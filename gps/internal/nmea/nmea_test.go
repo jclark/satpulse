@@ -707,7 +707,7 @@ func TestGGAQuality(t *testing.T) {
 		{
 			name:     "quality 2 DGPS",
 			payload:  "GNGGA,071113.000,3957.7995,N,11619.0286,E,2,10,1.0,100.0,M,-8.0,M,3.0,0001",
-			fixLevel: gpsprot.FixLevelCodeCorrected,
+			fixLevel: gpsprot.FixLevelCode,
 			corr:     gpsprot.CorrUsed,
 			numSV:    10,
 			hasNumSV: true,
@@ -836,7 +836,7 @@ func TestRMCQuality(t *testing.T) {
 		{
 			name:     "mode D differential",
 			payload:  "GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,D",
-			fixLevel: gpsprot.FixLevelCodeCorrected,
+			fixLevel: gpsprot.FixLevelCode,
 			corr:     gpsprot.CorrUsed,
 		},
 		{
@@ -854,7 +854,7 @@ func TestRMCQuality(t *testing.T) {
 		{
 			name:     "mode P wide area",
 			payload:  "GNRMC,153632.00,A,5550.602949,N,03732.239610,E,000.00000,000.0,310518,,,P",
-			fixLevel: gpsprot.FixLevelCodeCorrected,
+			fixLevel: gpsprot.FixLevelCode,
 			corr:     gpsprot.CorrSSR | gpsprot.CorrUsed,
 		},
 		{

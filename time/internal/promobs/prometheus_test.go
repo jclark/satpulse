@@ -11,7 +11,6 @@ func TestCamelToSnake(t *testing.T) {
 		{"notMeasured", "not_measured"},
 		{"doppler", "doppler"},
 		{"code", "code"},
-		{"codeCorrected", "code_corrected"},
 		{"carrierFloat", "carrier_float"},
 		{"carrierFixed", "carrier_fixed"},
 		// SolutionDim values

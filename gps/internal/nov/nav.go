@@ -188,7 +188,7 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType novmsg
 		ne.AuxSrc |= gpsprot.AuxSrcINS
 		return
 	case novmsg.PosINSSBAS:
-		ne.FixLevel = gpsprot.FixLevelCodeCorrected
+		ne.FixLevel = gpsprot.FixLevelCode
 		ne.SolutionDim = gpsprot.SolutionDim3D
 		ne.Correction = gpsprot.CorrSBAS.Expand()
 		ne.AuxSrc |= gpsprot.AuxSrcINS

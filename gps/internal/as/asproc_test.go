@@ -170,8 +170,8 @@ func TestNavAutoEpoch(t *testing.T) {
 		t.Fatalf("got %d NavEpochMsgs after third NAV-AUTO, want 2", len(epochs))
 	}
 	e2 := epochs[1]
-	if e2.FixLevel != gpsprot.FixLevelCodeCorrected {
-		t.Errorf("epoch 2 FixLevel = %v, want %v", e2.FixLevel, gpsprot.FixLevelCodeCorrected)
+	if e2.FixLevel != gpsprot.FixLevelCode {
+		t.Errorf("epoch 2 FixLevel = %v, want %v", e2.FixLevel, gpsprot.FixLevelCode)
 	}
 	if e2.Correction != gpsprot.CorrUsed {
 		t.Errorf("epoch 2 Correction = %v, want %v", e2.Correction, gpsprot.CorrUsed)

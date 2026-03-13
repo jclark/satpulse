@@ -189,7 +189,7 @@ func TestQualityNavAuto(t *testing.T) {
 		{2, gpsprot.FixLevelCode, gpsprot.SolutionDimTimeOnly, 0},
 		{3, gpsprot.FixLevelCode, gpsprot.SolutionDim2D, 0},
 		{4, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0},
-		{5, gpsprot.FixLevelCodeCorrected, gpsprot.SolutionDim3D, gpsprot.CorrUsed},
+		{5, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, gpsprot.CorrUsed},
 		{6, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrUsed},
 		{7, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrUsed},
 	}

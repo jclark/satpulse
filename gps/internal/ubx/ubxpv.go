@@ -163,7 +163,7 @@ func qualityNavPVT(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPVT) {
 		ne.Correction |= gpsprot.CorrUsed
 	default:
 		if m.Flags&ubxbin.NavPVTDiffSoln != 0 {
-			ne.FixLevel = gpsprot.FixLevelCodeCorrected
+			ne.FixLevel = gpsprot.FixLevelCode
 			ne.Correction |= gpsprot.CorrUsed
 		}
 	}

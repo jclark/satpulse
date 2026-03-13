@@ -68,7 +68,7 @@ func (o *TrackLogObserver) NavEpochPV(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMs
 		setDOP(&e.PDOP, msg.DOP.Pos)
 	}
 	e.NumSat = msg.NumSVUsed
-	e.FixType = fixType(msg.FixLevel, msg.SolutionDim)
+	e.FixType = fixType(msg.FixLevel, msg.SolutionDim, msg.Correction)
 	b, err := json.Marshal(&e)
 	if err != nil {
 		o.lf.HandleWriteError(err, o.lg)
@@ -95,7 +95,7 @@ func setDOP(dst *opt.Val[float32], src opt.Val[float64]) {
 	}
 }
 
-func fixType(level gpsprot.FixLevel, dim gpsprot.SolutionDim) string {
+func fixType(level gpsprot.FixLevel, dim gpsprot.SolutionDim, corr gpsprot.CorrKind) string {
 	if level == gpsprot.FixLevelNone {
 		return "none"
 	}
@@ -105,7 +105,7 @@ func fixType(level gpsprot.FixLevel, dim gpsprot.SolutionDim) string {
 	if dim != gpsprot.SolutionDim3D {
 		return ""
 	}
-	if level >= gpsprot.FixLevelCodeCorrected {
+	if corr != 0 {
 		return "dgps"
 	}
 	return "3d"
