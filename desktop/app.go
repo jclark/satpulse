@@ -15,6 +15,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/jclark/satpulse/desktop/rtcmbin"
 	"github.com/jclark/satpulse/desktop/serialenum"
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/corrsink"
@@ -342,6 +343,13 @@ type CorrEvent struct {
 	Error string `json:"error,omitempty"` // last error (set during reconnecting)
 }
 
+// CorrPacketEvent is the payload for "gps:corrpacket" events.
+type CorrPacketEvent struct {
+	Msg        string          `json:"msg"`
+	Epoch      opt.Val[uint64] `json:"epoch,omitzero"`
+	RefStation opt.Val[uint16] `json:"refstation,omitzero"`
+}
+
 // StartCorrections dials the remote address and starts forwarding
 // correction packets to the GPS receiver.
 func (a *App) StartCorrections(host string, port int) Result {
@@ -393,12 +401,23 @@ func (a *App) StartCorrections(host string, port int) Result {
 	// so a concurrent stop will wait for them.
 	wg.Go(func() {
 		defer sink.Packets.Unsubscribe(pktSub)
+		var epoch uint64
 		for pkt := range pktSub {
 			if pkt.Format == nil {
 				continue
 			}
-			msgID := pkt.Format.MsgID([]byte(pkt.Data))
-			runtime.EventsEmit(a.ctx, "gps:corrpacket", map[string]string{"msg": msgID})
+			data := []byte(pkt.Data)
+			ev := CorrPacketEvent{Msg: pkt.Format.MsgID(data)}
+			if mmb, ok := rtcmbin.MultipleMessageBit(data); ok {
+				ev.Epoch.Set(epoch)
+				if !mmb {
+					epoch++
+				}
+			}
+			if id, ok := rtcmbin.ReferenceStationID(data); ok {
+				ev.RefStation.Set(id)
+			}
+			runtime.EventsEmit(a.ctx, "gps:corrpacket", ev)
 		}
 	})
 	wg.Go(func() {
