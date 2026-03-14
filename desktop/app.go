@@ -15,7 +15,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/jclark/satpulse/desktop/rtcmbin"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/desktop/serialenum"
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/corrsink"
