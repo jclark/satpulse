@@ -6,15 +6,19 @@ package corrsink
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/scan"
 )
 
@@ -92,6 +96,10 @@ const (
 	maxBackoff     = 30 * time.Second
 	scanBufSize    = 16
 )
+
+// errReconnect is sent as a scan.Packet.ReadError to signal the
+// pruning queue that the connection was lost.
+var errReconnect = errors.New("reconnect")
 
 // Run connects to the correction source, scans packets, and writes
 // each to serialConn via WritePacket.  On network error, Run
@@ -187,6 +195,11 @@ func (s *Sink) reader(ctx context.Context, lg *slog.Logger,
 		readErr := s.readLoop(ctx, conn, pktFormats)
 		conn.Close()
 		close(done)
+		select {
+		case s.pktCh <- scan.Packet{ReadError: errReconnect}:
+		case <-ctx.Done():
+			return
+		}
 		if ctx.Err() != nil {
 			return
 		}
@@ -258,6 +271,9 @@ func (s *Sink) queue(subCh <-chan scan.Packet, writerCh chan<- scan.Packet) {
 				return
 			}
 			if pkt.Format == nil {
+				if errors.Is(pkt.ReadError, errReconnect) {
+					q.reconnect()
+				}
 				break
 			}
 			q.enqueue(pkt)
@@ -300,29 +316,44 @@ func (s *Sink) writer(ctx context.Context, lg *slog.Logger,
 
 // pruningQueue is a FIFO that deduplicates by message type.  When a
 // packet with the same message type is enqueued, the older entry is
-// removed.
+// removed -- unless both entries belong to the same MSM epoch, in
+// which case a single epoch can legitimately contain multiple packets
+// with the same message type.
 type pruningQueue struct {
-	entries []pqEntry
+	entries  []pqEntry
+	msmEpoch uint64
 }
 
 type pqEntry struct {
-	pkt   scan.Packet
-	msgID string
+	pkt      scan.Packet
+	msgID    string
+	msmEpoch *uint64
 }
 
 func (q *pruningQueue) len() int {
 	return len(q.entries)
 }
 
+func (q *pruningQueue) reconnect() {
+	q.msmEpoch++
+}
+
 func (q *pruningQueue) enqueue(pkt scan.Packet) {
 	msgID := pkt.Format.MsgID([]byte(pkt.Data))
-	for i, e := range q.entries {
-		if e.msgID == msgID {
-			q.entries = append(q.entries[:i], q.entries[i+1:]...)
-			break
+	var epoch *uint64
+	if pkt.Format.Tag() == gpsreg.TagRTCM {
+		if mmb, ok := rtcmbin.MultipleMessageBit(pkt.Data); ok {
+			ep := q.msmEpoch
+			epoch = &ep
+			if !mmb {
+				q.msmEpoch++
+			}
 		}
 	}
-	q.entries = append(q.entries, pqEntry{pkt: pkt, msgID: msgID})
+	q.entries = slices.DeleteFunc(q.entries, func(e pqEntry) bool {
+		return e.msgID == msgID && (epoch == nil || e.msmEpoch == nil || *epoch != *e.msmEpoch)
+	})
+	q.entries = append(q.entries, pqEntry{pkt: pkt, msgID: msgID, msmEpoch: epoch})
 }
 
 func (q *pruningQueue) dequeue() scan.Packet {

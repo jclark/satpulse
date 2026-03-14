@@ -33,6 +33,22 @@ func makeRTCM(msgType uint16, payloadLen int) []byte {
 	return pkt
 }
 
+// makeRTCMMSM builds a valid RTCM MSM packet with the multiple message
+// bit set or clear.  payloadLen must be >= 10 to hold the MSM header.
+func makeRTCMMSM(msgType uint16, mmb bool, payloadLen int) []byte {
+	pkt := makeRTCM(msgType, max(payloadLen, 10))
+	if mmb {
+		pkt[9] |= 0x02
+	}
+	// recompute CRC
+	totalPayload := len(pkt) - 6
+	crc := crc24q.Checksum(pkt[:3+totalPayload])
+	pkt[3+totalPayload] = byte(crc >> 16)
+	pkt[3+totalPayload+1] = byte(crc >> 8)
+	pkt[3+totalPayload+2] = byte(crc)
+	return pkt
+}
+
 // pipeSource returns a Source backed by net.Pipe.  The caller writes
 // correction data to the returned net.Conn.
 type pipeSource struct {
@@ -230,6 +246,115 @@ func TestPruningQueueDropsStale(t *testing.T) {
 	}
 	if p2.Data != string(pkt1005b) {
 		t.Errorf("expected updated 1005 packet")
+	}
+}
+
+func TestPruningQueueSameEpochNotPruned(t *testing.T) {
+	var q pruningQueue
+	pf := rtcm.PacketFormat
+	// Epoch 0: 1077(more), 1087(more), 1077(more) -- same msgID twice in same epoch
+	pkt1077a := makeRTCMMSM(1077, true, 20)
+	pkt1087 := makeRTCMMSM(1087, true, 20)
+	pkt1077b := makeRTCMMSM(1077, true, 22)
+	q.enqueue(scan.Packet{Format: pf, Data: string(pkt1077a)})
+	q.enqueue(scan.Packet{Format: pf, Data: string(pkt1087)})
+	q.enqueue(scan.Packet{Format: pf, Data: string(pkt1077b)})
+	if q.len() != 3 {
+		t.Fatalf("expected 3 entries, got %d", q.len())
+	}
+	p1 := q.dequeue()
+	if p1.Data != string(pkt1077a) {
+		t.Error("expected first 1077 packet")
+	}
+	p2 := q.dequeue()
+	if p2.Data != string(pkt1087) {
+		t.Error("expected 1087 packet")
+	}
+	p3 := q.dequeue()
+	if p3.Data != string(pkt1077b) {
+		t.Error("expected second 1077 packet")
+	}
+}
+
+func TestPruningQueueNewEpochPrunesOld(t *testing.T) {
+	var q pruningQueue
+	pf := rtcm.PacketFormat
+	// Epoch 0: 1077(more), 1087(last)
+	old1077 := makeRTCMMSM(1077, true, 20)
+	old1087 := makeRTCMMSM(1087, false, 20)
+	q.enqueue(scan.Packet{Format: pf, Data: string(old1077)})
+	q.enqueue(scan.Packet{Format: pf, Data: string(old1087)})
+	if q.len() != 2 {
+		t.Fatalf("expected 2 entries after epoch 0, got %d", q.len())
+	}
+	// Epoch 1: 1077(more), 1087(last) -- should replace epoch 0
+	new1077 := makeRTCMMSM(1077, true, 22)
+	new1087 := makeRTCMMSM(1087, false, 22)
+	q.enqueue(scan.Packet{Format: pf, Data: string(new1077)})
+	q.enqueue(scan.Packet{Format: pf, Data: string(new1087)})
+	if q.len() != 2 {
+		t.Fatalf("expected 2 entries after epoch 1, got %d", q.len())
+	}
+	p1 := q.dequeue()
+	if p1.Data != string(new1077) {
+		t.Error("expected new 1077 packet")
+	}
+	p2 := q.dequeue()
+	if p2.Data != string(new1087) {
+		t.Error("expected new 1087 packet")
+	}
+}
+
+func TestPruningQueueNewEpochPrunesDuplicateMsgIDs(t *testing.T) {
+	var q pruningQueue
+	pf := rtcm.PacketFormat
+	// Epoch 0: two 1077 packets (split) + 1087
+	old1077a := makeRTCMMSM(1077, true, 20)
+	old1077b := makeRTCMMSM(1077, true, 22)
+	old1087 := makeRTCMMSM(1087, false, 20)
+	q.enqueue(scan.Packet{Format: pf, Data: string(old1077a)})
+	q.enqueue(scan.Packet{Format: pf, Data: string(old1077b)})
+	q.enqueue(scan.Packet{Format: pf, Data: string(old1087)})
+	if q.len() != 3 {
+		t.Fatalf("expected 3 entries after epoch 0, got %d", q.len())
+	}
+	// Epoch 1: single 1077 -- must prune both old 1077 entries
+	new1077 := makeRTCMMSM(1077, false, 24)
+	q.enqueue(scan.Packet{Format: pf, Data: string(new1077)})
+	// old 1087 remains (different msgID), both old 1077s pruned
+	if q.len() != 2 {
+		t.Fatalf("expected 2 entries after epoch 1, got %d", q.len())
+	}
+	p1 := q.dequeue()
+	if p1.Format.MsgID([]byte(p1.Data)) != "1087" {
+		t.Errorf("expected 1087 first, got %s", p1.Format.MsgID([]byte(p1.Data)))
+	}
+	p2 := q.dequeue()
+	if p2.Data != string(new1077) {
+		t.Error("expected new 1077 packet")
+	}
+}
+
+func TestPruningQueueMSMAndNonMSM(t *testing.T) {
+	var q pruningQueue
+	pf := rtcm.PacketFormat
+	// Non-MSM 1005 should still be pruned normally
+	pkt1005a := makeRTCM(1005, 10)
+	pkt1077 := makeRTCMMSM(1077, false, 20)
+	pkt1005b := makeRTCM(1005, 12)
+	q.enqueue(scan.Packet{Format: pf, Data: string(pkt1005a)})
+	q.enqueue(scan.Packet{Format: pf, Data: string(pkt1077)})
+	q.enqueue(scan.Packet{Format: pf, Data: string(pkt1005b)})
+	if q.len() != 2 {
+		t.Fatalf("expected 2 entries, got %d", q.len())
+	}
+	p1 := q.dequeue()
+	if p1.Format.MsgID([]byte(p1.Data)) != "1077" {
+		t.Errorf("expected 1077 first, got %s", p1.Format.MsgID([]byte(p1.Data)))
+	}
+	p2 := q.dequeue()
+	if p2.Data != string(pkt1005b) {
+		t.Error("expected updated 1005 packet")
 	}
 }
 
