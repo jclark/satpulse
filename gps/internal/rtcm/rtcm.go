@@ -1,12 +1,12 @@
 package rtcm
 
 import (
-	"fmt"
 	"sort"
 	"time"
 
 	"github.com/jclark/crc24q"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 )
 
 // Tag for RTCM packets
@@ -15,15 +15,7 @@ const Tag gpsprot.Tag = "RTCM"
 // PacketFormat returns the RTCM packet format
 var PacketFormat gpsprot.PacketFormat = packetFormat{}
 
-type MsgType uint16
-
-// Message represents an RTCM message
-type Message struct {
-	Payload string
-	MsgType MsgType
-}
-
-var commomMsgTypes = []MsgType{
+var commonMsgTypes = []rtcmbin.MsgType{
 	1005, // station ARP
 	1006, // station ARP with height
 	1007, // antenna
@@ -40,16 +32,16 @@ var commomMsgTypes = []MsgType{
 	1230, // GLONASS bias
 }
 
-const ARPMsgType MsgType = 1005
-const GLONASSBiasMsgType MsgType = 1230	
+const ARPMsgType rtcmbin.MsgType = 1005
+const GLONASSBiasMsgType rtcmbin.MsgType = 1230
 
 // MSMMsgType returns the RTCM message type for a given GNSS and MSM number.
 // Returns 0 if the mapping cannot be done.
-func MSMMsgType(gnss gpsprot.GNSS, msm int) MsgType {
+func MSMMsgType(gnss gpsprot.GNSS, msm int) rtcmbin.MsgType {
 	if msm < 1 || msm > 7 {
 		return 0
 	}
-	var base MsgType
+	var base rtcmbin.MsgType
 	switch gnss {
 	case gpsprot.GPS:
 		base = 1070
@@ -64,21 +56,14 @@ func MSMMsgType(gnss gpsprot.GNSS, msm int) MsgType {
 	default:
 		return 0
 	}
-	return base + MsgType(msm)
+	return base + rtcmbin.MsgType(msm)
 }
 
-func isCommonMsgType(msgType MsgType) bool {
-	// Use binary search directly since the slice is already sorted
-	i := sort.Search(len(commomMsgTypes), func(i int) bool {
-		return commomMsgTypes[i] >= msgType
+func isCommonMsgType(mt rtcmbin.MsgType) bool {
+	i := sort.Search(len(commonMsgTypes), func(i int) bool {
+		return commonMsgTypes[i] >= mt
 	})
-
-	// Check if we found the message type
-	return i < len(commomMsgTypes) && commomMsgTypes[i] == msgType
-}
-
-func (mt MsgType) String() string {
-	return fmt.Sprintf("%d", mt)
+	return i < len(commonMsgTypes) && commonMsgTypes[i] == mt
 }
 
 // packetFormat implements the gpsprot.PacketFormat interface for RTCM packets
@@ -127,19 +112,13 @@ func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 	return state == stateExpectN
 }
 
-func (mt MsgType) isMSM() bool {
-	msm := mt % 10
-	return mt >= 1071 && mt <= 1137 && msm >= 1 && msm <= 7
-}
-
 func (f packetFormat) MsgID(pkt []byte) string {
-	return extractMsgType(pkt).String()
+	return rtcmbin.ExtractMsgType(pkt).String()
 }
 
 // ExtractChecksum extracts the checksum from the RTCM packet.
 // Precondition: the packet must be valid according to Next().
 func (f packetFormat) ExtractChecksum(pkt []byte) []byte {
-	// RTCM checksum is 3 bytes, so return the last 3 bytes of the buffer
 	return pkt[len(pkt)-3:]
 }
 
@@ -149,7 +128,7 @@ func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
 }
 
 func (f packetFormat) RescanOnBadChecksum(prevPktValid bool, pkt []byte) bool {
-	return !prevPktValid || !isCommonMsgType(extractMsgType(pkt))
+	return !prevPktValid || !isCommonMsgType(rtcmbin.ExtractMsgType(pkt))
 }
 
 // PacketProcessor implements the gpsprot.PacketProcessor interface for RTCM packets
@@ -168,7 +147,7 @@ func NewPacketProcessor() *PacketProcessor {
 // ProcessPacket processes an RTCM packet's data and returns any error.
 // It assumes checksum has already been verified.
 func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
-	msg := ParseMessage(data)
+	msg := rtcmbin.ParseMessage(data)
 	msgID := msg.MsgType.String()
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
@@ -180,41 +159,4 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 // NativeOnly returns true since RTCM only provides correction data
 func (p *PacketProcessor) NativeOnly() bool {
 	return true
-}
-
-// ParseMessage parses a packet into an RTCM Message
-func ParseMessage(packet string) *Message {
-	return &Message{
-		Payload: packet[3 : len(packet)-3],
-		MsgType: extractMsgType(packet),
-	}
-}
-
-type Bytes interface {
-	string | []byte
-}
-
-func extractMsgType[B Bytes](packet B) MsgType {
-	if len(packet) <= 6 {
-		return 0
-	}
-	return (MsgType(packet[3]) << 4) | MsgType(packet[4]>>4)
-}
-
-func (mt MsgType) hasStationID() bool {
-	return isCommonMsgType(mt) || mt.isMSM()
-}
-
-// ReferenceStationID extracts the 12-bit reference station ID (DF003)
-// from an RTCM packet. This field is at the same offset in MSM messages,
-// station ARP (1005/1006), antenna descriptor (1007/1008/1033),
-// and GLONASS bias (1230).
-// Returns false if the message type does not have a station ID at
-// this offset or the packet is too short.
-func ReferenceStationID[B Bytes](pkt B) (uint16, bool) {
-	mt := extractMsgType(pkt)
-	if !mt.hasStationID() || len(pkt) < 6 {
-		return 0, false
-	}
-	return uint16(pkt[4]&0x0F)<<8 | uint16(pkt[5]), true
 }

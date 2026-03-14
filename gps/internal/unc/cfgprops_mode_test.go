@@ -13,6 +13,48 @@ func TestConfigMode(t *testing.T) {
 
 var modeTestCases = []nativeConfigPropsTestCase{
 	{
+		name: "SetStatic with RTCMBaseID when already in survey mode",
+		currentState: []string{
+			"MODE BASE TIME 2000 0 0",
+		},
+		targetProps: func(props *gpsprot.ConfigProps) {
+			props.SetRTCMBaseID(1234)
+		},
+		targetOpts: func(opts *gpsprot.ConfigOptions) {
+			opts.SetStatic = true
+			opts.Survey.MinDur = 2000 * time.Second
+		},
+		expectedCmds: []string{"MODE BASE 1234 TIME 2000 0 0"},
+	},
+	{
+		name: "Change RTCMBaseID in survey mode",
+		currentState: []string{
+			"MODE BASE 123 TIME 2000",
+		},
+		targetProps: func(props *gpsprot.ConfigProps) {
+			props.SetMode(gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeNone})
+			props.SetRTCMBaseID(456)
+		},
+		targetOpts: func(opts *gpsprot.ConfigOptions) {
+			opts.Survey.MinDur = 2000 * time.Second
+		},
+		expectedCmds: []string{"MODE BASE 456 TIME 2000"},
+	},
+	{
+		name: "SetStatic preserves existing RTCMBaseID when not specified",
+		currentState: []string{
+			"MODE BASE 123 TIME 2000",
+		},
+		targetProps: func(props *gpsprot.ConfigProps) {
+			// No RTCMBaseID set - should preserve existing
+		},
+		targetOpts: func(opts *gpsprot.ConfigOptions) {
+			opts.SetStatic = true
+			opts.Survey.MinDur = 2000 * time.Second
+		},
+		expectedCmds: []string{}, // No change needed
+	},
+	{
 		name: "SetStatic true forces survey mode",
 		currentState: []string{
 			"MODE ROVER SURVEY",
