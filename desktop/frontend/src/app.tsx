@@ -18,6 +18,7 @@ import type {PosRow, PosGeoRow, PosECEFRow, VelRow, VelGeoRow, VelECEFRow, TimeR
 import {MapPanel} from './map-panel';
 import {ClockPanel} from './clock-panel';
 import {SkyViewPanel} from './sky-view-panel';
+import {TrackPanel} from './track-panel';
 export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo};
 
 export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
@@ -140,6 +141,7 @@ export function App() {
     const [noFixSecs, setNoFixSecs] = useState(0);
     const pvtEpoch = useRef(0);
     const [activeTab, setActiveTab] = useState<TabID>('monitor');
+    const [trackGen, setTrackGen] = useState(0);
     const [surveyOpen, setSurveyOpen] = useState(false);
     const surveyAutoExpanded = useRef(false);
     const [logHeight, setLogHeight] = useState(150);
@@ -317,6 +319,7 @@ export function App() {
                 setMapPos(null);
                 setMapCourse(null);
                 setNoFixSecs(0);
+                setTrackGen(g => g + 1);
             }
         });
         const offInitialPos = EventsOn('gps:initialPos', (ll: [number, number]) => {
@@ -559,6 +562,9 @@ export function App() {
                     </div>
                     <CollapsibleSection title="Status" variant="panel" defaultOpen>
                         <StatusPanel msg={navEpochMsg} />
+                    </CollapsibleSection>
+                    <CollapsibleSection title="Position Track" variant="panel" defaultOpen={false}>
+                        <TrackPanel key={trackGen} pos={mapPos} />
                     </CollapsibleSection>
                     <CollapsibleSection title="PVT Messages" variant="panel" open={pvtOpen} onToggle={setPvtOpen}>
                         <PVTPanel posRows={posRows} velRows={velRows} timeRows={timeRows} leapSecond={leapSecond} />

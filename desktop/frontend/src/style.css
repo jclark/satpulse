@@ -26,6 +26,7 @@
     --color-gnss-unknown: var(--gnss-unknown);
     --color-clock-digit: var(--clock-digit);
     --color-clock-ghost: var(--clock-ghost);
+    --color-track-dot: var(--track-dot);
 }
 
 :root {
@@ -55,6 +56,7 @@
     --gnss-unknown: #6b7280;
     --clock-digit: #1f2937;
     --clock-ghost: #e5e7eb;
+    --track-dot: #18181b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -81,6 +83,7 @@
         --info: #60a5fa;
         --clock-digit: #34d399;
         --clock-ghost: rgba(55, 65, 81, 0.4);
+        --track-dot: #f4f4f5;
     }
 }
 
