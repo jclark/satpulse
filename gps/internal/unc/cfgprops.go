@@ -165,6 +165,11 @@ func determineModeGeneration(effectiveProps *gpsprot.ConfigProps, curProps *gpsp
 	if survey.Flags&gpsprot.SurveyAgain != 0 {
 		return modeGenerationForce // force generation of MODE command to ensure survey semantics
 	}
+	// If the RTCM base ID changed, regenerate the MODE command
+	curBaseID, curOk := curProps.GetRTCMBaseID()
+	if effBaseID, effOk := effectiveProps.GetRTCMBaseID(); curOk != effOk || curBaseID != effBaseID {
+		return modeGenerationProperty
+	}
 	// Were in a survey before, want a survey now, but no SurveyAgain
 	// Do not generate a MODE command at all, because that would start a survey
 	return modeGenerationNone
