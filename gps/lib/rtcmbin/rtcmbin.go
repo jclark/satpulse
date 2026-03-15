@@ -1,7 +1,11 @@
-// Package rtcmbin provides RTCM binary field extraction functions.
+// Package rtcmbin provides RTCM binary packet parsing and field extraction.
 package rtcmbin
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/jclark/satpulse/gps/lib/bitsenc"
+)
 
 // Bytes constrains types to string or []byte.
 type Bytes interface {
@@ -38,17 +42,52 @@ func ExtractMsgType[B Bytes](pkt B) MsgType {
 	return MsgType(pkt[3])<<4 | MsgType(pkt[4])>>4
 }
 
-// Message represents a parsed RTCM message.
-type Message struct {
-	Payload string
-	MsgType MsgType
+// Msg is the interface implemented by all parsed RTCM messages.
+type Msg interface {
+	MsgType() MsgType
 }
 
-// ParseMessage parses a packet into an RTCM Message.
-func ParseMessage(packet string) *Message {
-	return &Message{
-		Payload: packet[3 : len(packet)-3],
-		MsgType: ExtractMsgType(packet),
+// MsgHdr is the common header for all RTCM messages.
+// Embed it to satisfy the Msg interface.
+type MsgHdr struct {
+	MsgNum MsgType `bits:"12" json:"msgNum"`
+}
+
+// MsgType returns the message type number.
+func (h *MsgHdr) MsgType() MsgType { return h.MsgNum }
+
+// UnknownMsg represents an RTCM message with an unrecognized message type.
+type UnknownMsg struct {
+	MsgHdr
+	Payload string `json:"payload"`
+}
+
+// ParseMsg parses an RTCM packet into a typed message struct.
+// Returns *UnknownMsg for unrecognized message types.
+func ParseMsg(packet string) (Msg, error) {
+	if len(packet) < 8 {
+		return nil, fmt.Errorf("rtcmbin: packet too short")
+	}
+	payload := packet[3 : len(packet)-3]
+	mt := ExtractMsgType(packet)
+	switch mt {
+	case 1005:
+		var msg MT1005
+		if err := bitsenc.Read([]byte(payload), &msg); err != nil {
+			return nil, fmt.Errorf("rtcm 1005: %w", err)
+		}
+		return &msg, nil
+	case 1006:
+		var msg MT1006
+		if err := bitsenc.Read([]byte(payload), &msg); err != nil {
+			return nil, fmt.Errorf("rtcm 1006: %w", err)
+		}
+		return &msg, nil
+	default:
+		return &UnknownMsg{
+			MsgHdr: MsgHdr{MsgNum: mt},
+			Payload:   payload,
+		}, nil
 	}
 }
 
