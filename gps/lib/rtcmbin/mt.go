@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"iter"
 	"math/bits"
+	"strconv"
 
 	"github.com/jclark/satpulse/gps/lib/bitsenc"
 )
@@ -60,18 +61,21 @@ func (m *MT1230) SizeSlices() {
 	m.CodePhaseBias = make([]int16, bits.OnesCount8(m.SignalMask))
 }
 
-// GNSS identifies a GNSS constellation.
-type GNSS string
+// MSM is an MSM1-5 message (standard resolution signal data).
+type MSM struct {
+	MSMHeader
+	CellMask uint64 `bits:"var"`
+	Sat      MSMSatData
+	Sig      MSMSigData
+}
 
-const (
-	GPS     GNSS = "GPS"
-	GLONASS GNSS = "GLONASS"
-	GALILEO GNSS = "GALILEO"
-	SBAS    GNSS = "SBAS"
-	QZSS    GNSS = "QZSS"
-	BEIDOU  GNSS = "BEIDOU"
-	IRNSS   GNSS = "IRNSS"
-)
+// MSMHiRes is an MSM6-7 message (high resolution signal data).
+type MSMHiRes struct {
+	MSMHeader
+	CellMask uint64 `bits:"var"`
+	Sat      MSMSatData
+	Sig      MSMHiResSigData
+}
 
 // MSMHeader is the header common to all MSM messages (1071-1137).
 type MSMHeader struct {
@@ -88,6 +92,47 @@ type MSMHeader struct {
 	SatMask       uint64
 	SigMask       uint32
 }
+
+// MSMSatData holds satellite-level data common to all MSM levels.
+type MSMSatData struct {
+	RangeInt  Uint8Slice // DF397, MSM4-7
+	ExtInfo   Uint8Slice `bits:"4"`  // MSM5/7
+	RangeMod  []uint16   `bits:"10"` // DF398, all MSM
+	PhaseRate []int16    `bits:"14"` // DF399, MSM5/7
+}
+
+// MSMSigData holds standard-resolution signal data (MSM1-5).
+type MSMSigData struct {
+	Pseudorange []int16    `bits:"15"` // DF400
+	PhaseRange  []int32    `bits:"22"` // DF401
+	LockTime    Uint8Slice `bits:"4"`  // DF402
+	HalfCycle   []bool     // DF420
+	CNR         Uint8Slice `bits:"6"`  // DF403
+	PhaseRate   []int16    `bits:"15"` // DF404
+}
+
+// MSMHiResSigData holds high-resolution signal data (MSM6-7).
+type MSMHiResSigData struct {
+	Pseudorange []int32  `bits:"20"` // DF405
+	PhaseRange  []int32  `bits:"24"` // DF406
+	LockTime    []uint16 `bits:"10"` // DF407
+	HalfCycle   []bool   // DF420
+	CNR         []uint16 `bits:"10"` // DF408
+	PhaseRate   []int16  `bits:"15"` // DF404
+}
+
+// GNSS identifies a GNSS constellation.
+type GNSS string
+
+const (
+	GPS     GNSS = "GPS"
+	GLONASS GNSS = "GLONASS"
+	GALILEO GNSS = "GALILEO"
+	SBAS    GNSS = "SBAS"
+	QZSS    GNSS = "QZSS"
+	BEIDOU  GNSS = "BEIDOU"
+	IRNSS   GNSS = "IRNSS"
+)
 
 // GNSS returns the constellation for this message type.
 func (h *MSMHeader) GNSS() GNSS {
@@ -154,47 +199,38 @@ func (h *MSMHeader) Signals() []uint8 {
 func (h *MSMHeader) sizeSatSlices(sat *MSMSatData) {
 	nsat := h.Nsat()
 	level := h.MSMLevel()
-	sat.RangeInt = make([]uint8, boolN(level >= 4, nsat))
-	sat.ExtInfo = make([]uint8, boolN(level == 5 || level == 7, nsat))
+	sat.RangeInt = make(Uint8Slice, boolN(level >= 4, nsat))
+	sat.ExtInfo = make(Uint8Slice, boolN(level == 5 || level == 7, nsat))
 	sat.RangeMod = make([]uint16, nsat)
 	sat.PhaseRate = make([]int16, boolN(level == 5 || level == 7, nsat))
 }
 
-// MSMSatData holds satellite-level data common to all MSM levels.
-type MSMSatData struct {
-	RangeInt  []uint8  // DF397, MSM4-7
-	ExtInfo   []uint8  `bits:"4"`  // MSM5/7
-	RangeMod  []uint16 `bits:"10"` // DF398, all MSM
-	PhaseRate []int16  `bits:"14"` // DF399, MSM5/7
-}
+// Uint8Slice is a []uint8 that serializes as a JSON array of numbers.
+// encoding/json treats []uint8 (aka []byte) as binary data and base64-encodes
+// it, which is wrong for numeric fields like lock times and CNR values.
+type Uint8Slice []uint8
 
-// MSMSigData holds standard-resolution signal data (MSM1-5).
-type MSMSigData struct {
-	Pseudorange []int16 `bits:"15"` // DF400
-	PhaseRange  []int32 `bits:"22"` // DF401
-	LockTime    []uint8 `bits:"4"`  // DF402
-	HalfCycle   []bool  // DF420
-	CNR         []uint8 `bits:"6"`  // DF403
-	PhaseRate   []int16 `bits:"15"` // DF404
+// MarshalJSON encodes the slice as a JSON array of numbers.
+func (s Uint8Slice) MarshalJSON() ([]byte, error) {
+	if s == nil {
+		return []byte("null"), nil
+	}
+	buf := []byte{'['}
+	for i, v := range s {
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		buf = strconv.AppendUint(buf, uint64(v), 10)
+	}
+	return append(buf, ']'), nil
 }
-
 func (s *MSMSigData) sizeSlices(level, ncell int) {
 	s.Pseudorange = make([]int16, boolN(level >= 1 && level != 2, ncell))
 	s.PhaseRange = make([]int32, boolN(level >= 2, ncell))
-	s.LockTime = make([]uint8, boolN(level >= 2, ncell))
+	s.LockTime = make(Uint8Slice, boolN(level >= 2, ncell))
 	s.HalfCycle = make([]bool, boolN(level >= 2, ncell))
-	s.CNR = make([]uint8, boolN(level >= 4, ncell))
+	s.CNR = make(Uint8Slice, boolN(level >= 4, ncell))
 	s.PhaseRate = make([]int16, boolN(level >= 5, ncell))
-}
-
-// MSMHiResSigData holds high-resolution signal data (MSM6-7).
-type MSMHiResSigData struct {
-	Pseudorange []int32  `bits:"20"` // DF405
-	PhaseRange  []int32  `bits:"24"` // DF406
-	LockTime    []uint16 `bits:"10"` // DF407
-	HalfCycle   []bool   // DF420
-	CNR         []uint16 `bits:"10"` // DF408
-	PhaseRate   []int16  `bits:"15"` // DF404
 }
 
 func (s *MSMHiResSigData) sizeSlices(level, ncell int) {
@@ -206,14 +242,6 @@ func (s *MSMHiResSigData) sizeSlices(level, ncell int) {
 	s.PhaseRate = make([]int16, boolN(level >= 7, ncell))
 }
 
-// MSM is an MSM1-5 message (standard resolution signal data).
-type MSM struct {
-	MSMHeader
-	CellMask uint64 `bits:"var"`
-	Sat      MSMSatData
-	Sig      MSMSigData
-}
-
 // VarBits yields the bit width for each bits:"var" field.
 func (m *MSM) VarBits() iter.Seq[int] {
 	return func(yield func(int) bool) { yield(m.cellMaskBits()) }
@@ -223,14 +251,6 @@ func (m *MSM) VarBits() iter.Seq[int] {
 func (m *MSM) SizeSlices() {
 	m.sizeSatSlices(&m.Sat)
 	m.Sig.sizeSlices(m.MSMLevel(), bits.OnesCount64(m.CellMask))
-}
-
-// MSMHiRes is an MSM6-7 message (high resolution signal data).
-type MSMHiRes struct {
-	MSMHeader
-	CellMask uint64 `bits:"var"`
-	Sat      MSMSatData
-	Sig      MSMHiResSigData
 }
 
 // VarBits yields the bit width for each bits:"var" field.
