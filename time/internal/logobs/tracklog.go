@@ -14,7 +14,9 @@ import (
 
 const TrackLogExtension = ".jsonl"
 
-type trackLogEntry struct {
+// TrackLogEntry is a single trackpoint with position, DOP, and fix type.
+// A zero entry (T == "") indicates no valid position is available.
+type TrackLogEntry struct {
 	T   string                  `json:"t"`
 	Lat gpsprot.Angle           `json:"lat"`
 	Lon gpsprot.Angle           `json:"lon"`
@@ -26,6 +28,29 @@ type trackLogEntry struct {
 	PDOP    opt.Val[float32] `json:"pdop,omitzero"`
 	NumSat  opt.Val[uint16]  `json:"numsat,omitzero"`
 	FixType string           `json:"fixType,omitzero"`
+}
+
+// NewTrackLogEntry builds a TrackLogEntry from a NavEpochMsg, PVMsgBundle, and UTCTime.
+// Returns a zero entry (T == "") if PosGeo or utc are unavailable.
+func NewTrackLogEntry(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMsgBundle, utc *ptime.UTCTime) TrackLogEntry {
+	if utc == nil || !pv.PosGeo.IsSet() {
+		return TrackLogEntry{}
+	}
+	pg := pv.PosGeo.Get()
+	e := TrackLogEntry{
+		T:   utc.Date.Add(utc.TimeOfDay).Format("2006-01-02T15:04:05.000Z"),
+		Lat: pg.LatLon[0],
+		Lon: pg.LatLon[1],
+		Ele: pg.HeightMSL,
+	}
+	if msg.SolutionDim != gpsprot.SolutionDimTimeOnly {
+		setDOP(&e.HDOP, msg.DOP.Hor)
+		setDOP(&e.VDOP, msg.DOP.Vert)
+		setDOP(&e.PDOP, msg.DOP.Pos)
+	}
+	e.NumSat = msg.NumSVUsed
+	e.FixType = fixType(msg.FixLevel, msg.SolutionDim, msg.Correction)
+	return e
 }
 
 // TrackLogObserver writes one JSONL trackpoint per navigation epoch.
@@ -52,23 +77,13 @@ func (o *TrackLogObserver) Tick(msg *gpsprot.TimeMsg, _ time.Time) {
 
 // NavEpochPV writes a trackpoint if PosGeo and UTC time are available.
 func (o *TrackLogObserver) NavEpochPV(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMsgBundle, _ time.Time) {
-	if o.lf.File == nil || o.utc == nil || !pv.PosGeo.IsSet() {
+	if o.lf.File == nil {
 		return
 	}
-	pg := pv.PosGeo.Get()
-	e := trackLogEntry{
-		T:   o.utc.Date.Add(o.utc.TimeOfDay).Format("2006-01-02T15:04:05.000Z"),
-		Lat: pg.LatLon[0],
-		Lon: pg.LatLon[1],
-		Ele: pg.HeightMSL,
+	e := NewTrackLogEntry(msg, pv, o.utc)
+	if e.T == "" {
+		return
 	}
-	if msg.SolutionDim != gpsprot.SolutionDimTimeOnly {
-		setDOP(&e.HDOP, msg.DOP.Hor)
-		setDOP(&e.VDOP, msg.DOP.Vert)
-		setDOP(&e.PDOP, msg.DOP.Pos)
-	}
-	e.NumSat = msg.NumSVUsed
-	e.FixType = fixType(msg.FixLevel, msg.SolutionDim, msg.Correction)
 	b, err := json.Marshal(&e)
 	if err != nil {
 		o.lf.HandleWriteError(err, o.lg)

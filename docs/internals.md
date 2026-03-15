@@ -110,6 +110,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/nmeamsg` analyzes NMEA sentence syntax and computes checksums.
 
+`gps/lib/airmsg` classifies responses to Airoha proprietary PAIR NMEA commands.
+
 `gps/lib/qtmmsg` parses Quectel NMEA PQTM messages.
 
 `gps/lib/opt` provides a generic optional value type for use in serialized structs.

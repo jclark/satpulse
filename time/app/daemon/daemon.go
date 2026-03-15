@@ -217,8 +217,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 
 	promObs := newPrometheusObserver(cfg)
 	sseObs := newSSEObserver(cfg, sseCh, lg, gcfg)
+	posObs := newPositionObserver(cfg)
 	if eb != nil {
-		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, sseObs, promObs)
+		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, sseObs, promObs, posObs)
 		if err != nil {
 			return err
 		}
@@ -268,7 +269,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 	gpsObs := logobs.NewGPSLogObserver(lg)
 
-	observer := combineObservers(promObs, sseObs, statsObs, clockObs, trackObs, gpsObs)
+	observer := combineObservers(promObs, sseObs, posObs, statsObs, clockObs, trackObs, gpsObs)
 
 	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, observer, tStart)
 	if err != nil {
@@ -337,6 +338,16 @@ func newPrometheusObserver(cfg *Config) *promobs.PrometheusObserver {
 	return nil
 }
 
+// newPositionObserver creates a positionObserver if any HTTP endpoint has position enabled.
+func newPositionObserver(cfg *Config) *positionObserver {
+	for _, hc := range cfg.HTTP {
+		if hc.position() {
+			return &positionObserver{}
+		}
+	}
+	return nil
+}
+
 // newStatsLogObserver creates StatsLogObserver if log interval is configured
 func newStatsLogObserver(cfg *Config, lg *slog.Logger) *logobs.StatsLogObserver {
 	if cfg.Log.Interval > 0 {
@@ -368,7 +379,7 @@ func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.L
 
 // combineObservers combines individual observers into appropriate single observer
 func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObserver,
-	statsObs *logobs.StatsLogObserver, clockObs *logobs.ClockLogObserver,
+	posObs *positionObserver, statsObs *logobs.StatsLogObserver, clockObs *logobs.ClockLogObserver,
 	trackObs *logobs.TrackLogObserver, gpsObs *logobs.GPSLogObserver) obs.Observer {
 
 	var observers []obs.Observer
@@ -391,6 +402,9 @@ func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObs
 	}
 	if sseObs != nil {
 		observers = append(observers, sseObs)
+	}
+	if posObs != nil {
+		observers = append(observers, posObs)
 	}
 
 	// Return combined observer or default
