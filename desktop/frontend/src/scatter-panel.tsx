@@ -51,7 +51,6 @@ export function ScatterPanel({ecef}: ScatterPanelProps) {
     const meanRef = useRef({x: 0, y: 0, z: 0});
     const sinCosRef = useRef<{sinLat: number; cosLat: number; sinLon: number; cosLon: number} | null>(null);
     const spanRef = useRef(INITIAL_SPAN);
-    const centerRef = useRef({e: 0, n: 0});
     const [, setTick] = useState(0);
     const lastEcefRef = useRef<[number, number, number] | null>(null);
     const pendingLLHRef = useRef(false);
@@ -79,21 +78,16 @@ export function ScatterPanel({ecef}: ScatterPanelProps) {
         if (n === 0) return;
         const lastE = enu[(n - 1) * 3];
         const lastN = enu[(n - 1) * 3 + 1];
-        const span = spanRef.current;
-        const half = span / 2;
-        const margin = span * MARGIN_FRAC;
-        const ce = centerRef.current.e, cn = centerRef.current.n;
-        if (Math.abs(lastE - ce) > half - margin || Math.abs(lastN - cn) > half - margin) {
-            let minE = Infinity, maxE = -Infinity, minN = Infinity, maxN = -Infinity;
+        const half = spanRef.current / 2;
+        const margin = spanRef.current * MARGIN_FRAC;
+        if (Math.abs(lastE) > half - margin || Math.abs(lastN) > half - margin) {
+            let maxAbs = 0;
             for (let i = 0; i < n; i++) {
-                const e = enu[i * 3], nn = enu[i * 3 + 1];
-                if (e < minE) minE = e;
-                if (e > maxE) maxE = e;
-                if (nn < minN) minN = nn;
-                if (nn > maxN) maxN = nn;
+                const ae = Math.abs(enu[i * 3]), an = Math.abs(enu[i * 3 + 1]);
+                if (ae > maxAbs) maxAbs = ae;
+                if (an > maxAbs) maxAbs = an;
             }
-            centerRef.current = {e: (minE + maxE) / 2, n: (minN + maxN) / 2};
-            const newSpan = Math.max(Math.max(maxE - minE, maxN - minN) * 1.5, INITIAL_SPAN);
+            const newSpan = Math.max(maxAbs * 2 * 1.5, INITIAL_SPAN);
             if (newSpan > spanRef.current) spanRef.current = newSpan;
         }
     }, []);
@@ -170,7 +164,6 @@ export function ScatterPanel({ecef}: ScatterPanelProps) {
         meanRef.current = {x: 0, y: 0, z: 0};
         sinCosRef.current = null;
         spanRef.current = INITIAL_SPAN;
-        centerRef.current = {e: 0, n: 0};
         lastEcefRef.current = null;
         pendingLLHRef.current = false;
         setTick(t => t + 1);
@@ -178,7 +171,6 @@ export function ScatterPanel({ecef}: ScatterPanelProps) {
 
     const n = countRef.current;
     const span = spanRef.current;
-    const center = centerRef.current;
     const mean = meanRef.current;
     const half = span / 2;
     const dotOpacity = Math.max(0.05, Math.min(1, 5 / Math.sqrt(n || 1)));
@@ -269,8 +261,8 @@ export function ScatterPanel({ecef}: ScatterPanelProps) {
                         {Array.from({length: n}, (_, i) => {
                             const e = enu[i * 3];
                             const nn2 = enu[i * 3 + 1];
-                            const px = ((e - center.e) / half) * (VB / 2) + VB / 2;
-                            const py = VB / 2 - ((nn2 - center.n) / half) * (VB / 2);
+                            const px = (e / half) * (VB / 2) + VB / 2;
+                            const py = VB / 2 - (nn2 / half) * (VB / 2);
                             const last = i === n - 1;
                             return (
                                 <circle
