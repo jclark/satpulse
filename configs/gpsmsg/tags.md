@@ -171,6 +171,9 @@ set the message rate to 10.
 | `rtcm-msm4` | Enable MSM4 for all constellations (1074/1084/1094/1124) |
 | `rtcm-msm7` | Enable MSM7 for all constellations (1077/1087/1097/1127) |
 | `rtcm-off` | Disable all RTCM messages |
+| `get-rtcm-base-id` | Query RTCM reference station ID |
+| `rtcm-base-id-0` | Set RTCM reference station ID to 0 |
+| `rtcm-base-id-1234` | Set RTCM reference station ID to 1234 (example) |
 
 ## PPP (Precise Point Positioning)
 
