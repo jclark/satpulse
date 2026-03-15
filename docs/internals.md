@@ -100,7 +100,9 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/asbin` translates binary packets in the Allystar binary protocol to and from Go structs.
 
-`gps/lib/rtcmbin` provides RTCM binary wire-format types and field extraction: message type, reference station ID, multiple-message bit detection, and message parsing.
+`gps/lib/bitsenc` provides reflection-based decoding of bit-packed binary data into Go structs. It supports unsigned and signed integers, bools, and embedded structs.
+
+`gps/lib/rtcmbin` provides RTCM binary wire-format types and field extraction: message type, reference station ID, multiple-message bit detection, and message parsing. It uses `gps/lib/bitsenc` to decode bit-packed message types like 1005/1006 (station ARP).
 
 `gps/lib/novmsg` provides parsing and serialization of NovAtel GPS receiver messages in binary and ASCII formats. It defines message header and body types and implements CRC32 validation.
 

@@ -1,6 +1,7 @@
 package bitsenc
 
 import (
+	"iter"
 	"testing"
 )
 
@@ -70,7 +71,28 @@ func TestReadBool(t *testing.T) {
 	}
 }
 
-func TestReadSkipsUntagged(t *testing.T) {
+func TestReadNativeSize(t *testing.T) {
+	// Untagged fields now read at native type size.
+	// uint8 = 8 bits, bool = 1 bit
+	// 0xFF 0x80 => uint8=0xFF, bool=1
+	data := []byte{0xFF, 0x80}
+	var v struct {
+		A uint8
+		B bool
+	}
+	if err := Read(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.A != 0xFF {
+		t.Errorf("A = 0x%X, want 0xFF", v.A)
+	}
+	if !v.B {
+		t.Error("B = false, want true")
+	}
+}
+
+func TestReadSkipsUnsupportedUntagged(t *testing.T) {
+	// Untagged fields of types without a native bit size (e.g. int) are skipped.
 	data := []byte{0xFF}
 	var v struct {
 		Skip int
@@ -111,8 +133,8 @@ type header struct {
 
 type body struct {
 	header
-	Flag bool   `bits:"1"`
-	Val  uint8  `bits:"3"`
+	Flag bool  `bits:"1"`
+	Val  uint8 `bits:"3"`
 }
 
 func TestReadEmbedded(t *testing.T) {
@@ -161,5 +183,135 @@ func TestReadNotPointer(t *testing.T) {
 	err := Read([]byte{0xFF}, v)
 	if err == nil {
 		t.Error("expected error for non-pointer argument")
+	}
+}
+
+func TestReaderUintInt(t *testing.T) {
+	data := []byte{0xAB, 0xCD}
+	r := NewReader(data)
+	v, err := r.Uint(8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != 0xAB {
+		t.Errorf("Uint(8) = 0x%X, want 0xAB", v)
+	}
+	s, err := r.Int(8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 0xCD sign-extended from 8 bits = -51
+	if s != -51 {
+		t.Errorf("Int(8) = %d, want -51", s)
+	}
+}
+
+func TestReadSlice(t *testing.T) {
+	// 3 x uint8 at 4 bits each = 12 bits
+	// 0xABC = 1010 1011 1100
+	data := []byte{0xAB, 0xC0}
+	var v struct {
+		Vals []uint8 `bits:"4"`
+	}
+	v.Vals = make([]uint8, 3)
+	if err := Read(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	want := []uint8{0xA, 0xB, 0xC}
+	for i, w := range want {
+		if v.Vals[i] != w {
+			t.Errorf("Vals[%d] = %d, want %d", i, v.Vals[i], w)
+		}
+	}
+}
+
+func TestReadSliceNative(t *testing.T) {
+	// 2 x uint16 at native 16-bit width = 32 bits
+	data := []byte{0x00, 0x01, 0x00, 0x02}
+	var v struct {
+		Vals []uint16
+	}
+	v.Vals = make([]uint16, 2)
+	if err := Read(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Vals[0] != 1 || v.Vals[1] != 2 {
+		t.Errorf("Vals = %v, want [1, 2]", v.Vals)
+	}
+}
+
+type varMsg struct {
+	Width uint8
+	Data  uint32 `bits:"var"`
+}
+
+func (m *varMsg) VarBits() iter.Seq[int] {
+	return func(yield func(int) bool) { yield(int(m.Width)) }
+}
+
+func TestReadVarBits(t *testing.T) {
+	// Width = 8 bits (native uint8), then Data = Width bits
+	// 0x0A = Width=10, then 10 bits = 0x2AB (1010101011)
+	// 00001010 1010101011_000000
+	// 0x0A 0xAA 0xC0
+	data := []byte{0x0A, 0xAA, 0xC0}
+	var v varMsg
+	if err := Read(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Width != 10 {
+		t.Errorf("Width = %d, want 10", v.Width)
+	}
+	if v.Data != 0x2AB {
+		t.Errorf("Data = 0x%X, want 0x2AB", v.Data)
+	}
+}
+
+type sliceSizerMsg struct {
+	Count uint8
+	Vals  []uint8 `bits:"4"`
+}
+
+func (m *sliceSizerMsg) SizeSlices() {
+	m.Vals = make([]uint8, m.Count)
+}
+
+func TestReadSliceSizer(t *testing.T) {
+	// Count = 3 (8 bits native), then 3 x 4-bit values
+	// 00000011 1010 1011 1100 0000
+	// 0x03 0xAB 0xC0
+	data := []byte{0x03, 0xAB, 0xC0}
+	var v sliceSizerMsg
+	if err := Read(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Count != 3 {
+		t.Errorf("Count = %d, want 3", v.Count)
+	}
+	want := []uint8{0xA, 0xB, 0xC}
+	for i, w := range want {
+		if v.Vals[i] != w {
+			t.Errorf("Vals[%d] = %d, want %d", i, v.Vals[i], w)
+		}
+	}
+}
+
+func TestReadNamedStruct(t *testing.T) {
+	// Named (non-embedded) structs are recursed into.
+	type inner struct {
+		A uint8 `bits:"4"`
+		B uint8 `bits:"4"`
+	}
+	type outer struct {
+		X inner
+		C uint8 `bits:"4"`
+	}
+	data := []byte{0xAB, 0xC0}
+	var v outer
+	if err := Read(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.X.A != 0xA || v.X.B != 0xB || v.C != 0xC {
+		t.Errorf("got {X:{%d,%d}, C:%d}, want {X:{10,11}, C:12}", v.X.A, v.X.B, v.C)
 	}
 }
