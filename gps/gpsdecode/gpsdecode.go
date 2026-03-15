@@ -11,6 +11,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/ubxcfgval"
@@ -90,6 +91,9 @@ checksumOK:
 		return pf, r, err
 	case gpsreg.TagNMEA:
 		r, err := nmeaDecode(data)
+		return pf, r, err
+	case gpsreg.TagRTCM:
+		r, err := rtcmDecode(data)
 		return pf, r, err
 	default:
 		return pf, nil, ErrInvalidPacket
@@ -244,6 +248,17 @@ func nmeaStarIndex(pkt []byte) int {
 		return n - 4
 	}
 	return -1
+}
+
+func rtcmDecode(data []byte) (*DecodeResult, error) {
+	msg, err := rtcmbin.ParseMsg(string(data))
+	if err != nil {
+		return nil, err
+	}
+	if _, isUnknown := msg.(*rtcmbin.UnknownMsg); isUnknown {
+		return nil, ErrUnknownMsg
+	}
+	return &DecodeResult{Payload: msg}, nil
 }
 
 func novbinDecode(data []byte) (*DecodeResult, error) {

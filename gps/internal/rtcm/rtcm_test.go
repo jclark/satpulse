@@ -23,8 +23,11 @@ func rtcmOK(t *testing.T, msgNum rtcmbin.MsgType, data string) {
 	if startPos != 0 || endPos != len(buf) || !ok {
 		t.Fatalf("failed to scan valid RTCM packet")
 	}
-	m := rtcmbin.ParseMessage(data)
-	if m.MsgType != msgNum {
+	m, err := rtcmbin.ParseMsg(data)
+	if err != nil {
+		t.Fatalf("ParseMsg failed: %v", err)
+	}
+	if m.MsgType() != msgNum {
 		t.Fatalf(`wrong message number for RTCM %d`, msgNum)
 	}
 	if !bytes.Equal(PacketFormat.ComputeChecksum(buf), PacketFormat.ExtractChecksum(buf)) {
