@@ -18,10 +18,11 @@ import (
 )
 
 type HTTPConfig struct {
-	Listen  string `toml:"listen"`
-	PProf   bool   `toml:"pprof"`
-	GUI     *bool  `toml:"gui"`     // Serve graphical user interface
-	Metrics *bool  `toml:"metrics"` // Serve Prometheus metrics endpoint
+	Listen   string `toml:"listen"`
+	PProf    bool   `toml:"pprof"`
+	GUI      *bool  `toml:"gui"`      // Serve graphical user interface
+	Metrics  *bool  `toml:"metrics"`  // Serve Prometheus metrics endpoint
+	Position *bool  `toml:"position"` // Serve current position endpoint
 }
 
 // gui gives the value of the GUI option, defaulting to true if not set.
@@ -40,6 +41,14 @@ func (hc HTTPConfig) metrics() bool {
 	return *hc.Metrics
 }
 
+// position gives the value of the Position option, defaulting to true if not set.
+func (hc HTTPConfig) position() bool {
+	if hc.Position == nil {
+		return true
+	}
+	return *hc.Position
+}
+
 const gracefulShutdownTimeout = 1 * time.Second
 
 func registerPprofHandlers(mux *http.ServeMux) {
@@ -50,7 +59,7 @@ func registerPprofHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 }
 
-func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], sseObs *sseobs.SSEObserver, promObs *promobs.PrometheusObserver) error {
+func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], sseObs *sseobs.SSEObserver, promObs *promobs.PrometheusObserver, posObs *positionObserver) error {
 	if len(cfg) == 0 {
 		return nil
 	}
@@ -59,8 +68,8 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 			return configErrorf("must specify listen option for each HTTP element")
 		}
 		// Validate that at least one endpoint is enabled
-		if !c.PProf && !c.gui() && !c.metrics() {
-			return configErrorf("HTTP endpoint %s must enable at least one of: pprof, gui, metrics", c.Listen)
+		if !c.PProf && !c.gui() && !c.metrics() && !c.position() {
+			return configErrorf("HTTP endpoint %s must enable at least one of: pprof, gui, metrics, position", c.Listen)
 		}
 	}
 
@@ -95,6 +104,9 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 		// Only register metrics endpoint if enabled for this endpoint
 		if cfg[i].metrics() {
 			mux.Handle("/metrics", promObs.Handler())
+		}
+		if cfg[i].position() {
+			mux.HandleFunc("/position", positionHandler(posObs))
 		}
 
 		// XXX we should supply an error logger that wraps lg

@@ -224,6 +224,7 @@ where the *host* is a host name or IP address, and port is the port number; *hos
 IP addresses
 * `gui` - a boolean saying whether to enable the web GUI at `/` and Server-Sent Events at `/sse`; default is `true`
 * `metrics` - a boolean saying whether to enable Prometheus metrics at `/metrics`; default is `true`
+* `position` - a boolean saying whether to enable the current GPS position at `/position` as JSON; default is `true`
 
 This example would run an HTTP server on port 2006 on all IP addresses:
 

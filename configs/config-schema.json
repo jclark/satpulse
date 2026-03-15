@@ -116,7 +116,8 @@
 		  "properties": {
 			"listen": { "type": "string" },
 			"gui": { "type": "boolean" },
-			"metrics": { "type": "boolean" }
+			"metrics": { "type": "boolean" },
+			"position": { "type": "boolean" }
 		  },
 		  "required": ["listen"]
 		}
