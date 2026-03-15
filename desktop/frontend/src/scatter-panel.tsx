@@ -5,6 +5,7 @@ import {Button} from './ui';
 
 interface ScatterPanelProps {
     ecef: [number, number, number] | null;
+    baseARPs?: Map<number, [number, number, number]>;
 }
 
 const VB = 500;
@@ -45,7 +46,7 @@ function formatECEF(m: number): string {
     return m.toFixed(4) + ' m';
 }
 
-export function ScatterPanel({ecef}: ScatterPanelProps) {
+export function ScatterPanel({ecef, baseARPs}: ScatterPanelProps) {
     const bufRef = useRef(new Float64Array(3072)); // interleaved X,Y,Z
     const countRef = useRef(0);
     const meanRef = useRef({x: 0, y: 0, z: 0});
@@ -201,6 +202,23 @@ export function ScatterPanel({ecef}: ScatterPanelProps) {
         cep95 = hDists[Math.min(Math.floor(n * 0.95), n - 1)];
     }
 
+    // ARP distance rows
+    const sc = sinCosRef.current;
+    const arpRows: {id: number; dist3D: number; horiz: number; vert: number}[] = [];
+    if (baseARPs && n > 0 && sc) {
+        for (const [id, arp] of baseARPs) {
+            const dx = arp[0] - mean.x;
+            const dy = arp[1] - mean.y;
+            const dz = arp[2] - mean.z;
+            const dist3D = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            const dE = -sc.sinLon * dx + sc.cosLon * dy;
+            const dN = -sc.sinLat * sc.cosLon * dx - sc.sinLat * sc.sinLon * dy + sc.cosLat * dz;
+            const dU = sc.cosLat * sc.cosLon * dx + sc.cosLat * sc.sinLon * dy + sc.sinLat * dz;
+            arpRows.push({id, dist3D, horiz: Math.sqrt(dE * dE + dN * dN), vert: Math.abs(dU)});
+        }
+        arpRows.sort((a, b) => a.id - b.id);
+    }
+
     // Distance rings
     const ringStep = pickRingStep(half);
     const rings: number[] = [];
@@ -307,6 +325,33 @@ export function ScatterPanel({ecef}: ScatterPanelProps) {
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                </div>
+            )}
+            {n > 0 && arpRows.length > 0 && (
+                <div class="flex min-w-0 items-start text-xs" style="height: 300px;">
+                    <div>
+                        <h4 class="mb-1 text-xs font-semibold uppercase tracking-wider text-text-secondary">Distance from RTCM ARP</h4>
+                        <table class="border-separate" style="border-spacing: 0 2px;">
+                            <thead>
+                                <tr class="text-text-secondary">
+                                    <td class="pr-4">Station</td>
+                                    <td class="pr-4 text-right">3D</td>
+                                    <td class="pr-4 text-right">Horiz</td>
+                                    <td class="text-right">Vert</td>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {arpRows.map(r => (
+                                    <tr key={r.id}>
+                                        <td class="text-text-secondary pr-4">{r.id}</td>
+                                        <td class="font-mono text-right pr-4">{formatPrecision(r.dist3D)}</td>
+                                        <td class="font-mono text-right pr-4">{formatPrecision(r.horiz)}</td>
+                                        <td class="font-mono text-right">{formatPrecision(r.vert)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             )}

@@ -140,6 +140,7 @@ export function App() {
     const [mapCourse, setMapCourse] = useState<{course: number; groundSpeed: number} | null>(null);
     const [noFixSecs, setNoFixSecs] = useState(0);
     const [scatterECEF, setScatterECEF] = useState<[number, number, number] | null>(null);
+    const [baseARPs, setBaseARPs] = useState<Map<number, [number, number, number]>>(new Map());
     const pvtEpoch = useRef(0);
     const [activeTab, setActiveTab] = useState<TabID>('monitor');
     const [trackGen, setTrackGen] = useState(0);
@@ -321,6 +322,7 @@ export function App() {
                 setMapCourse(null);
                 setNoFixSecs(0);
                 setScatterECEF(null);
+                setBaseARPs(new Map());
                 setTrackGen(g => g + 1);
             }
         });
@@ -362,6 +364,13 @@ export function App() {
             setPosRows(evict);
             setVelRows(evict);
             setTimeRows(evict);
+        });
+        const offBaseARP = EventsOn('gps:basearp', (evt: {stationID: number; ecef: [number, number, number]}) => {
+            setBaseARPs(prev => {
+                const next = new Map(prev);
+                next.set(evt.stationID, evt.ecef);
+                return next;
+            });
         });
         const offTime = EventsOn('gps:time', (msg: any) => {
             setTimeMsg(msg as TimeMsg);
@@ -433,6 +442,7 @@ export function App() {
             if (typeof offState === 'function') offState(); else EventsOff('gps:state');
             if (typeof offInitialPos === 'function') offInitialPos(); else EventsOff('gps:initialPos');
             if (typeof offEpochPVT === 'function') offEpochPVT(); else EventsOff('gps:epochPVT');
+            if (typeof offBaseARP === 'function') offBaseARP(); else EventsOff('gps:basearp');
             if (typeof offTime === 'function') offTime(); else EventsOff('gps:time');
             if (typeof offMsgSend === 'function') offMsgSend(); else EventsOff('gps:msgsend');
             if (typeof offResponse === 'function') offResponse(); else EventsOff('gps:response');
@@ -569,7 +579,7 @@ export function App() {
                         <StatusPanel msg={navEpochMsg} />
                     </CollapsibleSection>
                     <CollapsibleSection title="Position Scatter" variant="panel" defaultOpen={false}>
-                        <ScatterPanel key={trackGen} ecef={scatterECEF} />
+                        <ScatterPanel key={trackGen} ecef={scatterECEF} baseARPs={baseARPs} />
                     </CollapsibleSection>
                     <CollapsibleSection title="PVT Messages" variant="panel" open={pvtOpen} onToggle={setPvtOpen}>
                         <PVTPanel posRows={posRows} velRows={velRows} timeRows={timeRows} leapSecond={leapSecond} />

@@ -350,6 +350,13 @@ type CorrPacketEvent struct {
 	RefStation opt.Val[uint16] `json:"refstation,omitzero"`
 }
 
+// BaseARPEvent is the payload for "gps:basearp" events, emitted when
+// an RTCM 1005 or 1006 message is received with a base station ARP.
+type BaseARPEvent struct {
+	StationID uint16     `json:"stationID"`
+	ECEF      [3]float64 `json:"ecef"` // meters
+}
+
 // StartCorrections dials the remote address and starts forwarding
 // correction packets to the GPS receiver.
 func (a *App) StartCorrections(host string, port int) Result {
@@ -418,6 +425,21 @@ func (a *App) StartCorrections(host string, port int) Result {
 				ev.RefStation.Set(id)
 			}
 			runtime.EventsEmit(a.ctx, "gps:corrpacket", ev)
+			if ev.Msg == "1005" || ev.Msg == "1006" {
+				if msg, err := rtcmbin.ParseMsg(pkt.Data); err == nil {
+					if mt, ok := msg.(*rtcmbin.MT1005); ok {
+						runtime.EventsEmit(a.ctx, "gps:basearp", BaseARPEvent{
+							StationID: mt.StationID,
+							ECEF:      mt.ECEF(),
+						})
+					} else if mt, ok := msg.(*rtcmbin.MT1006); ok {
+						runtime.EventsEmit(a.ctx, "gps:basearp", BaseARPEvent{
+							StationID: mt.StationID,
+							ECEF:      mt.MT1005.ECEF(),
+						})
+					}
+				}
+			}
 		}
 	})
 	wg.Go(func() {
