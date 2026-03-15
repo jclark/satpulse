@@ -18,7 +18,7 @@ import type {PosRow, PosGeoRow, PosECEFRow, VelRow, VelGeoRow, VelECEFRow, TimeR
 import {MapPanel} from './map-panel';
 import {ClockPanel} from './clock-panel';
 import {SkyViewPanel} from './sky-view-panel';
-import {TrackPanel} from './track-panel';
+import {ScatterPanel} from './scatter-panel';
 export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo};
 
 export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
@@ -139,6 +139,7 @@ export function App() {
     const [mapPos, setMapPos] = useState<{lat: number; lon: number} | null>(null);
     const [mapCourse, setMapCourse] = useState<{course: number; groundSpeed: number} | null>(null);
     const [noFixSecs, setNoFixSecs] = useState(0);
+    const [scatterECEF, setScatterECEF] = useState<[number, number, number] | null>(null);
     const pvtEpoch = useRef(0);
     const [activeTab, setActiveTab] = useState<TabID>('monitor');
     const [trackGen, setTrackGen] = useState(0);
@@ -319,6 +320,7 @@ export function App() {
                 setMapPos(null);
                 setMapCourse(null);
                 setNoFixSecs(0);
+                setScatterECEF(null);
                 setTrackGen(g => g + 1);
             }
         });
@@ -332,6 +334,9 @@ export function App() {
                 setNoFixSecs(0);
             } else {
                 setNoFixSecs(prev => prev + 1);
+            }
+            if (nav.posECEF) {
+                setScatterECEF(nav.posECEF.pos);
             }
             if (nav.velGeo && nav.velGeo.groundSpeed != null && nav.velGeo.course != null) {
                 setMapCourse({course: nav.velGeo.course, groundSpeed: nav.velGeo.groundSpeed});
@@ -563,8 +568,8 @@ export function App() {
                     <CollapsibleSection title="Status" variant="panel" defaultOpen>
                         <StatusPanel msg={navEpochMsg} />
                     </CollapsibleSection>
-                    <CollapsibleSection title="Position Track" variant="panel" defaultOpen={false}>
-                        <TrackPanel key={trackGen} pos={mapPos} />
+                    <CollapsibleSection title="Position Scatter" variant="panel" defaultOpen={false}>
+                        <ScatterPanel key={trackGen} ecef={scatterECEF} />
                     </CollapsibleSection>
                     <CollapsibleSection title="PVT Messages" variant="panel" open={pvtOpen} onToggle={setPvtOpen}>
                         <PVTPanel posRows={posRows} velRows={velRows} timeRows={timeRows} leapSecond={leapSecond} />
