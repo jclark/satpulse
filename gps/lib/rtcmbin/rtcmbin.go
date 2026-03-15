@@ -83,10 +83,19 @@ func ParseMsg(packet string) (Msg, error) {
 			return nil, fmt.Errorf("rtcm 1006: %w", err)
 		}
 		return &msg, nil
+	case 1230:
+		var msg MT1230
+		if err := bitsenc.NewReader([]byte(payload)).Read(&msg); err != nil {
+			return nil, fmt.Errorf("rtcm 1230: %w", err)
+		}
+		return &msg, nil
 	default:
+		if mt.IsMSM() {
+			return parseMSM(mt, payload)
+		}
 		return &UnknownMsg{
-			MsgHdr: MsgHdr{MsgNum: mt},
-			Payload:   payload,
+			MsgHdr:  MsgHdr{MsgNum: mt},
+			Payload: payload,
 		}, nil
 	}
 }
