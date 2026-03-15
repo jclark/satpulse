@@ -147,8 +147,11 @@ func NewPacketProcessor() *PacketProcessor {
 // ProcessPacket processes an RTCM packet's data and returns any error.
 // It assumes checksum has already been verified.
 func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
-	msg := rtcmbin.ParseMessage(data)
-	msgID := msg.MsgType.String()
+	msg, err := rtcmbin.ParseMsg(data)
+	if err != nil {
+		return "", err
+	}
+	msgID := rtcmbin.ExtractMsgType(data).String()
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
 		return msgID, nmh.NativeMsg(Tag, msgID, msg, tRead)
