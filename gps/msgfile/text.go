@@ -7,6 +7,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/airmsg"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
 )
@@ -143,7 +144,20 @@ func nmeaVendor(payload string) string {
 type proprietaryClassifier func(sentPayload, recvPayload string) (ResponseKind, string)
 
 var proprietaryClassifiers = map[string]proprietaryClassifier{
+	"AIR": classifyPAIRResponse,
 	"QTM": classifyPQTMResponse,
+}
+
+func classifyPAIRResponse(sentPayload, recvPayload string) (ResponseKind, string) {
+	switch kind, msg := airmsg.CheckResponse(sentPayload, recvPayload); kind {
+	case airmsg.ResponseOK:
+		return AckResponse, ""
+	case airmsg.ResponseError:
+		return AckResponse, msg
+	case airmsg.ResponseWait, airmsg.ResponseData, airmsg.ResponseInvalid:
+		return OtherResponse, ""
+	}
+	return NotResponse, ""
 }
 
 func classifyPQTMResponse(sentPayload, recvPayload string) (ResponseKind, string) {

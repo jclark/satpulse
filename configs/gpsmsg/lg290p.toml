@@ -171,10 +171,10 @@ description = "Return to mobile mode (disable survey-in or fixed position)"
 
 # Fixed position mode (Mode=2)
 # ECEF coordinates in meters - example from protocol doc
-# X=-2519265.0514, Y=4849534.9045, Z=3277834.6432
+# X=-1144698.0455, Y=6090335.4099, Z=1504171.3914
 # Verified OK response and get-survey returns Mode=2 with coordinates on LG290P
 [[nmea]]
-text = "PQTMCFGSVIN,W,2,0,0,-2519265.0514,4849534.9045,3277834.6432"
+text = "PQTMCFGSVIN,W,2,0,0,-1144698.0455,6090335.4099,1504171.3914"
 tag = "fixed-pos-example"
 description = "Set fixed ECEF position (example coordinates - replace with yours)"
 

@@ -47,6 +47,7 @@ This can help with seeing whether your receiver is handling the commands correct
 | [sinognss.toml](sinognss.toml) | SinoGNSS K901/K902 | NovAtel-style commands |
 | [bynav.toml](bynav.toml) | Bynav M2 | NovAtel-style commands |
 | [um980.toml](um980.toml) | Unicore UM980 | Unicore commands |
+| [lc29h.toml](lc29h.toml) | Quectel LC29H | NMEA (PQTM, PAIR) |
 
 ## Configuring for satpulsed
 
