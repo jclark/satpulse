@@ -100,6 +100,22 @@ func ParseMsg(packet string) (Msg, error) {
 	}
 }
 
+func parseMSM(mt MsgType, payload string) (Msg, error) {
+	r := bitsenc.NewReader([]byte(payload))
+	if int(mt%10) >= 6 {
+		var msg MSMHiRes
+		if err := r.Read(&msg); err != nil {
+			return nil, fmt.Errorf("rtcm MSM %d: %w", mt, err)
+		}
+		return &msg, nil
+	}
+	var msg MSM
+	if err := r.Read(&msg); err != nil {
+		return nil, fmt.Errorf("rtcm MSM %d: %w", mt, err)
+	}
+	return &msg, nil
+}
+
 // MultipleMessageBit extracts the MSM Multiple Message Bit from an
 // RTCM packet.  ok is false for non-MSM messages or packets that are
 // too short.  When ok is true, mmb indicates whether more MSM messages

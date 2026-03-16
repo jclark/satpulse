@@ -84,3 +84,90 @@ func TestReferenceStationID(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMSM4(t *testing.T) {
+	for _, tt := range msmPackets {
+		t.Run(tt.name, func(t *testing.T) {
+			pkt := decodePkt(t, tt.hex)
+			result, err := ParseMsg(pkt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			msg, ok := result.(*MSM)
+			if !ok {
+				t.Fatalf("ParseMsg returned %T, want *MSM", result)
+			}
+			if msg.MsgNum != tt.mt {
+				t.Errorf("MsgNum = %d, want %d", msg.MsgNum, tt.mt)
+			}
+			if msg.GNSS() != tt.gnss {
+				t.Errorf("GNSS() = %q, want %q", msg.GNSS(), tt.gnss)
+			}
+			if msg.MSMLevel() != 4 {
+				t.Errorf("MSMLevel() = %d, want 4", msg.MSMLevel())
+			}
+			nsat := msg.Nsat()
+			nsig := msg.Nsig()
+			if nsat == 0 {
+				t.Error("Nsat = 0")
+			}
+			if nsig == 0 {
+				t.Error("Nsig = 0")
+			}
+			t.Logf("%s: station=%d nsat=%d nsig=%d sats=%v sigs=%v",
+				tt.gnss, msg.StationID, nsat, nsig, msg.Satellites(), msg.Signals())
+			if len(msg.Sat.RangeInt) != nsat {
+				t.Errorf("RangeInt len = %d, want %d", len(msg.Sat.RangeInt), nsat)
+			}
+			if len(msg.Sat.RangeMod) != nsat {
+				t.Errorf("RangeMod len = %d, want %d", len(msg.Sat.RangeMod), nsat)
+			}
+			if len(msg.Sat.ExtInfo) != 0 {
+				t.Errorf("ExtInfo len = %d, want 0", len(msg.Sat.ExtInfo))
+			}
+			if len(msg.Sat.PhaseRate) != 0 {
+				t.Errorf("PhaseRate len = %d, want 0", len(msg.Sat.PhaseRate))
+			}
+			ncell := len(msg.Sig.Pseudorange)
+			if ncell == 0 {
+				t.Error("Pseudorange len = 0")
+			}
+			if len(msg.Sig.PhaseRange) != ncell {
+				t.Errorf("PhaseRange len = %d, want %d", len(msg.Sig.PhaseRange), ncell)
+			}
+			if len(msg.Sig.CNR) != ncell {
+				t.Errorf("CNR len = %d, want %d", len(msg.Sig.CNR), ncell)
+			}
+			if len(msg.Sig.PhaseRate) != 0 {
+				t.Errorf("Sig.PhaseRate len = %d, want 0", len(msg.Sig.PhaseRate))
+			}
+			wantID, idOK := ReferenceStationID([]byte(pkt))
+			if !idOK {
+				t.Fatal("ReferenceStationID returned false")
+			}
+			if msg.StationID != wantID {
+				t.Errorf("StationID = %d, want %d", msg.StationID, wantID)
+			}
+		})
+	}
+}
+
+func TestParseMSM4StationID(t *testing.T) {
+	pkt0 := decodePkt(t, msmPackets[0].hex)
+	msg0, err := ParseMsg(pkt0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantID := msg0.(*MSM).StationID
+	for _, tt := range msmPackets[1:] {
+		pkt := decodePkt(t, tt.hex)
+		result, err := ParseMsg(pkt)
+		if err != nil {
+			t.Fatalf("%s: %v", tt.name, err)
+		}
+		msg := result.(*MSM)
+		if msg.StationID != wantID {
+			t.Errorf("%s: StationID = %d, want %d", tt.name, msg.StationID, wantID)
+		}
+	}
+}
