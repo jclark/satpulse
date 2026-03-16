@@ -1,11 +1,16 @@
-// Package rtcmbin provides RTCM binary packet parsing and field extraction.
+// Package rtcmbin provides RTCM binary packet parsing, serialization,
+// and field extraction.
 package rtcmbin
 
 import (
 	"fmt"
 
+	"github.com/jclark/crc24q"
 	"github.com/jclark/satpulse/gps/lib/bitsenc"
 )
+
+// PreambleByte is the RTCM preamble byte.
+const PreambleByte = 0xD3
 
 // Bytes constrains types to string or []byte.
 type Bytes interface {
@@ -98,6 +103,66 @@ func ParseMsg(packet string) (Msg, error) {
 			Payload: payload,
 		}, nil
 	}
+}
+
+func parseMSM(mt MsgType, payload string) (Msg, error) {
+	r := bitsenc.NewReader([]byte(payload))
+	if int(mt%10) >= 6 {
+		var msg MSMHiRes
+		if err := r.Read(&msg); err != nil {
+			return nil, fmt.Errorf("rtcm MSM %d: %w", mt, err)
+		}
+		return &msg, nil
+	}
+	var msg MSM
+	if err := r.Read(&msg); err != nil {
+		return nil, fmt.Errorf("rtcm MSM %d: %w", mt, err)
+	}
+	return &msg, nil
+}
+
+// SerializeMsg serializes a Msg into a complete RTCM packet.
+func SerializeMsg(msg Msg) (string, error) {
+	var payload []byte
+	if u, ok := msg.(*UnknownMsg); ok {
+		payload = []byte(u.Payload)
+	} else {
+		var err error
+		payload, err = bitsenc.Write(msg)
+		if err != nil {
+			return "", err
+		}
+	}
+	pkt, err := PackMsg(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(pkt), nil
+}
+
+// PackMsg frames a payload as a complete RTCM packet
+// (preamble + 10-bit length + payload + CRC-24Q).
+func PackMsg(payload []byte) ([]byte, error) {
+	n := len(payload)
+	if n > 1023 {
+		return nil, fmt.Errorf("rtcmbin: payload too long (%d bytes)", n)
+	}
+	pkt := make([]byte, 3+n+3)
+	pkt[0] = PreambleByte
+	pkt[1] = byte(n >> 8)
+	pkt[2] = byte(n)
+	copy(pkt[3:], payload)
+	crc := Checksum(pkt[:3+n])
+	pkt[3+n] = crc[0]
+	pkt[3+n+1] = crc[1]
+	pkt[3+n+2] = crc[2]
+	return pkt, nil
+}
+
+// Checksum computes the CRC-24Q checksum over data.
+func Checksum(data []byte) [3]byte {
+	c := crc24q.Checksum(data)
+	return [3]byte{byte(c >> 16), byte(c >> 8), byte(c)}
 }
 
 // MultipleMessageBit extracts the MSM Multiple Message Bit from an

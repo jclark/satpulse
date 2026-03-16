@@ -219,6 +219,187 @@ func readStruct(r *Reader, sv, root reflect.Value, varNext func() (int, bool)) e
 	return nil
 }
 
+// Writer writes bit-packed binary data. It maintains a bit position
+// across multiple Write calls.
+type Writer struct {
+	buf []byte
+	pos int // bit position
+}
+
+// NewWriter returns a Writer that appends to buf.
+// If buf is nil, the Writer allocates as needed.
+func NewWriter(buf []byte) *Writer {
+	return &Writer{buf: buf, pos: len(buf) * 8}
+}
+
+// PutUint writes the low n bits of v in MSB-first order.
+func (w *Writer) PutUint(v uint64, n int) {
+	if n <= 0 || n > 64 {
+		panic(fmt.Sprintf("bitsenc: invalid bit width %d", n))
+	}
+	for i := 0; i < n; i++ {
+		byteIdx := (w.pos + i) / 8
+		bitIdx := 7 - (w.pos+i)%8
+		for byteIdx >= len(w.buf) {
+			w.buf = append(w.buf, 0)
+		}
+		if v>>(n-1-i)&1 != 0 {
+			w.buf[byteIdx] |= 1 << bitIdx
+		}
+	}
+	w.pos += n
+}
+
+// PutInt writes the low n bits of v (two's complement) in MSB-first order.
+func (w *Writer) PutInt(v int64, n int) {
+	w.PutUint(uint64(v), n)
+}
+
+// PutBool writes a single bit: 1 for true, 0 for false.
+func (w *Writer) PutBool(v bool) {
+	if v {
+		w.PutUint(1, 1)
+	} else {
+		w.PutUint(0, 1)
+	}
+}
+
+// Bytes returns the accumulated buffer. The final byte is zero-padded
+// if the bit position is not byte-aligned.
+func (w *Writer) Bytes() []byte {
+	need := (w.pos + 7) / 8
+	for len(w.buf) < need {
+		w.buf = append(w.buf, 0)
+	}
+	return w.buf[:need]
+}
+
+// BitLen returns the number of bits written.
+func (w *Writer) BitLen() int { return w.pos }
+
+// Write encodes the bit-tagged fields of the struct pointed to by v
+// into the writer.
+func (w *Writer) Write(v any) error {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Pointer || rv.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("bitsenc: Write requires a pointer to a struct")
+	}
+	root := rv.Elem()
+	var varNext func() (int, bool)
+	if vb, ok := v.(VarBits); ok {
+		next, stop := iter.Pull(vb.VarBits())
+		defer stop()
+		varNext = next
+	}
+	return writeStruct(w, root, varNext)
+}
+
+// Write encodes the bit-tagged fields of the struct pointed to by v
+// and returns the packed bytes.
+func Write(v any) ([]byte, error) {
+	w := NewWriter(nil)
+	if err := w.Write(v); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+
+func writeStruct(w *Writer, sv reflect.Value, varNext func() (int, bool)) error {
+	st := sv.Type()
+	for i := 0; i < st.NumField(); i++ {
+		f := st.Field(i)
+		fv := sv.Field(i)
+		if f.Type.Kind() == reflect.Struct {
+			if err := writeStruct(w, fv, varNext); err != nil {
+				return err
+			}
+			continue
+		}
+		if !f.IsExported() {
+			continue
+		}
+		if f.Type.Kind() == reflect.Slice {
+			n := fv.Len()
+			elemKind := f.Type.Elem().Kind()
+			tag := f.Tag.Get(tagName)
+			bits := 0
+			if tag != "" {
+				var err error
+				bits, err = strconv.Atoi(tag)
+				if err != nil {
+					return fmt.Errorf("bitsenc: bad tag %q on field %s", tag, f.Name)
+				}
+			} else {
+				bits = nativeBits(elemKind)
+				if bits == 0 {
+					return fmt.Errorf("bitsenc: unsupported slice element type %s for field %s", f.Type.Elem(), f.Name)
+				}
+			}
+			for j := 0; j < n; j++ {
+				if err := writeField(w, fv.Index(j), elemKind, bits); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		tag := f.Tag.Get(tagName)
+		if tag == "var" {
+			if varNext == nil {
+				return fmt.Errorf("bitsenc: bits:\"var\" on field %s but struct does not implement VarBits", f.Name)
+			}
+			width, ok := varNext()
+			if !ok {
+				return fmt.Errorf("bitsenc: VarBits iterator exhausted at field %s", f.Name)
+			}
+			if width == 0 {
+				continue
+			}
+			switch fv.Kind() {
+			case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				w.PutUint(fv.Uint(), width)
+			case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				w.PutInt(fv.Int(), width)
+			default:
+				return fmt.Errorf("bitsenc: unsupported type %s for var field %s", f.Type, f.Name)
+			}
+			continue
+		}
+		bits := 0
+		if tag != "" {
+			var err error
+			bits, err = strconv.Atoi(tag)
+			if err != nil {
+				return fmt.Errorf("bitsenc: bad tag %q on field %s", tag, f.Name)
+			}
+		} else {
+			bits = nativeBits(fv.Kind())
+			if bits == 0 {
+				continue
+			}
+		}
+		if err := writeField(w, fv, fv.Kind(), bits); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeField(w *Writer, fv reflect.Value, kind reflect.Kind, bits int) error {
+	if kind == reflect.Bool {
+		w.PutBool(fv.Bool())
+		return nil
+	}
+	switch kind {
+	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		w.PutUint(fv.Uint(), bits)
+	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		w.PutInt(fv.Int(), bits)
+	default:
+		return fmt.Errorf("bitsenc: unsupported type %s", fv.Type())
+	}
+	return nil
+}
+
 func readField(r *Reader, fv reflect.Value, kind reflect.Kind, bits int) error {
 	if kind == reflect.Bool {
 		bit, err := r.Uint(1)
