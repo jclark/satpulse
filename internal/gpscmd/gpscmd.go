@@ -103,6 +103,9 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.navMsgAuth.IsSet() {
 		cp.SetNavMsgAuth(v.navMsgAuth.Get())
 	}
+	if v.rtcmBaseID.IsSet() {
+		cp.SetRTCMBaseID(v.rtcmBaseID.Get())
+	}
 	// If nothing requires the configurator, return nil (passive capture mode)
 	if !v.showReceiver && target.NoOp() {
 		return nil, nil

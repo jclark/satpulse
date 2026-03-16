@@ -18,7 +18,7 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pvt\-out** **pos**\|**vel**\|**time**\|**tp**\|**leap**\|**survey**\|**qual**\|**epoch**\|**tai**\|**ecef**\|**after**\|**daemon**\|**off**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-sats\-out** **sat**\|**sig**\|**none**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-raw\-out** **obs**\|**nav**\|**none**,...]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-out** **MSM4**\|**MSM7**\|**ARP**\|**auto**\|**none**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-out** **MSM4**\|**MSM7**\|**ARP**\|**auto**\|**none**,...] [**\-\-rtcm\-base\-id** *id*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea\-out** **RMC**\|**GGA**\|**GSA**\|**GSV**\|**ZDA**\|**VTG**\|**GLL**\|**none**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
@@ -252,6 +252,9 @@ The following options control which messages the receiver outputs.
 
   **none**
   : Disable all RTCM messages
+
+**\-\-rtcm\-base\-id** *id*
+: Set the RTCM reference station ID. The *id* must be an integer between 0 and 4095.
 
 **\-\-nmea\-out** *flags*
 : Configure NMEA message output. The *flags* parameter is a comma-separated list of:
