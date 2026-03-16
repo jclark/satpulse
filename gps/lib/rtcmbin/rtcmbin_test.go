@@ -1,6 +1,9 @@
 package rtcmbin
 
-import "testing"
+import (
+	"encoding/hex"
+	"testing"
+)
 
 // rtcm1005 is a real RTCM 1005 (Station ARP) packet.
 // Message type 1005 = 0x3ED => byte 3 = 0x3E, byte 4 high nibble = 0xD.
@@ -149,6 +152,73 @@ func TestParseMSM4(t *testing.T) {
 				t.Errorf("StationID = %d, want %d", msg.StationID, wantID)
 			}
 		})
+	}
+}
+
+func TestSerializeMsgMT1005(t *testing.T) {
+	pkts := []struct {
+		name string
+		hex  string
+	}{
+		{"station 2003", hex.EncodeToString([]byte(rtcm1005))},
+		{"station 1234", "d300133ed4d203bd55b51d7f8e2e1f5ad403808e27daf56b52"},
+	}
+	for _, tt := range pkts {
+		t.Run(tt.name, func(t *testing.T) {
+			pkt := decodePkt(t, tt.hex)
+			msg, err := ParseMsg(pkt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := SerializeMsg(msg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != pkt {
+				t.Errorf("round-trip mismatch:\n got %X\nwant %X", got, pkt)
+			}
+		})
+	}
+}
+
+func TestSerializeMsgMT1230(t *testing.T) {
+	pkt := decodePkt(t, "d3000c4ce4d28f000000000000000073929d")
+	msg, err := ParseMsg(pkt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := SerializeMsg(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != pkt {
+		t.Errorf("round-trip mismatch:\n got %X\nwant %X", got, pkt)
+	}
+}
+
+func TestSerializeMsgMSM4(t *testing.T) {
+	for _, tt := range msmPackets {
+		t.Run(tt.name, func(t *testing.T) {
+			pkt := decodePkt(t, tt.hex)
+			msg, err := ParseMsg(pkt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := SerializeMsg(msg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != pkt {
+				t.Errorf("round-trip mismatch:\n got %X\nwant %X", got, pkt)
+			}
+		})
+	}
+}
+
+func TestPackMsgTooLong(t *testing.T) {
+	_, err := PackMsg(make([]byte, 1024))
+	if err == nil {
+		t.Error("PackMsg(1024 bytes) should fail")
 	}
 }
 

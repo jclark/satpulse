@@ -11,7 +11,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/asbin"
 	casicbin "github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
-	"github.com/jclark/satpulse/gps/internal/rtcm"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 	"github.com/jclark/satpulse/gps/scan"
@@ -22,7 +22,7 @@ import (
 var packetSyncBytes = []byte{
 	'$',               // NMEA
 	ubxbin.Sync1,      // UBX
-	rtcm.PreambleByte, // RTCM
+	rtcmbin.PreambleByte, // RTCM
 	casicbin.Sync1,    // CASIC
 	uncmsg.Sync1,      // Unicore
 	novmsg.Sync1,      // NovAtel

@@ -102,7 +102,7 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/bitsenc` provides reflection-based decoding of bit-packed binary data into Go structs. It supports unsigned and signed integers, bools, and embedded structs.
 
-`gps/lib/rtcmbin` provides RTCM binary wire-format types, field extraction, message parsing, and MSM conversion. Field extraction covers message type, reference station ID, and multiple-message bit detection. It uses `gps/lib/bitsenc` to decode and encode bit-packed message types like 1005/1006 (station ARP) and MSM messages. MSM7-to-MSM4 conversion reduces high-resolution MSM7 signal data to standard-resolution MSM4.
+`gps/lib/rtcmbin` parses and serializes RTCM binary packets using `gps/lib/bitsenc`, including message types 1005/1006, 1230, and MSM. It also provides MSM7-to-MSM4 conversion.
 
 `gps/lib/novmsg` provides parsing and serialization of NovAtel GPS receiver messages in binary and ASCII formats. It defines message header and body types and implements CRC32 validation.
 
