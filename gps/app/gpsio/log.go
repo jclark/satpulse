@@ -152,8 +152,7 @@ func useBinary(fmt gpsprot.PacketFormat, bytes []byte) bool {
 	if fmt == nil {
 		return containsBinary(bytes)
 	}
-	sync1 := bytes[0]
-	return sync1 < 0x20 || sync1 >= 0x7F
+	return fmt.IsBinary()
 }
 
 // LogOutput logs an outgoing write. If fmt is non-nil, it is used directly

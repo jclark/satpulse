@@ -50,6 +50,10 @@ type PacketFormat interface {
 	// starting with the byte after the first byte of the packet with the bad checksum
 	// prevPktValid indicates if the previous packet was valid
 	RescanOnBadChecksum(prevPktValid bool, pkt []byte) bool
+
+	// IsBinary reports whether the packet format is binary.
+	// ASCII formats (e.g. NMEA) return false.
+	IsBinary() bool
 }
 
 // AltChecksumPacketFormat provides an alternate method for computing the checksum,

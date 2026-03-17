@@ -17,6 +17,10 @@ func (f packetFormat) Tag() gpsprot.Tag {
 	return Tag
 }
 
+func (f packetFormat) IsBinary() bool {
+	return true
+}
+
 const (
 	sync1Byte = asbin.Sync1
 	sync2Byte = asbin.Sync2
