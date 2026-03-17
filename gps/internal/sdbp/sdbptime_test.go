@@ -174,154 +174,111 @@ func TestTimeDatTPPSMatchesCaptureTime(t *testing.T) {
 	}
 }
 
-// Captured DAT-UTCT2 from Taidou T303-5D (2026-03-17T13:23:55Z)
-const captureUTCT2 = "233e061f1f0048002d0d0b02ea0703110d173741a002000400000012ffffffff000000000028d8"
-
-// Captured DAT-GPSU from Taidou T303-5D (2026-03-17T13:23:55Z)
-const captureGPSU = "233e062d230000000000000030be000000000000e0bc0000000000000000003006006a09128909071246da"
-
-func TestTimeDatUTCT2Captured(t *testing.T) {
-	msg := parsePacket(t, captureUTCT2)
-	tm := timeDatUTCT2(msg.(*sdbpbin.DatUTCT2))
-	if tm == nil {
-		t.Fatal("expected non-nil TimeMsg")
-	}
-	if tm.UTCTime == nil {
-		t.Fatal("expected non-nil UTCTime")
-	}
-	// Verify date/time matches capture
-	utc := tm.UTCTime.Date.Add(tm.UTCTime.TimeOfDay).Round(time.Second)
-	wantUTC := time.Date(2026, 3, 17, 13, 23, 55, 0, time.UTC)
-	if !utc.Equal(wantUTC) {
-		t.Errorf("DAT-UTCT2 UTC = %v, want %v", utc, wantUTC)
-	}
-	if tm.GNSS != gpsprot.GPS {
-		t.Errorf("GNSS = %v, want GPS", tm.GNSS)
-	}
-	if tm.Accuracy != 4*time.Nanosecond {
-		t.Errorf("Accuracy = %v, want 4ns", tm.Accuracy)
-	}
-}
-
-func TestLeapDatUTCT2Captured(t *testing.T) {
-	msg := parsePacket(t, captureUTCT2)
-	m := msg.(*sdbpbin.DatUTCT2)
-	// Valid=11 (0b1011) = HMS+YMD+LeapCorr, missing LeapForecast
-	// So leapDatUTCT2 should return nil (no future leap second info)
-	lm := leapDatUTCT2(m)
-	if lm != nil {
-		t.Errorf("expected nil LeapSecondMsg (no leap forecast), got %+v", lm)
-	}
-}
-
-func TestLeapDatGPSUCaptured(t *testing.T) {
-	msg := parsePacket(t, captureGPSU)
-	m := msg.(*sdbpbin.DatGPSU)
-	lm := leapDatGNSSU(&m.DatGNSSU, gpsprot.GPS)
-	if lm == nil {
-		t.Fatal("expected non-nil LeapSecondMsg from DAT-GPSU")
-	}
-	// DeltaTLS=18, DeltaTLSF=18 -> past leap second (2016)
-	// TAI-UTC offset = 18 + TAIMinusGPS(19) = 37
-	if lm.UTCOffAfter != 37 {
-		t.Errorf("UTCOffAfter = %d, want 37", lm.UTCOffAfter)
-	}
-	if lm.GNSS != gpsprot.GPS {
-		t.Errorf("GNSS = %v, want GPS", lm.GNSS)
-	}
-}
-
 func TestTimeDatUTCT2(t *testing.T) {
-	m := &sdbpbin.DatUTCT2{
-		Valid:   sdbpbin.DatUTCT2HMS | sdbpbin.DatUTCT2YMD,
-		RefGrid: sdbpbin.DatUTCT2RefGPS,
-		Year:    2026, Month: 3, Day: 17,
-		Hour: 0, Min: 15, Sec: 18,
-		SecFrac:  500000000, // 0.5s in ns
-		Accuracy: 50,
+	utcTime := func(y int, mo time.Month, d int, tod time.Duration) *ptime.UTCTime {
+		return &ptime.UTCTime{Date: time.Date(y, mo, d, 0, 0, 0, 0, time.UTC), TimeOfDay: tod}
 	}
-	tm := timeDatUTCT2(m)
-	if tm == nil {
-		t.Fatal("expected non-nil TimeMsg")
+	tests := []struct {
+		name  string
+		input *sdbpbin.DatUTCT2
+		want  *gpsprot.TimeMsg
+	}{
+		{
+			name: "captured",
+			input: parsePacket(t, "233e061f1f0048002d0d0b02ea0703110d173741a002000400000012ffffffff000000000028d8").(*sdbpbin.DatUTCT2),
+			want: &gpsprot.TimeMsg{
+				Ref:         gpsprot.NavSolution,
+				NativeMsgID: "DAT-UTCT2",
+				GNSS:        gpsprot.GPS,
+				UTCTime:     utcTime(2026, 3, 17, 13*time.Hour+23*time.Minute+55*time.Second+172097*time.Nanosecond),
+				Accuracy:    4 * time.Nanosecond,
+			},
+		},
+		{
+			name: "synthetic",
+			input: &sdbpbin.DatUTCT2{
+				Valid: sdbpbin.DatUTCT2HMS | sdbpbin.DatUTCT2YMD, RefGrid: sdbpbin.DatUTCT2RefGPS,
+				Year: 2026, Month: 3, Day: 17, Hour: 0, Min: 15, Sec: 18,
+				SecFrac: 500000000, Accuracy: 50,
+			},
+			want: &gpsprot.TimeMsg{
+				Ref:         gpsprot.NavSolution,
+				NativeMsgID: "DAT-UTCT2",
+				GNSS:        gpsprot.GPS,
+				UTCTime:     utcTime(2026, 3, 17, 15*time.Minute+18*time.Second+500*time.Millisecond),
+				Accuracy:    50 * time.Nanosecond,
+			},
+		},
+		{
+			name:  "missing-YMD",
+			input: &sdbpbin.DatUTCT2{Valid: sdbpbin.DatUTCT2HMS},
+			want:  nil,
+		},
+		{
+			name:  "missing-HMS",
+			input: &sdbpbin.DatUTCT2{Valid: sdbpbin.DatUTCT2YMD},
+			want:  nil,
+		},
 	}
-	if tm.GNSS != gpsprot.GPS {
-		t.Errorf("GNSS = %v, want GPS", tm.GNSS)
-	}
-	if tm.UTCTime == nil {
-		t.Fatal("expected non-nil UTCTime")
-	}
-	wantDate := time.Date(2026, 3, 17, 0, 0, 0, 0, time.UTC)
-	if !tm.UTCTime.Date.Equal(wantDate) {
-		t.Errorf("Date = %v, want %v", tm.UTCTime.Date, wantDate)
-	}
-	wantTOD := 15*time.Minute + 18*time.Second + 500*time.Millisecond
-	if tm.UTCTime.TimeOfDay != wantTOD {
-		t.Errorf("TimeOfDay = %v, want %v", tm.UTCTime.TimeOfDay, wantTOD)
-	}
-	if tm.Accuracy != 50*time.Nanosecond {
-		t.Errorf("Accuracy = %v, want 50ns", tm.Accuracy)
-	}
-	if tm.NativeMsgID != "DAT-UTCT2" {
-		t.Errorf("NativeMsgID = %q, want DAT-UTCT2", tm.NativeMsgID)
-	}
-}
-
-func TestTimeDatUTCT2Invalid(t *testing.T) {
-	m := &sdbpbin.DatUTCT2{Valid: sdbpbin.DatUTCT2HMS} // missing YMD
-	if tm := timeDatUTCT2(m); tm != nil {
-		t.Error("expected nil for missing YMD")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := timeDatUTCT2(tc.input)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("timeDatUTCT2:\n  got  %+v\n  want %+v", got, tc.want)
+			}
+		})
 	}
 }
 
 func TestLeapDatUTCT2(t *testing.T) {
-	m := &sdbpbin.DatUTCT2{
-		Valid:         sdbpbin.DatUTCT2HMS | sdbpbin.DatUTCT2YMD | sdbpbin.DatUTCT2LeapForecast | sdbpbin.DatUTCT2LeapCorr,
-		RefGrid:       sdbpbin.DatUTCT2RefGPS,
-		LeapSec:       18, // GPS-UTC offset = 18s -> TAI-UTC = 18 + 19 = 37
-		LeapChange:    1,
-		LeapYear:      2025, LeapMonth: 6, LeapDay: 30,
+	tests := []struct {
+		name  string
+		input *sdbpbin.DatUTCT2
+		want  *gpsprot.LeapSecondMsg
+	}{
+		{
+			name: "future-leap",
+			input: &sdbpbin.DatUTCT2{
+				Valid:   sdbpbin.DatUTCT2HMS | sdbpbin.DatUTCT2YMD | sdbpbin.DatUTCT2LeapForecast | sdbpbin.DatUTCT2LeapCorr,
+				RefGrid: sdbpbin.DatUTCT2RefGPS,
+				LeapSec: 18, LeapChange: 1,
+				LeapYear: 2025, LeapMonth: 6, LeapDay: 30,
+			},
+			want: &gpsprot.LeapSecondMsg{
+				LeapSecond: ptime.LeapSecondOnDate(time.Date(2025, 6, 30, 0, 0, 0, 0, time.UTC), 37, 38),
+				GNSS:       gpsprot.GPS,
+			},
+		},
+		{
+			name: "captured-no-forecast",
+			// Valid=11 (0b1011) = HMS+YMD+LeapCorr, missing LeapForecast
+			input: parsePacket(t, "233e061f1f0048002d0d0b02ea0703110d173741a002000400000012ffffffff000000000028d8").(*sdbpbin.DatUTCT2),
+			want:  nil,
+		},
+		{
+			name:  "missing-corr",
+			input: &sdbpbin.DatUTCT2{Valid: sdbpbin.DatUTCT2LeapForecast},
+			want:  nil,
+		},
 	}
-	lm := leapDatUTCT2(m)
-	if lm == nil {
-		t.Fatal("expected non-nil LeapSecondMsg")
-	}
-	if lm.UTCOffBefore != 37 {
-		t.Errorf("UTCOffBefore = %d, want 37", lm.UTCOffBefore)
-	}
-	if lm.UTCOffAfter != 38 {
-		t.Errorf("UTCOffAfter = %d, want 38", lm.UTCOffAfter)
-	}
-	if lm.GNSS != gpsprot.GPS {
-		t.Errorf("GNSS = %v, want GPS", lm.GNSS)
-	}
-	// Verify date
-	wantDate := time.Date(2025, 6, 30, 0, 0, 0, 0, time.UTC)
-	gotDate := lm.LeapSecond.Date()
-	if !gotDate.Equal(wantDate) {
-		t.Errorf("Date = %v, want %v", gotDate, wantDate)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := leapDatUTCT2(tc.input)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("leapDatUTCT2:\n  got  %+v\n  want %+v", got, tc.want)
+			}
+		})
 	}
 }
 
-func TestLeapDatUTCT2Invalid(t *testing.T) {
-	m := &sdbpbin.DatUTCT2{Valid: sdbpbin.DatUTCT2LeapForecast} // missing LeapCorr
-	if lm := leapDatUTCT2(m); lm != nil {
-		t.Error("expected nil for missing leap corr bit")
+func TestLeapDatGPSUCaptured(t *testing.T) {
+	m := parsePacket(t, "233e062d230000000000000030be000000000000e0bc0000000000000000003006006a09128909071246da").(*sdbpbin.DatGPSU)
+	got := leapDatGNSSU(&m.DatGNSSU, gpsprot.GPS)
+	want := &gpsprot.LeapSecondMsg{
+		LeapSecond: ptime.LeapSecond2016(),
+		GNSS:       gpsprot.GPS,
 	}
-}
-
-func TestLeapDatGNSSU(t *testing.T) {
-	// Simulate GPS UTC parameters with a known future leap second
-	m := &sdbpbin.DatGNSSU{
-		TOT:       0,
-		WNOT:      0,
-		DeltaTLS:  18, // current GPS-UTC = 18s
-		WNLSF:     77, // low 8 bits of week of leap (2025-06-30 is GPS week 2373, 2373 mod 256 = 69... use a simpler example)
-		DN:        1,  // Sunday in GPS 1-based
-		DeltaTLSF: 18, // same = past leap second
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("leapDatGNSSU:\n  got  %+v\n  want %+v", got, want)
 	}
-	// For a past leap second (DeltaTLS == DeltaTLSF), the function should still produce a result.
-	lm := leapDatGNSSU(m, gpsprot.GPS)
-	// May return nil if ptime can't resolve the week; that's acceptable for this synthetic data.
-	// The important thing is it doesn't panic.
-	_ = lm
 }

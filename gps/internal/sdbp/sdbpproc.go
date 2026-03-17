@@ -1,6 +1,7 @@
 package sdbp
 
 import (
+	"math"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -142,10 +143,37 @@ func (p *PacketProcessor) dispatch(m sdbpbin.Msg, tRead time.Time) bool {
 				h.Satellites(msg, tRead)
 			}
 		}
+	case *sdbpbin.DatTSURV:
+		sm := surveyDatTSURV(mt)
+		if sm != nil {
+			if h := p.mh; h != nil {
+				h.Survey(sm, tRead)
+			}
+		}
 	default:
 		return false
 	}
 	return true
+}
+
+// surveyDatTSURV converts DatTSURV to SurveyMsg.
+// Returns nil when status is idle.
+func surveyDatTSURV(m *sdbpbin.DatTSURV) *gpsprot.SurveyMsg {
+	if m.Status == 0 {
+		return nil
+	}
+	return &gpsprot.SurveyMsg{
+		Position: gpsprot.Point3D{
+			gpsprot.Length(m.AvgX) * gpsprot.Centimeter,
+			gpsprot.Length(m.AvgY) * gpsprot.Centimeter,
+			gpsprot.Length(m.AvgZ) * gpsprot.Centimeter,
+		},
+		Accuracy:   gpsprot.Length(math.Sqrt(float64(m.AvgVariance)*1e-4) * float64(gpsprot.Meter)),
+		ObsTime:    gpsprot.Duration(m.ObsTime) * gpsprot.Second,
+		ObsCount:   m.ObsCount,
+		Valid:      m.Status == 2,
+		InProgress: m.Status == 1,
+	}
 }
 
 func (p *PacketProcessor) emitTime(tm *gpsprot.TimeMsg, tRead time.Time) {

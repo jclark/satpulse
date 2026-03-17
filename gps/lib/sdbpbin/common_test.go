@@ -108,6 +108,10 @@ func TestSerializeRoundTrip(t *testing.T) {
 		{"CfgSDBP-response", &CfgSDBP{MsgClass: 0x06, MsgID: 0x17, UART1: 1}},
 		{"PubAck", &PubAck{Class: clsCFG, MsgID: 0x52}},
 		{"PubNak", &PubNak{Class: clsCTL, MsgID: 0x01}},
+		{"CfgTMODE-survey", &CfgTMODE{Mode: TMODESurvey, MinObsTime: 2000, AccLimit: 2000}},
+		{"CfgTMODE-fixed", &CfgTMODE{Mode: TMODEFixed, FixedX: -114470000, FixedY: 609034500, FixedZ: 150417100, FixedAcc: 300}},
+		{"CfgTMODE2", &CfgTMODE2{Mode: TMODEFixed, FixedLon: 1135000000, FixedLat: 306000000, FixedAlt: 10000, FixedAcc: 300}},
+		{"CfgDELAY2", &CfgDELAY2{CableDelay: 100, GroupDelay: 1000}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -146,6 +150,9 @@ func TestMsgIDString(t *testing.T) {
 		{0x01, 0x02, "PUB-NAK"},
 		{0x02, 0x01, "CTL-RESTART"},
 		{0x03, 0x11, "CFG-GNSS"},
+		{0x03, 0x43, "CFG-TMODE"},
+		{0x03, 0x44, "CFG-DELAY2"},
+		{0x03, 0x45, "CFG-TMODE2"},
 		{0x03, 0x52, "CFG-SDBP"},
 		{0x05, 0x01, "QUE-VER"},
 		{0x06, 0x13, "DAT-DOP"},
@@ -157,6 +164,7 @@ func TestMsgIDString(t *testing.T) {
 		{0x06, 0x2C, "DAT-BDSU"},
 		{0x06, 0x2D, "DAT-GPSU"},
 		{0x06, 0x2E, "DAT-GALU"},
+		{0x06, 0x40, "DAT-TSURV"},
 		{0x06, 0x41, "DAT-TPPS"},
 		{0x07, 0xFF, "0x07-0xFF"},
 	}

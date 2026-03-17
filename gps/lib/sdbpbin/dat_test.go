@@ -89,6 +89,15 @@ var datPackets = []struct {
 			GDOP: 100, PDOP: 88, HDOP: 44, VDOP: 76, TDOP: 49,
 		},
 	},
+	{
+		"DAT-TSURV-survey",
+		"233e06401900010a0000000a0000009c532df9121d4d24322ff708c0650000ae31",
+		&DatTSURV{
+			Status: 1, ObsTime: 10, ObsCount: 10,
+			AvgX: -114469988, AvgY: 609033490, AvgZ: 150417202,
+			AvgVariance: 26048,
+		},
+	},
 }
 
 func TestDatParseAndRoundTrip(t *testing.T) {

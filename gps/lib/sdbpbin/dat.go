@@ -276,6 +276,20 @@ func (m *DatSAT) VaryingPart() any { return &m.Sats }
 
 var _ VaryingMsg = (*DatSAT)(nil)
 
+// DatTSURV is DAT-TSURV (class 0x06, id 0x40, 25 bytes).
+// Timing autonomous survey status. No LocalTimestamp (not part of nav epoch).
+type DatTSURV struct {
+	Status      uint8  // 0=idle, 1=in progress, 2=complete
+	ObsTime     uint32 // seconds
+	ObsCount    uint32
+	AvgX        int32  // 10^-2 m (cm)
+	AvgY        int32
+	AvgZ        int32
+	AvgVariance uint32 // 10^-4 m^2
+}
+
+func (m *DatTSURV) ID() MsgID { return makeMsgID(clsDAT, 0x40) }
+
 func init() {
 	regMsg[DatBDST]("BDST")
 	regMsg[DatGPST]("GPST")
@@ -290,4 +304,5 @@ func init() {
 	regMsg[DatLLA3]("LLA3")
 	regMsg[DatNED3]("NED3")
 	regMsg[DatSAT]("SAT")
+	regMsg[DatTSURV]("TSURV")
 }

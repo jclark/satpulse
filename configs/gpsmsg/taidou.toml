@@ -729,3 +729,88 @@ class = 0x03
 id = 0x21
 payload.types = "U1U1U1U1U1U1"
 payload.values = [1, 9, 0, 1, 0, 0]
+
+# DAT-TSURV survey status message
+
+[[sdbp]]
+tag = "sdbp-dat-tsurv"
+description = "Enable DAT-TSURV binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x40, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-tsurv-off"
+description = "Disable DAT-TSURV binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x40, 1, 0, 0]
+
+# Timing mode configuration (CFG-TMODE)
+# Mode: 1=normal, 2=autonomous survey, 3=fixed position
+
+[[sdbp]]
+tag = "get-tmode"
+description = "Query timing mode configuration"
+class = 0x03
+id = 0x43
+
+[[sdbp]]
+tag = "get-survey"
+description = "Query timing mode configuration"
+class = 0x03
+id = 0x43
+
+# Autonomous survey: 2000s observation, 20m accuracy threshold
+[[sdbp]]
+tag = "survey"
+description = "Start autonomous survey (2000s, 20m accuracy)"
+class = 0x03
+id = 0x43
+payload.types = "U1U4U4I4I4I4U4"
+payload.values = [2, 2000, 2000, 0, 0, 0, 0]
+
+# Normal positioning mode
+[[sdbp]]
+tag = "survey-off"
+description = "Set normal positioning mode"
+class = 0x03
+id = 0x43
+payload.types = "U1U4U4I4I4I4U4"
+payload.values = [1, 0, 0, 0, 0, 0, 0]
+
+# Query fixed position (same as get-tmode)
+[[sdbp]]
+tag = "get-fixed-pos"
+description = "Query timing mode configuration"
+class = 0x03
+id = 0x43
+
+# Fixed position mode (example ECEF coordinates in 10^-2 m)
+# X=-1144700m, Y=6090345m, Z=1504171m, accuracy 3m
+[[sdbp]]
+tag = "fixed-pos-example"
+description = "Set fixed ECEF position (example coordinates)"
+class = 0x03
+id = 0x43
+payload.types = "U1U4U4I4I4I4U4"
+payload.values = [3, 0, 0, -114470000, 609034500, 150417100, 300]
+
+# Clear fixed position (back to normal)
+[[sdbp]]
+tag = "fixed-pos-off"
+description = "Clear fixed position (normal mode)"
+class = 0x03
+id = 0x43
+payload.types = "U1U4U4I4I4I4U4"
+payload.values = [1, 0, 0, 0, 0, 0, 0]
+
+# Antenna cable delay (CFG-DELAY2)
+
+[[sdbp]]
+tag = "get-delay"
+description = "Query antenna cable delay"
+class = 0x03
+id = 0x44

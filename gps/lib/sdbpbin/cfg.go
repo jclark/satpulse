@@ -172,6 +172,52 @@ func PollCfgSDBP(msgClass, msgID uint8) []byte {
 	return pkt
 }
 
+// TMODEMode identifies the timing work mode.
+type TMODEMode uint8
+
+const (
+	TMODENormal  TMODEMode = 1 // normal positioning (default)
+	TMODESurvey  TMODEMode = 2 // autonomous survey
+	TMODEFixed   TMODEMode = 3 // fixed position
+)
+
+// CfgTMODE is CFG-TMODE (class 0x03, id 0x43, 25 bytes).
+// Fixed position in ECEF (X/Y/Z in 10^-2 m).
+type CfgTMODE struct {
+	Mode       TMODEMode
+	MinObsTime uint32 // seconds, <=86400
+	AccLimit   uint32 // 10^-2 m
+	FixedX     int32  // 10^-2 m
+	FixedY     int32
+	FixedZ     int32
+	FixedAcc   uint32 // 10^-2 m
+}
+
+func (m *CfgTMODE) ID() MsgID { return makeMsgID(clsCFG, 0x43) }
+
+// CfgDELAY2 is CFG-DELAY2 (class 0x03, id 0x44, 9 bytes).
+type CfgDELAY2 struct {
+	CableDelay int32 // ns
+	GroupDelay int32 // ns
+	Reserved   uint8
+}
+
+func (m *CfgDELAY2) ID() MsgID { return makeMsgID(clsCFG, 0x44) }
+
+// CfgTMODE2 is CFG-TMODE2 (class 0x03, id 0x45, 25 bytes).
+// Fixed position in LLA (Lon/Lat in 10^-7 deg, Alt in 10^-2 m).
+type CfgTMODE2 struct {
+	Mode       TMODEMode
+	MinObsTime uint32 // seconds, <=86400
+	AccLimit   uint32 // 10^-2 m
+	FixedLon   int32  // 10^-7 degrees
+	FixedLat   int32
+	FixedAlt   int32  // 10^-2 m
+	FixedAcc   uint32 // 10^-2 m
+}
+
+func (m *CfgTMODE2) ID() MsgID { return makeMsgID(clsCFG, 0x45) }
+
 func init() {
 	regMsg[CfgGNSS]("GNSS")
 	regMsg[CfgUART]("UART")
@@ -179,4 +225,7 @@ func init() {
 	regMsg[CfgPPS]("PPS")
 	regMsg[CfgNMEA]("NMEA")
 	regMsg[CfgSDBP]("SDBP")
+	regMsg[CfgTMODE]("TMODE")
+	regMsg[CfgDELAY2]("DELAY2")
+	regMsg[CfgTMODE2]("TMODE2")
 }
