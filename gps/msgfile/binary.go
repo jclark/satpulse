@@ -8,6 +8,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/lib/sdbpbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
@@ -93,6 +94,30 @@ func (am *ASBINMsg) toRaw() (RawMsg, error) {
 }
 
 func (am *ASBINMsg) getTag() string { return *am.Tag }
+
+// SDBPMsg represents a [[sdbp]] entry.
+type SDBPMsg struct {
+	UBXLikeMsg
+}
+
+func (sm *SDBPMsg) toRaw() (RawMsg, error) {
+	payload, err := sm.Payload.Encode(sdbpbin.Endian)
+	if err != nil {
+		return RawMsg{}, err
+	}
+	mid := sdbpbin.MakeMsgID(sm.Class, sm.ID)
+	pkt, err := sdbpbin.PackMsg(mid, payload)
+	if err != nil {
+		return RawMsg{}, err
+	}
+	delay, err := sm.MsgCommon.delay()
+	if err != nil {
+		return RawMsg{}, err
+	}
+	return RawMsg{Bytes: pkt, Delay: delay, Tag: *sm.Tag}, nil
+}
+
+func (sm *SDBPMsg) getTag() string { return *sm.Tag }
 
 // UBXMsg represents a [[ubx]] entry.
 type UBXMsg struct {
@@ -285,11 +310,27 @@ func (am *ASBINMsg) newMatcher() responseMatcher {
 	}
 }
 
+// sdbpMatcher treats any SDBP packet as a possible response.
+// ACK/NAK pattern is not yet known for this protocol.
+type sdbpMatcher struct{}
+
+func (sm *SDBPMsg) newMatcher() responseMatcher {
+	return &sdbpMatcher{}
+}
+
+func (m *sdbpMatcher) match(tag gpsprot.Tag, _ string) (ResponseKind, string) {
+	if tag == gpsreg.TagSDBP {
+		return MaybeResponse, ""
+	}
+	return NotResponse, ""
+}
+
 // binaryTags maps binary protocol tags used for response classification.
 var binaryTags = map[gpsprot.Tag]bool{
 	gpsreg.TagUBX:         true,
 	gpsreg.TagCASICBin:    true,
 	gpsreg.TagAllystarBin: true,
+	gpsreg.TagSDBP:        true,
 }
 
 // binaryMatcher handles BinaryMsg responses.

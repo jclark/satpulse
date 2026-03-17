@@ -1,0 +1,482 @@
+# Taidou T303-5D GPS message file
+# Protocol: SDBP 3.1 (SD Binary Protocol)
+
+[default.sdbp]
+delay = 0.1
+
+# Version query
+
+# QUE-VER: query firmware version
+[[sdbp]]
+tag = "get-version"
+description = "Query firmware and hardware version"
+class = 0x05
+id = 0x01
+
+# Restart commands (CTL-RESTART)
+# Fields: startup mode (U1), reset mode (U1)
+# Startup: 1=cold, 2=warm, 3=hot. Reset: 0=soft, 1=hard.
+
+[[sdbp]]
+tag = "cold-start"
+description = "Cold start (soft reset)"
+class = 0x02
+id = 0x01
+payload.types = "U1U1"
+payload.values = [1, 0]
+
+[[sdbp]]
+tag = "warm-start"
+description = "Warm start (soft reset)"
+class = 0x02
+id = 0x01
+payload.types = "U1U1"
+payload.values = [2, 0]
+
+[[sdbp]]
+tag = "hot-start"
+description = "Hot start (soft reset)"
+class = 0x02
+id = 0x01
+payload.types = "U1U1"
+payload.values = [3, 0]
+
+# Configuration management (CTL-CONFIG)
+
+[[sdbp]]
+tag = "save"
+description = "Save configuration to non-volatile memory"
+class = 0x02
+id = 0x02
+payload.types = "U2"
+payload.values = [1]
+
+[[sdbp]]
+tag = "factory-reset"
+description = "Restore factory defaults (triggers restart)"
+class = 0x02
+id = 0x02
+payload.types = "U2"
+payload.values = [0]
+
+# GNSS constellation selection (CFG-GNSS)
+# Bitmask: bit0=BDS, bit1=GPS, bit2=GLO, bit3=GAL
+
+[[sdbp]]
+tag = "get-gnss"
+description = "Query GNSS constellation settings"
+class = 0x03
+id = 0x11
+
+[[sdbp]]
+tag = "gnss-gps"
+description = "Enable GPS only"
+class = 0x03
+id = 0x11
+payload.types = "U1U1"
+payload.values = [0x02, 0]
+
+[[sdbp]]
+tag = "gnss-bds"
+description = "Enable BeiDou only"
+class = 0x03
+id = 0x11
+payload.types = "U1U1"
+payload.values = [0x01, 0]
+
+[[sdbp]]
+tag = "gnss-glo"
+description = "Enable GLONASS only"
+class = 0x03
+id = 0x11
+payload.types = "U1U1"
+payload.values = [0x04, 0]
+
+[[sdbp]]
+tag = "gnss-gal"
+description = "Enable Galileo only"
+class = 0x03
+id = 0x11
+payload.types = "U1U1"
+payload.values = [0x08, 0]
+
+[[sdbp]]
+tag = "gnss-gps-gal"
+description = "Enable GPS and Galileo"
+class = 0x03
+id = 0x11
+payload.types = "U1U1"
+payload.values = [0x0A, 0]
+
+[[sdbp]]
+tag = "gnss-all"
+description = "Enable all GNSS constellations"
+class = 0x03
+id = 0x11
+payload.types = "U1U1"
+payload.values = [0x0F, 0]
+
+# Measurement rate (CFG-RATE)
+# Fields: measurement interval (U2 ms), positioning frequency (U1), reserved (U1)
+
+[[sdbp]]
+tag = "get-fix-rate"
+description = "Query measurement rate configuration"
+class = 0x03
+id = 0x36
+
+[[sdbp]]
+tag = "fix-rate-1"
+description = "Set fix rate to 1 Hz"
+class = 0x03
+id = 0x36
+payload.types = "U2U1U1"
+payload.values = [1000, 1, 0]
+
+[[sdbp]]
+tag = "fix-rate-2"
+description = "Set fix rate to 2 Hz"
+class = 0x03
+id = 0x36
+payload.types = "U2U1U1"
+payload.values = [500, 1, 0]
+
+[[sdbp]]
+tag = "fix-rate-5"
+description = "Set fix rate to 5 Hz"
+class = 0x03
+id = 0x36
+payload.types = "U2U1U1"
+payload.values = [200, 1, 0]
+
+[[sdbp]]
+tag = "fix-rate-10"
+description = "Set fix rate to 10 Hz"
+class = 0x03
+id = 0x36
+payload.types = "U2U1U1"
+payload.values = [100, 1, 0]
+
+# NMEA message control (CFG-NMEA)
+# sentenceID: 1=ZDA 2=DTM 3=RMC 4=GGA 5=GSA 6=GSV 7=VTG 8=GNS 9=GLL 10=GRS 11=GST 12=GBS
+# port=1 (UART1), enable=1/0
+
+[[sdbp]]
+tag = "nmea-gga"
+description = "Enable NMEA GGA message"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [4, 1, 1, 0]
+
+[[sdbp]]
+tag = "nmea-gga-off"
+description = "Disable NMEA GGA message"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [4, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-rmc"
+description = "Enable NMEA RMC message"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [3, 1, 1, 0]
+
+[[sdbp]]
+tag = "nmea-rmc-off"
+description = "Disable NMEA RMC message"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [3, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-gsa"
+description = "Enable NMEA GSA message"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [5, 1, 1, 0]
+
+[[sdbp]]
+tag = "nmea-gsa-off"
+description = "Disable NMEA GSA message"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [5, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-gsv"
+description = "Enable NMEA GSV message"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [6, 1, 1, 0]
+
+[[sdbp]]
+tag = "nmea-gsv-off"
+description = "Disable NMEA GSV message"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [6, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-zda"
+description = "Enable NMEA ZDA message"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [1, 1, 1, 0]
+
+[[sdbp]]
+tag = "nmea-zda-off"
+description = "Disable NMEA ZDA message"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [1, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-gll"
+description = "Enable NMEA GLL message"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [9, 1, 1, 0]
+
+[[sdbp]]
+tag = "nmea-gll-off"
+description = "Disable NMEA GLL message"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [9, 1, 0, 0]
+
+# Disable all NMEA: ZDA, DTM, RMC, GGA, GSA, GSV, VTG, GNS, GLL, GRS, GST, GBS
+[[sdbp]]
+tag = "nmea-off"
+description = "Disable all NMEA messages"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [1, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-off"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [2, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-off"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [3, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-off"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [4, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-off"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [5, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-off"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [6, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-off"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [7, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-off"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [8, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-off"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [9, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-off"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [10, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-off"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [11, 1, 0, 0]
+
+[[sdbp]]
+tag = "nmea-off"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [12, 1, 0, 0]
+
+# Enable messages for satpulse daemon
+# RMC
+[[sdbp]]
+tag = "nmea-daemon"
+description = "Enable NMEA messages used by satpulse daemon"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [3, 1, 1, 0]
+
+# GGA
+[[sdbp]]
+tag = "nmea-daemon"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [4, 1, 1, 0]
+
+# GSV
+[[sdbp]]
+tag = "nmea-daemon"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [6, 1, 1, 0]
+
+# GSA
+[[sdbp]]
+tag = "nmea-daemon"
+class = 0x03
+id = 0x51
+payload.types = "U1U1U1U1"
+payload.values = [5, 1, 1, 0]
+
+# Binary message control (CFG-SDBP)
+# Enable/disable DAT-GPST on port 1
+
+[[sdbp]]
+tag = "sdbp-dat-gpst"
+description = "Enable DAT-GPST binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x17, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-gpst-off"
+description = "Disable DAT-GPST binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x17, 1, 0, 0]
+
+# Enable/disable DAT-TPPS on port 1
+
+[[sdbp]]
+tag = "sdbp-dat-tpps"
+description = "Enable DAT-TPPS binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x41, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-tpps-off"
+description = "Disable DAT-TPPS binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x41, 1, 0, 0]
+
+# UART configuration (CFG-UART)
+# Query: port ID (U1). Response: port, baud, dataBits, stopBits, parity, reserved.
+# Set: port, baud, dataBits, stopBits, parity, reserved.
+
+[[sdbp]]
+tag = "get-uart"
+description = "Query UART1 and UART2 configuration"
+class = 0x03
+id = 0x21
+payload.types = "U1"
+payload.values = [1]
+
+[[sdbp]]
+tag = "get-uart"
+class = 0x03
+id = 0x21
+payload.types = "U1"
+payload.values = [2]
+
+[[sdbp]]
+tag = "speed-38400"
+description = "Set serial speed to 38400 baud"
+class = 0x03
+id = 0x21
+payload.types = "U1U1U1U1U1U1"
+payload.values = [1, 4, 0, 1, 0, 0]
+
+[[sdbp]]
+tag = "speed-57600"
+description = "Set serial speed to 57600 baud"
+class = 0x03
+id = 0x21
+payload.types = "U1U1U1U1U1U1"
+payload.values = [1, 5, 0, 1, 0, 0]
+
+[[sdbp]]
+tag = "speed-115200"
+description = "Set serial speed to 115200 baud"
+class = 0x03
+id = 0x21
+payload.types = "U1U1U1U1U1U1"
+payload.values = [1, 6, 0, 1, 0, 0]
+
+[[sdbp]]
+tag = "speed-230400"
+description = "Set serial speed to 230400 baud"
+class = 0x03
+id = 0x21
+payload.types = "U1U1U1U1U1U1"
+payload.values = [1, 7, 0, 1, 0, 0]
+
+[[sdbp]]
+tag = "speed-460800"
+description = "Set serial speed to 460800 baud"
+class = 0x03
+id = 0x21
+payload.types = "U1U1U1U1U1U1"
+payload.values = [1, 8, 0, 1, 0, 0]
+
+[[sdbp]]
+tag = "speed-921600"
+description = "Set serial speed to 921600 baud"
+class = 0x03
+id = 0x21
+payload.types = "U1U1U1U1U1U1"
+payload.values = [1, 9, 0, 1, 0, 0]

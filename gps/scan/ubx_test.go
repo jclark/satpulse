@@ -12,6 +12,7 @@ import (
 	casicbin "github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
+	"github.com/jclark/satpulse/gps/lib/sdbpbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 	"github.com/jclark/satpulse/gps/scan"
@@ -27,6 +28,7 @@ var packetSyncBytes = []byte{
 	uncmsg.Sync1,      // Unicore
 	novmsg.Sync1,      // NovAtel
 	asbin.Sync1,       // Allystar
+	sdbpbin.Sync1,     // SDBP (Taidou)
 }
 
 // randomUBXPacket generates a random UBX packet for testing purposes.

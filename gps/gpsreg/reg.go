@@ -11,6 +11,7 @@ import (
 	"github.com/jclark/satpulse/gps/internal/nov"
 	"github.com/jclark/satpulse/gps/internal/quectel"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
+	"github.com/jclark/satpulse/gps/internal/sdbp"
 	"github.com/jclark/satpulse/gps/internal/sino"
 	"github.com/jclark/satpulse/gps/internal/ubx"
 	"github.com/jclark/satpulse/gps/internal/unc"
@@ -21,6 +22,7 @@ var PacketFormats = []gpsprot.PacketFormat{
 	ubx.PacketFormat,
 	casic.PacketFormat,
 	as.PacketFormat,
+	sdbp.PacketFormat,
 	nmea.PacketFormat,
 	rtcm.PacketFormat,
 	unc.BinPacketFormat,
@@ -42,6 +44,7 @@ const (
 	VendorSeptentrio
 	VendorSinoGNSS
 	VendorSkyTraq
+	VendorTaidou
 	VendorTrimble
 	VendorUblox
 	VendorUnicore
@@ -55,6 +58,7 @@ const (
 	TagRTCM         = rtcm.Tag
 	TagCASICBin     = casic.Tag
 	TagAllystarBin  = as.Tag
+	TagSDBP         = sdbp.Tag
 	TagUnicoreBin   = unc.TagBinary
 	TagUnicoreAscii = unc.TagAscii
 	TagNovAtelBin   = nov.TagBinary
@@ -71,6 +75,7 @@ var vendorNames = []string{
 	"Septentrio",
 	"SinoGNSS",
 	"SkyTraq",
+	"Taidou",
 	"Trimble",
 	"u-blox",
 	unc.Vendor,
@@ -117,6 +122,7 @@ func CreatePacketProcessors(vendor Vendor) map[gpsprot.Tag]gpsprot.PacketProcess
 		ubx.Tag:       ubx.NewPacketProcessor(mgr),
 		casic.Tag:     casic.NewPacketProcessor(mgr),
 		as.Tag:        as.NewPacketProcessor(mgr),
+		sdbp.Tag:      sdbp.NewPacketProcessor(mgr),
 		nmea.Tag:      nmeaPP,
 		rtcm.Tag:      rtcm.NewPacketProcessor(),
 		unc.TagBinary: unc.NewBinPacketProcessor(mgr),
@@ -192,6 +198,8 @@ func MakeVendor(vendor string) Vendor {
 		return VendorSinoGNSS
 	case "skytraq":
 		return VendorSkyTraq
+	case "taidou":
+		return VendorTaidou
 	case "trimble":
 		return VendorTrimble
 	case "u-blox", "ublox":
