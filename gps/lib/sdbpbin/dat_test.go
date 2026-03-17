@@ -217,8 +217,6 @@ var captureSATWant = &DatSAT{
 }
 
 func TestDatSATParseAndRoundTrip(t *testing.T) {
-	parseAndCompare(t, captureSATHex, captureSATWant)
-	// Serialize round-trip not tested: VaryingMsg with slices is not
-	// supported by binary.Write. The parse + DeepEqual check above
-	// verifies the struct layout is correct.
+	got := parseAndCompare(t, captureSATHex, captureSATWant)
+	serializeRoundTrip(t, got, captureSATHex)
 }

@@ -32,7 +32,9 @@ func velGeoDatLLA3(ne *gpsprot.NavEpochMsg, m *sdbpbin.DatLLA3) *gpsprot.VelGeoM
 		return nil
 	}
 	ne.Acc.GroundSpeed.Set(gpsprot.Speed(m.SpeedAcc) * gpsprot.CentimeterPerSecond)
-	ne.Acc.Course.Set(gpsprot.Angle(m.HeadingAcc) * gpsprot.Degrees / 100)
+	if m.HeadingAcc != 0xFFFFFFFF {
+		ne.Acc.Course.Set(gpsprot.Angle(m.HeadingAcc) * gpsprot.Degrees / 100)
+	}
 	return &gpsprot.VelGeoMsg{
 		GroundSpeed: opt.Make(gpsprot.MetersPerSecondFromFloat(float64(m.GroundSpeed))),
 		Course:      opt.Make(gpsprot.DegreesFromFloat(float64(m.Heading))),

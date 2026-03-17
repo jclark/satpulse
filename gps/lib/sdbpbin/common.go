@@ -184,8 +184,17 @@ func Serialize(msg Msg) ([]byte, error) {
 		return PackMsg(u.MsgID_, []byte(u.Payload))
 	}
 	buf := new(bytes.Buffer)
-	if err := binary.Write(buf, Endian, msg); err != nil {
-		return nil, err
+	if vMsg, ok := msg.(VaryingMsg); ok {
+		if err := binary.Write(buf, Endian, vMsg.FixedPart()); err != nil {
+			return nil, err
+		}
+		if err := binary.Write(buf, Endian, vMsg.VaryingPart()); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := binary.Write(buf, Endian, msg); err != nil {
+			return nil, err
+		}
 	}
 	return PackMsg(msg.ID(), buf.Bytes())
 }

@@ -100,7 +100,7 @@ triggering epoch changes once they embed `DatNavHeader`.
 **DatTSURV** (06:40, 25 bytes, no LocalTimestamp):
 - Status U8 (0=idle, 1=in progress, 2=complete),
   ObsTime U32 (s), ObsCount U32,
-  AvgX/Y/Z I32 (cm), AvgVariance U32 (0.01 mm^2)
+  AvgX/Y/Z I32 (cm), AvgVariance U32 (10^-4 m^2)
 
 **DatSAT** (06:30, variable, VaryingMsg):
 - Fixed: LocalTimestamp U32, SatCount U8

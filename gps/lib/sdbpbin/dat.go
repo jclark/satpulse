@@ -1,5 +1,7 @@
 package sdbpbin
 
+import "fmt"
+
 // NavMsg is implemented by DAT messages that participate in nav epoch tracking.
 type NavMsg interface {
 	Msg
@@ -267,6 +269,10 @@ type DatSAT struct {
 func (m *DatSAT) ID() MsgID { return makeMsgID(clsDAT, 0x30) }
 
 func (m *DatSAT) InitVaryingPart(payloadLen int) error {
+	want := 5 + int(m.SatCount)*14
+	if payloadLen < want {
+		return fmt.Errorf("DAT-SAT payload %d bytes, want %d for %d sats", payloadLen, want, m.SatCount)
+	}
 	m.Sats = make([]DatSATEntry, m.SatCount)
 	return nil
 }

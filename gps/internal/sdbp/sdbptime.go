@@ -169,15 +169,19 @@ func leapDatGNSSU(m *sdbpbin.DatGNSSU, gnss gpsprot.GNSS) *gpsprot.LeapSecondMsg
 		DeltaLS:  m.DeltaTLS,
 		DeltaLSF: m.DeltaTLSF,
 	}
-	now := ptime.GPS(int16(m.WNOT), ptime.Seconds(float64(m.TOT)))
+	tow := ptime.Seconds(float64(m.TOT))
+	var now ptime.Time
 	var ls ptime.LeapSecond
 	var err error
 	switch gnss {
 	case gpsprot.BDS:
+		now = ptime.BeiDou(int16(m.WNOT), tow)
 		ls, err = ptime.BeiDouLeapSecond(g, now)
 	case gpsprot.GAL:
+		now = ptime.Galileo(int16(m.WNOT), tow)
 		ls, err = ptime.GalileoLeapSecond(g, now)
 	default:
+		now = ptime.GPS(int16(m.WNOT), tow)
 		ls, err = ptime.GPSLeapSecond(g, now)
 	}
 	if err != nil {
