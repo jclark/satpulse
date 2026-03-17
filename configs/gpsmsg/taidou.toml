@@ -412,6 +412,118 @@ id = 0x52
 payload.types = "U1U1U1U1U1"
 payload.values = [0x06, 0x17, 1, 0, 0]
 
+[[sdbp]]
+tag = "sdbp-dat-dop"
+description = "Enable DAT-DOP binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x13, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-dop-off"
+description = "Disable DAT-DOP binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x13, 1, 0, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-utct"
+description = "Enable DAT-UTCT binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x15, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-utct-off"
+description = "Disable DAT-UTCT binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x15, 1, 0, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-ecef2"
+description = "Enable DAT-ECEF2 binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x1B, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-ecef2-off"
+description = "Disable DAT-ECEF2 binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x1B, 1, 0, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-utct2"
+description = "Enable DAT-UTCT2 binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x1F, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-utct2-off"
+description = "Disable DAT-UTCT2 binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x1F, 1, 0, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-gpsu"
+description = "Enable DAT-GPSU binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x2D, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-gpsu-off"
+description = "Disable DAT-GPSU binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x2D, 1, 0, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-galu"
+description = "Enable DAT-GALU binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x2E, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-galu-off"
+description = "Disable DAT-GALU binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x2E, 1, 0, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-bdsu"
+description = "Enable DAT-BDSU binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x2C, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-bdsu-off"
+description = "Disable DAT-BDSU binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x2C, 1, 0, 0]
+
 # Enable/disable DAT-TPPS on port 1
 
 [[sdbp]]

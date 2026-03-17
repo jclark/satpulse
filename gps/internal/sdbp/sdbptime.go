@@ -1,6 +1,7 @@
 package sdbp
 
 import (
+	"log/slog"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -102,4 +103,86 @@ func timeDatTPPS(m *sdbpbin.DatTPPS) *gpsprot.TimeMsg {
 		t.PulseOffset = &offset
 	}
 	return &t
+}
+
+// timeDatUTCT2 converts DatUTCT2 to TimeMsg.
+// Returns nil when the time fields are not valid.
+func timeDatUTCT2(m *sdbpbin.DatUTCT2) *gpsprot.TimeMsg {
+	if m.Valid&(sdbpbin.DatUTCT2HMS|sdbpbin.DatUTCT2YMD) != sdbpbin.DatUTCT2HMS|sdbpbin.DatUTCT2YMD {
+		return nil
+	}
+	date := time.Date(int(m.Year), time.Month(m.Month), int(m.Day), 0, 0, 0, 0, time.UTC)
+	tod := time.Duration(m.Hour)*time.Hour +
+		time.Duration(m.Min)*time.Minute +
+		time.Duration(m.Sec)*time.Second +
+		time.Duration(m.SecFrac)*time.Nanosecond
+	ut := ptime.UTCTime{Date: date, TimeOfDay: tod}
+	t := gpsprot.TimeMsg{
+		Ref:         gpsprot.NavSolution,
+		NativeMsgID: "DAT-UTCT2",
+		UTCTime:     &ut,
+		GNSS:        utct2GNSS(m.RefGrid),
+	}
+	if m.Accuracy != 0 {
+		t.Accuracy = time.Duration(m.Accuracy) * time.Nanosecond
+	}
+	return &t
+}
+
+func utct2GNSS(ref sdbpbin.DatUTCT2RefGrid) gpsprot.GNSS {
+	switch ref {
+	case sdbpbin.DatUTCT2RefBDS:
+		return gpsprot.BDS
+	case sdbpbin.DatUTCT2RefGPS:
+		return gpsprot.GPS
+	case sdbpbin.DatUTCT2RefGLO:
+		return gpsprot.GLO
+	case sdbpbin.DatUTCT2RefGAL:
+		return gpsprot.GAL
+	default:
+		return 0
+	}
+}
+
+// leapDatUTCT2 converts DatUTCT2 to LeapSecondMsg.
+// Returns nil when leap forecast/correction bits are not set.
+func leapDatUTCT2(m *sdbpbin.DatUTCT2) *gpsprot.LeapSecondMsg {
+	if m.Valid&(sdbpbin.DatUTCT2LeapForecast|sdbpbin.DatUTCT2LeapCorr) !=
+		sdbpbin.DatUTCT2LeapForecast|sdbpbin.DatUTCT2LeapCorr {
+		return nil
+	}
+	cur := int16(m.LeapSec) + ptime.TAIMinusGPS
+	after := cur + int16(m.LeapChange)
+	date := time.Date(int(m.LeapYear), time.Month(m.LeapMonth), int(m.LeapDay), 0, 0, 0, 0, time.UTC)
+	return &gpsprot.LeapSecondMsg{
+		LeapSecond: ptime.LeapSecondOnDate(date, cur, after),
+		GNSS:       utct2GNSS(m.RefGrid),
+	}
+}
+
+// leapDatGNSSU converts a DatGNSSU to LeapSecondMsg using the appropriate GNSS-specific decoder.
+// Returns nil on error.
+func leapDatGNSSU(m *sdbpbin.DatGNSSU, gnss gpsprot.GNSS) *gpsprot.LeapSecondMsg {
+	g := ptime.GNSSLeapSecond{
+		WNLSF:    uint8(m.WNLSF),
+		DN:       m.DN,
+		DeltaLS:  m.DeltaTLS,
+		DeltaLSF: m.DeltaTLSF,
+	}
+	now := ptime.GPS(int16(m.WNOT), ptime.Seconds(float64(m.TOT)))
+	var ls ptime.LeapSecond
+	var err error
+	switch gnss {
+	case gpsprot.BDS:
+		ls, err = ptime.BeiDouLeapSecond(g, now)
+	case gpsprot.GAL:
+		ls, err = ptime.GalileoLeapSecond(g, now)
+	default:
+		ls, err = ptime.GPSLeapSecond(g, now)
+	}
+	if err != nil {
+		slog.Debug("sdbp: leapDatGNSSU", "gnss", gnss, "err", err)
+		return nil
+	}
+	return &gpsprot.LeapSecondMsg{LeapSecond: ls, GNSS: gnss}
 }

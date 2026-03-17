@@ -1,5 +1,19 @@
 package sdbpbin
 
+// NavMsg is implemented by DAT messages that participate in nav epoch tracking.
+type NavMsg interface {
+	Msg
+	NavEpoch() uint32
+}
+
+// DatNavHeader is embedded in DAT messages that have a leading LocalTimestamp field.
+type DatNavHeader struct {
+	LocalTimestamp uint32
+}
+
+// NavEpoch returns the epoch identifier (LocalTimestamp).
+func (m *DatNavHeader) NavEpoch() uint32 { return m.LocalTimestamp }
+
 // DatTimeValid is a bitmask for DAT-*T validity flags.
 type DatTimeValid uint8
 
@@ -10,11 +24,11 @@ const (
 
 // DatGNSST is the common layout for DAT-BDST, DAT-GPST, and DAT-GALT (19 bytes).
 type DatGNSST struct {
-	LocalTimestamp uint32
-	Valid          DatTimeValid
-	Week           uint16
-	TOW            float64 // seconds of week
-	TimeAccuracy   uint32  // nanoseconds; 0xFFFFFFFF means invalid
+	DatNavHeader
+	Valid        DatTimeValid
+	Week         uint16
+	TOW          float64 // seconds of week
+	TimeAccuracy uint32  // nanoseconds; 0xFFFFFFFF means invalid
 }
 
 // TimeValid reports whether the time fields are valid.
@@ -60,9 +74,86 @@ type DatTPPS struct {
 
 func (m *DatTPPS) ID() MsgID { return makeMsgID(clsDAT, 0x41) }
 
+// DatUTCT2Valid is a bitmask for DatUTCT2 validity flags.
+type DatUTCT2Valid uint8
+
+const (
+	DatUTCT2HMS          DatUTCT2Valid = 1 << iota // bit 0: H/M/S valid
+	DatUTCT2YMD                                    // bit 1: Y/M/D valid
+	DatUTCT2LeapForecast                           // bit 2: leap second forecast valid
+	DatUTCT2LeapCorr                               // bit 3: leap second correction valid
+)
+
+// DatUTCT2RefGrid identifies the reference time grid for DatUTCT2.
+type DatUTCT2RefGrid uint8
+
+const (
+	DatUTCT2RefNone DatUTCT2RefGrid = iota
+	DatUTCT2RefBDS
+	DatUTCT2RefGPS
+	DatUTCT2RefGLO
+	DatUTCT2RefGAL
+)
+
+// DatUTCT2 is DAT-UTCT2 (class 0x06, id 0x1F, 31 bytes).
+type DatUTCT2 struct {
+	DatNavHeader
+	Valid         DatUTCT2Valid
+	RefGrid       DatUTCT2RefGrid
+	Year          uint16
+	Month         uint8
+	Day           uint8
+	Hour          uint8
+	Min           uint8
+	Sec           uint8
+	SecFrac       int32  // nanoseconds
+	Accuracy      uint32 // nanoseconds
+	LeapSec       int8   // current GPS-UTC offset (seconds)
+	LeapCountdown int32  // >0=countdown, 0=occurring, -1=done
+	LeapChange    int8   // +1 or -1
+	LeapYear      uint16
+	LeapMonth     uint8
+	LeapDay       uint8
+}
+
+func (m *DatUTCT2) ID() MsgID { return makeMsgID(clsDAT, 0x1F) }
+
+// DatGNSSU is the shared layout for DAT-GPSU, DAT-GALU, DAT-BDSU (35 bytes).
+// These carry broadcast UTC parameters, not per-epoch nav data.
+type DatGNSSU struct {
+	A0        float64 // seconds
+	A1        float64 // s/s
+	A2        float64 // s/s^2
+	TOT       uint32  // seconds
+	WNOT      uint16  // week
+	DeltaTLS  int8    // current leap offset (seconds since GNSS epoch)
+	WNLSF     uint16  // week of next leap
+	DN        uint8   // day number
+	DeltaTLSF int8    // leap offset after event
+}
+
+// DatBDSU is DAT-BDSU (class 0x06, id 0x2C). BeiDou UTC parameters.
+type DatBDSU struct{ DatGNSSU }
+
+func (m *DatBDSU) ID() MsgID { return makeMsgID(clsDAT, 0x2C) }
+
+// DatGPSU is DAT-GPSU (class 0x06, id 0x2D). GPS UTC parameters.
+type DatGPSU struct{ DatGNSSU }
+
+func (m *DatGPSU) ID() MsgID { return makeMsgID(clsDAT, 0x2D) }
+
+// DatGALU is DAT-GALU (class 0x06, id 0x2E). Galileo UTC parameters.
+type DatGALU struct{ DatGNSSU }
+
+func (m *DatGALU) ID() MsgID { return makeMsgID(clsDAT, 0x2E) }
+
 func init() {
 	regMsg[DatBDST]("BDST")
 	regMsg[DatGPST]("GPST")
 	regMsg[DatGALT]("GALT")
 	regMsg[DatTPPS]("TPPS")
+	regMsg[DatUTCT2]("UTCT2")
+	regMsg[DatBDSU]("BDSU")
+	regMsg[DatGPSU]("GPSU")
+	regMsg[DatGALU]("GALU")
 }
