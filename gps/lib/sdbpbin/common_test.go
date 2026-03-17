@@ -76,8 +76,8 @@ func TestSerializeRoundTrip(t *testing.T) {
 		{"CfgGNSS-bds-gps", &CfgGNSS{ConstellationMask: GNSSBitBDS | GNSSBitGPS}},
 		{"CfgNMEA-response", &CfgNMEA{SentenceID: NMEASentGGA, UART1: 1}},
 		{"CfgSDBP-response", &CfgSDBP{MsgClass: 0x06, MsgID: 0x17, UART1: 1}},
-		{"PubAck", &PubAck{AckedClass: clsCFG, AckedID: 0x52}},
-		{"PubNak", &PubNak{NakedClass: clsCTL, NakedID: 0x01}},
+		{"PubAck", &PubAck{Class: clsCFG, MsgID: 0x52}},
+		{"PubNak", &PubNak{Class: clsCTL, MsgID: 0x01}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

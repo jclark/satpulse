@@ -96,6 +96,17 @@ type VaryingMsg interface {
 	VaryingPart() any
 }
 
+// TimeRef identifies a time reference used by CFG-PPS and DAT-TPPS.
+type TimeRef uint8
+
+const (
+	TimeRefUTC TimeRef = 0
+	TimeRefBDS TimeRef = 1
+	TimeRefGPS TimeRef = 2
+	TimeRefGLO TimeRef = 3
+	TimeRefGAL TimeRef = 4
+)
+
 // AsciiSlice is a []byte that JSON-marshals as a string.
 type AsciiSlice []byte
 

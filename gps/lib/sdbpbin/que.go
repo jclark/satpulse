@@ -2,10 +2,6 @@ package sdbpbin
 
 var queVerID = makeMsgID(clsQUE, 0x01)
 
-func init() {
-	regMsg[QueVer]("VER")
-}
-
 // QueVer is QUE-VER (class 0x05, id 0x01).
 // The payload is a variable-length ASCII string.
 type QueVer struct {
@@ -24,3 +20,7 @@ func (m *QueVer) InitVaryingPart(payloadLen int) error {
 func (m *QueVer) VaryingPart() any { return &m.Version }
 
 var _ VaryingMsg = (*QueVer)(nil)
+
+func init() {
+	regMsg[QueVer]("VER")
+}

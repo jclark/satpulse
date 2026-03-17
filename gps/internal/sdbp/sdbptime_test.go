@@ -103,15 +103,16 @@ func TestTimeDatGPSTMatchesCaptureTime(t *testing.T) {
 func TestTimeDatGPSTInvalid(t *testing.T) {
 	tests := []struct {
 		name  string
-		valid sdbpbin.DatGPSTValid
+		valid sdbpbin.DatTimeValid
 	}{
 		{"no flags", 0},
-		{"tow only", sdbpbin.DatGPSTTowValid},
-		{"week only", sdbpbin.DatGPSTWeekValid},
+		{"tow only", sdbpbin.DatTimeTowValid},
+		{"week only", sdbpbin.DatTimeWeekValid},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			gpst := &sdbpbin.DatGPST{Valid: tc.valid}
+			gpst := &sdbpbin.DatGPST{}
+			gpst.Valid = tc.valid
 			if tm := timeDatGPST(gpst); tm != nil {
 				t.Error("expected nil for invalid DatGPST")
 			}

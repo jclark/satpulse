@@ -1,64 +1,68 @@
 package sdbpbin
 
-func init() {
-	regMsg[DatGPST]("GPST")
-	regMsg[DatTPPS]("TPPS")
-}
-
-// DatGPSTValid is a bitmask for DatGPST validity flags.
-type DatGPSTValid uint8
+// DatTimeValid is a bitmask for DAT-*T validity flags.
+type DatTimeValid uint8
 
 const (
-	DatGPSTTowValid  DatGPSTValid = 1 << 0
-	DatGPSTWeekValid DatGPSTValid = 1 << 1
+	DatTimeTowValid DatTimeValid = 1 << iota
+	DatTimeWeekValid
 )
 
-// DatGPST is DAT-GPST (class 0x06, id 0x17).
-type DatGPST struct {
+// DatGNSST is the common layout for DAT-BDST, DAT-GPST, and DAT-GALT (19 bytes).
+type DatGNSST struct {
 	LocalTimestamp uint32
-	Valid          DatGPSTValid
-	GPSWeek        uint16
+	Valid          DatTimeValid
+	Week           uint16
 	TOW            float64 // seconds of week
 	TimeAccuracy   uint32  // nanoseconds; 0xFFFFFFFF means invalid
 }
 
-func (m *DatGPST) ID() MsgID { return makeMsgID(clsDAT, 0x17) }
-
-// TimeValid reports whether the GPS time fields are valid.
-func (m *DatGPST) TimeValid() bool {
-	return m.Valid&(DatGPSTTowValid|DatGPSTWeekValid) == DatGPSTTowValid|DatGPSTWeekValid
+// TimeValid reports whether the time fields are valid.
+func (m *DatGNSST) TimeValid() bool {
+	return m.Valid&(DatTimeTowValid|DatTimeWeekValid) == DatTimeTowValid|DatTimeWeekValid
 }
 
-// TPPSTimeRef identifies the time reference for DAT-TPPS.
-type TPPSTimeRef uint8
+// DatBDST is DAT-BDST (class 0x06, id 0x16). BeiDou time.
+type DatBDST struct{ DatGNSST }
+
+func (m *DatBDST) ID() MsgID { return makeMsgID(clsDAT, 0x16) }
+
+// DatGPST is DAT-GPST (class 0x06, id 0x17). GPS time.
+type DatGPST struct{ DatGNSST }
+
+func (m *DatGPST) ID() MsgID { return makeMsgID(clsDAT, 0x17) }
+
+// DatGALT is DAT-GALT (class 0x06, id 0x19). Galileo time.
+type DatGALT struct{ DatGNSST }
+
+func (m *DatGALT) ID() MsgID { return makeMsgID(clsDAT, 0x19) }
+
+// UTCType identifies the UTC realization used when TimeRef is UTC.
+type UTCType uint8
 
 const (
-	TPPSTimeRefUTC TPPSTimeRef = 0
-	TPPSTimeRefBDS TPPSTimeRef = 1
-	TPPSTimeRefGPS TPPSTimeRef = 2
-	TPPSTimeRefGLO TPPSTimeRef = 3
-	TPPSTimeRefGAL TPPSTimeRef = 4
-)
-
-// TPPSUTCType identifies the UTC realization used when TimeRef is UTC.
-type TPPSUTCType uint8
-
-const (
-	TPPSUTCInvalid TPPSUTCType = 0 // time reference != UTC or no UTC correction
-	TPPSUTCBDS     TPPSUTCType = 1
-	TPPSUTCGPS     TPPSUTCType = 2
-	TPPSUTCGLO     TPPSUTCType = 3
-	TPPSUUTCGAL    TPPSUTCType = 4
+	UTCInvalid UTCType = 0 // time reference != UTC or no UTC correction
+	UTCBDS     UTCType = 1
+	UTCGPS     UTCType = 2
+	UTCGLO     UTCType = 3
+	UTCGAL     UTCType = 4
 )
 
 // DatTPPS is DAT-TPPS (class 0x06, id 0x41).
 type DatTPPS struct {
 	PPSIndex    uint8
-	TOW         float64     // pulse time, seconds of week
+	TOW         float64 // pulse time, seconds of week
 	Week        uint16
-	PPSResidual int32       // picoseconds
-	TimeRef     TPPSTimeRef // time reference
-	UTCType     TPPSUTCType // UTC source
+	PPSResidual int32   // picoseconds
+	TimeRef     TimeRef // time reference
+	UTCType     UTCType // UTC source
 }
 
 func (m *DatTPPS) ID() MsgID { return makeMsgID(clsDAT, 0x41) }
+
+func init() {
+	regMsg[DatBDST]("BDST")
+	regMsg[DatGPST]("GPST")
+	regMsg[DatGALT]("GALT")
+	regMsg[DatTPPS]("TPPS")
+}

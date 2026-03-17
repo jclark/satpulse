@@ -46,8 +46,12 @@ func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 func (p *PacketProcessor) dispatch(m sdbpbin.Msg, tRead time.Time) bool {
 	var tm *gpsprot.TimeMsg
 	switch mt := m.(type) {
+	case *sdbpbin.DatBDST:
+		tm = timeDatBDST(mt)
 	case *sdbpbin.DatGPST:
 		tm = timeDatGPST(mt)
+	case *sdbpbin.DatGALT:
+		tm = timeDatGALT(mt)
 	case *sdbpbin.DatTPPS:
 		tm = timeDatTPPS(mt)
 	default:

@@ -1,13 +1,5 @@
 package sdbpbin
 
-func init() {
-	regMsg[CfgGNSS]("GNSS")
-	regMsg[CfgUART]("UART")
-	regMsg[CfgRate]("RATE")
-	regMsg[CfgNMEA]("NMEA")
-	regMsg[CfgSDBP]("SDBP")
-}
-
 // GNSSMask is a bitmask of enabled GNSS constellations.
 type GNSSMask uint8
 
@@ -72,24 +64,57 @@ type CfgRate struct {
 
 func (m *CfgRate) ID() MsgID { return makeMsgID(clsCFG, 0x36) }
 
+// PPSPolarity is the pulse polarity.
+type PPSPolarity uint8
+
+const (
+	PPSNegative PPSPolarity = 0
+	PPSPositive PPSPolarity = 1
+)
+
+// CfgPPS is CFG-PPS (class 0x03, id 0x41).
+// Same format for set (I2) and response (O), 25 bytes.
+// Pulse parameter 1 controls the pulse before positioning (state 1).
+// Pulse parameter 2 controls the pulse after positioning (state 2).
+type CfgPPS struct {
+	Index      uint8    // 0=PPS0, 1=PPS1
+	Switch     uint8       // 0=off, 1=on
+	Polarity   PPSPolarity // 0=negative, 1=positive
+	TimeRef    TimeRef // 0=UTC, 1=BDS, 2=GPS, 3=GLO, 4=GAL
+	Period1    uint32      // state 1 (before fix) period in us, >= 100
+	Width1     uint32      // state 1 pulse width in us
+	Period2    uint32      // state 2 (after fix) period in us, >= 100
+	Width2     uint32      // state 2 pulse width in us
+	Offset     int32       // offset in ns
+	Reserved   uint8
+}
+
+func (m *CfgPPS) ID() MsgID { return makeMsgID(clsCFG, 0x41) }
+
+// PollCfgPPS builds a CFG-PPS query packet for the given PPS index.
+func PollCfgPPS(index uint8) []byte {
+	pkt, _ := PackMsg(makeMsgID(clsCFG, 0x41), []byte{byte(index)})
+	return pkt
+}
+
 // NMEASentence identifies an NMEA sentence type.
 type NMEASentence uint8
 
 const (
-	NMEASentZDA NMEASentence = 1
-	NMEASentDTM NMEASentence = 2
-	NMEASentRMC NMEASentence = 3
-	NMEASentGGA NMEASentence = 4
-	NMEASentGSA NMEASentence = 5
-	NMEASentGSV NMEASentence = 6
-	NMEASentVTG NMEASentence = 7
-	NMEASentGNS NMEASentence = 8
-	NMEASentGLL NMEASentence = 9
-	NMEASentGRS NMEASentence = 10
-	NMEASentGST NMEASentence = 11
-	NMEASentGBS NMEASentence = 12
-	NMEASentCLK NMEASentence = 13
-	NMEASentT01 NMEASentence = 14
+	NMEASentZDA NMEASentence = iota + 1
+	NMEASentDTM
+	NMEASentRMC
+	NMEASentGGA
+	NMEASentGSA
+	NMEASentGSV
+	NMEASentVTG
+	NMEASentGNS
+	NMEASentGLL
+	NMEASentGRS
+	NMEASentGST
+	NMEASentGBS
+	NMEASentCLK
+	NMEASentT01
 )
 
 var cfgNMEAID = makeMsgID(clsCFG, 0x51)
@@ -145,4 +170,13 @@ func SetCfgSDBP(msgClass, msgID uint8, port Port, enable, rate uint8) []byte {
 func PollCfgSDBP(msgClass, msgID uint8) []byte {
 	pkt, _ := PackMsg(cfgSDBPID, []byte{msgClass, msgID})
 	return pkt
+}
+
+func init() {
+	regMsg[CfgGNSS]("GNSS")
+	regMsg[CfgUART]("UART")
+	regMsg[CfgRate]("RATE")
+	regMsg[CfgPPS]("PPS")
+	regMsg[CfgNMEA]("NMEA")
+	regMsg[CfgSDBP]("SDBP")
 }

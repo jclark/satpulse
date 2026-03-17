@@ -1,11 +1,5 @@
 package sdbpbin
 
-func init() {
-	regMsg[CtlRestart]("RESTART")
-	regMsg[CtlConfig]("CONFIG")
-	regMsg[CtlStandby]("STANDBY")
-}
-
 // CtlRestart is CTL-RESTART (class 0x02, id 0x01).
 type CtlRestart struct {
 	StartupMode uint8 // 1=cold, 2=warm, 3=hot
@@ -47,3 +41,9 @@ type CtlStandby struct {
 }
 
 func (m *CtlStandby) ID() MsgID { return makeMsgID(clsCTL, 0x04) }
+
+func init() {
+	regMsg[CtlRestart]("RESTART")
+	regMsg[CtlConfig]("CONFIG")
+	regMsg[CtlStandby]("STANDBY")
+}
