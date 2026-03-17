@@ -147,6 +147,98 @@ type DatGALU struct{ DatGNSSU }
 
 func (m *DatGALU) ID() MsgID { return makeMsgID(clsDAT, 0x2E) }
 
+// DatDOP is DAT-DOP (class 0x06, id 0x13, 16 bytes).
+type DatDOP struct {
+	DatNavHeader
+	Valid   uint8
+	FixSats uint8
+	GDOP    uint16 // scale 0.01
+	PDOP    uint16
+	HDOP    uint16
+	VDOP    uint16
+	TDOP    uint16
+}
+
+func (m *DatDOP) ID() MsgID { return makeMsgID(clsDAT, 0x13) }
+
+// DatECEF2 is DAT-ECEF2 (class 0x06, id 0x1B, 75 bytes).
+type DatECEF2 struct {
+	DatNavHeader
+	Valid       uint8
+	TrackedSats uint8
+	FixSats     uint8
+	Year        uint16
+	Month       uint8
+	Day         uint8
+	Hour        uint8
+	Min         uint8
+	SecMs       uint16  // seconds * 1000
+	X           float64 // meters
+	Y           float64
+	Z           float64
+	XAcc        uint32 // mm
+	YAcc        uint32
+	ZAcc        uint32
+	VX          float32 // m/s
+	VY          float32
+	VZ          float32
+	VXAcc       uint32 // cm/s
+	VYAcc       uint32
+	VZAcc       uint32
+}
+
+func (m *DatECEF2) ID() MsgID { return makeMsgID(clsDAT, 0x1B) }
+
+// DatLLA3 is DAT-LLA3 (class 0x06, id 0x1D, 64 bytes).
+type DatLLA3 struct {
+	DatNavHeader
+	CoordSys    uint8
+	Valid       uint8
+	TrackedSats uint8
+	FixSats     uint8
+	Year        uint16
+	Month       uint8
+	Day         uint8
+	Hour        uint8
+	Min         uint8
+	SecMs       uint16  // seconds * 1000
+	Lon         float64 // degrees
+	Lat         float64
+	AltMSL      float32 // meters
+	GeoidSep    float32 // meters
+	HAcc        uint32  // mm
+	VAcc        uint32  // mm
+	GroundSpeed float32 // m/s
+	SpeedAcc    uint32  // cm/s
+	Heading     float32 // degrees
+	HeadingAcc  uint32  // 0.01 degrees
+}
+
+func (m *DatLLA3) ID() MsgID { return makeMsgID(clsDAT, 0x1D) }
+
+// DatNED3 is DAT-NED3 (class 0x06, id 0x1E, 40 bytes).
+type DatNED3 struct {
+	DatNavHeader
+	CoordSys    uint8
+	Valid       uint8
+	TrackedSats uint8
+	FixSats     uint8
+	Year        uint16
+	Month       uint8
+	Day         uint8
+	Hour        uint8
+	Min         uint8
+	SecMs       uint16
+	VN          float32 // m/s
+	VE          float32
+	VD          float32
+	VNAcc       uint32 // cm/s
+	VEAcc       uint32
+	VDAcc       uint32
+}
+
+func (m *DatNED3) ID() MsgID { return makeMsgID(clsDAT, 0x1E) }
+
 func init() {
 	regMsg[DatBDST]("BDST")
 	regMsg[DatGPST]("GPST")
@@ -156,4 +248,8 @@ func init() {
 	regMsg[DatBDSU]("BDSU")
 	regMsg[DatGPSU]("GPSU")
 	regMsg[DatGALU]("GALU")
+	regMsg[DatDOP]("DOP")
+	regMsg[DatECEF2]("ECEF2")
+	regMsg[DatLLA3]("LLA3")
+	regMsg[DatNED3]("NED3")
 }

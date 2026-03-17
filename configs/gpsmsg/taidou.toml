@@ -445,6 +445,38 @@ payload.types = "U1U1U1U1U1"
 payload.values = [0x06, 0x15, 1, 0, 0]
 
 [[sdbp]]
+tag = "sdbp-dat-lla3"
+description = "Enable DAT-LLA3 binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x1D, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-lla3-off"
+description = "Disable DAT-LLA3 binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x1D, 1, 0, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-ned3"
+description = "Enable DAT-NED3 binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x1E, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-ned3-off"
+description = "Disable DAT-NED3 binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x1E, 1, 0, 0]
+
+[[sdbp]]
 tag = "sdbp-dat-ecef2"
 description = "Enable DAT-ECEF2 binary message"
 class = 0x03

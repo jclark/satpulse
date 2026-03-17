@@ -88,6 +88,49 @@ func (p *PacketProcessor) dispatch(m sdbpbin.Msg, tRead time.Time) bool {
 		p.emitLeap(leapDatGNSSU(&mt.DatGNSSU, gpsprot.GAL), tRead)
 	case *sdbpbin.DatBDSU:
 		p.emitLeap(leapDatGNSSU(&mt.DatGNSSU, gpsprot.BDS), tRead)
+	case *sdbpbin.DatLLA3:
+		ne := p.curNavEpochMsg
+		posG := posGeoDatLLA3(ne, mt)
+		velG := velGeoDatLLA3(ne, mt)
+		if h := p.mh; h != nil {
+			if posG != nil {
+				posG.Tag = Tag
+				posG.Priority = gpsprot.PriVendorLow
+				h.PosGeo(posG, tRead)
+			}
+			if velG != nil {
+				velG.Tag = Tag
+				velG.Priority = gpsprot.PriVendorLow
+				h.VelGeo(velG, tRead)
+			}
+		}
+	case *sdbpbin.DatECEF2:
+		ne := p.curNavEpochMsg
+		posE := posECEFDatECEF2(ne, mt)
+		velE := velECEFDatECEF2(ne, mt)
+		if h := p.mh; h != nil {
+			if posE != nil {
+				posE.Tag = Tag
+				posE.Priority = gpsprot.PriVendorLow
+				h.PosECEF(posE, tRead)
+			}
+			if velE != nil {
+				velE.Tag = Tag
+				velE.Priority = gpsprot.PriVendorLow
+				h.VelECEF(velE, tRead)
+			}
+		}
+	case *sdbpbin.DatNED3:
+		velG := velGeoDatNED3(p.curNavEpochMsg, mt)
+		if velG != nil {
+			if h := p.mh; h != nil {
+				velG.Tag = Tag
+				velG.Priority = gpsprot.PriVendorLow
+				h.VelGeo(velG, tRead)
+			}
+		}
+	case *sdbpbin.DatDOP:
+		dopDatDOP(p.curNavEpochMsg, mt)
 	default:
 		return false
 	}
