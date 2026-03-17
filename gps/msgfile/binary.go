@@ -310,19 +310,31 @@ func (am *ASBINMsg) newMatcher() responseMatcher {
 	}
 }
 
-// sdbpMatcher treats any SDBP packet as a possible response.
-// ACK/NAK pattern is not yet known for this protocol.
-type sdbpMatcher struct{}
-
-func (sm *SDBPMsg) newMatcher() responseMatcher {
-	return &sdbpMatcher{}
+func parseSDBP(data string) (packetInfo[sdbpbin.MsgID], error) {
+	if len(data) < 8 {
+		return packetInfo[sdbpbin.MsgID]{}, fmt.Errorf("too short")
+	}
+	p := packetInfo[sdbpbin.MsgID]{msgID: sdbpbin.PacketMsgId(data)}
+	msg, _ := sdbpbin.ParseMsg(data)
+	switch m := msg.(type) {
+	case *sdbpbin.PubAck:
+		p.ack = isAckAck
+		p.ackedID = sdbpbin.MakeMsgID(m.Class, m.MsgID)
+	case *sdbpbin.PubNak:
+		p.ack = isAckNak
+		p.ackedID = sdbpbin.MakeMsgID(m.Class, m.MsgID)
+	}
+	return p, nil
 }
 
-func (m *sdbpMatcher) match(tag gpsprot.Tag, _ string) (ResponseKind, string) {
-	if tag == gpsreg.TagSDBP {
-		return MaybeResponse, ""
+func (sm *SDBPMsg) newMatcher() responseMatcher {
+	mid := sdbpbin.MakeMsgID(sm.Class, sm.ID)
+	return &ubxLikeMatcher[sdbpbin.MsgID]{
+		expectedTag: gpsreg.TagSDBP,
+		sentMsgID:   mid,
+		expectAck:   true,
+		parse:       parseSDBP,
 	}
-	return NotResponse, ""
 }
 
 // binaryTags maps binary protocol tags used for response classification.
