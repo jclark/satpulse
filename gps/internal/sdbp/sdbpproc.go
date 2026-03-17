@@ -131,6 +131,17 @@ func (p *PacketProcessor) dispatch(m sdbpbin.Msg, tRead time.Time) bool {
 		}
 	case *sdbpbin.DatDOP:
 		dopDatDOP(p.curNavEpochMsg, mt)
+	case *sdbpbin.DatSAT:
+		msg := satsDatSAT(mt)
+		if msg != nil {
+			if ne := p.curNavEpochMsg; ne != nil {
+				ne.GNSSUsed |= msg.GNSSUsed()
+				ne.BandsUsed |= msg.BandsUsed()
+			}
+			if h := p.mh; h != nil {
+				h.Satellites(msg, tRead)
+			}
+		}
 	default:
 		return false
 	}

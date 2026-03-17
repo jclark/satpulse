@@ -346,7 +346,12 @@ GLONASS (GNSS ID 5):
 | 1 | G2 | SigGLOL2 |
 
 Implement as a lookup table indexed by [gnssID][signalID].
-Unknown combinations should be skipped or mapped to a zero signal.
+
+**Signal ID 7** (undocumented): appears across all constellations for
+satellites known from almanac/ephemeris but not actually tracked.
+Always CN0=0. Not in Appendix A. Confirmed by cross-checking with
+NMEA GSV: sigID=7 entries never appear in GSV output. These entries
+are skipped (no signal data to report).
 
 **SignalID mapping** (for `SatellitesMsg.Signals[].SignalID`):
 Use the corresponding `gpsprot.SigID*` constants. E.g.:

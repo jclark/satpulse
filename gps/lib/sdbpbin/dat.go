@@ -239,6 +239,43 @@ type DatNED3 struct {
 
 func (m *DatNED3) ID() MsgID { return makeMsgID(clsDAT, 0x1E) }
 
+// DatSATFixed is the fixed part of DAT-SAT (class 0x06, id 0x30).
+type DatSATFixed struct {
+	DatNavHeader
+	SatCount uint8
+}
+
+// DatSATEntry is a per-satellite entry in DAT-SAT (14 bytes).
+type DatSATEntry struct {
+	GNSSID     uint8
+	SatID      uint8
+	OrbitID    int8
+	SignalID   uint8
+	CN0        uint8
+	Elev       int8   // degrees
+	Azim       uint16 // degrees
+	PRResidual int32  // cm
+	Flags      uint16 // bit 7 = used in fix
+}
+
+// DatSAT is DAT-SAT (class 0x06, id 0x30, variable length).
+type DatSAT struct {
+	DatSATFixed
+	Sats []DatSATEntry
+}
+
+func (m *DatSAT) ID() MsgID { return makeMsgID(clsDAT, 0x30) }
+
+func (m *DatSAT) InitVaryingPart(payloadLen int) error {
+	m.Sats = make([]DatSATEntry, m.SatCount)
+	return nil
+}
+
+func (m *DatSAT) FixedPart() any   { return &m.DatSATFixed }
+func (m *DatSAT) VaryingPart() any { return &m.Sats }
+
+var _ VaryingMsg = (*DatSAT)(nil)
+
 func init() {
 	regMsg[DatBDST]("BDST")
 	regMsg[DatGPST]("GPST")
@@ -252,4 +289,5 @@ func init() {
 	regMsg[DatECEF2]("ECEF2")
 	regMsg[DatLLA3]("LLA3")
 	regMsg[DatNED3]("NED3")
+	regMsg[DatSAT]("SAT")
 }

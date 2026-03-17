@@ -509,6 +509,22 @@ payload.types = "U1U1U1U1U1"
 payload.values = [0x06, 0x1F, 1, 0, 0]
 
 [[sdbp]]
+tag = "sdbp-dat-sat"
+description = "Enable DAT-SAT binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x30, 1, 1, 0]
+
+[[sdbp]]
+tag = "sdbp-dat-sat-off"
+description = "Disable DAT-SAT binary message"
+class = 0x03
+id = 0x52
+payload.types = "U1U1U1U1U1"
+payload.values = [0x06, 0x30, 1, 0, 0]
+
+[[sdbp]]
 tag = "sdbp-dat-gpsu"
 description = "Enable DAT-GPSU binary message"
 class = 0x03
