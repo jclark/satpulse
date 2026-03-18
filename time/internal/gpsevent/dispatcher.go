@@ -7,16 +7,17 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/logfile"
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/phcsync"
-	"github.com/jclark/satpulse/time/phctime"
-	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/internal/refclock"
-	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/timemsg"
 	"github.com/jclark/satpulse/time/internal/ts"
+	"github.com/jclark/satpulse/time/phctime"
 	"golang.org/x/sys/unix"
 )
 
@@ -201,9 +202,9 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 	if err != nil {
 		lg.Warn(err.Error(), "tag", tag, "len", len(pkt.Data))
 	}
-	_, err = pp.ProcessPacket(pkt.Data, pkt.TRead)
+	msgID, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
 	if err != nil {
-		lg.Warn("error processing packet", "err", err, "tag", tag, "data", pkt.Data)
+		lg.Warn("error processing packet", gpsio.PacketWarnAttrs(err, pkt, msgID)...)
 	}
 }
 

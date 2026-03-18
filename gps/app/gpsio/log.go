@@ -192,6 +192,31 @@ func (pl *PacketLog) LogOutput(tWrite time.Time, bytes []byte, speed int, fmt gp
 	pl.ch <- entry
 }
 
+// PacketWarnAttrs returns slog key-value pairs for logging a packet problem.
+func PacketWarnAttrs(err error, pkt scan.Packet, msgID string) []any {
+	var attrs []any
+	if err != nil {
+		attrs = append(attrs, "err", err)
+	}
+	fmt := pkt.Format
+	if fmt != nil {
+		attrs = append(attrs, "tag", fmt.Tag())
+	}
+	if msgID == "" && fmt != nil {
+		msgID = fmt.MsgID([]byte(pkt.Data))
+	}
+	if msgID != "" {
+		attrs = append(attrs, "msg", msgID)
+	}
+	b := []byte(pkt.Data)
+	if useBinary(fmt, b) {
+		attrs = append(attrs, "bin", HexString(b))
+	} else {
+		attrs = append(attrs, "ascii", pkt.Data)
+	}
+	return attrs
+}
+
 func containsBinary(data []byte) bool {
 	for _, b := range data {
 		if (b < 0x20 && b != '\r' && b != '\n') || b >= 0x7F {
@@ -214,8 +239,12 @@ func logEntry(lg *slog.Logger, lf *logfile.LogFile, entry *PacketLogEntry) {
 	}
 }
 
-// MarshalJSON implements json.Marshaler for HexString
-// It marshals the HexString as a JSON string of hex digits
+// LogValue implements slog.LogValuer for HexString.
+func (hs HexString) LogValue() slog.Value {
+	return slog.StringValue(hex.EncodeToString(hs))
+}
+
+// MarshalJSON implements json.Marshaler for HexString.
 func (hs HexString) MarshalJSON() ([]byte, error) {
 	return json.Marshal(hex.EncodeToString(hs))
 }
