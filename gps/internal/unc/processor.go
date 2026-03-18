@@ -274,6 +274,9 @@ func dispatchUTC[T any](
 	if err != nil {
 		return false, err
 	}
+	if params == nil {
+		return true, nil
+	}
 	lsm := &gpsprot.LeapSecondMsg{
 		LeapSecond: params.LeapSecond,
 		GNSS:       gnss,
@@ -289,6 +292,9 @@ func dispatchBDSUTC(hdr *uncmsg.MsgHdr, body *uncmsg.BDSUTC, mh gpsprot.MsgHandl
 	params, err := utcConversionParamsFromBDSUTC(body, weekStart, now)
 	if err != nil {
 		return false, err
+	}
+	if params == nil {
+		return true, nil
 	}
 	lsm := &gpsprot.LeapSecondMsg{
 		LeapSecond: params.LeapSecond,

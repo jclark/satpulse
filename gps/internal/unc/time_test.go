@@ -1,6 +1,7 @@
 package unc
 
 import (
+	"encoding/hex"
 	"fmt"
 	"testing"
 	"time"
@@ -187,6 +188,44 @@ func TestUTCConversionParamsFromBD3UTC(t *testing.T) {
 				t.Fatalf("utcConversionParamsFromBD3UTC failed: %v", err)
 			}
 			testUTCConversion(t, conversion, &msg.Hdr)
+		})
+	}
+}
+
+// TestUTCConversionParamsNoData tests that all-zero UTC messages from a cold
+// UM960 receiver (no almanac data) return nil rather than an error.
+// Binary packets captured from um960-decoded.jsonl at 10:36:56 UTC.
+func TestUTCConversionParamsNoData(t *testing.T) {
+	binPackets := map[string]string{
+		"GPSUTC": "aa44b5611300300000a06a09907bba11904000000012090000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000095f1e467",
+		"GALUTC": "aa44b5611400400000a06a09907bba11904000000012090000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b86f41e9",
+		"BD3UTC": "aa44b5611600380000a06a09907bba1190400000001209000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e815ce8e",
+	}
+	for name, h := range binPackets {
+		t.Run(name, func(t *testing.T) {
+			bin, err := hex.DecodeString(h)
+			if err != nil {
+				t.Fatal(err)
+			}
+			msg, err := uncmsg.ParseBinMsg(bin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, now := msgHdrTime(&msg.Hdr)
+			var p *utcConversionParams
+			switch body := msg.Body.(type) {
+			case *uncmsg.GPSUTC:
+				p, err = utcConversionParamsFromGPSUTC(body, now)
+			case *uncmsg.GALUTC:
+				p, err = utcConversionParamsFromGALUTC(body, now)
+			case *uncmsg.BD3UTC:
+				p, err = utcConversionParamsFromBD3UTC(body, now)
+			default:
+				t.Fatalf("unexpected body type %T", body)
+			}
+			if p != nil || err != nil {
+				t.Errorf("got (%v, %v), want (nil, nil)", p, err)
+			}
 		})
 	}
 }
