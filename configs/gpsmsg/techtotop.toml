@@ -1,3 +1,4 @@
+#:schema ./gpsmsg-schema.json
 # Techtotop/Taidou T303-5D GPS message file
 # Protocol: SDBP 3.1 (SD Binary Protocol)
 

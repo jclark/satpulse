@@ -49,6 +49,7 @@ Protocol-prefixed tags for proprietary binary messages:
 | `asbin-*` | `asbin-nav-time`, `asbin-nav-timeutc`, `asbin-nav-svinfo`, `asbin-nav-svin` |
 | `ubx-*` | `ubx-nav-pvt`, `ubx-tim-tp` |
 | `casbin-*` | `casbin-nav2-sol`, `casbin-nav2-timeutc` |
+| `sdbp-*` | `sdbp-dat-gpst`, `sdbp-dat-sat`, `sdbp-dat-ecef2` |
 | `pqtm-*` | `pqtm-epe`, `pqtm-vel`, `pqtm-pvt` |
 
 Each gets an `-off` variant for disabling.
