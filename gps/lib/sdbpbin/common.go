@@ -169,11 +169,9 @@ func ParseMsg(packet string) (Msg, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing sdbp-%s: %v", mid, err)
 	}
-	if vary == nil {
-		_, err = r.ReadByte()
-		if err != io.EOF {
-			return nil, fmt.Errorf("parsing sdbp-%s: trailing bytes", mid)
-		}
+	_, err = r.ReadByte()
+	if err != io.EOF {
+		return nil, fmt.Errorf("parsing sdbp-%s: trailing bytes", mid)
 	}
 	return msg, nil
 }
