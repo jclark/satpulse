@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-// Captured packets from Taidou T303-5D (2026-03-17).
+// Captured packets from Techtotop/Taidou T303-5D (2026-03-17).
 var datPackets = []struct {
 	name string
 	hex  string
@@ -109,7 +109,7 @@ func TestDatParseAndRoundTrip(t *testing.T) {
 	}
 }
 
-// Captured DAT-SAT from Taidou T303-5D (2026-03-17T14:12:35Z), 88 satellites.
+// Captured DAT-SAT from Techtotop T303-5D (2026-03-17T14:12:35Z), 88 satellites.
 // Cross-checked against NMEA GSV/GSA from the same epoch:
 //   BDS sig=0 -> B1I (BDGSV sigID=1), sig=3 -> B2a (BDGSV sigID=5)
 //   GPS sig=0 -> L1CA (GPGSV sigID=1), sig=4 -> L5 (GPGSV sigID=8)

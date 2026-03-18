@@ -28,7 +28,7 @@ var packetSyncBytes = []byte{
 	uncmsg.Sync1,      // Unicore
 	novmsg.Sync1,      // NovAtel
 	asbin.Sync1,       // Allystar
-	sdbpbin.Sync1,     // SDBP (Taidou)
+	sdbpbin.Sync1,     // SDBP (Techtotop/Taidou)
 }
 
 // randomUBXPacket generates a random UBX packet for testing purposes.

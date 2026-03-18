@@ -44,7 +44,7 @@ const (
 	VendorSeptentrio
 	VendorSinoGNSS
 	VendorSkyTraq
-	VendorTaidou
+	VendorTechtotop
 	VendorTrimble
 	VendorUblox
 	VendorUnicore
@@ -75,7 +75,7 @@ var vendorNames = []string{
 	"Septentrio",
 	"SinoGNSS",
 	"SkyTraq",
-	"Taidou",
+	"Techtotop",
 	"Trimble",
 	"u-blox",
 	unc.Vendor,
@@ -88,6 +88,7 @@ var vendorMap = func() map[string]Vendor {
 		m[strings.ToLower(name)] = Vendor(i + 1)
 	}
 	m["comnav"] = VendorSinoGNSS
+	m["taidou"] = VendorTechtotop
 	m["ublox"] = VendorUblox
 	return m
 }()
@@ -198,8 +199,8 @@ func MakeVendor(vendor string) Vendor {
 		return VendorSinoGNSS
 	case "skytraq":
 		return VendorSkyTraq
-	case "taidou":
-		return VendorTaidou
+	case "techtotop", "taidou":
+		return VendorTechtotop
 	case "trimble":
 		return VendorTrimble
 	case "u-blox", "ublox":

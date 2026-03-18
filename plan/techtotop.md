@@ -1,14 +1,14 @@
-# Taidou SDBP: complete DAT message support
+# Techtotop SDBP: complete DAT message support
 
-Finish the SDBP protocol implementation for the Taidou T303-5D timing
+Finish the SDBP protocol implementation for the Techtotop/Taidou T303-5D timing
 receiver. Currently only time messages (GPST, BDST, GALT, TPPS) are
 handled. Each phase delivers end-to-end testable functionality.
 
 Reference implementation: CASIC in `gps/internal/casic/` and
 `gps/lib/casbin/`.
 
-Hardware: Taidou T303-5D on `/dev/ttyUSB0` at 115200 baud.
-Use `satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m configs/gpsmsg/taidou.toml`
+Hardware: Techtotop/Taidou T303-5D on `/dev/ttyUSB0` at 115200 baud.
+Use `satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m configs/gpsmsg/techtotop.toml`
 for all hardware commands that need `-t`.
 
 ## Common infrastructure: NavMsg and epoch tracking
@@ -177,7 +177,7 @@ produce a leapSecond event.
 
 ### 1d. Message tags
 
-`configs/gpsmsg/taidou.toml`:
+`configs/gpsmsg/techtotop.toml`:
 - Add `sdbp-dat-utct2` / `sdbp-dat-utct2-off` tags
 - Add `sdbp-dat-gpsu` / `sdbp-dat-gpsu-off` tags
 - Add `sdbp-dat-galu` / `sdbp-dat-galu-off` tags
@@ -246,7 +246,7 @@ PosGeo, PosECEF, VelGeo, VelECEF, and NavEpoch events.
 
 ### 2d. Message tags
 
-`configs/gpsmsg/taidou.toml`:
+`configs/gpsmsg/techtotop.toml`:
 - Add `sdbp-dat-lla3` / `sdbp-dat-lla3-off`
 - Add `sdbp-dat-ned3` / `sdbp-dat-ned3-off`
 - (ECEF2 and DOP tags already exist)
@@ -367,7 +367,7 @@ Add DatSAT case to dispatch, emit SatellitesMsg.
 
 ### 3d. Message tags
 
-`configs/gpsmsg/taidou.toml`:
+`configs/gpsmsg/techtotop.toml`:
 - Add `sdbp-dat-sat` / `sdbp-dat-sat-off`
 
 ### 3e. Tests and verification
@@ -418,7 +418,7 @@ Add DatTSURV case (no epoch handling).
 
 ### 4d. Message tags
 
-`configs/gpsmsg/taidou.toml`:
+`configs/gpsmsg/techtotop.toml`:
 - `sdbp-dat-tsurv` / `sdbp-dat-tsurv-off`
 - `get-tmode` - query CFG-TMODE (receiver-specific)
 - `get-survey` - alias for get-tmode
