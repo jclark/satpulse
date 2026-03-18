@@ -195,9 +195,9 @@ func (a *App) Connect(device string, speed int) Result {
 	portLock := gpsio.NewOutPortLock(conn)
 	connCtx, connCancel := context.WithCancel(a.ctx)
 	pCh := make(chan scan.Packet, 1)
-	pLog, plCh := gpsio.NewPacketLog(gpsreg.PacketFormats)
+	pLog, plCh := gpsio.NewPacketLog(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown))
 	conn.SetPacketLog(pLog)
-	a.connWg.Go(func() { gpsio.Scan(connCtx, a.lg, conn, pCh, pLog, gpsreg.PacketFormats) })
+	a.connWg.Go(func() { gpsio.Scan(connCtx, a.lg, conn, pCh, pLog, gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)) })
 	pb := bcast.New(pCh)
 	a.connWg.Go(func() { pb.Run(connCtx, a.lg) })
 	a.connWg.Go(func() { a.packetLogWorker(plCh) })
@@ -257,7 +257,7 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 	target.Opts.ForceProbe = true
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
 	rslt, err := gpscfg.Configure(ctx, a.lg, procs,
-		gpsreg.CreateConfigProtocols(), target, sub, conn)
+		gpsreg.CreateConfigProtocols(gpsreg.VendorUnknown), target, sub, conn)
 	cancel()
 	portLock <- port
 	if err != nil && !errors.Is(err, gpscfg.ErrNoProbeResponse) && !errors.Is(err, gpscfg.ErrNotDetected) {
@@ -306,7 +306,7 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 			a.mu.Unlock()
 			ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
 			rslt, err := gpscfg.Configure(ctx, a.lg, procs,
-				gpsreg.CreateConfigProtocols(), req.target, sub, conn)
+				gpsreg.CreateConfigProtocols(gpsreg.VendorUnknown), req.target, sub, conn)
 			cancel()
 			portLock <- port
 			req.resultCh <- configResult{result: rslt, err: err}
@@ -390,7 +390,7 @@ func (a *App) StartCorrections(host string, port int) Result {
 	source := &corrsink.TCPSource{Addr: addr}
 	// Find RTCM packet formats for the scanner.
 	var rtcmFormats []gpsprot.PacketFormat
-	for _, pf := range gpsreg.PacketFormats {
+	for _, pf := range gpsreg.CreatePacketFormats(gpsreg.VendorUnknown) {
 		if pf.Tag() == gpsreg.TagRTCM {
 			rtcmFormats = append(rtcmFormats, pf)
 		}
@@ -593,7 +593,7 @@ func (a *App) DecodePacket(data string, opts DecodeOptions) (*gpsdecode.DecodeRe
 	} else {
 		b = []byte(data)
 	}
-	_, r, err := gpsdecode.Decode(gpsreg.PacketFormats, b, opts.Out)
+	_, r, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), b, opts.Out)
 	if err != nil {
 		return nil, nil
 	}
@@ -1265,8 +1265,8 @@ func (a *App) handleMsgPacket(procs map[gpsprot.Tag]gpsprot.PacketProcessor, pkt
 		a.lg.Warn(pkt.ChecksumError().Error(), "tag", tag, "len", len(pkt.Data))
 		return
 	}
-	_, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
+	msgID, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
 	if err != nil {
-		a.lg.Error("error processing packet", "err", err, "tag", tag, "len", len(pkt.Data))
+		a.lg.Warn("error processing packet", gpsio.PacketWarnAttrs(err, pkt, msgID)...)
 	}
 }
