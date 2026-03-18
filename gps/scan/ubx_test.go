@@ -72,7 +72,7 @@ func TestGoodUBX(t *testing.T) {
 
 	// Create a reader and scanner
 	r := strings.NewReader(data)
-	s := scan.New(r, bufferSize, gpsreg.PacketFormats)
+	s := scan.New(r, bufferSize, gpsreg.CreatePacketFormats(gpsreg.VendorUnknown))
 
 	// Scan the data and verify the packets
 	for i, expectedPacket := range packets {
@@ -107,7 +107,7 @@ func TestUBXRescan(t *testing.T) {
 
 	// Create a reader and scanner
 	r := strings.NewReader(data)
-	s := scan.New(r, bufferSize, gpsreg.PacketFormats)
+	s := scan.New(r, bufferSize, gpsreg.CreatePacketFormats(gpsreg.VendorUnknown))
 
 	// Scan the first packet
 	pkt, err := s.Scan()
@@ -173,7 +173,7 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 
 	// Create a reader and scanner
 	r := strings.NewReader(data)
-	s := scan.New(r, bufferSize, gpsreg.PacketFormats)
+	s := scan.New(r, bufferSize, gpsreg.CreatePacketFormats(gpsreg.VendorUnknown))
 
 	// Top-level loop to scan packets
 	var concatenatedInvalid string

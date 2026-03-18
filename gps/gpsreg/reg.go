@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/as"
 	"github.com/jclark/satpulse/gps/internal/casic"
-	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/internal/nov"
 	"github.com/jclark/satpulse/gps/internal/quectel"
@@ -17,24 +17,11 @@ import (
 	"github.com/jclark/satpulse/gps/internal/unc"
 )
 
-// PacketFormats contains all known packet formats
-var PacketFormats = []gpsprot.PacketFormat{
-	ubx.PacketFormat,
-	casic.PacketFormat,
-	as.PacketFormat,
-	sdbp.PacketFormat,
-	nmea.PacketFormat,
-	rtcm.PacketFormat,
-	unc.BinPacketFormat,
-	unc.AsciiPacketFormat,
-	nov.BinPacketFormat,
-	nov.AsciiPacketFormat,
-}
-
 type Vendor int
 
 const (
 	VendorUnknown Vendor = iota
+	VendorOther
 	VendorAllystar
 	VendorBynav
 	VendorFuruno
@@ -66,6 +53,7 @@ const (
 )
 
 var vendorNames = []string{
+	"other",
 	"Allystar",
 	"Bynav",
 	"Furuno",
@@ -80,6 +68,41 @@ var vendorNames = []string{
 	"u-blox",
 	unc.Vendor,
 	"Zhongke",
+}
+
+// allVendorPacketFormats contains all vendor-specific (non-NMEA, non-RTCM) packet formats.
+var allVendorPacketFormats = []gpsprot.PacketFormat{
+	ubx.PacketFormat,
+	casic.PacketFormat,
+	as.PacketFormat,
+	sdbp.PacketFormat,
+	unc.BinPacketFormat,
+	unc.AsciiPacketFormat,
+	nov.BinPacketFormat,
+	nov.AsciiPacketFormat,
+}
+
+// allVendorPacketFormats maps each vendor to the packet formats they are known to use.
+// NMEA and RTCM are added to these automatically, so they are not included here.
+var allVendorPacketFormatsMap = map[Vendor][]gpsprot.PacketFormat{
+	VendorUnknown:   allVendorPacketFormats,
+	// no entry needed for VendorOther, since it is treated like vendors we do not currently support
+	VendorAllystar:  {as.PacketFormat},
+	VendorBynav:     {nov.BinPacketFormat, nov.AsciiPacketFormat},
+	VendorNovAtel:   {nov.BinPacketFormat, nov.AsciiPacketFormat},
+	VendorSinoGNSS:  {nov.BinPacketFormat, nov.AsciiPacketFormat},
+	VendorTechtotop: {sdbp.PacketFormat},
+	VendorUblox:     {ubx.PacketFormat},
+	VendorUnicore:   {unc.BinPacketFormat, unc.AsciiPacketFormat, nov.BinPacketFormat, nov.AsciiPacketFormat},
+	VendorZhongke:   {casic.PacketFormat},
+}
+
+func CreatePacketFormats(vendor Vendor) []gpsprot.PacketFormat {
+	formats := []gpsprot.PacketFormat{nmea.PacketFormat, rtcm.PacketFormat} // NMEA and RTCM are common to all vendors
+	if vendorFormats, ok := allVendorPacketFormatsMap[vendor]; ok {
+		formats = append(formats, vendorFormats...)
+	}
+	return formats
 }
 
 var vendorMap = func() map[string]Vendor {
@@ -105,12 +128,24 @@ func (v Vendor) String() string {
 	return vendorNames[i]
 }
 
-// ParseVendor parses a vendor string and returns the corresponding Vendor
-func ParseVendor(vendor string) Vendor {
-	if v, ok := vendorMap[strings.ToLower(vendor)]; ok {
-		return v
+// ParseVendor parses a vendor string and returns the corresponding Vendor.
+// An empty string returns VendorUnknown.
+// It returns an error if the string is not a recognized vendor name.
+func ParseVendor(vendor string) (Vendor, error) {
+	if vendor == "" {
+		return VendorUnknown, nil
 	}
-	return VendorUnknown
+	if v, ok := vendorMap[strings.ToLower(vendor)]; ok {
+		return v, nil
+	}
+	return VendorUnknown, fmt.Errorf("unknown vendor: %q", vendor)
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler for Vendor.
+func (v *Vendor) UnmarshalText(data []byte) error {
+	var err error
+	*v, err = ParseVendor(string(data))
+	return err
 }
 
 // CreatePacketProcessors creates packet processors for all registered protocols.
@@ -171,46 +206,21 @@ func novVariantFor(v Vendor) nov.Variant {
 	}
 }
 
-// CreateConfigProtocols creates all available configuration protocols
-func CreateConfigProtocols() []gpsprot.ConfigProtocol {
-	return []gpsprot.ConfigProtocol{
-		ubx.NewConfigProtocol(),
-		unc.NewConfigProtocol(),
-	}
-}
-
-func MakeVendor(vendor string) Vendor {
-	switch strings.ToLower(vendor) {
-	case "allystar":
-		return VendorAllystar
-	case "bynav":
-		return VendorBynav
-	case "furuno":
-		return VendorFuruno
-	case "mediatek":
-		return VendorMediaTek
-	case "novatel":
-		return VendorNovAtel
-	case "quectel":
-		return VendorQuectel
-	case "septentrio":
-		return VendorSeptentrio
-	case "sinognss":
-		return VendorSinoGNSS
-	case "skytraq":
-		return VendorSkyTraq
-	case "techtotop", "taidou":
-		return VendorTechtotop
-	case "trimble":
-		return VendorTrimble
-	case "u-blox", "ublox":
-		return VendorUblox
-	case "unicore":
-		return VendorUnicore
-	case "zhongke":
-		return VendorZhongke
+// CreateConfigProtocols creates configuration protocols appropriate for the vendor.
+// VendorUnknown returns all protocols. A specific vendor returns only matching ones.
+func CreateConfigProtocols(vendor Vendor) []gpsprot.ConfigProtocol {
+	switch vendor {
+	case VendorUnknown:
+		return []gpsprot.ConfigProtocol{
+			ubx.NewConfigProtocol(),
+			unc.NewConfigProtocol(),
+		}
+	case VendorUblox:
+		return []gpsprot.ConfigProtocol{ubx.NewConfigProtocol()}
+	case VendorUnicore:
+		return []gpsprot.ConfigProtocol{unc.NewConfigProtocol()}
 	default:
-		return VendorUnknown
+		return nil
 	}
 }
 

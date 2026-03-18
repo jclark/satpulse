@@ -68,7 +68,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, msgs, conn, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, args)
+	err = run(ctx, lg, target, msgs, conn, v.vendor, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, args)
 	return
 }
 
@@ -136,7 +136,7 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 // Parameter dependencies:
 //   - logMode: must not be testLogMode when msgs is non-nil
 //   - args: only used for test log header when logMode is testLogMode
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msgs any, conn gpsio.Conn, logPath string, logMode packetLogMode, capture opt.Val[time.Duration], showReceiver bool, args []string) error {
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msgs any, conn gpsio.Conn, vendor gpsreg.Vendor, logPath string, logMode packetLogMode, capture opt.Val[time.Duration], showReceiver bool, args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -150,7 +150,8 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msg
 
 	var wg sync.WaitGroup
 
-	pktLog, lf, err := gpsio.LogPackets(lg, &wg, logPath, gpsreg.PacketFormats)
+	pktFormats := gpsreg.CreatePacketFormats(vendor)
+	pktLog, lf, err := gpsio.LogPackets(lg, &wg, logPath, pktFormats)
 	if err != nil {
 		return fmt.Errorf("failed to initialize packet logging: %w", err)
 	}
@@ -168,13 +169,13 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msg
 			pktLog.SemiClose() // Close needs to be called both for input and output packets
 		}
 	}
-	pCh := startScan(ctx, lg, &wg, conn, pktLog)
+	pCh := startScan(ctx, lg, &wg, conn, pktLog, pktFormats)
 
 	var rslt *gpscfg.Result
 	if msgs != nil {
 		err = runMsgs(ctx, lg, conn, pCh, msgs, capture)
 	} else if target != nil {
-		rslt, err = runConfig(ctx, lg, target, pCh, conn, capture, showReceiver)
+		rslt, err = runConfig(ctx, lg, target, pCh, conn, vendor, capture, showReceiver)
 	} else {
 		// Passive capture mode: just read and log packets
 		if capture.IsSet() {
@@ -196,13 +197,13 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msg
 	return err
 }
 
-func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, capture opt.Val[time.Duration], showReceiver bool) (*gpscfg.Result, error) {
+func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, vendor gpsreg.Vendor, capture opt.Val[time.Duration], showReceiver bool) (*gpscfg.Result, error) {
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpscfg relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	pktProcs := gpsreg.CreatePacketProcessors(0)
+	pktProcs := gpsreg.CreatePacketProcessors(vendor)
 	gpsprot.SetAllMsgHandlers(pktProcs, &gpsprot.DefaultHandler{})
-	rslt, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(), target, pCh, conn)
+	rslt, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(vendor), target, pCh, conn)
 	if errors.Is(err, gpscfg.ErrNoProbeResponse) && configTargetIsProbeOnly(target) {
 		err = nil
 	}
@@ -425,9 +426,9 @@ func printTimePulse(f *os.File, tp gpsprot.TimePulse) {
 	fmt.Fprintf(f, "Time pulse: enabled; width %g s; period %g s; polarity %s%s\n", tp.Width.Seconds(), tp.Period.Seconds(), polarity, flags)
 }
 
-func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog) <-chan scan.Packet {
+func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog, pktFormats []gpsprot.PacketFormat) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog, gpsreg.PacketFormats) })
+	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog, pktFormats) })
 	return msg
 }
 

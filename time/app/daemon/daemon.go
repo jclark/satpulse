@@ -15,7 +15,6 @@ import (
 	"github.com/jclark/satpulse/time/internal/gpsevent"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/time/internal/logobs"
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/phc"
@@ -130,7 +129,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	var wg sync.WaitGroup
 	// pLog must be closed by both the startScan goroutine and the conn
 	// gpsio.Scan starts a goroutine that calls conn.Stop() when the context is cancelled
-	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), gpsreg.PacketFormats)
+	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), cfg.GPS.CreatePacketFormats())
 	if err != nil {
 		return err
 	}
@@ -140,7 +139,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if pLog != nil {
 		conn.SetPacketLog(pLog)
 	}
-	pCh := startScan(ctx, lg, &wg, conn, pLog)
+	pCh := startScan(ctx, lg, &wg, conn, pLog, cfg.GPS.CreatePacketFormats())
 
 	pb := startBcast(ctx, lg, &wg, pCh)
 
@@ -179,10 +178,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		lg.Debug("wait group counter dropped to zero")
 	}()
 
-	pktProcs, err := cfg.GPS.CreatePacketProcessors()
-	if err != nil {
-		return err
-	}
+	pktProcs := cfg.GPS.CreatePacketProcessors()
 	// Install a MsgHandler to capture leap second during configuration
 	var lsc leapSecondCapture
 	gpsprot.SetAllMsgHandlers(pktProcs, &lsc)
@@ -194,7 +190,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if err != nil {
 		return err
 	}
-	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(), gct, pCh, conn)
+	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, cfg.GPS.CreateConfigProtocols(), gct, pCh, conn)
 	lsc.logLeapSecond(lg)
 	if err != nil {
 		if errors.Is(err, gpscfg.ErrNoProbeResponse) {
@@ -417,9 +413,9 @@ func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObs
 	}
 }
 
-func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog) <-chan scan.Packet {
+func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog, pktFormats []gpsprot.PacketFormat) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog, gpsreg.PacketFormats) })
+	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog, pktFormats) })
 	return msg
 }
 

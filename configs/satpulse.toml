@@ -13,12 +13,14 @@ speed = 9600
 # Uncommenting the following line will enable configuration of the GPS
 # (changes are not persistent across GPS reboots)
 #config = true
-# This specifies the vendor of your GPS module, if you know it; if you don't, leave it commented out.
-# Accepted values include u-blox, Allystar, Unicore, Quectel (and most other major vendors).
-# At the moment this is only used to handle non-standard numbering of space vehicles in NMEA GSV and GSA sentences.
-# which is needed to show all satellites in the satellites view, particularly when GPS receivers
-# are using versions of NMEA before 4.11.
-# In the future, it will be used to guide other aspects of configuration.
+# This specifies the vendor of your GPS module.
+# Setting this restricts which packet formats the scanner recognizes and which
+# configuration protocols are probed.
+# If not set, all packet formats and configuration protocols are tried.
+# The following values are supported:
+#   u-blox, Unicore, Allystar, Bynav, NovAtel, Quectel, SinoGNSS, Techtotop, Zhongke, other
+# In addition, the following values are allowed and currently treated as equivalent to "other":
+#   Furuno, MediaTek, Septentrio, SkyTraq, Trimble
 #vendor = "u-blox"
 
 [log]

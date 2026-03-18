@@ -61,9 +61,12 @@
 			  "Septentrio",
 			  "SinoGNSS",
 			  "SkyTraq",
+			  "Techtotop",
 			  "Trimble",
 			  "u-blox",
-			  "Unicore"
+			  "Unicore",
+			  "Zhongke",
+			  "other"
 			]
 		  }
 		}

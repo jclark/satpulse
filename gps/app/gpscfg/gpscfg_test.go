@@ -20,7 +20,7 @@ import (
 func TestNativeOnlyDetection(t *testing.T) {
 	mh := msgHandler{
 		lg:          slog.Default(),
-		packetProcs: gpsreg.CreatePacketProcessors(0),
+		packetProcs: gpsreg.CreatePacketProcessors(gpsreg.VendorUnknown),
 		msgCount:    make(map[gpsprot.Tag]int),
 	}
 	mh.msgCount[gpsreg.TagUBX] = 5
@@ -102,7 +102,7 @@ func makeFramingErrorPacket() scan.Packet {
 func setupMsgHandler(configProts []gpsprot.ConfigProtocol) (*msgHandler, chan scan.Packet) {
 	ch := make(chan scan.Packet, 16)
 	mh := &msgHandler{}
-	mh.init(slog.Default(), gpsreg.CreatePacketProcessors(0), configProts, ch)
+	mh.init(slog.Default(), gpsreg.CreatePacketProcessors(gpsreg.VendorUnknown), configProts, ch)
 	return mh, ch
 }
 

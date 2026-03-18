@@ -9,6 +9,7 @@ all:
     speed: 9600        # Baud rate
     interface: eth0    # Network interface
     config: "true"     # Enable GPS configuration
+    vendor: '"u-blox"' # GPS receiver vendor
     config_file: /etc/satpulse.toml  # SatPulse config file path
     http_port: 2000    # HTTP monitoring port
     ansible_ssh_common_args: '-o "SetEnv TERM=dumb"' # needed for Fedora 43
@@ -39,6 +40,7 @@ all:
       speed: 115200
       instance: ttyUSB0
       config: "false"
+      vendor: '"SinoGNSS"'
 
     # NEO-F10T on USB
     roquefort.lan:
@@ -110,6 +112,7 @@ all:
     wensleydale.lan:
       speed: 115200
       config: "false"
+      vendor: '"Unicore"'
     
     # TimeHAT on Pi 5 with M.2 NEO-M9N
     taleggio.lan:
@@ -121,6 +124,7 @@ all:
     serpa.lan:
       speed: 115200
       config: "false"
+      vendor: '"Unicore"'
 
     # LBE-1421 PPS out attached to E810-XXVDA4T
     brie.lan:
