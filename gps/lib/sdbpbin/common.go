@@ -185,8 +185,10 @@ func Serialize(msg Msg) ([]byte, error) {
 	}
 	buf := new(bytes.Buffer)
 	if vMsg, ok := msg.(VaryingMsg); ok {
-		if err := binary.Write(buf, Endian, vMsg.FixedPart()); err != nil {
-			return nil, err
+		if fixed := vMsg.FixedPart(); fixed != nil {
+			if err := binary.Write(buf, Endian, fixed); err != nil {
+				return nil, err
+			}
 		}
 		if err := binary.Write(buf, Endian, vMsg.VaryingPart()); err != nil {
 			return nil, err
