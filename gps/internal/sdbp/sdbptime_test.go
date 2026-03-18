@@ -33,8 +33,10 @@ func parsePacket(t *testing.T, hexStr string) sdbpbin.Msg {
 func ptr[T any](v T) *T { return &v }
 
 // Adjacent pair from taidou-capture2.jsonl:
-//   {"t":"2026-03-17T00:15:18.054733Z","tag":"SDBP","msg":"DAT-TPPS","bin":"233e064111000008000000b83405416a094d0100000001540f"}
-//   {"t":"2026-03-17T00:15:18.056741Z","tag":"SDBP","msg":"DAT-GPST","bin":"233e0617130040005b0a036a09ad8d24ff3f350541030000006550"}
+//
+//	{"t":"2026-03-17T00:15:18.054733Z","tag":"SDBP","msg":"DAT-TPPS","bin":"233e064111000008000000b83405416a094d0100000001540f"}
+//	{"t":"2026-03-17T00:15:18.056741Z","tag":"SDBP","msg":"DAT-GPST","bin":"233e0617130040005b0a036a09ad8d24ff3f350541030000006550"}
+//
 // Capture time (rounded to second): 2026-03-17 00:15:18 UTC
 const (
 	captureTPPS = "233e064111000008000000b83405416a094d0100000001540f"
@@ -184,7 +186,7 @@ func TestTimeDatUTCT2(t *testing.T) {
 		want  *gpsprot.TimeMsg
 	}{
 		{
-			name: "captured",
+			name:  "captured",
 			input: parsePacket(t, "233e061f1f0048002d0d0b02ea0703110d173741a002000400000012ffffffff000000000028d8").(*sdbpbin.DatUTCT2),
 			want: &gpsprot.TimeMsg{
 				Ref:         gpsprot.NavSolution,
@@ -230,7 +232,7 @@ func TestTimeDatUTCT2(t *testing.T) {
 	}
 }
 
-func TestLeapDatUTCT2(t *testing.T) {
+func TestLeapSecondDatUTCT2(t *testing.T) {
 	tests := []struct {
 		name  string
 		input *sdbpbin.DatUTCT2
@@ -263,22 +265,22 @@ func TestLeapDatUTCT2(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := leapDatUTCT2(tc.input)
+			got := leapSecondDatUTCT2(tc.input)
 			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("leapDatUTCT2:\n  got  %+v\n  want %+v", got, tc.want)
+				t.Errorf("leapSecondDatUTCT2:\n  got  %+v\n  want %+v", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestLeapDatGPSUCaptured(t *testing.T) {
+func TestLeapSecondDatGPSUCaptured(t *testing.T) {
 	m := parsePacket(t, "233e062d230000000000000030be000000000000e0bc0000000000000000003006006a09128909071246da").(*sdbpbin.DatGPSU)
-	got := leapDatGNSSU(&m.DatGNSSU, gpsprot.GPS)
+	got := leapSecondDatGNSSU(&m.DatGNSSU, gpsprot.GPS)
 	want := &gpsprot.LeapSecondMsg{
 		LeapSecond: ptime.LeapSecond2016(),
 		GNSS:       gpsprot.GPS,
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("leapDatGNSSU:\n  got  %+v\n  want %+v", got, want)
+		t.Errorf("leapSecondDatGNSSU:\n  got  %+v\n  want %+v", got, want)
 	}
 }

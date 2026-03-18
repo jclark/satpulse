@@ -100,9 +100,9 @@ func dopDatDOP(ne *gpsprot.NavEpochMsg, m *sdbpbin.DatDOP) {
 		return
 	}
 	ne.NumSVUsed.Set(uint16(m.FixSats))
-	ne.DOP.Geom = opt.Make(float64(m.GDOP) * 0.01)
-	ne.DOP.Pos = opt.Make(float64(m.PDOP) * 0.01)
-	ne.DOP.Hor = opt.Make(float64(m.HDOP) * 0.01)
-	ne.DOP.Vert = opt.Make(float64(m.VDOP) * 0.01)
-	ne.DOP.Time = opt.Make(float64(m.TDOP) * 0.01)
+	ne.DOP.Geom = opt.Make(float64(m.GDOP) / sdbpbin.DatDOPMeter)
+	ne.DOP.Pos = opt.Make(float64(m.PDOP) / sdbpbin.DatDOPMeter)
+	ne.DOP.Hor = opt.Make(float64(m.HDOP) / sdbpbin.DatDOPMeter)
+	ne.DOP.Vert = opt.Make(float64(m.VDOP) / sdbpbin.DatDOPMeter)
+	ne.DOP.Time = opt.Make(float64(m.TDOP) / sdbpbin.DatDOPMeter)
 }

@@ -1,7 +1,6 @@
 package sdbp
 
 import (
-	"log/slog"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -21,7 +20,7 @@ func timeDatGPST(m *sdbpbin.DatGPST) *gpsprot.TimeMsg {
 		GNSS:        gpsprot.GPS,
 		TAITime:     ptime.GPS(int16(m.Week), ptime.Seconds(m.TOW)),
 	}
-	if m.TimeAccuracy != 0xFFFFFFFF {
+	if m.TimeAccuracy != sdbpbin.TimeAccuracyInvalid {
 		t.Accuracy = time.Duration(m.TimeAccuracy) * time.Nanosecond
 	}
 	return &t
@@ -39,7 +38,7 @@ func timeDatBDST(m *sdbpbin.DatBDST) *gpsprot.TimeMsg {
 		GNSS:        gpsprot.BDS,
 		TAITime:     ptime.BeiDou(int16(m.Week), ptime.Seconds(m.TOW)),
 	}
-	if m.TimeAccuracy != 0xFFFFFFFF {
+	if m.TimeAccuracy != sdbpbin.TimeAccuracyInvalid {
 		t.Accuracy = time.Duration(m.TimeAccuracy) * time.Nanosecond
 	}
 	return &t
@@ -57,7 +56,7 @@ func timeDatGALT(m *sdbpbin.DatGALT) *gpsprot.TimeMsg {
 		GNSS:        gpsprot.GAL,
 		TAITime:     ptime.Galileo(int16(m.Week), ptime.Seconds(m.TOW)),
 	}
-	if m.TimeAccuracy != 0xFFFFFFFF {
+	if m.TimeAccuracy != sdbpbin.TimeAccuracyInvalid {
 		t.Accuracy = time.Duration(m.TimeAccuracy) * time.Nanosecond
 	}
 	return &t
@@ -144,9 +143,9 @@ func utct2GNSS(ref sdbpbin.DatUTCT2RefGrid) gpsprot.GNSS {
 	}
 }
 
-// leapDatUTCT2 converts DatUTCT2 to LeapSecondMsg.
+// leapSecondDatUTCT2 converts DatUTCT2 to LeapSecondMsg.
 // Returns nil when leap forecast/correction bits are not set.
-func leapDatUTCT2(m *sdbpbin.DatUTCT2) *gpsprot.LeapSecondMsg {
+func leapSecondDatUTCT2(m *sdbpbin.DatUTCT2) *gpsprot.LeapSecondMsg {
 	if m.Valid&(sdbpbin.DatUTCT2LeapForecast|sdbpbin.DatUTCT2LeapCorr) !=
 		sdbpbin.DatUTCT2LeapForecast|sdbpbin.DatUTCT2LeapCorr {
 		return nil
@@ -160,9 +159,9 @@ func leapDatUTCT2(m *sdbpbin.DatUTCT2) *gpsprot.LeapSecondMsg {
 	}
 }
 
-// leapDatGNSSU converts a DatGNSSU to LeapSecondMsg using the appropriate GNSS-specific decoder.
+// leapSecondDatGNSSU converts a DatGNSSU to LeapSecondMsg using the appropriate GNSS-specific decoder.
 // Returns nil on error.
-func leapDatGNSSU(m *sdbpbin.DatGNSSU, gnss gpsprot.GNSS) *gpsprot.LeapSecondMsg {
+func leapSecondDatGNSSU(m *sdbpbin.DatGNSSU, gnss gpsprot.GNSS) *gpsprot.LeapSecondMsg {
 	g := ptime.GNSSLeapSecond{
 		WNLSF:    uint8(m.WNLSF),
 		DN:       m.DN,
@@ -185,7 +184,6 @@ func leapDatGNSSU(m *sdbpbin.DatGNSSU, gnss gpsprot.GNSS) *gpsprot.LeapSecondMsg
 		ls, err = ptime.GPSLeapSecond(g, now)
 	}
 	if err != nil {
-		slog.Debug("sdbp: leapDatGNSSU", "gnss", gnss, "err", err)
 		return nil
 	}
 	return &gpsprot.LeapSecondMsg{LeapSecond: ls, GNSS: gnss}

@@ -19,11 +19,11 @@ func TestSatsDatSAT(t *testing.T) {
 			input: &sdbpbin.DatSAT{
 				DatSATFixed: sdbpbin.DatSATFixed{SatCount: 5},
 				Sats: []sdbpbin.DatSATEntry{
-					{GNSSID: 1, SatID: 15, SignalID: 0, CN0: 34, Elev: 53, Azim: 11, Flags: 0x00a7},
-					{GNSSID: 0, SatID: 5, SignalID: 0, CN0: 41, Elev: 40, Azim: 256, Flags: 0x00a7},
-					{GNSSID: 4, SatID: 9, SignalID: 0, CN0: 47, Elev: 70, Azim: 353, Flags: 0x00a5},
-					{GNSSID: 0, SatID: 1, SignalID: 7, CN0: 0, Elev: 38, Azim: 102, Flags: 0x000a}, // unknown, skipped
-					{GNSSID: 5, SatID: 4, OrbitID: 6, SignalID: 0, CN0: 47, Elev: 41, Azim: 333, Flags: 0x00a5},
+					{GNSSID: sdbpbin.GPS, SatID: 15, SignalID: sdbpbin.SigGPSL1CA, CN0: 34, Elev: 53, Azim: 11, Flags: 0x00a7},
+					{GNSSID: sdbpbin.BDS, SatID: 5, SignalID: sdbpbin.SigBDSB1I, CN0: 41, Elev: 40, Azim: 256, Flags: 0x00a7},
+					{GNSSID: sdbpbin.GAL, SatID: 9, SignalID: sdbpbin.SigGALE1, CN0: 47, Elev: 70, Azim: 353, Flags: 0x00a5},
+					{GNSSID: sdbpbin.BDS, SatID: 1, SignalID: 7, CN0: 0, Elev: 38, Azim: 102, Flags: 0x000a}, // unknown, skipped
+					{GNSSID: sdbpbin.GLO, SatID: 4, OrbitID: 6, SignalID: sdbpbin.SigGLOG1, CN0: 47, Elev: 41, Azim: 333, Flags: 0x00a5},
 				},
 			},
 			want: &gpsprot.SatellitesMsg{
@@ -42,7 +42,7 @@ func TestSatsDatSAT(t *testing.T) {
 			input: &sdbpbin.DatSAT{
 				DatSATFixed: sdbpbin.DatSATFixed{SatCount: 1},
 				Sats: []sdbpbin.DatSATEntry{
-					{GNSSID: 1, SatID: 20, SignalID: 0, CN0: 18, Elev: 14, Azim: 35, Flags: 0x0027},
+					{GNSSID: sdbpbin.GPS, SatID: 20, SignalID: sdbpbin.SigGPSL1CA, CN0: 18, Elev: 14, Azim: 35, Flags: 0x0027},
 				},
 			},
 			want: &gpsprot.SatellitesMsg{
@@ -65,8 +65,8 @@ func TestSatsDatSAT(t *testing.T) {
 			input: &sdbpbin.DatSAT{
 				DatSATFixed: sdbpbin.DatSATFixed{SatCount: 2},
 				Sats: []sdbpbin.DatSATEntry{
-					{GNSSID: 0, SatID: 1, SignalID: 7, CN0: 0, Flags: 0x000a},
-					{GNSSID: 1, SatID: 13, SignalID: 7, CN0: 0, Flags: 0x0005},
+					{GNSSID: sdbpbin.BDS, SatID: 1, SignalID: 7, CN0: 0, Flags: 0x000a},
+					{GNSSID: sdbpbin.GPS, SatID: 13, SignalID: 7, CN0: 0, Flags: 0x0005},
 				},
 			},
 			want: nil,
@@ -93,9 +93,8 @@ func TestSatsDatSATCaptured(t *testing.T) {
 	// Count entries with known signals
 	var wantSVs int
 	for _, s := range m.Sats {
-		if int(s.GNSSID) < len(sdbpSignal) {
-			sigs := sdbpSignal[s.GNSSID]
-			if int(s.SignalID) < len(sigs) && sigs[s.SignalID].id != "" {
+		if sigMap, ok := signalIDMap[s.GNSSID]; ok {
+			if _, ok := sigMap[s.SignalID]; ok {
 				wantSVs++
 			}
 		}

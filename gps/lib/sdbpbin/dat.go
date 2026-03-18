@@ -41,13 +41,16 @@ const (
 	DatTimeWeekValid
 )
 
+// TimeAccuracyInvalid is the sentinel value for unknown time accuracy.
+const TimeAccuracyInvalid = 0xFFFFFFFF
+
 // DatGNSST is the common layout for DAT-BDST, DAT-GPST, and DAT-GALT (19 bytes).
 type DatGNSST struct {
 	DatNavHeader
 	Valid        DatTimeValid
 	Week         uint16
 	TOW          float64 // seconds of week
-	TimeAccuracy uint32  // nanoseconds; 0xFFFFFFFF means invalid
+	TimeAccuracy uint32  // nanoseconds; TimeAccuracyInvalid means unknown
 }
 
 // TimeValid reports whether the time fields are valid.
@@ -166,6 +169,9 @@ type DatGALU struct{ DatGNSSU }
 
 func (m *DatGALU) ID() MsgID { return DatGALUID }
 
+// DatDOPMeter is 1 meter in DatDOP units.
+const DatDOPMeter = 100
+
 // DatDOP is DAT-DOP (class 0x06, id 0x13, 16 bytes).
 type DatDOP struct {
 	DatNavHeader
@@ -258,6 +264,67 @@ type DatNED3 struct {
 
 func (m *DatNED3) ID() MsgID { return DatNED3ID }
 
+// GNSSID identifies a GNSS constellation in DAT-SAT.
+type GNSSID uint8
+
+const (
+	BDS  GNSSID = 0
+	GPS  GNSSID = 1
+	QZSS GNSSID = 2
+	SBAS GNSSID = 3
+	GAL  GNSSID = 4
+	GLO  GNSSID = 5
+)
+
+// SignalID identifies a signal within a constellation in DAT-SAT.
+type SignalID uint8
+
+// BDS signal IDs
+const (
+	SigBDSB1I SignalID = 0
+	SigBDSB1C SignalID = 1
+	SigBDSB2I SignalID = 2
+	SigBDSB2a SignalID = 3
+	SigBDSB2b SignalID = 4
+	SigBDSB3I SignalID = 5
+)
+
+// GPS signal IDs
+const (
+	SigGPSL1CA SignalID = 0
+	SigGPSL1C  SignalID = 1
+	SigGPSL2C  SignalID = 2
+	SigGPSL2P  SignalID = 3
+	SigGPSL5   SignalID = 4
+)
+
+// QZSS signal IDs
+const (
+	SigQZSSL1CA SignalID = 0
+	SigQZSSL1C  SignalID = 1
+	SigQZSSL2C  SignalID = 2
+	SigQZSSL2P  SignalID = 3
+	SigQZSSL5   SignalID = 4
+)
+
+// SBAS signal IDs
+const (
+	SigSBASL1CA SignalID = 0
+)
+
+// Galileo signal IDs
+const (
+	SigGALE1  SignalID = 0
+	SigGALE5a SignalID = 1
+	SigGALE5b SignalID = 2
+)
+
+// GLONASS signal IDs
+const (
+	SigGLOG1 SignalID = 0
+	SigGLOG2 SignalID = 1
+)
+
 // DatSATFixed is the fixed part of DAT-SAT (class 0x06, id 0x30).
 type DatSATFixed struct {
 	DatNavHeader
@@ -266,10 +333,10 @@ type DatSATFixed struct {
 
 // DatSATEntry is a per-satellite entry in DAT-SAT (14 bytes).
 type DatSATEntry struct {
-	GNSSID     uint8
+	GNSSID     GNSSID
 	SatID      uint8
 	OrbitID    int8
-	SignalID   uint8
+	SignalID   SignalID
 	CN0        uint8
 	Elev       int8   // degrees
 	Azim       uint16 // degrees

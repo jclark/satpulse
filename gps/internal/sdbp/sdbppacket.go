@@ -67,9 +67,6 @@ func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 }
 
 func (f packetFormat) MsgID(pkt []byte) string {
-	if len(pkt) < 4 {
-		return "SDBP-??"
-	}
 	return sdbpbin.PacketMsgId(pkt).String()
 }
 

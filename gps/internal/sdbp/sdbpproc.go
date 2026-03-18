@@ -15,7 +15,7 @@ type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
 	mh             gpsprot.MsgHandler
 	mgr            *gpsprot.NavEpochManager
-	curNavEpoch    uint32              // current LocalTimestamp+1 (0 means no epoch seen)
+	curNavEpoch    uint32               // current LocalTimestamp+1 (0 means no epoch seen)
 	curNavEpochMsg *gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
 }
 
@@ -82,13 +82,13 @@ func (p *PacketProcessor) dispatch(m sdbpbin.Msg, tRead time.Time) bool {
 		p.emitTime(timeDatTPPS(mt), tRead)
 	case *sdbpbin.DatUTCT2:
 		p.emitTime(timeDatUTCT2(mt), tRead)
-		p.emitLeap(leapDatUTCT2(mt), tRead)
+		p.emitLeapSecond(leapSecondDatUTCT2(mt), tRead)
 	case *sdbpbin.DatGPSU:
-		p.emitLeap(leapDatGNSSU(&mt.DatGNSSU, gpsprot.GPS), tRead)
+		p.emitLeapSecond(leapSecondDatGNSSU(&mt.DatGNSSU, gpsprot.GPS), tRead)
 	case *sdbpbin.DatGALU:
-		p.emitLeap(leapDatGNSSU(&mt.DatGNSSU, gpsprot.GAL), tRead)
+		p.emitLeapSecond(leapSecondDatGNSSU(&mt.DatGNSSU, gpsprot.GAL), tRead)
 	case *sdbpbin.DatBDSU:
-		p.emitLeap(leapDatGNSSU(&mt.DatGNSSU, gpsprot.BDS), tRead)
+		p.emitLeapSecond(leapSecondDatGNSSU(&mt.DatGNSSU, gpsprot.BDS), tRead)
 	case *sdbpbin.DatLLA3:
 		ne := p.curNavEpochMsg
 		posG := posGeoDatLLA3(ne, mt)
@@ -186,7 +186,7 @@ func (p *PacketProcessor) emitTime(tm *gpsprot.TimeMsg, tRead time.Time) {
 	}
 }
 
-func (p *PacketProcessor) emitLeap(lm *gpsprot.LeapSecondMsg, tRead time.Time) {
+func (p *PacketProcessor) emitLeapSecond(lm *gpsprot.LeapSecondMsg, tRead time.Time) {
 	if lm == nil {
 		return
 	}
