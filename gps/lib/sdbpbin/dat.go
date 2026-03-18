@@ -2,6 +2,23 @@ package sdbpbin
 
 import "fmt"
 
+const (
+	DatDOPID   MsgID = clsDAT | (0x13 << 8)
+	DatBDSTID  MsgID = clsDAT | (0x16 << 8)
+	DatGPSTID  MsgID = clsDAT | (0x17 << 8)
+	DatGALTID  MsgID = clsDAT | (0x19 << 8)
+	DatECEF2ID MsgID = clsDAT | (0x1B << 8)
+	DatLLA3ID  MsgID = clsDAT | (0x1D << 8)
+	DatNED3ID  MsgID = clsDAT | (0x1E << 8)
+	DatUTCT2ID MsgID = clsDAT | (0x1F << 8)
+	DatBDSUID  MsgID = clsDAT | (0x2C << 8)
+	DatGPSUID  MsgID = clsDAT | (0x2D << 8)
+	DatGALUID  MsgID = clsDAT | (0x2E << 8)
+	DatSATID   MsgID = clsDAT | (0x30 << 8)
+	DatTSURVID MsgID = clsDAT | (0x40 << 8)
+	DatTPPSID  MsgID = clsDAT | (0x41 << 8)
+)
+
 // NavMsg is implemented by DAT messages that participate in nav epoch tracking.
 type NavMsg interface {
 	Msg
@@ -41,17 +58,17 @@ func (m *DatGNSST) TimeValid() bool {
 // DatBDST is DAT-BDST (class 0x06, id 0x16). BeiDou time.
 type DatBDST struct{ DatGNSST }
 
-func (m *DatBDST) ID() MsgID { return makeMsgID(clsDAT, 0x16) }
+func (m *DatBDST) ID() MsgID { return DatBDSTID }
 
 // DatGPST is DAT-GPST (class 0x06, id 0x17). GPS time.
 type DatGPST struct{ DatGNSST }
 
-func (m *DatGPST) ID() MsgID { return makeMsgID(clsDAT, 0x17) }
+func (m *DatGPST) ID() MsgID { return DatGPSTID }
 
 // DatGALT is DAT-GALT (class 0x06, id 0x19). Galileo time.
 type DatGALT struct{ DatGNSST }
 
-func (m *DatGALT) ID() MsgID { return makeMsgID(clsDAT, 0x19) }
+func (m *DatGALT) ID() MsgID { return DatGALTID }
 
 // UTCType identifies the UTC realization used when TimeRef is UTC.
 type UTCType uint8
@@ -74,7 +91,7 @@ type DatTPPS struct {
 	UTCType     UTCType // UTC source
 }
 
-func (m *DatTPPS) ID() MsgID { return makeMsgID(clsDAT, 0x41) }
+func (m *DatTPPS) ID() MsgID { return DatTPPSID }
 
 // DatUTCT2Valid is a bitmask for DatUTCT2 validity flags.
 type DatUTCT2Valid uint8
@@ -118,7 +135,7 @@ type DatUTCT2 struct {
 	LeapDay       uint8
 }
 
-func (m *DatUTCT2) ID() MsgID { return makeMsgID(clsDAT, 0x1F) }
+func (m *DatUTCT2) ID() MsgID { return DatUTCT2ID }
 
 // DatGNSSU is the shared layout for DAT-GPSU, DAT-GALU, DAT-BDSU (35 bytes).
 // These carry broadcast UTC parameters, not per-epoch nav data.
@@ -137,17 +154,17 @@ type DatGNSSU struct {
 // DatBDSU is DAT-BDSU (class 0x06, id 0x2C). BeiDou UTC parameters.
 type DatBDSU struct{ DatGNSSU }
 
-func (m *DatBDSU) ID() MsgID { return makeMsgID(clsDAT, 0x2C) }
+func (m *DatBDSU) ID() MsgID { return DatBDSUID }
 
 // DatGPSU is DAT-GPSU (class 0x06, id 0x2D). GPS UTC parameters.
 type DatGPSU struct{ DatGNSSU }
 
-func (m *DatGPSU) ID() MsgID { return makeMsgID(clsDAT, 0x2D) }
+func (m *DatGPSU) ID() MsgID { return DatGPSUID }
 
 // DatGALU is DAT-GALU (class 0x06, id 0x2E). Galileo UTC parameters.
 type DatGALU struct{ DatGNSSU }
 
-func (m *DatGALU) ID() MsgID { return makeMsgID(clsDAT, 0x2E) }
+func (m *DatGALU) ID() MsgID { return DatGALUID }
 
 // DatDOP is DAT-DOP (class 0x06, id 0x13, 16 bytes).
 type DatDOP struct {
@@ -161,7 +178,7 @@ type DatDOP struct {
 	TDOP    uint16
 }
 
-func (m *DatDOP) ID() MsgID { return makeMsgID(clsDAT, 0x13) }
+func (m *DatDOP) ID() MsgID { return DatDOPID }
 
 // DatECEF2 is DAT-ECEF2 (class 0x06, id 0x1B, 75 bytes).
 type DatECEF2 struct {
@@ -189,7 +206,7 @@ type DatECEF2 struct {
 	VZAcc       uint32
 }
 
-func (m *DatECEF2) ID() MsgID { return makeMsgID(clsDAT, 0x1B) }
+func (m *DatECEF2) ID() MsgID { return DatECEF2ID }
 
 // DatLLA3 is DAT-LLA3 (class 0x06, id 0x1D, 64 bytes).
 type DatLLA3 struct {
@@ -216,7 +233,7 @@ type DatLLA3 struct {
 	HeadingAcc  uint32  // 0.01 degrees
 }
 
-func (m *DatLLA3) ID() MsgID { return makeMsgID(clsDAT, 0x1D) }
+func (m *DatLLA3) ID() MsgID { return DatLLA3ID }
 
 // DatNED3 is DAT-NED3 (class 0x06, id 0x1E, 40 bytes).
 type DatNED3 struct {
@@ -239,7 +256,7 @@ type DatNED3 struct {
 	VDAcc       uint32
 }
 
-func (m *DatNED3) ID() MsgID { return makeMsgID(clsDAT, 0x1E) }
+func (m *DatNED3) ID() MsgID { return DatNED3ID }
 
 // DatSATFixed is the fixed part of DAT-SAT (class 0x06, id 0x30).
 type DatSATFixed struct {
@@ -266,7 +283,7 @@ type DatSAT struct {
 	Sats []DatSATEntry
 }
 
-func (m *DatSAT) ID() MsgID { return makeMsgID(clsDAT, 0x30) }
+func (m *DatSAT) ID() MsgID { return DatSATID }
 
 func (m *DatSAT) InitVaryingPart(payloadLen int) error {
 	want := 5 + int(m.SatCount)*14
@@ -294,7 +311,7 @@ type DatTSURV struct {
 	AvgVariance uint32 // 10^-4 m^2
 }
 
-func (m *DatTSURV) ID() MsgID { return makeMsgID(clsDAT, 0x40) }
+func (m *DatTSURV) ID() MsgID { return DatTSURVID }
 
 func init() {
 	regMsg[DatBDST]("BDST")

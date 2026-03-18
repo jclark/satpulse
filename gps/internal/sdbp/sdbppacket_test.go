@@ -16,6 +16,8 @@ var validPackets = []struct {
 }{
 	// QUE-VER from protocol doc
 	{"QUE-VER", "233e 0501 0000 0617", "QUE-VER"},
+	// AST-GALA: unimplemented message, tests that other.go name registration works
+	{"AST-GALA", "233e 0442 0000 46d6", "AST-GALA"},
 }
 
 func TestChecksum(t *testing.T) {

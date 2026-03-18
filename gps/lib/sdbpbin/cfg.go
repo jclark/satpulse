@@ -1,5 +1,17 @@
 package sdbpbin
 
+const (
+	CfgGNSSID   MsgID = clsCFG | (0x11 << 8)
+	CfgUARTID   MsgID = clsCFG | (0x21 << 8)
+	CfgRateID   MsgID = clsCFG | (0x36 << 8)
+	CfgPPSID    MsgID = clsCFG | (0x41 << 8)
+	CfgNMEAID   MsgID = clsCFG | (0x51 << 8)
+	CfgSDBPID   MsgID = clsCFG | (0x52 << 8)
+	CfgTMODEID  MsgID = clsCFG | (0x43 << 8)
+	CfgDELAY2ID MsgID = clsCFG | (0x44 << 8)
+	CfgTMODE2ID MsgID = clsCFG | (0x45 << 8)
+)
+
 // GNSSMask is a bitmask of enabled GNSS constellations.
 type GNSSMask uint8
 
@@ -16,7 +28,7 @@ type CfgGNSS struct {
 	Reserved          uint8
 }
 
-func (m *CfgGNSS) ID() MsgID { return makeMsgID(clsCFG, 0x11) }
+func (m *CfgGNSS) ID() MsgID { return CfgGNSSID }
 
 // BaudRate identifies a serial baud rate.
 type BaudRate uint8
@@ -53,7 +65,7 @@ type CfgUART struct {
 	Reserved uint8
 }
 
-func (m *CfgUART) ID() MsgID { return makeMsgID(clsCFG, 0x21) }
+func (m *CfgUART) ID() MsgID { return CfgUARTID }
 
 // CfgRate is CFG-RATE (class 0x03, id 0x36).
 type CfgRate struct {
@@ -62,7 +74,7 @@ type CfgRate struct {
 	Reserved     uint8
 }
 
-func (m *CfgRate) ID() MsgID { return makeMsgID(clsCFG, 0x36) }
+func (m *CfgRate) ID() MsgID { return CfgRateID }
 
 // PPSPolarity is the pulse polarity.
 type PPSPolarity uint8
@@ -89,7 +101,7 @@ type CfgPPS struct {
 	Reserved   uint8
 }
 
-func (m *CfgPPS) ID() MsgID { return makeMsgID(clsCFG, 0x41) }
+func (m *CfgPPS) ID() MsgID { return CfgPPSID }
 
 // PollCfgPPS builds a CFG-PPS query packet for the given PPS index.
 func PollCfgPPS(index uint8) []byte {
@@ -117,7 +129,6 @@ const (
 	NMEASentT01
 )
 
-var cfgNMEAID = makeMsgID(clsCFG, 0x51)
 
 // CfgNMEA is CFG-NMEA response (class 0x03, id 0x51).
 // Response format: SentenceID, UART1 freq, UART2 freq, SPI freq, I2C freq, Reserved.
@@ -130,21 +141,20 @@ type CfgNMEA struct {
 	Reserved   uint8
 }
 
-func (m *CfgNMEA) ID() MsgID { return cfgNMEAID }
+func (m *CfgNMEA) ID() MsgID { return CfgNMEAID }
 
 // SetCfgNMEA builds a CFG-NMEA set command packet.
 func SetCfgNMEA(sentence NMEASentence, port Port, frequency uint8) []byte {
-	pkt, _ := PackMsg(cfgNMEAID, []byte{byte(sentence), byte(port), frequency, 0})
+	pkt, _ := PackMsg(CfgNMEAID, []byte{byte(sentence), byte(port), frequency, 0})
 	return pkt
 }
 
 // PollCfgNMEA builds a CFG-NMEA query packet.
 func PollCfgNMEA(sentence NMEASentence) []byte {
-	pkt, _ := PackMsg(cfgNMEAID, []byte{byte(sentence)})
+	pkt, _ := PackMsg(CfgNMEAID, []byte{byte(sentence)})
 	return pkt
 }
 
-var cfgSDBPID = makeMsgID(clsCFG, 0x52)
 
 // CfgSDBP is CFG-SDBP response (class 0x03, id 0x52).
 // Response format: MsgClass, MsgID, UART1 freq, UART2 freq, SPI freq, I2C freq, Reserved.
@@ -158,17 +168,17 @@ type CfgSDBP struct {
 	Reserved uint8
 }
 
-func (m *CfgSDBP) ID() MsgID { return cfgSDBPID }
+func (m *CfgSDBP) ID() MsgID { return CfgSDBPID }
 
 // SetCfgSDBP builds a CFG-SDBP set command packet.
 func SetCfgSDBP(msgClass, msgID uint8, port Port, enable, rate uint8) []byte {
-	pkt, _ := PackMsg(cfgSDBPID, []byte{msgClass, msgID, byte(port), enable, rate})
+	pkt, _ := PackMsg(CfgSDBPID, []byte{msgClass, msgID, byte(port), enable, rate})
 	return pkt
 }
 
 // PollCfgSDBP builds a CFG-SDBP query packet.
 func PollCfgSDBP(msgClass, msgID uint8) []byte {
-	pkt, _ := PackMsg(cfgSDBPID, []byte{msgClass, msgID})
+	pkt, _ := PackMsg(CfgSDBPID, []byte{msgClass, msgID})
 	return pkt
 }
 
@@ -193,7 +203,7 @@ type CfgTMODE struct {
 	FixedAcc   uint32 // 10^-2 m
 }
 
-func (m *CfgTMODE) ID() MsgID { return makeMsgID(clsCFG, 0x43) }
+func (m *CfgTMODE) ID() MsgID { return CfgTMODEID }
 
 // CfgDELAY2 is CFG-DELAY2 (class 0x03, id 0x44, 9 bytes).
 type CfgDELAY2 struct {
@@ -202,7 +212,7 @@ type CfgDELAY2 struct {
 	Reserved   uint8
 }
 
-func (m *CfgDELAY2) ID() MsgID { return makeMsgID(clsCFG, 0x44) }
+func (m *CfgDELAY2) ID() MsgID { return CfgDELAY2ID }
 
 // CfgTMODE2 is CFG-TMODE2 (class 0x03, id 0x45, 25 bytes).
 // Fixed position in LLA (Lon/Lat in 10^-7 deg, Alt in 10^-2 m).
@@ -216,7 +226,7 @@ type CfgTMODE2 struct {
 	FixedAcc   uint32 // 10^-2 m
 }
 
-func (m *CfgTMODE2) ID() MsgID { return makeMsgID(clsCFG, 0x45) }
+func (m *CfgTMODE2) ID() MsgID { return CfgTMODE2ID }
 
 func init() {
 	regMsg[CfgGNSS]("GNSS")
