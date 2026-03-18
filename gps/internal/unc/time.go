@@ -6,8 +6,8 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nov"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
-	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
+	"github.com/jclark/satpulse/gps/ptime"
 )
 
 func timeMsgFromRecTime(hdr *uncmsg.MsgHdr, recTime *uncmsg.RecTime, tag gpsprot.Tag) (*gpsprot.TimeMsg, error) {
@@ -50,11 +50,9 @@ type utcConversionParams struct {
 }
 
 func utcConversionParamsFromGPSUTC(utc *uncmsg.GPSUTC, now ptime.Time) (*utcConversionParams, error) {
-	gnssLS := ptime.GNSSLeapSecond{
-		WNLSF:    uint8(utc.WnLsf),
-		DN:       uint8(utc.Dn),
-		DeltaLS:  int8(utc.DeltatLs),
-		DeltaLSF: int8(utc.DeltatLsf),
+	gnssLS, ok := gnssLeapSecondParams(utc.WnLsf, utc.Dn, utc.DeltatLs, utc.DeltatLsf)
+	if !ok {
+		return nil, nil
 	}
 	ls, err := ptime.GPSLeapSecond(gnssLS, now)
 	if err != nil {
@@ -71,11 +69,9 @@ func utcConversionParamsFromGPSUTC(utc *uncmsg.GPSUTC, now ptime.Time) (*utcConv
 }
 
 func utcConversionParamsFromGALUTC(utc *uncmsg.GALUTC, now ptime.Time) (*utcConversionParams, error) {
-	gnssLS := ptime.GNSSLeapSecond{
-		WNLSF:    uint8(utc.WnLsf),
-		DN:       uint8(utc.Dn),
-		DeltaLS:  int8(utc.DeltatLs),
-		DeltaLSF: int8(utc.DeltatLsf),
+	gnssLS, ok := gnssLeapSecondParams(utc.WnLsf, utc.Dn, utc.DeltatLs, utc.DeltatLsf)
+	if !ok {
+		return nil, nil
 	}
 	ls, err := ptime.GalileoLeapSecond(gnssLS, now)
 	if err != nil {
@@ -92,11 +88,9 @@ func utcConversionParamsFromGALUTC(utc *uncmsg.GALUTC, now ptime.Time) (*utcConv
 }
 
 func utcConversionParamsFromBD3UTC(utc *uncmsg.BD3UTC, now ptime.Time) (*utcConversionParams, error) {
-	gnssLS := ptime.GNSSLeapSecond{
-		WNLSF:    uint8(utc.WnLsf),
-		DN:       uint8(utc.Dn),
-		DeltaLS:  int8(utc.DeltatLs),
-		DeltaLSF: int8(utc.DeltatLsf),
+	gnssLS, ok := gnssLeapSecondParams(utc.WnLsf, utc.Dn, utc.DeltatLs, utc.DeltatLsf)
+	if !ok {
+		return nil, nil
 	}
 	ls, err := ptime.BeiDouLeapSecond(gnssLS, now)
 	if err != nil {
@@ -113,11 +107,9 @@ func utcConversionParamsFromBD3UTC(utc *uncmsg.BD3UTC, now ptime.Time) (*utcConv
 }
 
 func utcConversionParamsFromBDSUTC(utc *uncmsg.BDSUTC, weekStart ptime.Time, now ptime.Time) (*utcConversionParams, error) {
-	gnssLS := ptime.GNSSLeapSecond{
-		WNLSF:    uint8(utc.WnLsf),
-		DN:       uint8(utc.Dn),
-		DeltaLS:  int8(utc.DeltatLs),
-		DeltaLSF: int8(utc.DeltatLsf),
+	gnssLS, ok := gnssLeapSecondParams(utc.WnLsf, utc.Dn, utc.DeltatLs, utc.DeltatLsf)
+	if !ok {
+		return nil, nil
 	}
 	ls, err := ptime.BeiDouLeapSecond(gnssLS, now)
 	if err != nil {
@@ -131,4 +123,19 @@ func utcConversionParamsFromBDSUTC(utc *uncmsg.BDSUTC, weekStart ptime.Time, now
 		},
 		LeapSecond: ls,
 	}, nil
+}
+
+// gnssLeapSecondParams converts UTC message leap second fields to a
+// GNSSLeapSecond. Returns false if the fields indicate no data is available.
+func gnssLeapSecondParams(wnLsf uint32, dn uint32, deltaLS int32, deltaLSF int32) (ptime.GNSSLeapSecond, bool) {
+	if wnLsf == 0 && dn == 0 && deltaLS == 0 && deltaLSF == 0 {
+		// no data available
+		return ptime.GNSSLeapSecond{}, false
+	}
+	return ptime.GNSSLeapSecond{
+		WNLSF:    uint8(wnLsf),
+		DN:       uint8(dn),
+		DeltaLS:  int8(deltaLS),
+		DeltaLSF: int8(deltaLSF),
+	}, true
 }
