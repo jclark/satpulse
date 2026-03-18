@@ -30,6 +30,7 @@
         - { section: "serial", option: "device", value: '"{{ device }}"' }
         - { section: "serial", option: "speed", value: "{{ speed }}" }
         - { section: "gps", option: "config", value: "{{ config }}" }
+        - { section: "gps", option: "vendor", value: "{{ vendor }}" }
         - { section: "log", option: "clock", value: "true" }
         - { section: "ntp", option: "sock.path", value: '"/var/run/chrony.satpulse.sock"'}
         - { section: "[http]", option: "listen", value: '":{{ http_port }}"' }

@@ -22,6 +22,7 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea\-out** **RMC**\|**GGA**\|**GSA**\|**GSV**\|**ZDA**\|**VTG**\|**GLL**\|**none**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-vendor** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-msg\-file** *path*] [**\-t**\|**\-\-tag** *list*] [**\-\-show\-tags**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]
 
@@ -301,6 +302,15 @@ The following options control use of the receiver's non-volatile memory.
 
 **\-\-factory\-reset**
 : Restore the non-volatile memory of the GPS receiver to its default settings, and the perform a reset as with the **\-\-reset** option.
+
+The following option restricts which configuration protocols are probed. It also restricts which packet formats are recognized.
+
+**\-\-vendor** *name*
+: GPS receiver vendor name.
+  The following values are supported: `u-blox`, `Unicore`, `Allystar`, `Bynav`, `NovAtel`, `Quectel`, `SinoGNSS`, `Techtotop`, `Zhongke`, `other`.
+  In addition, the following values are allowed and currently treated as equivalent to `other`: `Furuno`, `MediaTek`, `Septentrio`, `SkyTraq`, `Trimble`.
+  Values are case-insensitive.
+  If not specified, no restrictions are applied.
 
 ## Low-level configuration
 

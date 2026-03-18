@@ -15,6 +15,10 @@ func (f packetFormat) Tag() gpsprot.Tag {
 	return Tag
 }
 
+func (f packetFormat) IsBinary() bool {
+	return true
+}
+
 // First two bytes of UBX packet
 const (
 	sync1Byte = ubxbin.Sync1

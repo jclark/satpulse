@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/crc24q"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/scan"
 )
 
@@ -26,10 +26,8 @@ func makeRTCM(msgType uint16, payloadLen int) []byte {
 	pkt[2] = byte(totalPayload)
 	pkt[3] = byte(msgType >> 4)
 	pkt[4] = byte(msgType << 4)
-	crc := crc24q.Checksum(pkt[:3+totalPayload])
-	pkt[3+totalPayload] = byte(crc >> 16)
-	pkt[3+totalPayload+1] = byte(crc >> 8)
-	pkt[3+totalPayload+2] = byte(crc)
+	crc := rtcmbin.Checksum(pkt[:3+totalPayload])
+	copy(pkt[3+totalPayload:], crc[:])
 	return pkt
 }
 
@@ -42,10 +40,8 @@ func makeRTCMMSM(msgType uint16, mmb bool, payloadLen int) []byte {
 	}
 	// recompute CRC
 	totalPayload := len(pkt) - 6
-	crc := crc24q.Checksum(pkt[:3+totalPayload])
-	pkt[3+totalPayload] = byte(crc >> 16)
-	pkt[3+totalPayload+1] = byte(crc >> 8)
-	pkt[3+totalPayload+2] = byte(crc)
+	crc := rtcmbin.Checksum(pkt[:3+totalPayload])
+	copy(pkt[3+totalPayload:], crc[:])
 	return pkt
 }
 

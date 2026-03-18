@@ -41,6 +41,10 @@ func (f asciiPacketFormat) Tag() gpsprot.Tag {
 	return f.tag
 }
 
+func (f asciiPacketFormat) IsBinary() bool {
+	return false
+}
+
 const (
 	// asciiStateSync is the initial state looking for '#'
 	asciiStateSync gpsprot.ScanState = iota + gpsprot.ScanStateSync

@@ -234,7 +234,9 @@ Default is empty string `""`. Not allowed in `[default.line]` etc.
 
 ## Protocol-specific message types
 
-For u-blox UBX, CASIC, and Allystar binary protocols, use structured payload encoding.
+For u-blox UBX, CASIC, Allystar, SDBP (Techtotop/Taidou) binary protocols, use structured binary payload encoding.
+These binary formats are all UBX-like: they have sync bytes, message class, message ID, payload length and checksum.
+The payload consists of binary integers and floats of various widths.
 
 For example, the CASIC CFG-TP message (0x06 0x03) controls the time pulse:
 
@@ -262,7 +264,7 @@ payload.values = [1000000, 0, 100000, 1, 13, 1]
 
 Each type descriptor in the `payload.types` string specifies how to encode the corresponding entry in `payload.values`.
 SatPulse doesn't need to know about the specific message, just the protocol packet format.
-It uses this to produce the correct packet (with sync bytes, payload length, class, message id, little-endian encoded payload, and checksum).
+It uses this to produce the correct packet.
 
 | Key | Type | Description |
 |-----|------|-------------|
@@ -283,9 +285,10 @@ Type specifiers are two characters each:
 | `[[line]]` | `text`, `eol`, `responsePattern`, `delay`, `tag`, `description` | appends eol (default `\r\n`) |
 | `[[binary]]` | `hex`, `delay`, `tag`, `description` | none |
 | `[[nmea]]` | `text`, `delay`, `tag`, `description` | prepends `$`, appends `*XX\r\n` checksum |
-| `[[ubx]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | UBX framing with header and checksum |
-| `[[casbin]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | CASIC binary framing with header and checksum |
-| `[[asbin]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | Allystar binary framing with header and checksum |
+| `[[ubx]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | UBX binary packets |
+| `[[casbin]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | CASIC binary packets |
+| `[[asbin]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | Allystar binary packets |
+| `[[sdbp]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | Techtotop/Taidou SDBP binary packets |
 
 ## Schema
 

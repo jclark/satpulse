@@ -12,6 +12,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
+	"github.com/jclark/satpulse/gps/lib/sdbpbin"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/ubxcfgval"
@@ -76,6 +77,9 @@ checksumOK:
 		return pf, r, err
 	case gpsreg.TagAllystarBin:
 		r, err := asbinDecode(data)
+		return pf, r, err
+	case gpsreg.TagSDBP:
+		r, err := sdbpDecode(data)
 		return pf, r, err
 	case gpsreg.TagUnicoreBin:
 		r, err := uncbinDecode(data)
@@ -173,6 +177,17 @@ func asbinDecode(data []byte) (*DecodeResult, error) {
 		return nil, err
 	}
 	if _, isUnknown := msg.(*asbin.UnknownMsg); isUnknown {
+		return nil, ErrUnknownMsg
+	}
+	return &DecodeResult{Payload: msg}, nil
+}
+
+func sdbpDecode(data []byte) (*DecodeResult, error) {
+	msg, err := sdbpbin.ParseMsg(string(data))
+	if err != nil {
+		return nil, err
+	}
+	if _, isUnknown := msg.(*sdbpbin.UnknownMsg); isUnknown {
 		return nil, ErrUnknownMsg
 	}
 	return &DecodeResult{Payload: msg}, nil

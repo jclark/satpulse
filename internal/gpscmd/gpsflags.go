@@ -8,6 +8,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/term"
@@ -45,6 +46,7 @@ type flagVars struct {
 	configGet      gpsprot.PropIDs
 	msgFilePath    string
 	msgTags        []string
+	vendor         gpsreg.Vendor
 	showReceiver   bool
 	showTags       bool
 }
@@ -56,7 +58,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-acc meters]
             [--survey] [--survey-time seconds] [--survey-acc meters]
-            [--min-elev degrees]
+            [--min-elev degrees] [--vendor name]
             [--pvt-out pos|vel|time|tp|leap|survey|qual|epoch|tai|ecef|off,...]
             [--sats-out sat|sig|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
             [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|GLL|none,...]
@@ -127,6 +129,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.StringVarP(&vars.msgFilePath, "msg-file", "m", "", "`path` to TOML file containing message definitions")
 	flags.StringVarP(&msgTags, "tag", "t", "", "comma-separated `list` of tags to send (in order)")
 	flags.BoolVar(&vars.showTags, "show-tags", false, "list all tags in the message file with descriptions, then exit")
+	var vendorStr string
+	flags.StringVar(&vendorStr, "vendor", "", "GPS receiver `vendor` name")
 	flags.Float64Var(&capture, "capture", 0, "capture packets for `seconds` after config (0 = forever)")
 	flags.StringVar(&testLogPath, "test-log", "", "log test data to `path`")
 	flags.MarkHidden("test-log")
@@ -173,6 +177,13 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 		// --show-tags doesn't require --socket or --serial-device
 		return &vars, nil, nil
+	}
+	if vendorStr != "" {
+		v, err := gpsreg.ParseVendor(vendorStr)
+		if err != nil {
+			return nil, nil, err
+		}
+		vars.vendor = v
 	}
 	if vars.configFile != "" {
 		if vars.serialDevice != "" || vars.localSpeed != 0 {

@@ -44,7 +44,7 @@ type GPSConfig struct {
 	PulseWidth         float64      `toml:"pulseWidth"`
 	SatellitesOutput   *bool        `toml:"satellitesOutput"`
 	RTCMOutput         *bool        `toml:"rtcmOutput"`
-	Vendor             string       `toml:"vendor"`
+	Vendor             gpsreg.Vendor `toml:"vendor"`
 }
 
 const defaultAccuracy = 20.0 // in meters
@@ -120,15 +120,19 @@ func (c *GPSConfig) setMsgOptions(opts *gpsprot.ConfigOptions, speed int, cf cfg
 	return err
 }
 
-func (c *GPSConfig) CreatePacketProcessors() (map[gpsprot.Tag]gpsprot.PacketProcessor, error) {
-	vendor := gpsreg.VendorUnknown
-	if c.Vendor != "" {
-		vendor = gpsreg.ParseVendor(c.Vendor)
-		if vendor == gpsreg.VendorUnknown {
-			return nil, configErrorf("unknown vendor: %s", c.Vendor)
-		}
-	}
-	return gpsreg.CreatePacketProcessors(vendor), nil
+// CreatePacketProcessors creates packet processors configured for the vendor.
+func (c *GPSConfig) CreatePacketProcessors() map[gpsprot.Tag]gpsprot.PacketProcessor {
+	return gpsreg.CreatePacketProcessors(c.Vendor)
+}
+
+// CreatePacketFormats returns the packet formats appropriate for the vendor.
+func (c *GPSConfig) CreatePacketFormats() []gpsprot.PacketFormat {
+	return gpsreg.CreatePacketFormats(c.Vendor)
+}
+
+// CreateConfigProtocols returns the configuration protocols appropriate for the vendor.
+func (c *GPSConfig) CreateConfigProtocols() []gpsprot.ConfigProtocol {
+	return gpsreg.CreateConfigProtocols(c.Vendor)
 }
 
 func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {

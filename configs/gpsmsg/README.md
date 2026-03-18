@@ -46,6 +46,7 @@ This can help with seeing whether your receiver is handling the commands correct
 | [ubx.toml](ubx.toml) | u-blox (e.g. ZED-F9P) | UBX binary, NMEA (PUBX) |
 | [sinognss.toml](sinognss.toml) | SinoGNSS K901/K902 | NovAtel-style commands |
 | [bynav.toml](bynav.toml) | Bynav M2 | NovAtel-style commands |
+| [techtotop.toml](techtotop.toml) | Techtotop/Taidou T303-5D | SDBP binary |
 | [um980.toml](um980.toml) | Unicore UM980 | Unicore commands |
 | [lc29h.toml](lc29h.toml) | Quectel LC29H | NMEA (PQTM, PAIR) |
 

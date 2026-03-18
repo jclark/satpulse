@@ -132,6 +132,7 @@ type Parsed struct {
 		NMEA   NMEAMsg   `toml:"nmea"`
 		CASBIN CASBINMsg `toml:"casbin"`
 		ASBIN  ASBINMsg  `toml:"asbin"`
+		SDBP   SDBPMsg   `toml:"sdbp"`
 		UBX    UBXMsg    `toml:"ubx"`
 	} `toml:"default"`
 	Line   []LineMsg   `toml:"line"`
@@ -139,6 +140,7 @@ type Parsed struct {
 	NMEA   []NMEAMsg   `toml:"nmea"`
 	CASBIN []CASBINMsg `toml:"casbin"`
 	ASBIN  []ASBINMsg  `toml:"asbin"`
+	SDBP   []SDBPMsg   `toml:"sdbp"`
 	UBX    []UBXMsg    `toml:"ubx"`
 }
 
@@ -249,6 +251,7 @@ func newDefault() *Parsed {
 	mf.Default.NMEA.MsgCommon = defaultMsgCommon()
 	mf.Default.CASBIN.MsgCommon = defaultMsgCommon()
 	mf.Default.ASBIN.MsgCommon = defaultMsgCommon()
+	mf.Default.SDBP.MsgCommon = defaultMsgCommon()
 	mf.Default.UBX.MsgCommon = defaultMsgCommon()
 	return mf
 }
@@ -310,6 +313,10 @@ func (mf *Parsed) applyASBINDefaults(am *ASBINMsg) {
 	applyCommonDefaults(&am.MsgCommon, &mf.Default.ASBIN.MsgCommon)
 }
 
+func (mf *Parsed) applySDBPDefaults(sm *SDBPMsg) {
+	applyCommonDefaults(&sm.MsgCommon, &mf.Default.SDBP.MsgCommon)
+}
+
 func (mf *Parsed) applyUBXDefaults(um *UBXMsg) {
 	applyCommonDefaults(&um.MsgCommon, &mf.Default.UBX.MsgCommon)
 }
@@ -360,6 +367,15 @@ func (mf *Parsed) validateDefaults() error {
 	if _, err := mf.Default.ASBIN.MsgCommon.delay(); err != nil {
 		return fmt.Errorf("default.asbin: %w", err)
 	}
+	if mf.Default.SDBP.Class != 0 || mf.Default.SDBP.ID != 0 {
+		return errors.New("default.sdbp.class and default.sdbp.id must be zero")
+	}
+	if mf.Default.SDBP.Description != "" {
+		return errors.New("default.sdbp.description must be empty")
+	}
+	if _, err := mf.Default.SDBP.MsgCommon.delay(); err != nil {
+		return fmt.Errorf("default.sdbp: %w", err)
+	}
 	if mf.Default.UBX.Class != 0 || mf.Default.UBX.ID != 0 {
 		return errors.New("default.ubx.class and default.ubx.id must be zero")
 	}
@@ -385,6 +401,7 @@ const (
 	msgTypeNMEA   msgType = "nmea"
 	msgTypeCASBIN msgType = "casbin"
 	msgTypeASBIN  msgType = "asbin"
+	msgTypeSDBP   msgType = "sdbp"
 	msgTypeUBX    msgType = "ubx"
 )
 
@@ -438,6 +455,13 @@ func (mf *Parsed) TaggedMsgs(tags []string) (any, error) {
 		}
 		rslt = asbinMsgs
 	}
+	sdbpMsgs := filterMsgs(mf.SDBP, tags, ti[msgTypeSDBP].byTag)
+	if len(sdbpMsgs) > 0 {
+		if rslt != nil {
+			return nil, fmt.Errorf("selected tags have mixed message types")
+		}
+		rslt = sdbpMsgs
+	}
 	ubxMsgs := filterMsgs(mf.UBX, tags, ti[msgTypeUBX].byTag)
 	if len(ubxMsgs) > 0 {
 		if rslt != nil {
@@ -481,6 +505,9 @@ func (mf *Parsed) buildTagIndices() (tagIndices, error) {
 		return tagIndices{}, err
 	}
 	if err := prepareTagIndex(mf.ASBIN, mf.applyASBINDefaults, msgTypeASBIN, tagTypes, tis); err != nil {
+		return tagIndices{}, err
+	}
+	if err := prepareTagIndex(mf.SDBP, mf.applySDBPDefaults, msgTypeSDBP, tagTypes, tis); err != nil {
 		return tagIndices{}, err
 	}
 	if err := prepareTagIndex(mf.UBX, mf.applyUBXDefaults, msgTypeUBX, tagTypes, tis); err != nil {
@@ -592,6 +619,8 @@ func ToRaw(msgs any) ([]RawMsg, error) {
 		return toRawMsgs(m)
 	case []ASBINMsg:
 		return toRawMsgs(m)
+	case []SDBPMsg:
+		return toRawMsgs(m)
 	case []UBXMsg:
 		return toRawMsgs(m)
 	default:
@@ -636,6 +665,7 @@ func (mf *Parsed) TagDescs() (descs, inconsistent []TagDesc) {
 	collectDescs(mf.NMEA, b)
 	collectDescs(mf.CASBIN, b)
 	collectDescs(mf.ASBIN, b)
+	collectDescs(mf.SDBP, b)
 	collectDescs(mf.UBX, b)
 	// Move empty tag to front if present
 	for i, td := range b.descs {

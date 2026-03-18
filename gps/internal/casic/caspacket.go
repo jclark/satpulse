@@ -24,6 +24,10 @@ func (f packetFormat) Tag() gpsprot.Tag {
 	return Tag
 }
 
+func (f packetFormat) IsBinary() bool {
+	return true
+}
+
 const (
 	stateSync gpsprot.ScanState = iota + gpsprot.ScanStateSync
 	stateSync2

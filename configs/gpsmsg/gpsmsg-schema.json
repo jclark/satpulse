@@ -50,7 +50,8 @@
 				"nmea": { "$ref": "#/definitions/common" },
 				"casbin": { "$ref": "#/definitions/common" },
 				"ubx": { "$ref": "#/definitions/common" },
-				"asbin": { "$ref": "#/definitions/common" }
+				"asbin": { "$ref": "#/definitions/common" },
+				"sdbp": { "$ref": "#/definitions/common" }
 			},
 			"additionalProperties": false
 		},
@@ -110,6 +111,10 @@
 			"items": { "$ref": "#/definitions/ubxLikeMsg" }
 		},
 		"asbin": {
+			"type": "array",
+			"items": { "$ref": "#/definitions/ubxLikeMsg" }
+		},
+		"sdbp": {
 			"type": "array",
 			"items": { "$ref": "#/definitions/ubxLikeMsg" }
 		}

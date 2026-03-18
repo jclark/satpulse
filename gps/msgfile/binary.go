@@ -8,6 +8,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/lib/sdbpbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
@@ -93,6 +94,30 @@ func (am *ASBINMsg) toRaw() (RawMsg, error) {
 }
 
 func (am *ASBINMsg) getTag() string { return *am.Tag }
+
+// SDBPMsg represents a [[sdbp]] entry.
+type SDBPMsg struct {
+	UBXLikeMsg
+}
+
+func (sm *SDBPMsg) toRaw() (RawMsg, error) {
+	payload, err := sm.Payload.Encode(sdbpbin.Endian)
+	if err != nil {
+		return RawMsg{}, err
+	}
+	mid := sdbpbin.MakeMsgID(sm.Class, sm.ID)
+	pkt, err := sdbpbin.PackMsg(mid, payload)
+	if err != nil {
+		return RawMsg{}, err
+	}
+	delay, err := sm.MsgCommon.delay()
+	if err != nil {
+		return RawMsg{}, err
+	}
+	return RawMsg{Bytes: pkt, Delay: delay, Tag: *sm.Tag}, nil
+}
+
+func (sm *SDBPMsg) getTag() string { return *sm.Tag }
 
 // UBXMsg represents a [[ubx]] entry.
 type UBXMsg struct {
@@ -285,11 +310,39 @@ func (am *ASBINMsg) newMatcher() responseMatcher {
 	}
 }
 
+func parseSDBP(data string) (packetInfo[sdbpbin.MsgID], error) {
+	if len(data) < 8 {
+		return packetInfo[sdbpbin.MsgID]{}, fmt.Errorf("too short")
+	}
+	p := packetInfo[sdbpbin.MsgID]{msgID: sdbpbin.PacketMsgId(data)}
+	msg, _ := sdbpbin.ParseMsg(data)
+	switch m := msg.(type) {
+	case *sdbpbin.PubAck:
+		p.ack = isAckAck
+		p.ackedID = sdbpbin.MakeMsgID(m.Class, m.MsgID)
+	case *sdbpbin.PubNak:
+		p.ack = isAckNak
+		p.ackedID = sdbpbin.MakeMsgID(m.Class, m.MsgID)
+	}
+	return p, nil
+}
+
+func (sm *SDBPMsg) newMatcher() responseMatcher {
+	mid := sdbpbin.MakeMsgID(sm.Class, sm.ID)
+	return &ubxLikeMatcher[sdbpbin.MsgID]{
+		expectedTag: gpsreg.TagSDBP,
+		sentMsgID:   mid,
+		expectAck:   true,
+		parse:       parseSDBP,
+	}
+}
+
 // binaryTags maps binary protocol tags used for response classification.
 var binaryTags = map[gpsprot.Tag]bool{
 	gpsreg.TagUBX:         true,
 	gpsreg.TagCASICBin:    true,
 	gpsreg.TagAllystarBin: true,
+	gpsreg.TagSDBP:        true,
 }
 
 // binaryMatcher handles BinaryMsg responses.

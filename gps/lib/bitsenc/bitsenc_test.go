@@ -1,6 +1,7 @@
 package bitsenc
 
 import (
+	"bytes"
 	"iter"
 	"testing"
 )
@@ -313,5 +314,213 @@ func TestReadNamedStruct(t *testing.T) {
 	}
 	if v.X.A != 0xA || v.X.B != 0xB || v.C != 0xC {
 		t.Errorf("got {X:{%d,%d}, C:%d}, want {X:{10,11}, C:12}", v.X.A, v.X.B, v.C)
+	}
+}
+
+// Writer tests
+
+func TestWriterPutUint(t *testing.T) {
+	w := NewWriter(nil)
+	w.PutUint(0xA, 4)
+	w.PutUint(0xB, 4)
+	w.PutUint(0xCD, 8)
+	got := w.Bytes()
+	want := []byte{0xAB, 0xCD}
+	if !bytes.Equal(got, want) {
+		t.Errorf("got %X, want %X", got, want)
+	}
+}
+
+func TestWriterPutInt(t *testing.T) {
+	w := NewWriter(nil)
+	w.PutInt(-1, 5)  // 11111
+	w.PutInt(1, 5)   // 00001
+	w.PutUint(0, 6)  // padding
+	got := w.Bytes()
+	want := []byte{0xF8, 0x40}
+	if !bytes.Equal(got, want) {
+		t.Errorf("got %X, want %X", got, want)
+	}
+}
+
+func TestWriterPutBool(t *testing.T) {
+	w := NewWriter(nil)
+	w.PutBool(true)
+	w.PutBool(false)
+	w.PutBool(true)
+	w.PutBool(false)
+	got := w.Bytes()
+	want := []byte{0xA0}
+	if !bytes.Equal(got, want) {
+		t.Errorf("got %X, want %X", got, want)
+	}
+	if w.BitLen() != 4 {
+		t.Errorf("BitLen = %d, want 4", w.BitLen())
+	}
+}
+
+func TestWriterPutUint64(t *testing.T) {
+	w := NewWriter(nil)
+	w.PutUint(0x3FFFFFFFFF, 38) // 38 ones = -1 in two's complement
+	got := w.Bytes()
+	// 38 ones + 2 zeros padding = 0xFF 0xFF 0xFF 0xFF 0xFC
+	want := []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFC}
+	if !bytes.Equal(got, want) {
+		t.Errorf("got %X, want %X", got, want)
+	}
+}
+
+func TestWriterAppend(t *testing.T) {
+	buf := []byte{0xAB}
+	w := NewWriter(buf)
+	w.PutUint(0xCD, 8)
+	got := w.Bytes()
+	want := []byte{0xAB, 0xCD}
+	if !bytes.Equal(got, want) {
+		t.Errorf("got %X, want %X", got, want)
+	}
+}
+
+func TestWriterPartialByte(t *testing.T) {
+	w := NewWriter(nil)
+	w.PutUint(0x7, 3) // 111 + 5 zero-padding bits = 0xE0
+	got := w.Bytes()
+	want := []byte{0xE0}
+	if !bytes.Equal(got, want) {
+		t.Errorf("got %X, want %X", got, want)
+	}
+}
+
+// Round-trip tests: Read then Write, verify bytes match.
+
+func TestRoundTripUnsigned(t *testing.T) {
+	data := []byte{0xAB, 0xCD}
+	var v struct {
+		A uint8  `bits:"4"`
+		B uint8  `bits:"4"`
+		C uint16 `bits:"8"`
+	}
+	if err := Read(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Write(&v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Errorf("got %X, want %X", got, data)
+	}
+}
+
+func TestRoundTripSliceNative(t *testing.T) {
+	data := []byte{0x00, 0x01, 0x00, 0x02}
+	var v struct {
+		Vals []uint16
+	}
+	v.Vals = make([]uint16, 2)
+	if err := Read(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Write(&v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Errorf("got %X, want %X", got, data)
+	}
+}
+
+func TestRoundTripEmbedded(t *testing.T) {
+	// 28 bits: MsgNum(12) + StationID(12) + Flag(1) + Val(3)
+	// Trailing 4 zero bits in byte 3 match because Flag=false, Val=0.
+	data := []byte{0xAB, 0xCD, 0xE0, 0x00}
+	var v body
+	if err := Read(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Write(&v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Write produces 28 bits = 4 bytes with 4 zero-pad bits.
+	want := []byte{0xAB, 0xCD, 0xE0, 0x00}
+	if !bytes.Equal(got, want) {
+		t.Errorf("got %X, want %X", got, want)
+	}
+}
+
+func TestRoundTripSlice(t *testing.T) {
+	var v struct {
+		Vals []uint8 `bits:"4"`
+	}
+	v.Vals = []uint8{0xA, 0xB, 0xC}
+	got, err := Write(&v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 12 bits = 0xABC0 padded
+	want := []byte{0xAB, 0xC0}
+	if !bytes.Equal(got, want) {
+		t.Errorf("got %X, want %X", got, want)
+	}
+}
+
+func TestRoundTripVarBits(t *testing.T) {
+	v := varMsg{Width: 10, Data: 0x2AB}
+	got, err := Write(&v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 8 bits (Width=10) + 10 bits (Data=0x2AB) = 18 bits
+	// 00001010 10_10101011 000000 = 0x0A 0xAA 0xC0
+	want := []byte{0x0A, 0xAA, 0xC0}
+	if !bytes.Equal(got, want) {
+		t.Errorf("got %X, want %X", got, want)
+	}
+}
+
+func TestWriteNotPointer(t *testing.T) {
+	var v struct {
+		A uint8 `bits:"4"`
+	}
+	_, err := Write(v)
+	if err == nil {
+		t.Error("expected error for non-pointer argument")
+	}
+}
+
+func TestWriteNamedStruct(t *testing.T) {
+	type inner struct {
+		A uint8 `bits:"4"`
+		B uint8 `bits:"4"`
+	}
+	type outer struct {
+		X inner
+		C uint8 `bits:"4"`
+	}
+	v := outer{X: inner{A: 0xA, B: 0xB}, C: 0xC}
+	got, err := Write(&v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{0xAB, 0xC0}
+	if !bytes.Equal(got, want) {
+		t.Errorf("got %X, want %X", got, want)
+	}
+}
+
+func TestWriteBoolSlice(t *testing.T) {
+	var v struct {
+		Flags []bool
+	}
+	v.Flags = []bool{true, false, true, true, false, false, true, false}
+	got, err := Write(&v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 10110010 = 0xB2
+	want := []byte{0xB2}
+	if !bytes.Equal(got, want) {
+		t.Errorf("got %X, want %X", got, want)
 	}
 }

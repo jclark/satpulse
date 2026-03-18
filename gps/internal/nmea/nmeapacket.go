@@ -15,6 +15,10 @@ func (f packetFormat) Tag() gpsprot.Tag {
 	return Tag
 }
 
+func (f packetFormat) IsBinary() bool {
+	return false
+}
+
 // Constants for NMEA packet scanning (private)
 const (
 	stateSync gpsprot.ScanState = iota + gpsprot.ScanStateSync

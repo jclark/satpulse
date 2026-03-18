@@ -90,7 +90,7 @@ func boolToInt(b bool) int {
 }
 
 func runDecode(data []byte, out, compact bool) error {
-	pf, result, err := gpsdecode.Decode(gpsreg.PacketFormats, data, out)
+	pf, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), data, out)
 	if err != nil {
 		return err
 	}
@@ -145,7 +145,7 @@ func processLine(line []byte) []byte {
 	} else {
 		return line
 	}
-	_, result, err := gpsdecode.Decode(gpsreg.PacketFormats, data, entry.Out)
+	_, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), data, entry.Out)
 	if err != nil {
 		var csErr *gpsdecode.ChecksumError
 		if errors.As(err, &csErr) {

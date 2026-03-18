@@ -4,7 +4,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/jclark/crc24q"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 )
@@ -73,6 +72,10 @@ func (f packetFormat) Tag() gpsprot.Tag {
 	return Tag
 }
 
+func (f packetFormat) IsBinary() bool {
+	return true
+}
+
 // Constants for RTCM packet scanning (private)
 const (
 	stateSync gpsprot.ScanState = iota + gpsprot.ScanStateSync
@@ -80,8 +83,8 @@ const (
 	stateExpectN
 )
 
-// PreambleByte is the RTCM preamble byte
-const PreambleByte = 0xD3
+// PreambleByte is the RTCM preamble byte.
+const PreambleByte = rtcmbin.PreambleByte
 
 func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, packetLen int) gpsprot.ScanState {
 	b := buf[nextScanIndex]
@@ -123,8 +126,8 @@ func (f packetFormat) ExtractChecksum(pkt []byte) []byte {
 }
 
 func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
-	checksum := crc24q.Checksum(pkt[0 : len(pkt)-3])
-	return []byte{byte(checksum >> 16), byte(checksum >> 8), byte(checksum)}
+	crc := rtcmbin.Checksum(pkt[:len(pkt)-3])
+	return crc[:]
 }
 
 func (f packetFormat) RescanOnBadChecksum(prevPktValid bool, pkt []byte) bool {

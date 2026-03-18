@@ -17,6 +17,10 @@ var BinPacketFormat gpsprot.PacketFormat = binPacketFormat{}
 type binPacketFormat struct{}
 
 
+func (f binPacketFormat) IsBinary() bool {
+	return true
+}
+
 func (f binPacketFormat) Tag() gpsprot.Tag {
 	return TagBinary
 }

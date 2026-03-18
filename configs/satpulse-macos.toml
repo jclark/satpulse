@@ -9,6 +9,14 @@ speed = 38400
 # Uncommenting the following line will enable configuration of the GPS
 # (changes are not persistent across GPS reboots)
 config = true
+# This specifies the vendor of your GPS module.
+# Setting this restricts which packet formats the scanner recognizes and which
+# configuration protocols are probed.
+# If not set, all packet formats and configuration protocols are tried.
+# The following values are supported:
+#   u-blox, Unicore, Allystar, Bynav, NovAtel, Quectel, SinoGNSS, Techtotop, Zhongke, other
+# In addition, the following values are allowed and currently treated as equivalent to "other":
+#   Furuno, MediaTek, Septentrio, SkyTraq, Trimble
 #vendor = "u-blox"
 
 [log]

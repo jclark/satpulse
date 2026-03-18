@@ -1,12 +1,9 @@
 package rtcmbin
 
 import (
-	"fmt"
 	"iter"
 	"math/bits"
 	"strconv"
-
-	"github.com/jclark/satpulse/gps/lib/bitsenc"
 )
 
 // Meter is the number of RTCM length units per meter (0.0001 m resolution).
@@ -270,20 +267,4 @@ func boolN(cond bool, n int) int {
 		return n
 	}
 	return 0
-}
-
-func parseMSM(mt MsgType, payload string) (Msg, error) {
-	r := bitsenc.NewReader([]byte(payload))
-	if int(mt%10) >= 6 {
-		var msg MSMHiRes
-		if err := r.Read(&msg); err != nil {
-			return nil, fmt.Errorf("rtcm MSM %d: %w", mt, err)
-		}
-		return &msg, nil
-	}
-	var msg MSM
-	if err := r.Read(&msg); err != nil {
-		return nil, fmt.Errorf("rtcm MSM %d: %w", mt, err)
-	}
-	return &msg, nil
 }
