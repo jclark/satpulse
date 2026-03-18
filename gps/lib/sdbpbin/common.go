@@ -167,11 +167,11 @@ func ParseMsg(packet string) (Msg, error) {
 		err = binary.Read(r, Endian, vary)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("parsing sdbp-%s: %v", mid, err)
+		return nil, fmt.Errorf("parsing SDBP-%s: %v", mid, err)
 	}
 	_, err = r.ReadByte()
 	if err != io.EOF {
-		return nil, fmt.Errorf("parsing sdbp-%s: trailing bytes", mid)
+		return nil, fmt.Errorf("parsing SDBP-%s: trailing bytes", mid)
 	}
 	return msg, nil
 }
@@ -202,7 +202,7 @@ func Serialize(msg Msg) ([]byte, error) {
 // PackMsg creates a complete SDBP packet from a MsgID and payload.
 func PackMsg(mid MsgID, payload []byte) ([]byte, error) {
 	if len(payload) > 0xFFFF {
-		return nil, fmt.Errorf("sdbp-%s payload too long (%d bytes)", mid, len(payload))
+		return nil, fmt.Errorf("SDBP-%s payload too long (%d bytes)", mid, len(payload))
 	}
 	cls, id := mid.unpack()
 	pkt := []byte{
