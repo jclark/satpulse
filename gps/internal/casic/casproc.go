@@ -88,6 +88,9 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		if p.mh != nil {
 			if tm != nil {
 				tm.Tag = Tag
+				if ne := p.curNavEpochMsg; ne != nil {
+					tm.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+				}
 				p.mh.Time(tm, tRead)
 			}
 			if posE != nil {
@@ -109,6 +112,9 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		}
 		if p.mh != nil {
 			tm.Tag = Tag
+			if ne := p.curNavEpochMsg; ne != nil {
+				tm.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+			}
 			p.mh.Time(tm, tRead)
 		}
 		return true
@@ -161,6 +167,9 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		p.lastTimeGNSS = tm.GNSS
 		if p.mh != nil {
 			tm.Tag = Tag
+			if ne := p.curNavEpochMsg; ne != nil {
+				tm.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+			}
 			p.mh.Time(tm, tRead)
 		}
 		return true
@@ -171,6 +180,9 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		if p.mh != nil {
 			if tm != nil {
 				tm.Tag = Tag
+				if ne := p.curNavEpochMsg; ne != nil {
+					tm.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+				}
 				p.mh.Time(tm, tRead)
 			}
 			if posE != nil {

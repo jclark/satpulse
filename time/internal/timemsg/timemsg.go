@@ -109,7 +109,7 @@ func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.
 			continue
 		}
 		secs = append(secs, sec)
-		tRead = append(tRead, e.tRead)
+		tRead = append(tRead, e.tRead.Add(-time.Duration(e.msg.ReadDelay)))
 	}
 	if len(secs) < n {
 		return 0, nil

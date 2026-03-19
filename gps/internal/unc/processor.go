@@ -138,6 +138,9 @@ func (p *packetProcessor) dispatch(msg *uncmsg.Msg, tRead time.Time, tag gpsprot
 			return false, err
 		}
 		if tm != nil {
+			if ne := p.curEpochMsg; ne != nil {
+				tm.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+			}
 			h.Time(tm, tRead)
 			return true, nil
 		}

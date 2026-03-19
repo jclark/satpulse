@@ -182,6 +182,9 @@ func (p *PacketProcessor) emitTime(tm *gpsprot.TimeMsg, tRead time.Time) {
 	}
 	if h := p.mh; h != nil {
 		tm.Tag = Tag
+		if ne := p.curNavEpochMsg; ne != nil && tm.Ref == gpsprot.NavSolution {
+			tm.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+		}
 		h.Time(tm, tRead)
 	}
 }

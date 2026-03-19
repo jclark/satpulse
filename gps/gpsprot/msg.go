@@ -556,6 +556,7 @@ type TimeMsg struct {
 	Ref         TimeRef        `json:"ref,omitempty"`
 	Tag         Tag            `json:"tag,omitempty"`
 	NativeMsgID string         `json:"nativeMsgID,omitempty"`
+	ReadDelay   Duration       `json:"readDelay,omitempty"` // time between epoch start and when this message was read
 }
 
 // ComputeTAITime computes the TAI time from this message, using the leap second for UTC conversion if needed

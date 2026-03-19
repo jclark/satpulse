@@ -255,6 +255,9 @@ func (p *packetProcessor) dispatch(common *novmsg.CommonHdr, body novmsg.MsgBody
 			return false, err
 		}
 		if tm != nil {
+			if ne := p.curEpochMsg; ne != nil {
+				tm.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+			}
 			h.Time(tm, tRead)
 			return true, nil
 		}

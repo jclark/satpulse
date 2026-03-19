@@ -143,6 +143,9 @@ func (p *PacketProcessor) dispatch(m asbin.Msg, tRead time.Time) bool {
 			h.Survey(sv, tRead)
 		} else if tm != nil {
 			tm.Tag = Tag
+			if ne := p.curNavEpochMsg; ne != nil {
+				tm.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+			}
 			h.Time(tm, tRead)
 		}
 		if posG != nil {

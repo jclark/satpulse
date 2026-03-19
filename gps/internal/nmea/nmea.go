@@ -180,7 +180,10 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 			return msgID, err
 		}
 		p.handleEpoch(epoch, tRead)
-		gpsprot.DispatchMsgs(msgs, p.mh, tRead)
+		if h := p.mh; h != nil {
+			p.setTimeMsgReadDelay(msgs, tRead)
+			gpsprot.DispatchMsgs(msgs, h, tRead)
+		}
 		return msgID, nil
 	}
 	nmh := p.GetNativeMsgHandler()
@@ -247,6 +250,7 @@ func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gps
 		gpsprot.SetMsgsPriority(msgs, gpsprot.PriGenericLow)
 		p.handleEpoch(epoch, tRead)
 		if h != nil {
+			p.setTimeMsgReadDelay(msgs, tRead)
 			gpsprot.DispatchMsgs(msgs, h, tRead)
 		}
 		return true, nil
@@ -281,6 +285,9 @@ func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gps
 		p.handleEpoch(epoch, tRead)
 		mt := gpsprot.TimeMsg{Tag: Tag, NativeMsgID: sen.msgID(), UTCTime: utc, GNSS: talkerIDToGNSS(sen.TalkerID)}
 		if h != nil {
+			if ne := p.curNavEpoch; ne != nil {
+				mt.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+			}
 			h.Time(&mt, tRead)
 		}
 		return true, nil
@@ -290,6 +297,20 @@ func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gps
 
 func (p *PacketProcessor) Idle(_ time.Time) {
 	p.sb.idle(p.mh, p.curNavEpoch)
+}
+
+// setTimeMsgReadDelay sets ReadDelay on the first TimeMsg in msgs, if curNavEpoch is known.
+func (p *PacketProcessor) setTimeMsgReadDelay(msgs []gpsprot.Msg, tRead time.Time) {
+	ne := p.curNavEpoch
+	if ne == nil {
+		return
+	}
+	for _, m := range msgs {
+		if tm, ok := m.(*gpsprot.TimeMsg); ok {
+			tm.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+			return
+		}
+	}
 }
 
 // Sentence parsers: each parser sets Tag and NativeMsgID on the
