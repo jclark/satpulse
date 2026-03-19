@@ -86,7 +86,7 @@ func (mc *msgChanges) options2(opts *gpsprot.ConfigOptions, ver *Version, enable
 		}
 	}
 	if opts.RTCMMsg.IsSet() {
-		err := mc.rtcm(opts.RTCMMsg.Get(), ver, enabledGNSS)
+		err := mc.rtcm(opts.RTCMMsg.Get(), ver.rtcmSupport(), enabledGNSS)
 		if err != nil {
 			return err
 		}
@@ -330,11 +330,10 @@ func (m *msgChanges) raw(flags gpsprot.RawMsgFlags, ver *Version) error {
 	return nil
 }
 
-func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, ver *Version, enabledGNSS gpsprot.GNSSSet) error {
+func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, sup rtcmSupport, enabledGNSS gpsprot.GNSSSet) error {
 	disabledMsgIDs := []ubxbin.MsgID{}
 	anyEnabled := false
-	supGNSS, supMSM := ver.rtcmSupport()
-	if supGNSS == 0 {
+	if sup.gnss == 0 {
 		if flags != gpsprot.RTCMMsgNone {
 			return errors.New("RTCM message output not supported by this model")
 		}
@@ -345,18 +344,18 @@ func (mc *msgChanges) rtcm(flags gpsprot.RTCMMsgFlags, ver *Version, enabledGNSS
 		return errors.New("enabled GNSS not properly computed as needed for RTCM messages")
 	}
 	gloEnabled := false
-	enableMSM := supMSM & flags
+	enableMSM := sup.msgs & flags
 	if enableMSM == 0 && flags&(gpsprot.RTCMMsgMSM4|gpsprot.RTCMMsgMSM7) != 0 {
 		if flags&gpsprot.RTCMMsgLax == 0 {
 			return errors.New("specified type of MSM message not supported by this model")
 		}
-		// supMSM must have only one flag set, otherwise enableMSM would not be 0
-		enableMSM = supMSM
+		// sup.msgs must have only one flag set, otherwise enableMSM would not be 0
+		enableMSM = sup.msgs
 	}
 	msmFlags := []gpsprot.RTCMMsgFlags{gpsprot.RTCMMsgMSM4, gpsprot.RTCMMsgMSM7}
-	for _, g := range supGNSS.Items() {
+	for _, g := range sup.gnss.Items() {
 		for _, m := range msmFlags {
-			if supMSM&m == 0 {
+			if sup.msgs&m == 0 {
 				continue
 			}
 			enable := false
