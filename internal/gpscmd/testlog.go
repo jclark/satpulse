@@ -7,8 +7,8 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
-	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/app/logfile"
+	"github.com/jclark/satpulse/gps/gpsprot"
 )
 
 type TestLogEnvEntry struct {
@@ -27,16 +27,17 @@ type TestLogReceiverEntry struct {
 }
 
 type TestLogConfigEntry struct {
-	Type              string           `json:"type"`
-	Error             string           `json:"error,omitempty"`
+	Type              string              `json:"type"`
+	Error             string              `json:"error,omitempty"`
 	SignalsEnabled    map[string][]string `json:"signalsEnabled,omitempty"`
-	TimeGNSS          string           `json:"timeGNSS,omitempty"`
-	AntennaCableDelay *int64           `json:"antennaCableDelay,omitempty"`
-	TimePulse         *TimePulseConfig `json:"timePulse,omitempty"`
-	BaudRate          *uint32          `json:"baudRate,omitempty"`
-	Static            *bool            `json:"static,omitempty"`
-	FixedPosECEF      []float64        `json:"fixedPosECEF,omitempty"`
-	FixedPosAcc       *float64         `json:"fixedPosAcc,omitempty"`
+	TimeGNSS          string              `json:"timeGNSS,omitempty"`
+	AntennaCableDelay *int64              `json:"antennaCableDelay,omitempty"`
+	TimePulse         *TimePulseConfig    `json:"timePulse,omitempty"`
+	BaudRate          *uint32             `json:"baudRate,omitempty"`
+	Static            *bool               `json:"static,omitempty"`
+	FixedPosECEF      []float64           `json:"fixedPosECEF,omitempty"`
+	FixedPosAcc       *float64            `json:"fixedPosAcc,omitempty"`
+	RTCMBaseID        *uint16             `json:"rtcmBaseID,omitempty"`
 }
 
 type TimePulseConfig struct {
@@ -127,6 +128,10 @@ func writeTestLogConfigProps(lf *logfile.LogFile, lg *slog.Logger, props *gpspro
 				acc := mode.FixedPosAcc.Meters()
 				entry.FixedPosAcc = &acc
 			}
+		}
+		if rtcmBaseID, ok := props.GetRTCMBaseID(); ok {
+			id := rtcmBaseID
+			entry.RTCMBaseID = &id
 		}
 	}
 	writeTestLogEntry(lf, lg, entry)
