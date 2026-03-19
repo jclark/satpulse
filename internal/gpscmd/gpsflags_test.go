@@ -272,6 +272,10 @@ var validFlagsTestCases = []validFlagsTestCase{
 			FixedPosAcc:  gpsprot.Meters(0.001),
 		}),
 	}},
+	// Test --rtcm-base-id flag
+	{"ttyS0", []string{"--rtcm-base-id", "0"}, flagVars{rtcmBaseID: opt.Make(uint16(0))}},
+	{"ttyS0", []string{"--rtcm-base-id", "1234"}, flagVars{rtcmBaseID: opt.Make(uint16(1234))}},
+	{"ttyS0", []string{"--rtcm-base-id", "4095"}, flagVars{rtcmBaseID: opt.Make(uint16(4095))}},
 	// Test --ant-cable-delay flag
 	{"ttyS0", []string{"--ant-cable-delay", "100"}, flagVars{antCableDelay: opt.Make(100 * time.Nanosecond)}},
 	{"ttyS0", []string{"--ant-cable-delay", "0"}, flagVars{antCableDelay: opt.Make(time.Duration(0))}},
@@ -437,6 +441,11 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"}, // can't use with --fixed-pos-ecef
 	// Test --msg-file cannot be combined with --test-log
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--test-log", "test.log", "--packet-log", "pkt.log"}, // can't use with --test-log
+	// Test invalid --rtcm-base-id values
+	{"--serial-device", "ttyS0", "--rtcm-base-id", "4096"},  // exceeds 12-bit max
+	{"--serial-device", "ttyS0", "--rtcm-base-id", "65535"}, // exceeds 12-bit max
+	// Test --rtcm-base-id cannot be combined with --msg-file
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--rtcm-base-id", "1"}, // can't use with --msg-file
 	// Test --tag requires --msg-file
 	{"--serial-device", "ttyS0", "--tag", "setup"}, // --tag without --msg-file
 	// Test --msg-file cannot be combined with --show-receiver

@@ -79,6 +79,9 @@ var cfgValKeysByProp = map[gpsprot.PropIDs][]ucv.AnyTypedKey{
 	gpsprot.PropIDAntennaCableDelay: {
 		ucv.KTpAntCabledelay,
 	},
+	gpsprot.PropIDRTCMBaseID: {
+		ucv.KRtcmDf003Out,
+	},
 	gpsprot.PropIDTimePulsePolarityRising: {
 		ucv.KTpPolTp1,
 	},
@@ -155,6 +158,9 @@ func (raw *CfgVals) Cook(ver *Version, cp *gpsprot.ConfigProps) {
 	if v, ok := cfgValGet(raw, ucv.KNavspgInfilMinelev); ok {
 		cp.SetMinElevation(gpsprot.Angle(v) * gpsprot.Degrees)
 	}
+	if v, ok := cfgValGet(raw, ucv.KRtcmDf003Out); ok {
+		cp.SetRTCMBaseID(uint16(v))
+	}
 }
 
 // Transaction determines the transaction to achieve the specified target.
@@ -199,6 +205,9 @@ func (known *CfgVals) addGetKeys(ids gpsprot.PropIDs, ver *Version, keys []ucv.K
 	}
 	for id, tk := range cfgValKeysByProp {
 		if id&ids == id { // be careful not to match PropIDTimePulse
+			if id == gpsprot.PropIDRTCMBaseID && !ver.rtcmSupport().df003Out {
+				continue
+			}
 			tks = append(tks, tk...)
 		}
 	}
@@ -266,6 +275,9 @@ func (tb *txnBuilder) build() error {
 		if deg, ok := angleToInt8Degrees(v); ok {
 			txnAddItem(tb, ucv.KNavspgInfilMinelev, int64(deg))
 		}
+	}
+	if v, ok := cp.GetRTCMBaseID(); ok && tb.ver.rtcmSupport().df003Out {
+		txnAddItem(tb, ucv.KRtcmDf003Out, uint64(v))
 	}
 	if v, ok := cp.GetTimePulsePolarityRising(); ok {
 		txnAddItem(tb, ucv.KTpPolTp1, v)

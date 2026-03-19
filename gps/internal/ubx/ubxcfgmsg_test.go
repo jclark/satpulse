@@ -9,12 +9,18 @@ import (
 )
 
 var testVers = struct {
-	f9p, m8f, m8p, lea6t, f10s, f9t, f9t20, x20p Version
+	f9p, f9p51, m8f, m8p, lea6t, f10s, f9t, f9t25, x20p Version
 }{
 	f9p: Version{
 		Mod:  "ZED-F9P",
 		Prot: &ProtVer{Major: 27, Minor: 11},
 		FW:   &FWVer{ProductCategory: "HPG", Major: 1, Minor: 12},
+		GNSS: gpsprot.MajorGNSSSet | gpsprot.GNSSSetOf(gpsprot.QZSS, gpsprot.SBAS),
+	},
+	f9p51: Version{
+		Mod:  "ZED-F9P",
+		Prot: &ProtVer{Major: 27, Minor: 50},
+		FW:   &FWVer{ProductCategory: "HPG", Major: 1, Minor: 51},
 		GNSS: gpsprot.MajorGNSSSet | gpsprot.GNSSSetOf(gpsprot.QZSS, gpsprot.SBAS),
 	},
 	m8f: Version{
@@ -45,7 +51,7 @@ var testVers = struct {
 		FW:   &FWVer{ProductCategory: "TIM", Major: 2, Minor: 1},
 		GNSS: gpsprot.MajorGNSSSet | gpsprot.GNSSSetOf(gpsprot.QZSS),
 	},
-	f9t20: Version{
+	f9t25: Version{
 		Mod:  "ZED-F9T",
 		Prot: &ProtVer{Major: 29, Minor: 25},
 		FW:   &FWVer{ProductCategory: "TIM", Major: 2, Minor: 25},
@@ -489,7 +495,7 @@ func TestMsgChangesSurvey(t *testing.T) {
 		{
 			name:            "F9T20 survey enabled",
 			flags:           gpsprot.PVTMsgSurvey,
-			version:         testVers.f9t20,
+			version:         testVers.f9t25,
 			surveyRequested: true,
 			expectedMsgID:   ubxbin.TimSvinID,
 			expectedRate:    1,
@@ -661,59 +667,77 @@ func TestVersionRtcmSupport(t *testing.T) {
 		version     Version
 		expectGNSS  gpsprot.GNSSSet
 		expectFlags gpsprot.RTCMMsgFlags
+		expectDF003 bool
 	}{
 		{
 			name:        "f9p",
 			version:     testVers.f9p,
 			expectGNSS:  gpsprot.MajorGNSSSet,
 			expectFlags: gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7,
+			expectDF003: false,
+		},
+		{
+			name:        "f9p51",
+			version:     testVers.f9p51,
+			expectGNSS:  gpsprot.MajorGNSSSet,
+			expectFlags: gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7,
+			expectDF003: true,
 		},
 		{
 			name:        "m8f",
 			version:     testVers.m8f,
 			expectGNSS:  0,
 			expectFlags: 0,
+			expectDF003: false,
 		},
 		{
 			name:        "m8p",
 			version:     testVers.m8p,
 			expectGNSS:  gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.GLO, gpsprot.BDS),
 			expectFlags: gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7,
+			expectDF003: false,
 		},
 		{
 			name:        "lea6t",
 			version:     testVers.lea6t,
 			expectGNSS:  0,
 			expectFlags: 0,
+			expectDF003: false,
 		},
 		{
 			name:        "f10s",
 			version:     testVers.f10s,
 			expectGNSS:  0,
 			expectFlags: 0,
+			expectDF003: false,
 		},
 		{
 			name:        "f9t",
 			version:     testVers.f9t,
 			expectGNSS:  gpsprot.MajorGNSSSet,
 			expectFlags: gpsprot.RTCMMsgMSM7,
+			expectDF003: false,
 		},
 		{
-			name:        "f9t20",
-			version:     testVers.f9t20,
+			name:        "f9t25",
+			version:     testVers.f9t25,
 			expectGNSS:  gpsprot.MajorGNSSSet,
 			expectFlags: gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7,
+			expectDF003: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gnss, flags := tt.version.rtcmSupport()
-			if gnss != tt.expectGNSS {
-				t.Errorf("GNSS support: got %v, want %v", gnss, tt.expectGNSS)
+			sup := tt.version.rtcmSupport()
+			if sup.gnss != tt.expectGNSS {
+				t.Errorf("GNSS support: got %v, want %v", sup.gnss, tt.expectGNSS)
 			}
-			if flags != tt.expectFlags {
-				t.Errorf("MSM flags: got %v, want %v", flags, tt.expectFlags)
+			if sup.msgs != tt.expectFlags {
+				t.Errorf("MSM flags: got %v, want %v", sup.msgs, tt.expectFlags)
+			}
+			if sup.df003Out != tt.expectDF003 {
+				t.Errorf("DF003 support: got %v, want %v", sup.df003Out, tt.expectDF003)
 			}
 		})
 	}
@@ -937,7 +961,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 		{
 			name:        "MSM7 all major GNSS (F9T20)",
 			flags:       gpsprot.RTCMMsgMSM7,
-			version:     testVers.f9t20,
+			version:     testVers.f9t25,
 			enabledGNSS: gpsprot.MajorGNSSSet,
 			expectedRates: map[ubxbin.MsgID]MsgRate{
 				ubxbin.Rtcm1074ID: 0, // GPS MSM4 disabled
@@ -1004,7 +1028,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 		{
 			name:        "MSM7+Lax GPS (F9T20 - no fallback needed)",
 			flags:       gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgLax,
-			version:     testVers.f9t20,
+			version:     testVers.f9t25,
 			enabledGNSS: gpsprot.GNSSSetOf(gpsprot.GPS),
 			expectedRates: map[ubxbin.MsgID]MsgRate{
 				ubxbin.Rtcm1074ID: 0, // GPS MSM4 disabled
@@ -1030,7 +1054,7 @@ func TestMsgChangesRtcm(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := newMsgChanges()
-			err := mc.rtcm(tt.flags, &tt.version, tt.enabledGNSS)
+			err := mc.rtcm(tt.flags, tt.version.rtcmSupport(), tt.enabledGNSS)
 
 			if tt.wantErr {
 				if err == nil {

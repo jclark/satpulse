@@ -103,6 +103,9 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.navMsgAuth.IsSet() {
 		cp.SetNavMsgAuth(v.navMsgAuth.Get())
 	}
+	if v.rtcmBaseID.IsSet() {
+		cp.SetRTCMBaseID(v.rtcmBaseID.Get())
+	}
 	// If nothing requires the configurator, return nil (passive capture mode)
 	if !v.showReceiver && target.NoOp() {
 		return nil, nil
@@ -356,6 +359,9 @@ func printProps(f *os.File, p *gpsprot.ConfigProps) {
 	if mode, ok := p.GetMode(); ok {
 		printMode(f, mode)
 	}
+	if rtcmBaseID, ok := p.GetRTCMBaseID(); ok {
+		printRTCMBaseID(f, rtcmBaseID)
+	}
 }
 
 func printSignals(f *os.File, sigs gpsprot.SignalSet) {
@@ -405,6 +411,10 @@ func printAntennaCableDelay(f *os.File, delay time.Duration) {
 
 func printMinElevation(f *os.File, elev gpsprot.Angle) {
 	fmt.Fprintf(f, "Minimum elevation: %s\n", elev.String())
+}
+
+func printRTCMBaseID(f *os.File, id uint16) {
+	fmt.Fprintf(f, "RTCM base station ID: %d\n", id)
 }
 
 func printTimePulse(f *os.File, tp gpsprot.TimePulse) {
