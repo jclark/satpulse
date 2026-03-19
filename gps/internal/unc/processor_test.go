@@ -271,9 +271,7 @@ func TestEpochTracking(t *testing.T) {
 	if epochMsg.Tag != TagBinary {
 		t.Errorf("NavEpoch.Tag = %q, want %q", epochMsg.Tag, TagBinary)
 	}
-	if epochMsg.StartTime != time.Unix(1, 0) {
-		t.Errorf("NavEpoch.StartTime = %v, want %v", epochMsg.StartTime, time.Unix(1, 0))
-	}
+
 	if epochTRead != time.Unix(2, 0) {
 		t.Errorf("NavEpoch tRead = %v, want %v", epochTRead, time.Unix(2, 0))
 	}

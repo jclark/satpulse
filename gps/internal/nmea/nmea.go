@@ -97,8 +97,9 @@ func (s *ApprovedSentence) msgID() string {
 // other packages) receive and return it.
 type NavEpoch struct {
 	gpsprot.NavEpochMsg
-	TimeOfDay  string // UTC time-of-day string from the sentence; "" means no time yet
-	rmcExtMode byte   // RMC extended mode indicator ('R', 'F', 'P'); 0 if not seen
+	startTime  time.Time // tRead of first message in this epoch
+	TimeOfDay  string    // UTC time-of-day string from the sentence; "" means no time yet
+	rmcExtMode byte      // RMC extended mode indicator ('R', 'F', 'P'); 0 if not seen
 }
 
 // CheckEpoch is called by a message handler that participates in the
@@ -200,7 +201,7 @@ func (p *PacketProcessor) handleEpoch(epoch *NavEpoch, tRead time.Time) {
 	}
 	if epoch != p.curNavEpoch {
 		p.mgr.EpochStarted(p, tRead)
-		epoch.StartTime = tRead
+		epoch.startTime = tRead
 		p.curNavEpoch = epoch
 	}
 }
@@ -286,7 +287,7 @@ func (p *PacketProcessor) Dispatch(sen *ApprovedSentence, tRead time.Time, h gps
 		mt := gpsprot.TimeMsg{Tag: Tag, NativeMsgID: sen.msgID(), UTCTime: utc, GNSS: talkerIDToGNSS(sen.TalkerID)}
 		if h != nil {
 			if ne := p.curNavEpoch; ne != nil {
-				mt.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+				mt.ReadDelay = gpsprot.Duration(tRead.Sub(ne.startTime))
 			}
 			h.Time(&mt, tRead)
 		}
@@ -307,7 +308,7 @@ func (p *PacketProcessor) setTimeMsgReadDelay(msgs []gpsprot.Msg, tRead time.Tim
 	}
 	for _, m := range msgs {
 		if tm, ok := m.(*gpsprot.TimeMsg); ok {
-			tm.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+			tm.ReadDelay = gpsprot.Duration(tRead.Sub(ne.startTime))
 			return
 		}
 	}

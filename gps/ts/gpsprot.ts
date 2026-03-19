@@ -56,6 +56,7 @@ export interface TimeMsg {
     pulseOffset?: number;
     gnss?: GNSS;
     ref?: TimeRef;
+    readDelay?: Duration;
     tag?: Tag;
     nativeMsgID?: string;
 }
@@ -139,7 +140,6 @@ export interface NavEpochMsg {
     gnssUsed?: GNSSSet;
     bandsUsed?: BandsUsed;
     tag?: Tag;
-    startTime: StdTime;
 }
 
 export interface LeapSecondMsg {

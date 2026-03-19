@@ -1126,8 +1126,6 @@ type NavEpochMsg struct {
 	BandsUsed Band `json:"bandsUsed,omitzero"`
 	// Tag identifies the protocol source (e.g. UBX, NMEA, Unicore).
 	Tag Tag `json:"tag,omitzero"`
-	// StartTime is when the first message in this epoch was read.
-	StartTime time.Time `json:"startTime"`
 }
 
 // Accuracy holds estimated accuracy of the navigation solution. Fields are
@@ -1155,8 +1153,8 @@ func (a *Accuracy) Fill(other *Accuracy) {
 // MergeNavEpoch merges multiple NavEpochMsg values. Priority is implicit in
 // argument order: the first non-nil message wins for scalar fields (Tag,
 // FixLevel, SolutionDim); optional fields use fill-if-unset semantics; bitmask
-// fields (Correction, AuxSrc, GNSSUsed, BandsUsed) are unioned; StartTime is
-// the earliest. The first non-nil argument is mutated and returned.
+// fields (Correction, AuxSrc, GNSSUsed, BandsUsed) are unioned. The first
+// non-nil argument is mutated and returned.
 func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
 	var dst *NavEpochMsg
 	for _, m := range msgs {
@@ -1187,9 +1185,6 @@ func MergeNavEpoch(msgs ...*NavEpochMsg) *NavEpochMsg {
 		dst.AuxSrc |= m.AuxSrc
 		dst.GNSSUsed |= m.GNSSUsed
 		dst.BandsUsed |= m.BandsUsed
-		if !m.StartTime.IsZero() && (dst.StartTime.IsZero() || m.StartTime.Before(dst.StartTime)) {
-			dst.StartTime = m.StartTime
-		}
 	}
 	if dst != nil && dst.FixLevel < FixLevelCode {
 		dst.SolutionDim = 0

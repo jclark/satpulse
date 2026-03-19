@@ -102,9 +102,7 @@ func TestNavEpochMsg(t *testing.T) {
 	if epochs[0].Tag != Tag {
 		t.Fatalf("NavEpochMsg.Tag = %q, want %q", epochs[0].Tag, Tag)
 	}
-	if epochs[0].StartTime != time.Unix(1, 0) {
-		t.Fatalf("NavEpochMsg.StartTime = %v, want %v", epochs[0].StartTime, time.Unix(1, 0))
-	}
+
 }
 
 func TestNavAutoEpoch(t *testing.T) {
@@ -158,9 +156,7 @@ func TestNavAutoEpoch(t *testing.T) {
 	if !e.NumSVUsed.IsSet() || e.NumSVUsed.Get() != 12 {
 		t.Errorf("epoch 1 NumSVUsed = %v, want 12", e.NumSVUsed)
 	}
-	if e.StartTime != time.Unix(1, 0) {
-		t.Errorf("epoch 1 StartTime = %v, want %v", e.StartTime, time.Unix(1, 0))
-	}
+
 
 	// Third NAV-AUTO should flush the second epoch
 	auto3 := &asbin.NavAuto{FixState: asbin.NavAutoFix3D, SatInUse: 10, SatInView: 20}

@@ -15,8 +15,9 @@ type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
 	mh             gpsprot.MsgHandler
 	mgr            *gpsprot.NavEpochManager
-	curNavEpoch    uint32               // current LocalTimestamp+1 (0 means no epoch seen)
-	curNavEpochMsg *gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
+	curNavEpoch      uint32               // current LocalTimestamp+1 (0 means no epoch seen)
+	curNavEpochMsg   *gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
+	curNavEpochStart time.Time            // tRead of first message in current epoch
 }
 
 // NewPacketProcessor creates a new SDBP packet processor.
@@ -51,7 +52,8 @@ func (p *PacketProcessor) handleNavEpoch(nm sdbpbin.NavMsg, tRead time.Time) {
 	if e != p.curNavEpoch {
 		p.mgr.EpochStarted(p, tRead)
 		p.curNavEpoch = e
-		p.curNavEpochMsg = &gpsprot.NavEpochMsg{StartTime: tRead}
+		p.curNavEpochMsg = &gpsprot.NavEpochMsg{}
+		p.curNavEpochStart = tRead
 	}
 }
 
@@ -183,7 +185,7 @@ func (p *PacketProcessor) emitTime(tm *gpsprot.TimeMsg, tRead time.Time) {
 	if h := p.mh; h != nil {
 		tm.Tag = Tag
 		if ne := p.curNavEpochMsg; ne != nil && tm.Ref == gpsprot.NavSolution {
-			tm.ReadDelay = gpsprot.Duration(tRead.Sub(ne.StartTime))
+			tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
 		}
 		h.Time(tm, tRead)
 	}

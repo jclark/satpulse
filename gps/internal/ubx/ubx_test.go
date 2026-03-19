@@ -374,9 +374,7 @@ func TestNavEpochMsg(t *testing.T) {
 	if epochMsg.Tag != Tag {
 		t.Fatalf("NavEpochMsg.Tag = %q, want %q", epochMsg.Tag, Tag)
 	}
-	if epochMsg.StartTime != time.Unix(1, 0) {
-		t.Fatalf("NavEpochMsg.StartTime = %v, want %v", epochMsg.StartTime, time.Unix(1, 0))
-	}
+
 	if epochTRead != time.Unix(2, 0) {
 		t.Fatalf("NavEpochMsg tRead = %v, want %v", epochTRead, time.Unix(2, 0))
 	}
