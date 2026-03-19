@@ -71,7 +71,8 @@ const showProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDTimePulse |
 	gpsprot.PropIDTimeGNSS |
 	gpsprot.PropIDAntennaCableDelay |
-	gpsprot.PropIDMinElevation
+	gpsprot.PropIDMinElevation |
+	gpsprot.PropIDRTCMBaseID
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
 	help := false
