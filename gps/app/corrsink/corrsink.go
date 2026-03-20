@@ -128,7 +128,7 @@ func (s *Sink) Run(ctx context.Context, lg *slog.Logger,
 	// subscribe to bcast before starting reader to avoid missing packets
 	subCh := s.Packets.Subscribe()
 	// queue channel from pruning queue to writer
-	qCh := make(chan scan.Packet)
+	qCh := make(chan scan.Packet, 1)
 	// start writer
 	pipelineWg.Go(func() {
 		writeErr = s.writer(iCtx, lg, pw, portLock, qCh, iCancel)
