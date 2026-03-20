@@ -1,17 +1,48 @@
-# Correction support in satpulsed (#221)
+# Stream support in satpulsed (#221, #99, #126)
 
-Add a `[correction]` configuration section to satpulsed that receives
-correction data from an external source and feeds it to the GPS
-receiver.  The `corrsink` package (see `plan/archive/corrsink.md`)
-handles the network/serial plumbing; this plan covers the daemon
-integration and the observability event that fires on each received
-correction packet.
+Integrate `stream.pull` and `stream.push` into satpulsed.  The
+`gps/app/stream` package handles the
+network/serial plumbing; this plan covers the daemon integration
+and the observability event that fires on each received correction
+packet.
 
-## Prerequisite: split rtcm into lib package
+## Prerequisite
 
-See `plan/rtcm-split.md`.  The RTCM packet format code moves to
-`gps/lib/rtcmbin`; `gps/internal/rtcm` retains only the
-`PacketProcessor`.
+- `plan/corrsink-rename.md` (rename corrsink to stream).
+- `plan/stream-backoff.md` (adaptive backoff).
+- `plan/ntrip-client.md` (NTRIPSource and ntriphdr library) if
+  NTRIP transport is needed.
+
+## TOML configuration
+
+`stream.pull` is a single table (one correction source per
+receiver).  Transport is selected by which dotted keys are present
+(`tcp.address` vs `ntrip.*`), mutually exclusive.
+
+```toml
+# Plain TCP
+[stream.pull]
+tcp.address = "10.56.65.82:2006"
+
+# OR NTRIP client
+[stream.pull]
+ntrip.address = "caster.example.com:2101"
+ntrip.mountpoint = "RTCM"
+ntrip.username = "user"
+ntrip.password = "pass"
+```
+
+### stream.pull with separate serial port
+
+If the receiver has a second serial input for corrections:
+
+```toml
+[stream.pull]
+ntrip.address = "caster.example.com:2101"
+ntrip.mountpoint = "RTCM"
+serial.device = "/dev/ttyUSB1"
+serial.speed = 115200
+```
 
 ## CorrectionPacket observer event
 
@@ -110,70 +141,54 @@ and does not affect the loop condition or select.
 
 ### Configuration
 
-Add `Correction CorrectionConfig` to `Config` in
-`time/app/daemon/config.go`.
+Add `Stream stream.Config` to `Config` in
+`time/app/daemon/config.go`.  The `stream.Config` type is defined
+in `gps/app/stream` and matches the `[[stream.pull]]` /
+`[stream.pull]` TOML table described above.
 
-```go
-type CorrectionConfig struct {
-    TCP    CorrectionTCPConfig
-    Serial CorrectionSerialConfig
-}
-
-type CorrectionTCPConfig struct {
-    Address string
-}
-
-type CorrectionSerialConfig struct {
-    Device string
-    Speed  int
-}
-```
-
-Transport is selected by which keys are present (TCP first, NTRIP
-later).  Serial defaults to the main GPS port.
-
-Put correction-specific daemon code in a new file
-`time/app/daemon/correction.go`.
+Put stream-specific daemon code in a new file
+`time/app/daemon/stream.go`.
 
 ### Startup in `run()`
 
-Correction setup is split into two phases to avoid a startup
-deadlock.  `run()` has many fallible steps between early setup and
-the final `d.Run(...)` call that starts consuming channels.  If the
-adapter started producing before the dispatcher was running, it
-could block on `corrCh <-` with no consumer, and a subsequent
-error-path `cancel()` + `wg.Wait()` would hang.
+Stream setup is split into two phases to avoid a startup deadlock.
+`run()` has many fallible steps between early setup and the final
+`d.Run(...)` call that starts consuming channels.  If the adapter
+started producing before the dispatcher was running, it could block
+on `corrCh <-` with no consumer, and a subsequent error-path
+`cancel()` + `wg.Wait()` would hang.
 
 **Phase 1 -- prepare (before any fallible steps that follow):**
 
-If `cfg.Correction.TCP.Address != ""`:
+If `[stream.pull]` is configured:
 
-1. Create `corrsink.NewSink()`.
-2. Create `corrsink.TCPSource{Addr: cfg.Correction.TCP.Address}`.
-3. Determine correction serial port: if `cfg.Correction.Serial.Device`
-   is set, open a separate serial connection and create a new
-   `OutPortLock`; otherwise reuse the main `portLock`.
+1. Create `stream.NewPull()`.
+2. Create the appropriate `Source` (`stream.TCPSource` or
+   `stream.NTRIPSource`) based on which transport keys are present.
+3. Determine serial port: if `serial.device` is set, open a
+   separate serial connection and create a new `OutPortLock`;
+   otherwise reuse the main `portLock`.
 4. Create `corrCh := make(chan CorrectionEvent)`.
 
 **Phase 2 -- start (immediately before `d.Run`, after all fallible
 steps):**
 
-5. Subscribe to `sink.Packets` and start the adapter goroutine that
+5. Subscribe to `pull.Packets` and start the adapter goroutine that
    owns `corrCh` and converts `scan.Packet` to `CorrectionEvent`:
    - Skip packets where `pkt.Format == nil` (malformed input,
      timeout markers, reconnect noise -- the bcast delivers these
      before the internal queue filters them).
    - `tag := pkt.Format.Tag()` for `Protocol`
    - `pkt.Format.MsgID([]byte(pkt.Data))` for `MsgType`
-   - Type-assert `pkt.Format` to `MultiPacketFormat` for
-     `IsMultipleMessage`
+   - Call `rtcmbin.MultipleMessageBit([]byte(pkt.Data))` for
+     `MultipleMessage`
    - Call `rtcmbin.ReferenceStationID([]byte(pkt.Data))` for
      `RefStationID` (import `gps/lib/rtcmbin`)
    - Send on `corrCh`
    - The adapter **closes `corrCh`** when the bcast subscription
-     channel closes (corrsink shutdown), signalling the dispatcher
+     channel closes (stream shutdown), signalling the dispatcher
      that no more correction events will arrive.
-6. Start `sink.Run` in a goroutine (via `wg.Go`).
+6. Start `pull.Run` in a goroutine (via `wg.Go`).
 7. Pass `corrCh` to `Dispatcher.Run`.
 
 ### Shutdown ordering
@@ -183,8 +198,8 @@ responsible for closing it.
 
 Shutdown sequence:
 
-1. Daemon cancels the corrsink context.
-2. `Sink.Run` drains its internal pipeline (reader, queue, writer),
+1. Daemon cancels the stream context.
+2. `Pull.Run` drains its internal pipeline (reader, queue, writer),
    then calls `Packets.Close()` which closes all bcast subscriber
    channels.
 3. The adapter goroutine sees its subscription channel close, closes
@@ -194,39 +209,37 @@ Shutdown sequence:
 
 The dispatcher loop condition `tsCh != nil || pktCh != nil ||
 corrCh != nil` ensures it stays alive to drain `corrCh` even if the
-GPS channels close first.  Conversely, because `Sink.Run` is
+GPS channels close first.  Conversely, because `Pull.Run` is
 ctx-based, the daemon must cancel that context before or concurrently
 with closing the GPS channels to avoid the dispatcher blocking
 indefinitely on a never-closed `corrCh`.
 
 ### Connection state logging
 
-`corrsink.Sink.Run` takes an `onState func(State, error)` callback.
+`stream.Pull.Run` takes an `onState func(State, error)` callback.
 The daemon passes a callback that logs state transitions via slog:
 
 ```go
-func(st corrsink.State, err error) {
+func(st stream.State, err error) {
     switch st {
-    case corrsink.Connecting:
-        lg.Info("correction source connecting", "addr", addr)
-    case corrsink.Connected:
-        lg.Info("correction source connected", "addr", addr)
-    case corrsink.Reconnecting:
-        lg.Warn("correction source reconnecting", "addr", addr, "err", err)
+    case stream.Connecting:
+        lg.Info("stream pull connecting", "addr", addr)
+    case stream.Connected:
+        lg.Info("stream pull connected", "addr", addr)
+    case stream.Reconnecting:
+        lg.Warn("stream pull reconnecting", "addr", addr, "err", err)
     }
 }
 ```
 
 ## Implementation order
 
-1. Split `gps/internal/rtcm` into `gps/lib/rtcmbin` +
-   `gps/internal/rtcm` (see `plan/rtcm-split.md`).
-2. `CorrectionPacketMsg` in `gps/gpsprot/msg.go`.
-3. `CorrectionPacket` on Observer interface + DefaultObserver +
+1. `CorrectionPacketMsg` in `gps/gpsprot/msg.go`.
+2. `CorrectionPacket` on Observer interface + DefaultObserver +
    MultiObserver.
-4. `CorrectionEvent` + dispatcher changes.
-5. `CorrectionConfig` + daemon wiring + adapter goroutine.
-6. Tests.
+3. `CorrectionEvent` + dispatcher changes.
+4. `stream.Config` + daemon wiring + adapter goroutine.
+5. Tests.
 
 ## Testing
 
@@ -236,5 +249,6 @@ func(st corrsink.State, err error) {
 - Unit test adapter goroutine: feed `scan.Packet` with known RTCM
   data, verify `CorrectionEvent` fields.
 - `make test` for no regressions.
-- Manual: add `[correction]` to `/etc/satpulse.toml` pointing at a
-  base station, verify `correctionPacket` entries in the event log.
+- Manual: add `[stream.pull]` to `/etc/satpulse.toml` pointing at
+  a base station, verify `correctionPacket` entries in the event
+  log.
