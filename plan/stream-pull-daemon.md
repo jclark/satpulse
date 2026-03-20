@@ -1,10 +1,8 @@
-# Stream support in satpulsed (#221, #99, #126)
+# Stream pull daemon integration (#221, #99, #237)
 
-Integrate `stream.pull` and `stream.push` into satpulsed.  The
-`gps/app/stream` package handles the
-network/serial plumbing; this plan covers the daemon integration
-and the observability event that fires on each received correction
-packet.
+Integrate `stream.pull` into satpulsed.  The `gps/app/stream`
+package handles the network/serial plumbing; this plan covers
+daemon wiring and RTCM observability.
 
 ## Prerequisite
 
@@ -44,46 +42,70 @@ serial.device = "/dev/ttyUSB1"
 serial.speed = 115200
 ```
 
-## CorrectionPacket observer event
+## RTCM observability (#237)
 
-The event uses a generic name (`CorrectionPacket`) rather than
-`RTCMMessage` so it can cover future correction protocols (SPARTN,
-etc.) without adding new methods.
+RTCM observability works in both directions: packets from the
+receiver and packets from the network (stream.pull).  Both
+directions produce the same `gpsprot.RTCMMsg` type and go through
+the same observer method.
 
-### CorrectionPacketMsg struct
+See `plan/rtcm-msm.md` for the future MSM satellite/signal detail
+extension.
+
+### RTCMMsg
 
 Add to `gps/gpsprot/msg.go`:
 
 ```go
-// CorrectionPacketMsg carries metadata about a received correction packet.
-type CorrectionPacketMsg struct {
-    Protocol        Tag             `json:"protocol"`
-    MsgType         string          `json:"msgType"`
-    MultipleMessage bool            `json:"multipleMessage,omitempty"`
-    RefStationID    opt.Val[uint16] `json:"refStationID,omitzero"`
+type RTCMSource int
+
+const (
+    RTCMReceiver RTCMSource = iota
+    RTCMNetwork
+)
+
+// RTCMMsg carries metadata about a parsed RTCM packet.
+type RTCMMsg struct {
+    Source    RTCMSource      `json:"source"`
+    MsgType  uint16          `json:"msgType"`
+    StationID opt.Val[uint16] `json:"stationID,omitzero"`
 }
 ```
 
-- `Protocol` is the packet format tag (e.g. `"RTCM"`, `"SPARTN"`).
-- `MsgType` is the human-readable message ID string (e.g. `"1077"`),
-  matching `PacketFormat.MsgID`.
-- `MultipleMessage` is true when more packets follow for this epoch
-  (MSM multiple-message bit).
-- `RefStationID` is set when the packet contains a reference station
-  ID (RTCM DF003).  `opt.Val` because not all message types or
-  protocols carry one.
-
 No `Dispatch` method -- this is not a `gpsprot.Msg` routed through
 `MsgHandler`.  It goes through Observer only.
+
+### Conversion function
+
+Add to `gps/internal/rtcm`:
+
+```go
+// MakeRTCMMsg builds a gpsprot.RTCMMsg from a parsed rtcmbin.Msg.
+func MakeRTCMMsg(msg rtcmbin.Msg, source gpsprot.RTCMSource) gpsprot.RTCMMsg
+```
+
+Extracts `MsgType` and `StationID` from the `rtcmbin.Msg`.  Both
+directions call this function:
+
+- **Receiver direction:** `gps/internal/rtcm.PacketProcessor`
+  already parses the packet via `rtcmbin.ParseMsg`.  It calls
+  `MakeRTCMMsg` with `RTCMReceiver` and delivers the result
+  through `NativeMsgHandler.NativeMsg`.
+- **Network direction:** `gps/app/stream` subscribes to
+  `Pull.Packets`, parses RTCM packets via `rtcmbin.ParseMsg`,
+  calls `MakeRTCMMsg` with `RTCMNetwork`, and sends the result
+  over a channel to the dispatcher.
+
+This keeps all rtcmbin-to-gpsprot conversion in `gps/internal/rtcm`
+and avoids the dispatcher (in the `time` layer) needing to import
+`gps/internal/` packages.
 
 ### Observer interface
 
 Add to `time/internal/obs/observer.go`:
 
 ```go
-// CorrectionPacket delivers metadata for each correction packet
-// received from the correction source.
-CorrectionPacket(msg *gpsprot.CorrectionPacketMsg, tRead time.Time)
+RTCM(msg *gpsprot.RTCMMsg, tRead time.Time)
 ```
 
 Update `DefaultObserver` (no-op), `MultiObserver` (fan-out with
@@ -94,48 +116,53 @@ type assertion, same pattern as `Tick` / `NavEpochPV`).
 Add to `gpsevent.LogEvent`:
 
 ```go
-CorrectionPacket *gpsprot.CorrectionPacketMsg `json:"correctionPacket,omitempty"`
+RTCM *gpsprot.RTCMMsg `json:"rtcm,omitempty"`
 ```
 
 ## Dispatcher
 
-Add an optional correction event channel to `Dispatcher.Run`:
+Add an optional RTCM event channel to `Dispatcher.Run`:
 
 ```go
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet,
-    corrCh <-chan CorrectionEvent)
+    rtcmCh <-chan RTCMEvent)
 ```
 
 where
 
 ```go
-// CorrectionEvent pairs a correction packet with its read time.
-type CorrectionEvent struct {
-    Msg   gpsprot.CorrectionPacketMsg
+// RTCMEvent pairs an RTCMMsg with its read time.
+type RTCMEvent struct {
+    Msg   gpsprot.RTCMMsg
     TRead time.Time
 }
 ```
 
-Update the loop condition to include `corrCh`:
+Update the loop condition to include `rtcmCh`:
 
 ```go
-for tsCh != nil || pktCh != nil || corrCh != nil {
+for tsCh != nil || pktCh != nil || rtcmCh != nil {
 ```
 
 Add to the select:
 
 ```go
-case ce, ok := <-corrCh:
+case re, ok := <-rtcmCh:
     if ok {
-        d.obs.CorrectionPacket(&ce.Msg, ce.TRead)
-        d.logEvent(LogEvent{T: ce.TRead, CorrectionPacket: &ce.Msg})
+        d.obs.RTCM(&re.Msg, re.TRead)
+        d.logEvent(LogEvent{T: re.TRead, RTCM: &re.Msg})
     } else {
-        corrCh = nil
+        rtcmCh = nil
     }
 ```
 
-When correction is not configured, `corrCh` is nil from the start
+When stream.pull is not configured, `rtcmCh` is nil from the start
 and does not affect the loop condition or select.
+
+Note: receiver-direction RTCM events also arrive via `rtcmCh`.
+The `PacketProcessor` delivers through `NativeMsgHandler`, and the
+daemon routes these into the same channel.  Both directions
+converge in the dispatcher.
 
 ## Daemon wiring
 
@@ -143,8 +170,8 @@ and does not affect the loop condition or select.
 
 Add `Stream stream.Config` to `Config` in
 `time/app/daemon/config.go`.  The `stream.Config` type is defined
-in `gps/app/stream` and matches the `[[stream.pull]]` /
-`[stream.pull]` TOML table described above.
+in `gps/app/stream` and matches the `[stream.pull]` TOML table
+described above.
 
 Put stream-specific daemon code in a new file
 `time/app/daemon/stream.go`.
@@ -155,7 +182,7 @@ Stream setup is split into two phases to avoid a startup deadlock.
 `run()` has many fallible steps between early setup and the final
 `d.Run(...)` call that starts consuming channels.  If the adapter
 started producing before the dispatcher was running, it could block
-on `corrCh <-` with no consumer, and a subsequent error-path
+on `rtcmCh <-` with no consumer, and a subsequent error-path
 `cancel()` + `wg.Wait()` would hang.
 
 **Phase 1 -- prepare (before any fallible steps that follow):**
@@ -168,32 +195,20 @@ If `[stream.pull]` is configured:
 3. Determine serial port: if `serial.device` is set, open a
    separate serial connection and create a new `OutPortLock`;
    otherwise reuse the main `portLock`.
-4. Create `corrCh := make(chan CorrectionEvent)`.
+4. Create `rtcmCh := make(chan RTCMEvent)`.
 
 **Phase 2 -- start (immediately before `d.Run`, after all fallible
 steps):**
 
-5. Subscribe to `pull.Packets` and start the adapter goroutine that
-   owns `corrCh` and converts `scan.Packet` to `CorrectionEvent`:
-   - Skip packets where `pkt.Format == nil` (malformed input,
-     timeout markers, reconnect noise -- the bcast delivers these
-     before the internal queue filters them).
-   - `tag := pkt.Format.Tag()` for `Protocol`
-   - `pkt.Format.MsgID([]byte(pkt.Data))` for `MsgType`
-   - Call `rtcmbin.MultipleMessageBit([]byte(pkt.Data))` for
-     `MultipleMessage`
-   - Call `rtcmbin.ReferenceStationID([]byte(pkt.Data))` for
-     `RefStationID` (import `gps/lib/rtcmbin`)
-   - Send on `corrCh`
-   - The adapter **closes `corrCh`** when the bcast subscription
-     channel closes (stream shutdown), signalling the dispatcher
-     that no more correction events will arrive.
-6. Start `pull.Run` in a goroutine (via `wg.Go`).
-7. Pass `corrCh` to `Dispatcher.Run`.
+5. Start `pull.Run` in a goroutine (via `wg.Go`).  `gps/app/stream`
+   subscribes to `pull.Packets` internally, parses RTCM packets,
+   calls `gps/internal/rtcm.MakeRTCMMsg`, and sends `RTCMEvent`
+   on `rtcmCh`.  Stream owns `rtcmCh` and closes it on shutdown.
+6. Pass `rtcmCh` to `Dispatcher.Run`.
 
 ### Shutdown ordering
 
-Channel ownership: the adapter goroutine owns `corrCh` and is
+Channel ownership: `gps/app/stream` owns `rtcmCh` and is
 responsible for closing it.
 
 Shutdown sequence:
@@ -202,17 +217,17 @@ Shutdown sequence:
 2. `Pull.Run` drains its internal pipeline (reader, queue, writer),
    then calls `Packets.Close()` which closes all bcast subscriber
    channels.
-3. The adapter goroutine sees its subscription channel close, closes
-   `corrCh`, and exits.
-4. The dispatcher sees `corrCh` closed, nils it out, and (once
+3. Stream's internal subscriber sees its channel close, closes
+   `rtcmCh`, and exits.
+4. The dispatcher sees `rtcmCh` closed, nils it out, and (once
    `tsCh` and `pktCh` are also nil) exits its loop.
 
 The dispatcher loop condition `tsCh != nil || pktCh != nil ||
-corrCh != nil` ensures it stays alive to drain `corrCh` even if the
-GPS channels close first.  Conversely, because `Pull.Run` is
-ctx-based, the daemon must cancel that context before or concurrently
-with closing the GPS channels to avoid the dispatcher blocking
-indefinitely on a never-closed `corrCh`.
+rtcmCh != nil` ensures it stays alive to drain `rtcmCh` even if
+the GPS channels close first.  Conversely, because `Pull.Run` is
+ctx-based, the daemon must cancel that context before or
+concurrently with closing the GPS channels to avoid the dispatcher
+blocking indefinitely on a never-closed `rtcmCh`.
 
 ### Connection state logging
 
@@ -234,21 +249,22 @@ func(st stream.State, err error) {
 
 ## Implementation order
 
-1. `CorrectionPacketMsg` in `gps/gpsprot/msg.go`.
-2. `CorrectionPacket` on Observer interface + DefaultObserver +
-   MultiObserver.
-3. `CorrectionEvent` + dispatcher changes.
-4. `stream.Config` + daemon wiring + adapter goroutine.
-5. Tests.
+1. `RTCMMsg` and `RTCMSource` in `gps/gpsprot/msg.go`.
+2. `MakeRTCMMsg` in `gps/internal/rtcm`.
+3. `PacketProcessor` calls `MakeRTCMMsg` for receiver direction.
+4. `RTCM` on Observer interface + DefaultObserver + MultiObserver.
+5. `RTCMEvent` + dispatcher changes.
+6. `stream.Config` + daemon wiring.
+7. Tests.
 
 ## Testing
 
-- Unit test `CorrectionPacketMsg` JSON marshaling (verify `omitzero`
-  omits unset `RefStationID`, `omitempty` omits false
-  `MultipleMessage`).
-- Unit test adapter goroutine: feed `scan.Packet` with known RTCM
-  data, verify `CorrectionEvent` fields.
+- Unit test `RTCMMsg` JSON marshaling (verify `omitzero` omits
+  unset `StationID`).
+- Unit test `MakeRTCMMsg` with various rtcmbin.Msg types (MSM,
+  1005, 1230).
+- Unit test dispatcher: send `RTCMEvent`, verify observer receives
+  `RTCMMsg` with correct source and fields.
 - `make test` for no regressions.
 - Manual: add `[stream.pull]` to `/etc/satpulse.toml` pointing at
-  a base station, verify `correctionPacket` entries in the event
-  log.
+  a base station, verify `rtcm` entries in the event log.
