@@ -561,9 +561,6 @@ func TestEpochBoundary(t *testing.T) {
 	if rec.epochs[0].Tag != Tag {
 		t.Errorf("epoch Tag = %q, want %q", rec.epochs[0].Tag, Tag)
 	}
-	if rec.epochs[0].StartTime != t1 {
-		t.Errorf("epoch StartTime = %v, want %v", rec.epochs[0].StartTime, t1)
-	}
 	// Third epoch triggers flush of second
 	if err := processSentence(pp, "GPRMC,083601.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V", t3); err != nil {
 		t.Fatal(err)
@@ -571,9 +568,7 @@ func TestEpochBoundary(t *testing.T) {
 	if len(rec.epochs) != 2 {
 		t.Fatalf("expected 2 epochs, got %d", len(rec.epochs))
 	}
-	if rec.epochs[1].StartTime != t2 {
-		t.Errorf("second epoch StartTime = %v, want %v", rec.epochs[1].StartTime, t2)
-	}
+
 }
 
 func TestEpochGGAVTGSameEpoch(t *testing.T) {
@@ -646,9 +641,6 @@ func TestExtHandlerEpochBoundary(t *testing.T) {
 	}
 	if len(rec.epochs) != 1 {
 		t.Fatalf("expected 1 epoch, got %d", len(rec.epochs))
-	}
-	if rec.epochs[0].StartTime != t1 {
-		t.Errorf("StartTime = %v, want %v", rec.epochs[0].StartTime, t1)
 	}
 }
 

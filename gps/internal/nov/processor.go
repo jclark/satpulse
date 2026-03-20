@@ -169,9 +169,10 @@ type packetProcessor struct {
 	// Navigation epoch tracking: NovAtel messages carry (Week, MillisecondsOfWeek)
 	// in the header. Messages with the same pair are part of the same epoch.
 	// Invariant: curEpochMsg is non-nil iff curEpoch is non-zero.
-	curEpoch    uint64              // (week<<32 | ms) + 1; 0 = no epoch
-	curEpochMsg *gpsprot.NavEpochMsg
-	curEpochTag gpsprot.Tag
+	curEpoch      uint64               // (week<<32 | ms) + 1; 0 = no epoch
+	curEpochMsg   *gpsprot.NavEpochMsg
+	curEpochStart time.Time
+	curEpochTag   gpsprot.Tag
 }
 
 // SetMsgHandler sets the handler for protocol-agnostic messages
@@ -255,6 +256,9 @@ func (p *packetProcessor) dispatch(common *novmsg.CommonHdr, body novmsg.MsgBody
 			return false, err
 		}
 		if tm != nil {
+			if ne := p.curEpochMsg; ne != nil {
+				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curEpochStart))
+			}
 			h.Time(tm, tRead)
 			return true, nil
 		}
@@ -275,7 +279,8 @@ func (p *packetProcessor) handleEpoch(common *novmsg.CommonHdr, tag gpsprot.Tag,
 	if e != p.curEpoch {
 		p.mgr.EpochStarted(p, tRead)
 		p.curEpoch = e
-		p.curEpochMsg = &gpsprot.NavEpochMsg{StartTime: tRead}
+		p.curEpochMsg = &gpsprot.NavEpochMsg{}
+		p.curEpochStart = tRead
 		p.curEpochTag = tag
 	}
 }

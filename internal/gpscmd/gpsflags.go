@@ -41,6 +41,7 @@ type flagVars struct {
 	pps            opt.Val[time.Duration]
 	antCableDelay  opt.Val[time.Duration]
 	minElev        opt.Val[gpsprot.Angle]
+	rtcmBaseID     opt.Val[uint16]
 	mode           opt.Val[gpsprot.Mode]
 	configOpts     gpsprot.ConfigOptions
 	configGet      gpsprot.PropIDs
@@ -58,7 +59,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-acc meters]
             [--survey] [--survey-time seconds] [--survey-acc meters]
-            [--min-elev degrees] [--vendor name]
+            [--min-elev degrees] [--vendor name] [--rtcm-base-id id]
             [--pvt-out pos|vel|time|tp|leap|survey|qual|epoch|tai|ecef|off,...]
             [--sats-out sat|sig|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
             [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|GLL|none,...]
@@ -72,7 +73,8 @@ const showProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDTimePulse |
 	gpsprot.PropIDTimeGNSS |
 	gpsprot.PropIDAntennaCableDelay |
-	gpsprot.PropIDMinElevation
+	gpsprot.PropIDMinElevation |
+	gpsprot.PropIDRTCMBaseID
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
 	help := false
@@ -154,6 +156,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Var(&fixedPosAcc, "fixed-pos-acc", "accuracy of fixed position in `meters`")
 	var minElev angle
 	flags.Var(&minElev, "min-elev", "minimum satellite elevation in `degrees`")
+	var rtcmBaseID uint16
+	flags.Uint16Var(&rtcmBaseID, "rtcm-base-id", 0, "RTCM reference station `id` (0-4095)")
 	flags.BoolVar(&vars.configOpts.SetStatic, "static", false, "make the receiver use static positioning mode if it is not already doing so")
 	flags.MarkHidden("static")
 	flags.BoolVar(&sysTimeTrusted, "sys-time-trusted", false, "provide system time as trusted time to the GPS receiver")
@@ -341,6 +345,13 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("--min-elev must be between -90 and 90 degrees")
 		}
 		vars.minElev.Set(elev)
+		configChanged = true
+	}
+	if flags.Lookup("rtcm-base-id").Changed {
+		if rtcmBaseID > 4095 {
+			return nil, nil, fmt.Errorf("--rtcm-base-id must be between 0 and 4095")
+		}
+		vars.rtcmBaseID.Set(rtcmBaseID)
 		configChanged = true
 	}
 	if vars.timeGNSS != 0 {

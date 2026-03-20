@@ -1,8 +1,8 @@
-// Package corrsink connects to a correction source, scans packets, and writes
+// Package stream connects to a correction source, scans packets, and writes
 // them to a serial port.  It handles reconnection internally and exposes a
 // bcast of scanned packets so callers can subscribe for UI updates, logging,
 // or other purposes.
-package corrsink
+package stream
 
 import (
 	"context"
@@ -46,7 +46,7 @@ func (s *TCPSource) Connect(ctx context.Context) (net.Conn, error) {
 	return (&net.Dialer{}).DialContext(ctx, "tcp", s.Addr)
 }
 
-// State represents the connection state of a Sink.
+// State represents the connection state of a Pull.
 type State int
 
 const (
@@ -68,11 +68,11 @@ func (s State) String() string {
 	}
 }
 
-// Sink reads correction packets from a Source and writes them to a
+// Pull reads correction packets from a Source and writes them to a
 // serial port via a pruning queue.  Scanned packets are broadcast
 // to subscribers so that subscriber timing reflects true
 // network-receive time.
-type Sink struct {
+type Pull struct {
 	// Packets broadcasts every scanned packet from the correction
 	// source.  The caller should subscribe before calling Run.
 	// The bcast lives for the entire duration of Run, surviving
@@ -81,21 +81,17 @@ type Sink struct {
 	pktCh   chan scan.Packet
 }
 
-// NewSink creates a Sink.  The caller should subscribe to
+// NewPull creates a Pull.  The caller should subscribe to
 // s.Packets before calling Run.
-func NewSink() *Sink {
+func NewPull() *Pull {
 	ch := make(chan scan.Packet)
-	return &Sink{
+	return &Pull{
 		Packets: bcast.New(ch),
 		pktCh:   ch,
 	}
 }
 
-const (
-	initialBackoff = 1 * time.Second
-	maxBackoff     = 30 * time.Second
-	scanBufSize    = 16
-)
+const scanBufSize = 16
 
 // errReconnect is sent as a scan.Packet.ReadError to signal the
 // pruning queue that the connection was lost.
@@ -103,12 +99,12 @@ var errReconnect = errors.New("reconnect")
 
 // Run connects to the correction source, scans packets, and writes
 // each to serialConn via WritePacket.  On network error, Run
-// reconnects with exponential backoff (1s, 2s, 4s, ... capped at
-// 30s).  It calls onState on each connection state change.
+// reconnects with adaptive backoff.  It calls onState on each
+// connection state change.
 // Run blocks until ctx is cancelled or serialConn errors.
 // On cancellation, Run waits for all internal goroutines to exit
 // before returning.
-func (s *Sink) Run(ctx context.Context, lg *slog.Logger,
+func (s *Pull) Run(ctx context.Context, lg *slog.Logger,
 	source Source,
 	pw PacketWriter,
 	portLock gpsio.OutPortLock,
@@ -128,7 +124,7 @@ func (s *Sink) Run(ctx context.Context, lg *slog.Logger,
 	// subscribe to bcast before starting reader to avoid missing packets
 	subCh := s.Packets.Subscribe()
 	// queue channel from pruning queue to writer
-	qCh := make(chan scan.Packet)
+	qCh := make(chan scan.Packet, 1)
 	// start writer
 	pipelineWg.Go(func() {
 		writeErr = s.writer(iCtx, lg, pw, portLock, qCh, iCancel)
@@ -152,16 +148,16 @@ func (s *Sink) Run(ctx context.Context, lg *slog.Logger,
 
 // reader owns the reconnect loop.  It connects to the source, scans
 // packets, and sends them into the bcast input channel.  On network
-// error it reconnects with exponential backoff.  It closes pktCh on
+// error it reconnects with adaptive backoff.  It closes pktCh on
 // exit.
-func (s *Sink) reader(ctx context.Context, lg *slog.Logger,
+func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 	source Source, pktFormats []gpsprot.PacketFormat,
 	onState func(State, error)) {
 	defer close(s.pktCh)
 	if onState == nil {
 		onState = func(State, error) {}
 	}
-	backoff := initialBackoff
+	b := newBackoff()
 	first := true
 	for {
 		if first {
@@ -174,15 +170,18 @@ func (s *Sink) reader(ctx context.Context, lg *slog.Logger,
 				return
 			}
 			lg.Error("correction source connect failed", "error", err)
+			b.increase()
 			onState(Reconnecting, err)
-			if !s.backoffWait(ctx, &backoff) {
+			select {
+			case <-ctx.Done():
 				return
+			case <-time.After(b.delay()):
 			}
 			onState(Connecting, nil)
 			continue
 		}
+		b.decrease()
 		onState(Connected, nil)
-		backoff = initialBackoff
 		// cancel goroutine: closes conn when ctx is done to unblock Scan
 		done := make(chan struct{})
 		go func() {
@@ -192,7 +191,7 @@ func (s *Sink) reader(ctx context.Context, lg *slog.Logger,
 			case <-done:
 			}
 		}()
-		readErr := s.readLoop(ctx, conn, pktFormats)
+		readErr := s.readLoop(ctx, conn, pktFormats, b)
 		conn.Close()
 		close(done)
 		select {
@@ -206,9 +205,12 @@ func (s *Sink) reader(ctx context.Context, lg *slog.Logger,
 		if readErr == nil {
 			lg.Info("correction source closed connection")
 		}
+		b.increase()
 		onState(Reconnecting, readErr)
-		if !s.backoffWait(ctx, &backoff) {
+		select {
+		case <-ctx.Done():
 			return
+		case <-time.After(b.delay()):
 		}
 		onState(Connecting, nil)
 	}
@@ -216,10 +218,12 @@ func (s *Sink) reader(ctx context.Context, lg *slog.Logger,
 
 // readLoop scans packets from conn and sends them to the bcast input
 // channel.  Returns nil on clean EOF, the read error otherwise, or
-// nil if cancelled via ctx.
-func (s *Sink) readLoop(ctx context.Context,
-	conn net.Conn, pktFormats []gpsprot.PacketFormat) error {
+// nil if cancelled via ctx.  It calls b.decrease periodically while
+// the connection is healthy.
+func (s *Pull) readLoop(ctx context.Context,
+	conn net.Conn, pktFormats []gpsprot.PacketFormat, b *backoff) error {
 	scanner := scan.New(conn, scanBufSize, pktFormats)
+	lastDecay := time.Now()
 	for {
 		pkt, err := scanner.Scan()
 		select {
@@ -233,22 +237,11 @@ func (s *Sink) readLoop(ctx context.Context,
 			}
 			return err
 		}
+		if time.Since(lastDecay) >= backoffDecay {
+			b.decrease()
+			lastDecay = time.Now()
+		}
 	}
-}
-
-// backoffWait waits for the current backoff duration, then doubles it
-// (capped at maxBackoff).  Returns false if ctx was cancelled.
-func (s *Sink) backoffWait(ctx context.Context, backoff *time.Duration) bool {
-	select {
-	case <-ctx.Done():
-		return false
-	case <-time.After(*backoff):
-	}
-	*backoff *= 2
-	if *backoff > maxBackoff {
-		*backoff = maxBackoff
-	}
-	return true
 }
 
 // queue subscribes to the bcast and mediates between the reader and
@@ -258,7 +251,7 @@ func (s *Sink) backoffWait(ctx context.Context, backoff *time.Duration) bool {
 // queue, the old entry is removed.  When the subscription channel
 // closes, the queue discards remaining packets, closes the writer
 // channel, and returns.
-func (s *Sink) queue(subCh <-chan scan.Packet, writerCh chan<- scan.Packet) {
+func (s *Pull) queue(subCh <-chan scan.Packet, writerCh chan<- scan.Packet) {
 	defer close(writerCh)
 	defer s.Packets.Unsubscribe(subCh)
 	var q pruningQueue
@@ -293,7 +286,7 @@ func (s *Sink) queue(subCh <-chan scan.Packet, writerCh chan<- scan.Packet) {
 
 // writer receives packets from the queue and writes them to the
 // serial port.
-func (s *Sink) writer(ctx context.Context, lg *slog.Logger,
+func (s *Pull) writer(ctx context.Context, lg *slog.Logger,
 	pw PacketWriter, portLock gpsio.OutPortLock,
 	qCh <-chan scan.Packet, cancel context.CancelFunc) error {
 	for pkt := range qCh {

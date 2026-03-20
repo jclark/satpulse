@@ -726,17 +726,12 @@ func TestMergeNavEpochNils(t *testing.T) {
 }
 
 func TestMergeNavEpochFirstWins(t *testing.T) {
-	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	t1 := t0.Add(time.Millisecond)
 	// Higher priority (UBX) passed first; lower priority (NMEA) fills gaps.
-	ubx := &NavEpochMsg{Tag: "UBX", StartTime: t0, Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
-	nmea := &NavEpochMsg{Tag: "NMEA", StartTime: t1, Acc: Accuracy{Hor: opt.Make(5 * Meter)}}
+	ubx := &NavEpochMsg{Tag: "UBX", Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
+	nmea := &NavEpochMsg{Tag: "NMEA", Acc: Accuracy{Hor: opt.Make(5 * Meter)}}
 	m := MergeNavEpoch(ubx, nmea)
 	if m.Tag != "UBX" {
 		t.Errorf("Tag = %v, want UBX (first wins)", m.Tag)
-	}
-	if m.StartTime != t0 {
-		t.Errorf("StartTime = %v, want %v (earliest)", m.StartTime, t0)
 	}
 	if m.Acc.Pos.Get() != 10*Meter {
 		t.Errorf("Acc.Pos = %v, want 10m (from UBX)", m.Acc.Pos.Get())
@@ -784,7 +779,7 @@ func TestNavEpochManagerSingleProtocol(t *testing.T) {
 		t.Fatalf("expected no epochs after first EpochStarted, got %d", len(rec.epochs))
 	}
 	// Set up what will be flushed
-	f.msg = &NavEpochMsg{Tag: "UBX", StartTime: t0, Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
+	f.msg = &NavEpochMsg{Tag: "UBX", Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
 	// Second epoch start: triggers flush of first epoch
 	mgr.EpochStarted(f, t1)
 	if len(rec.epochs) != 1 {
@@ -797,7 +792,7 @@ func TestNavEpochManagerSingleProtocol(t *testing.T) {
 		t.Errorf("tRead = %v, want %v", rec.tReads[0], t1)
 	}
 	// Set up second epoch data
-	f.msg = &NavEpochMsg{Tag: "UBX", StartTime: t1}
+	f.msg = &NavEpochMsg{Tag: "UBX"}
 	// Third epoch start: flushes second epoch
 	mgr.EpochStarted(f, t2)
 	if len(rec.epochs) != 2 {
@@ -820,8 +815,8 @@ func TestNavEpochManagerMultiProtocol(t *testing.T) {
 		t.Fatalf("no flush expected in first epoch, got %d", len(rec.epochs))
 	}
 	// Set up epoch 1 data for flush
-	binary.msg = &NavEpochMsg{Tag: "UBX", StartTime: t0, Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
-	nmeaF.msg = &NavEpochMsg{Tag: "NMEA", StartTime: t1, Acc: Accuracy{Hor: opt.Make(5 * Meter)}}
+	binary.msg = &NavEpochMsg{Tag: "UBX", Acc: Accuracy{Pos: opt.Make(10 * Meter)}}
+	nmeaF.msg = &NavEpochMsg{Tag: "NMEA", Acc: Accuracy{Hor: opt.Make(5 * Meter)}}
 	// Epoch 2: binary starts first, triggering flush
 	mgr.EpochStarted(binary, t2)
 	if len(rec.epochs) != 1 {
@@ -831,10 +826,6 @@ func TestNavEpochManagerMultiProtocol(t *testing.T) {
 	// Tag should come from binary (higher priority)
 	if m.Tag != "UBX" {
 		t.Errorf("Tag = %v, want UBX", m.Tag)
-	}
-	// StartTime should be earliest
-	if m.StartTime != t0 {
-		t.Errorf("StartTime = %v, want %v", m.StartTime, t0)
 	}
 	// Accuracy should be merged
 	if m.Acc.Pos.Get() != 10*Meter {
@@ -852,7 +843,7 @@ func TestNavEpochManagerEndOfEpochSingle(t *testing.T) {
 	t1 := t0.Add(time.Second)
 	f := &testFlusher{pri: PriVendorLow, mh: rec}
 	mgr.EpochStarted(f, t0)
-	f.msg = &NavEpochMsg{Tag: "UBX", StartTime: t0}
+	f.msg = &NavEpochMsg{Tag: "UBX"}
 	// EndOfEpoch with one active processor: flushes immediately
 	mgr.EndOfEpoch(t1)
 	if len(rec.epochs) != 1 {
@@ -896,7 +887,7 @@ func TestNavEpochManagerNilContribution(t *testing.T) {
 	mgr.EpochStarted(binary, t0)
 	mgr.EpochStarted(casicF, t0)
 	// Only binary has data; CASIC returns nil
-	binary.msg = &NavEpochMsg{Tag: "UBX", StartTime: t0}
+	binary.msg = &NavEpochMsg{Tag: "UBX"}
 	casicF.msg = nil
 	// Epoch 2: triggers flush
 	mgr.EpochStarted(binary, t1)

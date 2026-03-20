@@ -18,9 +18,10 @@ type PacketProcessor struct {
 	// Navigation epoch tracking: Allystar NAV messages contain an iTOW field
 	// that identifies which navigation solution they belong to.
 	// Invariant: curNavEpochMsg is non-nil iff curNavEpoch is non-zero.
-	curNavEpoch    uint32              // current navigation epoch (iTOW + 1 to reserve zero for "no epoch")
-	curNavEpochMsg *gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
-	hadNavAuto     bool                 // true if NAV-AUTO has been seen in the current epoch
+	curNavEpoch      uint32               // current navigation epoch (iTOW + 1 to reserve zero for "no epoch")
+	curNavEpochMsg   *gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
+	curNavEpochStart time.Time            // tRead of first message in current epoch
+	hadNavAuto       bool                 // true if NAV-AUTO has been seen in the current epoch
 }
 
 // NewPacketProcessor creates a new Allystar binary packet processor
@@ -59,7 +60,8 @@ func (p *PacketProcessor) handleNavEpoch(nm asbin.NavMsg, tRead time.Time) {
 	if !sameEpoch(e, p.curNavEpoch) {
 		p.mgr.EpochStarted(p, tRead)
 		p.curNavEpoch = e
-		p.curNavEpochMsg = &gpsprot.NavEpochMsg{StartTime: tRead}
+		p.curNavEpochMsg = &gpsprot.NavEpochMsg{}
+		p.curNavEpochStart = tRead
 		p.hadNavAuto = false
 	}
 }
@@ -115,7 +117,8 @@ func (p *PacketProcessor) dispatch(m asbin.Msg, tRead time.Time) bool {
 	case *asbin.NavAuto:
 		if p.hadNavAuto || p.curNavEpochMsg == nil {
 			p.mgr.EpochStarted(p, tRead)
-			p.curNavEpochMsg = &gpsprot.NavEpochMsg{StartTime: tRead}
+			p.curNavEpochMsg = &gpsprot.NavEpochMsg{}
+			p.curNavEpochStart = tRead
 		}
 		p.hadNavAuto = true
 		qualityNavAuto(p.curNavEpochMsg, mt)
@@ -143,6 +146,9 @@ func (p *PacketProcessor) dispatch(m asbin.Msg, tRead time.Time) bool {
 			h.Survey(sv, tRead)
 		} else if tm != nil {
 			tm.Tag = Tag
+			if ne := p.curNavEpochMsg; ne != nil {
+				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
+			}
 			h.Time(tm, tRead)
 		}
 		if posG != nil {

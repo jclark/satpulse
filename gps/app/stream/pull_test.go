@@ -1,4 +1,4 @@
-package corrsink
+package stream
 
 import (
 	"context"
@@ -185,7 +185,7 @@ func TestPacketsFlowToWriter(t *testing.T) {
 	defer client.Close()
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewSink()
+	sink := NewPull()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	pkt1005 := makeRTCM(1005, 16)
@@ -360,7 +360,7 @@ func TestCleanShutdownOnCancel(t *testing.T) {
 	defer client.Close()
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewSink()
+	sink := NewPull()
 	ctx, cancel := context.WithCancel(context.Background())
 	onState, connected := connectedCh()
 	done := make(chan error, 1)
@@ -387,7 +387,7 @@ func TestWriteErrorTriggersShutdown(t *testing.T) {
 	writeErr := errors.New("serial port gone")
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewSink()
+	sink := NewPull()
 	onState, connected := connectedCh()
 	done := make(chan error, 1)
 	go func() {
@@ -416,7 +416,7 @@ func TestPortLockAcquiredPerWrite(t *testing.T) {
 	defer client.Close()
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewSink()
+	sink := NewPull()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	onState, connected := connectedCh()
@@ -454,7 +454,7 @@ func TestReconnectOnNetworkError(t *testing.T) {
 	rs := &reconnectSource{}
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewSink()
+	sink := NewPull()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var states []State

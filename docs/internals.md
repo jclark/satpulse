@@ -60,7 +60,7 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/bcast` provides a concurrency abstraction that broadcasts a channel to multiple other channels. This is used for routing packets inside the application. At the moment it is used by `satpulsed` rather than `satpulsetool`, but it is useful for applications dealing with GPS packets.
 
-`gps/app/corrsink` fetches correction data from a network source and feeds it to the GPS receiver over the serial port.
+`gps/app/stream` fetches correction data from a network source and feeds it to the GPS receiver over the serial port.
 
 ### gps/internal/
 

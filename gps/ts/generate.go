@@ -46,6 +46,7 @@ func samples() []sample {
 			PulseOffset: &pulseOff,
 			GNSS:        gpsprot.GPS,
 			Ref:         gpsprot.NavSolution,
+			ReadDelay:   15 * gpsprot.Millisecond,
 			Tag:         "UBX",
 			NativeMsgID: "NAV-TIMEGPS",
 		}},
@@ -103,8 +104,7 @@ func samples() []sample {
 			NumSVUsed:   opt.Make[uint16](12),
 			GNSSUsed:  gpsprot.GNSSSetOf(gpsprot.GPS) | gpsprot.GNSSSetOf(gpsprot.GAL),
 			BandsUsed: gpsprot.BandL1 | gpsprot.BandL5,
-			Tag:         "UBX",
-			StartTime:   time.Date(2025, 3, 7, 4, 0, 0, 0, time.UTC),
+			Tag:       "UBX",
 		}},
 		{"LeapSecondMsg", gpsprot.LeapSecondMsg{
 			LeapSecond: ptime.LeapSecond{

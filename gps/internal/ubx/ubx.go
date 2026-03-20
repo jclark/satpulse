@@ -22,11 +22,12 @@ type PacketProcessor struct {
 	// that identifies which navigation solution they belong to. Messages with the same
 	// iTOW are part of the same epoch and can be grouped together.
 	// Invariant: curNavEpochMsg is non-nil iff curNavEpoch is non-zero.
-	curNavEpoch    uint32              // current navigation epoch (iTOW + 1 to handle zero)
-	curNavMsgs     byteSet             // NAV class message IDs seen in current epoch
-	prevNavMsgs    byteSet             // NAV class message IDs seen in previous epoch
-	nEpochsSeen    int                 // number of distinct epochs seen
-	curNavEpochMsg *gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
+	curNavEpoch      uint32               // current navigation epoch (iTOW + 1 to handle zero)
+	curNavMsgs       byteSet              // NAV class message IDs seen in current epoch
+	prevNavMsgs      byteSet              // NAV class message IDs seen in previous epoch
+	nEpochsSeen      int                  // number of distinct epochs seen
+	curNavEpochMsg   *gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
+	curNavEpochStart time.Time            // tRead of first message in current epoch
 	// Satellite message accumulation: NAV-SAT and NAV-SIG messages are combined
 	// into a single SatellitesMsg when both are available
 	satMsg      *gpsprot.SatellitesMsg
@@ -76,7 +77,8 @@ func (p *PacketProcessor) handleNavEpoch(nm ubxbin.NavMsg, tRead time.Time) {
 		// New epoch starting - flush any pending messages from previous epoch
 		p.mgr.EpochStarted(p, tRead)
 		p.curNavEpoch = e
-		p.curNavEpochMsg = &gpsprot.NavEpochMsg{StartTime: tRead}
+		p.curNavEpochMsg = &gpsprot.NavEpochMsg{}
+		p.curNavEpochStart = tRead
 		p.prevNavMsgs = p.curNavMsgs
 		p.curNavMsgs.clear()
 		p.nEpochsSeen++
@@ -256,6 +258,9 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 			h.Survey(sv, tRead)
 		} else if time != nil {
 			time.Tag = Tag
+			if ne := p.curNavEpochMsg; ne != nil && time.Ref == gpsprot.NavSolution {
+				time.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
+			}
 			h.Time(time, tRead)
 		}
 		if posG != nil {

@@ -95,7 +95,13 @@ func (v *Version) genUpTo8() bool {
 	return !v.protVerGreater(23, 1)
 }
 
-func (v *Version) rtcmSupport() (gpsprot.GNSSSet, gpsprot.RTCMMsgFlags) {
+type rtcmSupport struct {
+	gnss     gpsprot.GNSSSet
+	msgs     gpsprot.RTCMMsgFlags
+	df003Out bool
+}
+
+func (v *Version) rtcmSupport() rtcmSupport {
 	g := v.GNSS & gpsprot.MajorGNSSSet // nothing supports NavIC
 	switch v.ProductCategory() {
 	case "HPG":
@@ -103,7 +109,11 @@ func (v *Version) rtcmSupport() (gpsprot.GNSSSet, gpsprot.RTCMMsgFlags) {
 			// Gen 8 doesn't support GAL
 			g &^= gpsprot.GNSSSetOf(gpsprot.GAL)
 		}
-		return g, gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7
+		return rtcmSupport{
+			gnss:     g,
+			msgs:     gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7,
+			df003Out: v.protVerAtLeast(27, 12),
+		}
 	case "TIM":
 		// ZED-F9T has differential timing support
 		// NEO-F10T doesn't
@@ -112,12 +122,20 @@ func (v *Version) rtcmSupport() (gpsprot.GNSSSet, gpsprot.RTCMMsgFlags) {
 		}
 		// 29.25 added support for MSM4
 		if v.protVerAtLeast(29, 25) {
-			return g, gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7
+			return rtcmSupport{
+				gnss:     g,
+				msgs:     gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7,
+				df003Out: true,
+			}
 		}
-		return g, gpsprot.RTCMMsgMSM7
+		return rtcmSupport{
+			gnss:     g,
+			msgs:     gpsprot.RTCMMsgMSM7,
+			df003Out: v.protVerAtLeast(29, 20),
+		}
 	}
 	// RTCM requires HPG or TIM
-	return 0, 0
+	return rtcmSupport{}
 }
 
 // tpIndex returns the time pulse index: 0 for TIMEPULSE, 1 for TIMEPULSE2.
@@ -127,7 +145,7 @@ func (v *Version) tpIndex() int {
 			return 1
 		}
 	} else if v.ProductCategory() == "FTS" {
-			return 1
+		return 1
 	}
 	return 0
 }

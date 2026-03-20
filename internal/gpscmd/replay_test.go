@@ -19,6 +19,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
+	ucv "github.com/jclark/satpulse/gps/lib/ubxcfgval"
 )
 
 var update = flag.Bool("update", false, "update golden test data files")
@@ -38,6 +39,7 @@ func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 
 	scanner := bufio.NewScanner(f)
 	testNum := 0
+	globalInIdx := 0
 	globalOutIdx := 0
 	var replayers []*replayer
 
@@ -51,6 +53,8 @@ func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 		}
 
 		outOffset := globalOutIdx
+		inOffset := globalInIdx
+		globalInIdx += len(test.inPackets)
 		globalOutIdx += len(test.outPackets)
 
 		t.Run(fmt.Sprintf("%s_%d", name, testNum), func(t *testing.T) {
@@ -58,10 +62,14 @@ func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Preserve any updatable packet diffs even if verify() fails later.
+			defer func() {
+				replayers = append(replayers, r)
+			}()
+			r.inOffset = inOffset
 			r.outOffset = outOffset
 			r.run()
 			r.verify()
-			replayers = append(replayers, r)
 		})
 		testNum++
 	}
@@ -71,6 +79,7 @@ func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 	}
 	// Collect updates from non-structural replayers
 	allUpdates := make(map[int][]byte)
+	allInputUpdates := make(map[int][]byte)
 	for _, r := range replayers {
 		if r.structural {
 			continue
@@ -78,11 +87,19 @@ func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 		for idx, pkt := range r.updates {
 			allUpdates[idx] = pkt
 		}
+		for idx, pkt := range r.inputUpdates {
+			allInputUpdates[idx] = pkt
+		}
 	}
-	if len(allUpdates) == 0 {
+	if len(allUpdates) == 0 && len(allInputUpdates) == 0 {
 		return
 	}
-	applyUpdates(t, path, allUpdates)
+	if len(allUpdates) != 0 {
+		applyUpdates(t, path, allUpdates, true)
+	}
+	if len(allInputUpdates) != 0 {
+		applyUpdates(t, path, allInputUpdates, false)
+	}
 }
 
 type replayTest struct {
@@ -178,24 +195,31 @@ func fixupInBefore(test *replayTest) {
 
 type replayer struct {
 	gpsprot.DefaultHandler
-	t           *testing.T
-	test        *replayTest
-	target      *gpsprot.ConfigTarget
-	packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor
-	configProts []gpsprot.ConfigProtocol
-	inIdx       int
-	outIdx      int
-	cp          gpsprot.ConfigProtocol
-	cfgtor      gpsprot.Configurator
-	director    *gpsprot.ConfigDirector // Store director for ValidPacketReceived calls
-	configErr   error                   // first configuration error encountered
-	packetCmp   packetCmpFunc
-	replayTime  time.Time   // simulated current time for replay
-	timeline    []time.Time // sorted list of all packet timestamps
-	timelineIdx int         // current position in timeline
-	outOffset   int         // offset of this block's output packets in the global file
-	updates     map[int][]byte // global output packet index -> new packet bytes
-	structural  bool           // set on non-updatable failure
+	t             *testing.T
+	test          *replayTest
+	target        *gpsprot.ConfigTarget
+	packetProcs   map[gpsprot.Tag]gpsprot.PacketProcessor
+	configProts   []gpsprot.ConfigProtocol
+	inIdx         int
+	outIdx        int
+	cp            gpsprot.ConfigProtocol
+	cfgtor        gpsprot.Configurator
+	director      *gpsprot.ConfigDirector // Store director for ValidPacketReceived calls
+	configErr     error                   // first configuration error encountered
+	packetCmp     packetCmpFunc
+	replayTime    time.Time      // simulated current time for replay
+	timeline      []time.Time    // sorted list of all packet timestamps
+	timelineIdx   int            // current position in timeline
+	inOffset      int            // offset of this block's input packets in the global file
+	outOffset     int            // offset of this block's output packets in the global file
+	updates       map[int][]byte // global output packet index -> new packet bytes
+	inputUpdates  map[int][]byte // global input packet index -> new packet bytes
+	pendingValget []valgetResponsePatch
+	structural    bool // set on non-updatable failure
+}
+
+type valgetResponsePatch struct {
+	keys []ucv.Key
 }
 
 func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (*replayer, error) {
@@ -355,6 +379,11 @@ func (r *replayer) run() {
 				msgID = msg.ID().String()
 			}
 			eq, updatable := r.packetCmp(r.t, msgID, action.Packet, expected)
+			if *update {
+				if keys := cfgValgetRequestKeys(action.Packet); len(keys) != 0 {
+					r.pendingValget = append(r.pendingValget, valgetResponsePatch{keys: keys})
+				}
+			}
 			if !eq {
 				r.t.Errorf("packet mismatch")
 				if updatable && *update {
@@ -436,15 +465,16 @@ func (r *replayer) advanceToNextInstant(deadline time.Time) bool {
 				continue // Skip invalid packets
 			}
 
+			data := r.maybePatchInputPacket(r.inIdx-1, p)
 			pp, ok := r.packetProcs[p.Tag]
 			if !ok {
 				r.t.Errorf("no processor for tag %s", p.Tag)
 				continue
 			}
 
-			_, err := pp.ProcessPacket(p.Data(), pktTime)
+			_, err := pp.ProcessPacket(data, pktTime)
 			if err != nil {
-				r.t.Errorf("error processing packet at %v: %v (data: %q)", pktTime, err, p.Data())
+				r.t.Errorf("error processing packet at %v: %v (data: %q)", pktTime, err, data)
 			} else if r.director != nil {
 				// Notify director of valid packet for speed change handling
 				r.director.ValidPacketReceived(pktTime)
@@ -487,6 +517,8 @@ func (r *replayer) feedUpTo(outIdx int) {
 		pktTime := time.Time(p.T)
 		r.replayTime = pktTime
 
+		data := r.maybePatchInputPacket(r.inIdx-1, p)
+
 		// Get the packet processor for this packet's tag
 		pp, ok := r.packetProcs[p.Tag]
 		if !ok {
@@ -494,9 +526,9 @@ func (r *replayer) feedUpTo(outIdx int) {
 			continue
 		}
 
-		_, err := pp.ProcessPacket(p.Data(), pktTime)
+		_, err := pp.ProcessPacket(data, pktTime)
 		if err != nil {
-			r.t.Errorf("error processing packet at %v: %v (data: %q)", pktTime, err, p.Data())
+			r.t.Errorf("error processing packet at %v: %v (data: %q)", pktTime, err, data)
 		}
 	}
 }
@@ -603,6 +635,14 @@ func (r *replayer) verify() {
 			}
 		}
 	}
+	if cfg.RTCMBaseID != nil {
+		rtcmBaseID, ok := props.GetRTCMBaseID()
+		if !ok {
+			r.t.Error("rtcmBaseID not set")
+		} else if rtcmBaseID != *cfg.RTCMBaseID {
+			r.t.Errorf("rtcmBaseID mismatch: got %v, want %v", rtcmBaseID, *cfg.RTCMBaseID)
+		}
+	}
 
 }
 
@@ -621,9 +661,9 @@ func equalSignalMaps(a, b map[string][]string) bool {
 
 var binFieldRe = regexp.MustCompile(`"bin":"[0-9a-f]*"`)
 
-// applyUpdates rewrites a JSONL file, replacing the bin field of output packets
+// applyUpdates rewrites a JSONL file, replacing the bin field of packet lines
 // at the specified global indices with new hex-encoded packet data.
-func applyUpdates(t *testing.T, path string, updates map[int][]byte) {
+func applyUpdates(t *testing.T, path string, updates map[int][]byte, wantOut bool) {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -637,18 +677,32 @@ func applyUpdates(t *testing.T, path string, updates map[int][]byte) {
 	if err := scanner.Err(); err != nil {
 		t.Fatalf("scanning %s: %v", path, err)
 	}
+	inIdx := 0
 	outIdx := 0
 	updated := 0
 	for i, line := range lines {
-		if !isOutPacketLine(line) {
+		if !isPacketLine(line) {
 			continue
 		}
-		if newPkt, ok := updates[outIdx]; ok {
-			newHex := hex.EncodeToString(newPkt)
-			lines[i] = binFieldRe.ReplaceAllString(line, `"bin":"`+newHex+`"`)
-			updated++
+		if isOutPacketLine(line) {
+			if wantOut {
+				if newPkt, ok := updates[outIdx]; ok {
+					newHex := hex.EncodeToString(newPkt)
+					lines[i] = binFieldRe.ReplaceAllString(line, `"bin":"`+newHex+`"`)
+					updated++
+				}
+			}
+			outIdx++
+			continue
 		}
-		outIdx++
+		if !wantOut {
+			if newPkt, ok := updates[inIdx]; ok {
+				newHex := hex.EncodeToString(newPkt)
+				lines[i] = binFieldRe.ReplaceAllString(line, `"bin":"`+newHex+`"`)
+				updated++
+			}
+		}
+		inIdx++
 	}
 	var buf bytes.Buffer
 	for _, line := range lines {
@@ -658,11 +712,106 @@ func applyUpdates(t *testing.T, path string, updates map[int][]byte) {
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
 		t.Fatalf("writing %s: %v", path, err)
 	}
-	t.Logf("updated %s: %d packets changed", path, updated)
+	kind := "input"
+	if wantOut {
+		kind = "output"
+	}
+	t.Logf("updated %s: %d %s packets changed", path, updated, kind)
 }
 
 // isOutPacketLine reports whether a JSONL line is an output packet entry.
 func isOutPacketLine(line string) bool {
 	// Output packets have "out":true and a "bin" field
 	return bytes.Contains([]byte(line), []byte(`"out":true`))
+}
+
+func isPacketLine(line string) bool {
+	b := []byte(line)
+	if !bytes.Contains(b, []byte(`"t":"`)) {
+		return false
+	}
+	return bytes.Contains(b, []byte(`"bin":"`)) || bytes.Contains(b, []byte(`"ascii":"`))
+}
+
+func cfgValgetRequestKeys(actualPacket []byte) []ucv.Key {
+	actualMsg, err := ubxbin.ParseMsg(string(actualPacket))
+	if err != nil {
+		return nil
+	}
+	actualValget, ok := actualMsg.(*ubxbin.CfgValget)
+	if !ok || actualValget.Version != ubxbin.CfgValgetVersionRequest {
+		return nil
+	}
+	keys, err := ucv.UnmarshalKeys(actualValget.CfgData)
+	if err != nil {
+		return nil
+	}
+	return keys
+}
+
+func (r *replayer) maybePatchInputPacket(localIdx int, p gpsio.PacketLogEntry) string {
+	if !*update || len(r.pendingValget) == 0 {
+		return p.Data()
+	}
+	msg, err := ubxbin.ParseMsg(p.Data())
+	if err != nil {
+		return p.Data()
+	}
+	valget, ok := msg.(*ubxbin.CfgValget)
+	if !ok || valget.Version != ubxbin.CfgValgetVersionResponse {
+		return p.Data()
+	}
+	patch := r.pendingValget[0]
+	r.pendingValget = r.pendingValget[1:]
+	items, err := ucv.UnmarshalItems(valget.CfgData)
+	if err != nil {
+		return p.Data()
+	}
+	have := make(map[ucv.Key]struct{}, len(items))
+	for _, item := range items {
+		have[item.Key] = struct{}{}
+	}
+	changed := false
+	for _, key := range patch.keys {
+		if _, ok := have[key]; ok {
+			continue
+		}
+		value, ok := synthesizeCfgValValue(key, &r.test.config)
+		if !ok {
+			continue
+		}
+		items = append(items, ucv.Item{Key: key, Value: value})
+		changed = true
+	}
+	if !changed {
+		return p.Data()
+	}
+	ucv.SortItems(items)
+	cfgData, err := ucv.MarshalItems(items)
+	if err != nil {
+		return p.Data()
+	}
+	patched := *valget
+	patched.CfgData = cfgData
+	bytes, err := ubxbin.Serialize(&patched)
+	if err != nil {
+		return p.Data()
+	}
+	if r.inputUpdates == nil {
+		r.inputUpdates = make(map[int][]byte)
+	}
+	r.inputUpdates[r.inOffset+localIdx] = slices.Clone(bytes)
+	return string(bytes)
+}
+
+func synthesizeCfgValValue(key ucv.Key, cfg *TestLogConfigEntry) (uint64, bool) {
+	switch key {
+	case ucv.KRtcmDf003Out.Key():
+		if cfg != nil && cfg.RTCMBaseID != nil {
+			return uint64(*cfg.RTCMBaseID), true
+		}
+		return 0, true
+	default:
+		return 0, false
+	}
 }

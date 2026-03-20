@@ -3,14 +3,14 @@ import type { SatellitesMsg, TimeMsg, SurveyMsg, PosGeoMsg, PosECEFMsg, VelGeoMs
 import type {PacketLogEntry} from './gpsio';
 
 const _satellitesMsg: SatellitesMsg = {"tag":"UBX","nativeMsgID":"NAV-SAT","info":[{"id":"G01","lookAngles":{"azimuth":45,"elevation":30},"signals":[{"id":"L1 C/A","cn0":42,"used":true}],"used":true}],"usedValidity":2};
-const _timeMsg: TimeMsg = {"taiTime":"1741320000.000000000","utcTime":"2025-03-07T04:00:00Z","accuracy":25000000,"utcOffset":37,"pulseOffset":1.25e-7,"gnss":"GPS","tag":"UBX","nativeMsgID":"NAV-TIMEGPS"};
+const _timeMsg: TimeMsg = {"taiTime":"1741320000.000000000","utcTime":"2025-03-07T04:00:00Z","accuracy":25000000,"utcOffset":37,"pulseOffset":1.25e-7,"gnss":"GPS","tag":"UBX","nativeMsgID":"NAV-TIMEGPS","readDelay":0.015};
 const _surveyMsg: SurveyMsg = {"position":[4075539.814,555132.076,4828427.312],"accuracy":0.025,"obsCount":3600,"obsTime":3600,"valid":true,"inProgress":false};
 const _posGeoMsg: PosGeoMsg = {"latLon":[51.477928,-0.001545],"height":45.321,"heightMSL":0,"tag":"UBX","nativeMsgID":"NAV-PVT"};
 const _posECEFMsg: PosECEFMsg = {"pos":[4075539.814,555132.076,4828427.312],"tag":"UBX","nativeMsgID":"NAV-PVT"};
 const _velGeoMsg: VelGeoMsg = {"velNED":[0.015,-0.003,0.001],"groundSpeed":0.015,"speed3D":0.016,"course":78.5,"tag":"UBX","nativeMsgID":"NAV-PVT"};
 const _velECEFMsg: VelECEFMsg = {"vel":[0.012,-0.005,0.003],"tag":"UBX","nativeMsgID":"NAV-PVT"};
 const _pVMsgBundle: PVMsgBundle = {"posGeo":{"latLon":[51.477928,-0.001545],"tag":"UBX","nativeMsgID":"NAV-PVT"},"velECEF":{"vel":[0.012,-0.005,0.003],"tag":"UBX","nativeMsgID":"NAV-PVT"}};
-const _navEpochMsg: NavEpochMsg = {"fixLevel":"carrierFixed","solutionDim":"3D","correction":["RTCM"],"acc":{"hor":0.015,"vert":0.025},"dop":{"pos":1.2,"hor":0.8,"north":0.6,"east":0.5},"numSVUsed":12,"gnssUsed":["GPS","GAL"],"bandsUsed":["L1","L5"],"tag":"UBX","startTime":"2025-03-07T04:00:00Z"};
+const _navEpochMsg: NavEpochMsg = {"fixLevel":"carrierFixed","solutionDim":"3D","correction":["RTCM"],"acc":{"hor":0.015,"vert":0.025},"dop":{"pos":1.2,"hor":0.8,"north":0.6,"east":0.5},"numSVUsed":12,"gnssUsed":["GPS","GAL"],"bandsUsed":["L1","L5"],"tag":"UBX"};
 const _leapSecondMsg: LeapSecondMsg = {"OffChangeTime":"1735689637.000000000","UTCOffBefore":37,"UTCOffAfter":37,"gnss":"GPS"};
 const _receiverInfo: ReceiverInfo = {"vendor":"u-blox","firmware":"TIM 2.20 PROTVER 18.00","hardware":"ZED-F9T","supportedGNSS":["GPS","GAL","BDS","GLO"]};
 const _packetLogEntry: PacketLogEntry = {"t":"2025-03-07T04:00:00.123456Z","tag":"UBX","msg":"NAV-PVT","bin":"b5620107","speed":9600,"out":true};
