@@ -18,7 +18,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/desktop/serialenum"
 	"github.com/jclark/satpulse/gps/app/bcast"
-	"github.com/jclark/satpulse/gps/app/corrsink"
+	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsdecode"
@@ -386,8 +386,8 @@ func (a *App) StartCorrections(host string, port int) Result {
 	wg := &sync.WaitGroup{}
 	a.corrWg = wg
 	addr := fmt.Sprintf("%s:%d", host, port)
-	sink := corrsink.NewSink()
-	source := &corrsink.TCPSource{Addr: addr}
+	sink := stream.NewPull()
+	source := &stream.TCPSource{Addr: addr}
 	// Find RTCM packet formats for the scanner.
 	var rtcmFormats []gpsprot.PacketFormat
 	for _, pf := range gpsreg.CreatePacketFormats(gpsreg.VendorUnknown) {
@@ -395,7 +395,7 @@ func (a *App) StartCorrections(host string, port int) Result {
 			rtcmFormats = append(rtcmFormats, pf)
 		}
 	}
-	onState := func(s corrsink.State, err error) {
+	onState := func(s stream.State, err error) {
 		ev := CorrEvent{State: s.String(), Host: host, Port: port}
 		if err != nil {
 			ev.Error = err.Error()
