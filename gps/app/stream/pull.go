@@ -1,8 +1,8 @@
-// Package corrsink connects to a correction source, scans packets, and writes
+// Package stream connects to a correction source, scans packets, and writes
 // them to a serial port.  It handles reconnection internally and exposes a
 // bcast of scanned packets so callers can subscribe for UI updates, logging,
 // or other purposes.
-package corrsink
+package stream
 
 import (
 	"context"
@@ -46,7 +46,7 @@ func (s *TCPSource) Connect(ctx context.Context) (net.Conn, error) {
 	return (&net.Dialer{}).DialContext(ctx, "tcp", s.Addr)
 }
 
-// State represents the connection state of a Sink.
+// State represents the connection state of a Pull.
 type State int
 
 const (
@@ -68,11 +68,11 @@ func (s State) String() string {
 	}
 }
 
-// Sink reads correction packets from a Source and writes them to a
+// Pull reads correction packets from a Source and writes them to a
 // serial port via a pruning queue.  Scanned packets are broadcast
 // to subscribers so that subscriber timing reflects true
 // network-receive time.
-type Sink struct {
+type Pull struct {
 	// Packets broadcasts every scanned packet from the correction
 	// source.  The caller should subscribe before calling Run.
 	// The bcast lives for the entire duration of Run, surviving
@@ -81,11 +81,11 @@ type Sink struct {
 	pktCh   chan scan.Packet
 }
 
-// NewSink creates a Sink.  The caller should subscribe to
+// NewPull creates a Pull.  The caller should subscribe to
 // s.Packets before calling Run.
-func NewSink() *Sink {
+func NewPull() *Pull {
 	ch := make(chan scan.Packet)
-	return &Sink{
+	return &Pull{
 		Packets: bcast.New(ch),
 		pktCh:   ch,
 	}
@@ -108,7 +108,7 @@ var errReconnect = errors.New("reconnect")
 // Run blocks until ctx is cancelled or serialConn errors.
 // On cancellation, Run waits for all internal goroutines to exit
 // before returning.
-func (s *Sink) Run(ctx context.Context, lg *slog.Logger,
+func (s *Pull) Run(ctx context.Context, lg *slog.Logger,
 	source Source,
 	pw PacketWriter,
 	portLock gpsio.OutPortLock,
@@ -154,7 +154,7 @@ func (s *Sink) Run(ctx context.Context, lg *slog.Logger,
 // packets, and sends them into the bcast input channel.  On network
 // error it reconnects with exponential backoff.  It closes pktCh on
 // exit.
-func (s *Sink) reader(ctx context.Context, lg *slog.Logger,
+func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 	source Source, pktFormats []gpsprot.PacketFormat,
 	onState func(State, error)) {
 	defer close(s.pktCh)
@@ -217,7 +217,7 @@ func (s *Sink) reader(ctx context.Context, lg *slog.Logger,
 // readLoop scans packets from conn and sends them to the bcast input
 // channel.  Returns nil on clean EOF, the read error otherwise, or
 // nil if cancelled via ctx.
-func (s *Sink) readLoop(ctx context.Context,
+func (s *Pull) readLoop(ctx context.Context,
 	conn net.Conn, pktFormats []gpsprot.PacketFormat) error {
 	scanner := scan.New(conn, scanBufSize, pktFormats)
 	for {
@@ -238,7 +238,7 @@ func (s *Sink) readLoop(ctx context.Context,
 
 // backoffWait waits for the current backoff duration, then doubles it
 // (capped at maxBackoff).  Returns false if ctx was cancelled.
-func (s *Sink) backoffWait(ctx context.Context, backoff *time.Duration) bool {
+func (s *Pull) backoffWait(ctx context.Context, backoff *time.Duration) bool {
 	select {
 	case <-ctx.Done():
 		return false
@@ -258,7 +258,7 @@ func (s *Sink) backoffWait(ctx context.Context, backoff *time.Duration) bool {
 // queue, the old entry is removed.  When the subscription channel
 // closes, the queue discards remaining packets, closes the writer
 // channel, and returns.
-func (s *Sink) queue(subCh <-chan scan.Packet, writerCh chan<- scan.Packet) {
+func (s *Pull) queue(subCh <-chan scan.Packet, writerCh chan<- scan.Packet) {
 	defer close(writerCh)
 	defer s.Packets.Unsubscribe(subCh)
 	var q pruningQueue
@@ -293,7 +293,7 @@ func (s *Sink) queue(subCh <-chan scan.Packet, writerCh chan<- scan.Packet) {
 
 // writer receives packets from the queue and writes them to the
 // serial port.
-func (s *Sink) writer(ctx context.Context, lg *slog.Logger,
+func (s *Pull) writer(ctx context.Context, lg *slog.Logger,
 	pw PacketWriter, portLock gpsio.OutPortLock,
 	qCh <-chan scan.Packet, cancel context.CancelFunc) error {
 	for pkt := range qCh {
