@@ -4,51 +4,330 @@ Push RTCM data from the GPS receiver to a remote NTRIP caster
 using the NTRIP server (SOURCE) protocol.  Implemented as a
 `stream.Push` instance in `gps/app/stream`.
 
-Related issues: #126 (NTRIP).
+Issue: #238.  Related: #126 (NTRIP).
+
+The implementation should mirror `Pull` closely.  Reuse the same
+`State` callback model (`Connecting`, `Connected`,
+`Reconnecting`), `backoff`, and `pruningQueue`.  Do not add a
+second RTCM observability path, because the main dispatch process
+already reads the receiver packet bcast and emits RTCM events.
+
+## Protocol
+
+This plan implements the NTRIP v1 server (SOURCE) protocol.
+
+An NTRIP "server" is a source of GNSS correction data that uploads
+to a caster.  The protocol is:
+
+1. Open a TCP connection to the caster.
+2. Send a v1 SOURCE request:
+
+```text
+SOURCE <password> /<mountpoint>\r\n
+Source-Agent: NTRIP satpulse/<version>\r\n
+STR: <sourcetable-entry>\r\n
+\r\n
+```
+
+3. Do not send `Ntrip-Version`.
+4. If `STR` is not configured, omit the `STR:` line.
+5. Read the response line from the caster.
+6. Treat `ICY 200 OK` as success.
+7. Treat any `ERROR ...` response, or any other response line, as
+   failure.
+8. After success, write raw RTCM bytes to the socket with no HTTP
+   framing or chunked encoding.
+9. If the connection drops, reconnect and repeat the full
+   handshake.
 
 ## Prerequisite
 
 - `plan/corrsink-rename.md` (rename corrsink to stream).
 - `plan/stream-backoff.md` (adaptive backoff).
+- `plan/ntrip-client.md` (`gps/lib/ntriphdr` helpers for SOURCE
+  request formatting and NTRIP response-line parsing).
 
 ## Configuration
 
 ```toml
 [[stream.push]]
-ntrip.address = "caster.example.com:2101"
+ntrip.address = "caster.example.com:80"
 ntrip.mountpoint = "MY_BASE"
 ntrip.password = "secret"
+ntrip.str = "MY_BASE;Station;RTCM 3.3;1004(1),1005(10);2;GPS;SNIP;THA;13.7563;100.5018;1;0;satpulse;none;B;N;9600"
 ```
 
-`stream.push` is a table array (push to multiple destinations).
-The configuration scheme can be extended later to push to a plain
-TCP server by using `tcp.address` instead of `ntrip.*` keys.
+`stream.push` is a table array so one receiver can push to multiple
+destinations.  Transport is selected by which dotted keys are
+present, matching the `stream.pull` style.  Initially only
+`ntrip.*` is implemented; a future plain TCP push can use
+`tcp.address`.
 
-NTRIP server authentication uses a password only (no username).
-The server sends a `SOURCE <password> /<mountpoint>` request to
-the caster.
+NTRIP server authentication uses a password only (see Protocol
+section above).  Support `STR:` in the initial implementation via a
+config field carrying the sourcetable entry text; if the field is
+empty, omit the header.
 
 ### Options
 
-- `protocol` -- restrict which packet formats are forwarded.
-  Defaults to `"RTCM"` for NTRIP transport.
-- `msm7to4` -- convert MSM7 packets to MSM4 before sending.
+- `protocol` restricts which packet formats are forwarded.
+  Default for NTRIP push is `"RTCM"`.
+- `msm7to4` converts MSM7 packets to MSM4 before writing.
+- `ntrip.str` carries the sourcetable entry text to send in the
+  `STR:` header, not including the `STR: ` prefix.
 
-## Implementation
+## Connection
 
-Lives in `gps/app/stream` alongside `Pull`.  The entry point type
-is `Push`.  Reuses the `backoff` type from `plan/stream-backoff.md`
-for reconnection and the `pruningQueue` for handling network delays.
+Lives in `gps/app/stream` alongside `Pull`.
 
-`Push` subscribes to the existing packet bcast (the receiver's
-scanned packets) and runs a three-goroutine pipeline:
+Rename `Pull`'s existing `Source` interface to `Connection`:
 
-1. **Reader** -- receives packets from the bcast subscription,
-   filters to the relevant protocol.
-2. **Pruning queue** -- deduplicates by message type, same as
-   Pull's queue.
-3. **Writer** -- maintains the NTRIP server connection to the
-   remote caster (with adaptive backoff on reconnect) and writes
-   packets to it.
+```go
+type Connection interface {
+    Connect(ctx context.Context) (net.Conn, error)
+}
+```
 
-Details still to be fleshed out.
+This interface is used by both pull and push.  The difference is in
+how the returned `net.Conn` is used:
+
+- `Pull` reads from it
+- `Push` writes to it
+
+Concrete types keep the source/destination naming where that
+distinction matters:
+
+```go
+type TCPSource struct {
+    Addr string // "host:port"
+}
+
+type NTRIPSource struct {
+    Addr       string // "host:port"
+    Mountpoint string
+    Username   string
+    Password   string
+}
+
+type NTRIPDestination struct {
+    Addr       string // "host:port"
+    Mountpoint string
+    Password   string
+    STR        string
+}
+
+func (d *NTRIPDestination) Connect(ctx context.Context) (net.Conn, error)
+```
+
+`Connect` does:
+
+1. Dial TCP with `net.Dialer.DialContext`.
+2. Write the v1 SOURCE request:
+   - `SOURCE <password> /<mountpoint>\r\n`
+   - `Source-Agent: NTRIP satpulse/<version>\r\n`
+   - `STR: <d.STR>\r\n` if `d.STR` is non-empty
+   - terminating blank line `\r\n`
+3. Read the caster response line using `ntriphdr`.
+4. Return the raw `net.Conn` on success.
+5. Close and return an error on rejection.
+
+The caller only sees a connected stream socket, same as
+`Pull.reader` only sees a connected source socket.
+
+Success is exactly `ICY 200 OK`.  Any `ERROR ...` response, or any
+other response line, is a failure.  After success, the connection
+switches immediately to raw RTCM byte streaming; there is no HTTP
+message body or chunked framing.
+
+## Push
+
+Unlike `Pull`, `Push` does not own a packet bcast.  It consumes the
+receiver's existing packet bcast, because that is already the single
+source of truth for observability and downstream readers.
+
+The pipeline has three stages, with the reconnect loop on the writer
+side rather than the reader side:
+
+1. **Subscriber/filter stage**
+   Subscribe to the receiver packet bcast and receive scanned
+   packets from it.  Discard packets whose format does not match the
+   configured protocol filter.
+2. **Pruning queue**
+   Reuse the same `pruningQueue` as `Pull` so a slow or disconnected
+   network link collapses old packets to the latest packet per RTCM
+   message type, with the same MSM multiple-message handling.
+3. **Writer/reconnect stage**
+   Own the outbound network connection, reconnect with adaptive
+   backoff, and write queued packets to the remote caster.
+
+```go
+type Push struct{}
+
+func NewPush() *Push
+
+func (s *Push) Run(ctx context.Context, lg *slog.Logger,
+    packets *bcast.Bcast[scan.Packet],
+    conn Connection,
+    pktFormats []gpsprot.PacketFormat,
+    msm7to4 bool,
+    onState func(State, error)) error
+```
+
+`Push.Run` blocks until `ctx` is cancelled or the input bcast is
+closed.  Unlike `Pull`, there is no serial writer whose failure is
+fatal to the daemon; outbound network failures are handled as normal
+reconnect events.
+
+## Run
+
+`Run` follows the same structure as `Pull.Run`:
+
+1. Create an internal context with cancel.
+2. Subscribe to the input bcast before starting worker goroutines.
+3. Create a queue output channel `qCh`.
+4. Create a reconnect notification channel `reconnectCh`.
+5. Start the queue goroutine.
+6. Start the writer goroutine.
+7. Wait for both goroutines to exit.
+8. Return `ctx.Err()` unless a non-reconnect fatal error needs to be
+   surfaced.
+
+No internal `Packets` bcast is needed on `Push`, because packets are
+already broadcast by the main receiver scan path.
+
+## Queue
+
+The queue should use the same `pruningQueue` implementation as
+`Pull`, not a new variant.
+
+The queue differs from `Pull.queue` in two ways:
+
+1. The queue input is the receiver subscription channel rather than
+   `Pull`'s internal broadcast.
+2. Reconnect notifications come from the writer rather than the
+   reader.
+
+```go
+func (s *Push) queue(packets *bcast.Bcast[scan.Packet],
+    subCh <-chan scan.Packet,
+    reconnectCh <-chan struct{},
+    writerCh chan<- scan.Packet,
+    pktFormats []gpsprot.PacketFormat)
+```
+
+The queue does the following:
+
+1. Receive packets from `subCh`.
+2. Ignore packets with nil format or a mismatched protocol.
+3. Enqueue matching packets using `pruningQueue`.
+4. On `reconnectCh`, call `q.reconnect()` so MSM
+   multiple-message dedup does not span a broken outbound
+   connection.
+5. When `subCh` closes, discard any remaining queued packets,
+   close `writerCh`, call `packets.Unsubscribe(subCh)`, and
+   return.
+
+This is the minimum change needed to reuse Pull's queue logic
+without inventing a separate packet type just for reconnect
+markers.
+
+## Writer
+
+The writer owns the outbound reconnect loop, analogous to how
+`Pull.reader` owns the inbound reconnect loop.
+
+```go
+func (s *Push) writer(ctx context.Context, lg *slog.Logger,
+    conn Connection,
+    qCh <-chan scan.Packet,
+    reconnectCh chan<- struct{},
+    msm7to4 bool,
+    onState func(State, error)) error
+```
+
+The writer does the following:
+
+1. Call `onState(Connecting, nil)` before the first attempt.
+2. Connect using `conn.Connect(ctx)`.
+3. On connect failure:
+   - log
+   - increase backoff
+   - call `onState(Reconnecting, err)`
+   - sleep for `b.delay()` unless cancelled
+   - call `onState(Connecting, nil)` before retrying
+4. On success:
+   - decrease backoff
+   - call `onState(Connected, nil)`
+   - enter a write loop consuming `qCh`
+5. For each queued packet:
+   - optionally convert MSM7 to MSM4
+   - write raw bytes to `net.Conn`
+6. On write error:
+   - close the connection
+   - notify `reconnectCh`
+   - return to the outer reconnect loop
+7. On `qCh` close:
+   - close the connection
+   - return nil
+
+As with `Pull`, the backoff should also decay while the connection
+stays healthy.
+
+The reconnect path repeats the full v1 handshake each time: TCP
+connect, SOURCE request, `ICY 200 OK` check, then raw data stream.
+
+The current packet being written when the socket breaks may be lost;
+that is acceptable here because RTCM is a live stream and the queue
+retains the latest state per message type while reconnect proceeds.
+
+## MSM7 to MSM4 conversion
+
+Use the same policy as the NTRIP caster plan:
+
+- only attempt conversion for RTCM MSM7 packets
+- on parse/convert/serialize failure, log at debug/warn level and
+  send the original packet unchanged
+
+Conversion belongs in the writer, immediately before `conn.Write`,
+so the queue stays keyed on the original scanned packet and remains
+identical to `Pull`.
+
+## Daemon integration
+
+This belongs in the same `stream` daemon wiring area as
+`stream.pull`.
+
+At startup:
+
+1. If any `[[stream.push]]` entries are configured, create one
+   `Push` instance per entry.
+2. Reuse the receiver packet bcast that already exists in the
+   daemon.
+3. Build a `Connection` for each entry (`NTRIPDestination`
+   initially).
+4. Start each `Push.Run` in its own goroutine.
+5. Pass an `onState` callback that logs destination-specific state
+   changes.
+
+There is no extra dispatcher channel and no RTCM event generation in
+this path.
+
+## Testing
+
+- Unit test `NTRIPDestination.Connect` using a local TCP listener that
+  verifies the exact v1 handshake:
+  - `SOURCE <password> /<mountpoint>`
+  - `Source-Agent` begins with `NTRIP`
+  - no `Ntrip-Version` header
+  - `STR: ...` present when configured and omitted otherwise
+- Unit test success response handling: `ICY 200 OK`.
+- Unit test error response handling: `ERROR - Bad Password`,
+  `ERROR - Mount Point Taken or Invalid`, and unexpected response
+  lines.
+- Unit test the queue with reconnect notifications, especially the
+  MSM multiple-message boundary behavior.
+- Unit test writer reconnect behavior with a listener that accepts a
+  connection, reads a few packets, then closes the socket.
+- End-to-end test: feed RTCM packets into a `bcast.Bcast`, run
+  `Push`, and verify the remote test server receives the expected
+  stream after reconnects.
