@@ -339,6 +339,39 @@ func TestGetPostTimeMessages(t *testing.T) {
 			expectMsgLevel: levelTopOfSecond - 1,
 		},
 		{
+			// Two consecutive NavSolution messages, but n=3: just need to wait.
+			name: "insufficient_messages",
+			entries: []struct {
+				msg   *gpsprot.TimeMsg
+				tRead time.Time
+			}{
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882649, 185738),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.NavSolution,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "NAV-TIMEGPS",
+					},
+					tRead: timeAt(6005740766),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882650, 185603),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.NavSolution,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "NAV-TIMEGPS",
+					},
+					tRead: timeAt(7000832602),
+				},
+			},
+			n:              3,
+			expectLast:     0,
+			expectTRead:    nil,
+			expectMsgLevel: levelSufficient - 1,
+		},
+		{
 			name: "missing_second_should_fail",
 			entries: []struct {
 				msg   *gpsprot.TimeMsg

@@ -106,9 +106,6 @@ func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.
 	}
 	level = levelMultipleTimes
 	entries = entriesSameType(entries, start)
-	if len(entries) < n {
-		return 0, nil
-	}
 	// At this point all entries are of the same type.
 	tRead = make([]time.Time, 0, len(entries))
 	secs := make([]ptime.Time, 0, len(entries))
