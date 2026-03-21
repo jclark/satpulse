@@ -29,120 +29,314 @@ func TestGetPostTimeMessages(t *testing.T) {
 			msg   *gpsprot.TimeMsg
 			tRead time.Time
 		}
-		n           int
-		expectLast  ptime.Time
-		expectTRead []int64 // expected tRead values as nanos offsets
+		n              int
+		expectLast     ptime.Time
+		expectTRead    []int64 // expected tRead values as nanos offsets
+		expectMsgLevel bufMsgLevel
 	}{
 		{
-			name: "real_data_ubx_timegps_and_timtp",
+			// Real data from u-blox ZED-F9P event log.
+			// NAV-TIMEGPS is NavSolution; TIM-TP is PrePulse (ineligible).
+			// bestEntries selects NAV-TIMEGPS; times round to consecutive seconds.
+			name: "real_data_ubx_navsolution",
 			entries: []struct {
 				msg   *gpsprot.TimeMsg
 				tRead time.Time
 			}{
 				{
 					msg: &gpsprot.TimeMsg{
-						TAITime:     tai(1707442831, 999795255),
+						TAITime:     tai(1707882643, 186550),
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.NavSolution,
 						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "NAV-TIMEGPS",
 					},
-					tRead: timeAt(989951707),
+					tRead: timeAt(0),
 				},
 				{
 					msg: &gpsprot.TimeMsg{
-						TAITime:     tai(1707442833, 0),
+						TAITime:     tai(1707882644, 0),
 						GNSS:        gpsprot.GPS,
-						Ref:         gpsprot.PostPulse,
+						Ref:         gpsprot.PrePulse,
 						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "TIM-TP",
 					},
-					tRead: timeAt(1010185067),
+					tRead: timeAt(20106905),
 				},
 				{
 					msg: &gpsprot.TimeMsg{
-						TAITime:     tai(1707442832, 999795042),
+						TAITime:     tai(1707882644, 186415),
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.NavSolution,
 						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "NAV-TIMEGPS",
 					},
-					tRead: timeAt(1992953605),
+					tRead: timeAt(1004180411),
 				},
 				{
 					msg: &gpsprot.TimeMsg{
-						TAITime:     tai(1707442834, 0),
+						TAITime:     tai(1707882645, 0),
 						GNSS:        gpsprot.GPS,
-						Ref:         gpsprot.PostPulse,
+						Ref:         gpsprot.PrePulse,
 						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "TIM-TP",
 					},
-					tRead: timeAt(2016301635),
+					tRead: timeAt(1030748277),
 				},
 				{
 					msg: &gpsprot.TimeMsg{
-						TAITime:     tai(1707442833, 999794828),
+						TAITime:     tai(1707882645, 186279),
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.NavSolution,
 						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "NAV-TIMEGPS",
 					},
-					tRead: timeAt(2999948446),
+					tRead: timeAt(2001227631),
 				},
 				{
 					msg: &gpsprot.TimeMsg{
-						TAITime:     tai(1707442835, 0),
+						TAITime:     tai(1707882646, 0),
 						GNSS:        gpsprot.GPS,
-						Ref:         gpsprot.PostPulse,
+						Ref:         gpsprot.PrePulse,
 						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "TIM-TP",
 					},
-					tRead: timeAt(3023123219),
+					tRead: timeAt(2023850023),
 				},
 				{
 					msg: &gpsprot.TimeMsg{
-						TAITime:     tai(1707442834, 999794615),
+						TAITime:     tai(1707882646, 186144),
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.NavSolution,
 						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "NAV-TIMEGPS",
 					},
-					tRead: timeAt(3992241034),
+					tRead: timeAt(3004868715),
 				},
 				{
 					msg: &gpsprot.TimeMsg{
-						TAITime:     tai(1707442836, 0),
+						TAITime:     tai(1707882647, 0),
 						GNSS:        gpsprot.GPS,
-						Ref:         gpsprot.PostPulse,
+						Ref:         gpsprot.PrePulse,
 						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "TIM-TP",
 					},
-					tRead: timeAt(4011345185),
+					tRead: timeAt(3026795208),
 				},
 				{
 					msg: &gpsprot.TimeMsg{
-						TAITime:     tai(1707442835, 999794402),
+						TAITime:     tai(1707882647, 186009),
 						GNSS:        gpsprot.GPS,
 						Ref:         gpsprot.NavSolution,
 						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "NAV-TIMEGPS",
 					},
-					tRead: timeAt(4996451086),
+					tRead: timeAt(4002817020),
 				},
 				{
 					msg: &gpsprot.TimeMsg{
-						TAITime:     tai(1707442837, 0),
+						TAITime:     tai(1707882648, 0),
 						GNSS:        gpsprot.GPS,
-						Ref:         gpsprot.PostPulse,
+						Ref:         gpsprot.PrePulse,
 						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "TIM-TP",
 					},
-					tRead: timeAt(5018143724),
+					tRead: timeAt(4022928351),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882648, 185873),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.NavSolution,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "NAV-TIMEGPS",
+					},
+					tRead: timeAt(5004023327),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882649, 0),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PrePulse,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "TIM-TP",
+					},
+					tRead: timeAt(5026754453),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882649, 185738),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.NavSolution,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "NAV-TIMEGPS",
+					},
+					tRead: timeAt(6005740766),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882650, 0),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PrePulse,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "TIM-TP",
+					},
+					tRead: timeAt(6029888524),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882650, 185603),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.NavSolution,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "NAV-TIMEGPS",
+					},
+					tRead: timeAt(7000832602),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882651, 0),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PrePulse,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "TIM-TP",
+					},
+					tRead: timeAt(7017964962),
 				},
 			},
-			n:          3,
-			expectLast: tai(1707442837, 0),
-			expectTRead: []int64{3023123219, 4011345185, 5018143724}, // TIM-TP messages for seconds 1707442835, 1707442836, 1707442837
+			n:              3,
+			expectLast:     tai(1707882650, 0),
+			expectTRead:    []int64{5004023327, 6005740766, 7000832602},
+			expectMsgLevel: levelConsecutive,
+		},
+		{
+			// Only PrePulse (TIM-TP) messages: all ineligible for GetPostTimeMessages.
+			name: "only_prepulse",
+			entries: []struct {
+				msg   *gpsprot.TimeMsg
+				tRead time.Time
+			}{
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882644, 0),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PrePulse,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "TIM-TP",
+					},
+					tRead: timeAt(20106905),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882645, 0),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PrePulse,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "TIM-TP",
+					},
+					tRead: timeAt(1030748277),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882646, 0),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PrePulse,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "TIM-TP",
+					},
+					tRead: timeAt(2023850023),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882647, 0),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PrePulse,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "TIM-TP",
+					},
+					tRead: timeAt(3026795208),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882648, 0),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PrePulse,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "TIM-TP",
+					},
+					tRead: timeAt(4022928351),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882649, 0),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PrePulse,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "TIM-TP",
+					},
+					tRead: timeAt(5026754453),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882650, 0),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PrePulse,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "TIM-TP",
+					},
+					tRead: timeAt(6029888524),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						TAITime:     tai(1707882651, 0),
+						GNSS:        gpsprot.GPS,
+						Ref:         gpsprot.PrePulse,
+						Tag:         gpsreg.TagUBX,
+						NativeMsgID: "TIM-TP",
+					},
+					tRead: timeAt(7017964962),
+				},
+			},
+			n:              3,
+			expectLast:     0,
+			expectTRead:    nil,
+			expectMsgLevel: levelPost - 1,
+		},
+		{
+			// Real data from LBE1421: NMEA GNRMC with .3s offset, not second-aligned.
+			name: "nmea_not_second_aligned",
+			entries: func() []struct {
+				msg   *gpsprot.TimeMsg
+				tRead time.Time
+			} {
+				date := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
+				utc := func(h, m, s int, ns int) *ptime.UTCTime {
+					return &ptime.UTCTime{
+						Date:      date,
+						TimeOfDay: time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(s)*time.Second + time.Duration(ns),
+					}
+				}
+				type e = struct {
+					msg   *gpsprot.TimeMsg
+					tRead time.Time
+				}
+				return []e{
+					{msg: &gpsprot.TimeMsg{UTCTime: utc(12, 5, 50, 3e8), Tag: gpsreg.TagNMEA, NativeMsgID: "GNRMC"}, tRead: timeAt(0)},
+					{msg: &gpsprot.TimeMsg{UTCTime: utc(12, 5, 51, 3e8), Tag: gpsreg.TagNMEA, NativeMsgID: "GNRMC"}, tRead: timeAt(997662796)},
+					{msg: &gpsprot.TimeMsg{UTCTime: utc(12, 5, 52, 3e8), Tag: gpsreg.TagNMEA, NativeMsgID: "GNRMC"}, tRead: timeAt(2001736270)},
+					{msg: &gpsprot.TimeMsg{UTCTime: utc(12, 5, 53, 3e8), Tag: gpsreg.TagNMEA, NativeMsgID: "GNRMC"}, tRead: timeAt(2998303998)},
+					{msg: &gpsprot.TimeMsg{UTCTime: utc(12, 5, 54, 3e8), Tag: gpsreg.TagNMEA, NativeMsgID: "GNRMC"}, tRead: timeAt(3995654589)},
+					{msg: &gpsprot.TimeMsg{UTCTime: utc(12, 5, 55, 3e8), Tag: gpsreg.TagNMEA, NativeMsgID: "GNRMC"}, tRead: timeAt(5001573291)},
+					{msg: &gpsprot.TimeMsg{UTCTime: utc(12, 5, 56, 3e8), Tag: gpsreg.TagNMEA, NativeMsgID: "GNRMC"}, tRead: timeAt(5999669305)},
+					{msg: &gpsprot.TimeMsg{UTCTime: utc(12, 5, 57, 3e8), Tag: gpsreg.TagNMEA, NativeMsgID: "GNRMC"}, tRead: timeAt(6996519195)},
+					{msg: &gpsprot.TimeMsg{UTCTime: utc(12, 5, 58, 3e8), Tag: gpsreg.TagNMEA, NativeMsgID: "GNRMC"}, tRead: timeAt(7995389809)},
+					{msg: &gpsprot.TimeMsg{UTCTime: utc(12, 5, 59, 3e8), Tag: gpsreg.TagNMEA, NativeMsgID: "GNRMC"}, tRead: timeAt(9000060488)},
+				}
+			}(),
+			n:              3,
+			expectLast:     0,
+			expectTRead:    nil,
+			expectMsgLevel: levelTopOfSecond - 1,
 		},
 		{
 			name: "missing_second_should_fail",
@@ -184,7 +378,8 @@ func TestGetPostTimeMessages(t *testing.T) {
 			},
 			n:          3,
 			expectLast: 0,
-			expectTRead: nil, // Should fail due to missing second
+			expectTRead:    nil, // Should fail due to missing second
+			expectMsgLevel: levelConsecutive - 1,
 		},
 	}
 
@@ -207,6 +402,9 @@ func TestGetPostTimeMessages(t *testing.T) {
 				t.Errorf("GetPostTimeMessages() returned %d times, want %d", len(gotTRead), len(tt.expectTRead))
 			}
 
+			if buf.msgLevel != tt.expectMsgLevel {
+				t.Errorf("msgLevel = %d, want %d", buf.msgLevel, tt.expectMsgLevel)
+			}
 			// Check that the tRead values match expected nanos offsets
 			for i, tr := range gotTRead {
 				if i < len(tt.expectTRead) {
