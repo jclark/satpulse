@@ -76,7 +76,6 @@ all:
       instance: ttyS0
       interface: enp5s0
       speed: 38400
-      config: "false"
       config_file: /etc/satpulse.d/ttyS0.toml
       http_port: 2001
   
@@ -111,7 +110,6 @@ all:
     # UM960 on UART
     wensleydale.lan:
       speed: 115200
-      config: "false"
       vendor: '"Unicore"'
     
     # TimeHAT on Pi 5 with M.2 NEO-M9N
@@ -123,7 +121,6 @@ all:
     # UM980 on serial
     serpa.lan:
       speed: 115200
-      config: "false"
       vendor: '"Unicore"'
 
     # LBE-1421 PPS out attached to E810-XXVDA4T
