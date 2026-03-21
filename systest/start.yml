@@ -23,7 +23,7 @@
         mode: '0644'
 
     - name: Rotate log file if needed
-      command: logrotate -f /tmp/satpulse-logrotate.conf
+      command: logrotate -f -s /tmp/logrotate-{{ instance }}.state /tmp/satpulse-logrotate.conf
       register: logrotate_result
       changed_when: logrotate_result.rc == 0
 
