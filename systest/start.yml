@@ -39,3 +39,8 @@
       systemd:
         name: "satpulse@{{ instance }}"
         state: restarted
+
+    - name: Restart chrony
+      systemd:
+        name: "{{ 'chronyd' if ansible_os_family == 'RedHat' else 'chrony' }}"
+        state: restarted
