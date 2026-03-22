@@ -99,7 +99,7 @@ func init() {
 	idNameMap[CfgCwiID] = "CWI"
 	idNameMap[CfgNmeaID] = "NMEA"
 	idNameMap[CfgRtcmID] = "RTCM"
-	idNameMap[CfgTMode2ID] = "TMODE2"
+	// CfgTMode2ID registered in cfg.go
 	idNameMap[CfgSatMaskID] = "SATMASK"
 	idNameMap[CfgTgduID] = "TGDU"
 	idNameMap[CfgSbasID] = "SBAS"
