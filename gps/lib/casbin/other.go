@@ -34,17 +34,6 @@ const (
 	Nav2ClkID    MsgID = clsNav2 | (0x07 << 8)
 	Nav2RvtID    MsgID = clsNav2 | (0x08 << 8)
 	Nav2RtcID    MsgID = clsNav2 | (0x09 << 8)
-	// TIM2 message IDs (ZKW F8)
-	Tim2TpxID     MsgID = clsTim2 | (0x00 << 8)
-	Tim2TimeGPSID MsgID = clsTim2 | (0x01 << 8)
-	Tim2TimeBDSID MsgID = clsTim2 | (0x02 << 8)
-	Tim2TimeGLNID MsgID = clsTim2 | (0x03 << 8)
-	Tim2TimeGALID MsgID = clsTim2 | (0x04 << 8)
-	Tim2TimeIRNID MsgID = clsTim2 | (0x05 << 8)
-	Tim2TimePosID MsgID = clsTim2 | (0x06 << 8)
-	Tim2LsID      MsgID = clsTim2 | (0x07 << 8)
-	Tim2LyID      MsgID = clsTim2 | (0x08 << 8)
-	Tim2TcxoID    MsgID = clsTim2 | (0x09 << 8)
 	// RXM message IDs
 	RxmSensorID MsgID = clsRxm | (0x07 << 8)
 	RxmMeasxID  MsgID = clsRxm | (0x10 << 8)
@@ -123,17 +112,7 @@ func init() {
 	idNameMap[Nav2ClkID] = "CLK"
 	idNameMap[Nav2RvtID] = "RVT"
 	idNameMap[Nav2RtcID] = "RTC"
-	// TIM2 messages
-	idNameMap[Tim2TpxID] = "TPX"
-	idNameMap[Tim2TimeGPSID] = "TIMEGPS"
-	idNameMap[Tim2TimeBDSID] = "TIMEBDS"
-	idNameMap[Tim2TimeGLNID] = "TIMEGLN"
-	idNameMap[Tim2TimeGALID] = "TIMEGAL"
-	idNameMap[Tim2TimeIRNID] = "TIMEIRN"
-	idNameMap[Tim2TimePosID] = "TIMEPOS"
-	idNameMap[Tim2LsID] = "LS"
-	idNameMap[Tim2LyID] = "LY"
-	idNameMap[Tim2TcxoID] = "TCXO"
+	// TIM2 messages registered in tim2.go
 	// RXM messages
 	idNameMap[RxmSensorID] = "SENSOR"
 	idNameMap[RxmMeasxID] = "MEASX"
