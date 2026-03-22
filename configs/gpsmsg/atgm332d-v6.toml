@@ -146,9 +146,8 @@ payload.types = "U4U4U1I1U1U1R4"
 payload.values = [1000000, 0, 0, 0, 0, 0, 0.0]
 
 # CFG-CFG: Save/load configuration
-# Payload: U2 mask, U1 mode, U1 reserved
-# mask: 0xFFFF = all sections
-# mode: 0=clear, 1=save, 2=load
+# Payload: U2 reserved, U1 opMode, U1 reserved
+# opMode: 0=clear flash, 1=save to flash, 2=load from flash
 
 # Save configuration to NVM
 [[casbin]]
@@ -157,7 +156,7 @@ description = "Save configuration to NVM"
 class = 0x06
 id = 0x05
 payload.types = "U2U1U1"
-payload.values = [0xFFFF, 1, 0]
+payload.values = [0, 1, 0]
 
 # Load configuration from NVM (undo unsaved changes)
 [[casbin]]
@@ -166,7 +165,7 @@ description = "Reload configuration from NVM"
 class = 0x06
 id = 0x05
 payload.types = "U2U1U1"
-payload.values = [0xFFFF, 2, 0]
+payload.values = [0, 2, 0]
 
 # CFG-NAVLIMIT: Satellite filtering for positioning
 # Payload: U1 minSVs, U1 maxSVs, U1 minCNO, I1 minEle, U4 reserved
@@ -182,33 +181,29 @@ payload.types = "U1U1U1I1U4"
 payload.values = [4, 80, 8, 20, 0]
 
 # CFG-RST: Reset receiver
-# Payload: U2 navBbrMask, U1 resetMode, U1 startMode
-# navBbrMask: sections to clear (0=none, 0x039F=most, 0xFFFF=all)
-# resetMode: 0=HW immediate, 1=SW controlled
-# startMode: 0=hot, 1=warm, 2=cold, 3=factory
+# Payload: U2 reserved, U1 reserved, U1 resetMode
+# resetMode: 0=hot start, 1=warm start, 2=cold start, 3=factory reset
 
-# Reset receiver with cold start (clear ephemeris, almanac, position)
-# Uses HW immediate reset, clears all except clock drift/osc params
+# Cold start (clear ephemeris, almanac, position)
 [[casbin]]
 tag = "reset"
 description = "Cold start (clear ephemeris, almanac, position)"
 class = 0x06
 id = 0x02
 payload.types = "U2U1U1"
-payload.values = [0x039F, 0, 2]
+payload.values = [0, 0, 2]
 
 # Factory reset (restore NVM to defaults and reset receiver)
-# Uses HW immediate reset, clears all except clock drift/osc params
 [[casbin]]
 tag = "factory-reset"
 description = "Factory reset (restore all defaults)"
 class = 0x06
 id = 0x02
 payload.types = "U2U1U1"
-payload.values = [0x039F, 0, 3]
+payload.values = [0, 0, 3]
 
 # CFG-RATE: Navigation update rate
-# Payload: U2 measRate_ms, U2 reserved
+# Payload: U2 fixIntervalMs, U1 fixRateHz, U1 reserved
 
 # 1 Hz navigation rate
 [[casbin]]
@@ -216,8 +211,8 @@ tag = "rate-1hz"
 description = "Set 1 Hz navigation rate"
 class = 0x06
 id = 0x04
-payload.types = "U2U2"
-payload.values = [1000, 0]
+payload.types = "U2U1U1"
+payload.values = [1000, 0, 0]
 
 
 # CFG-PRT: Serial port configuration
