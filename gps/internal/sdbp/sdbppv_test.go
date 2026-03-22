@@ -20,7 +20,7 @@ func TestPosGeoDatLLA3(t *testing.T) {
 		{
 			name: "valid",
 			input: &sdbpbin.DatLLA3{
-				Valid: 1, FixSats: 12,
+				Valid: sdbpbin.DatValidPos3D | sdbpbin.DatValidFixOpen, FixSats: 12,
 				Lat: 13.731845, Lon: 100.644758,
 				AltMSL: 6.5, GeoidSep: -28.5,
 				HAcc: 1500, VAcc: 2500,
@@ -32,7 +32,9 @@ func TestPosGeoDatLLA3(t *testing.T) {
 				NativeMsgID: "DAT-LLA3",
 			},
 			wantNE: gpsprot.NavEpochMsg{
-				NumSVUsed: opt.Make[uint16](12),
+				FixLevel:    gpsprot.FixLevelCode,
+				SolutionDim: gpsprot.SolutionDim3D,
+				NumSVUsed:   opt.Make[uint16](12),
 				Acc: gpsprot.Accuracy{
 					Hor:  opt.Make(gpsprot.Length(1500) * gpsprot.Millimeter),
 					Vert: opt.Make(gpsprot.Length(2500) * gpsprot.Millimeter),
@@ -53,6 +55,12 @@ func TestPosGeoDatLLA3(t *testing.T) {
 				t.Errorf("posGeoDatLLA3:\n  got  %+v\n  want %+v", got, tc.want)
 			}
 			if tc.want != nil {
+				if ne.FixLevel != tc.wantNE.FixLevel {
+					t.Errorf("FixLevel = %v, want %v", ne.FixLevel, tc.wantNE.FixLevel)
+				}
+				if ne.SolutionDim != tc.wantNE.SolutionDim {
+					t.Errorf("SolutionDim = %v, want %v", ne.SolutionDim, tc.wantNE.SolutionDim)
+				}
 				if ne.NumSVUsed != tc.wantNE.NumSVUsed {
 					t.Errorf("NumSVUsed = %v, want %v", ne.NumSVUsed, tc.wantNE.NumSVUsed)
 				}
@@ -69,7 +77,7 @@ func TestPosGeoDatLLA3(t *testing.T) {
 
 func TestVelGeoDatLLA3(t *testing.T) {
 	ne := &gpsprot.NavEpochMsg{}
-	m := &sdbpbin.DatLLA3{Valid: 1, GroundSpeed: 0.5, Heading: 90.0, SpeedAcc: 10, HeadingAcc: 500}
+	m := &sdbpbin.DatLLA3{Valid: sdbpbin.DatValidPos3D | sdbpbin.DatValidFixOpen, GroundSpeed: 0.5, Heading: 90.0, SpeedAcc: 10, HeadingAcc: 500}
 	got := velGeoDatLLA3(ne, m)
 	want := &gpsprot.VelGeoMsg{
 		GroundSpeed: opt.Make(gpsprot.MetersPerSecondFromFloat(0.5)),
@@ -84,7 +92,7 @@ func TestVelGeoDatLLA3(t *testing.T) {
 func TestPosECEFDatECEF2(t *testing.T) {
 	ne := &gpsprot.NavEpochMsg{}
 	m := &sdbpbin.DatECEF2{
-		Valid: 1, FixSats: 10,
+		Valid: sdbpbin.DatValidPos3D | sdbpbin.DatValidFixOpen, FixSats: 10,
 		X: -1106227.0, Y: 5650780.0, Z: 1502567.0,
 		XAcc: 2000, YAcc: 2000, ZAcc: 3000,
 	}
@@ -107,7 +115,7 @@ func TestPosECEFDatECEF2(t *testing.T) {
 func TestVelECEFDatECEF2(t *testing.T) {
 	ne := &gpsprot.NavEpochMsg{}
 	m := &sdbpbin.DatECEF2{
-		Valid: 1,
+		Valid: sdbpbin.DatValidPos3D | sdbpbin.DatValidFixOpen,
 		VX: 0.01, VY: -0.02, VZ: 0.03,
 		VXAcc: 5, VYAcc: 5, VZAcc: 5,
 	}
@@ -128,7 +136,7 @@ func TestVelECEFDatECEF2(t *testing.T) {
 func TestVelGeoDatNED3(t *testing.T) {
 	ne := &gpsprot.NavEpochMsg{}
 	m := &sdbpbin.DatNED3{
-		Valid: 1,
+		Valid: sdbpbin.DatValidPos3D | sdbpbin.DatValidFixOpen,
 		VN: 3.0, VE: 4.0, VD: 0.0,
 		VNAcc: 5, VEAcc: 5, VDAcc: 5,
 	}
@@ -150,33 +158,30 @@ func TestVelGeoDatNED3(t *testing.T) {
 	}
 }
 
+// TestDopDatDOP uses a real captured DAT-DOP packet in timing-only mode.
 func TestDopDatDOP(t *testing.T) {
 	ne := &gpsprot.NavEpochMsg{}
 	m := &sdbpbin.DatDOP{
-		Valid: 1, FixSats: 12,
-		GDOP: 150, PDOP: 120, HDOP: 80, VDOP: 90, TDOP: 110,
+		Valid: sdbpbin.DatValidPosTiming, FixSats: 29,
+		GDOP: 19, PDOP: 9999, HDOP: 9999, VDOP: 9999, TDOP: 19,
 	}
 	dopDatDOP(ne, m)
-	want := gpsprot.NavEpochMsg{
-		NumSVUsed: opt.Make[uint16](12),
-		DOP: gpsprot.DOP{
-			Geom: opt.Make(1.5),
-			Pos:  opt.Make(1.2),
-			Hor:  opt.Make(0.8),
-			Vert: opt.Make(0.9),
-			Time: opt.Make(1.1),
-		},
+	if ne.FixLevel != gpsprot.FixLevelCode {
+		t.Errorf("FixLevel = %v, want %v", ne.FixLevel, gpsprot.FixLevelCode)
 	}
-	if !reflect.DeepEqual(ne.DOP, want.DOP) {
-		t.Errorf("DOP:\n  got  %+v\n  want %+v", ne.DOP, want.DOP)
+	if ne.SolutionDim != gpsprot.SolutionDimTimeOnly {
+		t.Errorf("SolutionDim = %v, want %v", ne.SolutionDim, gpsprot.SolutionDimTimeOnly)
 	}
-	if ne.NumSVUsed != want.NumSVUsed {
-		t.Errorf("NumSVUsed = %v, want %v", ne.NumSVUsed, want.NumSVUsed)
+	if ne.NumSVUsed != opt.Make[uint16](29) {
+		t.Errorf("NumSVUsed = %v, want 29", ne.NumSVUsed)
+	}
+	if ne.DOP.Time != opt.Make(0.19) {
+		t.Errorf("DOP.Time = %v, want 0.19", ne.DOP.Time)
 	}
 }
 
 func TestDopDatDOPNilEpoch(t *testing.T) {
-	m := &sdbpbin.DatDOP{Valid: 1, FixSats: 12, PDOP: 120}
+	m := &sdbpbin.DatDOP{Valid: sdbpbin.DatValidPos3D | sdbpbin.DatValidFixOpen, FixSats: 12, PDOP: 120}
 	dopDatDOP(nil, m) // should not panic
 }
 
@@ -225,6 +230,49 @@ func TestSurveyDatTSURV(t *testing.T) {
 			got := surveyDatTSURV(tc.input)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("surveyDatTSURV:\n  got  %+v\n  want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestQualityFromValid(t *testing.T) {
+	tests := []struct {
+		name       string
+		valid      sdbpbin.DatValid
+		fixLevel   gpsprot.FixLevel
+		solDim     gpsprot.SolutionDim
+		correction gpsprot.CorrKind
+		auxSrc     gpsprot.AuxSrc
+	}{
+		{"unavailable", sdbpbin.DatValidPosUnavailable | sdbpbin.DatValidFixOpen, gpsprot.FixLevelNone, 0, 0, 0},
+		{"DR/unavail", sdbpbin.DatValidPosDR, gpsprot.FixLevelNone, 0, 0, gpsprot.AuxSrcDR},
+		{"DR/DR", sdbpbin.DatValidPosDR | sdbpbin.DatValidFixDR, gpsprot.FixLevelNone, 0, 0, gpsprot.AuxSrcDR},
+		{"2D/open", sdbpbin.DatValidPos2D | sdbpbin.DatValidFixOpen, gpsprot.FixLevelCode, gpsprot.SolutionDim2D, 0, 0},
+		{"2D/diff", sdbpbin.DatValidPos2D | sdbpbin.DatValidFixDifferential, gpsprot.FixLevelCode, gpsprot.SolutionDim2D, gpsprot.CorrUsed, 0},
+		{"2D/auth", sdbpbin.DatValidPos2D | sdbpbin.DatValidFixAuthorized, gpsprot.FixLevelCode, gpsprot.SolutionDim2D, 0, 0},
+		{"3D/open", sdbpbin.DatValidPos3D | sdbpbin.DatValidFixOpen, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, 0},
+		{"3D/diff", sdbpbin.DatValidPos3D | sdbpbin.DatValidFixDifferential, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, gpsprot.CorrUsed, 0},
+		{"3D/auth", sdbpbin.DatValidPos3D | sdbpbin.DatValidFixAuthorized, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, 0},
+		{"3D/RTKFixed", sdbpbin.DatValidPos3D | sdbpbin.DatValidFixRTKFixed, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed, 0},
+		{"3D/RTKFloat", sdbpbin.DatValidPos3D | sdbpbin.DatValidFixRTKFloat, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed, 0},
+		{"timing/unavail", sdbpbin.DatValidPosTiming, gpsprot.FixLevelCode, gpsprot.SolutionDimTimeOnly, 0, 0},
+		{"timing/open", sdbpbin.DatValidPosTiming | sdbpbin.DatValidFixOpen, gpsprot.FixLevelCode, gpsprot.SolutionDimTimeOnly, 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ne gpsprot.NavEpochMsg
+			qualityFromValid(&ne, tt.valid)
+			if ne.FixLevel != tt.fixLevel {
+				t.Errorf("FixLevel = %v, want %v", ne.FixLevel, tt.fixLevel)
+			}
+			if ne.SolutionDim != tt.solDim {
+				t.Errorf("SolutionDim = %v, want %v", ne.SolutionDim, tt.solDim)
+			}
+			if ne.Correction != tt.correction {
+				t.Errorf("Correction = %v, want %v", ne.Correction, tt.correction)
+			}
+			if ne.AuxSrc != tt.auxSrc {
+				t.Errorf("AuxSrc = %v, want %v", ne.AuxSrc, tt.auxSrc)
 			}
 		})
 	}

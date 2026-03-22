@@ -47,7 +47,7 @@ var datPackets = []struct {
 		"233e061d4000d8e1420d00133529ea0703110d2f68bfcebf898743295940b2e59b83b0762b40fc9b3941185ae4c1630300001c05000057c3b23b0200000000000000ffffffffe057",
 		&DatLLA3{
 			DatNavHeader: DatNavHeader{222487000},
-			CoordSys: 0, Valid: 19, TrackedSats: 53, FixSats: 41,
+			CoordSys: 0, Valid: DatValidPos3D | DatValidFixOpen, TrackedSats: 53, FixSats: 41,
 			Year: 2026, Month: 3, Day: 17, Hour: 13, Min: 47, SecMs: 49000,
 			Lon: 100.6447466702659, Lat: 13.731815445690561,
 			AltMSL: 11.600582, GeoidSep: -28.543991,
@@ -61,7 +61,7 @@ var datPackets = []struct {
 		"233e061b4b00d8e1420d133529ea0703110d2f68bfd0b1d1b97c7731c1a46e65239a3b57417818cf0eabf33641d9020000090500000902000034f6e0bbc1a3f83b2e3c553b0200000003000000010000001663",
 		&DatECEF2{
 			DatNavHeader: DatNavHeader{222487000},
-			Valid: 19, TrackedSats: 53, FixSats: 41,
+			Valid: DatValidPos3D | DatValidFixOpen, TrackedSats: 53, FixSats: 41,
 			Year: 2026, Month: 3, Day: 17, Hour: 13, Min: 47, SecMs: 49000,
 			X: -1144700.7258559354, Y: 6090344.55306593, Z: 1504171.0578475278,
 			XAcc: 729, YAcc: 1289, ZAcc: 521,
@@ -74,7 +74,7 @@ var datPackets = []struct {
 		"233e061e2800d8e1420d00133529ea0703110d2f68bffccc8e3a7929af3ba98617bc010000000200000003000000513c",
 		&DatNED3{
 			DatNavHeader: DatNavHeader{222487000},
-			CoordSys: 0, Valid: 19, TrackedSats: 53, FixSats: 41,
+			CoordSys: 0, Valid: DatValidPos3D | DatValidFixOpen, TrackedSats: 53, FixSats: 41,
 			Year: 2026, Month: 3, Day: 17, Hour: 13, Min: 47, SecMs: 49000,
 			VN: 0.001089483, VE: 0.00534552, VD: -0.009248414,
 			VNAcc: 1, VEAcc: 2, VDAcc: 3,
@@ -85,7 +85,7 @@ var datPackets = []struct {
 		"233e06131000d8e1420d0329640058002c004c003100c21e",
 		&DatDOP{
 			DatNavHeader: DatNavHeader{222487000},
-			Valid: 3, FixSats: 41,
+			Valid: DatValidPos3D, FixSats: 41,
 			GDOP: 100, PDOP: 88, HDOP: 44, VDOP: 76, TDOP: 49,
 		},
 	},
