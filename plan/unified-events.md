@@ -20,6 +20,10 @@ A few gpsprot types still need cleanup before they serialise cleanly:
 
 `LeapSecondMsg` embeds `ptime.LeapSecond` which does not serialise cleanly: `ptime.Time` fields render as raw `int64`, and the embedded fields lack JSON tags. More broadly, GNSS satellites transmit leap second info as part of a time-correction block that describes how UTC relates to the GNSS system time (equivalent to `ptime.CorrectionParams`). The cleanup should consider generalising `LeapSecondMsg` to cover this GNSS-to-UTC conversion as a whole, not just the leap second. Details to be fleshed out.
 
+### TimeRef serialization
+
+`TimeMsg.Ref` is a `TimeRef` (`int` enum: `NavSolution`, `PrePulse`, `PostPulse`). It currently serialises as a bare integer (`"ref":1`), which is opaque to consumers. Add `MarshalJSON`/`UnmarshalJSON` methods so it serialises as a string (`"ref":"prePulse"`), matching how `GNSS` already serialises.
+
 ### Replace pointer optionality with `opt.Val`
 
 - `TimeMsg.UTCTime *ptime.UTCTime` -> `opt.Val[ptime.UTCTime]`
@@ -100,9 +104,9 @@ Trivial -- `SatellitesSSE` was already just `{ svs: []SVInfo }`. Send `Satellite
 
 ### `InitSSE` and `SampleSSE`
 
-`InitSSE` wraps `ReceiverInfo` -- send `ReceiverInfo` directly (or keep the wrapper if the init event needs to carry additional fields in future).
+`InitSSE` wraps `ReceiverInfo`. It is not a gpsprot `Msg` -- it carries static configuration data from the configuration handshake, not a decoded GPS message. The SSE handler sends it once on connection as the first event, so the frontend can display receiver info immediately.
 
-`SampleSSE` is derived from `phcsync.Sample` which is not a gpsprot type. Keep it as-is or inline the conversion.
+`ReceiverInfo` is already in gpsprot. Send it directly as the `init` event data -- for now `ReceiverInfo` is all that's needed. The `Event` envelope handles this as a special case: `"init"` is a registered type name, but the data is `ReceiverInfo`, not a `Msg`. The unmarshal registry maps `"init"` to `ReceiverInfo` directly.
 
 ## Frontend: path-based field mapping
 
@@ -193,6 +197,18 @@ The replay server reads `.jsonl` event log files and serves events as SSE, repla
 ### Playwright integration
 
 The Playwright MCP server can navigate to the dev server URL and take screenshots, giving the same visual feedback loop as the Wails desktop app.
+
+## satpulsetool event output (#215)
+
+Once `gpsprot.Event` exists, `satpulsetool gps` can gain an option to run packet processing after configuration and emit events as JSONL on stdout. This supersedes the `--event-log path` option envisaged in #215 -- writing to stdout is more composable: an application in another language can `popen` satpulsetool and consume the event stream directly, without coordinating around a file path.
+
+Concretely: a new flag (e.g. `--events`) keeps the session open after configuration, runs `NavEpochManager` packet processing, and writes one `gpsprot.Event` JSON object per line to stdout. The existing `--packet-log` writes raw packets to a file; `--events` writes decoded, structured events to stdout. Both can be active simultaneously.
+
+The `--show-nav` option from #215 (collect events for one epoch and display a summary) is orthogonal and can be done separately.
+
+## SampleSSE cleanup
+
+`SampleSSE` is a flattened view of `phcsync.Sample`. Send `phcsync.Sample` directly instead. Some fields need serialization cleanup (e.g. `Kind`, `Mode` should serialise as strings), but the structure should be sent as-is rather than flattened. This is independent of the gpsprot unified event work.
 
 ## Verify
 
