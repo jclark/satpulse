@@ -128,7 +128,9 @@ for each file i:
 ```
 
 The resulting `Parsed` has combined message slices with defaults already applied, and the root file's `Default` section. All existing methods work on it unchanged:
-- `buildTagIndices`: `validateDefaults` runs on the root file's defaults (same as today for single-file). `applyDefaults` is a no-op (already applied per-file). Consecutive check passes (each tag comes from one file, was consecutive there). Cross-type check works on the combined result.
+- `buildTagIndices`: `validateDefaults` runs on the root file's defaults (same as today for single-file). `applyDefaults` is a no-op (already applied per-file during `loadTree`). Consecutive check passes (each tag comes from one file, was consecutive there). Cross-type check works on the combined result.
+
+**Note:** defaults are now applied eagerly during `loadTree` rather than lazily in `buildTagIndices`. This is observable after `Load` (e.g. `Tag` pointers are non-nil before calling `TaggedMsgs`), but is unavoidable since each file's defaults must be applied before merging so that tags are known for ownership resolution. `applyDefaults` is idempotent so this does not affect `buildTagIndices`.
 - `TaggedMsgs`, `TagDescs`, `ValidateTags`, `ToRaw`, `filterMsgs`: no changes.
 
 ### Path handling

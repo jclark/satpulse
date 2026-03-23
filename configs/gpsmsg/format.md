@@ -290,6 +290,21 @@ Type specifiers are two characters each:
 | `[[asbin]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | Allystar binary packets |
 | `[[sdbp]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | Techtotop/Taidou SDBP binary packets |
 
+## Includes
+
+Message files can include other message files:
+
+```toml
+[[include]]
+src = "common.toml"
+```
+
+The `src` path is resolved relative to the directory of the including file.
+It should use `/` as a directory separator, which will be converted to the OS path separator.
+
+Tags in an including file override tags in an included file. Apart from this, it is an error for the same tag to appear in multiple included files. Defaults are applied to each file separately.
+`--show-tags` will show tags from included files in order, after the tags from the including file.
+
 ## Schema
 
 There is a JSON schema for message files at `gpsmsg-schema.json` in this directory.
