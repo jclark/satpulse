@@ -98,7 +98,7 @@ func timeDatTPPS(m *sdbpbin.DatTPPS) *gpsprot.TimeMsg {
 		t.GNSS = gpsprot.GPS
 	}
 	if m.PPSResidual != 0 {
-		offset := float64(m.PPSResidual) * 1e-12
+		offset := float64(m.PPSResidual) * 1e-3 // ps -> ns
 		t.PulseOffset = &offset
 	}
 	return &t

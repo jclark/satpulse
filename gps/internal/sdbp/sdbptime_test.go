@@ -137,7 +137,7 @@ func TestTimeDatTPPS(t *testing.T) {
 				NativeMsgID: "DAT-TPPS",
 				GNSS:        gpsprot.GPS,
 				UTCTime:     ptr(ptime.GPSUTC(2410, ptime.Seconds(134202.0))),
-				PulseOffset: ptr(597e-12),
+				PulseOffset: ptr(597e-3),
 			},
 		},
 		{
@@ -149,7 +149,7 @@ func TestTimeDatTPPS(t *testing.T) {
 				NativeMsgID: "DAT-TPPS",
 				GNSS:        gpsprot.GPS,
 				UTCTime:     ptr(ptime.GPSUTC(2410, ptime.Seconds(173719.0))),
-				PulseOffset: ptr(333e-12),
+				PulseOffset: ptr(333e-3),
 			},
 		},
 	}
