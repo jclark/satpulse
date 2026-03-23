@@ -85,37 +85,36 @@ When querying with a `get-*` tag, binary replies are printed as hex. Use `satpul
 
 ### 3. Sending arbitrary commands
 
-To send an arbitrary command to a receiver, create a temporary TOML message file and use `-m` without `-t`. The TOML format handles checksums and binary packing for you. See `configs/gpsmsg/format.md` for the full format reference.
+Use `-m -` to pipe the message file as a here document. No temporary file needed. The TOML format handles checksums and binary packing for you. See `configs/gpsmsg/format.md` for the full format reference.
 
 Send a line command (e.g. Unicore):
 
-```toml
-# /tmp/cmd.toml
+```
+out/amd64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m - <<'TOML'
 [[line]]
 text = "CONFIG PPP ENABLE E6-HAS"
-```
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /tmp/cmd.toml
+TOML
 ```
 
 Send an NMEA command (checksum computed automatically):
 
-```toml
-# /tmp/cmd.toml
+```
+out/amd64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m - <<'TOML'
 [[nmea]]
 text = "PQTMCFGPPS,W,1,1,100,2,1,0"
+TOML
 ```
 
 Send a binary command (payload packed automatically). Supported binary formats: `[[ubx]]` (u-blox), `[[asbin]]` (Allystar), `[[casbin]]` (CASIC), `[[sdbp]]` (Techtotop/Taidou). You specify the message class/id and the payload as type specifiers (`payload.types`) and values (`payload.values`). The type specifiers (`U1`, `U2`, `U4` unsigned; `I1`, `I2`, `I4` signed; `R4`, `R8` float) can typically be read directly from the protocol specification for the message. Satpulsetool handles sync bytes, length fields, and checksums.
 
-```toml
-# /tmp/cmd.toml
+```
+out/amd64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m - <<'TOML'
 [[ubx]]
 class = 0x06
 id = 0x03
 payload.types = "U4U4U1I1U1U1R4"
 payload.values = [1000000, 100000, 3, 0, 1, 0, 0.0]
+TOML
 ```
 
 Combine with `--packet-log` to see the response.

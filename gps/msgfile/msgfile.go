@@ -283,33 +283,56 @@ func newMsgFile() *msgFile {
 }
 
 // Load reads and parses a TOML message file, processing any [[include]] entries.
+// If path is "-", the TOML is read from stdin and includes are resolved
+// relative to the current directory.
 func Load(path string) (*Parsed, error) {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, err
-	}
 	var files []loadedFile
-	if err := loadTree(absPath, &files); err != nil {
-		return nil, err
+	if path == "-" {
+		mf, err := loadFile(os.Stdin)
+		if err != nil {
+			return nil, err
+		}
+		if err := processFile(mf, "", &files); err != nil {
+			return nil, err
+		}
+	} else {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return nil, err
+		}
+		if err := loadTree(absPath, &files); err != nil {
+			return nil, err
+		}
 	}
 	return mergeFiles(files)
 }
 
-func loadTree(absPath string, files *[]loadedFile) error {
-	for _, lf := range *files {
-		if lf.path == absPath {
-			return fmt.Errorf("file included more than once: %s", absPath)
-		}
+func loadFile(r io.Reader) (*msgFile, error) {
+	mf := newMsgFile()
+	if err := toml.NewDecoder(r).DisallowUnknownFields().Decode(mf); err != nil {
+		return nil, err
 	}
+	return mf, nil
+}
+
+func loadPath(absPath string) (*msgFile, error) {
 	f, err := os.Open(absPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return loadFile(f)
+}
+
+func loadTree(absPath string, files *[]loadedFile) error {
+	mf, err := loadPath(absPath)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	mf := newMsgFile()
-	if err := toml.NewDecoder(f).DisallowUnknownFields().Decode(mf); err != nil {
-		return fmt.Errorf("%s: %w", absPath, err)
-	}
+	return processFile(mf, absPath, files)
+}
+
+func processFile(mf *msgFile, path string, files *[]loadedFile) error {
 	p := &mf.Parsed
 	// Apply per-file defaults so tags are known for ownership resolution.
 	applyDefaults(p.Line, p.applyLineDefaults)
@@ -320,13 +343,16 @@ func loadTree(absPath string, files *[]loadedFile) error {
 	applyDefaults(p.SDBP, p.applySDBPDefaults)
 	applyDefaults(p.UBX, p.applyUBXDefaults)
 	idx := len(*files)
-	*files = append(*files, loadedFile{path: absPath, p: mf.Parsed})
+	*files = append(*files, loadedFile{path: path, p: mf.Parsed})
 	for _, inc := range mf.Include {
 		if inc.Src == "" {
-			return fmt.Errorf("%s: include src must not be empty", absPath)
+			return fmt.Errorf("%s: include src must not be empty", formatPath(path))
 		}
-		incAbs, err := resolveInclude(absPath, inc.Src)
+		incAbs, err := resolveInclude(path, inc.Src)
 		if err != nil {
+			return err
+		}
+		if err := checkUnique(incAbs, *files); err != nil {
 			return err
 		}
 		if err := loadTree(incAbs, files); err != nil {
@@ -337,10 +363,30 @@ func loadTree(absPath string, files *[]loadedFile) error {
 	return nil
 }
 
+func checkUnique(absPath string, files []loadedFile) error {
+	for _, lf := range files {
+		if lf.path == absPath {
+			return fmt.Errorf("file included more than once: %s", absPath)
+		}
+	}
+	return nil
+}
+
+func formatPath(path string) string {
+	if path == "" {
+		return "<stdin>"
+	}
+	return path
+}
+
 // resolveInclude resolves an include src path relative to the including file.
-func resolveInclude(baseAbs, src string) (string, error) {
-	p := filepath.Join(filepath.Dir(baseAbs), filepath.FromSlash(src))
-	return filepath.Abs(p)
+// An empty basePath (stdin) resolves relative to the current directory.
+func resolveInclude(basePath, src string) (string, error) {
+	src = filepath.FromSlash(src)
+	if basePath != "" {
+		src = filepath.Join(filepath.Dir(basePath), src)
+	}
+	return filepath.Abs(src)
 }
 
 // fileTags returns the set of tags defined by a loaded file's messages.
@@ -385,7 +431,7 @@ func mergeFiles(files []loadedFile) (*Parsed, error) {
 				continue
 			}
 			return nil, fmt.Errorf("tag %q defined in both %s and %s with no override",
-				tag, files[owner].path, files[i].path)
+				tag, formatPath(files[owner].path), formatPath(files[i].path))
 		}
 	}
 	// Build merged result using root file's Default section.

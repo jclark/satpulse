@@ -1326,6 +1326,66 @@ tag = "t"
 	}
 }
 
+func TestLoadFromReader(t *testing.T) {
+	r := strings.NewReader(`[[line]]
+text = "HELLO"
+tag = "greet"
+`)
+	mf, err := loadFile(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var files []loadedFile
+	if err := processFile(mf, "", &files); err != nil {
+		t.Fatal(err)
+	}
+	p, err := mergeFiles(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Line) != 1 || p.Line[0].Text != "HELLO" {
+		t.Errorf("expected HELLO, got %+v", p.Line)
+	}
+}
+
+func TestLoadFromReaderWithInclude(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "inc.toml", `
+[[line]]
+text = "INCLUDED"
+tag = "inc"
+`)
+	t.Chdir(dir)
+	r := strings.NewReader(`[[line]]
+text = "MAIN"
+tag = "main"
+
+[[include]]
+src = "inc.toml"
+`)
+	mf, err := loadFile(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var files []loadedFile
+	if err := processFile(mf, "", &files); err != nil {
+		t.Fatal(err)
+	}
+	p, err := mergeFiles(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Line) != 2 {
+		t.Fatalf("expected 2 line messages, got %d", len(p.Line))
+	}
+	if p.Line[0].Text != "MAIN" {
+		t.Errorf("line[0]: got %q, want MAIN", p.Line[0].Text)
+	}
+	if p.Line[1].Text != "INCLUDED" {
+		t.Errorf("line[1]: got %q, want INCLUDED", p.Line[1].Text)
+	}
+}
+
 func TestIncludeSingleFileUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "single.toml", `
