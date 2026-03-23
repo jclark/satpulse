@@ -65,25 +65,6 @@ type Tim2Tpx struct {
 
 func (m *Tim2Tpx) ID() MsgID { return Tim2TpxID }
 
-// Tim2PVTValid is the PVT validity flag (section 3.7.1), shared across
-// TIM2-TPX, TIM2-TIMEPOS, TIM2-TCXO, and TIM2-TIMExxxx messages.
-type Tim2PVTValid uint8
-
-const (
-	Tim2PVTInvalid       Tim2PVTValid = iota
-	Tim2PVTExternal
-	Tim2PVTRoughEstimate
-	Tim2PVTHold
-	Tim2PVTDeadReckoning
-	Tim2PVTQuickMode
-	Tim2PVT2D
-	Tim2PVT3D
-	Tim2PVTDGPS
-	Tim2PVTRTKFloat
-	Tim2PVTRTKFixed
-	Tim2PVTTimingFixed Tim2PVTValid = 15
-)
-
 // Tim2WnValid indicates week number validity (section 3.7.5).
 type Tim2WnValid uint8
 
@@ -126,11 +107,13 @@ const (
 
 // Tim2TimeGNSS is the shared structure for TIM2-TIMEGPS/BDS/GLN/GAL/IRN
 // (0x12 0x01-0x05) - GNSS system time information (36 bytes)
+// Tim2TimeGNSS is the shared structure for TIM2-TIMEGPS/BDS/GLN/GAL/IRN
+// (0x12 0x01-0x05) - GNSS system time information (36 bytes)
 type Tim2TimeGNSS struct {
-	TOW      uint32          // ms, integer TOW
+	Nav2TOW                         // ms, integer TOW
 	TOWSubms int32           // scaled 2^-30 ms, fractional TOW
 	Wn       uint16          // week number
-	TOWFlag  Tim2PVTValid    // TOW valid flag
+	TOWFlag  PVTValid    // TOW valid flag
 	WnFlag   Tim2WnValid     // week number valid flag
 	TotSec   uint32          // s, total seconds
 	TAcc     float32         // ns, time error estimate
@@ -189,7 +172,7 @@ type Tim2TimePos struct {
 	ZFix       float64      // m, positioning engine real-time position Z
 	SurTimer   uint32       // s, survey-in running time
 	SurPacc    float32      // m, survey-in position accuracy
-	FixFlag    Tim2PVTValid // position validity flag
+	FixFlag    PVTValid // position validity flag
 	TimFixMode Tim2FixMode  // how timing position was determined
 	PRResiRms  uint16       // m, pseudorange residual RMS
 	PosBias    uint16       // m, deviation between timing and real-time position
@@ -245,7 +228,7 @@ type Tim2Tcxo struct {
 	Dfu2Tcxo  float32      // difference between sampling clock and TCXO offset
 	DfxRatio  float32      // TCXO frequency offset (DfuRatio + Dfu2Tcxo)
 	VcBias    int32        // scaled 2^-28, VCTCXO voltage control offset
-	FrqFlag   Tim2PVTValid // frequency valid flag
+	FrqFlag   PVTValid // frequency valid flag
 	TcxoDoCnt uint8        // VCTCXO taming convergence count
 	_         uint16
 }

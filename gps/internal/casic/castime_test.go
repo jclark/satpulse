@@ -1,11 +1,14 @@
 package casic
 
 import (
+	"encoding/hex"
+	"math"
 	"testing"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/ptime"
 )
 
 func TestTimeNav2TimeUTC(t *testing.T) {
@@ -127,7 +130,7 @@ func TestNav2SolGNSSFromNav2TimeUTC(t *testing.T) {
 			pp.ProcessPacket(serialize(&casbin.Nav2Sol{
 				Nav2TOW:  casbin.Nav2TOW{TOW: 259200000},
 				Wn:       2356,
-				FixFlags: casbin.Nav2Fix3D,
+				FixFlags: casbin.PVT3D,
 			}), tRead)
 			// Find the NAV2-SOL TimeMsg
 			var solMsg *gpsprot.TimeMsg
@@ -159,7 +162,7 @@ func TestNav2SolGNSSWithoutNav2TimeUTC(t *testing.T) {
 	pkt, err := casbin.Serialize(&casbin.Nav2Sol{
 		Nav2TOW:  casbin.Nav2TOW{TOW: 259200000},
 		Wn:       2356,
-		FixFlags: casbin.Nav2Fix3D,
+		FixFlags: casbin.PVT3D,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -170,6 +173,196 @@ func TestNav2SolGNSSWithoutNav2TimeUTC(t *testing.T) {
 	}
 	if h.times[0].GNSS != 0 {
 		t.Errorf("GNSS = %v, want 0 (unknown)", h.times[0].GNSS)
+	}
+}
+
+func parseTimHex(t *testing.T, hexStr string) *casbin.Tim2TimeGNSS {
+	t.Helper()
+	b, err := hex.DecodeString(hexStr)
+	if err != nil {
+		t.Fatalf("bad hex: %v", err)
+	}
+	msg, err := casbin.ParseMsg(string(b))
+	if err != nil {
+		t.Fatalf("ParseMsg: %v", err)
+	}
+	switch m := msg.(type) {
+	case *casbin.Tim2TimeGPS:
+		return &m.Tim2TimeGNSS
+	case *casbin.Tim2TimeBDS:
+		return &m.Tim2TimeGNSS
+	case *casbin.Tim2TimeGLN:
+		return &m.Tim2TimeGNSS
+	case *casbin.Tim2TimeGAL:
+		return &m.Tim2TimeGNSS
+	default:
+		t.Fatalf("unexpected type %T", msg)
+		return nil
+	}
+}
+
+// Captured at 2026-03-22T03:49:56Z (UTC) = 2026-03-22T03:50:33 TAI
+var tim2CapturedHex = map[string]string{
+	"GPS": "bace24001201f0c8d2003e81ffff6b0907037629ea56df8810410c3f93bf9cdf1d0112120f0001010000cd37a65d",
+	"BDS": "bace240012024092d200da52ffff1f040703684b0826e07b5540000000009cdf1d0104040f01010100004695756e",
+	"GLN": "bace24001203a082d200da52ffff290604036494d9384e2c7a4400000000000000000000030200000000799c3e86",
+	"GAL": "bace24001204f0c8d200da52ffff6b050403762900324e2c7a44000000009cdf1d011212030303010000ce698382",
+}
+
+// TestTimeTim2TimeGNSSAgree verifies that GPS, BDS, and GAL produce the same TAI time.
+func TestTimeTim2TimeGNSSAgree(t *testing.T) {
+	type tc struct {
+		name          string
+		gnss          gpsprot.GNSS
+		toTAI         func(int16, time.Duration) ptime.Time
+		taiMinusGNSS  int16
+		msgID         string
+		wantUTCOffset uint8
+	}
+	tests := []tc{
+		{"GPS", gpsprot.GPS, ptime.GPS, ptime.TAIMinusGPS, "TIM2-TIMEGPS", 37},
+		{"BDS", gpsprot.BDS, ptime.BeiDou, ptime.TAIMinusBeiDou, "TIM2-TIMEBDS", 37},
+		{"GAL", gpsprot.GAL, ptime.Galileo, ptime.TAIMinusGalileo, "TIM2-TIMEGAL", 0},
+	}
+	var taiTimes []ptime.Time
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := parseTimHex(t, tim2CapturedHex[tt.name])
+			tm := timeTim2TimeGNSS(m, tt.gnss, tt.toTAI, tt.taiMinusGNSS, tt.msgID)
+			if tm.TAITime.IsZero() {
+				t.Fatal("TAITime is zero")
+			}
+			if tm.NativeMsgID != tt.msgID {
+				t.Errorf("NativeMsgID = %v, want %v", tm.NativeMsgID, tt.msgID)
+			}
+			if tm.GNSS != tt.gnss {
+				t.Errorf("GNSS = %v, want %v", tm.GNSS, tt.gnss)
+			}
+			if tm.UTCOffset != tt.wantUTCOffset {
+				t.Errorf("UTCOffset = %v, want %v", tm.UTCOffset, tt.wantUTCOffset)
+			}
+			taiTimes = append(taiTimes, tm.TAITime)
+		})
+	}
+	// GPS, BDS, GAL TAI times should agree within 1 microsecond
+	for i := 1; i < len(taiTimes); i++ {
+		diff := taiTimes[i].Sub(taiTimes[0])
+		if math.Abs(float64(diff)) > float64(time.Microsecond) {
+			t.Errorf("%s TAI differs from GPS by %v", tests[i].name, diff)
+		}
+	}
+}
+
+// TestTimeTim2TimeGLN verifies GLONASS produces UTCTime (not TAITime).
+func TestTimeTim2TimeGLN(t *testing.T) {
+	m := parseTimHex(t, tim2CapturedHex["GLN"])
+	tm := timeTim2TimeGLN(m)
+	if tm.TAITime != 0 {
+		t.Errorf("TAITime should be zero for GLONASS, got %v", tm.TAITime)
+	}
+	if tm.UTCTime == nil {
+		t.Fatal("UTCTime is nil")
+	}
+	if tm.GNSS != gpsprot.GLO {
+		t.Errorf("GNSS = %v, want GLO", tm.GNSS)
+	}
+	// Captured at 2026-03-22T03:49:56Z
+	wantDate := time.Date(2026, 3, 22, 0, 0, 0, 0, time.UTC)
+	if tm.UTCTime.Date != wantDate {
+		t.Errorf("Date = %v, want %v", tm.UTCTime.Date, wantDate)
+	}
+	wantTOD := 3*time.Hour + 49*time.Minute + 56*time.Second
+	if math.Abs(float64(tm.UTCTime.TimeOfDay-wantTOD)) > float64(time.Millisecond) {
+		t.Errorf("TimeOfDay = %v, want ~%v", tm.UTCTime.TimeOfDay, wantTOD)
+	}
+}
+
+func TestTimeTim2TimeGNSSInvalid(t *testing.T) {
+	m := &casbin.Tim2TimeGNSS{} // TFlag is zero
+	tm := timeTim2TimeGNSS(m, gpsprot.GPS, ptime.GPS, ptime.TAIMinusGPS, "TIM2-TIMEGPS")
+	if tm == nil {
+		t.Fatal("should not return nil")
+	}
+	if !tm.TAITime.IsZero() {
+		t.Errorf("TAITime should be zero, got %v", tm.TAITime)
+	}
+}
+
+func TestLeapTim2TimeGNSSNoEvent(t *testing.T) {
+	m := parseTimHex(t, tim2CapturedHex["GPS"])
+	ls := leapTim2TimeGNSS(m, gpsprot.GPS, ptime.TAIMinusGPS)
+	if ls != nil {
+		t.Errorf("expected nil LeapSecondMsg for NoEvent, got %+v", ls)
+	}
+}
+
+func TestLeapTim2TimeGNSSEvent(t *testing.T) {
+	m := &casbin.Tim2TimeGNSS{
+		LsFlag: casbin.Tim2LsEventNormal,
+		LsYear: (2026 << 1) | 1, // December 31, 2026
+		Ls:     18,
+		Lsf:    19,
+	}
+	ls := leapTim2TimeGNSS(m, gpsprot.GPS, ptime.TAIMinusGPS)
+	if ls == nil {
+		t.Fatal("expected non-nil LeapSecondMsg")
+	}
+	if ls.UTCOffBefore != 37 {
+		t.Errorf("UTCOffBefore = %d, want 37", ls.UTCOffBefore)
+	}
+	if ls.UTCOffAfter != 38 {
+		t.Errorf("UTCOffAfter = %d, want 38", ls.UTCOffAfter)
+	}
+	if ls.GNSS != gpsprot.GPS {
+		t.Errorf("GNSS = %v, want GPS", ls.GNSS)
+	}
+	// The event date should be 2027-01-01 00:00:00 TAI (day after Dec 31 + offset)
+	wantLS := ptime.LeapSecondOnDate(
+		time.Date(2026, time.December, 31, 0, 0, 0, 0, time.UTC),
+		37, 38,
+	)
+	if ls.OffChangeTime != wantLS.OffChangeTime {
+		t.Errorf("OffChangeTime = %v, want %v", ls.OffChangeTime, wantLS.OffChangeTime)
+	}
+}
+
+// leapMsgHandler captures LeapSecondMsg for test verification.
+type leapMsgHandler struct {
+	gpsprot.DefaultHandler
+	times []*gpsprot.TimeMsg
+	leaps []*gpsprot.LeapSecondMsg
+}
+
+func (h *leapMsgHandler) Time(msg *gpsprot.TimeMsg, _ time.Time) {
+	h.times = append(h.times, msg)
+}
+
+func (h *leapMsgHandler) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
+	h.leaps = append(h.leaps, msg)
+}
+
+func TestTim2TimeGPSDispatch(t *testing.T) {
+	mgr := gpsprot.NewNavEpochManager()
+	pp := NewPacketProcessor(mgr)
+	h := &leapMsgHandler{}
+	pp.SetMsgHandler(h)
+	b, _ := hex.DecodeString(tim2CapturedHex["GPS"])
+	_, err := pp.ProcessPacket(string(b), time.Unix(1, 0))
+	if err != nil {
+		t.Fatalf("ProcessPacket: %v", err)
+	}
+	if len(h.times) != 1 {
+		t.Fatalf("got %d TimeMsgs, want 1", len(h.times))
+	}
+	tm := h.times[0]
+	if tm.Tag != Tag {
+		t.Errorf("Tag = %v, want %v", tm.Tag, Tag)
+	}
+	if tm.TAITime.IsZero() {
+		t.Error("TAITime is zero")
+	}
+	if tm.NativeMsgID != "TIM2-TIMEGPS" {
+		t.Errorf("NativeMsgID = %v, want TIM2-TIMEGPS", tm.NativeMsgID)
 	}
 }
 

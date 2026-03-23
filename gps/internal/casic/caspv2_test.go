@@ -11,7 +11,7 @@ import (
 
 func TestPosECEFNav2Sol(t *testing.T) {
 	m := &casbin.Nav2Sol{
-		FixFlags:  casbin.Nav2Fix3D,
+		FixFlags:  casbin.PVT3D,
 		VelFlags:  casbin.Nav2Vel3D,
 		NumFixTot: 12,
 		PDOP:      1.5,
@@ -49,7 +49,7 @@ func TestPosECEFNav2Sol(t *testing.T) {
 
 func TestPosECEFNav2SolInvalid(t *testing.T) {
 	m := &casbin.Nav2Sol{
-		FixFlags:  casbin.Nav2FixRoughEstimate,
+		FixFlags:  casbin.PVTRoughEstimate,
 		NumFixTot: 5,
 		PDOP:      99.0,
 	}
@@ -105,7 +105,7 @@ func TestVelECEFNav2SolInvalid(t *testing.T) {
 
 func TestPosGeoNav2Pvh(t *testing.T) {
 	m := &casbin.Nav2Pvh{
-		FixFlags:  casbin.Nav2Fix3D,
+		FixFlags:  casbin.PVT3D,
 		NumFixTot: 10,
 		Lat:       47.0,
 		Lon:       8.0,
@@ -137,7 +137,7 @@ func TestPosGeoNav2Pvh(t *testing.T) {
 }
 
 func TestPosGeoNav2PvhInvalid(t *testing.T) {
-	m := &casbin.Nav2Pvh{FixFlags: casbin.Nav2FixDeadReckoning, NumFixTot: 0}
+	m := &casbin.Nav2Pvh{FixFlags: casbin.PVTDeadReckoning, NumFixTot: 0}
 	var ne gpsprot.NavEpochMsg
 	got := posGeoNav2Pvh(&ne, m)
 	if got != nil {
@@ -222,32 +222,32 @@ func TestDopNav2Dop(t *testing.T) {
 	check("East", ne.DOP.East, float64(float32(0.5)))
 }
 
-func TestQualityFromNav2FixFlags(t *testing.T) {
+func TestQualityFromPVTValid(t *testing.T) {
 	tests := []struct {
 		name       string
-		ff         casbin.Nav2FixFlags
+		ff         casbin.PVTValid
 		fixLevel   gpsprot.FixLevel
 		fixDim     gpsprot.SolutionDim
 		auxSrc     gpsprot.AuxSrc
 		correction gpsprot.CorrKind
 	}{
-		{"Invalid", casbin.Nav2FixInvalid, gpsprot.FixLevelNone, 0, 0, 0},
-		{"External", casbin.Nav2FixExternal, gpsprot.FixLevelNotMeasured, 0, 0, 0},
-		{"RoughEstimate", casbin.Nav2FixRoughEstimate, gpsprot.FixLevelNone, 0, 0, 0},
-		{"Hold", casbin.Nav2FixHold, gpsprot.FixLevelNone, 0, 0, 0},
-		{"DeadReckoning", casbin.Nav2FixDeadReckoning, gpsprot.FixLevelNone, 0, gpsprot.AuxSrcDR, 0},
-		{"QuickMode", casbin.Nav2FixQuickMode, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, 0},
-		{"2D", casbin.Nav2Fix2D, gpsprot.FixLevelCode, gpsprot.SolutionDim2D, 0, 0},
-		{"3D", casbin.Nav2Fix3D, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, 0},
-		{"DGPS", casbin.Nav2FixDGPS, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, gpsprot.CorrUsed},
-		{"RTKFloat", casbin.Nav2FixRTKFloat, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, 0, gpsprot.CorrOSR | gpsprot.CorrUsed},
-		{"RTKFixed", casbin.Nav2FixRTKFixed, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, 0, gpsprot.CorrOSR | gpsprot.CorrUsed},
-		{"TimingFixed", casbin.Nav2FixTimingFixed, gpsprot.FixLevelCode, gpsprot.SolutionDimTimeOnly, 0, 0},
+		{"Invalid", casbin.PVTInvalid, gpsprot.FixLevelNone, 0, 0, 0},
+		{"External", casbin.PVTExternal, gpsprot.FixLevelNotMeasured, 0, 0, 0},
+		{"RoughEstimate", casbin.PVTRoughEstimate, gpsprot.FixLevelNone, 0, 0, 0},
+		{"Hold", casbin.PVTHold, gpsprot.FixLevelNone, 0, 0, 0},
+		{"DeadReckoning", casbin.PVTDeadReckoning, gpsprot.FixLevelNone, 0, gpsprot.AuxSrcDR, 0},
+		{"QuickMode", casbin.PVTQuickMode, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, 0},
+		{"2D", casbin.PVT2D, gpsprot.FixLevelCode, gpsprot.SolutionDim2D, 0, 0},
+		{"3D", casbin.PVT3D, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, 0},
+		{"DGPS", casbin.PVTDGPS, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, gpsprot.CorrUsed},
+		{"RTKFloat", casbin.PVTRTKFloat, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, 0, gpsprot.CorrOSR | gpsprot.CorrUsed},
+		{"RTKFixed", casbin.PVTRTKFixed, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, 0, gpsprot.CorrOSR | gpsprot.CorrUsed},
+		{"TimingFixed", casbin.PVTTimingFixed, gpsprot.FixLevelCode, gpsprot.SolutionDimTimeOnly, 0, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var ne gpsprot.NavEpochMsg
-			qualityFromNav2FixFlags(&ne, tt.ff, 10)
+			qualityFromPVTValid(&ne, tt.ff, 10)
 			if ne.FixLevel != tt.fixLevel {
 				t.Errorf("FixLevel = %v, want %v", ne.FixLevel, tt.fixLevel)
 			}

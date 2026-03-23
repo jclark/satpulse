@@ -52,8 +52,8 @@ func TestNav2SolParse(t *testing.T) {
 	if sol.Wn != 2408 {
 		t.Errorf("Wn = %d, want 2408", sol.Wn)
 	}
-	if sol.FixFlags != Nav2Fix3D {
-		t.Errorf("FixFlags = %d, want %d", sol.FixFlags, Nav2Fix3D)
+	if sol.FixFlags != PVT3D {
+		t.Errorf("FixFlags = %d, want %d", sol.FixFlags, PVT3D)
 	}
 	if sol.VelFlags != Nav2Vel3D {
 		t.Errorf("VelFlags = %d, want %d", sol.VelFlags, Nav2Vel3D)
@@ -88,7 +88,7 @@ func TestNav2SolRoundtrip(t *testing.T) {
 	m := Nav2Sol{
 		Nav2TOW:    Nav2TOW{TOW: 260881000},
 		Wn:         2408,
-		FixFlags:   Nav2Fix3D,
+		FixFlags:   PVT3D,
 		VelFlags:   Nav2Vel3D,
 		GnssMask:   Nav2GnssGPS | Nav2GnssBDS,
 		NumFixTot:  20,
@@ -120,8 +120,8 @@ func TestNav2PvhParse(t *testing.T) {
 	if pvh.TOW != 0x0f8d00b8 {
 		t.Errorf("TOW = 0x%x, want 0x%x", pvh.TOW, 0x0f8d00b8)
 	}
-	if pvh.FixFlags != Nav2Fix3D {
-		t.Errorf("FixFlags = %d, want %d", pvh.FixFlags, Nav2Fix3D)
+	if pvh.FixFlags != PVT3D {
+		t.Errorf("FixFlags = %d, want %d", pvh.FixFlags, PVT3D)
 	}
 	if pvh.NumFixTot != 42 {
 		t.Errorf("NumFixTot = %d, want 42", pvh.NumFixTot)
@@ -139,7 +139,7 @@ func TestNav2PvhRoundtrip(t *testing.T) {
 	m := Nav2Pvh{
 		Nav2TOW:    Nav2TOW{TOW: 260881000},
 		Wn:         2408,
-		FixFlags:   Nav2Fix3D,
+		FixFlags:   PVT3D,
 		VelFlags:   Nav2Vel3D,
 		GnssMask:   Nav2GnssGPS | Nav2GnssBDS | Nav2GnssGLN | Nav2GnssGAL,
 		NumFixTot:  30,

@@ -314,23 +314,6 @@ type Nav2TOW struct {
 
 func (m *Nav2TOW) NavEpoch() uint32 { return uint32(m.TOW) }
 
-type Nav2FixFlags uint8
-
-const (
-	Nav2FixInvalid       Nav2FixFlags = 0
-	Nav2FixExternal      Nav2FixFlags = 1
-	Nav2FixRoughEstimate Nav2FixFlags = 2
-	Nav2FixHold          Nav2FixFlags = 3
-	Nav2FixDeadReckoning Nav2FixFlags = 4
-	Nav2FixQuickMode     Nav2FixFlags = 5
-	Nav2Fix2D            Nav2FixFlags = 6
-	Nav2Fix3D            Nav2FixFlags = 7
-	Nav2FixDGPS          Nav2FixFlags = 8
-	Nav2FixRTKFloat      Nav2FixFlags = 9
-	Nav2FixRTKFixed      Nav2FixFlags = 10
-	Nav2FixTimingFixed   Nav2FixFlags = 15
-)
-
 type Nav2VelFlags uint8
 
 const (
@@ -391,7 +374,7 @@ type Nav2Sol struct {
 	Nav2TOW
 	Wn         uint16
 	_          uint16       // reserved
-	FixFlags   Nav2FixFlags
+	FixFlags   PVTValid
 	VelFlags   Nav2VelFlags
 	_          uint8        // reserved
 	GnssMask   Nav2GnssMask
@@ -422,7 +405,7 @@ type Nav2Pvh struct {
 	Nav2TOW
 	Wn         uint16
 	_          uint16       // reserved
-	FixFlags   Nav2FixFlags
+	FixFlags   PVTValid
 	VelFlags   Nav2VelFlags
 	_          uint8        // reserved
 	GnssMask   Nav2GnssMask
