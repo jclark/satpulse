@@ -258,3 +258,6 @@ class = 0x06
 id = 0x16
 payload.types = "U1U1U1U1I4I4I4U4U4U4"
 payload.values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[include]]
+src = "atgm332d-v6.toml"
