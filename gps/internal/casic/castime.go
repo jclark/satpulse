@@ -49,6 +49,45 @@ func timeTimTP(m *casbin.TimTP) *gpsprot.TimeMsg {
 	return &t
 }
 
+// timeTim2Tpx converts Tim2Tpx to TimeMsg.
+// Always returns a TimeMsg, but with zero TAITime when flags are insufficient.
+// GLONASS produces UTCTime instead.
+func timeTim2Tpx(m *casbin.Tim2Tpx) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{Ref: gpsprot.PostPulse, NativeMsgID: "TIM2-TPX"}
+	if m.PPSFlag&(casbin.Tim2PPSTOWValid|casbin.Tim2PPSWnValid) != casbin.Tim2PPSTOWValid|casbin.Tim2PPSWnValid {
+		return &t
+	}
+	towSubNs := time.Duration(math.Round(float64(m.TOWSubms) * math.Exp2(-30) * 1e6))
+	tow := time.Duration(m.TOW)*time.Millisecond + towSubNs
+	var taiMinusGNSS int16
+	switch m.TSrc {
+	case casbin.Tim2TSrcGPS:
+		t.GNSS, t.TAITime = gpsprot.GPS, ptime.GPS(int16(m.Wn), tow)
+		taiMinusGNSS = ptime.TAIMinusGPS
+	case casbin.Tim2TSrcBDS:
+		t.GNSS, t.TAITime = gpsprot.BDS, ptime.BeiDou(int16(m.Wn), tow)
+		taiMinusGNSS = ptime.TAIMinusBeiDou
+	case casbin.Tim2TSrcGAL:
+		t.GNSS, t.TAITime = gpsprot.GAL, ptime.Galileo(int16(m.Wn), tow)
+		taiMinusGNSS = ptime.TAIMinusGalileo
+	case casbin.Tim2TSrcGLN:
+		t.GNSS = gpsprot.GLO
+		ut := ptime.GLONASSWeekUTC(m.Wn, tow)
+		t.UTCTime = &ut
+	}
+	if m.QuanErr != 0 {
+		off := float64(m.QuanErr) * 0.1 // 0.1 ns -> ns
+		t.PulseOffset = &off
+	}
+	if m.TAcc > 0 {
+		t.Accuracy = time.Duration(math.Round(float64(m.TAcc) * 0.1))
+	}
+	if taiMinusGNSS > 0 && m.PPSFlag&casbin.Tim2PPSLsValid != 0 {
+		t.UTCOffset = uint8(m.LeapSec) + uint8(taiMinusGNSS)
+	}
+	return &t
+}
+
 // timeNav2Sol converts Nav2Sol to TimeMsg.
 // Returns nil when the fix is below 2D.
 func timeNav2Sol(m *casbin.Nav2Sol, gnss gpsprot.GNSS) *gpsprot.TimeMsg {

@@ -235,6 +235,16 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		}
 		corrFromNav2Sig(p.curNavEpochMsg, mt)
 		return true
+	case *casbin.Tim2Tpx:
+		tm := timeTim2Tpx(mt)
+		if p.mh != nil {
+			tm.Tag = Tag
+			if ne := p.curNavEpochMsg; ne != nil {
+				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
+			}
+			p.mh.Time(tm, tRead)
+		}
+		return true
 	case *casbin.Tim2TimeGPS:
 		return p.dispatchTim2Time(&mt.Tim2TimeGNSS, gpsprot.GPS, ptime.GPS, ptime.TAIMinusGPS, "TIM2-TIMEGPS", tRead)
 	case *casbin.Tim2TimeBDS:

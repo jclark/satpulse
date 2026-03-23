@@ -3,6 +3,7 @@ package casic
 import (
 	"encoding/hex"
 	"math"
+	"reflect"
 	"testing"
 	"time"
 
@@ -274,6 +275,55 @@ func TestTimeTim2TimeGLN(t *testing.T) {
 	wantTOD := 3*time.Hour + 49*time.Minute + 56*time.Second
 	if math.Abs(float64(tm.UTCTime.TimeOfDay-wantTOD)) > float64(time.Millisecond) {
 		t.Errorf("TimeOfDay = %v, want ~%v", tm.UTCTime.TimeOfDay, wantTOD)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func TestTimeTim2Tpx(t *testing.T) {
+	tests := []struct {
+		name string
+		hex  string
+		want gpsprot.TimeMsg
+	}{
+		{
+			name: "BDS",
+			hex:  "bace180012004092d2001efbffff1f046f0001001a00a80704ef210000005f9971f0",
+			want: gpsprot.TimeMsg{
+				TAITime:     1774151432_999999999,
+				Accuracy:    3,
+				UTCOffset:   37,
+				PulseOffset: ptr(float64(-17) * 0.1),
+				GNSS:        gpsprot.BDS,
+				Ref:         gpsprot.PostPulse,
+				NativeMsgID: "TIM2-TPX",
+			},
+		},
+		{
+			name: "invalid",
+			hex:  "bace180012000000000000000000000000000000000000000000000000004a005a00",
+			want: gpsprot.TimeMsg{Ref: gpsprot.PostPulse, NativeMsgID: "TIM2-TPX"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, err := hex.DecodeString(tt.hex)
+			if err != nil {
+				t.Fatalf("bad hex: %v", err)
+			}
+			msg, err := casbin.ParseMsg(string(b))
+			if err != nil {
+				t.Fatalf("ParseMsg: %v", err)
+			}
+			tpx, ok := msg.(*casbin.Tim2Tpx)
+			if !ok {
+				t.Fatalf("unexpected type %T", msg)
+			}
+			got := timeTim2Tpx(tpx)
+			if !reflect.DeepEqual(*got, tt.want) {
+				t.Errorf("got  %+v\nwant %+v", *got, tt.want)
+			}
+		})
 	}
 }
 
