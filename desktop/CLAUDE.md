@@ -54,8 +54,8 @@ Uses Tailwind 4.x via `@tailwindcss/vite` plugin. Same utility classes and `dark
 ## Build
 
 ```
+cd desktop && make                      # full app (produces SatPulse.app on macOS)
 cd desktop/frontend && npm run build    # frontend only (tsc + vite build)
-cd desktop && wails build               # full app (produces SatPulse.app on macOS)
 ```
 
 The Go embed directive in `main.go` embeds `all:frontend/dist`.
