@@ -20,6 +20,8 @@ import (
 type HTTPConfig struct {
 	Listen   string `toml:"listen"`
 	PProf    bool   `toml:"pprof"`
+	// These default to true but use *bool because table array items
+	// cannot have pre-filled defaults.
 	GUI      *bool  `toml:"gui"`      // Serve graphical user interface
 	Metrics  *bool  `toml:"metrics"`  // Serve Prometheus metrics endpoint
 	Position *bool  `toml:"position"` // Serve current position endpoint
