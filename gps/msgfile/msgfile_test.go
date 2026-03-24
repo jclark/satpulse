@@ -998,3 +998,414 @@ func TestPacketAnalyzerCASBIN(t *testing.T) {
 		t.Errorf("ackErr: got %q, want empty", r.AckError)
 	}
 }
+
+// writeFile creates a file under dir with the given relative path and content.
+func writeFile(t *testing.T, dir, rel, content string) {
+	t.Helper()
+	p := filepath.Join(dir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIncludeBasic(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "main.toml", `
+[[line]]
+text = "FROM_A"
+tag = "a"
+
+[[include]]
+src = "b.toml"
+`)
+	writeFile(t, dir, "b.toml", `
+[[line]]
+text = "FROM_B"
+tag = "b"
+`)
+	mf, err := Load(filepath.Join(dir, "main.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mf.Line) != 2 {
+		t.Fatalf("expected 2 line messages, got %d", len(mf.Line))
+	}
+	if mf.Line[0].Text != "FROM_A" || *mf.Line[0].Tag != "a" {
+		t.Errorf("line[0]: got %q tag %q", mf.Line[0].Text, *mf.Line[0].Tag)
+	}
+	if mf.Line[1].Text != "FROM_B" || *mf.Line[1].Tag != "b" {
+		t.Errorf("line[1]: got %q tag %q", mf.Line[1].Text, *mf.Line[1].Tag)
+	}
+}
+
+func TestIncludeTagOverride(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "main.toml", `
+[[line]]
+text = "MAIN_X"
+tag = "x"
+
+[[include]]
+src = "b.toml"
+`)
+	writeFile(t, dir, "b.toml", `
+[[line]]
+text = "B_X"
+tag = "x"
+
+[[line]]
+text = "B_Y"
+tag = "y"
+`)
+	mf, err := Load(filepath.Join(dir, "main.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only main's "x" and b's "y" should survive.
+	if len(mf.Line) != 2 {
+		t.Fatalf("expected 2 line messages, got %d", len(mf.Line))
+	}
+	if mf.Line[0].Text != "MAIN_X" {
+		t.Errorf("line[0]: got %q, want MAIN_X", mf.Line[0].Text)
+	}
+	if mf.Line[1].Text != "B_Y" {
+		t.Errorf("line[1]: got %q, want B_Y", mf.Line[1].Text)
+	}
+}
+
+func TestIncludeConflict(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "main.toml", `
+[[include]]
+src = "b.toml"
+
+[[include]]
+src = "c.toml"
+`)
+	writeFile(t, dir, "b.toml", `
+[[line]]
+text = "B_Y"
+tag = "y"
+`)
+	writeFile(t, dir, "c.toml", `
+[[line]]
+text = "C_Y"
+tag = "y"
+`)
+	_, err := Load(filepath.Join(dir, "main.toml"))
+	if err == nil {
+		t.Fatal("expected error for conflicting tags")
+	}
+	if !strings.Contains(err.Error(), `tag "y"`) {
+		t.Errorf("error %q does not mention tag", err)
+	}
+}
+
+func TestIncludeCircular(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.toml", `
+[[include]]
+src = "b.toml"
+`)
+	writeFile(t, dir, "b.toml", `
+[[include]]
+src = "a.toml"
+`)
+	_, err := Load(filepath.Join(dir, "a.toml"))
+	if err == nil {
+		t.Fatal("expected error for circular include")
+	}
+	if !strings.Contains(err.Error(), "included more than once") {
+		t.Errorf("error %q does not mention duplicate", err)
+	}
+}
+
+func TestIncludeDiamond(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.toml", `
+[[include]]
+src = "b.toml"
+
+[[include]]
+src = "c.toml"
+`)
+	writeFile(t, dir, "b.toml", `
+[[include]]
+src = "d.toml"
+`)
+	writeFile(t, dir, "c.toml", `
+[[include]]
+src = "d.toml"
+`)
+	writeFile(t, dir, "d.toml", `
+[[line]]
+text = "D"
+tag = "d"
+`)
+	_, err := Load(filepath.Join(dir, "a.toml"))
+	if err == nil {
+		t.Fatal("expected error for diamond include")
+	}
+	if !strings.Contains(err.Error(), "included more than once") {
+		t.Errorf("error %q does not mention duplicate", err)
+	}
+}
+
+func TestIncludeRelativePath(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "main.toml", `
+[[include]]
+src = "sub/child.toml"
+`)
+	writeFile(t, dir, "sub/child.toml", `
+[[line]]
+text = "CHILD"
+tag = "c"
+`)
+	mf, err := Load(filepath.Join(dir, "main.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mf.Line) != 1 || mf.Line[0].Text != "CHILD" {
+		t.Errorf("expected CHILD, got %+v", mf.Line)
+	}
+}
+
+func TestIncludeMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "main.toml", `
+[[include]]
+src = "nonexistent.toml"
+`)
+	_, err := Load(filepath.Join(dir, "main.toml"))
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+	if !strings.Contains(err.Error(), "nonexistent.toml") {
+		t.Errorf("error %q does not mention file", err)
+	}
+}
+
+func TestIncludeRecursiveOverride(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.toml", `
+[[line]]
+text = "A_X"
+tag = "x"
+
+[[include]]
+src = "b.toml"
+`)
+	writeFile(t, dir, "b.toml", `
+[[include]]
+src = "c.toml"
+`)
+	writeFile(t, dir, "c.toml", `
+[[line]]
+text = "C_X"
+tag = "x"
+
+[[line]]
+text = "C_Z"
+tag = "z"
+`)
+	mf, err := Load(filepath.Join(dir, "a.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mf.Line) != 2 {
+		t.Fatalf("expected 2 line messages, got %d", len(mf.Line))
+	}
+	if mf.Line[0].Text != "A_X" {
+		t.Errorf("line[0]: got %q, want A_X", mf.Line[0].Text)
+	}
+	if mf.Line[1].Text != "C_Z" {
+		t.Errorf("line[1]: got %q, want C_Z", mf.Line[1].Text)
+	}
+}
+
+func TestIncludeIndependentDefaults(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "main.toml", `
+[default.line]
+tag = "main-default"
+
+[[line]]
+text = "MAIN"
+
+[[include]]
+src = "b.toml"
+`)
+	writeFile(t, dir, "b.toml", `
+[default.line]
+tag = "b-default"
+
+[[line]]
+text = "FROM_B"
+`)
+	mf, err := Load(filepath.Join(dir, "main.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mf.Line) != 2 {
+		t.Fatalf("expected 2 line messages, got %d", len(mf.Line))
+	}
+	if *mf.Line[0].Tag != "main-default" {
+		t.Errorf("line[0] tag: got %q, want main-default", *mf.Line[0].Tag)
+	}
+	if *mf.Line[1].Tag != "b-default" {
+		t.Errorf("line[1] tag: got %q, want b-default", *mf.Line[1].Tag)
+	}
+}
+
+func TestIncludeSelfInclude(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "self.toml", `
+[[line]]
+text = "SELF"
+
+[[include]]
+src = "self.toml"
+`)
+	_, err := Load(filepath.Join(dir, "self.toml"))
+	if err == nil {
+		t.Fatal("expected error for self-include")
+	}
+	if !strings.Contains(err.Error(), "included more than once") {
+		t.Errorf("error %q does not mention duplicate", err)
+	}
+}
+
+func TestIncludeEmptySrc(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "main.toml", `
+[[include]]
+src = ""
+`)
+	_, err := Load(filepath.Join(dir, "main.toml"))
+	if err == nil {
+		t.Fatal("expected error for empty src")
+	}
+	if !strings.Contains(err.Error(), "empty") {
+		t.Errorf("error %q does not mention empty", err)
+	}
+}
+
+func TestIncludeEmptyTagOverride(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "main.toml", `
+[[line]]
+text = "MAIN_UNTAGGED"
+
+[[include]]
+src = "b.toml"
+`)
+	writeFile(t, dir, "b.toml", `
+[[line]]
+text = "B_UNTAGGED"
+
+[[line]]
+text = "B_TAGGED"
+tag = "t"
+`)
+	mf, err := Load(filepath.Join(dir, "main.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mf.Line) != 2 {
+		t.Fatalf("expected 2 line messages, got %d", len(mf.Line))
+	}
+	if mf.Line[0].Text != "MAIN_UNTAGGED" {
+		t.Errorf("line[0]: got %q, want MAIN_UNTAGGED", mf.Line[0].Text)
+	}
+	if mf.Line[1].Text != "B_TAGGED" {
+		t.Errorf("line[1]: got %q, want B_TAGGED", mf.Line[1].Text)
+	}
+}
+
+func TestLoadFromReader(t *testing.T) {
+	r := strings.NewReader(`[[line]]
+text = "HELLO"
+tag = "greet"
+`)
+	mf, err := loadFile(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var files []loadedFile
+	if err := processFile(mf, "", &files); err != nil {
+		t.Fatal(err)
+	}
+	p, err := mergeFiles(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Line) != 1 || p.Line[0].Text != "HELLO" {
+		t.Errorf("expected HELLO, got %+v", p.Line)
+	}
+}
+
+func TestLoadFromReaderWithInclude(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "inc.toml", `
+[[line]]
+text = "INCLUDED"
+tag = "inc"
+`)
+	t.Chdir(dir)
+	r := strings.NewReader(`[[line]]
+text = "MAIN"
+tag = "main"
+
+[[include]]
+src = "inc.toml"
+`)
+	mf, err := loadFile(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var files []loadedFile
+	if err := processFile(mf, "", &files); err != nil {
+		t.Fatal(err)
+	}
+	p, err := mergeFiles(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Line) != 2 {
+		t.Fatalf("expected 2 line messages, got %d", len(p.Line))
+	}
+	if p.Line[0].Text != "MAIN" {
+		t.Errorf("line[0]: got %q, want MAIN", p.Line[0].Text)
+	}
+	if p.Line[1].Text != "INCLUDED" {
+		t.Errorf("line[1]: got %q, want INCLUDED", p.Line[1].Text)
+	}
+}
+
+func TestIncludeSingleFileUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "single.toml", `
+[default.line]
+tag = "setup"
+
+[[line]]
+text = "LINE1"
+
+[[line]]
+text = "LINE2"
+`)
+	mf, err := Load(filepath.Join(dir, "single.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mf.Line) != 2 {
+		t.Fatalf("expected 2 line messages, got %d", len(mf.Line))
+	}
+	if *mf.Line[0].Tag != "setup" || *mf.Line[1].Tag != "setup" {
+		t.Errorf("tags: got %q, %q", *mf.Line[0].Tag, *mf.Line[1].Tag)
+	}
+}

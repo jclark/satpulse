@@ -23,7 +23,7 @@
         mode: '0644'
 
     - name: Rotate log file if needed
-      command: logrotate -f /tmp/satpulse-logrotate.conf
+      command: logrotate -f -s /tmp/logrotate-{{ instance }}.state /tmp/satpulse-logrotate.conf
       register: logrotate_result
       changed_when: logrotate_result.rc == 0
 
@@ -38,4 +38,9 @@
     - name: Start SatPulse service
       systemd:
         name: "satpulse@{{ instance }}"
+        state: restarted
+
+    - name: Restart chrony
+      systemd:
+        name: "{{ 'chronyd' if ansible_os_family == 'RedHat' else 'chrony' }}"
         state: restarted

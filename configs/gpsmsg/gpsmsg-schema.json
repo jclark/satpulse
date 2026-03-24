@@ -117,6 +117,17 @@
 		"sdbp": {
 			"type": "array",
 			"items": { "$ref": "#/definitions/ubxLikeMsg" }
+		},
+		"include": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"src": { "type": "string", "minLength": 1 }
+				},
+				"required": ["src"],
+				"additionalProperties": false
+			}
 		}
 	},
 	"additionalProperties": false

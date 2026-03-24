@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -256,19 +257,208 @@ func newDefault() *Parsed {
 	return mf
 }
 
-// Load reads and parses a TOML message file.
+// IncludeEntry represents an [[include]] entry in a message file.
+type IncludeEntry struct {
+	Src string `toml:"src"`
+}
+
+// msgFile represents the on-disk message file format.
+// It embeds Parsed and adds the Include field.
+type msgFile struct {
+	Parsed
+	Include []IncludeEntry `toml:"include"`
+}
+
+// loadedFile tracks a parsed file during the Load tree walk.
+type loadedFile struct {
+	path string // absolute path
+	out  int    // DFS out-index (in-index is the slice index)
+	p    Parsed // per-file parsed content with defaults applied
+}
+
+func newMsgFile() *msgFile {
+	mf := new(msgFile)
+	mf.Parsed = *newDefault()
+	return mf
+}
+
+// Load reads and parses a TOML message file, processing any [[include]] entries.
+// If path is "-", the TOML is read from stdin and includes are resolved
+// relative to the current directory.
 func Load(path string) (*Parsed, error) {
-	f, err := os.Open(path)
+	var files []loadedFile
+	if path == "-" {
+		mf, err := loadFile(os.Stdin)
+		if err != nil {
+			return nil, err
+		}
+		if err := processFile(mf, "", &files); err != nil {
+			return nil, err
+		}
+	} else {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return nil, err
+		}
+		if err := loadTree(absPath, &files); err != nil {
+			return nil, err
+		}
+	}
+	return mergeFiles(files)
+}
+
+func loadFile(r io.Reader) (*msgFile, error) {
+	mf := newMsgFile()
+	if err := toml.NewDecoder(r).DisallowUnknownFields().Decode(mf); err != nil {
+		return nil, err
+	}
+	return mf, nil
+}
+
+func loadPath(absPath string) (*msgFile, error) {
+	f, err := os.Open(absPath)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	mf := newDefault()
-	err = toml.NewDecoder(f).DisallowUnknownFields().Decode(mf)
+	return loadFile(f)
+}
+
+func loadTree(absPath string, files *[]loadedFile) error {
+	mf, err := loadPath(absPath)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return mf, nil
+	return processFile(mf, absPath, files)
+}
+
+func processFile(mf *msgFile, path string, files *[]loadedFile) error {
+	p := &mf.Parsed
+	// Apply per-file defaults so tags are known for ownership resolution.
+	applyDefaults(p.Line, p.applyLineDefaults)
+	applyDefaults(p.Binary, p.applyBinaryDefaults)
+	applyDefaults(p.NMEA, p.applyNMEADefaults)
+	applyDefaults(p.CASBIN, p.applyCASBINDefaults)
+	applyDefaults(p.ASBIN, p.applyASBINDefaults)
+	applyDefaults(p.SDBP, p.applySDBPDefaults)
+	applyDefaults(p.UBX, p.applyUBXDefaults)
+	idx := len(*files)
+	*files = append(*files, loadedFile{path: path, p: mf.Parsed})
+	for _, inc := range mf.Include {
+		if inc.Src == "" {
+			return fmt.Errorf("%s: include src must not be empty", formatPath(path))
+		}
+		incAbs, err := resolveInclude(path, inc.Src)
+		if err != nil {
+			return err
+		}
+		if err := checkUnique(incAbs, *files); err != nil {
+			return err
+		}
+		if err := loadTree(incAbs, files); err != nil {
+			return err
+		}
+	}
+	(*files)[idx].out = len(*files)
+	return nil
+}
+
+func checkUnique(absPath string, files []loadedFile) error {
+	for _, lf := range files {
+		if lf.path == absPath {
+			return fmt.Errorf("file included more than once: %s", absPath)
+		}
+	}
+	return nil
+}
+
+func formatPath(path string) string {
+	if path == "" {
+		return "<stdin>"
+	}
+	return path
+}
+
+// resolveInclude resolves an include src path relative to the including file.
+// An empty basePath (stdin) resolves relative to the current directory.
+func resolveInclude(basePath, src string) (string, error) {
+	src = filepath.FromSlash(src)
+	if basePath != "" {
+		src = filepath.Join(filepath.Dir(basePath), src)
+	}
+	return filepath.Abs(src)
+}
+
+// fileTags returns the set of tags defined by a loaded file's messages.
+func fileTags(p *Parsed) map[string]bool {
+	tags := make(map[string]bool)
+	collectTags(tags, p.Line)
+	collectTags(tags, p.Binary)
+	collectTags(tags, p.NMEA)
+	collectTags(tags, p.CASBIN)
+	collectTags(tags, p.ASBIN)
+	collectTags(tags, p.SDBP)
+	collectTags(tags, p.UBX)
+	return tags
+}
+
+func collectTags[T any, PT interface {
+	*T
+	userMsg
+}](tags map[string]bool, msgs []T) {
+	for i := range msgs {
+		tags[PT(&msgs[i]).getTag()] = true
+	}
+}
+
+func mergeFiles(files []loadedFile) (*Parsed, error) {
+	if len(files) == 1 {
+		p := files[0].p
+		return &p, nil
+	}
+	// Determine tag ownership via DFS interval labeling.
+	tagOwner := make(map[string]int) // tag -> file index of owner
+	for i := range files {
+		for tag := range fileTags(&files[i].p) {
+			owner, exists := tagOwner[tag]
+			if !exists {
+				tagOwner[tag] = i
+				continue
+			}
+			// Check if existing owner is an ancestor of this file.
+			if files[owner].out > i {
+				// Owner's interval contains this file: valid override, owner wins.
+				continue
+			}
+			return nil, fmt.Errorf("tag %q defined in both %s and %s with no override",
+				tag, formatPath(files[owner].path), formatPath(files[i].path))
+		}
+	}
+	// Build merged result using root file's Default section.
+	var result Parsed
+	result.Default = files[0].p.Default
+	for i := range files {
+		p := &files[i].p
+		mergeOwnedMsgs(&result.Line, p.Line, i, tagOwner)
+		mergeOwnedMsgs(&result.Binary, p.Binary, i, tagOwner)
+		mergeOwnedMsgs(&result.NMEA, p.NMEA, i, tagOwner)
+		mergeOwnedMsgs(&result.CASBIN, p.CASBIN, i, tagOwner)
+		mergeOwnedMsgs(&result.ASBIN, p.ASBIN, i, tagOwner)
+		mergeOwnedMsgs(&result.SDBP, p.SDBP, i, tagOwner)
+		mergeOwnedMsgs(&result.UBX, p.UBX, i, tagOwner)
+	}
+	return &result, nil
+}
+
+func mergeOwnedMsgs[T any, PT interface {
+	*T
+	userMsg
+}](dst *[]T, src []T, owner int, tagOwner map[string]int) {
+	for j := range src {
+		if tagOwner[PT(&src[j]).getTag()] == owner {
+			*dst = append(*dst, src[j])
+		}
+	}
 }
 
 // decodeHex decodes a hex string, ignoring whitespace.

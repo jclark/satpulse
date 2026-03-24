@@ -3,8 +3,9 @@ package casic
 import (
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/ptime"
 )
 
 // Ensure PacketProcessor implements gpsprot.PacketProcessor
@@ -234,7 +235,51 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		}
 		corrFromNav2Sig(p.curNavEpochMsg, mt)
 		return true
+	case *casbin.Tim2Tpx:
+		tm := timeTim2Tpx(mt)
+		if p.mh != nil {
+			tm.Tag = Tag
+			if ne := p.curNavEpochMsg; ne != nil {
+				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
+			}
+			p.mh.Time(tm, tRead)
+		}
+		return true
+	case *casbin.Tim2TimeGPS:
+		return p.dispatchTim2Time(&mt.Tim2TimeGNSS, gpsprot.GPS, ptime.GPS, ptime.TAIMinusGPS, "TIM2-TIMEGPS", tRead)
+	case *casbin.Tim2TimeBDS:
+		return p.dispatchTim2Time(&mt.Tim2TimeGNSS, gpsprot.BDS, ptime.BeiDou, ptime.TAIMinusBeiDou, "TIM2-TIMEBDS", tRead)
+	case *casbin.Tim2TimeGLN:
+		// GLONASS time tracks UTC; use dedicated conversion that produces UTCTime
+		tm := timeTim2TimeGLN(&mt.Tim2TimeGNSS)
+		if p.mh != nil {
+			tm.Tag = Tag
+			if ne := p.curNavEpochMsg; ne != nil {
+				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
+			}
+			p.mh.Time(tm, tRead)
+		}
+		return true
+	case *casbin.Tim2TimeGAL:
+		return p.dispatchTim2Time(&mt.Tim2TimeGNSS, gpsprot.GAL, ptime.Galileo, ptime.TAIMinusGalileo, "TIM2-TIMEGAL", tRead)
 	default:
 		return false
 	}
+}
+
+func (p *PacketProcessor) dispatchTim2Time(m *casbin.Tim2TimeGNSS, gnss gpsprot.GNSS, toTAI func(int16, time.Duration) ptime.Time, taiMinusGNSS int16, msgID string, tRead time.Time) bool {
+	// Dispatch leap second before time so consumers have it available
+	ls := leapTim2TimeGNSS(m, gnss, taiMinusGNSS)
+	if ls != nil && p.mh != nil {
+		p.mh.LeapSecond(ls, tRead)
+	}
+	tm := timeTim2TimeGNSS(m, gnss, toTAI, taiMinusGNSS, msgID)
+	if p.mh != nil {
+		tm.Tag = Tag
+		if ne := p.curNavEpochMsg; ne != nil {
+			tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
+		}
+		p.mh.Time(tm, tRead)
+	}
+	return true
 }

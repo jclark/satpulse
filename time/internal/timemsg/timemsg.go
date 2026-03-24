@@ -23,13 +23,27 @@ type Buffer struct {
 	timeGNSS        gpsprot.GNSS     // GNSS system used for time messages; can be zero if unknown
 	lastPreCorrMsg  *gpsprot.TimeMsg // last PrePulse msg with a correction
 	lastPostCorrMsg *gpsprot.TimeMsg // PostPulse msg with PulseOffset with the greatest TAI time
-
+	msgLevel        bufMsgLevel
 }
 
 type entry struct {
 	msg   *gpsprot.TimeMsg
 	tRead time.Time
 }
+
+type bufMsgLevel int
+
+const (
+	levelUnknown       bufMsgLevel = iota
+	levelEmpty                     // have no messages at all
+	levelHaveMsg                   // have a time message
+	levelTime                      // have a message with a valid time
+	levelPost                      // have a post-pulse message
+	levelMultipleTimes             // have messages with different times
+	levelTopOfSecond               // have a message that is top of second aligned
+	levelSufficient                // have the number of requested messages
+	levelConsecutive               // have the requested messages and they are consecutive
+)
 
 // NewBuffer creates a new Buffer with the specified read window.
 // The readWindow determines how far back in time to keep messages.
@@ -81,15 +95,17 @@ func (buf *Buffer) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 // The messages must be the same GNSS message type, which must be of a type that follows the time pulse.
 // If there are insufficient messages in the buffer, the slice will be nil and lastSec will be zero.
 func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.Time) {
-	entries := buf.bestEntries()
+	level := levelEmpty
+	defer func() {
+		buf.noteBufMsgLevel(level)
+	}()
+	entries := buf.bestEntries(&level)
 	start := epochStartMsg(entries)
 	if start == nil {
 		return 0, nil
 	}
+	level = levelMultipleTimes
 	entries = entriesSameType(entries, start)
-	if len(entries) < n {
-		return 0, nil
-	}
 	// At this point all entries are of the same type.
 	tRead = make([]time.Time, 0, len(entries))
 	secs := make([]ptime.Time, 0, len(entries))
@@ -108,12 +124,14 @@ func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.
 			// It is not a second-aligned message so ignore it.
 			continue
 		}
+		level = levelTopOfSecond
 		secs = append(secs, sec)
 		tRead = append(tRead, e.tRead.Add(-time.Duration(e.msg.ReadDelay)))
 	}
 	if len(secs) < n {
 		return 0, nil
 	}
+	level = levelSufficient
 	secs = secs[len(secs)-n:]
 	tRead = tRead[len(tRead)-n:]
 	for i := 1; i < len(secs); i++ {
@@ -121,7 +139,37 @@ func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.
 			return 0, nil
 		}
 	}
+	level = levelConsecutive
 	return secs[len(secs)-1], tRead
+}
+
+func (buf *Buffer) noteBufMsgLevel(level bufMsgLevel) {
+	lastLevel := buf.msgLevel
+	if level == lastLevel {
+		return
+	}
+	buf.msgLevel = level
+	failLevel := level + 1 // the level we failed to reach
+	var msg string
+	switch failLevel {
+	case levelHaveMsg:
+		msg = "no time messages received"
+	case levelTime:
+		msg = "GNSS receiver does not have valid time"
+	case levelPost:
+		msg = "incorrect receiver configuration: only pre-pulse time messages being received"
+	case levelMultipleTimes:
+		// all messages have the same time, so just wait
+	case levelTopOfSecond:
+		msg = "time messages not aligned to top of second"
+	case levelSufficient:
+		// insufficient messages, so just wait
+	case levelConsecutive:
+		msg = "gap in time messages"
+	}
+	if msg != "" {
+		buf.lg.Warn(msg)
+	}
 }
 
 // validEntries returns the slice of valid entries.
@@ -131,11 +179,15 @@ func (buf *Buffer) validEntries() []entry {
 
 // bestEntries returns all the entries that are the best according to compareTimeMsg.
 // They must also be eligible.
-func (buf *Buffer) bestEntries() []entry {
+func (buf *Buffer) bestEntries(level *bufMsgLevel) []entry {
 	entries := buf.validEntries()
+	if len(entries) == 0 {
+		return nil
+	}
+	*level = levelHaveMsg
 	result := make([]entry, 0, len(entries))
 	first := 0
-	for first < len(entries) && !entries[first].eligible() {
+	for first < len(entries) && !entries[first].eligible(level) {
 		first++
 	}
 	if first == len(entries) {
@@ -143,7 +195,7 @@ func (buf *Buffer) bestEntries() []entry {
 	}
 	result = append(result, entries[first])
 	for _, e := range entries[first+1:] {
-		if !e.eligible() {
+		if !e.eligible(level) {
 			continue
 		}
 		switch buf.compareTimeMsg(e.msg, result[0].msg) {
@@ -240,13 +292,15 @@ func entriesSameType(entries []entry, msg *gpsprot.TimeMsg) []entry {
 	return result
 }
 
-func (e *entry) eligible() bool {
+func (e *entry) eligible(level *bufMsgLevel) bool {
 	if e.msg.TAITime.IsZero() && e.msg.UTCTime == nil {
 		return false
 	}
+	*level = max(*level, levelTime)
 	if e.msg.Ref == gpsprot.PrePulse {
 		return false
 	}
+	*level = levelPost
 	return true
 }
 

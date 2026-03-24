@@ -49,10 +49,49 @@ func timeTimTP(m *casbin.TimTP) *gpsprot.TimeMsg {
 	return &t
 }
 
+// timeTim2Tpx converts Tim2Tpx to TimeMsg.
+// Always returns a TimeMsg, but with zero TAITime when flags are insufficient.
+// GLONASS produces UTCTime instead.
+func timeTim2Tpx(m *casbin.Tim2Tpx) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{Ref: gpsprot.PostPulse, NativeMsgID: "TIM2-TPX"}
+	if m.PPSFlag&(casbin.Tim2PPSTOWValid|casbin.Tim2PPSWnValid) != casbin.Tim2PPSTOWValid|casbin.Tim2PPSWnValid {
+		return &t
+	}
+	towSubNs := time.Duration(math.Round(float64(m.TOWSubms) * math.Exp2(-30) * 1e6))
+	tow := time.Duration(m.TOW)*time.Millisecond + towSubNs
+	var taiMinusGNSS int16
+	switch m.TSrc {
+	case casbin.Tim2TSrcGPS:
+		t.GNSS, t.TAITime = gpsprot.GPS, ptime.GPS(int16(m.Wn), tow)
+		taiMinusGNSS = ptime.TAIMinusGPS
+	case casbin.Tim2TSrcBDS:
+		t.GNSS, t.TAITime = gpsprot.BDS, ptime.BeiDou(int16(m.Wn), tow)
+		taiMinusGNSS = ptime.TAIMinusBeiDou
+	case casbin.Tim2TSrcGAL:
+		t.GNSS, t.TAITime = gpsprot.GAL, ptime.Galileo(int16(m.Wn), tow)
+		taiMinusGNSS = ptime.TAIMinusGalileo
+	case casbin.Tim2TSrcGLN:
+		t.GNSS = gpsprot.GLO
+		ut := ptime.GLONASSWeekUTC(m.Wn, tow)
+		t.UTCTime = &ut
+	}
+	if m.QuanErr != 0 {
+		off := float64(m.QuanErr) * 0.1 // 0.1 ns -> ns
+		t.PulseOffset = &off
+	}
+	if m.TAcc > 0 {
+		t.Accuracy = time.Duration(math.Round(float64(m.TAcc) * 0.1))
+	}
+	if taiMinusGNSS > 0 && m.PPSFlag&casbin.Tim2PPSLsValid != 0 {
+		t.UTCOffset = uint8(m.LeapSec) + uint8(taiMinusGNSS)
+	}
+	return &t
+}
+
 // timeNav2Sol converts Nav2Sol to TimeMsg.
 // Returns nil when the fix is below 2D.
 func timeNav2Sol(m *casbin.Nav2Sol, gnss gpsprot.GNSS) *gpsprot.TimeMsg {
-	if m.FixFlags < casbin.Nav2Fix2D {
+	if m.FixFlags < casbin.PVT2D {
 		return nil
 	}
 	t := gpsprot.TimeMsg{NativeMsgID: "NAV2-SOL"}
@@ -99,6 +138,64 @@ func timeNav2TimeUTC(m *casbin.Nav2TimeUTC) *gpsprot.TimeMsg {
 	return &t
 }
 
+// timeTim2TimeGNSS converts Tim2TimeGNSS to TimeMsg.
+// Always returns a TimeMsg, but with zero TAITime when the time flags are insufficient.
+func timeTim2TimeGNSS(m *casbin.Tim2TimeGNSS, gnss gpsprot.GNSS, toTAI func(int16, time.Duration) ptime.Time, taiMinusGNSS int16, msgID string) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{NativeMsgID: msgID, GNSS: gnss}
+	if m.TFlag&(casbin.Tim2TimeFlagTOWValid|casbin.Tim2TimeFlagWnValid) != casbin.Tim2TimeFlagTOWValid|casbin.Tim2TimeFlagWnValid {
+		return &t
+	}
+	towSubNs := time.Duration(math.Round(float64(m.TOWSubms) * math.Exp2(-30) * 1e6))
+	tow := time.Duration(m.TOW)*time.Millisecond + towSubNs
+	t.TAITime = toTAI(int16(m.Wn), tow)
+	if m.TAcc > 0 {
+		t.Accuracy = time.Duration(math.Round(float64(m.TAcc)))
+	}
+	if m.TFlag&casbin.Tim2TimeFlagLsValid != 0 {
+		t.UTCOffset = uint8(m.Ls) + uint8(taiMinusGNSS)
+	}
+	return &t
+}
+
+// timeTim2TimeGLN converts Tim2TimeGLN to TimeMsg with UTCTime.
+// GLONASS time tracks UTC, so we produce UTCTime rather than TAITime.
+func timeTim2TimeGLN(m *casbin.Tim2TimeGNSS) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{NativeMsgID: "TIM2-TIMEGLN", GNSS: gpsprot.GLO}
+	if m.TFlag&(casbin.Tim2TimeFlagTOWValid|casbin.Tim2TimeFlagWnValid) != casbin.Tim2TimeFlagTOWValid|casbin.Tim2TimeFlagWnValid {
+		return &t
+	}
+	towSubNs := time.Duration(math.Round(float64(m.TOWSubms) * math.Exp2(-30) * 1e6))
+	tow := time.Duration(m.TOW)*time.Millisecond + towSubNs
+	ut := ptime.GLONASSWeekUTC(m.Wn, tow)
+	t.UTCTime = &ut
+	if m.TAcc > 0 {
+		t.Accuracy = time.Duration(math.Round(float64(m.TAcc)))
+	}
+	return &t
+}
+
+// leapTim2TimeGNSS extracts a LeapSecondMsg from Tim2TimeGNSS.
+// Returns nil when no leap second event is reported.
+func leapTim2TimeGNSS(m *casbin.Tim2TimeGNSS, gnss gpsprot.GNSS, taiMinusGNSS int16) *gpsprot.LeapSecondMsg {
+	if m.LsFlag != casbin.Tim2LsEventNormal || m.LsYear == 0 {
+		return nil
+	}
+	year := int(m.LsYear >> 1)
+	month := time.December
+	day := 31
+	if m.LsYear&1 == 0 {
+		month = time.June
+		day = 30
+	}
+	date := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+	utcOffBefore := int16(m.Ls) + taiMinusGNSS
+	utcOffAfter := int16(m.Lsf) + taiMinusGNSS
+	return &gpsprot.LeapSecondMsg{
+		LeapSecond: ptime.LeapSecondOnDate(date, utcOffBefore, utcOffAfter),
+		GNSS:       gnss,
+	}
+}
+
 // gnssIDToGNSS maps CASIC GNSSID to gpsprot.GNSS.
 func gnssIDToGNSS(id casbin.GNSSID) gpsprot.GNSS {
 	switch id {
@@ -136,4 +233,3 @@ func nav2TimeSrcToGNSS(id casbin.Nav2TimeSrc) gpsprot.GNSS {
 	}
 	return 0
 }
-

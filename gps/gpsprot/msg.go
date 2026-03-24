@@ -551,7 +551,7 @@ type TimeMsg struct {
 	UTCTime     *ptime.UTCTime `json:"utcTime,omitempty"`
 	Accuracy    time.Duration  `json:"accuracy,omitempty"`
 	UTCOffset   uint8          `json:"utcOffset,omitempty"`
-	PulseOffset *float64       `json:"pulseOffset,omitempty"` // the true time of the top of second is the time of the pulse plus the PulseOffset
+	PulseOffset *float64       `json:"pulseOffset,omitempty"` // ns; the true time of the top of second is the time of the pulse plus the PulseOffset
 	GNSS        GNSS           `json:"gnss,omitempty"`
 	Ref         TimeRef        `json:"ref,omitempty"`
 	Tag         Tag            `json:"tag,omitempty"`

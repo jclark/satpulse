@@ -50,6 +50,25 @@ const (
 	NAVIC
 )
 
+// PVTValid is the PVT validity flag (protocol section 3.7.1).
+// Shared across NAV2 and TIM2 message classes.
+type PVTValid uint8
+
+const (
+	PVTInvalid       PVTValid = 0
+	PVTExternal      PVTValid = 1
+	PVTRoughEstimate PVTValid = 2
+	PVTHold          PVTValid = 3
+	PVTDeadReckoning PVTValid = 4
+	PVTQuickMode     PVTValid = 5
+	PVT2D            PVTValid = 6
+	PVT3D            PVTValid = 7
+	PVTDGPS          PVTValid = 8
+	PVTRTKFloat      PVTValid = 9
+	PVTRTKFixed      PVTValid = 10
+	PVTTimingFixed   PVTValid = 15
+)
+
 var clsMap = map[byte]string{
 	clsNav:  "NAV",
 	clsTim:  "TIM",

@@ -328,6 +328,7 @@ this duration can be changed with the **\-\-capture** option.
 
 **\-m**, **\-\-msg\-file** *path*
 : Specifies the TOML message file to use. This option is required to perform low-level configuration.
+A *path* of **-** can be used to read from stdin.
 If neither **\-t** nor **\-\-show\-tags** is specified, then messages with no tag are sent.
 
 **\-t**, **\-\-tag** *list*
@@ -398,6 +399,13 @@ where `serial.toml` contains:
 Send the messages tagged `ppp-has` from `um980.toml` (which enable Galileo HAS on a UM980):
 
     satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980.toml -t ppp-has
+
+Send an ad-hoc command from stdin using a here document:
+
+    satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m - <<'TOML'
+    [[line]]
+    text = "CONFIG PPP ENABLE E6-HAS"
+    TOML
 
 # SEE ALSO
 

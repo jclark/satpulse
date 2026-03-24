@@ -321,6 +321,16 @@ func TestGPSUTC(t *testing.T) {
 	}
 }
 
+// TestGLONASSWeekUTC verifies conversion from GLONASS week/TOW to UTCTime.
+// Uses captured data: week 1577, TOW 13796000ms = 2026-03-22 03:49:56 UTC.
+func TestGLONASSWeekUTC(t *testing.T) {
+	expected := UTC(2026, 3, 22, 3, 49, 56, 0)
+	ut := GLONASSWeekUTC(1577, 13796000*time.Millisecond)
+	if expected != ut {
+		t.Errorf("GLONASSWeekUTC(1577, 13796000ms) = %v, want %v", ut, expected)
+	}
+}
+
 type leapSecondTestCase struct {
 	name      string
 	now       Time

@@ -172,10 +172,36 @@ func (m *DatGALU) ID() MsgID { return DatGALUID }
 // DatDOPMeter is 1 meter in DatDOP units.
 const DatDOPMeter = 100
 
+// DatValid is the Validity Flag byte in DAT nav messages.
+// The low nibble encodes position type; the high nibble encodes fix quality.
+type DatValid byte
+
+// Position type values (low nibble).
+const (
+	DatValidPosUnavailable DatValid = iota
+	DatValidPosDR
+	DatValidPos2D
+	DatValidPos3D
+	DatValidPosTiming
+	DatValidPosType DatValid = 0x0F
+)
+
+// Fix quality values (high nibble).
+const (
+	DatValidFixUnavailable  DatValid = iota << 4
+	DatValidFixOpen
+	DatValidFixDifferential
+	DatValidFixAuthorized
+	DatValidFixRTKFixed
+	DatValidFixRTKFloat
+	DatValidFixDR
+	DatValidFixQual DatValid = 0xF0
+)
+
 // DatDOP is DAT-DOP (class 0x06, id 0x13, 16 bytes).
 type DatDOP struct {
 	DatNavHeader
-	Valid   uint8
+	Valid   DatValid
 	FixSats uint8
 	GDOP    uint16 // scale 0.01
 	PDOP    uint16
@@ -189,7 +215,7 @@ func (m *DatDOP) ID() MsgID { return DatDOPID }
 // DatECEF2 is DAT-ECEF2 (class 0x06, id 0x1B, 75 bytes).
 type DatECEF2 struct {
 	DatNavHeader
-	Valid       uint8
+	Valid       DatValid
 	TrackedSats uint8
 	FixSats     uint8
 	Year        uint16
@@ -218,7 +244,7 @@ func (m *DatECEF2) ID() MsgID { return DatECEF2ID }
 type DatLLA3 struct {
 	DatNavHeader
 	CoordSys    uint8
-	Valid       uint8
+	Valid       DatValid
 	TrackedSats uint8
 	FixSats     uint8
 	Year        uint16
@@ -245,7 +271,7 @@ func (m *DatLLA3) ID() MsgID { return DatLLA3ID }
 type DatNED3 struct {
 	DatNavHeader
 	CoordSys    uint8
-	Valid       uint8
+	Valid       DatValid
 	TrackedSats uint8
 	FixSats     uint8
 	Year        uint16

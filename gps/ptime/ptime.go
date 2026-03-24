@@ -46,7 +46,10 @@ var epochGPS = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
 var epochGLONASS = time.Date(1996, time.January, 1, 0, 0, 0, 0, time.UTC)
 
 // epochGLONASSWeek is the Sunday before epochGLONASS.
-// This is used for non-standard GPS-style week/TOW representation of GLONASS time.
+// GLONASS does not itself have a week number concept, but some receivers
+// (notably CASIC) want to represent GLONASS time uniformly with other constellations
+// using a week number. For this purpose, the most natural date for the start of
+// the first week is epochGLONASSWeek.
 var epochGLONASSWeek = time.Date(1995, time.December, 31, 0, 0, 0, 0, time.UTC)
 
 // Galileo epoch
@@ -93,8 +96,7 @@ func BeiDou(week int16, tow time.Duration) Time {
 }
 
 // GLONASSWeek creates a Time from a GLONASS week number and time of week.
-// This is used by CASIC receivers which represent GLONASS time using GPS-style
-// week/TOW format with epoch December 31, 1995 (the Sunday before Jan 1, 1996).
+// See epochGLONASS week for explanation of GLONASS week number concept.
 // GLONASS time is aligned with UTC (except for leap seconds), and CASIC uses
 // the same TAI offset as GPS.
 func GLONASSWeek(week int16, tow time.Duration) Time {
@@ -131,6 +133,16 @@ func UTC(year uint16, month, day, hour, min, sec uint8, nanos int32) UTCTime {
 // This is what UBX-TIM-TP uses when time base is UTC.
 func GPSUTC(week uint16, tow time.Duration) UTCTime {
 	startOfWeek := epochGPS.AddDate(0, 0, int(week)*7)
+	t := startOfWeek.Add(tow)
+	y, m, d := t.Date()
+	date := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	return UTCTime{date, t.Sub(date)}
+}
+
+// GLONASSWeekUTC converts GLONASS week number and TOW to UTCTime.
+// See epochGLONASS week for explanation of GLONASS week number concept.
+func GLONASSWeekUTC(week uint16, tow time.Duration) UTCTime {
+	startOfWeek := epochGLONASSWeek.AddDate(0, 0, int(week)*7)
 	t := startOfWeek.Add(tow)
 	y, m, d := t.Date()
 	date := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
@@ -433,7 +445,6 @@ func (t Time) Round(d time.Duration) Time {
 	return Time(int64(time.Duration(int64(t)).Round(d)))
 }
 
-
 func Picoseconds(ps int32) time.Duration {
 	if ps < 0 {
 		return -Picoseconds(-ps)
@@ -575,7 +586,9 @@ func isLastDayOfQuarter(t time.Time) bool {
 
 // CorrectionParams holds parameters for computing a correction to a time.
 // The correction is computed using the polynomial mode
-//   delta = Bias + Drift * (t - Ref)
+//
+//	delta = Bias + Drift * (t - Ref)
+//
 // The correction is expected to be subtracted from the time to be corrected.
 // Typically, the CorrectionParams hold parameters derived from messages broadcast
 // by a GNSS system. The correction is applied to GNSS system time as part
@@ -583,9 +596,9 @@ func isLastDayOfQuarter(t time.Time) bool {
 // These corrections are independent of offsets applied to handle leap seconds,
 // and to handle differences in the epochs of different GNSS systems.
 type CorrectionParams struct {
-	Ref   Time // reference time
-	Bias  float64    // bias in nanoseconds
-	Drift float64    // drift seconds/seconds (i.e. dimensionless)
+	Ref   Time    // reference time
+	Bias  float64 // bias in nanoseconds
+	Drift float64 // drift seconds/seconds (i.e. dimensionless)
 }
 
 const MaxCorrection = 50 * time.Nanosecond
