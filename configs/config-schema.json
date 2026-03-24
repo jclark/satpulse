@@ -308,44 +308,53 @@
       "type": "object",
       "properties": {
         "reset": {
+          "description": "Reset mode parameters",
           "type": "object",
           "properties": {
             "pulseWindow": {
+              "description": "Number of pulses for alignment analysis",
               "type": "integer",
               "minimum": 3,
               "exclusiveMaximum": 100
             },
             "stepThreshold": {
+              "description": "Min offset to trigger clock step (ns)",
               "type": "integer",
               "minimum": 0,
               "exclusiveMaximum": 1000000
             },
             "pulseVariation": {
+              "description": "Max pulse interval variation (ppb)",
               "type": "number",
               "minimum": 5,
               "exclusiveMaximum": 1000000
             },
             "expectedDelay": {
+              "description": "Expected pulse-to-message delay (s)",
               "type": "number",
               "minimum": 0.0,
               "exclusiveMaximum": 1.0
             },
             "delayConfidenceWindow": {
+              "description": "Fraction of delay window to accept [0,1]",
               "type": "number",
               "exclusiveMinimum": 0.0,
               "maximum": 1.0
             },
             "delayVariation": {
+              "description": "Max delay spread as fraction of window",
               "type": "number",
               "exclusiveMinimum": 0.0,
               "exclusiveMaximum": 1.0
             },
             "pulseWidthDetectLimit": {
+              "description": "Max auto-detectable pulse width (s)",
               "type": "number",
               "minimum": 0.1,
               "exclusiveMaximum": 0.5
             },
             "driftRateLimit": {
+              "description": "Max drift rate to accept step (PPB)",
               "type": "number",
               "minimum": 0,
               "exclusiveMaximum": 1000000000
@@ -353,125 +362,151 @@
           }
         },
         "converge": {
+          "description": "Converging mode parameters",
           "type": "object",
           "properties": {
             "kp": {
+              "description": "PI servo proportional gain",
               "type": "number",
               "exclusiveMinimum": 0.0,
               "exclusiveMaximum": 10.0
             },
             "ki": {
+              "description": "PI servo integral gain",
               "type": "number",
               "minimum": 0.0,
               "exclusiveMaximum": 10.0
             },
             "medianWindow": {
+              "description": "Number of samples for median window",
               "type": "integer",
               "minimum": 3,
               "exclusiveMaximum": 100
             },
             "offsetLimit": {
+              "description": "Max offset to declare converged (ns)",
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 10000
             },
             "stableWindow": {
+              "description": "Number of stable samples before exit",
               "type": "integer",
               "minimum": 1,
               "exclusiveMaximum": 100
             },
             "badSampleLimit": {
+              "description": "Max consecutive bad samples before reset",
               "type": "integer",
               "minimum": 1,
               "exclusiveMaximum": 100
             },
             "stepCompensate": {
+              "description": "Compensate for ADJ_SETOFFSET delay",
               "type": "boolean"
             }
           }
         },
         "track": {
+          "description": "Tracking mode parameters",
           "type": "object",
           "properties": {
             "kp": {
+              "description": "PI servo proportional gain",
               "type": "number",
               "exclusiveMinimum": 0.0,
               "exclusiveMaximum": 10.0
             },
             "ki": {
+              "description": "PI servo integral gain",
               "type": "number",
               "exclusiveMinimum": 0.0,
               "exclusiveMaximum": 10.0
             },
             "madThreshold": {
+              "description": "Min offset to use MAD for outlier detection (ns)",
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 1000000
             },
             "madWindow": {
+              "description": "Number of samples for MAD window",
               "type": "integer",
               "minimum": 3,
               "exclusiveMaximum": 100
             },
             "madMultiple": {
+              "description": "MAD multiple for outlier threshold",
               "type": "number",
               "exclusiveMinimum": 0.0,
               "exclusiveMaximum": 1000.0
             },
             "madMinSamples": {
+              "description": "Min samples before MAD detection active",
               "type": "integer",
               "minimum": 3,
               "exclusiveMaximum": 100
             },
             "outlierThreshold": {
+              "description": "Unconditional outlier threshold (ns)",
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 1000000
             },
             "pulseWidthTolerance": {
+              "description": "Tolerance for trailing edge filter (ns)",
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 10000
             },
             "alignTolerance": {
+              "description": "Tolerance for leading edge detection (ns)",
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 10000
             },
             "badSampleRunLimit": {
+              "description": "Max consecutive bad samples before reset",
               "type": "integer",
               "minimum": 1,
               "exclusiveMaximum": 1000
             },
             "outlierRatioLimit": {
+              "description": "Max outlier ratio in MAD window",
               "type": "number",
               "exclusiveMinimum": 0.0,
               "maximum": 1.0
             },
             "badSampleWindow": {
+              "description": "Window size for bad sample frequency",
               "type": "integer",
               "minimum": 1,
               "exclusiveMaximum": 1000
             },
             "badSampleRatioLimit": {
+              "description": "Max bad sample ratio in window",
               "type": "number",
               "exclusiveMinimum": 0.0,
               "maximum": 1.0
             },
             "avgFreqTimeConstant": {
+              "description": "EMA time constant for avg frequency (s)",
               "type": "number",
               "minimum": 0.0,
               "exclusiveMaximum": 1000.0
             },
             "ignoreSawtoothCorrection": {
+              "description": "Ignore sawtooth corrections",
               "type": "boolean"
             },
             "pulseCorrectionTimeout": {
+              "description": "Max wait for pulse correction msg (s)",
               "type": "number",
               "exclusiveMinimum": 0,
               "exclusiveMaximum": 0.75
             },
             "persistThreshold": {
+              "description": "Min time in tracking before sample persists (s)",
               "type": "number",
               "minimum": 0,
               "exclusiveMaximum": 86400
