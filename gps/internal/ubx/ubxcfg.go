@@ -1260,8 +1260,16 @@ func (r msgRateRequest) AwaitingResponse(time.Time) bool { return false }
 
 func (r msgRateRequest) ID() string { return ubxbin.CfgMsgID.String() }
 
+// lengthHP converts a high-precision coordinate (cm main + 0.1mm HP)
+// used by NAV-HPPOSECEF for ECEF coordinates.
 func lengthHP(l int32, h int8) gpsprot.Length {
 	return gpsprot.Length(l)*gpsprot.Centimeter + gpsprot.Length(h)*(gpsprot.Millimeter/10)
+}
+
+// lengthHPmm converts a high-precision height (mm main + 0.1mm HP)
+// used by NAV-HPPOSLLH for height and hMSL.
+func lengthHPmm(l int32, h int8) gpsprot.Length {
+	return gpsprot.Length(l)*gpsprot.Millimeter + gpsprot.Length(h)*(gpsprot.Millimeter/10)
 }
 
 func angleHP(deg int32, hp int8) gpsprot.Angle {

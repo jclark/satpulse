@@ -362,11 +362,15 @@ func TestHPPosLLH(t *testing.T) {
 	if lon > 0 || lon < -1.0 {
 		t.Errorf("Lon = %.6f deg, out of plausible range", lon)
 	}
-	if !got.Height.IsSet() {
-		t.Error("Height not set")
+	// height=96700 mm, heightHp=2 -> 96700.2 mm
+	wantH := opt.Make(gpsprot.Length(96700)*gpsprot.Millimeter + gpsprot.Length(2)*(gpsprot.Millimeter/10))
+	if got.Height != wantH {
+		t.Errorf("Height = %v, want %v", got.Height, wantH)
 	}
-	if !got.HeightMSL.IsSet() {
-		t.Error("HeightMSL not set")
+	// hMSL=51067 mm, hMSLHp=1 -> 51067.1 mm
+	wantHMSL := opt.Make(gpsprot.Length(51067)*gpsprot.Millimeter + gpsprot.Length(1)*(gpsprot.Millimeter/10))
+	if got.HeightMSL != wantHMSL {
+		t.Errorf("HeightMSL = %v, want %v", got.HeightMSL, wantHMSL)
 	}
 	if !ne.Acc.Hor.IsSet() {
 		t.Error("Acc.Hor not set")

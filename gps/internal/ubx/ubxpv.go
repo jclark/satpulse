@@ -60,8 +60,8 @@ func posGeoNavHPPosLLH(ne *gpsprot.NavEpochMsg, m *ubxbin.NavHPPosLLH) *gpsprot.
 	return &gpsprot.PosGeoMsg{
 		Priority:    gpsprot.PriVendorHigh,
 		LatLon:      [2]gpsprot.Angle{angleHP(m.Lat, m.LatHp), angleHP(m.Lon, m.LonHp)},
-		Height:      opt.Make(lengthHP(m.Height, m.HeightHp)),
-		HeightMSL:   opt.Make(lengthHP(m.HMSL, m.HMSLHp)),
+		Height:      opt.Make(lengthHPmm(m.Height, m.HeightHp)),
+		HeightMSL:   opt.Make(lengthHPmm(m.HMSL, m.HMSLHp)),
 		NativeMsgID: "NAV-HPPOSLLH",
 	}
 }
