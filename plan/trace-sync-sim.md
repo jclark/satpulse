@@ -1,34 +1,45 @@
 # Trace-driven controller simulation
 
-Build a trace-driven simulator for `phcsync` that uses real packet timing and real PHC pulse traces instead of synthetic GPS/PHC models.
+Build a trace-driven simulator for `phcsync` that replays real PHC pulse traces through the converging and tracking modes, modeling the closed-loop effect of PHC adjustments on future timestamps.
 
-This is separate from the current synthetic `syncsim` work. The aim is not to replace `syncsim`, but to add a new controller-validation path based on recorded traces.
+## Testing strategy
+
+Three complementary tools test `phcsync` controller behavior:
+
+- **`syncsim`** -- fully synthetic simulation. Controls every parameter: oscillator model, PPS jitter, sawtooth, faults, outages. Tests all modes including fault injection and recovery. The reference tool for controller tuning and regression.
+
+- **timemsg-sync-testing** ([plan](./timemsg-sync-testing.md)) -- replays real pulse traces and real packet logs to test reset mode. Works because during reset the PHC is not adjusted, so captured timestamps can be replayed verbatim with synthetic phase/frequency transforms. Tests the real message-timing and pulse-alignment pipeline.
+
+- **tracesim** (this plan) -- replays real pulse traces through converging and tracking modes with closed-loop PHC modeling. The controller adjusts the simulated PHC, so future timestamps are counterfactual relative to the capture. Does not need packet logs or time messages: converging mode ignores them, and tracking mode uses them only for `qErr` corrections which come from the pulse trace.
+
+Each tool covers a different combination of realism and controllability. `syncsim` gives full control but synthetic data. Timemsg-sync-testing gives real data but only open-loop (reset mode). Tracesim gives real data with closed-loop behavior (converging/tracking) but without fault injection.
+
+A key difference: `syncsim` knows ground truth (the synthetic GPS model defines true time), so it can measure the thing you actually care about — how close the disciplined clock is to UTC. Tracesim cannot do this. It can observe that the controller converges and tracks stably on real oscillator data, but not the absolute accuracy of the result. This makes the two genuinely complementary: `syncsim` validates accuracy (assuming the oscillator/GPS models are correct), tracesim validates that the controller handles real hardware characteristics (assuming the controller logic is correct).
 
 ## Goals
 
-- Drive `phcsync.Controller` from real captured timing data.
-- Preserve real packet/message timing and real pulse-read behavior from captures.
+- Drive `phcsync.Controller` converging and tracking modes from real captured pulse data.
 - Model the closed-loop effect of PHC adjustments on future timestamps.
 - Support optional sawtooth correction data (`qErr`) when present in the phase trace.
+- Run from a single pulse trace file plus options -- no packet log required.
 
 ## Non-goals
 
+- Testing reset mode (handled by timemsg-sync-testing).
+- Fault injection (handled by `syncsim`).
 - Refactoring `time/clocksim` up front.
 - Replacing the existing synthetic `syncsim`.
-- Introducing synthetic perturbations beyond what is needed to replay the captured traces.
 - Generalizing the design into a reusable library before the first working implementation exists.
 
-## Why this is harder than packet replay or reset replay
+## Why closed-loop replay is hard
 
-Packet replay and reset replay can treat captured data mostly as fixed input.
-
-A full trace-driven controller simulator cannot simply replay raw traces unchanged, because the controller modifies the PHC during the run:
+A trace-driven controller simulator cannot simply replay raw traces unchanged, because the controller modifies the PHC during the run:
 
 - `SetFreqOffset` changes how future PHC time evolves
 - `AdjTime` steps the PHC and changes future timestamps
 - therefore future pulse timestamps seen by the controller are counterfactual relative to the original capture
 
-The simulator must therefore separate:
+The simulator must separate:
 
 - captured free-running behavior
 - simulated disciplined behavior layered on top of the capture
@@ -60,7 +71,6 @@ Keep everything in that package initially:
 
 - trace loading
 - replay-time remapping
-- phase-trace interpretation
 - disciplined PHC overlay
 - merged event loop
 - controller driving
@@ -81,7 +91,6 @@ The likely shared ideas with `clocksim` are:
 But the trace-driven problem has a different modeling boundary:
 
 - externally supplied pulse schedule
-- externally supplied message timing
 - trace-backed raw PHC evolution
 - optional phase annotations such as `qErr`
 
@@ -89,127 +98,157 @@ Forcing an early split would likely make the abstractions worse. Build the first
 
 ## Input data
 
-The simulator consumes captured data described by two companion plans:
+The primary input is a pulse trace JSONL file. The simplest source is `satpulsetool sdp -i -j` capturing a free-running PHC (see [timemsg-sync-testing.md](./timemsg-sync-testing.md) for capture procedure).
 
-- [packet-testing.md](./packet-testing.md) -- packet log collection and replay (`gps/testdata/packets/`)
-- [timemsg-sync-testing.md](./timemsg-sync-testing.md) -- pulse trace capture with `tReadPHC` and synthetic PHC transforms (`time/testdata/phase/`)
+Each line must include:
 
-Both must come from the same capture session so that message timing and pulse-to-message delay relationships are real.
-
-Concretely:
-
-- packet log or event log for GPS message timing (from `gps/testdata/packets/`)
-- pulse trace captured from `satpulsetool sdp -i -j` (from `time/testdata/phase/`)
-- `HW.toml` describing the GPS and PHC hardware
-
-The pulse trace should include at least:
-
-- `timestamp`
-- `tRead`
-- `tReadPHC`
-- `chan`
+- `timestamp` -- PHC value when kernel captured the PPS edge
+- `tRead` -- system time when the event was read
+- `tReadPHC` -- PHC value sampled near the read time
+- `chan` -- channel index
 
 Optional:
 
-- `qErr`
+- `qErr` -- sawtooth correction in nanoseconds
+
+Options (not from a file):
+
+- edges per pulse (1 or 2, default 1)
+
+No packet log or `HW.toml` is needed. Converging mode ignores time messages, and tracking mode uses them only for `qErr` corrections which are synthesized from the pulse trace.
+
 
 ## Sawtooth / qErr
 
-For this simulator, `qErr` should be treated as optional phase-trace data.
+For this simulator, `qErr` is a property of the pulse trace: it tells us where the true top-of-second lies relative to the observed pulse.
 
-From the measurement/modeling perspective, `qErr` is a property of the pulse trace:
-
-- it tells us where the true top-of-second lies relative to the observed pulse
-- equivalently: `true_second = pulse_time + qErr`
+```text
+true_second = pulse_time + qErr
+```
 
 This is consistent with `clock-model` usage.
 
-At replay time, `qErr` should still be translated into the satpulse runtime shape by synthesizing the appropriate `TimeMsg.PulseOffset` inputs at the correct epoch. But the canonical trace representation may store it with the PHC pulse trace.
+At replay time, `qErr` is translated into `TimeMsg.PulseOffset` inputs and delivered to `timemsg.Buffer` at the correct epoch. The `qErr` and the pulse timing are physically coupled -- they come from the same measurement of the same pulse edge. Any `PulseOffset` values that might appear in packet-derived messages cannot be used, because they are tied to the receiver's own timing, not to the PHC pulse timestamps in the trace. The pulse trace is the sole source of pulse corrections.
+
+## Skipping reset mode
+
+The controller always starts in `ModeReset`, which requires time messages to establish the initial second. Since tracesim has no packet log, it must bypass reset mode.
+
+The simulator pre-seeds the controller state that reset mode would have produced:
+
+- `lastSample` with a valid reference time, offset, era, edge index, and system time. The edge index must be consistent with the first trace pulse being a leading edge (needed for dual-edge parity filtering in converging and tracking modes).
+- `PulseType` with the configured edges-per-pulse
+- estimated frequency from the pulse interval
+- PHC phase set close to the correct time (within ~1ms)
+
+This requires a new entry point on `Controller` or a shim that constructs the post-reset state from the first few trace samples.
+
+Converging mode then starts normally: it uses only pulse edges, applies the PI servo, and transitions to tracking when converged.
 
 ## Core design
 
-The simulator should have these conceptual pieces.
-
 ### 1. Trace loader
 
-Loads:
-
-- pulse trace JSONL
-- packet log or event log
-- `HW.toml`
-
-Also validates:
+Loads the pulse trace JSONL and validates:
 
 - monotone ordering of read times
-- expected edge count behavior
-- required fields
+- expected edge count behavior (consistent with edges-per-pulse option)
+- required fields present
 
 ### 2. Local replay timeline
 
 Go monotonic `time.Time` components cannot be serialized, so the simulator must synthesize a fresh local monotonic timeline:
 
 - choose a local replay base time
-- map all recorded wallclock read times to `base + delta_from_capture_start`
+- map all recorded wallclock read times to `base + (tRead - tRead[0])`
 
-This gives a coherent local time axis for:
+This gives a coherent time axis for:
 
 - pulse `TRead.Sys`
-- packet/message read times
 - controller ticks
 
 ### 3. Trace-backed raw PHC model
 
-Create a representation of the free-running PHC as a function of replay time, derived from the pulse trace.
+The trace gives discrete `(tRead, tReadPHC)` pairs at each pulse event. After remapping `tRead` to the replay timeline, these become `(replayTime[i], rawPHCNs[i])` samples.
 
-This is the hard part of the design.
+The raw PHC model is a linear interpolation over these samples: given any replay time, return the raw (undisciplined) PHC value. Linear interpolation between 1-second PPS samples is sufficient -- sub-ppm drift within a single second is negligible.
 
-The model must support at least:
+For pulse events, the trace also gives `timestamp` -- the hardware-captured PHC value at the PPS edge, which is slightly earlier than `tReadPHC`. Both values are needed:
 
-- PHC value at pulse timestamps
-- PHC value at pulse read times (`tReadPHC`)
-- PHC value queried between pulse events for controller operations such as `Now()`
+- `timestamp[i]` is the raw PHC at the PPS edge -- the input to the disciplined overlay that produces `PulseEdge.Timestamp.T`
+- `tReadPHC[i]` is the raw PHC at the read time -- the input to the overlay that produces `PulseEdge.TRead.PHC.T`
 
-The initial implementation can use interpolation over the captured PHC samples. Exact modeling can evolve later.
+The delta between them is just the kernel delivery delay for that pulse event. It comes directly from the trace.
+
+For non-pulse replay times (tick events), `Now()` needs a raw PHC value. The `(replayTime, tReadPHC)` interpolation table provides this.
+
+**Boundary behavior:** Before the first sample, return the first sample's value. After the last sample, return the last sample's value. In practice the event loop should not generate events outside the trace span, but ticks near boundaries may land slightly outside.
+
+**Difference from `clocksim.RawClock`:** `RawClock` integrates a stateful oscillator simulator and must be called with monotonically increasing times. The trace-backed model is a lookup table with interpolation -- stateless and random-access in principle, though in practice called monotonically.
 
 ### 4. Disciplined PHC overlay
 
-On top of the raw trace-backed PHC model, maintain the simulated controller adjustments:
+The overlay maintains the simulated effect of controller adjustments on top of the raw trace-backed PHC model. The state is:
 
-- frequency offset changes
-- time steps
-- era transitions
+- `lastAdjTime` -- replay time of last adjustment
+- `lastRawPhaseNs` -- raw PHC value at last adjustment
+- `lastVirtPhaseNs` -- virtual (disciplined) PHC value at last adjustment
+- `freqOffset` -- current frequency offset in PPB
+- `era` -- current era value (must start at 1, an odd/certain era; even eras are uncertain and would cause converging mode to drop all pulses)
 
-This is conceptually similar to `clocksim.VirtualClock`, but should be implemented locally in `tracesim` first rather than by modifying `clocksim` up front.
+Given these, the virtual PHC at any replay time is:
 
-### 5. Event sources and merge loop
+```text
+rawNow         = rawPHC(replayTime)
+rawDelta       = rawNow - lastRawPhaseNs
+correctedDelta = rawDelta * (1 + freqOffset / 1e9)
+virtNow        = lastVirtPhaseNs + correctedDelta
+```
 
-Build a merged event loop similar in spirit to `syncsim`:
+This is the same formula as `clocksim.VirtualClock.computeVirtPhaseNs()`. The only difference is that `rawPHC()` comes from trace interpolation instead of oscillator integration.
+
+**`SetFreqOffset(f)`:** Snapshot current raw and virtual phase at the current replay time, then update `freqOffset`. Identical logic to `clocksim.VirtualClock.SetFreqOffset()`.
+
+**`AdjTime(d)`:** Step the virtual phase by `d`. For the first implementation, apply the step instantly without modeling kernel read-modify-write delay -- the trace already captures real-world timing. If the delay model matters, it can be added later. Increment era twice (once to mark uncertain, once to mark certain), matching `clocksim.TestClock.AdjTime()`.
+
+**`Now()`:** Return `phctime.Time{T: virtNow, Era: era}` where `virtNow` is computed from the overlay at the current replay time.
+
+**Initial virtual phase:** At the start of replay, the overlay has made no adjustments, so `lastVirtPhaseNs = lastRawPhaseNs = rawPHC(startTime)` and `freqOffset = 0`. The PHC starts at whatever value the trace captured.
+
+### 5. How pulse timestamps become counterfactual
+
+When the event loop processes a pulse event at replay time `t`:
+
+1. Look up `timestamp[i]` from the trace -- the raw PHC at the PPS edge
+2. Apply the disciplined overlay: `virtTimestamp = lastVirtPhase + (timestamp[i] - lastRawPhase) * (1 + freqOffset/1e9)`
+3. That becomes `PulseEdge.Timestamp.T`
+
+Similarly for `PulseEdge.TRead.PHC.T`:
+
+1. Look up `tReadPHC[i]` from the trace
+2. Apply the same overlay
+3. That becomes `TRead.PHC.T`
+
+`TRead.Sys` comes from the replay timeline remapping of `tRead[i]` and is unaffected by the overlay.
+
+In the original capture, the PHC was free-running. In the simulation, the controller is actively steering it. So after the first `SetFreqOffset` or `AdjTime`, the timestamps diverge from the captured values -- which is exactly the point.
+
+### 6. Event sources and merge loop
+
+The event loop has two sources:
 
 - pulse events from the pulse trace
-- message events from the packet/event source
-- periodic tick events
+- periodic tick events (every 250ms, matching `syncsim`)
 
-Process them in timestamp order and feed:
+No message events -- converging mode ignores time messages, and `qErr` corrections (when present) are delivered as synthetic `TimeMsg.PulseOffset` inputs at the pulse event, not as separate message events.
 
-- `phcsync.PulseEdge`
-- `timemsg.Buffer`
-- `Controller.Tick`
+Process events in replay-time order. For each event:
 
-## Message source choice
+**Tick:** Call `ctrl.Tick(replayTimeSys)`.
 
-Two possible message sources:
+**Pulse:** Compute the counterfactual `PulseEdge` using the disciplined overlay (section 5 above). If `qErr` is present for this pulse, synthesize a `TimeMsg` with `Ref = PrePulse` and `PulseOffset = -qErr`, and deliver it to `timemsg.Buffer` before delivering the pulse edge to the controller. Using `PrePulse` (not `PostPulse`) ensures that `WaitForPulseCorrection` does not trigger unintended waits when `qErr` is absent on some pulses. If `qErr` is missing for a given pulse, no correction message is delivered. Then deliver `ctrl.PulseEdge(edge)`.
 
-1. Packet log replay
-- decode packets during simulation
-- closer to real runtime pipeline
-- more moving parts
-
-2. Unified event replay
-- replay already-decoded timing messages
-- simpler for controller experiments
-- depends on unified event format existing first
-
-Either is acceptable. The first implementation should choose whichever gets a working end-to-end path faster.
+The merge can reuse the `iter.Seq[Event]` / `mergeEvents` pattern from `syncsim`. The pulse event generator iterates over the loaded trace data; the tick generator is synthetic (identical to `syncsim.generateTickEvents`).
 
 ## Interaction with clocksim
 
@@ -235,11 +274,11 @@ If a clean common layer later emerges, it can be extracted after the first worki
 
 ### Stage 1: skeleton runner
 
-- load traces
+- load pulse trace
 - build local replay timeline
-- merge pulse/message/tick events
-- feed controller with trace-derived inputs
-- no attempt to share code with `clocksim`
+- merge pulse/tick events
+- skip reset, start controller in converging mode
+- feed controller with trace-derived inputs (without disciplined overlay)
 
 ### Stage 2: disciplined trace-backed PHC
 
@@ -261,8 +300,9 @@ If a clean common layer later emerges, it can be extracted after the first worki
 ## Verify
 
 - A first working implementation exists entirely under `time/internal/tracesim`.
-- It can load a pulse trace with `tReadPHC` and a matching message source.
+- It can load a pulse trace with `tReadPHC`.
 - Replay uses a synthesized local monotonic timeline.
+- Controller starts in converging mode, bypassing reset.
 - Controller adjustments affect future simulated timestamps instead of merely replaying captured timestamps.
-- Optional `qErr` can be consumed from the pulse trace and turned into appropriate time-message corrections.
+- Optional `qErr` can be consumed from the pulse trace and turned into appropriate `PulseOffset` corrections.
 - No `clocksim` refactor is required to get the first working version.
