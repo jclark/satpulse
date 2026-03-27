@@ -6,7 +6,7 @@ This covers incoming packet traffic only. It does not cover configuration/probin
 
 ## Goals
 
-- Build a collection of packet logs from different GPS receivers.
+- Build a collection of packet logs from different GPS receivers. Use the `/packet-testdata` skill to plan and execute captures for each receiver model.
 - Test that `gps/scan.Scanner` correctly reconstructs packets regardless of how the byte stream is chunked.
 - Test packet decoding and `gpsprot.Msg` generation.
 - Generate expected `event` output (from [unified-events.md](./unified-events.md)) for each packet log.

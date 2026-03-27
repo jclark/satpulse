@@ -196,7 +196,7 @@ Each capture: reload, high-level config (`--binary --pvt-out tp,after,tai,leap,e
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --reload
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --binary --pvt-out tp,after,tai,leap,epoch,off --time-gnss gal --gnss gps,gal
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --vendor u-blox \
-  -m configs/gpsmsg/ubx.toml -t ubx-nav-timegal-usb,ubx-nav-timeutc-usb,ubx-nav-timebds-usb,ubx-nav-timeglo-usb \
+  -m configs/gpsmsg/ubx9.toml -t ubx-nav-timegal-usb,ubx-nav-timeutc-usb,ubx-nav-timebds-usb,ubx-nav-timeglo-usb \
   --packet-log time-gal-38400.jsonl --capture 30
 ```
 
@@ -208,7 +208,7 @@ satpulsetool gps -d /dev/ttyACM0 -s 38400 --vendor u-blox \
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --reload
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --binary --pvt-out tp,after,tai,leap,epoch,off --time-gnss bds --gnss gps,bds
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --vendor u-blox \
-  -m configs/gpsmsg/ubx.toml -t ubx-nav-timegal-usb,ubx-nav-timeutc-usb,ubx-nav-timebds-usb,ubx-nav-timeglo-usb \
+  -m configs/gpsmsg/ubx9.toml -t ubx-nav-timegal-usb,ubx-nav-timeutc-usb,ubx-nav-timebds-usb,ubx-nav-timeglo-usb \
   --packet-log time-bds-38400.jsonl --capture 30
 ```
 
@@ -220,7 +220,7 @@ satpulsetool gps -d /dev/ttyACM0 -s 38400 --vendor u-blox \
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --reload
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --binary --pvt-out tp,after,tai,leap,epoch,off --time-gnss glo --gnss gps,glo
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --vendor u-blox \
-  -m configs/gpsmsg/ubx.toml -t ubx-nav-timegal-usb,ubx-nav-timeutc-usb,ubx-nav-timebds-usb,ubx-nav-timeglo-usb \
+  -m configs/gpsmsg/ubx9.toml -t ubx-nav-timegal-usb,ubx-nav-timeutc-usb,ubx-nav-timebds-usb,ubx-nav-timeglo-usb \
   --packet-log time-glo-38400.jsonl --capture 30
 ```
 
@@ -232,7 +232,7 @@ satpulsetool gps -d /dev/ttyACM0 -s 38400 --vendor u-blox \
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --reload
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --binary --pvt-out tp,after,tai,leap,epoch,off --time-gnss gps --gnss gps
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --vendor u-blox \
-  -m configs/gpsmsg/ubx.toml -t ubx-nav-timegal-usb,ubx-nav-timeutc-usb,ubx-nav-timebds-usb,ubx-nav-timeglo-usb \
+  -m configs/gpsmsg/ubx9.toml -t ubx-nav-timegal-usb,ubx-nav-timeutc-usb,ubx-nav-timebds-usb,ubx-nav-timeglo-usb \
   --packet-log time-gps-38400.jsonl --capture 30
 ```
 
@@ -251,7 +251,7 @@ All five NAV-TIME variants + NAV-CLOCK + NAV-EOE. Enables them all together so e
 ```
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --reload
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --vendor u-blox \
-  -m configs/gpsmsg/ubx.toml \
+  -m configs/gpsmsg/ubx9.toml \
   -t ubx-nav-timegps-usb,ubx-nav-timeutc-usb,ubx-nav-timebds-usb,ubx-nav-timeglo-usb,ubx-nav-timegal-usb,ubx-nav-clock-usb,ubx-nav-eoe-usb \
   --packet-log ubx-nav-time-all-38400.jsonl --capture 30
 ```
@@ -265,7 +265,7 @@ Default NMEA + UBX NAV-EOE only. Tests cross-protocol epoch detection (NavEpochM
 ```
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --reload
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --vendor u-blox \
-  -m configs/gpsmsg/ubx.toml -t ubx-nav-eoe-usb \
+  -m configs/gpsmsg/ubx9.toml -t ubx-nav-eoe-usb \
   --packet-log nmea-ubx-eoe-38400.jsonl --capture 30
 ```
 
@@ -278,7 +278,7 @@ NavPosLLH + NavPosECEF + NAV-TIMEGPS + NAV-EOE. Non-HP position variants have di
 ```
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --reload
 satpulsetool gps -d /dev/ttyACM0 -s 38400 --vendor u-blox \
-  -m configs/gpsmsg/ubx.toml \
+  -m configs/gpsmsg/ubx9.toml \
   -t ubx-nav-posllh-usb,ubx-nav-posecef-usb,ubx-nav-timegps-usb,ubx-nav-eoe-usb \
   --packet-log ubx-nav-pos-38400.jsonl --capture 30
 ```
