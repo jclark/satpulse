@@ -5,8 +5,13 @@
 u-blox receivers have product categories that affect which messages high-level config enables:
 
 - **HPG** (High Precision GNSS, e.g., ZED-F9P): Uses NavHPPosLLH/NavHPPosECEF instead of NavPosLLH/NavPosECEF.
-- **FTS** (Frequency and Time Standard): Uses TimTos instead of TimTP.
+- **TIM** (Timing, e.g., LEA-M8T): Uses TimSvin for survey (not NavSvin). Message selection is otherwise the same as standard.
+- **FTS** (Frequency and Time Standard, e.g., LEA-M8F): Uses TimTos instead of TimTP. TimTos is NOT available on TIM receivers.
 - **Standard** (e.g., NEO-M8): Uses NavPosLLH/NavPosECEF directly.
+
+The product category is shown by `--show-receiver` in the firmware field (e.g., "TIM 1.10 PROTVER 22.00" or "HPG 1.51 PROTVER 27.50"). It is also recorded in the HW.toml `firmware` field. The `pvt()` function in `ubxcfgmsg.go` only checks for "HPG" and "FTS" -- "TIM" is treated like standard for message selection.
+
+**CRITICAL**: Do not confuse TIM and FTS. They are different product categories with different behavior. TIM uses TimTP (like standard); FTS uses TimTos.
 
 ## How `--pvt-out` maps to UBX messages
 
@@ -62,6 +67,30 @@ Pre-Gen9 differences:
 ## Protocol version checks
 
 Always check protocol version from `--show-receiver` before planning captures. Messages that don't exist on the receiver's protocol version should be skipped, not attempted.
+
+## Troubleshooting
+
+### Serial overload at low baud rates
+
+At 9600 baud, enabling extra UBX messages on top of default NMEA via message file tags can overload the serial link. When this happens, probe commands time out ("no response to configuration probe message").
+
+To avoid overload: if you have enabled extra messages at a higher baud rate, disable them (or reload) *before* changing to a lower baud rate.
+
+To recover from an overloaded link, use the message file `reload` tag (which doesn't need probing):
+
+```
+satpulsetool gps -d <device> -s 9600 --vendor u-blox -m configs/gpsmsg/ubx8.toml -t reload --capture 3
+```
+
+### Per-constellation capture verification
+
+After each per-constellation time capture, immediately verify the TIM-TP RefInfo field shows the expected GNSS:
+
+```
+satpulsetool decode --packet-log <file> | grep TIM-TP | tail -1 | jq .payload.RefInfo
+```
+
+RefInfo encodes the GNSS ID in the lower nibble. If it shows the wrong GNSS, the constellation may not have been acquired yet. Allow 10-15 seconds after a constellation change before starting the capture.
 
 ## Completed captures
 

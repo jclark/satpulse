@@ -11,6 +11,7 @@ Collect packet logs (JSONL files) that exercise every implemented decode path in
 - Don't capture a single non-time message plus only an end-of-epoch marker (if the receiver has one); combine it with something useful.
 - If the receiver supports end-of-epoch markers (currently u-blox and Quectel), some captures should include them and some should lack them -- testing epoch detection both ways matters. Most receivers do not have end-of-epoch markers.
 - Reload between every capture to ensure a clean receiver state. Without this, messages enabled by a prior capture leak into the next one.
+- UBX-only captures that use message file tags (`-m ... -t`) must first disable NMEA with `--binary`. The message file step does not probe or reset, so whatever protocol state exists before it runs carries through. Without `--binary`, default NMEA output remains enabled and pollutes the capture. Run `--binary` as a separate high-level config step before the `-m` step.
 
 ## What to capture
 
@@ -23,6 +24,19 @@ The captures should cover:
 5. **Per-constellation time** -- if the receiver supports configuring which GNSS system the time pulse references, capture one trace per constellation with all time message variants enabled.
 6. **NMEA subsets** -- specific NMEA sentence combinations needed for testing (e.g., RMC+GGA for timing correlation, GLL for future parsing).
 7. **Survey** -- if the receiver supports survey-in, a short survey capture to exercise survey messages.
+
+## Troubleshooting
+
+### Baud rate confusion
+
+If you lose track of the receiver's current baud rate (e.g. after a reload or speed change), probe at candidate speeds with no config options:
+
+```
+satpulsetool gps -d <device> -s 9600
+satpulsetool gps -d <device> -s 38400
+```
+
+The one that shows receiver info is the current speed. "Framing errors" means wrong speed.
 
 ## Packet log format
 
