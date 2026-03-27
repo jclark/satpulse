@@ -135,6 +135,19 @@ func TestConfiguratorGalileo(t *testing.T) {
 	testConfigurator(t, rcvr, target)
 }
 
+// TestConfiguratorGalileoFromGPS tests changing time GNSS from GPS to Galileo.
+// This reproduces #244: when TP5 grid bits already have GPS set,
+// changing to Galileo must clear the old grid before setting the new one.
+func TestConfiguratorGalileoFromGPS(t *testing.T) {
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetPPS(100 * time.Millisecond)
+	target.Props.SetTimeGNSS(gpsprot.GAL)
+	rcvr := newLegacyReceiver()
+	rcvr.raw.tp5.Flags |= ubxbin.CfgTp5GridGPS
+	rcvr.raw.gnss.Blocks[0].GNSSID = ubxbin.GAL
+	testConfigurator(t, rcvr, target)
+}
+
 func testConfigurator(t *testing.T, rcvr *gpsReceiver, target *gpsprot.ConfigTarget) {
 	c, naks, err := runConfiguration(rcvr, target)
 	if err != nil {

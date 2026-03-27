@@ -267,6 +267,7 @@ func (raw *CfgOld) changeTp5(cp *gpsprot.ConfigProps) *ubxbin.CfgTp5 {
 		gnssFlags := ubxbin.CfgTp5AlignToTow | ubxbin.CfgTp5LockGpsFreq
 		if align {
 			tp.Flags |= gnssFlags
+			tp.Flags &^= ubxbin.CfgTp5GridUTCGNSS
 			gnss := raw.changeTp5GNSS(cp)
 			switch gnss {
 			case gpsprot.GPS:
