@@ -11,7 +11,9 @@ type LogFile struct {
 	File *os.File
 }
 
-func (lf *LogFile) Open(path string) error {
+// Open opens the log file at path. If append is true, the file is opened
+// in append mode; otherwise, an existing file is truncated.
+func (lf *LogFile) Open(path string, append bool) error {
 	lf.path = path
 	if path == "" {
 		return nil
@@ -21,15 +23,16 @@ func (lf *LogFile) Open(path string) error {
 	if err != nil {
 		return err
 	}
-	return lf.doOpen()
+	return lf.doOpen(append)
 }
 
+// Reopen reopens the log file in append mode (e.g. after log rotation).
 func (lf *LogFile) Reopen(lg *slog.Logger) {
 	if lf.path == "" {
 		return
 	}
 	lf.Close(lg)
-	err := lf.doOpen()
+	err := lf.doOpen(true)
 	if err != nil {
 		lg.Error("error reopening log file", "err", err, "path", lf.path)
 	}
@@ -46,8 +49,14 @@ func (lf *LogFile) Close(lg *slog.Logger) {
 	lf.File = nil
 }
 
-func (lf *LogFile) doOpen() error {
-	f, err := os.OpenFile(lf.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+func (lf *LogFile) doOpen(append bool) error {
+	flags := os.O_CREATE | os.O_WRONLY
+	if append {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+	f, err := os.OpenFile(lf.path, flags, 0644)
 	if err != nil {
 		return err
 	}

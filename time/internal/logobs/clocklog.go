@@ -30,7 +30,7 @@ func NewClockLogObserver(lg *slog.Logger, path string, ls ptime.LeapSecond) (*Cl
 		lg: lg,
 		ls: ls,
 	}
-	err := o.lf.Open(path)
+	err := o.lf.Open(path, true)
 	if err != nil {
 		return nil, err
 	}

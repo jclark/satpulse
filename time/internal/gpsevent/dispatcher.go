@@ -81,7 +81,7 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		pp.SetMsgHandler(multiHandler)
 		pp.SetNativeMsgHandler(&d)
 	}
-	err := d.lf.Open(eventLogPath)
+	err := d.lf.Open(eventLogPath, true)
 	if err != nil {
 		return nil, err
 	}
