@@ -33,6 +33,7 @@ var replayFiles = []string{
 	"f10t-pps",
 	"m8t-binary",
 	"m8t-noop",
+	"m8t-pps",
 	"m8t-signal",
 	"m8t-speed",
 	"m8t-tmode",

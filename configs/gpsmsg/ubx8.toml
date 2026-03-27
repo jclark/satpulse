@@ -1,0 +1,347 @@
+#:schema ./gpsmsg-schema.json
+# u-blox Gen8 and earlier configuration messages (protocol < 27)
+# Uses CFG-MSG for message output rate control
+
+[[include]]
+src = "ubx.toml"
+
+# UBX message enable/disable via CFG-MSG (class 0x06, id 0x01).
+# The 3-byte short form [msgClass, msgID, rate] sets the rate on the
+# port the command is received on.
+# These tags are named with a -uart1 suffix to indicate they are intended
+# for use over UART1 (the receiving port determines which port is affected).
+
+# Configuration management via CFG-CFG (class 0x06, id 0x09).
+# Payload: clearMask(U4) + saveMask(U4) + loadMask(U4).
+
+[[ubx]]
+tag = "reload"
+description = "Reload configuration from NVM"
+class = 0x06
+id = 0x09
+payload.types = "U4U4U4"
+payload.values = [0, 0, 0x1F1F]
+
+# TIM messages
+
+[[ubx]]
+tag = "ubx-tim-tp-uart1"
+description = "Enable TIM-TP on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x0D, 0x01, 1]
+
+[[ubx]]
+tag = "ubx-tim-tp-uart1-off"
+description = "Disable TIM-TP on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x0D, 0x01, 0]
+
+[[ubx]]
+tag = "ubx-tim-svin-uart1"
+description = "Enable TIM-SVIN on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x0D, 0x04, 1]
+
+[[ubx]]
+tag = "ubx-tim-svin-uart1-off"
+description = "Disable TIM-SVIN on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x0D, 0x04, 0]
+
+# NAV messages
+
+[[ubx]]
+tag = "ubx-nav-pvt-uart1"
+description = "Enable NAV-PVT on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x07, 1]
+
+[[ubx]]
+tag = "ubx-nav-pvt-uart1-off"
+description = "Disable NAV-PVT on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x07, 0]
+
+[[ubx]]
+tag = "ubx-nav-timegps-uart1"
+description = "Enable NAV-TIMEGPS on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x20, 1]
+
+[[ubx]]
+tag = "ubx-nav-timegps-uart1-off"
+description = "Disable NAV-TIMEGPS on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x20, 0]
+
+[[ubx]]
+tag = "ubx-nav-timeutc-uart1"
+description = "Enable NAV-TIMEUTC on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x21, 1]
+
+[[ubx]]
+tag = "ubx-nav-timeutc-uart1-off"
+description = "Disable NAV-TIMEUTC on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x21, 0]
+
+[[ubx]]
+tag = "ubx-nav-timebds-uart1"
+description = "Enable NAV-TIMEBDS on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x24, 1]
+
+[[ubx]]
+tag = "ubx-nav-timebds-uart1-off"
+description = "Disable NAV-TIMEBDS on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x24, 0]
+
+[[ubx]]
+tag = "ubx-nav-timeglo-uart1"
+description = "Enable NAV-TIMEGLO on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x23, 1]
+
+[[ubx]]
+tag = "ubx-nav-timeglo-uart1-off"
+description = "Disable NAV-TIMEGLO on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x23, 0]
+
+[[ubx]]
+tag = "ubx-nav-timegal-uart1"
+description = "Enable NAV-TIMEGAL on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x25, 1]
+
+[[ubx]]
+tag = "ubx-nav-timegal-uart1-off"
+description = "Disable NAV-TIMEGAL on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x25, 0]
+
+[[ubx]]
+tag = "ubx-nav-timels-uart1"
+description = "Enable NAV-TIMELS on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x26, 1]
+
+[[ubx]]
+tag = "ubx-nav-timels-uart1-off"
+description = "Disable NAV-TIMELS on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x26, 0]
+
+[[ubx]]
+tag = "ubx-nav-clock-uart1"
+description = "Enable NAV-CLOCK on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x22, 1]
+
+[[ubx]]
+tag = "ubx-nav-clock-uart1-off"
+description = "Disable NAV-CLOCK on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x22, 0]
+
+[[ubx]]
+tag = "ubx-nav-eoe-uart1"
+description = "Enable NAV-EOE on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x61, 1]
+
+[[ubx]]
+tag = "ubx-nav-eoe-uart1-off"
+description = "Disable NAV-EOE on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x61, 0]
+
+[[ubx]]
+tag = "ubx-nav-posllh-uart1"
+description = "Enable NAV-POSLLH on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x02, 1]
+
+[[ubx]]
+tag = "ubx-nav-posllh-uart1-off"
+description = "Disable NAV-POSLLH on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x02, 0]
+
+[[ubx]]
+tag = "ubx-nav-posecef-uart1"
+description = "Enable NAV-POSECEF on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x01, 1]
+
+[[ubx]]
+tag = "ubx-nav-posecef-uart1-off"
+description = "Disable NAV-POSECEF on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x01, 0]
+
+[[ubx]]
+tag = "ubx-nav-velned-uart1"
+description = "Enable NAV-VELNED on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x12, 1]
+
+[[ubx]]
+tag = "ubx-nav-velned-uart1-off"
+description = "Disable NAV-VELNED on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x12, 0]
+
+[[ubx]]
+tag = "ubx-nav-velecef-uart1"
+description = "Enable NAV-VELECEF on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x11, 1]
+
+[[ubx]]
+tag = "ubx-nav-velecef-uart1-off"
+description = "Disable NAV-VELECEF on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x11, 0]
+
+[[ubx]]
+tag = "ubx-nav-dop-uart1"
+description = "Enable NAV-DOP on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x04, 1]
+
+[[ubx]]
+tag = "ubx-nav-dop-uart1-off"
+description = "Disable NAV-DOP on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x04, 0]
+
+[[ubx]]
+tag = "ubx-nav-sat-uart1"
+description = "Enable NAV-SAT on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x35, 1]
+
+[[ubx]]
+tag = "ubx-nav-sat-uart1-off"
+description = "Disable NAV-SAT on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x35, 0]
+
+[[ubx]]
+tag = "ubx-nav-svinfo-uart1"
+description = "Enable NAV-SVINFO on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x30, 1]
+
+[[ubx]]
+tag = "ubx-nav-svinfo-uart1-off"
+description = "Disable NAV-SVINFO on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x30, 0]
+
+[[ubx]]
+tag = "ubx-nav-sol-uart1"
+description = "Enable NAV-SOL on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x06, 1]
+
+[[ubx]]
+tag = "ubx-nav-sol-uart1-off"
+description = "Disable NAV-SOL on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x06, 0]
+
+[[ubx]]
+tag = "ubx-nav-svin-uart1"
+description = "Enable NAV-SVIN on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x3B, 1]
+
+[[ubx]]
+tag = "ubx-nav-svin-uart1-off"
+description = "Disable NAV-SVIN on UART1"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x3B, 0]

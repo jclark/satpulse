@@ -297,6 +297,12 @@ config = true
 listen = ":2000"
 ```
 
+# FILES
+
+`/usr/share/doc/satpulse/config-schema.json`
+: JSON schema for the configuration file, installed by the package.
+  When installed from source, it will be in `/usr/local/share/doc/satpulse/`.
+
 # SEE ALSO
 
 **satpulsed(8)**

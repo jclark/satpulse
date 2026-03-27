@@ -263,23 +263,31 @@ func (raw *CfgOld) changeTp5(cp *gpsprot.ConfigProps) *ubxbin.CfgTp5 {
 	}
 
 	// Handle CfgTimePulseAlignGNSS
+	const gnssAlignFlags = ubxbin.CfgTp5AlignToTow | ubxbin.CfgTp5LockGpsFreq
+	var aligned bool
 	if align, exists := cp.GetTimePulseAlignToGNSS(); exists {
-		gnssFlags := ubxbin.CfgTp5AlignToTow | ubxbin.CfgTp5LockGpsFreq
 		if align {
-			tp.Flags |= gnssFlags
-			gnss := raw.changeTp5GNSS(cp)
-			switch gnss {
-			case gpsprot.GPS:
-				tp.Flags |= ubxbin.CfgTp5GridGPS
-			case gpsprot.GLO:
-				tp.Flags |= ubxbin.CfgTp5GridGLONASS
-			case gpsprot.BDS:
-				tp.Flags |= ubxbin.CfgTp5GridBeiDou
-			case gpsprot.GAL:
-				tp.Flags |= ubxbin.CfgTp5GridGalileo
-			}
+			tp.Flags |= gnssAlignFlags
+			aligned = true
 		} else {
-			tp.Flags &^= gnssFlags
+			tp.Flags &^= gnssAlignFlags
+		}
+	} else if _, exists := cp.GetTimeGNSS(); exists {
+		// TimeGNSS set without AlignToGNSS: update the grid if already aligned
+		aligned = tp.Flags&gnssAlignFlags == gnssAlignFlags
+	}
+	if aligned {
+		tp.Flags &^= ubxbin.CfgTp5GridUTCGNSS
+		gnss := raw.changeTp5GNSS(cp)
+		switch gnss {
+		case gpsprot.GPS:
+			tp.Flags |= ubxbin.CfgTp5GridGPS
+		case gpsprot.GLO:
+			tp.Flags |= ubxbin.CfgTp5GridGLONASS
+		case gpsprot.BDS:
+			tp.Flags |= ubxbin.CfgTp5GridBeiDou
+		case gpsprot.GAL:
+			tp.Flags |= ubxbin.CfgTp5GridGalileo
 		}
 	}
 

@@ -118,7 +118,8 @@ if vars.showDefaultConfig {
 ## Implementation Order
 
 1. Add `comment` tags to all config structs
-2. Add dummy array entries to `defaultConfig()`
-3. Add `WriteDefaultConfig()` with NaN field handling
-4. Add `-C` flag handling in `parseFlags`
-5. Test: `go run ./cmd/satpulsed -C`
+2. Add corresponding `description` fields to `configs/config-schema.json`
+3. Add dummy array entries to `defaultConfig()`
+4. Add `WriteDefaultConfig()` with NaN field handling
+5. Add `-C` flag handling in `parseFlags`
+6. Test: `go run ./cmd/satpulsed -C`

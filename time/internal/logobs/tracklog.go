@@ -64,7 +64,7 @@ type TrackLogObserver struct {
 // NewTrackLogObserver creates a TrackLogObserver that writes trackpoints to a JSONL file.
 func NewTrackLogObserver(lg *slog.Logger, path string) (*TrackLogObserver, error) {
 	o := &TrackLogObserver{lg: lg}
-	if err := o.lf.Open(path); err != nil {
+	if err := o.lf.Open(path, true); err != nil {
 		return nil, err
 	}
 	return o, nil

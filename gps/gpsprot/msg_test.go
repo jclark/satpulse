@@ -1176,3 +1176,62 @@ func TestFillDerivedNoop(t *testing.T) {
 		t.Error("PosECEF overwritten when already set")
 	}
 }
+
+func TestMsgType(t *testing.T) {
+	tests := []struct {
+		msg  Msg
+		want string
+	}{
+		{&TimeMsg{}, "time"},
+		{&PosGeoMsg{}, "posGeo"},
+		{&PosECEFMsg{}, "posECEF"},
+		{&VelGeoMsg{}, "velGeo"},
+		{&VelECEFMsg{}, "velECEF"},
+		{&LeapSecondMsg{}, "leapSecond"},
+		{&SurveyMsg{}, "survey"},
+		{&SatellitesMsg{}, "satellites"},
+		{&NavEpochMsg{}, "navEpoch"},
+	}
+	for _, tt := range tests {
+		if got := tt.msg.MsgType(); got != tt.want {
+			t.Errorf("%T.MsgType() = %q, want %q", tt.msg, got, tt.want)
+		}
+	}
+}
+
+func TestEventMarshal(t *testing.T) {
+	msg := &PosGeoMsg{
+		LatLon: [2]Angle{47 * Degrees, 8 * Degrees},
+		Tag:    "UBX",
+	}
+	tRead := time.Date(2026, 3, 27, 10, 0, 0, 500000, time.UTC)
+	ev := NewEvent(msg, tRead, 123456*Microsecond)
+	b, err := json.Marshal(&ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	var typ string
+	if err := json.Unmarshal(raw["type"], &typ); err != nil {
+		t.Fatal(err)
+	}
+	if typ != "posGeo" {
+		t.Errorf("type = %q, want %q", typ, "posGeo")
+	}
+	var mono float64
+	if err := json.Unmarshal(raw["mono"], &mono); err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(mono-0.123456) > 1e-9 {
+		t.Errorf("mono = %v, want 0.123456", mono)
+	}
+	if _, ok := raw["data"]; !ok {
+		t.Error("missing data field")
+	}
+	if _, ok := raw["t"]; !ok {
+		t.Error("missing t field")
+	}
+}

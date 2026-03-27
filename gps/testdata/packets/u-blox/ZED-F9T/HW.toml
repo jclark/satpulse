@@ -1,0 +1,4 @@
+vendor = "u-blox"
+model = "ZED-F9T"
+firmware = "TIM 2.01 PROTVER 29.0"
+default-baud = 9600

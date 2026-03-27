@@ -34,12 +34,12 @@ func NewPacketLog(fmts []gpsprot.PacketFormat) (*PacketLog, <-chan PacketLogEntr
 
 // LogPackets creates a PacketLog and starts a goroutine that writes entries
 // to a JSONL file. Returns nil PacketLog if logPath is empty.
-func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string, fmts []gpsprot.PacketFormat) (*PacketLog, *logfile.LogFile, error) {
+func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string, append bool, fmts []gpsprot.PacketFormat) (*PacketLog, *logfile.LogFile, error) {
 	if logPath == "" {
 		return nil, nil, nil
 	}
 	lf := &logfile.LogFile{}
-	err := lf.Open(logPath)
+	err := lf.Open(logPath, append)
 	if err != nil {
 		return nil, nil, err
 	}

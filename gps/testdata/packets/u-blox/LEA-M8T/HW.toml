@@ -1,0 +1,4 @@
+vendor = "u-blox"
+model = "LEA-M8T"
+firmware = "TIM 1.10 PROTVER 22.0"
+default-baud = 9600

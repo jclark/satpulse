@@ -118,7 +118,13 @@ func timeTimTP(m *ubxbin.TimTP) *gpsprot.TimeMsg {
 	case ubxbin.TimTPTimeRefGPS:
 		t.GNSS = gpsprot.GPS
 	case ubxbin.TimTPTimeRefGLONASS:
+		// GLONASS time = UTC + 3h, using GPS week numbers.
+		// Convert to date/timeOfDay, then subtract 3h.
+		ut := ptime.GPSUTC(m.Week, tow)
+		ut.TimeOfDay -= 3 * time.Hour
+		t.UTCTime = &ut
 		t.GNSS = gpsprot.GLO
+		return &t
 	case ubxbin.TimTPTimeRefBeiDou:
 		t.GNSS = gpsprot.BDS
 		conv = ptime.BeiDou

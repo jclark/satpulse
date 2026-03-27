@@ -129,7 +129,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	var wg sync.WaitGroup
 	// pLog must be closed by both the startScan goroutine and the conn
 	// gpsio.Scan starts a goroutine that calls conn.Stop() when the context is cancelled
-	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), cfg.GPS.CreatePacketFormats())
+	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), true, cfg.GPS.CreatePacketFormats())
 	if err != nil {
 		return err
 	}

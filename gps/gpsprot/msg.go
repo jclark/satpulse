@@ -23,6 +23,7 @@ var ErrNotHandled = errors.New("sentence not handled")
 // Msg is implemented by all protocol-agnostic message types.
 type Msg interface {
 	Dispatch(MsgHandler, time.Time)
+	MsgType() string
 }
 
 // PVMsg is implemented by position/velocity message types
@@ -40,6 +41,17 @@ func (m *TimeMsg) Dispatch(h MsgHandler, t time.Time)       { h.Time(m, t) }
 func (m *LeapSecondMsg) Dispatch(h MsgHandler, t time.Time) { h.LeapSecond(m, t) }
 func (m *SurveyMsg) Dispatch(h MsgHandler, t time.Time)     { h.Survey(m, t) }
 func (m *SatellitesMsg) Dispatch(h MsgHandler, t time.Time) { h.Satellites(m, t) }
+func (m *NavEpochMsg) Dispatch(h MsgHandler, t time.Time)   { h.NavEpoch(m, t) }
+
+func (m *PosGeoMsg) MsgType() string     { return "posGeo" }
+func (m *PosECEFMsg) MsgType() string    { return "posECEF" }
+func (m *VelGeoMsg) MsgType() string     { return "velGeo" }
+func (m *VelECEFMsg) MsgType() string    { return "velECEF" }
+func (m *TimeMsg) MsgType() string       { return "time" }
+func (m *LeapSecondMsg) MsgType() string { return "leapSecond" }
+func (m *SurveyMsg) MsgType() string     { return "survey" }
+func (m *SatellitesMsg) MsgType() string { return "satellites" }
+func (m *NavEpochMsg) MsgType() string   { return "navEpoch" }
 
 // SetPriority implements PVMsg for the four position/velocity types.
 func (m *PosGeoMsg) SetPriority(pri MsgPriority)  { m.Priority = pri }
@@ -107,6 +119,35 @@ func (h *DefaultHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {}
 func (h *DefaultHandler) Survey(msg *SurveyMsg, tRead time.Time)         {}
 func (h *DefaultHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {}
 func (h *DefaultHandler) NavEpoch(msg *NavEpochMsg, tRead time.Time)     {}
+
+// GenericHandler adapts a single callback into the MsgHandler interface.
+// Every message type is dispatched to the same Handle function.
+type GenericHandler struct {
+	Handle func(msg Msg, tRead time.Time)
+}
+
+func (h *GenericHandler) Time(msg *TimeMsg, tRead time.Time)             { h.Handle(msg, tRead) }
+func (h *GenericHandler) PosGeo(msg *PosGeoMsg, tRead time.Time)         { h.Handle(msg, tRead) }
+func (h *GenericHandler) PosECEF(msg *PosECEFMsg, tRead time.Time)       { h.Handle(msg, tRead) }
+func (h *GenericHandler) VelGeo(msg *VelGeoMsg, tRead time.Time)         { h.Handle(msg, tRead) }
+func (h *GenericHandler) VelECEF(msg *VelECEFMsg, tRead time.Time)       { h.Handle(msg, tRead) }
+func (h *GenericHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) { h.Handle(msg, tRead) }
+func (h *GenericHandler) Survey(msg *SurveyMsg, tRead time.Time)         { h.Handle(msg, tRead) }
+func (h *GenericHandler) Satellites(msg *SatellitesMsg, tRead time.Time) { h.Handle(msg, tRead) }
+func (h *GenericHandler) NavEpoch(msg *NavEpochMsg, tRead time.Time)     { h.Handle(msg, tRead) }
+
+// Event is the universal envelope for all gpsprot messages.
+type Event struct {
+	Type string    `json:"type"`
+	T    time.Time `json:"t"`
+	Mono Duration  `json:"mono"`
+	Data Msg       `json:"data"`
+}
+
+// NewEvent constructs an Event from a message, wall-clock time, and monotonic offset.
+func NewEvent(msg Msg, t time.Time, mono Duration) Event {
+	return Event{Type: msg.MsgType(), T: t, Mono: mono, Data: msg}
+}
 
 type MultiHandler struct {
 	handlers []MsgHandler

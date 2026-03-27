@@ -92,7 +92,7 @@ type TrackingConfig struct {
 	// IgnoreSawtoothCorrection, when true, disables the use of pulse offset corrections
 	// from PrePulse messages. This is primarily for testing to verify that sawtooth
 	// correction improves synchronization accuracy. Default: false (use corrections).
-	IgnoreSawtoothCorrection bool `toml:"ignoreSawtoothCorrection" comment:"Ignore sawtooth corrections (for testing)"`
+	IgnoreSawtoothCorrection bool `toml:"ignoreSawtoothCorrection" comment:"Ignore sawtooth corrections"`
 
 	// PulseCorrectionTimeout is maximum time in seconds to wait for a PostPulse correction
 	// message after the pulse occurs.

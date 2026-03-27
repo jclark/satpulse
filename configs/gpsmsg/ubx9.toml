@@ -1,0 +1,154 @@
+#:schema ./gpsmsg-schema.json
+# u-blox Gen9+ configuration messages (protocol >= 27)
+# Uses CFG-VALSET for message output rate control
+
+[[include]]
+src = "ubx.toml"
+
+# UBX message enable/disable on USB port
+# Each tag sets one message rate on USB (MSGOUT key + port 3).
+# CFG-VALSET: version=0, layers=1 (RAM), transaction=0.
+
+[[ubx]]
+tag = "ubx-nav-timegps-usb"
+description = "Enable NAV-TIMEGPS on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x2091004A, 1]
+
+[[ubx]]
+tag = "ubx-nav-timegps-usb-off"
+description = "Disable NAV-TIMEGPS on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x2091004A, 0]
+
+[[ubx]]
+tag = "ubx-nav-timeutc-usb"
+description = "Enable NAV-TIMEUTC on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x2091005E, 1]
+
+[[ubx]]
+tag = "ubx-nav-timeutc-usb-off"
+description = "Disable NAV-TIMEUTC on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x2091005E, 0]
+
+[[ubx]]
+tag = "ubx-nav-timebds-usb"
+description = "Enable NAV-TIMEBDS on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x20910054, 1]
+
+[[ubx]]
+tag = "ubx-nav-timebds-usb-off"
+description = "Disable NAV-TIMEBDS on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x20910054, 0]
+
+[[ubx]]
+tag = "ubx-nav-timeglo-usb"
+description = "Enable NAV-TIMEGLO on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x2091004F, 1]
+
+[[ubx]]
+tag = "ubx-nav-timeglo-usb-off"
+description = "Disable NAV-TIMEGLO on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x2091004F, 0]
+
+[[ubx]]
+tag = "ubx-nav-timegal-usb"
+description = "Enable NAV-TIMEGAL on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x20910059, 1]
+
+[[ubx]]
+tag = "ubx-nav-timegal-usb-off"
+description = "Disable NAV-TIMEGAL on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x20910059, 0]
+
+[[ubx]]
+tag = "ubx-nav-clock-usb"
+description = "Enable NAV-CLOCK on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x20910068, 1]
+
+[[ubx]]
+tag = "ubx-nav-clock-usb-off"
+description = "Disable NAV-CLOCK on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x20910068, 0]
+
+[[ubx]]
+tag = "ubx-nav-eoe-usb"
+description = "Enable NAV-EOE on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x20910162, 1]
+
+[[ubx]]
+tag = "ubx-nav-eoe-usb-off"
+description = "Disable NAV-EOE on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x20910162, 0]
+
+[[ubx]]
+tag = "ubx-nav-posllh-usb"
+description = "Enable NAV-POSLLH on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x2091002C, 1]
+
+[[ubx]]
+tag = "ubx-nav-posllh-usb-off"
+description = "Disable NAV-POSLLH on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x2091002C, 0]
+
+[[ubx]]
+tag = "ubx-nav-posecef-usb"
+description = "Enable NAV-POSECEF on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x20910027, 1]
+
+[[ubx]]
+tag = "ubx-nav-posecef-usb-off"
+description = "Disable NAV-POSECEF on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x20910027, 0]
