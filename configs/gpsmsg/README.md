@@ -44,7 +44,8 @@ This can help with seeing whether your receiver is handling the commands correct
 | [atgm332d-v5.toml](atgm332d-v5.toml) | Zhongke Micro ATGM332D/ATGM336H firmware V5.x | CASIC binary |
 | [atgm332d-v6.toml](atgm332d-v6.toml) | Zhongke Micro ATGM332D/ATGM336H firmware V6.x | CASIC binary |
 | [at632.toml](at632.toml) | Zhongke Micro AT632-6T-30 timing receiver | CASIC binary |
-| [ubx.toml](ubx.toml) | u-blox (e.g. ZED-F9P) | UBX binary, NMEA (PUBX) |
+| [ubx.toml](ubx.toml) | u-blox (all generations) | UBX binary, NMEA (PUBX) |
+| [ubx9.toml](ubx9.toml) | u-blox Gen9+ (e.g. ZED-F9P) | UBX CFG-VALSET (includes ubx.toml) |
 | [sinognss.toml](sinognss.toml) | SinoGNSS K901/K902 | NovAtel-style commands |
 | [bynav.toml](bynav.toml) | Bynav M2 | NovAtel-style commands |
 | [techtotop.toml](techtotop.toml) | Techtotop/Taidou T303-5D | SDBP binary |
