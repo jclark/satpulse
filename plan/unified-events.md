@@ -32,7 +32,11 @@ A few gpsprot types still need cleanup before they serialise cleanly:
 
 Update all producers and consumers (including `TimeMsg.Merge`, `ComputeTAITime`).
 
-## Event envelope
+## Event envelope (done)
+
+`MsgType() string` has been added to the `Msg` interface, `Event` struct and `NewEvent` constructor added to `gpsprot`, `GenericHandler` added, `NavEpochMsg.Dispatch` added. `satpulsetool replay` uses the new `Event` envelope.
+
+Remaining: `Event.UnmarshalJSON` with type registry.
 
 Add `MsgType() string` to the existing `Msg` interface:
 
@@ -136,7 +140,7 @@ All three transports carry the same `Event` content with transport-specific fram
 
 ### Event log (`.jsonl` files)
 
-One `Event` JSON object per line, every raw message as received. No filtering or bundling. Replaces the current `LogEvent` struct in `gpsevent/dispatcher.go`.
+GPS message events use the `gpsprot.Event` envelope, one JSON object per line. No filtering or bundling.
 
 Before:
 ```json
@@ -147,6 +151,8 @@ After:
 ```json
 {"type":"posGeo","t":"...","mono":1.234567,"data":{"latLon":[...]}}
 ```
+
+**PulseEdge scope split**: `gpsprot.Event` covers the 9 GPS message types (`Msg` implementors). The daemon event log additionally records `PulseEdge` events that carry `ptime.Time` and `phctime.Era` -- types from the `time/` layer that `gpsprot` cannot import. The daemon event log therefore uses its own `gpsevent.LogEvent` envelope, which carries either a `gpsprot.Event` (for GPS messages) or a `PulseEdge`. SSE, the JSONL HTTP endpoint, and the replay command use `gpsprot.Event` directly -- they never carry pulse edges.
 
 ### SSE (`/sse` endpoint)
 
@@ -172,7 +178,7 @@ Without query parameters, the stream is the same as the event log: every raw mes
 
 ### Dispatcher update
 
-Replace `LogEvent` in `gpsevent/dispatcher.go` with `gpsprot.Event`. The `logEvent()` method constructs an `Event` with `MsgType()`, wall-clock time, and monotonic duration (microsecond-rounded `gpsprot.Duration` since session start).
+Update `LogEvent` in `gpsevent/dispatcher.go` to use `gpsprot.Event` for GPS messages. The `logEvent()` method constructs a `gpsprot.Event` via `NewEvent()` with `MsgType()`, wall-clock time, and monotonic duration (microsecond-rounded `gpsprot.Duration` since session start). `PulseEdge` events are logged separately using a `LogEvent` that wraps a `PulseEdge` instead of a `gpsprot.Event`.
 
 ### Replay code
 

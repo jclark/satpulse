@@ -23,6 +23,9 @@ The *command* must be one of the following.
 **decode**
 : Decode binary GPS packets from hex strings or annotate JSONL packet logs.
 
+**replay**
+: Replay a JSONL packet log, generating JSONL events, similar to an event log.
+
 **pmc**
 : PTP management client
 
