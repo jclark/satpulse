@@ -122,6 +122,78 @@ const (
 	MonGnssGalileo
 )
 
+// MonGnssGps is a bitmask of supported GPS signals in a MON-GNSS signal plan.
+type MonGnssGps uint16
+
+const (
+	MonGnssGpsL1CA MonGnssGps = 1 << iota
+	MonGnssGpsL1C
+	MonGnssGpsL2C
+	MonGnssGpsL5
+)
+
+// MonGnssGal is a bitmask of supported Galileo signals in a MON-GNSS signal plan.
+type MonGnssGal uint16
+
+const (
+	MonGnssGalE1 MonGnssGal = 1 << iota
+	MonGnssGalE5a
+	MonGnssGalE5b
+	MonGnssGalE6
+)
+
+// MonGnssBds is a bitmask of supported BeiDou signals in a MON-GNSS signal plan.
+type MonGnssBds uint16
+
+const (
+	MonGnssBdsB1I MonGnssBds = 1 << iota
+	MonGnssBdsB1C
+	MonGnssBdsB2I
+	MonGnssBdsB2a
+	MonGnssBdsB3I
+)
+
+// MonGnssGlo is a bitmask of supported GLONASS signals in a MON-GNSS signal plan.
+type MonGnssGlo uint16
+
+const (
+	MonGnssGloL1OF MonGnssGlo = 1 << iota
+	MonGnssGloL2OF
+)
+
+// MonGnssSbas is a bitmask of supported SBAS signals in a MON-GNSS signal plan.
+type MonGnssSbas uint16
+
+const (
+	MonGnssSbasL1CA MonGnssSbas = 1 << iota
+)
+
+// MonGnssQzss is a bitmask of supported QZSS signals in a MON-GNSS signal plan.
+type MonGnssQzss uint16
+
+const (
+	MonGnssQzssL1CA MonGnssQzss = 1 << iota
+	MonGnssQzssL1CB
+	MonGnssQzssL1C
+	MonGnssQzssL1S
+	MonGnssQzssL2C
+	MonGnssQzssL5
+)
+
+// MonGnssNavic is a bitmask of supported NavIC signals in a MON-GNSS signal plan.
+type MonGnssNavic uint16
+
+const (
+	MonGnssNavicL5 MonGnssNavic = 1 << iota
+)
+
+// MonGnssLband is a bitmask of supported L-band signals in a MON-GNSS signal plan.
+type MonGnssLband uint16
+
+const (
+	MonGnssLbandL1 MonGnssLband = 1 << iota
+)
+
 // MonGnss1Fixed is the fixed part of MON-GNSS version 1 (signal plans).
 type MonGnss1Fixed struct {
 	Version        byte   `json:"version"`
@@ -129,25 +201,25 @@ type MonGnss1Fixed struct {
 	ActivePlanInfo uint16 `json:"activePlanInfo"`
 }
 
-// MonGnss1Plan is one signal plan entry (28 bytes).
-type MonGnss1Plan struct {
-	ID       uint8    `json:"id"`
-	Name     Latin1Z5 `json:"name"`
-	GpsSup   uint16   `json:"gpsSup"`
-	GalSup   uint16   `json:"galSup"`
-	BdsSup   uint16   `json:"bdsSup"`
-	GloSup   uint16   `json:"gloSup"`
-	SbasSup  uint16   `json:"sbasSup"`
-	QzssSup  uint16   `json:"qzssSup"`
-	NavicSup uint16   `json:"navicSup"`
-	LbandSup uint16   `json:"lbandSup"`
+// MonGnssPlan is one signal plan entry (28 bytes).
+type MonGnssPlan struct {
+	ID       uint8        `json:"id"`
+	Name     Latin1Z5     `json:"name"`
+	GpsSup   MonGnssGps   `json:"gpsSup"`
+	GalSup   MonGnssGal   `json:"galSup"`
+	BdsSup   MonGnssBds   `json:"bdsSup"`
+	GloSup   MonGnssGlo   `json:"gloSup"`
+	SbasSup  MonGnssSbas  `json:"sbasSup"`
+	QzssSup  MonGnssQzss  `json:"qzssSup"`
+	NavicSup MonGnssNavic `json:"navicSup"`
+	LbandSup MonGnssLband `json:"lbandSup"`
 	_        [6]byte
 }
 
 // MonGnss1 represents UBX-MON-GNSS version 1, which reports signal plans.
 type MonGnss1 struct {
 	MonGnss1Fixed
-	Plans []MonGnss1Plan `json:"plans"`
+	Plans []MonGnssPlan `json:"plans"`
 }
 
 var _ VaryingMsg = (*MonGnss1)(nil)
@@ -166,7 +238,7 @@ func (m *MonGnss1) VaryingPart() any { return &m.Plans }
 func (m *MonGnss1) InitVaryingPart(payloadLen int) error {
 	n, err := sliceLen(m, payloadLen, 4, 28)
 	if err == nil {
-		m.Plans = make([]MonGnss1Plan, n)
+		m.Plans = make([]MonGnssPlan, n)
 	}
 	return err
 }

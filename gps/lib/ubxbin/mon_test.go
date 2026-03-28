@@ -234,7 +234,7 @@ func TestMonGnss1(t *testing.T) {
 			NumPlans:       2,
 			ActivePlanInfo: 0x0102,
 		},
-		Plans: []MonGnss1Plan{
+		Plans: []MonGnssPlan{
 			{
 				ID:       1,
 				Name:     Latin1Z5{'S', 'P', '1', 0, 0},
