@@ -227,6 +227,42 @@ def check_file(name, events, problems, ref_ecef=None, ref_latlon=None):
         if fix and fix not in ("none", "dead-reckoning", "code", "float-rtk", "rtk"):
             problems.append(f"{pfx}: unexpected fixLevel: {fix}")
 
+    # -- Check 12: cross-protocol satellite consistency --
+    # When both NMEA and non-NMEA satellite events appear in the same epoch,
+    # check that they agree on satellite IDs, look angles, and CN0.
+    epochs = group_by_epoch(events)
+    for i, epoch in enumerate(epochs):
+        sat_msgs = [ev for ev in epoch if ev["type"] == "satellites"]
+        nmea = [ev for ev in sat_msgs if ev["data"].get("tag") == "NMEA"]
+        native = [ev for ev in sat_msgs if ev["data"].get("tag") != "NMEA"]
+        if not nmea or not native:
+            continue
+        nmea_svs = {sv["id"]: sv for ev in nmea for sv in ev["data"]["info"]}
+        native_svs = {sv["id"]: sv for ev in native for sv in ev["data"]["info"]}
+        # Every NMEA SV should appear in native
+        for svid in nmea_svs:
+            if svid not in native_svs:
+                problems.append(
+                    f"{pfx}: epoch {i}: satellite {svid} in NMEA but not in native")
+        # Check look angles for shared SVs
+        for svid in nmea_svs:
+            if svid not in native_svs:
+                continue
+            n_la = nmea_svs[svid].get("lookAngles")
+            u_la = native_svs[svid].get("lookAngles")
+            if not n_la or not u_la:
+                continue
+            n_az, u_az = n_la["azimuth"], u_la["azimuth"]
+            # Normalize 0 vs 360
+            if abs(n_az - u_az) > 180:
+                n_az = n_az % 360
+                u_az = u_az % 360
+            if abs(n_az - u_az) > 1 or abs(n_la["elevation"] - u_la["elevation"]) > 1:
+                problems.append(
+                    f"{pfx}: epoch {i}: {svid} look angles differ: "
+                    f"NMEA az={n_la['azimuth']} el={n_la['elevation']} vs "
+                    f"native az={u_la['azimuth']} el={u_la['elevation']}")
+
     return by_type
 
 

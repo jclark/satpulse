@@ -35,6 +35,14 @@ To temporarily change baud: `satpulsetool gps -d <device> -s <baud> --speed 9600
 
 This two-step approach is used for per-constellation captures: high-level config sets `--time-gnss` and `--gnss`, then message file tags enable additional time messages.
 
+## Cross-protocol satellite capture
+
+Capture NMEA GSV/GSA alongside native satellite messages for cross-protocol validation. This does not use `--binary`, so both NMEA and native satellite messages appear in the same capture.
+
+```
+--pvt-out tp,after,tai,epoch,off --sats-out sat,sig --nmea-out RMC,GSA,GSV
+```
+
 ## Per-constellation time captures
 
 If the receiver supports `--time-gnss`, capture one trace per constellation to test TimTP with different GNSS references. Each capture:
