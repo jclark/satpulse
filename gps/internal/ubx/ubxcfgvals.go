@@ -351,6 +351,9 @@ func (tb *txnBuilder) messagesBuild() error {
 			enabledGNSS = enabledSignals.GNSSSet()
 		}
 	}
+	if enabledGNSS == 0 {
+		enabledGNSS = tb.ver.GNSS
+	}
 	err := msgChanges.options(&tb.target.Opts, tb.ver, enabledGNSS, tb.survey)
 	if err != nil {
 		return err
