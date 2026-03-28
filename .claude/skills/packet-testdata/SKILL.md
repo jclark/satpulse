@@ -100,9 +100,28 @@ For each capture:
 
 ## Replay verification
 
-After collecting all captures, replay them with `out/amd64/satpulsetool replay <file>` (build first with `make`) and examine the event output for anomalies:
+After collecting all captures, build with `make` and run `verify-replay.py` (in this skill directory):
 
-- Compare time messages across captures -- TAI times should be plausible and consistent.
-- Check that gnss fields are correctly populated for all constellations.
-- Verify that taiTime values from different time message variants within the same epoch agree to within a few nanoseconds.
-- For per-constellation captures, check that TimTP gnss reflects the configured constellation and that TAI values are not offset by unexpected amounts.
+```
+make
+python3 .claude/skills/packet-testdata/verify-replay.py [--ecef x,y,z] out/amd64/satpulsetool <packet-log-directory>
+```
+
+If the antenna's ECEF position is known (check `CLAUDE.local.md`), pass it with `--ecef` to enable distance checks on all position events (posGeo, posECEF, survey). Without `--ecef`, only basic plausibility checks (valid lat/lon range, Earth-radius ECEF magnitude) are performed.
+
+The script replays every `.jsonl` file through `satpulsetool replay`, collects all events in memory, and checks for:
+
+- Time events have taiTime or utcTime
+- TIM-TP events have ref field
+- NAV-TIMEUTC events have gnss field (known to be absent for GLONASS-only configs on u-blox)
+- Leap second consistency within and across files
+- Per-epoch TAI agreement across post-pulse time message variants (10ms tolerance)
+- Position (lat/lon and ECEF) plausibility
+- Velocity plausibility for stationary receivers
+- DOP values reasonable
+- Survey ECEF position plausibility
+- navEpoch fixLevel values valid
+- Per-constellation captures: TIM-TP gnss matches expected constellation
+- Cross-file: position consistency and leap second consistency
+
+The script exits 0 if all checks pass, 1 if any problems are found. Review any findings -- some are known receiver behaviors (e.g., NAV-TIMEUTC gnss=null under GLONASS-only timing) rather than capture defects.
