@@ -69,9 +69,13 @@ backup_file "$output_file"
 backup_file "$anno_output_file"
 
 # Define the t function that runs satpulsetool
+# Use a temp file and append, since --test-log truncates
 t() {
+    local tmpfile=$(mktemp)
     echo Running: satpulsetool gps -d /dev/$dev -s $speed --test-log $output_file "$@"
-    satpulsetool gps -d "/dev/$dev" -s "$speed" --test-log "$output_file" "$@"
+    satpulsetool gps -d "/dev/$dev" -s "$speed" --test-log "$tmpfile" "$@"
+    sed "s|$tmpfile|$output_file|" "$tmpfile" >> "$output_file"
+    rm "$tmpfile"
 }
 
 # Display version first
@@ -90,4 +94,4 @@ set +e
 source "$commands_file"
 
 echo Test log written to: $output_file
-ubxanno <$output_file >$anno_output_file
+satpulsetool decode --packet-log $output_file >$anno_output_file
