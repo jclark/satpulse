@@ -8,3 +8,10 @@
 text = "PUBX,04"
 tag = "get-pubx-04"
 description = "Poll time and clock status (includes tpGran)"
+
+# Poll MON-GNSS (supported GNSS and signal plans)
+[[ubx]]
+tag = "get-gnss"
+description = "Poll MON-GNSS for supported GNSS and signal plans"
+class = 0x0A
+id = 0x28

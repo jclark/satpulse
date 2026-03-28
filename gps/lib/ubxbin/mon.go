@@ -122,6 +122,60 @@ const (
 	MonGnssGalileo
 )
 
+// MonGnss1Fixed is the fixed part of MON-GNSS version 1 (signal plans).
+type MonGnss1Fixed struct {
+	Version        byte   `json:"version"`
+	NumPlans       byte   `json:"numPlans"`
+	ActivePlanInfo uint16 `json:"activePlanInfo"`
+}
+
+// MonGnss1Plan is one signal plan entry (28 bytes).
+type MonGnss1Plan struct {
+	ID       uint8    `json:"id"`
+	Name     Latin1Z5 `json:"name"`
+	GpsSup   uint16   `json:"gpsSup"`
+	GalSup   uint16   `json:"galSup"`
+	BdsSup   uint16   `json:"bdsSup"`
+	GloSup   uint16   `json:"gloSup"`
+	SbasSup  uint16   `json:"sbasSup"`
+	QzssSup  uint16   `json:"qzssSup"`
+	NavicSup uint16   `json:"navicSup"`
+	LbandSup uint16   `json:"lbandSup"`
+	_        [6]byte
+}
+
+// MonGnss1 represents UBX-MON-GNSS version 1, which reports signal plans.
+type MonGnss1 struct {
+	MonGnss1Fixed
+	Plans []MonGnss1Plan `json:"plans"`
+}
+
+var _ VaryingMsg = (*MonGnss1)(nil)
+var _ PartiallyHandledMsg = (*MonGnss1)(nil)
+
+func (m *MonGnss1) ID() MsgID { return MonGnssID }
+
+func (m *MonGnss1) IsHandled() bool {
+	return m.Version == 1
+}
+
+func (m *MonGnss1) FixedPart() any { return &m.MonGnss1Fixed }
+
+func (m *MonGnss1) VaryingPart() any { return &m.Plans }
+
+func (m *MonGnss1) InitVaryingPart(payloadLen int) error {
+	n, err := sliceLen(m, payloadLen, 4, 28)
+	if err == nil {
+		m.Plans = make([]MonGnss1Plan, n)
+	}
+	return err
+}
+
+// ActivePlanID returns the configuration ID of the active signal plan.
+func (m *MonGnss1) ActivePlanID() byte {
+	return byte(m.ActivePlanInfo & 0xFF)
+}
+
 type MonHw struct {
 	PinSel        uint32   `json:"pinSel"`
 	PinBank       uint32   `json:"pinBank"`
@@ -184,6 +238,7 @@ func (m *MonVer) VaryingPart() any {
 func init() {
 	regMsg[MonComms]("COMMS")
 	regMsg[MonGnss]("GNSS")
+	regMsg[MonGnss1]("GNSS")
 	regMsg[MonHw]("HW")
 	regMsg[MonMsgPP]("MSGPP")
 	regMsg[MonVer]("VER")
