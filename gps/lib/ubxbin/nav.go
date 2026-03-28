@@ -31,7 +31,7 @@ type NavMsg interface {
 }
 
 type NavITOW struct {
-	ITOW uint32
+	ITOW uint32 `json:"iTOW"`
 }
 
 func (m *NavITOW) NavEpoch() uint32 {
@@ -47,51 +47,51 @@ func (m *NavEOE) ID() MsgID { return NavEOEID }
 
 type NavClock struct {
 	NavITOW
-	ClkB int32  // Clock bias in ns
-	ClkD int32  // Clock drift in ns/s
-	TAcc uint32 // Time accuracy estimate in ns
-	FAcc uint32 // Frequency accuracy estimate in ps/s
+	ClkB int32  `json:"clkB"` // Clock bias in ns
+	ClkD int32  `json:"clkD"` // Clock drift in ns/s
+	TAcc uint32 `json:"tAcc"` // Time accuracy estimate in ns
+	FAcc uint32 `json:"fAcc"` // Frequency accuracy estimate in ps/s
 }
 
 func (m *NavClock) ID() MsgID { return NavClockID }
 
 type NavDOP struct {
 	NavITOW
-	GDOP uint16
-	PDOP uint16
-	TDOP uint16
-	VDOP uint16
-	HDOP uint16
-	NDOP uint16
-	EDOP uint16
+	GDOP uint16 `json:"gDOP"`
+	PDOP uint16 `json:"pDOP"`
+	TDOP uint16 `json:"tDOP"`
+	VDOP uint16 `json:"vDOP"`
+	HDOP uint16 `json:"hDOP"`
+	NDOP uint16 `json:"nDOP"`
+	EDOP uint16 `json:"eDOP"`
 }
 
 func (m *NavDOP) ID() MsgID { return NavDOPID }
 
 type NavPosECEF struct {
 	NavITOW
-	ECEF [3]int32
-	PAcc uint32
+	ECEF [3]int32 `json:"ecef"`
+	PAcc uint32   `json:"pAcc"`
 }
 
 func (m *NavPosECEF) ID() MsgID { return NavPosECEFID }
 
 type NavVelECEF struct {
 	NavITOW
-	ECEFV [3]int32
-	SAcc  uint32
+	ECEFV [3]int32 `json:"ecefV"`
+	SAcc  uint32   `json:"sAcc"`
 }
 
 func (m *NavVelECEF) ID() MsgID { return NavVelECEFID }
 
 type NavHPPosECEF struct {
-	Version byte
+	Version byte `json:"version"`
 	_       [3]byte
 	NavITOW
-	ECEF   [3]int32
-	ECEFHp [3]int8
-	Flags  NavHPPosECEFFlags
-	PAcc   uint32
+	ECEF   [3]int32          `json:"ecef"`
+	ECEFHp [3]int8           `json:"ecefHp"`
+	Flags  NavHPPosECEFFlags `json:"flags"`
+	PAcc   uint32            `json:"pAcc"`
 }
 
 type NavHPPosECEFFlags byte
@@ -105,31 +105,31 @@ func (m *NavHPPosECEF) IsHandled() bool   { return m.Version == 0 }
 
 type NavPosLLH struct {
 	NavITOW
-	Lon    int32
-	Lat    int32
-	Height int32
-	HMSL   int32
-	HAcc   uint32
-	VAcc   uint32
+	Lon    int32  `json:"lon"`
+	Lat    int32  `json:"lat"`
+	Height int32  `json:"height"`
+	HMSL   int32  `json:"hMSL"`
+	HAcc   uint32 `json:"hAcc"`
+	VAcc   uint32 `json:"vAcc"`
 }
 
 func (m *NavPosLLH) ID() MsgID { return NavPosLLHID }
 
 type NavHPPosLLH struct {
-	Version byte
+	Version byte             `json:"version"`
 	_       [2]byte
-	Flags   NavHPPosLLHFlags
+	Flags   NavHPPosLLHFlags `json:"flags"`
 	NavITOW
-	Lon      int32
-	Lat      int32
-	Height   int32
-	HMSL     int32
-	LonHp    int8
-	LatHp    int8
-	HeightHp int8
-	HMSLHp   int8
-	HAcc     uint32
-	VAcc     uint32
+	Lon      int32  `json:"lon"`
+	Lat      int32  `json:"lat"`
+	Height   int32  `json:"height"`
+	HMSL     int32  `json:"hMSL"`
+	LonHp    int8   `json:"lonHp"`
+	LatHp    int8   `json:"latHp"`
+	HeightHp int8   `json:"heightHp"`
+	HMSLHp   int8   `json:"hMSLHp"`
+	HAcc     uint32 `json:"hAcc"`
+	VAcc     uint32 `json:"vAcc"`
 }
 
 type NavHPPosLLHFlags byte
@@ -143,50 +143,50 @@ func (m *NavHPPosLLH) IsHandled() bool   { return m.Version == 0 }
 
 type NavVelNED struct {
 	NavITOW
-	VelNED  [3]int32
-	Speed   uint32
-	GSpeed  uint32
-	Heading int32
-	SAcc    uint32
-	CAcc    uint32
+	VelNED  [3]int32 `json:"velNED"`
+	Speed   uint32   `json:"speed"`
+	GSpeed  uint32   `json:"gSpeed"`
+	Heading int32    `json:"heading"`
+	SAcc    uint32   `json:"sAcc"`
+	CAcc    uint32   `json:"cAcc"`
 }
 
 func (m *NavVelNED) ID() MsgID { return NavVelNEDID }
 
 type NavPVT struct {
 	NavITOW
-	Year    uint16
-	Month   byte
-	Day     byte
-	Hour    byte
-	Min     byte
-	Sec     byte
-	Valid   NavPVTValid
-	TAcc    uint32
-	Nano    int32
-	FixType NavPVTFixType
-	Flags   NavPVTFlags
-	Flags2  NavPVTFlags2
-	NumSV   byte
-	Lon     int32
-	Lat     int32
-	Height  int32
-	HMSL    int32
-	HAcc    uint32
-	VAcc    uint32
-	VelN    int32
-	VelE    int32
-	VelD    int32
-	GSpeed  int32
-	HeadMot int32
-	SAcc    uint32
-	HeadAcc uint32
-	PDOP    uint16
-	Flags3  NavPVTFlags3
+	Year    uint16        `json:"year"`
+	Month   byte          `json:"month"`
+	Day     byte          `json:"day"`
+	Hour    byte          `json:"hour"`
+	Min     byte          `json:"min"`
+	Sec     byte          `json:"sec"`
+	Valid   NavPVTValid   `json:"valid"`
+	TAcc    uint32        `json:"tAcc"`
+	Nano    int32         `json:"nano"`
+	FixType NavPVTFixType `json:"fixType"`
+	Flags   NavPVTFlags   `json:"flags"`
+	Flags2  NavPVTFlags2  `json:"flags2"`
+	NumSV   byte          `json:"numSV"`
+	Lon     int32         `json:"lon"`
+	Lat     int32         `json:"lat"`
+	Height  int32         `json:"height"`
+	HMSL    int32         `json:"hMSL"`
+	HAcc    uint32        `json:"hAcc"`
+	VAcc    uint32        `json:"vAcc"`
+	VelN    int32         `json:"velN"`
+	VelE    int32         `json:"velE"`
+	VelD    int32         `json:"velD"`
+	GSpeed  int32         `json:"gSpeed"`
+	HeadMot int32         `json:"headMot"`
+	SAcc    uint32        `json:"sAcc"`
+	HeadAcc uint32        `json:"headAcc"`
+	PDOP    uint16        `json:"pDOP"`
+	Flags3  NavPVTFlags3  `json:"flags3"`
 	_       [4]byte
-	HeadVeh int32
-	MagDec  int16
-	MagAcc  uint16
+	HeadVeh int32  `json:"headVeh"`
+	MagDec  int16  `json:"magDec"`
+	MagAcc  uint16 `json:"magAcc"`
 }
 
 type NavPVTValid byte
@@ -275,24 +275,24 @@ func (m *NavPVT) ID() MsgID { return NavPVTID }
 
 type NavSat struct {
 	NavSatFixed
-	SVs []NavSatSV
+	SVs []NavSatSV `json:"SVs"`
 }
 
 type NavSatFixed struct {
 	NavITOW
-	Version byte
-	NumSVs  byte
+	Version byte `json:"version"`
+	NumSVs  byte `json:"numSvs"`
 	_       [2]byte
 }
 
 type NavSatSV struct {
-	GNSSID GNSSID
-	SVID   byte
-	CNO    byte
-	Elev   int8
-	Azim   int16
-	PRRes  int16
-	Flags  NavSatFlags
+	GNSSID GNSSID      `json:"gnssId"`
+	SVID   byte        `json:"svId"`
+	CNO    byte        `json:"cno"`
+	Elev   int8        `json:"elev"`
+	Azim   int16       `json:"azim"`
+	PRRes  int16       `json:"prRes"`
+	Flags  NavSatFlags `json:"flags"`
 }
 
 var _ VaryingMsg = (*NavSat)(nil)
@@ -387,27 +387,27 @@ const (
 
 type NavSig struct {
 	NavSigFixed
-	Signals []NavSigSignal
+	Signals []NavSigSignal `json:"signals"`
 }
 
 type NavSigFixed struct {
 	NavITOW
-	Version byte
-	NumSigs byte
+	Version byte `json:"version"`
+	NumSigs byte `json:"numSigs"`
 	_       [2]byte
 }
 
 type NavSigSignal struct {
-	GNSSID     GNSSID
-	SVID       byte
-	SigID      byte
-	FreqID     byte
-	PRRes      int16
-	CNO        byte
-	QualityInd NavSigQuality
-	CorrSource NavSigCorrSource
-	IonoModel  NavSigIonoModel
-	SigFlags   NavSigFlags
+	GNSSID     GNSSID           `json:"gnssId"`
+	SVID       byte             `json:"svId"`
+	SigID      byte             `json:"sigId"`
+	FreqID     byte             `json:"freqId"`
+	PRRes      int16            `json:"prRes"`
+	CNO        byte             `json:"cno"`
+	QualityInd NavSigQuality    `json:"qualityInd"`
+	CorrSource NavSigCorrSource `json:"corrSource"`
+	IonoModel  NavSigIonoModel  `json:"ionoModel"`
+	SigFlags   NavSigFlags      `json:"sigFlags"`
 	_          [4]byte
 }
 
@@ -503,25 +503,25 @@ const (
 
 type NavSVInfo struct {
 	NavSVInfoFixed
-	SVs []NavSVInfoSV
+	SVs []NavSVInfoSV `json:"SVs"`
 }
 
 type NavSVInfoFixed struct {
 	NavITOW
-	NumCh       byte
-	GlobalFlags NavSVInfoGlobalFlags
+	NumCh       byte                 `json:"numCh"`
+	GlobalFlags NavSVInfoGlobalFlags `json:"globalFlags"`
 	_           [2]byte
 }
 
 type NavSVInfoSV struct {
-	ChN     byte
-	SVID    byte
-	Flags   NavSVInfoFlags
-	Quality NavSVInfoQuality
-	CNO     byte
-	Elev    int8
-	Azim    int16
-	PRRes   int32
+	ChN     byte             `json:"chn"`
+	SVID    byte             `json:"svid"`
+	Flags   NavSVInfoFlags   `json:"flags"`
+	Quality NavSVInfoQuality `json:"quality"`
+	CNO     byte             `json:"cno"`
+	Elev    int8             `json:"elev"`
+	Azim    int16            `json:"azim"`
+	PRRes   int32            `json:"prRes"`
 }
 
 func (m *NavSVInfo) ID() MsgID { return NavSVInfoID }
@@ -580,17 +580,17 @@ const (
 
 type NavSol struct {
 	NavITOW
-	FTOW       int32
-	Week       int16
-	GPSFixType NavSolGPSFixType
-	Flags      NavSolFlags
-	ECEF       [3]int32
-	PAcc       uint32
-	ECEFV      [3]int32
-	SAcc       uint32
-	PDOP       uint16
+	FTOW       int32            `json:"fTOW"`
+	Week       int16            `json:"week"`
+	GPSFixType NavSolGPSFixType `json:"gpsFix"`
+	Flags      NavSolFlags      `json:"flags"`
+	ECEF       [3]int32         `json:"ecef"`
+	PAcc       uint32           `json:"pAcc"`
+	ECEFV      [3]int32         `json:"ecefV"`
+	SAcc       uint32           `json:"sAcc"`
+	PDOP       uint16           `json:"pDOP"`
 	_          byte
-	NumSV      byte
+	NumSV      byte `json:"numSV"`
 	_          [4]byte
 }
 
@@ -618,11 +618,11 @@ func (m *NavSol) ID() MsgID { return NavSolID }
 
 type NavTimeGPS struct {
 	NavITOW
-	FTOW  int32
-	Week  int16
-	LeapS byte
-	Valid NavTimeGPSValid
-	TAcc  uint32
+	FTOW  int32           `json:"fTOW"`
+	Week  int16           `json:"week"`
+	LeapS byte            `json:"leapS"`
+	Valid NavTimeGPSValid `json:"valid"`
+	TAcc  uint32          `json:"tAcc"`
 }
 
 type NavTimeGPSValid byte
@@ -637,15 +637,15 @@ func (m *NavTimeGPS) ID() MsgID { return NavTimeGPSID }
 
 type NavTimeUTC struct {
 	NavITOW
-	TAcc  uint32
-	Nano  int32
-	Year  uint16
-	Month byte
-	Day   byte
-	Hour  byte
-	Min   byte
-	Sec   byte
-	Valid NavTimeUTCValid
+	TAcc  uint32          `json:"tAcc"`
+	Nano  int32           `json:"nano"`
+	Year  uint16          `json:"year"`
+	Month byte            `json:"month"`
+	Day   byte            `json:"day"`
+	Hour  byte            `json:"hour"`
+	Min   byte            `json:"min"`
+	Sec   byte            `json:"sec"`
+	Valid NavTimeUTCValid `json:"valid"`
 }
 
 func (m *NavTimeUTC) ID() MsgID { return NavTimeUTCID }
@@ -664,12 +664,12 @@ func (v NavTimeUTCValid) UTCStandard() UTCStandard {
 
 type NavTimeBDS struct {
 	NavITOW
-	SOW   uint32
-	FSOW  int32
-	Week  int16
-	LeapS byte
-	Valid NavTimeBDSValid
-	TAcc  uint32
+	SOW   uint32          `json:"SOW"`
+	FSOW  int32           `json:"fSOW"`
+	Week  int16           `json:"week"`
+	LeapS byte            `json:"leapS"`
+	Valid NavTimeBDSValid `json:"valid"`
+	TAcc  uint32          `json:"tAcc"`
 }
 
 func (m *NavTimeBDS) ID() MsgID { return NavTimeBDSID }
@@ -684,12 +684,12 @@ const (
 
 type NavTimeGal struct {
 	NavITOW
-	GalTOW  uint32
-	FGalTOW int32
-	GalWno  int16
-	LeapS   byte
-	Valid   NavTimeGalValid
-	TAcc    uint32
+	GalTOW  uint32          `json:"galTow"`
+	FGalTOW int32           `json:"fGalTow"`
+	GalWno  int16           `json:"galWno"`
+	LeapS   byte            `json:"leapS"`
+	Valid   NavTimeGalValid `json:"valid"`
+	TAcc    uint32          `json:"tAcc"`
 }
 
 func (m *NavTimeGal) ID() MsgID { return NavTimeGalID }
@@ -704,12 +704,12 @@ const (
 
 type NavTimeGLO struct {
 	NavITOW
-	TOD   uint32
-	FTOD  int32
-	Nt    uint16
-	N4    byte
-	Valid NavTimeGLOValid
-	TAcc  uint32
+	TOD   uint32          `json:"TOD"`
+	FTOD  int32           `json:"fTOD"`
+	Nt    uint16          `json:"Nt"`
+	N4    byte            `json:"N4"`
+	Valid NavTimeGLOValid `json:"valid"`
+	TAcc  uint32          `json:"tAcc"`
 }
 
 func (m *NavTimeGLO) ID() MsgID { return NavTimeGLOID }
@@ -723,17 +723,17 @@ const (
 
 type NavTimeLS struct {
 	NavITOW
-	Version       byte
+	Version       byte                   `json:"version"`
 	_             [3]byte
-	SrcOfCurrLS   NavTimeSrcOfCurrLS
-	CurrLS        int8
-	SrcOfLSChange NavTimeLSSrcOfLSChange
-	LSChange      NavTimeLSChange
-	TimeToLSEvent int32
-	DateOfLSGPSWN uint16
-	DateOfLSGPSDN uint16
+	SrcOfCurrLS   NavTimeSrcOfCurrLS     `json:"srcOfCurrLs"`
+	CurrLS        int8                   `json:"currLs"`
+	SrcOfLSChange NavTimeLSSrcOfLSChange `json:"srcOfLsChange"`
+	LSChange      NavTimeLSChange        `json:"lsChange"`
+	TimeToLSEvent int32                  `json:"timeToLsEvent"`
+	DateOfLSGPSWN uint16                 `json:"dateOfLsGpsWn"`
+	DateOfLSGPSDN uint16                 `json:"dateOfLsGpsDn"`
 	_             [3]byte
-	Valid         NavTimeLSValid
+	Valid         NavTimeLSValid `json:"valid"`
 }
 
 type NavTimeSrcOfCurrLS byte
@@ -786,19 +786,19 @@ func (m *NavTimeLS) IsHandled() bool {
 }
 
 type NavTimeTrusted struct {
-	Version  byte
-	RefSys   NavTimeTrustedRefSys
-	Valid    NavTimeTrustedValid
+	Version  byte                 `json:"version"`
+	RefSys   NavTimeTrustedRefSys `json:"refSys"`
+	Valid    NavTimeTrustedValid  `json:"valid"`
 	_        byte
 	NavITOW
-	IniWno   uint16
-	PropWno  uint16
-	IniTow   uint32
-	PropTow  uint32
-	IniTAcc  uint32
-	PropTAcc uint32
-	DeltaS   int32
-	DeltaMs  int32
+	IniWno   uint16 `json:"iniWno"`
+	PropWno  uint16 `json:"propWno"`
+	IniTow   uint32 `json:"iniTow"`
+	PropTow  uint32 `json:"propTow"`
+	IniTAcc  uint32 `json:"iniTAcc"`
+	PropTAcc uint32 `json:"propTAcc"`
+	DeltaS   int32  `json:"deltaS"`
+	DeltaMs  int32  `json:"deltaMs"`
 	_        [4]byte
 }
 
@@ -828,21 +828,21 @@ func (m *NavTimeTrusted) IsHandled() bool {
 }
 
 type NavSvin struct {
-	Version byte
+	Version byte `json:"version"`
 	_       [3]byte
 	NavITOW
-	Dur     uint32
-	MeanX   int32
-	MeanY   int32
-	MeanZ   int32
-	MeanXHP int8
-	MeanYHP int8
-	MeanZHP int8
+	Dur     uint32 `json:"dur"`
+	MeanX   int32  `json:"meanX"`
+	MeanY   int32  `json:"meanY"`
+	MeanZ   int32  `json:"meanZ"`
+	MeanXHP int8   `json:"meanXHP"`
+	MeanYHP int8   `json:"meanYHP"`
+	MeanZHP int8   `json:"meanZHP"`
 	_       byte
-	MeanAcc uint32
-	Obs     uint32
-	Valid   byte
-	Active  byte
+	MeanAcc uint32 `json:"meanAcc"`
+	Obs     uint32 `json:"obs"`
+	Valid   byte   `json:"valid"`
+	Active  byte   `json:"active"`
 	_       [2]byte
 }
 

@@ -26,11 +26,11 @@ func (e MonCommsTxErrors) OutputPort() (PortID, bool) {
 }
 
 type MonCommsFixed struct {
-	Version  byte
-	NPorts   byte
-	TxErrors MonCommsTxErrors
+	Version  byte             `json:"version"`
+	NPorts   byte             `json:"nPorts"`
+	TxErrors MonCommsTxErrors `json:"txErrors"`
 	_        byte
-	ProtIds  [4]byte
+	ProtIds  [4]byte          `json:"protIds"`
 }
 
 type MonCommsPortID uint16
@@ -51,24 +51,24 @@ func (pid MonCommsPortID) PortID() (PortID, bool) {
 }
 
 type MonCommsPort struct {
-	PortID      MonCommsPortID
-	TxPending   uint16
-	TxBytes     uint32
-	TxUsage     byte
-	TxPeakUsage byte
-	RxPending   uint16
-	RxBytes     uint32
-	RxUsage     byte
-	RxPeakUsage byte
-	OverrunErrs uint16
-	Msgs        [4]uint16
+	PortID      MonCommsPortID `json:"portId"`
+	TxPending   uint16         `json:"txPending"`
+	TxBytes     uint32         `json:"txBytes"`
+	TxUsage     byte           `json:"txUsage"`
+	TxPeakUsage byte           `json:"txPeakUsage"`
+	RxPending   uint16         `json:"rxPending"`
+	RxBytes     uint32         `json:"rxBytes"`
+	RxUsage     byte           `json:"rxUsage"`
+	RxPeakUsage byte           `json:"rxPeakUsage"`
+	OverrunErrs uint16         `json:"overrunErrs"`
+	Msgs        [4]uint16      `json:"msgs"`
 	_           [8]byte
-	Skipped     uint32
+	Skipped     uint32         `json:"skipped"`
 }
 
 type MonComms struct {
 	MonCommsFixed
-	Ports []MonCommsPort
+	Ports []MonCommsPort `json:"ports"`
 }
 
 var _ VaryingMsg = (*MonComms)(nil)
@@ -97,11 +97,11 @@ func (m *MonComms) VaryingPart() any {
 }
 
 type MonGnss struct {
-	Version      byte
-	Supported    MonGnssMajorGnss
-	DefaultGnss  MonGnssMajorGnss
-	Enabled      MonGnssMajorGnss
-	Simultaneous uint8
+	Version      byte             `json:"version"`
+	Supported    MonGnssMajorGnss `json:"supported"`
+	DefaultGnss  MonGnssMajorGnss `json:"defaultGnss"`
+	Enabled      MonGnssMajorGnss `json:"enabled"`
+	Simultaneous uint8            `json:"simultaneous"`
 	_            [3]byte
 }
 
@@ -123,23 +123,23 @@ const (
 )
 
 type MonHw struct {
-	PinSel        uint32
-	PinBank       uint32
-	PinDir        uint32
-	PinVal        uint32
-	NoisePerMS    uint16
-	AgcCnt        uint16
-	AStatus       byte
-	APower        byte
-	Flags         byte
+	PinSel        uint32   `json:"pinSel"`
+	PinBank       uint32   `json:"pinBank"`
+	PinDir        uint32   `json:"pinDir"`
+	PinVal        uint32   `json:"pinVal"`
+	NoisePerMS    uint16   `json:"noisePerMS"`
+	AgcCnt        uint16   `json:"agcCnt"`
+	AStatus       byte     `json:"aStatus"`
+	APower        byte     `json:"aPower"`
+	Flags         byte     `json:"flags"`
 	_             byte
-	UsedMask      uint32
-	VP            [17]byte
-	CwSuppression byte
+	UsedMask      uint32   `json:"usedMask"`
+	VP            [17]byte `json:"VP"`
+	CwSuppression byte     `json:"cwSuppression"`
 	_             [2]byte
-	PinIrq        uint32
-	PullH         uint32
-	PullL         uint32
+	PinIrq        uint32   `json:"pinIrq"`
+	PullH         uint32   `json:"pullH"`
+	PullL         uint32   `json:"pullL"`
 }
 
 func (m *MonHw) ID() MsgID { return MonHwID }
@@ -147,20 +147,20 @@ func (m *MonHw) ID() MsgID { return MonHwID }
 const nProtocol = 8
 
 type MonMsgPP struct {
-	Msg     [NPort][nProtocol]uint16
-	Skipped [NPort]uint32
+	Msg     [NPort][nProtocol]uint16 `json:"msg"`
+	Skipped [NPort]uint32            `json:"skipped"`
 }
 
 func (m *MonMsgPP) ID() MsgID { return MonMsgPPID }
 
 type MonVerFixed struct {
-	SwVersion Latin1Z30
-	HwVersion Latin1Z10
+	SwVersion Latin1Z30 `json:"swVersion"`
+	HwVersion Latin1Z10 `json:"hwVersion"`
 }
 
 type MonVer struct {
 	MonVerFixed
-	Extension []Latin1Z30
+	Extension []Latin1Z30 `json:"extension"`
 }
 
 func (m *MonVer) ID() MsgID { return MonVerID }

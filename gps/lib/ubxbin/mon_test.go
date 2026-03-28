@@ -172,8 +172,8 @@ func TestMonVerJSON(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
-		`"SwVersion":"EXT CORE 1.00"`,
-		`"HwVersion":"00190000"`,
+		`"swVersion":"EXT CORE 1.00"`,
+		`"hwVersion":"00190000"`,
 		`"FWVER=SPG 1.00"`,
 	} {
 		if !strings.Contains(s, want) {

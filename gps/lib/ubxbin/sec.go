@@ -6,26 +6,26 @@ const (
 
 type SecOsnma struct {
 	SecOsnmaFixed
-	AuthSVs []SecOsnmaAuthSV
+	AuthSVs []SecOsnmaAuthSV `json:"authSVs"`
 }
 
 type SecOsnmaFixed struct {
-	Version           byte
-	NmaHeader         SecOsnmaNmaHeader
-	OsnmaMonitoring   SecOsnmaMonitoring
-	TimSyncReq        SecOsnmaTimSyncReq
+	Version           byte               `json:"version"`
+	NmaHeader         SecOsnmaNmaHeader  `json:"nmaHeader"`
+	OsnmaMonitoring   SecOsnmaMonitoring `json:"osnmaMonitoring"`
+	TimSyncReq        SecOsnmaTimSyncReq `json:"timSyncReq"`
 	_                 [3]byte
-	TimSyncReqDiff    int32
+	TimSyncReqDiff    int32              `json:"timSyncReqDiff"`
 	_                 [4]byte
-	DsmAuthentication SecOsnmaDsmAuth
-	TeslaKey          SecOsnmaTeslaKey
-	GeneralAndTiming  SecOsnmaGeneral
+	DsmAuthentication SecOsnmaDsmAuth    `json:"dsmAuthentication"`
+	TeslaKey          SecOsnmaTeslaKey   `json:"teslaKey"`
+	GeneralAndTiming  SecOsnmaGeneral    `json:"generalAndTiming"`
 }
 
 type SecOsnmaAuthSV struct {
-	Bitfield1 SecOsnmaAuthSVBitfield
-	SvId      byte
-	Reserved2 byte
+	Bitfield1 SecOsnmaAuthSVBitfield `json:"bitfield1"`
+	SvId      byte                   `json:"svId"`
+	Reserved2 byte                   `json:"reserved2"`
 }
 
 type SecOsnmaNmaHeader byte
