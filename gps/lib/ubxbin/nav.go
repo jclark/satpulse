@@ -15,6 +15,7 @@ const (
 	NavTimeBDSID     MsgID = clsNav | (0x24 << 8)
 	NavTimeGLOID     MsgID = clsNav | (0x23 << 8)
 	NavTimeGalID     MsgID = clsNav | (0x25 << 8)
+	NavTimeQZSSID    MsgID = clsNav | (0x27 << 8)
 	NavTimeLSID      MsgID = clsNav | (0x26 << 8)
 	NavEOEID         MsgID = clsNav | (0x61 << 8)
 	NavTimeTrustedID MsgID = clsNav | (0x64 << 8)
@@ -702,6 +703,26 @@ const (
 	NavTimeGalLeapSValid
 )
 
+type NavTimeQZSS struct {
+	NavITOW
+	QzssTow  uint32           `json:"qzssTow"`
+	FQzssTow int32            `json:"fQzssTow"`
+	QzssWno  int16            `json:"qzssWno"`
+	LeapS    byte             `json:"leapS"`
+	Valid    NavTimeQZSSValid `json:"valid"`
+	TAcc     uint32           `json:"tAcc"`
+}
+
+func (m *NavTimeQZSS) ID() MsgID { return NavTimeQZSSID }
+
+type NavTimeQZSSValid byte
+
+const (
+	NavTimeQZSSTOWValid NavTimeQZSSValid = 1 << iota
+	NavTimeQZSSWnoValid
+	NavTimeQZSSLeapSValid
+)
+
 type NavTimeGLO struct {
 	NavITOW
 	TOD   uint32          `json:"TOD"`
@@ -872,6 +893,7 @@ func init() {
 	regMsg[NavTimeBDS]("TIMEBDS")
 	regMsg[NavTimeGal]("TIMEGAL")
 	regMsg[NavTimeGLO]("TIMEGLO")
+	regMsg[NavTimeQZSS]("TIMEQZSS")
 	regMsg[NavTimeUTC]("TIMEUTC")
 	regMsg[NavTimeLS]("TIMELS")
 	regMsg[NavTimeTrusted]("TIMETRUSTED")

@@ -90,6 +90,22 @@ payload.types = "U1U1U2U4U1"
 payload.values = [0, 1, 0, 0x20910059, 0]
 
 [[ubx]]
+tag = "ubx-nav-timeqzss-usb"
+description = "Enable NAV-TIMEQZSS on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x20910389, 1]
+
+[[ubx]]
+tag = "ubx-nav-timeqzss-usb-off"
+description = "Disable NAV-TIMEQZSS on USB"
+class = 0x06
+id = 0x8A
+payload.types = "U1U1U2U4U1"
+payload.values = [0, 1, 0, 0x20910389, 0]
+
+[[ubx]]
 tag = "ubx-nav-clock-usb"
 description = "Enable NAV-CLOCK on USB"
 class = 0x06
