@@ -427,7 +427,7 @@ func TestSatellitesNavSat(t *testing.T) {
 						Elev:   30,
 						Azim:   90,
 						PRRes:  100,
-						Flags:  ubxbin.NavSatQualityCodeLocked | ubxbin.NavSatSVUsed,
+						Flags:  ubxbin.NavSatQualityCodeLocked | ubxbin.NavSatSVUsed | ubxbin.NavSatOrbitSourceEphemeris,
 					},
 				},
 			},
@@ -490,7 +490,7 @@ func TestSatellitesNavSat(t *testing.T) {
 						Elev:   30,
 						Azim:   90,
 						PRRes:  100,
-						Flags:  ubxbin.NavSatQualityCodeLocked | ubxbin.NavSatSVUsed,
+						Flags:  ubxbin.NavSatQualityCodeLocked | ubxbin.NavSatSVUsed | ubxbin.NavSatOrbitSourceEphemeris,
 					},
 					{
 						GNSSID: ubxbin.GAL,
@@ -499,7 +499,7 @@ func TestSatellitesNavSat(t *testing.T) {
 						Elev:   45,
 						Azim:   180,
 						PRRes:  -50,
-						Flags:  ubxbin.NavSatQualitySignalAcquired,
+						Flags:  ubxbin.NavSatQualitySignalAcquired | ubxbin.NavSatOrbitSourceAlmanac,
 					},
 					{
 						GNSSID: ubxbin.BDS,
@@ -508,7 +508,7 @@ func TestSatellitesNavSat(t *testing.T) {
 						Elev:   60,
 						Azim:   270,
 						PRRes:  200,
-						Flags:  ubxbin.NavSatQualityCodeAndCarrierLocked1,
+						Flags:  ubxbin.NavSatQualityCodeAndCarrierLocked1 | ubxbin.NavSatOrbitSourceEphemeris,
 					},
 					{
 						GNSSID: ubxbin.SBAS,
@@ -517,7 +517,7 @@ func TestSatellitesNavSat(t *testing.T) {
 						Elev:   70,
 						Azim:   0,
 						PRRes:  -75,
-						Flags:  ubxbin.NavSatQualityCodeLocked | ubxbin.NavSatSVUsed,
+						Flags:  ubxbin.NavSatQualityCodeLocked | ubxbin.NavSatSVUsed | ubxbin.NavSatOrbitSourceEphemeris,
 					},
 					{
 						GNSSID: ubxbin.GLO,
@@ -526,7 +526,7 @@ func TestSatellitesNavSat(t *testing.T) {
 						Elev:   20,
 						Azim:   315,
 						PRRes:  150,
-						Flags:  ubxbin.NavSatQualityCodeAndCarrierLocked2,
+						Flags:  ubxbin.NavSatQualityCodeAndCarrierLocked2 | ubxbin.NavSatOrbitSourceEphemeris,
 					},
 				},
 			},
@@ -539,6 +539,10 @@ func TestSatellitesNavSat(t *testing.T) {
 						},
 						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 30},
 						Used:       true,
+					},
+					{
+						ID:         gpsprot.SVID{GNSS: gpsprot.GAL, Num: 5},
+						LookAngles: &gpsprot.LookAngles{Azimuth: 180, Elevation: 45},
 					},
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10},
@@ -1409,6 +1413,65 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 
 			if !reflect.DeepEqual(*result, tt.expected) {
 				t.Errorf("satellitesNavSVInfo() = %+v, expected %+v", *result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSatellitesPrune(t *testing.T) {
+	la := &gpsprot.LookAngles{Azimuth: 90, Elevation: 30}
+	tests := []struct {
+		name     string
+		input    []gpsprot.SVInfo
+		expected []gpsprot.SVInfo
+	}{
+		{
+			name:     "empty",
+			input:    []gpsprot.SVInfo{},
+			expected: []gpsprot.SVInfo{},
+		},
+		{
+			name: "all have signals",
+			input: []gpsprot.SVInfo{
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1}, Signals: []gpsprot.SignalInfo{{CN0: 45}}, LookAngles: la},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 2}, Signals: []gpsprot.SignalInfo{{CN0: 30}}, LookAngles: la},
+			},
+			expected: []gpsprot.SVInfo{
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1}, Signals: []gpsprot.SignalInfo{{CN0: 45}}, LookAngles: la},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 2}, Signals: []gpsprot.SignalInfo{{CN0: 30}}, LookAngles: la},
+			},
+		},
+		{
+			name: "remove look-angle-only satellites",
+			input: []gpsprot.SVInfo{
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1}, Signals: []gpsprot.SignalInfo{{CN0: 45}}, LookAngles: la},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 2}, LookAngles: la},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 3}, Signals: []gpsprot.SignalInfo{{CN0: 30}}, LookAngles: la},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 8}, LookAngles: la},
+			},
+			expected: []gpsprot.SVInfo{
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1}, Signals: []gpsprot.SignalInfo{{CN0: 45}}, LookAngles: la},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 3}, Signals: []gpsprot.SignalInfo{{CN0: 30}}, LookAngles: la},
+			},
+		},
+		{
+			name: "remove all",
+			input: []gpsprot.SVInfo{
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1}, LookAngles: la},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 2}, LookAngles: la},
+			},
+			expected: []gpsprot.SVInfo{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := &gpsprot.SatellitesMsg{
+				SVs: make([]gpsprot.SVInfo, len(tt.input)),
+			}
+			copy(msg.SVs, tt.input)
+			satellitesPrune(msg)
+			if !reflect.DeepEqual(msg.SVs, tt.expected) {
+				t.Errorf("satellitesPrune() = %+v, expected %+v", msg.SVs, tt.expected)
 			}
 		})
 	}

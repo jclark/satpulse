@@ -149,6 +149,7 @@ func (p *PacketProcessor) flushSats() {
 	p.satMsg = nil
 	p.sigMsg = nil
 	combined := satellitesCombine(satMsg, sigMsg)
+	satellitesPrune(combined)
 	if ne := p.curNavEpochMsg; ne != nil {
 		ne.GNSSUsed |= combined.GNSSUsed()
 		ne.BandsUsed |= combined.BandsUsed()
