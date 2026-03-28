@@ -1,0 +1,4 @@
+vendor = "u-blox"
+model = "ZED-X20P"
+firmware = "HPG 2.02 PROTVER 50.10"
+default-baud = 38400
