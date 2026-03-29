@@ -30,36 +30,29 @@ type sockSample struct {
 const sizeofSockSample = (64*3 + 32*4) / 8 // timeval is 2 64-bit ints
 
 // sockPacket creates a Chrony refclock SOCK sample packet.
-func sockPacket(sys time.Time, ref ptime.Time, ls ptime.LeapSecond) ([]byte, error) {
+func sockPacket(sys time.Time, offset float64, leap ptime.LeapSecondKind) ([]byte, error) {
 	var s sockSample
-	if err := initSockSample(&s, sys, ref, ls); err != nil {
-		return nil, err
-	}
+	initSockSample(&s, sys, offset, leap)
 	var buf [sizeofSockSample]byte
 	type sockBufPtr *[sizeofSockSample]byte
 	buf = *(sockBufPtr)(unsafe.Pointer(&s))
 	return buf[:], nil
 }
 
-func initSockSample(s *sockSample, sys time.Time, ref ptime.Time, ls ptime.LeapSecond) error {
+func initSockSample(s *sockSample, sys time.Time, offset float64, leap ptime.LeapSecondKind) {
 	s.tv = unix.NsecToTimeval(sys.UnixNano())
-	// chrony will ignore measurements in the vicinity of leap seconds, so we don't have to worry about them
-	// but I still wonder if we should filter out cases where either of the two times are ambiguous
-	s.offset = ls.TimeToSys(ref).Sub(sys).Seconds()
-	s.leap = refSockLeap(ref, ls)
+	s.offset = offset
+	s.leap = leapToSock(leap)
 	s.magic = sockMagic
-	return nil
 }
 
-func refSockLeap(ref ptime.Time, ls ptime.LeapSecond) sockLeap {
-	switch ls.StateAt(ref).LeapTonight {
-	case ptime.LeapSecondNone:
-		return leapNormal
+func leapToSock(leap ptime.LeapSecondKind) sockLeap {
+	switch leap {
 	case ptime.LeapSecondPositive:
 		return leapInsert
 	case ptime.LeapSecondNegative:
 		return leapDelete
 	default:
-		panic("invalid leap second kind")
+		return leapNormal
 	}
 }

@@ -252,12 +252,14 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 }
 
 // sysSample generates a sample of system time vs true time (based on PHC)
-func (d *Dispatcher) sysSample(trp ptime.Time, tRead time.Time) {
+func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time) {
 	// Send refclock sample if in tracking mode
-	if d.rc == nil || trp.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
+	if d.rc == nil || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
 		return
 	}
-	err := d.rc.Sample(tRead, trp, d.ls)
+	offset := d.ls.TimeToSys(ref).Sub(sys).Seconds()
+	leap := d.ls.StateAt(ref).LeapTonight
+	err := d.rc.Sample(sys, offset, leap)
 	if err != nil {
 		d.lg.Warn("refclock sample failed", "err", err)
 	}

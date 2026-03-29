@@ -13,7 +13,7 @@ import (
 
 type RefClock interface {
 	io.Closer
-	Sample(sys time.Time, ref ptime.Time, ls ptime.LeapSecond) error
+	Sample(sys time.Time, offset float64, leap ptime.LeapSecondKind) error
 }
 
 type SockRefClock interface {
@@ -26,9 +26,9 @@ type ProxyRefClock struct {
 }
 
 type RefClockSample struct {
-	Sys time.Time
-	Ref ptime.Time
-	Ls  ptime.LeapSecond
+	Sys    time.Time
+	Offset float64
+	Leap   ptime.LeapSecondKind
 }
 
 func NewProxyRefClock() (*ProxyRefClock, <-chan RefClockSample) {
@@ -40,9 +40,9 @@ func (rc *ProxyRefClock) Close() {
 	close(rc.sampleCh)
 }
 
-func (rc *ProxyRefClock) Sample(sys time.Time, ref ptime.Time, ls ptime.LeapSecond) error {
+func (rc *ProxyRefClock) Sample(sys time.Time, offset float64, leap ptime.LeapSecondKind) error {
 	select {
-	case rc.sampleCh <- RefClockSample{Sys: sys, Ref: ref, Ls: ls}:
+	case rc.sampleCh <- RefClockSample{Sys: sys, Offset: offset, Leap: leap}:
 		return nil
 	default:
 		return errors.New("RefClockWorker is not ready for a sample")
@@ -56,7 +56,7 @@ func RefClockWorker(rc RefClock, sampCh <-chan RefClockSample, lg *slog.Logger) 
 		if !ok {
 			break
 		}
-		err := rc.Sample(samp.Sys, samp.Ref, samp.Ls)
+		err := rc.Sample(samp.Sys, samp.Offset, samp.Leap)
 		if err != nil {
 			lg.Info("error while sending refclock sample", "err", err)
 		}
@@ -85,8 +85,8 @@ func (rc *LoggingSockRefClock) Close() error {
 	return rc.sock.Close()
 }
 
-func (rc *LoggingSockRefClock) Sample(sys time.Time, ref ptime.Time, ls ptime.LeapSecond) error {
-	err := rc.sock.Sample(sys, ref, ls)
+func (rc *LoggingSockRefClock) Sample(sys time.Time, offset float64, leap ptime.LeapSecondKind) error {
+	err := rc.sock.Sample(sys, offset, leap)
 	lg := rc.lg
 	path := rc.sock.RemotePath()
 	if err != nil {
@@ -105,7 +105,7 @@ func (rc *LoggingSockRefClock) Sample(sys time.Time, ref ptime.Time, ls ptime.Le
 			lg.Info("the refclock socket has become ready", "path", path)
 			rc.sockOK = true
 		}
-		lg.Debug("successfully sent sample to refclock socket", "path", path, "sys", sys, "ref", ref)
+		lg.Debug("successfully sent sample to refclock socket", "path", path, "sys", sys, "offset", offset)
 	}
 	return nil
 }
