@@ -37,6 +37,16 @@ var replayFiles = []string{
 	"m8t-signal",
 	"m8t-speed",
 	"m8t-tmode",
+	"x20p-noop",
+	"x20p-signal",
+	"x20p-tmode",
+	"x20p-pps",
+	"x20p-speed",
+	"x20p-binary",
+	"x20p-rtcm-out",
+	"x20p-raw-out",
+	"x20p-pvt-out",
+	"x20p-reload",
 }
 
 func TestReplayUBX(t *testing.T) {

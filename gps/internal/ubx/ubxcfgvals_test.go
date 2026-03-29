@@ -1,6 +1,7 @@
 package ubx
 
 import (
+	"encoding/hex"
 	"fmt"
 	"slices"
 	"testing"
@@ -371,7 +372,7 @@ func TestEnableSignals(t *testing.T) {
 			}
 			ver := Version{GNSS: gpsprot.MajorGNSSSet}
 			supported := m.signalsSupported(&ver)
-			_, items := m.EnableSignals(tt.enabled, &ver)
+			_, items := m.EnableSignals(tt.enabled, supported)
 			expectedItems := make([]ucv.Item, 0, len(tt.expected))
 			for k, v := range tt.expected {
 				ucv.AddItem(&expectedItems, k, v)
@@ -1238,6 +1239,88 @@ func TestDynModelBuild(t *testing.T) {
 				if ucv.EnumNavspgDynmodel(item.Value) != *tt.expectDynModel {
 					t.Errorf("expected dynmodel %v, got %v", *tt.expectDynModel, item.Value)
 				}
+			}
+		})
+	}
+}
+
+func TestMonGnssPlanSignals(t *testing.T) {
+	// Real MON-GNSS v1 response from ZED-X20P (HPG 2.02, proto 50.10).
+	const x20pMonGnss = "b5620a285800010302010153503100000d000b001b00000001003900010000000000000000000253503200000d000b001a00000001003900010000000000000000000653503600000d0003000b00000001003900010000000000000000004de0"
+	pkt, err := hex.DecodeString(x20pMonGnss)
+	if err != nil {
+		t.Fatalf("hex decode: %v", err)
+	}
+	msg, err := ubxbin.ParseMsg(string(pkt))
+	if err != nil {
+		t.Fatalf("ParseMsg: %v", err)
+	}
+	m, ok := msg.(*ubxbin.MonGnss1)
+	if !ok {
+		t.Fatalf("expected *MonGnss1, got %T", msg)
+	}
+	// Active plan is SP2 (activePlanInfo=0x0102, low byte=2).
+	active := monGnss1Signals(m)
+	expectActive := gpsprot.SignalSetOf(
+		gpsprot.SigGPSL1CA, gpsprot.SigGPSL2C, gpsprot.SigGPSL5,
+		gpsprot.SigGALE1, gpsprot.SigGALE5a, gpsprot.SigGALE6,
+		gpsprot.SigBDSB1C, gpsprot.SigBDSB2a, gpsprot.SigBDSB3I,
+		gpsprot.SigSBASL1CA,
+		gpsprot.SigQZSSL1CA, gpsprot.SigQZSSL1S, gpsprot.SigQZSSL2C, gpsprot.SigQZSSL5,
+		gpsprot.SigNAVICL5,
+	)
+	if active != expectActive {
+		t.Errorf("monGnss1Signals: got  %v\nwant %v", active, expectActive)
+	}
+	tests := []struct {
+		name   string
+		plan   ubxbin.MonGnssPlan
+		expect gpsprot.SignalSet
+	}{
+		{
+			name: "SP1",
+			plan: m.Plans[0],
+			expect: gpsprot.SignalSetOf(
+				gpsprot.SigGPSL1CA, gpsprot.SigGPSL2C, gpsprot.SigGPSL5,
+				gpsprot.SigGALE1, gpsprot.SigGALE5a, gpsprot.SigGALE6,
+				gpsprot.SigBDSB1I, gpsprot.SigBDSB1C, gpsprot.SigBDSB2a, gpsprot.SigBDSB3I,
+				gpsprot.SigSBASL1CA,
+				gpsprot.SigQZSSL1CA, gpsprot.SigQZSSL1S, gpsprot.SigQZSSL2C, gpsprot.SigQZSSL5,
+				gpsprot.SigNAVICL5,
+			),
+		},
+		{
+			name: "SP2",
+			plan: m.Plans[1],
+			// Like SP1 but bdsSup=0x001A: B1C|B2a|B3I (no B1I, no B2I).
+			expect: gpsprot.SignalSetOf(
+				gpsprot.SigGPSL1CA, gpsprot.SigGPSL2C, gpsprot.SigGPSL5,
+				gpsprot.SigGALE1, gpsprot.SigGALE5a, gpsprot.SigGALE6,
+				gpsprot.SigBDSB1C, gpsprot.SigBDSB2a, gpsprot.SigBDSB3I,
+				gpsprot.SigSBASL1CA,
+				gpsprot.SigQZSSL1CA, gpsprot.SigQZSSL1S, gpsprot.SigQZSSL2C, gpsprot.SigQZSSL5,
+				gpsprot.SigNAVICL5,
+			),
+		},
+		{
+			name: "SP6",
+			plan: m.Plans[2],
+			// galSup=0x0003 (E1|E5a), bdsSup=0x000B (B1I|B1C|B2a).
+			expect: gpsprot.SignalSetOf(
+				gpsprot.SigGPSL1CA, gpsprot.SigGPSL2C, gpsprot.SigGPSL5,
+				gpsprot.SigGALE1, gpsprot.SigGALE5a,
+				gpsprot.SigBDSB1I, gpsprot.SigBDSB1C, gpsprot.SigBDSB2a,
+				gpsprot.SigSBASL1CA,
+				gpsprot.SigQZSSL1CA, gpsprot.SigQZSSL1S, gpsprot.SigQZSSL2C, gpsprot.SigQZSSL5,
+				gpsprot.SigNAVICL5,
+			),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := monGnssPlanSignals(&tc.plan)
+			if got != tc.expect {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
 			}
 		})
 	}
