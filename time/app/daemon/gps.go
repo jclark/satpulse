@@ -24,8 +24,11 @@ const (
 	cfgSatellites                         // satellite data is used
 )
 
-// PVTMsgFlags are the PVT message flags required by the daemon.
-const PVTMsgFlags = gpsevent.TimePulsePVTMsgFlags
+// PTPMsgFlags are the PVT message flags for PTP mode (with time pulse/PHC).
+const PTPMsgFlags = gpsevent.TimePulsePVTMsgFlags
+
+// NTPMsgFlags are the PVT message flags for NTP mode (serial timing, no PHC).
+const NTPMsgFlags = gpsevent.NoTimePulsePVTMsgFlags
 
 type GPSConfig struct {
 	Config             bool         `toml:"config"`
