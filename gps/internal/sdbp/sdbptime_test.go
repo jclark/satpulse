@@ -169,7 +169,7 @@ func TestTimeDatTPPS(t *testing.T) {
 func TestTimeDatTPPSMatchesCaptureTime(t *testing.T) {
 	msg := parsePacket(t, captureTPPS)
 	tm := timeDatTPPS(msg.(*sdbpbin.DatTPPS))
-	utc := tm.UTCTime.Date.Add(tm.UTCTime.TimeOfDay).Round(time.Second)
+	utc := tm.UTCTime.SysTime().Round(time.Second)
 	wantUTC := captureTime.Add(time.Second)
 	if !utc.Equal(wantUTC) {
 		t.Errorf("DAT-TPPS UTC = %v, want %v (capture time + 1s)", utc, wantUTC)

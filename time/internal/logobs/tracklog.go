@@ -38,7 +38,7 @@ func NewTrackLogEntry(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMsgBundle, utc *pt
 	}
 	pg := pv.PosGeo.Get()
 	e := TrackLogEntry{
-		T:   utc.Date.Add(utc.TimeOfDay).Format("2006-01-02T15:04:05.000Z"),
+		T:   utc.SysTime().Format("2006-01-02T15:04:05.000Z"),
 		Lat: pg.LatLon[0],
 		Lon: pg.LatLon[1],
 		Ele: pg.HeightMSL,

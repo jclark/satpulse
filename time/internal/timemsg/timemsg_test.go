@@ -722,3 +722,148 @@ func TestMixedPrePulseAndPostPulse(t *testing.T) {
 			gotLast, len(gotTRead))
 	}
 }
+
+type recordingSampler struct {
+	samples []serialSample
+}
+
+type serialSample struct {
+	utc  time.Time
+	read time.Time
+	leap ptime.LeapSecondKind
+}
+
+func (r *recordingSampler) SerialSample(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind) {
+	r.samples = append(r.samples, serialSample{utc: utc, read: tRead, leap: leap})
+}
+
+func TestSerialSampler(t *testing.T) {
+	date := time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC)
+	utc := func(h, m, s int) *ptime.UTCTime {
+		return &ptime.UTCTime{
+			Date:      date,
+			TimeOfDay: time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(s)*time.Second,
+		}
+	}
+	ls := ptime.LeapSecond{UTCOffAfter: 37}
+	tRead := time.Now()
+	readAt := func(ms int) time.Time {
+		return tRead.Add(time.Duration(ms) * time.Millisecond)
+	}
+	type input struct {
+		msg   *gpsprot.TimeMsg
+		tRead time.Time
+	}
+	tests := []struct {
+		name    string
+		msgs    []input
+		noSink  bool
+		expectN int
+	}{
+		{
+			name:    "eligible_triggers_call",
+			msgs:    []input{{&gpsprot.TimeMsg{UTCTime: utc(12, 0, 0)}, readAt(500)}},
+			expectN: 1,
+		},
+		{
+			name: "duplicate_second_suppressed",
+			msgs: []input{
+				{&gpsprot.TimeMsg{UTCTime: utc(12, 0, 0)}, readAt(500)},
+				{&gpsprot.TimeMsg{UTCTime: utc(12, 0, 0)}, readAt(600)},
+			},
+			expectN: 1,
+		},
+		{
+			name: "new_second_triggers",
+			msgs: []input{
+				{&gpsprot.TimeMsg{UTCTime: utc(12, 0, 0)}, readAt(500)},
+				{&gpsprot.TimeMsg{UTCTime: utc(12, 0, 1)}, readAt(1500)},
+			},
+			expectN: 2,
+		},
+		{
+			name:    "tai_only_ignored",
+			msgs:    []input{{&gpsprot.TimeMsg{TAITime: ls.UTCtoTime(*utc(12, 0, 0))}, readAt(500)}},
+			expectN: 0,
+		},
+		{
+			name:    "no_time_skipped",
+			msgs:    []input{{&gpsprot.TimeMsg{}, readAt(500)}},
+			expectN: 0,
+		},
+		{
+			name:    "leap_second_23_59_60_skipped",
+			msgs:    []input{{&gpsprot.TimeMsg{UTCTime: &ptime.UTCTime{Date: date, TimeOfDay: 24 * time.Hour}}, readAt(500)}},
+			expectN: 0,
+		},
+		{
+			name:    "nil_sink_no_panic",
+			msgs:    []input{{&gpsprot.TimeMsg{UTCTime: utc(12, 0, 0)}, readAt(500)}},
+			noSink:  true,
+			expectN: 0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+			buf := NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
+			var rec *recordingSampler
+			if !tc.noSink {
+				rec = &recordingSampler{}
+				buf.SetSerialSampler(rec)
+			}
+			for _, m := range tc.msgs {
+				buf.Time(m.msg, m.tRead)
+			}
+			if rec == nil {
+				return
+			}
+			if len(rec.samples) != tc.expectN {
+				t.Errorf("got %d samples, want %d", len(rec.samples), tc.expectN)
+			}
+		})
+	}
+}
+
+func TestSerialSamplerLeap(t *testing.T) {
+	leapLS := ptime.LeapSecondOnDate(time.Date(2026, time.June, 30, 0, 0, 0, 0, time.UTC), 37, 38)
+	leapDay := time.Date(2026, time.June, 30, 0, 0, 0, 0, time.UTC)
+	normalDay := time.Date(2026, time.March, 29, 0, 0, 0, 0, time.UTC)
+	tRead := time.Now()
+	tests := []struct {
+		name       string
+		ut         *ptime.UTCTime
+		expectLeap ptime.LeapSecondKind
+	}{
+		{
+			name:       "normal_day",
+			ut:         &ptime.UTCTime{Date: normalDay, TimeOfDay: 15 * time.Hour},
+			expectLeap: ptime.LeapSecondNone,
+		},
+		{
+			name:       "leap_day_in_window",
+			ut:         &ptime.UTCTime{Date: leapDay, TimeOfDay: 20 * time.Hour},
+			expectLeap: ptime.LeapSecondPositive,
+		},
+		{
+			name:       "leap_day_before_window",
+			ut:         &ptime.UTCTime{Date: leapDay, TimeOfDay: 6 * time.Hour},
+			expectLeap: ptime.LeapSecondNone,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+			buf := NewBuffer(lg, 5*time.Second, leapLS, gpsprot.GPS)
+			rec := &recordingSampler{}
+			buf.SetSerialSampler(rec)
+			buf.Time(&gpsprot.TimeMsg{UTCTime: tc.ut}, tRead)
+			if len(rec.samples) != 1 {
+				t.Fatalf("got %d samples, want 1", len(rec.samples))
+			}
+			if rec.samples[0].leap != tc.expectLeap {
+				t.Errorf("leap = %v, want %v", rec.samples[0].leap, tc.expectLeap)
+			}
+		})
+	}
+}
