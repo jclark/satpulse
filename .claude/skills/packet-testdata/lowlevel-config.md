@@ -57,3 +57,7 @@ For receivers that don't support `--reload`, reset between captures using:
 - A factory-reset tag followed by re-applying baseline configuration.
 
 The key requirement is that each capture starts from a known state with no leftover message configuration from the previous capture.
+
+## Cold start
+
+To save configuration to NVM: `-m <file> -t save`. To cold start: `-m <file> -t cold-start`. To factory reset afterwards: `-m <file> -t factory-reset`. Then `sleep 2` as the receiver may disconnect briefly during restart.

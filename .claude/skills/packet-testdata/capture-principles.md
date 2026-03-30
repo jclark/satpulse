@@ -26,6 +26,22 @@ The captures should cover:
 7. **Survey** -- if the receiver supports survey-in, a short survey capture to exercise survey messages.
 8. **Cross-protocol satellites** -- NMEA GSV/GSA alongside native satellite messages in the same capture. This enables cross-protocol validation: verify-replay.py checks that NMEA and native satellite lists are consistent in IDs, look angles, and CN0.
 
+## Cold-start capture
+
+In addition to steady-state captures, collect a cold-start capture for each receiver. The purpose is to exercise code paths that handle incomplete data: missing UTC, missing TOW/WN, invalid time status, no fix, etc. Receivers go through several phases during cold start (no time, GNSS time only, UTC available, first fix) and the decode layer must handle all of them without errors.
+
+A cold start clears satellite data but preserves NVM configuration, so the message configuration must be saved to NVM before the cold start. This means the cold-start capture should be done last, after all other captures, because saving to NVM changes the receiver's persistent state. A factory reset is needed afterwards to restore clean NVM state. Both saving to NVM and factory reset are destructive — ask the user for approval before proceeding.
+
+The sequence is:
+
+1. Configure the desired messages
+2. Save to NVM (see high-level and low-level config docs for the mechanism)
+3. Cold start
+4. Capture immediately for 120 seconds
+5. Factory reset (with user approval)
+
+Name the file `coldstart.jsonl`.
+
 ## Troubleshooting
 
 ### Baud rate confusion
