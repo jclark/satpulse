@@ -116,6 +116,9 @@ func (c *GPSConfig) setMsgOptions(opts *gpsprot.ConfigOptions, speed int, cf cfg
 	}
 	if cf&cfgPosition != 0 {
 		opts.PVTMsg |= gpsprot.PVTMsgPos
+		if c.Mobile {
+			opts.PVTMsg |= gpsprot.PVTMsgVel
+		}
 	}
 	opts.RTCMMsg = c.rtcmMsg()
 	var err error

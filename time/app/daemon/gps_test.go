@@ -104,6 +104,20 @@ fixedPosAcc = 3`,
 			},
 		},
 		{
+			name: "mobile with position enables velocity",
+			config: `[gps]
+config = true
+mobile = true`,
+			speed: 9600,
+			cf:    cfgTimePulse | cfgPosition,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: false})
+				target.Opts.PVTMsg |= gpsprot.PVTMsgPos | gpsprot.PVTMsgVel
+				target.Opts.Survey.MinDur = 2000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
+			},
+		},
+		{
 			name: "mobile=true overrides fixed position",
 			config: `[gps]
 config = true
