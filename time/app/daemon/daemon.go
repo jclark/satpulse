@@ -185,8 +185,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	timePulseEnabled := clk != nil
-	gct, err := createConfigTarget(lg, cfg, conn.Speed(), timePulseEnabled)
+	gct, err := createConfigTarget(lg, cfg, conn.Speed(), clk != nil)
 	if err != nil {
 		return err
 	}
@@ -443,9 +442,11 @@ func (h *leapSecondCapture) logLeapSecond(lg *slog.Logger) {
 	}
 }
 
-func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, timePulseEnabled bool) (*gpsprot.ConfigTarget, error) {
+func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, usingPHC bool) (*gpsprot.ConfigTarget, error) {
 	var cf cfgFeatures
-	if timePulseEnabled {
+	if usingPHC {
+		cf |= cfgTimePulse | cfgTimePulseMsg
+	} else if cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "" {
 		cf |= cfgTimePulse
 	}
 	if cfg.Log.Track || len(cfg.HTTP) > 0 {
