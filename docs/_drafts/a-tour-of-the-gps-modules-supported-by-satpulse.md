@@ -119,7 +119,7 @@ There is tier 1 support for the UM980 family, which consists of
 
 These use a protocol which is similar to that used by NovAtel OEM6/7 messages. Periodic data messages have dual binary/ASCII formats;
 the packet formats are similar, but the binary packet format has different sync bytes.
-Configuration messages are ASCII lines, similar but different from Novatel.
+Configuration messages are ASCII lines, similar but different from NovAtel.
 These modules also have some undocumented support for some periodic data messages that use the same packet format as NovAtel.
 This includes the RANGECMPB raw message which can be used by RTKLIB to generate RINEX observation files.
 
@@ -270,7 +270,7 @@ it has everything I expect of a timing module, including quantization error repo
 Techtotop also provide the [TDMonitor](https://www.techtotop.com/category.aspx?NodeID=49) application for Windows,
 which is similar to u-center (although the UI is all Chinese).
 
-## Conclusion
+## Where SatPulse is heading
 
 My vision for SatPulse 0.1 was quite narrow: to transfer time from a GPS module to a PTP hardware clock. But it turns out doing a really good job of that requires a
 complex and sophisticated GPS subsystem.
@@ -283,14 +283,7 @@ If you have done the work to create a GPS subsystem that works well for timing,
 you have done at least 80% of the work to create a GPS subsystem that works well for a wide variety of other applications.
 It makes sense to do that extra work, because the market for timing is relatively small:
 many more people care about precision positioning than care about precision timing.
-So this is the direction in which I am taking SatPulse:
+So this is where I am heading with SatPulse:
 precision timing is still a core part of the mission;
 but I want to add the few extra features that are needed to make SatPulse useful for
 a broader range of applications, in particular precision positioning.
-
-
-
-
-
-
-
