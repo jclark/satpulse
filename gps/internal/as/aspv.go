@@ -113,11 +113,11 @@ func qualityNavAuto(ne *gpsprot.NavEpochMsg, m *asbin.NavAuto) {
 	case asbin.NavAutoFixRTKFloat:
 		ne.FixLevel = gpsprot.FixLevelCarrierFloat
 		ne.SolutionDim = gpsprot.SolutionDim3D
-		ne.Correction = gpsprot.CorrUsed
+		ne.Correction = gpsprot.CorrOSR | gpsprot.CorrUsed
 	case asbin.NavAutoFixRTKFixed:
 		ne.FixLevel = gpsprot.FixLevelCarrierFixed
 		ne.SolutionDim = gpsprot.SolutionDim3D
-		ne.Correction = gpsprot.CorrUsed
+		ne.Correction = gpsprot.CorrOSR | gpsprot.CorrUsed
 	}
 	ne.NumSVUsed.Set(uint16(m.SatInUse))
 	ne.NumSVTracked.Set(uint16(m.SatInView))
