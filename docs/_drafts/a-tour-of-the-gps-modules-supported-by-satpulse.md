@@ -1,10 +1,11 @@
 ---
-Title: GPS hardware support in SatPulse 0.2
+Title: A tour of the GPS modules supported by SatPulse 0.2
 ---
-XXX this is not a good intro any more: we should highlight that we are going to have a whirlwind tour of the GNSS modules out there
-For the last 8 months or so, I have been working on improving the GPS hardware support in SatPulse, but it has really accelerated in the last 3 months.
 
-So what does GPS hardware support actually mean? All GPS receivers support NMEA which provides information about navigation solutions as they are computed by the receiver. GPS receivers also support RTCM, which is used both to consume corrections provided to the receiver and to provide corrections for use by other receivers. Apart from that, every GPS receiver supports one or more vendor-specific protocols. The messages used by these protocols can be divided into two groups. The first group performs a similar function to NMEA: they are messages periodically emitted by the receiver to provide information about the navigation solutions computed and other aspects of the ongoing operation of the receiver. The second group performs configuration: these include both requests that are input to the receiver to query and alter configuration, and messages that are output by the receiver as responses to these requests. Hardware support involves enabling SatPulse to make use of both kinds of message.
+For the last 8 months, I have been working on broadening the range of GNSS hardware supported by SatPulse. In 0.1, there was support only for u-blox modules. In 0.2, I have added support for a broad range of modules from other vendors, all of which are Chinese.
+
+Before getting into the details of the supported modules, I want to talk about what supporting a GPS module means.
+All GPS modules support NMEA which provides information about navigation solutions as they are computed by the module. GPS modules also support RTCM, which is used both to consume corrections provided to the module and to provide corrections for use by other modules. Apart from that, every GPS module supports one or more vendor-specific protocols. The messages used by these protocols can be divided into two groups. The first group performs a similar function to NMEA: they are messages periodically emitted by the module to provide information about the navigation solutions computed and other aspects of the ongoing operation of the module. The second group performs configuration: these include both requests that are input to the module to query and alter configuration, and messages that are output by the module as responses to these requests. Supporting a module involves enabling SatPulse to make use of both kinds of message.
 
 SatPulse supports vendor-specific periodic messages in the obvious way, by converting vendor-specific messages into a uniform abstraction. In the source code, this abstraction is defined by the `gpsprot` (GPS protocol) package. In 0.1, there were abstract messages that provide information about
 
@@ -13,7 +14,7 @@ SatPulse supports vendor-specific periodic messages in the obvious way, by conve
 - the next scheduled leap second
 - satellite positions and signal strengths
 
-In 0.2, there are in addition messages that provide information about
+In 0.2, there are additional messages that provide information about
 
 - the characteristics of a navigation solution; this includes
   - the technique used to compute the solution (e.g. ranging code or carrier phase)
@@ -32,17 +33,17 @@ The messages also feed the observability subsystem, which exposes them as Promet
 
 For configuration, there are now two kinds of configuration support as I described in more detail in my [earlier blog](https://satpulse.net/2026/01/29/improving-gps-configuration.html).
 
-- high-level configuration, intent-based configuration, where you describe what you want, and SatPulse turns that into the appropriate messages for the specific receiver
+- high-level configuration, intent-based configuration, where you describe what you want, and SatPulse turns that into the appropriate messages for the specific module
 - low-level configuration, which is based on message files
 
 High-level configuration in 0.2 provides a similar set of features as in 0.1. There are a couple of new properties that can be set:
 
 - minimum elevation angle for satellites to be used in the navigation solution
-- RTCM base ID - the RTCM reference station ID of the RTCM messages that the receiver generates
+- RTCM base ID - the reference station ID for the RTCM messages that the module generates
 
 I have added a few features to the message file implementation since the last blog:
 
-- the message file implementation now understands the request/response patterns of various protocols, which allows it to identify which messages from the receiver are responses to messages sent
+- the message file implementation now understands the request/response patterns of various protocols, which allows it to identify which messages from the module are responses to messages sent
 - there is a file inclusion capability, which is useful for allowing model-specific message files to share messages that work across multiple vendor models
 
 The high/low-level configuration split leads naturally to two tiers of support. In both tiers, there is
@@ -64,23 +65,23 @@ SatPulse 0.1 had support only for u-blox. In 0.2, there is support for the follo
 7. ByNav - tier 2
 8. ComNav/SinoGNSS - tier 2
 
-Apart from u-blox, these are all Chinese. There are other Western vendors, but they are all either much more expensive than u-blox (Septentrio, Trimble, NovAtel) or the chips are designed to be integrated into mobile phones and are not available as modules that you can buy separately (e.g. Broadcom). Septentrio has recently come down in price a bit and they also have an excellent reputation for timing, so I hope to add support for Septentrio in the future. I already have some support for NovAtel, because some Chinese vendors have adopted the NovAtel OEM 6/7 series protocol.
+Apart from u-blox, these vendors are all based in China. There are other Western vendors, but they are all either much more expensive than u-blox (Septentrio, Trimble, NovAtel) or the chips are designed to be integrated into mobile phones and are not available as modules that you can buy separately (e.g. Broadcom). Septentrio has recently come down in price a bit and they also have an excellent reputation for timing, so I hope to add support for Septentrio in the future. I already have some support for NovAtel, because some Chinese vendors have adopted the NovAtel OEM 6/7 series protocol.
 
 I have chosen which Chinese modules to support based on a number of factors:
 
-- Are they at least dual-band? Given the low cost of dual-band receivers, there are relatively few cases where single-band modules remain interesting.
+- Are they at least dual-band? Given the low cost of dual-band modules, there are relatively few cases where single-band modules remain interesting.
 - Do they have any features that are particularly interesting for precision timing and/or positioning?
 - How common and popular are they on Taobao?
 - Are there any Western vendors that resell them?
 
 Taobao recently started supporting direct shipping to my country of residence,
 which makes using Taobao much more convenient.
-I have found Taobao vendors much more knowledgeable about what they are selling than AliExpress vendors.
+I have found Taobao vendors to be considerably more knowledgeable about what they are selling than AliExpress vendors.
 If you can buy from Taobao, I recommend it.
 
 ## u-blox
 
-SatPulse supports all u-blox receivers starting from LEA-6T all the way through to ZED-X20P. I have tested it on all timing receivers:
+SatPulse supports all u-blox modules starting from LEA-6T all the way through to ZED-X20P. I have tested it on all timing modules:
 
 - LEA-6T
 - LEA-M8T
@@ -88,12 +89,12 @@ SatPulse supports all u-blox receivers starting from LEA-6T all the way through 
 - ZED-F9T (both L1/L2 and L1/L5 variants)
 - NEO-F10T
 
-and on both current high-precision receivers:
+and on both current high-precision modules:
 
 - ZED-F9P
 - ZED-X20P
 
-and on many standard precision receivers, including:
+and on many standard precision modules, including:
 
 - NEO-M9N
 - M10050-KB
@@ -105,7 +106,7 @@ In 0.2, the improvements in u-blox support are:
 - support for additional configuration properties (minimum elevation and RTCM base id)
 - support for ZED-X20P
 
-I have done much more testing on u-blox receivers than on any other brand.
+I have done much more testing on u-blox modules than on any other brand.
 
 ## Unicore
 
@@ -154,16 +155,16 @@ On Taobao, a good shop to buy from is [Mozi Technology/Mozihao](https://mzhtek.t
 The difference between these is the form-factor: ATGM332D uses the u-blox NEO form factor,
 whereas the ATGM336H uses the MAX form factor.
 The notable feature of these modules is that they are extraordinarily cheap.
-The module (without a board) is about $1.25 on Taobao.
+The bare module (without a board) is about $1.25 on Taobao.
 
 The vendor-specific protocol is CASIC. CAS stands for Chinese Academy of Sciences,
 and Zhongke in Chinese also refers to the Chinese Academy of Sciences. The CASIC protocol is UBX-like.
 
-There are actually literally dozens of different versions of these modules, and there are some very significant differences between them.
+There are literally dozens of different versions of these modules, and there are some very significant differences between them.
 
 The most common version is ATGM332D-5N31. These module names follow a common pattern.
-The 5 indicates what generation chip is used, in this case the AT6558.
-N I think stands for navigation. The 3 says what constellations are supported:
+The '5' indicates the generation of the chip used (in this case, the AT6558).
+'N' likely stands for navigation. The '3' designates which constellations are supported:
 1 means GPS, 2 means BeiDou, 4 means GLONASS, and these are added together to indicate the set of constellations supported. So 3 means GPS+BeiDou and 7 means GPS+BeiDou+GLONASS.
 I haven't figured out how the final digit works.
 
@@ -186,11 +187,11 @@ SatPulse has support for both the NAV messages and the NAV2 messages.
 As well as the low-end ATGM332D/ATGM336H modules, Zhongke also make higher-end modules designed explicitly for timing.
 I have the AT632-6T-30. This is similar to the 6 series of the ATGM332D, and is L1 only, but has a full set of timing features, which makes it interesting.
 These use a TIM2 class of message. In particular it has a TIM2-TPX message including quantization error.
-It is interesting to have a modern L1 timing receiver; u-blox have not done an L1 timing receiver since the LEA-M8T.
+It is interesting to have a modern L1 timing module; u-blox have not done an L1 timing module since the LEA-M8T.
 One noticeable difference is that the peak-to-peak amplitude of the sawtooth error is about 6ns on the AT632 compared to 21ns on the M8T,
-presumably reflecting the higher clock speed of the more modern receiver.
+presumably reflecting the higher clock speed of the more modern module.
 
-Zhongke provide a GnssToolkit3 application for Windows for configuring their receivers.
+Zhongke provide a GnssToolkit3 application for Windows for configuring their modules.
 
 ## Allystar
 
@@ -246,7 +247,7 @@ The configuration commands are NovAtel-style, but not compatible.
 But the configuration system is not in my view well-designed.
 One major deficiency is that it does not allow the current configuration to be queried.
 Another problem is that responses to configuration commands are not designed to be machine readable:
-they are not wrapped in a protocol packet that allows them to be distinguished from other traffic from the receiver.
+they are not wrapped in a protocol packet that allows them to be distinguished from other traffic from the module.
 
 Apart from the weakness in the configuration protocol, I found convergence of both Galileo HAS 
 and its BeiDou equivalent (B2b-PPP) to be flaky.
@@ -269,13 +270,23 @@ it has everything I expect of a timing module, including quantization error repo
 Techtotop also provide the [TDMonitor](https://www.techtotop.com/category.aspx?NodeID=49) application for Windows,
 which is similar to u-center (although the UI is all Chinese).
 
-## Conclusions
+## Conclusion
 
-The GPS subsystem in SatPulse 0.1 was designed to be multi-protocol but only implemented support for u-blox.
-In 0.2, broad multi-protocol support has been implemented.
-SatPulse provides support for several modules which are not supported by any other open-source project
-that I am aware of.
-XXX say something about expansion of data model
+My vision for SatPulse 0.1 was quite narrow: to transfer time from a GPS module to a PTP hardware clock. But it turns out doing a really good job of that requires a
+complex and sophisticated GPS subsystem.
+The subsystem should work for GPS modules from many vendors not just from u-blox.
+When monitoring a timing GPS, you want rich information about the current state of GPS,
+including the characteristics of the navigation solution.
+And it turns out that getting position information from the GPS is also useful:
+for example, you may want to use HAS to establish the fixed position to be used in timing.
+If you have done the work to create a GPS subsystem that works well for timing,
+you have done at least 80% of the work to create a GPS subsystem that works well for a wide variety of other applications.
+It makes sense to do that extra work, because the market for timing is relatively small:
+many more people care about precision positioning than care about precision timing.
+So this is the direction in which I am taking SatPulse:
+precision timing is still a core part of the mission;
+but I want to add the few extra features that are needed to make SatPulse useful for
+a broader range of applications, in particular precision positioning.
 
 
 
