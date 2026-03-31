@@ -184,7 +184,12 @@ ptp4l.udsAddress = "/var/run/ptp4l"
 The `ntp` table is about how SatPulse sends information to an NTP daemon. Currently only chrony is supported.
 It can have the following keys:
 
-* `sock.path` - a string 
+* `sock.path` - a string giving the path of the Unix domain socket that is used to communicate with chrony using the SOCK protocol;
+  it must match the path in the `refclock SOCK` line in the chrony configuration file
+
+If the `[phc]` table is not present, then the samples sent to chrony will be based on the timing of the serial messages.
+This is imprecise but is useful when chrony is also using a PPS refclock, which does not include time-of-day information.
+The samples from satpulse can be used by chrony to complete the samples from the PPS refclock.
 
 Example
 

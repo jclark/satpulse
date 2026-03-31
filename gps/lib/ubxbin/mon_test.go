@@ -172,8 +172,8 @@ func TestMonVerJSON(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
-		`"SwVersion":"EXT CORE 1.00"`,
-		`"HwVersion":"00190000"`,
+		`"swVersion":"EXT CORE 1.00"`,
+		`"hwVersion":"00190000"`,
 		`"FWVER=SPG 1.00"`,
 	} {
 		if !strings.Contains(s, want) {
@@ -199,7 +199,7 @@ func TestMonGnssUnknownVersion(t *testing.T) {
 		0x0A, 0x28, // class=MON(0x0A), id=GNSS(0x28)
 		0x08, 0x00, // length = 8 bytes
 		// Payload starts here:
-		0x01,                   // version = 1 (unknown)
+		0x02,                   // version = 2 (unknown)
 		0x0F, 0x0E, 0x0D, 0x0C, // Some data
 		0x04, 0x00, 0x00, // More data
 	}
@@ -208,7 +208,7 @@ func TestMonGnssUnknownVersion(t *testing.T) {
 
 	msg, err := ParseMsg(string(packet))
 	if err != nil {
-		t.Fatalf("failed to parse MON-GNSS v1: %v", err)
+		t.Fatalf("failed to parse MON-GNSS v2: %v", err)
 	}
 
 	// Should be parsed as UnknownMsg
@@ -221,8 +221,53 @@ func TestMonGnssUnknownVersion(t *testing.T) {
 		t.Errorf("expected MsgID=%v, got %v", MonGnssID, unknownMsg.MsgID)
 	}
 
-	expectedPayload := string([]byte{0x01, 0x0F, 0x0E, 0x0D, 0x0C, 0x04, 0x00, 0x00})
+	expectedPayload := string([]byte{0x02, 0x0F, 0x0E, 0x0D, 0x0C, 0x04, 0x00, 0x00})
 	if unknownMsg.Payload != expectedPayload {
 		t.Errorf("expected payload=%x, got %x", expectedPayload, unknownMsg.Payload)
+	}
+}
+
+func TestMonGnss1(t *testing.T) {
+	m := MonGnss1{
+		MonGnss1Fixed: MonGnss1Fixed{
+			Version:        1,
+			NumPlans:       2,
+			ActivePlanInfo: 0x0102,
+		},
+		Plans: []MonGnssPlan{
+			{
+				ID:       1,
+				Name:     Latin1Z5{'S', 'P', '1', 0, 0},
+				GpsSup:   0x000D,
+				GalSup:   0x000B,
+				BdsSup:   0x001B,
+				SbasSup:  0x0001,
+				QzssSup:  0x0039,
+				NavicSup: 0x0001,
+			},
+			{
+				ID:       2,
+				Name:     Latin1Z5{'S', 'P', '2', 0, 0},
+				GpsSup:   0x000D,
+				GalSup:   0x000B,
+				BdsSup:   0x001A,
+				SbasSup:  0x0001,
+				QzssSup:  0x0039,
+				NavicSup: 0x0001,
+			},
+		},
+	}
+	p2 := testMsgType1[MonGnss1](t, m)
+	m2 := p2.(*MonGnss1)
+	if m2.Version != 1 || m2.NumPlans != 2 || m2.ActivePlanInfo != m.ActivePlanInfo {
+		t.Fatalf("MonGnss1 header not roundtripped: %+v", m2.MonGnss1Fixed)
+	}
+	if len(m2.Plans) != len(m.Plans) {
+		t.Fatalf("MonGnss1 plan count: got %d, want %d", len(m2.Plans), len(m.Plans))
+	}
+	for i := range m.Plans {
+		if m2.Plans[i] != m.Plans[i] {
+			t.Fatalf("MonGnss1 plan %d not roundtripped", i)
+		}
 	}
 }

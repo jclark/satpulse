@@ -49,24 +49,25 @@ type configRequest struct {
 }
 
 type Configurator struct {
-	ver       *Version // never nil
-	tRead     map[ubxbin.MsgID]time.Time
-	raw       RawConfig
-	origPrt   *ubxbin.CfgPrt
-	portID    *ubxbin.PortID
-	monGNSS   *monGNSS
-	steps     []func(*Configurator) error
-	stepIndex int
-	reqs      []*configRequest
-	nextIndex int                   // Index of first request that is still in stateNotReady
-	complete  bool                  // True when no more requests can be added to reqs
-	target    *gpsprot.ConfigTarget // never nil
-	survey    bool                  // start a survey
+	ver         *Version // never nil
+	tRead       map[ubxbin.MsgID]time.Time
+	raw         RawConfig
+	origPrt     *ubxbin.CfgPrt
+	portID      *ubxbin.PortID
+	monGNSS     *monGNSS
+	planSignals gpsprot.SignalSet // signals for active signal plan from MON-GNSS v1
+	steps       []func(*Configurator) error
+	stepIndex   int
+	reqs        []*configRequest
+	nextIndex   int                   // Index of first request that is still in stateNotReady
+	complete    bool                  // True when no more requests can be added to reqs
+	target      *gpsprot.ConfigTarget // never nil
+	survey      bool                  // start a survey
 
 }
 
 // monGNSS records information from UBX-MON-GNSS
-// Since enabledGNSS can be invalidated by changed to the GNSS configuration,
+// Since enabledGNSS can be invalidated by changes to the GNSS configuration,
 // we store the gnssChangeCount at the time monGNSS was created.
 // enabledGNSS is only valid if gnssChangeCount in monGNSS is the same as raw.gnssChangeCount.
 type monGNSS struct {
@@ -520,6 +521,11 @@ func (c *Configurator) processMsg(msg ubxbin.Msg, t time.Time) (bool, error) {
 		c.monGNSS = c.newMonGNSS(mt)
 		c.checkPollResponses(t)
 		return true, nil
+	case *ubxbin.MonGnss1:
+		c.tRead[mt.ID()] = t
+		c.planSignals = monGnss1Signals(mt)
+		c.checkPollResponses(t)
+		return true, nil
 	}
 	mid := msg.ID()
 	if mid.CfgClass() {
@@ -645,29 +651,15 @@ func (c *Configurator) valGet() error {
 
 // valPollMonGNSS polls UBX-MON-GNSS for non-legacy configuration.
 func (c *Configurator) valPollMonGNSS() error {
-	// ZED-X20P is version 50 and its UBX-MON-GNSS is a different version,
-	// which has a completely different structure, which we don't yet support.
-	if c.ver.protVerAtLeast(50, 0) {
-		return nil
-	}
-	if !c.valNeedsMonGNSS() {
-		return nil
-	}
-	return c.addPollRequest(ubxbin.MonGnssID)
-}
-
-func (c *Configurator) valNeedsMonGNSS() bool {
-	// At the moment we use MON-GNSS only for enabledGNSS when enabling RTCM messages.
+	// MON-GNSS is use to determine enabled GNSS when configuring RTCM messages.
 	// XXX in the future use for maxSimultaneousMajorGNSS (needed for F10T at least)
 	// XXX in the future use also when inferring time GNSS
-	if !c.target.Opts.RTCMMsg.IsSet() {
-		return false
+	// Also X20P and newer (UBX protocol version 50 and newer) support a new MON-GNSS message that properly provides the supported signals;
+	// we use that to determine supported signals when setting the enabled signals.
+	if c.target.Opts.RTCMMsg.IsSet() || (c.ver.protVerAtLeast(50, 0) && c.target.Props.SetsAny(gpsprot.PropIDSignalsEnabled)) {
+		return c.addPollRequest(ubxbin.MonGnssID)
 	}
-	// If we are already getting signals, then we don't need MON-GNSS.
-	if c.target.UsesAny(gpsprot.PropIDSignalsEnabled) {
-		return false
-	}
-	return true
+	return nil
 }
 
 func (c *Configurator) valGetSignals() error {
@@ -686,14 +678,15 @@ func (c *Configurator) valSetSignals() error {
 	if !ok {
 		return nil
 	}
-	enabled, items := c.raw.valsPtr().EnableSignals(targetEnabled, c.ver)
+	supported := andIfNonZero(c.planSignals, c.raw.valsPtr().signalsSupported(c.ver))
+	if supported == 0 {
+		return errors.New("could not determine supported GNSS signals")
+	}
+	enabled, items := c.raw.valsPtr().EnableSignals(targetEnabled, supported)
 	// Ensure we have one non-augmentation signal from a major GNSS
 	enabled &= gpsprot.SigSetMajor
 	enabled &^= gpsprot.SigSetAugment
 	if enabled == 0 {
-		if c.raw.valsPtr().signalsSupported(c.ver) == 0 {
-			return errors.New("could not determine supported GNSS signals")
-		}
 		return fmt.Errorf("no suitable supported GNSS signal was enabled: %v", enabled)
 	}
 	val, err := newCfgValsetRequest(items, c.valSetLayer())
@@ -701,6 +694,16 @@ func (c *Configurator) valSetSignals() error {
 		return err
 	}
 	return c.addMsgSetPauseRequest(val, pauseAfterGNSSReset)
+}
+
+func andIfNonZero(ss1, ss2 gpsprot.SignalSet) gpsprot.SignalSet {
+	if ss1 == 0 {
+		return ss2
+	}
+	if ss2 == 0 {
+		return ss1
+	}
+	return ss1 & ss2
 }
 
 func (c *Configurator) valGetNMA() error {

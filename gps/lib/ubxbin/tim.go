@@ -7,27 +7,27 @@ const (
 )
 
 type TimTos struct {
-	Version           byte
-	GNSSID            GNSSID
+	Version           byte        `json:"version"`
+	GNSSID            GNSSID      `json:"gnssId"`
 	_                 [2]byte
-	Flags             TimTosFlags
-	Year              uint16
-	Month             byte
-	Day               byte
-	Hour              byte
-	Minute            byte
-	Second            byte
-	UTCStandard       UTCStandard
-	UTCOffset         int32
-	UTCUncertainty    uint32
-	Week              uint32
-	TOW               uint32
-	GNSSOffset        int32
-	GNSSUncertainty   uint32
-	IntOscOffset      int32
-	IntOscUncertainty uint32
-	ExtOscOffset      int32
-	ExtOscUncertainty uint32
+	Flags             TimTosFlags `json:"flags"`
+	Year              uint16      `json:"year"`
+	Month             byte        `json:"month"`
+	Day               byte        `json:"day"`
+	Hour              byte        `json:"hour"`
+	Minute            byte        `json:"minute"`
+	Second            byte        `json:"second"`
+	UTCStandard       UTCStandard `json:"utcStandard"`
+	UTCOffset         int32       `json:"utcOffset"`
+	UTCUncertainty    uint32      `json:"utcUncertainty"`
+	Week              uint32      `json:"week"`
+	TOW               uint32      `json:"TOW"`
+	GNSSOffset        int32       `json:"gnssOffset"`
+	GNSSUncertainty   uint32      `json:"gnssUncertainty"`
+	IntOscOffset      int32       `json:"intOscOffset"`
+	IntOscUncertainty uint32      `json:"intOscUncertainty"`
+	ExtOscOffset      int32       `json:"extOscOffset"`
+	ExtOscUncertainty uint32      `json:"extOscUncertainty"`
 }
 
 var _ PartiallyHandledMsg = (*TimTos)(nil)
@@ -69,12 +69,12 @@ const (
 )
 
 type TimTP struct {
-	TOWMS    uint32
-	TOWSubMS uint32
-	QErr     int32
-	Week     uint16
-	Flags    TimTPFlags
-	RefInfo  TimTPRefInfo
+	TOWMS    uint32       `json:"towMS"`
+	TOWSubMS uint32       `json:"towSubMS"`
+	QErr     int32        `json:"qErr"`
+	Week     uint16       `json:"week"`
+	Flags    TimTPFlags   `json:"flags"`
+	RefInfo  TimTPRefInfo `json:"refInfo"`
 }
 
 func (m *TimTP) ID() MsgID { return TimTPID }
@@ -122,14 +122,14 @@ const (
 )
 
 type TimSvin struct {
-	Dur    uint32
-	MeanX  int32
-	MeanY  int32
-	MeanZ  int32
-	MeanV  uint32
-	Obs    uint32
-	Valid  byte
-	Active byte
+	Dur    uint32 `json:"dur"`
+	MeanX  int32  `json:"meanX"`
+	MeanY  int32  `json:"meanY"`
+	MeanZ  int32  `json:"meanZ"`
+	MeanV  uint32 `json:"meanV"`
+	Obs    uint32 `json:"obs"`
+	Valid  byte   `json:"valid"`
+	Active byte   `json:"active"`
 	_      [2]byte
 }
 

@@ -39,8 +39,8 @@ func (c *SockRefClock) RemotePath() string {
 
 const sockRefClockTimeout = time.Second / 10
 
-func (c *SockRefClock) Sample(sys time.Time, ref ptime.Time, ls ptime.LeapSecond) error {
-	pkt, err := sockPacket(sys, ref, ls)
+func (c *SockRefClock) Sample(sys time.Time, offset float64, leap ptime.LeapSecondKind) error {
+	pkt, err := sockPacket(sys, offset, leap)
 	if err != nil {
 		return err
 	}

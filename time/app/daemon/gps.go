@@ -19,13 +19,17 @@ import (
 type cfgFeatures int
 
 const (
-	cfgTimePulse  cfgFeatures = 1 << iota // time pulse output is enabled
-	cfgPosition                           // position data is used
-	cfgSatellites                         // satellite data is used
+	cfgTimePulse    cfgFeatures = 1 << iota // configure time pulse output on receiver
+	cfgTimePulseMsg                         // configure messages reporting the time pulse
+	cfgPosition                             // position data is used
+	cfgSatellites                           // satellite data is used
 )
 
-// PVTMsgFlags are the PVT message flags required by the daemon.
-const PVTMsgFlags = gpsevent.TimePulsePVTMsgFlags
+// PTPMsgFlags are the PVT message flags for PTP mode (with time pulse/PHC).
+const PTPMsgFlags = gpsevent.TimePulsePVTMsgFlags
+
+// NTPMsgFlags are the PVT message flags for NTP mode (serial timing, no PHC).
+const NTPMsgFlags = gpsevent.NoTimePulsePVTMsgFlags
 
 type GPSConfig struct {
 	Config             bool         `toml:"config"`
@@ -106,13 +110,16 @@ func (c *GPSConfig) target(speed int, cf cfgFeatures) (*gpsprot.ConfigTarget, er
 func (c *GPSConfig) setMsgOptions(opts *gpsprot.ConfigOptions, speed int, cf cfgFeatures) error {
 	// Config is very slow on 8th gen if NMEA is enabled
 	opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
-	if cf&cfgTimePulse != 0 {
+	if cf&cfgTimePulseMsg != 0 {
 		opts.PVTMsg = gpsevent.TimePulsePVTMsgFlags
 	} else {
 		opts.PVTMsg = gpsevent.NoTimePulsePVTMsgFlags
 	}
 	if cf&cfgPosition != 0 {
 		opts.PVTMsg |= gpsprot.PVTMsgPos
+		if c.Mobile {
+			opts.PVTMsg |= gpsprot.PVTMsgVel
+		}
 	}
 	opts.RTCMMsg = c.rtcmMsg()
 	var err error

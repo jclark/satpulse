@@ -23,7 +23,7 @@ const (
 
 type CfgCfg struct {
 	CfgCfgFixed
-	DeviceMask []CfgCfgDeviceMask // this is optional so we use a slice; it will always be length 0 or 1
+	DeviceMask []CfgCfgDeviceMask `json:"deviceMask"` // this is optional so we use a slice; it will always be length 0 or 1
 }
 
 var _ VaryingMsg = (*CfgCfg)(nil)
@@ -51,9 +51,9 @@ func (m *CfgCfg) VaryingPart() any {
 }
 
 type CfgCfgFixed struct {
-	ClearMask CfgCfgSectionMask
-	SaveMask  CfgCfgSectionMask
-	LoadMask  CfgCfgSectionMask
+	ClearMask CfgCfgSectionMask `json:"clearMask"`
+	SaveMask  CfgCfgSectionMask `json:"saveMask"`
+	LoadMask  CfgCfgSectionMask `json:"loadMask"`
 }
 
 type CfgCfgSectionMask uint32
@@ -87,8 +87,8 @@ const (
 )
 
 type CfgMsg struct {
-	MsgID MsgID
-	Rate  [NPort]byte
+	MsgID MsgID       `json:"msgId"`
+	Rate  [NPort]byte `json:"rate"`
 }
 
 func (m *CfgMsg) ID() MsgID { return CfgMsgID }
@@ -96,24 +96,24 @@ func (m *CfgMsg) ID() MsgID { return CfgMsgID }
 // UBX-CFG-NAV5 Navigation engine settings
 
 type CfgNav5 struct {
-	Mask              CfgNav5Mask
-	DynModel          CfgNav5DynModel
-	FixMode           byte
-	FixedAlt          int32
-	FixedAltVar       uint32
-	MinElev           int8
-	DrLimit           byte
-	PDop              uint16
-	TDop              uint16
-	PAcc              uint16
-	TAcc              uint16
-	StaticHoldThresh  byte
-	DgnssTimeout      byte
-	CnoThreshNumSvs   byte
-	CnoThresh         byte
+	Mask              CfgNav5Mask        `json:"mask"`
+	DynModel          CfgNav5DynModel    `json:"dynModel"`
+	FixMode           byte               `json:"fixMode"`
+	FixedAlt          int32              `json:"fixedAlt"`
+	FixedAltVar       uint32             `json:"fixedAltVar"`
+	MinElev           int8               `json:"minElev"`
+	DrLimit           byte               `json:"drLimit"`
+	PDop              uint16             `json:"pDop"`
+	TDop              uint16             `json:"tDop"`
+	PAcc              uint16             `json:"pAcc"`
+	TAcc              uint16             `json:"tAcc"`
+	StaticHoldThresh  byte               `json:"staticHoldThresh"`
+	DgnssTimeout      byte               `json:"dgnssTimeout"`
+	CnoThreshNumSvs   byte               `json:"cnoThreshNumSVs"`
+	CnoThresh         byte               `json:"cnoThresh"`
 	_                 [2]byte
-	StaticHoldMaxDist uint16
-	UtcStandard       CfgNav5UtcStandard
+	StaticHoldMaxDist uint16             `json:"staticHoldMaxDist"`
+	UtcStandard       CfgNav5UtcStandard `json:"utcStandard"`
 	_                 [5]byte
 }
 
@@ -164,14 +164,14 @@ const (
 )
 
 type CfgPrt struct {
-	PortID       PortID
+	PortID       PortID          `json:"portID"`
 	_            byte
-	TxReady      CfgPrtTxReady
-	Mode         CfgPrtMode
-	BaudRate     uint32
-	InProtoMask  CfgPrtProtoMask
-	OutProtoMask CfgPrtProtoMask
-	Flags        CfgPrtFlags
+	TxReady      CfgPrtTxReady   `json:"txReady"`
+	Mode         CfgPrtMode      `json:"mode"`
+	BaudRate     uint32          `json:"baudRate"`
+	InProtoMask  CfgPrtProtoMask `json:"inProtoMask"`
+	OutProtoMask CfgPrtProtoMask `json:"outProtoMask"`
+	Flags        CfgPrtFlags     `json:"flags"`
 	_            [2]byte
 }
 
@@ -224,9 +224,9 @@ const (
 )
 
 type CfgRate struct {
-	MeasRate uint16
-	NavRate  uint16
-	TimeRef  CfgRateTimeRef
+	MeasRate uint16         `json:"measRate"`
+	NavRate  uint16         `json:"navRate"`
+	TimeRef  CfgRateTimeRef `json:"timeRef"`
 }
 
 func (m *CfgRate) ID() MsgID { return CfgRateID }
@@ -243,8 +243,8 @@ const (
 )
 
 type CfgRst struct {
-	NavBbrMask CfgRstNavBbrMask
-	ResetMode  CfgRstResetMode
+	NavBbrMask CfgRstNavBbrMask `json:"navBbrMask"`
+	ResetMode  CfgRstResetMode  `json:"resetMode"`
 	_          byte
 }
 
@@ -290,17 +290,17 @@ const (
 )
 
 type CfgTp5 struct {
-	TpIdx             byte
-	Version           byte
+	TpIdx             byte        `json:"tpIdx"`
+	Version           byte        `json:"version"`
 	_                 [2]byte
-	AntCableDelay     int16
-	RfGroupDelay      int16
-	FreqPeriod        uint32
-	FreqPeriodLock    uint32
-	PulseLenRatio     uint32
-	PulseLenRatioLock uint32
-	UserConfigDelay   int32
-	Flags             CfgTp5Flags
+	AntCableDelay     int16       `json:"antCableDelay"`
+	RfGroupDelay      int16       `json:"rfGroupDelay"`
+	FreqPeriod        uint32      `json:"freqPeriod"`
+	FreqPeriodLock    uint32      `json:"freqPeriodLock"`
+	PulseLenRatio     uint32      `json:"pulseLenRatio"`
+	PulseLenRatioLock uint32      `json:"pulseLenRatioLock"`
+	UserConfigDelay   int32       `json:"userConfigDelay"`
+	Flags             CfgTp5Flags `json:"flags"`
 }
 
 var _ PartiallyHandledMsg = (*CfgTp5)(nil)
@@ -343,27 +343,27 @@ const (
 )
 
 type CfgTmode struct {
-	TimeMode     CfgTmodeTimeMode
-	FixedPosX    int32
-	FixedPosY    int32
-	FixedPosZ    int32
-	FixedPosVar  uint32 // mm^2
-	SvinMinDur   uint32
-	SvinVarLimit uint32 // mm^2
+	TimeMode     CfgTmodeTimeMode `json:"timeMode"`
+	FixedPosX    int32            `json:"fixedPosX"`
+	FixedPosY    int32            `json:"fixedPosY"`
+	FixedPosZ    int32            `json:"fixedPosZ"`
+	FixedPosVar  uint32           `json:"fixedPosVar"` // mm^2
+	SvinMinDur   uint32           `json:"svinMinDur"`
+	SvinVarLimit uint32           `json:"svinVarLimit"` // mm^2
 }
 
 func (m *CfgTmode) ID() MsgID { return CfgTmodeID }
 
 type CfgTmode2 struct {
-	TimeMode     CfgTmode2TimeMode
+	TimeMode     CfgTmode2TimeMode `json:"timeMode"`
 	_            byte
-	Flags        CfgTmode2Flags
-	EcefXOrLat   int32
-	EcefYOrLon   int32
-	EcefZOrAlt   int32
-	FixedPosAcc  uint32
-	SvinMinDur   uint32
-	SvinAccLimit uint32
+	Flags        CfgTmode2Flags    `json:"flags"`
+	EcefXOrLat   int32             `json:"ecefXOrLat"`
+	EcefYOrLon   int32             `json:"ecefYOrLon"`
+	EcefZOrAlt   int32             `json:"ecefZOrAlt"`
+	FixedPosAcc  uint32            `json:"fixedPosAcc"`
+	SvinMinDur   uint32            `json:"svinMinDur"`
+	SvinAccLimit uint32            `json:"svinAccLimit"`
 }
 
 func (m *CfgTmode2) ID() MsgID { return CfgTmode2ID }
@@ -384,19 +384,19 @@ const (
 )
 
 type CfgTmode3 struct {
-	Version      byte
+	Version      byte           `json:"version"`
 	_            byte
-	Flags        CfgTmode3Flags
-	EcefXOrLat   int32
-	EcefYOrLon   int32
-	EcefZOrAlt   int32
-	EcefXOrLatHP int8
-	EcefYOrLonHP int8
-	EcefZOrAltHP int8
+	Flags        CfgTmode3Flags `json:"flags"`
+	EcefXOrLat   int32          `json:"ecefXOrLat"`
+	EcefYOrLon   int32          `json:"ecefYOrLon"`
+	EcefZOrAlt   int32          `json:"ecefZOrAlt"`
+	EcefXOrLatHP int8           `json:"ecefXOrLatHP"`
+	EcefYOrLonHP int8           `json:"ecefYOrLonHP"`
+	EcefZOrAltHP int8           `json:"ecefZOrAltHP"`
 	_            byte
-	FixedPosAcc  uint32
-	SvinMinDur   uint32
-	SvinAccLimit uint32
+	FixedPosAcc  uint32         `json:"fixedPosAcc"`
+	SvinMinDur   uint32         `json:"svinMinDur"`
+	SvinAccLimit uint32         `json:"svinAccLimit"`
 	_            [8]byte
 }
 
@@ -435,26 +435,26 @@ const (
 
 type CfgGNSS struct {
 	CfgGNSSFixed
-	Blocks []CfgGNSSBlock
+	Blocks []CfgGNSSBlock `json:"blocks"`
 }
 
 type CfgGNSSFixed struct {
-	MsgVer          byte
-	NumTrkChHw      byte
-	NumTrkChUse     byte
-	NumConfigBlocks byte
+	MsgVer          byte `json:"msgVer"`
+	NumTrkChHw      byte `json:"numTrkChHw"`
+	NumTrkChUse     byte `json:"numTrkChUse"`
+	NumConfigBlocks byte `json:"numConfigBlocks"`
 }
 
 type CfgGNSSSigMask byte
 
 type CfgGNSSBlock struct {
-	GNSSID     GNSSID
-	ResTrkCh   byte
-	MaxTrkCh   byte
+	GNSSID     GNSSID         `json:"gnssId"`
+	ResTrkCh   byte           `json:"resTrkCh"`
+	MaxTrkCh   byte           `json:"maxTrkCh"`
 	_          byte
-	Enable     byte
+	Enable     byte           `json:"enable"`
 	_          byte
-	SigCfgMask CfgGNSSSigMask
+	SigCfgMask CfgGNSSSigMask `json:"sigCfgMask"`
 	_          byte
 }
 
@@ -510,15 +510,15 @@ func (m *CfgGNSS) VaryingPart() any {
 
 type CfgValget struct {
 	CfgValgetFixed
-	CfgData []byte
+	CfgData []byte `json:"cfgData"`
 }
 
 func (m *CfgValget) ID() MsgID { return CfgValgetID }
 
 type CfgValgetFixed struct {
-	Version  CfgValgetVersion
-	Layer    CfgValgetLayer
-	Position uint16
+	Version  CfgValgetVersion `json:"version"`
+	Layer    CfgValgetLayer   `json:"layer"`
+	Position uint16           `json:"position"`
 }
 
 type CfgValgetVersion byte
@@ -565,15 +565,15 @@ const (
 
 type CfgValset struct {
 	CfgValsetFixed
-	CfgData []byte
+	CfgData []byte `json:"cfgData"`
 }
 
 func (m *CfgValset) ID() MsgID { return CfgValsetID }
 
 type CfgValsetFixed struct {
-	Version     CfgValsetVersion
-	Layers      CfgValsetLayer
-	Transaction CfgValTransaction
+	Version     CfgValsetVersion  `json:"version"`
+	Layers      CfgValsetLayer    `json:"layers"`
+	Transaction CfgValTransaction `json:"transaction"`
 	_           byte
 }
 
@@ -610,15 +610,15 @@ func (m *CfgValset) VaryingPart() any {
 
 type CfgValdel struct {
 	CfgValdelFixed
-	CfgData []byte
+	CfgData []byte `json:"keys"`
 }
 
 func (m *CfgValdel) ID() MsgID { return CfgValdelID }
 
 type CfgValdelFixed struct {
-	Version     CfgValdelVersion
-	Layers      CfgValdelLayer
-	Transaction CfgValTransaction
+	Version     CfgValdelVersion  `json:"version"`
+	Layers      CfgValdelLayer    `json:"layers"`
+	Transaction CfgValTransaction `json:"transaction"`
 	_           byte
 }
 

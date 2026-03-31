@@ -1,6 +1,6 @@
 ---
 name: go-unit-test
-description: Write Go unit tests
+description: Style rules for writing Go unit tests. Load whenever writing or modifying *_test.go files.
 allowed-tools: Bash, Glob, Grep, Read, Edit, Write
 ---
 

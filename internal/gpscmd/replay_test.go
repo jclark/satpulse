@@ -393,6 +393,7 @@ func (r *replayer) run() {
 					r.updates[r.outOffset+r.outIdx] = slices.Clone(action.Packet)
 				} else if !updatable {
 					r.structural = true
+					return
 				}
 			}
 			r.outIdx++

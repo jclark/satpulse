@@ -2,37 +2,48 @@ package ubx
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
 func satellitesNavSat(u *ubxbin.NavSat) *gpsprot.SatellitesMsg {
-	// This is the minimum quality signal we require to include in the SatellitesMsg.
-	// With CodeLocked, we have a CN0 of > 0 and it's reasonably stable.
+	// NAV-SAT reports one signal per SV (the L1 signal) and a quality indicator for it.
+	// On multi-band receivers, a satellite may have a usable non-L1 signal (e.g. B3I, L2)
+	// while L1 quality is below threshold. We keep SVs with orbit data (valid look angles)
+	// even without an L1 signal, so that satellitesCombine can attach NAV-SIG signals
+	// with the correct look angles. SVs with no signals are pruned before emission.
 	const minQuality = ubxbin.NavSatQualityCodeLocked
 	svs := make([]gpsprot.SVInfo, 0, u.NumSVs)
 	for _, usv := range u.SVs {
-		if usv.Flags&ubxbin.NavSatQuality < minQuality {
+		haveSignal := usv.Flags&ubxbin.NavSatQuality >= minQuality
+		haveLookAngle := usv.Flags&ubxbin.NavSatOrbit != ubxbin.NavSatOrbitSourceNone
+		if !haveSignal && !haveLookAngle {
 			continue
 		}
 		svid := gnssSVID(usv.GNSSID, usv.SVID)
 		used := usv.Flags&ubxbin.NavSatSVUsed != 0
-		svs = append(svs, gpsprot.SVInfo{
-			ID: svid,
-			Signals: []gpsprot.SignalInfo{
+		sv := gpsprot.SVInfo{
+			ID:   svid,
+			Used: used,
+		}
+		if haveSignal {
+			sv.Signals = []gpsprot.SignalInfo{
 				{
 					ID:   navSatSignalId(usv.GNSSID),
 					CN0:  usv.CNO,
 					Used: used,
 				},
-			},
-			LookAngles: &gpsprot.LookAngles{
+			}
+		}
+		if haveLookAngle {
+			sv.LookAngles = &gpsprot.LookAngles{
 				Azimuth:   usv.Azim,
 				Elevation: usv.Elev,
-			},
-			Used: used,
-		})
+			}
+		}
+		svs = append(svs, sv)
 	}
 	return &gpsprot.SatellitesMsg{
 		SVs:         svs,
@@ -166,6 +177,13 @@ func satellitesCopy(sats *gpsprot.SatellitesMsg) *gpsprot.SatellitesMsg {
 		copy(copiedSV.Signals, sats.SVs[i].Signals)
 	}
 	return &copied
+}
+
+// satellitesPrune removes SVs that have no signals.
+func satellitesPrune(sats *gpsprot.SatellitesMsg) {
+	sats.SVs = slices.DeleteFunc(sats.SVs, func(sv gpsprot.SVInfo) bool {
+		return len(sv.Signals) == 0
+	})
 }
 
 // sigIDMap maps GNSSID and SigID to a SignalID.

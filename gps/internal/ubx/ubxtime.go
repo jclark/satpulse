@@ -50,6 +50,20 @@ func timeNavTimeGal(m *ubxbin.NavTimeGal) *gpsprot.TimeMsg {
 	return &t
 }
 
+func timeNavTimeQZSS(m *ubxbin.NavTimeQZSS) *gpsprot.TimeMsg {
+	t := gpsprot.TimeMsg{NativeMsgID: "NAV-TIMEQZSS"}
+	if (m.Valid&ubxbin.NavTimeQZSSTOWValid) != 0 && (m.Valid&ubxbin.NavTimeQZSSWnoValid) != 0 {
+		// QZSS time is aligned to GPS time (same epoch)
+		t.TAITime = ptime.GPS(m.QzssWno, sTOW(m.QzssTow)+nsTOW(m.FQzssTow))
+	}
+	if (m.Valid & ubxbin.NavTimeQZSSLeapSValid) != 0 {
+		t.UTCOffset = m.LeapS + ptime.TAIMinusGPS
+	}
+	t.Accuracy = time.Duration(m.TAcc)
+	t.GNSS = gpsprot.QZSS
+	return &t
+}
+
 func timeNavTimeGLO(m *ubxbin.NavTimeGLO) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{NativeMsgID: "NAV-TIMEGLO"}
 	if (m.Valid&ubxbin.NavTimeGLOTODValid) != 0 && (m.Valid&ubxbin.NavTimeGLODateValid) != 0 {

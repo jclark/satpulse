@@ -30,7 +30,7 @@ func TestGPSConfig(t *testing.T) {
 			config: `[gps]
 config = true`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				// Default behavior: survey mode with SetStatic=true and default survey params
 				target.Opts.Survey.MinDur = 2000 * time.Second   // default surveyTime
@@ -43,7 +43,7 @@ config = true`,
 			config: `[gps]
 config = true`,
 			speed: 9600,
-			cf:    cfgTimePulse | cfgPosition,
+			cf:    cfgTimePulse | cfgTimePulseMsg | cfgPosition,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Opts.PVTMsg |= gpsprot.PVTMsgPos
 				target.Opts.Survey.MinDur = 2000 * time.Second
@@ -59,7 +59,7 @@ mobile = true
 surveyTime = 3000
 surveyAcc = 15`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetMode(gpsprot.Mode{Static: false})
 				target.Opts.Survey.MinDur = 3000 * time.Second
@@ -74,7 +74,7 @@ surveyTime = 2500
 surveyAcc = 10
 resurvey = true`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Opts.Survey.MinDur = 2500 * time.Second
 				target.Opts.Survey.AccLimit = gpsprot.Meters(10)
@@ -91,7 +91,7 @@ surveyAcc = 5
 fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
 fixedPosAcc = 3`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetMode(gpsprot.Mode{
 					Static:       true,
@@ -104,13 +104,27 @@ fixedPosAcc = 3`,
 			},
 		},
 		{
+			name: "mobile with position enables velocity",
+			config: `[gps]
+config = true
+mobile = true`,
+			speed: 9600,
+			cf:    cfgTimePulse | cfgTimePulseMsg | cfgPosition,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: false})
+				target.Opts.PVTMsg |= gpsprot.PVTMsgPos | gpsprot.PVTMsgVel
+				target.Opts.Survey.MinDur = 2000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
+			},
+		},
+		{
 			name: "mobile=true overrides fixed position",
 			config: `[gps]
 config = true
 mobile = true
 fixedPosECEF = [3978578.17, -8652.15, 4968410.94]`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetMode(gpsprot.Mode{Static: false})
 				target.Opts.Survey.MinDur = 2000 * time.Second   // default
@@ -123,7 +137,7 @@ fixedPosECEF = [3978578.17, -8652.15, 4968410.94]`,
 config = true
 surveyAcc = 0.0001`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			expectedError:        "error", // any error
 		},
 		{
@@ -133,7 +147,7 @@ config = true
 fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
 fixedPosAcc = 0.0001`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			expectedError:        "error", // any error
 		},
 		{
@@ -147,7 +161,7 @@ surveyAcc = 10
 fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
 fixedPosAcc = 5`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetMode(gpsprot.Mode{
 					Static:       true,
@@ -167,7 +181,7 @@ fixedPosAcc = 5`,
 config = true
 minElevation = 5.0`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Opts.Survey.MinDur = 2000 * time.Second
 				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
@@ -181,7 +195,7 @@ minElevation = 5.0`,
 config = true
 minElevation = 100`,
 			speed:         9600,
-			cf:            cfgTimePulse,
+			cf:            cfgTimePulse | cfgTimePulseMsg,
 			expectedError: "error",
 		},
 		{
@@ -190,7 +204,7 @@ minElevation = 100`,
 config = true
 rtcmBaseID = 100`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Opts.Survey.MinDur = 2000 * time.Second
 				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
@@ -204,7 +218,7 @@ rtcmBaseID = 100`,
 config = true
 rtcmBaseID = 0`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Opts.Survey.MinDur = 2000 * time.Second
 				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
@@ -218,7 +232,7 @@ rtcmBaseID = 0`,
 config = true
 rtcmBaseID = 4095`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Opts.Survey.MinDur = 2000 * time.Second
 				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
@@ -232,7 +246,7 @@ rtcmBaseID = 4095`,
 config = true
 rtcmBaseID = 4096`,
 			speed:         9600,
-			cf:            cfgTimePulse,
+			cf:            cfgTimePulse | cfgTimePulseMsg,
 			expectedError: "error",
 		},
 		{
@@ -240,7 +254,7 @@ rtcmBaseID = 4096`,
 			config: `[gps]
 config = true`,
 			speed: 9600,
-			cf:    cfgTimePulse,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Opts.Survey.MinDur = 2000 * time.Second
 				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
@@ -272,6 +286,21 @@ surveyAcc = 8`,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				// Create fresh Props without PPS when time pulse is disabled
 				target.Props = gpsprot.ConfigProps{}
+				target.Opts.Survey.MinDur = 1800 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(8)
+				target.Opts.SetStatic = true
+				target.Opts.PVTMsg = gpsevent.NoTimePulsePVTMsgFlags
+			},
+		},
+		{
+			name: "time pulse without time pulse messages",
+			config: `[gps]
+config = true
+surveyTime = 1800
+surveyAcc = 8`,
+			speed: 9600,
+			cf:    cfgTimePulse,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				target.Opts.Survey.MinDur = 1800 * time.Second
 				target.Opts.Survey.AccLimit = gpsprot.Meters(8)
 				target.Opts.SetStatic = true

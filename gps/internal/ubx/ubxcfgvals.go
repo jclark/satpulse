@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	ucv "github.com/jclark/satpulse/gps/lib/ubxcfgval"
 )
 
@@ -350,6 +351,9 @@ func (tb *txnBuilder) messagesBuild() error {
 		if enabledSignals, ok := tb.known.getSignalsEnabled(); ok {
 			enabledGNSS = enabledSignals.GNSSSet()
 		}
+	}
+	if enabledGNSS == 0 {
+		enabledGNSS = tb.ver.GNSS
 	}
 	err := msgChanges.options(&tb.target.Opts, tb.ver, enabledGNSS, tb.survey)
 	if err != nil {
@@ -876,8 +880,9 @@ func portBaudRateKey(port ucv.Port) ucv.KeyU {
 	return 0
 }
 
-func (known *CfgVals) EnableSignals(enabled gpsprot.SignalSet, ver *Version) (gpsprot.SignalSet, []ucv.Item) {
-	supported := known.signalsSupported(ver)
+// EnableSignals returns the items needed to enable the given signals,
+// constrained by the supported signal set.
+func (known *CfgVals) EnableSignals(enabled, supported gpsprot.SignalSet) (gpsprot.SignalSet, []ucv.Item) {
 	items := []ucv.Item{}
 	for g := gpsprot.GNSS(1); g <= gpsprot.GNSSLast; g++ {
 		gss := gpsprot.BandAll.SignalSet(g) & supported
@@ -925,6 +930,51 @@ func (raw *CfgVals) signalsSupported(ver *Version) gpsprot.SignalSet {
 		supported &^= gpsprot.SignalSetOf(gpsprot.SigBDSB1I)
 	}
 	return supported
+}
+
+// monGnss1Signals returns the supported signals for the active signal plan.
+func monGnss1Signals(m *ubxbin.MonGnss1) gpsprot.SignalSet {
+	id := m.ActivePlanID()
+	for i := range m.Plans {
+		if m.Plans[i].ID == id {
+			return monGnssPlanSignals(&m.Plans[i])
+		}
+	}
+	return 0
+}
+
+// monGnssPlanSignals converts a MON-GNSS v1 signal plan to a gpsprot.SignalSet.
+func monGnssPlanSignals(p *ubxbin.MonGnssPlan) gpsprot.SignalSet {
+	var ss gpsprot.SignalSet
+	addIf := func(sup bool, sig gpsprot.Signal) {
+		if sup {
+			ss |= gpsprot.SignalSetOf(sig)
+		}
+	}
+	addIf(p.GpsSup&ubxbin.MonGnssGpsL1CA != 0, gpsprot.SigGPSL1CA)
+	addIf(p.GpsSup&ubxbin.MonGnssGpsL1C != 0, gpsprot.SigGPSL1C)
+	addIf(p.GpsSup&ubxbin.MonGnssGpsL2C != 0, gpsprot.SigGPSL2C)
+	addIf(p.GpsSup&ubxbin.MonGnssGpsL5 != 0, gpsprot.SigGPSL5)
+	addIf(p.GalSup&ubxbin.MonGnssGalE1 != 0, gpsprot.SigGALE1)
+	addIf(p.GalSup&ubxbin.MonGnssGalE5a != 0, gpsprot.SigGALE5a)
+	addIf(p.GalSup&ubxbin.MonGnssGalE5b != 0, gpsprot.SigGALE5b)
+	addIf(p.GalSup&ubxbin.MonGnssGalE6 != 0, gpsprot.SigGALE6)
+	addIf(p.BdsSup&ubxbin.MonGnssBdsB1I != 0, gpsprot.SigBDSB1I)
+	addIf(p.BdsSup&ubxbin.MonGnssBdsB1C != 0, gpsprot.SigBDSB1C)
+	addIf(p.BdsSup&ubxbin.MonGnssBdsB2I != 0, gpsprot.SigBDSB2I)
+	addIf(p.BdsSup&ubxbin.MonGnssBdsB2a != 0, gpsprot.SigBDSB2a)
+	addIf(p.BdsSup&ubxbin.MonGnssBdsB3I != 0, gpsprot.SigBDSB3I)
+	addIf(p.GloSup&ubxbin.MonGnssGloL1OF != 0, gpsprot.SigGLOL1)
+	addIf(p.GloSup&ubxbin.MonGnssGloL2OF != 0, gpsprot.SigGLOL2)
+	addIf(p.SbasSup&ubxbin.MonGnssSbasL1CA != 0, gpsprot.SigSBASL1CA)
+	// L1C/B is an updated L1C/A; CFG-SIGNAL doesn't distinguish them.
+	addIf(p.QzssSup&(ubxbin.MonGnssQzssL1CA|ubxbin.MonGnssQzssL1CB) != 0, gpsprot.SigQZSSL1CA)
+	addIf(p.QzssSup&ubxbin.MonGnssQzssL1C != 0, gpsprot.SigQZSSL1C)
+	addIf(p.QzssSup&ubxbin.MonGnssQzssL1S != 0, gpsprot.SigQZSSL1S)
+	addIf(p.QzssSup&ubxbin.MonGnssQzssL2C != 0, gpsprot.SigQZSSL2C)
+	addIf(p.QzssSup&ubxbin.MonGnssQzssL5 != 0, gpsprot.SigQZSSL5)
+	addIf(p.NavicSup&ubxbin.MonGnssNavicL5 != 0, gpsprot.SigNAVICL5)
+	return ss
 }
 
 func (raw *CfgVals) getSignalsEnabled() (gpsprot.SignalSet, bool) {

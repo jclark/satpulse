@@ -27,7 +27,7 @@ const LogExtension = ".jsonl"
 const TimePulsePVTMsgFlags = gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgQuality | gpsprot.PVTMsgEpoch
 
 // NoTimePulsePVTMsgFlags are the PVT message flags when time pulse is not enabled.
-const NoTimePulsePVTMsgFlags = gpsprot.PVTMsgPos | gpsprot.PVTMsgTime | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgQuality | gpsprot.PVTMsgEpoch
+const NoTimePulsePVTMsgFlags = gpsprot.PVTMsgTime | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgQuality | gpsprot.PVTMsgEpoch
 
 // tickHandler forwards filled TimeMsgs from the TimeTicker to Observer.Tick.
 type tickHandler struct {
@@ -64,7 +64,6 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 	if controller != nil {
 		controller.SetTimeMsgBuffer(timeMsgBuffer)
 	}
-
 	d := Dispatcher{
 		pktProcs:      pktProcs,
 		controller:    controller,
@@ -80,6 +79,11 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 	for _, pp := range pktProcs {
 		pp.SetMsgHandler(multiHandler)
 		pp.SetNativeMsgHandler(&d)
+	}
+	// In serial timing mode (no PHC, but refclock configured), feed
+	// chrony SOCK samples directly from time messages.
+	if controller == nil && rc != nil {
+		timeMsgBuffer.SetSerialSampler(&d)
 	}
 	err := d.lf.Open(eventLogPath, true)
 	if err != nil {
@@ -252,12 +256,23 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 }
 
 // sysSample generates a sample of system time vs true time (based on PHC)
-func (d *Dispatcher) sysSample(trp ptime.Time, tRead time.Time) {
+func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time) {
 	// Send refclock sample if in tracking mode
-	if d.rc == nil || trp.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
+	if d.rc == nil || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
 		return
 	}
-	err := d.rc.Sample(tRead, trp, d.ls)
+	offset := d.ls.TimeToSys(ref).Sub(sys).Seconds()
+	leap := d.ls.StateAt(ref).LeapTonight
+	err := d.rc.Sample(sys, offset, leap)
+	if err != nil {
+		d.lg.Warn("refclock sample failed", "err", err)
+	}
+}
+
+// SerialSample implements timemsg.SerialSampler for serial timing mode.
+func (d *Dispatcher) SerialSample(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind) {
+	offset := utc.Sub(tRead).Seconds()
+	err := d.rc.Sample(tRead, offset, leap)
 	if err != nil {
 		d.lg.Warn("refclock sample failed", "err", err)
 	}

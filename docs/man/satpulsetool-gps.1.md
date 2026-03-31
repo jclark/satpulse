@@ -206,8 +206,11 @@ The following options control which messages the receiver outputs.
   **after**
   : If the time pulse message enabled by **tp** is emitted before the time pulse, then emit a time message also
 
-  **daemon**
-  : Enable messages needed by satpulsed (equivalent to `tp,after,tai,leap,survey,qual,epoch,off`)
+  **ptp**
+  : Enable the messages needed by satpulsed when it is being used as a source of time for PTP (equivalent to `tp,after,tai,leap,survey,qual,epoch,off`)
+
+  **ntp**
+  : Enable messages needed by satpulsed when it is being used as a source of time for NTP, without a PHC (equivalent to `time,leap,survey,qual,epoch,off`)
 
   **off**
   : Turn off PVT messages that are not explicitly enabled

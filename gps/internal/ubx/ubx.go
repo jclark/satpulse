@@ -149,6 +149,7 @@ func (p *PacketProcessor) flushSats() {
 	p.satMsg = nil
 	p.sigMsg = nil
 	combined := satellitesCombine(satMsg, sigMsg)
+	satellitesPrune(combined)
 	if ne := p.curNavEpochMsg; ne != nil {
 		ne.GNSSUsed |= combined.GNSSUsed()
 		ne.BandsUsed |= combined.BandsUsed()
@@ -224,6 +225,8 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 		time = timeNavTimeGal(mt)
 	case *ubxbin.NavTimeGLO:
 		time = timeNavTimeGLO(mt)
+	case *ubxbin.NavTimeQZSS:
+		time = timeNavTimeQZSS(mt)
 	case *ubxbin.NavTimeUTC:
 		time = timeNavTimeUTC(mt)
 	case *ubxbin.NavPVT:

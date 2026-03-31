@@ -10,6 +10,12 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
+// SerialSampler receives time samples derived from serial GPS messages.
+// Used in serial timing mode (no PHC) to feed chrony SOCK samples.
+type SerialSampler interface {
+	SerialSample(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind)
+}
+
 // Buffer stores recent time messages from a GPS receiver.
 // It implements gpsprot.MsgHandler to receive messages and
 // provides methods to retrieve sequences of messages for time synchronization.
@@ -24,6 +30,8 @@ type Buffer struct {
 	lastPreCorrMsg  *gpsprot.TimeMsg // last PrePulse msg with a correction
 	lastPostCorrMsg *gpsprot.TimeMsg // PostPulse msg with PulseOffset with the greatest TAI time
 	msgLevel        bufMsgLevel
+	serialSampler   SerialSampler // serial timing sink; nil in PHC mode
+	lastSerialUTC   time.Time     // UTC second already sent to serialSampler
 }
 
 type entry struct {
@@ -79,6 +87,41 @@ func (buf *Buffer) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 		buf.startIndex = 0
 	}
 	buf.entries = append(buf.entries, entry{msg: msg, tRead: tRead})
+	buf.serialSample(msg, tRead)
+}
+
+// SetSerialSampler sets the sink for serial timing mode.
+// When set, Buffer.Time() calls the sink for each new eligible second.
+func (buf *Buffer) SetSerialSampler(ss SerialSampler) {
+	buf.serialSampler = ss
+}
+
+func (buf *Buffer) serialSample(msg *gpsprot.TimeMsg, tRead time.Time) {
+	if buf.serialSampler == nil || msg.UTCTime == nil {
+		return
+	}
+	ut := *msg.UTCTime
+	// Skip leap second (23:59:60)
+	if ut.TimeOfDay >= 24*time.Hour {
+		return
+	}
+	// Generally receivers compute a navigation solution at an epoch aligned to a exact fraction of second:
+	// at 1Hz every second, at 5Hz every 200ms, etc. Let's call this the nominal time. In native messages,
+	// the time reported in the message is often not exactly the nomimal time, but is the navigation solution
+	// time computed at clock tick closest to the nominal time. This can be a few microseconds different from the
+	// nominal time. You don't see this in NMEA messages, because times are rounded to the nearest millisecond.
+	// If there are timing messages from different constellations, these exact times can be different for the
+	// same nominal time. Accordingly, we round to the nearest millisecond to recover the nominal time.
+	// In the PTP code, we discard samples where the nominal time is not exactly on the second, since the rest
+	// of the code assumes one pulse per second. However, here we just pass them on to chrony. This
+	// allows users to experiment with using higher-rate messages for timing. We could at some point add a
+	// configuration option to discard non-second-aligned messages.
+	utc := ut.SysTime().Round(time.Millisecond)
+	if !utc.After(buf.lastSerialUTC) {
+		return
+	}
+	buf.lastSerialUTC = utc
+	buf.serialSampler.SerialSample(utc, tRead, buf.ls.UTCStateAt(ut).LeapTonight)
 }
 
 // LeapSecond implements gpsprot.MsgHandler.

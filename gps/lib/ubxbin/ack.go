@@ -6,13 +6,13 @@ const (
 )
 
 type AckNak struct {
-	MsgID MsgID
+	MsgID MsgID `json:"msgId"`
 }
 
 func (m *AckNak) ID() MsgID { return AckNakID }
 
 type AckAck struct {
-	MsgID MsgID
+	MsgID MsgID `json:"msgId"`
 }
 
 func (m *AckAck) ID() MsgID { return AckAckID }

@@ -26,11 +26,11 @@ func (e MonCommsTxErrors) OutputPort() (PortID, bool) {
 }
 
 type MonCommsFixed struct {
-	Version  byte
-	NPorts   byte
-	TxErrors MonCommsTxErrors
+	Version  byte             `json:"version"`
+	NPorts   byte             `json:"nPorts"`
+	TxErrors MonCommsTxErrors `json:"txErrors"`
 	_        byte
-	ProtIds  [4]byte
+	ProtIds  [4]byte          `json:"protIds"`
 }
 
 type MonCommsPortID uint16
@@ -51,24 +51,24 @@ func (pid MonCommsPortID) PortID() (PortID, bool) {
 }
 
 type MonCommsPort struct {
-	PortID      MonCommsPortID
-	TxPending   uint16
-	TxBytes     uint32
-	TxUsage     byte
-	TxPeakUsage byte
-	RxPending   uint16
-	RxBytes     uint32
-	RxUsage     byte
-	RxPeakUsage byte
-	OverrunErrs uint16
-	Msgs        [4]uint16
+	PortID      MonCommsPortID `json:"portId"`
+	TxPending   uint16         `json:"txPending"`
+	TxBytes     uint32         `json:"txBytes"`
+	TxUsage     byte           `json:"txUsage"`
+	TxPeakUsage byte           `json:"txPeakUsage"`
+	RxPending   uint16         `json:"rxPending"`
+	RxBytes     uint32         `json:"rxBytes"`
+	RxUsage     byte           `json:"rxUsage"`
+	RxPeakUsage byte           `json:"rxPeakUsage"`
+	OverrunErrs uint16         `json:"overrunErrs"`
+	Msgs        [4]uint16      `json:"msgs"`
 	_           [8]byte
-	Skipped     uint32
+	Skipped     uint32         `json:"skipped"`
 }
 
 type MonComms struct {
 	MonCommsFixed
-	Ports []MonCommsPort
+	Ports []MonCommsPort `json:"ports"`
 }
 
 var _ VaryingMsg = (*MonComms)(nil)
@@ -97,11 +97,11 @@ func (m *MonComms) VaryingPart() any {
 }
 
 type MonGnss struct {
-	Version      byte
-	Supported    MonGnssMajorGnss
-	DefaultGnss  MonGnssMajorGnss
-	Enabled      MonGnssMajorGnss
-	Simultaneous uint8
+	Version      byte             `json:"version"`
+	Supported    MonGnssMajorGnss `json:"supported"`
+	DefaultGnss  MonGnssMajorGnss `json:"defaultGnss"`
+	Enabled      MonGnssMajorGnss `json:"enabled"`
+	Simultaneous uint8            `json:"simultaneous"`
 	_            [3]byte
 }
 
@@ -122,24 +122,150 @@ const (
 	MonGnssGalileo
 )
 
+// MonGnssGps is a bitmask of supported GPS signals in a MON-GNSS signal plan.
+type MonGnssGps uint16
+
+const (
+	MonGnssGpsL1CA MonGnssGps = 1 << iota
+	MonGnssGpsL1C
+	MonGnssGpsL2C
+	MonGnssGpsL5
+)
+
+// MonGnssGal is a bitmask of supported Galileo signals in a MON-GNSS signal plan.
+type MonGnssGal uint16
+
+const (
+	MonGnssGalE1 MonGnssGal = 1 << iota
+	MonGnssGalE5a
+	MonGnssGalE5b
+	MonGnssGalE6
+)
+
+// MonGnssBds is a bitmask of supported BeiDou signals in a MON-GNSS signal plan.
+type MonGnssBds uint16
+
+const (
+	MonGnssBdsB1I MonGnssBds = 1 << iota
+	MonGnssBdsB1C
+	MonGnssBdsB2I
+	MonGnssBdsB2a
+	MonGnssBdsB3I
+)
+
+// MonGnssGlo is a bitmask of supported GLONASS signals in a MON-GNSS signal plan.
+type MonGnssGlo uint16
+
+const (
+	MonGnssGloL1OF MonGnssGlo = 1 << iota
+	MonGnssGloL2OF
+)
+
+// MonGnssSbas is a bitmask of supported SBAS signals in a MON-GNSS signal plan.
+type MonGnssSbas uint16
+
+const (
+	MonGnssSbasL1CA MonGnssSbas = 1 << iota
+)
+
+// MonGnssQzss is a bitmask of supported QZSS signals in a MON-GNSS signal plan.
+type MonGnssQzss uint16
+
+const (
+	MonGnssQzssL1CA MonGnssQzss = 1 << iota
+	MonGnssQzssL1CB
+	MonGnssQzssL1C
+	MonGnssQzssL1S
+	MonGnssQzssL2C
+	MonGnssQzssL5
+)
+
+// MonGnssNavic is a bitmask of supported NavIC signals in a MON-GNSS signal plan.
+type MonGnssNavic uint16
+
+const (
+	MonGnssNavicL5 MonGnssNavic = 1 << iota
+)
+
+// MonGnssLband is a bitmask of supported L-band signals in a MON-GNSS signal plan.
+type MonGnssLband uint16
+
+const (
+	MonGnssLbandL1 MonGnssLband = 1 << iota
+)
+
+// MonGnss1Fixed is the fixed part of MON-GNSS version 1 (signal plans).
+type MonGnss1Fixed struct {
+	Version        byte   `json:"version"`
+	NumPlans       byte   `json:"numPlans"`
+	ActivePlanInfo uint16 `json:"activePlanInfo"`
+}
+
+// MonGnssPlan is one signal plan entry (28 bytes).
+type MonGnssPlan struct {
+	ID       uint8        `json:"id"`
+	Name     Latin1Z5     `json:"name"`
+	GpsSup   MonGnssGps   `json:"gpsSup"`
+	GalSup   MonGnssGal   `json:"galSup"`
+	BdsSup   MonGnssBds   `json:"bdsSup"`
+	GloSup   MonGnssGlo   `json:"gloSup"`
+	SbasSup  MonGnssSbas  `json:"sbasSup"`
+	QzssSup  MonGnssQzss  `json:"qzssSup"`
+	NavicSup MonGnssNavic `json:"navicSup"`
+	LbandSup MonGnssLband `json:"lbandSup"`
+	_        [6]byte
+}
+
+// MonGnss1 represents UBX-MON-GNSS version 1, which reports signal plans.
+type MonGnss1 struct {
+	MonGnss1Fixed
+	Plans []MonGnssPlan `json:"plans"`
+}
+
+var _ VaryingMsg = (*MonGnss1)(nil)
+var _ PartiallyHandledMsg = (*MonGnss1)(nil)
+
+func (m *MonGnss1) ID() MsgID { return MonGnssID }
+
+func (m *MonGnss1) IsHandled() bool {
+	return m.Version == 1
+}
+
+func (m *MonGnss1) FixedPart() any { return &m.MonGnss1Fixed }
+
+func (m *MonGnss1) VaryingPart() any { return &m.Plans }
+
+func (m *MonGnss1) InitVaryingPart(payloadLen int) error {
+	n, err := sliceLen(m, payloadLen, 4, 28)
+	if err == nil {
+		m.Plans = make([]MonGnssPlan, n)
+	}
+	return err
+}
+
+// ActivePlanID returns the configuration ID of the active signal plan.
+func (m *MonGnss1) ActivePlanID() byte {
+	return byte(m.ActivePlanInfo & 0xFF)
+}
+
 type MonHw struct {
-	PinSel        uint32
-	PinBank       uint32
-	PinDir        uint32
-	PinVal        uint32
-	NoisePerMS    uint16
-	AgcCnt        uint16
-	AStatus       byte
-	APower        byte
-	Flags         byte
+	PinSel        uint32   `json:"pinSel"`
+	PinBank       uint32   `json:"pinBank"`
+	PinDir        uint32   `json:"pinDir"`
+	PinVal        uint32   `json:"pinVal"`
+	NoisePerMS    uint16   `json:"noisePerMS"`
+	AgcCnt        uint16   `json:"agcCnt"`
+	AStatus       byte     `json:"aStatus"`
+	APower        byte     `json:"aPower"`
+	Flags         byte     `json:"flags"`
 	_             byte
-	UsedMask      uint32
-	VP            [17]byte
-	CwSuppression byte
+	UsedMask      uint32   `json:"usedMask"`
+	VP            [17]byte `json:"VP"`
+	CwSuppression byte     `json:"cwSuppression"`
 	_             [2]byte
-	PinIrq        uint32
-	PullH         uint32
-	PullL         uint32
+	PinIrq        uint32   `json:"pinIrq"`
+	PullH         uint32   `json:"pullH"`
+	PullL         uint32   `json:"pullL"`
 }
 
 func (m *MonHw) ID() MsgID { return MonHwID }
@@ -147,20 +273,20 @@ func (m *MonHw) ID() MsgID { return MonHwID }
 const nProtocol = 8
 
 type MonMsgPP struct {
-	Msg     [NPort][nProtocol]uint16
-	Skipped [NPort]uint32
+	Msg     [NPort][nProtocol]uint16 `json:"msg"`
+	Skipped [NPort]uint32            `json:"skipped"`
 }
 
 func (m *MonMsgPP) ID() MsgID { return MonMsgPPID }
 
 type MonVerFixed struct {
-	SwVersion Latin1Z30
-	HwVersion Latin1Z10
+	SwVersion Latin1Z30 `json:"swVersion"`
+	HwVersion Latin1Z10 `json:"hwVersion"`
 }
 
 type MonVer struct {
 	MonVerFixed
-	Extension []Latin1Z30
+	Extension []Latin1Z30 `json:"extension"`
 }
 
 func (m *MonVer) ID() MsgID { return MonVerID }
@@ -184,6 +310,7 @@ func (m *MonVer) VaryingPart() any {
 func init() {
 	regMsg[MonComms]("COMMS")
 	regMsg[MonGnss]("GNSS")
+	regMsg[MonGnss1]("GNSS")
 	regMsg[MonHw]("HW")
 	regMsg[MonMsgPP]("MSGPP")
 	regMsg[MonVer]("VER")

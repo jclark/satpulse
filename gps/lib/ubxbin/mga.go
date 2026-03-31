@@ -11,15 +11,15 @@ const (
 
 type MgaIni struct {
 	MgaIniFixed
-	Payload MgaIniPayload
+	Payload MgaIniPayload `json:"payload"`
 }
 
 var _ VaryingMsg = (*MgaIni)(nil)
 var _ PartiallyHandledMsg = (*MgaIni)(nil)
 
 type MgaIniFixed struct {
-	Type    MgaIniType
-	Version byte
+	Type    MgaIniType `json:"type"`
+	Version byte       `json:"version"`
 }
 
 type MgaIniType byte
@@ -100,51 +100,51 @@ func (m *MgaIni) InitVaryingPart(payloadLen int) error {
 
 type MgaIniPosXYZ struct {
 	_      [2]byte
-	ECEF   [3]int32
-	PosAcc uint32
+	ECEF   [3]int32 `json:"ecef"`
+	PosAcc uint32   `json:"posAcc"`
 }
 
 func (m *MgaIniPosXYZ) mgaIniPayload() {}
 
 type MgaIniPosLLH struct {
 	_      [2]byte
-	Lat    int32
-	Lon    int32
-	Alt    int32
-	PosAcc uint32
+	Lat    int32  `json:"lat"`
+	Lon    int32  `json:"lon"`
+	Alt    int32  `json:"alt"`
+	PosAcc uint32 `json:"posAcc"`
 }
 
 func (m *MgaIniPosLLH) mgaIniPayload() {}
 
 type MgaIniTimeUTC struct {
-	Ref       MgaIniTimeRef
-	LeapSecs  int8 // since GPS epoch
-	Year      uint16
-	Month     byte
-	Day       byte
-	Hour      byte
-	Minute    byte
-	Second    byte
-	Bitfield0 MgaIniTimeBitfield0
-	Ns        uint32
-	TAccS     uint16
+	Ref       MgaIniTimeRef       `json:"ref"`
+	LeapSecs  int8                `json:"leapSecs"` // since GPS epoch
+	Year      uint16              `json:"year"`
+	Month     byte                `json:"month"`
+	Day       byte                `json:"day"`
+	Hour      byte                `json:"hour"`
+	Minute    byte                `json:"minute"`
+	Second    byte                `json:"second"`
+	Bitfield0 MgaIniTimeBitfield0 `json:"bitfield0"`
+	Ns        uint32              `json:"ns"`
+	TAccS     uint16              `json:"tAccS"`
 	_         [2]byte
-	TAccNs    uint32
+	TAccNs    uint32              `json:"tAccNs"`
 }
 
 func (m *MgaIniTimeUTC) mgaIniPayload() {}
 
 type MgaIniTimeGNSS struct {
-	Ref       MgaIniTimeRef
-	GnssId    byte
-	Bitfield0 MgaIniTimeBitfield0
+	Ref       MgaIniTimeRef       `json:"ref"`
+	GnssId    byte                `json:"gnssId"`
+	Bitfield0 MgaIniTimeBitfield0 `json:"bitfield0"`
 	_         byte
-	Week      uint16
-	Tow       uint32
-	Ns        uint32
-	TAccS     uint16
+	Week      uint16              `json:"week"`
+	Tow       uint32              `json:"tow"`
+	Ns        uint32              `json:"ns"`
+	TAccS     uint16              `json:"tAccS"`
 	_         [2]byte
-	TAccNs    uint32
+	TAccNs    uint32              `json:"tAccNs"`
 }
 
 func (m *MgaIniTimeGNSS) mgaIniPayload() {}
@@ -170,17 +170,17 @@ const (
 
 type MgaIniClkD struct {
 	_       [2]byte
-	ClkD    int32
-	ClkDAcc uint32
+	ClkD    int32  `json:"clkD"`
+	ClkDAcc uint32 `json:"clkDAcc"`
 }
 
 func (m *MgaIniClkD) mgaIniPayload() {}
 
 type MgaIniFreq struct {
 	_       byte
-	Flags   byte
-	Freq    int32
-	FreqAcc uint32
+	Flags   byte   `json:"flags"`
+	Freq    int32  `json:"freq"`
+	FreqAcc uint32 `json:"freqAcc"`
 }
 
 func (m *MgaIniFreq) mgaIniPayload() {}
@@ -191,15 +191,15 @@ func (m *MgaIniUnknown) mgaIniPayload() {}
 
 type MgaGal struct {
 	MgaGalFixed
-	Payload MgaGalPayload
+	Payload MgaGalPayload `json:"payload"`
 }
 
 var _ VaryingMsg = (*MgaGal)(nil)
 var _ PartiallyHandledMsg = (*MgaGal)(nil)
 
 type MgaGalFixed struct {
-	Type    MgaGalType
-	Version byte
+	Type    MgaGalType `json:"type"`
+	Version byte       `json:"version"`
 }
 
 type MgaGalType byte
@@ -268,9 +268,9 @@ func (m *MgaGal) InitVaryingPart(payloadLen int) error {
 }
 
 type MgaGalOSNMAPubkey struct {
-	Bitfield0   MgaGalOSNMAPubkeyBitfield0
+	Bitfield0   MgaGalOSNMAPubkeyBitfield0 `json:"bitfield0"`
 	_           byte
-	PubKeyPoint [67]byte
+	PubKeyPoint [67]byte                    `json:"pubKeyPoint"`
 	_           byte
 }
 
@@ -284,9 +284,9 @@ const (
 )
 
 type MgaGalOSNMAMerkle struct {
-	Bitfield0 MgaGalOSNMAMerkleBitfield0
+	Bitfield0 MgaGalOSNMAMerkleBitfield0 `json:"bitfield0"`
 	_         byte
-	TreeNode  [32]byte
+	TreeNode  [32]byte                    `json:"treeNode"`
 }
 
 func (m *MgaGalOSNMAMerkle) mgaGalPayload() {}

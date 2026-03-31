@@ -19,6 +19,11 @@ type UTCTime struct {
 	TimeOfDay time.Duration // duration since start of day at midnight
 }
 
+// SysTime converts a UTCTime to a time.Time (system time).
+func (ut UTCTime) SysTime() time.Time {
+	return ut.Date.Add(ut.TimeOfDay)
+}
+
 type LeapSecond struct {
 	OffChangeTime Time  // Time at which TAI-UTC offset changes (i.e. when leap second is over 00:00:00 UTC)
 	UTCOffBefore  int16 // TAI-UTC offset before leap second
@@ -180,7 +185,7 @@ func (ls LeapSecond) UTCtoTime(ut UTCTime) Time {
 	} else {
 		s = ls.UTCOffBefore
 	}
-	return Time(ut.Date.Add(ut.TimeOfDay).UnixNano() + int64(s)*1e9)
+	return Time(ut.SysTime().UnixNano() + int64(s)*1e9)
 }
 
 // SysToTime converts a system time to a TAI time.
@@ -323,10 +328,32 @@ func (ls LeapSecond) StateAt(t Time) LeapSecondState {
 	return state
 }
 
+// UTCStateAt returns the leap second state for a given UTC time.
+// Like StateAt, it reports a pending leap second only in the 12 hours before midnight.
+func (ls LeapSecond) UTCStateAt(ut UTCTime) LeapSecondState {
+	date := ut.Date
+	tod := ut.TimeOfDay
+	// Normalize negative TimeOfDay (e.g. GLONASS UTC-3h offset)
+	if tod < 0 {
+		date = date.AddDate(0, 0, -1)
+		tod += 24 * time.Hour
+	}
+	var state LeapSecondState
+	if date.After(ls.Date()) {
+		state.UTCOffset = ls.UTCOffAfter
+	} else {
+		state.UTCOffset = ls.UTCOffBefore
+		if date.Equal(ls.Date()) && tod >= 12*time.Hour {
+			state.LeapTonight = LeapSecondKind(ls.UTCOffAfter - ls.UTCOffBefore)
+		}
+	}
+	return state
+}
+
 // MarshalJSON marshals UTCTime to ISO8601 format like "2025-03-24T06:19:00Z".
 // For leap seconds (TimeOfDay >= 24h), produces "2025-06-30T23:59:60Z" format.
 func (ut UTCTime) MarshalJSON() ([]byte, error) {
-	t := ut.Date.Add(ut.TimeOfDay)
+	t := ut.SysTime()
 	// Check if TimeOfDay represents a leap second (>= 86400s = 24h)
 	if ut.TimeOfDay >= 24*time.Hour {
 		// Subtract 1 second to get :59, then replace with :60

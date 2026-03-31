@@ -98,7 +98,7 @@ type Msg interface {
 	ID() MsgID
 }
 
-var msgMap = make(map[MsgID]func() Msg)
+var msgMap = make(map[MsgID][]func() Msg)
 var idNameMap = make(map[MsgID]string)
 
 func (mid MsgID) String() string {
@@ -151,7 +151,7 @@ func regMsg[T any, PT interface {
 }](idName string) {
 	m := PT(new(T))
 	mid := m.ID()
-	msgMap[mid] = func() Msg { return PT(new(T)) }
+	msgMap[mid] = append(msgMap[mid], func() Msg { return PT(new(T)) })
 	idNameMap[mid] = idName
 }
 
@@ -168,11 +168,27 @@ func ParseMsg(packet string) (Msg, error) {
 	checksumIndex := n - 2
 	trimmed := packet[2:checksumIndex]
 	mid := makeMsgID(trimmed[0], trimmed[1])
-	ctor := msgMap[mid]
+	ctors := msgMap[mid]
 	payload := trimmed[4:]
-	if ctor == nil {
+	if len(ctors) == 0 {
 		return &UnknownMsg{MsgID: mid, Payload: payload}, nil
 	}
+	for _, ctor := range ctors {
+		msg, err := tryParseMsg(mid, payload, ctor)
+		if err != nil {
+			return nil, err
+		}
+		if msg != nil {
+			return msg, nil
+		}
+	}
+	return &UnknownMsg{MsgID: mid, Payload: payload}, nil
+}
+
+// tryParseMsg attempts to parse a payload using a single constructor.
+// Returns (msg, nil) on success, (nil, nil) if IsHandled returned false,
+// or (nil, err) on parse error.
+func tryParseMsg(mid MsgID, payload string, ctor func() Msg) (Msg, error) {
 	msg := ctor()
 	var fixed, vary any
 	if vMsg, ok := msg.(VaryingMsg); ok {
@@ -187,10 +203,9 @@ func ParseMsg(packet string) (Msg, error) {
 	if fixed != nil {
 		err = binary.Read(r, binary.LittleEndian, fixed)
 	}
-	// Check if this is a partially handled message that we don't handle.
 	if err == nil {
 		if phMsg, ok := msg.(PartiallyHandledMsg); ok && !phMsg.IsHandled() {
-			return &UnknownMsg{MsgID: mid, Payload: payload}, nil
+			return nil, nil
 		}
 	}
 	if vMsg, ok := msg.(VaryingMsg); ok && err == nil {
@@ -292,6 +307,12 @@ func Latin1ZToString(chars []byte) string {
 	}
 	return string(r)
 }
+
+// Latin1Z5 is a [5]byte that JSON-marshals as a Latin-1 nul-terminated string.
+type Latin1Z5 [5]byte
+
+func (z Latin1Z5) String() string                { return Latin1ZToString(z[:]) }
+func (z Latin1Z5) MarshalJSON() ([]byte, error)   { return json.Marshal(z.String()) }
 
 // Latin1Z10 is a [10]byte that JSON-marshals as a Latin-1 nul-terminated string.
 type Latin1Z10 [10]byte

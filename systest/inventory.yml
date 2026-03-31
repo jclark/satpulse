@@ -42,11 +42,10 @@ all:
       config: "false"
       vendor: '"SinoGNSS"'
 
-    # Techtotop/Taidou T303-5D
+    # ZED-X20P on USB
     roquefort.lan:
-      speed: 115200
-      config: "false"
-      vendor: '"Techtotop"'
+      speed: 38400
+      instance: ttyACM0
 
     # LEA-6T
     pecorino.lan:

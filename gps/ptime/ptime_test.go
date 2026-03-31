@@ -555,3 +555,73 @@ func TestUTCTimeJSONInvalidLeapSeconds(t *testing.T) {
 	}
 }
 
+func TestUTCStateAt(t *testing.T) {
+	ls := LeapSecondOnDate(time.Date(2026, time.June, 30, 0, 0, 0, 0, time.UTC), 37, 38)
+	leapDay := time.Date(2026, time.June, 30, 0, 0, 0, 0, time.UTC)
+	nextDay := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+	normalDay := time.Date(2026, time.March, 29, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name       string
+		ut         UTCTime
+		expectLeap LeapSecondKind
+		expectOff  int16
+	}{
+		{
+			name:       "normal_day",
+			ut:         UTCTime{Date: normalDay, TimeOfDay: 15 * time.Hour},
+			expectLeap: LeapSecondNone,
+			expectOff:  37,
+		},
+		{
+			name:       "leap_day_in_window",
+			ut:         UTCTime{Date: leapDay, TimeOfDay: 20 * time.Hour},
+			expectLeap: LeapSecondPositive,
+			expectOff:  37,
+		},
+		{
+			name:       "leap_day_at_12h_boundary",
+			ut:         UTCTime{Date: leapDay, TimeOfDay: 12 * time.Hour},
+			expectLeap: LeapSecondPositive,
+			expectOff:  37,
+		},
+		{
+			name:       "leap_day_before_window",
+			ut:         UTCTime{Date: leapDay, TimeOfDay: 6 * time.Hour},
+			expectLeap: LeapSecondNone,
+			expectOff:  37,
+		},
+		{
+			name:       "day_after_leap",
+			ut:         UTCTime{Date: nextDay, TimeOfDay: 6 * time.Hour},
+			expectLeap: LeapSecondNone,
+			expectOff:  38,
+		},
+		{
+			// GLONASS: 21:00 UTC on June 30 as July 1 minus 3h
+			name:       "negative_tod_in_window",
+			ut:         UTCTime{Date: nextDay, TimeOfDay: -3 * time.Hour},
+			expectLeap: LeapSecondPositive,
+			expectOff:  37,
+		},
+		{
+			// GLONASS: 03:00 UTC on June 30 as June 30 minus 21h
+			// Normalizes to June 29 03:00 -- not the leap day
+			name:       "negative_tod_wrong_day",
+			ut:         UTCTime{Date: leapDay, TimeOfDay: -21 * time.Hour},
+			expectLeap: LeapSecondNone,
+			expectOff:  37,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ls.UTCStateAt(tc.ut)
+			if got.LeapTonight != tc.expectLeap {
+				t.Errorf("LeapTonight = %v, want %v", got.LeapTonight, tc.expectLeap)
+			}
+			if got.UTCOffset != tc.expectOff {
+				t.Errorf("UTCOffset = %v, want %v", got.UTCOffset, tc.expectOff)
+			}
+		})
+	}
+}
+
