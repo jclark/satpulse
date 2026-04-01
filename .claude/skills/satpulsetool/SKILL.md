@@ -197,39 +197,37 @@ out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --factory-reset
 
 ## decode subcommand
 
-Decodes GPS packets into JSON. Three input modes:
+Decodes a single GPS packet into JSON. Takes a positional DATA argument.
 
-Decode a hex-encoded binary packet:
+Auto-detection: if all characters in DATA are hex digits, it is treated as hex-encoded binary (odd length is an error); otherwise it is treated as ASCII text (with \r\n appended). Use `--bin` or `--line` to force interpretation.
 
 ```
+out/amd64/satpulsetool decode b562010614000000...
+out/amd64/satpulsetool decode '$GNGGA,034418.00,1343.91295,N,...*64'
 out/amd64/satpulsetool decode --bin b562010614000000...
-```
-
-Decode an ASCII packet (adds \r\n automatically):
-
-```
 out/amd64/satpulsetool decode --line '$GNGGA,034418.00,1343.91295,N,...*64'
 ```
 
-Annotate a JSONL packet log (as produced by `gps --packet-log`):
-
-```
-out/amd64/satpulsetool decode --packet-log capture.jsonl
-out/amd64/satpulsetool decode --packet-log - < capture.jsonl
-```
-
-This adds `payload`, `header`, and `cfgData` fields to each log entry that can be decoded.
-
 Options:
+- `--bin` - force hex interpretation
+- `--line` - force ASCII interpretation (appends \r\n)
 - `-c` / `--compact` - single-line JSON output
 - `--out` - treat packet as outgoing (affects CFG-VAL* decoding direction)
 
-Without any flags, reads one packet from stdin.
+## annotate subcommand
 
-### Typical workflow: capture then decode
+Annotates a JSONL packet log with decoded fields (`header`, `payload`, `cfgData`).
+
+```
+out/amd64/satpulsetool annotate capture.jsonl
+out/amd64/satpulsetool annotate - < capture.jsonl
+out/amd64/satpulsetool annotate < capture.jsonl
+```
+
+### Typical workflow: capture then annotate
 
 ```
 out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --packet-log cap.jsonl --capture 10
-out/amd64/satpulsetool decode --packet-log cap.jsonl > decoded.jsonl
+out/amd64/satpulsetool annotate cap.jsonl > decoded.jsonl
 ```
 

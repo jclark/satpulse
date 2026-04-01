@@ -21,7 +21,10 @@ The *command* must be one of the following.
 : Manage Software Defined Pins (SDPs) of PTP Hardware Clocks (PHCs)
 
 **decode**
-: Decode binary GPS packets from hex strings or annotate JSONL packet logs.
+: Decode a GPS packet from hex or ASCII data.
+
+**annotate**
+: Add fields to a JSONL packet log showing decoded packets
 
 **replay**
 : Replay a JSONL packet log, generating JSONL events, similar to an event log.

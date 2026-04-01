@@ -1,11 +1,8 @@
 package decodecmd
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,7 +10,6 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/gpsdecode"
-	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/spf13/pflag"
@@ -25,68 +21,76 @@ type output struct {
 	gpsdecode.DecodeResult
 }
 
-const summary = `[-h|--help] [-c|--compact] [--out] [--bin hex | --line text | --packet-log path]`
+const summary = `[-h|--help] [-c|--compact] [--out] [--bin|--line] data`
 
 // Cmd implements the decode subcommand.
-// Default: read one packet from stdin.
-// --bin hex: decode a hex-encoded binary packet.
-// --line text: decode text with \r\n appended (for ASCII packets).
-// --packet-log path: annotate a JSONL packet log.
+// DATA is a required positional argument containing the packet data.
+// By default, DATA is auto-detected as hex (if all characters are hex digits)
+// or ASCII text (with \r\n appended).
+// --bin forces hex interpretation; --line forces ASCII interpretation.
 func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []string) (usage string, err error) {
 	help := false
 	compact := false
 	out := false
-	binHex := ""
-	line := ""
-	packetLog := ""
+	binFlag := false
+	lineFlag := false
 
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.BoolVarP(&compact, "compact", "c", false, "output compact JSON (single line)")
 	flags.BoolVar(&out, "out", false, "treat packet as outgoing (affects CFG-VAL* decoding)")
-	flags.StringVar(&binHex, "bin", "", "decode `hex`-encoded binary packet")
-	flags.StringVar(&line, "line", "", "decode ASCII packet `text` (\\r\\n appended automatically)")
-	flags.StringVar(&packetLog, "packet-log", "", "annotate JSONL packet log (`path` or - for stdin)")
+	flags.BoolVar(&binFlag, "bin", false, "treat data as hex-encoded binary")
+	flags.BoolVar(&lineFlag, "line", false, "treat data as ASCII text (\\r\\n appended)")
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
-	err = flags.Parse(args)
-	if err != nil {
+	if err := flags.Parse(args); err != nil {
 		return usageFunc(progName), err
 	}
 	if help {
 		return usageFunc(progName), nil
 	}
-	if flags.NArg() != 0 {
-		return usageFunc(progName), fmt.Errorf("unexpected positional arguments")
+	if flags.NArg() != 1 {
+		return usageFunc(progName), fmt.Errorf("expected exactly one argument")
 	}
-	nSrc := boolToInt(binHex != "") + boolToInt(line != "") + boolToInt(packetLog != "")
-	if nSrc > 1 {
-		return usageFunc(progName), fmt.Errorf("--bin, --line, and --packet-log are mutually exclusive")
+	if flags.Arg(0) == "" {
+		return "", fmt.Errorf("packet data must not be empty")
 	}
+	if binFlag && lineFlag {
+		return usageFunc(progName), fmt.Errorf("--bin and --line are mutually exclusive")
+	}
+	data := flags.Arg(0)
+	var pktBytes []byte
 	switch {
-	case packetLog != "":
-		return "", runPacketLog(packetLog)
-	case binHex != "":
-		data, err := hex.DecodeString(binHex)
+	case binFlag:
+		pktBytes, err = hex.DecodeString(data)
 		if err != nil {
 			return "", fmt.Errorf("invalid hex: %w", err)
 		}
-		return "", runDecode(data, out, compact)
-	case line != "":
-		return "", runDecode([]byte(line+"\r\n"), out, compact)
+	case lineFlag:
+		pktBytes = []byte(data + "\r\n")
 	default:
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return "", err
+		if isAllHex(data) {
+			pktBytes, err = hex.DecodeString(data)
+			if err != nil {
+				return "", fmt.Errorf("invalid hex: %w", err)
+			}
+		} else {
+			pktBytes = []byte(data + "\r\n")
 		}
-		return "", runDecode(data, out, compact)
 	}
+	return "", runDecode(pktBytes, out, compact)
 }
 
-func boolToInt(b bool) int {
-	if b {
-		return 1
+func isAllHex(s string) bool {
+	for _, c := range s {
+		if !isHexDigit(c) {
+			return false
+		}
 	}
-	return 0
+	return true
+}
+
+func isHexDigit(c rune) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }
 
 func runDecode(data []byte, out, compact bool) error {
@@ -106,108 +110,4 @@ func runDecode(data []byte, out, compact bool) error {
 		enc.SetIndent("", "  ")
 	}
 	return enc.Encode(o)
-}
-
-func runPacketLog(path string) error {
-	var r io.Reader
-	if path == "-" {
-		r = os.Stdin
-	} else {
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		r = f
-	}
-	scanner := bufio.NewScanner(r)
-	out := bufio.NewWriter(os.Stdout)
-	defer out.Flush()
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		processed := processLine(line)
-		out.Write(processed)
-		out.WriteByte('\n')
-	}
-	return scanner.Err()
-}
-
-func processLine(line []byte) []byte {
-	var entry gpsio.PacketLogEntry
-	if err := json.Unmarshal(line, &entry); err != nil {
-		return line
-	}
-	var data []byte
-	if len(entry.Bin) > 0 {
-		data = entry.Bin
-	} else if entry.Ascii != "" {
-		data = []byte(entry.Ascii)
-	} else {
-		return line
-	}
-	_, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), data, entry.Out)
-	if err != nil {
-		var csErr *gpsdecode.ChecksumError
-		if errors.As(err, &csErr) {
-			return insertChecksumError(line, csErr)
-		}
-		return line
-	}
-	if result == nil {
-		return line
-	}
-	return insertDecodeResult(line, result)
-}
-
-type checksumErrorJSON struct {
-	InPacket string `json:"inPacket"`
-	Computed string `json:"computed"`
-}
-
-func insertChecksumError(line []byte, csErr *gpsdecode.ChecksumError) []byte {
-	errJSON := checksumErrorJSON{
-		InPacket: hex.EncodeToString(csErr.InPacket),
-		Computed: hex.EncodeToString(csErr.Computed),
-	}
-	b, err := json.Marshal(errJSON)
-	if err != nil {
-		return line
-	}
-	return insertField(line, "checksumError", b)
-}
-
-func insertDecodeResult(line []byte, result *gpsdecode.DecodeResult) []byte {
-	// Insert fields in order: header, payload, cfgData
-	if result.Header != nil {
-		b, err := json.Marshal(result.Header)
-		if err == nil {
-			line = insertField(line, "header", b)
-		}
-	}
-	if result.Payload != nil {
-		b, err := json.Marshal(result.Payload)
-		if err == nil {
-			line = insertField(line, "payload", b)
-		}
-	}
-	if result.CfgData != nil {
-		b, err := json.Marshal(result.CfgData)
-		if err == nil {
-			line = insertField(line, "cfgData", b)
-		}
-	}
-	return line
-}
-
-func insertField(line []byte, name string, value []byte) []byte {
-	closeIdx := bytes.LastIndexByte(line, '}')
-	if closeIdx == -1 {
-		return line
-	}
-	field := fmt.Sprintf(",\"%s\":%s", name, value)
-	result := make([]byte, 0, len(line)+len(field))
-	result = append(result, line[:closeIdx]...)
-	result = append(result, field...)
-	result = append(result, line[closeIdx:]...)
-	return result
 }
