@@ -87,7 +87,7 @@ satpulsetool gps -d <device> -s 9600 --vendor u-blox -m configs/gpsmsg/ubx8.toml
 After each per-constellation time capture, immediately verify the TIM-TP RefInfo field shows the expected GNSS:
 
 ```
-satpulsetool decode --packet-log <file> | grep TIM-TP | tail -1 | jq .payload.RefInfo
+satpulsetool annotate <file> | grep TIM-TP | tail -1 | jq .payload.RefInfo
 ```
 
 RefInfo encodes the GNSS ID in the lower nibble. If it shows the wrong GNSS, the constellation may not have been acquired yet. Allow 10-15 seconds after a constellation change before starting the capture.

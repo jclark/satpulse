@@ -94,4 +94,4 @@ set +e
 source "$commands_file"
 
 echo Test log written to: $output_file
-satpulsetool decode --packet-log $output_file >$anno_output_file
+satpulsetool annotate $output_file >$anno_output_file

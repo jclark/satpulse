@@ -123,10 +123,10 @@ After renaming they will have a timestamp suffix.
 
 #### Decode packet log
 
-Use `satpulsetool decode` to see decoded representations of each packet. Save stdout to a `.decoded.jsonl` file derived from the packet log filename:
+Use `satpulsetool annotate` to see decoded representations of each packet. Save stdout to a `.decoded.jsonl` file derived from the packet log filename:
 
 ```bash
-out/$ARCH/satpulsetool decode --packet-log tmp/satpulsed/log/packet.$DEVBASE-$STAMP.jsonl \
+out/$ARCH/satpulsetool annotate tmp/satpulsed/log/packet.$DEVBASE-$STAMP.jsonl \
   > tmp/satpulsed/log/packet.$DEVBASE-$STAMP.decoded.jsonl
 ```
 

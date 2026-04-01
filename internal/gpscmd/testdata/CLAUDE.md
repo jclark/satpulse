@@ -31,7 +31,7 @@ The traces are created using a structured testing approach:
 2. Sources the receiver configuration to set GPS connection parameters
 3. Runs initial setup commands (reload, binary mode)
 4. Sources and executes the command file, generating `filename.jsonl`
-5. Processes the raw trace with `ubxanno` to create `filename.anno.jsonl`
+5. Processes the raw trace with `satpulsetool annotate` to create `filename.anno.jsonl`
 
 **Example workflow:**
 ```bash
