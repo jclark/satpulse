@@ -1,5 +1,6 @@
 ---
-Title: A tour of the GPS modules supported by SatPulse 0.2
+title: A tour of the GPS modules supported by SatPulse 0.2
+date: 2026-04-01 17:15:00 +0700
 ---
 
 For the last 8 months, I have been working on broadening the range of GNSS hardware supported by SatPulse. In 0.1, there was support only for u-blox modules. In 0.2, I have added support for a broad range of modules from other vendors, all of which are Chinese.

@@ -1,5 +1,6 @@
 ---
 title: Using SatPulse for timing without a PHC
+date: 2026-04-01 16:45:00 +0700
 ---
 
 Up to now, using SatPulse for timing has required some [very specialized hardware]({%link hardware/index.md %}).
