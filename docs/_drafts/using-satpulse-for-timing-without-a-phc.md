@@ -25,14 +25,6 @@ enable time mode, enable messages reporting UTC time).
 I think this will provide quite a nice way of running an NTP server: as well as auto-configuration, you get the
 other SatPulse conveniences like a Web dashboard and Prometheus metrics.
 
-Ubuntu has [announced](https://discourse.ubuntu.com/t/ntpd-rs-its-about-time/79154) plans to adopt [ntpd-rs](https://github.com/pendulum-project/ntpd-rs) as its default NTP server, replacing chrony, primarily because of memory safety.
-ntpd-rs supports both the chrony refclock SOCK protocol and kernel PPS, so it should work with SatPulse in this mode,
-although I haven't tested it yet.
-But a user has already [confirmed](https://github.com/jclark/satpulse/issues/113) that ntpd-rs works with SatPulse in the existing PHC mode.
-Since SatPulse is written in Go, the combination of ntpd-rs and SatPulse provides a fully memory-safe timing stack.
-Like SatPulse, ntpd-rs uses TOML for its configuration files and supports Prometheus,
-so this will give a pleasantly harmonious configuration and observability experience.
-
 I have only tested this very lightly. I used the chrony PHC extpps option to test,
 since all my machines are currently set up with the PPS connected to a PHC.
 I used the following as the satpulsed configuration: 
