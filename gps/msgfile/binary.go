@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/lib/casbin"
@@ -30,10 +29,15 @@ func (bm *BinaryMsg) toRaw() (RawMsg, error) {
 	if err != nil {
 		return RawMsg{}, err
 	}
+	wl, err := bm.MsgCommon.waitLimit()
+	if err != nil {
+		return RawMsg{}, err
+	}
 	return RawMsg{
-		Bytes: b,
-		Delay: delay,
-		Tag:   *bm.Tag,
+		Bytes:     b,
+		Delay:     delay,
+		WaitLimit: wl,
+		Tag:       *bm.Tag,
 	}, nil
 }
 
@@ -66,7 +70,11 @@ func (cm *CASBINMsg) toRaw() (RawMsg, error) {
 	if err != nil {
 		return RawMsg{}, err
 	}
-	return RawMsg{Bytes: pkt, Delay: delay, Tag: *cm.Tag}, nil
+	wl, err := cm.MsgCommon.waitLimit()
+	if err != nil {
+		return RawMsg{}, err
+	}
+	return RawMsg{Bytes: pkt, Delay: delay, WaitLimit: wl, Tag: *cm.Tag}, nil
 }
 
 func (cm *CASBINMsg) getTag() string { return *cm.Tag }
@@ -90,7 +98,11 @@ func (am *ASBINMsg) toRaw() (RawMsg, error) {
 	if err != nil {
 		return RawMsg{}, err
 	}
-	return RawMsg{Bytes: pkt, Delay: delay, Tag: *am.Tag}, nil
+	wl, err := am.MsgCommon.waitLimit()
+	if err != nil {
+		return RawMsg{}, err
+	}
+	return RawMsg{Bytes: pkt, Delay: delay, WaitLimit: wl, Tag: *am.Tag}, nil
 }
 
 func (am *ASBINMsg) getTag() string { return *am.Tag }
@@ -114,7 +126,11 @@ func (sm *SDBPMsg) toRaw() (RawMsg, error) {
 	if err != nil {
 		return RawMsg{}, err
 	}
-	return RawMsg{Bytes: pkt, Delay: delay, Tag: *sm.Tag}, nil
+	wl, err := sm.MsgCommon.waitLimit()
+	if err != nil {
+		return RawMsg{}, err
+	}
+	return RawMsg{Bytes: pkt, Delay: delay, WaitLimit: wl, Tag: *sm.Tag}, nil
 }
 
 func (sm *SDBPMsg) getTag() string { return *sm.Tag }
@@ -138,225 +154,95 @@ func (um *UBXMsg) toRaw() (RawMsg, error) {
 	if err != nil {
 		return RawMsg{}, err
 	}
-	return RawMsg{Bytes: pkt, Delay: delay, Tag: *um.Tag}, nil
+	wl, err := um.MsgCommon.waitLimit()
+	if err != nil {
+		return RawMsg{}, err
+	}
+	return RawMsg{Bytes: pkt, Delay: delay, WaitLimit: wl, Tag: *um.Tag}, nil
 }
 
 func (um *UBXMsg) getTag() string { return *um.Tag }
 
-type ackType int
+// ubxAnalyzer handles both request and response analysis for UBX.
+type ubxAnalyzer struct{}
 
-const (
-	notAck ackType = iota
-	isAckAck
-	isAckNak
-)
-
-type packetInfo[M comparable] struct {
-	msgID   M
-	ack     ackType
-	ackedID M // valid only when ack != notAck
-}
-
-// ubxLikeMatcher handles UBX, CASBIN, and ASBIN matchers which all follow
-// the same pattern: check tag, parse, match ACK class/ID or message class/ID.
-// Only CFG class messages receive ACK/NAK replies.
-type ubxLikeMatcher[M comparable] struct {
-	expectedTag gpsprot.Tag
-	sentMsgID   M
-	expectAck   bool
-	parse       func(string) (packetInfo[M], error)
-}
-
-func (m *ubxLikeMatcher[M]) match(tag gpsprot.Tag, data string) (ResponseKind, string) {
-	if tag != m.expectedTag {
-		return NotResponse, ""
+func (ubxAnalyzer) analyzeResponse(data string) responseAnalysis {
+	if len(data) < 8 {
+		return responseAnalysis{kind: responseMaybeData}
 	}
-	p, err := m.parse(data)
-	if err != nil {
-		return NotResponse, ""
-	}
-	if m.expectAck && p.ackedID == m.sentMsgID {
-		switch p.ack {
-		case isAckAck:
-			return AckResponse, ""
-		case isAckNak:
-			return AckResponse, AckNak
+	mid := ubxbin.PacketMsgId(data)
+	switch mid {
+	case ubxbin.AckAckID:
+		return responseAnalysis{
+			kind:         responseAck,
+			ackCorrelate: ubxAckCorrelate(data),
+		}
+	case ubxbin.AckNakID:
+		return responseAnalysis{
+			kind:         responseNak,
+			ackCorrelate: ubxAckCorrelate(data),
 		}
 	}
-	if p.msgID == m.sentMsgID {
-		return OtherResponse, ""
-	}
-	return NotResponse, ""
+	return responseAnalysis{kind: responseMaybeData}
 }
 
-func parseUBX(data string) (packetInfo[ubxbin.MsgID], error) {
+// ubxAckCorrelate extracts the 2-byte class/ID from a UBX ACK payload.
+func ubxAckCorrelate(data string) string {
 	if len(data) < 8 {
-		return packetInfo[ubxbin.MsgID]{}, fmt.Errorf("too short")
+		return ""
 	}
-	p := packetInfo[ubxbin.MsgID]{msgID: ubxbin.PacketMsgId(data)}
-	msg, _ := ubxbin.ParseMsg(data)
-	switch m := msg.(type) {
-	case *ubxbin.AckAck:
-		p.ack = isAckAck
-		p.ackedID = m.MsgID
-	case *ubxbin.AckNak:
-		p.ack = isAckNak
-		p.ackedID = m.MsgID
-	}
-	return p, nil
+	return data[6:8]
 }
 
-func parseCASBIN(data string) (packetInfo[casbin.MsgID], error) {
-	if len(data) < 10 {
-		return packetInfo[casbin.MsgID]{}, fmt.Errorf("too short")
+// ubxMsgCorrelate extracts the 2-byte class/ID from a UBX packet header.
+func ubxMsgCorrelate(data string) string {
+	if len(data) < 4 {
+		return ""
 	}
-	p := packetInfo[casbin.MsgID]{msgID: casbin.MakeMsgID(data[4], data[5])}
-	msg, _ := casbin.ParseMsg(data)
-	switch m := msg.(type) {
-	case *casbin.AckAck:
-		p.ack = isAckAck
-		p.ackedID = casbin.MakeMsgID(m.ClsID, m.MsgID)
-	case *casbin.AckNak:
-		p.ack = isAckNak
-		p.ackedID = casbin.MakeMsgID(m.ClsID, m.MsgID)
-	}
-	return p, nil
+	return data[2:4]
 }
 
-func parseASBIN(data string) (packetInfo[asbin.MsgID], error) {
-	if len(data) < 8 {
-		return packetInfo[asbin.MsgID]{}, fmt.Errorf("too short")
-	}
-	p := packetInfo[asbin.MsgID]{msgID: asbin.MakeMsgID(data[2], data[3])}
-	msg, _ := asbin.ParseMsg(data)
-	switch m := msg.(type) {
-	case *asbin.AckAck:
-		p.ack = isAckAck
-		p.ackedID = asbin.MakeMsgID(m.MsgClass, m.MsgID)
-	case *asbin.AckNak:
-		p.ack = isAckNak
-		p.ackedID = asbin.MakeMsgID(m.MsgClass, m.MsgID)
-	}
-	return p, nil
-}
-
-func (um *UBXMsg) newMatcher() responseMatcher {
+func (um *UBXMsg) analyzeRequest(data string) requestAnalysis {
 	mid := ubxbin.MakeMsgID(um.Class, um.ID)
-	return &ubxLikeMatcher[ubxbin.MsgID]{
-		expectedTag: gpsreg.TagUBX,
-		sentMsgID:   mid,
-		expectAck:   mid.CfgClass(),
-		parse:       parseUBX,
-	}
-}
-
-func (cm *CASBINMsg) newMatcher() responseMatcher {
-	mid := casbin.MakeMsgID(cm.Class, cm.ID)
-	if mid == casbin.CfgMsgID && len(cm.Payload.Values) >= 3 {
-		rate, _ := cm.Payload.Values[2].(int64)
-		if rate == 0xFFFF {
-			cls, _ := cm.Payload.Values[0].(int64)
-			id, _ := cm.Payload.Values[1].(int64)
-			return &casbinPollMatcher{
-				sentMsgID:   mid,
-				polledMsgID: casbin.MakeMsgID(byte(cls), byte(id)),
-			}
+	corr := ubxMsgCorrelate(data)
+	hasPayload := len(data) > 8
+	if mid == ubxbin.CfgRstID {
+		return requestAnalysis{
+			expectAck:  ExpectAckNone,
+			expectData: expectDataNone,
 		}
 	}
-	return &ubxLikeMatcher[casbin.MsgID]{
-		expectedTag: gpsreg.TagCASICBin,
-		sentMsgID:   mid,
-		expectAck:   mid.CfgClass(),
-		parse:       parseCASBIN,
-	}
-}
-
-// casbinPollMatcher handles CASIC CFG-MSG polls (rate=0xFFFF).
-// CASIC polls via CFG-MSG; the response is an ACK followed by the polled message.
-type casbinPollMatcher struct {
-	sentMsgID   casbin.MsgID // CFG-MSG, for ACK matching
-	polledMsgID casbin.MsgID // the message being polled
-}
-
-func (m *casbinPollMatcher) match(tag gpsprot.Tag, data string) (ResponseKind, string) {
-	if tag != gpsreg.TagCASICBin {
-		return NotResponse, ""
-	}
-	p, err := parseCASBIN(data)
-	if err != nil {
-		return NotResponse, ""
-	}
-	if p.ackedID == m.sentMsgID {
-		switch p.ack {
-		case isAckAck:
-			return AckResponse, ""
-		case isAckNak:
-			return AckResponse, AckNak
+	if mid.CfgClass() {
+		a := requestAnalysis{
+			ackTag:       gpsreg.TagUBX,
+			ackCorrelate: corr,
+			expectAck:    ExpectAckOrNak,
+			dataTag:      gpsreg.TagUBX,
 		}
+		if hasPayload {
+			a.expectData = expectDataNone
+		} else {
+			a.expectData = expectDataSingle
+			a.dataMatch = ubxDataMatch(corr)
+		}
+		return a
 	}
-	if p.msgID == m.polledMsgID {
-		return OtherResponse, ""
+	// Non-CFG poll. Poll-only messages use expectDataSingle;
+	// periodic/polled messages use expectDataAmbig.
+	de := expectDataAmbig
+	if mid == ubxbin.MonVerID || mid == ubxbin.MonGnssID {
+		de = expectDataSingle
 	}
-	return NotResponse, ""
-}
-
-func (am *ASBINMsg) newMatcher() responseMatcher {
-	mid := asbin.MakeMsgID(am.Class, am.ID)
-	return &ubxLikeMatcher[asbin.MsgID]{
-		expectedTag: gpsreg.TagAllystarBin,
-		sentMsgID:   mid,
-		expectAck:   mid.CfgClass(),
-		parse:       parseASBIN,
-	}
-}
-
-func parseSDBP(data string) (packetInfo[sdbpbin.MsgID], error) {
-	if len(data) < 8 {
-		return packetInfo[sdbpbin.MsgID]{}, fmt.Errorf("too short")
-	}
-	p := packetInfo[sdbpbin.MsgID]{msgID: sdbpbin.PacketMsgId(data)}
-	msg, _ := sdbpbin.ParseMsg(data)
-	switch m := msg.(type) {
-	case *sdbpbin.PubAck:
-		p.ack = isAckAck
-		p.ackedID = sdbpbin.MakeMsgID(m.Class, m.MsgID)
-	case *sdbpbin.PubNak:
-		p.ack = isAckNak
-		p.ackedID = sdbpbin.MakeMsgID(m.Class, m.MsgID)
-	}
-	return p, nil
-}
-
-func (sm *SDBPMsg) newMatcher() responseMatcher {
-	mid := sdbpbin.MakeMsgID(sm.Class, sm.ID)
-	return &ubxLikeMatcher[sdbpbin.MsgID]{
-		expectedTag: gpsreg.TagSDBP,
-		sentMsgID:   mid,
-		expectAck:   true,
-		parse:       parseSDBP,
+	return requestAnalysis{
+		expectAck:  ExpectAckNone,
+		dataTag:    gpsreg.TagUBX,
+		expectData: de,
+		dataMatch:  ubxDataMatch(corr),
 	}
 }
 
-// binaryTags maps binary protocol tags used for response classification.
-var binaryTags = map[gpsprot.Tag]bool{
-	gpsreg.TagUBX:         true,
-	gpsreg.TagCASICBin:    true,
-	gpsreg.TagAllystarBin: true,
-	gpsreg.TagSDBP:        true,
-}
-
-// binaryMatcher handles BinaryMsg responses.
-type binaryMatcher struct{}
-
-func (bm *BinaryMsg) newMatcher() responseMatcher {
-	return &binaryMatcher{}
-}
-
-func (m *binaryMatcher) match(tag gpsprot.Tag, data string) (ResponseKind, string) {
-	// Text-based packets are not responses to raw binary.
-	switch tag {
-	case gpsreg.TagNMEA, gpsreg.TagUnicoreAscii, gpsreg.TagNovAtelAscii:
-		return NotResponse, ""
+func ubxDataMatch(corr string) func(string) bool {
+	return func(data string) bool {
+		return ubxMsgCorrelate(data) == corr
 	}
-	return MaybeResponse, ""
 }

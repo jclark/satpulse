@@ -288,12 +288,12 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"", []string{"--socket", "/tmp/socket", "--show-config"}, flagVars{socketPath: "/tmp/socket", configGet: showProps}},
 	{"", []string{"--socket", "/tmp/socket", "-c"}, flagVars{socketPath: "/tmp/socket", configGet: showProps}},
 	// Test --msg-file with --tag flag
-	{"ttyS0", []string{"--msg-file", "test.toml"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, capture: opt.Make(2 * time.Second)}},
-	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}, capture: opt.Make(2 * time.Second)}},
-	{"ttyS0", []string{"--msg-file", "test.toml", "-t", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}, capture: opt.Make(2 * time.Second)}},
-	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup,ppp"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup", "ppp"}, capture: opt.Make(2 * time.Second)}},
-	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "foo,,bar"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"foo", "", "bar"}, capture: opt.Make(2 * time.Second)}},
-	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", ""}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, capture: opt.Make(2 * time.Second)}},
+	{"ttyS0", []string{"--msg-file", "test.toml"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "-t", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup,ppp"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup", "ppp"}}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "foo,,bar"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"foo", "", "bar"}}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", ""}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}}},
 }
 
 func TestParseFlagsValid(t *testing.T) {

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/pelletier/go-toml/v2"
 )
@@ -18,6 +17,7 @@ import (
 // MsgCommon contains fields shared by all message types.
 type MsgCommon struct {
 	Delay       *float64 `toml:"delay"`
+	WaitLimit   *float64 `toml:"waitLimit"`
 	Tag         *string  `toml:"tag"`
 	Description string   `toml:"description"`
 }
@@ -94,36 +94,13 @@ func (mc *MsgCommon) delay() (time.Duration, error) {
 	return ptime.Seconds(*mc.Delay), nil
 }
 
-// ResponseKind classifies how an incoming packet relates to sent messages.
-type ResponseKind int
-
-const (
-	NotResponse   ResponseKind = iota // definitely not a response to anything we sent
-	MaybeResponse                     // might be a response, can't tell
-	AckResponse                       // definite ACK/NAK of a specific sent message
-	OtherResponse                     // definitely a response (not ACK/NAK)
-)
-
-// AckNak is the default AckError when no detail is available.
-const AckNak = "NAK"
-
-// PacketAnalysis is the result of analyzing an incoming packet.
-type PacketAnalysis struct {
-	Kind       ResponseKind
-	AckError   string  // AckResponse only: empty = success, non-empty = failure
-	RelatedMsg *RawMsg // AckResponse only: the sent message this responds to
+func (mc *MsgCommon) waitLimit() (time.Duration, error) {
+	if *mc.WaitLimit < 0 {
+		return 0, errors.New("waitLimit must not be negative")
+	}
+	return ptime.Seconds(*mc.WaitLimit), nil
 }
 
-// responsePattern creates a responseMatcher for a specific sent message.
-type responsePattern interface {
-	newMatcher() responseMatcher
-}
-
-// responseMatcher examines an incoming packet and returns how it relates
-// to the specific sent message this matcher was created for.
-type responseMatcher interface {
-	match(tag gpsprot.Tag, data string) (ResponseKind, string)
-}
 
 // Parsed represents a parsed message file.
 type Parsed struct {
@@ -147,12 +124,13 @@ type Parsed struct {
 
 // RawMsg is a message ready to send: raw bytes with metadata.
 type RawMsg struct {
-	Bytes  []byte
-	Delay  time.Duration
-	Tag    string // for logging
-	Index  int    // 0-based index within tag
-	Count  int    // total messages with this tag
-	source responsePattern
+	Bytes     []byte
+	Delay     time.Duration
+	WaitLimit time.Duration // max time to wait for pacing before sending anyway
+	Tag       string        // for logging
+	Index     int           // 0-based index within tag
+	Count     int           // total messages with this tag
+	source    requestAnalyzer
 }
 
 // MsgID identifies a sent message for display purposes.
@@ -170,77 +148,13 @@ func (rm *RawMsg) MsgID() MsgID {
 type userMsg interface {
 	toRaw() (RawMsg, error)
 	getTag() string
-	responsePattern
 }
 
-// PacketAnalyzer classifies incoming packets and correlates ACK/NAK
-// responses to specific sent messages.
-type PacketAnalyzer struct {
-	msgs     []RawMsg
-	matchers []responseMatcher
-	acked    []bool
-}
-
-// NewPacketAnalyzer creates a new PacketAnalyzer.
-func NewPacketAnalyzer() *PacketAnalyzer {
-	return &PacketAnalyzer{}
-}
-
-// NotifySent records a sent message for future response matching.
-func (pa *PacketAnalyzer) NotifySent(rm RawMsg) {
-	pa.msgs = append(pa.msgs, rm)
-	pa.matchers = append(pa.matchers, rm.source.newMatcher())
-	pa.acked = append(pa.acked, false)
-}
-
-// Analyze classifies an incoming packet and correlates acks to sent messages.
-func (pa *PacketAnalyzer) Analyze(tag gpsprot.Tag, data string) PacketAnalysis {
-	type ackResult struct {
-		idx    int
-		ackErr string
-	}
-	var acks []ackResult
-	hasOther := false
-	hasMaybe := false
-	for i, m := range pa.matchers {
-		kind, ackErr := m.match(tag, data)
-		if kind == AckResponse && pa.acked[i] {
-			continue // ignore acks from already-acked matchers
-		}
-		switch kind {
-		case AckResponse:
-			acks = append(acks, ackResult{i, ackErr})
-		case OtherResponse:
-			hasOther = true
-		case MaybeResponse:
-			hasMaybe = true
-		}
-	}
-	if len(acks) == 1 {
-		idx := acks[0].idx
-		pa.acked[idx] = true
-		return PacketAnalysis{
-			Kind:       AckResponse,
-			AckError:   acks[0].ackErr,
-			RelatedMsg: &pa.msgs[idx],
-		}
-	}
-	if len(acks) > 1 {
-		return PacketAnalysis{Kind: OtherResponse}
-	}
-	if hasOther {
-		return PacketAnalysis{Kind: OtherResponse}
-	}
-	if hasMaybe {
-		return PacketAnalysis{Kind: MaybeResponse}
-	}
-	return PacketAnalysis{Kind: NotResponse}
-}
 
 func ptr[T any](v T) *T { return &v }
 
 func defaultMsgCommon() MsgCommon {
-	return MsgCommon{Delay: ptr(0.0), Tag: ptr("")}
+	return MsgCommon{Delay: ptr(0.0), WaitLimit: ptr(1.2), Tag: ptr("")}
 }
 
 func newDefault() *Parsed {
@@ -472,6 +386,9 @@ func applyCommonDefaults(dst, src *MsgCommon) {
 	if dst.Delay == nil {
 		dst.Delay = src.Delay
 	}
+	if dst.WaitLimit == nil {
+		dst.WaitLimit = src.WaitLimit
+	}
 	if dst.Tag == nil {
 		dst.Tag = src.Tag
 	}
@@ -521,6 +438,9 @@ func (mf *Parsed) validateDefaults() error {
 	if _, err := mf.Default.Line.MsgCommon.delay(); err != nil {
 		return fmt.Errorf("default.line: %w", err)
 	}
+	if _, err := mf.Default.Line.MsgCommon.waitLimit(); err != nil {
+		return fmt.Errorf("default.line: %w", err)
+	}
 	if mf.Default.Binary.Hex != "" {
 		return errors.New("default.binary.hex must be empty")
 	}
@@ -528,6 +448,9 @@ func (mf *Parsed) validateDefaults() error {
 		return errors.New("default.binary.description must be empty")
 	}
 	if _, err := mf.Default.Binary.MsgCommon.delay(); err != nil {
+		return fmt.Errorf("default.binary: %w", err)
+	}
+	if _, err := mf.Default.Binary.MsgCommon.waitLimit(); err != nil {
 		return fmt.Errorf("default.binary: %w", err)
 	}
 	if mf.Default.NMEA.Text != "" {
@@ -539,6 +462,9 @@ func (mf *Parsed) validateDefaults() error {
 	if _, err := mf.Default.NMEA.MsgCommon.delay(); err != nil {
 		return fmt.Errorf("default.nmea: %w", err)
 	}
+	if _, err := mf.Default.NMEA.MsgCommon.waitLimit(); err != nil {
+		return fmt.Errorf("default.nmea: %w", err)
+	}
 	if mf.Default.CASBIN.Class != 0 || mf.Default.CASBIN.ID != 0 {
 		return errors.New("default.casbin.class and default.casbin.id must be zero")
 	}
@@ -546,6 +472,9 @@ func (mf *Parsed) validateDefaults() error {
 		return errors.New("default.casbin.description must be empty")
 	}
 	if _, err := mf.Default.CASBIN.MsgCommon.delay(); err != nil {
+		return fmt.Errorf("default.casbin: %w", err)
+	}
+	if _, err := mf.Default.CASBIN.MsgCommon.waitLimit(); err != nil {
 		return fmt.Errorf("default.casbin: %w", err)
 	}
 	if mf.Default.ASBIN.Class != 0 || mf.Default.ASBIN.ID != 0 {
@@ -557,6 +486,9 @@ func (mf *Parsed) validateDefaults() error {
 	if _, err := mf.Default.ASBIN.MsgCommon.delay(); err != nil {
 		return fmt.Errorf("default.asbin: %w", err)
 	}
+	if _, err := mf.Default.ASBIN.MsgCommon.waitLimit(); err != nil {
+		return fmt.Errorf("default.asbin: %w", err)
+	}
 	if mf.Default.SDBP.Class != 0 || mf.Default.SDBP.ID != 0 {
 		return errors.New("default.sdbp.class and default.sdbp.id must be zero")
 	}
@@ -566,6 +498,9 @@ func (mf *Parsed) validateDefaults() error {
 	if _, err := mf.Default.SDBP.MsgCommon.delay(); err != nil {
 		return fmt.Errorf("default.sdbp: %w", err)
 	}
+	if _, err := mf.Default.SDBP.MsgCommon.waitLimit(); err != nil {
+		return fmt.Errorf("default.sdbp: %w", err)
+	}
 	if mf.Default.UBX.Class != 0 || mf.Default.UBX.ID != 0 {
 		return errors.New("default.ubx.class and default.ubx.id must be zero")
 	}
@@ -573,6 +508,9 @@ func (mf *Parsed) validateDefaults() error {
 		return errors.New("default.ubx.description must be empty")
 	}
 	if _, err := mf.Default.UBX.MsgCommon.delay(); err != nil {
+		return fmt.Errorf("default.ubx: %w", err)
+	}
+	if _, err := mf.Default.UBX.MsgCommon.waitLimit(); err != nil {
 		return fmt.Errorf("default.ubx: %w", err)
 	}
 	return nil

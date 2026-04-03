@@ -5,295 +5,205 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
-	"github.com/jclark/satpulse/gps/lib/asbin"
-	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
-// makeUBXPacket builds a valid UBX packet from class, id, and payload.
-func makeUBXPacket(cls, id byte, payload []byte) string {
-	pkt, err := ubxbin.PackMsg(ubxbin.MakeMsgID(cls, id), payload)
+// UBX recv helpers for correlator tests.
+
+type recvUBXEvent struct{ mid ubxbin.MsgID }
+
+func recvUBX(mid ubxbin.MsgID) recvUBXEvent { return recvUBXEvent{mid: mid} }
+
+func (e recvUBXEvent) run(t *testing.T, tc *testContext) {
+	t.Helper()
+	pkt, err := ubxbin.PackMsg(e.mid, nil)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	return string(pkt)
+	tc.last = tc.cor.CorrelatePacket(gpsreg.TagUBX, string(pkt))
 }
 
-// makeUBXAckAck builds a UBX ACK-ACK packet echoing the given class/id.
-func makeUBXAckAck(cls, id byte) string {
-	return makeUBXPacket(0x05, 0x01, []byte{cls, id})
-}
+type recvUBXAckEvent struct{ mid ubxbin.MsgID }
 
-// makeUBXAckNak builds a UBX ACK-NAK packet echoing the given class/id.
-func makeUBXAckNak(cls, id byte) string {
-	return makeUBXPacket(0x05, 0x00, []byte{cls, id})
-}
+func recvUBXAck(mid ubxbin.MsgID) recvUBXAckEvent { return recvUBXAckEvent{mid: mid} }
 
-// makeCASBINPacket builds a valid CASBIN packet from class, id, and payload.
-func makeCASBINPacket(cls, id byte, payload []byte) string {
-	pkt, err := casbin.PackMsg(casbin.MakeMsgID(cls, id), payload)
+func (e recvUBXAckEvent) run(t *testing.T, tc *testContext) {
+	t.Helper()
+	cls, id := e.mid.Unpack()
+	pkt, err := ubxbin.PackMsg(ubxbin.AckAckID, []byte{cls, id})
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	return string(pkt)
+	tc.last = tc.cor.CorrelatePacket(gpsreg.TagUBX, string(pkt))
 }
 
-// makeCASBINAckAck builds a CASBIN ACK-ACK packet echoing the given class/id.
-func makeCASBINAckAck(cls, id byte) string {
-	return makeCASBINPacket(0x05, 0x01, []byte{cls, id, 0, 0})
-}
+type recvUBXNakEvent struct{ mid ubxbin.MsgID }
 
-// makeCASBINAckNak builds a CASBIN ACK-NAK packet echoing the given class/id.
-func makeCASBINAckNak(cls, id byte) string {
-	return makeCASBINPacket(0x05, 0x00, []byte{cls, id, 0, 0})
-}
+func recvUBXNak(mid ubxbin.MsgID) recvUBXNakEvent { return recvUBXNakEvent{mid: mid} }
 
-// makeASBINPacket builds a valid ASBIN packet from class, id, and payload.
-func makeASBINPacket(cls, id byte, payload []byte) string {
-	pkt, err := asbin.PackMsg(asbin.MakeMsgID(cls, id), payload)
+func (e recvUBXNakEvent) run(t *testing.T, tc *testContext) {
+	t.Helper()
+	cls, id := e.mid.Unpack()
+	pkt, err := ubxbin.PackMsg(ubxbin.AckNakID, []byte{cls, id})
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	return string(pkt)
+	tc.last = tc.cor.CorrelatePacket(gpsreg.TagUBX, string(pkt))
 }
 
-// makeASBINAckAck builds an ASBIN ACK-ACK packet echoing the given class/id.
-func makeASBINAckAck(cls, id byte) string {
-	return makeASBINPacket(0x05, 0x01, []byte{cls, id})
-}
-
-// makeASBINAckNak builds an ASBIN ACK-NAK packet echoing the given class/id.
-func makeASBINAckNak(cls, id byte) string {
-	return makeASBINPacket(0x05, 0x00, []byte{cls, id})
-}
-
-func TestUBXMatcher(t *testing.T) {
-	sentClass, sentID := byte(0x06), byte(0x8A)
-	um := &UBXMsg{}
-	um.Class = sentClass
-	um.ID = sentID
-	tests := []struct {
-		name     string
-		tag      gpsprot.Tag
-		data     string
-		wantKind ResponseKind
-		wantErr  string
-	}{
+func TestCorrelatorUBX(t *testing.T) {
+	runCorrelatorTests(t, "ubx-test.toml", []correlatorTest{
 		{
-			name:     "ack-ack matching class/id",
-			tag:      gpsreg.TagUBX,
-			data:     makeUBXAckAck(sentClass, sentID),
-			wantKind: AckResponse,
-			wantErr:  "",
+			name: "CFG set ACK",
+			tags: []string{"set-tp5"},
+			events: []event{
+				sendEvent{},
+				recvUBXAck(ubxbin.CfgTp5ID),
+				expect{ack: AckAck, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
 		},
 		{
-			name:     "ack-nak matching class/id",
-			tag:      gpsreg.TagUBX,
-			data:     makeUBXAckNak(sentClass, sentID),
-			wantKind: AckResponse,
-			wantErr:  AckNak,
+			name: "CFG set NAK",
+			tags: []string{"set-tp5"},
+			events: []event{
+				sendEvent{},
+				recvUBXNak(ubxbin.CfgTp5ID),
+				expect{ack: AckNak, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
 		},
 		{
-			name:     "ack-ack wrong class/id",
-			tag:      gpsreg.TagUBX,
-			data:     makeUBXAckAck(0x06, 0x01),
-			wantKind: NotResponse,
+			name: "CFG set no response",
+			tags: []string{"set-tp5"},
+			events: []event{
+				sendEvent{},
+				checkDone{canAcceptMore: true},
+				checkMissing{ack: []int{0}},
+			},
 		},
 		{
-			name:     "same class/id data reply",
-			tag:      gpsreg.TagUBX,
-			data:     makeUBXPacket(sentClass, sentID, []byte{0x01, 0x02}),
-			wantKind: OtherResponse,
+			name: "CFG poll ACK then data",
+			tags: []string{"get-tp5"},
+			events: []event{
+				sendEvent{},
+				recvUBXAck(ubxbin.CfgTp5ID),
+				expect{ack: AckAck, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				recvUBX(ubxbin.CfgTp5ID),
+				expect{relevance: LevelSoleResponse},
+				checkDone{canAcceptMore: false},
+			},
 		},
 		{
-			name:     "different class/id",
-			tag:      gpsreg.TagUBX,
-			data:     makeUBXPacket(0x01, 0x07, []byte{0x00}),
-			wantKind: NotResponse,
+			name: "CFG poll data before ACK",
+			tags: []string{"get-tp5"},
+			events: []event{
+				sendEvent{},
+				recvUBX(ubxbin.CfgTp5ID),
+				expect{relevance: LevelSoleResponse},
+				recvUBXAck(ubxbin.CfgTp5ID),
+				expect{ack: AckAck, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
 		},
 		{
-			name:     "wrong protocol tag",
-			tag:      gpsreg.TagCASICBin,
-			data:     makeCASBINPacket(sentClass, sentID, nil),
-			wantKind: NotResponse,
+			name: "CFG poll NAK no data",
+			tags: []string{"get-tp5"},
+			events: []event{
+				sendEvent{},
+				recvUBXNak(ubxbin.CfgTp5ID),
+				expect{ack: AckNak, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
 		},
 		{
-			name:     "NMEA tag",
-			tag:      gpsreg.TagNMEA,
-			data:     makeNMEA("GPRMC,,,,,,,,,,,"),
-			wantKind: NotResponse,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			m := um.newMatcher()
-			kind, ackErr := m.match(tc.tag, tc.data)
-			if kind != tc.wantKind {
-				t.Errorf("kind: got %d, want %d", kind, tc.wantKind)
-			}
-			if kind == AckResponse && ackErr != tc.wantErr {
-				t.Errorf("ackErr: got %q, want %q", ackErr, tc.wantErr)
-			}
-		})
-	}
-}
-
-func TestCASBINMatcher(t *testing.T) {
-	sentClass, sentID := byte(0x06), byte(0x03)
-	cm := &CASBINMsg{}
-	cm.Class = sentClass
-	cm.ID = sentID
-	tests := []struct {
-		name     string
-		tag      gpsprot.Tag
-		data     string
-		wantKind ResponseKind
-		wantErr  string
-	}{
-		{
-			name:     "ack-ack matching",
-			tag:      gpsreg.TagCASICBin,
-			data:     makeCASBINAckAck(sentClass, sentID),
-			wantKind: AckResponse,
-			wantErr:  "",
+			name: "CFG poll missing ACK and data",
+			tags: []string{"get-tp5"},
+			events: []event{
+				sendEvent{},
+				checkMissing{ack: []int{0}, data: []int{0}},
+			},
 		},
 		{
-			name:     "ack-nak matching",
-			tag:      gpsreg.TagCASICBin,
-			data:     makeCASBINAckNak(sentClass, sentID),
-			wantKind: AckResponse,
-			wantErr:  AckNak,
+			name: "non-CFG poll data",
+			tags: []string{"poll-pvt"},
+			events: []event{
+				sendEvent{},
+				recvUBX(ubxbin.NavPVTID),
+				expect{relevance: LevelMaybeResponse},
+				checkDone{canAcceptMore: true},
+			},
 		},
 		{
-			name:     "ack-ack wrong class/id",
-			tag:      gpsreg.TagCASICBin,
-			data:     makeCASBINAckAck(0x06, 0x04),
-			wantKind: NotResponse,
+			name: "non-CFG poll unrelated packet",
+			tags: []string{"poll-pvt"},
+			events: []event{
+				sendEvent{},
+				recvUBX(ubxbin.NavDOPID),
+				expect{relevance: LevelNotResponse},
+			},
 		},
 		{
-			name:     "same class/id poll response",
-			tag:      gpsreg.TagCASICBin,
-			data:     makeCASBINPacket(sentClass, sentID, []byte{0x01, 0x02, 0x03, 0x04}),
-			wantKind: OtherResponse,
+			name: "poll-only MON-GNSS completes on data",
+			tags: []string{"poll-gnss"},
+			events: []event{
+				sendEvent{},
+				recvUBX(ubxbin.MonGnssID),
+				expect{relevance: LevelSoleResponse},
+				checkDone{canAcceptMore: false},
+			},
 		},
 		{
-			name:     "wrong tag",
-			tag:      gpsreg.TagUBX,
-			data:     makeUBXAckAck(sentClass, sentID),
-			wantKind: NotResponse,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			m := cm.newMatcher()
-			kind, ackErr := m.match(tc.tag, tc.data)
-			if kind != tc.wantKind {
-				t.Errorf("kind: got %d, want %d", kind, tc.wantKind)
-			}
-			if kind == AckResponse && ackErr != tc.wantErr {
-				t.Errorf("ackErr: got %q, want %q", ackErr, tc.wantErr)
-			}
-		})
-	}
-}
-
-func TestASBINMatcher(t *testing.T) {
-	sentClass, sentID := byte(0x06), byte(0x02)
-	am := &ASBINMsg{}
-	am.Class = sentClass
-	am.ID = sentID
-	tests := []struct {
-		name     string
-		tag      gpsprot.Tag
-		data     string
-		wantKind ResponseKind
-		wantErr  string
-	}{
-		{
-			name:     "ack-ack matching",
-			tag:      gpsreg.TagAllystarBin,
-			data:     makeASBINAckAck(sentClass, sentID),
-			wantKind: AckResponse,
-			wantErr:  "",
+			name: "CFG-RST no response expected",
+			tags: []string{"reset"},
+			events: []event{
+				sendEvent{},
+				checkDone{canAcceptMore: false},
+				checkMissing{},
+			},
 		},
 		{
-			name:     "ack-nak matching",
-			tag:      gpsreg.TagAllystarBin,
-			data:     makeASBINAckNak(sentClass, sentID),
-			wantKind: AckResponse,
-			wantErr:  AckNak,
+			name: "two CFG sets different IDs pacing OK",
+			tags: []string{"set-tp5", "set-prt"},
+			events: []event{
+				sendEvent{},
+				readyToSend{want: true},
+				sendEvent{},
+				recvUBXAck(ubxbin.CfgTp5ID),
+				expect{ack: AckAck, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				recvUBXAck(ubxbin.CfgPrtID),
+				expect{ack: AckAck, relevance: LevelAckOnly, msgIndex: intptr(1)},
+				checkDone{canAcceptMore: false},
+			},
 		},
 		{
-			name:     "wrong tag",
-			tag:      gpsreg.TagUBX,
-			data:     makeUBXAckAck(sentClass, sentID),
-			wantKind: NotResponse,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			m := am.newMatcher()
-			kind, ackErr := m.match(tc.tag, tc.data)
-			if kind != tc.wantKind {
-				t.Errorf("kind: got %d, want %d", kind, tc.wantKind)
-			}
-			if kind == AckResponse && ackErr != tc.wantErr {
-				t.Errorf("ackErr: got %q, want %q", ackErr, tc.wantErr)
-			}
-		})
-	}
-}
-
-func TestBinaryMatcher(t *testing.T) {
-	bm := &BinaryMsg{Hex: "B562068A"}
-	tests := []struct {
-		name     string
-		tag      gpsprot.Tag
-		data     string
-		wantKind ResponseKind
-	}{
-		{
-			name:     "NMEA not a response",
-			tag:      gpsreg.TagNMEA,
-			data:     makeNMEA("GPRMC,,,,,,,,,,,"),
-			wantKind: NotResponse,
+			name: "two CFG sets same ID pacing blocks",
+			tags: []string{"set-tp5", "set-tp5-dup"},
+			events: []event{
+				sendEvent{},
+				readyToSend{want: false},
+				recvUBXAck(ubxbin.CfgTp5ID),
+				expect{ack: AckAck, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				readyToSend{want: true},
+				sendEvent{},
+				recvUBXAck(ubxbin.CfgTp5ID),
+				expect{ack: AckAck, relevance: LevelAckOnly, msgIndex: intptr(1)},
+				checkDone{canAcceptMore: false},
+			},
 		},
 		{
-			name:     "UNCA not a response",
-			tag:      gpsreg.TagUnicoreAscii,
-			data:     "#MODE,0;MODE,ROVER*xx\r\n",
-			wantKind: NotResponse,
+			name: "ambiguous ACK two pending same ID",
+			tags: []string{"set-tp5", "set-tp5-dup"},
+			events: []event{
+				sendEvent{},
+				sendEvent{},
+				recvUBXAck(ubxbin.CfgTp5ID),
+				expect{ack: AckNone, relevance: LevelAmbigResponse},
+				checkDone{canAcceptMore: true},
+			},
 		},
-		{
-			name:     "NOVA not a response",
-			tag:      gpsreg.TagNovAtelAscii,
-			data:     "#VERSION,COM1;blah*xx\r\n",
-			wantKind: NotResponse,
-		},
-		{
-			name:     "UBX maybe response",
-			tag:      gpsreg.TagUBX,
-			data:     makeUBXPacket(0x06, 0x8A, nil),
-			wantKind: MaybeResponse,
-		},
-		{
-			name:     "unrecognized maybe response",
-			tag:      gpsprot.EmptyTag,
-			data:     "\x00\x01\x02",
-			wantKind: MaybeResponse,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			m := bm.newMatcher()
-			kind, _ := m.match(tc.tag, tc.data)
-			if kind != tc.wantKind {
-				t.Errorf("kind: got %d, want %d", kind, tc.wantKind)
-			}
-		})
-	}
+	})
 }
 
 func TestLoadBinaryMsgSimple(t *testing.T) {

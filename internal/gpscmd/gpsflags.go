@@ -422,10 +422,6 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		if vars.packetLogMode == testLogMode {
 			return nil, nil, fmt.Errorf("--msg-file cannot be combined with --test-log")
 		}
-		// Default to --capture 2 for message file mode to show receiver responses
-		if !flags.Lookup("capture").Changed {
-			vars.capture.Set(2 * time.Second)
-		}
 		// Parse tags: split on comma, preserving empty strings for empty tags
 		vars.msgTags = strings.Split(msgTags, ",")
 	} else if msgTags != "" {

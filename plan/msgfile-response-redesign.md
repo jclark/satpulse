@@ -330,24 +330,48 @@ any pending request has a conflicting ACK correlation fragment
 (same `ackTag` and `ackCorrelate` with ack still pending). Returns
 true if safe to send.
 
-Before sending each message, the sender calls `ReadyToSend`. If
-false, it enters a select loop waiting on:
-- the `waitDelay` deadline (send anyway when expired),
-- context cancellation,
-- incoming packets (call `CorrelatePacket`, which may clear the
-  conflict by acking the pending request).
+### delay, waitLimit, and --capture
 
-The loop re-checks `ReadyToSend` after each packet until it
-returns true or the deadline expires.
+Three independent timing controls govern message sending:
+
+**`delay`** is a per-message minimum pause before the next message
+is sent. It controls inter-message spacing (e.g. giving the
+receiver time to process a command before sending the next). It
+does not extend the response wait deadline. Packets are processed
+during the delay.
+
+**`waitLimit`** is a per-message property on `MsgCommon` (TOML key
+`waitLimit`), a float64 in seconds with a default of 1.2 seconds.
+It is stored as `RawMsg.WaitLimit` (a `time.Duration`). It
+controls how long the sender is willing to wait for responses.
+After sending each message, the sender extends a response deadline
+to `max(deadline, now + waitLimit)`. A message with a longer
+`waitLimit` extends the deadline but a subsequent message with a
+shorter one does not reduce it.
+
+**`--capture`** is a CLI flag that adds additional packet capture
+time *after* all message sending and response waiting is complete.
+It has no default in message file mode. When specified, packets
+are displayed for the full capture duration with no early exit.
+`--capture` is independent of `waitLimit`.
+
+### Send loop
+
+After sending each message, the sender waits for the message's
+`delay`, then checks `ReadyToSend` for the next message. If
+`ReadyToSend` returns false, the sender processes incoming packets
+(which may clear the conflicting ACK) until `ReadyToSend` returns
+true or the response deadline expires.
 
 ### Knowing when to stop waiting
 
-After all messages have been sent, the caller enters a read loop.
-On each packet it checks `CanAcceptMore()`: if false, all requests
-have reached known completion and the caller stops immediately.
-Otherwise it keeps reading until a timeout expires.
+After all messages have been sent, the sender enters a response
+wait loop. On each packet it checks `CanAcceptMore()`: if false,
+all requests have reached known completion and the sender stops
+immediately. Otherwise it keeps processing packets until the
+response deadline expires.
 
-After the timeout (or early stop), the caller calls `Missing()` to
+After the deadline (or early stop), the caller calls `Missing()` to
 get requests whose firm expectations were not met, and warns the
 user about each one.
 
@@ -418,11 +442,20 @@ ACK-NAK (rule 1) and the same message populated with data (rule 2).
 For example, polling CFG-TP5 produces an ACK-ACK for CFG-TP5 and
 a CFG-TP5 message containing the current timepulse configuration.
 
-**Non-CFG poll.** Send a non-CFG message with an empty payload.
-The receiver replies with the same message populated with data
-(rule 2) only -- no ACK/NAK since it is not CFG-class. For example,
-polling NAV-PVT (class 0x01, ID 0x07) produces a NAV-PVT message
-with the current navigation solution.
+**Non-CFG poll (periodic).** Send a non-CFG message with an empty
+payload. The receiver replies with the same message populated with
+data (rule 2) only -- no ACK/NAK since it is not CFG-class. For
+example, polling NAV-PVT (class 0x01, ID 0x07) produces a NAV-PVT
+message with the current navigation solution. Most NAV, RXM, MON,
+and TIM messages are periodic: the receiver may output them
+independently of any poll, so the response is indistinguishable
+from periodic output.
+
+**Non-CFG poll (poll-only).** Some non-CFG messages are poll-only
+(Type "Polled" in the u-blox spec): the receiver only outputs them
+in response to a poll, never periodically. For these messages the
+response is definitively a reply to the poll. Currently MON-VER
+(0x0A 0x04) and MON-GNSS (0x0A 0x28) are handled as poll-only.
 
 **Exception:** CFG-RST (reset) does not produce a response because
 the receiver resets before it can reply.
@@ -436,9 +469,10 @@ Implemented by UBXMsg. Produces a requestAnalysis:
   otherwise. Exception: CFG-RST uses `ExpectAckNone` (receiver
   resets before it can reply).
 - `dataTag`: TagUBX.
-- `dataExpect`: `expectDataNone` for CFG set, `expectDataSingle`
-  for CFG poll, `expectDataAmbig` for non-CFG poll. CFG-RST uses
-  `expectDataNone`.
+- `expectData`: `expectDataNone` for CFG set, `expectDataSingle`
+  for CFG poll, `expectDataAmbig` for non-CFG periodic poll,
+  `expectDataSingle` for non-CFG poll-only (MON-VER, MON-GNSS).
+  CFG-RST uses `expectDataNone`.
 - `dataMatch`: non-nil closure that checks the incoming packet's
   class/ID against the sent message's class/ID. (Without this,
   any UBX data packet would match.)
