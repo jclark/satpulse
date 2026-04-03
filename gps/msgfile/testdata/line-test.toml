@@ -1,0 +1,5 @@
+# Line test messages for correlator tests (no response pattern).
+
+[[line]]
+tag = "raw-cmd"
+text = "SOME COMMAND"

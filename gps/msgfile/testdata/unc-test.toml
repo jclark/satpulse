@@ -1,0 +1,54 @@
+# Unicore test messages for correlator tests.
+
+[default.line]
+responsePattern = "unicore"
+
+# Set command: expects ACK only.
+[[line]]
+tag = "set-pps"
+text = "CONFIG PPS ENABLE GPS POSITIVE 500000 1000 0 0"
+
+# Another set command with different text.
+[[line]]
+tag = "set-sg"
+text = "CONFIG SIGNALGROUP 2"
+
+# Duplicate set command (same text as set-pps) for pacing/ambiguity tests.
+[[line]]
+tag = "set-pps-dup"
+text = "CONFIG PPS ENABLE GPS POSITIVE 500000 1000 0 0"
+
+# CONFIG query (bare): expects ACK + multiple $CONFIG data.
+[[line]]
+tag = "get-config"
+text = "CONFIG"
+
+# MASK query: expects ACK + multiple $CONFIG,MASK data.
+[[line]]
+tag = "get-mask"
+text = "MASK"
+
+# MODE query: expects ACK + single UNCA data.
+[[line]]
+tag = "get-mode"
+text = "MODE"
+
+# VERSION query: expects ACK + single UNCA data.
+[[line]]
+tag = "get-version"
+text = "VERSION"
+
+# Data output command (one-shot): expects ACK + ambiguous UNCA data.
+[[line]]
+tag = "get-versiona"
+text = "VERSIONA"
+
+# Data output command (periodic): expects ACK + ambiguous UNCA data.
+[[line]]
+tag = "set-rectimeb"
+text = "RECTIMEB 1"
+
+# MODE set command: expects ACK only.
+[[line]]
+tag = "set-mode"
+text = "MODE ROVER SURVEY"

@@ -126,7 +126,9 @@ type Correlator struct {
 func NewCorrelator() *Correlator {
 	return &Correlator{
 		analyzers: map[gpsprot.Tag]responseAnalyzer{
-			gpsreg.TagUBX: ubxAnalyzer{},
+			gpsreg.TagUBX:          ubxAnalyzer{},
+			gpsreg.TagNMEA:         nmeaAnalyzer{},
+			gpsreg.TagUnicoreAscii: uncaAnalyzer{},
 		},
 	}
 }
@@ -274,7 +276,8 @@ func (c *Correlator) correlateData(tag gpsprot.Tag, data string, confirmed bool)
 	var matches []*requestState
 	for i := range c.requests {
 		rs := &c.requests[i]
-		if rs.data != dataWait {
+		if rs.data != dataWait &&
+			!(rs.data == dataReceived && rs.analysis.expectData == expectDataMultiple) {
 			continue
 		}
 		a := &rs.analysis
@@ -301,7 +304,7 @@ func (c *Correlator) correlateData(tag gpsprot.Tag, data string, confirmed bool)
 		rs.data = dataReceived
 		return Correlation{Relevance: LevelSoleResponse}
 	case expectDataMultiple:
-		// Don't mark received -- more may come.
+		rs.data = dataReceived
 		return Correlation{Relevance: LevelMultiResponse}
 	case expectDataAmbig:
 		return Correlation{Relevance: LevelMaybeResponse}
