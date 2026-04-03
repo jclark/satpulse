@@ -127,6 +127,9 @@ func NewCorrelator() *Correlator {
 	return &Correlator{
 		analyzers: map[gpsprot.Tag]responseAnalyzer{
 			gpsreg.TagUBX:          ubxAnalyzer{},
+			gpsreg.TagCASICBin:     casbinAnalyzer{},
+			gpsreg.TagAllystarBin:  asbinAnalyzer{},
+			gpsreg.TagSDBP:         sdbpAnalyzer{},
 			gpsreg.TagNMEA:         nmeaAnalyzer{},
 			gpsreg.TagUnicoreAscii: uncaAnalyzer{},
 		},

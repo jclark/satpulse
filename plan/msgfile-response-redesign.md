@@ -1294,6 +1294,122 @@ b) Implement SDBP request and response analyzers.
 c) Run test cases.
 d) Test against real hardware.
 
+## Follow-ups
+
+Issues discovered during implementation of phases 7-9 that
+should be addressed as follow-up work.
+
+### Poll payload length in lib packages
+
+The current request analyzers use "empty payload = poll" to
+distinguish polls from sets. This is wrong for messages where
+the poll carries a short payload to select what is being queried:
+
+- **UBX**: `PollCfgTp5` (1 byte), `PollCfgMsg` (2 bytes).
+- **ASBIN**: `PollPrt` (1 byte), `PollCfgMsg` (2 bytes),
+  `PollNavTime` (1 byte).
+- **SDBP**: `PollCfgPPS` (1 byte), `PollCfgNMEA` (1 byte),
+  `PollCfgSDBP` (2 bytes).
+- **CASIC**: CFG-MSG single-message poll (4 bytes with
+  rate=0xFFFF) is already handled as a special case, but
+  ideally the payload-format knowledge should live in `casbin`.
+
+Each lib package that needs it should expose a function like
+`PollPayloadLen(MsgID) (int, bool)` that returns the maximum
+payload length indicating a poll for that message ID, and
+whether the message has a poll variant at all. The request
+analyzers in `msgfile/binary.go` should call this instead of
+using payload-length heuristics.
+
+Related: #225 (decoding outgoing poll messages).
+
+### No-response messages in lib packages
+
+The current request analyzers hardcode specific message IDs
+that produce no response (UBX `CfgRstID`, ASBIN
+`CfgSimpleRstID`, SDBP `CtlRestartID`/`CtlStandbyID`). This
+knowledge belongs in the lib packages.
+
+UBX already has `Ackable()` which returns false for `CfgRstID`.
+Each lib package should expose a similar method so that the
+correlator does not need to know individual message IDs.
+
+A NAK is always possible for any message in any protocol (as a
+generic "unsupported message" rejection), so `ExpectAckNone`
+should never be used for binary protocol messages. The question
+for reset/restart commands is whether the protocol specifies an
+ACK before resetting (`ExpectAckOrNak`) or no ACK on success
+(`ExpectAckNakOnly`). This needs to be verified per-protocol by
+checking protocol docs and testing with hardware. PQTM and PAIR
+reset commands should also be checked.
+
+The current UBX and CASIC analyzers use `ExpectAckNone` for
+their reset messages, which should be changed to
+`ExpectAckNakOnly` at minimum.
+
+### Wire-format knowledge in msgfile
+
+The request and response analyzers in `msgfile/binary.go`
+extract correlation data by reading bytes at specific offsets
+in packet data (e.g. `data[2:4]` for class/ID, `data[6:8]` for
+ACK payload). This wire-format knowledge should live in the lib
+packages, not in `msgfile`.
+
+Each lib package should expose functions to extract the
+correlation-relevant fields from a packet:
+
+- Message class/ID from a packet header (e.g.
+  `PacketMsgID` already exists in most libs).
+- Acknowledged class/ID from an ACK/NAK payload.
+
+The response and request analyzers should call these functions
+instead of using raw byte offsets.
+
+### Split binary.go and text.go per protocol
+
+`binary.go` contains message types and analyzers for all four
+binary protocols (UBX, CASIC, ASBIN, SDBP). `text.go` contains
+NMEA, line, and Unicore handling. Split into per-protocol files
+so that each protocol-specific lib package is imported in only
+one place, and adding a new protocol just adds a new file and
+its registration in a parent file.
+
+- `ubx.go` — UBXLikeMsg, UBXMsg, UBX analyzer
+- `casbin.go` — CASBINMsg, CASIC analyzer
+- `asbin.go` — ASBINMsg, Allystar analyzer
+- `sdbp.go` — SDBPMsg, SDBP analyzer
+- `nmea.go` — NMEAMsg, NMEA analyzer, proprietary dispatch
+- `pqtm.go` — PQTM classifier
+- `pair.go` — PAIR classifier
+- `unc.go` — Unicore request/response analyzers
+- `line.go` — LineMsg
+- `binary.go` — BinaryMsg only
+
+Registration points:
+- `correlate.go` `NewCorrelator()`: registers response
+  analyzers by tag (one line per binary protocol, plus NMEA
+  and Unicore ASCII).
+- `nmea.go` `proprietaryClassifiers`: registers PQTM, PAIR
+  classifiers by vendor code.
+- `msgfile.go`: registers message types for TOML parsing.
+
+### Documentation updates
+
+The message file format documentation and schema need updating
+for the new `waitLimit` key and any other format additions.
+The man page needs updating for the changed `--capture`
+behavior with `-m` and `-t` (early stop when all responses
+received, `waitLimit`-based deadlines).
+
+- `configs/gpsmsg/format.md`: document `waitLimit` key and
+  updated response handling behavior.
+- `configs/gpsmsg/gpsmsg-schema.json`: add `waitLimit` to the
+  schema definitions.
+- `docs/man/satpulsetool-gps.1.md`: update `--capture`
+  description to reflect that it now adds capture time *after*
+  response waiting is complete, rather than being the sole
+  timeout.
+
 ## Key files
 
 - This plan: `plan/msgfile-response-redesign.md`
