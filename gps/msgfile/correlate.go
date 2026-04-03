@@ -183,6 +183,9 @@ func (c *Correlator) ReadyToSend(rm RawMsg) bool {
 	}
 	for i := range c.requests {
 		rs := &c.requests[i]
+		if c.requestComplete(rs) {
+			continue
+		}
 		if rs.ack != ackWait && rs.ack != ackWaitMore {
 			continue
 		}
@@ -220,6 +223,9 @@ func (c *Correlator) correlateAck(tag gpsprot.Tag, ra responseAnalysis) Correlat
 	var matches []*requestState
 	for i := range c.requests {
 		rs := &c.requests[i]
+		if c.requestComplete(rs) {
+			continue
+		}
 		if rs.ack != ackWait && rs.ack != ackWaitMore {
 			continue
 		}

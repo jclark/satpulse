@@ -934,7 +934,8 @@ The NMEAMsg request analyzer maps these to `requestAnalysis`:
 - `RequestVerno` -> `ExpectAckNakOnly`, `expectDataSingle`.
 
 In all cases: `ackTag` = TagNMEA, `ackCorrelate` = Sentence,
-`dataTag` = TagNMEA, `dataMatch` = nil.
+`dataTag` = TagNMEA. `dataMatch` = nil for commands and queries;
+non-nil for `RequestVerno` (checks sentence name).
 
 ### airmsg
 

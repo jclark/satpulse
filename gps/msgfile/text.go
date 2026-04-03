@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/airmsg"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/lib/qtmmsg"
 )
 
 // LineMsg represents a [[line]] entry or [default.line].
@@ -75,9 +77,24 @@ func (nm *NMEAMsg) toRaw() (RawMsg, error) {
 
 func (nm *NMEAMsg) getTag() string { return *nm.Tag }
 
-// buildNMEA builds a complete NMEA sentence from user text.
-// Prepends $ if missing, appends *XX checksum if missing, appends CRLF.
-// Validates the result using nmeamsg.CheckSyntax.
+// analyzeRequest implements requestAnalyzer for NMEAMsg.
+func (nm *NMEAMsg) analyzeRequest(data string) requestAnalysis {
+	payload := nmeaPayload(data)
+	if payload == "" {
+		return requestAnalysis{}
+	}
+	if nm.flags.IsValidProprietaryNMEA() && len(payload) >= 4 {
+		vendor := payload[1:4] // skip 'P', take 3-letter vendor code
+		if c, ok := proprietaryClassifiers[vendor]; ok {
+			return c.classifyRequest(payload)
+		}
+	}
+	return requestAnalysis{
+		expectAck:  ExpectAckNone,
+		expectData: expectDataUnknown,
+	}
+}
+
 // analyzeRequest implements requestAnalyzer for LineMsg.
 func (lm *LineMsg) analyzeRequest(data string) requestAnalysis {
 	if lm.RespPattern != nil && *lm.RespPattern == ResponsePatternUnicore {
@@ -172,6 +189,100 @@ func uncConfigDataMatch(data string, wantMask bool) bool {
 	return isMask == wantMask
 }
 
+// proprietaryNMEA classifies proprietary NMEA requests and responses.
+type proprietaryNMEA interface {
+	classifyRequest(payload string) requestAnalysis
+	classifyResponse(payload string) responseAnalysis
+}
+
+var proprietaryClassifiers = map[string]proprietaryNMEA{
+	"QTM": pqtmClassifier{},
+	"AIR": pairClassifier{},
+}
+
+// pqtmClassifier dispatches PQTM classification to the qtmmsg package.
+type pqtmClassifier struct{}
+
+func (pqtmClassifier) classifyRequest(payload string) requestAnalysis {
+	rc := qtmmsg.ClassifyRequest(payload)
+	a := requestAnalysis{
+		ackTag:       gpsreg.TagNMEA,
+		ackCorrelate: rc.Sentence,
+		dataTag:      gpsreg.TagNMEA,
+	}
+	switch rc.Kind {
+	case qtmmsg.RequestCommand:
+		a.expectAck = ExpectAckOrNak
+		a.expectData = expectDataNone
+	case qtmmsg.RequestQuery:
+		a.expectAck = ExpectAckOrNak
+		a.expectData = expectDataWithAck
+	case qtmmsg.RequestVerno:
+		a.expectAck = ExpectAckNakOnly
+		a.expectData = expectDataSingle
+		a.dataMatch = func(data string) bool {
+			p := nmeaPayload(data)
+			name, _, _ := strings.Cut(p, ",")
+			return name == rc.Sentence
+		}
+	}
+	return a
+}
+
+func (pqtmClassifier) classifyResponse(payload string) responseAnalysis {
+	rc := qtmmsg.ClassifyResponse(payload)
+	switch rc.Kind {
+	case qtmmsg.ResponseOK, qtmmsg.ResponseOKData:
+		return responseAnalysis{kind: responseAck, ackCorrelate: rc.Sentence}
+	case qtmmsg.ResponseError:
+		return responseAnalysis{kind: responseNak, ackCorrelate: rc.Sentence, ackError: rc.Error}
+	case qtmmsg.ResponseData:
+		return responseAnalysis{kind: responseData}
+	}
+	return responseAnalysis{kind: responseMaybeData}
+}
+
+// pairClassifier dispatches PAIR classification to the airmsg package.
+type pairClassifier struct{}
+
+func (pairClassifier) classifyRequest(payload string) requestAnalysis {
+	rc := airmsg.ClassifyRequest(payload)
+	a := requestAnalysis{
+		ackTag:       gpsreg.TagNMEA,
+		ackCorrelate: rc.CommandID,
+		expectAck:    ExpectAckOrNak,
+		dataTag:      gpsreg.TagNMEA,
+	}
+	switch rc.Kind {
+	case airmsg.RequestCommand:
+		a.expectData = expectDataNone
+	case airmsg.RequestQuery:
+		a.expectData = expectDataSingle
+		sentName := "PAIR" + rc.CommandID
+		a.dataMatch = func(data string) bool {
+			p := nmeaPayload(data)
+			name, _, _ := strings.Cut(p, ",")
+			return name == sentName
+		}
+	}
+	return a
+}
+
+func (pairClassifier) classifyResponse(payload string) responseAnalysis {
+	rc := airmsg.ClassifyResponse(payload)
+	switch rc.Kind {
+	case airmsg.ResponseOK:
+		return responseAnalysis{kind: responseAck, ackCorrelate: rc.CommandID}
+	case airmsg.ResponseWait:
+		return responseAnalysis{kind: responseWait, ackCorrelate: rc.CommandID}
+	case airmsg.ResponseError:
+		return responseAnalysis{kind: responseNak, ackCorrelate: rc.CommandID, ackError: rc.Error}
+	case airmsg.ResponseData:
+		return responseAnalysis{kind: responseData}
+	}
+	return responseAnalysis{kind: responseMaybeData}
+}
+
 // nmeaAnalyzer classifies incoming NMEA packets for response correlation.
 type nmeaAnalyzer struct{}
 
@@ -193,6 +304,13 @@ func (nmeaAnalyzer) analyzeResponse(data string) responseAnalysis {
 	flags := nmeamsg.CheckSyntax(data)
 	if flags.IsValidGNSSTalkerNMEA() {
 		return responseAnalysis{kind: responseNotData}
+	}
+	// Proprietary NMEA: dispatch by vendor code.
+	if flags.IsValidProprietaryNMEA() && len(payload) >= 4 {
+		vendor := payload[1:4]
+		if c, ok := proprietaryClassifiers[vendor]; ok {
+			return c.classifyResponse(payload)
+		}
 	}
 	return responseAnalysis{kind: responseMaybeData}
 }

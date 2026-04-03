@@ -1,0 +1,31 @@
+# PQTM test messages for correlator tests.
+
+# Write command: expects ACK only.
+[[nmea]]
+tag = "set-pps"
+text = "PQTMCFGPPS,W,1,1,100000,1000,0,0"
+
+# Query: expects ACK with data (data combined in ACK packet).
+[[nmea]]
+tag = "get-pps"
+text = "PQTMCFGPPS,R,1"
+
+# Version query: expects data without OK, may get NAK on error.
+[[nmea]]
+tag = "get-version"
+text = "PQTMVERNO"
+
+# Another write command for pacing tests.
+[[nmea]]
+tag = "set-fixrate"
+text = "PQTMCFGFIXRATE,W,1000"
+
+# Duplicate write command (same sentence name as set-pps) for ambiguity tests.
+[[nmea]]
+tag = "set-pps-dup"
+text = "PQTMCFGPPS,W,2,1,100000,1000,0,0"
+
+# Save parameters command (bare command, no W/R).
+[[nmea]]
+tag = "savepar"
+text = "PQTMSAVEPAR"
