@@ -1393,6 +1393,51 @@ Registration points:
   classifiers by vendor code.
 - `msgfile.go`: registers message types for TOML parsing.
 
+### Wait-for-ACK message property
+
+Add a boolean `MsgCommon` property (TOML key `waitForAck` or
+similar) that forces the sender to wait for the ACK/NAK before
+sending the next message, even when `ReadyToSend` would allow
+it. Currently the sender only waits when the next message's ACK
+correlation would conflict with a pending request. The UBX spec
+explicitly requires waiting for each ACK before sending the
+next message; the current conflict-only pacing is an
+optimization that works in practice but deviates from the spec.
+This property would restore spec-compliant behaviour, and could
+be the default for protocols where the spec mandates it.
+
+### Unknown proprietary NMEA responses
+
+For proprietary NMEA protocols where we don't understand the
+vendor code (PXYZ where XYZ is not in `proprietaryClassifiers`),
+we should accept as responses only:
+
+- PXYZ sentences with matching vendor code XYZ.
+- NMEA TXT sentences (any valid talker ID, e.g. GPTXT,
+  GNTXT), since some proprietary protocols respond using
+  TXT messages rather than their own sentence format.
+
+Currently all unknown proprietary sentences get
+`responseMaybeData` regardless of vendor code, which is too
+broad.
+
+### UBX-INF informational messages
+
+UBX-INF-* messages (ERROR, WARNING, NOTICE, etc.) can
+accompany ACK/NAK responses to provide additional error context.
+The UBX response analyzer returns `responseMaybeData` for these,
+but the correlator's data matching then fails (INF class 0x04
+doesn't match any request's class/ID), so they end up as
+`LevelNotResponse` and are silently dropped. The INF message
+classes are already defined in `ubxbin/inf.go`.
+
+These are spontaneous human-readable messages produced by the
+receiver that could be related to what was sent. May need a new
+response kind to handle this — distinct from data responses
+(not correlated to a specific request) and from ACK/NAK (no
+state update). NMEA TXT messages might use this same response
+kind. Needs experimentation with hardware.
+
 ### Documentation updates
 
 The message file format documentation and schema need updating
