@@ -1312,20 +1312,13 @@ optimization that works in practice but deviates from the spec.
 This property would restore spec-compliant behaviour, and could
 be the default for protocols where the spec mandates it.
 
-### Unknown proprietary NMEA responses
+### NMEA TXT as informational responses
 
-For proprietary NMEA protocols where we don't understand the
-vendor code (PXYZ where XYZ is not in `proprietaryClassifiers`),
-we should accept as responses only:
-
-- PXYZ sentences with matching vendor code XYZ.
-- NMEA TXT sentences (any valid talker ID, e.g. GPTXT,
-  GNTXT), since some proprietary protocols respond using
-  TXT messages rather than their own sentence format.
-
-Currently all unknown proprietary sentences get
-`responseMaybeData` regardless of vendor code, which is too
-broad.
+Some proprietary protocols respond using NMEA TXT messages
+(GPTXT, GNTXT) rather than their own sentence format. Currently
+TXT sentences are classified as `responseNotData` because
+`IsValidGNSSTalkerNMEA()` returns true. They should be accepted
+as possible responses for unknown proprietary NMEA commands.
 
 ### UBX-INF informational messages
 
