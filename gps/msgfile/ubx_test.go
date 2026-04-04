@@ -155,12 +155,22 @@ func TestCorrelatorUBX(t *testing.T) {
 			},
 		},
 		{
-			name: "CFG-RST no response expected",
+			name: "CFG-RST silent success",
 			tags: []string{"reset"},
 			events: []event{
 				sendEvent{},
-				checkDone{canAcceptMore: false},
+				checkDone{canAcceptMore: true},
 				checkMissing{},
+			},
+		},
+		{
+			name: "CFG-RST NAK on failure",
+			tags: []string{"reset"},
+			events: []event{
+				sendEvent{},
+				recvUBXNak(ubxbin.CfgRstID),
+				expect{ack: AckNak, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
 			},
 		},
 		{

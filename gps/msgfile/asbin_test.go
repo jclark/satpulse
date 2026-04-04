@@ -140,12 +140,22 @@ func TestCorrelatorASBIN(t *testing.T) {
 			},
 		},
 		{
-			name: "CFG-SIMPLERST no response expected",
+			name: "CFG-SIMPLERST silent success",
 			tags: []string{"reset"},
 			events: []event{
 				sendEvent{},
-				checkDone{canAcceptMore: false},
+				checkDone{canAcceptMore: true},
 				checkMissing{},
+			},
+		},
+		{
+			name: "CFG-SIMPLERST NAK on failure",
+			tags: []string{"reset"},
+			events: []event{
+				sendEvent{},
+				recvASBINNak(asbin.CfgSimpleRstID),
+				expect{ack: AckNak, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
 			},
 		},
 		{

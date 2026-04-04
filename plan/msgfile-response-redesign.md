@@ -1299,21 +1299,6 @@ d) Test against real hardware.
 Issues discovered during implementation of phases 7-9 that
 should be addressed as follow-up work.
 
-### Fix ExpectAckNone for reset messages
-
-A NAK is always possible for any message in any protocol (as a
-generic "unsupported message" rejection), so `ExpectAckNone`
-should never be used for binary protocol messages. The question
-for reset/restart commands is whether the protocol specifies an
-ACK before resetting (`ExpectAckOrNak`) or no ACK on success
-(`ExpectAckNakOnly`). This needs to be verified per-protocol by
-checking protocol docs and testing with hardware. PQTM and PAIR
-reset commands should also be checked.
-
-The current UBX and CASIC analyzers use `ExpectAckNone` for
-their reset messages, which should be changed to
-`ExpectAckNakOnly` at minimum.
-
 ### Wait-for-ACK message property
 
 Add a boolean `MsgCommon` property (TOML key `waitForAck` or

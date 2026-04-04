@@ -67,8 +67,10 @@ func (cm *CASBINMsg) analyzeRequest(data string) requestAnalysis {
 	payloadLen := len(data) - casbin.PacketMinLen
 	if mid.CfgClass() && !mid.Ackable() {
 		return requestAnalysis{
-			expectAck:  ExpectAckNone,
-			expectData: expectDataNone,
+			ackTag:       gpsreg.TagCASICBin,
+			ackCorrelate: corr,
+			expectAck:    ExpectAckNakOnly,
+			expectData:   expectDataNone,
 		}
 	}
 	if mid == casbin.CfgMsgID {

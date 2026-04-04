@@ -68,8 +68,10 @@ func (am *ASBINMsg) analyzeRequest(data string) requestAnalysis {
 	if mid.CfgClass() {
 		if !mid.Ackable() {
 			return requestAnalysis{
-				expectAck:  ExpectAckNone,
-				expectData: expectDataNone,
+				ackTag:       gpsreg.TagAllystarBin,
+				ackCorrelate: corr,
+				expectAck:    ExpectAckNakOnly,
+				expectData:   expectDataNone,
 			}
 		}
 		a := requestAnalysis{
