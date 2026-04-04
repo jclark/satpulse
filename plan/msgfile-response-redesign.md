@@ -1301,16 +1301,7 @@ should be addressed as follow-up work.
 
 ### Wait-for-ACK message property
 
-Add a boolean `MsgCommon` property (TOML key `waitForAck` or
-similar) that forces the sender to wait for the ACK/NAK before
-sending the next message, even when `ReadyToSend` would allow
-it. Currently the sender only waits when the next message's ACK
-correlation would conflict with a pending request. The UBX spec
-explicitly requires waiting for each ACK before sending the
-next message; the current conflict-only pacing is an
-optimization that works in practice but deviates from the spec.
-This property would restore spec-compliant behaviour, and could
-be the default for protocols where the spec mandates it.
+See #252.
 
 ### NMEA TXT as informational responses
 
