@@ -48,8 +48,8 @@ function entryData(pkt: PacketLogEntry): string {
     return pkt.bin || '';
 }
 
-function isActive(pkt: PacketLogEntry): boolean {
-    return Date.now() - new Date(pkt.t).getTime() < ACTIVE_WINDOW_MS;
+function isActive(pkt: PacketLogEntry, now?: number): boolean {
+    return (now ?? Date.now()) - new Date(pkt.t).getTime() < ACTIVE_WINDOW_MS;
 }
 
 const chevronSvg = (
@@ -62,6 +62,8 @@ export function PacketPanel({visible, connState}: Props) {
     const liveRef = useRef<Map<string, MsgTypeState>>(new Map());
     const [displayed, setDisplayed] = useState<Map<string, MsgTypeState>>(new Map());
     const frozenRef = useRef(false);
+    const frozenAtRef = useRef(0);
+    const [isFrozen, setIsFrozen] = useState(false);
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [decodeTarget, setDecodeTarget] = useState<DecodeTarget | null>(null);
     const [decodeContent, setDecodeContent] = useState<string>('');
@@ -110,14 +112,28 @@ export function PacketPanel({visible, connState}: Props) {
 
     // Freeze/unfreeze
     const handleFreeze = useCallback(() => {
-        frozenRef.current = !frozenRef.current;
-        setDisplayed(new Map(liveRef.current));
+        const wasFrozen = frozenRef.current;
+        frozenRef.current = !wasFrozen;
+        setIsFrozen(!wasFrozen);
+        if (wasFrozen) {
+            // Resuming: sync display to live
+            setDisplayed(new Map(liveRef.current));
+        } else {
+            // Freezing: deep-copy so in-place mutations to live don't leak through
+            frozenAtRef.current = Date.now();
+            const snap = new Map<string, MsgTypeState>();
+            for (const [k, v] of liveRef.current) {
+                snap.set(k, {...v, recentEntries: v.recentEntries.slice()});
+            }
+            setDisplayed(snap);
+        }
     }, []);
 
     // Clear
     const handleClear = useCallback(() => {
         liveRef.current = new Map();
         frozenRef.current = false;
+        setIsFrozen(false);
         setDisplayed(new Map());
         setExpanded(new Set());
         setDecodeTarget(null);
@@ -207,8 +223,6 @@ export function PacketPanel({visible, connState}: Props) {
         return () => document.removeEventListener('keydown', onKey);
     }, [snapshotOpen]);
 
-    const isFrozen = frozenRef.current;
-
     return (
         <div class="flex h-full flex-col text-xs">
             {/* Table area */}
@@ -229,7 +243,7 @@ export function PacketPanel({visible, connState}: Props) {
                         {sortedRows.map(state => {
                             const key = `${state.tag}:${state.msg}:${state.out ? 'o' : 'i'}`;
                             const last = state.recentEntries[state.recentEntries.length - 1];
-                            const active = isActive(last);
+                            const active = isActive(last, isFrozen ? frozenAtRef.current : undefined);
                             const textClass = active ? 'text-text-primary' : 'text-text-muted';
                             const canExpand = state.recentEntries.length > 1;
                             const isExpanded = expanded.has(key);
