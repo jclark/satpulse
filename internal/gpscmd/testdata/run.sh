@@ -84,7 +84,7 @@ satpulsetool --version
 # Discard temp state
 echo Running: satpulsetool gps --reload
 satpulsetool gps --reload -d /dev/$dev -s $speed
-sleep 1
+sleep ${reload_secs:-1}
 
 echo Setting binary mode
 satpulsetool gps --binary -d /dev/$dev -s $speed
