@@ -14,6 +14,7 @@ var uncReplayFiles = []string{
 	"um980-rtcm-out",
 	"um980-binary",
 	"um980-min-elev",
+	"um980-tmode",
 }
 
 func TestReplayUNC(t *testing.T) {
