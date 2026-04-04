@@ -231,66 +231,123 @@ func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan s
 	if err != nil {
 		return err
 	}
-	rh := newResponseHandler(os.Stdout)
-	err = runRawMsgs(ctx, lg, conn, pCh, raw, rh)
+	rh := newResponseHandler(os.Stdout, lg)
+	err = sendAllMsgs(ctx, lg, conn, pCh, raw, rh)
 	if capture.IsSet() {
 		keepReading(ctx, lg, pCh, capture.Get(), rh)
 	}
+	rh.reportMissing()
 	rh.Flush()
 	return err
 }
 
-func runRawMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, msgs []msgfile.RawMsg, rh *responseHandler) error {
-	for _, m := range msgs {
-		if err := sendMsg(ctx, lg, conn, pCh, m, rh); err != nil {
+func sendAllMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, msgs []msgfile.RawMsg, rh *responseHandler) error {
+	var deadline time.Time
+	for i, m := range msgs {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		_, err := conn.Write(m.Bytes)
+		if err != nil {
+			return err
+		}
+		rh.notifySent(m)
+		lg.Info("sent message", "index", m.Index+1, "tag", m.Tag)
+		if d := time.Now().Add(m.WaitLimit); d.After(deadline) {
+			deadline = d
+		}
+		if err := waitAfterSend(ctx, lg, pCh, m, msgs, i, deadline, rh); err != nil {
 			return err
 		}
 	}
-	return nil
+	// Wait for remaining responses until deadline.
+	return waitForResponses(ctx, lg, pCh, deadline, rh)
 }
 
-func sendMsg(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, m msgfile.RawMsg, rh *responseHandler) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	_, err := conn.Write(m.Bytes)
-	if err != nil {
-		return err
-	}
-	rh.notifySent(m)
-	lg.Info("sent message", "index", m.Index+1, "tag", m.Tag)
-	var timerCh <-chan time.Time
+// waitAfterSend waits for the message's delay, then for pacing to
+// clear for the next message. Packets are processed throughout.
+func waitAfterSend(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Packet, m msgfile.RawMsg, msgs []msgfile.RawMsg, i int, deadline time.Time, rh *responseHandler) error {
+	last := i == len(msgs)-1
+	// Wait for delay.
 	if m.Delay > 0 {
 		timer := time.NewTimer(m.Delay)
 		defer timer.Stop()
-		timerCh = timer.C
-	}
-	for timerCh != nil {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timerCh:
-			timerCh = nil
-		case pkt, ok := <-pCh:
-			if !ok {
-				return nil
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+				goto delayDone
+			case pkt, ok := <-pCh:
+				if !ok {
+					return nil
+				}
+				rh.handlePacket(pkt)
 			}
-			rh.handlePacket(pkt)
 		}
 	}
-
-	// Drain any immediately available packets (including when delay is zero).
+delayDone:
+	if last {
+		return nil
+	}
+	// Wait for pacing: ReadyToSend for the next message.
+	next := msgs[i+1]
+	if rh.readyToSend(next) {
+		return nil
+	}
+	lg.Debug("waiting for pending ACK before sending", "index", next.Index+1, "tag", next.Tag)
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(remaining)
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-timer.C:
+			return nil
 		case pkt, ok := <-pCh:
 			if !ok {
 				return nil
 			}
 			rh.handlePacket(pkt)
-		default:
+			if rh.readyToSend(next) {
+				return nil
+			}
+		}
+	}
+}
+
+// waitForResponses processes packets until all responses are received
+// or the deadline expires.
+func waitForResponses(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Packet, deadline time.Time, rh *responseHandler) error {
+	if !rh.canAcceptMore() {
+		return nil
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return nil
+	}
+	lg.Debug("waiting for responses", "remaining", remaining)
+	timer := time.NewTimer(remaining)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
 			return nil
+		case pkt, ok := <-pCh:
+			if !ok {
+				return nil
+			}
+			rh.handlePacket(pkt)
+			if !rh.canAcceptMore() {
+				lg.Debug("all responses received")
+				return nil
+			}
 		}
 	}
 }

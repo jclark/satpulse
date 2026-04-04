@@ -44,14 +44,19 @@ func makeMsgID(cls byte, id byte) MsgID {
 // MakeMsgID creates a MsgID from class and id bytes.
 func MakeMsgID(cls byte, id byte) MsgID { return makeMsgID(cls, id) }
 
-func (mid MsgID) unpack() (byte, byte) {
+func (mid MsgID) Unpack() (byte, byte) {
 	return byte(mid & 0xFF), byte((mid >> 8) & 0xFF)
 }
 
 // CfgClass reports whether mid is in the CFG class.
 func (mid MsgID) CfgClass() bool {
-	cls, _ := mid.unpack()
+	cls, _ := mid.Unpack()
 	return cls == clsCfg
+}
+
+// Ackable reports whether mid expects an ACK/NAK response.
+func (mid MsgID) Ackable() bool {
+	return mid.CfgClass() && mid != CfgSimpleRstID
 }
 
 type Msg interface {
@@ -63,7 +68,7 @@ var idNameMap = make(map[MsgID]string)
 
 func (mid MsgID) String() string {
 	idName := idNameMap[mid]
-	cls, id := mid.unpack()
+	cls, id := mid.Unpack()
 	s := clsMap[cls]
 	if s == "" {
 		s = fmt.Sprintf("0x%02X", cls)
@@ -109,12 +114,20 @@ func regMsg[T any, PT interface {
 	idNameMap[mid] = idName
 }
 
-// 2 bytes sync, 2 bytes clsid, 2 bytes length, 2 bytes checksum
-const packetMinLength = 8
+const (
+	HeaderLen    = 6 // sync(2) + class(1) + id(1) + length(2)
+	TrailerLen   = 2 // checksum(2)
+	PacketMinLen = HeaderLen + TrailerLen
+)
+
+// AckMsgID extracts the acknowledged MsgID from an ACK/NAK packet.
+func AckMsgID[B Bytes](pkt B) MsgID {
+	return makeMsgID(pkt[HeaderLen], pkt[HeaderLen+1])
+}
 
 func ParseMsg(packet string) (Msg, error) {
 	n := len(packet)
-	if n < packetMinLength {
+	if n < PacketMinLen {
 		return nil, fmt.Errorf("AS message too short (length %d bytes)", n)
 	}
 	checksumIndex := n - 2
@@ -194,7 +207,7 @@ func packMsg(mid MsgID, payload []byte) ([]byte, error) {
 	if len(payload) > 0xFFFF {
 		return nil, fmt.Errorf("as-%s payload too long (%d bytes)", mid.String(), len(payload))
 	}
-	cls, id := mid.unpack()
+	cls, id := mid.Unpack()
 	packet := []byte{
 		Sync1,
 		Sync2,

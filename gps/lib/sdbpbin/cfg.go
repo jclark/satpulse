@@ -103,6 +103,21 @@ type CfgPPS struct {
 
 func (m *CfgPPS) ID() MsgID { return CfgPPSID }
 
+// PollPayloadLen returns the maximum payload length that indicates
+// a poll for mid.
+func PollPayloadLen(mid MsgID) int {
+	switch mid {
+	case CfgPPSID:
+		return 1 // PPS index
+	case CfgNMEAID:
+		return 1 // sentence ID
+	case CfgSDBPID:
+		return 2 // class + ID
+	default:
+		return 0
+	}
+}
+
 // PollCfgPPS builds a CFG-PPS query packet for the given PPS index.
 func PollCfgPPS(index uint8) []byte {
 	pkt, _ := PackMsg(makeMsgID(clsCFG, 0x41), []byte{byte(index)})

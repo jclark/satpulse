@@ -1,0 +1,53 @@
+# UBX test messages for correlator tests.
+
+# CFG set: expects ACK only, no data.
+# Payload > 1 byte so it is not mistaken for a poll (1-byte poll selects timepulse index).
+[[ubx]]
+tag = "set-tp5"
+class = 0x06
+id = 0x31
+payload.types = "U1U1"
+payload.values = [0, 0]
+
+# CFG poll: expects ACK + data response.
+[[ubx]]
+tag = "get-tp5"
+class = 0x06
+id = 0x31
+
+# Non-CFG poll: expects data only, no ACK.
+[[ubx]]
+tag = "poll-pvt"
+class = 0x01
+id = 0x07
+
+# CFG set with different class/ID for pacing tests.
+# Payload > 1 byte so it is not mistaken for a poll (1-byte poll selects port ID).
+[[ubx]]
+tag = "set-prt"
+class = 0x06
+id = 0x00
+payload.types = "U1U1"
+payload.values = [1, 0]
+
+# CFG-RST: no response expected (receiver resets).
+[[ubx]]
+tag = "reset"
+class = 0x06
+id = 0x04
+payload.types = "U2U1U1"
+payload.values = [0xFFFF, 0, 0]
+
+# Non-CFG poll-only: MON-GNSS (not periodic, response is confirmable).
+[[ubx]]
+tag = "poll-gnss"
+class = 0x0A
+id = 0x28
+
+# Second CFG set with same class/ID as set-tp5 for ambiguity tests.
+[[ubx]]
+tag = "set-tp5-dup"
+class = 0x06
+id = 0x31
+payload.types = "U1U1"
+payload.values = [1, 0]

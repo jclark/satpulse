@@ -330,24 +330,48 @@ any pending request has a conflicting ACK correlation fragment
 (same `ackTag` and `ackCorrelate` with ack still pending). Returns
 true if safe to send.
 
-Before sending each message, the sender calls `ReadyToSend`. If
-false, it enters a select loop waiting on:
-- the `waitDelay` deadline (send anyway when expired),
-- context cancellation,
-- incoming packets (call `CorrelatePacket`, which may clear the
-  conflict by acking the pending request).
+### delay, waitLimit, and --capture
 
-The loop re-checks `ReadyToSend` after each packet until it
-returns true or the deadline expires.
+Three independent timing controls govern message sending:
+
+**`delay`** is a per-message minimum pause before the next message
+is sent. It controls inter-message spacing (e.g. giving the
+receiver time to process a command before sending the next). It
+does not extend the response wait deadline. Packets are processed
+during the delay.
+
+**`waitLimit`** is a per-message property on `MsgCommon` (TOML key
+`waitLimit`), a float64 in seconds with a default of 1.2 seconds.
+It is stored as `RawMsg.WaitLimit` (a `time.Duration`). It
+controls how long the sender is willing to wait for responses.
+After sending each message, the sender extends a response deadline
+to `max(deadline, now + waitLimit)`. A message with a longer
+`waitLimit` extends the deadline but a subsequent message with a
+shorter one does not reduce it.
+
+**`--capture`** is a CLI flag that adds additional packet capture
+time *after* all message sending and response waiting is complete.
+It has no default in message file mode. When specified, packets
+are displayed for the full capture duration with no early exit.
+`--capture` is independent of `waitLimit`.
+
+### Send loop
+
+After sending each message, the sender waits for the message's
+`delay`, then checks `ReadyToSend` for the next message. If
+`ReadyToSend` returns false, the sender processes incoming packets
+(which may clear the conflicting ACK) until `ReadyToSend` returns
+true or the response deadline expires.
 
 ### Knowing when to stop waiting
 
-After all messages have been sent, the caller enters a read loop.
-On each packet it checks `CanAcceptMore()`: if false, all requests
-have reached known completion and the caller stops immediately.
-Otherwise it keeps reading until a timeout expires.
+After all messages have been sent, the sender enters a response
+wait loop. On each packet it checks `CanAcceptMore()`: if false,
+all requests have reached known completion and the sender stops
+immediately. Otherwise it keeps processing packets until the
+response deadline expires.
 
-After the timeout (or early stop), the caller calls `Missing()` to
+After the deadline (or early stop), the caller calls `Missing()` to
 get requests whose firm expectations were not met, and warns the
 user about each one.
 
@@ -418,11 +442,20 @@ ACK-NAK (rule 1) and the same message populated with data (rule 2).
 For example, polling CFG-TP5 produces an ACK-ACK for CFG-TP5 and
 a CFG-TP5 message containing the current timepulse configuration.
 
-**Non-CFG poll.** Send a non-CFG message with an empty payload.
-The receiver replies with the same message populated with data
-(rule 2) only -- no ACK/NAK since it is not CFG-class. For example,
-polling NAV-PVT (class 0x01, ID 0x07) produces a NAV-PVT message
-with the current navigation solution.
+**Non-CFG poll (periodic).** Send a non-CFG message with an empty
+payload. The receiver replies with the same message populated with
+data (rule 2) only -- no ACK/NAK since it is not CFG-class. For
+example, polling NAV-PVT (class 0x01, ID 0x07) produces a NAV-PVT
+message with the current navigation solution. Most NAV, RXM, MON,
+and TIM messages are periodic: the receiver may output them
+independently of any poll, so the response is indistinguishable
+from periodic output.
+
+**Non-CFG poll (poll-only).** Some non-CFG messages are poll-only
+(Type "Polled" in the u-blox spec): the receiver only outputs them
+in response to a poll, never periodically. For these messages the
+response is definitively a reply to the poll. Currently MON-VER
+(0x0A 0x04) and MON-GNSS (0x0A 0x28) are handled as poll-only.
 
 **Exception:** CFG-RST (reset) does not produce a response because
 the receiver resets before it can reply.
@@ -436,9 +469,10 @@ Implemented by UBXMsg. Produces a requestAnalysis:
   otherwise. Exception: CFG-RST uses `ExpectAckNone` (receiver
   resets before it can reply).
 - `dataTag`: TagUBX.
-- `dataExpect`: `expectDataNone` for CFG set, `expectDataSingle`
-  for CFG poll, `expectDataAmbig` for non-CFG poll. CFG-RST uses
-  `expectDataNone`.
+- `expectData`: `expectDataNone` for CFG set, `expectDataSingle`
+  for CFG poll, `expectDataAmbig` for non-CFG periodic poll,
+  `expectDataSingle` for non-CFG poll-only (MON-VER, MON-GNSS).
+  CFG-RST uses `expectDataNone`.
 - `dataMatch`: non-nil closure that checks the incoming packet's
   class/ID against the sent message's class/ID. (Without this,
   any UBX data packet would match.)
@@ -900,7 +934,8 @@ The NMEAMsg request analyzer maps these to `requestAnalysis`:
 - `RequestVerno` -> `ExpectAckNakOnly`, `expectDataSingle`.
 
 In all cases: `ackTag` = TagNMEA, `ackCorrelate` = Sentence,
-`dataTag` = TagNMEA, `dataMatch` = nil.
+`dataTag` = TagNMEA. `dataMatch` = nil for commands and queries;
+non-nil for `RequestVerno` (checks sentence name).
 
 ### airmsg
 
@@ -1258,6 +1293,49 @@ a) Write test cases and testdata TOML for SDBP scenarios: set
 b) Implement SDBP request and response analyzers.
 c) Run test cases.
 d) Test against real hardware.
+
+## Follow-ups
+
+Issues discovered during implementation of phases 7-9 that
+should be addressed as follow-up work.
+
+### Wait-for-ACK message property
+
+Add a boolean `MsgCommon` property (TOML key `waitForAck` or
+similar) that forces the sender to wait for the ACK/NAK before
+sending the next message, even when `ReadyToSend` would allow
+it. Currently the sender only waits when the next message's ACK
+correlation would conflict with a pending request. The UBX spec
+explicitly requires waiting for each ACK before sending the
+next message; the current conflict-only pacing is an
+optimization that works in practice but deviates from the spec.
+This property would restore spec-compliant behaviour, and could
+be the default for protocols where the spec mandates it.
+
+### NMEA TXT as informational responses
+
+Some proprietary protocols respond using NMEA TXT messages
+(GPTXT, GNTXT) rather than their own sentence format. Currently
+TXT sentences are classified as `responseNotData` because
+`IsValidGNSSTalkerNMEA()` returns true. They should be accepted
+as possible responses for unknown proprietary NMEA commands.
+
+### UBX-INF informational messages
+
+UBX-INF-* messages (ERROR, WARNING, NOTICE, etc.) can
+accompany ACK/NAK responses to provide additional error context.
+The UBX response analyzer returns `responseMaybeData` for these,
+but the correlator's data matching then fails (INF class 0x04
+doesn't match any request's class/ID), so they end up as
+`LevelNotResponse` and are silently dropped. The INF message
+classes are already defined in `ubxbin/inf.go`.
+
+These are spontaneous human-readable messages produced by the
+receiver that could be related to what was sent. May need a new
+response kind to handle this — distinct from data responses
+(not correlated to a specific request) and from ACK/NAK (no
+state update). NMEA TXT messages might use this same response
+kind. Needs experimentation with hardware.
 
 ## Key files
 

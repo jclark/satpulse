@@ -96,6 +96,11 @@ func (mid MsgID) CfgClass() bool {
 	return cls == clsCfg
 }
 
+// Ackable reports whether mid expects an ACK/NAK response.
+func (mid MsgID) Ackable() bool {
+	return mid.CfgClass() && mid != CfgRstID
+}
+
 func (mid MsgID) String() string {
 	cls, id := mid.Unpack()
 	s := clsMap[cls]
@@ -158,14 +163,22 @@ func regMsg[T any, PT interface {
 	idNameMap[mid] = idName
 }
 
-// Packet header: sync(2) + len(2) + class(1) + id(1) + payload + checksum(4)
-const packetMinLength = 10
+const (
+	HeaderLen    = 6  // sync(2) + length(2) + class(1) + id(1)
+	TrailerLen   = 4  // checksum(4)
+	PacketMinLen = HeaderLen + TrailerLen
+)
+
+// AckMsgID extracts the acknowledged MsgID from an ACK/NAK packet.
+func AckMsgID[B ~string | ~[]byte](pkt B) MsgID {
+	return MakeMsgID(pkt[HeaderLen], pkt[HeaderLen+1])
+}
 
 // ParseMsg parses a CASIC message from a packet.
 // It assumes the checksum was already verified.
 func ParseMsg(packet string) (Msg, error) {
 	n := len(packet)
-	if n < packetMinLength {
+	if n < PacketMinLen {
 		return nil, fmt.Errorf("CASIC message too short (length %d bytes)", n)
 	}
 	checksumIndex := n - 4

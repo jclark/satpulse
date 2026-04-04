@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -12,64 +13,77 @@ import (
 )
 
 // responseHandler handles displaying responses from the receiver,
-// using a PacketAnalyzer to correlate responses to sent messages.
+// using a Correlator to correlate responses to sent messages.
 type responseHandler struct {
 	w       io.Writer
-	pa      *msgfile.PacketAnalyzer
+	lg      *slog.Logger
+	cor     *msgfile.Correlator
 	lineBuf []byte
+	lineEOL string
 }
 
-func newResponseHandler(w io.Writer) *responseHandler {
+func newResponseHandler(w io.Writer, lg *slog.Logger) *responseHandler {
 	return &responseHandler{
-		w:  w,
-		pa: msgfile.NewPacketAnalyzer(),
+		w:   w,
+		lg:  lg,
+		cor: msgfile.NewCorrelator(),
 	}
 }
 
 func (rh *responseHandler) notifySent(rm msgfile.RawMsg) {
-	rh.pa.NotifySent(rm)
+	rh.cor.NotifyMsgSent(rm)
+}
+
+func (rh *responseHandler) readyToSend(rm msgfile.RawMsg) bool {
+	return rh.cor.ReadyToSend(rm)
+}
+
+func (rh *responseHandler) canAcceptMore() bool {
+	return rh.cor.CanAcceptMore()
 }
 
 // handlePacket processes a received packet for display.
 // For unrecognized packets, line buffering re-slices raw bytes into
-// printable lines which are then fed into Analyze.
-// For recognized packets, Analyze is called directly.
+// printable lines which are then fed into CorrelatePacket.
+// For recognized packets, CorrelatePacket is called directly.
 func (rh *responseHandler) handlePacket(pkt scan.Packet) {
 	if pkt.Format == nil {
 		rh.bufferLines([]byte(pkt.Data))
 		return
 	}
 	rh.flushLine()
-	result := rh.pa.Analyze(pkt.Tag(), pkt.Data)
-	if s := rh.formatAnalysis(result, pkt); s != "" {
+	cor := rh.cor.CorrelatePacket(pkt.Tag(), pkt.Data)
+	rh.lg.Debug("correlate packet", "tag", pkt.Tag(), "ack", cor.Ack, "relevance", cor.Relevance)
+	if s := rh.formatCorrelation(cor, pkt); s != "" {
 		io.WriteString(rh.w, s)
 	}
 }
 
 func (rh *responseHandler) bufferLines(data []byte) {
 	for _, b := range data {
-		if b == '\n' {
-			rh.flushLine()
-		} else if b == '\r' {
-			// skip CR, will print on LF
+		if b == '\r' || b == '\n' {
+			rh.lineEOL += string(b)
+			if b == '\n' {
+				rh.flushLine()
+			}
 		} else if isPrintable(b) {
 			rh.lineBuf = append(rh.lineBuf, b)
 		} else {
-			// non-printable char, clear buffer
 			rh.lineBuf = rh.lineBuf[:0]
+			rh.lineEOL = ""
 		}
 	}
 }
 
-func (rh *responseHandler) formatAnalysis(r msgfile.PacketAnalysis, pkt scan.Packet) string {
-	switch r.Kind {
-	case msgfile.NotResponse:
-		return ""
-	case msgfile.AckResponse:
-		return formatAck(r)
-	default:
-		return formatPacket(pkt)
+func (rh *responseHandler) formatCorrelation(cor msgfile.Correlation, pkt scan.Packet) string {
+	var b strings.Builder
+	if cor.Ack != msgfile.AckNone && cor.InResponseTo != nil {
+		b.WriteString(formatAck(cor))
 	}
+	if cor.Relevance >= msgfile.LevelMaybeResponse {
+		b.WriteString(formatPacket(pkt))
+	}
+	return b.String()
 }
 
 func formatPacket(pkt scan.Packet) string {
@@ -85,13 +99,21 @@ func formatPacket(pkt scan.Packet) string {
 	return name + " " + hex.EncodeToString([]byte(pkt.Data)) + "\n"
 }
 
-func formatAck(r msgfile.PacketAnalysis) string {
-	mid := r.RelatedMsg.MsgID()
+func formatAck(cor msgfile.Correlation) string {
+	mid := cor.InResponseTo.MsgID()
 	prefix := formatMsgID(mid)
-	if r.AckError == "" {
+	switch cor.Ack {
+	case msgfile.AckAck:
 		return prefix + ": OK\n"
+	case msgfile.AckNak:
+		if cor.NakError != "" {
+			return fmt.Sprintf("%s: receiver rejected message: %s\n", prefix, cor.NakError)
+		}
+		return prefix + ": receiver rejected message: NAK\n"
+	case msgfile.AckOther:
+		return prefix + ": processing...\n"
 	}
-	return fmt.Sprintf("%s: receiver rejected message: %s\n", prefix, r.AckError)
+	return ""
 }
 
 func formatMsgID(mid msgfile.MsgID) string {
@@ -116,12 +138,16 @@ func formatText(pkt scan.Packet) string {
 
 func (rh *responseHandler) flushLine() {
 	if len(rh.lineBuf) == 0 {
+		rh.lineEOL = ""
 		return
 	}
 	line := string(rh.lineBuf)
+	eol := rh.lineEOL
 	rh.lineBuf = rh.lineBuf[:0]
-	result := rh.pa.Analyze(gpsprot.EmptyTag, line)
-	if result.Kind != msgfile.NotResponse {
+	rh.lineEOL = ""
+	cor := rh.cor.CorrelatePacket(gpsprot.EmptyTag, line+eol)
+	rh.lg.Debug("correlate line", "ack", cor.Ack, "relevance", cor.Relevance)
+	if cor.Relevance >= msgfile.LevelMaybeResponse {
 		fmt.Fprintf(rh.w, "%s\n", line)
 	}
 }
@@ -129,6 +155,16 @@ func (rh *responseHandler) flushLine() {
 // Flush outputs any buffered data.
 func (rh *responseHandler) Flush() {
 	rh.flushLine()
+}
+
+func (rh *responseHandler) reportMissing() {
+	missingAck, missingData := rh.cor.Missing()
+	for _, rm := range missingAck {
+		fmt.Fprintf(rh.w, "%s: no response received\n", formatMsgID(rm.MsgID()))
+	}
+	for _, rm := range missingData {
+		fmt.Fprintf(rh.w, "%s: no data response received\n", formatMsgID(rm.MsgID()))
+	}
 }
 
 // isPrintable returns true if b is a printable ASCII char (0x20-0x7E) or tab.

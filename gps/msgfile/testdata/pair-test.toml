@@ -1,0 +1,26 @@
+# PAIR test messages for correlator tests.
+
+# Set command (even ID): expects PAIR001 ACK only.
+[[nmea]]
+tag = "set-elev"
+text = "PAIR072,5"
+
+# Query (odd ID): expects PAIR001 ACK + data.
+[[nmea]]
+tag = "get-elev"
+text = "PAIR073"
+
+# Another set command for pacing tests (different command ID).
+[[nmea]]
+tag = "set-nmea-ver"
+text = "PAIR100,1,0"
+
+# Duplicate set command (same ID 072) for ambiguity tests.
+[[nmea]]
+tag = "set-elev-dup"
+text = "PAIR072,10"
+
+# Query for RTCM settings.
+[[nmea]]
+tag = "get-rtcm-out"
+text = "PAIR433"

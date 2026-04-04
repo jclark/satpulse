@@ -1,0 +1,58 @@
+# SDBP test messages for correlator tests.
+
+# CFG set: expects PubAck only, no data.
+# CfgPPS with full configuration payload (25 bytes).
+[[sdbp]]
+tag = "set-pps"
+class = 0x03
+id = 0x41
+payload.types = "U1U1U1U1U4U4U4U4I4U1"
+payload.values = [0, 1, 1, 2, 1000000, 100000, 1000000, 100000, 0, 0]
+
+# CFG query: expects PubAck + data response.
+# CfgPPS poll with 1-byte payload (PPS index).
+[[sdbp]]
+tag = "get-pps"
+class = 0x03
+id = 0x41
+payload.types = "U1"
+payload.values = [0]
+
+# QUE-VER query: expects PubAck + data response.
+[[sdbp]]
+tag = "get-ver"
+class = 0x05
+id = 0x01
+
+# CTL-RESTART: PubNak on failure, no response on success.
+[[sdbp]]
+tag = "restart"
+class = 0x02
+id = 0x01
+payload.types = "U1U1"
+payload.values = [3, 0]
+
+# CTL-STANDBY: PubNak on failure, no response on success.
+[[sdbp]]
+tag = "standby"
+class = 0x02
+id = 0x04
+payload.types = "U1"
+payload.values = [1]
+
+# CFG set with different class/ID for pacing tests.
+# CfgUART with full configuration payload (6 bytes).
+[[sdbp]]
+tag = "set-uart"
+class = 0x03
+id = 0x21
+payload.types = "U1U1U1U1U1U1"
+payload.values = [1, 6, 0, 1, 0, 0]
+
+# Second CFG set with same class/ID as set-pps for ambiguity tests.
+[[sdbp]]
+tag = "set-pps-dup"
+class = 0x03
+id = 0x41
+payload.types = "U1U1U1U1U4U4U4U4I4U1"
+payload.values = [0, 1, 1, 0, 1000000, 100000, 1000000, 100000, 0, 0]

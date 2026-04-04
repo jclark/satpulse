@@ -155,14 +155,22 @@ func regMsg[T any, PT interface {
 	idNameMap[mid] = idName
 }
 
-// 2 bytes sync, 2 bytes clsid, 2 bytes length, 2 bytes checksum
-const packetMinLength = 8
+const (
+	HeaderLen    = 6 // sync(2) + class(1) + id(1) + length(2)
+	TrailerLen   = 2 // checksum(2)
+	PacketMinLen = HeaderLen + TrailerLen
+)
+
+// AckMsgID extracts the acknowledged MsgID from an ACK/NAK packet.
+func AckMsgID[B Bytes](pkt B) MsgID {
+	return makeMsgID(pkt[HeaderLen], pkt[HeaderLen+1])
+}
 
 // ParseMsg parses a UBlox message from a string.
 // It assumes the checksums were already verified.
 func ParseMsg(packet string) (Msg, error) {
 	n := len(packet)
-	if n < packetMinLength {
+	if n < PacketMinLen {
 		return nil, fmt.Errorf("UBX message too short (length %d bytes)", n)
 	}
 	checksumIndex := n - 2

@@ -1,0 +1,5 @@
+# Unknown proprietary NMEA test messages for correlator tests.
+
+[[nmea]]
+tag = "send-xyz"
+text = "PXYZ,some,data"
