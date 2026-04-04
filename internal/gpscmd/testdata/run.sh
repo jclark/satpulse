@@ -42,8 +42,14 @@ PATH="../../../out/$outdir:$PATH"
 export PATH
 
 # Output file name
-output_file="${receiver_base}-${commands_base}.jsonl"
-anno_output_file="${receiver_base}-${commands_base}.anno.jsonl"
+if [ -n "$vendor" ]; then
+    mkdir -p "$vendor"
+    output_file="${vendor}/${receiver_base}-${commands_base}.jsonl"
+    anno_output_file="${vendor}/${receiver_base}-${commands_base}.anno.jsonl"
+else
+    output_file="${receiver_base}-${commands_base}.jsonl"
+    anno_output_file="${receiver_base}-${commands_base}.anno.jsonl"
+fi
 
 # Function to create numbered backups (GNU Emacs style)
 backup_file() {

@@ -7,19 +7,19 @@ import (
 )
 
 var uncReplayFiles = []string{
-	"unc/show",
-	"unc/gps",
-	"unc/noop",
-	"unc/pvt-out",
-	"unc/rtcm-out",
-	"unc/binary",
-	"unc/min-elev",
+	"um980-show",
+	"um980-gps",
+	"um980-noop",
+	"um980-pvt-out",
+	"um980-rtcm-out",
+	"um980-binary",
+	"um980-min-elev",
 }
 
 func TestReplayUNC(t *testing.T) {
 	for _, filename := range uncReplayFiles {
 		t.Run(filename, func(t *testing.T) {
-			testReplayFile(t, filename, uncPacketsEqual)
+			testReplayFile(t, "unicore/"+filename, uncPacketsEqual)
 		})
 	}
 }
