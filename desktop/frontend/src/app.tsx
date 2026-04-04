@@ -71,7 +71,7 @@ export interface MsgFileTag {
 
 export interface MsgSendEvent {
     session: number;
-    status: 'started' | 'sent' | 'delaying' | 'delayed' | 'done' | 'cancelled' | 'error';
+    status: 'started' | 'sent' | 'done' | 'cancelled' | 'error';
     current?: number;
     total?: number;
     error?: string;
@@ -79,7 +79,7 @@ export interface MsgSendEvent {
 
 export interface SendLine {
     session: number;
-    status: 'sending' | 'delaying' | 'done' | 'error';
+    status: 'sending' | 'done' | 'error';
     index: number;
     total: number;
     error?: string;
@@ -389,22 +389,6 @@ export function App() {
                         return lines;
                     });
                     break;
-                case 'delaying':
-                    setSendLines(prev => {
-                        const lines = [...prev];
-                        const idx = (current ?? 1) - 1;
-                        if (lines[idx]) lines[idx] = {...lines[idx], status: 'delaying'};
-                        return lines;
-                    });
-                    break;
-                case 'delayed':
-                    setSendLines(prev => {
-                        const lines = [...prev];
-                        const idx = (current ?? 1) - 1;
-                        if (lines[idx]) lines[idx] = {...lines[idx], status: 'done'};
-                        return lines;
-                    });
-                    break;
                 case 'done':
                     setSendLines(prev => {
                         const lines = [...prev];
@@ -429,7 +413,8 @@ export function App() {
             if (evt.session !== respSessionRef.current) return;
             setResponseLines(prev => {
                 const next = [...prev, evt];
-                if (evt.kind === 'other' && !prev.some(r => r.kind === 'other')) {
+                const hasContent = !!(evt.text || evt.bin);
+                if (hasContent && !prev.some(r => r.text || r.bin)) {
                     setSelectedResponseIndex(next.length - 1);
                 }
                 return next;

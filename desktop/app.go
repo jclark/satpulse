@@ -54,9 +54,12 @@ type configResult struct {
 	err    error
 }
 
-// writeReq is sent from the coordinator to the worker for each message.
-type writeReq struct {
+// sendStepReq is sent from the coordinator to the worker for each message.
+// The worker writes the message, waits for its delay, and (if next is non-nil)
+// waits for ReadyToSend(next) before replying.
+type sendStepReq struct {
 	rm    msgfile.RawMsg
+	next  *msgfile.RawMsg // nil for the last message
 	reply chan<- error
 }
 
@@ -720,15 +723,15 @@ func (a *App) SendMsgFile(tag string) error {
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:state", StateSending)
 	total := len(rawMsgs)
-	writeReqCh := make(chan writeReq)
+	stepCh := make(chan sendStepReq)
 	// Start the worker goroutine.
 	a.connWg.Go(func() {
-		a.sendWorker(workerCtx, pb, conn, portLock, writeReqCh, session)
+		a.sendWorker(workerCtx, pb, conn, portLock, stepCh, session)
 	})
 	// Coordinator goroutine.
 	a.connWg.Go(func() {
 		defer func() {
-			close(writeReqCh)
+			close(stepCh)
 			a.finishSend()
 		}()
 		runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
@@ -742,8 +745,12 @@ func (a *App) SendMsgFile(tag string) error {
 				})
 				return
 			}
+			var next *msgfile.RawMsg
+			if i+1 < len(rawMsgs) {
+				next = &rawMsgs[i+1]
+			}
 			select {
-			case writeReqCh <- writeReq{rm: rm, reply: replyCh}:
+			case stepCh <- sendStepReq{rm: rm, next: next, reply: replyCh}:
 			case <-sendCtx.Done():
 				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
 					Session: session, Status: "cancelled", Current: i + 1, Total: total,
@@ -769,22 +776,6 @@ func (a *App) SendMsgFile(tag string) error {
 			runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
 				Session: session, Status: "sent", Current: i + 1, Total: total,
 			})
-			if rm.Delay > 0 {
-				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
-					Session: session, Status: "delaying", Current: i + 1, Total: total,
-				})
-				select {
-				case <-time.After(rm.Delay):
-				case <-sendCtx.Done():
-					runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
-						Session: session, Status: "cancelled", Current: i + 1, Total: total,
-					})
-					return
-				}
-				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
-					Session: session, Status: "delayed", Current: i + 1, Total: total,
-				})
-			}
 		}
 		runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
 			Session: session, Status: "done", Current: total, Total: total,
@@ -806,13 +797,12 @@ func (a *App) finishSend() {
 	runtime.EventsEmit(a.ctx, "gps:state", s)
 }
 
-// sendWorker owns conn.Write, PacketAnalyzer, line buffer, and the broadcast
-// subscriber. It runs until writeReqCh is closed and a tail timer expires,
-// or workerCtx is cancelled.
-func (a *App) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet], conn gpsio.Conn, portLock gpsio.OutPortLock, writeReqCh <-chan writeReq, session int) {
+// sendWorker owns conn.Write, Correlator, line buffer, and the broadcast
+// subscriber. It runs until stepCh is closed and all expected responses
+// have arrived (or a deadline expires), or workerCtx is cancelled.
+func (a *App) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet], conn gpsio.Conn, portLock gpsio.OutPortLock, stepCh <-chan sendStepReq, session int) {
 	sub := pb.Subscribe()
 	defer pb.Unsubscribe(sub)
-	// Acquire portLock for the entire send session to pause corrections.
 	var port gpsio.OutPort
 	select {
 	case <-workerCtx.Done():
@@ -820,37 +810,46 @@ func (a *App) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet]
 	case port = <-portLock:
 	}
 	defer func() { portLock <- port }()
-	pa := msgfile.NewPacketAnalyzer()
+	cor := msgfile.NewCorrelator()
 	var lineBuf []byte
+	var deadline time.Time
 	var tailCh <-chan time.Time
 	for {
 		select {
-		case req, ok := <-writeReqCh:
+		case req, ok := <-stepCh:
 			if !ok {
-				tailCh = time.After(3 * time.Second)
-				writeReqCh = nil
+				// Coordinator is done sending. Enter tail phase.
+				if !cor.CanAcceptMore() {
+					return
+				}
+				remaining := time.Until(deadline)
+				if remaining <= 0 {
+					return
+				}
+				tailCh = time.After(remaining)
+				stepCh = nil
 				continue
 			}
+			// Write the message.
 			_, err := conn.Write(req.rm.Bytes)
-			if err == nil {
-				pa.NotifySent(req.rm)
+			if err != nil {
+				req.reply <- err
+				continue
 			}
-			req.reply <- err
+			cor.NotifyMsgSent(req.rm)
+			// Update running deadline for tail phase.
+			if d := time.Now().Add(req.rm.WaitLimit); d.After(deadline) {
+				deadline = d
+			}
+			// Wait for delay + pacing, processing packets throughout.
+			lineBuf = a.workerWaitStep(workerCtx, sub, cor, req, lineBuf, session, deadline)
 		case pkt, ok := <-sub:
 			if !ok {
 				return
 			}
-			if pkt.IsInterPacketTimeout() {
-				continue
-			}
-			if pkt.Format == nil {
-				lineBuf = a.bufferWorkerLines(pa, lineBuf, []byte(pkt.Data), session)
-				continue
-			}
-			lineBuf = a.flushWorkerLine(pa, lineBuf, session)
-			result := pa.Analyze(pkt.Tag(), pkt.Data)
-			if result.Kind != msgfile.NotResponse {
-				a.emitResponse(result, &pkt, session)
+			lineBuf = a.processWorkerPacket(cor, lineBuf, pkt, session)
+			if tailCh != nil && !cor.CanAcceptMore() {
+				return
 			}
 		case <-tailCh:
 			return
@@ -860,10 +859,79 @@ func (a *App) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet]
 	}
 }
 
-func (a *App) bufferWorkerLines(pa *msgfile.PacketAnalyzer, lineBuf, data []byte, session int) []byte {
+// workerWaitStep handles the delay and pacing wait after a successful write.
+// It processes packets throughout, then replies to the coordinator.
+func (a *App) workerWaitStep(workerCtx context.Context, sub <-chan scan.Packet, cor *msgfile.Correlator, req sendStepReq, lineBuf []byte, session int, deadline time.Time) []byte {
+	// Wait for delay.
+	if req.rm.Delay > 0 {
+		timer := time.NewTimer(req.rm.Delay)
+		defer timer.Stop()
+	delayLoop:
+		for {
+			select {
+			case <-workerCtx.Done():
+				req.reply <- workerCtx.Err()
+				return lineBuf
+			case <-timer.C:
+				break delayLoop
+			case pkt, ok := <-sub:
+				if !ok {
+					req.reply <- nil
+					return lineBuf
+				}
+				lineBuf = a.processWorkerPacket(cor, lineBuf, pkt, session)
+			}
+		}
+	}
+	// Wait for pacing if there is a next message.
+	if req.next != nil && !cor.ReadyToSend(*req.next) {
+		remaining := time.Until(deadline)
+		if remaining > 0 {
+			timer := time.NewTimer(remaining)
+			defer timer.Stop()
+		paceLoop:
+			for {
+				select {
+				case <-workerCtx.Done():
+					req.reply <- workerCtx.Err()
+					return lineBuf
+				case <-timer.C:
+					break paceLoop
+				case pkt, ok := <-sub:
+					if !ok {
+						req.reply <- nil
+						return lineBuf
+					}
+					lineBuf = a.processWorkerPacket(cor, lineBuf, pkt, session)
+					if cor.ReadyToSend(*req.next) {
+						break paceLoop
+					}
+				}
+			}
+		}
+	}
+	req.reply <- nil
+	return lineBuf
+}
+
+// processWorkerPacket handles a single packet from the broadcast subscriber.
+func (a *App) processWorkerPacket(cor *msgfile.Correlator, lineBuf []byte, pkt scan.Packet, session int) []byte {
+	if pkt.IsInterPacketTimeout() {
+		return lineBuf
+	}
+	if pkt.Format == nil {
+		return a.bufferWorkerLines(cor, lineBuf, []byte(pkt.Data), session)
+	}
+	lineBuf = a.flushWorkerLine(cor, lineBuf, session)
+	result := cor.CorrelatePacket(pkt.Tag(), pkt.Data)
+	a.emitCorrelation(result, &pkt, session)
+	return lineBuf
+}
+
+func (a *App) bufferWorkerLines(cor *msgfile.Correlator, lineBuf, data []byte, session int) []byte {
 	for _, b := range data {
 		if b == '\n' {
-			lineBuf = a.flushWorkerLine(pa, lineBuf, session)
+			lineBuf = a.flushWorkerLine(cor, lineBuf, session)
 		} else if b == '\r' {
 			// skip
 		} else if b >= 0x20 && b <= 0x7E || b == '\t' {
@@ -875,27 +943,39 @@ func (a *App) bufferWorkerLines(pa *msgfile.PacketAnalyzer, lineBuf, data []byte
 	return lineBuf
 }
 
-func (a *App) flushWorkerLine(pa *msgfile.PacketAnalyzer, lineBuf []byte, session int) []byte {
+func (a *App) flushWorkerLine(cor *msgfile.Correlator, lineBuf []byte, session int) []byte {
 	if len(lineBuf) == 0 {
 		return lineBuf
 	}
 	line := string(lineBuf)
 	lineBuf = lineBuf[:0]
-	result := pa.Analyze(gpsprot.EmptyTag, line)
-	if result.Kind != msgfile.NotResponse && a.sessionCurrent(session) {
-		ev := a.makeResponseEvent(result, nil, session)
+	result := cor.CorrelatePacket(gpsprot.EmptyTag, line)
+	if !a.sessionCurrent(session) {
+		return lineBuf
+	}
+	if (result.Ack == msgfile.AckAck || result.Ack == msgfile.AckNak) && result.InResponseTo != nil {
+		runtime.EventsEmit(a.ctx, "gps:response", a.makeAckEvent(result, session))
+	}
+	if result.Relevance >= msgfile.LevelMaybeResponse {
+		ev := a.makePacketEvent(result, nil, session)
 		ev.Text = line
 		runtime.EventsEmit(a.ctx, "gps:response", ev)
 	}
 	return lineBuf
 }
 
-func (a *App) emitResponse(r msgfile.PacketAnalysis, pkt *scan.Packet, session int) {
+// emitCorrelation emits up to two ResponseEvents for a correlated packet:
+// one for the ACK (if any) and one for the displayable payload (if any).
+func (a *App) emitCorrelation(r msgfile.Correlation, pkt *scan.Packet, session int) {
 	if !a.sessionCurrent(session) {
 		return
 	}
-	ev := a.makeResponseEvent(r, pkt, session)
-	runtime.EventsEmit(a.ctx, "gps:response", ev)
+	if (r.Ack == msgfile.AckAck || r.Ack == msgfile.AckNak) && r.InResponseTo != nil {
+		runtime.EventsEmit(a.ctx, "gps:response", a.makeAckEvent(r, session))
+	}
+	if r.Relevance >= msgfile.LevelMaybeResponse {
+		runtime.EventsEmit(a.ctx, "gps:response", a.makePacketEvent(r, pkt, session))
+	}
 }
 
 // sessionCurrent returns true if the given session matches the current respSession.
@@ -903,21 +983,27 @@ func (a *App) sessionCurrent(session int) bool {
 	return int(a.respSession.Load()) == session
 }
 
-func (a *App) makeResponseEvent(r msgfile.PacketAnalysis, pkt *scan.Packet, session int) ResponseEvent {
-	ev := ResponseEvent{Session: session, ResponseTo: -1}
-	switch r.Kind {
-	case msgfile.AckResponse:
-		ev.Kind = "ack"
-		ev.AckError = r.AckError
-		if r.RelatedMsg != nil {
-			ev.ResponseTo = r.RelatedMsg.Index
-			ev.MsgCount = r.RelatedMsg.Count
-		}
-	case msgfile.OtherResponse:
-		ev.Kind = "other"
-	case msgfile.MaybeResponse:
-		ev.Kind = "maybe"
+func (a *App) makeAckEvent(r msgfile.Correlation, session int) ResponseEvent {
+	ev := ResponseEvent{Session: session, Kind: "ack", ResponseTo: -1}
+	if r.InResponseTo != nil {
+		ev.ResponseTo = r.InResponseTo.Index
+		ev.MsgCount = r.InResponseTo.Count
 	}
+	if r.Ack == msgfile.AckNak {
+		ev.AckError = r.NakError
+		if ev.AckError == "" {
+			ev.AckError = "NAK"
+		}
+	}
+	return ev
+}
+
+func (a *App) makePacketEvent(r msgfile.Correlation, pkt *scan.Packet, session int) ResponseEvent {
+	kind := "other"
+	if r.Relevance == msgfile.LevelMaybeResponse {
+		kind = "maybe"
+	}
+	ev := ResponseEvent{Session: session, Kind: kind, ResponseTo: -1}
 	if pkt != nil && pkt.Format != nil {
 		ev.Tag = string(pkt.Format.Tag())
 		ev.MsgID = pkt.Format.MsgID([]byte(pkt.Data))
@@ -932,6 +1018,8 @@ func (a *App) makeResponseEvent(r msgfile.PacketAnalysis, pkt *scan.Packet, sess
 }
 
 // CancelMsgSend cancels an in-progress send operation.
+// Cancels both the coordinator (sendCancel) and the worker (workerCancel)
+// so that any in-progress delay or pacing wait is interrupted immediately.
 func (a *App) CancelMsgSend() error {
 	a.mu.Lock()
 	if a.state != StateSending {
@@ -941,6 +1029,7 @@ func (a *App) CancelMsgSend() error {
 	if a.sendCancel != nil {
 		a.sendCancel()
 	}
+	a.cancelWorkerLocked()
 	a.mu.Unlock()
 	return nil
 }
