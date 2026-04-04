@@ -19,6 +19,7 @@ type responseHandler struct {
 	lg      *slog.Logger
 	cor     *msgfile.Correlator
 	lineBuf []byte
+	lineEOL string
 }
 
 func newResponseHandler(w io.Writer, lg *slog.Logger) *responseHandler {
@@ -60,15 +61,16 @@ func (rh *responseHandler) handlePacket(pkt scan.Packet) {
 
 func (rh *responseHandler) bufferLines(data []byte) {
 	for _, b := range data {
-		if b == '\n' {
-			rh.flushLine()
-		} else if b == '\r' {
-			// skip CR, will print on LF
+		if b == '\r' || b == '\n' {
+			rh.lineEOL += string(b)
+			if b == '\n' {
+				rh.flushLine()
+			}
 		} else if isPrintable(b) {
 			rh.lineBuf = append(rh.lineBuf, b)
 		} else {
-			// non-printable char, clear buffer
 			rh.lineBuf = rh.lineBuf[:0]
+			rh.lineEOL = ""
 		}
 	}
 }
@@ -136,11 +138,14 @@ func formatText(pkt scan.Packet) string {
 
 func (rh *responseHandler) flushLine() {
 	if len(rh.lineBuf) == 0 {
+		rh.lineEOL = ""
 		return
 	}
 	line := string(rh.lineBuf)
+	eol := rh.lineEOL
 	rh.lineBuf = rh.lineBuf[:0]
-	cor := rh.cor.CorrelatePacket(gpsprot.EmptyTag, line)
+	rh.lineEOL = ""
+	cor := rh.cor.CorrelatePacket(gpsprot.EmptyTag, line+eol)
 	rh.lg.Debug("correlate line", "ack", cor.Ack, "relevance", cor.Relevance)
 	if cor.Relevance >= msgfile.LevelMaybeResponse {
 		fmt.Fprintf(rh.w, "%s\n", line)

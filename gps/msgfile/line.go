@@ -2,7 +2,6 @@ package msgfile
 
 import (
 	"errors"
-	"strings"
 )
 
 // LineMsg represents a [[line]] entry or [default.line].
@@ -51,15 +50,27 @@ func (lm *LineMsg) analyzeRequest(data string) requestAnalysis {
 	}
 }
 
+// extractEOL returns the trailing line ending from s.
+func extractEOL(s string) string {
+	i := len(s)
+	if i > 0 && s[i-1] == '\n' {
+		i--
+	}
+	if i > 0 && s[i-1] == '\r' {
+		i--
+	}
+	return s[i:]
+}
+
 // lineDataMatch returns a data match function for generic line messages.
-// It accepts printable ASCII data ending with the expected line terminator.
+// It accepts printable ASCII data whose line ending matches eol.
 func lineDataMatch(eol string) func(string) bool {
 	return func(data string) bool {
-		if !strings.HasSuffix(data, eol) {
+		if extractEOL(data) != eol {
 			return false
 		}
 		body := data[:len(data)-len(eol)]
-		for i := 0; i < len(body); i++ {
+		for i := range len(body) {
 			if body[i] < 0x20 || body[i] > 0x7E {
 				return false
 			}

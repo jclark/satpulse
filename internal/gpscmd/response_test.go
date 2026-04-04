@@ -146,7 +146,7 @@ func TestUnrecognizedLineBuffer(t *testing.T) {
 	if buf.String() != "" {
 		t.Errorf("expected empty buffer, got %q", buf.String())
 	}
-	rh.bufferLines([]byte("ial\n"))
+	rh.bufferLines([]byte("ial\r\n"))
 	if buf.String() != "partial\n" {
 		t.Errorf("got %q, want %q", buf.String(), "partial\n")
 	}
