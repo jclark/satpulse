@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/internal/annotatecmd"
 	"github.com/jclark/satpulse/internal/decodecmd"
 	"github.com/jclark/satpulse/internal/gpscmd"
 	"github.com/jclark/satpulse/internal/pmccmd"
@@ -68,6 +69,8 @@ func main() {
 	exitCode := 0
 	var exec func(logWriter io.Writer, logLevel slog.Level, progName string, cmdName string, cmdArgs []string) (usage string, err error)
 	switch cmdName {
+	case "annotate":
+		exec = annotatecmd.Cmd
 	case "decode":
 		exec = decodecmd.Cmd
 	case "gps":
@@ -113,6 +116,7 @@ func usage(progName string, flags *pflag.FlagSet) {
 	fmt.Fprintln(os.Stderr, "  sdp - control software-defined pins on PTP hardware clocks")
 	fmt.Fprintln(os.Stderr, "  syncsim - run clock synchronization simulation")
 	fmt.Fprintln(os.Stderr, "  decode - decode a GPS packet")
+	fmt.Fprintln(os.Stderr, "  annotate - annotate a JSONL packet log with decoded fields")
 	fmt.Fprintln(os.Stderr, "  replay - replay a JSONL packet log through the processing pipeline")
 	fmt.Fprintln(os.Stderr, "  pmc - send a PTP management message to ptp4l process")
 	fmt.Fprintln(os.Stderr, "Global options:")

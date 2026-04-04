@@ -190,8 +190,8 @@ func TestQualityNavAuto(t *testing.T) {
 		{3, gpsprot.FixLevelCode, gpsprot.SolutionDim2D, 0},
 		{4, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0},
 		{5, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, gpsprot.CorrUsed},
-		{6, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrUsed},
-		{7, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrUsed},
+		{6, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed},
+		{7, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed},
 	}
 	for _, tt := range tests {
 		var ne gpsprot.NavEpochMsg

@@ -21,7 +21,7 @@ Fields from gpsd's TPV and SKY JSON objects that have no equivalent in
 | GLONASS | SKY | `freqid` | GLONASS frequency slot | |
 | Pseudorange | SKY | `pr` | Pseudorange | |
 | Pseudorange | SKY | `prRate` | Pseudorange rate of change | |
-| Pseudorange | SKY | `prRes` | Pseudorange residual | |
+| Pseudorange | SKY | `prRes` | Pseudorange residual | [pr-residual.md](pr-residual.md) |
 | Moving base RTK | TPV | `relN` | North component of relative position | |
 | Moving base RTK | TPV | `relE` | East component of relative position | |
 | Moving base RTK | TPV | `relD` | Down component of relative position | |

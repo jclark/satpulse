@@ -2,130 +2,184 @@ package airmsg
 
 import "testing"
 
-func TestCheckResponse(t *testing.T) {
+func TestClassifyResponse(t *testing.T) {
 	tests := []struct {
-		name     string
-		sent     string
-		recv     string
+		name    string
+		recv    string
 		wantKind ResponseKind
-		wantMsg  string
+		wantID  string
+		wantErr string
 	}{
 		{
 			name:     "ack success",
-			sent:     "PAIR072,5",
 			recv:     "PAIR001,072,0",
 			wantKind: ResponseOK,
+			wantID:   "072",
 		},
 		{
 			name:     "processing wait",
-			sent:     "PAIR072,5",
 			recv:     "PAIR001,072,1",
 			wantKind: ResponseWait,
+			wantID:   "072",
 		},
 		{
 			name:     "ack sending failed",
-			sent:     "PAIR072,5",
 			recv:     "PAIR001,072,2",
 			wantKind: ResponseError,
-			wantMsg:  "sending failed",
+			wantID:   "072",
+			wantErr:  "sending failed",
 		},
 		{
 			name:     "ack command not supported",
-			sent:     "PAIR072,5",
 			recv:     "PAIR001,072,3",
 			wantKind: ResponseError,
-			wantMsg:  "command not supported",
+			wantID:   "072",
+			wantErr:  "command not supported",
 		},
 		{
 			name:     "ack parameter error",
-			sent:     "PAIR072,5",
 			recv:     "PAIR001,072,4",
 			wantKind: ResponseError,
-			wantMsg:  "parameter error",
+			wantID:   "072",
+			wantErr:  "parameter error",
 		},
 		{
 			name:     "ack service busy",
-			sent:     "PAIR072,5",
 			recv:     "PAIR001,072,5",
 			wantKind: ResponseError,
-			wantMsg:  "service busy",
+			wantID:   "072",
+			wantErr:  "service busy",
 		},
 		{
 			name:     "ack unknown code",
-			sent:     "PAIR072,5",
 			recv:     "PAIR001,072,99",
 			wantKind: ResponseError,
-			wantMsg:  "unknown error 99",
+			wantID:   "072",
+			wantErr:  "unknown error 99",
 		},
 		{
 			name:     "ack missing result code",
-			sent:     "PAIR072,5",
 			recv:     "PAIR001,072",
-			wantKind: ResponseInvalid,
-		},
-		{
-			name:     "ack empty result code",
-			sent:     "PAIR072,5",
-			recv:     "PAIR001,072,",
-			wantKind: ResponseInvalid,
+			wantKind: ResponseNotPAIR,
 		},
 		{
 			name:     "ack non-numeric result",
-			sent:     "PAIR072,5",
 			recv:     "PAIR001,072,abc",
-			wantKind: ResponseInvalid,
+			wantKind: ResponseNotPAIR,
 		},
 		{
 			name:     "ack negative result",
-			sent:     "PAIR072,5",
 			recv:     "PAIR001,072,-1",
-			wantKind: ResponseInvalid,
+			wantKind: ResponseNotPAIR,
 		},
 		{
 			name:     "data response",
-			sent:     "PAIR073",
 			recv:     "PAIR073,5",
 			wantKind: ResponseData,
+			wantID:   "073",
 		},
 		{
 			name:     "data response no fields",
-			sent:     "PAIR073",
 			recv:     "PAIR073",
 			wantKind: ResponseData,
-		},
-		{
-			name:     "command ID mismatch in ack",
-			sent:     "PAIR072,5",
-			recv:     "PAIR001,073,0",
-			wantKind: NotResponse,
-		},
-		{
-			name:     "different command ID in data",
-			sent:     "PAIR072,5",
-			recv:     "PAIR073,5",
-			wantKind: NotResponse,
+			wantID:   "073",
 		},
 		{
 			name:     "PAIR001 no fields",
-			sent:     "PAIR072,5",
 			recv:     "PAIR001",
-			wantKind: NotResponse,
+			wantKind: ResponseNotPAIR,
 		},
 		{
 			name:     "unrelated message",
-			sent:     "PAIR072,5",
 			recv:     "PQTMCFGPPS,OK",
-			wantKind: NotResponse,
+			wantKind: ResponseNotPAIR,
+		},
+		{
+			name:     "not PAIR at all",
+			recv:     "GPRMC,123456.00,A",
+			wantKind: ResponseNotPAIR,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			kind, msg := CheckResponse(tc.sent, tc.recv)
-			if kind != tc.wantKind {
-				t.Errorf("kind: got %v, want %v", kind, tc.wantKind)
+			rc := ClassifyResponse(tc.recv)
+			if rc.Kind != tc.wantKind {
+				t.Errorf("kind: got %v, want %v", rc.Kind, tc.wantKind)
 			}
-			if kind == ResponseError && msg != tc.wantMsg {
-				t.Errorf("msg: got %q, want %q", msg, tc.wantMsg)
+			if tc.wantID != "" && rc.CommandID != tc.wantID {
+				t.Errorf("commandID: got %q, want %q", rc.CommandID, tc.wantID)
+			}
+			if tc.wantErr != "" && rc.Error != tc.wantErr {
+				t.Errorf("error: got %q, want %q", rc.Error, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestClassifyRequest(t *testing.T) {
+	tests := []struct {
+		name     string
+		sent     string
+		wantKind RequestKind
+		wantID   string
+	}{
+		{
+			name:     "even ID = command",
+			sent:     "PAIR062,1,1",
+			wantKind: RequestCommand,
+			wantID:   "062",
+		},
+		{
+			name:     "odd ID = query",
+			sent:     "PAIR073",
+			wantKind: RequestQuery,
+			wantID:   "073",
+		},
+		{
+			name:     "exception: 003 is query despite odd",
+			sent:     "PAIR003",
+			wantKind: RequestCommand,
+			wantID:   "003",
+		},
+		{
+			name:     "exception: 008 is query despite even",
+			sent:     "PAIR008",
+			wantKind: RequestQuery,
+			wantID:   "008",
+		},
+		{
+			name:     "exception: 020 is query despite even",
+			sent:     "PAIR020",
+			wantKind: RequestQuery,
+			wantID:   "020",
+		},
+		{
+			name:     "exception: 412 is query despite even",
+			sent:     "PAIR412",
+			wantKind: RequestQuery,
+			wantID:   "412",
+		},
+		{
+			name:     "normal even command 410",
+			sent:     "PAIR410,1",
+			wantKind: RequestCommand,
+			wantID:   "410",
+		},
+		{
+			name:     "normal odd query 411",
+			sent:     "PAIR411",
+			wantKind: RequestQuery,
+			wantID:   "411",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rc := ClassifyRequest(tc.sent)
+			if rc.Kind != tc.wantKind {
+				t.Errorf("kind: got %v, want %v", rc.Kind, tc.wantKind)
+			}
+			if rc.CommandID != tc.wantID {
+				t.Errorf("commandID: got %q, want %q", rc.CommandID, tc.wantID)
 			}
 		})
 	}

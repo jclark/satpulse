@@ -32,7 +32,7 @@ satpulsetool gps -m allystar.toml --show-tags
 The `-m` flag cannot be combined with config flags like `--gnss`, `--pps`, `--save`.
 
 You can use `--packet-log file.json --capture 3` options to capture packets for 3 seconds and save them to `file.jsonl`.
-You can then use `satpulsetool decode --packet-log file.json` to decode the binary packets: pipe through `jq` to pretty-print the JSONL.
+You can then use `satpulsetool annotate file.json` to add fields showing decoded packets: pipe through `jq` to pretty-print the JSONL.
 This can help with seeing whether your receiver is handling the commands correctly.
 
 ## Available message files
@@ -77,7 +77,7 @@ You can verify the configuration by querying current settings:
 ```
 satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar.toml \
   -t get-pps,get-gnss --packet-log verify.jsonl --capture 2
-satpulsetool decode --packet-log verify.jsonl | jq
+satpulsetool annotate verify.jsonl | jq
 ```
 
 If the configuration seems to be working, you can save it to non-volatile memory:

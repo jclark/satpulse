@@ -652,6 +652,21 @@ func (m *CfgValdel) VaryingPart() any {
 	return &m.CfgData
 }
 
+// PollPayloadLen returns the maximum payload length that indicates
+// a poll for mid.
+func PollPayloadLen(mid MsgID) int {
+	switch mid {
+	case CfgPrtID:
+		return 1 // port ID
+	case CfgMsgID:
+		return 2 // class + ID
+	case CfgTp5ID:
+		return 1 // timepulse index
+	default:
+		return 0
+	}
+}
+
 func PollCfgTp5(tpIdx int) []byte {
 	packet, _ := PackMsg(CfgTp5ID, []byte{byte(tpIdx)})
 	return packet

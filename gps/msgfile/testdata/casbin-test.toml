@@ -1,0 +1,60 @@
+# CASIC test messages for correlator tests.
+
+# CFG set: expects ACK only, no data.
+[[casbin]]
+tag = "set-tp"
+class = 0x06
+id = 0x03
+payload.types = "U1"
+payload.values = [0]
+
+# CFG poll: expects ACK + data response.
+[[casbin]]
+tag = "get-tp"
+class = 0x06
+id = 0x03
+
+# Non-CFG poll: expects data only, no ACK.
+[[casbin]]
+tag = "poll-status"
+class = 0x01
+id = 0x00
+
+# CFG-RST: no response expected (receiver resets).
+[[casbin]]
+tag = "reset"
+class = 0x06
+id = 0x02
+payload.types = "U2U1U1"
+payload.values = [0xFFFF, 0, 0]
+
+# CFG set with different class/ID for pacing tests.
+[[casbin]]
+tag = "set-prt"
+class = 0x06
+id = 0x00
+payload.types = "U1"
+payload.values = [1]
+
+# CFG-MSG single-message poll: poll NAV-DOP (class 0x01, id 0x02).
+# Payload: target class, target id, rate 0xFFFF.
+[[casbin]]
+tag = "poll-nav-dop"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x01, 0x02, 0xFFFF]
+
+# CFG-MSG all-rates query: empty payload.
+[[casbin]]
+tag = "get-all-rates"
+class = 0x06
+id = 0x01
+
+# Second CFG set with same class/ID as set-tp for ambiguity tests.
+[[casbin]]
+tag = "set-tp-dup"
+class = 0x06
+id = 0x03
+payload.types = "U1"
+payload.values = [1]
