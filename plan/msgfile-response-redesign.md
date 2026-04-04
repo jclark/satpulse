@@ -1323,7 +1323,7 @@ using payload-length heuristics.
 
 Related: #225 (decoding outgoing poll messages).
 
-### No-response messages in lib packages
+### No-response knowledge in lib packages
 
 The current request analyzers hardcode specific message IDs
 that produce no response (UBX `CfgRstID`, ASBIN
@@ -1333,6 +1333,8 @@ knowledge belongs in the lib packages.
 UBX already has `Ackable()` which returns false for `CfgRstID`.
 Each lib package should expose a similar method so that the
 correlator does not need to know individual message IDs.
+
+### Fix ExpectAckNone for reset messages
 
 A NAK is always possible for any message in any protocol (as a
 generic "unsupported message" rejection), so `ExpectAckNone`
