@@ -164,12 +164,12 @@ func copyMap[K comparable, V any](m map[K]V) map[K]V {
 // packetProcessor is the common functionality between BinPacketProcessor and AsciiPacketProcessor
 type packetProcessor struct {
 	gpsprot.DefaultPacketProcessor
-	mh  gpsprot.MsgHandler        // never nil; initialized to &gpsprot.DefaultHandler{}
+	mh  gpsprot.MsgHandler // never nil; initialized to &gpsprot.DefaultHandler{}
 	mgr *gpsprot.NavEpochManager
 	// Navigation epoch tracking: NovAtel messages carry (Week, MillisecondsOfWeek)
 	// in the header. Messages with the same pair are part of the same epoch.
 	// Invariant: curEpochMsg is non-nil iff curEpoch is non-zero.
-	curEpoch      uint64               // (week<<32 | ms) + 1; 0 = no epoch
+	curEpoch      uint64 // (week<<32 | ms) + 1; 0 = no epoch
 	curEpochMsg   *gpsprot.NavEpochMsg
 	curEpochStart time.Time
 	curEpochTag   gpsprot.Tag
@@ -289,6 +289,7 @@ func (p *packetProcessor) handleEpoch(common *novmsg.CommonHdr, tag gpsprot.Tag,
 func (p *packetProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
 	msg := p.curEpochMsg
 	p.curEpochMsg = nil
+	p.curEpoch = 0
 	if msg != nil {
 		msg.Tag = p.curEpochTag
 		// Station ID is only meaningful as an RTCM base station ID

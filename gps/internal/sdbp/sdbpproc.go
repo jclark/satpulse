@@ -13,8 +13,11 @@ var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
 // PacketProcessor implements gpsprot.PacketProcessor for SDBP packets.
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
-	mh             gpsprot.MsgHandler
-	mgr            *gpsprot.NavEpochManager
+	mh  gpsprot.MsgHandler
+	mgr *gpsprot.NavEpochManager
+	// Navigation epoch tracking: SDBP navigation messages carry a
+	// LocalTimestamp that identifies which navigation solution they belong to.
+	// Invariant: curNavEpochMsg is non-nil iff curNavEpoch is non-zero.
 	curNavEpoch      uint32               // current LocalTimestamp+1 (0 means no epoch seen)
 	curNavEpochMsg   *gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
 	curNavEpochStart time.Time            // tRead of first message in current epoch
@@ -60,6 +63,7 @@ func (p *PacketProcessor) handleNavEpoch(nm sdbpbin.NavMsg, tRead time.Time) {
 // FlushNavEpoch implements gpsprot.EpochFlusher.
 func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
 	msg := p.curNavEpochMsg
+	p.curNavEpoch = 0
 	p.curNavEpochMsg = nil
 	if msg != nil {
 		msg.Tag = Tag
