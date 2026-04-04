@@ -43,6 +43,28 @@ text = "CONFIG PPP ENABLE E6-HAS"
 
 This will add delay 0.1 seconds after sending the first line.
 
+## Wait limit
+
+The `waitLimit` key says how long to wait for the receiver.
+This applies in two situations:
+between messages, if the next message would produce an ACK indistinguishable from a still-pending one;
+and after all messages have been sent, for any remaining expected ACKs and data responses.
+
+The `waitLimit` key works by establishing a response deadline.
+Each message extends the deadline by its `waitLimit` from the time it was sent;
+a later message with a shorter `waitLimit` won't pull the deadline back.
+After sending, waiting stops early if all expected responses arrive before the deadline.
+
+The default `waitLimit` is 1.2 seconds.
+
+```toml
+[[nmea]]
+text = "PQTMVERNO"
+waitLimit = 3.0
+```
+
+If `--capture` is also specified, capture time is added after response waiting is complete.
+
 ## Defaults
 
 ```toml
@@ -282,13 +304,13 @@ Type specifiers are two characters each:
 
 | Type | Keys | Framing |
 |------|------|---------|
-| `[[line]]` | `text`, `eol`, `responsePattern`, `delay`, `tag`, `description` | appends eol (default `\r\n`) |
-| `[[binary]]` | `hex`, `delay`, `tag`, `description` | none |
-| `[[nmea]]` | `text`, `delay`, `tag`, `description` | prepends `$`, appends `*XX\r\n` checksum |
-| `[[ubx]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | UBX binary packets |
-| `[[casbin]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | CASIC binary packets |
-| `[[asbin]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | Allystar binary packets |
-| `[[sdbp]]` | `class`, `id`, `payload`, `delay`, `tag`, `description` | Techtotop/Taidou SDBP binary packets |
+| `[[line]]` | `text`, `eol`, `responsePattern`, `delay`, `waitLimit`, `tag`, `description` | appends eol (default `\r\n`) |
+| `[[binary]]` | `hex`, `delay`, `waitLimit`, `tag`, `description` | none |
+| `[[nmea]]` | `text`, `delay`, `waitLimit`, `tag`, `description` | prepends `$`, appends `*XX\r\n` checksum |
+| `[[ubx]]` | `class`, `id`, `payload`, `delay`, `waitLimit`, `tag`, `description` | UBX binary packets |
+| `[[casbin]]` | `class`, `id`, `payload`, `delay`, `waitLimit`, `tag`, `description` | CASIC binary packets |
+| `[[asbin]]` | `class`, `id`, `payload`, `delay`, `waitLimit`, `tag`, `description` | Allystar binary packets |
+| `[[sdbp]]` | `class`, `id`, `payload`, `delay`, `waitLimit`, `tag`, `description` | Techtotop/Taidou SDBP binary packets |
 
 ## Includes
 

@@ -1359,23 +1359,6 @@ response kind to handle this — distinct from data responses
 state update). NMEA TXT messages might use this same response
 kind. Needs experimentation with hardware.
 
-### Documentation updates
-
-The message file format documentation and schema need updating
-for the new `waitLimit` key and any other format additions.
-The man page needs updating for the changed `--capture`
-behavior with `-m` and `-t` (early stop when all responses
-received, `waitLimit`-based deadlines).
-
-- `configs/gpsmsg/format.md`: document `waitLimit` key and
-  updated response handling behavior.
-- `configs/gpsmsg/gpsmsg-schema.json`: add `waitLimit` to the
-  schema definitions.
-- `docs/man/satpulsetool-gps.1.md`: update `--capture`
-  description to reflect that it now adds capture time *after*
-  response waiting is complete, rather than being the sole
-  timeout.
-
 ## Key files
 
 - This plan: `plan/msgfile-response-redesign.md`

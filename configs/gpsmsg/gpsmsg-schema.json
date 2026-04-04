@@ -5,6 +5,7 @@
 			"type": "object",
 			"properties": {
 				"delay": { "type": "number", "minimum": 0 },
+				"waitLimit": { "type": "number", "minimum": 0 },
 				"tag": { "type": "string" }
 			}
 		},
