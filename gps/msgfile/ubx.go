@@ -84,13 +84,13 @@ func (um *UBXMsg) analyzeRequest(data string) requestAnalysis {
 	mid := ubxbin.MakeMsgID(um.Class, um.ID)
 	corr := ubxMsgCorrelate(data)
 	payloadLen := len(data) - 8
-	if mid == ubxbin.CfgRstID {
-		return requestAnalysis{
-			expectAck:  ExpectAckNone,
-			expectData: expectDataNone,
-		}
-	}
 	if mid.CfgClass() {
+		if !mid.Ackable() {
+			return requestAnalysis{
+				expectAck:  ExpectAckNone,
+				expectData: expectDataNone,
+			}
+		}
 		a := requestAnalysis{
 			ackTag:       gpsreg.TagUBX,
 			ackCorrelate: corr,

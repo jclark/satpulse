@@ -54,6 +54,11 @@ func (mid MsgID) CfgClass() bool {
 	return cls == clsCfg
 }
 
+// Ackable reports whether mid expects an ACK/NAK response.
+func (mid MsgID) Ackable() bool {
+	return mid.CfgClass() && mid != CfgSimpleRstID
+}
+
 type Msg interface {
 	ID() MsgID
 }

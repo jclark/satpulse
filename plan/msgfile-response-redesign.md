@@ -1299,17 +1299,6 @@ d) Test against real hardware.
 Issues discovered during implementation of phases 7-9 that
 should be addressed as follow-up work.
 
-### No-response knowledge in lib packages
-
-The current request analyzers hardcode specific message IDs
-that produce no response (UBX `CfgRstID`, ASBIN
-`CfgSimpleRstID`, SDBP `CtlRestartID`/`CtlStandbyID`). This
-knowledge belongs in the lib packages.
-
-UBX already has `Ackable()` which returns false for `CfgRstID`.
-Each lib package should expose a similar method so that the
-correlator does not need to know individual message IDs.
-
 ### Fix ExpectAckNone for reset messages
 
 A NAK is always possible for any message in any protocol (as a

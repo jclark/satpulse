@@ -78,7 +78,7 @@ func (cm *CASBINMsg) analyzeRequest(data string) requestAnalysis {
 	mid := casbin.MakeMsgID(cm.Class, cm.ID)
 	corr := casbinMsgCorrelate(data)
 	payloadLen := len(data) - 10
-	if mid == casbin.CfgRstID {
+	if mid.CfgClass() && !mid.Ackable() {
 		return requestAnalysis{
 			expectAck:  ExpectAckNone,
 			expectData: expectDataNone,

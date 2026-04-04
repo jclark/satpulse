@@ -78,8 +78,7 @@ func (sm *SDBPMsg) analyzeRequest(data string) requestAnalysis {
 	mid := sdbpbin.MakeMsgID(sm.Class, sm.ID)
 	corr := sdbpMsgCorrelate(data)
 	payloadLen := len(data) - 8 // 8 bytes overhead
-	switch mid {
-	case sdbpbin.CtlRestartID, sdbpbin.CtlStandbyID:
+	if !mid.Ackable() {
 		return requestAnalysis{
 			ackTag:       gpsreg.TagSDBP,
 			ackCorrelate: corr,

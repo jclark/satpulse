@@ -78,13 +78,13 @@ func (am *ASBINMsg) analyzeRequest(data string) requestAnalysis {
 	mid := asbin.MakeMsgID(am.Class, am.ID)
 	corr := asbinMsgCorrelate(data)
 	payloadLen := len(data) - 8
-	if mid == asbin.CfgSimpleRstID {
-		return requestAnalysis{
-			expectAck:  ExpectAckNone,
-			expectData: expectDataNone,
-		}
-	}
 	if mid.CfgClass() {
+		if !mid.Ackable() {
+			return requestAnalysis{
+				expectAck:  ExpectAckNone,
+				expectData: expectDataNone,
+			}
+		}
 		a := requestAnalysis{
 			ackTag:       gpsreg.TagAllystarBin,
 			ackCorrelate: corr,

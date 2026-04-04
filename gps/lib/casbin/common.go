@@ -96,6 +96,11 @@ func (mid MsgID) CfgClass() bool {
 	return cls == clsCfg
 }
 
+// Ackable reports whether mid expects an ACK/NAK response.
+func (mid MsgID) Ackable() bool {
+	return mid.CfgClass() && mid != CfgRstID
+}
+
 func (mid MsgID) String() string {
 	cls, id := mid.Unpack()
 	s := clsMap[cls]
