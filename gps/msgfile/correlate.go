@@ -155,7 +155,7 @@ func (c *Correlator) NotifyMsgSent(rm RawMsg) {
 	}
 	// expectDataUnknown with ack: data status depends on ack type,
 	// but for now we set dataWait -- all expectDataUnknown messages
-	// have ExpectAckNone per the plan.
+	// have ExpectAckNone.
 	if a.expectData == expectDataUnknown {
 		data = dataWait
 	}

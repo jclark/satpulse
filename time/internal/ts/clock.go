@@ -78,7 +78,7 @@ func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinD
 		return nil, err
 	}
 	if phcIndex < 0 {
-		return nil, fmt.Errorf("interface %s cannot be used because it does not have a PTP hardware clock", ifName)
+		return nil, &ConfigError{msg: fmt.Sprintf("interface %s cannot be used because it does not have a PTP hardware clock", ifName)}
 	}
 	flags, err := phc.IfDriverFlags(ifName)
 	if err != nil {
@@ -174,6 +174,13 @@ loop:
 	return nil
 }
 
+// ConfigError indicates a configuration that is incompatible with the PTP clock hardware.
+type ConfigError struct {
+	msg string
+}
+
+func (e *ConfigError) Error() string { return e.msg }
+
 func (clk *Clock) validatePinDesc() error {
 	var msg string
 	if clk.ExttsChanCount() == 0 || clk.PinCount() == 0 {
@@ -185,7 +192,7 @@ func (clk *Clock) validatePinDesc() error {
 	} else {
 		return nil
 	}
-	return errors.New(msg)
+	return &ConfigError{msg: msg}
 }
 
 func StartWorker(ctx context.Context, clk *Clock, lg *slog.Logger) (<-chan Event, error) {

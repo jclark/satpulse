@@ -326,8 +326,10 @@ A message file can also include messages with an empty or missing tag.
 
 While sending messages, **satpulsetool** will attempt to determine which messages output by the receiver
 are in response to the messages that were sent and will display those messages.
-It will continue to listen for those messages for a period of 2 seconds after the last message was sent;
-this duration can be changed with the **\-\-capture** option.
+After all messages have been sent, it waits for any remaining expected responses,
+stopping early if all arrive;
+the duration to wait is controlled by the per-message `waitLimit` key in the message file,
+which defaults to 1.2 seconds.
 
 **\-m**, **\-\-msg\-file** *path*
 : Specifies the TOML message file to use. This option is required to perform low-level configuration.
@@ -351,8 +353,7 @@ The following options control packet capture.
 **\-\-capture** *seconds*
 : Continue capturing packets for the specified number of seconds after configuration is complete.
 Use `0` to capture indefinitely until interrupted.
-With low-level configuration, this also controls how long to wait for responses after the last
-message was sent.
+With low-level configuration (**\-m**), capture time is added after response waiting is complete.
 Requires **\-\-packet\-log** or **\-\-msg\-file**.
 
 # EXAMPLES

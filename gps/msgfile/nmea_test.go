@@ -207,6 +207,29 @@ text = "BAD*ZZ"
 	}
 }
 
+func TestCorrelatorNMEA(t *testing.T) {
+	runCorrelatorTests(t, "nmea-test.toml", []correlatorTest{
+		{
+			name: "same vendor response accepted",
+			tags: []string{"send-xyz"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("PXYZ,reply,data"),
+				expect{relevance: LevelMaybeResponse},
+			},
+		},
+		{
+			name: "different vendor filtered",
+			tags: []string{"send-xyz"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("PABC,reply,data"),
+				expect{relevance: LevelNotResponse},
+			},
+		},
+	})
+}
+
 func TestTaggedNMEAMsgs(t *testing.T) {
 	tests := []struct {
 		name     string

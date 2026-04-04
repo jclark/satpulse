@@ -1299,56 +1299,6 @@ d) Test against real hardware.
 Issues discovered during implementation of phases 7-9 that
 should be addressed as follow-up work.
 
-### No-response knowledge in lib packages
-
-The current request analyzers hardcode specific message IDs
-that produce no response (UBX `CfgRstID`, ASBIN
-`CfgSimpleRstID`, SDBP `CtlRestartID`/`CtlStandbyID`). This
-knowledge belongs in the lib packages.
-
-UBX already has `Ackable()` which returns false for `CfgRstID`.
-Each lib package should expose a similar method so that the
-correlator does not need to know individual message IDs.
-
-### Fix ExpectAckNone for reset messages
-
-A NAK is always possible for any message in any protocol (as a
-generic "unsupported message" rejection), so `ExpectAckNone`
-should never be used for binary protocol messages. The question
-for reset/restart commands is whether the protocol specifies an
-ACK before resetting (`ExpectAckOrNak`) or no ACK on success
-(`ExpectAckNakOnly`). This needs to be verified per-protocol by
-checking protocol docs and testing with hardware. PQTM and PAIR
-reset commands should also be checked.
-
-The current UBX and CASIC analyzers use `ExpectAckNone` for
-their reset messages, which should be changed to
-`ExpectAckNakOnly` at minimum.
-
-### Wire-format knowledge in msgfile
-
-The request and response analyzers in `msgfile/binary.go`
-extract correlation data by reading bytes at specific offsets
-in packet data (e.g. `data[2:4]` for class/ID, `data[6:8]` for
-ACK payload). This wire-format knowledge should live in the lib
-packages, not in `msgfile`.
-
-Each lib package should expose functions to extract the
-correlation-relevant fields from a packet:
-
-- Message class/ID from a packet header (e.g.
-  `PacketMsgID` already exists in most libs).
-- Acknowledged class/ID from an ACK/NAK payload.
-
-The response and request analyzers should call these functions
-instead of using raw byte offsets.
-
-Each lib package should also expose a constant for the packet
-overhead (header + trailer size), so that computing payload
-length from packet length does not require hardcoded magic
-numbers (e.g. `len(data) - 8` for UBX, `len(data) - 10` for
-CASIC) in the msgfile analyzers.
-
 ### Wait-for-ACK message property
 
 Add a boolean `MsgCommon` property (TOML key `waitForAck` or
@@ -1362,20 +1312,13 @@ optimization that works in practice but deviates from the spec.
 This property would restore spec-compliant behaviour, and could
 be the default for protocols where the spec mandates it.
 
-### Unknown proprietary NMEA responses
+### NMEA TXT as informational responses
 
-For proprietary NMEA protocols where we don't understand the
-vendor code (PXYZ where XYZ is not in `proprietaryClassifiers`),
-we should accept as responses only:
-
-- PXYZ sentences with matching vendor code XYZ.
-- NMEA TXT sentences (any valid talker ID, e.g. GPTXT,
-  GNTXT), since some proprietary protocols respond using
-  TXT messages rather than their own sentence format.
-
-Currently all unknown proprietary sentences get
-`responseMaybeData` regardless of vendor code, which is too
-broad.
+Some proprietary protocols respond using NMEA TXT messages
+(GPTXT, GNTXT) rather than their own sentence format. Currently
+TXT sentences are classified as `responseNotData` because
+`IsValidGNSSTalkerNMEA()` returns true. They should be accepted
+as possible responses for unknown proprietary NMEA commands.
 
 ### UBX-INF informational messages
 
@@ -1393,23 +1336,6 @@ response kind to handle this — distinct from data responses
 (not correlated to a specific request) and from ACK/NAK (no
 state update). NMEA TXT messages might use this same response
 kind. Needs experimentation with hardware.
-
-### Documentation updates
-
-The message file format documentation and schema need updating
-for the new `waitLimit` key and any other format additions.
-The man page needs updating for the changed `--capture`
-behavior with `-m` and `-t` (early stop when all responses
-received, `waitLimit`-based deadlines).
-
-- `configs/gpsmsg/format.md`: document `waitLimit` key and
-  updated response handling behavior.
-- `configs/gpsmsg/gpsmsg-schema.json`: add `waitLimit` to the
-  schema definitions.
-- `docs/man/satpulsetool-gps.1.md`: update `--capture`
-  description to reflect that it now adds capture time *after*
-  response waiting is complete, rather than being the sole
-  timeout.
 
 ## Key files
 

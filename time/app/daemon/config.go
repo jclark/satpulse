@@ -167,7 +167,15 @@ func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock,
 	if cfg.Interface == "" {
 		return nil, nil
 	}
-	return ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait)
+	clk, err := ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait)
+	if err != nil {
+		var cfgErr *ts.ConfigError
+		if errors.As(err, &cfgErr) {
+			return nil, &configError{err: err}
+		}
+		return nil, err
+	}
+	return clk, nil
 }
 
 func (cff PHCConfig) PinDesc() ts.PinDesc {

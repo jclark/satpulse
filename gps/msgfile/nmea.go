@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 )
 
@@ -54,6 +55,12 @@ func (nm *NMEAMsg) analyzeRequest(data string) requestAnalysis {
 		vendor := payload[1:4] // skip 'P', take 3-letter vendor code
 		if c, ok := proprietaryClassifiers[vendor]; ok {
 			return c.classifyRequest(payload)
+		}
+		return requestAnalysis{
+			expectAck:  ExpectAckNone,
+			dataTag:    gpsreg.TagNMEA,
+			expectData: expectDataUnknown,
+			dataMatch:  nmeaVendorMatch(vendor),
 		}
 	}
 	return requestAnalysis{
@@ -115,6 +122,15 @@ func nmeaPayload(data string) string {
 		return ""
 	}
 	return data[1:i]
+}
+
+// nmeaVendorMatch returns a dataMatch function that accepts NMEA packets
+// with the same 3-letter proprietary vendor code.
+func nmeaVendorMatch(vendor string) func(string) bool {
+	return func(data string) bool {
+		p := nmeaPayload(data)
+		return len(p) >= 4 && p[0] == 'P' && p[1:4] == vendor
+	}
 }
 
 func buildNMEA(text string) (string, nmeamsg.SentenceSyntaxFlags, error) {

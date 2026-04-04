@@ -36,17 +36,18 @@ Where this information is documented in implemented protocols:
 - SDBP `DAT-SAT`: one `PRResidual` per entry (cm), and the entry already has a
   `SignalID` -- maps directly to `SignalInfo.PRResidual`
 
-Not available / not currently useful in the paths we use:
+Available in the protocol, but only via messages we do not currently parse:
 
-- NMEA `GRS`: range residuals in GSA order, with sentence-level `systemId` and
-  `signalId` in NMEA 4.10+. Deriving per-signal residuals requires correlating
-  `GRS` with the matching `GSA`; the current NMEA path does not parse `GRS`.
-- Unicore `GPGRS` / `GNGRS`: same NMEA-style residual output, not available
-  from the current `SATSINFO` / `BESTSAT` binary path
-- Quectel `GRS`: same NMEA-style residual output, would require NMEA `GRS`
-  support
+- standard NMEA `GRS`: range residuals in GSA order, with sentence-level
+  `systemId` and `signalId` in NMEA 4.10+. This is enough to derive
+  per-signal residuals by correlating `GRS` with the matching `GSA`, but
+  `gps/internal/nmea` does not currently parse `GRS`.
+- ByNav `TRACKSTAT`: per-channel pseudorange residuals are available there, but
+  we do not currently parse `TRACKSTAT`.
+
+Not available in the current vendor-specific satellite-message paths we use:
+
 - Unicore `SATSINFO` / `BESTSAT`: no residual field in the current binary path
-- standard NMEA `GSV` / `GSA`: no residual field; `GRS` is separate
 
 Comparison to current code:
 
@@ -67,5 +68,6 @@ Comparison to current code:
   mapping.
 - `gps/internal/unc/sats.go` does not currently have any residual value to
   propagate from `SATSINFO` / `BESTSAT`.
-- `gps/internal/nmea` does not currently parse `GRS`, so NMEA/Quectel/Unicore
-  residual support via `GRS` would be a separate follow-up feature.
+- `gps/internal/nmea` does not currently parse `GRS`, so NMEA residual support
+  there would be a separate follow-up feature.
+- ByNav would need a new `TRACKSTAT` parser path before this could be surfaced.
