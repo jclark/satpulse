@@ -72,6 +72,16 @@ func TestMaskPropRoundTrip(t *testing.T) {
 			),
 			commands: []string{"MASK B1I", "MASK B2I"},
 		},
+		{
+			name:      "mask GAL E5a",
+			signalSet: gpsprot.SignalSetOf(gpsprot.SigGALE5a),
+			commands:  []string{"MASK E5a"},
+		},
+		{
+			name:      "mask GAL E5b",
+			signalSet: gpsprot.SignalSetOf(gpsprot.SigGALE5b),
+			commands:  []string{"MASK E5b"},
+		},
 	}
 
 	for _, tc := range maskTestCases {
