@@ -37,7 +37,7 @@ func (am *ASBINMsg) getTag() string { return *am.Tag }
 type asbinAnalyzer struct{}
 
 func (asbinAnalyzer) analyzeResponse(data string) responseAnalysis {
-	if len(data) < 8 {
+	if len(data) < asbin.PacketMinLen {
 		return responseAnalysis{kind: responseMaybeData}
 	}
 	mid := asbin.PacketMsgId(data)
@@ -45,39 +45,26 @@ func (asbinAnalyzer) analyzeResponse(data string) responseAnalysis {
 	case asbin.AckAckID:
 		return responseAnalysis{
 			kind:         responseAck,
-			ackCorrelate: asbinAckCorrelate(data),
+			ackCorrelate: asbinMsgIDString(asbin.AckMsgID(data)),
 		}
 	case asbin.AckNakID:
 		return responseAnalysis{
 			kind:         responseNak,
-			ackCorrelate: asbinAckCorrelate(data),
+			ackCorrelate: asbinMsgIDString(asbin.AckMsgID(data)),
 		}
 	}
 	return responseAnalysis{kind: responseMaybeData}
 }
 
-// asbinAckCorrelate extracts the 2-byte class/ID from an Allystar ACK payload.
-// ASBIN packet: sync(2) + class(1) + id(1) + len(2) + payload + cksum(2).
-// ACK payload starts at byte 6: acked_class(1) + acked_id(1).
-func asbinAckCorrelate(data string) string {
-	if len(data) < 8 {
-		return ""
-	}
-	return data[6:8]
-}
-
-// asbinMsgCorrelate extracts the 2-byte class/ID from an Allystar packet header.
-func asbinMsgCorrelate(data string) string {
-	if len(data) < 4 {
-		return ""
-	}
-	return data[2:4]
+func asbinMsgIDString(mid asbin.MsgID) string {
+	cls, id := mid.Unpack()
+	return string([]byte{cls, id})
 }
 
 func (am *ASBINMsg) analyzeRequest(data string) requestAnalysis {
 	mid := asbin.MakeMsgID(am.Class, am.ID)
-	corr := asbinMsgCorrelate(data)
-	payloadLen := len(data) - 8
+	corr := asbinMsgIDString(asbin.PacketMsgId(data))
+	payloadLen := len(data) - asbin.PacketMinLen
 	if mid.CfgClass() {
 		if !mid.Ackable() {
 			return requestAnalysis{
@@ -93,7 +80,7 @@ func (am *ASBINMsg) analyzeRequest(data string) requestAnalysis {
 		}
 		if payloadLen <= asbin.PollPayloadLen(mid) {
 			a.expectData = expectDataSingle
-			a.dataMatch = asbinDataMatch(corr)
+			a.dataMatch = asbinDataMatch(mid)
 		} else {
 			a.expectData = expectDataNone
 		}
@@ -104,12 +91,12 @@ func (am *ASBINMsg) analyzeRequest(data string) requestAnalysis {
 		expectAck:  ExpectAckNone,
 		dataTag:    gpsreg.TagAllystarBin,
 		expectData: expectDataAmbig,
-		dataMatch:  asbinDataMatch(corr),
+		dataMatch:  asbinDataMatch(mid),
 	}
 }
 
-func asbinDataMatch(corr string) func(string) bool {
+func asbinDataMatch(mid asbin.MsgID) func(string) bool {
 	return func(data string) bool {
-		return asbinMsgCorrelate(data) == corr
+		return asbin.PacketMsgId(data) == mid
 	}
 }

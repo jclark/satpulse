@@ -45,13 +45,13 @@ func makeMsgID(cls, id byte) MsgID {
 // MakeMsgID creates a MsgID from class and id bytes.
 func MakeMsgID(cls, id byte) MsgID { return makeMsgID(cls, id) }
 
-func (mid MsgID) unpack() (cls, id byte) {
+func (mid MsgID) Unpack() (cls, id byte) {
 	return byte(mid & 0xFF), byte((mid >> 8) & 0xFF)
 }
 
 // CfgClass reports whether mid is in the CFG class.
 func (mid MsgID) CfgClass() bool {
-	cls, _ := mid.unpack()
+	cls, _ := mid.Unpack()
 	return cls == clsCFG
 }
 
@@ -61,7 +61,7 @@ func (mid MsgID) Ackable() bool {
 }
 
 func (mid MsgID) String() string {
-	cls, id := mid.unpack()
+	cls, id := mid.Unpack()
 	s := clsMap[cls]
 	if s == "" {
 		s = fmt.Sprintf("0x%02X", cls)
@@ -126,13 +126,21 @@ type UnknownMsg struct {
 
 func (m *UnknownMsg) ID() MsgID { return m.MsgID_ }
 
-// 2 sync + class + id + 2 length + 2 checksum
-const packetMinLength = 8
+const (
+	HeaderLen    = 6 // sync(2) + class(1) + id(1) + length(2)
+	TrailerLen   = 2 // checksum(2)
+	PacketMinLen = HeaderLen + TrailerLen
+)
+
+// AckMsgID extracts the acknowledged MsgID from an ACK/NAK packet.
+func AckMsgID[B Bytes](pkt B) MsgID {
+	return makeMsgID(pkt[HeaderLen], pkt[HeaderLen+1])
+}
 
 // ParseMsg parses a complete SDBP packet (including sync and checksum) into a Msg.
 func ParseMsg(packet string) (Msg, error) {
 	n := len(packet)
-	if n < packetMinLength {
+	if n < PacketMinLen {
 		return nil, fmt.Errorf("SDBP message too short (%d bytes)", n)
 	}
 	checksumIndex := n - 2
@@ -209,7 +217,7 @@ func PackMsg(mid MsgID, payload []byte) ([]byte, error) {
 	if len(payload) > 0xFFFF {
 		return nil, fmt.Errorf("SDBP-%s payload too long (%d bytes)", mid, len(payload))
 	}
-	cls, id := mid.unpack()
+	cls, id := mid.Unpack()
 	pkt := []byte{
 		Sync1, Sync2,
 		cls, id,

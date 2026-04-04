@@ -45,7 +45,7 @@ func (um *UBXMsg) getTag() string { return *um.Tag }
 type ubxAnalyzer struct{}
 
 func (ubxAnalyzer) analyzeResponse(data string) responseAnalysis {
-	if len(data) < 8 {
+	if len(data) < ubxbin.PacketMinLen {
 		return responseAnalysis{kind: responseMaybeData}
 	}
 	mid := ubxbin.PacketMsgId(data)
@@ -53,37 +53,26 @@ func (ubxAnalyzer) analyzeResponse(data string) responseAnalysis {
 	case ubxbin.AckAckID:
 		return responseAnalysis{
 			kind:         responseAck,
-			ackCorrelate: ubxAckCorrelate(data),
+			ackCorrelate: ubxMsgIDString(ubxbin.AckMsgID(data)),
 		}
 	case ubxbin.AckNakID:
 		return responseAnalysis{
 			kind:         responseNak,
-			ackCorrelate: ubxAckCorrelate(data),
+			ackCorrelate: ubxMsgIDString(ubxbin.AckMsgID(data)),
 		}
 	}
 	return responseAnalysis{kind: responseMaybeData}
 }
 
-// ubxAckCorrelate extracts the 2-byte class/ID from a UBX ACK payload.
-func ubxAckCorrelate(data string) string {
-	if len(data) < 8 {
-		return ""
-	}
-	return data[6:8]
-}
-
-// ubxMsgCorrelate extracts the 2-byte class/ID from a UBX packet header.
-func ubxMsgCorrelate(data string) string {
-	if len(data) < 4 {
-		return ""
-	}
-	return data[2:4]
+func ubxMsgIDString(mid ubxbin.MsgID) string {
+	cls, id := mid.Unpack()
+	return string([]byte{cls, id})
 }
 
 func (um *UBXMsg) analyzeRequest(data string) requestAnalysis {
 	mid := ubxbin.MakeMsgID(um.Class, um.ID)
-	corr := ubxMsgCorrelate(data)
-	payloadLen := len(data) - 8
+	corr := ubxMsgIDString(ubxbin.PacketMsgId(data))
+	payloadLen := len(data) - ubxbin.PacketMinLen
 	if mid.CfgClass() {
 		if !mid.Ackable() {
 			return requestAnalysis{
@@ -99,7 +88,7 @@ func (um *UBXMsg) analyzeRequest(data string) requestAnalysis {
 		}
 		if payloadLen <= ubxbin.PollPayloadLen(mid) {
 			a.expectData = expectDataSingle
-			a.dataMatch = ubxDataMatch(corr)
+			a.dataMatch = ubxDataMatch(mid)
 		} else {
 			a.expectData = expectDataNone
 		}
@@ -115,12 +104,12 @@ func (um *UBXMsg) analyzeRequest(data string) requestAnalysis {
 		expectAck:  ExpectAckNone,
 		dataTag:    gpsreg.TagUBX,
 		expectData: de,
-		dataMatch:  ubxDataMatch(corr),
+		dataMatch:  ubxDataMatch(mid),
 	}
 }
 
-func ubxDataMatch(corr string) func(string) bool {
+func ubxDataMatch(mid ubxbin.MsgID) func(string) bool {
 	return func(data string) bool {
-		return ubxMsgCorrelate(data) == corr
+		return ubxbin.PacketMsgId(data) == mid
 	}
 }

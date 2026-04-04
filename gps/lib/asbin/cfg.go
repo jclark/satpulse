@@ -229,13 +229,13 @@ func PollPrt(uartIdx int) []byte {
 }
 
 func SetCfgMsg(mid MsgID, rate byte) []byte {
-	cls, id := mid.unpack()
+	cls, id := mid.Unpack()
 	packet, _ := packMsg(CfgMsgID, []byte{cls, id, rate})
 	return packet
 }
 
 func PollCfgMsg(mid MsgID) []byte {
-	cls, id := mid.unpack()
+	cls, id := mid.Unpack()
 	packet, _ := packMsg(CfgMsgID, []byte{cls, id})
 	return packet
 }

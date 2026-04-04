@@ -1314,30 +1314,6 @@ The current UBX and CASIC analyzers use `ExpectAckNone` for
 their reset messages, which should be changed to
 `ExpectAckNakOnly` at minimum.
 
-### Wire-format knowledge in msgfile
-
-The request and response analyzers in `msgfile/binary.go`
-extract correlation data by reading bytes at specific offsets
-in packet data (e.g. `data[2:4]` for class/ID, `data[6:8]` for
-ACK payload). This wire-format knowledge should live in the lib
-packages, not in `msgfile`.
-
-Each lib package should expose functions to extract the
-correlation-relevant fields from a packet:
-
-- Message class/ID from a packet header (e.g.
-  `PacketMsgID` already exists in most libs).
-- Acknowledged class/ID from an ACK/NAK payload.
-
-The response and request analyzers should call these functions
-instead of using raw byte offsets.
-
-Each lib package should also expose a constant for the packet
-overhead (header + trailer size), so that computing payload
-length from packet length does not require hardcoded magic
-numbers (e.g. `len(data) - 8` for UBX, `len(data) - 10` for
-CASIC) in the msgfile analyzers.
-
 ### Wait-for-ACK message property
 
 Add a boolean `MsgCommon` property (TOML key `waitForAck` or

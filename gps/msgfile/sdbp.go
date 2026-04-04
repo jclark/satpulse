@@ -37,7 +37,7 @@ func (sm *SDBPMsg) getTag() string { return *sm.Tag }
 type sdbpAnalyzer struct{}
 
 func (sdbpAnalyzer) analyzeResponse(data string) responseAnalysis {
-	if len(data) < 8 {
+	if len(data) < sdbpbin.PacketMinLen {
 		return responseAnalysis{kind: responseMaybeData}
 	}
 	mid := sdbpbin.PacketMsgId(data)
@@ -45,39 +45,26 @@ func (sdbpAnalyzer) analyzeResponse(data string) responseAnalysis {
 	case sdbpbin.PubAckID:
 		return responseAnalysis{
 			kind:         responseAck,
-			ackCorrelate: sdbpAckCorrelate(data),
+			ackCorrelate: sdbpMsgIDString(sdbpbin.AckMsgID(data)),
 		}
 	case sdbpbin.PubNakID:
 		return responseAnalysis{
 			kind:         responseNak,
-			ackCorrelate: sdbpAckCorrelate(data),
+			ackCorrelate: sdbpMsgIDString(sdbpbin.AckMsgID(data)),
 		}
 	}
 	return responseAnalysis{kind: responseMaybeData}
 }
 
-// sdbpAckCorrelate extracts the 2-byte class/ID from an SDBP PubAck/PubNak payload.
-// SDBP packet: sync(2) + class(1) + id(1) + len(2) + payload + cksum(2).
-// PubAck/PubNak payload starts at byte 6: acked_class(1) + acked_id(1).
-func sdbpAckCorrelate(data string) string {
-	if len(data) < 8 {
-		return ""
-	}
-	return data[6:8]
-}
-
-// sdbpMsgCorrelate extracts the 2-byte class/ID from an SDBP packet header.
-func sdbpMsgCorrelate(data string) string {
-	if len(data) < 4 {
-		return ""
-	}
-	return data[2:4]
+func sdbpMsgIDString(mid sdbpbin.MsgID) string {
+	cls, id := mid.Unpack()
+	return string([]byte{cls, id})
 }
 
 func (sm *SDBPMsg) analyzeRequest(data string) requestAnalysis {
 	mid := sdbpbin.MakeMsgID(sm.Class, sm.ID)
-	corr := sdbpMsgCorrelate(data)
-	payloadLen := len(data) - 8 // 8 bytes overhead
+	corr := sdbpMsgIDString(sdbpbin.PacketMsgId(data))
+	payloadLen := len(data) - sdbpbin.PacketMinLen
 	if !mid.Ackable() {
 		return requestAnalysis{
 			ackTag:       gpsreg.TagSDBP,
@@ -95,7 +82,7 @@ func (sm *SDBPMsg) analyzeRequest(data string) requestAnalysis {
 			expectAck:    ExpectAckOrNak,
 			dataTag:      gpsreg.TagSDBP,
 			expectData:   expectDataSingle,
-			dataMatch:    sdbpDataMatch(corr),
+			dataMatch:    sdbpDataMatch(mid),
 		}
 	}
 	// Set command.
@@ -107,8 +94,8 @@ func (sm *SDBPMsg) analyzeRequest(data string) requestAnalysis {
 	}
 }
 
-func sdbpDataMatch(corr string) func(string) bool {
+func sdbpDataMatch(mid sdbpbin.MsgID) func(string) bool {
 	return func(data string) bool {
-		return sdbpMsgCorrelate(data) == corr
+		return sdbpbin.PacketMsgId(data) == mid
 	}
 }
