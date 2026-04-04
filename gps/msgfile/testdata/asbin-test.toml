@@ -29,12 +29,13 @@ payload.types = "U1"
 payload.values = [2]
 
 # CFG set with different class/ID for pacing tests.
+# Payload > 1 byte so it is not mistaken for a poll (1-byte poll selects UART index).
 [[asbin]]
 tag = "set-prt"
 class = 0x06
 id = 0x00
-payload.types = "U1"
-payload.values = [1]
+payload.types = "U1U1"
+payload.values = [1, 0]
 
 # Second CFG set with same class/ID as set-pps for ambiguity tests.
 [[asbin]]

@@ -77,7 +77,7 @@ func asbinMsgCorrelate(data string) string {
 func (am *ASBINMsg) analyzeRequest(data string) requestAnalysis {
 	mid := asbin.MakeMsgID(am.Class, am.ID)
 	corr := asbinMsgCorrelate(data)
-	hasPayload := len(data) > 8
+	payloadLen := len(data) - 8
 	if mid == asbin.CfgSimpleRstID {
 		return requestAnalysis{
 			expectAck:  ExpectAckNone,
@@ -91,11 +91,11 @@ func (am *ASBINMsg) analyzeRequest(data string) requestAnalysis {
 			expectAck:    ExpectAckOrNak,
 			dataTag:      gpsreg.TagAllystarBin,
 		}
-		if hasPayload {
-			a.expectData = expectDataNone
-		} else {
+		if payloadLen <= asbin.PollPayloadLen(mid) {
 			a.expectData = expectDataSingle
 			a.dataMatch = asbinDataMatch(corr)
+		} else {
+			a.expectData = expectDataNone
 		}
 		return a
 	}

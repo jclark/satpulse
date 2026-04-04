@@ -203,6 +203,21 @@ type CfgNmeaVer struct {
 
 func (m *CfgNmeaVer) ID() MsgID { return CfgNmeaVerID }
 
+// PollPayloadLen returns the maximum payload length that indicates
+// a poll for mid.
+func PollPayloadLen(mid MsgID) int {
+	switch mid {
+	case CfgPrtID:
+		return 1 // UART index
+	case CfgMsgID:
+		return 2 // class + ID
+	case NavTimeID:
+		return 1 // nav system
+	default:
+		return 0
+	}
+}
+
 func PollNavTime(navSys NavTimeSys) []byte {
 	packet, _ := packMsg(NavTimeID, []byte{byte(navSys)})
 	return packet

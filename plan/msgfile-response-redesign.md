@@ -1299,30 +1299,6 @@ d) Test against real hardware.
 Issues discovered during implementation of phases 7-9 that
 should be addressed as follow-up work.
 
-### Poll payload length in lib packages
-
-The current request analyzers use "empty payload = poll" to
-distinguish polls from sets. This is wrong for messages where
-the poll carries a short payload to select what is being queried:
-
-- **UBX**: `PollCfgTp5` (1 byte), `PollCfgMsg` (2 bytes).
-- **ASBIN**: `PollPrt` (1 byte), `PollCfgMsg` (2 bytes),
-  `PollNavTime` (1 byte).
-- **SDBP**: `PollCfgPPS` (1 byte), `PollCfgNMEA` (1 byte),
-  `PollCfgSDBP` (2 bytes).
-- **CASIC**: CFG-MSG single-message poll (4 bytes with
-  rate=0xFFFF) is already handled as a special case, but
-  ideally the payload-format knowledge should live in `casbin`.
-
-Each lib package that needs it should expose a function like
-`PollPayloadLen(MsgID) (int, bool)` that returns the maximum
-payload length indicating a poll for that message ID, and
-whether the message has a poll variant at all. The request
-analyzers in `msgfile/binary.go` should call this instead of
-using payload-length heuristics.
-
-Related: #225 (decoding outgoing poll messages).
-
 ### No-response knowledge in lib packages
 
 The current request analyzers hardcode specific message IDs
@@ -1366,6 +1342,12 @@ correlation-relevant fields from a packet:
 
 The response and request analyzers should call these functions
 instead of using raw byte offsets.
+
+Each lib package should also expose a constant for the packet
+overhead (header + trailer size), so that computing payload
+length from packet length does not require hardcoded magic
+numbers (e.g. `len(data) - 8` for UBX, `len(data) - 10` for
+CASIC) in the msgfile analyzers.
 
 ### Wait-for-ACK message property
 

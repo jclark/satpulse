@@ -1,12 +1,13 @@
 # UBX test messages for correlator tests.
 
 # CFG set: expects ACK only, no data.
+# Payload > 1 byte so it is not mistaken for a poll (1-byte poll selects timepulse index).
 [[ubx]]
 tag = "set-tp5"
 class = 0x06
 id = 0x31
-payload.types = "U1"
-payload.values = [0]
+payload.types = "U1U1"
+payload.values = [0, 0]
 
 # CFG poll: expects ACK + data response.
 [[ubx]]
@@ -21,12 +22,13 @@ class = 0x01
 id = 0x07
 
 # CFG set with different class/ID for pacing tests.
+# Payload > 1 byte so it is not mistaken for a poll (1-byte poll selects port ID).
 [[ubx]]
 tag = "set-prt"
 class = 0x06
 id = 0x00
-payload.types = "U1"
-payload.values = [1]
+payload.types = "U1U1"
+payload.values = [1, 0]
 
 # CFG-RST: no response expected (receiver resets).
 [[ubx]]
@@ -47,5 +49,5 @@ id = 0x28
 tag = "set-tp5-dup"
 class = 0x06
 id = 0x31
-payload.types = "U1"
-payload.values = [1]
+payload.types = "U1U1"
+payload.values = [1, 0]

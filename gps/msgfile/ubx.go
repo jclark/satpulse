@@ -83,7 +83,7 @@ func ubxMsgCorrelate(data string) string {
 func (um *UBXMsg) analyzeRequest(data string) requestAnalysis {
 	mid := ubxbin.MakeMsgID(um.Class, um.ID)
 	corr := ubxMsgCorrelate(data)
-	hasPayload := len(data) > 8
+	payloadLen := len(data) - 8
 	if mid == ubxbin.CfgRstID {
 		return requestAnalysis{
 			expectAck:  ExpectAckNone,
@@ -97,11 +97,11 @@ func (um *UBXMsg) analyzeRequest(data string) requestAnalysis {
 			expectAck:    ExpectAckOrNak,
 			dataTag:      gpsreg.TagUBX,
 		}
-		if hasPayload {
-			a.expectData = expectDataNone
-		} else {
+		if payloadLen <= ubxbin.PollPayloadLen(mid) {
 			a.expectData = expectDataSingle
 			a.dataMatch = ubxDataMatch(corr)
+		} else {
+			a.expectData = expectDataNone
 		}
 		return a
 	}

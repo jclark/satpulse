@@ -77,7 +77,7 @@ func casbinMsgCorrelate(data string) string {
 func (cm *CASBINMsg) analyzeRequest(data string) requestAnalysis {
 	mid := casbin.MakeMsgID(cm.Class, cm.ID)
 	corr := casbinMsgCorrelate(data)
-	hasPayload := len(data) > 10
+	payloadLen := len(data) - 10
 	if mid == casbin.CfgRstID {
 		return requestAnalysis{
 			expectAck:  ExpectAckNone,
@@ -85,7 +85,7 @@ func (cm *CASBINMsg) analyzeRequest(data string) requestAnalysis {
 		}
 	}
 	if mid == casbin.CfgMsgID {
-		if !hasPayload {
+		if payloadLen <= 0 {
 			// All-rates query: ACK + multiple CFG-MSG data responses.
 			return requestAnalysis{
 				ackTag:       gpsreg.TagCASICBin,
@@ -119,11 +119,11 @@ func (cm *CASBINMsg) analyzeRequest(data string) requestAnalysis {
 			expectAck:    ExpectAckOrNak,
 			dataTag:      gpsreg.TagCASICBin,
 		}
-		if hasPayload {
-			a.expectData = expectDataNone
-		} else {
+		if payloadLen <= casbin.PollPayloadLen(mid) {
 			a.expectData = expectDataSingle
 			a.dataMatch = casbinDataMatch(corr)
+		} else {
+			a.expectData = expectDataNone
 		}
 		return a
 	}

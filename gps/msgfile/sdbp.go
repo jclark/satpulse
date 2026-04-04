@@ -88,11 +88,7 @@ func (sm *SDBPMsg) analyzeRequest(data string) requestAnalysis {
 		}
 	}
 	// QUE class (0x05) messages are always queries.
-	// CFG queries use short payloads (0-1 bytes); sets use longer payloads.
-	isQuery := sm.Class == 0x05
-	if !isQuery {
-		isQuery = payloadLen <= 1
-	}
+	isQuery := sm.Class == 0x05 || payloadLen <= sdbpbin.PollPayloadLen(mid)
 	if isQuery {
 		return requestAnalysis{
 			ackTag:       gpsreg.TagSDBP,

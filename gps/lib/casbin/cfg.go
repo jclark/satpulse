@@ -36,6 +36,17 @@ type CfgTMode2 struct {
 
 func (m *CfgTMode2) ID() MsgID { return CfgTMode2ID }
 
+// PollPayloadLen returns the maximum payload length that indicates
+// a poll for mid.
+func PollPayloadLen(mid MsgID) int {
+	switch mid {
+	case CfgMsgID:
+		return 4 // class + ID + rate (0xFFFF)
+	default:
+		return 0
+	}
+}
+
 func init() {
 	regMsg[CfgTMode2]("TMODE2")
 }
