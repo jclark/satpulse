@@ -351,17 +351,8 @@ type gsaSentence struct {
 func parseGSA(sen *ApprovedSentence) (gsaSentence, error) {
 	gsa := gsaSentence{}
 	// Fix, Auto, 12*SVID, PDOP, HDOP, VDOP, opt sysID
-	gnss := gpsprot.GNSS(0)
-	if len(sen.Fields) >= 18 {
-		sysID, err := parseIntField(sen.Fields, 17, 1, 6, "GSA")
-		if err != nil {
-			return gsa, err
-		}
-		gnss = systemIDToGNSS(sysID)
-	} else if len(sen.Fields) < 17 {
+	if len(sen.Fields) < 17 {
 		return gsa, fmt.Errorf("GSA: too few fields")
-	} else {
-		gnss = talkerIDToGNSS(sen.TalkerID)
 	}
 	svids := make([]int, 0, 12)
 	for i := 2; i < 14; i++ {
@@ -373,6 +364,18 @@ func parseGSA(sen *ApprovedSentence) (gsaSentence, error) {
 			return gsa, err
 		}
 		svids = append(svids, svid)
+	}
+	var gnss gpsprot.GNSS
+	if len(sen.Fields) >= 18 && sen.Fields[17] != "" {
+		sysID, err := parseIntField(sen.Fields, 17, 1, 6, "GSA")
+		if err != nil {
+			return gsa, err
+		}
+		gnss = systemIDToGNSS(sysID)
+	} else if len(sen.Fields) >= 18 && len(svids) > 0 {
+		return gsa, fmt.Errorf("GSA: empty system ID with SVIDs present")
+	} else {
+		gnss = talkerIDToGNSS(sen.TalkerID)
 	}
 	gsa.svids = svids
 	gsa.gnss = gnss
