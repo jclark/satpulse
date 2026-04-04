@@ -9,6 +9,11 @@ import (
 var uncReplayFiles = []string{
 	"unc/show",
 	"unc/gps",
+	"unc/noop",
+	"unc/pvt-out",
+	"unc/rtcm-out",
+	"unc/binary",
+	"unc/min-elev",
 }
 
 func TestReplayUNC(t *testing.T) {
