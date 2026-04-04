@@ -85,3 +85,7 @@ File names indicate the content and baud rate:
 - `survey-38400.jsonl` -- survey-in capture at 38400
 
 Include baud rate suffix when it differs from the default/factory rate.
+
+## Parsing errors are bugs
+
+If `satpulsetool replay` reports parsing errors (e.g., `error processing packet`), these are bugs in the decode layer that need fixing. Packet logs from real hardware are the primary way to discover edge cases in parsers (empty fields, truncated payloads, unexpected enum values). File an issue or fix them immediately -- don't ignore them as expected behavior.
