@@ -1365,34 +1365,6 @@ correlation-relevant fields from a packet:
 The response and request analyzers should call these functions
 instead of using raw byte offsets.
 
-### Split binary.go and text.go per protocol
-
-`binary.go` contains message types and analyzers for all four
-binary protocols (UBX, CASIC, ASBIN, SDBP). `text.go` contains
-NMEA, line, and Unicore handling. Split into per-protocol files
-so that each protocol-specific lib package is imported in only
-one place, and adding a new protocol just adds a new file and
-its registration in a parent file.
-
-- `ubx.go` — UBXLikeMsg, UBXMsg, UBX analyzer
-- `casbin.go` — CASBINMsg, CASIC analyzer
-- `asbin.go` — ASBINMsg, Allystar analyzer
-- `sdbp.go` — SDBPMsg, SDBP analyzer
-- `nmea.go` — NMEAMsg, NMEA analyzer, proprietary dispatch
-- `pqtm.go` — PQTM classifier
-- `pair.go` — PAIR classifier
-- `unc.go` — Unicore request/response analyzers
-- `line.go` — LineMsg
-- `binary.go` — BinaryMsg only
-
-Registration points:
-- `correlate.go` `NewCorrelator()`: registers response
-  analyzers by tag (one line per binary protocol, plus NMEA
-  and Unicore ASCII).
-- `nmea.go` `proprietaryClassifiers`: registers PQTM, PAIR
-  classifiers by vendor code.
-- `msgfile.go`: registers message types for TOML parsing.
-
 ### Wait-for-ACK message property
 
 Add a boolean `MsgCommon` property (TOML key `waitForAck` or
