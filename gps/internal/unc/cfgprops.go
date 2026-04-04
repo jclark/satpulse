@@ -789,6 +789,7 @@ func (p *modeProp) updateFromProps(props *gpsprot.ConfigProps, survey gpsprot.Su
 		cmd += fmt.Sprintf(" %.4f %.4f %.4f", m.FixedPosECEF[0].Meters(), m.FixedPosECEF[1].Meters(), m.FixedPosECEF[2].Meters())
 	case gpsprot.PosTypeNone:
 		surveySecs := int64(survey.MinDur.Round(time.Second) / time.Second)
+		surveySecs = min(surveySecs, 3600)
 		cmd += fmt.Sprintf(" TIME %d", surveySecs)
 		// Preserve TIME distance parameter if present in existing command
 		if matches != nil && matches[6] != "" {
