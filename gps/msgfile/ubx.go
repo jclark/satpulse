@@ -61,6 +61,9 @@ func (ubxAnalyzer) analyzeResponse(data string) responseAnalysis {
 			ackCorrelate: ubxMsgIDString(ubxbin.AckMsgID(data)),
 		}
 	}
+	if mid.InfClass() {
+		return responseAnalysis{kind: responseInfo}
+	}
 	return responseAnalysis{kind: responseMaybeData}
 }
 

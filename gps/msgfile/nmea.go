@@ -97,9 +97,13 @@ func (nmeaAnalyzer) analyzeResponse(data string) responseAnalysis {
 	if fields[0] == "CONFIG" {
 		return responseAnalysis{kind: responseData}
 	}
-	// Standard GNSS talker NMEA (GPRMC, GPGGA, etc.) is not a response.
+	// Standard GNSS talker NMEA is not a response, except TXT which
+	// can carry informational messages related to sent commands.
 	flags := nmeamsg.CheckSyntax(data)
 	if flags.IsValidGNSSTalkerNMEA() {
+		if fields[0][2:] == "TXT" {
+			return responseAnalysis{kind: responseInfo}
+		}
 		return responseAnalysis{kind: responseNotData}
 	}
 	// Proprietary NMEA: dispatch by vendor code.

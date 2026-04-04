@@ -227,6 +227,33 @@ func TestCorrelatorNMEA(t *testing.T) {
 				expect{relevance: LevelNotResponse},
 			},
 		},
+		{
+			name: "TXT response shown",
+			tags: []string{"send-xyz"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("GPTXT,01,01,02,PXYZ not recognized"),
+				expect{relevance: LevelMaybeResponse},
+			},
+		},
+		{
+			name: "TXT response multi-talker",
+			tags: []string{"send-xyz"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("GNTXT,01,01,02,some info"),
+				expect{relevance: LevelMaybeResponse},
+			},
+		},
+		{
+			name: "non-TXT GNSS NMEA filtered",
+			tags: []string{"send-xyz"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,47.0,M,,"),
+				expect{relevance: LevelNotResponse},
+			},
+		},
 	})
 }
 

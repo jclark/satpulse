@@ -1303,31 +1303,6 @@ should be addressed as follow-up work.
 
 See #252.
 
-### NMEA TXT as informational responses
-
-Some proprietary protocols respond using NMEA TXT messages
-(GPTXT, GNTXT) rather than their own sentence format. Currently
-TXT sentences are classified as `responseNotData` because
-`IsValidGNSSTalkerNMEA()` returns true. They should be accepted
-as possible responses for unknown proprietary NMEA commands.
-
-### UBX-INF informational messages
-
-UBX-INF-* messages (ERROR, WARNING, NOTICE, etc.) can
-accompany ACK/NAK responses to provide additional error context.
-The UBX response analyzer returns `responseMaybeData` for these,
-but the correlator's data matching then fails (INF class 0x04
-doesn't match any request's class/ID), so they end up as
-`LevelNotResponse` and are silently dropped. The INF message
-classes are already defined in `ubxbin/inf.go`.
-
-These are spontaneous human-readable messages produced by the
-receiver that could be related to what was sent. May need a new
-response kind to handle this — distinct from data responses
-(not correlated to a specific request) and from ACK/NAK (no
-state update). NMEA TXT messages might use this same response
-kind. Needs experimentation with hardware.
-
 ## Key files
 
 - This plan: `plan/msgfile-response-redesign.md`

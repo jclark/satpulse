@@ -94,6 +94,12 @@ func (mid MsgID) CfgClass() bool {
 	return cls == clsCfg
 }
 
+// InfClass reports whether mid is a UBX-INF informational message.
+func (mid MsgID) InfClass() bool {
+	cls, _ := mid.Unpack()
+	return cls == clsInf
+}
+
 type Msg interface {
 	ID() MsgID
 }
