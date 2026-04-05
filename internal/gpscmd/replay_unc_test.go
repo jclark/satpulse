@@ -15,6 +15,7 @@ var uncReplayFiles = []string{
 	"um980-binary",
 	"um980-min-elev",
 	"um980-pps",
+	"um980-signal",
 	"um980-tmode",
 	"um980-raw-out",
 }
