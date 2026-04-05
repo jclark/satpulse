@@ -49,7 +49,7 @@ conn_summary() {
         serial)  echo "$SERIAL_DEVICE @ ${DEVICE_SPEED}bps" ;;
         config)  echo "from $CONFIG_FILE" ;;
         socket)  echo "socket $SOCKET_PATH" ;;
-        *)       echo "not set" ;;
+        *)       echo "no change" ;;
     esac
 }
 
@@ -58,7 +58,7 @@ gnss_summary() {
     [ -n "$GNSS" ] && parts="$GNSS"
     [ -n "$BAND" ] && parts="${parts:+$parts / }bands: $BAND"
     [ -n "$MIN_ELEV" ] && parts="${parts:+$parts / }elev>=${MIN_ELEV}deg"
-    echo "${parts:-not set}"
+    echo "${parts:-no change}"
 }
 
 timemode_summary() {
@@ -75,7 +75,7 @@ timemode_summary() {
             echo "$parts"
             ;;
         mobile) echo "mobile" ;;
-        *)      echo "not set" ;;
+        *)      echo "no change" ;;
     esac
 }
 
@@ -84,7 +84,7 @@ timepulse_summary() {
     [ -n "$PPS_WIDTH" ] && parts="pps=${PPS_WIDTH}s"
     [ -n "$ANT_CABLE_DELAY" ] && parts="${parts:+$parts }cable=${ANT_CABLE_DELAY}ns"
     [ -n "$TIME_GNSS" ] && parts="${parts:+$parts }gnss=$TIME_GNSS"
-    echo "${parts:-not set}"
+    echo "${parts:-no change}"
 }
 
 messages_summary() {
@@ -95,7 +95,7 @@ messages_summary() {
     [ -n "$RTCM_OUT" ] && parts="${parts:+$parts }rtcm:$RTCM_OUT"
     [ -n "$SATS_OUT" ] && parts="${parts:+$parts }sats:$SATS_OUT"
     [ -n "$RAW_OUT" ] && parts="${parts:+$parts }raw:$RAW_OUT"
-    echo "${parts:-not set}"
+    echo "${parts:-no change}"
 }
 
 save_summary() {
@@ -105,7 +105,7 @@ save_summary() {
         reload)        echo "reload from NV" ;;
         reset)         echo "reset" ;;
         factory-reset) echo "factory reset" ;;
-        *)             echo "not set" ;;
+        *)             echo "no change" ;;
     esac
 }
 
