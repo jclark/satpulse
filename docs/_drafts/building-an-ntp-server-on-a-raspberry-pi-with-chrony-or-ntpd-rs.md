@@ -1,5 +1,5 @@
 ---
-title: Building an NTP server with SatPulse on a Raspberry Pi
+title: Building an NTP server on a Raspberry Pi with chrony or ntpd-rs
 ---
 
 In an earlier post, I described how SatPulse can now work without the specialised PHC hardware it previously required. This means, in particular, that it is possible to use SatPulse to build an NTP server on a regular Raspberry Pi, rather than requiring a Raspberry Pi CM4 or CM5.
@@ -175,9 +175,11 @@ minimum-agreeing-sources = 1
 listen = "0.0.0.0:123"
 ```
 
-Version 1.7.2 of ntpd-rs, which was released a few days ago, added support
-for specifying the accuracy of sources as distinct from their precision.
-This is crucial for making this work.
+When I tried initially to get this working with version 1.7.1 of ntpd-rs,
+it didn't work. I submitted an [issue](https://github.com/pendulum-project/ntpd-rs/issues/2169),
+and within a day one of the developers, David Venhoek, had added a [feature](https://github.com/pendulum-project/ntpd-rs/pull/2171) to enable this configuration.
+This was included in version 1.7.2, released a few days ago.
+It adds the ability to specify the accuracy of sources as distinct from their precision.
 Accuracy means how close measurements are to true time.
 Precision means how much measurements vary from each other.
 The serial timing measurements from satpulsed are quite precise
