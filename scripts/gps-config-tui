@@ -87,30 +87,15 @@ timepulse_summary() {
     echo "${parts:-not set}"
 }
 
-protocol_summary() {
-    echo "${BINARY_NMEA:-not set}"
-}
-
-pvt_summary() {
-    echo "${PVT_OUT:-not set}"
-}
-
-sats_out_summary() {
-    echo "${SATS_OUT:-not set}"
-}
-
-raw_summary() {
-    echo "${RAW_OUT:-not set}"
-}
-
-rtcm_summary() {
-    local s="${RTCM_OUT:-not set}"
-    [ -n "$RTCM_BASE_ID" ] && s="$s id:$RTCM_BASE_ID"
-    echo "$s"
-}
-
-nmea_out_summary() {
-    echo "${NMEA_OUT:-not set}"
+messages_summary() {
+    local parts=""
+    [ -n "$BINARY_NMEA" ] && parts="$BINARY_NMEA"
+    [ -n "$PVT_OUT" ] && parts="${parts:+$parts }pvt:$PVT_OUT"
+    [ -n "$NMEA_OUT" ] && parts="${parts:+$parts }nmea:$NMEA_OUT"
+    [ -n "$RTCM_OUT" ] && parts="${parts:+$parts }rtcm:$RTCM_OUT"
+    [ -n "$SATS_OUT" ] && parts="${parts:+$parts }sats:$SATS_OUT"
+    [ -n "$RAW_OUT" ] && parts="${parts:+$parts }raw:$RAW_OUT"
+    echo "${parts:-not set}"
 }
 
 save_summary() {
@@ -339,57 +324,76 @@ dlg_timepulse() {
     TIME_GNSS="$g"
 }
 
-dlg_protocol() {
-    local p
-    p=$(whiptail --title "Output protocol" --menu "Select protocol:" \
-        $WT_HEIGHT $WT_WIDTH 4 \
-        "binary" "Binary messages" \
-        "nmea"   "NMEA messages" \
-        ""       "Don't specify" \
+dlg_messages() {
+    local choice
+    choice=$(whiptail --title "Message output" --menu "Configure which aspect:" \
+        $WT_HEIGHT $WT_WIDTH 8 \
+        "protocol" "Binary or NMEA protocol  ${BINARY_NMEA:+[$BINARY_NMEA]}" \
+        "pvt"      "PVT messages             ${PVT_OUT:+[$PVT_OUT]}" \
+        "sats"     "Satellite messages       ${SATS_OUT:+[$SATS_OUT]}" \
+        "raw"      "Raw data messages        ${RAW_OUT:+[$RAW_OUT]}" \
+        "rtcm"     "RTCM messages            ${RTCM_OUT:+[$RTCM_OUT]}" \
+        "nmea"     "NMEA sentences           ${NMEA_OUT:+[$NMEA_OUT]}" \
+        "clear"    "Clear all message settings" \
         3>&1 1>&2 2>&3) || return 0
-    BINARY_NMEA="$p"
-}
-
-dlg_pvt() {
-    local result
-    result=$(checklist_csv "PVT output messages" "$PVT_OUT" \
-        pos vel time tp leap survey qual epoch tai ecef after ptp ntp off) || return 0
-    PVT_OUT="$result"
-}
-
-dlg_sats() {
-    local result
-    result=$(checklist_csv "Satellite output messages" "$SATS_OUT" \
-        sat sig none) || return 0
-    SATS_OUT="$result"
-}
-
-dlg_raw() {
-    local result
-    result=$(checklist_csv "Raw data output messages" "$RAW_OUT" \
-        obs nav none) || return 0
-    RAW_OUT="$result"
-}
-
-dlg_rtcm() {
-    local result
-    result=$(checklist_csv "RTCM output messages" "$RTCM_OUT" \
-        MSM4 MSM7 ARP auto none) || return 0
-    RTCM_OUT="$result"
-    if [ -n "$RTCM_OUT" ] && [ "$RTCM_OUT" != "none" ]; then
-        local bid
-        bid=$(whiptail --title "RTCM base station ID" \
-            --inputbox "Reference station ID 0-4095 (empty to skip):" \
-            8 $WT_WIDTH "$RTCM_BASE_ID" 3>&1 1>&2 2>&3) || true
-        RTCM_BASE_ID="$bid"
-    fi
-}
-
-dlg_nmea_out() {
-    local result
-    result=$(checklist_csv "NMEA output sentences" "$NMEA_OUT" \
-        RMC GGA GSA GSV ZDA VTG GLL none) || return 0
-    NMEA_OUT="$result"
+    case "$choice" in
+        protocol)
+            local p
+            p=$(whiptail --title "Output protocol" --menu "Select protocol:" \
+                $WT_HEIGHT $WT_WIDTH 4 \
+                "binary" "Binary messages" \
+                "nmea"   "NMEA messages" \
+                ""       "Don't specify" \
+                3>&1 1>&2 2>&3) || return 0
+            BINARY_NMEA="$p"
+            ;;
+        pvt)
+            local result
+            result=$(checklist_csv "PVT output messages" "$PVT_OUT" \
+                pos vel time tp leap survey qual epoch tai ecef after ptp ntp off) || return 0
+            PVT_OUT="$result"
+            ;;
+        sats)
+            local result
+            result=$(checklist_csv "Satellite output messages" "$SATS_OUT" \
+                sat sig none) || return 0
+            SATS_OUT="$result"
+            ;;
+        raw)
+            local result
+            result=$(checklist_csv "Raw data output messages" "$RAW_OUT" \
+                obs nav none) || return 0
+            RAW_OUT="$result"
+            ;;
+        rtcm)
+            local result
+            result=$(checklist_csv "RTCM output messages" "$RTCM_OUT" \
+                MSM4 MSM7 ARP auto none) || return 0
+            RTCM_OUT="$result"
+            if [ -n "$RTCM_OUT" ] && [ "$RTCM_OUT" != "none" ]; then
+                local bid
+                bid=$(whiptail --title "RTCM base station ID" \
+                    --inputbox "Reference station ID 0-4095 (empty to skip):" \
+                    8 $WT_WIDTH "$RTCM_BASE_ID" 3>&1 1>&2 2>&3) || true
+                RTCM_BASE_ID="$bid"
+            fi
+            ;;
+        nmea)
+            local result
+            result=$(checklist_csv "NMEA output sentences" "$NMEA_OUT" \
+                RMC GGA GSA GSV ZDA VTG GLL none) || return 0
+            NMEA_OUT="$result"
+            ;;
+        clear)
+            BINARY_NMEA=""
+            PVT_OUT=""
+            SATS_OUT=""
+            RAW_OUT=""
+            RTCM_OUT=""
+            RTCM_BASE_ID=""
+            NMEA_OUT=""
+            ;;
+    esac
 }
 
 dlg_speed() {
@@ -451,17 +455,12 @@ main_menu() {
         local choice
         choice=$(whiptail --title "GPS Configuration" \
             --menu "Select an aspect to configure:" \
-            22 $WT_WIDTH 14 \
+            $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT \
             "connection" "$(conn_summary)" \
             "gnss"       "$(gnss_summary)" \
             "timemode"   "$(timemode_summary)" \
             "timepulse"  "$(timepulse_summary)" \
-            "protocol"   "$(protocol_summary)" \
-            "pvt"        "$(pvt_summary)" \
-            "sats"       "$(sats_out_summary)" \
-            "raw"        "$(raw_summary)" \
-            "rtcm"       "$(rtcm_summary)" \
-            "nmea"       "$(nmea_out_summary)" \
+            "messages"   "$(messages_summary)" \
             "speed"      "${RECEIVER_SPEED:+${RECEIVER_SPEED}bps}" \
             "save"       "$(save_summary)" \
             "---"        "---" \
@@ -473,12 +472,7 @@ main_menu() {
             gnss)       dlg_gnss ;;
             timemode)   dlg_timemode ;;
             timepulse)  dlg_timepulse ;;
-            protocol)   dlg_protocol ;;
-            pvt)        dlg_pvt ;;
-            sats)       dlg_sats ;;
-            raw)        dlg_raw ;;
-            rtcm)       dlg_rtcm ;;
-            nmea)       dlg_nmea_out ;;
+            messages)   dlg_messages ;;
             speed)      dlg_speed ;;
             save)       dlg_save_reset ;;
             show)       dlg_show_command ;;
