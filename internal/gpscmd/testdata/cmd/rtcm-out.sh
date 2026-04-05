@@ -15,5 +15,8 @@ t --rtcm-out MSM7,ARP
 t --rtcm-out auto
 # intelligent selection of MSM messages with MSM7 preference
 t --rtcm-out auto,MSM7
+# Set RTCM base station ID
+t --rtcm-out MSM4,ARP --rtcm-base-id 100
+t --rtcm-out MSM7,ARP --rtcm-base-id 4000
 # Leave nothing enabled
 t --rtcm-out none

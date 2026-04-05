@@ -362,6 +362,22 @@ var modeTestCases = []nativeConfigPropsTestCase{
 		},
 		expectedCmds: []string{"MODE BASE 456 40.00000000000 116.00000000000 50.000000"},
 	},
+	{
+		name: "Survey time clamped to 3600 for UM980",
+		currentState: []string{
+			"MODE ROVER",
+		},
+		targetProps: func(props *gpsprot.ConfigProps) {
+			props.SetMode(gpsprot.Mode{
+				Static:  true,
+				PosType: gpsprot.PosTypeNone,
+			})
+		},
+		targetOpts: func(opts *gpsprot.ConfigOptions) {
+			opts.Survey.MinDur = 5000 * time.Second
+		},
+		expectedCmds: []string{"MODE BASE TIME 3600"},
+	},
 }
 
 

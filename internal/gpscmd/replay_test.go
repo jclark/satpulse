@@ -234,8 +234,8 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 	}
 
 	// Create packet processors like gpscfg does
-	packetProcs := gpsreg.CreatePacketProcessors(gpsreg.VendorUnknown)
-	configProts := gpsreg.CreateConfigProtocols(gpsreg.VendorUnknown)
+	packetProcs := gpsreg.CreatePacketProcessors(v.vendor)
+	configProts := gpsreg.CreateConfigProtocols(v.vendor)
 
 	// Build timeline of all packet timestamps
 	timeline := make([]time.Time, 0, len(test.inPackets)+len(test.outPackets))
@@ -407,6 +407,14 @@ func (r *replayer) run() {
 			req.SetSentTime(sendTime)
 
 		case gpsprot.ConfigActionWaitUntil:
+			// The director may batch more SendRequest actions after observing an
+			// earlier pending deadline. By the time it yields WaitUntil, replayTime
+			// can already be past that deadline, which means the wait is already
+			// satisfied and must not rewind simulated time.
+			if !action.Deadline.After(r.replayTime) {
+				continue
+			}
+
 			// Advance to the next timeline instant, but not past the deadline
 			// This allows the director to re-evaluate after each packet is processed
 			if !r.advanceToNextInstant(action.Deadline) {
@@ -535,6 +543,10 @@ func (r *replayer) feedUpTo(outIdx int) {
 }
 
 func (r *replayer) verify() {
+	if r.structural || r.cfgtor == nil {
+		return
+	}
+
 	props := r.cfgtor.ConfigProps()
 	cfg := &r.test.config
 

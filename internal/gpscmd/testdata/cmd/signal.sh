@@ -29,3 +29,5 @@ t --gnss GPS,GAL --band L1
 t --gnss BDS --band L1
 t --gnss GPS,GAL --band L1,L5
 t --gnss BDS,GAL --band L1,L5
+t --gnss GPS,GAL,BDS --band L1,E5
+t --gnss GPS,GAL,BDS --band L1,E5,E6

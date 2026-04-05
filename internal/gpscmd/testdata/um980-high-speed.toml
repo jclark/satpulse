@@ -1,0 +1,6 @@
+# Switch UM980 COM3 to 460800 baud for high-bandwidth tests
+[default.line]
+responsePattern = "unicore"
+
+[[line]]
+text = "CONFIG COM3 460800"
