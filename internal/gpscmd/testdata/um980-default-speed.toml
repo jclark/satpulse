@@ -1,0 +1,6 @@
+# Restore UM980 COM3 to default 115200 baud
+[default.line]
+responsePattern = "unicore"
+
+[[line]]
+text = "CONFIG COM3 115200"
