@@ -342,6 +342,25 @@ var ppsTestCases = []nativeConfigPropsTestCase{
 		expectedCmds: []string{"CONFIG PPS ENABLE3 BDS POSITIVE 300 500 150 0"},
 	},
 	{
+		name: "re-enable PPS from disabled with BDS-only signals",
+		currentState: []string{
+			"CONFIG SIGNALGROUP 8",
+			"MASK GPS",
+			"MASK GAL",
+			"CONFIG PPS DISABLE",
+		},
+		targetProps: func(props *gpsprot.ConfigProps) {
+			props.SetTimePulse(gpsprot.TimePulse{
+				Width:          100 * time.Microsecond,
+				Period:         time.Second,
+				PolarityRising: true,
+				OnlyWhenLocked: true,
+				AlignToGNSS:    true,
+			})
+		},
+		expectedCmds: []string{"CONFIG PPS ENABLE BDS POSITIVE 100 1000 0 0"},
+	},
+	{
 		name: "preserve everything when no properties are set",
 		currentState: []string{
 			"CONFIG PPS ENABLE2 GAL NEGATIVE 750 3000 999 789",

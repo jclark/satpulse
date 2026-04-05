@@ -323,10 +323,12 @@ func (p *ppsProp) updateFromProps(props *gpsprot.ConfigProps) error {
 		return nil
 	}
 
-	// For ENABLE, we also need TimeGNSS
+	// For ENABLE, we also need TimeGNSS.
+	// After DISABLE, the receiver state has no TimeGNSS,
+	// so pick from enabled constellations.
 	timeGNSS, ok := props.GetTimeGNSS()
 	if !ok {
-		return errMissingProp
+		timeGNSS = defaultTimeGNSS(props)
 	}
 
 	// Get antenna cable delay (optional, defaults to 0)
@@ -382,6 +384,20 @@ func (p *ppsProp) updateFromProps(props *gpsprot.ConfigProps) error {
 		enable, gnssStr, polarity, widthUs, periodMs, rfDelayNs, userDelay)
 
 	return nil
+}
+
+// defaultTimeGNSS returns a default TimeGNSS based on enabled constellations.
+// GLONASS is last because its unusual leap-second handling is bad for PTP.
+func defaultTimeGNSS(props *gpsprot.ConfigProps) gpsprot.GNSS {
+	if sigs, ok := props.GetSignalsEnabled(); ok {
+		enabled := sigs.GNSSSet()
+		for _, g := range [...]gpsprot.GNSS{gpsprot.GPS, gpsprot.GAL, gpsprot.BDS, gpsprot.GLO} {
+			if enabled.Contains(g) {
+				return g
+			}
+		}
+	}
+	return gpsprot.GPS
 }
 
 type signalGroupProp struct {
