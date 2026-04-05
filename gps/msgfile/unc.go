@@ -80,9 +80,19 @@ func (lm *LineMsg) analyzeRequestUnicore() requestAnalysis {
 	return a
 }
 
+// isComPortConfig reports whether args starts with "COM" followed by a digit,
+// e.g. "COM1 460800". Speed changes on the current port mean the ACK
+// arrives at the new speed, so we cannot require it.
+func isComPortConfig(args string) bool {
+	return len(args) >= 4 && args[:3] == "COM" && args[3] >= '1' && args[3] <= '9'
+}
+
 func uncConfigOrMask(a *requestAnalysis, hasArgs bool, cmdWord string) {
 	if hasArgs {
 		a.expectData = expectDataNone
+		if cmdWord == "CONFIG" && isComPortConfig(a.ackCorrelate[len("CONFIG "):]) {
+			a.expectAck = ExpectAckNakOnly
+		}
 		return
 	}
 	a.dataTag = gpsreg.TagNMEA

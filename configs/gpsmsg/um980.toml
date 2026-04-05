@@ -24,6 +24,35 @@ tag = "get-loglist"
 description = "Query active log list (includes current port)"
 text = "LOGLIST"
 
+# Serial port speed (COM1, COM2, COM3)
+[[line]]
+tag = "speed-115200-com1"
+text = "CONFIG COM1 115200"
+[[line]]
+tag = "speed-230400-com1"
+text = "CONFIG COM1 230400"
+[[line]]
+tag = "speed-460800-com1"
+text = "CONFIG COM1 460800"
+[[line]]
+tag = "speed-115200-com2"
+text = "CONFIG COM2 115200"
+[[line]]
+tag = "speed-230400-com2"
+text = "CONFIG COM2 230400"
+[[line]]
+tag = "speed-460800-com2"
+text = "CONFIG COM2 460800"
+[[line]]
+tag = "speed-115200-com3"
+text = "CONFIG COM3 115200"
+[[line]]
+tag = "speed-230400-com3"
+text = "CONFIG COM3 230400"
+[[line]]
+tag = "speed-460800-com3"
+text = "CONFIG COM3 460800"
+
 # RECTIME (receiver clock and UTC time)
 [[line]]
 tag = "unc-rectimeb"

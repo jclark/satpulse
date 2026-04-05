@@ -247,6 +247,25 @@ func TestCorrelatorUnicore(t *testing.T) {
 			},
 		},
 		{
+			name: "COM port speed change no ACK expected",
+			tags: []string{"speed-com3"},
+			events: []event{
+				sendEvent{},
+				checkDone{canAcceptMore: true}, // silent success is normal
+				checkMissing{},                 // not reported as missing
+			},
+		},
+		{
+			name: "COM port speed change NAK still reported",
+			tags: []string{"speed-com3"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("command,CONFIG COM3 460800,response: not support"),
+				expect{ack: AckNak, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
+		},
+		{
 			name: "LOGLIST query ACK then NOVAA data",
 			tags: []string{"get-loglist"},
 			events: []event{

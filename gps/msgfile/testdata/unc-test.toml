@@ -53,6 +53,11 @@ text = "RECTIMEB 1"
 tag = "set-mode"
 text = "MODE ROVER SURVEY"
 
+# COM port speed change: may not get ACK (speed changes before response).
+[[line]]
+tag = "speed-com3"
+text = "CONFIG COM3 460800"
+
 # LOGLIST query: expects ACK + multiple EmptyTag data starting with '<'.
 [[line]]
 tag = "get-loglist"
