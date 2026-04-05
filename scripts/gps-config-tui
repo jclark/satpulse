@@ -1,0 +1,509 @@
+#!/bin/bash
+# gps-config-tui - whiptail-based TUI for building satpulsetool gps commands
+# Similar in spirit to raspi-config / nmtui
+
+set -e
+
+# --- State variables ---
+CONN_TYPE=""       # "serial", "config", "socket"
+SERIAL_DEVICE=""
+DEVICE_SPEED=""
+CONFIG_FILE=""
+SOCKET_PATH=""
+
+GNSS=""            # e.g. "GPS,GAL"
+BAND=""            # e.g. "L1,L5"
+MIN_ELEV=""
+
+TIME_MODE=""       # "survey", "fixed", "mobile", ""
+SURVEY_TIME=""
+SURVEY_ACC=""
+FIXED_POS=""       # X,Y,Z
+FIXED_POS_ACC=""
+
+PPS_WIDTH=""
+ANT_CABLE_DELAY=""
+TIME_GNSS=""
+
+PVT_OUT=""
+SATS_OUT=""
+RAW_OUT=""
+RTCM_OUT=""
+RTCM_BASE_ID=""
+NMEA_OUT=""
+BINARY_NMEA=""     # "binary", "nmea", ""
+
+RECEIVER_SPEED=""
+
+SAVE_RESET=""      # "save", "save-all", "reload", "reset", "factory-reset", ""
+
+WT_HEIGHT=20
+WT_WIDTH=70
+WT_MENU_HEIGHT=12
+
+# --- Helpers ---
+
+# Summary string for a config aspect, shown in main menu
+conn_summary() {
+    case "$CONN_TYPE" in
+        serial)  echo "$SERIAL_DEVICE @ ${DEVICE_SPEED}bps" ;;
+        config)  echo "from $CONFIG_FILE" ;;
+        socket)  echo "socket $SOCKET_PATH" ;;
+        *)       echo "not set" ;;
+    esac
+}
+
+gnss_summary() {
+    local parts=""
+    [ -n "$GNSS" ] && parts="$GNSS"
+    [ -n "$BAND" ] && parts="${parts:+$parts / }bands: $BAND"
+    [ -n "$MIN_ELEV" ] && parts="${parts:+$parts / }elev>=${MIN_ELEV}deg"
+    echo "${parts:-not set}"
+}
+
+timemode_summary() {
+    case "$TIME_MODE" in
+        survey)
+            local parts="survey"
+            [ -n "$SURVEY_TIME" ] && parts="$parts ${SURVEY_TIME}s"
+            [ -n "$SURVEY_ACC" ] && parts="$parts ${SURVEY_ACC}m"
+            echo "$parts"
+            ;;
+        fixed)
+            local parts="fixed $FIXED_POS"
+            [ -n "$FIXED_POS_ACC" ] && parts="$parts ${FIXED_POS_ACC}m"
+            echo "$parts"
+            ;;
+        mobile) echo "mobile" ;;
+        *)      echo "not set" ;;
+    esac
+}
+
+timepulse_summary() {
+    local parts=""
+    [ -n "$PPS_WIDTH" ] && parts="pps=${PPS_WIDTH}s"
+    [ -n "$ANT_CABLE_DELAY" ] && parts="${parts:+$parts }cable=${ANT_CABLE_DELAY}ns"
+    [ -n "$TIME_GNSS" ] && parts="${parts:+$parts }gnss=$TIME_GNSS"
+    echo "${parts:-not set}"
+}
+
+protocol_summary() {
+    echo "${BINARY_NMEA:-not set}"
+}
+
+pvt_summary() {
+    echo "${PVT_OUT:-not set}"
+}
+
+sats_out_summary() {
+    echo "${SATS_OUT:-not set}"
+}
+
+raw_summary() {
+    echo "${RAW_OUT:-not set}"
+}
+
+rtcm_summary() {
+    local s="${RTCM_OUT:-not set}"
+    [ -n "$RTCM_BASE_ID" ] && s="$s id:$RTCM_BASE_ID"
+    echo "$s"
+}
+
+nmea_out_summary() {
+    echo "${NMEA_OUT:-not set}"
+}
+
+save_summary() {
+    case "$SAVE_RESET" in
+        save)          echo "save changes" ;;
+        save-all)      echo "save all" ;;
+        reload)        echo "reload from NV" ;;
+        reset)         echo "reset" ;;
+        factory-reset) echo "factory reset" ;;
+        *)             echo "not set" ;;
+    esac
+}
+
+# Build the satpulsetool gps command from current state
+build_command() {
+    local cmd="satpulsetool gps"
+    case "$CONN_TYPE" in
+        serial) cmd="$cmd -d $SERIAL_DEVICE -s $DEVICE_SPEED" ;;
+        config) cmd="$cmd -f $CONFIG_FILE" ;;
+        socket) cmd="$cmd --socket $SOCKET_PATH" ;;
+    esac
+    [ -n "$GNSS" ] && cmd="$cmd -g $GNSS"
+    [ -n "$BAND" ] && cmd="$cmd -b $BAND"
+    [ -n "$MIN_ELEV" ] && cmd="$cmd --min-elev $MIN_ELEV"
+    case "$TIME_MODE" in
+        survey)
+            cmd="$cmd --survey"
+            [ -n "$SURVEY_TIME" ] && cmd="$cmd --survey-time $SURVEY_TIME"
+            [ -n "$SURVEY_ACC" ] && cmd="$cmd --survey-acc $SURVEY_ACC"
+            ;;
+        fixed)
+            cmd="$cmd --fixed-pos-ecef $FIXED_POS"
+            [ -n "$FIXED_POS_ACC" ] && cmd="$cmd --fixed-pos-acc $FIXED_POS_ACC"
+            ;;
+        mobile) cmd="$cmd --mobile" ;;
+    esac
+    [ -n "$PPS_WIDTH" ] && cmd="$cmd --pps $PPS_WIDTH"
+    [ -n "$ANT_CABLE_DELAY" ] && cmd="$cmd --ant-cable-delay $ANT_CABLE_DELAY"
+    [ -n "$TIME_GNSS" ] && cmd="$cmd --time-gnss $TIME_GNSS"
+    [ "$BINARY_NMEA" = "binary" ] && cmd="$cmd --binary"
+    [ "$BINARY_NMEA" = "nmea" ] && cmd="$cmd --nmea"
+    [ -n "$PVT_OUT" ] && cmd="$cmd --pvt-out $PVT_OUT"
+    [ -n "$SATS_OUT" ] && cmd="$cmd --sats-out $SATS_OUT"
+    [ -n "$RAW_OUT" ] && cmd="$cmd --raw-out $RAW_OUT"
+    [ -n "$RTCM_OUT" ] && cmd="$cmd --rtcm-out $RTCM_OUT"
+    [ -n "$RTCM_BASE_ID" ] && cmd="$cmd --rtcm-base-id $RTCM_BASE_ID"
+    [ -n "$NMEA_OUT" ] && cmd="$cmd --nmea-out $NMEA_OUT"
+    [ -n "$RECEIVER_SPEED" ] && cmd="$cmd --speed $RECEIVER_SPEED"
+    case "$SAVE_RESET" in
+        save)          cmd="$cmd --save" ;;
+        save-all)      cmd="$cmd --save-all" ;;
+        reload)        cmd="$cmd --reload" ;;
+        reset)         cmd="$cmd --reset" ;;
+        factory-reset) cmd="$cmd --factory-reset" ;;
+    esac
+    echo "$cmd"
+}
+
+# --- Dialogs ---
+
+dlg_connection() {
+    local choice
+    choice=$(whiptail --title "Connection" --menu "How to connect to the GPS receiver?" \
+        $WT_HEIGHT $WT_WIDTH 4 \
+        "serial" "Serial device and speed" \
+        "config" "Read from config file" \
+        "socket" "Unix domain socket" \
+        "clear" "Clear connection settings" \
+        3>&1 1>&2 2>&3) || return 0
+    case "$choice" in
+        serial)
+            local dev speed
+            dev=$(whiptail --title "Serial device" --inputbox "Device path:" \
+                8 $WT_WIDTH "$SERIAL_DEVICE" 3>&1 1>&2 2>&3) || return 0
+            speed=$(whiptail --title "Device speed" --inputbox "Speed (bps):" \
+                8 $WT_WIDTH "$DEVICE_SPEED" 3>&1 1>&2 2>&3) || return 0
+            if [ -n "$dev" ] && [ -n "$speed" ]; then
+                CONN_TYPE="serial"
+                SERIAL_DEVICE="$dev"
+                DEVICE_SPEED="$speed"
+            fi
+            ;;
+        config)
+            local f
+            f=$(whiptail --title "Config file" --inputbox "Path to TOML config file:" \
+                8 $WT_WIDTH "$CONFIG_FILE" 3>&1 1>&2 2>&3) || return 0
+            if [ -n "$f" ]; then
+                CONN_TYPE="config"
+                CONFIG_FILE="$f"
+            fi
+            ;;
+        socket)
+            local s
+            s=$(whiptail --title "Socket" --inputbox "Path to Unix domain socket:" \
+                8 $WT_WIDTH "$SOCKET_PATH" 3>&1 1>&2 2>&3) || return 0
+            if [ -n "$s" ]; then
+                CONN_TYPE="socket"
+                SOCKET_PATH="$s"
+            fi
+            ;;
+        clear)
+            CONN_TYPE=""
+            SERIAL_DEVICE=""
+            DEVICE_SPEED=""
+            CONFIG_FILE=""
+            SOCKET_PATH=""
+            ;;
+    esac
+}
+
+# Helper: run a checklist, return comma-separated result
+# Args: title, current_value, item1, item2, ...
+checklist_csv() {
+    local title="$1" current="$2"
+    shift 2
+    local args=()
+    while [ $# -gt 0 ]; do
+        local item="$1"
+        shift
+        local state="OFF"
+        # Check if item is in current comma-separated list
+        case ",$current," in
+            *",$item,"*) state="ON" ;;
+        esac
+        args+=("$item" "" "$state")
+    done
+    local result
+    result=$(whiptail --title "$title" --checklist "Select with space, enter to confirm:" \
+        $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT "${args[@]}" 3>&1 1>&2 2>&3) || return 1
+    # whiptail returns space-separated quoted strings; convert to CSV
+    echo "$result" | tr -d '"' | tr ' ' ','
+}
+
+dlg_gnss() {
+    local result
+    result=$(checklist_csv "GNSS constellations" "$GNSS" \
+        GPS GAL BDS GLO QZSS NAVIC SBAS) || return 0
+    GNSS="$result"
+
+    if [ -n "$GNSS" ]; then
+        result=$(checklist_csv "Frequency bands" "$BAND" \
+            L1 L2 L5 E5b E5 E6) || return 0
+        BAND="$result"
+
+        local elev
+        elev=$(whiptail --title "Minimum elevation" \
+            --inputbox "Minimum satellite elevation in degrees (empty for default):" \
+            8 $WT_WIDTH "$MIN_ELEV" 3>&1 1>&2 2>&3) || return 0
+        MIN_ELEV="$elev"
+    fi
+}
+
+dlg_timemode() {
+    local choice
+    choice=$(whiptail --title "Time mode" --menu "Select time mode:" \
+        $WT_HEIGHT $WT_WIDTH 5 \
+        "survey" "Survey to determine position" \
+        "fixed"  "Use known fixed position (ECEF)" \
+        "mobile" "Mobile (position may change)" \
+        "clear"  "Clear time mode settings" \
+        3>&1 1>&2 2>&3) || return 0
+    case "$choice" in
+        survey)
+            TIME_MODE="survey"
+            local t a
+            t=$(whiptail --title "Survey time" \
+                --inputbox "Survey duration in seconds (default: 2000):" \
+                8 $WT_WIDTH "$SURVEY_TIME" 3>&1 1>&2 2>&3) || return 0
+            SURVEY_TIME="$t"
+            a=$(whiptail --title "Survey accuracy" \
+                --inputbox "Required accuracy in meters (default: 20.0):" \
+                8 $WT_WIDTH "$SURVEY_ACC" 3>&1 1>&2 2>&3) || return 0
+            SURVEY_ACC="$a"
+            ;;
+        fixed)
+            TIME_MODE="fixed"
+            local pos acc
+            pos=$(whiptail --title "Fixed position" \
+                --inputbox "ECEF coordinates as X,Y,Z in meters:" \
+                8 $WT_WIDTH "$FIXED_POS" 3>&1 1>&2 2>&3) || return 0
+            FIXED_POS="$pos"
+            acc=$(whiptail --title "Position accuracy" \
+                --inputbox "Position accuracy in meters (default: 20.0):" \
+                8 $WT_WIDTH "$FIXED_POS_ACC" 3>&1 1>&2 2>&3) || return 0
+            FIXED_POS_ACC="$acc"
+            ;;
+        mobile)
+            TIME_MODE="mobile"
+            SURVEY_TIME=""
+            SURVEY_ACC=""
+            FIXED_POS=""
+            FIXED_POS_ACC=""
+            ;;
+        clear)
+            TIME_MODE=""
+            SURVEY_TIME=""
+            SURVEY_ACC=""
+            FIXED_POS=""
+            FIXED_POS_ACC=""
+            ;;
+    esac
+}
+
+dlg_timepulse() {
+    local w
+    w=$(whiptail --title "PPS pulse width" \
+        --inputbox "Pulse width in seconds (0 to disable, empty to skip):" \
+        8 $WT_WIDTH "$PPS_WIDTH" 3>&1 1>&2 2>&3) || return 0
+    PPS_WIDTH="$w"
+
+    local d
+    d=$(whiptail --title "Antenna cable delay" \
+        --inputbox "Cable delay in nanoseconds (empty to skip):" \
+        8 $WT_WIDTH "$ANT_CABLE_DELAY" 3>&1 1>&2 2>&3) || return 0
+    ANT_CABLE_DELAY="$d"
+
+    local g
+    g=$(whiptail --title "Time GNSS" --menu "GNSS for timing (cancel to skip):" \
+        $WT_HEIGHT $WT_WIDTH 5 \
+        "GPS" "GPS system time" \
+        "GAL" "Galileo system time" \
+        "BDS" "BeiDou system time" \
+        "GLO" "GLONASS system time" \
+        ""    "Clear" \
+        3>&1 1>&2 2>&3) || return 0
+    TIME_GNSS="$g"
+}
+
+dlg_protocol() {
+    local p
+    p=$(whiptail --title "Output protocol" --menu "Select protocol:" \
+        $WT_HEIGHT $WT_WIDTH 4 \
+        "binary" "Binary messages" \
+        "nmea"   "NMEA messages" \
+        ""       "Don't specify" \
+        3>&1 1>&2 2>&3) || return 0
+    BINARY_NMEA="$p"
+}
+
+dlg_pvt() {
+    local result
+    result=$(checklist_csv "PVT output messages" "$PVT_OUT" \
+        pos vel time tp leap survey qual epoch tai ecef after ptp ntp off) || return 0
+    PVT_OUT="$result"
+}
+
+dlg_sats() {
+    local result
+    result=$(checklist_csv "Satellite output messages" "$SATS_OUT" \
+        sat sig none) || return 0
+    SATS_OUT="$result"
+}
+
+dlg_raw() {
+    local result
+    result=$(checklist_csv "Raw data output messages" "$RAW_OUT" \
+        obs nav none) || return 0
+    RAW_OUT="$result"
+}
+
+dlg_rtcm() {
+    local result
+    result=$(checklist_csv "RTCM output messages" "$RTCM_OUT" \
+        MSM4 MSM7 ARP auto none) || return 0
+    RTCM_OUT="$result"
+    if [ -n "$RTCM_OUT" ] && [ "$RTCM_OUT" != "none" ]; then
+        local bid
+        bid=$(whiptail --title "RTCM base station ID" \
+            --inputbox "Reference station ID 0-4095 (empty to skip):" \
+            8 $WT_WIDTH "$RTCM_BASE_ID" 3>&1 1>&2 2>&3) || true
+        RTCM_BASE_ID="$bid"
+    fi
+}
+
+dlg_nmea_out() {
+    local result
+    result=$(checklist_csv "NMEA output sentences" "$NMEA_OUT" \
+        RMC GGA GSA GSV ZDA VTG GLL none) || return 0
+    NMEA_OUT="$result"
+}
+
+dlg_speed() {
+    local s
+    s=$(whiptail --title "Receiver serial speed" \
+        --inputbox "Set GPS receiver serial speed in bps (empty to skip):" \
+        8 $WT_WIDTH "$RECEIVER_SPEED" 3>&1 1>&2 2>&3) || return 0
+    RECEIVER_SPEED="$s"
+}
+
+dlg_save_reset() {
+    local choice
+    choice=$(whiptail --title "Save / Reset" --menu "Select operation:" \
+        $WT_HEIGHT $WT_WIDTH 7 \
+        "save"          "Save changes to NV memory" \
+        "save-all"      "Save entire config to NV memory" \
+        "reload"        "Reload config from NV memory" \
+        "reset"         "Reset receiver (reload + clear state)" \
+        "factory-reset" "Factory reset (restore defaults)" \
+        ""              "None" \
+        3>&1 1>&2 2>&3) || return 0
+    SAVE_RESET="$choice"
+}
+
+dlg_show_command() {
+    local cmd
+    cmd=$(build_command)
+    whiptail --title "Generated command" --msgbox "$cmd" 10 $WT_WIDTH
+}
+
+dlg_run_command() {
+    if [ -z "$CONN_TYPE" ]; then
+        whiptail --title "Error" --msgbox "Connection not configured." 8 $WT_WIDTH
+        return 0
+    fi
+    local cmd
+    cmd=$(build_command)
+    if whiptail --title "Run command?" --yesno "$cmd" 10 $WT_WIDTH; then
+        clear
+        echo "Running: $cmd"
+        echo
+        eval "$cmd"
+        local rc=$?
+        echo
+        if [ $rc -eq 0 ]; then
+            echo "Command completed successfully."
+        else
+            echo "Command exited with status $rc."
+        fi
+        echo "Press Enter to return to menu."
+        read -r
+    fi
+}
+
+# --- Main menu loop ---
+
+main_menu() {
+    while true; do
+        local choice
+        choice=$(whiptail --title "GPS Configuration" \
+            --menu "Select an aspect to configure:" \
+            22 $WT_WIDTH 14 \
+            "connection" "$(conn_summary)" \
+            "gnss"       "$(gnss_summary)" \
+            "timemode"   "$(timemode_summary)" \
+            "timepulse"  "$(timepulse_summary)" \
+            "protocol"   "$(protocol_summary)" \
+            "pvt"        "$(pvt_summary)" \
+            "sats"       "$(sats_out_summary)" \
+            "raw"        "$(raw_summary)" \
+            "rtcm"       "$(rtcm_summary)" \
+            "nmea"       "$(nmea_out_summary)" \
+            "speed"      "${RECEIVER_SPEED:+${RECEIVER_SPEED}bps}" \
+            "save"       "$(save_summary)" \
+            "---"        "---" \
+            "show"       "Show command" \
+            "run"        "Run command" \
+            3>&1 1>&2 2>&3) || break
+        case "$choice" in
+            connection) dlg_connection ;;
+            gnss)       dlg_gnss ;;
+            timemode)   dlg_timemode ;;
+            timepulse)  dlg_timepulse ;;
+            protocol)   dlg_protocol ;;
+            pvt)        dlg_pvt ;;
+            sats)       dlg_sats ;;
+            raw)        dlg_raw ;;
+            rtcm)       dlg_rtcm ;;
+            nmea)       dlg_nmea_out ;;
+            speed)      dlg_speed ;;
+            save)       dlg_save_reset ;;
+            show)       dlg_show_command ;;
+            run)        dlg_run_command ;;
+            *)          ;;
+        esac
+    done
+}
+
+# --- Entry point ---
+
+# Check for whiptail
+if ! command -v whiptail >/dev/null 2>&1; then
+    echo "Error: whiptail is required but not installed." >&2
+    echo "Install it with: sudo apt install whiptail" >&2
+    exit 1
+fi
+
+# If /etc/satpulse.toml exists, offer to use it
+if [ -f /etc/satpulse.toml ]; then
+    if whiptail --title "Config file found" --yesno \
+        "Found /etc/satpulse.toml. Use it for connection settings?" 8 $WT_WIDTH; then
+        CONN_TYPE="config"
+        CONFIG_FILE="/etc/satpulse.toml"
+    fi
+fi
+
+main_menu
