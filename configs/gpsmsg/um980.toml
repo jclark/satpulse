@@ -19,6 +19,10 @@ text = "MASK"
 tag = "get-config"
 description = "Query receiver configuration"
 text = "CONFIG"
+[[line]]
+tag = "get-loglist"
+description = "Query active log list (includes current port)"
+text = "LOGLIST"
 
 # RECTIME (receiver clock and UTC time)
 [[line]]

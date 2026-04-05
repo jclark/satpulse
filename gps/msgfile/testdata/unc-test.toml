@@ -52,3 +52,8 @@ text = "RECTIMEB 1"
 [[line]]
 tag = "set-mode"
 text = "MODE ROVER SURVEY"
+
+# LOGLIST query: expects ACK + multiple EmptyTag data starting with '<'.
+[[line]]
+tag = "get-loglist"
+text = "LOGLIST"
