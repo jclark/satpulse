@@ -74,12 +74,18 @@ backup_file() {
 backup_file "$output_file"
 backup_file "$anno_output_file"
 
+# Build common flags
+vendor_flag=""
+if [ -n "$vendor" ]; then
+    vendor_flag="--vendor $vendor"
+fi
+
 # Define the t function that runs satpulsetool
 # Use a temp file and append, since --test-log truncates
 t() {
     local tmpfile=$(mktemp)
-    echo Running: satpulsetool gps -d /dev/$dev -s $speed --test-log $output_file "$@"
-    satpulsetool gps -d "/dev/$dev" -s "$speed" --test-log "$tmpfile" "$@"
+    echo Running: satpulsetool gps -d /dev/$dev -s $speed $vendor_flag --test-log $output_file "$@"
+    satpulsetool gps -d "/dev/$dev" -s "$speed" $vendor_flag --test-log "$tmpfile" "$@"
     sed "s|$tmpfile|$output_file|" "$tmpfile" >> "$output_file"
     rm "$tmpfile"
 }
@@ -89,11 +95,11 @@ satpulsetool --version
 
 # Discard temp state
 echo Running: satpulsetool gps --reload
-satpulsetool gps --reload -d /dev/$dev -s $speed
+satpulsetool gps --reload -d /dev/$dev -s $speed $vendor_flag
 sleep ${reload_secs:-1}
 
 echo Setting binary mode
-satpulsetool gps --binary -d /dev/$dev -s $speed
+satpulsetool gps --binary -d /dev/$dev -s $speed $vendor_flag
 
 set +e
 # Source and run the commands file

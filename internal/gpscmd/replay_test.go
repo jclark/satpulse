@@ -234,8 +234,8 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 	}
 
 	// Create packet processors like gpscfg does
-	packetProcs := gpsreg.CreatePacketProcessors(gpsreg.VendorUnknown)
-	configProts := gpsreg.CreateConfigProtocols(gpsreg.VendorUnknown)
+	packetProcs := gpsreg.CreatePacketProcessors(v.vendor)
+	configProts := gpsreg.CreateConfigProtocols(v.vendor)
 
 	// Build timeline of all packet timestamps
 	timeline := make([]time.Time, 0, len(test.inPackets)+len(test.outPackets))
