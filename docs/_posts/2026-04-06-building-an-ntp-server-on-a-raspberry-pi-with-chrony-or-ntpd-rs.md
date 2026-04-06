@@ -2,7 +2,7 @@
 title: Building an NTP server on a Raspberry Pi with chrony or ntpd-rs
 ---
 
-In an earlier post, I described how SatPulse can now work without the specialised PHC hardware it previously required. This means, in particular, that it is possible to use SatPulse to build an NTP server on a regular Raspberry Pi, rather than requiring a Raspberry Pi CM4 or CM5.
+In an [earlier post](https://satpulse.net/2026/04/01/using-satpulse-for-timing-without-a-phc.html), I described how SatPulse can now work without the specialised PHC hardware it previously required. This means, in particular, that it is possible to use SatPulse to build an NTP server on a regular Raspberry Pi, rather than requiring a Raspberry Pi CM4 or CM5.
 
 In this post, I will explain how to do this, using two different NTP servers: chrony and ntpd-rs.
 
@@ -124,7 +124,7 @@ The `offset 0.1` corrects for serial messages coming 0.1 second after the top of
 Chrony can use the samples from satpulsed to complete the PPS samples.  
 Chrony can also use samples from other NTP servers to complete the samples,
 so if you want to check that this is really working,  
-you should at least temporarily comment out the `pool` line from `/etc/chrony/chrony.conf`
+you should at least temporarily comment out the `pool` line from `/etc/chrony/chrony.conf`.
 
 ### ntpd-rs
 
@@ -149,6 +149,21 @@ Then install ntpd-rs
 sudo dpkg -i ./ntpd-rs_1.7.2-1_arm64.deb
 ```
 
+Now you need to set things up so that ntpd-rs can access `/dev/pps0`.
+Create a file `/etc/udev/rules.d/99-ntpd-rs-pps.rules` containing the line
+```
+KERNEL=="pps0", GROUP="ntpd-rs", MODE="0640"
+```
+
+This ensures that when /dev/pps0 is created at boot time it will have a group and permissions
+that enables ntpd-rs to access it. To make this take effect without booting, do
+
+```
+sudo udevadm control --reload
+sudo udevadm trigger /dev/pps0
+```
+
+Now we need to configure ntpd-rs.
 Put the following in `/etc/ntpd-rs/ntp.toml`:
 
 ```
