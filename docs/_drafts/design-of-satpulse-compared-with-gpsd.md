@@ -4,11 +4,13 @@ title: Design of SatPulse compared with GPSd
 
 In version 0.1 SatPulse focused on a specialized use case:
 transferring time from a GPS to a PTP hardware clock (PHC).
-In version 0.2, SatPulse's scope is much broader.
+In [version 0.2]({% link _posts/2026-04-01-first-pre-release-of-satpulse-0.2.md %}),
+SatPulse's scope is much broader.
 It now includes a rich, general-purpose GPS subsystem,
-which supports a wide range of vendor protocols.
+which supports a [wide range of vendor protocols]({% link _posts/2026-04-01-a-tour-of-the-gps-modules-supported-by-satpulse.md %}).
 I believe 0.2 already has everything needed to provide full support for
-timing-oriented use of a GPS receiver on Linux.
+[timing-oriented use]({% link _posts/2026-04-06-building-an-ntp-server-on-a-raspberry-pi-with-chrony-or-ntpd-rs.md %})
+of a GPS receiver on Linux.
 It also includes most of the pieces that are needed to support
 precision positioning using RTK and NTRIP; this will be rounded out in upcoming releases.
 
@@ -21,11 +23,12 @@ I want to emphasize that SatPulse is not attempting to be a replacement for GPSd
 GPSd does what it sets out to do very well, as evidenced by its popularity.
 
 Let me start by giving a brief overview of how GPSd works.
+For a fuller description, see the [GPSd chapter](https://aosabook.org/en/v2/gpsd.html) from the Architecture of Open Source Applications book.
 GPSd is both a daemon, written in C, and a suite of related tools.
 It is centered around a device-independent data model of the information
 provided by periodic messages emitted by GPS receivers.
 A single instance of the daemon acts as a multiplexer.
-Streams of messages are input from multiple sources such as serial devices,
+Streams of messages are read from multiple sources such as serial devices,
 converted to the device-independent data model and provided to multiple clients.
 GPSd's primary API is a service API: a client runs as a separate process and
 interacts with GPSd over a TCP socket using a JSON protocol;
@@ -52,19 +55,25 @@ The daemon is configured using a file in TOML syntax.
 One instance of the daemon runs for each device to which a receiver is attached.
 This allows each instance to have its own configuration file,
 and for systemd to manage the daemon lifecycle.
+SatPulse does not attempt to discover GPS receivers:
+it opens a serial device only when explicitly configured to do so.
 The configuration file has a modular structure, with separate TOML tables to configure
 each aspect of application-level functionality.
 The second executable, `satpulsetool`, is a suite of command-line tools.
 It uses a subcommand syntax, so for example `satpulsetool gps` runs the `gps` tool.
-These separate tools are bundled into a single executable because the Go language has a runtime that makes executables
-quite large.
+These separate tools are bundled into a single executable because the Go language has a runtime that makes executables quite large.
 The GPS subsystem of SatPulse is structured as a reusable library of Go packages.
 Both `satpulsed` and `satpulsetool` use this library for their GPS-related functionality:
 `satpulsetool` does not need `satpulsed` to be running.
 
 The most significant GPS functionality in SatPulse that goes beyond what GPSd provides
-is its device-independent abstraction for GPS receiver configuration.
-It allows you to choose which specific aspects of the configuration should be changed.
+is support for GPS receiver configuration.
+For basic GPS usage, the factory default configuration is often sufficient.
+But modern GPS receivers even at modest price points have started to offer
+more advanced features, such as RTK, PPP-HAS or OSNMA,
+which typically require some configuration to be used.
+SatPulse provides a device-independent abstraction for GPS receiver configuration.
+This allows you to choose which specific aspects of the configuration should be changed.
 So, for example, you can specify that a time pulse should be enabled with a specific pulse width,
 that the time pulse should be enabled only when the receiver has a lock,
 and that it should be aligned to the system time of a particular GNSS;
@@ -84,6 +93,13 @@ then the daemon will ensure a 1PPS time pulse is enabled.
 But configuration changes that affect the receiver's non-volatile
 memory or interrupt receiver operation (such as changing the enabled GNSS constellations) are only
 done when specifically requested by the user with `satpulsetool`.
+Implementing device-independent configuration is significantly more complex than implementing
+the device-independent data model for periodic messages.
+In the Go package that implements the device-independent abstractions for the u-blox UBX protocol,
+about 70% of the code is devoted to configuration.
+SatPulse also provides an alternative lower-level approach to configuration,
+which is less challenging to implement:
+see [this blog post]({% link _posts/2026-01-29-improving-gps-configuration.md %}) for more detail.
 
 The device-independent data model provided by the GPS subsystem can be serialized as JSON.
 The daemon uses this for its Web dashboard feature.
@@ -144,10 +160,3 @@ which have made different design choices for good reasons.
 SatPulse would not be a suitable replacement for many uses of GPSd.
 But I think there are several use-cases, particularly on the server side, where
 SatPulse's more integrated approach and support for GPS configuration offers significant advantages.
-
-## TODO
-
-1. Add AOSA book reference to GPSd overview paragraph (around line 23). Something like: "GPSd's design is eloquently explained in a [chapter](https://aosabook.org/en/v2/gpsd.html) from the Architecture of Open Source Applications book."
-2. Around line 51-54, note that SatPulse's default configuration treads lightly: it will not touch a serial port or modify a receiver unless explicitly configured to do so.
-3. Around line 65-66, briefly motivate *why* configuration matters: modern GPS features (RTK, constellation selection, OSNMA, satellite-based PPP) all require receiver configuration, and there is no vendor-independent standard for it.
-4. Fix "are input from" (line 28) — e.g. "It receives message streams from multiple sources..."
