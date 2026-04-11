@@ -22,6 +22,9 @@ as an alternative to GPSd.
 I want to emphasize that SatPulse is not attempting to be a replacement for GPSd.
 GPSd does what it sets out to do very well, as evidenced by its popularity.
 
+TL;DR: Consider SatPulse for server-side use of a GPS receiver,
+or when GPS receiver configuration is needed.
+
 Let me start by giving a brief overview of how GPSd works.
 For a fuller description, see the [GPSd chapter](https://aosabook.org/en/v2/gpsd.html) from the Architecture of Open Source Applications book.
 GPSd is both a daemon, written in C, and a suite of related tools.
