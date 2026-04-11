@@ -1,5 +1,6 @@
 ---
 title: Design of SatPulse compared with GPSd
+date: 2026-04-11
 ---
 
 In version 0.1 SatPulse focused on a specialized use case:
@@ -49,6 +50,7 @@ Instead it provides a separate Python program, ubxtool, for configuring u-blox r
 Like GPSd, SatPulse is also both a daemon and a suite of related tools,
 and it is also centered around a similar device-independent data model.
 SatPulse is written in Go.
+Its codebase is comparable in size to GPSd's.
 SatPulse compiles into two executables:
 `satpulsed`, which is a daemon, and `satpulsetool`, which is a command line tool.
 All the application-level functionality that SatPulse provides
@@ -123,10 +125,10 @@ Exposing this directly on a network endpoint allows receiver sharing without the
 a new daemon-dependent wire-format.
 Many applications already exist that can work with such packet streams.
 Here are three examples.
-1. All GPS vendors provide an application for configuring their receivers, typically Windows-only.
+1. Every vendor that I know of provides an application for configuring their receivers, typically Windows-only.
 Many of these applications, notably u-center, allow the receiver to be accessed over a TCP socket.
-These can be used with SatPulse by taking advantage of the read-write feature. 
-2. IANA have [registered](https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml?search=nmea) service name nmea-0183 and port 10110 for NMEA over TCP or UDP. [GeoClue](https://gitlab.freedesktop.org/geoclue/geoclue/-/wikis/home) is a D-Bus service that provides location information. It includes an NMEA backend that uses DNS-based service discovery (RFC 6763 as implemented by Avahi) to discover nmea-0183 services on the network. SatPulse can be configured to expose the NMEA service on port 10110, Avahi can be configured to advertise it and then the GeoClue NMEA backend can discover it and expose it to desktop apps over DBus.
+These can be used with SatPulse by taking advantage of the read-write feature.
+2. IANA has [registered](https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml?search=nmea) the service name nmea-0183 and port 10110 for NMEA over TCP or UDP. [GeoClue](https://gitlab.freedesktop.org/geoclue/geoclue/-/wikis/home) is a D-Bus service that provides location information. It includes an NMEA backend that uses DNS-based service discovery (RFC 6763 as implemented by Avahi) to discover nmea-0183 services on the network. SatPulse can be configured to expose the NMEA service on port 10110, Avahi can be configured to advertise it and then the GeoClue NMEA backend can discover it and expose it to desktop apps over D-Bus.
 3. RTK works by providing the rover's receiver with a stream of RTCM packets emitted by a base station's receiver. In a production environment, NTRIP is typically used to move packets from a base to a rover. An RTK base station uses a NTRIP server to provide RTCM packets to an NTRIP caster; an RTK rover uses an NTRIP client to get RTCM packets from the caster. NTRIP support is planned for a future release of SatPulse. But one popular open-source caster, the [BKG NtripCaster](https://igs.bkg.bund.de/ntrip/bkgcaster) can [pull](https://igs.bkg.bund.de/root_ftp/NTRIP/software/caster/ntripcaster_manual.html#c5) RTCM data from a TCP port without using NTRIP. This allows SatPulse to be used today as the GPS component of a combined RTK and time server.
 
 We can summarize the key design choices for SatPulse that are different from GPSd as follows:
@@ -135,8 +137,8 @@ We can summarize the key design choices for SatPulse that are different from GPS
 2. the primary GPS API is a library API
 3. the daemon does application-level work
 4. the daemon has a configuration file
-5. the daemon has separately configured instance per receiver
-6. it provides device-independent model for GPS configuration
+5. the daemon has a separately configured instance per receiver
+6. it provides a device-independent model for GPS configuration
 7. it emphasizes packet streams as a foundational layer
 
 So why did I make these choices? They were not independent.
@@ -144,7 +146,7 @@ The initial PTP use case requires a daemon to do substantial application-level w
 it uses timestamp events from the Linux PHC subsystem in combination
 with messages from the GPS receiver to discipline the PHC and send metadata updates to the PTP daemon.
 I didn't want this use case to require two independent daemons.
-Once the daemon is doing application-level work, then there needs to be a way to configure it. 
+Once the daemon is doing application-level work, then there needs to be a way to configure it.
 Having one daemon instance per serial device makes things straightforward:
 each instance can have its own configuration file
 and systemd can ensure that the daemon is not started until the serial device is ready.
@@ -153,7 +155,7 @@ Even with the initial PTP use case, the daemon has significant internal concurre
 reading from the serial device, reading timestamp events, and updating the PTP daemon
 are naturally concurrent with the main PHC-disciplining loop.
 Other features like packet proxying or HTTP monitoring involve additional concurrency.
-A reliable implementation of a daemon with this level of concurrency would not be feasible
+I would not attempt implementing a daemon with this level of concurrency
 except in a modern language like Go, which is memory safe and has language support for concurrency.
 The implementation of `satpulsetool` also uses concurrency, although to a lesser extent than `satpulsed`.
 Go makes it relatively straightforward to have a library that supports concurrency in a flexible way.
