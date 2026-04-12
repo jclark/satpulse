@@ -457,6 +457,50 @@ text = "UNLOG GPVTG"
 tag = "nmea-off"
 text = "UNLOG GPZDA"
 
+# RTCM ephemeris messages
+# Enables ephemeris output for GPS, GLONASS, BeiDou, QZSS, and
+# Galileo (both F/NAV and I/NAV).  RTCM1041 (NavIC) is rejected by
+# UM982 firmware Build13495.
+# Each message is emitted round-robin one satellite per second.
+[[line]]
+tag = "rtcm-eph"
+description = "Enable RTCM ephemeris messages at 1Hz"
+text = "RTCM1019 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1020 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1042 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1044 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1045 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1046 1"
+[[line]]
+tag = "rtcm-eph-off"
+description = "Disable RTCM ephemeris messages"
+text = "UNLOG RTCM1019"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1020"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1042"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1044"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1045"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1046"
+
 # Disable all messages
 [[line]]
 tag = "msg-all-off"
