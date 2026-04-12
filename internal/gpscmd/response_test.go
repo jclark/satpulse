@@ -24,7 +24,7 @@ func TestFormatMsgID(t *testing.T) {
 		{msgfile.MsgID{Tag: "setup", Index: 0, Count: 3}, "setup/1"},
 		{msgfile.MsgID{Tag: "setup", Index: 2, Count: 3}, "setup/3"},
 		{msgfile.MsgID{Tag: "", Index: 0, Count: 1}, ""},
-		{msgfile.MsgID{Tag: "", Index: 1, Count: 3}, "/2"},
+		{msgfile.MsgID{Tag: "", Index: 1, Count: 3}, "2"},
 	}
 	for _, tc := range tests {
 		got := formatMsgID(tc.mid)
