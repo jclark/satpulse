@@ -87,10 +87,12 @@ When querying with a `get-*` tag, binary replies are printed as hex. Use `satpul
 
 Use `-m -` to pipe the message file as a here document. No temporary file needed. The TOML format handles checksums and binary packing for you. See `configs/gpsmsg/format.md` for the full format reference.
 
-Send a line command (e.g. Unicore):
+Send a line command (e.g. Unicore). For Unicore receivers, set `responsePattern = "unicore"` so satpulsetool can match the receiver's ACK/NAK reply — without it the tool has no way to tell if the command was accepted. Use a `[default.line]` block to apply it to every `[[line]]` in the document:
 
 ```
 out/amd64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m - <<'TOML'
+[default.line]
+responsePattern = "unicore"
 [[line]]
 text = "CONFIG PPP ENABLE E6-HAS"
 TOML
