@@ -12,8 +12,7 @@ const Meter = 10000
 // MT1005 represents an RTCM 1005 Stationary RTK Reference Station ARP message.
 // ECEF coordinates are in units of 0.0001 m.
 type MT1005 struct {
-	MsgHdr
-	StationID    uint16 `bits:"12" json:"stationID"`
+	MsgHdrStationID
 	ITRFYear     uint8  `bits:"6" json:"itrfYear"`
 	GPS          bool   `bits:"1" json:"gps"`
 	GLONASS      bool   `bits:"1" json:"glonass"`
@@ -45,8 +44,7 @@ type MT1006 struct {
 // SignalMask, in order: L1 C/A (bit 3), L1 P (bit 2), L2 C/A (bit 1),
 // L2 P (bit 0). Values are in units of 0.02 m.
 type MT1230 struct {
-	MsgHdr
-	StationID     uint16 `bits:"12"`
+	MsgHdrStationID
 	Indicator     bool
 	Reserved      uint8 `bits:"3"`
 	SignalMask    uint8 `bits:"4"`
@@ -76,8 +74,7 @@ type MSMHiRes struct {
 
 // MSMHeader is the header common to all MSM messages (1071-1137).
 type MSMHeader struct {
-	MsgHdr
-	StationID     uint16 `bits:"12"`
+	MsgHdrStationID
 	EpochTime     uint32 `bits:"30"`
 	MultipleMsg   bool
 	IODS          uint8 `bits:"3"`

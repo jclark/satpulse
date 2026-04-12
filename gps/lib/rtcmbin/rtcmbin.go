@@ -31,14 +31,6 @@ func (mt MsgType) IsMSM() bool {
 	return mt >= 1071 && mt <= 1137 && msm >= 1 && msm <= 7
 }
 
-func (mt MsgType) hasStationID() bool {
-	switch mt {
-	case 1005, 1006, 1007, 1008, 1033, 1230:
-		return true
-	}
-	return mt.IsMSM()
-}
-
 // ExtractMsgType returns the 12-bit message type from a packet.
 func ExtractMsgType[B Bytes](pkt B) MsgType {
 	if len(pkt) <= 6 {
@@ -60,6 +52,18 @@ type MsgHdr struct {
 
 // MsgType returns the message type number.
 func (h *MsgHdr) MsgType() MsgType { return h.MsgNum }
+
+// MsgHdrStationID is the header for RTCM messages that carry DF003
+// (Reference Station ID).  Embedding this instead of MsgHdr both
+// declares the field and satisfies the StationIDer interface, so
+// ReferenceStationID can find it without a per-MsgType allow-list.
+type MsgHdrStationID struct {
+	MsgHdr
+	StationID uint16 `bits:"12" json:"stationID"`
+}
+
+// RefStationID returns the 12-bit DF003 Reference Station ID.
+func (h *MsgHdrStationID) RefStationID() uint16 { return h.StationID }
 
 // UnknownMsg represents an RTCM message with an unrecognized message type.
 type UnknownMsg struct {
@@ -177,13 +181,23 @@ func MultipleMessageBit[B Bytes](pkt B) (mmb, ok bool) {
 	return pkt[9]&0x02 != 0, true
 }
 
+// StationIDer is implemented by message types that carry DF003
+// (Reference Station ID).
+type StationIDer interface {
+	RefStationID() uint16
+}
+
 // ReferenceStationID extracts the 12-bit reference station ID (DF003)
 // from an RTCM packet.  Returns false if the message type does not
-// have a station ID at this offset or the packet is too short.
+// carry a station ID or the packet cannot be parsed.
 func ReferenceStationID[B Bytes](pkt B) (uint16, bool) {
-	mt := ExtractMsgType(pkt)
-	if !mt.hasStationID() || len(pkt) < 6 {
+	msg, err := ParseMsg(string(pkt))
+	if err != nil {
 		return 0, false
 	}
-	return uint16(pkt[4]&0x0F)<<8 | uint16(pkt[5]), true
+	s, ok := msg.(StationIDer)
+	if !ok {
+		return 0, false
+	}
+	return s.RefStationID(), true
 }

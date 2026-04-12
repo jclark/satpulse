@@ -153,7 +153,7 @@ func decodePkt(t *testing.T, h string) string {
 }
 
 func TestMSMHeaderMethods(t *testing.T) {
-	h := MSMHeader{MsgHdr: MsgHdr{MsgNum: 1074}}
+	h := MSMHeader{MsgHdrStationID: MsgHdrStationID{MsgHdr: MsgHdr{MsgNum: 1074}}}
 	if h.GNSS() != GPS {
 		t.Errorf("GNSS() = %q, want GPS", h.GNSS())
 	}
@@ -187,7 +187,7 @@ func TestMSMHeaderGNSSAll(t *testing.T) {
 		{1134, IRNSS},
 	}
 	for _, tt := range tests {
-		h := MSMHeader{MsgHdr: MsgHdr{MsgNum: tt.mt}}
+		h := MSMHeader{MsgHdrStationID: MsgHdrStationID{MsgHdr: MsgHdr{MsgNum: tt.mt}}}
 		if got := h.GNSS(); got != tt.want {
 			t.Errorf("GNSS(%d) = %q, want %q", tt.mt, got, tt.want)
 		}

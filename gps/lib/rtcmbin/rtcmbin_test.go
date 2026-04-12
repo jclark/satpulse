@@ -73,9 +73,9 @@ func TestReferenceStationID(t *testing.T) {
 		wantOK bool
 	}{
 		{"1005 station 2003", []byte(rtcm1005), 2003, true},
-		{"MSM7 station 42", makeMSM(1077, false), 42, true},
+		{"MSM4 station 1234", []byte(decodePkt(t, msmPackets[0].hex)), 1234, true},
 		{"too short", []byte{0xD3, 0x00, 0x01, 0x43}, 0, false},
-		{"unknown type", []byte{0xD3, 0x00, 0x01, 0x00, 0x10, 0xFF}, 0, false},
+		{"unknown type", []byte{0xD3, 0x00, 0x01, 0x00, 0x10, 0xFF, 0xFF, 0xFF, 0xFF}, 0, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
