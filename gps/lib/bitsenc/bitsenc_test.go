@@ -509,6 +509,71 @@ func TestWriteNamedStruct(t *testing.T) {
 	}
 }
 
+type innerItem struct {
+	A uint8 `bits:"4"`
+	B int8  `bits:"4"`
+	C bool
+}
+
+type sliceOfStructMsg struct {
+	N     uint8 `bits:"4"`
+	Items []innerItem
+}
+
+func (m *sliceOfStructMsg) SizeSlices() {
+	m.Items = make([]innerItem, m.N)
+}
+
+func TestRoundTripSliceOfStruct(t *testing.T) {
+	src := sliceOfStructMsg{
+		N: 3,
+		Items: []innerItem{
+			{A: 0xA, B: -1, C: true},
+			{A: 0x5, B: 2, C: false},
+			{A: 0xF, B: -8, C: true},
+		},
+	}
+	encoded, err := Write(&src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got sliceOfStructMsg
+	if err := Read(encoded, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.N != src.N {
+		t.Errorf("N = %d, want %d", got.N, src.N)
+	}
+	if len(got.Items) != len(src.Items) {
+		t.Fatalf("Items len = %d, want %d", len(got.Items), len(src.Items))
+	}
+	for i, want := range src.Items {
+		if got.Items[i] != want {
+			t.Errorf("Items[%d] = %+v, want %+v", i, got.Items[i], want)
+		}
+	}
+	round, err := Write(&got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(round, encoded) {
+		t.Errorf("round-trip bytes: got %X, want %X", round, encoded)
+	}
+}
+
+func TestSliceOfStructRejectsBitsTag(t *testing.T) {
+	type bad struct {
+		Items []innerItem `bits:"8"`
+	}
+	v := bad{Items: []innerItem{{}}}
+	if _, err := Write(&v); err == nil {
+		t.Error("expected error for bits tag on []struct")
+	}
+	if err := Read([]byte{0}, &v); err == nil {
+		t.Error("expected error reading []struct with bits tag")
+	}
+}
+
 func TestWriteBoolSlice(t *testing.T) {
 	var v struct {
 		Flags []bool
