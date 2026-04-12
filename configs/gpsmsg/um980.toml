@@ -501,6 +501,61 @@ text = "UNLOG RTCM1045"
 tag = "rtcm-eph-off"
 text = "UNLOG RTCM1046"
 
+# Legacy RTCM observables
+# MT1001-1004 are GPS L1/L1+L2 basic/extended observables;
+# MT1009-1012 are the GLONASS equivalents.  MSM (107x/108x)
+# supersedes these but some base stations still emit them.
+[[line]]
+tag = "rtcm-legacy"
+description = "Enable legacy RTCM observables at 1Hz"
+text = "RTCM1001 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1002 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1003 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1004 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1009 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1010 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1011 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1012 1"
+[[line]]
+tag = "rtcm-legacy-off"
+description = "Disable legacy RTCM observables"
+text = "UNLOG RTCM1001"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1002"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1003"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1004"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1009"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1010"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1011"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1012"
+
 # Disable all messages
 [[line]]
 tag = "msg-all-off"
