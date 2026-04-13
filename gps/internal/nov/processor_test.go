@@ -255,3 +255,51 @@ func TestDispatchEpochQualityNotComputed(t *testing.T) {
 	}
 	t.Fatal("no NavEpoch emitted")
 }
+
+func TestFlushResetsEpochStateForLateSameEpochPacket(t *testing.T) {
+	mgr := gpsprot.NewNavEpochManager()
+	bp := NewBinPacketProcessor(mgr)
+	ap := NewAsciiPacketProcessor(mgr)
+	h := &testMsgHandler{}
+	bp.SetMsgHandler(h)
+	ap.SetMsgHandler(h)
+
+	epoch1 := makeCommon(2350, 100000)
+	epoch2 := makeCommon(2350, 101000)
+
+	bestPos := &novmsg.BestPos{Pos: novmsg.Pos[novmsg.SolStatus, novmsg.PosType]{
+		PSolStatus: novmsg.SolComputed,
+		PosType:    novmsg.PosSingle,
+		Lat:        47.0,
+		Lon:        8.0,
+		Hgt:        400.0,
+	}}
+	if handled, err := bp.dispatch(&epoch1, bestPos, time.Unix(1, 0), TagBinary); err != nil || !handled {
+		t.Fatalf("binary epoch 1 BESTPOS handled=%v err=%v", handled, err)
+	}
+	if handled, err := ap.dispatch(&epoch1, bestPos, time.Unix(1, 0), TagAscii); err != nil || !handled {
+		t.Fatalf("ascii epoch 1 BESTPOS handled=%v err=%v", handled, err)
+	}
+
+	// Starting a new binary epoch flushes all active processors, including the
+	// ASCII processor. A late ASCII packet from the previous epoch should start
+	// a fresh accumulation instead of dereferencing a nil curEpochMsg.
+	if _, err := bp.dispatch(&epoch2, &novmsg.BestPos{Pos: novmsg.Pos[novmsg.SolStatus, novmsg.PosType]{
+		PSolStatus: novmsg.InsufficientObs,
+	}}, time.Unix(2, 0), TagBinary); err != nil {
+		t.Fatalf("binary epoch 2 BESTPOS err=%v", err)
+	}
+
+	if handled, err := ap.dispatch(&epoch1, &novmsg.BestXYZ{XYZ: novmsg.XYZ[novmsg.SolStatus, novmsg.PosType]{
+		PSolStatus: novmsg.SolComputed,
+		PosType:    novmsg.PosSingle,
+		PX:         1,
+		PY:         2,
+		PZ:         3,
+	}}, time.Unix(3, 0), TagAscii); err != nil || !handled {
+		t.Fatalf("late ascii epoch 1 BESTXYZ handled=%v err=%v", handled, err)
+	}
+	if ap.curEpoch == 0 || ap.curEpochMsg == nil {
+		t.Fatalf("late ascii packet should restart epoch accumulation, got curEpoch=%d curEpochMsg=%v", ap.curEpoch, ap.curEpochMsg)
+	}
+}

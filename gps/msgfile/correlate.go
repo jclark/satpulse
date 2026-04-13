@@ -43,6 +43,7 @@ type responseKind int
 const (
 	responseMaybeData responseKind = iota // zero value: might be data, uncertain
 	responseNotData                       // definitely not data
+	responseInfo                          // informational, display without correlation
 	responseData                          // confirmed data response
 	responseAck                           // positive acknowledgement
 	responseNak                           // negative acknowledgement
@@ -209,6 +210,8 @@ func (c *Correlator) CorrelatePacket(tag gpsprot.Tag, data string) Correlation {
 		return c.correlateData(tag, data, true)
 	case responseMaybeData:
 		return c.correlateData(tag, data, false)
+	case responseInfo:
+		return Correlation{Relevance: LevelMaybeResponse}
 	case responseNotData:
 		return Correlation{Relevance: LevelNotResponse}
 	}

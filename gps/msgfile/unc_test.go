@@ -246,5 +246,63 @@ func TestCorrelatorUnicore(t *testing.T) {
 				checkDone{canAcceptMore: false},
 			},
 		},
+		{
+			name: "COM port speed change no ACK expected",
+			tags: []string{"speed-com3"},
+			events: []event{
+				sendEvent{},
+				checkDone{canAcceptMore: true}, // silent success is normal
+				checkMissing{},                 // not reported as missing
+			},
+		},
+		{
+			name: "COM port speed change NAK still reported",
+			tags: []string{"speed-com3"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("command,CONFIG COM3 460800,response: not support"),
+				expect{ack: AckNak, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
+		},
+		{
+			name: "LOGLIST query ACK then NOVAA data",
+			tags: []string{"get-loglist"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("command,LOGLIST,response: OK"),
+				expect{ack: AckAck, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				recvEmptyTag("<LOGLIST COM3 17548 95.000000 FINE 2413 3196.000000 42155794 830 18\r\n"),
+				expect{relevance: LevelMultiResponse},
+				recvEmptyTag("<\t1\r\n"),
+				expect{relevance: LevelMultiResponse},
+				recvEmptyTag("<\tRECTIMEB COM3 1\r\n"),
+				expect{relevance: LevelMultiResponse},
+				checkDone{canAcceptMore: true},
+				checkMissing{},
+			},
+		},
+		{
+			name: "LOGLIST query non-NOVAA data ignored",
+			tags: []string{"get-loglist"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("command,LOGLIST,response: OK"),
+				expect{ack: AckAck},
+				recvEmptyTag("some random line\r\n"),
+				expect{relevance: LevelNotResponse},
+			},
+		},
+		{
+			name: "LOGLIST query ignores UNCA packets",
+			tags: []string{"get-loglist"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("command,LOGLIST,response: OK"),
+				expect{ack: AckAck},
+				recvUnicoreAscii("#RECTIMEA,95;some data,"),
+				expect{relevance: LevelNotResponse},
+			},
+		},
 	})
 }

@@ -31,14 +31,6 @@ func (mt MsgType) IsMSM() bool {
 	return mt >= 1071 && mt <= 1137 && msm >= 1 && msm <= 7
 }
 
-func (mt MsgType) hasStationID() bool {
-	switch mt {
-	case 1005, 1006, 1007, 1008, 1033, 1230:
-		return true
-	}
-	return mt.IsMSM()
-}
-
 // ExtractMsgType returns the 12-bit message type from a packet.
 func ExtractMsgType[B Bytes](pkt B) MsgType {
 	if len(pkt) <= 6 {
@@ -61,6 +53,18 @@ type MsgHdr struct {
 // MsgType returns the message type number.
 func (h *MsgHdr) MsgType() MsgType { return h.MsgNum }
 
+// MsgHdrStationID is the header for RTCM messages that carry DF003
+// (Reference Station ID).  Embedding this instead of MsgHdr both
+// declares the field and satisfies the StationIDer interface, so
+// ReferenceStationID can find it without a per-MsgType allow-list.
+type MsgHdrStationID struct {
+	MsgHdr
+	StationID uint16 `bits:"12" json:"stationID"`
+}
+
+// RefStationID returns the 12-bit DF003 Reference Station ID.
+func (h *MsgHdrStationID) RefStationID() uint16 { return h.StationID }
+
 // UnknownMsg represents an RTCM message with an unrecognized message type.
 type UnknownMsg struct {
 	MsgHdr
@@ -76,24 +80,36 @@ func ParseMsg(packet string) (Msg, error) {
 	payload := packet[3 : len(packet)-3]
 	mt := ExtractMsgType(packet)
 	switch mt {
+	case 1001:
+		return parseBits[MT1001](mt, payload)
+	case 1002:
+		return parseBits[MT1002](mt, payload)
+	case 1003:
+		return parseBits[MT1003](mt, payload)
+	case 1004:
+		return parseBits[MT1004](mt, payload)
 	case 1005:
-		var msg MT1005
-		if err := bitsenc.Read([]byte(payload), &msg); err != nil {
-			return nil, fmt.Errorf("rtcm 1005: %w", err)
-		}
-		return &msg, nil
+		return parseBits[MT1005](mt, payload)
 	case 1006:
-		var msg MT1006
-		if err := bitsenc.Read([]byte(payload), &msg); err != nil {
-			return nil, fmt.Errorf("rtcm 1006: %w", err)
-		}
-		return &msg, nil
+		return parseBits[MT1006](mt, payload)
+	case 1007:
+		return parseBits[MT1007](mt, payload)
+	case 1008:
+		return parseBits[MT1008](mt, payload)
+	case 1009:
+		return parseBits[MT1009](mt, payload)
+	case 1010:
+		return parseBits[MT1010](mt, payload)
+	case 1011:
+		return parseBits[MT1011](mt, payload)
+	case 1012:
+		return parseBits[MT1012](mt, payload)
+	case 1013:
+		return parseBits[MT1013](mt, payload)
+	case 1033:
+		return parseBits[MT1033](mt, payload)
 	case 1230:
-		var msg MT1230
-		if err := bitsenc.NewReader([]byte(payload)).Read(&msg); err != nil {
-			return nil, fmt.Errorf("rtcm 1230: %w", err)
-		}
-		return &msg, nil
+		return parseBits[MT1230](mt, payload)
 	default:
 		if mt.IsMSM() {
 			return parseMSM(mt, payload)
@@ -103,6 +119,21 @@ func ParseMsg(packet string) (Msg, error) {
 			Payload: payload,
 		}, nil
 	}
+}
+
+// parseBits decodes a fixed RTCM message type T from payload using the
+// bitsenc codec.  The PT constraint requires *T to satisfy Msg, so
+// embedding MsgHdr (directly or via MsgHdrStationID) is sufficient.
+func parseBits[T any, PT interface {
+	*T
+	Msg
+}](mt MsgType, payload string) (Msg, error) {
+	var msg T
+	pmsg := PT(&msg)
+	if err := bitsenc.NewReader([]byte(payload)).Read(pmsg); err != nil {
+		return nil, fmt.Errorf("rtcm %d: %w", mt, err)
+	}
+	return pmsg, nil
 }
 
 func parseMSM(mt MsgType, payload string) (Msg, error) {
@@ -175,6 +206,29 @@ func MultipleMessageBit[B Bytes](pkt B) (mmb, ok bool) {
 		return false, false
 	}
 	return pkt[9]&0x02 != 0, true
+}
+
+// StationIDer is implemented by message types that carry DF003
+// (Reference Station ID).  Typed callers that have already parsed a
+// packet can type-assert against this interface; ReferenceStationID
+// uses a byte-level fast path instead, so it also works for DF003-
+// bearing packets whose payload we don't parse into a typed struct.
+type StationIDer interface {
+	RefStationID() uint16
+}
+
+// hasStationID reports whether mt carries DF003 as its second 12-bit
+// field.  Keep in sync with the set of message types whose typed struct
+// embeds MsgHdrStationID, plus any DF003-bearing types not yet modelled.
+func (mt MsgType) hasStationID() bool {
+	switch mt {
+	case 1001, 1002, 1003, 1004,
+		1005, 1006, 1007, 1008,
+		1009, 1010, 1011, 1012, 1013,
+		1033, 1230:
+		return true
+	}
+	return mt.IsMSM()
 }
 
 // ReferenceStationID extracts the 12-bit reference station ID (DF003)

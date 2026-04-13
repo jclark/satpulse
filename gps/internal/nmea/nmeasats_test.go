@@ -16,10 +16,12 @@ import (
 func TestGSAParse(t *testing.T) {
 	tests := []struct {
 		sen   string
+		gnss  gpsprot.GNSS
 		svids []gpsprot.SVID
 	}{
 		{
-			sen: "$GNGSA,A,3,10,12,23,25,32,,,,,,,,2.38,1.26,2.01,1*0B",
+			sen:  "$GNGSA,A,3,10,12,23,25,32,,,,,,,,2.38,1.26,2.01,1*0B",
+			gnss: gpsprot.GPS,
 			svids: []gpsprot.SVID{
 				{GNSS: gpsprot.GPS, Num: 10},
 				{GNSS: gpsprot.GPS, Num: 12},
@@ -27,6 +29,11 @@ func TestGSAParse(t *testing.T) {
 				{GNSS: gpsprot.GPS, Num: 25},
 				{GNSS: gpsprot.GPS, Num: 32},
 			},
+		},
+		{
+			// Cold start: empty auto/manual, fix mode 1, no SVIDs, empty system ID
+			sen:  "$GPGSA,,1,,,,,,,,,,,,,,,,*73",
+			gnss: gpsprot.GPS,
 		},
 	}
 	for _, test := range tests {
@@ -36,6 +43,9 @@ func TestGSAParse(t *testing.T) {
 			gsa, err := parseGSA(sen)
 			if err != nil {
 				t.Fatalf("unexpected GGA parsing error: %v", err)
+			}
+			if gsa.gnss != test.gnss {
+				t.Fatalf("expected GNSS %v, got %v", test.gnss, gsa.gnss)
 			}
 			if len(gsa.svids) != len(test.svids) {
 				t.Fatalf("unexpected number of SVIDs, expected %d, got %d", len(test.svids), len(gsa.svids))

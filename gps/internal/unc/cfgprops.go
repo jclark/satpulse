@@ -323,10 +323,12 @@ func (p *ppsProp) updateFromProps(props *gpsprot.ConfigProps) error {
 		return nil
 	}
 
-	// For ENABLE, we also need TimeGNSS
+	// For ENABLE, we also need TimeGNSS.
+	// After DISABLE, the receiver state has no TimeGNSS,
+	// so pick from enabled constellations.
 	timeGNSS, ok := props.GetTimeGNSS()
 	if !ok {
-		return errMissingProp
+		timeGNSS = defaultTimeGNSS(props)
 	}
 
 	// Get antenna cable delay (optional, defaults to 0)
@@ -382,6 +384,20 @@ func (p *ppsProp) updateFromProps(props *gpsprot.ConfigProps) error {
 		enable, gnssStr, polarity, widthUs, periodMs, rfDelayNs, userDelay)
 
 	return nil
+}
+
+// defaultTimeGNSS returns a default TimeGNSS based on enabled constellations.
+// GLONASS is last because its unusual leap-second handling is bad for PTP.
+func defaultTimeGNSS(props *gpsprot.ConfigProps) gpsprot.GNSS {
+	if sigs, ok := props.GetSignalsEnabled(); ok {
+		enabled := sigs.GNSSSet()
+		for _, g := range [...]gpsprot.GNSS{gpsprot.GPS, gpsprot.GAL, gpsprot.BDS, gpsprot.GLO} {
+			if enabled.Contains(g) {
+				return g
+			}
+		}
+	}
+	return gpsprot.GPS
 }
 
 type signalGroupProp struct {
@@ -531,7 +547,7 @@ func (p *sbasProp) updateFromProps(props *gpsprot.ConfigProps) error {
 // - MASK/UNMASK <signal>: system or frequency (group 4), or PRN (no capture, ignored)
 // - MASK <subtype> <value>: unknown subtypes like CN0, RTK (no capture, ignored)
 // - <System>MaskPrn:<prn>,<prn>,...: PRN mask query response format (no capture, ignored)
-var maskRegexp = regexp.MustCompile(`^(?:MASK (-?\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Z0-9]*)|[A-Z]+ PRN \d+))|MASK [A-Z][A-Z0-9]* [A-Z0-9.]+|[A-Z]+MaskPrn:[1-9]\d*(?:,[1-9]\d*)*,?)$`)
+var maskRegexp = regexp.MustCompile(`^(?:MASK (-?\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Za-z0-9]*)|[A-Z]+ PRN \d+))|MASK [A-Z][A-Z0-9]* [A-Z0-9.]+|[A-Z]+MaskPrn:[1-9]\d*(?:,[1-9]\d*)*,?)$`)
 
 type maskProp struct {
 	elevationMask opt.Val[float64] // elevation angle in degrees
@@ -789,6 +805,7 @@ func (p *modeProp) updateFromProps(props *gpsprot.ConfigProps, survey gpsprot.Su
 		cmd += fmt.Sprintf(" %.4f %.4f %.4f", m.FixedPosECEF[0].Meters(), m.FixedPosECEF[1].Meters(), m.FixedPosECEF[2].Meters())
 	case gpsprot.PosTypeNone:
 		surveySecs := int64(survey.MinDur.Round(time.Second) / time.Second)
+		surveySecs = min(surveySecs, 3600)
 		cmd += fmt.Sprintf(" TIME %d", surveySecs)
 		// Preserve TIME distance parameter if present in existing command
 		if matches != nil && matches[6] != "" {

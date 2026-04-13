@@ -5,12 +5,17 @@
 package stream
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,9 +36,9 @@ type PacketWriter interface {
 // Source provides a network connection for correction data.
 type Source interface {
 	// Connect establishes a connection to the correction source and
-	// returns a net.Conn that delivers raw correction data.  Connect
-	// must respect ctx cancellation.
-	Connect(ctx context.Context) (net.Conn, error)
+	// returns an io.ReadCloser that delivers raw correction data.
+	// Connect must respect ctx cancellation.
+	Connect(ctx context.Context) (io.ReadCloser, error)
 }
 
 // TCPSource connects to a TCP address.
@@ -42,8 +47,96 @@ type TCPSource struct {
 }
 
 // Connect dials the TCP address.
-func (s *TCPSource) Connect(ctx context.Context) (net.Conn, error) {
+func (s *TCPSource) Connect(ctx context.Context) (io.ReadCloser, error) {
 	return (&net.Dialer{}).DialContext(ctx, "tcp", s.Addr)
+}
+
+// NTRIPUserAgent carries the fields used to build an NTRIP client's
+// User-Agent header.  NTRIP requires the header to start with "NTRIP ".
+type NTRIPUserAgent struct {
+	Version string // e.g. "1.2.3"
+}
+
+// NTRIPSource is an NTRIP v1 client.  It connects to an NTRIP caster,
+// sends a v1 request, and returns a stream of RTCM bytes on success.
+// Only "ICY 200 OK" is accepted as a successful response.
+type NTRIPSource struct {
+	Addr       string // "host:port"
+	Mountpoint string
+	Username   string
+	Password   string
+	UserAgent  NTRIPUserAgent
+}
+
+// Connect dials the caster, performs the NTRIP v1 handshake, and
+// returns a reader over the RTCM body.
+func (s *NTRIPSource) Connect(ctx context.Context) (io.ReadCloser, error) {
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", s.Addr)
+	if err != nil {
+		return nil, err
+	}
+	// Close conn on ctx cancellation during write/read.  The dial
+	// itself is covered by DialContext.
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-done:
+		}
+	}()
+	rc, err := s.handshake(conn)
+	close(done)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return rc, nil
+}
+
+// handshake writes the NTRIP v1 request, reads the status line, and
+// returns an io.ReadCloser over the body.  On error, the caller
+// closes conn.
+func (s *NTRIPSource) handshake(conn net.Conn) (io.ReadCloser, error) {
+	if _, err := conn.Write([]byte(s.request())); err != nil {
+		return nil, err
+	}
+	br := bufio.NewReaderSize(conn, 4096)
+	line, err := br.ReadSlice('\n')
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(line, []byte("ICY 200 OK\r\n")) {
+		return nil, fmt.Errorf("NTRIP: %s", strings.TrimSuffix(string(line), "\r\n"))
+	}
+	if br.Buffered() == 0 {
+		return conn, nil
+	}
+	leftover, _ := br.Peek(br.Buffered())
+	return struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(leftover), conn), conn}, nil
+}
+
+// request builds the NTRIP v1 request bytes.
+func (s *NTRIPSource) request() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "GET /%s HTTP/1.0\r\n", s.Mountpoint)
+	fmt.Fprintf(&b, "User-Agent: %s\r\n", s.userAgent())
+	if s.Username != "" {
+		creds := base64.StdEncoding.EncodeToString([]byte(s.Username + ":" + s.Password))
+		fmt.Fprintf(&b, "Authorization: Basic %s\r\n", creds)
+	}
+	b.WriteString("\r\n")
+	return b.String()
+}
+
+func (s *NTRIPSource) userAgent() string {
+	if s.UserAgent.Version == "" {
+		return "NTRIP SatPulse"
+	}
+	return "NTRIP SatPulse/" + s.UserAgent.Version
 }
 
 // State represents the connection state of a Pull.
@@ -221,7 +314,7 @@ func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 // nil if cancelled via ctx.  It calls b.decrease periodically while
 // the connection is healthy.
 func (s *Pull) readLoop(ctx context.Context,
-	conn net.Conn, pktFormats []gpsprot.PacketFormat, b *backoff) error {
+	conn io.ReadCloser, pktFormats []gpsprot.PacketFormat, b *backoff) error {
 	scanner := scan.New(conn, scanBufSize, pktFormats)
 	lastDecay := time.Now()
 	for {

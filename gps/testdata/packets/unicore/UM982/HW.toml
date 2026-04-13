@@ -1,0 +1,4 @@
+vendor = "Unicore"
+model = "UM982"
+firmware = "Build13495"
+default-baud = 115200

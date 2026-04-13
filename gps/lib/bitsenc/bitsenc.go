@@ -151,6 +151,17 @@ func readStruct(r *Reader, sv, root reflect.Value, varNext func() (int, bool)) e
 			}
 			n := fv.Len()
 			elemKind := f.Type.Elem().Kind()
+			if elemKind == reflect.Struct {
+				if f.Tag.Get(tagName) != "" {
+					return fmt.Errorf("bitsenc: bits tag not allowed on []struct field %s", f.Name)
+				}
+				for j := 0; j < n; j++ {
+					if err := readStruct(r, fv.Index(j), root, varNext); err != nil {
+						return err
+					}
+				}
+				continue
+			}
 			tag := f.Tag.Get(tagName)
 			bits := 0
 			if tag != "" {
@@ -321,6 +332,17 @@ func writeStruct(w *Writer, sv reflect.Value, varNext func() (int, bool)) error 
 		if f.Type.Kind() == reflect.Slice {
 			n := fv.Len()
 			elemKind := f.Type.Elem().Kind()
+			if elemKind == reflect.Struct {
+				if f.Tag.Get(tagName) != "" {
+					return fmt.Errorf("bitsenc: bits tag not allowed on []struct field %s", f.Name)
+				}
+				for j := 0; j < n; j++ {
+					if err := writeStruct(w, fv.Index(j), varNext); err != nil {
+						return err
+					}
+				}
+				continue
+			}
 			tag := f.Tag.Get(tagName)
 			bits := 0
 			if tag != "" {

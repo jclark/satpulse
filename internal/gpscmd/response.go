@@ -120,7 +120,11 @@ func formatMsgID(mid msgfile.MsgID) string {
 	if mid.Count <= 1 {
 		return mid.Tag
 	}
-	return fmt.Sprintf("%s/%d", mid.Tag, mid.Index+1)
+	sep := "/"
+	if mid.Tag == "" {
+		sep = ""
+	}
+	return fmt.Sprintf("%s%s%d", mid.Tag, sep, mid.Index+1)
 }
 
 func formatText(pkt scan.Packet) string {

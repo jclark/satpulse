@@ -3,8 +3,8 @@ package as
 import (
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/asbin"
 )
 
 // Ensure PacketProcessor implements gpsprot.PacketProcessor
@@ -81,6 +81,7 @@ func sameEpoch(a, b uint32) bool {
 // FlushNavEpoch implements gpsprot.EpochFlusher.
 func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
 	msg := p.curNavEpochMsg
+	p.curNavEpoch = 0
 	p.curNavEpochMsg = nil
 	if msg != nil {
 		msg.Tag = Tag

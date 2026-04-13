@@ -73,6 +73,8 @@ For receivers with high-level configuration support (u-blox, Unicore), read `hig
 
 For u-blox receivers specifically, also read `ubx-config.md`.
 
+For Unicore receivers (UM980, UM981, UM982), also read `unicore-config.md`.
+
 For all receivers, message files in `configs/gpsmsg/` provide low-level message tags. Read `lowlevel-config.md` for how to use these.
 
 ## Capture procedure

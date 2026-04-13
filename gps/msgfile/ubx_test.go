@@ -52,6 +52,19 @@ func (e recvUBXNakEvent) run(t *testing.T, tc *testContext) {
 	tc.last = tc.cor.CorrelatePacket(gpsreg.TagUBX, string(pkt))
 }
 
+type recvUBXInfEvent struct{ mid ubxbin.MsgID }
+
+func recvUBXInf(mid ubxbin.MsgID) recvUBXInfEvent { return recvUBXInfEvent{mid: mid} }
+
+func (e recvUBXInfEvent) run(t *testing.T, tc *testContext) {
+	t.Helper()
+	pkt, err := ubxbin.PackMsg(e.mid, []byte("test message"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc.last = tc.cor.CorrelatePacket(gpsreg.TagUBX, string(pkt))
+}
+
 func TestCorrelatorUBX(t *testing.T) {
 	runCorrelatorTests(t, "ubx-test.toml", []correlatorTest{
 		{
@@ -211,6 +224,26 @@ func TestCorrelatorUBX(t *testing.T) {
 				recvUBXAck(ubxbin.CfgTp5ID),
 				expect{ack: AckNone, relevance: LevelAmbigResponse},
 				checkDone{canAcceptMore: true},
+			},
+		},
+		{
+			name: "INF shown during pending request",
+			tags: []string{"set-tp5"},
+			events: []event{
+				sendEvent{},
+				recvUBXInf(ubxbin.InfWarningID),
+				expect{relevance: LevelMaybeResponse},
+			},
+		},
+		{
+			name: "INF shown after ACK",
+			tags: []string{"set-tp5"},
+			events: []event{
+				sendEvent{},
+				recvUBXAck(ubxbin.CfgTp5ID),
+				expect{ack: AckAck, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				recvUBXInf(ubxbin.InfNoticeID),
+				expect{relevance: LevelMaybeResponse},
 			},
 		},
 	})

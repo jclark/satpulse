@@ -19,6 +19,39 @@ text = "MASK"
 tag = "get-config"
 description = "Query receiver configuration"
 text = "CONFIG"
+[[line]]
+tag = "get-loglist"
+description = "Query active log list (includes current port)"
+text = "LOGLIST"
+
+# Serial port speed (COM1, COM2, COM3)
+[[line]]
+tag = "speed-115200-com1"
+text = "CONFIG COM1 115200"
+[[line]]
+tag = "speed-230400-com1"
+text = "CONFIG COM1 230400"
+[[line]]
+tag = "speed-460800-com1"
+text = "CONFIG COM1 460800"
+[[line]]
+tag = "speed-115200-com2"
+text = "CONFIG COM2 115200"
+[[line]]
+tag = "speed-230400-com2"
+text = "CONFIG COM2 230400"
+[[line]]
+tag = "speed-460800-com2"
+text = "CONFIG COM2 460800"
+[[line]]
+tag = "speed-115200-com3"
+text = "CONFIG COM3 115200"
+[[line]]
+tag = "speed-230400-com3"
+text = "CONFIG COM3 230400"
+[[line]]
+tag = "speed-460800-com3"
+text = "CONFIG COM3 460800"
 
 # RECTIME (receiver clock and UTC time)
 [[line]]
@@ -326,6 +359,202 @@ text = "CONFIG PPP CONVERGE 10 20"
 tag = "ppp-off"
 description = "Disable PPP"
 text = "CONFIG PPP DISABLE"
+
+# NMEA message control
+[[line]]
+tag = "nmea-rmc"
+description = "Enable NMEA RMC at 1Hz"
+text = "GPRMC 1"
+[[line]]
+tag = "nmea-rmc-off"
+description = "Disable NMEA RMC"
+text = "UNLOG GPRMC"
+[[line]]
+tag = "nmea-gga"
+description = "Enable NMEA GGA at 1Hz"
+text = "GPGGA 1"
+[[line]]
+tag = "nmea-gga-off"
+description = "Disable NMEA GGA"
+text = "UNLOG GPGGA"
+[[line]]
+tag = "nmea-gll"
+description = "Enable NMEA GLL at 1Hz"
+text = "GPGLL 1"
+[[line]]
+tag = "nmea-gll-off"
+description = "Disable NMEA GLL"
+text = "UNLOG GPGLL"
+[[line]]
+tag = "nmea-gsa"
+description = "Enable NMEA GSA at 1Hz"
+text = "GPGSA 1"
+[[line]]
+tag = "nmea-gsa-off"
+description = "Disable NMEA GSA"
+text = "UNLOG GPGSA"
+[[line]]
+tag = "nmea-gsv"
+description = "Enable NMEA GSV at 1Hz"
+text = "GPGSV 1"
+[[line]]
+tag = "nmea-gsv-off"
+description = "Disable NMEA GSV"
+text = "UNLOG GPGSV"
+[[line]]
+tag = "nmea-vtg"
+description = "Enable NMEA VTG at 1Hz"
+text = "GPVTG 1"
+[[line]]
+tag = "nmea-vtg-off"
+description = "Disable NMEA VTG"
+text = "UNLOG GPVTG"
+[[line]]
+tag = "nmea-zda"
+description = "Enable NMEA ZDA at 1Hz"
+text = "GPZDA 1"
+[[line]]
+tag = "nmea-zda-off"
+description = "Disable NMEA ZDA"
+text = "UNLOG GPZDA"
+
+# NMEA daemon set (RMC, GGA, GSV, GSA)
+[[line]]
+tag = "nmea-daemon"
+description = "Enable NMEA daemon set (RMC, GGA, GSV, GSA)"
+text = "GPRMC 1"
+[[line]]
+tag = "nmea-daemon"
+text = "GPGGA 1"
+[[line]]
+tag = "nmea-daemon"
+text = "GPGSV 1"
+[[line]]
+tag = "nmea-daemon"
+text = "GPGSA 1"
+
+# Disable all NMEA messages
+[[line]]
+tag = "nmea-off"
+description = "Disable all NMEA messages"
+text = "UNLOG GPRMC"
+[[line]]
+tag = "nmea-off"
+text = "UNLOG GPGGA"
+[[line]]
+tag = "nmea-off"
+text = "UNLOG GPGLL"
+[[line]]
+tag = "nmea-off"
+text = "UNLOG GPGSA"
+[[line]]
+tag = "nmea-off"
+text = "UNLOG GPGSV"
+[[line]]
+tag = "nmea-off"
+text = "UNLOG GPVTG"
+[[line]]
+tag = "nmea-off"
+text = "UNLOG GPZDA"
+
+# RTCM ephemeris messages
+# Enables ephemeris output for GPS, GLONASS, BeiDou, QZSS, and
+# Galileo (both F/NAV and I/NAV).  RTCM1041 (NavIC) is rejected by
+# UM982 firmware Build13495.
+# Each message is emitted round-robin one satellite per second.
+[[line]]
+tag = "rtcm-eph"
+description = "Enable RTCM ephemeris messages at 1Hz"
+text = "RTCM1019 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1020 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1042 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1044 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1045 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1046 1"
+[[line]]
+tag = "rtcm-eph-off"
+description = "Disable RTCM ephemeris messages"
+text = "UNLOG RTCM1019"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1020"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1042"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1044"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1045"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1046"
+
+# Legacy RTCM observables
+# MT1001-1004 are GPS L1/L1+L2 basic/extended observables;
+# MT1009-1012 are the GLONASS equivalents.  MSM (107x/108x)
+# supersedes these but some base stations still emit them.
+[[line]]
+tag = "rtcm-legacy"
+description = "Enable legacy RTCM observables at 1Hz"
+text = "RTCM1001 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1002 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1003 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1004 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1009 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1010 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1011 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1012 1"
+[[line]]
+tag = "rtcm-legacy-off"
+description = "Disable legacy RTCM observables"
+text = "UNLOG RTCM1001"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1002"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1003"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1004"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1009"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1010"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1011"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1012"
 
 # Disable all messages
 [[line]]

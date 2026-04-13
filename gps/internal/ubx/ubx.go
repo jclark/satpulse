@@ -91,6 +91,7 @@ func (p *PacketProcessor) handleNavEpoch(nm ubxbin.NavMsg, tRead time.Time) {
 func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
 	p.flushSats()
 	msg := p.curNavEpochMsg
+	p.curNavEpoch = 0
 	p.curNavEpochMsg = nil
 	if msg != nil {
 		msg.Tag = Tag

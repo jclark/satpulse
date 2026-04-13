@@ -92,10 +92,12 @@ func TestRoundShift(t *testing.T) {
 func TestMSM7Convert(t *testing.T) {
 	m7 := &MSMHiRes{
 		MSMHeader: MSMHeader{
-			MsgHdr:    MsgHdr{MsgNum: 1077},
-			StationID: 1234,
-			SatMask:   1<<63 | 1<<62, // 2 sats
-			SigMask:   1 << 31,        // 1 sig
+			MsgHdrStationID: MsgHdrStationID{
+				MsgHdr:    MsgHdr{MsgNum: 1077},
+				StationID: 1234,
+			},
+			SatMask: 1<<63 | 1<<62, // 2 sats
+			SigMask: 1 << 31,       // 1 sig
 		},
 		CellMask: 1<<1 | 1<<0, // 2 cells
 		Sat: MSMSatData{
@@ -180,7 +182,7 @@ func TestMSM7Convert(t *testing.T) {
 func TestMSM7ConvertClamp(t *testing.T) {
 	m7 := &MSMHiRes{
 		MSMHeader: MSMHeader{
-			MsgHdr:  MsgHdr{MsgNum: 1077},
+			MsgHdrStationID: MsgHdrStationID{MsgHdr: MsgHdr{MsgNum: 1077}},
 			SatMask: 1 << 63,
 			SigMask: 1 << 31,
 		},
@@ -216,14 +218,14 @@ func TestMSM7ConvertClamp(t *testing.T) {
 }
 
 func TestMSM7ConvertErrorNotMSM7(t *testing.T) {
-	m6 := &MSMHiRes{MSMHeader: MSMHeader{MsgHdr: MsgHdr{MsgNum: 1076}}}
+	m6 := &MSMHiRes{MSMHeader: MSMHeader{MsgHdrStationID: MsgHdrStationID{MsgHdr: MsgHdr{MsgNum: 1076}}}}
 	if _, err := MSM7Convert(m6, 4); err == nil {
 		t.Error("expected error for MSM6 input")
 	}
 }
 
 func TestMSM7ConvertErrorBadLevel(t *testing.T) {
-	m7 := &MSMHiRes{MSMHeader: MSMHeader{MsgHdr: MsgHdr{MsgNum: 1077}}}
+	m7 := &MSMHiRes{MSMHeader: MSMHeader{MsgHdrStationID: MsgHdrStationID{MsgHdr: MsgHdr{MsgNum: 1077}}}}
 	if _, err := MSM7Convert(m7, 5); err == nil {
 		t.Error("expected error for unsupported target level 5")
 	}
@@ -232,7 +234,7 @@ func TestMSM7ConvertErrorBadLevel(t *testing.T) {
 func TestMSM7ConvertErrorReservedLockTime(t *testing.T) {
 	m7 := &MSMHiRes{
 		MSMHeader: MSMHeader{
-			MsgHdr:  MsgHdr{MsgNum: 1077},
+			MsgHdrStationID: MsgHdrStationID{MsgHdr: MsgHdr{MsgNum: 1077}},
 			SatMask: 1 << 63,
 			SigMask: 1 << 31,
 		},
@@ -260,7 +262,7 @@ func TestMSM7ConvertErrorReservedLockTime(t *testing.T) {
 func TestMSM7ConvertErrorBadSatSlices(t *testing.T) {
 	m7 := &MSMHiRes{
 		MSMHeader: MSMHeader{
-			MsgHdr:  MsgHdr{MsgNum: 1077},
+			MsgHdrStationID: MsgHdrStationID{MsgHdr: MsgHdr{MsgNum: 1077}},
 			SatMask: 1<<63 | 1<<62, // 2 sats
 			SigMask: 1 << 31,
 		},
@@ -280,7 +282,7 @@ func TestMSM7ConvertErrorBadSatSlices(t *testing.T) {
 func TestMSM7ConvertErrorBadSigSlices(t *testing.T) {
 	m7 := &MSMHiRes{
 		MSMHeader: MSMHeader{
-			MsgHdr:  MsgHdr{MsgNum: 1077},
+			MsgHdrStationID: MsgHdrStationID{MsgHdr: MsgHdr{MsgNum: 1077}},
 			SatMask: 1 << 63,
 			SigMask: 1 << 31,
 		},
@@ -308,7 +310,7 @@ func TestMSM7ConvertErrorBadSigSlices(t *testing.T) {
 func TestMSM7ConvertErrorBadCellMask(t *testing.T) {
 	m7 := &MSMHiRes{
 		MSMHeader: MSMHeader{
-			MsgHdr:  MsgHdr{MsgNum: 1077},
+			MsgHdrStationID: MsgHdrStationID{MsgHdr: MsgHdr{MsgNum: 1077}},
 			SatMask: 1 << 63, // 1 sat
 			SigMask: 1 << 31, // 1 sig -> 1 cell mask bit allowed
 		},

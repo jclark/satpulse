@@ -78,7 +78,7 @@ def group_by_epoch(events):
     return epochs
 
 
-def check_file(name, events, problems, ref_ecef=None, ref_latlon=None):
+def check_file(name, events, problems, diagnostics, ref_ecef=None, ref_latlon=None):
     """Run all checks on one file's replay output."""
     pfx = name
 
@@ -197,13 +197,23 @@ def check_file(name, events, problems, ref_ecef=None, ref_latlon=None):
             problems.append(f"{pfx}: ECEF speed {speed:.3f} m/s seems high for stationary")
 
     # -- Check 9: DOP values reasonable --
+    dop_sentinels = 0
     for ev in by_type["navEpoch"]:
         d = ev["data"]
         dop = d.get("dop")
         if dop:
             for k, v in dop.items():
-                if v is not None and v > 20:
+                if v is None:
+                    continue
+                # Detect sentinel values: all digits are 9 when printed
+                # to 2 decimal places (e.g., 99.99, 9999.00, 9999.99)
+                formatted = f"{v:.2f}".rstrip('0').rstrip('.')
+                if all(c == '9' or c == '.' for c in formatted) and '9' in formatted:
+                    dop_sentinels += 1
+                elif v > 20:
                     problems.append(f"{pfx}: DOP {k}={v} seems high")
+    if dop_sentinels > 0:
+        diagnostics.append(f"{pfx}: {dop_sentinels} DOP sentinel values (no solution)")
 
     # -- Check 10: survey events --
     for ev in by_type["survey"]:
@@ -221,10 +231,14 @@ def check_file(name, events, problems, ref_ecef=None, ref_latlon=None):
                     problems.append(f"{pfx}: survey ECEF magnitude {mag:.0f}m out of range")
 
     # -- Check 11: navEpoch fixLevel --
+    valid_fix_levels = {
+        "none", "notMeasured", "doppler", "code",
+        "carrierFloat", "carrierFixed",
+    }
     for ev in by_type["navEpoch"]:
         d = ev["data"]
         fix = d.get("fixLevel")
-        if fix and fix not in ("none", "dead-reckoning", "code", "float-rtk", "rtk"):
+        if fix and fix not in valid_fix_levels:
             problems.append(f"{pfx}: unexpected fixLevel: {fix}")
 
     # -- Check 12: cross-protocol satellite consistency --
@@ -358,8 +372,9 @@ def main():
 
     # Run per-file checks
     problems = []
+    diagnostics = []
     for name, events in all_data.items():
-        check_file(name, events, problems, ref_ecef, ref_latlon)
+        check_file(name, events, problems, diagnostics, ref_ecef, ref_latlon)
 
     # Run per-constellation checks
     check_per_constellation(all_data, problems)
@@ -369,6 +384,11 @@ def main():
 
     # Report
     print()
+    if diagnostics:
+        print(f"Diagnostics ({len(diagnostics)}):")
+        for d in diagnostics:
+            print(f"  - {d}")
+        print()
     if problems:
         print(f"Found {len(problems)} problem(s):")
         for p in problems:

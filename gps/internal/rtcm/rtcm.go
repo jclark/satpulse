@@ -15,10 +15,13 @@ const Tag gpsprot.Tag = "RTCM"
 var PacketFormat gpsprot.PacketFormat = packetFormat{}
 
 var commonMsgTypes = []rtcmbin.MsgType{
+	1001, 1002, 1003, 1004, // legacy GPS observables
 	1005, // station ARP
 	1006, // station ARP with height
 	1007, // antenna
 	1008, // antenna with serial number
+	1009, 1010, 1011, 1012, // legacy GLONASS observables
+	1013, // system parameters
 	1033, // receiver and antenna descriptor
 	// MSM 4 and 7
 	1074, 1077, // GPS

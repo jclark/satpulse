@@ -14,14 +14,17 @@ var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
 // PacketProcessor implements the gpsprot.PacketProcessor interface for CASIC binary packets
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
-	mh             gpsprot.MsgHandler
-	mgr            *gpsprot.NavEpochManager
+	mh  gpsprot.MsgHandler
+	mgr *gpsprot.NavEpochManager
+	// Navigation epoch tracking: CASIC navigation messages carry a RunTime
+	// value that identifies which navigation solution they belong to.
+	// Invariant: curNavEpochMsg is non-nil iff curNavEpoch is non-zero.
 	curNavEpoch      uint32               // current RunTime (0 means no epoch seen yet)
 	curNavEpochMsg   *gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
 	curNavEpochStart time.Time            // tRead of first message in current epoch
-	pendingNav2Dop *casbin.Nav2Dop       // buffered until FlushNavEpoch (no TOW field)
-	lastTimeGNSS   gpsprot.GNSS         // from most recent Nav2TimeUTC
-	satAccum       satAccum             // satellite info accumulator
+	pendingNav2Dop   *casbin.Nav2Dop      // buffered until FlushNavEpoch (no TOW field)
+	lastTimeGNSS     gpsprot.GNSS         // from most recent Nav2TimeUTC
+	satAccum         satAccum             // satellite info accumulator
 }
 
 // NewPacketProcessor creates a new CASIC binary packet processor
@@ -66,6 +69,7 @@ func (p *PacketProcessor) handleNavEpoch(nm casbin.NavMsg, tRead time.Time) {
 func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
 	p.satAccum.epochChange(p.mh, tRead)
 	msg := p.curNavEpochMsg
+	p.curNavEpoch = 0
 	p.curNavEpochMsg = nil
 	if p.pendingNav2Dop != nil && msg != nil {
 		dopNav2Dop(msg, p.pendingNav2Dop)

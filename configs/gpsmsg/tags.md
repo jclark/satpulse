@@ -171,6 +171,8 @@ set the message rate to 10.
 | `rtcm-arp` | Enable ARP message (1005) |
 | `rtcm-msm4` | Enable MSM4 for all constellations (1074/1084/1094/1124) |
 | `rtcm-msm7` | Enable MSM7 for all constellations (1077/1087/1097/1127) |
+| `rtcm-eph` | Enable ephemeris messages (1019/1020/1041/1042/1044/1045/1046) |
+| `rtcm-eph-off` | Disable ephemeris messages |
 | `rtcm-off` | Disable all RTCM messages |
 | `get-rtcm-base-id` | Query RTCM reference station ID |
 | `rtcm-base-id-0` | Set RTCM reference station ID to 0 |
