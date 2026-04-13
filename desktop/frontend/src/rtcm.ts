@@ -17,11 +17,27 @@ const MSM_DESC: Record<number, string> = {
 };
 
 const NON_MSM: Record<string, string> = {
+    '1001': 'GPS Basic RTK, L1 Only',
+    '1002': 'GPS Extended RTK, L1 Only',
+    '1003': 'GPS Basic RTK, L1 & L2',
+    '1004': 'GPS Extended RTK, L1 & L2',
     '1005': 'Stationary Antenna Reference Point, No Height Information',
     '1006': 'Stationary Antenna Reference Point, with Height Information',
     '1007': 'Antenna Descriptor',
     '1008': 'Antenna Descriptor & Serial Number',
+    '1009': 'GLONASS Basic RTK, L1 Only',
+    '1010': 'GLONASS Extended RTK, L1 Only',
+    '1011': 'GLONASS Basic RTK, L1 & L2',
+    '1012': 'GLONASS Extended RTK, L1 & L2',
+    '1013': 'System Parameters',
+    '1019': 'GPS Satellite Ephemeris Data',
+    '1020': 'GLONASS Satellite Ephemeris Data',
     '1033': 'Receiver and Antenna Descriptors',
+    '1041': 'NavIC Satellite Ephemeris Data',
+    '1042': 'BeiDou Satellite Ephemeris Data',
+    '1044': 'QZSS Satellite Ephemeris Data',
+    '1045': 'Galileo F/NAV Satellite Ephemeris Data',
+    '1046': 'Galileo I/NAV Satellite Ephemeris Data',
     '1230': 'GLONASS L1 and L2 Code-Phase Biases',
 };
 
