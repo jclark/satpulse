@@ -11,6 +11,7 @@ import (
 	"github.com/jclark/satpulse/internal/annotatecmd"
 	"github.com/jclark/satpulse/internal/decodecmd"
 	"github.com/jclark/satpulse/internal/gpscmd"
+	"github.com/jclark/satpulse/internal/ntripcmd"
 	"github.com/jclark/satpulse/internal/pmccmd"
 	"github.com/jclark/satpulse/internal/replaycmd"
 	"github.com/jclark/satpulse/internal/sdpcmd"
@@ -75,6 +76,8 @@ func main() {
 		exec = decodecmd.Cmd
 	case "gps":
 		exec = gpscmd.Cmd
+	case "ntrip":
+		exec = ntripcmd.Cmd
 	case "pmc":
 		exec = pmccmd.Cmd
 	case "replay":
@@ -118,6 +121,7 @@ func usage(progName string, flags *pflag.FlagSet) {
 	fmt.Fprintln(os.Stderr, "  decode - decode a GPS packet")
 	fmt.Fprintln(os.Stderr, "  annotate - annotate a JSONL packet log with decoded fields")
 	fmt.Fprintln(os.Stderr, "  replay - replay a JSONL packet log through the processing pipeline")
+	fmt.Fprintln(os.Stderr, "  ntrip - NTRIP client")
 	fmt.Fprintln(os.Stderr, "  pmc - send a PTP management message to ptp4l process")
 	fmt.Fprintln(os.Stderr, "Global options:")
 	flags.PrintDefaults()
