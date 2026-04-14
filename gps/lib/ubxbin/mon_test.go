@@ -7,13 +7,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jclark/satpulse/gps/lib/latin1z"
 	"golang.org/x/exp/slices"
 )
 
 func TestMonVer(t *testing.T) {
 	m := MonVer{
-		MonVerFixed{Latin1Z30{1, 2, 3}, Latin1Z10{4, 5}},
-		[]Latin1Z30{{7, 8}, {9}},
+		MonVerFixed{latin1z.StringZ30{1, 2, 3}, latin1z.StringZ10{4, 5}},
+		[]latin1z.StringZ30{{7, 8}, {9}},
 	}
 	p2 := testMsgType1(t, m)
 	if !EqualMonVer(&m, p2.(*MonVer)) {
@@ -155,12 +156,12 @@ func TestMonCommsPortID(t *testing.T) {
 func TestMonVerJSON(t *testing.T) {
 	m := MonVer{
 		MonVerFixed: MonVerFixed{
-			SwVersion: Latin1Z30{'E', 'X', 'T', ' ', 'C', 'O', 'R', 'E', ' ', '1', '.', '0', '0'},
-			HwVersion: Latin1Z10{'0', '0', '1', '9', '0', '0', '0', '0'},
+			SwVersion: latin1z.StringZ30{'E', 'X', 'T', ' ', 'C', 'O', 'R', 'E', ' ', '1', '.', '0', '0'},
+			HwVersion: latin1z.StringZ10{'0', '0', '1', '9', '0', '0', '0', '0'},
 		},
-		Extension: []Latin1Z30{
-			func() Latin1Z30 {
-				var b Latin1Z30
+		Extension: []latin1z.StringZ30{
+			func() latin1z.StringZ30 {
+				var b latin1z.StringZ30
 				copy(b[:], "FWVER=SPG 1.00")
 				return b
 			}(),
@@ -237,7 +238,7 @@ func TestMonGnss1(t *testing.T) {
 		Plans: []MonGnssPlan{
 			{
 				ID:       1,
-				Name:     Latin1Z5{'S', 'P', '1', 0, 0},
+				Name:     latin1z.StringZ5{'S', 'P', '1', 0, 0},
 				GpsSup:   0x000D,
 				GalSup:   0x000B,
 				BdsSup:   0x001B,
@@ -247,7 +248,7 @@ func TestMonGnss1(t *testing.T) {
 			},
 			{
 				ID:       2,
-				Name:     Latin1Z5{'S', 'P', '2', 0, 0},
+				Name:     latin1z.StringZ5{'S', 'P', '2', 0, 0},
 				GpsSup:   0x000D,
 				GalSup:   0x000B,
 				BdsSup:   0x001A,

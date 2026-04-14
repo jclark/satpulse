@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
+
+	"github.com/jclark/satpulse/gps/lib/latin1z"
 )
 
 var versionTests = []dataTestCase{
@@ -27,11 +29,11 @@ var versionTests = []dataTestCase{
 			},
 			Body: &Version{
 				Type:        ProductModelUM980,
-				SwVersion:   [33]byte{'R', '4', '.', '1', '0', 'B', 'u', 'i', 'l', 'd', '1', '3', '5', '0', '4'},
-				Auth:        [129]byte{'H', 'R', 'P', 'T', '0', '0', '-', 'S', '1', '0', 'C', '-', 'P'},
-				Psn:         [66]byte{'2', '3', '1', '0', '4', '1', '5', '0', '0', '0', '0', '0', '1', '-', 'M', 'D', '2', '2', 'A', '6', '2', '2', '4', '5', '1', '8', '9', '8', '2'},
-				EfuseID:     [33]byte{'f', 'f', '3', 'b', 'a', 'd', '9', '9', '3', '9', '5', 'a', '9', 'a', 'f', 'c'},
-				CompileTime: [43]byte{'2', '0', '2', '4', '/', '0', '4', '/', '0', '3'},
+				SwVersion:   latin1z.StringZ33{'R', '4', '.', '1', '0', 'B', 'u', 'i', 'l', 'd', '1', '3', '5', '0', '4'},
+				Auth:        latin1z.StringZ129{'H', 'R', 'P', 'T', '0', '0', '-', 'S', '1', '0', 'C', '-', 'P'},
+				Psn:         latin1z.StringZ66{'2', '3', '1', '0', '4', '1', '5', '0', '0', '0', '0', '0', '1', '-', 'M', 'D', '2', '2', 'A', '6', '2', '2', '4', '5', '1', '8', '9', '8', '2'},
+				EfuseID:     latin1z.StringZ33{'f', 'f', '3', 'b', 'a', 'd', '9', '9', '3', '9', '5', 'a', '9', 'a', 'f', 'c'},
+				CompileTime: latin1z.StringZ43{'2', '0', '2', '4', '/', '0', '4', '/', '0', '3'},
 			},
 		},
 		fixupMsgForBin: fixupVersionMsgForBin,
@@ -92,8 +94,7 @@ func TestVersion_BuildNumber(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.swVersion, func(t *testing.T) {
-			// Convert string to [33]byte array
-			var swVersionArray [33]byte
+			var swVersionArray latin1z.StringZ33
 			copy(swVersionArray[:], tt.swVersion)
 
 			v := &Version{
@@ -139,7 +140,7 @@ func fixupVersionMsgForBin(msg *Msg) *Msg {
 	buildStr := strconv.Itoa(buildNum)
 
 	// Clear SwVersion and copy build string
-	result.SwVersion = [33]byte{}
+	result.SwVersion = latin1z.StringZ33{}
 	copy(result.SwVersion[:], buildStr)
 
 	return &Msg{

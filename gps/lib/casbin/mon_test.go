@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/jclark/satpulse/gps/lib/latin1z"
 )
 
 func TestMonVerRoundtrip(t *testing.T) {
-	var sw, hw Latin1Z32
+	var sw, hw latin1z.StringZ32
 	copy(sw[:], "CASIC V5.3.0.0")
 	copy(hw[:], "HW-1234-REV-A")
 	testMsgType[MonVer](t, MonVer{SwVersion: sw, HwVersion: hw})
