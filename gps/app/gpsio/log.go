@@ -130,8 +130,13 @@ func (pl *PacketLog) LogInput(pkt scan.Packet) {
 	if len(pkt.Data) == 0 {
 		return
 	}
-	msgID := ""
+	pl.ch <- MakePacketLogEntry(pkt)
+}
+
+// MakePacketLogEntry builds a PacketLogEntry for an incoming scanned packet.
+func MakePacketLogEntry(pkt scan.Packet) PacketLogEntry {
 	bytes := []byte(pkt.Data)
+	msgID := ""
 	if pkt.Format != nil {
 		msgID = pkt.Format.MsgID(bytes)
 	}
@@ -145,7 +150,7 @@ func (pl *PacketLog) LogInput(pkt scan.Packet) {
 	} else {
 		entry.Ascii = pkt.Data
 	}
-	pl.ch <- entry
+	return entry
 }
 
 func useBinary(fmt gpsprot.PacketFormat, bytes []byte) bool {

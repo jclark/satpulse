@@ -1,5 +1,7 @@
 package ubxbin
 
+import "github.com/jclark/satpulse/gps/lib/latin1z"
+
 const (
 	MonCommsID MsgID = clsMon | (0x36 << 8)
 	MonGnssID  MsgID = clsMon | (0x28 << 8)
@@ -204,7 +206,7 @@ type MonGnss1Fixed struct {
 // MonGnssPlan is one signal plan entry (28 bytes).
 type MonGnssPlan struct {
 	ID       uint8        `json:"id"`
-	Name     Latin1Z5     `json:"name"`
+	Name     latin1z.StringZ5     `json:"name"`
 	GpsSup   MonGnssGps   `json:"gpsSup"`
 	GalSup   MonGnssGal   `json:"galSup"`
 	BdsSup   MonGnssBds   `json:"bdsSup"`
@@ -280,13 +282,13 @@ type MonMsgPP struct {
 func (m *MonMsgPP) ID() MsgID { return MonMsgPPID }
 
 type MonVerFixed struct {
-	SwVersion Latin1Z30 `json:"swVersion"`
-	HwVersion Latin1Z10 `json:"hwVersion"`
+	SwVersion latin1z.StringZ30 `json:"swVersion"`
+	HwVersion latin1z.StringZ10 `json:"hwVersion"`
 }
 
 type MonVer struct {
 	MonVerFixed
-	Extension []Latin1Z30 `json:"extension"`
+	Extension []latin1z.StringZ30 `json:"extension"`
 }
 
 func (m *MonVer) ID() MsgID { return MonVerID }
@@ -294,7 +296,7 @@ func (m *MonVer) ID() MsgID { return MonVerID }
 func (m *MonVer) InitVaryingPart(payloadLen int) (err error) {
 	len, err := sliceLen(m, payloadLen, 30+10, 30)
 	if err == nil {
-		m.Extension = make([]Latin1Z30, len)
+		m.Extension = make([]latin1z.StringZ30, len)
 	}
 	return
 }

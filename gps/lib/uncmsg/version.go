@@ -1,10 +1,11 @@
 package uncmsg
 
 import (
-	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/jclark/satpulse/gps/lib/latin1z"
 )
 
 // Message IDs for version-related messages
@@ -142,12 +143,12 @@ func (pm ProductModel) MarshalText() ([]byte, error) {
 // Message ID: 37
 // Contains product model, software version, serial number, and authorization information.
 type Version struct {
-	Type        ProductModel // Product model
-	SwVersion   [33]byte     // Firmware version string
-	Auth        [129]byte    // Authorization type string
-	Psn         [66]byte     // Part number and Serial number
-	EfuseID     [33]byte     // Board ID
-	CompileTime [43]byte     // Firmware compile time
+	Type        ProductModel       // Product model
+	SwVersion   latin1z.StringZ33  // Firmware version string
+	Auth        latin1z.StringZ129 // Authorization type string
+	Psn         latin1z.StringZ66  // Part number and Serial number
+	EfuseID     latin1z.StringZ33  // Board ID
+	CompileTime latin1z.StringZ43  // Firmware compile time
 }
 
 // ID returns the message ID for VERSION
@@ -167,25 +168,25 @@ func (v *Version) QuotedFieldCount() int {
 // Handles both binary format ("13504") and ASCII format ("R4.10Build13504").
 // Returns the build number as an integer.
 func (v *Version) BuildNumber() (int, error) {
-	swVer := string(bytes.TrimRight(v.SwVersion[:], "\x00"))
-	
+	swVer := v.SwVersion.String()
+
 	// Try parsing as pure number first (binary format)
 	if buildNum, err := strconv.Atoi(swVer); err == nil {
 		return buildNum, nil
 	}
-	
+
 	// Look for "Build" followed by digits (ASCII format)
 	buildIndex := strings.Index(swVer, "Build")
 	if buildIndex == -1 {
 		return 0, fmt.Errorf("no build number found in version: %s", swVer)
 	}
-	
+
 	buildStr := swVer[buildIndex+5:] // Skip "Build"
 	buildNum, err := strconv.Atoi(buildStr)
 	if err != nil {
 		return 0, fmt.Errorf("invalid build number in version %s: %v", swVer, err)
 	}
-	
+
 	return buildNum, nil
 }
 
