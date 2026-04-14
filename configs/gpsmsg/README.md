@@ -51,6 +51,7 @@ This can help with seeing whether your receiver is handling the commands correct
 | [bynav.toml](bynav.toml) | Bynav M2 | NovAtel-style commands |
 | [techtotop.toml](techtotop.toml) | Techtotop/Taidou T303-5D | SDBP binary |
 | [um980.toml](um980.toml) | Unicore UM980 | Unicore commands |
+| [um982.toml](um982.toml) | Unicore UM982 (dual antenna) | Unicore commands (includes um980.toml) |
 | [lc29h.toml](lc29h.toml) | Quectel LC29H | NMEA (PQTM, PAIR) |
 
 ## Configuring for satpulsed
