@@ -15,17 +15,17 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/desktop/serialenum"
 	"github.com/jclark/satpulse/gps/app/bcast"
-	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsdecode"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/msgfile"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
@@ -70,6 +70,7 @@ type App struct {
 	lg           *slog.Logger
 	mu           sync.Mutex
 	state        ConnState
+	corrState    CorrEvent
 	conn         gpsio.Conn
 	connCtx      context.Context
 	connCancel   context.CancelFunc
@@ -92,7 +93,10 @@ type App struct {
 
 // NewApp creates a new App.
 func NewApp() *App {
-	return &App{state: StateDisconnected}
+	return &App{
+		state:     StateDisconnected,
+		corrState: CorrEvent{State: "stopped"},
+	}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -136,7 +140,6 @@ func (a *App) setEndState(target ConnState) ConnState {
 	runtime.EventsEmit(a.ctx, "gps:state", target)
 	return target
 }
-
 
 // cancelWorkerLocked cancels the response worker and invalidates its session
 // so any in-flight gps:response events are dropped by the frontend.
@@ -221,11 +224,11 @@ func (a *App) Connect(device string, speed int) Result {
 
 // ReceiverEvent is emitted as the "gps:receiver" event payload.
 type ReceiverEvent struct {
-	OK            bool                              `json:"ok"`
-	Error         string                            `json:"error,omitempty"`
-	Warning       string                            `json:"warning,omitempty"`
-	Info          opt.Val[gpsprot.ReceiverInfo]      `json:",omitzero"`
-	PacketFormats []string                           `json:"packetFormats,omitempty"`
+	OK            bool                          `json:"ok"`
+	Error         string                        `json:"error,omitempty"`
+	Warning       string                        `json:"warning,omitempty"`
+	Info          opt.Val[gpsprot.ReceiverInfo] `json:",omitzero"`
+	PacketFormats []string                      `json:"packetFormats,omitempty"`
 }
 
 // packetWorker is the single goroutine that owns packet processing.
@@ -327,23 +330,50 @@ func (a *App) GetReceiverState() ReceiverEvent {
 // Disconnect closes the GPS connection.
 func (a *App) Disconnect() Result {
 	a.mu.Lock()
-	hadCorr := a.corrCancel != nil
 	a.closeLocked()
 	a.probe = ReceiverEvent{}
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:state", StateDisconnected)
-	if hadCorr {
-		runtime.EventsEmit(a.ctx, "gps:corrections", CorrEvent{State: "stopped"})
-	}
 	return Result{OK: true}
 }
 
 // CorrEvent is the payload for "gps:corrections" events.
 type CorrEvent struct {
-	State string `json:"state"`           // "connecting", "connected", "reconnecting", "stopped"
-	Host  string `json:"host,omitempty"`
-	Port  int    `json:"port,omitempty"`
-	Error string `json:"error,omitempty"` // last error (set during reconnecting)
+	State      string `json:"state"`          // "connecting", "connected", "reconnecting", "stopped"
+	Mode       string `json:"mode,omitempty"` // "tcp" or "ntrip"
+	Host       string `json:"host,omitempty"`
+	Port       int    `json:"port,omitempty"`
+	Mountpoint string `json:"mountpoint,omitempty"` // ntrip only
+	Error      string `json:"error,omitempty"`      // last error (set during reconnecting)
+}
+
+func (a *App) setCorrStateLocked(ev CorrEvent) {
+	a.corrState = ev
+}
+
+func (a *App) emitCorrState(ev CorrEvent) {
+	a.mu.Lock()
+	a.setCorrStateLocked(ev)
+	a.mu.Unlock()
+	runtime.EventsEmit(a.ctx, "gps:corrections", ev)
+}
+
+// GetCorrectionsState returns the last known corrections state.
+func (a *App) GetCorrectionsState() CorrEvent {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.corrState
+}
+
+// CorrectionSource is the configuration passed from the frontend to
+// start a correction session.
+type CorrectionSource struct {
+	Mode       string `json:"mode"` // "tcp" or "ntrip"
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	Mountpoint string `json:"mountpoint"` // ntrip only
+	Username   string `json:"username"`   // ntrip only, may be empty
+	Password   string `json:"password"`   // ntrip only, may be empty
 }
 
 // CorrPacketEvent is the payload for "gps:corrpacket" events.
@@ -362,12 +392,27 @@ type BaseARPEvent struct {
 
 // StartCorrections dials the remote address and starts forwarding
 // correction packets to the GPS receiver.
-func (a *App) StartCorrections(host string, port int) Result {
-	if host == "" {
+func (a *App) StartCorrections(cfg CorrectionSource) Result {
+	if cfg.Host == "" {
 		return Result{Error: "host is required"}
 	}
-	if port <= 0 || port > 65535 {
+	if cfg.Port <= 0 || cfg.Port > 65535 {
 		return Result{Error: "invalid port"}
+	}
+	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	var source stream.Source
+	switch cfg.Mode {
+	case "tcp":
+		source = &stream.TCPSource{Addr: addr}
+	case "ntrip":
+		source = &stream.NTRIPSource{
+			Addr:       addr,
+			Mountpoint: cfg.Mountpoint,
+			Username:   cfg.Username,
+			Password:   cfg.Password,
+		}
+	default:
+		return Result{Error: "invalid source mode"}
 	}
 	a.mu.Lock()
 	if a.state != StateConnected {
@@ -388,9 +433,14 @@ func (a *App) StartCorrections(host string, port int) Result {
 	a.corrCancel = corrCancel
 	wg := &sync.WaitGroup{}
 	a.corrWg = wg
-	addr := fmt.Sprintf("%s:%d", host, port)
 	sink := stream.NewPull()
-	source := &stream.TCPSource{Addr: addr}
+	a.setCorrStateLocked(CorrEvent{
+		State:      "connecting",
+		Mode:       cfg.Mode,
+		Host:       cfg.Host,
+		Port:       cfg.Port,
+		Mountpoint: cfg.Mountpoint,
+	})
 	// Find RTCM packet formats for the scanner.
 	var rtcmFormats []gpsprot.PacketFormat
 	for _, pf := range gpsreg.CreatePacketFormats(gpsreg.VendorUnknown) {
@@ -399,11 +449,17 @@ func (a *App) StartCorrections(host string, port int) Result {
 		}
 	}
 	onState := func(s stream.State, err error) {
-		ev := CorrEvent{State: s.String(), Host: host, Port: port}
+		ev := CorrEvent{
+			State:      s.String(),
+			Mode:       cfg.Mode,
+			Host:       cfg.Host,
+			Port:       cfg.Port,
+			Mountpoint: cfg.Mountpoint,
+		}
 		if err != nil {
 			ev.Error = err.Error()
 		}
-		runtime.EventsEmit(a.ctx, "gps:corrections", ev)
+		a.emitCorrState(ev)
 	}
 	// Subscribe before starting goroutines to avoid missing packets.
 	pktSub := sink.Packets.Subscribe()
@@ -447,6 +503,13 @@ func (a *App) StartCorrections(host string, port int) Result {
 	})
 	wg.Go(func() {
 		sink.Run(corrCtx, a.lg, source, conn, portLock, rtcmFormats, onState)
+		a.emitCorrState(CorrEvent{
+			State:      "stopped",
+			Mode:       cfg.Mode,
+			Host:       cfg.Host,
+			Port:       cfg.Port,
+			Mountpoint: cfg.Mountpoint,
+		})
 	})
 	// Bridge into connWg using a captured wg, so the connWg goroutine
 	// is independent of a.corrWg and won't conflict with a new session.
@@ -464,7 +527,6 @@ func (a *App) StopCorrections() Result {
 	}
 	a.stopCorrLocked()
 	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:corrections", CorrEvent{State: "stopped"})
 	return Result{OK: true}
 }
 
@@ -473,6 +535,7 @@ func (a *App) StopCorrections() Result {
 // temporarily releases a.mu while waiting.
 func (a *App) stopCorrLocked() {
 	if a.corrCancel == nil {
+		a.setCorrStateLocked(CorrEvent{State: "stopped"})
 		return
 	}
 	a.corrCancel()
@@ -576,8 +639,6 @@ func (a *App) ApplyConfig(cfg gpsprot.ConfigTarget) Result {
 	return r
 }
 
-
-
 // DecodeOptions controls how DecodePacket interprets its input.
 type DecodeOptions struct {
 	Hex bool `json:"hex"` // data is hex-encoded binary
@@ -664,7 +725,7 @@ type MsgSendEvent struct {
 // ResponseEvent is emitted as "gps:response" during SendMsgFile.
 type ResponseEvent struct {
 	Session    int    `json:"session"`
-	Kind       string `json:"kind"`              // "ack", "other", "maybe"
+	Kind       string `json:"kind"`               // "ack", "other", "maybe"
 	ResponseTo int    `json:"responseTo"`         // 0-based index of sent message, or -1
 	MsgCount   int    `json:"msgCount,omitempty"` // ack only: total messages sent for this tag
 	AckError   string `json:"ackError,omitempty"` // ack only: empty = accepted, non-empty = rejected
