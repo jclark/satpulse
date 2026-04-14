@@ -1,9 +1,9 @@
-import {h, Fragment} from 'preact';
+import {h} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
 import {GetCorrectionsState, StartCorrections, StopCorrections} from '../wailsjs/go/main/App';
 import type {ConnState} from './app';
-import {Button, Input, fieldLabelText, labeledControlText} from './ui';
+import {Button, Input, Select, cx, fieldLabelText} from './ui';
 import {RtcmPanel} from './rtcm-panel';
 
 type CorrState = 'stopped' | 'connecting' | 'connected' | 'reconnecting';
@@ -55,9 +55,6 @@ export function CorrectionsPanel({connState}: Props) {
     const [password, setPassword] = useState(() => localStorage.getItem(LS_PASSWORD_KEY) || '');
     const [corrState, setCorrState] = useState<CorrState | null>(null);
     const [corrError, setCorrError] = useState('');
-    const [statusHost, setStatusHost] = useState('');
-    const [statusPort, setStatusPort] = useState<number | null>(null);
-    const [statusMountpoint, setStatusMountpoint] = useState('');
     const [pending, setPending] = useState<'start' | 'stop' | null>(null);
     const pendingRef = useRef<'start' | 'stop' | null>(null);
     const corrEventSeqRef = useRef(0);
@@ -78,9 +75,6 @@ export function CorrectionsPanel({connState}: Props) {
     const applyCorrEvent = useCallback((evt: CorrEvent) => {
         setCorrState(evt.state);
         setCorrError(evt.state === 'reconnecting' && evt.error ? evt.error : '');
-        setStatusHost(evt.host || '');
-        setStatusPort(typeof evt.port === 'number' ? evt.port : null);
-        setStatusMountpoint(evt.mountpoint || '');
         if (evt.state === 'stopped') {
             if (pendingRef.current !== null) setPendingSync(null);
         } else if (pendingRef.current === 'start') {
@@ -116,9 +110,6 @@ export function CorrectionsPanel({connState}: Props) {
         if (!connected) {
             setCorrState('stopped');
             setCorrError('');
-            setStatusHost('');
-            setStatusPort(null);
-            setStatusMountpoint('');
             setPendingSync(null);
         }
     }, [connected, setPendingSync]);
@@ -167,51 +158,39 @@ export function CorrectionsPanel({connState}: Props) {
     const locked = running || pending !== null;
     const fieldsDisabled = !connected || locked;
 
+    let dotClass = 'bg-text-muted';
+    if (corrState === 'connected') dotClass = 'bg-success';
+    else if (corrState === 'reconnecting') dotClass = 'bg-danger';
+    else if (corrState === 'connecting') dotClass = 'bg-warning';
+
     let statusText = '';
     let statusClass = 'text-text-muted';
-    const addrHost = statusHost || host;
-    const addrPort = statusPort ?? (portOk ? portNum : null);
-    const addr = addrPort !== null
-        ? `${addrHost}:${addrPort}${statusMountpoint ? '/' + statusMountpoint : ''}`
-        : '';
-    switch (corrState) {
-        case 'connected':
-            statusText = `Connected to ${addr}`;
-            statusClass = 'text-success';
-            break;
-        case 'connecting':
-            statusText = `Connecting to ${addr}...`;
-            statusClass = 'text-info';
-            break;
-        case 'reconnecting':
-            statusText = `Reconnecting: ${corrError || 'connection lost'}`;
-            statusClass = 'text-warning';
-            break;
-        case 'stopped':
-            break;
+    if (corrState === 'reconnecting') {
+        statusText = `Reconnecting: ${corrError || 'connection lost'}`;
+        statusClass = 'text-warning';
+    } else if (corrError) {
+        statusText = corrError;
+        statusClass = 'text-danger';
     }
+
+    const ntripDisabled = fieldsDisabled || mode !== 'ntrip';
 
     return (
         <div class="flex h-full flex-col">
-            <div class="flex shrink-0 items-center gap-4 px-4 pt-4 pb-2">
-                {([['ntrip', 'NTRIP'], ['tcp', 'TCP']] as const).map(([val, label]) => (
-                    <label key={val} class={labeledControlText(fieldsDisabled)}>
-                        <input
-                            type="radio"
-                            name="corrMode"
-                            class="accent-accent mr-1.5"
-                            checked={mode === val}
-                            disabled={fieldsDisabled}
-                            onChange={() => handleModeChange(val)}
-                        />
-                        {label}
-                    </label>
-                ))}
-            </div>
-            <div class="flex shrink-0 items-center gap-3 px-4 pb-2">
-                <span class={fieldLabelText(!connected)}>Host:</span>
+            <div class="flex shrink-0 items-center gap-3 px-4 pt-4 pb-2">
+                <Select
+                    class="w-24"
+                    value={mode}
+                    onChange={e => handleModeChange((e.target as HTMLSelectElement).value as CorrMode)}
+                    disabled={fieldsDisabled}
+                >
+                    <option value="ntrip">NTRIP</option>
+                    <option value="tcp">TCP</option>
+                </Select>
+                <div class={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`} />
+                <span class={cx(fieldLabelText(!connected), 'w-8 shrink-0')}>Host:</span>
                 <Input
-                    class="w-48"
+                    class="w-40"
                     value={host}
                     onInput={e => setHost((e.target as HTMLInputElement).value)}
                     disabled={fieldsDisabled}
@@ -226,46 +205,41 @@ export function CorrectionsPanel({connState}: Props) {
                     disabled={fieldsDisabled}
                     placeholder={mode === 'ntrip' ? NTRIP_DEFAULT_PORT : ''}
                 />
-                {mode === 'ntrip' && (
-                    <>
-                        <span class={fieldLabelText(!connected)}>Mountpoint:</span>
-                        <Input
-                            class="w-40"
-                            value={mountpoint}
-                            onInput={e => setMountpoint((e.target as HTMLInputElement).value)}
-                            disabled={fieldsDisabled}
-                        />
-                    </>
-                )}
-            </div>
-            {mode === 'ntrip' && (
-                <div class="flex shrink-0 items-center gap-3 px-4 pb-2">
-                    <span class={fieldLabelText(!connected)}>Username:</span>
-                    <Input
-                        class="w-32"
-                        value={username}
-                        onInput={e => setUsername((e.target as HTMLInputElement).value)}
-                        disabled={fieldsDisabled}
-                    />
-                    <span class={fieldLabelText(!connected)}>Password:</span>
-                    <Input
-                        class="w-32"
-                        type="password"
-                        value={password}
-                        onInput={e => setPassword((e.target as HTMLInputElement).value)}
-                        disabled={fieldsDisabled}
-                    />
-                </div>
-            )}
-            <div class="flex shrink-0 items-center gap-3 px-4 pb-2">
+                <span class={fieldLabelText(ntripDisabled)}>Mountpoint:</span>
+                <Input
+                    class="w-40"
+                    value={mountpoint}
+                    onInput={e => setMountpoint((e.target as HTMLInputElement).value)}
+                    disabled={ntripDisabled}
+                />
                 <Button
+                    class="ml-auto"
                     variant={running ? 'secondary' : 'primary'}
                     disabled={!synced || pending !== null || !connected || (!running && !canStart)}
                     onClick={handleToggle}
                 >
                     {running ? 'Disconnect' : 'Connect'}
                 </Button>
-                <span class={`text-xs ${statusClass}`}>{statusText}</span>
+            </div>
+            <div class="flex shrink-0 items-center gap-3 px-4 pb-2">
+                <div class="w-24 shrink-0 invisible" />
+                <div class="h-2.5 w-2.5 shrink-0 invisible" />
+                <span class={cx(fieldLabelText(ntripDisabled), 'w-8 shrink-0')}>User:</span>
+                <Input
+                    class="w-40"
+                    value={username}
+                    onInput={e => setUsername((e.target as HTMLInputElement).value)}
+                    disabled={ntripDisabled}
+                />
+                <span class={fieldLabelText(ntripDisabled)}>Password:</span>
+                <Input
+                    class="w-32"
+                    type="password"
+                    value={password}
+                    onInput={e => setPassword((e.target as HTMLInputElement).value)}
+                    disabled={ntripDisabled}
+                />
+                <span class={cx('ml-auto text-xs', statusClass)}>{statusText}</span>
             </div>
 
             <RtcmPanel connected={connected} />
