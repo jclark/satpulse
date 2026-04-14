@@ -21,6 +21,7 @@ interface MsgRow {
 
 interface Props {
     connected: boolean;
+    sessionSeq: number;
 }
 
 function formatAge(ms: number): string {
@@ -28,7 +29,7 @@ function formatAge(ms: number): string {
     return Math.floor(ms / 1000) + 's';
 }
 
-export function RtcmPanel({connected}: Props) {
+export function RtcmPanel({connected, sessionSeq}: Props) {
     const rowsRef = useRef<Map<string, MsgRow>>(new Map());
     const [displayed, setDisplayed] = useState<Map<string, MsgRow>>(new Map());
     const [tick, setTick] = useState(0);
@@ -86,6 +87,12 @@ export function RtcmPanel({connected}: Props) {
             setDisplayed(new Map());
         }
     }, [connected]);
+
+    // Clear when a new corrections session starts
+    useEffect(() => {
+        rowsRef.current = new Map();
+        setDisplayed(new Map());
+    }, [sessionSeq]);
 
     // 1-second tick for age updates
     useEffect(() => {

@@ -56,6 +56,7 @@ export function CorrectionsPanel({connState}: Props) {
     const [corrState, setCorrState] = useState<CorrState | null>(null);
     const [corrError, setCorrError] = useState('');
     const [pending, setPending] = useState<'start' | 'stop' | null>(null);
+    const [sessionSeq, setSessionSeq] = useState(0);
     const pendingRef = useRef<'start' | 'stop' | null>(null);
     const corrEventSeqRef = useRef(0);
     const setPendingSync = useCallback((p: 'start' | 'stop' | null) => {
@@ -140,6 +141,7 @@ export function CorrectionsPanel({connState}: Props) {
             if (!canStart) return;
             setPendingSync('start');
             setCorrError('');
+            setSessionSeq(s => s + 1);
             const r = await StartCorrections({
                 mode,
                 host,
@@ -242,7 +244,7 @@ export function CorrectionsPanel({connState}: Props) {
                 <span class={cx('ml-auto text-xs', statusClass)}>{statusText}</span>
             </div>
 
-            <RtcmPanel connected={connected} />
+            <RtcmPanel connected={connected} sessionSeq={sessionSeq} />
         </div>
     );
 }
