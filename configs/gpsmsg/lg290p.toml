@@ -509,6 +509,19 @@ text = "PQTMCFGMSGRATE,W,PQTMPL,0,1"
 tag = "pqtm-pl-off"
 description = "Disable PQTMPL message"
 
+# Enable PQTMPPPNAV message (PPP position result)
+# Added in R02A01S firmware - requires newer firmware
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMPPPNAV,1,1"
+tag = "pqtm-pppnav"
+description = "Enable PQTMPPPNAV message (rate of one per fix)"
+
+# Disable PQTMPPPNAV message
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMPPPNAV,0,1"
+tag = "pqtm-pppnav-off"
+description = "Disable PQTMPPPNAV message"
+
 # Enable PQTMSVINSTATUS message (survey-in status)
 # Does not work on R02 firmware
 [[nmea]]
@@ -607,6 +620,26 @@ tag = "pqtm-r01a05-off"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMDOP,0,1"
 tag = "pqtm-r01a05-off"
+
+# PPP (Precise Point Positioning)
+# Mode=2 (E6 HAS), Datum=1 (WGS84), Timeout=120s,
+# Horizontal=0.10m, Vertical=0.15m convergence accuracy thresholds
+[[nmea]]
+text = "PQTMCFGPPP,W,2,1,120,0.10,0.15"
+tag = "ppp-has"
+description = "Enable PPP with Galileo E6 HAS source"
+
+# Mode=1 (B2b PPP), Datum=1 (WGS84), other params as defaults
+[[nmea]]
+text = "PQTMCFGPPP,W,1,1,120,0.10,0.15"
+tag = "ppp-b2b"
+description = "Enable PPP with BeiDou B2b source"
+
+# Mode=0 (Disable)
+[[nmea]]
+text = "PQTMCFGPPP,W,0"
+tag = "ppp-off"
+description = "Disable PPP"
 
 # Base station mode (disables NMEA, enables RTCM MSM4/1005)
 [[nmea]]
