@@ -69,16 +69,17 @@ type RequestClass struct {
 // ClassifyRequest classifies a sent NMEA payload (between $ and *).
 //
 // Classification logic:
-//   - Contains ",W," -> RequestCommand (write)
-//   - Contains ",R," -> RequestQuery (read)
+//   - Second field is "W" -> RequestCommand (write)
+//   - Second field is "R" -> RequestQuery (read)
 //   - Sentence is PQTMVERNO -> RequestVerno
 //   - Otherwise -> RequestCommand (default)
 func ClassifyRequest(sent string) RequestClass {
-	name, _, _ := strings.Cut(sent, ",")
-	if strings.Contains(sent, ",W,") {
+	name, rest, _ := strings.Cut(sent, ",")
+	second, _, _ := strings.Cut(rest, ",")
+	switch second {
+	case "W":
 		return RequestClass{Kind: RequestCommand, Sentence: name}
-	}
-	if strings.Contains(sent, ",R,") {
+	case "R":
 		return RequestClass{Kind: RequestQuery, Sentence: name}
 	}
 	if name == "PQTMVERNO" {
