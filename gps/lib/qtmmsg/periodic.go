@@ -173,6 +173,8 @@ func (*NAV) ID() (string, uint8) { return "NAV", 1 }
 
 // PPPNAV represents a PQTMPPPNAV PPP navigation information message.
 // Same layout as NAV except field 8 is Datumid instead of reserved.
+// LG290P firmware R02A01S appends one extra trailing reserved field
+// beyond the v1.0 spec; Res18 absorbs it.
 type PPPNAV struct {
 	TimeStatus uint8           // 0=invalid, 1=valid
 	TimeRef    uint8           // 1=GPS
@@ -216,6 +218,7 @@ type PPPNAV struct {
 	COG        opt.Val[float64] // deg, 0-360
 	Res16      skip
 	Res17      skip
+	Res18      skip
 }
 
 func (*PPPNAV) periodicMsg()        {}
