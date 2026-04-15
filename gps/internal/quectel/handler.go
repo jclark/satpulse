@@ -49,6 +49,11 @@ func (h *Handler) HandleSentence(
 		msgs := msgsNAV(m, epoch)
 		gpsprot.SetMsgsPriority(msgs, gpsprot.PriVendorLow)
 		return msgs, epoch, nil
+	case *qtmmsg.PPPNAV:
+		epoch = nmea.CheckEpoch(epoch, m.UTC)
+		msgs := msgsPPPNAV(m, epoch)
+		gpsprot.SetMsgsPriority(msgs, gpsprot.PriVendorLow)
+		return msgs, epoch, nil
 	case *qtmmsg.VEL:
 		epoch = nmea.CheckEpoch(epoch, m.Time)
 		msgs := msgsVEL(m, epoch)
@@ -224,6 +229,88 @@ func msgsNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) []gpsprot.Msg {
 	return msgs
 }
 
+func msgsPPPNAV(m *qtmmsg.PPPNAV, epoch *nmea.NavEpoch) []gpsprot.Msg {
+	var msgs []gpsprot.Msg
+	if m.TimeStatus == 1 {
+		if utc, ok := parseDateTime(m.Date, m.UTC); ok {
+			tm := &gpsprot.TimeMsg{
+				UTCTime:     &utc,
+				Tag:         nmea.Tag,
+				NativeMsgID: "PQTMPPPNAV",
+			}
+			if m.WN.IsSet() && m.TOW.IsSet() {
+				tm.TAITime = ptime.GPS(int16(m.WN.Get()), time.Duration(m.TOW.Get())*time.Millisecond)
+			}
+			if m.LeapSec.IsSet() {
+				tm.UTCOffset = m.LeapSec.Get() + ptime.TAIMinusGPS
+			}
+			msgs = append(msgs, tm)
+		}
+	}
+	if m.Lat.IsSet() && m.Lon.IsSet() {
+		pos := &gpsprot.PosGeoMsg{
+			LatLon: [2]gpsprot.Angle{
+				gpsprot.DegreesFromFloat(m.Lat.Get()),
+				gpsprot.DegreesFromFloat(m.Lon.Get()),
+			},
+			Tag:         nmea.Tag,
+			NativeMsgID: "PQTMPPPNAV",
+		}
+		if m.Alt.IsSet() {
+			pos.HeightMSL.Set(gpsprot.Meters(m.Alt.Get()))
+			if m.Sep.IsSet() {
+				pos.Height.Set(gpsprot.Meters(m.Alt.Get() + m.Sep.Get()))
+			}
+		}
+		msgs = append(msgs, pos)
+	}
+	if m.HVel.IsSet() {
+		vel := &gpsprot.VelGeoMsg{
+			Tag:         nmea.Tag,
+			NativeMsgID: "PQTMPPPNAV",
+		}
+		vel.GroundSpeed.Set(gpsprot.MetersPerSecondFromFloat(m.HVel.Get()))
+		if m.COG.IsSet() {
+			vel.Course.Set(gpsprot.DegreesFromFloat(m.COG.Get()))
+		}
+		msgs = append(msgs, vel)
+	}
+	if m.LatStd.IsSet() && m.LonStd.IsSet() {
+		lat, lon := m.LatStd.Get(), m.LonStd.Get()
+		epoch.Acc.Hor.Set(gpsprot.Meters(math.Sqrt(lat*lat + lon*lon)))
+	}
+	if m.AltStd.IsSet() {
+		epoch.Acc.Vert.Set(gpsprot.Meters(m.AltStd.Get()))
+	}
+	if m.HVelStd.IsSet() {
+		epoch.Acc.GroundSpeed.Set(gpsprot.MetersPerSecondFromFloat(m.HVelStd.Get()))
+	}
+	if m.SolType.IsSet() {
+		if fl, fd, corr, ok := navSolQuality(m.SolType.Get()); ok {
+			epoch.FixLevel = fl
+			epoch.SolutionDim = fd
+			epoch.Correction = corr
+		}
+	}
+	if m.SatUsed.IsSet() {
+		epoch.NumSVUsed = opt.Make(uint16(m.SatUsed.Get()))
+	}
+	if m.SatView.IsSet() {
+		epoch.NumSVInView = opt.Make(uint16(m.SatView.Get()))
+	}
+	if m.DiffAge.IsSet() {
+		epoch.DiffAge = opt.Make(gpsprot.Seconds(m.DiffAge.Get()))
+	}
+	if m.DiffID.IsSet() {
+		if c := pppDiffIDCorrection(m.DiffID.Get()); c != 0 {
+			epoch.Correction |= c.Expand()
+		} else if m.DiffID.Get() <= 4095 {
+			epoch.RTCMRefBaseID = opt.Make(m.DiffID.Get())
+		}
+	}
+	return msgs
+}
+
 func msgsVEL(m *qtmmsg.VEL, epoch *nmea.NavEpoch) []gpsprot.Msg {
 	var msgs []gpsprot.Msg
 	if m.VelN.IsSet() && m.VelE.IsSet() && m.VelD.IsSet() {
@@ -271,7 +358,7 @@ func accEPE(m *qtmmsg.EPE, epoch *nmea.NavEpoch) {
 	}
 }
 
-// navSolQuality maps PQTMNAV SolType to NavEpochMsg quality fields.
+// navSolQuality maps PQTMNAV/PQTMPPPNAV SolType to NavEpochMsg quality fields.
 // Returns false for unrecognized SolType values so the caller can
 // preserve existing epoch state rather than zeroing it.
 func navSolQuality(solType uint8) (gpsprot.FixLevel, gpsprot.SolutionDim, gpsprot.CorrKind, bool) {
@@ -286,6 +373,12 @@ func navSolQuality(solType uint8) (gpsprot.FixLevel, gpsprot.SolutionDim, gpspro
 	case 5:
 		return gpsprot.FixLevelCode, gpsprot.SolutionDim3D,
 			gpsprot.CorrOSR | gpsprot.CorrUsed, true
+	case 6:
+		return gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D,
+			(gpsprot.CorrPPPConverging | gpsprot.CorrUsed).Expand(), true
+	case 7:
+		return gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D,
+			(gpsprot.CorrPPPConverged | gpsprot.CorrUsed).Expand(), true
 	case 8:
 		return gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D,
 			gpsprot.CorrOSR | gpsprot.CorrUsed, true
@@ -295,6 +388,19 @@ func navSolQuality(solType uint8) (gpsprot.FixLevel, gpsprot.SolutionDim, gpspro
 	default:
 		return 0, 0, 0, false
 	}
+}
+
+// pppDiffIDCorrection maps a PQTMPPPNAV DiffID magic value to its PPP
+// service correction kind. Returns 0 for non-magic values (which the
+// caller should treat as a regular RTCM reference station ID).
+func pppDiffIDCorrection(diffID uint16) gpsprot.CorrKind {
+	switch diffID {
+	case 9001:
+		return gpsprot.CorrPPPB2b
+	case 9002:
+		return gpsprot.CorrPPPHAS
+	}
+	return 0
 }
 
 func dopQuality(m *qtmmsg.DOP, epoch *nmea.NavEpoch) {
