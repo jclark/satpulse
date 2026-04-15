@@ -374,6 +374,27 @@ text = "PQTMCFGMSGRATE,W,GLL,0"
 tag = "nmea-gll-off"
 description = "Disable NMEA GLL message"
 
+# Disable all NMEA messages
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RMC,0"
+tag = "nmea-off"
+description = "Disable all NMEA messages"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GGA,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,VTG,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSV,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GSA,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GLL,0"
+tag = "nmea-off"
+
 # Enable NMEA messages for satpulse daemon (RMC, GGA, GSV, GSA)
 # Verified RMC, GGA, GSV, GSA messages all appear in capture after enable on LG290P
 [[nmea]]
