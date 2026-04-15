@@ -171,6 +171,56 @@ type NAV struct {
 func (*NAV) periodicMsg()        {}
 func (*NAV) ID() (string, uint8) { return "NAV", 1 }
 
+// PPPNAV represents a PQTMPPPNAV PPP navigation information message.
+// Same layout as NAV except field 8 is Datumid instead of reserved.
+type PPPNAV struct {
+	TimeStatus uint8           // 0=invalid, 1=valid
+	TimeRef    uint8           // 1=GPS
+	UTC        string          // hhmmss.sss
+	Date       string          // yyyymmdd
+	TOW        opt.Val[uint32] // ms, GPS time of week
+	WN         opt.Val[uint16] // GPS week number
+	LeapSec    opt.Val[uint8]  // seconds
+	Datumid    opt.Val[uint8]  // 1=WGS84, 2=PPP original, 3=CGCS2000
+	Res1       skip
+	SolType    opt.Val[uint8] // 0=none, 1=single, 2=SBAS, 5=DGPS, 6=PPP converging, 7=PPP convergenced, 8=RTK float, 12=RTK fixed
+	Res2       skip
+	Lat        opt.Val[float64] // deg
+	Lon        opt.Val[float64] // deg
+	Alt        opt.Val[float64] // m, above MSL
+	Sep        opt.Val[float64] // m, geoidal separation
+	Res3       skip
+	Res4       skip
+	LatStd     opt.Val[float64] // m
+	LonStd     opt.Val[float64] // m
+	AltStd     opt.Val[float64] // m
+	Res5       skip
+	Res6       skip
+	DiffID     opt.Val[uint16]  // 9001=B2b PPP, 9002=E6 HAS
+	DiffAge    opt.Val[float64] // seconds
+	Res7       skip
+	SatView    opt.Val[decUint8] // satellites in view
+	SatUsed    opt.Val[decUint8] // satellites in use
+	Res8       skip
+	Res9       skip
+	Res10      skip
+	Res11      skip
+	Res12      skip
+	Res13      skip
+	HVel       opt.Val[float64] // m/s
+	VVel       opt.Val[float64] // m/s, upward positive
+	HVelStd    opt.Val[float64] // m/s
+	VVelStd    opt.Val[float64] // m/s
+	Res14      skip
+	Res15      skip
+	COG        opt.Val[float64] // deg, 0-360
+	Res16      skip
+	Res17      skip
+}
+
+func (*PPPNAV) periodicMsg()        {}
+func (*PPPNAV) ID() (string, uint8) { return "PPPNAV", 1 }
+
 // GeofenceStatus represents a PQTMGEOFENCESTATUS geofence status message.
 type GeofenceStatus struct {
 	Time   string // hhmmss.sss, UTC
@@ -327,6 +377,7 @@ func init() {
 	regPeriodic[DOP]()
 	regPeriodic[SVINStatus]()
 	regPeriodic[NAV]()
+	regPeriodic[PPPNAV]()
 	regPeriodic[EOE]()
 	regPeriodic[GeofenceStatus]()
 	regPeriodic[TXT]()
