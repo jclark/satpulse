@@ -74,32 +74,7 @@ func (cm *CASBINMsg) analyzeRequest(data string) requestAnalysis {
 		}
 	}
 	if mid == casbin.CfgMsgID {
-		if payloadLen <= 0 {
-			// All-rates query: ACK + multiple CFG-MSG data responses.
-			return requestAnalysis{
-				ackTag:       gpsreg.TagCASICBin,
-				ackCorrelate: corr,
-				expectAck:    ExpectAckOrNak,
-				dataTag:      gpsreg.TagCASICBin,
-				expectData:   expectDataMultiple,
-				dataMatch:    casbinDataMatch(mid),
-			}
-		}
-		// Single-message poll: rate field is 0xFFFF.
-		// Payload: target_class(1) + target_id(1) + rate(2).
-		payload := data[casbin.HeaderLen : len(data)-casbin.TrailerLen]
-		if len(payload) >= 4 && payload[2] == 0xFF && payload[3] == 0xFF {
-			polledMid := casbin.MakeMsgID(payload[0], payload[1])
-			return requestAnalysis{
-				ackTag:       gpsreg.TagCASICBin,
-				ackCorrelate: corr,
-				expectAck:    ExpectAckOrNak,
-				dataTag:      gpsreg.TagCASICBin,
-				expectData:   expectDataSingle,
-				dataMatch:    casbinDataMatch(polledMid),
-			}
-		}
-		// Regular CFG-MSG set (falls through to CFG set below).
+		return analyzeCfgMsgRequest(data, corr, payloadLen)
 	}
 	if mid.CfgClass() {
 		a := requestAnalysis{
@@ -122,6 +97,41 @@ func (cm *CASBINMsg) analyzeRequest(data string) requestAnalysis {
 		dataTag:    gpsreg.TagCASICBin,
 		expectData: expectDataAmbig,
 		dataMatch:  casbinDataMatch(mid),
+	}
+}
+
+// analyzeCfgMsgRequest analyzes a CFG-MSG request. Three forms:
+// empty payload polls all message rates; 4-byte payload with rate=0xFFFF
+// polls one specific message; 4-byte payload with any other rate is a set.
+func analyzeCfgMsgRequest(data, corr string, payloadLen int) requestAnalysis {
+	if payloadLen <= 0 {
+		return requestAnalysis{
+			ackTag:       gpsreg.TagCASICBin,
+			ackCorrelate: corr,
+			expectAck:    ExpectAckOrNak,
+			dataTag:      gpsreg.TagCASICBin,
+			expectData:   expectDataMultiple,
+			dataMatch:    casbinDataMatch(casbin.CfgMsgID),
+		}
+	}
+	// Payload: target_class(1) + target_id(1) + rate(2).
+	payload := data[casbin.HeaderLen : len(data)-casbin.TrailerLen]
+	if len(payload) >= 4 && payload[2] == 0xFF && payload[3] == 0xFF {
+		polledMid := casbin.MakeMsgID(payload[0], payload[1])
+		return requestAnalysis{
+			ackTag:       gpsreg.TagCASICBin,
+			ackCorrelate: corr,
+			expectAck:    ExpectAckOrNak,
+			dataTag:      gpsreg.TagCASICBin,
+			expectData:   expectDataSingle,
+			dataMatch:    casbinDataMatch(polledMid),
+		}
+	}
+	return requestAnalysis{
+		ackTag:       gpsreg.TagCASICBin,
+		ackCorrelate: corr,
+		expectAck:    ExpectAckOrNak,
+		expectData:   expectDataNone,
 	}
 }
 
