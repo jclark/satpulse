@@ -218,6 +218,26 @@ func TestCorrelatorCASBIN(t *testing.T) {
 			},
 		},
 		{
+			name: "CFG-MSG set ACK",
+			tags: []string{"set-nav-dop"},
+			events: []event{
+				sendEvent{},
+				recvCASBINAck(casbin.CfgMsgID),
+				expect{ack: AckAck, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
+		},
+		{
+			name: "CFG-MSG set NAK",
+			tags: []string{"set-nav-dop"},
+			events: []event{
+				sendEvent{},
+				recvCASBINNak(casbin.CfgMsgID),
+				expect{ack: AckNak, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
+		},
+		{
 			name: "CFG-MSG all-rates ACK then multiple data",
 			tags: []string{"get-all-rates"},
 			events: []event{
