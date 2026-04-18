@@ -121,7 +121,7 @@ func (buf *Buffer) serialSample(msg *gpsprot.TimeMsg, tRead time.Time) {
 		return
 	}
 	buf.lastSerialUTC = utc
-	buf.serialSampler.SerialSample(utc, tRead, buf.ls.UTCStateAt(ut).LeapTonight)
+	buf.serialSampler.SerialSample(utc, tRead.Add(-time.Duration(msg.ReadDelay)), buf.ls.UTCStateAt(ut).LeapTonight)
 }
 
 // LeapSecond implements gpsprot.MsgHandler.

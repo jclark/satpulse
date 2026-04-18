@@ -867,3 +867,23 @@ func TestSerialSamplerLeap(t *testing.T) {
 		})
 	}
 }
+
+func TestSerialSamplerReadDelay(t *testing.T) {
+	date := time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC)
+	ut := &ptime.UTCTime{Date: date, TimeOfDay: 12 * time.Hour}
+	ls := ptime.LeapSecond{UTCOffAfter: 37}
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	buf := NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
+	rec := &recordingSampler{}
+	buf.SetSerialSampler(rec)
+	tRead := time.Now()
+	readDelay := 30 * time.Millisecond
+	buf.Time(&gpsprot.TimeMsg{UTCTime: ut, ReadDelay: gpsprot.Duration(readDelay)}, tRead)
+	if len(rec.samples) != 1 {
+		t.Fatalf("got %d samples, want 1", len(rec.samples))
+	}
+	want := tRead.Add(-readDelay)
+	if !rec.samples[0].read.Equal(want) {
+		t.Errorf("tRead = %v, want %v (tRead - ReadDelay)", rec.samples[0].read, want)
+	}
+}
