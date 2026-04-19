@@ -44,14 +44,24 @@ When `phc.freeRunning` is true, `phcsync` does not run and `[phcsample]` configu
 
 ## Module interface
 
-The module exposes a single type, `phcsample.Generator`, with two entry points:
+The module exposes a single type, `phcsample.Generator`, with a small surface:
 
 ```go
+// PulseEdge carries the PHC-side data the Generator needs from a
+// single edge event. The dispatcher adapts ts.Event into this,
+// dropping Kind / ResumeFunc / TReadWall; ts.Event.Kind filtering
+// (Pause, Resume) and stale-era filtering are dispatcher
+// responsibilities.
+type PulseEdge struct {
+    Timestamp phctime.Time   // PHC timestamp of the pulse edge
+    TRead     phctime.Sample // monotonic-bearing PHC/system read sample
+}
+
 // Pulse records a pulse-edge. The Generator labels it with a UTC
 // second via the labelling regression over MsgUTCTime inputs and, if
 // the edge passes pre-admission filtering, adds it as a (PHC, UTC)
 // entry to the PHC calibration window.
-func (g *Generator) Pulse(edge ts.Event)
+func (g *Generator) Pulse(edge PulseEdge)
 
 // Generate returns the offset (true time - sys) in seconds at the moment
 // the cross-sample was taken. It returns a non-nil error when no sample
@@ -66,6 +76,10 @@ var ErrNotReady = errors.New("phcsample: not enough labelled edges")
 ```
 
 Other error returns (e.g., `phc` too far outside the PHC calibration window to extrapolate safely) will be defined as additional sentinels as the need arises. `ErrNotReady` is privileged because callers want to treat it as a normal transient state, not something to log loudly.
+
+In addition, the Generator implements the `MsgUTCTimer` sink on `timemsg.Buffer` — `MsgUTCTime` in phase 1, adding `Leap` in phase 2. See the "MsgUTCTimer interface" subsection for the method signatures.
+
+**No lifecycle methods.** `Generator` has no `Pause`, `Resume`, or `Reset`. On `ts.PauseEvent` the dispatcher drops the current Generator; on the next edge event after the new era, it constructs a fresh `phcsample.NewGenerator(...)`. This works because the Generator holds nothing worth preserving across a pause: the wallClock regression re-warms quickly from subsequent `MsgUTCTime` calls, and any pre-pause PHC calibration window entries are invalid anyway (the PHC may have stepped during pause). Stale-era filtering stays in the dispatcher, same as for phcsync. Contrast with `phcsync.Controller.Pause()`, which preserves servo state (`freq`, `estimatedFreq`), the persistent tracking sample, and the PTP grandmaster reference; phcsample has no analogues to preserve.
 
 The two sides of the calculation are deliberately split so that `Generate` does purely the mapping work and the dispatcher owns the refclock plumbing:
 
@@ -271,6 +285,165 @@ Three pieces with narrow jobs:
 
 3. **PHC calibration fit**: on `Generate`, fit a linear model over the PHC calibration window (likely plain least squares; see the "PHC calibration regression" section) and evaluate at the requested PHC timestamp. Return the offset in seconds.
 
+## Implementation design
+
+This section pins down the internal shapes the module structure above compiles to. The first subsection captures the config surface; subsequent subsections describe individual internal types.
+
+### Config
+
+`phcsample.Config` reuses a **subset of `phcsync.ResetConfig` properties verbatim**. Names, units, toml tags, check constraints, and semantics match `time/internal/phcsync/reset.go`; do not introduce parallel names for things reset.go already names. The subset:
+
+- **`PulseWindow`** — number of pulses kept for the PHC calibration window.
+- **`PulseVariation`** — max PPB relative variation on the stride-`edgesPerPulse` interval check (pre-admission filter).
+- **`PulseWidthDetectLimit`** — dual-edge polarity auto-detection threshold.
+- **`ExpectedDelay`** — expected pulse-to-message delay. Subtracted from each `MsgUTCTime` sample's `tRead` before feeding the wallClock regression so predictions centre on the true pulse-mono time rather than lagging by the delay.
+- **`DelayConfidenceWindow`** — validates the wallClock fit's implied delay (recovered from the fit) against `ExpectedDelay`.
+- **`DelayVariation`** — max residual spread of wallClock fit points around the fitted line.
+
+From `ResetConfig`, these do **not** apply:
+
+- `StepThreshold` — phcsample does not step a clock.
+- `DriftRateLimit` — phcsample does not validate candidate steps against a persisted sample.
+
+Phcsample-specific fields are introduced only when a reset.go property cannot be reused. Open: whether the wallClock regression needs a separate window size (messages arrive at a different rate from pulses) or can derive one from `PulseWindow`; whether minimum-edges warm-up needs its own field or falls out of `PulseWindow`.
+
+### Generator
+
+`Generator` is the public type. All three entry points are thin pass-throughs to the internal collaborators; it owns no state beyond the collaborators themselves.
+
+```go
+type Generator struct {
+    cfg Config
+    wc  wallClock
+    win phcWindow
+    smp Sampler
+    lg  *slog.Logger
+}
+
+func NewGenerator(cfg Config, smp Sampler, edgesPerPulse int, lg *slog.Logger) *Generator {
+    return &Generator{
+        cfg: cfg,
+        wc:  *newWallClock(&cfg),
+        win: *newPhcWindow(&cfg, edgesPerPulse),
+        smp: smp,
+        lg:  lg,
+    }
+}
+
+// MsgUTCTime implements the MsgUTCTimer sink. Phase 1 ignores the
+// leap arg; phase 2 adds a separate Leap method.
+func (g *Generator) MsgUTCTime(utc, tRead time.Time, _ ptime.LeapSecondKind) {
+    g.wc.Add(tRead, utc)
+}
+
+func (g *Generator) Pulse(edge PulseEdge) {
+    g.win.Pulse(edge)
+}
+
+func (g *Generator) Generate(phc ptime.Time, sys time.Time) (float64, error) {
+    off, err := g.win.TrueTimeOffset(phc, sys, &g.wc, nil, g.lg)
+    if err != nil { return 0, err }
+    g.smp.NTPSample(sys, off, phc)
+    return off, nil
+}
+```
+
+The `wallClock` reference is passed to `TrueTimeOffset` per call rather than stored inside `phcWindow`. This keeps phcWindow free of lifetime-bound pointers and makes each call self-contained. `Pulse` never consults the wallClock — edges are recorded cheaply and all labelling work happens lazily inside `TrueTimeOffset` against the wallClock state at the moment of the query. The `pulseCorrector` argument is `nil` in phase 1 and `timemsg.Buffer`'s phase-2 `GetUTCPulseCorrection` accessor in phase 2; phase-1 code exercises the full arithmetic path with a zero correction, so phase 2 adds no new data flow.
+
+### phcWindow
+
+`phcWindow` holds recent pulse edges, labels them via the wallClock at query time, admits those that pass pre-admission filtering, fits the PHC-to-UTC regression, evaluates it, and combines with the cross-sample's `sys` reading to produce the refclock offset. The only method called per edge, `Pulse`, is trivial: it appends the raw edge. All labelling, admission, fitting, and arithmetic happens lazily inside `TrueTimeOffset`.
+
+```go
+// pulseCorrector is the interface implemented by timemsg.Buffer's
+// phase-2 UTC-keyed pulse-correction accessor. Phase 1 passes nil.
+// Harmonised with timemsg.Buffer's existing GetPulseCorrection
+// style; both return (value, ok) rather than error.
+type pulseCorrector interface {
+    GetUTCPulseCorrection(refTime time.Time) (float64, bool)
+}
+
+func newPhcWindow(cfg *Config, edgesPerPulse int) *phcWindow
+
+// Pulse records the edge for later processing.
+func (w *phcWindow) Pulse(edge PulseEdge)
+
+// TrueTimeOffset returns the refclock offset in seconds:
+//
+//     offset = true_time_at(phc) - sys
+//
+// A positive value means true time is ahead of sys — i.e., the
+// system clock is behind real time and needs to advance by this
+// amount. A negative value means the opposite. This matches the
+// sign convention chrony expects from a SOCK refclock.
+//
+// Internally: processes recorded edges via wc (with phase-2 pulse
+// correction via po when non-nil), runs pre-admission filtering,
+// fits the PHC-to-UTC regression over admitted entries, evaluates
+// at phc, and combines with sys. Sub-nanosecond precision from the
+// pulse-correction accessor is carried through arithmetic at this
+// level, not exposed in the return type. Returns ErrNotReady until
+// enough admissible data is available; other sentinels for
+// extrapolation-range failures etc. The Generator forwards errors
+// to its caller without wrapping.
+func (w *phcWindow) TrueTimeOffset(phc ptime.Time, sys time.Time, wc *wallClock, po pulseCorrector, lg *slog.Logger) (offset float64, err error)
+
+// Reset clears state (phase 2, for leap handling).
+func (w *phcWindow) Reset()
+```
+
+Internals (buffering strategy, stride/polarity state, fit method, sub-ns carry representation) are deferred to a later design pass.
+
+### wallClock
+
+`wallClock` is an unexported type inside `phcsample` that models UTC as a function of monotonic time, synthesised from the `MsgUTCTime` stream. Given a monotonic instant — including a recovered edge-mono time — it returns the integer UTC second that time falls inside.
+
+```go
+// wallClock maps monotonic time to integer-second UTC from the
+// MsgUTCTime stream. Internally it maintains a sliding linear
+// regression over (tRead - expectedDelay, utc) pairs.
+type wallClock struct {
+    // captured from Config at construction in convenient internal form
+    expectedDelay time.Duration // Config.ExpectedDelay as Duration
+    minDelay      time.Duration // lower bound of DelayConfidenceWindow
+    maxDelay      time.Duration // upper bound of DelayConfidenceWindow
+    maxSpread     time.Duration // DelayVariation expressed as a Duration
+    windowSize    int           // derived from PulseWindow
+    // regression state follows
+}
+
+func newWallClock(cfg *Config) *wallClock
+
+// Add observes a MsgUTCTime sample. tRead is the monotonic read
+// time (with ReadDelay already subtracted by timemsg.Buffer); utc
+// is the integer-second UTC reported for the corresponding pulse.
+func (c *wallClock) Add(tRead, utc time.Time)
+
+// SecondAt returns the integer UTC second the wall clock reads at
+// the given monotonic instant. ok=false while the window is warming
+// up or when the fit's implied delay or residual spread fails the
+// DelayConfidenceWindow / DelayVariation validation.
+func (c *wallClock) SecondAt(mono time.Time) (utc time.Time, ok bool)
+
+// Reset clears the window (used on leap transition in phase 2).
+func (c *wallClock) Reset()
+```
+
+**Construction and type conversion.** `newWallClock` takes `*Config` and captures only the fields it uses, converted to internal forms. `Config` is the external/TOML-facing surface and matches `ResetConfig` by using `float64` seconds and proportions; wallClock internally prefers `time.Duration` for quantities that combine with `time.Time` values. The conversion happens once, at construction — `SecondAt` and `Add` then operate entirely in `time.Duration` without re-parsing `Config` fields. (The `minDelay` / `maxDelay` pair corresponds to reset.go's `ResetConfig.DelayBounds(1.0)`.)
+
+**Delay handling.** A message's `tRead` lags its pulse by the receiver's internal pulse-to-message delay (typically 50–250 ms). The regression operates on `(tRead - expectedDelay, utc)` pairs so predictions centre on the true pulse-mono time.
+
+**Validation.** `SecondAt` returns `ok=false` when either gate fails:
+
+- The fit's implied delay (recovered from the fit, back-shifted by `ExpectedDelay`) falls outside `Config.DelayConfidenceWindow` around `ExpectedDelay`.
+- The residual spread of points around the fitted line exceeds `Config.DelayVariation`.
+
+These match reset.go's identically-named checks and use identical arithmetic on the same quantities.
+
+**Warm-up.** Under the minimum-points threshold, `SecondAt` returns `ok=false`. Threshold tied to `PulseWindow` (or a separate field, pending the open question in "Config").
+
+**Internal state.** Sliding window of `(tRead, utc)` pairs anchored at the oldest entry so the regression operates in small deltas rather than absolute nanoseconds. Plain OLS starting point; recency-weighted and other non-robust variants are candidates to compare in simulation (see "Open decisions").
+
 ## Relationship to existing code
 
 `freeRunning=true` introduces a **third dispatcher runtime mode**, not merely a "no controller" variant of PHC-disciplined mode. The three modes are mutually exclusive:
@@ -284,7 +457,7 @@ Three pieces with narrow jobs:
 Implications for the dispatcher and daemon wiring:
 
 - **`controller == nil` must stop being a synonym for serial timing.** The current code in `time/internal/gpsevent/dispatcher.go` uses the nil-controller check to route GPS time messages into `SerialSample`, and PHC event handling assumes a controller exists. Both sites must become three-way: `controller != nil` (disciplined) vs. `generator != nil` (free-running) vs. both nil (serial). The correct conditions for serial SOCK sampling and for PHC event delivery must be made explicit, not implicit in `controller == nil`.
-- **PHC event path in free-running mode.** `ts.Event` edges flow to `generator.Pulse(edge)` instead of to the phcsync controller. Cross-samples from those events go to `generator.Generate(phc, sys)`; the dispatcher owns the `rc.Sample` call.
+- **PHC event path in free-running mode.** The dispatcher adapts `ts.Event` into `phcsample.PulseEdge` (see "Module interface") and calls `generator.Pulse(edge)` for each `EdgeEvent`. On `PauseEvent` it drops the Generator; on the next edge after the era advances it constructs a fresh one. Stale-era filtering stays in the dispatcher. Cross-samples from edge events go to `generator.Generate(phc, sys)` using the `TReadWall` side; the dispatcher owns the `rc.Sample` call.
 - **Serial SOCK sampling is disabled in free-running mode**, just as it is in disciplined mode - the refclock samples come from `phcsample`, not from GPS messages. `Buffer.SetMsgUTCTimer` (today `SetSerialSampler`; see "MsgUTCTimer interface") is wired to the dispatcher in serial timing mode and to `phcsample.Generator` in free-running mode. In disciplined mode no `MsgUTCTimer` is installed.
 - The `ts.Event` feed and `timemsg.Buffer` already provide everything this module needs on the input side, once the generalized `MsgUTCTimer` interface replaces today's `SerialSampler` (see "MsgUTCTimer interface").
 - The `refclock.ProxyRefClock` / `sockrefclock` path already provides the output. No changes required there.
@@ -303,9 +476,11 @@ Deliberately absent:
 
 Three phases. Phase 0 lands two small preliminaries that are independent of the rest of the design and worth shipping first. Phase 1 gets us something that works with chrony. Phase 2 refines, polishes, and adds sawtooth correction for the full receiver-specific product. Each step is self-contained, reviewable, and leaves the build green.
 
-### Phase 0 — preliminaries
+### Phase 0 — preliminaries (done)
 
 Two standalone additions that the later phases build on but do not themselves depend on phcsample. Either can ship on its own.
+
+**Status: landed.** Both steps below are complete; this section is retained as a record of what shipped.
 
 1. **Rename in `timemsg`.** `SerialSampler` → `MsgUTCTimer`, `SerialSample` → `MsgUTCTime`, `SetSerialSampler` → `SetMsgUTCTimer`. Update the one implementer (`Dispatcher.SerialSample`) and the existing tests. No `Leap` method yet — it is added in phase 2.
 
@@ -326,23 +501,25 @@ Throughout phase 1:
 
 Steps:
 
-3. **Define the `phcsample` API.** Create the package with the `Generator` type, `Pulse(edge ts.Event)`, `Generate(phc, sys) (float64, error)`, and `ErrNotReady`. Method bodies are stubs — `Generate` returns `ErrNotReady` unconditionally; `Pulse` is empty. A `phcsample.Config` struct holds the tunable knobs (labelling and PHC calibration window lengths, stride tolerance, minimum-edges warm-up, fit method). Field names are provisional; final pass in phase 2. The tree compiles.
+3. **Implement `wallClock` and `phcsample.Config` with unit tests.** Create the `phcsample` package. Land `phcsample.Config` with the reset.go-subset fields named in "Implementation design / Config". Implement the `wallClock` type per "Implementation design / wallClock". Unit tests (using the `go-unit-test` skill) cover: warm-up gating, correct integer-second identification across typical pulse-to-message delays (50–250 ms), `ok=false` when the implied delay falls outside `DelayConfidenceWindow`, `ok=false` when residual spread exceeds `DelayVariation`, and `Reset()` behaviour. This is the first concrete phcsample code to land.
 
-4. **Build `phcsample/sim` and unit tests.** Implement `phcsample/sim` paralleling `syncsim` — event loop, clocksim plumbing, ground-truth scoring. Add table-driven unit tests (using the `go-unit-test` skill) covering single-edge, dual-edge, missing messages, missing edges, gross outliers, and startup. Tests compile; most fail because the implementation is still stubs.
+4. **Implement `Generator` and the `phcWindow` interface.** Add the public `Generator` type per "Implementation design / Generator", with its method bodies as actual pass-throughs (`MsgUTCTime` forwards to `wallClock.Add`; `Pulse` forwards to `phcWindow.Pulse`; `Generate` calls `phcWindow.TrueTimeOffset` and emits via the `Sampler`). Add the `phcWindow` surface (`Pulse`, `TrueTimeOffset`, `Reset`) with `Pulse` appending the edge to an internal buffer, `Reset` clearing it, and `TrueTimeOffset` stubbed to return `ErrNotReady`. Add `PulseEdge`, `ErrNotReady`, the `Sampler` interface, and the `pulseCorrector` interface. The tree compiles; the Generator actually routes calls; the only missing piece is `TrueTimeOffset`'s body.
 
-5. **Implement the core; get tests passing.** Fills in the stubs. To be broken down into its own sub-plan — this step is substantial. Covers: the `MsgUTCTimer` implementation and labelling regression, the PHC calibration window and pre-admission filter, the PHC calibration regression, and minimum-edges warm-up. No sawtooth correction and no leap-second handling. Tests pass; the sim rig produces clocksim statistics on par with `syncsim`'s output for `phcsync`.
+5. **Build `phcsample/sim` and integration unit tests.** Implement `phcsample/sim` paralleling `syncsim` — event loop, clocksim plumbing, ground-truth scoring. Add table-driven Generator-level unit tests covering single-edge, dual-edge, missing messages, missing edges, gross outliers, and startup. Tests compile; most fail because `TrueTimeOffset` still returns `ErrNotReady`.
 
-6. **Wire into the daemon.** Add the `phc.freeRunning` config field. In the daemon and `time/internal/gpsevent/dispatcher.go`, add the third runtime mode (free-running): `controller == nil` stops being a synonym for serial timing; the three-way split between `controller`, `generator`, and neither becomes explicit. Wire `SetMsgUTCTimer` to the generator in free-running mode and to the dispatcher in serial mode; neither in disciplined mode.
+6. **Implement `phcWindow.TrueTimeOffset`; get tests passing.** Fills in `TrueTimeOffset`'s body. This is where the heavy lifting lives: edge labelling via the passed `wallClock` (and the phase-1-nil `pulseCorrector`), pre-admission filtering (stride-`edgesPerPulse` consistency check), dual-edge polarity selection, the PHC calibration fit, evaluation at `phc`, and combination with `sys`. To be broken down into its own sub-plan. No sawtooth correction and no leap-second handling. Tests pass; the sim rig produces clocksim statistics on par with `syncsim`'s output for `phcsync`.
+
+7. **Wire into the daemon.** Add the `phc.freeRunning` config field. In the daemon and `time/internal/gpsevent/dispatcher.go`, add the third runtime mode (free-running): `controller == nil` stops being a synonym for serial timing; the three-way split between `controller`, `generator`, and neither becomes explicit. Wire `SetMsgUTCTimer` to the generator in free-running mode and to the dispatcher in serial mode; neither in disciplined mode.
 
 End of phase 1: the system is usable with chrony.
 
 ### Phase 2 — refine, polish, and add sawtooth correction
 
-7. **Add leap-second handling.** Extend `MsgUTCTimer` with `Leap(kind ptime.LeapSecondKind)`. `timemsg.Buffer` fires it on observed leap-second transitions. `phcsample.Generator` resets both regression windows on `Leap` and returns `ErrNotReady` until re-warmed. Implement the three behaviors from "Leap-second handling". Add sim-rig tests covering leap transitions.
+8. **Add leap-second handling.** Extend `MsgUTCTimer` with `Leap(kind ptime.LeapSecondKind)`. `timemsg.Buffer` fires it on observed leap-second transitions. `phcsample.Generator` resets both regression windows on `Leap` and returns `ErrNotReady` until re-warmed. Implement the three behaviors from "Leap-second handling". Add sim-rig tests covering leap transitions.
 
-8. **Wire the `[phcsample]` config section.** Parse the TOML `[phcsample]` section into the Generator's `Config` struct. Revisit field names, types, units, and descriptions now that the implementation constrains what's actually tunable. Update `docs/man/satpulse.toml.5.md`.
+9. **Wire the `[phcsample]` config section.** Parse the TOML `[phcsample]` section into the Generator's `Config` struct. Revisit field names, types, units, and descriptions now that the implementation constrains what's actually tunable. Update `docs/man/satpulse.toml.5.md`.
 
-9. **Add sawtooth correction.**
+10. **Add sawtooth correction.**
     - Consume pulse-correction messages and apply `PulseOffset` to each pulse-edge label so it lands at the exact top of the second.
     - The pulse-edge label becomes (UTC top-of-second) = (message UTC) + (pulse-offset adjustment).
     - Pulse-offset lookup is done in UTC: `timemsg.Buffer` is extended to accept a UTC key for pulse-correction access. **No leap-second or TAI arithmetic enters `phcsample`** — the UTC-in / UTC-out boundary established in phase 1 is preserved.
