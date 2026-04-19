@@ -69,10 +69,14 @@ func (g *Generator) Pulse(edge PulseEdge)
 // from other failures using errors.Is against the sentinels below.
 func (g *Generator) Generate(phc ptime.Time, sys time.Time) (offset float64, err error)
 
-// ErrNotReady indicates the Generator does not yet have enough
-// labelled edges to answer. This is the expected error during startup
-// and after a gap in edges or messages.
-var ErrNotReady = errors.New("phcsample: not enough labelled edges")
+// ErrNotReady indicates phcsample is not yet able to produce a sample.
+// It is returned when the wallClock window has not warmed up (too few
+// messages, or messages do not yet span enough real time) or when the
+// phcWindow has not yet accumulated enough labelled edges. This is the
+// expected error during startup and after a gap in edges or messages;
+// callers treat it as a quiet transient state rather than something to
+// log loudly.
+var ErrNotReady = errors.New("phcsample: not ready")
 ```
 
 Other error returns (e.g., `phc` too far outside the PHC calibration window to extrapolate safely) will be defined as additional sentinels as the need arises. `ErrNotReady` is privileged because callers want to treat it as a normal transient state, not something to log loudly.
@@ -257,13 +261,13 @@ It is load-bearing for three purposes:
 
 **A mislabelled edge cannot be recovered from once it enters the window.** It is not noise that the regression can average out; it is a bad `(P_i, T_i)` pair, with a one-second or one-pulse-width error in the true-time column. Chrony's downstream filtering cannot repair it either - it operates on emitted samples, not on window entries. So the filtering here must be strong enough that *every edge admitted to the window is correctly labelled*; the PHC calibration regression assumes that precondition.
 
-The mechanism is an absolute consistency check on edge PHC timestamps. With `edgesPerPulse` known from config (1 for single-edge, 2 for dual-edge), the check is: the PHC interval between edge n and edge n - `edgesPerPulse` should be within an absolute tolerance of 1 true second.
+The mechanism is a relative-variation check on edge PHC timestamps, matching reset.go's `PulseVariation`: with `edgesPerPulse` known from config (1 for single-edge, 2 for dual-edge), compute the stride-`edgesPerPulse` interval between each pair of successive same-polarity edges in the window, and check the PPB variation between the shortest and longest of those intervals against `PulseVariation`.
 
-In single-edge mode this is consecutive intervals. In dual-edge mode it is the stride-2 interval between same-polarity edges; intervals between alternating polarities contain one pulse-width and one gap duration, which are not equal to 1 second and automatically fail the check - which is how the non-timing edge gets filtered.
+In single-edge mode this is consecutive intervals. In dual-edge mode it is the stride-2 interval between same-polarity edges; intervals between alternating polarities contain one pulse-width and one gap duration, which differ markedly from 1 second and therefore blow the relative-variation limit, which is how the non-timing edge gets filtered.
 
-When a stride interval falls outside tolerance, the offending edge is not added to the window. Wait for subsequent edges to re-establish stride consistency.
+When the stride variation exceeds the limit, the offending edge is not added to the window. Wait for subsequent edges to re-establish stride consistency.
 
-The tolerance must be chosen to be tight enough that mis-labelling is impossible in practice (well under 0.5 s for the round-to-second; well under any plausible sawtooth magnitude for phase 2), and loose enough to admit every legitimately-timed edge even under worst-case PHC jitter and drift. Numbers to be determined against real hardware and the clocksim rig.
+`PulseVariation` must be tight enough that mis-labelling is impossible in practice (variations that would move a PHC interval more than a small fraction of a second from 1 true second must be rejected; well under any plausible sawtooth magnitude for phase 2), and loose enough to admit every legitimately-timed edge even under worst-case PHC jitter and drift. reset.go's default (500 PPB) is a starting point; the final value is to be determined against real hardware and the clocksim rig.
 
 ## Dual-edge timing-edge selection
 
@@ -279,9 +283,9 @@ Module name: `phcsample` (matches the config section).
 
 Three pieces with narrow jobs:
 
-1. **Labelling regression**: fit a linear `tRead → UTC` model over a sliding window of `MsgUTCTime` calls. Evaluate at each edge's recovered monotonic time and round to the second to produce its label. Discard edges whose predicted UTC is too far from an integer second.
+1. **Labelling regression**: fit a linear `tRead → UTC` model over a sliding window of `MsgUTCTime` calls. Evaluate at each edge's recovered monotonic time and round to the second to produce its label. Validation of the fit (enough points, enough span, staleness, slope, scatter) is wholly the wallClock's responsibility; see "Implementation design / wallClock".
 
-2. **PHC calibration window**: maintain recent labelled edges that pass pre-admission filtering, each with a `ptime.Time` PHC position and a UTC `time.Time` label. Apply the stride-`edgesPerPulse` consistency filter. In dual-edge mode, track which polarity is the timing edge and discard the other.
+2. **PHC calibration window**: maintain recent labelled edges that pass pre-admission filtering, each with a `ptime.Time` PHC position and a UTC `time.Time` label. Apply the stride-`edgesPerPulse` consistency filter. In dual-edge mode, track which polarity is the timing edge and discard the other. Separately, discard edges whose predicted UTC is too far from an integer second — this per-edge confidence check runs over the wallClock's output and is a phcWindow responsibility, not a wallClock gate.
 
 3. **PHC calibration fit**: on `Generate`, fit a linear model over the PHC calibration window (likely plain least squares; see the "PHC calibration regression" section) and evaluate at the requested PHC timestamp. Return the offset in seconds.
 
@@ -291,21 +295,34 @@ This section pins down the internal shapes the module structure above compiles t
 
 ### Config
 
-`phcsample.Config` reuses a **subset of `phcsync.ResetConfig` properties verbatim**. Names, units, toml tags, check constraints, and semantics match `time/internal/phcsync/reset.go`; do not introduce parallel names for things reset.go already names. The subset:
+Although `phcsample.Config` shares some field names with `phcsync.ResetConfig`, the semantics are not identical. Reset-mode validation is based on explicit pulse/message correlation: it takes a matched sequence of pulse times and post-pulse message read times and asks pair-wise questions about absolute delays. phcsample's wallClock does not do pair-wise matching — it fits a continuous monotonic-to-UTC mapping from the stream of `MsgUTCTime` observations, which may contain more messages than pulses and which has no unique "this message belongs to this pulse" relationship. Reset-style absolute-delay checks therefore do not carry over literally.
 
-- **`PulseWindow`** — number of pulses kept for the PHC calibration window.
-- **`PulseVariation`** — max PPB relative variation on the stride-`edgesPerPulse` interval check (pre-admission filter).
+Only the parameters whose meanings survive the change in observables are reused verbatim; the rest are either dropped or replaced by parameters shaped around what phcsample actually sees. Docstring style (a multi-line comment above each field explaining observable behaviour, plus a short `comment:` tag for TOML generation) matches reset.go.
+
+Carried over verbatim from `phcsync.ResetConfig` — same units, same toml tag, same semantics:
+
+- **`PulseWindow`** — number of pulses kept for the PHC calibration window. Used only for phcWindow; the wallClock sizes its message window independently (see "wallClock window sizing" below).
+- **`PulseVariation`** — max relative PPB variation between stride-`edgesPerPulse` intervals in phcWindow (pre-admission filter).
 - **`PulseWidthDetectLimit`** — dual-edge polarity auto-detection threshold.
-- **`ExpectedDelay`** — expected pulse-to-message delay. Subtracted from each `MsgUTCTime` sample's `tRead` before feeding the wallClock regression so predictions centre on the true pulse-mono time rather than lagging by the delay.
-- **`DelayConfidenceWindow`** — validates the wallClock fit's implied delay (recovered from the fit) against `ExpectedDelay`.
-- **`DelayVariation`** — max residual spread of wallClock fit points around the fitted line.
 
-From `ResetConfig`, these do **not** apply:
+Carried over with a narrower role:
 
-- `StepThreshold` — phcsample does not step a clock.
-- `DriftRateLimit` — phcsample does not validate candidate steps against a persisted sample.
+- **`ExpectedDelay`** — expected pulse-to-message delay in seconds. In phcsample it is used only as a centering shift subtracted from each `MsgUTCTime` sample's `tRead` before feeding the wallClock regression, so predictions centre on the true pulse-mono time rather than on the later message read time. No absolute-window check is built on top of it.
 
-Phcsample-specific fields are introduced only when a reset.go property cannot be reused. Open: whether the wallClock regression needs a separate window size (messages arrive at a different rate from pulses) or can derive one from `PulseWindow`; whether minimum-edges warm-up needs its own field or falls out of `PulseWindow`.
+New to phcsample (observables that exist only in the message-stream model):
+
+- **`MsgWindow`** — length of the message history retained for the wallClock's regression, in integer seconds. Messages older than this are discarded. A generously-sized window gives a tighter slope estimate, greater tolerance of occasional outliers (dilution rather than dominance), and more jitter averaging; there is no meaningful cost since neither memory nor compute scales problematically at typical message rates. Default ~30 s.
+- **`MaxMsgGap`** — how long phcsample will continue answering after the most recent message arrived, in seconds. While messages are flowing the fitted mapping stays fresh; when they stop, the wallClock projects forward until the gap reaches this limit, then stops producing samples.
+- **`MinMsgSpan`** — minimum elapsed time (seconds) that the observed messages must cover before the wallClock's fit is treated as usable. Larger values give more stable slope estimates but delay the first sample after startup. Recommended ~3 s.
+- **`ClockRateLimit`** — maximum tolerated rate mismatch between the system monotonic clock and the UTC time advertised by the GPS message stream, as a dimensionless fraction (e.g. `0.1` ≡ 10 %). When the two clocks appear to tick at rates differing by more than this, phcsample treats the stream as unreliable and stops producing samples. A safety bound; expected to be very generous (default around `0.1`) so it catches pathological conditions without interfering with normal crystal drift.
+- **`MsgTimingVariation`** — tolerated inconsistency in message timing, expressed as a fraction of 1 second. Measured as the median absolute deviation of observations from the best-fit line, so occasional badly-timed messages (e.g., the slower of two interleaved message types, or bursts on a 9600-baud link) do not trip it — up to ~50 % of messages can be off without firing. Deliberately lenient; a safety gate against genuinely broken streams, not a per-sample quality filter.
+
+Dropped from `phcsync.ResetConfig` (semantics do not survive):
+
+- **`DelayConfidenceWindow`** — a pair-based absolute-delay gate; wallClock observes a message stream and cannot infer absolute pulse-to-message delay from it alone (an OLS fit absorbs any constant delay into the intercept).
+- **`DelayVariation`** — spread of pair-wise delays; replaced by `MsgTimingVariation`, which measures a related but distinct observable (median scatter around the fit, not pair-delay spread).
+- **`StepThreshold`** — phcsample does not step a clock.
+- **`DriftRateLimit`** — phcsample does not validate candidate steps against a persisted sample.
 
 ### Generator
 
@@ -313,11 +330,12 @@ Phcsample-specific fields are introduced only when a reset.go property cannot be
 
 ```go
 type Generator struct {
-    cfg Config
-    wc  wallClock
-    win phcWindow
-    smp Sampler
-    lg  *slog.Logger
+    cfg  Config
+    wc   wallClock
+    win  phcWindow
+    smp  Sampler
+    leap ptime.LeapSecondKind // latest value from MsgUTCTime, forwarded to NTPSample
+    lg   *slog.Logger
 }
 
 func NewGenerator(cfg Config, smp Sampler, edgesPerPulse int, lg *slog.Logger) *Generator {
@@ -398,7 +416,7 @@ Internals (buffering strategy, stride/polarity state, fit method, sub-ns carry r
 
 ### wallClock
 
-`wallClock` is an unexported type inside `phcsample` that models UTC as a function of monotonic time, synthesised from the `MsgUTCTime` stream. Given a monotonic instant — including a recovered edge-mono time — it returns the integer UTC second that time falls inside.
+`wallClock` is an unexported type inside `phcsample` that models UTC as a function of monotonic time, synthesised from the `MsgUTCTime` stream. Given a monotonic instant — including a recovered edge-mono time — it returns the integer UTC second that time falls inside, or an error that explains why no answer is available.
 
 ```go
 // wallClock maps monotonic time to integer-second UTC from the
@@ -406,11 +424,12 @@ Internals (buffering strategy, stride/polarity state, fit method, sub-ns carry r
 // regression over (tRead - expectedDelay, utc) pairs.
 type wallClock struct {
     // captured from Config at construction in convenient internal form
-    expectedDelay time.Duration // Config.ExpectedDelay as Duration
-    minDelay      time.Duration // lower bound of DelayConfidenceWindow
-    maxDelay      time.Duration // upper bound of DelayConfidenceWindow
-    maxSpread     time.Duration // DelayVariation expressed as a Duration
-    windowSize    int           // derived from PulseWindow
+    expectedDelay time.Duration // Config.ExpectedDelay
+    msgWindow     time.Duration // Config.MsgWindow (seconds -> Duration)
+    maxGap        time.Duration // Config.MaxMsgGap
+    minSpan       time.Duration // Config.MinMsgSpan
+    rateLimit     float64       // Config.ClockRateLimit (dimensionless)
+    timingVar     time.Duration // Config.MsgTimingVariation expressed as a Duration
     // regression state follows
 }
 
@@ -418,31 +437,33 @@ func newWallClock(cfg *Config) *wallClock
 
 // Add observes a MsgUTCTime sample. tRead is the monotonic read
 // time (with ReadDelay already subtracted by timemsg.Buffer); utc
-// is the integer-second UTC reported for the corresponding pulse.
+// is the ms-rounded UTC reported for that message.
 func (c *wallClock) Add(tRead, utc time.Time)
 
 // SecondAt returns the integer UTC second the wall clock reads at
-// the given monotonic instant. ok=false while the window is warming
-// up or when the fit's implied delay or residual spread fails the
-// DelayConfidenceWindow / DelayVariation validation.
-func (c *wallClock) SecondAt(mono time.Time) (utc time.Time, ok bool)
+// the given monotonic instant. On failure it returns an error
+// describing which gate rejected the fit. The sentinel ErrNotReady
+// is returned when there isn't yet enough observation to answer
+// (too few points, or observations span too little real time);
+// callers treat that as quiet transient state.
+func (c *wallClock) SecondAt(mono time.Time) (utc time.Time, err error)
 
 // Reset clears the window (used on leap transition in phase 2).
 func (c *wallClock) Reset()
 ```
 
-**Construction and type conversion.** `newWallClock` takes `*Config` and captures only the fields it uses, converted to internal forms. `Config` is the external/TOML-facing surface and matches `ResetConfig` by using `float64` seconds and proportions; wallClock internally prefers `time.Duration` for quantities that combine with `time.Time` values. The conversion happens once, at construction — `SecondAt` and `Add` then operate entirely in `time.Duration` without re-parsing `Config` fields. (The `minDelay` / `maxDelay` pair corresponds to reset.go's `ResetConfig.DelayBounds(1.0)`.)
+**Construction and type conversion.** `newWallClock` takes `*Config` and captures only the fields it uses, converted to internal forms. The `Config` surface expresses sub-second seconds as `float64` (so fractional values are natural in TOML), fractions as `float64` in `[0, 1]`, and `MsgWindow` as an `int` number of whole seconds (values of practical interest are tens of seconds, and integer TOML renders more cleanly than `"30s"`-style duration strings). wallClock internally prefers `time.Duration` for quantities that combine with `time.Time` values; the conversion happens once, at construction, so `SecondAt` and `Add` operate entirely in `time.Duration` without re-parsing `Config` fields.
 
-**Delay handling.** A message's `tRead` lags its pulse by the receiver's internal pulse-to-message delay (typically 50–250 ms). The regression operates on `(tRead - expectedDelay, utc)` pairs so predictions centre on the true pulse-mono time.
+**Delay handling.** A message's `tRead` lags its pulse by the receiver's internal pulse-to-message delay (typically 50–250 ms). The regression operates on `(tRead - expectedDelay, utc)` pairs so predictions centre on the true pulse-mono time. wallClock does not attempt to measure the absolute delay — an OLS fit absorbs any constant offset into the intercept, and there is no external reference for the monotonic-to-UTC offset from within wallClock's inputs.
 
-**Validation.** `SecondAt` returns `ok=false` when either gate fails:
+**Validation.** `SecondAt` applies these gates; failure returns an error describing which gate tripped:
 
-- The fit's implied delay (recovered from the fit, back-shifted by `ExpectedDelay`) falls outside `Config.DelayConfidenceWindow` around `ExpectedDelay`.
-- The residual spread of points around the fitted line exceeds `Config.DelayVariation`.
+- **Not enough data.** Fewer than the minimum number of observations, or observations that do not yet cover `MinMsgSpan` of real time. Both conditions return `ErrNotReady` — a quiet transient state during startup and after a reset. The Generator forwards the same sentinel to its caller.
+- **Stale query.** The query's monotonic instant is more than `MaxMsgGap` past the most recent observation. The fit is too old to project from.
+- **Clock rate mismatch.** The fitted slope differs from unity by more than `ClockRateLimit`. Indicates a pathologically broken message stream or clock — a safety gate, expected to fire very rarely.
+- **Message timing scatter.** The median absolute residual of observations around the fit line exceeds `MsgTimingVariation` (interpreted as a fraction of 1 s). Tolerant of a minority of badly-timed messages by construction; catches streams where most messages are inconsistent with each other.
 
-These match reset.go's identically-named checks and use identical arithmetic on the same quantities.
-
-**Warm-up.** Under the minimum-points threshold, `SecondAt` returns `ok=false`. Threshold tied to `PulseWindow` (or a separate field, pending the open question in "Config").
+All gates are purely local to wallClock's state and do not require external information.
 
 **Internal state.** Sliding window of `(tRead, utc)` pairs anchored at the oldest entry so the regression operates in small deltas rather than absolute nanoseconds. Plain OLS starting point; recency-weighted and other non-robust variants are candidates to compare in simulation (see "Open decisions").
 
@@ -494,6 +515,8 @@ Two standalone additions that the later phases build on but do not themselves de
 
 ### Phase 1 — working with chrony
 
+**Status: steps 3 and 4 landed.**
+
 Throughout phase 1:
 
 - UTC time messages only (no sawtooth correction).
@@ -503,7 +526,7 @@ Throughout phase 1:
 
 Steps:
 
-3. **Implement `wallClock` and `phcsample.Config` with unit tests.** Create the `phcsample` package. Land `phcsample.Config` with the reset.go-subset fields named in "Implementation design / Config". Implement the `wallClock` type per "Implementation design / wallClock". Unit tests (using the `go-unit-test` skill) cover: warm-up gating, correct integer-second identification across typical pulse-to-message delays (50–250 ms), `ok=false` when the implied delay falls outside `DelayConfidenceWindow`, `ok=false` when residual spread exceeds `DelayVariation`, and `Reset()` behaviour. This is the first concrete phcsample code to land.
+3. **Implement `wallClock` and `phcsample.Config` with unit tests.** Create the `phcsample` package. Land `phcsample.Config` with the fields named in "Implementation design / Config". Implement the `wallClock` type per "Implementation design / wallClock". Unit tests (using the `go-unit-test` skill) cover each gate: `ErrNotReady` when too few observations or the window span is below `MinMsgSpan`; correct integer-second identification across typical pulse-to-message delays (50–250 ms); the stale-query gate (`MaxMsgGap`); the clock-rate gate (`ClockRateLimit`); the message-timing-scatter gate (`MsgTimingVariation`, confirming the median-based check tolerates a minority of offset points); and `Reset()` behaviour. This is the first concrete phcsample code to land.
 
 4. **Implement `Generator` and the `phcWindow` interface.** Add the public `Generator` type per "Implementation design / Generator", with its method bodies as actual pass-throughs (`MsgUTCTime` forwards to `wallClock.Add`; `Pulse` forwards to `phcWindow.Pulse`; `Generate` calls `phcWindow.TrueTimeOffset` and emits via the `Sampler`). Add the `phcWindow` surface (`Pulse`, `TrueTimeOffset`, `Reset`) with `Pulse` appending the edge to an internal buffer, `Reset` clearing it, and `TrueTimeOffset` stubbed to return `ErrNotReady`. Add `PulseEdge`, `ErrNotReady`, the `Sampler` interface, and the `pulseCorrector` interface. The tree compiles; the Generator actually routes calls; the only missing piece is `TrueTimeOffset`'s body.
 
