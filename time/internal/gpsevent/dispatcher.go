@@ -266,7 +266,9 @@ func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time) {
 	err := d.rc.Sample(sys, offset, leap)
 	if err != nil {
 		d.lg.Warn("refclock sample failed", "err", err)
+		return
 	}
+	d.obs.NTPSample(sys, offset, ref)
 }
 
 // SerialSample implements timemsg.SerialSampler for serial timing mode.
@@ -275,7 +277,9 @@ func (d *Dispatcher) SerialSample(utc time.Time, tRead time.Time, leap ptime.Lea
 	err := d.rc.Sample(tRead, offset, leap)
 	if err != nil {
 		d.lg.Warn("refclock sample failed", "err", err)
+		return
 	}
+	d.obs.NTPSample(tRead, offset, ptime.Time(0))
 }
 
 func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {

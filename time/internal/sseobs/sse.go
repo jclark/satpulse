@@ -9,6 +9,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/lib/sse"
 )
@@ -113,7 +114,7 @@ type QualitySSE struct {
 
 // SSEObserver implements obs.Observer for Server-Sent Events
 type SSEObserver struct {
-	gpsprot.DefaultHandler
+	obs.DefaultObserver
 	sseCh     chan<- sse.Event
 	lg        *slog.Logger
 	ls        ptime.LeapSecond
@@ -213,9 +214,6 @@ func (o *SSEObserver) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 func (o *SSEObserver) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 	o.sendSSE("satellites", SatellitesSSE{SVs: msg.SVs})
 }
-
-// ReopenLog implements Observer as a no-op.
-func (o *SSEObserver) ReopenLog() {}
 
 // LeapSecond updates the local leap second used for time formatting.
 func (o *SSEObserver) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
