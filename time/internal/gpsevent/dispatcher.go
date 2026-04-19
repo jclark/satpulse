@@ -83,7 +83,7 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 	// In serial timing mode (no PHC, but refclock configured), feed
 	// chrony SOCK samples directly from time messages.
 	if controller == nil && rc != nil {
-		timeMsgBuffer.SetSerialSampler(&d)
+		timeMsgBuffer.SetMsgUTCTimer(&d)
 	}
 	err := d.lf.Open(eventLogPath, true)
 	if err != nil {
@@ -271,8 +271,8 @@ func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time) {
 	d.obs.NTPSample(sys, offset, ref)
 }
 
-// SerialSample implements timemsg.SerialSampler for serial timing mode.
-func (d *Dispatcher) SerialSample(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind) {
+// MsgUTCTime implements timemsg.MsgUTCTimer for serial timing mode.
+func (d *Dispatcher) MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind) {
 	offset := utc.Sub(tRead).Seconds()
 	err := d.rc.Sample(tRead, offset, leap)
 	if err != nil {

@@ -10,10 +10,11 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
-// SerialSampler receives time samples derived from serial GPS messages.
-// Used in serial timing mode (no PHC) to feed chrony SOCK samples.
-type SerialSampler interface {
-	SerialSample(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind)
+// MsgUTCTimer receives UTC time samples derived from GPS time messages.
+// Used in serial timing mode (no PHC) to feed chrony SOCK samples, and
+// in PHC free-running mode to feed phcsample's labelling regression.
+type MsgUTCTimer interface {
+	MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind)
 }
 
 // Buffer stores recent time messages from a GPS receiver.
@@ -30,8 +31,8 @@ type Buffer struct {
 	lastPreCorrMsg  *gpsprot.TimeMsg // last PrePulse msg with a correction
 	lastPostCorrMsg *gpsprot.TimeMsg // PostPulse msg with PulseOffset with the greatest TAI time
 	msgLevel        bufMsgLevel
-	serialSampler   SerialSampler // serial timing sink; nil in PHC mode
-	lastSerialUTC   time.Time     // UTC second already sent to serialSampler
+	msgUTCTimer     MsgUTCTimer // UTC message sink; nil in PHC-disciplined mode
+	lastMsgUTC      time.Time   // UTC second already sent to msgUTCTimer
 }
 
 type entry struct {
@@ -87,17 +88,17 @@ func (buf *Buffer) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 		buf.startIndex = 0
 	}
 	buf.entries = append(buf.entries, entry{msg: msg, tRead: tRead})
-	buf.serialSample(msg, tRead)
+	buf.msgUTCTime(msg, tRead)
 }
 
-// SetSerialSampler sets the sink for serial timing mode.
+// SetMsgUTCTimer sets the MsgUTCTimer sink.
 // When set, Buffer.Time() calls the sink for each new eligible second.
-func (buf *Buffer) SetSerialSampler(ss SerialSampler) {
-	buf.serialSampler = ss
+func (buf *Buffer) SetMsgUTCTimer(t MsgUTCTimer) {
+	buf.msgUTCTimer = t
 }
 
-func (buf *Buffer) serialSample(msg *gpsprot.TimeMsg, tRead time.Time) {
-	if buf.serialSampler == nil || msg.UTCTime == nil {
+func (buf *Buffer) msgUTCTime(msg *gpsprot.TimeMsg, tRead time.Time) {
+	if buf.msgUTCTimer == nil || msg.UTCTime == nil {
 		return
 	}
 	ut := *msg.UTCTime
@@ -117,11 +118,11 @@ func (buf *Buffer) serialSample(msg *gpsprot.TimeMsg, tRead time.Time) {
 	// allows users to experiment with using higher-rate messages for timing. We could at some point add a
 	// configuration option to discard non-second-aligned messages.
 	utc := ut.SysTime().Round(time.Millisecond)
-	if !utc.After(buf.lastSerialUTC) {
+	if !utc.After(buf.lastMsgUTC) {
 		return
 	}
-	buf.lastSerialUTC = utc
-	buf.serialSampler.SerialSample(utc, tRead.Add(-time.Duration(msg.ReadDelay)), buf.ls.UTCStateAt(ut).LeapTonight)
+	buf.lastMsgUTC = utc
+	buf.msgUTCTimer.MsgUTCTime(utc, tRead.Add(-time.Duration(msg.ReadDelay)), buf.ls.UTCStateAt(ut).LeapTonight)
 }
 
 // LeapSecond implements gpsprot.MsgHandler.
