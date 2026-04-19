@@ -723,21 +723,21 @@ func TestMixedPrePulseAndPostPulse(t *testing.T) {
 	}
 }
 
-type recordingSampler struct {
-	samples []serialSample
+type recordingTimer struct {
+	samples []msgUTCSample
 }
 
-type serialSample struct {
+type msgUTCSample struct {
 	utc  time.Time
 	read time.Time
 	leap ptime.LeapSecondKind
 }
 
-func (r *recordingSampler) SerialSample(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind) {
-	r.samples = append(r.samples, serialSample{utc: utc, read: tRead, leap: leap})
+func (r *recordingTimer) MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind) {
+	r.samples = append(r.samples, msgUTCSample{utc: utc, read: tRead, leap: leap})
 }
 
-func TestSerialSampler(t *testing.T) {
+func TestMsgUTCTimer(t *testing.T) {
 	date := time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC)
 	utc := func(h, m, s int) *ptime.UTCTime {
 		return &ptime.UTCTime{
@@ -807,10 +807,10 @@ func TestSerialSampler(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 			buf := NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
-			var rec *recordingSampler
+			var rec *recordingTimer
 			if !tc.noSink {
-				rec = &recordingSampler{}
-				buf.SetSerialSampler(rec)
+				rec = &recordingTimer{}
+				buf.SetMsgUTCTimer(rec)
 			}
 			for _, m := range tc.msgs {
 				buf.Time(m.msg, m.tRead)
@@ -825,7 +825,7 @@ func TestSerialSampler(t *testing.T) {
 	}
 }
 
-func TestSerialSamplerLeap(t *testing.T) {
+func TestMsgUTCTimerLeap(t *testing.T) {
 	leapLS := ptime.LeapSecondOnDate(time.Date(2026, time.June, 30, 0, 0, 0, 0, time.UTC), 37, 38)
 	leapDay := time.Date(2026, time.June, 30, 0, 0, 0, 0, time.UTC)
 	normalDay := time.Date(2026, time.March, 29, 0, 0, 0, 0, time.UTC)
@@ -855,8 +855,8 @@ func TestSerialSamplerLeap(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 			buf := NewBuffer(lg, 5*time.Second, leapLS, gpsprot.GPS)
-			rec := &recordingSampler{}
-			buf.SetSerialSampler(rec)
+			rec := &recordingTimer{}
+			buf.SetMsgUTCTimer(rec)
 			buf.Time(&gpsprot.TimeMsg{UTCTime: tc.ut}, tRead)
 			if len(rec.samples) != 1 {
 				t.Fatalf("got %d samples, want 1", len(rec.samples))
@@ -865,5 +865,25 @@ func TestSerialSamplerLeap(t *testing.T) {
 				t.Errorf("leap = %v, want %v", rec.samples[0].leap, tc.expectLeap)
 			}
 		})
+	}
+}
+
+func TestMsgUTCTimerReadDelay(t *testing.T) {
+	date := time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC)
+	ut := &ptime.UTCTime{Date: date, TimeOfDay: 12 * time.Hour}
+	ls := ptime.LeapSecond{UTCOffAfter: 37}
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	buf := NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
+	rec := &recordingTimer{}
+	buf.SetMsgUTCTimer(rec)
+	tRead := time.Now()
+	readDelay := 30 * time.Millisecond
+	buf.Time(&gpsprot.TimeMsg{UTCTime: ut, ReadDelay: gpsprot.Duration(readDelay)}, tRead)
+	if len(rec.samples) != 1 {
+		t.Fatalf("got %d samples, want 1", len(rec.samples))
+	}
+	want := tRead.Add(-readDelay)
+	if !rec.samples[0].read.Equal(want) {
+		t.Errorf("tRead = %v, want %v (tRead - ReadDelay)", rec.samples[0].read, want)
 	}
 }
