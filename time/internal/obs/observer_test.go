@@ -32,7 +32,7 @@ func (m *mockObserver) NavEpochPV(_ *gpsprot.NavEpochMsg, _ *gpsprot.PVMsgBundle
 	m.navEpochPVCount++
 }
 
-func (m *mockObserver) NTPSample(_ time.Time, _ float64, _ ptime.Time) {
+func (m *mockObserver) NTPSample(_ time.Time, _ float64, _ ptime.LeapSecondKind, _ ptime.Time) {
 	m.ntpSampleCount++
 }
 
@@ -128,7 +128,7 @@ func TestMultiObserver_NTPSample(t *testing.T) {
 	mock2 := &mockObserver{}
 	multi := NewMultiObserver(mock1, mock2)
 
-	multi.NTPSample(time.Now(), 0.0, ptime.Time(0))
+	multi.NTPSample(time.Now(), 0.0, ptime.LeapSecondNone, ptime.Time(0))
 
 	if mock1.ntpSampleCount != 1 {
 		t.Errorf("Expected NTPSample count 1 on mock1, got %d", mock1.ntpSampleCount)

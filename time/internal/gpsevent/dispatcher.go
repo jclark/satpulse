@@ -268,7 +268,7 @@ func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time) {
 		d.lg.Warn("refclock sample failed", "err", err)
 		return
 	}
-	d.obs.NTPSample(sys, offset, ref)
+	d.obs.NTPSample(sys, offset, leap, ref)
 }
 
 // MsgUTCTime implements timemsg.MsgUTCTimer for serial timing mode.
@@ -279,7 +279,7 @@ func (d *Dispatcher) MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.LeapS
 		d.lg.Warn("refclock sample failed", "err", err)
 		return
 	}
-	d.obs.NTPSample(tRead, offset, ptime.Time(0))
+	d.obs.NTPSample(tRead, offset, leap, ptime.Time(0))
 }
 
 func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {

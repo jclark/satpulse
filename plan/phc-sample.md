@@ -108,18 +108,18 @@ On each successful `Generate`, the Generator reports the resulting sample throug
 // Only successful calls are reported; ErrNotReady and other
 // errors produce no sample.
 type Sampler interface {
-    NTPSample(sys time.Time, offset float64, phc ptime.Time)
+    NTPSample(sys time.Time, offset float64, leap ptime.LeapSecondKind, phc ptime.Time)
 }
 ```
 
-`Generator` takes a `Sampler` at construction. `Generate` calls `NTPSample` exactly once per successful return; `ErrNotReady` and other error returns are silent. `sys` is the CLOCK_REALTIME reading paired with the PHC cross-sample, `offset` is the seconds offset returned by `Generate` (true time minus `sys`), and `phc` is the PHC timestamp at which the offset was computed.
+`Generator` takes a `Sampler` at construction. `Generate` calls `NTPSample` exactly once per successful return; `ErrNotReady` and other error returns are silent. `sys` is the CLOCK_REALTIME reading paired with the PHC cross-sample, `offset` is the seconds offset returned by `Generate` (true time minus `sys`), `leap` is the leap-second state passed to the refclock, and `phc` is the PHC timestamp at which the offset was computed.
 
 The method is named `NTPSample` rather than `Sample` for two reasons:
 
 1. **No name collision.** `phcsync.Sampler` already declares `Sample(phcsync.Sample)`. Go does not permit two embedded interfaces in `obs.Observer` to share a method name with different signatures, so this interface must pick a different method name.
 2. **Names the consumer.** These samples are what chrony (the NTP side) ultimately receives via the SOCK refclock; `NTPSample` says so on the tin.
 
-**Why three arguments and not a shared struct.** Passing values individually rather than packaging them into a named `Sample` struct means no single package has to own the type. `phcsample.Sampler` declares `NTPSample(time.Time, float64, ptime.Time)` here; `obs.Observer` declares the same method directly alongside its other methods. By Go's structural typing any `obs.Observer` also satisfies `phcsample.Sampler` with no import relationship between the two packages. This is what lets the Dispatcher — which already holds an `obs.Observer` — emit `NTPSample(sys, offset, phc)` from the serial-timing and PHC-disciplined paths without importing `phcsample`, while the Generator calls the same method on its own `phcsample.Sampler` argument. A shared struct type, by contrast, would force one package to own it and the other to import it, pushing the dependency in a direction that crosses the producer/aggregator boundary.
+**Why separate arguments and not a shared struct.** Passing values individually rather than packaging them into a named `Sample` struct means no single package has to own the type. `phcsample.Sampler` declares `NTPSample(time.Time, float64, ptime.LeapSecondKind, ptime.Time)` here; `obs.Observer` declares the same method directly alongside its other methods. By Go's structural typing any `obs.Observer` also satisfies `phcsample.Sampler` with no import relationship between the two packages. This is what lets the Dispatcher — which already holds an `obs.Observer` — emit `NTPSample(sys, offset, leap, phc)` from the serial-timing and PHC-disciplined paths without importing `phcsample`, while the Generator calls the same method on its own `phcsample.Sampler` argument. A shared struct type, by contrast, would force one package to own it and the other to import it, pushing the dependency in a direction that crosses the producer/aggregator boundary.
 
 In the serial-timing path `phc` is `ptime.Time{}` (no PHC in play); in the PHC-disciplined and free-running paths it carries the PHC timestamp the offset was computed at. Observers that want to distinguish can check `phc.IsZero()`.
 
@@ -330,10 +330,12 @@ func NewGenerator(cfg Config, smp Sampler, edgesPerPulse int, lg *slog.Logger) *
     }
 }
 
-// MsgUTCTime implements the MsgUTCTimer sink. Phase 1 ignores the
-// leap arg; phase 2 adds a separate Leap method.
-func (g *Generator) MsgUTCTime(utc, tRead time.Time, _ ptime.LeapSecondKind) {
+// MsgUTCTime implements the MsgUTCTimer sink. The most recent leap
+// value is retained and forwarded on the next NTPSample call; phase 2
+// adds a separate Leap method.
+func (g *Generator) MsgUTCTime(utc, tRead time.Time, leap ptime.LeapSecondKind) {
     g.wc.Add(tRead, utc)
+    g.leap = leap
 }
 
 func (g *Generator) Pulse(edge PulseEdge) {
@@ -343,7 +345,7 @@ func (g *Generator) Pulse(edge PulseEdge) {
 func (g *Generator) Generate(phc ptime.Time, sys time.Time) (float64, error) {
     off, err := g.win.TrueTimeOffset(phc, sys, &g.wc, nil, g.lg)
     if err != nil { return 0, err }
-    g.smp.NTPSample(sys, off, phc)
+    g.smp.NTPSample(sys, off, g.leap, phc)
     return off, nil
 }
 ```
@@ -484,9 +486,9 @@ Two standalone additions that the later phases build on but do not themselves de
 
 1. **Rename in `timemsg`.** `SerialSampler` → `MsgUTCTimer`, `SerialSample` → `MsgUTCTime`, `SetSerialSampler` → `SetMsgUTCTimer`. Update the one implementer (`Dispatcher.SerialSample`) and the existing tests. No `Leap` method yet — it is added in phase 2.
 
-2. **Add `NTPSample` observability.** Declare `NTPSample(sys time.Time, offset float64, phc ptime.Time)` on `obs.Observer` (see "Sample emission"), extend `obs.MultiObserver` to fan out and `obs.DefaultObserver` to no-op. Fix `SSEObserver` to embed `obs.DefaultObserver` (it currently embeds only `gpsprot.DefaultHandler` — see `time/internal/sseobs/sse.go`), so it picks up `NTPSample` and any future Observer additions for free. In `time/internal/gpsevent/dispatcher.go`, call `d.obs.NTPSample(...)` alongside the existing `rc.Sample(...)` in both refclock-sample paths:
-   - `SerialSample` (serial timing mode): `sys = tRead`, `offset = utc.Sub(tRead).Seconds()`, `phc = ptime.Time{}`.
-   - `sysSample` (PHC-disciplined mode): `sys = sys`, `offset = offset`, `phc = ref`.
+2. **Add `NTPSample` observability.** Declare `NTPSample(sys time.Time, offset float64, leap ptime.LeapSecondKind, phc ptime.Time)` on `obs.Observer` (see "Sample emission"), extend `obs.MultiObserver` to fan out and `obs.DefaultObserver` to no-op. Fix `SSEObserver` to embed `obs.DefaultObserver` (it currently embeds only `gpsprot.DefaultHandler` — see `time/internal/sseobs/sse.go`), so it picks up `NTPSample` and any future Observer additions for free. In `time/internal/gpsevent/dispatcher.go`, call `d.obs.NTPSample(...)` only on the success branch of `rc.Sample(...)` in both refclock-sample paths:
+   - `MsgUTCTime` (serial timing mode): `sys = tRead`, `offset = utc.Sub(tRead).Seconds()`, `leap = leap`, `phc = ptime.Time(0)`.
+   - `sysSample` (PHC-disciplined mode): `sys = sys`, `offset = offset`, `leap = leap`, `phc = ref`.
 
    The `rc.Sample` calls are unchanged; the observer hook is purely additive. Concrete observer consumers (`statsobs`, `logobs`, `promobs`, `sseobs`) pick up no-op `NTPSample` from `DefaultObserver` for now and are wired up as separate follow-ups outside this plan.
 
