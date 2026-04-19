@@ -30,13 +30,6 @@ func (edge PulseEdge) IsZero() bool {
 // a gap in edges or messages.
 var ErrNotReady = errors.New("phcsample: not enough labelled edges")
 
-// Sampler receives samples emitted by Generator.Generate. Only
-// successful calls are reported; ErrNotReady and other errors produce
-// no sample.
-type Sampler interface {
-	NTPSample(sys time.Time, offset float64, leap ptime.LeapSecondKind, phc ptime.Time)
-}
-
 // pulseCorrector is the interface implemented by timemsg.Buffer's
 // phase-2 UTC-keyed pulse-correction accessor. Phase 1 passes nil.
 type pulseCorrector interface {
@@ -47,32 +40,40 @@ type pulseCorrector interface {
 // refclock in PHC free-running mode. All three entry points are thin
 // pass-throughs to internal collaborators.
 type Generator struct {
-	cfg  Config
-	wc   wallClock
-	win  phcWindow
-	smp  Sampler
-	leap ptime.LeapSecondKind
-	lg   *slog.Logger
+	cfg           Config
+	wc            wallClock
+	win           phcWindow
+	edgesPerPulse int
+	lg            *slog.Logger
 }
 
 // NewGenerator constructs a Generator. edgesPerPulse is 1 for single-edge
 // or 2 for dual-edge mode; it is discovered by the dispatcher the same
 // way as for phcsync.
-func NewGenerator(cfg Config, smp Sampler, edgesPerPulse int, lg *slog.Logger) *Generator {
+func NewGenerator(cfg Config, edgesPerPulse int, lg *slog.Logger) *Generator {
 	return &Generator{
-		cfg: cfg,
-		wc:  *newWallClock(&cfg),
-		win: *newPhcWindow(&cfg, edgesPerPulse),
-		smp: smp,
-		lg:  lg,
+		cfg:           cfg,
+		wc:            *newWallClock(&cfg),
+		win:           *newPhcWindow(&cfg, edgesPerPulse),
+		edgesPerPulse: edgesPerPulse,
+		lg:            lg,
 	}
 }
 
-// MsgUTCTime implements the MsgUTCTimer sink. The most recent leap
-// value is retained and forwarded on the next NTPSample call.
-func (g *Generator) MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind) {
+// NewInstance returns a fresh Generator with the same configuration,
+// edgesPerPulse, and logger as g, but with empty wallClock and
+// phcWindow state. Used by the dispatcher on PHC era transitions,
+// where nothing in the prior instance is worth preserving: the
+// wallClock regression re-warms from subsequent MsgUTCTime calls and
+// pre-pause phcWindow entries would reference a stepped PHC.
+func (g *Generator) NewInstance() *Generator {
+	return NewGenerator(g.cfg, g.edgesPerPulse, g.lg)
+}
+
+// MsgUTCTime implements the MsgUTCTimer sink: every eligible UTC
+// observation from the message stream feeds the wallClock regression.
+func (g *Generator) MsgUTCTime(utc time.Time, tRead time.Time, _ ptime.LeapSecondKind) {
 	g.wc.Add(tRead, utc)
-	g.leap = leap
 }
 
 // Pulse records a pulse-edge event. Per plan, edges are buffered cheaply
@@ -82,13 +83,7 @@ func (g *Generator) Pulse(edge PulseEdge) {
 }
 
 // Generate returns the offset (true time - sys) in seconds at the PHC
-// cross-sample. On success the sample is also emitted via the Sampler.
-// Returns ErrNotReady while warming up.
+// cross-sample. Returns ErrNotReady while warming up.
 func (g *Generator) Generate(phc ptime.Time, sys time.Time) (float64, error) {
-	off, err := g.win.TrueTimeOffset(phc, sys, &g.wc, nil, g.lg)
-	if err != nil {
-		return 0, err
-	}
-	g.smp.NTPSample(sys, off, g.leap, phc)
-	return off, nil
+	return g.win.TrueTimeOffset(phc, sys, &g.wc, nil, g.lg)
 }

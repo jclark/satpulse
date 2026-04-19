@@ -3,9 +3,8 @@
 // it reuses clocksim for oscillator and PPS simulation and it reuses
 // the Go-level configuration types from syncsim for oscillator, GPS,
 // pulse, message, and fault parameters. The rig feeds the Generator
-// with synthesized PulseEdge events and UTC time messages, installs
-// its own Sampler to capture the emitted sample stream, and scores
-// each sample against ground-truth true time.
+// with synthesized PulseEdge events and UTC time messages and scores
+// each returned offset against ground-truth true time.
 //
 // There is no TOML loader. Tests and evaluation programs construct
 // Config values programmatically.
@@ -227,10 +226,7 @@ func Simulate(cfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 
 	stats := &residualStats{adev: *allan.NewAccum(1.0)}
 	buf := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
-	gen := phcsample.NewGenerator(cfg.Sample, &captureSampler{
-		expected: expectedOffset,
-		stats:    stats,
-	}, edgesPerPulse, lg)
+	gen := phcsample.NewGenerator(cfg.Sample, edgesPerPulse, lg)
 	buf.SetMsgUTCTimer(gen)
 
 	lg.Info("starting phcsample simulation",
@@ -273,10 +269,10 @@ func Simulate(cfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 			// production this is TReadWall.PHC.T / TReadWall.Sys;
 			// in the sim it is the testClock.Now() reading above
 			// paired with a non-monotonic wall-clock sys.
-			_, err := gen.Generate(tReadPHC.T, tSysWall)
+			off, err := gen.Generate(tReadPHC.T, tSysWall)
 			switch {
 			case err == nil:
-				// already scored via captureSampler.NTPSample
+				stats.addResidual(off - expectedOffset)
 			case errors.Is(err, phcsample.ErrNotReady):
 				stats.notReady++
 			default:
@@ -321,18 +317,6 @@ type PulseEventData struct {
 // is a sub-second grid point.
 type MessageEventData struct {
 	Time float64
-}
-
-// captureSampler is installed on the Generator by Simulate. Each
-// successful sample becomes a residual against the known ground-
-// truth offset.
-type captureSampler struct {
-	expected float64
-	stats    *residualStats
-}
-
-func (c *captureSampler) NTPSample(sys time.Time, offset float64, leap ptime.LeapSecondKind, phc ptime.Time) {
-	c.stats.addResidual(offset - c.expected)
 }
 
 type residualStats struct {

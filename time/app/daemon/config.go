@@ -42,10 +42,11 @@ type SerialConfig struct {
 }
 
 type PHCConfig struct {
-	Interface string `toml:"interface"`
-	Pin       uint8  `toml:"pin"`
-	Channel   uint8  `toml:"channel"`
-	Wait      bool   `toml:"wait"`
+	Interface   string `toml:"interface"`
+	Pin         uint8  `toml:"pin"`
+	Channel     uint8  `toml:"channel"`
+	Wait        bool   `toml:"wait"`
+	FreeRunning bool   `toml:"freeRunning"`
 }
 
 type LeapSecondConfig struct {

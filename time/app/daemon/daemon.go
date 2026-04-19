@@ -18,6 +18,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/logobs"
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/phc"
+	"github.com/jclark/satpulse/time/internal/phcsample"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/promobs"
 	"github.com/jclark/satpulse/time/internal/proxy"
@@ -294,23 +295,31 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, cfg *Config, gm *ptpgm.Grandmaster, rc *refclock.ProxyRefClock, obs obs.Observer, tStart time.Time) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
 	var controller *phcsync.Controller
+	var generator *phcsample.Generator
 	if clk != nil {
-		var err error
-		controller, err = phcsync.NewController(
-			clk,
-			obs,
-			gm,
-			cfg.Sync,
-			ls,
-			clk.DriverFlags.Edges(),
-			lg,
-		)
-		if err != nil {
-			return nil, err
+		edges := clk.DriverFlags.Edges()
+		if cfg.PHC.FreeRunning {
+			// Step 9 wires the [phcsample] TOML section; for now
+			// construct with built-in defaults.
+			generator = phcsample.NewGenerator(phcsample.DefaultConfig(), edges, lg)
+		} else {
+			var err error
+			controller, err = phcsync.NewController(
+				clk,
+				obs,
+				gm,
+				cfg.Sync,
+				ls,
+				edges,
+				lg,
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, ls, obs, eventLogPath, tStart)
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, generator, rc, ls, obs, eventLogPath, tStart)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
