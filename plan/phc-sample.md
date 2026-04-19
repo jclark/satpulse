@@ -57,6 +57,11 @@ type PulseEdge struct {
     TRead     phctime.Sample // monotonic-bearing PHC/system read sample
 }
 
+// IsZero reports whether edge is the zero value. Used inside phcWindow
+// to mark entries that pre-admission filtering has rejected, without
+// disturbing positional alignment across dual-edge polarity streams.
+func (edge PulseEdge) IsZero() bool
+
 // Pulse records a pulse-edge. The Generator labels it with a UTC
 // second via the labelling regression over MsgUTCTime inputs and, if
 // the edge passes pre-admission filtering, adds it as a (PHC, UTC)
@@ -316,6 +321,7 @@ New to phcsample (observables that exist only in the message-stream model):
 - **`MinMsgSpan`** — minimum elapsed time (seconds) that the observed messages must cover before the wallClock's fit is treated as usable. Larger values give more stable slope estimates but delay the first sample after startup. Recommended ~3 s.
 - **`ClockRateLimit`** — maximum tolerated rate mismatch between the system monotonic clock and the UTC time advertised by the GPS message stream, as a dimensionless fraction (e.g. `0.1` ≡ 10 %). When the two clocks appear to tick at rates differing by more than this, phcsample treats the stream as unreliable and stops producing samples. A safety bound; expected to be very generous (default around `0.1`) so it catches pathological conditions without interfering with normal crystal drift.
 - **`MsgTimingVariation`** — tolerated inconsistency in message timing, expressed as a fraction of 1 second. Measured as the median absolute deviation of observations from the best-fit line, so occasional badly-timed messages (e.g., the slower of two interleaved message types, or bursts on a 9600-baud link) do not trip it — up to ~50 % of messages can be off without firing. Deliberately lenient; a safety gate against genuinely broken streams, not a per-sample quality filter.
+- **`EdgeSecondTolerance`** — max distance in seconds from the fit-predicted UTC of an edge to the nearest integer second, for the edge to be admitted to the PHC calibration window. Must be well under 0.5 s so that rounding to the nearest second is unambiguous, and loose enough to accept legitimate edges under worst-case message-to-pulse delay jitter. Distinct from `MsgTimingVariation`: this field caps an edge-to-second-boundary distance in the fit's *output*, whereas `MsgTimingVariation` caps residual scatter of message observations around the fit *input*.
 
 Dropped from `phcsync.ResetConfig` (semantics do not survive):
 
@@ -412,9 +418,156 @@ func (w *phcWindow) TrueTimeOffset(phc ptime.Time, sys time.Time, wc *wallClock,
 func (w *phcWindow) Reset()
 ```
 
-Internals (buffering strategy, stride/polarity state, fit method, sub-ns carry representation) are deferred to a later design pass.
+**Top-level sketch of `TrueTimeOffset`.** The body is a straight pipeline through four internal collaborators, one per sub-step. Stateless across calls: no sticky state other than the raw `Pulse` buffer.
 
-### wallClock
+```go
+func (w *phcWindow) TrueTimeOffset(phc ptime.Time, sys time.Time, wc *wallClock, po pulseCorrector, lg *slog.Logger) (float64, error) {
+    timing, medianInterval, err := timingEdges(w.buf, w.edgesPerPulse, w.cfg)   // 6a + 6b
+    if err != nil {
+        return 0, err
+    }
+    basePHC := w.buf[0].Timestamp.T
+    entries, err := mapEdgesToUTC(timing, medianInterval, basePHC, wc, po)      // 6c
+    if err != nil {
+        return 0, err
+    }
+    return fitAndEvaluate(entries, basePHC, phc, sys, w.cfg.maxExtrapolation()) // 6d
+}
+```
+
+`timingEdges` wraps 6a (stride-consistency filter, applied once in single-edge mode and once per polarity in dual-edge mode) and 6b (polarity selection in dual-edge mode). Internals (buffering strategy, fit method, sub-ns carry representation) are deferred to the per-step subsections below.
+
+#### timingEdges (6a + 6b)
+
+```go
+func timingEdges(buf []PulseEdge, edgesPerPulse int, cfg *Config) (edges []PulseEdge, medianInterval time.Duration, err error) {
+    if edgesPerPulse == 1 {
+        raw, medianInterval := consistentEdges(buf, cfg.PulseVariation)
+        edges = removeZeroEdges(raw)
+        if len(edges) == 0 {
+            return nil, 0, ErrNotReady
+        }
+        return edges, medianInterval, nil
+    }
+    a, b := splitAlternating(buf)
+    ea, ma := consistentEdges(a, cfg.PulseVariation)
+    eb, mb := consistentEdges(b, cfg.PulseVariation)
+    return selectTimingStream(ea, eb, ma, mb, cfg.PulseWidthDetectLimit)
+}
+```
+
+`medianInterval` is the PHC duration spanning one real second, sourced from the chosen stream's same-polarity stride. Downstream steps (`mapEdgesToUTC`) use it as the PHC-to-real scaling factor and so do not need to recompute it.
+
+Stateless: polarity is re-decided every call from the current buffer. `selectTimingStream` returns `ErrNotReady` when either stream is empty or when the short/long pattern is not yet unambiguous.
+
+#### consistentEdges (6a)
+
+```go
+func consistentEdges(stream []PulseEdge, tolPPB float64) (edges []PulseEdge, medianInterval time.Duration)
+```
+
+`consistentEdges` takes a chronological polarity stream and returns a same-length slice where rejected edges are replaced by the `PulseEdge` zero value (admitted edges are passed through unchanged), along with the stream's median interval. Keeping the slice length fixed preserves positional alignment between the two polarity streams in dual-edge mode, so `selectTimingStream` can pair `A[i]` with `B[i]` without the shift that would otherwise arise when either stream loses entries. `selectTimingStream` calls `removeZeroEdges` on the chosen stream before returning, so callers downstream of `timingEdges` never see zero entries. `medianInterval` is the PHC duration corresponding to one real second for this stream. Rejection is against `tolPPB` (sourced from `Config.PulseVariation`). Algorithm:
+
+1. Compute PHC intervals between consecutive edges in the stream.
+2. Find the median interval.
+3. If any interval is ≥1.5× median (a gap, e.g. a missing pulse), zero out every entry before the gap and restart from step 1 on the post-gap suffix.
+4. Flag intervals deviating from the median by more than `tolPPB`. An edge adjacent to two flagged intervals — or adjacent to a single flagged interval at the stream boundary — is an outlier and is zeroed. Survivors are left in place at their original indices.
+
+Median-based so a single bad edge does not pull the center away from the true cluster. Drift across the window (tens of µs at phase-1 window sizes) is orders of magnitude below outlier magnitudes and below `PulseVariation` tolerance, so a window-wide median is drift-safe; it would need to become local if windows were ever tuned to tens of seconds or more.
+
+Returns a fully-zeroed slice (surfaced as `ErrNotReady` by callers) when the window is too short to compute a meaningful median, or when the classifier cannot identify a consistent majority.
+
+#### selectTimingStream (6b)
+
+```go
+func selectTimingStream(a, b []PulseEdge, aMed, bMed time.Duration, pulseWidthLimit float64) ([]PulseEdge, time.Duration, error) {
+    // a and b are same-length (guaranteed by splitAlternating +
+    // consistentEdges). Pair by index, skipping any pair where either
+    // side is zero. If crossPolarityGap finds no admissible pair
+    // (e.g. both streams are fully zeroed), it returns ok=false and
+    // this function returns ErrNotReady.
+    avgMedian := (aMed + bMed) / 2
+    pulseWidthPHC, ok := crossPolarityGap(a, b)
+    if !ok {
+        return nil, 0, ErrNotReady
+    }
+    pulseWidth := float64(pulseWidthPHC) * (float64(time.Second) / float64(avgMedian))
+    // The chosen stream has its zero entries removed before return:
+    // zeros served their purpose inside selectTimingStream (preserving
+    // A↔B index alignment), and mapEdgesToUTC receives a simple slice.
+    switch {
+    case pulseWidth <= pulseWidthLimit*float64(time.Second):
+        return removeZeroEdges(b), bMed, nil
+    case (1-pulseWidthLimit)*float64(time.Second) <= pulseWidth:
+        return removeZeroEdges(a), aMed, nil
+    default:
+        // Ambiguous — pulse width near 50% duty. V1 product rule
+        // forbids this; receiver must be configured outside the
+        // ambiguous band.
+        return nil, 0, ErrNotReady
+    }
+}
+```
+
+The short/long discriminator is inherited from [`phcsync/reset.go` `filterEdgeListsByPulseWidth`](time/internal/phcsync/reset.go) (line 374 onwards), but the surrounding machinery is different: a zero-sentinel alignment scheme that preserves positional pairing between the two polarity streams through `consistentEdges`'s filtering, and `crossPolarityGap` skipping zeroed pairs. The ambiguous-pulse-width fallback ("both — try message alignment") is also dropped: V1's product rule — satpulsed configures the receiver, so the pulse width can be kept well outside the ambiguous band — makes it unnecessary, and the simpler surface is preferred.
+
+#### mapEdgesToUTC (6c)
+
+```go
+// calibEntry is one point on the PHC-to-true-time ruler.
+// X is PHC nanoseconds relative to basePHC (the caller's per-call anchor).
+// Y is the top-of-second UTC at that edge, as an exact time.Time — no
+// anchoring needed on this side since time.Time is already nanosecond-
+// precise and arithmetic through time.Duration stays exact. Phase 2's
+// sub-ns pulse-offset correction modifies X (it shifts the PHC-side
+// ruler mark to the true top-of-second), not Y.
+type calibEntry struct {
+    X float64   // (P_i - basePHC) - pulseOffsetNs_i, nanoseconds
+    Y time.Time // integer-second UTC of this edge
+}
+
+func mapEdgesToUTC(edges []PulseEdge, medianInterval time.Duration, basePHC ptime.Time, wc *wallClock, po pulseCorrector) ([]calibEntry, error)
+```
+
+`mapEdgesToUTC` turns each stride-admitted edge into a ruler mark. `X` is the edge's PHC position relative to `basePHC` (a per-call anchor supplied by the caller — typically `w.buf[0].Timestamp.T`), adjusted by the sub-ns pulse-offset correction so that the mark lands at the *true* top of the GPS second rather than at the physical pulse edge. `Y` is the exact integer UTC second that top-of-second corresponds to.
+
+`basePHC` exists to keep `X` bounded to window-span magnitude (tens of seconds), so float64 ULP stays in the femtosecond range regardless of process uptime. There is no corresponding UTC anchor: `time.Time` handles nanosecond arithmetic exactly, and the fractional-ns precision from pulse correction is carried on the PHC side via `X`.
+
+Algorithm:
+
+1. For each edge, derive the edge-occurrence monotonic time: shift `TRead.Mono` back by the PHC-side delivery gap (`TRead.PHC.T - Timestamp.T`) scaled to real time by `medianInterval` (the PHC duration corresponding to one real second, already computed by `consistentEdges` — no separate rate estimate here).
+2. Ask `wc.SecondAt(edgeMono)` for the integer UTC second. Three outcomes:
+   - **Success** → admit the edge.
+   - **`errors.Is(err, ErrNotReady)`** → wallClock has no fit that covers this edge's time. The whole window is blocked on the message side. Return `ErrNotReady` immediately.
+   - **`errors.Is(err, errStale)`** → this edge is newer than wallClock's usable range. All subsequent edges (in chronological order) are also stale, so stop iterating and return the already-admitted prefix as the result. Stale on its own is not an error to the caller — the admitted prefix is a valid answer.
+   - **Any other error** (rate, scatter) → the fit is globally broken. Return the error.
+3. Drop edges whose fit-predicted UTC (before rounding) lies further from an integer second than `cfg.EdgeSecondTolerance`. Guards against rounding an edge that falls near the half-second mark. (Details of surfacing the unrounded residual out of `wallClock` are an internal change alongside this step.)
+4. Let `pulseOffsetNs` be `0.0` in phase 1, or the sub-ns `float64` returned by `po.GetUTCPulseCorrection(integer_utc)` in phase 2. Compute `X = float64((edge.Timestamp.T - basePHC).Nanoseconds()) - pulseOffsetNs` and `Y = integer_utc`. Append `{X, Y}` to entries. The pulse-offset correction enters the ruler by construction; phase 2 is purely additive because the arithmetic path already carries the fractional-ns term.
+
+Returns `ErrNotReady` if the surviving entries are too few for the 6d fit (threshold tied to a small constant; minimum meaningful window for OLS is 3).
+
+#### fitAndEvaluate (6d)
+
+```go
+// errExtrapolation indicates phc is too far past the last entry's PHC
+// position for a trusted fit evaluation.
+var errExtrapolation = errors.New("phcsample: phc beyond extrapolation range")
+
+func fitAndEvaluate(entries []calibEntry, basePHC ptime.Time, phc ptime.Time, sys time.Time, maxExtrapolation time.Duration) (offsetSeconds float64, err error)
+```
+
+`fitAndEvaluate` fits an OLS line to the ruler marks, evaluates it at `phc` to get the true UTC, subtracts `sys`, and returns the result as `float64` seconds. The entire pipeline stays in float64 nanoseconds from 6c through the final return, preserving the phase-2 sub-ns pulse-offset precision into the refclock output. No intermediate `time.Time` materialisation of the true time — `time.Time` has 1 ns resolution and would round the sub-ns precision away.
+
+Algorithm:
+
+1. If `len(entries) < minFitEntries`, return `ErrNotReady`.
+2. Compute `X_query := float64((phc - basePHC).Nanoseconds())`. `phc` is the PHC timestamp paired with the current edge's cross-sample, so it is at or just past the last entry's `X`; the evaluation is strictly forward. If `X_query - entries[last].X > float64(maxExtrapolation.Nanoseconds())`, return `errExtrapolation`.
+3. Anchor Y internally: let `yRef := entries[0].Y`. Transform to `Y_i := float64(entries[i].Y.Sub(yRef).Nanoseconds())` for OLS. Values stay bounded to window-span magnitude so float64 ULP remains in the femtosecond range.
+4. Plain OLS over `(X_i, Y_i)`: means, `S_xy`, `S_xx`, slope `b := S_xy/S_xx`, intercept `a := meanY - b·meanX`.
+5. Evaluate: `Y_query_ns := a + b·X_query`. This is the true-time offset from `yRef` in nanoseconds, as a float64 carrying sub-ns precision.
+6. Compute the offset against `sys`: `offsetNs := float64(yRef.Sub(sys).Nanoseconds()) + Y_query_ns`. The `yRef.Sub(sys)` is an exact `time.Duration` (int64 ns), small in magnitude because cross-samples pair `sys` with the recent PHC window. Return `offsetNs * 1e-9`.
+
+Plain OLS is the starting point; recency-weighted and other non-robust variants are candidates to compare in simulation (see "Open decisions"). `minFitEntries` is a small package constant — meaningful OLS needs at least 3 points.
 
 `wallClock` is an unexported type inside `phcsample` that models UTC as a function of monotonic time, synthesised from the `MsgUTCTime` stream. Given a monotonic instant — including a recovered edge-mono time — it returns the integer UTC second that time falls inside, or an error that explains why no answer is available.
 
@@ -459,7 +612,7 @@ func (c *wallClock) Reset()
 **Validation.** `SecondAt` applies these gates; failure returns an error describing which gate tripped:
 
 - **Not enough data.** Fewer than the minimum number of observations, or observations that do not yet cover `MinMsgSpan` of real time. Both conditions return `ErrNotReady` — a quiet transient state during startup and after a reset. The Generator forwards the same sentinel to its caller.
-- **Stale query.** The query's monotonic instant is more than `MaxMsgGap` past the most recent observation. The fit is too old to project from.
+- **Stale query.** The query's monotonic instant is more than `MaxMsgGap` past the most recent observation. The fit is too old to project from. Returns the sentinel `errStale` (wrapped via `fmt.Errorf` with the numeric detail) so callers can distinguish it from `ErrNotReady` and from the global-fit failures below.
 - **Clock rate mismatch.** The fitted slope differs from unity by more than `ClockRateLimit`. Indicates a pathologically broken message stream or clock — a safety gate, expected to fire very rarely.
 - **Message timing scatter.** The median absolute residual of observations around the fit line exceeds `MsgTimingVariation` (interpreted as a fraction of 1 s). Tolerant of a minority of badly-timed messages by construction; catches streams where most messages are inconsistent with each other.
 
@@ -515,7 +668,7 @@ Two standalone additions that the later phases build on but do not themselves de
 
 ### Phase 1 — working with chrony
 
-**Status: steps 3 and 4 landed.**
+**Status: steps 3, 4, and 5 landed.**
 
 Throughout phase 1:
 
@@ -575,7 +728,7 @@ A sub-package `phcsample/sim`, paralleling `syncsim` in scope, drives the Genera
 - Reuses `clocksim.RawClock`, `clocksim.VirtualClock`, oscillator simulators (`ConstantDrift`, `WhiteFreqNoise`, etc.), and GPS simulators (jitter, sawtooth, excursions, outliers) unchanged.
 - Reuses `syncsim`'s Go-level configuration types for oscillator, GPS, pulse, and fault (outages/excursions/outliers) parameters. There is no TOML loader; tests and evaluation scripts construct configs programmatically.
 - The `phcsample`-specific configuration is intentionally a small surface compared to `phcsync`'s. `phcsync` is a servo with many knobs (PI gains, MAD thresholds, convergence criteria, tracking windows, reset thresholds); `phcsample` is essentially a window size, a stride tolerance, and the choice of regression method. A handful of fields.
-- Event loop analogous to `syncsim`: merged pulse / message / tick streams. On each tick (or chosen cadence) it synthesizes a `sys time.Time` and a `phc ptime.Time` from the simulator, calls `gen.Generate(phc, sys)`, and records the returned offset.
+- Event loop analogous to `syncsim`: merged pulse / message streams. `gen.Generate(phc, sys)` is called once per edge event, synchronously with the cross-sample the simulator produced for that edge — matching production, where `Generate` runs on edge events and `phc` is always the latest edge's PHC timestamp. The sim does not call `Generate` at independent cadences; there is no higher-rate cross-sampler in v1.
 - The simulator's ground-truth true time is known, so the "true offset" is known exactly. Each emitted `(sys, offset)` is scored against it.
 - Stats: offset-vs-true mean / stddev / absMax / Allan deviation, plus Generator-internal diagnostics (residual stddev, rejected-edge rate, estimated local rate).
 - No refclock, no `rc.Sample` call, no leap-second plumbing in the sim loop. The UTC labels enter via `timemsg.Buffer` exactly as in production; `sys` is a synthesized `time.Time`; the subtraction at the end of `Generate` works identically.

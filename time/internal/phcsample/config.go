@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jclark/satpulse/time/lib/check"
 )
@@ -87,6 +88,30 @@ type Config struct {
 	// Deliberately lenient; a safety gate against genuinely broken
 	// streams, not a per-sample quality filter.
 	MsgTimingVariation float64 `toml:"msgTimingVariation" check:">0.0,<1.0" comment:"Max median residual around fit [0,1]"`
+
+	// EdgeSecondTolerance bounds the distance between the wallClock's
+	// fit-predicted UTC of a pulse edge and the nearest integer second,
+	// as a fraction of one second. Edges outside this tolerance are
+	// dropped so that rounding to the nearest integer second is never
+	// ambiguous. Must be well under 0.5 (rounding boundary); typical
+	// values are a small multiple of worst-case message-to-pulse
+	// delay jitter.
+	EdgeSecondTolerance float64 `toml:"edgeSecondTolerance" check:">0.0,<0.5" comment:"Max edge distance from integer second [0,0.5)"`
+}
+
+// maxExtrapolation is how far past the last admitted edge's PHC
+// timestamp phcWindow will extrapolate the PHC-to-UTC fit when
+// evaluating Generate. The query is normally at the latest edge's
+// PHC timestamp, but pre-admission can reject a trailing run of
+// edges (the outlier edge and its immediate neighbour), pushing the
+// last admitted entry up to two pulse intervals behind. Three
+// seconds accommodates that case for single-edge 1 Hz pulses while
+// still catching pathologically stale windows. Held as a method so
+// the plan's w.cfg.maxExtrapolation() call-site signature is
+// preserved even though the value is not a tunable Config field
+// today.
+func (cfg Config) maxExtrapolation() time.Duration {
+	return 3 * time.Second
 }
 
 // DefaultConfig returns a Config with sensible default values.
@@ -101,6 +126,7 @@ func DefaultConfig() Config {
 		MinMsgSpan:            3.0,
 		ClockRateLimit:        0.1,
 		MsgTimingVariation:    0.05,
+		EdgeSecondTolerance:   0.1,
 	}
 }
 

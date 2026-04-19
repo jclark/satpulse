@@ -199,12 +199,16 @@ func TestWallClockMsgTimingScatterRejectsMajority(t *testing.T) {
 		80 * time.Millisecond, -80 * time.Millisecond,
 		80 * time.Millisecond, -80 * time.Millisecond,
 	}
+	// Query inside the fit window: first point lands at monoBase+180ms
+	// (delay + first residual), so a queryOffset of 2500ms is safely
+	// between first and last points and doesn't trip the backward-
+	// coverage gate — the intent here is to verify the scatter gate.
 	_, _, _, err := wallClockTestInput{
 		cfg:         cfg,
 		n:           len(residuals),
 		delay:       100 * time.Millisecond,
 		residuals:   residuals,
-		queryOffset: 0,
+		queryOffset: 2500 * time.Millisecond,
 	}.run()
 	if err == nil {
 		t.Fatalf("expected msg timing scatter error, got nil")

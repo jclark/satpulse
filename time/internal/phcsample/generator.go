@@ -18,6 +18,13 @@ type PulseEdge struct {
 	TRead     phctime.Sample // monotonic-bearing PHC/system read sample
 }
 
+// IsZero reports whether edge is the zero value. phcWindow uses this
+// sentinel to mark entries that pre-admission filtering has rejected,
+// preserving positional alignment across dual-edge polarity streams.
+func (edge PulseEdge) IsZero() bool {
+	return edge == PulseEdge{}
+}
+
 // ErrNotReady indicates the Generator does not yet have enough labelled
 // edges to answer. This is the expected error during startup and after
 // a gap in edges or messages.

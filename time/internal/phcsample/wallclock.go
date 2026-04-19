@@ -1,6 +1,7 @@
 package phcsample
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -8,6 +9,11 @@ import (
 
 	"github.com/jclark/satpulse/gps/ptime"
 )
+
+// errStale indicates a wallClock query is more than MaxMsgGap past the
+// most recent observation. mapEdgesToUTC uses this as a stop-iterating
+// signal: later edges in chronological order are also stale.
+var errStale = errors.New("phcsample: wallClock query beyond max message gap")
 
 // wallClock maps monotonic time to integer-second UTC from the
 // MsgUTCTime stream. Internally it maintains a sliding linear
@@ -80,6 +86,18 @@ func (c *wallClock) Add(tRead, utc time.Time) {
 // or observations span too little real time), which callers treat as
 // a quiet transient state.
 func (c *wallClock) SecondAt(mono time.Time) (time.Time, error) {
+	t, err := c.predictUTC(mono)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t.Round(time.Second), nil
+}
+
+// predictUTC returns the fit-predicted UTC (unrounded) at mono. The
+// gates and their errors are the same as SecondAt; mapEdgesToUTC uses
+// the unrounded prediction to apply cfg.EdgeSecondTolerance before
+// rounding.
+func (c *wallClock) predictUTC(mono time.Time) (time.Time, error) {
 	if len(c.points) < 2 {
 		return time.Time{}, ErrNotReady
 	}
@@ -88,9 +106,26 @@ func (c *wallClock) SecondAt(mono time.Time) (time.Time, error) {
 		return time.Time{}, ErrNotReady
 	}
 	last := c.points[len(c.points)-1].tRead
-	if mono.Sub(last) > c.maxGap {
-		return time.Time{}, fmt.Errorf("phcsample: wallClock query %v past most recent message (limit %v)",
-			mono.Sub(last), c.maxGap)
+	if gap := mono.Sub(last); gap > c.maxGap {
+		return time.Time{}, fmt.Errorf("phcsample: wallClock query %v past most recent message (limit %v): %w",
+			gap, c.maxGap, errStale)
+	}
+	// Backward coverage: reject queries that fall before the earliest
+	// retained observation's pulse-mono position. Can happen when a
+	// message outage longer than MsgWindow is followed by recovery:
+	// the single Add that brings in the first post-outage message
+	// prunes every pre-outage point (cutoff = newest - MsgWindow), so
+	// the window jumps forward in one step while phcWindow's pulse
+	// buffer still carries edges from just before recovery. Those
+	// older edges must not be labelled by backward-extrapolating the
+	// freshly-rebuilt fit - plan step 6c treats "no fit that covers
+	// this edge's time" as ErrNotReady, so surface it as that
+	// sentinel rather than errStale (which is reserved for forward
+	// uncovered queries and drives mapEdgesToUTC's stop-iterating
+	// behaviour).
+	firstPulseMono := c.points[0].tRead.Add(-c.expectedDelay)
+	if mono.Before(firstPulseMono) {
+		return time.Time{}, ErrNotReady
 	}
 	if !c.fitValid {
 		c.refit()
@@ -105,7 +140,7 @@ func (c *wallClock) SecondAt(mono time.Time) (time.Time, error) {
 	}
 	dx := mono.Sub(c.anchorX)
 	offset := c.a + time.Duration(c.b*float64(dx))
-	return c.anchorY.Add(offset).Round(time.Second), nil
+	return c.anchorY.Add(offset), nil
 }
 
 // Reset clears the window (used on leap transition in phase 2).
