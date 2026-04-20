@@ -39,7 +39,10 @@ const (
 	epePayload  = "PQTMEPE,2,1.000,1.000,1.000,1.414,1.732"
 	svinPayload = "PQTMSVINSTATUS,1,1000,1,01,20,100,-2484434.3645,4875976.9741,3266161.3412,1.2415"
 	navPayload  = "PQTMNAV,1,1,1,190423.000,20241224,212681000,2346,18,,,12,,31.45874521,117.41532415,45.1254,-6.1245,,,1.2451,2.1254,5.1242,,,290,1.0,,78,56,,,,,,,1.2101,1.2148,0.4578,1.1547,,,45.124,,"
-	eoePayload  = "PQTMEOE,1,190423.000,20241224,2346,212681000"
+	// Captured from LG290P with PPP HAS enabled. DiffID=9002 (E6 HAS),
+	// SolType=6 (PPP converging), Datumid=1 (WGS84).
+	pppnavPayload = "PQTMPPPNAV,1,1,1,072703.000,20260415,286041000,2414,18,1,,6,,49.19484103,2.47996030,56.2874,44.6858,,,0.2254,0.3138,0.5100,,,9002,13.000,,33,33,,,,,,,0.0023,0.0149,0.1413,0.1973,,,48.19,,,"
+	eoePayload    = "PQTMEOE,1,190423.000,20241224,2346,212681000"
 )
 
 func TestPVTBundle(t *testing.T) {
@@ -244,6 +247,86 @@ func TestNAVBundle(t *testing.T) {
 	}
 	if !epoch.RTCMRefBaseID.IsSet() || epoch.RTCMRefBaseID.Get() != 290 {
 		t.Errorf("RTCMRefBaseID = %v, want 290", epoch.RTCMRefBaseID)
+	}
+}
+
+func TestPPPNAVBundle(t *testing.T) {
+	h := NewHandler()
+	msgs, epoch, err := h.HandleSentence(propFlags, pppnavPayload, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := dispatch(msgs)
+	if len(r.times) != 1 {
+		t.Fatal("expected 1 TimeMsg")
+	}
+	tm := r.times[0]
+	wantUTC := ptime.UTC(2026, 4, 15, 7, 27, 3, 0)
+	if *tm.UTCTime != wantUTC {
+		t.Errorf("UTCTime = %v, want %v", *tm.UTCTime, wantUTC)
+	}
+	wantTAI := ptime.GPS(2414, time.Duration(286041000)*time.Millisecond)
+	if tm.TAITime != wantTAI {
+		t.Errorf("TAITime = %v, want %v", tm.TAITime, wantTAI)
+	}
+	if tm.NativeMsgID != "PQTMPPPNAV" {
+		t.Errorf("NativeMsgID = %q, want PQTMPPPNAV", tm.NativeMsgID)
+	}
+	if len(r.posGeo) != 1 {
+		t.Fatal("expected 1 PosGeoMsg")
+	}
+	if r.posGeo[0].NativeMsgID != "PQTMPPPNAV" {
+		t.Errorf("PosGeoMsg.NativeMsgID = %q, want PQTMPPPNAV", r.posGeo[0].NativeMsgID)
+	}
+	if len(r.velGeo) != 1 {
+		t.Fatal("expected 1 VelGeoMsg")
+	}
+	vg := r.velGeo[0]
+	if !vg.GroundSpeed.IsSet() || vg.GroundSpeed.Get() != gpsprot.MetersPerSecondFromFloat(0.0023) {
+		t.Errorf("GroundSpeed = %v", vg.GroundSpeed.Get())
+	}
+	if epoch.FixLevel != gpsprot.FixLevelCarrierFloat {
+		t.Errorf("FixLevel = %d, want FixLevelCarrierFloat", epoch.FixLevel)
+	}
+	if epoch.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("SolutionDim = %d, want SolutionDim3D", epoch.SolutionDim)
+	}
+	wantBits := gpsprot.CorrPPPHAS | gpsprot.CorrPPPConverging | gpsprot.CorrPPP | gpsprot.CorrSSR | gpsprot.CorrUsed
+	if epoch.Correction&wantBits != wantBits {
+		t.Errorf("Correction = %b, missing bits %b", epoch.Correction, wantBits&^epoch.Correction)
+	}
+	if epoch.RTCMRefBaseID.IsSet() {
+		t.Errorf("RTCMRefBaseID should not be set for PPP magic DiffID, got %v", epoch.RTCMRefBaseID.Get())
+	}
+	if !epoch.NumSVUsed.IsSet() || epoch.NumSVUsed.Get() != 33 {
+		t.Errorf("NumSVUsed = %v, want 33", epoch.NumSVUsed)
+	}
+	if !epoch.NumSVInView.IsSet() || epoch.NumSVInView.Get() != 33 {
+		t.Errorf("NumSVInView = %v, want 33", epoch.NumSVInView)
+	}
+	wantHor := gpsprot.Meters(math.Sqrt(0.2254*0.2254 + 0.3138*0.3138))
+	if !epoch.Acc.Hor.IsSet() || epoch.Acc.Hor.Get() != wantHor {
+		t.Errorf("Acc.Hor = %v, want %v", epoch.Acc.Hor.Get(), wantHor)
+	}
+	if !epoch.Acc.Vert.IsSet() || epoch.Acc.Vert.Get() != gpsprot.Meters(0.5100) {
+		t.Errorf("Acc.Vert = %v, want 0.5100", epoch.Acc.Vert.Get())
+	}
+}
+
+// PPPNAV with a regular RTCM-range DiffID populates RTCMRefBaseID, not
+// a PPP service correction bit.
+func TestPPPNAVRTCMDiffID(t *testing.T) {
+	payload := "PQTMPPPNAV,1,1,1,072703.000,20260415,286041000,2414,18,1,,8,,49.19484103,2.47996030,56.2874,44.6858,,,0.2254,0.3138,0.5100,,,290,1.0,,33,33,,,,,,,0.0023,0.0149,0.1413,0.1973,,,48.19,,,"
+	h := NewHandler()
+	_, epoch, err := h.HandleSentence(propFlags, payload, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !epoch.RTCMRefBaseID.IsSet() || epoch.RTCMRefBaseID.Get() != 290 {
+		t.Errorf("RTCMRefBaseID = %v, want 290", epoch.RTCMRefBaseID)
+	}
+	if epoch.Correction&(gpsprot.CorrPPPHAS|gpsprot.CorrPPPB2b) != 0 {
+		t.Errorf("Correction unexpectedly contains PPP service bits: %b", epoch.Correction)
 	}
 }
 

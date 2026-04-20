@@ -123,6 +123,12 @@ func TestClassifyRequest(t *testing.T) {
 			wantSent: "PQTMCFGPPS",
 		},
 		{
+			name:     "query command no params",
+			sent:     "PQTMCFGRCVRMODE,R",
+			wantKind: RequestQuery,
+			wantSent: "PQTMCFGRCVRMODE",
+		},
+		{
 			name:     "version query",
 			sent:     "PQTMVERNO",
 			wantKind: RequestVerno,

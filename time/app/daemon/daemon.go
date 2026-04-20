@@ -12,23 +12,24 @@ import (
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
-	"github.com/jclark/satpulse/time/internal/gpsevent"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/gps/scan"
+	"github.com/jclark/satpulse/time/internal/gpsevent"
 	"github.com/jclark/satpulse/time/internal/logobs"
 	"github.com/jclark/satpulse/time/internal/obs"
-	"github.com/jclark/satpulse/time/phc"
 	"github.com/jclark/satpulse/time/internal/phcsample"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/promobs"
 	"github.com/jclark/satpulse/time/internal/proxy"
-	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/internal/ptpgm"
 	"github.com/jclark/satpulse/time/internal/refclock"
-	"github.com/jclark/satpulse/gps/scan"
-	"github.com/jclark/satpulse/time/lib/sse"
 	"github.com/jclark/satpulse/time/internal/sseobs"
 	"github.com/jclark/satpulse/time/internal/ts"
+	"github.com/jclark/satpulse/time/lib/pmc"
+	"github.com/jclark/satpulse/time/lib/sse"
+	"github.com/jclark/satpulse/time/phc"
 )
 
 func Cmd(progName string, args []string) {
@@ -224,12 +225,15 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	var (
 		gm         *ptpgm.Grandmaster
 		gmUpdateCh <-chan ptpgm.GrandmasterUpdateRequest
+		pmcClient  *pmc.Client
 	)
-	pmcClient, err := cfg.PTP.NewClient()
-	if err != nil {
-		return err
-	}
-	if pmcClient != nil {
+	// The PHC sync controller owns gm.Close(), which in turn shuts down the
+	// PTP4L worker by closing its request channel.
+	if clk != nil && cfg.PTP.PTP4L != nil {
+		pmcClient, err = cfg.PTP.NewClient()
+		if err != nil {
+			return err
+		}
 		cq, err := cfg.PTP.ClockQuality()
 		if err != nil {
 			return err
