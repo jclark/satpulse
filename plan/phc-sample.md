@@ -717,6 +717,8 @@ End of phase 1: the system is usable with chrony.
 
     Exact attribute sets and wording TBD in the step itself.
 
+13. **Surface `NTPSample` in the web UI via SSE.** `sseobs.SSEObserver` currently emits `SampleSSE` off `phcsync.Sampler.Sample` — so in free-running mode the offset field in the UI is empty. Add an `NTPSample` method on `SSEObserver` that emits an SSE with the `offset` (sys-vs-true-time in seconds, the quantity already carried by `NTPSample`), and any other values worth surfacing. This offset is *system-clock* offset rather than PHC offset, and is itself interesting — it's what chrony is ultimately disciplining, so operators can read it directly from the UI. Fires in all three dispatcher modes (serial, disciplined, free-running), so the same SSE channel becomes informative across modes. Minor web-side work to render it. Separate-from-but-parallel-to the `Sample` wiring that observes PHC offset.
+
 End of phase 2: fully configurable, tested, documented, production-grade, and delivers the receiver-specific sawtooth-correction advantage described in the motivation.
 
 ## Not in v1 (any phase)
