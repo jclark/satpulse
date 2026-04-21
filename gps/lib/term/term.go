@@ -1,6 +1,7 @@
 package term
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -9,6 +10,10 @@ import (
 
 	"golang.org/x/sys/unix"
 )
+
+// ErrNotATTY is returned when a device does not support termios.
+// Callers can check for it with errors.Is.
+var ErrNotATTY = errors.New("not a serial device")
 
 type Term struct {
 	fd      int
@@ -52,12 +57,15 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 		}
 	}()
 	// We could make this optional, but non-exclusive use of the serial port seems like a bad idea.
-	err = t.lock()
+	err = lock(fd, path)
 	if err != nil {
 		return
 	}
 	tsp, err := t.getAttr()
 	if err != nil {
+		if errors.Is(err, unix.ENOTTY) {
+			err = fmt.Errorf("%s: %w", t.path, ErrNotATTY)
+		}
 		return
 	}
 	attr := Attr{*tsp}
@@ -96,10 +104,10 @@ func (t *Term) Speed() int {
 	return t.attr.speed()
 }
 
-func (t *Term) lock() error {
-	err := unix.Flock(t.fd, unix.LOCK_EX|unix.LOCK_NB)
+func lock(fd int, path string) error {
+	err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB)
 	if err != nil {
-		return fmt.Errorf("%s: could not lock device (%w); probably being used by another process", t.path, err)
+		return fmt.Errorf("%s: could not lock device (%w); probably being used by another process", path, err)
 	}
 	return nil
 }

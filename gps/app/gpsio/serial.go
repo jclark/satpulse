@@ -35,17 +35,18 @@ var _ SerialOutPort = (*SerialConn)(nil)
 
 // OpenSerial opens a serial port at the given path and speed.
 // speed can be 0 meaning to use the current speed.
-func OpenSerial(path string, speed int) (*SerialConn, error) {
+// It returns the actual speed configured on the device.
+func OpenSerial(path string, speed int) (*SerialConn, int, error) {
 	t, err := openTerm(path, speed)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	isUART := t.DevKind() == term.DevUART
 	readLock := make(chan struct{}, 1)
 	readLock <- struct{}{}
 	writeLock := make(chan struct{}, 1)
 	writeLock <- struct{}{}
-	return &SerialConn{term: t, readLock: readLock, writeLock: writeLock, isUART: isUART}, nil
+	return &SerialConn{term: t, readLock: readLock, writeLock: writeLock, isUART: isUART}, t.Speed(), nil
 }
 
 func (c *SerialConn) LocalAddr() string {
@@ -120,7 +121,7 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 			const minDelay = time.Millisecond
 			delay := minDelay
 			if !c.isUART {
-				delay += c.TransmitTime(n)
+				delay += c.term.TransmitTime(n)
 			}
 			time.Sleep(delay)
 			err = c.term.Change(term.Speed(speed))
@@ -136,14 +137,6 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 
 func (c *SerialConn) Buffered() (int, error) {
 	return c.term.Buffered()
-}
-
-func (c *SerialConn) TransmitTime(nBytes int) time.Duration {
-	return c.term.TransmitTime(nBytes)
-}
-
-func (c *SerialConn) Speed() int {
-	return c.term.Speed()
 }
 
 func (c *SerialConn) isStopped() bool {

@@ -119,9 +119,8 @@ func (w *mockWriter) setError(err error) {
 // mockOutPort satisfies gpsio.OutPort for NewOutPortLock.
 type mockOutPort struct{}
 
-func (mockOutPort) Write(p []byte) (int, error)           { return len(p), nil }
-func (mockOutPort) Buffered() (int, error)                 { return 0, nil }
-func (mockOutPort) TransmitTime(nBytes int) time.Duration  { return 0 }
+func (mockOutPort) Write(p []byte) (int, error) { return len(p), nil }
+func (mockOutPort) Buffered() (int, error)      { return 0, nil }
 
 func testLogger() *slog.Logger {
 	return slog.Default()

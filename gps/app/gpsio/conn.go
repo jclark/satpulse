@@ -13,7 +13,6 @@ import (
 type OutPort interface {
 	io.Writer
 	Buffered() (int, error)
-	TransmitTime(nBytes int) time.Duration
 }
 
 // OutPortLock coordinates exclusive write access to an OutPort.

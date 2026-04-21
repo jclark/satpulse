@@ -51,10 +51,6 @@ func (c *NetConn) Buffered() (int, error) {
 	return 0, nil
 }
 
-func (c *NetConn) TransmitTime(nBytes int) time.Duration {
-	return 0
-}
-
 func (c *NetConn) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
