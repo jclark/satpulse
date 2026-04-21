@@ -217,17 +217,23 @@ func Simulate(cfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 	// the PHC cross-sample.
 	monoBase := time.Now()
 
-	// Ground-truth offset is constant: chrony expects
+	// Ground-truth offset is a small constant: chrony expects
 	// (true_wall_time - sys) in seconds. We synthesise
-	// sys = time.Unix(0,0) + eventTime*1s while true_wall_time =
-	// simOrigin + eventTime*1s, so the difference reduces to
-	// simOrigin - 1970.
-	expectedOffset := simOrigin.Sub(time.Unix(0, 0)).Seconds()
+	// sys = simOrigin + eventTime*1s - fixedOffsetSecs while
+	// true_wall_time = simOrigin + eventTime*1s, so the difference
+	// reduces to fixedOffsetSecs. Keeping the absolute offset small
+	// (seconds rather than decades) avoids burying sub-µs residuals
+	// under the float64 quantization floor at 1.5e9 seconds, which
+	// would otherwise hide all sawtooth-scale variation when scoring.
+	const fixedOffsetSecs = 5.0
+	sysBase := simOrigin.Add(-time.Duration(fixedOffsetSecs * 1e9))
+	expectedOffset := fixedOffsetSecs
 
 	stats := &residualStats{adev: *allan.NewAccum(1.0)}
 	buf := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
 	gen := phcsample.NewGenerator(cfg.Sample, edgesPerPulse, lg)
 	buf.SetMsgUTCTimer(gen)
+	gen.SetPulseCorrector(buf)
 
 	lg.Info("starting phcsample simulation",
 		"duration", cfg.Sim.Duration,
@@ -238,6 +244,7 @@ func Simulate(cfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 	events := mergeEvents(
 		generatePulseEvents(cfg, cfg.Sim.Duration, edgesPerPulse),
 		generateMessageEvents(cfg, cfg.Sim.Duration),
+		generatePrePulseEvents(cfg, cfg.Sim.Duration),
 	)
 
 	var lastReading clocksim.TimestampReading
@@ -255,7 +262,7 @@ func Simulate(cfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 				continue
 			}
 			tMono := monoBase.Add(time.Duration(event.Time * 1e9))
-			tSysWall := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
+			tSysWall := sysBase.Add(time.Duration(event.Time * 1e9))
 			tReadPHC := testClock.Now()
 			gen.Pulse(phcsample.PulseEdge{
 				Timestamp: lastReading.Timestamp,
@@ -284,6 +291,15 @@ func Simulate(cfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 				continue
 			}
 			deliverMessage(buf, data, event.Time, monoBase, tStart, ls)
+		case EventPrePulseMsg:
+			data := event.Data.(PrePulseMsgEventData)
+			if syncsim.InOutage(combinedOutages, data.PPS) || syncsim.InOutage(msgOnlyOutages, data.PPS) {
+				continue
+			}
+			if lastReading.Sawtooth == nil {
+				continue
+			}
+			deliverPrePulseMsg(buf, data, lastReading.Sawtooth.Next, event.Time, monoBase, tStart, ls)
 		}
 	}
 
@@ -303,6 +319,7 @@ type EventType int
 const (
 	EventPulse EventType = iota
 	EventMessage
+	EventPrePulseMsg
 )
 
 // PulseEventData is the payload of EventPulse.
@@ -317,6 +334,12 @@ type PulseEventData struct {
 // is a sub-second grid point.
 type MessageEventData struct {
 	Time float64
+}
+
+// PrePulseMsgEventData is the payload of EventPrePulseMsg. PPS is the
+// integer second the correction refers to (same grid as PulseEventData.PPS).
+type PrePulseMsgEventData struct {
+	PPS float64
 }
 
 type residualStats struct {
@@ -360,6 +383,28 @@ func (s *residualStats) final() Stats {
 		out.StdDev = math.Sqrt(variance)
 	}
 	return out
+}
+
+// deliverPrePulseMsg builds and delivers a synthetic PrePulse
+// sawtooth-correction TimeMsg for the PPS second identified by data.
+// sawNext is the sawtooth correction that will be observed at the
+// upcoming pulse (i.e. lastReading.Sawtooth.Next): sawNext is defined
+// so that pulse_time = true_second + sawNext, which makes
+// PulseOffset = -sawNext per the gpsprot convention
+// (true_second = pulse_time + PulseOffset).
+func deliverPrePulseMsg(buf *timemsg.Buffer, data PrePulseMsgEventData, sawNext float64, eventTime float64, monoBase time.Time, tStart ptime.Time, _ ptime.LeapSecond) {
+	tai := tStart.Add(time.Duration(data.PPS * 1e9))
+	pulseOffset := -sawNext * 1e9
+	msg := &gpsprot.TimeMsg{
+		TAITime:     tai,
+		GNSS:        gpsprot.GPS,
+		Ref:         gpsprot.PrePulse,
+		Tag:         gpsreg.TagUBX,
+		NativeMsgID: "TIM-TP",
+		PulseOffset: &pulseOffset,
+	}
+	tRead := monoBase.Add(time.Duration(eventTime * 1e9))
+	buf.Time(msg, tRead)
 }
 
 func deliverMessage(buf *timemsg.Buffer, data MessageEventData, eventTime float64, monoBase time.Time, tStart ptime.Time, ls ptime.LeapSecond) {
@@ -408,6 +453,32 @@ func generatePulseEvents(cfg Config, duration float64, edgesPerPulse int) iter.S
 	}
 }
 
+// generatePrePulseEvents yields an EventPrePulseMsg event a small
+// fixed interval before each PPS pulse, mirroring syncsim's PrePulse
+// emission. Returns an empty sequence when no sawtooth is configured
+// or when SawtoothType is not PrePulse, so non-sawtooth runs keep
+// their existing behaviour bit-for-bit.
+func generatePrePulseEvents(cfg Config, duration float64) iter.Seq[Event] {
+	return func(yield func(Event) bool) {
+		if cfg.GPS.Sawtooth.Amp <= 0 || cfg.Msg.SawtoothType != syncsim.SawtoothPrePulse {
+			return
+		}
+		prePulseTime := cfg.Msg.PrePulseTime
+		if prePulseTime == 0 {
+			prePulseTime = 0.95
+		}
+		for pps := 1.0; pps < duration; pps += 1.0 {
+			t := pps - prePulseTime
+			if t <= 0 {
+				continue
+			}
+			if !yield(Event{Time: t, Type: EventPrePulseMsg, Data: PrePulseMsgEventData{PPS: pps}}) {
+				return
+			}
+		}
+	}
+}
+
 func generateMessageEvents(cfg Config, duration float64) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
 		rng := rand.New(rand.NewSource(888))
@@ -426,23 +497,37 @@ func generateMessageEvents(cfg Config, duration float64) iter.Seq[Event] {
 	}
 }
 
-func mergeEvents(a, b iter.Seq[Event]) iter.Seq[Event] {
+// mergeEvents yields events from the supplied sequences in time order.
+// Ties are broken by the sequence's position in seqs (earlier wins), so
+// PrePulse messages scheduled at the same instant as a pulse would
+// still fire first when placed before it — though in practice the two
+// are separated by PrePulseTime.
+func mergeEvents(seqs ...iter.Seq[Event]) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
-		aNext, aStop := iter.Pull(a)
-		bNext, bStop := iter.Pull(b)
-		defer aStop()
-		defer bStop()
-		aEv, aOK := aNext()
-		bEv, bOK := bNext()
-		for aOK || bOK {
-			var ev Event
-			if aOK && (!bOK || aEv.Time <= bEv.Time) {
-				ev = aEv
-				aEv, aOK = aNext()
-			} else {
-				ev = bEv
-				bEv, bOK = bNext()
+		nexts := make([]func() (Event, bool), len(seqs))
+		evs := make([]Event, len(seqs))
+		oks := make([]bool, len(seqs))
+		for i, s := range seqs {
+			next, stop := iter.Pull(s)
+			defer stop()
+			nexts[i] = next
+			evs[i], oks[i] = next()
+		}
+		for {
+			pick := -1
+			for i, ok := range oks {
+				if !ok {
+					continue
+				}
+				if pick == -1 || evs[i].Time < evs[pick].Time {
+					pick = i
+				}
 			}
+			if pick == -1 {
+				return
+			}
+			ev := evs[pick]
+			evs[pick], oks[pick] = nexts[pick]()
 			if !yield(ev) {
 				return
 			}

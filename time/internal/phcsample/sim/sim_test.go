@@ -235,3 +235,123 @@ func TestPHCSample(t *testing.T) {
 		})
 	}
 }
+
+// TestPHCSampleSawtoothCorrection is the step-10 acceptance test.
+// Residual per sample is (fitted UTC at cross-sample PHC) - (true UTC
+// at cross-sample PHC); it is the delta we want to keep small. With
+// a 15 ns peak-to-peak PrePulse sawtooth injected by the sim:
+//
+//   - IgnoreSawtoothCorrection=true must leave the delta at the
+//     uncorrected-sawtooth level;
+//   - corrections applied must shrink the delta meaningfully toward
+//     the zero-sawtooth baseline.
+//
+// A wrong-sign or wrong-timescale correction fails the "corrected
+// beats ignored" assertions because it doubles the sawtooth in X
+// rather than cancelling it.
+//
+// Two delay regimes are exercised:
+//   - "fast delivery": Pulse.MaxDelay = 250 µs (the MinDelay..MaxDelay
+//     defaults), matching fast PHC-timestamper paths. xQuery is on top
+//     of the last admitted edge.
+//   - "CM4/5 delivery": Pulse.MaxDelay = 0.25 s, matching the Raspberry
+//     Pi CM4/CM5 kernel worker-thread cadence that can delay edge
+//     timestamp delivery by up to a quarter second. xQuery is a full
+//     extrapolation horizon past the last admitted edge, so any slope
+//     error in the OLS fit is amplified by 0.25 s before surfacing as
+//     residual. This is where the PHC regression is really stressed.
+//
+// The sawtooth cycles fast enough (driven by a 100 ppb internal clock)
+// to look non-linear over the PulseWindow; otherwise OLS absorbs it
+// perfectly as a slope shift.
+func TestPHCSampleSawtoothCorrection(t *testing.T) {
+	const (
+		duration   = 3000.0 // a few thousand samples
+		sawAmp     = 15.0   // ns peak-to-peak
+		phcFreqOff = 2000
+		phcDrift   = -150.0
+	)
+	cases := []struct {
+		name     string
+		minDelay float64
+		maxDelay float64
+	}{
+		{name: "fast delivery (MaxDelay=250us)", minDelay: 5e-6, maxDelay: 250e-6},
+		{name: "CM4/5 delivery (MaxDelay=0.25s)", minDelay: 0.01, maxDelay: 0.25},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			run := func(name string, modify func(*Config)) Stats {
+				t.Helper()
+				cfg := DefaultConfig()
+				cfg.Sim.Duration = duration
+				cfg.PHC.FreqOffset = phcFreqOff
+				cfg.PHC.Drift = phcDrift
+				cfg.Pulse.MinDelay = tc.minDelay
+				cfg.Pulse.MaxDelay = tc.maxDelay
+				if modify != nil {
+					modify(&cfg)
+				}
+				curTime := time.Date(2017, 1, 1, 0, 0, 0, 0, time.UTC)
+				lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+				stats, err := Simulate(cfg, &curTime, lg)
+				if err != nil {
+					t.Fatalf("%s: Simulate: %v", name, err)
+				}
+				if stats.Samples < 2000 {
+					t.Errorf("%s: Samples = %d, want >= 2000", name, stats.Samples)
+				}
+				if stats.Errors > 0 {
+					t.Errorf("%s: Errors = %d, want 0", name, stats.Errors)
+				}
+				t.Logf("%-10s samples=%d  mean=%+.3f ns  stddev=%.3f ns  absMax=%d ns",
+					name, stats.Samples, stats.Mean, stats.StdDev, stats.AbsMax.Nanoseconds())
+				return stats
+			}
+
+			baseline := run("baseline", nil)
+
+			withSawtooth := func(cfg *Config) {
+				cfg.GPS.Sawtooth.Amp = sawAmp
+				cfg.GPS.Sawtooth.InternalClock.Amp = 100.0
+				cfg.Msg.SawtoothType = syncsim.SawtoothPrePulse
+				cfg.Msg.PrePulseTime = 0.95
+			}
+			ignored := run("ignored", func(cfg *Config) {
+				withSawtooth(cfg)
+				cfg.Sample.IgnoreSawtoothCorrection = true
+			})
+			corrected := run("corrected", withSawtooth)
+
+			// Sanity: uncorrected sawtooth must visibly widen the
+			// delta versus baseline, so that "corrected beats ignored"
+			// is a real assertion.
+			if ignored.StdDev < 2.0*baseline.StdDev {
+				t.Errorf("ignored stddev %.2f ns is not visibly worse than baseline %.2f ns; sawtooth injection too weak", ignored.StdDev, baseline.StdDev)
+			}
+
+			// Corrections must meaningfully shrink the delta relative
+			// to the ignored case. A wrong-sign or unscaled
+			// implementation fails here because it adds the sawtooth
+			// back in rather than cancelling it.
+			if corrected.StdDev >= 0.5*ignored.StdDev {
+				t.Errorf("corrected stddev %.2f ns does not improve on ignored %.2f ns (< 0.5x)", corrected.StdDev, ignored.StdDev)
+			}
+			if corrected.AbsMax*2 > ignored.AbsMax*3/2+time.Nanosecond {
+				// Require absMax to drop by at least ~33 percent.
+				t.Errorf("corrected absMax %v does not improve enough on ignored %v", corrected.AbsMax, ignored.AbsMax)
+			}
+
+			// Corrections should recover close to the zero-sawtooth
+			// baseline. The slack is wider for the CM4/5 case because
+			// extrapolation amplifies residual sub-ns noise in X.
+			absSlack := 3 * time.Nanosecond
+			if tc.maxDelay > 0.01 {
+				absSlack = 5 * time.Nanosecond
+			}
+			if corrected.AbsMax > baseline.AbsMax+absSlack {
+				t.Errorf("corrected absMax %v does not recover close to baseline %v (slack %v)", corrected.AbsMax, baseline.AbsMax, absSlack)
+			}
+		})
+	}
+}

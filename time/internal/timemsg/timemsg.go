@@ -101,6 +101,14 @@ func (buf *Buffer) msgUTCTime(msg *gpsprot.TimeMsg, tRead time.Time) {
 	if buf.msgUTCTimer == nil || msg.UTCTime == nil {
 		return
 	}
+	// PrePulse messages arrive before the pulse and carry the UTC of
+	// the upcoming pulse; pairing that UTC with the receive-time tRead
+	// would feed misaligned points into downstream wallClock/SOCK
+	// regressions. PulseOffset lookup consumes PrePulse messages
+	// through a separate UTC-keyed accessor.
+	if msg.Ref == gpsprot.PrePulse {
+		return
+	}
 	ut := *msg.UTCTime
 	// Skip leap second (23:59:60)
 	if ut.TimeOfDay >= 24*time.Hour {
@@ -384,18 +392,93 @@ func (buf *Buffer) getPulseCorrectionLast(lastCorr *gpsprot.TimeMsg, refTime pti
 	return 0, false
 }
 
+// GetUTCPulseCorrection retrieves the PrePulse pulse-offset correction for
+// a given UTC reference time, as float64 nanoseconds with no rounding.
+// Returns (0, false) if no suitable correction is available.
+//
+// PostPulse correction messages are not consulted: in PostPulse mode the
+// correction for pulse N arrives after pulse N's edge event, which is a
+// different pipeline. See the phase-2 plan for PostPulse handling.
+//
+// Lookup uses each candidate message's TAITime (converted via buf.ls to
+// UTC sys-time for comparison), so PrePulse messages that only carry
+// TAI (as real UBX TIM-TP messages may) are still matchable. This also
+// keeps the PrePulse delivery out of Buffer.msgUTCTime, which should
+// only fire for PostPulse/NAV messages.
+//
+// The returned correction satisfies: true_time_of_second = pulse_time + correction
+func (buf *Buffer) GetUTCPulseCorrection(refTime time.Time) (float64, bool) {
+	lastCorr := buf.lastPreCorrMsg
+	if lastCorr == nil {
+		return 0, false
+	}
+	lastUTC, ok := buf.msgUTC(lastCorr)
+	if !ok {
+		return 0, false
+	}
+	if refTime.After(lastUTC) {
+		return 0, false
+	}
+	if refTime.Equal(lastUTC) {
+		return buf.pulseOffsetNs(lastCorr)
+	}
+	entries := buf.validEntries()
+	for i := len(entries) - 1; i >= 0; i-- {
+		m := entries[i].msg
+		if m.PulseOffset == nil || m.Ref != gpsprot.PrePulse {
+			continue
+		}
+		t, ok := buf.msgUTC(m)
+		if !ok {
+			continue
+		}
+		if refTime.Equal(t) {
+			return buf.pulseOffsetNs(m)
+		}
+		if t.Before(refTime) {
+			break
+		}
+	}
+	return 0, false
+}
+
+// msgUTC returns msg's UTC as a sys-time, preferring an explicit UTCTime
+// field but falling back to a TAI-derived value via buf.ls. Returns
+// (zero, false) when neither is available.
+func (buf *Buffer) msgUTC(msg *gpsprot.TimeMsg) (time.Time, bool) {
+	if msg.UTCTime != nil {
+		return msg.UTCTime.SysTime(), true
+	}
+	if !msg.TAITime.IsZero() {
+		u := buf.ls.TimeToUTC(msg.TAITime)
+		return u.SysTime(), true
+	}
+	return time.Time{}, false
+}
+
 // maxPulseOffset is the maximum acceptable pulse offset in nanoseconds.
 const maxPulseOffset = 100
 
-// validatePulseOffset checks that the PulseOffset in the message is within acceptable limits.
-// It returns the PulseOffset as a time.Duration and true if valid, or (0, false) if invalid.
-func (buf *Buffer) validatePulseOffset(msg *gpsprot.TimeMsg) (time.Duration, bool) {
+// pulseOffsetNs returns msg.PulseOffset in nanoseconds if within limits,
+// or (0, false) if missing or out of range. Shared validation core for
+// both the rounded-Duration accessor and the float64 accessor.
+func (buf *Buffer) pulseOffsetNs(msg *gpsprot.TimeMsg) (float64, bool) {
 	if msg.PulseOffset == nil {
 		return 0, false
 	}
 	off := *msg.PulseOffset
 	if math.Abs(off) > maxPulseOffset {
 		buf.lg.Warn("pulse offset exceeds acceptable limit", "pulseOffset", off, "limit", maxPulseOffset, "tag", msg.Tag, "msgID", msg.NativeMsgID, "tai", msg.TAITime)
+		return 0, false
+	}
+	return off, true
+}
+
+// validatePulseOffset checks that the PulseOffset in the message is within acceptable limits.
+// It returns the PulseOffset as a time.Duration and true if valid, or (0, false) if invalid.
+func (buf *Buffer) validatePulseOffset(msg *gpsprot.TimeMsg) (time.Duration, bool) {
+	off, ok := buf.pulseOffsetNs(msg)
+	if !ok {
 		return 0, false
 	}
 	return time.Duration(math.Round(off)), true

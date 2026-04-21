@@ -263,9 +263,10 @@ func crossPolarityGap(a, b []PulseEdge) (time.Duration, bool) {
 }
 
 // calibEntry is one point on the PHC-to-true-time ruler. X is PHC
-// nanoseconds relative to the per-call basePHC anchor, minus the
-// sub-ns pulse-offset correction (phase 2); Y is the integer-second
-// UTC label at that edge.
+// nanoseconds relative to the per-call basePHC anchor, shifted by the
+// PHC-scaled pulse-offset correction (phase 2) so the ruler mark lands
+// at the exact top-of-second rather than at the physical edge; Y is
+// the integer-second UTC label of that top-of-second.
 type calibEntry struct {
 	X float64
 	Y time.Time
@@ -309,14 +310,20 @@ func mapEdgesToUTC(edges []PulseEdge, medianInterval time.Duration, basePHC ptim
 			continue
 		}
 
-		var pulseOffsetNs float64
+		var pulseOffsetPHCNs float64
 		if po != nil {
 			if v, ok := po.GetUTCPulseCorrection(rounded); ok {
-				pulseOffsetNs = v
+				// PulseOffset is true-time ns: true_second = pulse_time + PulseOffset,
+				// so the physical edge sits PulseOffset true-time ns before the top
+				// of second. Convert into PHC ns (scale = realPerPHC, so PHC ns per
+				// real ns = 1/scale = medianInterval/Second) and add to the edge's
+				// PHC coordinate, shifting the ruler mark from the physical edge
+				// to the top-of-second that Y labels.
+				pulseOffsetPHCNs = v / scale
 			}
 		}
 
-		x := float64(edge.Timestamp.T.Sub(basePHC).Nanoseconds()) - pulseOffsetNs
+		x := float64(edge.Timestamp.T.Sub(basePHC).Nanoseconds()) + pulseOffsetPHCNs
 		entries = append(entries, calibEntry{X: x, Y: rounded})
 	}
 	if len(entries) < minFitEntries {

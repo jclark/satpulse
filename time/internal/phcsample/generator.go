@@ -31,7 +31,9 @@ func (edge PulseEdge) IsZero() bool {
 var ErrNotReady = errors.New("phcsample: not enough labelled edges")
 
 // pulseCorrector is the interface implemented by timemsg.Buffer's
-// phase-2 UTC-keyed pulse-correction accessor. Phase 1 passes nil.
+// phase-2 UTC-keyed pulse-correction accessor. Callers that have no
+// correction source leave g.pc nil; the arithmetic path then behaves
+// as if every correction were zero (the phase-1 fallback).
 type pulseCorrector interface {
 	GetUTCPulseCorrection(refTime time.Time) (float64, bool)
 }
@@ -43,13 +45,15 @@ type Generator struct {
 	cfg           Config
 	wc            wallClock
 	win           phcWindow
+	pc            pulseCorrector // nil if no sawtooth correction source is installed
 	edgesPerPulse int
 	lg            *slog.Logger
 }
 
 // NewGenerator constructs a Generator. edgesPerPulse is 1 for single-edge
 // or 2 for dual-edge mode; it is discovered by the dispatcher the same
-// way as for phcsync.
+// way as for phcsync. The sawtooth-correction source is installed
+// separately via SetPulseCorrector.
 func NewGenerator(cfg Config, edgesPerPulse int, lg *slog.Logger) *Generator {
 	return &Generator{
 		cfg:           cfg,
@@ -60,14 +64,24 @@ func NewGenerator(cfg Config, edgesPerPulse int, lg *slog.Logger) *Generator {
 	}
 }
 
+// SetPulseCorrector installs the source of UTC-keyed pulse-offset
+// corrections used to shift pulse-edge labels to the true top-of-second
+// during PHC calibration. Typically wired by the dispatcher to the
+// timemsg.Buffer. Pass nil to disable sawtooth correction.
+func (g *Generator) SetPulseCorrector(pc pulseCorrector) {
+	g.pc = pc
+}
+
 // NewInstance returns a fresh Generator with the same configuration,
-// edgesPerPulse, and logger as g, but with empty wallClock and
-// phcWindow state. Used by the dispatcher on PHC era transitions,
-// where nothing in the prior instance is worth preserving: the
-// wallClock regression re-warms from subsequent MsgUTCTime calls and
-// pre-pause phcWindow entries would reference a stepped PHC.
+// edgesPerPulse, pulse-corrector, and logger as g, but with empty
+// wallClock and phcWindow state. Used by the dispatcher on PHC era
+// transitions, where nothing in the prior instance is worth preserving:
+// the wallClock regression re-warms from subsequent MsgUTCTime calls
+// and pre-pause phcWindow entries would reference a stepped PHC.
 func (g *Generator) NewInstance() *Generator {
-	return NewGenerator(g.cfg, g.edgesPerPulse, g.lg)
+	n := NewGenerator(g.cfg, g.edgesPerPulse, g.lg)
+	n.pc = g.pc
+	return n
 }
 
 // MsgUTCTime implements the MsgUTCTimer sink: every eligible UTC
@@ -85,5 +99,9 @@ func (g *Generator) Pulse(edge PulseEdge) {
 // Generate returns the offset (true time - sys) in seconds at the PHC
 // cross-sample. Returns ErrNotReady while warming up.
 func (g *Generator) Generate(phc ptime.Time, sys time.Time) (float64, error) {
-	return g.win.TrueTimeOffset(phc, sys, &g.wc, nil, g.lg)
+	pc := g.pc
+	if g.cfg.IgnoreSawtoothCorrection {
+		pc = nil
+	}
+	return g.win.TrueTimeOffset(phc, sys, &g.wc, pc, g.lg)
 }

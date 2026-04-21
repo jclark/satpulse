@@ -887,3 +887,111 @@ func TestMsgUTCTimerReadDelay(t *testing.T) {
 		t.Errorf("tRead = %v, want %v (tRead - ReadDelay)", rec.samples[0].read, want)
 	}
 }
+
+func TestGetUTCPulseCorrection(t *testing.T) {
+	date := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
+	utc := func(sec int64) *ptime.UTCTime {
+		return &ptime.UTCTime{Date: date, TimeOfDay: time.Duration(sec) * time.Second}
+	}
+	utcAt := func(sec int64) time.Time {
+		return utc(sec).SysTime()
+	}
+	pre := func(sec int64, off float64) *gpsprot.TimeMsg {
+		o := off
+		return &gpsprot.TimeMsg{
+			TAITime:     ptime.Time(sec * int64(time.Second)),
+			UTCTime:     utc(sec),
+			GNSS:        gpsprot.GPS,
+			Ref:         gpsprot.PrePulse,
+			Tag:         gpsreg.TagUBX,
+			NativeMsgID: "TIM-TOS",
+			PulseOffset: &o,
+		}
+	}
+	post := func(sec int64, off float64) *gpsprot.TimeMsg {
+		m := pre(sec, off)
+		m.Ref = gpsprot.PostPulse
+		return m
+	}
+
+	// A PrePulse with an out-of-range offset + a separate in-range entry
+	// for the same test of "corrupt latest, fall back to earlier".
+	outOfRange := pre(400, 150.0) // exceeds maxPulseOffset
+
+	tests := []struct {
+		name       string
+		msgs       []*gpsprot.TimeMsg // delivered in order
+		query      time.Time
+		expectNs   float64
+		expectOK   bool
+	}{
+		{
+			name:     "prepulse exact match returns unrounded ns",
+			msgs:     []*gpsprot.TimeMsg{pre(100, -5.5)},
+			query:    utcAt(100),
+			expectNs: -5.5,
+			expectOK: true,
+		},
+		{
+			name:     "preserves sub-nanosecond fraction",
+			msgs:     []*gpsprot.TimeMsg{pre(100, 7.25)},
+			query:    utcAt(100),
+			expectNs: 7.25,
+			expectOK: true,
+		},
+		{
+			name:     "walks back to earlier prepulse",
+			msgs:     []*gpsprot.TimeMsg{pre(100, -4.0), pre(101, -5.5)},
+			query:    utcAt(100),
+			expectNs: -4.0,
+			expectOK: true,
+		},
+		{
+			name:     "future refTime returns not-ok",
+			msgs:     []*gpsprot.TimeMsg{pre(100, -4.0)},
+			query:    utcAt(101),
+			expectOK: false,
+		},
+		{
+			name:     "postpulse alone is ignored",
+			msgs:     []*gpsprot.TimeMsg{post(100, -4.0)},
+			query:    utcAt(100),
+			expectOK: false,
+		},
+		{
+			name:     "postpulse does not mask missing prepulse",
+			msgs:     []*gpsprot.TimeMsg{pre(100, -4.0), post(101, -5.5)},
+			query:    utcAt(101),
+			expectOK: false,
+		},
+		{
+			name:     "no messages",
+			msgs:     nil,
+			query:    utcAt(100),
+			expectOK: false,
+		},
+		{
+			name:     "out-of-range prepulse is rejected",
+			msgs:     []*gpsprot.TimeMsg{outOfRange},
+			query:    utcAt(400),
+			expectOK: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+			buf := NewBuffer(lg, 10*time.Second, ptime.LeapSecond{UTCOffAfter: 37}, gpsprot.GPS)
+			for _, m := range tc.msgs {
+				buf.Time(m, time.Now())
+			}
+			got, ok := buf.GetUTCPulseCorrection(tc.query)
+			if ok != tc.expectOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.expectOK)
+			}
+			if ok && got != tc.expectNs {
+				t.Errorf("got %v ns, want %v ns", got, tc.expectNs)
+			}
+		})
+	}
+}

@@ -71,9 +71,12 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 	// Always create timeMsgBuffer (useful even without PHC)
 	timeMsgBuffer := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
 
-	// Inject buffer into controller if controller exists
+	// Inject buffer into controller (for pulse/message correlation) or
+	// into generator (as sawtooth pulse-correction source).
 	if controller != nil {
 		controller.SetTimeMsgBuffer(timeMsgBuffer)
+	} else if generator != nil {
+		generator.SetPulseCorrector(timeMsgBuffer)
 	}
 	d := Dispatcher{
 		pktProcs:      pktProcs,
