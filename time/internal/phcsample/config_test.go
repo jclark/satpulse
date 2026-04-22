@@ -9,6 +9,9 @@ import (
 // validation.
 func TestDefaultConfigValidates(t *testing.T) {
 	cfg := DefaultConfig()
+	if !cfg.SmoothPhase {
+		t.Errorf("DefaultConfig().SmoothPhase = false, want true")
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("DefaultConfig().Validate() = %v", err)
 	}

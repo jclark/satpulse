@@ -75,7 +75,7 @@ func (w *phcWindow) TrueTimeOffset(phc ptime.Time, sys time.Time, wc *wallClock,
 	if err != nil {
 		return 0, err
 	}
-	return fitAndEvaluate(entries, basePHC, phc, sys, w.cfg.maxExtrapolation())
+	return fitAndEvaluate(entries, basePHC, phc, sys, w.cfg.maxExtrapolation(), w.cfg.SmoothPhase)
 }
 
 // timingEdges runs pre-admission stride filtering and (in dual-edge
@@ -332,12 +332,15 @@ func mapEdgesToUTC(edges []PulseEdge, medianInterval time.Duration, basePHC ptim
 	return entries, nil
 }
 
-// fitAndEvaluate fits a plain OLS line to the calibration entries and
+// fitAndEvaluate fits a plain OLS slope to the calibration entries and
 // evaluates it at phc, subtracting sys to yield the refclock offset in
-// seconds. The entire pipeline after mapEdgesToUTC stays in float64
-// nanoseconds so the phase-2 sub-ns pulse-offset correction is carried
-// through to the returned seconds value.
-func fitAndEvaluate(entries []calibEntry, basePHC ptime.Time, phc ptime.Time, sys time.Time, maxExtrap time.Duration) (float64, error) {
+// seconds. When smoothPhase is true the full-window OLS line provides
+// both rate and phase; when false the window contributes only the rate
+// estimate and the phase is anchored at the newest admitted edge. The
+// entire pipeline after mapEdgesToUTC stays in float64 nanoseconds so
+// the phase-2 sub-ns pulse-offset correction is carried through to the
+// returned seconds value.
+func fitAndEvaluate(entries []calibEntry, basePHC ptime.Time, phc ptime.Time, sys time.Time, maxExtrap time.Duration, smoothPhase bool) (float64, error) {
 	if len(entries) < minFitEntries {
 		return 0, ErrNotReady
 	}
@@ -373,7 +376,14 @@ func fitAndEvaluate(entries []calibEntry, basePHC ptime.Time, phc ptime.Time, sy
 		slope = sxy / sxx
 		intercept = meanY - slope*meanX
 	}
-	yQueryNs := intercept + slope*xQuery
+	var yQueryNs float64
+	if smoothPhase {
+		yQueryNs = intercept + slope*xQuery
+	} else {
+		last := entries[len(entries)-1]
+		yLastNs := ys[len(ys)-1]
+		yQueryNs = yLastNs + slope*(xQuery-last.X)
+	}
 	// Keep the big (yRef - sys) delta as an int64 Duration until the
 	// very end, then convert via Duration.Seconds() (which splits
 	// sec/nsec internally). This matches how the refclock-sample

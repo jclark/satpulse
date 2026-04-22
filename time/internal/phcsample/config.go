@@ -98,6 +98,13 @@ type Config struct {
 	// delay jitter.
 	EdgeSecondTolerance float64 `toml:"edgeSecondTolerance" check:">0.0,<0.5" comment:"Max edge distance from integer second [0,0.5)"`
 
+	// SmoothPhase controls whether the PHC calibration window smooths
+	// the phase estimate as well as the rate estimate. When false, the
+	// window is used only to estimate slope and the phase is anchored at
+	// the newest admitted edge. When true, the full-window OLS fit
+	// contributes to both slope and intercept.
+	SmoothPhase bool `toml:"smoothPhase" comment:"Smooth phase across the pulse window"`
+
 	// IgnoreSawtoothCorrection disables the phase-2 PrePulse sawtooth
 	// correction path. When true, Generator treats every edge as if its
 	// physical top-of-second coincided with the raw edge, even if the
@@ -137,6 +144,7 @@ func DefaultConfig() Config {
 		ClockRateLimit:      0.1,
 		MsgTimingVariation:  0.05,
 		EdgeSecondTolerance: 0.1,
+		SmoothPhase:         true,
 	}
 }
 
