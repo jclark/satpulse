@@ -59,7 +59,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	}
 	var conn gpsio.Conn
 	if v.serialDevice != "" {
-		conn, err = gpsio.OpenSerial(v.serialDevice, v.localSpeed)
+		conn, _, err = gpsio.OpenSerial(v.serialDevice, v.localSpeed)
 	} else {
 		conn, err = gpsio.OpenSocket(v.socketPath)
 	}

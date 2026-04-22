@@ -50,8 +50,7 @@ func (p *fakeOutPort) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func (p *fakeOutPort) Buffered() (int, error)              { return 0, nil }
-func (p *fakeOutPort) TransmitTime(nBytes int) time.Duration { return 0 }
+func (p *fakeOutPort) Buffered() (int, error) { return 0, nil }
 
 // fakeConfigProtocol implements gpsprot.ConfigProtocol for testing.
 type fakeConfigProtocol struct {

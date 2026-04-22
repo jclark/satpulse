@@ -108,13 +108,16 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 			lg.Debug("closed the PHC", "interface", cfg.PHC.Interface)
 		}()
 	}
-	speed := 0
+	cfgSpeed := 0
 	if cfg.Serial.Speed != nil {
-		speed = *cfg.Serial.Speed
+		cfgSpeed = *cfg.Serial.Speed
 	}
-	conn, err := gpsio.OpenSerial(cfg.Serial.Device, speed)
+	conn, speed, err := gpsio.OpenSerial(cfg.Serial.Device, cfgSpeed)
 	if err != nil {
 		return err
+	}
+	if speed == 0 {
+		speed = cfgSpeed
 	}
 
 	defer func() {
@@ -187,7 +190,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// Let the compiler check that TermError implements the SerialError interface
 	// gpsInit relies on this
 	var _ gpscfg.SerialError = gpsio.TermError{}
-	gct, err := createConfigTarget(lg, cfg, conn.Speed(), clk != nil)
+	gct, err := createConfigTarget(lg, cfg, speed, clk != nil)
 	if err != nil {
 		return err
 	}
