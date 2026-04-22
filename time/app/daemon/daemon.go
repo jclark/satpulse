@@ -232,7 +232,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	)
 	// The PHC sync controller owns gm.Close(), which in turn shuts down the
 	// PTP4L worker by closing its request channel.
-	if clk != nil && !cfg.PHC.FreeRunning && cfg.PTP.PTP4L != nil {
+	if clk != nil && cfg.PHC.Sync && cfg.PTP.PTP4L != nil {
 		pmcClient, err = cfg.PTP.NewClient()
 		if err != nil {
 			return err
@@ -305,8 +305,8 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 	var pulse gpsevent.PulseReceiver
 	if clk != nil {
 		edges := clk.DriverFlags.Edges()
-		if cfg.PHC.FreeRunning {
-			pulse = phcsample.NewGenerator(cfg.PHCSample, edges, lg)
+		if !cfg.PHC.Sync {
+			pulse = phcsample.NewGenerator(cfg.Sample.PHC, edges, lg)
 		} else {
 			ctrl, err := phcsync.NewController(
 				clk,

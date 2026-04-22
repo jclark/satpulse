@@ -29,7 +29,7 @@ type Config struct {
 	GPS        GPSConfig
 	PHC        PHCConfig
 	Sync       phcsync.Config
-	PHCSample  phcsample.Config
+	Sample     struct{ PHC phcsample.Config }
 	Proxy      proxy.Config
 	HTTP       []HTTPConfig
 	LeapSecond LeapSecondConfig
@@ -44,11 +44,11 @@ type SerialConfig struct {
 }
 
 type PHCConfig struct {
-	Interface   string `toml:"interface"`
-	Pin         uint8  `toml:"pin"`
-	Channel     uint8  `toml:"channel"`
-	Wait        bool   `toml:"wait"`
-	FreeRunning bool   `toml:"freeRunning" comment:"Do not synchronize the PHC, but use it to transfer time from the GPS receiver to an NTP daemon"`
+	Interface string `toml:"interface"`
+	Pin       uint8  `toml:"pin"`
+	Channel   uint8  `toml:"channel"`
+	Wait      bool   `toml:"wait"`
+	Sync      bool   `toml:"sync"`
 }
 
 type LeapSecondConfig struct {
@@ -143,8 +143,9 @@ func defaultConfig() *Config {
 	cfg.Log.Dir = "/var/log/satpulse"
 	cfg.PTP.ClockAccuracy = 150
 	cfg.PTP.OffsetScaledLogVariance = pmc.OffsetScaledLogVarianceUnknown
+	cfg.PHC.Sync = true
 	cfg.Sync = phcsync.DefaultConfig()
-	cfg.PHCSample = phcsample.DefaultConfig()
+	cfg.Sample.PHC = phcsample.DefaultConfig()
 	return cfg
 }
 
@@ -164,7 +165,7 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
 	}
-	if err := cfg.PHCSample.Validate(); err != nil {
+	if err := cfg.Sample.PHC.Validate(); err != nil {
 		return &configError{err: err}
 	}
 	return nil

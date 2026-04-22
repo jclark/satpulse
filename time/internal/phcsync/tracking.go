@@ -89,9 +89,7 @@ type TrackingConfig struct {
 	// feature (no frequency adjustment on missing samples).
 	AvgFreqTimeConstant float64 `toml:"avgFreqTimeConstant" check:">=0.0,<1000.0" comment:"EMA time constant for avg frequency (s)"`
 
-	// IgnoreSawtoothCorrection, when true, disables the use of pulse offset corrections
-	// from PrePulse messages. This is primarily for testing to verify that sawtooth
-	// correction improves synchronization accuracy. Default: false (use corrections).
+	// IgnoreSawtoothCorrection, when true, disables the use of pulse offset corrections.
 	IgnoreSawtoothCorrection bool `toml:"ignoreSawtoothCorrection" comment:"Ignore sawtooth corrections"`
 
 	// PulseCorrectionTimeout is maximum time in seconds to wait for a PostPulse correction

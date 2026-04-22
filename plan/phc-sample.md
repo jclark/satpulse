@@ -41,10 +41,10 @@ A new boolean field on the existing `[phc]` section:
 ```toml
 [phc]
 interface = "enp1s0"
-freeRunning = true
+sync = false
 ```
 
-When `phc.freeRunning` is true, `phcsync` does not run and `[phcsample]` configures this module instead; otherwise `[sync]` applies and `[phcsample]` is ignored. Both `[sync]` and `[phcsample]` may be present in a file; `phc.freeRunning` selects which one applies.
+`phc.sync` defaults to `true`. When it is `false`, `phcsync` does not run and `[sample.phc]` configures this module instead; otherwise `[sync]` applies and `[sample.phc]` is ignored. Both `[sync]` and `[sample.phc]` may be present in a file; `phc.sync` selects which one applies.
 
 ## Module interface
 
@@ -288,7 +288,7 @@ Explicit `gps.pulseWidth` configuration is not required; the pattern reveals its
 
 ## Module structure
 
-Module name: `phcsample` (matches the config section).
+Module name: `phcsample` (the TOML section is `[sample.phc]`).
 
 Three pieces with narrow jobs:
 
@@ -628,7 +628,7 @@ All gates are purely local to wallClock's state and do not require external info
 
 ## Relationship to existing code
 
-`freeRunning=true` introduces a **third dispatcher runtime mode**, not merely a "no controller" variant of PHC-disciplined mode. The three modes are mutually exclusive:
+`phc.sync=false` introduces a **third dispatcher runtime mode**, not merely a "no controller" variant of PHC-disciplined mode. The three modes are mutually exclusive:
 
 | Mode | PHC | `phcsync.Controller` | `phcsample.Generator` |
 |------|-----|----------------------|-----------------------|
@@ -693,17 +693,17 @@ Steps:
 
 6. **Implement `phcWindow.TrueTimeOffset`; get tests passing.** Fills in `TrueTimeOffset`'s body. This is where the heavy lifting lives: edge labelling via the passed `wallClock` (and the phase-1-nil `pulseCorrector`), pre-admission filtering (stride-`edgesPerPulse` consistency check), dual-edge polarity selection, the PHC calibration fit, evaluation at `phc`, and combination with `sys`. To be broken down into its own sub-plan. No sawtooth correction and no leap-second handling. Tests pass; the sim rig produces clocksim statistics on par with `syncsim`'s output for `phcsync`.
 
-7. **Wire into the daemon.** Add the `phc.freeRunning` config field. In the daemon and `time/internal/gpsevent/dispatcher.go`, add the third runtime mode (free-running): `controller == nil` stops being a synonym for serial timing; the three-way split between `controller`, `generator`, and neither becomes explicit. Wire `SetMsgUTCTimer` to the generator in free-running mode and to the dispatcher in serial mode; neither in disciplined mode.
+7. **Wire into the daemon.** Add the `phc.sync` config field (default `true`). In the daemon and `time/internal/gpsevent/dispatcher.go`, add the third runtime mode (free-running): `controller == nil` stops being a synonym for serial timing; the three-way split between `controller`, `generator`, and neither becomes explicit. Wire `SetMsgUTCTimer` to the generator in free-running mode and to the dispatcher in serial mode; neither in disciplined mode.
 
 End of phase 1: the system is usable with chrony.
 
 ### Phase 2 — refine, polish, and add sawtooth correction
 
-**Status: steps 9, 10, 11, and the schema part of 16 landed; first-sample info log landed out-of-band.** PrePulse sawtooth correction, `IgnoreSawtoothCorrection` knob, and the sim-rig acceptance test are in. The `[phcsample]` TOML section is now wired into the daemon's `Config` (validated, and passed to `NewGenerator` in free-running mode). `configs/config-schema.json` describes `phc.freeRunning` and the full `[phcsample]` section. A `logobs.NTPSampleLogObserver` now emits "generated first NTP refclock sample" info on the first `Observer.NTPSample` call, covering the step-12 warmup log in a mode-neutral way (see step 12 for the reduced scope). The `gpsevent.PulseReceiver` interface is in place; `phcsync.Controller` and `phcsample.Generator` both expose `Pulse(ts, tr)` and their former `PulseEdge` structs are unexported; `gpsevent.NewDispatcher` takes a single `PulseReceiver`. Steps 8, 12, 13, 14, 15, and the man-page portion of 16 are still to do.
+**Status: steps 9, 10, 11, and the schema part of 16 landed; first-sample info log landed out-of-band.** PrePulse sawtooth correction, `IgnoreSawtoothCorrection` knob, and the sim-rig acceptance test are in. The `[sample.phc]` TOML section is now wired into the daemon's `Config` (validated, and passed to `NewGenerator` in free-running mode). `configs/config-schema.json` describes `phc.sync` and the `[sample.phc]` section. A `logobs.NTPSampleLogObserver` now emits "generated first NTP refclock sample" info on the first `Observer.NTPSample` call, covering the step-12 warmup log in a mode-neutral way (see step 12 for the reduced scope). The `gpsevent.PulseReceiver` interface is in place; `phcsync.Controller` and `phcsample.Generator` both expose `Pulse(ts, tr)` and their former `PulseEdge` structs are unexported; `gpsevent.NewDispatcher` takes a single `PulseReceiver`. Steps 8, 12, 13, 14, 15, and the man-page portion of 16 are still to do.
 
 8. **Add leap-second handling.** Extend `MsgUTCTimer` with `Leap(kind ptime.LeapSecondKind)`. `timemsg.Buffer` fires it on observed leap-second transitions. `phcsample.Generator` resets both regression windows on `Leap` and returns `ErrNotReady` until re-warmed. Implement the three behaviors from "Leap-second handling". Add sim-rig tests covering leap transitions.
 
-9. **Wire the `[phcsample]` config section.** Parse the TOML `[phcsample]` section into the Generator's `Config` struct, including the phase-2 `ignoreSawtoothCorrection` knob. Revisit field names, types, units, and descriptions now that the implementation constrains what's actually tunable. Documentation and schema updates are covered separately in step 16.
+9. **Wire the `[sample.phc]` config section.** Parse the TOML `[sample.phc]` section into the Generator's `Config` struct, including the phase-2 `ignoreSawtoothCorrection` knob. Revisit field names, types, units, and descriptions now that the implementation constrains what's actually tunable. Documentation and schema updates are covered separately in step 16.
 
 10. **Add sawtooth correction (PrePulse only).**
     - Consume PrePulse pulse-correction messages and apply `PulseOffset` to each pulse-edge calibration pair so the PHC-side ruler mark lands at the exact top of the second rather than at the physical PPS edge.
@@ -735,7 +735,7 @@ End of phase 1: the system is usable with chrony.
 
 15. **Robustness to another process stepping the PHC.** `phcsample` assumes the PHC is free-running, but another process could step it — e.g. a future chrony feature that disciplines the PHC (large corrections only; small frequency tweaks are fine), or an operator running `phc_ctl`. A large step would poison the PHC calibration window if pre-step and post-step edges were combined in the same fit. The admissibility pass in `consistentEdges` already discards across a forward gap (`firstGap` flags intervals >= 1.5x median and `consistentEdges` restarts from the post-gap suffix), so a forward step is covered. A backward step produces an anomalously small or negative interval, which the per-edge PPB check flags but the `flagged[j-1] && flagged[j]` reject rule only drops the stepped edge itself; surrounding pre- and post-step edges remain and end up in the same fit. Extend the gap detector to also treat intervals far below the median as a discontinuity, so backward steps likewise trigger a restart from the post-step suffix. Sim-rig test injects a forward step and a backward step mid-run and verifies only post-step edges contribute to the next fit.
 
-16. **Man-page documentation for `phc.freeRunning` and `[phcsample]`.** Update `docs/man/satpulse.toml.5.md`: the main addition is explaining `phc.freeRunning` and what that mode does; the `[phcsample]` section gets a brief mention that it exists and a pointer to `configs/config-schema.json` for the tunable fields rather than field-by-field man-page coverage. The schema part of this step (`configs/config-schema.json` coverage of `phc.freeRunning` and all `[phcsample]` fields, kept in sync with the Go `toml:`, `check:`, and `comment:` tags) is already landed.
+16. **Man-page documentation for `phc.sync` and `[sample.phc]`.** Update `docs/man/satpulse.toml.5.md`: the main addition is explaining `phc.sync` and what `phc.sync = false` does; the `[sample.phc]` section gets a brief mention that it exists and a pointer to `configs/config-schema.json` for the tunable fields rather than field-by-field man-page coverage. The schema part of this step (`configs/config-schema.json` coverage of `phc.sync` and all `[sample.phc]` fields, kept in sync with the Go `toml:`, `check:`, and `comment:` tags) is already landed.
 
 End of phase 2: fully configurable, tested, documented, production-grade, and delivers the receiver-specific sawtooth-correction advantage described in the motivation.
 

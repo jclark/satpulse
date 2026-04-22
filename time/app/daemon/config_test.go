@@ -56,11 +56,11 @@ func TestPTPConfig(t *testing.T) {
 	}
 }
 
-func TestPHCSampleConfig(t *testing.T) {
+func TestSamplePHCConfig(t *testing.T) {
 	cfgStr := `[phc]
-freeRunning = true
+sync = false
 
-[phcsample]
+[sample.phc]
 pulseWindow = 7
 msgWindow = 60
 ignoreSawtoothCorrection = true`
@@ -68,21 +68,31 @@ ignoreSawtoothCorrection = true`
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.PHC.FreeRunning {
-		t.Errorf("PHC.FreeRunning = false, want true")
+	if cfg.PHC.Sync {
+		t.Errorf("PHC.Sync = true, want false")
 	}
-	if cfg.PHCSample.PulseWindow != 7 {
-		t.Errorf("PHCSample.PulseWindow = %d, want 7", cfg.PHCSample.PulseWindow)
+	if cfg.Sample.PHC.PulseWindow != 7 {
+		t.Errorf("Sample.PHC.PulseWindow = %d, want 7", cfg.Sample.PHC.PulseWindow)
 	}
-	if cfg.PHCSample.MsgWindow != 60 {
-		t.Errorf("PHCSample.MsgWindow = %d, want 60", cfg.PHCSample.MsgWindow)
+	if cfg.Sample.PHC.MsgWindow != 60 {
+		t.Errorf("Sample.PHC.MsgWindow = %d, want 60", cfg.Sample.PHC.MsgWindow)
 	}
-	if !cfg.PHCSample.IgnoreSawtoothCorrection {
-		t.Errorf("PHCSample.IgnoreSawtoothCorrection = false, want true")
+	if !cfg.Sample.PHC.IgnoreSawtoothCorrection {
+		t.Errorf("Sample.PHC.IgnoreSawtoothCorrection = false, want true")
 	}
 	// Unset fields inherit from DefaultConfig.
-	if cfg.PHCSample.EdgeSecondTolerance == 0 {
-		t.Errorf("PHCSample.EdgeSecondTolerance = 0, want default")
+	if cfg.Sample.PHC.EdgeSecondTolerance == 0 {
+		t.Errorf("Sample.PHC.EdgeSecondTolerance = 0, want default")
+	}
+}
+
+func TestPHCSyncDefaultsTrue(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.PHC.Sync {
+		t.Errorf("PHC.Sync = false by default, want true")
 	}
 }
 

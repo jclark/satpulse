@@ -98,13 +98,8 @@ type Config struct {
 	// delay jitter.
 	EdgeSecondTolerance float64 `toml:"edgeSecondTolerance" check:">0.0,<0.5" comment:"Max edge distance from integer second [0,0.5)"`
 
-	// IgnoreSawtoothCorrection disables the phase-2 PrePulse sawtooth
-	// correction path. When true, Generator treats every edge as if its
-	// physical top-of-second coincided with the raw edge, even if the
-	// receiver provides pulse-offset messages. Useful both as an
-	// operator escape hatch and as an A/B toggle against the corrected
-	// behaviour.
-	IgnoreSawtoothCorrection bool `toml:"ignoreSawtoothCorrection" comment:"Ignore PrePulse sawtooth corrections even if received"`
+	// IgnoreSawtoothCorrection, when true, disables the use of pulse offset corrections.
+	IgnoreSawtoothCorrection bool `toml:"ignoreSawtoothCorrection" comment:"Ignore sawtooth corrections"`
 }
 
 // maxExtrapolation is how far past the last admitted edge's PHC
