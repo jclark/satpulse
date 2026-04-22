@@ -699,7 +699,7 @@ End of phase 1: the system is usable with chrony.
 
 ### Phase 2 — refine, polish, and add sawtooth correction
 
-**Status: step 10 landed; first-sample info log landed out-of-band.** PrePulse sawtooth correction, `IgnoreSawtoothCorrection` knob, and the sim-rig acceptance test are in. A `logobs.NTPSampleLogObserver` now emits "generated first NTP refclock sample" info on the first `Observer.NTPSample` call, covering the step-12 warmup log in a mode-neutral way (see step 12 for the reduced scope). Steps 8, 9, 11, 12, 13, and 14 are still to do.
+**Status: steps 9 and 10 landed; first-sample info log landed out-of-band.** PrePulse sawtooth correction, `IgnoreSawtoothCorrection` knob, and the sim-rig acceptance test are in. The `[phcsample]` TOML section is now wired into the daemon's `Config` (validated, and passed to `NewGenerator` in free-running mode). A `logobs.NTPSampleLogObserver` now emits "generated first NTP refclock sample" info on the first `Observer.NTPSample` call, covering the step-12 warmup log in a mode-neutral way (see step 12 for the reduced scope). Steps 8, 11, 12, 13, 14, 15, and 16 are still to do.
 
 8. **Add leap-second handling.** Extend `MsgUTCTimer` with `Leap(kind ptime.LeapSecondKind)`. `timemsg.Buffer` fires it on observed leap-second transitions. `phcsample.Generator` resets both regression windows on `Leap` and returns `ErrNotReady` until re-warmed. Implement the three behaviors from "Leap-second handling". Add sim-rig tests covering leap transitions.
 

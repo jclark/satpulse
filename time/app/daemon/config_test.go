@@ -56,6 +56,36 @@ func TestPTPConfig(t *testing.T) {
 	}
 }
 
+func TestPHCSampleConfig(t *testing.T) {
+	cfgStr := `[phc]
+freeRunning = true
+
+[phcsample]
+pulseWindow = 7
+msgWindow = 60
+ignoreSawtoothCorrection = true`
+	cfg, err := readConfig(strings.NewReader(cfgStr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.PHC.FreeRunning {
+		t.Errorf("PHC.FreeRunning = false, want true")
+	}
+	if cfg.PHCSample.PulseWindow != 7 {
+		t.Errorf("PHCSample.PulseWindow = %d, want 7", cfg.PHCSample.PulseWindow)
+	}
+	if cfg.PHCSample.MsgWindow != 60 {
+		t.Errorf("PHCSample.MsgWindow = %d, want 60", cfg.PHCSample.MsgWindow)
+	}
+	if !cfg.PHCSample.IgnoreSawtoothCorrection {
+		t.Errorf("PHCSample.IgnoreSawtoothCorrection = false, want true")
+	}
+	// Unset fields inherit from DefaultConfig.
+	if cfg.PHCSample.EdgeSecondTolerance == 0 {
+		t.Errorf("PHCSample.EdgeSecondTolerance = 0, want default")
+	}
+}
+
 func TestPTPConfigClockQuality(t *testing.T) {
 	tests := []struct {
 		name      string

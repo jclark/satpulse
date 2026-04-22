@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/time/internal/phcsample"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/lib/pmc"
 	"github.com/jclark/satpulse/time/internal/proxy"
@@ -28,6 +29,7 @@ type Config struct {
 	GPS        GPSConfig
 	PHC        PHCConfig
 	Sync       phcsync.Config
+	PHCSample  phcsample.Config
 	Proxy      proxy.Config
 	HTTP       []HTTPConfig
 	LeapSecond LeapSecondConfig
@@ -142,6 +144,7 @@ func defaultConfig() *Config {
 	cfg.PTP.ClockAccuracy = 150
 	cfg.PTP.OffsetScaledLogVariance = pmc.OffsetScaledLogVarianceUnknown
 	cfg.Sync = phcsync.DefaultConfig()
+	cfg.PHCSample = phcsample.DefaultConfig()
 	return cfg
 }
 
@@ -159,6 +162,9 @@ func (cfg *Config) httpWantsSatellites() bool {
 func (cfg *Config) Validate(lg *slog.Logger) error {
 	cfg.GPS.validate(lg)
 	if err := cfg.Sync.Validate(); err != nil {
+		return &configError{err: err}
+	}
+	if err := cfg.PHCSample.Validate(); err != nil {
 		return &configError{err: err}
 	}
 	return nil

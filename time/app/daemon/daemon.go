@@ -307,9 +307,7 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 	if clk != nil {
 		edges := clk.DriverFlags.Edges()
 		if cfg.PHC.FreeRunning {
-			// Step 9 wires the [phcsample] TOML section; for now
-			// construct with built-in defaults.
-			generator = phcsample.NewGenerator(phcsample.DefaultConfig(), edges, lg)
+			generator = phcsample.NewGenerator(cfg.PHCSample, edges, lg)
 		} else {
 			var err error
 			controller, err = phcsync.NewController(
