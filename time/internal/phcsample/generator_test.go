@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/phctime"
 )
 
 // TestGeneratorWarmUpReturnsErrNotReady confirms that Generate returns
@@ -17,7 +18,7 @@ func TestGeneratorWarmUpReturnsErrNotReady(t *testing.T) {
 	g := NewGenerator(DefaultConfig(), 1, lg)
 
 	g.MsgUTCTime(utcBaseTime, utcBaseTime.Add(100*time.Millisecond), ptime.LeapSecondNone)
-	g.Pulse(PulseEdge{})
+	g.Pulse(phctime.Time{}, phctime.Sample{})
 
 	off, err := g.Generate(0, utcBaseTime)
 	if !errors.Is(err, ErrNotReady) {

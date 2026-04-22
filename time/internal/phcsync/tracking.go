@@ -135,7 +135,7 @@ type trackingSampleGenerator struct {
 	lastSample   *Sample // last accepted sample, used for edge filtering
 	timeMsgBuf   TimeMsgBuffer
 	pendingPulse *struct {
-		PulseEdge
+		pulseEdge
 		edgeIndex uint64
 	}
 }
@@ -157,7 +157,7 @@ func newTrackingSampleGenerator(cfg TrackingConfig, pt PulseType, lastSample *Sa
 
 // ignoreEdge determines whether to ignore an edge based on dual-edge filtering.
 // Returns true if the edge should be ignored (filtered out).
-func (g *trackingSampleGenerator) ignoreEdge(edge PulseEdge, edgeIndex uint64) bool {
+func (g *trackingSampleGenerator) ignoreEdge(edge pulseEdge, edgeIndex uint64) bool {
 	// If not dual-edge mode, accept all edges
 	if g.pt.EdgesPerPulse != 2 {
 		return false
@@ -202,7 +202,7 @@ func (g *trackingSampleGenerator) ignoreEdge(edge PulseEdge, edgeIndex uint64) b
 	return parityIgnore
 }
 
-func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64) *Sample {
+func (g *trackingSampleGenerator) pulseEdgeSample(edge pulseEdge, edgeIndex uint64) *Sample {
 	// Filter dual edges
 	if g.ignoreEdge(edge, edgeIndex) {
 		return nil
@@ -216,10 +216,10 @@ func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint
 	sample := g.pulseSample(edge, edgeIndex, g.cfg.IgnoreSawtoothCorrection)
 	if sample == nil {
 		pendingPulse := &struct {
-			PulseEdge
+			pulseEdge
 			edgeIndex uint64
 		}{
-			PulseEdge: edge,
+			pulseEdge: edge,
 			edgeIndex: edgeIndex,
 		}
 		g.pendingPulse = pendingPulse
@@ -231,7 +231,7 @@ func (g *trackingSampleGenerator) timeMessageSample() *Sample {
 	if g.pendingPulse == nil {
 		return nil
 	}
-	sample := g.pulseSample(g.pendingPulse.PulseEdge, g.pendingPulse.edgeIndex, g.cfg.IgnoreSawtoothCorrection)
+	sample := g.pulseSample(g.pendingPulse.pulseEdge, g.pendingPulse.edgeIndex, g.cfg.IgnoreSawtoothCorrection)
 	if sample != nil {
 		g.pendingPulse = nil
 	}
@@ -247,12 +247,12 @@ func (g *trackingSampleGenerator) tickSample(now time.Time) *Sample {
 		return nil
 	}
 	// we have passed the deadline
-	sample := g.pulseSample(g.pendingPulse.PulseEdge, g.pendingPulse.edgeIndex, true)
+	sample := g.pulseSample(g.pendingPulse.pulseEdge, g.pendingPulse.edgeIndex, true)
 	g.pendingPulse = nil
 	return sample
 }
 
-func (g *trackingSampleGenerator) pulseSample(edge PulseEdge, edgeIndex uint64, ignoreCorr bool) *Sample {
+func (g *trackingSampleGenerator) pulseSample(edge pulseEdge, edgeIndex uint64, ignoreCorr bool) *Sample {
 	// Round to nearest second
 	sec := edge.Timestamp.T.Round(time.Second)
 

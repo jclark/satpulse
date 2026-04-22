@@ -99,9 +99,9 @@ type pulseInfo struct {
 	avgInterval time.Duration // average PHC interval between pulses
 }
 
-// pulseEdgeList is a slice of PulseEdge values with the edgeIndex of the last edge.
+// pulseEdgeList is a slice of pulseEdge values with the edgeIndex of the last edge.
 type pulseEdgeList struct {
-	edges         []PulseEdge
+	edges         []pulseEdge
 	lastEdgeIndex uint64
 	pulseWidth    time.Duration // discovered pulse width (0 if single-edge mode or unknown)
 }
@@ -115,7 +115,7 @@ type resetStats struct {
 
 type resetSampleGenerator struct {
 	timeMsgBuffer     TimeMsgBuffer
-	edgeBuf           *circbuf.Buffer[PulseEdge]
+	edgeBuf           *circbuf.Buffer[pulseEdge]
 	cfg               ResetConfig
 	lg                *slog.Logger
 	pt                PulseType
@@ -132,7 +132,7 @@ func newResetSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg ResetConfig, edges
 	bufSize := cfg.PulseWindow * edgesPerPulse
 	return &resetSampleGenerator{
 		timeMsgBuffer: timeMsgBuffer,
-		edgeBuf:       circbuf.New[PulseEdge](bufSize),
+		edgeBuf:       circbuf.New[pulseEdge](bufSize),
 		cfg:           cfg,
 		lg:            lg,
 		pt:            PulseType{EdgesPerPulse: edgesPerPulse},
@@ -141,7 +141,7 @@ func newResetSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg ResetConfig, edges
 	}
 }
 
-func (g *resetSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64) *Sample {
+func (g *resetSampleGenerator) pulseEdgeSample(edge pulseEdge, edgeIndex uint64) *Sample {
 	if edge.Timestamp.Era.Uncertain() {
 		// this should not happen, since eras only change when there is a step
 		return nil
@@ -153,7 +153,7 @@ func (g *resetSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64)
 // storeEdge appends an edge to the buffer and updates lastEdgeIndex.
 // This is used during reset mode to collect edges for analysis.
 // Tests can call this directly to populate the edge buffer.
-func (g *resetSampleGenerator) storeEdge(edge PulseEdge, edgeIndex uint64) {
+func (g *resetSampleGenerator) storeEdge(edge pulseEdge, edgeIndex uint64) {
 	// Clear the edge buffer if there is obviously a missing pulse.
 	// We do this only in order to avoid getting multiple confusing log messages from
 	// checkPulseIntervals (while the gap ages out of the edgeBuf).
@@ -170,7 +170,7 @@ func (g *resetSampleGenerator) storeEdge(edge PulseEdge, edgeIndex uint64) {
 
 const maxEdgeInterval = time.Second * 3 / 2
 
-func (g *resetSampleGenerator) pulseEdgeMissing(edge PulseEdge) bool {
+func (g *resetSampleGenerator) pulseEdgeMissing(edge pulseEdge) bool {
 	if g.edgeBuf.Len() == 0 {
 		return false
 	}
@@ -468,7 +468,7 @@ func (g *resetSampleGenerator) checkPulseIntervals(edgeList pulseEdgeList, stats
 // pulseTimes estimates the real (monotonic) time when each pulse occurred.
 // It uses avgInterval to scale the delay between when the pulse timestamp was captured
 // and when it was read from the PHC, converting from PHC time domain to real time domain.
-func (g *resetSampleGenerator) pulseTimes(edges []PulseEdge, avgInterval time.Duration) []time.Time {
+func (g *resetSampleGenerator) pulseTimes(edges []pulseEdge, avgInterval time.Duration) []time.Time {
 	times := make([]time.Time, len(edges))
 	for i, edge := range edges {
 		phcDelta := edge.TRead.PHC.T.Sub(edge.Timestamp.T)
@@ -609,8 +609,8 @@ func (g *resetSampleGenerator) pulseEdgeLists() []pulseEdgeList {
 // Edges are ordered oldest to newest (same order as pulseTimestamps).
 func (g *resetSampleGenerator) pulseEdges() pulseEdgeList {
 	n := g.edgeBuf.Len()
-	edges := make([]PulseEdge, n)
-	g.edgeBuf.Iterate(func(i int, edge PulseEdge) bool {
+	edges := make([]pulseEdge, n)
+	g.edgeBuf.Iterate(func(i int, edge pulseEdge) bool {
 		edges[i] = edge
 		return true
 	})

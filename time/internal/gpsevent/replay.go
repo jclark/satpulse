@@ -41,19 +41,19 @@ func (r *Replayer) replayEvent(bytes []byte) error {
 	}
 	// Replay pulse edges
 	if event.PulseEdge != nil {
-		r.ctrl.PulseEdge(phcsync.PulseEdge{
-			Timestamp: phctime.Time{
+		r.ctrl.Pulse(
+			phctime.Time{
 				T:   event.PulseEdge.T,
 				Era: event.PulseEdge.Era,
 			},
-			TRead: phctime.Sample{
+			phctime.Sample{
 				PHC: phctime.Time{
 					T:   event.PulseEdge.TRead,
 					Era: event.PulseEdge.Era,
 				},
 				Sys: tRead, // reconstructed monotonic time
 			},
-		})
+		)
 	}
 	// Replay time messages
 	if event.Time != nil {

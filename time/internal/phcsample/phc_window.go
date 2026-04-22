@@ -26,7 +26,7 @@ var errExtrapolation = errors.New("phcsample: phc beyond extrapolation range")
 type phcWindow struct {
 	cfg           *Config
 	edgesPerPulse int
-	buf           []PulseEdge
+	buf           []pulseEdge
 }
 
 func newPhcWindow(cfg *Config, edgesPerPulse int) *phcWindow {
@@ -39,7 +39,7 @@ func newPhcWindow(cfg *Config, edgesPerPulse int) *phcWindow {
 // Pulse records a pulse edge for later processing. The buffer is
 // bounded to PulseWindow * edgesPerPulse; the oldest entry is dropped
 // when capacity is exceeded.
-func (w *phcWindow) Pulse(edge PulseEdge) {
+func (w *phcWindow) Pulse(edge pulseEdge) {
 	w.buf = append(w.buf, edge)
 	maxLen := w.cfg.PulseWindow * w.edgesPerPulse
 	if maxLen > 0 && len(w.buf) > maxLen {
@@ -82,7 +82,7 @@ func (w *phcWindow) TrueTimeOffset(phc ptime.Time, sys time.Time, wc *wallClock,
 // mode) polarity selection. Returns the chosen polarity's surviving
 // edges in chronological order, the median same-polarity interval for
 // PHC-to-real scaling downstream, and any error.
-func timingEdges(buf []PulseEdge, edgesPerPulse int, cfg *Config) ([]PulseEdge, time.Duration, error) {
+func timingEdges(buf []pulseEdge, edgesPerPulse int, cfg *Config) ([]pulseEdge, time.Duration, error) {
 	if edgesPerPulse == 1 {
 		raw, medianInterval := consistentEdges(buf, cfg.PulseVariation)
 		edges := removeZeroEdges(raw)
@@ -98,14 +98,14 @@ func timingEdges(buf []PulseEdge, edgesPerPulse int, cfg *Config) ([]PulseEdge, 
 }
 
 // consistentEdges takes a chronological polarity stream and returns a
-// same-length slice where rejected edges are replaced by the PulseEdge
+// same-length slice where rejected edges are replaced by the pulseEdge
 // zero value, along with the stream's median interval. Admitted edges
 // keep their original indices so callers pairing two polarity streams
 // can assume positional alignment. See "consistentEdges (6a)" in
 // plan/phc-sample.md for the algorithm.
-func consistentEdges(stream []PulseEdge, tolPPB float64) ([]PulseEdge, time.Duration) {
+func consistentEdges(stream []pulseEdge, tolPPB float64) ([]pulseEdge, time.Duration) {
 	n := len(stream)
-	out := make([]PulseEdge, n)
+	out := make([]pulseEdge, n)
 	if n < 2 {
 		return out, 0
 	}
@@ -181,9 +181,9 @@ func medianDuration(ds []time.Duration) time.Duration {
 // splitAlternating splits buf into even-index and odd-index streams,
 // preserving chronological order inside each. In dual-edge mode this
 // separates the two polarities.
-func splitAlternating(buf []PulseEdge) ([]PulseEdge, []PulseEdge) {
-	a := make([]PulseEdge, 0, (len(buf)+1)/2)
-	b := make([]PulseEdge, 0, len(buf)/2)
+func splitAlternating(buf []pulseEdge) ([]pulseEdge, []pulseEdge) {
+	a := make([]pulseEdge, 0, (len(buf)+1)/2)
+	b := make([]pulseEdge, 0, len(buf)/2)
 	for i, e := range buf {
 		if i%2 == 0 {
 			a = append(a, e)
@@ -194,8 +194,8 @@ func splitAlternating(buf []PulseEdge) ([]PulseEdge, []PulseEdge) {
 	return a, b
 }
 
-func removeZeroEdges(in []PulseEdge) []PulseEdge {
-	out := make([]PulseEdge, 0, len(in))
+func removeZeroEdges(in []pulseEdge) []pulseEdge {
+	out := make([]pulseEdge, 0, len(in))
 	for _, e := range in {
 		if !e.IsZero() {
 			out = append(out, e)
@@ -209,7 +209,7 @@ func removeZeroEdges(in []PulseEdge) []PulseEdge {
 // filterEdgeListsByPulseWidth. The ambiguous ~50%-duty branch is
 // deliberately rejected; satpulse is what configures the receiver, so
 // V1 requires the pulse width to be far from 0.5 s.
-func selectTimingStream(a, b []PulseEdge, aMed, bMed time.Duration, pulseWidthLimit float64) ([]PulseEdge, time.Duration, error) {
+func selectTimingStream(a, b []pulseEdge, aMed, bMed time.Duration, pulseWidthLimit float64) ([]pulseEdge, time.Duration, error) {
 	if aMed <= 0 || bMed <= 0 {
 		return nil, 0, ErrNotReady
 	}
@@ -246,7 +246,7 @@ func selectTimingStream(a, b []PulseEdge, aMed, bMed time.Duration, pulseWidthLi
 // sentinel. Returns ok=false when no admissible pair is available.
 // Matches the "gap from polarity B to the next polarity A" semantic
 // the selectTimingStream short/long branches are written against.
-func crossPolarityGap(a, b []PulseEdge) (time.Duration, bool) {
+func crossPolarityGap(a, b []pulseEdge) (time.Duration, bool) {
 	var total time.Duration
 	var n int
 	for i := 0; i+1 < len(a) && i < len(b); i++ {
@@ -278,7 +278,7 @@ type calibEntry struct {
 // propagate: ErrNotReady surfaces immediately, errStale stops
 // iteration (later edges are also stale) but returns the admitted
 // prefix, others abort with the error.
-func mapEdgesToUTC(edges []PulseEdge, medianInterval time.Duration, basePHC ptime.Time, wc *wallClock, po pulseCorrector, edgeSecTol float64) ([]calibEntry, error) {
+func mapEdgesToUTC(edges []pulseEdge, medianInterval time.Duration, basePHC ptime.Time, wc *wallClock, po pulseCorrector, edgeSecTol float64) ([]calibEntry, error) {
 	if medianInterval <= 0 {
 		return nil, ErrNotReady
 	}

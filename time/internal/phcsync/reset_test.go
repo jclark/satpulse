@@ -336,7 +336,7 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 	pt := PulseType{EdgesPerPulse: edgesPerPulse, PulseWidth: pulseWidth}
 	gen := &resetSampleGenerator{
 		timeMsgBuffer: nil, // not needed when testing genSampleForMessages directly
-		edgeBuf:       circbuf.New[PulseEdge](bufSize),
+		edgeBuf:       circbuf.New[pulseEdge](bufSize),
 		cfg:           cfg,
 		lg:            slog.Default(),
 		pt:            pt,
@@ -358,7 +358,7 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 			tRead := realTime.Add(readDelay)
 			tReadPHC := phcTime.Add(readDelay)
 
-			gen.storeEdge(PulseEdge{
+			gen.storeEdge(pulseEdge{
 				Timestamp: phctime.Time{T: phcTime, Era: 0},
 				TRead: phctime.Sample{
 					PHC: phctime.Time{T: tReadPHC, Era: 0},
@@ -424,7 +424,7 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 
 		// Store edges in chronological order
 		for i, edge := range edges {
-			gen.storeEdge(PulseEdge{
+			gen.storeEdge(pulseEdge{
 				Timestamp: phctime.Time{T: edge.phcTime, Era: 0},
 				TRead: phctime.Sample{
 					PHC: phctime.Time{T: edge.phcTime.Add(readDelay), Era: 0},
@@ -443,7 +443,7 @@ func setupGeneratorCustomIntervals(cfg ResetConfig, intervals []time.Duration) *
 	pt := PulseType{EdgesPerPulse: 1, PulseWidth: 0}
 	gen := &resetSampleGenerator{
 		timeMsgBuffer: nil,
-		edgeBuf:       circbuf.New[PulseEdge](cfg.PulseWindow),
+		edgeBuf:       circbuf.New[pulseEdge](cfg.PulseWindow),
 		cfg:           cfg,
 		lg:            slog.Default(),
 		pt:            pt,
@@ -462,7 +462,7 @@ func setupGeneratorCustomIntervals(cfg ResetConfig, intervals []time.Duration) *
 			realTime = realTime.Add(intervals[i])
 		}
 		readDelay := 1 * time.Millisecond
-		gen.storeEdge(PulseEdge{
+		gen.storeEdge(pulseEdge{
 			Timestamp: phctime.Time{T: phcTime, Era: 0},
 			TRead: phctime.Sample{
 				PHC: phctime.Time{T: phcTime.Add(readDelay), Era: 0},

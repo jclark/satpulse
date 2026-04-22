@@ -302,15 +302,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 
 func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, cfg *Config, gm *ptpgm.Grandmaster, rc *refclock.ProxyRefClock, obs obs.Observer, tStart time.Time) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
-	var controller *phcsync.Controller
-	var generator *phcsample.Generator
+	var pulse gpsevent.PulseReceiver
 	if clk != nil {
 		edges := clk.DriverFlags.Edges()
 		if cfg.PHC.FreeRunning {
-			generator = phcsample.NewGenerator(cfg.PHCSample, edges, lg)
+			pulse = phcsample.NewGenerator(cfg.PHCSample, edges, lg)
 		} else {
-			var err error
-			controller, err = phcsync.NewController(
+			ctrl, err := phcsync.NewController(
 				clk,
 				obs,
 				gm,
@@ -322,10 +320,11 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 			if err != nil {
 				return nil, err
 			}
+			pulse = ctrl
 		}
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, generator, rc, ls, obs, eventLogPath, tStart)
+	return gpsevent.NewDispatcher(lg, pktProcs, pulse, rc, ls, obs, eventLogPath, tStart)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI

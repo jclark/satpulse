@@ -109,7 +109,7 @@ type Controller struct {
 	freq          float64 // current frequency adjustment in PPB
 	estimatedFreq float64 // estimated correct frequency in PPB (from reset mode)
 	maxFreq       float64 // maximum frequency adjustment in PPB
-	edgeIndex     uint64  // increments on each PulseEdge call, tracks odd/even
+	edgeIndex     uint64  // increments on each Pulse call, tracks odd/even
 	sampleGen     sampleGenerator
 	sampleProc    sampleProcessor
 	lastSample    *Sample     // last sample (real or missing)
@@ -117,7 +117,7 @@ type Controller struct {
 }
 
 type sampleGenerator interface {
-	pulseEdgeSample(PulseEdge, uint64) *Sample
+	pulseEdgeSample(pulseEdge, uint64) *Sample
 	timeMessageSample() *Sample
 }
 
@@ -177,13 +177,13 @@ func NewController(
 	return c, nil
 }
 
-type PulseEdge struct {
+type pulseEdge struct {
 	Timestamp phctime.Time   // PHC clock timestamp for the pulse edge
 	TRead     phctime.Sample // PHC and system time immediately after the timestamp event was read
 }
 
 // SetTimeMsgBuffer sets the time message buffer for the controller.
-// This must be called exactly once after construction, before any PulseEdge or TimeMessage calls.
+// This must be called exactly once after construction, before any Pulse or TimeMessage calls.
 func (c *Controller) SetTimeMsgBuffer(buf TimeMsgBuffer) {
 	if c.mode != ModeInvalid {
 		panic("SetTimeMsgBuffer called after controller already initialized")
@@ -193,8 +193,11 @@ func (c *Controller) SetTimeMsgBuffer(buf TimeMsgBuffer) {
 	c.changeMode(ModeReset)
 }
 
-// PulseEdge handles edge timestamp events from the PHC.
-func (c *Controller) PulseEdge(edge PulseEdge) {
+// Pulse handles an edge timestamp event from the PHC. It implements
+// gpsevent.PulseReceiver so the dispatcher can deliver edges without
+// knowing which runtime mode is active.
+func (c *Controller) Pulse(ts phctime.Time, tr phctime.Sample) {
+	edge := pulseEdge{Timestamp: ts, TRead: tr}
 	sample := c.sampleGen.pulseEdgeSample(edge, c.edgeIndex)
 	c.edgeIndex++
 	c.processPresentSample(sample)

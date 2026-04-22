@@ -3,7 +3,7 @@
 // it reuses clocksim for oscillator and PPS simulation and it reuses
 // the Go-level configuration types from syncsim for oscillator, GPS,
 // pulse, message, and fault parameters. The rig feeds the Generator
-// with synthesized PulseEdge events and UTC time messages and scores
+// with synthesized pulse-edge events and UTC time messages and scores
 // each returned offset against ground-truth true time.
 //
 // There is no TOML loader. Tests and evaluation programs construct
@@ -278,12 +278,9 @@ func Simulate(cfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 			tMono := monoBase.Add(time.Duration(event.Time * 1e9))
 			tSysWall := sysBase.Add(time.Duration(event.Time * 1e9))
 			tReadPHC := testClock.Now()
-			gen.Pulse(phcsample.PulseEdge{
-				Timestamp: lastReading.Timestamp,
-				TRead: phctime.Sample{
-					PHC: tReadPHC,
-					Sys: tMono,
-				},
+			gen.Pulse(lastReading.Timestamp, phctime.Sample{
+				PHC: tReadPHC,
+				Sys: tMono,
 			})
 			// Generate consumes the PHC/sys cross-sample taken at
 			// read time, not the pulse-edge timestamp itself. In

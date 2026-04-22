@@ -9,11 +9,11 @@ import (
 	"github.com/jclark/satpulse/time/phctime"
 )
 
-// PulseEdge carries the PHC-side data the Generator needs from a
+// pulseEdge carries the PHC-side data the Generator needs from a
 // single edge event. The dispatcher adapts ts.Event into this, dropping
 // Kind / ResumeFunc / TReadWall; Kind filtering (Pause, Resume) and
 // stale-era filtering are dispatcher responsibilities.
-type PulseEdge struct {
+type pulseEdge struct {
 	Timestamp phctime.Time   // PHC timestamp of the pulse edge
 	TRead     phctime.Sample // monotonic-bearing PHC/system read sample
 }
@@ -21,8 +21,8 @@ type PulseEdge struct {
 // IsZero reports whether edge is the zero value. phcWindow uses this
 // sentinel to mark entries that pre-admission filtering has rejected,
 // preserving positional alignment across dual-edge polarity streams.
-func (edge PulseEdge) IsZero() bool {
-	return edge == PulseEdge{}
+func (edge pulseEdge) IsZero() bool {
+	return edge == pulseEdge{}
 }
 
 // ErrNotReady indicates the Generator does not yet have enough labelled
@@ -91,9 +91,11 @@ func (g *Generator) MsgUTCTime(utc time.Time, tRead time.Time, _ ptime.LeapSecon
 }
 
 // Pulse records a pulse-edge event. Per plan, edges are buffered cheaply
-// here; labelling and admission happen lazily inside Generate.
-func (g *Generator) Pulse(edge PulseEdge) {
-	g.win.Pulse(edge)
+// here; labelling and admission happen lazily inside Generate. Implements
+// gpsevent.PulseReceiver so the dispatcher can deliver edges without
+// knowing which runtime mode is active.
+func (g *Generator) Pulse(ts phctime.Time, tr phctime.Sample) {
+	g.win.Pulse(pulseEdge{Timestamp: ts, TRead: tr})
 }
 
 // Generate returns the offset (true time - sys) in seconds at the PHC

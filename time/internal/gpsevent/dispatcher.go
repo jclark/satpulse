@@ -31,6 +31,15 @@ const TimePulsePVTMsgFlags = gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAf
 // NoTimePulsePVTMsgFlags are the PVT message flags when time pulse is not enabled.
 const NoTimePulsePVTMsgFlags = gpsprot.PVTMsgTime | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgQuality | gpsprot.PVTMsgEpoch
 
+// PulseReceiver is the dispatcher's sink for PHC pulse-edge events.
+// phcsync.Controller (disciplined mode) and phcsample.Generator
+// (free-running mode) both satisfy it; the dispatcher uses a single
+// typed field for the shared Pulse call and recovers the concrete type
+// at construction time for mode-specific paths.
+type PulseReceiver interface {
+	Pulse(timestamp phctime.Time, tRead phctime.Sample)
+}
+
 // tickHandler forwards filled TimeMsgs from the TimeTicker to Observer.Tick.
 type tickHandler struct {
 	gpsprot.DefaultHandler
@@ -45,6 +54,7 @@ type Dispatcher struct {
 	gpsprot.DefaultHandler
 	pktProcs              map[gpsprot.Tag]gpsprot.PacketProcessor
 	obs                   obs.Observer // never nil
+	pulse                 PulseReceiver
 	controller            *phcsync.Controller
 	generator             *phcsample.Generator
 	rc                    *refclock.ProxyRefClock
@@ -59,14 +69,23 @@ type Dispatcher struct {
 	tStart                time.Time
 }
 
-// NewDispatcher constructs a Dispatcher. At most one of controller and
-// generator may be non-nil; that selects the runtime mode:
-//   - controller != nil: PHC-disciplined (phcsync steers the PHC).
-//   - generator != nil:  PHC free-running (phcsample emits samples).
-//   - both nil:          serial timing (samples come from time messages).
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, controller *phcsync.Controller, generator *phcsample.Generator, rc *refclock.ProxyRefClock, ls ptime.LeapSecond, obs obs.Observer, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
-	if controller != nil && generator != nil {
-		panic("gpsevent: controller and generator cannot both be non-nil")
+// NewDispatcher constructs a Dispatcher. The pulse argument selects the
+// runtime mode:
+//   - *phcsync.Controller: PHC-disciplined (phcsync steers the PHC).
+//   - *phcsample.Generator: PHC free-running (phcsample emits samples).
+//   - nil:                 serial timing (samples come from time messages).
+func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, pulse PulseReceiver, rc *refclock.ProxyRefClock, ls ptime.LeapSecond, obs obs.Observer, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
+	var controller *phcsync.Controller
+	var generator *phcsample.Generator
+	switch p := pulse.(type) {
+	case *phcsync.Controller:
+		controller = p
+	case *phcsample.Generator:
+		generator = p
+	case nil:
+		// serial timing mode
+	default:
+		panic("gpsevent: unexpected PulseReceiver type")
 	}
 	// Always create timeMsgBuffer (useful even without PHC)
 	timeMsgBuffer := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
@@ -80,6 +99,7 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 	}
 	d := Dispatcher{
 		pktProcs:      pktProcs,
+		pulse:         pulse,
 		controller:    controller,
 		generator:     generator,
 		rc:            rc,
@@ -156,8 +176,11 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 				} else if d.generator != nil {
 					// Replace with a fresh instance; nothing in
 					// the prior one is worth preserving across
-					// a PHC era transition.
+					// a PHC era transition. d.pulse has to track
+					// the swap so post-resume edges reach the new
+					// instance, not the discarded one.
 					d.generator = d.generator.NewInstance()
+					d.pulse = d.generator
 				}
 				continue
 			}
@@ -257,19 +280,13 @@ type PulseEdge struct {
 }
 
 func (d *Dispatcher) timestamp(e ts.Event) {
-	// timestamp events only occur when PHC is available, so either
-	// controller (disciplined) or generator (free-running) is set.
+	// timestamp events only occur when PHC is available, so d.pulse is
+	// set to either the controller (disciplined) or the generator
+	// (free-running). The cross-sample hop is mode-specific.
+	d.pulse.Pulse(e.Ts, e.TReadMono)
 	if d.controller != nil {
-		d.controller.PulseEdge(phcsync.PulseEdge{
-			Timestamp: e.Ts,
-			TRead:     e.TReadMono,
-		})
 		d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys)
 	} else if d.generator != nil {
-		d.generator.Pulse(phcsample.PulseEdge{
-			Timestamp: e.Ts,
-			TRead:     e.TReadMono,
-		})
 		d.genSample(e.TReadWall.PHC.T, e.TReadWall.Sys)
 	}
 
