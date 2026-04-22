@@ -733,6 +733,8 @@ End of phase 1: the system is usable with chrony.
 
     Either approach needs the UTC-keyed accessor to distinguish "correction not yet received" from "no correction for this GPS second". Must preserve step 10's UTC-in / UTC-out boundary and sub-ns precision guarantees. Details TBD.
 
+15. **Robustness to another process stepping the PHC.** `phcsample` assumes the PHC is free-running, but another process could step it — e.g. a future chrony feature that disciplines the PHC (large corrections only; small frequency tweaks are fine), or an operator running `phc_ctl`. A large step would poison the PHC calibration window if pre-step and post-step edges were combined in the same fit. The admissibility pass in `consistentEdges` already discards across a forward gap (`firstGap` flags intervals >= 1.5x median and `consistentEdges` restarts from the post-gap suffix), so a forward step is covered. A backward step produces an anomalously small or negative interval, which the per-edge PPB check flags but the `flagged[j-1] && flagged[j]` reject rule only drops the stepped edge itself; surrounding pre- and post-step edges remain and end up in the same fit. Extend the gap detector to also treat intervals far below the median as a discontinuity, so backward steps likewise trigger a restart from the post-step suffix. Sim-rig test injects a forward step and a backward step mid-run and verifies only post-step edges contribute to the next fit.
+
 End of phase 2: fully configurable, tested, documented, production-grade, and delivers the receiver-specific sawtooth-correction advantage described in the motivation.
 
 ## Not in v1 (any phase)
