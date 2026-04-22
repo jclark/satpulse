@@ -674,7 +674,7 @@ Two standalone additions that the later phases build on but do not themselves de
 
 ### Phase 1 — working with chrony
 
-**Status: steps 3, 4, and 5 landed.**
+**Status: landed.** All steps (3–7) complete; free-running mode is usable with chrony end-to-end.
 
 Throughout phase 1:
 
@@ -698,6 +698,8 @@ Steps:
 End of phase 1: the system is usable with chrony.
 
 ### Phase 2 — refine, polish, and add sawtooth correction
+
+**Status: step 10 landed.** PrePulse sawtooth correction, `IgnoreSawtoothCorrection` knob, and the sim-rig acceptance test are in. Steps 8, 9, 11, 12, 13, and 14 are still to do.
 
 8. **Add leap-second handling.** Extend `MsgUTCTimer` with `Leap(kind ptime.LeapSecondKind)`. `timemsg.Buffer` fires it on observed leap-second transitions. `phcsample.Generator` resets both regression windows on `Leap` and returns `ErrNotReady` until re-warmed. Implement the three behaviors from "Leap-second handling". Add sim-rig tests covering leap transitions.
 
