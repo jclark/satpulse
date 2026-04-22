@@ -153,6 +153,35 @@ func TestWallClockStaleQuery(t *testing.T) {
 	}
 }
 
+func TestWallClockBackwardCoverageAllowsSmallExtrapolation(t *testing.T) {
+	cfg := DefaultConfig()
+	utc, _, _, err := wallClockTestInput{
+		cfg:         cfg,
+		n:           4,
+		delay:       100 * time.Millisecond,
+		queryOffset: -300 * time.Millisecond,
+	}.run()
+	if err != nil {
+		t.Fatalf("unexpected err for small backward extrapolation: %v", err)
+	}
+	if !utc.Equal(utcBaseTime) {
+		t.Errorf("utc = %v, want %v", utc, utcBaseTime)
+	}
+}
+
+func TestWallClockBackwardCoverageRejectsTooFarBack(t *testing.T) {
+	cfg := DefaultConfig()
+	_, _, _, err := wallClockTestInput{
+		cfg:         cfg,
+		n:           4,
+		delay:       100 * time.Millisecond,
+		queryOffset: -600 * time.Millisecond,
+	}.run()
+	if !errors.Is(err, ErrNotReady) {
+		t.Fatalf("err = %v, want ErrNotReady", err)
+	}
+}
+
 func TestWallClockClockRateMismatch(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ClockRateLimit = 0.01 // 1%, tight on purpose
@@ -160,7 +189,7 @@ func TestWallClockClockRateMismatch(t *testing.T) {
 	wc := newWallClock(&cfg)
 	for i := range 8 {
 		utc := utcBaseTime.Add(time.Duration(i) * time.Second)
-		tRead := monoBaseTime.Add(time.Duration(i)*1200*time.Millisecond).Add(100 * time.Millisecond)
+		tRead := monoBaseTime.Add(time.Duration(i) * 1200 * time.Millisecond).Add(100 * time.Millisecond)
 		wc.Add(tRead, utc)
 	}
 	_, err := wc.SecondAt(monoBaseTime)

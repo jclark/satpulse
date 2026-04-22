@@ -131,10 +131,12 @@ func DefaultConfig() Config {
 		PulseWidthDetectLimit: 0.45,
 		MsgWindow:             30,
 		MaxMsgGap:             10.0,
-		MinMsgSpan:            3.0,
-		ClockRateLimit:        0.1,
-		MsgTimingVariation:    0.05,
-		EdgeSecondTolerance:   0.1,
+		// Slightly below 3s so normal message-timing variation does not
+		// push startup from pulse 5 to pulse 6 when using 1 Hz messages.
+		MinMsgSpan:          2.9,
+		ClockRateLimit:      0.1,
+		MsgTimingVariation:  0.05,
+		EdgeSecondTolerance: 0.1,
 	}
 }
 

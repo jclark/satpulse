@@ -60,6 +60,14 @@ type Config struct {
 	// affecting GPS message delivery. Useful for exercising the
 	// "pulses stop but messages continue" case.
 	EdgeOutage []syncsim.OutageConfig
+
+	// PulseSeed controls the RNG used for pulse-delivery timing.
+	// Kept in the sim package only; production has no equivalent.
+	PulseSeed int64
+
+	// MsgSeed controls the RNG used for message-delivery timing.
+	// Kept in the sim package only; production has no equivalent.
+	MsgSeed int64
 }
 
 // Validate checks every field in the reused syncsim config surface
@@ -117,14 +125,18 @@ func validateSlice[T any](prefix string, items []T) []string {
 // default tuning, and a default 1000s simulation duration.
 func DefaultConfig() Config {
 	return Config{
-		Sim:    syncsim.DefaultSimConfig(),
-		PHC:    syncsim.DefaultPHCConfig(),
-		GPS:    syncsim.DefaultGPSConfig(),
-		Sample: phcsample.DefaultConfig(),
+		Sim:     syncsim.DefaultSimConfig(),
+		PHC:     syncsim.DefaultPHCConfig(),
+		GPS:     syncsim.DefaultGPSConfig(),
+		Sample:  phcsample.DefaultConfig(),
 		Pulse:   syncsim.DefaultPulseConfig(),
 		Msg:     syncsim.DefaultMsgConfig(),
 		Fault:   syncsim.DefaultFaultConfig(),
 		MsgRate: 1,
+		// Preserve the historical fixed timing realizations unless a
+		// test or caller overrides them explicitly.
+		PulseSeed: 999,
+		MsgSeed:   888,
 	}
 }
 
@@ -132,19 +144,20 @@ func DefaultConfig() Config {
 // between each sample's offset and the simulator's ground-truth
 // offset, expressed in nanoseconds.
 type Stats struct {
-	Samples  int           // successful Generate returns
-	NotReady int           // ErrNotReady returns
-	Errors   int           // other error returns
-	Mean     float64       // mean residual (ns)
-	StdDev   float64       // residual stddev (ns)
-	AbsMax   time.Duration // max absolute residual
-	ADev     float64       // Allan deviation of residuals (seconds)
+	Samples    int           // successful Generate returns
+	NotReady   int           // ErrNotReady returns
+	Errors     int           // other error returns
+	ReadyPulse int           // delivered pulse count at first successful sample (1-based)
+	Mean       float64       // mean residual (ns)
+	StdDev     float64       // residual stddev (ns)
+	AbsMax     time.Duration // max absolute residual
+	ADev       float64       // Allan deviation of residuals (seconds)
 }
 
 // String formats Stats in a block suitable for t.Logf.
 func (s Stats) String() string {
-	return fmt.Sprintf("samples = %d\nnotReady = %d\nerrors = %d\nmean = %.2f\nstdDev = %.2f\nabsMax = %d\naDev = %.6e\n",
-		s.Samples, s.NotReady, s.Errors, s.Mean, s.StdDev, s.AbsMax.Nanoseconds(), s.ADev)
+	return fmt.Sprintf("samples = %d\nnotReady = %d\nerrors = %d\nreadyPulse = %d\nmean = %.2f\nstdDev = %.2f\nabsMax = %d\naDev = %.6e\n",
+		s.Samples, s.NotReady, s.Errors, s.ReadyPulse, s.Mean, s.StdDev, s.AbsMax.Nanoseconds(), s.ADev)
 }
 
 // Simulate runs a phcsample simulation with cfg and returns stats
@@ -261,6 +274,7 @@ func Simulate(cfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 			if syncsim.InOutage(combinedOutages, data.PPS) || syncsim.InOutage(edgeOnlyOutages, data.PPS) {
 				continue
 			}
+			stats.pulses++
 			tMono := monoBase.Add(time.Duration(event.Time * 1e9))
 			tSysWall := sysBase.Add(time.Duration(event.Time * 1e9))
 			tReadPHC := testClock.Now()
@@ -343,18 +357,23 @@ type PrePulseMsgEventData struct {
 }
 
 type residualStats struct {
-	n        int
-	sumNs    float64
-	sumSqNs  float64
-	absMaxNs float64
-	adev     allan.Accum[float64]
-	notReady int
-	errors   int
+	n          int
+	sumNs      float64
+	sumSqNs    float64
+	absMaxNs   float64
+	adev       allan.Accum[float64]
+	notReady   int
+	errors     int
+	pulses     int
+	readyPulse int
 }
 
 func (s *residualStats) addResidual(seconds float64) {
 	ns := seconds * 1e9
 	s.n++
+	if s.readyPulse == 0 {
+		s.readyPulse = s.pulses
+	}
 	s.sumNs += ns
 	s.sumSqNs += ns * ns
 	if abs := math.Abs(ns); abs > s.absMaxNs {
@@ -365,11 +384,12 @@ func (s *residualStats) addResidual(seconds float64) {
 
 func (s *residualStats) final() Stats {
 	out := Stats{
-		Samples:  s.n,
-		NotReady: s.notReady,
-		Errors:   s.errors,
-		AbsMax:   time.Duration(s.absMaxNs),
-		ADev:     s.adev.ADev(),
+		Samples:    s.n,
+		NotReady:   s.notReady,
+		Errors:     s.errors,
+		ReadyPulse: s.readyPulse,
+		AbsMax:     time.Duration(s.absMaxNs),
+		ADev:       s.adev.ADev(),
 	}
 	if s.n > 0 {
 		out.Mean = s.sumNs / float64(s.n)
@@ -436,7 +456,7 @@ func normalizeOutages(list []syncsim.OutageConfig) []syncsim.OutageConfig {
 
 func generatePulseEvents(cfg Config, duration float64, edgesPerPulse int) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
-		rng := rand.New(rand.NewSource(999))
+		rng := rand.New(rand.NewSource(cfg.PulseSeed))
 		for pps := 1.0; pps < duration; pps += 1.0 {
 			pulseDelay := cfg.Pulse.MinDelay + rng.Float64()*(cfg.Pulse.MaxDelay-cfg.Pulse.MinDelay)
 			rising := pps + pulseDelay
@@ -481,7 +501,7 @@ func generatePrePulseEvents(cfg Config, duration float64) iter.Seq[Event] {
 
 func generateMessageEvents(cfg Config, duration float64) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
-		rng := rand.New(rand.NewSource(888))
+		rng := rand.New(rand.NewSource(cfg.MsgSeed))
 		rate := max(cfg.MsgRate, 1)
 		period := 1.0 / float64(rate)
 		for nominal := period; nominal < duration; nominal += period {

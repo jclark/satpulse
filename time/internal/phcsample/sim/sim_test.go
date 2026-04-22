@@ -236,6 +236,64 @@ func TestPHCSample(t *testing.T) {
 	}
 }
 
+type warmUpSweepSummary struct {
+	meanPulse      float64
+	maxPulse       int
+	maxPulseSeed   int64
+	pulseHistogram map[int]int
+}
+
+func sweepWarmUpOverMsgSeeds(t *testing.T, msgSeeds int) warmUpSweepSummary {
+	t.Helper()
+
+	var totalPulse int
+	summary := warmUpSweepSummary{
+		pulseHistogram: make(map[int]int),
+	}
+
+	for seed := range msgSeeds {
+		cfg := DefaultConfig()
+		cfg.Sim.Duration = 10
+		cfg.PHC.FreqOffset = 2000
+		cfg.PHC.Drift = -150
+		cfg.PHC.WhiteNoise = 0.633
+		cfg.GPS.Jitter = 10
+		cfg.PulseSeed = 999
+		cfg.MsgSeed = int64(seed)
+
+		curTime := time.Date(2017, 1, 1, 0, 0, 0, 0, time.UTC)
+		lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+		stats, err := Simulate(cfg, &curTime, lg)
+		if err != nil {
+			t.Fatalf("seed %d: Simulate: %v", seed, err)
+		}
+		if stats.Samples == 0 {
+			t.Fatalf("seed %d: no samples generated\n%s", seed, stats)
+		}
+		if stats.ReadyPulse != 5 {
+			t.Fatalf("seed %d: ReadyPulse = %d, want 5\n%s", seed, stats.ReadyPulse, stats)
+		}
+
+		totalPulse += stats.ReadyPulse
+		summary.pulseHistogram[stats.ReadyPulse]++
+		if stats.ReadyPulse > summary.maxPulse {
+			summary.maxPulse = stats.ReadyPulse
+			summary.maxPulseSeed = int64(seed)
+		}
+	}
+
+	summary.meanPulse = float64(totalPulse) / float64(msgSeeds)
+	return summary
+}
+
+func TestPHCSampleWarmUpMsgSeedSweep(t *testing.T) {
+	const msgSeeds = 100
+
+	summary := sweepWarmUpOverMsgSeeds(t, msgSeeds)
+	t.Logf("defaults over %d msgSeeds: meanPulse=%.2f maxPulse=%d maxPulseSeed=%d histogram=%v",
+		msgSeeds, summary.meanPulse, summary.maxPulse, summary.maxPulseSeed, summary.pulseHistogram)
+}
+
 // TestPHCSampleSawtoothCorrection is the step-10 acceptance test.
 // Residual per sample is (fitted UTC at cross-sample PHC) - (true UTC
 // at cross-sample PHC); it is the delta we want to keep small. With

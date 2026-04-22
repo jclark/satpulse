@@ -15,6 +15,14 @@ import (
 // signal: later edges in chronological order are also stale.
 var errStale = errors.New("phcsample: wallClock query beyond max message gap")
 
+// maxBackwardCoverage is how far before the earliest retained message
+// read-time the wallClock fit is allowed to extrapolate. The fit only
+// needs to identify the UTC second of a pulse edge, so a small bounded
+// backward extrapolation is acceptable and avoids startup sensitivity
+// to whether the first actual message delay lands slightly above or
+// below ExpectedDelay.
+const maxBackwardCoverage = 500 * time.Millisecond
+
 // wallClock maps monotonic time to integer-second UTC from the
 // MsgUTCTime stream. Internally it maintains a sliding linear
 // regression over (tRead - expectedDelay, utc) pairs.
@@ -110,21 +118,16 @@ func (c *wallClock) predictUTC(mono time.Time) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("phcsample: wallClock query %v past most recent message (limit %v): %w",
 			gap, c.maxGap, errStale)
 	}
-	// Backward coverage: reject queries that fall before the earliest
-	// retained observation's pulse-mono position. Can happen when a
-	// message outage longer than MsgWindow is followed by recovery:
-	// the single Add that brings in the first post-outage message
-	// prunes every pre-outage point (cutoff = newest - MsgWindow), so
-	// the window jumps forward in one step while phcWindow's pulse
-	// buffer still carries edges from just before recovery. Those
-	// older edges must not be labelled by backward-extrapolating the
-	// freshly-rebuilt fit - plan step 6c treats "no fit that covers
-	// this edge's time" as ErrNotReady, so surface it as that
-	// sentinel rather than errStale (which is reserved for forward
-	// uncovered queries and drives mapEdgesToUTC's stop-iterating
-	// behaviour).
-	firstPulseMono := c.points[0].tRead.Add(-c.expectedDelay)
-	if mono.Before(firstPulseMono) {
+	// Backward coverage: reject queries that fall too far before the
+	// earliest retained observation's read-time. A small bounded
+	// backward extrapolation is fine for assigning a pulse edge to the
+	// correct UTC second, but the fit must not reach arbitrarily far
+	// back into stale pulse history after recovery from a message gap.
+	// Return ErrNotReady rather than errStale: errStale is reserved
+	// for forward-uncovered queries and drives mapEdgesToUTC's
+	// stop-iterating behaviour, which is not what we want here.
+	firstCoveredMono := c.points[0].tRead.Add(-maxBackwardCoverage)
+	if mono.Before(firstCoveredMono) {
 		return time.Time{}, ErrNotReady
 	}
 	if !c.fitValid {
