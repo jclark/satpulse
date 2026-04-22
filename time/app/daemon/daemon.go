@@ -271,8 +271,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 	gpsObs := logobs.NewGPSLogObserver(lg)
+	ntpObs := logobs.NewNTPSampleLogObserver(lg)
 
-	observer := combineObservers(promObs, sseObs, posObs, statsObs, clockObs, trackObs, gpsObs)
+	observer := combineObservers(promObs, sseObs, posObs, statsObs, clockObs, trackObs, gpsObs, ntpObs)
 
 	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, observer, tStart)
 	if err != nil {
@@ -391,7 +392,8 @@ func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.L
 // combineObservers combines individual observers into appropriate single observer
 func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObserver,
 	posObs *positionObserver, statsObs *logobs.StatsLogObserver, clockObs *logobs.ClockLogObserver,
-	trackObs *logobs.TrackLogObserver, gpsObs *logobs.GPSLogObserver) obs.Observer {
+	trackObs *logobs.TrackLogObserver, gpsObs *logobs.GPSLogObserver,
+	ntpObs *logobs.NTPSampleLogObserver) obs.Observer {
 
 	var observers []obs.Observer
 
@@ -407,6 +409,9 @@ func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObs
 	}
 	if gpsObs != nil {
 		observers = append(observers, gpsObs)
+	}
+	if ntpObs != nil {
+		observers = append(observers, ntpObs)
 	}
 	if promObs != nil {
 		observers = append(observers, promObs)

@@ -699,7 +699,7 @@ End of phase 1: the system is usable with chrony.
 
 ### Phase 2 — refine, polish, and add sawtooth correction
 
-**Status: step 10 landed.** PrePulse sawtooth correction, `IgnoreSawtoothCorrection` knob, and the sim-rig acceptance test are in. Steps 8, 9, 11, 12, 13, and 14 are still to do.
+**Status: step 10 landed; first-sample info log landed out-of-band.** PrePulse sawtooth correction, `IgnoreSawtoothCorrection` knob, and the sim-rig acceptance test are in. A `logobs.NTPSampleLogObserver` now emits "generated first NTP refclock sample" info on the first `Observer.NTPSample` call, covering the step-12 warmup log in a mode-neutral way (see step 12 for the reduced scope). Steps 8, 9, 11, 12, 13, and 14 are still to do.
 
 8. **Add leap-second handling.** Extend `MsgUTCTimer` with `Leap(kind ptime.LeapSecondKind)`. `timemsg.Buffer` fires it on observed leap-second transitions. `phcsample.Generator` resets both regression windows on `Leap` and returns `ErrNotReady` until re-warmed. Implement the three behaviors from "Leap-second handling". Add sim-rig tests covering leap transitions.
 
@@ -717,10 +717,11 @@ End of phase 1: the system is usable with chrony.
 
 11. **Unify the pulse-edge sink interface (cleanup).** `phcsync.Controller` and `phcsample.Generator` each declare their own exported `PulseEdge` struct with the same two fields (`Timestamp phctime.Time`, `TRead phctime.Sample`) and take it via differently-named methods (`PulseEdge` vs. `Pulse`). Introduce a shared `gpsevent.PulseReceiver` interface with a single method `Pulse(timestamp phctime.Time, tRead phctime.Sample)`. Rename `phcsync.Controller.PulseEdge` to `Pulse(ts, tr)` and change `phcsample.Generator.Pulse(edge)` to `Pulse(ts, tr)`; both build their own (now unexported) `pulseEdge` internally. `gpsevent.NewDispatcher` takes a single `PulseReceiver` argument instead of separate `controller` and `generator` parameters; the Dispatcher keeps both a `pulse PulseReceiver` field (for the shared `Pulse` call) and typed `controller` / `generator` fields (populated by a one-shot type-switch in the constructor) for the mode-specific paths (Pause, sysSample / genSample, Close, ticker, MsgUTCTime). Update callers: `replay.go`, `syncsim.go`, `phcsample/sim/sim.go`, and the daemon wiring. Also touches phcsync's internal `PulseEdge` uses (tracking.go, reset.go, converging.go, tests) as a mechanical rename. Pure cleanup — no behaviour change.
 
-12. **Add logging inside `phcsample`.** The `*slog.Logger` is plumbed through `Generator` and `phcWindow.TrueTimeOffset` today but nothing inside the package uses it. Three tiers:
-    - **Info, once per Generator lifetime**: first successful `Generate` after construction or `NewInstance`, signalling warmup completion. Fires again after every `NewInstance` (i.e. after each PHC era transition), so operators see recovery in the log.
+12. **Add debug logging inside `phcsample`.** The `*slog.Logger` is plumbed through `Generator` and `phcWindow.TrueTimeOffset` today but nothing inside the package uses it. Two tiers:
     - **Debug, per successful `Generate`**: a small handful of interesting stats — likely window size, fit residual, estimated PHC rate. Keep the attribute list short; this fires at the edge rate.
     - **Debug, when things go wrong**: the non-`ErrNotReady` failure paths in `TrueTimeOffset` (stride rejection, ambiguous polarity, `errExtrapolation`, wallClock rate / scatter gates). These don't surface nicely through the error return today — each gate becomes a targeted `Debug` log with the relevant numeric detail.
+
+    The "first successful `Generate`" info log originally scoped here is already handled generically by `logobs.NTPSampleLogObserver`, which fires once per process lifetime on the first `Observer.NTPSample` call across all three dispatcher modes. Re-firing on each `NewInstance` (PHC era transition) is not covered there; if operators want per-era warmup visibility, it needs an observability hook (e.g. a `Pause` event) that today does not exist.
 
     Exact attribute sets and wording TBD in the step itself.
 
