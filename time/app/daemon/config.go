@@ -48,7 +48,7 @@ type PHCConfig struct {
 	Pin         uint8  `toml:"pin"`
 	Channel     uint8  `toml:"channel"`
 	Wait        bool   `toml:"wait"`
-	FreeRunning bool   `toml:"freeRunning"`
+	FreeRunning bool   `toml:"freeRunning" comment:"Do not synchronize the PHC, but use it to transfer time from the GPS receiver to an NTP daemon"`
 }
 
 type LeapSecondConfig struct {
