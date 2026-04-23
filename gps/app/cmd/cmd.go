@@ -7,8 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-
-	"golang.org/x/sys/unix"
+	"syscall"
 )
 
 func ErrPrintln(progName string, arg any) {
@@ -30,7 +29,7 @@ func ErrPrintlnWithDetail(progName string, err error) {
 func CancelOnSignal(ctx context.Context, lg *slog.Logger) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(ctx)
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, unix.SIGTERM)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sig
 		lg.Debug("received signal, initiating cancellation")
