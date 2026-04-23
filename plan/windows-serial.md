@@ -1,86 +1,120 @@
 # Windows support for `gps/lib/term`
 
 ## Goal
-Add Windows serial I/O to `gps/lib/term` with error detection.
+Add Windows serial I/O to `gps/lib/term`, matching the Linux level of
+control including serial error detection.
+
+## Prerequisites
+
+This plan assumes `plan/serial-refactor.md` is complete. In particular:
+
+- **Step 8**: `term.Error` with an `ErrFlags` bitmask is the portable
+  representation of read-time serial errors, with an optional
+  `*ErrorCounts` for platforms that expose per-category kernel
+  counters. Windows will populate `Flags` only (`Counts` nil).
+- **Step 5**: `term.OpenPolling` is a Linux-only feature; all
+  non-Linux platforms share a stub in `polling_stub.go`
+  (`//go:build !linux`) that returns "polling not supported on this
+  platform". Windows inherits this stub unchanged.
+- **Step 2**: `term.ErrNotATTY` is the sentinel returned from
+  `getAttr` when the underlying ioctl reports `ENOTTY`. Windows has
+  no termios so this does not apply there; `CreateFile` on a
+  non-comm handle simply fails at open time.
 
 ## Current state
+
 `gps/lib/term` works on Linux and macOS/BSD:
-- Linux: full support including serial error counters via `TIOCGICOUNT` ioctl
-- macOS/BSD: full I/O support via BSD termios; `GetErrorCounts` returns zero (no kernel API for error stats); `DevKind` detects USB device types by path pattern
-- Windows: **not supported** -- no `term_windows.go` exists
+- Linux: full support including per-error counters via `TIOCGICOUNT`,
+  and `term.OpenPolling` for non-TTY char devices (e.g. `/dev/gnss0`).
+- macOS/BSD: full termios I/O; `term.Error` carries only `Flags`;
+  `term.OpenPolling` is stubbed via `polling_stub.go`
+  (`//go:build !linux`) returning "polling not supported on this
+  platform".
+- Windows: **not supported** -- no `term_windows.go`.
 
-## Approach decisions
+## Approach
 
-**Windows serial I/O:** roll our own `term_windows.go` using Win32 APIs (`windows.CreateFile`, `GetCommState`/`SetCommState`, `ReadFile`/`WriteFile`). This gives us control over file locking and serial error detection, matching the level of control we have on Linux. A third-party serial library would hide the error information we need.
+Roll our own `term_windows.go` using Win32 APIs (`windows.CreateFile`,
+`GetCommState`/`SetCommState`, `ReadFile`/`WriteFile`,
+`ClearCommError`). This matches the Linux level of control and lets
+us surface serial errors through the `term.Error` type from
+serial-refactor step 8. A third-party serial library would hide that
+information.
 
-**Serial error API:** simplify from counts to flags. The existing `ErrorCounts` struct with `int32` fields is over-specified -- all consumers just check whether errors occurred (`> 0`), not how many. Replace with boolean flags:
-
-```go
-type ReadErrors struct {
-    Framing bool
-    Parity  bool
-    Overrun bool
-}
-```
-
-This maps directly to Windows `ClearCommError` flags (`CE_FRAME`, `CE_RXPARITY`, `CE_OVERRUN`). On Linux, convert non-zero `TIOCGICOUNT` deltas to `true`. On macOS, return zero (no error info available). The `gpscfg.SerialError` interface changes from `FramingErrs() int` to `HasFramingErr() bool`.
+For `term.OpenPolling`, Windows has no equivalent of the Linux GNSS
+subsystem or the `/tmp/fifo` replay workflow, so it's covered by the
+shared `polling_stub.go` (`//go:build !linux`) with no
+Windows-specific code.
 
 ## Steps
 
-### 1. Revise serial error API
+### 1. Build tags and package structure
 
-Replace `ErrorCounts` (int32 fields) with `ReadErrors` (bool fields). Update callers:
+For Windows:
 
-- `term.GetErrorCounts() ErrorCounts` becomes `term.ReadErrors() ReadErrors`
-- `ReadErrors.IsZero()` returns true when all fields are false
-- `gpsio.TermError` stores `ReadErrors` instead of `ErrorCounts`
-- `gpsio.TermError.FramingErrs() int` becomes `HasFramingErr() bool`
-- `gpscfg.SerialError` interface: `FramingErrs() int` becomes `HasFramingErr() bool`
-- `gpscfg.mh.invalid()`: instead of accumulating `err.FramingErrs()`, just increment by 1 when `HasFramingErr()` is true (the accumulated count was only used for diagnostics)
-- Remove `SerialICounter` from the public API; it becomes an internal implementation detail on Linux
+- Add `//go:build !windows` to files that import
+  `golang.org/x/sys/unix`: `term.go`, `term_test.go`.
+- Widen `types.go`'s build tag from `!freebsd` to
+  `!freebsd && !windows` (it defines the Unix-only `unixspeed`
+  alias). Optionally rename it to `unixspeed.go` for clarity.
+- Add `term_windows.go` for the Windows implementation. The
+  `_windows` filename suffix selects it automatically.
+- `polling_stub.go` (`//go:build !linux`) already covers Windows --
+  no new polling file needed.
 
-This step can be done and tested on Linux/macOS before writing any Windows code.
+### 2. Windows serial I/O (`term_windows.go`)
 
-### 2. Build tags and package structure
+Implement the same public API as `term.go` using Win32:
 
-Current file layout:
-- `term.go` -- core implementation (uses `golang.org/x/sys/unix`)
-- `term_linux.go`, `term_bsd.go`, `term_darwin.go` -- Unix variant-specific code
-
-Linux is the primary platform. Keep `term.go` as-is and add a `//go:build !windows` tag to it (and any other files that import `unix`). `term_windows.go` provides an alternative implementation of the same public API using Win32 calls. Shared types that need to be visible on all platforms (`ReadErrors`, `DevKind`, etc.) go in a new `types.go` with no build tag. Rename the existing `types.go` (which just defines the `unixspeed` type alias) to `unixspeed.go`.
-
-### 3. Windows serial I/O (`term_windows.go`)
-
-Add `gps/lib/term/term_windows.go` implementing the same `Term` API using Win32 calls:
-
-- **Open/Init:** `windows.CreateFile` on `\\.\COMn` with `shareMode=0` for exclusive access. Configure with `GetCommState`/`SetCommState` on the `DCB` struct (baud rate, 8N1, no flow control). Set timeouts with `SetCommTimeouts`.
+- **Open/Init:** `windows.CreateFile` on `\\.\COMn` with
+  `shareMode=0` for exclusive access (no separate `flock` step
+  needed). Configure via `GetCommState`/`SetCommState` on the `DCB`
+  struct (baud rate, 8N1, no flow control). Set read timeouts with
+  `SetCommTimeouts` to match the Linux ~100ms VTIME behaviour.
 - **Read/Write:** `windows.ReadFile`/`windows.WriteFile`.
-- **Speed:** map to DCB `BaudRate` field. Windows supports arbitrary baud rates natively (no Bxxx constants needed); `IsValidSpeed` can be more permissive or use the same table.
-- **Flush:** `PurgeComm` with `PURGE_RXCLEAR | PURGE_TXCLEAR`.
-- **Close/Restore:** `CloseHandle`. No termios to restore; save/restore DCB if needed.
-- **Lock:** exclusive access is handled by `CreateFile` with `shareMode=0`.
-- **DevKind:** return `DevUSB` or `DevUSBtoUART` based on USB VID/PID from the registry, or `DevUnknown`.
-- **Path sanitisation:** prepend `\\.\` to COM port names (required for `COM10` and above, harmless for lower numbers).
-
-#### Error detection on Windows
-
-- **`ReadErrors`:** call `ClearCommError` after each read. Map flags: `CE_FRAME` -> `Framing`, `CE_RXPARITY` -> `Parity`, `CE_OVERRUN` -> `Overrun`.
-- On Linux, keep `TIOCGICOUNT` delta logic internally, but return `ReadErrors{Framing: delta.Frame > 0, ...}`.
-- On macOS, return zero struct (no error info).
-
-Optional: `Buffered()` can use `ClearCommError`'s `cbOutQue`. `ModemStatus()` can use `GetCommModemStatus`. These can be deferred.
+- **Error detection (the reason for the DIY approach):** after each
+  successful `ReadFile`, call `ClearCommError` and map the returned
+  flags to `term.ErrFlags`:
+  - `CE_FRAME`    -> `ErrFraming`
+  - `CE_RXPARITY` -> `ErrParity`
+  - `CE_OVERRUN`  -> `ErrOverrun`
+  - `CE_BREAK`    -> `ErrBreak`
+  - `CE_RXOVER`   -> `ErrBufOverrun`
+  When any flag is set, return
+  `(n, &term.Error{Path: t.path, Flags: ..., Counts: nil})`.
+  Windows does not report per-category counters, so `Counts` stays
+  nil and `(*Error).Error()` falls back to rendering the flag names.
+- **Speed:** write directly to `DCB.BaudRate`. Windows accepts
+  arbitrary baud rates; keep the existing `baudRates` table for
+  `IsValidSpeed` so accepted speeds remain consistent across
+  platforms.
+- **Flush:** `PurgeComm(PURGE_RXCLEAR | PURGE_TXCLEAR)`.
+- **Buffered:** `ClearCommError`'s `COMSTAT.cbOutQue`.
+- **Close/Restore:** snapshot the DCB at Open, restore it at Close,
+  then `CloseHandle`.
+- **DevKind:** look up USB VID/PID via the registry and return
+  `DevUSB` / `DevUSBtoUART` / `DevUnknown`.
+- **Path sanitisation:** prepend `\\.\` to COM port names so
+  `COM10` and above work.
 
 ## Testing
 
-- Run existing tests on Linux and macOS to verify the error API refactor doesn't break anything.
-- On Windows, test with a real COM port if available; otherwise verify the package compiles with `GOOS=windows go vet ./gps/lib/term`.
+- Run existing tests on Linux and macOS after the build-tag changes to
+  confirm nothing regressed.
+- `GOOS=windows go vet ./gps/lib/term` to confirm the package builds.
+- On a Windows host with a real GPS, point `satpulsed` at the COM
+  port and verify that `term.Error` flows through `scan.Scan` exactly
+  as on Linux (`TemporaryError` handling; log-line trigger via
+  `(*Error).SerialFraming()`).
 
 ## Result
-`gps/lib/term` compiles and works on Windows with serial error detection, matching the level of control available on Linux.
+`gps/lib/term` compiles and works on Windows with serial error
+detection, surfacing errors through the platform-agnostic
+`term.Error` type defined in serial-refactor step 8.
 
 ## Files changed
-- `gps/lib/term/term.go` -- add `//go:build !windows` tag
-- `gps/lib/term/types.go` -- shared types with no build tag (`ReadErrors`, `DevKind`, etc.); rename existing `types.go` to `unixspeed.go`
+- `gps/lib/term/term.go` -- add `//go:build !windows`
+- `gps/lib/term/term_test.go` -- add `//go:build !windows`
+- `gps/lib/term/types.go` -- widen tag to `!freebsd && !windows`
+  (optionally rename to `unixspeed.go`)
 - `gps/lib/term/term_windows.go` -- new Win32 serial implementation
-- `gps/app/gpsio/serial.go` -- update to use `ReadErrors`
-- `gps/app/gpscfg/gpscfg.go` -- update `SerialError` interface
