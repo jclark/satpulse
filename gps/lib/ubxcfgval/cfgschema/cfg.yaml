@@ -751,6 +751,58 @@ USBOUTPROT:
     key: 0x10780004
     type: L
     description: Flag to indicate if RTCM3X should be an output protocol on USB
+I2CINPROT:
+  UBX:
+    key: 0x10710001
+    type: L
+    description: Flag to indicate if UBX should be an input protocol on I2C
+  NMEA:
+    key: 0x10710002
+    type: L
+    description: Flag to indicate if NMEA should be an input protocol on I2C
+  RTCM3X:
+    key: 0x10710004
+    type: L
+    description: Flag to indicate if RTCM3X should be an input protocol on I2C
+I2COUTPROT:
+  UBX:
+    key: 0x10720001
+    type: L
+    description: Flag to indicate if UBX should be an output protocol on I2C
+  NMEA:
+    key: 0x10720002
+    type: L
+    description: Flag to indicate if NMEA should be an output protocol on I2C
+  RTCM3X:
+    key: 0x10720004
+    type: L
+    description: Flag to indicate if RTCM3X should be an output protocol on I2C
+SPIINPROT:
+  UBX:
+    key: 0x10790001
+    type: L
+    description: Flag to indicate if UBX should be an input protocol on SPI
+  NMEA:
+    key: 0x10790002
+    type: L
+    description: Flag to indicate if NMEA should be an input protocol on SPI
+  RTCM3X:
+    key: 0x10790004
+    type: L
+    description: Flag to indicate if RTCM3X should be an input protocol on SPI
+SPIOUTPROT:
+  UBX:
+    key: 0x107a0001
+    type: L
+    description: Flag to indicate if UBX should be an output protocol on SPI
+  NMEA:
+    key: 0x107a0002
+    type: L
+    description: Flag to indicate if NMEA should be an output protocol on SPI
+  RTCM3X:
+    key: 0x107a0004
+    type: L
+    description: Flag to indicate if RTCM3X should be an output protocol on SPI
 RATE:
   MEAS:
     key: 0x30210001

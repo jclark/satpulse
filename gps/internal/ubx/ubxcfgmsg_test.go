@@ -6,6 +6,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
+	ucv "github.com/jclark/satpulse/gps/lib/ubxcfgval"
 )
 
 var testVers = struct {
@@ -1426,4 +1427,66 @@ func TestMsgChangesNMEA(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMsgChangesItemsPortKeys verifies that msgChanges.items emits the
+// correct port-specific OUTPROT keys for each port, and never emits an
+// item with a zero key. Regression test for the I2C/SPI VALSET NACK
+// caused by portOutprotNmeaKey/portOutprotRtcm3xKey returning 0.
+func TestMsgChangesItemsPortKeys(t *testing.T) {
+	tests := []struct {
+		port     ucv.Port
+		nmeaKey  ucv.Key
+		rtcm3Key ucv.Key
+	}{
+		{ucv.I2C, ucv.KI2coutprotNmea.Key(), ucv.KI2coutprotRtcm3x.Key()},
+		{ucv.UART1, ucv.KUart1outprotNmea.Key(), ucv.KUart1outprotRtcm3x.Key()},
+		{ucv.UART2, ucv.KUart2outprotNmea.Key(), ucv.KUart2outprotRtcm3x.Key()},
+		{ucv.USB, ucv.KUsboutprotNmea.Key(), ucv.KUsboutprotRtcm3x.Key()},
+		{ucv.SPI, ucv.KSpioutprotNmea.Key(), ucv.KSpioutprotRtcm3x.Key()},
+	}
+	for _, tt := range tests {
+		t.Run(portName(tt.port), func(t *testing.T) {
+			mc := newMsgChanges()
+			mc.protoDisable = ubxbin.CfgPrtProtoNMEA
+			mc.protoEnable = ubxbin.CfgPrtProtoRTCM3
+			items := mc.items(tt.port)
+			for _, it := range items {
+				if it.Key == 0 {
+					t.Errorf("item with zero key: %+v", it)
+				}
+			}
+			if !hasItem(items, tt.nmeaKey, 0) {
+				t.Errorf("missing NMEA disable item for key 0x%08x", uint32(tt.nmeaKey))
+			}
+			if !hasItem(items, tt.rtcm3Key, 1) {
+				t.Errorf("missing RTCM3 enable item for key 0x%08x", uint32(tt.rtcm3Key))
+			}
+		})
+	}
+}
+
+func portName(p ucv.Port) string {
+	switch p {
+	case ucv.I2C:
+		return "I2C"
+	case ucv.UART1:
+		return "UART1"
+	case ucv.UART2:
+		return "UART2"
+	case ucv.USB:
+		return "USB"
+	case ucv.SPI:
+		return "SPI"
+	}
+	return "?"
+}
+
+func hasItem(items []ucv.Item, key ucv.Key, value uint64) bool {
+	for _, it := range items {
+		if it.Key == key && it.Value == value {
+			return true
+		}
+	}
+	return false
 }

@@ -97,10 +97,14 @@ func (mc *msgChanges) options2(opts *gpsprot.ConfigOptions, ver *Version, enable
 func (mc *msgChanges) items(port ucv.Port) []ucv.Item {
 	items := []ucv.Item{}
 	if (mc.protoEnable|mc.protoDisable)&ubxbin.CfgPrtProtoNMEA != 0 {
-		ucv.AddItem(&items, portOutprotNmeaKey(port), mc.protoEnable&ubxbin.CfgPrtProtoNMEA != 0)
+		if k := portOutprotNmeaKey(port); k != 0 {
+			ucv.AddItem(&items, k, mc.protoEnable&ubxbin.CfgPrtProtoNMEA != 0)
+		}
 	}
 	if (mc.protoEnable|mc.protoDisable)&ubxbin.CfgPrtProtoRTCM3 != 0 {
-		ucv.AddItem(&items, portOutprotRtcm3xKey(port), mc.protoEnable&ubxbin.CfgPrtProtoRTCM3 != 0)
+		if k := portOutprotRtcm3xKey(port); k != 0 {
+			ucv.AddItem(&items, k, mc.protoEnable&ubxbin.CfgPrtProtoRTCM3 != 0)
+		}
 	}
 	for mid, rate := range mc.rate {
 		km, ok := msgIDKey[mid]
