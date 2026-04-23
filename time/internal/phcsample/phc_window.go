@@ -83,8 +83,9 @@ func (w *phcWindow) TrueTimeOffset(phc ptime.Time, sys time.Time, wc *wallClock,
 // edges in chronological order, the median same-polarity interval for
 // PHC-to-real scaling downstream, and any error.
 func timingEdges(buf []pulseEdge, edgesPerPulse int, cfg *Config) ([]pulseEdge, time.Duration, error) {
+	discThresh := time.Duration(cfg.DiscontinuityThreshold * float64(time.Second))
 	if edgesPerPulse == 1 {
-		raw, medianInterval := consistentEdges(buf, cfg.PulseVariation)
+		raw, medianInterval := consistentEdges(buf, cfg.PulseVariation, discThresh)
 		edges := removeZeroEdges(raw)
 		if len(edges) == 0 || medianInterval <= 0 {
 			return nil, 0, ErrNotReady
@@ -92,8 +93,8 @@ func timingEdges(buf []pulseEdge, edgesPerPulse int, cfg *Config) ([]pulseEdge, 
 		return edges, medianInterval, nil
 	}
 	a, b := splitAlternating(buf)
-	ea, ma := consistentEdges(a, cfg.PulseVariation)
-	eb, mb := consistentEdges(b, cfg.PulseVariation)
+	ea, ma := consistentEdges(a, cfg.PulseVariation, discThresh)
+	eb, mb := consistentEdges(b, cfg.PulseVariation, discThresh)
 	return selectTimingStream(ea, eb, ma, mb, cfg.PulseWidthDetectLimit)
 }
 
@@ -103,7 +104,7 @@ func timingEdges(buf []pulseEdge, edgesPerPulse int, cfg *Config) ([]pulseEdge, 
 // keep their original indices so callers pairing two polarity streams
 // can assume positional alignment. See "consistentEdges (6a)" in
 // plan/phc-sample.md for the algorithm.
-func consistentEdges(stream []pulseEdge, tolPPB float64) ([]pulseEdge, time.Duration) {
+func consistentEdges(stream []pulseEdge, tolPPB float64, discThresh time.Duration) ([]pulseEdge, time.Duration) {
 	n := len(stream)
 	out := make([]pulseEdge, n)
 	if n < 2 {
@@ -119,10 +120,10 @@ func consistentEdges(stream []pulseEdge, tolPPB float64) ([]pulseEdge, time.Dura
 		if med <= 0 {
 			return out, 0
 		}
-		if gapIdx, ok := firstGap(intervals, med); ok {
-			// Entries up to and including start+gapIdx stay zero in
-			// out; restart from the post-gap suffix.
-			start += gapIdx + 1
+		if idx, ok := firstDiscontinuity(intervals, med, discThresh); ok {
+			// Entries up to and including start+idx stay zero in
+			// out; restart from the post-discontinuity suffix.
+			start += idx + 1
 			continue
 		}
 		flagged := make([]bool, len(intervals))
@@ -152,15 +153,33 @@ func consistentEdges(stream []pulseEdge, tolPPB float64) ([]pulseEdge, time.Dura
 	return out, 0
 }
 
-// firstGap returns the index of the first interval that is >= 1.5x
-// the median — i.e. the first gap that signals a missing pulse. The
-// boolean is false when no gap is present.
-func firstGap(intervals []time.Duration, med time.Duration) (int, bool) {
-	threshold := med + med/2
-	for i, iv := range intervals {
-		if iv >= threshold {
-			return i, true
+// firstDiscontinuity returns the index of the first interval whose
+// absolute deviation from the median is at least discThresh and whose
+// neighbouring intervals are each below that threshold. This flags
+// PHC discontinuities (forward missing-pulse gaps, and forward or
+// backward PHC steps injected by another process) so consistentEdges
+// can restart from the post-discontinuity suffix. At stream boundaries
+// only the available neighbour is required to be below threshold. The
+// boolean is false when no such interval exists.
+func firstDiscontinuity(intervals []time.Duration, med time.Duration, discThresh time.Duration) (int, bool) {
+	farFromMed := func(iv time.Duration) bool {
+		d := iv - med
+		if d < 0 {
+			d = -d
 		}
+		return d >= discThresh
+	}
+	for i, iv := range intervals {
+		if !farFromMed(iv) {
+			continue
+		}
+		if i > 0 && farFromMed(intervals[i-1]) {
+			continue
+		}
+		if i+1 < len(intervals) && farFromMed(intervals[i+1]) {
+			continue
+		}
+		return i, true
 	}
 	return 0, false
 }

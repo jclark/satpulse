@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"math"
 	"math/rand"
+	"sort"
 	"strings"
 	"time"
 
@@ -33,8 +34,9 @@ import (
 )
 
 // Config holds phcsample simulation parameters. The oscillator, GPS,
-// pulse, message, and fault subconfigs come directly from syncsim so
-// both simulators share a single noise and fault-injection model.
+// pulse, and message subconfigs come directly from syncsim so both
+// simulators share a single noise model. Fault is a phcsample-local
+// superset of syncsim.FaultConfig that adds PHC-side faults.
 type Config struct {
 	Sim    syncsim.SimConfig
 	PHC    syncsim.PHCConfig
@@ -42,7 +44,7 @@ type Config struct {
 	Sample phcsample.Config
 	Pulse  syncsim.PulseConfig
 	Msg    syncsim.MsgConfig
-	Fault  syncsim.FaultConfig
+	Fault  FaultConfig
 
 	// MsgRate is the number of time messages emitted per simulated
 	// second. A value of 1 matches the classic one-per-pulse model;
@@ -70,6 +72,36 @@ type Config struct {
 	MsgSeed int64
 }
 
+// FaultConfig is the phcsample-local fault surface. It embeds
+// syncsim.FaultConfig verbatim for the GPS-side faults (Outage,
+// Outlier, Excursion) and adds PHC-side faults.
+type FaultConfig struct {
+	syncsim.FaultConfig
+
+	// PHCStep injects step-changes to the PHC that simulate another
+	// process adjusting it (e.g. a future chrony PHC-disciplining
+	// feature, or an operator running phc_ctl).
+	PHCStep []PHCStepConfig `toml:"phcStep" comment:"PHC step injections"`
+}
+
+// PHCStepConfig configures one PHC step event.
+type PHCStepConfig struct {
+	// Time is the simulation time at which to step the PHC.
+	Time syncsim.Seconds `toml:"time" check:">=0" comment:"When to step PHC (s)"`
+
+	// Offset is the signed magnitude of the PHC step.
+	// Positive moves the PHC forward; negative moves it backward.
+	Offset clocksim.Nanoseconds `toml:"offset" comment:"Step magnitude, signed (ns)"`
+}
+
+// IsZero returns true if the PHC step config has no effect.
+func (c PHCStepConfig) IsZero() bool { return c.Offset == 0 }
+
+// DefaultFaultConfig returns a FaultConfig with no faults configured.
+func DefaultFaultConfig() FaultConfig {
+	return FaultConfig{FaultConfig: syncsim.DefaultFaultConfig()}
+}
+
 // Validate checks every field in the reused syncsim config surface
 // against its check-tag constraints (including elements of each
 // []struct slice, which check.Validate does not descend into on
@@ -87,6 +119,7 @@ func (c *Config) Validate() error {
 	msgs = append(msgs, validateSlice("fault.outage", c.Fault.Outage)...)
 	msgs = append(msgs, validateSlice("fault.outlier", c.Fault.Outlier)...)
 	msgs = append(msgs, validateSlice("fault.excursion", c.Fault.Excursion)...)
+	msgs = append(msgs, validateSlice("fault.phcStep", c.Fault.PHCStep)...)
 	msgs = append(msgs, validateSlice("msgOutage", c.MsgOutage)...)
 	msgs = append(msgs, validateSlice("edgeOutage", c.EdgeOutage)...)
 	if err := c.Sample.Validate(); err != nil {
@@ -131,7 +164,7 @@ func DefaultConfig() Config {
 		Sample:  phcsample.DefaultConfig(),
 		Pulse:   syncsim.DefaultPulseConfig(),
 		Msg:     syncsim.DefaultMsgConfig(),
-		Fault:   syncsim.DefaultFaultConfig(),
+		Fault:   DefaultFaultConfig(),
 		MsgRate: 1,
 		// Preserve the historical fixed timing realizations unless a
 		// test or caller overrides them explicitly.
@@ -260,12 +293,20 @@ func Simulate(cfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 		generatePrePulseEvents(cfg, cfg.Sim.Duration),
 	)
 
+	phcSteps := normalizePHCSteps(cfg.Fault.PHCStep)
+	var phcStepIdx int
+	var phcStepOffset time.Duration
+
 	var lastReading clocksim.TimestampReading
 	for event := range events {
 		*curTime = simOrigin.Add(time.Duration(event.Time * 1e9))
 		vclock.AdvanceTo(event.Time)
 		if vclock.TimestampAvailable() {
 			lastReading, _ = testClock.ReadTimestamp()
+		}
+		for phcStepIdx < len(phcSteps) && phcSteps[phcStepIdx].Time <= event.Time {
+			phcStepOffset += time.Duration(phcSteps[phcStepIdx].Offset)
+			phcStepIdx++
 		}
 
 		switch event.Type {
@@ -278,7 +319,10 @@ func Simulate(cfg Config, curTime *time.Time, lg *slog.Logger) (Stats, error) {
 			tMono := monoBase.Add(time.Duration(event.Time * 1e9))
 			tSysWall := sysBase.Add(time.Duration(event.Time * 1e9))
 			tReadPHC := testClock.Now()
-			gen.Pulse(lastReading.Timestamp, phctime.Sample{
+			tReadPHC.T = tReadPHC.T.Add(phcStepOffset)
+			edgeTimestamp := lastReading.Timestamp
+			edgeTimestamp.T = edgeTimestamp.T.Add(phcStepOffset)
+			gen.Pulse(edgeTimestamp, phctime.Sample{
 				PHC: tReadPHC,
 				Sys: tMono,
 			})
@@ -449,6 +493,23 @@ func normalizeOutages(list []syncsim.OutageConfig) []syncsim.OutageConfig {
 	}
 	tmp := syncsim.FaultConfig{Outage: list}
 	return tmp.NormalizeOutages()
+}
+
+// normalizePHCSteps returns a time-sorted copy of list with zero-offset
+// entries removed. The event loop can then walk it with a single index
+// advancing through event time.
+func normalizePHCSteps(list []PHCStepConfig) []PHCStepConfig {
+	if len(list) == 0 {
+		return nil
+	}
+	out := make([]PHCStepConfig, 0, len(list))
+	for _, s := range list {
+		if !s.IsZero() {
+			out = append(out, s)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Time < out[j].Time })
+	return out
 }
 
 func generatePulseEvents(cfg Config, duration float64, edgesPerPulse int) iter.Seq[Event] {

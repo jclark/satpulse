@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/time/clocksim"
 	"github.com/jclark/satpulse/time/internal/syncsim"
 )
 
@@ -292,6 +293,96 @@ func TestPHCSampleWarmUpMsgSeedSweep(t *testing.T) {
 	summary := sweepWarmUpOverMsgSeeds(t, msgSeeds)
 	t.Logf("defaults over %d msgSeeds: meanPulse=%.2f maxPulse=%d maxPulseSeed=%d histogram=%v",
 		msgSeeds, summary.meanPulse, summary.maxPulse, summary.maxPulseSeed, summary.pulseHistogram)
+}
+
+// TestPHCSampleStepRecovery is the step-15 acceptance test. Another
+// process (e.g. a future chrony PHC-disciplining feature, or phc_ctl)
+// steps the PHC mid-run. The consistentEdges admissibility pass must
+// notice the discontinuity and restart from the post-step suffix, so
+// that the post-step regression does not combine pre- and post-step
+// edges in the same fit.
+//
+// Each scenario runs twice: once with the default
+// DiscontinuityThreshold (detector active) and once with the threshold
+// raised far above any plausible interval deviation (detector
+// effectively disabled). The active-detector run must stay at
+// baseline-clean residuals; the disabled-detector run must show
+// contamination well above the active-detector bound. The pair
+// prevents the acceptance check from going vacuous if future changes
+// were to make the discontinuity path unreachable.
+func TestPHCSampleStepRecovery(t *testing.T) {
+	const (
+		cleanResidualBound        = 1 * time.Microsecond
+		contaminatedResidualFloor = 1 * time.Millisecond
+	)
+	tests := []struct {
+		name         string
+		stepOffsetNs clocksim.Nanoseconds
+		pulseWidth   float64 // 0 = single-edge; >0 = dual-edge
+		minSamples   int
+	}{
+		{name: "single-edge forward step +500ms", stepOffsetNs: 500_000_000, pulseWidth: 0, minSamples: 80},
+		{name: "single-edge backward step -500ms", stepOffsetNs: -500_000_000, pulseWidth: 0, minSamples: 80},
+		{name: "dual-edge forward step +500ms", stepOffsetNs: 500_000_000, pulseWidth: 0.1, minSamples: 160},
+		{name: "dual-edge backward step -500ms", stepOffsetNs: -500_000_000, pulseWidth: 0.1, minSamples: 160},
+	}
+	run := func(t *testing.T, stepOffsetNs clocksim.Nanoseconds, pulseWidth float64, disableDetector bool) Stats {
+		t.Helper()
+		cfg := DefaultConfig()
+		cfg.Sim.Duration = 120
+		cfg.PHC.FreqOffset = 2000
+		cfg.PHC.Drift = -150
+		cfg.PHC.WhiteNoise = 0.633
+		cfg.GPS.Jitter = 10
+		cfg.Pulse.Width = pulseWidth
+		cfg.Fault.PHCStep = []PHCStepConfig{{Time: 60, Offset: stepOffsetNs}}
+		if disableDetector {
+			// Push the threshold above any plausible interval
+			// deviation. consistentEdges then falls through to the
+			// Stage 4/5 PPB pass, which on a single interior stepped
+			// interval rejects no edge and lets pre- and post-step
+			// edges combine in the same fit.
+			cfg.Sample.DiscontinuityThreshold = 0.9
+		}
+		curTime := time.Date(2017, 1, 1, 0, 0, 0, 0, time.UTC)
+		lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+		stats, err := Simulate(cfg, &curTime, lg)
+		if err != nil {
+			t.Fatalf("Simulate: %v", err)
+		}
+		return stats
+	}
+	for _, tc := range tests {
+		t.Run(tc.name+" detector active", func(t *testing.T) {
+			stats := run(t, tc.stepOffsetNs, tc.pulseWidth, false)
+			// Pre-step warm-up (~5 s), post-step re-warm (~10 s while
+			// the buffer flushes across the discontinuity and the
+			// post-step suffix reaches PulseWindow). The remaining
+			// ~100 s should produce plenty of samples; floor is well
+			// below the clean-run count.
+			if stats.Samples < tc.minSamples {
+				t.Errorf("Samples = %d, want >= %d", stats.Samples, tc.minSamples)
+			}
+			if stats.AbsMax > cleanResidualBound {
+				t.Errorf("AbsMax = %v, want <= %v (step likely contaminated fit)", stats.AbsMax, cleanResidualBound)
+			}
+			if stats.Errors > 0 {
+				t.Errorf("Errors = %d, want 0", stats.Errors)
+			}
+			t.Logf("stats:\n%s", stats)
+		})
+		t.Run(tc.name+" detector disabled shows contamination", func(t *testing.T) {
+			stats := run(t, tc.stepOffsetNs, tc.pulseWidth, true)
+			// With the detector disabled, pre- and post-step edges
+			// combine in the same fit; residuals are of order the
+			// step size. If this assertion fails, the acceptance
+			// test above may be passing vacuously.
+			if stats.AbsMax < contaminatedResidualFloor {
+				t.Errorf("AbsMax = %v, want >= %v (detector disabled but no contamination visible)", stats.AbsMax, contaminatedResidualFloor)
+			}
+			t.Logf("stats:\n%s", stats)
+		})
+	}
 }
 
 // TestPHCSampleSawtoothCorrection is the step-10 acceptance test.

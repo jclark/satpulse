@@ -100,6 +100,19 @@ type Config struct {
 
 	// IgnoreSawtoothCorrection, when true, disables the use of pulse offset corrections.
 	IgnoreSawtoothCorrection bool `toml:"ignoreSawtoothCorrection" comment:"Ignore sawtooth corrections"`
+
+	// DiscontinuityThreshold is the minimum absolute PHC-interval
+	// deviation from the median that triggers a PHC discontinuity
+	// restart in the pulse-edge admissibility pass, in seconds. An
+	// external process (e.g. chrony disciplining the PHC, or
+	// phc_ctl) may step the PHC; a step that crosses this threshold
+	// causes consistentEdges to discard pre-step edges and restart
+	// from the post-step suffix. Should be set well above ordinary
+	// PHC jitter and aligned with the step / don't-step threshold of
+	// the external disciplining system, if any. The lower bound is 1
+	// ns (the resolution of time.Duration); values below that would
+	// round to zero on internal conversion.
+	DiscontinuityThreshold float64 `toml:"discontinuityThreshold" check:">=1e-9,<1.0" comment:"PHC discontinuity detection threshold (s)"`
 }
 
 // maxExtrapolation is how far past the last admitted edge's PHC
@@ -129,9 +142,10 @@ func DefaultConfig() Config {
 		// Slightly below 3s so normal message-timing variation does not
 		// push startup from pulse 5 to pulse 6 when using 1 Hz messages.
 		MinMsgSpan:          2.9,
-		ClockRateLimit:      0.1,
-		MsgTimingVariation:  0.05,
-		EdgeSecondTolerance: 0.1,
+		ClockRateLimit:         0.1,
+		MsgTimingVariation:     0.05,
+		EdgeSecondTolerance:    0.1,
+		DiscontinuityThreshold: 0.001,
 	}
 }
 

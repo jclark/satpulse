@@ -651,6 +651,13 @@
               "description": "Ignore sawtooth corrections",
               "type": "boolean",
               "default": false
+            },
+            "discontinuityThreshold": {
+              "description": "PHC discontinuity detection threshold (s)",
+              "type": "number",
+              "default": 0.001,
+              "minimum": 1e-9,
+              "exclusiveMaximum": 1.0
             }
           }
         }
