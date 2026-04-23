@@ -594,7 +594,7 @@
             "expectedDelay": {
               "description": "Expected pulse-to-message delay (s)",
               "type": "number",
-              "default": 0.1,
+              "default": 0.15,
               "minimum": 0.0,
               "exclusiveMaximum": 1.0
             },
@@ -636,14 +636,14 @@
             "msgTimingVariation": {
               "description": "Max median residual around fit [0,1]",
               "type": "number",
-              "default": 0.05,
+              "default": 0.2,
               "exclusiveMinimum": 0.0,
               "exclusiveMaximum": 1.0
             },
             "edgeSecondTolerance": {
               "description": "Max edge distance from integer second [0,0.5)",
               "type": "number",
-              "default": 0.1,
+              "default": 0.4,
               "exclusiveMinimum": 0.0,
               "exclusiveMaximum": 0.5
             },
