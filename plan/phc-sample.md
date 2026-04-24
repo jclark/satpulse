@@ -626,6 +626,41 @@ All gates are purely local to wallClock's state and do not require external info
 
 **Internal state.** Sliding window of `(tRead, utc)` pairs anchored at the oldest entry so the regression operates in small deltas rather than absolute nanoseconds. Plain OLS starting point; recency-weighted and other non-robust variants are candidates to compare in simulation (see "Open decisions").
 
+### Logging
+
+**Goal.** When `Generate` stops producing samples, the log alone must tell the operator which configured parameter is responsible and which TOML field to adjust. Today seven distinct call sites collapse into a single `ErrNotReady` sentinel that the dispatcher treats as warmup and stays silent about, so failures caused by overly tight `pulseVariation`, ambiguous polarity, tight `edgeSecondTolerance`, and wallClock backward-coverage misses are invisible.
+
+**Policy.**
+
+- **All `phcsample` logging happens inside `phcsample`.** The package sits in the application layer (`time/internal/`) per `docs/internals.md`, where logging is permitted; `phcsync` already logs from its own helpers. Having the package log itself keeps structured slog attrs (property/value/limit) intact rather than flattening them into an error string, and allows rejection-specific repetition suppression to live next to the rejection detection.
+- **The dispatcher's Warn goes away.** `Dispatcher.genSample`'s `"could not derive offset from PHC"` becomes redundant; the dispatcher simply returns on a no-sample result.
+- **`TrueTimeOffset` returns `(float64, bool)`.** External sentinel identity (`errExtrapolation`, `errStale`) is no longer load-bearing at the caller boundary because `phcsample` has already logged. Internal-to-package, the rejection helpers still produce typed errors (mirroring `reset.go`'s `limitError`) so the single logging call site can switch on reason and unit tests can assert on typed values.
+- **`ErrNotReady` becomes strictly "warmup" again.** Only empty-buffer, too-few wallClock points, span below `minMsgSpan`, wallClock backward-coverage miss, and first-fit short *with no rejection having fired upstream* stay silent. Every other former `ErrNotReady` site becomes a named rejection that logs at `Info` or higher.
+
+**Rejection sites and the TOML parameter each names.** Each log carries `property`, `value`, and `limit` as structured attrs, matching `phcsync.ResetConfig.limitError`'s style so operators see a consistent shape across both packages.
+
+- `consistentEdges` PPB flagging causing the admitted count to fall below `minFitEntries` → `pulseVariation`.
+- `selectTimingStream` ambiguous-polarity branch → `pulseWidthDetectLimit`.
+- `mapEdgesToUTC` edges dropped as too-far-from-integer-second causing the admitted count to fall below `minFitEntries` → `edgeSecondTolerance`.
+- `wallClock` forward-stale → `maxMsgGap`.
+- `wallClock` rate-limit breach → `clockRateLimit`.
+- `wallClock` median-residual breach → `msgTimingVariation`.
+- `errExtrapolation` (hard-coded 3 s bound, no TOML parameter) — logged with numeric context; message wording makes clear this is an internal safety bound.
+
+Attribution when multiple rejections contribute: the *earliest* pipeline stage that rejected wins (`pulseVariation` before `edgeSecondTolerance` before `errExtrapolation`), since downstream stages only saw what the earlier ones let through. This reads as "fix the upstream cause first."
+
+Silent-drop bug notes: `mapEdgesToUTC`'s `continue` at the `r > tolNs` check and `consistentEdges`'s PPB flagging both discard edges today without anyone counting them. Surfacing these as `edgeSecondTolerance` / `pulseVariation` rejections requires threading a drop-count and worst-deviation out of those helpers to the layer that builds the log — a small diagnostics struct returned alongside the surviving edges is the natural shape.
+
+wallClock backward-coverage miss (`wallclock.go:130-132`) stays silent (`ErrNotReady`-equivalent). The error value at that site is load-bearing for `mapEdgesToUTC`'s flow control (not `errStale`, so iteration continues); and after a message gap the forward-stale `maxMsgGap` Info has already told the operator what they need to know.
+
+**Avoiding message flood.** `Generate` fires at edge rate, so naive Info-per-rejection would produce one line per edge for the duration of any persistent failure. Mirror `reset.go`'s `pulseIntervalsBad`-style sticky-flag pattern (cleared on new input in `reset.go:167-168`): remember the last rejection reason that fired, suppress repeat Info for the same reason until an input event changes (new edge for edge-side rejections, new message for wallClock-side rejections). A fresh failure for a different reason, or the same reason after a quiet interval, logs again. Recovery is implicit via the next success `Debug`.
+
+**Success-path Debug.** One `lg.Debug` at the end of `TrueTimeOffset` on success carrying a short attribute set — entry count, slope (expressed as PPB), residual stddev, offset nanoseconds. Residual stddev needs one extra accumulator (`syy`) in `fitAndEvaluate`'s second loop. This also functions as the implicit recovery signal after a logged rejection episode. Exact attribute names and wording TBD during implementation.
+
+The once-per-process "first `NTPSample`" Info that phase-2 planning originally placed here is covered generically by `logobs.NTPSampleLogObserver` across all three dispatcher modes; it is out of scope for this design.
+
+**Files primarily touched by this design.** `time/internal/phcsample/phc_window.go` (main battleground: `TrueTimeOffset`, `timingEdges`, `consistentEdges`, `selectTimingStream`, `mapEdgesToUTC`, `fitAndEvaluate`; add the typed rejection error, the single logging dispatch site, and the sticky-flag state); `time/internal/phcsample/wallclock.go` (wrap the three existing `fmt.Errorf` rejections in the typed form); `time/internal/phcsample/generator.go` (owner of the sticky-flag state is likely `Generator`, co-located with the logger); `time/internal/gpsevent/dispatcher.go` (delete the now-redundant Warn in `genSample`). Reference for style: `time/internal/phcsync/reset.go`'s `limitError`, `logMsgError`, `pulseIntervalsBad`, and `tReadLastMsg`.
+
 ## Relationship to existing code
 
 `phc.sync=false` introduces a **third dispatcher runtime mode**, not merely a "no controller" variant of PHC-disciplined mode. The three modes are mutually exclusive:
@@ -717,13 +752,7 @@ End of phase 1: the system is usable with chrony.
 
 11. **Unify the pulse-edge sink interface (cleanup).** *(landed)* `phcsync.Controller` and `phcsample.Generator` each declare their own exported `PulseEdge` struct with the same two fields (`Timestamp phctime.Time`, `TRead phctime.Sample`) and take it via differently-named methods (`PulseEdge` vs. `Pulse`). Introduce a shared `gpsevent.PulseReceiver` interface with a single method `Pulse(timestamp phctime.Time, tRead phctime.Sample)`. Rename `phcsync.Controller.PulseEdge` to `Pulse(ts, tr)` and change `phcsample.Generator.Pulse(edge)` to `Pulse(ts, tr)`; both build their own (now unexported) `pulseEdge` internally. `gpsevent.NewDispatcher` takes a single `PulseReceiver` argument instead of separate `controller` and `generator` parameters; the Dispatcher keeps both a `pulse PulseReceiver` field (for the shared `Pulse` call) and typed `controller` / `generator` fields (populated by a one-shot type-switch in the constructor) for the mode-specific paths (Pause, sysSample / genSample, Close, ticker, MsgUTCTime). Update callers: `replay.go`, `syncsim.go`, `phcsample/sim/sim.go`, and the daemon wiring. Also touches phcsync's internal `PulseEdge` uses (tracking.go, reset.go, converging.go, tests) as a mechanical rename. Pure cleanup — no behaviour change.
 
-12. **Add debug logging inside `phcsample`.** The `*slog.Logger` is plumbed through `Generator` and `phcWindow.TrueTimeOffset` today but nothing inside the package uses it. Two tiers:
-    - **Debug, per successful `Generate`**: a small handful of interesting stats — likely window size, fit residual, estimated PHC rate. Keep the attribute list short; this fires at the edge rate.
-    - **Debug, when things go wrong**: the non-`ErrNotReady` failure paths in `TrueTimeOffset` (stride rejection, ambiguous polarity, `errExtrapolation`, wallClock rate / scatter gates). These don't surface nicely through the error return today — each gate becomes a targeted `Debug` log with the relevant numeric detail.
-
-    The "first successful `Generate`" info log originally scoped here is already handled generically by `logobs.NTPSampleLogObserver`, which fires once per process lifetime on the first `Observer.NTPSample` call across all three dispatcher modes. Re-firing on each `NewInstance` (PHC era transition) is not covered there; if operators want per-era warmup visibility, it needs an observability hook (e.g. a `Pause` event) that today does not exist.
-
-    Exact attribute sets and wording TBD in the step itself.
+12. **Implement logging inside `phcsample`.** See the "Logging" subsection under "Implementation design" for the design. This step delivers it: the typed rejection error, the single logging dispatch site inside `TrueTimeOffset`, the sticky-flag repetition suppression, the rewrite of the seven current `ErrNotReady` call sites into either true-warmup (silent) or named rejection (logged `Info`), the `(float64, bool)` return from `TrueTimeOffset`, and the removal of the now-redundant dispatcher Warn. Also adds the per-successful-`Generate` `Debug` stats log (requires extending `fitAndEvaluate` with a `syy` accumulator so residual stddev is available).
 
 13. **Surface `NTPSample` in the web UI via SSE.** `sseobs.SSEObserver` currently emits `SampleSSE` off `phcsync.Sampler.Sample` — so in free-running mode the offset field in the UI is empty. Add an `NTPSample` method on `SSEObserver` that emits an SSE with the `offset` (sys-vs-true-time in seconds, the quantity already carried by `NTPSample`), and any other values worth surfacing. This offset is *system-clock* offset rather than PHC offset, and is itself interesting — it's what chrony is ultimately disciplining, so operators can read it directly from the UI. Fires in all three dispatcher modes (serial, disciplined, free-running), so the same SSE channel becomes informative across modes. Minor web-side work to render it. Separate-from-but-parallel-to the `Sample` wiring that observes PHC offset.
 
