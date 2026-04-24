@@ -8,6 +8,6 @@ import (
 )
 
 // OpenPolling is not supported on this platform.
-func OpenPolling(path string) (*os.File, error) {
-	return nil, fmt.Errorf("%s: polling not supported on this platform", path)
+func OpenPolling(path string) (*os.File, DevKind, error) {
+	return nil, DevUnknown, fmt.Errorf("%s: polling not supported on this platform", path)
 }

@@ -424,4 +424,5 @@ const (
 	DevUSB
 	DevUSBtoUART
 	DevBT
+	DevFIFO
 )

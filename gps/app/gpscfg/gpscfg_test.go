@@ -52,6 +52,10 @@ func (p *fakeOutPort) Write(b []byte) (int, error) {
 
 func (p *fakeOutPort) Buffered() (int, error) { return 0, nil }
 
+func (p *fakeOutPort) ReadOnly() bool { return false }
+
+func (p *fakeOutPort) Direct() bool { return false }
+
 // fakeConfigProtocol implements gpsprot.ConfigProtocol for testing.
 type fakeConfigProtocol struct {
 	probePacket []byte

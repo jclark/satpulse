@@ -51,6 +51,11 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 	probeEnabled := !noop && len(mh.configProts) > 0
 	socket := target.Opts.Socket
 
+	if probeEnabled && port.ReadOnly() {
+		lg.Warn("device is not writable, not configuring GPS")
+		probeEnabled = false
+	}
+
 	// Install native message handlers before detection if probing is enabled
 	var mnmh *gpsprot.MultiNativeMsgHandler
 	if probeEnabled {

@@ -24,7 +24,7 @@ import (
 // before restoring serial settings and closing the underlying file descriptor.
 type SerialConn struct {
 	file      ioFile
-	isUART    bool
+	kind      term.DevKind
 	mu        sync.Mutex
 	stopped   bool // protected by mu
 	readLock  chan struct{}
@@ -52,28 +52,48 @@ var _ SerialOutPort = (*SerialConn)(nil)
 func OpenSerial(path string, speed int) (*SerialConn, int, error) {
 	t, err := openTerm(path, speed)
 	if err == nil {
-		return newSerialConn(t, t.DevKind() == term.DevUART), t.Speed(), nil
+		return newSerialConn(t, t.DevKind()), t.Speed(), nil
 	}
 	if !errors.Is(err, term.ErrNotATTY) {
 		return nil, 0, err
 	}
-	f, perr := term.OpenPolling(path)
+	f, kind, perr := term.OpenPolling(path)
 	if perr != nil {
 		return nil, 0, fmt.Errorf("%s and %w", perr, term.ErrNotATTY)
 	}
-	return newSerialConn(newPollingFile(f, readTimeout), false), 0, nil
+	return newSerialConn(newPollingFile(f, readTimeout), kind), 0, nil
 }
 
-func newSerialConn(f ioFile, isUART bool) *SerialConn {
+func newSerialConn(f ioFile, kind term.DevKind) *SerialConn {
 	readLock := make(chan struct{}, 1)
 	readLock <- struct{}{}
 	writeLock := make(chan struct{}, 1)
 	writeLock <- struct{}{}
-	return &SerialConn{file: f, readLock: readLock, writeLock: writeLock, isUART: isUART}
+	return &SerialConn{file: f, readLock: readLock, writeLock: writeLock, kind: kind}
 }
 
 func (c *SerialConn) LocalAddr() string {
 	return c.file.Path()
+}
+
+// ReadOnly reports whether writes to this port are rejected.
+// True only for FIFOs today.
+func (c *SerialConn) ReadOnly() bool {
+	return c.kind == term.DevFIFO
+}
+
+// Direct reports whether this port is a classified hardware
+// attachment -- a UART, USB serial receiver, USB-to-UART bridge, or
+// Bluetooth RFCOMM device -- that will produce data continuously
+// when healthy. Anything unclassified (including /dev/gnss0,
+// pseudo-terminals, and unknown TTY majors) and FIFOs return false
+// on the conservative assumption that we cannot promise prompt input.
+func (c *SerialConn) Direct() bool {
+	switch c.kind {
+	case term.DevUART, term.DevUSB, term.DevUSBtoUART, term.DevBT:
+		return true
+	}
+	return false
 }
 
 // term returns the underlying *term.Term if this SerialConn is backed by a
@@ -123,6 +143,9 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 	if c.isStopped() {
 		return 0, net.ErrClosed
 	}
+	if c.ReadOnly() {
+		return 0, fmt.Errorf("%s: device is not writable", c.file.Path())
+	}
 	select {
 	case <-c.writeLock:
 		// this tells close that a write is in progress
@@ -152,7 +175,7 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 				// But we can recover from a lost ACK.
 				const minDelay = time.Millisecond
 				delay := minDelay
-				if !c.isUART {
+				if c.kind != term.DevUART {
 					delay += t.TransmitTime(n)
 				}
 				time.Sleep(delay)

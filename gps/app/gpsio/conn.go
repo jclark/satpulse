@@ -22,6 +22,18 @@ type SerialError = term.Error
 type OutPort interface {
 	io.Writer
 	Buffered() (int, error)
+	// ReadOnly reports whether writes to the port are rejected.
+	// Callers that would otherwise probe (e.g. gpscfg.Configure)
+	// should fall through to a listen-only path when true.
+	ReadOnly() bool
+	// Direct reports whether the port is known to be a live hardware
+	// attachment that will produce data continuously (e.g. a
+	// classified UART or USB serial receiver). When false, callers
+	// must not assume prompt input: the port could be a FIFO, a
+	// socket, a pseudo-terminal, or any char device we couldn't
+	// classify further. Used to decide whether to fail fast on a
+	// silent port.
+	Direct() bool
 }
 
 // OutPortLock coordinates exclusive write access to an OutPort.

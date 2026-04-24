@@ -121,6 +121,8 @@ type mockOutPort struct{}
 
 func (mockOutPort) Write(p []byte) (int, error) { return len(p), nil }
 func (mockOutPort) Buffered() (int, error)      { return 0, nil }
+func (mockOutPort) ReadOnly() bool              { return false }
+func (mockOutPort) Direct() bool                { return false }
 
 func testLogger() *slog.Logger {
 	return slog.Default()
