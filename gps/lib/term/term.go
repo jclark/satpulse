@@ -238,6 +238,9 @@ func uint8Clamp(v int64) uint8 {
 }
 
 func (t *Term) Read(buf []byte) (n int, err error) {
+	if len(buf) == 0 {
+		return 0, nil
+	}
 	for {
 		n, err = unix.Read(t.fd, buf)
 		if err != unix.EINTR {
@@ -246,6 +249,9 @@ func (t *Term) Read(buf []byte) (n int, err error) {
 	}
 	if err != nil {
 		err = t.wrapErr(err, "read")
+	} else if n == 0 {
+		// VTIME expired with no data available.
+		err = &os.PathError{Op: "read", Path: t.path, Err: os.ErrDeadlineExceeded}
 	}
 	return
 }

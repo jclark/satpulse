@@ -39,9 +39,6 @@ type Conn interface {
 	LocalAddr() string
 }
 
-// timeoutError implements scan.TimeoutError
-var _ scan.TimeoutError = timeoutError{}
-
 // TermError implements scan.TemporaryError
 var _ scan.TemporaryError = TermError{}
 

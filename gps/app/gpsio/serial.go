@@ -295,18 +295,6 @@ func (pf *pollingFile) Buffered() (int, error) {
 	return 0, nil
 }
 
-type timeoutError struct {
-	path string
-}
-
-func (e timeoutError) Error() string {
-	return e.path + ": timeout error"
-}
-
-func (e timeoutError) Timeout() bool {
-	return true
-}
-
 type TermError struct {
 	path   string
 	counts term.ErrorCounts
@@ -325,9 +313,8 @@ func (e TermError) Temporary() bool {
 }
 
 // ioRead reads from f and, for *term.Term inputs, attaches serial
-// error or timeout information. For non-TTY files, the underlying
-// Read is expected to report timeouts itself (e.g. via
-// os.ErrDeadlineExceeded).
+// error information. Both *term.Term and *pollingFile report
+// timeouts themselves via os.ErrDeadlineExceeded.
 func ioRead(f ioFile, p []byte) (n int, err error) {
 	n, err = f.Read(p)
 	if err != nil {
@@ -336,8 +323,6 @@ func ioRead(f ioFile, p []byte) (n int, err error) {
 	if t, ok := f.(*term.Term); ok {
 		if errCounts := t.GetErrorCounts(); !errCounts.IsZero() {
 			err = TermError{path: t.Path(), counts: errCounts}
-		} else if n == 0 {
-			err = timeoutError{path: t.Path()}
 		}
 	}
 	return
