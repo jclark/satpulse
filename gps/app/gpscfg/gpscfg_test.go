@@ -71,11 +71,11 @@ func (p *fakeConfigProtocol) Configure(*gpsprot.ConfigTarget) (gpsprot.Configura
 
 // fakeSerialError implements SerialError for testing.
 type fakeSerialError struct {
-	framingErrs int
+	framing bool
 }
 
-func (e *fakeSerialError) Error() string    { return fmt.Sprintf("%d framing errors", e.framingErrs) }
-func (e *fakeSerialError) FramingErrs() int { return e.framingErrs }
+func (e *fakeSerialError) Error() string       { return fmt.Sprintf("framing=%v", e.framing) }
+func (e *fakeSerialError) SerialFraming() bool { return e.framing }
 
 // makeNMEAPacket constructs a valid scan.Packet with a GPZDA sentence.
 func makeNMEAPacket() scan.Packet {
@@ -92,7 +92,7 @@ func makeNMEAPacket() scan.Packet {
 // makeFramingErrorPacket constructs a scan.Packet with a framing error.
 func makeFramingErrorPacket() scan.Packet {
 	return scan.Packet{
-		ReadError: &fakeSerialError{framingErrs: 1},
+		ReadError: &fakeSerialError{framing: true},
 		Data:      "\xff\xff",
 	}
 }

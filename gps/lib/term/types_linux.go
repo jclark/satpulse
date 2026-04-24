@@ -12,4 +12,4 @@ package term
 import "C"
 
 // serial.h
-type SerialICounter C.struct_serial_icounter_struct
+type serialICounter C.struct_serial_icounter_struct

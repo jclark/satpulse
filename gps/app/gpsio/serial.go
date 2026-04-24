@@ -101,7 +101,7 @@ func (c *SerialConn) Read(p []byte) (int, error) {
 	if c.isStopped() {
 		return 0, io.EOF
 	}
-	return ioRead(c.file, p)
+	return c.file.Read(p)
 }
 
 func (c *SerialConn) Write(p []byte) (int, error) {
@@ -293,37 +293,4 @@ func (pf *pollingFile) Path() string {
 
 func (pf *pollingFile) Buffered() (int, error) {
 	return 0, nil
-}
-
-type TermError struct {
-	path   string
-	counts term.ErrorCounts
-}
-
-func (e TermError) Error() string {
-	return e.path + ": serial errors:" + e.counts.String()
-}
-
-func (e TermError) FramingErrs() int {
-	return int(e.counts.FrameErrs)
-}
-
-func (e TermError) Temporary() bool {
-	return true
-}
-
-// ioRead reads from f and, for *term.Term inputs, attaches serial
-// error information. Both *term.Term and *pollingFile report
-// timeouts themselves via os.ErrDeadlineExceeded.
-func ioRead(f ioFile, p []byte) (n int, err error) {
-	n, err = f.Read(p)
-	if err != nil {
-		return
-	}
-	if t, ok := f.(*term.Term); ok {
-		if errCounts := t.GetErrorCounts(); !errCounts.IsZero() {
-			err = TermError{path: t.Path(), counts: errCounts}
-		}
-	}
-	return
 }

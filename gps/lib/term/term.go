@@ -20,7 +20,7 @@ type Term struct {
 	path    string
 	attr    Attr
 	tsSaved unix.Termios
-	iCount  *SerialICounter
+	iCount  *serialICounter
 }
 
 type Attr struct {
@@ -79,7 +79,7 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	// XXX turn of IXOFF
 	err = t.setAttrNow(&attr.ts)
 	t.attr = attr
-	_ = t.GetErrorCounts()
+	_ = t.readError()
 	return
 }
 
@@ -248,10 +248,14 @@ func (t *Term) Read(buf []byte) (n int, err error) {
 		}
 	}
 	if err != nil {
-		err = t.wrapErr(err, "read")
-	} else if n == 0 {
+		return n, t.wrapErr(err, "read")
+	}
+	if n == 0 {
 		// VTIME expired with no data available.
-		err = &os.PathError{Op: "read", Path: t.path, Err: os.ErrDeadlineExceeded}
+		return 0, &os.PathError{Op: "read", Path: t.path, Err: os.ErrDeadlineExceeded}
+	}
+	if serr := t.readError(); serr != nil {
+		err = serr
 	}
 	return
 }
@@ -296,30 +300,90 @@ func (t *Term) ModemStatus() (int, error) {
 	return status, nil
 }
 
-type ErrorCounts struct {
-	FrameErrs, OverrunErrs, ParityErrs, BreakErrs, BufOverrunErrs int32
+// Error reports one or more serial errors (framing, parity, overrun, etc.)
+// that occurred during a successful Term.Read.
+type Error struct {
+	Path  string
+	Flags ErrFlags
+	// Counts holds per-category counts when the platform reports them
+	// (Linux via TIOCGICOUNT); nil on platforms that cannot distinguish
+	// beyond Flags.
+	Counts *ErrorCounts
 }
 
-func (c ErrorCounts) IsZero() bool {
-	return c.FrameErrs == 0 && c.OverrunErrs == 0 && c.ParityErrs == 0 && c.BreakErrs == 0 && c.BufOverrunErrs == 0
+// ErrFlags is a bitmask of serial error categories reported by Term.Read.
+type ErrFlags uint32
+
+const (
+	ErrFraming ErrFlags = 1 << iota
+	ErrParity
+	ErrOverrun
+	ErrBreak
+	ErrBufOverrun
+)
+
+// ErrorCounts holds per-category counts of serial errors observed during
+// a single Term.Read.
+type ErrorCounts struct {
+	Framing, Parity, Overrun, Break, BufOverrun int32
 }
+
+func (e *Error) Error() string {
+	var detail string
+	if e.Counts != nil {
+		detail = e.Counts.String()
+	} else {
+		detail = e.Flags.String()
+	}
+	return e.Path + ": serial errors: " + detail
+}
+
+// Temporary reports that the error does not affect the validity of the
+// connection. Always true for a *Error.
+func (e *Error) Temporary() bool { return true }
+
+// SerialFraming reports whether the error includes a framing error.
+func (e *Error) SerialFraming() bool { return e.Flags&ErrFraming != 0 }
 
 func (c ErrorCounts) String() string {
-	var s []string = make([]string, 0, 5)
-	if c.FrameErrs != 0 {
-		s = append(s, fmt.Sprintf("fe=%d", c.FrameErrs))
+	var s []string
+	if c.Framing != 0 {
+		s = append(s, fmt.Sprintf("fe=%d", c.Framing))
 	}
-	if c.OverrunErrs != 0 {
-		s = append(s, fmt.Sprintf("oe=%d", c.OverrunErrs))
+	if c.Overrun != 0 {
+		s = append(s, fmt.Sprintf("oe=%d", c.Overrun))
 	}
-	if c.ParityErrs != 0 {
-		s = append(s, fmt.Sprintf("pe=%d", c.ParityErrs))
+	if c.Parity != 0 {
+		s = append(s, fmt.Sprintf("pe=%d", c.Parity))
 	}
-	if c.BreakErrs != 0 {
-		s = append(s, fmt.Sprintf("brk=%d", c.BreakErrs))
+	if c.Break != 0 {
+		s = append(s, fmt.Sprintf("brk=%d", c.Break))
 	}
-	if c.BufOverrunErrs != 0 {
-		s = append(s, fmt.Sprintf("bo=%d", c.BufOverrunErrs))
+	if c.BufOverrun != 0 {
+		s = append(s, fmt.Sprintf("bo=%d", c.BufOverrun))
+	}
+	if len(s) == 0 {
+		return "none"
+	}
+	return strings.Join(s, " ")
+}
+
+func (f ErrFlags) String() string {
+	var s []string
+	if f&ErrFraming != 0 {
+		s = append(s, "framing")
+	}
+	if f&ErrParity != 0 {
+		s = append(s, "parity")
+	}
+	if f&ErrOverrun != 0 {
+		s = append(s, "overrun")
+	}
+	if f&ErrBreak != 0 {
+		s = append(s, "break")
+	}
+	if f&ErrBufOverrun != 0 {
+		s = append(s, "bufoverrun")
 	}
 	if len(s) == 0 {
 		return "none"

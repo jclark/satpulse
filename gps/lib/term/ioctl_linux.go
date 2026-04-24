@@ -1,13 +1,15 @@
 package term
 
+//go:generate sh -c "go tool cgo -godefs types_linux.go | gofmt > ztypes_linux.go && rm -rf _obj"
+
 import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
 
-func IoctlGetSerialICounter(fd int) (*SerialICounter, error) {
-	var value SerialICounter
+func ioctlGetSerialICounter(fd int) (*serialICounter, error) {
+	var value serialICounter
 	err := ioctlPtr(fd, unix.TIOCGICOUNT, unsafe.Pointer(&value))
 	return &value, err
 }

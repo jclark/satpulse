@@ -389,7 +389,7 @@ func (d *detector) processPacket(packet scan.Packet) {
 // isFramingError reports whether err is a serial error with framing errors.
 func isFramingError(err error) bool {
 	se, ok := err.(SerialError)
-	return ok && se.FramingErrs() > 0
+	return ok && se.SerialFraming()
 }
 
 // probeSucceeded returns the first ConfigProtocol that has responded to probing, or nil.
@@ -556,7 +556,7 @@ const invalidBytesMaxExpected = 100
 
 type SerialError interface {
 	error
-	FramingErrs() int
+	SerialFraming() bool
 }
 
 func (mh *msgHandler) invalid(data string, readErr error) {
@@ -567,11 +567,11 @@ func (mh *msgHandler) invalid(data string, readErr error) {
 		mh.lg.Debug("unexpectedly large number of unparseable bytes while starting to read GPS output")
 	}
 	if readErr != nil {
-		if err, ok := readErr.(SerialError); ok && err.FramingErrs() > 0 {
+		if err, ok := readErr.(SerialError); ok && err.SerialFraming() {
 			if bad.framingErrs == 0 {
 				mh.lg.Info("framing errors reading GPS output during initialization")
 			}
-			bad.framingErrs += err.FramingErrs()
+			bad.framingErrs++
 		} else {
 			// Don't expect these
 			mh.lg.Info("error reading GPS output during initialization", "err", readErr)
