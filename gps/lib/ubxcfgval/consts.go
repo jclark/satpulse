@@ -33,6 +33,12 @@ const (
 	EHwRfLnaModeLowgain
 	EHwRfLnaModeBypass
 )
+const KI2cinprotNmea KeyL = 0x10710002
+const KI2cinprotRtcm3x KeyL = 0x10710004
+const KI2cinprotUbx KeyL = 0x10710001
+const KI2coutprotNmea KeyL = 0x10720002
+const KI2coutprotRtcm3x KeyL = 0x10720004
+const KI2coutprotUbx KeyL = 0x10720001
 const KNavhpgDgnssmode KeyE[EnumNavhpgDgnssmode] = 0x20140011
 type EnumNavhpgDgnssmode uint8
 const (
@@ -287,6 +293,12 @@ const KSignalQzssL2cEna KeyL = 0x10310015
 const KSignalQzssL5Ena KeyL = 0x10310017
 const KSignalSbasEna KeyL = 0x10310020
 const KSignalSbasL1caEna KeyL = 0x10310005
+const KSpiinprotNmea KeyL = 0x10790002
+const KSpiinprotRtcm3x KeyL = 0x10790004
+const KSpiinprotUbx KeyL = 0x10790001
+const KSpioutprotNmea KeyL = 0x107a0002
+const KSpioutprotRtcm3x KeyL = 0x107a0004
+const KSpioutprotUbx KeyL = 0x107a0001
 const KTmodeEcefX KeyI = 0x40030003
 const KTmodeEcefXHp KeyI = 0x20030006
 const KTmodeEcefY KeyI = 0x40030004

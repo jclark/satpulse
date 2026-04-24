@@ -51,6 +51,14 @@ tag = "get-all-rates"
 class = 0x06
 id = 0x01
 
+# CFG-MSG set: enable NAV-DOP at 1Hz. ACK only, no data response.
+[[casbin]]
+tag = "set-nav-dop"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x01, 0x02, 1]
+
 # Second CFG set with same class/ID as set-tp for ambiguity tests.
 [[casbin]]
 tag = "set-tp-dup"

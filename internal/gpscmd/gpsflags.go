@@ -13,7 +13,6 @@ import (
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/term"
 	"github.com/jclark/satpulse/gps/ptime"
-	"github.com/jclark/satpulse/time/app/daemon"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/pflag"
 )
@@ -684,9 +683,9 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 		case "off":
 			flags |= gpsprot.PVTMsgOff
 		case "ptp":
-			flags |= daemon.PTPMsgFlags | gpsprot.PVTMsgOff
+			flags |= gpsprot.PVTMsgTimingPTP | gpsprot.PVTMsgOff
 		case "ntp":
-			flags |= daemon.NTPMsgFlags | gpsprot.PVTMsgOff
+			flags |= gpsprot.PVTMsgTimingSerialUTC | gpsprot.PVTMsgOff
 		default:
 			return fmt.Errorf("unknown pvt output flag: %s", w)
 		}

@@ -1,9 +1,11 @@
 package gpsio
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -21,8 +23,8 @@ import (
 // Close will wait for any in-progress reads or writes to complete,
 // before restoring serial settings and closing the underlying file descriptor.
 type SerialConn struct {
-	term      *term.Term
-	isUART    bool
+	file      ioFile
+	kind      term.DevKind
 	mu        sync.Mutex
 	stopped   bool // protected by mu
 	readLock  chan struct{}
@@ -30,26 +32,76 @@ type SerialConn struct {
 	pktLog    *PacketLog
 }
 
+// ioFile is the minimal file-like interface SerialConn needs.
+// Both *term.Term and *pollingFile satisfy it.
+// TTY-specific operations (speed change, flush, restore, error counts)
+// are performed via type assertion to *term.Term.
+type ioFile interface {
+	io.ReadWriteCloser
+	Path() string
+	Buffered() (int, error)
+}
+
 var _ Conn = (*SerialConn)(nil)
 var _ SerialOutPort = (*SerialConn)(nil)
 
 // OpenSerial opens a serial port at the given path and speed.
 // speed can be 0 meaning to use the current speed.
-func OpenSerial(path string, speed int) (*SerialConn, error) {
+// It returns the actual speed configured on the device; for devices
+// that are not TTYs the returned speed is 0.
+func OpenSerial(path string, speed int) (*SerialConn, int, error) {
 	t, err := openTerm(path, speed)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		return newSerialConn(t, t.DevKind()), t.Speed(), nil
 	}
-	isUART := t.DevKind() == term.DevUART
+	if !errors.Is(err, term.ErrNotATTY) {
+		return nil, 0, err
+	}
+	f, kind, perr := term.OpenPolling(path)
+	if perr != nil {
+		return nil, 0, fmt.Errorf("%s and %w", perr, term.ErrNotATTY)
+	}
+	return newSerialConn(newPollingFile(f, readTimeout), kind), 0, nil
+}
+
+func newSerialConn(f ioFile, kind term.DevKind) *SerialConn {
 	readLock := make(chan struct{}, 1)
 	readLock <- struct{}{}
 	writeLock := make(chan struct{}, 1)
 	writeLock <- struct{}{}
-	return &SerialConn{term: t, readLock: readLock, writeLock: writeLock, isUART: isUART}, nil
+	return &SerialConn{file: f, readLock: readLock, writeLock: writeLock, kind: kind}
 }
 
 func (c *SerialConn) LocalAddr() string {
-	return c.term.Path()
+	return c.file.Path()
+}
+
+// ReadOnly reports whether writes to this port are rejected.
+// True only for FIFOs today.
+func (c *SerialConn) ReadOnly() bool {
+	return c.kind == term.DevFIFO
+}
+
+// Direct reports whether this port is a classified hardware
+// attachment -- a UART, USB serial receiver, USB-to-UART bridge, or
+// Bluetooth RFCOMM device -- that will produce data continuously
+// when healthy. Anything unclassified (including /dev/gnss0,
+// pseudo-terminals, and unknown TTY majors) and FIFOs return false
+// on the conservative assumption that we cannot promise prompt input.
+func (c *SerialConn) Direct() bool {
+	switch c.kind {
+	case term.DevUART, term.DevUSB, term.DevUSBtoUART, term.DevBT:
+		return true
+	}
+	return false
+}
+
+// term returns the underlying *term.Term if this SerialConn is backed by a
+// TTY, nil otherwise. TTY-specific operations (speed change, restore) are
+// gated on the result.
+func (c *SerialConn) term() *term.Term {
+	t, _ := c.file.(*term.Term)
+	return t
 }
 
 func (c *SerialConn) Read(p []byte) (int, error) {
@@ -69,7 +121,7 @@ func (c *SerialConn) Read(p []byte) (int, error) {
 	if c.isStopped() {
 		return 0, io.EOF
 	}
-	return termRead(c.term, p)
+	return c.file.Read(p)
 }
 
 func (c *SerialConn) Write(p []byte) (int, error) {
@@ -91,6 +143,9 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 	if c.isStopped() {
 		return 0, net.ErrClosed
 	}
+	if c.ReadOnly() {
+		return 0, fmt.Errorf("%s: device is not writable", c.file.Path())
+	}
 	select {
 	case <-c.writeLock:
 		// this tells close that a write is in progress
@@ -104,27 +159,32 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 	if c.isStopped() {
 		return 0, net.ErrClosed
 	}
-	n, err := c.term.Write(p)
+	n, err := c.file.Write(p)
 	if err == nil {
 		if speed != 0 {
-			// If it's a UART, then the TCSETSW flag should in theory take care of delaying the speed change
-			// until the data as been transmitted.
-			// But I found that on the Raspberry Pi, which uses a PL011 UART, it doesn't work without a little delay,
-			// for reasons I don't understand.
-			// With something like a USB-serial converter, it seems unlikely that the TCSETW flag will work,
-			// since the kernel does not have access to the UART buffer to determine when it is empty.
-			// So in this case, we increase the delay to ensure the data is transmitted before we change the speed,
-			// since that is the most important thing.
-			// We ideally want get the ACK back, which means we need to change the speed promptly.
-			// But we can recover from a lost ACK.
-			const minDelay = time.Millisecond
-			delay := minDelay
-			if !c.isUART {
-				delay += c.TransmitTime(n)
-			}
-			time.Sleep(delay)
-			err = c.term.Change(term.Speed(speed))
-			if err != nil {
+			if t := c.term(); t != nil {
+				// If it's a UART, then the TCSETSW flag should in theory take care of delaying the speed change
+				// until the data as been transmitted.
+				// But I found that on the Raspberry Pi, which uses a PL011 UART, it doesn't work without a little delay,
+				// for reasons I don't understand.
+				// With something like a USB-serial converter, it seems unlikely that the TCSETW flag will work,
+				// since the kernel does not have access to the UART buffer to determine when it is empty.
+				// So in this case, we increase the delay to ensure the data is transmitted before we change the speed,
+				// since that is the most important thing.
+				// We ideally want get the ACK back, which means we need to change the speed promptly.
+				// But we can recover from a lost ACK.
+				const minDelay = time.Millisecond
+				delay := minDelay
+				if c.kind != term.DevUART {
+					delay += t.TransmitTime(n)
+				}
+				time.Sleep(delay)
+				err = t.Change(term.Speed(speed))
+				if err != nil {
+					speed = 0
+				}
+			} else {
+				// speed change is meaningless on a non-TTY device
 				speed = 0
 			}
 		}
@@ -135,15 +195,7 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 }
 
 func (c *SerialConn) Buffered() (int, error) {
-	return c.term.Buffered()
-}
-
-func (c *SerialConn) TransmitTime(nBytes int) time.Duration {
-	return c.term.TransmitTime(nBytes)
-}
-
-func (c *SerialConn) Speed() int {
-	return c.term.Speed()
+	return c.file.Buffered()
 }
 
 func (c *SerialConn) isStopped() bool {
@@ -193,8 +245,11 @@ func (c *SerialConn) Close() error {
 	<-c.writeLock
 	close(c.writeLock)
 	// no more reads or writes are in progress
-	restoreErr := c.term.Restore()
-	closeErr := c.term.Close()
+	var restoreErr error
+	if t := c.term(); t != nil {
+		restoreErr = t.Restore()
+	}
+	closeErr := c.file.Close()
 	if restoreErr != nil {
 		return fmt.Errorf("cannot restore serial settings: %w", restoreErr)
 	}
@@ -229,43 +284,36 @@ func openTerm(path string, speed int) (*term.Term, error) {
 	return t, nil
 }
 
-type timeoutError struct {
-	path string
+// pollingFile is an ioFile implementation backed by an *os.File opened
+// O_NONBLOCK. It uses Go's runtime netpoller for deadline-based timeouts.
+type pollingFile struct {
+	f       *os.File
+	timeout time.Duration
 }
 
-func (e timeoutError) Error() string {
-	return e.path + ": timeout error"
+func newPollingFile(f *os.File, timeout time.Duration) *pollingFile {
+	return &pollingFile{f: f, timeout: timeout}
 }
 
-func (e timeoutError) Timeout() bool {
-	return true
-}
-
-type TermError struct {
-	path   string
-	counts term.ErrorCounts
-}
-
-func (e TermError) Error() string {
-	return e.path + ": serial errors:" + e.counts.String()
-}
-
-func (e TermError) FramingErrs() int {
-	return int(e.counts.FrameErrs)
-}
-
-func (e TermError) Temporary() bool {
-	return true
-}
-
-func termRead(t *term.Term, p []byte) (n int, err error) {
-	n, err = t.Read(p)
-	if err == nil {
-		if errCounts := t.GetErrorCounts(); !errCounts.IsZero() {
-			err = TermError{path: t.Path(), counts: errCounts}
-		} else if n == 0 {
-			err = timeoutError{path: t.Path()}
-		}
+func (pf *pollingFile) Read(p []byte) (int, error) {
+	if err := pf.f.SetReadDeadline(time.Now().Add(pf.timeout)); err != nil {
+		return 0, err
 	}
-	return
+	return pf.f.Read(p)
+}
+
+func (pf *pollingFile) Write(p []byte) (int, error) {
+	return pf.f.Write(p)
+}
+
+func (pf *pollingFile) Close() error {
+	return pf.f.Close()
+}
+
+func (pf *pollingFile) Path() string {
+	return pf.f.Name()
+}
+
+func (pf *pollingFile) Buffered() (int, error) {
+	return 0, nil
 }

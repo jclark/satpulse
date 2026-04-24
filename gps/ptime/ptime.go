@@ -6,8 +6,6 @@ import (
 	"math"
 	"strings"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 // Time in TAI timescale represented as nanoseconds since 1970-01-01T00:00:00 TAI
@@ -407,14 +405,6 @@ func (ut *UTCTime) UnmarshalJSON(data []byte) error {
 
 func Unix(sec int64, nsec int64) Time {
 	return Time(sec*1e9 + nsec)
-}
-
-func TimespecToTime(t unix.Timespec) Time {
-	return Time(t.Nano())
-}
-
-func (t Time) Timespec() unix.Timespec {
-	return unix.NsecToTimespec(int64(t))
 }
 
 func (t Time) String() string {

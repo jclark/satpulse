@@ -11,7 +11,6 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/opt"
-	"github.com/jclark/satpulse/time/internal/gpsevent"
 )
 
 // cfgFeatures describes aspects of the non-GPS daemon configuration
@@ -24,12 +23,6 @@ const (
 	cfgPosition                             // position data is used
 	cfgSatellites                           // satellite data is used
 )
-
-// PTPMsgFlags are the PVT message flags for PTP mode (with time pulse/PHC).
-const PTPMsgFlags = gpsevent.TimePulsePVTMsgFlags
-
-// NTPMsgFlags are the PVT message flags for NTP mode (serial timing, no PHC).
-const NTPMsgFlags = gpsevent.NoTimePulsePVTMsgFlags
 
 type GPSConfig struct {
 	Config             bool         `toml:"config"`
@@ -111,9 +104,9 @@ func (c *GPSConfig) setMsgOptions(opts *gpsprot.ConfigOptions, speed int, cf cfg
 	// Config is very slow on 8th gen if NMEA is enabled
 	opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
 	if cf&cfgTimePulseMsg != 0 {
-		opts.PVTMsg = gpsevent.TimePulsePVTMsgFlags
+		opts.PVTMsg = gpsprot.PVTMsgTimingPTP
 	} else {
-		opts.PVTMsg = gpsevent.NoTimePulsePVTMsgFlags
+		opts.PVTMsg = gpsprot.PVTMsgTimingSerialUTC
 	}
 	if cf&cfgPosition != 0 {
 		opts.PVTMsg |= gpsprot.PVTMsgPos

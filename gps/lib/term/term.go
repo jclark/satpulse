@@ -1,10 +1,12 @@
+//go:build !windows
+
 package term
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -15,7 +17,7 @@ type Term struct {
 	path    string
 	attr    Attr
 	tsSaved unix.Termios
-	iCount  *SerialICounter
+	iCount  *serialICounter
 }
 
 type Attr struct {
@@ -52,12 +54,15 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 		}
 	}()
 	// We could make this optional, but non-exclusive use of the serial port seems like a bad idea.
-	err = t.lock()
+	err = lock(fd, path)
 	if err != nil {
 		return
 	}
 	tsp, err := t.getAttr()
 	if err != nil {
+		if errors.Is(err, unix.ENOTTY) {
+			err = fmt.Errorf("%s: %w", t.path, ErrNotATTY)
+		}
 		return
 	}
 	attr := Attr{*tsp}
@@ -71,7 +76,7 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	// XXX turn of IXOFF
 	err = t.setAttrNow(&attr.ts)
 	t.attr = attr
-	_ = t.GetErrorCounts()
+	_ = t.readError()
 	return
 }
 
@@ -96,10 +101,10 @@ func (t *Term) Speed() int {
 	return t.attr.speed()
 }
 
-func (t *Term) lock() error {
-	err := unix.Flock(t.fd, unix.LOCK_EX|unix.LOCK_NB)
+func lock(fd int, path string) error {
+	err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB)
 	if err != nil {
-		return fmt.Errorf("%s: could not lock device (%w); probably being used by another process", t.path, err)
+		return fmt.Errorf("%s: could not lock device (%w); probably being used by another process", path, err)
 	}
 	return nil
 }
@@ -230,6 +235,9 @@ func uint8Clamp(v int64) uint8 {
 }
 
 func (t *Term) Read(buf []byte) (n int, err error) {
+	if len(buf) == 0 {
+		return 0, nil
+	}
 	for {
 		n, err = unix.Read(t.fd, buf)
 		if err != unix.EINTR {
@@ -237,7 +245,14 @@ func (t *Term) Read(buf []byte) (n int, err error) {
 		}
 	}
 	if err != nil {
-		err = t.wrapErr(err, "read")
+		return n, t.wrapErr(err, "read")
+	}
+	if n == 0 {
+		// VTIME expired with no data available.
+		return 0, &os.PathError{Op: "read", Path: t.path, Err: os.ErrDeadlineExceeded}
+	}
+	if serr := t.readError(); serr != nil {
+		err = serr
 	}
 	return
 }
@@ -282,37 +297,6 @@ func (t *Term) ModemStatus() (int, error) {
 	return status, nil
 }
 
-type ErrorCounts struct {
-	FrameErrs, OverrunErrs, ParityErrs, BreakErrs, BufOverrunErrs int32
-}
-
-func (c ErrorCounts) IsZero() bool {
-	return c.FrameErrs == 0 && c.OverrunErrs == 0 && c.ParityErrs == 0 && c.BreakErrs == 0 && c.BufOverrunErrs == 0
-}
-
-func (c ErrorCounts) String() string {
-	var s []string = make([]string, 0, 5)
-	if c.FrameErrs != 0 {
-		s = append(s, fmt.Sprintf("fe=%d", c.FrameErrs))
-	}
-	if c.OverrunErrs != 0 {
-		s = append(s, fmt.Sprintf("oe=%d", c.OverrunErrs))
-	}
-	if c.ParityErrs != 0 {
-		s = append(s, fmt.Sprintf("pe=%d", c.ParityErrs))
-	}
-	if c.BreakErrs != 0 {
-		s = append(s, fmt.Sprintf("brk=%d", c.BreakErrs))
-	}
-	if c.BufOverrunErrs != 0 {
-		s = append(s, fmt.Sprintf("bo=%d", c.BufOverrunErrs))
-	}
-	if len(s) == 0 {
-		return "none"
-	}
-	return strings.Join(s, " ")
-}
-
 func (t *Term) Restore() error {
 	return t.setAttrNow(&t.tsSaved)
 }
@@ -338,12 +322,3 @@ func (t *Term) wrapErr(err error, op string) error {
 	}
 }
 
-type DevKind int
-
-const (
-	DevUnknown DevKind = iota
-	DevUART
-	DevUSB
-	DevUSBtoUART
-	DevBT
-)

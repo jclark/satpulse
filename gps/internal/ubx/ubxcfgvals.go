@@ -848,24 +848,32 @@ func timegridTp1ToMsgRateKey(tg ucv.EnumTpTimegridTp1) ucv.KeyM {
 
 func portOutprotNmeaKey(port ucv.Port) ucv.KeyL {
 	switch port {
+	case ucv.I2C:
+		return ucv.KI2coutprotNmea
 	case ucv.UART1:
 		return ucv.KUart1outprotNmea
 	case ucv.UART2:
 		return ucv.KUart2outprotNmea
 	case ucv.USB:
 		return ucv.KUsboutprotNmea
+	case ucv.SPI:
+		return ucv.KSpioutprotNmea
 	}
 	return 0
 }
 
 func portOutprotRtcm3xKey(port ucv.Port) ucv.KeyL {
 	switch port {
+	case ucv.I2C:
+		return ucv.KI2coutprotRtcm3x
 	case ucv.UART1:
 		return ucv.KUart1outprotRtcm3x
 	case ucv.UART2:
 		return ucv.KUart2outprotRtcm3x
 	case ucv.USB:
 		return ucv.KUsboutprotRtcm3x
+	case ucv.SPI:
+		return ucv.KSpioutprotRtcm3x
 	}
 	return 0
 }

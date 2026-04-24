@@ -155,7 +155,7 @@ Galileo, BeiDou and QZSS each have their own PPP service: HAS, B2b-PPP and MADOC
 
 With navigation message authentication, navigation messages broadcast by a GNSS are cryptographically signed.
 This allows you to detect some kinds of spoofing.
-Galileo has the only deployed service so far, which is called OSNMA, and it achieved operational status in 2025.
+Galileo and QZSS have both deployed NMA services: OSNMA and QZNMA, respectively.
 
 ## u-blox
 

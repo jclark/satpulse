@@ -31,6 +31,16 @@ var dfltSchema = MustNewSchema(map[string]map[string]Desc{
 		"ANT_SUP_SWITCH_PIN": U(0x20a30036),
 		"RF_LNA_MODE": E(0x20a30057, "NORMAL", "LOWGAIN", "BYPASS"),
 	},
+	"I2CINPROT":{
+		"NMEA": L(0x10710002),
+		"RTCM3X": L(0x10710004),
+		"UBX": L(0x10710001),
+	},
+	"I2COUTPROT":{
+		"NMEA": L(0x10720002),
+		"RTCM3X": L(0x10720004),
+		"UBX": L(0x10720001),
+	},
 	"NAVHPG":{
 		"DGNSSMODE": E(0x20140011, "", "", "RTK_FLOAT", "RTK_FIXED", "", "RTK_CAR"),
 	},
@@ -132,6 +142,16 @@ var dfltSchema = MustNewSchema(map[string]map[string]Desc{
 		"QZSS_L5_ENA": L(0x10310017),
 		"SBAS_ENA": L(0x10310020),
 		"SBAS_L1CA_ENA": L(0x10310005),
+	},
+	"SPIINPROT":{
+		"NMEA": L(0x10790002),
+		"RTCM3X": L(0x10790004),
+		"UBX": L(0x10790001),
+	},
+	"SPIOUTPROT":{
+		"NMEA": L(0x107a0002),
+		"RTCM3X": L(0x107a0004),
+		"UBX": L(0x107a0001),
 	},
 	"TMODE":{
 		"ECEF_X": I(0x40030003),

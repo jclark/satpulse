@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 )
 
@@ -20,6 +21,14 @@ type Observer interface {
 	// Relative order with respect to NavEpoch is undefined;
 	// observers should use one or the other, not both.
 	NavEpochPV(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMsgBundle, tRead time.Time)
+
+	// NTPSample reports a sample sent to the refclock (chrony SOCK).
+	// sys is the CLOCK_REALTIME reading paired with the sample; offset
+	// is (true time - sys) in seconds; leap is the leap-second state
+	// passed to the refclock; phc is the PHC timestamp the offset was
+	// computed at, or the zero value when no PHC is in play (serial
+	// timing mode).
+	NTPSample(sys time.Time, offset float64, leap ptime.LeapSecondKind, phc ptime.Time)
 
 	// ReopenLog handles log rotation (e.g., on SIGHUP signal)
 	ReopenLog()
@@ -72,6 +81,15 @@ func (m *MultiObserver) NavEpochPV(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMsgBu
 	}
 }
 
+// NTPSample implements Observer by type-asserting handlers to Observer
+func (m *MultiObserver) NTPSample(sys time.Time, offset float64, leap ptime.LeapSecondKind, phc ptime.Time) {
+	for h := range m.Handlers() {
+		if obs, ok := h.(Observer); ok {
+			obs.NTPSample(sys, offset, leap, phc)
+		}
+	}
+}
+
 // ReopenLog implements Observer by type-asserting handlers to Observer
 func (m *MultiObserver) ReopenLog() {
 	for h := range m.Handlers() {
@@ -103,6 +121,9 @@ func (o *DefaultObserver) Tick(_ *gpsprot.TimeMsg, _ time.Time) {}
 
 // NavEpochPV implements Observer as a no-op
 func (o *DefaultObserver) NavEpochPV(_ *gpsprot.NavEpochMsg, _ *gpsprot.PVMsgBundle, _ time.Time) {}
+
+// NTPSample implements Observer as a no-op
+func (o *DefaultObserver) NTPSample(_ time.Time, _ float64, _ ptime.LeapSecondKind, _ ptime.Time) {}
 
 // ReopenLog implements Observer as a no-op
 func (o *DefaultObserver) ReopenLog() {}

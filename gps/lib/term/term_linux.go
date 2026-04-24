@@ -5,7 +5,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-
 var baudRates = []struct {
 	b     uint32
 	speed int
@@ -78,26 +77,48 @@ func (t *Term) getAttr() (tp *unix.Termios, err error) {
 	return
 }
 
-// GetErrorCounts returns counts for serial errors that have occurred since the last call to GetErrorCounts.
-// If the serial driver does not provide information about error flags, GetErrorCounts returns a zero value
-func (t *Term) GetErrorCounts() (ec ErrorCounts) {
-	icNew, err := IoctlGetSerialICounter(t.fd)
+// readError returns a *Error describing serial errors that have occurred
+// since the previous call, or nil if none. It also establishes the
+// baseline counters on the first call after Init.
+func (t *Term) readError() *Error {
+	icNew, err := ioctlGetSerialICounter(t.fd)
 	if err != nil {
 		t.iCount = nil
-		return
+		return nil
 	}
 	if t.iCount == nil {
 		t.iCount = icNew
-		return
+		return nil
 	}
 	ic := t.iCount
-	ec.FrameErrs = icNew.Frame - ic.Frame
-	ec.OverrunErrs = icNew.Overrun - ic.Overrun
-	ec.ParityErrs = icNew.Parity - ic.Parity
-	ec.BreakErrs = icNew.Brk - ic.Brk
-	ec.BufOverrunErrs = icNew.Buf_overrun - ic.Buf_overrun
+	ec := ErrorCounts{
+		Framing:    icNew.Frame - ic.Frame,
+		Overrun:    icNew.Overrun - ic.Overrun,
+		Parity:     icNew.Parity - ic.Parity,
+		Break:      icNew.Brk - ic.Brk,
+		BufOverrun: icNew.Buf_overrun - ic.Buf_overrun,
+	}
 	*ic = *icNew
-	return
+	if ec == (ErrorCounts{}) {
+		return nil
+	}
+	var flags ErrFlags
+	if ec.Framing != 0 {
+		flags |= ErrFraming
+	}
+	if ec.Parity != 0 {
+		flags |= ErrParity
+	}
+	if ec.Overrun != 0 {
+		flags |= ErrOverrun
+	}
+	if ec.Break != 0 {
+		flags |= ErrBreak
+	}
+	if ec.BufOverrun != 0 {
+		flags |= ErrBufOverrun
+	}
+	return &Error{Path: t.path, Flags: flags, Counts: &ec}
 }
 
 func (t *Term) DevKind() DevKind {

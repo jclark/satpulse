@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 )
 
@@ -16,6 +17,7 @@ type mockObserver struct {
 	timeCount       int
 	tickCount       int
 	navEpochPVCount int
+	ntpSampleCount  int
 }
 
 func (m *mockObserver) Sample(data phcsync.Sample) {
@@ -28,6 +30,10 @@ func (m *mockObserver) Tick(_ *gpsprot.TimeMsg, _ time.Time) {
 
 func (m *mockObserver) NavEpochPV(_ *gpsprot.NavEpochMsg, _ *gpsprot.PVMsgBundle, _ time.Time) {
 	m.navEpochPVCount++
+}
+
+func (m *mockObserver) NTPSample(_ time.Time, _ float64, _ ptime.LeapSecondKind, _ ptime.Time) {
+	m.ntpSampleCount++
 }
 
 func (m *mockObserver) ReopenLog() {
@@ -114,5 +120,20 @@ func TestMultiObserver_Tick(t *testing.T) {
 	}
 	if mock2.tickCount != 1 {
 		t.Errorf("Expected Tick count 1 on mock2, got %d", mock2.tickCount)
+	}
+}
+
+func TestMultiObserver_NTPSample(t *testing.T) {
+	mock1 := &mockObserver{}
+	mock2 := &mockObserver{}
+	multi := NewMultiObserver(mock1, mock2)
+
+	multi.NTPSample(time.Now(), 0.0, ptime.LeapSecondNone, ptime.Time(0))
+
+	if mock1.ntpSampleCount != 1 {
+		t.Errorf("Expected NTPSample count 1 on mock1, got %d", mock1.ntpSampleCount)
+	}
+	if mock2.ntpSampleCount != 1 {
+		t.Errorf("Expected NTPSample count 1 on mock2, got %d", mock2.ntpSampleCount)
 	}
 }

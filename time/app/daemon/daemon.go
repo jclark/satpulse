@@ -12,22 +12,23 @@ import (
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
-	"github.com/jclark/satpulse/time/internal/gpsevent"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/gps/scan"
+	"github.com/jclark/satpulse/time/internal/gpsevent"
 	"github.com/jclark/satpulse/time/internal/logobs"
 	"github.com/jclark/satpulse/time/internal/obs"
-	"github.com/jclark/satpulse/time/phc"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/promobs"
 	"github.com/jclark/satpulse/time/internal/proxy"
-	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/internal/ptpgm"
 	"github.com/jclark/satpulse/time/internal/refclock"
-	"github.com/jclark/satpulse/gps/scan"
-	"github.com/jclark/satpulse/time/lib/sse"
 	"github.com/jclark/satpulse/time/internal/sseobs"
 	"github.com/jclark/satpulse/time/internal/ts"
+	"github.com/jclark/satpulse/time/lib/pmc"
+	"github.com/jclark/satpulse/time/lib/sse"
+	"github.com/jclark/satpulse/time/phc"
 )
 
 func Cmd(progName string, args []string) {
@@ -106,13 +107,16 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 			lg.Debug("closed the PHC", "interface", cfg.PHC.Interface)
 		}()
 	}
-	speed := 0
+	cfgSpeed := 0
 	if cfg.Serial.Speed != nil {
-		speed = *cfg.Serial.Speed
+		cfgSpeed = *cfg.Serial.Speed
 	}
-	conn, err := gpsio.OpenSerial(cfg.Serial.Device, speed)
+	conn, speed, err := gpsio.OpenSerial(cfg.Serial.Device, cfgSpeed)
 	if err != nil {
 		return err
+	}
+	if speed == 0 {
+		speed = cfgSpeed
 	}
 
 	defer func() {
@@ -182,10 +186,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// Install a MsgHandler to capture leap second during configuration
 	var lsc leapSecondCapture
 	gpsprot.SetAllMsgHandlers(pktProcs, &lsc)
-	// Let the compiler check that TermError implements the SerialError interface
-	// gpsInit relies on this
-	var _ gpscfg.SerialError = gpsio.TermError{}
-	gct, err := createConfigTarget(lg, cfg, conn.Speed(), clk != nil)
+	// Compile-time check: serial faults surfaced by gpsio satisfy the
+	// gpscfg.SerialError interface. gpsInit relies on this.
+	var _ gpscfg.SerialError = (*gpsio.SerialError)(nil)
+	gct, err := createConfigTarget(lg, cfg, speed, clk != nil)
 	if err != nil {
 		return err
 	}
@@ -223,12 +227,15 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	var (
 		gm         *ptpgm.Grandmaster
 		gmUpdateCh <-chan ptpgm.GrandmasterUpdateRequest
+		pmcClient  *pmc.Client
 	)
-	pmcClient, err := cfg.PTP.NewClient()
-	if err != nil {
-		return err
-	}
-	if pmcClient != nil {
+	// The PHC sync controller owns gm.Close(), which in turn shuts down the
+	// PTP4L worker by closing its request channel.
+	if clk != nil && cfg.PTP.PTP4L != nil {
+		pmcClient, err = cfg.PTP.NewClient()
+		if err != nil {
+			return err
+		}
 		cq, err := cfg.PTP.ClockQuality()
 		if err != nil {
 			return err

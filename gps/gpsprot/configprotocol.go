@@ -216,6 +216,7 @@ type ConfigDirector struct {
 	maxRetries          int
 	ErrorCount          int       // Number of ConfigActionError actions yielded
 	currentTime         time.Time // Current time as reported by client
+	advanceCount        int       // Number of times AdvanceTimeTo has been called
 }
 
 // ConfigActionType specifies the type of action the client should take.
@@ -260,6 +261,7 @@ func (cd *ConfigDirector) AdvanceTimeTo(t time.Time) {
 		panic("ConfigDirector: AdvanceTime moved backwards")
 	}
 	cd.currentTime = t
+	cd.advanceCount++
 	cd.processTimeouts()
 }
 
@@ -307,7 +309,7 @@ func (cd *ConfigDirector) ValidPacketReceived(t time.Time) {
 // next action without executing the actions itself.
 func (cd *ConfigDirector) Actions() iter.Seq[ConfigAction] {
 	return func(yield func(ConfigAction) bool) {
-		var lastWaitTime time.Time
+		lastWaitAdvanceCount := -1
 		for {
 			// Try to generate more requests
 			if err := cd.cfgtor.GenerateRequests(); err != nil {
@@ -377,12 +379,11 @@ func (cd *ConfigDirector) Actions() iter.Seq[ConfigAction] {
 
 			// If we have any awaiting requests, yield wait action
 			if !earliestDeadline.IsZero() {
-				// Robustness check: ensure time advances between wait actions
-				// Allow equal times on first iteration (both zero) but require advancement thereafter
-				if !lastWaitTime.IsZero() && !cd.currentTime.After(lastWaitTime) {
-					panic("ConfigDirector API misuse: client must call AdvanceTimeTo() to advance time after ConfigActionWaitUntil")
+				// Robustness check: ensure the client reported time after waiting.
+				if cd.advanceCount == lastWaitAdvanceCount {
+					panic("ConfigDirector API misuse: client must call AdvanceTimeTo() after ConfigActionWaitUntil")
 				}
-				lastWaitTime = cd.currentTime
+				lastWaitAdvanceCount = cd.advanceCount
 
 				if !yield(ConfigAction{Type: ConfigActionWaitUntil, Deadline: earliestDeadline}) {
 					return
