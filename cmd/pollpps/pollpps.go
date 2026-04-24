@@ -1,3 +1,5 @@
+//go:build !windows
+
 // This is an experiment for Darwin to try polling the CTS line to detect PPS signals.
 // The GPS PPS output should be connected to the CTS pin of a USB to TTL adapter.
 // I have tested this with the Waveshare USB to TTL converter, which uses the FTDI FT232RNL.
