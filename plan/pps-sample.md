@@ -6,6 +6,21 @@ This document describes a mode of satpulsed operation in which edges come from t
 
 **Assumes `plan/phc-sample.md`.** Most of the reasoning, vocabulary, and data shapes carry over. This plan is scoped as a delta: what is reused, what is refactored, what is new. Refer back to `phc-sample.md` for the motivation around chrony hardware timestamping, leap-second strategy, and the shape of the label/calibration pipeline.
 
+## Prerequisites and relationship to other modes
+
+Two satpulse changes need to land before this plan is picked up:
+
+- **#258 (`ntime.Time`).** The refclock path's timestamp type becomes domain-neutral. This plan is written in terms of `ntime.Time` throughout.
+- **`gensample` extraction** (phase 1 below). The shared pieces are lifted out of `phcsample` into a peer package that this mode and `phcsample` both consume.
+
+This mode (tracked as #259) is one of three in the same family that leave the PHC free-running (or have no PHC at all):
+
+- **#256** — non-syncing PHC mode, satpulse ships system-referenced samples.
+- **#257** — PHC-base-clock mode, satpulse ships PHC-referenced samples; chrony does PHC-to-system mapping. Needs upstream chrony `multi-clock` support.
+- **#259 (this plan)** — kernel-PPS edge source, satpulse ships system-referenced samples, no PHC involved.
+
+This mode's distinguishing niche is deployments where no NIC PHC is usable (or wanted), typically Raspberry Pi with `pps-gpio`.
+
 ## Motivation
 
 Three situations where kernel PPS is the right input source rather than a NIC PHC:
@@ -27,21 +42,24 @@ The kernel delivers each edge as a `CLOCK_REALTIME` timestamp at the moment of t
 
 What remains is the message-side work: mapping the edge to its integer UTC second, and filtering wrong-stride / wrong-polarity edges before they reach the emitter.
 
-The core per-edge calculation:
+The core per-edge calculation (under #258, with `ntime.Time` as the neutral timestamp type):
 
 ```
-utc_at_edge := wallClock.SecondAt(edge_realtime)
-offset      := utc_at_edge.Sub(edge_realtime)        // float64 seconds
-sampler.NTPSample(sys = edge_realtime, offset, leap, phc = ptime.Time{})
+edge_ntime  := ntime.FromSysTime(edge_realtime)
+utc_at_edge := wallClock.SecondAt(edge_realtime)   // returns ntime.Time
+offset      := utc_at_edge.Sub(edge_ntime).Seconds() + sawtooth
+sampler.NTPSample(sys = edge_ntime, offset, leap)
 ```
 
 That is the whole Generator, modulo warm-up, edge buffering, and filtering.
 
 ## Wall-clock-only edge times are fine
 
-Kernel PPS produces `CLOCK_REALTIME` without a monotonic companion. `gensample.WallClock.SecondAt` expects a `time.Time`; internally it computes `mono.Sub(anchorX)` where `anchorX` is a monotonic-bearing `time.Time` from `timemsg.Buffer`. Go's `time.Time.Sub` falls back to wall-clock subtraction when either operand lacks a monotonic reading, so passing the kernel's `time.Unix(sec, nsec)` value through unchanged works.
+Kernel PPS produces `CLOCK_REALTIME` without a monotonic companion. `gensample.WallClock.SecondAt` takes a `time.Time` on its X axis; internally it computes `mono.Sub(anchorX)` where `anchorX` is a monotonic-bearing `time.Time` from `timemsg.Buffer`. Go's `time.Time.Sub` falls back to wall-clock subtraction when either operand lacks a monotonic reading, so passing the kernel's `time.Unix(sec, nsec)` value through unchanged works.
 
 The fallback answer is "CLOCK_REALTIME elapsed since anchor capture" rather than "monotonic elapsed," which diverge only across `CLOCK_REALTIME` steps. Chrony slews rather than steps once settled, and the wallClock window turns over in tens of seconds, so the divergence is irrelevant for the sub-second precision `SecondAt` needs.
+
+The Y-axis return (`ntime.Time`) is integer-nanosecond arithmetic with no monotonic-vs-wall-clock subtlety, so the above concerns only the X-axis input.
 
 No edge-monotonic derivation is required on the PPS side. Contrast with `phcsample`, which must scale a PHC delta to real time and subtract from `TRead.Mono` because there is no direct PHC-side wall-clock anchor.
 
@@ -73,7 +91,12 @@ In MVP, `device` is expected to be a `/dev/ppsN` character device (typically fro
 
 The remaining fields are the same wallClock and edge-filter tuning carried by `[phcsample]`. `ppssample.Config` embeds `gensample.Config`, and Go's TOML encoder surfaces the combined fields at the top of `[pps]`. `pulseWidthDetectLimit` has no analogue here because dual-edge-polarity detection does not apply.
 
-Mode selection: the presence of `[pps]` selects ppssample mode, mutually exclusive with the three existing modes (serial, PHC-disciplined, PHC-free-running).
+Mode selection has two orthogonal axes:
+
+1. **Edge source** — determined by the presence of `[pps]`. Absent: PHC via `/dev/ptpN`. Present: kernel PPS via `/dev/ppsN`.
+2. **SOCK sample domain** — determined by `[ntp].clock` (introduced with #257). `"system"` means satpulse ships system-referenced samples; `"phc-utc"` / `"phc-tai"` mean PHC-referenced samples.
+
+With `[pps]` present, only `clock = "system"` is valid — the PHC-referenced modes require a PHC, which this path does not have. Rejecting the combination at config load is straightforward.
 
 ## Module structure
 
@@ -110,21 +133,23 @@ Each Config renders flat in its TOML section; `phcsample.Config` embeds `gensamp
 
 ## Dispatcher wiring
 
-Adds a fourth runtime mode. Following the three-way split introduced for phcsample:
+Runtime mode is the product of edge source and sample domain:
 
-| Mode | Source | Controller | Generator |
-|------|--------|------------|-----------|
-| Serial timing | - | nil | nil |
-| PHC disciplined | PHC events | phcsync | nil |
-| PHC free-running | PHC events | nil | phcsample |
-| PPS sample | kernel PPS | nil | ppssample |
+| Edge source | `clock` | Controller | Generator | Mode |
+|-------------|---------|------------|-----------|------|
+| (none) | `system` | nil | nil | Serial timing |
+| PHC events | `system` | phcsync | nil | PHC disciplined |
+| PHC events | `system` | nil | phcsample | PHC free-running (#256) |
+| PHC events | `phc-utc` / `phc-tai` | nil | phcdirect | PHC-base-clock (#257) |
+| kernel PPS | `system` | nil | ppssample | PPS sample (this plan) |
+| kernel PPS | `phc-*` | — | — | rejected at config load |
 
-Implications:
+Implications for PPS sample mode:
 
 - `ppsreader` runs as a goroutine analogous to the PHC event source, delivering edges into `ppssample.Generator.Pulse`.
 - `SetMsgUTCTimer` wires to the ppssample generator; serial SOCK sampling is disabled, same as in the other generator-driven modes.
 - The PHC path is not instantiated at all in ppssample mode.
-- `obs.Observer.NTPSample` is already in place; ppssample hooks into it through the same `Sampler` structural match as phcsample.
+- `obs.Observer.NTPSample` is already in place; ppssample hooks into it through the same `Sampler` structural match as phcsample. Under #258 the Sampler interface is typed in `ntime.Time`.
 
 ## Simulation challenge
 
@@ -142,7 +167,7 @@ Practical consequence: the sim rig is cheap to build but has less cross-check va
 
 ### Phase 1 — refactor phcsample into gensample + phcsample
 
-Pure refactor. No behaviour change, no new features, no change in public API of `phcsample`. The only observable difference is the physical location of types: what was unexported inside `phcsample` is now exported from `gensample` and referenced by `phcsample`.
+Pure refactor. No behaviour change, no new features, no change in public API of `phcsample`. The only observable difference is the physical location of types: what was unexported inside `phcsample` is now exported from `gensample` and referenced by `phcsample`. Assumes #258 has already landed, so `WallClock` is already `ntime.Time`-typed on its Y axis.
 
 1. **Create `time/internal/gensample`.** Move `phcsample.wallClock` to `gensample.WallClock`, exporting. Move `ErrNotReady`, `Sampler` interface, `pulseCorrector` → `PulseCorrector` interface. Move `consistentEdges` → `ConsistentEdges[E any]` and `selectTimingStream` → `SelectTimingStream[E any]`, generifying over edge-timestamp type via an `interval func(prev, next E) time.Duration` callback. Extract the shared Config fields (`MsgWindow`, `MaxMsgGap`, `MinMsgSpan`, `ClockRateLimit`, `MsgTimingVariation`, `ExpectedDelay`, `PulseWindow`, `PulseVariation`) into `gensample.Config`. `PulseWidthDetectLimit` stays in `phcsample.Config` — it drives `SelectTimingStream`, which only phcsample calls.
 
@@ -170,7 +195,7 @@ MVP consumes whatever `/dev/ppsN` the kernel has already set up. If the underlyi
 ### Phase 3 — ppssample
 
 5. **`ppssample.Config`.** Config surface lands and validates. Embeds `gensample.Config`. `[pps].device` is a separate small struct (ignored if section absent).
-6. **`ppssample.Generator`.** Core type. Holds a bounded edge buffer; on `Pulse`, appends the edge and runs `gensample.ConsistentEdges` to filter wrong-stride edges. If the new edge is admitted, calls `WallClock.SecondAt`, computes the offset, and emits via `Sampler`. Implements `MsgUTCTimer`. Includes leap-second reset behaviour. Sawtooth / `PulseOffset` correction is additive — applied only when `PulseCorrector` is non-nil, matching phcsample's phase-2 convention. No polarity detection (`gensample.SelectTimingStream` is not called; only the configured single polarity is ever captured by `ppsreader`).
+6. **`ppssample.Generator`.** Core type. Holds a bounded edge buffer; on `Pulse`, appends the edge and runs `gensample.ConsistentEdges` to filter wrong-stride edges. If the new edge is admitted, calls `WallClock.SecondAt` (returning `ntime.Time`), computes the offset, and emits via `Sampler`. Implements `MsgUTCTimer`. Includes leap-second reset behaviour. Sawtooth / `PulseOffset` correction is additive — applied only when `PulseCorrector` is non-nil, matching phcsample's phase-2 convention. No polarity detection (`gensample.SelectTimingStream` is not called; only the configured single polarity is ever captured by `ppsreader`).
 7. **`ppssample/sim`.** Parallels `phcsample/sim` minus the PHC oscillator: reuses syncsim's GPS simulator (pulse jitter, outages, outliers, sawtooth) for edge timing; treats `sys` as ground-truth plus receiver error; scores each emitted sample against ground truth. Unit tests cover warm-up, steady-state, missing messages, missing edges, gross outliers, multi-rate messages.
 8. **Generator-level tests.** Table-driven, same style as phcsample.
 
@@ -178,7 +203,7 @@ End of phase 3: `ppssample` passes unit and sim tests; no daemon wiring yet.
 
 ### Phase 4 — wire into the daemon
 
-9. **Config parse.** Add the `[pps]` section to the daemon config loader. Reject combinations that conflict with existing mode selectors.
+9. **Config parse.** Add the `[pps]` section to the daemon config loader. Reject combinations that conflict with existing mode selectors, including `[pps]` with `[ntp].clock != "system"`.
 10. **Dispatcher mode.** Fourth runtime mode per the table above. Route edges from `ppsreader` into `ppssample.Generator.Pulse`. Wire `SetMsgUTCTimer` to the generator. Disable serial SOCK sampling. PHC path not instantiated.
 11. **End-to-end.** satpulsed + chrony + kernel PPS, on real hardware. Collect residual traces and use them to retune `ppssample/sim` thresholds where model and reality diverge.
 
