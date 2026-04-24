@@ -327,6 +327,69 @@ func TestConfigDirectorMultiResponse(t *testing.T) {
 	}
 }
 
+func TestConfigDirectorEqualTimeAdvanceAfterWait(t *testing.T) {
+	testTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{
+			{
+				packet:   []byte("req1"),
+				state:    ConfigRequestAwaitingResponse,
+				deadline: testTime.Add(time.Second),
+			},
+		},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 3)
+	waitCount := 0
+	for action := range director.Actions() {
+		if action.Type != ConfigActionWaitUntil {
+			t.Fatalf("action.Type = %v, want ConfigActionWaitUntil", action.Type)
+		}
+		waitCount++
+		director.AdvanceTimeTo(testTime)
+		if waitCount == 2 {
+			cfg.requests[0].state = ConfigRequestSucceeded
+		}
+	}
+
+	if waitCount != 2 {
+		t.Fatalf("waitCount = %d, want 2", waitCount)
+	}
+}
+
+func TestConfigDirectorPanicWithoutAdvanceAfterWait(t *testing.T) {
+	testTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{
+			{
+				packet:   []byte("req1"),
+				state:    ConfigRequestAwaitingResponse,
+				deadline: testTime.Add(time.Second),
+			},
+		},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 3)
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Actions() did not panic without AdvanceTimeTo after WaitUntil")
+		}
+		const want = "ConfigDirector API misuse: client must call AdvanceTimeTo() after ConfigActionWaitUntil"
+		if r != want {
+			t.Fatalf("panic = %q, want %q", r, want)
+		}
+	}()
+	director.Actions()(func(action ConfigAction) bool {
+		if action.Type != ConfigActionWaitUntil {
+			t.Fatalf("action.Type = %v, want ConfigActionWaitUntil", action.Type)
+		}
+		return true
+	})
+}
+
 // Test pausing state
 func TestConfigDirectorPausing(t *testing.T) {
 	testTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
