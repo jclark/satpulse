@@ -13,9 +13,10 @@ returns "polling not supported on this platform". `term.ErrNotATTY`
 when its ioctl returns `ENOTTY` -- so the fallback path exists on
 BSD/Darwin but always errors out cleanly.
 
-FIFO/pipe support and the read-only-port machinery (step 6) are
-separated from the `/dev/gnss0` work because they are not needed for
-the motivating use case and naturally extend across platforms.
+FIFO/pipe support and the read-only-port machinery (step 8) are
+separated from the `/dev/gnss0` and Windows-enabling refactors because
+they are not needed for either prerequisite path and naturally extend
+across platforms.
 
 ## Step 1: OpenSerial returns the speed it used
 
@@ -139,7 +140,7 @@ protocol but don't implement termios) working.
   Implementation:
   1. `fstat` the path first and dispatch on file type:
      - Regular file, block device, directory, socket, FIFO: reject
-       with a clear error. FIFO support arrives in step 6.
+       with a clear error. FIFO support arrives in step 8.
      - Char device: open `O_RDWR|O_NOCTTY|O_CLOEXEC|O_NONBLOCK`, then
        probe with a throwaway `epoll_create1` + `epoll_ctl(EPOLL_CTL_ADD)`.
        If the probe fails (`EPERM`, etc.) the driver lacks `.poll`
@@ -209,41 +210,7 @@ accounting runs only when the argument is a `*term.Term` (via type
 assertion). For a `pollingFile`, `ioRead` returns whatever the file
 returned.
 
-## Step 6: FIFO and read-only port support
-
-Extend `OpenPolling` to accept FIFOs (named pipes) opened read-only,
-and plumb the read-only bit up to `gpscfg` so it can warn and fall
-through to listening mode instead of attempting probes it cannot
-send.
-
-This enables the `satpulsetool pack --timing packets.jsonl > /tmp/fifo`
-replay workflow (issues #246, #247) against a running satpulsed reading
-from `/tmp/fifo` -- a test path for the full daemon pipeline that
-doesn't require GPS hardware.
-
-### Changes
-
-- `term.OpenPolling` (Linux) signature grows to
-  `(*os.File, bool, error)` where the bool is `readOnly`. The
-  existing char-device branch returns `readOnly=false`. A new FIFO
-  branch opens `O_RDONLY|O_NONBLOCK` and returns `readOnly=true`;
-  FIFOs are always pollable so no probe is needed. Writing to a FIFO
-  opened `O_RDWR` would self-feed, so reading-only is mandatory.
-- `term.OpenPolling` (BSD/Darwin): stub signature updated to match;
-  still returns an error.
-- `pollingFile`: gains a `readOnly` field set from the `OpenPolling`
-  result. `Write` returns a clear error when `readOnly` is true.
-- `gps/app/gpsio/conn.go`: add `ReadOnly() bool` to the `OutPort`
-  interface. `SerialConn.ReadOnly()` returns false for the TTY path
-  and the `pollingFile.readOnly` bit otherwise. `NetConn.ReadOnly()`
-  returns false. Test fakes return false.
-- `gps/app/gpscfg/gpscfg.go`: at the top of `Configure`, if
-  `port.ReadOnly()` and configuration was wanted, log a warning
-  ("device is not writable, not configuring GPS") and downgrade to
-  the no-probe path (same path already taken when nothing needs
-  configuring).
-
-## Step 7: push timeout handling into term.Read
+## Step 6: push timeout handling into term.Read
 
 Make `term.Read` report a VTIME timeout as a timeout-flavoured error
 directly, matching what `pollingFile.Read` already does. After this
@@ -264,7 +231,7 @@ implementations return `(0, timeout-err)` on timeout themselves.
   `var _ scan.TimeoutError = timeoutError{}` assertion in
   `gps/app/gpsio/conn.go`.
 - `ioRead` retains its `GetErrorCounts` / `TermError` handling for the
-  term case. That moves in step 8.
+  term case. That moves in step 7.
 
 ### Scope
 
@@ -273,7 +240,7 @@ it receives still satisfies `TimeoutError` and still reports
 `Timeout() bool = true`. Only the concrete error type changes. No
 changes to `term.Term`'s public API.
 
-## Step 8: move serial error checking into term.Read
+## Step 7: move serial error checking into term.Read
 
 Move the `GetErrorCounts` check from `ioRead` into `term.Read` so
 `SerialConn.Read` can call `c.file.Read(p)` directly through the
@@ -353,3 +320,96 @@ with a new portable `term.Error` type that also works for Windows.
 
 Observable behaviour: `scan.Scan` still sees a `TemporaryError` on
 serial errors and the Linux `Error()` string still carries counts.
+
+## Step 8: FIFO and read-only port support
+
+Extend `OpenPolling` to accept FIFOs (named pipes), classify the
+opened device with `term.DevKind`, and plumb two orthogonal predicates
+(`ReadOnly` and `Direct`) up through `OutPort` so higher layers can
+adapt their behaviour.
+
+This enables the `satpulsetool pack --timing packets.jsonl > /tmp/fifo`
+replay workflow (issues #246, #247) against a running satpulsed reading
+from `/tmp/fifo` -- a test path for the full daemon pipeline that
+doesn't require GPS hardware.
+
+### Concepts
+
+`ReadOnly` and `Direct` are orthogonal properties of a port:
+
+- **ReadOnly**: writes to this port are rejected. Today this is true
+  only for FIFOs; in future it could also be true for a
+  permission-restricted TTY opened `O_RDONLY`. Consumers: `gpscfg`
+  downgrades from probing to listen-only when true.
+- **Direct**: the port is known to be a live hardware attachment --
+  a classified UART, USB serial receiver, USB-to-UART bridge, or
+  Bluetooth RFCOMM device -- that will produce data continuously
+  when healthy. The predicate is deliberately whitelist-driven:
+  only kinds we have classified from their kernel major number
+  return true. Anything else (FIFO, socket, pseudo-terminal,
+  unclassified TTY, `/dev/gnss0`) returns false on the conservative
+  assumption that we cannot promise prompt input. Char devices
+  aren't a reliable proxy for "attached" -- `/dev/ptyN` is a char
+  device but clearly not a GPS receiver -- so we opt in rather than
+  out. Consumers: none yet, but the predicate is plumbed so that
+  `detect()` can later extend or remove its timeout for non-direct
+  sources. Callers read `if !port.Direct() { ... wait patiently
+  ... }`.
+
+The whitelist default means `/dev/gnss0` is treated as non-direct
+today, which is conservative -- if we later want to fast-fail on it
+specifically, we can add a `DevGNSS` value classified from its sysfs
+subsystem or device path and include it in `Direct()`.
+
+### Changes
+
+- `gps/lib/term`: add `DevFIFO` constant to the existing `DevKind`.
+  No other new values: char devices without termios (e.g.
+  `/dev/gnss0`) classify as `DevUnknown` under the existing
+  major-number scheme, which is accurate -- the UART/USB/BT
+  distinctions don't apply.
+- `term.OpenPolling` (Linux) signature grows to
+  `(*os.File, DevKind, error)`. The existing char-device branch
+  returns `DevUnknown`. A new FIFO branch opens
+  `O_RDWR|O_NONBLOCK` and returns `DevFIFO`. `O_RDWR` (not
+  `O_RDONLY`) is used so that our own fd keeps the write side of the
+  pipe open: an `O_RDONLY` FIFO with no writer returns EOF on every
+  read, which would shut the scan worker down before any external
+  writer connects. Self-feeding is prevented at the application
+  layer -- `SerialConn.writeThenChangeSpeed` rejects writes when
+  `c.ReadOnly()` is true (see the `SerialConn` bullet below).
+- `term.OpenPolling` (BSD/Darwin): stub signature updated to match;
+  still returns an error.
+- `pollingFile`: unchanged from step 5 -- just `f *os.File` and
+  `timeout time.Duration`. It does not need to know the kind: it is
+  only constructed and used inside `SerialConn`, and write rejection
+  happens at the `SerialConn` layer (see below) before any call
+  reaches `pollingFile.Write`.
+- `SerialConn`: drops the `isUART bool` field added in step 5 and
+  stores `kind term.DevKind` directly. On the TTY open path, the
+  kind is `t.DevKind()`; on the polling path, it is whatever
+  `OpenPolling` returned (`DevUnknown` for char devices, `DevFIFO`
+  for FIFOs). The speed-change branch in `writeThenChangeSpeed`
+  tests `c.kind == term.DevUART` (previously `c.isUART`); this
+  preserves the existing behaviour of using the `TransmitTime` delay
+  for USB-serial converters and other non-UART TTYs.
+  `writeThenChangeSpeed` rejects the write up front with a clear
+  error when `c.ReadOnly()` returns true, so the read-only guard
+  lives in one place and naturally picks up any future read-only
+  cases that extend `ReadOnly()`.
+- `gps/app/gpsio/conn.go`: add `ReadOnly() bool` and `Direct() bool`
+  to the `OutPort` interface. Both are derived inside `gpsio` from
+  the stored `term.DevKind`; `term` is not re-exported through the
+  `OutPort` interface. `SerialConn.ReadOnly()` returns
+  `kind == DevFIFO`. `SerialConn.Direct()` returns true only for
+  `DevUART`, `DevUSB`, `DevUSBtoUART`, `DevBT`. `NetConn.ReadOnly()`
+  returns false; `NetConn.Direct()` returns false. Test fakes:
+  `ReadOnly=false`, `Direct=false`.
+- `gps/app/gpscfg/gpscfg.go`: at the top of `Configure`, if
+  `port.ReadOnly()` and configuration was wanted, log a warning
+  ("device is not writable, not configuring GPS") and downgrade to
+  the no-probe path (same path already taken when nothing needs
+  configuring). `Direct()` is plumbed but not yet consumed -- the
+  existing `listenTimeout` still applies, so a FIFO replay must
+  begin within 2 seconds of satpulsed startup. A follow-up step
+  can extend detection for non-direct sources.

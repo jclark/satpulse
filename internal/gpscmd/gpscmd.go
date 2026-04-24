@@ -201,9 +201,9 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msg
 }
 
 func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, vendor gpsreg.Vendor, capture opt.Val[time.Duration], showReceiver bool) (*gpscfg.Result, error) {
-	// Let the compiler check that TermError implements the SerialError interface
-	// gpscfg relies on this
-	var _ gpscfg.SerialError = gpsio.TermError{}
+	// Compile-time check: serial faults surfaced by gpsio satisfy the
+	// gpscfg.SerialError interface. gpscfg relies on this.
+	var _ gpscfg.SerialError = (*gpsio.SerialError)(nil)
 	pktProcs := gpsreg.CreatePacketProcessors(vendor)
 	gpsprot.SetAllMsgHandlers(pktProcs, &gpsprot.DefaultHandler{})
 	rslt, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(vendor), target, pCh, conn)

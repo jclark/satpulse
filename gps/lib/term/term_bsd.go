@@ -8,12 +8,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type SerialICounter struct{}
-
-func (ic *SerialICounter) errorCounts() (ec ErrorCounts) {
-	// BSD does not support error counts, so we return zero values.
-	return
-}
+type serialICounter struct{}
 
 func Speed(speed int) AttrSetter {
 	b, ok := speedToB(speed)
@@ -33,9 +28,9 @@ func (attr *Attr) speed() int {
 	return int(attr.ts.Ospeed)
 }
 
-func (t *Term) GetErrorCounts() ErrorCounts {
-	return t.iCount.errorCounts()
-}
+// readError is a stub on BSD -- there is no way to detect serial errors
+// through the kernel, so Read never returns *Error on these platforms.
+func (t *Term) readError() *Error { return nil }
 
 func (t *Term) Flush() error {
 	return t.wrapErr(unix.IoctlSetPointerInt(t.fd, unix.TIOCFLUSH, 0), "ioctl(TIOCFLUSH)")

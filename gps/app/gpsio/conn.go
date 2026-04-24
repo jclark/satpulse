@@ -7,12 +7,33 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/term"
 	"github.com/jclark/satpulse/gps/scan"
 )
+
+// SerialError is the concrete error type returned by SerialConn.Read when
+// the underlying device reports a serial fault (framing, parity, overrun,
+// break, or buffer overrun). It is an alias for term.Error; callers that
+// need to assert the contract between Read errors and higher-level
+// interfaces (e.g. gpscfg.SerialError) can do so via *SerialError without
+// depending on the term package directly.
+type SerialError = term.Error
 
 type OutPort interface {
 	io.Writer
 	Buffered() (int, error)
+	// ReadOnly reports whether writes to the port are rejected.
+	// Callers that would otherwise probe (e.g. gpscfg.Configure)
+	// should fall through to a listen-only path when true.
+	ReadOnly() bool
+	// Direct reports whether the port is known to be a live hardware
+	// attachment that will produce data continuously (e.g. a
+	// classified UART or USB serial receiver). When false, callers
+	// must not assume prompt input: the port could be a FIFO, a
+	// socket, a pseudo-terminal, or any char device we couldn't
+	// classify further. Used to decide whether to fail fast on a
+	// silent port.
+	Direct() bool
 }
 
 // OutPortLock coordinates exclusive write access to an OutPort.
@@ -38,12 +59,6 @@ type Conn interface {
 	Stop()
 	LocalAddr() string
 }
-
-// timeoutError implements scan.TimeoutError
-var _ scan.TimeoutError = timeoutError{}
-
-// TermError implements scan.TemporaryError
-var _ scan.TemporaryError = TermError{}
 
 const scanBufSize = 16
 

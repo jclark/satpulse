@@ -186,9 +186,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// Install a MsgHandler to capture leap second during configuration
 	var lsc leapSecondCapture
 	gpsprot.SetAllMsgHandlers(pktProcs, &lsc)
-	// Let the compiler check that TermError implements the SerialError interface
-	// gpsInit relies on this
-	var _ gpscfg.SerialError = gpsio.TermError{}
+	// Compile-time check: serial faults surfaced by gpsio satisfy the
+	// gpscfg.SerialError interface. gpsInit relies on this.
+	var _ gpscfg.SerialError = (*gpsio.SerialError)(nil)
 	gct, err := createConfigTarget(lg, cfg, speed, clk != nil)
 	if err != nil {
 		return err
