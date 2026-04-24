@@ -1,53 +1,372 @@
 package term
 
 import (
-	"errors"
 	"fmt"
+	"os"
+	"sort"
+	"strings"
 	"time"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
-// This file is a placeholder: the full Win32 implementation described in
-// plan/windows-serial.md is not yet written. Everything here compiles but
-// returns errNotImplemented at runtime.
+// Win32 comm error flags from winbase.h, not exported by x/sys/windows.
+const (
+	ceRxOver   = 0x0001
+	ceOverrun  = 0x0002
+	ceRxParity = 0x0004
+	ceFrame    = 0x0008
+	ceBreak    = 0x0010
+)
 
-var errNotImplemented = errors.New("term: serial I/O not yet implemented on windows")
+// DCB.Flags bit layout from winbase.h.
+const (
+	dcbBinary           = 1 << 0
+	dcbParity           = 1 << 1
+	dcbOutxCtsFlow      = 1 << 2
+	dcbOutxDsrFlow      = 1 << 3
+	dcbDtrControlMask   = 0x3 << 4
+	dcbDsrSensitivity   = 1 << 6
+	dcbTXContinueOnXoff = 1 << 7
+	dcbOutX             = 1 << 8
+	dcbInX              = 1 << 9
+	dcbErrorChar        = 1 << 10
+	dcbNull             = 1 << 11
+	dcbRtsControlMask   = 0x3 << 12
+	dcbAbortOnError     = 1 << 14
+)
 
-type Term struct {
-	path string
+const maxDWORD = 0xffffffff
+
+// baudRates is used by IsValidSpeed so the set of accepted speeds matches
+// Unix. Windows accepts the baud rate value directly in DCB.BaudRate.
+var baudRates = []int{
+	50, 75, 110, 134, 150, 200, 300, 600, 1200, 1800,
+	2400, 4800, 9600, 19200, 38400, 57600, 115200,
+	230400, 460800, 921600,
 }
 
-type Attr struct{}
+type Term struct {
+	handle        windows.Handle
+	path          string
+	attr          Attr
+	dcbSaved      windows.DCB
+	timeoutsSaved windows.CommTimeouts
+}
+
+type Attr struct {
+	dcb      windows.DCB
+	timeouts windows.CommTimeouts
+}
 
 type AttrSetter func(*Attr) error
 
 func Open(path string, opts ...AttrSetter) (*Term, error) {
-	return nil, fmt.Errorf("%s: %w", path, errNotImplemented)
+	t := new(Term)
+	err := t.Init(path, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
 }
 
-func (t *Term) Change(opts ...AttrSetter) error       { return errNotImplemented }
-func (t *Term) Read(buf []byte) (int, error)          { return 0, errNotImplemented }
-func (t *Term) Write(buf []byte) (int, error)         { return 0, errNotImplemented }
-func (t *Term) Buffered() (int, error)                { return 0, errNotImplemented }
-func (t *Term) Flush() error                          { return errNotImplemented }
-func (t *Term) Restore() error                        { return errNotImplemented }
-func (t *Term) Close() error                          { return nil }
-func (t *Term) Speed() int                            { return 0 }
-func (t *Term) TransmitTime(nBytes int) time.Duration { return 0 }
-func (t *Term) Path() string                          { return t.path }
-func (t *Term) DevKind() DevKind                      { return DevUnknown }
+func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
+	t.path = path
+	name, err := windows.UTF16PtrFromString(normalizeCOM(path))
+	if err != nil {
+		return t.wrapErr(err, "open")
+	}
+	h, err := windows.CreateFile(
+		name,
+		windows.GENERIC_READ|windows.GENERIC_WRITE,
+		0, // exclusive: no sharing
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_ATTRIBUTE_NORMAL,
+		0,
+	)
+	if err != nil {
+		return t.wrapErr(err, "open")
+	}
+	t.handle = h
+	var dcbChanged, timeoutsChanged bool
+	defer func() {
+		if err == nil {
+			return
+		}
+		if dcbChanged {
+			windows.SetCommState(h, &t.dcbSaved)
+		}
+		if timeoutsChanged {
+			windows.SetCommTimeouts(h, &t.timeoutsSaved)
+		}
+		windows.CloseHandle(h)
+		t.handle = windows.InvalidHandle
+	}()
+	var dcb windows.DCB
+	dcb.DCBlength = uint32(unsafe.Sizeof(dcb))
+	err = windows.GetCommState(h, &dcb)
+	if err != nil {
+		return t.wrapErr(err, "GetCommState")
+	}
+	t.dcbSaved = dcb
+	var timeouts windows.CommTimeouts
+	err = windows.GetCommTimeouts(h, &timeouts)
+	if err != nil {
+		return t.wrapErr(err, "GetCommTimeouts")
+	}
+	t.timeoutsSaved = timeouts
+	attr := Attr{dcb: dcb, timeouts: timeouts}
+	for _, opt := range opts {
+		err = opt(&attr)
+		if err != nil {
+			return
+		}
+	}
+	err = windows.SetCommState(h, &attr.dcb)
+	if err != nil {
+		return t.wrapErr(err, "SetCommState")
+	}
+	dcbChanged = true
+	err = windows.SetCommTimeouts(h, &attr.timeouts)
+	if err != nil {
+		return t.wrapErr(err, "SetCommTimeouts")
+	}
+	timeoutsChanged = true
+	t.attr = attr
+	return
+}
 
-func RawMode(a *Attr) error       { return nil }
-func Local(a *Attr) error         { return nil }
-func NoFlowControl(a *Attr) error { return nil }
+// normalizeCOM rewrites bare COMn names to \\.\COMn so ports above COM9 work.
+func normalizeCOM(path string) string {
+	if strings.HasPrefix(path, `\\.\`) || strings.HasPrefix(path, `\\?\`) {
+		return path
+	}
+	if len(path) >= 3 && strings.EqualFold(path[:3], "COM") {
+		return `\\.\` + path
+	}
+	return path
+}
+
+// Change changes the attributes of the terminal.
+func (t *Term) Change(opts ...AttrSetter) error {
+	attr := t.attr
+	for _, opt := range opts {
+		err := opt(&attr)
+		if err != nil {
+			return err
+		}
+	}
+	err := windows.SetCommState(t.handle, &attr.dcb)
+	if err != nil {
+		return t.wrapErr(err, "SetCommState")
+	}
+	err = windows.SetCommTimeouts(t.handle, &attr.timeouts)
+	if err != nil {
+		return t.wrapErr(err, "SetCommTimeouts")
+	}
+	t.attr = attr
+	return nil
+}
+
+func (t *Term) Read(buf []byte) (int, error) {
+	if len(buf) == 0 {
+		return 0, nil
+	}
+	var n uint32
+	err := windows.ReadFile(t.handle, buf, &n, nil)
+	if err != nil {
+		return int(n), t.wrapErr(err, "read")
+	}
+	if n == 0 {
+		return 0, &os.PathError{Op: "read", Path: t.path, Err: os.ErrDeadlineExceeded}
+	}
+	if serr := t.readError(); serr != nil {
+		return int(n), serr
+	}
+	return int(n), nil
+}
+
+func (t *Term) Write(buf []byte) (int, error) {
+	total := 0
+	for len(buf) > 0 {
+		var n uint32
+		err := windows.WriteFile(t.handle, buf, &n, nil)
+		if err != nil {
+			return total, t.wrapErr(err, "write")
+		}
+		total += int(n)
+		buf = buf[n:]
+	}
+	return total, nil
+}
+
+func (t *Term) Buffered() (int, error) {
+	var errs uint32
+	var stat windows.ComStat
+	err := windows.ClearCommError(t.handle, &errs, &stat)
+	if err != nil {
+		return 0, t.wrapErr(err, "ClearCommError")
+	}
+	return int(stat.CBOutQue), nil
+}
+
+func (t *Term) Flush() error {
+	err := windows.PurgeComm(t.handle, windows.PURGE_RXCLEAR|windows.PURGE_TXCLEAR)
+	return t.wrapErr(err, "PurgeComm")
+}
+
+func (t *Term) Restore() error {
+	err := windows.SetCommState(t.handle, &t.dcbSaved)
+	if err != nil {
+		return t.wrapErr(err, "SetCommState")
+	}
+	err = windows.SetCommTimeouts(t.handle, &t.timeoutsSaved)
+	return t.wrapErr(err, "SetCommTimeouts")
+}
+
+func (t *Term) Close() error {
+	h := t.handle
+	t.handle = windows.InvalidHandle
+	return t.wrapErr(windows.CloseHandle(h), "close")
+}
+
+func (t *Term) Path() string {
+	return t.path
+}
+
+func (t *Term) Speed() int {
+	return int(t.attr.dcb.BaudRate)
+}
+
+// TransmitTime returns the time it takes to send nBytes at the current speed.
+func (t *Term) TransmitTime(nBytes int) time.Duration {
+	if nBytes <= 0 {
+		return 0
+	}
+	return t.attr.byteTransmitTime() * time.Duration(nBytes)
+}
+
+func (attr *Attr) byteTransmitTime() time.Duration {
+	speed := int(attr.dcb.BaudRate)
+	if speed <= 0 {
+		return 0
+	}
+	bits := 2 + int(attr.dcb.ByteSize)
+	if attr.dcb.Parity != windows.NOPARITY {
+		bits++
+	}
+	if attr.dcb.StopBits == windows.TWOSTOPBITS {
+		bits++
+	}
+	return time.Duration(bits) * time.Second / time.Duration(speed)
+}
+
+// DevKind on Windows returns DevUnknown. The plan allows best-effort
+// classification via registry lookup; that is not yet implemented.
+func (t *Term) DevKind() DevKind {
+	return DevUnknown
+}
+
+// readError returns a *Error describing serial errors reported by
+// ClearCommError, or nil if none. Windows does not expose per-category
+// counters, so Error.Counts is always nil.
+func (t *Term) readError() *Error {
+	var errs uint32
+	var stat windows.ComStat
+	if err := windows.ClearCommError(t.handle, &errs, &stat); err != nil {
+		return nil
+	}
+	var flags ErrFlags
+	if errs&ceFrame != 0 {
+		flags |= ErrFraming
+	}
+	if errs&ceRxParity != 0 {
+		flags |= ErrParity
+	}
+	if errs&ceOverrun != 0 {
+		flags |= ErrOverrun
+	}
+	if errs&ceBreak != 0 {
+		flags |= ErrBreak
+	}
+	if errs&ceRxOver != 0 {
+		flags |= ErrBufOverrun
+	}
+	if flags == 0 {
+		return nil
+	}
+	return &Error{Path: t.path, Flags: flags}
+}
+
+func (t *Term) wrapErr(err error, op string) error {
+	if err == nil {
+		return nil
+	}
+	return &os.PathError{
+		Op:   op,
+		Path: t.path,
+		Err:  err,
+	}
+}
+
+func RawMode(a *Attr) error {
+	a.dcb.ByteSize = 8
+	a.dcb.Parity = windows.NOPARITY
+	a.dcb.StopBits = windows.ONESTOPBIT
+	a.dcb.Flags |= dcbBinary
+	a.dcb.Flags &^= dcbParity | dcbErrorChar | dcbNull | dcbAbortOnError
+	return nil
+}
+
+// Local is a no-op on Windows; CLOCAL has no direct equivalent. Clearing
+// fDsrSensitivity ensures incoming bytes are not dropped based on DSR.
+func Local(a *Attr) error {
+	a.dcb.Flags &^= dcbDsrSensitivity
+	return nil
+}
+
+func NoFlowControl(a *Attr) error {
+	a.dcb.Flags &^= dcbOutxCtsFlow | dcbOutxDsrFlow | dcbOutX | dcbInX | dcbDsrSensitivity | dcbTXContinueOnXoff
+	a.dcb.Flags = (a.dcb.Flags &^ dcbDtrControlMask) | windows.DTR_CONTROL_ENABLE
+	a.dcb.Flags = (a.dcb.Flags &^ dcbRtsControlMask) | windows.RTS_CONTROL_ENABLE
+	return nil
+}
 
 func Speed(speed int) AttrSetter {
-	return func(a *Attr) error { return nil }
+	if !IsValidSpeed(speed) {
+		return func(*Attr) error {
+			return fmt.Errorf("invalid terminal speed: %d", speed)
+		}
+	}
+	return func(a *Attr) error {
+		a.dcb.BaudRate = uint32(speed)
+		return nil
+	}
 }
 
+// ReadTimeout configures ReadFile to return immediately if data is
+// available, or after the given timeout if none arrives.
 func ReadTimeout(timeout time.Duration) AttrSetter {
-	return func(a *Attr) error { return nil }
+	return func(a *Attr) error {
+		ms := timeout.Milliseconds()
+		if ms <= 0 && timeout > 0 {
+			ms = 1
+		}
+		if ms >= maxDWORD {
+			ms = maxDWORD - 1
+		}
+		a.timeouts.ReadIntervalTimeout = maxDWORD
+		a.timeouts.ReadTotalTimeoutMultiplier = maxDWORD
+		a.timeouts.ReadTotalTimeoutConstant = uint32(ms)
+		a.timeouts.WriteTotalTimeoutMultiplier = 0
+		a.timeouts.WriteTotalTimeoutConstant = 0
+		return nil
+	}
 }
 
 func IsValidSpeed(speed int) bool {
-	return speed > 0
+	i := sort.SearchInts(baudRates, speed)
+	return i < len(baudRates) && baudRates[i] == speed
 }
