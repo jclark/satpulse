@@ -23,12 +23,6 @@ import (
 
 const LogExtension = ".jsonl"
 
-// TimePulsePVTMsgFlags are the PVT message flags when time pulse is enabled.
-const TimePulsePVTMsgFlags = gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgQuality | gpsprot.PVTMsgEpoch
-
-// NoTimePulsePVTMsgFlags are the PVT message flags when time pulse is not enabled.
-const NoTimePulsePVTMsgFlags = gpsprot.PVTMsgTime | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgQuality | gpsprot.PVTMsgEpoch
-
 // tickHandler forwards filled TimeMsgs from the TimeTicker to Observer.Tick.
 type tickHandler struct {
 	gpsprot.DefaultHandler

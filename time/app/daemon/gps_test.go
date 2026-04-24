@@ -7,14 +7,13 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/opt"
-	"github.com/jclark/satpulse/time/internal/gpsevent"
 )
 
 func TestGPSConfig(t *testing.T) {
 	// Baseline target that represents the common structure
 	var baseline gpsprot.ConfigTarget
 	baseline.Props.SetPPS(defaultPPSWidth)
-	baseline.Opts.PVTMsg = gpsevent.TimePulsePVTMsgFlags
+	baseline.Opts.PVTMsg = gpsprot.PVTMsgTimingPTP
 	baseline.Opts.NMEAMsg = opt.Make(gpsprot.NMEAMsgNone)
 
 	tests := []struct {
@@ -273,7 +272,7 @@ mobile = true`,
 				target.Props.SetMode(gpsprot.Mode{Static: false})
 				target.Opts.Survey.MinDur = 2000 * time.Second   // default
 				target.Opts.Survey.AccLimit = gpsprot.Meters(20) // default
-				target.Opts.PVTMsg = gpsevent.NoTimePulsePVTMsgFlags
+				target.Opts.PVTMsg = gpsprot.PVTMsgTimingSerialUTC
 			},
 		},
 		{
@@ -289,7 +288,7 @@ surveyAcc = 8`,
 				target.Opts.Survey.MinDur = 1800 * time.Second
 				target.Opts.Survey.AccLimit = gpsprot.Meters(8)
 				target.Opts.SetStatic = true
-				target.Opts.PVTMsg = gpsevent.NoTimePulsePVTMsgFlags
+				target.Opts.PVTMsg = gpsprot.PVTMsgTimingSerialUTC
 			},
 		},
 		{
@@ -304,7 +303,7 @@ surveyAcc = 8`,
 				target.Opts.Survey.MinDur = 1800 * time.Second
 				target.Opts.Survey.AccLimit = gpsprot.Meters(8)
 				target.Opts.SetStatic = true
-				target.Opts.PVTMsg = gpsevent.NoTimePulsePVTMsgFlags
+				target.Opts.PVTMsg = gpsprot.PVTMsgTimingSerialUTC
 			},
 		},
 		{

@@ -122,6 +122,15 @@ const (
 
 const PVTMsgAny PVTMsgFlags = PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond | PVTMsgSurvey | PVTMsgQuality | PVTMsgEpoch // any message (not option)
 
+// PVTMsgTimingPTP is the PVT message set required to drive a PTP
+// grandmaster from a receiver's hardware time pulse.
+const PVTMsgTimingPTP PVTMsgFlags = PVTMsgTimePulse | PVTMsgTimePulseAfter | PVTMsgTAI | PVTMsgLeapSecond | PVTMsgSurvey | PVTMsgQuality | PVTMsgEpoch
+
+// PVTMsgTimingSerialUTC is the PVT message set required when time is
+// delivered in UTC over the serial stream only, without a hardware
+// time pulse.
+const PVTMsgTimingSerialUTC PVTMsgFlags = PVTMsgTime | PVTMsgLeapSecond | PVTMsgSurvey | PVTMsgQuality | PVTMsgEpoch
+
 // These methods are to make PVTMsgFlags more consistent with Option[*Flags] for the other flags.
 
 // IsZero returns true if no PVT message flags are set

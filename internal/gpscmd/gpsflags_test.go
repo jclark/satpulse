@@ -9,7 +9,6 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/opt"
-	"github.com/jclark/satpulse/time/app/daemon"
 )
 
 type validFlagsTestCase struct {
@@ -107,8 +106,8 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--raw-out", "none"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: opt.Make(gpsprot.RawMsgFlags(0))}}},
 	{"ttyS0", []string{"--raw-out", "obs", "--save"}, flagVars{configOpts: gpsprot.ConfigOptions{RawMsg: opt.Make(gpsprot.RawMsgObs), Save: gpsprot.SaveMinimal}}},
 	// Test --pvt-out flag
-	{"ttyS0", []string{"--pvt-out", "ptp"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: daemon.PTPMsgFlags | gpsprot.PVTMsgOff}}},
-	{"ttyS0", []string{"--pvt-out", "ntp"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: daemon.NTPMsgFlags | gpsprot.PVTMsgOff}}},
+	{"ttyS0", []string{"--pvt-out", "ptp"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgTimingPTP | gpsprot.PVTMsgOff}}},
+	{"ttyS0", []string{"--pvt-out", "ntp"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgTimingSerialUTC | gpsprot.PVTMsgOff}}},
 	{"ttyS0", []string{"--pvt-out", "pos"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgPos}}},
 	{"ttyS0", []string{"--pvt-out", "vel"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgVel}}},
 	{"ttyS0", []string{"--pvt-out", "time"}, flagVars{configOpts: gpsprot.ConfigOptions{PVTMsg: gpsprot.PVTMsgTime}}},
