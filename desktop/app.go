@@ -193,7 +193,7 @@ func (a *App) Connect(device string, speed int) Result {
 	a.state = StateConnecting
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:state", StateConnecting)
-	conn, err := gpsio.OpenSerial(device, speed)
+	conn, _, err := gpsio.OpenSerial(device, speed)
 	if err != nil {
 		a.setState(StateDisconnected)
 		return Result{Error: err.Error()}
