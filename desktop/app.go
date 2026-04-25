@@ -44,6 +44,8 @@ const (
 	StateSending      ConnState = "sending"
 )
 
+const packetLogChannelSize = 64
+
 // configRequest is sent to packetWorker to run gpscfg.Configure.
 type configRequest struct {
 	target   *gpsprot.ConfigTarget
@@ -247,7 +249,7 @@ func (a *App) Connect(device string, speed int) Result {
 	portLock := gpsio.NewOutPortLock(conn)
 	connCtx, connCancel := context.WithCancel(a.ctx)
 	pCh := make(chan scan.Packet, 1)
-	pLog, plCh := gpsio.NewPacketLog(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown))
+	pLog, plCh := gpsio.NewPacketLog(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packetLogChannelSize)
 	conn.SetPacketLog(pLog)
 	a.connWg.Go(func() { gpsio.Scan(connCtx, a.lg, conn, pCh, pLog, gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)) })
 	pb := bcast.New(pCh)
