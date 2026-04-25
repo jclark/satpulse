@@ -16,7 +16,13 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
-const PacketLogExtension = ".jsonl"
+const (
+	PacketLogExtension = ".jsonl"
+
+	// MinPacketLogChannelSize is the minimum channel buffer needed because
+	// LogInput and LogOutput can be called from separate goroutines.
+	MinPacketLogChannelSize = 2
+)
 
 type HexString []byte
 
@@ -27,8 +33,11 @@ type OutPacket struct {
 }
 
 // NewPacketLog creates a PacketLog and returns the consumer channel.
-func NewPacketLog(fmts []gpsprot.PacketFormat) (*PacketLog, <-chan PacketLogEntry) {
-	ch := make(chan PacketLogEntry, 2) // 2 because LogInput and LogOutput can be called from separate goroutines
+func NewPacketLog(fmts []gpsprot.PacketFormat, channelSize int) (*PacketLog, <-chan PacketLogEntry) {
+	if channelSize < MinPacketLogChannelSize {
+		channelSize = MinPacketLogChannelSize
+	}
+	ch := make(chan PacketLogEntry, channelSize)
 	return &PacketLog{ch: ch, pktFormats: fmts}, ch
 }
 
@@ -43,7 +52,7 @@ func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string, append bool
 	if err != nil {
 		return nil, nil, err
 	}
-	pl, ch := NewPacketLog(fmts)
+	pl, ch := NewPacketLog(fmts, MinPacketLogChannelSize)
 	wg.Go(func() {
 		doLogPackets(lg, lf, ch)
 	})
