@@ -13,12 +13,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jclark/satpulse/desktop/logdir"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/jclark/satpulse/desktop/serialenum"
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/logfile"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsdecode"
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -89,6 +91,9 @@ type App struct {
 	corrCancel   context.CancelFunc
 	corrWg       *sync.WaitGroup
 	corrStopping bool
+	logDir       string
+	systemLog    *logfile.LogFile
+	packetLog    *logfile.LogFile
 }
 
 // NewApp creates a new App.
@@ -101,14 +106,55 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	base := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
+	base := slog.Handler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	if err := a.openLogFiles(); err != nil {
+		fmt.Fprintln(os.Stderr, "error opening log files:", err)
+	} else if a.systemLog != nil {
+		jsonHandler := slog.NewJSONHandler(a.systemLog.File, &slog.HandlerOptions{Level: slog.LevelDebug})
+		base = multiHandler{base, jsonHandler}
+	}
 	a.lg = slog.New(&eventHandler{ctx: ctx, base: base})
+	if a.logDir != "" {
+		a.lg.Info("opened desktop log files", "dir", a.logDir)
+	}
 }
 
 func (a *App) shutdown(_ context.Context) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.closeLocked()
+	a.closeLogFilesLocked()
+}
+
+func (a *App) openLogFiles() error {
+	dir, err := logdir.Path()
+	if err != nil {
+		return err
+	}
+	systemLog := &logfile.LogFile{}
+	if err := systemLog.Open(filepath.Join(dir, "system.jsonl"), false); err != nil {
+		return err
+	}
+	packetLog := &logfile.LogFile{}
+	if err := packetLog.Open(filepath.Join(dir, "packets.jsonl"), false); err != nil {
+		systemLog.Close(slog.Default())
+		return err
+	}
+	a.logDir = dir
+	a.systemLog = systemLog
+	a.packetLog = packetLog
+	return nil
+}
+
+func (a *App) closeLogFilesLocked() {
+	if a.packetLog != nil {
+		a.packetLog.Close(a.lg)
+		a.packetLog = nil
+	}
+	if a.systemLog != nil {
+		a.systemLog.Close(a.lg)
+		a.systemLog = nil
+	}
 }
 
 // setState transitions the connection state and emits a gps:state event.
@@ -1144,6 +1190,43 @@ type LogEvent struct {
 	Attrs     map[string]any `json:"attrs,omitempty"`
 }
 
+type multiHandler []slog.Handler
+
+func (h multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	for _, handler := range h {
+		if handler.Enabled(ctx, level) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h multiHandler) Handle(ctx context.Context, r slog.Record) error {
+	var firstErr error
+	for _, handler := range h {
+		if err := handler.Handle(ctx, r); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+func (h multiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	handlers := make(multiHandler, len(h))
+	for i, handler := range h {
+		handlers[i] = handler.WithAttrs(attrs)
+	}
+	return handlers
+}
+
+func (h multiHandler) WithGroup(name string) slog.Handler {
+	handlers := make(multiHandler, len(h))
+	for i, handler := range h {
+		handlers[i] = handler.WithGroup(name)
+	}
+	return handlers
+}
+
 func (h *eventHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return h.base.Enabled(context.Background(), level)
 }
@@ -1200,7 +1283,23 @@ func (h *eventHandler) WithGroup(name string) slog.Handler {
 
 func (a *App) packetLogWorker(ch <-chan gpsio.PacketLogEntry) {
 	for entry := range ch {
+		a.writePacketLogEntry(entry)
 		runtime.EventsEmit(a.ctx, "gps:packet", entry)
+	}
+}
+
+func (a *App) writePacketLogEntry(entry gpsio.PacketLogEntry) {
+	if a.packetLog == nil || a.packetLog.File == nil {
+		return
+	}
+	bytes, err := json.Marshal(entry)
+	if err != nil {
+		a.lg.Warn("failed to convert packet to JSON", "err", err)
+		return
+	}
+	bytes = append(bytes, '\n')
+	if _, err := a.packetLog.File.Write(bytes); err != nil {
+		a.packetLog.HandleWriteError(err, a.lg)
 	}
 }
 
