@@ -34,7 +34,7 @@ type requestOps interface {
 	ChangeSpeed() int
 	Pause() time.Duration
 	Ackable() bool
-	AwaitingResponse(tSent time.Time) bool
+	AwaitingResponse(sentSeq uint64) bool
 	Done()
 	ID() string
 }
@@ -42,8 +42,10 @@ type requestOps interface {
 // configRequest is the UBX implementation of gpsprot.ConfigRequest
 type configRequest struct {
 	ops            requestOps         // Request-specific operations
+	cfg            *Configurator      // Back-reference for event sequence lookup
 	state          configRequestState // Internal state for ACK/response tracking
 	sentTime       time.Time          // When the request was sent
+	sentSeq        uint64             // Event sequence visible when the request was sent
 	pauseStartTime time.Time          // When the pause period started
 	err            error              // Error details for failed requests
 }
@@ -51,6 +53,8 @@ type configRequest struct {
 type Configurator struct {
 	ver         *Version // never nil
 	tRead       map[ubxbin.MsgID]time.Time
+	msgSeq      map[ubxbin.MsgID]uint64
+	eventSeq    uint64
 	raw         RawConfig
 	origPrt     *ubxbin.CfgPrt
 	portID      *ubxbin.PortID
@@ -202,10 +206,11 @@ func (cr *configRequest) SetSentTime(tSent time.Time) {
 	}
 
 	cr.sentTime = tSent
+	cr.sentSeq = cr.cfg.eventSeq
 
 	// Determine initial awaiting state based on what this request needs
 	needsAck := cr.ops.Ackable()
-	needsResponse := cr.ops.AwaitingResponse(tSent)
+	needsResponse := cr.ops.AwaitingResponse(cr.sentSeq)
 
 	if needsAck && needsResponse {
 		cr.state = stateAwaitingAckAndResponse
@@ -274,7 +279,7 @@ func (cr *configRequest) checkComplete(ackTime time.Time) {
 		}
 	case stateAwaitingResponse:
 		// Check if we have the response
-		if !cr.ops.AwaitingResponse(cr.sentTime) {
+		if !cr.ops.AwaitingResponse(cr.sentSeq) {
 			if cr.ops.Pause() > 0 {
 				cr.state = statePausing
 				cr.pauseStartTime = ackTime
@@ -284,16 +289,12 @@ func (cr *configRequest) checkComplete(ackTime time.Time) {
 			}
 		}
 	case stateAwaitingAckAndResponse:
-		// Need to check if we have both
-		// This will be called when either ACK arrives or response data updates
-		// For now, transition to appropriate single-waiting state
-		if !cr.ops.AwaitingResponse(cr.sentTime) {
-			// Got response, still waiting for ACK
+		// If the response arrived, wait for the ACK before completing.
+		// Do not recursively call checkComplete here: the ACK path in
+		// processAckNak is responsible for advancing stateAwaitingAck.
+		if !cr.ops.AwaitingResponse(cr.sentSeq) {
 			cr.state = stateAwaitingAck
-			cr.checkComplete(ackTime)
 		}
-		// If only ACK arrived, we stay in stateAwaitingAckAndResponse
-		// The processAckNak will handle transitioning when ACK arrives
 	}
 }
 
@@ -307,7 +308,19 @@ func newConfigurator(target *gpsprot.ConfigTarget, ver *Version) *Configurator {
 		target: target,
 		steps:  steps,
 		tRead:  make(map[ubxbin.MsgID]time.Time),
+		msgSeq: make(map[ubxbin.MsgID]uint64),
 	}
+}
+
+func (c *Configurator) nextEventSeq() uint64 {
+	c.eventSeq++
+	return c.eventSeq
+}
+
+func (c *Configurator) noteMsg(mid ubxbin.MsgID, t time.Time) {
+	seq := c.nextEventSeq()
+	c.tRead[mid] = t
+	c.msgSeq[mid] = seq
 }
 
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
@@ -451,6 +464,7 @@ func (c *Configurator) handleFailedRequest(index int) {
 	msg := c.origPrt
 	c.reqs = append(c.reqs, &configRequest{
 		ops:   msgSetRequest{msgRequest{msg}, &c.raw},
+		cfg:   c,
 		state: stateReadyToSend,
 	})
 }
@@ -459,20 +473,21 @@ func (c *Configurator) handleFailedRequest(index int) {
 func (c *Configurator) addRequest(ops requestOps) error {
 	c.reqs = append(c.reqs, &configRequest{
 		ops:   ops,
+		cfg:   c,
 		state: stateNotReady,
 	})
 	return nil
 }
 
 // processAckNak handles both positive and negative acknowledgments
-func (c *Configurator) processAckNak(msgID ubxbin.MsgID, ok bool, t time.Time) {
+func (c *Configurator) processAckNak(msgID ubxbin.MsgID, ok bool, t time.Time, eventSeq uint64) {
 	// Find the request that matches this ACK/NACK
 	for i := 0; i < len(c.reqs); i++ {
 		cr := c.reqs[i]
 		// Check if this request is awaiting an ACK
 		if cr.state == stateAwaitingAck || cr.state == stateAwaitingAckAndResponse {
 			packet := cr.ops.Packet()
-			if ubxbin.PacketMsgId(packet) == msgID && !t.Before(cr.sentTime) {
+			if ubxbin.PacketMsgId(packet) == msgID && eventSeq > cr.sentSeq {
 				if ok {
 					// ACK received
 					if cr.state == stateAwaitingAckAndResponse {
@@ -494,42 +509,48 @@ func (c *Configurator) processAckNak(msgID ubxbin.MsgID, ok bool, t time.Time) {
 	}
 }
 
-// checkPollResponses checks if any awaiting poll requests are now satisfied
+// checkPollResponses checks if any awaiting poll requests are now satisfied.
+// It intentionally skips stateAwaitingAck so that a response event cannot
+// complete a request that is only waiting for an ACK.
 func (c *Configurator) checkPollResponses(t time.Time) {
 	for i := 0; i < len(c.reqs); i++ {
-		c.reqs[i].checkComplete(t)
+		cr := c.reqs[i]
+		if cr.state == stateAwaitingAck {
+			continue
+		}
+		cr.checkComplete(t)
 	}
 }
 
 func (c *Configurator) processMsg(msg ubxbin.Msg, t time.Time) (bool, error) {
 	switch mt := msg.(type) {
 	case *ubxbin.AckAck:
-		c.processAckNak(mt.MsgID, true, t)
+		c.processAckNak(mt.MsgID, true, t, c.nextEventSeq())
 		return true, nil
 	case *ubxbin.AckNak:
-		c.processAckNak(mt.MsgID, false, t)
+		c.processAckNak(mt.MsgID, false, t, c.nextEventSeq())
 		return true, nil
 	case *ubxbin.MonComms:
-		c.tRead[mt.ID()] = t
+		c.noteMsg(mt.ID(), t)
 		if pid, ok := monCommsPort(mt); ok {
 			c.portID = &pid
 		}
 		c.checkPollResponses(t)
 		return true, nil
 	case *ubxbin.MonGnss:
-		c.tRead[mt.ID()] = t
+		c.noteMsg(mt.ID(), t)
 		c.monGNSS = c.newMonGNSS(mt)
 		c.checkPollResponses(t)
 		return true, nil
 	case *ubxbin.MonGnss1:
-		c.tRead[mt.ID()] = t
+		c.noteMsg(mt.ID(), t)
 		c.planSignals = monGnss1Signals(mt)
 		c.checkPollResponses(t)
 		return true, nil
 	}
 	mid := msg.ID()
 	if mid.CfgClass() {
-		c.tRead[mid] = t
+		c.noteMsg(mid, t)
 		_, err := c.raw.AddMsg(msg)
 		c.checkPollResponses(t)
 		return err == nil, err
@@ -1116,7 +1137,7 @@ func (r msgRequest) ID() string { return r.msg.ID().String() }
 
 func (r msgRequest) Ackable() bool { return r.msg.ID().Ackable() }
 
-func (r msgRequest) AwaitingResponse(time.Time) bool { return false }
+func (r msgRequest) AwaitingResponse(uint64) bool { return false }
 
 func (r msgRequest) Done() {}
 
@@ -1133,27 +1154,27 @@ func (c *Configurator) addMsgSetPauseRequest(msg ubxbin.Msg, pause time.Duration
 }
 
 func (c *Configurator) addMsgPollRequest(msg ubxbin.Msg) error {
-	return c.addRequest(msgPollRequest{msgRequest: msgRequest{msg}, tRead: c.tRead})
+	return c.addRequest(msgPollRequest{msgRequest: msgRequest{msg}, msgSeq: c.msgSeq})
 }
 
 func (c *Configurator) addPollRequest(mid ubxbin.MsgID) error {
-	return c.addRequest(pollRequest{c.tRead, mid})
+	return c.addRequest(pollRequest{c.msgSeq, mid})
 }
 
 func (c *Configurator) addPollTp5Request(tpIdx int) error {
 	return c.addRequest(pollTp5Request{
-		pollRequest: pollRequest{c.tRead, ubxbin.CfgTp5ID},
+		pollRequest: pollRequest{c.msgSeq, ubxbin.CfgTp5ID},
 		tpIdx:       tpIdx,
 	})
 }
 
 type msgPollRequest struct {
 	msgRequest
-	tRead map[ubxbin.MsgID]time.Time
+	msgSeq map[ubxbin.MsgID]uint64
 }
 
-func (r msgPollRequest) AwaitingResponse(tSent time.Time) bool {
-	return r.tRead[r.msg.ID()].Before(tSent)
+func (r msgPollRequest) AwaitingResponse(sentSeq uint64) bool {
+	return r.msgSeq[r.msg.ID()] <= sentSeq
 }
 
 var _ requestOps = (*msgPollRequest)(nil)
@@ -1202,8 +1223,8 @@ func (r msgSetPauseRequest) Pause() time.Duration {
 var _ requestOps = (*msgSetPauseRequest)(nil)
 
 type pollRequest struct {
-	tRead map[ubxbin.MsgID]time.Time
-	msgID ubxbin.MsgID
+	msgSeq map[ubxbin.MsgID]uint64
+	msgID  ubxbin.MsgID
 }
 
 func (r pollRequest) Packet() []byte {
@@ -1222,8 +1243,8 @@ func (r pollRequest) Ackable() bool {
 	return r.msgID.Ackable()
 }
 
-func (r pollRequest) AwaitingResponse(tSent time.Time) bool {
-	return r.tRead[r.msgID].Before(tSent)
+func (r pollRequest) AwaitingResponse(sentSeq uint64) bool {
+	return r.msgSeq[r.msgID] <= sentSeq
 }
 
 type pollTp5Request struct {
@@ -1259,7 +1280,7 @@ func (r msgRateRequest) Done() {
 
 func (r msgRateRequest) Ackable() bool { return true }
 
-func (r msgRateRequest) AwaitingResponse(time.Time) bool { return false }
+func (r msgRateRequest) AwaitingResponse(uint64) bool { return false }
 
 func (r msgRateRequest) ID() string { return ubxbin.CfgMsgID.String() }
 
