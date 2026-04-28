@@ -63,6 +63,11 @@ each timestamp is measured with respect to the PHC and has to take account of an
 Another complicating factor is that GPS messages can include sawtooth corrections for the PPS signal
 and these corrections have to match the timestamps being generated.
 
+When run under a simulator, the code under test produces its normal output,
+but the simulator can observe the offsets between the simulated true time and the simulated PHC.
+It can produce a log of these offsets and also generate statistics such as the maximum offset and the Allan deviation.
+These statistics could only be produced in real-world testing by using a reference clock that tracks UTC with much greater accuracy than a GPS PPS signal. This would require expensive hardware such as a caesium clock or better still, a hydrogen maser; a rubidium clock would not be sufficient.
+
 The configuration includes error models for the PHC oscillator and the GPS PPS signal.
 Each error model consists of a number of components that describe different sources of error, which are combined additively.
 For example, the PHC error model has components for white, flicker and random walk FM noise.
@@ -81,6 +86,6 @@ In a future post, I will go into more detail about how I made measurements and u
 
 ## 0.2 PHC synchronization architecture
 
-modal architecture
-
-say it was developed using the simulator
+Points to cover:
+* modal architecture
+* say it was developed using the simulator
