@@ -52,6 +52,8 @@ and that meant developing a simulator.
 
 ## Simulator
 
+XXX mention clknetsim
+
 The goal of the simulator is not to be perfect, but to be realistic enough to enable closed-loop testing of synchronization algorithms.
 
 The simulator is initialized with a configuration and performs a simulation for some period of time.
@@ -86,6 +88,37 @@ In a future post, I will go into more detail about how I made measurements and u
 
 ## 0.2 PHC synchronization architecture
 
-Points to cover:
-* modal architecture
-* say it was developed using the simulator
+Goals for improvements relative to 0.1
+- configurable/tunable via config file section
+- support 50% duty cycle
+- foundation for holdover mode
+- separate GPS message handling, so as to enable serial timing and other modes of operation that use GPS time without synchronizing the PHC
+- must work with simulator
+
+New decomposition into code (as opposed to old pipeline)
+- per-mode
+- two packages: phcsync, timemsg
+- phcsync divides into 
+  - controller (logic shared between modes)
+  - per mode: generate sample, process sample
+- each mode has to do the same task, but having separate code for each mode is simpler than previous pipeline approach that tried to do it in a uniform way, which is counterintuitive
+
+Overview of modes
+- what modes are there: reset, converging, tracking
+- what transitions happen
+   - reset to converging when we have good sequence of timestamps and messages
+   - converging to tracking when things stop improving
+   - tracking to reset when things go wrong
+   - converging to reset when thing go wrong
+- corresponding PTP clock quality
+
+Tasks performed in each mode:
+- determine which second timestamp belongs to
+- handle dual edge timestamps
+- handle anomalous timestamps
+- handle sawtooth correction 
+- PHC control
+
+Role of simulator
+- testing during development
+- tune defaults for configurable values
