@@ -6,17 +6,22 @@ On connect, two separate `gpscfg.Configure` calls happen in sequence: the initia
 
 Currently the probe is initiated by the Go backend (`packetWorker`) and the readback is initiated by the frontend (`doReadback` via `ReadConfig`). Combining them would require the backend to know whether properties should be read during the probe, or a way to piggyback the readback request onto the probe.
 
-## config-speed-change: Handle receiver serial speed change in GUI
+## config-speed-change: Change receiver baud rate from the Config tab
 
-The CLI supports `--speed` to configure the GPS receiver's serial port speed (as opposed to `--device-speed` which sets the host serial port speed). The desktop GUI needs equivalent support so users can change the receiver's baud rate from the Config tab.
+The CLI supports `--speed` to change the GPS receiver's serial baud rate, which also changes the host port speed in step (`SerialConn.WriteThenChangeSpeed`). The desktop GUI has no equivalent -- the connection bar's speed dropdown only sets the *host* port speed at connect time and does not reconfigure the receiver.
 
-The backend already handles this correctly: `gpscfg.configure()` detects `ConfigAction.Speed != 0` and calls `SerialConn.WriteThenChangeSpeed()`, which sends the command, waits for drain, then changes the host port speed. The `Scan` goroutine continues reading at the new speed. The missing piece is propagating the new speed back to the frontend so the connection bar reflects reality.
+Add a "Serial speed" section to the Config tab. The user picks a target baud rate from a dropdown and clicks the existing Apply button. The frontend populates `cfg.Opts.BaudRate` on the `ConfigTarget` it sends to `ApplyConfig`. The backend already handles the rest: `gpscfg.configure()` builds a `ConfigAction` with `Speed != 0`, and `SerialConn.WriteThenChangeSpeed` sends the CFG message and switches the host port speed.
+
+The connection bar speed must reflect the actual host-port speed after every `Configure`. The single source of truth is `SerialConn.Speed()`. After `gpscfg.Configure` returns -- success or error -- `app.go` reads the current host speed and emits an event if it changed. This handles all cases uniformly: ubx success, ubx ACK timeout (host moved, receiver desynced), ubx earlier-step failure (host unchanged), UNC silent no-op (host unchanged, since UNC's config path emits no baud-rate action), and any other path that ever moves the host port.
 
 Outline:
 
-1. Add a `Speed int` field to `gpscfg.Result`. In `gpscfg.configure()`, record the speed from `ConfigActionSendRequest` when `action.Speed != 0`.
-2. In `app.go`, after `gpscfg.Configure` returns with a non-zero `Result.Speed`, emit a `gps:speed` event to the frontend with the new speed value.
-3. Frontend listens for `gps:speed` and updates the speed state in `App`, which flows down to the connection bar dropdown.
+1. Backend (`desktop/app.go`): track the last-emitted host speed. After `gpscfg.Configure` returns in `runConfig` and after the initial probe, read `a.conn.(*gpsio.SerialConn).Speed()` (the same assertion is already used elsewhere in `app.go`). If different from the last-emitted value, emit `gps:speed` with the new int and update the tracker.
+2. Frontend (`app.tsx`): subscribe to `gps:speed` and call `setSpeed(...)`. The connection bar already binds to that state.
+3. Frontend (`config-panel.tsx`): add a Speed `ConfigGroup` placed just before "Persistent operations". Single labelled `<Select>` of speeds (reuse the list from `connection-panel.tsx` -- lift to a shared module). Local state `selectedSpeed` defaults to the `speed` prop; reset to current speed when the speed prop changes.
+4. Frontend Apply path (`config-panel.tsx`): if `selectedSpeed !== speed`, set `target.opts.baudRate = selectedSpeed` on the `ConfigTarget`. No post-apply state update needed -- the `gps:speed` event flow handles it.
+
+UNC users: dropdown still appears, Apply still runs, but nothing changes (no baud-rate action emitted, host port unchanged, no `gps:speed` event). The UI honestly reflects that nothing happened. A clearer "not supported" affordance for UNC is a follow-up if needed.
 
 ## connected-speed-change: Allow changing host serial speed while connected
 
