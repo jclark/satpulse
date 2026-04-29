@@ -106,6 +106,9 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.rtcmBaseID.IsSet() {
 		cp.SetRTCMBaseID(v.rtcmBaseID.Get())
 	}
+	if v.baudRate.IsSet() {
+		cp.SetBaudRate(v.baudRate.Get())
+	}
 	// If nothing requires the configurator, return nil (passive capture mode)
 	if !v.showReceiver && target.NoOp() {
 		return nil, nil
@@ -419,6 +422,9 @@ func printProps(f *os.File, p *gpsprot.ConfigProps) {
 	if rtcmBaseID, ok := p.GetRTCMBaseID(); ok {
 		printRTCMBaseID(f, rtcmBaseID)
 	}
+	if baudRate, ok := p.GetBaudRate(); ok {
+		printBaudRate(f, baudRate)
+	}
 }
 
 func printSignals(f *os.File, sigs gpsprot.SignalSet) {
@@ -472,6 +478,14 @@ func printMinElevation(f *os.File, elev gpsprot.Angle) {
 
 func printRTCMBaseID(f *os.File, id uint16) {
 	fmt.Fprintf(f, "RTCM base station ID: %d\n", id)
+}
+
+func printBaudRate(f *os.File, baudRate uint32) {
+	if baudRate == 0 {
+		fmt.Fprint(f, "Serial speed: not applicable\n")
+		return
+	}
+	fmt.Fprintf(f, "Serial speed: %d\n", baudRate)
 }
 
 func printTimePulse(f *os.File, tp gpsprot.TimePulse) {

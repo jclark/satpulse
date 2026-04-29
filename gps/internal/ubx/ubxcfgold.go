@@ -109,14 +109,29 @@ func (raw *CfgOld) changePrtProto(mc *msgChanges) *ubxbin.CfgPrt {
 	return &prt
 }
 
-func (raw *CfgOld) changePrtBaudRate(opts *gpsprot.ConfigOptions) *ubxbin.CfgPrt {
-	if opts.BaudRate == 0 || raw.prt == nil || opts.BaudRate == raw.prt.BaudRate ||
+func (raw *CfgOld) changePrtBaudRate(target *gpsprot.ConfigTarget) *ubxbin.CfgPrt {
+	baudRate, ok := target.Props.GetBaudRate()
+	if !ok || baudRate == 0 || raw.prt == nil || baudRate == raw.prt.BaudRate ||
 		(raw.prt.PortID != ubxbin.PortUART1 && raw.prt.PortID != ubxbin.PortUART2) {
 		return nil
 	}
 	prt := *raw.prt
-	prt.BaudRate = opts.BaudRate
+	prt.BaudRate = baudRate
 	return &prt
+}
+
+// cookPrt populates BaudRate from raw.prt. UART ports report the
+// polled (or just-written) speed; USB / I2C / SPI report 0.
+func (raw *CfgOld) cookPrt(cp *gpsprot.ConfigProps) {
+	if raw.prt == nil {
+		return
+	}
+	switch raw.prt.PortID {
+	case ubxbin.PortUART1, ubxbin.PortUART2:
+		cp.SetBaudRate(raw.prt.BaudRate)
+	default:
+		cp.SetBaudRate(0)
+	}
 }
 
 func (raw *CfgOld) cookTmode(cp *gpsprot.ConfigProps) {

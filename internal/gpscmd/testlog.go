@@ -133,6 +133,9 @@ func writeTestLogConfigProps(lf *logfile.LogFile, lg *slog.Logger, props *gpspro
 			id := rtcmBaseID
 			entry.RTCMBaseID = &id
 		}
+		if br, ok := props.GetBaudRate(); ok {
+			entry.BaudRate = &br
+		}
 	}
 	writeTestLogEntry(lf, lg, entry)
 }

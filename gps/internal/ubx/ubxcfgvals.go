@@ -137,7 +137,7 @@ func (raw *CfgVals) AddData(cfgData []byte) (map[uint8]struct{}, error) {
 	return groups, nil
 }
 
-func (raw *CfgVals) Cook(ver *Version, cp *gpsprot.ConfigProps) {
+func (raw *CfgVals) Cook(ver *Version, cp *gpsprot.ConfigProps, port *ubxbin.PortID) {
 	if ver.tpIndex() == 1 {
 		raw = &CfgVals{ucv.RemapMap(raw.Map, ucv.KeyRemap(ucv.TPKeyPairs, 1, 0))}
 	}
@@ -161,6 +161,9 @@ func (raw *CfgVals) Cook(ver *Version, cp *gpsprot.ConfigProps) {
 	}
 	if v, ok := cfgValGet(raw, ucv.KRtcmDf003Out); ok {
 		cp.SetRTCMBaseID(uint16(v))
+	}
+	if v, ok := raw.getBaudRate(port); ok {
+		cp.SetBaudRate(v)
 	}
 }
 
@@ -195,6 +198,7 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 // This doesn't handle the SignalsEnabled or NMAMsgAuth properties, which are handled separately.
 func (known *CfgVals) addGetKeys(ids gpsprot.PropIDs, ver *Version, keys []ucv.Key) []ucv.Key {
 	tks := []ucv.AnyTypedKey{}
+	// TODO request KUart{N}Baudrate when ids has PropIDBaudRate
 	switch ids & gpsprot.PropIDTimePulse {
 	// we handle a few of these properties individually
 	case gpsprot.PropIDAntennaCableDelay, 0:
@@ -369,8 +373,8 @@ func (tb *txnBuilder) messagesBuild() error {
 
 func (known *CfgVals) BaudRate(target *gpsprot.ConfigTarget, port ucv.Port) []ucv.Item {
 	items := []ucv.Item{}
-	baudRate := target.Opts.BaudRate
-	if baudRate != 0 {
+	baudRate, ok := target.Props.GetBaudRate()
+	if ok && baudRate != 0 {
 		k := portBaudRateKey(port)
 		if k != 0 {
 			ucv.AddItem(&items, k, uint64(baudRate))
@@ -583,12 +587,29 @@ func (raw *CfgVals) getTimePulse() (gpsprot.TimePulse, bool) {
 	return tp, true
 }
 
-
 func (raw *CfgVals) getTimeGNSS() (gpsprot.GNSS, bool) {
 	if tg, ok := cfgValGet(raw, ucv.KTpTimegridTp1); ok {
 		if g := timegridTp1ToGNSS(tg); g != 0 {
 			return g, true
 		}
+	}
+	return 0, false
+}
+
+// getBaudRate returns the baud rate for the active port. USB / I2C / SPI
+// return (0, true) ("not applicable"). UART returns the value if it is
+// in the val map (post-write); otherwise the result is unset since we
+// don't poll KUart{N}Baudrate.
+func (raw *CfgVals) getBaudRate(port *ubxbin.PortID) (uint32, bool) {
+	if port == nil {
+		return 0, false
+	}
+	k := portBaudRateKey(ucv.Port(*port))
+	if k == 0 {
+		return 0, true
+	}
+	if v, ok := cfgValGet(raw, k); ok {
+		return uint32(v), true
 	}
 	return 0, false
 }

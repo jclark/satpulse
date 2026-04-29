@@ -41,6 +41,7 @@ type flagVars struct {
 	antCableDelay  opt.Val[time.Duration]
 	minElev        opt.Val[gpsprot.Angle]
 	rtcmBaseID     opt.Val[uint16]
+	baudRate       opt.Val[uint32]
 	mode           opt.Val[gpsprot.Mode]
 	configOpts     gpsprot.ConfigOptions
 	configGet      gpsprot.PropIDs
@@ -67,6 +68,10 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
 const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20 * gpsprot.Meter
 const defaultFixedPosAcc = 20 * gpsprot.Meter
+
+// TODO: add PropIDBaudRate to showProps so --show-config reports the current configured speed.
+// Requires fix to CfgVals.addGetKeys
+// Would need regeneration of the *-noop replay-test traces.
 const showProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDMode |
 	gpsprot.PropIDTimePulse |
@@ -136,7 +141,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.StringVar(&testLogPath, "test-log", "", "log test data to `path`")
 	flags.MarkHidden("test-log")
 	flags.IntVarP(&vars.localSpeed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
-	flags.Uint32Var(&vars.configOpts.BaudRate, "speed", 0, "set GPS receiver baud-rate in `bps`")
+	var baudRate uint32
+	flags.Uint32Var(&baudRate, "speed", 0, "set GPS receiver baud-rate in `bps`")
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
 	flags.VarP(&bands, "band", "b", "enabled GNSS bands `list`: L1,L2,L5,E5,E6,...")
 	flags.Var(&timeGNSS, "time-gnss", "GNSS `constellation` used for timing: GPS|GAL|BDS|GLO")
@@ -224,11 +230,12 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	configChanged := false
 
-	if vars.configOpts.BaudRate != 0 {
+	if baudRate != 0 {
 		configChanged = true
-		if !term.IsValidSpeed(int(vars.configOpts.BaudRate)) {
-			return nil, nil, fmt.Errorf("invalid remote serial speed %d", vars.configOpts.BaudRate)
+		if !term.IsValidSpeed(int(baudRate)) {
+			return nil, nil, fmt.Errorf("invalid remote serial speed %d", baudRate)
 		}
+		vars.baudRate.Set(baudRate)
 	}
 
 	if len(gl.gnss) != 0 {
