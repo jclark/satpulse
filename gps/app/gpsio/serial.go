@@ -104,6 +104,15 @@ func (c *SerialConn) term() *term.Term {
 	return t
 }
 
+// Speed returns the current termios speed of the underlying TTY,
+// or 0 if this connection is not backed by a TTY.
+func (c *SerialConn) Speed() int {
+	if t := c.term(); t != nil {
+		return t.Speed()
+	}
+	return 0
+}
+
 func (c *SerialConn) Read(p []byte) (int, error) {
 	if c.isStopped() {
 		return 0, io.EOF
