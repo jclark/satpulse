@@ -73,6 +73,7 @@ export function ConnectionPanel({
                             type="text"
                             class="w-44 rounded-r-none border-r-0"
                             value={device}
+                            disabled={connected}
                             onInput={e => setDevice((e.target as HTMLInputElement).value)}
                             placeholder="device path"
                         />
@@ -81,6 +82,7 @@ export function ConnectionPanel({
                             variant="secondary"
                             class="rounded-l-none px-1.5"
                             onClick={toggleDropdown}
+                            disabled={connected}
                             aria-label="Select port"
                         >
                             <svg class="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
@@ -107,6 +109,7 @@ export function ConnectionPanel({
                 <Select
                     class="w-24"
                     value={speed}
+                    disabled={connected}
                     onChange={e => setSpeed(parseInt((e.target as HTMLSelectElement).value, 10))}
                 >
                     {speeds.map(s => (

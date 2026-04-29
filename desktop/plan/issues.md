@@ -8,11 +8,9 @@ Currently the probe is initiated by the Go backend (`packetWorker`) and the read
 
 ## connected-speed-change: Allow changing host serial speed while connected
 
-When first connecting to a receiver at an unknown baud rate, or after a speed change via a message file command, the user may need to change the host serial port speed without disconnecting and reconnecting. The speed dropdown should remain enabled while connected and changing it should call `term.Change()` on the live `SerialConn` to switch the host port speed in place.
+When first connecting to a receiver at an unknown baud rate, or after a speed change via a message file command, the user may need to change the host serial port speed without disconnecting and reconnecting.
 
-## disable-inputs: Disable device and speed inputs while connected
-
-The device text input and speed dropdown in the connection bar remain editable while connected, but changing them has no effect on the live connection. They should be disabled when `connected` is true to avoid confusion.
+Changing the host speed also requires re-running the receiver probe at the new speed. Without re-probing, the receiver-info display and the Config tab gating stay stuck on whatever the last successful probe found.
 
 ## tcp-connect: Allow connecting to a GPS receiver via TCP
 
