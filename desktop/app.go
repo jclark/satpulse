@@ -75,7 +75,7 @@ type App struct {
 	mu           sync.Mutex
 	state        ConnState
 	corrState    CorrEvent
-	conn         gpsio.Conn
+	conn         *gpsio.SerialConn
 	connCtx      context.Context
 	connCancel   context.CancelFunc
 	connWg       sync.WaitGroup
@@ -314,6 +314,7 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 		gpsreg.CreateConfigProtocols(gpsreg.VendorUnknown), target, sub, conn)
 	cancel()
 	portLock <- port
+	a.emitSpeed(conn)
 	if err != nil && !errors.Is(err, gpscfg.ErrNoProbeResponse) && !errors.Is(err, gpscfg.ErrNotDetected) {
 		runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{Error: err.Error()})
 		a.setEndState(StateDisconnected)
@@ -363,6 +364,7 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 				gpsreg.CreateConfigProtocols(gpsreg.VendorUnknown), req.target, sub, conn)
 			cancel()
 			portLock <- port
+			a.emitSpeed(conn)
 			req.resultCh <- configResult{result: rslt, err: err}
 		}
 	}
@@ -473,7 +475,7 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 	}
 	// Stop any existing correction session.
 	a.stopCorrLocked()
-	conn := a.conn.(*gpsio.SerialConn)
+	conn := a.conn
 	portLock := a.portLock
 	connCtx := a.connCtx
 	corrCtx, corrCancel := context.WithCancel(connCtx)
@@ -643,7 +645,8 @@ const readProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDTimeGNSS |
 	gpsprot.PropIDAntennaCableDelay |
 	gpsprot.PropIDMinElevation |
-	gpsprot.PropIDNavMsgAuth
+	gpsprot.PropIDNavMsgAuth |
+	gpsprot.PropIDBaudRate
 
 // ReadConfig reads back the current configuration from the receiver.
 func (a *App) ReadConfig() (*gpsprot.ConfigProps, error) {
@@ -1172,6 +1175,13 @@ func (a *App) runConfig(target *gpsprot.ConfigTarget) Result {
 		return Result{Error: cr.err.Error()}
 	}
 	return Result{OK: true}
+}
+
+// emitSpeed reads the current host serial port speed and emits gps:speed.
+// Called after any gpscfg.Configure since that is the only path that can
+// change the host speed (via SerialConn.WriteThenChangeSpeed).
+func (a *App) emitSpeed(conn *gpsio.SerialConn) {
+	runtime.EventsEmit(a.ctx, "gps:speed", conn.Speed())
 }
 
 // eventHandler is an slog.Handler that emits "gps:log" events to the frontend

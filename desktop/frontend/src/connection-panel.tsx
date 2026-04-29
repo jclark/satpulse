@@ -1,6 +1,7 @@
 import {h} from 'preact';
 import {useState, useRef, useEffect, useCallback} from 'preact/hooks';
 import {Button, Input, Select} from './ui';
+import {speeds} from './speeds';
 
 export interface PortInfo {
     device: string;
@@ -18,8 +19,6 @@ interface Props {
     ports: PortInfo[];
     onRefreshPorts: () => void;
 }
-
-const speeds = [9600, 38400, 57600, 115200, 230400, 460800, 921600];
 
 export function ConnectionPanel({
     connected,

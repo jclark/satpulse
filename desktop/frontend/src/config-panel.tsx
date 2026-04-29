@@ -14,6 +14,7 @@ import {
 } from './msg-flags';
 import type {ConnState, OperationState} from './app';
 import {Button, Input, Select, ConfigGroup, ConfigSubGroup, fieldLabelText, labeledControlText} from './ui';
+import {speeds} from './speeds';
 
 interface Props {
     connState: ConnState;
@@ -134,6 +135,14 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const [rawChange, setRawChange] = useState(false);
     const [rawFlags, setRawFlags] = useState(0);
 
+    // Serial speed state.
+    // baudRateApplicable: null = unknown (pre-readback or readback didn't include baudRate),
+    // true = UART (dropdown shown), false = non-UART (replaced by "not applicable" line).
+    const [baudRateApplicable, setBaudRateApplicable] = useState<boolean | null>(null);
+    const [selectedSpeed, setSelectedSpeed] = useState(speed);
+    const [speedTouched, setSpeedTouched] = useState(false);
+    useEffect(() => { setSelectedSpeed(speed); }, [speed]);
+
     // Persistent operations state
     const [saveType, setSaveType] = useState(0); // 0=none, 1=minimal, 2=all
     const [resetType, setResetType] = useState(0); // 0=none, 1=reload, 2=cold, 3=factory
@@ -187,6 +196,14 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         if (cfg.timeGNSS) setTimeGNSS(String(cfg.timeGNSS));
         if (cfg.antennaCableDelay !== undefined) setCableDelay(String(cfg.antennaCableDelay * 1e9));
         if (cfg.minElevation !== undefined) setMinElev(String(cfg.minElevation));
+        if (cfg.baudRate !== undefined) {
+            if (cfg.baudRate === 0) {
+                setBaudRateApplicable(false);
+            } else {
+                setBaudRateApplicable(true);
+                setSelectedSpeed(cfg.baudRate);
+            }
+        }
         if (cfg.signalsEnabled) {
             const s = signalMapToSet(cfg.signalsEnabled);
             setSelectedSignals(() => s);
@@ -223,6 +240,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             setPvtChange(false);
             setSatsChange(false);
             setRawChange(false);
+            setSpeedTouched(false);
             setSaveType(0);
             setResetType(0);
             setOperation({status: 'success', label: 'Reading configuration'});
@@ -296,6 +314,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         if (rawWire !== undefined) opts.RawMsg = rawWire;
         if (saveType) opts.Save = saveType;
         if (resetType) opts.Reset = resetType;
+        if (speedTouched) props.baudRate = selectedSpeed;
         const cfg: Record<string, any> = {Props: props, Opts: opts};
         setApplying(true);
         setOperation({status: 'running', label: 'Applying configuration'});
@@ -314,6 +333,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             setTimePulseTouched(false);
             setTimeModeTouched(false);
             setSignalsTouched(false);
+            setSpeedTouched(false);
         } else {
             addToast(r.error || 'Apply failed', 'error');
             setOperation({status: 'failed', label: 'Applying configuration', error: r.error || 'Apply failed'});
@@ -330,6 +350,8 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         setPvtChange(false);
         setSatsChange(false);
         setRawChange(false);
+        setSelectedSpeed(speed);
+        setSpeedTouched(false);
         setSaveType(0);
         setResetType(0);
     };
@@ -355,6 +377,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     if (timeModeTouched) pendingSections.push('time mode');
     if (signalsTouched) pendingSections.push('satellites and signals');
     if (nmeaChange || rtcmChange || pvtChange || satsChange || rawChange) pendingSections.push('messages');
+    if (speedTouched) pendingSections.push('serial speed');
     if (saveType) pendingSections.push('save');
     if (resetType) pendingSections.push('reset');
     const pendingLabel = pendingSections.length > 0
@@ -596,6 +619,20 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                             onFlagsChange={setRawFlags}
                             disabled={!connected}
                         />
+                </ConfigGroup>
+
+                <ConfigGroup title="Serial speed">
+                    {baudRateApplicable === false ? (
+                        <p class="text-xs text-text-primary">Current port is not a UART: baud rate not applicable</p>
+                    ) : (
+                        <div class="flex items-center gap-2">
+                            <label class={fieldLabelText()}>Baud rate</label>
+                            <Select class="w-28" value={selectedSpeed} disabled={!connected}
+                                onChange={e => { setSpeedTouched(true); setSelectedSpeed(parseInt((e.target as HTMLSelectElement).value, 10)); }}>
+                                {speeds.map(s => (<option key={s} value={s}>{s}</option>))}
+                            </Select>
+                        </div>
+                    )}
                 </ConfigGroup>
 
                 {/* Persistent operations */}

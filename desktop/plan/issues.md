@@ -6,23 +6,6 @@ On connect, two separate `gpscfg.Configure` calls happen in sequence: the initia
 
 Currently the probe is initiated by the Go backend (`packetWorker`) and the readback is initiated by the frontend (`doReadback` via `ReadConfig`). Combining them would require the backend to know whether properties should be read during the probe, or a way to piggyback the readback request onto the probe.
 
-## config-speed-change: Change receiver baud rate from the Config tab
-
-The CLI supports `--speed` to change the GPS receiver's serial baud rate, which also changes the host port speed in step (`SerialConn.WriteThenChangeSpeed`). The desktop GUI has no equivalent -- the connection bar's speed dropdown only sets the *host* port speed at connect time and does not reconfigure the receiver.
-
-Add a "Serial speed" section to the Config tab. For UART ports the user picks a target baud rate from a dropdown and clicks the existing Apply button; for non-UART ports (USB / I2C / SPI) the dropdown is replaced by "Current port is not a UART: baud rate not applicable". The frontend writes `props.baudRate` on the `ConfigTarget` it sends to `ApplyConfig`. The backend handles the rest: `gpscfg.configure()` builds a `ConfigAction` with `Speed != 0`, and `SerialConn.WriteThenChangeSpeed` sends the CFG message and switches the host port speed.
-
-The connection bar speed must reflect the actual host-port speed after every `Configure`. The single source of truth is `SerialConn.Speed()`. After `gpscfg.Configure` returns -- success or error -- `app.go` reads the current host speed and emits `gps:speed`. This handles all cases uniformly: ubx UART success, ubx ACK timeout (host moved, receiver desynced), ubx earlier-step failure (host unchanged), and any path where no baud-rate action is emitted (USB, UNC, etc).
-
-Outline:
-
-1. Backend (`desktop/app.go`): after every `gpscfg.Configure` call site in `packetWorker` (initial probe and inline config-request handler), call a helper that type-asserts `a.conn` to `*gpsio.SerialConn` and emits `gps:speed` with `Speed()`. Emitted unconditionally; the frontend setter is idempotent for unchanged values. Also add `PropIDBaudRate` to `readProps` so `ReadConfig` returns the receiver-side baud rate (or 0 for non-UART ports).
-2. Frontend (`app.tsx`): subscribe to `gps:speed` and call `setSpeed(...)`. The connection bar already binds to that state.
-3. Frontend (`config-panel.tsx`): add a Speed `ConfigGroup` placed just before "Persistent operations". Track `baudRateApplicable: boolean | null` from the readback's `baudRate` field: present and 0 -> non-UART, render "not applicable" line; present and non-zero -> UART, render dropdown initialised to that value; absent -> render dropdown initialised from `speed` prop. Reuse the speed list from `connection-panel.tsx` (lift to a shared module). Use a `speedTouched` flag for dirty tracking, matching the existing `*Touched` pattern.
-4. Frontend Apply path (`config-panel.tsx`): if `speedTouched`, set `props.baudRate = selectedSpeed` on the `ConfigTarget`. After Apply success the `gps:speed` event flows in and re-syncs the dropdown via the existing `useEffect([speed]) -> setSelectedSpeed(speed)`.
-
-Non-UART ports: the readback's `baudRate=0` triggers the "not applicable" UI; no dropdown, no way to mark `speedTouched`, so Apply never sends `props.baudRate`. UNC: same fall-through as USB-on-ubx (no action emitted by the configurator, host port unchanged, `gps:speed` reports the unchanged value).
-
 ## connected-speed-change: Allow changing host serial speed while connected
 
 When first connecting to a receiver at an unknown baud rate, or after a speed change via a message file command, the user may need to change the host serial port speed without disconnecting and reconnecting. The speed dropdown should remain enabled while connected and changing it should call `term.Change()` on the live `SerialConn` to switch the host port speed in place.

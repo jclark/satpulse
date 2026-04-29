@@ -251,6 +251,9 @@ export function App() {
                 }
             }
         });
+        const offSpeed = EventsOn('gps:speed', (newSpeed: number) => {
+            if (newSpeed) setSpeed(newSpeed);
+        });
         const offMsg = EventsOn('gps:msg', (evt: MsgEvent) => {
             switch (evt.kind) {
                 case 'time': {
@@ -423,6 +426,7 @@ export function App() {
         return () => {
             if (typeof offLog === 'function') offLog(); else EventsOff('gps:log');
             if (typeof offRcv === 'function') offRcv(); else EventsOff('gps:receiver');
+            if (typeof offSpeed === 'function') offSpeed(); else EventsOff('gps:speed');
             if (typeof offMsg === 'function') offMsg(); else EventsOff('gps:msg');
             if (typeof offState === 'function') offState(); else EventsOff('gps:state');
             if (typeof offInitialPos === 'function') offInitialPos(); else EventsOff('gps:initialPos');
