@@ -82,6 +82,40 @@ func TestPoint3DRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfigPropsBaudRate(t *testing.T) {
+	t.Run("CopyFrom", func(t *testing.T) {
+		var dst, src ConfigProps
+		src.SetBaudRate(115200)
+		dst.CopyFrom(&src)
+		if v, ok := dst.GetBaudRate(); !ok || v != 115200 {
+			t.Errorf("after CopyFrom: got (%d, %v), want (115200, true)", v, ok)
+		}
+	})
+	t.Run("Inconsistent", func(t *testing.T) {
+		var a, b ConfigProps
+		a.SetBaudRate(9600)
+		b.SetBaudRate(38400)
+		got := a.Inconsistent(&b)
+		if v, ok := got.GetBaudRate(); !ok || v != 38400 {
+			t.Errorf("Inconsistent: got (%d, %v), want (38400, true)", v, ok)
+		}
+		var c ConfigProps
+		c.SetBaudRate(9600)
+		got = a.Inconsistent(&c)
+		if _, ok := got.GetBaudRate(); ok {
+			t.Errorf("Inconsistent with equal values must not flag")
+		}
+	})
+	t.Run("Missing", func(t *testing.T) {
+		var a, b ConfigProps
+		b.SetBaudRate(9600)
+		got := a.Missing(&b)
+		if v, ok := got.GetBaudRate(); !ok || v != 9600 {
+			t.Errorf("Missing: got (%d, %v), want (9600, true)", v, ok)
+		}
+	})
+}
+
 func TestPropIDOperations(t *testing.T) {
 	props := PropIDSignalsEnabled | PropIDTimePulsePeriod
 
@@ -217,6 +251,22 @@ func TestConfigPropsJSONRoundTrip(t *testing.T) {
 			},
 		},
 		{
+			"baudRate",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetBaudRate(9600)
+				return cp
+			},
+		},
+		{
+			"baudRate zero",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetBaudRate(0)
+				return cp
+			},
+		},
+		{
 			"all properties",
 			func() ConfigProps {
 				var cp ConfigProps
@@ -299,8 +349,9 @@ func TestPropIDsJSONRoundTrip(t *testing.T) {
 		{"timePulse single", PropIDTimePulseWidth},
 		{"timePulse partial", PropIDTimePulseWidth | PropIDTimePulsePeriod},
 		{"multiple", PropIDSignalsEnabled | PropIDMode | PropIDMinElevation},
+		{"baudRate", PropIDBaudRate},
 		{"all", PropIDSignalsEnabled | PropIDTimeGNSS | PropIDTimePulse | PropIDMode |
-			PropIDAntennaCableDelay | PropIDNavMsgAuth | PropIDRTCMBaseID | PropIDMinElevation},
+			PropIDAntennaCableDelay | PropIDNavMsgAuth | PropIDRTCMBaseID | PropIDMinElevation | PropIDBaudRate},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

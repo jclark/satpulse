@@ -67,19 +67,25 @@ the others. There is no read-only mask involvement.
 - **Target.** Caller sets `target.Props.SetBaudRate(N)` to request a
   new speed `N`. Caller sets `target.Get |= PropIDBaudRate` to read
   back the current speed.
-- **Result.** Backend populates `Props.BaudRate` on the result when
-  `target.UsesAny(PropIDBaudRate)` is true (i.e. the caller either
-  asked via `target.Get` or supplied a write via `target.Props`) and
-  the active port is known:
+- **Result.** Backend populates `Props.BaudRate` whenever the
+  necessary state is available -- i.e. "when the value falls out for
+  free":
   1. Port has no baud rate concept (USB / I2C / SPI) -> value `0`.
-  2. Port is a UART and a current value is known to the backend
-     without extra work -> that value. This naturally covers the
-     "we just successfully wrote `N`" case (the write path already
-     records the new value on internal config state) and any case
-     where existing detection polls happen to have surfaced the
-     current speed.
+  2. Port is a UART and a current value is in hand -> that value.
+     This covers the "we just successfully wrote `N`" case (the
+     write path records the new value on internal config state) and
+     any case where existing detection polls happen to have
+     surfaced the current speed.
   3. Otherwise -> leave unset. Specifically: do not add new poll
      requests just to learn the current UART speed.
+
+  No explicit `target.UsesAny(PropIDBaudRate)` gate is applied at
+  the cooking step. The gate lives upstream: `pollPrt` /
+  `pollMonComms` only fire when `target.UsesAny(PropIDBaudRate) ||
+  target.Opts.SetsMsgs()`, and `KUart{N}Baudrate` only lands in
+  `CfgVals` after a successful val-set write. As a corollary, when
+  `--nmea` legacy polls CFG-PRT for message-mask reasons, the
+  current speed surfaces for free on the result.
 
 ### Migration of existing `Opts.BaudRate` writes
 
@@ -132,48 +138,45 @@ signature to take whatever it actually needs (the value plus the
 
 ### Result population
 
-`RawConfig.Config(ver)` / `CfgVals.Cook` are *not* changed to emit
-baud rate on their own. Instead, an overlay in
-`Configurator.ConfigProps()` adds the property after `c.raw.Config`
-has built the rest:
+Each backend cooks its own baud rate, alongside the other cooks.
+There is no overlay at the `Configurator` level.
+
+`Configurator.ConfigProps()` is a one-liner that hands the
+MON-COMMS port to `RawConfig.Config`:
 
 ```go
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
-    cp := c.raw.Config(c.ver)
-    if cp != nil && c.target != nil && c.target.UsesAny(gpsprot.PropIDBaudRate) {
-        if port, ok := c.activePort(); ok {
-            switch {
-            case !portHasBaudRate(port):
-                cp.SetBaudRate(0)
-            case c.knownUartBaudRate(port) != 0:
-                cp.SetBaudRate(c.knownUartBaudRate(port))
-            }
-        }
-    }
-    return cp
+    return c.raw.Config(c.ver, c.portID)
 }
 ```
 
-`activePort()` mirrors the first two branches of `valPort()`:
-`c.portID` first, then `c.raw.prt.PortID`. (No UART1 fallback here:
-"unknown" is a meaningful answer.)
+`RawConfig.Config(ver, portID *ubxbin.PortID)` dispatches to one of
+two backend paths:
 
-`knownUartBaudRate(port)` returns the speed if it is already
-available for free, otherwise `0`:
+- **Legacy.** Existing cookers (`cookTmode`, `cookTp5`, `cookGNSS`,
+  `cookNav5`) plus a new `CfgOld.cookPrt(cp)` that reads `raw.prt`
+  directly -- it has both the port and the speed. UART ports report
+  `raw.prt.BaudRate`; USB / I2C / SPI report `0`. `raw.prt` is
+  populated by `pollPrt` and updated by the `Done()` hook of a
+  successful speed-change request (legacy routes through
+  `msgSetRequest.Done() -> raw.AddMsg`).
 
-- Legacy: `c.raw.prt.BaudRate` if `c.raw.prt != nil`. This is set by
-  both `pollPrt` and the `Done()` hook of a successful speed-change
-  request (legacy goes through `msgSetRequest.Done() -> raw.AddMsg`
-  with the new CFG-PRT), so the polled and just-written cases are
-  handled uniformly.
-- Val-based: the relevant `KUart{N}Baudrate` from `c.raw.CfgVals`
-  if present. The val-set ack path (`raw.AddMsg` for `*CfgValset`
-  with `LayerRAM`) populates the cfgvals on a successful write, so
+- **Val-based.** `CfgVals.Cook(ver, cp, port)` is extended to take
+  the active port and call a new `getBaudRate(port)` getter
+  (alongside the existing `getMode` / `getTimePulse` / `getTimeGNSS`
+  family). The active port is determined inside `RawConfig.Config`'s
+  val-based branch: `portID` first (from MON-COMMS via
+  `c.portID`), `raw.prt.PortID` second (from any CFG-PRT poll
+  response). `getBaudRate` returns `(0, true)` for non-UART ports;
+  for UART, it looks up `KUart{N}Baudrate` in `CfgVals`. The
+  val-set ack path populates `CfgVals` on a successful write, so
   the just-written case works without extra plumbing. Plain queries
   of the current speed are *not* served (we do not add a `valGet`
   for `KUart{N}Baudrate`); see "Out of scope".
 
-`portHasBaudRate(port)` returns `true` only for `UART1`/`UART2`.
+The non-UART check in the val-based path falls out of
+`portBaudRateKey` returning `0` for non-UART ports -- no separate
+predicate is needed.
 
 ### Trigger for active-port detection
 
@@ -224,8 +227,12 @@ UNC currently has no speed-change support and does not read
 `vars.configOpts` loses its `BaudRate` field along with
 `ConfigOptions.BaudRate`.
 
-Add `PropIDBaudRate` to the `showProps` constant so `--show-config`
-asks for it. No new CLI flag.
+`PropIDBaudRate` is deliberately *not* added to the `showProps`
+constant. Adding it would change the request set for `--show-config`
+and require the `-noop` replay-test traces (which exercise
+`--show-config`) to be regenerated against real hardware. Surfacing
+the current speed on a plain query is out of scope for this change;
+see "Out of scope". No new CLI flag.
 
 `printProps` gains a small helper that prints the speed when
 `PropIDBaudRate` is set on the result:
@@ -237,7 +244,10 @@ Serial speed: not applicable
 
 The "not applicable" form is used when the value is `0` (port has no
 baud rate concept). For UART ports whose speed has not been
-populated, the line is omitted.
+populated, the line is omitted. In practice, with `PropIDBaudRate`
+not in `showProps`, this only fires after `--speed N` writes a new
+speed: the val/legacy backends populate `BaudRate` on the result
+because `target.UsesAny(PropIDBaudRate)` is true.
 
 ## Test log
 
@@ -298,21 +308,37 @@ along for free.
     field).
   - `--speed 0` is still rejected.
 
+## Follow-on work
+
+These two changes belong together and are deliberately deferred from
+this plan because they both force regeneration of the existing
+replay-test goldens against real hardware:
+
+1. **Add `PropIDBaudRate` to `showProps`** so `--show-config`
+   advertises baud-rate retrieval. On its own this would change the
+   request set for `--show-config` (`pollPrt` / `pollMonComms` would
+   start firing), invalidating the `-noop` traces.
+2. **Request `KUart{N}Baudrate` in `CfgVals.addGetKeys`** when the
+   target asks for `PropIDBaudRate`. Without this the val-based path
+   leaves the property unset on a plain query, since
+   `KUart{N}Baudrate` only lands in `CfgVals` after a successful
+   write. With it, the val-based result side reaches feature parity
+   with legacy.
+
+Doing (1) without (2) leaves val-based `--show-config` reporting
+"unset" for the UART speed, so they should land together.
+
 ## Out of scope
 
-- Adding new poll requests just to learn the current UART baud
-  rate. Specifically, no new `valGet` step is added for
-  `KUart{N}Baudrate`; val-based runs that neither write the speed
-  nor incidentally have the value already populated will leave
-  `PropIDBaudRate` unset on the result. Legacy runs do not need new
-  polls -- `pollPrt` already returns `CfgPrt.BaudRate`, so the
-  current UART speed surfaces for free.
+- Surfacing the current speed on a plain `--show-config` -- see
+  "Follow-on work" above.
+- Adding a `valGet` for `KUart{N}Baudrate` in `addGetKeys` -- see
+  "Follow-on work" above.
 
-  A desktop GUI handling the val-based unset case can fall back to
-  the host-side `SerialConn` speed -- the receiver-side speed must
-  equal it or the conversation would not have worked. When the
-  val-based query is wired up later, that fallback becomes
-  unnecessary.
+  Until the follow-ons land, a desktop GUI handling the val-based
+  unset case can fall back to the host-side `SerialConn` speed --
+  the receiver-side speed must equal it or the conversation would
+  not have worked.
 - A read-only `PortName` property and the read-only-property
   scaffolding it would need. Independent change; tracked separately.
 - UNC speed-change support. Independent.

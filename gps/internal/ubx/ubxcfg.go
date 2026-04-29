@@ -324,7 +324,7 @@ func (c *Configurator) noteMsg(mid ubxbin.MsgID, t time.Time) {
 }
 
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
-	return c.raw.Config(c.ver)
+	return c.raw.Config(c.ver, c.portID)
 }
 
 // ReceiverInfo returns static information about the GPS receiver.
@@ -596,7 +596,7 @@ func (c *Configurator) saveMinimal() error {
 		return nil
 	}
 	// Port has bits for wther NMEA/RTCM output is enabled at all on the port.
-	if c.target.Opts.BaudRate != 0 || c.target.Opts.NMEAMsg.IsSet() || c.target.Opts.RTCMMsg.IsSet() {
+	if c.target.Props.SetsAny(gpsprot.PropIDBaudRate) || c.target.Opts.NMEAMsg.IsSet() || c.target.Opts.RTCMMsg.IsSet() {
 		saveMask |= ubxbin.CfgCfgIOPort
 	}
 	if c.target.Opts.SetsMsgs() {
@@ -844,7 +844,7 @@ func (c *Configurator) pollMonComms() error {
 	if !c.ver.protVerAtLeast(50, 0) {
 		return nil
 	}
-	if c.target.Opts.BaudRate == 0 && !c.target.Opts.SetsMsgs() {
+	if !c.target.UsesAny(gpsprot.PropIDBaudRate) && !c.target.Opts.SetsMsgs() {
 		return nil
 	}
 	return c.addPollRequest(ubxbin.MonCommsID)
@@ -854,7 +854,7 @@ func (c *Configurator) pollPrt() error {
 	if c.portID != nil {
 		return nil
 	}
-	if c.target.Opts.BaudRate == 0 && !c.target.Opts.SetsMsgs() {
+	if !c.target.UsesAny(gpsprot.PropIDBaudRate) && !c.target.Opts.SetsMsgs() {
 		return nil
 	}
 	return c.addPollRequest(ubxbin.CfgPrtID)
@@ -972,11 +972,12 @@ func (c *Configurator) setMsgChanges(mc *msgChanges) {
 }
 
 func (c *Configurator) setBaudRate() error {
-	prt := c.raw.changePrtBaudRate(&c.target.Opts)
+	prt := c.raw.changePrtBaudRate(c.target)
 	if prt == nil {
 		return nil
 	}
-	return c.addMsgSetSpeedRequest(prt, int(c.target.Opts.BaudRate))
+	baudRate, _ := c.target.Props.GetBaudRate()
+	return c.addMsgSetSpeedRequest(prt, int(baudRate))
 }
 
 func (c *Configurator) setNav5() error {
@@ -1048,20 +1049,25 @@ func (c *Configurator) osnmaAssist() error {
 	return c.addRequest(msgRequest{mga})
 }
 
-func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigProps {
+func (raw *RawConfig) Config(ver *Version, portID *ubxbin.PortID) *gpsprot.ConfigProps {
 	if raw == nil {
 		return nil
 	}
 	cm := &gpsprot.ConfigProps{}
 	if !raw.CfgVals.isNil() {
-		raw.CfgVals.Cook(ver, cm)
+		// Active port for val-based: MON-COMMS first, CFG-PRT second.
+		port := portID
+		if port == nil && raw.prt != nil {
+			port = &raw.prt.PortID
+		}
+		raw.CfgVals.Cook(ver, cm, port)
 	} else {
-
 		raw.cookTmode(cm)
 		raw.cookTp5(cm)
 		raw.cookGNSS(cm)
 		// must call cookNav5 after cookTp5, because we want to prefer primary GNSS from TP5
 		raw.cookNav5(cm, ver)
+		raw.cookPrt(cm)
 	}
 	return cm
 }
