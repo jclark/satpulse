@@ -442,19 +442,16 @@ func TestSatellitesBuffer(t *testing.T) {
 		},
 		{
 			// Edge case: Only GSV messages, no idle, no format changes
-			// Start with partial burst, then repeated complete bursts
+			// Start with partial burst, then repeated complete bursts.
+			// Keys are recorded at msgNum==1, so the partial GAGSV at i=0
+			// records (GA,6) and triggers a flush at i=3 when GAGSV
+			// msgNum==1 repeats. Subsequent cycles flush at every GAGSV
+			// repeat (i=7, i=11).
 			order: []int{2, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3},
 			expect: []result{
-				// i=0: GAGSV 1/2 (partial burst)
-				// i=1: GPGSV - format change, possibleBoundary clears buffer
-				// i=2-4: First complete burst (GPS+GLO+GAL)
-				// i=5: GPGSV - GPS repeats!
-				{i: 5, nSV: 11}, // GPS repeats, flush first burst
-				// i=6-8: Second complete burst accumulates
-				// i=9: GPGSV - GPS repeats again!
-				{i: 9, nSV: 11}, // GPS repeats, flush second burst
-				// i=10-12: Third burst accumulates
-				// No more flushes (would need another repeat)
+				{i: 3, nSV: 11},  // GAGSV repeats, flush partial+GP+GL
+				{i: 7, nSV: 11},  // GAGSV repeats, flush previous burst
+				{i: 11, nSV: 11}, // GAGSV repeats, flush previous burst
 			},
 		},
 		// Legacy tests from previous GNSS-tracking buffering approach
@@ -542,6 +539,233 @@ func TestSatellitesBuffer(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// collectingHandler records every SatellitesMsg passed to Satellites,
+// in the order they arrive.
+type collectingHandler struct {
+	gpsprot.DefaultHandler
+	msgs []*gpsprot.SatellitesMsg
+}
+
+func (h *collectingHandler) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time) {
+	h.msgs = append(h.msgs, msg)
+}
+
+// TestSatellitesBufferBug1RepeatedSequence exercises Phase 1 Bug 1 from
+// plan/nmea-gsv-fix.md: when a continuous stream produces back-to-back
+// cycles with no idle between, the duplicate-key flush must fall between
+// cycles, not inside cycle 2's first sequence. Cycle 1 and cycle 2 use
+// distinct GPS SVIDs so a too-late flush is visible as cycle 2's data
+// leaking into cycle 1's report.
+func TestSatellitesBufferBug1RepeatedSequence(t *testing.T) {
+	sens := []string{
+		// Cycle 1
+		"$GPGSV,1,1,04,01,10,100,30,02,20,110,31,03,30,120,32,04,40,130,33,1",
+		"$GLGSV,1,1,02,65,50,140,34,66,60,150,35,1",
+		// Cycle 2 (same keys, but cycle 2 GPS uses different SVIDs)
+		"$GPGSV,1,1,04,05,15,160,36,06,25,170,37,07,35,180,38,08,45,190,39,1",
+		"$GLGSV,1,1,02,65,55,200,40,66,65,210,41,1",
+	}
+	h := &collectingHandler{}
+	sb := newSatellitesBuffer()
+	sb.idle(h, nil) // establish boundary
+	for _, s := range sens {
+		sen := parseApprovedSentence(addTrailer(s))
+		if _, err := sb.process(sen, time.Time{}, h, nil); err != nil {
+			t.Fatalf("process %q: %v", s, err)
+		}
+	}
+	sb.idle(h, nil) // flush cycle 2
+	if len(h.msgs) != 2 {
+		t.Fatalf("expected 2 SatellitesMsgs, got %d", len(h.msgs))
+	}
+	cycle1SVs := []gpsprot.SVID{
+		{GNSS: gpsprot.GPS, Num: 1},
+		{GNSS: gpsprot.GPS, Num: 2},
+		{GNSS: gpsprot.GPS, Num: 3},
+		{GNSS: gpsprot.GPS, Num: 4},
+		{GNSS: gpsprot.GLO, Num: 1},
+		{GNSS: gpsprot.GLO, Num: 2},
+	}
+	cycle2SVs := []gpsprot.SVID{
+		{GNSS: gpsprot.GPS, Num: 5},
+		{GNSS: gpsprot.GPS, Num: 6},
+		{GNSS: gpsprot.GPS, Num: 7},
+		{GNSS: gpsprot.GPS, Num: 8},
+		{GNSS: gpsprot.GLO, Num: 1},
+		{GNSS: gpsprot.GLO, Num: 2},
+	}
+	checkSVIDs(t, "cycle 1", h.msgs[0], cycle1SVs)
+	checkSVIDs(t, "cycle 2", h.msgs[1], cycle2SVs)
+}
+
+// TestSatellitesBufferLostLeadingMsg verifies that when a noisy stream
+// drops the leading sentence of cycle 2's first GSV sequence, the
+// duplicate-flush still fires before the partial sequence accumulates.
+// Without seqStart-driven duplicate detection, the cycle-2 GP entries
+// would pile up in sb.gsvs alongside cycle 1's GP entries, both keyed
+// (GP, 1).
+func TestSatellitesBufferLostLeadingMsg(t *testing.T) {
+	tests := []struct {
+		name string
+		sens []string
+		want [][]gpsprot.SVID
+	}{
+		{
+			// Cycle 2's GPGSV msgNum=1 is lost; stream resumes at msgNum=2.
+			// lastGSV at that point is GLGSV (different gnss) so checkMsgNum
+			// must classify the resumed sentence as a sequence start.
+			name: "lost msg 1 across different gnss",
+			sens: []string{
+				"$GPGSV,3,1,06,01,10,100,30,02,20,110,31,1",
+				"$GPGSV,3,2,06,03,30,120,32,04,40,130,33,1",
+				"$GPGSV,3,3,06,05,15,140,34,06,25,150,35,1",
+				"$GLGSV,1,1,02,65,50,160,36,66,60,170,37,1",
+				"$GPGSV,3,2,06,13,30,220,42,14,40,230,43,1",
+				"$GPGSV,3,3,06,15,15,240,44,16,25,250,45,1",
+				"$GLGSV,1,1,02,65,55,260,46,66,65,270,47,1",
+			},
+			want: [][]gpsprot.SVID{
+				{
+					{GNSS: gpsprot.GPS, Num: 1}, {GNSS: gpsprot.GPS, Num: 2},
+					{GNSS: gpsprot.GPS, Num: 3}, {GNSS: gpsprot.GPS, Num: 4},
+					{GNSS: gpsprot.GPS, Num: 5}, {GNSS: gpsprot.GPS, Num: 6},
+					{GNSS: gpsprot.GLO, Num: 1}, {GNSS: gpsprot.GLO, Num: 2},
+				},
+				{
+					{GNSS: gpsprot.GPS, Num: 13}, {GNSS: gpsprot.GPS, Num: 14},
+					{GNSS: gpsprot.GPS, Num: 15}, {GNSS: gpsprot.GPS, Num: 16},
+					{GNSS: gpsprot.GLO, Num: 1}, {GNSS: gpsprot.GLO, Num: 2},
+				},
+			},
+		},
+		{
+			// Coincidental msgNum line-up: cycle 1 is a single-sentence
+			// GPGSV (1/1, complete), then cycle 2 loses GPGSV msgNum=1 of
+			// its 3-sentence sequence and resumes at msgNum=2. lastGSV.gnss
+			// matches and gsv.msgNum == lastGSV.msgNum+1, but lastGSV is
+			// already complete (lastGSV.msgNum == lastGSV.numMsg) and
+			// numMsg differs (1 vs 3) -- not a continuation.
+			name: "lost msg 1 with coincidental msgNum line-up",
+			sens: []string{
+				"$GPGSV,1,1,02,01,10,100,30,02,20,110,31,1",
+				"$GPGSV,3,2,06,13,30,220,42,14,40,230,43,1",
+				"$GPGSV,3,3,06,15,15,240,44,16,25,250,45,1",
+			},
+			want: [][]gpsprot.SVID{
+				{
+					{GNSS: gpsprot.GPS, Num: 1}, {GNSS: gpsprot.GPS, Num: 2},
+				},
+				{
+					{GNSS: gpsprot.GPS, Num: 13}, {GNSS: gpsprot.GPS, Num: 14},
+					{GNSS: gpsprot.GPS, Num: 15}, {GNSS: gpsprot.GPS, Num: 16},
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			h := &collectingHandler{}
+			sb := newSatellitesBuffer()
+			sb.idle(h, nil)
+			for _, s := range test.sens {
+				sen := parseApprovedSentence(addTrailer(s))
+				sb.process(sen, time.Time{}, h, nil)
+			}
+			sb.idle(h, nil)
+			if len(h.msgs) != len(test.want) {
+				t.Fatalf("expected %d SatellitesMsgs, got %d", len(test.want), len(h.msgs))
+			}
+			for i, want := range test.want {
+				checkSVIDs(t, fmt.Sprintf("cycle %d", i+1), h.msgs[i], want)
+			}
+		})
+	}
+}
+
+// TestSatellitesBufferF9TDuplicateSigID exercises Phase 2 from
+// plan/nmea-gsv-fix.md: a u-blox ZED-F9T firmware bug emits two
+// back-to-back GAGSV sequences with the same sigID=7 within a single
+// burst. The buffer should detect the immediate-predecessor same-key
+// collision, drop the older sequence's SVs, keep the newer one, and
+// emit a single SatellitesMsg at the burst boundary that includes the
+// GBGSV data following the duplicated GAGSV sequences.
+func TestSatellitesBufferF9TDuplicateSigID(t *testing.T) {
+	sens := []string{
+		// First GAGSV-7 sequence (the older one — should be dropped).
+		// SV 04 has CN0=19, SV 06 has CN0=40.
+		"$GAGSV,2,1,08,04,09,181,19,06,11,205,40,09,09,229,20,10,61,234,47,7",
+		"$GAGSV,2,2,08,11,32,223,42,12,81,299,39,16,28,332,26,23,30,110,28,7",
+		// Second GAGSV-7 sequence (the newer one — should be kept).
+		// Same SVIDs but distinct CN0s: SV 04=21, SV 06=42.
+		"$GAGSV,2,1,08,04,09,181,21,06,11,205,42,09,09,229,27,10,61,234,53,7",
+		"$GAGSV,2,2,08,11,32,223,42,12,81,299,48,16,28,332,30,23,30,110,32,7",
+		// GBGSV (single-sentence) following the duplicated GAGSV.
+		"$GBGSV,1,1,02,01,42,105,30,02,60,233,46,1",
+	}
+	h := &collectingHandler{}
+	sb := newSatellitesBuffer()
+	sb.idle(h, nil) // establish boundary
+	for _, s := range sens {
+		sen := parseApprovedSentence(addTrailer(s))
+		if _, err := sb.process(sen, time.Time{}, h, nil); err != nil {
+			t.Fatalf("process %q: %v", s, err)
+		}
+	}
+	sb.idle(h, nil) // flush burst
+	if len(h.msgs) != 1 {
+		t.Fatalf("expected 1 SatellitesMsg, got %d", len(h.msgs))
+	}
+	msg := h.msgs[0]
+	wantSVs := []gpsprot.SVID{
+		{GNSS: gpsprot.GAL, Num: 4},
+		{GNSS: gpsprot.GAL, Num: 6},
+		{GNSS: gpsprot.GAL, Num: 9},
+		{GNSS: gpsprot.GAL, Num: 10},
+		{GNSS: gpsprot.GAL, Num: 11},
+		{GNSS: gpsprot.GAL, Num: 12},
+		{GNSS: gpsprot.GAL, Num: 16},
+		{GNSS: gpsprot.GAL, Num: 23},
+		{GNSS: gpsprot.BDS, Num: 1},
+		{GNSS: gpsprot.BDS, Num: 2},
+	}
+	checkSVIDs(t, "F9T burst", msg, wantSVs)
+	// Verify the newer GAGSV-7 sequence's CN0 is what was retained,
+	// not the older one's. SV GAL 4: older=19, newer=21.
+	for _, sv := range msg.SVs {
+		if sv.ID != (gpsprot.SVID{GNSS: gpsprot.GAL, Num: 4}) {
+			continue
+		}
+		if len(sv.Signals) != 1 {
+			t.Fatalf("GAL 4: expected 1 signal, got %d", len(sv.Signals))
+		}
+		if sv.Signals[0].CN0 != 21 {
+			t.Errorf("GAL 4: expected CN0=21 (newer sequence), got %d", sv.Signals[0].CN0)
+		}
+	}
+}
+
+func checkSVIDs(t *testing.T, label string, msg *gpsprot.SatellitesMsg, want []gpsprot.SVID) {
+	t.Helper()
+	got := make(map[gpsprot.SVID]bool, len(msg.SVs))
+	for _, sv := range msg.SVs {
+		got[sv.ID] = true
+	}
+	wantSet := make(map[gpsprot.SVID]bool, len(want))
+	for _, id := range want {
+		wantSet[id] = true
+	}
+	for id := range wantSet {
+		if !got[id] {
+			t.Errorf("%s: missing %s", label, id)
+		}
+	}
+	for id := range got {
+		if !wantSet[id] {
+			t.Errorf("%s: unexpected %s", label, id)
+		}
 	}
 }
 
