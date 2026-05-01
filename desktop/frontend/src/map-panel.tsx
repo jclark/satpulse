@@ -25,14 +25,16 @@ const MARGIN = 40; // re-center when dot is this close to viewport edge
 export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const anchorRef = useRef<{x: number; y: number} | null>(null);
-    const [size, setSize] = useState(0);
+    const [dims, setDims] = useState({w: 0, h: 0});
 
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
         const update = () => {
-            const w = Math.round(el.getBoundingClientRect().width);
-            if (w > 0) setSize(w);
+            const r = el.getBoundingClientRect();
+            const w = Math.round(r.width);
+            const h = Math.round(r.height);
+            if (w > 0 && h > 0) setDims(prev => (prev.w === w && prev.h === h ? prev : {w, h}));
         };
         update();
         const ro = new ResizeObserver(update);
@@ -40,10 +42,11 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
         return () => ro.disconnect();
     }, []);
 
-    const half = size / 2;
-
     const mapState = useMemo(() => {
-        if (!pos || size === 0) return null;
+        const {w, h} = dims;
+        if (!pos || w === 0 || h === 0) return null;
+        const halfW = w / 2;
+        const halfH = h / 2;
         const dot = latLonToPixel(pos.lat, pos.lon, ZOOM);
         let anchor = anchorRef.current;
         if (!anchor) {
@@ -51,29 +54,29 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
             anchorRef.current = anchor;
         } else {
             // Re-center when dot approaches the viewport edge.
-            const dvx = half + dot.x - anchor.x;
-            const dvy = half + dot.y - anchor.y;
-            if (dvx < MARGIN || dvx > size - MARGIN || dvy < MARGIN || dvy > size - MARGIN) {
+            const dvx = halfW + dot.x - anchor.x;
+            const dvy = halfH + dot.y - anchor.y;
+            if (dvx < MARGIN || dvx > w - MARGIN || dvy < MARGIN || dvy > h - MARGIN) {
                 anchor = {x: dot.x, y: dot.y};
                 anchorRef.current = anchor;
             }
         }
         // Dot position in viewport pixels.
-        const dotLeft = Math.round(half + dot.x - anchor.x);
-        const dotTop = Math.round(half + dot.y - anchor.y);
+        const dotLeft = Math.round(halfW + dot.x - anchor.x);
+        const dotTop = Math.round(halfH + dot.y - anchor.y);
         // Tile grid: cover the viewport with however many 256px tiles are needed.
-        const vpLeft = anchor.x - half;
-        const vpTop = anchor.y - half;
+        const vpLeft = anchor.x - halfW;
+        const vpTop = anchor.y - halfH;
         const baseTileX = Math.floor(vpLeft / TILE);
         const baseTileY = Math.floor(vpTop / TILE);
-        const lastTileX = Math.floor((vpLeft + size - 1) / TILE);
-        const lastTileY = Math.floor((vpTop + size - 1) / TILE);
+        const lastTileX = Math.floor((vpLeft + w - 1) / TILE);
+        const lastTileY = Math.floor((vpTop + h - 1) / TILE);
         const cols = lastTileX - baseTileX + 1;
         const rows = lastTileY - baseTileY + 1;
         const gridLeft = Math.round(baseTileX * TILE - vpLeft);
         const gridTop = Math.round(baseTileY * TILE - vpTop);
         return {baseTileX, baseTileY, cols, rows, gridLeft, gridTop, dotLeft, dotTop};
-    }, [pos?.lat, pos?.lon, size]);
+    }, [pos?.lat, pos?.lon, dims.w, dims.h]);
 
     const openGoogleMaps = () => {
         if (pos) {
@@ -88,7 +91,6 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
             <div
                 ref={containerRef}
                 class="relative flex h-full w-full select-none items-center justify-center bg-surface-1 text-sm text-text-muted"
-                style="aspect-ratio: 1 / 1;"
             >
                 Waiting for position
             </div>
@@ -99,7 +101,6 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
         <div
             ref={containerRef}
             class="relative h-full w-full overflow-hidden cursor-pointer"
-            style="aspect-ratio: 1 / 1;"
             onClick={openGoogleMaps}
             title="Click to open in Google Maps"
         >
