@@ -147,8 +147,26 @@ export function App() {
     const [trackGen, setTrackGen] = useState(0);
     const [surveyOpen, setSurveyOpen] = useState(false);
     const surveyAutoExpanded = useRef(false);
-    const [logHeight, setLogHeight] = useState(150);
+    const [logHeight, setLogHeight] = useState(140);
     const dragging = useRef(false);
+    const monitorRowRef = useRef<HTMLDivElement>(null);
+
+    // Drive --row-scale on the monitor row 2 from its current width, anchored
+    // at 1009 px (the row width at a 1024 px window). Every dimension inside
+    // the row uses calc(... * var(--row-scale)) so the layout grows or shrinks
+    // proportionally.
+    useEffect(() => {
+        const el = monitorRowRef.current;
+        if (!el) return;
+        const update = () => {
+            const w = el.getBoundingClientRect().width;
+            if (w > 0) el.style.setProperty('--row-scale', String(w / 1009));
+        };
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
 
     // Message file state
     const [msgFilePath, setMsgFilePath] = useState('');
@@ -558,23 +576,35 @@ export function App() {
             <div class="flex-1 overflow-hidden" style="min-height: 80px;">
                 {/* Monitor tab */}
                 <div class={`h-full overflow-y-auto ${activeTab === 'monitor' ? '' : 'hidden'}`}>
-                    <div class="flex gap-4 p-4 items-stretch" style="height: 512px;">
+                    <div
+                        ref={monitorRowRef}
+                        class="flex items-stretch"
+                        style={{
+                            height: 'calc(512px * var(--row-scale, 1))',
+                            padding: 'calc(16px * var(--row-scale, 1))',
+                            gap: 'calc(16px * var(--row-scale, 1))',
+                            fontSize: 'calc(14px * var(--row-scale, 1))',
+                        }}
+                    >
                         {/* Column A: clock + summary on top, map below */}
-                        <div class="flex-1 min-w-0 flex flex-col gap-4">
-                            <div class="flex gap-4 shrink-0 items-stretch" style="height: 90px;">
-                                <ClockPanel msg={timeMsg} />
+                        <div class="flex-1 min-w-0 flex flex-col" style="gap: calc(16px * var(--row-scale, 1));">
+                            <div class="flex shrink-0 items-start" style="gap: calc(16px * var(--row-scale, 1));">
+                                <div class="shrink-0" style="height: calc(90px * var(--row-scale, 1));">
+                                    <ClockPanel msg={timeMsg} />
+                                </div>
                                 <SummaryPanel msg={navEpochMsg} />
                             </div>
                             <div class="flex-1 min-h-0">
                                 <MapPanel pos={mapPos} course={mapCourse} noFixSecs={noFixSecs} />
                             </div>
                         </div>
-                        {/* Column B: sky view (square, sized from row height) */}
-                        <div class="shrink-0 aspect-square h-full">
+                        {/* Column B: sky view (square) with legend overlaid in the bottom-right corner */}
+                        <div class="shrink-0 aspect-square h-full relative">
                             <SkyViewPanel msg={satsMsg} />
+                            <div class="absolute bottom-1 right-1">
+                                <SkyViewLegend msg={satsMsg} />
+                            </div>
                         </div>
-                        {/* Column C: legend */}
-                        <SkyViewLegend msg={satsMsg} />
                     </div>
                     <CollapsibleSection title="Status" variant="panel" defaultOpen>
                         <StatusPanel msg={navEpochMsg} />

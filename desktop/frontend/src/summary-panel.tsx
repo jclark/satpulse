@@ -8,7 +8,7 @@ interface Props {
 export function SummaryPanel({msg}: Props) {
     if (!msg) {
         return (
-            <div class="flex-1 min-w-0 bg-surface-1 flex flex-col gap-1 text-sm tabular-nums text-text-muted">
+            <div class="flex-1 min-w-0 bg-surface-1 flex flex-col gap-1 tabular-nums text-text-muted">
                 Waiting for fix
             </div>
         );
@@ -21,11 +21,12 @@ export function SummaryPanel({msg}: Props) {
     const svCount = msg.numSVUsed != null && msg.numSVTracked != null
         ? `${msg.numSVUsed}/${msg.numSVTracked}`
         : '';
-    const gnssLine = [
+    const gnssParts = [
         svCount,
-        (msg.gnssUsed || []).join(', '),
-        (msg.bandsUsed || []).join(', '),
-    ].filter(s => s.length > 0).join('  ');
+        (msg.gnssUsed || []).join(' '),
+        (msg.bandsUsed || []).join(' '),
+    ].filter(s => s.length > 0);
+    const gnssLine = gnssParts.length > 0 ? `Sats: ${gnssParts.join('; ')}` : '';
 
     const dop = msg.dop || {};
     const dopParts: string[] = [];
@@ -46,7 +47,10 @@ export function SummaryPanel({msg}: Props) {
     const accLine = accParts.length > 0 ? `Acc: ${accParts.join(' ')}` : '';
 
     return (
-        <div class="flex-1 min-w-0 bg-surface-1 flex flex-col gap-1 text-sm tabular-nums text-text-primary">
+        <div
+            class="flex-1 min-w-0 bg-surface-1 flex flex-col gap-1 tabular-nums text-text-primary"
+            style="padding-left: 1em; text-indent: -1em;"
+        >
             {fixLine && <div>{fixLine}</div>}
             {gnssLine && <div>{gnssLine}</div>}
             {dopLine && <div>{dopLine}</div>}

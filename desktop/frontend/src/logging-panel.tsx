@@ -128,7 +128,7 @@ export function LoggingPanel({logEntries, setLogEntries}: Props) {
             <div
                 ref={logRef}
                 onScroll={handleScroll}
-                class="flex-1 overflow-x-auto overflow-y-auto border-t border-border-subtle bg-surface-1 px-2.5 py-1.5 font-mono text-xs leading-relaxed"
+                class="flex-1 overflow-x-auto overflow-y-auto border-t border-border-subtle bg-surface-1 px-2.5 py-0.5 font-mono text-xs leading-relaxed"
             >
                 {filtered.map((entry, i) => (
                     <div key={i} class="whitespace-nowrap py-px">

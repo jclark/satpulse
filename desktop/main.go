@@ -17,7 +17,7 @@ func main() {
 	err := wails.Run(&options.App{
 		Title:     "SatPulse",
 		Width:     1024,
-		Height:    700,
+		Height:    768,
 		MinWidth:  800,
 		MinHeight: 600,
 		AssetServer: &assetserver.Options{
@@ -25,7 +25,7 @@ func main() {
 		},
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
-		Bind: []interface{}{
+		Bind: []any{
 			app,
 		},
 		Mac: &mac.Options{},
