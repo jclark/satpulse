@@ -9,8 +9,7 @@ import {ConfigPanel} from './config-panel';
 import {PacketPanel} from './packet-panel';
 import {LoggingPanel} from './logging-panel';
 import {SurveyPanel} from './survey-panel';
-import {StatusPanel} from './status-panel';
-import type {NavEpochMsg} from './status-panel';
+import type {NavEpochMsg} from '@satpulse/gps/gpsprot';
 import {MsgFilePanel} from './msgfile-panel';
 import {CorrectionsPanel} from './corrections-panel';
 import {PVTPanel} from './pvt-panel';
@@ -606,9 +605,6 @@ export function App() {
                             </div>
                         </div>
                     </div>
-                    <CollapsibleSection title="Status" variant="panel" defaultOpen>
-                        <StatusPanel msg={navEpochMsg} />
-                    </CollapsibleSection>
                     <CollapsibleSection title="Position Scatter" variant="panel" defaultOpen={false}>
                         <ScatterPanel key={trackGen} ecef={scatterECEF} baseARPs={baseARPs} />
                     </CollapsibleSection>
