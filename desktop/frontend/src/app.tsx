@@ -592,7 +592,7 @@ export function App() {
                                 <div class="shrink-0" style="height: calc(90px * var(--row-scale, 1));">
                                     <ClockPanel msg={timeMsg} />
                                 </div>
-                                <SummaryPanel msg={navEpochMsg} />
+                                <SummaryPanel msg={navEpochMsg} groundSpeed={mapCourse?.groundSpeed ?? null} />
                             </div>
                             <div class="flex-1 min-h-0">
                                 <MapPanel pos={mapPos} course={mapCourse} noFixSecs={noFixSecs} />

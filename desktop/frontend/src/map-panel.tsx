@@ -21,6 +21,7 @@ function latLonToPixel(lat: number, lon: number, zoom: number): {x: number; y: n
 const ZOOM = 17;
 const TILE = 256;
 const MARGIN = 40; // re-center when dot is this close to viewport edge
+const MOVING_SPEED_MIN = 0.1; // m/s; below this, course is unreliable
 
 export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -141,7 +142,7 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
                 class="absolute pointer-events-none"
                 style={{left: mapState.dotLeft + 'px', top: mapState.dotTop + 'px', transform: 'translate(-50%, -50%)'}}
             >
-                {course && course.groundSpeed >= 0.1 ? (
+                {course && course.groundSpeed >= MOVING_SPEED_MIN ? (
                     <svg width="24" height="24" viewBox="0 0 24 24" style={{transform: `rotate(${course.course}deg)`}}>
                         <polygon points="12,2 4,20 12,16 20,20" fill="var(--accent)" fill-opacity="0.8" stroke="var(--surface-2)" stroke-width="1.5" stroke-linejoin="round" />
                     </svg>
