@@ -13,9 +13,16 @@ interface ClockTime {
     ss: string;
 }
 
-const W = 320;
-const H = 256;
 const FONT = "'DSEG7 Classic', monospace";
+// Sizes are expressed as a percentage of container height (cqh) so the
+// clock scales fluidly. Proportions follow the reference design (HH:MM
+// largest, then seconds/tz, then date), sized to fill ~95% of container.
+const HM_SIZE = '44.5cqh';
+const DATE_SIZE = '16.1cqh';
+const SS_SIZE = '22.3cqh';
+const GAP = '6.2cqh';
+const HM_LETTER = '0';
+const DATE_LETTER = '1.24cqh';
 
 function formatUTCOffset(): string {
     const mins = new Date().getTimezoneOffset();
@@ -47,15 +54,14 @@ export function ClockPanel({msg}: Props) {
     if (!time) {
         return (
             <div
-                class="relative flex shrink-0 select-none items-center justify-center bg-surface-1 text-sm text-text-muted"
-                style={{width: W + 'px', height: H + 'px'}}
+                class="relative flex h-full w-full select-none items-center justify-start bg-surface-1 text-sm text-text-muted"
+                style="container-type: size;"
             >
                 Waiting for time
             </div>
         );
     }
 
-    // Ghost text: all-8s shows every segment dimly behind the real digits.
     const dateGhost = '8888-88-88';
     const hmGhost = '88:88';
     const ssGhost = '88';
@@ -63,21 +69,21 @@ export function ClockPanel({msg}: Props) {
 
     return (
         <div
-            class="relative flex shrink-0 select-none items-center justify-center bg-surface-1"
-            style={{width: W + 'px', height: H + 'px'}}
+            class="relative flex h-full w-full select-none items-center justify-start bg-surface-1"
+            style="container-type: size;"
         >
-            <div class="flex flex-col items-end" style={{gap: '10px'}}>
+            <div class="flex flex-col items-start" style={{gap: GAP}}>
                 {/* Date YYYY-MM-DD — scaled to match HH:MM width */}
                 <div class="relative self-stretch text-center" style={{lineHeight: 1}}>
                     <span
                         class="text-clock-ghost"
-                        style={{fontFamily: FONT, fontSize: '26px', fontWeight: 700, letterSpacing: '2px'}}
+                        style={{fontFamily: FONT, fontSize: DATE_SIZE, fontWeight: 700, letterSpacing: DATE_LETTER}}
                     >
                         {dateGhost}
                     </span>
                     <span
                         class="absolute inset-0 text-clock-digit"
-                        style={{fontFamily: FONT, fontSize: '26px', fontWeight: 700, letterSpacing: '2px'}}
+                        style={{fontFamily: FONT, fontSize: DATE_SIZE, fontWeight: 700, letterSpacing: DATE_LETTER}}
                     >
                         {time.date}
                     </span>
@@ -86,13 +92,13 @@ export function ClockPanel({msg}: Props) {
                 <div class="relative" style={{lineHeight: 1}}>
                     <span
                         class="text-clock-ghost"
-                        style={{fontFamily: FONT, fontSize: '72px', fontWeight: 700}}
+                        style={{fontFamily: FONT, fontSize: HM_SIZE, fontWeight: 700, letterSpacing: HM_LETTER}}
                     >
                         {hmGhost}
                     </span>
                     <span
                         class="absolute inset-0 text-clock-digit"
-                        style={{fontFamily: FONT, fontSize: '72px', fontWeight: 700}}
+                        style={{fontFamily: FONT, fontSize: HM_SIZE, fontWeight: 700, letterSpacing: HM_LETTER}}
                     >
                         {time.hm}
                     </span>
@@ -102,13 +108,13 @@ export function ClockPanel({msg}: Props) {
                     <div class="relative">
                         <span
                             class="text-clock-ghost"
-                            style={{fontFamily: FONT, fontSize: '36px', fontWeight: 700}}
+                            style={{fontFamily: FONT, fontSize: SS_SIZE, fontWeight: 700}}
                         >
                             {tzGhost}
                         </span>
                         <span
                             class="absolute inset-0 text-clock-digit"
-                            style={{fontFamily: FONT, fontSize: '36px', fontWeight: 700}}
+                            style={{fontFamily: FONT, fontSize: SS_SIZE, fontWeight: 700}}
                         >
                             {utcOffset}
                         </span>
@@ -116,13 +122,13 @@ export function ClockPanel({msg}: Props) {
                     <div class="relative">
                         <span
                             class="text-clock-ghost"
-                            style={{fontFamily: FONT, fontSize: '36px', fontWeight: 700}}
+                            style={{fontFamily: FONT, fontSize: SS_SIZE, fontWeight: 700}}
                         >
                             {ssGhost}
                         </span>
                         <span
                             class="absolute inset-0 text-clock-digit"
-                            style={{fontFamily: FONT, fontSize: '36px', fontWeight: 700}}
+                            style={{fontFamily: FONT, fontSize: SS_SIZE, fontWeight: 700}}
                         >
                             {time.ss}
                         </span>
