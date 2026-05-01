@@ -1,9 +1,9 @@
 import {h} from 'preact';
-import {useMemo} from 'preact/hooks';
+import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import type {SatellitesMsg, SVInfo, SignalInfo} from './app';
 
 interface Props {
-    msg: SatellitesMsg;
+    msg: SatellitesMsg | null;
 }
 
 const SIZE = 200;
@@ -12,6 +12,8 @@ const STROKE_PAD = 1;
 const MIN_ELEVATION = -3;
 const COMPASS_PADDING = 2;
 const CAP_X_HEIGHT_DIFF = 0.5;
+const DOT_RADIUS = 2.0;
+const DOT_INNER_RADIUS = 0.9;
 
 function toXY(az: number, el: number): [number, number] {
     const r = ((90 - Math.max(el, MIN_ELEVATION)) / 90) * RADIUS;
@@ -41,15 +43,49 @@ function opacityClassFor(cn0: number): string {
     return 'opacity-100';
 }
 
-function colorClassFor(svid: string): string {
+type GnssKey = 'gps' | 'galileo' | 'beidou' | 'glonass' | 'qzss' | 'navic' | 'unknown';
+
+const GNSS_LABEL: Record<GnssKey, string> = {
+    gps: 'GPS',
+    galileo: 'GAL',
+    beidou: 'BDS',
+    glonass: 'GLO',
+    qzss: 'QZSS',
+    navic: 'NAVIC',
+    unknown: '?',
+};
+
+const GNSS_ORDER: GnssKey[] = ['gps', 'galileo', 'beidou', 'glonass', 'qzss', 'navic', 'unknown'];
+
+const GNSS_BG: Record<GnssKey, string> = {
+    gps: 'bg-gnss-gps',
+    galileo: 'bg-gnss-galileo',
+    beidou: 'bg-gnss-beidou',
+    glonass: 'bg-gnss-glonass',
+    qzss: 'bg-gnss-qzss',
+    navic: 'bg-gnss-navic',
+    unknown: 'bg-gnss-unknown',
+};
+
+const GNSS_FILL: Record<GnssKey, string> = {
+    gps: 'fill-gnss-gps',
+    galileo: 'fill-gnss-galileo',
+    beidou: 'fill-gnss-beidou',
+    glonass: 'fill-gnss-glonass',
+    qzss: 'fill-gnss-qzss',
+    navic: 'fill-gnss-navic',
+    unknown: 'fill-gnss-unknown',
+};
+
+function gnssKey(svid: string): GnssKey {
     switch (svid[0]) {
-        case 'G': case 'S': return 'fill-gnss-gps';
-        case 'E': return 'fill-gnss-galileo';
-        case 'C': return 'fill-gnss-beidou';
-        case 'R': return 'fill-gnss-glonass';
-        case 'J': return 'fill-gnss-qzss';
-        case 'I': return 'fill-gnss-navic';
-        default: return 'fill-gnss-unknown';
+        case 'G': case 'S': return 'gps';
+        case 'E': return 'galileo';
+        case 'C': return 'beidou';
+        case 'R': return 'glonass';
+        case 'J': return 'qzss';
+        case 'I': return 'navic';
+        default: return 'unknown';
     }
 }
 
@@ -62,15 +98,30 @@ function tooltipText(sv: SVInfo): string {
 }
 
 export function SkyViewPanel({msg}: Props) {
-    const satellites = useMemo(() => simplifySignals(msg.info || []), [msg]);
+    const satellites = useMemo(() => simplifySignals(msg?.info || []), [msg]);
     const usedValid = satellites.some(s => s.used === true);
+    const svgRef = useRef<SVGSVGElement>(null);
+
+    useEffect(() => {
+        const svg = svgRef.current;
+        if (!svg) return;
+        const update = () => {
+            const w = svg.getBoundingClientRect().width;
+            document.documentElement.style.setProperty('--sky-unit-px', `${w / SIZE}px`);
+        };
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(svg);
+        return () => ro.disconnect();
+    }, []);
 
     return (
-        <div class="flex-2 min-w-0 flex items-center justify-center bg-surface-1">
+        <div class="h-full w-full flex items-center justify-center bg-surface-1">
             <svg
+                ref={svgRef}
                 viewBox={`${-STROKE_PAD} ${-STROKE_PAD} ${SIZE + 2 * STROKE_PAD} ${SIZE + 2 * STROKE_PAD}`}
                 preserveAspectRatio="xMidYMid meet"
-                class="w-full h-full max-h-full"
+                class="h-full max-h-full"
                 style="aspect-ratio: 1 / 1;"
                 xmlns="http://www.w3.org/2000/svg"
             >
@@ -112,28 +163,52 @@ export function SkyViewPanel({msg}: Props) {
                 <text x={SIZE - COMPASS_PADDING} y={RADIUS + CAP_X_HEIGHT_DIFF} text-anchor="end" dominant-baseline="middle" class="fill-text-secondary text-[6px]">E</text>
                 <text x={COMPASS_PADDING} y={RADIUS + CAP_X_HEIGHT_DIFF} text-anchor="start" dominant-baseline="middle" class="fill-text-secondary text-[6px]">W</text>
 
-                {/* Satellite labels */}
+                {/* Satellite dots */}
                 {satellites.map(sv => {
                     if (!sv.lookAngles) return null;
                     const [x, y] = toXY(sv.lookAngles.azimuth, sv.lookAngles.elevation);
+                    const key = gnssKey(sv.id);
                     const unused = usedValid && !sv.used;
+                    const opacity = opacityClassFor(sv.signals[0].cn0);
                     return (
-                        <text
-                            key={sv.id}
-                            x={x}
-                            y={y}
-                            text-anchor="middle"
-                            dominant-baseline="middle"
-                            class={`text-[3px] font-bold ${colorClassFor(sv.id)} ${opacityClassFor(sv.signals[0].cn0)}`}
-                        >
-                            <title>{tooltipText(sv)}</title>
-                            {unused ? <tspan class="opacity-0">-</tspan> : ''}
-                            {sv.id}
-                            {unused ? '-' : ''}
-                        </text>
+                        <g key={sv.id} class={opacity}>
+                            <circle cx={x} cy={y} r={DOT_RADIUS} class={GNSS_FILL[key]}>
+                                <title>{tooltipText(sv)}</title>
+                            </circle>
+                            {unused && (
+                                <circle cx={x} cy={y} r={DOT_INNER_RADIUS} class="fill-surface-1 pointer-events-none" />
+                            )}
+                        </g>
                     );
                 })}
             </svg>
         </div>
+    );
+}
+
+interface LegendProps {
+    msg: SatellitesMsg | null;
+}
+
+export function SkyViewLegend({msg}: LegendProps) {
+    const presentKeys = useMemo(() => {
+        const seen = new Set<GnssKey>();
+        for (const sv of msg?.info || []) seen.add(gnssKey(sv.id));
+        return GNSS_ORDER.filter(k => seen.has(k));
+    }, [msg]);
+    if (presentKeys.length === 0) return null;
+    const box = DOT_RADIUS * 2;
+    const px = `calc(var(--sky-unit-px, 2px) * ${box})`;
+    return (
+        <ul class="flex flex-col gap-1 text-xs text-text-secondary">
+            {presentKeys.map(k => (
+                <li key={k} class="flex items-center gap-1.5">
+                    <svg style={{width: px, height: px}} viewBox={`${-box / 2} ${-box / 2} ${box} ${box}`} class="shrink-0">
+                        <circle cx="0" cy="0" r={DOT_RADIUS} class={GNSS_FILL[k]} />
+                    </svg>
+                    {GNSS_LABEL[k]}
+                </li>
+            ))}
+        </ul>
     );
 }
