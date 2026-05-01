@@ -19,6 +19,7 @@ import {ClockPanel} from './clock-panel';
 import {SkyViewPanel, SkyViewLegend} from './sky-view-panel';
 import {SummaryPanel} from './summary-panel';
 import {ScatterPanel} from './scatter-panel';
+import {SignalsPanel} from './signals-panel';
 export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo};
 
 export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
@@ -610,6 +611,9 @@ export function App() {
                     </CollapsibleSection>
                     <CollapsibleSection title="PVT Messages" variant="panel" open={pvtOpen} onToggle={setPvtOpen}>
                         <PVTPanel posRows={posRows} velRows={velRows} timeRows={timeRows} leapSecond={leapSecond} />
+                    </CollapsibleSection>
+                    <CollapsibleSection title="Satellite Signals" variant="panel" defaultOpen={false}>
+                        <SignalsPanel msg={satsMsg} />
                     </CollapsibleSection>
                     <CollapsibleSection title="Survey" variant="panel" open={surveyOpen} onToggle={setSurveyOpen}>
                         <SurveyPanel msg={surveyMsg} />
