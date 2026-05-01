@@ -17,7 +17,8 @@ import {PVTPanel} from './pvt-panel';
 import type {PosRow, PosGeoRow, PosECEFRow, VelRow, VelGeoRow, VelECEFRow, TimeRow} from './pvt-panel';
 import {MapPanel} from './map-panel';
 import {ClockPanel} from './clock-panel';
-import {SkyViewPanel} from './sky-view-panel';
+import {SkyViewPanel, SkyViewLegend} from './sky-view-panel';
+import {SummaryPanel} from './summary-panel';
 import {ScatterPanel} from './scatter-panel';
 export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo};
 
@@ -557,12 +558,23 @@ export function App() {
             <div class="flex-1 overflow-hidden" style="min-height: 80px;">
                 {/* Monitor tab */}
                 <div class={`h-full overflow-y-auto ${activeTab === 'monitor' ? '' : 'hidden'}`}>
-                    <div class="flex gap-4 p-4">
-                        <div class="flex flex-col gap-4">
-                            <ClockPanel msg={timeMsg} />
-                            <MapPanel pos={mapPos} course={mapCourse} noFixSecs={noFixSecs} />
+                    <div class="flex gap-4 p-4 items-stretch" style="height: 512px;">
+                        {/* Column A: clock + summary on top, map below */}
+                        <div class="flex-1 min-w-0 flex flex-col gap-4">
+                            <div class="flex gap-4 shrink-0 items-stretch" style="height: 90px;">
+                                <ClockPanel msg={timeMsg} />
+                                <SummaryPanel msg={navEpochMsg} />
+                            </div>
+                            <div class="flex-1 min-h-0">
+                                <MapPanel pos={mapPos} course={mapCourse} noFixSecs={noFixSecs} />
+                            </div>
                         </div>
-                        {satsMsg && <SkyViewPanel msg={satsMsg} />}
+                        {/* Column B: sky view (square, sized from row height) */}
+                        <div class="shrink-0 aspect-square h-full">
+                            <SkyViewPanel msg={satsMsg} />
+                        </div>
+                        {/* Column C: legend */}
+                        <SkyViewLegend msg={satsMsg} />
                     </div>
                     <CollapsibleSection title="Status" variant="panel" defaultOpen>
                         <StatusPanel msg={navEpochMsg} />
