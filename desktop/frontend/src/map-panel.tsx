@@ -1,5 +1,5 @@
 import {h} from 'preact';
-import {useMemo, useRef} from 'preact/hooks';
+import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import {BrowserOpenURL} from '../wailsjs/runtime/runtime';
 
 interface MapPanelProps {
@@ -18,16 +18,32 @@ function latLonToPixel(lat: number, lon: number, zoom: number): {x: number; y: n
     };
 }
 
-const ZOOM = 16;
-const SIZE = 256;
-const HALF = SIZE / 2; // 128
+const ZOOM = 17;
+const TILE = 256;
 const MARGIN = 40; // re-center when dot is this close to viewport edge
 
 export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
+    const containerRef = useRef<HTMLDivElement>(null);
     const anchorRef = useRef<{x: number; y: number} | null>(null);
+    const [size, setSize] = useState(0);
+
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const update = () => {
+            const w = Math.round(el.getBoundingClientRect().width);
+            if (w > 0) setSize(w);
+        };
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+
+    const half = size / 2;
 
     const mapState = useMemo(() => {
-        if (!pos) return null;
+        if (!pos || size === 0) return null;
         const dot = latLonToPixel(pos.lat, pos.lon, ZOOM);
         let anchor = anchorRef.current;
         if (!anchor) {
@@ -35,25 +51,29 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
             anchorRef.current = anchor;
         } else {
             // Re-center when dot approaches the viewport edge.
-            const dvx = HALF + dot.x - anchor.x;
-            const dvy = HALF + dot.y - anchor.y;
-            if (dvx < MARGIN || dvx > SIZE - MARGIN || dvy < MARGIN || dvy > SIZE - MARGIN) {
+            const dvx = half + dot.x - anchor.x;
+            const dvy = half + dot.y - anchor.y;
+            if (dvx < MARGIN || dvx > size - MARGIN || dvy < MARGIN || dvy > size - MARGIN) {
                 anchor = {x: dot.x, y: dot.y};
                 anchorRef.current = anchor;
             }
         }
         // Dot position in viewport pixels.
-        const dotLeft = Math.round(HALF + dot.x - anchor.x);
-        const dotTop = Math.round(HALF + dot.y - anchor.y);
-        // Which 2x2 tiles cover the viewport.
-        const vpLeft = anchor.x - HALF;
-        const vpTop = anchor.y - HALF;
-        const baseTileX = Math.floor(vpLeft / 256);
-        const baseTileY = Math.floor(vpTop / 256);
-        const gridLeft = Math.round(baseTileX * 256 - vpLeft);
-        const gridTop = Math.round(baseTileY * 256 - vpTop);
-        return {baseTileX, baseTileY, gridLeft, gridTop, dotLeft, dotTop};
-    }, [pos?.lat, pos?.lon]);
+        const dotLeft = Math.round(half + dot.x - anchor.x);
+        const dotTop = Math.round(half + dot.y - anchor.y);
+        // Tile grid: cover the viewport with however many 256px tiles are needed.
+        const vpLeft = anchor.x - half;
+        const vpTop = anchor.y - half;
+        const baseTileX = Math.floor(vpLeft / TILE);
+        const baseTileY = Math.floor(vpTop / TILE);
+        const lastTileX = Math.floor((vpLeft + size - 1) / TILE);
+        const lastTileY = Math.floor((vpTop + size - 1) / TILE);
+        const cols = lastTileX - baseTileX + 1;
+        const rows = lastTileY - baseTileY + 1;
+        const gridLeft = Math.round(baseTileX * TILE - vpLeft);
+        const gridTop = Math.round(baseTileY * TILE - vpTop);
+        return {baseTileX, baseTileY, cols, rows, gridLeft, gridTop, dotLeft, dotTop};
+    }, [pos?.lat, pos?.lon, size]);
 
     const openGoogleMaps = () => {
         if (pos) {
@@ -66,8 +86,9 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
     if (!pos) {
         return (
             <div
-                class="relative flex shrink-0 select-none items-center justify-center bg-surface-1 text-sm text-text-muted"
-                style={{width: SIZE + 'px', height: SIZE + 'px'}}
+                ref={containerRef}
+                class="relative flex h-full w-full select-none items-center justify-center bg-surface-1 text-sm text-text-muted"
+                style="aspect-ratio: 1 / 1;"
             >
                 Waiting for position
             </div>
@@ -76,8 +97,9 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
 
     return (
         <div
-            class="relative overflow-hidden cursor-pointer shrink-0"
-            style={{width: SIZE + 'px', height: SIZE + 'px'}}
+            ref={containerRef}
+            class="relative h-full w-full overflow-hidden cursor-pointer"
+            style="aspect-ratio: 1 / 1;"
             onClick={openGoogleMaps}
             title="Click to open in Google Maps"
         >
@@ -88,21 +110,21 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
                         position: 'absolute',
                         left: mapState.gridLeft + 'px',
                         top: mapState.gridTop + 'px',
-                        width: '512px',
-                        height: '512px',
+                        width: mapState.cols * TILE + 'px',
+                        height: mapState.rows * TILE + 'px',
                     }}
                 >
-                    {[0, 1].map(dy =>
-                        [0, 1].map(dx => (
+                    {Array.from({length: mapState.rows}, (_, dy) =>
+                        Array.from({length: mapState.cols}, (_, dx) => (
                             <img
                                 key={`${mapState.baseTileX + dx},${mapState.baseTileY + dy}`}
                                 src={`https://tile.openstreetmap.org/${ZOOM}/${mapState.baseTileX + dx}/${mapState.baseTileY + dy}.png`}
                                 style={{
                                     position: 'absolute',
-                                    left: dx * 256 + 'px',
-                                    top: dy * 256 + 'px',
-                                    width: '256px',
-                                    height: '256px',
+                                    left: dx * TILE + 'px',
+                                    top: dy * TILE + 'px',
+                                    width: TILE + 'px',
+                                    height: TILE + 'px',
                                     display: 'block',
                                 }}
                                 draggable={false}
