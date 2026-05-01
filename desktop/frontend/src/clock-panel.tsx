@@ -1,5 +1,5 @@
 import {h} from 'preact';
-import {useEffect, useMemo, useState} from 'preact/hooks';
+import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
 import type {TimeMsg} from './app';
 import '@fontsource/dseg7-classic/700.css';
 
@@ -14,15 +14,16 @@ interface ClockTime {
 }
 
 const FONT = "'DSEG7 Classic', monospace";
-// Sizes are expressed as a percentage of container height (cqh) so the
-// clock scales fluidly. Proportions follow the reference design (HH:MM
-// largest, then seconds/tz, then date), sized to fill ~95% of container.
-const HM_SIZE = '44.5cqh';
-const DATE_SIZE = '16.1cqh';
-const SS_SIZE = '22.3cqh';
-const GAP = '6.2cqh';
+// Sizes are expressed as multiples of --clock-unit (1% of container height)
+// so the clock scales fluidly with whatever height its parent gives it.
+// Proportions are picked to fill ~95% of the container vertically.
+const u = (n: number) => `calc(var(--clock-unit) * ${n})`;
+const HM_SIZE = u(44.5);
+const DATE_SIZE = u(16.1);
+const SS_SIZE = u(22.3);
+const GAP = u(6.2);
 const HM_LETTER = '0';
-const DATE_LETTER = '1.24cqh';
+const DATE_LETTER = u(1.24);
 
 function formatUTCOffset(): string {
     const mins = new Date().getTimezoneOffset();
@@ -35,6 +36,8 @@ function formatUTCOffset(): string {
 
 export function ClockPanel({msg}: Props) {
     const [time, setTime] = useState<ClockTime | null>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+
     useEffect(() => {
         if (!msg?.utcTime) return;
         const d = new Date(msg.utcTime);
@@ -49,13 +52,27 @@ export function ClockPanel({msg}: Props) {
         });
     }, [msg?.utcTime]);
 
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const update = () => {
+            const h = el.getBoundingClientRect().height;
+            if (h > 0) el.style.setProperty('--clock-unit', `${h / 100}px`);
+        };
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [time !== null]);
+
     const utcOffset = useMemo(() => formatUTCOffset(), []);
 
     if (!time) {
         return (
             <div
-                class="relative flex h-full w-full select-none items-center justify-start bg-surface-1 text-sm text-text-muted"
-                style="container-type: size;"
+                ref={containerRef}
+                class="relative inline-flex h-full select-none items-center justify-start bg-surface-1 text-sm text-text-muted"
+                style="--clock-unit: 0px;"
             >
                 Waiting for time
             </div>
@@ -69,8 +86,9 @@ export function ClockPanel({msg}: Props) {
 
     return (
         <div
-            class="relative flex h-full w-full select-none items-center justify-start bg-surface-1"
-            style="container-type: size;"
+            ref={containerRef}
+            class="relative inline-flex h-full select-none items-center justify-start bg-surface-1"
+            style="--clock-unit: 0px;"
         >
             <div class="flex flex-col items-start" style={{gap: GAP}}>
                 {/* Date YYYY-MM-DD — scaled to match HH:MM width */}
