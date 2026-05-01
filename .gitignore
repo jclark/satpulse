@@ -8,3 +8,4 @@ go.work
 go.work.sum
 .playwright-mcp/
 CLAUDE.local.md
+.codex

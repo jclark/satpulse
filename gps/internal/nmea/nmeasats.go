@@ -210,7 +210,7 @@ func (sb *satellitesBuffer) process(sen *ApprovedSentence, tRead time.Time, h gp
 	if sb.lastFormat != sen.Format && sb.lastFormat != "" {
 		sb.possibleBoundary()
 	}
-	sb.lastFormat = sen.Format
+	defer func() { sb.lastFormat = sen.Format }()
 	switch sen.Format {
 	case "GSV":
 		return sb.gsvProcess(sen, tRead, h, epoch)
@@ -282,51 +282,111 @@ func (sb *satellitesBuffer) gsvProcess(sen *ApprovedSentence, tRead time.Time, h
 	if err != nil {
 		return false, err
 	}
+	// checkMsgNum decides whether gsv starts a new sequence (vs. continues
+	// the immediately preceding one). At every sequence start we enforce
+	// the invariant that sb.gsvs holds at most one sequence per effective
+	// (gnss, sigID) key: if the new key is already in gsvKeys, either drop
+	// the preceding F9T-style duplicate or flush. We can't gate this on
+	// msgNum == 1 alone because the leading sentence(s) of a sequence may
+	// be lost in a noisy stream.
+	seqStart, err := sb.checkMsgNum(gsv)
+	if seqStart {
+		if _, exists := sb.gsvKeys[gsvKey{gnss: gsv.gnss, sigID: sb.gsvSigID(gsv)}]; exists {
+			// dropDuplicate handles the F9T-style back-to-back duplicate
+			// pattern by dropping the older sequence; otherwise treat the
+			// collision as a real cycle boundary and flush. The key stays
+			// in gsvKeys so a later cycle 2 (collision that isn't the
+			// immediate predecessor) still triggers the flush.
+			// In practice receivers emit sentences in a consistent order
+			// within a cycle, so the wrap from "first key recorded" back
+			// to the same key usually brackets one full cycle even pre-
+			// haveBoundary (although this is making assumptions that we
+			// do not make elsewhere).
+			if !sb.dropDuplicate(gsv) {
+				sb.flush(h, epoch)
+			}
+		}
+		// Recompute the key after a possible flush: flush -> clear() resets
+		// mixedSigIDs, so gsvSigID(gsv) may now differ from what it was
+		// above.
+		sb.gsvKeys[gsvKey{gnss: gsv.gnss, sigID: sb.gsvSigID(gsv)}] = struct{}{}
+	}
 	if len(sb.gsvs) == 0 {
 		sb.tRead = tRead
 	}
-	// If we get an error here, we will report it up so it can be logged, but still add the SVs.
-	err = sb.checkMsgNum(gsv)
 	sb.gsvs = append(sb.gsvs, gsv)
-	if gsv.numMsg != gsv.msgNum {
-		return true, err
-	}
-	// Here we have a complete series of GSV sentences.
-	k := gsvKey{gnss: gsv.gnss, sigID: gsv.sigID}
-	if sb.mixedSigIDs {
-		k.sigID = 0 // ignore signal ID for flush detection
-	}
-	if _, exists := sb.gsvKeys[k]; exists {
-		sb.flush(h, epoch)
-	}
-	sb.gsvKeys[k] = struct{}{}
 	return true, err
 }
 
-func (sb *satellitesBuffer) checkMsgNum(gsv gsvSentence) error {
+// checkMsgNum classifies gsv against the immediately preceding GSV in the
+// buffer. It returns seqStart == false only when gsv is a valid
+// continuation of that sequence (same gnss, msgNum == lastGSV.msgNum+1).
+// All other cases -- empty buffer, different gnss, different sigID with
+// msgNum == 1, or any malformed numbering -- count as the start of a new
+// sequence. err is non-nil for malformed numbering that the caller should
+// log as a lost-data diagnostic; the sentence is still treated as a
+// sequence start and accumulated.
+func (sb *satellitesBuffer) checkMsgNum(gsv gsvSentence) (bool, error) {
+	if gsv.msgNum == 1 {
+		return true, nil
+	}
 	if len(sb.gsvs) == 0 {
-		if gsv.msgNum != 1 {
-			// Don't give an error here, because we may have started a new group too soon,
-			// or we might have started in the middle of a group.
-		}
-		return nil
+		return true, nil
 	}
 	lastGSV := sb.gsvs[len(sb.gsvs)-1]
-	if lastGSV.gnss == gsv.gnss && lastGSV.sigID == gsv.sigID {
-		if gsv.msgNum != lastGSV.msgNum+1 {
-			return fmt.Errorf("invalid GSV message number: expected %d, got %d", lastGSV.msgNum+1, gsv.msgNum)
-		}
-	} else if lastGSV.gnss == gsv.gnss {
-		// Same GNSS, different signal ID: allow either restart (1) or continuation
-		if gsv.msgNum == lastGSV.msgNum+1 {
-			sb.setMixedSigIDs()
-		} else if gsv.msgNum != 1 {
-			return fmt.Errorf("invalid GSV message number: expected 1 or %d, got %d", lastGSV.msgNum+1, gsv.msgNum)
-		}
-	} else if gsv.msgNum != 1 {
-		return fmt.Errorf("invalid GSV message number: expected 1, got %d", gsv.msgNum)
+	if lastGSV.gnss != gsv.gnss {
+		return true, fmt.Errorf("invalid GSV message number: expected 1, got %d", gsv.msgNum)
 	}
-	return nil
+	// A valid continuation requires lastGSV to be mid-sequence with matching
+	// numMsg; if lastGSV already completed or numMsg differs, the new
+	// sentence belongs to a different sequence even when the numbers happen
+	// to line up (e.g. previous 1/1 then next cycle's 2/N with msgNum=1
+	// lost). Treating those as continuations would let same-key data from
+	// two cycles accumulate together.
+	if lastGSV.msgNum < lastGSV.numMsg && gsv.numMsg == lastGSV.numMsg && gsv.msgNum == lastGSV.msgNum+1 {
+		// If sigID differs, the receiver is mixing signal IDs within a
+		// single sequence (Allystar style); switch into mixedSigIDs mode.
+		if lastGSV.sigID != gsv.sigID {
+			sb.setMixedSigIDs()
+		}
+		return false, nil
+	}
+	if lastGSV.msgNum == lastGSV.numMsg {
+		return true, fmt.Errorf("invalid GSV message number: expected 1, got %d", gsv.msgNum)
+	}
+	return true, fmt.Errorf("invalid GSV message number: expected 1 or %d, got %d", lastGSV.msgNum+1, gsv.msgNum)
+}
+
+// dropDuplicate detects the F9T-style duplicate-sigID firmware bug, where
+// a u-blox ZED-F9T emits two back-to-back GAGSV sequences in a single
+// burst carrying the same sigID instead of distinct sigIDs. The pattern
+// is: gsv starts a fresh sequence (msgNum == 1), the previous processed
+// sentence was also GSV (no other sentence type between them), and the
+// immediately preceding entries in sb.gsvs are a completed same-key
+// sequence. When all three hold, drop those entries and return true.
+// Otherwise return false (the caller will flush, treating it as a real
+// cycle boundary).
+func (sb *satellitesBuffer) dropDuplicate(gsv gsvSentence) bool {
+	if gsv.msgNum != 1 || sb.lastFormat != "GSV" || len(sb.gsvs) == 0 {
+		return false
+	}
+	if last := sb.gsvs[len(sb.gsvs)-1]; last.msgNum != last.numMsg {
+		return false
+	}
+	gsvSigID := sb.gsvSigID(gsv)
+	i := len(sb.gsvs)
+	for i > 0 {
+		prev := sb.gsvs[i-1]
+		if prev.gnss != gsv.gnss || sb.gsvSigID(prev) != gsvSigID {
+			break
+		}
+		i--
+	}
+	if i == len(sb.gsvs) {
+		return false
+	}
+	sb.gsvs = sb.gsvs[:i]
+	return true
 }
 
 // setMixedSigIDs switches to mixed signal ID mode (e.g. Allystar receivers).
@@ -341,6 +401,15 @@ func (sb *satellitesBuffer) setMixedSigIDs() {
 		newKeys[gsvKey{gnss: k.gnss, sigID: 0}] = struct{}{}
 	}
 	sb.gsvKeys = newKeys
+}
+
+// gsvSigID returns the effective signal ID for gsv, collapsing to 0 in
+// mixedSigIDs mode so callers don't have to repeat the check.
+func (sb *satellitesBuffer) gsvSigID(gsv gsvSentence) int {
+	if sb.mixedSigIDs {
+		return 0
+	}
+	return gsv.sigID
 }
 
 type gsaSentence struct {
