@@ -80,30 +80,26 @@ The caller acts on the bool.
 
 ## Configuration
 
-A new top-level `[sync.shared]` section under `[sync]`. Mode
-sub-sections (`reset`, `converge`, `track`) are mode-named; `shared`
+A new top-level `[sync.share]` section under `[sync]`. Mode
+sub-sections (`reset`, `converge`, `track`) are mode-named; `share`
 makes it explicit that these parameters are not specific to any one
 mode. Two fields:
 
-- **`leapDetect`** (bool, default true): user-facing kill switch for
-  the detector. When false, the check is skipped regardless of lock
-  state.
-- **`minDuplicateUTCGap`** (float seconds, default 0.8, validated
+- **`detectInvalidLeap`** (bool, default true): user-facing kill switch for
+  the detector. When false, the check is skipped regardless of mode.
+- **`minInvalidRepeatInterval`** (float seconds, default 0.8, validated
   `>0,<1.0`): the threshold supplied to the check as `minDelta`. Below
-  this gap, a duplicate UTC is treated as a receiver glitch rather
-  than a leap-second correction.
+  this interval, a repeated UTC value is treated as a receiver glitch
+  rather than a leap-second correction.
 
 The bool is independent of the threshold so users can disable the
 detector without losing the threshold value, and can tune the
-threshold without re-enabling. `minDuplicateUTCGap` is a direct
+threshold without re-enabling. `minInvalidRepeatInterval` is a direct
 duration rather than a derived `1s - jitter` so that bumping it does
 not silently couple to other receiver-jitter knobs.
 
-`Config` (in `phcsync`) gains a `Shared SharedConfig` field;
-`DefaultConfig` initialises it. A new `shared.go` source file in
-`phcsync` owns `SharedConfig` and any future cross-mode parameters and
-checks that warrant their own home; it is not a general utilities
-file.
+`Config` (in `phcsync`) gains a `Share SharedConfig` field;
+`DefaultConfig` initialises it.
 
 ## Wiring
 
@@ -158,7 +154,7 @@ extend:
 - On entering reset, the closure is cleared.
 
 In `TimeMessage`, before processing the present sample, the controller
-runs the check when all of (a) `cfg.Shared.LeapDetect` is true,
+runs the check when all of (a) `cfg.Share.DetectInvalidLeap` is true,
 (b) the closure is non-nil. If the check fires, the controller
 transitions to `ModeReset` and skips sample processing for this
 message. The buffer-side function logs the diagnostic; `changeMode`
@@ -168,7 +164,7 @@ logs the transition; no additional logging in `TimeMessage`.
 happens at message arrival.
 
 The non-nil-closure guard handles two of the three "skip the check"
-conditions (in-reset, TAI-source); the `LeapDetect` bool handles the
+conditions (in-reset, TAI-source); the `DetectInvalidLeap` bool handles the
 third (user disable).
 
 ## Testing
@@ -231,16 +227,16 @@ Cases:
    true. Call `c.TimeMessage()`. Assert `c.Mode() == ModeReset` and
    the captured closure has been cleared.
 4. **Kill switch.** Same setup as case 3, but with
-   `cfg.Shared.LeapDetect = false`. The closure-returning-true is not
+   `cfg.Share.DetectInvalidLeap = false`. The closure-returning-true is not
    consulted; mode unchanged.
 5. **No-discontinuity steady state.** UTC-source feed; closure
    returning false throughout. After reset success, mode advances
    normally; closure remains captured.
 
 Config validation: separate table-driven test in the same file.
-Defaults validate cleanly; `minDuplicateUTCGap = 0` and
-`minDuplicateUTCGap >= 1.0` are rejected; both `LeapDetect = true`
-and `LeapDetect = false` are accepted.
+Defaults validate cleanly; `minInvalidRepeatInterval = 0` and
+`minInvalidRepeatInterval >= 1.0` are rejected; both `DetectInvalidLeap = true`
+and `DetectInvalidLeap = false` are accepted.
 
 ## Out of scope
 
@@ -256,7 +252,7 @@ and `LeapDetect = false` are accepted.
   iteration of this plan proposed a window to silence the detector
   after firmware has had time to learn the leap; with the present
   check the false-positive rate is low enough that an unbounded window
-  is acceptable, and `LeapDetect=false` is the escape hatch if needed.
+  is acceptable, and `DetectInvalidLeap=false` is the escape hatch if needed.
 - Buffer sizing. See [timemsg-buffer-window.md](timemsg-buffer-window.md);
   the new check only consults the most recent two same-type entries,
   well within any reasonable window.
@@ -269,16 +265,16 @@ and `LeapDetect = false` are accepted.
 - `gps/ptime/ptime.go` and `gps/ptime/ptime_test.go` -- ensure
   `UTCTime.Sub` handles an explicit `23:59:60` endpoint when
   subtracting across the next midnight.
-- `time/internal/phcsync/shared.go` (new) -- `SharedConfig`.
-- `time/internal/phcsync/controller.go` -- widened `TimeMsgBuffer`
-  interface, `Shared SharedConfig` on `Config`, captured closure on
+- `time/internal/phcsync/controller.go` -- new `SharedConfig` type
+  and `defaultSharedConfig`, widened `TimeMsgBuffer` interface,
+  `Share SharedConfig` field on `Config`, captured closure on
   `Controller`, set/clear in `changeMode`, invoke in `TimeMessage`.
 - `time/internal/phcsync/reset.go` -- captured closure on
   `resetSampleGenerator`, accessor.
 - `time/internal/phcsync/controller_test.go` -- fake
   `TimeMsgBuffer`, integration cases for closure capture / clear /
   TAI-bypass / end-to-end reset / kill-switch, and config-validation
-  cases for the new `[sync.shared]` fields.
-- `configs/config-schema.json` -- new `[sync.shared]` section.
+  cases for the new `[sync.share]` fields.
+- `configs/config-schema.json` -- new `[sync.share]` section.
 - Other callers of `GetPostTimeMessages` -- adapt to the new
   signature.

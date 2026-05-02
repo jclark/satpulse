@@ -121,10 +121,11 @@ type resetSampleGenerator struct {
 	pt                PulseType
 	maxFreq           float64
 	freq              float64
-	lastEdgeIndex     uint64        // stores edgeIndex from most recent pulseEdgeSample call
-	avgInterval       time.Duration // stored from last successful sample generation
-	tReadLastMsg      time.Time     // read time of last message processed by genSampleForMessages
-	pulseIntervalsBad bool          // true if checkPulseIntervals failed; cleared on new edge
+	lastEdgeIndex     uint64                          // stores edgeIndex from most recent pulseEdgeSample call
+	avgInterval       time.Duration                   // stored from last successful sample generation
+	tReadLastMsg      time.Time                       // read time of last message processed by genSampleForMessages
+	pulseIntervalsBad bool                            // true if checkPulseIntervals failed; cleared on new edge
+	detectLeap        func(time.Duration) bool        // captured on the most recent successful sample; nil if the selected time messages are TAI-source
 }
 
 func newResetSampleGenerator(timeMsgBuffer TimeMsgBuffer, cfg ResetConfig, edgesPerPulse int, freq, maxFreq float64, lg *slog.Logger) *resetSampleGenerator {
@@ -187,6 +188,10 @@ func (g *resetSampleGenerator) timeMessageSample() *Sample {
 	return g.genSample()
 }
 
+func (g *resetSampleGenerator) getDetectLeap() func(time.Duration) bool {
+	return g.detectLeap
+}
+
 func (g *resetSampleGenerator) getPulseInfo() pulseInfo {
 	return pulseInfo{
 		pulseWidth:  g.pt.PulseWidth,
@@ -235,7 +240,7 @@ func (g *resetSampleGenerator) genSample() *Sample {
 	}
 
 	// Get time messages from buffer
-	lastSec, tRead := g.timeMsgBuffer.GetPostTimeMessages(g.cfg.PulseWindow)
+	lastSec, tRead, detectLeap := g.timeMsgBuffer.GetPostTimeMessages(g.cfg.PulseWindow)
 	if lastSec.IsZero() {
 		// Not enough time messages yet
 		return nil
@@ -254,6 +259,7 @@ func (g *resetSampleGenerator) genSample() *Sample {
 	}
 
 	if sample != nil {
+		g.detectLeap = detectLeap
 		g.lg.Info("reset mode succeeded",
 			"pulseVariation", fmt.Sprintf("%.1f", stats.pulseVariation),
 			"delay", stats.delay,
