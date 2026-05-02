@@ -21,11 +21,19 @@ func (ut UTCTime) SysTime() time.Time {
 	return ut.Date.Add(ut.TimeOfDay)
 }
 
-// Sub subtracts two UTCTimes preserving leap-second TimeOfDay values.
-// This handles cases where either time is during a leap second,
-// but not intervals where the two times are on different sides of a leap second.
+// Sub subtracts two UTCTimes using the civil labels encoded in the values.
+// It handles an explicitly represented positive leap second
+// (TimeOfDay >= 24h) at either endpoint. It cannot infer negative leap
+// seconds or unrepresented positive leap seconds elsewhere in the interval.
 func (ut1 UTCTime) Sub(ut2 UTCTime) time.Duration {
-	return ut1.Date.Sub(ut2.Date) + (ut1.TimeOfDay - ut2.TimeOfDay)
+	d := ut1.Date.Sub(ut2.Date) + (ut1.TimeOfDay - ut2.TimeOfDay)
+	if ut2.TimeOfDay >= 24*time.Hour && ut1.Date.After(ut2.Date) {
+		d += time.Second
+	}
+	if ut1.TimeOfDay >= 24*time.Hour && ut2.Date.After(ut1.Date) {
+		d -= time.Second
+	}
+	return d
 }
 
 type LeapSecond struct {

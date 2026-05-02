@@ -77,6 +77,24 @@ func TestUTCTimeSub(t *testing.T) {
 			want: 500 * time.Millisecond,
 		},
 		{
+			name: "out of positive leap second",
+			ut1:  UTC(2025, 7, 1, 0, 0, 0, 0),
+			ut2:  UTC(2025, 6, 30, 23, 59, 60, 0),
+			want: time.Second,
+		},
+		{
+			name: "out of positive leap second subsecond",
+			ut1:  UTC(2025, 7, 1, 0, 0, 0, 0),
+			ut2:  UTC(2025, 6, 30, 23, 59, 60, 250000000),
+			want: 750 * time.Millisecond,
+		},
+		{
+			name: "reverse out of positive leap second",
+			ut1:  UTC(2025, 6, 30, 23, 59, 60, 0),
+			ut2:  UTC(2025, 7, 1, 0, 0, 0, 0),
+			want: -time.Second,
+		},
+		{
 			name: "negative result",
 			ut1:  UTC(2025, 6, 30, 23, 59, 59, 750000000),
 			ut2:  UTC(2025, 6, 30, 23, 59, 60, 250000000),
