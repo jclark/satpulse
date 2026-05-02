@@ -1,7 +1,6 @@
 package ptime
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -355,9 +354,9 @@ func (ls LeapSecond) UTCStateAt(ut UTCTime) LeapSecondState {
 	return state
 }
 
-// MarshalJSON marshals UTCTime to ISO8601 format like "2025-03-24T06:19:00Z".
+// String formats UTCTime in ISO8601 format like "2025-03-24T06:19:00Z".
 // For leap seconds (TimeOfDay >= 24h), produces "2025-06-30T23:59:60Z" format.
-func (ut UTCTime) MarshalJSON() ([]byte, error) {
+func (ut UTCTime) String() string {
 	t := ut.SysTime()
 	// Check if TimeOfDay represents a leap second (>= 86400s = 24h)
 	if ut.TimeOfDay >= 24*time.Hour {
@@ -369,19 +368,21 @@ func (ut UTCTime) MarshalJSON() ([]byte, error) {
 		if colonPos >= 0 && len(s) >= colonPos+3 {
 			s = s[:colonPos+1] + "60" + s[colonPos+3:]
 		}
-		return json.Marshal(s)
+		return s
 	}
 	// Normal case: use standard RFC3339Nano
-	return json.Marshal(t.Format(time.RFC3339Nano))
+	return t.Format(time.RFC3339Nano)
 }
 
-// UnmarshalJSON unmarshals from ISO8601 format.
+// MarshalText marshals UTCTime to ISO8601 format. json.Marshal picks this up automatically.
+func (ut UTCTime) MarshalText() ([]byte, error) {
+	return []byte(ut.String()), nil
+}
+
+// UnmarshalText unmarshals from ISO8601 format.
 // Handles leap seconds (sec=60) correctly.
-func (ut *UTCTime) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return err
-	}
+func (ut *UTCTime) UnmarshalText(data []byte) error {
+	s := string(data)
 	// Check for leap second (":60")
 	colonPos := strings.LastIndex(s, ":")
 	isLeapSecond := false
