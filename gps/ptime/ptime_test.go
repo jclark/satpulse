@@ -36,6 +36,63 @@ func TestLeapSecs(t *testing.T) {
 	}
 }
 
+func TestUTCTimeSub(t *testing.T) {
+	cases := []struct {
+		name string
+		ut1  UTCTime
+		ut2  UTCTime
+		want time.Duration
+	}{
+		{
+			name: "same day",
+			ut1:  UTC(2025, 5, 1, 12, 30, 0, 0),
+			ut2:  UTC(2025, 5, 1, 12, 29, 58, 500000000),
+			want: 1500 * time.Millisecond,
+		},
+		{
+			name: "ordinary midnight",
+			ut1:  UTC(2025, 5, 2, 0, 0, 1, 0),
+			ut2:  UTC(2025, 5, 1, 23, 59, 59, 500000000),
+			want: 1500 * time.Millisecond,
+		},
+		{
+			name: "negative time of day",
+			ut1: UTCTime{
+				Date:      time.Date(2025, time.July, 1, 0, 0, 0, 0, time.UTC),
+				TimeOfDay: -1 * time.Hour,
+			},
+			ut2:  UTC(2025, 6, 30, 22, 0, 0, 0),
+			want: time.Hour,
+		},
+		{
+			name: "into positive leap second",
+			ut1:  UTC(2025, 6, 30, 23, 59, 60, 250000000),
+			ut2:  UTC(2025, 6, 30, 23, 59, 59, 750000000),
+			want: 500 * time.Millisecond,
+		},
+		{
+			name: "within positive leap second",
+			ut1:  UTC(2025, 6, 30, 23, 59, 60, 750000000),
+			ut2:  UTC(2025, 6, 30, 23, 59, 60, 250000000),
+			want: 500 * time.Millisecond,
+		},
+		{
+			name: "negative result",
+			ut1:  UTC(2025, 6, 30, 23, 59, 59, 750000000),
+			ut2:  UTC(2025, 6, 30, 23, 59, 60, 250000000),
+			want: -500 * time.Millisecond,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.ut1.Sub(tc.ut2)
+			if got != tc.want {
+				t.Fatalf("%v.Sub(%v) = %v, want %v", tc.ut1, tc.ut2, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestFormat(t *testing.T) {
 	leaps := LeapSecondOnDate(time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC), 37, 38)
 	testCases := [][6]uint8{
@@ -624,4 +681,3 @@ func TestUTCStateAt(t *testing.T) {
 		})
 	}
 }
-

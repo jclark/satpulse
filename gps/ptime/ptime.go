@@ -22,6 +22,13 @@ func (ut UTCTime) SysTime() time.Time {
 	return ut.Date.Add(ut.TimeOfDay)
 }
 
+// Sub subtracts two UTCTimes preserving leap-second TimeOfDay values.
+// This handles cases where either time is during a leap second,
+// but not intervals where the two times are on different sides of a leap second.
+func (ut1 UTCTime) Sub(ut2 UTCTime) time.Duration {
+	return ut1.Date.Sub(ut2.Date) + (ut1.TimeOfDay - ut2.TimeOfDay)
+}
+
 type LeapSecond struct {
 	OffChangeTime Time  // Time at which TAI-UTC offset changes (i.e. when leap second is over 00:00:00 UTC)
 	UTCOffBefore  int16 // TAI-UTC offset before leap second
