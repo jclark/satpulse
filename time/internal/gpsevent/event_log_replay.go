@@ -154,7 +154,7 @@ func main() {
 	defer ctrl.Close()
 
 	// Create time message buffer
-	timeMsgBuffer := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
+	timeMsgBuffer := timemsg.NewBuffer(lg, ctrl.RequiredMsgWindow(), ls, gpsprot.GPS)
 
 	// Inject buffer into controller
 	ctrl.SetTimeMsgBuffer(timeMsgBuffer)

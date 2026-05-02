@@ -231,9 +231,6 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	// Convert start time to TAI once
 	tStart, _ := ls.SysToTime(*curTime)
 
-	// Create timemsg.Buffer
-	timeMsgBuf := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
-
 	// Create mode observer
 	modeObs := &modeObserver{}
 
@@ -244,7 +241,8 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	allObservers := append([]obs.Observer{statsObs, modeObs}, observers...)
 	multiObs := obs.NewMultiObserver(allObservers...)
 
-	// Create controller
+	// Create controller before the buffer so the buffer can be sized
+	// from the controller's requirement.
 	ctrl, err := phcsync.NewController(
 		testClock,
 		multiObs,
@@ -257,6 +255,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	if err != nil {
 		return Stats{}, err
 	}
+	timeMsgBuf := timemsg.NewBuffer(lg, ctrl.RequiredMsgWindow(), ls, gpsprot.GPS)
 	ctrl.SetTimeMsgBuffer(timeMsgBuf)
 	defer ctrl.Close()
 

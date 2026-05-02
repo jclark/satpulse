@@ -27,7 +27,7 @@ func TestReplayFast(t *testing.T) {
 	}
 	defer ctrl.Close()
 	// Create time message buffer
-	timeMsgBuffer := timemsg.NewBuffer(lg, 5*time.Second, ptime.LeapSecond2016(), gpsprot.GPS)
+	timeMsgBuffer := timemsg.NewBuffer(lg, ctrl.RequiredMsgWindow(), ptime.LeapSecond2016(), gpsprot.GPS)
 	ctrl.SetTimeMsgBuffer(timeMsgBuffer)
 	// Replay file
 	err = ReplayFile("testdata/fast.jsonl", ctrl, timeMsgBuffer, nil)

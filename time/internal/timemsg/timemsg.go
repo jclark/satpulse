@@ -54,11 +54,19 @@ const (
 	levelConsecutive               // have the requested messages and they are consecutive
 )
 
-// NewBuffer creates a new Buffer with the specified read window.
-// The readWindow determines how far back in time to keep messages.
+// minReadWindow is the lower bound on the read window the Buffer will use,
+// regardless of what the caller requests. It must be large enough to cover
+// the package's own internal lookback needs (detectInvalidLeap looks back
+// ~2s for a same-type entry; getPulseCorrectionLast looks back ~1s for a
+// matching refTime).
+const minReadWindow = 3 * time.Second
+
+// NewBuffer creates a new Buffer with at least the given read window.
+// readWindow is the minimum the caller requires; the Buffer may use a
+// larger window to satisfy its own internal needs.
 func NewBuffer(lg *slog.Logger, readWindow time.Duration, ls ptime.LeapSecond, timeGNSS gpsprot.GNSS) *Buffer {
 	return &Buffer{
-		readWindow: readWindow,
+		readWindow: max(readWindow, minReadWindow),
 		ls:         ls,
 		lg:         lg,
 		timeGNSS:   timeGNSS,

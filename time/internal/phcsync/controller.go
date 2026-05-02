@@ -474,6 +474,14 @@ func (c *Controller) Mode() Mode {
 	return c.mode
 }
 
+// RequiredMsgWindow returns the minimum time-message buffer window the
+// controller needs based on its current config. Reset mode requests
+// PulseWindow consecutive messages at 1 Hz; the +2 s margin absorbs
+// message-rate jitter so PulseWindow entries are reliably on hand.
+func (c *Controller) RequiredMsgWindow() time.Duration {
+	return time.Duration(c.cfg.Reset.PulseWindow+2) * time.Second
+}
+
 func (cfg *Config) Validate() error {
 	msgs := check.Validate(cfg)
 	switch len(msgs) {
