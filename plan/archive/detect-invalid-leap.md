@@ -238,6 +238,34 @@ Defaults validate cleanly; `minInvalidRepeatInterval = 0` and
 `minInvalidRepeatInterval >= 1.0` are rejected; both `DetectInvalidLeap = true`
 and `DetectInvalidLeap = false` are accepted.
 
+## Interaction with the tracking-mode persisted sample
+
+The persisted-sample / drift-rate-limit mechanism from
+[reset-drift-limit.md](reset-drift-limit.md) (issue #193) caches the
+last good tracking sample after `track.persistThreshold` seconds of
+stable tracking (default 900 = 15 min) and uses it in reset mode to
+reject any candidate alignment whose implied drift relative to the
+persisted sample exceeds `reset.driftRateLimit` (default 100 ppm).
+Its purpose is to prevent re-locking to a bad phase after PPS-side
+faults, not to detect stale-firmware leap corrections.
+
+This matters here because a stale-firmware leap correction would
+itself look like an impossible drift (~1s of slip over the elapsed
+interval, far above 100 ppm). If a persisted sample existed when the
+leap detector forced a reset, the drift-rate check in reset would
+then reject the corrected (1s-shifted) realignment, leaving the
+controller stuck in reset.
+
+The 900s default for `track.persistThreshold` is what closes this
+gap. It was chosen to accommodate the 12.5-minute worst case for GPS
+to broadcast the full leap-second subframe to a cold-started
+receiver: by the time tracking has been stable long enough to
+persist a sample, the firmware has already learnt the correct leap
+count, so the leap detector either fires before there is a
+persisted sample to block recovery, or never fires at all. The two
+features therefore do not interfere in any realistic operating
+regime.
+
 ## Out of scope
 
 - Buffer-overflow / no-message detection (the other half of #182, and

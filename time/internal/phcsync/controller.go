@@ -229,6 +229,11 @@ func (c *Controller) PulseEdge(edge PulseEdge) {
 
 // TimeMessage handles notification that a time message occurred.
 func (c *Controller) TimeMessage() {
+	// The reset triggered here would be rejected by the drift-rate check against
+	// the tracking-mode persisted sample (see TrackingConfig.PersistThreshold),
+	// since a stale-firmware leap correction looks like ~1s of drift. The default
+	// PersistThreshold (900s) exceeds the 12.5-minute GPS leap-subframe worst case,
+	// so the correction is detected before any sample is persisted.
 	if c.detectLeap != nil && c.detectLeap() {
 		c.changeMode(ModeReset)
 		return
