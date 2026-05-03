@@ -48,11 +48,16 @@ But if the sample-generation stage was affected by the monitoring stage, this wo
 
 The first problem meant that a rewrite was needed: I hadn't decomposed the problem in the best way.
 And if I was going to do a rewrite, then I should solve the second problem once and for all,
-and that meant developing a simulator.
+and that meant I needed a simulator.
+
+The most significant open source project in the timing simulation space that I know of is Miroslav Lichvar's [clknetsim](https://gitlab.com/chrony/clknetsim).
+In fact, this project is what made me realise that serious testing needed a simulator.
+However, clknetsim would not work for SatPulse, because it relies on being able to redirect system calls using LD_PRELOAD,
+but SatPulse is written in Go and on Linux Go usually produces statically linked executables; system calls are raw kernel syscalls, which do not
+go through a dynamic library. So that meant I needed to develop my own simulator.
+Also clknetsim does not handle the GPS side of things.
 
 ## Simulator
-
-XXX mention clknetsim
 
 The goal of the simulator is not to be perfect, but to be realistic enough to enable closed-loop testing of synchronization algorithms.
 
