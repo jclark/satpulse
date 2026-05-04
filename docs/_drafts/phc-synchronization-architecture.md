@@ -5,14 +5,21 @@ title: SatPulse 0.2 PHC synchronization architecture
 One of the major changes in SatPulse 0.2 is a new architecture for the PHC synchronization subsystem.
 The PHC synchronization subsystem has two inputs: a stream of timestamps from the PHC and a stream of messages from the GPS receiver.
 Its primary function is to synchronize the time of the PHC with the GPS receiver's time.
-It also needs to update the PTP daemon with current clock quality.
+This involves generating a stream of *samples* from the two streams of timestamps and messages.
+A sample says what the offset is between PHC time and GNSS time.
+These samples are then used to synchronize the PHC and to update the PTP grandmaster with the synchronization status.
+
+Generating samples includes the following tasks:
+* pulse edge filtering: some Intel NICs generate timestamps for both edges of a pulse; in this case, we have to identify which edges are leading edges
+* sample completion: the timestamp for a leading edge marks the top of a second; completing the sample means determining which second that is
+* sawtooth correction: a GPS receiver can only generate a pulse on an edge of its internal clock, but there can be an offset between the edge of its internal clock and the top of the second; a timing-grade GPS receiver will output a message for each pulse giving the size of this offset; the sample then needs to be adjusted for this offset
 
 ## 0.1 PHC synchronization architecture
 
 My initial implementation of PHC synchronization followed the approach of the `ts2phc` program,
 included in LinuxPTP.
 The approach consists of a 2-stage pipeline.
-The initial stage generates samples, which give the offset between the PHC and GNSS time, by combining timestamps from the PHC with time-of-day information from GPS messages.
+The initial stage generates samples by combining timestamps from the PHC with time-of-day information from GPS messages.
 The samples are fed into a second stage, which uses a PI servo to adjust the phase and frequency of the PHC.
 
 This approach evolved to add a monitoring stage to the pipeline between the sample-generation stage and the servo.
@@ -93,37 +100,72 @@ In a future post, I will go into more detail about how I made measurements and u
 
 ## 0.2 PHC synchronization architecture
 
-Goals for improvements relative to 0.1
-- configurable/tunable via config file section
-- support 50% duty cycle
-- foundation for holdover mode
-- separate GPS message handling, so as to enable serial timing and other modes of operation that use GPS time without synchronizing the PHC
-- must work with simulator
+The approach in 0.2 is modal. There are three modes: reset, converging and tracking.
+At a high level, these modes work as follows.
+Reset is the initial mode: its job is to generate a single, reliable sample; it does this by collecting a batch of timestamps and GPS messages.
+After generating the sample, reset mode will perform a step of the PHC so as to guarantee that the PHC is close to the GNSS time.
+At that point, it transitions to converging mode. Its job is to aggressively adjust the frequency so as to bring the PHC into as precise as possible alignment with GNSS time.
+When the offsets between the PHC and timestamps are no longer decreasing, it transitions to tracking mode.
+Its job is to continually tweak the PHC frequency so as to keep the offsets as small as possible.
+It remains in tracking mode so long as the offsets indicate that the PHC is still synchronized to GNSS time.
+If synchronization is lost, it transitions to reset mode.
 
-New decomposition into code (as opposed to old pipeline)
-- per-mode
+Each mode is associated with a clock quality notified to the PTP grandmaster:
+tracking mode is associated with clock quality representing a synchronized state;
+reset and converging mode are associated with a clock quality representing an unsynchronized state.
+
+The following table summarizes the operation of the modes.
+
+| Task | Reset | Converging | Tracking |
+| --- | --- | --- | --- |
+| Pulse edge filtering | analysis of batch of pulse edges | parity from leading edge learned in reset | alignment of edge to top of second |
+| Sample completion | alignment of batch of timestamps and messages | round timestamp to nearest second | round timestamp to nearest second |
+| Sawtooth correction | not applied | not applied | applied |
+| Outlier detection | validation of batch of timestamps and messages | none |  MAD-based  |
+| PHC control | step when leaving mode | aggressive PI servo | gentle PI servo |
+| PTP GM notification | not synchronized | not synchronized | synchronized |
+| Successful exit | valid sample | offsets stabilize | none |
+| Failure exit | none | too many missing samples | too many bad samples |
+
+The key point to notice in the table is that each mode performs its tasks very differently.
+I want to focus particularly on sample completion, which is the most fundamental part of sample generation.
+In production, SatPulse should be spending 99.9999% of its time in tracking mode,
+and in tracking mode sample completion is utterly trivial:
+the PHC clock will be accurate to a microsecond, so you can just round the timestamp to know which second the timestamp is for.
+
+In contrast, sample completion in reset mode is quite elaborate.
+- everythiung else depends on this choice of second, so we had better get it right
+- have to correlate time messages with timestamps; for time messages we know the time we received them as a monotonic ssystem time
+- for timestamps, after we read the timestamp we can get the monotonic system time, but this is not a a sufficient basis for correlation
+XXX
+
+Decomposition
 - two packages: phcsync, timemsg
+- timemsg XXX
 - phcsync divides into 
-  - controller (logic shared between modes)
-  - per mode: generate sample, process sample
-- each mode has to do the same task, but having separate code for each mode is simpler than previous pipeline approach that tried to do it in a uniform way, which is counterintuitive
+  - per mode split into
+    * sample generator: pulse edge filtering, sampl completion, sawtooth correction
+    * sample processor: outlier detection, requests any needed mode change, requests PHC adjustments
+       * PI servo implementation shared between converging and tracking
+  - controller
+    * orchestrates the modes
+    * calls sample generator, and sample processor (still a pipeline but mediated by controller)
+    * synthesizes missing samples, which feeds into mode-specific sample processor
+    * performs mode change requested by sample processor
+    * performs PHC adjustement requested by sample processor
+    * notifies PTP GM
+  - reset mode discovers parameters that later modes use
+    * which edges are leading edges (in dual-edge mode)
+    * pulse width (in dual-edge mode)
+    * PHC frequency error, used to initialize tracking servo
 
-Overview of modes
-- what modes are there: reset, converging, tracking
-- what transitions happen
-   - reset to converging when we have good sequence of timestamps and messages
-   - converging to tracking when things stop improving
-   - tracking to reset when things go wrong
-   - converging to reset when thing go wrong
-- corresponding PTP clock quality
 
-Tasks performed in each mode:
-- determine which second timestamp belongs to
-- handle dual edge timestamps
-- handle anomalous timestamps
-- handle sawtooth correction 
-- PHC control
+Advantages of 0.2
+ - solves 0.1 problems
+    - testable: works with simulator; was in fact used in developement
+    - sample generation architecture is much improved and much more principled
+ - user visible benefit is that PHC synchronizaion parameters can now be configured using [sync] secton of the config file
+    - simulator can be used to tune defaults
+ - minor benefit: 50% duty cycle now works
+ - foundation for future improvements, most importanty holdover mode
 
-Role of simulator
-- testing during development
-- tune defaults for configurable values
