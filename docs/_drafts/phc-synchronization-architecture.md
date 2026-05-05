@@ -25,7 +25,7 @@ The samples are fed into a second stage, which uses a PI servo to adjust the pha
 This approach evolved to add a monitoring stage to the pipeline between the sample-generation stage and the servo.
 This monitoring stage had a variety of responsibilities.
 It determined whether the PHC was in sync with GNSS time, and used this to dynamically update
-the PTP daemon's clock quality.
+the PTP grandmaster's clock quality.
 It also performed outlier detection using a MAD algorithm.
 
 I found two major problems with this pipeline approach.
@@ -123,7 +123,6 @@ The following table summarizes the operation of the modes.
 | Sawtooth correction | not applied | not applied | applied |
 | Outlier detection | validation of batch of timestamps and messages | none |  MAD-based  |
 | PHC control | step when leaving mode | aggressive PI servo | gentle PI servo |
-| PTP GM notification | not synchronized | not synchronized | synchronized |
 | Successful exit | valid sample | offsets stabilize | none |
 | Failure exit | none | too many missing samples | too many bad samples |
 
@@ -134,31 +133,51 @@ and in tracking mode sample completion is utterly trivial:
 the PHC clock will be accurate to a microsecond, so you can just round the timestamp to know which second the timestamp is for.
 
 In contrast, sample completion in reset mode is quite elaborate.
-- everythiung else depends on this choice of second, so we had better get it right
-- have to correlate time messages with timestamps; for time messages we know the time we received them as a monotonic ssystem time
-- for timestamps, after we read the timestamp we can get the monotonic system time, but this is not a a sufficient basis for correlation
-XXX
+If reset mode makes the wrong choice of second, then that will persist throughout the operation of the daemon,
+so the implementation takes a lot of care to ensure that it is right.
+It collects time messages and timestamps for several seconds,
+and then performs multiple consistency and quality checks.
 
-Decomposition
-- two packages: phcsync, timemsg
-- timemsg XXX
-- phcsync divides into 
-  - per mode split into
-    * sample generator: pulse edge filtering, sampl completion, sawtooth correction
-    * sample processor: outlier detection, requests any needed mode change, requests PHC adjustments
-       * PI servo implementation shared between converging and tracking
-  - controller
-    * orchestrates the modes
-    * calls sample generator, and sample processor (still a pipeline but mediated by controller)
-    * synthesizes missing samples, which feeds into mode-specific sample processor
-    * performs mode change requested by sample processor
-    * performs PHC adjustement requested by sample processor
-    * notifies PTP GM
-  - reset mode discovers parameters that later modes use
-    * which edges are leading edges (in dual-edge mode)
-    * pulse width (in dual-edge mode)
-    * PHC frequency error, used to initialize tracking servo
+Reset mode has to correlate time messages with timestamps.
+For time messages, we record the monotonic time at which we read the first character of the message.
+But these monotonic times cannot be compared directly with the timestamps, which are in the PHC time domain.
+The natural way to handle this is to record the monotonic time immediately after the timestamp is read.
+But the Raspberry Pi CM4/CM5 ethernet PHY driver has a quirk which makes this insufficient by itself:
+the driver can deliver the timestamp to user space up to 0.25s after the pulse occurred.
+To handle this, we also record the PHC time immediately after reading the timestamp,
+and then adjust the post-read monotonic time by the difference between the post-read PHC time and the timestamp.
+We also have to account for the possibility that the PHC is fast or slow.
+The average interval in PHC time between successive pulses tells us how much PHC time corresponds to one second,
+and we use this to scale the PHC difference before using it to adjust the monotonic time.
 
+The decomposition of responsibilities is as follows.
+The main implementation package is `phcsync`.
+It has a controller, which is responsible for orchestrating the modes.
+For each mode, there is a sample-generator and a sample-processor.
+The sample-generator is responsible for pulse edge filtering, sample completion and sawtooth correction;
+in tracking mode it uses the pulse width discovered in reset mode.
+The sample-processor is responsible for outlier detection,
+and for determining when and how to adjust the PHC and change mode;
+these PHC adjustments and mode changes are then performed by the controller.
+The sample-processors for converging and tracking mode share a PI servo implementation;
+in tracking mode, the servo is initialized using the PHC frequency error discovered in reset mode.
+The controller feeds samples from the sample-generator to the sample-processor.
+The controller also synthesizes missing samples and feeds them to the sample-processor.
+The controller notifies the PTP grandmaster for mode changes that imply a change in clock quality.
+Thus, as in 0.1, there is a 3-stage pipeline: sample-generator then sample-processor then controller.
+But the pipeline is driven by the controller, and the sample-generator and sample-processor
+are mode-specific.
+
+The other implementation package is `timemsg`,
+which serves as a bridge between `phcsync` and the GPS subsystem.
+`timemsg` maintains a buffer of recent time-related messages from the GPS receiver.
+`phcsync` defines an interface which captures what it needs to know about time messages,
+and `timemsg` implements this.
+Reset mode obviously depends on this interface,
+but tracking mode also uses it for sawtooth corrections.
+This separation between `phcsync` and `timemsg` was also designed to enable `timemsg`
+to be reused for a new feature in 0.2: samples can be provided to an NTP server
+based on serial timing, without needing a PHC.
 
 Advantages of 0.2
  - solves 0.1 problems
