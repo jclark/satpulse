@@ -179,12 +179,17 @@ This separation between `phcsync` and `timemsg` was also designed to enable `tim
 to be reused for a new feature in 0.2: samples can be provided to an NTP server
 based on serial timing, without needing a PHC.
 
-Advantages of 0.2
- - solves 0.1 problems
-    - testable: works with simulator; was in fact used in developement
-    - sample generation architecture is much improved and much more principled
- - user visible benefit is that PHC synchronizaion parameters can now be configured using [sync] secton of the config file
-    - simulator can be used to tune defaults
- - minor benefit: 50% duty cycle now works
- - foundation for future improvements, most importanty holdover mode
+The benefits in terms of user-visible features of the 0.2 implementation are relatively modest.
+Reset mode can disambiguate leading and trailing edges even with a 50% duty cycle.
+PHC synchronization parameters are now fully configurable using a new `[sync]` section of the config file.
+The simulator has a CLI that can be used to tune these parameters, in particular the Kp/Ki constants for the tracking servo.
 
+But the major wins from the new architecture are in terms of improving reliability and providing a foundation for future development.
+The most important missing feature at the moment is holdover:
+the modal architecture can accommodate this in a natural way.
+Sample generation has a clean and principled architecture that solves the problems this had in 0.1;
+in tracking mode, it does not depend on time messages and so should be more reliable.
+The most important aspect of the architecture is I believe the simulator.
+This solves the testability problem we had in 0.1 and improves the reliability of 0.2.
+But it is also crucial for future development: without a simulator,
+it would be very difficult to develop a reliable implementation of complex features like holdover.
