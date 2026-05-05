@@ -1,5 +1,6 @@
 ---
-title: SatPulse 0.2 PHC synchronization architecture
+title: Evolving a new PHC synchronization architecture for SatPulse 0.2
+date: 2026-05-05 11:30:00 +0700
 ---
 
 One of the major changes in SatPulse 0.2 is a new architecture for the PHC synchronization subsystem.
@@ -111,7 +112,7 @@ It remains in tracking mode so long as the offsets indicate that the PHC is stil
 If synchronization is lost, it transitions to reset mode.
 
 Each mode is associated with a clock quality notified to the PTP grandmaster:
-tracking mode is associated with clock quality representing a synchronized state;
+tracking mode is associated with a clock quality representing a synchronized state;
 reset and converging mode are associated with a clock quality representing an unsynchronized state.
 
 The following table summarizes the operation of the modes.
@@ -189,7 +190,7 @@ The most important missing feature at the moment is holdover:
 the modal architecture can accommodate this in a natural way.
 Sample generation has a clean and principled architecture that solves the problems this had in 0.1;
 in tracking mode, it does not depend on time messages and so should be more reliable.
-The most important aspect of the architecture is I believe the simulator.
+The most important aspect of the architecture is, I believe, the simulator.
 This solves the testability problem we had in 0.1 and improves the reliability of 0.2.
 But it is also crucial for future development: without a simulator,
 it would be very difficult to develop a reliable implementation of complex features like holdover.
