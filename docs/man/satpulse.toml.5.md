@@ -285,6 +285,23 @@ In addition, `proxy.tcp` and `proxy.sock` can both have the following keys:
 * `readOnly` - a boolean saying whether access to the GPS receiver should be read-only; this means that serial packets will be forwarded from the GPS receiver to the network, but the network will not be able to send packets to the GPS receiver; this defaults to true if `protocol` is specified and false otherwise
 * `writeLockTimeout` - a number giving the time in seconds that a writer to the GPS receiver should have exclusive write access; if client writes to the GPS receiver (which is allowed only when readOnly is false), then no other client will be able to write to the GPS receiver for this period of time; the default is 2 seconds
 
+## `sync` table
+
+The `sync` table specifies parameters that control the process of synchronizing the PHC with the time from the GPS receiver. The table has subtables `reset`, `converge` and `track`, which configure parameters for reset, converging and tracking synchronization modes. There is also a `share` subtable for parameters shared between modes.
+SatPulse starts in reset mode. In this mode, it observes timestamps and GPS messages for a short period and then generates a single sample, which is usually used to step the PHC. It then transitions to converging mode, where the PHC frequency is adjusted by a PI servo to bring the phase of the PHC into alignment with the GPS time. It then transitions to tracking mode, where it adjusts the frequency to maintain alignment. If a problem is encountered in converging or tracking mode, it will transition back to reset mode.
+
+There are over 30 parameters. They are tightly coupled to the implementation and may change between releases.
+The defaults have been chosen to work well in most situations.
+Changes should be made with caution, as a poor choice of parameters may make SatPulse work unreliably or not at all.
+The full set of keys is documented in the configuration file schema.
+The keys you are most likely to want to change are:
+
+* `track.kp`, `track.ki` - numbers specifying the proportional and integral constants used for the tracking mode servo; the defaults are 0.8 and 0.3
+* `track.ignoreSawtoothCorrection` - a boolean specifying whether to ignore the sawtooth correction provided by the GPS receiver; the default is false; this should be set to true if the PPS signal from the GPS receiver passes through a disciplining process before reaching the PHC; this happens for example when the PHC is connected to a GPSDO or with the Intel E810 time synchronization network adapters.
+* `share.detectInvalidLeap` - a boolean saying whether to try to detect invalid backwards leaps in the GPS messages; the default is true; these leaps happen in a very specific combination of circumstances (the GPS firmware was released before the last leap second, SatPulse has not configured the receiver and the receiver does a cold start); if these circumstances do not apply, this can be set to false.
+* `reset.expectedDelay` - the expected delay in seconds between the pulse and the corresponding GPS message; when there are multiple messages in the same navigation epoch, the delay is measured from the pulse to the first message in the epoch, rather than to the message which carries the current time; the default is 0.1
+* `reset.pulseWindow` - the number of pulses to use in generating the first sample; the default is 5; a larger value more thoroughly checks the timestamps and messages being generated, at the cost of increased start-up time
+
 # EXAMPLES
 
 ```
