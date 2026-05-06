@@ -264,6 +264,13 @@ func angle1e5Opt[T integer](v T) opt.Val[gpsprot.Angle] {
 	return opt.Make(angle1e5(v))
 }
 
+// invalidDOP is the sentinel u-blox uses to indicate a DOP is not
+// available, e.g. positional DOPs in a time-only fix.
+const invalidDOP uint16 = 9999
+
 func dop01(v uint16) opt.Val[float64] {
+	if v == invalidDOP {
+		return opt.Val[float64]{}
+	}
 	return opt.Make(float64(v) * 0.01)
 }
