@@ -72,6 +72,8 @@ docs:
         url: "/man/satpulsetool-gps.1.html"
       - title: "satpulsetool-sdp(1)"
         url: "/man/satpulsetool-sdp.1.html"
+      - title: "satpulsetool-syncsim(1)"
+        url: "/man/satpulsetool-syncsim.1.html"
       - title: "satpulse.toml(5)"
         url: "/man/satpulse.toml.5.html"
       - title: "satpulsed(8)"

@@ -20,11 +20,14 @@ The *command* must be one of the following.
 **sdp**
 : Manage Software Defined Pins (SDPs) of PTP Hardware Clocks (PHCs)
 
+**syncsim**
+: Simulate synchronizing a PHC with a GPS receiver
+
 **decode**
 : Decode a GPS packet from hex or ASCII data.
 
 **annotate**
-: Add fields to a JSONL packet log showing decoded packets
+: Add fields to a JSONL packet log showing decoded packets.
 
 **replay**
 : Replay a JSONL packet log, generating JSONL events, similar to an event log.
@@ -57,4 +60,4 @@ Show help for satpulsetool gps command:
 
 # SEE ALSO
 
-**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-sdp(1)**
+**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-sdp(1)**, **satpulsetool-syncsim(1)**
