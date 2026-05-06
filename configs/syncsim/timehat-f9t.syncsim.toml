@@ -1,0 +1,23 @@
+#:schema syncsim-schema.json
+# Time Appliances TimeHAT (i226 NIC with TCXO) with u-blox ZED-F9T (dual-frequency L1/L2)
+
+[sim]
+duration = 86400
+
+[phc]
+whiteNoise = 2.5
+flickerNoise = 0.6
+randomWalk = 0.02
+
+[gps]
+jitter = 0.2
+sawtooth.amp = 7.86
+
+[[gps.ar1]]
+tau = 3400
+sigma = 3
+
+[sync]
+track.kp = 0.8
+track.ki = 0.001
+track.ignoreSawtoothCorrection = false

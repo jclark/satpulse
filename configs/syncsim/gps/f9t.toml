@@ -1,0 +1,8 @@
+# ZED-F9T (dual-frequency L1/L2)
+[gps]
+jitter = 0.2
+sawtooth.amp = 7.86
+
+[[gps.ar1]]
+tau = 3400
+sigma = 3
