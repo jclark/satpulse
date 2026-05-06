@@ -4,12 +4,14 @@
 //
 // The simulator uses an event-driven architecture built on Go 1.23 iterators:
 //
-//	generatePulseEvents()    ─┐
-//	generateMessageEvents()  ─┼─> mergeEvents() ──> for event := range events
-//	generateTickEvents()     ─┘
+//	generatePulseEvents()        ─┐
+//	generatePulseMsgEvents()     ─┤
+//	generateMessageEvents()      ─┼─> mergeEvents() ──> for event := range events
+//	generateTickEvents()         ─┘
 //
-// Three event streams are generated independently and merged chronologically:
+// Event streams are generated independently and merged chronologically:
 //   - Pulse events: GPS PPS edges (rising, and trailing for dual-edge mode)
+//   - Pulse-related messages tied to GPS PPS edges
 //   - Message events: GPS time messages containing TAI time
 //   - Tick events: System ticks every 250ms (like real daemon)
 //
@@ -54,6 +56,10 @@ import (
 
 const (
 	tickInterval = 0.25
+
+	// Must be used by both pulse event generators, advancing once per PPS,
+	// so pulse edges and pulse messages use the same delay for each PPS.
+	pulseDelaySeed = 999
 	NoPulse      = gpsprot.NavSolution // use NavSolution value to indicate no sawtooth messages
 )
 
@@ -262,7 +268,8 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	durSec := cfg.Sim.Duration
 	lg.Info("starting phcsync simulation",
 		"duration", durSec,
-		"pulseDelay", "5µs-250µs",
+		"pulseMinDelay", cfg.Pulse.MinDelay,
+		"pulseMaxDelay", cfg.Pulse.MaxDelay,
 		"msgDelay", cfg.Msg.Delay,
 		"phcFreqOffset", cfg.PHC.FreqOffset,
 		"phcDrift", cfg.PHC.Drift,
@@ -275,11 +282,12 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	// Note: ticks start at t=0.25, modeling real system behavior where ticks
 	// run continuously from the start. Early ticks are safe - see generateTickEvents.
 	pulseGen := generatePulseEvents(cfg, durSec, edgesPerPulse)
+	pulseMsgGen := generatePulseMsgEvents(cfg, durSec)
 	msgGen := generateNavSolutionMsgEvents(cfg, durSec)
 	tickGen := generateTickEvents(durSec)
 
 	// Merge and process events
-	events := mergeEvents(pulseGen, msgGen, tickGen)
+	events := mergeEvents(pulseGen, pulseMsgGen, msgGen, tickGen)
 
 	sampleCount := 0
 	stats := &offsetStats{adev: *allan.NewAccum(1.0)}
@@ -484,26 +492,10 @@ func (s *offsetStats) stdDev() float64 {
 // Generates ALL pulses - does NOT filter by outages (filtering happens in main loop).
 func generatePulseEvents(cfg Config, duration float64, edgesPerPulse int) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
-		rng := rand.New(rand.NewSource(999))
-		prePulseTime := cfg.Msg.PrePulseTime
-		if prePulseTime == 0 {
-			prePulseTime = 0.95
-		}
+		rng := rand.New(rand.NewSource(pulseDelaySeed))
 		for pps := 1.0; pps < duration; pps += 1.0 {
 			pulseDelay := cfg.Pulse.MinDelay + rng.Float64()*(cfg.Pulse.MaxDelay-cfg.Pulse.MinDelay)
 			risingTime := pps + pulseDelay
-
-			// Emit PrePulse event only if sawtooth is configured and PrePulse mode
-			if cfg.GPS.Sawtooth.Amp > 0 && cfg.Msg.SawtoothType == SawtoothPrePulse {
-				prePulseEventTime := risingTime - prePulseTime
-				if !yield(Event{
-					Time: prePulseEventTime,
-					Type: EventPrePulseMsg,
-					Data: PrePulseMsgEventData{PPS: pps, Sawtooth: 0}, // filled by main loop
-				}) {
-					return
-				}
-			}
 
 			// Emit rising edge pulse event
 			if !yield(Event{
@@ -517,18 +509,6 @@ func generatePulseEvents(cfg Config, duration float64, edgesPerPulse int) iter.S
 				return
 			}
 
-			// Emit PostPulse event only if sawtooth is configured and PostPulse mode
-			if cfg.GPS.Sawtooth.Amp > 0 && cfg.Msg.SawtoothType == SawtoothPostPulse {
-				postPulseEventTime := risingTime + cfg.Msg.PostPulseDelay
-				if !yield(Event{
-					Time: postPulseEventTime,
-					Type: EventPostPulseMsg,
-					Data: PostPulseMsgEventData{PPS: pps},
-				}) {
-					return
-				}
-			}
-
 			if edgesPerPulse == 2 {
 				trailingTime := pps + cfg.Pulse.Width + pulseDelay
 				if !yield(Event{
@@ -538,6 +518,41 @@ func generatePulseEvents(cfg Config, duration float64, edgesPerPulse int) iter.S
 						EdgeIdx: 1,
 						PPS:     pps,
 					},
+				}) {
+					return
+				}
+			}
+		}
+	}
+}
+
+func generatePulseMsgEvents(cfg Config, duration float64) iter.Seq[Event] {
+	return func(yield func(Event) bool) {
+		if cfg.GPS.Sawtooth.Amp <= 0 || cfg.Msg.SawtoothType == SawtoothNone {
+			return
+		}
+		rng := rand.New(rand.NewSource(pulseDelaySeed))
+		prePulseTime := cfg.Msg.PrePulseTime
+		if prePulseTime == 0 {
+			prePulseTime = 0.95
+		}
+		for pps := 1.0; pps < duration; pps += 1.0 {
+			pulseDelay := cfg.Pulse.MinDelay + rng.Float64()*(cfg.Pulse.MaxDelay-cfg.Pulse.MinDelay)
+			risingTime := pps + pulseDelay
+
+			if cfg.Msg.SawtoothType == SawtoothPrePulse {
+				if !yield(Event{
+					Time: risingTime - prePulseTime,
+					Type: EventPrePulseMsg,
+					Data: PrePulseMsgEventData{PPS: pps, Sawtooth: 0}, // filled by main loop
+				}) {
+					return
+				}
+			} else if cfg.Msg.SawtoothType == SawtoothPostPulse {
+				if !yield(Event{
+					Time: risingTime + cfg.Msg.PostPulseDelay,
+					Type: EventPostPulseMsg,
+					Data: PostPulseMsgEventData{PPS: pps},
 				}) {
 					return
 				}
@@ -587,28 +602,40 @@ func generateTickEvents(duration float64) iter.Seq[Event] {
 	}
 }
 
-// mergeEvents takes three event generators and merges them chronologically
+// mergeEvents takes four event generators and merges them chronologically
 // Returns events in time order until all generators are exhausted
 func mergeEvents(
 	pulseGen iter.Seq[Event],
+	pulseMsgGen iter.Seq[Event],
 	msgGen iter.Seq[Event],
 	tickGen iter.Seq[Event],
 ) iter.Seq[Event] {
 	return func(yield func(Event) bool) {
 		pulseNext, pulseStop := iter.Pull(pulseGen)
+		pulseMsgNext, pulseMsgStop := iter.Pull(pulseMsgGen)
 		msgNext, msgStop := iter.Pull(msgGen)
 		tickNext, tickStop := iter.Pull(tickGen)
 		defer pulseStop()
+		defer pulseMsgStop()
 		defer msgStop()
 		defer tickStop()
 		pulseEvent, pulseOK := pulseNext()
+		pulseMsgEvent, pulseMsgOK := pulseMsgNext()
 		msgEvent, msgOK := msgNext()
 		tickEvent, tickOK := tickNext()
-		for pulseOK || msgOK || tickOK {
+		for pulseOK || pulseMsgOK || msgOK || tickOK {
 			var nextEvent Event
-			if pulseOK && (!msgOK || pulseEvent.Time <= msgEvent.Time) && (!tickOK || pulseEvent.Time <= tickEvent.Time) {
+			if pulseOK &&
+				(!pulseMsgOK || pulseEvent.Time <= pulseMsgEvent.Time) &&
+				(!msgOK || pulseEvent.Time <= msgEvent.Time) &&
+				(!tickOK || pulseEvent.Time <= tickEvent.Time) {
 				nextEvent = pulseEvent
 				pulseEvent, pulseOK = pulseNext()
+			} else if pulseMsgOK &&
+				(!msgOK || pulseMsgEvent.Time <= msgEvent.Time) &&
+				(!tickOK || pulseMsgEvent.Time <= tickEvent.Time) {
+				nextEvent = pulseMsgEvent
+				pulseMsgEvent, pulseMsgOK = pulseMsgNext()
 			} else if msgOK && (!tickOK || msgEvent.Time <= tickEvent.Time) {
 				nextEvent = msgEvent
 				msgEvent, msgOK = msgNext()
