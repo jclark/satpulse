@@ -20,7 +20,8 @@ export const Dashboard: FunctionComponent = () => {
     const context = useContext(EventSourceContext) as EventSource;
     const [events, setEvents] = useState<Map>({});
     const [haveLookAngles, setHaveLookAngles] = useState(false);
-    
+    const [everMoving, setEverMoving] = useState(false);
+
     useEffect(() => {
         const handler = (type: string) => (e: MessageEvent<string>) => {
             const parsedEvents = parseSSEMessage(type, e.data);
@@ -29,6 +30,9 @@ export const Dashboard: FunctionComponent = () => {
                 if (obj !== null) {
                     if (eventType === 'satellites' && obj.svs && obj.svs.length > 0) {
                         setHaveLookAngles(obj.svs.some((sv: any) => sv.lookAngles));
+                    }
+                    if (eventType === 'posvel' && typeof obj.groundSpeed === 'number' && obj.groundSpeed >= 0.1) {
+                        setEverMoving(true);
                     }
                     setEvents(prev => ({ ...prev, [eventType]: obj }));
                 }
@@ -55,7 +59,7 @@ export const Dashboard: FunctionComponent = () => {
         {events.receiver && <PropertyCard title="Receiver" data={events.receiver} format={receiverFormat} />}
         {events.quality && <PropertyCard title="Status" data={events.quality} format={statusFormat} />}
         {events.posvel && <PropertyCard title="Position" data={events.posvel} format={positionFormat} />}
-        {events.posvel && showVelocity(events.posvel) && <PropertyCard title="Velocity" data={events.posvel} format={velocityFormat} />}
+        {events.posvel && everMoving && <PropertyCard title="Velocity" data={events.posvel} format={velocityFormat} />}
         {events.quality && <PropertyCard title="Position Quality" data={events.quality} format={positionQualityFormat} />}
         {events.survey && <PropertyCard title="Survey-in Status" data={events.survey} format={surveyFormat} />}
         </CardsElement>
@@ -287,10 +291,6 @@ const velocityFormat: EventFormat = {
     velN: ["Vel north", (arg: number) => `${arg.toFixed(3)} m/s`],
     velE: ["Vel east", (arg: number) => `${arg.toFixed(3)} m/s`],
     velD: ["Vel down", (arg: number) => `${arg.toFixed(3)} m/s`],
-}
-
-function showVelocity(posvel: Map): boolean {
-    return typeof posvel.groundSpeed === 'number' && posvel.groundSpeed >= 0.1;
 }
 
 const positionQualityFormat: EventFormat = {

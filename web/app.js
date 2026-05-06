@@ -724,6 +724,7 @@
     const context = x2(EventSourceContext);
     const [events, setEvents] = d2({});
     const [haveLookAngles, setHaveLookAngles] = d2(false);
+    const [everMoving, setEverMoving] = d2(false);
     y2(() => {
       const handler = (type) => (e3) => {
         const parsedEvents = parseSSEMessage(type, e3.data);
@@ -732,6 +733,9 @@
           if (obj !== null) {
             if (eventType === "satellites" && obj.svs && obj.svs.length > 0) {
               setHaveLookAngles(obj.svs.some((sv) => sv.lookAngles));
+            }
+            if (eventType === "posvel" && typeof obj.groundSpeed === "number" && obj.groundSpeed >= 0.1) {
+              setEverMoving(true);
             }
             setEvents((prev) => ({ ...prev, [eventType]: obj }));
           }
@@ -755,7 +759,7 @@
       events.receiver && /* @__PURE__ */ u3(PropertyCard, { title: "Receiver", data: events.receiver, format: receiverFormat }),
       events.quality && /* @__PURE__ */ u3(PropertyCard, { title: "Status", data: events.quality, format: statusFormat }),
       events.posvel && /* @__PURE__ */ u3(PropertyCard, { title: "Position", data: events.posvel, format: positionFormat }),
-      events.posvel && showVelocity(events.posvel) && /* @__PURE__ */ u3(PropertyCard, { title: "Velocity", data: events.posvel, format: velocityFormat }),
+      events.posvel && everMoving && /* @__PURE__ */ u3(PropertyCard, { title: "Velocity", data: events.posvel, format: velocityFormat }),
       events.quality && /* @__PURE__ */ u3(PropertyCard, { title: "Position Quality", data: events.quality, format: positionQualityFormat }),
       events.survey && /* @__PURE__ */ u3(PropertyCard, { title: "Survey-in Status", data: events.survey, format: surveyFormat })
     ] });
@@ -906,9 +910,6 @@
     velE: ["Vel east", (arg) => `${arg.toFixed(3)} m/s`],
     velD: ["Vel down", (arg) => `${arg.toFixed(3)} m/s`]
   };
-  function showVelocity(posvel) {
-    return typeof posvel.groundSpeed === "number" && posvel.groundSpeed >= 0.1;
-  }
   var positionQualityFormat = {
     accHor: ["Horizontal accuracy", (arg) => `${arg.toFixed(3)} m`],
     accVert: ["Vertical accuracy", (arg) => `${arg.toFixed(3)} m`],
