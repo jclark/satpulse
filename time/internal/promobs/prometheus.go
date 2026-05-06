@@ -26,6 +26,7 @@ type PrometheusObserver struct {
 
 	// PHC metrics
 	inSyncGauge           prometheus.Gauge
+	syncModeGauge         prometheus.Gauge
 	offsetHistogram       prometheus.Histogram
 	offsetGauge           prometheus.Gauge
 	frequencyGauge        prometheus.Gauge
@@ -80,6 +81,13 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 	})
 	// It takes a while for samples to start coming through: during this period we should be observed as out of sync.
 	inSyncGauge.Set(0)
+
+	// Sync mode gauge: holds the raw phcsync.Mode integer.
+	syncModeGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "satpulse_phc_sync_mode",
+		Help: syncModeHelp(),
+	})
+	syncModeGauge.Set(0)
 
 	// Clock offset histogram
 	offsetHistogram := prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -148,6 +156,7 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 
 	// Register metrics
 	reg.MustRegister(inSyncGauge)
+	reg.MustRegister(syncModeGauge)
 	reg.MustRegister(offsetHistogram)
 	reg.MustRegister(offsetGauge)
 	reg.MustRegister(frequencyGauge)
@@ -165,6 +174,7 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 		reg:                   reg,
 		activeSatellites:      make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{}),
 		inSyncGauge:           inSyncGauge,
+		syncModeGauge:         syncModeGauge,
 		offsetHistogram:       offsetHistogram,
 		offsetGauge:           offsetGauge,
 		frequencyGauge:        frequencyGauge,
@@ -209,23 +219,47 @@ func makeBuckets(clockAccuracyNanos float64) []float64 {
 	return slices.Insert(buckets, i, clockAccuracySeconds)
 }
 
+// ModeChanged drives sync_mode and sync_status from the new controller
+// mode. Both gauges therefore reflect current state — including transitions
+// that aren't sample-driven, such as a Pause() on carrier loss.
+func (p *PrometheusObserver) ModeChanged(_, newMode phcsync.Mode) {
+	p.syncModeGauge.Set(float64(newMode))
+	if newMode.InSync() {
+		p.inSyncGauge.Set(1)
+		p.everInSync = true
+	} else {
+		p.inSyncGauge.Set(0)
+	}
+}
+
+// syncModeHelp builds the help text for the satpulse_phc_sync_mode metric
+// from the phcsync.Mode enum, so the documentation stays in lock-step with
+// the underlying constants.
+func syncModeHelp() string {
+	var b strings.Builder
+	b.WriteString("PHC time sync mode (")
+	for m := phcsync.ModeReset; m < phcsync.NModes; m++ {
+		if m > phcsync.ModeReset {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%d = %s", int(m), m)
+	}
+	b.WriteString(")")
+	return b.String()
+}
+
 // Handler returns the HTTP handler for /metrics endpoint
 func (p *PrometheusObserver) Handler() http.Handler {
 	return promhttp.HandlerFor(p.reg, promhttp.HandlerOpts{})
 }
 
-// Sample implements phcsync.Sampler interface
+// Sample implements phcsync.Observer interface
 func (p *PrometheusObserver) Sample(data phcsync.Sample) {
 	// Always update frequency gauge (convert ppb to dimensionless)
 	p.frequencyGauge.Set(data.Freq / 1e9)
 
-	if data.Mode.InSync() {
-		p.inSyncGauge.Set(1)
-		if !p.everInSync {
-			p.everInSync = true
-		}
-	} else {
-		p.inSyncGauge.Set(0)
+	// data.Mode is sample-attribution: was this sample served in sync?
+	if !data.Mode.InSync() {
 		if p.everInSync {
 			p.samplesCounter.WithLabelValues("out_of_sync").Inc()
 		} else {

@@ -150,7 +150,7 @@ func (o *SSEObserver) Release() {
 	close(o.sseCh)
 }
 
-// Sample implements phcsync.Sampler - generates PHC sample SSE events
+// Sample implements phcsync.Observer - generates PHC sample SSE events
 func (o *SSEObserver) Sample(data phcsync.Sample) {
 	stepCount, changing := data.Era.StepCount()
 	event := SampleSSE{

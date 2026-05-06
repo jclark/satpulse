@@ -125,7 +125,7 @@ func (m Mode) InSync() bool {
 type Controller struct {
 	clock         Clock
 	timeMsgBuffer TimeMsgBuffer
-	sampler       Sampler
+	observer      Observer
 	gm            *ptpgm.Grandmaster
 	cfg           Config
 	leapSecond    ptime.LeapSecond
@@ -171,7 +171,7 @@ type sampleProcessor interface {
 // The Config must be validated before calling this function.
 func NewController(
 	clock Clock,
-	sampler Sampler,
+	observer Observer,
 	gm *ptpgm.Grandmaster,
 	cfg Config,
 	leapSecond ptime.LeapSecond,
@@ -187,7 +187,7 @@ func NewController(
 	}
 	c := &Controller{
 		clock:      clock,
-		sampler:    sampler,
+		observer:   observer,
 		gm:         gm,
 		cfg:        cfg,
 		leapSecond: leapSecond,
@@ -269,7 +269,7 @@ func (c *Controller) processSample(sample *Sample) {
 	// or outlier samples that cause us to leave tracking) represent the quality of time
 	// that clients were receiving while we were still in tracking mode.
 	sample.Mode = c.mode
-	c.sampler.Sample(*sample)
+	c.observer.Sample(*sample)
 	if mode != c.mode {
 		c.changeMode(mode)
 	}
@@ -372,9 +372,10 @@ func (c *Controller) changeMode(mode Mode) {
 	if c.mode == mode {
 		return
 	}
-	if c.mode != ModeInvalid {
+	old := c.mode
+	if old != ModeInvalid {
 		c.lg.Info("changing mode",
-			"from", c.mode.String(),
+			"from", old.String(),
 			"to", mode.String(),
 		)
 	}
@@ -416,6 +417,7 @@ func (c *Controller) changeMode(mode Mode) {
 	c.mode = mode
 
 	c.gmUpdate()
+	c.observer.ModeChanged(old, mode)
 }
 
 // getDetectLeap builds the parameter-less leap-detection closure to

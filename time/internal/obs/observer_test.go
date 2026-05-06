@@ -24,6 +24,8 @@ func (m *mockObserver) Sample(data phcsync.Sample) {
 	m.sampleCount++
 }
 
+func (m *mockObserver) ModeChanged(_, _ phcsync.Mode) {}
+
 func (m *mockObserver) Tick(_ *gpsprot.TimeMsg, _ time.Time) {
 	m.tickCount++
 }
