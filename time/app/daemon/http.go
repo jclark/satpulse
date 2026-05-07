@@ -96,7 +96,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 		// Only register GUI routes if enabled for this endpoint
 		if cfg[i].gui() {
 			mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
-				sseHandleRequest(ctx, lg, w, r, b, sseObs.InitEvent())
+				sseHandleRequest(ctx, lg, w, r, b, sseObs.InitEvents())
 			})
 			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 				fileServer.ServeHTTP(w, r)
@@ -138,22 +138,28 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 	return nil
 }
 
-func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWriter, r *http.Request, b *bcast.Bcast[sse.Event], initEvent sse.Event) {
+func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWriter, r *http.Request, b *bcast.Bcast[sse.Event], initEvents []sse.Event) {
 	defer lg.Debug("about to exit HTTP SSE request handler")
 	lg.Debug("starting to handle HTTP SSE request")
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	flusher := w.(http.Flusher)
-	if !initEvent.IsZero() {
-		_, err := w.Write(([]byte)(initEvent.Format()))
-		if err != nil {
+	// Subscribe before writing the init events: any broadcast events that
+	// fire in the small window between init delivery and the loop below
+	// will then be queued for us, rather than lost.
+	ch := b.Subscribe()
+	defer b.Unsubscribe(ch)
+	for _, ev := range initEvents {
+		if ev.IsZero() {
+			continue
+		}
+		if _, err := w.Write(([]byte)(ev.Format())); err != nil {
 			lg.Error("error writing HTTP response", "err", err)
 			return
 		}
 	}
-	ch := b.Subscribe()
-	defer b.Unsubscribe(ch)
+	flusher.Flush()
 
 	for {
 		select {

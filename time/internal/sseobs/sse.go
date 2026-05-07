@@ -2,6 +2,7 @@ package sseobs
 
 import (
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpscfg"
@@ -19,6 +20,12 @@ import (
 // InitSSE is the type of the SSE for the initialization event
 type InitSSE struct {
 	Receiver *gpsprot.ReceiverInfo `json:"receiver,omitempty"`
+}
+
+// ModeSSE is the SSE event data for sync mode changes.
+// Carries the controller's current mode (post-transition).
+type ModeSSE struct {
+	Mode string `json:"mode"`
 }
 
 // TimeSSE is the type of the SSE for time events
@@ -119,6 +126,10 @@ type SSEObserver struct {
 	lg        *slog.Logger
 	ls        ptime.LeapSecond
 	initEvent sse.Event
+	// modeEvent caches the most recent "mode" event so new SSE clients
+	// can be told the current mode at connect time. nil before the first
+	// ModeChanged is observed.
+	modeEvent atomic.Pointer[sse.Event]
 }
 
 // New creates a new SSE observer with the provided channel and leap second.
@@ -141,8 +152,27 @@ func New(sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger, cfgResult
 	}
 }
 
-func (o *SSEObserver) InitEvent() sse.Event {
-	return o.initEvent
+// InitEvents returns the events to write to a new SSE client before it
+// starts receiving live broadcast events. Currently the static init
+// event, plus the most recent mode event if one has been observed.
+func (o *SSEObserver) InitEvents() []sse.Event {
+	events := []sse.Event{o.initEvent}
+	if p := o.modeEvent.Load(); p != nil {
+		events = append(events, *p)
+	}
+	return events
+}
+
+// ModeChanged implements phcsync.Observer. Stores the latest mode event
+// for delivery to new clients and broadcasts it to current subscribers.
+func (o *SSEObserver) ModeChanged(_, newMode phcsync.Mode) {
+	ev, err := sse.Make("mode", ModeSSE{Mode: newMode.String()})
+	if err != nil {
+		o.lg.Error("failed to create SSE event", "name", "mode", "err", err)
+		return
+	}
+	o.modeEvent.Store(&ev)
+	o.sseCh <- ev
 }
 
 // Release implements Observer - closes the SSE channel
