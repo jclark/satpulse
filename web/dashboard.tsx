@@ -19,6 +19,11 @@ type Map = {[key: string]: any};
 export const Dashboard: FunctionComponent = () => {
     const context = useContext(EventSourceContext) as EventSource;
     const [events, setEvents] = useState<Map>({});
+    // phc accumulates fields from both `phc` and `mode` events as they
+    // arrive. The shared `mode` field is therefore last-write-wins by
+    // arrival order, so a stale cached mode delivered at connect is
+    // corrected by the next live event from either stream.
+    const [phc, setPhc] = useState<Map | null>(null);
     const [haveLookAngles, setHaveLookAngles] = useState(false);
     const [everMoving, setEverMoving] = useState(false);
 
@@ -28,6 +33,10 @@ export const Dashboard: FunctionComponent = () => {
             for (const [eventType, eventData] of parsedEvents) {
                 const obj : Map|null = validateEvent(eventType, eventData);
                 if (obj !== null) {
+                    if (eventType === 'phc' || eventType === 'mode') {
+                        setPhc(prev => ({ ...prev, ...obj }));
+                        continue;
+                    }
                     if (eventType === 'satellites' && obj.svs && obj.svs.length > 0) {
                         setHaveLookAngles(obj.svs.some((sv: any) => sv.lookAngles));
                     }
@@ -55,12 +64,7 @@ export const Dashboard: FunctionComponent = () => {
         {events.satellites && haveLookAngles && <SkyViewCard svs={svs} />}
         {events.satellites && <SignalGraphCard svs={svs} />}
         {events.time && <PropertyCard title="Current GPS Time" data={events.time} format={timeFormat} />}
-        {(events.phc || events.mode) && (
-            // Both events carry a `mode` field; spreading events.mode last
-            // means the dedicated mode event wins over the per-sample mode,
-            // so transitions are visible before the next sample arrives.
-            <PropertyCard title="PTP Hardware Clock" data={{ ...events.phc, ...events.mode }} format={phcFormat} />
-        )}
+        {phc && <PropertyCard title="PTP Hardware Clock" data={phc} format={phcFormat} />}
         {events.receiver && <PropertyCard title="Receiver" data={events.receiver} format={receiverFormat} />}
         {events.quality && <PropertyCard title="Status" data={events.quality} format={statusFormat} />}
         {events.posvel && <PropertyCard title="Position" data={events.posvel} format={positionFormat} />}
