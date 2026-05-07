@@ -59,7 +59,7 @@ func TestSSEObserver_Events(t *testing.T) {
 				})
 			},
 			eventType:    "phc",
-			expectedJSON: `{"offset":123,"freq":1.5,"stepCount":0,"stepCountChanging":true,"syncState":"tracking"}`,
+			expectedJSON: `{"offset":123,"freq":1.5,"stepCount":0,"stepCountChanging":true,"mode":"tracking"}`,
 		},
 		{
 			name: "sample_outlier",
@@ -73,7 +73,7 @@ func TestSSEObserver_Events(t *testing.T) {
 				})
 			},
 			eventType:    "phc",
-			expectedJSON: `{"offset":-456,"freq":-2.3,"stepCount":0,"stepCountChanging":true,"outlier":true,"syncState":"reset"}`,
+			expectedJSON: `{"offset":-456,"freq":-2.3,"stepCount":0,"stepCountChanging":true,"outlier":true,"mode":"reset"}`,
 		},
 		{
 			name: "time",

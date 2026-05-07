@@ -719,7 +719,7 @@
 
   // dashboard.tsx
   var EventSourceContext = Q(null);
-  var EVENT_TYPES = ["satellites", "time", "phc", "survey", "receiver", "posvel", "quality", "init"];
+  var EVENT_TYPES = ["satellites", "time", "phc", "mode", "survey", "receiver", "posvel", "quality", "init"];
   var Dashboard = () => {
     const context = x2(EventSourceContext);
     const [events, setEvents] = d2({});
@@ -755,7 +755,10 @@
       events.satellites && haveLookAngles && /* @__PURE__ */ u3(SkyViewCard, { svs }),
       events.satellites && /* @__PURE__ */ u3(SignalGraphCard, { svs }),
       events.time && /* @__PURE__ */ u3(PropertyCard, { title: "Current GPS Time", data: events.time, format: timeFormat }),
-      events.phc && /* @__PURE__ */ u3(PropertyCard, { title: "PTP Hardware Clock", data: events.phc, format: phcFormat }),
+      (events.phc || events.mode) && // Both events carry a `mode` field; spreading events.mode last
+      // means the dedicated mode event wins over the per-sample mode,
+      // so transitions are visible before the next sample arrives.
+      /* @__PURE__ */ u3(PropertyCard, { title: "PTP Hardware Clock", data: { ...events.phc, ...events.mode }, format: phcFormat }),
       events.receiver && /* @__PURE__ */ u3(PropertyCard, { title: "Receiver", data: events.receiver, format: receiverFormat }),
       events.quality && /* @__PURE__ */ u3(PropertyCard, { title: "Status", data: events.quality, format: statusFormat }),
       events.posvel && /* @__PURE__ */ u3(PropertyCard, { title: "Position", data: events.posvel, format: positionFormat }),
@@ -864,7 +867,7 @@
     tai: ["TAI", formatTAI]
   };
   var phcFormat = {
-    syncState: ["State"],
+    mode: ["State"],
     offset: ["Offset from GPS", formatNanoseconds],
     freq: ["Frequency offset", (arg) => `${arg.toFixed(2)} ppb`],
     stepCount: (count, obj) => [

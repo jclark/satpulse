@@ -11,7 +11,7 @@ type JSONObject = { [key: string]: JSONValue };
 type JSONArray = JSONValue[];
 
 // Use a more specific type for our parsed event data
-const EVENT_TYPES = ["satellites", "time", "phc", "survey", "receiver", "posvel", "quality", "init"] as const;
+const EVENT_TYPES = ["satellites", "time", "phc", "mode", "survey", "receiver", "posvel", "quality", "init"] as const;
 type EventType = typeof EVENT_TYPES[number];
 
 type Map = {[key: string]: any};
@@ -55,7 +55,12 @@ export const Dashboard: FunctionComponent = () => {
         {events.satellites && haveLookAngles && <SkyViewCard svs={svs} />}
         {events.satellites && <SignalGraphCard svs={svs} />}
         {events.time && <PropertyCard title="Current GPS Time" data={events.time} format={timeFormat} />}
-        {events.phc && <PropertyCard title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}
+        {(events.phc || events.mode) && (
+            // Both events carry a `mode` field; spreading events.mode last
+            // means the dedicated mode event wins over the per-sample mode,
+            // so transitions are visible before the next sample arrives.
+            <PropertyCard title="PTP Hardware Clock" data={{ ...events.phc, ...events.mode }} format={phcFormat} />
+        )}
         {events.receiver && <PropertyCard title="Receiver" data={events.receiver} format={receiverFormat} />}
         {events.quality && <PropertyCard title="Status" data={events.quality} format={statusFormat} />}
         {events.posvel && <PropertyCard title="Position" data={events.posvel} format={positionFormat} />}
@@ -242,7 +247,7 @@ const timeFormat: EventFormat = {
 }
 
 const phcFormat: EventFormat = {
-    syncState: ["State"],
+    mode: ["State"],
     offset: ["Offset from GPS", formatNanoseconds],
     freq: ["Frequency offset", (arg: number) => `${arg.toFixed(2)} ppb`],
     stepCount: (count: number, obj: Map) => [

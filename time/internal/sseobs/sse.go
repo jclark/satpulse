@@ -60,7 +60,7 @@ type SampleSSE struct {
 	StepCount         uint32  `json:"stepCount"`
 	StepCountChanging bool    `json:"stepCountChanging,omitempty"`
 	Outlier           bool    `json:"outlier,omitempty"`
-	SyncState         string  `json:"syncState"`
+	Mode              string  `json:"mode"`
 }
 
 // PosVelSSE is the SSE event data for position and velocity.
@@ -189,7 +189,7 @@ func (o *SSEObserver) Sample(data phcsync.Sample) {
 		StepCountChanging: changing,
 		Freq:              data.Freq,
 		Outlier:           data.Kind == phcsync.SampleOutlier,
-		SyncState:         data.Mode.String(),
+		Mode:              data.Mode.String(),
 	}
 	o.sendSSE("phc", event)
 }
