@@ -27,7 +27,7 @@ func NewStatsLogObserver(lg *slog.Logger, interval int) *StatsLogObserver {
 	}
 }
 
-// Sample implements phcsync.Sampler
+// Sample implements phcsync.Observer
 func (o *StatsLogObserver) Sample(data phcsync.Sample) {
 	if o.interval <= 0 {
 		return

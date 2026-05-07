@@ -178,12 +178,21 @@ func (b *fakeBuffer) WaitForPulseCorrection(refTime ptime.Time) bool {
 	return false
 }
 
-// recordingSampler captures Sample calls for inspection.
+// recordingSampler captures Sample and ModeChanged calls for inspection.
 type recordingSampler struct {
-	samples []Sample
+	samples      []Sample
+	modeChanges  []modeChange
+}
+
+type modeChange struct {
+	old, new Mode
 }
 
 func (s *recordingSampler) Sample(data Sample) { s.samples = append(s.samples, data) }
+
+func (s *recordingSampler) ModeChanged(old, new Mode) {
+	s.modeChanges = append(s.modeChanges, modeChange{old, new})
+}
 
 // fakeClock is a minimal phcsync.Clock implementation for tests.
 type fakeClock struct {
@@ -344,3 +353,45 @@ func TestChangeModeWiringDetectLeap(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// TestModeChangedFiresWithoutSample verifies that ModeChanged is delivered
+// to observers on every transition path, including ones that aren't driven
+// by a sample. The carrier-loss case (Pause -> ModeReset) is the motivating
+// scenario: Tick returns early in reset, so without an explicit ModeChanged
+// notification a current-state gauge would stay stuck at "tracking" until
+// samples resume.
+func TestModeChangedFiresWithoutSample(t *testing.T) {
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	rec := &recordingSampler{}
+	c, err := NewController(&fakeClock{}, rec, nil, DefaultConfig(), ptime.LeapSecond{UTCOffAfter: 37}, 1, lg)
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	// Initial transition: ModeInvalid -> ModeReset.
+	c.SetTimeMsgBuffer(&fakeBuffer{})
+	// Drive sampleless transitions through the controller's internal API.
+	c.lastSample = &Sample{Kind: SampleOK}
+	c.changeMode(ModeConverging)
+	c.changeMode(ModeTracking)
+	// The case Codex flagged: carrier loss while tracking.
+	c.Pause()
+
+	want := []modeChange{
+		{ModeInvalid, ModeReset},
+		{ModeReset, ModeConverging},
+		{ModeConverging, ModeTracking},
+		{ModeTracking, ModeReset},
+	}
+	if len(rec.modeChanges) != len(want) {
+		t.Fatalf("ModeChanged calls: got %d (%v), want %d (%v)",
+			len(rec.modeChanges), rec.modeChanges, len(want), want)
+	}
+	for i, mc := range rec.modeChanges {
+		if mc != want[i] {
+			t.Errorf("ModeChanged[%d] = %v, want %v", i, mc, want[i])
+		}
+	}
+	if len(rec.samples) != 0 {
+		t.Errorf("expected no Sample calls, got %d", len(rec.samples))
+	}
+}

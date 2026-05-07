@@ -10,7 +10,7 @@ import (
 
 // Observer provides unified observability interface
 type Observer interface {
-	phcsync.Sampler
+	phcsync.Observer
 	gpsprot.MsgHandler
 
 	// Tick delivers a filled TimeMsg (TAI+UTC populated, rounded to ms)
@@ -54,11 +54,20 @@ func NewMultiObserver(observers ...Observer) *MultiObserver {
 	}
 }
 
-// Sample implements phcsync.Sampler by type-asserting handlers to Sampler
+// Sample implements phcsync.Observer by type-asserting handlers to Observer
 func (m *MultiObserver) Sample(data phcsync.Sample) {
 	for h := range m.Handlers() {
-		if sampler, ok := h.(phcsync.Sampler); ok {
-			sampler.Sample(data)
+		if o, ok := h.(phcsync.Observer); ok {
+			o.Sample(data)
+		}
+	}
+}
+
+// ModeChanged implements phcsync.Observer by type-asserting handlers to Observer
+func (m *MultiObserver) ModeChanged(oldMode, newMode phcsync.Mode) {
+	for h := range m.Handlers() {
+		if o, ok := h.(phcsync.Observer); ok {
+			o.ModeChanged(oldMode, newMode)
 		}
 	}
 }
@@ -113,8 +122,11 @@ type DefaultObserver struct {
 	gpsprot.DefaultHandler
 }
 
-// Sample implements phcsync.Sampler as a no-op
+// Sample implements phcsync.Observer as a no-op
 func (o *DefaultObserver) Sample(data phcsync.Sample) {}
+
+// ModeChanged implements phcsync.Observer as a no-op
+func (o *DefaultObserver) ModeChanged(_, _ phcsync.Mode) {}
 
 // Tick implements Observer as a no-op
 func (o *DefaultObserver) Tick(_ *gpsprot.TimeMsg, _ time.Time) {}

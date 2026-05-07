@@ -719,10 +719,11 @@
 
   // dashboard.tsx
   var EventSourceContext = Q(null);
-  var EVENT_TYPES = ["satellites", "time", "phc", "survey", "receiver", "posvel", "quality", "init"];
+  var EVENT_TYPES = ["satellites", "time", "phc", "mode", "survey", "receiver", "posvel", "quality", "init"];
   var Dashboard = () => {
     const context = x2(EventSourceContext);
     const [events, setEvents] = d2({});
+    const [phc, setPhc] = d2(null);
     const [haveLookAngles, setHaveLookAngles] = d2(false);
     const [everMoving, setEverMoving] = d2(false);
     y2(() => {
@@ -731,6 +732,10 @@
         for (const [eventType, eventData] of parsedEvents) {
           const obj = validateEvent(eventType, eventData);
           if (obj !== null) {
+            if (eventType === "phc" || eventType === "mode") {
+              setPhc((prev) => ({ ...prev, ...obj }));
+              continue;
+            }
             if (eventType === "satellites" && obj.svs && obj.svs.length > 0) {
               setHaveLookAngles(obj.svs.some((sv) => sv.lookAngles));
             }
@@ -755,7 +760,7 @@
       events.satellites && haveLookAngles && /* @__PURE__ */ u3(SkyViewCard, { svs }),
       events.satellites && /* @__PURE__ */ u3(SignalGraphCard, { svs }),
       events.time && /* @__PURE__ */ u3(PropertyCard, { title: "Current GPS Time", data: events.time, format: timeFormat }),
-      events.phc && /* @__PURE__ */ u3(PropertyCard, { title: "PTP Hardware Clock", data: events.phc, format: phcFormat }),
+      phc && /* @__PURE__ */ u3(PropertyCard, { title: "PTP Hardware Clock", data: phc, format: phcFormat }),
       events.receiver && /* @__PURE__ */ u3(PropertyCard, { title: "Receiver", data: events.receiver, format: receiverFormat }),
       events.quality && /* @__PURE__ */ u3(PropertyCard, { title: "Status", data: events.quality, format: statusFormat }),
       events.posvel && /* @__PURE__ */ u3(PropertyCard, { title: "Position", data: events.posvel, format: positionFormat }),
@@ -864,7 +869,7 @@
     tai: ["TAI", formatTAI]
   };
   var phcFormat = {
-    syncState: ["State"],
+    mode: ["State"],
     offset: ["Offset from GPS", formatNanoseconds],
     freq: ["Frequency offset", (arg) => `${arg.toFixed(2)} ppb`],
     stepCount: (count, obj) => [

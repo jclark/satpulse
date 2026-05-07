@@ -41,7 +41,11 @@ const phcEvent = {
   stepCount: 5,
   stepCountChanging: false,
   outlier: false,
-  syncState: "in sync"
+  mode: "tracking"
+};
+
+const modeEvent = {
+  mode: "tracking",
 };
 
 const posvelEvent = {
@@ -147,6 +151,10 @@ class MockEventSource implements MinimalEventSource {
       setTimeout(() => {
         listener(new MessageEvent('phc', { data: JSON.stringify(phcEvent) }));
       }, 400);
+    } else if (type === 'mode') {
+      setTimeout(() => {
+        listener(new MessageEvent('mode', { data: JSON.stringify(modeEvent) }));
+      }, 380);
     } else if (type === 'init') {
       setTimeout(() => {
         listener(new MessageEvent('init', { data: JSON.stringify(initEvent) }));
