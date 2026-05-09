@@ -78,7 +78,7 @@ better than 15 s to use MAC ADKD type 0, better than 165 s to
 use MAC ADKD type 12, and beyond 165 s OSNMA cannot be applied
 at all.
 
-satpulse supplies this trusted time once at startup; the
+satpulse sets this trusted time once at startup; the
 receiver maintains it on its TCXO from there.  Initial supply
 works "for a while" because TCXO drift takes time to push the
 accuracy past 15 s and then 165 s; once it does, OSNMA falls
@@ -86,97 +86,108 @@ back from ADKD type 0 to type 12 and eventually stops.
 Occasional refresh (piece 3) is sufficient because we just need
 to keep the receiver-side accuracy under those thresholds.
 
-This section establishes the assistance infrastructure; piece 3
-builds on it for ongoing refresh.
+This section establishes the trusted-time setting path; piece 3
+builds on it for u-blox ongoing refresh.
 
 ### Architecture
 
-Trusted time is *not* configuration.  A user with persistent
-receiver config (`gps.config = false`) still needs trusted time
-supplied on every cold boot for OSNMA to work.  Assistance sits
-beside configuration as a separate concern that the daemon can
-be licensed to perform.  Both share the receiver-identification
-probe in `gps/app/gpscfg`.
+Trusted time is not configuration in the user-facing
+`gps.config` sense: it is not a persistent receiver setting, and
+a user with persistent receiver config (`gps.config = false`)
+still needs trusted time set on every cold boot for OSNMA to
+work.  SatPulse models this as setting the receiver's internal
+trusted-time clock, not as assistance.  u-blox transports the
+operation through
+`UBX-MGA-INI-TIME_UTC` / `UBX-MGA-INI-TIME_GNSS` with the
+`trustedSource` bit set, but that is a u-blox implementation
+detail.  Quectel and Septentrio use dedicated trusted-time
+commands.
+
+The initial set is part of the existing `gpscfg.Configure`
+operation as an implementation detail.  This reuses receiver
+identification and the existing request machinery, while keeping
+normal receiver configuration changes gated by `gps.config` and
+trusted-time setting gated by `gps.setTrustedTime`.  Future TTFF
+assistance (time/position/ephemeris/almanac hints, or a stream of
+vendor assistance data) remains a separate feature and is not
+modeled here.
 
 ### Probing
 
 `gpscfg.Configure` already has `ConfigOptions.ForceProbe`,
 which forces the probe to run when the configurator has nothing
-to do.  Assistance reuses that mechanism: when assistance is
-licensed but configuration is not, `ForceProbe` is set so the
-probe still identifies the receiver.
+to do.  Trusted-time setting reuses that mechanism: when
+`gps.setTrustedTime = true` but `gps.config = false`,
+`ForceProbe` is set so the probe still identifies the receiver
+and selects the correct trusted-time command.
 
-### Assist packet builder
+### Time estimate types
 
-`gpscfg.Configure` returns a new value, alongside `ReceiverInfo`
-and `ConfigProps`, that knows how to construct assistance
-packets for the identified receiver.  The interface is the
-opposite of `PacketProcessor` (which decodes receiver bytes
-into protocol-agnostic messages): it takes a protocol-agnostic
-assistance message and produces receiver bytes.
+The startup/configuration path uses a UTC-only estimate:
 
 ```go
-type AssistPacketBuilder interface {
-    TrustedTime(*TimeAssistMsg) ([]byte, error)
-    // future: Time(*TimeAssistMsg), Position(*PositionAssistMsg), ...
+type UTCTimeEstimate struct {
+    // UTC time, monotonic anchor, accuracy; exact field names TBD.
 }
 ```
 
-The trusted-vs-untrusted distinction lives at the method level,
-not on `TimeAssistMsg`.  This plan implements `TrustedTime`
-only; `Time` (TTFF assist without the trusted bit) is layered
-on later, sharing most of the implementation on u-blox.
+The estimate is anchored in monotonic time (`TimeOfEstimate`) so
+the receiver backend can extrapolate to "now" at the moment it
+builds the packet.  A zero `UTCTimeEstimate` means no initial
+trusted-time estimate is present, using the same `IsZero`
+convention as the existing time-assist path.  The existing
+`Trusted bool` field is removed -- trust is not a property of
+the estimate itself; it is expressed by placing the estimate in
+`ConfigOptions.TrustedTime`.
 
-The u-blox implementation of `TrustedTime` produces
-`UBX-MGA-INI-TIME_UTC` or `UBX-MGA-INI-TIME_GNSS` depending on
-the timebase carried in the `TimeAssistMsg` -- both supported
-in this section.  A future Quectel implementation of
-`TrustedTime` would produce `$PQTMNMATIMESYNC`.  Vendors that
-don't support trusted-time supply return nil from `Configure`'s
-builder slot.
+The ongoing refresh path uses a richer estimate:
 
-### `TimeAssistMsg` vs `TimeEstimate`
+```go
+type TimeEstimate struct {
+    UTCTimeEstimate
+    TAI ptime.Time // optional; zero means unavailable
+}
+```
 
-A new `TimeAssistMsg` type in `gpsprot` is the protocol-agnostic
-*snapshot* of the time fields about to be packetized: timebase
-(UTC or a specific GNSS), concrete calendar / week-and-tow
-fields, accuracy, leap-second offset (where applicable).  It
-is the input to `AssistPacketBuilder.TrustedTime` (and the
-future `Time`).  This is the input/output peer of the existing
-`TimeMsg`: receiver bytes -> `TimeMsg` on output; `TimeAssistMsg`
--> receiver bytes on input.
+The embedded UTC estimate is always available when a
+`TimeEstimate` is usable.  The TAI field is populated when the
+source naturally has GNSS/TAI time, such as receiver-fed-back
+authenticated time while SatPulse is running with a PHC.  In
+other modes, including a no-PHC serial-time setup, ongoing
+refresh may be UTC-only.  The packet builder chooses the
+receiver message form from the data available: for u-blox,
+`UBX-MGA-INI-TIME_GNSS` when TAI is present and
+`UBX-MGA-INI-TIME_UTC` otherwise.
 
-`TimeEstimate` (existing) is the time estimate at the source:
-an estimated time anchored in monotonic time
-(`TimeOfEstimate`), with accuracy and leap-second state.  The
-monotonic anchor lets us extrapolate to "now" at the moment of
-writing.  The existing `Trusted bool` field is removed -- trust
-isn't a property of the estimate itself; it's expressed by
-which builder method the daemon calls.
+### Trusted-time packet builder
 
-`TimeEstimate` carries the time as either UTC or TAI
-(`ptime.Time`), based on what the source naturally produces,
-plus `ptime.LeapSecond` so the other timebase can be derived
-when the target protocol message needs it.  This lets the
-system-clock source supply UTC and the receiver-fed-back source
-supply TAI (GNSS time) without forcing either through a lossy
-conversion.  The exact representation of the UTC variant
-(`time.Time` vs `ptime.UTCTime`) and the discrimination between
-the two cases are implementation details.
+Receivers that need ongoing trusted-time refresh expose a packet
+builder in `gpscfg.Result`:
 
-The supplier always produces `TimeEstimate`s; the goroutine
-extrapolates each one to a `TimeAssistMsg` after acquiring the
-port lock.
+```go
+type TrustedTimePacketBuilder interface {
+    TrustedTimePacket(est *TimeEstimate, now time.Time) ([]byte, error)
+}
+```
 
-### Building the initial `TimeEstimate`
+This interface only constructs receiver bytes.  The caller owns
+port locking and writing.  It is not required for receivers that
+only need a one-shot trusted-time set: Quectel and Septentrio can
+generate their startup command directly inside their configurator
+and return nil for the ongoing builder.  u-blox uses the same
+builder internally from its configurator for the initial packet
+and returns it in `gpscfg.Result` because u-blox also needs
+ongoing refresh.
 
-The initial `TimeEstimate` is constructed from the system
+### Building the initial `UTCTimeEstimate`
+
+The initial `UTCTimeEstimate` is constructed from the system
 clock.  Both the daemon (at startup) and `satpulsetool gps`
 use the same construction:
 
 1. Read kernel NTP state via `gps/lib/ntptime.Get`.
 2. If `Synchronized`: use kernel time, `MaxError` for accuracy,
-   and the kernel's leap-second status.
+   and the monotonic timestamp of the read.
 3. If not `Synchronized`: invoke the configured external
    program (TBD configuration knob).  The program's contract
    is to assert that the current system clock can be trusted
@@ -185,70 +196,81 @@ use the same construction:
    on failure.  On failure, skip trusted-time supply with a
    warning.
 
-The two branches differ only in how accuracy was obtained.
-The trustedness of the supply is expressed by which builder
-method is called (`TrustedTime` vs the future `Time`), not by
-a flag on the `TimeEstimate` itself.
+The two branches differ only in how accuracy was obtained.  The
+trustedness of the receiver write is expressed by putting the
+estimate in the trusted-time setting field of `ConfigTarget`, not
+by a flag on the estimate itself.
 
 ### Daemon-side initial supply
 
 The daemon does the initial supply at startup, synchronously
-(no goroutine -- that comes with piece 3 for the ongoing
-case).  Two conditions must both hold:
+(no goroutine yet).  `gps.setTrustedTime` controls whether this
+operation is requested:
 
-- `gps.assist = true` (license to write assistance packets).
-- `gps.nma = "osnma"` (trigger: there's a reason to supply
-  trusted time).
+- unset: defaults to `gps.config && gps.nma == "osnma"`;
+- `true`: set trusted time regardless of `gps.config`;
+- `false`: do not set trusted time.
 
-When both hold and the identified receiver supports time
-assistance, the daemon:
+When trusted-time setting is enabled, the daemon:
 
-1. Builds the initial `TimeEstimate` (above).
-2. Extrapolates to "now" and produces a `TimeAssistMsg`.
-3. Calls `TrustedTime` on the `AssistPacketBuilder`.
-4. Writes the resulting bytes to the port.
+1. Builds the initial `UTCTimeEstimate` (above).
+2. Stores it in `ConfigTarget.Opts.TrustedTime`.
+3. Sets `ForceProbe` if normal receiver configuration is not
+   otherwise needed.
+4. Calls `gpscfg.Configure`, whose selected configurator builds
+   and writes the receiver-specific trusted-time packet as part
+   of the normal request flow.
 
 This happens during startup before stream/proxy goroutines
-begin writing to the port, so no lock contention.
+begin writing to the port, so no lock contention.  If the
+selected receiver requires ongoing refresh, `gpscfg.Result`
+also carries a `TrustedTimePacketBuilder` for piece 3.
 
 ### `satpulsetool gps` one-shot
 
-`satpulsetool gps` uses the same `AssistPacketBuilder` and the
-same `TimeEstimate` construction.  After the configurator
-finishes, if the user has requested trusted-time assistance via
-the new flag(s) (naming TBD; replaces `--sys-time-trusted`),
-satpulsetool extrapolates the `TimeEstimate` once, calls
-`TrustedTime` on the `AssistPacketBuilder`, and writes the
-bytes directly.
+`satpulsetool gps` uses the same `UTCTimeEstimate` construction and
+the same configurator path.  If the user requests trusted-time
+setting via the new flag(s) (naming TBD; replaces
+`--sys-time-trusted`), the tool stores the estimate in
+`ConfigTarget.Opts.TrustedTime` and lets the selected
+configurator emit the receiver-specific one-shot packet.
 
 ### TOML configuration
 
-The assistance side splits into a *license* and per-kind
-*triggers*.
+`[gps]` is broadened from "receiver configuration only" to
+"receiver interaction/control".  Normal configuration changes
+remain gated by `gps.config`, but trusted-time setting is a
+separate receiver operation:
 
-`gps.assist = true` is the license, peer to `gps.config`.  It
-licenses the daemon to:
+```toml
+[gps]
+config = true
+nma = "osnma"
+setTrustedTime = true
 
-- run the receiver-identification probe (via `ForceProbe` if
-  `gps.config = false`), and
-- write assistance packets to the receiver.
+[trustedTime]
+# how trusted time is obtained and validated
+```
 
-It does *not* license other configuration changes.  If
-`gps.assist` is not set, it defaults to the value of
-`gps.config` -- consistent with the policy that `gps.config =
-true` makes things work optimally by default.
+`gps.nma` does not default -- OSNMA requires explicit setup
+(Merkle provisioning), so it stays opt-in.
 
-The triggers decide *what* the daemon writes.  In this plan
-the only trigger is `gps.nma = "osnma"`, which causes
-trusted-time supply (initial + ongoing).  Future per-kind
-triggers (e.g. `gps.assistTime`, `gps.assistPosition` for plain
-TTFF / position assistance) would default-from-`gps.config`
-the same way `gps.assist` does.  `gps.nma` itself does *not*
-default -- OSNMA requires explicit setup (Merkle provisioning),
-so it stays opt-in.
+Piece 2 introduces the `gps.nma` TOML field only far enough to
+parse it and compute the `gps.setTrustedTime` default.  Piece 5
+wires the same field to receiver OSNMA enable configuration.
 
-License + trigger both required: `assist=true` alone with no
-trigger writes nothing.
+`gps.setTrustedTime` is optional and defaults as follows:
+
+- unset: `true` when `gps.config = true` and `gps.nma =
+  "osnma"`, otherwise `false`;
+- `true`: set the receiver's trusted-time clock regardless of
+  `gps.config`;
+- `false`: never set trusted time, even when OSNMA is enabled.
+
+The `[trustedTime]` table says how SatPulse obtains and validates
+the time value.  It is distinct from future TTFF assistance,
+which may later use an `[assist]` / `[assist.pull]` shape for
+time/position hints or streamed ephemeris/almanac/vendor data.
 
 The remaining sub-configuration is to be designed:
 
@@ -266,21 +288,22 @@ input; for them, this piece is a no-op.
 ### Prerequisite
 
 The reporting work (piece 1, NMA-verified flag on
-`NavEpochMsg`) must land first.  The `AssistPacketBuilder`,
-`TimeAssistMsg`, and `TimeEstimate` infrastructure from piece 2
-is the substrate.
+`NavEpochMsg`) must land first.  The `TrustedTimePacketBuilder`,
+`UTCTimeEstimate`, and `TimeEstimate` infrastructure from piece 2
+are the substrate.
 
 ### Daemon goroutine
 
 A new package (location TBD; sibling of `gps/app/stream`)
-provides the assistance goroutine.  It is constructed with:
+provides the trusted-time refresh goroutine.  It is constructed
+with:
 
-- the `AssistPacketBuilder` from `Configure`
+- the `TrustedTimePacketBuilder` from `gpscfg.Result`
 - the `PacketFormat` for the identified protocol
 - the connection / `OutPortLock`
 
 ```go
-func Run(ctx context.Context, b AssistPacketBuilder,
+func Run(ctx context.Context, b TrustedTimePacketBuilder,
     pf PacketFormat, port OutPortLock,
     ch <-chan TimeEstimate)
 ```
@@ -289,10 +312,9 @@ For each `TimeEstimate` received on the channel:
 
 1. Acquire the port write-lock (shared with `stream.pull` and
    the proxy feature).
-2. Compute `now := time.Now()`; extrapolate the `TimeEstimate`
-   to build a `TimeAssistMsg`.
-3. Call `TrustedTime` on the `AssistPacketBuilder` (because
-   `gps.nma = "osnma"`).
+2. Compute `now := time.Now()`.
+3. Call `TrustedTimePacket(est, now)` on the
+   `TrustedTimePacketBuilder`.
 4. Write the resulting bytes to the port.
 5. Release the lock.
 
@@ -308,8 +330,9 @@ This is an operational policy, not a cryptographic guarantee:
 once NMA-verified is observed on `NavEpochMsg` and
 `phcsync.Controller` is in tracking mode, the daemon treats
 the receiver's GNSS time as suitable for trusted-time refresh.
-It builds a TAI-based `TimeEstimate` from that time and sends
-it to the assistance goroutine's channel.
+It builds a `TimeEstimate` from that time, with TAI populated
+when the current SatPulse mode has a TAI/GNSS time source, and
+sends it to the refresh goroutine's channel.
 
 Refresh is rare, not per epoch.  The 165 s OSNMA accuracy
 ceiling means the receiver's propagated trusted time has plenty
@@ -318,10 +341,11 @@ the receiver-side accuracy under that ceiling (and ideally
 under 15 s for ADKD type 0).  The exact cadence is to be worked
 out -- specifically *not* "every NMA-verified epoch."
 
-The ongoing path emits `UBX-MGA-INI-TIME_GNSS` (already
-supported by `TrustedTime` from piece 2, since both UTC and
-GNSS variants are implemented in piece 2); the GNSS timebase
-avoids the leap-second ambiguity that UTC carries.
+For u-blox, the ongoing path uses the same
+`TrustedTimePacketBuilder` implementation as the initial
+configurator step.  It emits `UBX-MGA-INI-TIME_GNSS` when TAI is
+available, avoiding the leap-second ambiguity that UTC carries,
+and falls back to `UBX-MGA-INI-TIME_UTC` for UTC-only estimates.
 
 ## Provisioning Merkle and public keys
 
@@ -352,7 +376,8 @@ and the new `gps.nma` TOML knob (see Enabling).
 ## Enabling OSNMA
 
 A new TOML knob (proposed: `gps.nma`, peer to `gps.config` and
-`gps.assist`) turns OSNMA processing on or off.  Initial values:
+`gps.setTrustedTime`) turns OSNMA processing on or off.  Initial
+values:
 
 - unset / `"none"` (default): no OSNMA.
 - `"osnma"`: OSNMA processing enabled.  u-blox: sets
@@ -419,7 +444,7 @@ This piece augments pieces 2 and 3:
 
 - **Piece 2 (initial supply):** if a remote NTP server is
   configured and reachable, use it as the source for the
-  initial `TimeEstimate` instead of the kernel NTP state.
+  initial `UTCTimeEstimate` instead of the kernel NTP state.
 - **Piece 3 (ongoing supply):** if a remote NTP server is
   configured and reachable, prefer it over the
   receiver-fed-back authenticated time as the ongoing-supply
@@ -557,40 +582,63 @@ sub-list captures the steps within the piece.
    fills it from `nmaFixStatus`; expose in web UI and as a
    Prometheus metric.
 2. Initial trusted time:
-   a. `AssistPacketBuilder` interface in `gpsprot` (with
-      `TrustedTime` method); `TimeAssistMsg` type; remove
-      `Trusted bool` from `TimeEstimate`; extrapolation helper
-      from `TimeEstimate` to `TimeAssistMsg`.
-   b. `gpscfg.Configure` returns the `AssistPacketBuilder`;
-      u-blox `TrustedTime` implementation producing both
-      `UBX-MGA-INI-TIME_UTC` and `UBX-MGA-INI-TIME_GNSS`.
-   c. `TimeEstimate` construction from the system clock:
+   a. Split the time-estimate types: `UTCTimeEstimate` carries
+      UTC time, monotonic anchor, and accuracy for the
+      startup/configuration case; `TimeEstimate` embeds
+      `UTCTimeEstimate` and adds optional TAI (`ptime.Time`) for
+      ongoing refresh sources that naturally have GNSS/TAI time.
+      Remove `Trusted bool`; trust is expressed by the operation.
+   b. `UTCTimeEstimate` construction from the system clock:
       kernel-NTP path, then external-program path for the
       unsynchronized case.
-   d. `satpulsetool gps`: new flag(s) replacing
-      `--sys-time-trusted`; calls `TrustedTime` on the
-      `AssistPacketBuilder` and writes the bytes directly.
-   e. Daemon-side initial supply at startup (synchronous):
-      `gps.assist` TOML (defaulting from `gps.config`),
-      `ForceProbe` plumbing, build `TimeEstimate`, call
-      `TrustedTime`, write before stream/proxy goroutines
+   c. Replace `ConfigOptions.TimeAssist` with
+      `ConfigOptions.TrustedTime` (`UTCTimeEstimate`); a zero
+      estimate means absent.  Configurators emit the
+      receiver-specific one-shot trusted-time packet from this
+      field.
+   d. Add `gpsprot.TrustedTimePacketBuilder` for receivers that
+      require ongoing refresh:
+      `TrustedTimePacket(*TimeEstimate, time.Time) ([]byte,
+      error)`.
+   e. u-blox implements `gpsprot.TrustedTimePacketBuilder`,
+      producing both `UBX-MGA-INI-TIME_UTC` and
+      `UBX-MGA-INI-TIME_GNSS`, and calls it internally from the
+      configurator for the initial trusted-time packet.
+      Quectel/Septentrio trusted-time support can be implemented
+      directly in their configurator paths and need not expose a
+      builder if they do not require ongoing refresh.
+   f. `satpulsetool gps`: new flag(s) replacing
+      `--sys-time-trusted`; stores the estimate in
+      `ConfigOptions.TrustedTime` and lets the configurator emit
+      the packet.
+   g. Daemon-side initial supply at startup (synchronous):
+      introduce/parse `gps.setTrustedTime` TOML and parse
+      `gps.nma` for defaulting only (`gps.config && gps.nma ==
+      "osnma"`); add `ForceProbe` plumbing, build
+      `UTCTimeEstimate`, store it in `ConfigOptions.TrustedTime`,
+      and run `gpscfg.Configure` before stream/proxy goroutines
       start.
 3. Ongoing trusted time:
-   a. Daemon goroutine package and its `Run` entry point.
-   b. Daemon wiring: phase-1 prepare / phase-2 start of the
+   a. `gpscfg.Result` exposes `TrustedTimePacketBuilder` when
+      the selected receiver requires ongoing trusted-time
+      refresh; for u-blox OSNMA this is required, while
+      Septentrio/Quectel can return nil if their one-shot
+      trusted-time command is sufficient.
+   b. Daemon goroutine package and its `Run` entry point.
+   c. Daemon wiring: phase-1 prepare / phase-2 start of the
       goroutine.
-   c. `NavEpochMsg` NMA-verified trigger gated on
+   d. `NavEpochMsg` NMA-verified trigger gated on
       `phcsync.Controller` tracking mode; sends `TimeEstimate`
       on the goroutine's channel.
 4. Provisioning cleanup: retire the compiled-in Merkle
    constant and `ConfigOptions.OSNMA.MerkleTreeRoot`; remove
    `mgaOSNMAMerkle` from the configurator path.
 5. Enabling cleanup: rename `--osnma` to `--nma=osnma|off`;
-   wire the `gps.nma` TOML knob to the configurator.
-6. Final cleanup: remove `--sys-time-trusted`,
-   `ConfigOptions.TimeAssist`, and the configurator's
-   `mgaTime` call.  The assist subsystem owns trusted-time
-   supply end to end.
+   wire the already-parsed `gps.nma` TOML knob to the
+   configurator.
+6. Final cleanup: remove `--sys-time-trusted` and the old
+   `ConfigOptions.TimeAssist` name.  Trusted-time setting is no
+   longer modeled as generic assistance.
 7. Trusted time from NTP, staged:
    a. SNTP primitive (DONE: `time/lib/sntp`).  Remaining
       work: integrate as preferred source for pieces 2 and 3
