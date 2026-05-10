@@ -147,6 +147,11 @@ Limitations:
   and `0` otherwise.  Once issue #203 lands and `ReceiverInfo`
   reports MSM4/MSM7 capability, the daemon can pass the actual
   configured MSM type.
+- Synthesis hard-codes major-GNSS-only MSM, which is correct for
+  u-blox but understates the stream for Unicore receivers (which
+  also emit QZSS MSM 1114/1117 when QZSS is enabled).  Once issue
+  #203 lands and `ReceiverInfo` reports per-vendor MSM-output GNSS,
+  the synthesis can match what each receiver actually emits.
 - Assumes only the messages satpulse configures are emitted.  If
   the operator has manually configured the receiver to emit
   additional message types (or `gps.config = false` and the
