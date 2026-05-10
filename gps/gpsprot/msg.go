@@ -354,6 +354,8 @@ func GNSSSetOf(gs ...GNSS) GNSSSet {
 
 const MajorGNSSSet GNSSSet = 1<<GPS | 1<<GAL | 1<<BDS | 1<<GLO
 
+const AllGNSSSet GNSSSet = MajorGNSSSet | 1<<QZSS | 1<<NAVIC | 1<<SBAS
+
 // IsZero returns true when the set is empty.
 func (s GNSSSet) IsZero() bool { return s == 0 }
 

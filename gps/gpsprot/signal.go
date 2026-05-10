@@ -355,6 +355,19 @@ func (ss SignalSet) GNSSSet() GNSSSet {
 	return result
 }
 
+// Bands returns the set of frequency bands containing any signal in ss.
+func (ss SignalSet) Bands() Band {
+	var result Band
+	allGNSS := AllGNSSSet.Items()
+	// Skip final bandNames entry, which is the "E5" alias for L5|E5b.
+	for _, bn := range bandNames[:len(bandNames)-1] {
+		if ss&bn.band.SignalSet(allGNSS...) != 0 {
+			result |= bn.band
+		}
+	}
+	return result
+}
+
 // SignalID constants
 const (
 	SigIDInvalid SignalID = "" // Invalid SignalID
