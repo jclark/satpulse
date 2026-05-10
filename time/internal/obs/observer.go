@@ -30,6 +30,11 @@ type Observer interface {
 	// timing mode).
 	NTPSample(sys time.Time, offset float64, leap ptime.LeapSecondKind, phc ptime.Time)
 
+	// NativeMsg reports a parsed protocol-specific message that did not map
+	// to a protocol-independent gpsprot.MsgHandler message. It returns true
+	// if the observer recognized or used the message.
+	NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) bool
+
 	// ReopenLog handles log rotation (e.g., on SIGHUP signal)
 	ReopenLog()
 
@@ -48,7 +53,7 @@ func NewMultiObserver(observers ...Observer) *MultiObserver {
 	for i, obs := range observers {
 		handlers[i] = obs
 	}
-	
+
 	return &MultiObserver{
 		MultiHandler: gpsprot.NewMultiHandler(handlers...),
 	}
@@ -99,6 +104,17 @@ func (m *MultiObserver) NTPSample(sys time.Time, offset float64, leap ptime.Leap
 	}
 }
 
+// NativeMsg implements Observer by type-asserting handlers to Observer
+func (m *MultiObserver) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) bool {
+	handled := false
+	for h := range m.Handlers() {
+		if obs, ok := h.(Observer); ok {
+			handled = obs.NativeMsg(tag, msgID, msg, tRead) || handled
+		}
+	}
+	return handled
+}
+
 // ReopenLog implements Observer by type-asserting handlers to Observer
 func (m *MultiObserver) ReopenLog() {
 	for h := range m.Handlers() {
@@ -136,6 +152,9 @@ func (o *DefaultObserver) NavEpochPV(_ *gpsprot.NavEpochMsg, _ *gpsprot.PVMsgBun
 
 // NTPSample implements Observer as a no-op
 func (o *DefaultObserver) NTPSample(_ time.Time, _ float64, _ ptime.LeapSecondKind, _ ptime.Time) {}
+
+// NativeMsg implements Observer as a no-op
+func (o *DefaultObserver) NativeMsg(_ gpsprot.Tag, _ string, _ any, _ time.Time) bool { return false }
 
 // ReopenLog implements Observer as a no-op
 func (o *DefaultObserver) ReopenLog() {}
