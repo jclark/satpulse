@@ -6,10 +6,10 @@ that implement it, initially u-blox. Quectel LC29H and Septentrio have OSNMA
 support and can be added later.
 
 This is deliberately not the full trusted-time manager for the daemon. It gets
-SatPulse to the point where OSNMA can be provisioned, enabled, observed at the
-fix-authenticated level, and supplied with trusted time by explicit tool/socket
-operations. Protocol-specific observability and autonomous daemon maintenance
-of trusted time are follow-on plans.
+SatPulse to the point where OSNMA can be provisioned, enabled, observed at both
+the fix-authenticated and selected native u-blox status levels, and supplied
+with trusted time by explicit tool/socket operations. Autonomous daemon
+maintenance of trusted time is a follow-on plan.
 
 The core pieces are:
 
@@ -20,6 +20,8 @@ The core pieces are:
 3. Provision OSNMA Merkle/public-key data from `osnma.toml` instead of compiled
    code.
 4. Enable OSNMA with explicit `gps.nma` / `--nma` controls.
+5. Log selected native u-blox OSNMA and trusted-time status messages from the
+   daemon.
 
 The result is useful but imperfect. In particular, u-blox trusted time decays
 unless refreshed. The pragmatic interim refresh path is to run
@@ -41,9 +43,9 @@ The new field is surfaced in existing sinks:
 - Prometheus: expose it as a metric alongside the other `NavEpochMsg`-derived
   metrics.
 
-This is intentionally protocol-independent and limited to the authenticated-fix
-status. Richer native status, such as u-blox `UBX-SEC-OSNMA` or
-`UBX-NAV-TIMETRUSTED`, belongs in a protocol-specific observability follow-on.
+This protocol-independent field remains the right surface for sinks such as the
+web UI and Prometheus. Richer native status stays out of `gpsprot` and is logged
+through protocol-specific observer code.
 
 ## Trusted-Time Packet Builder
 
@@ -220,6 +222,59 @@ The u-blox-only settings below remain in the message file for now:
 
 Promoting either to daemon TOML is a later choice.
 
+## Protocol-Specific UBX Observability
+
+u-blox exposes useful native OSNMA and trusted-time state that does not fit
+cleanly into the current protocol-independent `gpsprot` model:
+
+- `UBX-NAV-TIMETRUSTED`: reports the receiver's internal trusted-time state,
+  including reference system, validity, propagated accuracy, and delta fields.
+- `UBX-SEC-OSNMA`: reports u-blox OSNMA state in more detail than a single
+  authenticated-fix boolean.
+
+Use the native-message observer hook for this rather than forcing these fields
+through `gpsprot`. The u-blox packet processor already calls the native-message
+path only for parsed messages that were not converted into protocol-independent
+messages, so handled messages such as `NAV-PVT`, `NAV-TIME*`, `NAV-SAT`, and
+`NAV-SIG` are not duplicated.
+
+Add `time/internal/logobs/ubxlog.go` with a `UBXLogObserver` that embeds
+`obs.DefaultObserver`, depends on `gps/lib/ubxbin`, and implements:
+
+```go
+func (o *UBXLogObserver) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) bool
+```
+
+The observer should:
+
+- Return `false` for non-UBX messages and unhandled UBX message types.
+- Type-switch on `*ubxbin.NavTimeTrusted` and `*ubxbin.SecOsnma`.
+- Log concise structured entries through `slog` for the useful status fields.
+- Return `true` after logging one of the recognized messages, so the dispatcher
+  does not also emit the generic unused-native-message debug log.
+
+Initial log fields should be enough for operational diagnosis without turning
+the log into a dump of the entire UBX struct. For `NAV-TIMETRUSTED`, include
+the reference system, validity bits, initial and propagated time accuracy, and
+delta fields. For `SEC-OSNMA`, include OSNMA enabled/header status, time-sync
+requirement/status, DSM authentication status, TESLA key authentication status,
+timing authentication, authenticated satellite count, MAC ADKD type, and
+Merkle/public-key validity/source fields.
+
+Wire this into the daemon in `time/app/daemon/daemon.go`:
+
+- Construct `ubxObs := logobs.NewUBXLogObserver(lg)` near the existing
+  `GPSLogObserver`.
+- Add `ubxObs` to `combineObservers`.
+- Keep this always enabled with the daemon's normal logging; receiver output is
+  still controlled by the message configuration in `configs/gpsmsg/osnma.toml`.
+
+Add focused tests for `UBXLogObserver.NativeMsg`:
+
+- It returns `true` for `*ubxbin.NavTimeTrusted`.
+- It returns `true` for `*ubxbin.SecOsnma`.
+- It returns `false` for other tags or unrelated UBX messages.
+
 ## Implementation Order
 
 1. Reporting:
@@ -227,7 +282,14 @@ Promoting either to daemon TOML is a later choice.
    - Fill it from u-blox `UBX-NAV-PVT.nmaFixStatus`.
    - Expose it in the web UI and Prometheus.
 
-2. Trusted-time builder and tool path:
+2. UBX native observability:
+   - Add `time/internal/logobs/ubxlog.go`.
+   - Log `UBX-NAV-TIMETRUSTED` and `UBX-SEC-OSNMA` through the native-message
+     observer hook.
+   - Wire the observer into `time/app/daemon/daemon.go`.
+   - Add focused observer tests.
+
+3. Trusted-time builder and tool path:
    - Replace the current `TimeEstimate` fields with optional UTC, optional TAI
      (`ptime.Time`), monotonic anchor, and accuracy.
    - Remove the old trusted-time-as-assistance path
@@ -241,34 +303,15 @@ Promoting either to daemon TOML is a later choice.
    - Add an uncertainty option for sources that cannot provide max error.
    - Document the cron/systemd timer plus daemon-socket refresh pattern.
 
-3. Provisioning cleanup:
+4. Provisioning cleanup:
    - Move Merkle/public-key provisioning to `configs/gpsmsg/osnma.toml`.
    - Remove the compiled-in Merkle root and related configurator plumbing.
 
-4. Enable cleanup:
+5. Enable cleanup:
    - Rename/replace the old hidden `--osnma` behavior with
      `--nma=osnma|off`.
    - Add `gps.nma` TOML.
    - Wire the NMA property to the configurator, gated by `gps.config`.
-
-## Follow-On: Protocol-Specific Observability
-
-u-blox exposes useful native OSNMA and trusted-time state that does not fit
-cleanly into the current protocol-independent `gpsprot` model:
-
-- `UBX-NAV-TIMETRUSTED`: reports the receiver's internal trusted-time state,
-  including reference system, validity, propagated accuracy, and delta fields.
-- `UBX-SEC-OSNMA`: reports u-blox OSNMA state in more detail than a single
-  authenticated-fix boolean.
-
-Do not force this through `gpsprot` prematurely. A separate native-message
-logging or observer mechanism is needed.
-
-An intermediate option is a u-blox-specific helper daemon that reads UBX packets
-from a port exposed by existing tooling and writes trusted-time packets through
-`satpulsetool gps --socket` or the daemon socket. That sidecar would provide an
-early path to observing `NAV-TIMETRUSTED` / `SEC-OSNMA` and experimenting with
-trusted-time maintenance before the main daemon owns the whole policy.
 
 ## Follow-On: Daemon Trusted-Time Manager
 
