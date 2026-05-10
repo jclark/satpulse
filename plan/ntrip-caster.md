@@ -603,10 +603,18 @@ Update the JSON schema in `config-schema.json`.
 4. Auth.
 5. Daemon integration.
 6. Tests throughout.
-7. Config documentation.
+7. JSON schema in `config-schema.json` and `comment:` tags on
+   the config structs.
+8. Man-page documentation in `docs/man/satpulse.toml.5.md`.
 
 Once the above is landed and working end-to-end, MSM7→MSM4 is
 added as a separate follow-on step:
 
-8. Add `msm7to4` to `MountConfig` and apply the conversion in the
+9. Add `msm7to4` to `MountConfig` and apply the conversion in the
    stream handler per the "MSM7→MSM4 conversion" section above.
+
+## Implementation status
+
+- Steps 1-7 are complete.
+- Step 8 (man-page documentation): not yet started.
+- Step 9 (MSM7→MSM4 conversion): not yet started.

@@ -1,0 +1,242 @@
+package ntrip
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/geopos"
+)
+
+// streamFormat is the value emitted in field 4 of the STR record.
+const streamFormat = "RTCM 3.3"
+
+// gnssOrder is the order in which GNSS constellations appear in the
+// nav-system and format-details fields of the STR record.  This
+// follows the conventional Ntrip source-table ordering (USA, Russia,
+// Europe, China, Japan, India, augmentation).
+var gnssOrder = [...]gpsprot.GNSS{
+	gpsprot.GPS,
+	gpsprot.GLO,
+	gpsprot.GAL,
+	gpsprot.BDS,
+	gpsprot.QZSS,
+	gpsprot.NAVIC,
+	gpsprot.SBAS,
+}
+
+// msmBase maps each GNSS constellation to its MSM message-number
+// "decade", i.e. the number from which 107x..113x is computed.
+var msmBase = map[gpsprot.GNSS]int{
+	gpsprot.GPS:   1070,
+	gpsprot.GLO:   1080,
+	gpsprot.GAL:   1090,
+	gpsprot.SBAS:  1100,
+	gpsprot.QZSS:  1110,
+	gpsprot.BDS:   1120,
+	gpsprot.NAVIC: 1130,
+}
+
+// StreamRecordBuilder returns a closure that builds STR-record
+// fields-3..n strings.  The constructor reads from *shared and from
+// gps state, derives nav-system and carrier from enabled signals,
+// and captures the resolved values plus everything else needed in
+// the closure.  Neither the constructor nor the closure mutates
+// *shared or *StreamConfig.
+//
+// info or props may be nil; an empty versionInfo is allowed.  msm is
+// 0 to skip format-details synthesis, or 4/7 etc.  hasAuth is true
+// when the caster requires basic auth (any [[ntrip.user]] defined).
+func StreamRecordBuilder(
+	shared *SharedStreamConfig,
+	props *gpsprot.ConfigProps,
+	info *gpsprot.ReceiverInfo,
+	versionInfo string,
+	msm int,
+	hasAuth bool,
+) func(sc *StreamConfig, name string) string {
+	gnss, signals := enabledGNSSAndSignals(props)
+	navSystem := buildNavSystem(gnss)
+	carrier := buildCarrier(signals)
+
+	formatDetails := shared.FormatDetails
+	if formatDetails == "" && msm > 0 {
+		formatDetails = buildFormatDetails(gnss, msm)
+	}
+
+	network := shared.Network
+	if network == "" {
+		network = DefaultNetwork
+	}
+	country := shared.Country
+	if country == "" {
+		country = DefaultCountry
+	}
+
+	lat, lon := resolveLatLon(shared, props)
+
+	generator := shared.Generator
+	if generator == "" {
+		if info != nil && info.Hardware != "" {
+			generator = info.Hardware
+		} else if versionInfo != "" {
+			generator = versionInfo
+		} else {
+			generator = "satpulse"
+		}
+	}
+
+	authentication := "N"
+	if hasAuth {
+		authentication = "B"
+	}
+
+	sharedBitrate := shared.Bitrate
+
+	return func(sc *StreamConfig, name string) string {
+		identifier := sc.Description
+		if identifier == "" {
+			identifier = name
+		}
+		bitrate := sc.Bitrate
+		if bitrate == 0 {
+			bitrate = sharedBitrate
+		}
+		fields := [...]string{
+			identifier,
+			streamFormat,
+			formatDetails,
+			strconv.Itoa(carrier),
+			navSystem,
+			network,
+			country,
+			formatLatLon(lat),
+			formatLatLon(lon),
+			"0",
+			"0",
+			generator,
+			"none",
+			authentication,
+			"N",
+			strconv.Itoa(bitrate),
+			"",
+		}
+		return strings.Join(fields[:], ";")
+	}
+}
+
+// enabledGNSSAndSignals returns the enabled GNSS set and signal set
+// from props, or zero values if props is nil or has no signals set.
+func enabledGNSSAndSignals(props *gpsprot.ConfigProps) (gpsprot.GNSSSet, gpsprot.SignalSet) {
+	if props == nil {
+		return 0, 0
+	}
+	signals, ok := props.GetSignalsEnabled()
+	if !ok {
+		return 0, 0
+	}
+	return signals.GNSSSet(), signals
+}
+
+// buildNavSystem returns the nav-system string from the enabled GNSS
+// set, e.g. "GPS+GLO+GAL+BDS".
+func buildNavSystem(gnss gpsprot.GNSSSet) string {
+	var parts []string
+	for _, g := range gnssOrder {
+		if gnss.Contains(g) {
+			parts = append(parts, g.String())
+		}
+	}
+	return strings.Join(parts, "+")
+}
+
+// buildCarrier returns the carrier value: 2 if any non-L1 signal is
+// enabled, else 1 if any L1 signal is enabled, else 0.
+func buildCarrier(signals gpsprot.SignalSet) int {
+	if signals == 0 {
+		return 0
+	}
+	all := []gpsprot.GNSS{
+		gpsprot.GPS, gpsprot.GLO, gpsprot.GAL, gpsprot.BDS,
+		gpsprot.QZSS, gpsprot.NAVIC, gpsprot.SBAS,
+	}
+	l1 := gpsprot.BandL1.SignalSet(all...)
+	if signals&^l1 != 0 {
+		return 2
+	}
+	return 1
+}
+
+// buildFormatDetails synthesises the format-details string from the
+// enabled GNSS set and the MSM level.
+func buildFormatDetails(gnss gpsprot.GNSSSet, msm int) string {
+	parts := []string{"1005(1)"}
+	for _, g := range gnssOrder {
+		if !gnss.Contains(g) {
+			continue
+		}
+		base, ok := msmBase[g]
+		if !ok {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%d(1)", base+msm))
+	}
+	if gnss.Contains(gpsprot.GLO) {
+		parts = append(parts, "1230(1)")
+	}
+	return strings.Join(parts, ",")
+}
+
+// resolveLatLon returns latitude and longitude in degrees, taking
+// shared overrides if set, else deriving from props.Mode.
+func resolveLatLon(shared *SharedStreamConfig, props *gpsprot.ConfigProps) (lat, lon float64) {
+	if shared.Lat.IsSet() {
+		lat = shared.Lat.Get().Degrees()
+	}
+	if shared.Lon.IsSet() {
+		lon = shared.Lon.Get().Degrees()
+	}
+	if shared.Lat.IsSet() && shared.Lon.IsSet() {
+		return
+	}
+	if props == nil {
+		return
+	}
+	mode, ok := props.GetMode()
+	if !ok {
+		return
+	}
+	var dlat, dlon float64
+	switch mode.PosType {
+	case gpsprot.PosTypeECEF:
+		ecef := geopos.ECEF{
+			mode.FixedPosECEF[0].Meters(),
+			mode.FixedPosECEF[1].Meters(),
+			mode.FixedPosECEF[2].Meters(),
+		}
+		llh, err := geopos.WGS84.ECEFtoLLH(ecef)
+		if err != nil {
+			return
+		}
+		dlat, dlon = llh.Lat, llh.Lon
+	case gpsprot.PosTypeLLH:
+		dlat = mode.FixedPosLLH[0].Degrees()
+		dlon = mode.FixedPosLLH[1].Degrees()
+	default:
+		return
+	}
+	if !shared.Lat.IsSet() {
+		lat = dlat
+	}
+	if !shared.Lon.IsSet() {
+		lon = dlon
+	}
+	return
+}
+
+// formatLatLon formats a latitude or longitude in degrees with two
+// decimal places (Ntrip source-table convention).
+func formatLatLon(deg float64) string {
+	return strconv.FormatFloat(deg, 'f', 2, 64)
+}

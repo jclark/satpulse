@@ -323,6 +323,97 @@
         }
       }
     },
+    "ntrip": {
+      "type": "object",
+      "properties": {
+        "listen": {
+          "description": "TCP listen address",
+          "type": "string",
+          "default": ":2101"
+        },
+        "country": {
+          "description": "ISO 3166 country code shown in the source table",
+          "type": "string",
+          "default": "XXX"
+        },
+        "network": {
+          "description": "Network name shown in the source table",
+          "type": "string",
+          "default": "Misc"
+        },
+        "lat": {
+          "description": "Latitude override; default derived from receiver fixed position",
+          "type": "number"
+        },
+        "lon": {
+          "description": "Longitude override; default derived from receiver fixed position",
+          "type": "number"
+        },
+        "generator": {
+          "description": "Generator string; default receiver hardware or satpulse version",
+          "type": "string"
+        },
+        "formatDetails": {
+          "description": "RTCM message list override; default synthesised from enabled GNSS",
+          "type": "string"
+        },
+        "bitrate": {
+          "description": "Default per-mountpoint bitrate",
+          "type": "integer",
+          "default": 0,
+          "minimum": 0
+        },
+        "user": {
+          "description": "Defined users for basic authentication",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "username": {
+                "description": "Username for basic authentication",
+                "type": "string"
+              },
+              "password": {
+                "description": "Password for basic authentication",
+                "type": "string"
+              }
+            },
+            "required": ["username"]
+          }
+        },
+        "mountpoint": {
+          "description": "Mountpoints served by the caster",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "description": "Mountpoint name (URL path component)",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._-]{1,100}$"
+              },
+              "description": {
+                "description": "Mountpoint description shown in the source table (default = name)",
+                "type": "string"
+              },
+              "bitrate": {
+                "description": "Bitrate shown in the source table for this mountpoint",
+                "type": "integer",
+                "minimum": 0
+              },
+              "users": {
+                "description": "Restrict access to these users (default all)",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["name"]
+          }
+        }
+      }
+    },
     "sync": {
       "type": "object",
       "properties": {

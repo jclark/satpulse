@@ -22,6 +22,7 @@ const (
 	cfgTimePulseMsg                         // configure messages reporting the time pulse
 	cfgPosition                             // position data is used
 	cfgSatellites                           // satellite data is used
+	cfgNtripStream                          // Ntrip caster or push needs signals/mode read back from receiver
 )
 
 type GPSConfig struct {
@@ -93,6 +94,15 @@ func (c *GPSConfig) target(speed int, cf cfgFeatures) (*gpsprot.ConfigTarget, er
 	err = c.getRTCMBaseID(cp)
 	if err != nil {
 		return nil, err
+	}
+	if cf&cfgNtripStream != 0 {
+		// Both properties feed STR-record fields built by
+		// ntrip.StreamRecordBuilder: SignalsEnabled drives the
+		// nav-system, carrier, and synthesised format-details
+		// fields; Mode supplies the receiver's fixed position so
+		// the lat/lon fields can be derived (Mode is otherwise
+		// only in props when the operator set gps.fixedPosECEF).
+		target.Get |= gpsprot.PropIDSignalsEnabled | gpsprot.PropIDMode
 	}
 	// setMsgOptions last because its error may be a non-fatal warning
 	err = c.setMsgOptions(&target.Opts, speed, cf)

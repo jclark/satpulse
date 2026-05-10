@@ -214,6 +214,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 
+	if err := startNtrip(ctx, lg, &wg, cfg, gcfg, pb); err != nil {
+		return err
+	}
+
 	promObs := newPrometheusObserver(cfg)
 	sseObs := newSSEObserver(cfg, sseCh, lg, gcfg)
 	posObs := newPositionObserver(cfg)
@@ -461,6 +465,9 @@ func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, usingPHC bool) 
 	}
 	if cfg.httpWantsSatellites() {
 		cf |= cfgSatellites
+	}
+	if cfg.hasNtripStream() {
+		cf |= cfgNtripStream
 	}
 	gct, err := cfg.GPS.target(speed, cf)
 	lg.Debug("GPS configure input", "target", gct)

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/ntrip"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/lib/pmc"
 	"github.com/jclark/satpulse/time/internal/proxy"
@@ -29,6 +30,7 @@ type Config struct {
 	PHC        PHCConfig
 	Sync       phcsync.Config
 	Proxy      proxy.Config
+	Ntrip      ntrip.Config
 	HTTP       []HTTPConfig
 	LeapSecond LeapSecondConfig
 	PTP        PTPConfig
@@ -153,11 +155,22 @@ func (cfg *Config) httpWantsSatellites() bool {
 	return false
 }
 
+// hasNtripStream reports whether any Ntrip stream is configured
+// (caster mountpoint or, in the future, stream.push entry) and so
+// needs signals-enabled and mode read back from the receiver to fill
+// in STR-record fields.
+func (cfg *Config) hasNtripStream() bool {
+	return len(cfg.Ntrip.Mountpoint) > 0
+}
+
 // Validate validates the configuration and logs warnings for deprecated options.
 // It is separate from LoadConfig because the config contains logging settings.
 func (cfg *Config) Validate(lg *slog.Logger) error {
 	cfg.GPS.validate(lg)
 	if err := cfg.Sync.Validate(); err != nil {
+		return &configError{err: err}
+	}
+	if err := cfg.Ntrip.Validate(); err != nil {
 		return &configError{err: err}
 	}
 	return nil
