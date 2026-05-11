@@ -51,26 +51,26 @@ func (s *TCPSource) Connect(ctx context.Context) (io.ReadCloser, error) {
 	return (&net.Dialer{}).DialContext(ctx, "tcp", s.Addr)
 }
 
-// NTRIPUserAgent carries the fields used to build an NTRIP client's
-// User-Agent header.  NTRIP requires the header to start with "NTRIP ".
-type NTRIPUserAgent struct {
+// NtripUserAgent carries the fields used to build an Ntrip client's
+// User-Agent header.  Ntrip requires the header to start with "NTRIP ".
+type NtripUserAgent struct {
 	Version string // e.g. "1.2.3"
 }
 
-// NTRIPSource is an NTRIP v1 client.  It connects to an NTRIP caster,
+// NtripSource is an Ntrip v1 client.  It connects to an Ntrip caster,
 // sends a v1 request, and returns a stream of RTCM bytes on success.
 // Only "ICY 200 OK" is accepted as a successful response.
-type NTRIPSource struct {
+type NtripSource struct {
 	Addr       string // "host:port"
 	Mountpoint string
 	Username   string
 	Password   string
-	UserAgent  NTRIPUserAgent
+	UserAgent  NtripUserAgent
 }
 
-// Connect dials the caster, performs the NTRIP v1 handshake, and
+// Connect dials the caster, performs the Ntrip v1 handshake, and
 // returns a reader over the RTCM body.
-func (s *NTRIPSource) Connect(ctx context.Context) (io.ReadCloser, error) {
+func (s *NtripSource) Connect(ctx context.Context) (io.ReadCloser, error) {
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", s.Addr)
 	if err != nil {
 		return nil, err
@@ -94,10 +94,10 @@ func (s *NTRIPSource) Connect(ctx context.Context) (io.ReadCloser, error) {
 	return rc, nil
 }
 
-// handshake writes the NTRIP v1 request, reads the status line, and
+// handshake writes the Ntrip v1 request, reads the status line, and
 // returns an io.ReadCloser over the body.  On error, the caller
 // closes conn.
-func (s *NTRIPSource) handshake(conn net.Conn) (io.ReadCloser, error) {
+func (s *NtripSource) handshake(conn net.Conn) (io.ReadCloser, error) {
 	if _, err := conn.Write([]byte(s.request())); err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func (s *NTRIPSource) handshake(conn net.Conn) (io.ReadCloser, error) {
 		return nil, err
 	}
 	if !bytes.Equal(line, []byte("ICY 200 OK\r\n")) {
-		return nil, fmt.Errorf("NTRIP: %s", strings.TrimSuffix(string(line), "\r\n"))
+		return nil, fmt.Errorf("Ntrip: %s", strings.TrimSuffix(string(line), "\r\n"))
 	}
 	if br.Buffered() == 0 {
 		return conn, nil
@@ -119,8 +119,8 @@ func (s *NTRIPSource) handshake(conn net.Conn) (io.ReadCloser, error) {
 	}{io.MultiReader(bytes.NewReader(leftover), conn), conn}, nil
 }
 
-// request builds the NTRIP v1 request bytes.
-func (s *NTRIPSource) request() string {
+// request builds the Ntrip v1 request bytes.
+func (s *NtripSource) request() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "GET /%s HTTP/1.0\r\n", s.Mountpoint)
 	fmt.Fprintf(&b, "User-Agent: %s\r\n", s.userAgent())
@@ -132,7 +132,7 @@ func (s *NTRIPSource) request() string {
 	return b.String()
 }
 
-func (s *NTRIPSource) userAgent() string {
+func (s *NtripSource) userAgent() string {
 	if s.UserAgent.Version == "" {
 		return "NTRIP SatPulse"
 	}

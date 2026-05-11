@@ -541,7 +541,7 @@ func (s *reconnectSource) waitConn(t *testing.T) net.Conn {
 }
 
 // ntripListener wraps a local TCP listener that scripts a single
-// NTRIP handshake.  It captures the request bytes and writes the
+// Ntrip handshake.  It captures the request bytes and writes the
 // configured response.
 type ntripListener struct {
 	ln       net.Listener
@@ -551,7 +551,7 @@ type ntripListener struct {
 	wg       sync.WaitGroup
 }
 
-func newNTRIPListener(t *testing.T, respond func(conn net.Conn, req []byte)) *ntripListener {
+func newNtripListener(t *testing.T, respond func(conn net.Conn, req []byte)) *ntripListener {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -603,15 +603,15 @@ func (l *ntripListener) close() {
 	l.wg.Wait()
 }
 
-func TestNTRIPConnectV1Handshake(t *testing.T) {
+func TestNtripConnectV1Handshake(t *testing.T) {
 	// Single write combines status and body so the buffered-body
 	// (over-read) branch is exercised deterministically.
 	body := []byte{0xD3, 0x00, 0x04, 0x41, 0x02, 0x03, 0x04, 0x99, 0x88, 0x77}
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write(append([]byte("ICY 200 OK\r\n"), body...))
 	})
 	defer ln.close()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	rc, err := src.Connect(context.Background())
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -626,15 +626,15 @@ func TestNTRIPConnectV1Handshake(t *testing.T) {
 	}
 }
 
-func TestNTRIPConnectV1HandshakeSplitWrites(t *testing.T) {
+func TestNtripConnectV1HandshakeSplitWrites(t *testing.T) {
 	body := []byte{0xD3, 0x00, 0x04, 0x41, 0x02, 0x03, 0x04, 0x99, 0x88, 0x77}
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("ICY 200 OK\r\n"))
 		time.Sleep(50 * time.Millisecond)
 		conn.Write(body)
 	})
 	defer ln.close()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	rc, err := src.Connect(context.Background())
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -649,17 +649,17 @@ func TestNTRIPConnectV1HandshakeSplitWrites(t *testing.T) {
 	}
 }
 
-func TestNTRIPRequestHeaders(t *testing.T) {
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+func TestNtripRequestHeaders(t *testing.T) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("ICY 200 OK\r\n"))
 	})
 	defer ln.close()
-	src := &NTRIPSource{
+	src := &NtripSource{
 		Addr:       ln.addr(),
 		Mountpoint: "MNT",
 		Username:   "user",
 		Password:   "pw",
-		UserAgent:  NTRIPUserAgent{Version: "1.2.3"},
+		UserAgent:  NtripUserAgent{Version: "1.2.3"},
 	}
 	rc, err := src.Connect(context.Background())
 	if err != nil {
@@ -691,12 +691,12 @@ func TestNTRIPRequestHeaders(t *testing.T) {
 	}
 }
 
-func TestNTRIPUserAgentNoVersion(t *testing.T) {
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+func TestNtripUserAgentNoVersion(t *testing.T) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("ICY 200 OK\r\n"))
 	})
 	defer ln.close()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	rc, err := src.Connect(context.Background())
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -716,12 +716,12 @@ func TestNTRIPUserAgentNoVersion(t *testing.T) {
 	}
 }
 
-func TestNTRIPNoAuthHeaderWhenNoUsername(t *testing.T) {
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+func TestNtripNoAuthHeaderWhenNoUsername(t *testing.T) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("ICY 200 OK\r\n"))
 	})
 	defer ln.close()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT", Password: "ignored"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT", Password: "ignored"}
 	rc, err := src.Connect(context.Background())
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -741,12 +741,12 @@ func TestNTRIPNoAuthHeaderWhenNoUsername(t *testing.T) {
 	}
 }
 
-func TestNTRIPErrorResponse(t *testing.T) {
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+func TestNtripErrorResponse(t *testing.T) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("ERROR - Bad Password\r\n"))
 	})
 	defer ln.close()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	_, err := src.Connect(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -756,12 +756,12 @@ func TestNTRIPErrorResponse(t *testing.T) {
 	}
 }
 
-func TestNTRIPHTTPErrorResponse(t *testing.T) {
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+func TestNtripHTTPErrorResponse(t *testing.T) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n"))
 	})
 	defer ln.close()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	_, err := src.Connect(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -771,17 +771,17 @@ func TestNTRIPHTTPErrorResponse(t *testing.T) {
 	}
 }
 
-func TestNTRIPCtxCancelMidHandshake(t *testing.T) {
+func TestNtripCtxCancelMidHandshake(t *testing.T) {
 	// listener that accepts but never responds
 	release := make(chan struct{})
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		<-release
 	})
 	defer func() {
 		close(release)
 		ln.close()
 	}()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -800,7 +800,7 @@ func TestNTRIPCtxCancelMidHandshake(t *testing.T) {
 	}
 }
 
-func TestNTRIPConnectionRefused(t *testing.T) {
+func TestNtripConnectionRefused(t *testing.T) {
 	// Pick an unused port by listening and immediately closing.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -808,7 +808,7 @@ func TestNTRIPConnectionRefused(t *testing.T) {
 	}
 	addr := ln.Addr().String()
 	ln.Close()
-	src := &NTRIPSource{Addr: addr, Mountpoint: "MNT"}
+	src := &NtripSource{Addr: addr, Mountpoint: "MNT"}
 	_, err = src.Connect(context.Background())
 	if err == nil {
 		t.Fatal("expected dial error")

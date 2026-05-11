@@ -116,7 +116,7 @@ func enabledGNSSAndSignals(props *gpsprot.ConfigProps) (gpsprot.GNSSSet, gpsprot
 }
 
 // majorGNSSByMSMBase is the major GNSS constellations sorted by MSM
-// message-number base (the numeric NTRIP source-table convention).
+// message-number base (the numeric Ntrip source-table convention).
 // Only major GNSS are synthesised because satpulse's RTCM config
 // only enables MSM messages for them (see
 // gps/internal/ubx/ubxver.go: rtcmSupport).  Operators can override
