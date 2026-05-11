@@ -66,9 +66,11 @@ func TestReplay(t *testing.T) {
 	}
 	t.Logf("replayed %d NavEpoch, %d Satellites events", nNavEpoch, nSatellites)
 
-	// Also exercise Sample() with hand-crafted PHC samples
+	// Also exercise Sample() and ModeChanged() with hand-crafted PHC samples.
+	obs.ModeChanged(phcsync.ModeInvalid, phcsync.ModeReset)
 	obs.Sample(phcsync.Sample{Kind: phcsync.SampleMissing, Mode: phcsync.ModeReset, Freq: 1000})
 	obs.Sample(phcsync.Sample{Kind: phcsync.SampleMissing, Mode: phcsync.ModeReset, Freq: 2000})
+	obs.ModeChanged(phcsync.ModeReset, phcsync.ModeTracking)
 	obs.Sample(phcsync.Sample{
 		Kind: phcsync.SampleOK, Mode: phcsync.ModeTracking, Freq: 500,
 		Offset: 50 * time.Nanosecond, FreqDelta: 0.1,
@@ -185,6 +187,15 @@ doneSignalCheck:
 	assertCounterLabel(t, mf, "satpulse_phc_samples_total", "status", "missing", 1)
 	// ModeTracking.InSync() == true, so last sample (Missing in tracking) keeps sync=1
 	assertGauge(t, mf, "satpulse_phc_sync_status", 1)
+	// Last sample is in ModeTracking; gauge holds the raw enum value.
+	assertGauge(t, mf, "satpulse_phc_sync_mode", float64(phcsync.ModeTracking))
+	// A ModeChanged notification — without any accompanying sample — must
+	// drive both gauges immediately, including paths like carrier-loss
+	// Pause where the controller transitions without producing a sample.
+	obs.ModeChanged(phcsync.ModeTracking, phcsync.ModeReset)
+	mfAfterTransition := scrape(t, obs)
+	assertGauge(t, mfAfterTransition, "satpulse_phc_sync_mode", float64(phcsync.ModeReset))
+	assertGauge(t, mfAfterTransition, "satpulse_phc_sync_status", 0)
 	// Frequency gauge should be last sample's Freq / 1e9
 	assertGauge(t, mf, "satpulse_phc_frequency_adjustment", 800.0/1e9)
 	// Offset gauge should be the last OK sample's offset: -30ns

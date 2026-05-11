@@ -38,7 +38,7 @@ func NewClockLogObserver(lg *slog.Logger, path string, ls ptime.LeapSecond) (*Cl
 	return o, nil
 }
 
-// Sample implements phcsync.Sampler - logs clock data samples
+// Sample implements phcsync.Observer - logs clock data samples
 func (o *ClockLogObserver) Sample(data phcsync.Sample) {
 	// Don't log missing samples
 	if data.Kind == phcsync.SampleMissing {

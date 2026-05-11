@@ -11,18 +11,22 @@ import (
 
 type mockObserver struct {
 	gpsprot.DefaultHandler
-	sampleCount     int
-	releaseCount    int
-	reopenCount     int
-	timeCount       int
-	tickCount       int
-	navEpochPVCount int
-	ntpSampleCount  int
+	sampleCount      int
+	releaseCount     int
+	reopenCount      int
+	timeCount        int
+	tickCount        int
+	navEpochPVCount  int
+	ntpSampleCount   int
+	nativeMsgCount   int
+	nativeMsgHandled bool
 }
 
 func (m *mockObserver) Sample(data phcsync.Sample) {
 	m.sampleCount++
 }
+
+func (m *mockObserver) ModeChanged(_, _ phcsync.Mode) {}
 
 func (m *mockObserver) Tick(_ *gpsprot.TimeMsg, _ time.Time) {
 	m.tickCount++
@@ -34,6 +38,11 @@ func (m *mockObserver) NavEpochPV(_ *gpsprot.NavEpochMsg, _ *gpsprot.PVMsgBundle
 
 func (m *mockObserver) NTPSample(_ time.Time, _ float64, _ ptime.LeapSecondKind, _ ptime.Time) {
 	m.ntpSampleCount++
+}
+
+func (m *mockObserver) NativeMsg(_ gpsprot.Tag, _ string, _ any, _ time.Time) bool {
+	m.nativeMsgCount++
+	return m.nativeMsgHandled
 }
 
 func (m *mockObserver) ReopenLog() {
@@ -135,5 +144,31 @@ func TestMultiObserver_NTPSample(t *testing.T) {
 	}
 	if mock2.ntpSampleCount != 1 {
 		t.Errorf("Expected NTPSample count 1 on mock2, got %d", mock2.ntpSampleCount)
+	}
+}
+
+func TestMultiObserver_NativeMsg(t *testing.T) {
+	mock1 := &mockObserver{}
+	mock2 := &mockObserver{nativeMsgHandled: true}
+	multi := NewMultiObserver(mock1, mock2)
+
+	handled := multi.NativeMsg("TEST", "MSG", struct{}{}, time.Now())
+
+	if !handled {
+		t.Error("Expected NativeMsg to return true when a child handles the message")
+	}
+	if mock1.nativeMsgCount != 1 {
+		t.Errorf("Expected NativeMsg count 1 on mock1, got %d", mock1.nativeMsgCount)
+	}
+	if mock2.nativeMsgCount != 1 {
+		t.Errorf("Expected NativeMsg count 1 on mock2, got %d", mock2.nativeMsgCount)
+	}
+}
+
+func TestDefaultObserver_NativeMsg(t *testing.T) {
+	var obs DefaultObserver
+
+	if obs.NativeMsg("TEST", "MSG", struct{}{}, time.Now()) {
+		t.Error("Expected DefaultObserver.NativeMsg to return false")
 	}
 }

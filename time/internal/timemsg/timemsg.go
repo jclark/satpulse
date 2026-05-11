@@ -54,11 +54,19 @@ const (
 	levelConsecutive               // have the requested messages and they are consecutive
 )
 
-// NewBuffer creates a new Buffer with the specified read window.
-// The readWindow determines how far back in time to keep messages.
+// minReadWindow is the lower bound on the read window the Buffer will use,
+// regardless of what the caller requests. It must be large enough to cover
+// the package's own internal lookback needs (detectInvalidLeap looks back
+// ~2s for a same-type entry; getPulseCorrectionLast looks back ~1s for a
+// matching refTime).
+const minReadWindow = 3 * time.Second
+
+// NewBuffer creates a new Buffer with at least the given read window.
+// readWindow is the minimum the caller requires; the Buffer may use a
+// larger window to satisfy its own internal needs.
 func NewBuffer(lg *slog.Logger, readWindow time.Duration, ls ptime.LeapSecond, timeGNSS gpsprot.GNSS) *Buffer {
 	return &Buffer{
-		readWindow: readWindow,
+		readWindow: max(readWindow, minReadWindow),
 		ls:         ls,
 		lg:         lg,
 		timeGNSS:   timeGNSS,
@@ -138,7 +146,12 @@ func (buf *Buffer) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 // the reference time of each time message is one greater than the previous one.
 // The messages must be the same GNSS message type, which must be of a type that follows the time pulse.
 // If there are insufficient messages in the buffer, the slice will be nil and lastSec will be zero.
-func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.Time) {
+//
+// detectLeap is non-nil only when the selected time messages are
+// UTC-source (i.e. start.TAITime.IsZero()). When non-nil, calling it
+// with a minDelta runs the invalid-leap check on the buffer's current
+// contents for the captured (Tag, NativeMsgID).
+func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.Time, detectLeap func(minDelta time.Duration) bool) {
 	level := levelEmpty
 	defer func() {
 		buf.noteBufMsgLevel(level)
@@ -146,7 +159,7 @@ func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.
 	entries := buf.bestEntries(&level)
 	start := epochStartMsg(entries)
 	if start == nil {
-		return 0, nil
+		return 0, nil, nil
 	}
 	level = levelMultipleTimes
 	entries = entriesSameType(entries, start)
@@ -173,18 +186,24 @@ func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.
 		tRead = append(tRead, e.tRead.Add(-time.Duration(e.msg.ReadDelay)))
 	}
 	if len(secs) < n {
-		return 0, nil
+		return 0, nil, nil
 	}
 	level = levelSufficient
 	secs = secs[len(secs)-n:]
 	tRead = tRead[len(tRead)-n:]
 	for i := 1; i < len(secs); i++ {
 		if secs[i].Sub(secs[i-1]) != time.Second {
-			return 0, nil
+			return 0, nil, nil
 		}
 	}
 	level = levelConsecutive
-	return secs[len(secs)-1], tRead
+	if start.TAITime.IsZero() {
+		tag, msgID := start.Tag, start.NativeMsgID
+		detectLeap = func(minDelta time.Duration) bool {
+			return buf.detectInvalidLeap(tag, msgID, minDelta)
+		}
+	}
+	return secs[len(secs)-1], tRead, detectLeap
 }
 
 func (buf *Buffer) noteBufMsgLevel(level bufMsgLevel) {
@@ -345,6 +364,54 @@ func (e *entry) eligible(level *bufMsgLevel) bool {
 		return false
 	}
 	*level = levelPost
+	return true
+}
+
+// detectInvalidLeap detects a backwards leap in the sequence of messages due to out of date firmware
+// this needs to be called after each message is added to the buffer
+func (buf *Buffer) detectInvalidLeap(tag gpsprot.Tag, nativeMsgID string, minDelta time.Duration) bool {
+	entries := buf.validEntries()
+	if len(entries) == 0 {
+		return false
+	}
+	last := entries[len(entries)-1]
+	if m := last.msg; m.Tag != tag || m.NativeMsgID != nativeMsgID || m.UTCTime == nil {
+		return false
+	}
+	t2 := *last.msg.UTCTime
+
+	i := len(entries) - 2
+	for {
+		if i < 0 {
+			return false
+		}
+		if msg := entries[i].msg; msg.Tag == tag && msg.NativeMsgID == nativeMsgID {
+			if msg.UTCTime == nil {
+				return false
+			}
+			break
+		}
+		i--
+	}
+	t1 := *entries[i].msg.UTCTime
+	delta := t2.Sub(t1)
+	if delta > 0 {
+		return false
+	}
+	if delta < 0 {
+		// the GPS reported UTC time has actually gone backwards; definitely an invalid leap second
+		buf.lg.Warn("detected backwards leap in GPS UTC time; likely due to out of date firmware", "tag", tag, "nativeMsgID", nativeMsgID, "t1", t1, "t2", t2, "leap", delta)
+		return true
+	}
+	tRead1 := entries[i].tRead.Add(-time.Duration(entries[i].msg.ReadDelay))
+	tRead2 := last.tRead.Add(-time.Duration(last.msg.ReadDelay))
+	tReadDelta := tRead2.Sub(tRead1)
+	if tReadDelta < minDelta {
+		// not quite strong enough evidence that this is an invalid leap, but duplicate message of same msg ID and same UTC time is suspicious
+		buf.lg.Info("suspicious duplicate GPS UTC time message", "tag", tag, "nativeMsgID", nativeMsgID, "t", t1)
+		return false
+	}
+	buf.lg.Warn("detected duplicate GPS UTC time message with same UTC time; likely due to out of date firmware", "tag", tag, "nativeMsgID", nativeMsgID, "t", t1, "tReadDelta", tReadDelta)
 	return true
 }
 

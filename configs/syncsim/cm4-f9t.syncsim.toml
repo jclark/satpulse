@@ -1,0 +1,26 @@
+#:schema syncsim-schema.json
+# Raspberry Pi Compute Module 4 with u-blox ZED-F9T (dual-frequency L1/L2)
+
+[sim]
+duration = 86400
+
+[phc]
+whiteNoise = 2.8
+flickerNoise = 1.3
+randomWalk = 0.8
+
+[gps]
+jitter = 0.2
+sawtooth.amp = 7.86
+
+[[gps.ar1]]
+tau = 3400
+sigma = 3
+
+[pulse]
+maxDelay = 0.25
+
+[sync]
+track.kp = 0.8
+track.ki = 0.3
+track.ignoreSawtoothCorrection = false

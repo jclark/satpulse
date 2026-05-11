@@ -11,7 +11,7 @@ type JSONObject = { [key: string]: JSONValue };
 type JSONArray = JSONValue[];
 
 // Use a more specific type for our parsed event data
-const EVENT_TYPES = ["satellites", "time", "phc", "survey", "receiver", "posvel", "quality", "init"] as const;
+const EVENT_TYPES = ["satellites", "time", "phc", "mode", "survey", "receiver", "posvel", "quality", "init"] as const;
 type EventType = typeof EVENT_TYPES[number];
 
 type Map = {[key: string]: any};
@@ -19,16 +19,29 @@ type Map = {[key: string]: any};
 export const Dashboard: FunctionComponent = () => {
     const context = useContext(EventSourceContext) as EventSource;
     const [events, setEvents] = useState<Map>({});
+    // phc accumulates fields from both `phc` and `mode` events as they
+    // arrive. The shared `mode` field is therefore last-write-wins by
+    // arrival order, so a stale cached mode delivered at connect is
+    // corrected by the next live event from either stream.
+    const [phc, setPhc] = useState<Map | null>(null);
     const [haveLookAngles, setHaveLookAngles] = useState(false);
-    
+    const [everMoving, setEverMoving] = useState(false);
+
     useEffect(() => {
         const handler = (type: string) => (e: MessageEvent<string>) => {
             const parsedEvents = parseSSEMessage(type, e.data);
             for (const [eventType, eventData] of parsedEvents) {
                 const obj : Map|null = validateEvent(eventType, eventData);
                 if (obj !== null) {
+                    if (eventType === 'phc' || eventType === 'mode') {
+                        setPhc(prev => ({ ...prev, ...obj }));
+                        continue;
+                    }
                     if (eventType === 'satellites' && obj.svs && obj.svs.length > 0) {
                         setHaveLookAngles(obj.svs.some((sv: any) => sv.lookAngles));
+                    }
+                    if (eventType === 'posvel' && typeof obj.groundSpeed === 'number' && obj.groundSpeed >= 0.1) {
+                        setEverMoving(true);
                     }
                     setEvents(prev => ({ ...prev, [eventType]: obj }));
                 }
@@ -51,11 +64,11 @@ export const Dashboard: FunctionComponent = () => {
         {events.satellites && haveLookAngles && <SkyViewCard svs={svs} />}
         {events.satellites && <SignalGraphCard svs={svs} />}
         {events.time && <PropertyCard title="Current GPS Time" data={events.time} format={timeFormat} />}
-        {events.phc && <PropertyCard title="PTP Hardware Clock" data={events.phc} format={phcFormat} />}
+        {phc && <PropertyCard title="PTP Hardware Clock" data={phc} format={phcFormat} />}
         {events.receiver && <PropertyCard title="Receiver" data={events.receiver} format={receiverFormat} />}
         {events.quality && <PropertyCard title="Status" data={events.quality} format={statusFormat} />}
         {events.posvel && <PropertyCard title="Position" data={events.posvel} format={positionFormat} />}
-        {events.posvel && showVelocity(events.posvel) && <PropertyCard title="Velocity" data={events.posvel} format={velocityFormat} />}
+        {events.posvel && everMoving && <PropertyCard title="Velocity" data={events.posvel} format={velocityFormat} />}
         {events.quality && <PropertyCard title="Position Quality" data={events.quality} format={positionQualityFormat} />}
         {events.survey && <PropertyCard title="Survey-in Status" data={events.survey} format={surveyFormat} />}
         </CardsElement>
@@ -238,7 +251,7 @@ const timeFormat: EventFormat = {
 }
 
 const phcFormat: EventFormat = {
-    syncState: ["State"],
+    mode: ["State"],
     offset: ["Offset from GPS", formatNanoseconds],
     freq: ["Frequency offset", (arg: number) => `${arg.toFixed(2)} ppb`],
     stepCount: (count: number, obj: Map) => [
@@ -287,10 +300,6 @@ const velocityFormat: EventFormat = {
     velN: ["Vel north", (arg: number) => `${arg.toFixed(3)} m/s`],
     velE: ["Vel east", (arg: number) => `${arg.toFixed(3)} m/s`],
     velD: ["Vel down", (arg: number) => `${arg.toFixed(3)} m/s`],
-}
-
-function showVelocity(posvel: Map): boolean {
-    return typeof posvel.groundSpeed === 'number' && posvel.groundSpeed >= 0.1;
 }
 
 const positionQualityFormat: EventFormat = {

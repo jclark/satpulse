@@ -1,0 +1,4 @@
+vendor = "u-blox"
+model = "LEA-6T"
+firmware = "PROTVER 12.2"
+default-baud = 9600

@@ -1,0 +1,421 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "freqSinusoid": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "period": {
+          "description": "Oscillation period (s)",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000
+        },
+        "amp": {
+          "description": "Frequency amplitude (ppb)",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "phaseInit": {
+          "description": "Initial phase as fraction of cycle [0,1)",
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        }
+      }
+    },
+    "ar1": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tau": {
+          "description": "Correlation time constant (s)",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "sigma": {
+          "description": "Steady-state RMS (ns)",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
+        }
+      }
+    },
+    "ramp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "duration": {
+          "description": "Ramp duration (s); 0 means instant transition",
+          "type": "number",
+          "minimum": 0
+        },
+        "power": {
+          "description": "Shape power (>1 for smooth S-curve, default 2)",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 10
+        }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "sim": {
+      "description": "Simulation parameters",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "duration": {
+          "description": "Simulation duration (s)",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "startTime": {
+          "description": "Wall-clock time for t=0 (HH:MM:SS)",
+          "type": "string",
+          "format": "time"
+        }
+      }
+    },
+    "phc": {
+      "description": "PHC oscillator error model",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "freqOffset": {
+          "description": "Constant frequency offset (ppb)",
+          "type": "number",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "drift": {
+          "description": "Linear frequency drift (ppb/day)",
+          "type": "number",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "whiteNoise": {
+          "description": "White frequency noise stddev (ppb)",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "flickerNoise": {
+          "description": "Flicker (1/f) frequency noise stddev (ppb)",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "randomWalk": {
+          "description": "Random walk FM coefficient (ppb/sqrt(s))",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "sinusoid": {
+          "description": "Sinusoidal frequency modulation components",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/freqSinusoid"
+          }
+        }
+      }
+    },
+    "gps": {
+      "description": "GPS time pulse error model",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jitter": {
+          "description": "White phase noise stddev (ns)",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "sawtooth": {
+          "description": "GPS receiver quantization sawtooth error",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "amp": {
+              "description": "Sawtooth amplitude (ns, ~ 0.5e9/f_osc)",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "phaseInit": {
+              "description": "Initial phase [0,1)",
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "internalClock": {
+              "description": "GPS internal oscillator error model",
+              "$ref": "#/definitions/freqSinusoid"
+            }
+          }
+        },
+        "ar1": {
+          "description": "AR(1) coloured phase noise processes",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ar1"
+          }
+        },
+        "ar1FM": {
+          "description": "AR(1) frequency modulation process",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tau": {
+              "description": "Correlation time constant (s)",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "sigma": {
+              "description": "Steady-state RMS of frequency bias (ppb)",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10000
+            }
+          }
+        },
+        "randomWalk": {
+          "description": "Random walk FM coefficient (ppb/sqrt(s))",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "drift": {
+          "description": "Bounded drift (Carpenter-Lee 2nd-order Gauss-Markov)",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tau": {
+              "description": "Characteristic timescale (s)",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "sigma": {
+              "description": "RMS phase deviation (ns)",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10000
+            },
+            "zeta": {
+              "description": "Damping ratio",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10
+            }
+          }
+        },
+        "resonator": {
+          "description": "Damped harmonic oscillator on phase",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "period": {
+              "description": "Natural oscillation period (s)",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "sigma": {
+              "description": "RMS phase deviation (ns)",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10000
+            },
+            "zeta": {
+              "description": "Damping ratio",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10
+            }
+          }
+        },
+        "sinusoid": {
+          "description": "Sinusoidal phase modulation components",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "period": {
+                "description": "Oscillation period (s)",
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1000000
+              },
+              "amp": {
+                "description": "Phase amplitude (ns)",
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10000
+              },
+              "peakAt": {
+                "description": "Time of day when sinusoid peaks (HH:MM:SS)",
+                "type": "string",
+                "format": "time"
+              }
+            }
+          }
+        }
+      }
+    },
+    "sync": {
+      "description": "PHC sync controller parameters",
+      "$ref": "../config-schema.json#/properties/sync"
+    },
+    "pulse": {
+      "description": "Pulse delivery timing",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minDelay": {
+          "description": "Min pulse delay from GPS second (s)",
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "maxDelay": {
+          "description": "Max pulse delay from GPS second (s)",
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "width": {
+          "description": "Pulse width (s); 0 = single-edge mode",
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        }
+      }
+    },
+    "msg": {
+      "description": "GPS message delivery timing",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "delay": {
+          "description": "Mean message delay after pulse (s)",
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "jitter": {
+          "description": "Message delay stddev (s)",
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "sawtoothType": {
+          "description": "How sawtooth correction is delivered",
+          "type": "string",
+          "enum": [
+            "prepulse",
+            "postpulse",
+            "none"
+          ]
+        },
+        "prePulseTime": {
+          "description": "Time before pulse for prepulse message (s)",
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "postPulseDelay": {
+          "description": "Delay after pulse for postpulse message (s)",
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        }
+      }
+    },
+    "fault": {
+      "description": "Fault injection parameters",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "outage": {
+          "description": "Signal outage periods",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "startTime": {
+                "description": "When outage begins (s)",
+                "type": "number",
+                "minimum": 0
+              },
+              "duration": {
+                "description": "Outage duration (s)",
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "outlier": {
+          "description": "Discrete phase outlier injection",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "time": {
+                "description": "When to inject outlier (s)",
+                "type": "number",
+                "minimum": 0
+              },
+              "offset": {
+                "description": "Outlier offset magnitude (ns)",
+                "type": "number"
+              }
+            }
+          }
+        },
+        "excursion": {
+          "description": "Temporary phase excursions",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "startTime": {
+                "description": "When excursion begins (s)",
+                "type": "number",
+                "minimum": 0
+              },
+              "duration": {
+                "description": "Total duration including ramps (s)",
+                "type": "number",
+                "minimum": 0
+              },
+              "amplitude": {
+                "description": "Peak phase shift (ns)",
+                "type": "number"
+              },
+              "rise": {
+                "description": "Rising edge ramp",
+                "$ref": "#/definitions/ramp"
+              },
+              "fall": {
+                "description": "Falling edge ramp",
+                "$ref": "#/definitions/ramp"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

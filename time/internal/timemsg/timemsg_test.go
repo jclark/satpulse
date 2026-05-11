@@ -24,8 +24,8 @@ func TestGetPostTimeMessages(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		entries    []struct {
+		name    string
+		entries []struct {
 			msg   *gpsprot.TimeMsg
 			tRead time.Time
 		}
@@ -409,8 +409,8 @@ func TestGetPostTimeMessages(t *testing.T) {
 					tRead: timeAt(3100000000),
 				},
 			},
-			n:          3,
-			expectLast: 0,
+			n:              3,
+			expectLast:     0,
 			expectTRead:    nil, // Should fail due to missing second
 			expectMsgLevel: levelConsecutive - 1,
 		},
@@ -425,7 +425,7 @@ func TestGetPostTimeMessages(t *testing.T) {
 				buf.Time(e.msg, e.tRead)
 			}
 
-			gotLast, gotTRead := buf.GetPostTimeMessages(tt.n)
+			gotLast, gotTRead, _ := buf.GetPostTimeMessages(tt.n)
 
 			if gotLast != tt.expectLast {
 				t.Errorf("GetPostTimeMessages() lastSec = %v, want %v", gotLast, tt.expectLast)
@@ -488,7 +488,7 @@ func TestPostPulseMessagePreference(t *testing.T) {
 	}
 
 	// Request 3 messages - should get PostPulse messages, not NavSolution
-	gotLast, gotTRead := buf.GetPostTimeMessages(3)
+	gotLast, gotTRead, _ := buf.GetPostTimeMessages(3)
 
 	if gotLast != tai(102) {
 		t.Errorf("GetPostTimeMessages() lastSec = %v, want %v", gotLast, tai(102))
@@ -606,10 +606,10 @@ func TestValidatePulseOffset(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		offset     float64
-		wantOK     bool
-		wantCorr   time.Duration
+		name     string
+		offset   float64
+		wantOK   bool
+		wantCorr time.Duration
 	}{
 		{"valid_small_positive", 5.5, true, 6},
 		{"valid_small_negative", -5.5, true, -6},
@@ -714,7 +714,7 @@ func TestMixedPrePulseAndPostPulse(t *testing.T) {
 
 	// GetPostTimeMessages should prefer PostPulse for 101 (but there's only one PostPulse message)
 	// So we can't get 2 consecutive messages - this verifies filtering works
-	gotLast, gotTRead := buf.GetPostTimeMessages(2)
+	gotLast, gotTRead, _ := buf.GetPostTimeMessages(2)
 
 	// Should fail because we only have one PostPulse message (101) and PrePulse is not eligible
 	if gotLast != 0 || len(gotTRead) != 0 {
@@ -885,5 +885,238 @@ func TestMsgUTCTimerReadDelay(t *testing.T) {
 	want := tRead.Add(-readDelay)
 	if !rec.samples[0].read.Equal(want) {
 		t.Errorf("tRead = %v, want %v (tRead - ReadDelay)", rec.samples[0].read, want)
+	}
+}
+
+func TestDetectInvalidLeap(t *testing.T) {
+	startTime := time.Now()
+	timeAt := func(ms int64) time.Time {
+		return startTime.Add(time.Duration(ms) * time.Millisecond)
+	}
+	date := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	utc := func(h, m, s int) *ptime.UTCTime {
+		return &ptime.UTCTime{
+			Date:      date,
+			TimeOfDay: time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(s)*time.Second,
+		}
+	}
+	utcOn := func(date time.Time, h, m, s int) *ptime.UTCTime {
+		return &ptime.UTCTime{
+			Date:      date,
+			TimeOfDay: time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(s)*time.Second,
+		}
+	}
+
+	type entry struct {
+		msg   *gpsprot.TimeMsg
+		tRead time.Time
+	}
+	rmc := func(u *ptime.UTCTime, ms int64) entry {
+		return entry{
+			msg:   &gpsprot.TimeMsg{UTCTime: u, Tag: gpsreg.TagNMEA, NativeMsgID: "GPRMC"},
+			tRead: timeAt(ms),
+		}
+	}
+	gga := func(u *ptime.UTCTime, ms int64) entry {
+		return entry{
+			msg:   &gpsprot.TimeMsg{UTCTime: u, Tag: gpsreg.TagNMEA, NativeMsgID: "GPGGA"},
+			tRead: timeAt(ms),
+		}
+	}
+
+	const minDelta = 800 * time.Millisecond
+
+	tests := []struct {
+		name    string
+		entries []entry
+		expect  bool
+	}{
+		{
+			// Real bug from u-blox LEA-6T coldstart.jsonl: NMEA UTC steps
+			// 11:11:08 -> 11:11:06 because firmware was using a stale
+			// leap-second count and just learned the correct value from
+			// the GPS broadcast.
+			name: "lea6t_backwards_2s",
+			entries: []entry{
+				rmc(utc(11, 11, 5), 3009),
+				rmc(utc(11, 11, 6), 3993),
+				rmc(utc(11, 11, 7), 5006),
+				rmc(utc(11, 11, 8), 6046),
+				rmc(utc(11, 11, 6), 7055),
+			},
+			expect: true,
+		},
+		{
+			name: "backwards_1s",
+			entries: []entry{
+				rmc(utc(12, 0, 0), 0),
+				rmc(utc(11, 59, 59), 1000),
+			},
+			expect: true,
+		},
+		{
+			name: "duplicate_normal_gap",
+			entries: []entry{
+				rmc(utc(12, 0, 0), 0),
+				rmc(utc(12, 0, 0), 1000),
+			},
+			expect: true,
+		},
+		{
+			name: "duplicate_short_gap",
+			entries: []entry{
+				rmc(utc(12, 0, 0), 0),
+				rmc(utc(12, 0, 0), 100),
+			},
+			expect: false,
+		},
+		{
+			// Gap exactly equal to minDelta is treated as a real correction
+			// (the suspicious-duplicate test is strict <).
+			name: "duplicate_at_threshold",
+			entries: []entry{
+				rmc(utc(12, 0, 0), 0),
+				rmc(utc(12, 0, 0), int64(minDelta/time.Millisecond)),
+			},
+			expect: true,
+		},
+		{
+			name: "normal_forward",
+			entries: []entry{
+				rmc(utc(12, 0, 0), 0),
+				rmc(utc(12, 0, 1), 1000),
+				rmc(utc(12, 0, 2), 2000),
+			},
+			expect: false,
+		},
+		{
+			// Real positive leap seconds advance civil UTC through :60
+			// before the next midnight. The :60 -> next-day-00:00:00
+			// step must not be mistaken for a duplicate UTC second.
+			name: "real_positive_leap_60_to_next_day",
+			entries: []entry{
+				rmc(utcOn(time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC), 23, 59, 60), 0),
+				rmc(utcOn(time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), 0, 0, 0), 1000),
+			},
+			expect: false,
+		},
+		{
+			// Step into the leap second: 23:59:59 -> 23:59:60 on the
+			// leap-eligible day. Same-Date pair, but TimeOfDay advances
+			// from 23h59m59s to 24h.
+			name: "real_positive_leap_into_60",
+			entries: []entry{
+				rmc(utcOn(time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC), 23, 59, 59), 0),
+				rmc(utcOn(time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC), 23, 59, 60), 1000),
+			},
+			expect: false,
+		},
+		{
+			// Ordinary midnight crossing on a non-leap day: the Date
+			// changes between the two entries. Verifies the cross-Date
+			// arithmetic on its own, independent of leap-second handling.
+			name: "ordinary_midnight_crossing",
+			entries: []entry{
+				rmc(utcOn(time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), 23, 59, 59), 0),
+				rmc(utcOn(time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), 0, 0, 0), 1000),
+			},
+			expect: false,
+		},
+		{
+			name: "single_message",
+			entries: []entry{
+				rmc(utc(12, 0, 0), 0),
+			},
+			expect: false,
+		},
+		{
+			name:    "empty_buffer",
+			entries: nil,
+			expect:  false,
+		},
+		{
+			// Last entry is GPGGA, not GPRMC; function does not search past
+			// the last entry.
+			name: "last_not_matching_type",
+			entries: []entry{
+				rmc(utc(12, 0, 0), 0),
+				rmc(utc(11, 59, 59), 1000),
+				gga(utc(12, 0, 1), 2000),
+			},
+			expect: false,
+		},
+		{
+			name: "last_nil_utc",
+			entries: []entry{
+				rmc(utc(12, 0, 0), 0),
+				{
+					msg:   &gpsprot.TimeMsg{UTCTime: nil, Tag: gpsreg.TagNMEA, NativeMsgID: "GPRMC"},
+					tRead: timeAt(1000),
+				},
+			},
+			expect: false,
+		},
+		{
+			// Most recent prior matching entry has nil UTCTime; function
+			// gives up rather than searching further back.
+			name: "prev_nil_utc",
+			entries: []entry{
+				rmc(utc(12, 0, 0), 0),
+				{
+					msg:   &gpsprot.TimeMsg{UTCTime: nil, Tag: gpsreg.TagNMEA, NativeMsgID: "GPRMC"},
+					tRead: timeAt(1000),
+				},
+				rmc(utc(11, 59, 59), 2000),
+			},
+			expect: false,
+		},
+		{
+			// Backwards leap with intervening other-type messages between
+			// the two GPRMC entries; function walks back over them.
+			name: "backwards_skips_other_types",
+			entries: []entry{
+				rmc(utc(12, 0, 0), 0),
+				gga(utc(12, 0, 0), 50),
+				gga(utc(12, 0, 1), 1050),
+				rmc(utc(11, 59, 59), 1000),
+			},
+			expect: true,
+		},
+		{
+			// Duplicate UTC where raw tRead gap is 1000ms but ReadDelay on
+			// the second message corrects its tRead 300ms earlier, putting
+			// the corrected gap (700ms) below minDelta.
+			name: "duplicate_read_delay_pulls_below_threshold",
+			entries: []entry{
+				{
+					msg:   &gpsprot.TimeMsg{UTCTime: utc(12, 0, 0), Tag: gpsreg.TagNMEA, NativeMsgID: "GPRMC"},
+					tRead: timeAt(0),
+				},
+				{
+					msg: &gpsprot.TimeMsg{
+						UTCTime:     utc(12, 0, 0),
+						Tag:         gpsreg.TagNMEA,
+						NativeMsgID: "GPRMC",
+						ReadDelay:   gpsprot.Duration(300 * time.Millisecond),
+					},
+					tRead: timeAt(1000),
+				},
+			},
+			expect: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+			buf := NewBuffer(lg, 30*time.Second, ptime.LeapSecond{UTCOffAfter: 37}, gpsprot.GPS)
+			for _, e := range tc.entries {
+				buf.Time(e.msg, e.tRead)
+			}
+			got := buf.detectInvalidLeap(gpsreg.TagNMEA, "GPRMC", minDelta)
+			if got != tc.expect {
+				t.Errorf("detectInvalidLeap() = %v, want %v", got, tc.expect)
+			}
+		})
 	}
 }

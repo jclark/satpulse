@@ -1,0 +1,4 @@
+*.result.toml
+*.syncsim.log
+*.ts.jsonl
+*.clock.log

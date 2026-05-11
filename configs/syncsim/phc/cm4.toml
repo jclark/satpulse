@@ -1,0 +1,5 @@
+# Raspberry Pi Compute Module 4
+[phc]
+whiteNoise = 2.8
+flickerNoise = 1.3
+randomWalk = 0.8

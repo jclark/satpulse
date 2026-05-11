@@ -52,7 +52,11 @@ type Dispatcher struct {
 
 func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, controller *phcsync.Controller, rc *refclock.ProxyRefClock, ls ptime.LeapSecond, obs obs.Observer, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
 	// Always create timeMsgBuffer (useful even without PHC)
-	timeMsgBuffer := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
+	var minWindow time.Duration
+	if controller != nil {
+		minWindow = controller.RequiredMsgWindow()
+	}
+	timeMsgBuffer := timemsg.NewBuffer(lg, minWindow, ls, gpsprot.GPS)
 
 	// Inject buffer into controller if controller exists
 	if controller != nil {
@@ -351,7 +355,9 @@ func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 }
 
 func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
-	d.lg.Debug("unused message from GPS receiver", "protocol", tag, "msgID", msgID)
+	if !d.obs.NativeMsg(tag, msgID, msg, tRead) {
+		d.lg.Debug("unused message from GPS receiver", "protocol", tag, "msgID", msgID)
+	}
 	return nil
 }
 

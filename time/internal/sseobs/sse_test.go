@@ -30,11 +30,22 @@ func TestSSEObserver_Events(t *testing.T) {
 		{
 			name: "init",
 			action: func(obs *SSEObserver) {
-				event := obs.InitEvent()
-				obs.sseCh <- event
+				events := obs.InitEvents()
+				if len(events) != 1 {
+					panic("expected single init event before any ModeChanged")
+				}
+				obs.sseCh <- events[0]
 			},
 			eventType:    "init",
 			expectedJSON: `{"receiver":{"vendor":"u-blox","firmware":"HPG 1.32 PROTVER 27.31","hardware":"ZED-F9P","supportedGNSS":["GPS","GLO"]}}`,
+		},
+		{
+			name: "mode_changed",
+			action: func(obs *SSEObserver) {
+				obs.ModeChanged(phcsync.ModeReset, phcsync.ModeTracking)
+			},
+			eventType:    "mode",
+			expectedJSON: `{"mode":"tracking"}`,
 		},
 		{
 			name: "sample_ok",
@@ -48,7 +59,7 @@ func TestSSEObserver_Events(t *testing.T) {
 				})
 			},
 			eventType:    "phc",
-			expectedJSON: `{"offset":123,"freq":1.5,"stepCount":0,"stepCountChanging":true,"syncState":"tracking"}`,
+			expectedJSON: `{"offset":123,"freq":1.5,"stepCount":0,"stepCountChanging":true,"mode":"tracking"}`,
 		},
 		{
 			name: "sample_outlier",
@@ -62,7 +73,7 @@ func TestSSEObserver_Events(t *testing.T) {
 				})
 			},
 			eventType:    "phc",
-			expectedJSON: `{"offset":-456,"freq":-2.3,"stepCount":0,"stepCountChanging":true,"outlier":true,"syncState":"reset"}`,
+			expectedJSON: `{"offset":-456,"freq":-2.3,"stepCount":0,"stepCountChanging":true,"outlier":true,"mode":"reset"}`,
 		},
 		{
 			name: "time",
@@ -389,6 +400,44 @@ func TestNavEpochPVSSE(t *testing.T) {
 	quality := <-ch
 	if !strings.Contains(quality.Format(), "event: quality\n") {
 		t.Errorf("expected quality event, got: %s", quality.Format())
+	}
+}
+
+// TestInitEventsAfterModeChanged checks that once ModeChanged has been
+// observed, InitEvents includes the cached mode event so a fresh client
+// learns the current mode at connect time.
+func TestInitEventsAfterModeChanged(t *testing.T) {
+	ch := make(chan sse.Event, 1)
+	cfgResult := &gpscfg.Result{ReceiverInfo: &gpsprot.ReceiverInfo{Vendor: "test"}}
+	obs := New(ch, ptime.LeapSecond{}, slog.Default(), cfgResult)
+	if got := obs.InitEvents(); len(got) != 1 {
+		t.Fatalf("expected 1 init event before ModeChanged, got %d", len(got))
+	}
+	obs.ModeChanged(phcsync.ModeInvalid, phcsync.ModeReset)
+	<-ch // drain the broadcast emit
+	events := obs.InitEvents()
+	if len(events) != 2 {
+		t.Fatalf("expected 2 init events after ModeChanged, got %d", len(events))
+	}
+	if !strings.Contains(events[0].Format(), "event: init\n") {
+		t.Errorf("first init event should be init, got: %s", events[0].Format())
+	}
+	wire := events[1].Format()
+	if !strings.Contains(wire, "event: mode\n") {
+		t.Errorf("second init event should be mode, got: %s", wire)
+	}
+	if !strings.Contains(wire, `{"mode":"reset"}`) {
+		t.Errorf("mode event payload should be {\"mode\":\"reset\"}, got: %s", wire)
+	}
+	// A subsequent transition replaces the cached mode.
+	obs.ModeChanged(phcsync.ModeReset, phcsync.ModeTracking)
+	<-ch
+	events = obs.InitEvents()
+	if len(events) != 2 {
+		t.Fatalf("expected 2 init events, got %d", len(events))
+	}
+	if !strings.Contains(events[1].Format(), `{"mode":"tracking"}`) {
+		t.Errorf("expected mode=tracking after second ModeChanged, got: %s", events[1].Format())
 	}
 }
 

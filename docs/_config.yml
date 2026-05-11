@@ -31,6 +31,7 @@ words_per_minute         : 200
 enable_copy_code_button  : # true, false (default)
 copyright                : "James Clark"
 copyright_url            : # "copyright" URL, defaults to site.url
+man_prerelease_notice    : false # show pre-release banner on man pages; set true during development
 comments:
   provider               : # false (default), "disqus", "discourse", "facebook", "staticman", "staticman_v2", "utterances", "giscus", "custom"
   disqus:

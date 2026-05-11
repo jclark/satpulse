@@ -1,0 +1,5 @@
+# Time Appliances TimeHAT (i226 NIC with TCXO)
+[phc]
+whiteNoise = 2.5
+flickerNoise = 0.6
+randomWalk = 0.02

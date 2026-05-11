@@ -38,7 +38,10 @@ type TimeMsgBuffer interface {
 	// The last message must not be stale i.e. there must not be a time message of the same type with a later reference time.
 	// The messages must be the same GNSS message type, which must be of a type that follows the time pulse.
 	// If n such messages are not available, the slice will be empty and lastSec will be zero.
-	GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.Time)
+	// detectLeap is a closure for the invalid-leap-second check on the
+	// selected message type; non-nil only when those messages are
+	// UTC-source.
+	GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.Time, detectLeap func(minDelta time.Duration) bool)
 	// GetPulseCorrection retrieves the pulse offset correction (PulseOffset) for a given reference time.
 	// The returned correction satisfies: true_time_of_second = pulse_time + correction
 	// Returns (correction, true) if available, (0, false) otherwise.
@@ -51,6 +54,28 @@ type Config struct {
 	Reset    ResetConfig      `toml:"reset" comment:"Reset mode parameters"`
 	Converge ConvergingConfig `toml:"converge" comment:"Converging mode parameters"`
 	Track    TrackingConfig   `toml:"track" comment:"Tracking mode parameters"`
+	Share    SharedConfig     `toml:"share" comment:"Cross-mode parameters"`
+}
+
+// SharedConfig contains tunable parameters for cross-mode checks.
+type SharedConfig struct {
+	// DetectInvalidLeap enables the invalid-leap-second detector that
+	// runs on UTC-source time messages after reset mode completes.
+	// When false the detector is skipped.
+	DetectInvalidLeap bool `toml:"detectInvalidLeap" comment:"Enable detection of invalid leap seconds after reset mode completes"`
+
+	// MinInvalidRepeatInterval is the minimum read-time interval (s)
+	// between two same-type messages reporting identical UTC for the
+	// repeat to be declared an invalid leap-second event (a stale-
+	// firmware correction) rather than a receiver glitch.
+	MinInvalidRepeatInterval float64 `toml:"minInvalidRepeatInterval" check:">0,<1.0" comment:"Min repeat interval to declare invalid leap (s)"`
+}
+
+func defaultSharedConfig() SharedConfig {
+	return SharedConfig{
+		DetectInvalidLeap:        true,
+		MinInvalidRepeatInterval: 0.8,
+	}
 }
 
 // DefaultConfig returns a Config with sensible default values.
@@ -59,6 +84,7 @@ func DefaultConfig() Config {
 		Reset:    defaultResetConfig(),
 		Converge: defaultConvergingConfig(),
 		Track:    defaultTrackingConfig(),
+		Share:    defaultSharedConfig(),
 	}
 }
 
@@ -99,7 +125,7 @@ func (m Mode) InSync() bool {
 type Controller struct {
 	clock         Clock
 	timeMsgBuffer TimeMsgBuffer
-	sampler       Sampler
+	observer      Observer
 	gm            *ptpgm.Grandmaster
 	cfg           Config
 	leapSecond    ptime.LeapSecond
@@ -112,8 +138,9 @@ type Controller struct {
 	edgeIndex     uint64  // increments on each PulseEdge call, tracks odd/even
 	sampleGen     sampleGenerator
 	sampleProc    sampleProcessor
-	lastSample    *Sample     // last sample (real or missing)
-	era           phctime.Era // current PHC era
+	lastSample    *Sample                  // last sample (real or missing)
+	era           phctime.Era              // current PHC era
+	detectLeap    func() bool              // installed on reset->converging with the configured threshold baked in; nil while in reset mode, when the selected time messages are TAI-source, or when DetectInvalidLeap is disabled
 }
 
 type sampleGenerator interface {
@@ -144,7 +171,7 @@ type sampleProcessor interface {
 // The Config must be validated before calling this function.
 func NewController(
 	clock Clock,
-	sampler Sampler,
+	observer Observer,
 	gm *ptpgm.Grandmaster,
 	cfg Config,
 	leapSecond ptime.LeapSecond,
@@ -160,7 +187,7 @@ func NewController(
 	}
 	c := &Controller{
 		clock:      clock,
-		sampler:    sampler,
+		observer:   observer,
 		gm:         gm,
 		cfg:        cfg,
 		leapSecond: leapSecond,
@@ -202,6 +229,15 @@ func (c *Controller) PulseEdge(edge PulseEdge) {
 
 // TimeMessage handles notification that a time message occurred.
 func (c *Controller) TimeMessage() {
+	// The reset triggered here would be rejected by the drift-rate check against
+	// the tracking-mode persisted sample (see TrackingConfig.PersistThreshold),
+	// since a stale-firmware leap correction looks like ~1s of drift. The default
+	// PersistThreshold (900s) exceeds the 12.5-minute GPS leap-subframe worst case,
+	// so the correction is detected before any sample is persisted.
+	if c.detectLeap != nil && c.detectLeap() {
+		c.changeMode(ModeReset)
+		return
+	}
 	sample := c.sampleGen.timeMessageSample()
 	c.processPresentSample(sample)
 }
@@ -233,7 +269,7 @@ func (c *Controller) processSample(sample *Sample) {
 	// or outlier samples that cause us to leave tracking) represent the quality of time
 	// that clients were receiving while we were still in tracking mode.
 	sample.Mode = c.mode
-	c.sampler.Sample(*sample)
+	c.observer.Sample(*sample)
 	if mode != c.mode {
 		c.changeMode(mode)
 	}
@@ -336,17 +372,19 @@ func (c *Controller) changeMode(mode Mode) {
 	if c.mode == mode {
 		return
 	}
-	if c.mode != ModeInvalid {
+	old := c.mode
+	if old != ModeInvalid {
 		c.lg.Info("changing mode",
-			"from", c.mode.String(),
+			"from", old.String(),
 			"to", mode.String(),
 		)
 	}
 
-	// Extract pulse info when leaving reset mode
+	// Extract pulse info and the leap-detect closure when leaving reset mode.
 	if c.mode == ModeReset {
 		if rsg, ok := c.sampleGen.(*resetSampleGenerator); ok {
 			c.notePulseInfo(rsg.getPulseInfo())
+			c.detectLeap = c.getDetectLeap()
 		}
 	}
 
@@ -363,6 +401,7 @@ func (c *Controller) changeMode(mode Mode) {
 	case ModeReset:
 		// Reset pulse width when entering reset mode; will be auto-detected
 		c.pt.PulseWidth = 0
+		c.detectLeap = nil
 		c.sampleGen = newResetSampleGenerator(c.timeMsgBuffer, c.cfg.Reset, c.pt.EdgesPerPulse, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newResetSampleProcessor(c.cfg.Reset, persistSample, c.lg)
 	case ModeConverging:
@@ -378,6 +417,29 @@ func (c *Controller) changeMode(mode Mode) {
 	c.mode = mode
 
 	c.gmUpdate()
+	c.observer.ModeChanged(old, mode)
+}
+
+// getDetectLeap builds the parameter-less leap-detection closure to
+// install when leaving reset mode. Returns nil when the user has
+// disabled the detector, when the active sampleGen is not a
+// resetSampleGenerator (defensive), or when the reset generator's
+// captured closure is nil (TAI-source lock). The configured threshold
+// is baked in so TimeMessage does not need to re-read config.
+func (c *Controller) getDetectLeap() func() bool {
+	if !c.cfg.Share.DetectInvalidLeap {
+		return nil
+	}
+	rsg, ok := c.sampleGen.(*resetSampleGenerator)
+	if !ok {
+		return nil
+	}
+	inner := rsg.getDetectLeap()
+	if inner == nil {
+		return nil
+	}
+	minDelta := time.Duration(c.cfg.Share.MinInvalidRepeatInterval * float64(time.Second))
+	return func() bool { return inner(minDelta) }
 }
 
 func (c *Controller) notePulseInfo(pi pulseInfo) {
@@ -417,6 +479,14 @@ func gmSyncState(mode Mode) ptpgm.SyncState {
 // Mode returns the current operating mode of the controller.
 func (c *Controller) Mode() Mode {
 	return c.mode
+}
+
+// RequiredMsgWindow returns the minimum time-message buffer window the
+// controller needs based on its current config. Reset mode requests
+// PulseWindow consecutive messages at 1 Hz; the +2 s margin absorbs
+// message-rate jitter so PulseWindow entries are reliably on hand.
+func (c *Controller) RequiredMsgWindow() time.Duration {
+	return time.Duration(c.cfg.Reset.PulseWindow+2) * time.Second
 }
 
 func (cfg *Config) Validate() error {

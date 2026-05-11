@@ -563,6 +563,24 @@
               "exclusiveMaximum": 86400
             }
           }
+        },
+        "share": {
+          "description": "Cross-mode parameters",
+          "type": "object",
+          "properties": {
+            "detectInvalidLeap": {
+              "description": "Enable detection of invalid leap seconds after reset mode completes",
+              "type": "boolean",
+              "default": true
+            },
+            "minInvalidRepeatInterval": {
+              "description": "Min repeat interval to declare invalid leap (s)",
+              "type": "number",
+              "default": 0.8,
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1.0
+            }
+          }
         }
       }
     }

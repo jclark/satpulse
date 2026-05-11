@@ -102,6 +102,10 @@ type TrackingConfig struct {
 	// PersistThreshold is the minimum time in seconds that must be spent in tracking mode
 	// before the current sample is persisted for drift rate validation in reset mode.
 	// This ensures we only trust the reference sample after being synchronized for a while.
+	// The 900s default also exceeds the 12.5-minute worst case for GPS to broadcast the
+	// full leap-second subframe, so any stale-firmware leap correction (see the
+	// invalid-leap detector wired in controller.go) happens before a sample is persisted
+	// and cannot be blocked by the drift-rate check.
 	PersistThreshold float64 `toml:"persistThreshold" check:">=0,<86400" comment:"Min time in tracking before sample persists (s)"`
 }
 

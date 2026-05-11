@@ -27,7 +27,7 @@ func TestReplayFast(t *testing.T) {
 	}
 	defer ctrl.Close()
 	// Create time message buffer
-	timeMsgBuffer := timemsg.NewBuffer(lg, 5*time.Second, ptime.LeapSecond2016(), gpsprot.GPS)
+	timeMsgBuffer := timemsg.NewBuffer(lg, ctrl.RequiredMsgWindow(), ptime.LeapSecond2016(), gpsprot.GPS)
 	ctrl.SetTimeMsgBuffer(timeMsgBuffer)
 	// Replay file
 	err = ReplayFile("testdata/fast.jsonl", ctrl, timeMsgBuffer, nil)
@@ -68,7 +68,7 @@ func (m *mockClock) AdjTime(d time.Duration) (phctime.Era, error) {
 	return phctime.Era(1), nil
 }
 
-// replaySampler implements phcsync.Sampler for testing
+// replaySampler implements phcsync.Observer for testing
 type replaySampler struct {
 	t           *testing.T
 	ref         ptime.Time
@@ -85,3 +85,5 @@ func (s *replaySampler) Sample(data phcsync.Sample) {
 	s.ref = data.Ref
 	s.sampleCount++
 }
+
+func (s *replaySampler) ModeChanged(_, _ phcsync.Mode) {}

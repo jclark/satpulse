@@ -719,19 +719,28 @@
 
   // dashboard.tsx
   var EventSourceContext = Q(null);
-  var EVENT_TYPES = ["satellites", "time", "phc", "survey", "receiver", "posvel", "quality", "init"];
+  var EVENT_TYPES = ["satellites", "time", "phc", "mode", "survey", "receiver", "posvel", "quality", "init"];
   var Dashboard = () => {
     const context = x2(EventSourceContext);
     const [events, setEvents] = d2({});
+    const [phc, setPhc] = d2(null);
     const [haveLookAngles, setHaveLookAngles] = d2(false);
+    const [everMoving, setEverMoving] = d2(false);
     y2(() => {
       const handler = (type) => (e3) => {
         const parsedEvents = parseSSEMessage(type, e3.data);
         for (const [eventType, eventData] of parsedEvents) {
           const obj = validateEvent(eventType, eventData);
           if (obj !== null) {
+            if (eventType === "phc" || eventType === "mode") {
+              setPhc((prev) => ({ ...prev, ...obj }));
+              continue;
+            }
             if (eventType === "satellites" && obj.svs && obj.svs.length > 0) {
               setHaveLookAngles(obj.svs.some((sv) => sv.lookAngles));
+            }
+            if (eventType === "posvel" && typeof obj.groundSpeed === "number" && obj.groundSpeed >= 0.1) {
+              setEverMoving(true);
             }
             setEvents((prev) => ({ ...prev, [eventType]: obj }));
           }
@@ -751,11 +760,11 @@
       events.satellites && haveLookAngles && /* @__PURE__ */ u3(SkyViewCard, { svs }),
       events.satellites && /* @__PURE__ */ u3(SignalGraphCard, { svs }),
       events.time && /* @__PURE__ */ u3(PropertyCard, { title: "Current GPS Time", data: events.time, format: timeFormat }),
-      events.phc && /* @__PURE__ */ u3(PropertyCard, { title: "PTP Hardware Clock", data: events.phc, format: phcFormat }),
+      phc && /* @__PURE__ */ u3(PropertyCard, { title: "PTP Hardware Clock", data: phc, format: phcFormat }),
       events.receiver && /* @__PURE__ */ u3(PropertyCard, { title: "Receiver", data: events.receiver, format: receiverFormat }),
       events.quality && /* @__PURE__ */ u3(PropertyCard, { title: "Status", data: events.quality, format: statusFormat }),
       events.posvel && /* @__PURE__ */ u3(PropertyCard, { title: "Position", data: events.posvel, format: positionFormat }),
-      events.posvel && showVelocity(events.posvel) && /* @__PURE__ */ u3(PropertyCard, { title: "Velocity", data: events.posvel, format: velocityFormat }),
+      events.posvel && everMoving && /* @__PURE__ */ u3(PropertyCard, { title: "Velocity", data: events.posvel, format: velocityFormat }),
       events.quality && /* @__PURE__ */ u3(PropertyCard, { title: "Position Quality", data: events.quality, format: positionQualityFormat }),
       events.survey && /* @__PURE__ */ u3(PropertyCard, { title: "Survey-in Status", data: events.survey, format: surveyFormat })
     ] });
@@ -860,7 +869,7 @@
     tai: ["TAI", formatTAI]
   };
   var phcFormat = {
-    syncState: ["State"],
+    mode: ["State"],
     offset: ["Offset from GPS", formatNanoseconds],
     freq: ["Frequency offset", (arg) => `${arg.toFixed(2)} ppb`],
     stepCount: (count, obj) => [
@@ -906,9 +915,6 @@
     velE: ["Vel east", (arg) => `${arg.toFixed(3)} m/s`],
     velD: ["Vel down", (arg) => `${arg.toFixed(3)} m/s`]
   };
-  function showVelocity(posvel) {
-    return typeof posvel.groundSpeed === "number" && posvel.groundSpeed >= 0.1;
-  }
   var positionQualityFormat = {
     accHor: ["Horizontal accuracy", (arg) => `${arg.toFixed(3)} m`],
     accVert: ["Vertical accuracy", (arg) => `${arg.toFixed(3)} m`],

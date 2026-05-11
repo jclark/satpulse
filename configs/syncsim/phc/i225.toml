@@ -1,0 +1,4 @@
+# Intel i225-T1 PCIe NIC
+[phc]
+whiteNoise = 2.5
+randomWalk = 2.9

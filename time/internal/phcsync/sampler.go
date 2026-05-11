@@ -39,34 +39,52 @@ func (s *Sample) SysSample() phctime.Sample {
 	}
 }
 
-// Sampler handles clock synchronization samples of all types
-type Sampler interface {
-	// Sample reports a clock synchronization sample of any kind
+// Observer receives clock synchronization samples and mode-change events
+// from the controller.
+type Observer interface {
+	// Sample reports a clock synchronization sample of any kind.
+	// data.Mode is the mode the sample was served in; if the sample
+	// triggered a transition, ModeChanged will be called immediately
+	// after with the new mode.
 	Sample(data Sample)
+
+	// ModeChanged reports a transition in the controller's sync mode.
+	// It fires from every transition path, including those not driven
+	// by a sample (e.g. carrier-loss Pause). At controller startup the
+	// initial transition out of ModeInvalid into ModeReset is also
+	// reported here.
+	ModeChanged(oldMode, newMode Mode)
 }
 
-// MultiSampler fans out Sample calls to multiple samplers
-type MultiSampler struct {
-	samplers []Sampler
+// MultiObserver fans out events to multiple observers.
+type MultiObserver struct {
+	observers []Observer
 }
 
-// NewMultiSampler creates a new MultiSampler that fans out to multiple samplers
-func NewMultiSampler(samplers ...Sampler) *MultiSampler {
-	return &MultiSampler{samplers: samplers}
+// NewMultiObserver creates a new MultiObserver that fans out to multiple observers.
+func NewMultiObserver(observers ...Observer) *MultiObserver {
+	return &MultiObserver{observers: observers}
 }
 
-// Sample implements Sampler by calling Sample on all samplers
-func (m *MultiSampler) Sample(data Sample) {
-	for _, s := range m.samplers {
-		s.Sample(data)
+// Sample implements Observer by calling Sample on all observers.
+func (m *MultiObserver) Sample(data Sample) {
+	for _, o := range m.observers {
+		o.Sample(data)
 	}
 }
 
-// Samplers returns an iterator over the samplers
-func (m *MultiSampler) Samplers() iter.Seq[Sampler] {
-	return func(yield func(Sampler) bool) {
-		for _, s := range m.samplers {
-			if !yield(s) {
+// ModeChanged implements Observer by calling ModeChanged on all observers.
+func (m *MultiObserver) ModeChanged(oldMode, newMode Mode) {
+	for _, o := range m.observers {
+		o.ModeChanged(oldMode, newMode)
+	}
+}
+
+// Observers returns an iterator over the observers.
+func (m *MultiObserver) Observers() iter.Seq[Observer] {
+	return func(yield func(Observer) bool) {
+		for _, o := range m.observers {
+			if !yield(o) {
 				return
 			}
 		}
