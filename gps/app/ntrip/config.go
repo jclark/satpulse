@@ -89,6 +89,9 @@ func (cfg *Config) Validate() error {
 	if cfg.Bitrate < 0 {
 		return fmt.Errorf("ntrip: invalid bitrate %d", cfg.Bitrate)
 	}
+	if cfg.Lat.IsSet() != cfg.Lon.IsSet() {
+		return fmt.Errorf("ntrip: lat and lon must be set together")
+	}
 	for _, fld := range []struct{ name, value string }{
 		{"country", cfg.Country},
 		{"network", cfg.Network},

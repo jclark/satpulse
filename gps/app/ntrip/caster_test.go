@@ -49,7 +49,7 @@ func newFixture(t *testing.T, cfg Config) *fixture {
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := bcast.New((<-chan scan.Packet)(f.pktCh))
 	f.wg.Go(func() { b.Run(ctx, lg) })
-	build := StreamRecordBuilder(&cfg.SharedStreamConfig, nil, nil, "", 0, len(cfg.Users) > 0)
+	build := StreamRecordBuilder(&cfg.SharedStreamConfig, nil, nil, "", 0, len(cfg.Users) > 0, nil)
 	c := newCaster(lg, cfg, "0.0.0", b, build)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

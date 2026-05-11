@@ -24,6 +24,11 @@ const streamFormat = "RTCM 3.3"
 // info or props may be nil; an empty versionInfo is allowed.  msm is
 // 0 to skip format-details synthesis, or 4/7 etc.  hasAuth is true
 // when the caster requires basic auth (any [[ntrip.user]] defined).
+// configCapturePos is an opportunistic PosGeoMsg captured during
+// gpscfg.Configure, used as a lat/lon fallback when no fixed
+// position is configured; may be nil.  Lat/lon resolution order:
+// shared.Lat/Lon overrides -> Mode.FixedPos* -> configCapturePos
+// -> 0.00.
 func StreamRecordBuilder(
 	shared *SharedStreamConfig,
 	props *gpsprot.ConfigProps,
@@ -31,6 +36,7 @@ func StreamRecordBuilder(
 	versionInfo string,
 	msm int,
 	hasAuth bool,
+	configCapturePos *gpsprot.PosGeoMsg,
 ) func(sc *StreamConfig, name string) string {
 	gnss, signals := enabledGNSSAndSignals(props)
 	navSystem := buildNavSystem(gnss)
@@ -50,7 +56,7 @@ func StreamRecordBuilder(
 		country = DefaultCountry
 	}
 
-	lat, lon := resolveLatLon(shared, props)
+	lat, lon := resolveLatLon(shared, props, configCapturePos)
 
 	generator := shared.Generator
 	if generator == "" {
@@ -173,49 +179,32 @@ func buildFormatDetails(gnss gpsprot.GNSSSet, msm int) string {
 	return strings.Join(parts, ",")
 }
 
-// resolveLatLon returns latitude and longitude in degrees, taking
-// shared overrides if set, else deriving from props.Mode.
-func resolveLatLon(shared *SharedStreamConfig, props *gpsprot.ConfigProps) (lat, lon float64) {
+// resolveLatLon returns latitude and longitude in degrees, trying in
+// order: shared overrides (validated to be set together), Mode.FixedPos*,
+// the opportunistically captured PosGeoMsg, and finally (0, 0).
+func resolveLatLon(shared *SharedStreamConfig, props *gpsprot.ConfigProps, configCapturePos *gpsprot.PosGeoMsg) (lat, lon float64) {
 	if shared.Lat.IsSet() {
-		lat = shared.Lat.Get().Degrees()
+		return shared.Lat.Get().Degrees(), shared.Lon.Get().Degrees()
 	}
-	if shared.Lon.IsSet() {
-		lon = shared.Lon.Get().Degrees()
-	}
-	if shared.Lat.IsSet() && shared.Lon.IsSet() {
-		return
-	}
-	if props == nil {
-		return
-	}
-	mode, ok := props.GetMode()
-	if !ok {
-		return
-	}
-	var dlat, dlon float64
-	switch mode.PosType {
-	case gpsprot.PosTypeECEF:
-		ecef := geopos.ECEF{
-			mode.FixedPosECEF[0].Meters(),
-			mode.FixedPosECEF[1].Meters(),
-			mode.FixedPosECEF[2].Meters(),
+	if props != nil {
+		if mode, ok := props.GetMode(); ok {
+			switch mode.PosType {
+			case gpsprot.PosTypeECEF:
+				ecef := geopos.ECEF{
+					mode.FixedPosECEF[0].Meters(),
+					mode.FixedPosECEF[1].Meters(),
+					mode.FixedPosECEF[2].Meters(),
+				}
+				if llh, err := geopos.WGS84.ECEFtoLLH(ecef); err == nil {
+					return llh.Lat, llh.Lon
+				}
+			case gpsprot.PosTypeLLH:
+				return mode.FixedPosLLH[0].Degrees(), mode.FixedPosLLH[1].Degrees()
+			}
 		}
-		llh, err := geopos.WGS84.ECEFtoLLH(ecef)
-		if err != nil {
-			return
-		}
-		dlat, dlon = llh.Lat, llh.Lon
-	case gpsprot.PosTypeLLH:
-		dlat = mode.FixedPosLLH[0].Degrees()
-		dlon = mode.FixedPosLLH[1].Degrees()
-	default:
-		return
 	}
-	if !shared.Lat.IsSet() {
-		lat = dlat
-	}
-	if !shared.Lon.IsSet() {
-		lon = dlon
+	if configCapturePos != nil {
+		return configCapturePos.LatLon[0].Degrees(), configCapturePos.LatLon[1].Degrees()
 	}
 	return
 }

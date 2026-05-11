@@ -2,6 +2,9 @@ package ntrip
 
 import (
 	"testing"
+
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
 func TestConfigValidate(t *testing.T) {
@@ -63,6 +66,32 @@ func TestConfigValidate(t *testing.T) {
 			cfg: Config{
 				Users:      []UserConfig{{Username: "rover1"}},
 				Mountpoint: []MountConfig{{Name: "BKK", Users: []string{"rover1"}}},
+			},
+		},
+		{
+			name: "lat without lon",
+			cfg: Config{
+				SharedStreamConfig: SharedStreamConfig{Lat: opt.Make(gpsprot.DegreesFromFloat(13.76))},
+				Mountpoint:         []MountConfig{{Name: "BKK"}},
+			},
+			expectErr: true,
+		},
+		{
+			name: "lon without lat",
+			cfg: Config{
+				SharedStreamConfig: SharedStreamConfig{Lon: opt.Make(gpsprot.DegreesFromFloat(100.5))},
+				Mountpoint:         []MountConfig{{Name: "BKK"}},
+			},
+			expectErr: true,
+		},
+		{
+			name: "lat and lon together",
+			cfg: Config{
+				SharedStreamConfig: SharedStreamConfig{
+					Lat: opt.Make(gpsprot.DegreesFromFloat(13.76)),
+					Lon: opt.Make(gpsprot.DegreesFromFloat(100.5)),
+				},
+				Mountpoint: []MountConfig{{Name: "BKK"}},
 			},
 		},
 		{

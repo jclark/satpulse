@@ -21,16 +21,17 @@ func majorSignals() gpsprot.SignalSet {
 
 func TestStreamRecordBuilder(t *testing.T) {
 	tests := []struct {
-		name      string
-		shared    SharedStreamConfig
-		props     *gpsprot.ConfigProps
-		info      *gpsprot.ReceiverInfo
-		version   string
-		msm       int
-		hasAuth   bool
-		sc        StreamConfig
-		mountName string
-		expect    string
+		name             string
+		shared           SharedStreamConfig
+		props            *gpsprot.ConfigProps
+		info             *gpsprot.ReceiverInfo
+		version          string
+		msm              int
+		hasAuth          bool
+		configCapturePos *gpsprot.PosGeoMsg
+		sc               StreamConfig
+		mountName        string
+		expect           string
 	}{
 		{
 			name:      "minimal anonymous, no signals",
@@ -125,6 +126,37 @@ func TestStreamRecordBuilder(t *testing.T) {
 			expect: "BKK;RTCM 3.3;;0;;Misc;XXX;13.76;100.50;0;0;satpulse;none;N;N;0;",
 		},
 		{
+			name: "lat/lon from captured PosGeo when no fixed pos",
+			configCapturePos: &gpsprot.PosGeoMsg{
+				LatLon: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(13.76), gpsprot.DegreesFromFloat(100.50)},
+			},
+			expect: "BKK;RTCM 3.3;;0;;Misc;XXX;13.76;100.50;0;0;satpulse;none;N;N;0;",
+		},
+		{
+			name:   "Mode.FixedPos wins over captured PosGeo",
+			shared: SharedStreamConfig{},
+			props: func() *gpsprot.ConfigProps {
+				cp := new(gpsprot.ConfigProps)
+				cp.SetMode(gpsprot.Mode{
+					PosType:     gpsprot.PosTypeLLH,
+					FixedPosLLH: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(13.76), gpsprot.DegreesFromFloat(100.50)},
+				})
+				return cp
+			}(),
+			configCapturePos: &gpsprot.PosGeoMsg{
+				LatLon: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(40.0), gpsprot.DegreesFromFloat(-74.0)},
+			},
+			expect: "BKK;RTCM 3.3;;0;;Misc;XXX;13.76;100.50;0;0;satpulse;none;N;N;0;",
+		},
+		{
+			name:   "shared override wins over captured PosGeo",
+			shared: SharedStreamConfig{Lat: opt.Make(gpsprot.DegreesFromFloat(1.5)), Lon: opt.Make(gpsprot.DegreesFromFloat(2.5))},
+			configCapturePos: &gpsprot.PosGeoMsg{
+				LatLon: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(40.0), gpsprot.DegreesFromFloat(-74.0)},
+			},
+			expect: "BKK;RTCM 3.3;;0;;Misc;XXX;1.50;2.50;0;0;satpulse;none;N;N;0;",
+		},
+		{
 			name:      "stream description overrides identifier",
 			sc:        StreamConfig{Description: "Bangkok"},
 			mountName: "BKK",
@@ -140,7 +172,7 @@ func TestStreamRecordBuilder(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			build := StreamRecordBuilder(&tc.shared, tc.props, tc.info, tc.version, tc.msm, tc.hasAuth)
+			build := StreamRecordBuilder(&tc.shared, tc.props, tc.info, tc.version, tc.msm, tc.hasAuth, tc.configCapturePos)
 			name := tc.mountName
 			if name == "" {
 				name = "BKK"

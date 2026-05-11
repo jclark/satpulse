@@ -17,8 +17,12 @@ import (
 // is configured (mountpoints present), it builds the shared
 // StreamRecordBuilder closure and calls ntrip.Start.  When no
 // mountpoints are configured, returns nil and does nothing.
+// configCapturePos is an opportunistic position captured during
+// gpscfg.Configure, used as a lat/lon fallback in the STR record;
+// may be nil.
 func startNtrip(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
-	cfg *Config, gcfg *gpscfg.Result, pb *bcast.Bcast[scan.Packet]) error {
+	cfg *Config, gcfg *gpscfg.Result, pb *bcast.Bcast[scan.Packet],
+	configCapturePos *gpsprot.PosGeoMsg) error {
 	if len(cfg.Ntrip.Mountpoint) == 0 {
 		return nil
 	}
@@ -35,7 +39,7 @@ func startNtrip(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	}
 	buildSTR := ntrip.StreamRecordBuilder(
 		&cfg.Ntrip.SharedStreamConfig, props, info,
-		cmd.VersionInfo(), msm, hasAuth)
+		cmd.VersionInfo(), msm, hasAuth, configCapturePos)
 	version, _ := cmd.Version()
 	return ntrip.Start(ctx, lg, wg, cfg.Ntrip, version, pb, buildSTR)
 }

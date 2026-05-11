@@ -542,11 +542,13 @@ build their own `StreamRecordBuilder` closures.
 1. If no `[[stream.push]]` entry uses `ntrip.*`, return nil.
 2. If any NTRIP push entry has `protocol = "RTCM"` (the
    default), build a `StreamRecordBuilder` closure with
-   `hasAuth = false`.  Skipped entirely if all NTRIP push
-   entries are non-RTCM.  The server pushing to a remote
-   caster cannot know that caster's client-auth policy and
-   must not advertise our own `[ntrip.user]` list.  See "Push
-   STR field 16" below.
+   `hasAuth = false` and `configCapturePos = cc.pos` (the same
+   opportunistically captured `PosGeoMsg` the caster uses --
+   see `plan/ntrip-caster.md` "Live-position capture").
+   Skipped entirely if all NTRIP push entries are non-RTCM.
+   The server pushing to a remote caster cannot know that
+   caster's client-auth policy and must not advertise our own
+   `[ntrip.user]` list.  See "Push STR field 16" below.
 3. For each NTRIP push entry, construct an `NtripDestination`
    with the address, mountpoint, password, and `UserAgent`
    (built from `cmd.Version()`) copied from `NtripPushConfig`

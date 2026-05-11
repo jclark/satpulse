@@ -27,7 +27,7 @@ func TestStartNtripNilGcfg(t *testing.T) {
 	pktCh := make(chan scan.Packet)
 	b := bcast.New((<-chan scan.Packet)(pktCh))
 	wg.Go(func() { b.Run(ctx, lg) })
-	if err := startNtrip(ctx, lg, &wg, cfg, nil, b); err != nil {
+	if err := startNtrip(ctx, lg, &wg, cfg, nil, b, nil); err != nil {
 		cancel()
 		close(pktCh)
 		b.Close()
