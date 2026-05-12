@@ -296,6 +296,13 @@ var validFlagsTestCases = []validFlagsTestCase{
 	// --save with --msg-file is allowed; it controls VALSET layers, not the configurator.
 	{"ttyS0", []string{"--msg-file", "test.toml", "--save"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgSave: true}},
 	{"ttyS0", []string{"--msg-file", "test.toml", "--save", "--tag", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}, msgSave: true}},
+	// --port with --msg-file is allowed and normalized to lower case.
+	{"ttyS0", []string{"--msg-file", "test.toml", "--port", "usb"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgPort: "usb"}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--port", "USB"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgPort: "usb"}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--port", "Uart1"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgPort: "uart1"}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--port", "i2c", "--save"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgPort: "i2c", msgSave: true}},
+	// --show-tags does not require --port.
+	{"ttyS0", []string{"--msg-file", "test.toml", "--show-tags"}, flagVars{msgFilePath: "test.toml", showTags: true}},
 }
 
 func TestParseFlagsValid(t *testing.T) {
@@ -450,6 +457,11 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--rtcm-base-id", "1"}, // can't use with --msg-file
 	// Test --tag requires --msg-file
 	{"--serial-device", "ttyS0", "--tag", "setup"}, // --tag without --msg-file
+	// Test --port requires --msg-file
+	{"--serial-device", "ttyS0", "--port", "usb"},
+	// Test --port value must be a known u-blox port name
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--port", "bogus"},
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--port", ""},
 	// Test --msg-file cannot be combined with --show-receiver
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-receiver"}, // can't use with --show-receiver
 	// Test --config-file mutual exclusivity with --serial-device and --device-speed

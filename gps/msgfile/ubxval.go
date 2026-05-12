@@ -24,10 +24,9 @@ func (um *UBXValMsg) getTag() string { return *um.Tag }
 // analyzeRequest treats the emitted packet as a regular UBX-CFG-VALSET write
 // for response correlation.
 func (um *UBXValMsg) analyzeRequest(data string) requestAnalysis {
-	corr := ubxMsgIDString(ubxbin.PacketMsgId(data))
 	return requestAnalysis{
 		ackTag:       gpsreg.TagUBX,
-		ackCorrelate: corr,
+		ackCorrelate: ubxMsgIDString(ubxbin.PacketMsgId(data)),
 		expectAck:    ExpectAckOrNak,
 		expectData:   expectDataNone,
 	}
@@ -100,32 +99,6 @@ func newUBXValRaw(keys []uint32, typesStr string, values []any, layer ubxbin.Cfg
 	// payload[3] reserved
 	copy(payload[4:], cfgData)
 	return ubxbin.PackMsg(ubxbin.CfgValsetID, payload)
-}
-
-// toRawUBXValMsgs walks ubxval messages, encoding each with the layer
-// implied by save. It mirrors toRawMsgs but threads the layer through.
-func toRawUBXValMsgs(msgs []UBXValMsg, save bool) ([]RawMsg, error) {
-	layer := ubxValLayers(save)
-	result := make([]RawMsg, len(msgs))
-	tagCount := make(map[string]int)
-	for i := range msgs {
-		m := &msgs[i]
-		tag := m.getTag()
-		idx := tagCount[tag]
-		tagCount[tag]++
-		rm, err := m.toRawWithLayer(layer)
-		if err != nil {
-			return nil, fmt.Errorf("message %d with tag %q: %w", idx+1, tag, err)
-		}
-		rm.Index = idx
-		rm.Tag = tag
-		rm.source = m
-		result[i] = rm
-	}
-	for i := range result {
-		result[i].Count = tagCount[result[i].Tag]
-	}
-	return result, nil
 }
 
 func typeSpecName(t typeSpec) string {

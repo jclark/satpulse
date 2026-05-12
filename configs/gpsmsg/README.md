@@ -31,8 +31,9 @@ satpulsetool gps -m allystar.toml --show-tags
 
 The `-m` flag cannot be combined with config flags like `--gnss` or `--pps`.
 The `--save` flag is allowed with `-m` when the selected tags resolve to `[[ubxval]]`
-messages; in that case it persists the CFG-VALSET write to `RAM|BBR|Flash` instead of
-just `RAM`. See [format.md](format.md) for details.
+or `[[ubxvalport]]` messages; in that case it persists the CFG-VALSET write to
+`RAM|BBR|Flash` instead of just `RAM`. The `--port` flag selects the receiver port
+for `[[ubxvalport]]` entries. See [format.md](format.md) for details.
 
 You can use `--packet-log file.json --capture 3` options to capture packets for 3 seconds and save them to `file.jsonl`.
 You can then use `satpulsetool annotate file.json` to add fields showing decoded packets: pipe through `jq` to pretty-print the JSONL.

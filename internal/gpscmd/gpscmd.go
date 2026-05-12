@@ -58,9 +58,10 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 			return
 		}
 		// Convert to raw bytes before opening the GPS connection so that
-		// configuration errors (including --save against non-ubxval
-		// messages) surface without first touching the device.
-		raw, err = msgfile.ToRaw(msgs, v.msgSave)
+		// configuration errors (including --save against non-save-aware
+		// messages, or ubxvalport without --port) surface without first
+		// touching the device.
+		raw, err = msgfile.ToRaw(msgs, v.msgPort, v.msgSave)
 		if err != nil {
 			return
 		}

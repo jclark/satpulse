@@ -52,6 +52,7 @@
 				"casbin": { "$ref": "#/definitions/common" },
 				"ubx": { "$ref": "#/definitions/common" },
 				"ubxval": { "$ref": "#/definitions/common" },
+				"ubxvalport": { "$ref": "#/definitions/common" },
 				"asbin": { "$ref": "#/definitions/common" },
 				"sdbp": { "$ref": "#/definitions/common" }
 			},
@@ -126,6 +127,33 @@
 					"description": { "type": "string" }
 				},
 				"required": ["keys", "types", "values"],
+				"allOf": [
+					{ "$ref": "#/definitions/common" }
+				],
+				"unevaluatedProperties": false
+			}
+		},
+		"ubxvalport": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"key": {
+						"type": "object",
+						"properties": {
+							"i2c":   { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+							"uart1": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+							"uart2": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+							"usb":   { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+							"spi":   { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+						},
+						"additionalProperties": false,
+						"minProperties": 1
+					},
+					"value": { "type": "integer", "minimum": 0, "maximum": 255 },
+					"description": { "type": "string" }
+				},
+				"required": ["key", "value"],
 				"allOf": [
 					{ "$ref": "#/definitions/common" }
 				],

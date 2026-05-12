@@ -142,7 +142,7 @@ func runCorrelatorTests(t *testing.T, file string, tests []correlatorTest) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			raw, err := ToRaw(msgs, false)
+			raw, err := ToRaw(msgs, "", false)
 			if err != nil {
 				t.Fatal(err)
 			}

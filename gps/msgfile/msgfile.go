@@ -104,23 +104,25 @@ func (mc *MsgCommon) waitLimit() (time.Duration, error) {
 // Parsed represents a parsed message file.
 type Parsed struct {
 	Default struct {
-		Line   LineMsg   `toml:"line"`
-		Binary BinaryMsg `toml:"binary"`
-		NMEA   NMEAMsg   `toml:"nmea"`
-		CASBIN CASBINMsg `toml:"casbin"`
-		ASBIN  ASBINMsg  `toml:"asbin"`
-		SDBP   SDBPMsg   `toml:"sdbp"`
-		UBX    UBXMsg    `toml:"ubx"`
-		UBXVal UBXValMsg `toml:"ubxval"`
+		Line       LineMsg       `toml:"line"`
+		Binary     BinaryMsg     `toml:"binary"`
+		NMEA       NMEAMsg       `toml:"nmea"`
+		CASBIN     CASBINMsg     `toml:"casbin"`
+		ASBIN      ASBINMsg      `toml:"asbin"`
+		SDBP       SDBPMsg       `toml:"sdbp"`
+		UBX        UBXMsg        `toml:"ubx"`
+		UBXVal     UBXValMsg     `toml:"ubxval"`
+		UBXValPort UBXValPortMsg `toml:"ubxvalport"`
 	} `toml:"default"`
-	Line   []LineMsg   `toml:"line"`
-	Binary []BinaryMsg `toml:"binary"`
-	NMEA   []NMEAMsg   `toml:"nmea"`
-	CASBIN []CASBINMsg `toml:"casbin"`
-	ASBIN  []ASBINMsg  `toml:"asbin"`
-	SDBP   []SDBPMsg   `toml:"sdbp"`
-	UBX    []UBXMsg    `toml:"ubx"`
-	UBXVal []UBXValMsg `toml:"ubxval"`
+	Line       []LineMsg       `toml:"line"`
+	Binary     []BinaryMsg     `toml:"binary"`
+	NMEA       []NMEAMsg       `toml:"nmea"`
+	CASBIN     []CASBINMsg     `toml:"casbin"`
+	ASBIN      []ASBINMsg      `toml:"asbin"`
+	SDBP       []SDBPMsg       `toml:"sdbp"`
+	UBX        []UBXMsg        `toml:"ubx"`
+	UBXVal     []UBXValMsg     `toml:"ubxval"`
+	UBXValPort []UBXValPortMsg `toml:"ubxvalport"`
 }
 
 // RawMsg is a message ready to send: raw bytes with metadata.
@@ -150,11 +152,6 @@ type taggedMsg interface {
 	getTag() string
 }
 
-type userMsg interface {
-	taggedMsg
-	toRaw() (RawMsg, error)
-}
-
 func ptr[T any](v T) *T { return &v }
 
 func defaultMsgCommon() MsgCommon {
@@ -173,6 +170,7 @@ func newDefault() *Parsed {
 	mf.Default.SDBP.MsgCommon = defaultMsgCommon()
 	mf.Default.UBX.MsgCommon = defaultMsgCommon()
 	mf.Default.UBXVal.MsgCommon = defaultMsgCommon()
+	mf.Default.UBXValPort.MsgCommon = defaultMsgCommon()
 	return mf
 }
 
@@ -262,6 +260,7 @@ func processFile(mf *msgFile, path string, files *[]loadedFile) error {
 	applyDefaults(p.SDBP, p.applySDBPDefaults)
 	applyDefaults(p.UBX, p.applyUBXDefaults)
 	applyDefaults(p.UBXVal, p.applyUBXValDefaults)
+	applyDefaults(p.UBXValPort, p.applyUBXValPortDefaults)
 	idx := len(*files)
 	*files = append(*files, loadedFile{path: path, p: mf.Parsed})
 	for _, inc := range mf.Include {
@@ -320,6 +319,7 @@ func fileTags(p *Parsed) map[string]bool {
 	collectTags(tags, p.SDBP)
 	collectTags(tags, p.UBX)
 	collectTags(tags, p.UBXVal)
+	collectTags(tags, p.UBXValPort)
 	return tags
 }
 
@@ -368,6 +368,7 @@ func mergeFiles(files []loadedFile) (*Parsed, error) {
 		mergeOwnedMsgs(&result.SDBP, p.SDBP, i, tagOwner)
 		mergeOwnedMsgs(&result.UBX, p.UBX, i, tagOwner)
 		mergeOwnedMsgs(&result.UBXVal, p.UBXVal, i, tagOwner)
+		mergeOwnedMsgs(&result.UBXValPort, p.UBXValPort, i, tagOwner)
 	}
 	return &result, nil
 }
@@ -438,6 +439,10 @@ func (mf *Parsed) applyUBXDefaults(um *UBXMsg) {
 
 func (mf *Parsed) applyUBXValDefaults(um *UBXValMsg) {
 	applyCommonDefaults(&um.MsgCommon, &mf.Default.UBXVal.MsgCommon)
+}
+
+func (mf *Parsed) applyUBXValPortDefaults(um *UBXValPortMsg) {
+	applyCommonDefaults(&um.MsgCommon, &mf.Default.UBXValPort.MsgCommon)
 }
 
 func (mf *Parsed) validateDefaults() error {
@@ -537,6 +542,18 @@ func (mf *Parsed) validateDefaults() error {
 	if _, err := mf.Default.UBXVal.MsgCommon.waitLimit(); err != nil {
 		return fmt.Errorf("default.ubxval: %w", err)
 	}
+	if mf.Default.UBXValPort.Key.suppliedKeys() != nil || mf.Default.UBXValPort.Value != 0 {
+		return errors.New("default.ubxvalport must not set key or value")
+	}
+	if mf.Default.UBXValPort.Description != "" {
+		return errors.New("default.ubxvalport.description must be empty")
+	}
+	if _, err := mf.Default.UBXValPort.MsgCommon.delay(); err != nil {
+		return fmt.Errorf("default.ubxvalport: %w", err)
+	}
+	if _, err := mf.Default.UBXValPort.MsgCommon.waitLimit(); err != nil {
+		return fmt.Errorf("default.ubxvalport: %w", err)
+	}
 	return nil
 }
 
@@ -548,14 +565,15 @@ type tagIndex struct {
 type msgType string
 
 const (
-	msgTypeLine   msgType = "line"
-	msgTypeBinary msgType = "binary"
-	msgTypeNMEA   msgType = "nmea"
-	msgTypeCASBIN msgType = "casbin"
-	msgTypeASBIN  msgType = "asbin"
-	msgTypeSDBP   msgType = "sdbp"
-	msgTypeUBX    msgType = "ubx"
-	msgTypeUBXVal msgType = "ubxval"
+	msgTypeLine       msgType = "line"
+	msgTypeBinary     msgType = "binary"
+	msgTypeNMEA       msgType = "nmea"
+	msgTypeCASBIN     msgType = "casbin"
+	msgTypeASBIN      msgType = "asbin"
+	msgTypeSDBP       msgType = "sdbp"
+	msgTypeUBX        msgType = "ubx"
+	msgTypeUBXVal     msgType = "ubxval"
+	msgTypeUBXValPort msgType = "ubxvalport"
 )
 
 type tagIndices map[msgType]tagIndex
@@ -629,6 +647,13 @@ func (mf *Parsed) TaggedMsgs(tags []string) (any, error) {
 		}
 		rslt = ubxValMsgs
 	}
+	ubxValPortMsgs := filterMsgs(mf.UBXValPort, tags, ti[msgTypeUBXValPort].byTag)
+	if len(ubxValPortMsgs) > 0 {
+		if rslt != nil {
+			return nil, fmt.Errorf("selected tags have mixed message types")
+		}
+		rslt = ubxValPortMsgs
+	}
 	if rslt == nil {
 		return nil, noMessagesError(tags)
 	}
@@ -674,6 +699,9 @@ func (mf *Parsed) buildTagIndices() (tagIndices, error) {
 		return tagIndices{}, err
 	}
 	if err := prepareTagIndex(mf.UBXVal, mf.applyUBXValDefaults, msgTypeUBXVal, tagTypes, tis); err != nil {
+		return tagIndices{}, err
+	}
+	if err := prepareTagIndex(mf.UBXValPort, mf.applyUBXValPortDefaults, msgTypeUBXValPort, tagTypes, tis); err != nil {
 		return tagIndices{}, err
 	}
 
@@ -740,11 +768,14 @@ func filterMsgs[T any](msgs []T, tags []string, byTag map[string][]int) []T {
 	return result
 }
 
-// toRawMsgs converts a slice of messages to RawMsg.
+// toRawMsgs walks a slice of messages and encodes each one using the
+// supplied encoder. It is the single walker shared by every message type;
+// per-call context (e.g. save layer, port) is captured by the closure
+// passed in enc.
 func toRawMsgs[T any, PT interface {
 	*T
-	userMsg
-}](msgs []T) ([]RawMsg, error) {
+	taggedMsg
+}](msgs []T, enc func(PT) (RawMsg, error)) ([]RawMsg, error) {
 	result := make([]RawMsg, len(msgs))
 	tagCount := make(map[string]int)
 	for i := range msgs {
@@ -752,7 +783,7 @@ func toRawMsgs[T any, PT interface {
 		tag := p.getTag()
 		idx := tagCount[tag]
 		tagCount[tag]++
-		rm, err := p.toRaw()
+		rm, err := enc(p)
 		if err != nil {
 			return nil, fmt.Errorf("message %d with tag %q: %w", idx+1, tag, err)
 		}
@@ -761,7 +792,6 @@ func toRawMsgs[T any, PT interface {
 		rm.source = p
 		result[i] = rm
 	}
-	// Second pass to set Count.
 	for i := range result {
 		result[i].Count = tagCount[result[i].Tag]
 	}
@@ -770,53 +800,63 @@ func toRawMsgs[T any, PT interface {
 
 // ToRaw converts a typed message slice to raw messages. The msgs parameter
 // must be a typed slice as returned by Parsed.TaggedMsgs. The save flag is
-// only meaningful for save-aware message types (currently ubxval); if
-// save is true and msgs has any other type, ToRaw returns an error.
-func ToRaw(msgs any, save bool) ([]RawMsg, error) {
+// only meaningful for save-aware message types (ubxval, ubxvalport); if
+// save is true and msgs has any other type, ToRaw returns an error. The
+// port argument is required for ubxvalport messages and ignored for other
+// types.
+func ToRaw(msgs any, port string, save bool) ([]RawMsg, error) {
 	switch m := msgs.(type) {
 	case []LineMsg:
 		if save {
 			return nil, errSaveNotApplicable
 		}
-		return toRawMsgs(m)
+		return toRawMsgs[LineMsg](m, (*LineMsg).toRaw)
 	case []BinaryMsg:
 		if save {
 			return nil, errSaveNotApplicable
 		}
-		return toRawMsgs(m)
+		return toRawMsgs[BinaryMsg](m, (*BinaryMsg).toRaw)
 	case []NMEAMsg:
 		if save {
 			return nil, errSaveNotApplicable
 		}
-		return toRawMsgs(m)
+		return toRawMsgs[NMEAMsg](m, (*NMEAMsg).toRaw)
 	case []CASBINMsg:
 		if save {
 			return nil, errSaveNotApplicable
 		}
-		return toRawMsgs(m)
+		return toRawMsgs[CASBINMsg](m, (*CASBINMsg).toRaw)
 	case []ASBINMsg:
 		if save {
 			return nil, errSaveNotApplicable
 		}
-		return toRawMsgs(m)
+		return toRawMsgs[ASBINMsg](m, (*ASBINMsg).toRaw)
 	case []SDBPMsg:
 		if save {
 			return nil, errSaveNotApplicable
 		}
-		return toRawMsgs(m)
+		return toRawMsgs[SDBPMsg](m, (*SDBPMsg).toRaw)
 	case []UBXMsg:
 		if save {
 			return nil, errSaveNotApplicable
 		}
-		return toRawMsgs(m)
+		return toRawMsgs[UBXMsg](m, (*UBXMsg).toRaw)
 	case []UBXValMsg:
-		return toRawUBXValMsgs(m, save)
+		layer := ubxValLayers(save)
+		return toRawMsgs[UBXValMsg](m, func(p *UBXValMsg) (RawMsg, error) {
+			return p.toRawWithLayer(layer)
+		})
+	case []UBXValPortMsg:
+		layer := ubxValLayers(save)
+		return toRawMsgs[UBXValPortMsg](m, func(p *UBXValPortMsg) (RawMsg, error) {
+			return p.toRawWithPortLayer(port, layer)
+		})
 	default:
 		panic(fmt.Sprintf("unexpected message type: %T", msgs))
 	}
 }
 
-var errSaveNotApplicable = errors.New("--save requires selected ubxval messages")
+var errSaveNotApplicable = errors.New("--save requires selected ubxval or ubxvalport messages")
 
 type tagDescBuilder struct {
 	descs        []TagDesc
@@ -858,6 +898,7 @@ func (mf *Parsed) TagDescs() (descs, inconsistent []TagDesc) {
 	collectDescs(mf.SDBP, b)
 	collectDescs(mf.UBX, b)
 	collectDescs(mf.UBXVal, b)
+	collectDescs(mf.UBXValPort, b)
 	// Move empty tag to front if present
 	for i, td := range b.descs {
 		if td.Tag == "" && i > 0 {

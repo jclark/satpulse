@@ -118,7 +118,7 @@ func loadRawMsgs(t *testing.T, toml string) []msgfile.RawMsg {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := msgfile.ToRaw(msgs, false)
+	raw, err := msgfile.ToRaw(msgs, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}

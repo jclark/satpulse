@@ -41,7 +41,7 @@ func loadAndRaw(t *testing.T, toml string, tags []string, save bool) []RawMsg {
 	if err != nil {
 		t.Fatalf("TaggedMsgs: %v", err)
 	}
-	raw, err := ToRaw(msgs, save)
+	raw, err := ToRaw(msgs, "", save)
 	if err != nil {
 		t.Fatalf("ToRaw: %v", err)
 	}
@@ -147,7 +147,7 @@ values = [1, 1]
 			if err != nil {
 				t.Fatalf("TaggedMsgs: %v", err)
 			}
-			if _, err := ToRaw(msgs, false); err == nil {
+			if _, err := ToRaw(msgs, "", false); err == nil {
 				t.Fatal("expected error, got nil")
 			}
 		})
@@ -186,7 +186,7 @@ values = [1]
 	if err != nil {
 		t.Fatalf("TaggedMsgs: %v", err)
 	}
-	if _, err := ToRaw(msgs, false); err == nil {
+	if _, err := ToRaw(msgs, "", false); err == nil {
 		t.Fatal("expected width mismatch error, got nil")
 	}
 }
@@ -204,7 +204,7 @@ values = [1]
 	if err != nil {
 		t.Fatalf("TaggedMsgs: %v", err)
 	}
-	if _, err := ToRaw(msgs, false); err == nil {
+	if _, err := ToRaw(msgs, "", false); err == nil {
 		t.Fatal("expected invalid key error, got nil")
 	}
 }
@@ -222,7 +222,7 @@ values = [1]
 	if err != nil {
 		t.Fatalf("TaggedMsgs: %v", err)
 	}
-	if _, err := ToRaw(msgs, false); err == nil {
+	if _, err := ToRaw(msgs, "", false); err == nil {
 		t.Fatal("expected error for 8-byte integer type, got nil")
 	}
 }
@@ -239,7 +239,7 @@ values = [256]
 	if err != nil {
 		t.Fatalf("TaggedMsgs: %v", err)
 	}
-	if _, err := ToRaw(msgs, false); err == nil {
+	if _, err := ToRaw(msgs, "", false); err == nil {
 		t.Fatal("expected U1 range error, got nil")
 	}
 }
@@ -321,7 +321,7 @@ tag = "t"
 			if err != nil {
 				t.Fatalf("TaggedMsgs: %v", err)
 			}
-			_, err = ToRaw(msgs, true)
+			_, err = ToRaw(msgs, "", true)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
