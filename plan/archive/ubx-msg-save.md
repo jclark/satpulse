@@ -33,7 +33,7 @@ to make this persistent with `--save`.
 Add a typed message-file form:
 
 ```toml
-[[ubxvalset]]
+[[ubxval]]
 tag = "osnma-on"
 description = "Enable Galileo OSNMA authentication"
 keys = [0x10350005]
@@ -48,7 +48,7 @@ Without `--save`, this emits `UBX-CFG-VALSET` to RAM only. With
 
 In scope:
 
-- A new message-file type, `[[ubxvalset]]`.
+- A new message-file type, `[[ubxval]]`.
 - A `--save` option accepted in message-file mode.
 - `--save` choosing `CFG-VALSET` layers:
   - no `--save`: `ubxbin.CfgValsetLayerRAM`
@@ -70,12 +70,12 @@ Out of scope:
 
 ## Message Type
 
-Add `UBXValsetMsg` to `gps/msgfile` for `[[ubxvalset]]` entries.
+Add `UBXValMsg` to `gps/msgfile` for `[[ubxval]]` entries.
 
 User-facing fields:
 
 ```go
-type UBXValsetMsg struct {
+type UBXValMsg struct {
     Keys   []uint32 `toml:"keys"`
     Types  string   `toml:"types"`
     Values []any    `toml:"values"`
@@ -100,7 +100,7 @@ types = "U4"
 values = [0xdeadbeef]
 ```
 
-This avoids custom TOML unmarshalling and gives `[[ubxvalset]]` the
+This avoids custom TOML unmarshalling and gives `[[ubxval]]` the
 same numeric semantics as `payload.types` / `payload.values`. The
 TOML decoder fills `[]any`; integer literals, including TOML hex
 integers, decode as `int64`, and floating-point literals decode as
@@ -110,7 +110,7 @@ Use the existing payload type grammar for `types`: `U1`, `U2`, `U4`,
 `I1`, `I2`, `I4`, `R4`, and `R8`. This is a subset of the u-blox
 configuration scalar types, but it is enough for the values we need
 now and keeps the message-file encoding model consistent. Do not add
-`ubxvalset`-only type names.
+`ubxval`-only type names.
 
 Do not add 8-byte integer types to this format now. TOML integer
 literals decoded into `[]any` arrive as signed `int64`, so `U8` could
@@ -155,7 +155,7 @@ count.
 
 ## Encoding
 
-`[[ubxvalset]]` emits a `UBX-CFG-VALSET` packet:
+`[[ubxval]]` emits a `UBX-CFG-VALSET` packet:
 
 - class/id: `0x06 0x8a`
 - version: no transaction
@@ -167,8 +167,8 @@ Add a helper in `gps/msgfile`, not `gps/internal/ubx`, because message
 files cannot import internal UBX configurator code:
 
 ```go
-func ubxValsetLayers(save bool) ubxbin.CfgValsetLayer
-func newUBXValsetRaw(keys []uint32, types string, values []any, save bool) (RawMsg, error)
+func ubxValLayers(save bool) ubxbin.CfgValsetLayer
+func newUBXValRaw(keys []uint32, types string, values []any, save bool) ([]byte, error)
 ```
 
 The implementation should reuse the existing UBX config-value helpers:
@@ -179,7 +179,7 @@ The implementation should reuse the existing UBX config-value helpers:
 - `gps/lib/ubxbin.CfgValset`
 - `gps/lib/ubxbin.CfgValsetID`
 
-`[[ubxvalset]]` should still use the no-transaction VALSET mode. A
+`[[ubxval]]` should still use the no-transaction VALSET mode. A
 single entry can set multiple keys in one packet; it does not need to
 use the multi-packet UBX transaction mechanism.
 
@@ -193,9 +193,9 @@ Allow `--save` with `--msg-file`.
 Rules:
 
 - `--msg-file --save` is valid only when the selected tags resolve to
-  `ubxvalset` messages.
+  `ubxval` messages.
 - If `--save` is used and the selected tags do not include
-  `ubxvalset`, fail before sending anything with a clear error. This
+  `ubxval`, fail before sending anything with a clear error. This
   avoids making `--save` a silent no-op for raw `[[ubx]]`, line, NMEA,
   or other message types.
 - `--msg-file --save-all` remains invalid.
@@ -207,7 +207,7 @@ Rules:
 - In message-file mode, `--save` is passed directly to raw message
   conversion and does not create a `ConfigTarget`.
 
-The `--save`/`ubxvalset` validation happens after loading the message
+The `--save`/`ubxval` validation happens after loading the message
 file and selecting tags, because flag parsing alone cannot know the
 selected message type.
 
@@ -222,11 +222,11 @@ This keeps the two save paths separate:
 
 Extend `gps/msgfile`:
 
-- Add `Default.UBXValset` and `UBXValset []UBXValsetMsg` to `Parsed`
-  with TOML tags for `ubxvalset`.
-- Include `ubxvalset` in defaulting, tag indexing, tag validation,
+- Add `Default.UBXVal` and `UBXVal []UBXValMsg` to `Parsed`
+  with TOML tags for `ubxval`.
+- Include `ubxval` in defaulting, tag indexing, tag validation,
   tag descriptions, and `TaggedMsgs`.
-- Treat `ubxvalset` as the only save-aware message type in this plan.
+- Treat `ubxval` as the only save-aware message type in this plan.
 - Extend raw conversion to pass the new save argument:
 
   ```go
@@ -235,9 +235,9 @@ Extend `gps/msgfile`:
 
 - Existing message types continue through the old path when `save` is
   false.
-- `ubxvalset` uses `save`.
-- If `save` is true and `msgs` is not `[]UBXValsetMsg`, return an
-  error such as `--save requires selected ubxvalset messages`.
+- `ubxval` uses `save`.
+- If `save` is true and `msgs` is not `[]UBXValMsg`, return an
+  error such as `--save requires selected ubxval messages`.
 
 This deliberately uses a direct argument; do not add a raw conversion
 options struct.
@@ -257,7 +257,7 @@ non-message-output VALSET tags for this migration:
   `CFG-GAL-OSNMA_TIMESYNC`
 
 `configs/gpsmsg/ubx9.toml` currently has no good non-message-output
-tag to use as a `[[ubxvalset]]` example. Its raw `CFG-VALSET` entries
+tag to use as a `[[ubxval]]` example. Its raw `CFG-VALSET` entries
 are all USB `CFG-MSGOUT` enable/disable settings, with tags such as
 `ubx-nav-timegps-usb` and `ubx-nav-timegps-usb-off`.
 
@@ -265,7 +265,7 @@ Those entries are ultimately a better fit for `[[ubxmsg]]` in
 `plan/ubx-msg-port.md`, because they embed the output port in the key.
 Since this save plan lands before the port-aware plan, convert the
 existing `CFG-MSGOUT` entries in `ubx9.toml` mechanically to
-`[[ubxvalset]]` as an intermediate step so `--save` works with them.
+`[[ubxval]]` as an intermediate step so `--save` works with them.
 The later port plan should then convert those entries to `[[ubxmsg]]`.
 
 For a concrete non-message-output migration, convert OSNMA entries
@@ -284,7 +284,7 @@ payload.values = [0, 1, 0, 0x10350005, 1]
 to:
 
 ```toml
-[[ubxvalset]]
+[[ubxval]]
 tag = "osnma-on"
 description = "Enable Galileo OSNMA authentication"
 keys = [0x10350005]
@@ -311,32 +311,32 @@ Update:
 - `configs/gpsmsg/README.md`
 - `configs/gpsmsg/gpsmsg-schema.json`
 - `configs/gpsmsg/osnma.toml` from the OSNMA branch
-- `configs/gpsmsg/ubx9.toml`, as an intermediate `[[ubxvalset]]`
+- `configs/gpsmsg/ubx9.toml`, as an intermediate `[[ubxval]]`
   migration before `[[ubxmsg]]` exists
 
 The docs should explain:
 
-- `[[ubxvalset]]` is for u-blox Gen 9+ configuration database writes.
+- `[[ubxval]]` is for u-blox Gen 9+ configuration database writes.
 - `--save` changes VALSET layers from RAM to `RAM|BBR|Flash`.
 - Raw `[[ubx]]` packets are not interpreted, so `--save` does not
   rewrite hard-coded raw VALSET payloads.
-- `[[ubxvalset]]` uses `keys`, `types`, and `values`; `types` and
+- `[[ubxval]]` uses `keys`, `types`, and `values`; `types` and
   `values` follow the same grammar and numeric semantics as existing
   `payload.types` / `payload.values`.
 - Supplied UBX TOML files should use the type matching the scalar
   type and width in the u-blox spec.
-- The `[[ubxvalset]]` examples should use non-`CFG-MSGOUT` keys;
+- The `[[ubxval]]` examples should use non-`CFG-MSGOUT` keys;
   `CFG-MSGOUT` examples belong with `[[ubxmsg]]`.
 
 ## Tests
 
 Add focused tests for:
 
-- `ubxvalset` without `--save` encodes the same bytes as the old raw
+- `ubxval` without `--save` encodes the same bytes as the old raw
   RAM-only `CFG-VALSET` form.
-- `ubxvalset` with `--save` changes only the layer byte to
+- `ubxval` with `--save` changes only the layer byte to
   `RAM|BBR|Flash`.
-- Multiple keys in one `[[ubxvalset]]` entry encode as multiple
+- Multiple keys in one `[[ubxval]]` entry encode as multiple
   config items in one VALSET packet.
 - `keys`, parsed `types`, and `values` counts must match.
 - TOML hex integer values such as `values = [0xdeadbeef]` decode and
@@ -351,7 +351,7 @@ Add focused tests for:
 - `ToRaw(msgs, save)` keeps existing message types working when
   `save` is false.
 - `ToRaw(msgs, true)` rejects selected line, NMEA, raw `ubx`, or
-  other non-`ubxvalset` message types.
+  other non-`ubxval` message types.
 - `internal/gpscmd` flag parsing accepts `--msg-file --save` and
   still rejects `--msg-file --save-all`.
 - Existing replay tests are unchanged unless they intentionally cover
@@ -360,5 +360,5 @@ Add focused tests for:
 Add at least one message-file unit test that loads a converted
 `osnma.toml` entry, such as `osnma-on`, and verifies the emitted
 `CFG-VALSET` item. Add a second test that loads a converted
-`ubx9.toml` `CFG-MSGOUT` entry as `[[ubxvalset]]`, because that is
+`ubx9.toml` `CFG-MSGOUT` entry as `[[ubxval]]`, because that is
 the intermediate migration before `[[ubxmsg]]` exists.

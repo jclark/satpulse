@@ -47,6 +47,7 @@ type flagVars struct {
 	configGet      gpsprot.PropIDs
 	msgFilePath    string
 	msgTags        []string
+	msgSave        bool
 	vendor         gpsreg.Vendor
 	showReceiver   bool
 	showTags       bool
@@ -384,13 +385,17 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		vars.configGet = showProps
 	}
 	if save {
-		if !configChanged {
-			return nil, nil, fmt.Errorf("no configuration changes to save with --save; use --save-all to save current configuration")
-		}
 		if saveAll {
 			return nil, nil, fmt.Errorf("%s command must not specify both --save and --save-all", cmdName)
 		}
-		vars.configOpts.Save = gpsprot.SaveMinimal
+		if !configChanged && vars.msgFilePath == "" {
+			return nil, nil, fmt.Errorf("no configuration changes and no message file: nothing for --save to do; use --save-all to save current configuration")
+		}
+		// In message-file mode --save is a plain boolean for VALSET layers,
+		// not a configurator save; don't populate ConfigOptions.Save.
+		if vars.msgFilePath == "" {
+			vars.configOpts.Save = gpsprot.SaveMinimal
+		}
 	} else if saveAll {
 		vars.configOpts.Save = gpsprot.SaveAll
 	}
@@ -422,12 +427,15 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		doConfigure = true
 	}
 	if vars.msgFilePath != "" {
-		if doConfigure {
+		// In message-file mode --save is permitted (it controls VALSET
+		// layers for [[ubxval]]) but no other configuration flag is.
+		if saveAll || reset || reload || factoryReset || showConfig || configChanged || vars.showReceiver {
 			return nil, nil, fmt.Errorf("--msg-file cannot be combined with configuration flags")
 		}
 		if vars.packetLogMode == testLogMode {
 			return nil, nil, fmt.Errorf("--msg-file cannot be combined with --test-log")
 		}
+		vars.msgSave = save
 		// Parse tags: split on comma, preserving empty strings for empty tags
 		vars.msgTags = strings.Split(msgTags, ",")
 	} else if msgTags != "" {

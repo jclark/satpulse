@@ -27,8 +27,10 @@ satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980-has.toml
 The `-m` flag specifies the message file.
 Each line will be terminated with CR/LF and sent to the receiver.
 
-The `-m` flag cannot be combined with config flags like `--gnss`, `--pps`, `--save`, etc.
+The `-m` flag cannot be combined with config flags like `--gnss`, `--pps`, etc.
 This avoids ambiguity about ordering of manual messages versus higher-level configuration.
+The `--save` flag is permitted with `-m`, but only for save-aware message types (currently `[[ubxval]]`);
+see [u-blox Gen9+ CFG-VALSET](#u-blox-gen9-cfg-valset) below.
 
 ## Delay key
 
@@ -300,6 +302,58 @@ Type specifiers are two characters each:
 - `I1`, `I2`, `I4` - signed integers (1, 2, or 4 bytes)
 - `R4`, `R8` - floating point (4 or 8 bytes)
 
+## u-blox Gen9+ CFG-VALSET
+
+The `[[ubxval]]` message type writes one or more items to the u-blox Gen9+
+configuration database using `UBX-CFG-VALSET`. Unlike raw `[[ubx]]` entries,
+the layer byte is chosen by the `--save` command-line option, so the same
+TOML file can be used for either a RAM-only or persistent write.
+
+```toml
+[[ubxval]]
+tag = "osnma-on"
+description = "Enable Galileo OSNMA authentication"
+keys = [0x10350005]
+types = "U1"
+values = [1]
+```
+
+Without `--save`, this writes the item to RAM only. With `--save`, the
+same item is written to `RAM|BBR|Flash`.
+
+A single `[[ubxval]]` entry can carry several items: provide parallel
+`keys`, `types`, and `values` arrays of equal length, with one type
+specifier per value (two characters each, matching the `payload.types`
+grammar described above). All items are sent in one CFG-VALSET packet.
+
+```toml
+[[ubxval]]
+tag = "osnma-and-only-auth"
+keys = [0x10350005, 0x101100DD]
+types = "U1U1"
+values = [1, 1]
+```
+
+The `types` grammar mirrors `payload.types`: `U1`, `U2`, `U4`, `I1`, `I2`,
+`I4`, `R4`, `R8`. Supplied SatPulse UBX TOML files use the prefix that
+matches the scalar type in the u-blox specification:
+
+| u-blox scalar | `[[ubxval]]` type |
+|---------------|----------------------|
+| `Un`, `Xn`, `E1` | `U1`, `U2`, or `U4` |
+| `In` | `I1`, `I2`, or `I4` |
+| `Rn` | `R4` or `R8` |
+| `L` (boolean) | `U1` with value `0` or `1` |
+
+For each item the encoded byte width must match the value width encoded
+in the Key ID; for example `CFG-MSGOUT_*` keys have width 1 and must use
+`U1` with `0` or `1`. 8-byte integer types are not currently accepted
+in this format.
+
+Raw `[[ubx]]` packets are not interpreted, so `--save` does not rewrite a
+hard-coded `CFG-VALSET` layer byte inside a raw `payload`. Persistent
+configuration writes from a message file must use `[[ubxval]]`.
+
 ## Message types summary
 
 | Type | Keys | Framing |
@@ -308,6 +362,7 @@ Type specifiers are two characters each:
 | `[[binary]]` | `hex`, `delay`, `waitLimit`, `tag`, `description` | none |
 | `[[nmea]]` | `text`, `delay`, `waitLimit`, `tag`, `description` | prepends `$`, appends `*XX\r\n` checksum |
 | `[[ubx]]` | `class`, `id`, `payload`, `delay`, `waitLimit`, `tag`, `description` | UBX binary packets |
+| `[[ubxval]]` | `keys`, `types`, `values`, `delay`, `waitLimit`, `tag`, `description` | UBX-CFG-VALSET (layer chosen by `--save`) |
 | `[[casbin]]` | `class`, `id`, `payload`, `delay`, `waitLimit`, `tag`, `description` | CASIC binary packets |
 | `[[asbin]]` | `class`, `id`, `payload`, `delay`, `waitLimit`, `tag`, `description` | Allystar binary packets |
 | `[[sdbp]]` | `class`, `id`, `payload`, `delay`, `waitLimit`, `tag`, `description` | Techtotop/Taidou SDBP binary packets |

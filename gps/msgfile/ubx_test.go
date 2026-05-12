@@ -331,7 +331,7 @@ payload.values = []
 			if err != nil {
 				t.Fatalf("TaggedMsgs error: %v", err)
 			}
-			raw, err := ToRaw(msgs)
+			raw, err := ToRaw(msgs, false)
 			if tc.wantErr {
 				if err == nil {
 					t.Error("expected error, got nil")

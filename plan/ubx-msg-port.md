@@ -13,7 +13,7 @@ This plan builds on `plan/ubx-msg-save.md`. The save plan adds the
 save-aware `CFG-VALSET` path and allows `--save` in message-file mode,
 but it does not add `--port`. `[[ubxmsg]]` should resolve a
 port-specific `CFG-MSGOUT` key and then use the same VALSET encoding
-and layer-selection helper as `[[ubxvalset]]`.
+and layer-selection helper as `[[ubxval]]`.
 
 ## Goal
 
@@ -156,7 +156,7 @@ spell out all five keys and no inference is needed.
 ## Encoding
 
 `[[ubxmsg]]` resolves the requested `CFG-MSGOUT` port key and emits the
-same `UBX-CFG-VALSET` packet shape as `[[ubxvalset]]`:
+same `UBX-CFG-VALSET` packet shape as `[[ubxval]]`:
 
 - class/id: `0x06 0x8a`
 - version: no transaction
@@ -182,13 +182,13 @@ response matching: expect ACK or NAK for `UBX-CFG-VALSET`.
 
 Add a `--port` option to `satpulsetool gps`. The `--save` option is
 the one from `plan/ubx-msg-save.md` and applies to `ubxmsg` as well as
-`ubxvalset`.
+`ubxval`.
 
 Rules:
 
 - `--port` is only meaningful with `--msg-file`.
 - `--save` is allowed with `--msg-file` only when the selected tags
-  include a save-aware message type: `ubxvalset` from
+  include a save-aware message type: `ubxval` from
   `plan/ubx-msg-save.md` or the new `ubxmsg` type from this plan.
 - `--save-all` remains invalid with `--msg-file`.
 - Accepted values are case-insensitive:
@@ -231,7 +231,7 @@ Extend `gps/msgfile`:
 - `ubxmsg` uses both arguments: `port` chooses the key and `save`
   chooses the VALSET layers.
 - Extend the save-aware message check from `plan/ubx-msg-save.md` so
-  `save` is valid for either `[]UBXValsetMsg` or `[]UBXMsgoutMsg`.
+  `save` is valid for either `[]UBXValMsg` or `[]UBXMsgoutMsg`.
   It should still be an error for selected raw `ubx`, line, NMEA, or
   other non-save-aware message types.
 
@@ -260,7 +260,7 @@ Update:
 The updated `ubx9.toml` should replace hard-coded USB `CFG-VALSET`
 entries with `[[ubxmsg]]` entries where practical. The tags should
 drop the port suffix when the port is now supplied by `--port`.
-This supersedes the intermediate `[[ubxvalset]]` migration described
+This supersedes the intermediate `[[ubxval]]` migration described
 in `plan/ubx-msg-save.md` for entries that are specifically
 `CFG-MSGOUT` rates.
 
@@ -289,7 +289,7 @@ Add focused tests for:
 - `ubxmsg` without `--save` writes RAM only.
 - `ubxmsg` with `--save` writes `RAM|BBR|Flash`.
 - `--save` with selected `ubxmsg` messages is accepted.
-- `--save` with selected non-`ubxvalset`/non-`ubxmsg` messages is
+- `--save` with selected non-`ubxval`/non-`ubxmsg` messages is
   still rejected.
 - `ubxmsg` can infer the target port key from any supplied
   `key.<port>` value.

@@ -86,7 +86,7 @@ func MarshalItems(items []Item) ([]byte, error) {
 		binary.LittleEndian.PutUint32(bytes[i:], uint32(it.Key))
 		i += 4
 		binary.LittleEndian.PutUint64(bytes[i:], it.Value)
-		i += it.Key.nValueBytes()
+		i += it.Key.NValueBytes()
 	}
 	return bytes[0:i], nil
 }
@@ -96,7 +96,7 @@ func UnmarshalItems(data []byte) ([]Item, error) {
 	for len(data) > 4 {
 		k := Key(binary.LittleEndian.Uint32(data))
 		data = data[4:]
-		nBytes := k.nValueBytes()
+		nBytes := k.NValueBytes()
 		if len(data) < nBytes {
 			return nil, fmt.Errorf("invalid data length for key 0x%x", k)
 		}
@@ -116,7 +116,10 @@ func (k Key) String() string {
 	return fmt.Sprintf("0x%08x", uint32(k))
 }
 
-func (k Key) nValueBytes() int {
+// NValueBytes returns the number of bytes in the value for this key,
+// derived from the size field in the key ID. Returns 0 if the key has no
+// recognized value size.
+func (k Key) NValueBytes() int {
 	return (k.valueBits() + 7) / 8
 }
 

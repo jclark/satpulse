@@ -119,7 +119,7 @@ text = "PCAS04,7"
 			if err != nil {
 				t.Fatalf("TaggedMsgs error: %v", err)
 			}
-			raw, err := ToRaw(msgs)
+			raw, err := ToRaw(msgs, false)
 			if err != nil {
 				t.Fatalf("ToRaw error: %v", err)
 			}
@@ -304,7 +304,7 @@ tag = "other"
 			if err != nil {
 				t.Fatalf("TaggedMsgs error: %v", err)
 			}
-			raw, err := ToRaw(msgs)
+			raw, err := ToRaw(msgs, false)
 			if err != nil {
 				t.Fatalf("ToRaw error: %v", err)
 			}
