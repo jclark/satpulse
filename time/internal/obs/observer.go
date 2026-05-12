@@ -47,6 +47,33 @@ type MultiObserver struct {
 	*gpsprot.MultiHandler
 }
 
+// ObserverCombiner builds an observer fanout while ignoring nil optional observers.
+type ObserverCombiner struct {
+	observers []Observer
+}
+
+// AddObserver adds a non-nil pointer observer to the combiner.
+func AddObserver[T any, P interface {
+	*T
+	Observer
+}](c *ObserverCombiner, o P) {
+	if o != nil {
+		c.observers = append(c.observers, o)
+	}
+}
+
+// Observer returns the combined observer.
+func (c *ObserverCombiner) Observer() Observer {
+	switch len(c.observers) {
+	case 0:
+		return &DefaultObserver{}
+	case 1:
+		return c.observers[0]
+	default:
+		return NewMultiObserver(c.observers...)
+	}
+}
+
 // NewMultiObserver creates a new MultiObserver that fans out to multiple observers
 func NewMultiObserver(observers ...Observer) *MultiObserver {
 	handlers := make([]gpsprot.MsgHandler, len(observers))
