@@ -1,71 +1,64 @@
 #:schema ./gpsmsg-schema.json
 # Galileo OSNMA configuration for u-blox F9P (HPG 1.51 firmware or later).
-# Tags here use CFG-VALSET, CFG-VALGET and UBX-MGA-GAL, so they target Gen9+ receivers.
-# CFG-MSGOUT tags are USB-only (matching ubx9.toml convention); for UART1, change the
-# key in payload.values from 0x2091XXXX accordingly.
+# The [[ubxval]] and [[ubxvalport]] tags target Gen9+ receivers. Use --save to
+# persist writes to BBR+Flash, and --port for the CFG-MSGOUT tags (defaults to
+# usb if not given when only key.usb is supplied here).
 
 [[include]]
 src = "ubx9.toml"
 
-# OSNMA enable/disable via CFG-VALSET (class 0x06, id 0x8a).
-# Sets CFG-GAL-USE_OSNMA (key 0x10350005) in RAM layer.
+# OSNMA enable/disable: CFG-GAL-USE_OSNMA.
 
-[[ubx]]
+[[ubxval]]
 tag = "osnma-on"
 description = "Enable Galileo OSNMA authentication"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x10350005, 1]
+keys = [0x10350005]
+types = "U1"
+values = [1]
 
-[[ubx]]
+[[ubxval]]
 tag = "osnma-off"
 description = "Disable Galileo OSNMA authentication"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x10350005, 0]
+keys = [0x10350005]
+types = "U1"
+values = [0]
 
-# Restrict navigation solution to authenticated data only via
-# CFG-NAVSPG-ONLY_AUTHDATA (key 0x101100dd).
+# Restrict navigation solution to authenticated data only:
+# CFG-NAVSPG-ONLY_AUTHDATA.
 
-[[ubx]]
+[[ubxval]]
 tag = "osnma-only-auth"
 description = "Use only OSNMA-authenticated navigation data"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x101100DD, 1]
+keys = [0x101100DD]
+types = "U1"
+values = [1]
 
-[[ubx]]
+[[ubxval]]
 tag = "osnma-only-auth-off"
 description = "Allow unauthenticated navigation data"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x101100DD, 0]
+keys = [0x101100DD]
+types = "U1"
+values = [0]
 
-# Toggle the OSNMA time synchronization requirement via CFG-GAL-OSNMA_TIMESYNC
-# (key 0x10350009). When true (default), the receiver will only apply OSNMA if
-# trusted external time has been supplied via UBX-MGA-INI-TIME_UTC. Setting it
-# to false lets OSNMA run without external time, at the cost of weaker
-# protection against delayed-replay attacks.
+# OSNMA time synchronization requirement: CFG-GAL-OSNMA_TIMESYNC. When true
+# (default), the receiver only applies OSNMA after trusted external time has
+# been supplied via UBX-MGA-INI-TIME_UTC. Setting it false lets OSNMA run
+# without external time, at the cost of weaker protection against
+# delayed-replay attacks.
 
-[[ubx]]
+[[ubxval]]
 tag = "osnma-timesync"
 description = "Require external trusted time for OSNMA (default)"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x10350009, 1]
+keys = [0x10350009]
+types = "U1"
+values = [1]
 
-[[ubx]]
+[[ubxval]]
 tag = "osnma-timesync-off"
 description = "Run OSNMA without external trusted time"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x10350009, 0]
+keys = [0x10350009]
+types = "U1"
+values = [0]
 
 # Query current OSNMA configuration via CFG-VALGET (class 0x06, id 0x8b)
 # from the RAM layer.
@@ -129,40 +122,33 @@ payload.values = [
     0x00,
 ]
 
-# OSNMA monitoring messages on USB.
-# Enable these to observe authentication status on the receiver.
+# OSNMA monitoring messages.
+# Enable these (use --port to choose receiver port) to observe authentication
+# status on the receiver.
 
-[[ubx]]
-tag = "ubx-nav-pvt-usb"
-description = "Enable NAV-PVT on USB (carries NMA fix authentication status)"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x20910009, 1]
+[[ubxvalport]]
+tag = "ubx-nav-pvt"
+description = "Enable NAV-PVT (carries NMA fix authentication status)"
+key.usb = 0x20910009
+value = 1
 
-[[ubx]]
-tag = "ubx-nav-pvt-usb-off"
-description = "Disable NAV-PVT on USB"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x20910009, 0]
+[[ubxvalport]]
+tag = "ubx-nav-pvt-off"
+description = "Disable NAV-PVT"
+key.usb = 0x20910009
+value = 0
 
-[[ubx]]
-tag = "ubx-nav-sig-usb"
-description = "Enable NAV-SIG on USB (carries Galileo signal authentication status)"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x20910348, 1]
+[[ubxvalport]]
+tag = "ubx-nav-sig"
+description = "Enable NAV-SIG (carries Galileo signal authentication status)"
+key.usb = 0x20910348
+value = 1
 
-[[ubx]]
-tag = "ubx-nav-sig-usb-off"
-description = "Disable NAV-SIG on USB"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x20910348, 0]
+[[ubxvalport]]
+tag = "ubx-nav-sig-off"
+description = "Disable NAV-SIG"
+key.usb = 0x20910348
+value = 0
 
 [[ubx]]
 tag = "get-ubx-sec-osnma"
@@ -170,34 +156,26 @@ description = "Poll UBX-SEC-OSNMA for OSNMA security status (pubkey/Merkle valid
 class = 0x27
 id = 0x0A
 
-[[ubx]]
-tag = "ubx-sec-osnma-usb"
-description = "Enable SEC-OSNMA on USB (detailed OSNMA status)"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x209106CD, 1]
+[[ubxvalport]]
+tag = "ubx-sec-osnma"
+description = "Enable SEC-OSNMA (detailed OSNMA status)"
+key.usb = 0x209106CD
+value = 1
 
-[[ubx]]
-tag = "ubx-sec-osnma-usb-off"
-description = "Disable SEC-OSNMA on USB"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x209106CD, 0]
+[[ubxvalport]]
+tag = "ubx-sec-osnma-off"
+description = "Disable SEC-OSNMA"
+key.usb = 0x209106CD
+value = 0
 
-[[ubx]]
-tag = "ubx-nav-timetrusted-usb"
-description = "Enable NAV-TIMETRUSTED on USB (external trusted time info)"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x209103AB, 1]
+[[ubxvalport]]
+tag = "ubx-nav-timetrusted"
+description = "Enable NAV-TIMETRUSTED (external trusted time info)"
+key.usb = 0x209103AB
+value = 1
 
-[[ubx]]
-tag = "ubx-nav-timetrusted-usb-off"
-description = "Disable NAV-TIMETRUSTED on USB"
-class = 0x06
-id = 0x8A
-payload.types = "U1U1U2U4U1"
-payload.values = [0, 1, 0, 0x209103AB, 0]
+[[ubxvalport]]
+tag = "ubx-nav-timetrusted-off"
+description = "Disable NAV-TIMETRUSTED"
+key.usb = 0x209103AB
+value = 0
