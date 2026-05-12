@@ -9,6 +9,12 @@ a new `--port` argument when sending the message file. Discovering that
 port is deliberately out of scope here; the separate get-port work owns
 that problem.
 
+This plan builds on `plan/ubx-msg-save.md`. The save plan adds the
+save-aware `CFG-VALSET` path and allows `--save` in message-file mode,
+but it does not add `--port`. `[[ubxmsg]]` should resolve a
+port-specific `CFG-MSGOUT` key and then use the same VALSET encoding
+and layer-selection helper as `[[ubxvalset]]`.
+
 ## Goal
 
 Today a Gen 9+ message file has to spell out the complete
@@ -54,6 +60,9 @@ satpulsetool gps -d /dev/ttyACM0 -m configs/gpsmsg/osnma.toml -t osnma-monitor -
 emits `UBX-CFG-VALSET` packets for the USB keys
 `0x209103ab` and `0x209106cd`.
 
+Adding `--save` to the same invocation writes the resulting
+`CFG-MSGOUT` values to `RAM|BBR|Flash` instead of RAM only.
+
 ## Scope
 
 In scope:
@@ -62,6 +71,8 @@ In scope:
 - A `satpulsetool gps --port` option accepted in message-file mode.
 - A common message-file port argument, passed as a string.
 - Gen 9+ `UBX-CFG-VALSET` encoding for `CFG-MSGOUT` `U1` rates.
+- Use of the message-file `--save` behavior from
+  `plan/ubx-msg-save.md`.
 - Message-file docs, JSON schema, and focused tests.
 
 Out of scope:
@@ -144,30 +155,42 @@ spell out all five keys and no inference is needed.
 
 ## Encoding
 
-`[[ubxmsg]]` emits a `UBX-CFG-VALSET` packet:
+`[[ubxmsg]]` resolves the requested `CFG-MSGOUT` port key and emits the
+same `UBX-CFG-VALSET` packet shape as `[[ubxvalset]]`:
 
 - class/id: `0x06 0x8a`
 - version: no transaction
-- layers: RAM
+- layers: determined by the message-file `--save` option
 - transaction: none
 - one `CFG-MSGOUT` item with the port-adjusted key and the `U1` rate
 
-Implementation should reuse the existing UBX config-value helpers:
+Implementation should reuse the save-aware VALSET helper introduced by
+`plan/ubx-msg-save.md`. That helper in turn should use the existing
+UBX config-value helpers:
 
 - `gps/lib/ubxcfgval.KeyU` for the final `CFG-MSGOUT` key type
 - `gps/lib/ubxcfgval.MarshalItems`
 - `gps/lib/ubxbin.CfgValsetID`
+
+`ubxmsg` should call the helper with one key, `types = "U1"`, and a
+single rate value.
 
 The raw packet should be treated like other UBX CFG writes for
 response matching: expect ACK or NAK for `UBX-CFG-VALSET`.
 
 ## CLI
 
-Add a `--port` option to `satpulsetool gps`.
+Add a `--port` option to `satpulsetool gps`. The `--save` option is
+the one from `plan/ubx-msg-save.md` and applies to `ubxmsg` as well as
+`ubxvalset`.
 
 Rules:
 
 - `--port` is only meaningful with `--msg-file`.
+- `--save` is allowed with `--msg-file` only when the selected tags
+  include a save-aware message type: `ubxvalset` from
+  `plan/ubx-msg-save.md` or the new `ubxmsg` type from this plan.
+- `--save-all` remains invalid with `--msg-file`.
 - Accepted values are case-insensitive:
   `i2c`, `uart1`, `uart2`, `usb`, `spi`.
 - If selected messages include `ubxmsg` and `--port` is missing,
@@ -197,16 +220,23 @@ Extend `gps/msgfile`:
   with TOML tags for `ubxmsg`.
 - Include `ubxmsg` in defaulting, tag indexing, tag validation,
   tag descriptions, and `TaggedMsgs`.
-- Add a port argument to raw conversion:
+- Extend the raw conversion signature from `plan/ubx-msg-save.md` to
+  add the port argument:
 
   ```go
-  func ToRaw(msgs any, port string) ([]RawMsg, error)
+  func ToRaw(msgs any, port string, save bool) ([]RawMsg, error)
   ```
 
 - Empty `port` means no port was supplied.
+- `ubxmsg` uses both arguments: `port` chooses the key and `save`
+  chooses the VALSET layers.
+- Extend the save-aware message check from `plan/ubx-msg-save.md` so
+  `save` is valid for either `[]UBXValsetMsg` or `[]UBXMsgoutMsg`.
+  It should still be an error for selected raw `ubx`, line, NMEA, or
+  other non-save-aware message types.
 
 `internal/gpscmd` passes the parsed `--port` value through to
-`ToRaw`.
+`ToRaw` along with the parsed message-file `--save` value.
 
 For `ubxmsg`, valid port strings are mapped inside the UBX message
 type to the u-blox offsets:
@@ -230,6 +260,9 @@ Update:
 The updated `ubx9.toml` should replace hard-coded USB `CFG-VALSET`
 entries with `[[ubxmsg]]` entries where practical. The tags should
 drop the port suffix when the port is now supplied by `--port`.
+This supersedes the intermediate `[[ubxvalset]]` migration described
+in `plan/ubx-msg-save.md` for entries that are specifically
+`CFG-MSGOUT` rates.
 
 OSNMA-specific message-output enablement can then be expressed as
 portable Gen 9+ entries:
@@ -253,6 +286,11 @@ rate = 1
 Add focused tests for:
 
 - `ubxmsg` encodes the expected `CFG-VALSET` payload for each port.
+- `ubxmsg` without `--save` writes RAM only.
+- `ubxmsg` with `--save` writes `RAM|BBR|Flash`.
+- `--save` with selected `ubxmsg` messages is accepted.
+- `--save` with selected non-`ubxvalset`/non-`ubxmsg` messages is
+  still rejected.
 - `ubxmsg` can infer the target port key from any supplied
   `key.<port>` value.
 - Partial key tables reject multiple supplied `key.<port>` values that
