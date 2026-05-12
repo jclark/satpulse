@@ -271,7 +271,15 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 	gpsObs := logobs.NewGPSLogObserver(lg)
 
-	observer := combineObservers(promObs, sseObs, posObs, statsObs, clockObs, trackObs, gpsObs)
+	var oc obs.ObserverCombiner
+	obs.AddObserver(&oc, statsObs)
+	obs.AddObserver(&oc, clockObs)
+	obs.AddObserver(&oc, trackObs)
+	obs.AddObserver(&oc, gpsObs)
+	obs.AddObserver(&oc, promObs)
+	obs.AddObserver(&oc, sseObs)
+	obs.AddObserver(&oc, posObs)
+	observer := oc.Observer()
 
 	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, observer, tStart)
 	if err != nil {
@@ -377,46 +385,6 @@ func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.L
 		return nil, nil
 	}
 	return logobs.NewClockLogObserver(lg, clockLogPath, ls)
-}
-
-// combineObservers combines individual observers into appropriate single observer
-func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObserver,
-	posObs *positionObserver, statsObs *logobs.StatsLogObserver, clockObs *logobs.ClockLogObserver,
-	trackObs *logobs.TrackLogObserver, gpsObs *logobs.GPSLogObserver) obs.Observer {
-
-	var observers []obs.Observer
-
-	// Add observers if they exist (typed nils will be properly handled)
-	if statsObs != nil {
-		observers = append(observers, statsObs)
-	}
-	if clockObs != nil {
-		observers = append(observers, clockObs)
-	}
-	if trackObs != nil {
-		observers = append(observers, trackObs)
-	}
-	if gpsObs != nil {
-		observers = append(observers, gpsObs)
-	}
-	if promObs != nil {
-		observers = append(observers, promObs)
-	}
-	if sseObs != nil {
-		observers = append(observers, sseObs)
-	}
-	if posObs != nil {
-		observers = append(observers, posObs)
-	}
-
-	// Return combined observer or default
-	if len(observers) == 0 {
-		return &obs.DefaultObserver{}
-	} else if len(observers) == 1 {
-		return observers[0]
-	} else {
-		return obs.NewMultiObserver(observers...)
-	}
 }
 
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog, pktFormats []gpsprot.PacketFormat) <-chan scan.Packet {

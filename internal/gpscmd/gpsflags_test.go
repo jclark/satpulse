@@ -293,6 +293,16 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup,ppp"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup", "ppp"}}},
 	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "foo,,bar"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"foo", "", "bar"}}},
 	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", ""}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}}},
+	// --save with --msg-file is allowed; it controls VALSET layers, not the configurator.
+	{"ttyS0", []string{"--msg-file", "test.toml", "--save"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgSave: true}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--save", "--tag", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}, msgSave: true}},
+	// --port with --msg-file is allowed and normalized to lower case.
+	{"ttyS0", []string{"--msg-file", "test.toml", "--port", "usb"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgPort: "usb"}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--port", "USB"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgPort: "usb"}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--port", "Uart1"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgPort: "uart1"}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--port", "i2c", "--save"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgPort: "i2c", msgSave: true}},
+	// --show-tags does not require --port.
+	{"ttyS0", []string{"--msg-file", "test.toml", "--show-tags"}, flagVars{msgFilePath: "test.toml", showTags: true}},
 }
 
 func TestParseFlagsValid(t *testing.T) {
@@ -420,7 +430,6 @@ var invalidTestCases = [][]string{
 	// Test --msg-file mutual exclusivity with config flags
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--gnss", "GPS"},                                      // can't use with --gnss
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--pps", "0.1"},                                       // can't use with --pps
-	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--save"},                                             // can't use with --save
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--save-all"},                                         // can't use with --save-all
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--reset"},                                            // can't use with --reset
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--reload"},                                           // can't use with --reload
@@ -448,14 +457,19 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--rtcm-base-id", "1"}, // can't use with --msg-file
 	// Test --tag requires --msg-file
 	{"--serial-device", "ttyS0", "--tag", "setup"}, // --tag without --msg-file
+	// Test --port requires --msg-file
+	{"--serial-device", "ttyS0", "--port", "usb"},
+	// Test --port value must be a known u-blox port name
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--port", "bogus"},
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--port", ""},
 	// Test --msg-file cannot be combined with --show-receiver
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-receiver"}, // can't use with --show-receiver
 	// Test --config-file mutual exclusivity with --serial-device and --device-speed
-	{"--config-file", "test.toml", "--serial-device", "ttyS0"},  // can't use with --serial-device
-	{"--config-file", "test.toml", "--device-speed", "9600"},    // can't use with --device-speed
+	{"--config-file", "test.toml", "--serial-device", "ttyS0"}, // can't use with --serial-device
+	{"--config-file", "test.toml", "--device-speed", "9600"},   // can't use with --device-speed
 	{"-f", "test.toml", "-d", "ttyS0"},                         // short forms
-	{"-f", "test.toml", "-s", "9600"},                           // short forms
-	{"--config-file", "/nonexistent/path/satpulse.toml"},        // file does not exist
+	{"-f", "test.toml", "-s", "9600"},                          // short forms
+	{"--config-file", "/nonexistent/path/satpulse.toml"},       // file does not exist
 }
 
 func writeTestConfig(t *testing.T, content string) string {

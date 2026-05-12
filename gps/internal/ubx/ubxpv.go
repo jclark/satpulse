@@ -6,7 +6,12 @@ import (
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
+const wgs84a = 6378137 // meters, WGS84 semi-major axis
+
 func posECEFNavPosECEF(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPosECEF) *gpsprot.PosECEFMsg {
+	if m.ECEF[0] == wgs84a*100 && m.ECEF[1] == 0 && m.ECEF[2] == 0 { // cm
+		return nil
+	}
 	// Fill so HP accuracy from NAV-HPPOSECEF wins regardless of message order
 	ne.Acc.Pos.Fill(opt.Make(lengthCm(m.PAcc)))
 	return &gpsprot.PosECEFMsg{
@@ -40,6 +45,9 @@ func velECEFNavVelECEF(ne *gpsprot.NavEpochMsg, m *ubxbin.NavVelECEF) *gpsprot.V
 }
 
 func posGeoNavPosLLH(ne *gpsprot.NavEpochMsg, m *ubxbin.NavPosLLH) *gpsprot.PosGeoMsg {
+	if m.Lat == 0 && m.Lon == 0 && m.Height == 0 {
+		return nil
+	}
 	// Fill so HP accuracy from NAV-HPPOSLLH wins regardless of message order
 	ne.Acc.Hor.Fill(opt.Make(lengthMm(m.HAcc)))
 	ne.Acc.Vert.Fill(opt.Make(lengthMm(m.VAcc)))

@@ -47,6 +47,8 @@ type flagVars struct {
 	configGet      gpsprot.PropIDs
 	msgFilePath    string
 	msgTags        []string
+	msgSave        bool
+	msgPort        string
 	vendor         gpsreg.Vendor
 	showReceiver   bool
 	showTags       bool
@@ -63,7 +65,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [--pvt-out pos|vel|time|tp|leap|survey|qual|epoch|tai|ecef|ptp|ntp|off,...]
             [--sats-out sat|sig|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
             [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|GLL|none,...]
-            [-m|--msg-file path] [-t|--tag name,...] [--show-tags]`
+            [-m|--msg-file path] [-t|--tag name,...] [--port name] [--show-tags]`
 
 const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20 * gpsprot.Meter
@@ -135,6 +137,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.StringVarP(&vars.msgFilePath, "msg-file", "m", "", "`path` to TOML file containing message definitions")
 	flags.StringVarP(&msgTags, "tag", "t", "", "comma-separated `list` of tags to send (in order)")
 	flags.BoolVar(&vars.showTags, "show-tags", false, "list all tags in the message file with descriptions, then exit")
+	flags.StringVar(&vars.msgPort, "port", "", "u-blox receiver `port` for port-dependent message-file entries: i2c|uart1|uart2|usb|spi")
 	var vendorStr string
 	flags.StringVar(&vendorStr, "vendor", "", "GPS receiver `vendor` name")
 	flags.Float64Var(&capture, "capture", 0, "capture packets for `seconds` after config (0 = forever)")
@@ -384,13 +387,17 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		vars.configGet = showProps
 	}
 	if save {
-		if !configChanged {
-			return nil, nil, fmt.Errorf("no configuration changes to save with --save; use --save-all to save current configuration")
-		}
 		if saveAll {
 			return nil, nil, fmt.Errorf("%s command must not specify both --save and --save-all", cmdName)
 		}
-		vars.configOpts.Save = gpsprot.SaveMinimal
+		if !configChanged && vars.msgFilePath == "" {
+			return nil, nil, fmt.Errorf("no configuration changes and no message file: nothing for --save to do; use --save-all to save current configuration")
+		}
+		// In message-file mode --save is a plain boolean for VALSET layers,
+		// not a configurator save; don't populate ConfigOptions.Save.
+		if vars.msgFilePath == "" {
+			vars.configOpts.Save = gpsprot.SaveMinimal
+		}
 	} else if saveAll {
 		vars.configOpts.Save = gpsprot.SaveAll
 	}
@@ -422,20 +429,47 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		doConfigure = true
 	}
 	if vars.msgFilePath != "" {
-		if doConfigure {
+		// In message-file mode --save is permitted (it controls VALSET
+		// layers for [[ubxval]]) but no other configuration flag is.
+		if saveAll || reset || reload || factoryReset || showConfig || configChanged || vars.showReceiver {
 			return nil, nil, fmt.Errorf("--msg-file cannot be combined with configuration flags")
 		}
 		if vars.packetLogMode == testLogMode {
 			return nil, nil, fmt.Errorf("--msg-file cannot be combined with --test-log")
 		}
+		if flags.Lookup("port").Changed {
+			port, err := normalizeUBXPort(vars.msgPort)
+			if err != nil {
+				return nil, nil, err
+			}
+			vars.msgPort = port
+		}
+		vars.msgSave = save
 		// Parse tags: split on comma, preserving empty strings for empty tags
 		vars.msgTags = strings.Split(msgTags, ",")
-	} else if msgTags != "" {
-		return nil, nil, fmt.Errorf("--tag requires --msg-file")
-	} else if !doConfigure && !vars.capture.IsSet() {
-		vars.showReceiver = true
+	} else {
+		if msgTags != "" {
+			return nil, nil, fmt.Errorf("--tag requires --msg-file")
+		}
+		if flags.Lookup("port").Changed {
+			return nil, nil, fmt.Errorf("--port requires --msg-file")
+		}
+		if !doConfigure && !vars.capture.IsSet() {
+			vars.showReceiver = true
+		}
 	}
 	return &vars, nil, nil
+}
+
+// normalizeUBXPort lowercases s and verifies it is one of the u-blox port
+// names. Used for early flag-level validation.
+func normalizeUBXPort(s string) (string, error) {
+	p := strings.ToLower(s)
+	switch p {
+	case "i2c", "uart1", "uart2", "usb", "spi":
+		return p, nil
+	}
+	return "", fmt.Errorf("invalid --port value %q: must be one of i2c, uart1, uart2, usb, spi", s)
 }
 
 // loadConfigFile reads serial device and speed from a satpulse TOML config file.

@@ -23,7 +23,7 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-vendor** *name*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-msg\-file** *path*] [**\-t**\|**\-\-tag** *list*] [**\-\-show\-tags**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-msg\-file** *path*] [**\-t**\|**\-\-tag** *list*] [**\-\-port** *name*] [**\-\-show\-tags**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]
 
 # DESCRIPTION
@@ -342,6 +342,19 @@ Messages are sent in the order the tags are listed.
 
 **\-\-show\-tags**
 : Print all tags in the message file with their descriptions to stdout, validate tag constraints, and exit.
+
+**\-\-save** (with **\-\-msg\-file**)
+: When the selected tags are `[[ubxval]]` or `[[ubxvalport]]` messages,
+persist the `UBX-CFG-VALSET` write to `RAM|BBR|Flash` instead of the
+default `RAM` layer.
+Specifying **\-\-save** with selected tags of any other message type is an error.
+This use of **\-\-save** is independent of the configurator's **\-\-save**.
+
+**\-\-port** *name*
+: Selects thereceiver port for `[[ubxvalport]]` message-file
+entries. Accepted values (case insensitive): **i2c**, **uart1**,
+**uart2**, **usb**, **spi**. Required when selected tags include
+`[[ubxvalport]]` messages; ignored for other message types.
 
 ## Packet capture
 
