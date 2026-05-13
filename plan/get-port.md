@@ -38,23 +38,42 @@ func (c *Configurator) valPort() (ucv.Port, bool)
 ```
 
 returning `false` when the port has not been discovered, and remove
-the fallback. Update the callers in the same file:
+the fallback.
 
-- `valBaudRate`: if `!ok`, return nil. We cannot target a UART
-  baud-rate key without knowing which UART.
+`!ok` should not occur during normal operation. `needsPort()` (see
+below) ensures `pollMonComms` / `pollPrt` run whenever any downstream
+step needs the port, so by the time those steps execute the port is
+known. Treat `!ok` at those sites as an internal-invariant violation:
+on **write** paths, return an error; on **read** paths, omit the
+field. Don't try to recover.
+
+Update the callers in the same file:
+
+- `valBaudRate`: if `!ok`, return an error. We cannot target a UART
+  baud-rate key without knowing which UART. Silent no-op would mean
+  a `--speed` write was dropped without any signal to the caller.
 - `valGet` and `valSet`: propagate the unknown state through to
-  `CfgVals.Transaction`. The simplest shape is to widen `Transaction`,
-  `addGetKeys`, `msgChanges.items`, and `portBaudRateKey` to take
-  `(port ucv.Port, ok bool)` (or accept `*ucv.Port`) and skip
-  port-specific items - UART baud rate, per-port output rates,
-  per-port protocol enables - when `!ok`.
+  `CfgVals.Transaction`. Widen `Transaction`, `addGetKeys`,
+  `msgChanges.items`, and `portBaudRateKey` to take
+  `(port ucv.Port, ok bool)`.
+  - `Transaction` (write path): return an error if `!ok` and it would
+    have emitted any port-specific item (UART baud rate, per-port
+    output rates, per-port protocol enables).
+  - `addGetKeys` (read path): silently add no UART baud-rate key when
+    `!ok`. The result then omits `baudRate`; absence is the natural
+    representation.
 
 Tests:
 
-- `valBaudRate` is a no-op when neither `c.portID` nor `c.raw.prt` is
-  set.
-- `CfgVals.Transaction` / `addGetKeys` emit no UART1-specific items
-  when the port has not been discovered.
+- `valBaudRate` returns an error when neither `c.portID` nor
+  `c.raw.prt` is set (write path needs the port).
+- `CfgVals.Transaction` returns an error when port is `!ok` and the
+  transaction would have emitted port-specific items.
+- `CfgVals.Transaction` succeeds with port `!ok` when no port-specific
+  items would be emitted (e.g. only signal enables or time-pulse
+  changes).
+- `addGetKeys` emits no UART1-specific baud-rate key when the port
+  has not been discovered (read path silently omits).
 - Existing val-based UBX tests that relied on the UART1 fallback are
   updated to populate `c.portID` or `c.raw.prt` explicitly (or to pass
   a known port to `Transaction` directly).
@@ -176,7 +195,7 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
     cp := c.raw.Config(c.ver, c.portID)
     if cp != nil && c.target.Get&gpsprot.PropIDPort != 0 {
         if p, ok := c.valPort(); ok {
-            if name, ok := ubxPortName(p); ok {
+            if name, ok := portName(p); ok {
                 cp.SetPort(name)
             }
         }
@@ -258,6 +277,13 @@ Behavior:
   `vars.configGet |= gpsprot.PropIDPort | gpsprot.PropIDBaudRate`.
 - It triggers the configurator even if no write is requested.
 - It composes with `--show-config`; `-c --show-port` asks for both.
+- It inherits `--show-config`'s exclusions: reject combination with
+  `--reset`, `--reload`, `--factory-reset`, and `--msg-file`. Baud
+  rate is receiver-side configuration that reset/reload/factory-reset
+  can change, so showing it alongside those creates the same
+  pre-/post- ambiguity that motivates the `--show-config` rejections.
+  Extend the existing checks at the `--show-config` sites rather than
+  adding parallel ones.
 - It prints the port when known, and prints serial speed only when the
   baud rate is known and non-zero:
 
