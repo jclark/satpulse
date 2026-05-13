@@ -101,6 +101,10 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	}
 }
 
+func (c *Configurator) TrustedTimePacketBuilder() gpsprot.TrustedTimePacketBuilder {
+	return nil
+}
+
 // ConfigProps returns the current configuration of the GPS receiver
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	props := &gpsprot.ConfigProps{}

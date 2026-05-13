@@ -120,7 +120,6 @@ var newConfigSteps = []func(*Configurator) error{
 	(*Configurator).valSetNMA,
 	(*Configurator).valGet,
 	(*Configurator).valSet,
-	(*Configurator).timeAssist,
 	(*Configurator).osnmaAssist,
 	(*Configurator).valBaudRate,
 	(*Configurator).reloadCfg,
@@ -353,6 +352,13 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	}
 
 	return &rcvrInfo
+}
+
+func (c *Configurator) TrustedTimePacketBuilder() gpsprot.TrustedTimePacketBuilder {
+	if !c.target.Opts.TrustedTime {
+		return nil
+	}
+	return trustedTimePacketBuilder{}
 }
 
 // GetRequestCount returns the current number of requests and whether the slice is complete.
@@ -1028,17 +1034,6 @@ func (c *Configurator) setGNSS() error {
 		return err
 	}
 	return c.addMsgSetPauseRequest(gnss, pauseAfterGNSSReset)
-}
-
-func (c *Configurator) timeAssist() error {
-	mga, err := mgaTime(&c.target.Opts.TimeAssist, time.Now())
-	if err != nil {
-		return err
-	}
-	if mga == nil {
-		return nil
-	}
-	return c.addRequest(msgRequest{mga})
 }
 
 func (c *Configurator) osnmaAssist() error {

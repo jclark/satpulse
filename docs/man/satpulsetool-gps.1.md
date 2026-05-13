@@ -20,6 +20,7 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-raw\-out** **obs**\|**nav**\|**none**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-out** **MSM4**\|**MSM7**\|**ARP**\|**auto**\|**none**,...] [**\-\-rtcm\-base\-id** *id*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea\-out** **RMC**\|**GGA**\|**GSA**\|**GSV**\|**ZDA**\|**VTG**\|**GLL**\|**none**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-sys\-time\-trusted**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-vendor** *name*]\
@@ -286,6 +287,10 @@ The following options control which messages the receiver outputs.
 
   **none**
   : Disable all NMEA messages
+
+**\-\-sys\-time\-trusted**
+: Provide the synchronized system clock as trusted time to the GPS receiver.
+The system clock must be synchronized according to the kernel NTP state.
 
 The following option configures the receiver's serial port speed.
 

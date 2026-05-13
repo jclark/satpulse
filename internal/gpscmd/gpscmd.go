@@ -77,7 +77,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, raw, conn, v.vendor, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, args)
+	err = run(ctx, lg, target, v.timeEstimate, raw, conn, v.vendor, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, args)
 	return
 }
 
@@ -151,7 +151,7 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 // Parameter dependencies:
 //   - logMode: must not be testLogMode when raw is non-nil
 //   - args: only used for test log header when logMode is testLogMode
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw []msgfile.RawMsg, conn gpsio.Conn, vendor gpsreg.Vendor, logPath string, logMode packetLogMode, capture opt.Val[time.Duration], showReceiver bool, args []string) error {
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, timeEstimate *gpsprot.TimeEstimate, raw []msgfile.RawMsg, conn gpsio.Conn, vendor gpsreg.Vendor, logPath string, logMode packetLogMode, capture opt.Val[time.Duration], showReceiver bool, args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -190,7 +190,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw
 	if raw != nil {
 		err = runMsgs(ctx, lg, conn, pCh, raw, capture)
 	} else if target != nil {
-		rslt, err = runConfig(ctx, lg, target, pCh, conn, vendor, capture, showReceiver)
+		rslt, err = runConfig(ctx, lg, target, timeEstimate, pCh, conn, vendor, capture, showReceiver)
 	} else {
 		// Passive capture mode: just read and log packets
 		if capture.IsSet() {
@@ -212,7 +212,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw
 	return err
 }
 
-func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, vendor gpsreg.Vendor, capture opt.Val[time.Duration], showReceiver bool) (*gpscfg.Result, error) {
+func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, timeEstimate *gpsprot.TimeEstimate, pCh <-chan scan.Packet, conn gpsio.Conn, vendor gpsreg.Vendor, capture opt.Val[time.Duration], showReceiver bool) (*gpscfg.Result, error) {
 	// Compile-time check: serial faults surfaced by gpsio satisfy the
 	// gpscfg.SerialError interface. gpscfg relies on this.
 	var _ gpscfg.SerialError = (*gpsio.SerialError)(nil)
@@ -221,6 +221,9 @@ func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	rslt, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(vendor), target, pCh, conn)
 	if errors.Is(err, gpscfg.ErrNoProbeResponse) && configTargetIsProbeOnly(target) {
 		err = nil
+	}
+	if err == nil && rslt != nil && target.Opts.TrustedTime {
+		err = sendTrustedTime(lg, conn, rslt.TrustedTimePacketBuilder, timeEstimate)
 	}
 	if err == nil && rslt != nil {
 		if showReceiver {
@@ -236,6 +239,25 @@ func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 		keepReading(ctx, lg, pCh, capture.Get(), nil)
 	}
 	return rslt, err
+}
+
+func sendTrustedTime(lg *slog.Logger, w io.Writer, builder gpsprot.TrustedTimePacketBuilder, est *gpsprot.TimeEstimate) error {
+	if est == nil {
+		return errors.New("trusted time estimate is unavailable")
+	}
+	if builder == nil {
+		return errors.New("receiver does not support trusted time")
+	}
+	pkt, err := builder.TrustedTimePacket(est, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to build trusted time packet: %w", err)
+	}
+	_, err = w.Write(pkt)
+	if err != nil {
+		return fmt.Errorf("failed to send trusted time packet: %w", err)
+	}
+	lg.Info("sent trusted time packet", "len", len(pkt))
+	return nil
 }
 
 func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, raw []msgfile.RawMsg, capture opt.Val[time.Duration]) error {

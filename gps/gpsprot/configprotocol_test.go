@@ -157,6 +157,10 @@ func (c *mockConfigurator) ReceiverInfo() *ReceiverInfo {
 	return c.info
 }
 
+func (c *mockConfigurator) TrustedTimePacketBuilder() TrustedTimePacketBuilder {
+	return nil
+}
+
 // Test basic ConfigDirector operation with simple requests
 func TestConfigDirectorBasic(t *testing.T) {
 	cfg := &mockConfigurator{

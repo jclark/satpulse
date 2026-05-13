@@ -39,6 +39,10 @@ type Configurator interface {
 	// ReceiverInfo returns static information about the GPS receiver.
 	ReceiverInfo() *ReceiverInfo
 
+	// TrustedTimePacketBuilder returns a receiver-specific trusted-time
+	// packet builder when requested and supported.
+	TrustedTimePacketBuilder() TrustedTimePacketBuilder
+
 	// GenerateRequests attempts to generate more requests, potentially increasing the slice size.
 	// This is the only method that can increase the slice size.
 	// May also change states of existing requests (see ConfigRequestState documentation).
