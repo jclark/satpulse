@@ -4,89 +4,335 @@ import (
 	"bytes"
 	"encoding/json"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
-func TestUBXLogObserverNativeMsgNavTimeTrustedLogsSecondValues(t *testing.T) {
-	obs, buf := newUBXLogObserverTest()
-	msg := navTimeTrustedTestMsg()
-	msg.IniTAcc = 1500
-	msg.PropTAcc = 2500
-	msg.DeltaS = -2
-	msg.DeltaMs = -250
+type nativeMsgCall struct {
+	tag   gpsprot.Tag
+	msgID string
+	msg   any
+}
 
-	if !obs.NativeMsg(gpsreg.TagUBX, "NAV-TIMETRUSTED", msg, time.Time{}) {
-		t.Fatal("NativeMsg returned false for NAV-TIMETRUSTED")
+type nativeMsgResult struct {
+	handled []bool
+	entries []map[string]any
+}
+
+func TestUBXLogObserverNativeMsg(t *testing.T) {
+	tests := []struct {
+		name   string
+		calls  []nativeMsgCall
+		expect nativeMsgResult
+	}{
+		{
+			name: "NAV-TIMETRUSTED logs second values",
+			calls: []nativeMsgCall{{
+				tag:   gpsreg.TagUBX,
+				msgID: "NAV-TIMETRUSTED",
+				msg: navTimeTrustedTestMsgWith(func(m *ubxbin.NavTimeTrusted) {
+					m.IniTAcc = 1500
+					m.PropTAcc = 2500
+					m.DeltaS = -2
+					m.DeltaMs = -250
+				}),
+			}},
+			expect: nativeMsgResult{
+				handled: []bool{true},
+				entries: []map[string]any{{
+					"level":              "INFO",
+					"msg":                "change in receiver's trusted time state",
+					"refSys":             float64(1),
+					"trustedTimeValid":   true,
+					"deltaTimeValid":     true,
+					"initialAccuracy":    1.5,
+					"propagatedAccuracy": 2.5,
+					"deltaTime":          -2.25,
+				}},
+			},
+		},
+		{
+			name: "SEC-OSNMA authenticating",
+			calls: []nativeMsgCall{{
+				tag:   gpsreg.TagUBX,
+				msgID: "SEC-OSNMA",
+				msg:   secOsnmaAuthenticatingTestMsg(8, 4, 2),
+			}},
+			expect: nativeMsgResult{
+				handled: []bool{true},
+				entries: []map[string]any{{
+					"level":               "INFO",
+					"msg":                 "change in receiver's OSNMA state",
+					"state":               "authenticating",
+					"nmaStatus":           "operational",
+					"osnmaSVs":            float64(8),
+					"authenticatedSVs":    float64(4),
+					"timeSyncEnabled":     true,
+					"macAdkdType":         "ADKD12",
+					"timingAuth":          "ok",
+					"authenticatedTiming": float64(2),
+				}},
+			},
+		},
+		{
+			name: "SEC-OSNMA DSM alert precedes missing trust material",
+			calls: []nativeMsgCall{{
+				tag:   gpsreg.TagUBX,
+				msgID: "SEC-OSNMA",
+				msg: secOsnmaAuthenticatingTestMsgWith(8, 4, 2, func(m *ubxbin.SecOsnma) {
+					m.DsmAuthentication = ubxbin.SecOsnmaDsmAuthStatusAlert
+					m.GeneralAndTiming &^= ubxbin.SecOsnmaGeneralPubKeyVal | ubxbin.SecOsnmaGeneralMerkleRootVal
+				}),
+			}},
+			expect: nativeMsgResult{
+				handled: []bool{true},
+				entries: []map[string]any{{
+					"level":   "INFO",
+					"msg":     "change in receiver's OSNMA state",
+					"state":   "dsmFailed",
+					"dsmAuth": "alert",
+					"cpks":    "nominal",
+				}},
+			},
+		},
+		{
+			name: "SEC-OSNMA time sync failure logs diff",
+			calls: []nativeMsgCall{{
+				tag:   gpsreg.TagUBX,
+				msgID: "SEC-OSNMA",
+				msg: secOsnmaAuthenticatingTestMsgWith(8, 4, 2, func(m *ubxbin.SecOsnma) {
+					m.TimSyncReq = ubxbin.SecOsnmaTimSyncEnabled | ubxbin.SecOsnmaTimSyncStatusFailed
+					m.TimSyncReqDiff = -1500
+				}),
+			}},
+			expect: nativeMsgResult{
+				handled: []bool{true},
+				entries: []map[string]any{{
+					"level":          "INFO",
+					"msg":            "change in receiver's OSNMA state",
+					"state":          "timeSyncFailed",
+					"timeSyncStatus": "failed",
+					"timeSyncDiff":   -1.5,
+				}},
+			},
+		},
+		{
+			name: "non-UBX message is ignored",
+			calls: []nativeMsgCall{{
+				tag:   gpsreg.TagNMEA,
+				msgID: "NAV-TIMETRUSTED",
+				msg:   navTimeTrustedTestMsg(),
+			}},
+			expect: nativeMsgResult{handled: []bool{false}},
+		},
+		{
+			name: "unrelated UBX message is ignored",
+			calls: []nativeMsgCall{{
+				tag:   gpsreg.TagUBX,
+				msgID: "NAV-TIMEGPS",
+				msg:   &ubxbin.NavTimeGPS{},
+			}},
+			expect: nativeMsgResult{handled: []bool{false}},
+		},
 	}
-	entries := readLogEntries(t, buf)
-	if len(entries) != 1 {
-		t.Fatalf("got %d log entries, want 1", len(entries))
-	}
-	entry := entries[0]
-	if entry["msg"] != "change in receiver's trusted time state" {
-		t.Fatalf("msg = %v, want NAV-TIMETRUSTED log message", entry["msg"])
-	}
-	if entry["initialAccuracy"] != 1.5 {
-		t.Errorf("initialAccuracy = %v, want 1.5", entry["initialAccuracy"])
-	}
-	if entry["propagatedAccuracy"] != 2.5 {
-		t.Errorf("propagatedAccuracy = %v, want 2.5", entry["propagatedAccuracy"])
-	}
-	if entry["deltaTime"] != -2.25 {
-		t.Errorf("deltaTime = %v, want -2.25", entry["deltaTime"])
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runNativeMsgCalls(t, tc.calls)
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
+			}
+		})
 	}
 }
 
-func TestUBXLogObserverNativeMsgNavTimeTrustedSuppressesUntilStepOrDecrease(t *testing.T) {
-	obs, buf := newUBXLogObserverTest()
-	msg := navTimeTrustedTestMsg()
-	msg.PropTAcc = 1000
-
-	obs.NativeMsg(gpsreg.TagUBX, "NAV-TIMETRUSTED", msg, time.Time{})
-	assertLogEntryCount(t, buf, 1)
-
-	msg.PropTAcc = 1200
-	obs.NativeMsg(gpsreg.TagUBX, "NAV-TIMETRUSTED", msg, time.Time{})
-	assertLogEntryCount(t, buf, 1)
-
-	msg.PropTAcc = 1500
-	obs.NativeMsg(gpsreg.TagUBX, "NAV-TIMETRUSTED", msg, time.Time{})
-	assertLogEntryCount(t, buf, 2)
-
-	msg.PropTAcc = 1400
-	obs.NativeMsg(gpsreg.TagUBX, "NAV-TIMETRUSTED", msg, time.Time{})
-	assertLogEntryCount(t, buf, 3)
-}
-
-func TestUBXLogObserverNativeMsgNavTimeTrustedLogsStateChanges(t *testing.T) {
-	obs, buf := newUBXLogObserverTest()
-	msg := navTimeTrustedTestMsg()
-	msg.PropTAcc = 1000
-
-	obs.NativeMsg(gpsreg.TagUBX, "NAV-TIMETRUSTED", msg, time.Time{})
-	assertLogEntryCount(t, buf, 1)
-
-	msg.Valid = ubxbin.NavTimeTrustedValidTrustedTime
-	obs.NativeMsg(gpsreg.TagUBX, "NAV-TIMETRUSTED", msg, time.Time{})
-	assertLogEntryCount(t, buf, 2)
-
-	msg.RefSys = ubxbin.NavTimeTrustedRefSysGal
-	obs.NativeMsg(gpsreg.TagUBX, "NAV-TIMETRUSTED", msg, time.Time{})
-	assertLogEntryCount(t, buf, 3)
-}
-
-func TestUBXLogObserverNativeMsgFilters(t *testing.T) {
-	obs, _ := newUBXLogObserverTest()
-	if obs.NativeMsg(gpsreg.TagNMEA, "NAV-TIMETRUSTED", navTimeTrustedTestMsg(), time.Time{}) {
-		t.Fatal("NativeMsg returned true for non-UBX NAV-TIMETRUSTED")
+func TestUBXLogObserverNativeMsgSequences(t *testing.T) {
+	tests := []struct {
+		name   string
+		calls  []nativeMsgCall
+		expect nativeMsgResult
+	}{
+		{
+			name: "NAV-TIMETRUSTED suppresses until accuracy step or decrease",
+			calls: []nativeMsgCall{
+				navTimeTrustedTestCall(navTimeTrustedTestMsgWith(func(m *ubxbin.NavTimeTrusted) {
+					m.PropTAcc = 1000
+				})),
+				navTimeTrustedTestCall(navTimeTrustedTestMsgWith(func(m *ubxbin.NavTimeTrusted) {
+					m.PropTAcc = 1200
+				})),
+				navTimeTrustedTestCall(navTimeTrustedTestMsgWith(func(m *ubxbin.NavTimeTrusted) {
+					m.PropTAcc = 1500
+				})),
+				navTimeTrustedTestCall(navTimeTrustedTestMsgWith(func(m *ubxbin.NavTimeTrusted) {
+					m.PropTAcc = 1400
+				})),
+			},
+			expect: nativeMsgResult{
+				handled: []bool{true, true, true, true},
+				entries: []map[string]any{
+					{
+						"level":              "INFO",
+						"msg":                "change in receiver's trusted time state",
+						"refSys":             float64(1),
+						"trustedTimeValid":   true,
+						"deltaTimeValid":     true,
+						"initialAccuracy":    float64(0),
+						"propagatedAccuracy": float64(1),
+						"deltaTime":          float64(0),
+					},
+					{
+						"level":              "INFO",
+						"msg":                "change in receiver's trusted time state",
+						"refSys":             float64(1),
+						"trustedTimeValid":   true,
+						"deltaTimeValid":     true,
+						"initialAccuracy":    float64(0),
+						"propagatedAccuracy": 1.5,
+						"deltaTime":          float64(0),
+					},
+					{
+						"level":              "INFO",
+						"msg":                "change in receiver's trusted time state",
+						"refSys":             float64(1),
+						"trustedTimeValid":   true,
+						"deltaTimeValid":     true,
+						"initialAccuracy":    float64(0),
+						"propagatedAccuracy": 1.4,
+						"deltaTime":          float64(0),
+					},
+				},
+			},
+		},
+		{
+			name: "NAV-TIMETRUSTED logs state changes",
+			calls: []nativeMsgCall{
+				navTimeTrustedTestCall(navTimeTrustedTestMsgWith(func(m *ubxbin.NavTimeTrusted) {
+					m.PropTAcc = 1000
+				})),
+				navTimeTrustedTestCall(navTimeTrustedTestMsgWith(func(m *ubxbin.NavTimeTrusted) {
+					m.Valid = ubxbin.NavTimeTrustedValidTrustedTime
+					m.PropTAcc = 1000
+				})),
+				navTimeTrustedTestCall(navTimeTrustedTestMsgWith(func(m *ubxbin.NavTimeTrusted) {
+					m.RefSys = ubxbin.NavTimeTrustedRefSysGal
+					m.Valid = ubxbin.NavTimeTrustedValidTrustedTime
+					m.PropTAcc = 1000
+				})),
+			},
+			expect: nativeMsgResult{
+				handled: []bool{true, true, true},
+				entries: []map[string]any{
+					{
+						"level":              "INFO",
+						"msg":                "change in receiver's trusted time state",
+						"refSys":             float64(1),
+						"trustedTimeValid":   true,
+						"deltaTimeValid":     true,
+						"initialAccuracy":    float64(0),
+						"propagatedAccuracy": float64(1),
+						"deltaTime":          float64(0),
+					},
+					{
+						"level":              "INFO",
+						"msg":                "change in receiver's trusted time state",
+						"refSys":             float64(1),
+						"trustedTimeValid":   true,
+						"deltaTimeValid":     false,
+						"initialAccuracy":    float64(0),
+						"propagatedAccuracy": float64(1),
+						"deltaTime":          float64(0),
+					},
+					{
+						"level":              "INFO",
+						"msg":                "change in receiver's trusted time state",
+						"refSys":             float64(2),
+						"trustedTimeValid":   true,
+						"deltaTimeValid":     false,
+						"initialAccuracy":    float64(0),
+						"propagatedAccuracy": float64(1),
+						"deltaTime":          float64(0),
+					},
+				},
+			},
+		},
+		{
+			name: "SEC-OSNMA logs count high-water, drop, and recovery",
+			calls: []nativeMsgCall{
+				secOsnmaTestCall(secOsnmaAuthenticatingTestMsg(8, 4, 2)),
+				secOsnmaTestCall(secOsnmaAuthenticatingTestMsg(8, 4, 2)),
+				secOsnmaTestCall(secOsnmaAuthenticatingTestMsg(8, 5, 2)),
+				secOsnmaTestCall(secOsnmaAuthenticatingTestMsg(8, 3, 2)),
+				secOsnmaTestCall(secOsnmaAuthenticatingTestMsg(8, 2, 2)),
+				secOsnmaTestCall(secOsnmaAuthenticatingTestMsg(8, 3, 2)),
+			},
+			expect: nativeMsgResult{
+				handled: []bool{true, true, true, true, true, true},
+				entries: []map[string]any{
+					{
+						"level":               "INFO",
+						"msg":                 "change in receiver's OSNMA state",
+						"state":               "authenticating",
+						"nmaStatus":           "operational",
+						"osnmaSVs":            float64(8),
+						"authenticatedSVs":    float64(4),
+						"timeSyncEnabled":     true,
+						"macAdkdType":         "ADKD12",
+						"timingAuth":          "ok",
+						"authenticatedTiming": float64(2),
+					},
+					{
+						"level":               "INFO",
+						"msg":                 "change in receiver's OSNMA state",
+						"state":               "authenticating",
+						"nmaStatus":           "operational",
+						"osnmaSVs":            float64(8),
+						"authenticatedSVs":    float64(5),
+						"timeSyncEnabled":     true,
+						"macAdkdType":         "ADKD12",
+						"timingAuth":          "ok",
+						"authenticatedTiming": float64(2),
+					},
+					{
+						"level":               "INFO",
+						"msg":                 "change in receiver's OSNMA state",
+						"state":               "authenticating",
+						"nmaStatus":           "operational",
+						"osnmaSVs":            float64(8),
+						"authenticatedSVs":    float64(2),
+						"timeSyncEnabled":     true,
+						"macAdkdType":         "ADKD12",
+						"timingAuth":          "ok",
+						"authenticatedTiming": float64(2),
+					},
+					{
+						"level":               "INFO",
+						"msg":                 "change in receiver's OSNMA state",
+						"state":               "authenticating",
+						"nmaStatus":           "operational",
+						"osnmaSVs":            float64(8),
+						"authenticatedSVs":    float64(3),
+						"timeSyncEnabled":     true,
+						"macAdkdType":         "ADKD12",
+						"timingAuth":          "ok",
+						"authenticatedTiming": float64(2),
+					},
+				},
+			},
+		},
 	}
-	if obs.NativeMsg(gpsreg.TagUBX, "NAV-TIMEGPS", &ubxbin.NavTimeGPS{}, time.Time{}) {
-		t.Fatal("NativeMsg returned true for unrelated UBX message")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runNativeMsgCalls(t, tc.calls)
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
+			}
+		})
 	}
 }
 
@@ -104,11 +350,64 @@ func navTimeTrustedTestMsg() *ubxbin.NavTimeTrusted {
 	}
 }
 
-func assertLogEntryCount(t *testing.T, buf *bytes.Buffer, want int) {
-	t.Helper()
-	if got := len(readLogEntries(t, buf)); got != want {
-		t.Fatalf("got %d log entries, want %d\n%s", got, want, buf.String())
+func navTimeTrustedTestMsgWith(update func(*ubxbin.NavTimeTrusted)) *ubxbin.NavTimeTrusted {
+	m := navTimeTrustedTestMsg()
+	update(m)
+	return m
+}
+
+func navTimeTrustedTestCall(msg *ubxbin.NavTimeTrusted) nativeMsgCall {
+	return nativeMsgCall{
+		tag:   gpsreg.TagUBX,
+		msgID: "NAV-TIMETRUSTED",
+		msg:   msg,
 	}
+}
+
+func secOsnmaAuthenticatingTestMsg(osnmaSVs, authenticatedSVs, authenticatedTiming uint8) *ubxbin.SecOsnma {
+	return &ubxbin.SecOsnma{
+		SecOsnmaFixed: ubxbin.SecOsnmaFixed{
+			Version:           3,
+			NmaHeader:         ubxbin.SecOsnmaHeaderAuthStatus | ubxbin.SecOsnmaNmaStatusOperational | ubxbin.SecOsnmaCPKSNominal,
+			OsnmaMonitoring:   ubxbin.SecOsnmaMonitoringOsnmaEnabled | ubxbin.SecOsnmaMonitoring(osnmaSVs)<<1,
+			TimSyncReq:        ubxbin.SecOsnmaTimSyncEnabled | ubxbin.SecOsnmaTimSyncStatusPassed,
+			DsmAuthentication: ubxbin.SecOsnmaDsmAuthStatusKROOTOK,
+			TeslaKey:          ubxbin.SecOsnmaTeslaKeyAuthOK,
+			GeneralAndTiming: ubxbin.SecOsnmaGeneral(authenticatedSVs) |
+				ubxbin.SecOsnmaGeneral(authenticatedTiming)<<6 |
+				ubxbin.SecOsnmaTimingAuthOK |
+				ubxbin.SecOsnmaMacAdkdTypeSlow |
+				ubxbin.SecOsnmaGeneralPubKeyVal |
+				ubxbin.SecOsnmaGeneralMerkleRootVal,
+		},
+	}
+}
+
+func secOsnmaAuthenticatingTestMsgWith(osnmaSVs, authenticatedSVs, authenticatedTiming uint8, update func(*ubxbin.SecOsnma)) *ubxbin.SecOsnma {
+	m := secOsnmaAuthenticatingTestMsg(osnmaSVs, authenticatedSVs, authenticatedTiming)
+	update(m)
+	return m
+}
+
+func secOsnmaTestCall(msg *ubxbin.SecOsnma) nativeMsgCall {
+	return nativeMsgCall{
+		tag:   gpsreg.TagUBX,
+		msgID: "SEC-OSNMA",
+		msg:   msg,
+	}
+}
+
+func runNativeMsgCalls(t *testing.T, calls []nativeMsgCall) nativeMsgResult {
+	t.Helper()
+	obs, buf := newUBXLogObserverTest()
+	result := nativeMsgResult{
+		handled: make([]bool, 0, len(calls)),
+	}
+	for _, call := range calls {
+		result.handled = append(result.handled, obs.NativeMsg(call.tag, call.msgID, call.msg, time.Time{}))
+	}
+	result.entries = readLogEntries(t, buf)
+	return result
 }
 
 func readLogEntries(t *testing.T, buf *bytes.Buffer) []map[string]any {
@@ -124,6 +423,7 @@ func readLogEntries(t *testing.T, buf *bytes.Buffer) []map[string]any {
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			t.Fatalf("failed to parse log line %q: %v", line, err)
 		}
+		delete(entry, "time")
 		entries = append(entries, entry)
 	}
 	return entries

@@ -362,10 +362,9 @@ The observer should:
 Initial log fields should be enough for operational diagnosis without turning
 the log into a dump of the entire UBX struct. For `NAV-TIMETRUSTED`, include
 the reference system, validity bits, initial and propagated time accuracy, and
-delta fields. For `SEC-OSNMA`, include OSNMA enabled/header status, time-sync
-requirement/status, DSM authentication status, TESLA key authentication status,
-timing authentication, authenticated satellite count, MAC ADKD type, and
-Merkle/public-key validity/source fields.
+delta fields. For `SEC-OSNMA`, log a derived operational state plus only the
+fields that explain that state. Avoid per-SV data and low-level details such as
+TESLA chain ids unless later field experience shows they are needed.
 
 Wire this into the daemon in `time/app/daemon/daemon.go`:
 
@@ -380,6 +379,89 @@ Add focused tests for `UBXLogObserver.NativeMsg`:
 - It returns `true` for `*ubxbin.NavTimeTrusted`.
 - It returns `true` for `*ubxbin.SecOsnma`.
 - It returns `false` for other tags or unrelated UBX messages.
+
+### SEC-OSNMA Operational States
+
+`UBX-SEC-OSNMA` should be logged in the same spirit as trusted time: recognize
+every message, but emit a normal daemon log line only when the derived
+operational state changes significantly. The log entry should state the
+receiver's OSNMA state and include the minimal fields needed to explain it.
+
+Operational states, in evaluation order:
+
+- `disabled`: the receiver is not executing OSNMA.
+- `timeSyncFailed`: OSNMA cannot proceed because the trusted-time requirement
+  is unmet.
+- `serviceFailed`: the authenticated Galileo NMA service status says OSNMA is
+  invalid and must not be used.
+- `dsmFailed`: DSM-KROOT or DSM-PKR authentication has failed or cannot be
+  applied.
+- `missingTrustMaterial`: OSNMA cannot proceed because the current public key or
+  Merkle root is not valid.
+- `teslaFailed`: TESLA key authentication has failed or is impossible for the
+  current key.
+- `badData`: OSNMA data is present but receiver monitoring reports malformed or
+  inconsistent OSNMA/MAC data.
+- `noData`: OSNMA is enabled, but the receiver is not currently collecting
+  usable OSNMA data.
+- `pending`: OSNMA appears enabled and not blocked, but no satellite navigation
+  data has authenticated yet.
+- `authenticating`: at least one satellite's navigation data has authenticated.
+
+State distinction is top-down: the first matching state wins. This prevents
+secondary symptoms from hiding the root cause. For example, an OSNMA Alert
+Message can invalidate public-key and Merkle-root material; `dsmFailed` should
+therefore win over `missingTrustMaterial`.
+
+State distinction rules:
+
+- `disabled`: `osnmaEnabled` is false.
+- `timeSyncFailed`: `timSyncEnabled` is true and `timSyncStatus` is
+  `noTrustedTime`, `notAccurate`, or `failed`.
+- `serviceFailed`: `nmaStatus` is `invalid`.
+- `dsmFailed`: `dsmAuthenticationStatus` is an alert or failure state:
+  `alert`, `KROOTFail`, `PKRFail`, `unknownPK`, `PKDecompressFail`,
+  `configNotSupported`, or `NMTMissingMerkle`.
+- `missingTrustMaterial`: current `pubKeyVal` or `merkleRootVal` is false.
+- `teslaFailed`: `teslaKeyAuthStatus` is `fail`, `past`, or `oldRoot`.
+- `badData`: any of `wrongData`, `wrongFlxMac`, or `wrongMaclt` is true.
+- `noData`: `osnmaEnabled` is true and either `numberSVs` is zero or `noData`
+  is true.
+- `pending`: none of the above states applies, and `authenticatedSVs` is zero.
+- `authenticating`: `authenticatedSVs` is greater than zero.
+
+Fields shown by state:
+
+- `disabled`: `state`, `osnmaEnabled`.
+- `timeSyncFailed`: `state`, `timeSyncStatus`, and `timeSyncDiff` only when
+  the receiver reports a meaningful pass/fail difference.
+- `serviceFailed`: `state`, `nmaStatus`, `cpks`.
+- `dsmFailed`: `state`, `dsmAuth`, `cpks`.
+- `missingTrustMaterial`: `state`, `pubKeyValid`, `merkleRootValid`,
+  `dsmAuth`, `cpks`.
+- `teslaFailed`: `state`, `teslaKeyAuth`.
+- `badData`: `state`, `osnmaSVs`, `wrongData`, `wrongFlxMac`, `wrongMaclt`.
+- `noData`: `state`, `osnmaSVs`, `noData`.
+- `pending`: `state`, `osnmaSVs`, `nmaStatus`, `dsmAuth`, `teslaKeyAuth`,
+  `timeSyncStatus`.
+- `authenticating`: `state`, `nmaStatus`, `osnmaSVs`, `authenticatedSVs`,
+  `timeSyncEnabled`, `macAdkdType`, `timingAuth`, and
+  `authenticatedTiming`.
+
+Logging triggers:
+
+- Always log the first recognized `UBX-SEC-OSNMA` message.
+- Always log when the derived operational `state` changes.
+- Within a state, log when one of that state's displayed non-count fields
+  changes. This catches meaningful transitions such as service test vs
+  operational mode, time-sync status changes, DSM/TESLA failures, public-key or
+  Merkle-root validity changes, or MAC ADKD mode changes.
+- Treat `osnmaSVs`, `authenticatedSVs`, and `authenticatedTiming` as noisy
+  counts. Track a high-water mark for each count. Log a count when it reaches a
+  new high-water mark. If it later falls to less than half of that high-water
+  mark, log the drop and reset the high-water mark to the lower value. This
+  logs meaningful degradation and then shows recovery without logging ordinary
+  satellite visibility churn.
 
 ## Implementation Order
 
