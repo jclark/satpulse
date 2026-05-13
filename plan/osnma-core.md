@@ -9,14 +9,16 @@ This is deliberately not the full trusted-time manager for the daemon. It gets
 SatPulse to the point where OSNMA can be provisioned, enabled, observed at both
 the fix-authenticated and selected native u-blox status levels, and supplied
 with trusted time by explicit tool/socket operations. Autonomous daemon
-maintenance of trusted time is a follow-on plan.
+maintenance of trusted time is covered separately in
+`plan/daemon-trusted-time.md`.
 
 The core pieces are:
 
 1. Report whether a navigation fix is NMA-verified.
 2. Refactor trusted-time setting around a receiver-specific
-   `TrustedTimePacketBuilder`, and make `satpulsetool gps` able to set trusted
-   time directly, including from SNTP.
+   `TrustedTimePacketBuilder`. Phase 1 cleans up the existing
+   `satpulsetool gps --sys-time-trusted` path; later phases add explicit
+   uncertainty for system-clock use, SNTP, and richer u-blox timebase handling.
 3. Provision OSNMA Merkle/public-key data from `osnma.toml` instead of compiled
    code.
 4. Enable OSNMA with explicit `gps.nma` / `--nma` controls.
@@ -28,7 +30,7 @@ unless refreshed. The pragmatic interim refresh path is to run
 `satpulsetool gps --socket ...` from cron or a systemd timer; the daemon socket
 is intentionally writable so normal Unix permissions can control who is allowed
 to perform these receiver writes. A daemon-owned trusted-time state machine is a
-separate, harder problem.
+separate, harder problem covered by `plan/daemon-trusted-time.md`.
 
 ## Reporting OSNMA
 
@@ -68,31 +70,33 @@ still needs to set trusted time after a cold boot. Internally, however, the
 builder is returned by the existing configure/probe path because that path
 already identifies the receiver and selects the protocol-specific backend.
 
-### Estimate Type
+### Phases
 
-Use `TimeEstimate` for the trusted-time setting path. It carries whichever
-timebase the source can provide:
+Trusted-time support should land in small phases. The first phase is only the
+clean system-clock path needed to make the existing hidden flag supportable; it
+does not take on explicit uncertainty, SNTP, daemon refresh, or u-blox
+GNSS-time packets.
+
+#### Phase 1: System Clock To Trusted UTC
+
+Phase 1 keeps `TimeEstimate` close to the existing UTC estimate shape:
 
 ```go
 type TimeEstimate struct {
-    UTC time.Time
-    TAI ptime.Time
+    EstimatedTime time.Time
     TimeOfEstimate time.Time
     Accuracy time.Duration
+    LeapSecond ptime.LeapSecondState
 }
 ```
 
-`UTC` and `TAI` are optional; zero means absent. At least one must be present.
-There is no `Trusted bool`: trust is expressed by the caller choosing to use
-the trusted-time operation. `TimeOfEstimate` carries the monotonic anchor used
-to extrapolate the estimate to the actual packet-build time.
-
-The initial tool path will often be UTC-only, from the system clock or SNTP. An
-ongoing daemon path may later have TAI/GNSS time, for example when SatPulse is
-running with a PHC. A no-PHC mode may remain UTC-only. The builder chooses the
-best receiver message form from the timebases present.
-
-### Builder Interface
+`EstimatedTime` is UTC. `TimeOfEstimate` carries the monotonic anchor used to
+extrapolate the estimate to packet-build time. `LeapSecond` stays for now:
+`satpulsetool gps --sys-time-trusted` can fill it from the kernel NTP state,
+and the u-blox `MGA-INI-TIME_UTC` packet can use it for the `leapSecs` field.
+Do not remove it as part of phase 1; any later replacement with UTC/TAI fields
+needs a separate design decision. There is no `Trusted bool`: trust is
+expressed by the caller choosing to use the trusted-time operation.
 
 Receivers that can set trusted time expose a packet builder through the normal
 configure/probe result path:
@@ -107,8 +111,8 @@ This interface only constructs receiver bytes. The caller owns port locking and
 writing.
 
 Trusted-time estimates are no longer passed through `ConfigTarget` or
-`ConfigOptions.TimeAssist`. Replace the existing `TimeAssist TimeEstimate`
-field with a simple request flag:
+`ConfigOptions.TimeAssist`. Phase 1 replaces the existing
+`TimeAssist TimeEstimate` field with a simple request flag:
 
 ```go
 type ConfigOptions struct {
@@ -118,9 +122,8 @@ type ConfigOptions struct {
 ```
 
 `TrustedTime` does not provide time to the receiver. It tells the configurator
-that the caller wants trusted-time packet construction support, and that the
-configurator may do protocol-specific extra polling needed to initialize the
-builder.
+that the caller wants trusted-time packet construction support. Later phases
+may allow protocol-specific extra polling needed to initialize richer builders.
 
 Make the builder a first-class part of the config API rather than an optional
 capability or generic extra:
@@ -154,16 +157,86 @@ is true, backends that support trusted time should try to return a builder;
 unsupported receivers or unresolved dependencies leave the builder nil, and the
 tool path decides how to report that to the user.
 
-For u-blox, the configurator builds a packet builder that stores the GNSS time
-system to use when a TAI estimate is converted to `UBX-MGA-INI-TIME_GNSS`. If a
-TAI/GNSS estimate is present, the builder emits `UBX-MGA-INI-TIME_GNSS` using
-that stored GNSS; otherwise it emits `UBX-MGA-INI-TIME_UTC`. SatPulse's
-`gps.timeGNSS` configuration already writes the related u-blox timing keys
-(`CFG-TP-TIMEGRID_TP1`, `CFG-NAVSPG-UTCSTANDARD`, and `CFG-RATE-TIMEREF` where
-supported), so the builder should use the same GNSS choice. The expectation
-that `MGA-INI-TIME_UTC` plus `CFG-NAVSPG-UTCSTANDARD` determines the
-trusted-time reference system should be verified empirically with
-`UBX-NAV-TIMETRUSTED`.
+For u-blox, phase 1 returns a builder for `UBX-MGA-INI-TIME_UTC` only. The
+builder sets the `trustedSource` bit unconditionally, uses `LeapSecond` to set
+`leapSecs` when the TAI-UTC offset is known, and otherwise sends unknown leap
+seconds. If monotonic extrapolation crosses an announced leap-second boundary,
+the builder gives up on the leap-second value and increases the time accuracy
+by one second. Direct caller misuse such as a nil estimate or zero
+`EstimatedTime` is a programming error and should panic at the builder
+boundary; normal command-level failures such as an unsupported receiver should
+remain ordinary errors.
+
+The existing hidden `--sys-time-trusted` path should be cleaned up to use this
+builder and should no longer be hidden once phase 1 ships. The tool flow is:
+
+1. Set `ConfigOptions.TrustedTime` and run the normal receiver probe/configure
+   path enough to try to obtain a `TrustedTimePacketBuilder`.
+2. Build a `TimeEstimate`.
+3. Ask the builder for bytes at `time.Now()`.
+4. Write the bytes to the receiver or daemon socket.
+
+For phase 1, `--sys-time-trusted` is system-clock only. `gpscmd` obtains the
+estimate from the kernel NTP state, requires the clock to be synchronized, and
+fills `LeapSecond` from the kernel-reported TAI offset and leap-second status.
+It should also update the usage text and man page so the option is documented
+as a supported command option.
+
+#### Phase 2: System Clock With Explicit Uncertainty
+
+After the synchronized system-clock path is clean, add:
+
+- `--trusted-time-uncertainty <duration>`: supply an explicit uncertainty if
+  the user wants to trust the host system clock even though the kernel NTP
+  state does not report synchronization or cannot provide a useful max-error
+  bound.
+
+This option is not a separate time source. It is a system-clock policy knob:
+without it, `--sys-time-trusted` should continue to require synchronized kernel
+NTP state; with it, the command can use the host clock with the user-supplied
+accuracy bound. Leap-second information remains best effort. If the kernel
+state cannot provide a usable TAI offset, the `TimeEstimate` should leave
+`LeapSecond` unknown.
+
+#### Phase 3: SNTP Source
+
+After the system-clock paths are clean, add the only other trusted-time source
+in this core plan:
+
+- `--trusted-time-ntp <server>`: query the server with the existing
+  `time/lib/sntp` client and use the returned UTC time, monotonic anchor, and
+  accuracy bound.
+
+This phase can also revisit where the estimate is constructed in the command
+flow. The cleanest long-term flow is for flag parsing to record the requested
+trusted-time source, and for the command to estimate time immediately before
+packet construction and write. That is not required for phase 1.
+
+With `satpulsetool gps --socket`, this gives an operational interim path for
+refreshing u-blox trusted time from cron or a systemd timer without building the
+full daemon manager first. Document that pattern with the phase 3 tool work.
+
+#### Phase 4: TAI/GNSS-Aware Builders
+
+For u-blox, a later phase should let `satpulsetool gps` fill both UTC and TAI
+information in the `TimeEstimate` so the builder can use
+`MGA-INI-TIME_GNSS` with the configured GNSS time system when that is better
+than `MGA-INI-TIME_UTC`. The leap-second offset is opportunistic:
+
+- System-clock path: if kernel NTP state reports a usable `TAIOffset`, derive
+  `TAI` from the UTC estimate plus that offset. Kernel NTP state cannot be
+  relied on to report this; chrony configuration determines whether it is set.
+  If it is absent, keep the estimate UTC-only.
+- SNTP path: use SNTP for the UTC estimate, monotonic anchor, and accuracy. If
+  the local kernel NTP state also reports a usable `TAIOffset`, use that offset
+  only for UTC-to-TAI conversion; do not treat local kernel NTP as the time
+  accuracy source for the SNTP estimate. If the offset is absent, keep the
+  estimate UTC-only.
+
+The existing plan to replace the current `EstimatedTime`/`LeapSecond` estimate
+with optional UTC and optional TAI fields should be re-evaluated in this phase.
+Keeping explicit leap-second state may still be useful, especially when the
+receiver or kernel knows the offset but the source estimate is UTC-only.
 
 The u-blox GNSS choice is resolved from the explicit target `timeGNSS` value
 first. If no `timeGNSS` is being set and `ConfigOptions.TrustedTime` is true,
@@ -187,51 +260,7 @@ would otherwise be accepted. Test this with ACK/NAK behavior and
 
 Septentrio and Quectel can later return builders for their one-shot
 trusted-time commands. They do not need the u-blox-style ongoing refresh logic
-in this core phase.
-
-### `satpulsetool gps`
-
-The existing hidden `--sys-time-trusted` path should be cleaned up to use the
-builder and should no longer be hidden once this work ships. The tool flow is:
-
-1. Set `ConfigOptions.TrustedTime` and run the normal receiver probe/configure
-   path enough to try to obtain a `TrustedTimePacketBuilder`.
-2. Build a `TimeEstimate`.
-3. Ask the builder for bytes at `time.Now()`.
-4. Write the bytes to the receiver or daemon socket.
-
-The tool should also add:
-
-- `--trusted-time-ntp <server>`: query the server with the existing
-  `time/lib/sntp` client and use the returned UTC time, monotonic anchor, and
-  accuracy bound.
-- `--trusted-time-uncertainty <duration>`: supply an explicit uncertainty when
-  the source does not provide one, such as a manually trusted system clock.
-
-For u-blox, `satpulsetool gps` should try to fill both `UTC` and `TAI` in the
-`TimeEstimate` so the builder can use `MGA-INI-TIME_GNSS` with the configured
-GNSS time system. The leap-second offset is opportunistic:
-
-- System-clock path: if kernel NTP state reports a usable `TAIOffset`, derive
-  `TAI` from the UTC estimate plus that offset. Kernel NTP state cannot be
-  relied on to report this; chrony configuration determines whether it is set.
-  If it is absent, keep the estimate UTC-only.
-- SNTP path: use SNTP for the UTC estimate, monotonic anchor, and accuracy. If
-  the local kernel NTP state also reports a usable `TAIOffset`, use that offset
-  only for UTC-to-TAI conversion; do not treat local kernel NTP as the time
-  accuracy source for the SNTP estimate. If the offset is absent, keep the
-  estimate UTC-only.
-
-The cleaner long-term path is for `satpulsetool gps` to learn the leap-second
-offset from the receiver, since the receiver usually knows it. That implies
-polling/observing receiver time or leap-second messages during the probe, and
-is probably more complexity than the first core implementation needs. An
-explicit leap-second/UTC-offset option can be an escape hatch, but should not be
-the primary user workflow.
-
-With `satpulsetool gps --socket`, this gives an operational interim path for
-refreshing u-blox trusted time from cron or a systemd timer without building the
-full daemon manager first.
+in this core plan.
 
 ## Provisioning Merkle and Public Keys
 
@@ -354,10 +383,20 @@ Add focused tests for `UBXLogObserver.NativeMsg`:
 
 ## Implementation Order
 
-1. Reporting:
-   - Add the NMA-verified field to `NavEpochMsg`.
-   - Fill it from u-blox `UBX-NAV-PVT.nmaFixStatus`.
-   - Expose it in the web UI and Prometheus.
+1. Trusted-time builder, phase 1:
+   - Keep `TimeEstimate` as a UTC estimate with `TimeOfEstimate`, `Accuracy`,
+     and `LeapSecond`; remove only the old `Trusted` field.
+   - Remove the old trusted-time-as-assistance path
+     (`ConfigOptions.TimeAssist` / `ConfigTarget` plumbing).
+   - Add `ConfigOptions.TrustedTime` as the explicit request for builder
+     creation.
+   - Add `TrustedTimePacketBuilder()` to `gpsprot.Configurator` and
+     `TrustedTimePacketBuilder` to the `gpscfg.Configure` result.
+   - Implement the u-blox builder for trusted `MGA-INI-TIME_UTC`, using
+     `LeapSecond` when available.
+   - Update `satpulsetool gps --sys-time-trusted` to use the builder and make
+     it a supported option rather than a hidden one.
+   - Update the usage text and man page.
 
 2. UBX native observability:
    - Add `time/internal/logobs/ubxlog.go`.
@@ -366,28 +405,31 @@ Add focused tests for `UBXLogObserver.NativeMsg`:
    - Wire the observer into `time/app/daemon/daemon.go`.
    - Add focused observer tests.
 
-3. Trusted-time builder and tool path:
-   - Replace the current `TimeEstimate` fields with optional UTC, optional TAI
-     (`ptime.Time`), monotonic anchor, and accuracy.
-   - Remove the old trusted-time-as-assistance path
-     (`ConfigOptions.TimeAssist` / `ConfigTarget` plumbing).
-   - Add `ConfigOptions.TrustedTime` as the explicit request for builder
-     creation.
-   - Add `TrustedTimePacketBuilder()` to `gpsprot.Configurator` and
-     `TrustedTimePacketBuilder` to the `gpscfg.Configure` result.
-   - Implement the u-blox builder for `MGA-INI-TIME_UTC` and
-     `MGA-INI-TIME_GNSS`.
-   - Update `satpulsetool gps --sys-time-trusted` to use the builder and make
-     it a supported option rather than a hidden one.
+3. Reporting:
+   - Add the NMA-verified field to `NavEpochMsg`.
+   - Fill it from u-blox `UBX-NAV-PVT.nmaFixStatus`.
+   - Expose it in the web UI and Prometheus.
+
+4. Trusted-time phase 2:
+   - Add `--trusted-time-uncertainty` for system-clock use when the kernel NTP
+     state is not synchronized or cannot provide a useful max-error bound.
+
+5. Trusted-time phase 3:
    - Add `--trusted-time-ntp` using `time/lib/sntp`.
-   - Add an uncertainty option for sources that cannot provide max error.
    - Document the cron/systemd timer plus daemon-socket refresh pattern.
 
-4. Provisioning cleanup:
+6. Trusted-time phase 4:
+   - Revisit the estimate type for optional TAI/GNSS support without assuming
+     `LeapSecond` should disappear.
+   - Implement the u-blox builder for `MGA-INI-TIME_GNSS`.
+   - Verify trusted-time MGA ACK/NAK behavior and `UBX-NAV-TIMETRUSTED` on
+     target receiver/protocol versions.
+
+7. Provisioning cleanup:
    - Move Merkle/public-key provisioning to `configs/gpsmsg/osnma.toml`.
    - Remove the compiled-in Merkle root and related configurator plumbing.
 
-5. Enable cleanup:
+8. Enable cleanup:
    - Rename/replace the old hidden `--osnma` behavior with
      `--nma=osnma|off`.
    - Add `gps.nma` TOML.
@@ -395,6 +437,4 @@ Add focused tests for `UBXLogObserver.NativeMsg`:
 
 ## Follow-On: Daemon Trusted-Time Manager
 
-The full daemon manager is substantially harder than this core OSNMA plan and
-is not yet a settled design. The issues, configuration shape, and candidate
-approaches are tracked separately in `plan/daemon-trusted-time.md`.
+Tracked separately in `plan/daemon-trusted-time.md`.
