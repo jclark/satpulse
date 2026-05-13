@@ -1,222 +1,132 @@
 # RTCM observability (#237)
 
-Add basic RTCM observability for satpulsed.  RTCM packets may enter
-satpulsed from two directions:
+Add RTCM observability for `satpulsed` using the existing observer
+fan-out in `time/internal/obs`.  This is packet observability, not a
+new protocol-independent GPS solution message.
 
-- **Receiver direction:** the receiver emits RTCM on the main serial
-  output, typically when acting as a base station.
-- **Network direction:** `stream.pull` receives RTCM from a TCP or
-  NTRIP source before writing it to the receiver correction input.
+This plan is for issue #237.
 
-Both directions should produce the same `gpsprot.RTCMMsg` metadata
-and call the same observer method.  They should not both be forced
-through the same channel.  Receiver-direction RTCM is already on the
-dispatcher goroutine via `pktCh -> ProcessPacket -> NativeMsg`, so
-sending it to a dispatcher-owned `rtcmCh` would deadlock if the
-channel is unbuffered and can still block with a bounded buffer.
+RTCM packets can be observed in two directions:
 
-The convergence point is a dispatcher helper such as `handleRTCM`,
-not `rtcmCh`.
+- **Pulled RTCM:** `stream.pull` receives RTCM from a TCP or NTRIP
+  source.  This is the correction feed being pulled from the network.
+- **RTCM output:** the receiver emits RTCM on its output stream,
+  typically when acting as a base station.
 
-See `plan/rtcm-msm.md` for the future MSM satellite/signal detail
-extension.
+Add a dedicated observer callback only for pulled RTCM.  Receiver RTCM
+output already goes through the generic native-message observability
+path as `tag == RTCM`, with `msg` carrying the parsed `rtcmbin.Msg`.
+Do not introduce a generic `gpsprot.RTCMMsg`, `RTCMSource`, source
+enum, or `RTCMOutput` observer callback.
 
-## RTCMMsg
+## RTCMPulled
 
-Add to `gps/gpsprot/msg.go`:
+`RTCMPulled` means:
 
-```go
-type RTCMSource int
+> `stream.pull` received an RTCM packet from the configured network
+> source and the packet passed RTCM checksum validation.
 
-const (
-    RTCMReceiver RTCMSource = iota
-    RTCMNetwork
-)
+It does not mean the packet was written to the receiver, accepted by
+the receiver, or used in the receiver's solution.
 
-// RTCMMsg carries metadata about a parsed RTCM packet.
-type RTCMMsg struct {
-    Source    RTCMSource      `json:"source"`
-    MsgType  uint16          `json:"msgType"`
-    StationID opt.Val[uint16] `json:"stationID,omitzero"`
-}
-```
-
-No `Dispatch` method: this is not a `gpsprot.Msg` routed through
-`MsgHandler`.  It goes through `obs.Observer`.
-
-## Conversion function
-
-Add to `gps/internal/rtcm`:
-
-```go
-// MakeRTCMMsg builds a gpsprot.RTCMMsg from a parsed rtcmbin.Msg.
-func MakeRTCMMsg(msg rtcmbin.Msg, source gpsprot.RTCMSource) gpsprot.RTCMMsg
-```
-
-Extract `MsgType` and `StationID` from the `rtcmbin.Msg`.  Both
-directions call this function:
-
-- **Receiver direction:** `gps/internal/rtcm.PacketProcessor`
-  already parses the packet via `rtcmbin.ParseMsg`.  It calls
-  `MakeRTCMMsg` with `RTCMReceiver` and delivers the resulting
-  `gpsprot.RTCMMsg` through `NativeMsgHandler.NativeMsg`.
-- **Network direction:** `gps/app/stream` observes `Pull.Packets`,
-  parses RTCM packets via `rtcmbin.ParseMsg`, calls `MakeRTCMMsg`
-  with `RTCMNetwork`, and sends the resulting metadata event to the
-  daemon dispatcher.
-
-This keeps all rtcmbin-to-gpsprot conversion in `gps/internal/rtcm`
-and avoids the dispatcher (in the `time` layer) needing to import
-`gps/internal/` packages.
-
-## Observer interface
+### Observer Interface
 
 Add to `time/internal/obs/observer.go`:
 
 ```go
-RTCM(msg *gpsprot.RTCMMsg, tRead time.Time)
+RTCMPulled(msg rtcmbin.Msg, msgID string, nBytes int, tRead time.Time)
 ```
 
-Update `DefaultObserver` with a no-op method and `MultiObserver`
-with fan-out, following the existing `Tick`, `NavEpochPV`, and
-`NTPSample` patterns.
+where:
 
-## Event log
+- `msg` is the parsed RTCM message.
+- `msgID` is the cheap display/label string from the packet format,
+  e.g. `"1077"`.
+- `nBytes` is the length of the complete RTCM packet in bytes.
+- `tRead` is the time the network scanner read the packet.
 
-Add to `gpsevent.LogEvent`:
+Update `DefaultObserver` with a no-op method and `MultiObserver` with
+fan-out, following the existing `Tick`, `NavEpochPV`, and `NTPSample`
+patterns.
 
-```go
-RTCM *gpsprot.RTCMMsg `json:"rtcm,omitempty"`
-```
+### Stream Pull Filtering
 
-## Dispatcher handling
+`stream.pull` already scans packets and records checksum validity in
+`scan.Packet.ChecksumValid`.  The pruning queue should explicitly drop
+invalid checksum packets before they can be enqueued or written.
 
-Add a dispatcher helper:
-
-```go
-func (d *Dispatcher) handleRTCM(msg gpsprot.RTCMMsg, tRead time.Time) {
-    d.obs.RTCM(&msg, tRead)
-    d.logEvent(LogEvent{T: tRead, RTCM: &msg})
-}
-```
-
-Receiver-direction RTCM reaches the dispatcher through the existing
-native-message callback:
+Log checksum failures at `Info` level:
 
 ```go
-func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
-    switch m := msg.(type) {
-    case gpsprot.RTCMMsg:
-        d.handleRTCM(m, tRead)
-        return nil
-    case *gpsprot.RTCMMsg:
-        d.handleRTCM(*m, tRead)
-        return nil
-    }
-    if !d.obs.NativeMsg(tag, msgID, msg, tRead) {
-        d.lg.Debug("unused message from GPS receiver", "protocol", tag, "msgID", msgID)
-    }
-    return nil
-}
-```
-
-This path must not send to `rtcmCh`, because it runs on the
-dispatcher goroutine while `Run` is still inside the `pktCh` case.
-
-## Network RTCM channel
-
-Network-direction RTCM is produced by a stream goroutine, so a
-channel into the dispatcher is appropriate there.
-
-Define an RTCM event type in `gps/gpsprot`, which is usable by
-both `gps/app/stream` and `time/internal/gpsevent`:
-
-```go
-// RTCMEvent pairs an RTCMMsg with its read time.
-type RTCMEvent struct {
-    Msg   RTCMMsg
-    TRead time.Time
-}
-```
-
-Add an optional RTCM event channel to `Dispatcher.Run`:
-
-```go
-func (d *Dispatcher) Run(
-    tsCh <-chan ts.Event,
-    pktCh <-chan scan.Packet,
-    rtcmCh <-chan gpsprot.RTCMEvent,
+lg.Info("correction packet has invalid checksum",
+    "tag", pkt.Format.Tag(),
+    "msg", pkt.Format.MsgID([]byte(pkt.Data)),
+    "len", len(pkt.Data),
 )
 ```
 
-Update the loop condition to include `rtcmCh`:
+Only packets with `Format != nil` and `ChecksumValid == true` should
+be reported as `RTCMPulled`.  Packets dropped by the pruning queue
+should be logged.
+
+### Packet Path
+
+The dispatcher should receive pulled packets by subscribing to
+`stream.Pull.Packets`.  Expose this from `PullSetup` with:
 
 ```go
-for tsCh != nil || pktCh != nil || rtcmCh != nil {
+func (s *PullSetup) Bcast() *bcast.Bcast[scan.Packet]
 ```
 
-Add to the select:
+The daemon should call `pullSetup.Bcast().Subscribe()` before
+`startStream`, then pass the subscribed channel to `Dispatcher.Run`.
+Do not add a separate puller-to-dispatcher queue; the existing bcast
+queuing is sufficient.
 
-```go
-case re, ok := <-rtcmCh:
-    if ok {
-        d.handleRTCM(re.Msg, re.TRead)
-    } else {
-        rtcmCh = nil
-    }
-```
+The daemon owns the subscription lifecycle.  It should keep the bcast
+pointer and call `Unsubscribe` after `Dispatcher.Run` returns.  The
+subscription must be created before `startStream`; subscribing after
+`Pull.Run` has exited returns a closed channel.
 
-When stream pull observability is not configured, `rtcmCh` is nil
-from the start and does not affect the loop condition or select.
+`Dispatcher.Run` should take the subscribed pulled-packet channel as a
+third input.  Its loop condition should include this channel, and its
+select should nil the channel when it closes.  `Pull.Run` calls
+`Bcast.Close()` when it exits, so the dispatcher subscription closes
+naturally on stream-pull shutdown.
 
-## Stream integration
+`stream.Pull` should not parse RTCM itself.  The dispatcher parses the
+packet with `rtcmbin.ParseMsg` and calls `obs.RTCMPulled`.
 
-Add a small observer adapter in `gps/app/stream`, where importing
-`gps/internal/rtcm` is allowed.  The adapter subscribes to
-`Pull.Packets`, filters RTCM packets, converts them to
-`gpsprot.RTCMEvent`, and sends them to the channel passed by the
-daemon.
+This keeps `stream.Pull` focused on network read, validation, queueing,
+and serial write mechanics.  It also ensures RTCM parsing happens in
+one place before observer fan-out, rather than inside each observer.
 
-The daemon creates `rtcmCh`, starts this adapter immediately before
-starting `Pull.Run` and `Dispatcher.Run`, and performs no fallible
-setup after that point.  Starting the adapter before `Pull.Run`
-lets it subscribe before the stream reader can produce packets.  The
-adapter owns the send side of the network RTCM channel and closes it
-when the packet subscription ends.
+The dispatcher should treat parse errors as unexpected but non-fatal:
+log the packet problem and do not call `RTCMPulled` for that packet.
 
-Shutdown sequence:
+## Implementation Order
 
-1. Daemon cancels the stream context.
-2. `Pull.Run` drains its internal pipeline and closes `Pull.Packets`.
-3. The stream RTCM observer subscription closes, so the adapter
-   closes `rtcmCh`.
-4. The dispatcher sees `rtcmCh` closed and nils it out.
-
-## Implementation order
-
-1. `RTCMMsg`, `RTCMSource`, and `RTCMEvent` in `gps/gpsprot/msg.go`.
-2. `MakeRTCMMsg` in `gps/internal/rtcm`.
-3. `gps/internal/rtcm.PacketProcessor` calls `MakeRTCMMsg` for
-   receiver-direction RTCM.
-4. `RTCM` on `obs.Observer`, `DefaultObserver`, and
+1. Add `RTCMPulled` to `obs.Observer`, `DefaultObserver`, and
    `MultiObserver`.
-5. `gpsevent.LogEvent.RTCM` and `Dispatcher.handleRTCM`.
-6. Receiver path: `Dispatcher.NativeMsg` handles `gpsprot.RTCMMsg`
-   directly.
-7. Network path: stream RTCM observer adapter plus optional
-   dispatcher `rtcmCh`.
-8. Tests.
+2. Add checksum filtering and `Info` logging for invalid correction
+   packets in `stream.Pull`.
+3. Add `PullSetup.Bcast()` and have the daemon subscribe the dispatcher
+   to `stream.Pull.Packets` before starting stream pull.  The daemon
+   should unsubscribe after `Dispatcher.Run` returns.
+4. Add the pulled-packet channel to `Dispatcher.Run` and handle channel
+   close by niling it in the select loop.
+5. Parse pulled RTCM packets in the dispatcher and call
+   `obs.RTCMPulled`.
+6. Add tests for observer fan-out, invalid-checksum drop/logging, and
+   dispatcher parsing for `RTCMPulled`.
 
-## Testing
+## Follow-ons
 
-- Unit test `RTCMMsg` JSON marshaling, including `omitzero`
-  behavior for unset `StationID`.
-- Unit test `MakeRTCMMsg` with representative `rtcmbin.Msg` types
-  (MSM, 1005, 1230).
-- Unit test receiver path: process an RTCM packet through the
-  dispatcher packet path and verify observer/event-log RTCM handling
-  without using `rtcmCh`.
-- Unit test network path: send a `gpsprot.RTCMEvent` on `rtcmCh`
-  and verify the dispatcher observer receives the expected message.
-- Unit test stream adapter filtering and channel close behavior.
-- `make test` for no regressions.
+These are not part of this plan.
+
+- Make existing observers use `RTCMPulled` and native `RTCM` messages.
+- Enrich the generic `NativeMsg` observer path to include packet
+  length, if receiver-output RTCM observers need it.
+- Add protocol-specific correction-input status observers, including
+  correlating `RTCMPulled` with u-blox RXM correction-input status in
+  `UBXLogObserver`.
