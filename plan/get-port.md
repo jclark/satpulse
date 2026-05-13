@@ -22,6 +22,47 @@ That branch is a good basis for the read-only property mechanics and
 UBX polling/result plumbing, but its `Port` struct and `HasBaudRate`
 field should be collapsed to the string property described here.
 
+## Preliminary phase: drop the valPort UART1 fallback
+
+Land this as its own commit before the rest of the plan.
+
+`gps/internal/ubx/ubxcfg.go`'s `valPort()` currently falls back to
+`UART1` when neither `c.portID` nor `c.raw.prt` is known (marked with
+`// XXX what to do here`). That silent guess can leak into real writes
+- UART baud-rate keys, per-port output-rate keys, per-port protocol
+enables - on receivers we are actually talking to over USB. Change the
+signature to:
+
+```go
+func (c *Configurator) valPort() (ucv.Port, bool)
+```
+
+returning `false` when the port has not been discovered, and remove
+the fallback. Update the callers in the same file:
+
+- `valBaudRate`: if `!ok`, return nil. We cannot target a UART
+  baud-rate key without knowing which UART.
+- `valGet` and `valSet`: propagate the unknown state through to
+  `CfgVals.Transaction`. The simplest shape is to widen `Transaction`,
+  `addGetKeys`, `msgChanges.items`, and `portBaudRateKey` to take
+  `(port ucv.Port, ok bool)` (or accept `*ucv.Port`) and skip
+  port-specific items - UART baud rate, per-port output rates,
+  per-port protocol enables - when `!ok`.
+
+Tests:
+
+- `valBaudRate` is a no-op when neither `c.portID` nor `c.raw.prt` is
+  set.
+- `CfgVals.Transaction` / `addGetKeys` emit no UART1-specific items
+  when the port has not been discovered.
+- Existing val-based UBX tests that relied on the UART1 fallback are
+  updated to populate `c.portID` or `c.raw.prt` explicitly (or to pass
+  a known port to `Transaction` directly).
+
+After this lands, the rest of the plan can rely on `valPort` honestly
+reporting whether the port is known, and `currentPort` can share the
+same sources without a separate carve-out.
+
 ## Design
 
 Add `PropIDPort` as a read-only property on `gpsprot.ConfigProps`.
@@ -123,9 +164,10 @@ Port detection sources:
 - `c.portID`, set from `UBX-MON-COMMS` when available.
 - `c.raw.prt.PortID`, populated by `UBX-CFG-PRT` fallback.
 
-Do not use `valPort()`'s final UART1 fallback when reporting the
-property. A reported port must mean the backend actually learned the
-port.
+After the preliminary phase, `valPort` already reads these same
+sources and returns `(port, false)` when neither is set, so reporting
+can reuse it directly. A reported port must mean the backend actually
+learned the port.
 
 Sketch:
 
@@ -133,21 +175,13 @@ Sketch:
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
     cp := c.raw.Config(c.ver, c.portID)
     if cp != nil && c.target.Get&gpsprot.PropIDPort != 0 {
-        if port, ok := c.currentPort(); ok {
-            cp.SetPort(port)
+        if p, ok := c.valPort(); ok {
+            if name, ok := ubxPortName(p); ok {
+                cp.SetPort(name)
+            }
         }
     }
     return cp
-}
-
-func (c *Configurator) currentPort() (string, bool) {
-    if c.portID != nil {
-        return ubxPortName(*c.portID)
-    }
-    if c.raw.prt != nil {
-        return ubxPortName(c.raw.prt.PortID)
-    }
-    return "", false
 }
 ```
 
@@ -197,14 +231,13 @@ not apply.
 For val-based UBX, finish the existing `CfgVals.addGetKeys` TODO for
 `PropIDBaudRate`:
 
-- Use the current port passed to `Transaction`.
+- Use the current port passed to `Transaction` (now `(port, ok)`
+  after the preliminary phase).
 - Add `KUart1Baudrate` or `KUart2Baudrate` for UART ports.
 - Add no key for USB, I2C, or SPI; `CfgVals.getBaudRate` already
   reports those as `0` when the active port is known.
-
-Do not report baud rate based on the `valPort()` UART1 fallback. If
-port discovery fails, the result may omit both `port` and `baudRate`
-rather than showing a guessed speed.
+- Add no key when `!ok`; the result may then omit both `port` and
+  `baudRate` rather than reporting a guessed speed.
 
 ## Other Backends
 
@@ -266,8 +299,9 @@ Add focused tests for:
   active port was actually discovered.
 - UBX result population from `c.portID`.
 - UBX result population from `c.raw.prt` fallback.
-- UBX leaves port unset when only the `valPort()` UART1 fallback would
-  be available.
+- UBX leaves port unset when neither `c.portID` nor `c.raw.prt` is
+  known (regression test for the removed UART1 fallback; complements
+  the preliminary-phase tests on the write path).
 - `--show-port` flag parsing requests both `PropIDPort` and
   `PropIDBaudRate`; `-c --show-port` composes with `showProps`.
 - CLI output prints `Port: <name>` when the property is present and
