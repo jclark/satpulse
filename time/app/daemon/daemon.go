@@ -270,12 +270,14 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 	gpsObs := logobs.NewGPSLogObserver(lg)
+	ubxObs := logobs.NewUBXLogObserver(lg)
 
 	var oc obs.ObserverCombiner
 	obs.AddObserver(&oc, statsObs)
 	obs.AddObserver(&oc, clockObs)
 	obs.AddObserver(&oc, trackObs)
 	obs.AddObserver(&oc, gpsObs)
+	obs.AddObserver(&oc, ubxObs)
 	obs.AddObserver(&oc, promObs)
 	obs.AddObserver(&oc, sseObs)
 	obs.AddObserver(&oc, posObs)
