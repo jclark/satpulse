@@ -286,6 +286,9 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"-c"}, flagVars{configGet: showProps}},
 	{"", []string{"--socket", "/tmp/socket", "--show-config"}, flagVars{socketPath: "/tmp/socket", configGet: showProps}},
 	{"", []string{"--socket", "/tmp/socket", "-c"}, flagVars{socketPath: "/tmp/socket", configGet: showProps}},
+	// Test --show-port flag
+	{"ttyS0", []string{"--show-port"}, flagVars{configGet: gpsprot.PropIDPort | gpsprot.PropIDBaudRate}},
+	{"ttyS0", []string{"-c", "--show-port"}, flagVars{configGet: showProps | gpsprot.PropIDPort | gpsprot.PropIDBaudRate}},
 	// Test --msg-file with --tag flag
 	{"ttyS0", []string{"--msg-file", "test.toml"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}}},
 	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}}},
@@ -427,6 +430,10 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--reset", "-c"},                                     // can't use reset with short form
 	{"--serial-device", "ttyS0", "--reload", "-c"},                                    // can't use reload with short form
 	{"--serial-device", "ttyS0", "--show-config", "--factory-reset", "--gnss", "GPS"}, // multiple incompatible options
+	// Test invalid --show-port combinations
+	{"--serial-device", "ttyS0", "--show-port", "--factory-reset"},                    // can't use show-port with factory-reset
+	{"--serial-device", "ttyS0", "--show-port", "--reset"},                            // can't use show-port with reset
+	{"--serial-device", "ttyS0", "--show-port", "--reload"},                           // can't use show-port with reload
 	// Test --msg-file mutual exclusivity with config flags
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--gnss", "GPS"},                                      // can't use with --gnss
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--pps", "0.1"},                                       // can't use with --pps
@@ -435,6 +442,7 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--reload"},                                           // can't use with --reload
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--factory-reset"},                                    // can't use with --factory-reset
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-config"},                                      // can't use with --show-config
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-port"},                                        // can't use with --show-port
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--nmea"},                                             // can't use with --nmea
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--binary"},                                           // can't use with --binary
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--mobile"},                                           // can't use with --mobile

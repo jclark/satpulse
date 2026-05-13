@@ -34,6 +34,7 @@ type TestLogConfigEntry struct {
 	AntennaCableDelay *int64              `json:"antennaCableDelay,omitempty"`
 	TimePulse         *TimePulseConfig    `json:"timePulse,omitempty"`
 	BaudRate          *uint32             `json:"baudRate,omitempty"`
+	Port              string              `json:"port,omitempty"`
 	Static            *bool               `json:"static,omitempty"`
 	FixedPosECEF      []float64           `json:"fixedPosECEF,omitempty"`
 	FixedPosAcc       *float64            `json:"fixedPosAcc,omitempty"`
@@ -135,6 +136,9 @@ func writeTestLogConfigProps(lf *logfile.LogFile, lg *slog.Logger, props *gpspro
 		}
 		if br, ok := props.GetBaudRate(); ok {
 			entry.BaudRate = &br
+		}
+		if port, ok := props.GetPort(); ok {
+			entry.Port = port
 		}
 	}
 	writeTestLogEntry(lf, lg, entry)

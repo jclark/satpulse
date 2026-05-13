@@ -427,6 +427,9 @@ func printProps(f *os.File, p *gpsprot.ConfigProps) {
 	if rtcmBaseID, ok := p.GetRTCMBaseID(); ok {
 		printRTCMBaseID(f, rtcmBaseID)
 	}
+	if port, ok := p.GetPort(); ok {
+		printPort(f, port)
+	}
 	if baudRate, ok := p.GetBaudRate(); ok {
 		printBaudRate(f, baudRate)
 	}
@@ -485,9 +488,12 @@ func printRTCMBaseID(f *os.File, id uint16) {
 	fmt.Fprintf(f, "RTCM base station ID: %d\n", id)
 }
 
+func printPort(f *os.File, name string) {
+	fmt.Fprintf(f, "Port: %s\n", name)
+}
+
 func printBaudRate(f *os.File, baudRate uint32) {
 	if baudRate == 0 {
-		fmt.Fprint(f, "Serial speed: not applicable\n")
 		return
 	}
 	fmt.Fprintf(f, "Serial speed: %d\n", baudRate)
