@@ -35,6 +35,25 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestStreamPullConfig(t *testing.T) {
+	cfgStr := `[stream.pull]
+ntrip.address = "caster.example.com:2101"
+ntrip.mountpoint = "RTCM"
+ntrip.username = "u"
+ntrip.password = "p"`
+	cfg, err := readConfig(strings.NewReader(cfgStr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Stream.Pull == nil || cfg.Stream.Pull.Ntrip == nil {
+		t.Fatalf("expected stream.pull.ntrip to be set, got %+v", cfg.Stream)
+	}
+	n := cfg.Stream.Pull.Ntrip
+	if n.Address != "caster.example.com:2101" || n.Mountpoint != "RTCM" || n.Username != "u" || n.Password != "p" {
+		t.Errorf("ntrip = %+v", n)
+	}
+}
+
 func TestPTPConfig(t *testing.T) {
 	cfgStr := `[ptp]
 	ptp4l.udsAddress = "/tmp/ptp4l"

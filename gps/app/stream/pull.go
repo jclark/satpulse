@@ -27,6 +27,10 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
+// defaultPullFormats are the packet formats stream pull recognises
+// from a correction source.  RTCM is currently the only one.
+var defaultPullFormats = []gpsprot.PacketFormat{gpsreg.RTCMPacketFormat}
+
 // PacketWriter writes a packet to the serial port.
 // gpsio.SerialConn satisfies this interface.
 type PacketWriter interface {
@@ -182,6 +186,30 @@ func NewPull() *Pull {
 		Packets: bcast.New(ch),
 		pktCh:   ch,
 	}
+}
+
+// PullSetup is a Pull paired with the resources it needs to run
+// (source, packet writer, output port lock, and packet formats).
+// Built by (*PullConfig).Prepare.
+type PullSetup struct {
+	pull       *Pull
+	source     Source
+	addr       string
+	pktFormats []gpsprot.PacketFormat
+	pw         PacketWriter
+	portLock   gpsio.OutPortLock
+}
+
+// Addr returns the source address string, for use in log lines.
+func (s *PullSetup) Addr() string {
+	return s.addr
+}
+
+// Run runs the prepared Pull.  It blocks until ctx is cancelled or
+// the serial writer returns a fatal error.
+func (s *PullSetup) Run(ctx context.Context, lg *slog.Logger,
+	onState func(State, error)) error {
+	return s.pull.Run(ctx, lg, s.source, s.pw, s.portLock, s.pktFormats, onState)
 }
 
 const scanBufSize = 16

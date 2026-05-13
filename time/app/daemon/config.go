@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/ntrip"
+	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/lib/pmc"
 	"github.com/jclark/satpulse/time/internal/proxy"
@@ -31,6 +32,7 @@ type Config struct {
 	Sync       phcsync.Config
 	Proxy      proxy.Config
 	Ntrip      ntrip.Config
+	Stream     stream.Config
 	HTTP       []HTTPConfig
 	LeapSecond LeapSecondConfig
 	PTP        PTPConfig
@@ -171,6 +173,9 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		return &configError{err: err}
 	}
 	if err := cfg.Ntrip.Validate(); err != nil {
+		return &configError{err: err}
+	}
+	if err := cfg.Stream.Validate(); err != nil {
 		return &configError{err: err}
 	}
 	return nil

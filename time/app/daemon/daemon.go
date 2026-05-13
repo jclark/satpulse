@@ -215,6 +215,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 
+	version, _ := cmd.Version()
+	pullSetup := cfg.Stream.Pull.Prepare(version, conn, portLock)
+
 	if err := startNtrip(ctx, lg, &wg, cfg, gcfg, pb, cc.pos); err != nil {
 		return err
 	}
@@ -292,6 +295,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
 	ls := cc.leapSecond
+	startStream(ctx, lg, &wg, pullSetup)
 	wg.Go(func() {
 		if ls != nil {
 			d.LeapSecond(ls, time.Time{})

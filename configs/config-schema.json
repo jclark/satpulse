@@ -414,6 +414,55 @@
         }
       }
     },
+    "stream": {
+      "type": "object",
+      "properties": {
+        "pull": {
+          "description": "Network correction source written to the receiver. Exactly one of tcp or ntrip must be configured.",
+          "type": "object",
+          "properties": {
+            "tcp": {
+              "description": "Plain TCP correction source",
+              "type": "object",
+              "properties": {
+                "address": {
+                  "description": "host:port of the correction source",
+                  "type": "string"
+                }
+              },
+              "required": ["address"]
+            },
+            "ntrip": {
+              "description": "Ntrip v1 caster client",
+              "type": "object",
+              "properties": {
+                "address": {
+                  "description": "host:port of the Ntrip caster",
+                  "type": "string"
+                },
+                "mountpoint": {
+                  "description": "Caster mountpoint to subscribe to",
+                  "type": "string"
+                },
+                "username": {
+                  "description": "Username for basic authentication",
+                  "type": "string"
+                },
+                "password": {
+                  "description": "Password for basic authentication",
+                  "type": "string"
+                }
+              },
+              "required": ["address", "mountpoint"]
+            }
+          },
+          "oneOf": [
+            {"required": ["tcp"]},
+            {"required": ["ntrip"]}
+          ]
+        }
+      }
+    },
     "sync": {
       "type": "object",
       "properties": {
