@@ -5,8 +5,7 @@ data, structured similarly to `gpsprot.SatellitesMsg`.
 
 ## Prerequisite
 
-- `plan/stream-pull-daemon.md` (basic `RTCMMsg` with MsgType and
-  StationID).
+- `plan/rtcm-obs.md` (basic `RTCMMsg` with MsgType and StationID).
 
 ## RTCMMsg extension
 

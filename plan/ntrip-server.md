@@ -9,8 +9,8 @@ Issue: #238.  Related: #126 (NTRIP).
 The implementation should mirror `Pull` closely.  Reuse the same
 `State` callback model (`Connecting`, `Connected`,
 `Reconnecting`), `backoff`, and `pruningQueue`.  Do not add a
-second RTCM observability path, because the main dispatch process
-already reads the receiver packet bcast and emits RTCM events.
+second RTCM observability path; `plan/rtcm-obs.md` handles
+receiver-direction RTCM from the main dispatch process.
 
 ## Protocol
 

@@ -1,8 +1,10 @@
-# Stream pull daemon integration (#221, #99, #237)
+# Stream pull daemon integration (#221, #99)
 
 Integrate `stream.pull` into satpulsed.  The `gps/app/stream`
-package handles the network/serial plumbing; this plan covers
-daemon wiring and RTCM observability.
+package handles the network/serial correction data path; this plan
+covers daemon configuration and lifecycle wiring only.
+
+RTCM observability is a separate concern; see `plan/rtcm-obs.md`.
 
 ## Prerequisite
 
@@ -30,141 +32,35 @@ ntrip.username = "user"
 ntrip.password = "pass"
 ```
 
-### stream.pull with separate serial port
+A separate serial port for corrections is a follow-on phase.  The
+first phase shares the receiver's serial port; see "Phase 2
+(follow-on): separate serial port" below.
 
-If the receiver has a second serial input for corrections:
+## Data path
 
-```toml
-[stream.pull]
-ntrip.address = "caster.example.com:2101"
-ntrip.mountpoint = "RTCM"
-serial.device = "/dev/ttyUSB1"
-serial.speed = 115200
+The pull path is network-to-receiver:
+
+```text
+NTRIP/TCP source
+  -> stream.Pull reader
+  -> RTCM packet scanner
+  -> pruning queue
+  -> serial writer
+  -> receiver correction input
 ```
 
-## RTCM observability (#237)
+`stream.Pull.Packets` continues to broadcast scanned packets inside
+`gps/app/stream`; this plan does not connect that broadcast to the
+daemon dispatcher.  `plan/rtcm-obs.md` adds optional observation of
+those packets.
 
-RTCM observability works in both directions: packets from the
-receiver and packets from the network (stream.pull).  Both
-directions produce the same `gpsprot.RTCMMsg` type and go through
-the same observer method.
+## Phase 1: shared serial port
 
-See `plan/rtcm-msm.md` for the future MSM satellite/signal detail
-extension.
-
-### RTCMMsg
-
-Add to `gps/gpsprot/msg.go`:
-
-```go
-type RTCMSource int
-
-const (
-    RTCMReceiver RTCMSource = iota
-    RTCMNetwork
-)
-
-// RTCMMsg carries metadata about a parsed RTCM packet.
-type RTCMMsg struct {
-    Source    RTCMSource      `json:"source"`
-    MsgType  uint16          `json:"msgType"`
-    StationID opt.Val[uint16] `json:"stationID,omitzero"`
-}
-```
-
-No `Dispatch` method -- this is not a `gpsprot.Msg` routed through
-`MsgHandler`.  It goes through Observer only.
-
-### Conversion function
-
-Add to `gps/internal/rtcm`:
-
-```go
-// MakeRTCMMsg builds a gpsprot.RTCMMsg from a parsed rtcmbin.Msg.
-func MakeRTCMMsg(msg rtcmbin.Msg, source gpsprot.RTCMSource) gpsprot.RTCMMsg
-```
-
-Extracts `MsgType` and `StationID` from the `rtcmbin.Msg`.  Both
-directions call this function:
-
-- **Receiver direction:** `gps/internal/rtcm.PacketProcessor`
-  already parses the packet via `rtcmbin.ParseMsg`.  It calls
-  `MakeRTCMMsg` with `RTCMReceiver` and delivers the result
-  through `NativeMsgHandler.NativeMsg`.
-- **Network direction:** `gps/app/stream` subscribes to
-  `Pull.Packets`, parses RTCM packets via `rtcmbin.ParseMsg`,
-  calls `MakeRTCMMsg` with `RTCMNetwork`, and sends the result
-  over a channel to the dispatcher.
-
-This keeps all rtcmbin-to-gpsprot conversion in `gps/internal/rtcm`
-and avoids the dispatcher (in the `time` layer) needing to import
-`gps/internal/` packages.
-
-### Observer interface
-
-Add to `time/internal/obs/observer.go`:
-
-```go
-RTCM(msg *gpsprot.RTCMMsg, tRead time.Time)
-```
-
-Update `DefaultObserver` (no-op), `MultiObserver` (fan-out with
-type assertion, same pattern as `Tick` / `NavEpochPV`).
-
-### Event log
-
-Add to `gpsevent.LogEvent`:
-
-```go
-RTCM *gpsprot.RTCMMsg `json:"rtcm,omitempty"`
-```
-
-## Dispatcher
-
-Add an optional RTCM event channel to `Dispatcher.Run`:
-
-```go
-func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet,
-    rtcmCh <-chan RTCMEvent)
-```
-
-where
-
-```go
-// RTCMEvent pairs an RTCMMsg with its read time.
-type RTCMEvent struct {
-    Msg   gpsprot.RTCMMsg
-    TRead time.Time
-}
-```
-
-Update the loop condition to include `rtcmCh`:
-
-```go
-for tsCh != nil || pktCh != nil || rtcmCh != nil {
-```
-
-Add to the select:
-
-```go
-case re, ok := <-rtcmCh:
-    if ok {
-        d.obs.RTCM(&re.Msg, re.TRead)
-        d.logEvent(LogEvent{T: re.TRead, RTCM: &re.Msg})
-    } else {
-        rtcmCh = nil
-    }
-```
-
-When stream.pull is not configured, `rtcmCh` is nil from the start
-and does not affect the loop condition or select.
-
-Note: receiver-direction RTCM events also arrive via `rtcmCh`.
-The `PacketProcessor` delivers through `NativeMsgHandler`, and the
-daemon routes these into the same channel.  Both directions
-converge in the dispatcher.
-
-## Daemon wiring
+The first phase writes corrections to the same serial port the daemon
+already uses for the receiver, sharing its `OutPortLock`.  This
+covers the common single-receiver setup and lets the rest of the
+daemon wiring (config, lifecycle, logging) land before the
+multi-port plumbing.
 
 ### Configuration
 
@@ -178,56 +74,51 @@ Put stream-specific daemon code in a new file
 
 ### Startup in `run()`
 
-Stream setup is split into two phases to avoid a startup deadlock.
-`run()` has many fallible steps between early setup and the final
-`d.Run(...)` call that starts consuming channels.  If the adapter
-started producing before the dispatcher was running, it could block
-on `rtcmCh <-` with no consumer, and a subsequent error-path
-`cancel()` + `wg.Wait()` would hang.
+Stream setup is split into prepare and start phases so the daemon
+does not launch a long-running stream goroutine until the remaining
+daemon setup has succeeded.
 
-**Phase 1 -- prepare (before any fallible steps that follow):**
+**Prepare step:**
 
 If `[stream.pull]` is configured:
 
 1. Create `stream.NewPull()`.
 2. Create the appropriate `Source` (`stream.TCPSource` or
-   `stream.NTRIPSource`) based on which transport keys are present.
-3. Determine serial port: if `serial.device` is set, open a
-   separate serial connection and create a new `OutPortLock`;
-   otherwise reuse the main `portLock`.
-4. Create `rtcmCh := make(chan RTCMEvent)`.
+   `stream.NtripSource`) based on which transport keys are present.
+3. Reuse the main receiver `portLock` and `SerialConn` as the
+   correction output port.  Reject `[stream.pull.serial]` in
+   config validation; it is reserved for the follow-on phase.
+4. Build the packet format list for correction input scanning.  For
+   now this is RTCM.
 
-**Phase 2 -- start (immediately before `d.Run`, after all fallible
-steps):**
+**Start step:**
 
-5. Start `pull.Run` in a goroutine (via `wg.Go`).  `gps/app/stream`
-   subscribes to `pull.Packets` internally, parses RTCM packets,
-   calls `gps/internal/rtcm.MakeRTCMMsg`, and sends `RTCMEvent`
-   on `rtcmCh`.  Stream owns `rtcmCh` and closes it on shutdown.
-6. Pass `rtcmCh` to `Dispatcher.Run`.
+Immediately before starting the dispatcher, after all fallible
+setup has completed, start `pull.Run` in a goroutine via `wg.Go`.
+Pass it the prepared source, packet writer, output port lock,
+packet formats, and state callback.
+
+If `pull.Run` returns a non-cancel error (e.g. serial write failure),
+the goroutine logs it and exits.  Stream pull errors must not cancel
+the daemon: time/PHC sync is independent of corrections, and the
+daemon should continue degraded rather than tear down on a
+correction-side fault.
+
+No dispatcher API change is required by this plan.  The dispatcher
+continues to run with its existing GPS packet and timestamp inputs.
 
 ### Shutdown ordering
 
-Channel ownership: `gps/app/stream` owns `rtcmCh` and is
-responsible for closing it.
+The daemon context owns stream shutdown.
 
-Shutdown sequence:
+1. Daemon cancellation cancels the context passed to `Pull.Run`.
+2. `Pull.Run` stops the reader, queue, and writer pipeline.
+3. `Pull.Run` closes `Pull.Packets` after its internal pipeline has
+   drained.
 
-1. Daemon cancels the stream context.
-2. `Pull.Run` drains its internal pipeline (reader, queue, writer),
-   then calls `Packets.Close()` which closes all bcast subscriber
-   channels.
-3. Stream's internal subscriber sees its channel close, closes
-   `rtcmCh`, and exits.
-4. The dispatcher sees `rtcmCh` closed, nils it out, and (once
-   `tsCh` and `pktCh` are also nil) exits its loop.
-
-The dispatcher loop condition `tsCh != nil || pktCh != nil ||
-rtcmCh != nil` ensures it stays alive to drain `rtcmCh` even if
-the GPS channels close first.  Conversely, because `Pull.Run` is
-ctx-based, the daemon must cancel that context before or
-concurrently with closing the GPS channels to avoid the dispatcher
-blocking indefinitely on a never-closed `rtcmCh`.
+Because stream pull is context-based and independent of dispatcher
+channel lifetime, shutdown does not require the dispatcher to drain
+any stream-specific channel.
 
 ### Connection state logging
 
@@ -247,24 +138,72 @@ func(st stream.State, err error) {
 }
 ```
 
-## Implementation order
+### Implementation order
 
-1. `RTCMMsg` and `RTCMSource` in `gps/gpsprot/msg.go`.
-2. `MakeRTCMMsg` in `gps/internal/rtcm`.
-3. `PacketProcessor` calls `MakeRTCMMsg` for receiver direction.
-4. `RTCM` on Observer interface + DefaultObserver + MultiObserver.
-5. `RTCMEvent` + dispatcher changes.
-6. `stream.Config` + daemon wiring.
-7. Tests.
+1. `stream.Config` TOML integration in daemon `Config`, including a
+   validation error for `[stream.pull.serial]`.
+2. `time/app/daemon/stream.go` prepare/start helpers.
+3. Wire `run()` to prepare stream pull before final daemon setup and
+   start it immediately before `d.Run(...)`.
+4. Tests.
 
-## Testing
+### Testing
 
-- Unit test `RTCMMsg` JSON marshaling (verify `omitzero` omits
-  unset `StationID`).
-- Unit test `MakeRTCMMsg` with various rtcmbin.Msg types (MSM,
-  1005, 1230).
-- Unit test dispatcher: send `RTCMEvent`, verify observer receives
-  `RTCMMsg` with correct source and fields.
+- Unit tests for `[stream.pull]` config parsing: TCP vs Ntrip,
+  mutual exclusion, required fields, and rejection of
+  `[stream.pull.serial]`.
+- Unit tests for daemon stream helper behavior where practical
+  (configured vs not configured, source selection).
+- Existing `gps/app/stream` pull tests continue to cover reader,
+  scanner, pruning queue, writer, reconnect, and Ntrip transport.
 - `make test` for no regressions.
-- Manual: add `[stream.pull]` to `/etc/satpulse.toml` pointing at
-  a base station, verify `rtcm` entries in the event log.
+- Manual: add `[stream.pull]` to `/etc/satpulse.toml` pointing at a
+  correction source, verify connection-state logs and receiver
+  correction status.
+
+## Phase 2 (follow-on): separate serial port
+
+Allow `[stream.pull]` to drive a second serial port dedicated to
+corrections, separate from the main receiver port.  This is useful
+for receivers with a dedicated correction input channel.
+
+### TOML
+
+```toml
+[stream.pull]
+ntrip.address = "caster.example.com:2101"
+ntrip.mountpoint = "RTCM"
+serial.device = "/dev/ttyUSB1"
+serial.speed = 115200
+```
+
+`serial.device` is required when `[stream.pull.serial]` is present;
+`serial.speed` follows the same `0 = use current speed` semantics as
+the main `[serial]` table.
+
+### Configuration
+
+Lift the Phase 1 validation that rejects `[stream.pull.serial]`.
+Reject configs where `serial.device` equals the main `[serial]`
+device (would conflict with the main port lock).
+
+### Startup
+
+Replace Phase 1 step 3 with: if `[stream.pull.serial]` is present,
+open a second `*gpsio.SerialConn` via `gpsio.OpenSerial(device,
+speed)`, build a fresh `OutPortLock` for it, and use that connection
+as both the `PacketWriter` and the locked port.  The daemon `run()`
+defers `Close` on this connection.  Otherwise, fall back to the
+shared-port wiring from Phase 1.
+
+### Shutdown
+
+Adds one step to the Phase 1 sequence: after `Pull.Run` returns, the
+daemon closes the separate `SerialConn` (via the deferred close).
+
+### Testing
+
+- Config parsing: separate `serial.{device,speed}` fields, conflict
+  with main `[serial].device`.
+- Daemon helper: separate `SerialConn` is opened when
+  `serial.device` is set and closed on shutdown.
