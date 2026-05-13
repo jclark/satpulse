@@ -41,6 +41,7 @@ type ConfigProps struct {
 	rtcmBaseID        uint16
 	minElevation      Angle
 	baudRate          uint32
+	port              string
 }
 
 const (
@@ -58,9 +59,17 @@ const (
 	PropIDRTCMBaseID
 	PropIDMinElevation
 	PropIDBaudRate
+	PropIDPort
 	PropIDTimePulse PropIDs = PropIDTimePulseWidth | PropIDTimePulsePeriod |
 		PropIDTimePulseAlignToGNSS | PropIDTimePulseOnlyWhenLocked | PropIDTimePulsePolarityRising
 )
+
+// PropIDsReadOnly is the bitmask of properties that can only be
+// retrieved, not set. Callers must not include any of these bits in
+// target.Props; the contract is enforced at the public entry point in
+// gpscfg.Configure (panic on violation). Backends populate these
+// values on the result with the normal setter.
+const PropIDsReadOnly PropIDs = PropIDPort
 
 // propNames lists the property names in the same order as the bit constants
 var propNames = []string{
@@ -77,6 +86,7 @@ var propNames = []string{
 	"RTCMBaseID",
 	"MinElevation",
 	"BaudRate",
+	"Port",
 }
 
 // IsEmpty returns true if no properties are set
@@ -286,6 +296,7 @@ var propIDJSON = map[string]PropIDs{
 	"rtcmBaseID":               PropIDRTCMBaseID,
 	"minElevation":             PropIDMinElevation,
 	"baudRate":                 PropIDBaudRate,
+	"port":                     PropIDPort,
 }
 
 // propIDJSONNames lists the JSON names in a stable order for marshaling.
@@ -294,7 +305,7 @@ var propIDJSONNames = []string{
 	"signalsEnabled", "timeGNSS",
 	"timePulse", "timePulse.width", "timePulse.period",
 	"timePulse.alignToGNSS", "timePulse.onlyWhenLocked", "timePulse.polarityRising",
-	"mode", "antennaCableDelay", "navMsgAuth", "rtcmBaseID", "minElevation", "baudRate",
+	"mode", "antennaCableDelay", "navMsgAuth", "rtcmBaseID", "minElevation", "baudRate", "port",
 }
 
 // MarshalJSON marshals PropIDs as a JSON array of property name strings.
@@ -532,6 +543,38 @@ func (cp *ConfigProps) SetBaudRate(val uint32) {
 	cp.valid |= PropIDBaudRate
 }
 
+// GetPort returns the active receiver port name and whether it is
+// set. Port is a read-only property: it can appear on a result, but
+// must not appear in target.Props.
+func (cp *ConfigProps) GetPort() (string, bool) {
+	if cp.valid&PropIDPort != 0 {
+		return cp.port, true
+	}
+	return "", false
+}
+
+// SetPort records the active receiver port name on a result.
+// Public so backends can populate it; callers building a target must
+// not use this. See PropIDsReadOnly.
+func (cp *ConfigProps) SetPort(val string) {
+	cp.port = val
+	cp.valid |= PropIDPort
+}
+
+// ReadOnlyProps returns the subset of PropIDsReadOnly that are set on
+// cp. Used by gpscfg.Configure to detect API misuse (read-only
+// properties in target.Props).
+func (cp *ConfigProps) ReadOnlyProps() PropIDs {
+	return cp.valid & PropIDsReadOnly
+}
+
+// ClearReadOnlyProps removes all read-only properties from cp so it
+// can safely be reused as target.Props (e.g. after deserializing a
+// prior result).
+func (cp *ConfigProps) ClearReadOnlyProps() {
+	cp.valid &^= PropIDsReadOnly
+}
+
 // SetsAny returns true if any of the specified properties are set in the ConfigProps
 func (cp *ConfigProps) SetsAny(props ...PropIDs) bool {
 	for _, p := range props {
@@ -632,6 +675,12 @@ func (cp *ConfigProps) UnmarshalJSON(data []byte) error {
 				return fmt.Errorf("baudRate: %w", err)
 			}
 			tmp.SetBaudRate(v)
+		case "port":
+			var s string
+			if err := json.Unmarshal(val, &s); err != nil {
+				return fmt.Errorf("port: %w", err)
+			}
+			tmp.SetPort(s)
 		default:
 			return fmt.Errorf("unknown property %q", key)
 		}
@@ -789,6 +838,9 @@ func (cp *ConfigProps) CopyFrom(other *ConfigProps) {
 	if other.valid&PropIDBaudRate != 0 {
 		cp.baudRate = other.baudRate
 	}
+	if other.valid&PropIDPort != 0 {
+		cp.port = other.port
+	}
 	cp.valid |= other.valid
 }
 
@@ -839,6 +891,9 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	}
 	if both&PropIDBaudRate != 0 && cp.baudRate != other.baudRate {
 		result.SetBaudRate(other.baudRate)
+	}
+	if both&PropIDPort != 0 && cp.port != other.port {
+		result.SetPort(other.port)
 	}
 	return result
 }
@@ -927,6 +982,9 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	}
 	if cp.valid&PropIDBaudRate != 0 {
 		m["baudRate"] = cp.baudRate
+	}
+	if cp.valid&PropIDPort != 0 {
+		m["port"] = cp.port
 	}
 	return m
 }

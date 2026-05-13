@@ -57,7 +57,7 @@ type flagVars struct {
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [-f|--config-file path]
        	    [--socket path] [--packet-log path] [--capture seconds] [--save] [--speed bps] [--nmea] [--binary]
-            [-c|--show-config] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
+            [-c|--show-config] [--show-port] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-acc meters]
@@ -74,7 +74,6 @@ const defaultSurveyAcc = 20 * gpsprot.Meter
 const defaultFixedPosAcc = 20 * gpsprot.Meter
 
 // TODO: add PropIDBaudRate to showProps so --show-config reports the current configured speed.
-// Requires fix to CfgVals.addGetKeys
 // Would need regeneration of the *-noop replay-test traces.
 const showProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDMode |
@@ -97,6 +96,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	factoryReset := false
 	reload := false
 	showConfig := false
+	showPort := false
 	testLogPath := ""
 	nmea := false
 	binary := false
@@ -124,6 +124,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.BoolVarP(&showConfig, "show-config", "c", false, "show current GPS receiver configuration")
+	flags.BoolVar(&showPort, "show-port", false, "show the receiver port the host is communicating on and its serial speed when applicable")
 	flags.BoolVar(&save, "save", false, "save configuration changes to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&saveAll, "save-all", false, "save the current configuration to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&reset, "reset", false, "reset the GPS receiver and perform a cold start")
@@ -387,6 +388,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if showConfig {
 		vars.configGet = showProps
 	}
+	if showPort {
+		vars.configGet |= gpsprot.PropIDPort | gpsprot.PropIDBaudRate
+	}
 	if save {
 		if saveAll {
 			return nil, nil, fmt.Errorf("%s command must not specify both --save and --save-all", cmdName)
@@ -403,10 +407,10 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		vars.configOpts.Save = gpsprot.SaveAll
 	}
 	// tests whether configurator needs to run
-	doConfigure := save || saveAll || reset || reload || showConfig || configChanged
+	doConfigure := save || saveAll || reset || reload || showConfig || showPort || configChanged
 	if factoryReset {
 		if doConfigure {
-			return nil, nil, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config or configuration changes", cmdName)
+			return nil, nil, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config, --show-port or configuration changes", cmdName)
 		}
 		doConfigure = true
 		vars.configOpts.Reset = gpsprot.ResetFactory
@@ -414,8 +418,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		if configChanged && !save && !saveAll {
 			return nil, nil, fmt.Errorf("--reset or --reload without saving would lose configuration changes")
 		}
-		if showConfig {
-			return nil, nil, fmt.Errorf("cannot use --reset or --reload with --show-config")
+		if showConfig || showPort {
+			return nil, nil, fmt.Errorf("cannot use --reset or --reload with --show-config or --show-port")
 		}
 		if reset && reload {
 			return nil, nil, fmt.Errorf("cannot use both --reset and --reload")
@@ -432,7 +436,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if vars.msgFilePath != "" {
 		// In message-file mode --save is permitted (it controls VALSET
 		// layers for [[ubxval]]) but no other configuration flag is.
-		if saveAll || reset || reload || factoryReset || showConfig || configChanged || vars.showReceiver || vars.configOpts.TrustedTime {
+		if saveAll || reset || reload || factoryReset || showConfig || showPort || configChanged || vars.showReceiver || vars.configOpts.TrustedTime {
 			return nil, nil, fmt.Errorf("--msg-file cannot be combined with configuration flags")
 		}
 		if vars.packetLogMode == testLogMode {

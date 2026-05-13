@@ -323,7 +323,34 @@ func (c *Configurator) noteMsg(mid ubxbin.MsgID, t time.Time) {
 }
 
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
-	return c.raw.Config(c.ver, c.portID)
+	cp := c.raw.Config(c.ver, c.portID)
+	if cp != nil && c.target.Get&gpsprot.PropIDPort != 0 {
+		if port, ok := c.valPort(); ok {
+			if name, ok := portName(port); ok {
+				cp.SetPort(name)
+			}
+		}
+	}
+	return cp
+}
+
+// portName maps a u-blox port identifier to the user-facing port
+// name. Returns false for unrecognised values; the result then leaves
+// PropIDPort unset rather than emitting a synthetic name.
+func portName(p ucv.Port) (string, bool) {
+	switch p {
+	case ucv.I2C:
+		return "I2C", true
+	case ucv.UART1:
+		return "UART1", true
+	case ucv.UART2:
+		return "UART2", true
+	case ucv.USB:
+		return "USB", true
+	case ucv.SPI:
+		return "SPI", true
+	}
+	return "", false
 }
 
 // ReceiverInfo returns static information about the GPS receiver.
@@ -666,7 +693,8 @@ func (c *Configurator) reset() error {
 }
 
 func (c *Configurator) valGet() error {
-	_, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.valPort(), c.monEnabledGNSS())
+	port, portOK := c.valPort()
+	_, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, port, portOK, c.monEnabledGNSS())
 	if err != nil {
 		return err
 	}
@@ -756,7 +784,8 @@ func (c *Configurator) valSetNMA() error {
 }
 
 func (c *Configurator) valSet() error {
-	items, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.valPort(), c.monEnabledGNSS())
+	port, portOK := c.valPort()
+	items, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, port, portOK, c.monEnabledGNSS())
 	if err != nil {
 		return err
 	}
@@ -794,7 +823,14 @@ func (c *Configurator) monEnabledGNSS() gpsprot.GNSSSet {
 }
 
 func (c *Configurator) valBaudRate() error {
-	items := c.raw.valsPtr().BaudRate(c.target, c.valPort())
+	if !c.target.Props.SetsAny(gpsprot.PropIDBaudRate) {
+		return nil
+	}
+	port, ok := c.valPort()
+	if !ok {
+		return errors.New("baud-rate change requested but receiver port unknown")
+	}
+	items := c.raw.valsPtr().BaudRate(c.target, port)
 	if len(items) == 0 {
 		return nil
 	}
@@ -805,15 +841,18 @@ func (c *Configurator) valBaudRate() error {
 	return c.addMsgSetSpeedRequest(val, int(items[0].Value))
 }
 
-func (c *Configurator) valPort() ucv.Port {
+// valPort returns the active receiver port and true when known, or
+// (0, false) when it has not been discovered. The zero value must not
+// be treated as a guess: callers that need a real port for a write
+// must surface an error on !ok rather than silently substituting one.
+func (c *Configurator) valPort() (ucv.Port, bool) {
 	if c.portID != nil {
-		return ucv.Port(*c.portID)
+		return ucv.Port(*c.portID), true
 	}
 	if c.raw.prt != nil {
-		return ucv.Port(c.raw.prt.PortID)
+		return ucv.Port(c.raw.prt.PortID), true
 	}
-	// XXX what to do here
-	return ucv.Port(ucv.UART1)
+	return 0, false
 }
 
 func newCfgValgetRequest(keys []ucv.Key, layer ubxbin.CfgValgetLayer) *ubxbin.CfgValget {
@@ -850,7 +889,7 @@ func (c *Configurator) pollMonComms() error {
 	if !c.ver.protVerAtLeast(50, 0) {
 		return nil
 	}
-	if !c.target.UsesAny(gpsprot.PropIDBaudRate) && !c.target.Opts.SetsMsgs() {
+	if !c.needsPort() {
 		return nil
 	}
 	return c.addPollRequest(ubxbin.MonCommsID)
@@ -860,10 +899,20 @@ func (c *Configurator) pollPrt() error {
 	if c.portID != nil {
 		return nil
 	}
-	if !c.target.UsesAny(gpsprot.PropIDBaudRate) && !c.target.Opts.SetsMsgs() {
+	if !c.needsPort() {
 		return nil
 	}
 	return c.addPollRequest(ubxbin.CfgPrtID)
+}
+
+// needsPort reports whether any downstream step requires the active
+// receiver port. PropIDPort is read-only so target.Get is checked
+// directly rather than via UsesAny.
+func (c *Configurator) needsPort() bool {
+	if c.target.Get&gpsprot.PropIDPort != 0 {
+		return true
+	}
+	return c.target.UsesAny(gpsprot.PropIDBaudRate) || c.target.Opts.SetsMsgs()
 }
 
 func (c *Configurator) pollGNSS() error {

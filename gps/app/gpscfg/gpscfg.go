@@ -45,6 +45,9 @@ var ErrNoProbeResponse = errors.New("no response to configuration probe message;
 var ErrNotDetected = errors.New("GPS detection failed")
 
 func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
+	if ro := target.Props.ReadOnlyProps(); ro != 0 {
+		panic(fmt.Sprintf("read-only properties in target.Props: %v", ro))
+	}
 	mh := msgHandler{}
 	mh.init(lg, packetProcs, configProts, packetCh)
 
