@@ -94,8 +94,8 @@ best receiver message form from the timebases present.
 
 ### Builder Interface
 
-Receivers that can set trusted time expose a builder in the result returned by
-`gpscfg.Configure`:
+Receivers that can set trusted time expose a packet builder through the normal
+configure/probe result path:
 
 ```go
 type TrustedTimePacketBuilder interface {
@@ -106,10 +106,53 @@ type TrustedTimePacketBuilder interface {
 This interface only constructs receiver bytes. The caller owns port locking and
 writing.
 
-Trusted time is no longer passed through `ConfigTarget` or
-`ConfigOptions.TimeAssist`. `gpscfg.Configure` returns the builder even when no
-persistent receiver configuration is being changed, using `ForceProbe` when the
-caller needs identification only.
+Trusted-time estimates are no longer passed through `ConfigTarget` or
+`ConfigOptions.TimeAssist`. Replace the existing `TimeAssist TimeEstimate`
+field with a simple request flag:
+
+```go
+type ConfigOptions struct {
+    // ...
+    TrustedTime bool // try to return a TrustedTimePacketBuilder
+}
+```
+
+`TrustedTime` does not provide time to the receiver. It tells the configurator
+that the caller wants trusted-time packet construction support, and that the
+configurator may do protocol-specific extra polling needed to initialize the
+builder.
+
+Make the builder a first-class part of the config API rather than an optional
+capability or generic extra:
+
+```go
+type Configurator interface {
+    ConfigProps() *ConfigProps
+    ReceiverInfo() *ReceiverInfo
+    TrustedTimePacketBuilder() TrustedTimePacketBuilder
+
+    GenerateRequests() error
+    GetRequestCount() (count int, complete bool)
+    Request(index int) ConfigRequest
+}
+```
+
+and carry it through `gpscfg.Configure`:
+
+```go
+type Result struct {
+    ReceiverInfo              *gpsprot.ReceiverInfo
+    ConfigProps               *gpsprot.ConfigProps
+    TrustedTimePacketBuilder  gpsprot.TrustedTimePacketBuilder
+    PacketFormatsDetected     []gpsprot.Tag
+}
+```
+
+The result is best effort. If `ConfigOptions.TrustedTime` is false, backends
+should not do trusted-time-specific work and should normally return nil. If it
+is true, backends that support trusted time should try to return a builder;
+unsupported receivers or unresolved dependencies leave the builder nil, and the
+tool path decides how to report that to the user.
 
 For u-blox, the configurator builds a packet builder that stores the GNSS time
 system to use when a TAI estimate is converted to `UBX-MGA-INI-TIME_GNSS`. If a
@@ -122,6 +165,26 @@ that `MGA-INI-TIME_UTC` plus `CFG-NAVSPG-UTCSTANDARD` determines the
 trusted-time reference system should be verified empirically with
 `UBX-NAV-TIMETRUSTED`.
 
+The u-blox GNSS choice is resolved from the explicit target `timeGNSS` value
+first. If no `timeGNSS` is being set and `ConfigOptions.TrustedTime` is true,
+the configurator may query the receiver's current timing configuration to learn
+the existing GNSS time system. This query is not done on unrelated configure
+paths. If the GNSS time system is still unknown, a builder may still use
+`MGA-INI-TIME_UTC` for UTC estimates; it cannot build `MGA-INI-TIME_GNSS` from a
+TAI-only estimate without a known GNSS time system.
+
+Do not assume all OSNMA-capable-looking u-blox receivers accept trusted-time
+MGA packets in the same way. Before treating the u-blox builder as production
+quality, verify the u-blox protocol-version support for `UBX-MGA-INI-TIME_UTC`
+and `UBX-MGA-INI-TIME_GNSS`, including the `trustedSource` bit. The issue #105
+history only establishes useful empirical points: `--sys-time-trusted` was part
+of a working ZED-F9P HPG 1.51 / PROTVER 27.50 OSNMA setup, while NEO-F10T TIM
+3.01 / PROTVER 42.01 did not support OSNMA. It does not establish a minimum
+protocol version for trusted-time MGA, nor whether setting `trustedSource` can
+cause rejection or different behavior on receivers where plain assistance time
+would otherwise be accepted. Test this with ACK/NAK behavior and
+`UBX-NAV-TIMETRUSTED`.
+
 Septentrio and Quectel can later return builders for their one-shot
 trusted-time commands. They do not need the u-blox-style ongoing refresh logic
 in this core phase.
@@ -131,8 +194,8 @@ in this core phase.
 The existing hidden `--sys-time-trusted` path should be cleaned up to use the
 builder and should no longer be hidden once this work ships. The tool flow is:
 
-1. Run the normal receiver probe/configure path enough to obtain a
-   `TrustedTimePacketBuilder`.
+1. Set `ConfigOptions.TrustedTime` and run the normal receiver probe/configure
+   path enough to try to obtain a `TrustedTimePacketBuilder`.
 2. Build a `TimeEstimate`.
 3. Ask the builder for bytes at `time.Now()`.
 4. Write the bytes to the receiver or daemon socket.
@@ -203,6 +266,20 @@ Initial values:
 - `"osnma"`: enable OSNMA processing. For u-blox, set
   `CFG-GAL-USE_OSNMA = 1`.
 - `"off"`: disable OSNMA processing where supported.
+
+For u-blox, do not treat the existence of `CFG-GAL-USE_OSNMA` in SatPulse's
+schema as proof that a receiver can enable OSNMA. The issue #105 history reports
+a u-blox failure mode where `CFG-GAL-USE_OSNMA` appears to be recognized in a
+wildcard `CFG-GAL-*` `VALGET`, but the receiver rejects the `VALSET`. The
+configurator should first check whether `CFG-GAL-USE_OSNMA` is recognized by
+querying `CFG-GAL-*`, then apply a specific skip override for the known
+false-positive case: NEO-F10T with TIM 3.01 / PROTVER 42.01. That receiver
+should not attempt the `CFG-GAL-USE_OSNMA` `VALSET` even if the key appears in
+the wildcard query. The configuration result remains best effort: report the
+observed `NavMsgAuth` / NMA state when available, leave it unset when unknown,
+and let the command/UI show that OSNMA was not enabled. Add empirical records
+for other firmware/protocol combinations as they are tested, especially F10T
+firmware where OSNMA is expected to start working.
 
 Receiver enable configuration remains gated by `gps.config`. When
 `gps.config = true`, the daemon applies the corresponding config-key setting
@@ -294,7 +371,10 @@ Add focused tests for `UBXLogObserver.NativeMsg`:
      (`ptime.Time`), monotonic anchor, and accuracy.
    - Remove the old trusted-time-as-assistance path
      (`ConfigOptions.TimeAssist` / `ConfigTarget` plumbing).
-   - Add `TrustedTimePacketBuilder` to the configure/probe result.
+   - Add `ConfigOptions.TrustedTime` as the explicit request for builder
+     creation.
+   - Add `TrustedTimePacketBuilder()` to `gpsprot.Configurator` and
+     `TrustedTimePacketBuilder` to the `gpscfg.Configure` result.
    - Implement the u-blox builder for `MGA-INI-TIME_UTC` and
      `MGA-INI-TIME_GNSS`.
    - Update `satpulsetool gps --sys-time-trusted` to use the builder and make
