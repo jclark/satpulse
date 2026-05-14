@@ -18,15 +18,15 @@ This plan is for issue #237.
 Add a new `gpsprot.Msg`:
 
 ```go
-type CorrectionReportSource uint8
+type CorReportSource uint8
 
 const (
-	CorrectionReportSourcePull CorrectionReportSource = iota
-	CorrectionReportSourceReceiver
+	CorReportSourcePull CorReportSource = iota
+	CorReportSourceReceiver
 )
 
-type CorrectionReportMsg struct {
-	Source CorrectionReportSource `json:"source"`
+type CorReportMsg struct {
+	Source CorReportSource `json:"source"`
 
 	Tag   Tag    `json:"tag"`
 	MsgID string `json:"msgID"`
@@ -40,33 +40,33 @@ type CorrectionReportMsg struct {
 }
 ```
 
-`CorrectionReportSource` should have `String()` values `pull` and
+`CorReportSource` should have `String()` values `pull` and
 `receiver`, and `MarshalText()` should be implemented in terms of
 `String()`.
 
-`CorrectionReportMsg` should implement `gpsprot.Msg`:
+`CorReportMsg` should implement `gpsprot.Msg`:
 
-- `MsgType()` returns `correctionReport`.
-- `Dispatch` calls `MsgHandler.CorrectionReport`.
+- `MsgType()` returns `corReport`.
+- `Dispatch` calls `MsgHandler.CorReport`.
 
 Add a small interface for consumers that only need correction reports:
 
 ```go
-type CorrectionReporter interface {
-	CorrectionReport(msg *CorrectionReportMsg, tRead time.Time)
+type CorReporter interface {
+	CorReport(msg *CorReportMsg, tRead time.Time)
 }
 ```
 
-Embed `CorrectionReporter` in `MsgHandler`.  This keeps correction
+Embed `CorReporter` in `MsgHandler`.  This keeps correction
 reports on the normal `gpsprot.Msg` path while allowing a future
 protocol-independent correlator to consume only correction reports.
 
 Update `DefaultHandler`, `GenericHandler`, and `MultiHandler` for
-`CorrectionReport`.
+`CorReport`.
 
 ## Semantics
 
-`CorrectionReportSourcePull` means `stream.pull` scanned a correction
+`CorReportSourcePull` means `stream.pull` scanned a correction
 packet from the network source.  It does not mean the packet was used by
 the receiver.
 
@@ -78,7 +78,7 @@ For pulled RTCM reports:
 - `ChecksumOK` is always set.
 - `NativeMsg`, when present, is the parsed `rtcmbin.Msg`.
 
-`CorrectionReportSourceReceiver` means the receiver reported correction
+`CorReportSourceReceiver` means the receiver reported correction
 input status.  It does not mean the receiver emitted an RTCM packet.
 
 For u-blox `UBX-RXM-COR` reports:
@@ -97,7 +97,7 @@ For u-blox `UBX-RXM-COR` reports:
 
 For Unicore `RTCMSTATUS` reports:
 
-- `Source` is `CorrectionReportSourceReceiver`.
+- `Source` is `CorReportSourceReceiver`.
 - `Tag` is `RTCM`.
 - `MsgID` uses the same RTCM message ID formatting as other reports
   when the available message fields support it.
@@ -117,7 +117,7 @@ Add `UBX-RXM-COR` support to `gps/lib/ubxbin`, limited to parsing the
 message fields needed by the packet processor.
 
 In `gps/internal/ubx.PacketProcessor.Dispatch`, convert parsed
-`*ubxbin.RxmCor` into `*gpsprot.CorrectionReportMsg` and emit it through
+`*ubxbin.RxmCor` into `*gpsprot.CorReportMsg` and emit it through
 the configured `gpsprot.MsgHandler`.
 
 Unicore can use the same receiver-source emission path by adding typed
@@ -138,17 +138,17 @@ where it currently formats IDs with `rtcmbin.ExtractMsgType(...).String()`:
 - `PacketProcessor.ProcessPacket`
 
 Add an API in `gps/internal/rtcm` that converts an RTCM packet into a
-`*gpsprot.CorrectionReportMsg` for the pull path.  This keeps packet
+`*gpsprot.CorReportMsg` for the pull path.  This keeps packet
 length, checksum status, reference station extraction, and `rtcmbin.Msg`
 parsing out of the dispatcher.
 
 The dispatcher should emit both pull-derived and receiver-derived
-reports as separate `CorrectionReportMsg` observations.  It should not
+reports as separate `CorReportMsg` observations.  It should not
 try to combine them or prefer one source over the other.  Correlation is
 protocol-independent observer policy, because both sides have the same
 `gpsprot` representation.
 
-Add `CorrectionReport` to `time/internal/gpsevent.LogEvent` so reports
+Add `CorReport` to `time/internal/gpsevent.LogEvent` so reports
 are visible in the JSONL event log like other `gpsprot.Msg` values.
 
 ## Pull Packet Path
@@ -186,11 +186,11 @@ now.
 
 ## Implementation Order
 
-1. Add `CorrectionReportMsg` and `CorrectionReportSource` to
+1. Add `CorReportMsg` and `CorReportSource` to
    `gpsprot`, including handler plumbing and source text marshaling.
-2. Add `CorrectionReport` to the dispatcher log event.
+2. Add `CorReport` to the dispatcher log event.
 3. Add `UBX-RXM-COR` parsing in `ubxbin`.
-4. Convert `UBX-RXM-COR` to `CorrectionReportMsg` in the u-blox packet
+4. Convert `UBX-RXM-COR` to `CorReportMsg` in the u-blox packet
    processor.
 5. Add Unicore `RTCMSTATUS` parsing and conversion if Unicore receiver
    status is included in this implementation.
@@ -214,7 +214,7 @@ now.
 
 These are not part of this plan.
 
-- Make existing observers consume `CorrectionReportMsg`.
+- Make existing observers consume `CorReportMsg`.
 - Enable `UBX-RXM-COR` through `ConfigOpts` where needed.
 - Add a protocol-independent correction-report correlator if needed.
 - Enrich the generic `NativeMsg` observer path with packet length if

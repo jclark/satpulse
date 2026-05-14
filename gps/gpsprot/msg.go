@@ -42,6 +42,7 @@ func (m *LeapSecondMsg) Dispatch(h MsgHandler, t time.Time) { h.LeapSecond(m, t)
 func (m *SurveyMsg) Dispatch(h MsgHandler, t time.Time)     { h.Survey(m, t) }
 func (m *SatellitesMsg) Dispatch(h MsgHandler, t time.Time) { h.Satellites(m, t) }
 func (m *NavEpochMsg) Dispatch(h MsgHandler, t time.Time)   { h.NavEpoch(m, t) }
+func (m *CorReportMsg) Dispatch(h MsgHandler, t time.Time)  { h.CorReport(m, t) }
 
 func (m *PosGeoMsg) MsgType() string     { return "posGeo" }
 func (m *PosECEFMsg) MsgType() string    { return "posECEF" }
@@ -52,6 +53,7 @@ func (m *LeapSecondMsg) MsgType() string { return "leapSecond" }
 func (m *SurveyMsg) MsgType() string     { return "survey" }
 func (m *SatellitesMsg) MsgType() string { return "satellites" }
 func (m *NavEpochMsg) MsgType() string   { return "navEpoch" }
+func (m *CorReportMsg) MsgType() string  { return "corReport" }
 
 // SetPriority implements PVMsg for the four position/velocity types.
 func (m *PosGeoMsg) SetPriority(pri MsgPriority)  { m.Priority = pri }
@@ -96,6 +98,15 @@ type MsgHandler interface {
 	Survey(msg *SurveyMsg, tRead time.Time)
 	Satellites(msg *SatellitesMsg, tRead time.Time)
 	NavEpoch(msg *NavEpochMsg, tRead time.Time)
+	CorReporter
+}
+
+// CorReporter is implemented by consumers that handle correction
+// reports. It is embedded in MsgHandler so correction reports flow through
+// the normal gpsprot.Msg path, but can also be used on its own by a
+// protocol-independent correlator that only needs correction reports.
+type CorReporter interface {
+	CorReport(msg *CorReportMsg, tRead time.Time)
 }
 
 // NativeMsgHandler handles protocol-specific messages that don't map to standard messages.
@@ -119,6 +130,7 @@ func (h *DefaultHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {}
 func (h *DefaultHandler) Survey(msg *SurveyMsg, tRead time.Time)         {}
 func (h *DefaultHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {}
 func (h *DefaultHandler) NavEpoch(msg *NavEpochMsg, tRead time.Time)     {}
+func (h *DefaultHandler) CorReport(msg *CorReportMsg, tRead time.Time)   {}
 
 // GenericHandler adapts a single callback into the MsgHandler interface.
 // Every message type is dispatched to the same Handle function.
@@ -135,6 +147,9 @@ func (h *GenericHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) { h.Han
 func (h *GenericHandler) Survey(msg *SurveyMsg, tRead time.Time)         { h.Handle(msg, tRead) }
 func (h *GenericHandler) Satellites(msg *SatellitesMsg, tRead time.Time) { h.Handle(msg, tRead) }
 func (h *GenericHandler) NavEpoch(msg *NavEpochMsg, tRead time.Time)     { h.Handle(msg, tRead) }
+func (h *GenericHandler) CorReport(msg *CorReportMsg, tRead time.Time) {
+	h.Handle(msg, tRead)
+}
 
 // Event is the universal envelope for all gpsprot messages.
 type Event struct {
@@ -204,6 +219,12 @@ func (h *MultiHandler) VelECEF(msg *VelECEFMsg, tRead time.Time) {
 func (h *MultiHandler) NavEpoch(msg *NavEpochMsg, tRead time.Time) {
 	for _, handler := range h.handlers {
 		handler.NavEpoch(msg, tRead)
+	}
+}
+
+func (h *MultiHandler) CorReport(msg *CorReportMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.CorReport(msg, tRead)
 	}
 }
 
@@ -1104,9 +1125,9 @@ func (a *AuxSrc) UnmarshalJSON(data []byte) error {
 // be synthesized from multiple messages within an epoch (e.g. UBX-NAV-DOP
 // provides all five, while NMEA GSA provides only PDOP/HDOP/VDOP).
 type DOP struct {
-	Geom opt.Val[float64] `json:"geom,omitzero"` // geometric DOP
-	Pos  opt.Val[float64] `json:"pos,omitzero"`  // position (3D) DOP
-	Hor  opt.Val[float64] `json:"hor,omitzero"`  // horizontal DOP
+	Geom  opt.Val[float64] `json:"geom,omitzero"`  // geometric DOP
+	Pos   opt.Val[float64] `json:"pos,omitzero"`   // position (3D) DOP
+	Hor   opt.Val[float64] `json:"hor,omitzero"`   // horizontal DOP
 	Vert  opt.Val[float64] `json:"vert,omitzero"`  // vertical DOP
 	Time  opt.Val[float64] `json:"time,omitzero"`  // time DOP
 	North opt.Val[float64] `json:"north,omitzero"` // northing DOP
@@ -1475,4 +1496,51 @@ func (t *TimeTicker) fill(m *TimeMsg) {
 			m.UTCOffset = uint8(state.UTCOffset)
 		}
 	}
+}
+
+// CorReportSource indicates where a CorReportMsg was observed.
+type CorReportSource uint8
+
+const (
+	// CorReportSourcePull means the report was scanned from a
+	// correction packet pulled from a network source (e.g. stream.pull).
+	// It does not imply the receiver used the packet.
+	CorReportSourcePull CorReportSource = iota
+
+	// CorReportSourceReceiver means the receiver reported the
+	// correction input status. It does not imply the receiver emitted
+	// the correction packet itself.
+	CorReportSourceReceiver
+)
+
+func (s CorReportSource) String() string {
+	switch s {
+	case CorReportSourcePull:
+		return "pull"
+	case CorReportSourceReceiver:
+		return "receiver"
+	}
+	return fmt.Sprintf("CorReportSource(%d)", s)
+}
+
+func (s CorReportSource) MarshalText() ([]byte, error) {
+	return []byte(s.String()), nil
+}
+
+// CorReportMsg is a protocol-independent observation of a
+// correction packet (typically RTCM). It is emitted by both pulled
+// network sources and by receivers reporting their correction input
+// status; the two cases are distinguished by Source.
+type CorReportMsg struct {
+	Source CorReportSource `json:"source"`
+
+	Tag   Tag    `json:"tag"`
+	MsgID string `json:"msgID"`
+
+	NativeMsg any `json:"nativeMsg,omitempty"`
+
+	NBytes        opt.Val[int]    `json:"nBytes,omitzero"`
+	ChecksumOK    opt.Val[bool]   `json:"checksumOK,omitzero"`
+	Used          opt.Val[bool]   `json:"used,omitzero"`
+	RTCMRefBaseID opt.Val[uint16] `json:"rtcmRefBaseID,omitzero"`
 }
