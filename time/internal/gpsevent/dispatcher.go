@@ -9,6 +9,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/logfile"
+	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
@@ -92,8 +93,8 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 
 const tickPeriod = time.Second / 4
 
-func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
-	// loop until both channels are closed
+func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
+	// loop until all input channels are closed
 	defer d.obs.Release()
 	if d.rc != nil {
 		defer d.rc.Close()
@@ -124,7 +125,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 	staleEra := ts.StaleEra
 	nSkipped := 0
 
-	for tsCh != nil || pktCh != nil {
+	for tsCh != nil || pktCh != nil || pullPktCh != nil {
 		select {
 		case e, ok := <-tsCh:
 			if !ok {
@@ -163,6 +164,13 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 			} else {
 				lg.Debug("packet channel of event dispatcher goroutine was closed")
 				pktCh = nil
+			}
+		case pkt, ok := <-pullPktCh:
+			if ok {
+				d.handlePulledPacket(pkt)
+			} else {
+				lg.Debug("pull packet channel of event dispatcher goroutine was closed")
+				pullPktCh = nil
 			}
 		case t := <-tickerCh:
 			d.controller.Tick(t)
@@ -208,6 +216,24 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 	if err != nil {
 		lg.Warn("error processing packet", gpsio.PacketWarnAttrs(err, pkt, msgID)...)
 	}
+}
+
+func (d *Dispatcher) handlePulledPacket(pkt scan.Packet) {
+	msg, err := stream.CorReportFromPacket(pkt)
+	if err != nil {
+		msgID := ""
+		if msg != nil {
+			msgID = msg.MsgID
+		}
+		d.lg.Warn("error processing pulled correction packet", gpsio.PacketWarnAttrs(err, pkt, msgID)...)
+	}
+	if msg == nil {
+		return
+	}
+	// Packet processors emit through MultiHandler(&d, obs). Pull reports are
+	// created here, so mirror that logger/observer fan-out explicitly.
+	d.CorReport(msg, pkt.TRead)
+	d.obs.CorReport(msg, pkt.TRead)
 }
 
 type LogEvent struct {
@@ -342,6 +368,8 @@ func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 }
 
 func (d *Dispatcher) CorReport(msg *gpsprot.CorReportMsg, tRead time.Time) {
+	// Receiver-derived reports already reach observers through
+	// MultiHandler(&d, obs), so the dispatcher side only records the event log.
 	d.logEvent(LogEvent{T: tRead, CorReport: msg})
 }
 

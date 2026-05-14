@@ -137,10 +137,11 @@ where it currently formats IDs with `rtcmbin.ExtractMsgType(...).String()`:
 - `packetFormat.MsgID`
 - `PacketProcessor.ProcessPacket`
 
-Add an API in `gps/internal/rtcm` that converts an RTCM packet into a
-`*gpsprot.CorReportMsg` for the pull path.  This keeps packet
-length, checksum status, reference station extraction, and `rtcmbin.Msg`
-parsing out of the dispatcher.
+Add an API in `gps/app/stream` that converts a scanned correction-source
+RTCM packet into a pull-source `*gpsprot.CorReportMsg`.  This keeps
+packet length, checksum status, reference station extraction, and
+`rtcmbin.Msg` parsing out of the dispatcher, while keeping the API in
+the package that owns pulled correction packets.
 
 The dispatcher should emit both pull-derived and receiver-derived
 reports as separate `CorReportMsg` observations.  It should not
@@ -322,8 +323,8 @@ now.
    `gps/internal/rtcm` call sites (`packetFormat.MsgID`,
    `PacketProcessor.ProcessPacket`) to use it.
 6. Wire pulled correction packets into the dispatcher: add the
-   `gps/internal/rtcm` API that converts an RTCM packet into a
-   `*gpsprot.CorReportMsg`; expose `PullSetup.Bcast()`; subscribe
+   `gps/app/stream` API that converts a scanned correction-source RTCM
+   packet into a pull-source `*gpsprot.CorReportMsg`; expose `PullSetup.Bcast()`; subscribe
    the dispatcher before stream pull starts; take the subscribed
    channel in `Dispatcher.Run`; and emit pull-source `CorReportMsg`
    through the existing `gpsprot.MsgHandler` fan-out.

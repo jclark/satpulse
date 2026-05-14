@@ -217,6 +217,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 
 	version, _ := cmd.Version()
 	pullSetup := cfg.Stream.Pull.Prepare(version, conn, portLock)
+	var pullPktCh <-chan scan.Packet
+	if pullSetup != nil {
+		pullPktCh = pullSetup.Bcast().Subscribe()
+	}
 
 	if err := startNtrip(ctx, lg, &wg, cfg, gcfg, pb, cc.pos); err != nil {
 		return err
@@ -301,7 +305,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 			d.LeapSecond(ls, time.Time{})
 		}
 		// Dispatcher is responsible for closing rcProxy via defer in Run()
-		d.Run(tsCh, pCh)
+		d.Run(tsCh, pCh, pullPktCh)
 	})
 
 	return nil

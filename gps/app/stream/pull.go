@@ -23,6 +23,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/scan"
 )
@@ -30,6 +31,35 @@ import (
 // defaultPullFormats are the packet formats stream pull recognises
 // from a correction source.  RTCM is currently the only one.
 var defaultPullFormats = []gpsprot.PacketFormat{gpsreg.RTCMPacketFormat}
+
+// CorReportFromPacket converts a scanned correction-source packet into a
+// pull-source correction report. Non-RTCM packets return nil. The MsgID
+// field is extracted even when ChecksumOK is false; consumers must treat it
+// as advisory for checksum-invalid packets.
+func CorReportFromPacket(pkt scan.Packet) (*gpsprot.CorReportMsg, error) {
+	if !pkt.HasTag(gpsreg.TagRTCM) {
+		return nil, nil
+	}
+	msg := &gpsprot.CorReportMsg{
+		Source:     gpsprot.CorReportSourcePull,
+		Tag:        gpsreg.TagRTCM,
+		MsgID:      rtcmbin.ExtractMsgID(pkt.Data),
+		NBytes:     opt.Make(len(pkt.Data)),
+		ChecksumOK: opt.Make(pkt.ChecksumValid),
+	}
+	if !pkt.ChecksumValid {
+		return msg, nil
+	}
+	if id, ok := rtcmbin.ReferenceStationID(pkt.Data); ok {
+		msg.RTCMRefBaseID = opt.Make(id)
+	}
+	native, err := rtcmbin.ParseMsg(pkt.Data)
+	if err != nil {
+		return msg, err
+	}
+	msg.NativeMsg = native
+	return msg, nil
+}
 
 // PacketWriter writes a packet to the serial port.
 // gpsio.SerialConn satisfies this interface.
@@ -203,6 +233,11 @@ type PullSetup struct {
 // Addr returns the source address string, for use in log lines.
 func (s *PullSetup) Addr() string {
 	return s.addr
+}
+
+// Bcast returns the packet broadcast for pull-observer subscribers.
+func (s *PullSetup) Bcast() *bcast.Bcast[scan.Packet] {
+	return s.pull.Packets
 }
 
 // Run runs the prepared Pull.  It blocks until ctx is cancelled or
