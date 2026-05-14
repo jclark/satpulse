@@ -130,6 +130,42 @@ description = "Disable NAV-POSECEF"
 key.usb = 0x20910027
 value = 0
 
+[[ubxvalport]]
+tag = "ubx-rxm-cor"
+description = "Enable RXM-COR (differential correction input status)"
+key.usb = 0x209106B9
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-rxm-cor-off"
+description = "Disable RXM-COR"
+key.usb = 0x209106B9
+value = 0
+
+[[ubxvalport]]
+tag = "rtcm-4072-0"
+description = "Enable RTCM 4072.0 (reference station PVT, u-blox proprietary)"
+key.usb = 0x20910301
+value = 1
+
+[[ubxvalport]]
+tag = "rtcm-4072-0-off"
+description = "Disable RTCM 4072.0"
+key.usb = 0x20910301
+value = 0
+
+[[ubxvalport]]
+tag = "rtcm-4072-1"
+description = "Enable RTCM 4072.1 (additional reference station info, u-blox proprietary)"
+key.usb = 0x20910384
+value = 1
+
+[[ubxvalport]]
+tag = "rtcm-4072-1-off"
+description = "Disable RTCM 4072.1"
+key.usb = 0x20910384
+value = 0
+
 [[ubxval]]
 tag = "min-cno-25"
 description = "Set minimum C/N0 to 25 dBHz"
