@@ -2,6 +2,7 @@ package stream
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -304,6 +305,38 @@ func TestPacketsFlowToWriter(t *testing.T) {
 	runErr := <-done
 	if runErr != nil && !errors.Is(runErr, context.Canceled) {
 		t.Errorf("unexpected Run error: %v", runErr)
+	}
+}
+
+func TestReadLoopLogsInvalidChecksum(t *testing.T) {
+	valid := makeRTCM(1005, 16)
+	invalid := append([]byte(nil), valid...)
+	invalid[len(invalid)-1] ^= 0x01
+	var logBuf bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&logBuf, nil))
+	sink := &Pull{pktCh: make(chan scan.Packet, 3)}
+	err := sink.readLoop(context.Background(), lg, io.NopCloser(bytes.NewReader(append(valid, invalid...))),
+		[]gpsprot.PacketFormat{rtcm.PacketFormat}, newBackoff())
+	if err != nil {
+		t.Fatalf("readLoop returned error: %v", err)
+	}
+	gotLog := logBuf.String()
+	if !strings.Contains(gotLog, "invalid correction checksum") {
+		t.Fatalf("log output %q does not contain invalid checksum message", gotLog)
+	}
+	if !strings.Contains(gotLog, "msg=1005") {
+		t.Fatalf("log output %q does not contain RTCM message ID", gotLog)
+	}
+	if !strings.Contains(gotLog, "tag=RTCM") {
+		t.Fatalf("log output %q does not contain packet tag", gotLog)
+	}
+	pkt := <-sink.pktCh
+	if !pkt.ChecksumValid {
+		t.Fatal("first packet checksum invalid, want valid")
+	}
+	pkt = <-sink.pktCh
+	if pkt.ChecksumValid {
+		t.Fatal("second packet checksum valid, want invalid")
 	}
 }
 

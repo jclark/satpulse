@@ -347,7 +347,7 @@ func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 			case <-done:
 			}
 		}()
-		readErr := s.readLoop(ctx, conn, pktFormats, b)
+		readErr := s.readLoop(ctx, lg, conn, pktFormats, b)
 		conn.Close()
 		close(done)
 		select {
@@ -376,12 +376,17 @@ func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 // channel.  Returns nil on clean EOF, the read error otherwise, or
 // nil if cancelled via ctx.  It calls b.decrease periodically while
 // the connection is healthy.
-func (s *Pull) readLoop(ctx context.Context,
+func (s *Pull) readLoop(ctx context.Context, lg *slog.Logger,
 	conn io.ReadCloser, pktFormats []gpsprot.PacketFormat, b *backoff) error {
 	scanner := scan.New(conn, scanBufSize, pktFormats)
 	lastDecay := time.Now()
 	for {
 		pkt, err := scanner.Scan()
+		if pkt.Format != nil && !pkt.ChecksumValid {
+			msgID := pkt.Format.MsgID([]byte(pkt.Data))
+			lg.Warn("invalid correction checksum", "tag", pkt.Format.Tag(), "msg", msgID,
+				"len", len(pkt.Data), "err", pkt.ChecksumError())
+		}
 		select {
 		case s.pktCh <- pkt:
 		case <-ctx.Done():
