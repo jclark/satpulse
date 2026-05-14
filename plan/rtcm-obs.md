@@ -1,4 +1,4 @@
-# Correction report observability (#237)
+ # Correction report observability (#237)
 
 Add correction observability for `satpulsed` as a protocol-independent
 `gpsprot.Msg`.  The initial producers are:
@@ -188,27 +188,25 @@ now.
 
 1. Add `CorReportMsg` and `CorReportSource` to
    `gpsprot`, including handler plumbing and source text marshaling.
-2. Add `CorReport` to the dispatcher log event.
-3. Add `UBX-RXM-COR` parsing in `ubxbin`.
-4. Convert `UBX-RXM-COR` to `CorReportMsg` in the u-blox packet
+2. Add `UBX-RXM-COR` parsing in `ubxbin`.
+3. Convert `UBX-RXM-COR` to `CorReportMsg` in the u-blox packet
    processor.
-5. Add Unicore `RTCMSTATUS` parsing and conversion if Unicore receiver
-   status is included in this implementation.
-6. Add subtype-aware RTCM message ID support in `rtcmbin`, including
+4. Add `CorReport` to the dispatcher log event.
+5. Add subtype-aware RTCM message ID support in `rtcmbin`, including
    4072 u-blox proprietary subtype extraction.
-7. Update `gps/internal/rtcm.packetFormat.MsgID`,
+6. Update `gps/internal/rtcm.packetFormat.MsgID`,
    `gps/internal/rtcm.PacketProcessor.ProcessPacket`, and the RTCM
    pull-report helper to use the new `rtcmbin` MsgID helper.
-8. Add `PullSetup.Bcast()` and subscribe the dispatcher before stream
+7. Add `PullSetup.Bcast()` and subscribe the dispatcher before stream
    pull starts.
-9. Add the pulled-packet channel to `Dispatcher.Run` and dispatch pull
+8. Add the pulled-packet channel to `Dispatcher.Run` and dispatch pull
    reports through the same `gpsprot.MsgHandler` fan-out used for packet
    processors.
-10. Log invalid correction checksums in `stream.pull`.
-11. Add tests for source marshaling, handler fan-out, UBX-RXM-COR
+9. Log invalid correction checksums in `stream.pull`.
+10. Add tests for source marshaling, handler fan-out, UBX-RXM-COR
     conversion, RTCM pull-report conversion, and dispatcher pull-channel
-    close handling.  Add RTCMSTATUS conversion tests if Unicore support
-    is included.
+    close handling. 
+11. Add Unicore `RTCMSTATUS` parsing and conversion.
 
 ## Follow-ons
 
