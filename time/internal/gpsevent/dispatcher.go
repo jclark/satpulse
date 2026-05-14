@@ -223,6 +223,7 @@ type LogEvent struct {
 	LeapSecond *gpsprot.LeapSecondMsg `json:"leapSecond,omitempty"`
 	Satellites *gpsprot.SatellitesMsg `json:"satellites,omitempty"`
 	NavEpoch   *gpsprot.NavEpochMsg   `json:"navEpoch,omitempty"`
+	CorReport  *gpsprot.CorReportMsg  `json:"corReport,omitempty"`
 }
 
 type PulseEdge struct {
@@ -338,6 +339,10 @@ func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 	pv := d.pvAccum.PVMsgBundle // copy before clearing
 	d.pvAccum.NavEpoch(msg, tRead)
 	d.obs.NavEpochPV(msg, &pv, tRead)
+}
+
+func (d *Dispatcher) CorReport(msg *gpsprot.CorReportMsg, tRead time.Time) {
+	d.logEvent(LogEvent{T: tRead, CorReport: msg})
 }
 
 func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
