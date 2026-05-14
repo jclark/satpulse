@@ -283,10 +283,16 @@ The daemon should call `pullSetup.Bcast().Subscribe()` before
 Do not add a separate puller-to-dispatcher queue; the existing bcast
 queuing is sufficient.
 
-The daemon owns the subscription lifecycle.  It should keep the bcast
-pointer and call `Unsubscribe` after `Dispatcher.Run` returns.  The
-subscription must be created before `startStream`; subscribing after
-`Pull.Run` has exited returns a closed channel.
+The daemon does not need to unsubscribe this dispatcher subscription.
+This is a daemon-lifetime subscriber, analogous to the existing
+receiver packet subscription used by the dispatcher.  `Unsubscribe` is
+needed for dynamic subscribers that can go away while the bcast remains
+live, such as HTTP SSE, proxy, or NTRIP client streams; otherwise the
+bcast would retain a non-reading subscriber.  Here `Pull.Run` owns the
+bcast and calls `Bcast.Close()` when it exits, which closes the
+dispatcher subscription channel.  The subscription must be created
+before `startStream`; subscribing after `Pull.Run` has exited returns a
+closed channel.
 
 `Dispatcher.Run` should take the subscribed pulled-packet channel as a
 third input.  Its loop condition should include this channel, and its
