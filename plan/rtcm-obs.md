@@ -1,75 +1,157 @@
-# RTCM observability (#237)
+# Correction report observability (#237)
 
-Add RTCM observability for `satpulsed` using the existing observer
-fan-out in `time/internal/obs`.  This is packet observability, not a
-new protocol-independent GPS solution message.
+Add correction observability for `satpulsed` as a protocol-independent
+`gpsprot.Msg`.  The initial producers are:
+
+- `stream.pull`, which reports correction packets received from the
+  configured network source.
+- u-blox `UBX-RXM-COR`, which reports correction input status from the
+  receiver.
+
+Unicore `RTCMSTATUS` also fits this model as another receiver-status
+producer, although it populates fewer common fields.
 
 This plan is for issue #237.
 
-RTCM packets can be observed in two directions:
+## Message Shape
 
-- **Pulled RTCM:** `stream.pull` receives RTCM from a TCP or NTRIP
-  source.  This is the correction feed being pulled from the network.
-- **RTCM output:** the receiver emits RTCM on its output stream,
-  typically when acting as a base station.
-
-Add a dedicated observer callback only for pulled RTCM.  Receiver RTCM
-output already goes through the generic native-message observability
-path as `tag == RTCM`, with `msg` carrying the parsed `rtcmbin.Msg`.
-Do not introduce a generic `gpsprot.RTCMMsg`, `RTCMSource`, source
-enum, or `RTCMOutput` observer callback.
-
-## RTCMPulled
-
-`RTCMPulled` means:
-
-> `stream.pull` received an RTCM packet from the configured network
-> source and the packet passed RTCM checksum validation.
-
-It does not mean the packet was written to the receiver, accepted by
-the receiver, or used in the receiver's solution.
-
-### Observer Interface
-
-Add to `time/internal/obs/observer.go`:
+Add a new `gpsprot.Msg`:
 
 ```go
-RTCMPulled(msg rtcmbin.Msg, msgID string, nBytes int, tRead time.Time)
-```
+type CorrectionReportSource uint8
 
-where:
-
-- `msg` is the parsed RTCM message.
-- `msgID` is the cheap display/label string from the packet format,
-  e.g. `"1077"`.
-- `nBytes` is the length of the complete RTCM packet in bytes.
-- `tRead` is the time the network scanner read the packet.
-
-Update `DefaultObserver` with a no-op method and `MultiObserver` with
-fan-out, following the existing `Tick`, `NavEpochPV`, and `NTPSample`
-patterns.
-
-### Stream Pull Filtering
-
-`stream.pull` already scans packets and records checksum validity in
-`scan.Packet.ChecksumValid`.  The pruning queue should explicitly drop
-invalid checksum packets before they can be enqueued or written.
-
-Log checksum failures at `Info` level:
-
-```go
-lg.Info("correction packet has invalid checksum",
-    "tag", pkt.Format.Tag(),
-    "msg", pkt.Format.MsgID([]byte(pkt.Data)),
-    "len", len(pkt.Data),
+const (
+	CorrectionReportSourcePull CorrectionReportSource = iota
+	CorrectionReportSourceReceiver
 )
+
+type CorrectionReportMsg struct {
+	Source CorrectionReportSource `json:"source"`
+
+	Tag   Tag    `json:"tag"`
+	MsgID string `json:"msgID"`
+
+	NativeMsg any `json:"nativeMsg,omitempty"`
+
+	NBytes        opt.Val[int]    `json:"nBytes,omitzero"`
+	ChecksumOK    opt.Val[bool]   `json:"checksumOK,omitzero"`
+	Used          opt.Val[bool]   `json:"used,omitzero"`
+	RTCMRefBaseID opt.Val[uint16] `json:"rtcmRefBaseID,omitzero"`
+}
 ```
 
-Only packets with `Format != nil` and `ChecksumValid == true` should
-be reported as `RTCMPulled`.  Packets dropped by the pruning queue
-should be logged.
+`CorrectionReportSource` should have `String()` values `pull` and
+`receiver`, and `MarshalText()` should be implemented in terms of
+`String()`.
 
-### Packet Path
+`CorrectionReportMsg` should implement `gpsprot.Msg`:
+
+- `MsgType()` returns `correctionReport`.
+- `Dispatch` calls `MsgHandler.CorrectionReport`.
+
+Add a small interface for consumers that only need correction reports:
+
+```go
+type CorrectionReporter interface {
+	CorrectionReport(msg *CorrectionReportMsg, tRead time.Time)
+}
+```
+
+Embed `CorrectionReporter` in `MsgHandler`.  This keeps correction
+reports on the normal `gpsprot.Msg` path while allowing a future
+protocol-independent correlator to consume only correction reports.
+
+Update `DefaultHandler`, `GenericHandler`, and `MultiHandler` for
+`CorrectionReport`.
+
+## Semantics
+
+`CorrectionReportSourcePull` means `stream.pull` scanned a correction
+packet from the network source.  It does not mean the packet was used by
+the receiver.
+
+For pulled RTCM reports:
+
+- `Tag` is `RTCM`.
+- `MsgID` is the RTCM message ID string, e.g. `1077` or `4072.1`.
+- `NBytes` is the complete packet length.
+- `ChecksumOK` is always set.
+- `NativeMsg`, when present, is the parsed `rtcmbin.Msg`.
+
+`CorrectionReportSourceReceiver` means the receiver reported correction
+input status.  It does not mean the receiver emitted an RTCM packet.
+
+For u-blox `UBX-RXM-COR` reports:
+
+- Convert only the correction protocol into the existing `gpsprot.Tag`
+  space; initially this is `RTCM`.
+- `MsgID` uses the same RTCM message ID formatting as pull reports,
+  including the subtype for proprietary messages such as `4072.1`.
+- `Used` maps `msgUsed`: unknown is unset, not used is `false`, used is
+  `true`.
+- `ChecksumOK` maps RTCM `errStatus`: unknown is unset, error-free is
+  `true`, erroneous is `false`.
+- `RTCMRefBaseID` maps the RTCM reference station ID when present.
+- Do not put the `UBX-RXM-COR` struct into `NativeMsg`; for `Tag ==
+  RTCM`, non-nil `NativeMsg` is an `rtcmbin.Msg`.
+
+For Unicore `RTCMSTATUS` reports:
+
+- `Source` is `CorrectionReportSourceReceiver`.
+- `Tag` is `RTCM`.
+- `MsgID` uses the same RTCM message ID formatting as other reports
+  when the available message fields support it.
+- `RTCMRefBaseID` maps the Base ID field.
+- Leave `NBytes`, `ChecksumOK`, `Used`, and `NativeMsg` unset.  The
+  documented checksum is the Unicore log checksum, not an RTCM
+  correction-message checksum, and the message does not explicitly say
+  whether the receiver used the correction in its solution.
+
+Receiver-emitted RTCM remains on the existing native-message path as
+`NativeMsg(tag == RTCM, msgID, rtcmbin.Msg, tRead)`.  Do not add
+`RTCMOutput`.
+
+## Emission Path
+
+Add `UBX-RXM-COR` support to `gps/lib/ubxbin`, limited to parsing the
+message fields needed by the packet processor.
+
+In `gps/internal/ubx.PacketProcessor.Dispatch`, convert parsed
+`*ubxbin.RxmCor` into `*gpsprot.CorrectionReportMsg` and emit it through
+the configured `gpsprot.MsgHandler`.
+
+Unicore can use the same receiver-source emission path by adding typed
+`RTCMSTATUS` parsing in `gps/lib/uncmsg` and converting it in
+`gps/internal/unc.packetProcessor.dispatch`.  The repository already
+knows the `RTCMSTATUS` message ID/name, but unregistered messages are
+currently parsed as unknown bodies.
+
+Add subtype-aware RTCM message ID support in `gps/lib/rtcmbin`.  It
+should continue to return the plain message type for normal RTCM
+messages, but for RTCM 4072 u-blox proprietary messages it should
+extract the subtype and format IDs such as `4072.0` and `4072.1`.
+
+Update `gps/internal/rtcm` to use the new `rtcmbin` MsgID helper
+where it currently formats IDs with `rtcmbin.ExtractMsgType(...).String()`:
+
+- `packetFormat.MsgID`
+- `PacketProcessor.ProcessPacket`
+
+Add an API in `gps/internal/rtcm` that converts an RTCM packet into a
+`*gpsprot.CorrectionReportMsg` for the pull path.  This keeps packet
+length, checksum status, reference station extraction, and `rtcmbin.Msg`
+parsing out of the dispatcher.
+
+The dispatcher should emit both pull-derived and receiver-derived
+reports as separate `CorrectionReportMsg` observations.  It should not
+try to combine them or prefer one source over the other.  Correlation is
+protocol-independent observer policy, because both sides have the same
+`gpsprot` representation.
+
+Add `CorrectionReport` to `time/internal/gpsevent.LogEvent` so reports
+are visible in the JSONL event log like other `gpsprot.Msg` values.
+
+## Pull Packet Path
 
 The dispatcher should receive pulled packets by subscribing to
 `stream.Pull.Packets`.  Expose this from `PullSetup` with:
@@ -94,39 +176,46 @@ select should nil the channel when it closes.  `Pull.Run` calls
 `Bcast.Close()` when it exits, so the dispatcher subscription closes
 naturally on stream-pull shutdown.
 
-`stream.Pull` should not parse RTCM itself.  The dispatcher parses the
-packet with `rtcmbin.ParseMsg` and calls `obs.RTCMPulled`.
+Do not require checksum-valid packets for the dispatcher channel.  A
+pull report can carry `ChecksumOK=false`, so observability does not
+depend on dropping the packet.  `stream.pull` should log invalid
+correction checksums when it sees them.
 
-This keeps `stream.Pull` focused on network read, validation, queueing,
-and serial write mechanics.  It also ensures RTCM parsing happens in
-one place before observer fan-out, rather than inside each observer.
-
-The dispatcher should treat parse errors as unexpected but non-fatal:
-log the packet problem and do not call `RTCMPulled` for that packet.
+The dispatcher should ignore non-RTCM packets on the pull channel for
+now.
 
 ## Implementation Order
 
-1. Add `RTCMPulled` to `obs.Observer`, `DefaultObserver`, and
-   `MultiObserver`.
-2. Add checksum filtering and `Info` logging for invalid correction
-   packets in `stream.Pull`.
-3. Add `PullSetup.Bcast()` and have the daemon subscribe the dispatcher
-   to `stream.Pull.Packets` before starting stream pull.  The daemon
-   should unsubscribe after `Dispatcher.Run` returns.
-4. Add the pulled-packet channel to `Dispatcher.Run` and handle channel
-   close by niling it in the select loop.
-5. Parse pulled RTCM packets in the dispatcher and call
-   `obs.RTCMPulled`.
-6. Add tests for observer fan-out, invalid-checksum drop/logging, and
-   dispatcher parsing for `RTCMPulled`.
+1. Add `CorrectionReportMsg` and `CorrectionReportSource` to
+   `gpsprot`, including handler plumbing and source text marshaling.
+2. Add `CorrectionReport` to the dispatcher log event.
+3. Add `UBX-RXM-COR` parsing in `ubxbin`.
+4. Convert `UBX-RXM-COR` to `CorrectionReportMsg` in the u-blox packet
+   processor.
+5. Add Unicore `RTCMSTATUS` parsing and conversion if Unicore receiver
+   status is included in this implementation.
+6. Add subtype-aware RTCM message ID support in `rtcmbin`, including
+   4072 u-blox proprietary subtype extraction.
+7. Update `gps/internal/rtcm.packetFormat.MsgID`,
+   `gps/internal/rtcm.PacketProcessor.ProcessPacket`, and the RTCM
+   pull-report helper to use the new `rtcmbin` MsgID helper.
+8. Add `PullSetup.Bcast()` and subscribe the dispatcher before stream
+   pull starts.
+9. Add the pulled-packet channel to `Dispatcher.Run` and dispatch pull
+   reports through the same `gpsprot.MsgHandler` fan-out used for packet
+   processors.
+10. Log invalid correction checksums in `stream.pull`.
+11. Add tests for source marshaling, handler fan-out, UBX-RXM-COR
+    conversion, RTCM pull-report conversion, and dispatcher pull-channel
+    close handling.  Add RTCMSTATUS conversion tests if Unicore support
+    is included.
 
 ## Follow-ons
 
 These are not part of this plan.
 
-- Make existing observers use `RTCMPulled` and native `RTCM` messages.
-- Enrich the generic `NativeMsg` observer path to include packet
-  length, if receiver-output RTCM observers need it.
-- Add protocol-specific correction-input status observers, including
-  correlating `RTCMPulled` with u-blox RXM correction-input status in
-  `UBXLogObserver`.
+- Make existing observers consume `CorrectionReportMsg`.
+- Enable `UBX-RXM-COR` through `ConfigOpts` where needed.
+- Add a protocol-independent correction-report correlator if needed.
+- Enrich the generic `NativeMsg` observer path with packet length if
+  receiver-output RTCM observers need it.
