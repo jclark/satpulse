@@ -151,6 +151,124 @@ protocol-independent observer policy, because both sides have the same
 Add `CorReport` to `time/internal/gpsevent.LogEvent` so reports
 are visible in the JSONL event log like other `gpsprot.Msg` values.
 
+## SSE and Web Dashboard
+
+Surface RTCM correction traffic in the web dashboard through a dedicated
+RTCM SSE event and card.  This is intentionally a presentation path, not
+a correlator.
+
+Add an RTCM-specific SSE event in `time/internal/sseobs`:
+
+```go
+type RTCMSSE struct {
+	MsgID  string                      `json:"msgID"`
+	Source gpsprot.CorReportSource     `json:"source"`
+	Used   opt.Val[bool]               `json:"used,omitzero"`
+}
+```
+
+`SSEObserver.CorReport` should filter `CorReportMsg` before sending:
+
+- Require `Tag == RTCM`.
+- Require a non-empty, subtype-aware `MsgID`.
+- Exclude explicitly invalid packets: when `ChecksumOK` is set and
+  false, emit no SSE event.
+- Do not include `NativeMsg` in the SSE payload.
+
+Emit the filtered report as SSE event name `rtcm`.  Keep the payload
+small: message ID, source, and optional used status are enough for the
+first pass.
+
+The SSE observer should prefer receiver-source reports over pull-source
+reports.  It starts in pull mode and emits valid pull reports so the UI
+can show that corrections are arriving from the configured source.  Once
+it observes any valid `CorReportSourceReceiver` RTCM report, it switches
+to receiver mode and suppresses all subsequent pull-source reports.  The
+receiver report that caused the switch is emitted.  Do not switch back
+to pull mode during the daemon session; this avoids mixing two views of
+the same correction stream and keeps the dashboard counts easy to
+interpret.
+
+Receiver mode is the better user-facing signal because it describes
+what the receiver reports about correction input, not merely what
+`stream.pull` downloaded.  Be precise about wording: call the receiver
+view `RTCM messages used` only when the UI is counting receiver reports
+with `Used == true`.  If a receiver-source producer does not provide
+used/not-used status, title the card `RTCM messages reported by
+receiver`.
+
+In `web/dashboard.tsx`:
+
+- Add `rtcm` to the subscribed event types.
+- Maintain RTCM counts in the frontend, separate from the existing
+  latest-event state.  Track the current RTCM view (`pull` or
+  `receiver`) and a map from `msgID` to count.
+- On each valid pull-source `rtcm` event, increment that message ID's
+  count while the UI is still in pull mode.
+- On the first receiver-source `rtcm` event, switch the UI to receiver
+  mode and clear any pull-mode counts so the card never mixes source
+  observations with receiver observations.
+- In receiver mode, increment counts for receiver-source events.  If
+  the event includes `used: false`, do not increment the `used` count;
+  that event still establishes receiver mode.
+- Add an RTCM dashboard card with one row per message ID and the count
+  observed since the page connected.  Use a header that reflects the
+  current view, for example `RTCM messages received` in pull mode and
+  `RTCM messages used` in receiver mode when counting `used: true`
+  events.
+- Sort rows by numeric message ID where possible, with subtype IDs such
+  as `4072.1` sorted naturally after `4072.0`.
+- Do not add backend aggregation, persisted counters, frequency
+  estimates, or reconnect recovery for this pass; a page reload or new
+  SSE connection starts the dashboard counts from zero.
+
+Add focused tests:
+
+- `SSEObserver.CorReport` emits `event: rtcm` for a valid RTCM
+  `CorReportMsg`.
+- It emits nothing for non-RTCM reports, empty message IDs, and
+  explicitly failed checksums.
+- It suppresses pull-source reports after the first valid receiver-source
+  report.
+- The dashboard test EventSource can send multiple `rtcm` events and
+  the rendered RTCM card shows the expected per-message counts.
+- The dashboard resets pull-mode counts when the first receiver-source
+  event arrives and updates the card header to match the receiver view.
+
+## Prometheus
+
+Add `PrometheusObserver.CorReport` so RTCM correction observations are
+also visible through `/metrics`.
+
+Prometheus should not apply the SSE/dashboard receiver-preference rule;
+export both sources with labels so operators can compare the pull-side
+and receiver-side streams.
+
+Use bounded labels:
+
+- `satpulse_rtcm_messages_total{source,msg_id,usage}` increments for
+  each RTCM `CorReportMsg` with a non-empty message ID and no explicit
+  checksum failure.
+- `satpulse_rtcm_checksum_errors_total{source}` increments when
+  `ChecksumOK` is set and false.  Do not trust a corrupted packet's
+  message ID for this error counter.
+
+The `source` label should use `CorReportSource.String()` values
+(`pull`, `receiver`).  The `usage` label is a bounded enum:
+
+- `used` when `Used` is set and true.
+- `not_used` when `Used` is set and false.
+- `unknown` when `Used` is unset, including pull-source reports.
+
+This lets operators query total valid RTCM observations by summing over
+`usage`, or receiver-used traffic with `source="receiver",usage="used"`.
+Do not include receiver base ID or byte length as labels in this first
+metric surface; those either have higher cardinality risk or are better
+suited to later gauges after there is a clear consumer.
+
+Add Prometheus tests that exercise valid RTCM report counters, source
+labels, usage labels, non-RTCM filtering, and checksum-error counting.
+
 ## Pull Packet Path
 
 The dispatcher should receive pulled packets by subscribing to
@@ -204,17 +322,26 @@ now.
    channel in `Dispatcher.Run`; and emit pull-source `CorReportMsg`
    through the existing `gpsprot.MsgHandler` fan-out.
 7. Log invalid correction checksums in `stream.pull`.
-8. Add tests for source marshaling, handler fan-out, UBX-RXM-COR
-   conversion, RTCM pull-report conversion, and dispatcher
-   pull-channel close handling.
-9. Add Unicore `RTCMSTATUS` parsing and conversion.
+8. Add the `rtcm` SSE event in `time/internal/sseobs`, filtered to
+   valid RTCM reports with non-empty message IDs.
+9. Add the `RTCM` dashboard card in `web/`, maintaining per-message-ID
+   counts in frontend state.
+10. Add Prometheus RTCM counters for valid reports and checksum
+    failures.
+11. Add tests for source marshaling, handler fan-out, UBX-RXM-COR
+    conversion, RTCM pull-report conversion, dispatcher pull-channel
+    close handling, SSE filtering, dashboard counting, and Prometheus
+    metrics.
+12. Add Unicore `RTCMSTATUS` parsing and conversion.
 
 ## Follow-ons
 
 These are not part of this plan.
 
-- Make existing observers consume `CorReportMsg`.
 - Enable `UBX-RXM-COR` through `ConfigOpts` where needed.
 - Add a protocol-independent correction-report correlator if needed.
 - Enrich the generic `NativeMsg` observer path with packet length if
   receiver-output RTCM observers need it.
+- Add web-dashboard frequency estimates, source splits, persisted counts,
+  or invalid-packet displays if the simple RTCM count card proves too
+  limited.
