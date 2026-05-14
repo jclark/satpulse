@@ -192,21 +192,22 @@ now.
 3. Convert `UBX-RXM-COR` to `CorReportMsg` in the u-blox packet
    processor.
 4. Add `CorReport` to the dispatcher log event.
-5. Add subtype-aware RTCM message ID support in `rtcmbin`, including
-   4072 u-blox proprietary subtype extraction.
-6. Update `gps/internal/rtcm.packetFormat.MsgID`,
-   `gps/internal/rtcm.PacketProcessor.ProcessPacket`, and the RTCM
-   pull-report helper to use the new `rtcmbin` MsgID helper.
-7. Add `PullSetup.Bcast()` and subscribe the dispatcher before stream
-   pull starts.
-8. Add the pulled-packet channel to `Dispatcher.Run` and dispatch pull
-   reports through the same `gpsprot.MsgHandler` fan-out used for packet
-   processors.
-9. Log invalid correction checksums in `stream.pull`.
-10. Add tests for source marshaling, handler fan-out, UBX-RXM-COR
-    conversion, RTCM pull-report conversion, and dispatcher pull-channel
-    close handling. 
-11. Add Unicore `RTCMSTATUS` parsing and conversion.
+5. Use subtype-aware RTCM message IDs consistently: add a
+   subtype-aware MsgID helper in `rtcmbin` (including 4072 u-blox
+   proprietary subtype extraction), and switch existing
+   `gps/internal/rtcm` call sites (`packetFormat.MsgID`,
+   `PacketProcessor.ProcessPacket`) to use it.
+6. Wire pulled correction packets into the dispatcher: add the
+   `gps/internal/rtcm` API that converts an RTCM packet into a
+   `*gpsprot.CorReportMsg`; expose `PullSetup.Bcast()`; subscribe
+   the dispatcher before stream pull starts; take the subscribed
+   channel in `Dispatcher.Run`; and emit pull-source `CorReportMsg`
+   through the existing `gpsprot.MsgHandler` fan-out.
+7. Log invalid correction checksums in `stream.pull`.
+8. Add tests for source marshaling, handler fan-out, UBX-RXM-COR
+   conversion, RTCM pull-report conversion, and dispatcher
+   pull-channel close handling.
+9. Add Unicore `RTCMSTATUS` parsing and conversion.
 
 ## Follow-ons
 
