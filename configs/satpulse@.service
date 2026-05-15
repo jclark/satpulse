@@ -32,5 +32,5 @@ ProtectControlGroups=yes
 SystemCallArchitectures=native
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=dev-%i.device
 #DefaultInstance=ttyAMA0
