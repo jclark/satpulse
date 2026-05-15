@@ -65,8 +65,9 @@ func TestConvertNavSatInfo(t *testing.T) {
 				if !sv.Used || !sv.Signals[0].Used {
 					t.Errorf("Used = %v/%v, want true/true", sv.Used, sv.Signals[0].Used)
 				}
-				if sv.LookAngles.Azimuth != 180 || sv.LookAngles.Elevation != 45 {
-					t.Errorf("LookAngles = %v, want {180, 45}", sv.LookAngles)
+				la := sv.LookAngles.Get()
+				if la.Azimuth != 180 || la.Elevation != 45 {
+					t.Errorf("LookAngles = %v, want {180, 45}", la)
 				}
 			},
 		},
@@ -124,7 +125,7 @@ func TestConvertNavSatInfo(t *testing.T) {
 			svs:     []casbin.NavSVInfo{makeSVInfo(7, 25, false, -5, 359)},
 			wantLen: 1,
 			check: func(t *testing.T, result []gpsprot.SVInfo) {
-				la := result[0].LookAngles
+				la := result[0].LookAngles.Get()
 				if la.Elevation != -5 || la.Azimuth != 359 {
 					t.Errorf("LookAngles = {%d, %d}, want {359, -5}", la.Azimuth, la.Elevation)
 				}

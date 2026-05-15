@@ -46,6 +46,7 @@ import (
 	"github.com/jclark/satpulse/time/clocksim"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/phctime"
@@ -328,7 +329,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 						Ref:         gpsprot.PrePulse,
 						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "TIM-TP",
-						PulseOffset: &pulseOffset,
+						PulseOffset: opt.Make(pulseOffset),
 					}
 					msgTRead := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
 					timeMsgBuf.Time(timeMsg, msgTRead)
@@ -358,7 +359,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 						Ref:         gpsprot.PostPulse,
 						Tag:         gpsreg.TagUBX,
 						NativeMsgID: "TIM-TOS",
-						PulseOffset: &pulseOffset,
+						PulseOffset: opt.Make(pulseOffset),
 					}
 					msgTRead := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
 					timeMsgBuf.Time(timeMsg, msgTRead)

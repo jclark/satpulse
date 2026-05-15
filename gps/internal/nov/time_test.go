@@ -8,6 +8,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -114,10 +115,7 @@ func TestTimeMsgFromTime(t *testing.T) {
 				NativeMsgID: "TIME",
 				GNSS:        0, // NovAtel doesn't specify reference GNSS
 				TAITime:     ptime.GPS(2381, 207960*time.Second),
-				UTCTime: func() *ptime.UTCTime {
-					utc := ptime.UTC(2025, 8, 26, 9, 45, 42, 0)
-					return &utc
-				}(),
+				UTCTime:   opt.Make(ptime.UTC(2025, 8, 26, 9, 45, 42, 0)),
 				UTCOffset: 37, // TAI-UTC = 19 - (-18) = 37
 				Accuracy:  13 * time.Nanosecond, // 1.298132705e-08 seconds rounded up
 			},
