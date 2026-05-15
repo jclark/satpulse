@@ -1,5 +1,7 @@
 # RTCM ephemeris support
 
+Issue: #282
+
 Adds decode/encode of RTCM ephemeris messages to `rtcmbin`, a new
 `RTCMMsgEph` config flag, Unicore driver support for enabling
 per-constellation ephemeris output, and replay-on-connect in the
