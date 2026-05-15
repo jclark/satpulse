@@ -131,6 +131,12 @@ key.usb = 0x20910027
 value = 0
 
 [[ubxvalport]]
+tag = "ubx-mon-comms"
+description = "Enable UBX-MON-COMMS"
+key.usb = 0x20910352
+value = 1
+
+[[ubxvalport]]
 tag = "ubx-rxm-cor"
 description = "Enable RXM-COR (differential correction input status)"
 key.usb = 0x209106B9
