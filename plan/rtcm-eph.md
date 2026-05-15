@@ -1,6 +1,4 @@
-# RTCM ephemeris support
-
-Issue: #282
+# RTCM ephemeris support (#282)
 
 Adds decode/encode of RTCM ephemeris messages to `rtcmbin`, a new
 `RTCMMsgEph` config flag, Unicore driver support for enabling

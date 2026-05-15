@@ -1,6 +1,4 @@
-# PHC sample mode
-
-Issue: #256
+# PHC sample mode (#256)
 
 ## Introduction
 

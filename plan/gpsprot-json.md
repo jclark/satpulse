@@ -1,4 +1,4 @@
-# gpsprot JSON
+# gpsprot JSON (#276)
 
 Make `gpsprot.Msg` payloads serialize to stable, natural JSON independent of
 any transport or event envelope.

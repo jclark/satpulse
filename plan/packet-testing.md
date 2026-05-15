@@ -1,6 +1,4 @@
-# Packet log testing
-
-Issue: #287
+# Packet log testing (#287)
 
 Collect packet logs from real GPS receivers and use them to test scanner and decoding behavior deterministically.
 

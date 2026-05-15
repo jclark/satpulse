@@ -1,4 +1,4 @@
-# Event log format
+# Event log format (#277)
 
 Clean up the daemon event log JSONL format. The current `LogEvent` shape is a
 sparse object with one optional field per possible event type, which is not a

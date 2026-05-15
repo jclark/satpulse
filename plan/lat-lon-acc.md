@@ -1,6 +1,4 @@
-# Separate accuracy for latitude and longitude
-
-Issue: #280
+# Separate accuracy for latitude and longitude (#280)
 
 This looks like a clean fit for `NavEpochMsg.Acc`.
 

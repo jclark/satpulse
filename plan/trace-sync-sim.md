@@ -1,6 +1,4 @@
-# Trace-driven controller simulation
-
-Issue: #285
+# Trace-driven controller simulation (#285)
 
 Build a trace-driven simulator for `phcsync` that replays real PHC pulse traces through the converging and tracking modes, modeling the closed-loop effect of PHC adjustments on future timestamps.
 

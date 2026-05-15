@@ -1,6 +1,4 @@
-# Local clock bias/drift
-
-Issue: #279
+# Local clock bias/drift (#279)
 
 Receiver clock bias (offset from GPS time) and clock drift (rate of change)
 are produced by several protocols. The decoding layer (`gps/lib/*`) already
