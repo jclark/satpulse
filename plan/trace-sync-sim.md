@@ -1,6 +1,12 @@
 # Trace-driven controller simulation
 
+Issue: #285
+
 Build a trace-driven simulator for `phcsync` that replays real PHC pulse traces through the converging and tracking modes, modeling the closed-loop effect of PHC adjustments on future timestamps.
+
+A pulse trace is a JSONL log of PPS edges captured from the PHC's external timestamp channel (e.g. via `satpulsetool sdp -i -j`). Each line records the PHC value at the pulse edge, the system time it was read, and the PHC value sampled near the read time, with optional `qErr` sawtooth correction.
+
+Critically, the pulse trace must be captured while the PHC is **free-running** -- not being disciplined by any controller. The simulator layers a disciplined overlay on top of the captured raw evolution, so the underlying trace data must represent the undisciplined oscillator behaviour. A trace captured while another controller was steering the PHC would already contain that controller's adjustments and could not be replayed counterfactually.
 
 ## Testing strategy
 
