@@ -1,5 +1,7 @@
 # Packet log testing
 
+Issue: #287
+
 Collect packet logs from real GPS receivers and use them to test scanner and decoding behavior deterministically.
 
 This covers incoming packet traffic only. It does not cover configuration/probing traffic, `gpscmd` configuration replay, PHC synchronization, or `phcsync` timing behavior.

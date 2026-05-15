@@ -1,5 +1,7 @@
 # PHC sample mode
 
+Issue: #256
+
 ## Introduction
 
 This document describes a new mode of satpulsed operation in which the PTP hardware clock is left free-running and satpulsed feeds reference-clock samples to chrony (via the existing SOCK refclock) rather than disciplining the PHC itself.
