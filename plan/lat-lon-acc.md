@@ -1,5 +1,7 @@
 # Separate accuracy for latitude and longitude
 
+Issue: #280
+
 This looks like a clean fit for `NavEpochMsg.Acc`.
 
 `gpsprot.Accuracy` already consists of optional scalar fields with simple
