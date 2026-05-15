@@ -2,6 +2,7 @@ package sdbp
 
 import (
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/sdbpbin"
 )
 
@@ -81,10 +82,10 @@ func satsDatSAT(m *sdbpbin.DatSAT) *gpsprot.SatellitesMsg {
 		used := s.Flags&datSATUsedFlag != 0
 		msg.SVs = append(msg.SVs, gpsprot.SVInfo{
 			ID: gpsprot.SVID{GNSS: gnss, Num: s.SatID},
-			LookAngles: &gpsprot.LookAngles{
+			LookAngles: opt.Make(gpsprot.LookAngles{
 				Azimuth:   int16(s.Azim),
 				Elevation: s.Elev,
-			},
+			}),
 			Signals: []gpsprot.SignalInfo{{
 				ID:   sigID,
 				CN0:  s.CN0,

@@ -22,7 +22,6 @@ type sample struct {
 }
 
 func samples() []sample {
-	pulseOff := 0.000000125
 	speed := 9600
 	return []sample{
 		{"SatellitesMsg", gpsprot.SatellitesMsg{
@@ -31,7 +30,7 @@ func samples() []sample {
 			SVs: []gpsprot.SVInfo{
 				{
 					ID:         gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
-					LookAngles: &gpsprot.LookAngles{Azimuth: 45, Elevation: 30},
+					LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 45, Elevation: 30}),
 					Signals:    []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42, Used: true}},
 					Used:       true,
 				},
@@ -43,7 +42,7 @@ func samples() []sample {
 			UTCTime:     utcTime(2025, 3, 7, 4, 0, 0),
 			Accuracy:    25 * time.Millisecond,
 			UTCOffset:   37,
-			PulseOffset: &pulseOff,
+			PulseOffset: opt.Make(0.000000125),
 			GNSS:        gpsprot.GPS,
 			Ref:         gpsprot.NavSolution,
 			ReadDelay:   15 * gpsprot.Millisecond,
@@ -167,8 +166,8 @@ func lcFirst(s string) string {
 	return string(s[0]|0x20) + s[1:]
 }
 
-func utcTime(year int, month time.Month, day, hour, min, sec int) *ptime.UTCTime {
+func utcTime(year int, month time.Month, day, hour, min, sec int) opt.Val[ptime.UTCTime] {
 	date := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 	tod := time.Duration(hour)*time.Hour + time.Duration(min)*time.Minute + time.Duration(sec)*time.Second
-	return &ptime.UTCTime{Date: date, TimeOfDay: tod}
+	return opt.Make(ptime.UTCTime{Date: date, TimeOfDay: tod})
 }
