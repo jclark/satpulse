@@ -1,5 +1,7 @@
 # Web UI toolchain reorganisation
 
+Issue: #283
+
 Separate frontend source from Go embed machinery, switch from esbuild to Vite, and set up an npm workspace that enables component sharing with the desktop GUI.
 
 No user-visible behaviour change. The web dashboard looks and works identically after this work.
