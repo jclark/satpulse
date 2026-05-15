@@ -1,12 +1,22 @@
 # Local clock bias/drift
 
-Receiver clock bias (offset from GPS time) and clock drift (rate of change).
-These are natural additions to `NavEpochMsg` since they are produced once per
-navigation epoch alongside the position/velocity solution.
+Issue: #279
 
-The vendor-neutral representation is bias in nanoseconds and drift in
-nanoseconds per second. Some protocols use seconds or range-equivalent metres
-(multiply by c); conversion is straightforward.
+Receiver clock bias (offset from GPS time) and clock drift (rate of change)
+are produced by several protocols. The decoding layer (`gps/lib/*`) already
+parses these fields into vendor-specific structs, but there is no
+vendor-neutral representation in `gpsprot`, so the protocol handlers in
+`gps/internal/*` discard the values.
+
+This plan covers adding a vendor-neutral representation in `gpsprot` and
+wiring the existing decoded values through the protocol handlers. The
+proposed home is `NavEpochMsg`, which is already emitted once per
+navigation epoch alongside the position/velocity solution and accuracy
+fields.
+
+The vendor-neutral units are bias in nanoseconds and drift in nanoseconds
+per second. Protocols that report seconds or range-equivalent metres are
+converted at the handler boundary.
 
 Where this information is documented in implemented protocols:
 
@@ -43,6 +53,7 @@ Comparison to current code:
 - `gps/lib/uncmsg/time.go` wraps `novmsg.Time` as `RecTime` --
   `gps/internal/unc/` uses it for time but does not extract clock fields.
 
-So the parser structs already exist for u-blox, Allystar, CASIC, NovAtel, and
-Unicore. The missing piece is adding clock bias/drift fields to `gpsprot` and
-wiring the existing parsed values through the handlers.
+So decoding-layer parser structs already exist for u-blox, Allystar, CASIC,
+NovAtel, and Unicore. The missing pieces are (1) a vendor-neutral
+representation in `gpsprot` (fields on `NavEpochMsg`) and (2) wiring the
+existing decoded values through the `gps/internal/*` handlers.
