@@ -49,6 +49,22 @@ This protocol-independent field remains the right surface for sinks such as the
 web UI and Prometheus. Richer native status stays out of `gpsprot` and is logged
 through protocol-specific observer code.
 
+## Per-signal authentication
+
+`gpsprot.SignalInfo` gains an `Auth bool` field reporting whether the
+navigation data carried by that signal was authenticated in the current
+navigation epoch. The u-blox decoder populates it from the `authStatus` bit in
+`UBX-NAV-SIG` `sigFlags` (add a `NavSigAuth` constant in `ubxbin` alongside
+the existing flag bits). `bool` rather than `opt.Val[bool]`: the value is
+asymmetric. `true` means the signal's navigation data is known to be
+authenticated; `false` means that is not known. There is no "known to be
+unauthenticated" value -- failed authentication causes the receiver to
+discard the data rather than report a failure.
+
+Currently the only per-signal data authentication is Galileo OSNMA on E1
+I/NAV; other protocols can populate `Auth` as their authentication support is
+added.
+
 ## Trusted-Time Packet Builder
 
 OSNMA requires the receiver to know the current time accurately enough to apply
@@ -492,26 +508,31 @@ Logging triggers:
    - Fill it from u-blox `UBX-NAV-PVT.nmaFixStatus`.
    - Expose it in the web UI and Prometheus.
 
-4. Trusted-time phase 2:
+4. Per-signal authentication:
+   - Add a `NavSigAuth` flag constant to `ubxbin`.
+   - Add the `Auth` field to `gpsprot.SignalInfo`.
+   - Fill it from u-blox `UBX-NAV-SIG` `sigFlags.authStatus`.
+
+5. Trusted-time phase 2:
    - Add `--trusted-time-uncertainty` for system-clock use when the kernel NTP
      state is not synchronized or cannot provide a useful max-error bound.
 
-5. Trusted-time phase 3:
+6. Trusted-time phase 3:
    - Add `--trusted-time-ntp` using `time/lib/sntp`.
    - Document the cron/systemd timer plus daemon-socket refresh pattern.
 
-6. Trusted-time phase 4:
+7. Trusted-time phase 4:
    - Revisit the estimate type for optional TAI/GNSS support without assuming
      `LeapSecond` should disappear.
    - Implement the u-blox builder for `MGA-INI-TIME_GNSS`.
    - Verify trusted-time MGA ACK/NAK behavior and `UBX-NAV-TIMETRUSTED` on
      target receiver/protocol versions.
 
-7. Provisioning cleanup:
+8. Provisioning cleanup:
    - Move Merkle/public-key provisioning to `configs/gpsmsg/osnma.toml`.
    - Remove the compiled-in Merkle root and related configurator plumbing.
 
-8. Enable cleanup:
+9. Enable cleanup:
    - Rename/replace the old hidden `--osnma` behavior with
      `--nma=osnma|off`.
    - Add `gps.nma` TOML.
