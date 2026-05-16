@@ -1,4 +1,4 @@
-# Time message and sync testing with real captures
+# Time message and sync testing with real captures (#286)
 
 Test `phcsync` reset mode using real GPS time messages and real PHC pulse traces captured while the PHC is free-running.
 

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/sdbpbin"
 )
 
@@ -30,10 +31,10 @@ func TestSatsDatSAT(t *testing.T) {
 				NativeMsgID:  "DAT-SAT",
 				UsedValidity: gpsprot.SatelliteUsedSignal,
 				SVs: []gpsprot.SVInfo{
-					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 15}, LookAngles: &gpsprot.LookAngles{Azimuth: 11, Elevation: 53}, Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGPSL1CA, CN0: 34, Used: true}}, Used: true},
-					{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 256, Elevation: 40}, Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDBDSB1I, CN0: 41, Used: true}}, Used: true},
-					{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 353, Elevation: 70}, Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGALE1, CN0: 47, Used: true}}, Used: true},
-					{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 333, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGLOL1, CN0: 47, Used: true}}, Used: true},
+					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 15}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 11, Elevation: 53}), Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGPSL1CA, CN0: 34, Used: true}}, Used: true},
+					{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 5}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 256, Elevation: 40}), Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDBDSB1I, CN0: 41, Used: true}}, Used: true},
+					{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 9}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 353, Elevation: 70}), Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGALE1, CN0: 47, Used: true}}, Used: true},
+					{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 4}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 333, Elevation: 41}), Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGLOL1, CN0: 47, Used: true}}, Used: true},
 				},
 			},
 		},
@@ -49,7 +50,7 @@ func TestSatsDatSAT(t *testing.T) {
 				NativeMsgID:  "DAT-SAT",
 				UsedValidity: gpsprot.SatelliteUsedSignal,
 				SVs: []gpsprot.SVInfo{
-					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 35, Elevation: 14}, Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGPSL1CA, CN0: 18}}},
+					{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 35, Elevation: 14}), Signals: []gpsprot.SignalInfo{{ID: gpsprot.SigIDGPSL1CA, CN0: 18}}},
 				},
 			},
 		},

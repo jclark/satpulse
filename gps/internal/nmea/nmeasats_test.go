@@ -9,6 +9,7 @@ import (
 	"github.com/jclark/satpulse/gps/internal/as"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/internal/sino"
 )
 
@@ -851,18 +852,18 @@ func TestPacketProcessorSatellites(t *testing.T) {
 				"$GNGLL,1343.91062,N,10038.68405,E,011451.00,A,D*7E\r\n",
 			},
 			expectedSVs: []gpsprot.SVInfo{
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 234, Elevation: 53}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 11}, LookAngles: &gpsprot.LookAngles{Azimuth: 354, Elevation: 39}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 26}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 12}, LookAngles: &gpsprot.LookAngles{Azimuth: 301, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 17}, LookAngles: &gpsprot.LookAngles{Azimuth: 109, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 27}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 88, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 23}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 306, Elevation: 72}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 41}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 21}, LookAngles: &gpsprot.LookAngles{Azimuth: 339, Elevation: 82}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 161, Elevation: 23}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 38}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 234, Elevation: 53}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 11}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 354, Elevation: 39}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 26}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 12}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 301, Elevation: 42}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 17}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 109, Elevation: 24}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 27}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 19}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 88, Elevation: 41}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 23}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 306, Elevation: 72}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 41}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 21}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 339, Elevation: 82}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 22}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 161, Elevation: 23}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 38}}, Used: false},
 				// SBAS satellites (GPS IDs 41, 42, 50 -> SBAS 28, 29, 37)
-				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 28}, LookAngles: &gpsprot.LookAngles{Azimuth: 233, Elevation: 64}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 37}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 28}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 233, Elevation: 64}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 29}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 116, Elevation: 56}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 37}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 116, Elevation: 56}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}}, Used: false},
 			},
 		},
 		{
@@ -881,19 +882,19 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			},
 			expectedSVs: []gpsprot.SVInfo{
 				// GPS satellites with signal combinations from sigID 1 and 6 - GSA indicates 12,11,21,22,20,05 are used
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 234, Elevation: 53}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}, {ID: "L2C-L", CN0: 43}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 35, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "L2C-L", CN0: 15}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 11}, LookAngles: &gpsprot.LookAngles{Azimuth: 354, Elevation: 39}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 26}, {ID: "L2C-L", CN0: 25}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 12}, LookAngles: &gpsprot.LookAngles{Azimuth: 301, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42}, {ID: "L2C-L", CN0: 39}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 17}, LookAngles: &gpsprot.LookAngles{Azimuth: 109, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 27}, {ID: "L2C-L", CN0: 18}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 88, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 23}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 306, Elevation: 72}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 41}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 21}, LookAngles: &gpsprot.LookAngles{Azimuth: 339, Elevation: 82}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}, {ID: "L2C-L", CN0: 49}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 161, Elevation: 23}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 38}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 234, Elevation: 53}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}, {ID: "L2C-L", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 6}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 35, Elevation: 24}), Signals: []gpsprot.SignalInfo{{ID: "L2C-L", CN0: 15}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 11}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 354, Elevation: 39}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 26}, {ID: "L2C-L", CN0: 25}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 12}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 301, Elevation: 42}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42}, {ID: "L2C-L", CN0: 39}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 17}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 109, Elevation: 24}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 27}, {ID: "L2C-L", CN0: 18}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 19}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 88, Elevation: 41}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 23}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 306, Elevation: 72}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 41}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 21}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 339, Elevation: 82}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}, {ID: "L2C-L", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 22}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 161, Elevation: 23}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 38}}, Used: true},
 				// SBAS satellites (GPS IDs 41, 42, 50 -> SBAS 28, 29, 37)
-				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 28}, LookAngles: &gpsprot.LookAngles{Azimuth: 233, Elevation: 64}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 37}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 28}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 233, Elevation: 64}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 29}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 116, Elevation: 56}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 37}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 116, Elevation: 56}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}}, Used: false},
 			},
 		},
 		{
@@ -911,11 +912,11 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			},
 			expectedSVs: []gpsprot.SVInfo{
 				// GLONASS satellites (NMEA IDs 68,69,73,80,83 -> GLO nums 4,5,9,16,19) - GSA indicates 80->R16, 69->R05, 73->R09 are used
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 67, Elevation: 45}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 19}, {ID: "L2", CN0: 30}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 148, Elevation: 47}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 48}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 258, Elevation: 37}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 47}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 195, Elevation: 22}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 37}, {ID: "L2", CN0: 37}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 16, Elevation: 26}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 28}, {ID: "L2", CN0: 16}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 4}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 67, Elevation: 45}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 19}, {ID: "L2", CN0: 30}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 5}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 148, Elevation: 47}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 48}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 9}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 258, Elevation: 37}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 16}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 195, Elevation: 22}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 37}, {ID: "L2", CN0: 37}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 19}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 16, Elevation: 26}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 28}, {ID: "L2", CN0: 16}}, Used: false},
 			},
 		},
 		{
@@ -934,15 +935,15 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			},
 			expectedSVs: []gpsprot.SVInfo{
 				// Galileo satellites (E5b sigID=2, E1 sigID=7) - GSA indicates 24,09,04,31,25,11,16,36,06 are used
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 114, Elevation: 31}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 31}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 144, Elevation: 31}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 169, Elevation: 22}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 10}, LookAngles: &gpsprot.LookAngles{Azimuth: 12, Elevation: 35}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 25}, {ID: "E5b", CN0: 22}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 11}, LookAngles: &gpsprot.LookAngles{Azimuth: 337, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 33}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 273, Elevation: 64}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 48}, {ID: "E5b", CN0: 49}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 24}, LookAngles: &gpsprot.LookAngles{Azimuth: 202, Elevation: 65}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 47}, {ID: "E5b", CN0: 48}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 25}, LookAngles: &gpsprot.LookAngles{Azimuth: 304, Elevation: 45}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 43}, {ID: "E5b", CN0: 49}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 31}, LookAngles: &gpsprot.LookAngles{Azimuth: 158, Elevation: 20}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 40}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 4}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 114, Elevation: 31}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 31}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 6}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 144, Elevation: 31}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 9}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 169, Elevation: 22}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 10}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 12, Elevation: 35}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 25}, {ID: "E5b", CN0: 22}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 11}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 337, Elevation: 41}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 33}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 16}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 273, Elevation: 64}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 48}, {ID: "E5b", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 24}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 202, Elevation: 65}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 47}, {ID: "E5b", CN0: 48}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 25}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 304, Elevation: 45}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 43}, {ID: "E5b", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 31}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 158, Elevation: 20}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 40}}, Used: true},
 			},
 		},
 		{
@@ -963,17 +964,17 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			},
 			expectedSVs: []gpsprot.SVInfo{
 				// BeiDou satellites - GSA lists 19,45,06,36,16,38,10,09,07,13,40,08 as used, but only those with valid CN0 appear in output
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 179, Elevation: 14}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}, {ID: "B2I", CN0: 36}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 63, Elevation: 71}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 39}, {ID: "B2I", CN0: 40}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 8}, LookAngles: &gpsprot.LookAngles{Azimuth: 316, Elevation: 79}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 43}, {ID: "B2I", CN0: 46}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 193, Elevation: 17}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 34}, {ID: "B2I", CN0: 41}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10}, LookAngles: &gpsprot.LookAngles{Azimuth: 16, Elevation: 71}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 41}, {ID: "B2I", CN0: 43}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 13}, LookAngles: &gpsprot.LookAngles{Azimuth: 269, Elevation: 76}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 49}, {ID: "B2I", CN0: 47}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 177, Elevation: 13}, Signals: []gpsprot.SignalInfo{{ID: "B2I", CN0: 30}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 141, Elevation: 66}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 50}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 55, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 198, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 44}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 34, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 27}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 6}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 179, Elevation: 14}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}, {ID: "B2I", CN0: 36}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 7}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 63, Elevation: 71}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 39}, {ID: "B2I", CN0: 40}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 8}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 316, Elevation: 79}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 43}, {ID: "B2I", CN0: 46}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 9}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 193, Elevation: 17}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 34}, {ID: "B2I", CN0: 41}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 16, Elevation: 71}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 41}, {ID: "B2I", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 13}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 269, Elevation: 76}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 49}, {ID: "B2I", CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 16}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 177, Elevation: 13}), Signals: []gpsprot.SignalInfo{{ID: "B2I", CN0: 30}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 19}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 141, Elevation: 66}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 50}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 20}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 55, Elevation: 41}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 22}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 198, Elevation: 24}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 44}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 29}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 34, Elevation: 42}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 27}}, Used: false},
 			},
 		},
 		{
@@ -988,9 +989,9 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			},
 			expectedSVs: []gpsprot.SVInfo{
 				// QZSS satellites - GSA lists 04,02 as used
-				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 2}, LookAngles: &gpsprot.LookAngles{Azimuth: 137, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}, {ID: "L2C-L", CN0: 43}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 93, Elevation: 49}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 22}, {ID: "L2C-L", CN0: 30}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 37}, {ID: "L2C-L", CN0: 44}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 2}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 137, Elevation: 42}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}, {ID: "L2C-L", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 4}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 93, Elevation: 49}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 22}, {ID: "L2C-L", CN0: 30}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 7}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 116, Elevation: 56}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 37}, {ID: "L2C-L", CN0: 44}}, Used: false},
 			},
 		},
 		{
@@ -1038,56 +1039,56 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			},
 			expectedSVs: []gpsprot.SVInfo{
 				// GPS satellites with correct Used flags (from GPS test)
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 234, Elevation: 53}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}, {ID: "L2C-L", CN0: 43}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 35, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "L2C-L", CN0: 15}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 11}, LookAngles: &gpsprot.LookAngles{Azimuth: 354, Elevation: 39}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 26}, {ID: "L2C-L", CN0: 25}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 12}, LookAngles: &gpsprot.LookAngles{Azimuth: 301, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42}, {ID: "L2C-L", CN0: 39}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 17}, LookAngles: &gpsprot.LookAngles{Azimuth: 109, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 27}, {ID: "L2C-L", CN0: 18}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 88, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 23}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 306, Elevation: 72}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 41}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 21}, LookAngles: &gpsprot.LookAngles{Azimuth: 339, Elevation: 82}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}, {ID: "L2C-L", CN0: 49}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 161, Elevation: 23}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 38}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 234, Elevation: 53}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}, {ID: "L2C-L", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 6}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 35, Elevation: 24}), Signals: []gpsprot.SignalInfo{{ID: "L2C-L", CN0: 15}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 11}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 354, Elevation: 39}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 26}, {ID: "L2C-L", CN0: 25}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 12}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 301, Elevation: 42}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42}, {ID: "L2C-L", CN0: 39}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 17}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 109, Elevation: 24}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 27}, {ID: "L2C-L", CN0: 18}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 19}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 88, Elevation: 41}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 23}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 20}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 306, Elevation: 72}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 41}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 21}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 339, Elevation: 82}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}, {ID: "L2C-L", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 22}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 161, Elevation: 23}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 38}}, Used: true},
 
 				// SBAS satellites (from GPS test)
-				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 28}, LookAngles: &gpsprot.LookAngles{Azimuth: 233, Elevation: 64}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 37}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 28}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 233, Elevation: 64}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 29}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 116, Elevation: 56}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 37}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 116, Elevation: 56}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}}, Used: false},
 
 				// GLONASS satellites with correct Used flags (from GLONASS test)
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 67, Elevation: 45}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 19}, {ID: "L2", CN0: 30}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 148, Elevation: 47}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 48}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 258, Elevation: 37}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 47}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 195, Elevation: 22}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 37}, {ID: "L2", CN0: 37}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 16, Elevation: 26}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 28}, {ID: "L2", CN0: 16}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 4}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 67, Elevation: 45}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 19}, {ID: "L2", CN0: 30}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 5}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 148, Elevation: 47}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 48}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 9}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 258, Elevation: 37}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 49}, {ID: "L2", CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 16}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 195, Elevation: 22}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 37}, {ID: "L2", CN0: 37}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 19}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 16, Elevation: 26}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 28}, {ID: "L2", CN0: 16}}, Used: false},
 
 				// Galileo satellites with correct Used flags (from Galileo test)
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 114, Elevation: 31}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 31}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 144, Elevation: 31}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 169, Elevation: 22}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 10}, LookAngles: &gpsprot.LookAngles{Azimuth: 12, Elevation: 35}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 25}, {ID: "E5b", CN0: 22}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 11}, LookAngles: &gpsprot.LookAngles{Azimuth: 337, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 33}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 273, Elevation: 64}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 48}, {ID: "E5b", CN0: 49}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 24}, LookAngles: &gpsprot.LookAngles{Azimuth: 202, Elevation: 65}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 47}, {ID: "E5b", CN0: 48}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 25}, LookAngles: &gpsprot.LookAngles{Azimuth: 304, Elevation: 45}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 43}, {ID: "E5b", CN0: 49}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 31}, LookAngles: &gpsprot.LookAngles{Azimuth: 158, Elevation: 20}, Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 40}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 4}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 114, Elevation: 31}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 31}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 6}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 144, Elevation: 31}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 9}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 169, Elevation: 22}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 45}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 10}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 12, Elevation: 35}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 25}, {ID: "E5b", CN0: 22}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 11}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 337, Elevation: 41}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 28}, {ID: "E5b", CN0: 33}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 16}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 273, Elevation: 64}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 48}, {ID: "E5b", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 24}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 202, Elevation: 65}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 47}, {ID: "E5b", CN0: 48}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 25}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 304, Elevation: 45}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 43}, {ID: "E5b", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 31}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 158, Elevation: 20}), Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 38}, {ID: "E5b", CN0: 40}}, Used: true},
 
 				// BeiDou satellites with correct Used flags (from BeiDou test)
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 179, Elevation: 14}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}, {ID: "B2I", CN0: 36}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 63, Elevation: 71}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 39}, {ID: "B2I", CN0: 40}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 8}, LookAngles: &gpsprot.LookAngles{Azimuth: 316, Elevation: 79}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 43}, {ID: "B2I", CN0: 46}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 193, Elevation: 17}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 34}, {ID: "B2I", CN0: 41}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10}, LookAngles: &gpsprot.LookAngles{Azimuth: 16, Elevation: 71}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 41}, {ID: "B2I", CN0: 43}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 13}, LookAngles: &gpsprot.LookAngles{Azimuth: 269, Elevation: 76}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 49}, {ID: "B2I", CN0: 47}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 177, Elevation: 13}, Signals: []gpsprot.SignalInfo{{ID: "B2I", CN0: 30}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 141, Elevation: 66}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 50}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 20}, LookAngles: &gpsprot.LookAngles{Azimuth: 55, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 198, Elevation: 24}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 44}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 34, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 27}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 6}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 179, Elevation: 14}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}, {ID: "B2I", CN0: 36}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 7}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 63, Elevation: 71}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 39}, {ID: "B2I", CN0: 40}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 8}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 316, Elevation: 79}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 43}, {ID: "B2I", CN0: 46}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 9}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 193, Elevation: 17}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 34}, {ID: "B2I", CN0: 41}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 16, Elevation: 71}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 41}, {ID: "B2I", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 13}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 269, Elevation: 76}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 49}, {ID: "B2I", CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 16}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 177, Elevation: 13}), Signals: []gpsprot.SignalInfo{{ID: "B2I", CN0: 30}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 19}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 141, Elevation: 66}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 50}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 20}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 55, Elevation: 41}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 26}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 22}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 198, Elevation: 24}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 44}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 29}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 34, Elevation: 42}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 27}}, Used: false},
 
 				// QZSS satellites with correct Used flags (from QZSS test)
-				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 2}, LookAngles: &gpsprot.LookAngles{Azimuth: 137, Elevation: 42}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}, {ID: "L2C-L", CN0: 43}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 4}, LookAngles: &gpsprot.LookAngles{Azimuth: 93, Elevation: 49}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 22}, {ID: "L2C-L", CN0: 30}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 116, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 37}, {ID: "L2C-L", CN0: 44}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 2}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 137, Elevation: 42}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 40}, {ID: "L2C-L", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 4}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 93, Elevation: 49}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 22}, {ID: "L2C-L", CN0: 30}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 7}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 116, Elevation: 56}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 37}, {ID: "L2C-L", CN0: 44}}, Used: false},
 			},
 		},
 		{
@@ -1116,52 +1117,52 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			numbering: sino.NewNMEASVNumbering(),
 			expectedSVs: []gpsprot.SVInfo{
 				// GPS satellites (GSA: 26,31,16,02,10 used)
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 26}, LookAngles: &gpsprot.LookAngles{Azimuth: 199, Elevation: 86}, Signals: []gpsprot.SignalInfo{{CN0: 49}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 31}, LookAngles: &gpsprot.LookAngles{Azimuth: 340, Elevation: 46}, Signals: []gpsprot.SignalInfo{{CN0: 31}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 202, Elevation: 43}, Signals: []gpsprot.SignalInfo{{CN0: 47}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 2}, LookAngles: &gpsprot.LookAngles{Azimuth: 250, Elevation: 11}, Signals: []gpsprot.SignalInfo{{CN0: 37}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 10}, LookAngles: &gpsprot.LookAngles{Azimuth: 159, Elevation: 35}, Signals: []gpsprot.SignalInfo{{CN0: 44}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 26}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 199, Elevation: 86}), Signals: []gpsprot.SignalInfo{{CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 31}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 340, Elevation: 46}), Signals: []gpsprot.SignalInfo{{CN0: 31}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 16}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 202, Elevation: 43}), Signals: []gpsprot.SignalInfo{{CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 2}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 250, Elevation: 11}), Signals: []gpsprot.SignalInfo{{CN0: 37}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 10}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 159, Elevation: 35}), Signals: []gpsprot.SignalInfo{{CN0: 44}}, Used: true},
 				// QZSS satellites (GSA: 133->3, 137->7 used)
-				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 3}, LookAngles: &gpsprot.LookAngles{Azimuth: 146, Elevation: 15}, Signals: []gpsprot.SignalInfo{{CN0: 31}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 115, Elevation: 56}, Signals: []gpsprot.SignalInfo{{CN0: 36}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 3}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 146, Elevation: 15}), Signals: []gpsprot.SignalInfo{{CN0: 31}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 7}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 115, Elevation: 56}), Signals: []gpsprot.SignalInfo{{CN0: 36}}, Used: true},
 				// BeiDou satellites (GSA: 143,142,150,147,145,149,153,148,200,159,176,162,185,166,180,199,161,178 used)
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 3}, LookAngles: &gpsprot.LookAngles{Azimuth: 143, Elevation: 71}, Signals: []gpsprot.SignalInfo{{CN0: 46}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 2}, LookAngles: &gpsprot.LookAngles{Azimuth: 238, Elevation: 67}, Signals: []gpsprot.SignalInfo{{CN0: 46}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10}, LookAngles: &gpsprot.LookAngles{Azimuth: 173, Elevation: 31}, Signals: []gpsprot.SignalInfo{{CN0: 42}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 161, Elevation: 34}, Signals: []gpsprot.SignalInfo{{CN0: 42}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 259, Elevation: 40}, Signals: []gpsprot.SignalInfo{{CN0: 42}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 322, Elevation: 54}, Signals: []gpsprot.SignalInfo{{CN0: 40}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 347, Elevation: 51}, Signals: []gpsprot.SignalInfo{{CN0: 22}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 13}, LookAngles: &gpsprot.LookAngles{Azimuth: 203, Elevation: 76}, Signals: []gpsprot.SignalInfo{{CN0: 48}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 8}, LookAngles: &gpsprot.LookAngles{Azimuth: 174, Elevation: 66}, Signals: []gpsprot.SignalInfo{{CN0: 47}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 56}, LookAngles: &gpsprot.LookAngles{Azimuth: 219, Elevation: 79}, Signals: []gpsprot.SignalInfo{{CN0: 42}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 60}, LookAngles: &gpsprot.LookAngles{Azimuth: 240, Elevation: 62}, Signals: []gpsprot.SignalInfo{{CN0: 49}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 127, Elevation: 28}, Signals: []gpsprot.SignalInfo{{CN0: 43}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 36}, LookAngles: &gpsprot.LookAngles{Azimuth: 32, Elevation: 25}, Signals: []gpsprot.SignalInfo{{CN0: 27}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 62, Elevation: 71}, Signals: []gpsprot.SignalInfo{{CN0: 45}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 45}, LookAngles: &gpsprot.LookAngles{Azimuth: 344, Elevation: 65}, Signals: []gpsprot.SignalInfo{{CN0: 48}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 26}, LookAngles: &gpsprot.LookAngles{Azimuth: 245, Elevation: 36}, Signals: []gpsprot.SignalInfo{{CN0: 48}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 40}, LookAngles: &gpsprot.LookAngles{Azimuth: 147, Elevation: 26}, Signals: []gpsprot.SignalInfo{{CN0: 40}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 59}, LookAngles: &gpsprot.LookAngles{Azimuth: 105, Elevation: 43}, Signals: []gpsprot.SignalInfo{{CN0: 34}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 21}, LookAngles: &gpsprot.LookAngles{Azimuth: 335, Elevation: 36}, Signals: []gpsprot.SignalInfo{{CN0: 33}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 38}, LookAngles: &gpsprot.LookAngles{Azimuth: 166, Elevation: 52}, Signals: []gpsprot.SignalInfo{{CN0: 45}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 3}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 143, Elevation: 71}), Signals: []gpsprot.SignalInfo{{CN0: 46}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 2}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 238, Elevation: 67}), Signals: []gpsprot.SignalInfo{{CN0: 46}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 173, Elevation: 31}), Signals: []gpsprot.SignalInfo{{CN0: 42}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 7}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 161, Elevation: 34}), Signals: []gpsprot.SignalInfo{{CN0: 42}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 5}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 259, Elevation: 40}), Signals: []gpsprot.SignalInfo{{CN0: 42}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 9}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 322, Elevation: 54}), Signals: []gpsprot.SignalInfo{{CN0: 40}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 6}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 347, Elevation: 51}), Signals: []gpsprot.SignalInfo{{CN0: 22}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 13}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 203, Elevation: 76}), Signals: []gpsprot.SignalInfo{{CN0: 48}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 8}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 174, Elevation: 66}), Signals: []gpsprot.SignalInfo{{CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 56}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 219, Elevation: 79}), Signals: []gpsprot.SignalInfo{{CN0: 42}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 60}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 240, Elevation: 62}), Signals: []gpsprot.SignalInfo{{CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 19}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 127, Elevation: 28}), Signals: []gpsprot.SignalInfo{{CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 36}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 32, Elevation: 25}), Signals: []gpsprot.SignalInfo{{CN0: 27}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 22}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 62, Elevation: 71}), Signals: []gpsprot.SignalInfo{{CN0: 45}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 45}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 344, Elevation: 65}), Signals: []gpsprot.SignalInfo{{CN0: 48}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 26}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 245, Elevation: 36}), Signals: []gpsprot.SignalInfo{{CN0: 48}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 40}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 147, Elevation: 26}), Signals: []gpsprot.SignalInfo{{CN0: 40}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 59}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 105, Elevation: 43}), Signals: []gpsprot.SignalInfo{{CN0: 34}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 21}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 335, Elevation: 36}), Signals: []gpsprot.SignalInfo{{CN0: 33}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 38}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 166, Elevation: 52}), Signals: []gpsprot.SignalInfo{{CN0: 45}}, Used: true},
 				// GLONASS satellites (GSA: 38,45,49,50 → 1,8,12,13 used)
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 1}, LookAngles: &gpsprot.LookAngles{Azimuth: 58, Elevation: 58}, Signals: []gpsprot.SignalInfo{{CN0: 32}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 8}, LookAngles: &gpsprot.LookAngles{Azimuth: 122, Elevation: 23}, Signals: []gpsprot.SignalInfo{{CN0: 39}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 1}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 58, Elevation: 58}), Signals: []gpsprot.SignalInfo{{CN0: 32}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 8}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 122, Elevation: 23}), Signals: []gpsprot.SignalInfo{{CN0: 39}}, Used: true},
 				// Vendor ID 63 -> slot 26 is rejected (beyond 24 operational slots, spare satellite)
-				// {ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 26}, LookAngles: &gpsprot.LookAngles{Azimuth: 126, Elevation: 17}, Signals: []gpsprot.SignalInfo{{CN0: 39}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 12}, LookAngles: &gpsprot.LookAngles{Azimuth: 344, Elevation: 66}, Signals: []gpsprot.SignalInfo{{CN0: 51}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 13}, LookAngles: &gpsprot.LookAngles{Azimuth: 236, Elevation: 49}, Signals: []gpsprot.SignalInfo{{CN0: 47}}, Used: true},
+				// {ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 26}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 126, Elevation: 17}), Signals: []gpsprot.SignalInfo{{CN0: 39}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 12}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 344, Elevation: 66}), Signals: []gpsprot.SignalInfo{{CN0: 51}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 13}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 236, Elevation: 49}), Signals: []gpsprot.SignalInfo{{CN0: 47}}, Used: true},
 				// Galileo satellites (GSA: 93,99,89,103,82,91 → 23,29,19,33,12,21 used)
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 23}, LookAngles: &gpsprot.LookAngles{Azimuth: 194, Elevation: 51}, Signals: []gpsprot.SignalInfo{{CN0: 47}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 63, Elevation: 39}, Signals: []gpsprot.SignalInfo{{CN0: 25}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 357, Elevation: 41}, Signals: []gpsprot.SignalInfo{{CN0: 19}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 33}, LookAngles: &gpsprot.LookAngles{Azimuth: 211, Elevation: 24}, Signals: []gpsprot.SignalInfo{{CN0: 43}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 12}, LookAngles: &gpsprot.LookAngles{Azimuth: 268, Elevation: 20}, Signals: []gpsprot.SignalInfo{{CN0: 28}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 21}, LookAngles: &gpsprot.LookAngles{Azimuth: 69, Elevation: 65}, Signals: []gpsprot.SignalInfo{{CN0: 39}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 23}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 194, Elevation: 51}), Signals: []gpsprot.SignalInfo{{CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 29}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 63, Elevation: 39}), Signals: []gpsprot.SignalInfo{{CN0: 25}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 19}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 357, Elevation: 41}), Signals: []gpsprot.SignalInfo{{CN0: 19}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 33}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 211, Elevation: 24}), Signals: []gpsprot.SignalInfo{{CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 12}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 268, Elevation: 20}), Signals: []gpsprot.SignalInfo{{CN0: 28}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 21}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 69, Elevation: 65}), Signals: []gpsprot.SignalInfo{{CN0: 39}}, Used: true},
 				// NAVIC satellites (63->2, 70->9)
-				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, Num: 2}, LookAngles: &gpsprot.LookAngles{Azimuth: 226, Elevation: 25}, Signals: []gpsprot.SignalInfo{{CN0: 44}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 297, Elevation: 40}, Signals: []gpsprot.SignalInfo{{CN0: 44}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, Num: 2}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 226, Elevation: 25}), Signals: []gpsprot.SignalInfo{{CN0: 44}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, Num: 9}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 297, Elevation: 40}), Signals: []gpsprot.SignalInfo{{CN0: 44}}, Used: false},
 			},
 		},
 		{
@@ -1219,46 +1220,46 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			numbering: nil, // Use default NMEA 4.11 numbering
 			expectedSVs: []gpsprot.SVInfo{
 				// GPS satellites
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 26}, LookAngles: &gpsprot.LookAngles{Azimuth: 199, Elevation: 86}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 49}, {ID: "L2P", CN0: 52}, {ID: "L5-Q", CN0: 50}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 31}, LookAngles: &gpsprot.LookAngles{Azimuth: 340, Elevation: 46}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 31}, {ID: "L2P", CN0: 24}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 202, Elevation: 43}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}, {ID: "L2P", CN0: 37}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 2}, LookAngles: &gpsprot.LookAngles{Azimuth: 250, Elevation: 11}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 37}, {ID: "L2P", CN0: 23}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 10}, LookAngles: &gpsprot.LookAngles{Azimuth: 159, Elevation: 35}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}, {ID: "L2P", CN0: 36}, {ID: "L5-Q", CN0: 40}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 26}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 199, Elevation: 86}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 49}, {ID: "L2P", CN0: 52}, {ID: "L5-Q", CN0: 50}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 31}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 340, Elevation: 46}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 31}, {ID: "L2P", CN0: 24}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 16}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 202, Elevation: 43}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 47}, {ID: "L2P", CN0: 37}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 2}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 250, Elevation: 11}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 37}, {ID: "L2P", CN0: 23}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 10}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 159, Elevation: 35}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}, {ID: "L2P", CN0: 36}, {ID: "L5-Q", CN0: 40}}, Used: true},
 				// GLONASS satellites - slot 26 (ID 90) is NOW ACCEPTED after msg.go fix
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 1}, LookAngles: &gpsprot.LookAngles{Azimuth: 58, Elevation: 58}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 33}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 8}, LookAngles: &gpsprot.LookAngles{Azimuth: 122, Elevation: 23}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 39}, {ID: "L2", CN0: 43}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 26}, LookAngles: &gpsprot.LookAngles{Azimuth: 126, Elevation: 17}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 38}, {ID: "L2", CN0: 45}}, Used: false}, // Spare slot 26 accepted!
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 12}, LookAngles: &gpsprot.LookAngles{Azimuth: 344, Elevation: 66}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 51}, {ID: "L2", CN0: 48}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 13}, LookAngles: &gpsprot.LookAngles{Azimuth: 236, Elevation: 49}, Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 47}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 2}, LookAngles: &gpsprot.LookAngles{Azimuth: 351, Elevation: 30}, Signals: []gpsprot.SignalInfo{{ID: "L2", CN0: 32}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 1}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 58, Elevation: 58}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 33}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 8}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 122, Elevation: 23}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 39}, {ID: "L2", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 26}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 126, Elevation: 17}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 38}, {ID: "L2", CN0: 45}}, Used: false}, // Spare slot 26 accepted!
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 12}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 344, Elevation: 66}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 51}, {ID: "L2", CN0: 48}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 13}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 236, Elevation: 49}), Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GLO, Num: 2}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 351, Elevation: 30}), Signals: []gpsprot.SignalInfo{{ID: "L2", CN0: 32}}, Used: false},
 				// BeiDou satellites
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 3}, LookAngles: &gpsprot.LookAngles{Azimuth: 143, Elevation: 71}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 46}, {ID: "B3I", CN0: 49}, {ID: "B2I", CN0: 50}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 2}, LookAngles: &gpsprot.LookAngles{Azimuth: 238, Elevation: 67}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 47}, {ID: "B3I", CN0: 50}, {ID: "B2I", CN0: 49}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10}, LookAngles: &gpsprot.LookAngles{Azimuth: 173, Elevation: 31}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 42}, {ID: "B3I", CN0: 39}, {ID: "B2I", CN0: 46}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 161, Elevation: 34}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 43}, {ID: "B3I", CN0: 45}, {ID: "B2I", CN0: 46}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 5}, LookAngles: &gpsprot.LookAngles{Azimuth: 259, Elevation: 40}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 43}, {ID: "B3I", CN0: 43}, {ID: "B2I", CN0: 43}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 322, Elevation: 54}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 40}, {ID: "B3I", CN0: 38}, {ID: "B2I", CN0: 43}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 347, Elevation: 51}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 22}, {ID: "B3I", CN0: 38}, {ID: "B2I", CN0: 37}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 13}, LookAngles: &gpsprot.LookAngles{Azimuth: 203, Elevation: 76}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 48}, {ID: "B3I", CN0: 49}, {ID: "B2I", CN0: 49}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 8}, LookAngles: &gpsprot.LookAngles{Azimuth: 174, Elevation: 66}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 47}, {ID: "B3I", CN0: 49}, {ID: "B2I", CN0: 49}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 127, Elevation: 28}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 43}, {ID: "B3I", CN0: 44}, {ID: "B1C", CN0: 41}, {ID: "B2a", CN0: 40}, {ID: "B2b", CN0: 42}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 22}, LookAngles: &gpsprot.LookAngles{Azimuth: 62, Elevation: 71}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 45}, {ID: "B3I", CN0: 43}, {ID: "B1C", CN0: 44}, {ID: "B2a", CN0: 40}, {ID: "B2b", CN0: 42}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 26}, LookAngles: &gpsprot.LookAngles{Azimuth: 245, Elevation: 36}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 48}, {ID: "B3I", CN0: 50}, {ID: "B1C", CN0: 47}, {ID: "B2a", CN0: 44}, {ID: "B2b", CN0: 49}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 21}, LookAngles: &gpsprot.LookAngles{Azimuth: 335, Elevation: 36}, Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 34}, {ID: "B3I", CN0: 36}, {ID: "B1C", CN0: 31}, {ID: "B2a", CN0: 35}, {ID: "B2b", CN0: 40}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 1}, LookAngles: &gpsprot.LookAngles{Azimuth: 104, Elevation: 37}, Signals: []gpsprot.SignalInfo{{ID: "B3I", CN0: 31}, {ID: "B2I", CN0: 33}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 16}, LookAngles: &gpsprot.LookAngles{Azimuth: 359, Elevation: 47}, Signals: []gpsprot.SignalInfo{{ID: "B3I", CN0: 26}, {ID: "B2I", CN0: 27}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 3}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 143, Elevation: 71}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 46}, {ID: "B3I", CN0: 49}, {ID: "B2I", CN0: 50}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 2}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 238, Elevation: 67}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 47}, {ID: "B3I", CN0: 50}, {ID: "B2I", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 173, Elevation: 31}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 42}, {ID: "B3I", CN0: 39}, {ID: "B2I", CN0: 46}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 7}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 161, Elevation: 34}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 43}, {ID: "B3I", CN0: 45}, {ID: "B2I", CN0: 46}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 5}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 259, Elevation: 40}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 43}, {ID: "B3I", CN0: 43}, {ID: "B2I", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 9}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 322, Elevation: 54}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 40}, {ID: "B3I", CN0: 38}, {ID: "B2I", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 6}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 347, Elevation: 51}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 22}, {ID: "B3I", CN0: 38}, {ID: "B2I", CN0: 37}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 13}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 203, Elevation: 76}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 48}, {ID: "B3I", CN0: 49}, {ID: "B2I", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 8}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 174, Elevation: 66}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 47}, {ID: "B3I", CN0: 49}, {ID: "B2I", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 19}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 127, Elevation: 28}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 43}, {ID: "B3I", CN0: 44}, {ID: "B1C", CN0: 41}, {ID: "B2a", CN0: 40}, {ID: "B2b", CN0: 42}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 22}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 62, Elevation: 71}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 45}, {ID: "B3I", CN0: 43}, {ID: "B1C", CN0: 44}, {ID: "B2a", CN0: 40}, {ID: "B2b", CN0: 42}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 26}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 245, Elevation: 36}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 48}, {ID: "B3I", CN0: 50}, {ID: "B1C", CN0: 47}, {ID: "B2a", CN0: 44}, {ID: "B2b", CN0: 49}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 21}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 335, Elevation: 36}), Signals: []gpsprot.SignalInfo{{ID: "B1I", CN0: 34}, {ID: "B3I", CN0: 36}, {ID: "B1C", CN0: 31}, {ID: "B2a", CN0: 35}, {ID: "B2b", CN0: 40}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 1}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 104, Elevation: 37}), Signals: []gpsprot.SignalInfo{{ID: "B3I", CN0: 31}, {ID: "B2I", CN0: 33}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 16}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 359, Elevation: 47}), Signals: []gpsprot.SignalInfo{{ID: "B3I", CN0: 26}, {ID: "B2I", CN0: 27}}, Used: false},
 				// Galileo satellites
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 23}, LookAngles: &gpsprot.LookAngles{Azimuth: 194, Elevation: 51}, Signals: []gpsprot.SignalInfo{{ID: "E5a", CN0: 46}, {ID: "E5b", CN0: 51}, {ID: "E1", CN0: 48}, {ID: "E6", CN0: 52}, {ID: "E5", CN0: 52}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 12}, LookAngles: &gpsprot.LookAngles{Azimuth: 268, Elevation: 20}, Signals: []gpsprot.SignalInfo{{ID: "E5a", CN0: 35}, {ID: "E5b", CN0: 39}, {ID: "E1", CN0: 28}, {ID: "E6", CN0: 38}, {ID: "E5", CN0: 41}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 21}, LookAngles: &gpsprot.LookAngles{Azimuth: 69, Elevation: 65}, Signals: []gpsprot.SignalInfo{{ID: "E5a", CN0: 37}, {ID: "E5b", CN0: 41}, {ID: "E1", CN0: 39}, {ID: "E6", CN0: 41}, {ID: "E5", CN0: 43}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 29}, LookAngles: &gpsprot.LookAngles{Azimuth: 62, Elevation: 39}, Signals: []gpsprot.SignalInfo{{ID: "E5b", CN0: 20}, {ID: "E1", CN0: 25}, {ID: "E6", CN0: 30}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 357, Elevation: 41}, Signals: []gpsprot.SignalInfo{{ID: "E5b", CN0: 26}, {ID: "E1", CN0: 19}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 23}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 194, Elevation: 51}), Signals: []gpsprot.SignalInfo{{ID: "E5a", CN0: 46}, {ID: "E5b", CN0: 51}, {ID: "E1", CN0: 48}, {ID: "E6", CN0: 52}, {ID: "E5", CN0: 52}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 12}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 268, Elevation: 20}), Signals: []gpsprot.SignalInfo{{ID: "E5a", CN0: 35}, {ID: "E5b", CN0: 39}, {ID: "E1", CN0: 28}, {ID: "E6", CN0: 38}, {ID: "E5", CN0: 41}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 21}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 69, Elevation: 65}), Signals: []gpsprot.SignalInfo{{ID: "E5a", CN0: 37}, {ID: "E5b", CN0: 41}, {ID: "E1", CN0: 39}, {ID: "E6", CN0: 41}, {ID: "E5", CN0: 43}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 29}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 62, Elevation: 39}), Signals: []gpsprot.SignalInfo{{ID: "E5b", CN0: 20}, {ID: "E1", CN0: 25}, {ID: "E6", CN0: 30}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 19}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 357, Elevation: 41}), Signals: []gpsprot.SignalInfo{{ID: "E5b", CN0: 26}, {ID: "E1", CN0: 19}}, Used: true},
 				// QZSS satellites
-				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 3}, LookAngles: &gpsprot.LookAngles{Azimuth: 146, Elevation: 15}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 30}, {ID: "L2C-L", CN0: 42}, {ID: "L5-Q", CN0: 37}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 115, Elevation: 56}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 36}, {ID: "L2C-L", CN0: 51}, {ID: "L5-Q", CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 3}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 146, Elevation: 15}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 30}, {ID: "L2C-L", CN0: 42}, {ID: "L5-Q", CN0: 37}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.QZSS, Num: 7}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 115, Elevation: 56}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 36}, {ID: "L2C-L", CN0: 51}, {ID: "L5-Q", CN0: 47}}, Used: true},
 				// NAVIC satellites
-				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, Num: 2}, LookAngles: &gpsprot.LookAngles{Azimuth: 226, Elevation: 25}, Signals: []gpsprot.SignalInfo{{ID: "L5", CN0: 44}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, Num: 9}, LookAngles: &gpsprot.LookAngles{Azimuth: 297, Elevation: 40}, Signals: []gpsprot.SignalInfo{{ID: "L5", CN0: 44}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, Num: 2}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 226, Elevation: 25}), Signals: []gpsprot.SignalInfo{{ID: "L5", CN0: 44}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.NAVIC, Num: 9}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 297, Elevation: 40}), Signals: []gpsprot.SignalInfo{{ID: "L5", CN0: 44}}, Used: false},
 			},
 		},
 		{
@@ -1277,12 +1278,12 @@ func TestPacketProcessorSatellites(t *testing.T) {
 			expectedSVs: []gpsprot.SVInfo{
 				// Satellites parsed from all 4 GSV messages with combined signals
 				// SVIDs 199, 195, 194 are beyond valid GPS range and get filtered out
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 14}, LookAngles: &gpsprot.LookAngles{Azimuth: 23, Elevation: 61}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 29}}, Used: false},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 6}, LookAngles: &gpsprot.LookAngles{Azimuth: 238, Elevation: 57}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}, {ID: "L5-Q", CN0: 47}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 30}, LookAngles: &gpsprot.LookAngles{Azimuth: 198, Elevation: 49}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 49}, {ID: "L5-Q", CN0: 50}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 19}, LookAngles: &gpsprot.LookAngles{Azimuth: 315, Elevation: 34}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 3}, LookAngles: &gpsprot.LookAngles{Azimuth: 74, Elevation: 26}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 18}}, Used: true},
-				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 7}, LookAngles: &gpsprot.LookAngles{Azimuth: 169, Elevation: 26}, Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 14}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 23, Elevation: 61}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 29}}, Used: false},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 6}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 238, Elevation: 57}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 51}, {ID: "L5-Q", CN0: 47}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 30}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 198, Elevation: 49}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 49}, {ID: "L5-Q", CN0: 50}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 19}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 315, Elevation: 34}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 42}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 3}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 74, Elevation: 26}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 18}}, Used: true},
+				{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 7}, LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 169, Elevation: 26}), Signals: []gpsprot.SignalInfo{{ID: "L1 C/A", CN0: 44}}, Used: true},
 			},
 		},
 	}
@@ -1368,14 +1369,16 @@ func testCompareSatellitesMsgs(t *testing.T, actual, expected *gpsprot.Satellite
 		}
 
 		// Compare look angles
-		if (actualSV.LookAngles == nil) != (expectedSV.LookAngles == nil) {
-			t.Errorf("Satellite %s LookAngles nil mismatch: got %v, expected %v", svid, actualSV.LookAngles == nil, expectedSV.LookAngles == nil)
-		} else if actualSV.LookAngles != nil {
-			if actualSV.LookAngles.Azimuth != expectedSV.LookAngles.Azimuth {
-				t.Errorf("Satellite %s Azimuth mismatch: got %d, expected %d", svid, actualSV.LookAngles.Azimuth, expectedSV.LookAngles.Azimuth)
+		if actualSV.LookAngles.IsSet() != expectedSV.LookAngles.IsSet() {
+			t.Errorf("Satellite %s LookAngles set mismatch: got %v, expected %v", svid, actualSV.LookAngles.IsSet(), expectedSV.LookAngles.IsSet())
+		} else if actualSV.LookAngles.IsSet() {
+			actLA := actualSV.LookAngles.Get()
+			expLA := expectedSV.LookAngles.Get()
+			if actLA.Azimuth != expLA.Azimuth {
+				t.Errorf("Satellite %s Azimuth mismatch: got %d, expected %d", svid, actLA.Azimuth, expLA.Azimuth)
 			}
-			if actualSV.LookAngles.Elevation != expectedSV.LookAngles.Elevation {
-				t.Errorf("Satellite %s Elevation mismatch: got %d, expected %d", svid, actualSV.LookAngles.Elevation, expectedSV.LookAngles.Elevation)
+			if actLA.Elevation != expLA.Elevation {
+				t.Errorf("Satellite %s Elevation mismatch: got %d, expected %d", svid, actLA.Elevation, expLA.Elevation)
 			}
 		}
 

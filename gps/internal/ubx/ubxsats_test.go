@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
@@ -38,7 +39,7 @@ func TestSatellitesCopy(t *testing.T) {
 							{CN0: 45, Used: true},
 							{CN0: 35, Used: false},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 45}),
 						Used:       true,
 					},
 				},
@@ -56,7 +57,7 @@ func TestSatellitesCopy(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{CN0: 45, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 45}),
 						Used:       true,
 					},
 					{
@@ -120,9 +121,9 @@ func TestSatellitesCopy(t *testing.T) {
 					t.Errorf("SV %d: expected Used %v, got %v", i, tt.input.SVs[i].Used, result.SVs[i].Used)
 				}
 
-				// Verify LookAngles is NOT deep copied
+				// LookAngles is a value type, so the copy should be equal.
 				if result.SVs[i].LookAngles != tt.input.SVs[i].LookAngles {
-					t.Errorf("SV %d: LookAngles should point to same object", i)
+					t.Errorf("SV %d: LookAngles should be equal after copy", i)
 				}
 
 				// Verify Signals slice is copied
@@ -213,7 +214,7 @@ func TestSatellitesCombine(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{CN0: 45, Used: true}, // SAT says it's used
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 45}),
 						Used:       true, // SAT says satellite is used
 					},
 				},
@@ -242,7 +243,7 @@ func TestSatellitesCombine(t *testing.T) {
 							{CN0: 42, Used: false}, // Signals from SIG
 							{CN0: 38, Used: false}, // Signals from SIG
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45}, // LookAngles from SAT
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 45}), // LookAngles from SAT
 						Used:       false,                                           // Should be false (from SIG), not true (from SAT)
 					},
 				},
@@ -259,7 +260,7 @@ func TestSatellitesCombine(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{CN0: 45, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 45}),
 						Used:       true,
 					},
 					{
@@ -267,7 +268,7 @@ func TestSatellitesCombine(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{CN0: 40, Used: false},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 180, Elevation: 30},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 180, Elevation: 30}),
 						Used:       false,
 					},
 				},
@@ -303,7 +304,7 @@ func TestSatellitesCombine(t *testing.T) {
 							{CN0: 42, Used: true},
 							{CN0: 38, Used: false},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 45}),
 						Used:       true,
 					},
 					{
@@ -311,7 +312,7 @@ func TestSatellitesCombine(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{CN0: 40, Used: false},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 180, Elevation: 30},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 180, Elevation: 30}),
 						Used:       false,
 					},
 					{
@@ -335,7 +336,7 @@ func TestSatellitesCombine(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{CN0: 45, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 45}),
 						Used:       true,
 					},
 				},
@@ -362,7 +363,7 @@ func TestSatellitesCombine(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{CN0: 45, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 45},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 45}),
 						Used:       true,
 					},
 					{
@@ -438,7 +439,7 @@ func TestSatellitesNavSat(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGPSL1CA, CN0: 45, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 30},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 30}),
 						Used:       true,
 					},
 				},
@@ -537,19 +538,19 @@ func TestSatellitesNavSat(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGPSL1CA, CN0: 45, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 30},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 30}),
 						Used:       true,
 					},
 					{
 						ID:         gpsprot.SVID{GNSS: gpsprot.GAL, Num: 5},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 180, Elevation: 45},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 180, Elevation: 45}),
 					},
 					{
 						ID: gpsprot.SVID{GNSS: gpsprot.BDS, Num: 10},
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDBDSB1I, CN0: 40, Used: false},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 270, Elevation: 60},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 270, Elevation: 60}),
 						Used:       false,
 					},
 					{
@@ -557,7 +558,7 @@ func TestSatellitesNavSat(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGPSL1CA, CN0: 35, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 0, Elevation: 70},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 0, Elevation: 70}),
 						Used:       true,
 					},
 					{
@@ -565,7 +566,7 @@ func TestSatellitesNavSat(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGLOL1, CN0: 30, Used: false},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 315, Elevation: 20},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 315, Elevation: 20}),
 						Used:       false,
 					},
 				},
@@ -1140,7 +1141,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGPSL1CA, CN0: 45, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 30},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 30}),
 						Used:       true,
 					},
 				},
@@ -1235,7 +1236,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGPSL1CA, CN0: 45, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 30},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 30}),
 						Used:       true,
 					},
 					{
@@ -1243,7 +1244,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGPSL1CA, CN0: 40},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 180, Elevation: 45},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 180, Elevation: 45}),
 						Used:       false,
 					},
 					{
@@ -1251,7 +1252,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGPSL1CA, CN0: 35, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 270, Elevation: 60},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 270, Elevation: 60}),
 						Used:       true,
 					},
 				},
@@ -1348,7 +1349,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGPSL1CA, CN0: 42, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 45, Elevation: 25},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 45, Elevation: 25}),
 						Used:       true,
 					},
 					{
@@ -1356,7 +1357,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGLOL1, CN0: 38, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 135, Elevation: 35},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 135, Elevation: 35}),
 						Used:       true,
 					},
 					{
@@ -1364,7 +1365,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGLOL1, CN0: 33},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 225, Elevation: 55},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 225, Elevation: 55}),
 						Used:       false,
 					},
 					{
@@ -1372,7 +1373,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGPSL1CA, CN0: 30, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 315, Elevation: 65},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 315, Elevation: 65}),
 						Used:       true,
 					},
 					{
@@ -1380,7 +1381,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGPSL1CA, CN0: 28},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 0, Elevation: 70},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 0, Elevation: 70}),
 						Used:       false,
 					},
 					{
@@ -1388,7 +1389,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDQZSSL1CA, CN0: 40, Used: true},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 180, Elevation: 40},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 180, Elevation: 40}),
 						Used:       true,
 					},
 					{
@@ -1396,7 +1397,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 						Signals: []gpsprot.SignalInfo{
 							{ID: gpsprot.SigIDGLOL1, CN0: 20},
 						},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 90, Elevation: 10},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 10}),
 						Used:       false,
 					},
 				},
@@ -1419,7 +1420,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 }
 
 func TestSatellitesPrune(t *testing.T) {
-	la := &gpsprot.LookAngles{Azimuth: 90, Elevation: 30}
+	la := opt.Make(gpsprot.LookAngles{Azimuth: 90, Elevation: 30})
 	tests := []struct {
 		name     string
 		input    []gpsprot.SVInfo

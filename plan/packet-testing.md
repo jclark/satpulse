@@ -1,4 +1,4 @@
-# Packet log testing
+# Packet log testing (#287)
 
 Collect packet logs from real GPS receivers and use them to test scanner and decoding behavior deterministically.
 
@@ -9,7 +9,8 @@ This covers incoming packet traffic only. It does not cover configuration/probin
 - Build a collection of packet logs from different GPS receivers. Use the `/packet-testdata` skill to plan and execute captures for each receiver model.
 - Test that `gps/scan.Scanner` correctly reconstructs packets regardless of how the byte stream is chunked.
 - Test packet decoding and `gpsprot.Msg` generation.
-- Generate expected `event` output (from [unified-events.md](./unified-events.md)) for each packet log.
+- Generate expected decoded GPS message output using the `gpsprot.Msg` JSON
+  shape from [gpsprot-json.md](./gpsprot-json.md).
 - Provide test data that can later be used by a port in another language.
 
 ## Layout
@@ -55,7 +56,11 @@ Chunk sizes should include: whole stream, one byte at a time, small fixed sizes,
 
 Test packet decoding separately from scanner chunking: feed logged packets (with their recorded timestamps) through packet processors, emit `event` output, and compare against expected output.
 
-Once the event format from [unified-events.md](./unified-events.md) exists, generate an `event.jsonl` alongside each packet log containing the expected event output. The packet log is the primary artifact; the event file is derived from it and should only change when decoding or event semantics intentionally change.
+Once the `gpsprot.Msg` JSON shape from [gpsprot-json.md](./gpsprot-json.md)
+exists, generate an `event.jsonl` alongside each packet log containing the
+expected decoded GPS message output. The packet log is the primary artifact;
+the event file is derived from it and should only change when decoding or
+event semantics intentionally change.
 
 ## `satpulsetool replay`
 
@@ -67,13 +72,15 @@ Input is a packet log file (or `-` for stdin). The vendor is specified with a `-
 
 The output uses the existing `gpsevent.LogEvent` format: each line has `t` (from the recorded packet read time), `nanos` (derived from wallclock deltas relative to the first packet), and one message field (`time`, `posGeo`, `navEpoch`, etc.). `pulseEdge` is not emitted since pulse edges come from the PHC, not from packets. Output is deterministic -- no dependency on current wallclock, goroutine scheduling, or iteration order.
 
-When the unified event envelope from [unified-events.md](./unified-events.md) lands, the output format will switch to that.
+When the `gpsprot.Msg` JSON cleanup from
+[gpsprot-json.md](./gpsprot-json.md) lands, generated expected output should
+use the cleaned `gpsprot.Msg` payload JSON.
 
 Uses:
 
 - Generate and update expected `event.jsonl` files for the packet log collection.
 - Inspect decoded output: `satpulsetool replay factory.jsonl | jq ...`
-- Feed the replay dev server (see [unified-events.md](./unified-events.md)) for frontend development without GPS hardware.
+- Feed a replay dev server for frontend development without GPS hardware.
 - Agent-driven validation of decoding changes.
 
 ## Verify

@@ -57,12 +57,12 @@ func TestPVTBundle(t *testing.T) {
 		t.Fatal("expected 1 TimeMsg")
 	}
 	tm := r.times[0]
-	if tm.UTCTime == nil {
+	if !tm.UTCTime.IsSet() {
 		t.Fatal("expected UTCTime")
 	}
 	wantUTC := ptime.UTC(2022, 12, 25, 8, 37, 37, 0)
-	if *tm.UTCTime != wantUTC {
-		t.Errorf("UTCTime = %v, want %v", *tm.UTCTime, wantUTC)
+	if tm.UTCTime.Get() != wantUTC {
+		t.Errorf("UTCTime = %v, want %v", tm.UTCTime.Get(), wantUTC)
 	}
 	if tm.UTCOffset != 37 {
 		t.Errorf("UTCOffset = %d, want 37", tm.UTCOffset)
@@ -173,8 +173,8 @@ func TestNAVBundle(t *testing.T) {
 	}
 	tm := r.times[0]
 	wantUTC := ptime.UTC(2024, 12, 24, 19, 4, 23, 0)
-	if *tm.UTCTime != wantUTC {
-		t.Errorf("UTCTime = %v, want %v", *tm.UTCTime, wantUTC)
+	if tm.UTCTime.Get() != wantUTC {
+		t.Errorf("UTCTime = %v, want %v", tm.UTCTime.Get(), wantUTC)
 	}
 	wantTAI := ptime.GPS(2346, time.Duration(212681000)*time.Millisecond)
 	if tm.TAITime != wantTAI {
@@ -262,8 +262,8 @@ func TestPPPNAVBundle(t *testing.T) {
 	}
 	tm := r.times[0]
 	wantUTC := ptime.UTC(2026, 4, 15, 7, 27, 3, 0)
-	if *tm.UTCTime != wantUTC {
-		t.Errorf("UTCTime = %v, want %v", *tm.UTCTime, wantUTC)
+	if tm.UTCTime.Get() != wantUTC {
+		t.Errorf("UTCTime = %v, want %v", tm.UTCTime.Get(), wantUTC)
 	}
 	wantTAI := ptime.GPS(2414, time.Duration(286041000)*time.Millisecond)
 	if tm.TAITime != wantTAI {

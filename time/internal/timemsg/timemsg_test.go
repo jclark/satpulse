@@ -9,6 +9,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -310,11 +311,11 @@ func TestGetPostTimeMessages(t *testing.T) {
 				tRead time.Time
 			} {
 				date := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
-				utc := func(h, m, s int, ns int) *ptime.UTCTime {
-					return &ptime.UTCTime{
+				utc := func(h, m, s int, ns int) opt.Val[ptime.UTCTime] {
+					return opt.Make(ptime.UTCTime{
 						Date:      date,
 						TimeOfDay: time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(s)*time.Second + time.Duration(ns),
-					}
+					})
 				}
 				type e = struct {
 					msg   *gpsprot.TimeMsg
@@ -527,7 +528,7 @@ func TestGetPulseCorrectionPostPulse(t *testing.T) {
 		Ref:         gpsprot.PostPulse,
 		Tag:         gpsreg.TagUBX,
 		NativeMsgID: "TIM-TOS",
-		PulseOffset: &pulseOffset1,
+		PulseOffset: opt.Make(pulseOffset1),
 	}, time.Now())
 
 	buf.Time(&gpsprot.TimeMsg{
@@ -536,7 +537,7 @@ func TestGetPulseCorrectionPostPulse(t *testing.T) {
 		Ref:         gpsprot.PostPulse,
 		Tag:         gpsreg.TagUBX,
 		NativeMsgID: "TIM-TOS",
-		PulseOffset: &pulseOffset2,
+		PulseOffset: opt.Make(pulseOffset2),
 	}, time.Now())
 
 	// Test retrieval of PostPulse corrections
@@ -578,7 +579,7 @@ func TestWaitForPulseCorrectionPostPulse(t *testing.T) {
 		Ref:         gpsprot.PostPulse,
 		Tag:         gpsreg.TagUBX,
 		NativeMsgID: "TIM-TOS",
-		PulseOffset: &pulseOffset,
+		PulseOffset: opt.Make(pulseOffset),
 	}, time.Now())
 
 	// WaitForPulseCorrection should return true for the next second (101)
@@ -630,7 +631,7 @@ func TestValidatePulseOffset(t *testing.T) {
 				Ref:         gpsprot.PostPulse,
 				Tag:         gpsreg.TagUBX,
 				NativeMsgID: "TIM-TOS",
-				PulseOffset: &offset,
+				PulseOffset: opt.Make(offset),
 			}, time.Now())
 
 			corr, ok := buf.GetPulseCorrection(tai(200))
@@ -669,7 +670,7 @@ func TestMixedPrePulseAndPostPulse(t *testing.T) {
 		Ref:         gpsprot.PrePulse,
 		Tag:         gpsreg.TagUBX,
 		NativeMsgID: "TIM-TP",
-		PulseOffset: &prePulseOffset,
+		PulseOffset: opt.Make(prePulseOffset),
 	}, timeAt(99e9+50e6)) // 50ms before second 100
 
 	// PostPulse for second 101 (arrives after pulse)
@@ -679,7 +680,7 @@ func TestMixedPrePulseAndPostPulse(t *testing.T) {
 		Ref:         gpsprot.PostPulse,
 		Tag:         gpsreg.TagUBX,
 		NativeMsgID: "TIM-TOS",
-		PulseOffset: &postPulseOffset,
+		PulseOffset: opt.Make(postPulseOffset),
 	}, timeAt(101e9+100e6)) // 100ms after second 101
 
 	// NavSolution messages for both seconds (should be ignored in favor of PrePulse/PostPulse)
@@ -739,11 +740,11 @@ func (r *recordingTimer) MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.L
 
 func TestMsgUTCTimer(t *testing.T) {
 	date := time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC)
-	utc := func(h, m, s int) *ptime.UTCTime {
-		return &ptime.UTCTime{
+	utc := func(h, m, s int) opt.Val[ptime.UTCTime] {
+		return opt.Make(ptime.UTCTime{
 			Date:      date,
 			TimeOfDay: time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(s)*time.Second,
-		}
+		})
 	}
 	ls := ptime.LeapSecond{UTCOffAfter: 37}
 	tRead := time.Now()
@@ -782,8 +783,11 @@ func TestMsgUTCTimer(t *testing.T) {
 			expectN: 2,
 		},
 		{
-			name:    "tai_only_ignored",
-			msgs:    []input{{&gpsprot.TimeMsg{TAITime: ls.UTCtoTime(*utc(12, 0, 0))}, readAt(500)}},
+			name: "tai_only_ignored",
+			msgs: func() []input {
+				u := utc(12, 0, 0)
+				return []input{{&gpsprot.TimeMsg{TAITime: ls.UTCtoTime(u.Get())}, readAt(500)}}
+			}(),
 			expectN: 0,
 		},
 		{
@@ -793,7 +797,7 @@ func TestMsgUTCTimer(t *testing.T) {
 		},
 		{
 			name:    "leap_second_23_59_60_skipped",
-			msgs:    []input{{&gpsprot.TimeMsg{UTCTime: &ptime.UTCTime{Date: date, TimeOfDay: 24 * time.Hour}}, readAt(500)}},
+			msgs:    []input{{&gpsprot.TimeMsg{UTCTime: opt.Make(ptime.UTCTime{Date: date, TimeOfDay: 24 * time.Hour})}, readAt(500)}},
 			expectN: 0,
 		},
 		{
@@ -832,22 +836,22 @@ func TestMsgUTCTimerLeap(t *testing.T) {
 	tRead := time.Now()
 	tests := []struct {
 		name       string
-		ut         *ptime.UTCTime
+		ut         ptime.UTCTime
 		expectLeap ptime.LeapSecondKind
 	}{
 		{
 			name:       "normal_day",
-			ut:         &ptime.UTCTime{Date: normalDay, TimeOfDay: 15 * time.Hour},
+			ut:         ptime.UTCTime{Date: normalDay, TimeOfDay: 15 * time.Hour},
 			expectLeap: ptime.LeapSecondNone,
 		},
 		{
 			name:       "leap_day_in_window",
-			ut:         &ptime.UTCTime{Date: leapDay, TimeOfDay: 20 * time.Hour},
+			ut:         ptime.UTCTime{Date: leapDay, TimeOfDay: 20 * time.Hour},
 			expectLeap: ptime.LeapSecondPositive,
 		},
 		{
 			name:       "leap_day_before_window",
-			ut:         &ptime.UTCTime{Date: leapDay, TimeOfDay: 6 * time.Hour},
+			ut:         ptime.UTCTime{Date: leapDay, TimeOfDay: 6 * time.Hour},
 			expectLeap: ptime.LeapSecondNone,
 		},
 	}
@@ -857,7 +861,7 @@ func TestMsgUTCTimerLeap(t *testing.T) {
 			buf := NewBuffer(lg, 5*time.Second, leapLS, gpsprot.GPS)
 			rec := &recordingTimer{}
 			buf.SetMsgUTCTimer(rec)
-			buf.Time(&gpsprot.TimeMsg{UTCTime: tc.ut}, tRead)
+			buf.Time(&gpsprot.TimeMsg{UTCTime: opt.Make(tc.ut)}, tRead)
 			if len(rec.samples) != 1 {
 				t.Fatalf("got %d samples, want 1", len(rec.samples))
 			}
@@ -870,7 +874,7 @@ func TestMsgUTCTimerLeap(t *testing.T) {
 
 func TestMsgUTCTimerReadDelay(t *testing.T) {
 	date := time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC)
-	ut := &ptime.UTCTime{Date: date, TimeOfDay: 12 * time.Hour}
+	ut := opt.Make(ptime.UTCTime{Date: date, TimeOfDay: 12 * time.Hour})
 	ls := ptime.LeapSecond{UTCOffAfter: 37}
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	buf := NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
@@ -894,30 +898,30 @@ func TestDetectInvalidLeap(t *testing.T) {
 		return startTime.Add(time.Duration(ms) * time.Millisecond)
 	}
 	date := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
-	utc := func(h, m, s int) *ptime.UTCTime {
-		return &ptime.UTCTime{
+	utc := func(h, m, s int) opt.Val[ptime.UTCTime] {
+		return opt.Make(ptime.UTCTime{
 			Date:      date,
 			TimeOfDay: time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(s)*time.Second,
-		}
+		})
 	}
-	utcOn := func(date time.Time, h, m, s int) *ptime.UTCTime {
-		return &ptime.UTCTime{
+	utcOn := func(date time.Time, h, m, s int) opt.Val[ptime.UTCTime] {
+		return opt.Make(ptime.UTCTime{
 			Date:      date,
 			TimeOfDay: time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(s)*time.Second,
-		}
+		})
 	}
 
 	type entry struct {
 		msg   *gpsprot.TimeMsg
 		tRead time.Time
 	}
-	rmc := func(u *ptime.UTCTime, ms int64) entry {
+	rmc := func(u opt.Val[ptime.UTCTime], ms int64) entry {
 		return entry{
 			msg:   &gpsprot.TimeMsg{UTCTime: u, Tag: gpsreg.TagNMEA, NativeMsgID: "GPRMC"},
 			tRead: timeAt(ms),
 		}
 	}
-	gga := func(u *ptime.UTCTime, ms int64) entry {
+	gga := func(u opt.Val[ptime.UTCTime], ms int64) entry {
 		return entry{
 			msg:   &gpsprot.TimeMsg{UTCTime: u, Tag: gpsreg.TagNMEA, NativeMsgID: "GPGGA"},
 			tRead: timeAt(ms),
@@ -1050,7 +1054,7 @@ func TestDetectInvalidLeap(t *testing.T) {
 			entries: []entry{
 				rmc(utc(12, 0, 0), 0),
 				{
-					msg:   &gpsprot.TimeMsg{UTCTime: nil, Tag: gpsreg.TagNMEA, NativeMsgID: "GPRMC"},
+					msg:   &gpsprot.TimeMsg{UTCTime: opt.Val[ptime.UTCTime]{}, Tag: gpsreg.TagNMEA, NativeMsgID: "GPRMC"},
 					tRead: timeAt(1000),
 				},
 			},
@@ -1063,7 +1067,7 @@ func TestDetectInvalidLeap(t *testing.T) {
 			entries: []entry{
 				rmc(utc(12, 0, 0), 0),
 				{
-					msg:   &gpsprot.TimeMsg{UTCTime: nil, Tag: gpsreg.TagNMEA, NativeMsgID: "GPRMC"},
+					msg:   &gpsprot.TimeMsg{UTCTime: opt.Val[ptime.UTCTime]{}, Tag: gpsreg.TagNMEA, NativeMsgID: "GPRMC"},
 					tRead: timeAt(1000),
 				},
 				rmc(utc(11, 59, 59), 2000),

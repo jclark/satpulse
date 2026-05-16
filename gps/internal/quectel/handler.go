@@ -82,7 +82,7 @@ func msgsPVT(m *qtmmsg.PVT, epoch *nmea.NavEpoch) []gpsprot.Msg {
 	if m.FixType >= 2 {
 		if utc, ok := parseDateTime(m.Date, m.Time); ok {
 			tm := &gpsprot.TimeMsg{
-				UTCTime:     &utc,
+				UTCTime:     opt.Make(utc),
 				Tag:         nmea.Tag,
 				NativeMsgID: "PQTMPVT",
 			}
@@ -156,7 +156,7 @@ func msgsNAV(m *qtmmsg.NAV, epoch *nmea.NavEpoch) []gpsprot.Msg {
 	if m.TimeStatus == 1 {
 		if utc, ok := parseDateTime(m.Date, m.UTC); ok {
 			tm := &gpsprot.TimeMsg{
-				UTCTime:     &utc,
+				UTCTime:     opt.Make(utc),
 				Tag:         nmea.Tag,
 				NativeMsgID: "PQTMNAV",
 			}
@@ -234,7 +234,7 @@ func msgsPPPNAV(m *qtmmsg.PPPNAV, epoch *nmea.NavEpoch) []gpsprot.Msg {
 	if m.TimeStatus == 1 {
 		if utc, ok := parseDateTime(m.Date, m.UTC); ok {
 			tm := &gpsprot.TimeMsg{
-				UTCTime:     &utc,
+				UTCTime:     opt.Make(utc),
 				Tag:         nmea.Tag,
 				NativeMsgID: "PQTMPPPNAV",
 			}

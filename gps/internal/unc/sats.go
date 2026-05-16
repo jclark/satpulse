@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 )
 
@@ -36,10 +37,10 @@ func satellitesMsgFromSatsInfo(_ *uncmsg.MsgHdr, satsInfo *uncmsg.SatsInfo, tag 
 		svs = append(svs, gpsprot.SVInfo{
 			ID:      svid,
 			Signals: signals,
-			LookAngles: &gpsprot.LookAngles{
+			LookAngles: opt.Make(gpsprot.LookAngles{
 				Azimuth:   int16(sat.Azimuth),
 				Elevation: int8(sat.Elevation),
-			},
+			}),
 		})
 	}
 

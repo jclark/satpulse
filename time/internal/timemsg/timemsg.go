@@ -76,7 +76,7 @@ func NewBuffer(lg *slog.Logger, readWindow time.Duration, ls ptime.LeapSecond, t
 // Time implements gpsprot.MsgHandler.
 func (buf *Buffer) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 	cutoff := tRead.Add(-buf.readWindow)
-	if msg.PulseOffset != nil {
+	if msg.PulseOffset.IsSet() {
 		switch msg.Ref {
 		case gpsprot.PrePulse:
 			buf.lastPreCorrMsg = msg
@@ -106,10 +106,10 @@ func (buf *Buffer) SetMsgUTCTimer(t MsgUTCTimer) {
 }
 
 func (buf *Buffer) msgUTCTime(msg *gpsprot.TimeMsg, tRead time.Time) {
-	if buf.msgUTCTimer == nil || msg.UTCTime == nil {
+	if buf.msgUTCTimer == nil || !msg.UTCTime.IsSet() {
 		return
 	}
-	ut := *msg.UTCTime
+	ut := msg.UTCTime.Get()
 	// Skip leap second (23:59:60)
 	if ut.TimeOfDay >= 24*time.Hour {
 		return
@@ -169,7 +169,7 @@ func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.
 	for _, e := range entries {
 		sec := e.msg.TAITime
 		if sec.IsZero() {
-			sec = buf.ls.UTCtoTime(*e.msg.UTCTime)
+			sec = buf.ls.UTCtoTime(e.msg.UTCTime.Get())
 		}
 		// With u-blox UBX, the time in navigation solution messages is not-exactly on the second:
 		// it's the time of the navigation solution, which is slightly different.
@@ -336,7 +336,7 @@ func epochStartMsg(entries []entry) *gpsprot.TimeMsg {
 				continue
 			}
 		} else {
-			if *entries[i].msg.UTCTime == *utc {
+			if entries[i].msg.UTCTime.Get() == utc.Get() {
 				continue
 			}
 		}
@@ -356,7 +356,7 @@ func entriesSameType(entries []entry, msg *gpsprot.TimeMsg) []entry {
 }
 
 func (e *entry) eligible(level *bufMsgLevel) bool {
-	if e.msg.TAITime.IsZero() && e.msg.UTCTime == nil {
+	if e.msg.TAITime.IsZero() && !e.msg.UTCTime.IsSet() {
 		return false
 	}
 	*level = max(*level, levelTime)
@@ -375,10 +375,10 @@ func (buf *Buffer) detectInvalidLeap(tag gpsprot.Tag, nativeMsgID string, minDel
 		return false
 	}
 	last := entries[len(entries)-1]
-	if m := last.msg; m.Tag != tag || m.NativeMsgID != nativeMsgID || m.UTCTime == nil {
+	if m := last.msg; m.Tag != tag || m.NativeMsgID != nativeMsgID || !m.UTCTime.IsSet() {
 		return false
 	}
-	t2 := *last.msg.UTCTime
+	t2 := last.msg.UTCTime.Get()
 
 	i := len(entries) - 2
 	for {
@@ -386,14 +386,14 @@ func (buf *Buffer) detectInvalidLeap(tag gpsprot.Tag, nativeMsgID string, minDel
 			return false
 		}
 		if msg := entries[i].msg; msg.Tag == tag && msg.NativeMsgID == nativeMsgID {
-			if msg.UTCTime == nil {
+			if !msg.UTCTime.IsSet() {
 				return false
 			}
 			break
 		}
 		i--
 	}
-	t1 := *entries[i].msg.UTCTime
+	t1 := entries[i].msg.UTCTime.Get()
 	delta := t2.Sub(t1)
 	if delta > 0 {
 		return false
@@ -440,7 +440,7 @@ func (buf *Buffer) getPulseCorrectionLast(lastCorr *gpsprot.TimeMsg, refTime pti
 	for i := len(entries) - 1; i >= 0; i-- {
 		m := entries[i].msg
 		t := m.TAITime
-		if m.PulseOffset != nil && t == refTime {
+		if m.PulseOffset.IsSet() && t == refTime {
 			return buf.validatePulseOffset(m)
 		}
 		// Since pulse offsets of each Ref type are in order, stop if we've gone past the time we're looking for
@@ -457,10 +457,10 @@ const maxPulseOffset = 100
 // validatePulseOffset checks that the PulseOffset in the message is within acceptable limits.
 // It returns the PulseOffset as a time.Duration and true if valid, or (0, false) if invalid.
 func (buf *Buffer) validatePulseOffset(msg *gpsprot.TimeMsg) (time.Duration, bool) {
-	if msg.PulseOffset == nil {
+	if !msg.PulseOffset.IsSet() {
 		return 0, false
 	}
-	off := *msg.PulseOffset
+	off := msg.PulseOffset.Get()
 	if math.Abs(off) > maxPulseOffset {
 		buf.lg.Warn("pulse offset exceeds acceptable limit", "pulseOffset", off, "limit", maxPulseOffset, "tag", msg.Tag, "msgID", msg.NativeMsgID, "tai", msg.TAITime)
 		return 0, false

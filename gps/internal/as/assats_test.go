@@ -6,6 +6,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
 func TestAsSVID(t *testing.T) {
@@ -111,7 +112,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID:         gpsprot.SVID{GNSS: gpsprot.GPS, Num: 2},
 						Signals:    []gpsprot.SignalInfo{{ID: gpsprot.SigIDGPSL1CA, CN0: 40}},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 0, Elevation: 0},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 0, Elevation: 0}),
 						Used:       false,
 					},
 				},
@@ -140,7 +141,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID:         gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5},
 						Signals:    []gpsprot.SignalInfo{{ID: gpsprot.SigIDGPSL1CA, CN0: 45, Used: true}},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 180, Elevation: 60},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 180, Elevation: 60}),
 						Used:       true,
 					},
 				},
@@ -166,22 +167,22 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID:         gpsprot.SVID{GNSS: gpsprot.GPS, Num: 8},
 						Signals:    []gpsprot.SignalInfo{{ID: gpsprot.SigIDGPSL1CA, CN0: 36}},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 24, Elevation: 68},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 24, Elevation: 68}),
 					},
 					{
 						ID:         gpsprot.SVID{GNSS: gpsprot.GAL, Num: 9},
 						Signals:    []gpsprot.SignalInfo{{ID: gpsprot.SigIDGALE1, CN0: 50}},
-						LookAngles: &gpsprot.LookAngles{Azimuth: -82, Elevation: 73},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: -82, Elevation: 73}),
 					},
 					{
 						ID:         gpsprot.SVID{GNSS: gpsprot.BDS, Num: 7},
 						Signals:    []gpsprot.SignalInfo{{ID: gpsprot.SigIDBDSB1I, CN0: 44}},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 15, Elevation: 86},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 15, Elevation: 86}),
 					},
 					{
 						ID:         gpsprot.SVID{GNSS: gpsprot.GLO, Num: 20},
 						Signals:    []gpsprot.SignalInfo{{ID: gpsprot.SigIDGLOL1, CN0: 41}},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 157, Elevation: 33},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 157, Elevation: 33}),
 					},
 				},
 				Tag:          Tag,
@@ -203,7 +204,7 @@ func TestSatellitesNavSVInfo(t *testing.T) {
 					{
 						ID:         gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5},
 						Signals:    []gpsprot.SignalInfo{{ID: gpsprot.SigIDGPSL1CA, CN0: 40}},
-						LookAngles: &gpsprot.LookAngles{Azimuth: 0, Elevation: 0},
+						LookAngles: opt.Make(gpsprot.LookAngles{Azimuth: 0, Elevation: 0}),
 					},
 				},
 				Tag:          Tag,

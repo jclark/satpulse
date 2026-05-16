@@ -519,10 +519,10 @@ func (sv SVID) IsValid() bool {
 }
 
 type SVInfo struct {
-	ID         SVID         `json:"id"`
-	LookAngles *LookAngles  `json:"lookAngles,omitempty"` // look angle of the satellite
-	Signals    []SignalInfo `json:"signals"`              // signals being transmitted by a satellite
-	Used       bool         `json:"used,omitempty"`       // true if the satellite is used in the navigation solution
+	ID         SVID                `json:"id"`
+	LookAngles opt.Val[LookAngles] `json:"lookAngles,omitzero"` // look angle of the satellite
+	Signals    []SignalInfo        `json:"signals"`             // signals being transmitted by a satellite
+	Used       bool                `json:"used,omitempty"`      // true if the satellite is used in the navigation solution
 }
 
 type LookAngles struct {
@@ -611,16 +611,16 @@ const (
 )
 
 type TimeMsg struct {
-	TAITime     ptime.Time     `json:"taiTime,omitempty"`
-	UTCTime     *ptime.UTCTime `json:"utcTime,omitempty"`
-	Accuracy    time.Duration  `json:"accuracy,omitempty"`
-	UTCOffset   uint8          `json:"utcOffset,omitempty"`
-	PulseOffset *float64       `json:"pulseOffset,omitempty"` // ns; the true time of the top of second is the time of the pulse plus the PulseOffset
-	GNSS        GNSS           `json:"gnss,omitempty"`
-	Ref         TimeRef        `json:"ref,omitempty"`
-	Tag         Tag            `json:"tag,omitempty"`
-	NativeMsgID string         `json:"nativeMsgID,omitempty"`
-	ReadDelay   Duration       `json:"readDelay,omitempty"` // time between epoch start and when this message was read
+	TAITime     ptime.Time             `json:"taiTime,omitempty"`
+	UTCTime     opt.Val[ptime.UTCTime] `json:"utcTime,omitzero"`
+	Accuracy    time.Duration          `json:"accuracy,omitempty"`
+	UTCOffset   uint8                  `json:"utcOffset,omitempty"`
+	PulseOffset opt.Val[float64]       `json:"pulseOffset,omitzero"` // ns; the true time of the top of second is the time of the pulse plus the PulseOffset
+	GNSS        GNSS                   `json:"gnss,omitempty"`
+	Ref         TimeRef                `json:"ref,omitempty"`
+	Tag         Tag                    `json:"tag,omitempty"`
+	NativeMsgID string                 `json:"nativeMsgID,omitempty"`
+	ReadDelay   Duration               `json:"readDelay,omitempty"` // time between epoch start and when this message was read
 }
 
 // ComputeTAITime computes the TAI time from this message, using the leap second for UTC conversion if needed
@@ -628,10 +628,10 @@ func (msg *TimeMsg) ComputeTAITime(ls ptime.LeapSecond) (ptime.Time, bool) {
 	if !msg.TAITime.IsZero() {
 		return msg.TAITime, true
 	}
-	if msg.UTCTime == nil {
+	if !msg.UTCTime.IsSet() {
 		return 0, false
 	}
-	return ls.UTCtoTime(*msg.UTCTime), true
+	return ls.UTCtoTime(msg.UTCTime.Get()), true
 }
 
 // PosGeoMsg is a geodetic position (latitude, longitude, height above WGS-84 ellipsoid).
@@ -1462,10 +1462,6 @@ func (t *TimeTicker) Time(msg *TimeMsg, tRead time.Time) {
 		return
 	}
 	m := *msg
-	if m.UTCTime != nil {
-		ut := *m.UTCTime
-		m.UTCTime = &ut
-	}
 	t.fill(&m)
 	t.time.Set(m)
 	t.h.Time(&m, tRead)
@@ -1480,15 +1476,14 @@ func (t *TimeTicker) fill(m *TimeMsg) {
 	if !m.TAITime.IsZero() {
 		m.TAITime = m.TAITime.Round(time.Millisecond)
 	}
-	if m.UTCTime != nil {
-		m.UTCTime.TimeOfDay = m.UTCTime.TimeOfDay.Round(time.Millisecond)
+	if ut := m.UTCTime.Ptr(); ut != nil {
+		ut.TimeOfDay = ut.TimeOfDay.Round(time.Millisecond)
 	}
-	if m.TAITime.IsZero() && m.UTCTime != nil {
-		m.TAITime = t.ls.UTCtoTime(*m.UTCTime)
+	if m.TAITime.IsZero() && m.UTCTime.IsSet() {
+		m.TAITime = t.ls.UTCtoTime(m.UTCTime.Get())
 	}
-	if m.UTCTime == nil && !m.TAITime.IsZero() {
-		ut := t.ls.TimeToUTC(m.TAITime)
-		m.UTCTime = &ut
+	if !m.UTCTime.IsSet() && !m.TAITime.IsZero() {
+		m.UTCTime.Set(t.ls.TimeToUTC(m.TAITime))
 	}
 	if m.UTCOffset == 0 && !m.TAITime.IsZero() {
 		state := t.ls.StateAt(m.TAITime)
