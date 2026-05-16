@@ -62,6 +62,20 @@ const posvelEvent = {
   velD: 0.005,
 };
 
+const corReportEvents = [
+  { tag: "RTCM", source: "pull", msgID: "1077", checksumOK: true },
+  { tag: "RTCM", source: "pull", msgID: "1087", checksumOK: true },
+  { tag: "RTCM", source: "pull", msgID: "1077", checksumOK: true },
+  { tag: "RTCM", source: "pull", msgID: "4072.0", checksumOK: true },
+  { tag: "RTCM", source: "pull", msgID: "4072.1", checksumOK: true },
+  { tag: "RTCM", source: "pull", msgID: "1230", checksumOK: true },
+  { tag: "RTCM", source: "receiver", msgID: "1077", checksumOK: true, used: true },
+  { tag: "RTCM", source: "receiver", msgID: "1087", checksumOK: true, used: true },
+  { tag: "RTCM", source: "receiver", msgID: "1077", checksumOK: true, used: true },
+  { tag: "RTCM", source: "receiver", msgID: "1230", checksumOK: true, used: false },
+  { tag: "RTCM", source: "receiver", msgID: "4072.1", checksumOK: true, used: true },
+];
+
 const qualityEvent = {
   fixLevel: "carrierFixed",
   solutionDim: "3D",
@@ -183,6 +197,12 @@ class MockEventSource implements MinimalEventSource {
       setTimeout(() => {
         listener(new MessageEvent('quality', { data: JSON.stringify(qualityEvent) }));
       }, 330);
+    } else if (type === 'corReport') {
+      corReportEvents.forEach((ev, i) => {
+        setTimeout(() => {
+          listener(new MessageEvent('corReport', { data: JSON.stringify(ev) }));
+        }, 600 + i * 200);
+      });
     }
   }
 

@@ -215,27 +215,38 @@ disabling UBX-RXM-COR) recover quickly.  Start with T = 30 s.
 In `web/dashboard.tsx`:
 
 - Add `corReport` to the subscribed event types.
-- Ignore events with `tag != "RTCM"`, empty `msgID`, or
-  `checksumOK === false`.
-- Maintain a map from `msgID` to count and the current `source`
-  observed.  When an event's `source` differs from the last observed
-  source, clear the count map before counting the new event.  This
-  picks up the backend's mode switches without duplicating the latch
-  logic in the frontend.
-- If a receiver-source event has `used: false`, count it for source
-  tracking but do not increment the `used` count.
-- Add an RTCM dashboard card with one row per message ID and the count
-  observed since the page connected.  Use a header that reflects the
-  current source, for example `RTCM messages received` for pull-source
-  and `RTCM messages used` for receiver-source when counting
-  `used: true` events.  If a receiver-source producer does not provide
-  used/not-used status, title the card `RTCM messages reported by
-  receiver`.
-- Sort rows by numeric message ID where possible, with subtype IDs such
-  as `4072.1` sorted naturally after `4072.0`.
+- In `validateEvent`, drop events with `tag != "RTCM"`, empty
+  `msgID`, `checksumOK === false`, or an unknown `source`.
+- Accumulate per-msgID counts in an `RTCMState` class with a
+  mutating `update(ev)` method.  The state holds two maps:
+  `totalCount[msgID]` is the number of accepted events for the
+  current source session, and `unusedCount[msgID]` counts events
+  with `used === false`.  `unusedCount` is `null` until at least one
+  event in the current session has carried a `used` field; once any
+  event in the session reports `used` (true or false),
+  `unusedCount` becomes a (possibly empty) map.
+- When an event's `source` differs from the current state's source,
+  `update` clears both counters and switches to the new source.
+  This picks up the backend's mode switches without duplicating the
+  latch logic in the frontend.
+- Add an RTCM dashboard card with one row per message ID.  Row
+  display:
+  - `unusedCount === null` -- show the integer `totalCount[msgID]`.
+  - otherwise -- show `M/N`, where `N = totalCount[msgID]` and
+    `M = N - unusedCount[msgID]` (i.e. the count of `used: true`
+    events for that message).
+- Card title:
+  - Source `receiver` with `unusedCount === null` (no `used` info
+    ever observed, e.g. Unicore `RTCMSTATUS`): `RTCM Messages Used`.
+  - All other cases (source `pull`, or source `receiver` with
+    `used` info available): `RTCM Messages Received`.  The M/N
+    column already conveys the used/total split in the receiver
+    case.
+- Sort rows by numeric message ID where possible, with subtype IDs
+  such as `4072.1` sorted naturally after `4072.0`.
 - Do not add backend aggregation, persisted counters, frequency
-  estimates, or reconnect recovery for this pass; a page reload or new
-  SSE connection starts the dashboard counts from zero.
+  estimates, or reconnect recovery for this pass; a page reload or
+  new SSE connection starts the dashboard counts from zero.
 
 When corrections first start flowing the dashboard will typically see
 one or a few pull-source events before the first receiver-source event
@@ -245,6 +256,10 @@ pull-counted rows before the source change clears them.  Keep the
 source-change handler simple -- update the title and reset the counts
 -- so this transient is not visually distracting.  Do not animate row
 removal or otherwise draw attention to the reset.
+
+`RTCMState.update` is mutating, so the SSE handler clones the
+previous state (`prev.clone()`) before calling `update` to keep
+React/Preact's state-identity comparison happy.
 
 Add focused tests:
 
@@ -257,12 +272,15 @@ Add focused tests:
   receiver-source event switches the observer back to pull and is
   emitted.
 - `NativeMsg` is absent from the emitted payload.
-- The dashboard test EventSource can send multiple `corReport` events
-  and the rendered RTCM card shows the expected per-message counts.
-- The dashboard ignores non-RTCM events, empty message IDs, and
-  explicitly failed checksums.
-- The dashboard clears its count map and updates its header when an
-  event with a different source arrives.
+- `RTCMState.update` accumulates pull-source events by msgID and
+  reports the right title and row values.
+- A receiver-source event after pull-source events clears the
+  counters and switches the title/format appropriately.
+- Receiver-source events with `used: false` increment `totalCount`
+  and `unusedCount` so the M/N display reads correctly.
+- `validateEvent('corReport', ...)` rejects non-RTCM tag, empty
+  message ID, failed checksum, and unknown source.
+- `sortRTCMMsgIDs` orders plain and subtype message IDs numerically.
 
 ## Prometheus
 

@@ -11,7 +11,7 @@ type JSONObject = { [key: string]: JSONValue };
 type JSONArray = JSONValue[];
 
 // Use a more specific type for our parsed event data
-const EVENT_TYPES = ["satellites", "time", "phc", "mode", "survey", "receiver", "posvel", "quality", "init"] as const;
+const EVENT_TYPES = ["satellites", "time", "phc", "mode", "survey", "receiver", "posvel", "quality", "corReport", "init"] as const;
 type EventType = typeof EVENT_TYPES[number];
 
 type Map = {[key: string]: any};
@@ -24,6 +24,7 @@ export const Dashboard: FunctionComponent = () => {
     // arrival order, so a stale cached mode delivered at connect is
     // corrected by the next live event from either stream.
     const [phc, setPhc] = useState<Map | null>(null);
+    const [rtcm, setRTCM] = useState<RTCMState | null>(null);
     const [haveLookAngles, setHaveLookAngles] = useState(false);
     const [everMoving, setEverMoving] = useState(false);
 
@@ -35,6 +36,15 @@ export const Dashboard: FunctionComponent = () => {
                 if (obj !== null) {
                     if (eventType === 'phc' || eventType === 'mode') {
                         setPhc(prev => ({ ...prev, ...obj }));
+                        continue;
+                    }
+                    if (eventType === 'corReport') {
+                        const ev = obj as RTCMEvent;
+                        setRTCM(prev => {
+                            const next = prev ? prev.clone() : new RTCMState(ev.source);
+                            next.update(ev);
+                            return next;
+                        });
                         continue;
                     }
                     if (eventType === 'satellites' && obj.svs && obj.svs.length > 0) {
@@ -71,6 +81,7 @@ export const Dashboard: FunctionComponent = () => {
         {events.posvel && everMoving && <PropertyCard title="Velocity" data={events.posvel} format={velocityFormat} />}
         {events.quality && <PropertyCard title="Position Quality" data={events.quality} format={positionQualityFormat} />}
         {events.survey && <PropertyCard title="Survey-in Status" data={events.survey} format={surveyFormat} />}
+        {rtcm && <RTCMCard state={rtcm} />}
         </CardsElement>
     );
 };
@@ -115,19 +126,19 @@ function parseSSEMessage(type: string, data: string): [string, JSONValue][] {
 * @param data Parsed event data
 * @returns Validated data or null if invalid
 */
-function validateEvent(type: string, data: JSONValue): JSONObject | null {
+export function validateEvent(type: string, data: JSONValue): JSONObject | null {
     // Check that the type is one of the known types but not "init"
     if (type === "init" || !EVENT_TYPES.includes(type as EventType)) {
         console.warn(`Invalid event type: ${type}`);
         return null;
     }
-    
+
     // Validate that data is a JSONObject
     if (!data || typeof data !== 'object' || Array.isArray(data)) {
         console.warn(`Invalid ${type} event data: not an object`, data);
         return null;
     }
-    
+
     // Type-specific validation
     switch (type) {
         case "satellites":
@@ -137,8 +148,14 @@ function validateEvent(type: string, data: JSONValue): JSONObject | null {
                 return null;
             }
             break;
+        case "corReport":
+            if (data.tag !== "RTCM") return null;
+            if (typeof data.msgID !== "string" || data.msgID === "") return null;
+            if (data.checksumOK === false) return null;
+            if (data.source !== "pull" && data.source !== "receiver") return null;
+            break;
     }
-    
+
     return data;
 }
 
@@ -374,23 +391,118 @@ interface SignalGraphCardProps {
 
 const SignalGraphCard: FunctionComponent<SignalGraphCardProps> = ({ svs }) => {
     const [maxSatelliteCount, setMaxSatelliteCount] = useState(0);
-    
+
     // Only ever increase the max count (high water mark approach)
     useEffect(() => {
         if (svs.length > maxSatelliteCount) {
             setMaxSatelliteCount(svs.length);
         }
     }, [svs, maxSatelliteCount]);
-    
+
     // Apply row-span-2 when max satellite count exceeds threshold
     const isDoubleRow = maxSatelliteCount >= 15;
     const rowSpanClass = isDoubleRow ? "md:row-span-2 lg:row-span-2" : "";
-    
+
     return (
         <div className={`${rowSpanClass} h-full`}>
             <CardElement title="Signal Levels">
                 {SignalGraph(svs, maxSatelliteCount, isDoubleRow)}
             </CardElement>
         </div>
+    );
+};
+
+// RTCMEvent is the subset of the corReport SSE payload that the RTCM
+// card cares about. validateEvent has already enforced tag === "RTCM"
+// and a non-empty msgID.
+export type RTCMEvent = {
+    source: 'pull' | 'receiver';
+    msgID: string;
+    used?: boolean;
+};
+
+// RTCMState is the per-msgID accumulator backing the RTCM card.
+// totalCount[id] is the number of accepted events for that msgID in
+// the current source session. unusedCount is null until at least one
+// event in the session has carried a `used` field, after which it
+// counts the `used === false` events; M = total - unused is the
+// "used" count shown as M/N. Both reset when source flips.
+export class RTCMState {
+    source: 'pull' | 'receiver';
+    totalCount: { [msgID: string]: number } = {};
+    unusedCount: { [msgID: string]: number } | null = null;
+
+    constructor(source: 'pull' | 'receiver') {
+        this.source = source;
+    }
+
+    // update mutates this state to incorporate ev. A source flip
+    // clears the counters before counting the new event.
+    update(ev: RTCMEvent) {
+        if (this.source !== ev.source) {
+            this.source = ev.source;
+            this.totalCount = {};
+            this.unusedCount = null;
+        }
+        this.totalCount[ev.msgID] = (this.totalCount[ev.msgID] ?? 0) + 1;
+        if (ev.used !== undefined) {
+            if (this.unusedCount === null) this.unusedCount = {};
+            if (ev.used === false) {
+                this.unusedCount[ev.msgID] = (this.unusedCount[ev.msgID] ?? 0) + 1;
+            }
+        }
+    }
+
+    // clone returns a shallow copy of this state. Used by the React
+    // boundary so setRTCM sees a fresh reference each tick.
+    clone(): RTCMState {
+        const c = new RTCMState(this.source);
+        c.totalCount = { ...this.totalCount };
+        c.unusedCount = this.unusedCount === null ? null : { ...this.unusedCount };
+        return c;
+    }
+
+    title(): string {
+        if (this.source === 'receiver' && this.unusedCount === null) {
+            return 'RTCM Messages Used';
+        }
+        return 'RTCM Messages Received';
+    }
+
+    rowValue(id: string): string {
+        const n = this.totalCount[id];
+        if (this.unusedCount === null) return String(n);
+        const unused = this.unusedCount[id] ?? 0;
+        return `${n - unused}/${n}`;
+    }
+}
+
+// sortRTCMMsgIDs sorts by [main, sub] pairs so '4072.0' precedes
+// '4072.1' precedes '4072.10'.
+export function sortRTCMMsgIDs(ids: string[]): string[] {
+    return [...ids].sort((a, b) => {
+        const [am, as] = parseMsgID(a);
+        const [bm, bs] = parseMsgID(b);
+        return am - bm || as - bs;
+    });
+}
+
+function parseMsgID(id: string): [number, number] {
+    const [main, sub = "0"] = id.split(".");
+    return [Number(main), Number(sub)];
+}
+
+interface RTCMCardProps {
+    state: RTCMState;
+}
+
+const RTCMCard: FunctionComponent<RTCMCardProps> = ({ state }) => {
+    const ids = sortRTCMMsgIDs(Object.keys(state.totalCount));
+    return (
+        <CardElement title={state.title()}>
+        {ids.map(id => (
+            <FieldElement desc={id}>{state.rowValue(id)}</FieldElement>
+        ))}
+        </CardElement>
     );
 };

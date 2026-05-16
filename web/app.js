@@ -719,11 +719,12 @@
 
   // dashboard.tsx
   var EventSourceContext = Q(null);
-  var EVENT_TYPES = ["satellites", "time", "phc", "mode", "survey", "receiver", "posvel", "quality", "init"];
+  var EVENT_TYPES = ["satellites", "time", "phc", "mode", "survey", "receiver", "posvel", "quality", "corReport", "init"];
   var Dashboard = () => {
     const context = x2(EventSourceContext);
     const [events, setEvents] = d2({});
     const [phc, setPhc] = d2(null);
+    const [rtcm, setRTCM] = d2(null);
     const [haveLookAngles, setHaveLookAngles] = d2(false);
     const [everMoving, setEverMoving] = d2(false);
     y2(() => {
@@ -734,6 +735,15 @@
           if (obj !== null) {
             if (eventType === "phc" || eventType === "mode") {
               setPhc((prev) => ({ ...prev, ...obj }));
+              continue;
+            }
+            if (eventType === "corReport") {
+              const ev = obj;
+              setRTCM((prev) => {
+                const next = prev ? prev.clone() : new RTCMState(ev.source);
+                next.update(ev);
+                return next;
+              });
               continue;
             }
             if (eventType === "satellites" && obj.svs && obj.svs.length > 0) {
@@ -766,7 +776,8 @@
       events.posvel && /* @__PURE__ */ u3(PropertyCard, { title: "Position", data: events.posvel, format: positionFormat }),
       events.posvel && everMoving && /* @__PURE__ */ u3(PropertyCard, { title: "Velocity", data: events.posvel, format: velocityFormat }),
       events.quality && /* @__PURE__ */ u3(PropertyCard, { title: "Position Quality", data: events.quality, format: positionQualityFormat }),
-      events.survey && /* @__PURE__ */ u3(PropertyCard, { title: "Survey-in Status", data: events.survey, format: surveyFormat })
+      events.survey && /* @__PURE__ */ u3(PropertyCard, { title: "Survey-in Status", data: events.survey, format: surveyFormat }),
+      rtcm && /* @__PURE__ */ u3(RTCMCard, { state: rtcm })
     ] });
   };
   function parseSSEMessage(type, data) {
@@ -809,6 +820,12 @@
           console.warn("Invalid satellites event: missing svs array", data);
           return null;
         }
+        break;
+      case "corReport":
+        if (data.tag !== "RTCM") return null;
+        if (typeof data.msgID !== "string" || data.msgID === "") return null;
+        if (data.checksumOK === false) return null;
+        if (data.source !== "pull" && data.source !== "receiver") return null;
         break;
     }
     return data;
@@ -972,6 +989,64 @@
     const isDoubleRow = maxSatelliteCount >= 15;
     const rowSpanClass = isDoubleRow ? "md:row-span-2 lg:row-span-2" : "";
     return /* @__PURE__ */ u3("div", { className: `${rowSpanClass} h-full`, children: /* @__PURE__ */ u3(CardElement, { title: "Signal Levels", children: SignalGraph(svs, maxSatelliteCount, isDoubleRow) }) });
+  };
+  var RTCMState = class _RTCMState {
+    constructor(source) {
+      this.totalCount = {};
+      this.unusedCount = null;
+      this.source = source;
+    }
+    // update mutates this state to incorporate ev. A source flip
+    // clears the counters before counting the new event.
+    update(ev) {
+      if (this.source !== ev.source) {
+        this.source = ev.source;
+        this.totalCount = {};
+        this.unusedCount = null;
+      }
+      this.totalCount[ev.msgID] = (this.totalCount[ev.msgID] ?? 0) + 1;
+      if (ev.used !== void 0) {
+        if (this.unusedCount === null) this.unusedCount = {};
+        if (ev.used === false) {
+          this.unusedCount[ev.msgID] = (this.unusedCount[ev.msgID] ?? 0) + 1;
+        }
+      }
+    }
+    // clone returns a shallow copy of this state. Used by the React
+    // boundary so setRTCM sees a fresh reference each tick.
+    clone() {
+      const c3 = new _RTCMState(this.source);
+      c3.totalCount = { ...this.totalCount };
+      c3.unusedCount = this.unusedCount === null ? null : { ...this.unusedCount };
+      return c3;
+    }
+    title() {
+      if (this.source === "receiver" && this.unusedCount === null) {
+        return "RTCM Messages Used";
+      }
+      return "RTCM Messages Received";
+    }
+    rowValue(id) {
+      const n2 = this.totalCount[id];
+      if (this.unusedCount === null) return String(n2);
+      const unused = this.unusedCount[id] ?? 0;
+      return `${n2 - unused}/${n2}`;
+    }
+  };
+  function sortRTCMMsgIDs(ids) {
+    return [...ids].sort((a3, b) => {
+      const [am, as] = parseMsgID(a3);
+      const [bm, bs] = parseMsgID(b);
+      return am - bm || as - bs;
+    });
+  }
+  function parseMsgID(id) {
+    const [main, sub = "0"] = id.split(".");
+    return [Number(main), Number(sub)];
+  }
+  var RTCMCard = ({ state }) => {
+    const ids = sortRTCMMsgIDs(Object.keys(state.totalCount));
+    return /* @__PURE__ */ u3(CardElement, { title: state.title(), children: ids.map((id) => /* @__PURE__ */ u3(FieldElement, { desc: id, children: state.rowValue(id) })) });
   };
 
   // app.tsx
