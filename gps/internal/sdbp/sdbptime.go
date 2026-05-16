@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/sdbpbin"
 	"github.com/jclark/satpulse/gps/ptime"
 )
@@ -73,8 +74,7 @@ func timeDatTPPS(m *sdbpbin.DatTPPS) *gpsprot.TimeMsg {
 	tow := ptime.Seconds(m.TOW)
 	switch m.TimeRef {
 	case sdbpbin.TimeRefUTC:
-		ut := ptime.GPSUTC(m.Week, tow)
-		t.UTCTime = &ut
+		t.UTCTime.Set(ptime.GPSUTC(m.Week, tow))
 		t.GNSS = gpsprot.GPS
 	case sdbpbin.TimeRefBDS:
 		t.TAITime = ptime.BeiDou(int16(m.Week), tow)
@@ -88,7 +88,7 @@ func timeDatTPPS(m *sdbpbin.DatTPPS) *gpsprot.TimeMsg {
 		// UTCTime supports negative TimeOfDay (down to -24h).
 		ut := ptime.GPSUTC(m.Week, tow)
 		ut.TimeOfDay -= 3 * time.Hour
-		t.UTCTime = &ut
+		t.UTCTime.Set(ut)
 		t.GNSS = gpsprot.GLO
 	case sdbpbin.TimeRefGAL:
 		t.TAITime = ptime.Galileo(int16(m.Week), tow)
@@ -98,8 +98,7 @@ func timeDatTPPS(m *sdbpbin.DatTPPS) *gpsprot.TimeMsg {
 		t.GNSS = gpsprot.GPS
 	}
 	if m.PPSResidual != 0 {
-		offset := float64(m.PPSResidual) * 1e-3 // ps -> ns
-		t.PulseOffset = &offset
+		t.PulseOffset.Set(float64(m.PPSResidual) * 1e-3) // ps -> ns
 	}
 	return &t
 }
@@ -115,11 +114,10 @@ func timeDatUTCT2(m *sdbpbin.DatUTCT2) *gpsprot.TimeMsg {
 		time.Duration(m.Min)*time.Minute +
 		time.Duration(m.Sec)*time.Second +
 		time.Duration(m.SecFrac)*time.Nanosecond
-	ut := ptime.UTCTime{Date: date, TimeOfDay: tod}
 	t := gpsprot.TimeMsg{
 		Ref:         gpsprot.NavSolution,
 		NativeMsgID: "DAT-UTCT2",
-		UTCTime:     &ut,
+		UTCTime:     opt.Make(ptime.UTCTime{Date: date, TimeOfDay: tod}),
 		GNSS:        utct2GNSS(m.RefGrid),
 	}
 	if m.Accuracy != 0 {

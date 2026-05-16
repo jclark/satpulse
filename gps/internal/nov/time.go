@@ -29,8 +29,7 @@ func timeMsgFromTime(common *novmsg.CommonHdr, m *novmsg.Time, tag gpsprot.Tag) 
 func TimeMsgSetUTC(t *gpsprot.TimeMsg, m *novmsg.Time) (*gpsprot.TimeMsg, error) {
 	if m.UTCStatus == novmsg.UTCStatusValid {
 		nanos := int32(m.UTCMs%1000) * 1e6
-		utc := ptime.UTC(uint16(m.UTCYear), m.UTCMonth, m.UTCDay, m.UTCHour, m.UTCMin, uint8(m.UTCMs/1000), nanos)
-		t.UTCTime = &utc
+		t.UTCTime.Set(ptime.UTC(uint16(m.UTCYear), m.UTCMonth, m.UTCDay, m.UTCHour, m.UTCMin, uint8(m.UTCMs/1000), nanos))
 		t.UTCOffset = convertUTCOffset(m.UTCOffset)
 		if t.UTCOffset == 0 {
 			return nil, fmt.Errorf("invalid UTC offset %f", m.UTCOffset)

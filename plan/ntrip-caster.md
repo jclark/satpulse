@@ -1,4 +1,4 @@
-# NTRIP caster: `gps/app/ntrip`
+# NTRIP caster: `gps/app/ntrip` (#126)
 
 Implements an NTRIP caster that serves RTCM correction data from the
 GPS receiver to connecting NTRIP clients (rovers).  Addresses issue

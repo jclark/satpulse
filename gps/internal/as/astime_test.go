@@ -7,6 +7,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -329,6 +330,6 @@ func TestTimeNavTimeUTC(t *testing.T) {
 	}
 }
 
-func utcTimePtr(u ptime.UTCTime) *ptime.UTCTime {
-	return &u
+func utcTimePtr(u ptime.UTCTime) opt.Val[ptime.UTCTime] {
+	return opt.Make(u)
 }

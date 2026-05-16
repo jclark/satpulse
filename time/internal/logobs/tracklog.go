@@ -72,7 +72,7 @@ func NewTrackLogObserver(lg *slog.Logger, path string) (*TrackLogObserver, error
 
 // Tick caches the latest UTC time for use in trackpoint timestamps.
 func (o *TrackLogObserver) Tick(msg *gpsprot.TimeMsg, _ time.Time) {
-	o.utc = msg.UTCTime
+	o.utc = msg.UTCTime.Ptr()
 }
 
 // NavEpochPV writes a trackpoint if PosGeo and UTC time are available.

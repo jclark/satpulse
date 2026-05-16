@@ -149,10 +149,10 @@ func (sb *satellitesBuffer) createSatellitesMsg() *gpsprot.SatellitesMsg {
 				svidIndex[svid] = i
 				svs = append(svs, gpsprot.SVInfo{
 					ID: svid,
-					LookAngles: &gpsprot.LookAngles{
+					LookAngles: opt.Make(gpsprot.LookAngles{
 						Azimuth:   int16(sv.azim),
 						Elevation: int8(sv.elev),
-					},
+					}),
 					Signals: []gpsprot.SignalInfo{sig},
 				})
 			}

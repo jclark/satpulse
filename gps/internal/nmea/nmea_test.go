@@ -9,6 +9,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -56,18 +57,17 @@ func testTime(t *testing.T, s string, expectUTC ptime.UTCTime) {
 	if e != nil || !handled {
 		t.Fatalf("nmea.Dispatch failed: %v: %s", e, s)
 	}
-	utc := h.utc
-	if utc == nil {
+	if !h.utc.IsSet() {
 		t.Fatalf("nmea.UTCTime failed: %s", s)
 	}
-	if *utc != expectUTC {
+	if utc := h.utc.Get(); utc != expectUTC {
 		t.Fatalf("nmea.UTCTime wrong time: %s: got %v, want %v", s, utc, expectUTC)
 	}
 }
 
 type timeHandler struct {
 	gpsprot.DefaultHandler
-	utc *ptime.UTCTime
+	utc opt.Val[ptime.UTCTime]
 }
 
 func (h *timeHandler) Time(msg *gpsprot.TimeMsg, _ time.Time) {
@@ -151,7 +151,7 @@ func TestExtHandlerDispatch(t *testing.T) {
 	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.AddExtHandler(&mockExtHandler{
 		prefix: "PTEST,",
-		msgs:   []gpsprot.Msg{&gpsprot.TimeMsg{Tag: Tag, NativeMsgID: "PTEST", UTCTime: &wantUTC}},
+		msgs:   []gpsprot.Msg{&gpsprot.TimeMsg{Tag: Tag, NativeMsgID: "PTEST", UTCTime: opt.Make(wantUTC)}},
 	})
 	var th timeHandler
 	pp.SetMsgHandler(&th)
@@ -162,7 +162,7 @@ func TestExtHandlerDispatch(t *testing.T) {
 	if msgID != "PTEST" {
 		t.Errorf("msgID = %q, want PTEST", msgID)
 	}
-	if th.utc == nil || *th.utc != wantUTC {
+	if !th.utc.IsSet() || th.utc.Get() != wantUTC {
 		t.Errorf("TimeMsg not dispatched: utc = %v", th.utc)
 	}
 }
@@ -347,8 +347,8 @@ func TestRMCVoid(t *testing.T) {
 	if len(rec.times) != 1 {
 		t.Fatal("expected 1 TimeMsg")
 	}
-	if rec.times[0].UTCTime != nil {
-		t.Error("expected nil UTCTime for void status")
+	if rec.times[0].UTCTime.IsSet() {
+		t.Error("expected unset UTCTime for void status")
 	}
 	if len(rec.pos) != 0 {
 		t.Error("expected no PosGeo for void status")
