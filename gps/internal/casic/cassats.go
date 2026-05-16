@@ -5,6 +5,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
 // casicSignalID maps CASIC GNSSID to the SignalID for the L1 legacy signal.
@@ -44,10 +45,10 @@ func convertNavSatInfo(fixed *casbin.NavSatInfoFixed, svs []casbin.NavSVInfo) []
 		used := sv.Flags&casbin.NavSVUsed != 0
 		result = append(result, gpsprot.SVInfo{
 			ID: casicSVID(gnss, sv.SVID),
-			LookAngles: &gpsprot.LookAngles{
+			LookAngles: opt.Make(gpsprot.LookAngles{
 				Azimuth:   sv.Azim,
 				Elevation: sv.Elev,
-			},
+			}),
 			Signals: []gpsprot.SignalInfo{{
 				ID:   sigID,
 				CN0:  sv.CNO,
@@ -104,10 +105,10 @@ func satsNav2Sig(m *casbin.Nav2Sig) *gpsprot.SatellitesMsg {
 			idx = len(svs)
 			svs = append(svs, gpsprot.SVInfo{
 				ID: svid,
-				LookAngles: &gpsprot.LookAngles{
+				LookAngles: opt.Make(gpsprot.LookAngles{
 					Azimuth:   int16(sig.Azim),
 					Elevation: int8(sig.Elev),
-				},
+				}),
 			})
 			sigIndex[svid] = idx
 		}

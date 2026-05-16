@@ -67,8 +67,7 @@ func timeNavTimeQZSS(m *ubxbin.NavTimeQZSS) *gpsprot.TimeMsg {
 func timeNavTimeGLO(m *ubxbin.NavTimeGLO) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{NativeMsgID: "NAV-TIMEGLO"}
 	if (m.Valid&ubxbin.NavTimeGLOTODValid) != 0 && (m.Valid&ubxbin.NavTimeGLODateValid) != 0 {
-		u := ptime.GLONASS(m.N4, m.Nt, sTOW(m.TOD)+nsTOW(m.FTOD))
-		t.UTCTime = &u
+		t.UTCTime.Set(ptime.GLONASS(m.N4, m.Nt, sTOW(m.TOD)+nsTOW(m.FTOD)))
 	}
 	t.GNSS = gpsprot.GLO
 	t.Accuracy = time.Duration(m.TAcc)
@@ -80,8 +79,7 @@ func timeNavTimeUTC(m *ubxbin.NavTimeUTC) *gpsprot.TimeMsg {
 		return nil
 	}
 	t := gpsprot.TimeMsg{NativeMsgID: "NAV-TIMEUTC"}
-	u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano)
-	t.UTCTime = &u
+	t.UTCTime.Set(ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano))
 	t.Accuracy = time.Duration(m.TAcc)
 	t.GNSS = utcStandardToGNSS(m.Valid.UTCStandard())
 	return &t
@@ -90,8 +88,7 @@ func timeNavTimeUTC(m *ubxbin.NavTimeUTC) *gpsprot.TimeMsg {
 func timeNavPVT(m *ubxbin.NavPVT) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{NativeMsgID: "NAV-PVT"}
 	if (m.Valid & (ubxbin.NavPVTValidTime | ubxbin.NavPVTValidDate)) == (ubxbin.NavPVTValidTime | ubxbin.NavPVTValidDate) {
-		u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano)
-		t.UTCTime = &u
+		t.UTCTime.Set(ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano))
 	}
 	t.Accuracy = time.Duration(m.TAcc)
 	// XXX there are some interesting validity flags that we should try to represent
@@ -116,15 +113,13 @@ func utcStandardToGNSS(u ubxbin.UTCStandard) gpsprot.GNSS {
 func timeTimTP(m *ubxbin.TimTP) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{Ref: gpsprot.PrePulse, NativeMsgID: "TIM-TP"}
 	if (m.Flags & ubxbin.TimTPQErrInvalid) == 0 {
-		off := float64(m.QErr) / 1000.0
-		t.PulseOffset = &off
+		t.PulseOffset.Set(float64(m.QErr) / 1000.0)
 	}
 	tow := msTOW(m.TOWMS) + msScaledTOW(m.TOWSubMS)
 	if (m.Flags & ubxbin.TimTPTimeBase) == ubxbin.TimTPTimeBaseUTC {
 		// XXX This will be problematic around a leap second.
 		// we should return nil in the case that we might be on a leap second
-		utc := ptime.GPSUTC(m.Week, tow)
-		t.UTCTime = &utc
+		t.UTCTime.Set(ptime.GPSUTC(m.Week, tow))
 		return &t
 	}
 	conv := ptime.GPS
@@ -136,7 +131,7 @@ func timeTimTP(m *ubxbin.TimTP) *gpsprot.TimeMsg {
 		// Convert to date/timeOfDay, then subtract 3h.
 		ut := ptime.GPSUTC(m.Week, tow)
 		ut.TimeOfDay -= 3 * time.Hour
-		t.UTCTime = &ut
+		t.UTCTime.Set(ut)
 		t.GNSS = gpsprot.GLO
 		return &t
 	case ubxbin.TimTPTimeRefBeiDou:
@@ -155,8 +150,7 @@ func timeTimTP(m *ubxbin.TimTP) *gpsprot.TimeMsg {
 func timeTimTos(m *ubxbin.TimTos) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{Ref: gpsprot.PostPulse, NativeMsgID: "TIM-TOS"}
 	if (m.Flags & ubxbin.TimTosUTCTimeValid) != 0 {
-		u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Minute, m.Second, 0)
-		t.UTCTime = &u
+		t.UTCTime.Set(ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Minute, m.Second, 0))
 		t.GNSS = utcStandardToGNSS(m.UTCStandard)
 		t.Accuracy = time.Duration(m.UTCUncertainty)
 	}
@@ -170,8 +164,7 @@ func timeTimTos(m *ubxbin.TimTos) *gpsprot.TimeMsg {
 			t.TAITime = toTAI(int16(m.Week), sTOW(m.TOW))
 			t.GNSS = g
 			t.Accuracy = time.Duration(m.GNSSUncertainty)
-			pulseOff := float64(m.GNSSOffset)
-			t.PulseOffset = &pulseOff
+			t.PulseOffset.Set(float64(m.GNSSOffset))
 		}
 	}
 	return &t

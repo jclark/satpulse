@@ -638,10 +638,10 @@ func (p *PrometheusObserver) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time)
 			usedValue = 1
 		}
 		p.satelliteUsedGauge.WithLabelValues(gnss, sv).Set(usedValue)
-		if s.LookAngles == nil {
+		if !s.LookAngles.IsSet() {
 			continue
 		}
-		lookAngles := s.LookAngles
+		lookAngles := s.LookAngles.Get()
 		p.lookAngleGauge.WithLabelValues(gnss, sv, "azimuth").Set(float64(lookAngles.Azimuth))
 		p.lookAngleGauge.WithLabelValues(gnss, sv, "elevation").Set(float64(lookAngles.Elevation))
 	}

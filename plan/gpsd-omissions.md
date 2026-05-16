@@ -1,7 +1,7 @@
 # gpsd data not covered by gpsprot
 
 Fields from gpsd's TPV and SKY JSON objects that have no equivalent in
-`gpsprot` msg.go (including changes planned in unified-events.md).
+`gpsprot` msg.go (including changes planned in [gpsprot-json.md](gpsprot-json.md)).
 
 | Category | Source | Field | Description | Plan |
 |---|---|---|---|---|

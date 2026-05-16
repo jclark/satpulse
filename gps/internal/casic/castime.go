@@ -18,8 +18,7 @@ func timeNavTimeUTC(m *casbin.NavTimeUTC) *gpsprot.TimeMsg {
 	}
 	// MsErr is residual error in ms after rounding to whole milliseconds
 	nanos := int32(math.Round(float64(m.MsErr) * 1e6))
-	u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, nanos)
-	t.UTCTime = &u
+	t.UTCTime.Set(ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, nanos))
 	// TAcc is variance scaled by 1/c², so actual variance = TAcc * c²
 	// Convert to standard deviation: sqrt(TAcc) * c
 	const c = 299792458.0
@@ -72,12 +71,10 @@ func timeTim2Tpx(m *casbin.Tim2Tpx) *gpsprot.TimeMsg {
 		taiMinusGNSS = ptime.TAIMinusGalileo
 	case casbin.Tim2TSrcGLN:
 		t.GNSS = gpsprot.GLO
-		ut := ptime.GLONASSWeekUTC(m.Wn, tow)
-		t.UTCTime = &ut
+		t.UTCTime.Set(ptime.GLONASSWeekUTC(m.Wn, tow))
 	}
 	if m.QuanErr != 0 {
-		off := float64(m.QuanErr) * 0.1 // 0.1 ns -> ns
-		t.PulseOffset = &off
+		t.PulseOffset.Set(float64(m.QuanErr) * 0.1) // 0.1 ns -> ns
 	}
 	if m.TAcc > 0 {
 		t.Accuracy = time.Duration(math.Round(float64(m.TAcc) * 0.1))
@@ -125,8 +122,7 @@ func timeNav2TimeUTC(m *casbin.Nav2TimeUTC) *gpsprot.TimeMsg {
 	// Fractional time: Cs (centiseconds) + Subcs (cs error) + Subms (sub-ms, scale 2^-30)
 	fracMs := float64(m.Cs)*10 + float64(m.Subcs) + float64(m.Subms)*math.Exp2(-30)
 	nanos := int32(math.Round(fracMs * 1e6))
-	u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, nanos)
-	t.UTCTime = &u
+	t.UTCTime.Set(ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, nanos))
 	// V6 TAcc is nanoseconds (direct std dev, not variance)
 	if m.TAcc > 0 {
 		t.Accuracy = time.Duration(math.Round(float64(m.TAcc)))
@@ -166,8 +162,7 @@ func timeTim2TimeGLN(m *casbin.Tim2TimeGNSS) *gpsprot.TimeMsg {
 	}
 	towSubNs := time.Duration(math.Round(float64(m.TOWSubms) * math.Exp2(-30) * 1e6))
 	tow := time.Duration(m.TOW)*time.Millisecond + towSubNs
-	ut := ptime.GLONASSWeekUTC(m.Wn, tow)
-	t.UTCTime = &ut
+	t.UTCTime.Set(ptime.GLONASSWeekUTC(m.Wn, tow))
 	if m.TAcc > 0 {
 		t.Accuracy = time.Duration(math.Round(float64(m.TAcc)))
 	}

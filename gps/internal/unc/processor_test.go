@@ -7,6 +7,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 )
 
@@ -755,7 +756,7 @@ func TestDefaultHandlerInvariant(t *testing.T) {
 }
 
 func TestSatellitesMerge(t *testing.T) {
-	la := &gpsprot.LookAngles{Azimuth: 100, Elevation: 45}
+	la := opt.Make(gpsprot.LookAngles{Azimuth: 100, Elevation: 45})
 	tests := []struct {
 		name     string
 		sats     *gpsprot.SatellitesMsg

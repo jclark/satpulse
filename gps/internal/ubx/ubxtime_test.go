@@ -40,15 +40,15 @@ func TestTimeTimTPGLONASS(t *testing.T) {
 	if !got.TAITime.IsZero() {
 		t.Errorf("TAITime = %v, want zero", got.TAITime)
 	}
-	if got.UTCTime == nil {
-		t.Fatal("UTCTime is nil, want non-nil")
+	if !got.UTCTime.IsSet() {
+		t.Fatal("UTCTime not set, want set")
 	}
 	// GPSUTC(2410, 3h) gives Date=<start of week Sunday>, TOD=3h.
 	// After subtracting 3h for Moscow offset, TOD should be 0.
 	want := ptime.GPSUTC(week, time.Duration(towMS)*time.Millisecond)
 	want.TimeOfDay -= 3 * time.Hour
-	if *got.UTCTime != want {
-		t.Errorf("UTCTime = %+v, want %+v", *got.UTCTime, want)
+	if utc := got.UTCTime.Get(); utc != want {
+		t.Errorf("UTCTime = %+v, want %+v", utc, want)
 	}
 }
 
@@ -70,8 +70,8 @@ func TestTimeTimTPGPS(t *testing.T) {
 	if got.TAITime.IsZero() {
 		t.Error("TAITime is zero, want non-zero")
 	}
-	if got.UTCTime != nil {
-		t.Errorf("UTCTime = %+v, want nil", *got.UTCTime)
+	if got.UTCTime.IsSet() {
+		t.Errorf("UTCTime = %+v, want unset", got.UTCTime.Get())
 	}
 	want := ptime.GPS(int16(m.Week), time.Duration(m.TOWMS)*time.Millisecond)
 	if got.TAITime != want {

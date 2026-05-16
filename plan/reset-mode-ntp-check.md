@@ -1,6 +1,6 @@
-# Reset mode NTP cross-check
+# Reset mode NTP cross-check (#181)
 
-Address #181: cross-check the GPS-derived second chosen during reset mode
+Cross-check the GPS-derived second chosen during reset mode
 against an externally supplied wall-clock estimate (typically NTP), so
 that occasional wrong-second picks from the GPS pipeline (#175 cold-start
 NMEA leap-second errors, buffered-message delays) can be detected and

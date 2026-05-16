@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/sdbpbin"
 	"github.com/jclark/satpulse/gps/ptime"
 )
@@ -31,6 +32,8 @@ func parsePacket(t *testing.T, hexStr string) sdbpbin.Msg {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func optVal[T any](v T) opt.Val[T] { return opt.Make(v) }
 
 // Adjacent pair from taidou-capture2.jsonl:
 //
@@ -136,8 +139,8 @@ func TestTimeDatTPPS(t *testing.T) {
 				Ref:         gpsprot.PrePulse,
 				NativeMsgID: "DAT-TPPS",
 				GNSS:        gpsprot.GPS,
-				UTCTime:     ptr(ptime.GPSUTC(2410, ptime.Seconds(134202.0))),
-				PulseOffset: ptr(597e-3),
+				UTCTime:     optVal(ptime.GPSUTC(2410, ptime.Seconds(134202.0))),
+				PulseOffset: optVal(597e-3),
 			},
 		},
 		{
@@ -148,8 +151,8 @@ func TestTimeDatTPPS(t *testing.T) {
 				Ref:         gpsprot.PrePulse,
 				NativeMsgID: "DAT-TPPS",
 				GNSS:        gpsprot.GPS,
-				UTCTime:     ptr(ptime.GPSUTC(2410, ptime.Seconds(173719.0))),
-				PulseOffset: ptr(333e-3),
+				UTCTime:     optVal(ptime.GPSUTC(2410, ptime.Seconds(173719.0))),
+				PulseOffset: optVal(333e-3),
 			},
 		},
 	}
@@ -169,7 +172,7 @@ func TestTimeDatTPPS(t *testing.T) {
 func TestTimeDatTPPSMatchesCaptureTime(t *testing.T) {
 	msg := parsePacket(t, captureTPPS)
 	tm := timeDatTPPS(msg.(*sdbpbin.DatTPPS))
-	utc := tm.UTCTime.SysTime().Round(time.Second)
+	utc := tm.UTCTime.Get().SysTime().Round(time.Second)
 	wantUTC := captureTime.Add(time.Second)
 	if !utc.Equal(wantUTC) {
 		t.Errorf("DAT-TPPS UTC = %v, want %v (capture time + 1s)", utc, wantUTC)
@@ -177,8 +180,8 @@ func TestTimeDatTPPSMatchesCaptureTime(t *testing.T) {
 }
 
 func TestTimeDatUTCT2(t *testing.T) {
-	utcTime := func(y int, mo time.Month, d int, tod time.Duration) *ptime.UTCTime {
-		return &ptime.UTCTime{Date: time.Date(y, mo, d, 0, 0, 0, 0, time.UTC), TimeOfDay: tod}
+	utcTime := func(y int, mo time.Month, d int, tod time.Duration) opt.Val[ptime.UTCTime] {
+		return opt.Make(ptime.UTCTime{Date: time.Date(y, mo, d, 0, 0, 0, 0, time.UTC), TimeOfDay: tod})
 	}
 	tests := []struct {
 		name  string

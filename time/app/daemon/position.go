@@ -22,7 +22,7 @@ type positionObserver struct {
 
 // Tick caches the latest UTC time.
 func (o *positionObserver) Tick(msg *gpsprot.TimeMsg, _ time.Time) {
-	o.utc = msg.UTCTime
+	o.utc = msg.UTCTime.Ptr()
 }
 
 // NavEpochPV stores the latest position.

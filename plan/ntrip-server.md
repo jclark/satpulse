@@ -1,10 +1,8 @@
-# NTRIP server: `stream.push` to remote caster
+# NTRIP server: `stream.push` to remote caster (#238)
 
 Push RTCM data from the GPS receiver to a remote NTRIP caster
 using the NTRIP server (SOURCE) protocol.  Implemented as a
-`stream.Push` instance in `gps/app/stream`.
-
-Issue: #238.  Related: #126 (NTRIP).
+`stream.Push` instance in `gps/app/stream`.  Related: #126 (NTRIP).
 
 The implementation should mirror `Pull` closely.  Reuse the same
 `State` callback model (`Connecting`, `Connected`,

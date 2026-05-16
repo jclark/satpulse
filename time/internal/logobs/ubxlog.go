@@ -14,10 +14,13 @@ import (
 // UBXLogObserver logs notable UBX protocol messages via slog.
 type UBXLogObserver struct {
 	obs.DefaultObserver
-	lg               *slog.Logger
-	trustedTimeState trustedTimeState
-	osnmaState       osnmaState
+	lg                    *slog.Logger
+	trustedTimeState      trustedTimeState
+	osnmaState            osnmaState
+	nextMonCommsAllocWarn time.Time
 }
+
+const monCommsAllocWarnInterval = 5 * time.Minute
 
 // NewUBXLogObserver creates a new UBXLogObserver.
 func NewUBXLogObserver(lg *slog.Logger) *UBXLogObserver {
@@ -91,7 +94,7 @@ type osnmaSnapshot struct {
 
 // NativeMsg implements obs.Observer by dispatching recognized UBX messages
 // to type-specific handlers.
-func (o *UBXLogObserver) NativeMsg(tag gpsprot.Tag, _ string, msg any, _ time.Time) bool {
+func (o *UBXLogObserver) NativeMsg(tag gpsprot.Tag, _ string, msg any, tRead time.Time) bool {
 	if tag != gpsreg.TagUBX {
 		return false
 	}
@@ -110,6 +113,8 @@ func (o *UBXLogObserver) NativeMsg(tag gpsprot.Tag, _ string, msg any, _ time.Ti
 		o.logInf(m.ID(), m.InfText)
 	case *ubxbin.InfTest:
 		o.logInf(m.ID(), m.InfText)
+	case *ubxbin.MonComms:
+		o.logMonComms(m, tRead)
 	default:
 		return false
 	}
@@ -520,4 +525,15 @@ func (o *UBXLogObserver) logInf(id ubxbin.MsgID, text ubxbin.InfText) {
 	case ubxbin.InfWarningID, ubxbin.InfErrorID:
 		o.lg.Warn(msg, args...)
 	}
+}
+
+func (o *UBXLogObserver) logMonComms(msg *ubxbin.MonComms, tRead time.Time) {
+	if msg.TxErrors&ubxbin.MonCommsTxErrAlloc == 0 {
+		return
+	}
+	if !o.nextMonCommsAllocWarn.IsZero() && tRead.Before(o.nextMonCommsAllocWarn) {
+		return
+	}
+	o.nextMonCommsAllocWarn = tRead.Add(monCommsAllocWarnInterval)
+	o.lg.Warn("GPS receiver reports its transmit buffer has overflowed")
 }
