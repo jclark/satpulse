@@ -119,6 +119,26 @@ type QualitySSE struct {
 	RTCMRefBaseID opt.Val[uint16]  `json:"rtcmRefBaseID,omitzero"`
 }
 
+// CorReportSSE is the SSE event data for a correction-report
+// observation. Field names mirror gpsprot.CorReportMsg so that a
+// future migration to direct *CorReportMsg payloads is a drop-in for
+// the frontend. NativeMsg and NBytes are intentionally omitted.
+type CorReportSSE struct {
+	Tag           gpsprot.Tag             `json:"tag"`
+	MsgID         string                  `json:"msgID"`
+	Source        gpsprot.CorReportSource `json:"source"`
+	ChecksumOK    opt.Val[bool]           `json:"checksumOK,omitzero"`
+	Used          opt.Val[bool]           `json:"used,omitzero"`
+	RTCMRefBaseID opt.Val[uint16]         `json:"rtcmRefBaseID,omitzero"`
+}
+
+// corReportSourceTimeout is how long the SSE observer stays in
+// receiver mode after the last receiver-source CorReport before a
+// pull-source event can switch it back to pull mode. Long enough to
+// absorb brief gaps in UBX-RXM-COR (~1 Hz), short enough that operator
+// config changes recover within a sensible window.
+const corReportSourceTimeout = 30 * time.Second
+
 // SSEObserver implements obs.Observer for Server-Sent Events
 type SSEObserver struct {
 	obs.DefaultObserver
@@ -130,6 +150,12 @@ type SSEObserver struct {
 	// can be told the current mode at connect time. nil before the first
 	// ModeChanged is observed.
 	modeEvent atomic.Pointer[sse.Event]
+	// Source-preference state for CorReport. corMode is the source the
+	// observer is currently emitting; lastReceiverTime is the tRead of
+	// the most recent receiver-source event. Zero values mean pull mode
+	// with no receiver event seen.
+	corMode          gpsprot.CorReportSource
+	lastReceiverTime time.Time
 }
 
 // New creates a new SSE observer with the provided channel and leap second.
@@ -248,6 +274,37 @@ func (o *SSEObserver) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 // LeapSecond updates the local leap second used for time formatting.
 func (o *SSEObserver) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	msg.UpdateLeapSecond(&o.ls)
+}
+
+// CorReport implements gpsprot.CorReporter. Applies a source-preference
+// latch so the dashboard only sees one source at a time: start in pull
+// mode, switch to receiver on any receiver-source event, and switch
+// back to pull on a pull-source event only if corReportSourceTimeout
+// has elapsed since the last receiver-source event. No content
+// filtering (tag, message ID, checksum) -- the dashboard handles that.
+func (o *SSEObserver) CorReport(msg *gpsprot.CorReportMsg, tRead time.Time) {
+	switch msg.Source {
+	case gpsprot.CorReportSourceReceiver:
+		o.corMode = gpsprot.CorReportSourceReceiver
+		o.lastReceiverTime = tRead
+	case gpsprot.CorReportSourcePull:
+		if o.corMode == gpsprot.CorReportSourceReceiver {
+			if tRead.Sub(o.lastReceiverTime) <= corReportSourceTimeout {
+				return
+			}
+			o.corMode = gpsprot.CorReportSourcePull
+		}
+	default:
+		return
+	}
+	o.sendSSE("corReport", CorReportSSE{
+		Tag:           msg.Tag,
+		MsgID:         msg.MsgID,
+		Source:        msg.Source,
+		ChecksumOK:    msg.ChecksumOK,
+		Used:          msg.Used,
+		RTCMRefBaseID: msg.RTCMRefBaseID,
+	})
 }
 
 // NavEpochPV emits posvel and quality SSE events from the accumulated bundle.
