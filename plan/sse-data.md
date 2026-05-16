@@ -1,4 +1,4 @@
-# SSE data (#230)
+# SSE data (#278)
 
 Make SSE `data:` payloads the JSON serialization of the relevant daemon
 observability bus types. SSE `event:` names remain transport framing; the
