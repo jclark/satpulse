@@ -1022,10 +1022,9 @@
       return c3;
     }
     title() {
-      if (this.source === "receiver" && this.unusedCount === null) {
-        return "RTCM Messages Used";
-      }
-      return "RTCM Messages Received";
+      if (this.source !== "receiver") return "RTCM Messages Received";
+      if (this.unusedCount === null) return "RTCM Messages Used";
+      return "RTCM Messages Used/Received";
     }
     rowValue(id) {
       const n2 = this.totalCount[id];

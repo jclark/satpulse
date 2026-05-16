@@ -464,10 +464,9 @@ export class RTCMState {
     }
 
     title(): string {
-        if (this.source === 'receiver' && this.unusedCount === null) {
-            return 'RTCM Messages Used';
-        }
-        return 'RTCM Messages Received';
+        if (this.source !== 'receiver') return 'RTCM Messages Received';
+        if (this.unusedCount === null) return 'RTCM Messages Used';
+        return 'RTCM Messages Used/Received';
     }
 
     rowValue(id: string): string {

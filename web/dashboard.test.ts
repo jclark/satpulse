@@ -24,7 +24,7 @@ test('RTCMState.update: receiver event after pull clears counts', () => {
     expect(s.source).toBe('receiver');
     expect(s.totalCount).toEqual({ '1077': 1 });
     expect(s.unusedCount).toEqual({});
-    expect(s.title()).toBe('RTCM Messages Received');
+    expect(s.title()).toBe('RTCM Messages Used/Received');
     expect(s.rowValue('1077')).toBe('1/1');
 });
 

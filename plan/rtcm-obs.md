@@ -236,12 +236,11 @@ In `web/dashboard.tsx`:
     `M = N - unusedCount[msgID]` (i.e. the count of `used: true`
     events for that message).
 - Card title:
+  - Source `pull`: `RTCM Messages Received`.
   - Source `receiver` with `unusedCount === null` (no `used` info
     ever observed, e.g. Unicore `RTCMSTATUS`): `RTCM Messages Used`.
-  - All other cases (source `pull`, or source `receiver` with
-    `used` info available): `RTCM Messages Received`.  The M/N
-    column already conveys the used/total split in the receiver
-    case.
+  - Source `receiver` with `used` info available: `RTCM Messages
+    Used/Received`, matching the M/N column.
 - Sort rows by numeric message ID where possible, with subtype IDs
   such as `4072.1` sorted naturally after `4072.0`.
 - Do not add backend aggregation, persisted counters, frequency
