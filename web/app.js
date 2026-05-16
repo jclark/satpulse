@@ -756,12 +756,13 @@
           }
         }
       };
-      for (const type of EVENT_TYPES) {
-        context.addEventListener(type, handler(type));
+      const listeners = EVENT_TYPES.map((type) => [type, handler(type)]);
+      for (const [type, listener] of listeners) {
+        context.addEventListener(type, listener);
       }
       return () => {
-        for (const type of EVENT_TYPES) {
-          context.removeEventListener(type, handler(type));
+        for (const [type, listener] of listeners) {
+          context.removeEventListener(type, listener);
         }
       };
     }, []);
