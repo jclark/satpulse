@@ -13,6 +13,15 @@ import (
 
 const Vendor = "Unicore"
 
+const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportBand |
+	gpsprot.ConfigSupportSurvey |
+	gpsprot.ConfigSupportFixedPos |
+	gpsprot.ConfigSupportRaw |
+	gpsprot.ConfigSupportRTCMMSM4 |
+	gpsprot.ConfigSupportRTCMMSM7 |
+	gpsprot.ConfigSupportRTCMBaseID |
+	gpsprot.ConfigSupportRTCMQZSS
+
 type ConfigProtocol struct {
 	ver *uncmsg.Version // Stored from VERSIONB response for probing
 	cfg *Configurator   // Created during Configure() call
@@ -99,6 +108,11 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 		SupportedGNSS:  0, // Will be populated from CONFIG query responses
 		VendorSpecific: c.ver,
 	}
+}
+
+// ConfigSupport returns configuration support for this implementation.
+func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
+	return configSupport
 }
 
 // ConfigProps returns the current configuration of the GPS receiver
