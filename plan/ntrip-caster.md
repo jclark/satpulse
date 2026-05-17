@@ -728,8 +728,8 @@ added as a separate follow-on step:
 
 ## Implementation status
 
-- Steps 1-7 are complete, including the top-level `[[user]]` plus
+- Steps 1-8 are complete, including the top-level `[[user]]` plus
   per-mountpoint `auth` object redesign (config types, validation,
-  auth handling, daemon integration, tests, JSON schema).
-- Step 8 (man-page documentation): not yet started.
+  auth handling, daemon integration, tests, JSON schema, man-page
+  documentation).
 - Step 9 (MSM7→MSM4 conversion): not yet started.

@@ -254,6 +254,68 @@ However, this will be done only if the serial speed is less than 38400.
 This can be overridden  using the `satellitesOutput` key in the `gps` table.
 But if you want the graphical view, it is recommended to increase the serial speed to at least 38400.
 
+## `ntrip` table
+
+The `ntrip` table controls the Ntrip caster. The caster serves RTCM correction data from the GPS receiver to Ntrip clients.
+It starts only when at least one `[[ntrip.mountpoint]]` table is configured.
+A mountpoint with just a name is enough for a working caster:
+
+```
+[[ntrip.mountpoint]]
+name = "BKK"
+```
+
+The `ntrip` table can have the following keys:
+
+* `listen` - a string giving the TCP listen address; the default is `":2101"`
+* `country` - a string giving the country code reported in the source table; the default is `"XXX"`
+* `network` - a string giving the network name reported in the source table; the default is `"Misc"`
+* `lat`, `lon` - numbers giving the latitude and longitude reported in the source table; they must be specified together; the default is from the GPS receiver's fixed position, if any, otherwise 0
+* `generator` - a string giving the generator reported in the source table; the default is derived from the receiver or SatPulse version
+* `formatDetails` - a string giving the RTCM message list reported in the source table; the default is derived from the enabled GNSS systems
+* `bitrate` - an integer giving the default bitrate reported in the source table for mountpoints; the default is 0
+
+Each `[[ntrip.mountpoint]]` table has the following keys:
+
+* `name` - a string giving the mountpoint name; this is required and must be a single URL path component
+* `description` - a string giving the mountpoint description reported in the source table; the default is the mountpoint name
+* `bitrate` - an integer giving the bitrate reported in the source table for this mountpoint; the default is `ntrip.bitrate`
+* `auth` - a table saying that clients must authenticate to use this mountpoint; the default is not to authenticate
+
+The `auth` table has the following keys:
+
+* `anyUser` - a boolean saying whether any user defined in the `[[user]]` table may use this mountpoint
+* `users` - an array of strings giving the names of users that may use this mountpoint
+
+At most one of `auth.anyUser` and `auth.users` can be specified; if neither is, then no user can use the mountpoint.
+
+Example
+
+```
+[[user]]
+name = "rover"
+password = "secret"
+
+[ntrip]
+listen = ":80"
+country = "THA"
+
+[[ntrip.mountpoint]]
+name = "BKK"
+description = "Bangkok"
+auth.users = ["rover"]
+```
+
+## `user` table array
+
+The `user` table array defines users that can be referenced by other tables.
+It has the following keys:
+
+* `name` - a string giving the user name; this key is required
+* `password` - a string giving the password
+
+Defining a user does not by itself enable authentication for any service.
+
 ## `proxy.tcp` and `proxy.sock` table arrays
 
 The `proxy.tcp` table array provides network access to the GPS receiver over TCP/IP.
