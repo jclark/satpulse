@@ -172,12 +172,12 @@ func TestStreamRecordBuilder(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			build := StreamRecordBuilder(&tc.shared, tc.props, tc.info, tc.version, tc.msm, tc.hasAuth, tc.configCapturePos)
+			build := StreamRecordBuilder(&tc.shared, tc.props, tc.info, tc.version, tc.msm, tc.configCapturePos)
 			name := tc.mountName
 			if name == "" {
 				name = "BKK"
 			}
-			got := build(&tc.sc, name)
+			got := build(&tc.sc, name, tc.hasAuth)
 			expect := tc.expect
 			// Some test cases above use a hardcoded "Bangkok" identifier,
 			// independent of mountName.

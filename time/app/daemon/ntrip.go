@@ -30,7 +30,6 @@ func startNtrip(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	if cfg.GPS.Config && cfg.GPS.RTCMOutput != nil && *cfg.GPS.RTCMOutput {
 		msm = 4
 	}
-	hasAuth := len(cfg.Ntrip.Users) > 0
 	var props *gpsprot.ConfigProps
 	var info *gpsprot.ReceiverInfo
 	if gcfg != nil {
@@ -39,7 +38,20 @@ func startNtrip(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	}
 	buildSTR := ntrip.StreamRecordBuilder(
 		&cfg.Ntrip.SharedStreamConfig, props, info,
-		cmd.VersionInfo(), msm, hasAuth, configCapturePos)
+		cmd.VersionInfo(), msm, configCapturePos)
 	version, _ := cmd.Version()
-	return ntrip.Start(ctx, lg, wg, cfg.Ntrip, version, pb, buildSTR)
+	return ntrip.Start(ctx, lg, wg, cfg.Ntrip, version, userPasswordMap(cfg.User), pb, buildSTR)
+}
+
+// userPasswordMap returns a name->password map from the top-level
+// [[user]] table, suitable for passing into ntrip.Start.
+func userPasswordMap(users []UserConfig) map[string]string {
+	if len(users) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(users))
+	for i := range users {
+		m[users[i].Name] = users[i].Password
+	}
+	return m
 }

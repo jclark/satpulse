@@ -23,6 +23,23 @@
   },
   "type": "object",
   "properties": {
+    "user": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "User name",
+            "type": "string"
+          },
+          "password": {
+            "description": "Password",
+            "type": "string"
+          }
+        },
+        "required": ["name"]
+      }
+    },
     "serial": {
       "type": "object",
       "properties": {
@@ -363,24 +380,6 @@
           "default": 0,
           "minimum": 0
         },
-        "user": {
-          "description": "Defined users for basic authentication",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "username": {
-                "description": "Username for basic authentication",
-                "type": "string"
-              },
-              "password": {
-                "description": "Password for basic authentication",
-                "type": "string"
-              }
-            },
-            "required": ["username"]
-          }
-        },
         "mountpoint": {
           "description": "Mountpoints served by the caster",
           "type": "array",
@@ -401,11 +400,28 @@
                 "type": "integer",
                 "minimum": 0
               },
-              "users": {
-                "description": "Restrict access to these users (default all)",
-                "type": "array",
-                "items": {
-                  "type": "string"
+              "auth": {
+                "description": "Authentication, if any, for this mountpoint",
+                "type": "object",
+                "properties": {
+                  "anyUser": {
+                    "description": "Allow any valid user",
+                    "type": "boolean"
+                  },
+                  "users": {
+                    "description": "Restrict access to these users",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "not": {
+                  "properties": {
+                    "anyUser": {"const": true},
+                    "users": {"minItems": 1}
+                  },
+                  "required": ["anyUser", "users"]
                 }
               }
             },

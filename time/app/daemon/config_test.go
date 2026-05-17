@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +34,96 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("no config files found in %s", configsDir)
 	} else {
 		t.Logf("tested %d config files from %s", count, configsDir)
+	}
+}
+
+// TestConfigValidate covers the daemon-level config validations
+// that bridge top-level users with per-feature references (currently
+// Ntrip mountpoint auth.users).  Internal ntrip validation is
+// covered in gps/app/ntrip; this test focuses on cross-table checks
+// that only the daemon Config can perform.
+func TestConfigValidate(t *testing.T) {
+	tests := []struct {
+		name      string
+		toml      string
+		expectErr bool
+	}{
+		{
+			name: "no users, no ntrip auth",
+			toml: `
+[[ntrip.mountpoint]]
+name = "BKK"
+`,
+		},
+		{
+			name: "valid user + mountpoint auth.users",
+			toml: `
+[[user]]
+name = "rover1"
+password = "p1"
+
+[[ntrip.mountpoint]]
+name = "BKK"
+auth.users = ["rover1"]
+`,
+		},
+		{
+			name: "user without name",
+			toml: `
+[[user]]
+password = "p"
+`,
+			expectErr: true,
+		},
+		{
+			name: "duplicate user names",
+			toml: `
+[[user]]
+name = "rover1"
+[[user]]
+name = "rover1"
+`,
+			expectErr: true,
+		},
+		{
+			name: "mountpoint references undefined user",
+			toml: `
+[[user]]
+name = "rover1"
+
+[[ntrip.mountpoint]]
+name = "BKK"
+auth.users = ["ghost"]
+`,
+			expectErr: true,
+		},
+		{
+			name: "auth.anyUser does not need any top-level user",
+			toml: `
+[[ntrip.mountpoint]]
+name = "BKK"
+auth.anyUser = true
+`,
+		},
+	}
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader(tc.toml))
+			if err != nil {
+				t.Fatalf("readConfig: %v", err)
+			}
+			err = cfg.Validate(lg)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 

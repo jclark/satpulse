@@ -526,9 +526,9 @@ those fields fall back to placeholders.
 
 `startNtrip` (in `time/app/daemon/ntrip.go`) is unchanged.  It
 continues to bail when `len(cfg.Ntrip.Mountpoint) == 0` and to
-build a single `StreamRecordBuilder` closure with
-`hasAuth = len(cfg.Ntrip.Users) > 0`.  No restructuring; push
-wiring lives elsewhere.
+build a single `StreamRecordBuilder` closure, calling it once per
+mountpoint with that mountpoint's `hasAuth` value (`m.Auth !=
+nil`).  No restructuring; push wiring lives elsewhere.
 
 ### Push
 
@@ -540,22 +540,19 @@ build their own `StreamRecordBuilder` closures.
 1. If no `[[stream.push]]` entry uses `ntrip.*`, return nil.
 2. If any NTRIP push entry has `protocol = "RTCM"` (the
    default), build a `StreamRecordBuilder` closure with
-   `hasAuth = false` and `configCapturePos = cc.pos` (the same
-   opportunistically captured `PosGeoMsg` the caster uses --
-   see `plan/ntrip-caster.md` "Live-position capture").
-   Skipped entirely if all NTRIP push entries are non-RTCM.
-   The server pushing to a remote caster cannot know that
-   caster's client-auth policy and must not advertise our own
-   `[ntrip.user]` list.  See "Push STR field 16" below.
+   `configCapturePos = cc.pos` (the same opportunistically
+   captured `PosGeoMsg` the caster uses -- see
+   `plan/ntrip-caster.md` "Live-position capture").  Skipped
+   entirely if all NTRIP push entries are non-RTCM.
 3. For each NTRIP push entry, construct an `NtripDestination`
    with the address, mountpoint, password, and `UserAgent`
    (built from `cmd.Version()`) copied from `NtripPushConfig`
    plus daemon state.  For `protocol = "RTCM"` entries, also
-   call the closure with the entry's `StreamConfig` and
-   mountpoint name and store the result in
-   `NtripDestination.STR`.  For non-RTCM entries, leave `STR =
-   ""` so `Connect` omits the `STR:` header (see Configuration
-   above for rationale).
+   call the closure with the entry's `StreamConfig`, mountpoint
+   name, and `hasAuth = false` (see "Push STR field 16" below),
+   and store the result in `NtripDestination.STR`.  For non-RTCM
+   entries, leave `STR = ""` so `Connect` omits the `STR:`
+   header (see Configuration above for rationale).
 4. Start each `Push.Run` in its own goroutine via `wg.Go`, with
    an `onState` callback that logs destination-specific state
    changes.
@@ -583,14 +580,15 @@ We always send `N` (no authentication) for push.  Rationale:
 - The remote caster owns its own source-table entry and uses it
   when publishing to clients; the STR header we send during
   upload is hint-only metadata.
-- Sending our own caster's `hasAuth` value would be actively
-  misleading and could make the remote caster advertise wrong
-  information to its clients if it trusts our STR string
-  verbatim.
+- Sending any value derived from our own caster's per-mountpoint
+  auth would be actively misleading and could make the remote
+  caster advertise wrong information to its clients if it trusts
+  our STR string verbatim.
 
-This is implemented by building a second `StreamRecordBuilder`
-closure with `hasAuth = false`.  No new operator-facing config
-is added.
+This is implemented by calling the `StreamRecordBuilder` closure
+with `hasAuth = false` for every push entry, regardless of the
+caster's own per-mountpoint auth settings.  No new
+operator-facing config is added.
 
 ## Testing
 

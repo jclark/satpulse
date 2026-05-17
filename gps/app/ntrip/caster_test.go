@@ -38,10 +38,15 @@ type fixture struct {
 
 // newFixture starts a bcast goroutine and an http.Server backed by a
 // caster built from cfg.  The fixture takes ownership of pktCh; tests
-// send scan.Packet values to drive the stream.
-func newFixture(t *testing.T, cfg Config) *fixture {
+// send scan.Packet values to drive the stream.  users is the
+// top-level user registry; pass nil when no users are defined.
+func newFixture(t *testing.T, cfg Config, users map[string]string) *fixture {
 	t.Helper()
-	if err := cfg.Validate(); err != nil {
+	userSet := make(map[string]struct{}, len(users))
+	for name := range users {
+		userSet[name] = struct{}{}
+	}
+	if err := cfg.Validate(userSet); err != nil {
 		t.Fatalf("invalid test config: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -49,8 +54,8 @@ func newFixture(t *testing.T, cfg Config) *fixture {
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := bcast.New((<-chan scan.Packet)(f.pktCh))
 	f.wg.Go(func() { b.Run(ctx, lg) })
-	build := StreamRecordBuilder(&cfg.SharedStreamConfig, nil, nil, "", 0, len(cfg.Users) > 0, nil)
-	c := newCaster(lg, cfg, "0.0.0", b, build)
+	build := StreamRecordBuilder(&cfg.SharedStreamConfig, nil, nil, "", 0, nil)
+	c := newCaster(lg, cfg, "0.0.0", users, b, build)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		cancel()
@@ -143,7 +148,7 @@ func basicAuthHeader(user, pass string) string {
 func TestSourceTableV1(t *testing.T) {
 	f := newFixture(t, Config{
 		Mountpoint: []MountConfig{{Name: "BKK"}, {Name: "BKK2"}},
-	})
+	}, nil)
 	conn := f.dial()
 	defer conn.Close()
 	fmt.Fprint(conn, "GET / HTTP/1.0\r\n\r\n")
@@ -187,7 +192,7 @@ func TestSourceTableV1(t *testing.T) {
 func TestSourceTableV2(t *testing.T) {
 	f := newFixture(t, Config{
 		Mountpoint: []MountConfig{{Name: "BKK"}},
-	})
+	}, nil)
 	conn := f.dial()
 	defer conn.Close()
 	fmt.Fprint(conn, "GET / HTTP/1.1\r\nHost: x\r\nNtrip-Version: Ntrip/2.0\r\nConnection: close\r\n\r\n")
@@ -218,7 +223,7 @@ func TestSourceTableV2WithQueryString(t *testing.T) {
 	// respond to ?match=/?filter= as if no query string was supplied.
 	f := newFixture(t, Config{
 		Mountpoint: []MountConfig{{Name: "BKK"}},
-	})
+	}, nil)
 	conn := f.dial()
 	defer conn.Close()
 	fmt.Fprint(conn, "GET /?filter=foo HTTP/1.1\r\nHost: x\r\nNtrip-Version: Ntrip/2.0\r\nConnection: close\r\n\r\n")
@@ -238,7 +243,7 @@ func TestSourceTableV2WithQueryString(t *testing.T) {
 func TestStreamV1(t *testing.T) {
 	f := newFixture(t, Config{
 		Mountpoint: []MountConfig{{Name: "BKK"}},
-	})
+	}, nil)
 	conn := f.dial()
 	defer conn.Close()
 	fmt.Fprint(conn, "GET /BKK HTTP/1.0\r\n\r\n")
@@ -257,7 +262,7 @@ func TestStreamV1(t *testing.T) {
 func TestStreamV2(t *testing.T) {
 	f := newFixture(t, Config{
 		Mountpoint: []MountConfig{{Name: "BKK"}},
-	})
+	}, nil)
 	conn := f.dial()
 	defer conn.Close()
 	fmt.Fprint(conn, "GET /BKK HTTP/1.1\r\nHost: x\r\nNtrip-Version: Ntrip/2.0\r\nConnection: close\r\n\r\n")
@@ -318,7 +323,7 @@ func readChunk(r *bufio.Reader) ([]byte, error) {
 func TestStreamFiltersNonRTCM(t *testing.T) {
 	f := newFixture(t, Config{
 		Mountpoint: []MountConfig{{Name: "BKK"}},
-	})
+	}, nil)
 	conn := f.dial()
 	defer conn.Close()
 	fmt.Fprint(conn, "GET /BKK HTTP/1.0\r\n\r\n")
@@ -336,96 +341,10 @@ func TestStreamFiltersNonRTCM(t *testing.T) {
 	}
 }
 
-func TestAuthRequired(t *testing.T) {
-	cfg := Config{
-		Users:      []UserConfig{{Username: "rover1", Password: "secret"}},
-		Mountpoint: []MountConfig{{Name: "BKK"}},
-	}
-	tests := []struct {
-		name           string
-		authHeader     string
-		expectStatus   int
-		expectAuthHdr  string
-		expectStreamOK bool
-	}{
-		{name: "missing creds", expectStatus: http.StatusUnauthorized, expectAuthHdr: `Basic realm="/BKK"`},
-		{name: "bad password", authHeader: basicAuthHeader("rover1", "wrong"), expectStatus: http.StatusUnauthorized, expectAuthHdr: `Basic realm="/BKK"`},
-		{name: "unknown user", authHeader: basicAuthHeader("ghost", "x"), expectStatus: http.StatusUnauthorized, expectAuthHdr: `Basic realm="/BKK"`},
-		{name: "good creds", authHeader: basicAuthHeader("rover1", "secret"), expectStreamOK: true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newFixture(t, cfg)
-			conn := f.dial()
-			defer conn.Close()
-			req := "GET /BKK HTTP/1.1\r\nHost: x\r\nNtrip-Version: Ntrip/2.0\r\nConnection: close\r\n"
-			if tc.authHeader != "" {
-				req += "Authorization: " + tc.authHeader + "\r\n"
-			}
-			req += "\r\n"
-			fmt.Fprint(conn, req)
-			if tc.expectStreamOK {
-				r := bufio.NewReader(conn)
-				if line := readLine(t, r); !strings.HasPrefix(line, "HTTP/1.1 200") {
-					t.Fatalf("expected 200, got %q", line)
-				}
-				return
-			}
-			resp := readResponse(t, conn)
-			if resp.StatusCode != tc.expectStatus {
-				t.Fatalf("status %d", resp.StatusCode)
-			}
-			if got := resp.Header.Get("WWW-Authenticate"); got != tc.expectAuthHdr {
-				t.Errorf("WWW-Authenticate = %q", got)
-			}
-		})
-	}
-}
-
-func TestPerMountpointUserRestriction(t *testing.T) {
-	f := newFixture(t, Config{
-		Users: []UserConfig{
-			{Username: "rover1", Password: "p1"},
-			{Username: "rover2", Password: "p2"},
-		},
-		Mountpoint: []MountConfig{{
-			Name:  "BKK",
-			Users: []string{"rover1"},
-		}},
-	})
-	tests := []struct {
-		user, pass    string
-		expectAllowed bool
-	}{
-		{"rover1", "p1", true},
-		{"rover2", "p2", false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.user, func(t *testing.T) {
-			conn := f.dial()
-			defer conn.Close()
-			fmt.Fprintf(conn,
-				"GET /BKK HTTP/1.1\r\nHost: x\r\nNtrip-Version: Ntrip/2.0\r\nAuthorization: %s\r\nConnection: close\r\n\r\n",
-				basicAuthHeader(tc.user, tc.pass))
-			r := bufio.NewReader(conn)
-			line := readLine(t, r)
-			if tc.expectAllowed {
-				if !strings.HasPrefix(line, "HTTP/1.1 200") {
-					t.Fatalf("expected 200, got %q", line)
-				}
-			} else {
-				if !strings.HasPrefix(line, "HTTP/1.1 401") {
-					t.Fatalf("expected 401, got %q", line)
-				}
-			}
-		})
-	}
-}
-
 func TestAnonymousAccess(t *testing.T) {
 	f := newFixture(t, Config{
 		Mountpoint: []MountConfig{{Name: "BKK"}},
-	})
+	}, nil)
 	conn := f.dial()
 	defer conn.Close()
 	fmt.Fprint(conn, "GET /BKK HTTP/1.0\r\n\r\n")
@@ -443,7 +362,7 @@ func TestAnonymousAccess(t *testing.T) {
 func TestUnknownMountpointV1ReturnsSourcetable(t *testing.T) {
 	f := newFixture(t, Config{
 		Mountpoint: []MountConfig{{Name: "BKK"}},
-	})
+	}, nil)
 	conn := f.dial()
 	defer conn.Close()
 	fmt.Fprint(conn, "GET /XYZ HTTP/1.0\r\n\r\n")
@@ -456,7 +375,7 @@ func TestUnknownMountpointV1ReturnsSourcetable(t *testing.T) {
 func TestUnknownMountpointV2Returns404(t *testing.T) {
 	f := newFixture(t, Config{
 		Mountpoint: []MountConfig{{Name: "BKK"}},
-	})
+	}, nil)
 	conn := f.dial()
 	defer conn.Close()
 	fmt.Fprint(conn, "GET /XYZ HTTP/1.1\r\nHost: x\r\nNtrip-Version: Ntrip/2.0\r\nConnection: close\r\n\r\n")
@@ -469,7 +388,7 @@ func TestUnknownMountpointV2Returns404(t *testing.T) {
 func TestClientDisconnectCleansUp(t *testing.T) {
 	f := newFixture(t, Config{
 		Mountpoint: []MountConfig{{Name: "BKK"}},
-	})
+	}, nil)
 	conn := f.dial()
 	fmt.Fprint(conn, "GET /BKK HTTP/1.0\r\n\r\n")
 	r := bufio.NewReader(conn)

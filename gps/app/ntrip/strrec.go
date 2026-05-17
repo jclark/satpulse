@@ -22,22 +22,24 @@ const streamFormat = "RTCM 3.3"
 // *shared or *StreamConfig.
 //
 // info or props may be nil; an empty versionInfo is allowed.  msm is
-// 0 to skip format-details synthesis, or 4/7 etc.  hasAuth is true
-// when the caster requires basic auth (any [[ntrip.user]] defined).
-// configCapturePos is an opportunistic PosGeoMsg captured during
-// gpscfg.Configure, used as a lat/lon fallback when no fixed
-// position is configured; may be nil.  Lat/lon resolution order:
-// shared.Lat/Lon overrides -> Mode.FixedPos* -> configCapturePos
-// -> 0.00.
+// 0 to skip format-details synthesis, or 4/7 etc.  configCapturePos
+// is an opportunistic PosGeoMsg captured during gpscfg.Configure,
+// used as a lat/lon fallback when no fixed position is configured;
+// may be nil.  Lat/lon resolution order: shared.Lat/Lon overrides ->
+// Mode.FixedPos* -> configCapturePos -> 0.00.
+//
+// The returned closure takes the per-stream StreamConfig, the
+// stream's mountpoint name, and whether that stream requires client
+// authentication (drives the STR record's authentication field: "B"
+// when true, "N" when false).
 func StreamRecordBuilder(
 	shared *SharedStreamConfig,
 	props *gpsprot.ConfigProps,
 	info *gpsprot.ReceiverInfo,
 	versionInfo string,
 	msm int,
-	hasAuth bool,
 	configCapturePos *gpsprot.PosGeoMsg,
-) func(sc *StreamConfig, name string) string {
+) func(sc *StreamConfig, name string, hasAuth bool) string {
 	gnss, signals := enabledGNSSAndSignals(props)
 	navSystem := buildNavSystem(gnss)
 	carrier := buildCarrier(signals)
@@ -69,14 +71,9 @@ func StreamRecordBuilder(
 		}
 	}
 
-	authentication := "N"
-	if hasAuth {
-		authentication = "B"
-	}
-
 	sharedBitrate := shared.Bitrate
 
-	return func(sc *StreamConfig, name string) string {
+	return func(sc *StreamConfig, name string, hasAuth bool) string {
 		identifier := sc.Description
 		if identifier == "" {
 			identifier = name
@@ -84,6 +81,10 @@ func StreamRecordBuilder(
 		bitrate := sc.Bitrate
 		if bitrate == 0 {
 			bitrate = sharedBitrate
+		}
+		authentication := "N"
+		if hasAuth {
+			authentication = "B"
 		}
 		fields := [...]string{
 			identifier,

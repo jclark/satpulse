@@ -11,6 +11,7 @@ func TestConfigValidate(t *testing.T) {
 	tests := []struct {
 		name      string
 		cfg       Config
+		users     []string
 		expectErr bool
 	}{
 		{
@@ -38,35 +39,45 @@ func TestConfigValidate(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "user without username",
+			name: "auth anyUser alone is valid",
 			cfg: Config{
-				Users:      []UserConfig{{Password: "x"}},
-				Mountpoint: []MountConfig{{Name: "BKK"}},
+				Mountpoint: []MountConfig{{Name: "BKK", Auth: &AuthConfig{AnyUser: true}}},
+			},
+		},
+		{
+			name: "auth users list is valid",
+			cfg: Config{
+				Mountpoint: []MountConfig{{Name: "BKK", Auth: &AuthConfig{Users: []string{"rover1"}}}},
+			},
+			users: []string{"rover1"},
+		},
+		{
+			name: "auth empty object (closed) is valid",
+			cfg: Config{
+				Mountpoint: []MountConfig{{Name: "BKK", Auth: &AuthConfig{}}},
+			},
+		},
+		{
+			name: "auth anyUser with users is rejected",
+			cfg: Config{
+				Mountpoint: []MountConfig{{Name: "BKK", Auth: &AuthConfig{AnyUser: true, Users: []string{"rover1"}}}},
 			},
 			expectErr: true,
 		},
 		{
-			name: "duplicate users",
+			name: "auth.users referencing defined user is valid",
 			cfg: Config{
-				Users:      []UserConfig{{Username: "a"}, {Username: "a"}},
-				Mountpoint: []MountConfig{{Name: "BKK"}},
+				Mountpoint: []MountConfig{{Name: "BKK", Auth: &AuthConfig{Users: []string{"rover1"}}}},
 			},
-			expectErr: true,
+			users: []string{"rover1"},
 		},
 		{
-			name: "mountpoint references undefined user",
+			name: "auth.users referencing undefined user is rejected",
 			cfg: Config{
-				Users:      []UserConfig{{Username: "rover1"}},
-				Mountpoint: []MountConfig{{Name: "BKK", Users: []string{"ghost"}}},
+				Mountpoint: []MountConfig{{Name: "BKK", Auth: &AuthConfig{Users: []string{"ghost"}}}},
 			},
+			users:     []string{"rover1"},
 			expectErr: true,
-		},
-		{
-			name: "mountpoint references defined user",
-			cfg: Config{
-				Users:      []UserConfig{{Username: "rover1"}},
-				Mountpoint: []MountConfig{{Name: "BKK", Users: []string{"rover1"}}},
-			},
 		},
 		{
 			name: "lat without lon",
@@ -164,7 +175,11 @@ func TestConfigValidate(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.cfg.Validate()
+			users := make(map[string]struct{}, len(tc.users))
+			for _, u := range tc.users {
+				users[u] = struct{}{}
+			}
+			err := tc.cfg.Validate(users)
 			if tc.expectErr {
 				if err == nil {
 					t.Fatalf("expected error")

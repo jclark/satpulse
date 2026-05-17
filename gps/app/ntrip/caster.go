@@ -21,24 +21,34 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
-// Start validates cfg, opens a TCP listener, and starts goroutines
-// that accept and serve Ntrip client connections.  It returns once
-// the listener is open; serving continues until ctx is cancelled.
+// Start opens a TCP listener and starts goroutines that accept and
+// serve Ntrip client connections.  It returns once the listener is
+// open; serving continues until ctx is cancelled.  The caller is
+// responsible for calling cfg.Validate before invoking Start;
+// Start assumes the configuration is internally consistent.
 //
 // version is the satpulse version (e.g. from cmd.Version()), used in
 // the Server response header.  Empty is allowed.
+//
+// users maps top-level user names to passwords.  The caster does not
+// own the user registry: it is supplied by the daemon's top-level
+// config so other features can share the same credentials.  Pass nil
+// or an empty map when no users are defined.
 //
 // buildSTR is the closure returned by StreamRecordBuilder.  Start
 // calls it once per mountpoint at startup, prepends "STR;<name>;" to
 // each result, and stores the resulting line-prefixed strings in
 // caster runtime state to be served as part of the source-table
-// response.  After startup the closure is not retained.
+// response.  After startup the closure is not retained.  hasAuth is
+// passed per-mountpoint to drive the STR record's authentication
+// field.
 func Start(ctx context.Context, lg *slog.Logger,
 	wg *sync.WaitGroup, cfg Config, version string,
+	users map[string]string,
 	b *bcast.Bcast[scan.Packet],
-	buildSTR func(sc *StreamConfig, name string) string,
+	buildSTR func(sc *StreamConfig, name string, hasAuth bool) string,
 ) error {
-	c := newCaster(lg, cfg, version, b, buildSTR)
+	c := newCaster(lg, cfg, version, users, b, buildSTR)
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.listen())
 	if err != nil {
 		return err
@@ -80,8 +90,17 @@ type caster struct {
 
 // mount is a configured mountpoint at runtime.
 type mount struct {
-	name    string
-	allowed map[string]struct{} // nil means all defined users (or anonymous)
+	name string
+	auth *mountAuth // nil means anonymous (no credentials required)
+}
+
+// mountAuth captures the authorization rule for a mountpoint that
+// requires authentication.  anyUser=true admits any valid top-level
+// user; otherwise the credentials must match a user present in users.
+// An empty users map with anyUser=false is a closed mountpoint.
+type mountAuth struct {
+	anyUser bool
+	users   map[string]struct{}
 }
 
 // buildServerHdr builds the Server response header value.  The
@@ -96,29 +115,28 @@ func buildServerHdr(version string) string {
 }
 
 func newCaster(lg *slog.Logger, cfg Config, version string,
+	users map[string]string,
 	b *bcast.Bcast[scan.Packet],
-	buildSTR func(sc *StreamConfig, name string) string,
+	buildSTR func(sc *StreamConfig, name string, hasAuth bool) string,
 ) *caster {
-	users := make(map[string]string, len(cfg.Users))
-	for _, u := range cfg.Users {
-		users[u.Username] = u.Password
-	}
 	mounts := make(map[string]*mount, len(cfg.Mountpoint))
 	var sb strings.Builder
 	for i := range cfg.Mountpoint {
 		mc := &cfg.Mountpoint[i]
-		fields := buildSTR(&mc.StreamConfig, mc.Name)
-		var allowed map[string]struct{}
-		if len(mc.Users) > 0 {
-			allowed = make(map[string]struct{}, len(mc.Users))
-			for _, u := range mc.Users {
-				allowed[u] = struct{}{}
+		hasAuth := mc.Auth != nil
+		fields := buildSTR(&mc.StreamConfig, mc.Name, hasAuth)
+		m := &mount{name: mc.Name}
+		if hasAuth {
+			a := &mountAuth{anyUser: mc.Auth.AnyUser}
+			if !a.anyUser {
+				a.users = make(map[string]struct{}, len(mc.Auth.Users))
+				for _, u := range mc.Auth.Users {
+					a.users[u] = struct{}{}
+				}
 			}
+			m.auth = a
 		}
-		mounts[mc.Name] = &mount{
-			name:    mc.Name,
-			allowed: allowed,
-		}
+		mounts[mc.Name] = m
 		sb.WriteString("STR;" + mc.Name + ";" + fields + "\r\n")
 	}
 	sb.WriteString("ENDSOURCETABLE\r\n")
@@ -180,11 +198,12 @@ func isNtripV2(r *http.Request) bool {
 }
 
 // checkAuth returns true if the request is authorized for mount m.
-// If no users are defined globally, any request is allowed.
-// Otherwise basic auth must match a defined user, and that user must
-// be in m.allowed (when m.allowed restricts).
+// A mountpoint with no auth (m.auth == nil) is open: any request is
+// allowed.  Otherwise the request must carry basic auth credentials
+// that match a top-level user, and that user must be admitted by
+// m.auth (anyUser=true, or membership in m.auth.users).
 func (c *caster) checkAuth(r *http.Request, m *mount) bool {
-	if len(c.users) == 0 {
+	if m.auth == nil {
 		return true
 	}
 	user, pass, ok := r.BasicAuth()
@@ -198,12 +217,11 @@ func (c *caster) checkAuth(r *http.Request, m *mount) bool {
 	if subtle.ConstantTimeCompare([]byte(pass), []byte(want)) != 1 {
 		return false
 	}
-	if m.allowed != nil {
-		if _, ok := m.allowed[user]; !ok {
-			return false
-		}
+	if m.auth.anyUser {
+		return true
 	}
-	return true
+	_, ok = m.auth.users[user]
+	return ok
 }
 
 // sendUnauthorized writes a 401 response with WWW-Authenticate.

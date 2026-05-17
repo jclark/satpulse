@@ -38,23 +38,26 @@ type StreamConfig struct {
 
 // Config is the TOML configuration for the Ntrip caster.
 type Config struct {
-	Listen             string `toml:"listen" comment:"TCP listen address"`
-	SharedStreamConfig        // embedded
-	Users      []UserConfig  `toml:"user" comment:"Defined users for basic authentication"`
-	Mountpoint []MountConfig `toml:"mountpoint" comment:"Mountpoints served by the caster"`
-}
-
-// UserConfig describes one Ntrip user with username/password credentials.
-type UserConfig struct {
-	Username string `toml:"username" comment:"Username for basic authentication"`
-	Password string `toml:"password" comment:"Password for basic authentication"`
+	Listen             string        `toml:"listen" comment:"TCP listen address"`
+	SharedStreamConfig               // embedded
+	Mountpoint         []MountConfig `toml:"mountpoint" comment:"Mountpoints served by the caster"`
 }
 
 // MountConfig describes one mountpoint served by the caster.
 type MountConfig struct {
-	Name         string   `toml:"name" comment:"Mountpoint name (URL path component)"`
-	StreamConfig          // embedded
-	Users        []string `toml:"users" comment:"Restrict access to these users (default all)"`
+	Name         string      `toml:"name" comment:"Mountpoint name"`
+	StreamConfig             // embedded
+	Auth         *AuthConfig `toml:"auth" comment:"Authentication, if any, for this mountpoint"`
+}
+
+// AuthConfig describes the authentication policy for a mountpoint.
+// AnyUser and Users are mutually exclusive.  An AuthConfig that is
+// present but has neither AnyUser nor a non-empty Users list is a
+// closed mountpoint: authentication is required but no user is
+// authorized.
+type AuthConfig struct {
+	AnyUser bool     `toml:"anyUser" comment:"Allow any top-level user"`
+	Users   []string `toml:"users" comment:"Restrict access to these users"`
 }
 
 // DefaultListen is the default listen address used when [ntrip.listen]
@@ -82,7 +85,11 @@ var formatDetailsRE = regexp.MustCompile(`^[A-Za-z0-9_]+(\([0-9]+\))?(,[A-Za-z0-
 // STR-record defaults for stream.push entries even when no caster
 // runs).  Whether to start the caster is decided by the caller
 // based on len(cfg.Mountpoint).
-func (cfg *Config) Validate() error {
+//
+// users is the set of top-level user names defined by the caller.
+// Validate checks that every name in a mountpoint's auth.users
+// refers to a defined user.  Pass nil when no users are defined.
+func (cfg *Config) Validate(users map[string]struct{}) error {
 	if cfg.FormatDetails != "" && !formatDetailsRE.MatchString(cfg.FormatDetails) {
 		return fmt.Errorf("ntrip: invalid formatDetails %q", cfg.FormatDetails)
 	}
@@ -101,17 +108,6 @@ func (cfg *Config) Validate() error {
 			return fmt.Errorf("ntrip.%s: %w", fld.name, err)
 		}
 	}
-	users := make(map[string]struct{}, len(cfg.Users))
-	for i := range cfg.Users {
-		u := &cfg.Users[i]
-		if u.Username == "" {
-			return fmt.Errorf("ntrip.user[%d]: username is required", i)
-		}
-		if _, dup := users[u.Username]; dup {
-			return fmt.Errorf("ntrip.user: duplicate username %q", u.Username)
-		}
-		users[u.Username] = struct{}{}
-	}
 	names := make(map[string]struct{}, len(cfg.Mountpoint))
 	for i := range cfg.Mountpoint {
 		m := &cfg.Mountpoint[i]
@@ -128,9 +124,15 @@ func (cfg *Config) Validate() error {
 		if err := checkSTRField(m.Description); err != nil {
 			return fmt.Errorf("ntrip.mountpoint[%q].description: %w", m.Name, err)
 		}
-		for _, name := range m.Users {
-			if _, ok := users[name]; !ok {
-				return fmt.Errorf("ntrip.mountpoint[%q]: undefined user %q", m.Name, name)
+		if m.Auth == nil {
+			continue
+		}
+		if m.Auth.AnyUser && len(m.Auth.Users) > 0 {
+			return fmt.Errorf("ntrip.mountpoint[%q].auth: anyUser and users are mutually exclusive", m.Name)
+		}
+		for _, u := range m.Auth.Users {
+			if _, ok := users[u]; !ok {
+				return fmt.Errorf("ntrip.mountpoint[%q].auth: undefined user %q", m.Name, u)
 			}
 		}
 	}

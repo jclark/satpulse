@@ -30,6 +30,7 @@ type Config struct {
 	GPS        GPSConfig
 	PHC        PHCConfig
 	Sync       phcsync.Config
+	User       []UserConfig
 	Proxy      proxy.Config
 	Ntrip      ntrip.Config
 	Stream     stream.Config
@@ -38,6 +39,14 @@ type Config struct {
 	PTP        PTPConfig
 	NTP        NTPConfig
 	Log        LogConfig
+}
+
+// UserConfig describes one user with name/password credentials.
+// Used by any feature that needs basic auth (currently the Ntrip
+// caster); referenced from per-feature config by user name.
+type UserConfig struct {
+	Name     string `toml:"name" comment:"User name"`
+	Password string `toml:"password" comment:"Password"`
 }
 
 type SerialConfig struct {
@@ -172,13 +181,35 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
 	}
-	if err := cfg.Ntrip.Validate(); err != nil {
+	users, err := cfg.userSet()
+	if err != nil {
+		return &configError{err: err}
+	}
+	if err := cfg.Ntrip.Validate(users); err != nil {
 		return &configError{err: err}
 	}
 	if err := cfg.Stream.Validate(); err != nil {
 		return &configError{err: err}
 	}
 	return nil
+}
+
+// userSet checks the top-level [[user]] table for empty or duplicate
+// names and returns the set of defined user names, suitable for
+// passing into sub-config validators that resolve user references.
+func (cfg *Config) userSet() (map[string]struct{}, error) {
+	users := make(map[string]struct{}, len(cfg.User))
+	for i := range cfg.User {
+		u := &cfg.User[i]
+		if u.Name == "" {
+			return nil, fmt.Errorf("user[%d]: name is required", i)
+		}
+		if _, dup := users[u.Name]; dup {
+			return nil, fmt.Errorf("user: duplicate name %q", u.Name)
+		}
+		users[u.Name] = struct{}{}
+	}
+	return users, nil
 }
 
 func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock, error) {
