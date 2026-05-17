@@ -15,13 +15,13 @@ automatic NTRIP STR records.
 
 ## Data model
 
-Add a single field to `gpsprot.ReceiverInfo`:
+Add the support bitset type to `gpsprot`:
 
 ```go
 type ConfigSupportFlags uint32
 
 const (
-	ConfigSupportBands ConfigSupportFlags = 1 << iota
+	ConfigSupportBand ConfigSupportFlags = 1 << iota
 	ConfigSupportSpeed
 	ConfigSupportSurvey
 	ConfigSupportSurveyAcc
@@ -33,15 +33,37 @@ const (
 	ConfigSupportRTCMMSM7
 	ConfigSupportRTCMBaseID
 	ConfigSupportRTCMQZSS
+	ConfigSupportLast = ConfigSupportRTCMQZSS
 )
 
 const ConfigSupportRTCMMSM = ConfigSupportRTCMMSM4 | ConfigSupportRTCMMSM7
 ```
 
-`ReceiverInfo` gets:
+`ConfigSupportLast` is exported because packages outside `gpsprot`
+need a stable bound when iterating over individual public support flags.
+Keep it equal to the highest declared single-bit flag and test that it
+matches the flag table.
+
+The bitset belongs to the configuration result, not to
+`ReceiverInfo`.  It describes what the current SatPulse configuration
+implementation can configure for the probed receiver/protocol; it is
+not a pure hardware capability.
+
+Add a method to `gpsprot.Configurator`:
 
 ```go
-ConfigSupport ConfigSupportFlags `json:"configSupport,omitempty"`
+ConfigSupport() ConfigSupportFlags
+```
+
+Add a sibling field to the configuration result:
+
+```go
+type Result struct {
+	ReceiverInfo  *gpsprot.ReceiverInfo
+	ConfigSupport gpsprot.ConfigSupportFlags
+	ConfigProps   *gpsprot.ConfigProps
+	// ...
+}
 ```
 
 `gpsprot` owns the string representation:
@@ -57,16 +79,18 @@ func (f ConfigSupportFlags) MarshalJSON() ([]byte, error)
 same item list, so JSON consumers see:
 
 ```json
-["bands", "speed", "fixedPos", "raw"]
+["band", "speed", "fixedPos", "raw"]
 ```
 
-The TypeScript generator should expose `ReceiverInfo.configSupport`
-as a string list.  The desktop GUI can use those names directly rather
-than depending on the numeric bit values.
+When a JSON or TypeScript surface exposes configuration results, it
+should expose `configSupport` as a string list next to receiver
+information, not inside `ReceiverInfo`.  Do not add it to the current
+time-server `InitSSE` event yet; wait until there is a concrete
+frontend or NTRIP consumer for that surface.
 
 ## Flag meanings
 
-`ConfigSupportBands`
+`ConfigSupportBand`
 : The receiver/config protocol supports meaningful non-L1 band
 selection.  This is the flag for `--band` and the desktop signal
 picker's band-level controls.  It does not replace `SupportedGNSS`;
@@ -169,25 +193,25 @@ by the configurator:
 - `RTCMQZSS`: false for now.  The F9 and X20 protocol docs list
   GPS/GLO/GAL/BDS MSM output keys but not QZSS 1114/1117, and
   `ubxcfgmsg.go` has no QZSS RTCM message keys.
-- `Bands`: conservative model/version logic.  True for known multiband
-  families such as F9, F10, X20, and product categories that explicitly
-  contain non-L1 bands.  False for known L1-only families such as M8
-  timing modules, LEA-6T, and unknown receivers.
+- `Band`: false before generation 9.  For generation 9 or later, true
+  for product categories `HPG`, `TIM`, and `SPGL1L5`; false otherwise.
 
-Set `ReceiverInfo.ConfigSupport` in `(*ubx.Configurator).ReceiverInfo`.
+Return this value from `(*ubx.Configurator).ConfigSupport`.
 
 ## Unicore computation
 
-Add a helper based on `uncmsg.Version.Type`, for example:
+Define a package-level constant for the Unicore implementation support
+set:
 
 ```go
-func configSupport(ver *uncmsg.Version) gpsprot.ConfigSupportFlags
+const configSupport gpsprot.ConfigSupportFlags = ...
 ```
 
-Use a conservative model table.  For known Nebula IV models supported
-by the current config engine, start with:
+The current Unicore configuration implementation is not conditioned on
+specific product models, so do not maintain a model allowlist.  The
+constant should include:
 
-- `Bands`: true.
+- `Band`: true.
 - `Speed`: false.
 - `Survey`: true.
 - `SurveyAcc`: false.  `MODE BASE TIME [T] [Distance]` has an optional
@@ -202,22 +226,24 @@ by the current config engine, start with:
 - `RTCMBaseID`: true.
 - `RTCMQZSS`: true.
 
-For unknown Unicore product models, be conservative: expose only flags
-that are known to be protocol-wide, or none if that is unclear.  This
-can be loosened as hardware is tested.
-
-Set `ReceiverInfo.ConfigSupport` in `(*unc.Configurator).ReceiverInfo`.
+Return this constant from `(*unc.Configurator).ConfigSupport`.
 
 ## satpulsetool gps requirements
 
 `internal/gpscmd/gpsflags.go` should return or record the
 `ConfigSupportFlags` required by the user's requested configuration.
-This requirement set is compared with `ReceiverInfo.ConfigSupport` to
-produce warnings for missing support.
+This requirement set is compared with `gpscfg.Result.ConfigSupport` to
+produce warnings for missing support.  Track requirements as a map
+from required support flag to the CLI option that requested it, plus a
+single special case for RTCM MSM where either MSM4 or MSM7 satisfies
+the option.  Emit one warning per missing CLI option, for example
+`receiver does not support the following option` with
+`option=--fixed-pos-ecef`, rather than warning with raw support flag
+names.
 
 Initial mapping:
 
-- `--band`: `ConfigSupportBands`.
+- `--band`: `ConfigSupportBand`.
 - `--speed`: `ConfigSupportSpeed`.
 - `--survey`: `ConfigSupportSurvey`.
 - Explicit `--survey-acc`: `ConfigSupportSurveyAcc`.
@@ -250,7 +276,7 @@ explicit or implied by a no-op `satpulsetool gps` invocation, print
 the support flags as a single stable comma-separated line:
 
 ```text
-Supports: bands, speed, survey, surveyAcc, surveyMsg, fixedPos, fixedPosAcc, raw, rtcmMSM4, rtcmMSM7, rtcmBaseID, rtcmQZSS
+Supports: band, speed, survey, surveyAcc, surveyMsg, fixedPos, fixedPosAcc, raw, rtcmMSM4, rtcmMSM7, rtcmBaseID, rtcmQZSS
 ```
 
 Only include names for flags that are set, and omit the line when the
@@ -267,7 +293,7 @@ message groups, and serial speed.  The proposed flags have enough
 granularity for these controls without becoming a receiver capability
 taxonomy:
 
-- `Bands` covers the signal picker/band-selection distinction from
+- `Band` covers the signal picker/band-selection distinction from
   the constellation checkboxes.
 - `Speed` covers the serial speed selector.
 - `Survey`, `SurveyAcc`, and `SurveyMsg` cover the survey-in mode
@@ -278,9 +304,11 @@ taxonomy:
 - `RTCMMSM4`, `RTCMMSM7`, `RTCMBaseID`, and `RTCMQZSS` cover the RTCM
   group and NTRIP STR needs.
 
-The GUI should consume `ReceiverInfo.configSupport` from the existing
-receiver event/readback flow.  It should not need protocol-specific
-tables in frontend code.
+When the desktop GUI branch needs this, it should consume
+`configSupport` from the configuration-result/readback flow as a
+sibling to receiver information.  It should not need protocol-specific
+tables in frontend code.  The current time-server dashboard does not
+need a `configSupport` field in `InitSSE`.
 
 ## NTRIP STR use
 
@@ -299,13 +327,15 @@ mean every constellation is present on that receiver.
 Add focused unit tests rather than broad integration tests:
 
 - `gps/gpsprot`: `ConfigSupportFlags.Items`, `String`, and
-  `MarshalJSON`; JSON and TypeScript generation include
-  `configSupport` as a string list.
+  `MarshalJSON`.
+- Configuration result JSON/TypeScript tests, where applicable, should
+  include `configSupport` as a string list outside `ReceiverInfo`.  Do
+  not add this to the time-server `InitSSE` tests yet.
 - `gps/internal/ubx`: table tests for `configSupport()` using existing
   `testVers` values: LEA-6T, M8F/M8P, F9P, F9T before and after MSM4
   support, F10S, and X20P.
-- `gps/internal/unc`: table tests for known product models such as
-  UM960, UM980, UM982, UB9A0, and unknown.
+- `gps/internal/unc`: test the package-level support constant and
+  `(*Configurator).ConfigSupport`.
 - `internal/gpscmd`: flag parsing tests for the requirement bitset,
   including explicit-vs-default survey/fixed accuracy, MSM4/MSM7,
   auto/lax RTCM, QZSS RTCM, and disabling options.
