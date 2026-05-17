@@ -18,6 +18,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/scan"
 )
 
@@ -39,14 +40,15 @@ import (
 // calls it once per mountpoint at startup, prepends "STR;<name>;" to
 // each result, and stores the resulting line-prefixed strings in
 // caster runtime state to be served as part of the source-table
-// response.  After startup the closure is not retained.  hasAuth is
-// passed per-mountpoint to drive the STR record's authentication
-// field.
+// response.  After startup the closure is not retained.  hasAuth and
+// msm7to4 are passed per-mountpoint to drive the STR record's
+// authentication field and the substitution of MSM7 message numbers
+// in the format-details field.
 func Start(ctx context.Context, lg *slog.Logger,
 	wg *sync.WaitGroup, cfg Config, version string,
 	users map[string]string,
 	b *bcast.Bcast[scan.Packet],
-	buildSTR func(sc *StreamConfig, name string, hasAuth bool) string,
+	buildSTR func(sc *StreamConfig, name string, hasAuth, msm7to4 bool) string,
 ) error {
 	c := newCaster(lg, cfg, version, users, b, buildSTR)
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.listen())
@@ -90,8 +92,9 @@ type caster struct {
 
 // mount is a configured mountpoint at runtime.
 type mount struct {
-	name string
-	auth *mountAuth // nil means anonymous (no credentials required)
+	name    string
+	auth    *mountAuth // nil means anonymous (no credentials required)
+	msm7to4 bool       // convert MSM7 packets to MSM4 before sending
 }
 
 // mountAuth captures the authorization rule for a mountpoint that
@@ -117,15 +120,15 @@ func buildServerHdr(version string) string {
 func newCaster(lg *slog.Logger, cfg Config, version string,
 	users map[string]string,
 	b *bcast.Bcast[scan.Packet],
-	buildSTR func(sc *StreamConfig, name string, hasAuth bool) string,
+	buildSTR func(sc *StreamConfig, name string, hasAuth, msm7to4 bool) string,
 ) *caster {
 	mounts := make(map[string]*mount, len(cfg.Mountpoint))
 	var sb strings.Builder
 	for i := range cfg.Mountpoint {
 		mc := &cfg.Mountpoint[i]
 		hasAuth := mc.Auth != nil
-		fields := buildSTR(&mc.StreamConfig, mc.Name, hasAuth)
-		m := &mount{name: mc.Name}
+		fields := buildSTR(&mc.StreamConfig, mc.Name, hasAuth, mc.MSM7to4)
+		m := &mount{name: mc.Name, msm7to4: mc.MSM7to4}
 		if hasAuth {
 			a := &mountAuth{anyUser: mc.Auth.AnyUser}
 			if !a.anyUser {
@@ -190,6 +193,38 @@ func (c *caster) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.serveStream(w, r, m, v2)
+}
+
+// convertMSM7to4Packet returns the MSM4 RTCM serialization of pkt
+// when pkt is an MSM7 packet, or pkt unchanged otherwise.  A
+// conversion error leaves pkt unchanged -- forwarding a degraded
+// MSM7 is preferable to dropping it.
+func convertMSM7to4Packet(lg *slog.Logger, pkt string) string {
+	mt := rtcmbin.ExtractMsgType(pkt)
+	if !mt.IsMSM() || mt%10 != 7 {
+		return pkt
+	}
+	m7, err := rtcmbin.ParseMsg(pkt)
+	if err != nil {
+		lg.Debug("MSM7 parse failed, forwarding unchanged", "msgType", mt, "err", err)
+		return pkt
+	}
+	hiRes, ok := m7.(*rtcmbin.MSMHiRes)
+	if !ok {
+		lg.Debug("MSM7 parse returned non-MSMHiRes, forwarding unchanged", "msgType", mt)
+		return pkt
+	}
+	m4, err := rtcmbin.MSM7Convert(hiRes, 4)
+	if err != nil {
+		lg.Debug("MSM7->MSM4 convert failed, forwarding unchanged", "msgType", mt, "err", err)
+		return pkt
+	}
+	out, err := rtcmbin.SerializeMsg(m4)
+	if err != nil {
+		lg.Debug("MSM4 serialize failed, forwarding unchanged", "msgType", mt, "err", err)
+		return pkt
+	}
+	return out
 }
 
 // isNtripV2 returns true if the request claims Ntrip v2 via header.
@@ -272,17 +307,17 @@ func (c *caster) serveSourceTable(w http.ResponseWriter, v2 bool) {
 }
 
 // serveStream handles a successful GET /<mountpoint> request.
-func (c *caster) serveStream(w http.ResponseWriter, r *http.Request, _ *mount, v2 bool) {
+func (c *caster) serveStream(w http.ResponseWriter, r *http.Request, m *mount, v2 bool) {
 	if v2 {
-		c.serveStreamV2(w, r)
+		c.serveStreamV2(w, r, m)
 	} else {
-		c.serveStreamV1(w, r)
+		c.serveStreamV1(w, r, m)
 	}
 }
 
 // serveStreamV1 hijacks the connection and writes the 12-byte
 // "ICY 200 OK\r\n" status line followed by the raw RTCM byte stream.
-func (c *caster) serveStreamV1(w http.ResponseWriter, r *http.Request) {
+func (c *caster) serveStreamV1(w http.ResponseWriter, r *http.Request, m *mount) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "hijack not supported", http.StatusInternalServerError)
@@ -301,12 +336,12 @@ func (c *caster) serveStreamV1(w http.ResponseWriter, r *http.Request) {
 	if err := bw.Flush(); err != nil {
 		return
 	}
-	c.streamLoop(r.Context(), bufWriter{bw})
+	c.streamLoop(r.Context(), m, bufWriter{bw})
 }
 
 // serveStreamV2 streams via the http.ResponseWriter using chunked
 // encoding (Go's default since Content-Length is unknown).
-func (c *caster) serveStreamV2(w http.ResponseWriter, r *http.Request) {
+func (c *caster) serveStreamV2(w http.ResponseWriter, r *http.Request, m *mount) {
 	h := w.Header()
 	h.Set("Content-Type", "gnss/data")
 	h.Set("Cache-Control", "no-store, no-cache, max-age=0")
@@ -319,7 +354,7 @@ func (c *caster) serveStreamV2(w http.ResponseWriter, r *http.Request) {
 	if err := rc.Flush(); err != nil {
 		return
 	}
-	c.streamLoop(r.Context(), respWriter{w, rc})
+	c.streamLoop(r.Context(), m, respWriter{w, rc})
 }
 
 // streamWriter is the writer abstraction used by streamLoop so the
@@ -344,8 +379,11 @@ func (r respWriter) flush() error                { return r.rc.Flush() }
 
 // streamLoop subscribes to the packet bcast and writes RTCM packets
 // to w until ctx is cancelled, the bcast closes, or a write fails.
-// Mirrors proxy.connWriteWorker in time/internal/proxy.
-func (c *caster) streamLoop(ctx context.Context, w streamWriter) {
+// Mirrors proxy.connWriteWorker in time/internal/proxy.  When the
+// mountpoint requests MSM7->MSM4 conversion, each MSM7 packet is
+// rewritten before being forwarded; non-MSM7 packets pass through
+// unchanged.
+func (c *caster) streamLoop(ctx context.Context, m *mount, w streamWriter) {
 	defer c.lg.Debug("about to exit ntrip stream worker")
 	ch := c.bcast.Subscribe()
 	defer c.bcast.Unsubscribe(ch)
@@ -360,7 +398,11 @@ func (c *caster) streamLoop(ctx context.Context, w streamWriter) {
 			if !pkt.HasTag(gpsreg.TagRTCM) || !pkt.ChecksumValid {
 				continue
 			}
-			if _, err := w.Write([]byte(pkt.Data)); err != nil {
+			data := pkt.Data
+			if m.msm7to4 {
+				data = convertMSM7to4Packet(c.lg, data)
+			}
+			if _, err := w.Write([]byte(data)); err != nil {
 				logConnErr(c.lg, "error writing to ntrip stream", err)
 				return
 			}

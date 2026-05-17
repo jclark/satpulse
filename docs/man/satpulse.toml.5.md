@@ -272,7 +272,7 @@ The `ntrip` table can have the following keys:
 * `network` - a string giving the network name reported in the source table; the default is `"Misc"`
 * `lat`, `lon` - numbers giving the latitude and longitude reported in the source table; they must be specified together; the default is from the GPS receiver's fixed position, if any, otherwise 0
 * `generator` - a string giving the generator reported in the source table; the default is derived from the receiver or SatPulse version
-* `formatDetails` - a string giving the RTCM message list reported in the source table; the default is derived from the enabled GNSS systems
+* `formatDetails` - a string giving the RTCM message list reported in the source table; when MSM7 to MSM4 conversion is being done, this should describe the messages before conversion; the conversion will also substitute MSM7 message numbers with MSM4 message numbers; the default is derived from the enabled GNSS systems
 * `bitrate` - an integer giving the default bitrate reported in the source table for mountpoints; the default is 0
 
 Each `[[ntrip.mountpoint]]` table has the following keys:
@@ -281,6 +281,7 @@ Each `[[ntrip.mountpoint]]` table has the following keys:
 * `description` - a string giving the mountpoint description reported in the source table; the default is the mountpoint name
 * `bitrate` - an integer giving the bitrate reported in the source table for this mountpoint; the default is `ntrip.bitrate`
 * `auth` - a table saying that clients must authenticate to use this mountpoint; the default is not to authenticate
+* `msm7to4` - a boolean saying whether MSM7 RTCM packets should be converted to MSM4 before being sent to clients; non-MSM7 packets are forwarded unchanged; the default is false
 
 The `auth` table has the following keys:
 

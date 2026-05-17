@@ -28,6 +28,7 @@ func TestStreamRecordBuilder(t *testing.T) {
 		version          string
 		msm              int
 		hasAuth          bool
+		msm7to4          bool
 		configCapturePos *gpsprot.PosGeoMsg
 		sc               StreamConfig
 		mountName        string
@@ -169,6 +170,29 @@ func TestStreamRecordBuilder(t *testing.T) {
 			mountName: "BKK",
 			expect:    "Bangkok;RTCM 3.3;;0;;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;4800;",
 		},
+		{
+			name: "msm7to4 substitutes MSM7 numbers in synthesised formatDetails",
+			props: func() *gpsprot.ConfigProps {
+				cp := new(gpsprot.ConfigProps)
+				cp.SetSignalsEnabled(majorSignals())
+				return cp
+			}(),
+			msm:     7,
+			msm7to4: true,
+			expect:  "BKK;RTCM 3.3;1005(1),1074(1),1084(1),1094(1),1124(1),1230(1);2;GPS+GLO+GAL+BDS;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
+		},
+		{
+			name:    "msm7to4 substitutes MSM7 numbers in operator formatDetails",
+			shared:  SharedStreamConfig{FormatDetails: "1005(1),1077(1),1087(1),1230(1)"},
+			msm7to4: true,
+			expect:  "BKK;RTCM 3.3;1005(1),1074(1),1084(1),1230(1);0;;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
+		},
+		{
+			name:    "msm7to4 leaves non-MSM7 numbers alone",
+			shared:  SharedStreamConfig{FormatDetails: "1005,1074(2),1230"},
+			msm7to4: true,
+			expect:  "BKK;RTCM 3.3;1005,1074(2),1230;0;;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -177,7 +201,7 @@ func TestStreamRecordBuilder(t *testing.T) {
 			if name == "" {
 				name = "BKK"
 			}
-			got := build(&tc.sc, name, tc.hasAuth)
+			got := build(&tc.sc, name, tc.hasAuth, tc.msm7to4)
 			expect := tc.expect
 			// Some test cases above use a hardcoded "Bangkok" identifier,
 			// independent of mountName.

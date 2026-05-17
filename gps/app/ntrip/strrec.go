@@ -2,6 +2,7 @@ package ntrip
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,9 +30,11 @@ const streamFormat = "RTCM 3.3"
 // Mode.FixedPos* -> configCapturePos -> 0.00.
 //
 // The returned closure takes the per-stream StreamConfig, the
-// stream's mountpoint name, and whether that stream requires client
+// stream's mountpoint name, whether that stream requires client
 // authentication (drives the STR record's authentication field: "B"
-// when true, "N" when false).
+// when true, "N" when false), and whether the caster converts MSM7
+// packets to MSM4 for this stream (drives substitution of MSM7
+// message numbers in the format-details field).
 func StreamRecordBuilder(
 	shared *SharedStreamConfig,
 	props *gpsprot.ConfigProps,
@@ -39,7 +42,7 @@ func StreamRecordBuilder(
 	versionInfo string,
 	msm int,
 	configCapturePos *gpsprot.PosGeoMsg,
-) func(sc *StreamConfig, name string, hasAuth bool) string {
+) func(sc *StreamConfig, name string, hasAuth, msm7to4 bool) string {
 	gnss, signals := enabledGNSSAndSignals(props)
 	navSystem := buildNavSystem(gnss)
 	carrier := buildCarrier(signals)
@@ -73,7 +76,7 @@ func StreamRecordBuilder(
 
 	sharedBitrate := shared.Bitrate
 
-	return func(sc *StreamConfig, name string, hasAuth bool) string {
+	return func(sc *StreamConfig, name string, hasAuth, msm7to4 bool) string {
 		identifier := sc.Description
 		if identifier == "" {
 			identifier = name
@@ -86,10 +89,14 @@ func StreamRecordBuilder(
 		if hasAuth {
 			authentication = "B"
 		}
+		fd := formatDetails
+		if msm7to4 {
+			fd = convertFormatDetailsMSM7to4(fd)
+		}
 		fields := [...]string{
 			identifier,
 			streamFormat,
-			formatDetails,
+			fd,
 			strconv.Itoa(carrier),
 			navSystem,
 			network,
@@ -107,6 +114,19 @@ func StreamRecordBuilder(
 		}
 		return strings.Join(fields[:], ";")
 	}
+}
+
+// msm7NumberRE matches an MSM7 RTCM message number (1077, 1087, 1097,
+// 1107, 1117, 1127, 1137) as a standalone token.  Group 1 captures the
+// three-digit prefix shared with the corresponding MSM4 number.
+var msm7NumberRE = regexp.MustCompile(`\b(10[7-9]|11[0-3])7\b`)
+
+// convertFormatDetailsMSM7to4 rewrites any MSM7 RTCM message number
+// in a format-details string to the corresponding MSM4 number (e.g.
+// 1077 -> 1074, 1087 -> 1084).  Non-MSM7 tokens pass through
+// unchanged.
+func convertFormatDetailsMSM7to4(s string) string {
+	return msm7NumberRE.ReplaceAllString(s, "${1}4")
 }
 
 // enabledGNSSAndSignals returns the enabled GNSS set and signal set

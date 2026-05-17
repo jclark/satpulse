@@ -17,6 +17,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/scan"
 )
 
@@ -382,6 +383,123 @@ func TestUnknownMountpointV2Returns404(t *testing.T) {
 	resp := readResponse(t, conn)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status %d", resp.StatusCode)
+	}
+}
+
+// buildMSM7Packet returns a serialized MSM7 (GPS, 1077) RTCM packet
+// suitable for round-tripping through the caster's MSM7->MSM4 path.
+func buildMSM7Packet(t *testing.T) string {
+	t.Helper()
+	m7 := &rtcmbin.MSMHiRes{
+		MSMHeader: rtcmbin.MSMHeader{
+			MsgHdrStationID: rtcmbin.MsgHdrStationID{
+				MsgHdr:    rtcmbin.MsgHdr{MsgNum: 1077},
+				StationID: 1234,
+			},
+			SatMask: 1 << 63,
+			SigMask: 1 << 31,
+		},
+		CellMask: 1,
+		Sat: rtcmbin.MSMSatData{
+			RangeInt:  rtcmbin.Uint8Slice{100},
+			ExtInfo:   rtcmbin.Uint8Slice{0},
+			RangeMod:  []uint16{500},
+			PhaseRate: []int16{0},
+		},
+		Sig: rtcmbin.MSMHiResSigData{
+			Pseudorange: []int32{1000},
+			PhaseRange:  []int32{2000},
+			LockTime:    []uint16{100},
+			HalfCycle:   []bool{false},
+			CNR:         []uint16{160},
+			PhaseRate:   []int16{0},
+		},
+	}
+	data, err := rtcmbin.SerializeMsg(m7)
+	if err != nil {
+		t.Fatalf("serialize MSM7: %v", err)
+	}
+	return data
+}
+
+func TestStreamMSM7To4Conversion(t *testing.T) {
+	pkt := buildMSM7Packet(t)
+	f := newFixture(t, Config{
+		Mountpoint: []MountConfig{{Name: "BKK", MSM7to4: true}},
+	}, nil)
+	conn := f.dial()
+	defer conn.Close()
+	fmt.Fprint(conn, "GET /BKK HTTP/1.0\r\n\r\n")
+	r := bufio.NewReader(conn)
+	if line := readLine(t, r); line != "ICY 200 OK\r\n" {
+		t.Fatalf("status %q", line)
+	}
+	f.send(rtcmPacket(pkt))
+	// MSM4 has a shorter payload than MSM7; read the 3-byte framing
+	// header to learn the length, then the payload and CRC.
+	header := readN(t, r, 3)
+	if header[0] != rtcmbin.PreambleByte {
+		t.Fatalf("preamble = %#x, want %#x", header[0], rtcmbin.PreambleByte)
+	}
+	payloadLen := int(header[1]&0x03)<<8 | int(header[2])
+	body := readN(t, r, payloadLen+3)
+	mt := rtcmbin.ExtractMsgType(string(append(header, body...)))
+	if mt != 1074 {
+		t.Errorf("converted MsgType = %d, want 1074", mt)
+	}
+}
+
+func TestStreamMSM7To4ForwardsNonMSM7Unchanged(t *testing.T) {
+	f := newFixture(t, Config{
+		Mountpoint: []MountConfig{{Name: "BKK", MSM7to4: true}},
+	}, nil)
+	conn := f.dial()
+	defer conn.Close()
+	fmt.Fprint(conn, "GET /BKK HTTP/1.0\r\n\r\n")
+	r := bufio.NewReader(conn)
+	if line := readLine(t, r); line != "ICY 200 OK\r\n" {
+		t.Fatalf("status %q", line)
+	}
+	// testRTCMData is RTCM 1005 (Stationary Antenna Reference Point),
+	// which is not MSM7 -- the caster must forward it unchanged.
+	f.send(rtcmPacket(testRTCMData))
+	got := readN(t, r, len(testRTCMData))
+	if string(got) != testRTCMData {
+		t.Errorf("got  %x\nwant %x", got, testRTCMData)
+	}
+}
+
+func TestSourceTableMSM7To4SubstitutesNumbers(t *testing.T) {
+	// Operator-set formatDetails with MSM7 numbers -> source table
+	// should show the MSM4 numbers for the msm7to4 mountpoint.
+	f := newFixture(t, Config{
+		SharedStreamConfig: SharedStreamConfig{
+			FormatDetails: "1005(1),1077(1),1087(1),1230(1)",
+		},
+		Mountpoint: []MountConfig{
+			{Name: "MSM7"},
+			{Name: "MSM4", MSM7to4: true},
+		},
+	}, nil)
+	conn := f.dial()
+	defer conn.Close()
+	fmt.Fprint(conn, "GET / HTTP/1.0\r\n\r\n")
+	r := bufio.NewReader(conn)
+	_ = readLine(t, r) // status line
+	for {
+		if line := readLine(t, r); line == "\r\n" {
+			break
+		}
+	}
+	body, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !bytes.Contains(body, []byte(";MSM7;RTCM 3.3;1005(1),1077(1),1087(1),1230(1);")) {
+		t.Errorf("MSM7 mount line missing or wrong: %s", body)
+	}
+	if !bytes.Contains(body, []byte(";MSM4;RTCM 3.3;1005(1),1074(1),1084(1),1230(1);")) {
+		t.Errorf("MSM4 mount line missing or wrong substitution: %s", body)
 	}
 }
 

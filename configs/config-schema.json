@@ -423,6 +423,11 @@
                   },
                   "required": ["anyUser", "users"]
                 }
+              },
+              "msm7to4": {
+                "description": "Convert MSM7 packets to MSM4 before sending",
+                "type": "boolean",
+                "default": false
               }
             },
             "required": ["name"]

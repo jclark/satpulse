@@ -48,6 +48,7 @@ type MountConfig struct {
 	Name         string      `toml:"name" comment:"Mountpoint name"`
 	StreamConfig             // embedded
 	Auth         *AuthConfig `toml:"auth" comment:"Authentication, if any, for this mountpoint"`
+	MSM7to4      bool        `toml:"msm7to4" comment:"Convert MSM7 packets to MSM4 before sending"`
 }
 
 // AuthConfig describes the authentication policy for a mountpoint.
