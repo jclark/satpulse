@@ -195,38 +195,6 @@ func (c *caster) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	c.serveStream(w, r, m, v2)
 }
 
-// convertMSM7to4Packet returns the MSM4 RTCM serialization of pkt
-// when pkt is an MSM7 packet, or pkt unchanged otherwise.  A
-// conversion error leaves pkt unchanged -- forwarding a degraded
-// MSM7 is preferable to dropping it.
-func convertMSM7to4Packet(lg *slog.Logger, pkt string) string {
-	mt := rtcmbin.ExtractMsgType(pkt)
-	if !mt.IsMSM() || mt%10 != 7 {
-		return pkt
-	}
-	m7, err := rtcmbin.ParseMsg(pkt)
-	if err != nil {
-		lg.Debug("MSM7 parse failed, forwarding unchanged", "msgType", mt, "err", err)
-		return pkt
-	}
-	hiRes, ok := m7.(*rtcmbin.MSMHiRes)
-	if !ok {
-		lg.Debug("MSM7 parse returned non-MSMHiRes, forwarding unchanged", "msgType", mt)
-		return pkt
-	}
-	m4, err := rtcmbin.MSM7Convert(hiRes, 4)
-	if err != nil {
-		lg.Debug("MSM7->MSM4 convert failed, forwarding unchanged", "msgType", mt, "err", err)
-		return pkt
-	}
-	out, err := rtcmbin.SerializeMsg(m4)
-	if err != nil {
-		lg.Debug("MSM4 serialize failed, forwarding unchanged", "msgType", mt, "err", err)
-		return pkt
-	}
-	return out
-}
-
 // isNtripV2 returns true if the request claims Ntrip v2 via header.
 func isNtripV2(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("Ntrip-Version"), "Ntrip/2.0")
@@ -400,7 +368,13 @@ func (c *caster) streamLoop(ctx context.Context, m *mount, w streamWriter) {
 			}
 			data := pkt.Data
 			if m.msm7to4 {
-				data = convertMSM7to4Packet(c.lg, data)
+				out, err := rtcmbin.MSM7ConvertPacket(data, 4)
+				if err != nil {
+					c.lg.Debug("MSM7->MSM4 conversion failed, forwarding unchanged",
+						"msgType", rtcmbin.ExtractMsgType(data), "err", err)
+				} else {
+					data = out
+				}
 			}
 			if _, err := w.Write([]byte(data)); err != nil {
 				logConnErr(c.lg, "error writing to ntrip stream", err)

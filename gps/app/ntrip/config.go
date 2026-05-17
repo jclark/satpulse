@@ -105,15 +105,15 @@ func (cfg *Config) Validate(users map[string]struct{}) error {
 		{"network", cfg.Network},
 		{"generator", cfg.Generator},
 	} {
-		if err := checkSTRField(fld.value); err != nil {
+		if err := CheckSTRField(fld.value); err != nil {
 			return fmt.Errorf("ntrip.%s: %w", fld.name, err)
 		}
 	}
 	names := make(map[string]struct{}, len(cfg.Mountpoint))
 	for i := range cfg.Mountpoint {
 		m := &cfg.Mountpoint[i]
-		if !mountpointNameRE.MatchString(m.Name) {
-			return fmt.Errorf("ntrip.mountpoint[%d]: invalid name %q", i, m.Name)
+		if err := CheckMountpointName(m.Name); err != nil {
+			return fmt.Errorf("ntrip.mountpoint[%d]: %w", i, err)
 		}
 		if _, dup := names[m.Name]; dup {
 			return fmt.Errorf("ntrip.mountpoint: duplicate name %q", m.Name)
@@ -122,7 +122,7 @@ func (cfg *Config) Validate(users map[string]struct{}) error {
 		if m.Bitrate < 0 {
 			return fmt.Errorf("ntrip.mountpoint[%q]: invalid bitrate %d", m.Name, m.Bitrate)
 		}
-		if err := checkSTRField(m.Description); err != nil {
+		if err := CheckSTRField(m.Description); err != nil {
 			return fmt.Errorf("ntrip.mountpoint[%q].description: %w", m.Name, err)
 		}
 		if m.Auth == nil {
@@ -140,12 +140,24 @@ func (cfg *Config) Validate(users map[string]struct{}) error {
 	return nil
 }
 
-// checkSTRField rejects characters that would break the
+// CheckSTRField rejects characters that would break the
 // semicolon-separated, CRLF-terminated source-table line format if
-// embedded in an operator-controlled STR field.
-func checkSTRField(s string) error {
+// embedded in an operator-controlled STR field.  Exported so that
+// the stream.push validator can apply the same rule to push-side
+// STR fields.
+func CheckSTRField(s string) error {
 	if i := strings.IndexAny(s, ";\r\n"); i >= 0 {
 		return fmt.Errorf("disallowed character %q at offset %d", s[i:i+1], i)
+	}
+	return nil
+}
+
+// CheckMountpointName validates a mountpoint name per the Ntrip v2
+// spec: up to 100 characters of [A-Za-z0-9._-].  Exported so the
+// stream.push validator can apply the same rule.
+func CheckMountpointName(name string) error {
+	if !mountpointNameRE.MatchString(name) {
+		return fmt.Errorf("invalid mountpoint name %q", name)
 	}
 	return nil
 }

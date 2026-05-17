@@ -166,12 +166,13 @@ func (cfg *Config) httpWantsSatellites() bool {
 	return false
 }
 
-// hasNtripStream reports whether any Ntrip stream is configured
-// (caster mountpoint or, in the future, stream.push entry) and so
-// needs signals-enabled and mode read back from the receiver to fill
-// in STR-record fields.
+// hasNtripStream reports whether any STR record will be
+// synthesised at runtime -- a caster mountpoint or an RTCM
+// stream.push entry -- and so needs signals-enabled and mode read
+// back from the receiver to fill in STR-record fields.  Non-RTCM
+// pushes omit the STR header entirely and do not need this state.
 func (cfg *Config) hasNtripStream() bool {
-	return len(cfg.Ntrip.Mountpoint) > 0
+	return len(cfg.Ntrip.Mountpoint) > 0 || hasRTCMPush(cfg)
 }
 
 // Validate validates the configuration and logs warnings for deprecated options.

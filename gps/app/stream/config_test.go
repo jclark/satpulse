@@ -115,6 +115,177 @@ func TestPullConfigPrepareNtrip(t *testing.T) {
 	}
 }
 
+func TestConfigPushNtrip(t *testing.T) {
+	cfg := decode(t, `
+[[push]]
+ntrip.address = "caster.example.com:2101"
+ntrip.mountpoint = "MY_BASE"
+ntrip.password = "secret"
+ntrip.description = "Bangkok"
+ntrip.bitrate = 4800
+ntrip.msm7to4 = true
+`)
+	if len(cfg.Push) != 1 {
+		t.Fatalf("expected 1 push entry, got %d", len(cfg.Push))
+	}
+	p := cfg.Push[0]
+	if p.Ntrip == nil {
+		t.Fatal("expected ntrip set")
+	}
+	if p.Ntrip.Address != "caster.example.com:2101" {
+		t.Errorf("address = %q", p.Ntrip.Address)
+	}
+	if p.Ntrip.Description != "Bangkok" {
+		t.Errorf("description = %q", p.Ntrip.Description)
+	}
+	if p.Ntrip.Bitrate != 4800 {
+		t.Errorf("bitrate = %d", p.Ntrip.Bitrate)
+	}
+	if !p.Ntrip.MSM7to4 {
+		t.Errorf("msm7to4 = false, want true")
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+	// protocol defaulted to RTCM after Validate.
+	if cfg.Push[0].Protocol.Tag() != "RTCM" {
+		t.Errorf("Protocol after default = %q, want RTCM", cfg.Push[0].Protocol.Tag())
+	}
+}
+
+func TestConfigPushValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		wantErr string
+	}{
+		{
+			name:    "no transport",
+			toml:    `[[push]]`,
+			wantErr: "must configure ntrip",
+		},
+		{
+			name: "missing address",
+			toml: `
+[[push]]
+ntrip.mountpoint = "M"
+ntrip.password = "p"
+`,
+			wantErr: "ntrip.address is required",
+		},
+		{
+			name: "missing mountpoint",
+			toml: `
+[[push]]
+ntrip.address = "h:1"
+ntrip.password = "p"
+`,
+			wantErr: "ntrip.mountpoint is required",
+		},
+		{
+			name: "msm7to4 with non-RTCM protocol",
+			toml: `
+[[push]]
+protocol = "UBX"
+ntrip.address = "h:1"
+ntrip.mountpoint = "M"
+ntrip.password = "p"
+ntrip.msm7to4 = true
+`,
+			wantErr: "msm7to4 requires protocol",
+		},
+		{
+			name: "invalid mountpoint name",
+			toml: `
+[[push]]
+ntrip.address = "h:1"
+ntrip.mountpoint = "bad/mp"
+ntrip.password = "p"
+`,
+			wantErr: "invalid mountpoint name",
+		},
+		{
+			name: "missing password",
+			toml: `
+[[push]]
+ntrip.address = "h:1"
+ntrip.mountpoint = "M"
+`,
+			wantErr: "ntrip.password",
+		},
+		{
+			name: "password with space",
+			toml: `
+[[push]]
+ntrip.address = "h:1"
+ntrip.mountpoint = "M"
+ntrip.password = "let me in"
+`,
+			wantErr: "ntrip.password",
+		},
+		{
+			name: "password with CR",
+			toml: `
+[[push]]
+ntrip.address = "h:1"
+ntrip.mountpoint = "M"
+ntrip.password = "bad\rhdr"
+`,
+			wantErr: "ntrip.password",
+		},
+		{
+			name: "description with semicolon",
+			toml: `
+[[push]]
+ntrip.address = "h:1"
+ntrip.mountpoint = "M"
+ntrip.password = "p"
+ntrip.description = "BKK;injected"
+`,
+			wantErr: "ntrip.description",
+		},
+		{
+			name: "description with CRLF",
+			toml: `
+[[push]]
+ntrip.address = "h:1"
+ntrip.mountpoint = "M"
+ntrip.password = "p"
+ntrip.description = "BKK\r\nX: y"
+`,
+			wantErr: "ntrip.description",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := decode(t, tt.toml)
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q does not contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestConfigHasNtripPush(t *testing.T) {
+	cfg := decode(t, ``)
+	if cfg.HasNtripPush() {
+		t.Errorf("empty config: HasNtripPush = true")
+	}
+	cfg = decode(t, `
+[[push]]
+ntrip.address = "h:1"
+ntrip.mountpoint = "M"
+ntrip.password = "p"
+`)
+	if !cfg.HasNtripPush() {
+		t.Errorf("with ntrip push: HasNtripPush = false")
+	}
+}
+
 func TestConfigPullValidate(t *testing.T) {
 	tests := []struct {
 		name    string

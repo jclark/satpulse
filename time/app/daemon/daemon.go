@@ -131,9 +131,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}()
 
 	var wg sync.WaitGroup
+	pktFormats := cfg.GPS.CreatePacketFormats()
 	// pLog must be closed by both the startScan goroutine and the conn
 	// gpsio.Scan starts a goroutine that calls conn.Stop() when the context is cancelled
-	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), true, cfg.GPS.CreatePacketFormats())
+	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), true, pktFormats)
 	if err != nil {
 		return err
 	}
@@ -143,7 +144,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if pLog != nil {
 		conn.SetPacketLog(pLog)
 	}
-	pCh := startScan(ctx, lg, &wg, conn, pLog, cfg.GPS.CreatePacketFormats())
+	pCh := startScan(ctx, lg, &wg, conn, pLog, pktFormats)
 
 	pb := startBcast(ctx, lg, &wg, pCh)
 
@@ -225,6 +226,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if err := startNtrip(ctx, lg, &wg, cfg, gcfg, pb, cc.pos); err != nil {
 		return err
 	}
+	startPush(ctx, lg, &wg, cfg, gcfg, pb, cc.pos, packetTagSet(pktFormats))
 
 	promObs := newPrometheusObserver(cfg)
 	sseObs := newSSEObserver(cfg, sseCh, lg, gcfg)
@@ -299,7 +301,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
 	ls := cc.leapSecond
-	startStream(ctx, lg, &wg, pullSetup)
+	startPull(ctx, lg, &wg, pullSetup)
 	wg.Go(func() {
 		if ls != nil {
 			d.LeapSecond(ls, time.Time{})

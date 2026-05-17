@@ -481,6 +481,75 @@
             {"required": ["tcp"]},
             {"required": ["ntrip"]}
           ]
+        },
+        "push": {
+          "description": "Outbound stream destinations. Each entry forwards scanned packets to a remote endpoint.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "protocol": {
+                "description": "Packet format to forward (default: RTCM for ntrip transport)",
+                "type": "string",
+                "enum": ["", "RTCM", "NMEA", "UBX"]
+              },
+              "ntrip": {
+                "description": "Ntrip v1 server (SOURCE) upload to a remote caster",
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "description": "host:port of the remote caster",
+                    "type": "string"
+                  },
+                  "mountpoint": {
+                    "description": "Mountpoint name to push to on the remote caster",
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                  },
+                  "password": {
+                    "description": "Password authenticating the SOURCE upload (printable ASCII, no whitespace)",
+                    "type": "string",
+                    "pattern": "^[\\x21-\\x7E]+$"
+                  },
+                  "description": {
+                    "description": "Description used in the STR header (defaults to mountpoint)",
+                    "type": "string",
+                    "pattern": "^[^;\\r\\n]*$"
+                  },
+                  "bitrate": {
+                    "description": "Bitrate used in the STR header for this stream",
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "msm7to4": {
+                    "description": "Convert MSM7 packets to MSM4 before sending (RTCM only)",
+                    "type": "boolean"
+                  }
+                },
+                "required": ["address", "mountpoint", "password"]
+              }
+            },
+            "required": ["ntrip"],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "protocol": {"enum": ["NMEA", "UBX"]}
+                  },
+                  "required": ["protocol"]
+                },
+                "then": {
+                  "properties": {
+                    "ntrip": {
+                      "properties": {
+                        "msm7to4": {"const": false}
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
         }
       }
     },

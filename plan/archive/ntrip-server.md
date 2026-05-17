@@ -143,12 +143,15 @@ already omits the `STR:` header when `STR` is empty.
   field on `NtripPushConfig`, mirroring the caster's separate
   `MountConfig.MSM7to4` field.
 
-The daemon resolves `protocol` to a `gpsprot.PacketFormat` at
-startup by looking up the matching tag in the vendor's packet
-formats (`cfg.GPS.CreatePacketFormats()`).  An unrecognised or
-vendor-incompatible protocol is a startup config error.  The
-resolved single-element `[]gpsprot.PacketFormat` is handed to
-`Push.Run` as `pktFormats`.
+The daemon checks each push entry's protocol tag against the
+vendor's packet formats (`cfg.GPS.CreatePacketFormats()`) at
+startup.  If the tag is absent (e.g. `protocol = "UBX"` on a
+non-u-blox receiver) the entry is skipped with a warning rather
+than failing the daemon: time/PHC sync is independent of push,
+so a misconfigured push should not block startup.  `Push.Run`
+takes the protocol tag (`gpsprot.Tag`) directly and filters
+packets by `pkt.Tag()`; no `PacketFormat` slice needs to be
+plumbed through.
 
 ## Destination
 
@@ -359,18 +362,39 @@ func (s *Push) queue(iCtx context.Context, iCancel context.CancelFunc,
     packets *bcast.Bcast[scan.Packet],
     subCh <-chan scan.Packet,
     reconnectCh <-chan struct{},
-    writerCh chan<- scan.Packet,
-    pktFormats []gpsprot.PacketFormat)
+    writerCh chan scan.Packet,
+    pktTag gpsprot.Tag)
 ```
+
+`writerCh` is bidirectional rather than send-only because the
+queue also drains it on reconnect (see step 4).  The queue is
+its sole sender, so a non-blocking receive is safe.
 
 The queue does the following:
 
 1. Receive packets from `subCh`.
-2. Ignore packets with nil format or a mismatched protocol.
+2. Ignore packets whose tag does not match `pktTag` or whose
+   checksum is not valid.  The checksum filter matches the
+   caster's policy in `gps/app/ntrip/caster.go` (don't forward
+   garbage).
 3. Enqueue matching packets using `pruningQueue`.
-4. On `reconnectCh`, call `q.reconnect()` so MSM
-   multiple-message dedup does not span a broken outbound
-   connection.
+4. On `reconnectCh`, the writer just hit a write error, so the
+   in-flight pipeline state may already reflect a partial send
+   on the broken connection.  Drop everything outside the
+   pruning queue: drain `writerCh` non-blockingly, set
+   `outCh = nil` to discard the staged `front`, call
+   `q.reconnect()` to bump the MSM epoch, and re-pull a fresh
+   front from `q` if any items remain.  This is best-effort:
+   packets that subCh delivers between the writer's failure and
+   the queue picking `reconnectCh` are enqueued under the old
+   MSM epoch and remain in `q` until evicted by a fresh
+   same-msgID packet.  A small bounded number of pre-disconnect
+   packets may therefore still be written after reconnect.
+   Eliminating that race would require either an unbuffered
+   `writerCh` plus a readiness handshake, or a synchronous
+   reset RPC from writer to queue; the additional complexity
+   isn't justified for a live stream where staleness self-heals
+   within ~1 second under normal RTCM rates.
 5. On `subCh` close, call `iCancel` to cancel the internal ctx
    so the writer wakes up regardless of whether it is in
    `Connect`, in backoff sleep, or in the streaming write loop.
@@ -385,6 +409,13 @@ The queue does the following:
 This is the minimum change needed to reuse Pull's queue logic
 without inventing a separate packet type just for reconnect
 markers.
+
+The drain-on-reconnect in step 4 collapses the two most likely
+sources of post-reconnect staleness (the 1-slot `writerCh`
+buffer and the staged `front`).  It does not guarantee strict
+"latest per message type" output on the new connection -- see
+step 4 for the residual race.  This is deliberate; the simpler
+design beats the small staleness window in practice.
 
 ## Writer
 
@@ -498,9 +529,14 @@ needing a separate ticker or goroutine.
 The reconnect path repeats the full v1 handshake each time: TCP
 connect, SOURCE request, `ICY 200 OK` check, then raw data stream.
 
-The current packet being written when the socket breaks may be lost;
-that is acceptable here because the stream is live and the queue
-retains the latest state per message type while reconnect proceeds.
+The packet the writer was mid-`Write` on when the socket breaks
+is lost.  The queue's reconnect handler drops the staged
+`front` and drains `writerCh` (see Queue step 4) so the new
+connection starts from mostly-fresh pruned state; a small
+bounded number of pre-disconnect packets may still slip through
+under the race described in that step.  This is acceptable
+because the stream is live and `q` self-heals within a few
+packets as fresh updates supersede stale ones.
 
 ## MSM7 to MSM4 conversion
 
@@ -532,10 +568,13 @@ the remaining config work is specific to `stream.push`:
 `Config.hasNtripStream()` in `time/app/daemon/config.go` must be
 extended (its comment already anticipates this) to return true
 when *either* caster mountpoints exist or any `[[stream.push]]`
-entry uses `ntrip.*`.  This drives `cfgNtripStream` in `gps.go`,
-which sets `target.Get |= PropIDSignalsEnabled | PropIDMode` so
-STR-record building has signals and mode available; otherwise
-those fields fall back to placeholders.
+entry uses `ntrip.*` with `protocol = "RTCM"`.  This drives
+`cfgNtripStream` in `gps.go`, which sets `target.Get |=
+PropIDSignalsEnabled | PropIDMode` so STR-record building has
+signals and mode available; otherwise those fields fall back to
+placeholders.  Non-RTCM pushes omit the STR header entirely (see
+Configuration) and do not need this receiver state, so they are
+deliberately excluded from the predicate.
 
 ### Caster
 
