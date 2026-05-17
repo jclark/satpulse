@@ -795,7 +795,7 @@ func TestNtripRequestHeaders(t *testing.T) {
 	if !strings.HasPrefix(req, "GET /MNT HTTP/1.0\r\n") {
 		t.Errorf("bad request line: %q", req)
 	}
-	if !strings.Contains(req, "\r\nUser-Agent: NTRIP SatPulse/1.2.3\r\n") {
+	if !strings.Contains(req, "\r\nUser-Agent: NTRIP satpulse/1.2.3\r\n") {
 		t.Errorf("missing User-Agent: %q", req)
 	}
 	wantCreds := base64.StdEncoding.EncodeToString([]byte("user:pw"))
@@ -827,7 +827,7 @@ func TestNtripUserAgentNoVersion(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !strings.Contains(req, "\r\nUser-Agent: NTRIP SatPulse\r\n") {
+	if !strings.Contains(req, "\r\nUser-Agent: NTRIP satpulse\r\n") {
 		t.Errorf("unexpected User-Agent: %q", req)
 	}
 }

@@ -168,9 +168,9 @@ func (s *NtripSource) request() string {
 
 func (s *NtripSource) userAgent() string {
 	if s.UserAgent.Version == "" {
-		return "NTRIP SatPulse"
+		return "NTRIP satpulse"
 	}
-	return "NTRIP SatPulse/" + s.UserAgent.Version
+	return "NTRIP satpulse/" + s.UserAgent.Version
 }
 
 // State represents the connection state of a Pull.
