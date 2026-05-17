@@ -1,4 +1,4 @@
-# Health field per satellite signal
+# Health field per satellite signal (#281)
 
 Health belongs on both `SignalInfo` and `SVInfo`, each as `opt.Val[bool]`
 (true = healthy, false = unhealthy, absent = unknown).

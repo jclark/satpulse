@@ -20,6 +20,7 @@ import (
 
 type Result struct {
 	ReceiverInfo          *gpsprot.ReceiverInfo
+	ConfigSupport         gpsprot.ConfigSupportFlags
 	ConfigProps           *gpsprot.ConfigProps
 	PacketFormatsDetected []gpsprot.Tag
 }
@@ -81,13 +82,13 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 	// Now that we know which protocol succeeded, reset to just mh + that one protocol.
 	mnmh.Reset(&mh, configProt)
 
-	cfgProps, rcvrInfo, err := mh.configure(ctx, configProt, target, port)
+	cfgProps, rcvrInfo, support, err := mh.configure(ctx, configProt, target, port)
 	// We have no ConfigProps and no ReceiverInfo, so return a nil result.
 	if err != nil && cfgProps == nil {
 		return nil, err
 	}
 	// Return the configuration results, even if there were errors during configuration.
-	return mh.finish(cfgProps, rcvrInfo), err
+	return mh.finish(cfgProps, rcvrInfo, support), err
 }
 
 func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, packetCh <-chan scan.Packet) {
@@ -103,14 +104,14 @@ func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.
 	}
 }
 
-func (mh *msgHandler) finish(cfgProps *gpsprot.ConfigProps, rcvrInfo *gpsprot.ReceiverInfo) *Result {
+func (mh *msgHandler) finish(cfgProps *gpsprot.ConfigProps, rcvrInfo *gpsprot.ReceiverInfo, support gpsprot.ConfigSupportFlags) *Result {
 	lg := mh.lg
 	if cfgProps != nil {
 		lg.Info("GPS configuration", "cfg", cfgProps)
 	}
 	if rcvrInfo != nil {
 		lg.Info("GPS receiver", "vendor", rcvrInfo.Vendor, "hardware", rcvrInfo.Hardware,
-			"firmware", rcvrInfo.Firmware, "gnss", rcvrInfo.SupportedGNSS)
+			"firmware", rcvrInfo.Firmware, "gnss", rcvrInfo.SupportedGNSS, "configSupport", support)
 	}
 	for tag, msgIDs := range mh.msgIDs {
 		if len(msgIDs) > 0 {
@@ -119,6 +120,7 @@ func (mh *msgHandler) finish(cfgProps *gpsprot.ConfigProps, rcvrInfo *gpsprot.Re
 	}
 	return &Result{
 		ReceiverInfo:          rcvrInfo,
+		ConfigSupport:         support,
 		ConfigProps:           cfgProps,
 		PacketFormatsDetected: mh.packetFormatsDetected(),
 	}
@@ -441,10 +443,10 @@ func (mh *msgHandler) installNativeMsgHandlers() (*gpsprot.MultiNativeMsgHandler
 // maximum number of times to retry a request that doesn't get a response
 const maxTries = 3
 
-func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, error) {
+func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, gpsprot.ConfigSupportFlags, error) {
 	cfgtor, err := prot.Configure(target)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 	director := gpsprot.NewConfigDirector(cfgtor, maxTries)
 	var knownErr error // error that we know how to handle
@@ -459,7 +461,7 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 				_, err = port.Write(action.Packet)
 			}
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to send configuration packet: %w", err)
+				return nil, nil, 0, fmt.Errorf("failed to send configuration packet: %w", err)
 			}
 			cfgtor.Request(action.Index).SetSentTime(time.Now())
 			mh.lg.Debug("sent configuration message", "index", action.Index, "len", len(action.Packet))
@@ -467,12 +469,12 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 			timerCh := time.After(time.Until(action.Deadline))
 			select {
 			case <-ctx.Done():
-				return nil, nil, ctx.Err()
+				return nil, nil, 0, ctx.Err()
 			case <-timerCh:
 				// Continue to next iteration to check for state changes
 			case packet, ok := <-mh.packetCh:
 				if !ok {
-					return nil, nil, mh.packetChClosed(ctx)
+					return nil, nil, 0, mh.packetChClosed(ctx)
 				}
 				mh.packet(packet)
 				if packet.ChecksumValid {
@@ -487,7 +489,7 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 			}
 		}
 	}
-	return cfgtor.ConfigProps(), cfgtor.ReceiverInfo(), knownErr
+	return cfgtor.ConfigProps(), cfgtor.ReceiverInfo(), cfgtor.ConfigSupport(), knownErr
 }
 
 func (mh *msgHandler) suitableMessageCount() int {

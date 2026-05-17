@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
@@ -38,10 +39,10 @@ func satellitesNavSat(u *ubxbin.NavSat) *gpsprot.SatellitesMsg {
 			}
 		}
 		if haveLookAngle {
-			sv.LookAngles = &gpsprot.LookAngles{
+			sv.LookAngles = opt.Make(gpsprot.LookAngles{
 				Azimuth:   usv.Azim,
 				Elevation: usv.Elev,
-			}
+			})
 		}
 		svs = append(svs, sv)
 	}
@@ -347,10 +348,10 @@ func satellitesNavSVInfo(u *ubxbin.NavSVInfo) *gpsprot.SatellitesMsg {
 				CN0:  usv.CNO,
 				Used: used,
 			}},
-			LookAngles: &gpsprot.LookAngles{
+			LookAngles: opt.Make(gpsprot.LookAngles{
 				Azimuth:   usv.Azim,
 				Elevation: usv.Elev,
-			},
+			}),
 			Used: used,
 		})
 	}

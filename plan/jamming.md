@@ -1,4 +1,4 @@
-# Receiver-level jamming detected
+# Receiver-level jamming detected (#231)
 
 `JammingDetected opt.Val[bool]` is a reasonable additive field on
 `NavEpochMsg`.

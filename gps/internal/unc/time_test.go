@@ -48,11 +48,11 @@ func TestRecTime(t *testing.T) {
 	}
 
 	// Check UTC time (2025-08-15 02:34:21.000)
-	if timeMsg.UTCTime == nil {
-		t.Fatal("UTCTime is nil")
+	if !timeMsg.UTCTime.IsSet() {
+		t.Fatal("UTCTime not set")
 	}
 
-	utc := *timeMsg.UTCTime
+	utc := timeMsg.UTCTime.Get()
 	expectedUTC := ptime.UTC(2025, 8, 15, 2, 34, 21, 0)
 	if utc != expectedUTC {
 		t.Errorf("UTCTime = %v, want %v", utc, expectedUTC)

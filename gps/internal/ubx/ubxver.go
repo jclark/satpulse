@@ -138,6 +138,52 @@ func (v *Version) rtcmSupport() rtcmSupport {
 	return rtcmSupport{}
 }
 
+func (v *Version) configSupport() gpsprot.ConfigSupportFlags {
+	if v == nil {
+		return 0
+	}
+	flags := gpsprot.ConfigSupportSpeed
+	if v.bandsConfigSupport() {
+		flags |= gpsprot.ConfigSupportBand
+	}
+	tmode := v.tmodeLevel()
+	if tmode > 0 {
+		flags |= gpsprot.ConfigSupportSurvey |
+			gpsprot.ConfigSupportSurveyAcc |
+			gpsprot.ConfigSupportFixedPos |
+			gpsprot.ConfigSupportFixedPosAcc
+		if v.protVerAtLeast(15, 0) && (tmode == 2 || tmode == 3) {
+			flags |= gpsprot.ConfigSupportSurveyMsg
+		}
+	}
+	if v.rawLevel() > 0 {
+		flags |= gpsprot.ConfigSupportRaw
+	}
+	rtcm := v.rtcmSupport()
+	if rtcm.msgs&gpsprot.RTCMMsgMSM4 != 0 {
+		flags |= gpsprot.ConfigSupportRTCMMSM4
+	}
+	if rtcm.msgs&gpsprot.RTCMMsgMSM7 != 0 {
+		flags |= gpsprot.ConfigSupportRTCMMSM7
+	}
+	if rtcm.df003Out {
+		flags |= gpsprot.ConfigSupportRTCMBaseID
+	}
+	return flags
+}
+
+func (v *Version) bandsConfigSupport() bool {
+	if !v.genAtLeast9() {
+		return false
+	}
+	switch v.ProductCategory() {
+	case "HPG", "TIM", "SPGL1L5":
+		return true
+	default:
+		return false
+	}
+}
+
 // tpIndex returns the time pulse index: 0 for TIMEPULSE, 1 for TIMEPULSE2.
 func (v *Version) tpIndex() int {
 	if v.genAtLeast9() {

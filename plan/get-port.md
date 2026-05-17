@@ -1,4 +1,4 @@
-# Get current-port info via ConfigProps
+# Get current-port info via ConfigProps (#271)
 
 A desktop GUI needs to know which port the receiver is currently
 communicating on, and whether the concept of a baud rate applies to

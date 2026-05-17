@@ -3,6 +3,7 @@ package as
 import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/asbin"
+	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
 // NAV-SVINFO SVID to RINEX SVID Mapping
@@ -95,10 +96,10 @@ func satellitesNavSVInfo(m *asbin.NavSVInfo) *gpsprot.SatellitesMsg {
 				CN0:  asv.Cno,
 				Used: used,
 			}},
-			LookAngles: &gpsprot.LookAngles{
+			LookAngles: opt.Make(gpsprot.LookAngles{
 				Azimuth:   asv.Azim,
 				Elevation: asv.Elev,
-			},
+			}),
 			Used: used,
 		})
 	}

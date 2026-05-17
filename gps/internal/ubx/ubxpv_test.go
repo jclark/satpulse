@@ -105,6 +105,16 @@ func TestPosLLH(t *testing.T) {
 	}
 }
 
+func TestColdStartPosition(t *testing.T) {
+	var ne gpsprot.NavEpochMsg
+	if got := posECEFNavPosECEF(&ne, &ubxbin.NavPosECEF{ECEF: [3]int32{wgs84a*100, 0, 0}}); got != nil {
+		t.Fatalf("posECEFNavPosECEF() = %+v, want nil", got)
+	}
+	if got := posGeoNavPosLLH(&ne, &ubxbin.NavPosLLH{HMSL: 123456}); got != nil {
+		t.Fatalf("posGeoNavPosLLH() = %+v, want nil", got)
+	}
+}
+
 func TestVelNED(t *testing.T) {
 	m := &ubxbin.NavVelNED{
 		VelNED:  [3]int32{10, -5, 3}, // cm/s

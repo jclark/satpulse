@@ -17,8 +17,7 @@ func timeNavTimeUTC(m *asbin.NavTimeUTC) *gpsprot.TimeMsg {
 	if m.ValidFlag&fullyValid != fullyValid {
 		return &t
 	}
-	u := ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano)
-	t.UTCTime = &u
+	t.UTCTime.Set(ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano))
 	t.Accuracy = time.Duration(m.TAcc) * time.Nanosecond
 	t.GNSS = utcStandardToGNSS(m.ValidFlag.UTCStandard())
 	return &t

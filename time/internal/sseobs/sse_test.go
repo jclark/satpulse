@@ -122,10 +122,10 @@ func TestSSEObserver_Events(t *testing.T) {
 					SVs: []gpsprot.SVInfo{
 						{
 							ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
-							LookAngles: &gpsprot.LookAngles{
+							LookAngles: opt.Make(gpsprot.LookAngles{
 								Azimuth:   45,
 								Elevation: 30,
-							},
+							}),
 							Signals: []gpsprot.SignalInfo{{ID: "L1"}},
 							Used:    true,
 						},

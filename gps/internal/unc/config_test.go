@@ -19,6 +19,24 @@ type testResponse struct {
 	unc  *uncmsg.Msg
 }
 
+func TestConfigSupport(t *testing.T) {
+	want := gpsprot.ConfigSupportBand |
+		gpsprot.ConfigSupportSurvey |
+		gpsprot.ConfigSupportFixedPos |
+		gpsprot.ConfigSupportRaw |
+		gpsprot.ConfigSupportRTCMMSM4 |
+		gpsprot.ConfigSupportRTCMMSM7 |
+		gpsprot.ConfigSupportRTCMBaseID |
+		gpsprot.ConfigSupportRTCMQZSS
+	if configSupport != want {
+		t.Errorf("configSupport = %v, want %v", configSupport.Items(), want.Items())
+	}
+	var cfg Configurator
+	if got := cfg.ConfigSupport(); got != want {
+		t.Errorf("ConfigSupport() = %v, want %v", got.Items(), want.Items())
+	}
+}
+
 // processResponse processes a single typed response through NativeMsg
 func processResponse(cp *ConfigProtocol, resp testResponse, t0 time.Time) error {
 	if resp.nmea != nil {
