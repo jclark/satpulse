@@ -191,6 +191,9 @@ func (cfg *PullConfig) Validate() error {
 		if cfg.Ntrip.Mountpoint == "" {
 			return fmt.Errorf("stream.pull.ntrip.mountpoint is required")
 		}
+		if err := ntrip.CheckMountpointName(cfg.Ntrip.Mountpoint); err != nil {
+			return fmt.Errorf("stream.pull.ntrip.mountpoint: %w", err)
+		}
 	}
 	return nil
 }
