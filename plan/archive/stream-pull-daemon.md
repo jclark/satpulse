@@ -6,6 +6,10 @@ covers daemon configuration and lifecycle wiring only.
 
 RTCM observability is a separate concern; see `plan/rtcm-obs.md`.
 
+A dedicated correction-input serial port (separate from the main
+receiver port) is out of scope here; see `plan/stream-pull-serial.md`
+(#291).
+
 ## Prerequisite
 
 - `plan/corrsink-rename.md` (rename corrsink to stream).
@@ -32,9 +36,9 @@ ntrip.username = "user"
 ntrip.password = "pass"
 ```
 
-A separate serial port for corrections is a follow-on phase.  The
-first phase shares the receiver's serial port; see "Phase 2
-(follow-on): separate serial port" below.
+Corrections are written to the same serial port the daemon already
+uses for the receiver, sharing its `OutPortLock`.  This covers the
+common single-receiver setup.
 
 ## Data path
 
@@ -54,15 +58,7 @@ NTRIP/TCP source
 daemon dispatcher.  `plan/rtcm-obs.md` adds optional observation of
 those packets.
 
-## Phase 1: shared serial port
-
-The first phase writes corrections to the same serial port the daemon
-already uses for the receiver, sharing its `OutPortLock`.  This
-covers the common single-receiver setup and lets the rest of the
-daemon wiring (config, lifecycle, logging) land before the
-multi-port plumbing.
-
-### Configuration
+## Configuration
 
 Add `Stream stream.Config` to `Config` in
 `time/app/daemon/config.go`.  The `stream.Config` type is defined
@@ -72,7 +68,7 @@ described above.
 Put stream-specific daemon code in a new file
 `time/app/daemon/stream.go`.
 
-### Startup in `run()`
+## Startup in `run()`
 
 Stream setup is split into prepare and start phases so the daemon
 does not launch a long-running stream goroutine until the remaining
@@ -86,8 +82,7 @@ If `[stream.pull]` is configured:
 2. Create the appropriate `Source` (`stream.TCPSource` or
    `stream.NtripSource`) based on which transport keys are present.
 3. Reuse the main receiver `portLock` and `SerialConn` as the
-   correction output port.  Reject `[stream.pull.serial]` in
-   config validation; it is reserved for the follow-on phase.
+   correction output port.
 4. Build the packet format list for correction input scanning.  For
    now this is RTCM.
 
@@ -107,7 +102,7 @@ correction-side fault.
 No dispatcher API change is required by this plan.  The dispatcher
 continues to run with its existing GPS packet and timestamp inputs.
 
-### Shutdown ordering
+## Shutdown ordering
 
 The daemon context owns stream shutdown.
 
@@ -120,7 +115,7 @@ Because stream pull is context-based and independent of dispatcher
 channel lifetime, shutdown does not require the dispatcher to drain
 any stream-specific channel.
 
-### Connection state logging
+## Connection state logging
 
 `stream.Pull.Run` takes an `onState func(State, error)` callback.
 The daemon passes a callback that logs state transitions via slog:
@@ -138,20 +133,18 @@ func(st stream.State, err error) {
 }
 ```
 
-### Implementation order
+## Implementation order
 
-1. `stream.Config` TOML integration in daemon `Config`, including a
-   validation error for `[stream.pull.serial]`.
+1. `stream.Config` TOML integration in daemon `Config`.
 2. `time/app/daemon/stream.go` prepare/start helpers.
 3. Wire `run()` to prepare stream pull before final daemon setup and
    start it immediately before `d.Run(...)`.
 4. Tests.
 
-### Testing
+## Testing
 
 - Unit tests for `[stream.pull]` config parsing: TCP vs Ntrip,
-  mutual exclusion, required fields, and rejection of
-  `[stream.pull.serial]`.
+  mutual exclusion, required fields.
 - Unit tests for daemon stream helper behavior where practical
   (configured vs not configured, source selection).
 - Existing `gps/app/stream` pull tests continue to cover reader,
@@ -160,50 +153,3 @@ func(st stream.State, err error) {
 - Manual: add `[stream.pull]` to `/etc/satpulse.toml` pointing at a
   correction source, verify connection-state logs and receiver
   correction status.
-
-## Phase 2 (follow-on): separate serial port
-
-Allow `[stream.pull]` to drive a second serial port dedicated to
-corrections, separate from the main receiver port.  This is useful
-for receivers with a dedicated correction input channel.
-
-### TOML
-
-```toml
-[stream.pull]
-ntrip.address = "caster.example.com:2101"
-ntrip.mountpoint = "RTCM"
-serial.device = "/dev/ttyUSB1"
-serial.speed = 115200
-```
-
-`serial.device` is required when `[stream.pull.serial]` is present;
-`serial.speed` follows the same `0 = use current speed` semantics as
-the main `[serial]` table.
-
-### Configuration
-
-Lift the Phase 1 validation that rejects `[stream.pull.serial]`.
-Reject configs where `serial.device` equals the main `[serial]`
-device (would conflict with the main port lock).
-
-### Startup
-
-Replace Phase 1 step 3 with: if `[stream.pull.serial]` is present,
-open a second `*gpsio.SerialConn` via `gpsio.OpenSerial(device,
-speed)`, build a fresh `OutPortLock` for it, and use that connection
-as both the `PacketWriter` and the locked port.  The daemon `run()`
-defers `Close` on this connection.  Otherwise, fall back to the
-shared-port wiring from Phase 1.
-
-### Shutdown
-
-Adds one step to the Phase 1 sequence: after `Pull.Run` returns, the
-daemon closes the separate `SerialConn` (via the deferred close).
-
-### Testing
-
-- Config parsing: separate `serial.{device,speed}` fields, conflict
-  with main `[serial].device`.
-- Daemon helper: separate `SerialConn` is opened when
-  `serial.device` is set and closed on shutdown.
