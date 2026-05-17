@@ -138,25 +138,31 @@ func New(sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger, cfgResult
 	if sseCh == nil {
 		panic("sseCh must be non-nil")
 	}
-	initEvent, err := sse.Make("init", InitSSE{
-		Receiver: cfgResult.ReceiverInfo,
-	})
-	if err != nil {
-		lg.Error("failed to create SSE event", "name", "init", "err", err)
+	o := &SSEObserver{
+		sseCh: sseCh,
+		ls:    ls,
+		lg:    lg,
 	}
-	return &SSEObserver{
-		sseCh:     sseCh,
-		ls:        ls,
-		lg:        lg,
-		initEvent: initEvent,
+	if cfgResult != nil && cfgResult.ReceiverInfo != nil {
+		ev, err := sse.Make("init", InitSSE{Receiver: cfgResult.ReceiverInfo})
+		if err != nil {
+			lg.Error("failed to create SSE event", "name", "init", "err", err)
+		} else {
+			o.initEvent = ev
+		}
 	}
+	return o
 }
 
 // InitEvents returns the events to write to a new SSE client before it
 // starts receiving live broadcast events. Currently the static init
-// event, plus the most recent mode event if one has been observed.
+// event (if any receiver info is available), plus the most recent mode
+// event if one has been observed.
 func (o *SSEObserver) InitEvents() []sse.Event {
-	events := []sse.Event{o.initEvent}
+	var events []sse.Event
+	if !o.initEvent.IsZero() {
+		events = append(events, o.initEvent)
+	}
 	if p := o.modeEvent.Load(); p != nil {
 		events = append(events, *p)
 	}

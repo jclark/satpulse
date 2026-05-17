@@ -441,6 +441,18 @@ func TestInitEventsAfterModeChanged(t *testing.T) {
 	}
 }
 
+// TestNewNilCfgResult checks that New tolerates a nil cfgResult and
+// emits no init event in that case. This happens in degraded startup
+// when GPS detection fails but the daemon continues running because no
+// PHC is configured.
+func TestNewNilCfgResult(t *testing.T) {
+	ch := make(chan sse.Event, 1)
+	obs := New(ch, ptime.LeapSecond{}, slog.Default(), nil)
+	if got := obs.InitEvents(); len(got) != 0 {
+		t.Fatalf("expected 0 init events with nil cfgResult, got %d", len(got))
+	}
+}
+
 // jsonEqual compares two JSON strings for equivalence by parsing and using reflect.DeepEqual
 func jsonEqual(a, b string) bool {
 	var objA, objB interface{}
