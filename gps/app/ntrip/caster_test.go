@@ -88,15 +88,45 @@ func (f *fixture) dial() net.Conn {
 	return conn
 }
 
-// send delivers a single RTCM packet through the bcast.  Returns
-// once the caster's handler has read the packet (or after the test
-// times out).
+// send delivers a single packet into the bcast input channel.
+// It does not wait for any subscriber to receive the packet.
 func (f *fixture) send(pkt scan.Packet) {
 	f.t.Helper()
 	select {
 	case f.pktCh <- pkt:
 	case <-time.After(2 * time.Second):
 		f.t.Fatal("timed out sending packet to bcast")
+	}
+}
+
+// repeatSend delivers pkt until stop is closed.  Stream tests use it
+// because clients join a live bcast and may miss packets that race
+// with subscription registration.
+func (f *fixture) repeatSend(pkt scan.Packet, stop <-chan struct{}) {
+	for {
+		select {
+		case <-stop:
+			return
+		case f.pktCh <- pkt:
+		}
+		select {
+		case <-stop:
+			return
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func (f *fixture) streamPackets(pkt scan.Packet) func() {
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f.repeatSend(pkt, stop)
+	}()
+	return func() {
+		close(stop)
+		<-done
 	}
 }
 
@@ -139,6 +169,22 @@ func readN(t *testing.T, r io.Reader, n int) []byte {
 		t.Fatalf("ReadFull: %v", err)
 	}
 	return buf
+}
+
+func readNWithin(t *testing.T, conn net.Conn, r io.Reader, n int) []byte {
+	t.Helper()
+	setReadDeadline(t, conn)
+	return readN(t, r, n)
+}
+
+func setReadDeadline(t *testing.T, conn net.Conn) {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = conn.SetReadDeadline(time.Time{})
+	})
 }
 
 // basicAuthHeader returns the value of an Authorization: Basic header.
@@ -253,8 +299,9 @@ func TestStreamV1(t *testing.T) {
 	if status != "ICY 200 OK\r\n" {
 		t.Fatalf("status %q", status)
 	}
-	f.send(rtcmPacket(testRTCMData))
-	got := readN(t, r, len(testRTCMData))
+	stop := f.streamPackets(rtcmPacket(testRTCMData))
+	defer stop()
+	got := readNWithin(t, conn, r, len(testRTCMData))
 	if string(got) != testRTCMData {
 		t.Errorf("got  %x\nwant %x", got, testRTCMData)
 	}
@@ -290,7 +337,9 @@ func TestStreamV2(t *testing.T) {
 	if got := headers["Ntrip-Version"]; got != "Ntrip/2.0" {
 		t.Errorf("Ntrip-Version = %q", got)
 	}
-	f.send(rtcmPacket(testRTCMData))
+	stop := f.streamPackets(rtcmPacket(testRTCMData))
+	defer stop()
+	setReadDeadline(t, conn)
 	// Consume one chunked frame.
 	got, err := readChunk(r)
 	if err != nil {
@@ -335,8 +384,9 @@ func TestStreamFiltersNonRTCM(t *testing.T) {
 	// Bad checksum: must be dropped.
 	f.send(scan.Packet{Format: rtcm.PacketFormat, Data: testRTCMData, ChecksumValid: false})
 	// Good packet: must arrive.
-	f.send(rtcmPacket(testRTCMData))
-	got := readN(t, r, len(testRTCMData))
+	stop := f.streamPackets(rtcmPacket(testRTCMData))
+	defer stop()
+	got := readNWithin(t, conn, r, len(testRTCMData))
 	if string(got) != testRTCMData {
 		t.Errorf("got  %x\nwant %x", got, testRTCMData)
 	}
@@ -353,8 +403,9 @@ func TestAnonymousAccess(t *testing.T) {
 	if line := readLine(t, r); line != "ICY 200 OK\r\n" {
 		t.Fatalf("expected ICY 200 OK, got %q", line)
 	}
-	f.send(rtcmPacket(testRTCMData))
-	got := readN(t, r, len(testRTCMData))
+	stop := f.streamPackets(rtcmPacket(testRTCMData))
+	defer stop()
+	got := readNWithin(t, conn, r, len(testRTCMData))
 	if string(got) != testRTCMData {
 		t.Errorf("got  %x\nwant %x", got, testRTCMData)
 	}
@@ -434,15 +485,16 @@ func TestStreamMSM7To4Conversion(t *testing.T) {
 	if line := readLine(t, r); line != "ICY 200 OK\r\n" {
 		t.Fatalf("status %q", line)
 	}
-	f.send(rtcmPacket(pkt))
+	stop := f.streamPackets(rtcmPacket(pkt))
+	defer stop()
 	// MSM4 has a shorter payload than MSM7; read the 3-byte framing
 	// header to learn the length, then the payload and CRC.
-	header := readN(t, r, 3)
+	header := readNWithin(t, conn, r, 3)
 	if header[0] != rtcmbin.PreambleByte {
 		t.Fatalf("preamble = %#x, want %#x", header[0], rtcmbin.PreambleByte)
 	}
 	payloadLen := int(header[1]&0x03)<<8 | int(header[2])
-	body := readN(t, r, payloadLen+3)
+	body := readNWithin(t, conn, r, payloadLen+3)
 	mt := rtcmbin.ExtractMsgType(string(append(header, body...)))
 	if mt != 1074 {
 		t.Errorf("converted MsgType = %d, want 1074", mt)
@@ -462,8 +514,9 @@ func TestStreamMSM7To4ForwardsNonMSM7Unchanged(t *testing.T) {
 	}
 	// testRTCMData is RTCM 1005 (Stationary Antenna Reference Point),
 	// which is not MSM7 -- the caster must forward it unchanged.
-	f.send(rtcmPacket(testRTCMData))
-	got := readN(t, r, len(testRTCMData))
+	stop := f.streamPackets(rtcmPacket(testRTCMData))
+	defer stop()
+	got := readNWithin(t, conn, r, len(testRTCMData))
 	if string(got) != testRTCMData {
 		t.Errorf("got  %x\nwant %x", got, testRTCMData)
 	}
