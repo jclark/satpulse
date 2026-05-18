@@ -4,6 +4,7 @@ package rinex
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +75,7 @@ type Metadata struct {
 	MarkerName     string              `json:"markerName,omitzero"`
 	MarkerNumber   string              `json:"markerNumber,omitzero"`
 	MarkerType     string              `json:"markerType,omitzero"`
+	Comments       []string            `json:"comments,omitzero"`
 	Observer       string              `json:"observer,omitzero"`
 	Agency         string              `json:"agency,omitzero"`
 	Receiver       Receiver            `json:"receiver,omitzero"`
@@ -94,6 +96,29 @@ type Receiver struct {
 type Antenna struct {
 	Number string `json:"number,omitzero"`
 	Type   string `json:"type,omitzero"`
+}
+
+// Sink receives RINEX conversion records.
+type Sink interface {
+	Metadata(Metadata) error
+	Observation(SignalObservation) error
+	Flush() error
+}
+
+// WriterOptions controls RINEX observation file output.
+type WriterOptions struct {
+	Version float64
+	Program string
+	RunBy   string
+	Date    time.Time
+}
+
+// ObservationSink buffers observations and writes RINEX output on Flush.
+type ObservationSink struct {
+	w    io.Writer
+	opts WriterOptions
+	meta Metadata
+	obs  []SignalObservation
 }
 
 // String formats t as an ISO8601 time label without a timezone suffix.
@@ -137,6 +162,11 @@ func (t Time) UTC() time.Time {
 // TimeFromGPSWeekMillis converts a GPS week and millisecond TOW to a Time.
 func TimeFromGPSWeekMillis(week int64, towMS uint32) Time {
 	return Time((week*msPerWeek + int64(towMS)) * 1e6 / tickNs)
+}
+
+// TimeFromGPSWeekSeconds converts a GPS week and TOW seconds to a Time.
+func TimeFromGPSWeekSeconds(week int64, tow float64) Time {
+	return Time(week*msPerWeek*1e6/tickNs + int64(tow*1e9/float64(tickNs)+0.5))
 }
 
 // GPSWeekMillis converts GPS-scale t to GPS week and millisecond TOW.
@@ -252,6 +282,66 @@ func (c SignalObservation) ObservationCodes() []ObservationCode {
 // System returns the RINEX satellite system code for c.
 func (c SignalObservation) System() string {
 	return c.Sat.System()
+}
+
+// NewObservationSink creates a sink that writes a RINEX observation file.
+func NewObservationSink(w io.Writer, opts WriterOptions) *ObservationSink {
+	return &ObservationSink{w: w, opts: opts}
+}
+
+// Metadata merges m into s.
+func (s *ObservationSink) Metadata(m Metadata) error {
+	s.meta = MergeMetadata(s.meta, m)
+	return nil
+}
+
+// Observation appends obs to s.
+func (s *ObservationSink) Observation(obs SignalObservation) error {
+	s.obs = append(s.obs, obs)
+	return nil
+}
+
+// Flush writes all buffered observations as a RINEX observation file.
+func (s *ObservationSink) Flush() error {
+	return WriteObservationFile(s.w, s.meta, s.obs, s.opts)
+}
+
+// MergeMetadata merges b into a and returns the result.
+func MergeMetadata(a, b Metadata) Metadata {
+	if b.MarkerName != "" {
+		a.MarkerName = b.MarkerName
+	}
+	if b.MarkerNumber != "" {
+		a.MarkerNumber = b.MarkerNumber
+	}
+	if b.MarkerType != "" {
+		a.MarkerType = b.MarkerType
+	}
+	if len(b.Comments) != 0 {
+		a.Comments = append(a.Comments, b.Comments...)
+	}
+	if b.Observer != "" {
+		a.Observer = b.Observer
+	}
+	if b.Agency != "" {
+		a.Agency = b.Agency
+	}
+	if !b.Receiver.IsZero() {
+		a.Receiver = b.Receiver
+	}
+	if !b.Antenna.IsZero() {
+		a.Antenna = b.Antenna
+	}
+	if b.ApproxPosition.IsSet() {
+		a.ApproxPosition = b.ApproxPosition
+	}
+	if b.AntennaDelta.IsSet() {
+		a.AntennaDelta = b.AntennaDelta
+	}
+	if b.LeapSeconds.IsSet() {
+		a.LeapSeconds = b.LeapSeconds
+	}
+	return a
 }
 
 // IsZero reports whether r has no receiver header data.
