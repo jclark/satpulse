@@ -85,7 +85,9 @@ and antenna-related messages emit `Metadata` records. The converter will need
 to assemble MSM fragments for the same epoch/reference station and map RTCM
 satellite and signal IDs to RINEX identifiers.
 
-## UBX gnssId/sigId to RINEX signal mapping
+## UBX conversion
+
+### UBX gnssId/sigId to RINEX signal mapping
 
 Sources: u-blox X20-HPG-2.00 section 1.5.4 Table 4 (signal identifiers); RINEX
 4.02 Tables 10-16 (observation codes).
@@ -158,7 +160,7 @@ Notes:
 - gnssId values 4 (IMES) and any others not listed have no UBX-RXM-RAWX
   signals defined in the X20 spec and need not be mapped.
 
-## UBX-RXM-RAWX LLI derivation
+### UBX-RXM-RAWX LLI derivation
 
 The RINEX loss-of-lock indicator (LLI) byte that follows each phase
 observation is not provided directly by UBX-RXM-RAWX; it is derived from
@@ -166,7 +168,7 @@ per-measurement flags and from per-(sat, sig) state carried across
 epochs. The rules below follow rtklib-ex's UBX decoder
 (`src/rcv/ublox.c`, function `decode_rxmrawx`).
 
-### LLI bit 1: half-cycle ambiguity unresolved
+#### LLI bit 1: half-cycle ambiguity unresolved
 
 Set when a phase value is present at this epoch and the receiver has not
 resolved half-cycle ambiguity:
@@ -176,14 +178,16 @@ resolved half-cycle ambiguity:
   so the bit is set while `locktime <= 8000 ms` and cleared once
   `locktime > 8000 ms`.
 
-### LLI bit 0: cycle slip
+#### LLI bit 0: cycle slip
 
 A slip is detected for this (sat, sig) whenever any of the following is
 true:
 
 1. `locktime == 0` (no continuous tracking).
 2. `locktime` decreased since the previous epoch on this signal.
-3. `trkStat.halfCycleSubtracted` flipped since the previous epoch.
+3. `trkStat.halfCycleSubtracted` differs from the converter's stored value.
+   The stored value starts as false, so the first observation of a signal with
+   `halfCycleSubtracted` set is treated as a change.
 4. `cpStdev` (the carrier-phase σ index, bits 3..0) is at or above the
    slip threshold. The default threshold is 15, which is u-blox's
    "max quantization noise / invalid" sentinel; the threshold should be
@@ -194,17 +198,23 @@ stamped on the next epoch that actually reports a phase value for this
 (sat, sig); the pending-slip flag is then cleared. This guarantees that
 slips are never lost across gaps in phase reporting.
 
-### Converter state
+If the slip is caused by a `halfCycleSubtracted` change, the converter also
+returns an immediate LLI bit 0 for the current observation. If the current
+observation has no phase value but still has another value, such as
+pseudorange, this can produce a RINEX phase field with no phase value and only
+the LLI indicator. The pending-slip flag still remains set until a later phase
+value is emitted.
 
-To compute these flags the converter must keep, per (sat, sig):
+#### Converter state
+
+To compute these flags the converter keeps, per (sat, sig):
 
 - The previous epoch's `locktime`.
-- The previous epoch's `halfCycleSubtracted` bit.
+- The stored `halfCycleSubtracted` bit, initialized to false.
 - A pending-slip flag carried forward across phase-absent epochs.
+- A `seen` flag used only for the locktime-decrease check.
 
-State is established lazily on first observation of a (sat, sig).
-
-## SSI
+### SSI
 
 RINEX C/L/D/S records reserve a one-character SSI (signal-strength
 indicator) digit immediately after each LLI byte. RTKLIB leaves this
@@ -213,3 +223,92 @@ observation type to carry signal strength as dBHz. We follow RTKLIB's
 convention: the converter does not populate `SSI` on `SignalObservation`.
 Signal strength is carried in `CN0`, which the RINEX writer emits as the
 `S<band><attr>` observation.
+
+## RTCM conversion
+
+### RTCM MSM signal ID to RINEX signal mapping
+
+Each row maps a constellation and MSM signal ID from the MSM signal mask
+(DF395) to a two-character RINEX signal suffix. The suffix prefixed with the
+observation type (`C`, `L`, `D`, `S`) gives the RINEX observation code.
+
+| Constellation | RTCM sig id | RINEX sig id |
+| ------------- | ----------: | :----------: |
+| GPS           |           2 |      1C      |
+| GPS           |           3 |      1P      |
+| GPS           |           4 |      1W      |
+| GPS           |           8 |      2C      |
+| GPS           |           9 |      2P      |
+| GPS           |          10 |      2W      |
+| GPS           |          15 |      2S      |
+| GPS           |          16 |      2L      |
+| GPS           |          17 |      2X      |
+| GPS           |          22 |      5I      |
+| GPS           |          23 |      5Q      |
+| GPS           |          24 |      5X      |
+| GPS           |          30 |      1S      |
+| GPS           |          31 |      1L      |
+| GPS           |          32 |      1X      |
+| GLONASS       |           2 |      1C      |
+| GLONASS       |           3 |      1P      |
+| GLONASS       |           8 |      2C      |
+| GLONASS       |           9 |      2P      |
+| Galileo       |           2 |      1C      |
+| Galileo       |           3 |      1A      |
+| Galileo       |           4 |      1B      |
+| Galileo       |           5 |      1X      |
+| Galileo       |           6 |      1Z      |
+| Galileo       |           8 |      6C      |
+| Galileo       |           9 |      6A      |
+| Galileo       |          10 |      6B      |
+| Galileo       |          11 |      6X      |
+| Galileo       |          12 |      6Z      |
+| Galileo       |          14 |      7I      |
+| Galileo       |          15 |      7Q      |
+| Galileo       |          16 |      7X      |
+| Galileo       |          18 |      8I      |
+| Galileo       |          19 |      8Q      |
+| Galileo       |          20 |      8X      |
+| Galileo       |          22 |      5I      |
+| Galileo       |          23 |      5Q      |
+| Galileo       |          24 |      5X      |
+| SBAS          |           2 |      1C      |
+| SBAS          |          22 |      5I      |
+| SBAS          |          23 |      5Q      |
+| SBAS          |          24 |      5X      |
+| QZSS          |           2 |      1C      |
+| QZSS          |           9 |      6S      |
+| QZSS          |          10 |      6L      |
+| QZSS          |          11 |      6X      |
+| QZSS          |          15 |      2S      |
+| QZSS          |          16 |      2L      |
+| QZSS          |          17 |      2X      |
+| QZSS          |          22 |      5I      |
+| QZSS          |          23 |      5Q      |
+| QZSS          |          24 |      5X      |
+| QZSS          |          30 |      1S      |
+| QZSS          |          31 |      1L      |
+| QZSS          |          32 |      1X      |
+| BeiDou        |           2 |      2I      |
+| BeiDou        |           3 |      2Q      |
+| BeiDou        |           4 |      2X      |
+| BeiDou        |           8 |      6I      |
+| BeiDou        |           9 |      6Q      |
+| BeiDou        |          10 |      6X      |
+| BeiDou        |          14 |      7I      |
+| BeiDou        |          15 |      7Q      |
+| BeiDou        |          16 |      7X      |
+| BeiDou        |          22 |      5D      |
+| BeiDou        |          23 |      5P      |
+| BeiDou        |          24 |      5X      |
+| BeiDou        |          25 |      7D      |
+| BeiDou        |          30 |      1D      |
+| BeiDou        |          31 |      1P      |
+| BeiDou        |          32 |      1X      |
+| NavIC         |           8 |      9A      |
+| NavIC         |          22 |      5A      |
+
+The MSM converter should use this table only for the signal suffix. Satellite
+system letters still come from the RTCM message type (`1077` GPS, `1087`
+GLONASS, `1097` Galileo, `1107` SBAS, `1117` QZSS, `1127` BeiDou, `1137`
+NavIC).
