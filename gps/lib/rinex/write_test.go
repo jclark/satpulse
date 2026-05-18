@@ -52,6 +52,9 @@ func TestWriteObservationFile(t *testing.T) {
 			t.Errorf("output does not contain %q\n%s", want, s)
 		}
 	}
+	if strings.Contains(s, "SYS / PHASE SHIFT") {
+		t.Errorf("output contains phase shift header\n%s", s)
+	}
 }
 
 func TestReadObservationFileBlankPhaseLLI(t *testing.T) {

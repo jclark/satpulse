@@ -237,15 +237,6 @@ func writeHeader(w *bufio.Writer, meta Metadata, f *obsFile, opts WriterOptions)
 	if err := writeTimeHeader(w, f.last, "TIME OF LAST OBS"); err != nil {
 		return err
 	}
-	for _, sys := range orderedSystems(f.codes) {
-		for _, code := range f.codes[sys] {
-			if len(code) == 3 && code[0] == byte(TypePhase) {
-				if err := writeHeaderLine(w, phaseShiftContent(sys, code), "SYS / PHASE SHIFT"); err != nil {
-					return err
-				}
-			}
-		}
-	}
 	if len(f.frq) != 0 {
 		if err := writeGLONASSFreq(w, f.frq); err != nil {
 			return err
@@ -262,13 +253,6 @@ func writeHeader(w *bufio.Writer, meta Metadata, f *obsFile, opts WriterOptions)
 		}
 	}
 	return writeHeaderLine(w, "", "END OF HEADER")
-}
-
-func phaseShiftContent(sys string, code ObservationCode) string {
-	if sys == "R" || sys == "C" || (code == "L1C" && (sys == "G" || sys == "J")) || sys == "J" && code == "L2S" {
-		return fmt.Sprintf("%s %-3s", sys, code)
-	}
-	return fmt.Sprintf("%s %-3s  %.5f", sys, code, 0.0)
 }
 
 func writeHeaderLine(w *bufio.Writer, content, label string) error {
