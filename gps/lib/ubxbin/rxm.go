@@ -124,6 +124,13 @@ type RxmRawxMeas struct {
 	_        byte
 }
 
+// Masks to extract multi-bit fields from RAWX measurement fields.
+const (
+	RxmRawxPrStdMask byte = 0b1111 // bits 3..0 of prStdev
+	RxmRawxCpStdMask byte = 0b1111 // bits 3..0 of cpStdev
+	RxmRawxDoStdMask byte = 0b1111 // bits 3..0 of doStdev
+)
+
 var _ VaryingMsg = (*RxmRawx)(nil)
 var _ PartiallyHandledMsg = (*RxmRawx)(nil)
 

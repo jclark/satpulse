@@ -103,7 +103,7 @@ func (c *Converter) observation(t rinex.Time, phaseThreshold byte, meas ubxbin.R
 	if meas.TrkStat&ubxbin.RxmRawxPrValid != 0 && finite64(meas.PrMes) {
 		obs.PR = opt.Make(meas.PrMes)
 	}
-	phase := meas.TrkStat&ubxbin.RxmRawxCpValid != 0 && meas.CpStdev&0x0F < phaseThreshold && meas.CpMes != -0.5 && finite64(meas.CpMes)
+	phase := meas.TrkStat&ubxbin.RxmRawxCpValid != 0 && meas.CpStdev&ubxbin.RxmRawxCpStdMask < phaseThreshold && meas.CpMes != -0.5 && finite64(meas.CpMes)
 	lli := c.lli(obs.Sat, obs.Sig, meas, phase)
 	if phase {
 		obs.CP = opt.Make(carrierPhase(meas))
@@ -138,7 +138,7 @@ func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.R
 	st := c.state[k]
 	sub := meas.TrkStat&ubxbin.RxmRawxSubHalfCyc != 0
 	subChanged := sub != st.subHalfCyc
-	if meas.LockTime == 0 || st.seen && meas.LockTime < st.lock || subChanged || meas.CpStdev&0x0F >= c.opts.SlipThreshold {
+	if meas.LockTime == 0 || st.seen && meas.LockTime < st.lock || subChanged || meas.CpStdev&ubxbin.RxmRawxCpStdMask >= c.opts.SlipThreshold {
 		st.pending = true
 	}
 	lli := uint8(0)
