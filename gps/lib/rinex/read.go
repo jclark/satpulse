@@ -298,7 +298,7 @@ func addRINEXField(o *SignalObservation, code ObservationCode, field string) {
 			o.CP = opt.Make(v)
 		}
 		if v, ok := parseIndicator(field[14]); ok {
-			o.LLI = opt.Make(v)
+			o.LLI = opt.Make(LLI(v))
 		}
 		if v, ok := parseIndicator(field[15]); ok {
 			o.SSI = opt.Make(v)

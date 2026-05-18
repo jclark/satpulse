@@ -33,7 +33,7 @@ type epoch struct {
 
 type obsField struct {
 	val opt.Val[float64]
-	lli opt.Val[uint8]
+	lli opt.Val[LLI]
 	ssi opt.Val[uint8]
 }
 
@@ -162,7 +162,7 @@ func writerObservationCodes(o SignalObservation) []ObservationCode {
 
 func addSignalObservation(dst map[ObservationCode]obsField, o SignalObservation) {
 	if o.PR.IsSet() {
-		addObsField(dst, o.Sig.Code(TypeCode), opt.Make(float64(o.PR.Get())), opt.Val[uint8]{}, opt.Val[uint8]{})
+		addObsField(dst, o.Sig.Code(TypeCode), opt.Make(float64(o.PR.Get())), opt.Val[LLI]{}, opt.Val[uint8]{})
 	}
 	if o.CP.IsSet() {
 		addObsField(dst, o.Sig.Code(TypePhase), opt.Make(o.CP.Get()), o.LLI, o.SSI)
@@ -170,14 +170,14 @@ func addSignalObservation(dst map[ObservationCode]obsField, o SignalObservation)
 		addObsField(dst, o.Sig.Code(TypePhase), opt.Val[float64]{}, o.LLI, o.SSI)
 	}
 	if o.Do.IsSet() {
-		addObsField(dst, o.Sig.Code(TypeDoppler), opt.Make(o.Do.Get()), opt.Val[uint8]{}, opt.Val[uint8]{})
+		addObsField(dst, o.Sig.Code(TypeDoppler), opt.Make(o.Do.Get()), opt.Val[LLI]{}, opt.Val[uint8]{})
 	}
 	if o.CN0.IsSet() {
-		addObsField(dst, o.Sig.Code(TypeSignalStrength), opt.Make(float64(o.CN0.Get())), opt.Val[uint8]{}, opt.Val[uint8]{})
+		addObsField(dst, o.Sig.Code(TypeSignalStrength), opt.Make(float64(o.CN0.Get())), opt.Val[LLI]{}, opt.Val[uint8]{})
 	}
 }
 
-func addObsField(dst map[ObservationCode]obsField, code ObservationCode, val opt.Val[float64], lli, ssi opt.Val[uint8]) {
+func addObsField(dst map[ObservationCode]obsField, code ObservationCode, val opt.Val[float64], lli opt.Val[LLI], ssi opt.Val[uint8]) {
 	if code == "" {
 		return
 	}
@@ -390,7 +390,7 @@ func writeObsField(w *bufio.Writer, field obsField) error {
 	lli := ' '
 	ssi := ' '
 	if field.lli.IsSet() {
-		lli = rune('0' + field.lli.Get())
+		lli = rune('0' + uint8(field.lli.Get()))
 	}
 	if field.ssi.IsSet() {
 		ssi = rune('0' + field.ssi.Get())

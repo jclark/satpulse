@@ -133,7 +133,7 @@ func carrierPhase(meas ubxbin.RxmRawxMeas) float64 {
 	return cp
 }
 
-func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.RxmRawxMeas, phase bool) uint8 {
+func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.RxmRawxMeas, phase bool) rinex.LLI {
 	k := signalKey{sat: sat, sig: sig}
 	st := c.state[k]
 	sub := meas.TrkStat&ubxbin.RxmRawxSubHalfCyc != 0
@@ -141,16 +141,16 @@ func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.R
 	if meas.LockTime == 0 || st.seen && meas.LockTime < st.lock || subChanged || meas.CpStdev&ubxbin.RxmRawxCpStdMask >= c.opts.SlipThreshold {
 		st.pending = true
 	}
-	lli := uint8(0)
+	lli := rinex.LLI(0)
 	if subChanged {
-		lli = 1
+		lli = rinex.LLILostLock
 	}
 	if phase && st.pending {
-		lli |= 1
+		lli |= rinex.LLILostLock
 		st.pending = false
 	}
 	if phase && halfCycleUnresolved(meas) {
-		lli |= 2
+		lli |= rinex.LLIHalfCycleAmbiguity
 	}
 	st.lock = meas.LockTime
 	st.subHalfCyc = sub

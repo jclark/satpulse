@@ -54,6 +54,15 @@ type SignalID string
 // ObservationCode is a complete three-character RINEX observation code.
 type ObservationCode string
 
+// LLI is the RINEX loss-of-lock indicator for phase observations.
+type LLI uint8
+
+const (
+	LLILostLock           LLI = 1 << iota // lost lock between observations; cycle slip possible
+	LLIHalfCycleAmbiguity                 // half-cycle ambiguity or slip possible
+	LLIBOCTracking                        // BOC tracking of an MBOC-modulated signal
+)
+
 // SignalObservation holds measurements for one satellite signal at one epoch.
 // It is the JSONL record type for an obsj file and can expand to RINEX C/L/D/S observation codes.
 type SignalObservation struct {
@@ -65,7 +74,7 @@ type SignalObservation struct {
 	CP  opt.Val[float64] `json:"cp,omitzero"`  // carrier phase, cycles
 	Do  opt.Val[float64] `json:"do,omitzero"`  // Doppler, Hz
 	CN0 opt.Val[float32] `json:"cn0,omitzero"` // carrier-to-noise density, dB-Hz
-	LLI opt.Val[uint8]   `json:"lli,omitzero"` // RINEX loss-of-lock indicator for phase
+	LLI opt.Val[LLI]     `json:"lli,omitzero"` // RINEX loss-of-lock indicator for phase
 	SSI opt.Val[uint8]   `json:"ssi,omitzero"` // RINEX signal strength indicator
 }
 

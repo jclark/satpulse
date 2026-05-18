@@ -19,7 +19,7 @@ func TestWriteObservationFile(t *testing.T) {
 			CP:  opt.Make(125893980.172),
 			Do:  opt.Make(2059.717),
 			CN0: opt.Make(float32(34)),
-			LLI: opt.Make(uint8(1)),
+			LLI: opt.Make(LLILostLock),
 		},
 		{
 			T:   mustTime(t, "2025-12-17T08:14:06.0080000"),
@@ -66,7 +66,7 @@ func TestReadObservationFileBlankPhaseLLI(t *testing.T) {
 			PR:  opt.Make(21017865.128),
 			Do:  opt.Make(-289.416),
 			CN0: opt.Make(float32(27)),
-			LLI: opt.Make(uint8(3)),
+			LLI: opt.Make(LLILostLock | LLIHalfCycleAmbiguity),
 		},
 		{
 			T:   mustTime(t, "2025-12-17T08:11:24.9990000"),
@@ -95,7 +95,7 @@ func TestReadObservationFileBlankPhaseLLI(t *testing.T) {
 	if got[0].CP.IsSet() {
 		t.Errorf("CP is set to %v, want unset", got[0].CP.Get())
 	}
-	if got[0].LLI.Get() != 3 {
+	if got[0].LLI.Get() != LLILostLock|LLIHalfCycleAmbiguity {
 		t.Errorf("LLI = %d, want 3", got[0].LLI.Get())
 	}
 }
@@ -107,7 +107,7 @@ func TestWriteObservationFileZeroIndicators(t *testing.T) {
 			Sat: "G07",
 			Sig: "1C",
 			CP:  opt.Make(1.0),
-			LLI: opt.Make(uint8(0)),
+			LLI: opt.Make(LLI(0)),
 			SSI: opt.Make(uint8(0)),
 		},
 	}

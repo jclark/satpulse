@@ -62,7 +62,7 @@ func TestConverterSetsNonzeroLLI(t *testing.T) {
 	if len(s.obs) != 1 {
 		t.Fatalf("len observations = %d, want 1", len(s.obs))
 	}
-	if !s.obs[0].LLI.IsSet() || s.obs[0].LLI.Get() != 1 {
+	if !s.obs[0].LLI.IsSet() || s.obs[0].LLI.Get() != rinex.LLILostLock {
 		t.Errorf("LLI = %v, want 1", s.obs[0].LLI)
 	}
 }

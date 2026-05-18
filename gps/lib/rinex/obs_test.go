@@ -19,7 +19,7 @@ func TestSignalObservationJSON(t *testing.T) {
 		PR:  opt.Make(22187868.655),
 		CP:  opt.Make(116598092.035),
 		CN0: opt.Make(float32(48.5)),
-		LLI: opt.Make(uint8(1)),
+		LLI: opt.Make(LLILostLock),
 	}
 	b, err := json.Marshal(obs)
 	if err != nil {
