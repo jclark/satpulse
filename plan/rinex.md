@@ -84,3 +84,132 @@ messages: MSM7 messages emit `SignalObservation` records, while ARP, receiver,
 and antenna-related messages emit `Metadata` records. The converter will need
 to assemble MSM fragments for the same epoch/reference station and map RTCM
 satellite and signal IDs to RINEX identifiers.
+
+## UBX gnssId/sigId to RINEX signal mapping
+
+Sources: u-blox X20-HPG-2.00 section 1.5.4 Table 4 (signal identifiers); RINEX
+4.02 Tables 10-16 (observation codes).
+
+Each row maps a `(gnssId, sigId)` pair from `UBX-RXM-RAWX` to a RINEX satellite
+system letter and a two-character RINEX signal suffix. The system letter
+combined with the RINEX-numbered SV gives the `SatelliteID`; the signal suffix
+prefixed with the observation type (`C`, `L`, `D`, `S`) gives the
+`ObservationCode`.
+
+| gnssId | sigId | UBX signal name        | RINEX sys | RINEX sig | RINEX band   |
+| -----: | ----: | ---------------------- | :-------: | :-------: | ------------ |
+|      0 |     0 | GPS L1C/A              |     G     |    1C     | L1 1575.42   |
+|      0 |     3 | GPS L2 CL              |     G     |    2L     | L2 1227.60   |
+|      0 |     4 | GPS L2 CM              |     G     |    2S     | L2 1227.60   |
+|      0 |     6 | GPS L5 I               |     G     |    5I     | L5 1176.45   |
+|      0 |     7 | GPS L5 Q               |     G     |    5Q     | L5 1176.45   |
+|      1 |     0 | SBAS L1C/A             |     S     |    1C     | L1 1575.42   |
+|      2 |     0 | Galileo E1 C (pilot)   |     E     |    1C     | E1 1575.42   |
+|      2 |     1 | Galileo E1 B (data)    |     E     |    1B     | E1 1575.42   |
+|      2 |     3 | Galileo E5 aI          |     E     |    5I     | E5a 1176.45  |
+|      2 |     4 | Galileo E5 aQ          |     E     |    5Q     | E5a 1176.45  |
+|      2 |     5 | Galileo E5 bI          |     E     |    7I     | E5b 1207.140 |
+|      2 |     6 | Galileo E5 bQ          |     E     |    7Q     | E5b 1207.140 |
+|      2 |     8 | Galileo E6 B           |     E     |    6B     | E6 1278.75   |
+|      2 |     9 | Galileo E6 C           |     E     |    6C     | E6 1278.75   |
+|      2 |    10 | Galileo E6 A (PRS)     |     E     |    6A     | E6 1278.75   |
+|      3 |     0 | BeiDou B1I D1          |     C     |    2I     | B1I 1561.098 |
+|      3 |     1 | BeiDou B1I D2          |     C     |    2I     | B1I 1561.098 |
+|      3 |     2 | BeiDou B2I D1          |     C     |    7I     | B2 1207.140  |
+|      3 |     3 | BeiDou B2I D2          |     C     |    7I     | B2 1207.140  |
+|      3 |     4 | BeiDou B3I D1          |     C     |    6I     | B3 1268.52   |
+|      3 |    10 | BeiDou B3I D2          |     C     |    6I     | B3 1268.52   |
+|      3 |     5 | BeiDou B1 Cp (pilot)   |     C     |    1P     | B1C 1575.42  |
+|      3 |     6 | BeiDou B1 Cd (data)    |     C     |    1D     | B1C 1575.42  |
+|      3 |     7 | BeiDou B2 ap (pilot)   |     C     |    5P     | B2a 1176.45  |
+|      3 |     8 | BeiDou B2 ad (data)    |     C     |    5D     | B2a 1176.45  |
+|      5 |     0 | QZSS L1C/A             |     J     |    1C     | L1 1575.42   |
+|      5 |     1 | QZSS L1S               |     J     |    1Z     | L1 1575.42   |
+|      5 |     4 | QZSS L2 CM             |     J     |    2S     | L2 1227.60   |
+|      5 |     5 | QZSS L2 CL             |     J     |    2L     | L2 1227.60   |
+|      5 |     8 | QZSS L5 I              |     J     |    5I     | L5 1176.45   |
+|      5 |     9 | QZSS L5 Q              |     J     |    5Q     | L5 1176.45   |
+|      5 |    12 | QZSS L1C/B             |     J     |    1E     | L1 1575.42   |
+|      6 |     0 | GLONASS L1 OF (C/A)    |     R     |    1C     | G1 1602+k*9/16 |
+|      6 |     2 | GLONASS L2 OF (C/A)    |     R     |    2C     | G2 1246+k*7/16 |
+|      7 |     0 | NavIC L5 A (SPS)       |     I     |    5A     | L5 1176.45   |
+
+Notes:
+
+- BeiDou D1 and D2 are different navigation message variants on the same
+  physical signal (B1I or B3I). RINEX has no separate code for the data
+  variant, so `sigId` 0 and 1 both map to `2I` and `sigId` 4 and 10 both map
+  to `6I`. The converter must treat the two variants as the same RINEX signal
+  and merge observations accordingly.
+- BeiDou B1I sits at 1561.098 MHz but is assigned RINEX band 2, not band 1.
+  RINEX band 1 on BeiDou is reserved for the B1C signals (1575.42 MHz).
+- For SBAS, the RINEX satellite letter is always `S`; the `svId` to RINEX
+  PRN conversion follows the standard rules and is independent of the signal
+  mapping.
+- GLONASS observations need the FDMA frequency channel `k` (range -7..+6) on
+  the `SignalObservation`. UBX `RXM-RAWX` carries it as `freqId`, with
+  `k = freqId - 7`.
+- The RINEX `1Z` code is used for both the legacy QZSS L1-SAIF signal and the
+  updated L1S signal (per the RINEX 4.02 QZSS table note).
+- UBX-RXM-RAWX only supplies `sigId` from protocol version 27 onward. Earlier
+  protocol versions emit the subset marked "no explicit sigId" in u-blox
+  Table 4; for the X20 (protocol >= 50) the field is always present and the
+  full mapping above applies.
+- gnssId values 4 (IMES) and any others not listed have no UBX-RXM-RAWX
+  signals defined in the X20 spec and need not be mapped.
+
+## UBX-RXM-RAWX LLI derivation
+
+The RINEX loss-of-lock indicator (LLI) byte that follows each phase
+observation is not provided directly by UBX-RXM-RAWX; it is derived from
+per-measurement flags and from per-(sat, sig) state carried across
+epochs. The rules below follow rtklib-ex's UBX decoder
+(`src/rcv/ublox.c`, function `decode_rxmrawx`).
+
+### LLI bit 1: half-cycle ambiguity unresolved
+
+Set when a phase value is present at this epoch and the receiver has not
+resolved half-cycle ambiguity:
+
+- Default: set when `trkStat.halfCycleValid == 0`.
+- SBAS exception: the receiver does not expose `halfCycleValid` for SBAS,
+  so the bit is set while `locktime <= 8000 ms` and cleared once
+  `locktime > 8000 ms`.
+
+### LLI bit 0: cycle slip
+
+A slip is detected for this (sat, sig) whenever any of the following is
+true:
+
+1. `locktime == 0` (no continuous tracking).
+2. `locktime` decreased since the previous epoch on this signal.
+3. `trkStat.halfCycleSubtracted` flipped since the previous epoch.
+4. `cpStdev` (the carrier-phase σ index, bits 3..0) is at or above the
+   slip threshold. The default threshold is 15, which is u-blox's
+   "max quantization noise / invalid" sentinel; the threshold should be
+   configurable.
+
+When a slip is detected, the converter remembers it. The slip bit is
+stamped on the next epoch that actually reports a phase value for this
+(sat, sig); the pending-slip flag is then cleared. This guarantees that
+slips are never lost across gaps in phase reporting.
+
+### Converter state
+
+To compute these flags the converter must keep, per (sat, sig):
+
+- The previous epoch's `locktime`.
+- The previous epoch's `halfCycleSubtracted` bit.
+- A pending-slip flag carried forward across phase-absent epochs.
+
+State is established lazily on first observation of a (sat, sig).
+
+## SSI
+
+RINEX C/L/D/S records reserve a one-character SSI (signal-strength
+indicator) digit immediately after each LLI byte. RTKLIB leaves this
+column blank in its RINEX output, relying on the separate `S<band><attr>`
+observation type to carry signal strength as dBHz. We follow RTKLIB's
+convention: the converter does not populate `SSI` on `SignalObservation`.
+Signal strength is carried in `CN0`, which the RINEX writer emits as the
+`S<band><attr>` observation.
