@@ -104,6 +104,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/rtcmbin` parses and serializes RTCM binary packets using `gps/lib/bitsenc`, including message types 1005/1006, 1230, and MSM. It also provides MSM7-to-MSM4 conversion.
 
+`gps/lib/rinex` defines JSON-serializable signal observation and metadata record types for RINEX observation tooling.
+
 `gps/lib/novmsg` provides parsing and serialization of NovAtel GPS receiver messages in binary and ASCII formats. It defines message header and body types and implements CRC32 validation.
 
 `gps/lib/uncmsg` parses Unicore protocol messages in binary and ASCII formats. It defines message structures and provides parsing/serialization using `gps/lib/novmsg`.

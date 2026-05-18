@@ -1,0 +1,292 @@
+package rinex
+
+import (
+	"encoding/json"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/gps/ptime"
+)
+
+func TestSignalObservationJSON(t *testing.T) {
+	obs := SignalObservation{
+		T:   mustTime(t, "2025-06-30T23:59:59.1234567"),
+		Sat: SatelliteID("G03"),
+		Sig: SignalID("1C"),
+		Frq: opt.Make(int8(-4)),
+		PR:  opt.Make(22187868.655),
+		CP:  opt.Make(116598092.035),
+		CN0: opt.Make(float32(48.5)),
+		LLI: opt.Make(uint8(1)),
+	}
+	b, err := json.Marshal(obs)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+	want := `{"t":"2025-06-30T23:59:59.1234567","sat":"G03","sig":"1C","frq":-4,"pr":22187868.655,"cp":116598092.035,"cn0":48.5,"lli":1}`
+	if string(b) != want {
+		t.Errorf("Marshal = %s, want %s", string(b), want)
+	}
+	var got SignalObservation
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+	if got != obs {
+		t.Errorf("round trip = %#v, want %#v", got, obs)
+	}
+}
+
+func TestMetadataJSON(t *testing.T) {
+	meta := Metadata{
+		MarkerName: "REDU00BEL",
+		Receiver: Receiver{
+			Number:  "4503038",
+			Type:    "GNSS_RECEIVER",
+			Version: "5.4.0",
+		},
+		Antenna: Antenna{
+			Number: "5644",
+			Type:   "GEOANTENNA NONE",
+		},
+		ApproxPosition: opt.Make([3]float64{4091423.719, 368380.653, 4863179.994}),
+		LeapSeconds:    opt.Make(int16(18)),
+	}
+	b, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+	want := `{"markerName":"REDU00BEL","receiver":{"number":"4503038","type":"GNSS_RECEIVER","version":"5.4.0"},"antenna":{"number":"5644","type":"GEOANTENNA NONE"},"approxPosition":[4091423.719,368380.653,4863179.994],"leapSeconds":18}`
+	if string(b) != want {
+		t.Errorf("Marshal = %s, want %s", string(b), want)
+	}
+	var got Metadata
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+	if got.MarkerName != meta.MarkerName || got.Receiver.Number != meta.Receiver.Number ||
+		got.Antenna.Type != meta.Antenna.Type || got.ApproxPosition.Get() != meta.ApproxPosition.Get() ||
+		got.LeapSeconds.Get() != meta.LeapSeconds.Get() {
+		t.Errorf("round trip = %#v, want %#v", got, meta)
+	}
+}
+
+func TestUnmarshalRecord(t *testing.T) {
+	obs, meta, isObs, err := UnmarshalRecord([]byte(`{"t":"2025-06-30T23:59:59.0000000","sat":"R03","sig":"1C","frq":-4,"pr":22187868.655}`))
+	if err != nil {
+		t.Fatalf("UnmarshalRecord observation error: %v", err)
+	}
+	if !isObs {
+		t.Fatal("UnmarshalRecord observation isObs = false, want true")
+	}
+	if obs.Sat != "R03" || obs.Frq.Get() != -4 || !obs.PR.IsSet() {
+		t.Errorf("observation = %#v", obs)
+	}
+	if meta.MarkerName != "" {
+		t.Errorf("metadata for observation = %#v", meta)
+	}
+	obs, meta, isObs, err = UnmarshalRecord([]byte(`{"antenna":{"type":"ROVER"},"antennaDelta":[0.903,0,0]}`))
+	if err != nil {
+		t.Fatalf("UnmarshalRecord metadata error: %v", err)
+	}
+	if isObs {
+		t.Fatal("UnmarshalRecord metadata isObs = true, want false")
+	}
+	if meta.Antenna.Type != "ROVER" || meta.AntennaDelta.Get()[0] != 0.903 {
+		t.Errorf("metadata = %#v", meta)
+	}
+	if obs.T != 0 {
+		t.Errorf("observation for metadata = %#v", obs)
+	}
+}
+
+func TestObservationCodes(t *testing.T) {
+	obs := SignalObservation{
+		Sig: SignalID("5Q"),
+		PR:  opt.Make(21474836.125),
+		CP:  opt.Make(112859323.25),
+		Do:  opt.Make(-1234.5),
+		CN0: opt.Make(float32(42.0)),
+	}
+	got := obs.ObservationCodes()
+	want := []ObservationCode{"C5Q", "L5Q", "D5Q", "S5Q"}
+	if !slices.Equal(got, want) {
+		t.Errorf("ObservationCodes = %v, want %v", got, want)
+	}
+}
+
+func TestObservationCodeSet(t *testing.T) {
+	obs := []SignalObservation{
+		{
+			Sat: SatelliteID("G03"),
+			Sig: SignalID("5Q"),
+			PR:  opt.Make(21474836.125),
+			CP:  opt.Make(112859323.25),
+		},
+		{
+			Sat: SatelliteID("G03"),
+			Sig: SignalID("1C"),
+			CN0: opt.Make(float32(48.5)),
+		},
+		{
+			Sat: SatelliteID("E11"),
+			Sig: SignalID("1C"),
+			PR:  opt.Make(24123456.0),
+		},
+	}
+	got := ObservationCodeSet(obs)
+	wantGPS := []ObservationCode{"S1C", "C5Q", "L5Q"}
+	wantGAL := []ObservationCode{"C1C"}
+	if !slices.Equal(got["G"], wantGPS) {
+		t.Errorf("ObservationCodeSet G = %v, want %v", got["G"], wantGPS)
+	}
+	if !slices.Equal(got["E"], wantGAL) {
+		t.Errorf("ObservationCodeSet E = %v, want %v", got["E"], wantGAL)
+	}
+	if !IsMixed(obs) {
+		t.Error("IsMixed = false, want true")
+	}
+}
+
+func TestTimeText(t *testing.T) {
+	testCases := []struct {
+		name string
+		time Time
+		text string
+	}{
+		{"epoch", 0, "1980-01-06T00:00:00.0000000"},
+		{"tick after epoch", 1, "1980-01-06T00:00:00.0000001"},
+		{"tick before epoch", -1, "1980-01-05T23:59:59.9999999"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.time.String(); got != tc.text {
+				t.Errorf("String = %s, want %s", got, tc.text)
+			}
+			var got Time
+			if err := got.UnmarshalText([]byte(tc.text)); err != nil {
+				t.Fatalf("UnmarshalText error: %v", err)
+			}
+			if got != tc.time {
+				t.Errorf("UnmarshalText = %d, want %d", got, tc.time)
+			}
+			b, err := json.Marshal(tc.time)
+			if err != nil {
+				t.Fatalf("Marshal error: %v", err)
+			}
+			want := `"` + tc.text + `"`
+			if string(b) != want {
+				t.Errorf("Marshal = %s, want %s", string(b), want)
+			}
+		})
+	}
+	var got Time
+	if err := got.UnmarshalText([]byte("1980-01-06T00:00:00.0000000Z")); err == nil {
+		t.Fatal("UnmarshalText with timezone suffix succeeded")
+	}
+}
+
+func TestGPSWeekMillis(t *testing.T) {
+	tm := TimeFromGPSWeekMillis(1, 1234)
+	if got := tm.String(); got != "1980-01-13T00:00:01.2340000" {
+		t.Errorf("String = %s, want 1980-01-13T00:00:01.2340000", got)
+	}
+	week, towMS := tm.GPSWeekMillis()
+	if week != 1 || towMS != 1234 {
+		t.Errorf("GPSWeekMillis = %d, %d, want 1, 1234", week, towMS)
+	}
+	week, towMS = Time(10005).GPSWeekMillis()
+	if week != 0 || towMS != 1 {
+		t.Errorf("GPSWeekMillis floors = %d, %d, want 0, 1", week, towMS)
+	}
+}
+
+func TestGPSTimeText(t *testing.T) {
+	ls := ptime.LeapSecond2016()
+	utc := ptime.UTC(2023, 10, 6, 23, 40, 9, 0)
+	pt := ls.UTCtoTime(utc)
+	if gps := ptime.GPS(2282, 517227*time.Second); gps != pt {
+		t.Fatalf("ptime.GPS = %v, want %v", gps, pt)
+	}
+	rt := TimeFromGPSWeekMillis(2282, 517227000)
+	if got := rt.String(); got != "2023-10-06T23:40:27.0000000" {
+		t.Errorf("GPS String = %s, want 2023-10-06T23:40:27.0000000", got)
+	}
+}
+
+func TestUTCTime(t *testing.T) {
+	if got := Time(0).UTC(); !got.Equal(Epoch) {
+		t.Errorf("Time(0).UTC = %v, want %v", got, Epoch)
+	}
+	if got := TimeFromUTC(Epoch); got != 0 {
+		t.Errorf("TimeFromUTC(Epoch) = %d, want 0", got)
+	}
+	if got := TimeFromUTC(Epoch.Add(100 * time.Nanosecond)); got != 1 {
+		t.Errorf("TimeFromUTC(Epoch + 100ns) = %d, want 1", got)
+	}
+	if got := TimeFromUTC(Epoch.Add(-1 * time.Nanosecond)); got != -1 {
+		t.Errorf("TimeFromUTC(Epoch - 1ns) = %d, want -1", got)
+	}
+	now := FloorTime(time.Now())
+	rt := TimeFromUTC(now)
+	got, err := time.ParseInLocation(timeLayout, rt.String(), time.UTC)
+	if err != nil {
+		t.Fatalf("ParseInLocation error: %v", err)
+	}
+	if !got.Equal(now) {
+		t.Errorf("UTC text round trip = %v, want %v", got, now)
+	}
+}
+
+func TestIDsAreValid(t *testing.T) {
+	satCases := []struct {
+		id   SatelliteID
+		want bool
+	}{
+		{"G03", true},
+		{"E11", true},
+		{"R00", false},
+		{"X01", false},
+		{"G3", false},
+	}
+	for _, tc := range satCases {
+		if got := tc.id.IsValid(); got != tc.want {
+			t.Errorf("%q IsValid = %v, want %v", tc.id, got, tc.want)
+		}
+	}
+	sigCases := []struct {
+		id   SignalID
+		want bool
+	}{
+		{"1C", true},
+		{"5Q", true},
+		{"12", false},
+		{"C1C", false},
+		{"", false},
+	}
+	for _, tc := range sigCases {
+		if got := tc.id.IsValid(); got != tc.want {
+			t.Errorf("%q IsValid = %v, want %v", tc.id, got, tc.want)
+		}
+	}
+}
+
+func TestInvalidIDUnmarshal(t *testing.T) {
+	var obs SignalObservation
+	if err := json.Unmarshal([]byte(`{"t":"2025-06-30T23:59:59.0000000","sat":"X01","sig":"1C"}`), &obs); err == nil {
+		t.Fatal("Unmarshal invalid satellite succeeded")
+	}
+	if err := json.Unmarshal([]byte(`{"t":"2025-06-30T23:59:59.0000000","sat":"G01","sig":"C1C"}`), &obs); err == nil {
+		t.Fatal("Unmarshal invalid signal succeeded")
+	}
+}
+
+func mustTime(t *testing.T, s string) Time {
+	t.Helper()
+	var tm Time
+	if err := tm.UnmarshalText([]byte(s)); err != nil {
+		t.Fatalf("UnmarshalText(%q): %v", s, err)
+	}
+	return tm
+}
