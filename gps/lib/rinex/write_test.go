@@ -99,3 +99,33 @@ func TestReadObservationFileBlankPhaseLLI(t *testing.T) {
 		t.Errorf("LLI = %d, want 3", got[0].LLI.Get())
 	}
 }
+
+func TestWriteObservationFileZeroIndicators(t *testing.T) {
+	obs := []SignalObservation{
+		{
+			T:   mustTime(t, "2025-12-17T08:14:06.0080000"),
+			Sat: "G07",
+			Sig: "1C",
+			CP:  opt.Make(1.0),
+			LLI: opt.Make(uint8(0)),
+			SSI: opt.Make(uint8(0)),
+		},
+	}
+	var b bytes.Buffer
+	if err := WriteObservationFile(&b, Metadata{}, obs, WriterOptions{Date: time.Date(2026, time.May, 18, 9, 0, 0, 0, time.UTC)}); err != nil {
+		t.Fatalf("WriteObservationFile: %v", err)
+	}
+	if !strings.Contains(b.String(), "G07         1.00000") {
+		t.Fatalf("output does not contain explicit zero indicators\n%s", b.String())
+	}
+	_, got, err := ReadObservationFile(strings.NewReader(b.String()))
+	if err != nil {
+		t.Fatalf("ReadObservationFile: %v", err)
+	}
+	if !got[0].LLI.IsSet() || got[0].LLI.Get() != 0 {
+		t.Errorf("LLI = %v, want explicit 0", got[0].LLI)
+	}
+	if !got[0].SSI.IsSet() || got[0].SSI.Get() != 0 {
+		t.Errorf("SSI = %v, want explicit 0", got[0].SSI)
+	}
+}

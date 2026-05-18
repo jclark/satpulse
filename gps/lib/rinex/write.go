@@ -389,10 +389,10 @@ func secondField(sec float64) string {
 func writeObsField(w *bufio.Writer, field obsField) error {
 	lli := ' '
 	ssi := ' '
-	if field.lli.IsSet() && field.lli.Get() != 0 {
+	if field.lli.IsSet() {
 		lli = rune('0' + field.lli.Get())
 	}
-	if field.ssi.IsSet() && field.ssi.Get() != 0 {
+	if field.ssi.IsSet() {
 		ssi = rune('0' + field.ssi.Get())
 	}
 	if !field.val.IsSet() {
