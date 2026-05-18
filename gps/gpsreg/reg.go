@@ -52,6 +52,11 @@ const (
 	TagNovAtelAscii = nov.TagAscii
 )
 
+// RTCMPacketFormat is the RTCM packet format, re-exported for
+// callers that need to scan RTCM without depending on
+// gps/internal/rtcm directly.
+var RTCMPacketFormat = rtcm.PacketFormat
+
 var vendorNames = []string{
 	"other",
 	"Allystar",

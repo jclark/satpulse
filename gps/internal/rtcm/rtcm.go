@@ -119,7 +119,7 @@ func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 }
 
 func (f packetFormat) MsgID(pkt []byte) string {
-	return rtcmbin.ExtractMsgType(pkt).String()
+	return rtcmbin.ExtractMsgID(pkt)
 }
 
 // ExtractChecksum extracts the checksum from the RTCM packet.
@@ -157,7 +157,7 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 	if err != nil {
 		return "", err
 	}
-	msgID := rtcmbin.ExtractMsgType(data).String()
+	msgID := rtcmbin.ExtractMsgID(data)
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
 		return msgID, nmh.NativeMsg(Tag, msgID, msg, tRead)

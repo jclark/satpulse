@@ -131,9 +131,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}()
 
 	var wg sync.WaitGroup
+	pktFormats := cfg.GPS.CreatePacketFormats()
 	// pLog must be closed by both the startScan goroutine and the conn
 	// gpsio.Scan starts a goroutine that calls conn.Stop() when the context is cancelled
-	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), true, cfg.GPS.CreatePacketFormats())
+	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), true, pktFormats)
 	if err != nil {
 		return err
 	}
@@ -143,7 +144,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if pLog != nil {
 		conn.SetPacketLog(pLog)
 	}
-	pCh := startScan(ctx, lg, &wg, conn, pLog, cfg.GPS.CreatePacketFormats())
+	pCh := startScan(ctx, lg, &wg, conn, pLog, pktFormats)
 
 	pb := startBcast(ctx, lg, &wg, pCh)
 
@@ -183,9 +184,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}()
 
 	pktProcs := cfg.GPS.CreatePacketProcessors()
-	// Install a MsgHandler to capture leap second during configuration
-	var lsc leapSecondCapture
-	gpsprot.SetAllMsgHandlers(pktProcs, &lsc)
+	// Install a MsgHandler to capture leap second and position during
+	// configuration; consumed after gpscfg.Configure returns.
+	var cc configCapture
+	gpsprot.SetAllMsgHandlers(pktProcs, &cc)
 	// Compile-time check: serial faults surfaced by gpsio satisfy the
 	// gpscfg.SerialError interface. gpsInit relies on this.
 	var _ gpscfg.SerialError = (*gpsio.SerialError)(nil)
@@ -194,7 +196,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, cfg.GPS.CreateConfigProtocols(), gct, pCh, conn)
-	lsc.logLeapSecond(lg)
+	cc.logLeapSecond(lg)
 	if err != nil {
 		if errors.Is(err, gpscfg.ErrNoProbeResponse) {
 			lg.Info(err.Error())
@@ -213,6 +215,18 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if err != nil {
 		return err
 	}
+
+	version, _ := cmd.Version()
+	pullSetup := cfg.Stream.Pull.Prepare(version, conn, portLock)
+	var pullPktCh <-chan scan.Packet
+	if pullSetup != nil {
+		pullPktCh = pullSetup.Bcast().Subscribe()
+	}
+
+	if err := startNtrip(ctx, lg, &wg, cfg, gcfg, pb, cc.pos); err != nil {
+		return err
+	}
+	startPush(ctx, lg, &wg, cfg, gcfg, pb, cc.pos, packetTagSet(pktFormats))
 
 	promObs := newPrometheusObserver(cfg)
 	sseObs := newSSEObserver(cfg, sseCh, lg, gcfg)
@@ -286,13 +300,14 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
-	ls := lsc.msg
+	ls := cc.leapSecond
+	startPull(ctx, lg, &wg, pullSetup)
 	wg.Go(func() {
 		if ls != nil {
 			d.LeapSecond(ls, time.Time{})
 		}
 		// Dispatcher is responsible for closing rcProxy via defer in Run()
-		d.Run(tsCh, pCh)
+		d.Run(tsCh, pCh, pullPktCh)
 	})
 
 	return nil
@@ -431,21 +446,27 @@ func startBcast[T any](ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	return b
 }
 
-// leapSecondCapture is a MsgHandler that captures leap second messages
-// received during GPS configuration.
-type leapSecondCapture struct {
+// configCapture is a MsgHandler that opportunistically captures
+// leap second and geodetic position messages received during GPS
+// configuration, for use by code that runs after gpscfg.Configure.
+type configCapture struct {
 	gpsprot.DefaultHandler
-	msg *gpsprot.LeapSecondMsg
+	leapSecond *gpsprot.LeapSecondMsg
+	pos        *gpsprot.PosGeoMsg
 }
 
-func (h *leapSecondCapture) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
-	h.msg = msg
+func (h *configCapture) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
+	h.leapSecond = msg
 }
 
-func (h *leapSecondCapture) logLeapSecond(lg *slog.Logger) {
-	if h.msg != nil {
-		lsdStr := h.msg.Date().Format("2006-01-02")
-		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", h.msg.UTCOffBefore, "utcOffAfter", h.msg.UTCOffAfter)
+func (h *configCapture) PosGeo(msg *gpsprot.PosGeoMsg, _ time.Time) {
+	h.pos = msg
+}
+
+func (h *configCapture) logLeapSecond(lg *slog.Logger) {
+	if h.leapSecond != nil {
+		lsdStr := h.leapSecond.Date().Format("2006-01-02")
+		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", h.leapSecond.UTCOffBefore, "utcOffAfter", h.leapSecond.UTCOffAfter)
 	}
 }
 
@@ -461,6 +482,9 @@ func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, usingPHC bool) 
 	}
 	if cfg.httpWantsSatellites() {
 		cf |= cfgSatellites
+	}
+	if cfg.hasNtripStream() {
+		cf |= cfgNtripStream
 	}
 	gct, err := cfg.GPS.target(speed, cf)
 	lg.Debug("GPS configure input", "target", gct)

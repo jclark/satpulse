@@ -39,6 +39,30 @@ func ExtractMsgType[B Bytes](pkt B) MsgType {
 	return MsgType(pkt[3])<<4 | MsgType(pkt[4])>>4
 }
 
+// ExtractMsgTypeSubtype returns the 12-bit message type and the
+// 12-bit subtype.  hasSub reports whether the message type carries a
+// subtype; currently only RTCM 4072 (u-blox proprietary) does.
+func ExtractMsgTypeSubtype[B Bytes](pkt B) (mt MsgType, sub uint16, hasSub bool) {
+	mt = ExtractMsgType(pkt)
+	if mt == 4072 {
+		// 12-bit subtype at bits 12..23 of the payload (bytes 4-5).
+		sub = uint16(pkt[4]&0x0F)<<8 | uint16(pkt[5])
+		hasSub = true
+	}
+	return
+}
+
+// ExtractMsgID returns the RTCM message ID as a string.  For message
+// types that carry a subtype it includes the subtype (e.g. "4072.1");
+// otherwise it returns the plain message type number (e.g. "1077").
+func ExtractMsgID[B Bytes](pkt B) string {
+	mt, sub, hasSub := ExtractMsgTypeSubtype(pkt)
+	if hasSub {
+		return fmt.Sprintf("%d.%d", mt, sub)
+	}
+	return mt.String()
+}
+
 // Msg is the interface implemented by all parsed RTCM messages.
 type Msg interface {
 	MsgType() MsgType

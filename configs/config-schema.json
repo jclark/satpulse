@@ -23,6 +23,23 @@
   },
   "type": "object",
   "properties": {
+    "user": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "User name",
+            "type": "string"
+          },
+          "password": {
+            "description": "Password",
+            "type": "string"
+          }
+        },
+        "required": ["name"]
+      }
+    },
     "serial": {
       "type": "object",
       "properties": {
@@ -320,6 +337,219 @@
           "required": [
             "path"
           ]
+        }
+      }
+    },
+    "ntrip": {
+      "type": "object",
+      "properties": {
+        "listen": {
+          "description": "TCP listen address",
+          "type": "string",
+          "default": ":2101"
+        },
+        "country": {
+          "description": "ISO 3166 country code shown in the source table",
+          "type": "string",
+          "default": "XXX"
+        },
+        "network": {
+          "description": "Network name shown in the source table",
+          "type": "string",
+          "default": "Misc"
+        },
+        "lat": {
+          "description": "Latitude override; default derived from receiver fixed position",
+          "type": "number"
+        },
+        "lon": {
+          "description": "Longitude override; default derived from receiver fixed position",
+          "type": "number"
+        },
+        "generator": {
+          "description": "Generator string; default receiver hardware or satpulse version",
+          "type": "string"
+        },
+        "formatDetails": {
+          "description": "RTCM message list override; default synthesised from enabled GNSS",
+          "type": "string"
+        },
+        "bitrate": {
+          "description": "Default per-mountpoint bitrate",
+          "type": "integer",
+          "default": 0,
+          "minimum": 0
+        },
+        "mountpoint": {
+          "description": "Mountpoints served by the caster",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "description": "Mountpoint name (URL path component)",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._-]{1,100}$"
+              },
+              "description": {
+                "description": "Mountpoint description shown in the source table (default = name)",
+                "type": "string"
+              },
+              "bitrate": {
+                "description": "Bitrate shown in the source table for this mountpoint",
+                "type": "integer",
+                "minimum": 0
+              },
+              "auth": {
+                "description": "Authentication, if any, for this mountpoint",
+                "type": "object",
+                "properties": {
+                  "anyUser": {
+                    "description": "Allow any valid user",
+                    "type": "boolean"
+                  },
+                  "users": {
+                    "description": "Restrict access to these users",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "not": {
+                  "properties": {
+                    "anyUser": {"const": true},
+                    "users": {"minItems": 1}
+                  },
+                  "required": ["anyUser", "users"]
+                }
+              },
+              "msm7to4": {
+                "description": "Convert MSM7 packets to MSM4 before sending",
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "required": ["name"]
+          }
+        }
+      }
+    },
+    "stream": {
+      "type": "object",
+      "properties": {
+        "pull": {
+          "description": "Network correction source written to the receiver. Exactly one of tcp or ntrip must be configured.",
+          "type": "object",
+          "properties": {
+            "tcp": {
+              "description": "Plain TCP correction source",
+              "type": "object",
+              "properties": {
+                "address": {
+                  "description": "host:port of the correction source",
+                  "type": "string"
+                }
+              },
+              "required": ["address"]
+            },
+            "ntrip": {
+              "description": "Ntrip v1 caster client",
+              "type": "object",
+              "properties": {
+                "address": {
+                  "description": "host:port of the Ntrip caster",
+                  "type": "string"
+                },
+                "mountpoint": {
+                  "description": "Caster mountpoint to subscribe to",
+                  "type": "string"
+                },
+                "username": {
+                  "description": "Username for basic authentication",
+                  "type": "string"
+                },
+                "password": {
+                  "description": "Password for basic authentication",
+                  "type": "string"
+                }
+              },
+              "required": ["address", "mountpoint"]
+            }
+          },
+          "oneOf": [
+            {"required": ["tcp"]},
+            {"required": ["ntrip"]}
+          ]
+        },
+        "push": {
+          "description": "Outbound stream destinations. Each entry forwards scanned packets to a remote endpoint.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "protocol": {
+                "description": "Packet format to forward (default: RTCM for ntrip transport)",
+                "type": "string",
+                "enum": ["", "RTCM", "NMEA", "UBX"]
+              },
+              "ntrip": {
+                "description": "Ntrip v1 server (SOURCE) upload to a remote caster",
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "description": "host:port of the remote caster",
+                    "type": "string"
+                  },
+                  "mountpoint": {
+                    "description": "Mountpoint name to push to on the remote caster",
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,100}$"
+                  },
+                  "password": {
+                    "description": "Password authenticating the SOURCE upload (printable ASCII, no whitespace)",
+                    "type": "string",
+                    "pattern": "^[\\x21-\\x7E]+$"
+                  },
+                  "description": {
+                    "description": "Description used in the STR header (defaults to mountpoint)",
+                    "type": "string",
+                    "pattern": "^[^;\\r\\n]*$"
+                  },
+                  "bitrate": {
+                    "description": "Bitrate used in the STR header for this stream",
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "msm7to4": {
+                    "description": "Convert MSM7 packets to MSM4 before sending (RTCM only)",
+                    "type": "boolean"
+                  }
+                },
+                "required": ["address", "mountpoint", "password"]
+              }
+            },
+            "required": ["ntrip"],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "protocol": {"enum": ["NMEA", "UBX"]}
+                  },
+                  "required": ["protocol"]
+                },
+                "then": {
+                  "properties": {
+                    "ntrip": {
+                      "properties": {
+                        "msm7to4": {"const": false}
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
         }
       }
     },
