@@ -47,8 +47,9 @@ enough to work as a future `satpulsetool convobs` subcommand.
 The command shape should be:
 
 ```text
-convobs [-o path] [--metadata path] [--protocol tag]
-        [--packet-log|--json-in] [--json-out] input...
+convobs [-r|--from raw|ubx|rtcm|uncb|unca|nova|novb|rinex|obsj]
+        [--packet-log] [--to rinex|obsj] [-o path] [--metadata path]
+        input...
 ```
 
 At least one input positional argument is required. Each input is processed in
@@ -62,21 +63,44 @@ of the same observation stream. This supports the usual Unix pattern of
 passing all input files positionally while keeping output redirection separate
 from input selection.
 
-By default, input is a raw binary packet stream and output is a RINEX
-observation file. The raw input path uses the public packet scanner interface
-from `gps/scan`. The command scans packets until it sees the first supported
-raw observation message, then selects the matching converter:
+The `--from` option selects the input observation format or packet protocol.
+The short option `-r` is accepted as an alias for `--from`, following RTKLIB
+`convbin` prior art. Most users should not need to specify `--from`: the
+default is `raw`, which auto-detects the packet observation protocol from the
+stream. RINEX and `.obsj` inputs must be selected explicitly with
+`--from rinex` or `--from obsj`.
+
+For packet input, `--from raw` means scan the packet stream until the first
+supported raw observation message is found, then select the matching converter:
 
 - `UBX-RXM-RAWX` selects the UBX converter.
 - RTCM MSM7 messages select the RTCM converter.
 
-The command should also have a protocol-selection flag for cases where the
-input protocol is known or the stream is ambiguous. The default should be
-auto-detection. Explicit protocol tags should be case-insensitive and use the
-same style as packet log tags, for example `UBX` and `RTCM`, with room for
-future raw-observation protocols such as `UNCB`, `UNCA`, `NOVA`, and `NOVB`.
-When this flag is set, only packets for the selected protocol should be
-considered for observation conversion.
+Explicit packet-protocol formats, such as `ubx`, `rtcm`, `uncb`, `unca`,
+`nova`, and `novb`, are case-insensitive and are for cases where the packet
+protocol is known or the stream is ambiguous. When one of these formats is set,
+only packets for the selected protocol should be considered for observation
+conversion.
+
+The `--packet-log` flag says that packet input is wrapped in a SatPulse JSONL
+packet log instead of being a raw binary packet stream. It is valid only with
+packet input formats: `raw`, `ubx`, `rtcm`, `uncb`, `unca`, `nova`, and
+`novb`. It is not valid with `--from rinex` or `--from obsj`.
+
+The `--to` option selects the output format. The supported output formats are
+`rinex` and `obsj`. Output defaults to RINEX. Filenames do not imply formats:
+use `--to obsj` to write JSONL observation records.
+
+Examples:
+
+```sh
+satpulsetool convobs in.ubx > out.obs
+satpulsetool convobs --to obsj -o out.obsj in.ubx
+satpulsetool convobs --from ubx -o out.obs stream.bin
+satpulsetool convobs --packet-log -o out.obs packets.jsonl
+satpulsetool convobs --from obsj -o out.obs in.obsj
+satpulsetool convobs --from rinex --to obsj -o out.obsj in.obs
+```
 
 Once a converter is selected, subsequent packets are fed to that converter.
 The command should reject a later observation message from a different raw
@@ -84,22 +108,6 @@ observation family, because a single output file should have one coherent
 time/receiver metadata model. Packets seen before converter selection may need
 to be buffered or replayed so metadata packets that precede the first raw
 observation message are not lost.
-
-The command should support these format-selection flags:
-
-- `--packet-log`: read a SatPulse JSONL packet log instead of a raw binary
-  packet stream. The packet log records supply the same packet bytes that the
-  raw scanner would have produced.
-- `--json-in`: read `.obsj` records instead of packets. This is for turning a
-  previously generated observation JSONL file into RINEX.
-- `--json-out`: write `.obsj` records instead of RINEX. This is for streaming
-  packet conversion into the intermediate observation format.
-
-`--packet-log` and `--json-in` are mutually exclusive input modes. `--json-in`
-and `--json-out` should also be mutually exclusive; `.obsj` to `.obsj`
-conversion is just a copy operation and should not be part of this tool's
-behavior. Metadata JSON and metadata-related CLI flags should apply to both
-RINEX and `.obsj` output.
 
 The current `ubx2rinex` command is temporary. It accepts exactly one positional
 input, uses stdin only when that input is the literal `-`, and writes to stdout
@@ -113,6 +121,12 @@ The command structure should stay close to the internal command packages:
 parse flags into one command-local struct, open files in the command layer
 with `defer`, and keep the conversion core expressed in terms of `io.Reader`,
 `io.Writer`, metadata, writer options, and converter options.
+
+RTKLIB's `convbin` uses `-r format` to select receiver/raw log input format,
+for example `-r ubx`, `-r rtcm3`, `-r nov`, `-r unicore`, or `-r rinex`.
+It also infers input format from file extension when `-r` is omitted.
+`convobs` borrows `-r` as a short alias for `--from`, but intentionally does
+not use filename inference for either input or output formats.
 
 ## Implementation plan
 
@@ -147,30 +161,36 @@ with `defer`, and keep the conversion core expressed in terms of `io.Reader`,
    the current UBX path but rename the user-facing command to the generic
    observation converter.
 
-7. Add support for multiple positional inputs to `convobs`. Process the inputs
-   in command-line order as consecutive chunks of one observation stream, with
-   stdin used only for an explicit `-` input.
+7. Implement `.obsj` output. Add a JSONL sink in
+   `gps/lib/rinex` that writes `Metadata` and `SignalObservation` records as
+   they arrive, so raw packet input can be converted streamably into the
+   intermediate observation format. Wire this into `convobs` with
+   `--to obsj`.
 
-8. Add explicit input protocol selection to `convobs`. Auto-detection remains
-   the default, but a case-insensitive protocol tag flag should allow known
-   input such as `UBX` or `RTCM`, and later raw-observation packet families
-   such as `UNCB`, `UNCA`, `NOVA`, and `NOVB`.
+8. Implement `.obsj` input. Add a reader in `gps/lib/rinex`
+    that reads JSONL records containing a mixture of `SignalObservation` and
+    `Metadata`, merges metadata, and feeds the RINEX observation writer. Wire
+    this into `convobs` with `--from obsj`.
 
 9. Add `--packet-log` input mode. This mode reads SatPulse JSONL packet logs
    instead of raw binary packet streams and feeds the packet bytes through the
    same converter-selection path as raw input.
 
-10. Implement `.obsj` writing and `--json-out`. Add a JSONL sink in
-   `gps/lib/rinex` that writes `Metadata` and `SignalObservation` records as
-   they arrive, so raw packet input can be converted streamably into the
-   intermediate observation format.
+10. Implement RINEX observation input. Add a RINEX observation reader in
+    `gps/lib/rinex` that reads RINEX observation files into the internal
+    observation model and metadata records. Wire this into `convobs` with
+    `--from rinex`, enabling RINEX to `.obsj` conversion.
 
-11. Implement `.obsj` reading and `--json-in`. Add a reader in `gps/lib/rinex`
-    that reads JSONL records containing a mixture of `SignalObservation` and
-    `Metadata`, merges metadata, and feeds the RINEX observation writer. This
-    enables `.obsj` to RINEX conversion.
+11. Add explicit input selection to `convobs`. `--from raw` remains the packet
+    auto-detection mode, while `--from ubx`, `--from rtcm`, and future
+    packet-protocol formats such as `uncb`, `unca`, `nova`, and `novb` force a
+    known packet protocol.
 
-12. Support RTCM MSM7 input. Add an MSM7 converter that emits
+12. Add support for multiple positional inputs to `convobs`. Process the
+    inputs in command-line order as consecutive chunks of one observation
+    stream, with stdin used only for an explicit `-` input.
+
+13. Support RTCM MSM7 input. Add an MSM7 converter that emits
     `SignalObservation` records from RTCM MSM7 messages and metadata records
     from relevant station, receiver, and antenna messages. It must assemble MSM
     fragments for the same epoch/reference station and map RTCM satellite and
