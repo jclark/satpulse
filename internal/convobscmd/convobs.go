@@ -9,6 +9,7 @@ import (
 	"io"
 	"iter"
 	"log/slog"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ const scanBufSize = 64 * 1024
 
 const summary = `[-h|--help] [-o|--output path] [--metadata path]
            [-r|--from raw|ubx|rinex|obsj] [--packet-log] [--to rinex|obsj]
+           [--interval seconds]
            [--marker-name name] [--marker-number number] [--marker-type type]
            [--observer name] [--agency name]
            [--receiver-number number] [--receiver-type type] [--receiver-version version]
@@ -58,6 +60,7 @@ type flagVars struct {
 	packetLog    bool
 	inputFormat  inputFormat
 	outputFormat outputFormat
+	interval     time.Duration
 	meta         rinex.Metadata
 	wopts        rinex.WriterOptions
 	uopts        rinexubx.Options
@@ -99,7 +102,7 @@ func Cmd(_ io.Writer, _ slog.Level, progName, cmdName string, args []string) (us
 		defer f.Close()
 		out = f
 	}
-	return "", runInputs(openInputs(v.inputPaths), out, v.inputFormat, v.outputFormat, v.packetLog, v.meta, v.wopts, v.uopts)
+	return "", runInputs(openInputs(v.inputPaths), out, v.inputFormat, v.outputFormat, v.packetLog, v.meta, v.wopts, v.uopts, v.interval)
 }
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
@@ -112,11 +115,13 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	help := false
 	from := string(v.inputFormat)
 	to := string(v.outputFormat)
+	interval := 0.0
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.StringVarP(&v.outputPath, "output", "o", "", "output observation file, or - for stdout")
 	flags.StringVarP(&from, "from", "r", from, "input observation format")
 	flags.BoolVar(&v.packetLog, "packet-log", false, "input is a JSONL packet log")
 	flags.StringVar(&to, "to", to, "output observation format")
+	flags.Float64Var(&interval, "interval", 0, "observation decimation interval in `seconds` (0 disables)")
 	flags.StringVar(&v.metaPath, "metadata", "", "JSON RINEX metadata file")
 	flags.StringVar(&v.meta.MarkerName, "marker-name", "", "RINEX marker name")
 	flags.StringVar(&v.meta.MarkerNumber, "marker-number", "", "RINEX marker number")
@@ -147,6 +152,15 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if v.packetLog && !v.inputFormat.packetInput() {
 		return nil, usageFunc, errors.New("--packet-log is valid only with packet input formats")
+	}
+	if math.IsNaN(interval) || math.IsInf(interval, 0) || interval < 0 {
+		return nil, usageFunc, errors.New("--interval must be a finite non-negative number of seconds")
+	}
+	v.interval = time.Duration(math.Round(interval * float64(time.Second)))
+	if interval > 0 {
+		if err := rinex.ValidateDecimationInterval(v.interval); err != nil {
+			return nil, usageFunc, err
+		}
 	}
 	if flags.NArg() == 0 {
 		return nil, usageFunc, errors.New("expected at least one input file")
@@ -215,12 +229,12 @@ func (f inputFormat) packetInput() bool {
 	return f == inputRaw || f == inputUBX
 }
 
-func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rinexubx.Options) error {
+func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rinexubx.Options, interval time.Duration) error {
 	switch from {
 	case inputRINEX, inputObsJSON:
-		return convertObservationInputs(inputs, out, from, to, meta, wopts)
+		return convertObservationInputs(inputs, out, from, to, meta, wopts, interval)
 	}
-	sink, err := outputSink(out, to, wopts)
+	sink, err := outputSink(out, to, wopts, interval)
 	if err != nil {
 		return err
 	}
@@ -260,18 +274,23 @@ func inputError(path string, err error) error {
 	return fmt.Errorf("%s: %w", path, err)
 }
 
-func outputSink(w io.Writer, format outputFormat, wopts rinex.WriterOptions) (rinex.Sink, error) {
+func outputSink(w io.Writer, format outputFormat, wopts rinex.WriterOptions, interval time.Duration) (rinex.Sink, error) {
+	var sink rinex.Sink
 	switch format {
 	case outputRINEX:
-		return rinex.NewObservationSink(w, wopts), nil
+		sink = rinex.NewObservationSink(w, wopts)
 	case outputObsJSON:
-		return rinex.NewObsJSONSink(w), nil
+		sink = rinex.NewObsJSONSink(w)
 	default:
 		return nil, fmt.Errorf("unsupported output format %q", format)
 	}
+	if interval == 0 {
+		return sink, nil
+	}
+	return rinex.NewDecimationSink(sink, interval)
 }
 
-func convertObservationInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, meta rinex.Metadata, wopts rinex.WriterOptions) error {
+func convertObservationInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, meta rinex.Metadata, wopts rinex.WriterOptions, interval time.Duration) error {
 	var fileMeta rinex.Metadata
 	var obs []rinex.SignalObservation
 	for path, in := range inputs {
@@ -285,7 +304,7 @@ func convertObservationInputs(inputs iter.Seq2[string, inputReader], out io.Writ
 		fileMeta = rinex.MergeMetadata(fileMeta, m)
 		obs = append(obs, o...)
 	}
-	return convertBufferedObservations(out, to, rinex.MergeMetadata(fileMeta, meta), obs, wopts)
+	return convertBufferedObservations(out, to, rinex.MergeMetadata(fileMeta, meta), obs, wopts, interval)
 }
 
 func readObservationInput(in io.Reader, from inputFormat) (rinex.Metadata, []rinex.SignalObservation, error) {
@@ -299,24 +318,20 @@ func readObservationInput(in io.Reader, from inputFormat) (rinex.Metadata, []rin
 	}
 }
 
-func convertBufferedObservations(out io.Writer, to outputFormat, meta rinex.Metadata, obs []rinex.SignalObservation, wopts rinex.WriterOptions) error {
-	switch to {
-	case outputRINEX:
-		return rinex.WriteObservationFile(out, meta, obs, wopts)
-	case outputObsJSON:
-		sink := rinex.NewObsJSONSink(out)
-		if err := sink.Metadata(meta); err != nil {
+func convertBufferedObservations(out io.Writer, to outputFormat, meta rinex.Metadata, obs []rinex.SignalObservation, wopts rinex.WriterOptions, interval time.Duration) error {
+	sink, err := outputSink(out, to, wopts, interval)
+	if err != nil {
+		return err
+	}
+	if err := sink.Metadata(meta); err != nil {
+		return err
+	}
+	for _, o := range obs {
+		if err := sink.Observation(o); err != nil {
 			return err
 		}
-		for _, o := range obs {
-			if err := sink.Observation(o); err != nil {
-				return err
-			}
-		}
-		return sink.Flush()
-	default:
-		return fmt.Errorf("unsupported output format %q", to)
 	}
+	return sink.Flush()
 }
 
 func loadMetadata(dst *rinex.Metadata, path string, r io.Reader) error {
