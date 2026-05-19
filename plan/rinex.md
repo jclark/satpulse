@@ -189,7 +189,23 @@ not use filename inference for either input or output formats.
     packet-protocol formats such as `uncb`, `unca`, `nova`, and `novb` force a
     known packet protocol.
 
-13. Support RTCM MSM7 input. Add an MSM7 converter that emits
+13. Add observation decimation. Implement a `rinex.Sink` wrapper that emits
+    only epochs on a GPS-time-aligned interval grid. Restrict intervals to at
+    least one second and to values that divide one GPS day exactly. For grid
+    matching, round the epoch label to the nearest 0.01 second, then test the
+    rounded time against the interval grid; emitted observations keep their
+    original epoch label. Skipped observations are dropped, but their LLI bits
+    are ORed into the next emitted observation for the same satellite and
+    signal. Wire this into `convobs` so raw, `.obsj`, and RINEX inputs can all
+    be decimated before writing RINEX or `.obsj`.
+
+14. Write a `satpulsetool-convobs.1` man page following the existing
+    `docs/man/satpulsetool-*.1.md` pattern. Document the command synopsis,
+    input and output formats, multiple input behavior, stdin handling,
+    packet-log mode, metadata options, and examples for raw, packet-log,
+    `.obsj`, and RINEX conversions.
+
+15. Support RTCM MSM7 input. Add an MSM7 converter that emits
     `SignalObservation` records from RTCM MSM7 messages and metadata records
     from relevant station, receiver, and antenna messages. It must assemble MSM
     fragments for the same epoch/reference station and map RTCM satellite and
