@@ -36,54 +36,143 @@ packages. That code can live outside `gps/lib/rinex`; the reusable library
 package should define the `.obsj` records and low-level formatting helpers, not
 own the whole conversion pipeline.
 
-## Next steps
+## CLI tool
 
-Add an `.obsj` reader in `gps/lib/rinex`. It should take an `io.Reader`, read
-JSONL records containing a mixture of `SignalObservation` and `Metadata`, and
-return separate slices of observations and metadata.
+The command-line interface should be a generic observation converter, not a
+UBX-specific tool. The working name is `convobs`, short for "convert
+observations". This is intentionally similar to RTKLIB's `convbin`, but names
+the thing being converted rather than the packet container. It is also short
+enough to work as a future `satpulsetool convobs` subcommand.
 
-Add metadata merge support. The input should be a slice of `Metadata` records;
-the output should be a single merged metadata value suitable for driving RINEX
-header generation.
+The command shape should be:
 
-Add a RINEX observation writer. It should take an `io.Writer`, the merged metadata,
-and a slice of `SignalObservation`, then write a
-RINEX observation file or return an error. The writer will derive observation
-code lists, epoch ordering, satellite ordering, and other header facts from the
-complete observation slice.
+```text
+convobs [-o path] [--metadata path] [--protocol tag]
+        [--packet-log|--json-in] [--json-out] input...
+```
 
-Add a sink interface in `gps/lib/rinex` for conversion output. It should have
-methods for `Metadata` and `SignalObservation`, and probably a `Flush` or close
-method for final output and error reporting.
+At least one input positional argument is required. Each input is processed in
+the order supplied. A literal `-` means stdin, and stdin is used only when that
+literal input is present. Output defaults to stdout. An output path can be
+specified with `-o`/`--output`. The output path is never taken from a
+positional argument.
 
-Provide one sink implementation that writes `.obsj` JSONL to an `io.Writer`.
-This implementation can write records as they arrive.
+When multiple input files are supplied, they are treated as consecutive chunks
+of the same observation stream. This supports the usual Unix pattern of
+passing all input files positionally while keeping output redirection separate
+from input selection.
 
-Provide another sink implementation that writes RINEX observation output to an
-`io.Writer`. This implementation should merge metadata as it arrives and buffer
-observations until flush/finalization, then call the RINEX observation writer
-described above. RINEX output needs whole-file facts for the header,
-observation code lists, epoch ordering, and satellite ordering.
+By default, input is a raw binary packet stream and output is a RINEX
+observation file. The raw input path uses the public packet scanner interface
+from `gps/scan`. The command scans packets until it sees the first supported
+raw observation message, then selects the matching converter:
 
-Add conversion from receiver stream formats outside `gps/lib/rinex`. The
-converter code may depend on domain-layer packages and protocol-specific packet
-handling. Converters should write their output to the `gps/lib/rinex` sink
-interface, so conversion can be used for streaming `.obsj` generation, direct
-RINEX generation, and tests.
+- `UBX-RXM-RAWX` selects the UBX converter.
+- RTCM MSM7 messages select the RTCM converter.
 
-Start with UBX-RXM-RAWX. It maps naturally to `SignalObservation`: one RAWX
-measurement group becomes one signal observation, with the RAWX message epoch
-providing the GPS-scale `Time`. The main missing piece is the mapping from UBX
-`gnssId`/`sigId` to RINEX satellite and signal identifiers, plus state for
-deriving LLI from carrier-phase validity and lock-time changes.
+The command should also have a protocol-selection flag for cases where the
+input protocol is known or the stream is ambiguous. The default should be
+auto-detection. Explicit protocol tags should be case-insensitive and use the
+same style as packet log tags, for example `UBX` and `RTCM`, with room for
+future raw-observation protocols such as `UNCB`, `UNCA`, `NOVA`, and `NOVB`.
+When this flag is set, only packets for the selected protocol should be
+considered for observation conversion.
 
-Add RTCM MSM7 conversion after that. MSM7 provides pseudorange, carrier phase,
-Doppler, carrier-to-noise density, lock time, half-cycle ambiguity, and for
-GLONASS the FDMA frequency channel. The converter takes a stream of RTCM
-messages: MSM7 messages emit `SignalObservation` records, while ARP, receiver,
-and antenna-related messages emit `Metadata` records. The converter will need
-to assemble MSM fragments for the same epoch/reference station and map RTCM
-satellite and signal IDs to RINEX identifiers.
+Once a converter is selected, subsequent packets are fed to that converter.
+The command should reject a later observation message from a different raw
+observation family, because a single output file should have one coherent
+time/receiver metadata model. Packets seen before converter selection may need
+to be buffered or replayed so metadata packets that precede the first raw
+observation message are not lost.
+
+The command should support these format-selection flags:
+
+- `--packet-log`: read a SatPulse JSONL packet log instead of a raw binary
+  packet stream. The packet log records supply the same packet bytes that the
+  raw scanner would have produced.
+- `--json-in`: read `.obsj` records instead of packets. This is for turning a
+  previously generated observation JSONL file into RINEX.
+- `--json-out`: write `.obsj` records instead of RINEX. This is for streaming
+  packet conversion into the intermediate observation format.
+
+`--packet-log` and `--json-in` are mutually exclusive input modes. `--json-in`
+and `--json-out` should also be mutually exclusive; `.obsj` to `.obsj`
+conversion is just a copy operation and should not be part of this tool's
+behavior. Metadata JSON and metadata-related CLI flags should apply to both
+RINEX and `.obsj` output.
+
+The current `ubx2rinex` command is temporary. It accepts exactly one positional
+input, uses stdin only when that input is the literal `-`, and writes to stdout
+unless `-o`/`--output` names an output file. It does not accept a positional
+output path. When this command is moved into `satpulsetool`, it should be
+renamed to the generic `convobs` subcommand even if only UBX input is
+implemented at that point. Adding support for multiple positional inputs can
+be done as part of that move.
+
+The command structure should stay close to the internal command packages:
+parse flags into one command-local struct, open files in the command layer
+with `defer`, and keep the conversion core expressed in terms of `io.Reader`,
+`io.Writer`, metadata, writer options, and converter options.
+
+## Implementation plan
+
+1. Done: define the core observation model in `gps/lib/rinex`.
+   `SignalObservation` represents one satellite signal at one epoch, and
+   `Metadata` represents RINEX-style header facts that can be merged with facts
+   derived from observations.
+
+2. Done: implement RINEX observation output in `gps/lib/rinex`. The RINEX
+   writer/sink buffers observations, merges metadata, derives header facts such
+   as observation code lists and time range, and writes valid RINEX observation
+   files.
+
+3. Done: implement UBX-RXM-RAWX conversion in `gps/lib/rinex/ubx`. The
+   converter maps UBX satellites and signals to RINEX identifiers, derives LLI
+   in the RTKLIB-compatible way, leaves SSI unset, and emits
+   `SignalObservation` records through the RINEX sink interface.
+
+4. Done: add the temporary `cmd/ubx2rinex` command. It uses the public packet
+   scanner, accepts exactly one positional UBX input, uses stdin only for an
+   explicit `-`, writes to stdout by default, and uses `-o`/`--output` for a
+   named output file. It also accepts JSON metadata and command-line metadata
+   flags.
+
+5. Done: lock down current UBX behavior with golden tests. The test fixtures
+   include long M8T and F9T UBX captures and compare generated RINEX output to
+   checked-in golden files that are byte-identical to RTKLIB Explorer after
+   normalizing generated header fields and ignoring RTKLIB's
+   `SYS / PHASE SHIFT` header records.
+
+6. Move the command into `satpulsetool` as `convobs`. The move should preserve
+   the current UBX path but rename the user-facing command to the generic
+   observation converter. This is also the right time to allow multiple
+   positional inputs and process them as consecutive chunks of one observation
+   stream.
+
+7. Add explicit input protocol selection to `convobs`. Auto-detection remains
+   the default, but a case-insensitive protocol tag flag should allow known
+   input such as `UBX` or `RTCM`, and later raw-observation packet families
+   such as `UNCB`, `UNCA`, `NOVA`, and `NOVB`.
+
+8. Add `--packet-log` input mode. This mode reads SatPulse JSONL packet logs
+   instead of raw binary packet streams and feeds the packet bytes through the
+   same converter-selection path as raw input.
+
+9. Implement `.obsj` writing and `--json-out`. Add a JSONL sink in
+   `gps/lib/rinex` that writes `Metadata` and `SignalObservation` records as
+   they arrive, so raw packet input can be converted streamably into the
+   intermediate observation format.
+
+10. Implement `.obsj` reading and `--json-in`. Add a reader in `gps/lib/rinex`
+    that reads JSONL records containing a mixture of `SignalObservation` and
+    `Metadata`, merges metadata, and feeds the RINEX observation writer. This
+    enables `.obsj` to RINEX conversion.
+
+11. Support RTCM MSM7 input. Add an MSM7 converter that emits
+    `SignalObservation` records from RTCM MSM7 messages and metadata records
+    from relevant station, receiver, and antenna messages. It must assemble MSM
+    fragments for the same epoch/reference station and map RTCM satellite and
+    signal IDs to RINEX identifiers.
 
 ## UBX conversion
 
