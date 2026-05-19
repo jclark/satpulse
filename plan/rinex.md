@@ -157,9 +157,8 @@ not use filename inference for either input or output formats.
    normalizing generated header fields and ignoring RTKLIB's
    `SYS / PHASE SHIFT` header records.
 
-6. Move the command into `satpulsetool` as `convobs`. The move should preserve
-   the current UBX path but rename the user-facing command to the generic
-   observation converter.
+6. Done: move ubx2rinex command into `satpulsetool` as `convobs`. It is now
+   `internal/convobscmd`.
 
 7. Implement `.obsj` output. Add a JSONL sink in
    `gps/lib/rinex` that writes `Metadata` and `SignalObservation` records as

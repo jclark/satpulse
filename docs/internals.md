@@ -210,6 +210,8 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 
 `internal/annotatecmd` implements `annotate` subcommand of satpulsetool. It annotates JSONL packet logs with decoded payload fields (header, payload, cfgData).
 
+`internal/convobscmd` implements `convobs` subcommand of satpulsetool. It converts raw observation streams to RINEX observation files.
+
 `internal/decodecmd` implements `decode` subcommand of satpulsetool. It decodes a single GPS packet from hex or ASCII data into JSON.
 
 `internal/pmccmd` implements `pmc` subcommand of satpulsetool.
