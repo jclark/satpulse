@@ -2,6 +2,8 @@
 package rinex
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -128,6 +130,12 @@ type ObservationSink struct {
 	opts WriterOptions
 	meta Metadata
 	obs  []SignalObservation
+}
+
+// ObsJSONSink writes observation records as obsj JSON lines.
+type ObsJSONSink struct {
+	w   *bufio.Writer
+	enc *json.Encoder
 }
 
 // String formats t as an ISO8601 time label without a timezone suffix.
@@ -270,6 +278,35 @@ func UnmarshalRecord(data []byte) (SignalObservation, Metadata, bool, error) {
 	return SignalObservation{}, meta, false, nil
 }
 
+// ReadObsJSON reads obsj JSON lines.
+func ReadObsJSON(r io.Reader) (Metadata, []SignalObservation, error) {
+	s := bufio.NewScanner(r)
+	s.Buffer(make([]byte, 1024), 1024*1024)
+	var meta Metadata
+	var obs []SignalObservation
+	line := 0
+	for s.Scan() {
+		line++
+		b := bytes.TrimSpace(s.Bytes())
+		if len(b) == 0 {
+			continue
+		}
+		o, m, isObs, err := UnmarshalRecord(b)
+		if err != nil {
+			return Metadata{}, nil, fmt.Errorf("rinex: obsj line %d: %w", line, err)
+		}
+		if isObs {
+			obs = append(obs, o)
+		} else {
+			meta = MergeMetadata(meta, m)
+		}
+	}
+	if err := s.Err(); err != nil {
+		return Metadata{}, nil, err
+	}
+	return meta, obs, nil
+}
+
 // ObservationCodes returns the RINEX observation codes present in c.
 func (c SignalObservation) ObservationCodes() []ObservationCode {
 	codes := make([]ObservationCode, 0, 4)
@@ -313,6 +350,27 @@ func (s *ObservationSink) Observation(obs SignalObservation) error {
 // Flush writes all buffered observations as a RINEX observation file.
 func (s *ObservationSink) Flush() error {
 	return WriteObservationFile(s.w, s.meta, s.obs, s.opts)
+}
+
+// NewObsJSONSink creates a sink that writes obsj JSON lines.
+func NewObsJSONSink(w io.Writer) *ObsJSONSink {
+	bw := bufio.NewWriter(w)
+	return &ObsJSONSink{w: bw, enc: json.NewEncoder(bw)}
+}
+
+// Metadata writes m as one obsj metadata record.
+func (s *ObsJSONSink) Metadata(m Metadata) error {
+	return s.enc.Encode(m)
+}
+
+// Observation writes obs as one obsj signal observation record.
+func (s *ObsJSONSink) Observation(obs SignalObservation) error {
+	return s.enc.Encode(obs)
+}
+
+// Flush flushes buffered obsj output.
+func (s *ObsJSONSink) Flush() error {
+	return s.w.Flush()
 }
 
 // MergeMetadata merges b into a and returns the result.

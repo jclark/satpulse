@@ -160,13 +160,13 @@ not use filename inference for either input or output formats.
 6. Done: move ubx2rinex command into `satpulsetool` as `convobs`. It is now
    `internal/convobscmd`.
 
-7. Implement `.obsj` output. Add a JSONL sink in
+7. Done: implement `.obsj` output. Add a JSONL sink in
    `gps/lib/rinex` that writes `Metadata` and `SignalObservation` records as
    they arrive, so raw packet input can be converted streamably into the
    intermediate observation format. Wire this into `convobs` with
    `--to obsj`.
 
-8. Implement `.obsj` input. Add a reader in `gps/lib/rinex`
+8. Done: implement `.obsj` input. Add a reader in `gps/lib/rinex`
     that reads JSONL records containing a mixture of `SignalObservation` and
     `Metadata`, merges metadata, and feeds the RINEX observation writer. Wire
     this into `convobs` with `--from obsj`.

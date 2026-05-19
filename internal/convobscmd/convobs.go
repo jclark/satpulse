@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
@@ -22,6 +23,7 @@ import (
 const scanBufSize = 64 * 1024
 
 const summary = `[-h|--help] [-o|--output path] [--metadata path]
+           [-r|--from raw|ubx|obsj] [--to rinex|obsj]
            [--marker-name name] [--marker-number number] [--marker-type type]
            [--observer name] [--agency name]
            [--receiver-number number] [--receiver-type type] [--receiver-version version]
@@ -30,13 +32,30 @@ const summary = `[-h|--help] [-o|--output path] [--metadata path]
            [--phase-threshold n] [--slip-threshold n]
            input`
 
+type inputFormat string
+
+const (
+	inputRaw     inputFormat = "raw"
+	inputUBX     inputFormat = "ubx"
+	inputObsJSON inputFormat = "obsj"
+)
+
+type outputFormat string
+
+const (
+	outputRINEX   outputFormat = "rinex"
+	outputObsJSON outputFormat = "obsj"
+)
+
 type flagVars struct {
-	inputPath  string
-	outputPath string
-	metaPath   string
-	meta       rinex.Metadata
-	wopts      rinex.WriterOptions
-	uopts      rinexubx.Options
+	inputPath    string
+	outputPath   string
+	metaPath     string
+	inputFormat  inputFormat
+	outputFormat outputFormat
+	meta         rinex.Metadata
+	wopts        rinex.WriterOptions
+	uopts        rinexubx.Options
 }
 
 // Cmd implements the convobs subcommand.
@@ -81,19 +100,23 @@ func Cmd(_ io.Writer, _ slog.Level, progName, cmdName string, args []string) (us
 		defer f.Close()
 		out = f
 	}
-	return "", run(in, out, v.meta, v.wopts, v.uopts)
+	return "", runFormat(in, out, v.inputFormat, v.outputFormat, v.meta, v.wopts, v.uopts)
 }
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
-	v := &flagVars{}
+	v := &flagVars{inputFormat: inputRaw, outputFormat: outputRINEX}
 	if cmdName == "" {
 		cmdName = "convobs"
 	}
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	help := false
+	from := string(v.inputFormat)
+	to := string(v.outputFormat)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
-	flags.StringVarP(&v.outputPath, "output", "o", "", "output RINEX observation file, or - for stdout")
+	flags.StringVarP(&v.outputPath, "output", "o", "", "output observation file, or - for stdout")
+	flags.StringVarP(&from, "from", "r", from, "input observation format")
+	flags.StringVar(&to, "to", to, "output observation format")
 	flags.StringVar(&v.metaPath, "metadata", "", "JSON RINEX metadata file")
 	flags.StringVar(&v.meta.MarkerName, "marker-name", "", "RINEX marker name")
 	flags.StringVar(&v.meta.MarkerNumber, "marker-number", "", "RINEX marker number")
@@ -116,24 +139,68 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if help {
 		return nil, usageFunc, nil
 	}
+	if err := v.setInputFormat(from); err != nil {
+		return nil, usageFunc, err
+	}
+	if err := v.setOutputFormat(to); err != nil {
+		return nil, usageFunc, err
+	}
 	switch flags.NArg() {
 	case 1:
 		v.inputPath = flags.Arg(0)
 	default:
 		return nil, usageFunc, errors.New("expected exactly one input file")
 	}
-	v.meta.Comments = append(v.meta.Comments, "format: u-blox UBX")
-	v.meta.Comments = append(v.meta.Comments, "options: -MULTICODE")
-	if v.inputPath == "-" {
-		v.meta.Comments = append(v.meta.Comments, "log: stdin")
-	} else {
-		v.meta.Comments = append(v.meta.Comments, "log: "+v.inputPath)
+	if v.inputFormat.packetInput() {
+		v.meta.Comments = append(v.meta.Comments, "format: u-blox UBX")
+		v.meta.Comments = append(v.meta.Comments, "options: -MULTICODE")
+		if v.inputPath == "-" {
+			v.meta.Comments = append(v.meta.Comments, "log: stdin")
+		} else {
+			v.meta.Comments = append(v.meta.Comments, "log: "+v.inputPath)
+		}
 	}
 	return v, usageFunc, nil
 }
 
+func (v *flagVars) setInputFormat(s string) error {
+	s = strings.ToLower(s)
+	switch inputFormat(s) {
+	case inputRaw, inputUBX, inputObsJSON:
+		v.inputFormat = inputFormat(s)
+		return nil
+	default:
+		return fmt.Errorf("unsupported input format %q", s)
+	}
+}
+
+func (v *flagVars) setOutputFormat(s string) error {
+	s = strings.ToLower(s)
+	switch outputFormat(s) {
+	case outputRINEX, outputObsJSON:
+		v.outputFormat = outputFormat(s)
+		return nil
+	default:
+		return fmt.Errorf("unsupported output format %q", s)
+	}
+}
+
+func (f inputFormat) packetInput() bool {
+	return f == inputRaw || f == inputUBX
+}
+
 func run(in io.Reader, out io.Writer, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rinexubx.Options) error {
-	sink := rinex.NewObservationSink(out, wopts)
+	return runFormat(in, out, inputRaw, outputRINEX, meta, wopts, uopts)
+}
+
+func runFormat(in io.Reader, out io.Writer, from inputFormat, to outputFormat, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rinexubx.Options) error {
+	if from == inputObsJSON {
+		return convertObsJSON(in, out, to, meta, wopts)
+	}
+	sink, err := outputSink(out, to, wopts)
+	if err != nil {
+		return err
+	}
 	if err := sink.Metadata(meta); err != nil {
 		return err
 	}
@@ -142,6 +209,42 @@ func run(in io.Reader, out io.Writer, meta rinex.Metadata, wopts rinex.WriterOpt
 		return err
 	}
 	return sink.Flush()
+}
+
+func outputSink(w io.Writer, format outputFormat, wopts rinex.WriterOptions) (rinex.Sink, error) {
+	switch format {
+	case outputRINEX:
+		return rinex.NewObservationSink(w, wopts), nil
+	case outputObsJSON:
+		return rinex.NewObsJSONSink(w), nil
+	default:
+		return nil, fmt.Errorf("unsupported output format %q", format)
+	}
+}
+
+func convertObsJSON(in io.Reader, out io.Writer, to outputFormat, meta rinex.Metadata, wopts rinex.WriterOptions) error {
+	fileMeta, obs, err := rinex.ReadObsJSON(in)
+	if err != nil {
+		return err
+	}
+	meta = rinex.MergeMetadata(fileMeta, meta)
+	switch to {
+	case outputRINEX:
+		return rinex.WriteObservationFile(out, meta, obs, wopts)
+	case outputObsJSON:
+		sink := rinex.NewObsJSONSink(out)
+		if err := sink.Metadata(meta); err != nil {
+			return err
+		}
+		for _, o := range obs {
+			if err := sink.Observation(o); err != nil {
+				return err
+			}
+		}
+		return sink.Flush()
+	default:
+		return fmt.Errorf("unsupported output format %q", to)
+	}
 }
 
 func loadMetadata(dst *rinex.Metadata, path string, r io.Reader) error {

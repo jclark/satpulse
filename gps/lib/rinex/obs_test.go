@@ -1,8 +1,10 @@
 package rinex
 
 import (
+	"bytes"
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,6 +100,62 @@ func TestUnmarshalRecord(t *testing.T) {
 	}
 	if obs.T != 0 {
 		t.Errorf("observation for metadata = %#v", obs)
+	}
+}
+
+func TestObsJSONSinkAndReadObsJSON(t *testing.T) {
+	var b bytes.Buffer
+	sink := NewObsJSONSink(&b)
+	if err := sink.Metadata(Metadata{Comments: []string{"from first"}, Receiver: Receiver{Type: "RX"}}); err != nil {
+		t.Fatalf("Metadata first: %v", err)
+	}
+	obs := SignalObservation{
+		T:   mustTime(t, "2025-06-30T23:59:59.0000000"),
+		Sat: "G03",
+		Sig: "1C",
+		PR:  opt.Make(22187868.655),
+		LLI: opt.Make(LLI(0)),
+	}
+	if err := sink.Observation(obs); err != nil {
+		t.Fatalf("Observation: %v", err)
+	}
+	if err := sink.Metadata(Metadata{MarkerName: "MARK", Comments: []string{"from second"}}); err != nil {
+		t.Fatalf("Metadata second: %v", err)
+	}
+	if err := sink.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	want := strings.Join([]string{
+		`{"comments":["from first"],"receiver":{"type":"RX"}}`,
+		`{"t":"2025-06-30T23:59:59.0000000","sat":"G03","sig":"1C","pr":22187868.655,"lli":0}`,
+		`{"markerName":"MARK","comments":["from second"]}`,
+		"",
+	}, "\n")
+	if b.String() != want {
+		t.Fatalf("obsj output = %q, want %q", b.String(), want)
+	}
+	meta, got, err := ReadObsJSON(strings.NewReader(" \n" + b.String()))
+	if err != nil {
+		t.Fatalf("ReadObsJSON: %v", err)
+	}
+	if meta.MarkerName != "MARK" || meta.Receiver.Type != "RX" {
+		t.Errorf("metadata = %#v", meta)
+	}
+	if len(meta.Comments) != 2 || meta.Comments[0] != "from first" || meta.Comments[1] != "from second" {
+		t.Errorf("metadata comments = %#v", meta.Comments)
+	}
+	if len(got) != 1 || got[0] != obs {
+		t.Errorf("observations = %#v, want %#v", got, []SignalObservation{obs})
+	}
+}
+
+func TestReadObsJSONLineError(t *testing.T) {
+	_, _, err := ReadObsJSON(strings.NewReader(`{"t":"2025-06-30T23:59:59.0000000","sat":"X03","sig":"1C"}`))
+	if err == nil {
+		t.Fatal("ReadObsJSON invalid observation succeeded")
+	}
+	if !strings.Contains(err.Error(), "obsj line 1") {
+		t.Fatalf("error = %v, want line number", err)
 	}
 }
 
