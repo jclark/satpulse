@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"log/slog"
 	"os"
 	"strings"
@@ -32,7 +33,7 @@ const summary = `[-h|--help] [-o|--output path] [--metadata path]
            [--antenna-number number] [--antenna-type type]
            [--program name] [--run-by name]
            [--phase-threshold n] [--slip-threshold n]
-           input`
+           input...`
 
 type inputFormat string
 
@@ -51,7 +52,7 @@ const (
 )
 
 type flagVars struct {
-	inputPath    string
+	inputPaths   []string
 	outputPath   string
 	metaPath     string
 	packetLog    bool
@@ -60,6 +61,11 @@ type flagVars struct {
 	meta         rinex.Metadata
 	wopts        rinex.WriterOptions
 	uopts        rinexubx.Options
+}
+
+type inputReader struct {
+	r   io.Reader
+	err error
 }
 
 // Cmd implements the convobs subcommand.
@@ -84,17 +90,6 @@ func Cmd(_ io.Writer, _ slog.Level, progName, cmdName string, args []string) (us
 			return "", err
 		}
 	}
-	var in io.Reader
-	if v.inputPath == "-" {
-		in = os.Stdin
-	} else {
-		f, err := os.Open(v.inputPath)
-		if err != nil {
-			return "", err
-		}
-		defer f.Close()
-		in = f
-	}
 	var out io.Writer = os.Stdout
 	if v.outputPath != "" && v.outputPath != "-" {
 		f, err := os.Create(v.outputPath)
@@ -104,7 +99,7 @@ func Cmd(_ io.Writer, _ slog.Level, progName, cmdName string, args []string) (us
 		defer f.Close()
 		out = f
 	}
-	return "", runFormat(in, out, v.inputFormat, v.outputFormat, v.packetLog, v.meta, v.wopts, v.uopts)
+	return "", runInputs(openInputs(v.inputPaths), out, v.inputFormat, v.outputFormat, v.packetLog, v.meta, v.wopts, v.uopts)
 }
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
@@ -153,22 +148,45 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if v.packetLog && !v.inputFormat.packetInput() {
 		return nil, usageFunc, errors.New("--packet-log is valid only with packet input formats")
 	}
-	switch flags.NArg() {
-	case 1:
-		v.inputPath = flags.Arg(0)
-	default:
-		return nil, usageFunc, errors.New("expected exactly one input file")
+	if flags.NArg() == 0 {
+		return nil, usageFunc, errors.New("expected at least one input file")
 	}
+	v.inputPaths = flags.Args()
 	if v.inputFormat.packetInput() {
 		v.meta.Comments = append(v.meta.Comments, "format: u-blox UBX")
 		v.meta.Comments = append(v.meta.Comments, "options: -MULTICODE")
-		if v.inputPath == "-" {
-			v.meta.Comments = append(v.meta.Comments, "log: stdin")
-		} else {
-			v.meta.Comments = append(v.meta.Comments, "log: "+v.inputPath)
+		for _, path := range v.inputPaths {
+			if path == "-" {
+				v.meta.Comments = append(v.meta.Comments, "log: stdin")
+			} else {
+				v.meta.Comments = append(v.meta.Comments, "log: "+path)
+			}
 		}
 	}
 	return v, usageFunc, nil
+}
+
+func openInputs(paths []string) iter.Seq2[string, inputReader] {
+	return func(yield func(string, inputReader) bool) {
+		for _, path := range paths {
+			if path == "-" {
+				if !yield(path, inputReader{r: os.Stdin}) {
+					return
+				}
+				continue
+			}
+			f, err := os.Open(path)
+			if err != nil {
+				yield(path, inputReader{err: err})
+				return
+			}
+			if !yield(path, inputReader{r: f}) {
+				f.Close()
+				return
+			}
+			f.Close()
+		}
+	}
 }
 
 func (v *flagVars) setInputFormat(s string) error {
@@ -197,16 +215,10 @@ func (f inputFormat) packetInput() bool {
 	return f == inputRaw || f == inputUBX
 }
 
-func run(in io.Reader, out io.Writer, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rinexubx.Options) error {
-	return runFormat(in, out, inputRaw, outputRINEX, false, meta, wopts, uopts)
-}
-
-func runFormat(in io.Reader, out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rinexubx.Options) error {
-	if from == inputRINEX {
-		return convertObservationFile(in, out, to, meta, wopts)
-	}
-	if from == inputObsJSON {
-		return convertObsJSON(in, out, to, meta, wopts)
+func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rinexubx.Options) error {
+	switch from {
+	case inputRINEX, inputObsJSON:
+		return convertObservationInputs(inputs, out, from, to, meta, wopts)
 	}
 	sink, err := outputSink(out, to, wopts)
 	if err != nil {
@@ -216,15 +228,36 @@ func runFormat(in io.Reader, out io.Writer, from inputFormat, to outputFormat, p
 		return err
 	}
 	conv := rinexubx.New(sink, uopts)
-	if packetLog {
-		err = convertPacketLog(in, conv)
-	} else {
-		err = convert(in, conv)
+	n := 0
+	for path, in := range inputs {
+		if in.err != nil {
+			return inputError(path, in.err)
+		}
+		var c int
+		if packetLog {
+			c, err = convertPacketLog(in.r, conv)
+		} else {
+			c, err = convertPacketStream(in.r, conv)
+		}
+		if err != nil {
+			return inputError(path, err)
+		}
+		n += c
 	}
-	if err != nil {
-		return err
+	if n == 0 {
+		return errors.New("no UBX-RXM-RAWX messages found")
 	}
 	return sink.Flush()
+}
+
+func inputError(path string, err error) error {
+	if path == "" {
+		return err
+	}
+	if path == "-" {
+		return fmt.Errorf("stdin: %w", err)
+	}
+	return fmt.Errorf("%s: %w", path, err)
 }
 
 func outputSink(w io.Writer, format outputFormat, wopts rinex.WriterOptions) (rinex.Sink, error) {
@@ -238,20 +271,32 @@ func outputSink(w io.Writer, format outputFormat, wopts rinex.WriterOptions) (ri
 	}
 }
 
-func convertObsJSON(in io.Reader, out io.Writer, to outputFormat, meta rinex.Metadata, wopts rinex.WriterOptions) error {
-	fileMeta, obs, err := rinex.ReadObsJSON(in)
-	if err != nil {
-		return err
+func convertObservationInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, meta rinex.Metadata, wopts rinex.WriterOptions) error {
+	var fileMeta rinex.Metadata
+	var obs []rinex.SignalObservation
+	for path, in := range inputs {
+		if in.err != nil {
+			return inputError(path, in.err)
+		}
+		m, o, err := readObservationInput(in.r, from)
+		if err != nil {
+			return inputError(path, err)
+		}
+		fileMeta = rinex.MergeMetadata(fileMeta, m)
+		obs = append(obs, o...)
 	}
 	return convertBufferedObservations(out, to, rinex.MergeMetadata(fileMeta, meta), obs, wopts)
 }
 
-func convertObservationFile(in io.Reader, out io.Writer, to outputFormat, meta rinex.Metadata, wopts rinex.WriterOptions) error {
-	fileMeta, obs, err := rinex.ReadObservationFile(in)
-	if err != nil {
-		return err
+func readObservationInput(in io.Reader, from inputFormat) (rinex.Metadata, []rinex.SignalObservation, error) {
+	switch from {
+	case inputRINEX:
+		return rinex.ReadObservationFile(in)
+	case inputObsJSON:
+		return rinex.ReadObsJSON(in)
+	default:
+		return rinex.Metadata{}, nil, fmt.Errorf("unsupported input format %q", from)
 	}
-	return convertBufferedObservations(out, to, rinex.MergeMetadata(fileMeta, meta), obs, wopts)
 }
 
 func convertBufferedObservations(out io.Writer, to outputFormat, meta rinex.Metadata, obs []rinex.SignalObservation, wopts rinex.WriterOptions) error {
@@ -283,7 +328,7 @@ func loadMetadata(dst *rinex.Metadata, path string, r io.Reader) error {
 	return nil
 }
 
-func convert(r io.Reader, conv *rinexubx.Converter) error {
+func convertPacketStream(r io.Reader, conv *rinexubx.Converter) (int, error) {
 	s := scan.New(r, scanBufSize, gpsreg.CreatePacketFormats(gpsreg.VendorUblox))
 	n := 0
 	for {
@@ -292,23 +337,20 @@ func convert(r io.Reader, conv *rinexubx.Converter) error {
 			break
 		}
 		if err != nil {
-			return err
+			return n, err
 		}
 		ok, err := convertPacket(pkt, conv)
 		if err != nil {
-			return err
+			return n, err
 		}
 		if ok {
 			n++
 		}
 	}
-	if n == 0 {
-		return errors.New("no UBX-RXM-RAWX messages found")
-	}
-	return nil
+	return n, nil
 }
 
-func convertPacketLog(r io.Reader, conv *rinexubx.Converter) error {
+func convertPacketLog(r io.Reader, conv *rinexubx.Converter) (int, error) {
 	s := bufio.NewScanner(r)
 	s.Buffer(make([]byte, 1024), 1024*1024)
 	n := 0
@@ -317,26 +359,23 @@ func convertPacketLog(r io.Reader, conv *rinexubx.Converter) error {
 		line++
 		var entry gpsio.PacketLogEntry
 		if err := json.Unmarshal(s.Bytes(), &entry); err != nil {
-			return fmt.Errorf("packet log line %d: %w", line, err)
+			return n, fmt.Errorf("packet log line %d: %w", line, err)
 		}
 		if entry.Out || entry.Data() == "" {
 			continue
 		}
 		ok, err := convertPacketData(entry.Data(), conv)
 		if err != nil {
-			return fmt.Errorf("packet log line %d: %w", line, err)
+			return n, fmt.Errorf("packet log line %d: %w", line, err)
 		}
 		if ok {
 			n++
 		}
 	}
 	if err := s.Err(); err != nil {
-		return err
+		return n, err
 	}
-	if n == 0 {
-		return errors.New("no UBX-RXM-RAWX messages found")
-	}
-	return nil
+	return n, nil
 }
 
 func convertPacketData(data string, conv *rinexubx.Converter) (bool, error) {

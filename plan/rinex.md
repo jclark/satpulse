@@ -180,14 +180,14 @@ not use filename inference for either input or output formats.
     observation model and metadata records. Wire this into `convobs` with
     `--from rinex`, enabling RINEX to `.obsj` conversion.
 
-11. Add explicit input selection to `convobs`. `--from raw` remains the packet
+11. Done: add support for multiple positional inputs to `convobs`. Process the
+    inputs in command-line order as consecutive chunks of one observation
+    stream, with stdin used only for an explicit `-` input.
+
+12. Add explicit input selection to `convobs`. `--from raw` remains the packet
     auto-detection mode, while `--from ubx`, `--from rtcm`, and future
     packet-protocol formats such as `uncb`, `unca`, `nova`, and `novb` force a
     known packet protocol.
-
-12. Add support for multiple positional inputs to `convobs`. Process the
-    inputs in command-line order as consecutive chunks of one observation
-    stream, with stdin used only for an explicit `-` input.
 
 13. Support RTCM MSM7 input. Add an MSM7 converter that emits
     `SignalObservation` records from RTCM MSM7 messages and metadata records
