@@ -25,7 +25,7 @@ import (
 const scanBufSize = 64 * 1024
 
 const summary = `[-h|--help] [-o|--output path] [--metadata path]
-           [-r|--from raw|ubx|obsj] [--packet-log] [--to rinex|obsj]
+           [-r|--from raw|ubx|rinex|obsj] [--packet-log] [--to rinex|obsj]
            [--marker-name name] [--marker-number number] [--marker-type type]
            [--observer name] [--agency name]
            [--receiver-number number] [--receiver-type type] [--receiver-version version]
@@ -39,6 +39,7 @@ type inputFormat string
 const (
 	inputRaw     inputFormat = "raw"
 	inputUBX     inputFormat = "ubx"
+	inputRINEX   inputFormat = "rinex"
 	inputObsJSON inputFormat = "obsj"
 )
 
@@ -173,7 +174,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 func (v *flagVars) setInputFormat(s string) error {
 	s = strings.ToLower(s)
 	switch inputFormat(s) {
-	case inputRaw, inputUBX, inputObsJSON:
+	case inputRaw, inputUBX, inputRINEX, inputObsJSON:
 		v.inputFormat = inputFormat(s)
 		return nil
 	default:
@@ -201,6 +202,9 @@ func run(in io.Reader, out io.Writer, meta rinex.Metadata, wopts rinex.WriterOpt
 }
 
 func runFormat(in io.Reader, out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rinexubx.Options) error {
+	if from == inputRINEX {
+		return convertObservationFile(in, out, to, meta, wopts)
+	}
 	if from == inputObsJSON {
 		return convertObsJSON(in, out, to, meta, wopts)
 	}
@@ -239,7 +243,18 @@ func convertObsJSON(in io.Reader, out io.Writer, to outputFormat, meta rinex.Met
 	if err != nil {
 		return err
 	}
-	meta = rinex.MergeMetadata(fileMeta, meta)
+	return convertBufferedObservations(out, to, rinex.MergeMetadata(fileMeta, meta), obs, wopts)
+}
+
+func convertObservationFile(in io.Reader, out io.Writer, to outputFormat, meta rinex.Metadata, wopts rinex.WriterOptions) error {
+	fileMeta, obs, err := rinex.ReadObservationFile(in)
+	if err != nil {
+		return err
+	}
+	return convertBufferedObservations(out, to, rinex.MergeMetadata(fileMeta, meta), obs, wopts)
+}
+
+func convertBufferedObservations(out io.Writer, to outputFormat, meta rinex.Metadata, obs []rinex.SignalObservation, wopts rinex.WriterOptions) error {
 	switch to {
 	case outputRINEX:
 		return rinex.WriteObservationFile(out, meta, obs, wopts)

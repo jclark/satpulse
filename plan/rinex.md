@@ -175,7 +175,7 @@ not use filename inference for either input or output formats.
    instead of raw binary packet streams and feeds the packet bytes through the
    same converter-selection path as raw input.
 
-10. Implement RINEX observation input. Add a RINEX observation reader in
+10. Done: implement RINEX observation input. Add a RINEX observation reader in
     `gps/lib/rinex` that reads RINEX observation files into the internal
     observation model and metadata records. Wire this into `convobs` with
     `--from rinex`, enabling RINEX to `.obsj` conversion.

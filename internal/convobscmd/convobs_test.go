@@ -13,6 +13,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rinex"
 	rinexubx "github.com/jclark/satpulse/gps/lib/rinex/ubx"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
@@ -75,8 +76,15 @@ func TestParseFlagsFormats(t *testing.T) {
 	if len(v.meta.Comments) != 0 {
 		t.Fatalf("obsj comments = %#v, want none", v.meta.Comments)
 	}
-	if _, _, err := parseFlags("", []string{"--from", "rinex", "input.obs"}); err == nil {
-		t.Fatal("parseFlags accepted unsupported rinex input")
+	v, _, err = parseFlags("", []string{"--from", "rinex", "--to", "obsj", "input.obs"})
+	if err != nil {
+		t.Fatalf("parseFlags rinex: %v", err)
+	}
+	if v.inputFormat != inputRINEX || v.outputFormat != outputObsJSON {
+		t.Fatalf("formats = %q, %q; want rinex, obsj", v.inputFormat, v.outputFormat)
+	}
+	if len(v.meta.Comments) != 0 {
+		t.Fatalf("rinex comments = %#v, want none", v.meta.Comments)
 	}
 	if _, _, err := parseFlags("", []string{"--to", "ubx", "input.ubx"}); err == nil {
 		t.Fatal("parseFlags accepted unsupported ubx output")
@@ -90,6 +98,9 @@ func TestParseFlagsFormats(t *testing.T) {
 	}
 	if _, _, err := parseFlags("", []string{"--packet-log", "--from", "obsj", "input.obsj"}); err == nil {
 		t.Fatal("parseFlags accepted packet log with obsj input")
+	}
+	if _, _, err := parseFlags("", []string{"--packet-log", "--from", "rinex", "input.obs"}); err == nil {
+		t.Fatal("parseFlags accepted packet log with rinex input")
 	}
 }
 
@@ -116,6 +127,49 @@ func TestRunObsJSONInput(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Fatalf("output does not contain %q\n%s", want, s)
 		}
+	}
+}
+
+func TestRunRINEXInput(t *testing.T) {
+	obs := []rinex.SignalObservation{
+		{
+			T:   mustTime(t, "2025-12-17T08:14:06.0080000"),
+			Sat: "R06",
+			Sig: "1C",
+			Frq: opt.Make(int8(-4)),
+			PR:  opt.Make(24968868.310),
+			CP:  opt.Make(133238671.287),
+			Do:  opt.Make(-2790.338),
+			CN0: opt.Make(float32(32)),
+		},
+	}
+	meta := rinex.Metadata{
+		MarkerName:   "FILE",
+		Comments:     []string{"from rinex"},
+		LeapSeconds:  opt.Make(int16(18)),
+		AntennaDelta: opt.Make([3]float64{1.25, 0, 0}),
+	}
+	var in bytes.Buffer
+	wopts := rinex.WriterOptions{Program: "test", Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}
+	if err := rinex.WriteObservationFile(&in, meta, obs, wopts); err != nil {
+		t.Fatalf("WriteObservationFile: %v", err)
+	}
+	var out bytes.Buffer
+	if err := runFormat(&in, &out, inputRINEX, outputObsJSON, false, rinex.Metadata{MarkerName: "FLAG"}, wopts, rinexubx.Options{}); err != nil {
+		t.Fatalf("runFormat rinex to obsj: %v", err)
+	}
+	gotMeta, gotObs, err := rinex.ReadObsJSON(strings.NewReader(out.String()))
+	if err != nil {
+		t.Fatalf("ReadObsJSON: %v\n%s", err, out.String())
+	}
+	if gotMeta.MarkerName != "FLAG" || gotMeta.LeapSeconds.Get() != 18 || gotMeta.AntennaDelta.Get()[0] != 1.25 {
+		t.Fatalf("metadata = %#v", gotMeta)
+	}
+	if len(gotMeta.Comments) != 1 || gotMeta.Comments[0] != "from rinex" {
+		t.Fatalf("comments = %#v", gotMeta.Comments)
+	}
+	if len(gotObs) != 1 || gotObs[0].Sat != "R06" || gotObs[0].Sig != "1C" || gotObs[0].Frq.Get() != -4 || !gotObs[0].CP.IsSet() {
+		t.Fatalf("observations = %#v", gotObs)
 	}
 }
 
@@ -228,6 +282,52 @@ func TestGoldenFiles(t *testing.T) {
 	}
 }
 
+func TestGoldenObservationFilesRoundTripThroughObsJSON(t *testing.T) {
+	now := time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		obs  string
+	}{
+		{
+			name: "m8t_20251217_4h",
+			obs:  filepath.Join("testdata", "m8t-20251217-4h.obs"),
+		},
+		{
+			name: "f9t_20251217_3h",
+			obs:  filepath.Join("testdata", "f9t-20251217-3h.obs"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in, err := os.ReadFile(tt.obs)
+			if err != nil {
+				t.Fatalf("ReadFile %s: %v", tt.obs, err)
+			}
+			wopts := rinex.WriterOptions{Program: "convobs", Date: now}
+			var obsj bytes.Buffer
+			if err := runFormat(bytes.NewReader(in), &obsj, inputRINEX, outputObsJSON, false, rinex.Metadata{}, wopts, rinexubx.Options{}); err != nil {
+				t.Fatalf("runFormat rinex to obsj: %v", err)
+			}
+			if _, obs, err := rinex.ReadObsJSON(bytes.NewReader(obsj.Bytes())); err != nil {
+				t.Fatalf("ReadObsJSON: %v", err)
+			} else if len(obs) == 0 {
+				t.Fatal("ReadObsJSON returned no observations")
+			}
+			var got bytes.Buffer
+			if err := runFormat(bytes.NewReader(obsj.Bytes()), &got, inputObsJSON, outputRINEX, false, rinex.Metadata{}, wopts, rinexubx.Options{}); err != nil {
+				t.Fatalf("runFormat obsj to rinex: %v", err)
+			}
+			if !bytes.Equal(got.Bytes(), in) {
+				gotPath := filepath.Join(t.TempDir(), "got.obs")
+				if err := os.WriteFile(gotPath, got.Bytes(), 0o644); err != nil {
+					t.Fatalf("WriteFile %s: %v", gotPath, err)
+				}
+				t.Fatalf("round trip mismatch; got written to %s; %s", gotPath, firstDiff(got.Bytes(), in))
+			}
+		})
+	}
+}
+
 func packetLogLine(t *testing.T, entry gpsio.PacketLogEntry) string {
 	t.Helper()
 	entry.T = gpsio.TimeMicro(time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC))
@@ -236,6 +336,15 @@ func packetLogLine(t *testing.T, entry gpsio.PacketLogEntry) string {
 		t.Fatalf("Marshal packet log entry: %v", err)
 	}
 	return string(b)
+}
+
+func mustTime(t *testing.T, s string) rinex.Time {
+	t.Helper()
+	var tm rinex.Time
+	if err := tm.UnmarshalText([]byte(s)); err != nil {
+		t.Fatalf("UnmarshalText(%q): %v", s, err)
+	}
+	return tm
 }
 
 func rawxPacket(t *testing.T) []byte {
