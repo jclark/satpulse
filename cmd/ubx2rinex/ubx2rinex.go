@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/rinex"
@@ -18,7 +20,9 @@ import (
 
 const scanBufSize = 64 * 1024
 
-type config struct {
+const summary = `[-h|--help] [options] input.ubx [output.obs]`
+
+type flagVars struct {
 	inputPath  string
 	outputPath string
 	metaPath   string
@@ -28,121 +32,149 @@ type config struct {
 }
 
 func main() {
-	cfg, usage, err := parseArgs(os.Args[1:])
+	usage, err := Cmd(os.Stderr, slog.LevelWarn, os.Args[0], "", os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, filepath.Base(os.Args[0])+":", err)
-		fmt.Fprint(os.Stderr, usage)
+	}
+	fmt.Fprint(os.Stderr, usage)
+	if err == nil {
+		return
+	}
+	if usage != "" {
 		os.Exit(2)
 	}
-	if err := run(cfg); err != nil {
-		fmt.Fprintln(os.Stderr, filepath.Base(os.Args[0])+":", err)
-		os.Exit(1)
-	}
+	os.Exit(1)
 }
 
-func parseArgs(args []string) (config, string, error) {
-	var cfg config
-	flags := pflag.NewFlagSet("ubx2rinex", pflag.ContinueOnError)
+// Cmd implements the ubx2rinex command.
+func Cmd(_ io.Writer, _ slog.Level, progName, cmdName string, args []string) (usage string, err error) {
+	v, usageFunc, err := parseArgs(cmdName, args)
+	if err != nil {
+		return usageFunc(progName), err
+	}
+	if v == nil {
+		return usageFunc(progName), nil
+	}
+	if v.wopts.Date.IsZero() {
+		v.wopts.Date = time.Now().UTC()
+	}
+	if v.metaPath != "" {
+		f, err := os.Open(v.metaPath)
+		if err != nil {
+			return "", err
+		}
+		defer f.Close()
+		if err := loadMetadata(&v.meta, v.metaPath, f); err != nil {
+			return "", err
+		}
+	}
+	var in io.Reader
+	if v.inputPath == "-" {
+		in = os.Stdin
+	} else {
+		f, err := os.Open(v.inputPath)
+		if err != nil {
+			return "", err
+		}
+		defer f.Close()
+		in = f
+	}
+	var out io.Writer = os.Stdout
+	if v.outputPath != "" && v.outputPath != "-" {
+		f, err := os.Create(v.outputPath)
+		if err != nil {
+			return "", err
+		}
+		defer f.Close()
+		out = f
+	}
+	return "", run(in, out, v.meta, v.wopts, v.uopts)
+}
+
+func parseArgs(cmdName string, args []string) (*flagVars, func(string) string, error) {
+	v := &flagVars{}
+	flagName := cmdName
+	if flagName == "" {
+		flagName = "ubx2rinex"
+	}
+	flags := pflag.NewFlagSet(flagName, pflag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	flags.StringVarP(&cfg.outputPath, "output", "o", "", "output RINEX observation file, or - for stdout")
-	flags.StringVar(&cfg.metaPath, "metadata", "", "JSON RINEX metadata file")
-	flags.StringVar(&cfg.meta.MarkerName, "marker-name", "", "RINEX marker name")
-	flags.StringVar(&cfg.meta.MarkerNumber, "marker-number", "", "RINEX marker number")
-	flags.StringVar(&cfg.meta.MarkerType, "marker-type", "", "RINEX marker type")
-	flags.StringVar(&cfg.meta.Observer, "observer", "", "RINEX observer")
-	flags.StringVar(&cfg.meta.Agency, "agency", "", "RINEX agency")
-	flags.StringVar(&cfg.meta.Receiver.Number, "receiver-number", "", "RINEX receiver number")
-	flags.StringVar(&cfg.meta.Receiver.Type, "receiver-type", "", "RINEX receiver type")
-	flags.StringVar(&cfg.meta.Receiver.Version, "receiver-version", "", "RINEX receiver version")
-	flags.StringVar(&cfg.meta.Antenna.Number, "antenna-number", "", "RINEX antenna number")
-	flags.StringVar(&cfg.meta.Antenna.Type, "antenna-type", "", "RINEX antenna type")
-	flags.StringVar(&cfg.wopts.Program, "program", "ubx2rinex", "RINEX program field")
-	flags.StringVar(&cfg.wopts.RunBy, "run-by", "", "RINEX run-by field")
-	flags.Uint8Var(&cfg.uopts.PhaseThreshold, "phase-threshold", 0, "RAWX cpStdev index at which carrier phase is omitted, or 0 for RTKLIB Explorer auto")
-	flags.Uint8Var(&cfg.uopts.SlipThreshold, "slip-threshold", 15, "RAWX cpStdev index that marks a cycle slip")
+	help := false
+	flags.BoolVarP(&help, "help", "h", false, "show help")
+	flags.StringVarP(&v.outputPath, "output", "o", "", "output RINEX observation file, or - for stdout")
+	flags.StringVar(&v.metaPath, "metadata", "", "JSON RINEX metadata file")
+	flags.StringVar(&v.meta.MarkerName, "marker-name", "", "RINEX marker name")
+	flags.StringVar(&v.meta.MarkerNumber, "marker-number", "", "RINEX marker number")
+	flags.StringVar(&v.meta.MarkerType, "marker-type", "", "RINEX marker type")
+	flags.StringVar(&v.meta.Observer, "observer", "", "RINEX observer")
+	flags.StringVar(&v.meta.Agency, "agency", "", "RINEX agency")
+	flags.StringVar(&v.meta.Receiver.Number, "receiver-number", "", "RINEX receiver number")
+	flags.StringVar(&v.meta.Receiver.Type, "receiver-type", "", "RINEX receiver type")
+	flags.StringVar(&v.meta.Receiver.Version, "receiver-version", "", "RINEX receiver version")
+	flags.StringVar(&v.meta.Antenna.Number, "antenna-number", "", "RINEX antenna number")
+	flags.StringVar(&v.meta.Antenna.Type, "antenna-type", "", "RINEX antenna type")
+	flags.StringVar(&v.wopts.Program, "program", "ubx2rinex", "RINEX program field")
+	flags.StringVar(&v.wopts.RunBy, "run-by", "", "RINEX run-by field")
+	flags.Uint8Var(&v.uopts.PhaseThreshold, "phase-threshold", 0, "RAWX cpStdev index at which carrier phase is omitted, or 0 for RTKLIB Explorer auto")
+	flags.Uint8Var(&v.uopts.SlipThreshold, "slip-threshold", 15, "RAWX cpStdev index that marks a cycle slip")
+	usageFunc := usage(cmdName, flags)
 	if err := flags.Parse(args); err != nil {
-		return cfg, usage(flags), err
+		return nil, usageFunc, err
+	}
+	if help {
+		return nil, usageFunc, nil
 	}
 	switch flags.NArg() {
 	case 1:
-		cfg.inputPath = flags.Arg(0)
+		v.inputPath = flags.Arg(0)
 	case 2:
-		cfg.inputPath = flags.Arg(0)
-		if cfg.outputPath != "" {
-			return cfg, usage(flags), errors.New("output specified both as argument and -o")
+		v.inputPath = flags.Arg(0)
+		if v.outputPath != "" {
+			return nil, usageFunc, errors.New("output specified both as argument and -o")
 		}
-		cfg.outputPath = flags.Arg(1)
+		v.outputPath = flags.Arg(1)
 	default:
-		return cfg, usage(flags), errors.New("expected input UBX file and optional output file")
+		return nil, usageFunc, errors.New("expected input UBX file and optional output file")
 	}
-	cfg.meta.Comments = append(cfg.meta.Comments, "format: u-blox UBX")
-	cfg.meta.Comments = append(cfg.meta.Comments, "options: -MULTICODE")
-	if cfg.inputPath == "-" {
-		cfg.meta.Comments = append(cfg.meta.Comments, "log: stdin")
+	v.meta.Comments = append(v.meta.Comments, "format: u-blox UBX")
+	v.meta.Comments = append(v.meta.Comments, "options: -MULTICODE")
+	if v.inputPath == "-" {
+		v.meta.Comments = append(v.meta.Comments, "log: stdin")
 	} else {
-		cfg.meta.Comments = append(cfg.meta.Comments, "log: "+cfg.inputPath)
+		v.meta.Comments = append(v.meta.Comments, "log: "+v.inputPath)
 	}
-	return cfg, "", nil
+	return v, usageFunc, nil
 }
 
-func usage(flags *pflag.FlagSet) string {
-	return "Usage: ubx2rinex [options] input.ubx [output.obs]\nOptions:\n" + flags.FlagUsages()
+func usage(cmdName string, flags *pflag.FlagSet) func(string) string {
+	return func(progName string) string {
+		name := progName
+		if cmdName != "" {
+			name += " " + cmdName
+		}
+		return fmt.Sprintf("Usage: %s %s\nOptions:\n%s", name, summary, flags.FlagUsages())
+	}
 }
 
-func run(cfg config) error {
-	in, err := openInput(cfg.inputPath)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := openOutput(cfg.outputPath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	sink := rinex.NewObservationSink(out, cfg.wopts)
-	meta, err := loadMetadata(cfg)
-	if err != nil {
-		return err
-	}
+func run(in io.Reader, out io.Writer, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rinexubx.Options) error {
+	sink := rinex.NewObservationSink(out, wopts)
 	if err := sink.Metadata(meta); err != nil {
 		return err
 	}
-	conv := rinexubx.New(sink, cfg.uopts)
+	conv := rinexubx.New(sink, uopts)
 	if err := convert(in, conv); err != nil {
 		return err
 	}
 	return sink.Flush()
 }
 
-func openInput(path string) (io.ReadCloser, error) {
-	if path == "-" {
-		return io.NopCloser(os.Stdin), nil
-	}
-	return os.Open(path)
-}
-
-func loadMetadata(cfg config) (rinex.Metadata, error) {
-	if cfg.metaPath == "" {
-		return cfg.meta, nil
-	}
-	f, err := os.Open(cfg.metaPath)
-	if err != nil {
-		return rinex.Metadata{}, err
-	}
-	defer f.Close()
+func loadMetadata(dst *rinex.Metadata, path string, r io.Reader) error {
 	var meta rinex.Metadata
-	if err := json.NewDecoder(f).Decode(&meta); err != nil {
-		return rinex.Metadata{}, fmt.Errorf("%s: %w", cfg.metaPath, err)
+	if err := json.NewDecoder(r).Decode(&meta); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
 	}
-	return rinex.MergeMetadata(meta, cfg.meta), nil
-}
-
-func openOutput(path string) (io.WriteCloser, error) {
-	if path == "" || path == "-" {
-		return nopWriteCloser{os.Stdout}, nil
-	}
-	return os.Create(path)
+	*dst = rinex.MergeMetadata(meta, *dst)
+	return nil
 }
 
 func convert(r io.Reader, conv *rinexubx.Converter) error {
@@ -190,13 +222,5 @@ func convert(r io.Reader, conv *rinexubx.Converter) error {
 	if n == 0 {
 		return errors.New("no UBX-RXM-RAWX messages found")
 	}
-	return nil
-}
-
-type nopWriteCloser struct {
-	io.Writer
-}
-
-func (w nopWriteCloser) Close() error {
 	return nil
 }
