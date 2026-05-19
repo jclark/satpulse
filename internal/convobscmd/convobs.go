@@ -2,6 +2,7 @@
 package convobscmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/rinex"
 	rinexubx "github.com/jclark/satpulse/gps/lib/rinex/ubx"
@@ -23,7 +25,7 @@ import (
 const scanBufSize = 64 * 1024
 
 const summary = `[-h|--help] [-o|--output path] [--metadata path]
-           [-r|--from raw|ubx|obsj] [--to rinex|obsj]
+           [-r|--from raw|ubx|obsj] [--packet-log] [--to rinex|obsj]
            [--marker-name name] [--marker-number number] [--marker-type type]
            [--observer name] [--agency name]
            [--receiver-number number] [--receiver-type type] [--receiver-version version]
@@ -51,6 +53,7 @@ type flagVars struct {
 	inputPath    string
 	outputPath   string
 	metaPath     string
+	packetLog    bool
 	inputFormat  inputFormat
 	outputFormat outputFormat
 	meta         rinex.Metadata
@@ -100,7 +103,7 @@ func Cmd(_ io.Writer, _ slog.Level, progName, cmdName string, args []string) (us
 		defer f.Close()
 		out = f
 	}
-	return "", runFormat(in, out, v.inputFormat, v.outputFormat, v.meta, v.wopts, v.uopts)
+	return "", runFormat(in, out, v.inputFormat, v.outputFormat, v.packetLog, v.meta, v.wopts, v.uopts)
 }
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
@@ -116,6 +119,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.StringVarP(&v.outputPath, "output", "o", "", "output observation file, or - for stdout")
 	flags.StringVarP(&from, "from", "r", from, "input observation format")
+	flags.BoolVar(&v.packetLog, "packet-log", false, "input is a JSONL packet log")
 	flags.StringVar(&to, "to", to, "output observation format")
 	flags.StringVar(&v.metaPath, "metadata", "", "JSON RINEX metadata file")
 	flags.StringVar(&v.meta.MarkerName, "marker-name", "", "RINEX marker name")
@@ -144,6 +148,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if err := v.setOutputFormat(to); err != nil {
 		return nil, usageFunc, err
+	}
+	if v.packetLog && !v.inputFormat.packetInput() {
+		return nil, usageFunc, errors.New("--packet-log is valid only with packet input formats")
 	}
 	switch flags.NArg() {
 	case 1:
@@ -190,10 +197,10 @@ func (f inputFormat) packetInput() bool {
 }
 
 func run(in io.Reader, out io.Writer, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rinexubx.Options) error {
-	return runFormat(in, out, inputRaw, outputRINEX, meta, wopts, uopts)
+	return runFormat(in, out, inputRaw, outputRINEX, false, meta, wopts, uopts)
 }
 
-func runFormat(in io.Reader, out io.Writer, from inputFormat, to outputFormat, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rinexubx.Options) error {
+func runFormat(in io.Reader, out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rinexubx.Options) error {
 	if from == inputObsJSON {
 		return convertObsJSON(in, out, to, meta, wopts)
 	}
@@ -205,7 +212,12 @@ func runFormat(in io.Reader, out io.Writer, from inputFormat, to outputFormat, m
 		return err
 	}
 	conv := rinexubx.New(sink, uopts)
-	if err := convert(in, conv); err != nil {
+	if packetLog {
+		err = convertPacketLog(in, conv)
+	} else {
+		err = convert(in, conv)
+	}
+	if err != nil {
 		return err
 	}
 	return sink.Flush()
@@ -267,39 +279,99 @@ func convert(r io.Reader, conv *rinexubx.Converter) error {
 		if err != nil {
 			return err
 		}
-		if pkt.ReadError != nil {
-			return pkt.ReadError
-		}
-		if pkt.Format == nil {
-			if len(pkt.Data) != 0 {
-				return fmt.Errorf("invalid input data before packet: %d bytes", len(pkt.Data))
-			}
-			continue
-		}
-		if !pkt.HasTag(gpsreg.TagUBX) {
-			continue
-		}
-		if !pkt.ChecksumValid {
-			return pkt.ChecksumError()
-		}
-		if ubxbin.PacketMsgId(pkt.Data) != ubxbin.RxmRawxID {
-			continue
-		}
-		msg, err := ubxbin.ParseMsg(pkt.Data)
+		ok, err := convertPacket(pkt, conv)
 		if err != nil {
 			return err
 		}
-		rawx, ok := msg.(*ubxbin.RxmRawx)
-		if !ok {
-			continue
+		if ok {
+			n++
 		}
-		if err := conv.ConvertRAWX(rawx); err != nil {
-			return err
-		}
-		n++
 	}
 	if n == 0 {
 		return errors.New("no UBX-RXM-RAWX messages found")
 	}
 	return nil
+}
+
+func convertPacketLog(r io.Reader, conv *rinexubx.Converter) error {
+	s := bufio.NewScanner(r)
+	s.Buffer(make([]byte, 1024), 1024*1024)
+	n := 0
+	line := 0
+	for s.Scan() {
+		line++
+		var entry gpsio.PacketLogEntry
+		if err := json.Unmarshal(s.Bytes(), &entry); err != nil {
+			return fmt.Errorf("packet log line %d: %w", line, err)
+		}
+		if entry.Out || entry.Data() == "" {
+			continue
+		}
+		ok, err := convertPacketData(entry.Data(), conv)
+		if err != nil {
+			return fmt.Errorf("packet log line %d: %w", line, err)
+		}
+		if ok {
+			n++
+		}
+	}
+	if err := s.Err(); err != nil {
+		return err
+	}
+	if n == 0 {
+		return errors.New("no UBX-RXM-RAWX messages found")
+	}
+	return nil
+}
+
+func convertPacketData(data string, conv *rinexubx.Converter) (bool, error) {
+	s := scan.New(strings.NewReader(data), scanBufSize, gpsreg.CreatePacketFormats(gpsreg.VendorUblox))
+	n := 0
+	for {
+		pkt, err := s.Scan()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return false, err
+		}
+		ok, err := convertPacket(pkt, conv)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			n++
+		}
+	}
+	return n != 0, nil
+}
+
+func convertPacket(pkt scan.Packet, conv *rinexubx.Converter) (bool, error) {
+	if pkt.ReadError != nil {
+		return false, pkt.ReadError
+	}
+	if pkt.Format == nil {
+		if len(pkt.Data) != 0 {
+			return false, fmt.Errorf("invalid input data before packet: %d bytes", len(pkt.Data))
+		}
+		return false, nil
+	}
+	if !pkt.HasTag(gpsreg.TagUBX) {
+		return false, nil
+	}
+	if !pkt.ChecksumValid {
+		return false, pkt.ChecksumError()
+	}
+	if ubxbin.PacketMsgId(pkt.Data) != ubxbin.RxmRawxID {
+		return false, nil
+	}
+	msg, err := ubxbin.ParseMsg(pkt.Data)
+	if err != nil {
+		return false, err
+	}
+	rawx, ok := msg.(*ubxbin.RxmRawx)
+	if !ok {
+		return false, nil
+	}
+	return true, conv.ConvertRAWX(rawx)
 }

@@ -2,6 +2,7 @@ package convobscmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/rinex"
 	rinexubx "github.com/jclark/satpulse/gps/lib/rinex/ubx"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
@@ -78,6 +81,16 @@ func TestParseFlagsFormats(t *testing.T) {
 	if _, _, err := parseFlags("", []string{"--to", "ubx", "input.ubx"}); err == nil {
 		t.Fatal("parseFlags accepted unsupported ubx output")
 	}
+	v, _, err = parseFlags("", []string{"--packet-log", "--from", "raw", "input.jsonl"})
+	if err != nil {
+		t.Fatalf("parseFlags packet log: %v", err)
+	}
+	if !v.packetLog {
+		t.Fatal("packetLog = false, want true")
+	}
+	if _, _, err := parseFlags("", []string{"--packet-log", "--from", "obsj", "input.obsj"}); err == nil {
+		t.Fatal("parseFlags accepted packet log with obsj input")
+	}
 }
 
 func TestRunObsJSONInput(t *testing.T) {
@@ -89,7 +102,7 @@ func TestRunObsJSONInput(t *testing.T) {
 	var got bytes.Buffer
 	meta := rinex.Metadata{MarkerName: "FLAG"}
 	wopts := rinex.WriterOptions{Program: "test", Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}
-	if err := runFormat(strings.NewReader(data), &got, inputObsJSON, outputRINEX, meta, wopts, rinexubx.Options{}); err != nil {
+	if err := runFormat(strings.NewReader(data), &got, inputObsJSON, outputRINEX, false, meta, wopts, rinexubx.Options{}); err != nil {
 		t.Fatalf("runFormat obsj to rinex: %v", err)
 	}
 	s := got.String()
@@ -110,7 +123,7 @@ func TestRunObsJSONOutput(t *testing.T) {
 	pkt := rawxPacket(t)
 	var got bytes.Buffer
 	meta := rinex.Metadata{MarkerName: "JSONL"}
-	if err := runFormat(bytes.NewReader(pkt), &got, inputRaw, outputObsJSON, meta, rinex.WriterOptions{}, rinexubx.Options{}); err != nil {
+	if err := runFormat(bytes.NewReader(pkt), &got, inputRaw, outputObsJSON, false, meta, rinex.WriterOptions{}, rinexubx.Options{}); err != nil {
 		t.Fatalf("runFormat raw to obsj: %v", err)
 	}
 	fileMeta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -119,6 +132,33 @@ func TestRunObsJSONOutput(t *testing.T) {
 	}
 	if fileMeta.MarkerName != "JSONL" {
 		t.Fatalf("MarkerName = %q, want JSONL", fileMeta.MarkerName)
+	}
+	if len(obs) != 1 {
+		t.Fatalf("len observations = %d, want 1\n%s", len(obs), got.String())
+	}
+	if obs[0].Sat != "G03" || obs[0].Sig != "1C" || !obs[0].PR.IsSet() || !obs[0].CP.IsSet() {
+		t.Fatalf("observation = %#v", obs[0])
+	}
+}
+
+func TestRunPacketLogInput(t *testing.T) {
+	pkt := rawxPacket(t)
+	log := strings.Join([]string{
+		packetLogLine(t, gpsio.PacketLogEntry{Out: true, Tag: gpsreg.TagUBX, Msg: "RXM-RAWX", Bin: gpsio.HexString(pkt)}),
+		packetLogLine(t, gpsio.PacketLogEntry{Tag: gpsreg.TagUBX, Msg: "RXM-RAWX", Bin: gpsio.HexString(pkt)}),
+		"",
+	}, "\n")
+	var got bytes.Buffer
+	meta := rinex.Metadata{MarkerName: "PKTLOG"}
+	if err := runFormat(strings.NewReader(log), &got, inputRaw, outputObsJSON, true, meta, rinex.WriterOptions{}, rinexubx.Options{}); err != nil {
+		t.Fatalf("runFormat packet log to obsj: %v", err)
+	}
+	fileMeta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
+	if err != nil {
+		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
+	}
+	if fileMeta.MarkerName != "PKTLOG" {
+		t.Fatalf("MarkerName = %q, want PKTLOG", fileMeta.MarkerName)
 	}
 	if len(obs) != 1 {
 		t.Fatalf("len observations = %d, want 1\n%s", len(obs), got.String())
@@ -186,6 +226,16 @@ func TestGoldenFiles(t *testing.T) {
 			}
 		})
 	}
+}
+
+func packetLogLine(t *testing.T, entry gpsio.PacketLogEntry) string {
+	t.Helper()
+	entry.T = gpsio.TimeMicro(time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC))
+	b, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("Marshal packet log entry: %v", err)
+	}
+	return string(b)
 }
 
 func rawxPacket(t *testing.T) []byte {

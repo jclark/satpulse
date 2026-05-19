@@ -171,7 +171,7 @@ not use filename inference for either input or output formats.
     `Metadata`, merges metadata, and feeds the RINEX observation writer. Wire
     this into `convobs` with `--from obsj`.
 
-9. Add `--packet-log` input mode. This mode reads SatPulse JSONL packet logs
+9. Done: add `--packet-log` input mode. This mode reads SatPulse JSONL packet logs
    instead of raw binary packet streams and feeds the packet bytes through the
    same converter-selection path as raw input.
 
