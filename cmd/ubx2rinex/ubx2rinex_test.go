@@ -20,7 +20,6 @@ func TestLoadMetadata(t *testing.T) {
 		"--metadata", path,
 		"--marker-name", "FLAG",
 		"input.ubx",
-		"output.obs",
 	})
 	if err != nil {
 		t.Fatalf("parseArgs: %v", err)
@@ -46,11 +45,15 @@ func TestParseArgsRequiresInput(t *testing.T) {
 		t.Fatal("parseArgs succeeded without input")
 	}
 	v, _, err := parseArgs("", []string{"-", "-"})
+	if err == nil {
+		t.Fatal("parseArgs succeeded with positional output")
+	}
+	v, _, err = parseArgs("", []string{"-"})
 	if err != nil {
 		t.Fatalf("parseArgs dash input: %v", err)
 	}
-	if v.inputPath != "-" || v.outputPath != "-" {
-		t.Fatalf("inputPath = %q, outputPath = %q, want dash", v.inputPath, v.outputPath)
+	if v.inputPath != "-" {
+		t.Fatalf("inputPath = %q, want dash", v.inputPath)
 	}
 }
 
@@ -80,7 +83,7 @@ func TestGoldenFiles(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, _, err := parseArgs("", []string{tt.ubx, "-"})
+			v, _, err := parseArgs("", []string{tt.ubx})
 			if err != nil {
 				t.Fatalf("parseArgs: %v", err)
 			}

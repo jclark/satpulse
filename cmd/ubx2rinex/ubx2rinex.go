@@ -20,7 +20,14 @@ import (
 
 const scanBufSize = 64 * 1024
 
-const summary = `[-h|--help] [options] input.ubx [output.obs]`
+const summary = `[-h|--help] [-o|--output path] [--metadata path]
+           [--marker-name name] [--marker-number number] [--marker-type type]
+           [--observer name] [--agency name]
+           [--receiver-number number] [--receiver-type type] [--receiver-version version]
+           [--antenna-number number] [--antenna-type type]
+           [--program name] [--run-by name]
+           [--phase-threshold n] [--slip-threshold n]
+           input.ubx`
 
 type flagVars struct {
 	inputPath  string
@@ -127,14 +134,8 @@ func parseArgs(cmdName string, args []string) (*flagVars, func(string) string, e
 	switch flags.NArg() {
 	case 1:
 		v.inputPath = flags.Arg(0)
-	case 2:
-		v.inputPath = flags.Arg(0)
-		if v.outputPath != "" {
-			return nil, usageFunc, errors.New("output specified both as argument and -o")
-		}
-		v.outputPath = flags.Arg(1)
 	default:
-		return nil, usageFunc, errors.New("expected input UBX file and optional output file")
+		return nil, usageFunc, errors.New("expected exactly one input UBX file")
 	}
 	v.meta.Comments = append(v.meta.Comments, "format: u-blox UBX")
 	v.meta.Comments = append(v.meta.Comments, "options: -MULTICODE")
