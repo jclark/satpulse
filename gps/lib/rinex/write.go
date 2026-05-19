@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/jclark/satpulse/gps/lib/opt"
 )
+
+const obsValueWidth = 14
 
 const (
 	defaultRINEXVersion = 3.04
@@ -350,31 +353,34 @@ func writeGLONASSFreq(w *bufio.Writer, frq map[SatelliteID]int8) error {
 }
 
 func writeEpochs(w *bufio.Writer, f *obsFile) error {
+	line := make([]byte, 0, 256)
 	for _, e := range f.epochs {
 		tm := e.t.UTC()
 		sec := float64(tm.Second()) + float64(tm.Nanosecond())/1e9
-		content := fmt.Sprintf("> %04d %02d %02d %02d %02d %s  0%3d", tm.Year(), tm.Month(), tm.Day(), tm.Hour(), tm.Minute(), secondField(sec), len(e.sats))
-		if _, err := fmt.Fprintf(w, "%-56s\n", content); err != nil {
+		line = line[:0]
+		line = fmt.Appendf(line, "> %04d %02d %02d %02d %02d %s  0%3d", tm.Year(), tm.Month(), tm.Day(), tm.Hour(), tm.Minute(), secondField(sec), len(e.sats))
+		for len(line) < 56 {
+			line = append(line, ' ')
+		}
+		line = append(line, '\n')
+		if _, err := w.Write(line); err != nil {
 			return err
 		}
 		for _, sat := range e.sats {
-			if _, err := fmt.Fprint(w, sat); err != nil {
-				return err
-			}
+			line = line[:0]
+			line = append(line, string(sat)...)
 			codes := f.codes[sat.System()]
+			fields := e.obs[sat]
 			for _, code := range codes {
-				field, ok := e.obs[sat][code]
+				field, ok := fields[code]
 				if !ok {
-					if _, err := fmt.Fprint(w, "                "); err != nil {
-						return err
-					}
+					line = append(line, "                "...)
 					continue
 				}
-				if err := writeObsField(w, field); err != nil {
-					return err
-				}
+				line = appendObsField(line, field)
 			}
-			if _, err := fmt.Fprint(w, "\n"); err != nil {
+			line = append(line, '\n')
+			if _, err := w.Write(line); err != nil {
 				return err
 			}
 		}
@@ -386,19 +392,23 @@ func secondField(sec float64) string {
 	return fmt.Sprintf("%010.7f", sec)
 }
 
-func writeObsField(w *bufio.Writer, field obsField) error {
-	lli := ' '
-	ssi := ' '
+func appendObsField(line []byte, field obsField) []byte {
+	lli := byte(' ')
+	ssi := byte(' ')
 	if field.lli.IsSet() {
-		lli = rune('0' + uint8(field.lli.Get()))
+		lli = '0' + uint8(field.lli.Get())
 	}
 	if field.ssi.IsSet() {
-		ssi = rune('0' + field.ssi.Get())
+		ssi = '0' + field.ssi.Get()
 	}
-	if !field.val.IsSet() {
-		_, err := fmt.Fprintf(w, "%14s%c%c", "", lli, ssi)
-		return err
+	var tmp [32]byte
+	text := tmp[:0]
+	if field.val.IsSet() {
+		text = strconv.AppendFloat(text, field.val.Get(), 'f', 3, 64)
 	}
-	_, err := fmt.Fprintf(w, "%14.3f%c%c", field.val.Get(), lli, ssi)
-	return err
+	for i := len(text); i < obsValueWidth; i++ {
+		line = append(line, ' ')
+	}
+	line = append(line, text...)
+	return append(line, lli, ssi)
 }
