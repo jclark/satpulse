@@ -18,23 +18,19 @@ import (
 const ObsJSONExtension = ".obsj"
 
 const (
-	tickNs     int64 = 100 // Time is in ticks that correspond to tickNs nanoseconds
-	msPerWeek        = 7 * 24 * 60 * 60 * 1000
-	timeLayout       = "2006-01-02T15:04:05.0000000"
+	tickNs               int64 = 100 // Time is in ticks that correspond to tickNs nanoseconds
+	msPerWeek                  = 7 * 24 * 60 * 60 * 1000
+	defaultGPSUTCSeconds       = 18
+	bdtGPSOffsetSeconds        = 14
+	timeLayout                 = "2006-01-02T15:04:05.0000000"
 )
 
 // Epoch is the calendar label used as the zero point for Time.
 var Epoch = time.Date(1980, time.January, 6, 0, 0, 0, 0, time.UTC)
 
-// Time represents an instant in either the GPS or UTC time scale.
-// Time is measured as 100 ns ticks from Epoch.
-// The GPS time scale uses elapsed physical time, which includes leap seconds.
-// The UTC time scale excludes leap seconds, treating each day
-// as having 86400 seconds.
-// The text form is ISO8601 with 7 digits of fractional precision and no time zone.
-// For a UTC instant whose RFC3339 UTC representation is S+00:00, the text form is S.
-// For a GPS instant at the same physical time, the text form is GPS-UTC
-// seconds after S.
+// Time represents GPS time as 100 ns ticks from Epoch.
+// The text form is the GPS-time calendar label with 7 digits of fractional
+// precision and no time zone.
 type Time int64
 
 // SatelliteID is a RINEX satellite identifier, such as G03 or E11.
@@ -67,6 +63,8 @@ const (
 
 // SignalObservation holds measurements for one satellite signal at one epoch.
 // It is the JSONL record type for an obsj file and can expand to RINEX C/L/D/S observation codes.
+// T is always in GPS time, independent of the satellite constellation or the
+// time system used by an input or output RINEX file.
 type SignalObservation struct {
 	T   Time             `json:"t"`            // RINEX observation time label
 	Sat SatelliteID      `json:"sat"`          // RINEX satellite identifier, e.g. G03
@@ -93,7 +91,7 @@ type Metadata struct {
 	Antenna        Antenna             `json:"antenna,omitzero"`
 	ApproxPosition opt.Val[[3]float64] `json:"approxPosition,omitzero"` // APPROX POSITION XYZ, meters
 	AntennaDelta   opt.Val[[3]float64] `json:"antennaDelta,omitzero"`   // ANTENNA: DELTA H/E/N, meters
-	LeapSeconds    opt.Val[int16]      `json:"leapSeconds,omitzero"`    // TAI-UTC offset
+	LeapSeconds    opt.Val[int16]      `json:"leapSeconds,omitzero"`    // GPS-UTC offset
 }
 
 // Receiver describes the receiver used for a RINEX observation file.
@@ -140,9 +138,7 @@ type ObsJSONSink struct {
 
 // String formats t as an ISO8601 time label without a timezone suffix.
 func (t Time) String() string {
-	sec, tick := divMod(int64(t), 1e9/tickNs)
-	tm := time.Unix(Epoch.Unix()+sec, tick*tickNs).UTC()
-	return tm.Format(timeLayout)
+	return t.CivilTime().Format(timeLayout)
 }
 
 // MarshalText formats t as an ISO8601 time label without a timezone suffix.
@@ -156,7 +152,7 @@ func (t *Time) UnmarshalText(text []byte) error {
 	if err != nil {
 		return fmt.Errorf("rinex: invalid time %q: %w", text, err)
 	}
-	*t = Time(((tm.Unix()-Epoch.Unix())*1e9 + int64(tm.Nanosecond())) / tickNs)
+	*t = TimeFromCivilTime(tm)
 	return nil
 }
 
@@ -165,13 +161,17 @@ func FloorTime(tm time.Time) time.Time {
 	return tm.UTC().Truncate(time.Duration(tickNs) * time.Nanosecond)
 }
 
-// TimeFromUTC converts a UTC time.Time to a Time using the UTC scale.
-func TimeFromUTC(tm time.Time) Time {
+// TimeFromCivilTime converts the instant tm to a Time.
+// No leap-second adjustment is applied, so a tm in time.UTC maps to the Time
+// with the same civil label. It is the inverse of CivilTime.
+func TimeFromCivilTime(tm time.Time) Time {
 	return Time(FloorTime(tm).Sub(Epoch).Nanoseconds() / tickNs)
 }
 
-// UTC converts t from the UTC scale to a time.Time.
-func (t Time) UTC() time.Time {
+// CivilTime converts t to a time.Time in time.UTC.
+// No leap-second adjustment is applied, so the result has the same civil label
+// as t. It is the inverse of TimeFromCivilTime.
+func (t Time) CivilTime() time.Time {
 	sec, nsec := divMod(int64(t)*tickNs, 1e9)
 	return time.Unix(Epoch.Unix()+sec, nsec).UTC()
 }
@@ -507,4 +507,49 @@ func observationTypeIndex(b byte) int {
 		return 4
 	}
 	return i
+}
+
+func sortWriterObservationCodes(sys string, codes []ObservationCode) {
+	for i := 1; i < len(codes); i++ {
+		for j := i; j > 0 && lessWriterObservationCode(sys, codes[j], codes[j-1]); j-- {
+			codes[j], codes[j-1] = codes[j-1], codes[j]
+		}
+	}
+}
+
+func lessWriterObservationCode(sys string, a, b ObservationCode) bool {
+	as := string(a)
+	bs := string(b)
+	if len(as) != 3 || len(bs) != 3 {
+		return as < bs
+	}
+	ai, aok := writerSignalIndex(sys, as[1:])
+	bi, bok := writerSignalIndex(sys, bs[1:])
+	if aok || bok {
+		if ai != bi {
+			return ai < bi
+		}
+		return observationTypeIndex(as[0]) < observationTypeIndex(bs[0])
+	}
+	return lessObservationCode(a, b)
+}
+
+func writerSignalIndex(sys, sig string) (int, bool) {
+	if sigs, ok := writerSignalOrder[sys]; ok {
+		for i, s := range sigs {
+			if sig == s {
+				return i, true
+			}
+		}
+		return len(sigs), false
+	}
+	return 0, false
+}
+
+var writerSignalOrder = map[string][]string{
+	"G": {"1C", "2W", "5Q"},
+	"R": {"1C", "2C"},
+	"E": {"1C", "7Q", "5Q"},
+	"J": {"1C", "2X", "5Q"},
+	"C": {"2I", "7I", "7D", "5P", "6I", "1P"},
 }

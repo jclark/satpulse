@@ -16,6 +16,15 @@ field, it is a `SignalObservation`; otherwise it is `Metadata`.
 the RINEX-style satellite identifier, RINEX signal identifier, observation time,
 and the observation values needed to produce RINEX C/L/D/S records. GLONASS
 FDMA frequency channel is carried on the observation when known.
+Observation time is always represented in GPS time (GPST), even for GLONASS
+and for observations read from single-constellation RINEX files that use a
+different RINEX file time system. This keeps `.obsj` suitable for mixed-GNSS
+and PPP workflows. RINEX file time systems are handled only at the RINEX
+reader boundary. The RINEX writer deliberately writes `GPS` as the file time
+system for every observation file, including single-constellation files. RINEX
+defaults pure GLONASS, BDS, and other single-system files to their native
+system time only when the time-system identifier is omitted; explicit `GPS`
+keeps the file aligned with the `.obsj` time model.
 
 `Metadata` carries scraps of information that correspond to RINEX observation
 header fields. Metadata records may appear anywhere in the file. A RINEX writer
@@ -194,22 +203,30 @@ not use filename inference for either input or output formats.
     signal. Wire this into `convobs` so raw, `.obsj`, and RINEX inputs can all
     be decimated before writing RINEX or `.obsj`.
 
-13. Write a `satpulsetool-convobs.1` man page following the existing
+13. Done: add explicit input selection to `convobs`. `--from raw` remains the
+    packet auto-detection mode, while `--from ubx`, `--from rtcm`, and future
+    packet-protocol formats such as `uncb`, `unca`, `nova`, and `novb` force a
+    known packet protocol.
+
+14. Done: support RTCM MSM7 input, split into these implementation substeps:
+    a) Done: update `gps/lib/rtcmbin` with RTCM-to-RINEX satellite-system,
+    satellite-number, and signal mapping helpers, with focused tests covering
+    valid, reserved, and unknown RTCM IDs.
+    b) Done: add a new `gps/lib/rinex/rtcm` package that converts parsed RTCM
+    MSM7 messages into `SignalObservation` records and relevant station,
+    receiver, and antenna messages into metadata records. It converts each MSM7
+    message independently, without buffering MSM fragments, and uses the
+    `rtcmbin` mapping helpers for RINEX identifiers.
+    c) Done: wire RTCM input into `convobs`, including raw and packet-log RTCM
+    selection, week-inference options and warnings, passing constraints to
+    `rinex/rtcm`, and routing emitted observations and metadata to RINEX or
+    `.obsj` output.
+
+15. Write a `satpulsetool-convobs.1` man page following the existing
     `docs/man/satpulsetool-*.1.md` pattern. Document the command synopsis,
     input and output formats, multiple input behavior, stdin handling,
     packet-log mode, metadata options, and examples for raw, packet-log,
     `.obsj`, and RINEX conversions.
-
-14. Add explicit input selection to `convobs`. `--from raw` remains the packet
-    auto-detection mode, while `--from ubx`, `--from rtcm`, and future
-    packet-protocol formats such as `uncb`, `unca`, `nova`, and `novb` force a
-    known packet protocol.
-
-15. Support RTCM MSM7 input. Add an MSM7 converter that emits
-    `SignalObservation` records from RTCM MSM7 messages and metadata records
-    from relevant station, receiver, and antenna messages. It should convert
-    each MSM7 message independently, without buffering MSM fragments, and map
-    RTCM satellite and signal IDs to RINEX identifiers.
 
 ## UBX conversion
 
@@ -358,8 +375,10 @@ RTCM MSM messages do not carry a complete date. Their epoch field identifies
 the time within a constellation-specific repeat cycle. GPS, Galileo, QZSS,
 SBAS, NavIC, and BeiDou MSM epochs repeat weekly because they carry a
 time-of-week in milliseconds. BeiDou carries BDT time-of-week, which must be
-converted to the output time scale. GLONASS MSM epochs also repeat weekly
-because they carry a day-of-week plus a time-of-day in the GLONASS time scale.
+converted to GPST before emitting a `SignalObservation`. GLONASS MSM epochs
+also repeat weekly because they carry a day-of-week plus a time-of-day in the
+GLONASS time scale; these epochs must be converted to GPST using GPS-UTC leap
+seconds before emitting a `SignalObservation`.
 For normal GLONASS MSM, the day within the week is present and the missing
 component is still the absolute week. If the GLONASS day-of-week value is 7,
 the day is unknown; resolution must then come from existing stream context or
@@ -411,9 +430,11 @@ There are three stages:
    In packet-log mode, each RTCM message gets a tight interval derived from
    the packet-log timestamp, using a generous one-minute slack on either side
    of the timestamp. In direct file mode, `convobs` constructs one interval for
-   the file and supplies it with the first RTCM message in that file that needs
-   epoch resolution. Later messages normally omit the interval and rely on the
-   RTCM converter's continuity state.
+   the file and supplies it with the first RTCM message in that file. The RTCM
+   converter stores that interval before dispatch, so metadata or other
+   non-MSM7 messages can carry the file interval for the first later MSM
+   message in each GNSS. Later messages normally omit the interval and rely on
+   the RTCM converter's continuity state.
 2. The per-message caller passes the RTCM message to `rinex/rtcm` together
    with only the optional `TimeInterval`. The `WeekConstraint` itself stays in
    `convobs`, at the layer that calls the RINEX converter. In the current
@@ -425,19 +446,22 @@ There are three stages:
    converter has no usable time context and no interval is supplied, conversion
    fails.
 
-The RTCM converter owns the state needed for rollover. It may maintain
-separate week or day context for each GNSS internally, because constellation
-time scales and week starts are not all identical. That detail is hidden from
-`convobs`: a supplied interval establishes or checks the absolute stream time
-context for the current message, and the converter uses that context to
-initialize or update whatever per-GNSS state is needed. This also means that
+The RTCM converter owns the state needed for rollover and for conversion to
+GPST. It may maintain separate week or day context for each GNSS internally,
+because constellation time scales and week starts are not all identical. That
+detail is hidden from `convobs`: a supplied interval resolves the current
+message and updates the per-GNSS state. When no interval is supplied, the
+converter uses existing per-GNSS continuity state. This also means that
 `convobs` does not need to know which constellations appear in the RTCM stream.
 The rollover policy must distinguish plausible rollover from out-of-order
 packets, duplicated messages, and file splices; not every backward movement in
 time-of-week or GLONASS day-of-week/time-of-day should be treated as rollover.
-`rinex/rtcm` should defensively reject empty, unbounded, overlong, ambiguous,
-or context-inconsistent intervals, even though `convobs` is expected to
-validate intervals before passing them down.
+`rinex/rtcm` should panic on interval contract violations such as a zero start,
+an empty duration, or a duration greater than one week, even though `convobs`
+is expected to validate intervals before passing them down. Data-dependent
+resolution failures, such as no epoch matching the supplied interval or more
+than one matching epoch, are returned as errors. A supplied interval
+deliberately overrides existing continuity for the current message.
 
 For direct file input, `convobs` builds the file-level `WeekConstraint` by
 intersecting all applicable constraints. It should capture `now` once per file
@@ -503,8 +527,8 @@ which explicit option the user can provide instead.
 
 The RTCM observation converter handles MSM7 observation messages only.
 MSM1-6 messages are not used to emit `SignalObservation` records. Metadata
-messages such as 1005, 1006, 1007, 1008, 1033, and 1230 may still be consumed
-when present.
+messages such as 1005, 1006, 1007, 1008, 1013, 1033, and 1230 may still be
+consumed when present.
 
 Each MSM7 message is converted independently. Do not buffer MSM fragments. The
 MSM multiple message bit (DF393) may be used for cheap diagnostics, but the

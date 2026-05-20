@@ -12,9 +12,11 @@ import (
 )
 
 type observationHeader struct {
-	meta  Metadata
-	codes map[string][]ObservationCode
-	frq   map[SatelliteID]int8
+	meta       Metadata
+	codes      map[string][]ObservationCode
+	frq        map[SatelliteID]int8
+	sys        string
+	timeSystem string
 }
 
 // ReadObservationFile reads a RINEX observation file.
@@ -70,12 +72,24 @@ func readObservationHeader(s *bufio.Scanner) (observationHeader, error) {
 				h.meta.AntennaDelta = opt.Make(v)
 			}
 		case "SYS / # / OBS TYPES":
-			if err := readObsTypesHeader(content, h.codes, obsTypeCount); err != nil {
+			sys, err := readObsTypesHeader(content, h.sys, h.codes, obsTypeCount)
+			if err != nil {
 				return h, err
 			}
+			h.sys = sys
 		case "GLONASS SLOT / FRQ #":
 			if err := readGLONASSFreqHeader(content, h.frq); err != nil {
 				return h, err
+			}
+		case "TIME OF FIRST OBS":
+			if sys := readTimeSystem(content); sys != "" {
+				h.timeSystem = sys
+			}
+		case "TIME OF LAST OBS":
+			if h.timeSystem == "" {
+				if sys := readTimeSystem(content); sys != "" {
+					h.timeSystem = sys
+				}
 			}
 		case "LEAP SECONDS":
 			fields := strings.Fields(content)
@@ -87,6 +101,9 @@ func readObservationHeader(s *bufio.Scanner) (observationHeader, error) {
 				h.meta.LeapSeconds = opt.Make(int16(n))
 			}
 		case "END OF HEADER":
+			if h.timeSystem == "" {
+				h.timeSystem = fileTimeSystem(h.codes)
+			}
 			return h, s.Err()
 		}
 	}
@@ -98,6 +115,7 @@ func readObservationHeader(s *bufio.Scanner) (observationHeader, error) {
 
 func readObservationEpochs(s *bufio.Scanner, h observationHeader) ([]SignalObservation, error) {
 	var obs []SignalObservation
+	leapSeconds := gpsUTCSeconds(h.meta)
 	for s.Scan() {
 		line := s.Text()
 		if strings.TrimSpace(line) == "" {
@@ -110,6 +128,7 @@ func readObservationEpochs(s *bufio.Scanner, h observationHeader) ([]SignalObser
 		if err != nil {
 			return nil, err
 		}
+		t = fileToGPSTime(t, h.timeSystem, leapSeconds)
 		for i := 0; i < n; i++ {
 			if !s.Scan() {
 				if err := s.Err(); err != nil {
@@ -144,14 +163,21 @@ func parseFloatTriple(s string) ([3]float64, bool) {
 	return out, true
 }
 
-func readObsTypesHeader(content string, codes map[string][]ObservationCode, counts map[string]int) error {
+func readObsTypesHeader(content, prev string, codes map[string][]ObservationCode, counts map[string]int) (string, error) {
 	fields := strings.Fields(content)
 	if len(fields) == 0 {
-		return nil
+		return prev, nil
 	}
-	sys := fields[0]
-	i := 1
-	if len(fields) > 1 {
+	sys := prev
+	i := 0
+	if len(fields[0]) == 1 && strings.Contains("GRESJCI", fields[0]) {
+		sys = fields[0]
+		i = 1
+	}
+	if sys == "" {
+		return "", fmt.Errorf("rinex: observation type continuation without system")
+	}
+	if len(fields) > i {
 		if _, err := strconv.Atoi(fields[i]); err == nil {
 			counts[sys], _ = strconv.Atoi(fields[i])
 			i++
@@ -160,11 +186,11 @@ func readObsTypesHeader(content string, codes map[string][]ObservationCode, coun
 	for ; i < len(fields); i++ {
 		code := ObservationCode(fields[i])
 		if len(code) != 3 {
-			return fmt.Errorf("rinex: invalid observation code %q", fields[i])
+			return sys, fmt.Errorf("rinex: invalid observation code %q", fields[i])
 		}
 		codes[sys] = append(codes[sys], code)
 	}
-	return nil
+	return sys, nil
 }
 
 func readGLONASSFreqHeader(content string, frq map[SatelliteID]int8) error {
@@ -188,6 +214,57 @@ func readGLONASSFreqHeader(content string, frq map[SatelliteID]int8) error {
 		i += 2
 	}
 	return nil
+}
+
+func readTimeSystem(content string) string {
+	fields := strings.Fields(content)
+	if len(fields) >= 7 {
+		return fields[6]
+	}
+	return ""
+}
+
+func fileTimeSystem(codes map[string][]ObservationCode) string {
+	systems := orderedSystems(codes)
+	if len(systems) == 1 {
+		return systemTimeSystem(systems[0])
+	}
+	return "GPS"
+}
+
+func systemTimeSystem(sys string) string {
+	switch sys {
+	case "R":
+		return "GLO"
+	case "E":
+		return "GAL"
+	case "J":
+		return "QZS"
+	case "C":
+		return "BDT"
+	case "I":
+		return "IRN"
+	default:
+		return "GPS"
+	}
+}
+
+func gpsUTCSeconds(meta Metadata) int64 {
+	if meta.LeapSeconds.IsSet() {
+		return int64(meta.LeapSeconds.Get())
+	}
+	return defaultGPSUTCSeconds
+}
+
+func fileToGPSTime(t Time, timeSystem string, leapSeconds int64) Time {
+	switch timeSystem {
+	case "GLO", "UTC":
+		return t + Time(leapSeconds*int64(time.Second)/tickNs)
+	case "BDT":
+		return t + Time(bdtGPSOffsetSeconds*int64(time.Second)/tickNs)
+	default:
+		return t
+	}
 }
 
 func parseEpochLine(line string) (Time, int, error) {
@@ -238,7 +315,7 @@ func parseRINEXTime(year, month, day, hour, minute, second string) (Time, error)
 		return 0, fmt.Errorf("rinex: invalid fractional second %q", second)
 	}
 	tm := time.Date(y, time.Month(mo), d, h, m, sec, 0, time.UTC)
-	return TimeFromUTC(tm) + Time(tick), nil
+	return TimeFromCivilTime(tm) + Time(tick), nil
 }
 
 func parseSatelliteObservationLine(t Time, line string, h observationHeader) ([]SignalObservation, error) {

@@ -2,6 +2,7 @@ package rinex
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -54,6 +55,217 @@ func TestWriteObservationFile(t *testing.T) {
 	}
 	if strings.Contains(s, "SYS / PHASE SHIFT") {
 		t.Errorf("output contains phase shift header\n%s", s)
+	}
+}
+
+func TestWriteObservationFileUsesGPSTimeSystem(t *testing.T) {
+	gpsT := mustTime(t, "2026-05-19T13:31:24.0000000")
+	for _, tt := range []struct {
+		name       string
+		obs        []SignalObservation
+		want       []string
+		wantEpochs int
+	}{
+		{
+			name: "pure GPS",
+			obs: []SignalObservation{
+				{T: gpsT, Sat: "G03", Sig: "1C", PR: opt.Make(1.0)},
+			},
+			want: []string{
+				"OBSERVATION DATA    G: GPS",
+				"2026    05    19    13    31   24.0000000     GPS         TIME OF FIRST OBS",
+				"> 2026 05 19 13 31 24.0000000  0  1",
+			},
+			wantEpochs: 1,
+		},
+		{
+			name: "pure GLONASS",
+			obs: []SignalObservation{
+				{T: gpsT, Sat: "R05", Sig: "1C", Frq: opt.Make(int8(1)), PR: opt.Make(1.0)},
+			},
+			want: []string{
+				"OBSERVATION DATA    R: GLONASS",
+				"2026    05    19    13    31   24.0000000     GPS         TIME OF FIRST OBS",
+				"> 2026 05 19 13 31 24.0000000  0  1",
+			},
+			wantEpochs: 1,
+		},
+		{
+			name: "pure Galileo",
+			obs: []SignalObservation{
+				{T: gpsT, Sat: "E11", Sig: "1C", PR: opt.Make(1.0)},
+			},
+			want: []string{
+				"OBSERVATION DATA    E: Galileo",
+				"2026    05    19    13    31   24.0000000     GPS         TIME OF FIRST OBS",
+				"> 2026 05 19 13 31 24.0000000  0  1",
+			},
+			wantEpochs: 1,
+		},
+		{
+			name: "pure BDS",
+			obs: []SignalObservation{
+				{T: gpsT, Sat: "C06", Sig: "2I", PR: opt.Make(1.0)},
+			},
+			want: []string{
+				"OBSERVATION DATA    C: BDS",
+				"2026    05    19    13    31   24.0000000     GPS         TIME OF FIRST OBS",
+				"> 2026 05 19 13 31 24.0000000  0  1",
+			},
+			wantEpochs: 1,
+		},
+		{
+			name: "pure QZSS",
+			obs: []SignalObservation{
+				{T: gpsT, Sat: "J01", Sig: "1C", PR: opt.Make(1.0)},
+			},
+			want: []string{
+				"OBSERVATION DATA    J: QZSS",
+				"2026    05    19    13    31   24.0000000     GPS         TIME OF FIRST OBS",
+				"> 2026 05 19 13 31 24.0000000  0  1",
+			},
+			wantEpochs: 1,
+		},
+		{
+			name: "pure NavIC",
+			obs: []SignalObservation{
+				{T: gpsT, Sat: "I05", Sig: "5A", PR: opt.Make(1.0)},
+			},
+			want: []string{
+				"OBSERVATION DATA    I: NavIC",
+				"2026    05    19    13    31   24.0000000     GPS         TIME OF FIRST OBS",
+				"> 2026 05 19 13 31 24.0000000  0  1",
+			},
+			wantEpochs: 1,
+		},
+		{
+			name: "mixed GPS",
+			obs: []SignalObservation{
+				{T: gpsT, Sat: "G03", Sig: "1C", PR: opt.Make(1.0)},
+				{T: gpsT, Sat: "R05", Sig: "1C", Frq: opt.Make(int8(1)), PR: opt.Make(1.0)},
+			},
+			want: []string{
+				"OBSERVATION DATA    M: Mixed",
+				"2026    05    19    13    31   24.0000000     GPS         TIME OF FIRST OBS",
+				"> 2026 05 19 13 31 24.0000000  0  2",
+				"G03         1.000",
+				"R05         1.000",
+			},
+			wantEpochs: 1,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var b bytes.Buffer
+			if err := WriteObservationFile(&b, Metadata{LeapSeconds: opt.Make(int16(18))}, tt.obs, WriterOptions{Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}); err != nil {
+				t.Fatalf("WriteObservationFile: %v", err)
+			}
+			s := b.String()
+			for _, want := range tt.want {
+				if !strings.Contains(s, want) {
+					t.Errorf("output does not contain %q\n%s", want, s)
+				}
+			}
+			if got := strings.Count(s, "\n> "); got != tt.wantEpochs {
+				t.Errorf("epoch count = %d, want %d\n%s", got, tt.wantEpochs, s)
+			}
+		})
+	}
+}
+
+func TestReadObservationFileTimeSystems(t *testing.T) {
+	for _, tt := range []struct {
+		name            string
+		timeSystem      string
+		omitTimeSystem  bool
+		omitLeapSeconds bool
+		obsTypes        []string
+		satLines        []string
+		want            map[SatelliteID]string
+	}{
+		{
+			name:       "pure GPS",
+			timeSystem: "GPS",
+			obsTypes:   []string{"G    1 C1C"},
+			satLines:   []string{"G03           1.000"},
+			want:       map[SatelliteID]string{"G03": "2026-05-19T13:31:24.0000000"},
+		},
+		{
+			name:       "pure GLONASS",
+			timeSystem: "GLO",
+			obsTypes:   []string{"R    1 C1C"},
+			satLines:   []string{"R05           1.000"},
+			want:       map[SatelliteID]string{"R05": "2026-05-19T13:31:24.0000000"},
+		},
+		{
+			name:           "pure GLONASS default time system",
+			timeSystem:     "GLO",
+			omitTimeSystem: true,
+			obsTypes:       []string{"R    1 C1C"},
+			satLines:       []string{"R05           1.000"},
+			want:           map[SatelliteID]string{"R05": "2026-05-19T13:31:24.0000000"},
+		},
+		{
+			name:            "pure GLONASS default leap seconds",
+			timeSystem:      "GLO",
+			omitLeapSeconds: true,
+			obsTypes:        []string{"R    1 C1C"},
+			satLines:        []string{"R05           1.000"},
+			want:            map[SatelliteID]string{"R05": "2026-05-19T13:31:24.0000000"},
+		},
+		{
+			name:       "pure BDS",
+			timeSystem: "BDT",
+			obsTypes:   []string{"C    1 C2I"},
+			satLines:   []string{"C06           1.000"},
+			want:       map[SatelliteID]string{"C06": "2026-05-19T13:31:24.0000000"},
+		},
+		{
+			name:       "pure Galileo",
+			timeSystem: "GAL",
+			obsTypes:   []string{"E    1 C1C"},
+			satLines:   []string{"E11           1.000"},
+			want:       map[SatelliteID]string{"E11": "2026-05-19T13:31:24.0000000"},
+		},
+		{
+			name:       "pure QZSS",
+			timeSystem: "QZS",
+			obsTypes:   []string{"J    1 C1C"},
+			satLines:   []string{"J01           1.000"},
+			want:       map[SatelliteID]string{"J01": "2026-05-19T13:31:24.0000000"},
+		},
+		{
+			name:       "pure NavIC",
+			timeSystem: "IRN",
+			obsTypes:   []string{"I    1 C5A"},
+			satLines:   []string{"I05           1.000"},
+			want:       map[SatelliteID]string{"I05": "2026-05-19T13:31:24.0000000"},
+		},
+		{
+			name:       "mixed GPS",
+			timeSystem: "GPS",
+			obsTypes:   []string{"G    1 C1C", "R    1 C1C"},
+			satLines:   []string{"G03           1.000", "R05           1.000"},
+			want: map[SatelliteID]string{
+				"G03": "2026-05-19T13:31:24.0000000",
+				"R05": "2026-05-19T13:31:24.0000000",
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, obs, err := ReadObservationFile(strings.NewReader(testObservationFile(tt.timeSystem, !tt.omitTimeSystem, !tt.omitLeapSeconds, tt.obsTypes, tt.satLines)))
+			if err != nil {
+				t.Fatalf("ReadObservationFile: %v", err)
+			}
+			got := make(map[SatelliteID]Time)
+			for _, o := range obs {
+				got[o.Sat] = o.T
+			}
+			for sat, want := range tt.want {
+				if got[sat].String() != want {
+					t.Errorf("%s time = %s, want %s", sat, got[sat], want)
+				}
+			}
+		})
 	}
 }
 
@@ -128,4 +340,42 @@ func TestWriteObservationFileZeroIndicators(t *testing.T) {
 	if !got[0].SSI.IsSet() || got[0].SSI.Get() != 0 {
 		t.Errorf("SSI = %v, want explicit 0", got[0].SSI)
 	}
+}
+
+func testObservationFile(timeSystem string, includeTimeSystem, includeLeapSeconds bool, obsTypes, satLines []string) string {
+	var b strings.Builder
+	b.WriteString(testHeaderLine("     3.04           OBSERVATION DATA    M: Mixed", "RINEX VERSION / TYPE"))
+	for _, s := range obsTypes {
+		b.WriteString(testHeaderLine(s, "SYS / # / OBS TYPES"))
+	}
+	timeHeader := fmt.Sprintf("  2026    05    19    13    31   %s.0000000", testSecond(timeSystem))
+	if includeTimeSystem {
+		timeHeader = fmt.Sprintf("%s     %-3s", timeHeader, timeSystem)
+	}
+	b.WriteString(testHeaderLine(timeHeader, "TIME OF FIRST OBS"))
+	if includeLeapSeconds {
+		b.WriteString(testHeaderLine("    18", "LEAP SECONDS"))
+	}
+	b.WriteString(testHeaderLine("", "END OF HEADER"))
+	b.WriteString(fmt.Sprintf("> 2026 05 19 13 31 %s.0000000  0%3d\n", testSecond(timeSystem), len(satLines)))
+	for _, s := range satLines {
+		b.WriteString(s)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func testSecond(timeSystem string) string {
+	// Non-GPS labels are chosen so conversion to GPS yields second 24.
+	if timeSystem == "GLO" {
+		return "06"
+	}
+	if timeSystem == "BDT" {
+		return "10"
+	}
+	return "24"
+}
+
+func testHeaderLine(content, label string) string {
+	return fmt.Sprintf("%-60s%-20s\n", content, label)
 }

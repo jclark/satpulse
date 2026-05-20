@@ -273,27 +273,30 @@ func TestGPSTimeText(t *testing.T) {
 	}
 }
 
-func TestUTCTime(t *testing.T) {
-	if got := Time(0).UTC(); !got.Equal(Epoch) {
-		t.Errorf("Time(0).UTC = %v, want %v", got, Epoch)
+func TestCivilTime(t *testing.T) {
+	if got := Time(0).CivilTime(); !got.Equal(Epoch) {
+		t.Errorf("Time(0).CivilTime = %v, want %v", got, Epoch)
 	}
-	if got := TimeFromUTC(Epoch); got != 0 {
-		t.Errorf("TimeFromUTC(Epoch) = %d, want 0", got)
+	if got := TimeFromCivilTime(Epoch); got != 0 {
+		t.Errorf("TimeFromCivilTime(Epoch) = %d, want 0", got)
 	}
-	if got := TimeFromUTC(Epoch.Add(100 * time.Nanosecond)); got != 1 {
-		t.Errorf("TimeFromUTC(Epoch + 100ns) = %d, want 1", got)
+	if got := TimeFromCivilTime(Epoch.Add(100 * time.Nanosecond)); got != 1 {
+		t.Errorf("TimeFromCivilTime(Epoch + 100ns) = %d, want 1", got)
 	}
-	if got := TimeFromUTC(Epoch.Add(-1 * time.Nanosecond)); got != -1 {
-		t.Errorf("TimeFromUTC(Epoch - 1ns) = %d, want -1", got)
+	if got := TimeFromCivilTime(Epoch.Add(-1 * time.Nanosecond)); got != -1 {
+		t.Errorf("TimeFromCivilTime(Epoch - 1ns) = %d, want -1", got)
+	}
+	if got := TimeFromCivilTime(Epoch.In(time.FixedZone("TEST", 7*3600))); got != 0 {
+		t.Errorf("TimeFromCivilTime(Epoch in fixed zone) = %d, want 0", got)
 	}
 	now := FloorTime(time.Now())
-	rt := TimeFromUTC(now)
+	rt := TimeFromCivilTime(now)
 	got, err := time.ParseInLocation(timeLayout, rt.String(), time.UTC)
 	if err != nil {
 		t.Fatalf("ParseInLocation error: %v", err)
 	}
 	if !got.Equal(now) {
-		t.Errorf("UTC text round trip = %v, want %v", got, now)
+		t.Errorf("civil time text round trip = %v, want %v", got, now)
 	}
 }
 

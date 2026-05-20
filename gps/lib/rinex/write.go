@@ -140,7 +140,7 @@ func writerObservationCodeSet(obs []SignalObservation) map[string][]ObservationC
 		for code := range m {
 			codes = append(codes, code)
 		}
-		sortObservationCodes(codes)
+		sortWriterObservationCodes(sys, codes)
 		out[sys] = codes
 	}
 	return out
@@ -309,7 +309,7 @@ func writeObsTypes(w *bufio.Writer, sys string, codes []ObservationCode) error {
 	for i := 0; i < len(codes); i += 13 {
 		content := fmt.Sprintf("%s%5d", sys, len(codes))
 		if i > 0 {
-			content = sys + "     "
+			content = "      "
 		}
 		end := min(i+13, len(codes))
 		for _, code := range codes[i:end] {
@@ -323,7 +323,7 @@ func writeObsTypes(w *bufio.Writer, sys string, codes []ObservationCode) error {
 }
 
 func writeTimeHeader(w *bufio.Writer, t Time, label string) error {
-	tm := t.UTC()
+	tm := t.CivilTime()
 	sec := float64(tm.Second()) + float64(tm.Nanosecond())/1e9
 	return writeHeaderLine(w, fmt.Sprintf("%6d%6.2d%6.2d%6.2d%6.2d%13s     GPS", tm.Year(), tm.Month(), tm.Day(), tm.Hour(), tm.Minute(), secondField(sec)), label)
 }
@@ -355,7 +355,7 @@ func writeGLONASSFreq(w *bufio.Writer, frq map[SatelliteID]int8) error {
 func writeEpochs(w *bufio.Writer, f *obsFile) error {
 	line := make([]byte, 0, 256)
 	for _, e := range f.epochs {
-		tm := e.t.UTC()
+		tm := e.t.CivilTime()
 		sec := float64(tm.Second()) + float64(tm.Nanosecond())/1e9
 		line = line[:0]
 		line = fmt.Appendf(line, "> %04d %02d %02d %02d %02d %s  0%3d", tm.Year(), tm.Month(), tm.Day(), tm.Hour(), tm.Minute(), secondField(sec), len(e.sats))
