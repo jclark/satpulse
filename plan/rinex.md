@@ -352,6 +352,153 @@ Signal strength is carried in `CN0`, which the RINEX writer emits as the
 
 ## RTCM conversion
 
+### Week inference
+
+RTCM MSM messages do not carry a complete date. Their epoch field identifies
+the time within a constellation-specific repeat cycle. GPS, Galileo, QZSS,
+SBAS, NavIC, and BeiDou MSM epochs repeat weekly because they carry a
+time-of-week in milliseconds. BeiDou carries BDT time-of-week, which must be
+converted to the output time scale. GLONASS MSM epochs also repeat weekly
+because they carry a day-of-week plus a time-of-day in the GLONASS time scale.
+For normal GLONASS MSM, the day within the week is present and the missing
+component is still the absolute week. If the GLONASS day-of-week value is 7,
+the day is unknown; resolution must then come from existing stream context or
+from an interval that yields exactly one possible absolute epoch. RINEX
+observations need a complete epoch for each `SignalObservation`, so the
+converter must infer the missing absolute week before it can write
+observations.
+
+The implementation should not silently use the system clock as the RTCM
+epoch date. That is convenient for live streams, but it can create a RINEX
+file with the wrong week when converting old RTCM files. Instead, `convobs`
+provides an optional absolute time interval. The interval is not GNSS-specific.
+It says that the epoch represented by the current RTCM message must fall within
+this absolute range. Supplied intervals must be finite, half-open, and short
+enough that the RTCM epoch field cannot resolve to more than one absolute
+epoch. For ordinary MSM messages this means the interval length must be no
+greater than one week. Resolution succeeds only if exactly one epoch matches.
+
+Represent the interval as a start time plus a duration, with half-open
+semantics:
+
+```go
+type TimeInterval struct {
+	Start    time.Time
+	Duration time.Duration
+}
+```
+
+`convobs` should keep the interval together with the user-facing reporting
+information in a value called `WeekConstraint`:
+
+```go
+type WeekConstraint struct {
+	Interval TimeInterval
+	Errf     string
+	WarnMsg  string
+	WarnArgs []any
+}
+```
+
+`Errf` is a format string containing `%w`; it is used to wrap an error returned
+by `rinex/rtcm`. `WarnMsg` and `WarnArgs` are passed to `slog.Warn` after
+successful conversion if the warning has not already been emitted for that
+file. An empty `WarnMsg` means no warning.
+
+There are three stages:
+
+1. `convobs` constructs a file-level or packet-level `WeekConstraint`.
+   In packet-log mode, each RTCM message gets a tight interval derived from
+   the packet-log timestamp, using a generous one-minute slack on either side
+   of the timestamp. In direct file mode, `convobs` constructs one interval for
+   the file and supplies it with the first RTCM message in that file that needs
+   epoch resolution. Later messages normally omit the interval and rely on the
+   RTCM converter's continuity state.
+2. The per-message caller passes the RTCM message to `rinex/rtcm` together
+   with only the optional `TimeInterval`. The `WeekConstraint` itself stays in
+   `convobs`, at the layer that calls the RINEX converter. In the current
+   `convobs` call graph, that layer is `convertPacket`.
+3. `rinex/rtcm` interprets the RTCM epoch field using RTCM semantics. If an
+   interval is supplied, it must find exactly one complete epoch consistent
+   with that interval. If no interval is supplied, it uses previously
+   established stream time context and handles week rollover as needed. If the
+   converter has no usable time context and no interval is supplied, conversion
+   fails.
+
+The RTCM converter owns the state needed for rollover. It may maintain
+separate week or day context for each GNSS internally, because constellation
+time scales and week starts are not all identical. That detail is hidden from
+`convobs`: a supplied interval establishes or checks the absolute stream time
+context for the current message, and the converter uses that context to
+initialize or update whatever per-GNSS state is needed. This also means that
+`convobs` does not need to know which constellations appear in the RTCM stream.
+The rollover policy must distinguish plausible rollover from out-of-order
+packets, duplicated messages, and file splices; not every backward movement in
+time-of-week or GLONASS day-of-week/time-of-day should be treated as rollover.
+`rinex/rtcm` should defensively reject empty, unbounded, overlong, ambiguous,
+or context-inconsistent intervals, even though `convobs` is expected to
+validate intervals before passing them down.
+
+For direct file input, `convobs` builds the file-level `WeekConstraint` by
+intersecting all applicable constraints. It should capture `now` once per file
+or conversion operation and use that same value for all constraints and
+diagnostics, so boundary behavior is deterministic.
+
+- Packet-log mode uses packet-log timestamps for week inference. Explicit week
+  inference options such as `--date`, `--recent`, and `--date-from-filename`
+  should be rejected in packet-log mode.
+- An explicit `--recent` option means observations are within the last week,
+  measured from the captured `now`. It produces the interval
+  `[now - 1 week, now)`, with no warning.
+- An explicit `--date YYYYMMDD` option means the observations are on that
+  civil date. Because the user's time zone may be unknown, this produces an
+  interval from 14 hours before `YYYY-MM-DDT00:00:00Z` to 36 hours after it.
+  This explicit interval is not intersected with a `now`-based constraint. The
+  resulting interval must still be unambiguous for the first RTCM message that
+  needs epoch resolution. `--date`, `--recent`, and `--date-from-filename` are
+  mutually exclusive.
+- An explicit `--date-from-filename` option, with short name `-f`, means
+  `convobs` must parse a date from the input filename and construct the same
+  civil-date interval as `--date`. A RINEX long filename date such as
+  `YYYYDDDHHMM` contributes its calendar date; the time-of-day part is not
+  needed for week inference. The option applies per input file. If a file has
+  no recognized date, or has multiple conflicting recognized dates, conversion
+  of that file must fail. The option is invalid for stdin, because there is no
+  filename to parse.
+- If there is no explicit `--date`, `--recent`, or `--date-from-filename`,
+  `convobs` may use an automatic recent assumption for convenience. This
+  produces the same interval as `--recent`, but the `WeekConstraint` includes
+  a warning explaining that an undated file is being assumed to contain
+  observations from the last week.
+- File modification time is not enough to date an RTCM file by itself. When
+  the automatic recent assumption is being considered, mtime is only a gate.
+  If mtime is before `now - 1 week`, and there is no explicit `--date`,
+  `--date-from-filename`, or `--recent`, `convobs` must fail and require an
+  explicit option for week inference. Otherwise mtime does not affect the
+  interval.
+- The automatic recent interval is bounded by `now`, since observations should
+  not be inferred to be in the future.
+- In direct file mode, stdin has no mtime and no filename. If no explicit week
+  inference option is provided, `convobs` should use the automatic recent
+  interval and warn after the first accepted RTCM message.
+
+If intersecting the applicable constraints produces an empty interval, `convobs`
+must fail before conversion and require an explicit argument such as `--date`,
+`--recent`, or `--date-from-filename`. Conflicting explicit options should
+also fail during option processing, before any RTCM messages are read.
+
+Warnings are controlled by `convobs`. If a direct file conversion succeeds
+with a non-empty `WarnMsg` in its `WeekConstraint`, `convobs` should print one
+warning for that file after the first RTCM message has been accepted. This
+warns about the only dangerous convenience behavior: assuming that an undated
+file contains observations from the last week. Packet-log timestamps, `--date`,
+`--recent`, and `--date-from-filename` do not need this warning. Errors
+returned by `rinex/rtcm`, such as no complete epoch matching the supplied
+interval or an ambiguous interval, are fatal conversion errors. `convobs`
+should combine them with the per-message error format string, for example with
+a message that explains which file-level time assumption was being used and
+which explicit option the user can provide instead.
+
 ### RTCM MSM signal ID to RINEX signal mapping
 
 Each row maps a constellation and MSM signal ID from the MSM signal mask
