@@ -207,9 +207,9 @@ not use filename inference for either input or output formats.
 
 15. Support RTCM MSM7 input. Add an MSM7 converter that emits
     `SignalObservation` records from RTCM MSM7 messages and metadata records
-    from relevant station, receiver, and antenna messages. It must assemble MSM
-    fragments for the same epoch/reference station and map RTCM satellite and
-    signal IDs to RINEX identifiers.
+    from relevant station, receiver, and antenna messages. It should convert
+    each MSM7 message independently, without buffering MSM fragments, and map
+    RTCM satellite and signal IDs to RINEX identifiers.
 
 ## UBX conversion
 
@@ -498,6 +498,162 @@ interval or an ambiguous interval, are fatal conversion errors. `convobs`
 should combine them with the per-message error format string, for example with
 a message that explains which file-level time assumption was being used and
 which explicit option the user can provide instead.
+
+### MSM7 observation construction
+
+The RTCM observation converter handles MSM7 observation messages only.
+MSM1-6 messages are not used to emit `SignalObservation` records. Metadata
+messages such as 1005, 1006, 1007, 1008, 1033, and 1230 may still be consumed
+when present.
+
+Each MSM7 message is converted independently. Do not buffer MSM fragments. The
+MSM multiple message bit (DF393) may be used for cheap diagnostics, but the
+converter is not an RTCM stream validator and should not require a complete
+fragment group before emitting observations. In MSM7, the satellite-level rough
+range/range-rate fields and the signal-level fine observation fields needed for
+one satellite/signal observation are all present in the same message.
+
+For each MSM7 message, expand the satellite mask and signal mask to increasing
+1-based IDs. Walk the cell mask in satellite-major order: for each satellite ID
+from the satellite mask, visit each signal ID from the signal mask. Each set
+cell consumes the next element of every signal-data slice. Each set cell may
+produce at most one `SignalObservation` for that `(time, satellite, signal)`.
+Unknown or reserved satellite and signal IDs are skipped. Invalid or unavailable
+RTCM fields leave the corresponding optional observation value unset. Malformed
+input must not crash conversion; skip the affected cell or field and continue
+with the rest of the stream.
+
+Emit a `SignalObservation` only when it has a valid time, satellite ID, signal
+ID, and at least one of `PR`, `CP`, `Do`, or `CN0` set. Do not emit an
+observation solely for GLONASS frequency channel, LLI, SSI, or other
+non-observable state. This follows the RINEX observation-record model: records
+may contain blank observation fields, and the header declares the observation
+types that actually occur in the file.
+
+The MSM7 numeric reconstruction rules are:
+
+- Use `c = 299792458` meters/second.
+- `PR` is the MSM high-resolution pseudorange in meters:
+  `c/1000 * (DF397 + DF398/1024 + DF405*2^-29)`. Leave unset if DF397 is the
+  invalid value 255 or DF405 is the invalid value `-524288`.
+- `CP` is the MSM high-resolution phase range converted from meters to carrier
+  cycles: `phaseRangeMeters / wavelength`. The phase range in meters is
+  `c/1000 * (DF397 + DF398/1024 + DF406*2^-31)`. Leave unset if DF397 is 255,
+  DF406 is the invalid value `-8388608`, or the wavelength is not known.
+- `Do` is the MSM phase range rate converted to RINEX Doppler in Hz:
+  `-(DF399 + DF404*0.0001) / wavelength`. Leave unset if DF399 is the invalid
+  value `-8192`, DF404 is the invalid value `-16384`, or the wavelength is not
+  known.
+- `CN0` is DF408 in dB-Hz, using the high-resolution scale
+  `DF408 * 0.0625`. Leave unset when DF408 is zero.
+- `Frq` is set only for GLONASS MSM7 when DF419 is in the range 0..13, using
+  `k = DF419 - 7`. Leave it unset when DF419 is 15, meaning unknown or not
+  applicable. Treat DF419 value 14 as reserved and do not use it for wavelength
+  conversion.
+
+Carrier wavelength is `c / frequency`. Determine frequency from the RINEX
+satellite system and two-character signal identifier:
+
+| System | RINEX band | Frequency MHz |
+| ------ | ---------- | ------------: |
+| GPS    | 1          | 1575.420      |
+| GPS    | 2          | 1227.600      |
+| GPS    | 5          | 1176.450      |
+| GLONASS | 1         | `1602.000 + k*0.5625` |
+| GLONASS | 2         | `1246.000 + k*0.4375` |
+| Galileo | 1         | 1575.420      |
+| Galileo | 5         | 1176.450      |
+| Galileo | 6         | 1278.750      |
+| Galileo | 7         | 1207.140      |
+| Galileo | 8         | 1191.795      |
+| SBAS   | 1          | 1575.420      |
+| SBAS   | 5          | 1176.450      |
+| QZSS   | 1          | 1575.420      |
+| QZSS   | 2          | 1227.600      |
+| QZSS   | 5          | 1176.450      |
+| QZSS   | 6          | 1278.750      |
+| BeiDou | 1          | 1575.420      |
+| BeiDou | 2          | 1561.098      |
+| BeiDou | 5          | 1176.450      |
+| BeiDou | 6          | 1268.520      |
+| BeiDou | 7          | 1207.140      |
+| NavIC  | 5          | 1176.450      |
+| NavIC  | 9          | 2492.028      |
+
+For GLONASS FDMA signals, code and signal-strength observations may still be
+emitted when `Frq` is unknown, but carrier phase and Doppler must be left unset
+because wavelength is unknown. Do not apply any additional phase-shift
+correction in the RTCM converter; MSM phase ranges are assumed to have the
+alignment required for RINEX.
+
+The RINEX LLI field is derived independently for each mapped satellite signal.
+The converter keeps lock state keyed by the RINEX satellite ID and mapped RINEX
+signal ID, matching the key used to merge observations for one signal. If two
+input signal IDs map to the same RINEX signal, they share the same LLI state.
+
+For each mapped MSM7 cell, use the raw MSM7 lock-time indicator as the lock
+state value. Initialize the previous lock value for a signal to zero. Set
+`LLILostLock` on the current observation when the current lock value is less
+than the previous lock value, or when both the current and previous lock values
+are zero. Then store the current lock value as the previous value for the next
+cell for that signal. This means a first observation with a nonzero lock value
+does not get `LLILostLock`, while a first observation with a zero lock value
+does.
+
+The MSM7 half-cycle ambiguity indicator maps one-to-one to
+`LLIHalfCycleAmbiguity`: set the bit when the RTCM half-cycle bit is set, and
+leave it clear when the RTCM half-cycle bit is clear. Do not invert it, debounce
+it, or carry it forward from earlier cells. MSM7 does not set
+`LLIBOCTracking`.
+
+The converter may update LLI lock state for any valid mapped MSM7 cell, even if
+that cell does not emit a `SignalObservation` because all observable values are
+unavailable. When an observation is emitted, set `LLI` only if the derived LLI
+value is nonzero. Do not emit an observation solely for LLI.
+
+### RTCM RINEX mapping helpers
+
+The RTCM-to-RINEX satellite-system, satellite-number, and signal mappings
+belong in `gps/lib/rtcmbin`, not in the higher-level `gps/lib/rinex/rtcm`
+converter. Add a `gps/lib/rtcmbin/rinex.go` file similar to
+`gps/lib/ubxbin/rinex.go`, with exported helper functions such as:
+
+- `RINEXSys(gnss GNSS) string`, returning `G`, `R`, `E`, `S`, `J`, `C`, or
+  `I`, and `""` for unknown constellations.
+- `RINEXSatNum(gnss GNSS, satID uint8) uint8`, applying the DF394 satellite
+  ID table below and returning 0 for reserved or unmapped IDs.
+- `RINEXSig(gnss GNSS, sigID uint8) string`, applying the DF395 signal table
+  below and returning `""` for reserved or unmapped signal IDs.
+
+The RINEX converter should call these helpers rather than duplicating RTCM
+mapping tables. Add focused `rtcmbin` tests for all valid rows plus representative
+reserved and unknown values.
+
+### RTCM MSM satellite ID to RINEX satellite mapping
+
+DF394 is always decoded the same way: the first encoded bit is RTCM satellite
+ID 1, the second encoded bit is RTCM satellite ID 2, and so on through RTCM
+satellite ID 64. Convert that RTCM satellite ID to a RINEX satellite ID using
+the following table. IDs in reserved ranges are skipped.
+
+| RTCM message | Constellation | RTCM satellite ID | GNSS identifier | RINEX satellite ID |
+| ------------ | ------------- | ----------------- | --------------- | ------------------ |
+| 1077         | GPS           | 1..63             | PRN = ID        | `G%02d`, using ID |
+| 1077         | GPS           | 64                | reserved        | skip |
+| 1087         | GLONASS       | 1..24             | slot = ID       | `R%02d`, using ID |
+| 1087         | GLONASS       | 25..64            | reserved        | skip |
+| 1097         | Galileo       | 1..50             | PRN = ID        | `E%02d`, using ID |
+| 1097         | Galileo       | 51                | GIOVE-A         | skip |
+| 1097         | Galileo       | 52                | GIOVE-B         | skip |
+| 1097         | Galileo       | 53..64            | reserved        | skip |
+| 1107         | SBAS          | 1..39             | PRN = ID + 119  | `S%02d`, using ID + 19 |
+| 1107         | SBAS          | 40..64            | reserved        | skip |
+| 1117         | QZSS          | 1..10             | PRN = ID + 192  | `J%02d`, using ID |
+| 1117         | QZSS          | 11..64            | reserved        | skip |
+| 1127         | BeiDou        | 1..63             | PRN = ID        | `C%02d`, using ID |
+| 1127         | BeiDou        | 64                | reserved        | skip |
+| 1137         | NavIC         | 1..14             | PRN = ID        | `I%02d`, using ID |
+| 1137         | NavIC         | 15..64            | reserved        | skip |
 
 ### RTCM MSM signal ID to RINEX signal mapping
 
