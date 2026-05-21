@@ -26,7 +26,7 @@ func TestStreamRecordBuilder(t *testing.T) {
 		props            *gpsprot.ConfigProps
 		info             *gpsprot.ReceiverInfo
 		version          string
-		msm              int
+		rtcmSupport      gpsprot.ConfigSupportFlags
 		hasAuth          bool
 		msm7to4          bool
 		configCapturePos *gpsprot.PosGeoMsg
@@ -40,7 +40,6 @@ func TestStreamRecordBuilder(t *testing.T) {
 			props:     nil,
 			info:      nil,
 			version:   "",
-			msm:       0,
 			hasAuth:   false,
 			sc:        StreamConfig{},
 			mountName: "BKK",
@@ -53,31 +52,61 @@ func TestStreamRecordBuilder(t *testing.T) {
 			expect:  "BKK;RTCM 3.3;;0;;Misc;XXX;0.00;0.00;0;0;satpulse;none;B;N;0;",
 		},
 		{
-			name:    "shared overrides apply",
-			shared:  SharedStreamConfig{Country: "THA", Network: "MyNet", Lat: opt.Make(gpsprot.DegreesFromFloat(13.76)), Lon: opt.Make(gpsprot.DegreesFromFloat(100.5)), Generator: "Custom", Bitrate: 9600},
-			expect:  "BKK;RTCM 3.3;;0;;MyNet;THA;13.76;100.50;0;0;Custom;none;N;N;9600;",
+			name:   "shared overrides apply",
+			shared: SharedStreamConfig{Country: "THA", Network: "MyNet", Lat: opt.Make(gpsprot.DegreesFromFloat(13.76)), Lon: opt.Make(gpsprot.DegreesFromFloat(100.5)), Generator: "Custom", Bitrate: 9600},
+			expect: "BKK;RTCM 3.3;;0;;MyNet;THA;13.76;100.50;0;0;Custom;none;N;N;9600;",
 		},
 		{
-			name: "synthesize MSM4 from major signals",
+			name:   "synthesize MSM4 from major signals",
 			shared: SharedStreamConfig{},
 			props: func() *gpsprot.ConfigProps {
 				cp := new(gpsprot.ConfigProps)
 				cp.SetSignalsEnabled(majorSignals())
 				return cp
 			}(),
-			msm:    4,
-			expect: "BKK;RTCM 3.3;1005(1),1074(1),1084(1),1094(1),1124(1),1230(1);2;GPS+GLO+GAL+BDS;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
+			rtcmSupport: gpsprot.ConfigSupportRTCMMSM4,
+			expect:      "BKK;RTCM 3.3;1005(1),1074(1),1084(1),1094(1),1124(1),1230(1);2;GPS+GLO+GAL+BDS;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
 		},
 		{
-			name: "synthesize MSM7",
+			name:   "synthesize MSM7",
 			shared: SharedStreamConfig{},
 			props: func() *gpsprot.ConfigProps {
 				cp := new(gpsprot.ConfigProps)
 				cp.SetSignalsEnabled(majorSignals())
 				return cp
 			}(),
-			msm:    7,
-			expect: "BKK;RTCM 3.3;1005(1),1077(1),1087(1),1097(1),1127(1),1230(1);2;GPS+GLO+GAL+BDS;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
+			rtcmSupport: gpsprot.ConfigSupportRTCMMSM7,
+			expect:      "BKK;RTCM 3.3;1005(1),1077(1),1087(1),1097(1),1127(1),1230(1);2;GPS+GLO+GAL+BDS;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
+		},
+		{
+			name: "prefer MSM4 when both MSM levels are supported",
+			props: func() *gpsprot.ConfigProps {
+				cp := new(gpsprot.ConfigProps)
+				cp.SetSignalsEnabled(majorSignals())
+				return cp
+			}(),
+			rtcmSupport: gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7,
+			expect:      "BKK;RTCM 3.3;1005(1),1074(1),1084(1),1094(1),1124(1),1230(1);2;GPS+GLO+GAL+BDS;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
+		},
+		{
+			name: "synthesize QZSS when supported",
+			props: func() *gpsprot.ConfigProps {
+				cp := new(gpsprot.ConfigProps)
+				cp.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigQZSSL1CA, gpsprot.SigQZSSL2C))
+				return cp
+			}(),
+			rtcmSupport: gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMQZSS,
+			expect:      "BKK;RTCM 3.3;1005(1),1074(1),1114(1);2;GPS+QZSS;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
+		},
+		{
+			name: "omit QZSS without support flag",
+			props: func() *gpsprot.ConfigProps {
+				cp := new(gpsprot.ConfigProps)
+				cp.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigQZSSL1CA, gpsprot.SigQZSSL2C))
+				return cp
+			}(),
+			rtcmSupport: gpsprot.ConfigSupportRTCMMSM4,
+			expect:      "BKK;RTCM 3.3;1005(1);0;;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
 		},
 		{
 			name: "L1-only carrier=1",
@@ -86,8 +115,8 @@ func TestStreamRecordBuilder(t *testing.T) {
 				cp.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1))
 				return cp
 			}(),
-			msm:    4,
-			expect: "BKK;RTCM 3.3;1005(1),1074(1),1094(1);1;GPS+GAL;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
+			rtcmSupport: gpsprot.ConfigSupportRTCMMSM4,
+			expect:      "BKK;RTCM 3.3;1005(1),1074(1),1094(1);1;GPS+GAL;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
 		},
 		{
 			name:    "generator from receiver hardware",
@@ -177,9 +206,9 @@ func TestStreamRecordBuilder(t *testing.T) {
 				cp.SetSignalsEnabled(majorSignals())
 				return cp
 			}(),
-			msm:     7,
-			msm7to4: true,
-			expect:  "BKK;RTCM 3.3;1005(1),1074(1),1084(1),1094(1),1124(1),1230(1);2;GPS+GLO+GAL+BDS;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
+			rtcmSupport: gpsprot.ConfigSupportRTCMMSM7,
+			msm7to4:     true,
+			expect:      "BKK;RTCM 3.3;1005(1),1074(1),1084(1),1094(1),1124(1),1230(1);2;GPS+GLO+GAL+BDS;Misc;XXX;0.00;0.00;0;0;satpulse;none;N;N;0;",
 		},
 		{
 			name:    "msm7to4 substitutes MSM7 numbers in operator formatDetails",
@@ -196,7 +225,7 @@ func TestStreamRecordBuilder(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			build := StreamRecordBuilder(&tc.shared, tc.props, tc.info, tc.version, tc.msm, tc.configCapturePos)
+			build := StreamRecordBuilder(&tc.shared, tc.props, tc.info, tc.version, tc.rtcmSupport, tc.configCapturePos)
 			name := tc.mountName
 			if name == "" {
 				name = "BKK"
