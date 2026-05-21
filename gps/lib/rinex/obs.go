@@ -61,14 +61,8 @@ const (
 	LLIBOCTracking                        // BOC tracking of an MBOC-modulated signal
 )
 
-// SignalObservation holds measurements for one satellite signal at one epoch.
-// It is the JSONL record type for an obsj file and can expand to RINEX C/L/D/S observation codes.
-// T is always in GPS time, independent of the satellite constellation or the
-// time system used by an input or output RINEX file.
-type SignalObservation struct {
-	T   Time             `json:"t"`            // RINEX observation time label
-	Sat SatelliteID      `json:"sat"`          // RINEX satellite identifier, e.g. G03
-	Sig SignalID         `json:"sig"`          // RINEX signal identifier, e.g. 1C for C1C/L1C/D1C/S1C
+// SignalValues holds the values for one satellite signal observation.
+type SignalValues struct {
 	Frq opt.Val[int8]    `json:"frq,omitzero"` // GLONASS FDMA frequency channel k
 	PR  opt.Val[float64] `json:"pr,omitzero"`  // pseudorange, meters
 	CP  opt.Val[float64] `json:"cp,omitzero"`  // carrier phase, cycles
@@ -76,6 +70,22 @@ type SignalObservation struct {
 	CN0 opt.Val[float32] `json:"cn0,omitzero"` // carrier-to-noise density, dB-Hz
 	LLI opt.Val[LLI]     `json:"lli,omitzero"` // RINEX loss-of-lock indicator for phase
 	SSI opt.Val[uint8]   `json:"ssi,omitzero"` // RINEX signal strength indicator
+}
+
+// IsZero reports whether v contains no values.
+func (v SignalValues) IsZero() bool {
+	return !v.Frq.IsSet() && !v.PR.IsSet() && !v.CP.IsSet() && !v.Do.IsSet() && !v.CN0.IsSet() && !v.LLI.IsSet() && !v.SSI.IsSet()
+}
+
+// SignalObservation holds measurements for one satellite signal at one epoch.
+// It is the JSONL record type for an obsj file and can expand to RINEX C/L/D/S observation codes.
+// T is always in GPS time, independent of the satellite constellation or the
+// time system used by an input or output RINEX file.
+type SignalObservation struct {
+	T   Time        `json:"t"`   // RINEX observation time label
+	Sat SatelliteID `json:"sat"` // RINEX satellite identifier, e.g. G03
+	Sig SignalID    `json:"sig"` // RINEX signal identifier, e.g. 1C for C1C/L1C/D1C/S1C
+	SignalValues
 }
 
 // Metadata holds header-related facts in an obsj metadata record.

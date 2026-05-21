@@ -187,11 +187,13 @@ func TestRunRINEXInput(t *testing.T) {
 			T:   mustTime(t, "2025-12-17T08:14:06.0080000"),
 			Sat: "R06",
 			Sig: "1C",
-			Frq: opt.Make(int8(-4)),
-			PR:  opt.Make(24968868.310),
-			CP:  opt.Make(133238671.287),
-			Do:  opt.Make(-2790.338),
-			CN0: opt.Make(float32(32)),
+			SignalValues: rinex.SignalValues{
+				Frq: opt.Make(int8(-4)),
+				PR:  opt.Make(24968868.310),
+				CP:  opt.Make(133238671.287),
+				Do:  opt.Make(-2790.338),
+				CN0: opt.Make(float32(32)),
+			},
 		},
 	}
 	meta := rinex.Metadata{

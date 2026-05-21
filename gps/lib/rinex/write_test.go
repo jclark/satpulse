@@ -16,21 +16,25 @@ func TestWriteObservationFile(t *testing.T) {
 			T:   mustTime(t, "2025-12-17T08:14:06.0080000"),
 			Sat: "G07",
 			Sig: "1C",
-			PR:  opt.Make(23956830.530),
-			CP:  opt.Make(125893980.172),
-			Do:  opt.Make(2059.717),
-			CN0: opt.Make(float32(34)),
-			LLI: opt.Make(LLILostLock),
+			SignalValues: SignalValues{
+				PR:  opt.Make(23956830.530),
+				CP:  opt.Make(125893980.172),
+				Do:  opt.Make(2059.717),
+				CN0: opt.Make(float32(34)),
+				LLI: opt.Make(LLILostLock),
+			},
 		},
 		{
 			T:   mustTime(t, "2025-12-17T08:14:06.0080000"),
 			Sat: "R06",
 			Sig: "1C",
-			Frq: opt.Make(int8(-4)),
-			PR:  opt.Make(24968868.310),
-			CP:  opt.Make(133238671.287),
-			Do:  opt.Make(-2790.338),
-			CN0: opt.Make(float32(32)),
+			SignalValues: SignalValues{
+				Frq: opt.Make(int8(-4)),
+				PR:  opt.Make(24968868.310),
+				CP:  opt.Make(133238671.287),
+				Do:  opt.Make(-2790.338),
+				CN0: opt.Make(float32(32)),
+			},
 		},
 	}
 	var b bytes.Buffer
@@ -69,7 +73,7 @@ func TestWriteObservationFileUsesGPSTimeSystem(t *testing.T) {
 		{
 			name: "pure GPS",
 			obs: []SignalObservation{
-				{T: gpsT, Sat: "G03", Sig: "1C", PR: opt.Make(1.0)},
+				{T: gpsT, Sat: "G03", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(1.0)}},
 			},
 			want: []string{
 				"OBSERVATION DATA    G: GPS",
@@ -81,7 +85,7 @@ func TestWriteObservationFileUsesGPSTimeSystem(t *testing.T) {
 		{
 			name: "pure GLONASS",
 			obs: []SignalObservation{
-				{T: gpsT, Sat: "R05", Sig: "1C", Frq: opt.Make(int8(1)), PR: opt.Make(1.0)},
+				{T: gpsT, Sat: "R05", Sig: "1C", SignalValues: SignalValues{Frq: opt.Make(int8(1)), PR: opt.Make(1.0)}},
 			},
 			want: []string{
 				"OBSERVATION DATA    R: GLONASS",
@@ -93,7 +97,7 @@ func TestWriteObservationFileUsesGPSTimeSystem(t *testing.T) {
 		{
 			name: "pure Galileo",
 			obs: []SignalObservation{
-				{T: gpsT, Sat: "E11", Sig: "1C", PR: opt.Make(1.0)},
+				{T: gpsT, Sat: "E11", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(1.0)}},
 			},
 			want: []string{
 				"OBSERVATION DATA    E: Galileo",
@@ -105,7 +109,7 @@ func TestWriteObservationFileUsesGPSTimeSystem(t *testing.T) {
 		{
 			name: "pure BDS",
 			obs: []SignalObservation{
-				{T: gpsT, Sat: "C06", Sig: "2I", PR: opt.Make(1.0)},
+				{T: gpsT, Sat: "C06", Sig: "2I", SignalValues: SignalValues{PR: opt.Make(1.0)}},
 			},
 			want: []string{
 				"OBSERVATION DATA    C: BDS",
@@ -117,7 +121,7 @@ func TestWriteObservationFileUsesGPSTimeSystem(t *testing.T) {
 		{
 			name: "pure QZSS",
 			obs: []SignalObservation{
-				{T: gpsT, Sat: "J01", Sig: "1C", PR: opt.Make(1.0)},
+				{T: gpsT, Sat: "J01", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(1.0)}},
 			},
 			want: []string{
 				"OBSERVATION DATA    J: QZSS",
@@ -129,7 +133,7 @@ func TestWriteObservationFileUsesGPSTimeSystem(t *testing.T) {
 		{
 			name: "pure NavIC",
 			obs: []SignalObservation{
-				{T: gpsT, Sat: "I05", Sig: "5A", PR: opt.Make(1.0)},
+				{T: gpsT, Sat: "I05", Sig: "5A", SignalValues: SignalValues{PR: opt.Make(1.0)}},
 			},
 			want: []string{
 				"OBSERVATION DATA    I: NavIC",
@@ -141,8 +145,8 @@ func TestWriteObservationFileUsesGPSTimeSystem(t *testing.T) {
 		{
 			name: "mixed GPS",
 			obs: []SignalObservation{
-				{T: gpsT, Sat: "G03", Sig: "1C", PR: opt.Make(1.0)},
-				{T: gpsT, Sat: "R05", Sig: "1C", Frq: opt.Make(int8(1)), PR: opt.Make(1.0)},
+				{T: gpsT, Sat: "G03", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(1.0)}},
+				{T: gpsT, Sat: "R05", Sig: "1C", SignalValues: SignalValues{Frq: opt.Make(int8(1)), PR: opt.Make(1.0)}},
 			},
 			want: []string{
 				"OBSERVATION DATA    M: Mixed",
@@ -275,19 +279,23 @@ func TestReadObservationFileBlankPhaseLLI(t *testing.T) {
 			T:   mustTime(t, "2025-12-17T08:11:24.9990000"),
 			Sat: "G02",
 			Sig: "1C",
-			PR:  opt.Make(21017865.128),
-			Do:  opt.Make(-289.416),
-			CN0: opt.Make(float32(27)),
-			LLI: opt.Make(LLILostLock | LLIHalfCycleAmbiguity),
+			SignalValues: SignalValues{
+				PR:  opt.Make(21017865.128),
+				Do:  opt.Make(-289.416),
+				CN0: opt.Make(float32(27)),
+				LLI: opt.Make(LLILostLock | LLIHalfCycleAmbiguity),
+			},
 		},
 		{
 			T:   mustTime(t, "2025-12-17T08:11:24.9990000"),
 			Sat: "G07",
 			Sig: "1C",
-			PR:  opt.Make(21339746.924),
-			CP:  opt.Make(112141146.362),
-			Do:  opt.Make(2686.021),
-			CN0: opt.Make(float32(29)),
+			SignalValues: SignalValues{
+				PR:  opt.Make(21339746.924),
+				CP:  opt.Make(112141146.362),
+				Do:  opt.Make(2686.021),
+				CN0: opt.Make(float32(29)),
+			},
 		},
 	}
 	var b bytes.Buffer
@@ -318,9 +326,11 @@ func TestWriteObservationFileZeroIndicators(t *testing.T) {
 			T:   mustTime(t, "2025-12-17T08:14:06.0080000"),
 			Sat: "G07",
 			Sig: "1C",
-			CP:  opt.Make(1.0),
-			LLI: opt.Make(LLI(0)),
-			SSI: opt.Make(uint8(0)),
+			SignalValues: SignalValues{
+				CP:  opt.Make(1.0),
+				LLI: opt.Make(LLI(0)),
+				SSI: opt.Make(uint8(0)),
+			},
 		},
 	}
 	var b bytes.Buffer

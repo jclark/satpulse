@@ -17,11 +17,13 @@ func TestSignalObservationJSON(t *testing.T) {
 		T:   mustTime(t, "2025-06-30T23:59:59.1234567"),
 		Sat: SatelliteID("G03"),
 		Sig: SignalID("1C"),
-		Frq: opt.Make(int8(-4)),
-		PR:  opt.Make(22187868.655),
-		CP:  opt.Make(116598092.035),
-		CN0: opt.Make(float32(48.5)),
-		LLI: opt.Make(LLILostLock),
+		SignalValues: SignalValues{
+			Frq: opt.Make(int8(-4)),
+			PR:  opt.Make(22187868.655),
+			CP:  opt.Make(116598092.035),
+			CN0: opt.Make(float32(48.5)),
+			LLI: opt.Make(LLILostLock),
+		},
 	}
 	b, err := json.Marshal(obs)
 	if err != nil {
@@ -37,6 +39,29 @@ func TestSignalObservationJSON(t *testing.T) {
 	}
 	if got != obs {
 		t.Errorf("round trip = %#v, want %#v", got, obs)
+	}
+}
+
+func TestSignalValuesIsZero(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		v    SignalValues
+		want bool
+	}{
+		{name: "zero", want: true},
+		{name: "frq", v: SignalValues{Frq: opt.Make(int8(-4))}},
+		{name: "pr", v: SignalValues{PR: opt.Make(1.0)}},
+		{name: "cp", v: SignalValues{CP: opt.Make(1.0)}},
+		{name: "do", v: SignalValues{Do: opt.Make(1.0)}},
+		{name: "cn0", v: SignalValues{CN0: opt.Make(float32(1.0))}},
+		{name: "lli zero", v: SignalValues{LLI: opt.Make(LLI(0))}},
+		{name: "ssi zero", v: SignalValues{SSI: opt.Make(uint8(0))}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.v.IsZero(); got != tt.want {
+				t.Errorf("IsZero = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -113,8 +138,10 @@ func TestObsJSONSinkAndReadObsJSON(t *testing.T) {
 		T:   mustTime(t, "2025-06-30T23:59:59.0000000"),
 		Sat: "G03",
 		Sig: "1C",
-		PR:  opt.Make(22187868.655),
-		LLI: opt.Make(LLI(0)),
+		SignalValues: SignalValues{
+			PR:  opt.Make(22187868.655),
+			LLI: opt.Make(LLI(0)),
+		},
 	}
 	if err := sink.Observation(obs); err != nil {
 		t.Fatalf("Observation: %v", err)
@@ -162,10 +189,12 @@ func TestReadObsJSONLineError(t *testing.T) {
 func TestObservationCodes(t *testing.T) {
 	obs := SignalObservation{
 		Sig: SignalID("5Q"),
-		PR:  opt.Make(21474836.125),
-		CP:  opt.Make(112859323.25),
-		Do:  opt.Make(-1234.5),
-		CN0: opt.Make(float32(42.0)),
+		SignalValues: SignalValues{
+			PR:  opt.Make(21474836.125),
+			CP:  opt.Make(112859323.25),
+			Do:  opt.Make(-1234.5),
+			CN0: opt.Make(float32(42.0)),
+		},
 	}
 	got := obs.ObservationCodes()
 	want := []ObservationCode{"C5Q", "L5Q", "D5Q", "S5Q"}
@@ -179,18 +208,20 @@ func TestObservationCodeSet(t *testing.T) {
 		{
 			Sat: SatelliteID("G03"),
 			Sig: SignalID("5Q"),
-			PR:  opt.Make(21474836.125),
-			CP:  opt.Make(112859323.25),
+			SignalValues: SignalValues{
+				PR: opt.Make(21474836.125),
+				CP: opt.Make(112859323.25),
+			},
 		},
 		{
-			Sat: SatelliteID("G03"),
-			Sig: SignalID("1C"),
-			CN0: opt.Make(float32(48.5)),
+			Sat:          SatelliteID("G03"),
+			Sig:          SignalID("1C"),
+			SignalValues: SignalValues{CN0: opt.Make(float32(48.5))},
 		},
 		{
-			Sat: SatelliteID("E11"),
-			Sig: SignalID("1C"),
-			PR:  opt.Make(24123456.0),
+			Sat:          SatelliteID("E11"),
+			Sig:          SignalID("1C"),
+			SignalValues: SignalValues{PR: opt.Make(24123456.0)},
 		},
 	}
 	got := ObservationCodeSet(obs)

@@ -62,10 +62,10 @@ func TestDecimationSinkEmitsRoundedGridEpochs(t *testing.T) {
 		t.Fatalf("Metadata: %v", err)
 	}
 	obs := []SignalObservation{
-		{T: mustTime(t, "2025-07-01T00:00:00.0490000"), Sat: "G03", Sig: "1C", PR: opt.Make(1.0)},
-		{T: mustTime(t, "2025-07-01T00:00:00.0510000"), Sat: "G03", Sig: "1C", PR: opt.Make(2.0)},
-		{T: mustTime(t, "2025-07-01T00:00:04.9510000"), Sat: "G03", Sig: "1C", PR: opt.Make(3.0)},
-		{T: mustTime(t, "2025-07-01T00:00:05.0510000"), Sat: "G03", Sig: "1C", PR: opt.Make(4.0)},
+		{T: mustTime(t, "2025-07-01T00:00:00.0490000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(1.0)}},
+		{T: mustTime(t, "2025-07-01T00:00:00.0510000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(2.0)}},
+		{T: mustTime(t, "2025-07-01T00:00:04.9510000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(3.0)}},
+		{T: mustTime(t, "2025-07-01T00:00:05.0510000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(4.0)}},
 	}
 	for _, o := range obs {
 		if err := sink.Observation(o); err != nil {
@@ -96,11 +96,11 @@ func TestDecimationSinkCarriesSkippedLLI(t *testing.T) {
 		t.Fatalf("NewDecimationSink: %v", err)
 	}
 	obs := []SignalObservation{
-		{T: mustTime(t, "2025-07-01T00:00:01.0000000"), Sat: "G03", Sig: "1C", LLI: opt.Make(LLILostLock)},
-		{T: mustTime(t, "2025-07-01T00:00:02.0000000"), Sat: "G03", Sig: "1C", LLI: opt.Make(LLIHalfCycleAmbiguity)},
-		{T: mustTime(t, "2025-07-01T00:00:03.0000000"), Sat: "G03", Sig: "2S", LLI: opt.Make(LLILostLock)},
-		{T: mustTime(t, "2025-07-01T00:00:10.0000000"), Sat: "G03", Sig: "1C", PR: opt.Make(1.0)},
-		{T: mustTime(t, "2025-07-01T00:00:10.0000000"), Sat: "G03", Sig: "2S", PR: opt.Make(2.0), LLI: opt.Make(LLIBOCTracking)},
+		{T: mustTime(t, "2025-07-01T00:00:01.0000000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{LLI: opt.Make(LLILostLock)}},
+		{T: mustTime(t, "2025-07-01T00:00:02.0000000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{LLI: opt.Make(LLIHalfCycleAmbiguity)}},
+		{T: mustTime(t, "2025-07-01T00:00:03.0000000"), Sat: "G03", Sig: "2S", SignalValues: SignalValues{LLI: opt.Make(LLILostLock)}},
+		{T: mustTime(t, "2025-07-01T00:00:10.0000000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(1.0)}},
+		{T: mustTime(t, "2025-07-01T00:00:10.0000000"), Sat: "G03", Sig: "2S", SignalValues: SignalValues{PR: opt.Make(2.0), LLI: opt.Make(LLIBOCTracking)}},
 	}
 	for _, o := range obs {
 		if err := sink.Observation(o); err != nil {
