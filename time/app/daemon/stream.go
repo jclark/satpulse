@@ -70,10 +70,6 @@ func startPush(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	}
 	var buildSTR func(sc *ntrip.StreamConfig, name string, hasAuth, msm7to4 bool) string
 	if hasRTCMPush(cfg) {
-		msm := 0
-		if cfg.GPS.Config && cfg.GPS.RTCMOutput != nil && *cfg.GPS.RTCMOutput {
-			msm = 4
-		}
 		var props *gpsprot.ConfigProps
 		var info *gpsprot.ReceiverInfo
 		if gcfg != nil {
@@ -82,7 +78,7 @@ func startPush(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 		}
 		buildSTR = ntrip.StreamRecordBuilder(
 			&cfg.Ntrip.SharedStreamConfig, props, info,
-			cmd.VersionInfo(), msm, configCapturePos)
+			cmd.VersionInfo(), rtcmOutputSupport(cfg, gcfg), configCapturePos)
 	}
 	version, _ := cmd.Version()
 	for i := range cfg.Stream.Push {

@@ -258,6 +258,7 @@ But if you want the graphical view, it is recommended to increase the serial spe
 
 The `ntrip` table controls the Ntrip caster. The caster serves RTCM correction data from the GPS receiver to Ntrip clients.
 It starts only when at least one `[[ntrip.mountpoint]]` table is configured.
+The same table also provides source table defaults for RTCM streams pushed to a remote caster using `[[stream.push]]`.
 A mountpoint with just a name is enough for a working caster:
 
 ```
@@ -273,7 +274,7 @@ The `ntrip` table can have the following keys:
 * `lat`, `lon` - numbers giving the latitude and longitude reported in the source table; they must be specified together; the default is from the GPS receiver's fixed position, if any, otherwise 0
 * `generator` - a string giving the generator reported in the source table; the default is derived from the receiver or SatPulse version
 * `formatDetails` - a string giving the RTCM message list reported in the source table; when MSM7 to MSM4 conversion is being done, this should describe the messages before conversion; the conversion will also substitute MSM7 message numbers with MSM4 message numbers; the default is derived from the enabled GNSS systems
-* `bitrate` - an integer giving the default bitrate reported in the source table for mountpoints; the default is 0
+* `bitrate` - an integer giving the default bitrate reported in the source table for mountpoints and pushed RTCM streams; the default is 0
 
 Each `[[ntrip.mountpoint]]` table has the following keys:
 
@@ -347,6 +348,81 @@ In addition, `proxy.tcp` and `proxy.sock` can both have the following keys:
 * `protocol` - a string saying that only packets with this protocol are to be forwarded; the value can be `"RTCM"`, `"NMEA"` or `"UBX"`
 * `readOnly` - a boolean saying whether access to the GPS receiver should be read-only; this means that serial packets will be forwarded from the GPS receiver to the network, but the network will not be able to send packets to the GPS receiver; this defaults to true if `protocol` is specified and false otherwise
 * `writeLockTimeout` - a number giving the time in seconds that a writer to the GPS receiver should have exclusive write access; if client writes to the GPS receiver (which is allowed only when readOnly is false), then no other client will be able to write to the GPS receiver for this period of time; the default is 2 seconds
+
+## `stream.pull` table
+
+The `stream.pull` table configures the network endpoint to be used as the source of correction data for the GPS receiver.
+The data is scanned as RTCM and sent to the receiver over the configured serial connection.
+Two kinds of endpoint are supported: Ntrip and TCP.
+
+With an Ntrip endpoint, SatPulse acts as an Ntrip client, receiving from an Ntrip caster.
+The following keys may be specified:
+
+* `ntrip.address` - a string giving the address of the Ntrip caster, in the form *host*`:`*port*; this key is required
+* `ntrip.mountpoint` - a string giving the caster mountpoint to use; this key is required
+* `ntrip.username` - a string giving the user name for Ntrip basic authentication
+* `ntrip.password` - a string giving the password for Ntrip basic authentication
+
+Example
+
+```
+[stream.pull]
+ntrip.address = "caster.example.com:2101"
+ntrip.mountpoint = "RTCM"
+ntrip.username = "rover"
+ntrip.password = "secret"
+```
+
+With a TCP endpoint, SatPulse acts as a TCP client, receiving from a TCP server.
+The following key must be specified:
+
+* `tcp.address` - a string giving the TCP address to connect to, in the form *host*`:`*port*
+
+Example using TCP
+
+```
+[stream.pull]
+tcp.address = "192.168.1.42:2006"
+```
+
+SatPulse could be configured to act as the TCP server on 192.168.1.42 using:
+
+```
+[[proxy.tcp]]
+listen = ":2006"
+protocol = "RTCM"
+```
+
+## `stream.push` table array
+
+The `stream.push` table array allows streams of packets from the GPS receiver to be sent to network endpoints.
+Each `[[stream.push]]` table specifies one endpoint.
+Currently the only kind of endpoint is Ntrip: SatPulse acts as an Ntrip server, sending to an Ntrip caster.
+
+The `[[stream.push]]` table has the following keys:
+
+* `protocol` - a string giving the packet protocol to forward; the value can be `"RTCM"`, `"NMEA"` or `"UBX"`; the receiver must output packets using this protocol; the default is `"RTCM"`
+* `ntrip.address` - a string giving the address of the remote Ntrip caster, in the form *host*`:`*port*; this key is required
+* `ntrip.mountpoint` - a string giving the mountpoint to push to on the remote caster; this key is required and must be a single URL path component
+* `ntrip.password` - a string giving the password for uploading to the remote caster; this key is required
+* `ntrip.description` - a string giving the stream description sent to the remote caster; the default is the mountpoint name
+* `ntrip.bitrate` - an integer giving the bitrate sent to the remote caster; the default is the `bitrate` key in the top-level `ntrip` table
+* `ntrip.msm7to4` - a boolean saying whether MSM7 RTCM packets should be converted to MSM4 before being pushed; non-MSM7 packets are forwarded unchanged; this can be used only when `protocol` is `RTCM`; the default is false
+
+When the protocol is `RTCM`, the source table information sent to the remote caster uses the fields from the `ntrip` table together with the `ntrip.description`, `ntrip.bitrate`, and `ntrip.msm7to4` keys from the push entry.
+
+Example
+
+```
+[ntrip]
+country = "THA"
+
+[[stream.push]]
+ntrip.address = "caster.example.com:2101"
+ntrip.mountpoint = "BKK"
+ntrip.password = "secret"
+ntrip.description = "Bangkok"
+```
 
 ## `sync` table
 

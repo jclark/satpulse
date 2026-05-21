@@ -26,10 +26,6 @@ func startNtrip(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	if len(cfg.Ntrip.Mountpoint) == 0 {
 		return nil
 	}
-	msm := 0
-	if cfg.GPS.Config && cfg.GPS.RTCMOutput != nil && *cfg.GPS.RTCMOutput {
-		msm = 4
-	}
 	var props *gpsprot.ConfigProps
 	var info *gpsprot.ReceiverInfo
 	if gcfg != nil {
@@ -38,9 +34,16 @@ func startNtrip(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	}
 	buildSTR := ntrip.StreamRecordBuilder(
 		&cfg.Ntrip.SharedStreamConfig, props, info,
-		cmd.VersionInfo(), msm, configCapturePos)
+		cmd.VersionInfo(), rtcmOutputSupport(cfg, gcfg), configCapturePos)
 	version, _ := cmd.Version()
 	return ntrip.Start(ctx, lg, wg, cfg.Ntrip, version, userPasswordMap(cfg.User), pb, buildSTR)
+}
+
+func rtcmOutputSupport(cfg *Config, gcfg *gpscfg.Result) gpsprot.ConfigSupportFlags {
+	if !cfg.GPS.Config || cfg.GPS.RTCMOutput == nil || !*cfg.GPS.RTCMOutput || gcfg == nil {
+		return 0
+	}
+	return gcfg.ConfigSupport & (gpsprot.ConfigSupportRTCMMSM | gpsprot.ConfigSupportRTCMQZSS)
 }
 
 // userPasswordMap returns a name->password map from the top-level

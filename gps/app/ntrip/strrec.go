@@ -22,11 +22,13 @@ const streamFormat = "RTCM 3.3"
 // the closure.  Neither the constructor nor the closure mutates
 // *shared or *StreamConfig.
 //
-// info or props may be nil; an empty versionInfo is allowed.  msm is
-// 0 to skip format-details synthesis, or 4/7 etc.  configCapturePos
-// is an opportunistic PosGeoMsg captured during gpscfg.Configure,
-// used as a lat/lon fallback when no fixed position is configured;
-// may be nil.  Lat/lon resolution order: shared.Lat/Lon overrides ->
+// info or props may be nil; an empty versionInfo is allowed.
+// rtcmSupport describes the configured RTCM MSM output used for
+// format-details synthesis.  If it has no MSM support bit set,
+// format-details synthesis is skipped.  configCapturePos is an
+// opportunistic PosGeoMsg captured during gpscfg.Configure, used as a
+// lat/lon fallback when no fixed position is configured; may be nil.
+// Lat/lon resolution order: shared.Lat/Lon overrides ->
 // Mode.FixedPos* -> configCapturePos -> 0.00.
 //
 // The returned closure takes the per-stream StreamConfig, the
@@ -40,16 +42,18 @@ func StreamRecordBuilder(
 	props *gpsprot.ConfigProps,
 	info *gpsprot.ReceiverInfo,
 	versionInfo string,
-	msm int,
+	rtcmSupport gpsprot.ConfigSupportFlags,
 	configCapturePos *gpsprot.PosGeoMsg,
 ) func(sc *StreamConfig, name string, hasAuth, msm7to4 bool) string {
 	gnss, signals := enabledGNSSAndSignals(props)
-	navSystem := buildNavSystem(gnss)
-	carrier := buildCarrier(signals)
+	rtcmGNSS := rtcmOutputGNSS(gnss, rtcmSupport)
+	navSystem := buildNavSystem(rtcmGNSS)
+	carrier := buildCarrier(signals, rtcmGNSS)
 
 	formatDetails := shared.FormatDetails
+	msm := rtcmMSMLevel(rtcmSupport)
 	if formatDetails == "" && msm > 0 {
-		formatDetails = buildFormatDetails(gnss, msm)
+		formatDetails = buildFormatDetails(rtcmGNSS, msm)
 	}
 
 	network := shared.Network
@@ -142,14 +146,29 @@ func enabledGNSSAndSignals(props *gpsprot.ConfigProps) (gpsprot.GNSSSet, gpsprot
 	return signals.GNSSSet(), signals
 }
 
-// majorGNSSByMSMBase is the major GNSS constellations sorted by MSM
-// message-number base (the numeric Ntrip source-table convention).
-// Only major GNSS are synthesised because satpulse's RTCM config
-// only enables MSM messages for them (see
-// gps/internal/ubx/ubxver.go: rtcmSupport).  Operators can override
-// via [ntrip].formatDetails when they need something different.
-var majorGNSSByMSMBase = func() []gpsprot.GNSS {
-	gs := gpsprot.MajorGNSSSet.Items()
+func rtcmMSMLevel(support gpsprot.ConfigSupportFlags) int {
+	if support&gpsprot.ConfigSupportRTCMMSM4 != 0 {
+		return 4
+	}
+	if support&gpsprot.ConfigSupportRTCMMSM7 != 0 {
+		return 7
+	}
+	return 0
+}
+
+func rtcmOutputGNSS(gnss gpsprot.GNSSSet, support gpsprot.ConfigSupportFlags) gpsprot.GNSSSet {
+	out := gnss & gpsprot.MajorGNSSSet
+	if support&gpsprot.ConfigSupportRTCMQZSS != 0 && gnss.Contains(gpsprot.QZSS) {
+		out |= gpsprot.GNSSSetOf(gpsprot.QZSS)
+	}
+	return out
+}
+
+// rtcmGNSSByMSMBase is the RTCM MSM-capable GNSS order used by
+// source-table synthesis.  The caller decides which entries are
+// active for the current receiver.
+var rtcmGNSSByMSMBase = func() []gpsprot.GNSS {
+	gs := (gpsprot.MajorGNSSSet | gpsprot.GNSSSetOf(gpsprot.QZSS)).Items()
 	slices.SortFunc(gs, func(a, b gpsprot.GNSS) int {
 		return int(rtcm.MSMMsgType(a, 1)) - int(rtcm.MSMMsgType(b, 1))
 	})
@@ -157,11 +176,10 @@ var majorGNSSByMSMBase = func() []gpsprot.GNSS {
 }()
 
 // buildNavSystem returns the nav-system string from the enabled GNSS
-// set, restricted to major constellations (since that's what
-// formatDetails advertises MSM for), e.g. "GPS+GLO+GAL+BDS".
+// set that formatDetails advertises MSM for, e.g. "GPS+GLO+GAL+BDS".
 func buildNavSystem(gnss gpsprot.GNSSSet) string {
 	var parts []string
-	for _, g := range majorGNSSByMSMBase {
+	for _, g := range rtcmGNSSByMSMBase {
 		if gnss.Contains(g) {
 			parts = append(parts, g.String())
 		}
@@ -170,10 +188,10 @@ func buildNavSystem(gnss gpsprot.GNSSSet) string {
 }
 
 // buildCarrier returns the carrier value: 0 if no signal, 1 if only
-// L1 signals, else 2.  Computed from major-GNSS signals only, since
-// that's the subset advertised by nav-system and formatDetails.
-func buildCarrier(signals gpsprot.SignalSet) int {
-	bands := (signals & gpsprot.SigSetMajor).Bands()
+// L1 signals, else 2.  Computed from the GNSS set advertised by
+// nav-system and formatDetails.
+func buildCarrier(signals gpsprot.SignalSet, gnss gpsprot.GNSSSet) int {
+	bands := (signals & signalSetForGNSS(gnss)).Bands()
 	if bands == 0 {
 		return 0
 	}
@@ -183,12 +201,19 @@ func buildCarrier(signals gpsprot.SignalSet) int {
 	return 2
 }
 
+func signalSetForGNSS(gnss gpsprot.GNSSSet) gpsprot.SignalSet {
+	var signals gpsprot.SignalSet
+	for _, g := range gnss.Items() {
+		signals |= gpsprot.BandAll.SignalSet(g)
+	}
+	return signals
+}
+
 // buildFormatDetails synthesises the format-details string from the
-// enabled GNSS set and the MSM level.  Only major GNSS appear, since
-// satpulse's RTCM configuration only enables MSM for those.
+// enabled GNSS set and the MSM level.
 func buildFormatDetails(gnss gpsprot.GNSSSet, msm int) string {
 	parts := []string{"1005(1)"}
-	for _, g := range majorGNSSByMSMBase {
+	for _, g := range rtcmGNSSByMSMBase {
 		if !gnss.Contains(g) {
 			continue
 		}
