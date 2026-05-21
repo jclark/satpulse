@@ -13,13 +13,13 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/ntrip"
 	"github.com/jclark/satpulse/gps/app/stream"
-	"github.com/jclark/satpulse/time/internal/phcsync"
-	"github.com/jclark/satpulse/time/lib/pmc"
-	"github.com/jclark/satpulse/time/internal/proxy"
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/internal/phcsync"
+	"github.com/jclark/satpulse/time/internal/proxy"
 	"github.com/jclark/satpulse/time/internal/refclock"
-	"github.com/jclark/satpulse/time/sockrefclock"
 	"github.com/jclark/satpulse/time/internal/ts"
+	"github.com/jclark/satpulse/time/lib/pmc"
+	"github.com/jclark/satpulse/time/sockrefclock"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -173,6 +173,15 @@ func (cfg *Config) httpWantsSatellites() bool {
 // pushes omit the STR header entirely and do not need this state.
 func (cfg *Config) hasNtripStream() bool {
 	return len(cfg.Ntrip.Mountpoint) > 0 || hasRTCMPush(cfg)
+}
+
+func (cfg *Config) hasRTCMMSM7To4() bool {
+	for i := range cfg.Ntrip.Mountpoint {
+		if cfg.Ntrip.Mountpoint[i].MSM7to4 {
+			return true
+		}
+	}
+	return hasRTCMPushMSM7To4(cfg)
 }
 
 // Validate validates the configuration and logs warnings for deprecated options.

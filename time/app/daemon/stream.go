@@ -144,3 +144,13 @@ func hasRTCMPush(cfg *Config) bool {
 	}
 	return false
 }
+
+func hasRTCMPushMSM7To4(cfg *Config) bool {
+	for i := range cfg.Stream.Push {
+		p := &cfg.Stream.Push[i]
+		if p.Ntrip != nil && p.Protocol.Tag() == gpsreg.TagRTCM && p.Ntrip.MSM7to4 {
+			return true
+		}
+	}
+	return false
+}

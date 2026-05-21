@@ -124,6 +124,9 @@
         "rtcmOutput": {
           "type": "boolean"
         },
+        "rtcmPreferMSM7": {
+          "type": "boolean"
+        },
         "vendor": {
           "type": "string",
           "enum": [

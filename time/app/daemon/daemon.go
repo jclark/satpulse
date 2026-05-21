@@ -471,6 +471,19 @@ func (h *configCapture) logLeapSecond(lg *slog.Logger) {
 }
 
 func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, usingPHC bool) (*gpsprot.ConfigTarget, error) {
+	gct, err := cfg.GPS.target(speed, configFeatures(cfg, usingPHC))
+	lg.Debug("GPS configure input", "target", gct)
+	if err != nil {
+		if errors.Is(err, errSatsOutNotEnabled) {
+			lg.Warn(err.Error())
+		} else {
+			return nil, err
+		}
+	}
+	return gct, nil
+}
+
+func configFeatures(cfg *Config, usingPHC bool) cfgFeatures {
 	var cf cfgFeatures
 	if usingPHC {
 		cf |= cfgTimePulse | cfgTimePulseMsg
@@ -486,14 +499,8 @@ func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, usingPHC bool) 
 	if cfg.hasNtripStream() {
 		cf |= cfgNtripStream
 	}
-	gct, err := cfg.GPS.target(speed, cf)
-	lg.Debug("GPS configure input", "target", gct)
-	if err != nil {
-		if errors.Is(err, errSatsOutNotEnabled) {
-			lg.Warn(err.Error())
-		} else {
-			return nil, err
-		}
+	if cfg.hasRTCMMSM7To4() {
+		cf |= cfgRTCMMSM7To4
 	}
-	return gct, nil
+	return cf
 }
