@@ -35,6 +35,7 @@ type CorReportMsg struct {
 
 	NBytes        opt.Val[int]    `json:"nBytes,omitzero"`
 	ChecksumOK    opt.Val[bool]   `json:"checksumOK,omitzero"`
+	FinalFragment opt.Val[bool]   `json:"finalFragment,omitzero"`
 	Used          opt.Val[bool]   `json:"used,omitzero"`
 	RTCMRefBaseID opt.Val[uint16] `json:"rtcmRefBaseID,omitzero"`
 }
@@ -77,6 +78,15 @@ For pulled RTCM reports:
 - `NBytes` is the complete packet length.
 - `ChecksumOK` is always set.
 - `NativeMsg`, when present, is the parsed `rtcmbin.Msg`.
+
+`FinalFragment` is pull-source-only fragmentation information for RTCM
+MSM packets.  It is `false` when the packet is a non-final fragment,
+`true` when the packet is the final fragment, including a logical
+message carried in one packet, and absent when the report carries no
+fragmentation information.  Receiver-source reports leave it absent.
+This three-state contract lets consumers decide statelessly: complete
+iff `FinalFragment` is true, incomplete iff false, otherwise fall back
+to their own policy.
 
 `CorReportSourceReceiver` means the receiver reported correction
 input status.  It does not mean the receiver emitted an RTCM packet.
