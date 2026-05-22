@@ -16,6 +16,7 @@ export type TimeRef = number;
 export type SatelliteUsedValidity = number;
 export type CorrKind = string[];
 export type AuxSrc = string[];
+export type CorReportSource = 'pull' | 'receiver';
 export type GNSSSet = string[];
 export type BandsUsed = string[];
 export type StdDuration = number;
@@ -140,6 +141,17 @@ export interface NavEpochMsg {
     gnssUsed?: GNSSSet;
     bandsUsed?: BandsUsed;
     tag?: Tag;
+}
+
+export interface CorReportMsg {
+    source: CorReportSource;
+    tag: Tag;
+    msgID: string;
+    nativeMsg?: unknown;
+    nBytes?: number;
+    checksumOK?: boolean;
+    used?: boolean;
+    rtcmRefBaseID?: number;
 }
 
 export interface LeapSecondMsg {

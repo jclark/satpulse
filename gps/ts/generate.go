@@ -101,9 +101,18 @@ func samples() []sample {
 			Acc:         gpsprot.Accuracy{Hor: opt.Make(gpsprot.Length(15000)), Vert: opt.Make(gpsprot.Length(25000))},
 			DOP:         gpsprot.DOP{Pos: opt.Make(1.2), Hor: opt.Make(0.8), North: opt.Make(0.6), East: opt.Make(0.5)},
 			NumSVUsed:   opt.Make[uint16](12),
-			GNSSUsed:  gpsprot.GNSSSetOf(gpsprot.GPS) | gpsprot.GNSSSetOf(gpsprot.GAL),
-			BandsUsed: gpsprot.BandL1 | gpsprot.BandL5,
-			Tag:       "UBX",
+			GNSSUsed:    gpsprot.GNSSSetOf(gpsprot.GPS) | gpsprot.GNSSSetOf(gpsprot.GAL),
+			BandsUsed:   gpsprot.BandL1 | gpsprot.BandL5,
+			Tag:         "UBX",
+		}},
+		{"CorReportMsg", gpsprot.CorReportMsg{
+			Source:        gpsprot.CorReportSourcePull,
+			Tag:           "RTCM",
+			MsgID:         "1077",
+			NBytes:        opt.Make(42),
+			ChecksumOK:    opt.Make(true),
+			Used:          opt.Make(false),
+			RTCMRefBaseID: opt.Make(uint16(123)),
 		}},
 		{"LeapSecondMsg", gpsprot.LeapSecondMsg{
 			LeapSecond: ptime.LeapSecond{
@@ -138,7 +147,7 @@ func Generate() ([]byte, error) {
 	gpsprots := []string{
 		"SatellitesMsg", "TimeMsg", "SurveyMsg",
 		"PosGeoMsg", "PosECEFMsg", "VelGeoMsg", "VelECEFMsg", "PVMsgBundle",
-		"NavEpochMsg", "LeapSecondMsg", "ReceiverInfo",
+		"NavEpochMsg", "CorReportMsg", "LeapSecondMsg", "ReceiverInfo",
 	}
 	for i, name := range gpsprots {
 		if i > 0 {

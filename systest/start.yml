@@ -21,19 +21,23 @@
           }
         dest: /tmp/satpulse-logrotate.conf
         mode: '0644'
+      when: interface != ""
 
     - name: Rotate log file if needed
       command: logrotate -f -s /tmp/logrotate-{{ instance }}.state /tmp/satpulse-logrotate.conf
       register: logrotate_result
       changed_when: logrotate_result.rc == 0
+      when: interface != ""
 
     - name: Clean up temporary logrotate config
       file:
         path: /tmp/satpulse-logrotate.conf
         state: absent
+      when: interface != ""
 
     - name: Initialize PHC
       command: "phc_ctl -q {{ interface }} set 0 freq 0"
+      when: interface != ""
 
     - name: Start SatPulse service
       systemd:
