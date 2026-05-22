@@ -241,7 +241,7 @@ const (
 	rtcm1012Um982 = "d3006a3f400004c5310301a2d04267fe08d7fa2b6200080000000060ce1f71502698fe9a7dfce4096c3fd12653976e0a0000002365200080000000019816a9e000de5fe8afdf9680364ffdc886da533efd8f2ffa0ba7e6f01d1eff40700ec7e9601197fe9335fd5c065fbfd980154a88"
 )
 
-// Captures from the Centipede NTRIP network (French CORS).  An independent
+// Captures from the Centipede Ntrip network (French CORS).  An independent
 // second source for MT1004/MT1012 that catches encoder-specific bugs a
 // self-consistent round-trip would miss, and the only source of MT1013.
 const (
@@ -459,7 +459,7 @@ func TestRoundTripEmptyNsat(t *testing.T) {
 	}
 }
 
-// Real MT1008 and MT1033 captures from the Centipede NTRIP network.
+// Real MT1008 and MT1033 captures from the Centipede Ntrip network.
 const (
 	rtcm1008Centipede = "d3001a3f00001454524d35353937312e303020202020204e4f4e45000069e22f"
 	rtcm1033Centipede = "d300364090001454524d35353937312e303020202020204e4f4e4500000a4c45494341204752323508342e33312e31303107313833303333378c14a0"

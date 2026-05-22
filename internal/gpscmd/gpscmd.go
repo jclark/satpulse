@@ -77,7 +77,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, v.timeEstimate, raw, conn, v.vendor, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, args)
+	err = run(ctx, lg, target, v.timeEstimate, raw, conn, v.vendor, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, v.configSupport, args)
 	return
 }
 
@@ -151,7 +151,7 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 // Parameter dependencies:
 //   - logMode: must not be testLogMode when raw is non-nil
 //   - args: only used for test log header when logMode is testLogMode
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, timeEstimate *gpsprot.TimeEstimate, raw []msgfile.RawMsg, conn gpsio.Conn, vendor gpsreg.Vendor, logPath string, logMode packetLogMode, capture opt.Val[time.Duration], showReceiver bool, args []string) error {
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, timeEstimate *gpsprot.TimeEstimate, raw []msgfile.RawMsg, conn gpsio.Conn, vendor gpsreg.Vendor, logPath string, logMode packetLogMode, capture opt.Val[time.Duration], showReceiver bool, support configSupportReq, args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -190,7 +190,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, tim
 	if raw != nil {
 		err = runMsgs(ctx, lg, conn, pCh, raw, capture)
 	} else if target != nil {
-		rslt, err = runConfig(ctx, lg, target, timeEstimate, pCh, conn, vendor, capture, showReceiver)
+		rslt, err = runConfig(ctx, lg, target, timeEstimate, pCh, conn, vendor, capture, showReceiver, support)
 	} else {
 		// Passive capture mode: just read and log packets
 		if capture.IsSet() {
@@ -212,7 +212,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, tim
 	return err
 }
 
-func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, timeEstimate *gpsprot.TimeEstimate, pCh <-chan scan.Packet, conn gpsio.Conn, vendor gpsreg.Vendor, capture opt.Val[time.Duration], showReceiver bool) (*gpscfg.Result, error) {
+func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, timeEstimate *gpsprot.TimeEstimate, pCh <-chan scan.Packet, conn gpsio.Conn, vendor gpsreg.Vendor, capture opt.Val[time.Duration], showReceiver bool, support configSupportReq) (*gpscfg.Result, error) {
 	// Compile-time check: serial faults surfaced by gpsio satisfy the
 	// gpscfg.SerialError interface. gpscfg relies on this.
 	var _ gpscfg.SerialError = (*gpsio.SerialError)(nil)
@@ -228,8 +228,10 @@ func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	if err == nil && rslt != nil {
 		if showReceiver {
 			printReceiverInfo(os.Stdout, rslt.ReceiverInfo)
+			printConfigSupport(os.Stdout, rslt.ConfigSupport)
 			printPacketFormats(os.Stdout, rslt.PacketFormatsDetected)
 		}
+		warnMissingConfigSupport(lg, support, rslt.ConfigSupport)
 		if !configTargetIsProbeOnly(target) {
 			logFailedProps(lg, &target.Props, rslt.ConfigProps)
 		}
@@ -258,6 +260,15 @@ func sendTrustedTime(lg *slog.Logger, w io.Writer, builder gpsprot.TrustedTimePa
 	}
 	lg.Info("sent trusted time packet", "len", len(pkt))
 	return nil
+}
+
+func warnMissingConfigSupport(lg *slog.Logger, req configSupportReq, supported gpsprot.ConfigSupportFlags) {
+	if req.isZero() {
+		return
+	}
+	for _, opt := range req.unsupportedOptions(supported) {
+		lg.Warn("receiver does not support the following option", "option", opt)
+	}
 }
 
 func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, raw []msgfile.RawMsg, capture opt.Val[time.Duration]) error {
@@ -410,6 +421,12 @@ func printReceiverInfo(f *os.File, info *gpsprot.ReceiverInfo) {
 	}
 	if info.SupportedGNSS != 0 {
 		fmt.Fprintf(f, "Supported GNSS: %s\n", info.SupportedGNSS)
+	}
+}
+
+func printConfigSupport(f *os.File, support gpsprot.ConfigSupportFlags) {
+	if support != 0 {
+		fmt.Fprintf(f, "Supports: %s\n", support)
 	}
 }
 

@@ -3,6 +3,7 @@ package gpscmd
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -44,6 +45,7 @@ type flagVars struct {
 	baudRate       opt.Val[uint32]
 	mode           opt.Val[gpsprot.Mode]
 	configOpts     gpsprot.ConfigOptions
+	configSupport  configSupportReq
 	configGet      gpsprot.PropIDs
 	timeEstimate   *gpsprot.TimeEstimate
 	msgFilePath    string
@@ -53,6 +55,63 @@ type flagVars struct {
 	vendor         gpsreg.Vendor
 	showReceiver   bool
 	showTags       bool
+}
+
+type configSupportReq struct {
+	all       gpsprot.ConfigSupportFlags
+	options   map[gpsprot.ConfigSupportFlags]string
+	msmOption string
+}
+
+func (r configSupportReq) isZero() bool {
+	return r.all == 0 && r.msmOption == ""
+}
+
+func (r *configSupportReq) require(flags gpsprot.ConfigSupportFlags, option string) {
+	r.init()
+	r.all |= flags
+	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportLast; flag <<= 1 {
+		if flags&flag != 0 {
+			r.options[flag] = option
+		}
+	}
+}
+
+func (r *configSupportReq) requireMSM(option string) {
+	r.msmOption = option
+}
+
+func (r *configSupportReq) init() {
+	if r.options == nil {
+		r.options = make(map[gpsprot.ConfigSupportFlags]string)
+	}
+}
+
+func (r configSupportReq) flags() (gpsprot.ConfigSupportFlags, gpsprot.ConfigSupportFlags) {
+	var msm gpsprot.ConfigSupportFlags
+	if r.msmOption != "" {
+		msm = gpsprot.ConfigSupportRTCMMSM
+	}
+	return r.all, msm
+}
+
+func (r configSupportReq) unsupportedOptions(supported gpsprot.ConfigSupportFlags) []string {
+	var opts []string
+	seen := make(map[string]bool)
+	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportLast; flag <<= 1 {
+		if r.all&flag == 0 || supported&flag != 0 {
+			continue
+		}
+		if opt := r.options[flag]; opt != "" && !seen[opt] {
+			opts = append(opts, opt)
+			seen[opt] = true
+		}
+	}
+	if r.msmOption != "" && supported&gpsprot.ConfigSupportRTCMMSM == 0 && !seen[r.msmOption] {
+		opts = append(opts, r.msmOption)
+	}
+	sort.Strings(opts)
+	return opts
 }
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [-f|--config-file path]
@@ -241,6 +300,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("invalid remote serial speed %d", baudRate)
 		}
 		vars.baudRate.Set(baudRate)
+		vars.configSupport.require(gpsprot.ConfigSupportSpeed, "--speed")
 	}
 
 	if len(gl.gnss) != 0 {
@@ -249,6 +309,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("at least one non-augmentation signal from a major GNSS must be enabled")
 		}
 		configChanged = true
+		if flags.Lookup("band").Changed {
+			vars.configSupport.require(gpsprot.ConfigSupportBand, "--band")
+		}
 	} else if flags.Lookup("band").Changed {
 		return nil, nil, fmt.Errorf("%s command must specify --gnss when --band is specified", cmdName)
 	}
@@ -261,6 +324,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if rawMsg.IsSet() || pvtMsg.IsSet() || rtcmMsg.IsSet() || nmeaMsg.IsSet() || satsMsg.IsSet() {
 		configChanged = true
 	}
+	addMsgConfigSupport(&vars.configSupport, vars.enabledSignals, rawMsg, pvtMsg, rtcmMsg)
 
 	if nmea {
 		configChanged = true
@@ -306,6 +370,10 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 		vars.configOpts.Survey.AccLimit = gpsprot.Length(surveyAcc)
 		if survey {
+			vars.configSupport.require(gpsprot.ConfigSupportSurvey, "--survey")
+			if flags.Lookup("survey-acc").Changed {
+				vars.configSupport.require(gpsprot.ConfigSupportSurveyAcc, "--survey-acc")
+			}
 			vars.configOpts.Survey.Flags |= gpsprot.SurveyAgain
 			vars.mode.Set(gpsprot.Mode{Static: true})
 			if mobile {
@@ -320,6 +388,10 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		configChanged = true
 		if gpsprot.Length(fixedPosAcc) < gpsprot.Millimeter {
 			return nil, nil, fmt.Errorf("--fixed-pos-acc must be at least 0.001 (1 mm)")
+		}
+		vars.configSupport.require(gpsprot.ConfigSupportFixedPos, "--fixed-pos-ecef")
+		if flags.Lookup("fixed-pos-acc").Changed {
+			vars.configSupport.require(gpsprot.ConfigSupportFixedPosAcc, "--fixed-pos-acc")
 		}
 		vars.mode.Set(gpsprot.Mode{
 			Static:       true,
@@ -363,6 +435,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("--rtcm-base-id must be between 0 and 4095")
 		}
 		vars.rtcmBaseID.Set(rtcmBaseID)
+		vars.configSupport.require(gpsprot.ConfigSupportRTCMBaseID, "--rtcm-base-id")
 		configChanged = true
 	}
 	if vars.timeGNSS != 0 {
@@ -475,6 +548,38 @@ func normalizeUBXPort(s string) (string, error) {
 		return p, nil
 	}
 	return "", fmt.Errorf("invalid --port value %q: must be one of i2c, uart1, uart2, usb, spi", s)
+}
+
+func addMsgConfigSupport(req *configSupportReq, sigs gpsprot.SignalSet, rawMsg opt.Val[gpsprot.RawMsgFlags], pvtMsg gpsprot.PVTMsgFlags, rtcmMsg opt.Val[gpsprot.RTCMMsgFlags]) {
+	if rawMsg.IsSet() && rawMsg.Get()&gpsprot.RawMsgAny != 0 {
+		req.require(gpsprot.ConfigSupportRaw, "--raw-out")
+	}
+	if pvtMsg&gpsprot.PVTMsgSurvey != 0 {
+		req.require(gpsprot.ConfigSupportSurveyMsg, "--pvt-out")
+	}
+	if !rtcmMsg.IsSet() {
+		return
+	}
+	rtcm := rtcmMsg.Get()
+	msm := rtcm & (gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7)
+	if rtcm&gpsprot.RTCMMsgLax != 0 {
+		if msm != 0 {
+			req.requireMSM("--rtcm-out")
+		}
+	} else {
+		if msm&gpsprot.RTCMMsgMSM4 != 0 {
+			req.require(gpsprot.ConfigSupportRTCMMSM4, "--rtcm-out")
+		}
+		if msm&gpsprot.RTCMMsgMSM7 != 0 {
+			req.require(gpsprot.ConfigSupportRTCMMSM7, "--rtcm-out")
+		}
+	}
+	if rtcm&gpsprot.RTCMMsgARP != 0 && msm == 0 {
+		req.requireMSM("--rtcm-out")
+	}
+	if msm != 0 && sigs.GNSSSet().Contains(gpsprot.QZSS) {
+		req.require(gpsprot.ConfigSupportRTCMQZSS, "--rtcm-out")
+	}
 }
 
 // loadConfigFile reads serial device and speed from a satpulse TOML config file.

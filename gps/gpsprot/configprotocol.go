@@ -1,7 +1,9 @@
 package gpsprot
 
 import (
+	"encoding/json"
 	"iter"
+	"strings"
 	"time"
 )
 
@@ -24,6 +26,66 @@ type ConfigProtocol interface {
 	Configure(target *ConfigTarget) (Configurator, error)
 }
 
+// ConfigSupportFlags describes supported configuration options.
+type ConfigSupportFlags uint32
+
+const (
+	ConfigSupportBand ConfigSupportFlags = 1 << iota
+	ConfigSupportSpeed
+	ConfigSupportSurvey
+	ConfigSupportSurveyAcc
+	ConfigSupportSurveyMsg
+	ConfigSupportFixedPos
+	ConfigSupportFixedPosAcc
+	ConfigSupportRaw
+	ConfigSupportRTCMMSM4
+	ConfigSupportRTCMMSM7
+	ConfigSupportRTCMBaseID
+	ConfigSupportRTCMQZSS
+	ConfigSupportLast = ConfigSupportRTCMQZSS
+)
+
+const ConfigSupportRTCMMSM = ConfigSupportRTCMMSM4 | ConfigSupportRTCMMSM7
+
+var configSupportFlagNames = [...]struct {
+	flag ConfigSupportFlags
+	name string
+}{
+	{ConfigSupportBand, "band"},
+	{ConfigSupportSpeed, "speed"},
+	{ConfigSupportSurvey, "survey"},
+	{ConfigSupportSurveyAcc, "surveyAcc"},
+	{ConfigSupportSurveyMsg, "surveyMsg"},
+	{ConfigSupportFixedPos, "fixedPos"},
+	{ConfigSupportFixedPosAcc, "fixedPosAcc"},
+	{ConfigSupportRaw, "raw"},
+	{ConfigSupportRTCMMSM4, "rtcmMSM4"},
+	{ConfigSupportRTCMMSM7, "rtcmMSM7"},
+	{ConfigSupportRTCMBaseID, "rtcmBaseID"},
+	{ConfigSupportRTCMQZSS, "rtcmQZSS"},
+}
+
+// Items returns the supported configuration item names in stable order.
+func (f ConfigSupportFlags) Items() []string {
+	items := make([]string, 0, len(configSupportFlagNames))
+	for _, entry := range configSupportFlagNames {
+		if f&entry.flag != 0 {
+			items = append(items, entry.name)
+		}
+	}
+	return items
+}
+
+// String returns the supported configuration item names as a comma-separated list.
+func (f ConfigSupportFlags) String() string {
+	return strings.Join(f.Items(), ", ")
+}
+
+// MarshalJSON marshals the supported configuration items as a JSON array.
+func (f ConfigSupportFlags) MarshalJSON() ([]byte, error) {
+	return json.Marshal(f.Items())
+}
+
 // Configurator manages the generation and interpretation of configuration-related packets.
 //
 // The Configurator maintains a slice of ConfigRequest instances, each with its own state.
@@ -42,6 +104,9 @@ type Configurator interface {
 	// TrustedTimePacketBuilder returns a receiver-specific trusted-time
 	// packet builder when requested and supported.
 	TrustedTimePacketBuilder() TrustedTimePacketBuilder
+
+	// ConfigSupport returns the configuration options this implementation supports.
+	ConfigSupport() ConfigSupportFlags
 
 	// GenerateRequests attempts to generate more requests, potentially increasing the slice size.
 	// This is the only method that can increase the slice size.

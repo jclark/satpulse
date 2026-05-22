@@ -381,11 +381,17 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	return &rcvrInfo
 }
 
+// TrustedTimePacketBuilder returns a trusted-time packet builder when requested.
 func (c *Configurator) TrustedTimePacketBuilder() gpsprot.TrustedTimePacketBuilder {
 	if !c.target.Opts.TrustedTime {
 		return nil
 	}
 	return trustedTimePacketBuilder{}
+}
+
+// ConfigSupport returns configuration support for this implementation.
+func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
+	return c.ver.configSupport()
 }
 
 // GetRequestCount returns the current number of requests and whether the slice is complete.

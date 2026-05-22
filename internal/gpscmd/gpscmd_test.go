@@ -3,6 +3,8 @@ package gpscmd
 import (
 	"bytes"
 	"log/slog"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,5 +116,44 @@ func TestCreateConfigTargetProbeOnly(t *testing.T) {
 				t.Logf("target.Opts.ForceProbe = %v", target.Opts.ForceProbe)
 			}
 		})
+	}
+}
+
+func TestPrintConfigSupport(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "receiver-info-*.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	printConfigSupport(f, gpsprot.ConfigSupportBand|gpsprot.ConfigSupportSpeed)
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Supports: band, speed\n"
+	if got := string(b); got != want {
+		t.Errorf("printConfigSupport output = %q, want %q", got, want)
+	}
+}
+
+func TestWarnMissingConfigSupport(t *testing.T) {
+	var req configSupportReq
+	req.require(gpsprot.ConfigSupportFixedPos, "--fixed-pos-ecef")
+	req.require(gpsprot.ConfigSupportRaw, "--raw-out")
+	req.requireMSM("--rtcm-out")
+	var b bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&b, nil))
+	warnMissingConfigSupport(lg, req, gpsprot.ConfigSupportRaw|gpsprot.ConfigSupportRTCMMSM7)
+	s := b.String()
+	if !strings.Contains(s, `msg="receiver does not support the following option"`) {
+		t.Errorf("log output missing warning message: %q", s)
+	}
+	if !strings.Contains(s, "option=--fixed-pos-ecef") {
+		t.Errorf("log output missing option: %q", s)
+	}
+	if strings.Contains(s, "option=--raw-out") || strings.Contains(s, "option=--rtcm-out") {
+		t.Errorf("log output contains supported option: %q", s)
 	}
 }

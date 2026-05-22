@@ -13,6 +13,15 @@ import (
 
 const Vendor = "Unicore"
 
+const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportBand |
+	gpsprot.ConfigSupportSurvey |
+	gpsprot.ConfigSupportFixedPos |
+	gpsprot.ConfigSupportRaw |
+	gpsprot.ConfigSupportRTCMMSM4 |
+	gpsprot.ConfigSupportRTCMMSM7 |
+	gpsprot.ConfigSupportRTCMBaseID |
+	gpsprot.ConfigSupportRTCMQZSS
+
 type ConfigProtocol struct {
 	ver *uncmsg.Version // Stored from VERSIONB response for probing
 	cfg *Configurator   // Created during Configure() call
@@ -101,8 +110,14 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	}
 }
 
+// TrustedTimePacketBuilder returns a trusted-time packet builder when supported.
 func (c *Configurator) TrustedTimePacketBuilder() gpsprot.TrustedTimePacketBuilder {
 	return nil
+}
+
+// ConfigSupport returns configuration support for this implementation.
+func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
+	return configSupport
 }
 
 // ConfigProps returns the current configuration of the GPS receiver

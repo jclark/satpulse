@@ -1,6 +1,7 @@
 package gpsprot
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -18,6 +19,57 @@ type mockRequest struct {
 	err          error
 	sentTime     time.Time
 	responseTime time.Time // For MaybeComplete state
+}
+
+func TestConfigSupportFlagsItems(t *testing.T) {
+	flags := ConfigSupportBand |
+		ConfigSupportSurveyMsg |
+		ConfigSupportFixedPos |
+		ConfigSupportRTCMMSM7 |
+		ConfigSupportRTCMQZSS
+	want := []string{"band", "surveyMsg", "fixedPos", "rtcmMSM7", "rtcmQZSS"}
+	if got := flags.Items(); !slices.Equal(got, want) {
+		t.Errorf("Items() = %v, want %v", got, want)
+	}
+}
+
+func TestConfigSupportLast(t *testing.T) {
+	var highest ConfigSupportFlags
+	for _, entry := range configSupportFlagNames {
+		if entry.flag > highest {
+			highest = entry.flag
+		}
+	}
+	if ConfigSupportLast != highest {
+		t.Errorf("ConfigSupportLast = %v, want highest declared flag %v", ConfigSupportLast, highest)
+	}
+}
+
+func TestConfigSupportFlagsString(t *testing.T) {
+	flags := ConfigSupportSpeed | ConfigSupportRaw | ConfigSupportRTCMBaseID
+	want := "speed, raw, rtcmBaseID"
+	if got := flags.String(); got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
+func TestConfigSupportFlagsMarshalJSON(t *testing.T) {
+	tests := []struct {
+		flags ConfigSupportFlags
+		want  string
+	}{
+		{0, `[]`},
+		{ConfigSupportBand | ConfigSupportFixedPos | ConfigSupportRaw, `["band","fixedPos","raw"]`},
+	}
+	for _, tt := range tests {
+		b, err := json.Marshal(tt.flags)
+		if err != nil {
+			t.Fatalf("Marshal(%v): %v", tt.flags, err)
+		}
+		if got := string(b); got != tt.want {
+			t.Errorf("Marshal(%v) = %s, want %s", tt.flags, got, tt.want)
+		}
+	}
 }
 
 func (r *mockRequest) GetPacket() []byte {
@@ -125,6 +177,7 @@ type mockConfigurator struct {
 	generateCalls int
 	props         *ConfigProps
 	info          *ReceiverInfo
+	support       ConfigSupportFlags
 }
 
 func (c *mockConfigurator) GenerateRequests() error {
@@ -159,6 +212,10 @@ func (c *mockConfigurator) ReceiverInfo() *ReceiverInfo {
 
 func (c *mockConfigurator) TrustedTimePacketBuilder() TrustedTimePacketBuilder {
 	return nil
+}
+
+func (c *mockConfigurator) ConfigSupport() ConfigSupportFlags {
+	return c.support
 }
 
 // Test basic ConfigDirector operation with simple requests
