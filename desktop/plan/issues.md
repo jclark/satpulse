@@ -45,6 +45,16 @@ UI additions:
 
 NTRIP caster support (HTTP-based, with authentication and mount points) could be added later as a separate transport option in the same tab.
 
+## cor-report-receiver: Show receiver-side correction usage in the Corrections tab
+
+The Corrections tab shows RTCM correction traffic as pull-source `gpsprot.CorReportMsg` events: `rtcm-panel.tsx` counts messages by ID from packets pulled off the configured network source. This tells the user corrections are *arriving* from the caster, but not whether the connected receiver is actually *using* them.
+
+`CorReportMsg` (issue #237, `plan/rtcm-obs.md`) has a second producer: receiver-source reports. The u-blox packet processor emits receiver-source `CorReportMsg` from UBX-RXM-COR, carrying `Used` (did the receiver use this correction) and `ChecksumOK` as the receiver saw it. These reports flow through the normal `gpsprot.Msg` path; the desktop's `msgHandler` embeds `gpsprot.DefaultHandler` and so already has a no-op `CorReport` to override.
+
+The work: override `msgHandler.CorReport` to emit receiver-source reports to the frontend, and extend the Corrections tab to show receiver-side usage -- e.g. a "used/received" count per message ID, as `plan/rtcm-obs.md` describes for the web dashboard.
+
+Pull and receiver are independent observations and must not be naively mixed: they may even describe different streams. `plan/rtcm-obs.md` resolves this for the web dashboard with a source-preference latch (prefer receiver; lazily fall back to pull after ~30 s of receiver silence) implemented in `sseobs`. The desktop does not go through `sseobs`, so it needs its own decision -- reuse that latch policy in the desktop backend, apply it in the frontend, or pick a deliberate equivalent.
+
 ## map-tile-retry: Reload failed map tiles when connectivity is restored
 
 If the app starts without internet connectivity (or loses it), map tile `<img>` loads fail silently. When connectivity is restored the tiles remain broken because the browser does not retry failed image loads, and the tile URLs haven't changed so Preact reuses the existing DOM elements.
