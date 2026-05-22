@@ -139,3 +139,10 @@ all:
       interface: eth1
       speed: 38400
 
+    # mini PC (no PHC)
+    edam.lan:
+      interface: ""
+      instance: ttyACM1
+      speed: 115200
+
+

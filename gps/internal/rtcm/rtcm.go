@@ -16,10 +16,10 @@ var PacketFormat gpsprot.PacketFormat = packetFormat{}
 
 var commonMsgTypes = []rtcmbin.MsgType{
 	1001, 1002, 1003, 1004, // legacy GPS observables
-	1005, // station ARP
-	1006, // station ARP with height
-	1007, // antenna
-	1008, // antenna with serial number
+	1005,                   // station ARP
+	1006,                   // station ARP with height
+	1007,                   // antenna
+	1008,                   // antenna with serial number
 	1009, 1010, 1011, 1012, // legacy GLONASS observables
 	1013, // system parameters
 	1033, // receiver and antenna descriptor
@@ -51,6 +51,8 @@ func MSMMsgType(gnss gpsprot.GNSS, msm int) rtcmbin.MsgType {
 		base = 1080
 	case gpsprot.GAL:
 		base = 1090
+	case gpsprot.QZSS:
+		base = 1110
 	case gpsprot.BDS:
 		base = 1120
 	case gpsprot.NAVIC:
@@ -119,7 +121,7 @@ func (f packetFormat) IsFinal(state gpsprot.ScanState) bool {
 }
 
 func (f packetFormat) MsgID(pkt []byte) string {
-	return rtcmbin.ExtractMsgType(pkt).String()
+	return rtcmbin.ExtractMsgID(pkt)
 }
 
 // ExtractChecksum extracts the checksum from the RTCM packet.
@@ -157,7 +159,7 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 	if err != nil {
 		return "", err
 	}
-	msgID := rtcmbin.ExtractMsgType(data).String()
+	msgID := rtcmbin.ExtractMsgID(data)
 	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
 		return msgID, nmh.NativeMsg(Tag, msgID, msg, tRead)
