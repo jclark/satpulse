@@ -9,7 +9,9 @@ Add correction observability for `satpulsed` as a protocol-independent
   receiver.
 
 Unicore `RTCMSTATUS` also fits this model as another receiver-status
-producer, although it populates fewer common fields.
+producer, although it populates fewer common fields.  Converting
+`RTCMSTATUS` is not part of this plan; it is tracked as a follow-on
+(#293).
 
 This plan is for issue #237.
 
@@ -105,18 +107,6 @@ For u-blox `UBX-RXM-COR` reports:
 - Do not put the `UBX-RXM-COR` struct into `NativeMsg`; for `Tag ==
   RTCM`, non-nil `NativeMsg` is an `rtcmbin.Msg`.
 
-For Unicore `RTCMSTATUS` reports:
-
-- `Source` is `CorReportSourceReceiver`.
-- `Tag` is `RTCM`.
-- `MsgID` uses the same RTCM message ID formatting as other reports
-  when the available message fields support it.
-- `RTCMRefBaseID` maps the Base ID field.
-- Leave `NBytes`, `ChecksumOK`, `Used`, and `NativeMsg` unset.  The
-  documented checksum is the Unicore log checksum, not an RTCM
-  correction-message checksum, and the message does not explicitly say
-  whether the receiver used the correction in its solution.
-
 Receiver-emitted RTCM remains on the existing native-message path as
 `NativeMsg(tag == RTCM, msgID, rtcmbin.Msg, tRead)`.  Do not add
 `RTCMOutput`.
@@ -129,12 +119,6 @@ message fields needed by the packet processor.
 In `gps/internal/ubx.PacketProcessor.Dispatch`, convert parsed
 `*ubxbin.RxmCor` into `*gpsprot.CorReportMsg` and emit it through
 the configured `gpsprot.MsgHandler`.
-
-Unicore can use the same receiver-source emission path by adding typed
-`RTCMSTATUS` parsing in `gps/lib/uncmsg` and converting it in
-`gps/internal/unc.packetProcessor.dispatch`.  The repository already
-knows the `RTCMSTATUS` message ID/name, but unregistered messages are
-currently parsed as unknown bodies.
 
 Add subtype-aware RTCM message ID support in `gps/lib/rtcmbin`.  It
 should continue to return the plain message type for normal RTCM
@@ -400,12 +384,25 @@ now.
     conversion, RTCM pull-report conversion, dispatcher pull-channel
     close handling, SSE filtering, dashboard counting, and Prometheus
     metrics.
-12. Add Unicore `RTCMSTATUS` parsing and conversion.
 
 ## Follow-ons
 
 These are not part of this plan.
 
+- Add Unicore `RTCMSTATUS` parsing and conversion as another
+  receiver-source producer (#293).  It can reuse the receiver-source
+  emission path: add typed `RTCMSTATUS` parsing in `gps/lib/uncmsg`
+  and convert it in `gps/internal/unc.packetProcessor.dispatch`.  The
+  repository already knows the `RTCMSTATUS` message ID/name, but
+  unregistered messages are currently parsed as unknown bodies.  As a
+  receiver-source report it sets `Source = CorReportSourceReceiver`,
+  `Tag = RTCM`, `MsgID` using the same RTCM message ID formatting as
+  other reports when the available fields support it, and
+  `RTCMRefBaseID` from the Base ID field; `NBytes`, `ChecksumOK`,
+  `Used`, and `NativeMsg` stay unset (the documented checksum is the
+  Unicore log checksum, not an RTCM correction-message checksum, and
+  the message does not explicitly say whether the receiver used the
+  correction in its solution).
 - Enable `UBX-RXM-COR` through `ConfigOpts` where needed.
 - Add a protocol-independent correction-report correlator if needed.
 - Enrich the generic `NativeMsg` observer path with packet length if
