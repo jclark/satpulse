@@ -111,6 +111,7 @@ func samples() []sample {
 			MsgID:         "1077",
 			NBytes:        opt.Make(42),
 			ChecksumOK:    opt.Make(true),
+			FinalFragment: opt.Make(true),
 			Used:          opt.Make(false),
 			RTCMRefBaseID: opt.Make(uint16(123)),
 		}},

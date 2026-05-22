@@ -47,6 +47,9 @@ func CorReportFromPacket(pkt scan.Packet) (*gpsprot.CorReportMsg, error) {
 		NBytes:     opt.Make(len(pkt.Data)),
 		ChecksumOK: opt.Make(pkt.ChecksumValid),
 	}
+	if mmb, ok := rtcmbin.MultipleMessageBit(pkt.Data); ok {
+		msg.FinalFragment = opt.Make(!mmb)
+	}
 	if !pkt.ChecksumValid {
 		return msg, nil
 	}

@@ -150,6 +150,7 @@ export interface CorReportMsg {
     nativeMsg?: unknown;
     nBytes?: number;
     checksumOK?: boolean;
+    finalFragment?: boolean;
     used?: boolean;
     rtcmRefBaseID?: number;
 }
