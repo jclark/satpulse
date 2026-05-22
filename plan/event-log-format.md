@@ -86,6 +86,7 @@ Keep a package-level map from type name to factory function:
 var msgRegistry = map[string]func() Msg{
     "posGeo":     func() Msg { return &PosGeoMsg{} },
     "time":       func() Msg { return &TimeMsg{} },
+    "corReport":  func() Msg { return &CorReportMsg{} },
     // ...
 }
 ```
@@ -122,6 +123,9 @@ The daemon event log records two kinds of payloads:
 - Pulse-edge records: `gpsevent.LogEvent` with `type:"pulseEdge"` and `Data`
   decoded as `gpsevent.PulseEdge`
 
+GPS message records include every current `gpsprot.Msg` type, including
+`corReport` correction-report events.
+
 `PulseEdge` carries `ptime.Time` and `phctime.Era`, which are types from the
 `time/` layer that `gpsprot` cannot import. The mixed event-log unmarshal path
 therefore belongs in `gpsevent`, not `gpsprot`.
@@ -141,6 +145,10 @@ Add custom unmarshalling for `gpsevent.LogEvent`. It decodes the top-level
 - `type == "pulseEdge"`: unmarshal `data` as `gpsevent.PulseEdge`
 - otherwise: use `gpsprot.UnmarshalMsg(type, data)` and store the resulting
   `gpsprot.Msg` in `Data`
+
+The runtime `gpsevent.LogEvent` unmarshaller should accept only the new
+envelope format. It should not accept the old sparse event-log shape; old logs
+are handled only by `gpsevent/migrate_log.go`.
 
 Update `LogEvent` writing in `gpsevent/dispatcher.go`:
 
@@ -169,6 +177,7 @@ Update `promobs/prometheus_replay_test.go` `readLogEvents()` to unmarshal
 - `gpsevent.LogEvent` unmarshals GPS message records and pulse-edge records.
 - Event log files use the new envelope format for GPS message and pulse-edge records.
 - Event log replay still handles pulse edges and GPS time/leap-second records correctly.
+- Event log migration preserves correction-report records as `type:"corReport"`.
 - Existing event-log replay and Prometheus replay tests pass with regenerated test data.
 
 ## Follow-on
@@ -238,4 +247,4 @@ For example:
 
 The full schema would have one branch for each GPS message type
 (`time`, `posGeo`, `posECEF`, `velGeo`, `velECEF`, `leapSecond`, `survey`,
-`satellites`, `navEpoch`) plus one branch for `pulseEdge`.
+`satellites`, `navEpoch`, `corReport`) plus one branch for `pulseEdge`.
