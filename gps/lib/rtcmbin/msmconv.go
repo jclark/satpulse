@@ -6,6 +6,37 @@ import (
 	"math/bits"
 )
 
+// MSM7ConvertPacket parses an RTCM packet and, if it is an MSM7
+// message, converts it to MSM at the given level and returns the
+// serialized result.  Non-MSM7 packets are returned unchanged with
+// no error -- callers do not need to filter by message type.  On a
+// parse, convert, or serialize failure the returned string is empty
+// and err describes the failure; the caller decides whether to drop
+// the packet or forward the original.
+func MSM7ConvertPacket(pkt string, level int) (string, error) {
+	mt := ExtractMsgType(pkt)
+	if !mt.IsMSM() || mt%10 != 7 {
+		return pkt, nil
+	}
+	msg, err := ParseMsg(pkt)
+	if err != nil {
+		return "", fmt.Errorf("parse: %w", err)
+	}
+	m7, ok := msg.(*MSMHiRes)
+	if !ok {
+		return "", fmt.Errorf("parse returned %T, want *MSMHiRes", msg)
+	}
+	mn, err := MSM7Convert(m7, level)
+	if err != nil {
+		return "", fmt.Errorf("convert: %w", err)
+	}
+	out, err := SerializeMsg(mn)
+	if err != nil {
+		return "", fmt.Errorf("serialize: %w", err)
+	}
+	return out, nil
+}
+
 // MSM7Convert converts an MSM7 message (MSMHiRes) to a standard-resolution
 // MSM at the given level. Currently only level 4 is supported.
 // Returns an error if the input is not MSM7, the target level is unsupported,

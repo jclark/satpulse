@@ -3,6 +3,7 @@ package gpsprot
 import (
 	"encoding/json"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1191,11 +1192,129 @@ func TestMsgType(t *testing.T) {
 		{&SurveyMsg{}, "survey"},
 		{&SatellitesMsg{}, "satellites"},
 		{&NavEpochMsg{}, "navEpoch"},
+		{&CorReportMsg{}, "corReport"},
 	}
 	for _, tt := range tests {
 		if got := tt.msg.MsgType(); got != tt.want {
 			t.Errorf("%T.MsgType() = %q, want %q", tt.msg, got, tt.want)
 		}
+	}
+}
+
+func TestCorReportSourceString(t *testing.T) {
+	tests := []struct {
+		s    CorReportSource
+		want string
+	}{
+		{CorReportSourcePull, "pull"},
+		{CorReportSourceReceiver, "receiver"},
+		{CorReportSource(42), "CorReportSource(42)"},
+	}
+	for _, tt := range tests {
+		if got := tt.s.String(); got != tt.want {
+			t.Errorf("CorReportSource(%d).String() = %q, want %q", uint8(tt.s), got, tt.want)
+		}
+	}
+}
+
+func TestCorReportSourceMarshalText(t *testing.T) {
+	tests := []struct {
+		s    CorReportSource
+		want string
+	}{
+		{CorReportSourcePull, "pull"},
+		{CorReportSourceReceiver, "receiver"},
+	}
+	for _, tt := range tests {
+		got, err := tt.s.MarshalText()
+		if err != nil {
+			t.Fatalf("MarshalText(%d): %v", uint8(tt.s), err)
+		}
+		if string(got) != tt.want {
+			t.Errorf("CorReportSource(%d).MarshalText() = %q, want %q", uint8(tt.s), got, tt.want)
+		}
+	}
+}
+
+func TestCorReportMsgJSON(t *testing.T) {
+	msg := CorReportMsg{
+		Source:        CorReportSourcePull,
+		Tag:           "RTCM",
+		MsgID:         "1077",
+		NBytes:        opt.Make(42),
+		ChecksumOK:    opt.Make(true),
+		RTCMRefBaseID: opt.Make(uint16(123)),
+	}
+	b, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"source":        "pull",
+		"tag":           "RTCM",
+		"msgID":         "1077",
+		"nBytes":        float64(42),
+		"checksumOK":    true,
+		"rtcmRefBaseID": float64(123),
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got  %+v\nwant %+v", got, want)
+	}
+}
+
+// corReportRecorder records CorReport calls for fan-out tests.
+type corReportRecorder struct {
+	DefaultHandler
+	msgs   []*CorReportMsg
+	tReads []time.Time
+}
+
+func (r *corReportRecorder) CorReport(msg *CorReportMsg, tRead time.Time) {
+	r.msgs = append(r.msgs, msg)
+	r.tReads = append(r.tReads, tRead)
+}
+
+func TestCorReportMsgDispatch(t *testing.T) {
+	rec := &corReportRecorder{}
+	msg := &CorReportMsg{Source: CorReportSourceReceiver, Tag: "RTCM", MsgID: "1077"}
+	tRead := time.Date(2026, 3, 27, 10, 0, 0, 0, time.UTC)
+	msg.Dispatch(rec, tRead)
+	if len(rec.msgs) != 1 {
+		t.Fatalf("expected 1 CorReport call, got %d", len(rec.msgs))
+	}
+	if rec.msgs[0] != msg {
+		t.Errorf("got msg %p, want %p", rec.msgs[0], msg)
+	}
+	if rec.tReads[0] != tRead {
+		t.Errorf("got tRead %v, want %v", rec.tReads[0], tRead)
+	}
+}
+
+func TestMultiHandlerCorReport(t *testing.T) {
+	r1 := &corReportRecorder{}
+	r2 := &corReportRecorder{}
+	mh := NewMultiHandler(r1, r2)
+	msg := &CorReportMsg{Source: CorReportSourcePull, Tag: "RTCM", MsgID: "1077"}
+	tRead := time.Date(2026, 3, 27, 10, 0, 0, 0, time.UTC)
+	mh.CorReport(msg, tRead)
+	for i, r := range []*corReportRecorder{r1, r2} {
+		if len(r.msgs) != 1 || r.msgs[0] != msg {
+			t.Errorf("handler %d: msgs = %v, want one call with %p", i, r.msgs, msg)
+		}
+	}
+}
+
+func TestGenericHandlerCorReport(t *testing.T) {
+	var got Msg
+	gh := &GenericHandler{Handle: func(m Msg, _ time.Time) { got = m }}
+	msg := &CorReportMsg{Source: CorReportSourcePull}
+	gh.CorReport(msg, time.Time{})
+	if got != msg {
+		t.Errorf("GenericHandler.CorReport: got %v, want %v", got, msg)
 	}
 }
 

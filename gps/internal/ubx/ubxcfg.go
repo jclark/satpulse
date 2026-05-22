@@ -382,6 +382,11 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	return &rcvrInfo
 }
 
+// ConfigSupport returns configuration support for this implementation.
+func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
+	return c.ver.configSupport()
+}
+
 // GetRequestCount returns the current number of requests and whether the slice is complete.
 func (c *Configurator) GetRequestCount() (count int, complete bool) {
 	return len(c.reqs), c.complete

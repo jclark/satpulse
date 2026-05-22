@@ -22,25 +22,28 @@ const (
 	cfgTimePulseMsg                         // configure messages reporting the time pulse
 	cfgPosition                             // position data is used
 	cfgSatellites                           // satellite data is used
+	cfgNtripStream                          // Ntrip caster or push needs signals/mode read back from receiver
+	cfgRTCMMSM7To4                          // Ntrip caster or push converts MSM7 output to MSM4
 )
 
 type GPSConfig struct {
-	Config             bool         `toml:"config"`
-	Mobile             bool         `toml:"mobile"`
-	Resurvey           bool         `toml:"resurvey"`
-	SurveyTime         uint32       `toml:"surveyTime"`
-	SurveyAcc          float64      `toml:"surveyAcc"`
-	FixedPosECEF       geopos.ECEF  `toml:"fixedPosECEF"`
-	FixedPosAcc        float64      `toml:"fixedPosAcc"`
-	AntennaCableDelay  float64      `toml:"antennaCableDelay"`  // in nanoseconds
-	AntennaCableLength float64      `toml:"antennaCableLength"` // in meters
-	AntennaCableVF     float64      `toml:"antennaCableVF"`     // velocity factor
-	TimeGNSS           gpsprot.GNSS `toml:"timeGNSS"`
-	MinElevation       float64      `toml:"minElevation"` // in degrees
-	RTCMBaseID         uint16       `toml:"rtcmBaseID"`
-	PulseWidth         float64      `toml:"pulseWidth"`
-	SatellitesOutput   *bool        `toml:"satellitesOutput"`
-	RTCMOutput         *bool        `toml:"rtcmOutput"`
+	Config             bool          `toml:"config"`
+	Mobile             bool          `toml:"mobile"`
+	Resurvey           bool          `toml:"resurvey"`
+	SurveyTime         uint32        `toml:"surveyTime"`
+	SurveyAcc          float64       `toml:"surveyAcc"`
+	FixedPosECEF       geopos.ECEF   `toml:"fixedPosECEF"`
+	FixedPosAcc        float64       `toml:"fixedPosAcc"`
+	AntennaCableDelay  float64       `toml:"antennaCableDelay"`  // in nanoseconds
+	AntennaCableLength float64       `toml:"antennaCableLength"` // in meters
+	AntennaCableVF     float64       `toml:"antennaCableVF"`     // velocity factor
+	TimeGNSS           gpsprot.GNSS  `toml:"timeGNSS"`
+	MinElevation       float64       `toml:"minElevation"` // in degrees
+	RTCMBaseID         uint16        `toml:"rtcmBaseID"`
+	PulseWidth         float64       `toml:"pulseWidth"`
+	SatellitesOutput   *bool         `toml:"satellitesOutput"`
+	RTCMOutput         *bool         `toml:"rtcmOutput"`
+	RTCMPreferMSM7     *bool         `toml:"rtcmPreferMSM7"`
 	Vendor             gpsreg.Vendor `toml:"vendor"`
 }
 
@@ -94,6 +97,15 @@ func (c *GPSConfig) target(speed int, cf cfgFeatures) (*gpsprot.ConfigTarget, er
 	if err != nil {
 		return nil, err
 	}
+	if cf&cfgNtripStream != 0 {
+		// Both properties feed STR-record fields built by
+		// ntrip.StreamRecordBuilder: SignalsEnabled drives the
+		// nav-system, carrier, and synthesised format-details
+		// fields; Mode supplies the receiver's fixed position so
+		// the lat/lon fields can be derived (Mode is otherwise
+		// only in props when the operator set gps.fixedPosECEF).
+		target.Get |= gpsprot.PropIDSignalsEnabled | gpsprot.PropIDMode
+	}
 	// setMsgOptions last because its error may be a non-fatal warning
 	err = c.setMsgOptions(&target.Opts, speed, cf)
 	return target, err
@@ -114,7 +126,7 @@ func (c *GPSConfig) setMsgOptions(opts *gpsprot.ConfigOptions, speed int, cf cfg
 			opts.PVTMsg |= gpsprot.PVTMsgVel
 		}
 	}
-	opts.RTCMMsg = c.rtcmMsg()
+	opts.RTCMMsg = c.rtcmMsg(cf)
 	var err error
 	opts.SatsMsg, err = c.satsMsg(speed, cf&cfgSatellites != 0)
 	return err
@@ -272,14 +284,22 @@ func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (v opt.Val[gps
 	return
 }
 
-func (c *GPSConfig) rtcmMsg() (v opt.Val[gpsprot.RTCMMsgFlags]) {
+func (c *GPSConfig) rtcmMsg(cf cfgFeatures) (v opt.Val[gpsprot.RTCMMsgFlags]) {
 	if c.RTCMOutput == nil {
 		return
 	}
-	if *c.RTCMOutput {
-		v.Set(gpsprot.RTCMMsgAuto)
-	} else {
+	if !*c.RTCMOutput {
 		v.Set(gpsprot.RTCMMsgNone)
+		return
+	}
+	preferMSM7 := cf&cfgRTCMMSM7To4 != 0
+	if c.RTCMPreferMSM7 != nil {
+		preferMSM7 = *c.RTCMPreferMSM7
+	}
+	if preferMSM7 {
+		v.Set(gpsprot.RTCMMsgAutoMSM7)
+	} else {
+		v.Set(gpsprot.RTCMMsgAuto)
 	}
 	return
 }

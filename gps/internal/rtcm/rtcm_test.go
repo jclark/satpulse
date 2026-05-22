@@ -88,13 +88,18 @@ func TestMSMMsgType(t *testing.T) {
 		{"NavIC MSM5", gpsprot.NAVIC, 5, 1135},
 		{"NavIC MSM7", gpsprot.NAVIC, 7, 1137},
 
+		// QZSS MSM tests
+		{"QZSS MSM1", gpsprot.QZSS, 1, 1111},
+		{"QZSS MSM4", gpsprot.QZSS, 4, 1114},
+		{"QZSS MSM5", gpsprot.QZSS, 5, 1115},
+		{"QZSS MSM7", gpsprot.QZSS, 7, 1117},
+
 		// Invalid MSM numbers
 		{"GPS MSM0", gpsprot.GPS, 0, 0},
 		{"GPS MSM8", gpsprot.GPS, 8, 0},
 		{"GLONASS MSM-1", gpsprot.GLO, -1, 0},
 
 		// Unsupported GNSS
-		{"QZSS MSM4", gpsprot.QZSS, 4, 0},
 		{"SBAS MSM4", gpsprot.SBAS, 4, 0},
 	}
 

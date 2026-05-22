@@ -11,13 +11,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/time/internal/phcsync"
-	"github.com/jclark/satpulse/time/lib/pmc"
-	"github.com/jclark/satpulse/time/internal/proxy"
+	"github.com/jclark/satpulse/gps/app/ntrip"
+	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/internal/phcsync"
+	"github.com/jclark/satpulse/time/internal/proxy"
 	"github.com/jclark/satpulse/time/internal/refclock"
-	"github.com/jclark/satpulse/time/sockrefclock"
 	"github.com/jclark/satpulse/time/internal/ts"
+	"github.com/jclark/satpulse/time/lib/pmc"
+	"github.com/jclark/satpulse/time/sockrefclock"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -28,12 +30,23 @@ type Config struct {
 	GPS        GPSConfig
 	PHC        PHCConfig
 	Sync       phcsync.Config
+	User       []UserConfig
 	Proxy      proxy.Config
+	Ntrip      ntrip.Config
+	Stream     stream.Config
 	HTTP       []HTTPConfig
 	LeapSecond LeapSecondConfig
 	PTP        PTPConfig
 	NTP        NTPConfig
 	Log        LogConfig
+}
+
+// UserConfig describes one user with name/password credentials.
+// Used by any feature that needs basic auth (currently the Ntrip
+// caster); referenced from per-feature config by user name.
+type UserConfig struct {
+	Name     string `toml:"name" comment:"User name"`
+	Password string `toml:"password" comment:"Password"`
 }
 
 type SerialConfig struct {
@@ -153,6 +166,24 @@ func (cfg *Config) httpWantsSatellites() bool {
 	return false
 }
 
+// hasNtripStream reports whether any STR record will be
+// synthesised at runtime -- a caster mountpoint or an RTCM
+// stream.push entry -- and so needs signals-enabled and mode read
+// back from the receiver to fill in STR-record fields.  Non-RTCM
+// pushes omit the STR header entirely and do not need this state.
+func (cfg *Config) hasNtripStream() bool {
+	return len(cfg.Ntrip.Mountpoint) > 0 || hasRTCMPush(cfg)
+}
+
+func (cfg *Config) hasRTCMMSM7To4() bool {
+	for i := range cfg.Ntrip.Mountpoint {
+		if cfg.Ntrip.Mountpoint[i].MSM7to4 {
+			return true
+		}
+	}
+	return hasRTCMPushMSM7To4(cfg)
+}
+
 // Validate validates the configuration and logs warnings for deprecated options.
 // It is separate from LoadConfig because the config contains logging settings.
 func (cfg *Config) Validate(lg *slog.Logger) error {
@@ -160,7 +191,35 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
 	}
+	users, err := cfg.userSet()
+	if err != nil {
+		return &configError{err: err}
+	}
+	if err := cfg.Ntrip.Validate(users); err != nil {
+		return &configError{err: err}
+	}
+	if err := cfg.Stream.Validate(); err != nil {
+		return &configError{err: err}
+	}
 	return nil
+}
+
+// userSet checks the top-level [[user]] table for empty or duplicate
+// names and returns the set of defined user names, suitable for
+// passing into sub-config validators that resolve user references.
+func (cfg *Config) userSet() (map[string]struct{}, error) {
+	users := make(map[string]struct{}, len(cfg.User))
+	for i := range cfg.User {
+		u := &cfg.User[i]
+		if u.Name == "" {
+			return nil, fmt.Errorf("user[%d]: name is required", i)
+		}
+		if _, dup := users[u.Name]; dup {
+			return nil, fmt.Errorf("user: duplicate name %q", u.Name)
+		}
+		users[u.Name] = struct{}{}
+	}
+	return users, nil
 }
 
 func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock, error) {

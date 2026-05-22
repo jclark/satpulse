@@ -3,6 +3,7 @@ package gpscmd
 import (
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -322,11 +323,119 @@ func TestParseFlagsValid(t *testing.T) {
 				t.Errorf("parseFlags returned error: %v", err)
 			} else if vars == nil {
 				t.Errorf("parseFlags returned nil vars")
-			} else if !reflect.DeepEqual(*vars, expect) {
-				t.Errorf("parseFlags returned %+v, expected %+v", *vars, expect)
+			} else {
+				expect.configSupport = vars.configSupport
+				if !reflect.DeepEqual(*vars, expect) {
+					t.Errorf("parseFlags returned %+v, expected %+v", *vars, expect)
+				}
 			}
 		})
 	}
+}
+
+func TestParseFlagsConfigSupport(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		all  gpsprot.ConfigSupportFlags
+		any  gpsprot.ConfigSupportFlags
+	}{
+		{"no config", nil, 0, 0},
+		{"speed", []string{"--speed", "9600"}, gpsprot.ConfigSupportSpeed, 0},
+		{"band", []string{"--gnss", "GPS", "--band", "L5"}, gpsprot.ConfigSupportBand, 0},
+		{"survey default accuracy", []string{"--survey"}, gpsprot.ConfigSupportSurvey, 0},
+		{"survey explicit accuracy", []string{"--survey", "--survey-acc", "5.5"}, gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc, 0},
+		{"survey time", []string{"--survey", "--survey-time", "300"}, gpsprot.ConfigSupportSurvey, 0},
+		{"pvt survey", []string{"--pvt-out", "survey"}, gpsprot.ConfigSupportSurveyMsg, 0},
+		{"pvt ptp", []string{"--pvt-out", "ptp"}, gpsprot.ConfigSupportSurveyMsg, 0},
+		{"pvt ntp", []string{"--pvt-out", "ntp"}, gpsprot.ConfigSupportSurveyMsg, 0},
+		{"fixed position default accuracy", []string{"--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"}, gpsprot.ConfigSupportFixedPos, 0},
+		{"fixed position explicit accuracy", []string{"--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "5"}, gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc, 0},
+		{"raw obs", []string{"--raw-out", "obs"}, gpsprot.ConfigSupportRaw, 0},
+		{"raw none", []string{"--raw-out", "none"}, 0, 0},
+		{"rtcm msm4", []string{"--rtcm-out", "MSM4"}, gpsprot.ConfigSupportRTCMMSM4, 0},
+		{"rtcm msm7", []string{"--rtcm-out", "MSM7"}, gpsprot.ConfigSupportRTCMMSM7, 0},
+		{"rtcm auto", []string{"--rtcm-out", "auto"}, 0, gpsprot.ConfigSupportRTCMMSM},
+		{"rtcm arp", []string{"--rtcm-out", "ARP"}, 0, gpsprot.ConfigSupportRTCMMSM},
+		{"rtcm none", []string{"--rtcm-out", "none"}, 0, 0},
+		{"rtcm qzss", []string{"--gnss", "GPS,QZSS", "--rtcm-out", "MSM4"}, gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMQZSS, 0},
+		{"rtcm base id", []string{"--rtcm-base-id", "1234"}, gpsprot.ConfigSupportRTCMBaseID, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append([]string{"--serial-device", "ttyS0"}, tt.args...)
+			vars, _, err := parseFlags("config", args)
+			if err != nil {
+				t.Fatalf("parseFlags returned error: %v", err)
+			}
+			all, any := vars.configSupport.flags()
+			if all != tt.all {
+				t.Errorf("configSupport.all = %v, want %v", all.Items(), tt.all.Items())
+			}
+			if any != tt.any {
+				t.Errorf("configSupport.any = %v, want %v", any.Items(), tt.any.Items())
+			}
+		})
+	}
+}
+
+func TestConfigSupportReqUnsupportedOptions(t *testing.T) {
+	tests := []struct {
+		name      string
+		req       configSupportReq
+		supported gpsprot.ConfigSupportFlags
+		want      []string
+	}{
+		{
+			name:      "exact satisfied",
+			req:       testConfigSupportReq(gpsprot.ConfigSupportRTCMMSM4, false, "--rtcm-out"),
+			supported: gpsprot.ConfigSupportRTCMMSM4,
+		},
+		{
+			name:      "exact unsupported",
+			req:       testConfigSupportReq(gpsprot.ConfigSupportRTCMMSM4, false, "--rtcm-out"),
+			supported: gpsprot.ConfigSupportRTCMMSM7,
+			want:      []string{"--rtcm-out"},
+		},
+		{
+			name:      "any satisfied",
+			req:       testConfigSupportReq(0, true, "--rtcm-out"),
+			supported: gpsprot.ConfigSupportRTCMMSM7,
+		},
+		{
+			name: "any unsupported",
+			req:  testConfigSupportReq(0, true, "--rtcm-out"),
+			want: []string{"--rtcm-out"},
+		},
+		{
+			name: "multiple sorted",
+			req: func() configSupportReq {
+				var req configSupportReq
+				req.require(gpsprot.ConfigSupportFixedPos, "--fixed-pos-ecef")
+				req.require(gpsprot.ConfigSupportSurvey, "--survey")
+				return req
+			}(),
+			want: []string{"--fixed-pos-ecef", "--survey"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.req.unsupportedOptions(tt.supported); !slices.Equal(got, tt.want) {
+				t.Errorf("unsupportedOptions() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func testConfigSupportReq(flags gpsprot.ConfigSupportFlags, msm bool, option string) configSupportReq {
+	var req configSupportReq
+	if flags != 0 {
+		req.require(flags, option)
+	}
+	if msm {
+		req.requireMSM(option)
+	}
+	return req
 }
 
 var invalidTestCases = [][]string{
