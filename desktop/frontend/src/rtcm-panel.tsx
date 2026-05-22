@@ -1,14 +1,9 @@
 import {h} from 'preact';
 import {useState, useEffect, useRef, useMemo} from 'preact/hooks';
+import type {CorReportMsg} from '@satpulse/gps/gpsprot';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
 import {Button} from './ui';
 import {rtcmInfo} from './rtcm';
-
-interface CorrPacketEvent {
-    msg: string;
-    epoch?: number;
-    refstation?: number;
-}
 
 interface MsgRow {
     msgType: string;
@@ -31,44 +26,49 @@ function formatAge(ms: number): string {
 
 export function RtcmPanel({connected, sessionSeq}: Props) {
     const rowsRef = useRef<Map<string, MsgRow>>(new Map());
+    // Epoch counter reconstructed from finalFragment: incremented after
+    // each packet that completes a logical message (finalFragment true).
+    const epochRef = useRef(0);
     const [displayed, setDisplayed] = useState<Map<string, MsgRow>>(new Map());
     const [tick, setTick] = useState(0);
 
     // Listen for corrpacket events
     useEffect(() => {
-        const off = EventsOn('gps:corrpacket', (evt: CorrPacketEvent) => {
+        const off = EventsOn('gps:corrpacket', (evt: CorReportMsg) => {
             const rows = rowsRef.current;
-            const row = rows.get(evt.msg);
+            const row = rows.get(evt.msgID);
             const now = Date.now();
-            if (evt.refstation != null && row) {
-                row.station = evt.refstation;
+            if (evt.rtcmRefBaseID != null && row) {
+                row.station = evt.rtcmRefBaseID;
             }
-            if (evt.epoch != null) {
-                // MSM packet: count by epoch
+            if (evt.finalFragment != null) {
+                // Fragmentable message (MSM): count by reconstructed epoch.
+                const epoch = epochRef.current;
+                if (evt.finalFragment) epochRef.current++;
                 if (row) {
-                    if (evt.epoch !== row.lastEpoch) {
+                    if (epoch !== row.lastEpoch) {
                         row.count++;
-                        row.lastEpoch = evt.epoch;
+                        row.lastEpoch = epoch;
                         row.lastTime = now;
                     } else {
                         row.splits++;
                     }
                 } else {
-                    rows.set(evt.msg, {
-                        msgType: evt.msg, count: 1, splits: 0,
-                        lastEpoch: evt.epoch, station: evt.refstation ?? -1,
+                    rows.set(evt.msgID, {
+                        msgType: evt.msgID, count: 1, splits: 0,
+                        lastEpoch: epoch, station: evt.rtcmRefBaseID ?? -1,
                         lastTime: now,
                     });
                 }
             } else {
-                // Non-MSM: count every packet
+                // Non-fragmentable message: count every packet.
                 if (row) {
                     row.count++;
                     row.lastTime = now;
                 } else {
-                    rows.set(evt.msg, {
-                        msgType: evt.msg, count: 1, splits: 0,
-                        lastEpoch: -1, station: evt.refstation ?? -1,
+                    rows.set(evt.msgID, {
+                        msgType: evt.msgID, count: 1, splits: 0,
+                        lastEpoch: -1, station: evt.rtcmRefBaseID ?? -1,
                         lastTime: now,
                     });
                 }
@@ -84,6 +84,7 @@ export function RtcmPanel({connected, sessionSeq}: Props) {
     useEffect(() => {
         if (!connected) {
             rowsRef.current = new Map();
+            epochRef.current = 0;
             setDisplayed(new Map());
         }
     }, [connected]);
@@ -91,6 +92,7 @@ export function RtcmPanel({connected, sessionSeq}: Props) {
     // Clear when a new corrections session starts
     useEffect(() => {
         rowsRef.current = new Map();
+        epochRef.current = 0;
         setDisplayed(new Map());
     }, [sessionSeq]);
 
@@ -102,6 +104,7 @@ export function RtcmPanel({connected, sessionSeq}: Props) {
 
     const handleClear = () => {
         rowsRef.current = new Map();
+        epochRef.current = 0;
         setDisplayed(new Map());
     };
 

@@ -426,18 +426,35 @@ type CorrectionSource struct {
 	Password   string `json:"password"`   // ntrip only, may be empty
 }
 
-// CorrPacketEvent is the payload for "gps:corrpacket" events.
-type CorrPacketEvent struct {
-	Msg        string          `json:"msg"`
-	Epoch      opt.Val[uint64] `json:"epoch,omitzero"`
-	RefStation opt.Val[uint16] `json:"refstation,omitzero"`
-}
-
 // BaseARPEvent is the payload for "gps:basearp" events, emitted when
 // an RTCM 1005 or 1006 message is received with a base station ARP.
 type BaseARPEvent struct {
 	StationID uint16     `json:"stationID"`
 	ECEF      [3]float64 `json:"ecef"` // meters
+}
+
+// emitCorrPacket converts a scanned correction packet into a
+// gpsprot.CorReportMsg and emits it as a "gps:corrpacket" event. The
+// parsed RTCM message is consumed here to emit a "gps:basearp" event
+// for 1005/1006; it is not put on the wire (NativeMsg is cleared).
+func (a *App) emitCorrPacket(pkt scan.Packet) {
+	msg, err := stream.CorReportFromPacket(pkt)
+	if err != nil || msg == nil {
+		return
+	}
+	if mt, ok := msg.NativeMsg.(*rtcmbin.MT1005); ok {
+		runtime.EventsEmit(a.ctx, "gps:basearp", BaseARPEvent{
+			StationID: mt.StationID,
+			ECEF:      mt.ECEF(),
+		})
+	} else if mt, ok := msg.NativeMsg.(*rtcmbin.MT1006); ok {
+		runtime.EventsEmit(a.ctx, "gps:basearp", BaseARPEvent{
+			StationID: mt.StationID,
+			ECEF:      mt.MT1005.ECEF(),
+		})
+	}
+	msg.NativeMsg = nil
+	runtime.EventsEmit(a.ctx, "gps:corrpacket", msg)
 }
 
 // StartCorrections dials the remote address and starts forwarding
@@ -517,38 +534,11 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 	// so a concurrent stop will wait for them.
 	wg.Go(func() {
 		defer sink.Packets.Unsubscribe(pktSub)
-		var epoch uint64
 		for pkt := range pktSub {
 			if pkt.Format == nil {
 				continue
 			}
-			data := []byte(pkt.Data)
-			ev := CorrPacketEvent{Msg: pkt.Format.MsgID(data)}
-			if mmb, ok := rtcmbin.MultipleMessageBit(data); ok {
-				ev.Epoch.Set(epoch)
-				if !mmb {
-					epoch++
-				}
-			}
-			if id, ok := rtcmbin.ReferenceStationID(data); ok {
-				ev.RefStation.Set(id)
-			}
-			runtime.EventsEmit(a.ctx, "gps:corrpacket", ev)
-			if ev.Msg == "1005" || ev.Msg == "1006" {
-				if msg, err := rtcmbin.ParseMsg(pkt.Data); err == nil {
-					if mt, ok := msg.(*rtcmbin.MT1005); ok {
-						runtime.EventsEmit(a.ctx, "gps:basearp", BaseARPEvent{
-							StationID: mt.StationID,
-							ECEF:      mt.ECEF(),
-						})
-					} else if mt, ok := msg.(*rtcmbin.MT1006); ok {
-						runtime.EventsEmit(a.ctx, "gps:basearp", BaseARPEvent{
-							StationID: mt.StationID,
-							ECEF:      mt.MT1005.ECEF(),
-						})
-					}
-				}
-			}
+			a.emitCorrPacket(pkt)
 		}
 	})
 	wg.Go(func() {
