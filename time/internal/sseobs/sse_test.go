@@ -441,6 +441,112 @@ func TestInitEventsAfterModeChanged(t *testing.T) {
 	}
 }
 
+// TestSSEObserverCorReportLatch exercises the source-preference state
+// machine in SSEObserver.CorReport: starts in pull, switches to
+// receiver on any receiver-source event, and switches back to pull
+// only on a pull-source event arriving more than corReportSourceTimeout
+// after the last receiver-source event.
+func TestSSEObserverCorReportLatch(t *testing.T) {
+	t0 := time.Date(2026, 5, 16, 12, 0, 0, 0, time.UTC)
+	pull := gpsprot.CorReportSourcePull
+	recv := gpsprot.CorReportSourceReceiver
+
+	type input struct {
+		source gpsprot.CorReportSource
+		tRead  time.Time
+	}
+	tests := []struct {
+		name   string
+		events []input
+		expect []string
+	}{
+		{
+			name: "pull stays in pull mode",
+			events: []input{
+				{pull, t0},
+				{pull, t0.Add(time.Second)},
+			},
+			expect: []string{"pull", "pull"},
+		},
+		{
+			name: "receiver switches and drops pull within timeout",
+			events: []input{
+				{pull, t0},
+				{recv, t0.Add(time.Second)},
+				{pull, t0.Add(2 * time.Second)},
+			},
+			expect: []string{"pull", "receiver"},
+		},
+		{
+			name: "pull at exactly timeout still dropped",
+			events: []input{
+				{recv, t0},
+				{pull, t0.Add(corReportSourceTimeout)},
+			},
+			expect: []string{"receiver"},
+		},
+		{
+			name: "pull past timeout switches back to pull",
+			events: []input{
+				{recv, t0},
+				{pull, t0.Add(corReportSourceTimeout + time.Nanosecond)},
+				{pull, t0.Add(corReportSourceTimeout + time.Second)},
+			},
+			expect: []string{"receiver", "pull", "pull"},
+		},
+		{
+			name: "receiver refreshes timeout",
+			events: []input{
+				{recv, t0},
+				{recv, t0.Add(corReportSourceTimeout - time.Second)},
+				{pull, t0.Add(corReportSourceTimeout + time.Second)},
+			},
+			expect: []string{"receiver", "receiver"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := make(chan sse.Event, len(tc.events))
+			obs := New(ch, ptime.LeapSecond{}, slog.Default(), &gpscfg.Result{})
+			for _, ev := range tc.events {
+				obs.CorReport(&gpsprot.CorReportMsg{
+					Source: ev.source,
+					Tag:    "RTCM",
+					MsgID:  "1077",
+				}, ev.tRead)
+			}
+			close(ch)
+			var got []string
+			for ev := range ch {
+				got = append(got, parseCorReportSource(t, ev))
+			}
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
+			}
+		})
+	}
+}
+
+// parseCorReportSource extracts the source field from a corReport SSE event.
+func parseCorReportSource(t *testing.T, ev sse.Event) string {
+	t.Helper()
+	var data string
+	for line := range strings.SplitSeq(ev.Format(), "\n") {
+		if d, ok := strings.CutPrefix(line, "data: "); ok {
+			data = d
+			break
+		}
+	}
+	var payload struct {
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal([]byte(data), &payload); err != nil {
+		t.Fatalf("unmarshal %q: %v", data, err)
+	}
+	return payload.Source
+}
+
 // TestNewNilCfgResult checks that New tolerates a nil cfgResult and
 // emits no init event in that case. This happens in degraded startup
 // when GPS detection fails but the daemon continues running because no
