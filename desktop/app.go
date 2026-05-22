@@ -455,7 +455,7 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 	case "tcp":
 		source = &stream.TCPSource{Addr: addr}
 	case "ntrip":
-		source = &stream.NTRIPSource{
+		source = &stream.NtripSource{
 			Addr:       addr,
 			Mountpoint: cfg.Mountpoint,
 			Username:   cfg.Username,
