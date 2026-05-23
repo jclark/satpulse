@@ -683,19 +683,15 @@ func convertPacketLog(r io.Reader, from inputFormat, in packetInput) (int, error
 		if entry.Out || entry.Data() == "" {
 			continue
 		}
-		fmts := packetLogFormats
-		if entry.Tag != "" {
-			if from != inputRaw && entry.Tag != inputPacketTags[from] {
+		if from != inputRaw && entry.Tag != inputPacketTags[from] {
+			continue
+		}
+		if from == inputRaw {
+			if _, ok := inputMetadataByTag[entry.Tag]; !ok {
 				continue
 			}
-			if from == inputRaw {
-				if _, ok := inputMetadataByTag[entry.Tag]; !ok {
-					continue
-				}
-			}
-			fmts = packetLogFormatsByTag[entry.Tag]
 		}
-		ok, err := convertPacketData(entry.Data(), fmts, in, packetLogWeekConstraint(entry, line))
+		ok, err := convertPacketData(entry.Data(), packetLogFormatsByTag[entry.Tag], in, packetLogWeekConstraint(entry, line))
 		if err != nil {
 			return n, fmt.Errorf("packet log line %d: %w", line, err)
 		}
@@ -740,9 +736,6 @@ func packetData(pkt scan.Packet) (string, bool, error) {
 		return "", false, pkt.ReadError
 	}
 	if pkt.Format == nil {
-		if len(pkt.Data) != 0 {
-			return "", false, fmt.Errorf("invalid input data before packet: %d bytes", len(pkt.Data))
-		}
 		return "", false, nil
 	}
 	if !pkt.ChecksumValid {

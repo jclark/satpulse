@@ -357,6 +357,25 @@ func TestRunObsJSONOutput(t *testing.T) {
 	}
 }
 
+func TestRunRawInputSkipsInvalidFragments(t *testing.T) {
+	pkt := append([]byte("junk"), rawxPacket(t)...)
+	for _, from := range []inputFormat{inputRaw, inputUBX} {
+		t.Run(string(from), func(t *testing.T) {
+			var got bytes.Buffer
+			if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, from, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, rnxubx.Options{}, 0); err != nil {
+				t.Fatalf("runInputs raw to obsj: %v", err)
+			}
+			_, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
+			if err != nil {
+				t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
+			}
+			if len(obs) != 1 || obs[0].Sat != "G03" || obs[0].Sig != "1C" {
+				t.Fatalf("observations = %#v", obs)
+			}
+		})
+	}
+}
+
 func TestRunDecimatesRawInput(t *testing.T) {
 	pkt := append(rawxPacketAt(t, 345601.0), rawxPacketAt(t, 345610.0)...)
 	var got bytes.Buffer
@@ -488,9 +507,18 @@ func TestRunPacketLogInput(t *testing.T) {
 			t:        uncT,
 		},
 		{
-			name:     "raw_selects_untagged_uncb",
-			from:     inputRaw,
-			entries:  []gpsio.PacketLogEntry{uncbUntagged},
+			name:    "raw_ignores_untagged_uncb",
+			from:    inputRaw,
+			entries: []gpsio.PacketLogEntry{uncbUntagged},
+			err:     "no raw observation packets found",
+		},
+		{
+			name: "raw_ignores_untagged_fragments",
+			from: inputRaw,
+			entries: []gpsio.PacketLogEntry{
+				{Bin: gpsio.HexString([]byte{0xd3})},
+				uncb,
+			},
 			comments: []string{"format: Unicore UNCB"},
 			sat:      "G06",
 			sig:      "1C",
