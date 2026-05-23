@@ -877,17 +877,24 @@ should therefore be built from:
 
 The helpers should cover:
 
-- `RINEXSys(system uint8) string`, mapping tracking-status system values to
+- `TrackingStatus.SysID() SysID`, extracting the tracking-status system value
+  for use by the RINEX helpers.
+- `TrackingStatus.SignalType() FreqID` and `TrackingStatus.L2C() bool`,
+  extracting the tracking-status signal fields used by `RINEXObsSig`.
+  The Unicore V1.13 Table 7-178 Channel Tracking Status calls bits 21..25
+  `Signal type`; the values reuse the package's `FreqID` type.
+- `RINEXSys(system SysID) string`, mapping tracking-status system values to
   `G`, `R`, `S`, `E`, `C`, `J`, and `I`.
-- `RINEXSatNum(system uint8, prnSlot uint16) uint8`, applying Unicore PRN/slot
+- `RINEXSatNum(system SysID, prnSlot uint16) uint8`, applying Unicore PRN/slot
   numbering and returning 0 for reserved or unsupported IDs.
-- `RINEXTrackingSig(system uint8, sigType uint8, l2c bool) string`, applying
+- `RINEXObsSig(system SysID, sigType FreqID, l2c bool) string`, applying
   the OBSVM Channel Tracking Status `Signal type` field. The name and
   documentation should make clear that this maps OBSVM tracking-status signal
-  types, not Unicore frequency identifiers in general. The caller extracts
-  `system`, `sigType`, and `l2c` from the tracking status word.
+  types, not Unicore frequency identifiers in general. The caller gets these
+  values from `TrackingStatus.SysID`, `TrackingStatus.SignalType`, and
+  `TrackingStatus.L2C`.
 
-Initial `RINEXTrackingSig` table for OBSVM Channel Tracking Status:
+Initial `RINEXObsSig` table for OBSVM Channel Tracking Status:
 
 | System | Signal type | `l2c` | Unicore signal | `gpsprot.SignalID` | RINEX signal |
 | ------ | ----------- | ----- | -------------- | ------------------ | ------------ |
@@ -971,8 +978,7 @@ Channel Tracking Status table defines bit `26` as part of the signal identity:
 
 Resolution notes:
 
-- GPS `sigType=9` is resolved by using the OBSVM `l2c` bit in
-  `RINEXTrackingSig`.
+- GPS `sigType=9` is resolved by using the OBSVM `l2c` bit in `RINEXObsSig`.
 - BDS `sigType=13` should map to RINEX `7D`. The OBSVM signal name is
   `B2b(I)`, and I is the B2b data component. RTKLIB Explorer's `7P` mapping is
   treated as wrong for this row.

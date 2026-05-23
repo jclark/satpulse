@@ -10,6 +10,22 @@ import (
 // TrackingStatus represents the OBSVM channel tracking status bitfield.
 type TrackingStatus uint32
 
+// SysID returns the GNSS system identifier from the OBSVM channel tracking
+// status word.
+func (s TrackingStatus) SysID() SysID {
+	return SysID((s >> 16) & 0x7)
+}
+
+// SignalType returns the signal type from the OBSVM channel tracking status word.
+func (s TrackingStatus) SignalType() FreqID {
+	return FreqID((s >> 21) & 0x1f)
+}
+
+// L2C reports whether the OBSVM channel tracking status word has the L2C flag.
+func (s TrackingStatus) L2C() bool {
+	return s&(1<<26) != 0
+}
+
 // String returns the OBSVM ASCII hex representation.
 func (s TrackingStatus) String() string {
 	return fmt.Sprintf("%08x", uint32(s))
