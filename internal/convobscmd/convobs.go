@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,8 +23,10 @@ import (
 	"github.com/jclark/satpulse/gps/lib/rinex"
 	rnxrtcm "github.com/jclark/satpulse/gps/lib/rinex/rtcm"
 	rnxubx "github.com/jclark/satpulse/gps/lib/rinex/ubx"
+	rnxunc "github.com/jclark/satpulse/gps/lib/rinex/unc"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
+	"github.com/jclark/satpulse/gps/lib/uncmsg"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/spf13/pflag"
 )
@@ -31,12 +34,14 @@ import (
 const scanBufSize = 64 * 1024
 const gpsWeek = 7 * 24 * time.Hour
 const packetLogWeekSlack = time.Minute
+const uncaObsVMMsg = "OBSVMA"
 
 var packetStreamFormats = gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)
-var packetLogFormats = gpsreg.CreatePacketFormats(gpsreg.VendorUblox)
+var packetLogFormats = gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)
+var packetLogFormatsByTag = packetFormatsByTag(packetLogFormats)
 
 const summary = `[-h|--help] [-o|--output path] [--metadata path]
-           [-r|--from raw|ubx|rtcm|rinex|obsj] [--packet-log] [--to rinex|obsj]
+           [-r|--from raw|ubx|rtcm|uncb|unca|rinex|obsj] [--packet-log] [--to rinex|obsj]
            [--date YYYYMMDD|--recent|-f|--date-from-filename]
            [--interval seconds]
            [--marker-name name] [--marker-number number] [--marker-type type]
@@ -53,9 +58,40 @@ const (
 	inputRaw     inputFormat = "raw"
 	inputUBX     inputFormat = "ubx"
 	inputRTCM    inputFormat = "rtcm"
+	inputUNCB    inputFormat = "uncb"
+	inputUNCA    inputFormat = "unca"
 	inputRINEX   inputFormat = "rinex"
 	inputObsJSON inputFormat = "obsj"
 )
+
+var inputPacketTags = map[inputFormat]gpsprot.Tag{
+	inputUBX:  gpsreg.TagUBX,
+	inputRTCM: gpsreg.TagRTCM,
+	inputUNCB: gpsreg.TagUnicoreBin,
+	inputUNCA: gpsreg.TagUnicoreAscii,
+}
+
+var inputMetadataByTag = map[gpsprot.Tag]rinex.Metadata{
+	gpsreg.TagUBX:          {Comments: []string{"format: u-blox UBX", "options: -MULTICODE"}},
+	gpsreg.TagRTCM:         {Comments: []string{"format: RTCM"}},
+	gpsreg.TagUnicoreBin:   {Comments: []string{"format: Unicore UNCB"}},
+	gpsreg.TagUnicoreAscii: {Comments: []string{"format: Unicore UNCA"}},
+}
+
+var rawObservationNames = map[gpsprot.Tag]string{
+	gpsreg.TagUBX:          "UBX RAWX",
+	gpsreg.TagRTCM:         "RTCM MSM7",
+	gpsreg.TagUnicoreBin:   "UNCB OBSVM",
+	gpsreg.TagUnicoreAscii: "UNCA OBSVMA",
+}
+
+var noPacketObservationMsgs = map[inputFormat]string{
+	inputUBX:  "no UBX-RXM-RAWX messages found",
+	inputRTCM: "no RTCM MSM7 messages found",
+	inputUNCB: "no Unicore UNCB OBSVM messages found",
+	inputUNCA: "no Unicore UNCA OBSVMA messages found",
+	inputRaw:  "no raw observation packets found (UBX RAWX, RTCM MSM7, UNCB OBSVM, UNCA OBSVMA)",
+}
 
 type outputFormat string
 
@@ -99,9 +135,17 @@ type weekOptions struct {
 	date time.Time
 }
 
-type runOptions struct {
-	now  time.Time
-	week weekOptions
+type convJob struct {
+	inputs    iter.Seq2[string, inputReader]
+	out       io.Writer
+	from      inputFormat
+	to        outputFormat
+	packetLog bool
+	meta      rinex.Metadata
+	wopts     rinex.WriterOptions
+	uopts     rnxubx.Options
+	interval  time.Duration
+	week      weekOptions
 }
 
 // WeekConstraint carries an RTCM week interval and its user-facing diagnostics.
@@ -123,22 +167,11 @@ type packetInput interface {
 	ConvertPacket(scan.Packet, WeekConstraint) (bool, error)
 }
 
-type rtcmWeekState struct {
-	week WeekConstraint
-	used bool
+type tagInput struct {
+	tag     gpsprot.Tag
+	convert func(string, WeekConstraint) (bool, error)
+	accept  func(scan.Packet, string) bool
 }
-
-type ubxPacketInput struct {
-	conv *rnxubx.Converter
-}
-
-var _ packetInput = (*ubxPacketInput)(nil)
-
-type rtcmPacketInput struct {
-	conv *rnxrtcm.Converter
-}
-
-var _ packetInput = (*rtcmPacketInput)(nil)
 
 type metadataBufferSink struct {
 	dst  rinex.Sink
@@ -149,20 +182,24 @@ type metadataBufferSink struct {
 var _ rinex.Sink = (*metadataBufferSink)(nil)
 
 type rawPacketInput struct {
-	sink      rinex.Sink
-	uopts     rnxubx.Options
-	tentative bool
-	week      WeekConstraint
-	meta      rinex.Metadata
-	metaBuf   *metadataBufferSink
-	rtcm      *rnxrtcm.Converter
-	ubx       *rnxubx.Converter
+	sink    rinex.Sink
+	lg      *slog.Logger
+	uopts   rnxubx.Options
+	family  gpsprot.Tag
+	warned  bool
+	week    WeekConstraint
+	meta    rinex.Metadata
+	metaBuf *metadataBufferSink
+	rtcm    *rnxrtcm.Converter
+	ubx     *rnxubx.Converter
+	unc     *rnxunc.Converter
 }
 
 var _ packetInput = (*rawPacketInput)(nil)
 
 // Cmd implements the convobs subcommand.
-func Cmd(_ io.Writer, _ slog.Level, progName, cmdName string, args []string) (usage string, err error) {
+func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, args []string) (usage string, err error) {
+	lg := cmd.NewDefaultLogger(logWriter, logLevel)
 	v, usageFunc, err := parseFlags(cmdName, args)
 	if err != nil {
 		return usageFunc(progName), err
@@ -193,10 +230,19 @@ func Cmd(_ io.Writer, _ slog.Level, progName, cmdName string, args []string) (us
 		defer f.Close()
 		out = f
 	}
-	return "", runInputsWithOptions(openInputs(v.inputPaths), out, v.inputFormat, v.outputFormat, v.packetLog, v.meta, v.wopts, v.uopts, v.interval, runOptions{
-		now:  now,
-		week: v.week,
-	})
+	cj := convJob{
+		inputs:    openInputs(v.inputPaths),
+		out:       out,
+		from:      v.inputFormat,
+		to:        v.outputFormat,
+		packetLog: v.packetLog,
+		meta:      v.meta,
+		wopts:     v.wopts,
+		uopts:     v.uopts,
+		interval:  v.interval,
+		week:      v.week,
+	}
+	return "", cj.run(lg, now)
 }
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
@@ -275,12 +321,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		return nil, usageFunc, errors.New("expected at least one input file")
 	}
 	v.inputPaths = flags.Args()
-	if v.week.mode == weekFilename {
-		for _, path := range v.inputPaths {
-			if path == "-" {
-				return nil, usageFunc, errors.New("--date-from-filename is not valid with stdin")
-			}
-		}
+	if v.week.mode == weekFilename && slices.Contains(v.inputPaths, "-") {
+		return nil, usageFunc, errors.New("--date-from-filename is not valid with stdin")
 	}
 	if v.inputFormat.packetInput() {
 		for _, path := range v.inputPaths {
@@ -323,10 +365,18 @@ func openInputs(paths []string) iter.Seq2[string, inputReader] {
 	}
 }
 
+func packetFormatsByTag(fmts []gpsprot.PacketFormat) map[gpsprot.Tag][]gpsprot.PacketFormat {
+	m := make(map[gpsprot.Tag][]gpsprot.PacketFormat)
+	for _, f := range fmts {
+		m[f.Tag()] = append(m[f.Tag()], f)
+	}
+	return m
+}
+
 func (v *flagVars) setInputFormat(s string) error {
 	s = strings.ToLower(s)
 	switch inputFormat(s) {
-	case inputRaw, inputUBX, inputRTCM, inputRINEX, inputObsJSON:
+	case inputRaw, inputUBX, inputRTCM, inputUNCB, inputUNCA, inputRINEX, inputObsJSON:
 		v.inputFormat = inputFormat(s)
 		return nil
 	default:
@@ -346,7 +396,7 @@ func (v *flagVars) setOutputFormat(s string) error {
 }
 
 func (f inputFormat) packetInput() bool {
-	return f == inputRaw || f == inputUBX || f == inputRTCM
+	return f == inputRaw || inputPacketTags[f] != gpsprot.EmptyTag
 }
 
 func (f inputFormat) mayUseRTCM() bool {
@@ -382,42 +432,38 @@ func (v *flagVars) setWeekOptions(date string, recent, dateFromFilename bool) er
 	return nil
 }
 
-func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rnxubx.Options, interval time.Duration) error {
-	return runInputsWithOptions(inputs, out, from, to, packetLog, meta, wopts, uopts, interval, runOptions{now: time.Now().UTC()})
-}
-
-func runInputsWithOptions(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rnxubx.Options, interval time.Duration, opts runOptions) error {
-	if opts.now.IsZero() {
-		opts.now = time.Now().UTC()
+func (cj convJob) run(lg *slog.Logger, now time.Time) error {
+	if now.IsZero() {
+		now = time.Now().UTC()
 	}
-	switch from {
+	switch cj.from {
 	case inputRINEX, inputObsJSON:
-		return convertObservationInputs(inputs, out, from, to, meta, wopts, interval)
+		return convertObservationInputs(cj.inputs, cj.out, cj.from, cj.to, cj.meta, cj.wopts, cj.interval)
 	}
-	sink, err := outputSink(out, to, wopts, interval)
+	sink, err := outputSink(cj.out, cj.to, cj.wopts, cj.interval)
 	if err != nil {
 		return err
 	}
-	conv, err := newPacketInput(from, sink, meta, uopts)
+	conv, err := newPacketInput(cj.from, sink, cj.meta, cj.uopts, lg)
 	if err != nil {
 		return err
 	}
 	n := 0
 	i := 0
-	for path, in := range inputs {
+	for path, in := range cj.inputs {
 		if in.err != nil {
 			return inputError(path, in.err)
 		}
-		var week rtcmWeekState
-		if !packetLog {
-			week, err = fileWeekConstraint(path, in, opts, from == inputRTCM, i)
+		var week WeekConstraint
+		if !cj.packetLog {
+			week, err = fileWeekConstraint(path, in, cj.week, now, cj.from == inputRTCM, i)
 			if err != nil {
 				return inputError(path, err)
 			}
 		}
 		var c int
-		if packetLog {
-			c, err = convertPacketLog(in.r, from, conv)
+		if cj.packetLog {
+			c, err = convertPacketLog(in.r, cj.from, conv)
 		} else {
 			c, err = convertPacketStream(in.r, conv, week)
 		}
@@ -428,7 +474,7 @@ func runInputsWithOptions(inputs iter.Seq2[string, inputReader], out io.Writer, 
 		i++
 	}
 	if n == 0 {
-		return noPacketObservationsError(from)
+		return errors.New(noPacketObservationMsgs[cj.from])
 	}
 	return sink.Flush()
 }
@@ -512,46 +558,52 @@ func loadMetadata(dst *rinex.Metadata, path string, r io.Reader) error {
 	return nil
 }
 
-func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, uopts rnxubx.Options) (packetInput, error) {
+func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, uopts rnxubx.Options, lg *slog.Logger) (packetInput, error) {
+	if tag := inputPacketTags[from]; tag != gpsprot.EmptyTag {
+		if err := sink.Metadata(inputMetadataByTag[tag]); err != nil {
+			return nil, err
+		}
+		if err := sink.Metadata(meta); err != nil {
+			return nil, err
+		}
+	}
 	switch from {
 	case inputUBX:
-		if err := sink.Metadata(ubxInputMetadata()); err != nil {
-			return nil, err
-		}
-		if err := sink.Metadata(meta); err != nil {
-			return nil, err
-		}
-		return &ubxPacketInput{conv: rnxubx.New(sink, uopts)}, nil
+		conv := rnxubx.New(sink, uopts)
+		return &tagInput{tag: gpsreg.TagUBX, convert: func(data string, _ WeekConstraint) (bool, error) {
+			return convertUBXData(data, conv)
+		}}, nil
 	case inputRTCM:
-		if err := sink.Metadata(rtcmInputMetadata()); err != nil {
-			return nil, err
-		}
-		if err := sink.Metadata(meta); err != nil {
-			return nil, err
-		}
-		return &rtcmPacketInput{conv: rnxrtcm.New(sink, rnxrtcm.Options{})}, nil
+		conv := rnxrtcm.New(sink, rnxrtcm.Options{})
+		return &tagInput{tag: gpsreg.TagRTCM, convert: func(data string, week WeekConstraint) (bool, error) {
+			return convertRTCMData(data, conv, week)
+		}}, nil
+	case inputUNCB:
+		conv := rnxunc.New(sink, rnxunc.Options{})
+		return &tagInput{tag: gpsreg.TagUnicoreBin, accept: isRawObsTag, convert: func(data string, _ WeekConstraint) (bool, error) {
+			return convertObsVMData(data, conv, uncmsg.ParseBinMsg)
+		}}, nil
+	case inputUNCA:
+		conv := rnxunc.New(sink, rnxunc.Options{})
+		return &tagInput{tag: gpsreg.TagUnicoreAscii, accept: isRawObsTag, convert: func(data string, _ WeekConstraint) (bool, error) {
+			return convertObsVMData(data, conv, uncmsg.ParseAsciiMessage)
+		}}, nil
 	default:
-		return newRawPacketInput(sink, meta, uopts), nil
+		return newRawPacketInput(sink, meta, uopts, lg), nil
 	}
 }
 
-func ubxInputMetadata() rinex.Metadata {
-	return rinex.Metadata{Comments: []string{"format: u-blox UBX", "options: -MULTICODE"}}
-}
-
-func rtcmInputMetadata() rinex.Metadata {
-	return rinex.Metadata{Comments: []string{"format: RTCM"}}
-}
-
-func newRawPacketInput(sink rinex.Sink, meta rinex.Metadata, uopts rnxubx.Options) *rawPacketInput {
+func newRawPacketInput(sink rinex.Sink, meta rinex.Metadata, uopts rnxubx.Options, lg *slog.Logger) *rawPacketInput {
 	buf := &metadataBufferSink{dst: sink}
 	return &rawPacketInput{
-		sink:      sink,
-		uopts:     uopts,
-		tentative: true,
-		meta:      meta,
-		metaBuf:   buf,
-		rtcm:      rnxrtcm.New(buf, rnxrtcm.Options{}),
+		sink:    sink,
+		lg:      lg,
+		uopts:   uopts,
+		meta:    meta,
+		metaBuf: buf,
+		rtcm:    rnxrtcm.New(buf, rnxrtcm.Options{}),
+		ubx:     rnxubx.New(sink, uopts),
+		unc:     rnxunc.New(sink, rnxunc.Options{}),
 	}
 }
 
@@ -587,9 +639,10 @@ func (s *metadataBufferSink) Drop() {
 	s.pass = true
 }
 
-func convertPacketStream(r io.Reader, in packetInput, week rtcmWeekState) (int, error) {
+func convertPacketStream(r io.Reader, in packetInput, week WeekConstraint) (int, error) {
 	s := scan.New(r, scanBufSize, packetStreamFormats)
 	n := 0
+	weekUsed := false
 	for {
 		pkt, err := s.Scan()
 		if err == io.EOF {
@@ -600,7 +653,10 @@ func convertPacketStream(r io.Reader, in packetInput, week rtcmWeekState) (int, 
 		}
 		var wc WeekConstraint
 		if pkt.HasTag(gpsreg.TagRTCM) {
-			wc = week.next()
+			if !weekUsed {
+				wc = week
+				weekUsed = true
+			}
 		}
 		ok, err := in.ConvertPacket(pkt, wc)
 		if err != nil {
@@ -627,10 +683,19 @@ func convertPacketLog(r io.Reader, from inputFormat, in packetInput) (int, error
 		if entry.Out || entry.Data() == "" {
 			continue
 		}
-		if entry.Tag != "" && !inputAcceptsTag(from, entry.Tag) {
-			continue
+		fmts := packetLogFormats
+		if entry.Tag != "" {
+			if from != inputRaw && entry.Tag != inputPacketTags[from] {
+				continue
+			}
+			if from == inputRaw {
+				if _, ok := inputMetadataByTag[entry.Tag]; !ok {
+					continue
+				}
+			}
+			fmts = packetLogFormatsByTag[entry.Tag]
 		}
-		ok, err := convertPacketData(entry.Data(), in, packetLogWeekConstraint(entry, line))
+		ok, err := convertPacketData(entry.Data(), fmts, in, packetLogWeekConstraint(entry, line))
 		if err != nil {
 			return n, fmt.Errorf("packet log line %d: %w", line, err)
 		}
@@ -644,8 +709,8 @@ func convertPacketLog(r io.Reader, from inputFormat, in packetInput) (int, error
 	return n, nil
 }
 
-func convertPacketData(data string, in packetInput, week WeekConstraint) (bool, error) {
-	s := scan.New(strings.NewReader(data), scanBufSize, packetLogFormats)
+func convertPacketData(data string, fmts []gpsprot.PacketFormat, in packetInput, week WeekConstraint) (bool, error) {
+	s := scan.New(strings.NewReader(data), scanBufSize, fmts)
 	seen := false
 	for {
 		pkt, err := s.Scan()
@@ -670,17 +735,6 @@ func convertPacketData(data string, in packetInput, week WeekConstraint) (bool, 
 	return seen, nil
 }
 
-func inputAcceptsTag(from inputFormat, tag gpsprot.Tag) bool {
-	switch from {
-	case inputUBX:
-		return tag == gpsreg.TagUBX
-	case inputRTCM:
-		return tag == gpsreg.TagRTCM
-	default:
-		return tag == gpsreg.TagUBX || tag == gpsreg.TagRTCM
-	}
-}
-
 func packetData(pkt scan.Packet) (string, bool, error) {
 	if pkt.ReadError != nil {
 		return "", false, pkt.ReadError
@@ -697,20 +751,15 @@ func packetData(pkt scan.Packet) (string, bool, error) {
 	return pkt.Data, true, nil
 }
 
-func (in *ubxPacketInput) ConvertPacket(pkt scan.Packet, _ WeekConstraint) (bool, error) {
+func (in *tagInput) ConvertPacket(pkt scan.Packet, week WeekConstraint) (bool, error) {
 	data, ok, err := packetData(pkt)
-	if !ok || err != nil || !pkt.HasTag(gpsreg.TagUBX) {
+	if !ok || err != nil || !pkt.HasTag(in.tag) {
 		return false, err
 	}
-	return convertUBXData(data, in.conv)
-}
-
-func (in *rtcmPacketInput) ConvertPacket(pkt scan.Packet, week WeekConstraint) (bool, error) {
-	data, ok, err := packetData(pkt)
-	if !ok || err != nil || !pkt.HasTag(gpsreg.TagRTCM) {
-		return false, err
+	if in.accept != nil && !in.accept(pkt, data) {
+		return false, nil
 	}
-	return convertRTCMData(data, in.conv, week)
+	return in.convert(data, week)
 }
 
 func (in *rawPacketInput) ConvertPacket(pkt scan.Packet, week WeekConstraint) (bool, error) {
@@ -718,47 +767,76 @@ func (in *rawPacketInput) ConvertPacket(pkt scan.Packet, week WeekConstraint) (b
 	if !ok || err != nil {
 		return false, err
 	}
-	switch pkt.Tag() {
-	case gpsreg.TagUBX:
-		return in.convertUBX(data)
-	case gpsreg.TagRTCM:
+	if pkt.HasTag(gpsreg.TagRTCM) {
 		return in.convertRTCM(data, week)
-	default:
+	}
+	tag, ok := isRawObs(pkt, data)
+	if !ok {
 		return false, nil
+	}
+	return in.convertNonRTCMObservation(tag, data)
+}
+
+func isRawObs(pkt scan.Packet, data string) (gpsprot.Tag, bool) {
+	switch tag := pkt.Tag(); tag {
+	case gpsreg.TagUBX:
+		return tag, ubxbin.PacketMsgId(data) == ubxbin.RxmRawxID
+	case gpsreg.TagUnicoreBin:
+		return tag, uncmsg.BinPacketMsgID([]byte(data)) == uncmsg.ObsvMID
+	case gpsreg.TagUnicoreAscii:
+		return tag, pkt.Format.MsgID([]byte(data)) == uncaObsVMMsg
+	default:
+		return gpsprot.EmptyTag, false
 	}
 }
 
-func (in *rawPacketInput) convertUBX(data string) (bool, error) {
-	if ubxbin.PacketMsgId(data) != ubxbin.RxmRawxID {
-		return false, nil
-	}
-	if in.tentative {
+func isRawObsTag(pkt scan.Packet, data string) bool {
+	_, ok := isRawObs(pkt, data)
+	return ok
+}
+
+func (in *rawPacketInput) convertNonRTCMObservation(tag gpsprot.Tag, data string) (bool, error) {
+	if in.family == gpsprot.EmptyTag {
 		in.metaBuf.Drop()
-		if err := in.sink.Metadata(ubxInputMetadata()); err != nil {
+		if err := in.sink.Metadata(inputMetadataByTag[tag]); err != nil {
 			return false, err
 		}
 		if err := in.sink.Metadata(in.meta); err != nil {
 			return false, err
 		}
 		in.rtcm = nil
-		in.ubx = rnxubx.New(in.sink, in.uopts)
-		in.tentative = false
+		in.family = tag
 	}
-	if in.rtcm != nil {
-		return false, errors.New("mixed raw observation input: UBX-RXM-RAWX after RTCM MSM7")
+	if in.family != tag {
+		if !in.warned {
+			warnMixedRawObservation(in.lg, tag, in.family)
+			in.warned = true
+		}
+		return false, nil
 	}
-	return convertUBXData(data, in.ubx)
+	switch tag {
+	case gpsreg.TagUBX:
+		return convertUBXData(data, in.ubx)
+	case gpsreg.TagUnicoreBin:
+		return convertObsVMData(data, in.unc, uncmsg.ParseBinMsg)
+	case gpsreg.TagUnicoreAscii:
+		return convertObsVMData(data, in.unc, uncmsg.ParseAsciiMessage)
+	}
+	return false, nil
 }
 
 func (in *rawPacketInput) convertRTCM(data string, week WeekConstraint) (bool, error) {
 	msm7 := isRTCMMSM7Packet(data)
-	if in.ubx != nil {
+	if in.family != gpsprot.EmptyTag && in.family != gpsreg.TagRTCM {
 		if msm7 {
-			return false, errors.New("mixed raw observation input: RTCM MSM7 after UBX-RXM-RAWX")
+			if !in.warned {
+				warnMixedRawObservation(in.lg, gpsreg.TagRTCM, in.family)
+				in.warned = true
+			}
 		}
 		return false, nil
 	}
-	if in.tentative {
+	if in.family == gpsprot.EmptyTag {
 		in.noteWeek(week)
 		if !msm7 {
 			return convertRTCMData(data, in.rtcm, quietWeekConstraint(week))
@@ -766,7 +844,7 @@ func (in *rawPacketInput) convertRTCM(data string, week WeekConstraint) (bool, e
 		if in.week.err != nil {
 			return false, in.week.err
 		}
-		if err := in.sink.Metadata(rtcmInputMetadata()); err != nil {
+		if err := in.sink.Metadata(inputMetadataByTag[gpsreg.TagRTCM]); err != nil {
 			return false, err
 		}
 		if err := in.sink.Metadata(in.meta); err != nil {
@@ -775,13 +853,24 @@ func (in *rawPacketInput) convertRTCM(data string, week WeekConstraint) (bool, e
 		if err := in.metaBuf.Commit(); err != nil {
 			return false, err
 		}
-		in.tentative = false
+		in.family = gpsreg.TagRTCM
 	}
 	ok, err := convertRTCMData(data, in.rtcm, week)
 	if err == nil && ok && week.Interval.IsZero() {
 		in.week.warnOnce()
 	}
 	return ok, err
+}
+
+func warnMixedRawObservation(lg *slog.Logger, got, selected gpsprot.Tag) {
+	gotName, selectedName := rawObservationNames[got], rawObservationNames[selected]
+	if gotName == "" {
+		gotName = "unknown"
+	}
+	if selectedName == "" {
+		selectedName = "unknown"
+	}
+	lg.Warn("ignoring mixed raw observation input", "got", gotName, "selected", selectedName)
 }
 
 func convertUBXData(data string, conv *rnxubx.Converter) (bool, error) {
@@ -797,6 +886,18 @@ func convertUBXData(data string, conv *rnxubx.Converter) (bool, error) {
 		return false, nil
 	}
 	return true, conv.ConvertRAWX(rawx)
+}
+
+func convertObsVMData(data string, conv *rnxunc.Converter, parse func([]byte) (*uncmsg.Msg, error)) (bool, error) {
+	msg, err := parse([]byte(data))
+	if err != nil {
+		return false, err
+	}
+	obs, ok := msg.Body.(*uncmsg.ObsVM)
+	if !ok {
+		return false, nil
+	}
+	return conv.ConvertObsVM(&msg.Hdr, obs)
 }
 
 func (in *rawPacketInput) noteWeek(week WeekConstraint) {
@@ -836,31 +937,23 @@ func isRTCMMSM7Packet(data string) bool {
 	return mt.IsMSM() && mt%10 == 7
 }
 
-func (s *rtcmWeekState) next() WeekConstraint {
-	if s.used {
-		return WeekConstraint{}
-	}
-	s.used = true
-	return s.week
-}
-
-func fileWeekConstraint(path string, in inputReader, opts runOptions, strict bool, i int) (rtcmWeekState, error) {
-	wc, err := newFileWeekConstraint(path, in, opts, i)
+func fileWeekConstraint(path string, in inputReader, week weekOptions, now time.Time, strict bool, i int) (WeekConstraint, error) {
+	wc, err := newFileWeekConstraint(path, in, week, now, i)
 	if err != nil {
-		return rtcmWeekState{}, err
+		return WeekConstraint{}, err
 	}
 	if strict && wc.err != nil {
-		return rtcmWeekState{}, wc.err
+		return WeekConstraint{}, wc.err
 	}
-	return rtcmWeekState{week: wc}, nil
+	return wc, nil
 }
 
-func newFileWeekConstraint(path string, in inputReader, opts runOptions, i int) (WeekConstraint, error) {
-	switch opts.week.mode {
+func newFileWeekConstraint(path string, in inputReader, week weekOptions, now time.Time, i int) (WeekConstraint, error) {
+	switch week.mode {
 	case weekRecent:
-		return recentWeekConstraint(opts.now, ""), nil
+		return recentWeekConstraint(now, ""), nil
 	case weekDate:
-		return dateWeekConstraint(opts.week.date, "--date"), nil
+		return dateWeekConstraint(week.date, "--date"), nil
 	case weekFilename:
 		t, err := dateFromFilename(path)
 		if err != nil {
@@ -868,7 +961,7 @@ func newFileWeekConstraint(path string, in inputReader, opts runOptions, i int) 
 		}
 		return dateWeekConstraint(t, "--date-from-filename"), nil
 	default:
-		return automaticWeekConstraint(path, in, opts.now, i), nil
+		return automaticWeekConstraint(path, in, now, i), nil
 	}
 }
 
@@ -1001,15 +1094,4 @@ func parseFilenameDateRunPrefix(s string) (time.Time, bool) {
 
 func isDigit(b byte) bool {
 	return b >= '0' && b <= '9'
-}
-
-func noPacketObservationsError(from inputFormat) error {
-	switch from {
-	case inputRTCM:
-		return errors.New("no RTCM MSM7 messages found")
-	case inputRaw:
-		return errors.New("no UBX-RXM-RAWX or RTCM MSM7 messages found")
-	default:
-		return errors.New("no UBX-RXM-RAWX messages found")
-	}
 }

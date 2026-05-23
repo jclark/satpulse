@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rinex"
@@ -27,6 +29,25 @@ var updateGolden = flag.Bool("update", false, "update golden test data files")
 
 func testPtr[T any](v T) *T {
 	return &v
+}
+
+func testLogger(w io.Writer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(w, nil))
+}
+
+func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rnxubx.Options, interval time.Duration) error {
+	cj := convJob{
+		inputs:    inputs,
+		out:       out,
+		from:      from,
+		to:        to,
+		packetLog: packetLog,
+		meta:      meta,
+		wopts:     wopts,
+		uopts:     uopts,
+		interval:  interval,
+	}
+	return cj.run(testLogger(io.Discard), time.Now().UTC())
 }
 
 func TestLoadMetadata(t *testing.T) {
@@ -109,6 +130,24 @@ func TestParseFlagsFormats(t *testing.T) {
 	}
 	if len(v.meta.Comments) != 1 || v.meta.Comments[0] != "log: input.rtcm" {
 		t.Fatalf("rtcm comments = %#v", v.meta.Comments)
+	}
+	for _, tt := range []struct {
+		from string
+		want inputFormat
+	}{
+		{from: "uncb", want: inputUNCB},
+		{from: "unca", want: inputUNCA},
+	} {
+		v, _, err = parseFlags("", []string{"--packet-log", "--from", tt.from, "input.jsonl"})
+		if err != nil {
+			t.Fatalf("parseFlags %s packet log: %v", tt.from, err)
+		}
+		if v.inputFormat != tt.want || !v.packetLog {
+			t.Fatalf("%s flags = %#v", tt.from, v)
+		}
+		if len(v.meta.Comments) != 1 || v.meta.Comments[0] != "log: input.jsonl" {
+			t.Fatalf("%s comments = %#v", tt.from, v.meta.Comments)
+		}
 	}
 	if _, _, err := parseFlags("", []string{"--to", "ubx", "input.ubx"}); err == nil {
 		t.Fatal("parseFlags accepted unsupported ubx output")
@@ -376,32 +415,125 @@ func TestRunMultipleInputFiles(t *testing.T) {
 }
 
 func TestRunPacketLogInput(t *testing.T) {
-	pkt := rawxPacket(t)
-	log := strings.Join([]string{
-		packetLogLine(t, gpsio.PacketLogEntry{Out: true, Tag: gpsreg.TagUBX, Msg: "RXM-RAWX", Bin: gpsio.HexString(pkt)}),
-		packetLogLine(t, gpsio.PacketLogEntry{Tag: gpsreg.TagUBX, Msg: "RXM-RAWX", Bin: gpsio.HexString(pkt)}),
-		"",
-	}, "\n")
-	var got bytes.Buffer
-	meta := rinex.Metadata{MarkerName: "PKTLOG"}
-	if err := runInputs(testInputs(strings.NewReader(log)), &got, inputRaw, outputObsJSON, true, meta, rinex.WriterOptions{}, rnxubx.Options{}, 0); err != nil {
-		t.Fatalf("runInputs packet log to obsj: %v", err)
+	rawx := rawxPacket(t)
+	tow := uint32(345600000)
+	rtcmT := rinex.TimeFromGPSWeekMillis(2397, tow)
+	uncT := rinex.TimeFromGPSWeekMillis(2419, 522335000)
+	uncb := packetLogEntryFromFixture(t, gpsreg.TagUnicoreBin, "OBSVM")
+	unca := packetLogEntryFromFixture(t, gpsreg.TagUnicoreAscii, "OBSVMA")
+	uncbUntagged := uncb
+	uncbUntagged.Tag = ""
+	uncbUntagged.Msg = ""
+	tests := []struct {
+		name     string
+		from     inputFormat
+		entries  []gpsio.PacketLogEntry
+		comments []string
+		sat      rinex.SatelliteID
+		sig      rinex.SignalID
+		t        rinex.Time
+		err      string
+		warn     string
+	}{
+		{
+			name: "ubx_raw",
+			from: inputRaw,
+			entries: []gpsio.PacketLogEntry{
+				{Out: true, Tag: gpsreg.TagUBX, Msg: "RXM-RAWX", Bin: gpsio.HexString(rawx)},
+				{Tag: gpsreg.TagUBX, Msg: "RXM-RAWX", Bin: gpsio.HexString(rawx)},
+			},
+			comments: []string{"format: u-blox UBX", "options: -MULTICODE"},
+			sat:      "G03",
+			sig:      "1C",
+		},
+		{
+			name: "rtcm_raw",
+			from: inputRaw,
+			entries: []gpsio.PacketLogEntry{{
+				T:   gpsio.TimeMicro(rtcmT.CivilTime()),
+				Tag: gpsreg.TagRTCM,
+				Msg: "1077",
+				Bin: gpsio.HexString(rtcmMSM7Packet(t, tow)),
+			}},
+			comments: []string{"format: RTCM"},
+			sat:      "G03",
+			sig:      "1C",
+			t:        rtcmT,
+		},
+		{
+			name:     "uncb_explicit",
+			from:     inputUNCB,
+			entries:  []gpsio.PacketLogEntry{uncb},
+			comments: []string{"format: Unicore UNCB"},
+			sat:      "G06",
+			sig:      "1C",
+			t:        uncT,
+		},
+		{
+			name:     "unca_explicit",
+			from:     inputUNCA,
+			entries:  []gpsio.PacketLogEntry{unca},
+			comments: []string{"format: Unicore UNCA"},
+			sat:      "G06",
+			sig:      "1C",
+			t:        uncT,
+		},
+		{
+			name:     "raw_selects_uncb",
+			from:     inputRaw,
+			entries:  []gpsio.PacketLogEntry{uncb},
+			comments: []string{"format: Unicore UNCB"},
+			sat:      "G06",
+			sig:      "1C",
+			t:        uncT,
+		},
+		{
+			name:     "raw_selects_untagged_uncb",
+			from:     inputRaw,
+			entries:  []gpsio.PacketLogEntry{uncbUntagged},
+			comments: []string{"format: Unicore UNCB"},
+			sat:      "G06",
+			sig:      "1C",
+			t:        uncT,
+		},
+		{
+			name:     "raw_ignores_mixed_unicore",
+			from:     inputRaw,
+			entries:  []gpsio.PacketLogEntry{unca, uncb},
+			comments: []string{"format: Unicore UNCA"},
+			sat:      "G06",
+			sig:      "1C",
+			t:        uncT,
+			warn:     "ignoring mixed raw observation input",
+		},
 	}
-	fileMeta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
-	if err != nil {
-		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
-	}
-	if fileMeta.MarkerName != "PKTLOG" {
-		t.Fatalf("MarkerName = %q, want PKTLOG", fileMeta.MarkerName)
-	}
-	if len(fileMeta.Comments) != 2 || fileMeta.Comments[0] != "format: u-blox UBX" || fileMeta.Comments[1] != "options: -MULTICODE" {
-		t.Fatalf("comments = %#v", fileMeta.Comments)
-	}
-	if len(obs) != 1 {
-		t.Fatalf("len observations = %d, want 1\n%s", len(obs), got.String())
-	}
-	if obs[0].Sat != "G03" || obs[0].Sig != "1C" || !obs[0].PR.IsSet() || !obs[0].CP.IsSet() {
-		t.Fatalf("observation = %#v", obs[0])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got bytes.Buffer
+			var log bytes.Buffer
+			cj := convJob{
+				inputs:    testInputs(strings.NewReader(packetLog(t, tt.entries...))),
+				out:       &got,
+				from:      tt.from,
+				to:        outputObsJSON,
+				packetLog: true,
+				meta:      rinex.Metadata{MarkerName: "PKTLOG"},
+			}
+			err := cj.run(testLogger(&log), time.Now().UTC())
+			if tt.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.err) {
+					t.Fatalf("runInputs error = %v, want %q", err, tt.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("runInputs packet log to obsj: %v", err)
+			}
+			if tt.warn != "" && !strings.Contains(log.String(), tt.warn) {
+				t.Fatalf("log = %q, want %q", log.String(), tt.warn)
+			}
+			assertObsJSON(t, got.String(), "PKTLOG", tt.comments, tt.sat, tt.sig, tt.t)
+		})
 	}
 }
 
@@ -410,8 +542,8 @@ func TestRunRTCMInput(t *testing.T) {
 	wantT := rinex.TimeFromGPSWeekMillis(2397, tow)
 	pkt := rtcmMSM7Packet(t, tow)
 	var got bytes.Buffer
-	opts := runOptions{week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())}}
-	if err := runInputsWithOptions(testInputs(bytes.NewReader(pkt)), &got, inputRTCM, outputObsJSON, false, rinex.Metadata{MarkerName: "RTCM"}, rinex.WriterOptions{}, rnxubx.Options{}, 0, opts); err != nil {
+	cj := convJob{inputs: testInputs(bytes.NewReader(pkt)), out: &got, from: inputRTCM, to: outputObsJSON, meta: rinex.Metadata{MarkerName: "RTCM"}, week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())}}
+	if err := cj.run(testLogger(io.Discard), time.Now().UTC()); err != nil {
 		t.Fatalf("runInputs rtcm to obsj: %v", err)
 	}
 	meta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -437,8 +569,8 @@ func TestRunRawRTCMBuffersMetadataBeforeSelection(t *testing.T) {
 	wantT := rinex.TimeFromGPSWeekMillis(2397, tow)
 	pkt := append(rtcm1005Packet(t), rtcmMSM7Packet(t, tow)...)
 	var got bytes.Buffer
-	opts := runOptions{week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())}}
-	if err := runInputsWithOptions(testInputs(bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, rnxubx.Options{}, 0, opts); err != nil {
+	cj := convJob{inputs: testInputs(bytes.NewReader(pkt)), out: &got, from: inputRaw, to: outputObsJSON, week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())}}
+	if err := cj.run(testLogger(io.Discard), time.Now().UTC()); err != nil {
 		t.Fatalf("runInputs raw rtcm to obsj: %v", err)
 	}
 	meta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -467,7 +599,8 @@ func TestRunRawDropsTentativeRTCMMetadataBeforeUBX(t *testing.T) {
 		})
 	}
 	var got bytes.Buffer
-	if err := runInputsWithOptions(inputs, &got, inputRaw, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, rnxubx.Options{}, 0, runOptions{now: now}); err != nil {
+	cj := convJob{inputs: inputs, out: &got, from: inputRaw, to: outputObsJSON}
+	if err := cj.run(testLogger(io.Discard), now); err != nil {
 		t.Fatalf("runInputs raw with tentative rtcm metadata to obsj: %v", err)
 	}
 	meta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -485,32 +618,6 @@ func TestRunRawDropsTentativeRTCMMetadataBeforeUBX(t *testing.T) {
 	}
 }
 
-func TestRunPacketLogRTCMUsesTimestamps(t *testing.T) {
-	tow := uint32(345600000)
-	wantT := rinex.TimeFromGPSWeekMillis(2397, tow)
-	pkt := rtcmMSM7Packet(t, tow)
-	log := strings.Join([]string{
-		packetLogLine(t, gpsio.PacketLogEntry{
-			T:   gpsio.TimeMicro(wantT.CivilTime()),
-			Tag: gpsreg.TagRTCM,
-			Msg: "1077",
-			Bin: gpsio.HexString(pkt),
-		}),
-		"",
-	}, "\n")
-	var got bytes.Buffer
-	if err := runInputs(testInputs(strings.NewReader(log)), &got, inputRaw, outputObsJSON, true, rinex.Metadata{}, rinex.WriterOptions{}, rnxubx.Options{}, 0); err != nil {
-		t.Fatalf("runInputs packet log rtcm to obsj: %v", err)
-	}
-	_, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
-	if err != nil {
-		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
-	}
-	if len(obs) != 1 || obs[0].T != wantT || obs[0].Sat != "G03" {
-		t.Fatalf("observations = %#v", obs)
-	}
-}
-
 func TestRunRTCMDateFromFilename(t *testing.T) {
 	tow := uint32(345600000)
 	wantT := rinex.TimeFromGPSWeekMillis(2397, tow)
@@ -519,8 +626,8 @@ func TestRunRTCMDateFromFilename(t *testing.T) {
 		yield("MARK00USA_202512180000_01D_30S_MO.rtcm", inputReader{r: bytes.NewReader(pkt)})
 	}
 	var got bytes.Buffer
-	opts := runOptions{week: weekOptions{mode: weekFilename}}
-	if err := runInputsWithOptions(inputs, &got, inputRTCM, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, rnxubx.Options{}, 0, opts); err != nil {
+	cj := convJob{inputs: inputs, out: &got, from: inputRTCM, to: outputObsJSON, week: weekOptions{mode: weekFilename}}
+	if err := cj.run(testLogger(io.Discard), time.Now().UTC()); err != nil {
 		t.Fatalf("runInputs rtcm date from filename: %v", err)
 	}
 	_, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -544,21 +651,35 @@ func TestRunRTCMOldFileNeedsDate(t *testing.T) {
 		})
 	}
 	var got bytes.Buffer
-	err := runInputsWithOptions(inputs, &got, inputRTCM, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, rnxubx.Options{}, 0, runOptions{now: now})
+	cj := convJob{inputs: inputs, out: &got, from: inputRTCM, to: outputObsJSON}
+	err := cj.run(testLogger(io.Discard), now)
 	if err == nil || !strings.Contains(err.Error(), "provide --date") {
 		t.Fatalf("runInputs old rtcm error = %v, want date hint", err)
 	}
 }
 
-func TestRunRawRejectsMixedObservationFamilies(t *testing.T) {
+func TestRunRawIgnoresMixedObservationFamilies(t *testing.T) {
 	tow := uint32(345600000)
 	wantT := rinex.TimeFromGPSWeekMillis(2397, tow)
 	pkt := append(rawxPacket(t), rtcmMSM7Packet(t, tow)...)
 	var got bytes.Buffer
-	opts := runOptions{week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())}}
-	err := runInputsWithOptions(testInputs(bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, rnxubx.Options{}, 0, opts)
-	if err == nil || !strings.Contains(err.Error(), "mixed raw observation input") {
-		t.Fatalf("runInputs mixed raw error = %v", err)
+	var log bytes.Buffer
+	cj := convJob{inputs: testInputs(bytes.NewReader(pkt)), out: &got, from: inputRaw, to: outputObsJSON, week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())}}
+	if err := cj.run(testLogger(&log), time.Now().UTC()); err != nil {
+		t.Fatalf("runInputs raw mixed to obsj: %v", err)
+	}
+	if !strings.Contains(log.String(), "ignoring mixed raw observation input") {
+		t.Fatalf("log = %q, want mixed raw warning", log.String())
+	}
+	meta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
+	if err != nil {
+		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
+	}
+	if len(meta.Comments) != 2 || meta.Comments[0] != "format: u-blox UBX" || meta.Comments[1] != "options: -MULTICODE" {
+		t.Fatalf("comments = %#v", meta.Comments)
+	}
+	if len(obs) != 1 || obs[0].Sat != "G03" || obs[0].Sig != "1C" || !obs[0].PR.IsSet() || !obs[0].CP.IsSet() {
+		t.Fatalf("observations = %#v", obs)
 	}
 }
 
@@ -602,7 +723,19 @@ func TestGoldenFiles(t *testing.T) {
 			}
 			v.wopts.Date = now
 			var got bytes.Buffer
-			if err := runInputsWithOptions(openInputs(v.inputPaths), &got, v.inputFormat, v.outputFormat, v.packetLog, v.meta, v.wopts, v.uopts, v.interval, runOptions{now: now, week: v.week}); err != nil {
+			cj := convJob{
+				inputs:    openInputs(v.inputPaths),
+				out:       &got,
+				from:      v.inputFormat,
+				to:        v.outputFormat,
+				packetLog: v.packetLog,
+				meta:      v.meta,
+				wopts:     v.wopts,
+				uopts:     v.uopts,
+				interval:  v.interval,
+				week:      v.week,
+			}
+			if err := cj.run(testLogger(io.Discard), now); err != nil {
 				t.Fatalf("run: %v", err)
 			}
 			if *updateGolden {
@@ -721,6 +854,62 @@ func packetLogLine(t *testing.T, entry gpsio.PacketLogEntry) string {
 		t.Fatalf("Marshal packet log entry: %v", err)
 	}
 	return string(b)
+}
+
+func packetLog(t *testing.T, entries ...gpsio.PacketLogEntry) string {
+	t.Helper()
+	lines := make([]string, 0, len(entries)+1)
+	for _, entry := range entries {
+		lines = append(lines, packetLogLine(t, entry))
+	}
+	lines = append(lines, "")
+	return strings.Join(lines, "\n")
+}
+
+func packetLogEntryFromFixture(t *testing.T, tag gpsprot.Tag, msg string) gpsio.PacketLogEntry {
+	t.Helper()
+	path := filepath.Join("..", "..", "gps", "testdata", "packets", "unicore", "UM980", "raw-obs-dual-460800.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile %s: %v", path, err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if line == "" {
+			continue
+		}
+		var entry gpsio.PacketLogEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("Unmarshal fixture packet log line: %v", err)
+		}
+		if entry.Tag == tag && entry.Msg == msg {
+			return entry
+		}
+	}
+	t.Fatalf("fixture packet %s %s not found", tag, msg)
+	return gpsio.PacketLogEntry{}
+}
+
+func assertObsJSON(t *testing.T, data, marker string, comments []string, sat rinex.SatelliteID, sig rinex.SignalID, wantT rinex.Time) {
+	t.Helper()
+	meta, obs, err := rinex.ReadObsJSON(strings.NewReader(data))
+	if err != nil {
+		t.Fatalf("ReadObsJSON: %v\n%s", err, data)
+	}
+	if meta.MarkerName != marker {
+		t.Fatalf("MarkerName = %q, want %s", meta.MarkerName, marker)
+	}
+	if strings.Join(meta.Comments, "\n") != strings.Join(comments, "\n") {
+		t.Fatalf("comments = %#v, want %#v", meta.Comments, comments)
+	}
+	for _, o := range obs {
+		if o.Sat == sat && o.Sig == sig && o.PR.IsSet() && o.CP.IsSet() {
+			if wantT != 0 && o.T != wantT {
+				t.Fatalf("observation time = %s, want %s", o.T, wantT)
+			}
+			return
+		}
+	}
+	t.Fatalf("observation %s %s with PR and CP not found in %d observations", sat, sig, len(obs))
 }
 
 func fileWithData(t *testing.T, dir, name string, data []byte) string {

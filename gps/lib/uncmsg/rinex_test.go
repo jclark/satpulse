@@ -3,7 +3,13 @@ package uncmsg
 import "testing"
 
 func TestTrackingStatusFields(t *testing.T) {
-	s := TrackingStatus(uint32(SysBDS)<<16 | 13<<21 | 1<<26)
+	s := TrackingStatus(1<<10 | 1<<12 | uint32(SysBDS)<<16 | 13<<21 | 1<<26)
+	if !s.CarrierPhaseValid() {
+		t.Errorf("CarrierPhaseValid() = false, want true")
+	}
+	if !s.PseudorangeValid() {
+		t.Errorf("PseudorangeValid() = false, want true")
+	}
 	if got := s.SysID(); got != SysBDS {
 		t.Errorf("SysID() = %d, want %d", got, SysBDS)
 	}

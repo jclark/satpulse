@@ -10,6 +10,18 @@ import (
 // TrackingStatus represents the OBSVM channel tracking status bitfield.
 type TrackingStatus uint32
 
+// CarrierPhaseValid reports whether carrier phase is valid in the OBSVM
+// channel tracking status word.
+func (s TrackingStatus) CarrierPhaseValid() bool {
+	return s&(1<<10) != 0
+}
+
+// PseudorangeValid reports whether pseudorange is valid in the OBSVM channel
+// tracking status word.
+func (s TrackingStatus) PseudorangeValid() bool {
+	return s&(1<<12) != 0
+}
+
 // SysID returns the GNSS system identifier from the OBSVM channel tracking
 // status word.
 func (s TrackingStatus) SysID() SysID {

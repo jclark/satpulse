@@ -56,7 +56,7 @@ enough to work as a future `satpulsetool convobs` subcommand.
 The command shape should be:
 
 ```text
-convobs [-r|--from raw|ubx|rtcm|uncb|unca|nova|novb|rinex|obsj]
+convobs [-r|--from raw|ubx|rtcm|uncb|unca|rinex|obsj]
         [--packet-log] [--to rinex|obsj] [-o path] [--metadata path]
         input...
 ```
@@ -84,17 +84,18 @@ supported raw observation message is found, then select the matching converter:
 
 - `UBX-RXM-RAWX` selects the UBX converter.
 - RTCM MSM7 messages select the RTCM converter.
+- `UNCB OBSVM` selects the Unicore binary converter.
+- `UNCA OBSVMA` selects the Unicore ASCII converter.
 
-Explicit packet-protocol formats, such as `ubx`, `rtcm`, `uncb`, `unca`,
-`nova`, and `novb`, are case-insensitive and are for cases where the packet
-protocol is known or the stream is ambiguous. When one of these formats is set,
-only packets for the selected protocol should be considered for observation
-conversion.
+Explicit packet-protocol formats, such as `ubx`, `rtcm`, `uncb`, and `unca`,
+are case-insensitive and are for cases where the packet protocol is known or
+the stream is ambiguous. When one of these formats is set, only packets for the
+selected protocol should be considered for observation conversion.
 
 The `--packet-log` flag says that packet input is wrapped in a SatPulse JSONL
 packet log instead of being a raw binary packet stream. It is valid only with
-packet input formats: `raw`, `ubx`, `rtcm`, `uncb`, `unca`, `nova`, and
-`novb`. It is not valid with `--from rinex` or `--from obsj`.
+packet input formats: `raw`, `ubx`, `rtcm`, `uncb`, and `unca`. It is not
+valid with `--from rinex` or `--from obsj`.
 
 The `--to` option selects the output format. The supported output formats are
 `rinex` and `obsj`. Output defaults to RINEX. Filenames do not imply formats:
@@ -823,7 +824,7 @@ round-tripping through binary serialization.
 
 ### Unicore observation converter
 
-Add a `gps/lib/rinex/unc` package, parallel to `gps/lib/rinex/ubx` and
+Done: add a `gps/lib/rinex/unc` package, parallel to `gps/lib/rinex/ubx` and
 `gps/lib/rinex/rtcm`. The converter should accept parsed Unicore messages plus
 their header and emit `rinex.SignalObservation` records to a `rinex.Sink`.
 
@@ -1017,17 +1018,17 @@ ambiguity from unrelated reserved bits.
 
 ### Unicore convobs wiring
 
-Wire the converter into `convobs` after the package-level decoder is tested:
+Done: wire the converter into `convobs`:
 
 - Add explicit `--from uncb` input selection.
-- Add `--from unca` only when `OBSVMA` parsing is implemented.
-- Include Unicore binary packets in packet-log conversion. The current
-  packet-log scanner is UBX-specific and must be widened before packet-log
-  `UNCB` input can work.
+- Add explicit `--from unca` input selection.
+- Include Unicore binary and ASCII packets in packet-log conversion. Tagged
+  packet-log entries are scanned with packet formats matching the tag; untagged
+  entries fall back to all known packet formats.
 - In `--from raw` mode, select the Unicore converter when the first supported
-  raw observation message is `UNCB OBSVM`.
-- Reject later UBX RAWX or RTCM MSM7 observations after selecting Unicore, and
-  reject later Unicore `OBSVM` observations after selecting UBX or RTCM.
+  raw observation message is `UNCB OBSVM` or `UNCA OBSVMA`.
+- Reject later UBX RAWX, RTCM MSM7, `UNCB OBSVM`, or `UNCA OBSVMA`
+  observations after selecting another raw observation family.
 
 ## Full RINEX observation reader
 
