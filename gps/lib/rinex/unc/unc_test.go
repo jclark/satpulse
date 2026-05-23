@@ -70,22 +70,35 @@ func TestConvertObsVMObservation(t *testing.T) {
 func TestConvertObsVMGLONASSFrequency(t *testing.T) {
 	s := &testSink{}
 	c := New(s, Options{})
-	_, err := c.ConvertObsVM(hdr(1, 1000), obsvm(uncmsg.ObsVMObs{
-		SystemFreq: 12,
-		PRN:        38,
-		PSR:        1,
-		ADR:        -2,
-		LockTime:   100,
-		ChTrStatus: tracking(uncmsg.SysGLO, uncmsg.FreqGLOL1CA, false, true, true),
-	}))
+	_, err := c.ConvertObsVM(hdr(1, 1000), obsvm(
+		uncmsg.ObsVMObs{
+			SystemFreq: 0,
+			PRN:        38,
+			PSR:        1,
+			ADR:        -2,
+			LockTime:   100,
+			ChTrStatus: tracking(uncmsg.SysGLO, uncmsg.FreqGLOL1CA, false, true, true),
+		},
+		uncmsg.ObsVMObs{
+			SystemFreq: 12,
+			PRN:        39,
+			PSR:        3,
+			ADR:        -4,
+			LockTime:   100,
+			ChTrStatus: tracking(uncmsg.SysGLO, uncmsg.FreqGLOL2CA, false, true, true),
+		},
+	))
 	if err != nil {
 		t.Fatalf("ConvertObsVM: %v", err)
 	}
-	if len(s.obs) != 1 {
-		t.Fatalf("observation count = %d, want 1", len(s.obs))
+	if len(s.obs) != 2 {
+		t.Fatalf("observation count = %d, want 2", len(s.obs))
 	}
-	if s.obs[0].Sat != "R01" || !s.obs[0].Frq.IsSet() || s.obs[0].Frq.Get() != 5 {
-		t.Fatalf("observation = %#v, want R01 with GLONASS frequency 5", s.obs[0])
+	if s.obs[0].Sat != "R01" || !s.obs[0].Frq.IsSet() || s.obs[0].Frq.Get() != -7 {
+		t.Fatalf("observation = %#v, want R01 with GLONASS frequency -7", s.obs[0])
+	}
+	if s.obs[1].Sat != "R02" || !s.obs[1].Frq.IsSet() || s.obs[1].Frq.Get() != 5 {
+		t.Fatalf("observation = %#v, want R02 with GLONASS frequency 5", s.obs[1])
 	}
 }
 

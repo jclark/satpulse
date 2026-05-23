@@ -75,7 +75,7 @@ func (c *Converter) convertObs(t rinex.Time, meas uncmsg.ObsVMObs) (bool, error)
 		Sat: rinex.SatelliteID(fmt.Sprintf("%s%02d", sys, satNum)),
 		Sig: rinex.SignalID(sig),
 	}
-	if sysID == uncmsg.SysGLO && meas.SystemFreq != 0 {
+	if sysID == uncmsg.SysGLO {
 		obs.Frq = opt.Make(int8(meas.SystemFreq) - 7)
 	}
 	if st.PseudorangeValid() && finite64(meas.PSR) {
