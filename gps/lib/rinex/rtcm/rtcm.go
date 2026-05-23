@@ -400,7 +400,7 @@ func doppler(m *rtcmbin.MSMHiRes, satIndex, cellIndex int, freq float64, hasFreq
 	if !hasFrequency || !ok1 || !ok2 || rough == -8192 || fine == -16384 {
 		return 0, false
 	}
-	d := float64(float32(-(float64(rough) + float64(fine)*0.0001) * freq / speedOfLight))
+	d := float64(float32((float64(rough) + float64(fine)*0.0001) * freq / speedOfLight))
 	return d, d != 0
 }
 

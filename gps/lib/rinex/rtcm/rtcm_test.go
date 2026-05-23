@@ -125,8 +125,8 @@ func TestConvertMSM7GPS(t *testing.T) {
 	if !near(obs.CP.Get(), pr/wl, 1e-6) {
 		t.Fatalf("CP = %.9f, want %.9f", obs.CP.Get(), pr/wl)
 	}
-	if !near(obs.Do.Get(), -99.8/wl, 3e-5) {
-		t.Fatalf("Do = %.9f, want %.9f", obs.Do.Get(), -99.8/wl)
+	if !near(obs.Do.Get(), 99.8/wl, 3e-5) {
+		t.Fatalf("Do = %.9f, want %.9f", obs.Do.Get(), 99.8/wl)
 	}
 	if obs.CN0.Get() != 45 {
 		t.Fatalf("CN0 = %.3f, want 45", obs.CN0.Get())
@@ -202,8 +202,8 @@ func TestConvertMSM7GPSMultiCell(t *testing.T) {
 		if !near(obs.CP.Get(), pr/wl, 1e-6) {
 			t.Fatalf("observation %d CP = %.9f, want %.9f", i, obs.CP.Get(), pr/wl)
 		}
-		if !near(obs.Do.Get(), -want.dop/wl, 3e-5) {
-			t.Fatalf("observation %d Do = %.9f, want %.9f", i, obs.Do.Get(), -want.dop/wl)
+		if !near(obs.Do.Get(), want.dop/wl, 3e-5) {
+			t.Fatalf("observation %d Do = %.9f, want %.9f", i, obs.Do.Get(), want.dop/wl)
 		}
 		if obs.CN0.Get() != want.cn0 {
 			t.Fatalf("observation %d CN0 = %.3f, want %.3f", i, obs.CN0.Get(), want.cn0)
@@ -474,8 +474,8 @@ func TestConvertMSM7GLONASSFrequency(t *testing.T) {
 	if !near(obs.CP.Get(), pr/wl, 1e-6) {
 		t.Fatalf("CP = %.9f, want %.9f", obs.CP.Get(), pr/wl)
 	}
-	if !near(obs.Do.Get(), -99.8/wl, 3e-5) {
-		t.Fatalf("Do = %.9f, want %.9f", obs.Do.Get(), -99.8/wl)
+	if !near(obs.Do.Get(), 99.8/wl, 3e-5) {
+		t.Fatalf("Do = %.9f, want %.9f", obs.Do.Get(), 99.8/wl)
 	}
 }
 

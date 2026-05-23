@@ -687,7 +687,12 @@ func TestGoldenFiles(t *testing.T) {
 	// The UBX golden files were checked against RTKLIB Explorer with:
 	// convbin -r ubx -v 3.04 -od -os -ro -MULTICODE.
 	// The RTCM golden file was checked against RTKLIB Explorer with:
-	// convbin -r rtcm3 -v 3.04 -od -os -ro "-MULTIMODE".
+	// convbin -r rtcm3 -v 3.04 -od -os -ro "-MULTIMODE -INVPRR".
+	// RTCM MSM encodes phase range rate with the sign of the phase-range
+	// derivative; RINEX Doppler uses the positive-approaching convention.
+	// RTKLIB Explorer's default RTCM MSM decoding writes the opposite Doppler
+	// sign for this file, while -INVPRR flips the decoded phase-range-rate
+	// polarity and makes the observation body match SatPulse.
 	// For UBX, after normalizing PGM/RUN BY/DATE and the log path comment,
 	// the only remaining header difference is that RTKLIB Explorer emits
 	// SYS / PHASE SHIFT records. For RTCM, the observation body is
