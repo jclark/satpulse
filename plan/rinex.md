@@ -223,11 +223,29 @@ not use filename inference for either input or output formats.
     `rinex/rtcm`, and routing emitted observations and metadata to RINEX or
     `.obsj` output.
 
-15. Write a `satpulsetool-convobs.1` man page following the existing
+15. Done: support Unicore OBSVM input, split into these implementation substeps:
+    a) Done: add Unicore OBSVM message parsing in `gps/lib/uncmsg`, including
+    the `ObsVM` typed payload for message ID 12 and tracking-status accessors
+    for system, signal type, and the L2C discriminator.
+    b) Done: add Unicore-to-RINEX mapping helpers in `gps/lib/uncmsg`
+    (`RINEXSys`, `RINEXSatNum`, `RINEXObsSig`) using the OBSVM Channel Tracking
+    Status table, with tests covering supported, reserved, and unknown values.
+    c) Done: add a `gps/lib/rinex/unc` package that converts parsed Unicore
+    OBSVM messages into `SignalObservation` records, derives LLI from the
+    `locktime` field, and emits records through the RINEX sink interface.
+    d) Done: wire Unicore input into `convobs`, including `--from uncb` and
+    `--from unca` selection, packet-log handling for tagged and untagged
+    entries, and `--from raw` auto-detection on the first `UNCB OBSVM` or
+    `UNCA OBSVMA` message.
+
+16. Write a `satpulsetool-convobs.1` man page following the existing
     `docs/man/satpulsetool-*.1.md` pattern. Document the command synopsis,
-    input and output formats, multiple input behavior, stdin handling,
-    packet-log mode, metadata options, and examples for raw, packet-log,
-    `.obsj`, and RINEX conversions.
+    the full set of input formats (`raw`, `ubx`, `rtcm`, `uncb`, `unca`,
+    `rinex`, `obsj`) and output formats (`rinex`, `obsj`), multiple input
+    behavior, stdin handling, packet-log mode, RTCM week-inference options
+    (`--date`, `--recent`, `--date-from-filename`), metadata options, and
+    examples for raw, packet-log, Unicore binary and ASCII, RTCM, `.obsj`,
+    and RINEX conversions.
 
 ## UBX conversion
 
