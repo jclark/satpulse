@@ -66,7 +66,7 @@ type SignalValues struct {
 	Frq opt.Val[int8]    `json:"frq,omitzero"` // GLONASS FDMA frequency channel k
 	PR  opt.Val[float64] `json:"pr,omitzero"`  // pseudorange, meters
 	CP  opt.Val[float64] `json:"cp,omitzero"`  // carrier phase, cycles
-	Do  opt.Val[float64] `json:"do,omitzero"`  // Doppler, Hz; RINEX sign: positive approaching, CP rate is -Do
+	Do  opt.Val[float64] `json:"do,omitzero"`  // RINEX Doppler, Hz; positive for approaching satellites
 	CN0 opt.Val[float32] `json:"cn0,omitzero"` // carrier-to-noise density, dB-Hz
 	LLI opt.Val[LLI]     `json:"lli,omitzero"` // RINEX loss-of-lock indicator for phase
 	SSI opt.Val[uint8]   `json:"ssi,omitzero"` // RINEX signal strength indicator

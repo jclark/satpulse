@@ -131,6 +131,13 @@ func TestParseFlagsFormats(t *testing.T) {
 	if len(v.meta.Comments) != 1 || v.meta.Comments[0] != "log: input.rtcm" {
 		t.Fatalf("rtcm comments = %#v", v.meta.Comments)
 	}
+	v, _, err = parseFlags("", []string{"--from", "raw", "--rtcm-strict-prr", "input.jsonl"})
+	if err != nil {
+		t.Fatalf("parseFlags raw strict prr: %v", err)
+	}
+	if !v.ropts.UseSpecPhaseRangeRateSign {
+		t.Fatal("UseSpecPhaseRangeRateSign = false, want true")
+	}
 	for _, tt := range []struct {
 		from string
 		want inputFormat
@@ -170,6 +177,9 @@ func TestParseFlagsFormats(t *testing.T) {
 	}
 	if _, _, err := parseFlags("", []string{"--from", "ubx", "--date", "20251218", "input.ubx"}); err == nil {
 		t.Fatal("parseFlags accepted RTCM date option with UBX input")
+	}
+	if _, _, err := parseFlags("", []string{"--from", "ubx", "--rtcm-strict-prr", "input.ubx"}); err == nil {
+		t.Fatal("parseFlags accepted RTCM PRR option with UBX input")
 	}
 	if _, _, err := parseFlags("", []string{"--packet-log", "--from", "rtcm", "--date", "20251218", "input.jsonl"}); err == nil {
 		t.Fatal("parseFlags accepted RTCM date option with packet log")
@@ -590,6 +600,22 @@ func TestRunRTCMInput(t *testing.T) {
 	if obs[0].T != wantT || obs[0].Sat != "G03" || obs[0].Sig != "1C" || !obs[0].PR.IsSet() || !obs[0].CP.IsSet() {
 		t.Fatalf("observation = %#v", obs[0])
 	}
+	if !obs[0].Do.IsSet() || obs[0].Do.Get() <= 0 {
+		t.Fatalf("Do = %v, want positive default PRR polarity", obs[0].Do)
+	}
+	got.Reset()
+	cj = convJob{inputs: testInputs(bytes.NewReader(pkt)), out: &got, from: inputRTCM, to: outputObsJSON, meta: rinex.Metadata{MarkerName: "RTCM"}, week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())}}
+	cj.ropts.UseSpecPhaseRangeRateSign = true
+	if err := cj.run(testLogger(io.Discard), time.Now().UTC()); err != nil {
+		t.Fatalf("runInputs rtcm strict prr to obsj: %v", err)
+	}
+	_, obs, err = rinex.ReadObsJSON(strings.NewReader(got.String()))
+	if err != nil {
+		t.Fatalf("ReadObsJSON strict PRR: %v\n%s", err, got.String())
+	}
+	if len(obs) != 1 || !obs[0].Do.IsSet() || obs[0].Do.Get() >= 0 {
+		t.Fatalf("observations = %#v, want negative strict PRR Doppler", obs)
+	}
 }
 
 func TestRunRawRTCMBuffersMetadataBeforeSelection(t *testing.T) {
@@ -716,11 +742,12 @@ func TestGoldenFiles(t *testing.T) {
 	// convbin -r ubx -v 3.04 -od -os -ro -MULTICODE.
 	// The RTCM golden file was checked against RTKLIB Explorer with:
 	// convbin -r rtcm3 -v 3.04 -od -os -ro "-MULTIMODE -INVPRR".
-	// RTCM MSM encodes phase range rate with the sign of the phase-range
-	// derivative; RINEX Doppler uses the positive-approaching convention.
-	// RTKLIB Explorer's default RTCM MSM decoding writes the opposite Doppler
-	// sign for this file, while -INVPRR flips the decoded phase-range-rate
-	// polarity and makes the observation body match SatPulse.
+	// RTCM defines MSM PhaseRangeRate as d(PhaseRange)/dt, with PhaseRange
+	// having pseudorange sign, so a strict RTCM decode converts to RINEX
+	// Doppler as -PRR/wavelength. This RTCM log needs RTKLIB Explorer's
+	// -INVPRR option because its encoded PRR has the opposite polarity from
+	// that strict RTCM interpretation. SatPulse's default matches this common
+	// receiver polarity; --rtcm-strict-prr selects the strict RTCM sign.
 	// For UBX, after normalizing PGM/RUN BY/DATE and the log path comment,
 	// the only remaining header difference is that RTKLIB Explorer emits
 	// SYS / PHASE SHIFT records. For RTCM, the observation body is

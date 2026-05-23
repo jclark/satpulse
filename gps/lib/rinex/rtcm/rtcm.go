@@ -44,11 +44,20 @@ func (week TimeInterval) IsZero() bool {
 }
 
 // Options controls RTCM to RINEX conversion.
-type Options struct{}
+type Options struct {
+	// UseSpecPhaseRangeRateSign interprets MSM PhaseRangeRate with strict
+	// RTCM sign. RTCM defines PhaseRange with the same sign as pseudorange,
+	// and PhaseRangeRate as d(PhaseRange)/dt, so RINEX Doppler is
+	// -PRR/wavelength. The default keeps the receiver-compatible polarity
+	// observed in UM980 and ZED-F9P MSM streams, where encoded PRR has the
+	// same sign as RINEX Doppler.
+	UseSpecPhaseRangeRateSign bool
+}
 
 // Converter converts parsed RTCM messages to RINEX records.
 type Converter struct {
 	sink   rinex.Sink
+	opts   Options
 	week   TimeInterval
 	leapMS int64
 	time   map[rtcmbin.GNSS]rinex.Time
@@ -63,12 +72,13 @@ type signalKey struct {
 
 // New creates a Converter that writes records to sink.
 // It panics if sink is nil.
-func New(sink rinex.Sink, _ Options) *Converter {
+func New(sink rinex.Sink, opts Options) *Converter {
 	if sink == nil {
 		panic("nil RINEX sink")
 	}
 	return &Converter{
 		sink:   sink,
+		opts:   opts,
 		leapMS: defaultGPSUTCMS,
 		time:   make(map[rtcmbin.GNSS]rinex.Time),
 		lock:   make(map[signalKey]uint16),
@@ -186,7 +196,7 @@ func (c *Converter) convertCell(t rinex.Time, gnss rtcmbin.GNSS, m *rtcmbin.MSMH
 	if cp, ok := carrierPhase(m, satIndex, cellIndex, freq, hasFrequency); ok {
 		obs.CP = opt.Make(cp)
 	}
-	if dop, ok := doppler(m, satIndex, cellIndex, freq, hasFrequency); ok {
+	if dop, ok := doppler(m, satIndex, cellIndex, freq, hasFrequency, c.opts.UseSpecPhaseRangeRateSign); ok {
 		obs.Do = opt.Make(dop)
 	}
 	if v, ok := cn0(m, cellIndex); ok {
@@ -394,13 +404,20 @@ func carrierPhase(m *rtcmbin.MSMHiRes, satIndex, cellIndex int, freq float64, ha
 	return (r + float64(fine)*p2_31*rangeMS) * freq / speedOfLight, true
 }
 
-func doppler(m *rtcmbin.MSMHiRes, satIndex, cellIndex int, freq float64, hasFrequency bool) (float64, bool) {
+// doppler converts MSM PhaseRangeRate to RINEX Doppler. With specSign, it
+// follows RTCM's derivative sign and returns -PRR/wavelength; otherwise it
+// leaves the observed receiver PRR polarity unchanged.
+func doppler(m *rtcmbin.MSMHiRes, satIndex, cellIndex int, freq float64, hasFrequency, specSign bool) (float64, bool) {
 	rough, ok1 := at(m.Sat.PhaseRate, satIndex)
 	fine, ok2 := at(m.Sig.PhaseRate, cellIndex)
 	if !hasFrequency || !ok1 || !ok2 || rough == -8192 || fine == -16384 {
 		return 0, false
 	}
-	d := float64(float32((float64(rough) + float64(fine)*0.0001) * freq / speedOfLight))
+	prr := float64(rough) + float64(fine)*0.0001
+	if specSign {
+		prr = -prr
+	}
+	d := float64(float32(prr * freq / speedOfLight))
 	return d, d != 0
 }
 

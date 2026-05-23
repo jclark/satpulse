@@ -49,6 +49,7 @@ const summary = `[-h|--help] [-o|--output path] [--metadata path]
            [--receiver-number number] [--receiver-type type] [--receiver-version version]
            [--antenna-number number] [--antenna-type type]
            [--program name] [--run-by name]
+           [--rtcm-strict-prr]
            [--phase-threshold n] [--slip-threshold n]
            input...`
 
@@ -111,6 +112,7 @@ type flagVars struct {
 	week         weekOptions
 	meta         rinex.Metadata
 	wopts        rinex.WriterOptions
+	ropts        rnxrtcm.Options
 	uopts        rnxubx.Options
 }
 
@@ -143,6 +145,7 @@ type convJob struct {
 	packetLog bool
 	meta      rinex.Metadata
 	wopts     rinex.WriterOptions
+	ropts     rnxrtcm.Options
 	uopts     rnxubx.Options
 	interval  time.Duration
 	week      weekOptions
@@ -238,6 +241,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		packetLog: v.packetLog,
 		meta:      v.meta,
 		wopts:     v.wopts,
+		ropts:     v.ropts,
 		uopts:     v.uopts,
 		interval:  v.interval,
 		week:      v.week,
@@ -281,6 +285,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.StringVar(&v.meta.Antenna.Type, "antenna-type", "", "RINEX antenna type")
 	flags.StringVar(&v.wopts.Program, "program", "convobs", "RINEX program field")
 	flags.StringVar(&v.wopts.RunBy, "run-by", "", "RINEX run-by field")
+	flags.BoolVar(&v.ropts.UseSpecPhaseRangeRateSign, "rtcm-strict-prr", false, "interpret sign of PhaseRangeRate in strict conformance with RTCM3 standard (Doppler = -PRR/wavelength)")
 	flags.Uint8Var(&v.uopts.PhaseThreshold, "phase-threshold", 0, "RAWX cpStdev index at which carrier phase is omitted, or 0 for RTKLIB Explorer auto")
 	flags.Uint8Var(&v.uopts.SlipThreshold, "slip-threshold", 15, "RAWX cpStdev index that marks a cycle slip")
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
@@ -307,6 +312,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if v.week.mode != weekAuto && !v.inputFormat.mayUseRTCM() {
 		return nil, usageFunc, errors.New("--date, --recent, and --date-from-filename are valid only with raw or RTCM input")
+	}
+	if v.ropts.UseSpecPhaseRangeRateSign && !v.inputFormat.mayUseRTCM() {
+		return nil, usageFunc, errors.New("--rtcm-strict-prr is valid only with raw or RTCM input")
 	}
 	if math.IsNaN(interval) || math.IsInf(interval, 0) || interval < 0 {
 		return nil, usageFunc, errors.New("--interval must be a finite non-negative number of seconds")
@@ -444,7 +452,7 @@ func (cj convJob) run(lg *slog.Logger, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	conv, err := newPacketInput(cj.from, sink, cj.meta, cj.uopts, lg)
+	conv, err := newPacketInput(cj.from, sink, cj.meta, cj.ropts, cj.uopts, lg)
 	if err != nil {
 		return err
 	}
@@ -558,7 +566,7 @@ func loadMetadata(dst *rinex.Metadata, path string, r io.Reader) error {
 	return nil
 }
 
-func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, uopts rnxubx.Options, lg *slog.Logger) (packetInput, error) {
+func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, ropts rnxrtcm.Options, uopts rnxubx.Options, lg *slog.Logger) (packetInput, error) {
 	if tag := inputPacketTags[from]; tag != gpsprot.EmptyTag {
 		if err := sink.Metadata(inputMetadataByTag[tag]); err != nil {
 			return nil, err
@@ -574,7 +582,7 @@ func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, uopt
 			return convertUBXData(data, conv)
 		}}, nil
 	case inputRTCM:
-		conv := rnxrtcm.New(sink, rnxrtcm.Options{})
+		conv := rnxrtcm.New(sink, ropts)
 		return &tagInput{tag: gpsreg.TagRTCM, convert: func(data string, week WeekConstraint) (bool, error) {
 			return convertRTCMData(data, conv, week)
 		}}, nil
@@ -589,11 +597,11 @@ func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, uopt
 			return convertObsVMData(data, conv, uncmsg.ParseAsciiMessage)
 		}}, nil
 	default:
-		return newRawPacketInput(sink, meta, uopts, lg), nil
+		return newRawPacketInput(sink, meta, ropts, uopts, lg), nil
 	}
 }
 
-func newRawPacketInput(sink rinex.Sink, meta rinex.Metadata, uopts rnxubx.Options, lg *slog.Logger) *rawPacketInput {
+func newRawPacketInput(sink rinex.Sink, meta rinex.Metadata, ropts rnxrtcm.Options, uopts rnxubx.Options, lg *slog.Logger) *rawPacketInput {
 	buf := &metadataBufferSink{dst: sink}
 	return &rawPacketInput{
 		sink:    sink,
@@ -601,7 +609,7 @@ func newRawPacketInput(sink rinex.Sink, meta rinex.Metadata, uopts rnxubx.Option
 		uopts:   uopts,
 		meta:    meta,
 		metaBuf: buf,
-		rtcm:    rnxrtcm.New(buf, rnxrtcm.Options{}),
+		rtcm:    rnxrtcm.New(buf, ropts),
 		ubx:     rnxubx.New(sink, uopts),
 		unc:     rnxunc.New(sink, rnxunc.Options{}),
 	}

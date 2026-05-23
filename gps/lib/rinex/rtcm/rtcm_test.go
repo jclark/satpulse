@@ -136,6 +136,24 @@ func TestConvertMSM7GPS(t *testing.T) {
 	}
 }
 
+func TestConvertMSM7StrictPhaseRangeRateSign(t *testing.T) {
+	s := &testSink{}
+	c := New(s, Options{UseSpecPhaseRangeRateSign: true})
+	tow := uint32(345600000)
+	wantT := rinex.TimeFromGPSWeekMillis(2397, tow)
+	ok, err := c.ConvertMSM7(msm7GPS(tow), weekFor(wantT))
+	if err != nil {
+		t.Fatalf("ConvertMSM7: %v", err)
+	}
+	if !ok || len(s.obs) != 1 {
+		t.Fatalf("observations = %#v ok=%v, want one", s.obs, ok)
+	}
+	wl := speedOfLight / (1575.420 * 1e6)
+	if !near(s.obs[0].Do.Get(), -99.8/wl, 3e-5) {
+		t.Fatalf("Do = %.9f, want %.9f", s.obs[0].Do.Get(), -99.8/wl)
+	}
+}
+
 func TestConvertMSM7GPSMultiCell(t *testing.T) {
 	s := &testSink{}
 	c := New(s, Options{})
