@@ -766,6 +766,263 @@ system letters still come from the RTCM message type (`1077` GPS, `1087`
 GLONASS, `1097` Galileo, `1107` SBAS, `1117` QZSS, `1127` BeiDou, `1137`
 NavIC).
 
+## Unicore conversion
+
+Initial Unicore support should convert `OBSVMB` messages to `.obsj` and RINEX
+observation output. This is the message enabled by SatPulse's existing
+`--raw-out obs` Unicore configuration path, which sends `OBSVMB 1`.
+
+Do not include the other Unicore observation messages in the first pass:
+
+- `OBSVMA` is the ASCII form of the same uncompressed master-antenna
+  observation data. It can be added after the binary path is working.
+- `OBSVBASEB` and `OBSVHB` use the same uncompressed observation-record layout,
+  but are base-station and slave-antenna logs rather than the normal receiver
+  observation stream.
+- `OBSVMCMPB` and `OBSVHCMPB` are compressed 24-byte-per-observation forms.
+  They should be treated as a separate follow-up because they require bitfield
+  unpacking.
+- Raw navigation messages such as `GPSEPHB`, `BDSEPHB`, `GLOEPHB`, `GALEPHB`,
+  and `QZSSEPHB` are navigation-file work, not observation conversion.
+
+### Unicore message parsing
+
+Add an `ObsVM` message type to `gps/lib/uncmsg` and register it for message ID
+`12`, with ASCII name `OBSVMA` and binary name `OBSVM` through the existing
+registration conventions. The binary packet parser already parses the 24-byte
+Unicore binary header and dispatches by message ID; what is missing is the
+typed payload.
+
+The `OBSVMB` payload starts immediately after the Unicore binary header:
+
+| Offset | Field | Type | Meaning |
+| ------:| ----- | ---- | ------- |
+| `H+0`  | obs number | `uint32` | Number of observation records |
+| `H+4`  | observations | `[]ObsVMRecord` | `obs number` fixed 40-byte records |
+
+Each `ObsVMRecord` has this layout:
+
+| Record offset | Field | Type | Meaning |
+| -------------:| ----- | ---- | ------- |
+| `+0`  | system frequency | `uint16` | GLONASS frequency channel plus 7; zero for other systems |
+| `+2`  | PRN/slot | `uint16` | Unicore satellite PRN/slot number |
+| `+4`  | pseudorange | `float64` | Meters |
+| `+12` | ADR | `float64` | Carrier phase / accumulated Doppler range, cycles |
+| `+20` | pseudorange std | `uint16` | Standard deviation times 100 |
+| `+22` | ADR std | `uint16` | Standard deviation times 10000 |
+| `+24` | Doppler | `float32` | Hz |
+| `+28` | C/N0 | `uint16` | dB-Hz times 100 |
+| `+30` | reserved | `uint16` | Reserved |
+| `+32` | lock time | `float32` | Continuous tracking time without cycle slip, seconds |
+| `+36` | tracking status | `uint32` | Validity, system, and signal fields |
+
+Add focused `uncmsg` tests using the existing UM980 `OBSVM` packet in
+`internal/gpscmd/testdata/unicore/um980-raw-out.jsonl`. The tests should lock
+down message ID dispatch, record count, selected record values, and
+round-tripping through binary serialization.
+
+### Unicore observation converter
+
+Add a `gps/lib/rinex/unc` package, parallel to `gps/lib/rinex/ubx` and
+`gps/lib/rinex/rtcm`. The converter should accept parsed Unicore messages plus
+their header and emit `rinex.SignalObservation` records to a `rinex.Sink`.
+
+Observation time comes from the Unicore message header. Convert the header's
+GPS week and millisecond-of-week to `rinex.Time`:
+
+```go
+rinex.TimeFromGPSWeekSeconds(int64(h.Week), float64(h.MillisecondsOfWeek)/1000)
+```
+
+Only emit observations whose tracking status maps to a known RINEX satellite
+and signal. Use the pseudorange and carrier-phase validity bits to decide
+whether `PR` and `CP` are set. Leave a field unset when the corresponding
+source value is invalid or unavailable. Do not emit an observation with no
+RINEX observation values.
+
+Tracking status fields documented by the Unicore protocol are:
+
+| Bits | Meaning |
+| ---: | ------- |
+| 10 | Carrier phase valid |
+| 12 | Pseudorange valid |
+| 16..18 | Satellite system: GPS, GLONASS, SBAS, Galileo, BDS, QZSS, IRNSS |
+| 21..25 | Signal type, interpreted per satellite system |
+| 26 | L2C flag, disambiguating GPS/QZSS L2P(Y) from L2C |
+
+Map C/N0 by dividing the source value by 100. Map Doppler directly in Hz. Map
+carrier phase with the RTKLIB-compatible sign convention used for Unicore:
+the RINEX carrier phase value is `-ADR`.
+
+For GLONASS, convert the Unicore PRN/slot range to RINEX slot numbering by
+subtracting 37. The RINEX `Frq` value should be the GLONASS frequency channel,
+so derive it as `int8(systemFrequency) - 7` when the source value is known.
+
+### Unicore RINEX mappings
+
+Put Unicore-to-RINEX mapping helpers in `gps/lib/uncmsg`, not in the
+higher-level RINEX converter. This mirrors `ubxbin` and `rtcmbin` and keeps the
+wire-protocol mapping close to the protocol package.
+
+Use `gpsprot.SignalID` as the midpoint. `gps/internal/unc` already maps
+Unicore system/frequency IDs to `gpsprot.SignalID`, and UBX already has both
+UBX-to-`gpsprot.SignalID` and UBX-to-RINEX mappings. The Unicore mapping table
+should therefore be built from:
+
+- Unicore V1.13 tracking-status system and signal-type IDs.
+- Existing `gps/internal/unc` mappings to `gpsprot.SignalID`.
+- Existing UBX RINEX mappings where the same `gpsprot.SignalID` is already
+  represented.
+- RINEX 4.02 observation-code tables for signals UBX does not expose.
+
+The helpers should cover:
+
+- `RINEXSys(system uint8) string`, mapping tracking-status system values to
+  `G`, `R`, `S`, `E`, `C`, `J`, and `I`.
+- `RINEXSatNum(system uint8, prnSlot uint16) uint8`, applying Unicore PRN/slot
+  numbering and returning 0 for reserved or unsupported IDs.
+- `RINEXTrackingSig(system uint8, sigType uint8, l2c bool) string`, applying
+  the OBSVM Channel Tracking Status `Signal type` field. The name and
+  documentation should make clear that this maps OBSVM tracking-status signal
+  types, not Unicore frequency identifiers in general. The caller extracts
+  `system`, `sigType`, and `l2c` from the tracking status word.
+
+Initial `RINEXTrackingSig` table for OBSVM Channel Tracking Status:
+
+| System | Signal type | `l2c` | Unicore signal | `gpsprot.SignalID` | RINEX signal |
+| ------ | ----------- | ----- | -------------- | ------------------ | ------------ |
+| GPS | 0 | - | L1 C/A | `SigIDGPSL1CA` | `1C` |
+| GPS | 9 | false | L2P(Y) | `SigIDGPSL2P` | `2W` |
+| GPS | 9 | true | L2C(M) | `SigIDGPSL2CM` | `2S` |
+| GPS | 3 | - | L1C pilot | `SigIDGPSL1CP` | `1L` |
+| GPS | 11 | - | L1C data | `SigIDGPSL1CD` | `1S` |
+| GPS | 6 | - | L5 data | `SigIDGPSL5I` | `5I` |
+| GPS | 14 | - | L5 pilot | `SigIDGPSL5Q` | `5Q` |
+| GPS | 17 | - | L2C(L) | `SigIDGPSL2CL` | `2L` |
+| GLONASS | 0 | - | L1 C/A | `SigIDGLOL1` | `1C` |
+| GLONASS | 5 | - | L2 C/A | `SigIDGLOL2` | `2C` |
+| GLONASS | 6 | - | G3I | `SigIDGLOL3I` | `3I` |
+| GLONASS | 7 | - | G3Q | `SigIDGLOL3Q` | `3Q` |
+| Galileo | 1 | - | E1B | `SigIDGALE1B` | `1B` |
+| Galileo | 2 | - | E1C | `SigIDGALE1C` | `1C` |
+| Galileo | 12 | - | E5a pilot | `SigIDGALE5aQ` | `5Q` |
+| Galileo | 17 | - | E5b pilot | `SigIDGALE5bQ` | `7Q` |
+| Galileo | 18 | - | E6B | `SigIDGALE6B` | `6B` |
+| Galileo | 22 | - | E6C | `SigIDGALE6C` | `6C` |
+| BDS | 0 | - | B1I | `SigIDBDSB1I` | `2I` |
+| BDS | 4 | - | B1Q | `SigIDBDSB1Q` | `2Q` |
+| BDS | 8 | - | B1C pilot | `SigIDBDSB1CP` | `1P` |
+| BDS | 23 | - | B1C data | `SigIDBDSB1CD` | `1D` |
+| BDS | 5 | - | B2Q | `SigIDBDSB2Q` | `7Q` |
+| BDS | 17 | - | B2I | `SigIDBDSB2I` | `7I` |
+| BDS | 12 | - | B2a pilot | `SigIDBDSB2aP` | `5P` |
+| BDS | 28 | - | B2a data | `SigIDBDSB2aD` | `5D` |
+| BDS | 6 | - | B3Q | `SigIDBDSB3Q` | `6Q` |
+| BDS | 21 | - | B3I | `SigIDBDSB3I` | `6I` |
+| BDS | 13 | - | B2b(I) | `SigIDBDSB2bI` | `7D` |
+| QZSS | 0 | - | L1 C/A | `SigIDQZSSL1CA` | `1C` |
+| QZSS | 1 | - | L1C/B | `SigIDQZSSL1CB` | `1E` |
+| QZSS | 3 | - | L1C pilot | `SigIDQZSSL1CP` | `1L` |
+| QZSS | 4 | - | L1S | `SigIDQZSSL1S` | `1Z` |
+| QZSS | 6 | - | L5 data | `SigIDQZSSL5I` | `5I` |
+| QZSS | 9 | false/true | Undocumented in OBSVM | - | Unmapped |
+| QZSS | 11 | - | L1C data | `SigIDQZSSL1CD` | `1S` |
+| QZSS | 14 | - | L5 pilot | `SigIDQZSSL5Q` | `5Q` |
+| QZSS | 17 | - | L2C(L) | `SigIDQZSSL2CL` | `2L` |
+| QZSS | 21 | - | L6D | `SigIDQZSSL6` | `6S` |
+| QZSS | 27 | - | L6E | `SigIDQZSSL6E` | `6E` |
+| SBAS | 0 | - | L1 C/A | `SigIDGPSL1CA` | `1C` |
+| SBAS | 6 | - | L5(I) | `SigIDGPSL5I` | `5I` |
+| NavIC | 6 | - | L5 data | `SigIDNAVICL5I` | `5A` |
+| NavIC | 14 | - | L5 pilot | `SigIDNAVICL5Q` | Unmapped |
+
+The entries above deliberately follow the local Unicore and `gpsprot`
+midpoint tables. Add tests for every supported row, plus representative
+reserved and unknown values.
+
+Cross-check notes and inconsistencies:
+
+The table below is only a cross-check. It separates four things that can
+disagree:
+
+- The Unicore OBSVM tracking-status and frequency-identifier documentation.
+- The current SatPulse `gps/internal/unc` mapping to `gpsprot.SignalID`.
+- The RTKLIB Explorer Unicore `sig2code` mapping.
+- The RINEX 4.02 observation-code definitions.
+
+The current SatPulse midpoint mapping is based on `SATSINFO`'s `Freq status`
+field, which references Unicore's separate `Frequency Identifier` table. OBSVM
+uses `ch-tr status`, which references `Table Channel Tracking Status`; bits
+`21..25` are the tracking-status `Signal type`, with bit `26` as an additional
+L2C discriminator. The existing midpoint table is useful supporting context,
+but it is not definitive for OBSVM tracking-status-to-RINEX mapping.
+
+GPS `sigType=9` is not an inconsistency in this OBSVM mapping. For OBSVM, the
+Channel Tracking Status table defines bit `26` as part of the signal identity:
+`sigType=9, l2c=0` maps to RINEX `2W`, and `sigType=9, l2c=1` maps to RINEX
+`2S`.
+
+| Case | Unicore docs | Current SatPulse mapping | RTKLIB Explorer mapping | RINEX 4.02 context | What is inconsistent |
+| ---- | ------------ | ------------------------ | ----------------------- | ------------------ | -------------------- |
+| QZSS `sigType=9` | OBSVM lists QZSS signal types `0`, `1`, `3`, `4`, `6`, `11`, `14`, `17`, `21`, and `27`. It does not list `9` for QZSS. | There is no QZSS `FreqID=9` row in `gps/internal/unc`; QZSS L2C(L) is `17`. This is only supporting context because SATSINFO uses the separate Frequency Identifier table. | `sig2code` has a QZSS `sigType=9` branch and applies the same `l2c` split as GPS: `2W` or `2S`. | QZSS has RINEX L2C(M), L2C(L), and L2C(M+L) codes, including `2S` and `2L`; RINEX 4.02 does not define QZSS `2W`. | RTKLIB Explorer maps a QZSS signal type that is absent from the Unicore OBSVM Channel Tracking Status table. This row is resolved as unmapped. |
+| QZSS `sigType=21` L6D | OBSVM says QZSS `21 = L6D`. | `gps/internal/unc` maps `FreqQZSSL6D` to `SigIDQZSSL6`, with a comment that `gpsprot` uses `L6` to mean L6D. This agrees with the OBSVM signal name, but it is only supporting context. | `sig2code` maps `sigType=21` to `CODE_L6Z`, i.e. RINEX `6Z`. | RINEX 4.02 QZSS says L6D is `6S`, L6E is `6E`, and L6(D+E) is `6Z`. | RTKLIB Explorer maps the OBSVM-documented single-channel L6D signal to the RINEX combined L6(D+E) code. This conflicts with both the OBSVM signal name and the RINEX QZSS L6 code definitions. |
+| BDS `sigType=13` B2b(I) | OBSVM says BDS `13 = B2b(I)`. Other Unicore fields also use B2b I/Q terminology. | `gps/internal/unc` maps `FreqBDSB2bI` to `SigIDBDSB2bI`. This agrees with the Unicore name, but it is only supporting context because it comes from the Frequency Identifier table path. | `sig2code` maps `sigType=13` to `CODE_L7P`, i.e. RINEX `7P`. | RINEX 4.02 BDS B2b codes are `7D` for data, `7P` for pilot, and `7Z` for data+pilot. | The OBSVM table names the signal B2b(I), while RTKLIB Explorer maps it to the RINEX pilot code. The conflict is between RTKLIB Explorer's `7P` choice and the usual GNSS convention that I denotes the data channel; RINEX itself uses data/pilot names rather than I/Q names for B2b. |
+| NavIC `sigType=6` and `14` | OBSVM says IRNSS/NavIC `6 = L5 data` and `14 = L5 pilot`. A separate Unicore GNSS ID / Signal ID table names NavIC `L5-SPS` and `L5-RS`, but that is a different identifier scheme from the OBSVM tracking-status signal type. | `gps/internal/unc` maps `6` to `SigIDNAVICL5I` and `14` to `SigIDNAVICL5Q`. These `gpsprot` NavIC signal IDs use generic I/Q-style names and do not resolve the RINEX SPS-vs-RS distinction. | `sig2code` maps `6` to `CODE_L5A`, i.e. RINEX `5A`, and `14` to `CODE_L5C`, i.e. RINEX `5C`. | RINEX 4.02 NavIC L5 says `5A` is L5 A SPS, `5B` is L5 B RS data, `5C` is L5 C RS pilot, and `5X` is B+C. | Unicore OBSVM uses generic data/pilot labels, while RINEX NavIC data/pilot labels refer to restricted-service B/C and the ordinary SPS signal is A. RTKLIB Explorer maps the data row to SPS `5A` but the pilot row to restricted-service `5C`; the current SatPulse `gpsprot` midpoint names are not authoritative for this RINEX decision. |
+
+Resolution notes:
+
+- GPS `sigType=9` is resolved by using the OBSVM `l2c` bit in
+  `RINEXTrackingSig`.
+- BDS `sigType=13` should map to RINEX `7D`. The OBSVM signal name is
+  `B2b(I)`, and I is the B2b data component. RTKLIB Explorer's `7P` mapping is
+  treated as wrong for this row.
+- QZSS `sigType=21` should map to RINEX `6S`. The OBSVM signal name is L6D,
+  and RINEX `6S` is the QZSS L6D code. RTKLIB Explorer's `6Z` mapping is
+  treated as wrong for this row.
+- NavIC `sigType=6` should map to RINEX `5A`, the NavIC L5 SPS signal.
+- NavIC `sigType=14` should remain unmapped. RTKLIB Explorer maps it to RINEX
+  `5C`, but `5C` is NavIC L5 restricted-service pilot.
+- QZSS `sigType=9` should remain unmapped because it is not documented in the
+  OBSVM Channel Tracking Status table.
+
+### Unicore LLI handling
+
+Unicore `OBSVMB` has a continuous `locktime` field rather than an RTCM-style
+lock-time indicator. Use the same state-management pattern as `rinex/rtcm`,
+but base the slip check on whether `locktime` advanced by approximately the
+epoch interval:
+
+```text
+locktime - previousLocktime + 0.05 <= epochDeltaSeconds
+```
+
+When that condition is true for the same satellite and signal, set
+`LLILostLock`. If carrier phase is invalid for the current observation, carry
+the lost-lock state forward and emit it on the next observation for that
+satellite and signal that has carrier phase. The `0.05` second tolerance
+matches the current RTKLIB Explorer Unicore decoder, but the implementation
+should be validated with local tests rather than treating that decoder as
+authoritative.
+
+The Unicore V1.13 documentation does not identify a half-cycle ambiguity bit in
+`OBSVMB` tracking status. The converter should therefore not set
+`LLIHalfCycleAmbiguity` for Unicore observations. Do not infer half-cycle
+ambiguity from unrelated reserved bits.
+
+### Unicore convobs wiring
+
+Wire the converter into `convobs` after the package-level decoder is tested:
+
+- Add explicit `--from uncb` input selection.
+- Add `--from unca` only when `OBSVMA` parsing is implemented.
+- Include Unicore binary packets in packet-log conversion. The current
+  packet-log scanner is UBX-specific and must be widened before packet-log
+  `UNCB` input can work.
+- In `--from raw` mode, select the Unicore converter when the first supported
+  raw observation message is `UNCB OBSVM`.
+- Reject later UBX RAWX or RTCM MSM7 observations after selecting Unicore, and
+  reject later Unicore `OBSVM` observations after selecting UBX or RTCM.
+
 ## Full RINEX observation reader
 
 The current RINEX observation reader is intentionally narrow. It can read the
