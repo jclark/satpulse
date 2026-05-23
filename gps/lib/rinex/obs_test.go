@@ -10,7 +10,12 @@ import (
 
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/pelletier/go-toml/v2"
 )
+
+func testPtr[T any](v T) *T {
+	return &v
+}
 
 func TestSignalObservationJSON(t *testing.T) {
 	obs := SignalObservation{
@@ -77,8 +82,8 @@ func TestMetadataJSON(t *testing.T) {
 			Number: "5644",
 			Type:   "GEOANTENNA NONE",
 		},
-		ApproxPosition: opt.Make([3]float64{4091423.719, 368380.653, 4863179.994}),
-		LeapSeconds:    opt.Make(int16(18)),
+		ApproxPosition: testPtr([3]float64{4091423.719, 368380.653, 4863179.994}),
+		LeapSeconds:    testPtr(int16(18)),
 	}
 	b, err := json.Marshal(meta)
 	if err != nil {
@@ -93,9 +98,52 @@ func TestMetadataJSON(t *testing.T) {
 		t.Fatalf("Unmarshal error: %v", err)
 	}
 	if got.MarkerName != meta.MarkerName || got.Receiver.Number != meta.Receiver.Number ||
-		got.Antenna.Type != meta.Antenna.Type || got.ApproxPosition.Get() != meta.ApproxPosition.Get() ||
-		got.LeapSeconds.Get() != meta.LeapSeconds.Get() {
+		got.Antenna.Type != meta.Antenna.Type || *got.ApproxPosition != *meta.ApproxPosition ||
+		*got.LeapSeconds != *meta.LeapSeconds {
 		t.Errorf("round trip = %#v, want %#v", got, meta)
+	}
+}
+
+func TestMetadataTOML(t *testing.T) {
+	data := []byte(`markerName = "SITE"
+observer = "JJ"
+agency = "SatPulse"
+approxPosition = [-1144697.9559, 6090335.6106, 1504171.2880]
+antennaDelta = [1.2, 0.3, 0.4]
+leapSeconds = 18
+
+[receiver]
+number = "RX001"
+type = "ZED-X20P"
+version = "HPG 2.02"
+
+[antenna]
+number = "ANT001"
+type = "ANTMODEL NONE"
+`)
+	var got Metadata
+	if err := toml.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+	if got.MarkerName != "SITE" || got.Observer != "JJ" || got.Agency != "SatPulse" {
+		t.Errorf("metadata strings = %#v", got)
+	}
+	if got.Receiver.Number != "RX001" || got.Receiver.Type != "ZED-X20P" || got.Receiver.Version != "HPG 2.02" {
+		t.Errorf("receiver = %#v", got.Receiver)
+	}
+	if got.Antenna.Number != "ANT001" || got.Antenna.Type != "ANTMODEL NONE" {
+		t.Errorf("antenna = %#v", got.Antenna)
+	}
+	pos := [3]float64{-1144697.9559, 6090335.6106, 1504171.2880}
+	if got.ApproxPosition == nil || *got.ApproxPosition != pos {
+		t.Errorf("approx position = %v, want %v", got.ApproxPosition, pos)
+	}
+	delta := [3]float64{1.2, 0.3, 0.4}
+	if got.AntennaDelta == nil || *got.AntennaDelta != delta {
+		t.Errorf("antenna delta = %v, want %v", got.AntennaDelta, delta)
+	}
+	if got.LeapSeconds == nil || *got.LeapSeconds != 18 {
+		t.Errorf("leap seconds = %v, want 18", got.LeapSeconds)
 	}
 }
 
@@ -120,7 +168,7 @@ func TestUnmarshalRecord(t *testing.T) {
 	if isObs {
 		t.Fatal("UnmarshalRecord metadata isObs = true, want false")
 	}
-	if meta.Antenna.Type != "ROVER" || meta.AntennaDelta.Get()[0] != 0.903 {
+	if meta.Antenna.Type != "ROVER" || meta.AntennaDelta == nil || meta.AntennaDelta[0] != 0.903 {
 		t.Errorf("metadata = %#v", meta)
 	}
 	if obs.T != 0 {

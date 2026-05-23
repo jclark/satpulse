@@ -160,7 +160,7 @@ func TestWriteObservationFileUsesGPSTimeSystem(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var b bytes.Buffer
-			if err := WriteObservationFile(&b, Metadata{LeapSeconds: opt.Make(int16(18))}, tt.obs, WriterOptions{Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}); err != nil {
+			if err := WriteObservationFile(&b, Metadata{LeapSeconds: testPtr(int16(18))}, tt.obs, WriterOptions{Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}); err != nil {
 				t.Fatalf("WriteObservationFile: %v", err)
 			}
 			s := b.String()

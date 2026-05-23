@@ -65,11 +65,11 @@ func readObservationHeader(s *bufio.Scanner) (observationHeader, error) {
 			h.meta.Antenna.Type = strings.TrimSpace(content[20:])
 		case "APPROX POSITION XYZ":
 			if v, ok := parseFloatTriple(content); ok {
-				h.meta.ApproxPosition = opt.Make(v)
+				h.meta.ApproxPosition = &v
 			}
 		case "ANTENNA: DELTA H/E/N":
 			if v, ok := parseFloatTriple(content); ok {
-				h.meta.AntennaDelta = opt.Make(v)
+				h.meta.AntennaDelta = &v
 			}
 		case "SYS / # / OBS TYPES":
 			sys, err := readObsTypesHeader(content, h.sys, h.codes, obsTypeCount)
@@ -98,7 +98,8 @@ func readObservationHeader(s *bufio.Scanner) (observationHeader, error) {
 				if err != nil {
 					return h, fmt.Errorf("rinex: invalid leap seconds %q", fields[0])
 				}
-				h.meta.LeapSeconds = opt.Make(int16(n))
+				v := int16(n)
+				h.meta.LeapSeconds = &v
 			}
 		case "END OF HEADER":
 			if h.timeSystem == "" {
@@ -250,8 +251,8 @@ func systemTimeSystem(sys string) string {
 }
 
 func gpsUTCSeconds(meta Metadata) int64 {
-	if meta.LeapSeconds.IsSet() {
-		return int64(meta.LeapSeconds.Get())
+	if meta.LeapSeconds != nil {
+		return int64(*meta.LeapSeconds)
 	}
 	return defaultGPSUTCSeconds
 }

@@ -25,6 +25,10 @@ import (
 
 var updateGolden = flag.Bool("update", false, "update golden test data files")
 
+func testPtr[T any](v T) *T {
+	return &v
+}
+
 func TestLoadMetadata(t *testing.T) {
 	path := "meta.json"
 	data := `{"markerName":"FILE","receiver":{"type":"RX"},"comments":["from file"]}`
@@ -199,8 +203,8 @@ func TestRunRINEXInput(t *testing.T) {
 	meta := rinex.Metadata{
 		MarkerName:   "FILE",
 		Comments:     []string{"from rinex"},
-		LeapSeconds:  opt.Make(int16(18)),
-		AntennaDelta: opt.Make([3]float64{1.25, 0, 0}),
+		LeapSeconds:  testPtr(int16(18)),
+		AntennaDelta: testPtr([3]float64{1.25, 0, 0}),
 	}
 	var in bytes.Buffer
 	wopts := rinex.WriterOptions{Program: "test", Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}
@@ -215,7 +219,7 @@ func TestRunRINEXInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v\n%s", err, out.String())
 	}
-	if gotMeta.MarkerName != "FLAG" || gotMeta.LeapSeconds.Get() != 18 || gotMeta.AntennaDelta.Get()[0] != 1.25 {
+	if gotMeta.MarkerName != "FLAG" || gotMeta.LeapSeconds == nil || *gotMeta.LeapSeconds != 18 || gotMeta.AntennaDelta == nil || gotMeta.AntennaDelta[0] != 1.25 {
 		t.Fatalf("metadata = %#v", gotMeta)
 	}
 	if len(gotMeta.Comments) != 1 || gotMeta.Comments[0] != "from rinex" {
@@ -441,7 +445,7 @@ func TestRunRawRTCMBuffersMetadataBeforeSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
 	}
-	if meta.MarkerNumber != "100" || meta.ApproxPosition.Get() != [3]float64{1, 2, 3} {
+	if meta.MarkerNumber != "100" || meta.ApproxPosition == nil || *meta.ApproxPosition != [3]float64{1, 2, 3} {
 		t.Fatalf("metadata = %#v", meta)
 	}
 	if len(meta.Comments) != 1 || meta.Comments[0] != "format: RTCM" {
@@ -470,7 +474,7 @@ func TestRunRawDropsTentativeRTCMMetadataBeforeUBX(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
 	}
-	if meta.MarkerNumber != "" || meta.ApproxPosition.IsSet() {
+	if meta.MarkerNumber != "" || meta.ApproxPosition != nil {
 		t.Fatalf("metadata = %#v, want RTCM metadata dropped", meta)
 	}
 	if len(meta.Comments) != 2 || meta.Comments[0] != "format: u-blox UBX" || meta.Comments[1] != "options: -MULTICODE" {

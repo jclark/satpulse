@@ -221,11 +221,17 @@ func writeHeader(w *bufio.Writer, meta Metadata, f *obsFile, opts WriterOptions)
 	if err := writeHeaderLine(w, fmt.Sprintf("%-20.20s%-40.40s", meta.Antenna.Number, meta.Antenna.Type), "ANT # / TYPE"); err != nil {
 		return err
 	}
-	pos := meta.ApproxPosition.Get()
+	var pos [3]float64
+	if meta.ApproxPosition != nil {
+		pos = *meta.ApproxPosition
+	}
 	if err := writeHeaderLine(w, fmt.Sprintf("%14.4f%14.4f%14.4f", pos[0], pos[1], pos[2]), "APPROX POSITION XYZ"); err != nil {
 		return err
 	}
-	delta := meta.AntennaDelta.Get()
+	var delta [3]float64
+	if meta.AntennaDelta != nil {
+		delta = *meta.AntennaDelta
+	}
 	if err := writeHeaderLine(w, fmt.Sprintf("%14.4f%14.4f%14.4f", delta[0], delta[1], delta[2]), "ANTENNA: DELTA H/E/N"); err != nil {
 		return err
 	}
@@ -250,8 +256,8 @@ func writeHeader(w *bufio.Writer, meta Metadata, f *obsFile, opts WriterOptions)
 			return err
 		}
 	}
-	if meta.LeapSeconds.IsSet() {
-		if err := writeHeaderLine(w, fmt.Sprintf("%6d", meta.LeapSeconds.Get()), "LEAP SECONDS"); err != nil {
+	if meta.LeapSeconds != nil {
+		if err := writeHeaderLine(w, fmt.Sprintf("%6d", *meta.LeapSeconds), "LEAP SECONDS"); err != nil {
 			return err
 		}
 	}

@@ -91,30 +91,32 @@ type SignalObservation struct {
 // Metadata holds header-related facts in an obsj metadata record.
 // Metadata records do not have a t field and may appear anywhere in an obsj file.
 type Metadata struct {
-	MarkerName     string              `json:"markerName,omitzero"`
-	MarkerNumber   string              `json:"markerNumber,omitzero"`
-	MarkerType     string              `json:"markerType,omitzero"`
-	Comments       []string            `json:"comments,omitzero"`
-	Observer       string              `json:"observer,omitzero"`
-	Agency         string              `json:"agency,omitzero"`
-	Receiver       Receiver            `json:"receiver,omitzero"`
-	Antenna        Antenna             `json:"antenna,omitzero"`
-	ApproxPosition opt.Val[[3]float64] `json:"approxPosition,omitzero"` // APPROX POSITION XYZ, meters
-	AntennaDelta   opt.Val[[3]float64] `json:"antennaDelta,omitzero"`   // ANTENNA: DELTA H/E/N, meters
-	LeapSeconds    opt.Val[int16]      `json:"leapSeconds,omitzero"`    // GPS-UTC offset
+	MarkerName   string   `json:"markerName,omitzero" toml:"markerName"`
+	MarkerNumber string   `json:"markerNumber,omitzero" toml:"markerNumber"`
+	MarkerType   string   `json:"markerType,omitzero" toml:"markerType"`
+	Comments     []string `json:"comments,omitzero" toml:"comments"`
+	Observer     string   `json:"observer,omitzero" toml:"observer"`
+	Agency       string   `json:"agency,omitzero" toml:"agency"`
+	Receiver     Receiver `json:"receiver,omitzero" toml:"receiver"`
+	Antenna      Antenna  `json:"antenna,omitzero" toml:"antenna"`
+	// Use pointers for optional metadata values so TOML packages can decode
+	// arrays and scalars directly without format-specific adapter structs.
+	ApproxPosition *[3]float64 `json:"approxPosition,omitzero" toml:"approxPosition"` // APPROX POSITION XYZ, meters
+	AntennaDelta   *[3]float64 `json:"antennaDelta,omitzero" toml:"antennaDelta"`     // ANTENNA: DELTA H/E/N, meters
+	LeapSeconds    *int16      `json:"leapSeconds,omitzero" toml:"leapSeconds"`       // GPS-UTC offset
 }
 
 // Receiver describes the receiver used for a RINEX observation file.
 type Receiver struct {
-	Number  string `json:"number,omitzero"`
-	Type    string `json:"type,omitzero"`
-	Version string `json:"version,omitzero"`
+	Number  string `json:"number,omitzero" toml:"number"`
+	Type    string `json:"type,omitzero" toml:"type"`
+	Version string `json:"version,omitzero" toml:"version"`
 }
 
 // Antenna describes the antenna used for a RINEX observation file.
 type Antenna struct {
-	Number string `json:"number,omitzero"`
-	Type   string `json:"type,omitzero"`
+	Number string `json:"number,omitzero" toml:"number"`
+	Type   string `json:"type,omitzero" toml:"type"`
 }
 
 // Sink receives RINEX conversion records.
@@ -409,13 +411,13 @@ func MergeMetadata(a, b Metadata) Metadata {
 	if !b.Antenna.IsZero() {
 		a.Antenna = b.Antenna
 	}
-	if b.ApproxPosition.IsSet() {
+	if b.ApproxPosition != nil {
 		a.ApproxPosition = b.ApproxPosition
 	}
-	if b.AntennaDelta.IsSet() {
+	if b.AntennaDelta != nil {
 		a.AntennaDelta = b.AntennaDelta
 	}
-	if b.LeapSeconds.IsSet() {
+	if b.LeapSeconds != nil {
 		a.LeapSeconds = b.LeapSeconds
 	}
 	return a
