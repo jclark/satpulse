@@ -20,7 +20,6 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rinex"
-	rnxubx "github.com/jclark/satpulse/gps/lib/rinex/ubx"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
@@ -35,17 +34,18 @@ func testLogger(w io.Writer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(w, nil))
 }
 
-func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, wopts rinex.WriterOptions, uopts rnxubx.Options, interval time.Duration) error {
+func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, wopts rinex.WriterOptions, interval time.Duration) error {
 	cj := convJob{
-		inputs:    inputs,
-		out:       out,
-		from:      from,
-		to:        to,
-		packetLog: packetLog,
-		meta:      meta,
-		wopts:     wopts,
-		uopts:     uopts,
-		interval:  interval,
+		inputs: inputs,
+		out:    out,
+		opts: convertOptions{
+			from:      from,
+			to:        to,
+			packetLog: packetLog,
+			meta:      meta,
+			write:     wopts,
+			interval:  interval,
+		},
 	}
 	return cj.run(testLogger(io.Discard), time.Now().UTC())
 }
@@ -105,8 +105,8 @@ func TestParseFlagsFormats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags obsj: %v", err)
 	}
-	if v.inputFormat != inputObsJSON || v.outputFormat != outputObsJSON {
-		t.Fatalf("formats = %q, %q; want obsj, obsj", v.inputFormat, v.outputFormat)
+	if v.from != inputObsJSON || v.to != outputObsJSON {
+		t.Fatalf("formats = %q, %q; want obsj, obsj", v.from, v.to)
 	}
 	if len(v.meta.Comments) != 0 {
 		t.Fatalf("obsj comments = %#v, want none", v.meta.Comments)
@@ -115,8 +115,8 @@ func TestParseFlagsFormats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags rinex: %v", err)
 	}
-	if v.inputFormat != inputRINEX || v.outputFormat != outputObsJSON {
-		t.Fatalf("formats = %q, %q; want rinex, obsj", v.inputFormat, v.outputFormat)
+	if v.from != inputRINEX || v.to != outputObsJSON {
+		t.Fatalf("formats = %q, %q; want rinex, obsj", v.from, v.to)
 	}
 	if len(v.meta.Comments) != 0 {
 		t.Fatalf("rinex comments = %#v, want none", v.meta.Comments)
@@ -125,7 +125,7 @@ func TestParseFlagsFormats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags rtcm: %v", err)
 	}
-	if v.inputFormat != inputRTCM || v.outputFormat != outputObsJSON || v.week.mode != weekDate {
+	if v.from != inputRTCM || v.to != outputObsJSON || v.week.mode != weekDate {
 		t.Fatalf("rtcm flags = %#v", v)
 	}
 	if len(v.meta.Comments) != 1 || v.meta.Comments[0] != "log: input.rtcm" {
@@ -135,8 +135,18 @@ func TestParseFlagsFormats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags raw strict prr: %v", err)
 	}
-	if !v.ropts.UseSpecPhaseRangeRateSign {
+	if !v.format.rtcm.UseSpecPhaseRangeRateSign {
 		t.Fatal("UseSpecPhaseRangeRateSign = false, want true")
+	}
+	v, _, err = parseFlags("", []string{"--from", "ubx", "--ubx-phase-threshold", "1", "--ubx-slip-threshold", "12", "input.ubx"})
+	if err != nil {
+		t.Fatalf("parseFlags ubx thresholds: %v", err)
+	}
+	if v.format.ubx.PhaseThreshold != 1 || v.format.ubx.SlipThreshold != 12 {
+		t.Fatalf("UBX thresholds = %d, %d; want 1, 12", v.format.ubx.PhaseThreshold, v.format.ubx.SlipThreshold)
+	}
+	if _, _, err := parseFlags("", []string{"--from", "raw", "--ubx-phase-threshold", "0", "--ubx-slip-threshold", "15", "input.raw"}); err != nil {
+		t.Fatalf("parseFlags raw UBX thresholds: %v", err)
 	}
 	for _, tt := range []struct {
 		from string
@@ -149,7 +159,7 @@ func TestParseFlagsFormats(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseFlags %s packet log: %v", tt.from, err)
 		}
-		if v.inputFormat != tt.want || !v.packetLog {
+		if v.from != tt.want || !v.packetLog {
 			t.Fatalf("%s flags = %#v", tt.from, v)
 		}
 		if len(v.meta.Comments) != 1 || v.meta.Comments[0] != "log: input.jsonl" {
@@ -180,6 +190,12 @@ func TestParseFlagsFormats(t *testing.T) {
 	}
 	if _, _, err := parseFlags("", []string{"--from", "ubx", "--rtcm-strict-prr", "input.ubx"}); err == nil {
 		t.Fatal("parseFlags accepted RTCM PRR option with UBX input")
+	}
+	if _, _, err := parseFlags("", []string{"--from", "rtcm", "--ubx-phase-threshold", "0", "input.rtcm"}); err == nil {
+		t.Fatal("parseFlags accepted UBX phase threshold option with RTCM input")
+	}
+	if _, _, err := parseFlags("", []string{"--from", "unca", "--ubx-slip-threshold", "15", "input.unc"}); err == nil {
+		t.Fatal("parseFlags accepted UBX slip threshold option with UNCA input")
 	}
 	if _, _, err := parseFlags("", []string{"--packet-log", "--from", "rtcm", "--date", "20251218", "input.jsonl"}); err == nil {
 		t.Fatal("parseFlags accepted RTCM date option with packet log")
@@ -217,7 +233,7 @@ func TestRunObsJSONInput(t *testing.T) {
 	var got bytes.Buffer
 	meta := rinex.Metadata{MarkerName: "FLAG"}
 	wopts := rinex.WriterOptions{Program: "test", Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}
-	if err := runInputs(testInputs(strings.NewReader(data)), &got, inputObsJSON, outputRINEX, false, meta, wopts, rnxubx.Options{}, 0); err != nil {
+	if err := runInputs(testInputs(strings.NewReader(data)), &got, inputObsJSON, outputRINEX, false, meta, wopts, 0); err != nil {
 		t.Fatalf("runInputs obsj to rinex: %v", err)
 	}
 	s := got.String()
@@ -261,7 +277,7 @@ func TestRunRINEXInput(t *testing.T) {
 		t.Fatalf("WriteObservationFile: %v", err)
 	}
 	var out bytes.Buffer
-	if err := runInputs(testInputs(&in), &out, inputRINEX, outputObsJSON, false, rinex.Metadata{MarkerName: "FLAG"}, wopts, rnxubx.Options{}, 0); err != nil {
+	if err := runInputs(testInputs(&in), &out, inputRINEX, outputObsJSON, false, rinex.Metadata{MarkerName: "FLAG"}, wopts, 0); err != nil {
 		t.Fatalf("runInputs rinex to obsj: %v", err)
 	}
 	gotMeta, gotObs, err := rinex.ReadObsJSON(strings.NewReader(out.String()))
@@ -294,7 +310,7 @@ func TestRunMultipleObsJSONInputs(t *testing.T) {
 	)
 	var got bytes.Buffer
 	wopts := rinex.WriterOptions{Program: "test", Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}
-	if err := runInputs(inputs, &got, inputObsJSON, outputRINEX, false, rinex.Metadata{}, wopts, rnxubx.Options{}, 0); err != nil {
+	if err := runInputs(inputs, &got, inputObsJSON, outputRINEX, false, rinex.Metadata{}, wopts, 0); err != nil {
 		t.Fatalf("runInputs obsj to rinex: %v", err)
 	}
 	s := got.String()
@@ -321,7 +337,7 @@ func TestRunDecimatesObsJSONInput(t *testing.T) {
 		"",
 	}, "\n")
 	var got bytes.Buffer
-	if err := runInputs(testInputs(strings.NewReader(data)), &got, inputObsJSON, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, rnxubx.Options{}, 10*time.Second); err != nil {
+	if err := runInputs(testInputs(strings.NewReader(data)), &got, inputObsJSON, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, 10*time.Second); err != nil {
 		t.Fatalf("runInputs obsj decimation: %v", err)
 	}
 	meta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -346,7 +362,7 @@ func TestRunObsJSONOutput(t *testing.T) {
 	pkt := rawxPacket(t)
 	var got bytes.Buffer
 	meta := rinex.Metadata{MarkerName: "JSONL"}
-	if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, meta, rinex.WriterOptions{}, rnxubx.Options{}, 0); err != nil {
+	if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, meta, rinex.WriterOptions{}, 0); err != nil {
 		t.Fatalf("runInputs raw to obsj: %v", err)
 	}
 	fileMeta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -372,7 +388,7 @@ func TestRunRawInputSkipsInvalidFragments(t *testing.T) {
 	for _, from := range []inputFormat{inputRaw, inputUBX} {
 		t.Run(string(from), func(t *testing.T) {
 			var got bytes.Buffer
-			if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, from, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, rnxubx.Options{}, 0); err != nil {
+			if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, from, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, 0); err != nil {
 				t.Fatalf("runInputs raw to obsj: %v", err)
 			}
 			_, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -389,7 +405,7 @@ func TestRunRawInputSkipsInvalidFragments(t *testing.T) {
 func TestRunDecimatesRawInput(t *testing.T) {
 	pkt := append(rawxPacketAt(t, 345601.0), rawxPacketAt(t, 345610.0)...)
 	var got bytes.Buffer
-	if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, rnxubx.Options{}, 10*time.Second); err != nil {
+	if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, 10*time.Second); err != nil {
 		t.Fatalf("runInputs raw decimation: %v", err)
 	}
 	_, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -408,7 +424,7 @@ func TestRunMultipleRawInputs(t *testing.T) {
 	pkt := rawxPacket(t)
 	var got bytes.Buffer
 	meta := rinex.Metadata{MarkerName: "MULTI"}
-	if err := runInputs(testInputs(bytes.NewReader(pkt), bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, meta, rinex.WriterOptions{}, rnxubx.Options{}, 0); err != nil {
+	if err := runInputs(testInputs(bytes.NewReader(pkt), bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, meta, rinex.WriterOptions{}, 0); err != nil {
 		t.Fatalf("runInputs raw to obsj: %v", err)
 	}
 	fileMeta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -431,7 +447,7 @@ func TestRunMultipleInputFiles(t *testing.T) {
 		fileWithData(t, dir, "b.ubx", pkt),
 	}
 	var got bytes.Buffer
-	if err := runInputs(openInputs(paths), &got, inputRaw, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, rnxubx.Options{}, 0); err != nil {
+	if err := runInputs(openInputs(paths), &got, inputRaw, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, 0); err != nil {
 		t.Fatalf("runInputs raw files to obsj: %v", err)
 	}
 	_, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -550,12 +566,14 @@ func TestRunPacketLogInput(t *testing.T) {
 			var got bytes.Buffer
 			var log bytes.Buffer
 			cj := convJob{
-				inputs:    testInputs(strings.NewReader(packetLog(t, tt.entries...))),
-				out:       &got,
-				from:      tt.from,
-				to:        outputObsJSON,
-				packetLog: true,
-				meta:      rinex.Metadata{MarkerName: "PKTLOG"},
+				inputs: testInputs(strings.NewReader(packetLog(t, tt.entries...))),
+				out:    &got,
+				opts: convertOptions{
+					from:      tt.from,
+					to:        outputObsJSON,
+					packetLog: true,
+					meta:      rinex.Metadata{MarkerName: "PKTLOG"},
+				},
 			}
 			err := cj.run(testLogger(&log), time.Now().UTC())
 			if tt.err != "" {
@@ -580,7 +598,16 @@ func TestRunRTCMInput(t *testing.T) {
 	wantT := rinex.TimeFromGPSWeekMillis(2397, tow)
 	pkt := rtcmMSM7Packet(t, tow)
 	var got bytes.Buffer
-	cj := convJob{inputs: testInputs(bytes.NewReader(pkt)), out: &got, from: inputRTCM, to: outputObsJSON, meta: rinex.Metadata{MarkerName: "RTCM"}, week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())}}
+	cj := convJob{
+		inputs: testInputs(bytes.NewReader(pkt)),
+		out:    &got,
+		opts: convertOptions{
+			from: inputRTCM,
+			to:   outputObsJSON,
+			meta: rinex.Metadata{MarkerName: "RTCM"},
+			week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())},
+		},
+	}
 	if err := cj.run(testLogger(io.Discard), time.Now().UTC()); err != nil {
 		t.Fatalf("runInputs rtcm to obsj: %v", err)
 	}
@@ -604,8 +631,17 @@ func TestRunRTCMInput(t *testing.T) {
 		t.Fatalf("Do = %v, want positive default PRR polarity", obs[0].Do)
 	}
 	got.Reset()
-	cj = convJob{inputs: testInputs(bytes.NewReader(pkt)), out: &got, from: inputRTCM, to: outputObsJSON, meta: rinex.Metadata{MarkerName: "RTCM"}, week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())}}
-	cj.ropts.UseSpecPhaseRangeRateSign = true
+	cj = convJob{
+		inputs: testInputs(bytes.NewReader(pkt)),
+		out:    &got,
+		opts: convertOptions{
+			from: inputRTCM,
+			to:   outputObsJSON,
+			meta: rinex.Metadata{MarkerName: "RTCM"},
+			week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())},
+		},
+	}
+	cj.opts.format.rtcm.UseSpecPhaseRangeRateSign = true
 	if err := cj.run(testLogger(io.Discard), time.Now().UTC()); err != nil {
 		t.Fatalf("runInputs rtcm strict prr to obsj: %v", err)
 	}
@@ -623,7 +659,15 @@ func TestRunRawRTCMBuffersMetadataBeforeSelection(t *testing.T) {
 	wantT := rinex.TimeFromGPSWeekMillis(2397, tow)
 	pkt := append(rtcm1005Packet(t), rtcmMSM7Packet(t, tow)...)
 	var got bytes.Buffer
-	cj := convJob{inputs: testInputs(bytes.NewReader(pkt)), out: &got, from: inputRaw, to: outputObsJSON, week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())}}
+	cj := convJob{
+		inputs: testInputs(bytes.NewReader(pkt)),
+		out:    &got,
+		opts: convertOptions{
+			from: inputRaw,
+			to:   outputObsJSON,
+			week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())},
+		},
+	}
 	if err := cj.run(testLogger(io.Discard), time.Now().UTC()); err != nil {
 		t.Fatalf("runInputs raw rtcm to obsj: %v", err)
 	}
@@ -653,7 +697,7 @@ func TestRunRawDropsTentativeRTCMMetadataBeforeUBX(t *testing.T) {
 		})
 	}
 	var got bytes.Buffer
-	cj := convJob{inputs: inputs, out: &got, from: inputRaw, to: outputObsJSON}
+	cj := convJob{inputs: inputs, out: &got, opts: convertOptions{from: inputRaw, to: outputObsJSON}}
 	if err := cj.run(testLogger(io.Discard), now); err != nil {
 		t.Fatalf("runInputs raw with tentative rtcm metadata to obsj: %v", err)
 	}
@@ -680,7 +724,7 @@ func TestRunRTCMDateFromFilename(t *testing.T) {
 		yield("MARK00USA_202512180000_01D_30S_MO.rtcm", inputReader{r: bytes.NewReader(pkt)})
 	}
 	var got bytes.Buffer
-	cj := convJob{inputs: inputs, out: &got, from: inputRTCM, to: outputObsJSON, week: weekOptions{mode: weekFilename}}
+	cj := convJob{inputs: inputs, out: &got, opts: convertOptions{from: inputRTCM, to: outputObsJSON, week: weekOptions{mode: weekFilename}}}
 	if err := cj.run(testLogger(io.Discard), time.Now().UTC()); err != nil {
 		t.Fatalf("runInputs rtcm date from filename: %v", err)
 	}
@@ -705,7 +749,7 @@ func TestRunRTCMOldFileNeedsDate(t *testing.T) {
 		})
 	}
 	var got bytes.Buffer
-	cj := convJob{inputs: inputs, out: &got, from: inputRTCM, to: outputObsJSON}
+	cj := convJob{inputs: inputs, out: &got, opts: convertOptions{from: inputRTCM, to: outputObsJSON}}
 	err := cj.run(testLogger(io.Discard), now)
 	if err == nil || !strings.Contains(err.Error(), "provide --date") {
 		t.Fatalf("runInputs old rtcm error = %v, want date hint", err)
@@ -718,7 +762,15 @@ func TestRunRawIgnoresMixedObservationFamilies(t *testing.T) {
 	pkt := append(rawxPacket(t), rtcmMSM7Packet(t, tow)...)
 	var got bytes.Buffer
 	var log bytes.Buffer
-	cj := convJob{inputs: testInputs(bytes.NewReader(pkt)), out: &got, from: inputRaw, to: outputObsJSON, week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())}}
+	cj := convJob{
+		inputs: testInputs(bytes.NewReader(pkt)),
+		out:    &got,
+		opts: convertOptions{
+			from: inputRaw,
+			to:   outputObsJSON,
+			week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())},
+		},
+	}
 	if err := cj.run(testLogger(&log), time.Now().UTC()); err != nil {
 		t.Fatalf("runInputs raw mixed to obsj: %v", err)
 	}
@@ -781,19 +833,12 @@ func TestGoldenFiles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseFlags: %v", err)
 			}
-			v.wopts.Date = now
+			v.write.Date = now
 			var got bytes.Buffer
 			cj := convJob{
-				inputs:    openInputs(v.inputPaths),
-				out:       &got,
-				from:      v.inputFormat,
-				to:        v.outputFormat,
-				packetLog: v.packetLog,
-				meta:      v.meta,
-				wopts:     v.wopts,
-				uopts:     v.uopts,
-				interval:  v.interval,
-				week:      v.week,
+				inputs: openInputs(v.inputPaths),
+				out:    &got,
+				opts:   v.convertOptions,
 			}
 			if err := cj.run(testLogger(io.Discard), now); err != nil {
 				t.Fatalf("run: %v", err)
@@ -845,7 +890,7 @@ func TestGoldenObservationFilesRoundTripThroughObsJSON(t *testing.T) {
 			}
 			wopts := rinex.WriterOptions{Program: "convobs", Date: now}
 			var obsj bytes.Buffer
-			if err := runInputs(testInputs(bytes.NewReader(in)), &obsj, inputRINEX, outputObsJSON, false, rinex.Metadata{}, wopts, rnxubx.Options{}, 0); err != nil {
+			if err := runInputs(testInputs(bytes.NewReader(in)), &obsj, inputRINEX, outputObsJSON, false, rinex.Metadata{}, wopts, 0); err != nil {
 				t.Fatalf("runInputs rinex to obsj: %v", err)
 			}
 			if _, obs, err := rinex.ReadObsJSON(bytes.NewReader(obsj.Bytes())); err != nil {
@@ -854,7 +899,7 @@ func TestGoldenObservationFilesRoundTripThroughObsJSON(t *testing.T) {
 				t.Fatal("ReadObsJSON returned no observations")
 			}
 			var got bytes.Buffer
-			if err := runInputs(testInputs(bytes.NewReader(obsj.Bytes())), &got, inputObsJSON, outputRINEX, false, rinex.Metadata{}, wopts, rnxubx.Options{}, 0); err != nil {
+			if err := runInputs(testInputs(bytes.NewReader(obsj.Bytes())), &got, inputObsJSON, outputRINEX, false, rinex.Metadata{}, wopts, 0); err != nil {
 				t.Fatalf("runInputs obsj to rinex: %v", err)
 			}
 			if !bytes.Equal(got.Bytes(), in) {

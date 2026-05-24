@@ -50,7 +50,7 @@ const summary = `[-h|--help] [-o|--output path] [--metadata path]
            [--antenna-number number] [--antenna-type type]
            [--program name] [--run-by name]
            [--rtcm-strict-prr]
-           [--phase-threshold n] [--slip-threshold n]
+           [--ubx-phase-threshold n] [--ubx-slip-threshold n]
            input...`
 
 type inputFormat string
@@ -102,18 +102,26 @@ const (
 )
 
 type flagVars struct {
-	inputPaths   []string
-	outputPath   string
-	metaPath     string
-	packetLog    bool
-	inputFormat  inputFormat
-	outputFormat outputFormat
-	interval     time.Duration
-	week         weekOptions
-	meta         rinex.Metadata
-	wopts        rinex.WriterOptions
-	ropts        rnxrtcm.Options
-	uopts        rnxubx.Options
+	convertOptions
+	inputPaths []string
+	outputPath string
+	metaPath   string
+}
+
+type convertOptions struct {
+	from      inputFormat
+	to        outputFormat
+	packetLog bool
+	meta      rinex.Metadata
+	write     rinex.WriterOptions
+	format    formatOptions
+	interval  time.Duration
+	week      weekOptions
+}
+
+type formatOptions struct {
+	rtcm rnxrtcm.Options
+	ubx  rnxubx.Options
 }
 
 type inputReader struct {
@@ -138,17 +146,9 @@ type weekOptions struct {
 }
 
 type convJob struct {
-	inputs    iter.Seq2[string, inputReader]
-	out       io.Writer
-	from      inputFormat
-	to        outputFormat
-	packetLog bool
-	meta      rinex.Metadata
-	wopts     rinex.WriterOptions
-	ropts     rnxrtcm.Options
-	uopts     rnxubx.Options
-	interval  time.Duration
-	week      weekOptions
+	inputs iter.Seq2[string, inputReader]
+	out    io.Writer
+	opts   convertOptions
 }
 
 // WeekConstraint carries an RTCM week interval and its user-facing diagnostics.
@@ -187,7 +187,6 @@ var _ rinex.Sink = (*metadataBufferSink)(nil)
 type rawPacketInput struct {
 	sink    rinex.Sink
 	lg      *slog.Logger
-	uopts   rnxubx.Options
 	family  gpsprot.Tag
 	warned  bool
 	week    WeekConstraint
@@ -211,8 +210,8 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		return usageFunc(progName), nil
 	}
 	now := time.Now().UTC()
-	if v.wopts.Date.IsZero() {
-		v.wopts.Date = now
+	if v.write.Date.IsZero() {
+		v.write.Date = now
 	}
 	if v.metaPath != "" {
 		f, err := os.Open(v.metaPath)
@@ -234,31 +233,23 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		out = f
 	}
 	cj := convJob{
-		inputs:    openInputs(v.inputPaths),
-		out:       out,
-		from:      v.inputFormat,
-		to:        v.outputFormat,
-		packetLog: v.packetLog,
-		meta:      v.meta,
-		wopts:     v.wopts,
-		ropts:     v.ropts,
-		uopts:     v.uopts,
-		interval:  v.interval,
-		week:      v.week,
+		inputs: openInputs(v.inputPaths),
+		out:    out,
+		opts:   v.convertOptions,
 	}
 	return "", cj.run(lg, now)
 }
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
-	v := &flagVars{inputFormat: inputRaw, outputFormat: outputRINEX}
+	v := &flagVars{convertOptions: convertOptions{from: inputRaw, to: outputRINEX}}
 	if cmdName == "" {
 		cmdName = "convobs"
 	}
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	help := false
-	from := string(v.inputFormat)
-	to := string(v.outputFormat)
+	from := string(v.from)
+	to := string(v.to)
 	interval := 0.0
 	date := ""
 	recent := false
@@ -283,11 +274,11 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.StringVar(&v.meta.Receiver.Version, "receiver-version", "", "RINEX receiver version")
 	flags.StringVar(&v.meta.Antenna.Number, "antenna-number", "", "RINEX antenna number")
 	flags.StringVar(&v.meta.Antenna.Type, "antenna-type", "", "RINEX antenna type")
-	flags.StringVar(&v.wopts.Program, "program", "convobs", "RINEX program field")
-	flags.StringVar(&v.wopts.RunBy, "run-by", "", "RINEX run-by field")
-	flags.BoolVar(&v.ropts.UseSpecPhaseRangeRateSign, "rtcm-strict-prr", false, "interpret sign of PhaseRangeRate in strict conformance with RTCM3 standard (Doppler = -PRR/wavelength)")
-	flags.Uint8Var(&v.uopts.PhaseThreshold, "phase-threshold", 0, "RAWX cpStdev index at which carrier phase is omitted, or 0 for RTKLIB Explorer auto")
-	flags.Uint8Var(&v.uopts.SlipThreshold, "slip-threshold", 15, "RAWX cpStdev index that marks a cycle slip")
+	flags.StringVar(&v.write.Program, "program", "convobs", "RINEX program field")
+	flags.StringVar(&v.write.RunBy, "run-by", "", "RINEX run-by field")
+	flags.BoolVar(&v.format.rtcm.UseSpecPhaseRangeRateSign, "rtcm-strict-prr", false, "interpret sign of PhaseRangeRate in strict conformance with RTCM3 standard (Doppler = -PRR/wavelength)")
+	flags.Uint8Var(&v.format.ubx.PhaseThreshold, "ubx-phase-threshold", 0, "RAWX cpStdev index at which carrier phase is omitted, or 0 for RTKLIB Explorer auto")
+	flags.Uint8Var(&v.format.ubx.SlipThreshold, "ubx-slip-threshold", 15, "RAWX cpStdev index that marks a cycle slip")
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
 	if err := flags.Parse(args); err != nil {
 		return nil, usageFunc, err
@@ -301,7 +292,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if err := v.setOutputFormat(to); err != nil {
 		return nil, usageFunc, err
 	}
-	if v.packetLog && !v.inputFormat.packetInput() {
+	if v.packetLog && !v.from.packetInput() {
 		return nil, usageFunc, errors.New("--packet-log is valid only with packet input formats")
 	}
 	if err := v.setWeekOptions(date, recent, dateFromFilename); err != nil {
@@ -310,11 +301,17 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if v.packetLog && v.week.mode != weekAuto {
 		return nil, usageFunc, errors.New("--date, --recent, and --date-from-filename are not valid with --packet-log")
 	}
-	if v.week.mode != weekAuto && !v.inputFormat.mayUseRTCM() {
+	if v.week.mode != weekAuto && !v.from.mayUseRTCM() {
 		return nil, usageFunc, errors.New("--date, --recent, and --date-from-filename are valid only with raw or RTCM input")
 	}
-	if v.ropts.UseSpecPhaseRangeRateSign && !v.inputFormat.mayUseRTCM() {
+	if v.format.rtcm.UseSpecPhaseRangeRateSign && !v.from.mayUseRTCM() {
 		return nil, usageFunc, errors.New("--rtcm-strict-prr is valid only with raw or RTCM input")
+	}
+	if flags.Changed("ubx-phase-threshold") && !v.from.mayUseUBX() {
+		return nil, usageFunc, errors.New("--ubx-phase-threshold is valid only with raw or UBX input")
+	}
+	if flags.Changed("ubx-slip-threshold") && !v.from.mayUseUBX() {
+		return nil, usageFunc, errors.New("--ubx-slip-threshold is valid only with raw or UBX input")
 	}
 	if math.IsNaN(interval) || math.IsInf(interval, 0) || interval < 0 {
 		return nil, usageFunc, errors.New("--interval must be a finite non-negative number of seconds")
@@ -332,7 +329,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if v.week.mode == weekFilename && slices.Contains(v.inputPaths, "-") {
 		return nil, usageFunc, errors.New("--date-from-filename is not valid with stdin")
 	}
-	if v.inputFormat.packetInput() {
+	if v.from.packetInput() {
 		for _, path := range v.inputPaths {
 			if path == "-" {
 				v.meta.Comments = append(v.meta.Comments, "log: stdin")
@@ -385,7 +382,7 @@ func (v *flagVars) setInputFormat(s string) error {
 	s = strings.ToLower(s)
 	switch inputFormat(s) {
 	case inputRaw, inputUBX, inputRTCM, inputUNCB, inputUNCA, inputRINEX, inputObsJSON:
-		v.inputFormat = inputFormat(s)
+		v.from = inputFormat(s)
 		return nil
 	default:
 		return fmt.Errorf("unsupported input format %q", s)
@@ -396,7 +393,7 @@ func (v *flagVars) setOutputFormat(s string) error {
 	s = strings.ToLower(s)
 	switch outputFormat(s) {
 	case outputRINEX, outputObsJSON:
-		v.outputFormat = outputFormat(s)
+		v.to = outputFormat(s)
 		return nil
 	default:
 		return fmt.Errorf("unsupported output format %q", s)
@@ -409,6 +406,10 @@ func (f inputFormat) packetInput() bool {
 
 func (f inputFormat) mayUseRTCM() bool {
 	return f == inputRaw || f == inputRTCM
+}
+
+func (f inputFormat) mayUseUBX() bool {
+	return f == inputRaw || f == inputUBX
 }
 
 func (v *flagVars) setWeekOptions(date string, recent, dateFromFilename bool) error {
@@ -444,15 +445,16 @@ func (cj convJob) run(lg *slog.Logger, now time.Time) error {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	switch cj.from {
+	opts := cj.opts
+	switch opts.from {
 	case inputRINEX, inputObsJSON:
-		return convertObservationInputs(cj.inputs, cj.out, cj.from, cj.to, cj.meta, cj.wopts, cj.interval)
+		return convertObservationInputs(cj.inputs, cj.out, opts.from, opts.to, opts.meta, opts.write, opts.interval)
 	}
-	sink, err := outputSink(cj.out, cj.to, cj.wopts, cj.interval)
+	sink, err := outputSink(cj.out, opts.to, opts.write, opts.interval)
 	if err != nil {
 		return err
 	}
-	conv, err := newPacketInput(cj.from, sink, cj.meta, cj.ropts, cj.uopts, lg)
+	conv, err := newPacketInput(opts.from, sink, opts.meta, opts.format, lg)
 	if err != nil {
 		return err
 	}
@@ -463,15 +465,15 @@ func (cj convJob) run(lg *slog.Logger, now time.Time) error {
 			return inputError(path, in.err)
 		}
 		var week WeekConstraint
-		if !cj.packetLog {
-			week, err = fileWeekConstraint(path, in, cj.week, now, cj.from == inputRTCM, i)
+		if !opts.packetLog {
+			week, err = fileWeekConstraint(path, in, opts.week, now, opts.from == inputRTCM, i)
 			if err != nil {
 				return inputError(path, err)
 			}
 		}
 		var c int
-		if cj.packetLog {
-			c, err = convertPacketLog(in.r, cj.from, conv)
+		if opts.packetLog {
+			c, err = convertPacketLog(in.r, opts.from, conv)
 		} else {
 			c, err = convertPacketStream(in.r, conv, week)
 		}
@@ -482,7 +484,7 @@ func (cj convJob) run(lg *slog.Logger, now time.Time) error {
 		i++
 	}
 	if n == 0 {
-		return errors.New(noPacketObservationMsgs[cj.from])
+		return errors.New(noPacketObservationMsgs[opts.from])
 	}
 	return sink.Flush()
 }
@@ -566,7 +568,7 @@ func loadMetadata(dst *rinex.Metadata, path string, r io.Reader) error {
 	return nil
 }
 
-func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, ropts rnxrtcm.Options, uopts rnxubx.Options, lg *slog.Logger) (packetInput, error) {
+func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, format formatOptions, lg *slog.Logger) (packetInput, error) {
 	if tag := inputPacketTags[from]; tag != gpsprot.EmptyTag {
 		if err := sink.Metadata(inputMetadataByTag[tag]); err != nil {
 			return nil, err
@@ -577,12 +579,12 @@ func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, ropt
 	}
 	switch from {
 	case inputUBX:
-		conv := rnxubx.New(sink, uopts)
+		conv := rnxubx.New(sink, format.ubx)
 		return &tagInput{tag: gpsreg.TagUBX, convert: func(data string, _ WeekConstraint) (bool, error) {
 			return convertUBXData(data, conv)
 		}}, nil
 	case inputRTCM:
-		conv := rnxrtcm.New(sink, ropts)
+		conv := rnxrtcm.New(sink, format.rtcm)
 		return &tagInput{tag: gpsreg.TagRTCM, convert: func(data string, week WeekConstraint) (bool, error) {
 			return convertRTCMData(data, conv, week)
 		}}, nil
@@ -597,20 +599,19 @@ func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, ropt
 			return convertObsVMData(data, conv, uncmsg.ParseAsciiMessage)
 		}}, nil
 	default:
-		return newRawPacketInput(sink, meta, ropts, uopts, lg), nil
+		return newRawPacketInput(sink, meta, format, lg), nil
 	}
 }
 
-func newRawPacketInput(sink rinex.Sink, meta rinex.Metadata, ropts rnxrtcm.Options, uopts rnxubx.Options, lg *slog.Logger) *rawPacketInput {
+func newRawPacketInput(sink rinex.Sink, meta rinex.Metadata, format formatOptions, lg *slog.Logger) *rawPacketInput {
 	buf := &metadataBufferSink{dst: sink}
 	return &rawPacketInput{
 		sink:    sink,
 		lg:      lg,
-		uopts:   uopts,
 		meta:    meta,
 		metaBuf: buf,
-		rtcm:    rnxrtcm.New(buf, ropts),
-		ubx:     rnxubx.New(sink, uopts),
+		rtcm:    rnxrtcm.New(buf, format.rtcm),
+		ubx:     rnxubx.New(sink, format.ubx),
 		unc:     rnxunc.New(sink, rnxunc.Options{}),
 	}
 }
