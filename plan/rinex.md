@@ -57,7 +57,7 @@ The command shape should be:
 
 ```text
 convobs [-r|--from raw|ubx|rtcm|uncb|unca|rinex|obsj]
-        [--packet-log] [--to rinex|obsj] [-o path] [--metadata path]
+        [--packet-log] [--to rinex|obsj] [-o path] [-H|--header-file path]
         input...
 ```
 
@@ -130,7 +130,7 @@ enhancement.
 The command structure should stay close to the internal command packages:
 parse flags into one command-local struct, open files in the command layer
 with `defer`, and keep the conversion core expressed in terms of `io.Reader`,
-`io.Writer`, metadata, writer options, and converter options.
+`io.Writer`, metadata, and converter options.
 
 RTKLIB's `convbin` uses `-r format` to select receiver/raw log input format,
 for example `-r ubx`, `-r rtcm3`, `-r nov`, `-r unicore`, or `-r rinex`.
@@ -240,23 +240,21 @@ not use filename inference for either input or output formats.
 
 16. Polish metadata handling and add metadata diffing.
 
-    a) Implement the metadata model described in the
+    a) Done: implement the metadata model described in the
        "Header/metadata design" section. Remove `WriterOptions`. Update
        the reader and writer to use the new `Metadata` shape. Update
        `convobs` to construct `Metadata` with the values it currently
        passes via `WriterOptions`. The broader default-and-override rule
        is defined separately in (b).
 
-    b) Implement the design in the "Convobs metadata generation"
+    b) Done: implement the design in the "Convobs metadata generation"
        subsection. The RTKLIB-inherited auto-comments
        (`format:`/`options:`/`log:`) are deferred to a separate
        decision and not in scope here.
 
-    c) Add metadata diffing. Extend the diff API in `gps/lib/rinex` to
-       compare `Metadata` field-by-field, with a small float tolerance on
-       `ApproxPosition` and `AntennaDelta` and multiset compare for
-       comments. Extend the `diffobs` tool to serialize metadata diffs
-       alongside observation diffs.
+    c) Add metadata diffing. See "Metadata diffing" subsection for
+       the API shape, tolerance organisation, comment compare
+       semantics, diffobs JSONL format, CLI flags, and exit code.
 
     d) Decide and document the golden-file strategy. Options:
        - Switch the `convobs` golden files to RTKLIB Explorer output and
@@ -282,7 +280,8 @@ not use filename inference for either input or output formats.
 header records that we model. It absorbs what was previously split between
 `Metadata` and `WriterOptions`, so every header value flows through `.obsj`,
 can be read from third-party files, can be diffed by `diffobs`, and can be
-merged from multiple sources (CLI, `--metadata`, defaults) by `convobs`.
+merged from multiple sources (command-line flags, `--header-file`, defaults)
+by `convobs`.
 
 ### Metadata struct
 
@@ -467,6 +466,87 @@ with `--comment`. As a non-essential future add-on, we may add options
 to emit `format:` and `options:` comments derived from the active
 `inputFormat` and `formatOptions`; `log:` is intentionally left out
 because it leaks the local input path.
+
+### Metadata diffing
+
+`DiffMetadata` mirrors `DiffSignal`'s value-return shape: one record
+per side, one call per pair.
+
+```go
+func DiffMetadata(a, b Metadata, tol MetadataTolerances) (aOnly, bOnly Metadata)
+```
+
+Field-by-field semantics:
+
+- Scalars (strings, `Version`): exact compare; if they differ, both
+  sides' values populate the result.
+- Pointer fields (`ApproxPosition`, `AntennaDelta`, `Interval`,
+  `LeapSeconds`): when only one side has a value, populate that
+  side's value in the result and leave the other side `nil`. When
+  both are set, apply the tolerance.
+- `Interval`: exact compare on the decoded float, no tolerance.
+- `Run` (anon-merge-atomic): diff per-field. Merge and diff are
+  separate operations; diff reports what's actually different.
+- `Marker`, `Receiver`, `Antenna`: diff per-field.
+- `Comment` (`Lines`): multiset compare with multiplicity.
+  `{A,B,B}` vs `{A,B}` yields `aOnly.Comment={B}`, `bOnly.Comment={}`.
+  Each side's residual preserves its input order. Whitespace is
+  byte-exact; trailing-space differences surface as diffs.
+
+The existing `Tolerances` struct is restructured to hold both
+observation and metadata tolerances:
+
+```go
+type Tolerances struct {
+    Obs      ObsTolerances      `json:"obs"      toml:"obs"`
+    Metadata MetadataTolerances `json:"metadata" toml:"metadata"`
+}
+
+type ObsTolerances struct {
+    PR  float64 // pseudorange, meters
+    CP  float64 // carrier phase, cycles
+    Do  float64 // Doppler, Hz
+    CN0 float64 // C/N0, dB-Hz
+}
+
+type MetadataTolerances struct {
+    ApproxPos    float64 // APPROX POSITION XYZ, meters
+    AntennaDelta float64 // ANTENNA: DELTA H/E/N, meters
+}
+```
+
+The current flat `Tolerances.PR/CP/Do/CN0` fields move into
+`ObsTolerances`. `DiffObservations` and `DiffSignal` take
+`ObsTolerances`; `DiffMetadata` takes `MetadataTolerances`. Callers
+holding a `Tolerances` pass `tol.Obs` or `tol.Metadata` explicitly.
+
+The `diffobs` tool serializes one metadata diff record as the first
+JSONL record of its output, before any observation diff records:
+
+```json
+{"a": {...}, "b": {...}}
+```
+
+`a` and `b` carry only fields where the two sides differ, following
+the same partial-population rule as observation diff records. The
+record is omitted when `aOnly.IsZero() && bOnly.IsZero()`.
+Discrimination follows the existing obsj convention: a record with
+no `t` field is metadata; a record with `t` is an observation. The
+metadata diff record's `a`/`b` shape distinguishes it from an obsj
+Metadata record (whose fields appear at the top level).
+
+CLI flags on `diffobs`:
+
+| Flag                   | Default  | Meaning                            |
+|------------------------|----------|------------------------------------|
+| `--approx-pos-tol m`   | `0.00005`| APPROX POSITION XYZ tolerance, m   |
+| `--antenna-delta-tol m`| `0.00005`| ANTENNA: DELTA H/E/N tolerance, m  |
+
+Defaults follow the existing observation-tolerance policy of one
+half-step of the write precision: `APPROX POSITION` and
+`ANTENNA: DELTA` are written `%14.4f`, so half-step is `0.00005` m.
+
+`diffobs` exits 1 when there is any diff, observation or metadata.
 
 ## UBX conversion
 
