@@ -20,8 +20,17 @@ type diffRecord struct {
 	B   *rinex.SignalValues `json:"b,omitempty"`
 }
 
+type metadataDiffRecord struct {
+	A rinex.Metadata `json:"a"`
+	B rinex.Metadata `json:"b"`
+}
+
 type jsonReporter struct {
 	enc *json.Encoder
+}
+
+func (r jsonReporter) Metadata(a, b rinex.Metadata) error {
+	return r.enc.Encode(metadataDiffRecord{A: a, B: b})
 }
 
 func (r jsonReporter) Diff(t rinex.Time, sat rinex.SatelliteID, sig rinex.SignalID, a, b *rinex.SignalValues) error {
@@ -57,11 +66,16 @@ func (r stderrErrorReporter) obs(side int) []rinex.SignalObservation {
 }
 
 func main() {
-	tol := rinex.Tolerances{PR: 0.0005, CP: 0.0005, Do: 0.0005, CN0: 0.0005}
-	flag.Float64Var(&tol.PR, "pr-tol", tol.PR, "pseudorange tolerance in meters")
-	flag.Float64Var(&tol.CP, "cp-tol", tol.CP, "carrier phase tolerance in cycles")
-	flag.Float64Var(&tol.Do, "do-tol", tol.Do, "Doppler tolerance in Hz")
-	flag.Float64Var(&tol.CN0, "cn0-tol", tol.CN0, "C/N0 tolerance in dB-Hz")
+	tol := rinex.Tolerances{
+		Obs:      rinex.ObsTolerances{PR: 0.0005, CP: 0.0005, Do: 0.0005, CN0: 0.0005},
+		Metadata: rinex.MetadataTolerances{ApproxPos: 0.00005, AntennaDelta: 0.00005},
+	}
+	flag.Float64Var(&tol.Obs.PR, "pr-tol", tol.Obs.PR, "pseudorange tolerance in meters")
+	flag.Float64Var(&tol.Obs.CP, "cp-tol", tol.Obs.CP, "carrier phase tolerance in cycles")
+	flag.Float64Var(&tol.Obs.Do, "do-tol", tol.Obs.Do, "Doppler tolerance in Hz")
+	flag.Float64Var(&tol.Obs.CN0, "cn0-tol", tol.Obs.CN0, "C/N0 tolerance in dB-Hz")
+	flag.Float64Var(&tol.Metadata.ApproxPos, "approx-pos-tol", tol.Metadata.ApproxPos, "APPROX POSITION XYZ tolerance in meters")
+	flag.Float64Var(&tol.Metadata.AntennaDelta, "antenna-delta-tol", tol.Metadata.AntennaDelta, "ANTENNA: DELTA H/E/N tolerance in meters")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "usage: diffobs [options] a.obs[.gz] b.obs[.gz]\n")
 		flag.PrintDefaults()
@@ -71,28 +85,47 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if tol.PR < 0 || tol.CP < 0 || tol.Do < 0 || tol.CN0 < 0 {
+	if err := validateTolerances(tol); err != nil {
 		fmt.Fprintln(os.Stderr, "diffobs: tolerances must be non-negative")
 		os.Exit(2)
 	}
-	a, err := readObservations(flag.Arg(0))
+	aMeta, aObs, err := readObservationFile(flag.Arg(0))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", flag.Arg(0), err)
 		os.Exit(2)
 	}
-	b, err := readObservations(flag.Arg(1))
+	bMeta, bObs, err := readObservationFile(flag.Arg(1))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", flag.Arg(1), err)
 		os.Exit(2)
 	}
-	n, err := rinex.DiffObservations(a, b, tol, jsonReporter{enc: json.NewEncoder(os.Stdout)}, stderrErrorReporter{a: a, b: b})
+	rep := jsonReporter{enc: json.NewEncoder(os.Stdout)}
+	n := 0
+	aOnly, bOnly := rinex.DiffMetadata(aMeta, bMeta, tol.Metadata)
+	if !aOnly.IsZero() || !bOnly.IsZero() {
+		if err := rep.Metadata(aOnly, bOnly); err != nil {
+			fmt.Fprintf(os.Stderr, "diffobs: %v\n", err)
+			os.Exit(2)
+		}
+		n++
+	}
+	m, err := rinex.DiffObservations(aObs, bObs, tol.Obs, rep, stderrErrorReporter{a: aObs, b: bObs})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "diffobs: %v\n", err)
 		os.Exit(2)
 	}
+	n += m
 	if n != 0 {
 		os.Exit(1)
 	}
+}
+
+func validateTolerances(tol rinex.Tolerances) error {
+	if tol.Obs.PR < 0 || tol.Obs.CP < 0 || tol.Obs.Do < 0 || tol.Obs.CN0 < 0 ||
+		tol.Metadata.ApproxPos < 0 || tol.Metadata.AntennaDelta < 0 {
+		return fmt.Errorf("tolerances must be non-negative")
+	}
+	return nil
 }
 
 func sideName(side int) string {
@@ -102,14 +135,13 @@ func sideName(side int) string {
 	return "b"
 }
 
-func readObservations(path string) ([]rinex.SignalObservation, error) {
+func readObservationFile(path string) (rinex.Metadata, []rinex.SignalObservation, error) {
 	r, err := openInput(path)
 	if err != nil {
-		return nil, err
+		return rinex.Metadata{}, nil, err
 	}
 	defer r.Close()
-	_, obs, err := rinex.ReadObservationFile(r)
-	return obs, err
+	return rinex.ReadObservationFile(r)
 }
 
 func openInput(path string) (io.ReadCloser, error) {

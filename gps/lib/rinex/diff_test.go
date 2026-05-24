@@ -2,6 +2,7 @@ package rinex
 
 import (
 	"testing"
+	"time"
 
 	"github.com/jclark/satpulse/gps/lib/opt"
 )
@@ -16,7 +17,7 @@ func TestDiffObservationsReportsInputProblems(t *testing.T) {
 		{T: t1, Sat: "G01", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(2.0)}},
 	}
 	var er testErrorReporter
-	if _, err := DiffObservations(obs, nil, Tolerances{}, &testReporter{}, &er); err != nil {
+	if _, err := DiffObservations(obs, nil, ObsTolerances{}, &testReporter{}, &er); err != nil {
 		t.Fatalf("DiffObservations: %v", err)
 	}
 	if len(er.unordered) != 1 || er.unordered[0] != (testUnordered{side: 0, index: 3}) {
@@ -36,7 +37,7 @@ func TestDiffObservationsReportsNilMissingSide(t *testing.T) {
 		{T: tm, Sat: "G02", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(2.0)}},
 	}
 	var r testReporter
-	n, err := DiffObservations(a, b, Tolerances{PR: 0.0005, CP: 0.0005, Do: 0.0005, CN0: 0.0005}, &r, nil)
+	n, err := DiffObservations(a, b, ObsTolerances{PR: 0.0005, CP: 0.0005, Do: 0.0005, CN0: 0.0005}, &r, nil)
 	if err != nil {
 		t.Fatalf("DiffObservations: %v", err)
 	}
@@ -108,7 +109,7 @@ func TestDiffSignal(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			gotA, gotB := DiffSignal(tt.a, tt.b, Tolerances{PR: 0.0005, CP: 0.0005, Do: 0.0005, CN0: 0.0005})
+			gotA, gotB := DiffSignal(tt.a, tt.b, ObsTolerances{PR: 0.0005, CP: 0.0005, Do: 0.0005, CN0: 0.0005})
 			if gotA != tt.wantA && (gotA == nil || tt.wantA == nil || *gotA != *tt.wantA) {
 				t.Fatalf("aRet = %#v, want %#v", gotA, tt.wantA)
 			}
@@ -116,6 +117,82 @@ func TestDiffSignal(t *testing.T) {
 				t.Fatalf("bRet = %#v, want %#v", gotB, tt.wantB)
 			}
 		})
+	}
+}
+
+func TestDiffMetadata(t *testing.T) {
+	d1 := time.Date(2026, time.May, 19, 13, 31, 24, 0, time.UTC)
+	d2 := d1.Add(time.Second)
+	a := Metadata{
+		Version: Version304,
+		Run: MetadataRun{
+			Program: "prog-a",
+			By:      "same",
+			Date:    d1,
+		},
+		Comment:        Lines{"keep", "dup", "left", "dup"},
+		Observer:       "obs-a",
+		Agency:         "same-agency",
+		Receiver:       Receiver{Number: "rx-a", Type: "rx-type", Version: "rx-vers"},
+		Antenna:        Antenna{Number: "ant-num", Type: "ant-a"},
+		ApproxPosition: testPtr([3]float64{1, 2, 3}),
+		AntennaDelta:   testPtr([3]float64{0, 0, 0}),
+		Interval:       testPtr(30.0),
+		LeapSeconds:    testPtr(int16(18)),
+	}
+	a.Marker.Name = "mark-a"
+	a.Marker.Number = "001"
+	b := Metadata{
+		Version: Version402,
+		Run: MetadataRun{
+			Program: "prog-b",
+			By:      "same",
+			Date:    d2,
+		},
+		Comment:        Lines{"dup", "keep", "right", "dup"},
+		Observer:       "obs-b",
+		Agency:         "same-agency",
+		Receiver:       Receiver{Number: "rx-b", Type: "rx-type", Version: "rx-vers"},
+		Antenna:        Antenna{Number: "ant-num", Type: "ant-b"},
+		ApproxPosition: testPtr([3]float64{1.00004, 2, 3}),
+		AntennaDelta:   testPtr([3]float64{0, 0.0002, 0}),
+		Interval:       testPtr(15.0),
+	}
+	b.Marker.Name = "mark-b"
+	b.Marker.Type = "GEODETIC"
+	gotA, gotB := DiffMetadata(a, b, MetadataTolerances{ApproxPos: 0.00005, AntennaDelta: 0.00005})
+	if gotA.Version != Version304 || gotB.Version != Version402 {
+		t.Fatalf("versions = %q/%q", gotA.Version, gotB.Version)
+	}
+	if gotA.Run.Program != "prog-a" || gotB.Run.Program != "prog-b" || gotA.Run.By != "" || gotB.Run.By != "" || !gotA.Run.Date.Equal(d1) || !gotB.Run.Date.Equal(d2) {
+		t.Fatalf("run diff = %#v %#v", gotA.Run, gotB.Run)
+	}
+	if len(gotA.Comment) != 1 || gotA.Comment[0] != "left" || len(gotB.Comment) != 1 || gotB.Comment[0] != "right" {
+		t.Fatalf("comment diff = %#v %#v", gotA.Comment, gotB.Comment)
+	}
+	if gotA.Marker.Name != "mark-a" || gotB.Marker.Name != "mark-b" || gotA.Marker.Number != "001" || gotB.Marker.Type != "GEODETIC" {
+		t.Fatalf("marker diff = %#v %#v", gotA.Marker, gotB.Marker)
+	}
+	if gotA.Observer != "obs-a" || gotB.Observer != "obs-b" || gotA.Agency != "" || gotB.Agency != "" {
+		t.Fatalf("observer/agency diff = %#v %#v", gotA, gotB)
+	}
+	if gotA.Receiver.Number != "rx-a" || gotB.Receiver.Number != "rx-b" || gotA.Receiver.Type != "" || gotB.Receiver.Type != "" {
+		t.Fatalf("receiver diff = %#v %#v", gotA.Receiver, gotB.Receiver)
+	}
+	if gotA.Antenna.Type != "ant-a" || gotB.Antenna.Type != "ant-b" || gotA.Antenna.Number != "" || gotB.Antenna.Number != "" {
+		t.Fatalf("antenna diff = %#v %#v", gotA.Antenna, gotB.Antenna)
+	}
+	if gotA.ApproxPosition != nil || gotB.ApproxPosition != nil {
+		t.Fatalf("approx position diff = %v %v", gotA.ApproxPosition, gotB.ApproxPosition)
+	}
+	if gotA.AntennaDelta == nil || gotB.AntennaDelta == nil || *gotA.AntennaDelta != [3]float64{0, 0, 0} || *gotB.AntennaDelta != [3]float64{0, 0.0002, 0} {
+		t.Fatalf("antenna delta diff = %v %v", gotA.AntennaDelta, gotB.AntennaDelta)
+	}
+	if gotA.Interval == nil || gotB.Interval == nil || *gotA.Interval != 30 || *gotB.Interval != 15 {
+		t.Fatalf("interval diff = %v %v", gotA.Interval, gotB.Interval)
+	}
+	if gotA.LeapSeconds == nil || *gotA.LeapSeconds != 18 || gotB.LeapSeconds != nil {
+		t.Fatalf("leap seconds diff = %v %v", gotA.LeapSeconds, gotB.LeapSeconds)
 	}
 }
 

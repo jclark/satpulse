@@ -24,7 +24,7 @@ func TestJSONReporter(t *testing.T) {
 		{T: t2, Sat: "G01", Sig: "1C", SignalValues: rinex.SignalValues{PR: opt.Make(10.0001)}},
 	}
 	var buf bytes.Buffer
-	n, err := rinex.DiffObservations(a, b, rinex.Tolerances{PR: 0.0005, CP: 0.0005, Do: 0.0005, CN0: 0.0005}, jsonReporter{enc: json.NewEncoder(&buf)}, nil)
+	n, err := rinex.DiffObservations(a, b, rinex.ObsTolerances{PR: 0.0005, CP: 0.0005, Do: 0.0005, CN0: 0.0005}, jsonReporter{enc: json.NewEncoder(&buf)}, nil)
 	if err != nil {
 		t.Fatalf("DiffObservations: %v", err)
 	}
@@ -39,6 +39,20 @@ func TestJSONReporter(t *testing.T) {
 	}, "\n")
 	if got := buf.String(); got != want {
 		t.Fatalf("diff output:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestJSONReporterMetadata(t *testing.T) {
+	a := rinex.Metadata{Comment: rinex.Lines{"left"}}
+	var b rinex.Metadata
+	b.Marker.Name = "right"
+	var buf bytes.Buffer
+	if err := (jsonReporter{enc: json.NewEncoder(&buf)}).Metadata(a, b); err != nil {
+		t.Fatalf("Metadata: %v", err)
+	}
+	want := `{"a":{"comment":["left"]},"b":{"marker":{"name":"right"}}}` + "\n"
+	if got := buf.String(); got != want {
+		t.Fatalf("metadata diff output:\n%s\nwant:\n%s", got, want)
 	}
 }
 

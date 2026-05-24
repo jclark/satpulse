@@ -252,7 +252,7 @@ not use filename inference for either input or output formats.
        (`format:`/`options:`/`log:`) are deferred to a separate
        decision and not in scope here.
 
-    c) Add metadata diffing. See "Metadata diffing" subsection for
+    c) Done: add metadata diffing. See "Metadata diffing" subsection for
        the API shape, tolerance organisation, comment compare
        semantics, diffobs JSONL format, CLI flags, and exit code.
 
@@ -406,6 +406,13 @@ flags accumulate into one CLI value (repeatable flag), but if any
 - they do not combine at the convobs source layer. Comments read from
 an input file flow in separately and combine with convobs's resulting
 `Metadata.Comment` via `MergeMetadata`'s natural `Lines` append.
+
+Precedence between convobs-supplied metadata and stream-derived metadata
+is a separate format-specific policy question, not part of this step.
+RTCM station, receiver, antenna, and leap-second messages have different
+reliability and meaning from RINEX or `.obsj` file metadata, so a later
+improvement should decide how each input format combines its own metadata
+with metadata supplied by convobs.
 
 CLI flags for metadata:
 
