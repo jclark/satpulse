@@ -238,7 +238,36 @@ not use filename inference for either input or output formats.
     entries, and `--from raw` auto-detection on the first `UNCB OBSVM` or
     `UNCA OBSVMA` message.
 
-16. Write a `satpulsetool-convobs.1` man page following the existing
+16. Polish metadata handling and add metadata diffing.
+
+    a) Implement the metadata model described in the
+       "Header/metadata design" section. Remove `WriterOptions`. Update
+       the reader and writer to use the new `Metadata` shape. Update
+       `convobs` to construct `Metadata` with the values it currently
+       passes via `WriterOptions`. The broader default-and-override rule
+       is defined separately in (b).
+
+    b) Implement the design in the "Convobs metadata generation"
+       subsection. The RTKLIB-inherited auto-comments
+       (`format:`/`options:`/`log:`) are deferred to a separate
+       decision and not in scope here.
+
+    c) Add metadata diffing. Extend the diff API in `gps/lib/rinex` to
+       compare `Metadata` field-by-field, with a small float tolerance on
+       `ApproxPosition` and `AntennaDelta` and multiset compare for
+       comments. Extend the `diffobs` tool to serialize metadata diffs
+       alongside observation diffs.
+
+    d) Decide and document the golden-file strategy. Options:
+       - Switch the `convobs` golden files to RTKLIB Explorer output and
+         validate `convobs` against them with `diffobs`.
+       - Keep our own golden files for byte-for-byte regression checks,
+         and run `diffobs` against RTKLIB Explorer only when the goldens
+         are regenerated.
+       Either strategy needs an ignore list for metadata fields expected
+       to differ between producers (program, run-by, date, input path).
+
+17. Write a `satpulsetool-convobs.1` man page following the existing
     `docs/man/satpulsetool-*.1.md` pattern. Document the command synopsis,
     the full set of input formats (`raw`, `ubx`, `rtcm`, `uncb`, `unca`,
     `rinex`, `obsj`) and output formats (`rinex`, `obsj`), multiple input
@@ -246,6 +275,198 @@ not use filename inference for either input or output formats.
     (`--date`, `--recent`, `--date-from-filename`), metadata options, and
     examples for raw, packet-log, Unicore binary and ASCII, RTCM, `.obsj`,
     and RINEX conversions.
+
+## Header/metadata design
+
+`rinex.Metadata` is the single typed container for the RINEX observation
+header records that we model. It absorbs what was previously split between
+`Metadata` and `WriterOptions`, so every header value flows through `.obsj`,
+can be read from third-party files, can be diffed by `diffobs`, and can be
+merged from multiple sources (CLI, `--metadata`, defaults) by `convobs`.
+
+### Metadata struct
+
+Grouping rule: group columns into a nested struct when grouping removes
+prefix repetition or supports atomic semantics. Do not group merely because
+RINEX puts columns on the same header line. Grouped sub-structs are
+anonymous unless the group needs methods.
+
+- `Marker` (anon): removes the `Marker*` prefix on Name/Number/Type.
+- `Receiver` (anon): one receiver's facets.
+- `Antenna` (anon): one antenna's facets.
+- `Run` (named `MetadataRun`): atomic merge semantics for
+  `PGM / RUN BY / DATE`; named so an `IsZero` method is available.
+- `Observer`, `Agency` (flat): no shared subject beyond a layout pairing.
+
+Field order mirrors RINEX 4.02 Table A2.
+
+Types:
+
+```go
+type Version string
+
+const (
+    Version304 Version = "3.04"
+    Version400 Version = "4.00"
+    Version401 Version = "4.01"
+    Version402 Version = "4.02"
+)
+
+type MetadataRun struct {
+    Program string    `json:"program,omitzero" toml:"program"`
+    By      string    `json:"by,omitzero" toml:"by"`
+    Date    time.Time `json:"date,omitzero" toml:"date"`
+}
+
+func (r MetadataRun) IsZero() bool {
+    return r.Program == "" && r.By == "" && r.Date.IsZero()
+}
+
+// Lines is a list of lines of text. MarshalText joins elements with '\n'
+// and UnmarshalText trims a trailing '\n' and splits. In TOML this
+// produces a clean multi-line string (with the `,multiline` struct tag)
+// and accepts either triple-quoted or escaped single-line input. In JSON
+// it serializes as the default array of strings.
+type Lines []string
+
+type Metadata struct {
+    Version  Version     `json:"version,omitzero" toml:"version"`           // RINEX VERSION
+    Run      MetadataRun `json:"run,omitzero" toml:"run"`                   // PGM / RUN BY / DATE
+    Comment  Lines       `json:"comment,omitzero" toml:"comment,multiline"` // COMMENT
+    Marker struct {
+        Name   string `json:"name,omitzero" toml:"name"`
+        Number string `json:"number,omitzero" toml:"number"`
+        Type   string `json:"type,omitzero" toml:"type"`
+    } `json:"marker,omitzero" toml:"marker"` // MARKER NAME / NUMBER / TYPE
+    Observer string `json:"observer,omitzero" toml:"observer"` // OBSERVER (part of OBSERVER / AGENCY)
+    Agency   string `json:"agency,omitzero" toml:"agency"`     // AGENCY
+    Receiver struct {
+        Number  string `json:"number,omitzero" toml:"number"`
+        Type    string `json:"type,omitzero" toml:"type"`
+        Version string `json:"version,omitzero" toml:"version"`
+    } `json:"receiver,omitzero" toml:"receiver"` // REC # / TYPE / VERS
+    Antenna struct {
+        Number string `json:"number,omitzero" toml:"number"`
+        Type   string `json:"type,omitzero" toml:"type"`
+    } `json:"antenna,omitzero" toml:"antenna"` // ANT # / TYPE
+    ApproxPosition *[3]float64 `json:"approxPosition,omitzero" toml:"approxPosition"` // APPROX POSITION XYZ
+    AntennaDelta   *[3]float64 `json:"antennaDelta,omitzero" toml:"antennaDelta"`     // ANTENNA: DELTA H/E/N
+    Interval       *float64    `json:"interval,omitzero" toml:"interval"`             // INTERVAL
+    LeapSeconds    *int16      `json:"leapSeconds,omitzero" toml:"leapSeconds"`       // LEAP SECONDS
+}
+```
+
+`RINEX VERSION / TYPE` packs format version, file type, and satellite system
+into one header line. Only the format version is a free parameter; file type
+is fixed for observation files and satellite system is derived from
+observations. Hence `Metadata.Version` captures only the format version.
+
+The reader populates every field from the input header, including the
+records previously consumed via `WriterOptions` (`RINEX VERSION / TYPE`
+into `Version`, `PGM / RUN BY / DATE` into `Run`) and the newly modelled
+`INTERVAL`. The writer emits every field from `Metadata`, including
+`INTERVAL` when set; derived header records (`SYS / # / OBS TYPES`,
+`TIME OF FIRST/LAST OBS`, `GLONASS SLOT / FRQ #`, `GLONASS COD/PHS/BIS`)
+are produced from observations, not from `Metadata`. The deprecated
+`SYS / PHASE SHIFT` is deliberately not emitted.
+
+`MergeMetadata` is extended to cover every new field. Grouped sub-structs
+with an `IsZero` method (`Run`, plus the existing `Receiver` and
+`Antenna`) merge atomically — if the source's struct is non-zero, it
+replaces the destination's wholesale. Anonymous nested groups (`Marker`)
+merge per-field. `Comment` (`Lines`) appends.
+
+### Convobs metadata generation
+
+`convobs` builds a `Metadata` value from CLI options, an optional
+`--header-file` TOML file, and convobs defaults. Precedence: CLI option
+> `--header-file` > convobs default. The rule applies per-field across
+all sources, including individual fields of grouped sub-structs (so
+supplying `--receiver-type` does not affect `Receiver.Number` set
+elsewhere). Atomic-merge semantics on grouped sub-structs are a library
+concern of `MergeMetadata`, not part of convobs's source-precedence
+merge.
+
+An explicit empty value on the CLI (`--run-by ""`) counts as set and
+overrides the default with blank. In TOML, an explicit empty value is
+treated the same as the field being absent — the default still
+applies. The CLI flag is the way to clear a default. This asymmetry
+avoids needing presence tracking on TOML decode. For CLI flags,
+presence is detected via pflag's `flags.Lookup("name").Changed`.
+
+A user who wants persistent blank `Run.By` writes `--run-by ""` in
+their convobs wrapper alongside `--header-file`. The asymmetry also
+lets convobs ship a template `convobs-header.toml` with every
+supported field present-but-blank plus documentation comments; users
+copy it, fill in what they want, and unfilled fields revert cleanly
+to convobs defaults.
+
+The precedence rule applies to `Comment` too. Multiple `--comment`
+flags accumulate into one CLI value (repeatable flag), but if any
+`--comment` is supplied, the TOML `comment` field is ignored entirely
+- they do not combine at the convobs source layer. Comments read from
+an input file flow in separately and combine with convobs's resulting
+`Metadata.Comment` via `MergeMetadata`'s natural `Lines` append.
+
+CLI flags for metadata:
+
+| Metadata field   | CLI option           | Default                                       |
+|------------------|----------------------|-----------------------------------------------|
+| `Version`        | `--rinex-version`    | `Version304`                                  |
+| `Run.Program`    | `--program`          | `satpulse <ver>` (see below)                  |
+| `Run.By`         | `--run-by`           | current user from `os/user` (see below)       |
+| `Run.Date`       | (header-file only)   | current UTC time                              |
+| `Interval`       | (header-file only)   | from `--interval` decimation value when set   |
+| `Observer`       | (header-file only)   | unset                                         |
+| `Agency`         | (header-file only)   | unset                                         |
+| `Antenna.Type`   | `--antenna`          | unset                                         |
+| `ApproxPosition` | `--approx-pos x,y,z` | unset                                         |
+| `Comment`        | `--comment` (repeatable) | unset                                     |
+
+`--header-file f` / `-H f` accepts any valid TOML file. It can supply
+any metadata field, including those without a dedicated CLI flag
+(`Observer`, `Agency`, `Marker.*`, `Receiver.*`, `Antenna.Number`,
+`AntennaDelta`, `LeapSeconds`). User-facing docs and examples should
+use the dotted form (`marker.name = "..."`, `receiver.type = "..."`)
+rather than bracketed tables, so the field-by-field override rule is
+visually obvious.
+
+`--interval n` is not a metadata-only flag: it controls decimation, and
+the supplied value becomes the `Metadata.Interval` default as a side
+effect. When `--interval` is not given, `Metadata.Interval` may still
+be set from `--header-file`. There is no separate flag for setting
+`Metadata.Interval` without decimating.
+
+`Run.Program` default uses a length-bounded version string. Add a
+helper in `gps/app/cmd/version.go`:
+
+```go
+// ShortenVersion returns the build version trimmed to at most maxLen
+// characters. It removes trailing chunks delimited by '-' or '.' until
+// the result fits, then hard-truncates if still too long.
+func ShortenVersion(maxLen int) string
+```
+
+Convobs builds the default `Run.Program` as `"satpulse " +
+cmd.ShortenVersion(20 - len("satpulse "))`, fitting the RINEX `A20`
+field. Examples: `1.3.4` -> `satpulse 1.3.4`;
+`0.2-pre.20260524.abc1234` -> `satpulse 0.2-pre`;
+`12.34.56-pre.20260524.abc1234` -> `satpulse 12.34.56` (the long base
+forces the `-pre` tag to drop too).
+
+`Run.By` defaults to the current user, looked up via `os/user`. Prefer
+`User.Name` when non-empty (e.g. "James Clark"); otherwise fall back to
+`User.Username` (e.g. "jjc"). If `user.Current` returns an error, the
+default is empty. Truncate to the `A20` limit. The user can suppress
+this with `--run-by ""`.
+
+`convobs` does not auto-generate any COMMENT records. The previously
+hardcoded RTKLIB-style entries (`format:`/`options:`/`log:`) are
+removed. A user who wants RTKLIB-compatible comments can supply them
+with `--comment`. As a non-essential future add-on, we may add options
+to emit `format:` and `options:` comments derived from the active
+`inputFormat` and `formatOptions`; `log:` is intentionally left out
+because it leaks the local input path.
 
 ## UBX conversion
 
@@ -1105,22 +1326,20 @@ or downstream tools. Unknown header records should still not be fatal; they
 should be ignored, preserved as comments/raw records, or reported depending on
 how much structure we choose to expose.
 
-Useful additions include:
+Useful additions beyond the core set defined in "Header/metadata design":
 
-- RINEX file provenance: `RINEX VERSION / TYPE`, `PGM / RUN BY / DATE`, and
-  file-level system/time-system declarations.
-- Observation timing headers: `INTERVAL`, `TIME OF FIRST OBS`, `TIME OF LAST
-  OBS`, and `RCV CLOCK OFFS APPL`.
-- Signal metadata: `SIGNAL STRENGTH UNIT`, `SYS / SCALE FACTOR`, and any
-  active observation type lists needed to explain how records were decoded.
+- File-level system / time-system declarations not yet captured.
+- Receiver clock and signal handling: `RCV CLOCK OFFS APPL` and
+  `SIGNAL STRENGTH UNIT`.
+- Observation-modifying records that the reader also needs to apply:
+  `SYS / SCALE FACTOR`.
 - Correction provenance: `SYS / DCBS APPLIED` and `SYS / PCVS APPLIED`.
 - Antenna and station details beyond the fields currently represented:
   antenna phase center, zero direction, bore-sight, center of mass, and other
   optional station records from the observation header.
-- Deprecated compatibility records, such as `SYS / PHASE SHIFT` and
-  `GLONASS COD/PHS/BIS`, if preserving them helps compare against third-party
-  RINEX producers. They should not be used to alter extracted observations for
-  RINEX 4.02 decoding.
+- Deprecated compatibility records such as `SYS / PHASE SHIFT`, if preserving
+  them helps compare against third-party RINEX producers. They should not be
+  used to alter extracted observations for RINEX 4.02 decoding.
 
 This work should keep the `.obsj` model focused on observations first. Metadata
 fields should be added when they preserve real semantics or make diagnostics
