@@ -256,16 +256,12 @@ not use filename inference for either input or output formats.
        the API shape, tolerance organisation, comment compare
        semantics, diffobs JSONL format, CLI flags, and exit code.
 
-    d) Decide and document the golden-file strategy. Options:
-       - Switch the `convobs` golden files to RTKLIB Explorer output and
-         validate `convobs` against them with `diffobs`.
-       - Keep our own golden files for byte-for-byte regression checks,
-         and run `diffobs` against RTKLIB Explorer only when the goldens
-         are regenerated.
-       Either strategy needs an ignore list for metadata fields expected
-       to differ between producers (program, run-by, date, input path).
+    d) Switch the `convobs` golden files to RTKLIB Explorer output and
+       validate `convobs` against them using `rinex.DiffObservations` and
+       `rinex.DiffMetadata` directly from the test. See "Golden-file
+       strategy" subsection for details.
 
-17. Write a `satpulsetool-convobs.1` man page following the existing
+17. Done: write a `satpulsetool-convobs.1` man page following the existing
     `docs/man/satpulsetool-*.1.md` pattern. Document the command synopsis,
     the full set of input formats (`raw`, `ubx`, `rtcm`, `uncb`, `unca`,
     `rinex`, `obsj`) and output formats (`rinex`, `obsj`), multiple input
@@ -554,6 +550,37 @@ half-step of the write precision: `APPROX POSITION` and
 `ANTENNA: DELTA` are written `%14.4f`, so half-step is `0.00005` m.
 
 `diffobs` exits 1 when there is any diff, observation or metadata.
+
+### Golden-file strategy
+
+`TestGoldenFiles` in `internal/convobscmd` holds RTKLIB Explorer RINEX
+output as the golden, not `convobs`'s own output, and gates on semantic
+equality via `rinex.DiffObservations` and `rinex.DiffMetadata` called
+directly from the test. The `diffobs` CLI tool is not invoked.
+
+Each test case carries a `cleanMetadata func(*rinex.Metadata)` that
+zeroes the fields known to differ between producers for that capture --
+typically `Run.Program`, `Run.By`, `Run.Date`, and `Comment`, plus
+anything case-specific. The helper is applied to both sides before
+`DiffMetadata` so cleared fields match by construction. There is no
+shared ignore list; the policy lives next to each case where the
+producer differences are visible.
+
+The goldens are produced once with `~/rtklib-ex/bin/convbin`, using
+the flags recorded with each test case. UBX, RTCM, and Unicore captures
+are all in scope -- rtklib-ex's `src/rcv/unicore.c` handles `OBSVMB`.
+They are not regenerated when `convobs` changes: the semantic gate
+absorbs benign formatting differences. Refresh only if RTKLIB Explorer
+itself changes meaningfully.
+
+Header-formatting drift in `gps/lib/rinex`'s writer is no longer caught
+by this test after the change. The writer's own unit tests in
+`gps/lib/rinex/write_test.go` remain the place that covers writer
+formatting at unit granularity.
+
+On failure the test should report counts (metadata fields differing,
+observation records differing across sat/sig pairs) and write the full
+diff records to a tempfile named in the failure message.
 
 ## UBX conversion
 
