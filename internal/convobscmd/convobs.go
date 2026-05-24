@@ -220,7 +220,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		return "", err
 	}
 	var out io.Writer = os.Stdout
-	if v.outputPath != "" && v.outputPath != "-" {
+	if v.outputPath != "" {
 		f, err := os.Create(v.outputPath)
 		if err != nil {
 			return "", err
@@ -252,7 +252,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	recent := false
 	dateFromFilename := false
 	flags.BoolVarP(&help, "help", "h", false, "show help")
-	flags.StringVarP(&v.outputPath, "output", "o", "", "output observation file, or - for stdout")
+	flags.StringVarP(&v.outputPath, "output", "o", "", "output observation file (default stdout)")
 	flags.StringVarP(&from, "from", "r", from, "input observation format")
 	flags.BoolVar(&v.packetLog, "packet-log", false, "input is a JSONL packet log")
 	flags.StringVar(&to, "to", to, "output observation format")
