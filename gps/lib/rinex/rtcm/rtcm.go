@@ -108,14 +108,15 @@ func (c *Converter) ConvertMsg(m rtcmbin.Msg, week TimeInterval) (bool, error) {
 	case *rtcmbin.MT1013:
 		c.leapMS = int64(m.LeapSeconds) * secondMS
 		leap := int16(m.LeapSeconds)
-		return c.emitMetadata(rinex.Metadata{
-			MarkerNumber: strconv.FormatUint(uint64(m.StationID), 10),
-			LeapSeconds:  &leap,
-		})
+		meta := rinex.Metadata{LeapSeconds: &leap}
+		meta.Marker.Number = strconv.FormatUint(uint64(m.StationID), 10)
+		return c.emitMetadata(meta)
 	case *rtcmbin.MT1033:
 		return c.emitMetadata(metadata1033(m))
 	case *rtcmbin.MT1230:
-		return c.emitMetadata(rinex.Metadata{MarkerNumber: strconv.FormatUint(uint64(m.StationID), 10)})
+		meta := rinex.Metadata{}
+		meta.Marker.Number = strconv.FormatUint(uint64(m.StationID), 10)
+		return c.emitMetadata(meta)
 	default:
 		return false, nil
 	}
@@ -214,10 +215,9 @@ func (c *Converter) convertCell(t rinex.Time, gnss rtcmbin.GNSS, m *rtcmbin.MSMH
 
 func metadata1005(m *rtcmbin.MT1005) rinex.Metadata {
 	pos := m.ECEF()
-	return rinex.Metadata{
-		MarkerNumber:   strconv.FormatUint(uint64(m.StationID), 10),
-		ApproxPosition: &pos,
-	}
+	meta := rinex.Metadata{ApproxPosition: &pos}
+	meta.Marker.Number = strconv.FormatUint(uint64(m.StationID), 10)
+	return meta
 }
 
 func metadata1006(m *rtcmbin.MT1006) rinex.Metadata {
@@ -227,12 +227,9 @@ func metadata1006(m *rtcmbin.MT1006) rinex.Metadata {
 }
 
 func metadata1007(m *rtcmbin.MT1007) rinex.Metadata {
-	return rinex.Metadata{
-		MarkerNumber: strconv.FormatUint(uint64(m.StationID), 10),
-		Antenna: rinex.Antenna{
-			Type: cleanASCII(m.AntennaDescriptor),
-		},
-	}
+	meta := rinex.Metadata{Antenna: rinex.Antenna{Type: cleanASCII(m.AntennaDescriptor)}}
+	meta.Marker.Number = strconv.FormatUint(uint64(m.StationID), 10)
+	return meta
 }
 
 func metadata1008(m *rtcmbin.MT1008) rinex.Metadata {

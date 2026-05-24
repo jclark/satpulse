@@ -6,7 +6,6 @@ import (
 	"io"
 	"slices"
 	"strconv"
-	"time"
 
 	"github.com/jclark/satpulse/gps/lib/opt"
 )
@@ -14,8 +13,7 @@ import (
 const obsValueWidth = 14
 
 const (
-	defaultRINEXVersion = 3.04
-	defaultProgram      = "ubx2rinex"
+	defaultRINEXVersion = Version304
 )
 
 var systemOrder = []string{"G", "R", "E", "J", "C", "I", "S"}
@@ -41,22 +39,16 @@ type obsField struct {
 }
 
 // WriteObservationFile writes a RINEX observation file.
-func WriteObservationFile(w io.Writer, meta Metadata, obs []SignalObservation, opts WriterOptions) error {
+func WriteObservationFile(w io.Writer, meta Metadata, obs []SignalObservation) error {
 	f, err := buildObsFile(obs)
 	if err != nil {
 		return err
 	}
-	if opts.Version == 0 {
-		opts.Version = defaultRINEXVersion
-	}
-	if opts.Program == "" {
-		opts.Program = defaultProgram
-	}
-	if opts.Date.IsZero() {
-		opts.Date = time.Now().UTC()
+	if meta.Version == "" {
+		meta.Version = defaultRINEXVersion
 	}
 	bw := bufio.NewWriter(w)
-	if err := writeHeader(bw, meta, f, opts); err != nil {
+	if err := writeHeader(bw, meta, f); err != nil {
 		return err
 	}
 	if err := writeEpochs(bw, f); err != nil {
@@ -189,27 +181,30 @@ func addObsField(dst map[ObservationCode]obsField, code ObservationCode, val opt
 	}
 }
 
-func writeHeader(w *bufio.Writer, meta Metadata, f *obsFile, opts WriterOptions) error {
+func writeHeader(w *bufio.Writer, meta Metadata, f *obsFile) error {
 	sys := headerSystem(f.codes)
-	if err := writeHeaderLine(w, fmt.Sprintf("%9.2f           OBSERVATION DATA    %-20s", opts.Version, sys), "RINEX VERSION / TYPE"); err != nil {
+	if err := writeHeaderLine(w, fmt.Sprintf("%9.9s           OBSERVATION DATA    %-20s", string(meta.Version), sys), "RINEX VERSION / TYPE"); err != nil {
 		return err
 	}
-	date := opts.Date.UTC().Format("20060102 150405 UTC")
-	if err := writeHeaderLine(w, fmt.Sprintf("%-20.20s%-20.20s%-20.20s", opts.Program, opts.RunBy, date), "PGM / RUN BY / DATE"); err != nil {
+	date := ""
+	if !meta.Run.Date.IsZero() {
+		date = meta.Run.Date.UTC().Format("20060102 150405 UTC")
+	}
+	if err := writeHeaderLine(w, fmt.Sprintf("%-20.20s%-20.20s%-20.20s", meta.Run.Program, meta.Run.By, date), "PGM / RUN BY / DATE"); err != nil {
 		return err
 	}
-	for _, c := range meta.Comments {
+	for _, c := range meta.Comment {
 		if err := writeHeaderLine(w, c, "COMMENT"); err != nil {
 			return err
 		}
 	}
-	if err := writeHeaderLine(w, meta.MarkerName, "MARKER NAME"); err != nil {
+	if err := writeHeaderLine(w, meta.Marker.Name, "MARKER NAME"); err != nil {
 		return err
 	}
-	if err := writeHeaderLine(w, meta.MarkerNumber, "MARKER NUMBER"); err != nil {
+	if err := writeHeaderLine(w, meta.Marker.Number, "MARKER NUMBER"); err != nil {
 		return err
 	}
-	if err := writeHeaderLine(w, meta.MarkerType, "MARKER TYPE"); err != nil {
+	if err := writeHeaderLine(w, meta.Marker.Type, "MARKER TYPE"); err != nil {
 		return err
 	}
 	if err := writeHeaderLine(w, fmt.Sprintf("%-20.20s%-40.40s", meta.Observer, meta.Agency), "OBSERVER / AGENCY"); err != nil {
@@ -237,6 +232,11 @@ func writeHeader(w *bufio.Writer, meta Metadata, f *obsFile, opts WriterOptions)
 	}
 	for _, sys := range orderedSystems(f.codes) {
 		if err := writeObsTypes(w, sys, f.codes[sys]); err != nil {
+			return err
+		}
+	}
+	if meta.Interval != nil {
+		if err := writeHeaderLine(w, fmt.Sprintf("%10.3f", *meta.Interval), "INTERVAL"); err != nil {
 			return err
 		}
 	}

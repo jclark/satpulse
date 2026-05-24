@@ -38,8 +38,8 @@ func TestWriteObservationFile(t *testing.T) {
 		},
 	}
 	var b bytes.Buffer
-	opts := WriterOptions{Program: "test", Date: time.Date(2026, time.May, 18, 9, 0, 0, 0, time.UTC)}
-	if err := WriteObservationFile(&b, Metadata{}, obs, opts); err != nil {
+	meta := Metadata{Run: MetadataRun{Program: "test", Date: time.Date(2026, time.May, 18, 9, 0, 0, 0, time.UTC)}}
+	if err := WriteObservationFile(&b, meta, obs); err != nil {
 		t.Fatalf("WriteObservationFile: %v", err)
 	}
 	s := b.String()
@@ -160,7 +160,8 @@ func TestWriteObservationFileUsesGPSTimeSystem(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var b bytes.Buffer
-			if err := WriteObservationFile(&b, Metadata{LeapSeconds: testPtr(int16(18))}, tt.obs, WriterOptions{Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}); err != nil {
+			meta := Metadata{LeapSeconds: testPtr(int16(18)), Run: MetadataRun{Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}}
+			if err := WriteObservationFile(&b, meta, tt.obs); err != nil {
 				t.Fatalf("WriteObservationFile: %v", err)
 			}
 			s := b.String()
@@ -299,7 +300,8 @@ func TestReadObservationFileBlankPhaseLLI(t *testing.T) {
 		},
 	}
 	var b bytes.Buffer
-	if err := WriteObservationFile(&b, Metadata{}, obs, WriterOptions{Date: time.Date(2026, time.May, 18, 9, 0, 0, 0, time.UTC)}); err != nil {
+	meta := Metadata{Run: MetadataRun{Date: time.Date(2026, time.May, 18, 9, 0, 0, 0, time.UTC)}}
+	if err := WriteObservationFile(&b, meta, obs); err != nil {
 		t.Fatalf("WriteObservationFile: %v", err)
 	}
 	if !strings.Contains(b.String(), "G02  21017865.128                3       -289.416          27.000") {
@@ -334,7 +336,8 @@ func TestWriteObservationFileZeroIndicators(t *testing.T) {
 		},
 	}
 	var b bytes.Buffer
-	if err := WriteObservationFile(&b, Metadata{}, obs, WriterOptions{Date: time.Date(2026, time.May, 18, 9, 0, 0, 0, time.UTC)}); err != nil {
+	meta := Metadata{Run: MetadataRun{Date: time.Date(2026, time.May, 18, 9, 0, 0, 0, time.UTC)}}
+	if err := WriteObservationFile(&b, meta, obs); err != nil {
 		t.Fatalf("WriteObservationFile: %v", err)
 	}
 	if !strings.Contains(b.String(), "G07         1.00000") {

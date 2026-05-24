@@ -30,11 +30,21 @@ func testPtr[T any](v T) *T {
 	return &v
 }
 
+func testMetaMarker(name string) rinex.Metadata {
+	var meta rinex.Metadata
+	meta.Marker.Name = name
+	return meta
+}
+
+func testWriteMeta(date time.Time) rinex.Metadata {
+	return rinex.Metadata{Run: rinex.MetadataRun{Program: "test", Date: date}}
+}
+
 func testLogger(w io.Writer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(w, nil))
 }
 
-func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, wopts rinex.WriterOptions, interval time.Duration) error {
+func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, interval time.Duration) error {
 	cj := convJob{
 		inputs: inputs,
 		out:    out,
@@ -42,37 +52,67 @@ func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputF
 			from:      from,
 			to:        to,
 			packetLog: packetLog,
-			meta:      meta,
-			write:     wopts,
 			interval:  interval,
 		},
+		meta: meta,
 	}
 	return cj.run(testLogger(io.Discard), time.Now().UTC())
 }
 
-func TestLoadMetadata(t *testing.T) {
-	path := "meta.json"
-	data := `{"markerName":"FILE","receiver":{"type":"RX"},"comments":["from file"]}`
+func TestMetadataPrecedence(t *testing.T) {
+	path := "header.toml"
+	data := `marker.name = "FILE"
+receiver.type = "RX"
+antenna.type = "HEADERANT"
+comment = "from file"
+interval = 60
+`
 	v, _, err := parseFlags("", []string{
-		"--metadata", path,
-		"--marker-name", "FLAG",
+		"--header-file", path,
+		"--interval", "30",
+		"--program", "flag",
+		"--run-by", "",
+		"--antenna", "FLAGANT",
+		"--approx-pos", "1,2,3",
+		"--comment", "from flag",
 		"input.ubx",
 	})
 	if err != nil {
 		t.Fatalf("parseFlags: %v", err)
 	}
-	if err := loadMetadata(&v.meta, v.metaPath, strings.NewReader(data)); err != nil {
-		t.Fatalf("loadMetadata: %v", err)
+	if v.headerFile != path {
+		t.Fatalf("headerFile = %q, want %q", v.headerFile, path)
 	}
-	meta := v.meta
-	if meta.MarkerName != "FLAG" {
-		t.Errorf("MarkerName = %q, want FLAG", meta.MarkerName)
+	header, err := readHeaderFile(path, strings.NewReader(data))
+	if err != nil {
+		t.Fatalf("readHeaderFile: %v", err)
+	}
+	now := time.Date(2026, time.May, 19, 1, 2, 3, 0, time.UTC)
+	meta := header
+	setMetadataDefaults(&meta, now, v.interval)
+	if err := applyMetadataFlags(&meta, v.metadataFlags); err != nil {
+		t.Fatalf("applyMetadataFlags: %v", err)
+	}
+	if meta.Marker.Name != "FILE" {
+		t.Errorf("Marker.Name = %q, want FILE", meta.Marker.Name)
 	}
 	if meta.Receiver.Type != "RX" {
 		t.Errorf("Receiver.Type = %q, want RX", meta.Receiver.Type)
 	}
-	if len(meta.Comments) != 2 || meta.Comments[0] != "from file" || meta.Comments[1] != "log: input.ubx" {
-		t.Errorf("Comments = %#v", meta.Comments)
+	if meta.Run.Program != "flag" || meta.Run.By != "" || !meta.Run.Date.Equal(now) {
+		t.Errorf("Run = %#v", meta.Run)
+	}
+	if meta.Antenna.Type != "FLAGANT" {
+		t.Errorf("Antenna.Type = %q, want FLAGANT", meta.Antenna.Type)
+	}
+	if meta.ApproxPosition == nil || *meta.ApproxPosition != [3]float64{1, 2, 3} {
+		t.Errorf("ApproxPosition = %#v", meta.ApproxPosition)
+	}
+	if len(meta.Comment) != 1 || meta.Comment[0] != "from flag" {
+		t.Errorf("Comment = %#v", meta.Comment)
+	}
+	if meta.Interval == nil || *meta.Interval != 60 {
+		t.Errorf("Interval = %v, want 60", meta.Interval)
 	}
 }
 
@@ -87,9 +127,6 @@ func TestParseFlagsRequiresInput(t *testing.T) {
 	}
 	if len(v.inputPaths) != 3 || v.inputPaths[0] != "a.ubx" || v.inputPaths[1] != "-" || v.inputPaths[2] != "b.ubx" {
 		t.Fatalf("inputPaths = %#v", v.inputPaths)
-	}
-	if len(v.meta.Comments) != 3 || v.meta.Comments[0] != "log: a.ubx" || v.meta.Comments[1] != "log: stdin" || v.meta.Comments[2] != "log: b.ubx" {
-		t.Fatalf("Comments = %#v", v.meta.Comments)
 	}
 	v, _, err = parseFlags("", []string{"-"})
 	if err != nil {
@@ -108,8 +145,8 @@ func TestParseFlagsFormats(t *testing.T) {
 	if v.from != inputObsJSON || v.to != outputObsJSON {
 		t.Fatalf("formats = %q, %q; want obsj, obsj", v.from, v.to)
 	}
-	if len(v.meta.Comments) != 0 {
-		t.Fatalf("obsj comments = %#v, want none", v.meta.Comments)
+	if v.metadataFlags.Changed("comment") {
+		t.Fatal("obsj comment flag changed, want false")
 	}
 	v, _, err = parseFlags("", []string{"--from", "rinex", "--to", "obsj", "input.obs"})
 	if err != nil {
@@ -118,8 +155,8 @@ func TestParseFlagsFormats(t *testing.T) {
 	if v.from != inputRINEX || v.to != outputObsJSON {
 		t.Fatalf("formats = %q, %q; want rinex, obsj", v.from, v.to)
 	}
-	if len(v.meta.Comments) != 0 {
-		t.Fatalf("rinex comments = %#v, want none", v.meta.Comments)
+	if v.metadataFlags.Changed("comment") {
+		t.Fatal("rinex comment flag changed, want false")
 	}
 	v, _, err = parseFlags("", []string{"--from", "rtcm", "--to", "obsj", "--date", "20251218", "input.rtcm"})
 	if err != nil {
@@ -127,9 +164,6 @@ func TestParseFlagsFormats(t *testing.T) {
 	}
 	if v.from != inputRTCM || v.to != outputObsJSON || v.week.mode != weekDate {
 		t.Fatalf("rtcm flags = %#v", v)
-	}
-	if len(v.meta.Comments) != 1 || v.meta.Comments[0] != "log: input.rtcm" {
-		t.Fatalf("rtcm comments = %#v", v.meta.Comments)
 	}
 	v, _, err = parseFlags("", []string{"--from", "raw", "--rtcm-strict-prr", "input.jsonl"})
 	if err != nil {
@@ -161,9 +195,6 @@ func TestParseFlagsFormats(t *testing.T) {
 		}
 		if v.from != tt.want || !v.packetLog {
 			t.Fatalf("%s flags = %#v", tt.from, v)
-		}
-		if len(v.meta.Comments) != 1 || v.meta.Comments[0] != "log: input.jsonl" {
-			t.Fatalf("%s comments = %#v", tt.from, v.meta.Comments)
 		}
 	}
 	if _, _, err := parseFlags("", []string{"--to", "ubx", "input.ubx"}); err == nil {
@@ -226,14 +257,13 @@ func TestParseFlagsInterval(t *testing.T) {
 
 func TestRunObsJSONInput(t *testing.T) {
 	data := strings.Join([]string{
-		`{"markerName":"FILE","comments":["from obsj"]}`,
+		`{"marker":{"name":"FILE"},"comment":["from obsj"]}`,
 		`{"t":"2025-06-30T23:59:59.0000000","sat":"G03","sig":"1C","pr":22187868.655,"cp":116598092.035,"cn0":48}`,
 		"",
 	}, "\n")
 	var got bytes.Buffer
-	meta := rinex.Metadata{MarkerName: "FLAG"}
-	wopts := rinex.WriterOptions{Program: "test", Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}
-	if err := runInputs(testInputs(strings.NewReader(data)), &got, inputObsJSON, outputRINEX, false, meta, wopts, 0); err != nil {
+	meta := testMetaMarker("FLAG")
+	if err := runInputs(testInputs(strings.NewReader(data)), &got, inputObsJSON, outputRINEX, false, meta, 0); err != nil {
 		t.Fatalf("runInputs obsj to rinex: %v", err)
 	}
 	s := got.String()
@@ -265,30 +295,28 @@ func TestRunRINEXInput(t *testing.T) {
 			},
 		},
 	}
-	meta := rinex.Metadata{
-		MarkerName:   "FILE",
-		Comments:     []string{"from rinex"},
-		LeapSeconds:  testPtr(int16(18)),
-		AntennaDelta: testPtr([3]float64{1.25, 0, 0}),
-	}
+	meta := testWriteMeta(time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC))
+	meta.Marker.Name = "FILE"
+	meta.Comment = rinex.Lines{"from rinex"}
+	meta.LeapSeconds = testPtr(int16(18))
+	meta.AntennaDelta = testPtr([3]float64{1.25, 0, 0})
 	var in bytes.Buffer
-	wopts := rinex.WriterOptions{Program: "test", Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}
-	if err := rinex.WriteObservationFile(&in, meta, obs, wopts); err != nil {
+	if err := rinex.WriteObservationFile(&in, meta, obs); err != nil {
 		t.Fatalf("WriteObservationFile: %v", err)
 	}
 	var out bytes.Buffer
-	if err := runInputs(testInputs(&in), &out, inputRINEX, outputObsJSON, false, rinex.Metadata{MarkerName: "FLAG"}, wopts, 0); err != nil {
+	if err := runInputs(testInputs(&in), &out, inputRINEX, outputObsJSON, false, testMetaMarker("FLAG"), 0); err != nil {
 		t.Fatalf("runInputs rinex to obsj: %v", err)
 	}
 	gotMeta, gotObs, err := rinex.ReadObsJSON(strings.NewReader(out.String()))
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v\n%s", err, out.String())
 	}
-	if gotMeta.MarkerName != "FLAG" || gotMeta.LeapSeconds == nil || *gotMeta.LeapSeconds != 18 || gotMeta.AntennaDelta == nil || gotMeta.AntennaDelta[0] != 1.25 {
+	if gotMeta.Marker.Name != "FLAG" || gotMeta.LeapSeconds == nil || *gotMeta.LeapSeconds != 18 || gotMeta.AntennaDelta == nil || gotMeta.AntennaDelta[0] != 1.25 {
 		t.Fatalf("metadata = %#v", gotMeta)
 	}
-	if len(gotMeta.Comments) != 1 || gotMeta.Comments[0] != "from rinex" {
-		t.Fatalf("comments = %#v", gotMeta.Comments)
+	if len(gotMeta.Comment) != 1 || gotMeta.Comment[0] != "from rinex" {
+		t.Fatalf("comments = %#v", gotMeta.Comment)
 	}
 	if len(gotObs) != 1 || gotObs[0].Sat != "R06" || gotObs[0].Sig != "1C" || gotObs[0].Frq.Get() != -4 || !gotObs[0].CP.IsSet() {
 		t.Fatalf("observations = %#v", gotObs)
@@ -298,19 +326,18 @@ func TestRunRINEXInput(t *testing.T) {
 func TestRunMultipleObsJSONInputs(t *testing.T) {
 	inputs := testInputs(
 		strings.NewReader(strings.Join([]string{
-			`{"markerName":"A","comments":["first"]}`,
+			`{"marker":{"name":"A"},"comment":["first"]}`,
 			`{"t":"2025-06-30T23:59:59.0000000","sat":"G03","sig":"1C","pr":22187868.655,"cp":116598092.035}`,
 			"",
 		}, "\n")),
 		strings.NewReader(strings.Join([]string{
-			`{"markerName":"B","comments":["second"]}`,
+			`{"marker":{"name":"B"},"comment":["second"]}`,
 			`{"t":"2025-07-01T00:00:00.0000000","sat":"G04","sig":"1C","pr":22728612.336,"cp":119439644.226}`,
 			"",
 		}, "\n")),
 	)
 	var got bytes.Buffer
-	wopts := rinex.WriterOptions{Program: "test", Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)}
-	if err := runInputs(inputs, &got, inputObsJSON, outputRINEX, false, rinex.Metadata{}, wopts, 0); err != nil {
+	if err := runInputs(inputs, &got, inputObsJSON, outputRINEX, false, rinex.Metadata{}, 0); err != nil {
 		t.Fatalf("runInputs obsj to rinex: %v", err)
 	}
 	s := got.String()
@@ -330,22 +357,22 @@ func TestRunMultipleObsJSONInputs(t *testing.T) {
 
 func TestRunDecimatesObsJSONInput(t *testing.T) {
 	data := strings.Join([]string{
-		`{"markerName":"FILE"}`,
+		`{"marker":{"name":"FILE"}}`,
 		`{"t":"2025-07-01T00:00:00.0000000","sat":"G03","sig":"1C","pr":1}`,
 		`{"t":"2025-07-01T00:00:05.0000000","sat":"G03","sig":"1C","lli":1}`,
 		`{"t":"2025-07-01T00:00:10.0000000","sat":"G03","sig":"1C","pr":2}`,
 		"",
 	}, "\n")
 	var got bytes.Buffer
-	if err := runInputs(testInputs(strings.NewReader(data)), &got, inputObsJSON, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, 10*time.Second); err != nil {
+	if err := runInputs(testInputs(strings.NewReader(data)), &got, inputObsJSON, outputObsJSON, false, rinex.Metadata{}, 10*time.Second); err != nil {
 		t.Fatalf("runInputs obsj decimation: %v", err)
 	}
 	meta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
 	}
-	if meta.MarkerName != "FILE" {
-		t.Fatalf("MarkerName = %q, want FILE", meta.MarkerName)
+	if meta.Marker.Name != "FILE" {
+		t.Fatalf("Marker.Name = %q, want FILE", meta.Marker.Name)
 	}
 	if len(obs) != 2 {
 		t.Fatalf("len observations = %d, want 2\n%s", len(obs), got.String())
@@ -361,19 +388,19 @@ func TestRunDecimatesObsJSONInput(t *testing.T) {
 func TestRunObsJSONOutput(t *testing.T) {
 	pkt := rawxPacket(t)
 	var got bytes.Buffer
-	meta := rinex.Metadata{MarkerName: "JSONL"}
-	if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, meta, rinex.WriterOptions{}, 0); err != nil {
+	meta := testMetaMarker("JSONL")
+	if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, meta, 0); err != nil {
 		t.Fatalf("runInputs raw to obsj: %v", err)
 	}
 	fileMeta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
 	}
-	if fileMeta.MarkerName != "JSONL" {
-		t.Fatalf("MarkerName = %q, want JSONL", fileMeta.MarkerName)
+	if fileMeta.Marker.Name != "JSONL" {
+		t.Fatalf("Marker.Name = %q, want JSONL", fileMeta.Marker.Name)
 	}
-	if len(fileMeta.Comments) != 2 || fileMeta.Comments[0] != "format: u-blox UBX" || fileMeta.Comments[1] != "options: -MULTICODE" {
-		t.Fatalf("comments = %#v", fileMeta.Comments)
+	if len(fileMeta.Comment) != 0 {
+		t.Fatalf("comments = %#v", fileMeta.Comment)
 	}
 	if len(obs) != 1 {
 		t.Fatalf("len observations = %d, want 1\n%s", len(obs), got.String())
@@ -388,7 +415,7 @@ func TestRunRawInputSkipsInvalidFragments(t *testing.T) {
 	for _, from := range []inputFormat{inputRaw, inputUBX} {
 		t.Run(string(from), func(t *testing.T) {
 			var got bytes.Buffer
-			if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, from, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, 0); err != nil {
+			if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, from, outputObsJSON, false, rinex.Metadata{}, 0); err != nil {
 				t.Fatalf("runInputs raw to obsj: %v", err)
 			}
 			_, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -405,7 +432,7 @@ func TestRunRawInputSkipsInvalidFragments(t *testing.T) {
 func TestRunDecimatesRawInput(t *testing.T) {
 	pkt := append(rawxPacketAt(t, 345601.0), rawxPacketAt(t, 345610.0)...)
 	var got bytes.Buffer
-	if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, 10*time.Second); err != nil {
+	if err := runInputs(testInputs(bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, rinex.Metadata{}, 10*time.Second); err != nil {
 		t.Fatalf("runInputs raw decimation: %v", err)
 	}
 	_, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -423,16 +450,16 @@ func TestRunDecimatesRawInput(t *testing.T) {
 func TestRunMultipleRawInputs(t *testing.T) {
 	pkt := rawxPacket(t)
 	var got bytes.Buffer
-	meta := rinex.Metadata{MarkerName: "MULTI"}
-	if err := runInputs(testInputs(bytes.NewReader(pkt), bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, meta, rinex.WriterOptions{}, 0); err != nil {
+	meta := testMetaMarker("MULTI")
+	if err := runInputs(testInputs(bytes.NewReader(pkt), bytes.NewReader(pkt)), &got, inputRaw, outputObsJSON, false, meta, 0); err != nil {
 		t.Fatalf("runInputs raw to obsj: %v", err)
 	}
 	fileMeta, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
 	}
-	if fileMeta.MarkerName != "MULTI" {
-		t.Fatalf("MarkerName = %q, want MULTI", fileMeta.MarkerName)
+	if fileMeta.Marker.Name != "MULTI" {
+		t.Fatalf("Marker.Name = %q, want MULTI", fileMeta.Marker.Name)
 	}
 	if len(obs) != 2 {
 		t.Fatalf("len observations = %d, want 2\n%s", len(obs), got.String())
@@ -447,7 +474,7 @@ func TestRunMultipleInputFiles(t *testing.T) {
 		fileWithData(t, dir, "b.ubx", pkt),
 	}
 	var got bytes.Buffer
-	if err := runInputs(openInputs(paths), &got, inputRaw, outputObsJSON, false, rinex.Metadata{}, rinex.WriterOptions{}, 0); err != nil {
+	if err := runInputs(openInputs(paths), &got, inputRaw, outputObsJSON, false, rinex.Metadata{}, 0); err != nil {
 		t.Fatalf("runInputs raw files to obsj: %v", err)
 	}
 	_, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
@@ -487,9 +514,8 @@ func TestRunPacketLogInput(t *testing.T) {
 				{Out: true, Tag: gpsreg.TagUBX, Msg: "RXM-RAWX", Bin: gpsio.HexString(rawx)},
 				{Tag: gpsreg.TagUBX, Msg: "RXM-RAWX", Bin: gpsio.HexString(rawx)},
 			},
-			comments: []string{"format: u-blox UBX", "options: -MULTICODE"},
-			sat:      "G03",
-			sig:      "1C",
+			sat: "G03",
+			sig: "1C",
 		},
 		{
 			name: "rtcm_raw",
@@ -500,37 +526,33 @@ func TestRunPacketLogInput(t *testing.T) {
 				Msg: "1077",
 				Bin: gpsio.HexString(rtcmMSM7Packet(t, tow)),
 			}},
-			comments: []string{"format: RTCM"},
-			sat:      "G03",
-			sig:      "1C",
-			t:        rtcmT,
+			sat: "G03",
+			sig: "1C",
+			t:   rtcmT,
 		},
 		{
-			name:     "uncb_explicit",
-			from:     inputUNCB,
-			entries:  []gpsio.PacketLogEntry{uncb},
-			comments: []string{"format: Unicore UNCB"},
-			sat:      "G06",
-			sig:      "1C",
-			t:        uncT,
+			name:    "uncb_explicit",
+			from:    inputUNCB,
+			entries: []gpsio.PacketLogEntry{uncb},
+			sat:     "G06",
+			sig:     "1C",
+			t:       uncT,
 		},
 		{
-			name:     "unca_explicit",
-			from:     inputUNCA,
-			entries:  []gpsio.PacketLogEntry{unca},
-			comments: []string{"format: Unicore UNCA"},
-			sat:      "G06",
-			sig:      "1C",
-			t:        uncT,
+			name:    "unca_explicit",
+			from:    inputUNCA,
+			entries: []gpsio.PacketLogEntry{unca},
+			sat:     "G06",
+			sig:     "1C",
+			t:       uncT,
 		},
 		{
-			name:     "raw_selects_uncb",
-			from:     inputRaw,
-			entries:  []gpsio.PacketLogEntry{uncb},
-			comments: []string{"format: Unicore UNCB"},
-			sat:      "G06",
-			sig:      "1C",
-			t:        uncT,
+			name:    "raw_selects_uncb",
+			from:    inputRaw,
+			entries: []gpsio.PacketLogEntry{uncb},
+			sat:     "G06",
+			sig:     "1C",
+			t:       uncT,
 		},
 		{
 			name:    "raw_ignores_untagged_uncb",
@@ -545,20 +567,18 @@ func TestRunPacketLogInput(t *testing.T) {
 				{Bin: gpsio.HexString([]byte{0xd3})},
 				uncb,
 			},
-			comments: []string{"format: Unicore UNCB"},
-			sat:      "G06",
-			sig:      "1C",
-			t:        uncT,
+			sat: "G06",
+			sig: "1C",
+			t:   uncT,
 		},
 		{
-			name:     "raw_ignores_mixed_unicore",
-			from:     inputRaw,
-			entries:  []gpsio.PacketLogEntry{unca, uncb},
-			comments: []string{"format: Unicore UNCA"},
-			sat:      "G06",
-			sig:      "1C",
-			t:        uncT,
-			warn:     "ignoring mixed raw observation input",
+			name:    "raw_ignores_mixed_unicore",
+			from:    inputRaw,
+			entries: []gpsio.PacketLogEntry{unca, uncb},
+			sat:     "G06",
+			sig:     "1C",
+			t:       uncT,
+			warn:    "ignoring mixed raw observation input",
 		},
 	}
 	for _, tt := range tests {
@@ -572,8 +592,8 @@ func TestRunPacketLogInput(t *testing.T) {
 					from:      tt.from,
 					to:        outputObsJSON,
 					packetLog: true,
-					meta:      rinex.Metadata{MarkerName: "PKTLOG"},
 				},
+				meta: testMetaMarker("PKTLOG"),
 			}
 			err := cj.run(testLogger(&log), time.Now().UTC())
 			if tt.err != "" {
@@ -604,9 +624,9 @@ func TestRunRTCMInput(t *testing.T) {
 		opts: convertOptions{
 			from: inputRTCM,
 			to:   outputObsJSON,
-			meta: rinex.Metadata{MarkerName: "RTCM"},
 			week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())},
 		},
+		meta: testMetaMarker("RTCM"),
 	}
 	if err := cj.run(testLogger(io.Discard), time.Now().UTC()); err != nil {
 		t.Fatalf("runInputs rtcm to obsj: %v", err)
@@ -615,11 +635,11 @@ func TestRunRTCMInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
 	}
-	if meta.MarkerName != "RTCM" {
-		t.Fatalf("MarkerName = %q, want RTCM", meta.MarkerName)
+	if meta.Marker.Name != "RTCM" {
+		t.Fatalf("Marker.Name = %q, want RTCM", meta.Marker.Name)
 	}
-	if len(meta.Comments) != 1 || meta.Comments[0] != "format: RTCM" {
-		t.Fatalf("comments = %#v", meta.Comments)
+	if len(meta.Comment) != 0 {
+		t.Fatalf("comments = %#v", meta.Comment)
 	}
 	if len(obs) != 1 {
 		t.Fatalf("len observations = %d, want 1\n%s", len(obs), got.String())
@@ -637,9 +657,9 @@ func TestRunRTCMInput(t *testing.T) {
 		opts: convertOptions{
 			from: inputRTCM,
 			to:   outputObsJSON,
-			meta: rinex.Metadata{MarkerName: "RTCM"},
 			week: weekOptions{mode: weekDate, date: civilDate(wantT.CivilTime())},
 		},
+		meta: testMetaMarker("RTCM"),
 	}
 	cj.opts.format.rtcm.UseSpecPhaseRangeRateSign = true
 	if err := cj.run(testLogger(io.Discard), time.Now().UTC()); err != nil {
@@ -675,11 +695,11 @@ func TestRunRawRTCMBuffersMetadataBeforeSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
 	}
-	if meta.MarkerNumber != "100" || meta.ApproxPosition == nil || *meta.ApproxPosition != [3]float64{1, 2, 3} {
+	if meta.Marker.Number != "100" || meta.ApproxPosition == nil || *meta.ApproxPosition != [3]float64{1, 2, 3} {
 		t.Fatalf("metadata = %#v", meta)
 	}
-	if len(meta.Comments) != 1 || meta.Comments[0] != "format: RTCM" {
-		t.Fatalf("comments = %#v", meta.Comments)
+	if len(meta.Comment) != 0 {
+		t.Fatalf("comments = %#v", meta.Comment)
 	}
 	if len(obs) != 1 || obs[0].T != wantT || obs[0].Sat != "G03" {
 		t.Fatalf("observations = %#v", obs)
@@ -705,11 +725,11 @@ func TestRunRawDropsTentativeRTCMMetadataBeforeUBX(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
 	}
-	if meta.MarkerNumber != "" || meta.ApproxPosition != nil {
+	if meta.Marker.Number != "" || meta.ApproxPosition != nil {
 		t.Fatalf("metadata = %#v, want RTCM metadata dropped", meta)
 	}
-	if len(meta.Comments) != 2 || meta.Comments[0] != "format: u-blox UBX" || meta.Comments[1] != "options: -MULTICODE" {
-		t.Fatalf("comments = %#v", meta.Comments)
+	if len(meta.Comment) != 0 {
+		t.Fatalf("comments = %#v", meta.Comment)
 	}
 	if len(obs) != 1 || obs[0].Sat != "G03" {
 		t.Fatalf("observations = %#v", obs)
@@ -781,8 +801,8 @@ func TestRunRawIgnoresMixedObservationFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
 	}
-	if len(meta.Comments) != 2 || meta.Comments[0] != "format: u-blox UBX" || meta.Comments[1] != "options: -MULTICODE" {
-		t.Fatalf("comments = %#v", meta.Comments)
+	if len(meta.Comment) != 0 {
+		t.Fatalf("comments = %#v", meta.Comment)
 	}
 	if len(obs) != 1 || obs[0].Sat != "G03" || obs[0].Sig != "1C" || !obs[0].PR.IsSet() || !obs[0].CP.IsSet() {
 		t.Fatalf("observations = %#v", obs)
@@ -800,11 +820,10 @@ func TestGoldenFiles(t *testing.T) {
 	// -INVPRR option because its encoded PRR has the opposite polarity from
 	// that strict RTCM interpretation. SatPulse's default matches this common
 	// receiver polarity; --rtcm-strict-prr selects the strict RTCM sign.
-	// For UBX, after normalizing PGM/RUN BY/DATE and the log path comment,
-	// the only remaining header difference is that RTKLIB Explorer emits
-	// SYS / PHASE SHIFT records. For RTCM, the observation body is
-	// byte-identical; the remaining differences are confined to header
-	// metadata and phase-shift records.
+	// For UBX, after normalizing PGM/RUN BY/DATE, the only remaining header
+	// difference is that RTKLIB Explorer emits SYS / PHASE SHIFT records.
+	// For RTCM, the observation body is byte-identical; the remaining
+	// differences are confined to header metadata and phase-shift records.
 	now := time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name string
@@ -813,17 +832,17 @@ func TestGoldenFiles(t *testing.T) {
 	}{
 		{
 			name: "m8t_20251217_4h",
-			args: []string{filepath.Join("testdata", "m8t-20251217-4h.ubx")},
+			args: []string{"--run-by", "", filepath.Join("testdata", "m8t-20251217-4h.ubx")},
 			obs:  filepath.Join("testdata", "m8t-20251217-4h.obs.gz"),
 		},
 		{
 			name: "f9t_20251217_3h",
-			args: []string{filepath.Join("testdata", "f9t-20251217-3h.ubx")},
+			args: []string{"--run-by", "", filepath.Join("testdata", "f9t-20251217-3h.ubx")},
 			obs:  filepath.Join("testdata", "f9t-20251217-3h.obs.gz"),
 		},
 		{
 			name: "rtcm_20260519_3h",
-			args: []string{"--from", "rtcm", "--date-from-filename", filepath.Join("testdata", "packet-rtcm-20260519-3h.rtcm")},
+			args: []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", filepath.Join("testdata", "packet-rtcm-20260519-3h.rtcm")},
 			obs:  filepath.Join("testdata", "packet-rtcm-20260519-3h.obs.gz"),
 		},
 	}
@@ -833,12 +852,17 @@ func TestGoldenFiles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseFlags: %v", err)
 			}
-			v.write.Date = now
+			var meta rinex.Metadata
+			setMetadataDefaults(&meta, now, v.interval)
+			if err := applyMetadataFlags(&meta, v.metadataFlags); err != nil {
+				t.Fatalf("applyMetadataFlags: %v", err)
+			}
 			var got bytes.Buffer
 			cj := convJob{
 				inputs: openInputs(v.inputPaths),
 				out:    &got,
 				opts:   v.convertOptions,
+				meta:   meta,
 			}
 			if err := cj.run(testLogger(io.Discard), now); err != nil {
 				t.Fatalf("run: %v", err)
@@ -864,7 +888,6 @@ func TestGoldenFiles(t *testing.T) {
 }
 
 func TestGoldenObservationFilesRoundTripThroughObsJSON(t *testing.T) {
-	now := time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name string
 		obs  string
@@ -888,9 +911,8 @@ func TestGoldenObservationFilesRoundTripThroughObsJSON(t *testing.T) {
 			if err != nil {
 				t.Fatalf("readGzipFile %s: %v", tt.obs, err)
 			}
-			wopts := rinex.WriterOptions{Program: "convobs", Date: now}
 			var obsj bytes.Buffer
-			if err := runInputs(testInputs(bytes.NewReader(in)), &obsj, inputRINEX, outputObsJSON, false, rinex.Metadata{}, wopts, 0); err != nil {
+			if err := runInputs(testInputs(bytes.NewReader(in)), &obsj, inputRINEX, outputObsJSON, false, rinex.Metadata{}, 0); err != nil {
 				t.Fatalf("runInputs rinex to obsj: %v", err)
 			}
 			if _, obs, err := rinex.ReadObsJSON(bytes.NewReader(obsj.Bytes())); err != nil {
@@ -899,7 +921,7 @@ func TestGoldenObservationFilesRoundTripThroughObsJSON(t *testing.T) {
 				t.Fatal("ReadObsJSON returned no observations")
 			}
 			var got bytes.Buffer
-			if err := runInputs(testInputs(bytes.NewReader(obsj.Bytes())), &got, inputObsJSON, outputRINEX, false, rinex.Metadata{}, wopts, 0); err != nil {
+			if err := runInputs(testInputs(bytes.NewReader(obsj.Bytes())), &got, inputObsJSON, outputRINEX, false, rinex.Metadata{}, 0); err != nil {
 				t.Fatalf("runInputs obsj to rinex: %v", err)
 			}
 			if !bytes.Equal(got.Bytes(), in) {
@@ -1000,11 +1022,11 @@ func assertObsJSON(t *testing.T, data, marker string, comments []string, sat rin
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v\n%s", err, data)
 	}
-	if meta.MarkerName != marker {
-		t.Fatalf("MarkerName = %q, want %s", meta.MarkerName, marker)
+	if meta.Marker.Name != marker {
+		t.Fatalf("Marker.Name = %q, want %s", meta.Marker.Name, marker)
 	}
-	if strings.Join(meta.Comments, "\n") != strings.Join(comments, "\n") {
-		t.Fatalf("comments = %#v, want %#v", meta.Comments, comments)
+	if strings.Join(meta.Comment, "\n") != strings.Join(comments, "\n") {
+		t.Fatalf("comments = %#v, want %#v", meta.Comment, comments)
 	}
 	for _, o := range obs {
 		if o.Sat == sat && o.Sig == sig && o.PR.IsSet() && o.CP.IsSet() {

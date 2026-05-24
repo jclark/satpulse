@@ -72,7 +72,6 @@ func TestSignalValuesIsZero(t *testing.T) {
 
 func TestMetadataJSON(t *testing.T) {
 	meta := Metadata{
-		MarkerName: "REDU00BEL",
 		Receiver: Receiver{
 			Number:  "4503038",
 			Type:    "GNSS_RECEIVER",
@@ -85,11 +84,12 @@ func TestMetadataJSON(t *testing.T) {
 		ApproxPosition: testPtr([3]float64{4091423.719, 368380.653, 4863179.994}),
 		LeapSeconds:    testPtr(int16(18)),
 	}
+	meta.Marker.Name = "REDU00BEL"
 	b, err := json.Marshal(meta)
 	if err != nil {
 		t.Fatalf("Marshal error: %v", err)
 	}
-	want := `{"markerName":"REDU00BEL","receiver":{"number":"4503038","type":"GNSS_RECEIVER","version":"5.4.0"},"antenna":{"number":"5644","type":"GEOANTENNA NONE"},"approxPosition":[4091423.719,368380.653,4863179.994],"leapSeconds":18}`
+	want := `{"marker":{"name":"REDU00BEL"},"receiver":{"number":"4503038","type":"GNSS_RECEIVER","version":"5.4.0"},"antenna":{"number":"5644","type":"GEOANTENNA NONE"},"approxPosition":[4091423.719,368380.653,4863179.994],"leapSeconds":18}`
 	if string(b) != want {
 		t.Errorf("Marshal = %s, want %s", string(b), want)
 	}
@@ -97,7 +97,7 @@ func TestMetadataJSON(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("Unmarshal error: %v", err)
 	}
-	if got.MarkerName != meta.MarkerName || got.Receiver.Number != meta.Receiver.Number ||
+	if got.Marker.Name != meta.Marker.Name || got.Receiver.Number != meta.Receiver.Number ||
 		got.Antenna.Type != meta.Antenna.Type || *got.ApproxPosition != *meta.ApproxPosition ||
 		*got.LeapSeconds != *meta.LeapSeconds {
 		t.Errorf("round trip = %#v, want %#v", got, meta)
@@ -105,11 +105,16 @@ func TestMetadataJSON(t *testing.T) {
 }
 
 func TestMetadataTOML(t *testing.T) {
-	data := []byte(`markerName = "SITE"
+	data := []byte(`marker.name = "SITE"
 observer = "JJ"
 agency = "SatPulse"
+comment = """
+first
+second
+"""
 approxPosition = [-1144697.9559, 6090335.6106, 1504171.2880]
 antennaDelta = [1.2, 0.3, 0.4]
+interval = 30.0
 leapSeconds = 18
 
 [receiver]
@@ -125,8 +130,11 @@ type = "ANTMODEL NONE"
 	if err := toml.Unmarshal(data, &got); err != nil {
 		t.Fatalf("Unmarshal error: %v", err)
 	}
-	if got.MarkerName != "SITE" || got.Observer != "JJ" || got.Agency != "SatPulse" {
+	if got.Marker.Name != "SITE" || got.Observer != "JJ" || got.Agency != "SatPulse" {
 		t.Errorf("metadata strings = %#v", got)
+	}
+	if len(got.Comment) != 2 || got.Comment[0] != "first" || got.Comment[1] != "second" {
+		t.Errorf("comment = %#v", got.Comment)
 	}
 	if got.Receiver.Number != "RX001" || got.Receiver.Type != "ZED-X20P" || got.Receiver.Version != "HPG 2.02" {
 		t.Errorf("receiver = %#v", got.Receiver)
@@ -141,6 +149,9 @@ type = "ANTMODEL NONE"
 	delta := [3]float64{1.2, 0.3, 0.4}
 	if got.AntennaDelta == nil || *got.AntennaDelta != delta {
 		t.Errorf("antenna delta = %v, want %v", got.AntennaDelta, delta)
+	}
+	if got.Interval == nil || *got.Interval != 30 {
+		t.Errorf("interval = %v, want 30", got.Interval)
 	}
 	if got.LeapSeconds == nil || *got.LeapSeconds != 18 {
 		t.Errorf("leap seconds = %v, want 18", got.LeapSeconds)
@@ -158,7 +169,7 @@ func TestUnmarshalRecord(t *testing.T) {
 	if obs.Sat != "R03" || obs.Frq.Get() != -4 || !obs.PR.IsSet() {
 		t.Errorf("observation = %#v", obs)
 	}
-	if meta.MarkerName != "" {
+	if meta.Marker.Name != "" {
 		t.Errorf("metadata for observation = %#v", meta)
 	}
 	obs, meta, isObs, err = UnmarshalRecord([]byte(`{"antenna":{"type":"ROVER"},"antennaDelta":[0.903,0,0]}`))
@@ -179,7 +190,7 @@ func TestUnmarshalRecord(t *testing.T) {
 func TestObsJSONSinkAndReadObsJSON(t *testing.T) {
 	var b bytes.Buffer
 	sink := NewObsJSONSink(&b)
-	if err := sink.Metadata(Metadata{Comments: []string{"from first"}, Receiver: Receiver{Type: "RX"}}); err != nil {
+	if err := sink.Metadata(Metadata{Comment: Lines{"from first"}, Receiver: Receiver{Type: "RX"}}); err != nil {
 		t.Fatalf("Metadata first: %v", err)
 	}
 	obs := SignalObservation{
@@ -194,16 +205,18 @@ func TestObsJSONSinkAndReadObsJSON(t *testing.T) {
 	if err := sink.Observation(obs); err != nil {
 		t.Fatalf("Observation: %v", err)
 	}
-	if err := sink.Metadata(Metadata{MarkerName: "MARK", Comments: []string{"from second"}}); err != nil {
+	meta := Metadata{Comment: Lines{"from second"}}
+	meta.Marker.Name = "MARK"
+	if err := sink.Metadata(meta); err != nil {
 		t.Fatalf("Metadata second: %v", err)
 	}
 	if err := sink.Flush(); err != nil {
 		t.Fatalf("Flush: %v", err)
 	}
 	want := strings.Join([]string{
-		`{"comments":["from first"],"receiver":{"type":"RX"}}`,
+		`{"comment":["from first"],"receiver":{"type":"RX"}}`,
 		`{"t":"2025-06-30T23:59:59.0000000","sat":"G03","sig":"1C","pr":22187868.655,"lli":0}`,
-		`{"markerName":"MARK","comments":["from second"]}`,
+		`{"comment":["from second"],"marker":{"name":"MARK"}}`,
 		"",
 	}, "\n")
 	if b.String() != want {
@@ -213,11 +226,11 @@ func TestObsJSONSinkAndReadObsJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadObsJSON: %v", err)
 	}
-	if meta.MarkerName != "MARK" || meta.Receiver.Type != "RX" {
+	if meta.Marker.Name != "MARK" || meta.Receiver.Type != "RX" {
 		t.Errorf("metadata = %#v", meta)
 	}
-	if len(meta.Comments) != 2 || meta.Comments[0] != "from first" || meta.Comments[1] != "from second" {
-		t.Errorf("metadata comments = %#v", meta.Comments)
+	if len(meta.Comment) != 2 || meta.Comment[0] != "from first" || meta.Comment[1] != "from second" {
+		t.Errorf("metadata comments = %#v", meta.Comment)
 	}
 	if len(got) != 1 || got[0] != obs {
 		t.Errorf("observations = %#v, want %#v", got, []SignalObservation{obs})

@@ -45,14 +45,23 @@ func readObservationHeader(s *bufio.Scanner) (observationHeader, error) {
 		content := line[:60]
 		label := strings.TrimSpace(line[60:80])
 		switch label {
+		case "RINEX VERSION / TYPE":
+			fields := strings.Fields(content[:20])
+			if len(fields) != 0 {
+				h.meta.Version = Version(fields[0])
+			}
+		case "PGM / RUN BY / DATE":
+			h.meta.Run.Program = strings.TrimSpace(content[:20])
+			h.meta.Run.By = strings.TrimSpace(content[20:40])
+			h.meta.Run.Date = parseRunDate(content[40:60])
 		case "COMMENT":
-			h.meta.Comments = append(h.meta.Comments, strings.TrimRight(content, " "))
+			h.meta.Comment = append(h.meta.Comment, strings.TrimRight(content, " "))
 		case "MARKER NAME":
-			h.meta.MarkerName = strings.TrimSpace(content)
+			h.meta.Marker.Name = strings.TrimSpace(content)
 		case "MARKER NUMBER":
-			h.meta.MarkerNumber = strings.TrimSpace(content)
+			h.meta.Marker.Number = strings.TrimSpace(content)
 		case "MARKER TYPE":
-			h.meta.MarkerType = strings.TrimSpace(content)
+			h.meta.Marker.Type = strings.TrimSpace(content)
 		case "OBSERVER / AGENCY":
 			h.meta.Observer = strings.TrimSpace(content[:20])
 			h.meta.Agency = strings.TrimSpace(content[20:])
@@ -77,6 +86,15 @@ func readObservationHeader(s *bufio.Scanner) (observationHeader, error) {
 				return h, err
 			}
 			h.sys = sys
+		case "INTERVAL":
+			fields := strings.Fields(content)
+			if len(fields) != 0 {
+				v, err := strconv.ParseFloat(fields[0], 64)
+				if err != nil {
+					return h, fmt.Errorf("rinex: invalid interval %q", fields[0])
+				}
+				h.meta.Interval = &v
+			}
 		case "GLONASS SLOT / FRQ #":
 			if err := readGLONASSFreqHeader(content, h.frq); err != nil {
 				return h, err
@@ -146,6 +164,18 @@ func readObservationEpochs(s *bufio.Scanner, h observationHeader) ([]SignalObser
 		}
 	}
 	return obs, s.Err()
+}
+
+func parseRunDate(s string) time.Time {
+	fields := strings.Fields(s)
+	if len(fields) < 2 {
+		return time.Time{}
+	}
+	t, err := time.ParseInLocation("20060102 150405", fields[0]+" "+fields[1], time.UTC)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }
 
 func parseFloatTriple(s string) ([3]float64, bool) {

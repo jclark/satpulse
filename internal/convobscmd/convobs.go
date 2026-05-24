@@ -11,8 +11,10 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"os/user"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +30,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 	"github.com/jclark/satpulse/gps/scan"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/pflag"
 )
 
@@ -40,15 +43,12 @@ var packetStreamFormats = gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)
 var packetLogFormats = gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)
 var packetLogFormatsByTag = packetFormatsByTag(packetLogFormats)
 
-const summary = `[-h|--help] [-o|--output path] [--metadata path]
+const summary = `[-h|--help] [-o|--output path] [-H|--header-file path]
            [-r|--from raw|ubx|rtcm|uncb|unca|rinex|obsj] [--packet-log] [--to rinex|obsj]
            [--date YYYYMMDD|--recent|-f|--date-from-filename]
            [--interval seconds]
-           [--marker-name name] [--marker-number number] [--marker-type type]
-           [--observer name] [--agency name]
-           [--receiver-number number] [--receiver-type type] [--receiver-version version]
-           [--antenna-number number] [--antenna-type type]
-           [--program name] [--run-by name]
+           [--rinex-version version] [--program name] [--run-by name]
+           [--antenna type] [--approx-pos x,y,z] [--comment text]
            [--rtcm-strict-prr]
            [--ubx-phase-threshold n] [--ubx-slip-threshold n]
            input...`
@@ -70,13 +70,6 @@ var inputPacketTags = map[inputFormat]gpsprot.Tag{
 	inputRTCM: gpsreg.TagRTCM,
 	inputUNCB: gpsreg.TagUnicoreBin,
 	inputUNCA: gpsreg.TagUnicoreAscii,
-}
-
-var inputMetadataByTag = map[gpsprot.Tag]rinex.Metadata{
-	gpsreg.TagUBX:          {Comments: []string{"format: u-blox UBX", "options: -MULTICODE"}},
-	gpsreg.TagRTCM:         {Comments: []string{"format: RTCM"}},
-	gpsreg.TagUnicoreBin:   {Comments: []string{"format: Unicore UNCB"}},
-	gpsreg.TagUnicoreAscii: {Comments: []string{"format: Unicore UNCA"}},
 }
 
 var rawObservationNames = map[gpsprot.Tag]string{
@@ -103,17 +96,16 @@ const (
 
 type flagVars struct {
 	convertOptions
-	inputPaths []string
-	outputPath string
-	metaPath   string
+	inputPaths    []string
+	outputPath    string
+	headerFile    string
+	metadataFlags *pflag.FlagSet
 }
 
 type convertOptions struct {
 	from      inputFormat
 	to        outputFormat
 	packetLog bool
-	meta      rinex.Metadata
-	write     rinex.WriterOptions
 	format    formatOptions
 	interval  time.Duration
 	week      weekOptions
@@ -149,6 +141,7 @@ type convJob struct {
 	inputs iter.Seq2[string, inputReader]
 	out    io.Writer
 	opts   convertOptions
+	meta   rinex.Metadata
 }
 
 // WeekConstraint carries an RTCM week interval and its user-facing diagnostics.
@@ -210,18 +203,21 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		return usageFunc(progName), nil
 	}
 	now := time.Now().UTC()
-	if v.write.Date.IsZero() {
-		v.write.Date = now
-	}
-	if v.metaPath != "" {
-		f, err := os.Open(v.metaPath)
+	var meta rinex.Metadata
+	if v.headerFile != "" {
+		f, err := os.Open(v.headerFile)
 		if err != nil {
 			return "", err
 		}
 		defer f.Close()
-		if err := loadMetadata(&v.meta, v.metaPath, f); err != nil {
+		meta, err = readHeaderFile(v.headerFile, f)
+		if err != nil {
 			return "", err
 		}
+	}
+	setMetadataDefaults(&meta, now, v.interval)
+	if err := applyMetadataFlags(&meta, v.metadataFlags); err != nil {
+		return "", err
 	}
 	var out io.Writer = os.Stdout
 	if v.outputPath != "" && v.outputPath != "-" {
@@ -236,6 +232,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		inputs: openInputs(v.inputPaths),
 		out:    out,
 		opts:   v.convertOptions,
+		meta:   meta,
 	}
 	return "", cj.run(lg, now)
 }
@@ -263,22 +260,17 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&recent, "recent", false, "infer RTCM observations are within the last week")
 	flags.BoolVarP(&dateFromFilename, "date-from-filename", "f", false, "infer RTCM date from input filename")
 	flags.Float64Var(&interval, "interval", 0, "observation decimation interval in `seconds` (0 disables)")
-	flags.StringVar(&v.metaPath, "metadata", "", "JSON RINEX metadata file")
-	flags.StringVar(&v.meta.MarkerName, "marker-name", "", "RINEX marker name")
-	flags.StringVar(&v.meta.MarkerNumber, "marker-number", "", "RINEX marker number")
-	flags.StringVar(&v.meta.MarkerType, "marker-type", "", "RINEX marker type")
-	flags.StringVar(&v.meta.Observer, "observer", "", "RINEX observer")
-	flags.StringVar(&v.meta.Agency, "agency", "", "RINEX agency")
-	flags.StringVar(&v.meta.Receiver.Number, "receiver-number", "", "RINEX receiver number")
-	flags.StringVar(&v.meta.Receiver.Type, "receiver-type", "", "RINEX receiver type")
-	flags.StringVar(&v.meta.Receiver.Version, "receiver-version", "", "RINEX receiver version")
-	flags.StringVar(&v.meta.Antenna.Number, "antenna-number", "", "RINEX antenna number")
-	flags.StringVar(&v.meta.Antenna.Type, "antenna-type", "", "RINEX antenna type")
-	flags.StringVar(&v.write.Program, "program", "convobs", "RINEX program field")
-	flags.StringVar(&v.write.RunBy, "run-by", "", "RINEX run-by field")
+	flags.StringVarP(&v.headerFile, "header-file", "H", "", "TOML RINEX header metadata file")
+	flags.String("rinex-version", "", "RINEX observation version")
+	flags.String("program", "", "RINEX program field")
+	flags.String("run-by", "", "RINEX run-by field")
+	flags.String("antenna", "", "RINEX antenna type")
+	flags.String("approx-pos", "", "RINEX approximate XYZ position as x,y,z")
+	flags.StringArray("comment", nil, "RINEX comment line")
 	flags.BoolVar(&v.format.rtcm.UseSpecPhaseRangeRateSign, "rtcm-strict-prr", false, "interpret sign of PhaseRangeRate in strict conformance with RTCM3 standard (Doppler = -PRR/wavelength)")
 	flags.Uint8Var(&v.format.ubx.PhaseThreshold, "ubx-phase-threshold", 0, "RAWX cpStdev index at which carrier phase is omitted, or 0 for RTKLIB Explorer auto")
 	flags.Uint8Var(&v.format.ubx.SlipThreshold, "ubx-slip-threshold", 15, "RAWX cpStdev index that marks a cycle slip")
+	v.metadataFlags = flags
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
 	if err := flags.Parse(args); err != nil {
 		return nil, usageFunc, err
@@ -328,15 +320,6 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	v.inputPaths = flags.Args()
 	if v.week.mode == weekFilename && slices.Contains(v.inputPaths, "-") {
 		return nil, usageFunc, errors.New("--date-from-filename is not valid with stdin")
-	}
-	if v.from.packetInput() {
-		for _, path := range v.inputPaths {
-			if path == "-" {
-				v.meta.Comments = append(v.meta.Comments, "log: stdin")
-			} else {
-				v.meta.Comments = append(v.meta.Comments, "log: "+path)
-			}
-		}
 	}
 	return v, usageFunc, nil
 }
@@ -441,6 +424,111 @@ func (v *flagVars) setWeekOptions(date string, recent, dateFromFilename bool) er
 	return nil
 }
 
+func readHeaderFile(path string, r io.Reader) (rinex.Metadata, error) {
+	var meta rinex.Metadata
+	if err := toml.NewDecoder(r).DisallowUnknownFields().Decode(&meta); err != nil {
+		return rinex.Metadata{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return meta, nil
+}
+
+func setMetadataDefaults(meta *rinex.Metadata, now time.Time, interval time.Duration) {
+	const headerFieldWidth = 20
+	truncateHeaderField := func(s string) string {
+		if len(s) <= headerFieldWidth {
+			return s
+		}
+		return s[:headerFieldWidth]
+	}
+	if meta.Version == "" {
+		meta.Version = rinex.Version304
+	}
+	if meta.Run.Program == "" {
+		const prefix = "satpulse"
+		if v := cmd.ShortenVersion(headerFieldWidth - len(prefix) - 1); v != "" {
+			meta.Run.Program = truncateHeaderField(prefix + " " + v)
+		} else {
+			meta.Run.Program = prefix
+		}
+	}
+	if meta.Run.By == "" {
+		u, err := user.Current()
+		if err == nil {
+			s := u.Name
+			if s == "" {
+				s = u.Username
+			}
+			meta.Run.By = truncateHeaderField(s)
+		}
+	}
+	if meta.Run.Date.IsZero() {
+		meta.Run.Date = now
+	}
+	if meta.Interval == nil && interval != 0 {
+		v := interval.Seconds()
+		meta.Interval = &v
+	}
+}
+
+func applyMetadataFlags(meta *rinex.Metadata, flags *pflag.FlagSet) error {
+	if flags.Changed("rinex-version") {
+		meta.Version = rinex.Version(mustString(flags, "rinex-version"))
+	}
+	if flags.Changed("program") {
+		meta.Run.Program = mustString(flags, "program")
+	}
+	if flags.Changed("run-by") {
+		meta.Run.By = mustString(flags, "run-by")
+	}
+	if flags.Changed("antenna") {
+		meta.Antenna.Type = mustString(flags, "antenna")
+	}
+	if flags.Changed("approx-pos") {
+		s := mustString(flags, "approx-pos")
+		if s == "" {
+			meta.ApproxPosition = nil
+		} else {
+			pos, err := parseXYZ(s, "--approx-pos")
+			if err != nil {
+				return err
+			}
+			meta.ApproxPosition = &pos
+		}
+	}
+	if flags.Changed("comment") {
+		lines, err := flags.GetStringArray("comment")
+		if err != nil {
+			panic(err)
+		}
+		meta.Comment = rinex.Lines(lines)
+	}
+	return nil
+}
+
+func mustString(flags *pflag.FlagSet, name string) string {
+	s, err := flags.GetString(name)
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+func parseXYZ(s, opt string) ([3]float64, error) {
+	parts := strings.Split(s, ",")
+	var out [3]float64
+	if len(parts) != 3 {
+		return out, fmt.Errorf("%s must contain three comma-separated numbers", opt)
+	}
+	for i, p := range parts {
+		v, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
+		if err != nil {
+			return out, fmt.Errorf("%s contains invalid number %q", opt, p)
+		}
+		out[i] = v
+	}
+	return out, nil
+}
+
 func (cj convJob) run(lg *slog.Logger, now time.Time) error {
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -448,13 +536,13 @@ func (cj convJob) run(lg *slog.Logger, now time.Time) error {
 	opts := cj.opts
 	switch opts.from {
 	case inputRINEX, inputObsJSON:
-		return convertObservationInputs(cj.inputs, cj.out, opts.from, opts.to, opts.meta, opts.write, opts.interval)
+		return convertObservationInputs(cj.inputs, cj.out, opts.from, opts.to, cj.meta, opts.interval)
 	}
-	sink, err := outputSink(cj.out, opts.to, opts.write, opts.interval)
+	sink, err := outputSink(cj.out, opts.to, opts.interval)
 	if err != nil {
 		return err
 	}
-	conv, err := newPacketInput(opts.from, sink, opts.meta, opts.format, lg)
+	conv, err := newPacketInput(opts.from, sink, cj.meta, opts.format, lg)
 	if err != nil {
 		return err
 	}
@@ -499,11 +587,11 @@ func inputError(path string, err error) error {
 	return fmt.Errorf("%s: %w", path, err)
 }
 
-func outputSink(w io.Writer, format outputFormat, wopts rinex.WriterOptions, interval time.Duration) (rinex.Sink, error) {
+func outputSink(w io.Writer, format outputFormat, interval time.Duration) (rinex.Sink, error) {
 	var sink rinex.Sink
 	switch format {
 	case outputRINEX:
-		sink = rinex.NewObservationSink(w, wopts)
+		sink = rinex.NewObservationSink(w)
 	case outputObsJSON:
 		sink = rinex.NewObsJSONSink(w)
 	default:
@@ -515,7 +603,7 @@ func outputSink(w io.Writer, format outputFormat, wopts rinex.WriterOptions, int
 	return rinex.NewDecimationSink(sink, interval)
 }
 
-func convertObservationInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, meta rinex.Metadata, wopts rinex.WriterOptions, interval time.Duration) error {
+func convertObservationInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, meta rinex.Metadata, interval time.Duration) error {
 	var fileMeta rinex.Metadata
 	var obs []rinex.SignalObservation
 	for path, in := range inputs {
@@ -529,7 +617,7 @@ func convertObservationInputs(inputs iter.Seq2[string, inputReader], out io.Writ
 		fileMeta = rinex.MergeMetadata(fileMeta, m)
 		obs = append(obs, o...)
 	}
-	return convertBufferedObservations(out, to, rinex.MergeMetadata(fileMeta, meta), obs, wopts, interval)
+	return convertBufferedObservations(out, to, rinex.MergeMetadata(fileMeta, meta), obs, interval)
 }
 
 func readObservationInput(in io.Reader, from inputFormat) (rinex.Metadata, []rinex.SignalObservation, error) {
@@ -543,12 +631,19 @@ func readObservationInput(in io.Reader, from inputFormat) (rinex.Metadata, []rin
 	}
 }
 
-func convertBufferedObservations(out io.Writer, to outputFormat, meta rinex.Metadata, obs []rinex.SignalObservation, wopts rinex.WriterOptions, interval time.Duration) error {
-	sink, err := outputSink(out, to, wopts, interval)
+func sinkMetadata(sink rinex.Sink, meta rinex.Metadata) error {
+	if meta.IsZero() {
+		return nil
+	}
+	return sink.Metadata(meta)
+}
+
+func convertBufferedObservations(out io.Writer, to outputFormat, meta rinex.Metadata, obs []rinex.SignalObservation, interval time.Duration) error {
+	sink, err := outputSink(out, to, interval)
 	if err != nil {
 		return err
 	}
-	if err := sink.Metadata(meta); err != nil {
+	if err := sinkMetadata(sink, meta); err != nil {
 		return err
 	}
 	for _, o := range obs {
@@ -559,21 +654,9 @@ func convertBufferedObservations(out io.Writer, to outputFormat, meta rinex.Meta
 	return sink.Flush()
 }
 
-func loadMetadata(dst *rinex.Metadata, path string, r io.Reader) error {
-	var meta rinex.Metadata
-	if err := json.NewDecoder(r).Decode(&meta); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
-	}
-	*dst = rinex.MergeMetadata(meta, *dst)
-	return nil
-}
-
 func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, format formatOptions, lg *slog.Logger) (packetInput, error) {
 	if tag := inputPacketTags[from]; tag != gpsprot.EmptyTag {
-		if err := sink.Metadata(inputMetadataByTag[tag]); err != nil {
-			return nil, err
-		}
-		if err := sink.Metadata(meta); err != nil {
+		if err := sinkMetadata(sink, meta); err != nil {
 			return nil, err
 		}
 	}
@@ -696,7 +779,7 @@ func convertPacketLog(r io.Reader, from inputFormat, in packetInput) (int, error
 			continue
 		}
 		if from == inputRaw {
-			if _, ok := inputMetadataByTag[entry.Tag]; !ok {
+			if !supportedRawPacketLogTag(entry.Tag) {
 				continue
 			}
 		}
@@ -712,6 +795,10 @@ func convertPacketLog(r io.Reader, from inputFormat, in packetInput) (int, error
 		return n, err
 	}
 	return n, nil
+}
+
+func supportedRawPacketLogTag(tag gpsprot.Tag) bool {
+	return tag == gpsreg.TagUBX || tag == gpsreg.TagRTCM || tag == gpsreg.TagUnicoreBin || tag == gpsreg.TagUnicoreAscii
 }
 
 func convertPacketData(data string, fmts []gpsprot.PacketFormat, in packetInput, week WeekConstraint) (bool, error) {
@@ -800,10 +887,7 @@ func isRawObsTag(pkt scan.Packet, data string) bool {
 func (in *rawPacketInput) convertNonRTCMObservation(tag gpsprot.Tag, data string) (bool, error) {
 	if in.family == gpsprot.EmptyTag {
 		in.metaBuf.Drop()
-		if err := in.sink.Metadata(inputMetadataByTag[tag]); err != nil {
-			return false, err
-		}
-		if err := in.sink.Metadata(in.meta); err != nil {
+		if err := sinkMetadata(in.sink, in.meta); err != nil {
 			return false, err
 		}
 		in.rtcm = nil
@@ -846,10 +930,7 @@ func (in *rawPacketInput) convertRTCM(data string, week WeekConstraint) (bool, e
 		if in.week.err != nil {
 			return false, in.week.err
 		}
-		if err := in.sink.Metadata(inputMetadataByTag[gpsreg.TagRTCM]); err != nil {
-			return false, err
-		}
-		if err := in.sink.Metadata(in.meta); err != nil {
+		if err := sinkMetadata(in.sink, in.meta); err != nil {
 			return false, err
 		}
 		if err := in.metaBuf.Commit(); err != nil {

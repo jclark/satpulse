@@ -58,7 +58,9 @@ func TestDecimationSinkEmitsRoundedGridEpochs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDecimationSink: %v", err)
 	}
-	if err := sink.Metadata(Metadata{MarkerName: "MARK"}); err != nil {
+	meta := Metadata{}
+	meta.Marker.Name = "MARK"
+	if err := sink.Metadata(meta); err != nil {
 		t.Fatalf("Metadata: %v", err)
 	}
 	obs := []SignalObservation{
@@ -75,7 +77,7 @@ func TestDecimationSinkEmitsRoundedGridEpochs(t *testing.T) {
 	if err := sink.Flush(); err != nil {
 		t.Fatalf("Flush: %v", err)
 	}
-	if len(dst.meta) != 1 || dst.meta[0].MarkerName != "MARK" {
+	if len(dst.meta) != 1 || dst.meta[0].Marker.Name != "MARK" {
 		t.Fatalf("metadata = %#v", dst.meta)
 	}
 	if len(dst.obs) != 2 {

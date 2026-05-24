@@ -87,7 +87,7 @@ func TestConvertMetadata(t *testing.T) {
 	if len(s.meta) != 3 {
 		t.Fatalf("metadata count = %d, want 3", len(s.meta))
 	}
-	if s.meta[0].MarkerNumber != "1234" || s.meta[0].ApproxPosition == nil || *s.meta[0].ApproxPosition != [3]float64{111, -222, 333} || s.meta[0].AntennaDelta == nil || !near(s.meta[0].AntennaDelta[0], 0.0123, 1e-12) {
+	if s.meta[0].Marker.Number != "1234" || s.meta[0].ApproxPosition == nil || *s.meta[0].ApproxPosition != [3]float64{111, -222, 333} || s.meta[0].AntennaDelta == nil || !near(s.meta[0].AntennaDelta[0], 0.0123, 1e-12) {
 		t.Fatalf("MT1006 metadata = %#v", s.meta[0])
 	}
 	if s.meta[1].Antenna.Type != "ANT TYPE" || s.meta[1].Antenna.Number != "ANT123" || s.meta[1].Receiver.Type != "RX TYPE" || s.meta[1].Receiver.Version != "FW1" || s.meta[1].Receiver.Number != "RX123" {

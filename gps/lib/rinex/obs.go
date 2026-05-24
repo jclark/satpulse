@@ -88,21 +88,46 @@ type SignalObservation struct {
 	SignalValues
 }
 
+// Version is a RINEX observation format version.
+type Version string
+
+const (
+	Version304 Version = "3.04"
+	Version400 Version = "4.00"
+	Version401 Version = "4.01"
+	Version402 Version = "4.02"
+)
+
+// MetadataRun describes the program run that created a RINEX observation file.
+type MetadataRun struct {
+	Program string    `json:"program,omitzero" toml:"program"`
+	By      string    `json:"by,omitzero" toml:"by"`
+	Date    time.Time `json:"date,omitzero" toml:"date"`
+}
+
+// Lines is a list of comment lines.
+type Lines []string
+
 // Metadata holds header-related facts in an obsj metadata record.
 // Metadata records do not have a t field and may appear anywhere in an obsj file.
 type Metadata struct {
-	MarkerName   string   `json:"markerName,omitzero" toml:"markerName"`
-	MarkerNumber string   `json:"markerNumber,omitzero" toml:"markerNumber"`
-	MarkerType   string   `json:"markerType,omitzero" toml:"markerType"`
-	Comments     []string `json:"comments,omitzero" toml:"comments"`
-	Observer     string   `json:"observer,omitzero" toml:"observer"`
-	Agency       string   `json:"agency,omitzero" toml:"agency"`
-	Receiver     Receiver `json:"receiver,omitzero" toml:"receiver"`
-	Antenna      Antenna  `json:"antenna,omitzero" toml:"antenna"`
+	Version Version     `json:"version,omitzero" toml:"version"`
+	Run     MetadataRun `json:"run,omitzero" toml:"run"`
+	Comment Lines       `json:"comment,omitzero" toml:"comment,multiline"`
+	Marker  struct {
+		Name   string `json:"name,omitzero" toml:"name"`
+		Number string `json:"number,omitzero" toml:"number"`
+		Type   string `json:"type,omitzero" toml:"type"`
+	} `json:"marker,omitzero" toml:"marker"`
+	Observer string   `json:"observer,omitzero" toml:"observer"`
+	Agency   string   `json:"agency,omitzero" toml:"agency"`
+	Receiver Receiver `json:"receiver,omitzero" toml:"receiver"`
+	Antenna  Antenna  `json:"antenna,omitzero" toml:"antenna"`
 	// Use pointers for optional metadata values so TOML packages can decode
 	// arrays and scalars directly without format-specific adapter structs.
 	ApproxPosition *[3]float64 `json:"approxPosition,omitzero" toml:"approxPosition"` // APPROX POSITION XYZ, meters
 	AntennaDelta   *[3]float64 `json:"antennaDelta,omitzero" toml:"antennaDelta"`     // ANTENNA: DELTA H/E/N, meters
+	Interval       *float64    `json:"interval,omitzero" toml:"interval"`             // observation interval, seconds
 	LeapSeconds    *int16      `json:"leapSeconds,omitzero" toml:"leapSeconds"`       // GPS-UTC offset
 }
 
@@ -126,18 +151,9 @@ type Sink interface {
 	Flush() error
 }
 
-// WriterOptions controls RINEX observation file output.
-type WriterOptions struct {
-	Version float64
-	Program string
-	RunBy   string
-	Date    time.Time
-}
-
 // ObservationSink buffers observations and writes RINEX output on Flush.
 type ObservationSink struct {
 	w    io.Writer
-	opts WriterOptions
 	meta Metadata
 	obs  []SignalObservation
 }
@@ -343,8 +359,8 @@ func (c SignalObservation) System() string {
 }
 
 // NewObservationSink creates a sink that writes a RINEX observation file.
-func NewObservationSink(w io.Writer, opts WriterOptions) *ObservationSink {
-	return &ObservationSink{w: w, opts: opts}
+func NewObservationSink(w io.Writer) *ObservationSink {
+	return &ObservationSink{w: w}
 }
 
 // Metadata merges m into s.
@@ -361,7 +377,7 @@ func (s *ObservationSink) Observation(obs SignalObservation) error {
 
 // Flush writes all buffered observations as a RINEX observation file.
 func (s *ObservationSink) Flush() error {
-	return WriteObservationFile(s.w, s.meta, s.obs, s.opts)
+	return WriteObservationFile(s.w, s.meta, s.obs)
 }
 
 // NewObsJSONSink creates a sink that writes obsj JSON lines.
@@ -385,19 +401,108 @@ func (s *ObsJSONSink) Flush() error {
 	return s.w.Flush()
 }
 
+// IsZero reports whether r has no run header data.
+func (r MetadataRun) IsZero() bool {
+	return r.Program == "" && r.By == "" && r.Date.IsZero()
+}
+
+// MarshalText joins lines with newlines for TOML string encoding.
+func (l Lines) MarshalText() ([]byte, error) {
+	return []byte(strings.Join(l, "\n")), nil
+}
+
+// UnmarshalText splits TOML comment text into lines.
+func (l *Lines) UnmarshalText(text []byte) error {
+	s := strings.TrimSuffix(string(text), "\n")
+	if s == "" {
+		*l = nil
+		return nil
+	}
+	*l = strings.Split(s, "\n")
+	return nil
+}
+
+// MarshalJSON encodes l as a JSON string array.
+func (l Lines) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]string(l))
+}
+
+// UnmarshalJSON decodes l from a JSON string array.
+func (l *Lines) UnmarshalJSON(data []byte) error {
+	var lines []string
+	if err := json.Unmarshal(data, &lines); err == nil {
+		*l = Lines(lines)
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	return l.UnmarshalText([]byte(s))
+}
+
+// MarshalTOML encodes l as a TOML string.
+func (l Lines) MarshalTOML() any {
+	return strings.Join(l, "\n")
+}
+
+// UnmarshalTOML decodes l from a TOML string or string array.
+func (l *Lines) UnmarshalTOML(v any) error {
+	switch v := v.(type) {
+	case string:
+		return l.UnmarshalText([]byte(v))
+	case []any:
+		lines := make([]string, 0, len(v))
+		for _, e := range v {
+			s, ok := e.(string)
+			if !ok {
+				return fmt.Errorf("rinex: comment array contains %T, want string", e)
+			}
+			lines = append(lines, s)
+		}
+		*l = Lines(lines)
+		return nil
+	case []string:
+		*l = Lines(v)
+		return nil
+	default:
+		return fmt.Errorf("rinex: cannot decode comment from %T", v)
+	}
+}
+
+// IsZero reports whether l has no comment lines.
+func (l Lines) IsZero() bool {
+	return len(l) == 0
+}
+
+// IsZero reports whether m has no header data.
+func (m Metadata) IsZero() bool {
+	return m.Version == "" && m.Run.IsZero() && len(m.Comment) == 0 &&
+		m.Marker.Name == "" && m.Marker.Number == "" && m.Marker.Type == "" &&
+		m.Observer == "" && m.Agency == "" && m.Receiver.IsZero() &&
+		m.Antenna.IsZero() && m.ApproxPosition == nil && m.AntennaDelta == nil &&
+		m.Interval == nil && m.LeapSeconds == nil
+}
+
 // MergeMetadata merges b into a and returns the result.
 func MergeMetadata(a, b Metadata) Metadata {
-	if b.MarkerName != "" {
-		a.MarkerName = b.MarkerName
+	if b.Version != "" {
+		a.Version = b.Version
 	}
-	if b.MarkerNumber != "" {
-		a.MarkerNumber = b.MarkerNumber
+	if !b.Run.IsZero() {
+		a.Run = b.Run
 	}
-	if b.MarkerType != "" {
-		a.MarkerType = b.MarkerType
+	if len(b.Comment) != 0 {
+		a.Comment = append(a.Comment, b.Comment...)
 	}
-	if len(b.Comments) != 0 {
-		a.Comments = append(a.Comments, b.Comments...)
+	if b.Marker.Name != "" {
+		a.Marker.Name = b.Marker.Name
+	}
+	if b.Marker.Number != "" {
+		a.Marker.Number = b.Marker.Number
+	}
+	if b.Marker.Type != "" {
+		a.Marker.Type = b.Marker.Type
 	}
 	if b.Observer != "" {
 		a.Observer = b.Observer
@@ -416,6 +521,9 @@ func MergeMetadata(a, b Metadata) Metadata {
 	}
 	if b.AntennaDelta != nil {
 		a.AntennaDelta = b.AntennaDelta
+	}
+	if b.Interval != nil {
+		a.Interval = b.Interval
 	}
 	if b.LeapSeconds != nil {
 		a.LeapSeconds = b.LeapSeconds
