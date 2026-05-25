@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"iter"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -23,8 +23,6 @@ import (
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
-
-var updateGolden = flag.Bool("update", false, "update golden test data files")
 
 func testPtr[T any](v T) *T {
 	return &v
@@ -813,37 +811,46 @@ func TestGoldenFiles(t *testing.T) {
 	// The UBX golden files were checked against RTKLIB Explorer with:
 	// convbin -r ubx -v 3.04 -od -os -ro -MULTICODE.
 	// The RTCM golden file was checked against RTKLIB Explorer with:
-	// convbin -r rtcm3 -v 3.04 -od -os -ro "-MULTIMODE -INVPRR".
+	// convbin -r rtcm3 -v 3.04 -od -os -ro "-MULTIMODE -INVPRR" -tr 2026/5/19 0:0:0.
 	// RTCM defines MSM PhaseRangeRate as d(PhaseRange)/dt, with PhaseRange
 	// having pseudorange sign, so a strict RTCM decode converts to RINEX
 	// Doppler as -PRR/wavelength. This RTCM log needs RTKLIB Explorer's
 	// -INVPRR option because its encoded PRR has the opposite polarity from
 	// that strict RTCM interpretation. SatPulse's default matches this common
 	// receiver polarity; --rtcm-strict-prr selects the strict RTCM sign.
-	// For UBX, after normalizing PGM/RUN BY/DATE, the only remaining header
-	// difference is that RTKLIB Explorer emits SYS / PHASE SHIFT records.
-	// For RTCM, the observation body is byte-identical; the remaining
-	// differences are confined to header metadata and phase-shift records.
 	now := time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)
+	cleanCommon := func(meta *rinex.Metadata) {
+		meta.Run = rinex.MetadataRun{}
+		meta.Comment = nil
+	}
+	cleanRTCM := func(meta *rinex.Metadata) {
+		cleanCommon(meta)
+		meta.Marker.Number = ""
+	}
+	tol := goldenTolerances()
 	tests := []struct {
-		name string
-		args []string
-		obs  string
+		name          string
+		args          []string
+		obs           string
+		cleanMetadata func(*rinex.Metadata)
 	}{
 		{
-			name: "m8t_20251217_4h",
-			args: []string{"--run-by", "", filepath.Join("testdata", "m8t-20251217-4h.ubx")},
-			obs:  filepath.Join("testdata", "m8t-20251217-4h.obs.gz"),
+			name:          "m8t_20251217_4h",
+			args:          []string{"--run-by", "", filepath.Join("testdata", "m8t-20251217-4h.ubx")},
+			obs:           filepath.Join("testdata", "m8t-20251217-4h.obs.gz"),
+			cleanMetadata: cleanCommon,
 		},
 		{
-			name: "f9t_20251217_3h",
-			args: []string{"--run-by", "", filepath.Join("testdata", "f9t-20251217-3h.ubx")},
-			obs:  filepath.Join("testdata", "f9t-20251217-3h.obs.gz"),
+			name:          "f9t_20251217_3h",
+			args:          []string{"--run-by", "", filepath.Join("testdata", "f9t-20251217-3h.ubx")},
+			obs:           filepath.Join("testdata", "f9t-20251217-3h.obs.gz"),
+			cleanMetadata: cleanCommon,
 		},
 		{
-			name: "rtcm_20260519_3h",
-			args: []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", filepath.Join("testdata", "packet-rtcm-20260519-3h.rtcm")},
-			obs:  filepath.Join("testdata", "packet-rtcm-20260519-3h.obs.gz"),
+			name:          "rtcm_20260519_3h",
+			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", filepath.Join("testdata", "packet-rtcm-20260519-3h.rtcm")},
+			obs:           filepath.Join("testdata", "packet-rtcm-20260519-3h.obs.gz"),
+			cleanMetadata: cleanRTCM,
 		},
 	}
 	for _, tt := range tests {
@@ -867,52 +874,222 @@ func TestGoldenFiles(t *testing.T) {
 			if err := cj.run(testLogger(io.Discard), now); err != nil {
 				t.Fatalf("run: %v", err)
 			}
-			if *updateGolden {
-				if err := writeGzipFile(tt.obs, got.Bytes()); err != nil {
-					t.Fatalf("writeGzipFile %s: %v", tt.obs, err)
-				}
-			}
 			want, err := readGzipFile(tt.obs)
 			if err != nil {
 				t.Fatalf("readGzipFile %s: %v", tt.obs, err)
 			}
-			if !bytes.Equal(got.Bytes(), want) {
-				gotPath := filepath.Join(t.TempDir(), "got.obs")
-				if err := os.WriteFile(gotPath, got.Bytes(), 0o644); err != nil {
-					t.Fatalf("WriteFile %s: %v", gotPath, err)
-				}
-				t.Fatalf("output mismatch; got written to %s; %s", gotPath, firstDiff(got.Bytes(), want))
-			}
+			assertNoObservationFileDiff(t, tt.name, got.Bytes(), want, tt.cleanMetadata, tol)
 		})
 	}
 }
 
-func TestGoldenObservationFilesRoundTripThroughObsJSON(t *testing.T) {
+type goldenObsDiff struct {
+	T   rinex.Time          `json:"t"`
+	Sat rinex.SatelliteID   `json:"sat"`
+	Sig rinex.SignalID      `json:"sig"`
+	A   *rinex.SignalValues `json:"a,omitempty"`
+	B   *rinex.SignalValues `json:"b,omitempty"`
+}
+
+type goldenMetadataDiff struct {
+	A rinex.Metadata `json:"a"`
+	B rinex.Metadata `json:"b"`
+}
+
+type goldenDiffReporter struct {
+	enc *json.Encoder
+}
+
+func (r goldenDiffReporter) Metadata(a, b rinex.Metadata) error {
+	return r.enc.Encode(goldenMetadataDiff{A: a, B: b})
+}
+
+func (r goldenDiffReporter) Diff(t rinex.Time, sat rinex.SatelliteID, sig rinex.SignalID, a, b *rinex.SignalValues) error {
+	return r.enc.Encode(goldenObsDiff{T: t, Sat: sat, Sig: sig, A: a, B: b})
+}
+
+type goldenDiffErrorReporter struct {
+	a []rinex.SignalObservation
+	b []rinex.SignalObservation
+}
+
+func (r goldenDiffErrorReporter) Duplicate(side int, index, prevIndex int) error {
+	o := r.obs(side)[index]
+	return fmt.Errorf("%s: duplicate observation at %s %s %s: observations %d and %d", goldenSideName(side), o.T, o.Sat, o.Sig, prevIndex, index)
+}
+
+func (r goldenDiffErrorReporter) Unordered(side int, index int) error {
+	obs := r.obs(side)
+	return fmt.Errorf("%s: epoch out of order at observation %d: %s follows %s", goldenSideName(side), index, obs[index].T, obs[index-1].T)
+}
+
+func (r goldenDiffErrorReporter) obs(side int) []rinex.SignalObservation {
+	if side == 0 {
+		return r.a
+	}
+	return r.b
+}
+
+func goldenSideName(side int) string {
+	if side == 0 {
+		return "got"
+	}
+	return "want"
+}
+
+func goldenTolerances() rinex.Tolerances {
+	return rinex.Tolerances{
+		Obs:      rinex.ObsTolerances{PR: 0.0005, CP: 0.0005, Do: 0.0005, CN0: 0.0005},
+		Metadata: rinex.MetadataTolerances{ApproxPos: 0.00005, AntennaDelta: 0.00005},
+	}
+}
+
+func assertNoObservationFileDiff(t *testing.T, name string, got, want []byte, clean func(*rinex.Metadata), tol rinex.Tolerances) {
+	t.Helper()
+	gotMeta, gotObs, err := rinex.ReadObservationFile(bytes.NewReader(got))
+	if err != nil {
+		t.Fatalf("ReadObservationFile got: %v", err)
+	}
+	wantMeta, wantObs, err := rinex.ReadObservationFile(bytes.NewReader(want))
+	if err != nil {
+		t.Fatalf("ReadObservationFile want: %v", err)
+	}
+	if clean != nil {
+		clean(&gotMeta)
+		clean(&wantMeta)
+	}
+	gotOnly, wantOnly := rinex.DiffMetadata(gotMeta, wantMeta, tol.Metadata)
+	var diff bytes.Buffer
+	rep := goldenDiffReporter{enc: json.NewEncoder(&diff)}
+	metaFields := metadataDiffFields(gotOnly, wantOnly)
+	if len(metaFields) != 0 {
+		if err := rep.Metadata(gotOnly, wantOnly); err != nil {
+			t.Fatalf("report metadata diff: %v", err)
+		}
+	}
+	obsDiffs, err := rinex.DiffObservations(gotObs, wantObs, tol.Obs, rep, goldenDiffErrorReporter{a: gotObs, b: wantObs})
+	if err != nil {
+		t.Fatalf("DiffObservations: %v", err)
+	}
+	if len(metaFields) != 0 || obsDiffs != 0 {
+		dir, err := os.MkdirTemp("", name+"-")
+		if err != nil {
+			t.Fatalf("MkdirTemp: %v", err)
+		}
+		diffPath := filepath.Join(dir, name+"-diff.jsonl")
+		if err := os.WriteFile(diffPath, diff.Bytes(), 0o644); err != nil {
+			t.Fatalf("WriteFile %s: %v", diffPath, err)
+		}
+		t.Fatalf("semantic diff: metadata fields=%s observation records=%d; full diff written to %s", metadataFieldList(metaFields), obsDiffs, diffPath)
+	}
+}
+
+func metadataDiffFields(a, b rinex.Metadata) []string {
+	return diffMetadataValueFields("", reflect.ValueOf(a), reflect.ValueOf(b))
+}
+
+func diffMetadataValueFields(prefix string, a, b reflect.Value) []string {
+	if metadataValueIsZero(a) && metadataValueIsZero(b) {
+		return nil
+	}
+	if a.Kind() != reflect.Struct || a.Type() == reflect.TypeOf(time.Time{}) {
+		return []string{prefix}
+	}
+	fields := make([]string, 0)
+	t := a.Type()
+	for i := 0; i < a.NumField(); i++ {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		name := metadataJSONName(f)
+		if name == "" {
+			continue
+		}
+		if prefix != "" {
+			name = prefix + "." + name
+		}
+		fields = append(fields, diffMetadataValueFields(name, a.Field(i), b.Field(i))...)
+	}
+	if len(fields) == 0 {
+		if prefix == "" {
+			return nil
+		}
+		return []string{prefix}
+	}
+	return fields
+}
+
+func metadataJSONName(f reflect.StructField) string {
+	name := f.Tag.Get("json")
+	if name == "-" {
+		return ""
+	}
+	if i := strings.IndexByte(name, ','); i >= 0 {
+		name = name[:i]
+	}
+	if name == "" {
+		name = f.Name
+	}
+	return name
+}
+
+func metadataValueIsZero(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Slice, reflect.Map:
+		return v.Len() == 0
+	case reflect.Pointer, reflect.Interface:
+		return v.IsNil()
+	default:
+		return v.IsZero()
+	}
+}
+
+func metadataFieldList(fields []string) string {
+	if len(fields) == 0 {
+		return "none"
+	}
+	return strings.Join(fields, ", ")
+}
+
+func TestUBXObservationFilesRoundTripThroughObsJSON(t *testing.T) {
+	now := time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name string
-		obs  string
+		args []string
 	}{
 		{
 			name: "m8t_20251217_4h",
-			obs:  filepath.Join("testdata", "m8t-20251217-4h.obs.gz"),
+			args: []string{"--run-by", "", filepath.Join("testdata", "m8t-20251217-4h.ubx")},
 		},
 		{
 			name: "f9t_20251217_3h",
-			obs:  filepath.Join("testdata", "f9t-20251217-3h.obs.gz"),
-		},
-		{
-			name: "rtcm_20260519_3h",
-			obs:  filepath.Join("testdata", "packet-rtcm-20260519-3h.obs.gz"),
+			args: []string{"--run-by", "", filepath.Join("testdata", "f9t-20251217-3h.ubx")},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			in, err := readGzipFile(tt.obs)
+			v, _, err := parseFlags("", tt.args)
 			if err != nil {
-				t.Fatalf("readGzipFile %s: %v", tt.obs, err)
+				t.Fatalf("parseFlags: %v", err)
+			}
+			var meta rinex.Metadata
+			setMetadataDefaults(&meta, now, v.interval)
+			if err := applyMetadataFlags(&meta, v.metadataFlags); err != nil {
+				t.Fatalf("applyMetadataFlags: %v", err)
+			}
+			var in bytes.Buffer
+			cj := convJob{
+				inputs: openInputs(v.inputPaths),
+				out:    &in,
+				opts:   v.convertOptions,
+				meta:   meta,
+			}
+			if err := cj.run(testLogger(io.Discard), now); err != nil {
+				t.Fatalf("run ubx to rinex: %v", err)
 			}
 			var obsj bytes.Buffer
-			if err := runInputs(testInputs(bytes.NewReader(in)), &obsj, inputRINEX, outputObsJSON, false, rinex.Metadata{}, 0); err != nil {
+			if err := runInputs(testInputs(bytes.NewReader(in.Bytes())), &obsj, inputRINEX, outputObsJSON, false, rinex.Metadata{}, 0); err != nil {
 				t.Fatalf("runInputs rinex to obsj: %v", err)
 			}
 			if _, obs, err := rinex.ReadObsJSON(bytes.NewReader(obsj.Bytes())); err != nil {
@@ -924,12 +1101,17 @@ func TestGoldenObservationFilesRoundTripThroughObsJSON(t *testing.T) {
 			if err := runInputs(testInputs(bytes.NewReader(obsj.Bytes())), &got, inputObsJSON, outputRINEX, false, rinex.Metadata{}, 0); err != nil {
 				t.Fatalf("runInputs obsj to rinex: %v", err)
 			}
-			if !bytes.Equal(got.Bytes(), in) {
-				gotPath := filepath.Join(t.TempDir(), "got.obs")
+			if !bytes.Equal(got.Bytes(), in.Bytes()) {
+				dir := t.TempDir()
+				gotPath := filepath.Join(dir, "got.obs")
+				wantPath := filepath.Join(dir, "want.obs")
 				if err := os.WriteFile(gotPath, got.Bytes(), 0o644); err != nil {
 					t.Fatalf("WriteFile %s: %v", gotPath, err)
 				}
-				t.Fatalf("round trip mismatch; got written to %s; %s", gotPath, firstDiff(got.Bytes(), in))
+				if err := os.WriteFile(wantPath, in.Bytes(), 0o644); err != nil {
+					t.Fatalf("WriteFile %s: %v", wantPath, err)
+				}
+				t.Fatalf("round trip mismatch; got written to %s; want written to %s; %s", gotPath, wantPath, firstDiff(got.Bytes(), in.Bytes()))
 			}
 		})
 	}
@@ -947,28 +1129,6 @@ func readGzipFile(path string) ([]byte, error) {
 	}
 	defer zr.Close()
 	return io.ReadAll(zr)
-}
-
-func writeGzipFile(path string, data []byte) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	zw, err := gzip.NewWriterLevel(f, gzip.DefaultCompression)
-	if err != nil {
-		_ = f.Close()
-		return err
-	}
-	if _, err := zw.Write(data); err != nil {
-		_ = zw.Close()
-		_ = f.Close()
-		return err
-	}
-	if err := zw.Close(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	return f.Close()
 }
 
 func packetLogLine(t *testing.T, entry gpsio.PacketLogEntry) string {
