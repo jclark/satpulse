@@ -11,25 +11,25 @@ import (
 )
 
 const (
-	gen8PhaseThreshold   = 6
-	gen9PhaseThreshold   = 15
-	defaultSlipThreshold = 15
+	singleBandPhaseThreshold = 6
+	multiBandPhaseThreshold  = 15
+	defaultSlipThreshold     = 15
 )
 
 // Options controls UBX to RINEX conversion.
 type Options struct {
 	// PhaseThreshold is the cpStdev value at which phase is omitted.
-	// If zero, the RTKLIB Explorer Gen8/Gen9 thresholds are used.
+	// If zero, the RTKLIB Explorer singleBand/multiBand thresholds are used.
 	PhaseThreshold byte
 	SlipThreshold  byte
 }
 
 // Converter converts UBX-RXM-RAWX messages to RINEX observations.
 type Converter struct {
-	opts  Options
-	sink  rinex.Sink
-	state map[signalKey]signalState
-	gen9  bool
+	opts      Options
+	sink      rinex.Sink
+	state     map[signalKey]signalState
+	multiBand bool
 }
 
 type signalKey struct {
@@ -60,10 +60,10 @@ func New(sink rinex.Sink, opts Options) *Converter {
 func (c *Converter) ConvertRAWX(m *ubxbin.RxmRawx) error {
 	t := rinex.TimeFromGPSWeekSeconds(int64(m.Week), m.RcvTow)
 	threshold := c.phaseThreshold()
-	gen9 := false
+	multiBand := false
 	for _, meas := range m.Meas {
 		obs, ok := c.observation(t, threshold, meas)
-		gen9 = gen9 || meas.SigID > 1
+		multiBand = multiBand || meas.SigID > 1
 		if !ok {
 			continue
 		}
@@ -71,7 +71,7 @@ func (c *Converter) ConvertRAWX(m *ubxbin.RxmRawx) error {
 			return err
 		}
 	}
-	c.gen9 = c.gen9 || gen9
+	c.multiBand = c.multiBand || multiBand
 	return nil
 }
 
@@ -79,10 +79,10 @@ func (c *Converter) phaseThreshold() byte {
 	if c.opts.PhaseThreshold != 0 {
 		return c.opts.PhaseThreshold
 	}
-	if c.gen9 {
-		return gen9PhaseThreshold
+	if c.multiBand {
+		return multiBandPhaseThreshold
 	}
-	return gen8PhaseThreshold
+	return singleBandPhaseThreshold
 }
 
 func (c *Converter) observation(t rinex.Time, phaseThreshold byte, meas ubxbin.RxmRawxMeas) (rinex.SignalObservation, bool) {
