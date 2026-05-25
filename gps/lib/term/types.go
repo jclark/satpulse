@@ -3,8 +3,38 @@ package term
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
+
+// BDAddr is a Bluetooth Device Address. The bytes are stored in
+// textual order, so BDAddr{0xAA,0xBB,0xCC,0xDD,0xEE,0xFF} formats
+// as "AA:BB:CC:DD:EE:FF".
+type BDAddr [6]byte
+
+// ParseBDAddr parses a Bluetooth Device Address in the form
+// "AA:BB:CC:DD:EE:FF" (case-insensitive).
+func ParseBDAddr(s string) (BDAddr, error) {
+	var a BDAddr
+	if len(s) != 17 {
+		return a, fmt.Errorf("invalid Bluetooth address %q: expected 17 characters", s)
+	}
+	for i := 0; i < 6; i++ {
+		if i > 0 && s[i*3-1] != ':' {
+			return a, fmt.Errorf("invalid Bluetooth address %q: expected ':' at position %d", s, i*3-1)
+		}
+		b, err := strconv.ParseUint(s[i*3:i*3+2], 16, 8)
+		if err != nil {
+			return a, fmt.Errorf("invalid Bluetooth address %q: %w", s, err)
+		}
+		a[i] = byte(b)
+	}
+	return a, nil
+}
+
+func (a BDAddr) String() string {
+	return fmt.Sprintf("%02X:%02X:%02X:%02X:%02X:%02X", a[0], a[1], a[2], a[3], a[4], a[5])
+}
 
 // ErrNotATTY is returned when a device does not support termios.
 // Callers can check for it with errors.Is.

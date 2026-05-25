@@ -31,6 +31,7 @@ type flagVars struct {
 	localSpeed     int
 	serialDevice   string
 	socketPath     string
+	btAddr         term.BDAddr
 	configFile     string
 	packetLogPath  string
 	packetLogMode  packetLogMode
@@ -190,6 +191,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&vars.showReceiver, "show-receiver", false, "detect and display GPS receiver information")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
+	flags.Var((*bdAddrFlag)(&vars.btAddr), "bt-addr", "Bluetooth Device Address of the GPS receiver")
+	flags.MarkHidden("bt-addr")
 	flags.StringVarP(&vars.configFile, "config-file", "f", "", "`path` to satpulse TOML configuration file")
 	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
 	flags.StringVarP(&vars.msgFilePath, "msg-file", "m", "", "`path` to TOML file containing message definitions")
@@ -263,7 +266,17 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, err
 		}
 	}
-	if (vars.socketPath == "") == (vars.serialDevice == "") {
+	nTransport := 0
+	if vars.serialDevice != "" {
+		nTransport++
+	}
+	if vars.socketPath != "" {
+		nTransport++
+	}
+	if vars.btAddr != (term.BDAddr{}) {
+		nTransport++
+	}
+	if nTransport != 1 {
 		return nil, usage, fmt.Errorf("%s command must specify either --socket or --serial-device or --config-file", cmdName)
 	}
 	if testLogPath != "" {
@@ -1142,6 +1155,30 @@ func (l *length) Set(s string) error {
 		return err
 	}
 	*l = length(v)
+	return nil
+}
+
+type bdAddrFlag term.BDAddr
+
+var _ pflag.Value = (*bdAddrFlag)(nil)
+
+func (a *bdAddrFlag) String() string {
+	if *a == (bdAddrFlag{}) {
+		return ""
+	}
+	return term.BDAddr(*a).String()
+}
+
+func (a *bdAddrFlag) Type() string {
+	return "BDAddr"
+}
+
+func (a *bdAddrFlag) Set(s string) error {
+	parsed, err := term.ParseBDAddr(s)
+	if err != nil {
+		return err
+	}
+	*a = bdAddrFlag(parsed)
 	return nil
 }
 

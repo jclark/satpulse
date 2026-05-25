@@ -17,6 +17,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/gps/lib/term"
 	"github.com/jclark/satpulse/gps/msgfile"
 	"github.com/jclark/satpulse/gps/scan"
 )
@@ -58,9 +59,12 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 		}
 	}
 	var conn gpsio.Conn
-	if v.serialDevice != "" {
+	switch {
+	case v.serialDevice != "":
 		conn, _, err = gpsio.OpenSerial(v.serialDevice, v.localSpeed)
-	} else {
+	case v.btAddr != (term.BDAddr{}):
+		conn, err = gpsio.OpenBluetooth(v.btAddr)
+	default:
 		conn, err = gpsio.OpenSocket(v.socketPath)
 	}
 	if err != nil {
