@@ -213,7 +213,7 @@ func writeHeader(w *bufio.Writer, meta Metadata, f *obsFile) error {
 	if err := writeHeaderLine(w, fmt.Sprintf("%-20.20s%-20.20s%-20.20s", meta.Receiver.Number, meta.Receiver.Type, meta.Receiver.Version), "REC # / TYPE / VERS"); err != nil {
 		return err
 	}
-	if err := writeHeaderLine(w, fmt.Sprintf("%-20.20s%-40.40s", meta.Antenna.Number, meta.Antenna.Type), "ANT # / TYPE"); err != nil {
+	if err := writeHeaderLine(w, fmt.Sprintf("%-20.20s%-20.20s", meta.Antenna.Number, meta.Antenna.Type), "ANT # / TYPE"); err != nil {
 		return err
 	}
 	var pos [3]float64

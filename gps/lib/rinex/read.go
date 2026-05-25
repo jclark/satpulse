@@ -71,7 +71,7 @@ func readObservationHeader(s *bufio.Scanner) (observationHeader, error) {
 			h.meta.Receiver.Version = strings.TrimSpace(content[40:])
 		case "ANT # / TYPE":
 			h.meta.Antenna.Number = strings.TrimSpace(content[:20])
-			h.meta.Antenna.Type = strings.TrimSpace(content[20:])
+			h.meta.Antenna.Type = strings.TrimSpace(content[20:40])
 		case "APPROX POSITION XYZ":
 			if v, ok := parseFloatTriple(content); ok {
 				h.meta.ApproxPosition = &v

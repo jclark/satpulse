@@ -62,6 +62,58 @@ func TestWriteObservationFile(t *testing.T) {
 	}
 }
 
+func TestWriteObservationFileTruncatesAntennaType(t *testing.T) {
+	obs := []SignalObservation{
+		{T: mustTime(t, "2026-05-19T13:31:24.0000000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(1.0)}},
+	}
+	meta := Metadata{
+		Antenna: Antenna{
+			Number: "ANT123",
+			Type:   "123456789012345678901234567890",
+		},
+		Run: MetadataRun{Date: time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)},
+	}
+	var b bytes.Buffer
+	if err := WriteObservationFile(&b, meta, obs); err != nil {
+		t.Fatalf("WriteObservationFile: %v", err)
+	}
+	for _, line := range strings.Split(b.String(), "\n") {
+		if len(line) < 80 {
+			continue
+		}
+		if strings.TrimSpace(line[60:80]) != "ANT # / TYPE" {
+			continue
+		}
+		if got, want := line[:20], "ANT123              "; got != want {
+			t.Fatalf("antenna number = %q, want %q", got, want)
+		}
+		if got, want := line[20:40], "12345678901234567890"; got != want {
+			t.Fatalf("antenna type = %q, want %q", got, want)
+		}
+		if got, want := line[40:60], strings.Repeat(" ", 20); got != want {
+			t.Fatalf("ANT # / TYPE cols 41-60 = %q, want %q", got, want)
+		}
+		return
+	}
+	t.Fatalf("missing ANT # / TYPE header\n%s", b.String())
+}
+
+func TestReadObservationFileTruncatesAntennaType(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(testHeaderLine("ANT123              12345678901234567890IGNORE              ", "ANT # / TYPE"))
+	b.WriteString(testHeaderLine("", "END OF HEADER"))
+	meta, _, err := ReadObservationFile(strings.NewReader(b.String()))
+	if err != nil {
+		t.Fatalf("ReadObservationFile: %v", err)
+	}
+	if meta.Antenna.Number != "ANT123" {
+		t.Errorf("antenna number = %q, want ANT123", meta.Antenna.Number)
+	}
+	if meta.Antenna.Type != "12345678901234567890" {
+		t.Errorf("antenna type = %q, want 12345678901234567890", meta.Antenna.Type)
+	}
+}
+
 func TestWriteObservationFileUsesGPSTimeSystem(t *testing.T) {
 	gpsT := mustTime(t, "2026-05-19T13:31:24.0000000")
 	for _, tt := range []struct {
