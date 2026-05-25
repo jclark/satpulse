@@ -49,7 +49,7 @@ const summary = `[-h|--help] [-o|--output path] [-H|--header-file path]
            [--interval seconds]
            [--rinex-version version] [--program name] [--run-by name]
            [--antenna type] [--approx-pos x,y,z] [--comment text]
-           [--rtcm-strict-prr]
+           [--rtcm-strict-prr] [--rtcm-omit-zero-doppler]
            [--ubx-phase-threshold n] [--ubx-slip-threshold n]
            input...`
 
@@ -268,6 +268,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.String("approx-pos", "", "RINEX approximate XYZ position as x,y,z")
 	flags.StringArray("comment", nil, "RINEX comment line")
 	flags.BoolVar(&v.format.rtcm.UseSpecPhaseRangeRateSign, "rtcm-strict-prr", false, "interpret sign of PhaseRangeRate in strict conformance with RTCM3 standard (Doppler = -PRR/wavelength)")
+	flags.BoolVar(&v.format.rtcm.OmitZeroDoppler, "rtcm-omit-zero-doppler", false, "omit RTCM MSM Doppler observations with numeric value zero")
 	flags.Uint8Var(&v.format.ubx.PhaseThreshold, "ubx-phase-threshold", 0, "RAWX cpStdev index at which carrier phase is omitted, or 0 for RTKLIB Explorer auto")
 	flags.Uint8Var(&v.format.ubx.SlipThreshold, "ubx-slip-threshold", 15, "RAWX cpStdev index that marks a cycle slip")
 	v.metadataFlags = flags
@@ -298,6 +299,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if v.format.rtcm.UseSpecPhaseRangeRateSign && !v.from.mayUseRTCM() {
 		return nil, usageFunc, errors.New("--rtcm-strict-prr is valid only with raw or RTCM input")
+	}
+	if v.format.rtcm.OmitZeroDoppler && !v.from.mayUseRTCM() {
+		return nil, usageFunc, errors.New("--rtcm-omit-zero-doppler is valid only with raw or RTCM input")
 	}
 	if flags.Changed("ubx-phase-threshold") && !v.from.mayUseUBX() {
 		return nil, usageFunc, errors.New("--ubx-phase-threshold is valid only with raw or UBX input")

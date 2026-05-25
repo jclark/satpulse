@@ -154,6 +154,40 @@ func TestConvertMSM7StrictPhaseRangeRateSign(t *testing.T) {
 	}
 }
 
+func TestConvertMSM7ZeroDoppler(t *testing.T) {
+	tow := uint32(345600000)
+	wantT := rinex.TimeFromGPSWeekMillis(2397, tow)
+	for _, tt := range []struct {
+		name    string
+		opts    Options
+		wantSet bool
+	}{
+		{name: "default preserves", wantSet: true},
+		{name: "omit option", opts: Options{OmitZeroDoppler: true}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &testSink{}
+			c := New(s, tt.opts)
+			m := msm7GPS(tow)
+			m.Sat.PhaseRate[0] = 0
+			m.Sig.PhaseRate[0] = 0
+			ok, err := c.ConvertMSM7(m, weekFor(wantT))
+			if err != nil {
+				t.Fatalf("ConvertMSM7: %v", err)
+			}
+			if !ok || len(s.obs) != 1 {
+				t.Fatalf("observations = %#v ok=%v, want one", s.obs, ok)
+			}
+			if s.obs[0].Do.IsSet() != tt.wantSet {
+				t.Fatalf("Do = %v, want set=%v", s.obs[0].Do, tt.wantSet)
+			}
+			if tt.wantSet && s.obs[0].Do.Get() != 0 {
+				t.Fatalf("Do = %v, want explicit zero", s.obs[0].Do)
+			}
+		})
+	}
+}
+
 func TestConvertMSM7GPSMultiCell(t *testing.T) {
 	s := &testSink{}
 	c := New(s, Options{})

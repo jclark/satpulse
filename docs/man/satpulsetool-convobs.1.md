@@ -140,6 +140,11 @@ If any **\-\-comment** option is supplied, comments from the TOML header file ar
 By default, **convobs** uses the sign needed by common RTCM logs.
 This option is valid only with **raw** or **rtcm** input.
 
+**\-\-rtcm\-omit\-zero\-doppler**
+: Omit RTCM MSM Doppler observations with numeric value zero.
+By default, **convobs** preserves explicit zero Doppler values.
+This option is valid only with **raw** or **rtcm** input.
+
 **\-\-ubx\-phase\-threshold** *n*
 : Set the UBX-RXM-RAWX `cpStdev` index at which carrier phase is omitted.
 The value 0 selects the RTKLIB Explorer-compatible automatic behavior.

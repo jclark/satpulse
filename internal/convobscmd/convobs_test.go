@@ -163,12 +163,15 @@ func TestParseFlagsFormats(t *testing.T) {
 	if v.from != inputRTCM || v.to != outputObsJSON || v.week.mode != weekDate {
 		t.Fatalf("rtcm flags = %#v", v)
 	}
-	v, _, err = parseFlags("", []string{"--from", "raw", "--rtcm-strict-prr", "input.jsonl"})
+	v, _, err = parseFlags("", []string{"--from", "raw", "--rtcm-strict-prr", "--rtcm-omit-zero-doppler", "input.jsonl"})
 	if err != nil {
-		t.Fatalf("parseFlags raw strict prr: %v", err)
+		t.Fatalf("parseFlags raw RTCM options: %v", err)
 	}
 	if !v.format.rtcm.UseSpecPhaseRangeRateSign {
 		t.Fatal("UseSpecPhaseRangeRateSign = false, want true")
+	}
+	if !v.format.rtcm.OmitZeroDoppler {
+		t.Fatal("OmitZeroDoppler = false, want true")
 	}
 	v, _, err = parseFlags("", []string{"--from", "ubx", "--ubx-phase-threshold", "1", "--ubx-slip-threshold", "12", "input.ubx"})
 	if err != nil {
@@ -219,6 +222,9 @@ func TestParseFlagsFormats(t *testing.T) {
 	}
 	if _, _, err := parseFlags("", []string{"--from", "ubx", "--rtcm-strict-prr", "input.ubx"}); err == nil {
 		t.Fatal("parseFlags accepted RTCM PRR option with UBX input")
+	}
+	if _, _, err := parseFlags("", []string{"--from", "ubx", "--rtcm-omit-zero-doppler", "input.ubx"}); err == nil {
+		t.Fatal("parseFlags accepted RTCM zero Doppler option with UBX input")
 	}
 	if _, _, err := parseFlags("", []string{"--from", "rtcm", "--ubx-phase-threshold", "0", "input.rtcm"}); err == nil {
 		t.Fatal("parseFlags accepted UBX phase threshold option with RTCM input")
@@ -818,6 +824,8 @@ func TestGoldenFiles(t *testing.T) {
 	// -INVPRR option because its encoded PRR has the opposite polarity from
 	// that strict RTCM interpretation. SatPulse's default matches this common
 	// receiver polarity; --rtcm-strict-prr selects the strict RTCM sign.
+	// RTKLIB Explorer omits numeric zero Doppler values; the RTCM case uses
+	// --rtcm-omit-zero-doppler to test that compatibility mode.
 	now := time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)
 	cleanCommon := func(meta *rinex.Metadata) {
 		meta.Run = rinex.MetadataRun{}
@@ -848,7 +856,7 @@ func TestGoldenFiles(t *testing.T) {
 		},
 		{
 			name:          "rtcm_20260519_3h",
-			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", filepath.Join("testdata", "packet-rtcm-20260519-3h.rtcm")},
+			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-doppler", filepath.Join("testdata", "packet-rtcm-20260519-3h.rtcm")},
 			obs:           filepath.Join("testdata", "packet-rtcm-20260519-3h.obs.gz"),
 			cleanMetadata: cleanRTCM,
 		},
