@@ -240,7 +240,7 @@ func marshalGroup(desc map[string]Desc, cfg map[string]any) ([]Item, error) {
 
 func (d *EDesc) UnmarshalValue(data uint64) (any, error) {
 	n := uint64(0)
-	switch d.key().nValueBytes() {
+	switch d.key().NValueBytes() {
 	case 1:
 		n = uint64(uint8(data))
 	case 2:
@@ -293,7 +293,7 @@ func boolToByte(b bool) byte {
 }
 
 func (d R) UnmarshalValue(data uint64) (any, error) {
-	switch d.key().nValueBytes() {
+	switch d.key().NValueBytes() {
 	case 4:
 		bits := uint32(data)
 		return math.Float32frombits(bits), nil
@@ -322,7 +322,7 @@ func (d R) MarshalValue(v any) (uint64, error) {
 }
 
 func (d U) UnmarshalValue(data uint64) (any, error) {
-	switch d.key().nValueBytes() {
+	switch d.key().NValueBytes() {
 	case 1:
 		return uint8(data), nil
 	case 2:
@@ -354,7 +354,7 @@ func (d U) MarshalValue(v any) (uint64, error) {
 }
 
 func (d I) UnmarshalValue(data uint64) (any, error) {
-	switch d.key().nValueBytes() {
+	switch d.key().NValueBytes() {
 	case 1:
 		return int8(uint8(data)), nil
 	case 2:

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
+	ucv "github.com/jclark/satpulse/gps/lib/ubxcfgval"
 )
 
 func TestConfigurationGet_Legacy(t *testing.T) {
@@ -695,5 +696,82 @@ func TestMonCommsPort(t *testing.T) {
 				t.Errorf("monCommsPort() = (%v, %v), want (%v, %v)", got, ok, tt.want, tt.wantOK)
 			}
 		})
+	}
+}
+
+// TestPortName covers the receiver-port name mapping used to
+// populate PropIDPort.
+func TestPortName(t *testing.T) {
+	tests := []struct {
+		port    ucv.Port
+		want    string
+		wantOK  bool
+	}{
+		{ucv.I2C, "I2C", true},
+		{ucv.UART1, "UART1", true},
+		{ucv.UART2, "UART2", true},
+		{ucv.USB, "USB", true},
+		{ucv.SPI, "SPI", true},
+		{ucv.Port(99), "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			got, ok := portName(tt.port)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("portName(%v) = (%q, %v), want (%q, %v)", tt.port, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+// TestConfigurator_PortFromMonComms verifies that ConfigProps reports
+// PropIDPort when the configurator learned the port from MON-COMMS.
+func TestConfigurator_PortFromMonComms(t *testing.T) {
+	target := gpsprot.NewConfigTarget()
+	target.Get |= gpsprot.PropIDPort
+	c := newConfigurator(target, &m10Version)
+	pid := ubxbin.PortUSB
+	c.portID = &pid
+	got, ok := c.ConfigProps().GetPort()
+	if !ok || got != "USB" {
+		t.Errorf("ConfigProps port from portID: got (%q, %v), want (\"USB\", true)", got, ok)
+	}
+}
+
+// TestConfigurator_PortFromCfgPrt verifies the CFG-PRT fallback when
+// no MON-COMMS info is available.
+func TestConfigurator_PortFromCfgPrt(t *testing.T) {
+	target := gpsprot.NewConfigTarget()
+	target.Get |= gpsprot.PropIDPort
+	c := newConfigurator(target, &m10Version)
+	c.raw = *newDefaultRawConfig()
+	c.raw.prt.PortID = ubxbin.PortUART1
+	got, ok := c.ConfigProps().GetPort()
+	if !ok || got != "UART1" {
+		t.Errorf("ConfigProps port from CFG-PRT: got (%q, %v), want (\"UART1\", true)", got, ok)
+	}
+}
+
+// TestConfigurator_PortUnsetWhenUnknown verifies that PropIDPort is
+// left unset when neither portID nor raw.prt is populated. Regression
+// against the prior UART1 fallback.
+func TestConfigurator_PortUnsetWhenUnknown(t *testing.T) {
+	target := gpsprot.NewConfigTarget()
+	target.Get |= gpsprot.PropIDPort
+	c := newConfigurator(target, &m10Version)
+	if _, ok := c.ConfigProps().GetPort(); ok {
+		t.Errorf("ConfigProps port should be unset when neither MON-COMMS nor CFG-PRT identified the port")
+	}
+}
+
+// TestNeedsPort_TriggeredByPropIDPort verifies that requesting
+// PropIDPort alone causes needsPort to return true (which in turn
+// triggers MON-COMMS / CFG-PRT polls).
+func TestNeedsPort_TriggeredByPropIDPort(t *testing.T) {
+	target := gpsprot.NewConfigTarget()
+	target.Get |= gpsprot.PropIDPort
+	c := newConfigurator(target, &m10Version)
+	if !c.needsPort() {
+		t.Errorf("needsPort should be true when target.Get has PropIDPort")
 	}
 }

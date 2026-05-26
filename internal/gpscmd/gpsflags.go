@@ -49,6 +49,8 @@ type flagVars struct {
 	configGet      gpsprot.PropIDs
 	msgFilePath    string
 	msgTags        []string
+	msgSave        bool
+	msgPort        string
 	vendor         gpsreg.Vendor
 	showReceiver   bool
 	showTags       bool
@@ -113,7 +115,7 @@ func (r configSupportReq) unsupportedOptions(supported gpsprot.ConfigSupportFlag
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [-f|--config-file path]
        	    [--socket path] [--packet-log path] [--capture seconds] [--save] [--speed bps] [--nmea] [--binary]
-            [-c|--show-config] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
+            [-c|--show-config] [--show-port] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-llh lat,lon,height] [--fixed-pos-acc meters]
@@ -122,14 +124,13 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [--pvt-out pos|vel|time|tp|leap|survey|qual|epoch|tai|ecef|ptp|ntp|off,...]
             [--sats-out sat|sig|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
             [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|GLL|none,...]
-            [-m|--msg-file path] [-t|--tag name,...] [--show-tags]`
+            [-m|--msg-file path] [-t|--tag name,...] [--port name] [--show-tags]`
 
 const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20 * gpsprot.Meter
 const defaultFixedPosAcc = 20 * gpsprot.Meter
 
 // TODO: add PropIDBaudRate to showProps so --show-config reports the current configured speed.
-// Requires fix to CfgVals.addGetKeys
 // Would need regeneration of the *-noop replay-test traces.
 const showProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDMode |
@@ -152,6 +153,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	factoryReset := false
 	reload := false
 	showConfig := false
+	showPort := false
 	testLogPath := ""
 	nmea := false
 	binary := false
@@ -180,6 +182,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.BoolVarP(&showConfig, "show-config", "c", false, "show current GPS receiver configuration")
+	flags.BoolVar(&showPort, "show-port", false, "show the receiver port the host is communicating on and its serial speed when applicable")
 	flags.BoolVar(&save, "save", false, "save configuration changes to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&saveAll, "save-all", false, "save the current configuration to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&reset, "reset", false, "reset the GPS receiver and perform a cold start")
@@ -195,6 +198,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.StringVarP(&vars.msgFilePath, "msg-file", "m", "", "`path` to TOML file containing message definitions")
 	flags.StringVarP(&msgTags, "tag", "t", "", "comma-separated `list` of tags to send (in order)")
 	flags.BoolVar(&vars.showTags, "show-tags", false, "list all tags in the message file with descriptions, then exit")
+	flags.StringVar(&vars.msgPort, "port", "", "u-blox receiver `port` for port-dependent message-file entries: i2c|uart1|uart2|usb|spi")
 	var vendorStr string
 	flags.StringVar(&vendorStr, "vendor", "", "GPS receiver `vendor` name")
 	flags.Float64Var(&capture, "capture", 0, "capture packets for `seconds` after config (0 = forever)")
@@ -483,22 +487,29 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if showConfig {
 		vars.configGet = showProps
 	}
+	if showPort {
+		vars.configGet |= gpsprot.PropIDPort | gpsprot.PropIDBaudRate
+	}
 	if save {
-		if !configChanged {
-			return nil, nil, fmt.Errorf("no configuration changes to save with --save; use --save-all to save current configuration")
-		}
 		if saveAll {
 			return nil, nil, fmt.Errorf("%s command must not specify both --save and --save-all", cmdName)
 		}
-		vars.configOpts.Save = gpsprot.SaveMinimal
+		if !configChanged && vars.msgFilePath == "" {
+			return nil, nil, fmt.Errorf("no configuration changes and no message file: nothing for --save to do; use --save-all to save current configuration")
+		}
+		// In message-file mode --save is a plain boolean for VALSET layers,
+		// not a configurator save; don't populate ConfigOptions.Save.
+		if vars.msgFilePath == "" {
+			vars.configOpts.Save = gpsprot.SaveMinimal
+		}
 	} else if saveAll {
 		vars.configOpts.Save = gpsprot.SaveAll
 	}
 	// tests whether configurator needs to run
-	doConfigure := save || saveAll || reset || reload || showConfig || configChanged
+	doConfigure := save || saveAll || reset || reload || showConfig || showPort || configChanged
 	if factoryReset {
 		if doConfigure {
-			return nil, nil, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config or configuration changes", cmdName)
+			return nil, nil, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config, --show-port or configuration changes", cmdName)
 		}
 		doConfigure = true
 		vars.configOpts.Reset = gpsprot.ResetFactory
@@ -506,8 +517,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		if configChanged && !save && !saveAll {
 			return nil, nil, fmt.Errorf("--reset or --reload without saving would lose configuration changes")
 		}
-		if showConfig {
-			return nil, nil, fmt.Errorf("cannot use --reset or --reload with --show-config")
+		if showConfig || showPort {
+			return nil, nil, fmt.Errorf("cannot use --reset or --reload with --show-config or --show-port")
 		}
 		if reset && reload {
 			return nil, nil, fmt.Errorf("cannot use both --reset and --reload")
@@ -522,20 +533,47 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		doConfigure = true
 	}
 	if vars.msgFilePath != "" {
-		if doConfigure {
+		// In message-file mode --save is permitted (it controls VALSET
+		// layers for [[ubxval]]) but no other configuration flag is.
+		if saveAll || reset || reload || factoryReset || showConfig || showPort || configChanged || vars.showReceiver {
 			return nil, nil, fmt.Errorf("--msg-file cannot be combined with configuration flags")
 		}
 		if vars.packetLogMode == testLogMode {
 			return nil, nil, fmt.Errorf("--msg-file cannot be combined with --test-log")
 		}
+		if flags.Lookup("port").Changed {
+			port, err := normalizeUBXPort(vars.msgPort)
+			if err != nil {
+				return nil, nil, err
+			}
+			vars.msgPort = port
+		}
+		vars.msgSave = save
 		// Parse tags: split on comma, preserving empty strings for empty tags
 		vars.msgTags = strings.Split(msgTags, ",")
-	} else if msgTags != "" {
-		return nil, nil, fmt.Errorf("--tag requires --msg-file")
-	} else if !doConfigure && !vars.capture.IsSet() {
-		vars.showReceiver = true
+	} else {
+		if msgTags != "" {
+			return nil, nil, fmt.Errorf("--tag requires --msg-file")
+		}
+		if flags.Lookup("port").Changed {
+			return nil, nil, fmt.Errorf("--port requires --msg-file")
+		}
+		if !doConfigure && !vars.capture.IsSet() {
+			vars.showReceiver = true
+		}
 	}
 	return &vars, nil, nil
+}
+
+// normalizeUBXPort lowercases s and verifies it is one of the u-blox port
+// names. Used for early flag-level validation.
+func normalizeUBXPort(s string) (string, error) {
+	p := strings.ToLower(s)
+	switch p {
+	case "i2c", "uart1", "uart2", "usb", "spi":
+		return p, nil
+	}
+	return "", fmt.Errorf("invalid --port value %q: must be one of i2c, uart1, uart2, usb, spi", s)
 }
 
 func addMsgConfigSupport(req *configSupportReq, sigs gpsprot.SignalSet, rawMsg opt.Val[gpsprot.RawMsgFlags], pvtMsg gpsprot.PVTMsgFlags, rtcmMsg opt.Val[gpsprot.RTCMMsgFlags]) {

@@ -7,7 +7,7 @@ satpulsetool-gps - configure a GPS receiver
 **satpulsetool** [*global options*] **gps** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-f**\|**\-\-config\-file** *path*] [**\-\-socket** *path*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-c**\|**\-\-show\-config**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-c**\|**\-\-show\-config**] [**\-\-show\-port**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**\|**QZSS**\|**NAVIC**\|**SBAS**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...] [**\-\-min\-elev** *degrees*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps** *width*] [**\-\-ant\-cable\-delay** *nanos*]\
@@ -23,7 +23,7 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-vendor** *name*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-msg\-file** *path*] [**\-t**\|**\-\-tag** *list*] [**\-\-show\-tags**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-msg\-file** *path*] [**\-t**\|**\-\-tag** *list*] [**\-\-port** *name*] [**\-\-show\-tags**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]
 
 # DESCRIPTION
@@ -80,6 +80,13 @@ The following options query the receiver.
 
 **\-c**, **\-\-show\-config**
 : Show the current configuration of the GPS receiver.
+
+**\-\-show\-port**
+: Show the receiver port the host is communicating on (for example **USB** or **UART1**)
+and, for UART ports, the serial speed in bits per second. The line for the serial speed is omitted
+for ports without a baud rate (**USB**, **I2C**, **SPI**).
+Useful for determining the value to pass to **\-\-port** for **\-\-msg\-file** entries that depend on the active port.
+Composes with **\-c**\|**\-\-show\-config**. Cannot be combined with **\-\-reset**, **\-\-reload**, **\-\-factory\-reset**, or **\-\-msg\-file**.
 
 The following options control which satellites and signals the receiver uses.
 
@@ -345,6 +352,19 @@ Messages are sent in the order the tags are listed.
 
 **\-\-show\-tags**
 : Print all tags in the message file with their descriptions to stdout, validate tag constraints, and exit.
+
+**\-\-save** (with **\-\-msg\-file**)
+: When the selected tags are `[[ubxval]]` or `[[ubxvalport]]` messages,
+persist the `UBX-CFG-VALSET` write to `RAM|BBR|Flash` instead of the
+default `RAM` layer.
+Specifying **\-\-save** with selected tags of any other message type is an error.
+This use of **\-\-save** is independent of the configurator's **\-\-save**.
+
+**\-\-port** *name*
+: Selects thereceiver port for `[[ubxvalport]]` message-file
+entries. Accepted values (case insensitive): **i2c**, **uart1**,
+**uart2**, **usb**, **spi**. Required when selected tags include
+`[[ubxvalport]]` messages; ignored for other message types.
 
 ## Packet capture
 

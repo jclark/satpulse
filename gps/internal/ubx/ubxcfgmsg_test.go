@@ -1446,11 +1446,12 @@ func TestMsgChangesItemsPortKeys(t *testing.T) {
 		{ucv.SPI, ucv.KSpioutprotNmea.Key(), ucv.KSpioutprotRtcm3x.Key()},
 	}
 	for _, tt := range tests {
-		t.Run(portName(tt.port), func(t *testing.T) {
+		name, _ := portName(tt.port)
+		t.Run(name, func(t *testing.T) {
 			mc := newMsgChanges()
 			mc.protoDisable = ubxbin.CfgPrtProtoNMEA
 			mc.protoEnable = ubxbin.CfgPrtProtoRTCM3
-			items := mc.items(tt.port)
+			items := mc.items(tt.port, true)
 			for _, it := range items {
 				if it.Key == 0 {
 					t.Errorf("item with zero key: %+v", it)
@@ -1464,22 +1465,6 @@ func TestMsgChangesItemsPortKeys(t *testing.T) {
 			}
 		})
 	}
-}
-
-func portName(p ucv.Port) string {
-	switch p {
-	case ucv.I2C:
-		return "I2C"
-	case ucv.UART1:
-		return "UART1"
-	case ucv.UART2:
-		return "UART2"
-	case ucv.USB:
-		return "USB"
-	case ucv.SPI:
-		return "SPI"
-	}
-	return "?"
 }
 
 func hasItem(items []ucv.Item, key ucv.Key, value uint64) bool {
