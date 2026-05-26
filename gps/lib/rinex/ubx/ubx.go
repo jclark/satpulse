@@ -81,15 +81,12 @@ func (c *Converter) observation(t rinex.Time, meas ubxbin.RxmRawxMeas) (rinex.Si
 		obs.PR = opt.Make(meas.PrMes)
 	}
 	cp, cpOK := carrierPhase(meas, c.opts.BDSGeoHalfCycle)
-	lli := c.lli(obs.Sat, obs.Sig, meas, cpOK)
+	ll, hc := c.lli(obs.Sat, obs.Sig, meas, cpOK)
 	if cpOK {
 		obs.CP = opt.Make(cp)
-		if lli != 0 {
-			obs.LLI = opt.Make(lli)
-		}
-	} else if lli != 0 {
-		obs.LLI = opt.Make(lli)
 	}
+	obs.LL = ll
+	obs.HC = hc
 	if finite32(meas.DoMes) {
 		obs.Do = opt.Make(float64(meas.DoMes))
 	}
@@ -119,7 +116,7 @@ func isBDSGeo(meas ubxbin.RxmRawxMeas) bool {
 	return meas.GNSSID == ubxbin.BDS && (meas.SVID <= 5 || meas.SVID >= 59)
 }
 
-func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.RxmRawxMeas, phase bool) rinex.LLI {
+func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.RxmRawxMeas, phase bool) (ll, hc bool) {
 	k := signalKey{sat: sat, sig: sig}
 	st := c.state[k]
 	sub := meas.TrkStat&ubxbin.RxmRawxSubHalfCyc != 0
@@ -127,22 +124,21 @@ func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.R
 	if meas.LockTime == 0 || st.seen && meas.LockTime < st.lock || subChanged || meas.CpStdev&ubxbin.RxmRawxCpStdMask >= c.opts.SlipThreshold {
 		st.pending = true
 	}
-	lli := rinex.LLI(0)
 	if subChanged {
-		lli = rinex.LLILostLock
+		ll = true
 	}
 	if phase && st.pending {
-		lli |= rinex.LLILostLock
+		ll = true
 		st.pending = false
 	}
 	if phase && halfCycleUnresolved(meas) {
-		lli |= rinex.LLIHalfCycleAmbiguity
+		hc = true
 	}
 	st.lock = meas.LockTime
 	st.subHalfCyc = sub
 	st.seen = true
 	c.state[k] = st
-	return lli
+	return ll, hc
 }
 
 func halfCycleUnresolved(meas ubxbin.RxmRawxMeas) bool {

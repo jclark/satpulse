@@ -98,11 +98,11 @@ func TestDecimationSinkCarriesSkippedLLI(t *testing.T) {
 		t.Fatalf("NewDecimationSink: %v", err)
 	}
 	obs := []SignalObservation{
-		{T: mustTime(t, "2025-07-01T00:00:01.0000000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{LLI: opt.Make(LLILostLock)}},
-		{T: mustTime(t, "2025-07-01T00:00:02.0000000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{LLI: opt.Make(LLIHalfCycleAmbiguity)}},
-		{T: mustTime(t, "2025-07-01T00:00:03.0000000"), Sat: "G03", Sig: "2S", SignalValues: SignalValues{LLI: opt.Make(LLILostLock)}},
+		{T: mustTime(t, "2025-07-01T00:00:01.0000000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{LL: true}},
+		{T: mustTime(t, "2025-07-01T00:00:02.0000000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{HC: true}},
+		{T: mustTime(t, "2025-07-01T00:00:03.0000000"), Sat: "G03", Sig: "2S", SignalValues: SignalValues{LL: true}},
 		{T: mustTime(t, "2025-07-01T00:00:10.0000000"), Sat: "G03", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(1.0)}},
-		{T: mustTime(t, "2025-07-01T00:00:10.0000000"), Sat: "G03", Sig: "2S", SignalValues: SignalValues{PR: opt.Make(2.0), LLI: opt.Make(LLIBOCTracking)}},
+		{T: mustTime(t, "2025-07-01T00:00:10.0000000"), Sat: "G03", Sig: "2S", SignalValues: SignalValues{PR: opt.Make(2.0), BT: true}},
 	}
 	for _, o := range obs {
 		if err := sink.Observation(o); err != nil {
@@ -112,10 +112,10 @@ func TestDecimationSinkCarriesSkippedLLI(t *testing.T) {
 	if len(dst.obs) != 2 {
 		t.Fatalf("len obs = %d, want 2: %#v", len(dst.obs), dst.obs)
 	}
-	if !dst.obs[0].LLI.IsSet() || dst.obs[0].LLI.Get() != LLILostLock|LLIHalfCycleAmbiguity {
-		t.Errorf("G03 1C LLI = %v, want 3", dst.obs[0].LLI)
+	if !dst.obs[0].LL || !dst.obs[0].HC || dst.obs[0].BT {
+		t.Errorf("G03 1C LL/HC/BT = %v/%v/%v, want true/true/false", dst.obs[0].LL, dst.obs[0].HC, dst.obs[0].BT)
 	}
-	if !dst.obs[1].LLI.IsSet() || dst.obs[1].LLI.Get() != LLILostLock|LLIBOCTracking {
-		t.Errorf("G03 2S LLI = %v, want 5", dst.obs[1].LLI)
+	if !dst.obs[1].LL || dst.obs[1].HC || !dst.obs[1].BT {
+		t.Errorf("G03 2S LL/HC/BT = %v/%v/%v, want true/false/true", dst.obs[1].LL, dst.obs[1].HC, dst.obs[1].BT)
 	}
 }

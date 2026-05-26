@@ -206,13 +206,12 @@ func (c *Converter) convertCell(t rinex.Time, gnss rtcmbin.GNSS, m *rtcmbin.MSMH
 	if v, ok := cn0(m, cellIndex); ok {
 		obs.CN0 = opt.Make(v)
 	}
-	lli := c.lli(obs.Sat, obs.Sig, m, cellIndex, obs.CP.IsSet())
+	ll, hc := c.lli(obs.Sat, obs.Sig, m, cellIndex, obs.CP.IsSet())
 	if len(obs.ObservationCodes()) == 0 {
 		return false, nil
 	}
-	if lli != 0 {
-		obs.LLI = opt.Make(lli)
-	}
+	obs.LL = ll
+	obs.HC = hc
 	return true, c.sink.Observation(obs)
 }
 
@@ -538,29 +537,28 @@ func frequencyMHz(sys, sig string, frq *int8) (float64, bool) {
 	return 0, false
 }
 
-func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, m *rtcmbin.MSMHiRes, cellIndex int, hasPhase bool) rinex.LLI {
+func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, m *rtcmbin.MSMHiRes, cellIndex int, hasPhase bool) (ll, hc bool) {
 	k := signalKey{sat: sat, sig: sig}
 	prev := c.lock[k]
-	lli := rinex.LLI(0)
 	if cur, ok := at(m.Sig.LockTime, cellIndex); ok {
 		if cur < prev || cur == 0 && prev == 0 {
-			lli |= rinex.LLILostLock
+			ll = true
 		}
 		c.lock[k] = cur
 	}
 	if c.slip[k] {
-		lli |= rinex.LLILostLock
+		ll = true
 		if hasPhase {
 			delete(c.slip, k)
 		}
 	}
-	if !hasPhase && lli&rinex.LLILostLock != 0 {
+	if !hasPhase && ll {
 		c.slip[k] = true
 	}
 	if half, ok := at(m.Sig.HalfCycle, cellIndex); ok && half {
-		lli |= rinex.LLIHalfCycleAmbiguity
+		hc = true
 	}
-	return lli
+	return ll, hc
 }
 
 func cellSet(mask uint64, ncell, cell int) bool {

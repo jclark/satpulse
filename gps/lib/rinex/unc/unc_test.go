@@ -62,8 +62,8 @@ func TestConvertObsVMObservation(t *testing.T) {
 	if !obs.CN0.IsSet() || obs.CN0.Get() != 45.34 {
 		t.Errorf("CN0 = %v, want 45.34", obs.CN0)
 	}
-	if obs.LLI.IsSet() {
-		t.Errorf("LLI = %v, want unset", obs.LLI)
+	if obs.LL || obs.HC || obs.BT {
+		t.Errorf("LL/HC/BT = %v/%v/%v, want false/false/false", obs.LL, obs.HC, obs.BT)
 	}
 }
 
@@ -164,13 +164,13 @@ func TestConvertObsVMCarriesLostLockUntilPhase(t *testing.T) {
 	if len(s.obs) != 3 {
 		t.Fatalf("observation count = %d, want 3", len(s.obs))
 	}
-	if s.obs[0].LLI.IsSet() {
-		t.Fatalf("first LLI = %v, want unset", s.obs[0].LLI)
+	if s.obs[0].LL || s.obs[0].HC || s.obs[0].BT {
+		t.Fatalf("first LL/HC/BT = %v/%v/%v, want false/false/false", s.obs[0].LL, s.obs[0].HC, s.obs[0].BT)
 	}
-	if s.obs[1].CP.IsSet() || s.obs[1].LLI.IsSet() {
+	if s.obs[1].CP.IsSet() || s.obs[1].LL || s.obs[1].HC || s.obs[1].BT {
 		t.Fatalf("second observation = %#v, want no phase and no LLI", s.obs[1])
 	}
-	if !s.obs[2].CP.IsSet() || !s.obs[2].LLI.IsSet() || s.obs[2].LLI.Get() != rinex.LLILostLock {
+	if !s.obs[2].CP.IsSet() || !s.obs[2].LL || s.obs[2].HC || s.obs[2].BT {
 		t.Fatalf("third observation = %#v, want carried lost lock", s.obs[2])
 	}
 }

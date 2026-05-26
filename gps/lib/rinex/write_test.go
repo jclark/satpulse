@@ -21,7 +21,7 @@ func TestWriteObservationFile(t *testing.T) {
 				CP:  opt.Make(125893980.172),
 				Do:  opt.Make(2059.717),
 				CN0: opt.Make(float32(34)),
-				LLI: opt.Make(LLILostLock),
+				LL:  true,
 			},
 		},
 		{
@@ -336,7 +336,8 @@ func TestReadObservationFileBlankPhaseLLI(t *testing.T) {
 				PR:  opt.Make(21017865.128),
 				Do:  opt.Make(-289.416),
 				CN0: opt.Make(float32(27)),
-				LLI: opt.Make(LLILostLock | LLIHalfCycleAmbiguity),
+				LL:  true,
+				HC:  true,
 			},
 		},
 		{
@@ -369,20 +370,19 @@ func TestReadObservationFileBlankPhaseLLI(t *testing.T) {
 	if got[0].CP.IsSet() {
 		t.Errorf("CP is set to %v, want unset", got[0].CP.Get())
 	}
-	if got[0].LLI.Get() != LLILostLock|LLIHalfCycleAmbiguity {
-		t.Errorf("LLI = %d, want 3", got[0].LLI.Get())
+	if !got[0].LL || !got[0].HC || got[0].BT {
+		t.Errorf("LL/HC/BT = %v/%v/%v, want true/true/false", got[0].LL, got[0].HC, got[0].BT)
 	}
 }
 
-func TestWriteObservationFileZeroLLI(t *testing.T) {
+func TestWriteObservationFileOmitsFalseLLI(t *testing.T) {
 	obs := []SignalObservation{
 		{
 			T:   mustTime(t, "2025-12-17T08:14:06.0080000"),
 			Sat: "G07",
 			Sig: "1C",
 			SignalValues: SignalValues{
-				CP:  opt.Make(1.0),
-				LLI: opt.Make(LLI(0)),
+				CP: opt.Make(1.0),
 			},
 		},
 	}
@@ -391,15 +391,15 @@ func TestWriteObservationFileZeroLLI(t *testing.T) {
 	if err := WriteObservationFile(&b, meta, obs); err != nil {
 		t.Fatalf("WriteObservationFile: %v", err)
 	}
-	if !strings.Contains(b.String(), "G07         1.0000 ") {
-		t.Fatalf("output does not contain explicit zero LLI\n%s", b.String())
+	if !strings.Contains(b.String(), "G07         1.000  ") {
+		t.Fatalf("output does not contain blank LLI\n%s", b.String())
 	}
 	_, got, err := ReadObservationFile(strings.NewReader(b.String()))
 	if err != nil {
 		t.Fatalf("ReadObservationFile: %v", err)
 	}
-	if !got[0].LLI.IsSet() || got[0].LLI.Get() != 0 {
-		t.Errorf("LLI = %v, want explicit 0", got[0].LLI)
+	if got[0].LL || got[0].HC || got[0].BT {
+		t.Errorf("LL/HC/BT = %v/%v/%v, want false/false/false", got[0].LL, got[0].HC, got[0].BT)
 	}
 	if got[0].CN0.IsSet() {
 		t.Errorf("CN0 = %v, want unset", got[0].CN0)

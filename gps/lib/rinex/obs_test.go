@@ -27,14 +27,14 @@ func TestSignalObservationJSON(t *testing.T) {
 			PR:  opt.Make(22187868.655),
 			CP:  opt.Make(116598092.035),
 			CN0: opt.Make(float32(48.5)),
-			LLI: opt.Make(LLILostLock),
+			LL:  true,
 		},
 	}
 	b, err := json.Marshal(obs)
 	if err != nil {
 		t.Fatalf("Marshal error: %v", err)
 	}
-	want := `{"t":"2025-06-30T23:59:59.1234567","sat":"G03","sig":"1C","frq":-4,"pr":22187868.655,"cp":116598092.035,"cn0":48.5,"lli":1}`
+	want := `{"t":"2025-06-30T23:59:59.1234567","sat":"G03","sig":"1C","frq":-4,"pr":22187868.655,"cp":116598092.035,"cn0":48.5,"ll":true}`
 	if string(b) != want {
 		t.Errorf("Marshal = %s, want %s", string(b), want)
 	}
@@ -59,7 +59,9 @@ func TestSignalValuesIsZero(t *testing.T) {
 		{name: "cp", v: SignalValues{CP: opt.Make(1.0)}},
 		{name: "do", v: SignalValues{Do: opt.Make(1.0)}},
 		{name: "cn0", v: SignalValues{CN0: opt.Make(float32(1.0))}},
-		{name: "lli zero", v: SignalValues{LLI: opt.Make(LLI(0))}},
+		{name: "ll", v: SignalValues{LL: true}},
+		{name: "hc", v: SignalValues{HC: true}},
+		{name: "bt", v: SignalValues{BT: true}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.v.IsZero(); got != tt.want {
@@ -188,6 +190,10 @@ func TestUnmarshalRecord(t *testing.T) {
 	if err == nil {
 		t.Fatal("UnmarshalRecord accepted unsupported ssi field")
 	}
+	_, _, _, err = UnmarshalRecord([]byte(`{"t":"2025-06-30T23:59:59.0000000","sat":"R03","sig":"1C","lli":1}`))
+	if err == nil {
+		t.Fatal("UnmarshalRecord accepted unsupported lli field")
+	}
 }
 
 func TestObsJSONSinkAndReadObsJSON(t *testing.T) {
@@ -201,8 +207,7 @@ func TestObsJSONSinkAndReadObsJSON(t *testing.T) {
 		Sat: "G03",
 		Sig: "1C",
 		SignalValues: SignalValues{
-			PR:  opt.Make(22187868.655),
-			LLI: opt.Make(LLI(0)),
+			PR: opt.Make(22187868.655),
 		},
 	}
 	if err := sink.Observation(obs); err != nil {
@@ -218,7 +223,7 @@ func TestObsJSONSinkAndReadObsJSON(t *testing.T) {
 	}
 	want := strings.Join([]string{
 		`{"comment":["from first"],"receiver":{"type":"RX"}}`,
-		`{"t":"2025-06-30T23:59:59.0000000","sat":"G03","sig":"1C","pr":22187868.655,"lli":0}`,
+		`{"t":"2025-06-30T23:59:59.0000000","sat":"G03","sig":"1C","pr":22187868.655}`,
 		`{"comment":["from second"],"marker":{"name":"MARK"}}`,
 		"",
 	}, "\n")

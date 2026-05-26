@@ -52,13 +52,12 @@ type SignalID string
 // ObservationCode is a complete three-character RINEX observation code.
 type ObservationCode string
 
-// LLI is the RINEX loss-of-lock indicator for phase observations.
-type LLI uint8
+type lossOfLockIndicator uint8
 
 const (
-	LLILostLock           LLI = 1 << iota // lost lock between observations; cycle slip possible
-	LLIHalfCycleAmbiguity                 // half-cycle ambiguity or slip possible
-	LLIBOCTracking                        // BOC tracking of an MBOC-modulated signal
+	lossOfLockIndicatorLostLock lossOfLockIndicator = 1 << iota
+	lossOfLockIndicatorHalfCycleAmbiguity
+	lossOfLockIndicatorBOCTracking
 )
 
 // SignalValues holds the values for one satellite signal observation.
@@ -68,12 +67,34 @@ type SignalValues struct {
 	CP  opt.Val[float64] `json:"cp,omitzero"`  // carrier phase, cycles
 	Do  opt.Val[float64] `json:"do,omitzero"`  // RINEX Doppler, Hz; positive for approaching satellites
 	CN0 opt.Val[float32] `json:"cn0,omitzero"` // carrier-to-noise density, dB-Hz
-	LLI opt.Val[LLI]     `json:"lli,omitzero"` // RINEX loss-of-lock indicator for phase
+	LL  bool             `json:"ll,omitzero"`  // RINEX LLI bit 0, cycle slip possible
+	HC  bool             `json:"hc,omitzero"`  // RINEX LLI bit 1, half-cycle ambiguity
+	BT  bool             `json:"bt,omitzero"`  // RINEX LLI bit 2, BOC tracking
 }
 
 // IsZero reports whether v contains no values.
 func (v SignalValues) IsZero() bool {
-	return v.Frq.IsZero() && v.PR.IsZero() && v.CP.IsZero() && v.Do.IsZero() && v.CN0.IsZero() && v.LLI.IsZero()
+	return v.Frq.IsZero() && v.PR.IsZero() && v.CP.IsZero() && v.Do.IsZero() && v.CN0.IsZero() && !v.LL && !v.HC && !v.BT
+}
+
+func (v *SignalValues) setLLI(x lossOfLockIndicator) {
+	v.LL = x&lossOfLockIndicatorLostLock != 0
+	v.HC = x&lossOfLockIndicatorHalfCycleAmbiguity != 0
+	v.BT = x&lossOfLockIndicatorBOCTracking != 0
+}
+
+func (v SignalValues) lli() lossOfLockIndicator {
+	x := lossOfLockIndicator(0)
+	if v.LL {
+		x |= lossOfLockIndicatorLostLock
+	}
+	if v.HC {
+		x |= lossOfLockIndicatorHalfCycleAmbiguity
+	}
+	if v.BT {
+		x |= lossOfLockIndicatorBOCTracking
+	}
+	return x
 }
 
 // SignalObservation holds measurements for one satellite signal at one epoch.
@@ -294,6 +315,9 @@ func UnmarshalRecord(data []byte) (SignalObservation, Metadata, bool, error) {
 	if _, ok := raw["t"]; ok {
 		if _, ok := raw["ssi"]; ok {
 			return SignalObservation{}, Metadata{}, true, fmt.Errorf("rinex: obsj field %q is not supported", "ssi")
+		}
+		if _, ok := raw["lli"]; ok {
+			return SignalObservation{}, Metadata{}, true, fmt.Errorf("rinex: obsj field %q is not supported", "lli")
 		}
 		var obs SignalObservation
 		if err := json.Unmarshal(data, &obs); err != nil {

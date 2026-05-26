@@ -16,7 +16,7 @@ type signalKey struct {
 type DecimationSink struct {
 	sink     Sink
 	interval Time
-	lli      map[signalKey]LLI
+	lli      map[signalKey]lossOfLockIndicator
 }
 
 // NewDecimationSink creates a Sink that decimates observations by interval.
@@ -28,7 +28,7 @@ func NewDecimationSink(sink Sink, interval time.Duration) (*DecimationSink, erro
 	return &DecimationSink{
 		sink:     sink,
 		interval: ticks,
-		lli:      make(map[signalKey]LLI),
+		lli:      make(map[signalKey]lossOfLockIndicator),
 	}, nil
 }
 
@@ -79,11 +79,12 @@ func (s *DecimationSink) onGrid(t Time) bool {
 }
 
 func (s *DecimationSink) saveLLI(obs SignalObservation) {
-	if !obs.LLI.IsSet() || obs.LLI.Get() == 0 {
+	lli := obs.lli()
+	if lli == 0 {
 		return
 	}
 	k := signalKey{sat: obs.Sat, sig: obs.Sig}
-	s.lli[k] |= obs.LLI.Get()
+	s.lli[k] |= lli
 }
 
 func (s *DecimationSink) applyLLI(obs *SignalObservation) {
@@ -92,10 +93,8 @@ func (s *DecimationSink) applyLLI(obs *SignalObservation) {
 	if lli == 0 {
 		return
 	}
-	if obs.LLI.IsSet() {
-		lli |= obs.LLI.Get()
-	}
-	obs.LLI.Set(lli)
+	lli |= obs.lli()
+	obs.setLLI(lli)
 	delete(s.lli, k)
 }
 

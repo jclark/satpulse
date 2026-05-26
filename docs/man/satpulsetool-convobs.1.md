@@ -205,7 +205,9 @@ Observation records can contain the following fields:
 * `cp` - number giving carrier phase in cycles
 * `do` - number giving Doppler in Hz
 * `cn0` - number giving carrier-to-noise density in dB-Hz
-* `lli` - integer giving the RINEX loss-of-lock indicator
+* `ll` - boolean indicating a loss of lock between the previous and current observation, equivalent to RINEX LLI bit 0
+* `hc` - boolean indicating half-cycle ambiguity in the carrier phase observation, equivalent to RINEX LLI bit 1
+* `bt` - boolean indicating BOC tracking of an MBOC-modulated signal, equivalent to RINEX LLI bit 2
 
 For example:
 

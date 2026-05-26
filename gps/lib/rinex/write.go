@@ -34,7 +34,7 @@ type epoch struct {
 
 type obsField struct {
 	val opt.Val[float64]
-	lli opt.Val[LLI]
+	lli lossOfLockIndicator
 }
 
 // WriteObservationFile writes a RINEX observation file.
@@ -142,7 +142,7 @@ func writerObservationCodes(o SignalObservation) []ObservationCode {
 	if o.PR.IsSet() {
 		codes = append(codes, o.Sig.Code(TypeCode))
 	}
-	if o.PR.IsSet() || o.CP.IsSet() || o.Do.IsSet() || o.CN0.IsSet() || o.LLI.IsSet() {
+	if o.PR.IsSet() || o.CP.IsSet() || o.Do.IsSet() || o.CN0.IsSet() || o.lli() != 0 {
 		codes = append(codes, o.Sig.Code(TypePhase))
 	}
 	if o.Do.IsSet() {
@@ -156,22 +156,23 @@ func writerObservationCodes(o SignalObservation) []ObservationCode {
 
 func addSignalObservation(dst map[ObservationCode]obsField, o SignalObservation) {
 	if o.PR.IsSet() {
-		addObsField(dst, o.Sig.Code(TypeCode), opt.Make(float64(o.PR.Get())), opt.Val[LLI]{})
+		addObsField(dst, o.Sig.Code(TypeCode), opt.Make(float64(o.PR.Get())), 0)
 	}
+	lli := o.lli()
 	if o.CP.IsSet() {
-		addObsField(dst, o.Sig.Code(TypePhase), opt.Make(o.CP.Get()), o.LLI)
-	} else if o.LLI.IsSet() {
-		addObsField(dst, o.Sig.Code(TypePhase), opt.Val[float64]{}, o.LLI)
+		addObsField(dst, o.Sig.Code(TypePhase), opt.Make(o.CP.Get()), lli)
+	} else if lli != 0 {
+		addObsField(dst, o.Sig.Code(TypePhase), opt.Val[float64]{}, lli)
 	}
 	if o.Do.IsSet() {
-		addObsField(dst, o.Sig.Code(TypeDoppler), opt.Make(o.Do.Get()), opt.Val[LLI]{})
+		addObsField(dst, o.Sig.Code(TypeDoppler), opt.Make(o.Do.Get()), 0)
 	}
 	if o.CN0.IsSet() {
-		addObsField(dst, o.Sig.Code(TypeSignalStrength), opt.Make(float64(o.CN0.Get())), opt.Val[LLI]{})
+		addObsField(dst, o.Sig.Code(TypeSignalStrength), opt.Make(float64(o.CN0.Get())), 0)
 	}
 }
 
-func addObsField(dst map[ObservationCode]obsField, code ObservationCode, val opt.Val[float64], lli opt.Val[LLI]) {
+func addObsField(dst map[ObservationCode]obsField, code ObservationCode, val opt.Val[float64], lli lossOfLockIndicator) {
 	if code == "" {
 		return
 	}
@@ -399,8 +400,8 @@ func secondField(sec float64) string {
 
 func appendObsField(line []byte, field obsField) []byte {
 	lli := byte(' ')
-	if field.lli.IsSet() {
-		lli = '0' + uint8(field.lli.Get())
+	if field.lli != 0 {
+		lli = '0' + uint8(field.lli)
 	}
 	var tmp [32]byte
 	text := tmp[:0]

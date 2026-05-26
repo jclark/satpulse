@@ -373,7 +373,7 @@ func TestRunDecimatesObsJSONInput(t *testing.T) {
 	data := strings.Join([]string{
 		`{"marker":{"name":"FILE"}}`,
 		`{"t":"2025-07-01T00:00:00.0000000","sat":"G03","sig":"1C","pr":1}`,
-		`{"t":"2025-07-01T00:00:05.0000000","sat":"G03","sig":"1C","lli":1}`,
+		`{"t":"2025-07-01T00:00:05.0000000","sat":"G03","sig":"1C","ll":true}`,
 		`{"t":"2025-07-01T00:00:10.0000000","sat":"G03","sig":"1C","pr":2}`,
 		"",
 	}, "\n")
@@ -394,8 +394,8 @@ func TestRunDecimatesObsJSONInput(t *testing.T) {
 	if obs[0].PR.Get() != 1 || obs[1].PR.Get() != 2 {
 		t.Fatalf("observations = %#v", obs)
 	}
-	if !obs[1].LLI.IsSet() || obs[1].LLI.Get() != rinex.LLILostLock {
-		t.Fatalf("carried LLI = %v, want 1", obs[1].LLI)
+	if !obs[1].LL || obs[1].HC || obs[1].BT {
+		t.Fatalf("carried LL/HC/BT = %v/%v/%v, want true/false/false", obs[1].LL, obs[1].HC, obs[1].BT)
 	}
 }
 

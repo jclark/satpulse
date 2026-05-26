@@ -81,13 +81,11 @@ func (c *Converter) convertObs(t rinex.Time, meas uncmsg.ObsVMObs) (bool, error)
 	if st.PseudorangeValid() && finite64(meas.PSR) {
 		obs.PR = opt.Make(meas.PSR)
 	}
-	phase := st.CarrierPhaseValid() && finite64(meas.ADR)
-	lli := c.lli(obs.Sat, obs.Sig, t, meas.LockTime, phase)
-	if phase {
+	cpOK := st.CarrierPhaseValid() && finite64(meas.ADR)
+	ll := c.lli(obs.Sat, obs.Sig, t, meas.LockTime, cpOK)
+	if cpOK {
 		obs.CP = opt.Make(-meas.ADR)
-		if lli != 0 {
-			obs.LLI = opt.Make(lli)
-		}
+		obs.LL = ll
 	}
 	if finite32(meas.Dopp) {
 		obs.Do = opt.Make(float64(meas.Dopp))
@@ -101,22 +99,22 @@ func (c *Converter) convertObs(t rinex.Time, meas uncmsg.ObsVMObs) (bool, error)
 	return true, c.sink.Observation(obs)
 }
 
-func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, t rinex.Time, lock float32, phase bool) rinex.LLI {
+func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, t rinex.Time, lock float32, phase bool) bool {
 	k := signalKey{sat: sat, sig: sig}
 	st := c.state[k]
 	if lock == 0 || st.seen && lockSlip(t, lock, st) {
 		st.pending = true
 	}
-	lli := rinex.LLI(0)
+	ll := false
 	if phase && st.pending {
-		lli = rinex.LLILostLock
+		ll = true
 		st.pending = false
 	}
 	st.t = t
 	st.lock = lock
 	st.seen = true
 	c.state[k] = st
-	return lli
+	return ll
 }
 
 func lockSlip(t rinex.Time, lock float32, st signalState) bool {
