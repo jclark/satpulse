@@ -60,7 +60,6 @@ func TestSignalValuesIsZero(t *testing.T) {
 		{name: "do", v: SignalValues{Do: opt.Make(1.0)}},
 		{name: "cn0", v: SignalValues{CN0: opt.Make(float32(1.0))}},
 		{name: "lli zero", v: SignalValues{LLI: opt.Make(LLI(0))}},
-		{name: "ssi zero", v: SignalValues{SSI: opt.Make(uint8(0))}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.v.IsZero(); got != tt.want {
@@ -184,6 +183,10 @@ func TestUnmarshalRecord(t *testing.T) {
 	}
 	if obs.T != 0 {
 		t.Errorf("observation for metadata = %#v", obs)
+	}
+	_, _, _, err = UnmarshalRecord([]byte(`{"t":"2025-06-30T23:59:59.0000000","sat":"R03","sig":"1C","ssi":7}`))
+	if err == nil {
+		t.Fatal("UnmarshalRecord accepted unsupported ssi field")
 	}
 }
 

@@ -401,6 +401,9 @@ func addRINEXField(o *SignalObservation, code ObservationCode, field string) {
 		if v, ok := parseObsFloat(val); ok {
 			o.PR = opt.Make(v)
 		}
+		if v, ok := parseIndicator(field[15]); ok {
+			addSSI(o, v)
+		}
 	case byte(TypePhase):
 		if v, ok := parseObsFloat(val); ok {
 			o.CP = opt.Make(v)
@@ -409,7 +412,7 @@ func addRINEXField(o *SignalObservation, code ObservationCode, field string) {
 			o.LLI = opt.Make(LLI(v))
 		}
 		if v, ok := parseIndicator(field[15]); ok {
-			o.SSI = opt.Make(v)
+			addSSI(o, v)
 		}
 	case byte(TypeDoppler):
 		if v, ok := parseObsFloat(val); ok {
@@ -420,6 +423,23 @@ func addRINEXField(o *SignalObservation, code ObservationCode, field string) {
 			o.CN0 = opt.Make(float32(v))
 		}
 	}
+}
+
+func addSSI(o *SignalObservation, ssi uint8) {
+	if ssi == 0 || o.CN0.IsSet() {
+		return
+	}
+	o.CN0 = opt.Make(cn0FromSSI(ssi))
+}
+
+func cn0FromSSI(ssi uint8) float32 {
+	if ssi <= 1 {
+		return 6
+	}
+	if ssi >= 9 {
+		return 57
+	}
+	return float32(ssi*6 + 3)
 }
 
 func parseObsFloat(s string) (float64, bool) {

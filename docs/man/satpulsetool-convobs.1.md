@@ -206,7 +206,6 @@ Observation records can contain the following fields:
 * `do` - number giving Doppler in Hz
 * `cn0` - number giving carrier-to-noise density in dB-Hz
 * `lli` - integer giving the RINEX loss-of-lock indicator
-* `ssi` - integer giving the RINEX signal strength indicator
 
 For example:
 

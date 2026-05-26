@@ -81,7 +81,6 @@ func DiffSignal(a, b *SignalValues, tol ObsTolerances) (aRet, bRet *SignalValues
 	compareFloat64(&aRet.Do, &bRet.Do, a.Do.IsSet(), b.Do.IsSet(), a.Do.Get(), b.Do.Get(), tol.Do)
 	compareFloat32(&aRet.CN0, &bRet.CN0, a.CN0.IsSet(), b.CN0.IsSet(), a.CN0.Get(), b.CN0.Get(), tol.CN0)
 	compareValue(&aRet.LLI, &bRet.LLI, a.LLI.IsSet(), b.LLI.IsSet(), a.LLI.Get(), b.LLI.Get())
-	compareValue(&aRet.SSI, &bRet.SSI, a.SSI.IsSet(), b.SSI.IsSet(), a.SSI.Get(), b.SSI.Get())
 	return aRet, bRet
 }
 

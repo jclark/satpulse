@@ -374,7 +374,7 @@ func TestReadObservationFileBlankPhaseLLI(t *testing.T) {
 	}
 }
 
-func TestWriteObservationFileZeroIndicators(t *testing.T) {
+func TestWriteObservationFileZeroLLI(t *testing.T) {
 	obs := []SignalObservation{
 		{
 			T:   mustTime(t, "2025-12-17T08:14:06.0080000"),
@@ -383,7 +383,6 @@ func TestWriteObservationFileZeroIndicators(t *testing.T) {
 			SignalValues: SignalValues{
 				CP:  opt.Make(1.0),
 				LLI: opt.Make(LLI(0)),
-				SSI: opt.Make(uint8(0)),
 			},
 		},
 	}
@@ -392,8 +391,8 @@ func TestWriteObservationFileZeroIndicators(t *testing.T) {
 	if err := WriteObservationFile(&b, meta, obs); err != nil {
 		t.Fatalf("WriteObservationFile: %v", err)
 	}
-	if !strings.Contains(b.String(), "G07         1.00000") {
-		t.Fatalf("output does not contain explicit zero indicators\n%s", b.String())
+	if !strings.Contains(b.String(), "G07         1.0000 ") {
+		t.Fatalf("output does not contain explicit zero LLI\n%s", b.String())
 	}
 	_, got, err := ReadObservationFile(strings.NewReader(b.String()))
 	if err != nil {
@@ -402,8 +401,30 @@ func TestWriteObservationFileZeroIndicators(t *testing.T) {
 	if !got[0].LLI.IsSet() || got[0].LLI.Get() != 0 {
 		t.Errorf("LLI = %v, want explicit 0", got[0].LLI)
 	}
-	if !got[0].SSI.IsSet() || got[0].SSI.Get() != 0 {
-		t.Errorf("SSI = %v, want explicit 0", got[0].SSI)
+	if got[0].CN0.IsSet() {
+		t.Errorf("CN0 = %v, want unset", got[0].CN0)
+	}
+}
+
+func TestReadObservationFileSynthesizesCN0FromSSI(t *testing.T) {
+	rnx := testObservationFile("GPS", true, true,
+		[]string{"G    2 L1C S1C"},
+		[]string{
+			fmt.Sprintf("G03%14.3f %d", 116598092.035, 7),
+			fmt.Sprintf("G04%14.3f %d%14.3f  ", 116598093.035, 7, 43.0),
+		})
+	_, got, err := ReadObservationFile(strings.NewReader(rnx))
+	if err != nil {
+		t.Fatalf("ReadObservationFile: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len observations = %d, want 2", len(got))
+	}
+	if !got[0].CN0.IsSet() || got[0].CN0.Get() != 45 {
+		t.Errorf("G03 CN0 = %v, want 45", got[0].CN0)
+	}
+	if !got[1].CN0.IsSet() || got[1].CN0.Get() != 43 {
+		t.Errorf("G04 CN0 = %v, want 43", got[1].CN0)
 	}
 }
 

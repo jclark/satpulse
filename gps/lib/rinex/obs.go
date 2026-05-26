@@ -69,12 +69,11 @@ type SignalValues struct {
 	Do  opt.Val[float64] `json:"do,omitzero"`  // RINEX Doppler, Hz; positive for approaching satellites
 	CN0 opt.Val[float32] `json:"cn0,omitzero"` // carrier-to-noise density, dB-Hz
 	LLI opt.Val[LLI]     `json:"lli,omitzero"` // RINEX loss-of-lock indicator for phase
-	SSI opt.Val[uint8]   `json:"ssi,omitzero"` // RINEX signal strength indicator
 }
 
 // IsZero reports whether v contains no values.
 func (v SignalValues) IsZero() bool {
-	return !v.Frq.IsSet() && !v.PR.IsSet() && !v.CP.IsSet() && !v.Do.IsSet() && !v.CN0.IsSet() && !v.LLI.IsSet() && !v.SSI.IsSet()
+	return v.Frq.IsZero() && v.PR.IsZero() && v.CP.IsZero() && v.Do.IsZero() && v.CN0.IsZero() && v.LLI.IsZero()
 }
 
 // SignalObservation holds measurements for one satellite signal at one epoch.
@@ -293,6 +292,9 @@ func UnmarshalRecord(data []byte) (SignalObservation, Metadata, bool, error) {
 		return SignalObservation{}, Metadata{}, false, err
 	}
 	if _, ok := raw["t"]; ok {
+		if _, ok := raw["ssi"]; ok {
+			return SignalObservation{}, Metadata{}, true, fmt.Errorf("rinex: obsj field %q is not supported", "ssi")
+		}
 		var obs SignalObservation
 		if err := json.Unmarshal(data, &obs); err != nil {
 			return SignalObservation{}, Metadata{}, true, err
