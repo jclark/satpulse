@@ -131,7 +131,7 @@ func writerObservationCodeSet(obs []SignalObservation) map[string][]ObservationC
 		for code := range m {
 			codes = append(codes, code)
 		}
-		sortWriterObservationCodes(sys, codes)
+		sortObservationCodes(codes)
 		out[sys] = codes
 	}
 	return out
