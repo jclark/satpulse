@@ -6,6 +6,11 @@
     sys_clock_offset: 100000  # Maximum allowed difference in nanoseconds
     
   tasks:
+    - name: Fail if host has no PHC
+      fail:
+        msg: "check.yml requires a PHC; host has interface = \"\""
+      when: interface == ""
+
     - name: Check if SatPulse service is running
       command: "systemctl is-active satpulse@{{ instance }}"
       register: service_status

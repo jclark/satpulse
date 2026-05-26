@@ -9,7 +9,9 @@ Add correction observability for `satpulsed` as a protocol-independent
   receiver.
 
 Unicore `RTCMSTATUS` also fits this model as another receiver-status
-producer, although it populates fewer common fields.
+producer, although it populates fewer common fields.  Converting
+`RTCMSTATUS` is not part of this plan; it is tracked as a follow-on
+(#293).
 
 This plan is for issue #237.
 
@@ -35,6 +37,7 @@ type CorReportMsg struct {
 
 	NBytes        opt.Val[int]    `json:"nBytes,omitzero"`
 	ChecksumOK    opt.Val[bool]   `json:"checksumOK,omitzero"`
+	FinalFragment opt.Val[bool]   `json:"finalFragment,omitzero"`
 	Used          opt.Val[bool]   `json:"used,omitzero"`
 	RTCMRefBaseID opt.Val[uint16] `json:"rtcmRefBaseID,omitzero"`
 }
@@ -78,6 +81,15 @@ For pulled RTCM reports:
 - `ChecksumOK` is always set.
 - `NativeMsg`, when present, is the parsed `rtcmbin.Msg`.
 
+`FinalFragment` is pull-source-only fragmentation information for RTCM
+MSM packets.  It is `false` when the packet is a non-final fragment,
+`true` when the packet is the final fragment, including a logical
+message carried in one packet, and absent when the report carries no
+fragmentation information.  Receiver-source reports leave it absent.
+This three-state contract lets consumers decide statelessly: complete
+iff `FinalFragment` is true, incomplete iff false, otherwise fall back
+to their own policy.
+
 `CorReportSourceReceiver` means the receiver reported correction
 input status.  It does not mean the receiver emitted an RTCM packet.
 
@@ -95,18 +107,6 @@ For u-blox `UBX-RXM-COR` reports:
 - Do not put the `UBX-RXM-COR` struct into `NativeMsg`; for `Tag ==
   RTCM`, non-nil `NativeMsg` is an `rtcmbin.Msg`.
 
-For Unicore `RTCMSTATUS` reports:
-
-- `Source` is `CorReportSourceReceiver`.
-- `Tag` is `RTCM`.
-- `MsgID` uses the same RTCM message ID formatting as other reports
-  when the available message fields support it.
-- `RTCMRefBaseID` maps the Base ID field.
-- Leave `NBytes`, `ChecksumOK`, `Used`, and `NativeMsg` unset.  The
-  documented checksum is the Unicore log checksum, not an RTCM
-  correction-message checksum, and the message does not explicitly say
-  whether the receiver used the correction in its solution.
-
 Receiver-emitted RTCM remains on the existing native-message path as
 `NativeMsg(tag == RTCM, msgID, rtcmbin.Msg, tRead)`.  Do not add
 `RTCMOutput`.
@@ -119,12 +119,6 @@ message fields needed by the packet processor.
 In `gps/internal/ubx.PacketProcessor.Dispatch`, convert parsed
 `*ubxbin.RxmCor` into `*gpsprot.CorReportMsg` and emit it through
 the configured `gpsprot.MsgHandler`.
-
-Unicore can use the same receiver-source emission path by adding typed
-`RTCMSTATUS` parsing in `gps/lib/uncmsg` and converting it in
-`gps/internal/unc.packetProcessor.dispatch`.  The repository already
-knows the `RTCMSTATUS` message ID/name, but unregistered messages are
-currently parsed as unknown bodies.
 
 Add subtype-aware RTCM message ID support in `gps/lib/rtcmbin`.  It
 should continue to return the plain message type for normal RTCM
@@ -287,33 +281,72 @@ Add `PrometheusObserver.CorReport` so RTCM correction observations are
 also visible through `/metrics`.
 
 Prometheus should not apply the SSE/dashboard receiver-preference rule;
-export both sources with labels so operators can compare the pull-side
-and receiver-side streams.
+export both the observed input stream and the receiver-reported input
+status so operators can compare them.  Metric names use `input` for
+rover-side incoming corrections; future base/outbound RTCM metrics
+should use a different direction word.
 
-Use bounded labels:
+For all metrics below, ignore non-RTCM `CorReportMsg` values and
+reports with an unknown `Source`.  A valid RTCM input report means
+`Tag == RTCM` and no explicit checksum failure (`ChecksumOK` unset or
+true).  The `msg_id` counters additionally require non-empty `MsgID`.
+If `ChecksumOK` is set and false, increment the relevant error counter
+without a message ID label, because a corrupted packet's ID is not
+trusted.
 
-- `satpulse_rtcm_messages_total{source,msg_id,usage}` increments for
-  each RTCM `CorReportMsg` with a non-empty message ID and no explicit
-  checksum failure.
-- `satpulse_rtcm_checksum_errors_total{source}` increments when
-  `ChecksumOK` is set and false.  Do not trust a corrupted packet's
-  message ID for this error counter.
+Observed input metrics are produced from `CorReportSourcePull`:
 
-The `source` label should use `CorReportSource.String()` values
-(`pull`, `receiver`).  The `usage` label is a bounded enum:
+- `satpulse_rtcm_input_messages_total{msg_id}` increments for each
+  complete logical RTCM input message observed from the correction
+  feed.  Increment when `FinalFragment` is absent or true; do not
+  increment when `FinalFragment` is explicitly false.
+- `satpulse_rtcm_input_packets_observed_total{msg_id}` increments for
+  each valid RTCM input packet observed from the correction feed,
+  including non-final fragments.
+- `satpulse_rtcm_input_bytes_total` adds `NBytes` for each valid RTCM
+  input packet observed from the correction feed when `NBytes` is set.
+  Do not label this by message ID; it answers total observed RTCM input
+  byte volume.  It does not require non-empty `MsgID`.
+- `satpulse_rtcm_input_errors_observed_total` increments when an
+  observed RTCM input packet has `ChecksumOK` set and false.
 
-- `used` when `Used` is set and true.
-- `not_used` when `Used` is set and false.
-- `unknown` when `Used` is unset, including pull-source reports.
+Receiver-reported input metrics are produced from
+`CorReportSourceReceiver`:
 
-This lets operators query total valid RTCM observations by summing over
-`usage`, or receiver-used traffic with `source="receiver",usage="used"`.
-Do not include receiver base ID or byte length as labels in this first
-metric surface; those either have higher cardinality risk or are better
-suited to later gauges after there is a clear consumer.
+- `satpulse_rtcm_input_packets_reported_total{msg_id}` increments for
+  each valid RTCM input packet reported by the receiver.
+- `satpulse_rtcm_input_packets_used_total{msg_id}` increments when the
+  receiver report is valid and `Used` is set and true.
+- `satpulse_rtcm_input_packets_unused_total{msg_id}` increments when
+  the receiver report is valid and `Used` is set and false.
+- `satpulse_rtcm_input_errors_reported_total` increments when a
+  receiver-reported RTCM input packet has `ChecksumOK` set and false.
 
-Add Prometheus tests that exercise valid RTCM report counters, source
-labels, usage labels, non-RTCM filtering, and checksum-error counting.
+When `Used` is unset on a valid receiver report, increment only
+`satpulse_rtcm_input_packets_reported_total{msg_id}`; do not increment
+the used or unused counters.
+
+Add a gauge `satpulse_rtcm_input_ref_station_id` for the most recent
+RTCM reference station ID seen in a valid RTCM input report.
+Set it from `RTCMRefBaseID` whenever that field is present on a
+non-error RTCM `CorReportMsg`; if both observed and receiver-reported
+input reports carry the field, the latest report wins.  It does not
+require non-empty `MsgID`.  In theory this is per message, but in
+normal correction streams it is effectively constant.  Do not use
+reference station ID as a label.
+
+Register these counter families in `New`, alongside the existing PHC
+counters.  Do not pre-initialize possible `msg_id` label values; each
+labelled series appears only after the first increment for that message
+ID.  The unlabelled byte and error counters are registered at startup.
+Register `satpulse_rtcm_input_ref_station_id` lazily when the first
+valid `RTCMRefBaseID` value is observed.
+
+Add Prometheus tests that exercise observed and receiver-reported RTCM
+input counters, `FinalFragment` message-counting semantics, byte
+counting without a message ID label, receiver used/unused counters,
+unknown usage, non-RTCM filtering, checksum-error counting, and lazy
+reference-station ID gauge creation.
 
 ## Pull Packet Path
 
@@ -384,18 +417,33 @@ now.
    events to `tag == "RTCM"` with valid checksum and non-empty
    `msgID`, and maintaining per-message-ID counts that reset whenever
    an event's `source` differs from the previous one.
-10. Add Prometheus RTCM counters for valid reports and checksum
-    failures.
+10. Add Prometheus RTCM input counters for observed messages, observed
+    packets and bytes, receiver-reported packets, receiver-reported
+    used/unused packets, checksum failures, and the latest reference
+    station ID gauge.
 11. Add tests for source marshaling, handler fan-out, UBX-RXM-COR
     conversion, RTCM pull-report conversion, dispatcher pull-channel
     close handling, SSE filtering, dashboard counting, and Prometheus
     metrics.
-12. Add Unicore `RTCMSTATUS` parsing and conversion.
 
 ## Follow-ons
 
 These are not part of this plan.
 
+- Add Unicore `RTCMSTATUS` parsing and conversion as another
+  receiver-source producer (#293).  It can reuse the receiver-source
+  emission path: add typed `RTCMSTATUS` parsing in `gps/lib/uncmsg`
+  and convert it in `gps/internal/unc.packetProcessor.dispatch`.  The
+  repository already knows the `RTCMSTATUS` message ID/name, but
+  unregistered messages are currently parsed as unknown bodies.  As a
+  receiver-source report it sets `Source = CorReportSourceReceiver`,
+  `Tag = RTCM`, `MsgID` using the same RTCM message ID formatting as
+  other reports when the available fields support it, and
+  `RTCMRefBaseID` from the Base ID field; `NBytes`, `ChecksumOK`,
+  `Used`, and `NativeMsg` stay unset (the documented checksum is the
+  Unicore log checksum, not an RTCM correction-message checksum, and
+  the message does not explicitly say whether the receiver used the
+  correction in its solution).
 - Enable `UBX-RXM-COR` through `ConfigOpts` where needed.
 - Add a protocol-independent correction-report correlator if needed.
 - Enrich the generic `NativeMsg` observer path with packet length if

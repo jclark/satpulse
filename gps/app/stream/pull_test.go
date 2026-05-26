@@ -80,6 +80,9 @@ func TestCorReportFromPacket(t *testing.T) {
 	if !msg.ChecksumOK.IsSet() || !msg.ChecksumOK.Get() {
 		t.Errorf("ChecksumOK = (%v, %v), want set true", msg.ChecksumOK.Get(), msg.ChecksumOK.IsSet())
 	}
+	if msg.FinalFragment.IsSet() {
+		t.Errorf("FinalFragment set for non-MSM packet: %v", msg.FinalFragment.Get())
+	}
 	wantBaseID, ok := rtcmbin.ReferenceStationID(testRTCM1005)
 	if !ok {
 		t.Fatal("ReferenceStationID returned false for test packet")
@@ -120,6 +123,37 @@ func TestCorReportFromPacketInvalidChecksum(t *testing.T) {
 	}
 	if msg.RTCMRefBaseID.IsSet() {
 		t.Errorf("RTCMRefBaseID set for invalid checksum: %d", msg.RTCMRefBaseID.Get())
+	}
+}
+
+func TestCorReportFromPacketMSMFinalFragment(t *testing.T) {
+	tests := []struct {
+		name string
+		mmb  bool
+		want bool
+	}{
+		{"more follow", true, false},
+		{"final", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeRTCMMSM(1077, tt.mmb, 19)
+			msg, err := CorReportFromPacket(scan.Packet{
+				Format:        rtcm.PacketFormat,
+				Data:          string(data),
+				ChecksumValid: true,
+			})
+			if err != nil {
+				t.Fatalf("CorReportFromPacket returned error: %v", err)
+			}
+			if msg == nil {
+				t.Fatal("CorReportFromPacket returned nil")
+			}
+			if !msg.FinalFragment.IsSet() || msg.FinalFragment.Get() != tt.want {
+				t.Errorf("FinalFragment = (%v, %v), want set %v",
+					msg.FinalFragment.Get(), msg.FinalFragment.IsSet(), tt.want)
+			}
+		})
 	}
 }
 
