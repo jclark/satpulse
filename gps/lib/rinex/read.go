@@ -19,6 +19,12 @@ type observationHeader struct {
 	timeSystem string
 }
 
+type epochLine struct {
+	t     Time
+	flag  int
+	count int
+}
+
 // ReadObservationFile reads a RINEX observation file.
 func ReadObservationFile(r io.Reader) (Metadata, []SignalObservation, error) {
 	s := bufio.NewScanner(r)
@@ -86,6 +92,12 @@ func readObservationHeader(s *bufio.Scanner) (observationHeader, error) {
 				return h, err
 			}
 			h.sys = sys
+		case "SYS / SCALE FACTOR":
+			return h, fmt.Errorf("rinex: unsupported SYS / SCALE FACTOR header")
+		case "SIGNAL STRENGTH UNIT":
+			if err := readSignalStrengthUnit(content); err != nil {
+				return h, err
+			}
 		case "INTERVAL":
 			fields := strings.Fields(content)
 			if len(fields) != 0 {
@@ -143,12 +155,29 @@ func readObservationEpochs(s *bufio.Scanner, h observationHeader) ([]SignalObser
 		if line[0] != '>' {
 			return nil, fmt.Errorf("rinex: expected epoch line, got %q", line)
 		}
-		t, n, err := parseEpochLine(line)
+		e, err := parseEpochLine(line)
 		if err != nil {
 			return nil, err
 		}
-		t = fileToGPSTime(t, h.timeSystem, leapSeconds)
-		for i := 0; i < n; i++ {
+		switch e.flag {
+		case 0, 1:
+		case 2, 3, 5:
+			if err := skipEpochRecords(s, e.count, "event records"); err != nil {
+				return nil, err
+			}
+			continue
+		case 4:
+			return nil, fmt.Errorf("rinex: unsupported mid-file header update")
+		case 6:
+			if err := skipEpochRecords(s, e.count, "cycle-slip records"); err != nil {
+				return nil, err
+			}
+			continue
+		default:
+			return nil, fmt.Errorf("rinex: unsupported epoch flag %d", e.flag)
+		}
+		t := fileToGPSTime(e.t, h.timeSystem, leapSeconds)
+		for i := 0; i < e.count; i++ {
 			if !s.Scan() {
 				if err := s.Err(); err != nil {
 					return nil, err
@@ -164,6 +193,18 @@ func readObservationEpochs(s *bufio.Scanner, h observationHeader) ([]SignalObser
 		}
 	}
 	return obs, s.Err()
+}
+
+func skipEpochRecords(s *bufio.Scanner, n int, context string) error {
+	for i := 0; i < n; i++ {
+		if !s.Scan() {
+			if err := s.Err(); err != nil {
+				return err
+			}
+			return fmt.Errorf("rinex: unexpected EOF in %s", context)
+		}
+	}
+	return nil
 }
 
 func parseRunDate(s string) time.Time {
@@ -222,6 +263,18 @@ func readObsTypesHeader(content, prev string, codes map[string][]ObservationCode
 		codes[sys] = append(codes[sys], code)
 	}
 	return sys, nil
+}
+
+func readSignalStrengthUnit(content string) error {
+	fields := strings.Fields(content)
+	if len(fields) == 0 {
+		return fmt.Errorf("rinex: missing signal strength unit")
+	}
+	unit := strings.ToUpper(fields[0])
+	if unit == "DBHZ" || unit == "DB-HZ" {
+		return nil
+	}
+	return fmt.Errorf("rinex: unsupported signal strength unit %q", fields[0])
 }
 
 func readGLONASSFreqHeader(content string, frq map[SatelliteID]int8) error {
@@ -298,20 +351,40 @@ func fileToGPSTime(t Time, timeSystem string, leapSeconds int64) Time {
 	}
 }
 
-func parseEpochLine(line string) (Time, int, error) {
-	fields := strings.Fields(line)
-	if len(fields) < 9 {
-		return 0, 0, fmt.Errorf("rinex: invalid epoch line %q", line)
-	}
-	t, err := parseRINEXTime(fields[1], fields[2], fields[3], fields[4], fields[5], fields[6])
+func parseEpochLine(line string) (epochLine, error) {
+	line = padLine(line, 35)
+	flag, err := parseEpochInt(line[31:32], "flag")
 	if err != nil {
-		return 0, 0, err
+		return epochLine{}, err
 	}
-	n, err := strconv.Atoi(fields[8])
+	n, err := parseEpochInt(line[32:35], "record count")
 	if err != nil {
-		return 0, 0, fmt.Errorf("rinex: invalid epoch satellite count %q", fields[8])
+		return epochLine{}, err
 	}
-	return t, n, nil
+	if n < 0 {
+		return epochLine{}, fmt.Errorf("rinex: invalid epoch record count %q", strings.TrimSpace(line[32:35]))
+	}
+	e := epochLine{flag: flag, count: n}
+	if flag == 0 || flag == 1 {
+		t, err := parseRINEXTime(strings.TrimSpace(line[2:6]), strings.TrimSpace(line[7:9]), strings.TrimSpace(line[10:12]), strings.TrimSpace(line[13:15]), strings.TrimSpace(line[16:18]), strings.TrimSpace(line[19:29]))
+		if err != nil {
+			return epochLine{}, err
+		}
+		e.t = t
+	}
+	return e, nil
+}
+
+func parseEpochInt(s, name string) (int, error) {
+	text := strings.TrimSpace(s)
+	if text == "" {
+		return 0, fmt.Errorf("rinex: missing epoch %s", name)
+	}
+	n, err := strconv.Atoi(text)
+	if err != nil {
+		return 0, fmt.Errorf("rinex: invalid epoch %s %q", name, text)
+	}
+	return n, nil
 }
 
 func parseRINEXTime(year, month, day, hour, minute, second string) (Time, error) {
