@@ -173,15 +173,15 @@ func TestParseFlagsFormats(t *testing.T) {
 	if !v.format.rtcm.OmitZeroDoppler {
 		t.Fatal("OmitZeroDoppler = false, want true")
 	}
-	v, _, err = parseFlags("", []string{"--from", "ubx", "--ubx-phase-threshold", "1", "--ubx-slip-threshold", "12", "input.ubx"})
+	v, _, err = parseFlags("", []string{"--from", "ubx", "--ubx-slip-threshold", "12", "input.ubx"})
 	if err != nil {
-		t.Fatalf("parseFlags ubx thresholds: %v", err)
+		t.Fatalf("parseFlags ubx slip threshold: %v", err)
 	}
-	if v.format.ubx.PhaseThreshold != 1 || v.format.ubx.SlipThreshold != 12 {
-		t.Fatalf("UBX thresholds = %d, %d; want 1, 12", v.format.ubx.PhaseThreshold, v.format.ubx.SlipThreshold)
+	if v.format.ubx.SlipThreshold != 12 {
+		t.Fatalf("UBX slip threshold = %d; want 12", v.format.ubx.SlipThreshold)
 	}
-	if _, _, err := parseFlags("", []string{"--from", "raw", "--ubx-phase-threshold", "0", "--ubx-slip-threshold", "15", "input.raw"}); err != nil {
-		t.Fatalf("parseFlags raw UBX thresholds: %v", err)
+	if _, _, err := parseFlags("", []string{"--from", "raw", "--ubx-slip-threshold", "15", "input.raw"}); err != nil {
+		t.Fatalf("parseFlags raw UBX slip threshold: %v", err)
 	}
 	for _, tt := range []struct {
 		from string
@@ -225,9 +225,6 @@ func TestParseFlagsFormats(t *testing.T) {
 	}
 	if _, _, err := parseFlags("", []string{"--from", "ubx", "--rtcm-omit-zero-doppler", "input.ubx"}); err == nil {
 		t.Fatal("parseFlags accepted RTCM zero Doppler option with UBX input")
-	}
-	if _, _, err := parseFlags("", []string{"--from", "rtcm", "--ubx-phase-threshold", "0", "input.rtcm"}); err == nil {
-		t.Fatal("parseFlags accepted UBX phase threshold option with RTCM input")
 	}
 	if _, _, err := parseFlags("", []string{"--from", "unca", "--ubx-slip-threshold", "15", "input.unc"}); err == nil {
 		t.Fatal("parseFlags accepted UBX slip threshold option with UNCA input")
@@ -815,7 +812,7 @@ func TestRunRawIgnoresMixedObservationFamilies(t *testing.T) {
 
 func TestGoldenFiles(t *testing.T) {
 	// The UBX golden files were checked against RTKLIB Explorer with:
-	// convbin -r ubx -v 3.04 -od -os -ro -MULTICODE.
+	// convbin -r ubx -v 3.04 -od -os -ro "-MULTICODE -MAX_STD_CP=15".
 	// The RTCM golden file was checked against RTKLIB Explorer with:
 	// convbin -r rtcm3 -v 3.04 -od -os -ro "-MULTIMODE -INVPRR" -tr 2026/5/19 0:0:0.
 	// RTCM defines MSM PhaseRangeRate as d(PhaseRange)/dt, with PhaseRange

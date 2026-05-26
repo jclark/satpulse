@@ -10,26 +10,16 @@ import (
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
-const (
-	singleBandPhaseThreshold = 6
-	multiBandPhaseThreshold  = 15
-	defaultSlipThreshold     = 15
-)
-
 // Options controls UBX to RINEX conversion.
 type Options struct {
-	// PhaseThreshold is the cpStdev value at which phase is omitted.
-	// If zero, the RTKLIB Explorer singleBand/multiBand thresholds are used.
-	PhaseThreshold byte
-	SlipThreshold  byte
+	SlipThreshold byte
 }
 
 // Converter converts UBX-RXM-RAWX messages to RINEX observations.
 type Converter struct {
-	opts      Options
-	sink      rinex.Sink
-	state     map[signalKey]signalState
-	multiBand bool
+	opts  Options
+	sink  rinex.Sink
+	state map[signalKey]signalState
 }
 
 type signalKey struct {
@@ -47,7 +37,7 @@ type signalState struct {
 // New creates a Converter that writes records to sink.
 func New(sink rinex.Sink, opts Options) *Converter {
 	if opts.SlipThreshold == 0 {
-		opts.SlipThreshold = defaultSlipThreshold
+		opts.SlipThreshold = 15
 	}
 	return &Converter{
 		opts:  opts,
@@ -59,11 +49,8 @@ func New(sink rinex.Sink, opts Options) *Converter {
 // ConvertRAWX converts one UBX-RXM-RAWX message.
 func (c *Converter) ConvertRAWX(m *ubxbin.RxmRawx) error {
 	t := rinex.TimeFromGPSWeekSeconds(int64(m.Week), m.RcvTow)
-	threshold := c.phaseThreshold()
-	multiBand := false
 	for _, meas := range m.Meas {
-		obs, ok := c.observation(t, threshold, meas)
-		multiBand = multiBand || meas.SigID > 1
+		obs, ok := c.observation(t, meas)
 		if !ok {
 			continue
 		}
@@ -71,21 +58,10 @@ func (c *Converter) ConvertRAWX(m *ubxbin.RxmRawx) error {
 			return err
 		}
 	}
-	c.multiBand = c.multiBand || multiBand
 	return nil
 }
 
-func (c *Converter) phaseThreshold() byte {
-	if c.opts.PhaseThreshold != 0 {
-		return c.opts.PhaseThreshold
-	}
-	if c.multiBand {
-		return multiBandPhaseThreshold
-	}
-	return singleBandPhaseThreshold
-}
-
-func (c *Converter) observation(t rinex.Time, phaseThreshold byte, meas ubxbin.RxmRawxMeas) (rinex.SignalObservation, bool) {
+func (c *Converter) observation(t rinex.Time, meas ubxbin.RxmRawxMeas) (rinex.SignalObservation, bool) {
 	sys := ubxbin.RINEXSys(meas.GNSSID)
 	satNum := ubxbin.RINEXSatNum(meas.GNSSID, meas.SVID)
 	sig := ubxbin.RINEXSig(meas.GNSSID, meas.SigID)
@@ -103,10 +79,10 @@ func (c *Converter) observation(t rinex.Time, phaseThreshold byte, meas ubxbin.R
 	if meas.TrkStat&ubxbin.RxmRawxPrValid != 0 && finite64(meas.PrMes) {
 		obs.PR = opt.Make(meas.PrMes)
 	}
-	phase := meas.TrkStat&ubxbin.RxmRawxCpValid != 0 && meas.CpStdev&ubxbin.RxmRawxCpStdMask < phaseThreshold && meas.CpMes != -0.5 && finite64(meas.CpMes)
-	lli := c.lli(obs.Sat, obs.Sig, meas, phase)
-	if phase {
-		obs.CP = opt.Make(carrierPhase(meas))
+	cp, cpOK := carrierPhase(meas)
+	lli := c.lli(obs.Sat, obs.Sig, meas, cpOK)
+	if cpOK {
+		obs.CP = opt.Make(cp)
 		if lli != 0 {
 			obs.LLI = opt.Make(lli)
 		}
@@ -125,12 +101,15 @@ func (c *Converter) observation(t rinex.Time, phaseThreshold byte, meas ubxbin.R
 	return obs, true
 }
 
-func carrierPhase(meas ubxbin.RxmRawxMeas) float64 {
+func carrierPhase(meas ubxbin.RxmRawxMeas) (float64, bool) {
+	if meas.TrkStat&ubxbin.RxmRawxCpValid == 0 || meas.CpMes == -0.5 || !finite64(meas.CpMes) {
+		return 0, false
+	}
 	cp := meas.CpMes
 	if meas.GNSSID == ubxbin.BDS && (meas.SVID <= 5 || meas.SVID >= 59) {
 		cp += 0.5
 	}
-	return cp
+	return cp, true
 }
 
 func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.RxmRawxMeas, phase bool) rinex.LLI {

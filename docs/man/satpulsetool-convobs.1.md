@@ -145,11 +145,6 @@ This option is valid only with **raw** or **rtcm** input.
 By default, **convobs** preserves explicit zero Doppler values.
 This option is valid only with **raw** or **rtcm** input.
 
-**\-\-ubx\-phase\-threshold** *n*
-: Set the UBX-RXM-RAWX `cpStdev` index at which carrier phase is omitted.
-The value 0 selects the RTKLIB Explorer-compatible automatic behavior.
-This option is valid only with **raw** or **ubx** input.
-
 **\-\-ubx\-slip\-threshold** *n*
 : Set the UBX-RXM-RAWX `cpStdev` index that marks a cycle slip.
 The default is 15.
