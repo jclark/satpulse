@@ -183,6 +183,16 @@ func TestParseFlagsFormats(t *testing.T) {
 	if _, _, err := parseFlags("", []string{"--from", "raw", "--ubx-slip-threshold", "15", "input.raw"}); err != nil {
 		t.Fatalf("parseFlags raw UBX slip threshold: %v", err)
 	}
+	v, _, err = parseFlags("", []string{"--from", "ubx", "--ubx-bds-geo-half-cycle", "input.ubx"})
+	if err != nil {
+		t.Fatalf("parseFlags ubx BDS GEO half cycle: %v", err)
+	}
+	if !v.format.ubx.BDSGeoHalfCycle {
+		t.Fatal("BDSGeoHalfCycle = false, want true")
+	}
+	if _, _, err := parseFlags("", []string{"--from", "raw", "--ubx-bds-geo-half-cycle", "input.raw"}); err != nil {
+		t.Fatalf("parseFlags raw UBX BDS GEO half cycle: %v", err)
+	}
 	for _, tt := range []struct {
 		from string
 		want inputFormat
@@ -228,6 +238,9 @@ func TestParseFlagsFormats(t *testing.T) {
 	}
 	if _, _, err := parseFlags("", []string{"--from", "unca", "--ubx-slip-threshold", "15", "input.unc"}); err == nil {
 		t.Fatal("parseFlags accepted UBX slip threshold option with UNCA input")
+	}
+	if _, _, err := parseFlags("", []string{"--from", "unca", "--ubx-bds-geo-half-cycle", "input.unc"}); err == nil {
+		t.Fatal("parseFlags accepted UBX BDS GEO half cycle option with UNCA input")
 	}
 	if _, _, err := parseFlags("", []string{"--packet-log", "--from", "rtcm", "--date", "20251218", "input.jsonl"}); err == nil {
 		t.Fatal("parseFlags accepted RTCM date option with packet log")
@@ -813,6 +826,7 @@ func TestRunRawIgnoresMixedObservationFamilies(t *testing.T) {
 func TestGoldenFiles(t *testing.T) {
 	// The UBX golden files were checked against RTKLIB Explorer with:
 	// convbin -r ubx -v 3.04 -od -os -ro "-MULTICODE -MAX_STD_CP=15".
+	// They use --ubx-bds-geo-half-cycle to match RTKLIB Explorer's BDS GEO phase correction.
 	// The RTCM golden file was checked against RTKLIB Explorer with:
 	// convbin -r rtcm3 -v 3.04 -od -os -ro "-MULTIMODE -INVPRR" -tr 2026/5/19 0:0:0.
 	// RTCM defines MSM PhaseRangeRate as d(PhaseRange)/dt, with PhaseRange
@@ -841,13 +855,13 @@ func TestGoldenFiles(t *testing.T) {
 	}{
 		{
 			name:          "m8t_20251217_4h",
-			args:          []string{"--run-by", "", filepath.Join("testdata", "m8t-20251217-4h.ubx")},
+			args:          []string{"--run-by", "", "--ubx-bds-geo-half-cycle", filepath.Join("testdata", "m8t-20251217-4h.ubx")},
 			obs:           filepath.Join("testdata", "m8t-20251217-4h.obs.gz"),
 			cleanMetadata: cleanCommon,
 		},
 		{
 			name:          "f9t_20251217_3h",
-			args:          []string{"--run-by", "", filepath.Join("testdata", "f9t-20251217-3h.ubx")},
+			args:          []string{"--run-by", "", "--ubx-bds-geo-half-cycle", filepath.Join("testdata", "f9t-20251217-3h.ubx")},
 			obs:           filepath.Join("testdata", "f9t-20251217-3h.obs.gz"),
 			cleanMetadata: cleanCommon,
 		},

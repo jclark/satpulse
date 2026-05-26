@@ -13,7 +13,7 @@ satpulsetool-convobs - convert GNSS observation data
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rinex\-version** *version*] [**\-\-program** *name*] [**\-\-run\-by** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-antenna** *type*] [**\-\-approx\-pos** *X,Y,Z*] [**\-\-comment** *text*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-strict\-prr**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-ubx\-slip\-threshold** *n*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-ubx\-slip\-threshold** *n*] [**\-\-ubx\-bds\-geo\-half\-cycle**]\
 &nbsp;&nbsp;&nbsp;&nbsp;*file*...
 
 # DESCRIPTION
@@ -148,6 +148,11 @@ This option is valid only with **raw** or **rtcm** input.
 **\-\-ubx\-slip\-threshold** *n*
 : Set the UBX-RXM-RAWX `cpStdev` index that marks a cycle slip.
 The default is 15.
+This option is valid only with **raw** or **ubx** input.
+
+**\-\-ubx\-bds\-geo\-half\-cycle**
+: Apply the RTKLIB-compatible half-cycle correction to UBX-RXM-RAWX carrier phase measurements for BDS GEO satellites.
+By default, **convobs** preserves the carrier phase value reported by the receiver.
 This option is valid only with **raw** or **ubx** input.
 
 # HEADER FILE FORMAT

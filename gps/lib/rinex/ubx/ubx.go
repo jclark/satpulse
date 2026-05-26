@@ -12,7 +12,8 @@ import (
 
 // Options controls UBX to RINEX conversion.
 type Options struct {
-	SlipThreshold byte
+	SlipThreshold   byte
+	BDSGeoHalfCycle bool
 }
 
 // Converter converts UBX-RXM-RAWX messages to RINEX observations.
@@ -79,7 +80,7 @@ func (c *Converter) observation(t rinex.Time, meas ubxbin.RxmRawxMeas) (rinex.Si
 	if meas.TrkStat&ubxbin.RxmRawxPrValid != 0 && finite64(meas.PrMes) {
 		obs.PR = opt.Make(meas.PrMes)
 	}
-	cp, cpOK := carrierPhase(meas)
+	cp, cpOK := carrierPhase(meas, c.opts.BDSGeoHalfCycle)
 	lli := c.lli(obs.Sat, obs.Sig, meas, cpOK)
 	if cpOK {
 		obs.CP = opt.Make(cp)
@@ -101,16 +102,21 @@ func (c *Converter) observation(t rinex.Time, meas ubxbin.RxmRawxMeas) (rinex.Si
 	return obs, true
 }
 
-func carrierPhase(meas ubxbin.RxmRawxMeas) (float64, bool) {
+func carrierPhase(meas ubxbin.RxmRawxMeas, bdsGeoHalfCycle bool) (float64, bool) {
 	if meas.TrkStat&ubxbin.RxmRawxCpValid == 0 || !finite64(meas.CpMes) {
 		return 0, false
 	}
 	// RTKLIB rejects a RAWX carrier phase of -0.5 cycles here for reasons unknown.
 	cp := meas.CpMes
-	if meas.GNSSID == ubxbin.BDS && (meas.SVID <= 5 || meas.SVID >= 59) {
+	if bdsGeoHalfCycle && isBDSGeo(meas) {
+		// RTKLIB applies this BDS GEO half-cycle shift; its source gives no rationale.
 		cp += 0.5
 	}
 	return cp, true
+}
+
+func isBDSGeo(meas ubxbin.RxmRawxMeas) bool {
+	return meas.GNSSID == ubxbin.BDS && (meas.SVID <= 5 || meas.SVID >= 59)
 }
 
 func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.RxmRawxMeas, phase bool) rinex.LLI {

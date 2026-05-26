@@ -50,7 +50,7 @@ const summary = `[-h|--help] [-o|--output path] [-H|--header-file path]
            [--rinex-version version] [--program name] [--run-by name]
            [--antenna type] [--approx-pos x,y,z] [--comment text]
            [--rtcm-strict-prr] [--rtcm-omit-zero-doppler]
-           [--ubx-slip-threshold n]
+           [--ubx-slip-threshold n] [--ubx-bds-geo-half-cycle]
            input...`
 
 type inputFormat string
@@ -270,6 +270,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&v.format.rtcm.UseSpecPhaseRangeRateSign, "rtcm-strict-prr", false, "interpret sign of PhaseRangeRate in strict conformance with RTCM3 standard (Doppler = -PRR/wavelength)")
 	flags.BoolVar(&v.format.rtcm.OmitZeroDoppler, "rtcm-omit-zero-doppler", false, "omit RTCM MSM Doppler observations with numeric value zero")
 	flags.Uint8Var(&v.format.ubx.SlipThreshold, "ubx-slip-threshold", 15, "RAWX cpStdev index that marks a cycle slip")
+	flags.BoolVar(&v.format.ubx.BDSGeoHalfCycle, "ubx-bds-geo-half-cycle", false, "apply RTKLIB-compatible BDS GEO half-cycle carrier phase correction")
 	v.metadataFlags = flags
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
 	if err := flags.Parse(args); err != nil {
@@ -304,6 +305,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if flags.Changed("ubx-slip-threshold") && !v.from.mayUseUBX() {
 		return nil, usageFunc, errors.New("--ubx-slip-threshold is valid only with raw or UBX input")
+	}
+	if flags.Changed("ubx-bds-geo-half-cycle") && !v.from.mayUseUBX() {
+		return nil, usageFunc, errors.New("--ubx-bds-geo-half-cycle is valid only with raw or UBX input")
 	}
 	if math.IsNaN(interval) || math.IsInf(interval, 0) || interval < 0 {
 		return nil, usageFunc, errors.New("--interval must be a finite non-negative number of seconds")
