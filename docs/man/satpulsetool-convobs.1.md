@@ -13,7 +13,7 @@ satpulsetool-convobs - convert GNSS observation data
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rinex\-version** *version*] [**\-\-program** *name*] [**\-\-run\-by** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-antenna** *type*] [**\-\-approx\-pos** *X,Y,Z*] [**\-\-comment** *text*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-strict\-prr**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-ubx\-phase\-threshold** *n*] [**\-\-ubx\-slip\-threshold** *n*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-ubx\-slip\-threshold** *n*]\
 &nbsp;&nbsp;&nbsp;&nbsp;*file*...
 
 # DESCRIPTION
