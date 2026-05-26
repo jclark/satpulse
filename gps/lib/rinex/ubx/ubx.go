@@ -102,9 +102,10 @@ func (c *Converter) observation(t rinex.Time, meas ubxbin.RxmRawxMeas) (rinex.Si
 }
 
 func carrierPhase(meas ubxbin.RxmRawxMeas) (float64, bool) {
-	if meas.TrkStat&ubxbin.RxmRawxCpValid == 0 || meas.CpMes == -0.5 || !finite64(meas.CpMes) {
+	if meas.TrkStat&ubxbin.RxmRawxCpValid == 0 || !finite64(meas.CpMes) {
 		return 0, false
 	}
+	// RTKLIB rejects a RAWX carrier phase of -0.5 cycles here for reasons unknown.
 	cp := meas.CpMes
 	if meas.GNSSID == ubxbin.BDS && (meas.SVID <= 5 || meas.SVID >= 59) {
 		cp += 0.5
