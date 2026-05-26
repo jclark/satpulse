@@ -48,7 +48,7 @@ func validateMsgs(mf *Parsed, tags []string) error {
 	if err != nil {
 		return err
 	}
-	_, err = ToRaw(msgs)
+	_, err = ToRaw(msgs, "", false)
 	return err
 }
 
@@ -188,7 +188,7 @@ description = "Send binary command"
 	if err != nil {
 		t.Fatalf("TaggedMsgs error: %v", err)
 	}
-	raw, err := ToRaw(msgs)
+	raw, err := ToRaw(msgs, "", false)
 	if err != nil {
 		t.Fatalf("ToRaw error: %v", err)
 	}
