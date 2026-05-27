@@ -87,7 +87,7 @@ Full standard NMEA set. Since UM980 has no default NMEA output, enable all sente
 ```
 satpulsetool gps ... --reload
 satpulsetool gps ... --vendor unicore \
-  -m configs/gpsmsg/um980.toml \
+  -m configs/gpsmsg/unicore/um980.toml \
   -t nmea-rmc,nmea-gga,nmea-gsa,nmea-gsv,nmea-vtg,nmea-gll \
   --packet-log nmea-default.jsonl --capture 30
 ```
@@ -101,7 +101,7 @@ RMC only. Tests a single NMEA sentence type.
 ```
 satpulsetool gps ... --reload
 satpulsetool gps ... --vendor unicore \
-  -m configs/gpsmsg/um980.toml -t nmea-rmc \
+  -m configs/gpsmsg/unicore/um980.toml -t nmea-rmc \
   --packet-log nmea-rmc.jsonl --capture 30
 ```
 
@@ -214,7 +214,7 @@ NovAtel-format BESTPOS + BESTXYZ + RECTIME. Tests the NovAtel processor path (NO
 ```
 satpulsetool gps ... --binary --pvt-out time,off
 satpulsetool gps ... --vendor unicore \
-  -m configs/gpsmsg/um980.toml \
+  -m configs/gpsmsg/unicore/um980.toml \
   -t nov-bestposa,nov-bestposb,nov-bestxyza,nov-bestxyzb,unc-rectimea \
   --packet-log novatel-dual.jsonl --capture 30
 ```
@@ -229,9 +229,9 @@ Requires SIGNALGROUP 2 + E6-HAS PPP. Done last because SIGNALGROUP change causes
 
 ```
 satpulsetool gps ... --reload
-satpulsetool gps ... --vendor unicore -m configs/gpsmsg/um980.toml -t signalgroup-2
+satpulsetool gps ... --vendor unicore -m configs/gpsmsg/unicore/um980.toml -t signalgroup-2
 sleep 5
-satpulsetool gps ... --vendor unicore -m configs/gpsmsg/um980.toml -t ppp-has
+satpulsetool gps ... --vendor unicore -m configs/gpsmsg/unicore/um980.toml -t ppp-has
 sleep 2
 satpulsetool gps ... --binary --pvt-out pos,time,off
 # Wait for PPP convergence -- monitor with BESTPOSA to check for SOL_COMPUTED,PPP

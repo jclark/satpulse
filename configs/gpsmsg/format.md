@@ -375,7 +375,7 @@ value = 1
 Send it with `--port`:
 
 ```
-satpulsetool gps -d /dev/ttyACM0 -m ubx9.toml -t ubx-nav-timeutc --port usb
+satpulsetool gps -d /dev/ttyACM0 -m u-blox/gen9.toml -t ubx-nav-timeutc --port usb
 ```
 
 `--port` accepts `i2c`, `uart1`, `uart2`, `usb`, and `spi` (case
@@ -446,12 +446,12 @@ Tags in an including file override tags in an included file. Apart from this, it
 
 ## Schema
 
-There is a JSON schema for message files at `gpsmsg-schema.json` in this directory.
+There is a JSON schema for message files at `gpsmsg-schema.json` in the root `gpsmsg` directory.
 With Visual Studio Code, the [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
 extension supports schema-sensitive editing. The first line of the TOML file can have a line like this:
 
 ```
-#:schema ./gpsmsg-schema.json
+#:schema ../gpsmsg-schema.json
 ```
 
-to tell the extension which schema to use.
+to tell the extension which schema to use from a vendor subdirectory.
