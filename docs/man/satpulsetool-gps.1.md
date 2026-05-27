@@ -164,11 +164,14 @@ The following options control the time mode of the receiver. In time mode, the r
 **\-\-fixed\-pos\-ecef** *X,Y,Z*
 : Use the specified coordinates as the fixed position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The coordinates are comma-separated X, Y, and Z coordinates in meters in the Earth-Centered, Earth-Fixed coordinate system.
 
+**\-\-fixed\-pos\-llh** *lat,lon,height*
+: Use the specified coordinates as the fixed position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The values are comma-separated latitude and longitude in degrees and height in meters above the WGS84 ellipsoid. Latitude must be in [-90, 90], longitude in [-180, 180], and height in [-500, 10000]. Mutually exclusive with **\-\-fixed-pos-ecef**, **\-\-survey** and **\-\-mobile**.
+
 **\-\-fixed\-pos\-acc** *meters*
 : Set the accuracy of the fixed position in meters (default: 20.0). This value should reflect the actual uncertainty in the fixed position coordinates. Minimum value is 0.001 (1 mm).
 
 **\-\-mobile**
-: Run in a normal mode, where the position of the antenna may change. This undoes the effect of **\-\-survey** or **\-\-fixed-pos-ecef**.
+: Run in a normal mode, where the position of the antenna may change. This undoes the effect of **\-\-survey**, **\-\-fixed-pos-ecef** or **\-\-fixed-pos-llh**.
 
 The following options control which messages the receiver outputs.
 
@@ -427,7 +430,7 @@ where `serial.toml` contains:
 
 Send the messages tagged `ppp-has` from `um980.toml` (which enable Galileo HAS on a UM980):
 
-    satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980.toml -t ppp-has
+    satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /usr/share/satpulse/gpsmsg/unicore/um980.toml -t ppp-has
 
 Send an ad-hoc command from stdin using a here document:
 
@@ -435,6 +438,11 @@ Send an ad-hoc command from stdin using a here document:
     [[line]]
     text = "CONFIG PPP ENABLE E6-HAS"
     TOML
+
+# FILES
+
+`/usr/share/satpulse/gpsmsg`
+: GPS message files installed by the package.
 
 # SEE ALSO
 

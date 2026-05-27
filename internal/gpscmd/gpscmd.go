@@ -507,6 +507,8 @@ func printMode(f *os.File, mode gpsprot.Mode) {
 		return
 	case gpsprot.PosTypeECEF:
 		fmt.Fprintf(f, "Fixed position ECEF: %s\n", mode.FixedPosECEF.String())
+	case gpsprot.PosTypeLLH:
+		fmt.Fprintf(f, "Fixed position LLH: %s,%s,%s\n", mode.FixedPosLLH[0].String(), mode.FixedPosLLH[1].String(), mode.Height.String())
 	}
 	fmt.Fprintf(f, "Fixed position accuracy: %s m\n", mode.FixedPosAcc.String())
 }

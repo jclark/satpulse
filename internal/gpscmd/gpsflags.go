@@ -119,7 +119,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [-c|--show-config] [--show-port] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
-            [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-acc meters]
+            [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-llh lat,lon,height] [--fixed-pos-acc meters]
             [--survey] [--survey-time seconds] [--survey-acc meters]
             [--min-elev degrees] [--vendor name] [--rtcm-base-id id]
             [--pvt-out pos|vel|time|tp|leap|survey|qual|epoch|tai|ecef|ptp|ntp|off,...]
@@ -165,6 +165,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	sysTimeTrusted := false
 	osnma := false
 	var fixedPosECEF ecef
+	var fixedPosLLH llh
 	fixedPosAcc := length(defaultFixedPosAcc)
 
 	pps := 0.0
@@ -223,6 +224,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Uint32Var(&surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
 	flags.Var(&surveyAcc, "survey-acc", "survey accuracy in `meters`")
 	flags.Var(&fixedPosECEF, "fixed-pos-ecef", "fixed ECEF position as `x,y,z` in meters")
+	flags.Var(&fixedPosLLH, "fixed-pos-llh", "fixed LLH position as `lat,lon,height` in degrees and meters")
 	flags.Var(&fixedPosAcc, "fixed-pos-acc", "accuracy of fixed position in `meters`")
 	var minElev angle
 	flags.Var(&minElev, "min-elev", "minimum satellite elevation in `degrees`")
@@ -403,6 +405,31 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --fixed-pos-ecef", cmdName)
 		} else if survey {
 			return nil, nil, fmt.Errorf("%s command must not specify both --survey and --fixed-pos-ecef", cmdName)
+		}
+	}
+	if flags.Lookup("fixed-pos-llh").Changed {
+		if flags.Lookup("fixed-pos-ecef").Changed {
+			return nil, nil, fmt.Errorf("%s command must not specify both --fixed-pos-ecef and --fixed-pos-llh", cmdName)
+		}
+		configChanged = true
+		if gpsprot.Length(fixedPosAcc) < gpsprot.Millimeter {
+			return nil, nil, fmt.Errorf("--fixed-pos-acc must be at least 0.001 (1 mm)")
+		}
+		vars.configSupport.require(gpsprot.ConfigSupportFixedPos, "--fixed-pos-llh")
+		if flags.Lookup("fixed-pos-acc").Changed {
+			vars.configSupport.require(gpsprot.ConfigSupportFixedPosAcc, "--fixed-pos-acc")
+		}
+		vars.mode.Set(gpsprot.Mode{
+			Static:      true,
+			PosType:     gpsprot.PosTypeLLH,
+			FixedPosLLH: fixedPosLLH.latLon,
+			Height:      fixedPosLLH.height,
+			FixedPosAcc: gpsprot.Length(fixedPosAcc),
+		})
+		if mobile {
+			return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --fixed-pos-llh", cmdName)
+		} else if survey {
+			return nil, nil, fmt.Errorf("%s command must not specify both --survey and --fixed-pos-llh", cmdName)
 		}
 	}
 	vars.timeGNSS = gpsprot.GNSS(timeGNSS)
@@ -1083,6 +1110,56 @@ func (e *ecef) Set(s string) error {
 		return fmt.Errorf("invalid ECEF coordinates: %w", err)
 	}
 	*e = ecef(pt)
+	return nil
+}
+
+type llh struct {
+	latLon [2]gpsprot.Angle
+	height gpsprot.Length
+}
+
+var _ pflag.Value = (*llh)(nil)
+
+func (l *llh) String() string {
+	if l.latLon[0] == 0 && l.latLon[1] == 0 && l.height == 0 {
+		return ""
+	}
+	return l.latLon[0].String() + "," + l.latLon[1].String() + "," + l.height.String()
+}
+
+func (l *llh) Type() string {
+	return "lat,lon,height"
+}
+
+func (l *llh) Set(s string) error {
+	parts := strings.Split(s, ",")
+	if len(parts) != 3 {
+		return fmt.Errorf("invalid LLH coordinates: %q", s)
+	}
+	lat, err := gpsprot.ParseAngle(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return fmt.Errorf("invalid LLH coordinates: %q", s)
+	}
+	lon, err := gpsprot.ParseAngle(strings.TrimSpace(parts[1]))
+	if err != nil {
+		return fmt.Errorf("invalid LLH coordinates: %q", s)
+	}
+	height, err := gpsprot.ParseLength(strings.TrimSpace(parts[2]))
+	if err != nil {
+		return fmt.Errorf("invalid LLH coordinates: %q", s)
+	}
+	if lat < -90*gpsprot.Degrees || lat > 90*gpsprot.Degrees {
+		return fmt.Errorf("invalid LLH coordinates: latitude %v out of range [-90, 90]", lat)
+	}
+	if lon < -180*gpsprot.Degrees || lon > 180*gpsprot.Degrees {
+		return fmt.Errorf("invalid LLH coordinates: longitude %v out of range [-180, 180]", lon)
+	}
+	if height < -500*gpsprot.Meter || height > 10000*gpsprot.Meter {
+		return fmt.Errorf("invalid LLH coordinates: height %v out of range [-500, 10000] meters", height)
+	}
+	l.latLon[0] = lat
+	l.latLon[1] = lon
+	l.height = height
 	return nil
 }
 

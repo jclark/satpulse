@@ -1534,8 +1534,28 @@ type CorReportMsg struct {
 
 	NativeMsg any `json:"nativeMsg,omitempty"`
 
-	NBytes        opt.Val[int]    `json:"nBytes,omitzero"`
-	ChecksumOK    opt.Val[bool]   `json:"checksumOK,omitzero"`
+	NBytes     opt.Val[int]  `json:"nBytes,omitzero"`
+	ChecksumOK opt.Val[bool] `json:"checksumOK,omitzero"`
+	// FinalFragment reports whether this packet is the final fragment of a
+	// logical correction message that may be split across multiple consecutive
+	// packets with the same Tag.
+	//
+	// Absent -- the report carries no information about fragmentation. This is
+	// the case for every receiver-source report (the receiver does not report
+	// on-the-wire fragmentation), and for every pull-source report whose message
+	// type cannot be fragmented across consecutive same-Tag packets.
+	//
+	// false -- a producer that can observe fragmentation determined this is a
+	// non-final fragment; more packets follow for this logical message.
+	//
+	// true -- this is the final fragment. A logical message carried in a single
+	// packet is true, not absent.
+	//
+	// The three states are deliberately chosen so a consumer can decide
+	// statelessly: a logical message is complete iff FinalFragment is true;
+	// incomplete iff false; and absent means the consumer has no fragmentation
+	// information and must fall back to its own policy.
+	FinalFragment opt.Val[bool]   `json:"finalFragment,omitzero"`
 	Used          opt.Val[bool]   `json:"used,omitzero"`
 	RTCMRefBaseID opt.Val[uint16] `json:"rtcmRefBaseID,omitzero"`
 }

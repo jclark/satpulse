@@ -12,11 +12,13 @@ Message files can also be used to configure receiver-specific features that satp
 Send messages from a file:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar.toml -t pps
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/allystar.toml -t pps
 ```
 
 The `-m` flag specifies the message file. The `-t` flag selects which tags to send.
 Tags listed with `-t` are sent in the order they are listed.
+When installed from a package, message files are under `/usr/share/satpulse/gpsmsg`.
+When installed with `make install`, message files are under `/usr/local/share/satpulse/gpsmsg`.
 
 Tag rules:
 - A tag can only be used with one message type in a file (`line`, `binary`, `nmea`, `casbin`, `asbin`, `sdbp`, `ubx`, or `ubxval`).
@@ -26,7 +28,7 @@ Tag rules:
 List available tags:
 
 ```
-satpulsetool gps -m allystar.toml --show-tags
+satpulsetool gps -m allystar/allystar.toml --show-tags
 ```
 
 The `-m` flag cannot be combined with config flags like `--gnss` or `--pps`.
@@ -39,24 +41,16 @@ You can use `--packet-log file.json --capture 3` options to capture packets for 
 You can then use `satpulsetool annotate file.json` to add fields showing decoded packets: pipe through `jq` to pretty-print the JSONL.
 This can help with seeing whether your receiver is handling the commands correctly.
 
-## Available message files
+## Vendor directories
 
-| File | Receiver | Protocol |
-|------|----------|----------|
-| [allystar.toml](allystar.toml) | Allystar (e.g. TAU1201, TAU951M) | Allystar binary |
-| [lg290p.toml](lg290p.toml) | Quectel LG290P | NMEA (PQTM) |
-| [atgm332d-v5.toml](atgm332d-v5.toml) | Zhongke Micro ATGM332D/ATGM336H firmware V5.x | CASIC binary |
-| [atgm332d-v6.toml](atgm332d-v6.toml) | Zhongke Micro ATGM332D/ATGM336H firmware V6.x | CASIC binary |
-| [at632.toml](at632.toml) | Zhongke Micro AT632-6T-30 timing receiver | CASIC binary |
-| [ubx.toml](ubx.toml) | u-blox (all generations) | UBX binary, NMEA (PUBX) |
-| [ubx8.toml](ubx8.toml) | u-blox Gen8 and earlier (e.g. LEA-M8T) | UBX CFG-MSG (includes ubx.toml) |
-| [ubx9.toml](ubx9.toml) | u-blox Gen9+ (e.g. ZED-F9P) | UBX CFG-VALSET (includes ubx.toml) |
-| [sinognss.toml](sinognss.toml) | SinoGNSS K901/K902 | NovAtel-style commands |
-| [bynav.toml](bynav.toml) | Bynav M2 | NovAtel-style commands |
-| [techtotop.toml](techtotop.toml) | Techtotop/Taidou T303-5D | SDBP binary |
-| [um980.toml](um980.toml) | Unicore UM980 | Unicore commands |
-| [um982.toml](um982.toml) | Unicore UM982 (dual antenna) | Unicore commands (includes um980.toml) |
-| [lc29h.toml](lc29h.toml) | Quectel LC29H | NMEA (PQTM, PAIR) |
+- [Allystar](allystar/)
+- [Bynav](bynav/)
+- [Quectel](quectel/)
+- [SinoGNSS](sinognss/)
+- [Techtotop](techtotop/)
+- [u-blox](u-blox/)
+- [Unicore](unicore/)
+- [Zhongke](zhongke/)
 
 ## Configuring for satpulsed
 
@@ -65,7 +59,7 @@ This can help with seeing whether your receiver is handling the commands correct
 Configure an Allystar receiver, such as the TAU1201, for use with satpulsed:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar.toml -t pps,asbin-nav-time,asbin-nav-svinfo,nmea-off,gnss-all
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/allystar.toml -t pps,asbin-nav-time,asbin-nav-svinfo,nmea-off,gnss-all
 ```
 
 This configures:
@@ -80,7 +74,7 @@ If you prefer to use a single constellation, you can use e.g. `gnss-gps` instead
 You can verify the configuration by querying current settings:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar.toml \
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/allystar.toml \
   -t get-pps,get-gnss --packet-log verify.jsonl --capture 2
 satpulsetool annotate verify.jsonl | jq
 ```
@@ -88,7 +82,7 @@ satpulsetool annotate verify.jsonl | jq
 If the configuration seems to be working, you can save it to non-volatile memory:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar.toml -t save
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/allystar.toml -t save
 ```
 
 ## Documentation

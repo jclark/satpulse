@@ -1,3 +1,4 @@
+#:schema ../gpsmsg-schema.json
 # Unicore UM980 GPS message file
 
 [default.line]
