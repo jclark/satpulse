@@ -1,11 +1,11 @@
-#:schema ./gpsmsg-schema.json
-# Galileo OSNMA configuration for u-blox F9P (HPG 1.51 firmware or later).
+#:schema ../gpsmsg-schema.json
+# Galileo OSNMA configuration for u-blox (e.g. ZED-F9P HPG 1.51)
 # The [[ubxval]] and [[ubxvalport]] tags target Gen9+ receivers. Use --save to
 # persist writes to BBR+Flash, and --port for the CFG-MSGOUT tags (defaults to
 # usb if not given when only key.usb is supplied here).
 
 [[include]]
-src = "ubx9.toml"
+src = "gen9.toml"
 
 # OSNMA enable/disable: CFG-GAL-USE_OSNMA.
 

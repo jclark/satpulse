@@ -289,7 +289,7 @@ Today, the hidden `--osnma` flag provisions a compiled-in Merkle root through
 `ConfigOptions.OSNMA.MerkleTreeRoot`. Move provisioning out of code:
 
 - Merkle root and public key provisioning live in
-  `configs/gpsmsg/osnma.toml`, including the `osnma-pubkey-2` tag.
+  `configs/gpsmsg/u-blox/osnma.toml`, including the `osnma-pubkey-2` tag.
 - The user runs `satpulsetool gps --msg-file osnma.toml --tag <tag>` to apply
   the needed records.
 - Retire the compiled-in `OSNMAMerkleTreeRoot` constant in
@@ -388,7 +388,7 @@ Wire this into the daemon in `time/app/daemon/daemon.go`:
   `GPSLogObserver`.
 - Add `ubxObs` to `combineObservers`.
 - Keep this always enabled with the daemon's normal logging; receiver output is
-  still controlled by the message configuration in `configs/gpsmsg/osnma.toml`.
+  still controlled by the message configuration in `configs/gpsmsg/u-blox/osnma.toml`.
 
 Add focused tests for `UBXLogObserver.NativeMsg`:
 
@@ -529,7 +529,7 @@ Logging triggers:
      target receiver/protocol versions.
 
 8. Provisioning cleanup:
-   - Move Merkle/public-key provisioning to `configs/gpsmsg/osnma.toml`.
+   - Move Merkle/public-key provisioning to `configs/gpsmsg/u-blox/osnma.toml`.
    - Remove the compiled-in Merkle root and related configurator plumbing.
 
 9. Enable cleanup:
