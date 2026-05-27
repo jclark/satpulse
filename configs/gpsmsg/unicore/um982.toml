@@ -1,4 +1,4 @@
-#:schema ./gpsmsg-schema.json
+#:schema ../gpsmsg-schema.json
 # Unicore UM982 GPS message file
 #
 # The UM982 is a dual-antenna variant of the UM980.  It shares the

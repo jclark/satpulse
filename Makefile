@@ -58,13 +58,17 @@ man: $(MAN_TARGETS)
 
 man.gz: $(MAN_GZ_TARGETS)
 
+gpsmsg:
+	mkdir -p out
+	cd configs/gpsmsg && git ls-files . > ../../out/gpsmsg.files
+
 out/%: docs/man/%.md
 	pandoc -s --metadata=title="$(basename $*)" --metadata=section="$(subst .,,$(suffix $*))" --metadata=author="James Clark" -t man -o $@ $<
 
 out/%.gz: out/%
 	gzip -c $< > $@
 
-install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpulse.toml $(MAN_TARGETS)
+install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpulse.toml $(MAN_TARGETS) gpsmsg
 	install out/$(GOARCH)/satpulsed /usr/local/sbin/satpulsed
 	install out/$(GOARCH)/satpulsetool /usr/local/bin/satpulsetool
 	sed -e 's;/etc/satpulse.toml;$(CONFIG_FILE);g' \
@@ -73,8 +77,11 @@ install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpul
 	  configs/satpulse@.service >/etc/systemd/system/satpulse@.service
 	[ -f "$(CONFIG_FILE)" ] || sed -e '/^#:schema /s;/usr/;/usr/local/;' out/$(GOARCH)/satpulse.toml >"$(CONFIG_FILE)"
 	install -m 644 -D configs/config-schema.json /usr/local/share/doc/satpulse/config-schema.json
+	for f in `cat out/gpsmsg.files`; do \
+	  install -D -m 644 configs/gpsmsg/$$f /usr/local/share/satpulse/gpsmsg/$$f; \
+	done
 	install -D -m 644 out/satpulsetool.1 /usr/local/share/man/man1/satpulsetool.1
-	install -D -m 644 out/satpulsetool-gps.1 /usr/local/share/man/man1/satpulsetool-gps.1
+	sed 's;/usr/share/satpulse/gpsmsg;/usr/local/share/satpulse/gpsmsg;g' out/satpulsetool-gps.1 > /usr/local/share/man/man1/satpulsetool-gps.1
 	install -D -m 644 out/satpulsetool-sdp.1 /usr/local/share/man/man1/satpulsetool-sdp.1
 	install -D -m 644 out/satpulsetool-syncsim.1 /usr/local/share/man/man1/satpulsetool-syncsim.1
 	install -D -m 644 out/satpulse.toml.5 /usr/local/share/man/man5/satpulse.toml.5
@@ -89,6 +96,7 @@ uninstall:
 	rm -f /usr/local/bin/satpulsetool
 	# we don't uninstall /usr/local/etc/satpulse.toml
 	rm -f /usr/local/share/doc/satpulse/config-schema.json
+	rm -rf /usr/local/share/satpulse/gpsmsg
 	rm -f /usr/local/share/man/man1/satpulsetool.1
 	rm -f /usr/local/share/man/man1/satpulsetool-gps.1
 	rm -f /usr/local/share/man/man1/satpulsetool-sdp.1
@@ -116,7 +124,7 @@ $(GH_DEBS): $(DEBS)
 $(GH_DEB_PATTERN): $(DEB_PATTERN)
 	ln -sf $(notdir $<) $@
 
-$(DEB_PATTERN): % out/%/satpulse.toml $(MAN_GZ_TARGETS)
+$(DEB_PATTERN): % out/%/satpulse.toml $(MAN_GZ_TARGETS) gpsmsg
 	rm -fr out/$*/deb
 	install -D -m 644 debian/conffiles out/$*/deb/DEBIAN/conffiles
 	install -D debian/postinst out/$*/deb/DEBIAN/postinst
@@ -126,6 +134,9 @@ $(DEB_PATTERN): % out/%/satpulse.toml $(MAN_GZ_TARGETS)
 	install -D -m 644 configs/ptp4l.service out/$*/deb/usr/share/doc/satpulse/ptp4l.service
 	install -D -m 644 configs/chrony.conf out/$*/deb/usr/share/doc/satpulse/chrony.conf
 	install -D -m 644 configs/config-schema.json out/$*/deb/usr/share/doc/satpulse/config-schema.json
+	for f in `cat out/gpsmsg.files`; do \
+	  install -D -m 644 configs/gpsmsg/$$f out/$*/deb/usr/share/satpulse/gpsmsg/$$f; \
+	done
 	install -D -m 644 LICENSE out/$*/deb/usr/share/doc/satpulse/copyright
 	install -D -m 644 configs/satpulse@.service out/$*/deb/lib/systemd/system/satpulse@.service
 	install -D -m 644 out/satpulsetool.1.gz out/$*/deb/usr/share/man/man1/satpulsetool.1.gz
@@ -152,7 +163,7 @@ $(GH_RPMS): $(RPMS)
 # The challenge here is that rpmbuild wants to put the generated RPMs in a subdirectory named by the architecture.
 # But if we follow that we will get endless pain from having patterns with two %s in them.
 # So we symlink each architecture to the current directory to avoid having the subdirectories.
-$(RPM_PATTERN): $(ALL_GOARCH) $(TOMLS) $(MAN_GZ_TARGETS)
+$(RPM_PATTERN): $(ALL_GOARCH) $(TOMLS) $(MAN_GZ_TARGETS) gpsmsg
 	goarch=$(subst x86_64,amd64,$(subst aarch64,arm64,$*)); \
 	test -L out/$* || ln -s . out/$*; \
 	echo ls -l out/$*; \
@@ -187,5 +198,4 @@ tag:
 untag:
 	git tag -d "$(VERSION_TAG)"
 
-.PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release man man.gz tag untag
-
+.PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release man man.gz gpsmsg tag untag

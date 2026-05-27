@@ -1,5 +1,5 @@
-#:schema ./gpsmsg-schema.json
-# u-blox Gen8 and earlier configuration messages (protocol < 27)
+#:schema ../gpsmsg-schema.json
+# u-blox gen 8 and earlier configuration messages (protocol < 27)
 # Uses CFG-MSG for message output rate control
 
 [[include]]

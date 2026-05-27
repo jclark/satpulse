@@ -1,4 +1,4 @@
-#:schema ./gpsmsg-schema.json
+#:schema ../gpsmsg-schema.json
 # AT632-6T-30 timing receiver configuration messages
 # Zhongke Microelectronics (icofchina.com) CASIC binary protocol
 # Firmware V6.x timing variant

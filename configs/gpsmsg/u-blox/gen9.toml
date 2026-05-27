@@ -1,5 +1,5 @@
-#:schema ./gpsmsg-schema.json
-# u-blox Gen9+ configuration messages (protocol >= 27)
+#:schema ../gpsmsg-schema.json
+# u-blox gen 9 and later configuration messages (protocol >= 27)
 # Uses CFG-VALSET for message output rate control.
 #
 # Port-dependent entries use [[ubxvalport]]; the active receiver port is
