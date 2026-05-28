@@ -276,8 +276,7 @@ func (cfg *NTPConfig) NewSHMWriter(lg *slog.Logger) (*ntpshm.Writer, error) {
 	unit := *cfg.SHM.Unit
 	w, a, err := ntpshm.New(unit)
 	if err != nil {
-		lg.Warn("could not attach NTP SHM segment", "unit", unit, "err", err)
-		return nil, nil
+		return nil, fmt.Errorf("attach NTP SHM segment unit %d: %w", unit, err)
 	}
 	lg.Info("attached to NTP SHM segment", "unit", a.Unit, "key", fmt.Sprintf("0x%x", a.Key))
 	return w, nil

@@ -202,9 +202,10 @@ shm.unit = 2
 ```
 
 `NTPConfig.NewSHMWriter` lives in the daemon package. It attaches to
-the configured segment, logs success or failure, and returns nil when
-SHM is not configured or attach fails. Attach failure is non-fatal so
-the rest of satpulsed can continue.
+the configured segment and logs success. It returns nil when SHM is not
+configured. If SHM is explicitly configured and attach fails, startup
+fails so service supervision can detect that the requested NTP output is
+inactive.
 
 `Config.shmFixedPrecision()` determines the effective fixed precision
 from config alone:
