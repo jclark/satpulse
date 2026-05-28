@@ -28,6 +28,7 @@ type Event struct {
 	Ts         phctime.Time
 	TReadMono  phctime.Sample // TReadMono.Sys includes a monotonic time
 	TReadWall  phctime.Sample // TReadWall.Sys does not have a monotonic time, but PHC-system offset is more precise
+	Precision  time.Duration
 	ResumeFunc func() phctime.Era
 }
 
@@ -321,7 +322,7 @@ func (clk *Clock) readWorker(ctx context.Context, lg *slog.Logger, tsCh chan<- E
 			event.TReadMono.Sys = time.Now()
 		}
 		// Collect wallclock sample
-		event.TReadWall, err = clk.wallSample()
+		event.TReadWall, event.Precision, err = clk.wallSample()
 		if err != nil {
 			lg.Warn("error from PTP_SYS_OFFSET", "err", err)
 			event.TReadWall.Sys = time.Now()
@@ -372,7 +373,7 @@ func (clk *Clock) monoSample() (sample phctime.Sample, err error) {
 // Uses PTP_SYS_OFFSET which gives precise correspondence between
 // PHC and system time, but result has only wallclock time (no monotonic).
 // This can be called only from readWorker.
-func (clk *Clock) wallSample() (sample phctime.Sample, err error) {
+func (clk *Clock) wallSample() (sample phctime.Sample, precision time.Duration, err error) {
 	eraPre := clk.eraCounter.load()
 
 	ms, err := clk.SysOffset(6)
@@ -383,7 +384,7 @@ func (clk *Clock) wallSample() (sample phctime.Sample, err error) {
 	eraPost := clk.eraCounter.load()
 	sample.PHC.Era = computeEra(eraPre, eraPost)
 
-	sample.PHC.T, sample.Sys = ms.Reduce()
+	sample.PHC.T, sample.Sys, precision = ms.Reduce()
 	return
 }
 

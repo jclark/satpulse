@@ -182,21 +182,40 @@ ptp4l.udsAddress = "/var/run/ptp4l"
 
 ## `ntp` table
 
-The `ntp` table is about how SatPulse sends information to an NTP daemon. Currently only chrony is supported.
-It can have the following keys:
+The `ntp` table controls how SatPulse sends samples to an NTP daemon.
+It supports two protocols: the refclock SOCK protocol defined by chrony, and the SHM protocol defined by NTP.
+
+If the `[phc]` table is not present, then the samples will be based on the timing of the serial messages.
+This is imprecise but is useful when the NTP daemon has a separate source of PPS samples, which do not include time-of-day information.
+The samples from SatPulse can be used to complete the PPS samples.
+
+The following key enables use of the refclock SOCK protocol:
 
 * `sock.path` - a string giving the path of the Unix domain socket that is used to communicate with chrony using the SOCK protocol;
-  it must match the path in the `refclock SOCK` line in the chrony configuration file
+  the NTP daemon must be configured with a matching path; with chrony this is specified in the `refclock SOCK` line
 
-If the `[phc]` table is not present, then the samples sent to chrony will be based on the timing of the serial messages.
-This is imprecise but is useful when chrony is also using a PPS refclock, which does not include time-of-day information.
-The samples from satpulse can be used by chrony to complete the samples from the PPS refclock.
-
-Example
+Example:
 
 ```
 [ntp]
 sock.path = "/var/run/chrony.satpulse.sock"
+```
+
+The following keys are used with the SHM protocol:
+
+* `shm.unit` - an integer from 0 to 255 giving the SysV shared-memory unit number for an NTP SHM refclock;
+  this key enables use of the SHM protocol
+* `shm.precision` - an optional integer from -128 to 127 overriding the SHM precision field, in log2 seconds;
+  the default is for SatPulse to choose a precision based on how the sample was generated
+
+The segment is created with mode 0600 when the unit is 0 or 1, and otherwise with mode 0666,
+so units 0 and 1 are only suitable when satpulsed and the NTP daemon run as the same user.
+
+Example:
+
+```
+[ntp]
+shm.unit = 2
 ```
 
 ## `log` table

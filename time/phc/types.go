@@ -97,12 +97,25 @@ type MultiSample struct {
 	Sys []time.Time
 }
 
-func (ms MultiSample) Reduce() (ptime.Time, time.Time) {
+const samplePrecisionMin = 5 * time.Nanosecond
+
+// Reduce returns the selected PHC/system sample and its precision.
+func (ms MultiSample) Reduce() (ptime.Time, time.Time, time.Duration) {
 	return ms.Extract(ms.Select())
 }
 
-func (ms MultiSample) Extract(i int) (ptime.Time, time.Time) {
-	return ms.PHC[i], ms.SysAverage(i)
+// Extract returns the PHC/system sample at index i and its precision.
+func (ms MultiSample) Extract(i int) (ptime.Time, time.Time, time.Duration) {
+	return ms.PHC[i], ms.SysAverage(i), ms.Precision(i)
+}
+
+// Precision returns the system-clock bracket interval for the i-th PHC sample.
+func (ms MultiSample) Precision(i int) time.Duration {
+	d := ms.SysInterval(i)
+	if d < samplePrecisionMin {
+		return samplePrecisionMin
+	}
+	return d
 }
 
 func (ms MultiSample) Select() int {
