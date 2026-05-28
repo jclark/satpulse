@@ -78,9 +78,10 @@ package should fail to compile.
 
 Use the standard NTP SHM key convention:
 
-- key: `0x4e545030 + unit`;
-- unit 0/1 mode: `0600`;
-- unit 2+ mode: `0666`.
+- key: `0x4e545030 + index`, where `index` is the configured
+  `shm.segment` value;
+- index 0/1 mode: `0600`;
+- index 2+ mode: `0666`.
 
 Attach with `IPC_CREAT`. Do not call `IPC_RMID` in normal operation.
 The segment should persist across satpulsed restarts, like gpsd and
@@ -188,7 +189,7 @@ the first sample without continually changing the SHM metadata.
 
 Extend `[ntp]` with an optional `[ntp.shm]` table:
 
-- `unit`: `0..255`; pointer-backed so `0` is distinguishable from
+- `segment`: NTP SHM segment index, `0..255`; pointer-backed so `0` is distinguishable from
   absent;
 - `precision`: optional `int8`; pointer-backed so `0` is
   distinguishable from absent.
@@ -197,7 +198,7 @@ Example:
 
 ```toml
 [ntp]
-shm.unit = 2
+shm.segment = 2
 # shm.precision = -23
 ```
 
@@ -214,18 +215,18 @@ from config alone:
 - no PHC interface means serial fallback `-1`;
 - configured PHC interface means nil, so PHC calibration runs.
 
-Document the permission consequence of the unit choice. Units 0 and 1
+Document the permission consequence of the segment index. Indices 0 and 1
 create private `0600` segments and are normally usable only when
-satpulsed and ntpd run as the same user. Units 2 and above create
+satpulsed and ntpd run as the same user. Indices 2 and above create
 `0666` segments and are the recommended cross-user configuration.
 
 ## Testing plan
 
-Unit tests in `time/lib/ntpshm`:
+Tests in `time/lib/ntpshm`:
 
 - `Precision` rounding, clamping, zero, and negative inputs;
 - write round-trip against an in-memory `shmTime`;
-- attaching twice to the same unit and observing writes through the
+- attaching twice to the same segment and observing writes through the
   second mapping.
 
 Dispatcher tests:
@@ -237,7 +238,7 @@ Dispatcher tests:
 
 Daemon config tests:
 
-- parse `ntp.shm.unit` and `ntp.shm.precision`;
+- parse `ntp.shm.segment` and `ntp.shm.precision`;
 - compute effective fixed precision from explicit config, serial mode,
   and PHC mode.
 
@@ -259,8 +260,8 @@ Update:
 
 The manual should explain:
 
-- what SHM unit means;
-- permissions for unit 0/1 vs 2+;
+- what the SHM segment index means;
+- permissions for indices 0/1 vs 2+;
 - precision override semantics;
 - that PPS must be configured separately in ntpd/NTPsec.
 

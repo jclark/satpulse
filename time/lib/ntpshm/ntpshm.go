@@ -17,8 +17,8 @@ const maxPrecision = 127
 
 // Attach reports the result of attaching to an NTP SHM segment.
 type Attach struct {
-	Unit int
-	Key  uint32
+	Segment int
+	Key     uint32
 }
 
 // Writer writes samples to an NTP SHM segment.
@@ -27,9 +27,9 @@ type Writer struct {
 	precision int8
 }
 
-// New attaches to the NTP SHM segment for unit.
-func New(unit uint8) (*Writer, Attach, error) {
-	w, a, err := newShmWriter(unit)
+// New attaches to the NTP SHM segment.
+func New(segment uint8) (*Writer, Attach, error) {
+	w, a, err := newShmWriter(segment)
 	if err != nil {
 		return nil, a, err
 	}
@@ -66,8 +66,8 @@ func Precision(d time.Duration) int8 {
 	return int8(p)
 }
 
-func shmKey(unit uint8) uint32 {
-	return 0x4e545030 + uint32(unit)
+func shmKey(segment uint8) uint32 {
+	return 0x4e545030 + uint32(segment)
 }
 
 func shmLeap(leap ptime.LeapSecondKind) int32 {

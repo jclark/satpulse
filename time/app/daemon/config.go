@@ -92,7 +92,7 @@ type NTPSockConfig struct {
 }
 
 type NTPSHMConfig struct {
-	Unit      *uint8 `toml:"unit"`
+	Segment   *uint8 `toml:"segment"`
 	Precision *int8  `toml:"precision"`
 }
 
@@ -270,15 +270,15 @@ func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (refclock.RefClock, error) {
 
 // NewSHMWriter attaches to the configured NTP SHM segment.
 func (cfg *NTPConfig) NewSHMWriter(lg *slog.Logger) (*ntpshm.Writer, error) {
-	if cfg.SHM == nil || cfg.SHM.Unit == nil {
+	if cfg.SHM == nil || cfg.SHM.Segment == nil {
 		return nil, nil
 	}
-	unit := *cfg.SHM.Unit
-	w, a, err := ntpshm.New(unit)
+	segment := *cfg.SHM.Segment
+	w, a, err := ntpshm.New(segment)
 	if err != nil {
-		return nil, fmt.Errorf("attach NTP SHM segment unit %d: %w", unit, err)
+		return nil, fmt.Errorf("attach NTP SHM segment %d: %w", segment, err)
 	}
-	lg.Info("attached to NTP SHM segment", "unit", a.Unit, "key", fmt.Sprintf("0x%x", a.Key))
+	lg.Info("attached to NTP SHM segment", "segment", a.Segment, "key", fmt.Sprintf("0x%x", a.Key))
 	return w, nil
 }
 

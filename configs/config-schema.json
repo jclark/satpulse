@@ -344,7 +344,7 @@
         "shm": {
           "type": "object",
           "properties": {
-            "unit": {
+            "segment": {
               "type": "integer",
               "minimum": 0,
               "maximum": 255

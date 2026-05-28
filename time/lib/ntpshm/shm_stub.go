@@ -10,8 +10,8 @@ import (
 
 type shmWriter struct{}
 
-func newShmWriter(unit uint8) (shmWriter, Attach, error) {
-	return shmWriter{}, Attach{Unit: int(unit), Key: shmKey(unit)}, ErrUnsupported
+func newShmWriter(segment uint8) (shmWriter, Attach, error) {
+	return shmWriter{}, Attach{Segment: int(segment), Key: shmKey(segment)}, ErrUnsupported
 }
 
 func (w shmWriter) write(clock, recv time.Time, leap ptime.LeapSecondKind, precision int8) {}

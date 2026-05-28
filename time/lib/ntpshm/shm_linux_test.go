@@ -40,9 +40,9 @@ func TestWriteRoundTrip(t *testing.T) {
 }
 
 func TestAttachExisting(t *testing.T) {
-	const unit = 254
-	if id, err := shmID(unit); err == nil {
-		t.Skipf("NTP SHM test unit %d already exists as shmid %d", unit, id)
+	const segment = 254
+	if id, err := shmID(segment); err == nil {
+		t.Skipf("NTP SHM test segment %d already exists as shmid %d", segment, id)
 	} else if !errors.Is(err, unix.ENOENT) {
 		t.Fatalf("checking existing segment: %v", err)
 	}
@@ -54,22 +54,22 @@ func TestAttachExisting(t *testing.T) {
 		if w1 != nil {
 			_ = w1.Close()
 		}
-		if err := removeSHM(unit); err != nil {
-			t.Errorf("removing SHM test unit %d: %v", unit, err)
+		if err := removeSHM(segment); err != nil {
+			t.Errorf("removing SHM test segment %d: %v", segment, err)
 		}
 	})
 	var a1, a2 Attach
 	var err error
-	w1, a1, err = New(unit)
+	w1, a1, err = New(segment)
 	if err != nil {
 		t.Fatalf("New first writer: %v", err)
 	}
-	w2, a2, err = New(unit)
+	w2, a2, err = New(segment)
 	if err != nil {
 		t.Fatalf("New second writer: %v", err)
 	}
-	if a1.Key != shmKey(unit) || a2.Key != a1.Key {
-		t.Fatalf("attach keys = %#x/%#x, want %#x", a1.Key, a2.Key, shmKey(unit))
+	if a1.Key != shmKey(segment) || a2.Key != a1.Key {
+		t.Fatalf("attach keys = %#x/%#x, want %#x", a1.Key, a2.Key, shmKey(segment))
 	}
 	clock := time.Unix(1_710_000_000, 111_222_333)
 	recv := time.Unix(1_710_000_001, 444_555_666)
@@ -86,12 +86,12 @@ func TestAttachExisting(t *testing.T) {
 	}
 }
 
-func shmID(unit uint8) (int, error) {
-	return unix.SysvShmGet(int(shmKey(unit)), expectedSize, 0)
+func shmID(segment uint8) (int, error) {
+	return unix.SysvShmGet(int(shmKey(segment)), expectedSize, 0)
 }
 
-func removeSHM(unit uint8) error {
-	id, err := shmID(unit)
+func removeSHM(segment uint8) error {
+	id, err := shmID(segment)
 	if errors.Is(err, unix.ENOENT) {
 		return nil
 	}

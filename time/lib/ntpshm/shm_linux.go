@@ -24,10 +24,10 @@ type shmWriter struct {
 	data []byte
 }
 
-func newShmWriter(unit uint8) (shmWriter, Attach, error) {
-	key := shmKey(unit)
-	id, err := unix.SysvShmGet(int(key), expectedSize, unix.IPC_CREAT|shmMode(unit))
-	a := Attach{Unit: int(unit), Key: key}
+func newShmWriter(segment uint8) (shmWriter, Attach, error) {
+	key := shmKey(segment)
+	id, err := unix.SysvShmGet(int(key), expectedSize, unix.IPC_CREAT|shmMode(segment))
+	a := Attach{Segment: int(segment), Key: key}
 	if err != nil {
 		return shmWriter{}, a, fmt.Errorf("shmget: %w", err)
 	}
@@ -44,8 +44,8 @@ func newShmWriter(unit uint8) (shmWriter, Attach, error) {
 	return w, a, nil
 }
 
-func shmMode(unit uint8) int {
-	if unit < 2 {
+func shmMode(segment uint8) int {
+	if segment < 2 {
 		return 0o600
 	}
 	return 0o666
