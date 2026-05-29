@@ -117,7 +117,7 @@ func (v *Version) rtcmSupport() rtcmSupport {
 	case "TIM":
 		// ZED-F9T has differential timing support
 		// NEO-F10T doesn't
-		if v.Mod != "ZED-F9T" {
+		if !v.isModel("ZED-F9T") {
 			break
 		}
 		// 29.25 added support for MSM4
@@ -187,13 +187,22 @@ func (v *Version) bandsConfigSupport() bool {
 // tpIndex returns the time pulse index: 0 for TIMEPULSE, 1 for TIMEPULSE2.
 func (v *Version) tpIndex() int {
 	if v.genAtLeast9() {
-		if v.Mod == "ZED-X20P" {
+		if v.isModel("ZED-X20P") {
 			return 1
 		}
 	} else if v.ProductCategory() == "FTS" {
 		return 1
 	}
 	return 0
+}
+
+// isModel reports whether v.Mod is name, optionally followed by a "-" variant suffix
+// (e.g. "ZED-F9T" matches both "ZED-F9T" and "ZED-F9T-20B").
+func (v *Version) isModel(name string) bool {
+	if v == nil {
+		return false
+	}
+	return v.Mod == name || strings.HasPrefix(v.Mod, name+"-")
 }
 
 func (v *Version) protVerAtLeast(major, minor byte) bool {

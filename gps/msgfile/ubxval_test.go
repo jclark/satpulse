@@ -367,7 +367,7 @@ values = [1]
 	}
 }
 
-func TestUBXValLoadFromUbx9TOML(t *testing.T) {
+func TestUBXValLoadFromGen9TOML(t *testing.T) {
 	// Mirrors the intermediate migration: a CFG-MSGOUT_*_USB key set via
 	// [[ubxval]]. Verifies the key byte width is respected and that
 	// the emitted payload matches the equivalent raw [[ubx]] write.
@@ -387,6 +387,6 @@ values = [1]
 	oldRaw := loadAndRaw(t, rawToml, []string{"old"}, false)
 	newRaw := loadAndRaw(t, newToml, []string{"new"}, false)
 	if !bytes.Equal(oldRaw[0].Bytes, newRaw[0].Bytes) {
-		t.Errorf("ubx9-style migration packets differ:\n old %x\n new %x", oldRaw[0].Bytes, newRaw[0].Bytes)
+		t.Errorf("gen9-style migration packets differ:\n old %x\n new %x", oldRaw[0].Bytes, newRaw[0].Bytes)
 	}
 }

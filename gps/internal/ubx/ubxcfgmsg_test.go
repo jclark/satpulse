@@ -53,7 +53,7 @@ var testVers = struct {
 		GNSS: gpsprot.MajorGNSSSet | gpsprot.GNSSSetOf(gpsprot.QZSS),
 	},
 	f9t25: Version{
-		Mod:  "ZED-F9T",
+		Mod:  "ZED-F9T-20B",
 		Prot: &ProtVer{Major: 29, Minor: 25},
 		FW:   &FWVer{ProductCategory: "TIM", Major: 2, Minor: 25},
 		GNSS: gpsprot.MajorGNSSSet | gpsprot.GNSSSetOf(gpsprot.QZSS),
