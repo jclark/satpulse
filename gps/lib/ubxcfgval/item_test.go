@@ -58,5 +58,5 @@ func TestValueBytes(t *testing.T) {
 }
 
 func valueBytes(k uint32) int {
-	return Key(k).nValueBytes()
+	return Key(k).NValueBytes()
 }

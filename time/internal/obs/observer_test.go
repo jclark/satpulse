@@ -165,6 +165,40 @@ func TestMultiObserver_NativeMsg(t *testing.T) {
 	}
 }
 
+func TestObserverCombinerSkipsTypedNil(t *testing.T) {
+	var nilObs *mockObserver
+	realObs := &mockObserver{}
+
+	var oc ObserverCombiner
+	AddObserver(&oc, nilObs)
+	AddObserver(&oc, realObs)
+
+	if got := oc.Observer(); got != realObs {
+		t.Fatalf("Observer() = %T, want the single non-nil observer", got)
+	}
+}
+
+func TestObserverCombinerEmptyReturnsDefaultObserver(t *testing.T) {
+	var oc ObserverCombiner
+
+	if _, ok := oc.Observer().(*DefaultObserver); !ok {
+		t.Fatalf("Observer() = %T, want *DefaultObserver", oc.Observer())
+	}
+}
+
+func TestObserverCombinerMultipleReturnsMultiObserver(t *testing.T) {
+	mock1 := &mockObserver{}
+	mock2 := &mockObserver{}
+
+	var oc ObserverCombiner
+	AddObserver(&oc, mock1)
+	AddObserver(&oc, mock2)
+
+	if _, ok := oc.Observer().(*MultiObserver); !ok {
+		t.Fatalf("Observer() = %T, want *MultiObserver", oc.Observer())
+	}
+}
+
 func TestDefaultObserver_NativeMsg(t *testing.T) {
 	var obs DefaultObserver
 
