@@ -18,291 +18,27 @@
 
 8. **SatPulse is designed for modern GNSS hardware and Unix-like computer systems.** Most receiver-facing functionality works on Unix-like systems; PHC/PTP hardware-clock timing is Linux-specific; `satpulsetool` also works on Windows. On the receiver side, SatPulse supports standard NMEA, RTCM correction streams, and vendor-specific protocols for u-blox and seven other vendors.
 
-## Outline
+## Navigation structure
 
-Top-level docs sections for the new site, and the leaf pages
-under each. Two-level navigation throughout; every top-level is an
-expandable section with pages at the leaf.
-
-Home page
-  - scope of site
-  - key things that SatPulse can help you with (and hardware/software requirements for each,
-    and how to navidate the site)
-    - transfer of time from GNSS to a computer system (better than Pi with GPIO PPS)
-    - precise GNSS positioning (better than just simple connection to L1-receiver)
-    - GPS configuration and how satpulse can help
-
-1. **Introduction**
-   - SatPulse (overview of what SatPulse does, vision, value proposition, status)
-   - GPS (what you need to know when choosing GPS/GNSS hardware and configuring)
-   - Timing (how to do better than regular NTP; why PHC/PTM/switches etc are important)
-   - Other software (ptp4l, chrony, rtklib, gpsd,...)
-
-2. **GNSS hardware** (general GNSS hardware; everyone uses this
-   regardless of whether they want timing or positioning)
-   - GNSS modules
-   - GNSS boards
-   - GNSS receivers
-   - GNSSDOs
-   - Antennas
-   - Vendors
-
-3. **PHC/PTP hardware** (niche hardware needed only for PHC-based
-   timing: PTP service, or chrony reading a PHC directly)
-   - PHCs with SDPs
-   - Precision Time Measurement (PTM)
-   - PTP switches
-   - Raspberry Pi CM4/CM5 PHC builds
-   - Intel NIC PHC builds
-
-4. **Setup** (gets `satpulsed` running on its own, not talking to
-   any other program; pages can be skipped when they do not apply,
-   e.g. non-Pi users skip the Pi-specific OS pages, users without a
-   PHC skip "Synchronizing a PHC")
-   - Overview (difference setup tracks)
-   - Raspberry Pi OS
-   - Fedora on Raspberry Pi
-   - Raspberry Pi UARTs
-   - Network configuration
-   - Installing SatPulse
-   - Serial connection to receiver
-   - Configuring and running satpulsed
-   - Synchronizing a PHC (bottom sections can include sync config and basic tuning with link to blog as example)
-   - Monitoring
-   - Establishing precise position with PPP
-
-5. **Connections** (each page pairs a SatPulse configuration with
-   configuration of an external program)
-   - chrony
-   - ptp4l
-   - Ntrip and corrections (sufficient to setup RTK - both base and rover, including config)
-   - Prometheus / Grafana
-   - TCP proxy for external apps
-   
-6. **GPS configuration** (configuring the receiver itself; covers
-   both timing and positioning settings; vendor pages added as they
-   are written, u-blox first, eventually one per supported vendor)
-   - Overview: different kinds of config
-   - High-level configuration
-   - Low-level configuration (includes AI-assisted message
-     libraries)
-   - u-blox (can include OSNMA section)
-   - ... (more vendors added per release)
-
-7. **Howtos** -- (non core tasks)
-   - Measuring sync quality
-   - Windows PTP client
-
-8. **Man pages** (kept as the existing section)
-   - satpulsetool(1)
-   - satpulsetool-gps(1)
-   - satpulsetool-sdp(1)
-   - satpulsetool-syncsim(1)
-   - satpulse.toml(5)
-   - satpulsed(8)
-
-9. **Internals**
-    - Packages
-    - AI use
-
-## Initial automated content reshuffle
-
-This phase makes the site look structurally close to the new outline
-while preserving the fact that the site content was manually written.
-AI moves existing content into the new structure under strict
-provenance rules, but does not rewrite prose.
-
-The main structural tool is `docs/_data/navigation.yml`: it presents
-pages from existing directories under the new top-level
-sections. The deliberate automated-phase path changes are the
-`intro.md` split and the `setup/gps-config.md` move.
-
-### Rules
-
-- Content is moved, but body content must not be modified,
-  summarized, paraphrased, corrected, deleted, or added.
-- Provenance comments, title rewrite comments, and the audit note are
-  allowed as metadata; they are not site prose.
-- Every inserted automated-phase comment must start with
-  `<! -- AI:`.
-- The only prose-like change allowed is a page title change. Every
-  rewritten title must have an adjacent comment saying it was
-  rewritten, for example:
-  `<! -- AI: title rewritten during automated reshuffle -->`. For
-  Markdown headings, put the comment immediately before the heading.
-  For YAML front matter titles, put the comment immediately after the
-  front matter block, because Jekyll front matter must remain first
-  in the file.
-- Change navigation in `docs/_data/navigation.yml`.
-- Create files and directories only for moved-content destinations,
-  the required `docs/homeless.md` page, and the automated-phase audit
-  note.
-- No content is deleted. Move every source chunk not assigned
-  below to `docs/homeless.md`.
-- Every moved chunk must have a provenance comment before and after
-  the chunk in its destination. The comments must identify the source
-  file and the original section heading. For unheaded chunks, identify
-  the original line range. For example:
-  `<! -- AI: moved-from: docs/intro.md, section "Features" -->`
-  and
-  `<! -- AI: /moved-from: docs/intro.md, section "Features" -->`.
-- At every removal site, leave a comment identifying the destination,
-  for example:
-  `<! -- AI: moved-to: docs/intro/satpulse.md, section "Features" -->`.
-- When moving content out of a source page, preserve the relative
-  order of chunks.
-- Existing Markdown, Liquid tags, image references, links, tables,
-  and code blocks must be preserved byte-for-byte inside moved
-  chunks. Adjust surrounding blank lines only to keep Markdown valid.
-- Produce a short audit note listing each source file touched, each
-  destination file created or changed, each title rewrite, and any
-  content placed in `docs/homeless.md`.
-- After the automated phase, another AI must be able to review
-  compliance mechanically by checking provenance comments, title
-  rewrite comments, the audit note, and diffs showing that body text
-  was moved unchanged.
-
-### Content moves
-
-- Keep `index.md` as the home page. Include it in the navigation
-  audit and top navigation, but do not rewrite it during the
-  automated phase.
-- Remove `intro.md` as a top-level page and replace it with a
-  top-level `intro/` directory.
-- Split existing `intro.md` by section:
-  - move the first two paragraphs and "Features" into
-    `intro/satpulse.md` and change the title to "SatPulse"
-  - move "Basics of how it works" into `intro/timing.md` and change
-    the title to "Timing"; also move the full body of
-    `_posts/2025-05-21-time-server-architecture.md`, the opening
-    conceptual chunk of
-    `_posts/2026-04-01-using-satpulse-for-timing-without-a-phc.md`
-    through the paragraph ending "Prometheus metrics", and the
-    `_posts/2026-04-06-building-an-ntp-server-on-a-raspberry-pi-with-chrony-or-ntpd-rs.md`
-    section `## Hardware`
-  - move "Relationship to other software" into
-    `intro/other-software.md` and change the title to "Other
-    software"; also move the gpsd-comparison post opening chunk from
-    "In version 0.1 SatPulse focused" through the paragraph ending
-    "`satpulsetool` does not need `satpulsed` to be running"
-- Build `intro/gps.md` from the third paragraph of `intro.md` and
-  the conceptual material in `hardware/gnss-modules.md` up to
-  `## u-blox`, and change the title to "GPS".
-- Make `hardware/gnss-modules.md` start with the
-  vendor-specific module content at `## u-blox`.
-- Keep all GNSS hardware pages under `hardware/`. In navigation, show
-  only the GNSS-facing pages under "GNSS hardware".
-- Retitle `hardware/index.md` to "GNSS and PTP hardware overview".
-- Move the 2026-04-01 module-tour post sections `## Unicore` through
-  `## Techtotop/Taidou` into `hardware/gnss-modules.md` unchanged,
-  after the existing vendor sections.
-- Move the 2026-04-01 module-tour post section
-  `## Where SatPulse is heading` into `intro/satpulse.md`
-  unchanged, after the old "Features" section.
-- Move the tinyGTC "providing time" material into
-  `hardware/gnssdos.md` unchanged.
-- Keep PHC/PTP hardware pages under `hardware/`, but expose them in a
-  separate "PHC/PTP hardware" nav section.
-- Add `hardware/phc-sdps.md` from these unchanged chunks:
-  `hardware/index.md` from the paragraph beginning "The key hardware
-  requirement" through the two build bullets, `setup/phc.md` from the
-  opening paragraph through the paragraph ending "there are four pins
-  called SDP0, SDP1, SDP2 and SDP3", `hardware/clients.md` from the
-  opening paragraph through the paragraph before `## Intel`,
-  `hardware/intel-build.md` from the opening paragraph through the
-  paragraph before `## PC system`, the tinyGTC post from the opening
-  paragraph through the paragraph ending "In both cases, this works
-  only with Linux", and the 2026-05-03 hardware test matrix post from
-  the opening paragraph through the end of the hardware table.
-- Keep `hardware/cm-build.md`, `hardware/intel-build.md`,
-  `hardware/ptm.md`, `hardware/switches.md`, and
-  `hardware/clients.md` under PHC/PTP hardware. Keep
-  `hardware/clients.md` titled "PTP client hardware".
-- Keep OS and platform setup pages where they are:
-  `setup/rpi-os.md`, `setup/fedora-rpi.md`,
-  `setup/rpi-uart.md`, `setup/network.md`,
-  `setup/satpulse-install.md`, and `setup/gps-serial.md`.
-- Retitle `setup/phc.md` to "Synchronizing a PHC".
-- Retitle `setup/without-phc.md` to "Running satpulsed without a
-  PHC". Move the basic configuration from the 2026-04-01 no-PHC post
-  unchanged.
-- Move `howtos/precise-position.md` into the Setup nav as
-  "Establishing precise position with PPP". Leave the file path in
-  `howtos/` for now.
-- Keep `setup/monitor.md` as the setup-level monitoring page. Move
-  the Prometheus/Grafana and TCP proxy sections unchanged into
-  Connections pages.
-- Keep `setup/chrony.md` as the "chrony" page. Move the
-  NTP-without-PHC chrony setup from the 2026-04-06 post unchanged
-  into it.
-- Keep `setup/ptp4l.md` as the "ptp4l" page.
-- Retitle `howtos/rtk.md` as "Ntrip and corrections" and expose it
-  in the Connections nav. Leave the file path in `howtos/` until the
-  manual cleanup phase.
-- Add `setup/prometheus.md` from the `### Prometheus and Grafana`
-  section of `setup/monitor.md` and the hardware test matrix
-  dashboard paragraph and image at the end of the 2026-05-03 hardware
-  test matrix post, using unchanged chunks.
-- Add `setup/proxy.md` from the `## TCP proxy for Windows
-  applications` section of `setup/monitor.md`, the
-  `### Using manufacturer's Windows application` section of
-  `gps-config/index.md`, and the packet-stream rationale beginning
-  "However, SatPulse emphasizes a different approach" through the
-  three numbered examples in the gpsd-comparison post, using
-  unchanged chunks.
-- Move `setup/gps-config.md` to `gps-config/index.md` so the section
-  has a top-level directory and renders at `/gps-config/`.
-- Retitle `gps-config/index.md` to "GPS configuration".
-- Add `gps-config/high-level.md` from these unchanged chunks:
-  `gps-config/index.md` from the opening paragraph through the
-  paragraph ending "By default, it will enable all bands",
-  `setup/satpulsed.md` section `## GPS configuration`, and
-  `satpulsetool-gps(1)` section `## High-level configuration`
-  through the paragraph before `## Low-level configuration`.
-- Add `gps-config/message-files.md` from these unchanged chunks: the
-  2026-01-29 configuration post section `## GPS message files`
-  through the end of that post, and `satpulsetool-gps(1)` section
-  `## Low-level configuration` through the paragraph before
-  `## Packet capture`.
-- Add `gps-config/ublox.md` as the first vendor page from the
-  2026-04-01 module-tour post section `## u-blox` and the u-blox L5
-  configuration paragraph from `gps-config/index.md`, using unchanged
-  chunks.
-- Keep `howtos/measure.md` as "Measuring sync quality", but move the
-  tinyGTC measurement material unchanged into it.
-- Keep `howtos/ptp-windows.md` as-is.
-- Keep `internals.md` as "Packages".
-- Move all remaining content that does not fit the new structure to
-  `docs/homeless.md`.
-
-### Navigation shape
-
-Set `docs/_data/navigation.yml` to this structure:
-
-```yaml
-main:
-  - title: "Home"
-    url: "/"
-  - title: "Blog"
-    url: "/blog.html"
-  - title: "GitHub"
-    url: https://github.com/jclark/satpulse
+This is the final navigation structure we eventually want to aim for.
 
 docs:
-  - title: "Introduction"
+  - title: "Orientation"
     children:
-      - title: "SatPulse"
-        url: "/intro/satpulse.html"
-      - title: "GPS"
+      - title: "Introduction"
+        url: "/intro/index.html"
+      - title: "GPS technology"
         url: "/intro/gps.html"
       - title: "Timing"
         url: "/intro/timing.html"
+      - title: "What SatPulse can do"
+        url: "/intro/what-satpulse-can-do.html"
       - title: "Other software"
         url: "/intro/other-software.html"
   - title: "GNSS hardware"
     children:
       - title: "Overview"
-        url: "/hardware/index.html"
+        url: "/hardware/gnss-hw.html"
       - title: "GNSS modules"
         url: "/hardware/gnss-modules.html"
       - title: "GNSS boards"
@@ -315,20 +51,20 @@ docs:
         url: "/hardware/antennas.html"
       - title: "Vendors"
         url: "/hardware/vendors.html"
-  - title: "PHC/PTP hardware"
+  - title: "Precision time hardware"
     children:
-      - title: "PHCs with SDPs"
-        url: "/hardware/phc-sdps.html"
-      - title: "Precision Time Measurement"
-        url: "/hardware/ptm.html"
-      - title: "PTP switches"
-        url: "/hardware/switches.html"
+      - title: "Overview"
+        url: "/hardware/index.html"
       - title: "Raspberry Pi CM4/CM5 builds"
         url: "/hardware/cm-build.html"
       - title: "Intel NIC builds"
         url: "/hardware/intel-build.html"
       - title: "PTP client hardware"
         url: "/hardware/clients.html"
+      - title: "Precision Time Measurement"
+        url: "/hardware/ptm.html"
+      - title: "PTP switches"
+        url: "/hardware/switches.html"
   - title: "Setup"
     children:
       - title: "Overview"
@@ -347,36 +83,32 @@ docs:
         url: "/setup/gps-serial.html"
       - title: "Run satpulsed"
         url: "/setup/satpulsed.html"
-      - title: "Synchronizing a PHC"
+      - title: "Setup PHC synchronization"
         url: "/setup/phc.html"
       - title: "Without a PHC"
         url: "/setup/without-phc.html"
       - title: "Monitoring"
         url: "/setup/monitor.html"
-      - title: "Precise position with PPP"
-        url: "/howtos/precise-position.html"
-  - title: "Connections"
-    children:
-      - title: "chrony"
+      - title: "Setup chrony"
         url: "/setup/chrony.html"
-      - title: "ptp4l"
+      - title: "Setup ptp4l"
         url: "/setup/ptp4l.html"
-      - title: "Ntrip and corrections"
-        url: "/howtos/rtk.html"
-      - title: "Prometheus and Grafana"
-        url: "/setup/prometheus.html"
-      - title: "TCP proxy"
-        url: "/setup/proxy.html"
+      - title: "Setup RTK"
+        url: "/setup/rtk.html"
   - title: "GPS configuration"
     children:
       - title: "Overview"
-        url: "/gps-config/"
+        url: "/gps-config/index.html"
       - title: "High-level configuration"
         url: "/gps-config/high-level.html"
+      - title: "Configuring fixed position"
+        url: "/howtos/fixed-pos.html"
       - title: "Message files"
-        url: "/gps-config/message-files.html"
+        url: "/gps-config/msg-files.html"
       - title: "u-blox"
-        url: "/gps-config/ublox.html"
+        url: "/gps-config/u-blox.html"  
+      - title: "Unicore"
+        url: "/gps-config/unicore.html"
   - title: "Howtos"
     children:
       - title: "Measuring sync quality"
@@ -400,113 +132,256 @@ docs:
   - title: "Internals"
     children:
       - title: "Packages"
-        url: "/internals.html"
-```
+        url: "/internal/packages.html"
+      - title: "AI usage"
+        url: "/internals/ai-usage.html"
 
-### Automated success criteria
+## Incremental rework steps
 
-- The automated rules have been followed and are reviewable by
-  another AI.
-- The new top-level navigation structure is in place.
-- For the documentation tree covered by the sidebar,
-  `docs/_data/navigation.yml` points to every ordinary non-post
-  documentation page under `docs/` after the reshuffle, with the only
-  allowed omitted page being `docs/homeless.md`. It does not point to
-  missing pages. The home page is represented in the main navigation.
-  The blog index, blog posts, assets, includes, layouts, config
-  files, and README are outside this navigation audit.
-- `docs/homeless.md` exists and contains every moved chunk that was
-  not assigned to another destination.
-- Every moved chunk has matching `<! -- AI:` provenance comments in
-  its destination.
-- Every removal site has a `<! -- AI:` destination comment.
-- Every rewritten title has a `<! -- AI:` title rewrite comment.
-- The audit note exists and lists source files, destination files,
-  title rewrites, and homeless content.
-- The site builds without missing navigation pages.
+Each step is an independent change that improves the site and moves it
+toward the final structure. The steps are ordered: earlier steps
+unblock later ones, and every step must leave the site usable for both
+the published stable binary and a build from master.
 
-## Manual content cleanup
+The home page is not reworked once. It evolves in stages alongside the
+rest of the site, and its claims must never outrun what the other
+pages can back up. The first step puts an honest, vision-led
+transitional page in place; later steps each earn an additional
+home-page claim (the broader hardware-resource claim after the
+hardware split, the accessible no-PHC timing path after the setup
+rework, and so on).
 
-After the automated reshuffle, I will rewrite, smooth, shorten,
-expand, and integrate the reshuffled content by hand. Cleanup should
-be done in this priority order.
+Release handling: the line that matters is what is done, not what has
+a published binary. Everything on the master branch is usable today --
+it builds as a `0.3-pre` version that anyone can clone and run, even
+though no binary pre-release has been published. The docs describe
+everything on master, and version-sensitive pages (RTK and
+corrections, configuration, the setup reframe) are written once against
+that near-final feature set rather than for the stable binary and
+rewritten later. Mark inline the features that are on master but not in
+the published stable binary (0.2), so binary-only users know they need
+to build from source (or wait for a 0.3 binary). Building is easy, so
+cutting a binary 0.3 pre-release is a convenience and a labelled
+testing target, not what makes these features usable.
 
-1. `index.md`: rewrite the home page around the broadened site
-   scope. Priorities: explain the three main tracks--GNSS time
-   transfer to computer systems, precise GNSS positioning, and GPS
-   configuration/observability--and give clear entry points into the
-   new navigation.
-2. `intro/satpulse.md`: turn the first two old intro paragraphs and
-   the old "Features" section into a coherent SatPulse overview.
-   Priorities: current project scope, what `satpulsed` does, what
-   `satpulsetool` does, current status, and the integrated-daemon
-   idea. Preserve the old 0.1 feature list as the mature PHC/PTP
-   timing subset of SatPulse, but reframe it so it no longer reads as
-   the whole product. Integrate it with the broader 0.3 scope:
-   receiver configuration, packet routing, RTCM/Ntrip correction
-   streams, observability, and positioning support.
-3. `intro/timing.md`: merge the old "Basics of how it works" section
-   with the time-server architecture post, the no-PHC timing post,
-   and the chrony/ntpd-rs hardware framing. Priorities: explain
-   system clock vs PHC, PPS timestamping, ptp4l, chrony, PTP
-   metadata, PHC-based PPS timestamping for tens-of-nanoseconds
-   timing, GPIO/kernel PPS timestamping for microsecond-class NTP,
-   and serial timing as time-of-day labeling rather than precise edge
-   timing.
-4. `intro/gps.md`: turn the third old intro paragraph and the
-   conceptual front of `hardware/gnss-modules.md` into a GPS/GNSS
-   concepts page. Priorities: terminology, constellations, bands,
-   timing mode, sawtooth error, RTK, raw data, PPP, and navigation
-   message authentication. Keep vendor-specific module detail out.
-5. `intro/other-software.md`: turn the old relationship section into
-   a broader related-software page. Priorities: explain ptp4l,
-   chrony, ntpd-rs, gpsd, rtklib, and where SatPulse fits with each.
-6. Move `howtos/rtk.md` to `setup/rtk.md` while reworking it as the
-   main Ntrip and correction-stream page. Priorities: cover receiver
-   RTCM output, SatPulse as a local Ntrip caster, mountpoint and
-   source-table configuration, authentication, MSM7-to-MSM4
-   conversion, SatPulse as an Ntrip/TCP correction client for a rover
-   through `[stream.pull]`, rover verification, and when the TCP proxy
-   or external RTKLIB tools still fit. Use
-   `plan/archive/ntrip-caster.md`, `plan/archive/ntrip-client.md`,
-   and `plan/archive/stream-pull-daemon.md` as source notes for the
-   new functionality.
-7. `gps-config/index.md`: make the section landing page coherent.
-   Priorities: explain why receiver configuration matters, the
-   difference between high-level configuration and message files, and
-   where `satpulsed` configuration stops and `satpulsetool gps`
-   starts.
-8. `gps-config/high-level.md`: turn moved chunks into a task-oriented
-   guide. Priorities: receiver detection, constellations, bands, PPS,
-   time mode, fixed position, raw output, RTCM output, persistence,
-   and safe use of non-volatile configuration.
-9. `gps-config/message-files.md`: turn blog/man-page chunks into a
-   durable low-level configuration guide. Priorities: message-file
-   tags, response matching, binary/NMEA/line message types, includes,
-   packet logs, and the AI-assisted message-library workflow.
-10. `hardware/phc-sdps.md`: turn collected chunks into a concept and
-   buying-guide page. Priorities: server PHC requirements, client PHC
-   requirements, SDPs, external timestamping, periodic output, Intel
-   vs Raspberry Pi CM4/CM5, and what hardware is not sufficient.
-11. `setup/monitor.md`: keep this as the basic, low-effort
-   monitoring page. Priorities: systemd logs, SatPulse log files, the
-   built-in HTTP interface, and the web GUI. Link forward to
-   `setup/prometheus.md` for higher-effort Prometheus/Grafana
-   monitoring.
-12. `setup/prometheus.md`: make the Prometheus/Grafana material a
-   standalone connection page. Priorities: required SatPulse HTTP
-   config, Prometheus scrape config, Grafana dashboard import, and
-   what metrics are useful first. Link back to `setup/monitor.md` as
-   the basic monitoring page for enabling the built-in HTTP interface
-   and web GUI before adding Prometheus/Grafana.
-13. `setup/proxy.md`: make the TCP/Unix socket proxy material a
-    standalone connection page. Priorities: read-only vs read-write
-    access, security warning, vendor Windows applications, Lady
-    Heather, NMEA service use, and packet-stream rationale.
-14. `gps-config/ublox.md`: make it the first vendor page. Priorities:
-    supported generations, timing vs high-precision products,
-    persistent vs volatile changes, L5/OSNMA notes, and links to
-    high-level configuration tasks.
-15. `docs/homeless.md`: triage all content placed here. Move each
-    chunk into a real page during manual cleanup or decide explicitly
-    that it should remain outside navigation for now.
+The tutorial docs need a reusable inline label marking content that is
+not in the current stable release (0.2), analogous to the pre-release
+banner the man pages already carry (`man_prerelease_notice`). The
+man-page banner is whole-page; the tutorial label is per-feature,
+because a single tutorial page often mixes stable and newer content.
+The version-sensitive steps below assume this label exists.
+
+### Transitional home page
+
+Replace the 0.1-era home page with an honest, vision-led transitional
+page now, before the deeper rework. This step does not wait on other
+pages, because it routes readers to sources that are already accurate
+rather than making claims the site cannot yet back.
+
+Frame the out-of-sync state positively: the software has moved ahead
+of the site because development has been fast, not because the site is
+unreliable. State the vision as direction, not current state, drawing
+on the "Where SatPulse is heading" section of the 2026-04-01
+module-tour post and positioning points 1-6: 0.1 was narrow (transfer
+time from a receiver to a PHC); a GPS subsystem good enough for timing
+is most of a general one; far more people want precision positioning
+than precision timing; so SatPulse is heading toward positioning, with
+timing still core.
+
+Do a light scope correction so the page no longer implies a PHC is
+required: SatPulse is for precision timing and positioning, receiver
+configuration, and observability. Route readers using the triad: the
+narrative site documents the 0.1 baseline and is accurate for the
+mature PTP/PHC timing path; the recent-changes page (NEWS) is the
+authoritative record of everything since; the man pages are current
+reference; the blog has depth. Offer two doors: a precise PTP/NTP time
+server (the existing setup guide applies), and everything newer
+(recent changes, man pages, blog), noting that it is easy to build
+from source.
+
+Claim anything that is done, which means anything on master: it builds
+today as a `0.3-pre` version, so it is usable now even though no binary
+pre-release has been published. That includes integrated, native
+Ntrip, so present it as available today, marked as needing a build from
+source (the published 0.2 binary does not have it yet). Precise
+positioning, including RTK, is likewise usable today, either via the
+existing howto (receiver RTCM output plus the TCP proxy and external
+Ntrip tools) or via native Ntrip in a build from master. Do not claim
+anything that is not yet on master. Hold back the broader "technical
+resource for GNSS hardware" claim until the hardware split and module
+beef-up land; add it then.
+
+Two wording decisions are left to the author: how broad the opening
+scope statement should be, and how bluntly to state that the narrative
+site currently documents 0.1.
+
+### Hardware split
+
+The site has useful hardware material, but a reader needs to know
+whether they are choosing GNSS receiver hardware or the more niche
+precision-time computer hardware. This step is version-independent
+(the content is the same for the stable release and any pre-release),
+so it can proceed regardless of release timing, and completing it
+earns the broader "technical resource" claim on the home page.
+
+#### Split GNSS and precision-time hardware
+
+Present the hardware pages as two top-level sections: GNSS hardware
+(modules, boards, receivers, GNSSDOs, antennas, vendors) and precision
+time hardware (PHCs and SDPs, external timestamping, periodic output,
+PTM, switches, CM4/CM5 builds, Intel NIC builds, client hardware). The
+pages already exist, so this is mostly a navigation.yml change plus a
+short overview page for each section. Do not rewrite the detailed build
+pages just to fit the split.
+
+#### Beef up the GNSS modules page
+
+Fold the per-vendor module-selection content from the 2026-04-01
+module-tour post (u-blox through Techtotop) into the GNSS modules page,
+keeping it focused on choosing modules: form factor, bands, timing
+features, price, and where to buy. De-blog the prose (remove
+first-person and time-relative phrasing) so it reads as durable
+reference. Route protocol internals (CASIC NAV/NAV2 classes,
+NovAtel-style packet formats, the ComNav configuration weaknesses) to
+the vendor configuration pages or internals, not the buyer-facing
+page.
+
+### Setup sequencing
+
+The current site makes SatPulse look as if it is only for users who
+already have niche PHC/PPS hardware. That is a major adoption barrier.
+Make no-PHC operation the baseline setup path, and make PHC
+synchronization an optional precision-timing step. Once setup has a
+coherent no-PHC path, the home page's timing door can be strengthened
+to offer the accessible no-PHC path up front (a later home-page
+stage).
+
+#### Make setup no-PHC first
+
+Change the setup overview so the baseline path is install SatPulse,
+connect the receiver, run `satpulsed`, monitor it, and optionally use
+chrony without a PHC. Present PHC synchronization as an additional
+step for users with suitable hardware, not as the entry requirement.
+
+#### Make without-PHC a normal setup step
+
+Make the without-PHC page read like a normal setup path rather than a
+fallback for users missing the "real" hardware. Source notes: the
+timing-without-a-PHC post and any existing no-PHC setup material.
+The page should state the accuracy class honestly and link to PHC
+synchronization as the upgrade path.
+
+#### Keep PHC synchronization optional and explicit
+
+Keep `setup/phc.md` focused on configuring SatPulse to discipline a
+PHC. Hardware requirements and buying guidance should live in the
+precision time hardware section. chrony and ptp4l integration should
+remain in their own task pages.
+
+#### Align chrony and ptp4l with the split setup model
+
+chrony should cover both the no-PHC baseline and the PHC-backed
+case. ptp4l should be clearly PHC-dependent. This keeps external
+software setup consistent with the new baseline instead of implying
+that all useful SatPulse setups require PTP hardware.
+
+### Configuration
+
+Receiver configuration is a core SatPulse capability, but it is
+currently buried in the setup path. Remove the existing setup GPS
+configuration page and build a top-level GPS configuration section as
+in the outline (overview, high-level configuration, message files,
+u-blox first, more vendors later). Build it around current-release
+functionality first, and mark next-release features inline.
+
+#### Make current GPS configuration discoverable
+
+The first coherent version should explain high-level configuration,
+message files, volatile versus persistent changes, `satpulsed` versus
+`satpulsetool gps`, and the current u-blox support. Source notes:
+the old setup GPS configuration page, the GPS message files post, and
+the u-blox material.
+
+#### Add message files after the high-level model is clear
+
+Make the message-file page depend on the high-level configuration
+page, so users understand why low-level messages are sometimes needed
+before seeing the syntax. Source notes: the GPS message files post
+and implementation plans for message bundles, includes, response
+matching, packet logs, and message-library workflows. Man pages
+should be linked as reference, not copied into the guide.
+
+#### Add vendor configuration pages only when they carry current tasks
+
+Use u-blox as the first vendor page because there is enough
+user-facing material: supported generations, timing products,
+high-precision products, L5, OSNMA notes if applicable to current
+support, persistent versus volatile config, and links back to
+high-level tasks. Add Unicore later when there is enough tested,
+user-facing configuration material. Protocol internals belong in
+implementation notes unless they affect user choices.
+
+#### Make fixed position the organizing task for PPP
+
+Place post-processed PPP under GPS configuration as part of the
+fixed-position workflow. The user task is "configure the receiver with
+a good fixed position"; post-processed PPP via `satpulsetool convobs`
+is one way to obtain that position. It is a next-release feature, so
+mark it inline and keep the older fixed-position howto available
+alongside it until the next release, after which the older one goes
+away.
+
+### Recast RTK as a setup workflow
+
+Move and update the RTK material. It should cover receiver
+RTCM output, SatPulse as a local Ntrip caster, upstream Ntrip use,
+rover correction input, mountpoints, source tables, authentication,
+and verification. Source notes: `howtos/rtk.md`,
+`plan/archive/ntrip-caster.md`, `plan/archive/ntrip-client.md`, and
+`plan/archive/stream-pull-daemon.md`.
+
+
+### Develop orientation section
+
+The final Orientation section should not be added all at once. It
+should grow from concept pages that support existing setup and
+hardware pages.
+
+#### Add the timing concept page after the setup split
+
+Create the Timing page as the conceptual foundation for the no-PHC
+baseline and optional PHC synchronization path. It should explain
+system clock versus PHC, PPS timestamping, hardware timestamping,
+GPIO PPS, serial time-of-day labeling, ptp4l, chrony, no-PHC NTP,
+and the precision classes users can realistically expect. Source
+notes: the old "Basics of how it works" material, the time-server
+architecture post, the no-PHC timing post, the SatPulse 0.2 PHC
+architecture post, and the chrony/ntpd-rs hardware framing.
+
+#### Move GNSS concepts out of the hardware catalog
+
+Use the GPS technology page to hold conceptual material about
+constellations, bands, timing mode, sawtooth error, raw observations,
+RTK, PPP, correction streams, and authentication. This should happen
+after the GNSS modules page has enough hardware-selection content to
+stand on its own. Source notes: the old GPS introduction material and
+the conceptual front of the GNSS modules page.
+
+#### Add a current capability page before broadening the site
+
+Create the "What SatPulse can do" page before broadening the home
+page. It should separate current released functionality from planned
+work. Current material can cover `satpulsed`, `satpulsetool`, PHC
+synchronization, PTP/chrony integration, no-PHC timing, receiver
+configuration, observability, packet capture, and current hardware
+support. Future positioning, RTK, and new PPP workflows should be
+clearly labelled rather than presented as current.
+
+#### Reframe related software after capabilities are clear
+
+Build the Other software page around boundaries and integration
+points: chrony, ntpd-rs, ptp4l, gpsd, RTKLIB, Ntrip tools, vendor
+tools, and SatPulse. This should answer "which tool owns which job?"
+rather than repeat setup instructions. It should not imply that
+future positioning workflows are already released.
+
