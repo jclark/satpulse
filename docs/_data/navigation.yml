@@ -1,6 +1,8 @@
 main:
   - title: "Blog"
     url: "/blog.html"
+  - title: "Recent changes"
+    url: "/recent-changes.html"
   - title: "GitHub"
     url: https://github.com/jclark/satpulse
 

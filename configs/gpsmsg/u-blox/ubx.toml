@@ -1,4 +1,4 @@
-#:schema ./gpsmsg-schema.json
+#:schema ../gpsmsg-schema.json
 # u-blox configuration messages (all generations)
 # For commands not yet supported through high-level configuration
 

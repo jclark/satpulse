@@ -1,4 +1,4 @@
-#:schema ./gpsmsg-schema.json
+#:schema ../gpsmsg-schema.json
 # Bynav M2 configuration messages
 # NovAtel-compatible GNSS receiver
 # Default baud rate: 115200

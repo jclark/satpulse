@@ -1,4 +1,4 @@
-#:schema ./gpsmsg-schema.json
+#:schema ../gpsmsg-schema.json
 # ATGM332D/ATGM336H configuration messages
 # This is for firmware version V5.x, which is found on the 5N series (e.g. ATGM332D-5N31).
 # The newer 6N/F8N series uses firmware V6.x which is significantly different.

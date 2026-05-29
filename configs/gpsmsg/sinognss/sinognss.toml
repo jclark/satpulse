@@ -1,4 +1,4 @@
-#:schema ./gpsmsg-schema.json
+#:schema ../gpsmsg-schema.json
 # SinoGNSS K902 configuration messages
 # QeeTek K8/K9 series GNSS receiver (NovAtel-style commands)
 # Default baud rate: 115200

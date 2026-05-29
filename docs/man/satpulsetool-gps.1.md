@@ -425,7 +425,7 @@ where `serial.toml` contains:
 
 Send the messages tagged `ppp-has` from `um980.toml` (which enable Galileo HAS on a UM980):
 
-    satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980.toml -t ppp-has
+    satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /usr/share/satpulse/gpsmsg/unicore/um980.toml -t ppp-has
 
 Send an ad-hoc command from stdin using a here document:
 
@@ -433,6 +433,11 @@ Send an ad-hoc command from stdin using a here document:
     [[line]]
     text = "CONFIG PPP ENABLE E6-HAS"
     TOML
+
+# FILES
+
+`/usr/share/satpulse/gpsmsg`
+: GPS message files installed by the package.
 
 # SEE ALSO
 
