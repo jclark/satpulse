@@ -25,7 +25,13 @@ Debian's own `ruby-<gem>` packages are not used: most don't match the
 versions `github-pages` 232 pins, and the vendored Bundler layout below
 wouldn't pick them up anyway.
 
-Then in this directory, install the gems into a project-local
+All `bundle` and `bundle exec` commands below must be run from inside
+this `docs/` directory — that's where the `Gemfile` and `.bundle/`
+config live, and Bundler only walks *up* the directory tree to find
+them. Running from the repo root will fail with
+`Could not locate Gemfile or .bundle/ directory`.
+
+In this directory, install the gems into a project-local
 `vendor/bundle/` so nothing leaks into your user or system gem path:
 
 ```
