@@ -29,6 +29,7 @@ type signalKey struct {
 type signalState struct {
 	t       rinex.Time
 	lock    float32
+	arc     uint32
 	pending bool
 	seen    bool
 }
@@ -82,10 +83,9 @@ func (c *Converter) convertObs(t rinex.Time, meas uncmsg.ObsVMObs) (bool, error)
 		obs.PR = opt.Make(meas.PSR)
 	}
 	cpOK := st.CarrierPhaseValid() && finite64(meas.ADR)
-	ll := c.lli(obs.Sat, obs.Sig, t, meas.LockTime, cpOK)
+	obs.Arc = c.arc(obs.Sat, obs.Sig, t, meas.LockTime, cpOK)
 	if cpOK {
 		obs.CP = opt.Make(-meas.ADR)
-		obs.LL = ll
 	}
 	if finite32(meas.Dopp) {
 		obs.Do = opt.Make(float64(meas.Dopp))
@@ -99,22 +99,21 @@ func (c *Converter) convertObs(t rinex.Time, meas uncmsg.ObsVMObs) (bool, error)
 	return true, c.sink.Observation(obs)
 }
 
-func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, t rinex.Time, lock float32, phase bool) bool {
+func (c *Converter) arc(sat rinex.SatelliteID, sig rinex.SignalID, t rinex.Time, lock float32, phase bool) uint32 {
 	k := signalKey{sat: sat, sig: sig}
 	st := c.state[k]
 	if lock == 0 || st.seen && lockSlip(t, lock, st) {
 		st.pending = true
 	}
-	ll := false
 	if phase && st.pending {
-		ll = true
+		st.arc++
 		st.pending = false
 	}
 	st.t = t
 	st.lock = lock
 	st.seen = true
 	c.state[k] = st
-	return ll
+	return st.arc
 }
 
 func lockSlip(t rinex.Time, lock float32, st signalState) bool {

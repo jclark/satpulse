@@ -27,14 +27,14 @@ func TestSignalObservationJSON(t *testing.T) {
 			PR:  opt.Make(22187868.655),
 			CP:  opt.Make(116598092.035),
 			CN0: opt.Make(float32(48.5)),
-			LL:  true,
+			Arc: 1,
 		},
 	}
 	b, err := json.Marshal(obs)
 	if err != nil {
 		t.Fatalf("Marshal error: %v", err)
 	}
-	want := `{"t":"2025-06-30T23:59:59.1234567","sat":"G03","sig":"1C","frq":-4,"pr":22187868.655,"cp":116598092.035,"cn0":48.5,"ll":true}`
+	want := `{"t":"2025-06-30T23:59:59.1234567","sat":"G03","sig":"1C","frq":-4,"pr":22187868.655,"cp":116598092.035,"cn0":48.5,"arc":1}`
 	if string(b) != want {
 		t.Errorf("Marshal = %s, want %s", string(b), want)
 	}
@@ -59,7 +59,7 @@ func TestSignalValuesIsZero(t *testing.T) {
 		{name: "cp", v: SignalValues{CP: opt.Make(1.0)}},
 		{name: "do", v: SignalValues{Do: opt.Make(1.0)}},
 		{name: "cn0", v: SignalValues{CN0: opt.Make(float32(1.0))}},
-		{name: "ll", v: SignalValues{LL: true}},
+		{name: "arc", v: SignalValues{Arc: 1}},
 		{name: "hc", v: SignalValues{HC: true}},
 		{name: "bt", v: SignalValues{BT: true}},
 	} {

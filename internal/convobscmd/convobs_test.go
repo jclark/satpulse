@@ -373,8 +373,8 @@ func TestRunDecimatesObsJSONInput(t *testing.T) {
 	data := strings.Join([]string{
 		`{"marker":{"name":"FILE"}}`,
 		`{"t":"2025-07-01T00:00:00.0000000","sat":"G03","sig":"1C","pr":1}`,
-		`{"t":"2025-07-01T00:00:05.0000000","sat":"G03","sig":"1C","ll":true}`,
-		`{"t":"2025-07-01T00:00:10.0000000","sat":"G03","sig":"1C","pr":2}`,
+		`{"t":"2025-07-01T00:00:05.0000000","sat":"G03","sig":"1C","arc":1}`,
+		`{"t":"2025-07-01T00:00:10.0000000","sat":"G03","sig":"1C","pr":2,"arc":1}`,
 		"",
 	}, "\n")
 	var got bytes.Buffer
@@ -394,8 +394,8 @@ func TestRunDecimatesObsJSONInput(t *testing.T) {
 	if obs[0].PR.Get() != 1 || obs[1].PR.Get() != 2 {
 		t.Fatalf("observations = %#v", obs)
 	}
-	if !obs[1].LL || obs[1].HC || obs[1].BT {
-		t.Fatalf("carried LL/HC/BT = %v/%v/%v, want true/false/false", obs[1].LL, obs[1].HC, obs[1].BT)
+	if obs[1].Arc != 1 || obs[1].HC || obs[1].BT {
+		t.Fatalf("selected Arc/HC/BT = %v/%v/%v, want 1/false/false", obs[1].Arc, obs[1].HC, obs[1].BT)
 	}
 }
 

@@ -60,6 +60,11 @@ const (
 	lossOfLockIndicatorBOCTracking
 )
 
+type signalKey struct {
+	sat SatelliteID
+	sig SignalID
+}
+
 // SignalValues holds the values for one satellite signal observation.
 type SignalValues struct {
 	Frq opt.Val[int8]    `json:"frq,omitzero"` // GLONASS FDMA frequency channel k
@@ -67,25 +72,25 @@ type SignalValues struct {
 	CP  opt.Val[float64] `json:"cp,omitzero"`  // carrier phase, cycles
 	Do  opt.Val[float64] `json:"do,omitzero"`  // RINEX Doppler, Hz; positive for approaching satellites
 	CN0 opt.Val[float32] `json:"cn0,omitzero"` // carrier-to-noise density, dB-Hz
-	LL  bool             `json:"ll,omitzero"`  // RINEX LLI bit 0, cycle slip possible
+	Arc uint32           `json:"arc,omitzero"` // carrier phase arc; RINEX LLI bit 0 increments this
 	HC  bool             `json:"hc,omitzero"`  // RINEX LLI bit 1, half-cycle ambiguity
 	BT  bool             `json:"bt,omitzero"`  // RINEX LLI bit 2, BOC tracking
 }
 
 // IsZero reports whether v contains no values.
 func (v SignalValues) IsZero() bool {
-	return v.Frq.IsZero() && v.PR.IsZero() && v.CP.IsZero() && v.Do.IsZero() && v.CN0.IsZero() && !v.LL && !v.HC && !v.BT
+	return v.Frq.IsZero() && v.PR.IsZero() && v.CP.IsZero() && v.Do.IsZero() && v.CN0.IsZero() && v.Arc == 0 && !v.HC && !v.BT
 }
 
-func (v *SignalValues) setLLI(x lossOfLockIndicator) {
-	v.LL = x&lossOfLockIndicatorLostLock != 0
+func (v *SignalValues) setRINEXLLI(x lossOfLockIndicator, arc uint32) {
+	v.Arc = arc
 	v.HC = x&lossOfLockIndicatorHalfCycleAmbiguity != 0
 	v.BT = x&lossOfLockIndicatorBOCTracking != 0
 }
 
-func (v SignalValues) lli() lossOfLockIndicator {
+func (v SignalValues) rinexLLI(arcChanged bool) lossOfLockIndicator {
 	x := lossOfLockIndicator(0)
-	if v.LL {
+	if arcChanged {
 		x |= lossOfLockIndicatorLostLock
 	}
 	if v.HC {
@@ -318,6 +323,9 @@ func UnmarshalRecord(data []byte) (SignalObservation, Metadata, bool, error) {
 		}
 		if _, ok := raw["lli"]; ok {
 			return SignalObservation{}, Metadata{}, true, fmt.Errorf("rinex: obsj field %q is not supported", "lli")
+		}
+		if _, ok := raw["ll"]; ok {
+			return SignalObservation{}, Metadata{}, true, fmt.Errorf("rinex: obsj field %q is not supported; use %q", "ll", "arc")
 		}
 		var obs SignalObservation
 		if err := json.Unmarshal(data, &obs); err != nil {

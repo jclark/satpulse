@@ -205,7 +205,7 @@ Observation records can contain the following fields:
 * `cp` - number giving carrier phase in cycles
 * `do` - number giving Doppler in Hz
 * `cn0` - number giving carrier-to-noise density in dB-Hz
-* `ll` - boolean indicating a loss of lock between the previous and current observation, equivalent to RINEX LLI bit 0
+* `arc` - integer identifying the carrier phase arc for this satellite and signal; an arc is a continuous span of carrier phase observations; a change in the arc index corresponds to RINEX LLI bit 0 being set
 * `hc` - boolean indicating half-cycle ambiguity in the carrier phase observation, equivalent to RINEX LLI bit 1
 * `bt` - boolean indicating BOC tracking of an MBOC-modulated signal, equivalent to RINEX LLI bit 2
 

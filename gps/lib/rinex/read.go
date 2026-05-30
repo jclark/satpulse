@@ -146,6 +146,7 @@ func readObservationHeader(s *bufio.Scanner) (observationHeader, error) {
 
 func readObservationEpochs(s *bufio.Scanner, h observationHeader) ([]SignalObservation, error) {
 	var obs []SignalObservation
+	arc := make(map[signalKey]uint32)
 	leapSeconds := gpsUTCSeconds(h.meta)
 	for s.Scan() {
 		line := s.Text()
@@ -185,7 +186,7 @@ func readObservationEpochs(s *bufio.Scanner, h observationHeader) ([]SignalObser
 				return nil, fmt.Errorf("rinex: unexpected EOF in epoch")
 			}
 			line := s.Text()
-			satObs, err := parseSatelliteObservationLine(t, line, h)
+			satObs, err := parseSatelliteObservationLine(t, line, h, arc)
 			if err != nil {
 				return nil, err
 			}
@@ -422,7 +423,7 @@ func parseRINEXTime(year, month, day, hour, minute, second string) (Time, error)
 	return TimeFromCivilTime(tm) + Time(tick), nil
 }
 
-func parseSatelliteObservationLine(t Time, line string, h observationHeader) ([]SignalObservation, error) {
+func parseSatelliteObservationLine(t Time, line string, h observationHeader, arc map[signalKey]uint32) ([]SignalObservation, error) {
 	line = padLine(line, 3)
 	sat := SatelliteID(line[:3])
 	if !sat.IsValid() {
@@ -441,12 +442,13 @@ func parseSatelliteObservationLine(t Time, line string, h observationHeader) ([]
 		if o == nil {
 			order = append(order, sig)
 			o = &SignalObservation{T: t, Sat: sat, Sig: sig}
+			o.Arc = arc[signalKey{sat: sat, sig: sig}]
 			if v, ok := h.frq[sat]; ok {
 				o.Frq = opt.Make(v)
 			}
 			bySig[sig] = o
 		}
-		addRINEXField(o, code, field)
+		addRINEXField(o, code, field, arc)
 	}
 	obs := make([]SignalObservation, 0, len(order))
 	for _, sig := range order {
@@ -467,7 +469,7 @@ func rinexField(line string, i int) string {
 	return line[start:end]
 }
 
-func addRINEXField(o *SignalObservation, code ObservationCode, field string) {
+func addRINEXField(o *SignalObservation, code ObservationCode, field string, arc map[signalKey]uint32) {
 	val := strings.TrimSpace(field[:14])
 	switch code[0] {
 	case byte(TypeCode):
@@ -482,7 +484,12 @@ func addRINEXField(o *SignalObservation, code ObservationCode, field string) {
 			o.CP = opt.Make(v)
 		}
 		if v, ok := parseIndicator(field[14]); ok {
-			o.setLLI(lossOfLockIndicator(v))
+			lli := lossOfLockIndicator(v)
+			k := signalKey{sat: o.Sat, sig: o.Sig}
+			if lli&lossOfLockIndicatorLostLock != 0 {
+				arc[k]++
+			}
+			o.setRINEXLLI(lli, arc[k])
 		}
 		if v, ok := parseIndicator(field[15]); ok {
 			addSSI(o, v)

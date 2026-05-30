@@ -37,6 +37,11 @@ type obsField struct {
 	lli lossOfLockIndicator
 }
 
+type signalArcState struct {
+	arc  uint32
+	seen bool
+}
+
 // WriteObservationFile writes a RINEX observation file.
 func WriteObservationFile(w io.Writer, meta Metadata, obs []SignalObservation) error {
 	f, err := buildObsFile(obs)
@@ -62,9 +67,21 @@ func buildObsFile(obs []SignalObservation) (*obsFile, error) {
 	}
 	builders := make(map[Time]*epoch)
 	frq := make(map[SatelliteID]int8)
+	arc := make(map[signalKey]signalArcState)
+	seenCodes := make(map[string]map[ObservationCode]bool)
 	first := obs[0].T
 	last := obs[0].T
-	for _, o := range obs {
+	sorted := slices.Clone(obs)
+	slices.SortStableFunc(sorted, func(a, b SignalObservation) int {
+		if a.T < b.T {
+			return -1
+		}
+		if a.T > b.T {
+			return 1
+		}
+		return 0
+	})
+	for _, o := range sorted {
 		if !o.Sat.IsValid() {
 			return nil, fmt.Errorf("rinex: invalid satellite %q", o.Sat)
 		}
@@ -89,7 +106,9 @@ func buildObsFile(obs []SignalObservation) (*obsFile, error) {
 		if o.Frq.IsSet() {
 			frq[o.Sat] = o.Frq.Get()
 		}
-		addSignalObservation(e.obs[o.Sat], o)
+		changed := arcChanged(arc, signalKey{sat: o.Sat, sig: o.Sig}, o.Arc)
+		addSignalObservation(e.obs[o.Sat], o, changed)
+		addWriterObservationCodes(seenCodes, o, changed)
 	}
 	epochs := make([]epoch, 0, len(builders))
 	for _, e := range builders {
@@ -104,27 +123,37 @@ func buildObsFile(obs []SignalObservation) (*obsFile, error) {
 		}
 		return 0
 	})
-	return &obsFile{codes: writerObservationCodeSet(obs), epochs: epochs, frq: frq, first: first, last: last}, nil
+	return &obsFile{codes: writerObservationCodeSet(seenCodes), epochs: epochs, frq: frq, first: first, last: last}, nil
 }
 
-func writerObservationCodeSet(obs []SignalObservation) map[string][]ObservationCode {
-	seen := make(map[string]map[ObservationCode]bool)
-	for _, o := range obs {
-		sys := o.System()
-		if sys == "" {
-			continue
-		}
-		m := seen[sys]
-		if m == nil {
-			m = make(map[ObservationCode]bool)
-			seen[sys] = m
-		}
-		for _, code := range writerObservationCodes(o) {
-			if code != "" {
-				m[code] = true
-			}
+func arcChanged(state map[signalKey]signalArcState, k signalKey, arc uint32) bool {
+	st := state[k]
+	changed := arc != st.arc
+	if !st.seen {
+		changed = arc != 0
+	}
+	state[k] = signalArcState{arc: arc, seen: true}
+	return changed
+}
+
+func addWriterObservationCodes(seen map[string]map[ObservationCode]bool, o SignalObservation, arcChanged bool) {
+	sys := o.System()
+	if sys == "" {
+		return
+	}
+	m := seen[sys]
+	if m == nil {
+		m = make(map[ObservationCode]bool)
+		seen[sys] = m
+	}
+	for _, code := range writerObservationCodes(o, arcChanged) {
+		if code != "" {
+			m[code] = true
 		}
 	}
+}
+
+func writerObservationCodeSet(seen map[string]map[ObservationCode]bool) map[string][]ObservationCode {
 	out := make(map[string][]ObservationCode, len(seen))
 	for sys, m := range seen {
 		codes := make([]ObservationCode, 0, len(m))
@@ -137,12 +166,12 @@ func writerObservationCodeSet(obs []SignalObservation) map[string][]ObservationC
 	return out
 }
 
-func writerObservationCodes(o SignalObservation) []ObservationCode {
+func writerObservationCodes(o SignalObservation, arcChanged bool) []ObservationCode {
 	codes := make([]ObservationCode, 0, 4)
 	if o.PR.IsSet() {
 		codes = append(codes, o.Sig.Code(TypeCode))
 	}
-	if o.PR.IsSet() || o.CP.IsSet() || o.Do.IsSet() || o.CN0.IsSet() || o.lli() != 0 {
+	if o.PR.IsSet() || o.CP.IsSet() || o.Do.IsSet() || o.CN0.IsSet() || o.rinexLLI(arcChanged) != 0 {
 		codes = append(codes, o.Sig.Code(TypePhase))
 	}
 	if o.Do.IsSet() {
@@ -154,11 +183,11 @@ func writerObservationCodes(o SignalObservation) []ObservationCode {
 	return codes
 }
 
-func addSignalObservation(dst map[ObservationCode]obsField, o SignalObservation) {
+func addSignalObservation(dst map[ObservationCode]obsField, o SignalObservation, arcChanged bool) {
 	if o.PR.IsSet() {
 		addObsField(dst, o.Sig.Code(TypeCode), opt.Make(float64(o.PR.Get())), 0)
 	}
-	lli := o.lli()
+	lli := o.rinexLLI(arcChanged)
 	if o.CP.IsSet() {
 		addObsField(dst, o.Sig.Code(TypePhase), opt.Make(o.CP.Get()), lli)
 	} else if lli != 0 {

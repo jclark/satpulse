@@ -21,7 +21,7 @@ func TestWriteObservationFile(t *testing.T) {
 				CP:  opt.Make(125893980.172),
 				Do:  opt.Make(2059.717),
 				CN0: opt.Make(float32(34)),
-				LL:  true,
+				Arc: 1,
 			},
 		},
 		{
@@ -336,7 +336,7 @@ func TestReadObservationFileBlankPhaseLLI(t *testing.T) {
 				PR:  opt.Make(21017865.128),
 				Do:  opt.Make(-289.416),
 				CN0: opt.Make(float32(27)),
-				LL:  true,
+				Arc: 1,
 				HC:  true,
 			},
 		},
@@ -370,8 +370,35 @@ func TestReadObservationFileBlankPhaseLLI(t *testing.T) {
 	if got[0].CP.IsSet() {
 		t.Errorf("CP is set to %v, want unset", got[0].CP.Get())
 	}
-	if !got[0].LL || !got[0].HC || got[0].BT {
-		t.Errorf("LL/HC/BT = %v/%v/%v, want true/true/false", got[0].LL, got[0].HC, got[0].BT)
+	if got[0].Arc != 1 || !got[0].HC || got[0].BT {
+		t.Errorf("Arc/HC/BT = %v/%v/%v, want 1/true/false", got[0].Arc, got[0].HC, got[0].BT)
+	}
+}
+
+func TestWriteObservationFileWritesLLIOnArcChange(t *testing.T) {
+	obs := []SignalObservation{
+		{T: mustTime(t, "2025-12-17T08:14:00.0000000"), Sat: "G07", Sig: "1C", SignalValues: SignalValues{CP: opt.Make(1.0)}},
+		{T: mustTime(t, "2025-12-17T08:14:01.0000000"), Sat: "G07", Sig: "1C", SignalValues: SignalValues{CP: opt.Make(2.0), Arc: 1}},
+		{T: mustTime(t, "2025-12-17T08:14:02.0000000"), Sat: "G07", Sig: "1C", SignalValues: SignalValues{CP: opt.Make(3.0), Arc: 1}},
+		{T: mustTime(t, "2025-12-17T08:14:03.0000000"), Sat: "G07", Sig: "1C", SignalValues: SignalValues{CP: opt.Make(4.0), Arc: 2}},
+		{T: mustTime(t, "2025-12-17T08:14:04.0000000"), Sat: "G07", Sig: "1C", SignalValues: SignalValues{CP: opt.Make(5.0), Arc: 2}},
+	}
+	var b bytes.Buffer
+	meta := Metadata{Run: MetadataRun{Date: time.Date(2026, time.May, 18, 9, 0, 0, 0, time.UTC)}}
+	if err := WriteObservationFile(&b, meta, obs); err != nil {
+		t.Fatalf("WriteObservationFile: %v", err)
+	}
+	_, got, err := ReadObservationFile(strings.NewReader(b.String()))
+	if err != nil {
+		t.Fatalf("ReadObservationFile: %v", err)
+	}
+	if len(got) != len(obs) {
+		t.Fatalf("len observations = %d, want %d", len(got), len(obs))
+	}
+	for i, o := range got {
+		if o.Arc != obs[i].Arc {
+			t.Fatalf("obs %d Arc = %d, want %d\n%s", i, o.Arc, obs[i].Arc, b.String())
+		}
 	}
 }
 
@@ -398,8 +425,8 @@ func TestWriteObservationFileOmitsFalseLLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadObservationFile: %v", err)
 	}
-	if got[0].LL || got[0].HC || got[0].BT {
-		t.Errorf("LL/HC/BT = %v/%v/%v, want false/false/false", got[0].LL, got[0].HC, got[0].BT)
+	if got[0].Arc != 0 || got[0].HC || got[0].BT {
+		t.Errorf("Arc/HC/BT = %v/%v/%v, want 0/false/false", got[0].Arc, got[0].HC, got[0].BT)
 	}
 	if got[0].CN0.IsSet() {
 		t.Errorf("CN0 = %v, want unset", got[0].CN0)

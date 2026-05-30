@@ -41,8 +41,8 @@ func TestConverterLeavesZeroLLIUnsetForValidPhase(t *testing.T) {
 	if len(s.obs) != 1 {
 		t.Fatalf("len observations = %d, want 1", len(s.obs))
 	}
-	if s.obs[0].LL || s.obs[0].HC || s.obs[0].BT {
-		t.Errorf("LL/HC/BT = %v/%v/%v, want false/false/false", s.obs[0].LL, s.obs[0].HC, s.obs[0].BT)
+	if s.obs[0].Arc != 0 || s.obs[0].HC || s.obs[0].BT {
+		t.Errorf("Arc/HC/BT = %v/%v/%v, want 0/false/false", s.obs[0].Arc, s.obs[0].HC, s.obs[0].BT)
 	}
 }
 
@@ -62,8 +62,8 @@ func TestConverterSetsNonzeroLLI(t *testing.T) {
 	if len(s.obs) != 1 {
 		t.Fatalf("len observations = %d, want 1", len(s.obs))
 	}
-	if !s.obs[0].LL || s.obs[0].HC || s.obs[0].BT {
-		t.Errorf("LL/HC/BT = %v/%v/%v, want true/false/false", s.obs[0].LL, s.obs[0].HC, s.obs[0].BT)
+	if s.obs[0].Arc != 1 || s.obs[0].HC || s.obs[0].BT {
+		t.Errorf("Arc/HC/BT = %v/%v/%v, want 1/false/false", s.obs[0].Arc, s.obs[0].HC, s.obs[0].BT)
 	}
 }
 
@@ -83,8 +83,8 @@ func TestConverterLeavesLLIUnsetWithoutPhaseIndicator(t *testing.T) {
 	if len(s.obs) != 1 {
 		t.Fatalf("len observations = %d, want 1", len(s.obs))
 	}
-	if s.obs[0].LL || s.obs[0].HC || s.obs[0].BT {
-		t.Errorf("LL/HC/BT = %v/%v/%v, want false/false/false", s.obs[0].LL, s.obs[0].HC, s.obs[0].BT)
+	if s.obs[0].Arc != 0 || s.obs[0].HC || s.obs[0].BT {
+		t.Errorf("Arc/HC/BT = %v/%v/%v, want 0/false/false", s.obs[0].Arc, s.obs[0].HC, s.obs[0].BT)
 	}
 }
 

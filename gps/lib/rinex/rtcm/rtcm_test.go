@@ -131,8 +131,8 @@ func TestConvertMSM7GPS(t *testing.T) {
 	if obs.CN0.Get() != 45 {
 		t.Fatalf("CN0 = %.3f, want 45", obs.CN0.Get())
 	}
-	if obs.LL || !obs.HC || obs.BT {
-		t.Fatalf("LL/HC/BT = %v/%v/%v, want false/true/false", obs.LL, obs.HC, obs.BT)
+	if obs.Arc != 0 || !obs.HC || obs.BT {
+		t.Fatalf("Arc/HC/BT = %v/%v/%v, want 0/true/false", obs.Arc, obs.HC, obs.BT)
 	}
 }
 
@@ -428,8 +428,8 @@ func TestConvertMSM7CarriesTimeContextAndLLI(t *testing.T) {
 	if s.obs[1].T != rinex.TimeFromGPSWeekMillis(2397, 345601000) {
 		t.Fatalf("second time = %s", s.obs[1].T)
 	}
-	if !s.obs[1].LL || s.obs[1].HC || s.obs[1].BT {
-		t.Fatalf("second LL/HC/BT = %v/%v/%v, want true/false/false", s.obs[1].LL, s.obs[1].HC, s.obs[1].BT)
+	if s.obs[1].Arc != 1 || s.obs[1].HC || s.obs[1].BT {
+		t.Fatalf("second Arc/HC/BT = %v/%v/%v, want 1/false/false", s.obs[1].Arc, s.obs[1].HC, s.obs[1].BT)
 	}
 }
 
@@ -448,8 +448,8 @@ func TestConvertMSM7FirstZeroLockSetsLLI(t *testing.T) {
 	if !ok || len(s.obs) != 1 {
 		t.Fatalf("observations = %#v ok=%v, want one", s.obs, ok)
 	}
-	if !s.obs[0].LL || s.obs[0].HC || s.obs[0].BT {
-		t.Fatalf("LL/HC/BT = %v/%v/%v, want true/false/false", s.obs[0].LL, s.obs[0].HC, s.obs[0].BT)
+	if s.obs[0].Arc != 1 || s.obs[0].HC || s.obs[0].BT {
+		t.Fatalf("Arc/HC/BT = %v/%v/%v, want 1/false/false", s.obs[0].Arc, s.obs[0].HC, s.obs[0].BT)
 	}
 }
 
@@ -474,10 +474,10 @@ func TestConvertMSM7CarriesBlankPhaseLLI(t *testing.T) {
 	if len(s.obs) != 2 {
 		t.Fatalf("observation count = %d, want 2", len(s.obs))
 	}
-	if s.obs[0].CP.IsSet() || !s.obs[0].LL || s.obs[0].HC || s.obs[0].BT {
+	if s.obs[0].CP.IsSet() || s.obs[0].Arc != 1 || s.obs[0].HC || s.obs[0].BT {
 		t.Fatalf("first observation = %#v, want blank phase lost lock", s.obs[0])
 	}
-	if !s.obs[1].CP.IsSet() || !s.obs[1].LL || s.obs[1].HC || s.obs[1].BT {
+	if !s.obs[1].CP.IsSet() || s.obs[1].Arc != 2 || s.obs[1].HC || s.obs[1].BT {
 		t.Fatalf("second observation = %#v, want carried lost lock", s.obs[1])
 	}
 }

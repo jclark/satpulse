@@ -31,6 +31,7 @@ type signalKey struct {
 type signalState struct {
 	lock       uint16
 	subHalfCyc bool
+	arc        uint32
 	pending    bool
 	seen       bool
 }
@@ -81,11 +82,11 @@ func (c *Converter) observation(t rinex.Time, meas ubxbin.RxmRawxMeas) (rinex.Si
 		obs.PR = opt.Make(meas.PrMes)
 	}
 	cp, cpOK := carrierPhase(meas, c.opts.BDSGeoHalfCycle)
-	ll, hc := c.lli(obs.Sat, obs.Sig, meas, cpOK)
+	arc, hc := c.arcHC(obs.Sat, obs.Sig, meas, cpOK)
 	if cpOK {
 		obs.CP = opt.Make(cp)
 	}
-	obs.LL = ll
+	obs.Arc = arc
 	obs.HC = hc
 	if finite32(meas.DoMes) {
 		obs.Do = opt.Make(float64(meas.DoMes))
@@ -116,11 +117,12 @@ func isBDSGeo(meas ubxbin.RxmRawxMeas) bool {
 	return meas.GNSSID == ubxbin.BDS && (meas.SVID <= 5 || meas.SVID >= 59)
 }
 
-func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.RxmRawxMeas, phase bool) (ll, hc bool) {
+func (c *Converter) arcHC(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.RxmRawxMeas, phase bool) (arc uint32, hc bool) {
 	k := signalKey{sat: sat, sig: sig}
 	st := c.state[k]
 	sub := meas.TrkStat&ubxbin.RxmRawxSubHalfCyc != 0
 	subChanged := sub != st.subHalfCyc
+	ll := false
 	if meas.LockTime == 0 || st.seen && meas.LockTime < st.lock || subChanged || meas.CpStdev&ubxbin.RxmRawxCpStdMask >= c.opts.SlipThreshold {
 		st.pending = true
 	}
@@ -131,6 +133,9 @@ func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.R
 		ll = true
 		st.pending = false
 	}
+	if ll {
+		st.arc++
+	}
 	if phase && halfCycleUnresolved(meas) {
 		hc = true
 	}
@@ -138,7 +143,7 @@ func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin.R
 	st.subHalfCyc = sub
 	st.seen = true
 	c.state[k] = st
-	return ll, hc
+	return st.arc, hc
 }
 
 func halfCycleUnresolved(meas ubxbin.RxmRawxMeas) bool {

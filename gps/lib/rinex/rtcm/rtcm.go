@@ -65,6 +65,7 @@ type Converter struct {
 	leapMS int64
 	time   map[rtcmbin.GNSS]rinex.Time
 	lock   map[signalKey]uint16
+	arc    map[signalKey]uint32
 	slip   map[signalKey]bool
 }
 
@@ -85,6 +86,7 @@ func New(sink rinex.Sink, opts Options) *Converter {
 		leapMS: defaultGPSUTCMS,
 		time:   make(map[rtcmbin.GNSS]rinex.Time),
 		lock:   make(map[signalKey]uint16),
+		arc:    make(map[signalKey]uint32),
 		slip:   make(map[signalKey]bool),
 	}
 }
@@ -206,12 +208,10 @@ func (c *Converter) convertCell(t rinex.Time, gnss rtcmbin.GNSS, m *rtcmbin.MSMH
 	if v, ok := cn0(m, cellIndex); ok {
 		obs.CN0 = opt.Make(v)
 	}
-	ll, hc := c.lli(obs.Sat, obs.Sig, m, cellIndex, obs.CP.IsSet())
+	obs.Arc, obs.HC = c.arcHC(obs.Sat, obs.Sig, m, cellIndex, obs.CP.IsSet())
 	if len(obs.ObservationCodes()) == 0 {
 		return false, nil
 	}
-	obs.LL = ll
-	obs.HC = hc
 	return true, c.sink.Observation(obs)
 }
 
@@ -537,9 +537,10 @@ func frequencyMHz(sys, sig string, frq *int8) (float64, bool) {
 	return 0, false
 }
 
-func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, m *rtcmbin.MSMHiRes, cellIndex int, hasPhase bool) (ll, hc bool) {
+func (c *Converter) arcHC(sat rinex.SatelliteID, sig rinex.SignalID, m *rtcmbin.MSMHiRes, cellIndex int, hasPhase bool) (arc uint32, hc bool) {
 	k := signalKey{sat: sat, sig: sig}
 	prev := c.lock[k]
+	ll := false
 	if cur, ok := at(m.Sig.LockTime, cellIndex); ok {
 		if cur < prev || cur == 0 && prev == 0 {
 			ll = true
@@ -555,10 +556,13 @@ func (c *Converter) lli(sat rinex.SatelliteID, sig rinex.SignalID, m *rtcmbin.MS
 	if !hasPhase && ll {
 		c.slip[k] = true
 	}
+	if ll {
+		c.arc[k]++
+	}
 	if half, ok := at(m.Sig.HalfCycle, cellIndex); ok && half {
 		hc = true
 	}
-	return ll, hc
+	return c.arc[k], hc
 }
 
 func cellSet(mask uint64, ncell, cell int) bool {

@@ -7,16 +7,10 @@ import (
 
 const decimationRoundTicks = Time(100 * time.Millisecond / (time.Duration(tickNs) * time.Nanosecond))
 
-type signalKey struct {
-	sat SatelliteID
-	sig SignalID
-}
-
 // DecimationSink wraps a Sink and emits only observations on a time grid.
 type DecimationSink struct {
 	sink     Sink
 	interval Time
-	lli      map[signalKey]lossOfLockIndicator
 }
 
 // NewDecimationSink creates a Sink that decimates observations by interval.
@@ -28,7 +22,6 @@ func NewDecimationSink(sink Sink, interval time.Duration) (*DecimationSink, erro
 	return &DecimationSink{
 		sink:     sink,
 		interval: ticks,
-		lli:      make(map[signalKey]lossOfLockIndicator),
 	}, nil
 }
 
@@ -46,10 +39,8 @@ func (s *DecimationSink) Metadata(m Metadata) error {
 // Observation emits obs only when its rounded epoch label is on the interval grid.
 func (s *DecimationSink) Observation(obs SignalObservation) error {
 	if s.onGrid(obs.T) {
-		s.applyLLI(&obs)
 		return s.sink.Observation(obs)
 	}
-	s.saveLLI(obs)
 	return nil
 }
 
@@ -76,26 +67,6 @@ func (s *DecimationSink) onGrid(t Time) bool {
 	t = roundTime(t, decimationRoundTicks)
 	_, r := divMod(int64(t), int64(s.interval))
 	return r == 0
-}
-
-func (s *DecimationSink) saveLLI(obs SignalObservation) {
-	lli := obs.lli()
-	if lli == 0 {
-		return
-	}
-	k := signalKey{sat: obs.Sat, sig: obs.Sig}
-	s.lli[k] |= lli
-}
-
-func (s *DecimationSink) applyLLI(obs *SignalObservation) {
-	k := signalKey{sat: obs.Sat, sig: obs.Sig}
-	lli := s.lli[k]
-	if lli == 0 {
-		return
-	}
-	lli |= obs.lli()
-	obs.setLLI(lli)
-	delete(s.lli, k)
 }
 
 func roundTime(t, unit Time) Time {

@@ -53,7 +53,7 @@ func TestDiffObservationsReportsNilMissingSide(t *testing.T) {
 }
 
 func TestDiffSignal(t *testing.T) {
-	a := SignalValues{PR: opt.Make(1.0), CP: opt.Make(2.0), LL: true}
+	a := SignalValues{PR: opt.Make(1.0), CP: opt.Make(2.0), Arc: 1}
 	b := SignalValues{PR: opt.Make(1.001), CP: opt.Make(2.0), HC: true}
 	for _, tt := range []struct {
 		name  string
@@ -90,7 +90,7 @@ func TestDiffSignal(t *testing.T) {
 			name:  "different values",
 			a:     &a,
 			b:     &b,
-			wantA: &SignalValues{PR: opt.Make(1.0), LL: true},
+			wantA: &SignalValues{PR: opt.Make(1.0), Arc: 1},
 			wantB: &SignalValues{PR: opt.Make(1.001), HC: true},
 		},
 		{
