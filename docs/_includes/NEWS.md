@@ -22,6 +22,10 @@ _Not yet released_
 - `satpulsed` warns when u-blox `UBX-MON-COMMS` reports transmit-buffer overflow, and the u-blox Gen 9 message file includes a tag to enable it. (#273)
 - `satpulsed` logs u-blox `UBX-INF-*` messages emitted by the receiver. (#273)
 
+### NTP support
+
+- SatPulse now supports the NTP SHM protocol in addition to the chrony refclock SOCK protocol for sending time information to an NTP server. `satpulse.toml` has a new `[ntp.shm]` table for configuring this. (#300)
+
 ### GPS high-level configuration
 
 - `satpulsetool gps` has a new `--fixed-pos-llh` option for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#146)

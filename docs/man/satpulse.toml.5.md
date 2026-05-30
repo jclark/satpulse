@@ -182,21 +182,40 @@ ptp4l.udsAddress = "/var/run/ptp4l"
 
 ## `ntp` table
 
-The `ntp` table is about how SatPulse sends information to an NTP daemon. Currently only chrony is supported.
-It can have the following keys:
+The `ntp` table controls how SatPulse sends samples to an NTP daemon.
+It supports two protocols: the refclock SOCK protocol defined by chrony, and the SHM protocol defined by NTP.
+
+If the `[phc]` table is not present, then the samples will be based on the timing of the serial messages.
+This is imprecise but is useful when the NTP daemon has a separate source of PPS samples, which do not include time-of-day information.
+The samples from SatPulse can be used to complete the PPS samples.
+
+The following key enables use of the refclock SOCK protocol:
 
 * `sock.path` - a string giving the path of the Unix domain socket that is used to communicate with chrony using the SOCK protocol;
-  it must match the path in the `refclock SOCK` line in the chrony configuration file
+  the NTP daemon must be configured with a matching path; with chrony this is specified in the `refclock SOCK` line
 
-If the `[phc]` table is not present, then the samples sent to chrony will be based on the timing of the serial messages.
-This is imprecise but is useful when chrony is also using a PPS refclock, which does not include time-of-day information.
-The samples from satpulse can be used by chrony to complete the samples from the PPS refclock.
-
-Example
+Example:
 
 ```
 [ntp]
 sock.path = "/var/run/chrony.satpulse.sock"
+```
+
+The following keys are used with the SHM protocol:
+
+* `shm.segment` - an integer from 0 to 255 giving the NTP SHM segment index;
+  this key enables use of the SHM protocol
+* `shm.precision` - an optional integer from -128 to 127 overriding the SHM precision field, in log2 seconds;
+  the default is for SatPulse to choose a precision based on how the sample was generated
+
+The segment is created with mode 0600 when the index is 0 or 1, and otherwise with mode 0666,
+so indices 0 and 1 are only suitable when satpulsed and the NTP daemon run as the same user.
+
+Example:
+
+```
+[ntp]
+shm.segment = 2
 ```
 
 ## `log` table
@@ -359,7 +378,7 @@ Two kinds of endpoint are supported: Ntrip and TCP.
 With an Ntrip endpoint, SatPulse acts as an Ntrip client, receiving from an Ntrip caster.
 The following keys may be specified:
 
-* `ntrip.address` - a string giving the address of the Ntrip caster, in the form *host*`:`*port*; this key is required
+* `ntrip.address` - a string giving the address of the Ntrip caster, in the form *host* or *host*`:`*port*; when the port is omitted, the default is 2101; this key is required
 * `ntrip.mountpoint` - a string giving the caster mountpoint to use; this key is required
 * `ntrip.username` - a string giving the user name for Ntrip basic authentication
 * `ntrip.password` - a string giving the password for Ntrip basic authentication
@@ -368,7 +387,7 @@ Example
 
 ```
 [stream.pull]
-ntrip.address = "caster.example.com:2101"
+ntrip.address = "caster.example.com"
 ntrip.mountpoint = "RTCM"
 ntrip.username = "rover"
 ntrip.password = "secret"
@@ -403,7 +422,7 @@ Currently the only kind of endpoint is Ntrip: SatPulse acts as an Ntrip server, 
 The `[[stream.push]]` table has the following keys:
 
 * `protocol` - a string giving the packet protocol to forward; the value can be `"RTCM"`, `"NMEA"` or `"UBX"`; the receiver must output packets using this protocol; the default is `"RTCM"`
-* `ntrip.address` - a string giving the address of the remote Ntrip caster, in the form *host*`:`*port*; this key is required
+* `ntrip.address` - a string giving the address of the remote Ntrip caster, in the form *host* or *host*`:`*port*; when the port is omitted, the default is 2101; this key is required
 * `ntrip.mountpoint` - a string giving the mountpoint to push to on the remote caster; this key is required and must be a single URL path component
 * `ntrip.password` - a string giving the password for uploading to the remote caster; this key is required
 * `ntrip.description` - a string giving the stream description sent to the remote caster; the default is the mountpoint name
@@ -419,7 +438,7 @@ Example
 country = "THA"
 
 [[stream.push]]
-ntrip.address = "caster.example.com:2101"
+ntrip.address = "caster.example.com"
 ntrip.mountpoint = "BKK"
 ntrip.password = "secret"
 ntrip.description = "Bangkok"

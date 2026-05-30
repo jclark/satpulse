@@ -8,8 +8,11 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/obs"
+	"github.com/jclark/satpulse/time/internal/refclock"
+	"github.com/jclark/satpulse/time/lib/ntpshm"
 )
 
 type nativeMsgObserver struct {
@@ -102,5 +105,134 @@ func TestDispatcherRunEmitsPulledRTCMCorReport(t *testing.T) {
 	}
 	if !observer.tRead[0].Equal(tRead) {
 		t.Errorf("tRead = %v, want %v", observer.tRead[0], tRead)
+	}
+}
+
+type shmWrite struct {
+	clock     time.Time
+	receive   time.Time
+	leap      ptime.LeapSecondKind
+	precision int8
+}
+
+type fakeSHM struct {
+	writes    []shmWrite
+	precision int8
+}
+
+func (s *fakeSHM) Write(clockTime, receiveTime time.Time, leap ptime.LeapSecondKind) {
+	s.writes = append(s.writes, shmWrite{
+		clock:     clockTime,
+		receive:   receiveTime,
+		leap:      leap,
+		precision: s.precision,
+	})
+}
+
+func (s *fakeSHM) Close() error { return nil }
+
+type ntpSampleObserver struct {
+	obs.DefaultObserver
+	count  int
+	sys    time.Time
+	offset float64
+	leap   ptime.LeapSecondKind
+	phc    ptime.Time
+}
+
+func (o *ntpSampleObserver) NTPSample(sys time.Time, offset float64, leap ptime.LeapSecondKind, phc ptime.Time) {
+	o.count++
+	o.sys = sys
+	o.offset = offset
+	o.leap = leap
+	o.phc = phc
+}
+
+func TestDispatcherMsgUTCTimeWritesSHM(t *testing.T) {
+	shm := &fakeSHM{precision: -1}
+	observer := &ntpSampleObserver{}
+	d := &Dispatcher{
+		shm: shm,
+		obs: observer,
+		lg:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	utc := time.Unix(100, 123)
+	tRead := time.Unix(99, 456)
+	d.MsgUTCTime(utc, tRead, ptime.LeapSecondPositive)
+	if len(shm.writes) != 1 {
+		t.Fatalf("SHM writes = %d, want 1", len(shm.writes))
+	}
+	w := shm.writes[0]
+	if !w.clock.Equal(utc) || !w.receive.Equal(tRead) || w.leap != ptime.LeapSecondPositive || w.precision != -1 {
+		t.Fatalf("SHM write = %+v, want clock %v receive %v leap positive precision -1", w, utc, tRead)
+	}
+	if observer.count != 1 || !observer.sys.Equal(tRead) || observer.leap != ptime.LeapSecondPositive || observer.phc != 0 {
+		t.Fatalf("observer sample = count %d sys %v leap %v phc %v", observer.count, observer.sys, observer.leap, observer.phc)
+	}
+	if want := utc.Sub(tRead).Seconds(); observer.offset != want {
+		t.Fatalf("observer offset = %v, want %v", observer.offset, want)
+	}
+}
+
+func TestDispatcherMsgUTCTimeWritesBothSinks(t *testing.T) {
+	shm := &fakeSHM{precision: -7}
+	rc, ch := refclock.NewProxyRefClock()
+	defer rc.Close()
+	d := &Dispatcher{
+		rc:  rc,
+		shm: shm,
+		obs: &obs.DefaultObserver{},
+		lg:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	utc := time.Unix(200, 0)
+	tRead := time.Unix(199, 0)
+	d.MsgUTCTime(utc, tRead, ptime.LeapSecondNegative)
+	if len(shm.writes) != 1 {
+		t.Fatalf("SHM writes = %d, want 1", len(shm.writes))
+	}
+	select {
+	case s := <-ch:
+		if !s.Sys.Equal(tRead) || s.Offset != utc.Sub(tRead).Seconds() || s.Leap != ptime.LeapSecondNegative {
+			t.Fatalf("refclock sample = %+v", s)
+		}
+	default:
+		t.Fatalf("refclock sample was not sent")
+	}
+}
+
+func TestDispatcherSHMPrecisionLifecycle(t *testing.T) {
+	base := &ntpshm.Writer{}
+	shm := NewSHMWriter(base, nil)
+	setter, ok := shm.(samplePrecisionSetter)
+	if !ok {
+		t.Fatalf("SHM writer is %T, want samplePrecisionSetter", shm)
+	}
+	cw := shm.(*calibratingSHMWriter)
+	setter.setSamplePrecision(20 * time.Nanosecond)
+	if cw.win == nil || cw.win.Len() != 1 {
+		t.Fatalf("precision window length = %v, want 1", cw.win)
+	}
+	for i := 1; i < precisionCalibrationSamples-1; i++ {
+		setter.setSamplePrecision(5 * time.Nanosecond)
+		if cw.win == nil {
+			t.Fatalf("precision window released before calibration on sample %d", i+1)
+		}
+	}
+	setter.setSamplePrecision(2 * time.Microsecond)
+	if cw.win != nil {
+		t.Fatalf("precision window was not released")
+	}
+	setter.setSamplePrecision(time.Second)
+}
+
+func TestDispatcherSHMPrecisionOverride(t *testing.T) {
+	precision := int8(12)
+	base := &ntpshm.Writer{}
+	shm := NewSHMWriter(base, &precision)
+	if _, ok := shm.(samplePrecisionSetter); ok {
+		t.Fatalf("explicit precision writer unexpectedly has a calibration setter")
+	}
+	if shm != base {
+		t.Fatalf("explicit precision writer = %T, want base writer", shm)
 	}
 }

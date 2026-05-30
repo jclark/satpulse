@@ -38,6 +38,14 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "ipv6 without port",
+			args: []string{"::1", "MNT"},
+			expect: &flagConfig{
+				Addr:       "[::1]:2101",
+				Mountpoint: "MNT",
+			},
+		},
+		{
 			name: "user without password",
 			args: []string{"--user", "jjc", "caster.example", "MNT"},
 			expect: &flagConfig{

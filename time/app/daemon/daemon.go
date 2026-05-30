@@ -26,6 +26,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/refclock"
 	"github.com/jclark/satpulse/time/internal/sseobs"
 	"github.com/jclark/satpulse/time/internal/ts"
+	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/lib/pmc"
 	"github.com/jclark/satpulse/time/lib/sse"
 	"github.com/jclark/satpulse/time/phc"
@@ -260,6 +261,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 
 	rc, err := cfg.NTP.NewRefClock(lg)
+	if err != nil {
+		return err
+	}
+	shm, err := cfg.NTP.NewSHMWriter(lg)
+	if err != nil {
+		return err
+	}
 	var (
 		rcProxy *refclock.ProxyRefClock
 		rcCh    <-chan refclock.RefClockSample
@@ -297,7 +305,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	obs.AddObserver(&oc, posObs)
 	observer := oc.Observer()
 
-	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, observer, tStart)
+	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, observer, tStart)
 	if err != nil {
 		return err
 	}
@@ -323,7 +331,18 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, cfg *Config, gm *ptpgm.Grandmaster, rc *refclock.ProxyRefClock, obs obs.Observer, tStart time.Time) (*gpsevent.Dispatcher, error) {
+// NewDispatcher creates the GPS event dispatcher for the daemon.
+func NewDispatcher(
+	lg *slog.Logger,
+	pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor,
+	clk *ts.Clock,
+	cfg *Config,
+	gm *ptpgm.Grandmaster,
+	rc *refclock.ProxyRefClock,
+	shm *ntpshm.Writer,
+	obs obs.Observer,
+	tStart time.Time,
+) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
 	var controller *phcsync.Controller
 	if clk != nil {
@@ -342,7 +361,8 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		}
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, ls, obs, eventLogPath, tStart)
+	shmWriter := gpsevent.NewSHMWriter(shm, cfg.shmFixedPrecision())
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ls, obs, eventLogPath, tStart)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
@@ -457,7 +477,7 @@ func configFeatures(cfg *Config, usingPHC bool) cfgFeatures {
 	var cf cfgFeatures
 	if usingPHC {
 		cf |= cfgTimePulse | cfgTimePulseMsg
-	} else if cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "" {
+	} else if (cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "") || (cfg.NTP.SHM != nil && cfg.NTP.SHM.Segment != nil) {
 		cf |= cfgTimePulse
 	}
 	if cfg.Log.Track || len(cfg.HTTP) > 0 {

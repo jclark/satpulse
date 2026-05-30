@@ -63,6 +63,48 @@ ntrip.password = "p"
 	}
 }
 
+func TestNtripNormalizeAddress(t *testing.T) {
+	tests := []struct {
+		addr string
+		want string
+	}{
+		{"caster.example.com", "caster.example.com:2101"},
+		{"caster.example.com:2102", "caster.example.com:2102"},
+		{"::1", "[::1]:2101"},
+		{"[::1]", "[::1]:2101"},
+		{"[::1]:2102", "[::1]:2102"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.addr, func(t *testing.T) {
+			if got := NtripNormalizeAddress(tt.addr); got != tt.want {
+				t.Errorf("NtripNormalizeAddress(%q) = %q, want %q", tt.addr, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateDoesNotNormalizeNtripAddress(t *testing.T) {
+	cfg := decode(t, `
+[pull]
+ntrip.address = "pull.example.com"
+ntrip.mountpoint = "PULL"
+
+[[push]]
+ntrip.address = "push.example.com"
+ntrip.mountpoint = "PUSH"
+ntrip.password = "p"
+`)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if cfg.Pull.Ntrip.Address != "pull.example.com" {
+		t.Errorf("pull address = %q", cfg.Pull.Ntrip.Address)
+	}
+	if cfg.Push[0].Ntrip.Address != "push.example.com" {
+		t.Errorf("push address = %q", cfg.Push[0].Ntrip.Address)
+	}
+}
+
 func TestPullConfigPrepareNil(t *testing.T) {
 	var pc *PullConfig
 	if got := pc.Prepare("1.0", nil, nil); got != nil {
@@ -90,7 +132,7 @@ func TestPullConfigPrepareTCP(t *testing.T) {
 
 func TestPullConfigPrepareNtrip(t *testing.T) {
 	pc := &PullConfig{Ntrip: &NtripConfig{
-		Address:    "caster.example.com:2101",
+		Address:    "caster.example.com",
 		Mountpoint: "RTCM",
 		Username:   "u",
 		Password:   "p",
@@ -112,6 +154,9 @@ func TestPullConfigPrepareNtrip(t *testing.T) {
 	}
 	if s.Addr() != "caster.example.com:2101" {
 		t.Errorf("Addr() = %q", s.Addr())
+	}
+	if pc.Ntrip.Address != "caster.example.com" {
+		t.Errorf("config address = %q", pc.Ntrip.Address)
 	}
 }
 
