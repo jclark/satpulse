@@ -163,15 +163,15 @@ func TestParseFlagsFormats(t *testing.T) {
 	if v.from != inputRTCM || v.to != outputObsJSON || v.week.mode != weekDate {
 		t.Fatalf("rtcm flags = %#v", v)
 	}
-	v, _, err = parseFlags("", []string{"--from", "raw", "--rtcm-strict-prr", "--rtcm-omit-zero-doppler", "input.jsonl"})
+	v, _, err = parseFlags("", []string{"--from", "raw", "--rtcm-strict-prr", "--rtcm-omit-zero-do", "input.jsonl"})
 	if err != nil {
 		t.Fatalf("parseFlags raw RTCM options: %v", err)
 	}
 	if !v.format.rtcm.UseSpecPhaseRangeRateSign {
 		t.Fatal("UseSpecPhaseRangeRateSign = false, want true")
 	}
-	if !v.format.rtcm.OmitZeroDoppler {
-		t.Fatal("OmitZeroDoppler = false, want true")
+	if !v.format.rtcm.OmitZeroDo {
+		t.Fatal("OmitZeroDo = false, want true")
 	}
 	v, _, err = parseFlags("", []string{"--from", "ubx", "--ubx-slip-threshold", "12", "input.ubx"})
 	if err != nil {
@@ -193,17 +193,17 @@ func TestParseFlagsFormats(t *testing.T) {
 	if _, _, err := parseFlags("", []string{"--from", "raw", "--ubx-bds-geo-half-cycle", "input.raw"}); err != nil {
 		t.Fatalf("parseFlags raw UBX BDS GEO half cycle: %v", err)
 	}
-	v, _, err = parseFlags("", []string{"--from", "uncb", "--unc-omit-doppler-without-cp", "input.uncb"})
+	v, _, err = parseFlags("", []string{"--from", "uncb", "--unc-omit-do-without-cp", "input.uncb"})
 	if err != nil {
 		t.Fatalf("parseFlags uncb omit doppler without cp: %v", err)
 	}
-	if !v.format.unc.OmitDopplerWithoutCP {
-		t.Fatal("OmitDopplerWithoutCP = false, want true")
+	if !v.format.unc.OmitDoWithoutCP {
+		t.Fatal("OmitDoWithoutCP = false, want true")
 	}
-	if _, _, err := parseFlags("", []string{"--from", "raw", "--unc-omit-doppler-without-cp", "input.raw"}); err != nil {
+	if _, _, err := parseFlags("", []string{"--from", "raw", "--unc-omit-do-without-cp", "input.raw"}); err != nil {
 		t.Fatalf("parseFlags raw UNC omit doppler without cp: %v", err)
 	}
-	if _, _, err := parseFlags("", []string{"--from", "unca", "--unc-omit-doppler-without-cp", "input.unca"}); err != nil {
+	if _, _, err := parseFlags("", []string{"--from", "unca", "--unc-omit-do-without-cp", "input.unca"}); err != nil {
 		t.Fatalf("parseFlags unca UNC omit doppler without cp: %v", err)
 	}
 	for _, tt := range []struct {
@@ -246,7 +246,7 @@ func TestParseFlagsFormats(t *testing.T) {
 	if _, _, err := parseFlags("", []string{"--from", "ubx", "--rtcm-strict-prr", "input.ubx"}); err == nil {
 		t.Fatal("parseFlags accepted RTCM PRR option with UBX input")
 	}
-	if _, _, err := parseFlags("", []string{"--from", "ubx", "--rtcm-omit-zero-doppler", "input.ubx"}); err == nil {
+	if _, _, err := parseFlags("", []string{"--from", "ubx", "--rtcm-omit-zero-do", "input.ubx"}); err == nil {
 		t.Fatal("parseFlags accepted RTCM zero Doppler option with UBX input")
 	}
 	if _, _, err := parseFlags("", []string{"--from", "unca", "--ubx-slip-threshold", "15", "input.unc"}); err == nil {
@@ -255,10 +255,10 @@ func TestParseFlagsFormats(t *testing.T) {
 	if _, _, err := parseFlags("", []string{"--from", "unca", "--ubx-bds-geo-half-cycle", "input.unc"}); err == nil {
 		t.Fatal("parseFlags accepted UBX BDS GEO half cycle option with UNCA input")
 	}
-	if _, _, err := parseFlags("", []string{"--from", "ubx", "--unc-omit-doppler-without-cp", "input.ubx"}); err == nil {
+	if _, _, err := parseFlags("", []string{"--from", "ubx", "--unc-omit-do-without-cp", "input.ubx"}); err == nil {
 		t.Fatal("parseFlags accepted UNC omit doppler option with UBX input")
 	}
-	if _, _, err := parseFlags("", []string{"--from", "rtcm", "--unc-omit-doppler-without-cp", "input.rtcm"}); err == nil {
+	if _, _, err := parseFlags("", []string{"--from", "rtcm", "--unc-omit-do-without-cp", "input.rtcm"}); err == nil {
 		t.Fatal("parseFlags accepted UNC omit doppler option with RTCM input")
 	}
 	if _, _, err := parseFlags("", []string{"--packet-log", "--from", "rtcm", "--date", "20251218", "input.jsonl"}); err == nil {
@@ -855,7 +855,7 @@ func TestGoldenFiles(t *testing.T) {
 	// that strict RTCM interpretation. SatPulse's default matches this common
 	// receiver polarity; --rtcm-strict-prr selects the strict RTCM sign.
 	// RTKLIB Explorer omits numeric zero Doppler values; the RTCM case uses
-	// --rtcm-omit-zero-doppler to test that compatibility mode.
+	// --rtcm-omit-zero-do to test that compatibility mode.
 	now := time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)
 	cleanCommon := func(meta *rinex.Metadata) {
 		meta.Run = rinex.MetadataRun{}
@@ -887,13 +887,13 @@ func TestGoldenFiles(t *testing.T) {
 		},
 		{
 			name:          "rtcm_20260519_3h",
-			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-doppler", filepath.Join("testdata", "packet-rtcm-20260519-3h.rtcm")},
+			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-do", filepath.Join("testdata", "packet-rtcm-20260519-3h.rtcm")},
 			obs:           filepath.Join("testdata", "packet-rtcm-20260519-3h.obs.gz"),
 			cleanMetadata: cleanRTCM,
 		},
 		{
 			name:          "um980_rtcm_20260527_3h",
-			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-doppler", filepath.Join("testdata", "um980-rtcm-20260527-3h.rtcm")},
+			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-do", filepath.Join("testdata", "um980-rtcm-20260527-3h.rtcm")},
 			obs:           filepath.Join("testdata", "um980-rtcm-20260527-3h.obs.gz"),
 			cleanMetadata: cleanRTCM,
 		},

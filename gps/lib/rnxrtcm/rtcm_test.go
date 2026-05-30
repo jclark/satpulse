@@ -163,7 +163,7 @@ func TestConvertMSM7ZeroDoppler(t *testing.T) {
 		wantSet bool
 	}{
 		{name: "default preserves", wantSet: true},
-		{name: "omit option", opts: Options{OmitZeroDoppler: true}},
+		{name: "omit option", opts: Options{OmitZeroDo: true}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &testSink{}

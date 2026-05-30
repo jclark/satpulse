@@ -49,9 +49,9 @@ const summary = `[-h|--help] [-o|--output path] [-H|--header-file path]
            [--interval seconds]
            [--rinex-version version] [--program name] [--run-by name]
            [--antenna type] [--approx-pos x,y,z] [--comment text]
-           [--rtcm-strict-prr] [--rtcm-omit-zero-doppler]
+           [--rtcm-strict-prr] [--rtcm-omit-zero-do]
            [--ubx-slip-threshold n] [--ubx-bds-geo-half-cycle]
-           [--unc-omit-doppler-without-cp]
+           [--unc-omit-do-without-cp]
            input...`
 
 type inputFormat string
@@ -270,10 +270,10 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.String("approx-pos", "", "RINEX approximate XYZ position as x,y,z")
 	flags.StringArray("comment", nil, "RINEX comment line")
 	flags.BoolVar(&v.format.rtcm.UseSpecPhaseRangeRateSign, "rtcm-strict-prr", false, "interpret sign of PhaseRangeRate in strict conformance with RTCM3 standard (Doppler = -PRR/wavelength)")
-	flags.BoolVar(&v.format.rtcm.OmitZeroDoppler, "rtcm-omit-zero-doppler", false, "omit RTCM MSM Doppler observations with numeric value zero")
+	flags.BoolVar(&v.format.rtcm.OmitZeroDo, "rtcm-omit-zero-do", false, "omit RTCM MSM Doppler observations with numeric value zero")
 	flags.Uint8Var(&v.format.ubx.SlipThreshold, "ubx-slip-threshold", 15, "RAWX cpStdev index that marks a cycle slip")
 	flags.BoolVar(&v.format.ubx.BDSGeoHalfCycle, "ubx-bds-geo-half-cycle", false, "apply RTKLIB-compatible BDS GEO half-cycle carrier phase correction")
-	flags.BoolVar(&v.format.unc.OmitDopplerWithoutCP, "unc-omit-doppler-without-cp", false, "omit Unicore OBSVM Doppler observations whose signal has no valid carrier phase")
+	flags.BoolVar(&v.format.unc.OmitDoWithoutCP, "unc-omit-do-without-cp", false, "omit Unicore OBSVM Doppler observations whose signal has no valid carrier phase")
 	v.metadataFlags = flags
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
 	if err := flags.Parse(args); err != nil {
@@ -303,14 +303,14 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if v.format.rtcm.UseSpecPhaseRangeRateSign && !v.from.mayUseRTCM() {
 		return nil, usageFunc, errors.New("--rtcm-strict-prr is valid only with raw or RTCM input")
 	}
-	if v.format.rtcm.OmitZeroDoppler && !v.from.mayUseRTCM() {
-		return nil, usageFunc, errors.New("--rtcm-omit-zero-doppler is valid only with raw or RTCM input")
+	if v.format.rtcm.OmitZeroDo && !v.from.mayUseRTCM() {
+		return nil, usageFunc, errors.New("--rtcm-omit-zero-do is valid only with raw or RTCM input")
 	}
 	if flags.Changed("ubx-slip-threshold") && !v.from.mayUseUBX() {
 		return nil, usageFunc, errors.New("--ubx-slip-threshold is valid only with raw or UBX input")
 	}
-	if v.format.unc.OmitDopplerWithoutCP && !v.from.mayUseUnicore() {
-		return nil, usageFunc, errors.New("--unc-omit-doppler-without-cp is valid only with raw, UNCB, or UNCA input")
+	if v.format.unc.OmitDoWithoutCP && !v.from.mayUseUnicore() {
+		return nil, usageFunc, errors.New("--unc-omit-do-without-cp is valid only with raw, UNCB, or UNCA input")
 	}
 	if flags.Changed("ubx-bds-geo-half-cycle") && !v.from.mayUseUBX() {
 		return nil, usageFunc, errors.New("--ubx-bds-geo-half-cycle is valid only with raw or UBX input")

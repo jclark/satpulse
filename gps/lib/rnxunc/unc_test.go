@@ -102,9 +102,9 @@ func TestConvertObsVMGLONASSFrequency(t *testing.T) {
 	}
 }
 
-func TestConvertObsVMOmitDopplerWithoutCP(t *testing.T) {
+func TestConvertObsVMOmitDoWithoutCP(t *testing.T) {
 	s := &testSink{}
-	c := New(s, Options{OmitDopplerWithoutCP: true})
+	c := New(s, Options{OmitDoWithoutCP: true})
 	_, err := c.ConvertObsVM(hdr(1, 1000), obsvm(
 		uncmsg.ObsVMObs{
 			PRN:        7,

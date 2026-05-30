@@ -52,9 +52,9 @@ type Options struct {
 	// observed in UM980 and ZED-F9P MSM streams, where encoded PRR has the
 	// same sign as RINEX Doppler.
 	UseSpecPhaseRangeRateSign bool
-	// OmitZeroDoppler omits RTCM MSM Doppler observations with numeric value
+	// OmitZeroDo omits RTCM MSM Doppler observations with numeric value
 	// zero, matching RTKLIB Explorer output.
-	OmitZeroDoppler bool
+	OmitZeroDo bool
 }
 
 // Converter converts parsed RTCM messages to RINEX records.
@@ -202,7 +202,7 @@ func (c *Converter) convertCell(t rinex.Time, gnss rtcmbin.GNSS, m *rtcmbin.MSMH
 	if cp, ok := carrierPhase(m, satIndex, cellIndex, freq, hasFrequency); ok {
 		obs.CP = opt.Make(cp)
 	}
-	if dop, ok := doppler(m, satIndex, cellIndex, freq, hasFrequency, c.opts.UseSpecPhaseRangeRateSign); ok && (!c.opts.OmitZeroDoppler || dop != 0) {
+	if dop, ok := doppler(m, satIndex, cellIndex, freq, hasFrequency, c.opts.UseSpecPhaseRangeRateSign); ok && (!c.opts.OmitZeroDo || dop != 0) {
 		obs.Do = opt.Make(dop)
 	}
 	if v, ok := cn0(m, cellIndex); ok {
