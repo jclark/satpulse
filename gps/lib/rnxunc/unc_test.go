@@ -102,6 +102,27 @@ func TestConvertObsVMGLONASSFrequency(t *testing.T) {
 	}
 }
 
+func TestConvertObsVMQZSSL2CM(t *testing.T) {
+	s := &testSink{}
+	c := New(s, Options{})
+	_, err := c.ConvertObsVM(hdr(1, 1000), obsvm(uncmsg.ObsVMObs{
+		PRN:        193,
+		PSR:        23000000,
+		ADR:        -120000000,
+		LockTime:   100,
+		ChTrStatus: tracking(uncmsg.SysQZSS, uncmsg.FreqQZSSL2CM, true, true, true),
+	}))
+	if err != nil {
+		t.Fatalf("ConvertObsVM: %v", err)
+	}
+	if len(s.obs) != 1 {
+		t.Fatalf("observation count = %d, want 1", len(s.obs))
+	}
+	if s.obs[0].Sat != "J01" || s.obs[0].Sig != "2S" {
+		t.Fatalf("observation = (%q, %q), want (J01, 2S)", s.obs[0].Sat, s.obs[0].Sig)
+	}
+}
+
 func TestConvertObsVMSkipsUnmappedAndEmpty(t *testing.T) {
 	s := &testSink{}
 	c := New(s, Options{})
@@ -112,7 +133,7 @@ func TestConvertObsVMSkipsUnmappedAndEmpty(t *testing.T) {
 			ADR:        -2,
 			Dopp:       3,
 			CN0:        4000,
-			ChTrStatus: tracking(uncmsg.SysQZSS, uncmsg.FreqGPSL2P, false, true, true),
+			ChTrStatus: tracking(uncmsg.SysQZSS, uncmsg.FreqQZSSL2CM, false, true, true),
 		},
 		uncmsg.ObsVMObs{
 			PRN:        7,

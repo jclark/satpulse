@@ -62,12 +62,21 @@ func RINEXSatNum(system SysID, prnSlot uint16) uint8 {
 // RINEXObsSig returns the RINEX two-character signal identifier for an OBSVM
 // channel tracking status satellite system, signal type, and L2C flag.
 // It returns "" for reserved or unmapped signal types.
+// The L2C flag (bit 26 of the channel tracking status word) overrides the
+// nominal L2P(Y) reading of sigType 9 to L2C(M) on GPS and QZSS. QZSS does
+// not actually broadcast L2P(Y), so only the L2C-set case is emitted.
 func RINEXObsSig(system SysID, sigType FreqID, l2c bool) string {
-	if system == SysGPS && sigType == FreqGPSL2P {
-		if l2c {
-			return "2S"
+	if l2c {
+		switch system {
+		case SysGPS:
+			if sigType == FreqGPSL2P {
+				return "2S"
+			}
+		case SysQZSS:
+			if sigType == FreqQZSSL2CM {
+				return "2S"
+			}
 		}
-		return "2W"
 	}
 	return rinexObsSigMap[system][sigType]
 }
@@ -81,6 +90,7 @@ var rinexObsSigMap = map[SysID]map[FreqID]string{
 		FreqGPSL1CD: "1S",
 		FreqGPSL5D:  "5I",
 		FreqGPSL5P:  "5Q",
+		FreqGPSL2P:  "2W",
 		FreqGPSL2CL: "2L",
 	},
 	SysGLO: {
