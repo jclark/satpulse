@@ -138,6 +138,8 @@ These packages provide the public API for time synchronization. They are in the 
 
 `time/sockrefclock` implements the chrony refclock protocol. It uses `gps/ptime`.
 
+`time/lib/ntpshm` implements the ntpd/NTPsec SHM refclock writer. It uses `gps/ptime`.
+
 `time/clocksim` provides discrete-time simulation of PTP hardware clocks and GNSS PPS signals. It includes simulator functions for oscillators (modeling frequency errors like white noise, flicker noise, random walk, drift) and for GPS/PPS timing errors (jitter, sawtooth, sinusoids, colored noise).
 
 `time/phctime` provides an `Era` type used for managing stepping of a PHC and types that combine `Era` with `ptime.Time`.

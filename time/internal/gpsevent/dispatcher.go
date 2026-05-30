@@ -18,11 +18,66 @@ import (
 	"github.com/jclark/satpulse/time/internal/refclock"
 	"github.com/jclark/satpulse/time/internal/timemsg"
 	"github.com/jclark/satpulse/time/internal/ts"
+	"github.com/jclark/satpulse/time/lib/median"
+	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/phctime"
 	"golang.org/x/sys/unix"
 )
 
 const LogExtension = ".jsonl"
+const precisionCalibrationSamples = 61
+
+// SHMWriter writes samples to an NTP SHM segment.
+type SHMWriter interface {
+	Write(clockTime, receiveTime time.Time, leap ptime.LeapSecondKind)
+	Close() error
+}
+
+type samplePrecisionSetter interface {
+	setSamplePrecision(time.Duration)
+}
+
+type calibratingSHMWriter struct {
+	w   *ntpshm.Writer
+	win *median.Window[time.Duration]
+}
+
+// NewSHMWriter configures precision handling for an NTP SHM writer.
+func NewSHMWriter(w *ntpshm.Writer, precision *int8) SHMWriter {
+	if w == nil {
+		return nil
+	}
+	if precision != nil {
+		w.SetPrecision(*precision)
+		return w
+	}
+	return &calibratingSHMWriter{
+		w:   w,
+		win: median.New[time.Duration](precisionCalibrationSamples),
+	}
+}
+
+func (w *calibratingSHMWriter) Write(clockTime, receiveTime time.Time, leap ptime.LeapSecondKind) {
+	w.w.Write(clockTime, receiveTime, leap)
+}
+
+func (w *calibratingSHMWriter) Close() error {
+	return w.w.Close()
+}
+
+func (w *calibratingSHMWriter) setSamplePrecision(p time.Duration) {
+	if w.win == nil {
+		return
+	}
+	if w.win.Len() == 0 {
+		w.w.SetPrecision(ntpshm.Precision(p))
+	}
+	w.win.Add(p)
+	if w.win.Len() == precisionCalibrationSamples {
+		w.w.SetPrecision(ntpshm.Precision(w.win.Median()))
+		w.win = nil
+	}
+}
 
 // tickHandler forwards filled TimeMsgs from the TimeTicker to Observer.Tick.
 type tickHandler struct {
@@ -40,6 +95,8 @@ type Dispatcher struct {
 	obs                   obs.Observer // never nil
 	controller            *phcsync.Controller
 	rc                    *refclock.ProxyRefClock
+	shm                   SHMWriter
+	sps                   samplePrecisionSetter
 	timeMsgBuffer         *timemsg.Buffer
 	timeTicker            gpsprot.TimeTicker
 	pvAccum               gpsprot.PVMsgAccum
@@ -51,7 +108,18 @@ type Dispatcher struct {
 	tStart                time.Time
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, controller *phcsync.Controller, rc *refclock.ProxyRefClock, ls ptime.LeapSecond, obs obs.Observer, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
+// NewDispatcher creates the GPS event dispatcher.
+func NewDispatcher(
+	lg *slog.Logger,
+	pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor,
+	controller *phcsync.Controller,
+	rc *refclock.ProxyRefClock,
+	shm SHMWriter,
+	ls ptime.LeapSecond,
+	obs obs.Observer,
+	eventLogPath string,
+	tStart time.Time,
+) (*Dispatcher, error) {
 	// Always create timeMsgBuffer (useful even without PHC)
 	var minWindow time.Duration
 	if controller != nil {
@@ -74,14 +142,18 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		obs:           obs,
 		tStart:        tStart,
 	}
+	d.shm = shm
+	if p, ok := shm.(samplePrecisionSetter); ok {
+		d.sps = p
+	}
 	multiHandler := gpsprot.NewMultiHandler(&d, obs)
 	for _, pp := range pktProcs {
 		pp.SetMsgHandler(multiHandler)
 		pp.SetNativeMsgHandler(&d)
 	}
 	// In serial timing mode (no PHC, but refclock configured), feed
-	// chrony SOCK samples directly from time messages.
-	if controller == nil && rc != nil {
+	// NTP samples directly from time messages.
+	if controller == nil && (rc != nil || shm != nil) {
 		timeMsgBuffer.SetMsgUTCTimer(&d)
 	}
 	err := d.lf.Open(eventLogPath, true)
@@ -98,6 +170,13 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 	defer d.obs.Release()
 	if d.rc != nil {
 		defer d.rc.Close()
+	}
+	if d.shm != nil {
+		defer func() {
+			if err := d.shm.Close(); err != nil {
+				d.lg.Warn("SHM detach failed", "err", err)
+			}
+		}()
 	}
 	// close the controller before the observer, since the controller uses the observer
 	if d.controller != nil {
@@ -266,8 +345,8 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 		TRead:     e.TReadMono,
 	})
 
-	// Pass wallclock sample to sysSample (for chrony)
-	d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys)
+	// Pass wallclock sample to sysSample (for NTP refclocks)
+	d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys, e.Precision)
 
 	// Log event with monotonic time and full sample info
 	d.logEvent(LogEvent{
@@ -281,17 +360,24 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 }
 
 // sysSample generates a sample of system time vs true time (based on PHC)
-func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time) {
+func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time, samplePrecision time.Duration) {
 	// Send refclock sample if in tracking mode
-	if d.rc == nil || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
+	if (d.rc == nil && d.shm == nil) || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
 		return
 	}
-	offset := d.ls.TimeToSys(ref).Sub(sys).Seconds()
+	if d.sps != nil {
+		d.sps.setSamplePrecision(samplePrecision)
+	}
+	clockTime := d.ls.TimeToSys(ref)
+	offset := clockTime.Sub(sys).Seconds()
 	leap := d.ls.StateAt(ref).LeapTonight
-	err := d.rc.Sample(sys, offset, leap)
-	if err != nil {
-		d.lg.Warn("refclock sample failed", "err", err)
-		return
+	if d.rc != nil {
+		if err := d.rc.Sample(sys, offset, leap); err != nil {
+			d.lg.Warn("refclock sample failed", "err", err)
+		}
+	}
+	if d.shm != nil {
+		d.shm.Write(clockTime, sys, leap)
 	}
 	d.obs.NTPSample(sys, offset, leap, ref)
 }
@@ -299,10 +385,13 @@ func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time) {
 // MsgUTCTime implements timemsg.MsgUTCTimer for serial timing mode.
 func (d *Dispatcher) MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind) {
 	offset := utc.Sub(tRead).Seconds()
-	err := d.rc.Sample(tRead, offset, leap)
-	if err != nil {
-		d.lg.Warn("refclock sample failed", "err", err)
-		return
+	if d.rc != nil {
+		if err := d.rc.Sample(tRead, offset, leap); err != nil {
+			d.lg.Warn("refclock sample failed", "err", err)
+		}
+	}
+	if d.shm != nil {
+		d.shm.Write(utc, tRead, leap)
 	}
 	d.obs.NTPSample(tRead, offset, leap, ptime.Time(0))
 }
