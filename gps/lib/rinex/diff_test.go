@@ -120,6 +120,45 @@ func TestDiffSignal(t *testing.T) {
 	}
 }
 
+func TestDiffObservationsArcTransitionLL(t *testing.T) {
+	t1 := mustTime(t, "2026-05-19T13:31:24.0000000")
+	t2 := mustTime(t, "2026-05-19T13:31:25.0000000")
+	t3 := mustTime(t, "2026-05-19T13:31:26.0000000")
+	t4 := mustTime(t, "2026-05-19T13:31:27.0000000")
+	mk := func(t Time, sat SatelliteID, sig SignalID, arc uint32) SignalObservation {
+		return SignalObservation{T: t, Sat: sat, Sig: sig, SignalValues: SignalValues{PR: opt.Make(1.0), Arc: arc}}
+	}
+	a := []SignalObservation{
+		mk(t1, "G01", "1C", 0),
+		mk(t2, "G01", "1C", 1), // a side transitions at t2
+		mk(t3, "G01", "1C", 1),
+		mk(t4, "G01", "1C", 2), // a side transitions at t4
+	}
+	b := []SignalObservation{
+		mk(t1, "G01", "1C", 0),
+		mk(t2, "G01", "1C", 0),
+		mk(t3, "G01", "1C", 1), // b side transitions at t3
+		mk(t4, "G01", "1C", 2), // b side transitions at t4 too -- agreement, no diff
+	}
+	var r testReporter
+	tol := ObsTolerances{PR: 0.0005}
+	if _, err := DiffObservations(a, b, tol, &r, nil); err != nil {
+		t.Fatalf("DiffObservations: %v", err)
+	}
+	for _, rep := range r.reports {
+		t.Logf("report t=%s a=%#v b=%#v", rep.t, rep.a, rep.b)
+	}
+	if len(r.reports) != 2 {
+		t.Fatalf("report count = %d, want 2", len(r.reports))
+	}
+	if r.reports[0].t != t2 || r.reports[0].a == nil || r.reports[0].b == nil || !r.reports[0].a.LL || r.reports[0].b.LL {
+		t.Fatalf("t2 report = %#v / %#v; want a.LL=true b.LL=false", r.reports[0].a, r.reports[0].b)
+	}
+	if r.reports[1].t != t3 || r.reports[1].a == nil || r.reports[1].b == nil || r.reports[1].a.LL || !r.reports[1].b.LL {
+		t.Fatalf("t3 report = %#v / %#v; want a.LL=false b.LL=true", r.reports[1].a, r.reports[1].b)
+	}
+}
+
 func TestDiffMetadata(t *testing.T) {
 	d1 := time.Date(2026, time.May, 19, 13, 31, 24, 0, time.UTC)
 	d2 := d1.Add(time.Second)
