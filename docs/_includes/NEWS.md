@@ -1,4 +1,6 @@
-## Changes in 0.3 (not yet released)
+## Changes in 0.3
+
+_Not yet released_
 
 ### RTK and RTCM
 
@@ -40,7 +42,9 @@
 - The `satpulse@.service` has been improved so that if a USB GNSS receiver is unplugged, its `satpulse@...` service stops, and when the receiver is plugged back in, its service is automatically restarted, provided it was enabled. To take advantage of this after installing the new unit file, previously enabled instances need to be reenabled, for example with `systemctl reenable satpulse@ttyS0`. (#172)
 - The packaged `satpulse@.service` unit now runs with improved systemd security hardening. (#254)
 
-## Changes in 0.2 (released 2026-05-07)
+## Changes in 0.2
+
+_Released 2026-05-07_
 
 ### Position and velocity
 
@@ -109,3 +113,7 @@
 
 - `satpulsetool` can now be built for Windows using the `win-build.ps1` script. It supports the `gps`, `decode`, `annotate`, `replay` and `ntrip` subcommands.
 - `satpulsed` now uses distinct exit statuses for usage errors, permission errors and configuration-file errors, so systemd can avoid restarting the daemon for failures that require user action. (#171)
+
+---
+
+0.1 was released on 2026-01-23.
