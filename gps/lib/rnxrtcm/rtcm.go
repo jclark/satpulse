@@ -539,25 +539,20 @@ func frequencyMHz(sys, sig string, frq *int8) (float64, bool) {
 
 func (c *Converter) arcHC(sat rinex.SatelliteID, sig rinex.SignalID, m *rtcmbin.MSMHiRes, cellIndex int, hasPhase bool) (arc uint32, hc bool) {
 	k := signalKey{sat: sat, sig: sig}
-	prev := c.lock[k]
-	ll := false
+	ll := c.slip[k]
 	if cur, ok := at(m.Sig.LockTime, cellIndex); ok {
-		if cur < prev || cur == 0 && prev == 0 {
+		if cur < c.lock[k] || cur == 0 && c.lock[k] == 0 {
 			ll = true
 		}
 		c.lock[k] = cur
 	}
-	if c.slip[k] {
-		ll = true
-		if hasPhase {
-			delete(c.slip, k)
-		}
-	}
-	if !hasPhase && ll {
-		c.slip[k] = true
-	}
 	if ll {
 		c.arc[k]++
+	}
+	if ll && !hasPhase {
+		c.slip[k] = true
+	} else {
+		delete(c.slip, k)
 	}
 	if half, ok := at(m.Sig.HalfCycle, cellIndex); ok && half {
 		hc = true
