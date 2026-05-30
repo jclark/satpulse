@@ -14,6 +14,12 @@ import (
 type Options struct {
 	SlipThreshold   byte
 	BDSGeoHalfCycle bool
+	// SlipOnSubHalfCycle restores the RTKLIB behaviour of marking a cycle slip
+	// on any change of the RAWX subHalfCyc bit. By default a subHalfCyc change
+	// marks a slip only when the half cycle is resolved on both the previous and
+	// current valid phase, so that a toggle caused by half-cycle resolution
+	// (already advertised by LLI bit 1) does not reset the carrier phase arc.
+	SlipOnSubHalfCycle bool
 }
 
 // Converter converts UBX-RXM-RAWX messages to RINEX observations.
@@ -31,6 +37,8 @@ type signalKey struct {
 type signalState struct {
 	lock       uint16
 	subHalfCyc bool
+	halfCyc    bool
+	cpValid    bool
 	arc        uint32
 	pending    bool
 	seen       bool
@@ -121,12 +129,17 @@ func (c *Converter) arcHC(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin
 	k := signalKey{sat: sat, sig: sig}
 	st := c.state[k]
 	sub := meas.TrkStat&ubxbin.RxmRawxSubHalfCyc != 0
+	half := meas.TrkStat&ubxbin.RxmRawxHalfCyc != 0
 	subChanged := sub != st.subHalfCyc
+	subSlip := subChanged
+	if !c.opts.SlipOnSubHalfCycle {
+		subSlip = subChanged && st.seen && st.cpValid && st.halfCyc && phase && half
+	}
 	ll := false
-	if meas.LockTime == 0 || st.seen && meas.LockTime < st.lock || subChanged || meas.CpStdev&ubxbin.RxmRawxCpStdMask >= c.opts.SlipThreshold {
+	if meas.LockTime == 0 || st.seen && meas.LockTime < st.lock || subSlip || meas.CpStdev&ubxbin.RxmRawxCpStdMask >= c.opts.SlipThreshold {
 		st.pending = true
 	}
-	if subChanged {
+	if subSlip {
 		ll = true
 	}
 	if phase && st.pending {
@@ -141,6 +154,8 @@ func (c *Converter) arcHC(sat rinex.SatelliteID, sig rinex.SignalID, meas ubxbin
 	}
 	st.lock = meas.LockTime
 	st.subHalfCyc = sub
+	st.halfCyc = half
+	st.cpValid = phase
 	st.seen = true
 	c.state[k] = st
 	return st.arc, hc

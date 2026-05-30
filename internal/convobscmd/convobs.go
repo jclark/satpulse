@@ -50,7 +50,7 @@ const summary = `[-h|--help] [-o|--output path] [-H|--header-file path]
            [--rinex-version version] [--program name] [--run-by name]
            [--antenna type] [--approx-pos x,y,z] [--comment text]
            [--rtcm-strict-prr] [--rtcm-omit-zero-do]
-           [--ubx-slip-threshold n] [--ubx-bds-geo-half-cycle]
+           [--ubx-slip-threshold n] [--ubx-bds-geo-half-cycle] [--ubx-slip-on-sub-hc]
            [--unc-omit-do-without-cp]
            input...`
 
@@ -275,6 +275,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&v.format.rtcm.OmitZeroDo, "rtcm-omit-zero-do", false, "omit RTCM MSM Doppler observations with numeric value zero")
 	flags.Uint8Var(&v.format.ubx.SlipThreshold, "ubx-slip-threshold", 15, "RAWX cpStdev index that marks a cycle slip")
 	flags.BoolVar(&v.format.ubx.BDSGeoHalfCycle, "ubx-bds-geo-half-cycle", false, "apply RTKLIB-compatible BDS GEO half-cycle carrier phase correction")
+	flags.BoolVar(&v.format.ubx.SlipOnSubHalfCycle, "ubx-slip-on-sub-hc", false, "mark a cycle slip on any RAWX subHalfCyc change (RTKLIB behaviour), not only when the half cycle is already resolved")
 	flags.BoolVar(&v.format.unc.OmitDoWithoutCP, "unc-omit-do-without-cp", false, "omit Unicore OBSVM Doppler observations whose signal has no valid carrier phase")
 	v.metadataFlags = flags
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
@@ -316,6 +317,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if flags.Changed("ubx-bds-geo-half-cycle") && !v.from.mayUseUBX() {
 		return nil, usageFunc, errors.New("--ubx-bds-geo-half-cycle is valid only with raw or UBX input")
+	}
+	if flags.Changed("ubx-slip-on-sub-hc") && !v.from.mayUseUBX() {
+		return nil, usageFunc, errors.New("--ubx-slip-on-sub-hc is valid only with raw or UBX input")
 	}
 	if math.IsNaN(interval) || math.IsInf(interval, 0) || interval < 0 {
 		return nil, usageFunc, errors.New("--interval must be a finite non-negative number of seconds")

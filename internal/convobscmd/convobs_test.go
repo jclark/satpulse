@@ -847,7 +847,10 @@ func TestGoldenFiles(t *testing.T) {
 	// the single source of truth for the convbin flags and regenerates them.
 	// The notes below explain only the SatPulse-side flags each case passes.
 	// The UBX cases use --ubx-bds-geo-half-cycle to match RTKLIB Explorer's BDS
-	// GEO half-cycle phase correction.
+	// GEO half-cycle phase correction, and --ubx-slip-on-sub-hc because RTKLIB
+	// Explorer marks a cycle slip on every RAWX subHalfCyc change; SatPulse's
+	// default suppresses the slip when the half cycle is already resolved (see
+	// arcHC in gps/lib/rnxubx).
 	// RTCM defines MSM PhaseRangeRate as d(PhaseRange)/dt, with PhaseRange
 	// having pseudorange sign, so a strict RTCM decode converts to RINEX
 	// Doppler as -PRR/wavelength. The RTCM logs need RTKLIB Explorer's -INVPRR
@@ -884,13 +887,13 @@ func TestGoldenFiles(t *testing.T) {
 	}{
 		{
 			name:          "m8t_20251217",
-			args:          []string{"--run-by", "", "--ubx-bds-geo-half-cycle", filepath.Join("testdata", "m8t-20251217.ubx")},
+			args:          []string{"--run-by", "", "--ubx-bds-geo-half-cycle", "--ubx-slip-on-sub-hc", filepath.Join("testdata", "m8t-20251217.ubx")},
 			obs:           filepath.Join("testdata", "m8t-20251217.obs.gz"),
 			cleanMetadata: cleanCommon,
 		},
 		{
 			name:          "f9t_20251217",
-			args:          []string{"--run-by", "", "--ubx-bds-geo-half-cycle", filepath.Join("testdata", "f9t-20251217.ubx")},
+			args:          []string{"--run-by", "", "--ubx-bds-geo-half-cycle", "--ubx-slip-on-sub-hc", filepath.Join("testdata", "f9t-20251217.ubx")},
 			obs:           filepath.Join("testdata", "f9t-20251217.obs.gz"),
 			cleanMetadata: cleanCommon,
 		},
