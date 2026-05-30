@@ -844,6 +844,7 @@ func TestGoldenFiles(t *testing.T) {
 	}
 	cleanRTCM := func(meta *rinex.Metadata) {
 		cleanCommon(meta)
+		meta.Marker.Name = ""
 		meta.Marker.Number = ""
 	}
 	tol := goldenTolerances()
@@ -869,6 +870,12 @@ func TestGoldenFiles(t *testing.T) {
 			name:          "rtcm_20260519_3h",
 			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-doppler", filepath.Join("testdata", "packet-rtcm-20260519-3h.rtcm")},
 			obs:           filepath.Join("testdata", "packet-rtcm-20260519-3h.obs.gz"),
+			cleanMetadata: cleanRTCM,
+		},
+		{
+			name:          "um980_rtcm_20260527_3h",
+			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-doppler", filepath.Join("testdata", "um980-rtcm-20260527-3h.rtcm")},
+			obs:           filepath.Join("testdata", "um980-rtcm-20260527-3h.obs.gz"),
 			cleanMetadata: cleanRTCM,
 		},
 	}
