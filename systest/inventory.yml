@@ -144,5 +144,10 @@ all:
       interface: ""
       instance: ttyACM1
       speed: 115200
+    
+    # Raspberry Pi 3
+    montasio.lan:
+      interface: ""
+
 
 
