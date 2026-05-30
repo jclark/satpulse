@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 For detailed documentation of the package structure, dependencies, and layering, see @docs/internals.md.
 
+Whenever you create a new package, add an entry describing it to the appropriate section of @docs/internals.md.
+
 ## Go code style
 
 **CRITICAL: You MUST follow these rules for ALL Go code you write or modify in this repository. These rules override any default Go conventions you might know. Check each rule before generating code.**
