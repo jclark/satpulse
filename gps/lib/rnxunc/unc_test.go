@@ -224,11 +224,11 @@ func TestConvertObsVMCarriesLostLockUntilPhase(t *testing.T) {
 	if s.obs[0].Arc != 0 || s.obs[0].HC || s.obs[0].BT {
 		t.Fatalf("first Arc/HC/BT = %v/%v/%v, want 0/false/false", s.obs[0].Arc, s.obs[0].HC, s.obs[0].BT)
 	}
-	if s.obs[1].CP.IsSet() || s.obs[1].Arc != 0 || s.obs[1].HC || s.obs[1].BT {
-		t.Fatalf("second observation = %#v, want no phase and no arc", s.obs[1])
+	if s.obs[1].CP.IsSet() || s.obs[1].Arc != 1 || s.obs[1].HC || s.obs[1].BT {
+		t.Fatalf("second observation = %#v, want no phase and arc 1", s.obs[1])
 	}
-	if !s.obs[2].CP.IsSet() || s.obs[2].Arc != 1 || s.obs[2].HC || s.obs[2].BT {
-		t.Fatalf("third observation = %#v, want carried lost lock", s.obs[2])
+	if !s.obs[2].CP.IsSet() || s.obs[2].Arc != 2 || s.obs[2].HC || s.obs[2].BT {
+		t.Fatalf("third observation = %#v, want phase and arc 2", s.obs[2])
 	}
 }
 

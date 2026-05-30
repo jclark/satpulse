@@ -37,7 +37,6 @@ type signalState struct {
 	lock    float32
 	arc     uint32
 	pending bool
-	seen    bool
 }
 
 // New creates a Converter that writes records to sink.
@@ -108,17 +107,14 @@ func (c *Converter) convertObs(t rinex.Time, meas uncmsg.ObsVMObs) (bool, error)
 
 func (c *Converter) arc(sat rinex.SatelliteID, sig rinex.SignalID, t rinex.Time, lock float32, phase bool) uint32 {
 	k := signalKey{sat: sat, sig: sig}
-	st := c.state[k]
-	if lock == 0 || st.seen && lockSlip(t, lock, st) {
-		st.pending = true
-	}
-	if phase && st.pending {
+	st, seen := c.state[k]
+	ll := st.pending || seen && (lock == 0 || lockSlip(t, lock, st))
+	if ll {
 		st.arc++
-		st.pending = false
 	}
+	st.pending = ll && !phase
 	st.t = t
 	st.lock = lock
-	st.seen = true
 	c.state[k] = st
 	return st.arc
 }
