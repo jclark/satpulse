@@ -112,4 +112,4 @@ _Released 2026-05-07_
 
 ---
 
-_0.1 released 2026-01-23_
+0.1 was released on 2026-01-23.
