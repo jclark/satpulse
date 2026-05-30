@@ -29,6 +29,9 @@ The *command* must be one of the following.
 **annotate**
 : Add fields to a JSONL packet log showing decoded packets.
 
+**pack**
+: Convert a JSONL packet log to a packet byte stream.
+
 **replay**
 : Replay a JSONL packet log, generating JSONL events, similar to an event log.
 
@@ -60,4 +63,4 @@ Show help for satpulsetool gps command:
 
 # SEE ALSO
 
-**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-sdp(1)**, **satpulsetool-syncsim(1)**
+**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-pack(1)**, **satpulsetool-sdp(1)**, **satpulsetool-syncsim(1)**

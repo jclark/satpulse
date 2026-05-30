@@ -8,6 +8,7 @@ import (
 	"github.com/jclark/satpulse/internal/decodecmd"
 	"github.com/jclark/satpulse/internal/gpscmd"
 	"github.com/jclark/satpulse/internal/ntripcmd"
+	"github.com/jclark/satpulse/internal/packcmd"
 	"github.com/jclark/satpulse/internal/replaycmd"
 )
 
@@ -20,5 +21,6 @@ var commands = map[string]cmdFunc{
 	"decode":   decodecmd.Cmd,
 	"gps":      gpscmd.Cmd,
 	"ntrip":    ntripcmd.Cmd,
+	"pack":     packcmd.Cmd,
 	"replay":   replaycmd.Cmd,
 }
