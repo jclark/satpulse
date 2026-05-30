@@ -35,6 +35,9 @@ The *command* must be one of the following.
 **replay**
 : Replay a JSONL packet log, generating JSONL events, similar to an event log.
 
+**ntrip**
+: Ntrip client.
+
 **pmc**
 : PTP management client
 
