@@ -89,6 +89,12 @@ System testing uses Ansible playbooks in `systest/`.
 
 - Headings use sentence case (capitalise only the first word and proper nouns)
 
+## Release notes
+
+- Implementing a user-facing feature MUST include an entry in `docs/_includes/NEWS.md`, in the same change as the implementation.
+- This applies to new features, behaviour changes, and upgrade notes. Bug fixes are excluded.
+- Add the entry under the current unreleased version heading, in the appropriate section, and reference the issue number(s) in parentheses to match the existing entries.
+
 ## Connected GPS
 
 You can look at `/etc/satpulse.toml` if it exists to find device and speed of a connected GPS receiver.
