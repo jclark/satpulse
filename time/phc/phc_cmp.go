@@ -39,7 +39,7 @@ func run(dev string) error {
 	}
 	i := samples.Select()
 	fmt.Printf("Sample interval: %v\n", samples.SysInterval(i))
-	p, sys := samples.Extract(i)
+	p, sys, _ := samples.Extract(i)
 	fmt.Printf("System time: %v\n", sys)
 	phcTime := time.Unix(0, int64(p))
 	fmt.Printf("TAI time from PHC: %v\n", phcTime)

@@ -340,6 +340,21 @@
           "required": [
             "path"
           ]
+        },
+        "shm": {
+          "type": "object",
+          "properties": {
+            "segment": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "precision": {
+              "type": "integer",
+              "minimum": -128,
+              "maximum": 127
+            }
+          }
         }
       }
     },
@@ -461,7 +476,7 @@
               "type": "object",
               "properties": {
                 "address": {
-                  "description": "host:port of the Ntrip caster",
+                  "description": "host[:port] of the Ntrip caster (default port 2101)",
                   "type": "string"
                 },
                 "mountpoint": {
@@ -501,7 +516,7 @@
                 "type": "object",
                 "properties": {
                   "address": {
-                    "description": "host:port of the remote caster",
+                    "description": "host[:port] of the remote caster (default port 2101)",
                     "type": "string"
                   },
                   "mountpoint": {

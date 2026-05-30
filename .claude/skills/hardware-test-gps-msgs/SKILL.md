@@ -20,31 +20,9 @@ Check `CLAUDE.local.md` for serial device and baud rate. If not found there, ask
 
 ## Setup
 
-### Build
+Use the `satpulsed-test-instance` skill to build the binaries (`out/$ARCH/...`) and create the working directory and config.
 
-```bash
-make
-```
-
-The build output shows the binary path (e.g., `out/amd64/satpulsetool`).
-
-### Determine architecture
-
-```bash
-ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-```
-
-### Create directory structure
-
-```bash
-mkdir -p tmp/satpulsed/log
-```
-
-### Create satpulsed config
-
-Extract the device base name from the serial path (e.g., `/dev/ttyUSB0` -> `ttyUSB0`).
-
-Create `tmp/satpulsed/$DEVBASE.toml`:
+For a hardware message test, name the config `tmp/satpulsed/$DEVBASE.toml` (where `$DEVBASE` is the device basename, e.g. `ttyUSB0`), point it at the real serial device, and enable both application logs:
 
 ```toml
 [serial]
@@ -55,12 +33,12 @@ speed = 115200
 config = false
 
 [log]
-packet = true
-event = true
 dir = "tmp/satpulsed/log"
+event = true
+packet = true
 ```
 
-Replace `device` and `speed` with the actual values.
+Replace `device` and `speed` with the actual values. No `[phc]` and no `[[http]]` are needed.
 
 ## Workflow
 

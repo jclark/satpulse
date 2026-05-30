@@ -138,6 +138,8 @@ These packages provide the public API for time synchronization. They are in the 
 
 `time/sockrefclock` implements the chrony refclock protocol. It uses `gps/ptime`.
 
+`time/lib/ntpshm` implements the ntpd/NTPsec SHM refclock writer. It uses `gps/ptime`.
+
 `time/clocksim` provides discrete-time simulation of PTP hardware clocks and GNSS PPS signals. It includes simulator functions for oscillators (modeling frequency errors like white noise, flicker noise, random walk, drift) and for GPS/PPS timing errors (jitter, sawtooth, sinusoids, colored noise).
 
 `time/phctime` provides an `Era` type used for managing stepping of a PHC and types that combine `Era` with `ptime.Time`.
@@ -212,7 +214,13 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 
 `internal/decodecmd` implements `decode` subcommand of satpulsetool. It decodes a single GPS packet from hex or ASCII data into JSON.
 
+`internal/ntripcmd` implements `ntrip` subcommand of satpulsetool. It fetches data from an Ntrip caster and writes either a JSONL packet log or raw bytes to stdout.
+
+`internal/packcmd` implements `pack` subcommand of satpulsetool. It reads a JSONL packet log and writes selected packets as a raw byte stream, optionally preserving inter-packet timing.
+
 `internal/pmccmd` implements `pmc` subcommand of satpulsetool.
+
+`internal/replaycmd` implements `replay` subcommand of satpulsetool. It replays a JSONL packet log, generating JSONL events similar to an event log.
 
 `internal/sdpcmd` implements the `sdp` subcommand of satpulsetool. It provides interfaces to manage software-defined pins (SDPs) on PTP hardware clocks, including listing available interfaces and pins, capturing external timestamps, configuring periodic output, and disabling pins.
 
