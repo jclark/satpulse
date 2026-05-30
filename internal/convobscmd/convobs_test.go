@@ -856,6 +856,16 @@ func TestGoldenFiles(t *testing.T) {
 	// receiver polarity; --rtcm-strict-prr selects the strict RTCM sign.
 	// RTKLIB Explorer omits numeric zero Doppler values; the RTCM case uses
 	// --rtcm-omit-zero-do to test that compatibility mode.
+	// The Unicore OBSVM golden file was checked against RTKLIB Explorer with:
+	// convbin -r unicore -v 3.04 -od -os.
+	// RTKLIB Explorer zeroes Doppler when carrier-phase tracking is lost, so
+	// the UNCB case uses --unc-omit-do-without-cp to match. Three BDS signals
+	// are ignored because SatPulse and RTKLIB Explorer disagree on them in
+	// ways the protocol specs resolve in SatPulse's favour (see
+	// um980-cross-test-findings.md): B3I (6I), which RTKLIB Explorer's
+	// build-time frequency limit drops but SatPulse emits, and B2b, which
+	// SatPulse labels 7D (the BDS-3 data component) per RINEX 4.02 and RTKLIB
+	// Explorer's Unicore decoder mislabels 7P.
 	now := time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)
 	cleanCommon := func(meta *rinex.Metadata) {
 		meta.Run = rinex.MetadataRun{}
@@ -872,6 +882,7 @@ func TestGoldenFiles(t *testing.T) {
 		args          []string
 		obs           string
 		cleanMetadata func(*rinex.Metadata)
+		ignoreSignals []ignoredSignal
 	}{
 		{
 			name:          "m8t_20251217_4h",
@@ -896,6 +907,17 @@ func TestGoldenFiles(t *testing.T) {
 			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-do", filepath.Join("testdata", "um980-rtcm-20260527-3h.rtcm")},
 			obs:           filepath.Join("testdata", "um980-rtcm-20260527-3h.obs.gz"),
 			cleanMetadata: cleanRTCM,
+		},
+		{
+			name:          "um980_uncb_20260527_1h",
+			args:          []string{"--from", "uncb", "--run-by", "", "--unc-omit-do-without-cp", filepath.Join("testdata", "um980-uncb-20260527-1h.uncb")},
+			obs:           filepath.Join("testdata", "um980-uncb-20260527-1h.obs.gz"),
+			cleanMetadata: cleanCommon,
+			ignoreSignals: []ignoredSignal{
+				{sys: 'C', sig: "6I"},
+				{sys: 'C', sig: "7D"},
+				{sys: 'C', sig: "7P"},
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -923,7 +945,7 @@ func TestGoldenFiles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("readGzipFile %s: %v", tt.obs, err)
 			}
-			assertNoObservationFileDiff(t, tt.name, got.Bytes(), want, tt.cleanMetadata, tol)
+			assertNoObservationFileDiff(t, tt.name, got.Bytes(), want, tt.cleanMetadata, tt.ignoreSignals, tol)
 		})
 	}
 }
@@ -989,7 +1011,15 @@ func goldenTolerances() rinex.Tolerances {
 	}
 }
 
-func assertNoObservationFileDiff(t *testing.T, name string, got, want []byte, clean func(*rinex.Metadata), tol rinex.Tolerances) {
+// ignoredSignal identifies a satellite-system signal to exclude from a golden
+// comparison, used where SatPulse and the reference decoder differ on a signal
+// in a way the protocol specs resolve in SatPulse's favour.
+type ignoredSignal struct {
+	sys byte
+	sig rinex.SignalID
+}
+
+func assertNoObservationFileDiff(t *testing.T, name string, got, want []byte, clean func(*rinex.Metadata), ignore []ignoredSignal, tol rinex.Tolerances) {
 	t.Helper()
 	gotMeta, gotObs, err := rinex.ReadObservationFile(bytes.NewReader(got))
 	if err != nil {
@@ -999,6 +1029,8 @@ func assertNoObservationFileDiff(t *testing.T, name string, got, want []byte, cl
 	if err != nil {
 		t.Fatalf("ReadObservationFile want: %v", err)
 	}
+	gotObs = filterIgnoredSignals(gotObs, ignore)
+	wantObs = filterIgnoredSignals(wantObs, ignore)
 	if clean != nil {
 		clean(&gotMeta)
 		clean(&wantMeta)
@@ -1027,6 +1059,28 @@ func assertNoObservationFileDiff(t *testing.T, name string, got, want []byte, cl
 		}
 		t.Fatalf("semantic diff: metadata fields=%s observation records=%d; full diff written to %s", metadataFieldList(metaFields), obsDiffs, diffPath)
 	}
+}
+
+func filterIgnoredSignals(obs []rinex.SignalObservation, ignore []ignoredSignal) []rinex.SignalObservation {
+	if len(ignore) == 0 {
+		return obs
+	}
+	out := make([]rinex.SignalObservation, 0, len(obs))
+	for _, o := range obs {
+		if !signalIgnored(o.Sat, o.Sig, ignore) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+func signalIgnored(sat rinex.SatelliteID, sig rinex.SignalID, ignore []ignoredSignal) bool {
+	for _, ig := range ignore {
+		if sat[0] == ig.sys && sig == ig.sig {
+			return true
+		}
+	}
+	return false
 }
 
 func metadataDiffFields(a, b rinex.Metadata) []string {
