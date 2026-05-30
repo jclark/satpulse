@@ -193,6 +193,19 @@ func TestParseFlagsFormats(t *testing.T) {
 	if _, _, err := parseFlags("", []string{"--from", "raw", "--ubx-bds-geo-half-cycle", "input.raw"}); err != nil {
 		t.Fatalf("parseFlags raw UBX BDS GEO half cycle: %v", err)
 	}
+	v, _, err = parseFlags("", []string{"--from", "uncb", "--unc-omit-doppler-without-cp", "input.uncb"})
+	if err != nil {
+		t.Fatalf("parseFlags uncb omit doppler without cp: %v", err)
+	}
+	if !v.format.unc.OmitDopplerWithoutCP {
+		t.Fatal("OmitDopplerWithoutCP = false, want true")
+	}
+	if _, _, err := parseFlags("", []string{"--from", "raw", "--unc-omit-doppler-without-cp", "input.raw"}); err != nil {
+		t.Fatalf("parseFlags raw UNC omit doppler without cp: %v", err)
+	}
+	if _, _, err := parseFlags("", []string{"--from", "unca", "--unc-omit-doppler-without-cp", "input.unca"}); err != nil {
+		t.Fatalf("parseFlags unca UNC omit doppler without cp: %v", err)
+	}
 	for _, tt := range []struct {
 		from string
 		want inputFormat
@@ -241,6 +254,12 @@ func TestParseFlagsFormats(t *testing.T) {
 	}
 	if _, _, err := parseFlags("", []string{"--from", "unca", "--ubx-bds-geo-half-cycle", "input.unc"}); err == nil {
 		t.Fatal("parseFlags accepted UBX BDS GEO half cycle option with UNCA input")
+	}
+	if _, _, err := parseFlags("", []string{"--from", "ubx", "--unc-omit-doppler-without-cp", "input.ubx"}); err == nil {
+		t.Fatal("parseFlags accepted UNC omit doppler option with UBX input")
+	}
+	if _, _, err := parseFlags("", []string{"--from", "rtcm", "--unc-omit-doppler-without-cp", "input.rtcm"}); err == nil {
+		t.Fatal("parseFlags accepted UNC omit doppler option with RTCM input")
 	}
 	if _, _, err := parseFlags("", []string{"--packet-log", "--from", "rtcm", "--date", "20251218", "input.jsonl"}); err == nil {
 		t.Fatal("parseFlags accepted RTCM date option with packet log")

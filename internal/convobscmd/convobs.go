@@ -51,6 +51,7 @@ const summary = `[-h|--help] [-o|--output path] [-H|--header-file path]
            [--antenna type] [--approx-pos x,y,z] [--comment text]
            [--rtcm-strict-prr] [--rtcm-omit-zero-doppler]
            [--ubx-slip-threshold n] [--ubx-bds-geo-half-cycle]
+           [--unc-omit-doppler-without-cp]
            input...`
 
 type inputFormat string
@@ -114,6 +115,7 @@ type convertOptions struct {
 type formatOptions struct {
 	rtcm rnxrtcm.Options
 	ubx  rnxubx.Options
+	unc  rnxunc.Options
 }
 
 type inputReader struct {
@@ -271,6 +273,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&v.format.rtcm.OmitZeroDoppler, "rtcm-omit-zero-doppler", false, "omit RTCM MSM Doppler observations with numeric value zero")
 	flags.Uint8Var(&v.format.ubx.SlipThreshold, "ubx-slip-threshold", 15, "RAWX cpStdev index that marks a cycle slip")
 	flags.BoolVar(&v.format.ubx.BDSGeoHalfCycle, "ubx-bds-geo-half-cycle", false, "apply RTKLIB-compatible BDS GEO half-cycle carrier phase correction")
+	flags.BoolVar(&v.format.unc.OmitDopplerWithoutCP, "unc-omit-doppler-without-cp", false, "omit Unicore OBSVM Doppler observations whose signal has no valid carrier phase")
 	v.metadataFlags = flags
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
 	if err := flags.Parse(args); err != nil {
@@ -305,6 +308,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if flags.Changed("ubx-slip-threshold") && !v.from.mayUseUBX() {
 		return nil, usageFunc, errors.New("--ubx-slip-threshold is valid only with raw or UBX input")
+	}
+	if v.format.unc.OmitDopplerWithoutCP && !v.from.mayUseUnicore() {
+		return nil, usageFunc, errors.New("--unc-omit-doppler-without-cp is valid only with raw, UNCB, or UNCA input")
 	}
 	if flags.Changed("ubx-bds-geo-half-cycle") && !v.from.mayUseUBX() {
 		return nil, usageFunc, errors.New("--ubx-bds-geo-half-cycle is valid only with raw or UBX input")
@@ -397,6 +403,10 @@ func (f inputFormat) mayUseRTCM() bool {
 
 func (f inputFormat) mayUseUBX() bool {
 	return f == inputRaw || f == inputUBX
+}
+
+func (f inputFormat) mayUseUnicore() bool {
+	return f == inputRaw || f == inputUNCB || f == inputUNCA
 }
 
 func (v *flagVars) setWeekOptions(date string, recent, dateFromFilename bool) error {
@@ -676,12 +686,12 @@ func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, form
 			return convertRTCMData(data, conv, week)
 		}}, nil
 	case inputUNCB:
-		conv := rnxunc.New(sink, rnxunc.Options{})
+		conv := rnxunc.New(sink, format.unc)
 		return &tagInput{tag: gpsreg.TagUnicoreBin, accept: isRawObsTag, convert: func(data string, _ WeekConstraint) (bool, error) {
 			return convertObsVMData(data, conv, uncmsg.ParseBinMsg)
 		}}, nil
 	case inputUNCA:
-		conv := rnxunc.New(sink, rnxunc.Options{})
+		conv := rnxunc.New(sink, format.unc)
 		return &tagInput{tag: gpsreg.TagUnicoreAscii, accept: isRawObsTag, convert: func(data string, _ WeekConstraint) (bool, error) {
 			return convertObsVMData(data, conv, uncmsg.ParseAsciiMessage)
 		}}, nil
@@ -699,7 +709,7 @@ func newRawPacketInput(sink rinex.Sink, meta rinex.Metadata, format formatOption
 		metaBuf: buf,
 		rtcm:    rnxrtcm.New(buf, format.rtcm),
 		ubx:     rnxubx.New(sink, format.ubx),
-		unc:     rnxunc.New(sink, rnxunc.Options{}),
+		unc:     rnxunc.New(sink, format.unc),
 	}
 }
 
