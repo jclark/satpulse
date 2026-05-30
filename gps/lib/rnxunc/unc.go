@@ -1,5 +1,5 @@
-// Package unc converts Unicore raw observation messages to RINEX records.
-package unc
+// Package rnxunc converts Unicore raw observation messages to RINEX records.
+package rnxunc
 
 import (
 	"fmt"

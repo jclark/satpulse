@@ -1,5 +1,5 @@
-// Package ubx converts u-blox raw observation messages to RINEX records.
-package ubx
+// Package rnxubx converts u-blox raw observation messages to RINEX records.
+package rnxubx
 
 import (
 	"fmt"

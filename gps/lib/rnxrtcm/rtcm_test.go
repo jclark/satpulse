@@ -1,4 +1,4 @@
-package rtcm
+package rnxrtcm
 
 import (
 	"math"

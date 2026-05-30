@@ -1,5 +1,5 @@
-// Package rtcm converts RTCM MSM7 observation messages to RINEX records.
-package rtcm
+// Package rnxrtcm converts RTCM MSM7 observation messages to RINEX records.
+package rnxrtcm
 
 import (
 	"fmt"

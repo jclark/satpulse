@@ -1,4 +1,4 @@
-package ubx
+package rnxubx
 
 import (
 	"testing"

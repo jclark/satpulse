@@ -1,4 +1,4 @@
-package unc
+package rnxunc
 
 import (
 	"math"
