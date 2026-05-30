@@ -986,7 +986,7 @@ func (raw *CfgVals) signalsSupported(ver *Version) gpsprot.SignalSet {
 			supported |= gpsprot.SignalSetOf(sig)
 		}
 	}
-	if ver.Mod == "NEO-F10T" {
+	if ver.isModel("NEO-F10T") {
 		// The NEO-F10T does not support BDS B1I,
 		// despite the fact that it has a key for it. Argh!
 		// This must be a bug in the firmware.

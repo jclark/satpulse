@@ -98,6 +98,7 @@ var descriptions = []struct {
 	{"convobs", "convert raw and JSON observations"},
 	{"decode", "decode a GPS packet"},
 	{"annotate", "annotate a JSONL packet log with decoded fields"},
+	{"pack", "convert a JSONL packet log to a packet byte stream"},
 	{"replay", "replay a JSONL packet log through the processing pipeline"},
 	{"ntrip", "Ntrip client"},
 	{"pmc", "send a PTP management message to ptp4l process"},

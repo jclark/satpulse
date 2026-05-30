@@ -1,13 +1,13 @@
 ---
 name: github-issue
-description: Write a GitHub issue following the project's style
+description: Create, edit, comment on, and label GitHub issues following the project's style
 user-invocable: true
 allowed-tools: Bash, Glob, Grep, Read, Write, WebSearch, WebFetch
 ---
 
-# Writing GitHub issues
+# Working with GitHub issues
 
-Write issues using `gh issue create`. Follow the style conventions below.
+This skill covers all work with GitHub issues: creating new issues (`gh issue create`), editing existing ones (`gh issue edit`), commenting (`gh issue comment`), and managing labels. Whenever you write or revise issue text, follow the style conventions below.
 
 ## Title
 
@@ -33,6 +33,8 @@ The body is plain prose -- no markdown headings. Structure it as:
 - Task checklist (optional, for larger issues): `- [ ]` / `- [x]`
 
 Do not use markdown headings (`#`, `##`, etc.) in the body. Keep formatting light: paragraphs, bullet lists, code blocks, backticks for identifiers. Assume the reader knows the codebase. Explain *why*, not just *what*. No greeting, sign-off, or filler. Sentence case. ASCII only.
+
+Do not hard-wrap body prose into fixed-width lines. Write each paragraph as a single long line and let GitHub wrap it for display. Hard line breaks inside a paragraph render as awkward wrapping in the GitHub UI. (This does not apply to code blocks, which are preformatted.)
 
 ## Labels
 
