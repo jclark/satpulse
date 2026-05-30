@@ -153,9 +153,9 @@ func (cfg *PullConfig) Prepare(version string,
 		addr = cfg.TCP.Address
 		src = &TCPSource{Addr: addr}
 	case cfg.Ntrip != nil:
-		addr = cfg.Ntrip.Address
+		addr = NtripNormalizeAddress(cfg.Ntrip.Address)
 		src = &NtripSource{
-			Addr:       cfg.Ntrip.Address,
+			Addr:       addr,
 			Mountpoint: cfg.Ntrip.Mountpoint,
 			Username:   cfg.Ntrip.Username,
 			Password:   cfg.Ntrip.Password,

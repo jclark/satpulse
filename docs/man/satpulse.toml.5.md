@@ -359,7 +359,7 @@ Two kinds of endpoint are supported: Ntrip and TCP.
 With an Ntrip endpoint, SatPulse acts as an Ntrip client, receiving from an Ntrip caster.
 The following keys may be specified:
 
-* `ntrip.address` - a string giving the address of the Ntrip caster, in the form *host*`:`*port*; this key is required
+* `ntrip.address` - a string giving the address of the Ntrip caster, in the form *host* or *host*`:`*port*; when the port is omitted, the default is 2101; this key is required
 * `ntrip.mountpoint` - a string giving the caster mountpoint to use; this key is required
 * `ntrip.username` - a string giving the user name for Ntrip basic authentication
 * `ntrip.password` - a string giving the password for Ntrip basic authentication
@@ -368,7 +368,7 @@ Example
 
 ```
 [stream.pull]
-ntrip.address = "caster.example.com:2101"
+ntrip.address = "caster.example.com"
 ntrip.mountpoint = "RTCM"
 ntrip.username = "rover"
 ntrip.password = "secret"
@@ -403,7 +403,7 @@ Currently the only kind of endpoint is Ntrip: SatPulse acts as an Ntrip server, 
 The `[[stream.push]]` table has the following keys:
 
 * `protocol` - a string giving the packet protocol to forward; the value can be `"RTCM"`, `"NMEA"` or `"UBX"`; the receiver must output packets using this protocol; the default is `"RTCM"`
-* `ntrip.address` - a string giving the address of the remote Ntrip caster, in the form *host*`:`*port*; this key is required
+* `ntrip.address` - a string giving the address of the remote Ntrip caster, in the form *host* or *host*`:`*port*; when the port is omitted, the default is 2101; this key is required
 * `ntrip.mountpoint` - a string giving the mountpoint to push to on the remote caster; this key is required and must be a single URL path component
 * `ntrip.password` - a string giving the password for uploading to the remote caster; this key is required
 * `ntrip.description` - a string giving the stream description sent to the remote caster; the default is the mountpoint name
@@ -419,7 +419,7 @@ Example
 country = "THA"
 
 [[stream.push]]
-ntrip.address = "caster.example.com:2101"
+ntrip.address = "caster.example.com"
 ntrip.mountpoint = "BKK"
 ntrip.password = "secret"
 ntrip.description = "Bangkok"
