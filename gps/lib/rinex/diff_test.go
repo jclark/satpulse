@@ -59,8 +59,8 @@ func TestDiffSignal(t *testing.T) {
 		name  string
 		a     *SignalValues
 		b     *SignalValues
-		wantA *SignalValues
-		wantB *SignalValues
+		wantA *SignalDiff
+		wantB *SignalDiff
 	}{
 		{
 			name:  "both missing",
@@ -71,41 +71,41 @@ func TestDiffSignal(t *testing.T) {
 			name:  "a missing",
 			b:     &b,
 			wantA: nil,
-			wantB: &b,
+			wantB: &SignalDiff{SignalValues: SignalValues{PR: opt.Make(1.001), CP: opt.Make(2.0), HC: true}},
 		},
 		{
 			name:  "b missing",
 			a:     &a,
-			wantA: &a,
+			wantA: &SignalDiff{SignalValues: SignalValues{PR: opt.Make(1.0), CP: opt.Make(2.0)}},
 			wantB: nil,
 		},
 		{
 			name:  "same",
 			a:     &a,
 			b:     &a,
-			wantA: &SignalValues{},
-			wantB: &SignalValues{},
+			wantA: &SignalDiff{},
+			wantB: &SignalDiff{},
 		},
 		{
 			name:  "different values",
 			a:     &a,
 			b:     &b,
-			wantA: &SignalValues{PR: opt.Make(1.0), Arc: 1},
-			wantB: &SignalValues{PR: opt.Make(1.001), HC: true},
+			wantA: &SignalDiff{SignalValues: SignalValues{PR: opt.Make(1.0)}},
+			wantB: &SignalDiff{SignalValues: SignalValues{PR: opt.Make(1.001), HC: true}},
 		},
 		{
 			name:  "missing field",
 			a:     &SignalValues{PR: opt.Make(1.0)},
 			b:     &SignalValues{},
-			wantA: &SignalValues{PR: opt.Make(1.0)},
-			wantB: &SignalValues{},
+			wantA: &SignalDiff{SignalValues: SignalValues{PR: opt.Make(1.0)}},
+			wantB: &SignalDiff{},
 		},
 		{
 			name:  "within tolerance",
 			a:     &SignalValues{PR: opt.Make(1.0), CN0: opt.Make(float32(45.0))},
 			b:     &SignalValues{PR: opt.Make(1.0001), CN0: opt.Make(float32(45.0001))},
-			wantA: &SignalValues{},
-			wantB: &SignalValues{},
+			wantA: &SignalDiff{},
+			wantB: &SignalDiff{},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -204,11 +204,11 @@ type testReport struct {
 	t   Time
 	sat SatelliteID
 	sig SignalID
-	a   *SignalValues
-	b   *SignalValues
+	a   *SignalDiff
+	b   *SignalDiff
 }
 
-func (r *testReporter) Diff(t Time, sat SatelliteID, sig SignalID, a, b *SignalValues) error {
+func (r *testReporter) Diff(t Time, sat SatelliteID, sig SignalID, a, b *SignalDiff) error {
 	r.reports = append(r.reports, testReport{t: t, sat: sat, sig: sig, a: a, b: b})
 	return nil
 }

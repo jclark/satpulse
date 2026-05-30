@@ -31,7 +31,25 @@ type MetadataTolerances struct {
 
 // DiffReporter receives observation differences.
 type DiffReporter interface {
-	Diff(t Time, sat SatelliteID, sig SignalID, a, b *SignalValues) error
+	Diff(t Time, sat SatelliteID, sig SignalID, a, b *SignalDiff) error
+}
+
+// SignalDiff is the per-signal output of DiffObservations. It embeds the
+// observation values and adds LL, a per-epoch boolean recovering loss-of-lock
+// semantics from cross-epoch arc state. LL is set on a side when the arc
+// number changed since the previous observation of the same signal on that
+// side, but only when the two sides disagree about the transition. Arc itself
+// is left zero in the diff output: absolute arc numbers diverge between sides
+// as soon as one LLI bit is placed differently, which would otherwise cascade
+// a single mismatch into a diff on every subsequent epoch.
+type SignalDiff struct {
+	SignalValues
+	LL bool `json:"ll,omitzero"`
+}
+
+// IsZero reports whether d contains no diff fields.
+func (d SignalDiff) IsZero() bool {
+	return d.SignalValues.IsZero() && !d.LL
 }
 
 // DiffErrorReporter receives non-fatal input problems found while diffing.
@@ -69,21 +87,37 @@ func DiffObservations(a, b []SignalObservation, tol ObsTolerances, r DiffReporte
 }
 
 // DiffSignal compares two signal observations and returns the differing values.
-func DiffSignal(a, b *SignalValues, tol ObsTolerances) (aRet, bRet *SignalValues) {
-	if a == nil || b == nil {
-		return a, b
+// The returned diff records carry the embedded SignalValues with Arc zeroed;
+// the LL bit is not set here. Per-epoch LL transitions across iterations are
+// added by DiffObservations.
+func DiffSignal(a, b *SignalValues, tol ObsTolerances) (aRet, bRet *SignalDiff) {
+	if a == nil && b == nil {
+		return nil, nil
 	}
-	aRet = &SignalValues{}
-	bRet = &SignalValues{}
+	if a == nil {
+		return nil, valuesAsDiff(b)
+	}
+	if b == nil {
+		return valuesAsDiff(a), nil
+	}
+	aRet = &SignalDiff{}
+	bRet = &SignalDiff{}
 	compareValue(&aRet.Frq, &bRet.Frq, a.Frq.IsSet(), b.Frq.IsSet(), a.Frq.Get(), b.Frq.Get())
 	compareFloat64(&aRet.PR, &bRet.PR, a.PR.IsSet(), b.PR.IsSet(), a.PR.Get(), b.PR.Get(), tol.PR)
 	compareFloat64(&aRet.CP, &bRet.CP, a.CP.IsSet(), b.CP.IsSet(), a.CP.Get(), b.CP.Get(), tol.CP)
 	compareFloat64(&aRet.Do, &bRet.Do, a.Do.IsSet(), b.Do.IsSet(), a.Do.Get(), b.Do.Get(), tol.Do)
 	compareFloat32(&aRet.CN0, &bRet.CN0, a.CN0.IsSet(), b.CN0.IsSet(), a.CN0.Get(), b.CN0.Get(), tol.CN0)
-	compareComparable(&aRet.Arc, &bRet.Arc, a.Arc, b.Arc)
 	compareComparable(&aRet.HC, &bRet.HC, a.HC, b.HC)
 	compareComparable(&aRet.BT, &bRet.BT, a.BT, b.BT)
 	return aRet, bRet
+}
+
+// valuesAsDiff wraps a one-sided observation as a diff record. Arc is cleared
+// because the absolute arc number has no meaning outside same-stream context.
+func valuesAsDiff(v *SignalValues) *SignalDiff {
+	d := SignalDiff{SignalValues: *v}
+	d.Arc = 0
+	return &d
 }
 
 // DiffMetadata compares two metadata records and returns the differing values.
@@ -144,12 +178,18 @@ func indexObservations(side int, obs []SignalObservation, er DiffErrorReporter) 
 
 func reportDiffs(a, b obsIndex, tol ObsTolerances, r DiffReporter) (int, error) {
 	n := 0
+	var aArc, bArc arcTracker
 	for _, t := range diffTimes(a, b) {
 		keys := diffKeys(a.epochs[t], b.epochs[t])
 		for _, k := range keys {
 			af, bf := compareAt(t, k, a, b, tol)
-			if af != nil && bf != nil && af.IsZero() && bf.IsZero() {
-				continue
+			aLL := aArc.transition(k, a, t)
+			bLL := bArc.transition(k, b, t)
+			if af != nil && bf != nil {
+				compareComparable(&af.LL, &bf.LL, aLL, bLL)
+				if af.IsZero() && bf.IsZero() {
+					continue
+				}
 			}
 			if err := r.Diff(t, k.sat, k.sig, af, bf); err != nil {
 				return n, err
@@ -158,6 +198,30 @@ func reportDiffs(a, b obsIndex, tol ObsTolerances, r DiffReporter) (int, error) 
 		}
 	}
 	return n, nil
+}
+
+// arcTracker remembers, for each signal on one side, whether it has been seen
+// and the most recent arc number observed. transition reports whether the
+// current epoch's observation marks a new arc relative to the previous one.
+type arcTracker struct {
+	prev map[obsKey]uint32
+	seen map[obsKey]bool
+}
+
+func (at *arcTracker) transition(k obsKey, idx obsIndex, t Time) bool {
+	i, ok := idx.epochs[t][k]
+	if !ok {
+		return false
+	}
+	if at.prev == nil {
+		at.prev = make(map[obsKey]uint32)
+		at.seen = make(map[obsKey]bool)
+	}
+	arc := idx.obs[i].Arc
+	transitioned := at.seen[k] && arc != at.prev[k]
+	at.prev[k] = arc
+	at.seen[k] = true
+	return transitioned
 }
 
 func diffTimes(a, b obsIndex) []Time {
@@ -195,7 +259,7 @@ func diffKeys(a, b map[obsKey]int) []obsKey {
 	return out
 }
 
-func compareAt(t Time, k obsKey, ai, bi obsIndex, tol ObsTolerances) (*SignalValues, *SignalValues) {
+func compareAt(t Time, k obsKey, ai, bi obsIndex, tol ObsTolerances) (*SignalDiff, *SignalDiff) {
 	an, aok := ai.epochs[t][k]
 	bn, bok := bi.epochs[t][k]
 	var av *SignalValues

@@ -13,11 +13,11 @@ import (
 )
 
 type diffRecord struct {
-	T   rinex.Time          `json:"t"`
-	Sat rinex.SatelliteID   `json:"sat"`
-	Sig rinex.SignalID      `json:"sig"`
-	A   *rinex.SignalValues `json:"a,omitempty"`
-	B   *rinex.SignalValues `json:"b,omitempty"`
+	T   rinex.Time        `json:"t"`
+	Sat rinex.SatelliteID `json:"sat"`
+	Sig rinex.SignalID    `json:"sig"`
+	A   *rinex.SignalDiff `json:"a,omitempty"`
+	B   *rinex.SignalDiff `json:"b,omitempty"`
 }
 
 type metadataDiffRecord struct {
@@ -33,7 +33,7 @@ func (r jsonReporter) Metadata(a, b rinex.Metadata) error {
 	return r.enc.Encode(metadataDiffRecord{A: a, B: b})
 }
 
-func (r jsonReporter) Diff(t rinex.Time, sat rinex.SatelliteID, sig rinex.SignalID, a, b *rinex.SignalValues) error {
+func (r jsonReporter) Diff(t rinex.Time, sat rinex.SatelliteID, sig rinex.SignalID, a, b *rinex.SignalDiff) error {
 	rec := diffRecord{T: t, Sat: sat, Sig: sig}
 	rec.A = a
 	rec.B = b

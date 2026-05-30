@@ -929,11 +929,11 @@ func TestGoldenFiles(t *testing.T) {
 }
 
 type goldenObsDiff struct {
-	T   rinex.Time          `json:"t"`
-	Sat rinex.SatelliteID   `json:"sat"`
-	Sig rinex.SignalID      `json:"sig"`
-	A   *rinex.SignalValues `json:"a,omitempty"`
-	B   *rinex.SignalValues `json:"b,omitempty"`
+	T   rinex.Time        `json:"t"`
+	Sat rinex.SatelliteID `json:"sat"`
+	Sig rinex.SignalID    `json:"sig"`
+	A   *rinex.SignalDiff `json:"a,omitempty"`
+	B   *rinex.SignalDiff `json:"b,omitempty"`
 }
 
 type goldenMetadataDiff struct {
@@ -949,7 +949,7 @@ func (r goldenDiffReporter) Metadata(a, b rinex.Metadata) error {
 	return r.enc.Encode(goldenMetadataDiff{A: a, B: b})
 }
 
-func (r goldenDiffReporter) Diff(t rinex.Time, sat rinex.SatelliteID, sig rinex.SignalID, a, b *rinex.SignalValues) error {
+func (r goldenDiffReporter) Diff(t rinex.Time, sat rinex.SatelliteID, sig rinex.SignalID, a, b *rinex.SignalDiff) error {
 	return r.enc.Encode(goldenObsDiff{T: t, Sat: sat, Sig: sig, A: a, B: b})
 }
 
