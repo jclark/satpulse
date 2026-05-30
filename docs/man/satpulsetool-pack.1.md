@@ -5,7 +5,7 @@ satpulsetool-pack - convert a JSONL packet log to a packet byte stream
 # SYNOPSIS
 
 **satpulsetool** [*global options*] **pack** [**\-h**\|**\-\-help**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-tag** *tag*] [**\-\-msg** *msg*] [**\-\-timing**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-t**\|**\-\-tag** *tag*] [**\-m**\|**\-\-msg** *msg*] [**\-r**\|**\-\-realtime**]\
 &nbsp;&nbsp;&nbsp;&nbsp;*file*\|**\-**
 
 # DESCRIPTION
@@ -30,17 +30,17 @@ Use **\-** as *file* to read from standard input.
 **\-h**, **\-\-help**
 : Show usage help for the **pack** command.
 
-**\-\-tag** *tag*
+**\-t**, **\-\-tag** *tag*
 : Write only packets whose `tag` field matches *tag*.
 The match is case-insensitive.
 Typical values are **UBX**, **RTCM**, and **NMEA**.
 
-**\-\-msg** *msg*
+**\-m**, **\-\-msg** *msg*
 : Write only packets whose `msg` field matches *msg*.
 The match is case-insensitive.
 This option requires **\-\-tag**, since message IDs are meaningful only within a packet protocol.
 
-**\-\-timing**
+**\-r**, **\-\-realtime**
 : Preserve the timing between packets that are written.
 The first selected packet is written immediately.
 Subsequent selected packets are delayed so that the time between write starts matches the time between packet timestamps in the log.
@@ -68,7 +68,7 @@ Extract RTCM message 1077 packets:
 Replay a recorded packet log with original packet pacing through a FIFO:
 
     mkfifo /tmp/fifo0
-    satpulsetool pack --timing \
+    satpulsetool pack --realtime \
         /var/log/satpulse/packet.ttyACM0.jsonl > /tmp/fifo0
 
 This can drive **satpulsed(8)** without GPS hardware, using a `satpulse.toml` like this.

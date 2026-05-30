@@ -15,12 +15,12 @@ import (
 	"github.com/spf13/pflag"
 )
 
-const summary = `[-h|--help] [--tag TAG] [--msg MSG] [--timing] file|-`
+const summary = `[-h|--help] [-t|--tag TAG] [-m|--msg MSG] [-r|--realtime] file|-`
 
 type flagVars struct {
 	tag      string
 	msg      string
-	timing   bool
+	realtime bool
 	filePath string
 }
 
@@ -49,10 +49,10 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 
 	out := bufio.NewWriter(os.Stdout)
 	return "", run(input, out, runConfig{
-		tag:    v.tag,
-		msg:    v.msg,
-		timing: v.timing,
-		clock:  realClock{},
+		tag:      v.tag,
+		msg:      v.msg,
+		realtime: v.realtime,
+		clock:    realClock{},
 	})
 }
 
@@ -61,9 +61,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	v := &flagVars{}
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
-	flags.StringVar(&v.tag, "tag", "", "packet log tag to include")
-	flags.StringVar(&v.msg, "msg", "", "packet log message ID to include")
-	flags.BoolVar(&v.timing, "timing", false, "preserve inter-packet timing")
+	flags.StringVarP(&v.tag, "tag", "t", "", "packet log tag to include")
+	flags.StringVarP(&v.msg, "msg", "m", "", "packet log message ID to include")
+	flags.BoolVarP(&v.realtime, "realtime", "r", false, "preserve inter-packet timing")
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
 	if err := flags.Parse(args); err != nil {
 		return nil, usageFunc, err
@@ -82,10 +82,10 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 }
 
 type runConfig struct {
-	tag    string
-	msg    string
-	timing bool
-	clock  clock
+	tag      string
+	msg      string
+	realtime bool
+	clock    clock
 }
 
 type clock interface {
@@ -129,10 +129,10 @@ func run(input io.Reader, out writeFlusher, cfg runConfig) error {
 		if !ok {
 			continue
 		}
-		if cfg.timing {
+		if cfg.realtime {
 			entryT := time.Time(entry.T)
 			if entryT.IsZero() {
-				return fmt.Errorf("line %d: --timing requires selected packets to have a non-zero t", lineNo)
+				return fmt.Errorf("line %d: --realtime requires selected packets to have a non-zero t", lineNo)
 			}
 			if havePrev {
 				delta := entryT.Sub(prevEntryT)
@@ -162,7 +162,7 @@ func run(input io.Reader, out writeFlusher, cfg runConfig) error {
 	if err := scanner.Err(); err != nil {
 		return err
 	}
-	if !cfg.timing {
+	if !cfg.realtime {
 		return out.Flush()
 	}
 	return nil

@@ -30,11 +30,11 @@ Start `satpulsed` in the background (per the setup skill) with `device = "/tmp/f
 Pick a packet log, for example `/var/log/satpulse/packet.ttyACM0.jsonl`, or a smaller test fixture. Replay it into the FIFO in the background:
 
 ```bash
-out/$ARCH/satpulsetool pack --timing \
+out/$ARCH/satpulsetool pack --realtime \
   /var/log/satpulse/packet.ttyACM0.jsonl > /tmp/fifo0
 ```
 
-- `--timing` reproduces the original inter-packet pacing (about 1 Hz for typical logs). Without it, `pack` writes as fast as the daemon reads.
+- `--realtime` reproduces the original inter-packet pacing (about 1 Hz for typical logs). Without it, `pack` writes as fast as the daemon reads.
 - `pack` writes only packets received from the receiver; `out:true` and non-packet metadata entries are skipped automatically.
 - Use `--tag`/`--msg` to replay only some packets. See **satpulsetool-pack(1)**.
 

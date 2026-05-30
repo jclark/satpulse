@@ -128,9 +128,9 @@ func TestParseFlags(t *testing.T) {
 			want: &flagVars{filePath: "packets.jsonl"},
 		},
 		{
-			name: "tag msg timing",
-			args: []string{"--tag", "UBX", "--msg", "NAV-PVT", "--timing", "-"},
-			want: &flagVars{tag: "UBX", msg: "NAV-PVT", timing: true, filePath: "-"},
+			name: "tag msg realtime",
+			args: []string{"--tag", "UBX", "--msg", "NAV-PVT", "--realtime", "-"},
+			want: &flagVars{tag: "UBX", msg: "NAV-PVT", realtime: true, filePath: "-"},
 		},
 		{
 			name:      "msg requires tag",
@@ -175,7 +175,7 @@ func TestTimingSleepsFromEmittedPacketDeltas(t *testing.T) {
 		timedBin(base.Add(350*time.Millisecond), "UBX", "NAV-PVT", "03"),
 	)
 
-	err := run(strings.NewReader(input), out, runConfig{timing: true, clock: fc})
+	err := run(strings.NewReader(input), out, runConfig{realtime: true, clock: fc})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestTimingUsesWriteStartBeforeWrite(t *testing.T) {
 		timedBin(base.Add(2*time.Second), "UBX", "NAV-PVT", "03"),
 	)
 
-	err := run(strings.NewReader(input), out, runConfig{timing: true, clock: fc})
+	err := run(strings.NewReader(input), out, runConfig{realtime: true, clock: fc})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestTimingUsesPreviousEmittedPacket(t *testing.T) {
 		timedBin(base.Add(300*time.Millisecond), "UBX", "NAV-PVT", "03"),
 	)
 
-	err := run(strings.NewReader(input), out, runConfig{tag: "UBX", timing: true, clock: fc})
+	err := run(strings.NewReader(input), out, runConfig{tag: "UBX", realtime: true, clock: fc})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -244,11 +244,11 @@ func TestTimingUsesPreviousEmittedPacket(t *testing.T) {
 
 func TestTimingRequiresTimestampOnSelectedPackets(t *testing.T) {
 	input := lines(`{"event":"metadata"}`, `{"tag":"UBX","bin":"01"}`)
-	err := run(strings.NewReader(input), &recordingOutput{}, runConfig{timing: true, clock: &fakeClock{}})
+	err := run(strings.NewReader(input), &recordingOutput{}, runConfig{realtime: true, clock: &fakeClock{}})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
-	if !strings.Contains(err.Error(), "line 2: --timing requires selected packets to have a non-zero t") {
+	if !strings.Contains(err.Error(), "line 2: --realtime requires selected packets to have a non-zero t") {
 		t.Fatalf("error = %q", err)
 	}
 }
