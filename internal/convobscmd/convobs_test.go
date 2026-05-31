@@ -843,21 +843,19 @@ func TestRunRawIgnoresMixedObservationFamilies(t *testing.T) {
 }
 
 func TestGoldenFiles(t *testing.T) {
-	// The UBX golden files were checked against RTKLIB Explorer with:
-	// convbin -r ubx -v 3.04 -od -os -ro "-MULTICODE -MAX_STD_CP=15".
-	// They use --ubx-bds-geo-half-cycle to match RTKLIB Explorer's BDS GEO phase correction.
-	// The RTCM golden file was checked against RTKLIB Explorer with:
-	// convbin -r rtcm3 -v 3.04 -od -os -ro "-MULTIMODE -INVPRR" -tr 2026/5/19 0:0:0.
+	// The golden files are RTKLIB Explorer convbin output; testdata/Makefile is
+	// the single source of truth for the convbin flags and regenerates them.
+	// The notes below explain only the SatPulse-side flags each case passes.
+	// The UBX cases use --ubx-bds-geo-half-cycle to match RTKLIB Explorer's BDS
+	// GEO half-cycle phase correction.
 	// RTCM defines MSM PhaseRangeRate as d(PhaseRange)/dt, with PhaseRange
 	// having pseudorange sign, so a strict RTCM decode converts to RINEX
-	// Doppler as -PRR/wavelength. This RTCM log needs RTKLIB Explorer's
-	// -INVPRR option because its encoded PRR has the opposite polarity from
-	// that strict RTCM interpretation. SatPulse's default matches this common
-	// receiver polarity; --rtcm-strict-prr selects the strict RTCM sign.
-	// RTKLIB Explorer omits numeric zero Doppler values; the RTCM case uses
-	// --rtcm-omit-zero-do to test that compatibility mode.
-	// The Unicore OBSVM golden file was checked against RTKLIB Explorer with:
-	// convbin -r unicore -v 3.04 -od -os.
+	// Doppler as -PRR/wavelength. The RTCM logs need RTKLIB Explorer's -INVPRR
+	// option (set in the Makefile) because their encoded PRR has the opposite
+	// polarity from that strict RTCM interpretation. SatPulse's default matches
+	// this common receiver polarity; --rtcm-strict-prr selects the strict RTCM
+	// sign. RTKLIB Explorer omits numeric zero Doppler values; the RTCM cases
+	// use --rtcm-omit-zero-do to test that compatibility mode.
 	// RTKLIB Explorer zeroes Doppler when carrier-phase tracking is lost, so
 	// the UNCB case uses --unc-omit-do-without-cp to match. Three BDS signals
 	// are ignored because SatPulse and RTKLIB Explorer disagree on them in
@@ -885,33 +883,33 @@ func TestGoldenFiles(t *testing.T) {
 		ignoreSignals []ignoredSignal
 	}{
 		{
-			name:          "m8t_20251217_4h",
-			args:          []string{"--run-by", "", "--ubx-bds-geo-half-cycle", filepath.Join("testdata", "m8t-20251217-4h.ubx")},
-			obs:           filepath.Join("testdata", "m8t-20251217-4h.obs.gz"),
+			name:          "m8t_20251217",
+			args:          []string{"--run-by", "", "--ubx-bds-geo-half-cycle", filepath.Join("testdata", "m8t-20251217.ubx")},
+			obs:           filepath.Join("testdata", "m8t-20251217.obs.gz"),
 			cleanMetadata: cleanCommon,
 		},
 		{
-			name:          "f9t_20251217_3h",
-			args:          []string{"--run-by", "", "--ubx-bds-geo-half-cycle", filepath.Join("testdata", "f9t-20251217-3h.ubx")},
-			obs:           filepath.Join("testdata", "f9t-20251217-3h.obs.gz"),
+			name:          "f9t_20251217",
+			args:          []string{"--run-by", "", "--ubx-bds-geo-half-cycle", filepath.Join("testdata", "f9t-20251217.ubx")},
+			obs:           filepath.Join("testdata", "f9t-20251217.obs.gz"),
 			cleanMetadata: cleanCommon,
 		},
 		{
-			name:          "rtcm_20260519_3h",
-			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-do", filepath.Join("testdata", "packet-rtcm-20260519-3h.rtcm")},
-			obs:           filepath.Join("testdata", "packet-rtcm-20260519-3h.obs.gz"),
+			name:          "rtcm_20260519",
+			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-do", filepath.Join("testdata", "packet-rtcm-20260519.rtcm")},
+			obs:           filepath.Join("testdata", "packet-rtcm-20260519.obs.gz"),
 			cleanMetadata: cleanRTCM,
 		},
 		{
-			name:          "um980_rtcm_20260527_3h",
-			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-do", filepath.Join("testdata", "um980-rtcm-20260527-3h.rtcm")},
-			obs:           filepath.Join("testdata", "um980-rtcm-20260527-3h.obs.gz"),
+			name:          "um980_rtcm_20260527",
+			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-do", filepath.Join("testdata", "um980-rtcm-20260527.rtcm")},
+			obs:           filepath.Join("testdata", "um980-rtcm-20260527.obs.gz"),
 			cleanMetadata: cleanRTCM,
 		},
 		{
-			name:          "um980_uncb_20260527_1h",
-			args:          []string{"--from", "uncb", "--run-by", "", "--unc-omit-do-without-cp", filepath.Join("testdata", "um980-uncb-20260527-1h.uncb")},
-			obs:           filepath.Join("testdata", "um980-uncb-20260527-1h.obs.gz"),
+			name:          "um980_uncb_20260527",
+			args:          []string{"--from", "uncb", "--run-by", "", "--unc-omit-do-without-cp", filepath.Join("testdata", "um980-uncb-20260527.uncb")},
+			obs:           filepath.Join("testdata", "um980-uncb-20260527.obs.gz"),
 			cleanMetadata: cleanCommon,
 			ignoreSignals: []ignoredSignal{
 				{sys: 'C', sig: "6I"},
@@ -1158,12 +1156,12 @@ func TestUBXObservationFilesRoundTripThroughObsJSON(t *testing.T) {
 		args []string
 	}{
 		{
-			name: "m8t_20251217_4h",
-			args: []string{"--run-by", "", filepath.Join("testdata", "m8t-20251217-4h.ubx")},
+			name: "m8t_20251217",
+			args: []string{"--run-by", "", filepath.Join("testdata", "m8t-20251217.ubx")},
 		},
 		{
-			name: "f9t_20251217_3h",
-			args: []string{"--run-by", "", filepath.Join("testdata", "f9t-20251217-3h.ubx")},
+			name: "f9t_20251217",
+			args: []string{"--run-by", "", filepath.Join("testdata", "f9t-20251217.ubx")},
 		},
 	}
 	for _, tt := range tests {
