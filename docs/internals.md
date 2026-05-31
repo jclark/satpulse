@@ -218,6 +218,8 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 
 `internal/packcmd` implements `pack` subcommand of satpulsetool. It reads a JSONL packet log and writes selected packets as a raw byte stream, optionally preserving inter-packet timing.
 
+`internal/scancmd` implements `scan` subcommand of satpulsetool. It reads a raw packet byte stream, splits it using the GPS packet scanner, and writes a JSONL packet log.
+
 `internal/pmccmd` implements `pmc` subcommand of satpulsetool.
 
 `internal/replaycmd` implements `replay` subcommand of satpulsetool. It replays a JSONL packet log, generating JSONL events similar to an event log.
