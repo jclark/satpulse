@@ -12,8 +12,9 @@ satpulsetool-convobs - convert GNSS observation data
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-interval** *seconds*] [**\-p**\|**\-\-ppp\-ar**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rinex\-version** *version*] [**\-\-program** *name*] [**\-\-run\-by** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-antenna** *type*] [**\-\-approx\-pos** *X,Y,Z*] [**\-\-comment** *text*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-strict\-prr**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-strict\-prr**] [**\-\-rtcm\-omit\-zero\-do**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-ubx\-slip\-threshold** *n*] [**\-\-ubx\-bds\-geo\-half\-cycle**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-unc\-omit\-do\-without\-cp**]\
 &nbsp;&nbsp;&nbsp;&nbsp;*file*...
 
 # DESCRIPTION
@@ -144,7 +145,7 @@ If any **\-\-comment** option is supplied, comments from the TOML header file ar
 By default, **convobs** uses the sign needed by common RTCM logs.
 This option is valid only with **raw** or **rtcm** input.
 
-**\-\-rtcm\-omit\-zero\-doppler**
+**\-\-rtcm\-omit\-zero\-do**
 : Omit RTCM MSM Doppler observations with numeric value zero.
 By default, **convobs** preserves explicit zero Doppler values.
 This option is valid only with **raw** or **rtcm** input.
@@ -158,6 +159,11 @@ This option is valid only with **raw** or **ubx** input.
 : Apply the RTKLIB-compatible half-cycle correction to UBX-RXM-RAWX carrier phase measurements for BDS GEO satellites.
 By default, **convobs** preserves the carrier phase value reported by the receiver.
 This option is valid only with **raw** or **ubx** input.
+
+**\-\-unc\-omit\-do\-without\-cp**
+: Omit Unicore OBSVM Doppler observations whose signal has no valid carrier phase.
+By default, **convobs** preserves these Doppler values.
+This option is valid only with **raw**, **uncb**, or **unca** input.
 
 # HEADER FILE FORMAT
 
