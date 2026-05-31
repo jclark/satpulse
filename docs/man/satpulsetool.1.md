@@ -35,6 +35,9 @@ The *command* must be one of the following.
 **pack**
 : Convert a JSONL packet log to a packet byte stream.
 
+**scan**
+: Convert a packet byte stream to a JSONL packet log.
+
 **replay**
 : Replay a JSONL packet log, generating JSONL events, similar to an event log.
 
@@ -69,4 +72,4 @@ Show help for satpulsetool gps command:
 
 # SEE ALSO
 
-**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-pack(1)**, **satpulsetool-sdp(1)**, **satpulsetool-syncsim(1)**, **satpulsetool-convobs(1)**
+**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-pack(1)**, **satpulsetool-scan(1)**, **satpulsetool-sdp(1)**, **satpulsetool-syncsim(1)**, **satpulsetool-convobs(1)**

@@ -11,6 +11,7 @@ import (
 	"github.com/jclark/satpulse/internal/ntripcmd"
 	"github.com/jclark/satpulse/internal/packcmd"
 	"github.com/jclark/satpulse/internal/replaycmd"
+	"github.com/jclark/satpulse/internal/scancmd"
 )
 
 type cmdFunc func(logWriter io.Writer, logLevel slog.Level, progName string, cmdName string, cmdArgs []string) (usage string, err error)
@@ -25,4 +26,5 @@ var commands = map[string]cmdFunc{
 	"ntrip":    ntripcmd.Cmd,
 	"pack":     packcmd.Cmd,
 	"replay":   replaycmd.Cmd,
+	"scan":     scancmd.Cmd,
 }

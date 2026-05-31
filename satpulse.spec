@@ -31,6 +31,7 @@ install -D -m 644 selinux/satpulse.pp.bz2 %{buildroot}/usr/share/selinux/package
 install -D -m 644 out/satpulsetool.1.gz %{buildroot}/usr/share/man/man1/satpulsetool.1.gz
 install -D -m 644 out/satpulsetool-gps.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-gps.1.gz
 install -D -m 644 out/satpulsetool-pack.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-pack.1.gz
+install -D -m 644 out/satpulsetool-scan.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-scan.1.gz
 install -D -m 644 out/satpulsetool-sdp.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-sdp.1.gz
 install -D -m 644 out/satpulsetool-syncsim.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-syncsim.1.gz
 install -D -m 644 out/satpulsetool-convobs.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-convobs.1.gz
@@ -60,6 +61,7 @@ fi
 /usr/share/man/man1/satpulsetool.1.gz
 /usr/share/man/man1/satpulsetool-gps.1.gz
 /usr/share/man/man1/satpulsetool-pack.1.gz
+/usr/share/man/man1/satpulsetool-scan.1.gz
 /usr/share/man/man1/satpulsetool-sdp.1.gz
 /usr/share/man/man1/satpulsetool-syncsim.1.gz
 /usr/share/man/man1/satpulsetool-convobs.1.gz

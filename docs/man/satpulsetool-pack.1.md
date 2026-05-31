@@ -87,4 +87,4 @@ This can drive **satpulsed(8)** without GPS hardware, using a `satpulse.toml` li
 
 # SEE ALSO
 
-**satpulsetool(1)**, **satpulsetool-gps(1)**, **satpulsed(8)**
+**satpulsetool(1)**, **satpulsetool-scan(1)**, **satpulsetool-gps(1)**, **satpulsed(8)**
