@@ -9,7 +9,7 @@ satpulsetool-convobs - convert GNSS observation data
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-r**\|**\-\-from** **raw**\|**ubx**\|**rtcm**\|**uncb**\|**unca**\|**rinex**\|**obsj**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log**] [**\-\-to** **rinex**\|**obsj**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-date** *YYYYMMDD*\|**\-\-recent**\|**\-f**\|**\-\-date\-from\-filename**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-interval** *seconds*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-interval** *seconds*] [**\-p**\|**\-\-ppp\-ar**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rinex\-version** *version*] [**\-\-program** *name*] [**\-\-run\-by** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-antenna** *type*] [**\-\-approx\-pos** *X,Y,Z*] [**\-\-comment** *text*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-strict\-prr**]\
@@ -79,6 +79,10 @@ This cannot be used with a **\-\-from** option of **rinex** or **obsj**.
 : Decimate observations to the specified interval.
 The value must be at least 1 second and must divide one day exactly.
 The default is 0, which disables decimation.
+
+**\-p**, **\-\-ppp\-ar**
+: Produce output optimized for PPP with ambiguity resolution (PPP-AR), such as CSRS-PPP.
+Currently this removes observations that have no carrier phase.
 
 ## RTCM week inference
 
