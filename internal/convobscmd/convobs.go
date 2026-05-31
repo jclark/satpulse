@@ -46,7 +46,7 @@ var packetLogFormatsByTag = packetFormatsByTag(packetLogFormats)
 const summary = `[-h|--help] [-o|--output path] [-H|--header-file path]
            [-r|--from raw|ubx|rtcm|uncb|unca|rinex|obsj] [--packet-log] [--to rinex|obsj]
            [--date YYYYMMDD|--recent|-f|--date-from-filename]
-           [--interval seconds] [-p|--ppp-ar]
+           [--interval seconds] [-p|--ppp-ar] [--smooth]
            [--rinex-version version] [--program name] [--run-by name]
            [--antenna type] [--approx-pos x,y,z] [--comment text]
            [--rtcm-strict-prr] [--rtcm-omit-zero-do]
@@ -110,6 +110,7 @@ type convertOptions struct {
 	requireCP bool
 	format    formatOptions
 	interval  time.Duration
+	smooth    bool
 	week      weekOptions
 }
 
@@ -264,6 +265,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVarP(&dateFromFilename, "date-from-filename", "f", false, "infer RTCM date from input filename")
 	flags.Float64Var(&interval, "interval", 0, "observation decimation interval in `seconds` (0 disables)")
 	flags.BoolVarP(&v.requireCP, "ppp-ar", "p", false, "produce output optimized for PPP-AR")
+	flags.BoolVar(&v.smooth, "smooth", false, "divergence-free carrier-smooth pseudoranges")
 	flags.StringVarP(&v.headerFile, "header-file", "H", "", "TOML RINEX header metadata file")
 	flags.String("rinex-version", "", "RINEX observation version")
 	flags.String("program", "", "RINEX program field")
@@ -552,9 +554,9 @@ func (cj convJob) run(lg *slog.Logger, now time.Time) error {
 	opts := cj.opts
 	switch opts.from {
 	case inputRINEX, inputObsJSON:
-		return convertObservationInputs(cj.inputs, cj.out, opts.from, opts.to, cj.meta, opts.interval, opts.requireCP)
+		return convertObservationInputs(cj.inputs, cj.out, opts.from, opts.to, cj.meta, opts.interval, opts.requireCP, opts.smooth)
 	}
-	sink, err := outputSink(cj.out, opts.to, opts.interval, opts.requireCP)
+	sink, err := outputSink(cj.out, opts.to, opts.interval, opts.requireCP, opts.smooth)
 	if err != nil {
 		return err
 	}
@@ -603,7 +605,7 @@ func inputError(path string, err error) error {
 	return fmt.Errorf("%s: %w", path, err)
 }
 
-func outputSink(w io.Writer, format outputFormat, interval time.Duration, requireCP bool) (rinex.Sink, error) {
+func outputSink(w io.Writer, format outputFormat, interval time.Duration, requireCP bool, smooth bool) (rinex.Sink, error) {
 	var sink rinex.Sink
 	switch format {
 	case outputRINEX:
@@ -623,10 +625,13 @@ func outputSink(w io.Writer, format outputFormat, interval time.Duration, requir
 	if requireCP {
 		sink = rinex.NewRequireCPFilter(sink)
 	}
+	if smooth {
+		sink = rinex.NewSmoothingSink(sink)
+	}
 	return sink, nil
 }
 
-func convertObservationInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, meta rinex.Metadata, interval time.Duration, requireCP bool) error {
+func convertObservationInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, meta rinex.Metadata, interval time.Duration, requireCP bool, smooth bool) error {
 	var fileMeta rinex.Metadata
 	var obs []rinex.SignalObservation
 	for path, in := range inputs {
@@ -640,7 +645,7 @@ func convertObservationInputs(inputs iter.Seq2[string, inputReader], out io.Writ
 		fileMeta = rinex.MergeMetadata(fileMeta, m)
 		obs = append(obs, o...)
 	}
-	return convertBufferedObservations(out, to, rinex.MergeMetadata(fileMeta, meta), obs, interval, requireCP)
+	return convertBufferedObservations(out, to, rinex.MergeMetadata(fileMeta, meta), obs, interval, requireCP, smooth)
 }
 
 func readObservationInput(in io.Reader, from inputFormat) (rinex.Metadata, []rinex.SignalObservation, error) {
@@ -661,8 +666,8 @@ func sinkMetadata(sink rinex.Sink, meta rinex.Metadata) error {
 	return sink.Metadata(meta)
 }
 
-func convertBufferedObservations(out io.Writer, to outputFormat, meta rinex.Metadata, obs []rinex.SignalObservation, interval time.Duration, requireCP bool) error {
-	sink, err := outputSink(out, to, interval, requireCP)
+func convertBufferedObservations(out io.Writer, to outputFormat, meta rinex.Metadata, obs []rinex.SignalObservation, interval time.Duration, requireCP bool, smooth bool) error {
+	sink, err := outputSink(out, to, interval, requireCP, smooth)
 	if err != nil {
 		return err
 	}
