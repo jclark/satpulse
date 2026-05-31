@@ -38,11 +38,11 @@ docs:
   - title: "GNSS hardware"
     children:
       - title: "Overview"
-        url: "/hardware/gnss-hw.html"
+        url: "/hardware/gnss.html"
       - title: "GNSS modules"
         url: "/hardware/gnss-modules.html"
-      - title: "GNSS boards"
-        url: "/hardware/gnss-boards.html"
+      - title: "GNSS HATs"
+        url: "/hardware/gnss-hats.html"
       - title: "GNSS receivers"
         url: "/hardware/gnss-receivers.html"
       - title: "GNSSDOs"
@@ -55,6 +55,8 @@ docs:
     children:
       - title: "Overview"
         url: "/hardware/index.html"
+      - title: "Selected GNSS boards"
+        url: "/hardware/gnss-boards.html"
       - title: "Raspberry Pi CM4/CM5 builds"
         url: "/hardware/cm-build.html"
       - title: "Intel NIC builds"
@@ -65,6 +67,8 @@ docs:
         url: "/hardware/ptm.html"
       - title: "PTP switches"
         url: "/hardware/switches.html"
+      - title: "Vendors"
+        url: "/hardware/timing-vendors.html"
   - title: "Setup"
     children:
       - title: "Overview"
@@ -226,13 +230,50 @@ earns the broader "technical resource" claim on the home page.
 
 #### Split GNSS and precision-time hardware
 
-Present the hardware pages as two top-level sections: GNSS hardware
-(modules, boards, receivers, GNSSDOs, antennas, vendors) and precision
-time hardware (PHCs and SDPs, external timestamping, periodic output,
-PTM, switches, CM4/CM5 builds, Intel NIC builds, client hardware). The
-pages already exist, so this is mostly a navigation.yml change plus a
-short overview page for each section. Do not rewrite the detailed build
-pages just to fit the split.
+Present the hardware pages as two top-level sections. The current
+`hardware/index.md` (and its URL) becomes the precision time hardware
+overview; a new `hardware/gnss.md` becomes the GNSS hardware overview,
+built by moving the GNSS-facing material out of `index.md`. GNSS
+hardware covers modules, receivers, GNSSDOs, antennas, and vendors;
+precision time hardware covers PHCs and SDPs, external timestamping,
+periodic output, PTM, switches, CM4/CM5 builds, Intel NIC builds,
+client hardware, and the in-case GNSS boards (see below). Most pages
+already exist, so this is mostly a navigation.yml change plus the new
+`gnss.md` overview. Do not rewrite the detailed build pages just to fit
+the split.
+
+#### Put the GNSS boards page on the timing side
+
+The existing `hardware/gnss-boards.md` is GNSS hardware only by name:
+it covers boards designed to mount inside a computer case for a timing
+build (CM4/CM5 sandwich boards, RCB timing boards, the ArduSimple M.2
+for an i226/i211 machine, SR1 boards for the CM IO case). Move it
+wholesale to the precision time hardware section and retitle it so the
+name signals that it is a curated set: the nav label is "Selected GNSS
+boards", and the page title and intro explain that these are boards
+chosen to work well in an in-case timing build (CM4/CM5 and Intel-NIC
+machines).
+
+#### Scope GNSS boards by use case
+
+Cataloguing every GNSS board on the market is hopeless -- there are too
+many. Scope the board pages by form factor and use instead. The
+Selected GNSS boards page above stays limited to boards for the in-case
+PPS timing build. Separately, the GNSS hardware section can have a GNSS
+HATs page for boards that plug into the Raspberry Pi 40-pin header (used
+on a standard Pi for positioning or GPIO-PPS timing) -- a bounded
+category, unlike boards in general. The HATs page is all-new content,
+so it is a later step, not part of the immediate split.
+
+#### Split the vendors page
+
+The broad vendors page stays in the GNSS hardware section. Identify the
+vendors on it that sell only timing-section hardware (PHCs, timecards,
+PTP switches, and the like) and move them into a new
+`hardware/timing-vendors.md` in the precision time hardware section,
+with a link back to the broad vendors page for GNSS vendors. This is a
+content move out of the existing page, not new writing, so it is part
+of the immediate split.
 
 #### Beef up the GNSS modules page
 
