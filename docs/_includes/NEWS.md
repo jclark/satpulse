@@ -32,6 +32,10 @@ _Not yet released_
 - `satpulsetool gps --show-receiver` now prints a `Supports:` line listing the receiver configuration features that SatPulse can use. (#203)
 - `satpulsetool gps` now warns if a specified configuration option could not be applied because it is not supported by the receiver. (#203)
 
+### RINEX observation conversion
+
+- `satpulsetool` has a new `convobs` command, which converts raw GNSS observation data from u-blox UBX-RXM-RAWX, Unicore OBSVM, or RTCM MSM7 into RINEX observation files for PPP post-processing. It can decimate observations and set RINEX header metadata from command-line options or a TOML header file. `convobs` also supports a new JSON Lines observation format that follows RINEX semantics to enable convenient processing with modern tooling such as `jq`; it reads and writes this format, and can also read existing RINEX files, so it can convert freely between raw packets, RINEX, and the JSON Lines format. (#296)
+
 ### Other satpulsetool improvements
 
 - `satpulsetool` has a new `pack` command, which reads a JSONL packet log and writes selected packets as a packet byte stream corresponding to the original packet contents. It can filter by packet `tag` and `msg`, and can preserve inter-packet timing for FIFO-based replay. (#247)
