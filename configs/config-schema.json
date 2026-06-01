@@ -12,7 +12,14 @@
           "enum": [
             "NMEA",
             "UBX",
-            "RTCM"
+            "RTCM",
+            "CASBIN",
+            "ASBIN",
+            "SDBP",
+            "UNCB",
+            "UNCA",
+            "NOVB",
+            "NOVA"
           ]
         },
         "writeLockTimeout": {
@@ -509,7 +516,7 @@
               "protocol": {
                 "description": "Packet format to forward (default: RTCM for ntrip transport)",
                 "type": "string",
-                "enum": ["", "RTCM", "NMEA", "UBX"]
+                "enum": ["", "RTCM", "NMEA", "UBX", "CASBIN", "ASBIN", "SDBP", "UNCB", "UNCA", "NOVB", "NOVA"]
               },
               "ntrip": {
                 "description": "Ntrip v1 server (SOURCE) upload to a remote caster",
@@ -552,7 +559,7 @@
               {
                 "if": {
                   "properties": {
-                    "protocol": {"enum": ["NMEA", "UBX"]}
+                    "protocol": {"enum": ["NMEA", "UBX", "CASBIN", "ASBIN", "SDBP", "UNCB", "UNCA", "NOVB", "NOVA"]}
                   },
                   "required": ["protocol"]
                 },
