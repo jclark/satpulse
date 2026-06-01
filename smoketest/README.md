@@ -82,6 +82,9 @@ A scenario owns the meaning of its test. `scenario.py` declares:
   only; also guards clean shutdown for GUI-disabled endpoints.
 - `ntrip` -- Ntrip caster source table and RTCM streaming.
 - `ntrip-auth` -- Ntrip caster with an authenticated mountpoint.
+- `ntp` -- chrony SOCK refclock: a pure 1 Hz RMC stream drives serial timing
+  mode, and the samples are well-formed, consistently timestamped, and carry
+  the correct GPS time.
 
 The Ntrip scenarios use `satpulsetool ntrip` as the client. Scenarios
 that need an external Ntrip peer (e.g. `stream.push`/`stream.pull`) would

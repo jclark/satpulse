@@ -61,7 +61,7 @@ def bin_path(name):
 class Context:
     """Resolved resources and helpers passed to a scenario's run(ctx)."""
 
-    def __init__(self, name, run_dir, env, factor, packet_log, daemon_log, has_http, has_ntrip):
+    def __init__(self, name, run_dir, env, factor, packet_log, daemon_log, has_http, has_ntrip, has_ntp):
         self.name = name
         self.run_dir = run_dir
         self.env = env
@@ -70,11 +70,16 @@ class Context:
         self.daemon_log = daemon_log
         self.has_http = has_http
         self.has_ntrip = has_ntrip
+        self.has_ntp = has_ntp
         self.replay_err = os.path.join(run_dir, "replay.err")
         self.satpulsed = bin_path("satpulsed")
         self.satpulsetool = bin_path("satpulsetool")
         self.daemon = None
         self.replay_proc = None
+        # Chrony SOCK consumer: a separate ntpsock.py process binds the socket
+        # before the daemon starts and logs received samples to ntp_log.
+        self.ntp_log = os.path.join(run_dir, "ntp.jsonl")
+        self.ntp_proc = None
 
     @property
     def fifo(self):
@@ -98,6 +103,42 @@ class Context:
     @property
     def proxy_socket(self):
         return self.env["SATPULSE_TEST_PROXY_SOCKET"]
+
+    @property
+    def ntp_sock(self):
+        return self.env["SATPULSE_TEST_NTP_SOCK"]
+
+    def start_ntp_sock(self, timeout=5):
+        """Spawn the chrony SOCK consumer and wait for it to bind the socket.
+
+        satpulsed plays the sender: it sends to this path and warns if no one
+        is listening, so the consumer must be bound before the daemon starts.
+        Binding an AF_UNIX datagram socket creates the path, so poll for it.
+        """
+        f = open(self.ntp_log, "wb")
+        self.ntp_proc = subprocess.Popen(
+            [sys.executable, os.path.join(HERE, "ntpsock.py"), "-f", "json", self.ntp_sock],
+            stdout=f, stderr=subprocess.STDOUT,
+        )
+        self.ntp_proc._out = f
+        deadline = time.time() + timeout
+        while not os.path.exists(self.ntp_sock):
+            if self.ntp_proc.poll() is not None:
+                raise RuntimeError("ntp consumer exited before binding the socket")
+            if time.time() >= deadline:
+                raise RuntimeError(f"ntp consumer did not bind {self.ntp_sock} within {timeout}s")
+            time.sleep(0.02)
+
+    def stop_ntp_sock(self):
+        if self.ntp_proc is None:
+            return
+        if self.ntp_proc.poll() is None:
+            self.ntp_proc.terminate()
+            try:
+                self.ntp_proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.ntp_proc.kill()
+        self.ntp_proc._out.close()
 
     def http_url(self, path):
         return f"http://127.0.0.1:{self.http_port}{path}"
@@ -214,6 +255,7 @@ def allocate_env(name, index, run_dir):
         "SATPULSE_TEST_FIFO": os.path.join(run_dir, "gps.fifo"),
         "SATPULSE_TEST_LOG_DIR": log_dir,
         "SATPULSE_TEST_PROXY_SOCKET": os.path.join(run_dir, "proxy.sock"),
+        "SATPULSE_TEST_NTP_SOCK": os.path.join(run_dir, "chrony.sock"),
     }
     for key, off in PORT_OFFSETS.items():
         env[key] = str(base + off)
@@ -223,8 +265,8 @@ def allocate_env(name, index, run_dir):
 def render_config(template_path, out_path, env):
     """Render the config template; report which listeners it configures.
 
-    Returns (has_http, has_ntrip), detected from non-comment table headers
-    so a comment that merely mentions a section is not mistaken for it.
+    Returns (has_http, has_ntrip, has_ntp), detected from non-comment table
+    headers so a comment that merely mentions a section is not mistaken for it.
     """
     with open(template_path) as f:
         text = f.read()
@@ -237,7 +279,7 @@ def render_config(template_path, out_path, env):
         for line in text.splitlines()
         if not line.lstrip().startswith("#")
     ]
-    return "[[http]]" in headers, "[ntrip]" in headers
+    return "[[http]]" in headers, "[ntrip]" in headers, "[ntp]" in headers
 
 
 def port_free(port):
@@ -292,14 +334,18 @@ def run_scenario(name, index):
     env["SATPULSE_TEST_PACKET_LOG"] = packet_log
     os.makedirs(env["SATPULSE_TEST_LOG_DIR"], exist_ok=True)
     os.mkfifo(env["SATPULSE_TEST_FIFO"])
-    has_http, has_ntrip = render_config(config_tmpl, env["SATPULSE_TEST_CONFIG"], env)
+    has_http, has_ntrip, has_ntp = render_config(config_tmpl, env["SATPULSE_TEST_CONFIG"], env)
 
     daemon_log = os.path.join(run_dir, "satpulsed.log")
-    ctx = Context(name, run_dir, env, factor, packet_log, daemon_log, has_http, has_ntrip)
+    ctx = Context(name, run_dir, env, factor, packet_log, daemon_log, has_http, has_ntrip, has_ntp)
 
     daemon = None
     keep = False
     try:
+        # Bind the chrony SOCK consumer before the daemon starts, so its first
+        # refclock sample lands in a listening socket rather than warning.
+        if has_ntp:
+            ctx.start_ntp_sock()
         with open(daemon_log, "wb") as out:
             daemon = subprocess.Popen(
                 [ctx.satpulsed, "-v", "-f", env["SATPULSE_TEST_CONFIG"]],
@@ -350,6 +396,7 @@ def run_scenario(name, index):
             ctx.replay_proc.kill()
         if daemon is not None and daemon.poll() is None:
             stop_daemon(daemon)
+        ctx.stop_ntp_sock()
         if keep:
             print(f"[{name}] artifacts kept in {run_dir}", file=sys.stderr)
         else:
