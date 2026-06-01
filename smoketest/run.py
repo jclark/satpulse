@@ -29,6 +29,7 @@ import sys
 import tempfile
 import threading
 import time
+import tomllib
 import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -120,7 +121,7 @@ def bin_path(name):
 class Context:
     """Resolved resources and helpers passed to a scenario's run(ctx)."""
 
-    def __init__(self, name, run_dir, env, factor, packet_log, daemon_log, has_http, has_ntrip, has_ntp):
+    def __init__(self, name, run_dir, env, factor, packet_log, daemon_log, has_http, has_ntrip, has_ntp, has_push):
         self.name = name
         self.run_dir = run_dir
         self.env = env
@@ -130,6 +131,7 @@ class Context:
         self.has_http = has_http
         self.has_ntrip = has_ntrip
         self.has_ntp = has_ntp
+        self.has_push = has_push
         self.replay_err = os.path.join(run_dir, "replay.err")
         self.satpulsed = bin_path("satpulsed")
         self.satpulsetool = bin_path("satpulsetool")
@@ -139,6 +141,12 @@ class Context:
         # before the daemon starts and logs received samples to ntp_log.
         self.ntp_log = os.path.join(run_dir, "ntp.jsonl")
         self.ntp_proc = None
+        # Fake Ntrip caster: a fakecaster.py process listens before the daemon
+        # starts, accepts the daemon's [[stream.push]] SOURCE feed, and appends
+        # the pushed payload to caster_capture; its diagnostics go to caster_log.
+        self.caster_capture = os.path.join(run_dir, "pushed.bin")
+        self.caster_log = os.path.join(run_dir, "caster.log")
+        self.caster_proc = None
 
     @property
     def fifo(self):
@@ -166,6 +174,10 @@ class Context:
     @property
     def ntp_sock(self):
         return self.env["SATPULSE_TEST_NTP_SOCK"]
+
+    @property
+    def remote_caster_port(self):
+        return self.port("SATPULSE_TEST_REMOTE_CASTER_PORT")
 
     def start_ntp_sock(self, timeout=5):
         """Spawn the chrony SOCK consumer and wait for it to bind the socket.
@@ -198,6 +210,71 @@ class Context:
             except subprocess.TimeoutExpired:
                 self.ntp_proc.kill()
         self.ntp_proc._out.close()
+
+    def start_caster(self, timeout=5):
+        """Spawn the fake Ntrip caster and wait until it accepts connections.
+
+        The daemon's push writer connects out at startup, so the caster must
+        be listening before the daemon starts; otherwise the connect fails,
+        logs an error (which check_no_unexpected_errors would flag), and backs
+        off. A readiness probe that does not complete a SOURCE handshake is
+        ignored by the caster, so polling the port is safe.
+
+        The caster is told to require the configured mountpoint and password,
+        read back from the rendered config, so a daemon that ignored or
+        mangled them would have its SOURCE handshake rejected and push nothing.
+        """
+        with open(self.env["SATPULSE_TEST_CONFIG"], "rb") as cf:
+            ntrip = tomllib.load(cf)["stream"]["push"][0]["ntrip"]
+        f = open(self.caster_log, "wb")
+        self.caster_proc = subprocess.Popen(
+            [sys.executable, os.path.join(HERE, "fakecaster.py"),
+             f"127.0.0.1:{self.remote_caster_port}", "-o", self.caster_capture,
+             "--mountpoint", ntrip["mountpoint"], "--password", ntrip["password"]],
+            stdout=f, stderr=subprocess.STDOUT,
+        )
+        self.caster_proc._out = f
+        deadline = time.time() + timeout
+        while port_free(self.remote_caster_port):
+            if self.caster_proc.poll() is not None:
+                raise RuntimeError("fake caster exited before listening")
+            if time.time() >= deadline:
+                raise RuntimeError(f"fake caster did not listen within {timeout}s")
+            time.sleep(0.02)
+
+    def wait_push(self, timeout=15):
+        """Wait until the daemon has completed its SOURCE handshake to the caster.
+
+        Gates replay: Push subscribes to the packet bcast as it connects, so
+        waiting for the caster to accept the SOURCE feed guarantees the
+        subscription exists before any packet flows. Without this, a fast
+        replay could publish packets the push subscriber never sees, and the
+        captured stream would be missing its leading packets.
+        """
+        deadline = time.time() + timeout
+        while True:
+            try:
+                with open(self.caster_log, errors="replace") as fh:
+                    if "accepted SOURCE" in fh.read():
+                        return
+            except OSError:
+                pass
+            if self.daemon is not None and self.daemon.poll() is not None:
+                raise RuntimeError("daemon exited before pushing to the caster")
+            if time.time() >= deadline:
+                raise RuntimeError(f"daemon did not push to the caster within {timeout}s")
+            time.sleep(0.05)
+
+    def stop_caster(self):
+        if self.caster_proc is None:
+            return
+        if self.caster_proc.poll() is None:
+            self.caster_proc.terminate()
+            try:
+                self.caster_proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.caster_proc.kill()
+        self.caster_proc._out.close()
 
     def http_url(self, path):
         return f"http://127.0.0.1:{self.http_port}{path}"
@@ -324,8 +401,9 @@ def allocate_env(name, run_dir):
 def render_config(template_path, out_path, env):
     """Render the config template; report which listeners it configures.
 
-    Returns (has_http, has_ntrip, has_ntp), detected from non-comment table
-    headers so a comment that merely mentions a section is not mistaken for it.
+    Returns (has_http, has_ntrip, has_ntp, has_push), detected from non-comment
+    table headers so a comment that merely mentions a section is not mistaken
+    for it.
     """
     with open(template_path) as f:
         text = f.read()
@@ -338,7 +416,8 @@ def render_config(template_path, out_path, env):
         for line in text.splitlines()
         if not line.lstrip().startswith("#")
     ]
-    return "[[http]]" in headers, "[ntrip]" in headers, "[ntp]" in headers
+    return ("[[http]]" in headers, "[ntrip]" in headers, "[ntp]" in headers,
+            "[[stream.push]]" in headers)
 
 
 def port_free(port):
@@ -392,10 +471,10 @@ def run_scenario(name):
     env["SATPULSE_TEST_PACKET_LOG"] = packet_log
     os.makedirs(env["SATPULSE_TEST_LOG_DIR"], exist_ok=True)
     os.mkfifo(env["SATPULSE_TEST_FIFO"])
-    has_http, has_ntrip, has_ntp = render_config(config_tmpl, env["SATPULSE_TEST_CONFIG"], env)
+    has_http, has_ntrip, has_ntp, has_push = render_config(config_tmpl, env["SATPULSE_TEST_CONFIG"], env)
 
     daemon_log = os.path.join(run_dir, "satpulsed.log")
-    ctx = Context(name, run_dir, env, factor, packet_log, daemon_log, has_http, has_ntrip, has_ntp)
+    ctx = Context(name, run_dir, env, factor, packet_log, daemon_log, has_http, has_ntrip, has_ntp, has_push)
 
     daemon = None
     keep = False
@@ -404,6 +483,10 @@ def run_scenario(name):
         # refclock sample lands in a listening socket rather than warning.
         if has_ntp:
             ctx.start_ntp_sock()
+        # Start the fake Ntrip caster before the daemon, so the daemon's push
+        # connect succeeds immediately instead of failing and backing off.
+        if has_push:
+            ctx.start_caster()
         with open(daemon_log, "wb") as out:
             daemon = subprocess.Popen(
                 [ctx.satpulsed, "-v", "-f", env["SATPULSE_TEST_CONFIG"]],
@@ -419,6 +502,11 @@ def run_scenario(name):
         if daemon.poll() is not None:
             raise RuntimeError(f"daemon exited at startup (code {daemon.returncode})")
         ctx.wait_listeners()
+        # Push has no listener of its own; wait for its outbound SOURCE feed so
+        # the bcast subscription is in place before replay, like wait_listeners
+        # does for the inbound observers.
+        if has_push:
+            ctx.wait_push()
 
         # A single replay then runs in the background while checks observe
         # the live daemon.
@@ -455,6 +543,7 @@ def run_scenario(name):
         if daemon is not None and daemon.poll() is None:
             stop_daemon(daemon)
         ctx.stop_ntp_sock()
+        ctx.stop_caster()
         if keep:
             print(f"[{name}] artifacts kept in {run_dir}", file=sys.stderr)
         else:

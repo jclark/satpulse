@@ -85,10 +85,17 @@ A scenario owns the meaning of its test. `scenario.py` declares:
 - `ntp` -- chrony SOCK refclock: a pure 1 Hz RMC stream drives serial timing
   mode, and the samples are well-formed, consistently timestamped, and carry
   the correct GPS time.
+- `stream-push` -- Ntrip push: the daemon forwards the log's RTCM to a remote
+  caster, and the pushed stream matches the source log's RTCM.
 
-The Ntrip scenarios use `satpulsetool ntrip` as the client. Scenarios
-that need an external Ntrip peer (e.g. `stream.push`/`stream.pull`) would
-use `str2str` from RTKLIB; none are included yet.
+The Ntrip caster scenarios use `satpulsetool ntrip` as the client. The
+`stream-push` scenario uses a built-in fake caster (`fakecaster.py`) as the
+remote peer, so it needs no external dependency: it accepts the daemon's Ntrip
+v1 SOURCE feed and captures the payload, which the check scans back into RTCM.
+A real-peer variant using `str2str` from RTKLIB could be added later.
+
+`stream.pull` is not covered: pull feeds corrections back to the receiver over
+a write path the read-only FIFO replay cannot provide.
 
 ## Installed systemd environment
 

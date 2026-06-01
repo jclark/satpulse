@@ -449,6 +449,42 @@ def _log_packets(path, tag=None):
     return out
 
 
+def _scan_packets(ctx, path, tag=None):
+    """Packets that `satpulsetool scan` finds in a raw byte-stream file.
+
+    Returns (tag, msg, raw-bytes) tuples like _log_packets, but the input is
+    a raw on-wire byte stream (e.g. a captured push feed) rather than a JSONL
+    packet log; scan turns it back into packets. Empty if the file is absent.
+    """
+    if not os.path.exists(path):
+        return []
+    p = subprocess.run(
+        [ctx.satpulsetool, "scan", path],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+    )
+    out = []
+    for line in p.stdout.decode("utf-8", "replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if e.get("out") or not e.get("tag"):
+            continue
+        if tag and e["tag"] != tag:
+            continue
+        if e.get("bin"):
+            data = bytes.fromhex(e["bin"])
+        elif e.get("ascii") is not None:
+            data = e["ascii"].encode("latin1")
+        else:
+            continue
+        out.append((e["tag"], e.get("msg"), data))
+    return out
+
+
 def check_proxy_tcp(ctx, port, protocol, read_seconds=3.0, connect_timeout=15.0):
     """A read-only TCP proxy on `port` filtered to `protocol` forwards that
     protocol's packets, and the bytes are a contiguous slice of the source log.
@@ -518,4 +554,35 @@ def check_proxy_socket_capture(ctx, protocol="UBX", capture_seconds=3.0):
     src = {d for (_, _, d) in _log_packets(ctx.packet_log, protocol)}
     missing = [m for (_, m, d) in captured if d not in src]
     assert not missing, f"captured packets not present in source log: {missing[:5]}"
-    return len(captured)
+
+
+# --- Stream push check ------------------------------------------------------
+
+
+def check_pushed_rtcm(ctx, mountpoint=None):
+    """The daemon's [[stream.push]] feed delivers the source log's RTCM intact.
+
+    The fake caster captured the pushed payload; scanning it must yield
+    exactly the same RTCM packets, in order, as the source packet log. With a
+    prompt consumer the push path neither prunes nor transforms, and the
+    packet bcast is lossless, so the streams are identical. Polls because the
+    last pushed packets may still be in flight when the scenario calls this.
+    """
+    want = [d for (_, _, d) in _log_packets(ctx.packet_log, "RTCM")]
+    assert want, "source log has no RTCM packets to push"
+    got = poll(lambda: _pushed_rtcm(ctx) == want or None, interval=0.25)
+    if got is None:
+        n = len(_pushed_rtcm(ctx))
+        raise AssertionError(
+            f"pushed RTCM does not match source log: captured {n} of {len(want)} packets"
+        )
+    if mountpoint is not None:
+        with open(ctx.caster_log, errors="replace") as f:
+            assert f"accepted SOURCE mount={mountpoint}" in f.read(), (
+                f"caster recorded no SOURCE feed for mountpoint {mountpoint}"
+            )
+    return len(want)
+
+
+def _pushed_rtcm(ctx):
+    return [d for (_, _, d) in _scan_packets(ctx, ctx.caster_capture, "RTCM")]
