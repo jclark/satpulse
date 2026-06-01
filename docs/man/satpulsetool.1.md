@@ -23,6 +23,9 @@ The *command* must be one of the following.
 **syncsim**
 : Simulate synchronizing a PHC with a GPS receiver
 
+**convobs**
+: Convert GNSS observation data
+
 **decode**
 : Decode a GPS packet from hex or ASCII data.
 
@@ -69,4 +72,4 @@ Show help for satpulsetool gps command:
 
 # SEE ALSO
 
-**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-pack(1)**, **satpulsetool-scan(1)**, **satpulsetool-sdp(1)**, **satpulsetool-syncsim(1)**
+**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-pack(1)**, **satpulsetool-scan(1)**, **satpulsetool-sdp(1)**, **satpulsetool-syncsim(1)**, **satpulsetool-convobs(1)**

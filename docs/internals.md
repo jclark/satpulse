@@ -106,6 +106,14 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/rtcmbin` parses and serializes RTCM binary packets using `gps/lib/bitsenc`, including message types 1005/1006, 1230, and MSM. It also provides MSM7-to-MSM4 conversion.
 
+`gps/lib/rinex` defines an intermediate, RINEX-adjacent representation of observation data as JSON-serializable Go types, and reads and writes it as RINEX observation files.
+
+`gps/lib/rnxrtcm` converts RTCM MSM7 observation messages to `gps/lib/rinex` records. It uses `gps/lib/rtcmbin` to decode the source messages.
+
+`gps/lib/rnxubx` converts u-blox raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/ubxbin` to decode the source messages.
+
+`gps/lib/rnxunc` converts Unicore raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/uncmsg` to decode the source messages.
+
 `gps/lib/novmsg` provides parsing and serialization of NovAtel GPS receiver messages in binary and ASCII formats. It defines message header and body types and implements CRC32 validation.
 
 `gps/lib/uncmsg` parses Unicore protocol messages in binary and ASCII formats. It defines message structures and provides parsing/serialization using `gps/lib/novmsg`.
@@ -211,6 +219,8 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 `internal/gpscmd` implements `gps` subcommand of satpulsetool.
 
 `internal/annotatecmd` implements `annotate` subcommand of satpulsetool. It annotates JSONL packet logs with decoded payload fields (header, payload, cfgData).
+
+`internal/convobscmd` implements `convobs` subcommand of satpulsetool. It converts raw and JSON observation streams.
 
 `internal/decodecmd` implements `decode` subcommand of satpulsetool. It decodes a single GPS packet from hex or ASCII data into JSON.
 

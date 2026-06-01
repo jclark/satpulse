@@ -33,6 +33,37 @@ The `pvt()` function in `gps/internal/ubx/ubxcfgmsg.go` determines which UBX mes
 
 Understanding the ecef flag consumption is critical: on HPG, `pos` with `ecef` consumes the ecef flag before `vel` can use it. To get NavVelECEF on HPG, use `vel,ecef` without `pos`.
 
+## How `--raw-out` maps to UBX messages
+
+From the `raw()` function in `gps/internal/ubx/ubxcfgmsg.go`:
+
+- `obs` => RXM-RAWX on modern receivers, RXM-RAW on legacy receivers.
+- `nav` => RXM-SFRBX (modern) or RXM-SFRB (legacy).
+
+The choice between modern and legacy IDs is driven by `Version.rawLevel()`. Receivers without raw support (`rawLevel == 0`) reject `--raw-out`. Among receivers in the test collection: ZED-F9P, ZED-F9T, ZED-X20P, and LEA-M8T use the modern IDs; LEA-6T uses the legacy IDs.
+
+Suggested capture names: `raw-obs.jsonl`, `raw-nav.jsonl`, `raw-obs-nav.jsonl` (with the usual `-NNNN` baud suffix if not at the default rate). Combine with a minimal time set so the capture has at least one time message:
+
+```
+--binary --pvt-out tp,after,tai,off --raw-out obs,nav
+```
+
+## Raw cross-format capture
+
+On u-blox receivers that support both RXM-RAWX and RTCM MSM7 output (currently F9P and later), capture them together in a binary-only trace with no time message. F9P emits RTCM only when `CFG-TMODE-MODE` is set to Fixed or Survey-In; in the default Disabled mode RTCM messages are configured but never sent. Pass `--fixed-pos-ecef <X,Y,Z> --fixed-pos-acc <m>` with the antenna's known ECEF coordinates:
+
+```
+satpulsetool gps -d <device> -s <baud> --binary --pvt-out off --raw-out obs --rtcm-out MSM7 \
+  --fixed-pos-ecef <X,Y,Z> --fixed-pos-acc <m> \
+  --packet-log raw-cross.jsonl --capture 30
+```
+
+`--pvt-out off` is essential -- it disables the daemon time-message set that high-level config would otherwise enable. The MSM7 messages and RXM-RAWX both carry their own GPS time; the cross-format test compares those embedded times.
+
+The F9P captures GPS, GLONASS, Galileo, and BeiDou MSM7 (1077, 1087, 1097, 1127) and the 1230 GLONASS code-phase bias. It does not emit QZSS MSM7 (1117). RTCM 1005 is also enabled by `--rtcm-out MSM7` if combined with `,ARP`, but is not required for cross-format testing.
+
+Older u-blox receivers (LEA-M8T, LEA-6T) do not emit MSM7 and are skipped for this capture.
+
 ## Messages not reachable via high-level config
 
 These need low-level message files (CFG-VALSET on Gen9+ receivers):

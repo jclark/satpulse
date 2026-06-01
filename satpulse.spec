@@ -34,6 +34,7 @@ install -D -m 644 out/satpulsetool-pack.1.gz %{buildroot}/usr/share/man/man1/sat
 install -D -m 644 out/satpulsetool-scan.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-scan.1.gz
 install -D -m 644 out/satpulsetool-sdp.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-sdp.1.gz
 install -D -m 644 out/satpulsetool-syncsim.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-syncsim.1.gz
+install -D -m 644 out/satpulsetool-convobs.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-convobs.1.gz
 install -D -m 644 out/satpulse.toml.5.gz %{buildroot}/usr/share/man/man5/satpulse.toml.5.gz
 install -D -m 644 out/satpulsed.8.gz %{buildroot}/usr/share/man/man8/satpulsed.8.gz
 
@@ -63,5 +64,6 @@ fi
 /usr/share/man/man1/satpulsetool-scan.1.gz
 /usr/share/man/man1/satpulsetool-sdp.1.gz
 /usr/share/man/man1/satpulsetool-syncsim.1.gz
+/usr/share/man/man1/satpulsetool-convobs.1.gz
 /usr/share/man/man5/satpulse.toml.5.gz
 /usr/share/man/man8/satpulsed.8.gz

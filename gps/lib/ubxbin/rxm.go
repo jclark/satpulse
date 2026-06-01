@@ -87,6 +87,91 @@ func (si RxmCorStatusInfo) CorrectionID() uint16 {
 	return uint16((si >> 9) & 0xFFFF)
 }
 
+// RxmRawx is UBX-RXM-RAWX: multi-GNSS raw measurements.
+// It carries the pseudorange, carrier phase, Doppler, and signal quality
+// information needed to generate a RINEX 3 multi-GNSS observation file.
+type RxmRawx struct {
+	RxmRawxFixed
+	Meas []RxmRawxMeas `json:"meas"`
+}
+
+// RxmRawxFixed is the fixed part of UBX-RXM-RAWX.
+type RxmRawxFixed struct {
+	RcvTow  float64        `json:"rcvTow"`  // measurement time of week, s
+	Week    uint16         `json:"week"`    // GPS week
+	LeapS   int8           `json:"leapS"`   // GPS-UTC leap seconds
+	NumMeas uint8          `json:"numMeas"` // number of measurements
+	RecStat RxmRawxRecStat `json:"recStat"`
+	Version byte           `json:"version"` // 0x01 for this version
+	_       [2]byte
+}
+
+// RxmRawxMeas is one per-signal measurement in UBX-RXM-RAWX.
+type RxmRawxMeas struct {
+	PrMes    float64        `json:"prMes"`    // pseudorange, m
+	CpMes    float64        `json:"cpMes"`    // carrier phase, cycles
+	DoMes    float32        `json:"doMes"`    // Doppler, Hz
+	GNSSID   GNSSID         `json:"gnssId"`
+	SVID     byte           `json:"svId"`
+	SigID    byte           `json:"sigId"`
+	FreqID   byte           `json:"freqId"`   // GLONASS only: slot + 7
+	LockTime uint16         `json:"locktime"` // carrier phase locktime, ms (max 64500)
+	CNO      byte           `json:"cno"`      // carrier-to-noise density, dB-Hz
+	PrStdev  byte           `json:"prStdev"`  // bits 3..0 = prStd (0.01*2^n m)
+	CpStdev  byte           `json:"cpStdev"`  // bits 3..0 = cpStd (0.004 cycles; 0x0F = invalid)
+	DoStdev  byte           `json:"doStdev"`  // bits 3..0 = doStd (0.002*2^n Hz)
+	TrkStat  RxmRawxTrkStat `json:"trkStat"`
+	_        byte
+}
+
+// Masks to extract multi-bit fields from RAWX measurement fields.
+const (
+	RxmRawxPrStdMask byte = 0b1111 // bits 3..0 of prStdev
+	RxmRawxCpStdMask byte = 0b1111 // bits 3..0 of cpStdev
+	RxmRawxDoStdMask byte = 0b1111 // bits 3..0 of doStdev
+)
+
+var _ VaryingMsg = (*RxmRawx)(nil)
+var _ PartiallyHandledMsg = (*RxmRawx)(nil)
+
+func (m *RxmRawx) ID() MsgID { return RxmRawxID }
+
+func (m *RxmRawx) IsHandled() bool {
+	return m.Version == 1
+}
+
+func (m *RxmRawx) InitVaryingPart(payloadLen int) error {
+	n, err := sliceLen(m, payloadLen, 16, 32)
+	if err == nil {
+		m.Meas = make([]RxmRawxMeas, n)
+	}
+	return err
+}
+
+func (m *RxmRawx) FixedPart() any   { return &m.RxmRawxFixed }
+func (m *RxmRawx) VaryingPart() any { return &m.Meas }
+
+// RxmRawxRecStat is the receiver tracking status bitfield in UBX-RXM-RAWX.
+type RxmRawxRecStat byte
+
+// Boolean flags in RecStat.
+const (
+	RxmRawxLeapSec  RxmRawxRecStat = 1 << 0 // leap seconds have been determined
+	RxmRawxClkReset RxmRawxRecStat = 1 << 1 // clock reset applied
+)
+
+// RxmRawxTrkStat is the per-measurement tracking status bitfield in UBX-RXM-RAWX.
+type RxmRawxTrkStat byte
+
+// Boolean flags in TrkStat.
+const (
+	RxmRawxPrValid    RxmRawxTrkStat = 1 << 0 // pseudorange valid
+	RxmRawxCpValid    RxmRawxTrkStat = 1 << 1 // carrier phase valid
+	RxmRawxHalfCyc    RxmRawxTrkStat = 1 << 2 // half cycle valid
+	RxmRawxSubHalfCyc RxmRawxTrkStat = 1 << 3 // half cycle subtracted from phase
+)
+
 func init() {
 	regMsg[RxmCor]("COR")
+	regMsg[RxmRawx]("RAWX")
 }
