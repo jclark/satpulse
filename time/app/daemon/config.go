@@ -166,13 +166,17 @@ func defaultConfig() *Config {
 	return cfg
 }
 
-func (cfg *Config) httpWantsSatellites() bool {
+func (cfg *Config) anyHTTP(f func(HTTPConfig) bool) bool {
 	for _, c := range cfg.HTTP {
-		if c.gui() || c.metrics() {
+		if f(c) {
 			return true
 		}
 	}
 	return false
+}
+
+func (cfg *Config) httpWantsSatellites() bool {
+	return cfg.anyHTTP(HTTPConfig.gui) || cfg.anyHTTP(HTTPConfig.metrics)
 }
 
 // hasNtripStream reports whether any STR record will be

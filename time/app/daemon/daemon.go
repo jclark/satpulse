@@ -151,7 +151,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 
 	var sseCh chan sse.Event
 	var eb *bcast.Bcast[sse.Event]
-	if len(cfg.HTTP) > 0 {
+	if cfg.anyHTTP(HTTPConfig.gui) {
 		sseCh = make(chan sse.Event, 1)
 		eb = startBcast(ctx, lg, &wg, sseCh)
 	}
@@ -232,7 +232,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	promObs := newPrometheusObserver(cfg)
 	sseObs := newSSEObserver(cfg, sseCh, lg, gcfg)
 	posObs := newPositionObserver(cfg)
-	if eb != nil {
+	if len(cfg.HTTP) > 0 {
 		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, sseObs, promObs, posObs)
 		if err != nil {
 			return err
@@ -367,30 +367,24 @@ func NewDispatcher(
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
 func newSSEObserver(cfg *Config, sseCh chan<- sse.Event, lg *slog.Logger, gcfg *gpscfg.Result) *sseobs.SSEObserver {
-	for _, hc := range cfg.HTTP {
-		if hc.gui() {
-			return sseobs.New(sseCh, cfg.LeapSecond.leapSecond(), lg, gcfg)
-		}
+	if cfg.anyHTTP(HTTPConfig.gui) {
+		return sseobs.New(sseCh, cfg.LeapSecond.leapSecond(), lg, gcfg)
 	}
 	return nil
 }
 
 // newPrometheusObserver creates Prometheus observer if any HTTP endpoint needs metrics
 func newPrometheusObserver(cfg *Config) *promobs.PrometheusObserver {
-	for _, hc := range cfg.HTTP {
-		if hc.metrics() {
-			return promobs.New(cfg.PTP.ClockAccuracy)
-		}
+	if cfg.anyHTTP(HTTPConfig.metrics) {
+		return promobs.New(cfg.PTP.ClockAccuracy)
 	}
 	return nil
 }
 
 // newPositionObserver creates a positionObserver if any HTTP endpoint has position enabled.
 func newPositionObserver(cfg *Config) *positionObserver {
-	for _, hc := range cfg.HTTP {
-		if hc.position() {
-			return &positionObserver{}
-		}
+	if cfg.anyHTTP(HTTPConfig.position) {
+		return &positionObserver{}
 	}
 	return nil
 }
