@@ -99,6 +99,15 @@ def alloc_port_block():
         raise RuntimeError("no free port block available below the ephemeral range")
 
 
+_out_lock = threading.Lock()
+
+
+def emit(msg):
+    """Print a progress line atomically across parallel worker threads."""
+    with _out_lock:
+        print(msg, flush=True)
+
+
 def arch():
     m = platform.machine()
     return {"x86_64": "amd64", "aarch64": "arm64"}.get(m, m)
@@ -370,6 +379,7 @@ def stop_daemon(daemon, grace=5.0):
 
 
 def run_scenario(name):
+    emit(f"START {name}")
     scen = load_scenario(name)
     factor = getattr(scen, "FACTOR", 5)
     packet_log = scen.PACKET_LOG
@@ -487,18 +497,15 @@ def main():
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as ex:
         futs = {ex.submit(run_scenario, n): n for n in selected}
         for fut in concurrent.futures.as_completed(futs):
-            results.append(fut.result())
+            name, ok, detail = fut.result()
+            results.append((name, ok, detail))
+            emit(f"PASS {name}" if ok else f"FAIL {name}")
 
-    results.sort()
-    failed = 0
-    for name, ok, detail in results:
-        if ok:
-            print(f"PASS {name}")
-        else:
-            failed += 1
-            print(f"FAIL {name}")
-            print("    " + detail.replace("\n", "\n    ").rstrip())
-    print(f"\n{len(results) - failed}/{len(results)} scenarios passed")
+    failed = sorted((name, detail) for name, ok, detail in results if not ok)
+    for name, detail in failed:
+        print(f"\n--- {name} ---")
+        print("    " + detail.replace("\n", "\n    ").rstrip())
+    print(f"\n{len(results) - len(failed)}/{len(results)} scenarios passed")
     return 1 if failed else 0
 
 
