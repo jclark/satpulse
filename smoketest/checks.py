@@ -207,16 +207,12 @@ def check_packet_log(ctx):
 
 # --- Daemon output check ----------------------------------------------------
 
-# Log lines expected under hardware-free FIFO replay and smoke teardown:
-# no PHC; GPS detection times out until packets flow; and the Ntrip
-# caster / serial proxy log a write error when the test disconnects its
-# client.
+# Log lines expected under hardware-free FIFO replay: no PHC, and GPS
+# detection times out until packets start flowing.
 ALLOWED_WARNINGS = (
     "running without a PTP hardware clock",
     "GPS detection failed",
     "no output detected",
-    "error flushing ntrip stream",        # ntrip client disconnect during teardown
-    "error writing to proxy connection",  # proxy client disconnect during teardown
 )
 
 
