@@ -337,10 +337,12 @@ def check_ntrip_unauthorized(ctx, mount):
 
 
 def _log_packets(path, tag=None):
-    """Input packets from a JSONL packet log as (tag, msg, bin-hex-lowercase).
+    """Input packets from a JSONL packet log as (tag, msg, raw-bytes).
 
-    Skips metadata, sent (`out`), and non-tagged lines; optionally filters
-    to a single tag.
+    raw-bytes is the on-wire packet: decoded hex for binary protocols
+    (UBX, RTCM) or the encoded string for ASCII protocols (NMEA). Skips
+    metadata, sent (`out`), and non-tagged lines; optionally filters to a
+    single tag.
     """
     out = []
     with open(path) as f:
@@ -356,13 +358,19 @@ def _log_packets(path, tag=None):
                 continue
             if tag and e["tag"] != tag:
                 continue
-            out.append((e["tag"], e.get("msg"), (e.get("bin") or "").lower()))
+            if e.get("bin"):
+                data = bytes.fromhex(e["bin"])
+            elif e.get("ascii") is not None:
+                data = e["ascii"].encode("latin1")
+            else:
+                continue
+            out.append((e["tag"], e.get("msg"), data))
     return out
 
 
-def check_proxy_tcp(ctx, protocol="UBX", read_seconds=3.0, connect_timeout=15.0):
-    """A read-only TCP proxy filtered to `protocol` forwards that protocol's
-    packets, and the forwarded bytes are a contiguous slice of the source log.
+def check_proxy_tcp(ctx, port, protocol, read_seconds=3.0, connect_timeout=15.0):
+    """A read-only TCP proxy on `port` filtered to `protocol` forwards that
+    protocol's packets, and the bytes are a contiguous slice of the source log.
 
     The proxy comes up after GPS detection, so poll-connect until it
     accepts; the single successful connection is the reading client (no
@@ -374,11 +382,11 @@ def check_proxy_tcp(ctx, protocol="UBX", read_seconds=3.0, connect_timeout=15.0)
     conn = None
     while time.time() < deadline:
         try:
-            conn = socket.create_connection(("127.0.0.1", ctx.proxy_tcp_port), timeout=1)
+            conn = socket.create_connection(("127.0.0.1", port), timeout=1)
             break
         except OSError:
             time.sleep(0.1)
-    assert conn is not None, f"proxy TCP port {ctx.proxy_tcp_port} never accepted a connection"
+    assert conn is not None, f"proxy TCP port {port} never accepted a connection"
     buf = b""
     conn.settimeout(read_seconds)
     stop = time.time() + read_seconds
@@ -393,11 +401,11 @@ def check_proxy_tcp(ctx, protocol="UBX", read_seconds=3.0, connect_timeout=15.0)
             buf += chunk
     finally:
         conn.close()
-    assert buf, "proxy TCP delivered no data"
-    # The proxy forwards whole packets in scan order, so the bytes received
+    assert buf, f"proxy TCP port {port} ({protocol}) delivered no data"
+    # The proxy forwards whole packets in scan order, so the received bytes
     # are a contiguous slice of the source log's same-protocol packets.
-    concat = b"".join(bytes.fromhex(b) for (_, _, b) in _log_packets(ctx.packet_log, protocol) if b)
-    assert buf in concat, "proxy TCP bytes are not a slice of the source log's packets"
+    concat = b"".join(d for (_, _, d) in _log_packets(ctx.packet_log, protocol))
+    assert buf in concat, f"proxy TCP {protocol} bytes are not a slice of the source log"
     return len(buf)
 
 
@@ -426,7 +434,7 @@ def check_proxy_socket_capture(ctx, protocol="UBX", capture_seconds=3.0):
     assert len(captured) == len(_log_packets(cap)), (
         f"proxy socket forwarded non-{protocol} packets despite filter"
     )
-    src = {b for (_, _, b) in _log_packets(ctx.packet_log, protocol) if b}
-    missing = [m for (_, m, b) in captured if b and b not in src]
+    src = {d for (_, _, d) in _log_packets(ctx.packet_log, protocol)}
+    missing = [m for (_, m, d) in captured if d not in src]
     assert not missing, f"captured packets not present in source log: {missing[:5]}"
     return len(captured)

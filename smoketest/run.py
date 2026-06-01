@@ -96,10 +96,6 @@ class Context:
         return self.port("SATPULSE_TEST_NTRIP_PORT")
 
     @property
-    def proxy_tcp_port(self):
-        return self.port("SATPULSE_TEST_PROXY_TCP_PORT")
-
-    @property
     def proxy_socket(self):
         return self.env["SATPULSE_TEST_PROXY_SOCKET"]
 
