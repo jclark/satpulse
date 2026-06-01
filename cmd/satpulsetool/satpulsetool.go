@@ -95,6 +95,7 @@ var descriptions = []struct {
 	{"gps", "configure a GPS device"},
 	{"sdp", "control software-defined pins on PTP hardware clocks"},
 	{"syncsim", "run clock synchronization simulation"},
+	{"convobs", "convert raw and JSON observations"},
 	{"decode", "decode a GPS packet"},
 	{"annotate", "annotate a JSONL packet log with decoded fields"},
 	{"pack", "convert a JSONL packet log to a packet byte stream"},

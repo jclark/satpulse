@@ -365,7 +365,7 @@ It has the following key:
 
 In addition, `proxy.tcp` and `proxy.sock` can both have the following keys:
 
-* `protocol` - a string saying that only packets with this protocol are to be forwarded; the value can be `"RTCM"`, `"NMEA"` or `"UBX"`
+* `protocol` - a string saying that only packets with this protocol are to be forwarded; recognized values are `"RTCM"`, `"NMEA"`, `"UBX"`, `"CASBIN"`, `"ASBIN"`, `"SDBP"`, `"UNCB"`, `"UNCA"`, `"NOVB"` and `"NOVA"`
 * `readOnly` - a boolean saying whether access to the GPS receiver should be read-only; this means that serial packets will be forwarded from the GPS receiver to the network, but the network will not be able to send packets to the GPS receiver; this defaults to true if `protocol` is specified and false otherwise
 * `writeLockTimeout` - a number giving the time in seconds that a writer to the GPS receiver should have exclusive write access; if client writes to the GPS receiver (which is allowed only when readOnly is false), then no other client will be able to write to the GPS receiver for this period of time; the default is 2 seconds
 
@@ -421,7 +421,7 @@ Currently the only kind of endpoint is Ntrip: SatPulse acts as an Ntrip server, 
 
 The `[[stream.push]]` table has the following keys:
 
-* `protocol` - a string giving the packet protocol to forward; the value can be `"RTCM"`, `"NMEA"` or `"UBX"`; the receiver must output packets using this protocol; the default is `"RTCM"`
+* `protocol` - a string giving the packet protocol to forward; recognized values are `"RTCM"`, `"NMEA"`, `"UBX"`, `"CASBIN"`, `"ASBIN"`, `"SDBP"`, `"UNCB"`, `"UNCA"`, `"NOVB"` and `"NOVA"`; the receiver must output packets using this protocol; the default is `"RTCM"`
 * `ntrip.address` - a string giving the address of the remote Ntrip caster, in the form *host* or *host*`:`*port*; when the port is omitted, the default is 2101; this key is required
 * `ntrip.mountpoint` - a string giving the mountpoint to push to on the remote caster; this key is required and must be a single URL path component
 * `ntrip.password` - a string giving the password for uploading to the remote caster; this key is required

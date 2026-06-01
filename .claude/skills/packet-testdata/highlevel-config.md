@@ -21,6 +21,7 @@ Use `--binary` to switch to binary output protocol (disables NMEA). Use `--pvt-o
 - `--sats-out sat,sig` -- satellite and signal info (bandwidth-sensitive, may need higher baud)
 - `--pvt-out tp,after,tai,off` -- minimal time-only set
 - `--pvt-out pos,ecef,time,epoch,off` -- ECEF position + time
+- `--raw-out obs,nav` -- raw observations and navigation data (RXM-RAWX/RXM-SFRBX on u-blox; OBSVMB and per-GNSS `*EPHB` on Unicore). High bandwidth -- typically needs 38400+. Combine with a minimal time set, e.g. `--pvt-out tp,after,tai,off --raw-out obs,nav`. See `ubx-config.md` and `unicore-config.md` for per-vendor details.
 - `--survey --survey-time 60 --survey-acc 50` -- short survey for testing (generous accuracy so it stays in progress during capture)
 
 ### Baud rate considerations

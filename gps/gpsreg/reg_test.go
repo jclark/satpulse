@@ -70,6 +70,39 @@ func TestVendorUnmarshalText(t *testing.T) {
 	}
 }
 
+func TestProtocolUnmarshalText(t *testing.T) {
+	tests := []struct {
+		input string
+		want  gpsprot.Tag
+	}{
+		{"", ""},
+		{"ubx", TagUBX},
+		{"NMEA", TagNMEA},
+		{"RTCM", TagRTCM},
+		{"CASBIN", TagCASICBin},
+		{"asbin", TagAllystarBin},
+		{"SDBP", TagSDBP},
+		{"UNCB", TagUnicoreBin},
+		{"unca", TagUnicoreAscii},
+		{"NOVB", TagNovAtelBin},
+		{"nova", TagNovAtelAscii},
+	}
+	for _, tt := range tests {
+		var prot Protocol
+		if err := prot.UnmarshalText([]byte(tt.input)); err != nil {
+			t.Errorf("UnmarshalText(%q) error = %v", tt.input, err)
+			continue
+		}
+		if got := prot.Tag(); got != tt.want {
+			t.Errorf("UnmarshalText(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+	var prot Protocol
+	if err := prot.UnmarshalText([]byte("xyzzy")); err == nil {
+		t.Error("expected error for unknown protocol")
+	}
+}
+
 func hasFormat(formats []gpsprot.PacketFormat, want gpsprot.PacketFormat) bool {
 	for _, f := range formats {
 		if f == want {
