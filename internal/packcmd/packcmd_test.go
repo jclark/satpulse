@@ -191,13 +191,13 @@ func TestTimingSleepsFromEmittedPacketDeltas(t *testing.T) {
 	}
 }
 
-func TestTimingUsesWriteStartBeforeWrite(t *testing.T) {
+func TestTimingAnchorsFirstPacketAfterFlush(t *testing.T) {
 	base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
 	start := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	fc := &fakeClock{now: start}
 	out := &recordingOutput{
 		clock:          fc,
-		advanceOnWrite: 200 * time.Millisecond,
+		advanceOnFlush: 200 * time.Millisecond,
 	}
 	input := lines(
 		timedBin(base, "UBX", "NAV-PVT", "01"),
@@ -209,11 +209,11 @@ func TestTimingUsesWriteStartBeforeWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	wantSleeps := []time.Duration{800 * time.Millisecond, 800 * time.Millisecond}
+	wantSleeps := []time.Duration{time.Second, 800 * time.Millisecond}
 	if !reflect.DeepEqual(fc.sleeps, wantSleeps) {
 		t.Fatalf("sleeps = %v, want %v", fc.sleeps, wantSleeps)
 	}
-	wantWriteTimes := []time.Time{start, start.Add(time.Second), start.Add(2 * time.Second)}
+	wantWriteTimes := []time.Time{start, start.Add(1200 * time.Millisecond), start.Add(2200 * time.Millisecond)}
 	if !reflect.DeepEqual(out.writeTimes, wantWriteTimes) {
 		t.Fatalf("writeTimes = %v, want %v", out.writeTimes, wantWriteTimes)
 	}
@@ -281,6 +281,7 @@ type recordingOutput struct {
 	clock          *fakeClock
 	writeTimes     []time.Time
 	advanceOnWrite time.Duration
+	advanceOnFlush time.Duration
 }
 
 func (w *recordingOutput) Write(p []byte) (int, error) {
@@ -296,5 +297,8 @@ func (w *recordingOutput) Write(p []byte) (int, error) {
 
 func (w *recordingOutput) Flush() error {
 	w.flushes++
+	if w.clock != nil {
+		w.clock.now = w.clock.now.Add(w.advanceOnFlush)
+	}
 	return nil
 }

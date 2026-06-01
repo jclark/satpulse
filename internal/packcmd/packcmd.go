@@ -134,6 +134,7 @@ func run(input io.Reader, out writeFlusher, cfg runConfig) error {
 			if entryT.IsZero() {
 				return fmt.Errorf("line %d: --realtime requires selected packets to have a non-zero t", lineNo)
 			}
+			var writeStart time.Time
 			if havePrev {
 				delta := entryT.Sub(prevEntryT)
 				if delta > 0 {
@@ -142,8 +143,8 @@ func run(input io.Reader, out writeFlusher, cfg runConfig) error {
 						cfg.clock.Sleep(sleepFor)
 					}
 				}
+				writeStart = cfg.clock.Now()
 			}
-			writeStart := cfg.clock.Now()
 			if _, err := out.Write(data); err != nil {
 				return fmt.Errorf("line %d: write packet: %w", lineNo, err)
 			}
@@ -151,6 +152,14 @@ func run(input io.Reader, out writeFlusher, cfg runConfig) error {
 				return fmt.Errorf("line %d: flush packet: %w", lineNo, err)
 			}
 			prevEntryT = entryT
+			// The first Flush can block until a FIFO reader is ready.
+			// Anchor after it completes so the second packet is delayed
+			// relative to the first packet actually being emitted. Later
+			// packets keep write-start anchoring to avoid accumulating drift
+			// when output is briefly slow.
+			if writeStart.IsZero() {
+				writeStart = cfg.clock.Now()
+			}
 			prevWriteStart = writeStart
 			havePrev = true
 			continue
