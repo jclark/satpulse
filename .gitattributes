@@ -1,0 +1,5 @@
+# TypeScript sources and generated golden files are written with LF.
+# Force LF on checkout so byte-for-byte comparisons (e.g. gps/ts
+# TestValidateGenTS) pass on Windows where autocrlf would otherwise
+# convert them to CRLF.
+*.ts text eol=lf
