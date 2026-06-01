@@ -210,6 +210,10 @@ func (c *mockConfigurator) ReceiverInfo() *ReceiverInfo {
 	return c.info
 }
 
+func (c *mockConfigurator) TrustedTimePacketBuilder() TrustedTimePacketBuilder {
+	return nil
+}
+
 func (c *mockConfigurator) ConfigSupport() ConfigSupportFlags {
 	return c.support
 }

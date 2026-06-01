@@ -1,0 +1,181 @@
+#:schema ../gpsmsg-schema.json
+# Galileo OSNMA configuration for u-blox (e.g. ZED-F9P HPG 1.51)
+# The [[ubxval]] and [[ubxvalport]] tags target Gen9+ receivers. Use --save to
+# persist writes to BBR+Flash, and --port for the CFG-MSGOUT tags (defaults to
+# usb if not given when only key.usb is supplied here).
+
+[[include]]
+src = "gen9.toml"
+
+# OSNMA enable/disable: CFG-GAL-USE_OSNMA.
+
+[[ubxval]]
+tag = "osnma-on"
+description = "Enable Galileo OSNMA authentication"
+keys = [0x10350005]
+types = "U1"
+values = [1]
+
+[[ubxval]]
+tag = "osnma-off"
+description = "Disable Galileo OSNMA authentication"
+keys = [0x10350005]
+types = "U1"
+values = [0]
+
+# Restrict navigation solution to authenticated data only:
+# CFG-NAVSPG-ONLY_AUTHDATA.
+
+[[ubxval]]
+tag = "osnma-only-auth"
+description = "Use only OSNMA-authenticated navigation data"
+keys = [0x101100DD]
+types = "U1"
+values = [1]
+
+[[ubxval]]
+tag = "osnma-only-auth-off"
+description = "Allow unauthenticated navigation data"
+keys = [0x101100DD]
+types = "U1"
+values = [0]
+
+# OSNMA time synchronization requirement: CFG-GAL-OSNMA_TIMESYNC. When true
+# (default), the receiver only applies OSNMA after trusted external time has
+# been supplied via UBX-MGA-INI-TIME_UTC. Setting it false lets OSNMA run
+# without external time, at the cost of weaker protection against
+# delayed-replay attacks.
+
+[[ubxval]]
+tag = "osnma-timesync"
+description = "Require external trusted time for OSNMA (default)"
+keys = [0x10350009]
+types = "U1"
+values = [1]
+
+[[ubxval]]
+tag = "osnma-timesync-off"
+description = "Run OSNMA without external trusted time"
+keys = [0x10350009]
+types = "U1"
+values = [0]
+
+# Query current OSNMA configuration via CFG-VALGET (class 0x06, id 0x8b)
+# from the RAM layer.
+
+[[ubx]]
+tag = "get-osnma"
+description = "Poll OSNMA configuration"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4U4U4"
+payload.values = [0, 0, 0, 0x10350005, 0x10350009, 0x101100DD]
+
+# Provision the Galileo OSNMA Merkle tree root via UBX-MGA-GAL-OSNMA_MERKLE
+# (class 0x13, id 0x02, type 0x08).
+# The tree node below is the current public Merkle tree root for the live OSNMA
+# service, taken from the GSC website (https://www.gsc-europa.eu/gsc-products/OSNMA/MT).
+# Once provisioned, the receiver stores the root in non-volatile memory and can
+# obtain the public key from the satellite signal (this can take several hours).
+
+[[ubx]]
+tag = "osnma-merkle"
+description = "Provision current Galileo OSNMA Merkle tree root"
+class = 0x13
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1"
+payload.values = [
+    0x08, 0x00, 0x00, 0x00,
+    0x83, 0x2E, 0x15, 0xED, 0xE5, 0x56, 0x55, 0xEA,
+    0xC6, 0xE3, 0x99, 0xA5, 0x39, 0x47, 0x7B, 0x7C,
+    0x03, 0x4C, 0xCE, 0x24, 0xC3, 0xC9, 0x3F, 0xFC,
+    0x90, 0x4A, 0xCD, 0x9B, 0xF8, 0x42, 0xF0, 0x4E,
+]
+
+# Provision the Galileo OSNMA public key via UBX-MGA-GAL-OSNMA_PUBKEY
+# (class 0x13, id 0x02, type 0x07).
+# Provisioning the pubkey directly avoids the multi-hour wait for the receiver
+# to acquire it from the satellite signal. The receiver stores keys indexed by
+# PKID, so multiple PKIDs can be provisioned; the live signal selects which is
+# in use. Below is PKID=2 (ECDSA P-256/SHA-256), applicable from 2025-12-10
+# (see https://www.gsc-europa.eu/gsc-products/OSNMA/PKI). The 33-byte P-256
+# compressed key is right-padded to fill the 67-byte field (sized for P-521).
+
+[[ubx]]
+tag = "osnma-pubkey-2"
+description = "Provision Galileo OSNMA public key with PKID 2 (P-256, applicable from 2025-12-10)"
+class = 0x13
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1U1"
+payload.values = [
+    0x07, 0x00, 0x12, 0x00,
+    0x02, 0x21, 0x92, 0x04, 0xB5, 0xCA, 0x6C, 0x46,
+    0xB6, 0x23, 0xEE, 0xED, 0x6C, 0xDD, 0x2C, 0xDD,
+    0xB1, 0xF7, 0xD6, 0xA7, 0x53, 0x27, 0x67, 0xE5,
+    0xB8, 0xDA, 0x0D, 0xE1, 0xEB, 0xD6, 0x95, 0xFC,
+    0x99,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00,
+    0x00,
+]
+
+# OSNMA monitoring messages.
+# Enable these (use --port to choose receiver port) to observe authentication
+# status on the receiver.
+
+[[ubxvalport]]
+tag = "ubx-nav-pvt"
+description = "Enable NAV-PVT (carries NMA fix authentication status)"
+key.usb = 0x20910009
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-pvt-off"
+description = "Disable NAV-PVT"
+key.usb = 0x20910009
+value = 0
+
+[[ubxvalport]]
+tag = "ubx-nav-sig"
+description = "Enable NAV-SIG (carries Galileo signal authentication status)"
+key.usb = 0x20910348
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-sig-off"
+description = "Disable NAV-SIG"
+key.usb = 0x20910348
+value = 0
+
+[[ubx]]
+tag = "get-ubx-sec-osnma"
+description = "Poll UBX-SEC-OSNMA for OSNMA security status (pubkey/Merkle validity, etc.)"
+class = 0x27
+id = 0x0A
+
+[[ubxvalport]]
+tag = "ubx-sec-osnma"
+description = "Enable SEC-OSNMA (detailed OSNMA status)"
+key.usb = 0x209106CD
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-sec-osnma-off"
+description = "Disable SEC-OSNMA"
+key.usb = 0x209106CD
+value = 0
+
+[[ubxvalport]]
+tag = "ubx-nav-timetrusted"
+description = "Enable NAV-TIMETRUSTED (external trusted time info)"
+key.usb = 0x209103AB
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-timetrusted-off"
+description = "Disable NAV-TIMETRUSTED"
+key.usb = 0x209103AB
+value = 0

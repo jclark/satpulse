@@ -47,6 +47,7 @@ type flagVars struct {
 	configOpts     gpsprot.ConfigOptions
 	configSupport  configSupportReq
 	configGet      gpsprot.PropIDs
+	timeEstimate   *gpsprot.TimeEstimate
 	msgFilePath    string
 	msgTags        []string
 	msgSave        bool
@@ -124,6 +125,7 @@ const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [
             [--pvt-out pos|vel|time|tp|leap|survey|qual|epoch|tai|ecef|ptp|ntp|off,...]
             [--sats-out sat|sig|none,...] [--rtcm-out MSM4|MSM7|ARP|auto|none,...]
             [--raw-out obs|nav|none,...] [--nmea-out RMC|GGA|GSA|GSV|ZDA|VTG|GLL|none,...]
+            [--sys-time-trusted]
             [-m|--msg-file path] [-t|--tag name,...] [--port name] [--show-tags]`
 
 const defaultSurveyTime = 2000
@@ -231,7 +233,6 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&vars.configOpts.SetStatic, "static", false, "make the receiver use static positioning mode if it is not already doing so")
 	flags.MarkHidden("static")
 	flags.BoolVar(&sysTimeTrusted, "sys-time-trusted", false, "provide system time as trusted time to the GPS receiver")
-	flags.MarkHidden("sys-time-trusted")
 	flags.BoolVar(&osnma, "osnma", false, "enable OSNMA authentication for Galileo")
 	flags.MarkHidden("osnma")
 	usage := cmd.UsageFunc(cmdName, summary, flags)
@@ -472,8 +473,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to estimate system time: %w", err)
 		}
-		vars.configOpts.TimeAssist = *est
-		vars.configOpts.TimeAssist.Trusted = true
+		vars.configOpts.TrustedTime = true
+		vars.timeEstimate = est
 	}
 	if flags.Lookup("osnma").Changed {
 		configChanged = true
@@ -535,7 +536,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if vars.msgFilePath != "" {
 		// In message-file mode --save is permitted (it controls VALSET
 		// layers for [[ubxval]]) but no other configuration flag is.
-		if saveAll || reset || reload || factoryReset || showConfig || showPort || configChanged || vars.showReceiver {
+		if saveAll || reset || reload || factoryReset || showConfig || showPort || configChanged || vars.showReceiver || vars.configOpts.TrustedTime {
 			return nil, nil, fmt.Errorf("--msg-file cannot be combined with configuration flags")
 		}
 		if vars.packetLogMode == testLogMode {

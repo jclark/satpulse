@@ -6,16 +6,29 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
+	"github.com/jclark/satpulse/gps/ptime"
 )
 
-// mgaTime creates an UBX-MGA-INI-TIMEUTC message from a gpsprot.TimeEstimate.
+type trustedTimePacketBuilder struct{}
+
+func (trustedTimePacketBuilder) TrustedTimePacket(est *gpsprot.TimeEstimate, now time.Time) ([]byte, error) {
+	if est == nil {
+		panic("trusted time estimate is nil")
+	}
+	if est.EstimatedTime.IsZero() {
+		panic("trusted time estimate has zero estimated time")
+	}
+	mga, err := mgaTime(est, now)
+	if err != nil {
+		return nil, err
+	}
+	return ubxbin.Serialize(mga)
+}
+
+// mgaTime creates a trusted UBX-MGA-INI-TIMEUTC message from a gpsprot.TimeEstimate.
 func mgaTime(ta *gpsprot.TimeEstimate, now time.Time) (*ubxbin.MgaIni, error) {
 	initialEst := ta.EstimatedTime.UTC()
-	if initialEst.IsZero() {
-		return nil, nil
-	}
 	t := initialEst // need this for leap second handling below
 	if !ta.TimeOfEstimate.IsZero() {
 		t = t.Add(now.Sub(ta.TimeOfEstimate))
@@ -72,9 +85,7 @@ func mgaTime(ta *gpsprot.TimeEstimate, now time.Time) (*ubxbin.MgaIni, error) {
 		TAccS:    uint16(tAccS),
 		TAccNs:   tAccNs,
 	}
-	if ta.Trusted {
-		utc.Bitfield0 |= ubxbin.MgaIniTimeTrustedSource
-	}
+	utc.Bitfield0 |= ubxbin.MgaIniTimeTrustedSource
 	return &ubxbin.MgaIni{
 		MgaIniFixed: ubxbin.MgaIniFixed{
 			Type:    ubxbin.MgaIniTypeTimeUTC,

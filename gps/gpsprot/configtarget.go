@@ -218,19 +218,19 @@ const (
 )
 
 type ConfigOptions struct {
-	Socket     bool                  // connected via socket, skip serial detection
-	ForceProbe bool                  // force probe even when no config changes needed
-	Save       SaveType              // what to save to non-volatile memory
-	Reset      ResetType             // what kind of reset to perform
-	PVTMsg     PVTMsgFlags           // messages relating to Position, Velocity, and Time
-	NMEAMsg    opt.Val[NMEAMsgFlags] `json:",omitzero"`
-	RTCMMsg    opt.Val[RTCMMsgFlags] `json:",omitzero"` // RTCM 3.x messages
-	SatsMsg    opt.Val[SatsMsgFlags] `json:",omitzero"`
-	RawMsg     opt.Val[RawMsgFlags]  `json:",omitzero"`
-	Survey     Survey
-	SetStatic  bool         // ensure receiver is in static mode without changing existing fixed position
-	TimeAssist TimeEstimate // provide time assistance to the receiver
-	OSNMA      OSNMAOptions // options for OSNMA authentication
+	Socket      bool                  // connected via socket, skip serial detection
+	ForceProbe  bool                  // force probe even when no config changes needed
+	Save        SaveType              // what to save to non-volatile memory
+	Reset       ResetType             // what kind of reset to perform
+	PVTMsg      PVTMsgFlags           // messages relating to Position, Velocity, and Time
+	NMEAMsg     opt.Val[NMEAMsgFlags] `json:",omitzero"`
+	RTCMMsg     opt.Val[RTCMMsgFlags] `json:",omitzero"` // RTCM 3.x messages
+	SatsMsg     opt.Val[SatsMsgFlags] `json:",omitzero"`
+	RawMsg      opt.Val[RawMsgFlags]  `json:",omitzero"`
+	Survey      Survey
+	SetStatic   bool         // ensure receiver is in static mode without changing existing fixed position
+	TrustedTime bool         // try to return a TrustedTimePacketBuilder
+	OSNMA       OSNMAOptions // options for OSNMA authentication
 }
 
 type OSNMAOptions struct {
@@ -1069,6 +1069,12 @@ const (
 	NavMsgAuthOSNMA
 )
 
+// TrustedTimePacketBuilder constructs receiver-specific packets for setting
+// the receiver's trusted-time clock.
+type TrustedTimePacketBuilder interface {
+	TrustedTimePacket(est *TimeEstimate, now time.Time) ([]byte, error)
+}
+
 // TimeEstimate represents an estimate of the current UTC time that can be provided to the GPS receiver.
 // An EstimatedTime of zero means that no estimate is available.
 // If TimeOfEstimate is non-zero, the EstimatedTime to be sent to the GPS receiver will be adjusted by the
@@ -1081,5 +1087,4 @@ type TimeEstimate struct {
 	TimeOfEstimate time.Time             // the monotonic time at which the estimate was made
 	Accuracy       time.Duration         // the accuracy of the estimate
 	LeapSecond     ptime.LeapSecondState // leap second information, if known
-	Trusted        bool                  // whether the estimate is trusted
 }

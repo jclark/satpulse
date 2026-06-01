@@ -110,6 +110,11 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	}
 }
 
+// TrustedTimePacketBuilder returns a trusted-time packet builder when supported.
+func (c *Configurator) TrustedTimePacketBuilder() gpsprot.TrustedTimePacketBuilder {
+	return nil
+}
+
 // ConfigSupport returns configuration support for this implementation.
 func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 	return configSupport
