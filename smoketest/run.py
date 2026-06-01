@@ -23,9 +23,11 @@ import os
 import platform
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import traceback
 
@@ -46,7 +48,55 @@ PORT_OFFSETS = {
     "SATPULSE_TEST_TOOL_PORT": 5,
 }
 PORT_BLOCK = 16
-PORT_BASE = 41000
+
+
+def _ephemeral_floor():
+    """Lowest port the kernel allocates for ephemeral (outbound) connections."""
+    try:
+        with open("/proc/sys/net/ipv4/ip_local_port_range") as f:
+            return int(f.read().split()[0])
+    except OSError:
+        return 32768  # Linux default; fallback when the file is absent
+
+
+# Scenario listener ports sit below the ephemeral range. A port inside that
+# range can be handed out as an outbound source port between allocation and the
+# daemon's listen(), which would then lose the bind race with EADDRINUSE.
+PORT_BASE = 20000
+PORT_CEIL = _ephemeral_floor()
+
+_port_lock = threading.Lock()
+_port_cursor = PORT_BASE
+
+
+def _port_bindable(port):
+    """True if a fresh TCP listener can bind 127.0.0.1:port right now."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def alloc_port_block():
+    """Reserve a free, contiguous block of PORT_BLOCK ports below the ephemeral range.
+
+    Parallel scenarios share a cursor under a lock so their blocks are disjoint,
+    and every port in a block is probed so a block already held by another
+    process is skipped rather than colliding with the daemon's listen().
+    """
+    global _port_cursor
+    with _port_lock:
+        base = _port_cursor
+        while base + PORT_BLOCK <= PORT_CEIL:
+            if all(_port_bindable(base + off) for off in range(PORT_BLOCK)):
+                _port_cursor = base + PORT_BLOCK
+                return base
+            base += PORT_BLOCK
+        raise RuntimeError("no free port block available below the ephemeral range")
 
 
 def arch():
@@ -246,8 +296,8 @@ def load_scenario(name):
     return mod
 
 
-def allocate_env(name, index, run_dir):
-    base = PORT_BASE + index * PORT_BLOCK
+def allocate_env(name, run_dir):
+    base = alloc_port_block()
     log_dir = os.path.join(run_dir, "log")
     env = {
         "SATPULSE_TEST_RUN_DIR": run_dir,
@@ -283,8 +333,6 @@ def render_config(template_path, out_path, env):
 
 
 def port_free(port):
-    import socket
-
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=0.3):
             return False
@@ -321,7 +369,7 @@ def stop_daemon(daemon, grace=5.0):
     )
 
 
-def run_scenario(name, index):
+def run_scenario(name):
     scen = load_scenario(name)
     factor = getattr(scen, "FACTOR", 5)
     packet_log = scen.PACKET_LOG
@@ -330,7 +378,7 @@ def run_scenario(name, index):
     config_tmpl = os.path.join(SCENARIOS_DIR, name, "satpulse.toml.in")
 
     run_dir = tempfile.mkdtemp(prefix=f"satpulse-smoke-{name}-")
-    env = allocate_env(name, index, run_dir)
+    env = allocate_env(name, run_dir)
     env["SATPULSE_TEST_PACKET_LOG"] = packet_log
     os.makedirs(env["SATPULSE_TEST_LOG_DIR"], exist_ok=True)
     os.mkfifo(env["SATPULSE_TEST_FIFO"])
@@ -437,7 +485,7 @@ def main():
 
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as ex:
-        futs = {ex.submit(run_scenario, n, i): n for i, n in enumerate(selected)}
+        futs = {ex.submit(run_scenario, n): n for n in selected}
         for fut in concurrent.futures.as_completed(futs):
             results.append(fut.result())
 
