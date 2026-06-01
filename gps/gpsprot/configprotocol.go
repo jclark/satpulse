@@ -101,6 +101,10 @@ type Configurator interface {
 	// ReceiverInfo returns static information about the GPS receiver.
 	ReceiverInfo() *ReceiverInfo
 
+	// TrustedTimePacketBuilder returns a receiver-specific trusted-time
+	// packet builder when requested and supported.
+	TrustedTimePacketBuilder() TrustedTimePacketBuilder
+
 	// ConfigSupport returns the configuration options this implementation supports.
 	ConfigSupport() ConfigSupportFlags
 

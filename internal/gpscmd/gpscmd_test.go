@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 )
@@ -35,6 +36,35 @@ func TestGnssListSet(t *testing.T) {
 	}
 	if err.Error() != "invalid GNSS name: empty string" {
 		t.Errorf("Unexpected error message for empty string, got %v", err.Error())
+	}
+}
+
+type trustedTimeBuilderFunc func(*gpsprot.TimeEstimate, time.Time) ([]byte, error)
+
+func (f trustedTimeBuilderFunc) TrustedTimePacket(est *gpsprot.TimeEstimate, now time.Time) ([]byte, error) {
+	return f(est, now)
+}
+
+func TestSendTrustedTime(t *testing.T) {
+	est := &gpsprot.TimeEstimate{EstimatedTime: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
+	want := []byte{0x01, 0x02, 0x03}
+	var gotEst *gpsprot.TimeEstimate
+	builder := trustedTimeBuilderFunc(func(est *gpsprot.TimeEstimate, now time.Time) ([]byte, error) {
+		gotEst = est
+		if now.IsZero() {
+			t.Fatal("builder got zero build time")
+		}
+		return want, nil
+	})
+	var out bytes.Buffer
+	if err := sendTrustedTime(slog.Default(), &out, builder, est); err != nil {
+		t.Fatalf("sendTrustedTime() error = %v", err)
+	}
+	if gotEst != est {
+		t.Fatalf("builder got estimate %p, want %p", gotEst, est)
+	}
+	if !bytes.Equal(out.Bytes(), want) {
+		t.Fatalf("written packet = %x, want %x", out.Bytes(), want)
 	}
 }
 
