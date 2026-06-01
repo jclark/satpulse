@@ -209,12 +209,14 @@ def check_packet_log(ctx):
 
 # Log lines expected under hardware-free FIFO replay and smoke teardown:
 # no PHC; GPS detection times out until packets flow; and the Ntrip
-# caster logs a write error when the test disconnects its client.
+# caster / serial proxy log a write error when the test disconnects its
+# client.
 ALLOWED_WARNINGS = (
     "running without a PTP hardware clock",
     "GPS detection failed",
     "no output detected",
-    "error flushing ntrip stream",  # client disconnect during teardown
+    "error flushing ntrip stream",        # ntrip client disconnect during teardown
+    "error writing to proxy connection",  # proxy client disconnect during teardown
 )
 
 
@@ -333,3 +335,102 @@ def check_ntrip_unauthorized(ctx, mount):
     """An unauthenticated request to a protected mountpoint is rejected."""
     status, _ = ntrip_request(ctx.ntrip_port, mount)
     assert status == 401, f"protected mount {mount} expected 401, got {status}"
+
+
+# --- Serial proxy checks ----------------------------------------------------
+
+
+def _log_packets(path, tag=None):
+    """Input packets from a JSONL packet log as (tag, msg, bin-hex-lowercase).
+
+    Skips metadata, sent (`out`), and non-tagged lines; optionally filters
+    to a single tag.
+    """
+    out = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if e.get("out") or not e.get("tag"):
+                continue
+            if tag and e["tag"] != tag:
+                continue
+            out.append((e["tag"], e.get("msg"), (e.get("bin") or "").lower()))
+    return out
+
+
+def check_proxy_tcp(ctx, protocol="UBX", read_seconds=3.0, connect_timeout=15.0):
+    """A read-only TCP proxy filtered to `protocol` forwards that protocol's
+    packets, and the forwarded bytes are a contiguous slice of the source log.
+
+    The proxy comes up after GPS detection, so poll-connect until it
+    accepts; the single successful connection is the reading client (no
+    throwaway probe that would leave a subscriber to error on disconnect).
+    """
+    import socket
+
+    deadline = time.time() + connect_timeout
+    conn = None
+    while time.time() < deadline:
+        try:
+            conn = socket.create_connection(("127.0.0.1", ctx.proxy_tcp_port), timeout=1)
+            break
+        except OSError:
+            time.sleep(0.1)
+    assert conn is not None, f"proxy TCP port {ctx.proxy_tcp_port} never accepted a connection"
+    buf = b""
+    conn.settimeout(read_seconds)
+    stop = time.time() + read_seconds
+    try:
+        while time.time() < stop:
+            try:
+                chunk = conn.recv(4096)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            buf += chunk
+    finally:
+        conn.close()
+    assert buf, "proxy TCP delivered no data"
+    # The proxy forwards whole packets in scan order, so the bytes received
+    # are a contiguous slice of the source log's same-protocol packets.
+    concat = b"".join(bytes.fromhex(b) for (_, _, b) in _log_packets(ctx.packet_log, protocol) if b)
+    assert buf in concat, "proxy TCP bytes are not a slice of the source log's packets"
+    return len(buf)
+
+
+def check_proxy_socket_capture(ctx, protocol="UBX", capture_seconds=3.0):
+    """satpulsetool captures the proxy Unix-socket stream to a packet log,
+    and every captured packet exists in the source log.
+
+    Exercises satpulsetool's --socket/--capture/--packet-log path (passive
+    capture: it only reads, so it works against a read-only proxy).
+    """
+    sock = ctx.proxy_socket
+    assert poll(lambda: os.path.exists(sock)), f"proxy socket {sock} not created"
+    cap = os.path.join(ctx.run_dir, "capture.jsonl")
+    cmd = [
+        ctx.satpulsetool, "gps", "--socket", sock,
+        "--capture", str(capture_seconds), "--packet-log", cap,
+    ]
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       timeout=capture_seconds + 15)
+    assert p.returncode == 0, (
+        f"satpulsetool capture failed ({p.returncode}): "
+        f"{p.stderr.decode('utf-8', 'replace')[-500:]}"
+    )
+    captured = _log_packets(cap, protocol)
+    assert captured, f"no {protocol} packets captured via proxy socket"
+    assert len(captured) == len(_log_packets(cap)), (
+        f"proxy socket forwarded non-{protocol} packets despite filter"
+    )
+    src = {b for (_, _, b) in _log_packets(ctx.packet_log, protocol) if b}
+    missing = [m for (_, m, b) in captured if b and b not in src]
+    assert not missing, f"captured packets not present in source log: {missing[:5]}"
+    return len(captured)

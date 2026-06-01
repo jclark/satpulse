@@ -95,6 +95,14 @@ class Context:
     def ntrip_port(self):
         return self.port("SATPULSE_TEST_NTRIP_PORT")
 
+    @property
+    def proxy_tcp_port(self):
+        return self.port("SATPULSE_TEST_PROXY_TCP_PORT")
+
+    @property
+    def proxy_socket(self):
+        return self.env["SATPULSE_TEST_PROXY_SOCKET"]
+
     def http_url(self, path):
         return f"http://127.0.0.1:{self.http_port}{path}"
 
@@ -209,6 +217,7 @@ def allocate_env(name, index, run_dir):
         "SATPULSE_TEST_CONFIG": os.path.join(run_dir, "satpulse.toml"),
         "SATPULSE_TEST_FIFO": os.path.join(run_dir, "gps.fifo"),
         "SATPULSE_TEST_LOG_DIR": log_dir,
+        "SATPULSE_TEST_PROXY_SOCKET": os.path.join(run_dir, "proxy.sock"),
     }
     for key, off in PORT_OFFSETS.items():
         env[key] = str(base + off)
