@@ -1,0 +1,13 @@
+# HTTP endpoint with GUI and metrics disabled, position only.
+[serial]
+device = "${SATPULSE_TEST_FIFO}"
+
+[gps]
+config = false
+vendor = "u-blox"
+
+[[http]]
+listen = "127.0.0.1:${SATPULSE_TEST_HTTP_PORT}"
+gui = false
+metrics = false
+position = true

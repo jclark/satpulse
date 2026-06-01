@@ -1,0 +1,18 @@
+# Ntrip caster with an authenticated mountpoint.
+[serial]
+device = "${SATPULSE_TEST_FIFO}"
+
+[gps]
+config = false
+vendor = "u-blox"
+
+[[user]]
+name = "rover"
+password = "secret"
+
+[ntrip]
+listen = "127.0.0.1:${SATPULSE_TEST_NTRIP_PORT}"
+
+[[ntrip.mountpoint]]
+name = "RTCM"
+auth.users = ["rover"]

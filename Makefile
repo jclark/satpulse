@@ -112,6 +112,9 @@ uninstall:
 test:
 	go test ./...
 
+smoketest: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool
+	python3 smoketest/run.py
+
 clean:
 	-rm -rf out
 
@@ -204,4 +207,4 @@ tag:
 untag:
 	git tag -d "$(VERSION_TAG)"
 
-.PHONY: $(ALL_GOARCH) all test install uninstall clean pkg deb rpm release man man.gz gpsmsg tag untag
+.PHONY: $(ALL_GOARCH) all test smoketest install uninstall clean pkg deb rpm release man man.gz gpsmsg tag untag

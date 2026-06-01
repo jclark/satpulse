@@ -1,0 +1,8 @@
+# Minimal config: no [log], [[http]], [ntrip], [stream], or [proxy] sections.
+# Exercises daemon startup, replay, and shutdown with nothing optional wired.
+[serial]
+device = "${SATPULSE_TEST_FIFO}"
+
+[gps]
+config = false
+vendor = "u-blox"
