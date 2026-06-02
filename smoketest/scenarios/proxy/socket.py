@@ -6,12 +6,13 @@ non-u-blox protocol filter. The check confirms only UNCB is forwarded and
 every captured packet exists in the source packet log.
 """
 
-import checks
+import common
+from scenarios import proxy
 
 PACKET_LOG = "gps/testdata/packets/unicore/UM980/raw-cross-460800.jsonl"
 FACTOR = 6
 
 
-def run(ctx):
-    checks.check_proxy_socket_capture(ctx, protocol="UNCB", capture_seconds=7.0)
+def run(ctx: common.SmokeContext) -> None:
+    proxy.check_socket_capture(ctx, protocol="UNCB", capture_seconds=7.0)
     ctx.wait_replay()

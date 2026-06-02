@@ -16,7 +16,7 @@ Build the binaries first, then run the suite:
 ```sh
 make
 python3 smoketest/run.py            # run all scenarios in parallel
-python3 smoketest/run.py http-full  # run named scenarios
+python3 smoketest/run.py http/full  # run named scenarios
 python3 smoketest/run.py --list     # list scenarios
 python3 smoketest/run.py -j 1        # run serially
 ```
@@ -35,7 +35,7 @@ For each scenario the runner (`run.py`):
 
 1. allocates a resource block (a port range and per-run paths) so
    scenarios are parallel-safe;
-2. renders the scenario's `satpulse.toml.in` template, substituting the
+2. renders the scenario's `<name>.toml.in` template, substituting the
    `SATPULSE_TEST_*` resource variables;
 3. creates the FIFO and starts `satpulsed`;
 4. starts a single `satpulsetool pack --realtime <factor>` replay of the
@@ -59,41 +59,77 @@ staying fast in CI.
 
 ```
 smoketest/
-  run.py            execution environment: resources, replay, shutdown
-  checks.py         reusable checks (HTTP, metrics, SSE, logs, Ntrip)
-  scenarios/<name>/
-    satpulse.toml.in  config template
-    scenario.py       PACKET_LOG, FACTOR, and run(ctx)
+  run.py              execution environment: resources, replay, shutdown
+  common.py           checks and helpers shared across scenario families
+  Makefile            Python dev tasks (typecheck, dev-deps, update-deps)
+  pyproject.toml      dev-only Python tooling config
+  scenarios/
+    basic/minimal.py
+    basic/minimal.toml.in
+    proxy/__init__.py
+    http/full.py
+    http/full.toml.in
 ```
 
-A scenario owns the meaning of its test. `scenario.py` declares:
+A scenario owns the meaning of its test. Each scenario ID is listed explicitly
+in `run.py` as `family/name`, and maps to:
+
+- `scenarios/family/name.py` -- scenario module
+- `scenarios/family/name.toml.in` -- config template
+
+The scenario module declares:
 
 - `PACKET_LOG` -- packet log to replay (path relative to the repo root;
   the scenarios reuse logs under `gps/testdata/packets/`);
 - `FACTOR` -- replay speedup factor;
-- `run(ctx)` -- the checks to perform, using helpers from `checks.py`.
+- `run(ctx)` -- the checks to perform, using helpers from `common.py` and
+  the owning scenario-family package.
+
+Checks used only by one scenario family live in that family's package, e.g.
+`scenarios/ntrip/__init__.py` or `scenarios/proxy/__init__.py`. Keep
+top-level `common.py` for checks and helpers that are genuinely common across
+scenario families.
+
+## Development checks
+
+Running smoke tests has no Python dependency beyond the standard library. Dev
+tools are scoped to `smoketest/`:
+
+```sh
+cd smoketest
+make dev-deps
+make typecheck
+make update-deps
+```
+
+`make typecheck` runs strict mypy over the explicit Python file list in
+`smoketest/Makefile`.
 
 ## Scenarios
 
-- `minimal` -- no optional sections; just start, replay, shut down.
-- `logging` -- event, track, and packet logs written with expected content.
-- `http-full` -- default HTTP endpoint: `/position`, `/metrics`, GUI HTML, SSE.
-- `http-disabled` -- HTTP endpoint with GUI and metrics off, position
+- `basic/minimal` -- minimal config: serial input only; just start, replay,
+  shut down.
+- `logging/all` -- event, track, and packet logs written with expected content.
+- `http/full` -- default HTTP endpoint: `/position`, `/metrics`, GUI HTML, SSE.
+- `http/disabled` -- HTTP endpoint with GUI and metrics off, position
   only; also guards clean shutdown for GUI-disabled endpoints.
-- `ntrip` -- Ntrip caster source table and RTCM streaming.
-- `ntrip-auth` -- Ntrip caster with an authenticated mountpoint.
-- `ntp` -- chrony SOCK refclock: a pure 1 Hz RMC stream drives serial timing
+- `ntrip/basic` -- Ntrip caster source table and RTCM streaming.
+- `ntrip/auth` -- Ntrip caster with an authenticated mountpoint.
+- `ntp/sock` -- chrony SOCK refclock: a pure 1 Hz RMC stream drives serial timing
   mode, and the samples are well-formed, consistently timestamped, and carry
   the correct GPS time.
-- `stream-push` -- Ntrip push: the daemon forwards the log's RTCM to a remote
+- `proxy/tcp` -- read-only TCP serial proxies with protocol filters.
+- `proxy/socket` -- read-only Unix-socket serial proxy with a protocol filter.
+- `stream/push` -- Ntrip push: the daemon forwards the log's RTCM to a remote
   caster (the pushed stream matches the source log's RTCM), and a second push
   entry with a wrong password is permanently rejected, so the daemon gives up
   on it rather than reconnecting forever.
 
 The Ntrip caster scenarios use `satpulsetool ntrip` as the client. The
-`stream-push` scenario uses a built-in fake caster (`fakecaster.py`) as the
-remote peer, so it needs no external dependency: it accepts the daemon's Ntrip
-v1 SOURCE feed and captures the payload, which the check scans back into RTCM.
+`stream/push` scenario uses the built-in Ntrip fake caster
+(`scenarios/ntrip/fakecaster.py`) as the remote peer, so it needs no external
+dependency: it accepts the daemon's Ntrip v1 SOURCE feed and captures the
+payload, which the check scans back into RTCM.
 A real-peer variant using `str2str` from RTKLIB could be added later.
 
 `stream.pull` is not covered: pull feeds corrections back to the receiver over

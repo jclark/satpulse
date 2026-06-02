@@ -4,15 +4,17 @@
 Runs real satpulsed binaries fed by realtime packet-log replay through a
 FIFO, with no root and no GPS hardware. See plan/smoke-test.md.
 
-Each scenario lives in scenarios/<name>/ as:
-  - satpulse.toml.in : config template using ${SATPULSE_TEST_*} variables
-  - scenario.py      : defines PACKET_LOG, FACTOR, and run(ctx)
+Each scenario has an explicit ID in SCENARIOS. For scenario ID family/name:
+  - scenarios/family/name.toml.in : config template using ${SATPULSE_TEST_*}
+  - scenarios/family/name.py      : defines PACKET_LOG, FACTOR, and run(ctx)
 
 The runner allocates a resource block (ports, paths) per scenario, renders
 the config, starts the daemon, replays the packet log into the FIFO, then
 calls the scenario's run(ctx) to perform its checks. Scenarios are
 parallel-safe and run concurrently by default.
 """
+
+from __future__ import annotations
 
 import argparse
 import concurrent.futures
@@ -31,13 +33,34 @@ import threading
 import time
 import tomllib
 import traceback
+from typing import IO, Protocol, cast
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)  # let run.py and scenarios import the shared checks module
 REPO = os.path.dirname(HERE)
 
-import checks  # noqa: E402  (after sys.path is set up)
+import common  # noqa: E402  (after sys.path is set up)
 SCENARIOS_DIR = os.path.join(HERE, "scenarios")
+
+SCENARIOS = [
+    "basic/minimal",
+    "logging/all",
+    "http/full",
+    "http/disabled",
+    "ntrip/basic",
+    "ntrip/auth",
+    "ntp/sock",
+    "proxy/tcp",
+    "proxy/socket",
+    "stream/push",
+]
+
+
+class ScenarioModule(Protocol):
+    PACKET_LOG: str
+    FACTOR: int
+
+    def run(self, ctx: Context) -> None: ...
 
 # Named resources mapped to offsets within each scenario's port block.
 PORT_OFFSETS = {
@@ -52,7 +75,7 @@ PORT_OFFSETS = {
 PORT_BLOCK = 16
 
 
-def _ephemeral_floor():
+def _ephemeral_floor() -> int:
     """Lowest port the kernel allocates for ephemeral (outbound) connections."""
     try:
         with open("/proc/sys/net/ipv4/ip_local_port_range") as f:
@@ -71,7 +94,7 @@ _port_lock = threading.Lock()
 _port_cursor = PORT_BASE
 
 
-def _port_bindable(port):
+def _port_bindable(port: int) -> bool:
     """True if a fresh TCP listener can bind 127.0.0.1:port right now."""
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -83,7 +106,7 @@ def _port_bindable(port):
         s.close()
 
 
-def alloc_port_block():
+def alloc_port_block() -> int:
     """Reserve a free, contiguous block of PORT_BLOCK ports below the ephemeral range.
 
     Parallel scenarios share a cursor under a lock so their blocks are disjoint,
@@ -104,25 +127,37 @@ def alloc_port_block():
 _out_lock = threading.Lock()
 
 
-def emit(msg):
+def emit(msg: str) -> None:
     """Print a progress line atomically across parallel worker threads."""
     with _out_lock:
         print(msg, flush=True)
 
 
-def arch():
+def arch() -> str:
     m = platform.machine()
     return {"x86_64": "amd64", "aarch64": "arm64"}.get(m, m)
 
 
-def bin_path(name):
+def bin_path(name: str) -> str:
     return os.path.join(REPO, "out", arch(), name)
 
 
 class Context:
     """Resolved resources and helpers passed to a scenario's run(ctx)."""
 
-    def __init__(self, name, run_dir, env, factor, packet_log, daemon_log, has_http, has_ntrip, has_ntp, has_push):
+    def __init__(
+        self,
+        name: str,
+        run_dir: str,
+        env: dict[str, str],
+        factor: int | float,
+        packet_log: str,
+        daemon_log: str,
+        has_http: bool,
+        has_ntrip: bool,
+        has_ntp: bool,
+        has_push: bool,
+    ) -> None:
         self.name = name
         self.run_dir = run_dir
         self.env = env
@@ -136,49 +171,52 @@ class Context:
         self.replay_err = os.path.join(run_dir, "replay.err")
         self.satpulsed = bin_path("satpulsed")
         self.satpulsetool = bin_path("satpulsetool")
-        self.daemon = None
-        self.replay_proc = None
+        self.daemon: subprocess.Popen[bytes] | None = None
+        self.replay_proc: subprocess.Popen[bytes] | None = None
+        self._replay_fifo: IO[bytes] | None = None
+        self._replay_err_file: IO[bytes] | None = None
         # Chrony SOCK consumer: a separate ntpsock.py process binds the socket
         # before the daemon starts and logs received samples to ntp_log.
         self.ntp_log = os.path.join(run_dir, "ntp.jsonl")
-        self.ntp_proc = None
-        # Fake Ntrip casters: one fakecaster.py process per [[stream.push]]
+        self.ntp_proc: subprocess.Popen[bytes] | None = None
+        self._ntp_log_file: IO[bytes] | None = None
+        # Fake Ntrip casters: one scenarios/ntrip/fakecaster.py process per [[stream.push]]
         # entry, each listening before the daemon starts. The first entry's
         # caster accepts and appends the pushed payload to caster_capture; their
         # diagnostics share caster_log.
         self.caster_capture = os.path.join(run_dir, "pushed.bin")
         self.caster_log = os.path.join(run_dir, "caster.log")
-        self.caster_procs = []
-        self._caster_log_file = None
+        self.caster_procs: list[subprocess.Popen[bytes]] = []
+        self._caster_log_file: IO[bytes] | None = None
 
     @property
-    def fifo(self):
+    def fifo(self) -> str:
         return self.env["SATPULSE_TEST_FIFO"]
 
     @property
-    def log_dir(self):
+    def log_dir(self) -> str:
         return self.env["SATPULSE_TEST_LOG_DIR"]
 
-    def port(self, key):
+    def port(self, key: str) -> int:
         return int(self.env[key])
 
     @property
-    def http_port(self):
+    def http_port(self) -> int:
         return self.port("SATPULSE_TEST_HTTP_PORT")
 
     @property
-    def ntrip_port(self):
+    def ntrip_port(self) -> int:
         return self.port("SATPULSE_TEST_NTRIP_PORT")
 
     @property
-    def proxy_socket(self):
+    def proxy_socket(self) -> str:
         return self.env["SATPULSE_TEST_PROXY_SOCKET"]
 
     @property
-    def ntp_sock(self):
+    def ntp_sock(self) -> str:
         return self.env["SATPULSE_TEST_NTP_SOCK"]
 
-    def start_ntp_sock(self, timeout=5):
+    def start_ntp_sock(self, timeout: float = 5) -> None:
         """Spawn the chrony SOCK consumer and wait for it to bind the socket.
 
         satpulsed plays the sender: it sends to this path and warns if no one
@@ -186,11 +224,11 @@ class Context:
         Binding an AF_UNIX datagram socket creates the path, so poll for it.
         """
         f = open(self.ntp_log, "wb")
+        self._ntp_log_file = f
         self.ntp_proc = subprocess.Popen(
             [sys.executable, os.path.join(HERE, "ntpsock.py"), "-f", "json", self.ntp_sock],
             stdout=f, stderr=subprocess.STDOUT,
         )
-        self.ntp_proc._out = f
         deadline = time.time() + timeout
         while not os.path.exists(self.ntp_sock):
             if self.ntp_proc.poll() is not None:
@@ -199,7 +237,7 @@ class Context:
                 raise RuntimeError(f"ntp consumer did not bind {self.ntp_sock} within {timeout}s")
             time.sleep(0.02)
 
-    def stop_ntp_sock(self):
+    def stop_ntp_sock(self) -> None:
         if self.ntp_proc is None:
             return
         if self.ntp_proc.poll() is None:
@@ -208,9 +246,11 @@ class Context:
                 self.ntp_proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 self.ntp_proc.kill()
-        self.ntp_proc._out.close()
+        if self._ntp_log_file is not None:
+            self._ntp_log_file.close()
+            self._ntp_log_file = None
 
-    def start_caster(self, timeout=5):
+    def start_caster(self, timeout: float = 5) -> None:
         """Start one fake Ntrip caster per [[stream.push]] entry, before the daemon.
 
         The daemon's push writers connect out at startup, so the casters must
@@ -235,7 +275,7 @@ class Context:
             ports.append(port)
             capture = self.caster_capture if i == 0 else os.path.join(self.run_dir, f"pushed-{i}.bin")
             self.caster_procs.append(subprocess.Popen(
-                [sys.executable, os.path.join(HERE, "fakecaster.py"),
+                [sys.executable, os.path.join(SCENARIOS_DIR, "ntrip", "fakecaster.py"),
                  f"127.0.0.1:{port}", "-o", capture,
                  "--mountpoint", good["mountpoint"], "--password", good["password"]],
                 stdout=self._caster_log_file, stderr=subprocess.STDOUT,
@@ -249,7 +289,7 @@ class Context:
                     raise RuntimeError(f"fake caster did not listen on {port} within {timeout}s")
                 time.sleep(0.02)
 
-    def wait_push(self, timeout=15):
+    def wait_push(self, timeout: float = 15) -> None:
         """Wait until the daemon has completed its SOURCE handshake to the caster.
 
         Gates replay: Push subscribes to the packet bcast as it connects, so
@@ -272,7 +312,7 @@ class Context:
                 raise RuntimeError(f"daemon did not push to the caster within {timeout}s")
             time.sleep(0.05)
 
-    def stop_caster(self):
+    def stop_caster(self) -> None:
         for p in self.caster_procs:
             if p.poll() is None:
                 p.terminate()
@@ -283,10 +323,10 @@ class Context:
         if self._caster_log_file is not None:
             self._caster_log_file.close()
 
-    def http_url(self, path):
+    def http_url(self, path: str) -> str:
         return f"http://127.0.0.1:{self.http_port}{path}"
 
-    def wait_listeners(self, timeout=15):
+    def wait_listeners(self, timeout: float = 15) -> None:
         """Wait until the daemon's configured listeners accept connections.
 
         satpulsed brings up its HTTP and Ntrip listeners only after GPS
@@ -309,7 +349,7 @@ class Context:
                     raise RuntimeError(f"daemon did not listen on port {p} within {timeout}s")
                 time.sleep(0.05)
 
-    def start_replay(self, open_timeout=15):
+    def start_replay(self, open_timeout: float = 15) -> subprocess.Popen[bytes]:
         """Start the single packet-log replay into the FIFO in the background.
 
         Exactly one replay runs per daemon lifetime: concatenating replays
@@ -322,12 +362,12 @@ class Context:
         cmd = [self.satpulsetool, "pack", "--realtime", str(self.factor), self.packet_log]
         errf = open(self.replay_err, "wb")
         p = subprocess.Popen(cmd, stdout=f, stderr=errf)
-        p._fifo = f  # keep the write fd alive for the process lifetime
-        p._errf = errf
+        self._replay_fifo = f
+        self._replay_err_file = errf
         self.replay_proc = p
         return p
 
-    def _open_fifo_write(self, timeout):
+    def _open_fifo_write(self, timeout: float) -> IO[bytes]:
         """Open the FIFO write end, waiting for the daemon to open the read end.
 
         A blocking open(O_WRONLY) would hang forever if the daemon crashes
@@ -355,7 +395,7 @@ class Context:
         fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
         return os.fdopen(fd, "wb")
 
-    def wait_replay(self, timeout=60):
+    def wait_replay(self, timeout: float = 60) -> None:
         """Block until the background replay finishes, checking its exit status.
 
         A non-zero pack exit (malformed packet log, broken replay) is
@@ -370,10 +410,19 @@ class Context:
         if self.replay_proc is None:
             return
         rc = self.replay_proc.wait(timeout=timeout)
+        self._close_replay_files()
         if rc != 0:
             raise RuntimeError(f"replay (pack) exited with code {rc}: {self._replay_stderr()}")
 
-    def _replay_stderr(self):
+    def _close_replay_files(self) -> None:
+        if self._replay_fifo is not None:
+            self._replay_fifo.close()
+            self._replay_fifo = None
+        if self._replay_err_file is not None:
+            self._replay_err_file.close()
+            self._replay_err_file = None
+
+    def _replay_stderr(self) -> str:
         try:
             with open(self.replay_err, errors="replace") as fh:
                 return fh.read().strip()[-2000:] or "(no stderr)"
@@ -381,15 +430,17 @@ class Context:
             return "(no stderr)"
 
 
-def load_scenario(name):
-    path = os.path.join(SCENARIOS_DIR, name, "scenario.py")
-    spec = importlib.util.spec_from_file_location(f"scenario_{name}", path)
+def load_scenario(name: str) -> ScenarioModule:
+    path = os.path.join(SCENARIOS_DIR, f"{name}.py")
+    spec = importlib.util.spec_from_file_location(f"scenario_{name.replace('/', '_')}", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load scenario {name} from {path}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod
+    return cast(ScenarioModule, mod)
 
 
-def allocate_env(name, run_dir):
+def allocate_env(name: str, run_dir: str) -> dict[str, str]:
     base = alloc_port_block()
     log_dir = os.path.join(run_dir, "log")
     env = {
@@ -405,7 +456,7 @@ def allocate_env(name, run_dir):
     return env
 
 
-def render_config(template_path, out_path, env):
+def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tuple[bool, bool, bool, bool]:
     """Render the config template; report which listeners it configures.
 
     Returns (has_http, has_ntrip, has_ntp, has_push), detected from non-comment
@@ -427,7 +478,7 @@ def render_config(template_path, out_path, env):
             "[[stream.push]]" in headers)
 
 
-def port_free(port):
+def port_free(port: int) -> bool:
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=0.3):
             return False
@@ -435,7 +486,7 @@ def port_free(port):
         return True
 
 
-def stop_daemon(daemon, grace=5.0):
+def stop_daemon(daemon: subprocess.Popen[bytes], grace: float = 5.0) -> str | None:
     """Stop the daemon, escalating the way the systemd unit does.
 
     satpulsed catches both SIGINT and SIGTERM and treats them as the same
@@ -464,16 +515,16 @@ def stop_daemon(daemon, grace=5.0):
     )
 
 
-def run_scenario(name):
+def run_scenario(name: str) -> tuple[str, bool, str]:
     emit(f"START {name}")
     scen = load_scenario(name)
-    factor = getattr(scen, "FACTOR", 5)
+    factor = scen.FACTOR
     packet_log = scen.PACKET_LOG
     if not os.path.isabs(packet_log):
         packet_log = os.path.join(REPO, packet_log)
-    config_tmpl = os.path.join(SCENARIOS_DIR, name, "satpulse.toml.in")
+    config_tmpl = os.path.join(SCENARIOS_DIR, f"{name}.toml.in")
 
-    run_dir = tempfile.mkdtemp(prefix=f"satpulse-smoke-{name}-")
+    run_dir = tempfile.mkdtemp(prefix=f"satpulse-smoke-{name.replace('/', '-')}-")
     env = allocate_env(name, run_dir)
     env["SATPULSE_TEST_PACKET_LOG"] = packet_log
     os.makedirs(env["SATPULSE_TEST_LOG_DIR"], exist_ok=True)
@@ -483,7 +534,7 @@ def run_scenario(name):
     daemon_log = os.path.join(run_dir, "satpulsed.log")
     ctx = Context(name, run_dir, env, factor, packet_log, daemon_log, has_http, has_ntrip, has_ntp, has_push)
 
-    daemon = None
+    daemon: subprocess.Popen[bytes] | None = None
     keep = False
     try:
         # Bind the chrony SOCK consumer before the daemon starts, so its first
@@ -541,7 +592,7 @@ def run_scenario(name):
         # (and any SIGQUIT goroutine dump) are included. A scenario may declare
         # ALLOWED_ERRORS for error lines it expects (e.g. a push it knows the
         # caster rejects).
-        checks.check_no_unexpected_errors(ctx, allowed=getattr(scen, "ALLOWED_ERRORS", ()))
+        common.check_no_unexpected_errors(ctx, allowed=getattr(scen, "ALLOWED_ERRORS", ()))
         return (name, True, "")
     except Exception:
         keep = True
@@ -549,6 +600,7 @@ def run_scenario(name):
     finally:
         if ctx.replay_proc is not None and ctx.replay_proc.poll() is None:
             ctx.replay_proc.kill()
+        ctx._close_replay_files()
         if daemon is not None and daemon.poll() is None:
             stop_daemon(daemon)
         ctx.stop_ntp_sock()
@@ -559,28 +611,20 @@ def run_scenario(name):
             shutil.rmtree(run_dir, ignore_errors=True)
 
 
-def discover_scenarios():
-    names = []
-    for entry in sorted(os.listdir(SCENARIOS_DIR)):
-        if os.path.isfile(os.path.join(SCENARIOS_DIR, entry, "scenario.py")):
-            names.append(entry)
-    return names
-
-
-def main():
+def main() -> int:
     ap = argparse.ArgumentParser(description="satpulsed daemon smoke tests")
     ap.add_argument("scenarios", nargs="*", help="scenario names (default: all)")
     ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("-l", "--list", action="store_true", help="list scenarios and exit")
     args = ap.parse_args()
 
-    available = discover_scenarios()
+    available = SCENARIOS
     if args.list:
         for n in available:
             print(n)
         return 0
 
-    selected = args.scenarios or available
+    selected = cast(list[str], args.scenarios) or list(available)
     unknown = [n for n in selected if n not in available]
     if unknown:
         print(f"unknown scenarios: {', '.join(unknown)}", file=sys.stderr)

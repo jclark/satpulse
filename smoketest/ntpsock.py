@@ -31,6 +31,8 @@ import stat
 import struct
 import sys
 import time
+from types import FrameType
+from typing import Sequence, TextIO, TypeAlias
 
 # struct sock_sample (native layout, as written by chrony's SOCK clients):
 #   struct timeval tv  -> sec, usec : int64 each on 64-bit Linux
@@ -42,11 +44,12 @@ import time
 SAMPLE_FMT = "@qqdiiii"
 SAMPLE_SIZE = struct.calcsize(SAMPLE_FMT)
 SOCK_MAGIC = 0x534F434B
+Record: TypeAlias = dict[str, object]
 
 
-def decode(data, recv):
+def decode(data: bytes, recv: float) -> Record:
     """Decode one datagram into a record dict; non-sample sizes are flagged."""
-    rec = {"recv": recv, "len": len(data)}
+    rec: Record = {"recv": recv, "len": len(data)}
     if len(data) == SAMPLE_SIZE:
         sec, usec, off, pulse, leap, _pad, magic = struct.unpack(SAMPLE_FMT, data)
         rec.update(sec=sec, usec=usec, offset=off, pulse=pulse, leap=leap, magic=magic)
@@ -55,24 +58,46 @@ def decode(data, recv):
     return rec
 
 
-def iso(t):
+def iso(t: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + f".{int((t % 1) * 1e6):06d}Z"
 
 
-def render_text(rec):
+def render_text(rec: Record) -> str:
     if "magic" not in rec:
-        return f"{iso(rec['recv'])} recv  unexpected {rec['len']}-byte datagram: {rec['hex']}"
-    tv = rec["sec"] + rec["usec"] * 1e-6
-    magic = "ok" if rec["magic"] == SOCK_MAGIC else f"BAD({rec['magic']:#x})"
-    kind = "pps" if rec["pulse"] else "sample"
+        return (
+            f"{iso(_float(rec['recv']))} recv  unexpected "
+            f"{_int(rec['len'])}-byte datagram: {_str(rec['hex'])}"
+        )
+    tv = _int(rec["sec"]) + _int(rec["usec"]) * 1e-6
+    magic_val = _int(rec["magic"])
+    magic = "ok" if magic_val == SOCK_MAGIC else f"BAD({magic_val:#x})"
+    kind = "pps" if _int(rec["pulse"]) else "sample"
     return (
-        f"{iso(rec['recv'])} recv  {kind} tv={iso(tv)} "
-        f"offset={rec['offset']:+.6f}s lag={(rec['recv'] - tv) * 1e3:.1f}ms "
-        f"leap={rec['leap']} magic={magic}"
+        f"{iso(_float(rec['recv']))} recv  {kind} tv={iso(tv)} "
+        f"offset={_float(rec['offset']):+.6f}s lag={(_float(rec['recv']) - tv) * 1e3:.1f}ms "
+        f"leap={_int(rec['leap'])} magic={magic}"
     )
 
 
-def bind(path, keep):
+def _float(v: object) -> float:
+    if isinstance(v, int | float):
+        return float(v)
+    raise TypeError(f"expected number, got {type(v).__name__}")
+
+
+def _int(v: object) -> int:
+    if isinstance(v, int):
+        return v
+    raise TypeError(f"expected int, got {type(v).__name__}")
+
+
+def _str(v: object) -> str:
+    if isinstance(v, str):
+        return v
+    raise TypeError(f"expected string, got {type(v).__name__}")
+
+
+def bind(path: str, keep: bool) -> socket.socket:
     """Bind an AF_UNIX datagram socket at path, replacing a stale socket file."""
     if os.path.exists(path) and stat.S_ISSOCK(os.stat(path).st_mode):
         os.unlink(path)
@@ -81,7 +106,7 @@ def bind(path, keep):
     return s
 
 
-def main(argv=None):
+def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("path", help="socket path to create and receive on")
     ap.add_argument("-o", "--output", help="write to this file instead of stdout")
@@ -97,7 +122,7 @@ def main(argv=None):
 
     stop = False
 
-    def handle(_signum, _frame):
+    def handle(_signum: int, _frame: FrameType | None) -> None:
         nonlocal stop
         stop = True
 
@@ -106,7 +131,7 @@ def main(argv=None):
 
     s = bind(args.path, args.keep)
     s.settimeout(0.5)
-    out = open(args.output, "w") if args.output else sys.stdout
+    out: TextIO = open(args.output, "w") if args.output else sys.stdout
     n = 0
     deadline = time.time() + args.duration if args.duration else None
     try:

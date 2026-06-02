@@ -3,15 +3,16 @@
 A pure 1 Hz GNRMC log drives serial timing mode, which feeds one SOCK sample
 per second. Replay must be realtime (factor 1): the offset stays constant only
 because the message UTC and the read clock advance together, so a tight offset
-spread is the real assertion. See checks.check_ntp_sock.
+spread is the real assertion. See scenarios.ntp.check_sock.
 """
 
-import checks
+import common
+from scenarios import ntp
 
 PACKET_LOG = "gps/testdata/packets/unicore/UM980/nmea-rmc.jsonl"
 FACTOR = 1
 
 
-def run(ctx):
+def run(ctx: common.SmokeContext) -> None:
     ctx.wait_replay()
-    checks.check_ntp_sock(ctx)
+    ntp.check_sock(ctx)

@@ -14,8 +14,8 @@ It implements only what a SOURCE client needs:
   - reply "ICY 200 OK\r\n" (or "ERROR - ...\r\n" on a mismatch)
   - append the rest of the connection to the capture file
 
-    fakecaster.py 127.0.0.1:2101 -o pushed.bin
-    fakecaster.py 127.0.0.1:2101 -o pushed.bin --mountpoint RTCM --password secret
+    scenarios/ntrip/fakecaster.py 127.0.0.1:2101 -o pushed.bin
+    scenarios/ntrip/fakecaster.py 127.0.0.1:2101 -o pushed.bin --mountpoint RTCM --password secret
 
 Diagnostic lines go to stdout (one per connection); the captured payload goes
 to the -o file. Runs until signalled. A connection that does not complete a
@@ -26,6 +26,8 @@ import signal
 import socket
 import sys
 import time
+from types import FrameType
+from typing import Sequence
 
 # Bound the handshake read so a connection that opens but never sends a
 # complete request (a readiness probe, a stalled peer) cannot wedge the
@@ -34,16 +36,16 @@ HANDSHAKE_TIMEOUT = 10.0
 MAX_HEADER = 8192
 
 
-def log(msg):
+def log(msg: str) -> None:
     sys.stdout.write(msg + "\n")
     sys.stdout.flush()
 
 
-def iso(t):
+def iso(t: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + "Z"
 
 
-def read_request(conn):
+def read_request(conn: socket.socket) -> tuple[bytes | None, bytes]:
     """Read request bytes up to the blank line; return (headers, leftover)."""
     conn.settimeout(HANDSHAKE_TIMEOUT)
     buf = b""
@@ -61,7 +63,7 @@ def read_request(conn):
     return head, rest
 
 
-def handle(conn, capture_path, want_mount, want_pw):
+def handle(conn: socket.socket, capture_path: str, want_mount: str, want_pw: str) -> None:
     """Run one SOURCE handshake and append the payload to capture_path."""
     head, rest = read_request(conn)
     if head is None:
@@ -101,7 +103,7 @@ def handle(conn, capture_path, want_mount, want_pw):
     log(f"{iso(time.time())} closed mount={mount} bytes={n}")
 
 
-def main(argv=None):
+def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("listen", help="address to listen on, host:port")
     ap.add_argument("-o", "--output", required=True, help="append captured payload to this file")
@@ -112,7 +114,7 @@ def main(argv=None):
     host, port = args.listen.rsplit(":", 1)
     stop = False
 
-    def handle_signal(_signum, _frame):
+    def handle_signal(_signum: int, _frame: FrameType | None) -> None:
         nonlocal stop
         stop = True
 

@@ -6,13 +6,14 @@ protocol and that the bytes are a slice of the source packet log. Uses a
 UBX+RTCM capture so both protocols flow throughout the replay.
 """
 
-import checks
+import common
+from scenarios import proxy
 
 PACKET_LOG = "gps/testdata/packets/u-blox/ZED-F9P/raw-cross-115200.jsonl"
 FACTOR = 3
 
 
-def run(ctx):
-    checks.check_proxy_tcp(ctx, ctx.port("SATPULSE_TEST_PROXY_TCP_PORT"), "UBX")
-    checks.check_proxy_tcp(ctx, ctx.port("SATPULSE_TEST_PROXY_TCP_RTCM_PORT"), "RTCM")
+def run(ctx: common.SmokeContext) -> None:
+    proxy.check_tcp(ctx, ctx.port("SATPULSE_TEST_PROXY_TCP_PORT"), "UBX")
+    proxy.check_tcp(ctx, ctx.port("SATPULSE_TEST_PROXY_TCP_RTCM_PORT"), "RTCM")
     ctx.wait_replay()
