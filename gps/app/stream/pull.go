@@ -1,7 +1,3 @@
-// Package stream connects to a correction source, scans packets, and writes
-// them to a serial port.  It handles reconnection internally and exposes a
-// bcast of scanned packets so callers can subscribe for UI updates, logging,
-// or other purposes.
 package stream
 
 import (
@@ -14,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -174,28 +169,6 @@ func (s *NtripSource) userAgent() string {
 		return "NTRIP satpulse"
 	}
 	return "NTRIP satpulse/" + s.UserAgent.Version
-}
-
-// State represents the connection state of a Pull.
-type State int
-
-const (
-	Connecting   State = iota
-	Connected
-	Reconnecting
-)
-
-func (s State) String() string {
-	switch s {
-	case Connecting:
-		return "connecting"
-	case Connected:
-		return "connected"
-	case Reconnecting:
-		return "reconnecting"
-	default:
-		return "unknown"
-	}
 }
 
 // Pull reads correction packets from a Source and writes them to a
@@ -469,52 +442,4 @@ func (s *Pull) writer(ctx context.Context, lg *slog.Logger,
 		}
 	}
 	return nil
-}
-
-// pruningQueue is a FIFO that deduplicates by message type.  When a
-// packet with the same message type is enqueued, the older entry is
-// removed -- unless both entries belong to the same MSM epoch, in
-// which case a single epoch can legitimately contain multiple packets
-// with the same message type.
-type pruningQueue struct {
-	entries  []pqEntry
-	msmEpoch uint64
-}
-
-type pqEntry struct {
-	pkt      scan.Packet
-	msgID    string
-	msmEpoch *uint64
-}
-
-func (q *pruningQueue) len() int {
-	return len(q.entries)
-}
-
-func (q *pruningQueue) reconnect() {
-	q.msmEpoch++
-}
-
-func (q *pruningQueue) enqueue(pkt scan.Packet) {
-	msgID := pkt.Format.MsgID([]byte(pkt.Data))
-	var epoch *uint64
-	if pkt.Format.Tag() == gpsreg.TagRTCM {
-		if mmb, ok := rtcmbin.MultipleMessageBit(pkt.Data); ok {
-			ep := q.msmEpoch
-			epoch = &ep
-			if !mmb {
-				q.msmEpoch++
-			}
-		}
-	}
-	q.entries = slices.DeleteFunc(q.entries, func(e pqEntry) bool {
-		return e.msgID == msgID && (epoch == nil || e.msmEpoch == nil || *epoch != *e.msmEpoch)
-	})
-	q.entries = append(q.entries, pqEntry{pkt: pkt, msgID: msgID, msmEpoch: epoch})
-}
-
-func (q *pruningQueue) dequeue() scan.Packet {
-	e := q.entries[0]
-	q.entries = q.entries[1:]
-	return e.pkt
 }
