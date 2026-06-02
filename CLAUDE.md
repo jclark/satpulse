@@ -76,6 +76,11 @@ Testing:
 - All tests: `make test`
 - Test files follow `*_test.go` convention
 
+Black-box smoke tests of the real `satpulsed` binary live in `smoketest/`
+(daemon-level config wiring, endpoints, logging, Ntrip, shutdown; no root or GPS
+hardware). Build first with `make`, then run `make smoketest`. See
+@smoketest/CLAUDE.md.
+
 System testing on real hardware is doing using ansible in `systest/` directory.
 
 ## Git usage
