@@ -47,6 +47,7 @@ PORT_OFFSETS = {
     "SATPULSE_TEST_PROXY_TCP_RTCM_PORT": 3,
     "SATPULSE_TEST_REMOTE_CASTER_PORT": 4,
     "SATPULSE_TEST_TOOL_PORT": 5,
+    "SATPULSE_TEST_REMOTE_CASTER_PORT2": 6,
 }
 PORT_BLOCK = 16
 
@@ -141,12 +142,14 @@ class Context:
         # before the daemon starts and logs received samples to ntp_log.
         self.ntp_log = os.path.join(run_dir, "ntp.jsonl")
         self.ntp_proc = None
-        # Fake Ntrip caster: a fakecaster.py process listens before the daemon
-        # starts, accepts the daemon's [[stream.push]] SOURCE feed, and appends
-        # the pushed payload to caster_capture; its diagnostics go to caster_log.
+        # Fake Ntrip casters: one fakecaster.py process per [[stream.push]]
+        # entry, each listening before the daemon starts. The first entry's
+        # caster accepts and appends the pushed payload to caster_capture; their
+        # diagnostics share caster_log.
         self.caster_capture = os.path.join(run_dir, "pushed.bin")
         self.caster_log = os.path.join(run_dir, "caster.log")
-        self.caster_proc = None
+        self.caster_procs = []
+        self._caster_log_file = None
 
     @property
     def fifo(self):
@@ -174,10 +177,6 @@ class Context:
     @property
     def ntp_sock(self):
         return self.env["SATPULSE_TEST_NTP_SOCK"]
-
-    @property
-    def remote_caster_port(self):
-        return self.port("SATPULSE_TEST_REMOTE_CASTER_PORT")
 
     def start_ntp_sock(self, timeout=5):
         """Spawn the chrony SOCK consumer and wait for it to bind the socket.
@@ -212,35 +211,43 @@ class Context:
         self.ntp_proc._out.close()
 
     def start_caster(self, timeout=5):
-        """Spawn the fake Ntrip caster and wait until it accepts connections.
+        """Start one fake Ntrip caster per [[stream.push]] entry, before the daemon.
 
-        The daemon's push writer connects out at startup, so the caster must
-        be listening before the daemon starts; otherwise the connect fails,
-        logs an error (which check_no_unexpected_errors would flag), and backs
-        off. A readiness probe that does not complete a SOURCE handshake is
-        ignored by the caster, so polling the port is safe.
+        The daemon's push writers connect out at startup, so the casters must
+        be listening first; otherwise a connect fails, logs an error (which
+        check_no_unexpected_errors would flag), and backs off. A readiness
+        probe that does not complete a SOURCE handshake is ignored, so polling
+        the port is safe.
 
-        The caster is told to require the configured mountpoint and password,
-        read back from the rendered config, so a daemon that ignored or
-        mangled them would have its SOURCE handshake rejected and push nothing.
+        Every caster requires the first entry's mountpoint and password (the
+        good credentials, read back from the rendered config), so an entry that
+        sends a wrong password is rejected with "Bad Password" -- a permanent
+        failure the daemon must give up on. Each caster serves a single
+        connection, so the long-lived good feed never blocks a reject.
         """
         with open(self.env["SATPULSE_TEST_CONFIG"], "rb") as cf:
-            ntrip = tomllib.load(cf)["stream"]["push"][0]["ntrip"]
-        f = open(self.caster_log, "wb")
-        self.caster_proc = subprocess.Popen(
-            [sys.executable, os.path.join(HERE, "fakecaster.py"),
-             f"127.0.0.1:{self.remote_caster_port}", "-o", self.caster_capture,
-             "--mountpoint", ntrip["mountpoint"], "--password", ntrip["password"]],
-            stdout=f, stderr=subprocess.STDOUT,
-        )
-        self.caster_proc._out = f
+            push = tomllib.load(cf)["stream"]["push"]
+        good = push[0]["ntrip"]
+        self._caster_log_file = open(self.caster_log, "wb")
+        ports = []
+        for i, entry in enumerate(push):
+            port = int(entry["ntrip"]["address"].rsplit(":", 1)[1])
+            ports.append(port)
+            capture = self.caster_capture if i == 0 else os.path.join(self.run_dir, f"pushed-{i}.bin")
+            self.caster_procs.append(subprocess.Popen(
+                [sys.executable, os.path.join(HERE, "fakecaster.py"),
+                 f"127.0.0.1:{port}", "-o", capture,
+                 "--mountpoint", good["mountpoint"], "--password", good["password"]],
+                stdout=self._caster_log_file, stderr=subprocess.STDOUT,
+            ))
         deadline = time.time() + timeout
-        while port_free(self.remote_caster_port):
-            if self.caster_proc.poll() is not None:
-                raise RuntimeError("fake caster exited before listening")
-            if time.time() >= deadline:
-                raise RuntimeError(f"fake caster did not listen within {timeout}s")
-            time.sleep(0.02)
+        for port in ports:
+            while port_free(port):
+                if any(p.poll() is not None for p in self.caster_procs):
+                    raise RuntimeError("fake caster exited before listening")
+                if time.time() >= deadline:
+                    raise RuntimeError(f"fake caster did not listen on {port} within {timeout}s")
+                time.sleep(0.02)
 
     def wait_push(self, timeout=15):
         """Wait until the daemon has completed its SOURCE handshake to the caster.
@@ -266,15 +273,15 @@ class Context:
             time.sleep(0.05)
 
     def stop_caster(self):
-        if self.caster_proc is None:
-            return
-        if self.caster_proc.poll() is None:
-            self.caster_proc.terminate()
-            try:
-                self.caster_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self.caster_proc.kill()
-        self.caster_proc._out.close()
+        for p in self.caster_procs:
+            if p.poll() is None:
+                p.terminate()
+                try:
+                    p.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+        if self._caster_log_file is not None:
+            self._caster_log_file.close()
 
     def http_url(self, path):
         return f"http://127.0.0.1:{self.http_port}{path}"
@@ -531,8 +538,10 @@ def run_scenario(name):
         if ctx.has_http and not port_free(ctx.http_port):
             raise RuntimeError(f"HTTP port {ctx.http_port} still in use after shutdown")
         # Scan the daemon log only now, so shutdown-time warnings/errors
-        # (and any SIGQUIT goroutine dump) are included.
-        checks.check_no_unexpected_errors(ctx)
+        # (and any SIGQUIT goroutine dump) are included. A scenario may declare
+        # ALLOWED_ERRORS for error lines it expects (e.g. a push it knows the
+        # caster rejects).
+        checks.check_no_unexpected_errors(ctx, allowed=getattr(scen, "ALLOWED_ERRORS", ()))
         return (name, True, "")
     except Exception:
         keep = True

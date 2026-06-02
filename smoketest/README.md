@@ -86,7 +86,9 @@ A scenario owns the meaning of its test. `scenario.py` declares:
   mode, and the samples are well-formed, consistently timestamped, and carry
   the correct GPS time.
 - `stream-push` -- Ntrip push: the daemon forwards the log's RTCM to a remote
-  caster, and the pushed stream matches the source log's RTCM.
+  caster (the pushed stream matches the source log's RTCM), and a second push
+  entry with a wrong password is permanently rejected, so the daemon gives up
+  on it rather than reconnecting forever.
 
 The Ntrip caster scenarios use `satpulsetool ntrip` as the client. The
 `stream-push` scenario uses a built-in fake caster (`fakecaster.py`) as the

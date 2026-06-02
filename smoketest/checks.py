@@ -217,8 +217,12 @@ ALLOWED_WARNINGS = (
 )
 
 
-def check_no_unexpected_errors(ctx):
-    """The daemon log has no panics or unexpected error/warn lines."""
+def check_no_unexpected_errors(ctx, allowed=()):
+    """The daemon log has no panics or unexpected error/warn lines.
+
+    allowed adds scenario-specific substrings (on top of ALLOWED_WARNINGS) for
+    error/warn lines a scenario expects.
+    """
     with open(ctx.daemon_log, "r", errors="replace") as f:
         lines = f.read().splitlines()
     bad = []
@@ -228,7 +232,7 @@ def check_no_unexpected_errors(ctx):
             bad.append(line)
             continue
         if "level=error" in low or "level=warn" in low or " err=" in low:
-            if not any(a in line for a in ALLOWED_WARNINGS):
+            if not any(a in line for a in ALLOWED_WARNINGS) and not any(a in line for a in allowed):
                 bad.append(line)
     assert not bad, "unexpected daemon log lines:\n" + "\n".join(bad)
 
@@ -586,3 +590,17 @@ def check_pushed_rtcm(ctx, mountpoint=None):
 
 def _pushed_rtcm(ctx):
     return [d for (_, _, d) in _scan_packets(ctx, ctx.caster_capture, "RTCM")]
+
+
+def check_push_gave_up(ctx):
+    """A push entry the caster permanently rejects makes the daemon give up.
+
+    Guards the fix that a "Bad Password" rejection is fatal: the daemon logs
+    "ntrip push gave up" and stops, rather than reconnecting forever (which
+    logged "ntrip push connect failed", not allowlisted, so also caught).
+    """
+    def attempt():
+        with open(ctx.daemon_log, errors="replace") as f:
+            return "ntrip push gave up" in f.read()
+
+    assert poll(attempt), "daemon did not give up on the rejected push"

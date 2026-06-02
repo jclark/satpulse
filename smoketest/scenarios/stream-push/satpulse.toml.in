@@ -14,3 +14,15 @@ protocol = "RTCM"
 address = "127.0.0.1:${SATPULSE_TEST_REMOTE_CASTER_PORT}"
 mountpoint = "RTCM"
 password = "smoketest"
+
+# Second destination with a wrong password, pointed at its own caster: the
+# caster rejects it with "Bad Password", which is a permanent failure, so the
+# daemon must give up on this entry rather than reconnect forever, while the
+# first entry keeps streaming.
+[[stream.push]]
+protocol = "RTCM"
+
+[stream.push.ntrip]
+address = "127.0.0.1:${SATPULSE_TEST_REMOTE_CASTER_PORT2}"
+mountpoint = "RTCM"
+password = "wrongpassword"
