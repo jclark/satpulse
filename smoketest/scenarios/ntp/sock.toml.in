@@ -1,12 +1,9 @@
 # Chrony SOCK refclock fed from a pure 1 Hz RMC stream in serial timing mode.
-# No PHC and no vendor: the daemon detects NMEA and feeds NTP samples straight
-# from the time messages. The packet log carries only GNRMC, so each second
-# produces exactly one refclock sample.
+# No PHC: the daemon detects NMEA and feeds NTP samples straight from the time
+# messages. The packet log carries only GNRMC, so each second produces exactly
+# one refclock sample.
 [serial]
 device = "${SATPULSE_TEST_FIFO}"
-
-[gps]
-config = false
 
 [ntp]
 sock.path = "${SATPULSE_TEST_NTP_SOCK}"

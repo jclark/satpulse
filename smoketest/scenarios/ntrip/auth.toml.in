@@ -2,10 +2,6 @@
 [serial]
 device = "${SATPULSE_TEST_FIFO}"
 
-[gps]
-config = false
-vendor = "u-blox"
-
 [[user]]
 name = "rover"
 password = "secret"

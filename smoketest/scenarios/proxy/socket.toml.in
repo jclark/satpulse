@@ -1,10 +1,6 @@
 # A read-only Unix-socket serial proxy, filtered to UNCB (Unicore binary).
-# No vendor is set so all packet formats, including Unicore, are scanned.
 [serial]
 device = "${SATPULSE_TEST_FIFO}"
-
-[gps]
-config = false
 
 [[proxy.socket]]
 path = "${SATPULSE_TEST_PROXY_SOCKET}"

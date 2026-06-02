@@ -3,10 +3,6 @@
 [serial]
 device = "${SATPULSE_TEST_FIFO}"
 
-[gps]
-config = false
-vendor = "u-blox"
-
 [[stream.push]]
 protocol = "RTCM"
 

@@ -2,10 +2,6 @@
 [serial]
 device = "${SATPULSE_TEST_FIFO}"
 
-[gps]
-config = false
-vendor = "u-blox"
-
 [log]
 dir = "${SATPULSE_TEST_LOG_DIR}"
 event = true

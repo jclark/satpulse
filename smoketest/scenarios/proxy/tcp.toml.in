@@ -3,10 +3,6 @@
 [serial]
 device = "${SATPULSE_TEST_FIFO}"
 
-[gps]
-config = false
-vendor = "u-blox"
-
 [[proxy.tcp]]
 listen = "127.0.0.1:${SATPULSE_TEST_PROXY_TCP_PORT}"
 protocol = "UBX"
