@@ -33,7 +33,7 @@ import threading
 import time
 import tomllib
 import traceback
-from typing import IO, Protocol, cast
+from typing import IO, Literal, Protocol, Sequence, cast
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)  # let run.py and scenarios import the shared checks module
@@ -50,6 +50,7 @@ SCENARIOS = [
     "ntrip/basic",
     "ntrip/auth",
     "ntp/sock",
+    "ntp/shm",
     "proxy/tcp",
     "proxy/socket",
     "stream/push",
@@ -61,6 +62,8 @@ class ScenarioModule(Protocol):
     FACTOR: int
 
     def run(self, ctx: Context) -> None: ...
+
+Status = Literal["PASS", "FAIL", "SKIP"]
 
 # Named resources mapped to offsets within each scenario's port block.
 PORT_OFFSETS = {
@@ -155,8 +158,10 @@ class Context:
         daemon_log: str,
         has_http: bool,
         has_ntrip: bool,
-        has_ntp: bool,
+        has_ntp_sock: bool,
         has_push: bool,
+        requires_root: bool,
+        use_sudo: bool,
     ) -> None:
         self.name = name
         self.run_dir = run_dir
@@ -166,8 +171,10 @@ class Context:
         self.daemon_log = daemon_log
         self.has_http = has_http
         self.has_ntrip = has_ntrip
-        self.has_ntp = has_ntp
+        self.has_ntp_sock = has_ntp_sock
         self.has_push = has_push
+        self.requires_root = requires_root
+        self.use_sudo = use_sudo
         self.replay_err = os.path.join(run_dir, "replay.err")
         self.satpulsed = bin_path("satpulsed")
         self.satpulsetool = bin_path("satpulsetool")
@@ -215,6 +222,32 @@ class Context:
     @property
     def ntp_sock(self) -> str:
         return self.env["SATPULSE_TEST_NTP_SOCK"]
+
+    @property
+    def ntp_shm_segment(self) -> int:
+        return int(self.env["SATPULSE_TEST_NTP_SHM_SEGMENT"])
+
+    def root_cmd(self, cmd: Sequence[str]) -> list[str]:
+        if os.geteuid() == 0:
+            return list(cmd)
+        if not self.use_sudo:
+            raise RuntimeError("root command requested without --sudo")
+        return ["sudo", "-n", *cmd]
+
+    def remove_ntp_shm(self) -> str | None:
+        """Remove the test NTP SHM segment if it exists."""
+        cmd = self.root_cmd([
+            sys.executable,
+            os.path.join(HERE, "ntpshm.py"),
+            "remove",
+            str(self.ntp_shm_segment),
+        ])
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+        if p.returncode == 0:
+            return None
+        err = p.stderr.decode("utf-8", "replace").strip()
+        out = p.stdout.decode("utf-8", "replace").strip()
+        return err or out or f"ntpshm.py remove exited with code {p.returncode}"
 
     def start_ntp_sock(self, timeout: float = 5) -> None:
         """Spawn the chrony SOCK consumer and wait for it to bind the socket.
@@ -450,6 +483,7 @@ def allocate_env(name: str, run_dir: str) -> dict[str, str]:
         "SATPULSE_TEST_LOG_DIR": log_dir,
         "SATPULSE_TEST_PROXY_SOCKET": os.path.join(run_dir, "proxy.sock"),
         "SATPULSE_TEST_NTP_SOCK": os.path.join(run_dir, "chrony.sock"),
+        "SATPULSE_TEST_NTP_SHM_SEGMENT": str(240 + ((base - PORT_BASE) // PORT_BLOCK) % 13),
     }
     for key, off in PORT_OFFSETS.items():
         env[key] = str(base + off)
@@ -459,9 +493,9 @@ def allocate_env(name: str, run_dir: str) -> dict[str, str]:
 def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tuple[bool, bool, bool, bool]:
     """Render the config template; report which listeners it configures.
 
-    Returns (has_http, has_ntrip, has_ntp, has_push), detected from non-comment
-    table headers so a comment that merely mentions a section is not mistaken
-    for it.
+    Returns (has_http, has_ntrip, has_ntp_sock, has_push), detected from
+    non-comment lines so a comment that merely mentions a section is not
+    mistaken for it.
     """
     with open(template_path) as f:
         text = f.read()
@@ -474,7 +508,8 @@ def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tup
         for line in text.splitlines()
         if not line.lstrip().startswith("#")
     ]
-    return ("[[http]]" in headers, "[ntrip]" in headers, "[ntp]" in headers,
+    return ("[[http]]" in headers, "[ntrip]" in headers,
+            any(line.startswith("sock.path") for line in headers),
             "[[stream.push]]" in headers)
 
 
@@ -486,7 +521,11 @@ def port_free(port: int) -> bool:
         return True
 
 
-def stop_daemon(daemon: subprocess.Popen[bytes], grace: float = 5.0) -> str | None:
+def stop_daemon(
+    daemon: subprocess.Popen[bytes],
+    grace: float = 5.0,
+    process_group: bool = False,
+) -> str | None:
     """Stop the daemon, escalating the way the systemd unit does.
 
     satpulsed catches both SIGINT and SIGTERM and treats them as the same
@@ -501,13 +540,13 @@ def stop_daemon(daemon: subprocess.Popen[bytes], grace: float = 5.0) -> str | No
     Returns None on a clean SIGINT exit, otherwise an error string
     describing the escalation that was needed.
     """
-    daemon.send_signal(signal.SIGINT)
+    send_daemon_signal(daemon, signal.SIGINT, process_group)
     try:
         daemon.wait(timeout=grace)
         return None
     except subprocess.TimeoutExpired:
         pass
-    daemon.send_signal(signal.SIGQUIT)  # dumps goroutines to the daemon log, then aborts
+    send_daemon_signal(daemon, signal.SIGQUIT, process_group)
     daemon.wait()
     return (
         f"daemon did not exit within {grace:g}s of SIGINT; "
@@ -515,9 +554,24 @@ def stop_daemon(daemon: subprocess.Popen[bytes], grace: float = 5.0) -> str | No
     )
 
 
-def run_scenario(name: str) -> tuple[str, bool, str]:
-    emit(f"START {name}")
+def send_daemon_signal(daemon: subprocess.Popen[bytes], sig: signal.Signals, process_group: bool) -> None:
+    """Send sig to the daemon, or to its process group when launched through sudo."""
+    if process_group:
+        os.killpg(daemon.pid, sig)
+        return
+    daemon.send_signal(sig)
+
+
+def scenario_requires_root(scen: ScenarioModule) -> bool:
+    return bool(getattr(scen, "REQUIRES_ROOT", False))
+
+
+def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
     scen = load_scenario(name)
+    requires_root = scenario_requires_root(scen)
+    if requires_root and os.geteuid() != 0 and not use_sudo:
+        return (name, "SKIP", "requires root; rerun with --sudo to use sudo -n")
+    emit(f"START {name}")
     factor = scen.FACTOR
     packet_log = scen.PACKET_LOG
     if not os.path.isabs(packet_log):
@@ -529,27 +583,34 @@ def run_scenario(name: str) -> tuple[str, bool, str]:
     env["SATPULSE_TEST_PACKET_LOG"] = packet_log
     os.makedirs(env["SATPULSE_TEST_LOG_DIR"], exist_ok=True)
     os.mkfifo(env["SATPULSE_TEST_FIFO"])
-    has_http, has_ntrip, has_ntp, has_push = render_config(config_tmpl, env["SATPULSE_TEST_CONFIG"], env)
+    has_http, has_ntrip, has_ntp_sock, has_push = render_config(config_tmpl, env["SATPULSE_TEST_CONFIG"], env)
 
     daemon_log = os.path.join(run_dir, "satpulsed.log")
-    ctx = Context(name, run_dir, env, factor, packet_log, daemon_log, has_http, has_ntrip, has_ntp, has_push)
+    ctx = Context(
+        name, run_dir, env, factor, packet_log, daemon_log,
+        has_http, has_ntrip, has_ntp_sock, has_push, requires_root, use_sudo,
+    )
 
     daemon: subprocess.Popen[bytes] | None = None
     keep = False
     try:
         # Bind the chrony SOCK consumer before the daemon starts, so its first
         # refclock sample lands in a listening socket rather than warning.
-        if has_ntp:
+        if has_ntp_sock:
             ctx.start_ntp_sock()
         # Start the fake Ntrip caster before the daemon, so the daemon's push
         # connect succeeds immediately instead of failing and backing off.
         if has_push:
             ctx.start_caster()
         with open(daemon_log, "wb") as out:
+            cmd = [ctx.satpulsed, "-v", "-f", env["SATPULSE_TEST_CONFIG"]]
+            if requires_root:
+                cmd = ctx.root_cmd(cmd)
             daemon = subprocess.Popen(
-                [ctx.satpulsed, "-v", "-f", env["SATPULSE_TEST_CONFIG"]],
+                cmd,
                 stdout=out,
                 stderr=subprocess.STDOUT,
+                start_new_session=requires_root,
             )
         ctx.daemon = daemon
 
@@ -581,7 +642,7 @@ def run_scenario(name: str) -> tuple[str, bool, str]:
         # Graceful shutdown: SIGINT should terminate the daemon promptly
         # and release its ports. A hang escalates to SIGQUIT (goroutine
         # dump) and is reported as a failure.
-        err = stop_daemon(daemon)
+        err = stop_daemon(daemon, process_group=requires_root)
         if err is not None:
             raise RuntimeError(err)
         if daemon.returncode not in (0, -signal.SIGINT):
@@ -593,18 +654,26 @@ def run_scenario(name: str) -> tuple[str, bool, str]:
         # ALLOWED_ERRORS for error lines it expects (e.g. a push it knows the
         # caster rejects).
         common.check_no_unexpected_errors(ctx, allowed=getattr(scen, "ALLOWED_ERRORS", ()))
-        return (name, True, "")
+        if requires_root:
+            err = ctx.remove_ntp_shm()
+            if err is not None:
+                raise RuntimeError(f"failed to remove NTP SHM segment {ctx.ntp_shm_segment}: {err}")
+        return (name, "PASS", "")
     except Exception:
         keep = True
-        return (name, False, traceback.format_exc())
+        return (name, "FAIL", traceback.format_exc())
     finally:
         if ctx.replay_proc is not None and ctx.replay_proc.poll() is None:
             ctx.replay_proc.kill()
         ctx._close_replay_files()
         if daemon is not None and daemon.poll() is None:
-            stop_daemon(daemon)
+            stop_daemon(daemon, process_group=requires_root)
         ctx.stop_ntp_sock()
         ctx.stop_caster()
+        if requires_root:
+            err = ctx.remove_ntp_shm()
+            if err is not None:
+                print(f"[{name}] failed to remove NTP SHM segment: {err}", file=sys.stderr)
         if keep:
             print(f"[{name}] artifacts kept in {run_dir}", file=sys.stderr)
         else:
@@ -616,6 +685,8 @@ def main() -> int:
     ap.add_argument("scenarios", nargs="*", help="scenario names (default: all)")
     ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("-l", "--list", action="store_true", help="list scenarios and exit")
+    ap.add_argument("--sudo", action="store_true",
+                    help="run root-required scenarios through sudo -n instead of skipping them")
     args = ap.parse_args()
 
     available = SCENARIOS
@@ -630,24 +701,46 @@ def main() -> int:
         print(f"unknown scenarios: {', '.join(unknown)}", file=sys.stderr)
         return 2
 
-    for b in ("satpulsed", "satpulsetool"):
-        if not os.path.exists(bin_path(b)):
-            print(f"missing binary {bin_path(b)}; run make first", file=sys.stderr)
+    selected_mods = {n: load_scenario(n) for n in selected}
+    skipped_without_sudo = [
+        n for n, scen in selected_mods.items()
+        if scenario_requires_root(scen) and os.geteuid() != 0 and not args.sudo
+    ]
+    runnable = [n for n in selected if n not in skipped_without_sudo]
+    if args.sudo and os.geteuid() != 0 and any(scenario_requires_root(s) for s in selected_mods.values()):
+        if shutil.which("sudo") is None:
+            print("--sudo requested, but sudo is not installed", file=sys.stderr)
             return 2
+        p = subprocess.run(["sudo", "-n", "true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+        if p.returncode != 0:
+            err = p.stderr.decode("utf-8", "replace").strip()
+            print("--sudo requested, but sudo -n true failed" + (f": {err}" if err else ""), file=sys.stderr)
+            return 2
+
+    if runnable:
+        for b in ("satpulsed", "satpulsetool"):
+            if not os.path.exists(bin_path(b)):
+                print(f"missing binary {bin_path(b)}; run make first", file=sys.stderr)
+                return 2
 
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as ex:
-        futs = {ex.submit(run_scenario, n): n for n in selected}
+        futs = {ex.submit(run_scenario, n, args.sudo): n for n in selected}
         for fut in concurrent.futures.as_completed(futs):
-            name, ok, detail = fut.result()
-            results.append((name, ok, detail))
-            emit(f"PASS {name}" if ok else f"FAIL {name}")
+            name, status, detail = fut.result()
+            results.append((name, status, detail))
+            emit(f"{status} {name}" + (f" ({detail})" if status == "SKIP" else ""))
 
-    failed = sorted((name, detail) for name, ok, detail in results if not ok)
+    failed = sorted((name, detail) for name, status, detail in results if status == "FAIL")
     for name, detail in failed:
         print(f"\n--- {name} ---")
         print("    " + detail.replace("\n", "\n    ").rstrip())
-    print(f"\n{len(results) - len(failed)}/{len(results)} scenarios passed")
+    skipped = sum(1 for _, status, _ in results if status == "SKIP")
+    ran = len(results) - skipped
+    summary = f"\n{ran - len(failed)}/{ran} scenarios passed"
+    if skipped:
+        summary += f", {skipped} skipped"
+    print(summary)
     return 1 if failed else 0
 
 

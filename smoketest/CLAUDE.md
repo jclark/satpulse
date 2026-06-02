@@ -40,12 +40,16 @@ python3 smoketest/run.py            # all scenarios, in parallel
 python3 smoketest/run.py http/full  # named scenarios (space-separated)
 python3 smoketest/run.py --list     # list scenario IDs
 python3 smoketest/run.py -j 1       # serial (use when debugging)
+python3 smoketest/run.py --sudo     # use sudo -n for root-required scenarios
 ```
 
 `PASS`/`FAIL` per scenario. On `FAIL` the traceback prints and the run
 directory is **kept** (path printed to stderr) -- inspect `satpulsed.log`,
 `replay.err`, `caster.log`, `ntp.jsonl`, the rendered `satpulse.toml`, and the
-`log/` dir there. On `PASS` the run dir is deleted.
+`log/` dir there. On `PASS` the run dir is deleted. Root-required scenarios
+print `SKIP` when the runner is not root and `--sudo` was not specified.
+`--sudo` uses `sudo -n`, so it is intended for passwordless sudo in CI and
+fails before starting scenarios if sudo is unavailable.
 
 No third-party Python packages are needed to run. Dev tooling (mypy) is scoped
 to this dir and managed with `uv`:
@@ -113,6 +117,9 @@ A scenario ID `family/name` maps to two files and one registry entry:
     lines the scenario legitimately expects (e.g. a push it knows is rejected).
     These are added on top of `common.ALLOWED_WARNINGS`. Keep them as narrow as
     possible so real regressions still fail.
+  - optional `REQUIRES_ROOT = True` -- the scenario is skipped unless the runner
+    is already root or `--sudo` was passed; use `ctx.root_cmd(...)` for helper
+    subprocesses that also need root.
 - `scenarios/family/name.toml.in` -- config template using `${SATPULSE_TEST_*}`.
 - An entry in the `SCENARIOS` list in `run.py` (IDs are explicit, not globbed).
 
@@ -143,6 +150,8 @@ Set per run by the runner; reference as `${NAME}`:
   `SATPULSE_TEST_PROXY_TCP_RTCM_PORT`, `SATPULSE_TEST_REMOTE_CASTER_PORT`,
   `SATPULSE_TEST_REMOTE_CASTER_PORT2`, `SATPULSE_TEST_TOOL_PORT`.
 - `SATPULSE_TEST_PROXY_SOCKET`, `SATPULSE_TEST_NTP_SOCK` -- Unix socket paths.
+- `SATPULSE_TEST_NTP_SHM_SEGMENT` -- high-numbered test SHM segment for
+  root-required NTP SHM scenarios.
 
 Adding a new resource means adding it to `PORT_OFFSETS` / `allocate_env()` in
 `run.py`, not hardcoding a port. Listener detection in `render_config()` keys
@@ -158,6 +167,8 @@ These are also usable by hand for debugging, independent of the suite:
 
 - `ntpsock.py` -- bind a chrony SOCK refclock path and decode/print the
   `sock_sample` datagrams a sender (satpulsed, gpsd) writes. Text or JSON.
+- `ntpshm.py` -- attach to an ntpd/NTPsec SHM refclock segment, read one
+  mode-1 sample using libatomic-backed loads/fences, or remove the segment.
 - `scenarios/ntrip/fakecaster.py` -- minimal Ntrip v1 caster: accepts a SOURCE
   handshake, replies `ICY 200 OK`, and appends the pushed payload to a file
   (feed it to `satpulsetool scan`). Optional `--mountpoint`/`--password` checks.

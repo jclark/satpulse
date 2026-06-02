@@ -5,6 +5,8 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import subprocess
+import sys
 from typing import TypedDict, cast
 
 import common
@@ -23,6 +25,36 @@ class NtpSample(TypedDict, total=False):
     pulse: int
     leap: int
     magic: int
+
+
+def check_shm(ctx: common.SmokeContext) -> common.JsonObject:
+    """The NTP SHM segment contains a valid mode-1 refclock sample."""
+
+    def attempt() -> common.JsonObject | None:
+        p = subprocess.run(
+            ctx.root_cmd([sys.executable, _ntpshm_helper(), "read", str(ctx.ntp_shm_segment)]),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+        )
+        if p.returncode != 0:
+            err = p.stderr.decode("utf-8", "replace").strip()
+            raise AssertionError(err or f"ntpshm.py exited with code {p.returncode}")
+        rec = cast(common.JsonObject, json.loads(p.stdout.decode("utf-8", "replace")))
+        if rec.get("ok") is True:
+            return rec
+        return None
+
+    rec = common.poll(attempt)
+    assert rec is not None, f"NTP SHM segment {ctx.ntp_shm_segment} did not produce a sample"
+    assert _int(rec, "mode") == 1, f"SHM mode = {_int(rec, 'mode')}, want 1"
+    assert _int(rec, "valid") == 1, f"SHM valid = {_int(rec, 'valid')}, want 1"
+    assert _int(rec, "nsamples") == 1, f"SHM nsamples = {_int(rec, 'nsamples')}, want 1"
+    assert _int(rec, "count") >= 4, f"SHM count = {_int(rec, 'count')}, want at least 4"
+    assert _int(rec, "clock_sec") > 0, f"SHM clock_sec not set: {rec}"
+    assert _int(rec, "receive_sec") > 0, f"SHM receive_sec not set: {rec}"
+    assert 0 <= _int(rec, "clock_nsec") < 1_000_000_000, f"bad clock_nsec: {rec}"
+    assert 0 <= _int(rec, "receive_nsec") < 1_000_000_000, f"bad receive_nsec: {rec}"
+    assert _int(rec, "precision") == -1, f"SHM precision = {_int(rec, 'precision')}, want -1"
+    return rec
 
 
 def check_sock(
@@ -73,6 +105,16 @@ def check_sock(
             f"(exceeds {max_time_error * 1000:.0f} ms): GPS time parsed or represented wrong"
         )
     return spread
+
+
+def _ntpshm_helper() -> str:
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "ntpshm.py")
+
+
+def _int(rec: common.JsonObject, key: str) -> int:
+    v = rec.get(key)
+    assert isinstance(v, int), f"SHM {key} missing or non-integer: {rec}"
+    return v
 
 
 def _ntp_samples(ctx: common.SmokeContext) -> list[NtpSample]:

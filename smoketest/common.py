@@ -20,7 +20,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from typing import Callable, Iterable, Protocol, TypeAlias, TypeVar, cast
+from typing import Callable, Iterable, Protocol, Sequence, TypeAlias, TypeVar, cast
 
 DEFAULT_TIMEOUT = 15.0
 
@@ -57,6 +57,11 @@ class SmokeContext(Protocol):
     def http_url(self, path: str) -> str: ...
 
     def port(self, key: str) -> int: ...
+
+    @property
+    def ntp_shm_segment(self) -> int: ...
+
+    def root_cmd(self, cmd: Sequence[str]) -> list[str]: ...
 
     def wait_replay(self, timeout: float = 60) -> None: ...
 

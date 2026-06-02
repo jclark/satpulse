@@ -19,6 +19,7 @@ python3 smoketest/run.py            # run all scenarios in parallel
 python3 smoketest/run.py http/full  # run named scenarios
 python3 smoketest/run.py --list     # list scenarios
 python3 smoketest/run.py -j 1        # run serially
+python3 smoketest/run.py --sudo     # use sudo -n for root-required scenarios
 ```
 
 No third-party Python packages are required (standard library only).
@@ -28,6 +29,12 @@ Output is one line per scenario:
 - `PASS` -- all checks passed and the daemon shut down cleanly.
 - `FAIL` -- a check failed; the traceback is printed and the run
   directory is kept for inspection.
+- `SKIP` -- a scenario needs root and neither root nor `--sudo` was used.
+
+Root-required scenarios are skipped by default when the runner is not root.
+Use `--sudo` to run them through passwordless `sudo -n`, as in CI. If `--sudo`
+is requested and `sudo -n true` fails, the runner fails before starting any
+scenario.
 
 ## How it works
 
@@ -61,6 +68,7 @@ staying fast in CI.
 smoketest/
   run.py              execution environment: resources, replay, shutdown
   common.py           checks and helpers shared across scenario families
+  ntpshm.py           NTP SHM read/remove helper for root-required scenarios
   Makefile            Python dev tasks (typecheck, dev-deps, update-deps)
   pyproject.toml      dev-only Python tooling config
   scenarios/
@@ -118,6 +126,10 @@ make update-deps
 - `ntp/sock` -- chrony SOCK refclock: a pure 1 Hz RMC stream drives serial timing
   mode, and the samples are well-formed, consistently timestamped, and carry
   the correct GPS time.
+- `ntp/shm` -- ntpd/NTPsec SHM refclock: a pure 1 Hz RMC stream drives serial
+  timing mode, and the configured SHM segment receives a valid mode-1 sample.
+  This scenario requires root and is skipped unless run as root or with
+  `--sudo`; the SHM reader helper also needs the system `libatomic` library.
 - `proxy/tcp` -- read-only TCP serial proxies with protocol filters.
 - `proxy/socket` -- read-only Unix-socket serial proxy with a protocol filter.
 - `stream/push` -- Ntrip push: the daemon forwards the log's RTCM to a remote
