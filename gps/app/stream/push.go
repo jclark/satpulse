@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -78,9 +79,27 @@ func (d *NtripDestination) Connect(ctx context.Context) (net.Conn, error) {
 	return conn, nil
 }
 
+// fatalConnectError wraps a Destination.Connect error that no amount
+// of retrying can fix (e.g. a rejected NTRIP password or an invalid
+// mountpoint).  The writer stops rather than reconnecting when it
+// sees one.  Errors not wrapped this way are treated as transient.
+type fatalConnectError struct{ err error }
+
+func (e *fatalConnectError) Error() string { return e.err.Error() }
+func (e *fatalConnectError) Unwrap() error { return e.err }
+
+// isFatalConnect reports whether err (or anything it wraps) is fatal.
+func isFatalConnect(err error) bool {
+	var fe *fatalConnectError
+	return errors.As(err, &fe)
+}
+
 // handshake writes the v1 SOURCE request and reads the caster
-// response.  Returns nil on "ICY 200 OK", an error on any other
-// response.
+// response.  Returns nil on "ICY 200 OK".  A non-OK response yields
+// an error wrapped in *fatalConnectError when the caster's rejection
+// is permanent (bad password, invalid mountpoint); transient
+// rejections such as "Mount Point Taken" return a plain error so the
+// writer keeps retrying.
 func (d *NtripDestination) handshake(conn net.Conn) error {
 	if _, err := conn.Write([]byte(d.request())); err != nil {
 		return err
@@ -90,10 +109,34 @@ func (d *NtripDestination) handshake(conn net.Conn) error {
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(line, []byte("ICY 200 OK\r\n")) {
-		return fmt.Errorf("Ntrip: %s", strings.TrimSuffix(string(line), "\r\n"))
+	if bytes.Equal(line, []byte("ICY 200 OK\r\n")) {
+		return nil
 	}
-	return nil
+	resp := strings.TrimSuffix(string(line), "\r\n")
+	err = fmt.Errorf("Ntrip: %s", resp)
+	if ntripFatalResponse(resp) {
+		return &fatalConnectError{err}
+	}
+	return err
+}
+
+// ntripFatalResponse reports whether an NTRIP v1 SOURCE error line
+// describes a permanent rejection.  "Mount Point Taken" and "Already
+// Connected" are transient (another server holds the mountpoint and
+// will eventually disconnect), and the ambiguous "Mount Point Taken
+// or Invalid" from old casters is treated as transient since it may
+// be Taken.  A bad password or a definitively invalid mountpoint is
+// fatal -- the configuration must change before a retry can succeed.
+func ntripFatalResponse(resp string) bool {
+	switch {
+	case strings.Contains(resp, "Mount Point Taken or Invalid"):
+		return false
+	case strings.Contains(resp, "Bad Password"):
+		return true
+	case strings.Contains(resp, "Mount Point Invalid"):
+		return true
+	}
+	return false
 }
 
 // request builds the v1 SOURCE request bytes.
@@ -147,7 +190,7 @@ func (s *Push) Run(ctx context.Context, lg *slog.Logger,
 		s.queue(iCtx, iCancel, packets, subCh, reconnectCh, qCh, pktTag)
 	})
 	wg.Go(func() {
-		s.writer(iCtx, lg, dest, qCh, reconnectCh, msm7to4, onState)
+		s.writer(iCtx, iCancel, lg, dest, qCh, reconnectCh, msm7to4, onState)
 	})
 	wg.Wait()
 	if ctx.Err() != nil {
@@ -224,12 +267,15 @@ func (s *Push) queue(iCtx context.Context, iCancel context.CancelFunc,
 	}
 }
 
-// writer owns the outbound reconnect loop.  On connect failure it
-// backs off; on connect success it streams packets from qCh; on
-// write error it closes the connection, signals reconnectCh
+// writer owns the outbound reconnect loop.  On a transient connect
+// failure it backs off; on connect success it streams packets from
+// qCh; on write error it closes the connection, signals reconnectCh
 // (non-blocking) so the queue can advance the MSM epoch, and
-// reconnects.
-func (s *Push) writer(ctx context.Context, lg *slog.Logger,
+// reconnects.  On a fatal connect error (a permanent caster
+// rejection) it reports State Failed and calls iCancel to stop the
+// whole Push instead of retrying.
+func (s *Push) writer(ctx context.Context, iCancel context.CancelFunc,
+	lg *slog.Logger,
 	dest Destination,
 	qCh <-chan scan.Packet,
 	reconnectCh chan<- struct{},
@@ -248,6 +294,14 @@ func (s *Push) writer(ctx context.Context, lg *slog.Logger,
 		conn, err := dest.Connect(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
+				return
+			}
+			if isFatalConnect(err) {
+				lg.Error("ntrip push giving up", "error", err)
+				onState(Failed, err)
+				// Wake the queue so Run's wg.Wait returns; the
+				// queue cleans up the subscription on iCtx.Done.
+				iCancel()
 				return
 			}
 			lg.Error("ntrip push connect failed", "error", err)
