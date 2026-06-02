@@ -1,6 +1,6 @@
 # NAME
 
-satpulsed - use a GPS receiver as an external clock source for PTP
+satpulsed - integrated GPS daemon
 
 # SYNOPSIS
 
@@ -9,22 +9,22 @@ satpulsed - use a GPS receiver as an external clock source for PTP
 
 # DESCRIPTION
 
-**satpulsed** enables a GPS receiver to be used as a source of time for the **ptp4l** PTP daemon, which allows ptp4l to work as a server (grandmaster) synchronized to time distributed by GPS.
-The PPS output of the GPS receiver must be connected to a Software Defined Pin (SDP) of an Ethernet controller with a PTP Hardware Clock (PHC) that supports external timestamping. There must also be a serial device connected to the GPS receiver.
-**satpulsed** synchronizes the PHC by reading messages from the serial device and timestamps from the external timestamping channel of the PHC.
-It also provides timing metadata to ptp4l using the PTP Management Protocol.
+**satpulsed** is a daemon that connects to a GPS receiver over a serial port and can
 
-In addition, it
-- can automatically configure a GPS receiver that uses the UBX protocol
-- can work as a refclock for chronyd to enable a combined NTP/PTP time server
-- can proxy the serial data to TCP (similarly to ser2net)
-- provides a graphical web interface for monitoring the GPS receiver
+- synchronize a PTP hardware clock and provide timing metadata to **ptp4l(8)**, allowing **ptp4l** to act as a PTP grandmaster;
+- provide timing information to an NTP daemon, either from a synchronized PHC or from serial messages, allowing the NTP daemon to act as a stratum 1 NTP server;
+- act as a Ntrip caster, serving RTCM corrections from the GPS receiver to Ntrip clients;
+- act as an Ntrip server, pushing RTCM corrections from the GPS receiver to an Ntrip caster;
+- act as an Ntrip client, pulling RTCM corrections from an Ntrip caster and feeding them to the GPS receiver;
+- act as a TCP server, proxying packets to and from the GPS receiver;
+- monitor the GPS receiver through logs, Prometheus metrics and a Web UI.
 
-**satpulsed** requires a configuration file **satpulse.toml(5)**.
+These functions are controlled by a required configuration file in TOML format **satpulse.toml(5)**.
+For supported GPS receivers, **satpulsed** can also configure the receiver as needed for the selected functions.
 
 The companion program **satpulsetool(1)** supports the use of **satpulsed**; in particular, it can be used to perform certain kinds of GPS configuration that are not done by **satpulsed**, such as configuration of baud rate and constellations/signals to be enabled.
 
-**satpulsed** does not fork itself into the background. It should normally be run using **systemd(1)** as a `Type=simple` service. It needs root permissions so it can access the PHC.
+**satpulsed** does not fork itself into the background. It should normally be run using **systemd(1)** as a `Type=simple` service.
 
 # OPTIONS
 
