@@ -23,16 +23,18 @@
 This is the final navigation structure we eventually want to aim for.
 
 docs:
-  - title: "Orientation"
+  - title: "Introduction"
     children:
-      - title: "Introduction"
+      - title: "Overview"
         url: "/intro/index.html"
-      - title: "GPS technology"
-        url: "/intro/gps.html"
-      - title: "Timing"
+      - title: "GNSS"
+        url: "/intro/gnss.html"
+      - title: "Precision timing"
         url: "/intro/timing.html"
-      - title: "What SatPulse can do"
-        url: "/intro/what-satpulse-can-do.html"
+      - title: "Positioning"
+        url: "/intro/positioning.html"
+      - title: "SatPulse features"
+        url: "/intro/satpulse-features.html"
       - title: "Other software"
         url: "/intro/other-software.html"
   - title: "GNSS hardware"
@@ -297,6 +299,14 @@ coherent no-PHC path, the home page's timing door can be strengthened
 to offer the accessible no-PHC path up front (a later home-page
 stage).
 
+Release-sequencing problem: the current default `satpulse.toml` sets a
+non-empty `phc.interface`, so a user without PHC hardware has to edit
+that out before the no-PHC path works. That makes a no-PHC-first setup
+flow awkward before the 0.3 release boundary, because the docs would be
+presenting a baseline path that starts with undoing part of the
+installed default configuration. This problem is noted here without
+choosing the exact staging or documentation resolution yet.
+
 #### Make setup no-PHC first
 
 Change the setup overview so the baseline path is install SatPulse,
@@ -381,42 +391,92 @@ and verification. Source notes: `howtos/rtk.md`,
 `plan/archive/ntrip-caster.md`, `plan/archive/ntrip-client.md`, and
 `plan/archive/stream-pull-daemon.md`.
 
+The rewritten setup workflow should distinguish base and rover
+requirements. A base needs a known antenna position and the ability to
+emit appropriate RTCM correction messages; a rover needs to accept
+corrections and compute an RTK position solution. Do not imply that
+RTCM output alone makes a receiver fully RTK-capable: typically a
+rover-capable receiver can also act as a base, but the reverse is not
+guaranteed.
 
-### Develop orientation section
+### Develop introduction section
 
-The final Orientation section should not be added all at once. It
-should grow from concept pages that support existing setup and
-hardware pages.
+The final Introduction section should not be added all at once. The
+first pass should be a structural rework of the existing introduction
+material, not an excuse to add arbitrary amounts of useful background.
+The current `intro.md` mixes SatPulse-independent concepts, current
+SatPulse capabilities, and comparisons with other software. Split and
+rewrite that material into an overview landing page plus pages for
+GNSS, timing, positioning, SatPulse features, and other software.
 
-#### Add the timing concept page after the setup split
+#### Create a short introduction overview
 
-Create the Timing page as the conceptual foundation for the no-PHC
-baseline and optional PHC synchronization path. It should explain
-system clock versus PHC, PPS timestamping, hardware timestamping,
-GPIO PPS, serial time-of-day labeling, ptp4l, chrony, no-PHC NTP,
-and the precision classes users can realistically expect. Source
-notes: the old "Basics of how it works" material, the time-server
-architecture post, the no-PHC timing post, the SatPulse 0.2 PHC
-architecture post, and the chrony/ntpd-rs hardware framing.
+Make `intro/index.md` a short landing page for the introduction
+section. It should point readers to GNSS, timing, positioning,
+SatPulse features, and related software, rather than trying to teach
+those topics itself. Source notes: the opening of the current
+`intro.md`, rewritten so it does not make the whole section look like
+only a SatPulse product introduction.
 
-#### Move GNSS concepts out of the hardware catalog
+#### Rewrite precision timing around low-cost hardware
 
-Use the GPS technology page to hold conceptual material about
-constellations, bands, timing mode, sawtooth error, raw observations,
-RTK, PPP, correction streams, and authentication. This should happen
-after the GNSS modules page has enough hardware-selection content to
-stand on its own. Source notes: the old GPS introduction material and
-the conceptual front of the GNSS modules page.
+Create the Precision timing page around the message that recent low-cost
+hardware and Linux kernel support make much more precise network
+timing practical than used to be possible without specialist
+equipment. The page should make the PHC mental model central: system
+clock versus PHC, hardware packet timestamping, external PPS
+timestamping, PHC-capable NICs, PTP switches, PTM, chrony/NTP, and
+the precision classes users can realistically expect. SatPulse should
+appear as one way to take advantage of this hardware, not as the
+reason the hardware can achieve the precision. Source notes: the
+current `intro.md` hardware and "Basics of how it works" material,
+the time-server architecture post, the unpublished recent-hardware
+draft, the no-PHC timing post, the SatPulse 0.2 PHC architecture
+post, and the chrony/ntpd-rs hardware framing.
+
+The Precision timing page should explain what PTM is conceptually:
+why precise PHC synchronization is not enough for ordinary software,
+why the system clock still matters, and how PTM/cross-timestamping
+helps transfer precision between a NIC clock and the system clock.
+Keep concrete hardware-selection material in `hardware/ptm.md`: which
+NICs, chipsets, CPUs, motherboards, drivers, and commands can be used
+to tell whether PTM support is present and working.
+
+#### Split GNSS and positioning concepts
+
+Use the GNSS page for the receiver and signal concepts: GPS versus
+GNSS terminology, constellations, bands, timing mode, sawtooth error,
+raw observations, correction data as a GNSS data product, and
+authentication. RTK and PPP can be mentioned here as high-end receiver
+capability categories, but the positioning page should own the
+explanation of how they work.
+
+Use the Positioning page for the message that hardware RTK has become
+cheap enough to be relevant beyond specialist surveying equipment, but
+that RTK is relative positioning. It should explain base versus rover,
+the need for a known base-station position, fixed versus float RTK,
+ambiguity resolution, RTK versus PPP, local OSR corrections versus
+global SSR corrections, and hardware RTK versus software positioning.
+Harvest the conceptual parts of the current RTK howto, especially the
+base/rover model and fixed-position extraction, while leaving command
+sequences and SatPulse-specific setup in the setup workflow. The
+GNSS modules page should then apply these concepts to hardware
+selection rather than explaining them in depth.
 
 #### Add a current capability page before broadening the site
 
-Create the "What SatPulse can do" page before broadening the home
-page. It should separate current released functionality from planned
-work. Current material can cover `satpulsed`, `satpulsetool`, PHC
+Create the SatPulse features page before broadening the home page. It
+can describe the 0.3 feature set, with a caveat at the top that the
+page assumes 0.3 or a build from current master. This is better than
+peppering the page with release labels. Material can cover
+`satpulsed`, `satpulsetool`, PHC
 synchronization, PTP/chrony integration, no-PHC timing, receiver
 configuration, observability, packet capture, and current hardware
-support. Future positioning, RTK, and new PPP workflows should be
-clearly labelled rather than presented as current.
+support. Future work beyond 0.3 should still be clearly labelled
+rather than presented as current. Source notes: the
+current `intro.md` feature list, the recently rewritten
+`satpulsed(8)` description, `satpulsetool(1)`, and NEWS for
+release-sensitive features.
 
 #### Reframe related software after capabilities are clear
 
@@ -425,4 +485,3 @@ points: chrony, ntpd-rs, ptp4l, gpsd, RTKLIB, Ntrip tools, vendor
 tools, and SatPulse. This should answer "which tool owns which job?"
 rather than repeat setup instructions. It should not imply that
 future positioning workflows are already released.
-
