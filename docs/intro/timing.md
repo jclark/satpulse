@@ -67,9 +67,10 @@ PTM requires support from both the network card and the computer (specifically t
 
 The Linux kernel enables applications to take advantage
 of PTM using a system call that performs *cross timestamping*, which
-means that a single system call fetches both the system time and the
-time of a NIC clock simultaneously.
+means that a single system call fetches both the system clock time and the PHC time simultaneously.
 (The system call is the PTP_SYS_OFFSET_PRECISE ioctl.)
+
+There are also a few on-motherboard Intel ethernet controllers, such as the I219-V, that support cross timestamping using a device-specific mechanism unrelated to PTM.
 
 The PTP daemon deals only with transferring time from the PHC of one system to the PHC of another system.
 Synchronizing the system clock with the PHC needs to be handled by another component.
@@ -124,6 +125,6 @@ To preserve GNSS accuracy, each link in the chain needs hardware support:
 - hardware timestamping of the PPS signal
 - hardware timestamping of the network packets
 - switch with PTP transparent clock support
-- PTM for cross-timestamping
+- PTM for cross timestamping
 
 With all of these in place, end-to-end accuracy in the tens of nanoseconds is achievable.
