@@ -3,18 +3,26 @@ title: "Precision network timing"
 ---
 
 The focus of the SatPulse project is using GNSS receivers with computer systems.
-For timing, the problem we are trying to solve is how to transfer time from a GNSS receiver to computer systems' clocks.
-This involves first transferring time to the computer to which the GNSS receiver is directly attached,
-and then from there to other computers.
+The starting point is a GNSS receiver directly connected to a host computer.
+For precision timing, two connections to the receiver are required.
+The first is a pulse-per-second (PPS) connection: the GNSS receiver emits a pulse that marks the start of each second very accurately.
+The second is a serial connection: the GNSS receiver emits messages shortly after each second,
+which include the current time.
 
-The classic approach to this problem is purely software-based, in the sense that only general-purpose hardware is used.
+For timing, we are trying to solve two problems:
+how to transfer time from the GNSS receiver to the host computer,
+and how to transfer time from the host computer to other computers over the network.
+The classic approach to both these problems is purely software-based, in the sense that only general-purpose hardware is used.
 The PPS signal is attached to a GPIO or serial port pin.
-The pulse edge causes an interrupt and the kernel's interrupt handler records the system time it was called.
-An NTP server uses this to synchronize the system clock with the GPS receiver's time,
-and NTP clients synchronize their system clocks over the network using NTP.
+The pulse edge causes an interrupt, and the kernel's interrupt handler records the system clock time when it was called.
+This information, together with the messages from the serial connection, is used
+by an NTP server to synchronize the host's system clock with the GNSS receiver's time.
+An NTP client exchanges packets with NTP servers over the network.
+The kernel timestamps each packet, recording the system clock time it sent or received the packet.
+These timestamps are used by the NTP client to synchronize its system clock with the server.
 This works very well, but the achievable accuracy is limited to about 1 microsecond.
 This is well short of the accuracy of a GPS receiver,
-which is about 5ns for a high-end model, and about 30ns for an inexpensive model.
+which is about 5ns for a high-end model, or about 30ns for an inexpensive model.
 
 In the last few years, inexpensive hardware has become available that makes it possible to do much better than this.
 This hardware is designed to support the Precision Time Protocol (PTP), but its use is not restricted to PTP,
