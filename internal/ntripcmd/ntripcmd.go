@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"os"
 	"strings"
 
@@ -23,8 +22,6 @@ import (
 )
 
 const summary = `[-h|--help] [--user user[:password]] [--bin] <address[:port]> <mountpoint>`
-
-const defaultPort = "2101"
 
 // scanBufSize matches stream.scanBufSize.
 const scanBufSize = 16
@@ -56,19 +53,12 @@ func parseFlags(cmdName string, args []string) (cfg *flagConfig, help bool, usag
 		return
 	}
 	cfg = &flagConfig{
-		Addr:       ensurePort(flags.Arg(0), defaultPort),
+		Addr:       stream.NtripNormalizeAddress(flags.Arg(0)),
 		Mountpoint: flags.Arg(1),
 		Bin:        bin,
 	}
 	cfg.Username, cfg.Password = splitUserPass(user)
 	return
-}
-
-func ensurePort(addr, port string) string {
-	if _, _, err := net.SplitHostPort(addr); err == nil {
-		return addr
-	}
-	return net.JoinHostPort(addr, port)
 }
 
 func splitUserPass(user string) (string, string) {

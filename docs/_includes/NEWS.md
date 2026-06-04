@@ -1,4 +1,6 @@
-## Changes in 0.3 (not yet released)
+## Changes in 0.3
+
+_Not yet released_
 
 ### RTK and RTCM
 
@@ -20,11 +22,24 @@
 - `satpulsed` warns when u-blox `UBX-MON-COMMS` reports transmit-buffer overflow, and the u-blox Gen 9 message file includes a tag to enable it. (#273)
 - `satpulsed` logs u-blox `UBX-INF-*` messages emitted by the receiver. (#273)
 
+### NTP support
+
+- SatPulse now supports the NTP SHM protocol in addition to the chrony refclock SOCK protocol for sending time information to an NTP server. `satpulse.toml` has a new `[ntp.shm]` table for configuring this. (#300)
+
 ### GPS high-level configuration
 
 - `satpulsetool gps` has a new `--fixed-pos-llh` option for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#146)
 - `satpulsetool gps --show-receiver` now prints a `Supports:` line listing the receiver configuration features that SatPulse can use. (#203)
 - `satpulsetool gps` now warns if a specified configuration option could not be applied because it is not supported by the receiver. (#203)
+
+### RINEX observation conversion
+
+- `satpulsetool` has a new `convobs` command, which converts raw GNSS observation data from u-blox UBX-RXM-RAWX, Unicore OBSVM, or RTCM MSM7 into RINEX observation files for PPP post-processing. It can decimate observations and set RINEX header metadata from command-line options or a TOML header file. `convobs` also supports a new JSON Lines observation format that follows RINEX semantics to enable convenient processing with modern tooling such as `jq`; it reads and writes this format, and can also read existing RINEX files, so it can convert freely between raw packets, RINEX, and the JSON Lines format. (#296)
+
+### Other satpulsetool improvements
+
+- `satpulsetool` has a new `pack` command, which reads a JSONL packet log and writes selected packets as a packet byte stream corresponding to the original packet contents. It can filter by packet `tag` and `msg`, and can preserve inter-packet timing for FIFO-based replay. (#247)
+- `satpulsetool` has a new `scan` command, which reads a raw GPS packet byte stream and writes a JSONL packet log that can be decoded with `satpulsetool annotate`. (#246)
 
 ### Miscellaneous
 
@@ -32,7 +47,9 @@
 - The `satpulse@.service` has been improved so that if a USB GNSS receiver is unplugged, its `satpulse@...` service stops, and when the receiver is plugged back in, its service is automatically restarted, provided it was enabled. To take advantage of this after installing the new unit file, previously enabled instances need to be reenabled, for example with `systemctl reenable satpulse@ttyS0`. (#172)
 - The packaged `satpulse@.service` unit now runs with improved systemd security hardening. (#254)
 
-## Changes in 0.2 (released 2026-05-07)
+## Changes in 0.2
+
+_Released 2026-05-07_
 
 ### Position and velocity
 
@@ -101,3 +118,7 @@
 
 - `satpulsetool` can now be built for Windows using the `win-build.ps1` script. It supports the `gps`, `decode`, `annotate`, `replay` and `ntrip` subcommands.
 - `satpulsed` now uses distinct exit statuses for usage errors, permission errors and configuration-file errors, so systemd can avoid restarting the daemon for failures that require user action. (#171)
+
+---
+
+0.1 was released on 2026-01-23.

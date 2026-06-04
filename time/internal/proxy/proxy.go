@@ -12,6 +12,7 @@ import (
 	"os/user"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/bcast"
@@ -305,8 +306,15 @@ func connReadWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn ne
 	}
 }
 
+// IsNormalConnClose reports whether err is an expected connection close.
+func IsNormalConnClose(err error) bool {
+	return errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET)
+}
+
 func logConnErr(lg *slog.Logger, msg string, err error) {
-	if !errors.Is(err, net.ErrClosed) {
+	if !IsNormalConnClose(err) {
 		lg.Error(msg, "err", err)
 	}
 }

@@ -12,7 +12,14 @@
           "enum": [
             "NMEA",
             "UBX",
-            "RTCM"
+            "RTCM",
+            "CASBIN",
+            "ASBIN",
+            "SDBP",
+            "UNCB",
+            "UNCA",
+            "NOVB",
+            "NOVA"
           ]
         },
         "writeLockTimeout": {
@@ -340,6 +347,21 @@
           "required": [
             "path"
           ]
+        },
+        "shm": {
+          "type": "object",
+          "properties": {
+            "segment": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "precision": {
+              "type": "integer",
+              "minimum": -128,
+              "maximum": 127
+            }
+          }
         }
       }
     },
@@ -461,7 +483,7 @@
               "type": "object",
               "properties": {
                 "address": {
-                  "description": "host:port of the Ntrip caster",
+                  "description": "host[:port] of the Ntrip caster (default port 2101)",
                   "type": "string"
                 },
                 "mountpoint": {
@@ -494,14 +516,14 @@
               "protocol": {
                 "description": "Packet format to forward (default: RTCM for ntrip transport)",
                 "type": "string",
-                "enum": ["", "RTCM", "NMEA", "UBX"]
+                "enum": ["", "RTCM", "NMEA", "UBX", "CASBIN", "ASBIN", "SDBP", "UNCB", "UNCA", "NOVB", "NOVA"]
               },
               "ntrip": {
                 "description": "Ntrip v1 server (SOURCE) upload to a remote caster",
                 "type": "object",
                 "properties": {
                   "address": {
-                    "description": "host:port of the remote caster",
+                    "description": "host[:port] of the remote caster (default port 2101)",
                     "type": "string"
                   },
                   "mountpoint": {
@@ -537,7 +559,7 @@
               {
                 "if": {
                   "properties": {
-                    "protocol": {"enum": ["NMEA", "UBX"]}
+                    "protocol": {"enum": ["NMEA", "UBX", "CASBIN", "ASBIN", "SDBP", "UNCB", "UNCA", "NOVB", "NOVA"]}
                   },
                   "required": ["protocol"]
                 },

@@ -12,19 +12,20 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/time/internal/promobs"
-	"github.com/jclark/satpulse/time/lib/sse"
+	"github.com/jclark/satpulse/time/internal/proxy"
 	"github.com/jclark/satpulse/time/internal/sseobs"
+	"github.com/jclark/satpulse/time/lib/sse"
 	"github.com/jclark/satpulse/web"
 )
 
 type HTTPConfig struct {
-	Listen   string `toml:"listen"`
-	PProf    bool   `toml:"pprof"`
+	Listen string `toml:"listen"`
+	PProf  bool   `toml:"pprof"`
 	// These default to true but use *bool because table array items
 	// cannot have pre-filled defaults.
-	GUI      *bool  `toml:"gui"`      // Serve graphical user interface
-	Metrics  *bool  `toml:"metrics"`  // Serve Prometheus metrics endpoint
-	Position *bool  `toml:"position"` // Serve current position endpoint
+	GUI      *bool `toml:"gui"`      // Serve graphical user interface
+	Metrics  *bool `toml:"metrics"`  // Serve Prometheus metrics endpoint
+	Position *bool `toml:"position"` // Serve current position endpoint
 }
 
 // gui gives the value of the GUI option, defaulting to true if not set.
@@ -156,7 +157,9 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWrite
 			continue
 		}
 		if _, err := w.Write(([]byte)(ev.Format())); err != nil {
-			lg.Error("error writing HTTP response", "err", err)
+			if !proxy.IsNormalConnClose(err) {
+				lg.Error("error writing HTTP response", "err", err)
+			}
 			return
 		}
 	}
@@ -175,7 +178,9 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWrite
 			// XXX: handle error
 			_, err := w.Write(([]byte)(event.Format()))
 			if err != nil {
-				lg.Error("error writing HTTP response", "err", err)
+				if !proxy.IsNormalConnClose(err) {
+					lg.Error("error writing HTTP response", "err", err)
+				}
 				return
 			}
 			flusher.Flush()

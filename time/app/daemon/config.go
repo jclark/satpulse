@@ -18,6 +18,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/proxy"
 	"github.com/jclark/satpulse/time/internal/refclock"
 	"github.com/jclark/satpulse/time/internal/ts"
+	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/lib/pmc"
 	"github.com/jclark/satpulse/time/sockrefclock"
 	"github.com/pelletier/go-toml/v2"
@@ -83,11 +84,19 @@ type PTP4LConfig struct {
 
 type NTPConfig struct {
 	Sock *NTPSockConfig `toml:"sock"`
+	SHM  *NTPSHMConfig  `toml:"shm"`
 }
 
 type NTPSockConfig struct {
 	Path string `toml:"path"`
 }
+
+type NTPSHMConfig struct {
+	Segment   *uint8 `toml:"segment"`
+	Precision *int8  `toml:"precision"`
+}
+
+const serialSHMPrecision int8 = -1
 
 type LogConfig struct {
 	Interval int    `toml:"interval"`
@@ -157,13 +166,17 @@ func defaultConfig() *Config {
 	return cfg
 }
 
-func (cfg *Config) httpWantsSatellites() bool {
+func (cfg *Config) anyHTTP(f func(HTTPConfig) bool) bool {
 	for _, c := range cfg.HTTP {
-		if c.gui() || c.metrics() {
+		if f(c) {
 			return true
 		}
 	}
 	return false
+}
+
+func (cfg *Config) httpWantsSatellites() bool {
+	return cfg.anyHTTP(HTTPConfig.gui) || cfg.anyHTTP(HTTPConfig.metrics)
 }
 
 // hasNtripStream reports whether any STR record will be
@@ -257,6 +270,31 @@ func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (refclock.RefClock, error) {
 		return nil, err
 	}
 	return refclock.NewLoggingSockRefClock(lg, rc), nil
+}
+
+// NewSHMWriter attaches to the configured NTP SHM segment.
+func (cfg *NTPConfig) NewSHMWriter(lg *slog.Logger) (*ntpshm.Writer, error) {
+	if cfg.SHM == nil || cfg.SHM.Segment == nil {
+		return nil, nil
+	}
+	segment := *cfg.SHM.Segment
+	w, a, err := ntpshm.New(segment)
+	if err != nil {
+		return nil, fmt.Errorf("attach NTP SHM segment %d: %w", segment, err)
+	}
+	lg.Info("attached to NTP SHM segment", "segment", a.Segment, "key", fmt.Sprintf("0x%x", a.Key))
+	return w, nil
+}
+
+func (cfg *Config) shmFixedPrecision() *int8 {
+	if cfg.NTP.SHM != nil && cfg.NTP.SHM.Precision != nil {
+		return cfg.NTP.SHM.Precision
+	}
+	if cfg.PHC.Interface == "" {
+		p := serialSHMPrecision
+		return &p
+	}
+	return nil
 }
 
 func (cfg *PTPConfig) NewClient() (*pmc.Client, error) {

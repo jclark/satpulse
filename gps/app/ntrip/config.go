@@ -61,9 +61,12 @@ type AuthConfig struct {
 	Users   []string `toml:"users" comment:"Restrict access to these users"`
 }
 
+// DefaultPort is the IANA-assigned Ntrip port.
+const DefaultPort = "2101"
+
 // DefaultListen is the default listen address used when [ntrip.listen]
-// is unset.  2101 is the IANA-assigned Ntrip port.
-const DefaultListen = ":2101"
+// is unset.
+const DefaultListen = ":" + DefaultPort
 
 // DefaultCountry is used when [ntrip.country] is unset.  ISO 3166
 // user-assigned range, conventional "unknown" placeholder.

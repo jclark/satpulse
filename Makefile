@@ -28,7 +28,7 @@ TAGS=netgo,osusergo
 ALL_GOARCH=arm64 amd64
 TOMLS:=$(patsubst %,out/%/satpulse.toml,$(ALL_GOARCH))
 ARCH:=$(shell uname -m)
-MAN_PAGES=satpulsetool.1 satpulsetool-gps.1 satpulsetool-sdp.1 satpulsetool-syncsim.1 satpulse.toml.5 satpulsed.8
+MAN_PAGES=satpulsetool.1 satpulsetool-gps.1 satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 satpulsetool-syncsim.1 satpulsetool-convobs.1 satpulse.toml.5 satpulsed.8
 MAN_TARGETS = $(addprefix out/, $(MAN_PAGES))
 MAN_GZ_TARGETS = $(addsuffix .gz, $(MAN_TARGETS))
 
@@ -82,8 +82,11 @@ install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpul
 	done
 	install -D -m 644 out/satpulsetool.1 /usr/local/share/man/man1/satpulsetool.1
 	sed 's;/usr/share/satpulse/gpsmsg;/usr/local/share/satpulse/gpsmsg;g' out/satpulsetool-gps.1 > /usr/local/share/man/man1/satpulsetool-gps.1
+	install -D -m 644 out/satpulsetool-pack.1 /usr/local/share/man/man1/satpulsetool-pack.1
+	install -D -m 644 out/satpulsetool-scan.1 /usr/local/share/man/man1/satpulsetool-scan.1
 	install -D -m 644 out/satpulsetool-sdp.1 /usr/local/share/man/man1/satpulsetool-sdp.1
 	install -D -m 644 out/satpulsetool-syncsim.1 /usr/local/share/man/man1/satpulsetool-syncsim.1
+	install -D -m 644 out/satpulsetool-convobs.1 /usr/local/share/man/man1/satpulsetool-convobs.1
 	install -D -m 644 out/satpulse.toml.5 /usr/local/share/man/man5/satpulse.toml.5
 	install -d /usr/local/share/man/man8
 	sed 's;/etc/satpulse.toml;$(CONFIG_FILE);g' out/satpulsed.8 > /usr/local/share/man/man8/satpulsed.8
@@ -99,8 +102,11 @@ uninstall:
 	rm -rf /usr/local/share/satpulse/gpsmsg
 	rm -f /usr/local/share/man/man1/satpulsetool.1
 	rm -f /usr/local/share/man/man1/satpulsetool-gps.1
+	rm -f /usr/local/share/man/man1/satpulsetool-pack.1
+	rm -f /usr/local/share/man/man1/satpulsetool-scan.1
 	rm -f /usr/local/share/man/man1/satpulsetool-sdp.1
 	rm -f /usr/local/share/man/man1/satpulsetool-syncsim.1
+	rm -f /usr/local/share/man/man1/satpulsetool-convobs.1
 	rm -f /usr/local/share/man/man5/satpulse.toml.5
 	rm -f /usr/local/share/man/man8/satpulsed.8
 	systemctl daemon-reload
@@ -141,8 +147,11 @@ $(DEB_PATTERN): % out/%/satpulse.toml $(MAN_GZ_TARGETS) gpsmsg
 	install -D -m 644 configs/satpulse@.service out/$*/deb/lib/systemd/system/satpulse@.service
 	install -D -m 644 out/satpulsetool.1.gz out/$*/deb/usr/share/man/man1/satpulsetool.1.gz
 	install -D -m 644 out/satpulsetool-gps.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-gps.1.gz
+	install -D -m 644 out/satpulsetool-pack.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-pack.1.gz
+	install -D -m 644 out/satpulsetool-scan.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-scan.1.gz
 	install -D -m 644 out/satpulsetool-sdp.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-sdp.1.gz
 	install -D -m 644 out/satpulsetool-syncsim.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-syncsim.1.gz
+	install -D -m 644 out/satpulsetool-convobs.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-convobs.1.gz
 	install -D -m 644 out/satpulse.toml.5.gz out/$*/deb/usr/share/man/man5/satpulse.toml.5.gz
 	install -D -m 644 out/satpulsed.8.gz out/$*/deb/usr/share/man/man8/satpulsed.8.gz
 	installed_size=`du -s -k out/$*/deb | cut -f1`;\

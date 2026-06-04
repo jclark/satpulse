@@ -93,7 +93,7 @@ func startPush(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 			continue
 		}
 		dest := &stream.NtripDestination{
-			Addr:       p.Ntrip.Address,
+			Addr:       stream.NtripNormalizeAddress(p.Ntrip.Address),
 			Mountpoint: p.Ntrip.Mountpoint,
 			Password:   p.Ntrip.Password,
 			UserAgent:  stream.NtripUserAgent{Version: version},
@@ -122,6 +122,8 @@ func runPushEntry(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 			lg.Info("ntrip push connected", "addr", addr, "mountpoint", mnt)
 		case stream.Reconnecting:
 			lg.Warn("ntrip push reconnecting", "addr", addr, "mountpoint", mnt, "err", err)
+		case stream.Failed:
+			lg.Error("ntrip push gave up", "addr", addr, "mountpoint", mnt, "err", err)
 		}
 	}
 	push := stream.NewPush()

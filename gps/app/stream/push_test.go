@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -255,6 +256,88 @@ func TestPushReconnectsAfterWriteError(t *testing.T) {
 	cancel()
 	if err := wait(); err != nil && !errors.Is(err, context.Canceled) {
 		t.Errorf("Run: %v", err)
+	}
+}
+
+func TestPushStopsOnFatalConnect(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Connect always fails with a fatal error; Push must give up
+	// rather than retry forever.
+	var calls atomic.Int32
+	dest := &fakeDest{}
+	dest.next = func(ctx context.Context) (net.Conn, error) {
+		calls.Add(1)
+		return nil, &fatalConnectError{errors.New("Ntrip: ERROR - Bad Password")}
+	}
+	var gotFailed atomic.Bool
+	onState := func(st State, _ error) {
+		if st == Failed {
+			gotFailed.Store(true)
+		}
+	}
+	_, _, wait := runPush(t, ctx, dest, rtcm.Tag, onState)
+	done := make(chan error, 1)
+	go func() { done <- wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Run: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Push.Run did not return after fatal connect error")
+	}
+	if !gotFailed.Load() {
+		t.Error("onState was not called with Failed")
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("Connect called %d times, want 1 (no retry on fatal error)", n)
+	}
+}
+
+func TestNtripFatalResponse(t *testing.T) {
+	cases := []struct {
+		resp  string
+		fatal bool
+	}{
+		{"ERROR - Bad Password", true},
+		{"ERROR - Mount Point Invalid", true},
+		{"ERROR - Mount Point Taken", false},
+		{"ERROR - Already Connected", false},
+		{"ERROR - Mount Point Taken or Invalid", false},
+		{"some unexpected line", false},
+	}
+	for _, c := range cases {
+		if got := ntripFatalResponse(c.resp); got != c.fatal {
+			t.Errorf("ntripFatalResponse(%q) = %v, want %v", c.resp, got, c.fatal)
+		}
+	}
+}
+
+func TestNtripDestinationBadPasswordFatal(t *testing.T) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
+		conn.Write([]byte("ERROR - Bad Password\r\n"))
+	})
+	defer ln.close()
+	d := &NtripDestination{Addr: ln.addr(), Mountpoint: "MNT", Password: "wrong"}
+	_, err := d.Connect(context.Background())
+	if !isFatalConnect(err) {
+		t.Errorf("bad password: isFatalConnect = false, want true (err %v)", err)
+	}
+}
+
+func TestNtripDestinationMountTakenNotFatal(t *testing.T) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
+		conn.Write([]byte("ERROR - Mount Point Taken or Invalid\r\n"))
+	})
+	defer ln.close()
+	d := &NtripDestination{Addr: ln.addr(), Mountpoint: "MNT", Password: "pw"}
+	_, err := d.Connect(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if isFatalConnect(err) {
+		t.Errorf("mount taken: isFatalConnect = true, want false (err %v)", err)
 	}
 }
 

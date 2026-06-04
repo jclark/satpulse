@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/bcast"
@@ -388,16 +389,20 @@ func (c *caster) streamLoop(ctx context.Context, m *mount, w streamWriter) {
 	}
 }
 
-// logConnErr logs a connection error unless it's a normal close
-// (net.ErrClosed).  Matches proxy.logConnErr.
+// logConnErr logs a connection error unless it's a normal close.
 func logConnErr(lg *slog.Logger, msg string, err error) {
-	if !errors.Is(err, net.ErrClosed) {
+	if !isNormalConnClose(err) {
 		lg.Error(msg, "err", err)
 	}
+}
+
+func isNormalConnClose(err error) bool {
+	return errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET)
 }
 
 // slogErrorLog adapts an slog.Logger for use as http.Server.ErrorLog.
 func slogErrorLog(lg *slog.Logger) *log.Logger {
 	return slog.NewLogLogger(lg.Handler(), slog.LevelError)
 }
-
