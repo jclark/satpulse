@@ -82,6 +82,7 @@ System testing on real hardware is doing using ansible in `systest/` directory.
 
 - Never use `git add -A` or `git add .` - these add untracked files which may include test data or local files
 - Use `git add -u` to stage modified/deleted tracked files, then add new files explicitly by name
+- Only create a branch when explicitly instructed to. Otherwise commit on the current branch, including the default branch.
 
 ## Development environment
 
