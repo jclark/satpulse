@@ -1,6 +1,7 @@
 package convobscmd
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
@@ -649,6 +650,76 @@ func TestRunPacketLogInput(t *testing.T) {
 			}
 			assertObsJSON(t, got.String(), "PKTLOG", tt.comments, tt.sat, tt.sig, tt.t)
 		})
+	}
+}
+
+func TestRunPacketLogPrefilterSkipsInsignificantPacket(t *testing.T) {
+	rawx := rawxPacket(t)
+	bad := `{"t":"2026-01-01T00:00:00Z","tag":"UBX","msg":"NAV-PVT","bin":"zz"}`
+	good := packetLogLine(t, gpsio.PacketLogEntry{Tag: gpsreg.TagUBX, Msg: "RXM-RAWX", Bin: gpsio.HexString(rawx)})
+	var got bytes.Buffer
+	cj := convJob{
+		inputs: testInputs(strings.NewReader(bad + "\n" + good + "\n")),
+		out:    &got,
+		opts: convertOptions{
+			from:      inputRaw,
+			to:        outputObsJSON,
+			packetLog: true,
+		},
+		meta: testMetaMarker("PKTLOG"),
+	}
+	if err := cj.run(testLogger(io.Discard), time.Now().UTC()); err != nil {
+		t.Fatalf("run packet log: %v", err)
+	}
+	assertObsJSON(t, got.String(), "PKTLOG", nil, "G03", "1C", 0)
+}
+
+func TestMaybeSignificantPacketLogLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{name: "ubx rawx", line: `{"tag":"UBX","msg":"RXM-RAWX"}`, want: true},
+		{name: "unc obsvm", line: `{"tag":"UNCB","msg":"OBSVM"}`, want: true},
+		{name: "rtcm", line: `{"tag":"RTCM","msg":"1005"}`, want: true},
+		{name: "unicode escape", line: `{"tag":"UBX","msg":"RX\u004d-RAWX"}`, want: true},
+		{name: "escaped crlf", line: `{"tag":"UNCA","msg":"MODE","ascii":"#MODE\\r\\n"}`, want: false},
+		{name: "irrelevant", line: `{"tag":"UBX","msg":"NAV-PVT"}`, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := maybeSignificantPacketLogLine([]byte(tt.line)); got != tt.want {
+				t.Fatalf("maybeSignificantPacketLogLine = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadPacketLogLine(t *testing.T) {
+	long := strings.Repeat("x", 20) + "\n"
+	r := bufio.NewReaderSize(strings.NewReader(long+"tail"), 8)
+	var buf []byte
+	got, err := readPacketLogLine(r, &buf)
+	if err != nil {
+		t.Fatalf("read long line: %v", err)
+	}
+	if string(got) != long {
+		t.Fatalf("long line = %q, want %q", string(got), long)
+	}
+	got, err = readPacketLogLine(r, &buf)
+	if err != io.EOF {
+		t.Fatalf("read tail err = %v, want EOF", err)
+	}
+	if string(got) != "tail" {
+		t.Fatalf("tail = %q, want tail", string(got))
+	}
+	got, err = readPacketLogLine(r, &buf)
+	if err != io.EOF {
+		t.Fatalf("final err = %v, want EOF", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("final line = %q, want empty", string(got))
 	}
 }
 

@@ -3,6 +3,7 @@ package convobscmd
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,12 +36,20 @@ import (
 )
 
 const scanBufSize = 64 * 1024
+const packetLogBufSize = 1024 * 1024
 const gpsWeek = 7 * 24 * time.Hour
 const packetLogWeekSlack = time.Minute
 
 var packetStreamFormats = gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)
 var packetLogFormats = gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)
 var packetLogFormatsByTag = packetFormatsByTag(packetLogFormats)
+
+// These markers mirror the packet-log formats convobs can convert.
+// Update them when adding another packet-log observation format.
+var packetLogRTCMMarker = []byte("RTCM")
+var packetLogUBXObsMarker = []byte("RXM-RAWX")
+var packetLogUNCObsMarker = []byte("OBSVM")
+var packetLogJSONEscapeMarker = []byte(`\u`)
 
 const summary = `[-h|--help] [-o|--output path] [-H|--header-file path]
            [-r|--from raw|ubx|rtcm|uncb|unca|rinex|obsj] [--packet-log] [--to rinex|obsj]
@@ -807,14 +816,27 @@ func convertPacketStream(r io.Reader, in packetInput, week WeekConstraint) (int,
 }
 
 func convertPacketLog(r io.Reader, from inputFormat, in packetInput) (int, error) {
-	s := bufio.NewScanner(r)
-	s.Buffer(make([]byte, 1024), 1024*1024)
+	rb := bufio.NewReaderSize(r, packetLogBufSize)
+	var buf []byte
 	n := 0
 	line := 0
-	for s.Scan() {
+	for {
+		b, err := readPacketLogLine(rb, &buf)
+		if err != nil && err != io.EOF {
+			return n, err
+		}
+		if len(b) == 0 {
+			break
+		}
 		line++
+		if !maybeSignificantPacketLogLine(b) {
+			if err == io.EOF {
+				break
+			}
+			continue
+		}
 		var entry gpsio.PacketLogEntry
-		if err := json.Unmarshal(s.Bytes(), &entry); err != nil {
+		if err := json.Unmarshal(b, &entry); err != nil {
 			return n, fmt.Errorf("packet log line %d: %w", line, err)
 		}
 		if entry.Out {
@@ -832,18 +854,44 @@ func convertPacketLog(r io.Reader, from inputFormat, in packetInput) (int, error
 				continue
 			}
 		}
-		ok, err := convertPacketData(data, packetLogFormatsByTag[entry.Tag], in, packetLogWeekConstraint(entry, line))
+		ok, err = convertPacketData(data, packetLogFormatsByTag[entry.Tag], in, packetLogWeekConstraint(entry, line))
 		if err != nil {
 			return n, fmt.Errorf("packet log line %d: %w", line, err)
 		}
 		if ok {
 			n++
 		}
-	}
-	if err := s.Err(); err != nil {
-		return n, err
+		if err == io.EOF {
+			break
+		}
 	}
 	return n, nil
+}
+
+func readPacketLogLine(r *bufio.Reader, buf *[]byte) ([]byte, error) {
+	line, err := r.ReadSlice('\n')
+	if err != bufio.ErrBufferFull {
+		return line, err
+	}
+	*buf = append((*buf)[:0], line...)
+	for err == bufio.ErrBufferFull {
+		line, err = r.ReadSlice('\n')
+		*buf = append(*buf, line...)
+	}
+	return *buf, err
+}
+
+func maybeSignificantPacketLogLine(b []byte) bool {
+	// This is a conservative prefilter: false means the packet log line cannot
+	// contain a message convobs uses, while true only means it needs full decoding.
+	// All literal markers contain M; \u keeps escaped JSON names on the safe path.
+	if bytes.IndexAny(b, "M\\") < 0 {
+		return false
+	}
+	return bytes.Contains(b, packetLogRTCMMarker) ||
+		bytes.Contains(b, packetLogUBXObsMarker) ||
+		bytes.Contains(b, packetLogUNCObsMarker) ||
+		bytes.Contains(b, packetLogJSONEscapeMarker)
 }
 
 func obsPacketFromScan(pkt scan.Packet) (obsPacket, bool, error) {
