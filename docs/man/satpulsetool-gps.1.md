@@ -69,7 +69,7 @@ This option cannot be combined with **\-d** or **\-s**.
 
 **\-\-socket** *path*
 : Path to a Unix-domain socket to connect to the GPS receiver instead of a serial device.
-This is for use with the `proxy.sock` table array in the TOML config file for **satpulsed**.
+This is for use with the `proxy.socket` table array in the TOML config file for **satpulsed**.
 
 ## High-level configuration
 

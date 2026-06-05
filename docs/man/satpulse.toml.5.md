@@ -338,7 +338,7 @@ It has the following keys:
 
 Defining a user does not by itself enable authentication for any service.
 
-## `proxy.tcp` and `proxy.sock` table arrays
+## `proxy.tcp` and `proxy.socket` table arrays
 
 The `proxy.tcp` table array provides network access to the GPS receiver over TCP/IP.
 This can be used with, for example, [u-center](https://www.u-blox.com/en/product/u-center)
@@ -352,18 +352,17 @@ It has the following key:
 where the *host* is a host name or IP address, and port is the port number; *host* can be omitted, which means to listen on all
 IP addresses; this key is required in each `[[proxy.tcp]]` table array element
 
-The `proxy.sock` table array provides access to the GPS receiver over a Unix domain socket.
+The `proxy.socket` table array provides access to the GPS receiver over a Unix domain socket.
 
 
 It has the following key:
 
-* `path` - a string specifying the path of the socket; this key is required in each `[[proxy.sock]]` table array element;
-  this key is required in each `[[proxy.sock]]` table array element
+* `path` - a string specifying the path of the socket; this key is required in each `[[proxy.socket]]` table array element
 * `group` - the group id for the socket path; by default this is `dialout` (this is the usual group for the tty devices,
    so a user that can access tty devices will be able to access the socket); when the socket is not readOnly, then the mode
    will be 0660, so only root and members of this group will be able to write to the socket
 
-In addition, `proxy.tcp` and `proxy.sock` can both have the following keys:
+In addition, `proxy.tcp` and `proxy.socket` can both have the following keys:
 
 * `protocol` - a string saying that only packets with this protocol are to be forwarded; recognized values are `"RTCM"`, `"NMEA"`, `"UBX"`, `"CASBIN"`, `"ASBIN"`, `"SDBP"`, `"UNCB"`, `"UNCA"`, `"NOVB"` and `"NOVA"`
 * `readOnly` - a boolean saying whether access to the GPS receiver should be read-only; this means that serial packets will be forwarded from the GPS receiver to the network, but the network will not be able to send packets to the GPS receiver; this defaults to true if `protocol` is specified and false otherwise
