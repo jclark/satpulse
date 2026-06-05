@@ -94,7 +94,7 @@ func (c *Converter) observation(t rinex.Time, meas ubxbin.RxmRawxMeas) (rinex.Si
 	if meas.CNO != 0 {
 		obs.CN0 = opt.Make(float32(meas.CNO))
 	}
-	if len(obs.ObservationCodes()) == 0 {
+	if !obs.PR.IsSet() && !obs.CP.IsSet() && !obs.Do.IsSet() && !obs.CN0.IsSet() {
 		return rinex.SignalObservation{}, false
 	}
 	return obs, true
