@@ -101,6 +101,7 @@ type Msg struct {
 var msgIDMap = make(map[MsgID]func() MsgBody)
 var msgNameMap = make(map[string]func() MsgBody)
 var idNameMap = make(map[MsgID]string)
+var nameIDMap = make(map[string]MsgID)
 
 // String returns a string representation of the message ID
 func (mid MsgID) String() string {
@@ -109,6 +110,14 @@ func (mid MsgID) String() string {
 		return name
 	}
 	return fmt.Sprintf("%d", uint16(mid))
+}
+
+// AsciiMsgID returns the binary MsgID for an ASCII wire name (e.g. "OBSVMA"),
+// or 0 if the name is not a known message. It is the inverse of the ASCII name
+// in MsgBody.ID, used to map an ASCII packet's wire name back to its canonical
+// (suffix-less) name via String.
+func AsciiMsgID(name string) MsgID {
+	return nameIDMap[name]
 }
 
 // regMsg registers a message type with its ID and name
@@ -123,6 +132,7 @@ func regMsg[T any, PT interface {
 	if id != 0 {
 		msgIDMap[id] = ctor
 		idNameMap[id] = idName
+		nameIDMap[name] = id
 	}
 	// Always register with the wire format name (includes "A" suffix except for MODE)
 	msgNameMap[name] = ctor

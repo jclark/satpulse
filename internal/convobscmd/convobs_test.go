@@ -531,7 +531,7 @@ func TestRunPacketLogInput(t *testing.T) {
 	rtcmT := rinex.TimeFromGPSWeekMillis(2397, tow)
 	uncT := rinex.TimeFromGPSWeekMillis(2419, 522335000)
 	uncb := packetLogEntryFromFixture(t, gpsreg.TagUnicoreBin, "OBSVM")
-	unca := packetLogEntryFromFixture(t, gpsreg.TagUnicoreAscii, "OBSVMA")
+	unca := packetLogEntryFromFixture(t, gpsreg.TagUnicoreAscii, "OBSVM")
 	uncbUntagged := uncb
 	uncbUntagged.Tag = ""
 	uncbUntagged.Msg = ""
@@ -656,7 +656,7 @@ func TestConvertPacketDataRecognizesRawFormats(t *testing.T) {
 	rawx := rawxPacket(t)
 	rtcm := rtcmMSM7Packet(t, 345600000)
 	uncbEntry := packetLogEntryFromFixture(t, gpsreg.TagUnicoreBin, "OBSVM")
-	uncaEntry := packetLogEntryFromFixture(t, gpsreg.TagUnicoreAscii, "OBSVMA")
+	uncaEntry := packetLogEntryFromFixture(t, gpsreg.TagUnicoreAscii, "OBSVM")
 	uncb, ok := packetLogEntryData(&uncbEntry)
 	if !ok {
 		t.Fatal("UNCB fixture has no packet data")

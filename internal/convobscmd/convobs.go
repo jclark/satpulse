@@ -37,7 +37,6 @@ import (
 const scanBufSize = 64 * 1024
 const gpsWeek = 7 * 24 * time.Hour
 const packetLogWeekSlack = time.Minute
-const uncaObsVMMsg = "OBSVMA"
 
 var packetStreamFormats = gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)
 var packetLogFormats = gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)
@@ -77,15 +76,15 @@ var rawObservationNames = map[gpsprot.Tag]string{
 	gpsreg.TagUBX:          "UBX RAWX",
 	gpsreg.TagRTCM:         "RTCM MSM7",
 	gpsreg.TagUnicoreBin:   "UNCB OBSVM",
-	gpsreg.TagUnicoreAscii: "UNCA OBSVMA",
+	gpsreg.TagUnicoreAscii: "UNCA OBSVM",
 }
 
 var noPacketObservationMsgs = map[inputFormat]string{
 	inputUBX:  "no UBX-RXM-RAWX messages found",
 	inputRTCM: "no RTCM MSM7 messages found",
 	inputUNCB: "no Unicore UNCB OBSVM messages found",
-	inputUNCA: "no Unicore UNCA OBSVMA messages found",
-	inputRaw:  "no raw observation packets found (UBX RAWX, RTCM MSM7, UNCB OBSVM, UNCA OBSVMA)",
+	inputUNCA: "no Unicore UNCA OBSVM messages found",
+	inputRaw:  "no raw observation packets found (UBX RAWX, RTCM MSM7, UNCB OBSVM, UNCA OBSVM)",
 }
 
 type outputFormat string
@@ -924,7 +923,7 @@ func isRawObs(pkt obsPacket) (gpsprot.Tag, bool) {
 	case gpsreg.TagUnicoreBin:
 		return tag, uncmsg.BinPacketMsgID(pkt.data) == uncmsg.ObsvMID
 	case gpsreg.TagUnicoreAscii:
-		return tag, pkt.format.MsgID(pkt.data) == uncaObsVMMsg
+		return tag, pkt.format.MsgID(pkt.data) == uncmsg.ObsvMID.String()
 	default:
 		return gpsprot.EmptyTag, false
 	}
