@@ -22,6 +22,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/rinex"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
+	"github.com/jclark/satpulse/gps/scan"
 )
 
 func testPtr[T any](v T) *T {
@@ -40,6 +41,12 @@ func testWriteMeta(date time.Time) rinex.Metadata {
 
 func testLogger(w io.Writer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(w, nil))
+}
+
+type packetInputFunc func(scan.Packet, WeekConstraint) (bool, error)
+
+func (f packetInputFunc) ConvertPacket(pkt scan.Packet, week WeekConstraint) (bool, error) {
+	return f(pkt, week)
 }
 
 func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, interval time.Duration) error {
@@ -643,6 +650,68 @@ func TestRunPacketLogInput(t *testing.T) {
 			}
 			assertObsJSON(t, got.String(), "PKTLOG", tt.comments, tt.sat, tt.sig, tt.t)
 		})
+	}
+}
+
+func TestConvertPacketDataRecognizesRawFormats(t *testing.T) {
+	rawx := string(rawxPacket(t))
+	rtcm := string(rtcmMSM7Packet(t, 345600000))
+	uncbEntry := packetLogEntryFromFixture(t, gpsreg.TagUnicoreBin, "OBSVM")
+	uncaEntry := packetLogEntryFromFixture(t, gpsreg.TagUnicoreAscii, "OBSVMA")
+	uncb := uncbEntry.Data()
+	unca := uncaEntry.Data()
+	tests := []struct {
+		name string
+		tag  gpsprot.Tag
+		data string
+	}{
+		{name: "ubx", tag: gpsreg.TagUBX, data: rawx},
+		{name: "rtcm", tag: gpsreg.TagRTCM, data: rtcm},
+		{name: "uncb", tag: gpsreg.TagUnicoreBin, data: uncb},
+		{name: "unca", tag: gpsreg.TagUnicoreAscii, data: unca},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seen := false
+			ok, err := convertPacketData(tt.data, packetLogFormatsByTag[tt.tag], packetInputFunc(func(pkt scan.Packet, week WeekConstraint) (bool, error) {
+				seen = true
+				if !pkt.HasTag(tt.tag) {
+					t.Fatalf("packet tag = %s, want %s", pkt.Tag(), tt.tag)
+				}
+				if pkt.Data != tt.data {
+					t.Fatal("packet data changed")
+				}
+				if !pkt.ChecksumValid {
+					t.Fatalf("packet checksum invalid: %v", pkt.ChecksumError())
+				}
+				return true, nil
+			}), WeekConstraint{})
+			if err != nil {
+				t.Fatalf("convertPacketData: %v", err)
+			}
+			if !ok || !seen {
+				t.Fatalf("convertPacketData ok = %v, seen = %v; want true, true", ok, seen)
+			}
+		})
+	}
+}
+
+func TestConvertPacketDataChecksumError(t *testing.T) {
+	data := rawxPacket(t)
+	data[len(data)-1] ^= 0xff
+	in := &tagInput{
+		tag: gpsreg.TagUBX,
+		convert: func(string, WeekConstraint) (bool, error) {
+			t.Fatal("convert called for packet with bad checksum")
+			return true, nil
+		},
+	}
+	ok, err := convertPacketData(string(data), packetLogFormatsByTag[gpsreg.TagUBX], in, WeekConstraint{})
+	if err == nil {
+		t.Fatal("convertPacketData error = nil, want checksum error")
+	}
+	if ok {
+		t.Fatal("convertPacketData ok = true, want false")
 	}
 }
 

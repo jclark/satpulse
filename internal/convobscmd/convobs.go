@@ -825,29 +825,19 @@ func supportedRawPacketLogTag(tag gpsprot.Tag) bool {
 }
 
 func convertPacketData(data string, fmts []gpsprot.PacketFormat, in packetInput, week WeekConstraint) (bool, error) {
-	s := scan.New(strings.NewReader(data), scanBufSize, fmts)
-	seen := false
-	for {
-		pkt, err := s.Scan()
-		if err == io.EOF {
-			break
+	buf := []byte(data)
+	for _, f := range fmts {
+		if !gpsprot.IsValidPacket(f, buf) {
+			continue
 		}
-		if err != nil {
-			return seen, err
-		}
+		pkt := scan.Packet{Format: f, Data: data, ChecksumValid: slices.Equal(f.ExtractChecksum(buf), f.ComputeChecksum(buf))}
 		var wc WeekConstraint
 		if pkt.HasTag(gpsreg.TagRTCM) {
 			wc = week
 		}
-		ok, err := in.ConvertPacket(pkt, wc)
-		if err != nil {
-			return seen, err
-		}
-		if ok {
-			seen = true
-		}
+		return in.ConvertPacket(pkt, wc)
 	}
-	return seen, nil
+	return false, nil
 }
 
 func packetData(pkt scan.Packet) (string, bool, error) {
