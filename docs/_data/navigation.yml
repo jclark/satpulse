@@ -1,6 +1,8 @@
 main:
   - title: "Blog"
     url: "/blog.html"
+  - title: "Recent changes"
+    url: "/recent-changes.html"
   - title: "GitHub"
     url: https://github.com/jclark/satpulse
 
@@ -70,10 +72,16 @@ docs:
         url: "/man/satpulsetool.1.html"
       - title: "satpulsetool-gps(1)"
         url: "/man/satpulsetool-gps.1.html"
+      - title: "satpulsetool-pack(1)"
+        url: "/man/satpulsetool-pack.1.html"
+      - title: "satpulsetool-scan(1)"
+        url: "/man/satpulsetool-scan.1.html"
       - title: "satpulsetool-sdp(1)"
         url: "/man/satpulsetool-sdp.1.html"
       - title: "satpulsetool-syncsim(1)"
         url: "/man/satpulsetool-syncsim.1.html"
+      - title: "satpulsetool-convobs(1)"
+        url: "/man/satpulsetool-convobs.1.html"
       - title: "satpulse.toml(5)"
         url: "/man/satpulse.toml.5.html"
       - title: "satpulsed(8)"

@@ -173,6 +173,10 @@ set the message rate to 10.
 | `rtcm-msm7` | Enable MSM7 for all constellations (1077/1087/1097/1127) |
 | `rtcm-eph` | Enable ephemeris messages (1019/1020/1041/1042/1044/1045/1046) |
 | `rtcm-eph-off` | Disable ephemeris messages |
+| `rtcm-4072-0` | Enable RTCM 4072.0 (example: numeric message with subtype) |
+| `rtcm-4072-0-off` | Disable RTCM 4072.0 |
+| `rtcm-4072-1` | Enable RTCM 4072.1 |
+| `rtcm-4072-1-off` | Disable RTCM 4072.1 |
 | `rtcm-off` | Disable all RTCM messages |
 | `get-rtcm-base-id` | Query RTCM reference station ID |
 | `rtcm-base-id-0` | Set RTCM reference station ID to 0 |

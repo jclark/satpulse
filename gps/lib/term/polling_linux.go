@@ -16,9 +16,10 @@ import (
 // opened O_RDWR|O_NOCTTY|O_CLOEXEC|O_NONBLOCK and classified as
 // DevUnknown (the UART/USB/BT classification applies only to TTYs).
 // FIFOs are opened O_RDWR|O_NONBLOCK -- so that our own fd keeps the
-// write side of the pipe open, avoiding EOF on every read before an
-// external writer connects -- and classified as DevFIFO. Writes into a
-// DevFIFO port are rejected at the gpsio layer to prevent self-feeding.
+// write side of the pipe open. This avoids EOF both before an external
+// writer connects and after it exits; an idle replay FIFO should look
+// like a silent receiver, not a disconnected one. Writes into a DevFIFO
+// port are rejected at the gpsio layer to prevent self-feeding.
 // The file descriptor is locked exclusively with flock.
 func OpenPolling(path string) (*os.File, DevKind, error) {
 	var st unix.Stat_t

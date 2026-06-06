@@ -86,6 +86,7 @@ Keep a package-level map from type name to factory function:
 var msgRegistry = map[string]func() Msg{
     "posGeo":     func() Msg { return &PosGeoMsg{} },
     "time":       func() Msg { return &TimeMsg{} },
+    "corReport":  func() Msg { return &CorReportMsg{} },
     // ...
 }
 ```
@@ -122,6 +123,9 @@ The daemon event log records two kinds of payloads:
 - Pulse-edge records: `gpsevent.LogEvent` with `type:"pulseEdge"` and `Data`
   decoded as `gpsevent.PulseEdge`
 
+GPS message records include every current `gpsprot.Msg` type, including
+`corReport` correction-report events.
+
 `PulseEdge` carries `ptime.Time` and `phctime.Era`, which are types from the
 `time/` layer that `gpsprot` cannot import. The mixed event-log unmarshal path
 therefore belongs in `gpsevent`, not `gpsprot`.
@@ -141,6 +145,10 @@ Add custom unmarshalling for `gpsevent.LogEvent`. It decodes the top-level
 - `type == "pulseEdge"`: unmarshal `data` as `gpsevent.PulseEdge`
 - otherwise: use `gpsprot.UnmarshalMsg(type, data)` and store the resulting
   `gpsprot.Msg` in `Data`
+
+The runtime `gpsevent.LogEvent` unmarshaller should accept only the new
+envelope format. It should not accept the old sparse event-log shape; old logs
+are handled only by `gpsevent/migrate_log.go`.
 
 Update `LogEvent` writing in `gpsevent/dispatcher.go`:
 
@@ -169,25 +177,16 @@ Update `promobs/prometheus_replay_test.go` `readLogEvents()` to unmarshal
 - `gpsevent.LogEvent` unmarshals GPS message records and pulse-edge records.
 - Event log files use the new envelope format for GPS message and pulse-edge records.
 - Event log replay still handles pulse edges and GPS time/leap-second records correctly.
+- Event log migration preserves correction-report records as `type:"corReport"`.
 - Existing event-log replay and Prometheus replay tests pass with regenerated test data.
 
-## Follow-on: socket API
+## Follow-on
 
-Once the GPS payload model and event envelope are stable, expose the GPS data
-model to external applications with a JSONL socket API.
+Once the GPS payload model and event envelope are stable, the same `Event`
+shape can be exposed to external applications.
 
-### JSONL socket API
-
-Streams `Event` objects as JSON Lines. Same envelope as event log GPS message
-records, but live.
-
-Query parameters select optional processing:
-
-- `?tick` -- pass `TimeMsg` events through `TimeTicker` (one per epoch, filled fields) instead of raw time messages.
-- `?pvbundle` -- emit `PVMsgBundle` events instead of individual `PosGeo`/`PosECEF`/`VelGeo`/`VelECEF` messages.
-
-Without query parameters, the stream is the same as the GPS message part of the
-event log: every raw message.
+An HTTP endpoint that streams gpsprot messages to external consumers as JSON
+Lines is tracked separately by #294.
 
 ### `satpulsetool` event output (#215)
 
@@ -206,11 +205,6 @@ stdout. Both can be active simultaneously.
 
 The `--show-nav` option from #215 (collect events for one epoch and display a
 summary) is orthogonal and can be done separately.
-
-Verify:
-
-- JSONL socket API streams raw GPS message events.
-- `?tick` and `?pvbundle` processing produce the expected GPS derived events.
 
 ## Appendix
 
@@ -253,4 +247,4 @@ For example:
 
 The full schema would have one branch for each GPS message type
 (`time`, `posGeo`, `posECEF`, `velGeo`, `velECEF`, `leapSecond`, `survey`,
-`satellites`, `navEpoch`) plus one branch for `pulseEdge`.
+`satellites`, `navEpoch`, `corReport`) plus one branch for `pulseEdge`.

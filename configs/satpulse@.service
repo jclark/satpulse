@@ -1,5 +1,5 @@
 [Unit]
-Description=Synchronize PTP hardware clock to GPS on /dev/%I
+Description=Integrated GPS daemon on /dev/%I
 After=time-set.target
 After=dev-%i.device
 BindsTo=dev-%i.device

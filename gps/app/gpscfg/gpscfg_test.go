@@ -17,6 +17,17 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
+func TestConfigurePanicsOnReadOnlyProps(t *testing.T) {
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetPort("USB")
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic when read-only properties appear in target.Props")
+		}
+	}()
+	_, _ = Configure(context.Background(), slog.Default(), nil, nil, target, nil, &fakeOutPort{})
+}
+
 func TestNativeOnlyDetection(t *testing.T) {
 	mh := msgHandler{
 		lg:          slog.Default(),

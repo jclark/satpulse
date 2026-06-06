@@ -57,7 +57,7 @@ Both use the same packet framing (0xBA 0xCE sync, same checksum) and share most 
 - `gps/lib/casbin/nav.go` - NAV (V5) and NAV2 (V6) navigation messages
 - `gps/lib/casbin/tim.go` - TIM-TP
 - `gps/internal/casic/` - packet processing and message conversion for both V5 and V6
-- `configs/gpsmsg/atgm332d-v5.toml`, `atgm332d-v6.toml` - reference command packets
+- `configs/gpsmsg/zhongke/atgm332d-v5.toml`, `configs/gpsmsg/zhongke/atgm332d-v6.toml` - reference command packets
 
 ## Stage 0: Hardware validation with message files
 
@@ -73,7 +73,7 @@ Before writing configurator code, validate receiver behaviour on real hardware u
 
 **Both:** Check completeness of both TOML files against `configs/gpsmsg/tags.md`.
 
-**V6:** `atgm332d-v6.toml` — hardware validation of untested messages. Key things to validate:
+**V6:** `configs/gpsmsg/zhongke/atgm332d-v6.toml` — hardware validation of untested messages. Key things to validate:
 - CFG-TP ppsOutMode values and timeRef/tBase polarity
 - CFG-TMODE2 (not yet in TOML file — add and test)
 - CFG-NAVBAND signal masks for each constellation
@@ -269,4 +269,4 @@ Step: `setPrt` - CFG-PRT to change baud rate. This is separate because the seria
 - V6 protocol spec: `../gps-protocol-docs/casic/zkw3.md`
 - Errata/notes: https://github.com/jclark/casictool (`spec/notes.md`)
 - UBX configurator (gpsprot interface pattern): `gps/internal/ubx/ubxcfgprot.go`, `ubxcfg.go`
-- TOML message files: `configs/gpsmsg/atgm332d-v5.toml`, `atgm332d-v6.toml`
+- TOML message files: `configs/gpsmsg/zhongke/atgm332d-v5.toml`, `configs/gpsmsg/zhongke/atgm332d-v6.toml`

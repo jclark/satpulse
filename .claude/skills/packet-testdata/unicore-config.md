@@ -56,6 +56,61 @@ Messages not reachable via high-level config:
 - All ASCII variants of any message
 - NovAtel-format messages (BESTPOS, BESTXYZ)
 
+## Baud rate changes
+
+`--speed` is a no-op on Unicore (`gps/internal/unc/config.go`: "Unicore doesn't yet use speed changes"). To change baud, use the `speed-<rate>-com<N>` tags in `configs/gpsmsg/um980.toml`:
+
+```
+satpulsetool gps -d <device> -s <current_baud> --vendor unicore \
+  -m configs/gpsmsg/um980.toml -t speed-460800-com3
+```
+
+The COM port number depends on how the receiver is wired. Determine the current port by querying `LOGLIST`:
+
+```
+printf '[default.line]\nresponsePattern = "unicore"\ndelay = 0.2\n[[line]]\ntext = "LOGLIST"\n' | \
+  satpulsetool gps -d <device> -s <baud> --vendor unicore -m -
+```
+
+The first response line is `<LOGLIST COMn ...`, where `COMn` is the port. On the lab UM980 rig, `/dev/ttyUSB0` is on COM3. Changes via `CONFIG COM<N> <baud>` are RAM-only; the receiver reverts to the NVM-saved baud after power cycle. Restore at the end of a capture session with the matching `speed-<default>-com<N>` tag.
+
+## Bandwidth notes
+
+Raw observations are bandwidth-heavy. The default 115200 baud is not enough for the full dual ASCII+binary OBSVM set -- even just OBSVMB+OBSVMA at 1Hz saturates the link and the scanner produces null/garbled fragments. Bump to 460800 (or higher) for any raw observation capture beyond OBSVMB alone. Use the `-460800` (or matching) suffix in the capture filename.
+
+The cross-format capture (OBSVMB + RANGECMPB + MSM7, no ASCII, no time) is much smaller and fits comfortably at 460800.
+
+## How `--raw-out` maps to Unicore messages
+
+From `generateRawMsgCommands` in `gps/internal/unc/cfgopts.go`:
+
+- `obs` => OBSVMB.
+- `nav` => `GPSEPHB`, `BDSEPHB`, `GLOEPHB`, `GALEPHB`, `QZSSEPHB`, gated by `--gnss`. Messages for disabled constellations are not enabled.
+
+High-level config only enables the binary uncompressed master variants. To cover the other implemented (and unimplemented-but-on-the-wire) raw paths, follow the high-level step with `-m -` to add:
+
+- ASCII master uncompressed: `OBSVMA 1`.
+- Compressed master and slave, binary and ASCII: `OBSVMCMPB 1`, `OBSVMCMPA 1`, `OBSVHCMPB 1`, `OBSVHCMPA 1`. The slave-antenna form produces no records on single-antenna setups, but the configuration is harmless.
+- NovAtel-compatible compressed range, binary: `RANGECMPB 1` (Unicore msg id 140, per `gps/lib/novmsg/other.go`).
+- ASCII ephemeris per enabled GNSS: `GPSEPHA 1`, `BDSEPHA 1`, `GLOEPHA 1`, `GALEPHA 1`, `QZSSEPHA 1`.
+
+Suggested capture names: `raw-obs-dual.jsonl`, `raw-nav-dual.jsonl`, or `raw-obs-nav-dual.jsonl` -- the `-dual` suffix follows the existing Unicore convention for binary + ASCII in one trace.
+
+`OBSVBASEB` and `OBSVHB` (uncompressed base/slave) are not enabled. They're out of scope for the master-antenna receiver under test.
+
+## Raw cross-format capture
+
+The cross-format capture (`raw-cross.jsonl`) enables three raw observation formats simultaneously, binary only, with no time message: OBSVMB (native), RANGECMPB (NovAtel-compatible), and RTCM MSM7. Each format carries its own GPS time, which is what the cross-format test compares.
+
+```
+satpulsetool gps -d <device> -s <baud> --binary --pvt-out off --raw-out obs --rtcm-out MSM7
+printf '[default.line]\nresponsePattern = "unicore"\ndelay = 0.2\n[[line]]\ntext = "RANGECMPB 1"\n' | \
+  satpulsetool gps -d <device> -s <baud> --vendor unicore -m -
+satpulsetool gps -d <device> -s <baud> --packet-log raw-cross.jsonl --capture 30 --vendor unicore
+```
+
+`--pvt-out off` is essential here -- it suppresses the default high-level config behavior of adding daemon time messages.
+
 ## No default output
 
 Unlike u-blox, the UM980 has no default message output after reload or factory reset. `--reload` produces a clean state with zero messages, which means there is no factory NMEA capture to collect.

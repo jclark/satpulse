@@ -167,6 +167,50 @@ func TestPTPConfig(t *testing.T) {
 	}
 }
 
+func TestNTPShmConfig(t *testing.T) {
+	cfgStr := `[ntp]
+shm.segment = 0
+shm.precision = -23`
+	cfg, err := readConfig(strings.NewReader(cfgStr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NTP.SHM == nil || cfg.NTP.SHM.Segment == nil || *cfg.NTP.SHM.Segment != 0 {
+		t.Fatalf("NTP SHM segment = %+v, want explicit 0", cfg.NTP.SHM)
+	}
+	if cfg.NTP.SHM.Precision == nil || *cfg.NTP.SHM.Precision != -23 {
+		t.Fatalf("NTP SHM precision = %+v, want -23", cfg.NTP.SHM.Precision)
+	}
+}
+
+func TestConfigSHMFixedPrecision(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.PHC.Interface = "eth0"
+	if got := cfg.shmFixedPrecision(); got != nil {
+		t.Fatalf("PHC-mode default SHM fixed precision = %v, want nil", *got)
+	}
+	cfg.PHC.Interface = ""
+	got := cfg.shmFixedPrecision()
+	if got == nil || *got != serialSHMPrecision {
+		t.Fatalf("serial-mode SHM fixed precision = %v, want %d", got, serialSHMPrecision)
+	}
+	cfg, err := readConfig(strings.NewReader(`[ntp]
+shm.segment = 2
+shm.precision = -23`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = cfg.shmFixedPrecision()
+	if got == nil || *got != -23 {
+		t.Fatalf("configured serial-mode SHM fixed precision = %v, want -23", got)
+	}
+	cfg.PHC.Interface = "eth0"
+	got = cfg.shmFixedPrecision()
+	if got == nil || *got != -23 {
+		t.Fatalf("configured PHC-mode SHM fixed precision = %v, want -23", got)
+	}
+}
+
 func TestPTPConfigClockQuality(t *testing.T) {
 	tests := []struct {
 		name      string

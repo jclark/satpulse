@@ -26,6 +26,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/refclock"
 	"github.com/jclark/satpulse/time/internal/sseobs"
 	"github.com/jclark/satpulse/time/internal/ts"
+	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/lib/pmc"
 	"github.com/jclark/satpulse/time/lib/sse"
 	"github.com/jclark/satpulse/time/phc"
@@ -150,7 +151,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 
 	var sseCh chan sse.Event
 	var eb *bcast.Bcast[sse.Event]
-	if len(cfg.HTTP) > 0 {
+	if cfg.anyHTTP(HTTPConfig.gui) {
 		sseCh = make(chan sse.Event, 1)
 		eb = startBcast(ctx, lg, &wg, sseCh)
 	}
@@ -231,7 +232,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	promObs := newPrometheusObserver(cfg)
 	sseObs := newSSEObserver(cfg, sseCh, lg, gcfg)
 	posObs := newPositionObserver(cfg)
-	if eb != nil {
+	if len(cfg.HTTP) > 0 {
 		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, sseObs, promObs, posObs)
 		if err != nil {
 			return err
@@ -260,6 +261,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 
 	rc, err := cfg.NTP.NewRefClock(lg)
+	if err != nil {
+		return err
+	}
+	shm, err := cfg.NTP.NewSHMWriter(lg)
+	if err != nil {
+		return err
+	}
 	var (
 		rcProxy *refclock.ProxyRefClock
 		rcCh    <-chan refclock.RefClockSample
@@ -284,10 +292,20 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 	gpsObs := logobs.NewGPSLogObserver(lg)
+	ubxObs := logobs.NewUBXLogObserver(lg)
 
-	observer := combineObservers(promObs, sseObs, posObs, statsObs, clockObs, trackObs, gpsObs)
+	var oc obs.ObserverCombiner
+	obs.AddObserver(&oc, statsObs)
+	obs.AddObserver(&oc, clockObs)
+	obs.AddObserver(&oc, trackObs)
+	obs.AddObserver(&oc, gpsObs)
+	obs.AddObserver(&oc, ubxObs)
+	obs.AddObserver(&oc, promObs)
+	obs.AddObserver(&oc, sseObs)
+	obs.AddObserver(&oc, posObs)
+	observer := oc.Observer()
 
-	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, observer, tStart)
+	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, observer, tStart)
 	if err != nil {
 		return err
 	}
@@ -313,7 +331,18 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, cfg *Config, gm *ptpgm.Grandmaster, rc *refclock.ProxyRefClock, obs obs.Observer, tStart time.Time) (*gpsevent.Dispatcher, error) {
+// NewDispatcher creates the GPS event dispatcher for the daemon.
+func NewDispatcher(
+	lg *slog.Logger,
+	pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor,
+	clk *ts.Clock,
+	cfg *Config,
+	gm *ptpgm.Grandmaster,
+	rc *refclock.ProxyRefClock,
+	shm *ntpshm.Writer,
+	obs obs.Observer,
+	tStart time.Time,
+) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
 	var controller *phcsync.Controller
 	if clk != nil {
@@ -332,35 +361,30 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		}
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, ls, obs, eventLogPath, tStart)
+	shmWriter := gpsevent.NewSHMWriter(shm, cfg.shmFixedPrecision())
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ls, obs, eventLogPath, tStart)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
 func newSSEObserver(cfg *Config, sseCh chan<- sse.Event, lg *slog.Logger, gcfg *gpscfg.Result) *sseobs.SSEObserver {
-	for _, hc := range cfg.HTTP {
-		if hc.gui() {
-			return sseobs.New(sseCh, cfg.LeapSecond.leapSecond(), lg, gcfg)
-		}
+	if cfg.anyHTTP(HTTPConfig.gui) {
+		return sseobs.New(sseCh, cfg.LeapSecond.leapSecond(), lg, gcfg)
 	}
 	return nil
 }
 
 // newPrometheusObserver creates Prometheus observer if any HTTP endpoint needs metrics
 func newPrometheusObserver(cfg *Config) *promobs.PrometheusObserver {
-	for _, hc := range cfg.HTTP {
-		if hc.metrics() {
-			return promobs.New(cfg.PTP.ClockAccuracy)
-		}
+	if cfg.anyHTTP(HTTPConfig.metrics) {
+		return promobs.New(cfg.PTP.ClockAccuracy)
 	}
 	return nil
 }
 
 // newPositionObserver creates a positionObserver if any HTTP endpoint has position enabled.
 func newPositionObserver(cfg *Config) *positionObserver {
-	for _, hc := range cfg.HTTP {
-		if hc.position() {
-			return &positionObserver{}
-		}
+	if cfg.anyHTTP(HTTPConfig.position) {
+		return &positionObserver{}
 	}
 	return nil
 }
@@ -392,46 +416,6 @@ func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.L
 		return nil, nil
 	}
 	return logobs.NewClockLogObserver(lg, clockLogPath, ls)
-}
-
-// combineObservers combines individual observers into appropriate single observer
-func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObserver,
-	posObs *positionObserver, statsObs *logobs.StatsLogObserver, clockObs *logobs.ClockLogObserver,
-	trackObs *logobs.TrackLogObserver, gpsObs *logobs.GPSLogObserver) obs.Observer {
-
-	var observers []obs.Observer
-
-	// Add observers if they exist (typed nils will be properly handled)
-	if statsObs != nil {
-		observers = append(observers, statsObs)
-	}
-	if clockObs != nil {
-		observers = append(observers, clockObs)
-	}
-	if trackObs != nil {
-		observers = append(observers, trackObs)
-	}
-	if gpsObs != nil {
-		observers = append(observers, gpsObs)
-	}
-	if promObs != nil {
-		observers = append(observers, promObs)
-	}
-	if sseObs != nil {
-		observers = append(observers, sseObs)
-	}
-	if posObs != nil {
-		observers = append(observers, posObs)
-	}
-
-	// Return combined observer or default
-	if len(observers) == 0 {
-		return &obs.DefaultObserver{}
-	} else if len(observers) == 1 {
-		return observers[0]
-	} else {
-		return obs.NewMultiObserver(observers...)
-	}
 }
 
 func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog, pktFormats []gpsprot.PacketFormat) <-chan scan.Packet {
@@ -487,7 +471,7 @@ func configFeatures(cfg *Config, usingPHC bool) cfgFeatures {
 	var cf cfgFeatures
 	if usingPHC {
 		cf |= cfgTimePulse | cfgTimePulseMsg
-	} else if cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "" {
+	} else if (cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "") || (cfg.NTP.SHM != nil && cfg.NTP.SHM.Segment != nil) {
 		cf |= cfgTimePulse
 	}
 	if cfg.Log.Track || len(cfg.HTTP) > 0 {

@@ -1,0 +1,180 @@
+#:schema ../gpsmsg-schema.json
+# u-blox gen 9 and later configuration messages (protocol >= 27)
+# Uses CFG-VALSET for message output rate control.
+#
+# Port-dependent entries use [[ubxvalport]]; the active receiver port is
+# supplied at run time via --port (i2c|uart1|uart2|usb|spi). With --save
+# the receiver persists the change to BBR and Flash; without --save it is
+# RAM-only.
+
+[[include]]
+src = "ubx.toml"
+
+[[ubxvalport]]
+tag = "ubx-nav-timegps"
+description = "Enable NAV-TIMEGPS"
+key.usb = 0x2091004A
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-timegps-off"
+description = "Disable NAV-TIMEGPS"
+key.usb = 0x2091004A
+value = 0
+
+[[ubxvalport]]
+tag = "ubx-nav-timeutc"
+description = "Enable NAV-TIMEUTC"
+key.usb = 0x2091005E
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-timeutc-off"
+description = "Disable NAV-TIMEUTC"
+key.usb = 0x2091005E
+value = 0
+
+[[ubxvalport]]
+tag = "ubx-nav-timebds"
+description = "Enable NAV-TIMEBDS"
+key.usb = 0x20910054
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-timebds-off"
+description = "Disable NAV-TIMEBDS"
+key.usb = 0x20910054
+value = 0
+
+[[ubxvalport]]
+tag = "ubx-nav-timeglo"
+description = "Enable NAV-TIMEGLO"
+key.usb = 0x2091004F
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-timeglo-off"
+description = "Disable NAV-TIMEGLO"
+key.usb = 0x2091004F
+value = 0
+
+[[ubxvalport]]
+tag = "ubx-nav-timegal"
+description = "Enable NAV-TIMEGAL"
+key.usb = 0x20910059
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-timegal-off"
+description = "Disable NAV-TIMEGAL"
+key.usb = 0x20910059
+value = 0
+
+[[ubxvalport]]
+tag = "ubx-nav-timeqzss"
+description = "Enable NAV-TIMEQZSS"
+key.usb = 0x20910389
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-timeqzss-off"
+description = "Disable NAV-TIMEQZSS"
+key.usb = 0x20910389
+value = 0
+
+[[ubxvalport]]
+tag = "ubx-nav-clock"
+description = "Enable NAV-CLOCK"
+key.usb = 0x20910068
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-clock-off"
+description = "Disable NAV-CLOCK"
+key.usb = 0x20910068
+value = 0
+
+[[ubxvalport]]
+tag = "ubx-nav-eoe"
+description = "Enable NAV-EOE"
+key.usb = 0x20910162
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-eoe-off"
+description = "Disable NAV-EOE"
+key.usb = 0x20910162
+value = 0
+
+[[ubxvalport]]
+tag = "ubx-nav-posllh"
+description = "Enable NAV-POSLLH"
+key.usb = 0x2091002C
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-posllh-off"
+description = "Disable NAV-POSLLH"
+key.usb = 0x2091002C
+value = 0
+
+[[ubxvalport]]
+tag = "ubx-nav-posecef"
+description = "Enable NAV-POSECEF"
+key.usb = 0x20910027
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-nav-posecef-off"
+description = "Disable NAV-POSECEF"
+key.usb = 0x20910027
+value = 0
+
+[[ubxvalport]]
+tag = "ubx-mon-comms"
+description = "Enable UBX-MON-COMMS"
+key.usb = 0x20910352
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-rxm-cor"
+description = "Enable RXM-COR (differential correction input status)"
+key.usb = 0x209106B9
+value = 1
+
+[[ubxvalport]]
+tag = "ubx-rxm-cor-off"
+description = "Disable RXM-COR"
+key.usb = 0x209106B9
+value = 0
+
+[[ubxvalport]]
+tag = "rtcm-4072-0"
+description = "Enable RTCM 4072.0 (reference station PVT, u-blox proprietary)"
+key.usb = 0x20910301
+value = 1
+
+[[ubxvalport]]
+tag = "rtcm-4072-0-off"
+description = "Disable RTCM 4072.0"
+key.usb = 0x20910301
+value = 0
+
+[[ubxvalport]]
+tag = "rtcm-4072-1"
+description = "Enable RTCM 4072.1 (additional reference station info, u-blox proprietary)"
+key.usb = 0x20910384
+value = 1
+
+[[ubxvalport]]
+tag = "rtcm-4072-1-off"
+description = "Disable RTCM 4072.1"
+key.usb = 0x20910384
+value = 0
+
+[[ubxval]]
+tag = "min-cno-25"
+description = "Set minimum C/N0 to 25 dBHz"
+keys = [0x201100A3] # CFG-NAVSPG-INFIL_MINCNO
+types = "U1"
+values = [25]

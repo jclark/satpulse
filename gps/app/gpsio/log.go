@@ -266,6 +266,14 @@ func (hs HexString) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements json.Unmarshaler for HexString
 // Expects a string of hex digits, two characters per byte
 func (hs *HexString) UnmarshalJSON(data []byte) error {
+	// convobs unmarshals large packet logs; avoid allocating the hex string on the hot path.
+	if len(data) >= 2 && data[0] == '"' && data[len(data)-1] == '"' && (len(data)-2)%2 == 0 {
+		b := make([]byte, hex.DecodedLen(len(data)-2))
+		if _, err := hex.Decode(b, data[1:len(data)-1]); err == nil {
+			*hs = HexString(b)
+			return nil
+		}
+	}
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
 		return err

@@ -7,7 +7,7 @@ satpulsetool-gps - configure a GPS receiver
 **satpulsetool** [*global options*] **gps** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-f**\|**\-\-config\-file** *path*] [**\-\-socket** *path*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-c**\|**\-\-show\-config**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-c**\|**\-\-show\-config**] [**\-\-show\-port**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**\|**QZSS**\|**NAVIC**\|**SBAS**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...] [**\-\-min\-elev** *degrees*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps** *width*] [**\-\-ant\-cable\-delay** *nanos*]\
@@ -23,7 +23,7 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-vendor** *name*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-msg\-file** *path*] [**\-t**\|**\-\-tag** *list*] [**\-\-show\-tags**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-msg\-file** *path*] [**\-t**\|**\-\-tag** *list*] [**\-\-port** *name*] [**\-\-show\-tags**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]
 
 # DESCRIPTION
@@ -69,7 +69,7 @@ This option cannot be combined with **\-d** or **\-s**.
 
 **\-\-socket** *path*
 : Path to a Unix-domain socket to connect to the GPS receiver instead of a serial device.
-This is for use with the `proxy.sock` table array in the TOML config file for **satpulsed**.
+This is for use with the `proxy.socket` table array in the TOML config file for **satpulsed**.
 
 ## High-level configuration
 
@@ -80,6 +80,13 @@ The following options query the receiver.
 
 **\-c**, **\-\-show\-config**
 : Show the current configuration of the GPS receiver.
+
+**\-\-show\-port**
+: Show the receiver port the host is communicating on (for example **USB** or **UART1**)
+and, for UART ports, the serial speed in bits per second. The line for the serial speed is omitted
+for ports without a baud rate (**USB**, **I2C**, **SPI**).
+Useful for determining the value to pass to **\-\-port** for **\-\-msg\-file** entries that depend on the active port.
+Composes with **\-c**\|**\-\-show\-config**. Cannot be combined with **\-\-reset**, **\-\-reload**, **\-\-factory\-reset**, or **\-\-msg\-file**.
 
 The following options control which satellites and signals the receiver uses.
 
@@ -156,11 +163,14 @@ The following options control the time mode of the receiver. In time mode, the r
 **\-\-fixed\-pos\-ecef** *X,Y,Z*
 : Use the specified coordinates as the fixed position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The coordinates are comma-separated X, Y, and Z coordinates in meters in the Earth-Centered, Earth-Fixed coordinate system.
 
+**\-\-fixed\-pos\-llh** *lat,lon,height*
+: Use the specified coordinates as the fixed position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The values are comma-separated latitude and longitude in degrees and height in meters above the WGS84 ellipsoid. Latitude must be in [-90, 90], longitude in [-180, 180], and height in [-500, 10000]. Mutually exclusive with **\-\-fixed-pos-ecef**, **\-\-survey** and **\-\-mobile**.
+
 **\-\-fixed\-pos\-acc** *meters*
 : Set the accuracy of the fixed position in meters (default: 20.0). This value should reflect the actual uncertainty in the fixed position coordinates. Minimum value is 0.001 (1 mm).
 
 **\-\-mobile**
-: Run in a normal mode, where the position of the antenna may change. This undoes the effect of **\-\-survey** or **\-\-fixed-pos-ecef**.
+: Run in a normal mode, where the position of the antenna may change. This undoes the effect of **\-\-survey**, **\-\-fixed-pos-ecef** or **\-\-fixed-pos-llh**.
 
 The following options control which messages the receiver outputs.
 
@@ -343,6 +353,19 @@ Messages are sent in the order the tags are listed.
 **\-\-show\-tags**
 : Print all tags in the message file with their descriptions to stdout, validate tag constraints, and exit.
 
+**\-\-save** (with **\-\-msg\-file**)
+: When the selected tags are `[[ubxval]]` or `[[ubxvalport]]` messages,
+persist the `UBX-CFG-VALSET` write to `RAM|BBR|Flash` instead of the
+default `RAM` layer.
+Specifying **\-\-save** with selected tags of any other message type is an error.
+This use of **\-\-save** is independent of the configurator's **\-\-save**.
+
+**\-\-port** *name*
+: Selects thereceiver port for `[[ubxvalport]]` message-file
+entries. Accepted values (case insensitive): **i2c**, **uart1**,
+**uart2**, **usb**, **spi**. Required when selected tags include
+`[[ubxvalport]]` messages; ignored for other message types.
+
 ## Packet capture
 
 The following options control packet capture.
@@ -402,7 +425,7 @@ where `serial.toml` contains:
 
 Send the messages tagged `ppp-has` from `um980.toml` (which enable Galileo HAS on a UM980):
 
-    satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980.toml -t ppp-has
+    satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /usr/share/satpulse/gpsmsg/unicore/um980.toml -t ppp-has
 
 Send an ad-hoc command from stdin using a here document:
 
@@ -410,6 +433,11 @@ Send an ad-hoc command from stdin using a here document:
     [[line]]
     text = "CONFIG PPP ENABLE E6-HAS"
     TOML
+
+# FILES
+
+`/usr/share/satpulse/gpsmsg`
+: GPS message files installed by the package.
 
 # SEE ALSO
 

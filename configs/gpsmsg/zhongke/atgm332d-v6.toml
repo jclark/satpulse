@@ -1,0 +1,561 @@
+#:schema ../gpsmsg-schema.json
+# ATGM332D/ATGM336H configuration messages
+# This is for firmware version V6.x, which is found on 6N and F8N series.
+# The older 5N series uses firmware V5.x which is significantly different.
+# Zhongke Microelectronics  (icofchina.com and hzzkw.com) CASIC binary protocol
+# Default baud rate: 115200
+
+# Poll MON-VER via CFG-MSG with rate=0xFFFF for one-time output
+[[casbin]]
+tag = "get-version"
+description = "Query firmware and hardware version"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x0A, 0x04, 0xFFFF]
+
+# CFG-NAVBAND: Signal band configuration
+# Payload: U1 sigBandAuto, U1 res1, U2 res2, U4 sigidMaskFix, U4 sigidMask
+# sigBandAuto=0 for manual selection, sigidMaskFix sets positioning signals
+#
+# Signal bit positions (from ZKW spec section 1.4):
+#   GPS L1C/A=0, GPS L5=2, SBAS L1=3, SBAS L5=4, GLO L1=5,
+#   GAL E1=7, GAL E5A=8, BDS B1I GEO=10, BDS B1I MEO=11,
+#   BDS B1C=14, BDS B2A=15, QZSS L1C/A=19, QZSS L5=21, IRNSS L5=23
+
+# GPS only: all GPS signals (bits 0,2 = 0x00000005)
+# Verified ACK received on ATGM332D-6N74
+# Verified GSV shows only GPS satellites after gnss-gps on ATGM332D-6N74
+[[casbin]]
+tag = "gnss-gps"
+description = "Enable GPS signals only"
+class = 0x06
+id = 0x0F
+payload.types = "U1U1U2U4U4"
+payload.values = [0, 0, 0, 0x00000005, 0x00000005]
+
+# Galileo only: all Galileo signals (bits 7,8 = 0x00000180)
+# Verified ACK received on ATGM332D-6N74
+# Verified GSV shows only Galileo satellites after gnss-gal on ATGM332D-6N74
+[[casbin]]
+tag = "gnss-gal"
+description = "Enable Galileo signals only"
+class = 0x06
+id = 0x0F
+payload.types = "U1U1U2U4U4"
+payload.values = [0, 0, 0, 0x00000180, 0x00000180]
+
+# BDS only: all BDS signals (bits 10,11,14,15 = 0x0000CC00)
+# Verified ACK received on ATGM332D-6N74
+# Verified GSV shows only BeiDou satellites after gnss-bds on ATGM332D-6N74
+[[casbin]]
+tag = "gnss-bds"
+description = "Enable BDS signals only"
+class = 0x06
+id = 0x0F
+payload.types = "U1U1U2U4U4"
+payload.values = [0, 0, 0, 0x0000CC00, 0x0000CC00]
+
+# GLONASS only: all GLONASS signals (bit 5 = 0x00000020)
+# Verified ACK received on ATGM332D-6N74
+# Verified GSV shows only GLONASS satellites after gnss-glo on ATGM332D-6N74
+[[casbin]]
+tag = "gnss-glo"
+description = "Enable GLONASS signals only"
+class = 0x06
+id = 0x0F
+payload.types = "U1U1U2U4U4"
+payload.values = [0, 0, 0, 0x00000020, 0x00000020]
+
+# GPS + Galileo: all signals (bits 0,2,7,8 = 0x00000185)
+# Verified ACK received on ATGM332D-6N74
+# Verified GSV shows only GPS and Galileo satellites after gnss-gps-gal on ATGM332D-6N74
+[[casbin]]
+tag = "gnss-gps-gal"
+description = "Enable GPS and Galileo signals"
+class = 0x06
+id = 0x0F
+payload.types = "U1U1U2U4U4"
+payload.values = [0, 0, 0, 0x00000185, 0x00000185]
+
+# All constellations: GPS, GLO, GAL, BDS, QZSS, SBAS, IRNSS
+# bits: 0,2,3,4,5,7,8,10,11,14,15,19,21,23 = 0x00A8CDBD
+# Verified ACK received on ATGM332D-6N74
+# Verified GSV shows GPS, Galileo, GLONASS, BeiDou, QZSS satellites after gnss-all on ATGM332D-6N74
+[[casbin]]
+tag = "gnss-all"
+description = "Enable all constellations"
+class = 0x06
+id = 0x0F
+payload.types = "U1U1U2U4U4"
+payload.values = [0, 0, 0, 0x00A8CDBD, 0x00A8CDBD]
+
+# Auto signal band selection (let receiver decide)
+[[casbin]]
+tag = "gnss-auto"
+description = "Enable automatic signal band selection"
+class = 0x06
+id = 0x0F
+payload.types = "U1U1U2U4U4"
+payload.values = [1, 0, 0, 0, 0]
+
+# CFG-TP: Time pulse (PPS) configuration
+# Payload: U4 interval_us, U4 width_us, U1 ppsOutMode, I1 polarity, U1 tBase,
+#          U1 tSrcMode, R4 user_delay
+# ppsOutMode: 0=always off, 1=output when time non-empty, 2=output after sat sync,
+#             3=output when position+time valid, 5=output when position+time reliable,
+#             7=always on
+# polarity: 0=rising edge, 1=falling edge
+# tBase: 0=GNSS, 1=UTC
+# tSrcMode: 0-3=force GPS/BDS/GLN/GAL, 4-8=primary BDS/GPS/GLN/GAL/IRN, 9=auto
+
+# Enable PPS: 100ms pulse, only when time is reliable, rising edge, UTC
+[[casbin]]
+tag = "pps"
+description = "Enable PPS output (0.1s pulse, only when time is reliable)"
+class = 0x06
+id = 0x03
+payload.types = "U4U4U1I1U1U1R4"
+payload.values = [1000000, 100000, 5, 0, 1, 9, 0.0]
+
+# PPS aligned to GPS time (not UTC)
+[[casbin]]
+tag = "pps-gps"
+description = "Enable PPS aligned to GPS time (0.1s pulse, only when time is reliable)"
+class = 0x06
+id = 0x03
+payload.types = "U4U4U1I1U1U1R4"
+payload.values = [1000000, 100000, 5, 0, 0, 0, 0.0]
+
+# PPS aligned to BDS time
+[[casbin]]
+tag = "pps-bds"
+description = "Enable PPS aligned to BDS time (0.1s pulse, only when time is reliable)"
+class = 0x06
+id = 0x03
+payload.types = "U4U4U1I1U1U1R4"
+payload.values = [1000000, 100000, 5, 0, 0, 1, 0.0]
+
+# Disable PPS
+[[casbin]]
+tag = "pps-off"
+description = "Disable PPS output"
+class = 0x06
+id = 0x03
+payload.types = "U4U4U1I1U1U1R4"
+payload.values = [1000000, 0, 0, 0, 0, 0, 0.0]
+
+# CFG-CFG: Save/load configuration
+# Payload: U2 reserved, U1 opMode, U1 reserved
+# opMode: 0=clear flash, 1=save to flash, 2=load from flash
+
+# Save configuration to NVM
+[[casbin]]
+tag = "save"
+description = "Save configuration to NVM"
+class = 0x06
+id = 0x05
+payload.types = "U2U1U1"
+payload.values = [0, 1, 0]
+
+# Load configuration from NVM (undo unsaved changes)
+[[casbin]]
+tag = "reload"
+description = "Reload configuration from NVM"
+class = 0x06
+id = 0x05
+payload.types = "U2U1U1"
+payload.values = [0, 2, 0]
+
+# CFG-NAVLIMIT: Satellite filtering for positioning
+# Payload: U1 minSVs, U1 maxSVs, U1 minCNO, I1 minEle, U4 reserved
+# Defaults: minSVs=4, maxSVs=80, minCNO=8, minEle=5
+
+# Set minimum elevation to 20 degrees
+[[casbin]]
+tag = "min-elev-20"
+description = "Set minimum elevation to 20 degrees"
+class = 0x06
+id = 0x0A
+payload.types = "U1U1U1I1U4"
+payload.values = [4, 80, 8, 20, 0]
+
+# CFG-RST: Reset receiver
+# Payload: U2 reserved, U1 reserved, U1 resetMode
+# resetMode: 0=hot start, 1=warm start, 2=cold start, 3=factory reset
+
+# Cold start (clear ephemeris, almanac, position)
+[[casbin]]
+tag = "reset"
+description = "Cold start (clear ephemeris, almanac, position)"
+class = 0x06
+id = 0x02
+payload.types = "U2U1U1"
+payload.values = [0, 0, 2]
+
+# Factory reset (restore NVM to defaults and reset receiver)
+[[casbin]]
+tag = "factory-reset"
+description = "Factory reset (restore all defaults)"
+class = 0x06
+id = 0x02
+payload.types = "U2U1U1"
+payload.values = [0, 0, 3]
+
+# CFG-RATE: Navigation update rate
+# Payload: U2 fixIntervalMs, U1 fixRateHz, U1 reserved
+
+# 1 Hz navigation rate
+[[casbin]]
+tag = "rate-1hz"
+description = "Set 1 Hz navigation rate"
+class = 0x06
+id = 0x04
+payload.types = "U2U1U1"
+payload.values = [1000, 0, 0]
+
+
+# CFG-PRT: Serial port configuration
+# Payload: U1 portId, U1 protoMask, U2 mode, U4 baudRate
+# portId: 0=UART0, 1=UART1, 0xFF=current
+# protoMask: B0=binary in, B1=text in, B4=binary out, B5=text out
+
+# Set baud rate to 115200 (binary+NMEA in/out)
+[[casbin]]
+tag = "speed-115200"
+description = "Set baud rate to 115200"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U2U4"
+payload.values = [0xFF, 0x33, 0x08C0, 115200]
+
+# Set baud rate to 38400 (binary+NMEA in/out)
+[[casbin]]
+tag = "speed-38400"
+description = "Set baud rate to 38400"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U2U4"
+payload.values = [0xFF, 0x33, 0x08C0, 38400]
+
+# Set baud rate to 9600 (binary+NMEA in/out)
+[[casbin]]
+tag = "speed-9600"
+description = "Set baud rate to 9600"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U2U4"
+payload.values = [0xFF, 0x33, 0x08C0, 9600]
+
+# CFG-MSG: Enable/disable message output
+# Payload: U1 class, U1 id, U2 rate
+# rate: 0=off, 1=every fix, N=every N fixes
+
+# Enable NAV2-SOL (position/velocity) at 1Hz
+[[casbin]]
+tag = "casbin-nav2-sol"
+description = "Enable NAV2-SOL output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x02, 1]
+
+# Disable NAV2-SOL
+[[casbin]]
+tag = "casbin-nav2-sol-off"
+description = "Disable NAV2-SOL output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x02, 0]
+
+# Enable NAV2-TIMEUTC at 1Hz
+[[casbin]]
+tag = "casbin-nav2-timeutc"
+description = "Enable NAV2-TIMEUTC output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x05, 1]
+
+# Disable NAV2-TIMEUTC
+[[casbin]]
+tag = "casbin-nav2-timeutc-off"
+description = "Disable NAV2-TIMEUTC output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x05, 0]
+
+# Enable NAV2-PVH (geodetic position/velocity) at 1Hz
+[[casbin]]
+tag = "casbin-nav2-pvh"
+description = "Enable NAV2-PVH output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x03, 1]
+
+# Disable NAV2-PVH
+[[casbin]]
+tag = "casbin-nav2-pvh-off"
+description = "Disable NAV2-PVH output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x03, 0]
+
+# Enable NAV2-DOP (dilution of precision) at 1Hz
+[[casbin]]
+tag = "casbin-nav2-dop"
+description = "Enable NAV2-DOP output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x01, 1]
+
+# Disable NAV2-DOP
+[[casbin]]
+tag = "casbin-nav2-dop-off"
+description = "Disable NAV2-DOP output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x01, 0]
+
+# Enable NAV2-SAT (satellite info) at 1Hz
+[[casbin]]
+tag = "casbin-nav2-sat"
+description = "Enable NAV2-SAT output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x04, 1]
+
+# Disable NAV2-SAT
+[[casbin]]
+tag = "casbin-nav2-sat-off"
+description = "Disable NAV2-SAT output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x04, 0]
+
+# Enable NAV2-SIG (per-signal tracking) at 1Hz
+[[casbin]]
+tag = "casbin-nav2-sig"
+description = "Enable NAV2-SIG output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x06, 1]
+
+# Disable NAV2-SIG
+[[casbin]]
+tag = "casbin-nav2-sig-off"
+description = "Disable NAV2-SIG output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x11, 0x06, 0]
+
+# NMEA message class is 0x4E
+# GGA=0x00, GLL=0x01, GSA=0x02, GSV=0x03, RMC=0x04, VTG=0x05, ZDA=0x06 (V5 uses 0x08)
+
+# Enable GGA at 1Hz
+[[casbin]]
+tag = "nmea-gga"
+description = "Enable NMEA GGA output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x00, 1]
+
+# Disable GGA
+[[casbin]]
+tag = "nmea-gga-off"
+description = "Disable NMEA GGA output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x00, 0]
+
+# Enable GSV at 1Hz
+[[casbin]]
+tag = "nmea-gsv"
+description = "Enable NMEA GSV output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x03, 1]
+
+# Disable GSV
+[[casbin]]
+tag = "nmea-gsv-off"
+description = "Disable NMEA GSV output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x03, 0]
+
+# Enable RMC at 1Hz
+[[casbin]]
+tag = "nmea-rmc"
+description = "Enable NMEA RMC output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x04, 1]
+
+# Disable RMC
+[[casbin]]
+tag = "nmea-rmc-off"
+description = "Disable NMEA RMC output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x04, 0]
+
+# Enable GSA at 1Hz
+[[casbin]]
+tag = "nmea-gsa"
+description = "Enable NMEA GSA output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x02, 1]
+
+# Disable GSA
+[[casbin]]
+tag = "nmea-gsa-off"
+description = "Disable NMEA GSA output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x02, 0]
+
+# Enable GLL at 1Hz
+[[casbin]]
+tag = "nmea-gll"
+description = "Enable NMEA GLL output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x01, 1]
+
+# Disable GLL
+[[casbin]]
+tag = "nmea-gll-off"
+description = "Disable NMEA GLL output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x01, 0]
+
+# Enable VTG at 1Hz
+[[casbin]]
+tag = "nmea-vtg"
+description = "Enable NMEA VTG output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x05, 1]
+
+# Disable VTG
+[[casbin]]
+tag = "nmea-vtg-off"
+description = "Disable NMEA VTG output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x05, 0]
+
+# Enable ZDA at 1Hz
+[[casbin]]
+tag = "nmea-zda"
+description = "Enable NMEA ZDA output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x06, 1]
+
+# Disable ZDA
+[[casbin]]
+tag = "nmea-zda-off"
+description = "Disable NMEA ZDA output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x06, 0]
+
+# Disable all NMEA messages (GGA, GLL, GSA, GSV, RMC, VTG, ZDA)
+# GGA
+[[casbin]]
+tag = "nmea-off"
+description = "Disable all NMEA messages"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x00, 0]
+
+# GLL
+[[casbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x01, 0]
+
+# GSA
+[[casbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x02, 0]
+
+# GSV
+[[casbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x03, 0]
+
+# RMC
+[[casbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x04, 0]
+
+# VTG
+[[casbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x05, 0]
+
+# ZDA
+[[casbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x06, 0]
+
+# CFG-NMEA: NMEA output configuration
+# Payload: U1 nmeaVer, U1 latLonReso, U1 heightReso, U1 gsaPlus,
+#          U1 nmeaValidOpen, U1 res, U2 res2
+# nmeaVer: 0=V2.2, 1=V4.0, 2=V4.10, 3=V4.11
+
+# Set NMEA version 4.10
+[[casbin]]
+tag = "nmea-ver-410"
+description = "Set NMEA version 4.10"
+class = 0x06
+id = 0x12
+payload.types = "U1U1U1U1U1U1U2"
+payload.values = [2, 7, 3, 4, 0, 0, 0]

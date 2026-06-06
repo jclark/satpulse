@@ -58,6 +58,13 @@ func (mc *msgChanges) usesRate() bool {
 	return false
 }
 
+// hasPortItems returns true if items would emit any port-specific
+// item for some known port. Used to detect the "port unknown but
+// configuration requires it" invariant violation in messagesBuild.
+func (mc *msgChanges) hasPortItems() bool {
+	return mc.protoEnable != 0 || mc.protoDisable != 0 || len(mc.rate) > 0
+}
+
 func (mc *msgChanges) options(opts *gpsprot.ConfigOptions, ver *Version, enabledGNSS gpsprot.GNSSSet, surveyRequested bool) error {
 	mc.options1(opts, ver)
 	return mc.options2(opts, ver, enabledGNSS, surveyRequested)
@@ -94,7 +101,14 @@ func (mc *msgChanges) options2(opts *gpsprot.ConfigOptions, ver *Version, enable
 	return nil
 }
 
-func (mc *msgChanges) items(port ucv.Port) []ucv.Item {
+// items returns the per-port items required by mc. When portOK is
+// false the port-specific keys cannot be formed and items returns
+// nil; the caller (Transaction) treats that case as an error if
+// items would otherwise have been non-empty.
+func (mc *msgChanges) items(port ucv.Port, portOK bool) []ucv.Item {
+	if !portOK {
+		return nil
+	}
 	items := []ucv.Item{}
 	if (mc.protoEnable|mc.protoDisable)&ubxbin.CfgPrtProtoNMEA != 0 {
 		if k := portOutprotNmeaKey(port); k != 0 {

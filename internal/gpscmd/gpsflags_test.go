@@ -273,6 +273,67 @@ var validFlagsTestCases = []validFlagsTestCase{
 			FixedPosAcc:  gpsprot.Meters(0.001),
 		}),
 	}},
+	// Test --fixed-pos-llh flag with Big Ben coordinates
+	{"ttyS0", []string{"--fixed-pos-llh", "51.5007,-0.1246,11"}, flagVars{
+		mode: opt.Make(gpsprot.Mode{
+			Static:      true,
+			PosType:     gpsprot.PosTypeLLH,
+			FixedPosLLH: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(51.5007), gpsprot.DegreesFromFloat(-0.1246)},
+			Height:      gpsprot.Meters(11),
+			FixedPosAcc: defaultFixedPosAcc,
+		}),
+	}},
+	// Test --fixed-pos-llh with custom accuracy (Eiffel Tower)
+	{"ttyS0", []string{"--fixed-pos-llh", "48.8584,2.2945,33", "--fixed-pos-acc", "5.0"}, flagVars{
+		mode: opt.Make(gpsprot.Mode{
+			Static:      true,
+			PosType:     gpsprot.PosTypeLLH,
+			FixedPosLLH: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(48.8584), gpsprot.DegreesFromFloat(2.2945)},
+			Height:      gpsprot.Meters(33),
+			FixedPosAcc: gpsprot.Meters(5.0),
+		}),
+	}},
+	// Test --fixed-pos-llh with save (Statue of Liberty)
+	{"ttyS0", []string{"--fixed-pos-llh", "40.6892,-74.0445,46", "--save"}, flagVars{
+		mode: opt.Make(gpsprot.Mode{
+			Static:      true,
+			PosType:     gpsprot.PosTypeLLH,
+			FixedPosLLH: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(40.6892), gpsprot.DegreesFromFloat(-74.0445)},
+			Height:      gpsprot.Meters(46),
+			FixedPosAcc: defaultFixedPosAcc,
+		}),
+		configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveMinimal},
+	}},
+	// Test --fixed-pos-llh with spaces around commas
+	{"ttyS0", []string{"--fixed-pos-llh", "48.8584, 2.2945, 33"}, flagVars{
+		mode: opt.Make(gpsprot.Mode{
+			Static:      true,
+			PosType:     gpsprot.PosTypeLLH,
+			FixedPosLLH: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(48.8584), gpsprot.DegreesFromFloat(2.2945)},
+			Height:      gpsprot.Meters(33),
+			FixedPosAcc: defaultFixedPosAcc,
+		}),
+	}},
+	// Test --fixed-pos-llh with minimum accuracy
+	{"ttyS0", []string{"--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0.001"}, flagVars{
+		mode: opt.Make(gpsprot.Mode{
+			Static:      true,
+			PosType:     gpsprot.PosTypeLLH,
+			FixedPosLLH: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(51.5007), gpsprot.DegreesFromFloat(-0.1246)},
+			Height:      gpsprot.Meters(11),
+			FixedPosAcc: gpsprot.Meters(0.001),
+		}),
+	}},
+	// Test --fixed-pos-llh at equator/prime meridian (proves zero LLH is treated as set)
+	{"ttyS0", []string{"--fixed-pos-llh", "0,0,0"}, flagVars{
+		mode: opt.Make(gpsprot.Mode{
+			Static:      true,
+			PosType:     gpsprot.PosTypeLLH,
+			FixedPosLLH: [2]gpsprot.Angle{0, 0},
+			Height:      0,
+			FixedPosAcc: defaultFixedPosAcc,
+		}),
+	}},
 	// Test --rtcm-base-id flag
 	{"ttyS0", []string{"--rtcm-base-id", "0"}, flagVars{rtcmBaseID: opt.Make(uint16(0))}},
 	{"ttyS0", []string{"--rtcm-base-id", "1234"}, flagVars{rtcmBaseID: opt.Make(uint16(1234))}},
@@ -287,6 +348,9 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"-c"}, flagVars{configGet: showProps}},
 	{"", []string{"--socket", "/tmp/socket", "--show-config"}, flagVars{socketPath: "/tmp/socket", configGet: showProps}},
 	{"", []string{"--socket", "/tmp/socket", "-c"}, flagVars{socketPath: "/tmp/socket", configGet: showProps}},
+	// Test --show-port flag
+	{"ttyS0", []string{"--show-port"}, flagVars{configGet: gpsprot.PropIDPort | gpsprot.PropIDBaudRate}},
+	{"ttyS0", []string{"-c", "--show-port"}, flagVars{configGet: showProps | gpsprot.PropIDPort | gpsprot.PropIDBaudRate}},
 	// Test --msg-file with --tag flag
 	{"ttyS0", []string{"--msg-file", "test.toml"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}}},
 	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}}},
@@ -294,6 +358,16 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "setup,ppp"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup", "ppp"}}},
 	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", "foo,,bar"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"foo", "", "bar"}}},
 	{"ttyS0", []string{"--msg-file", "test.toml", "--tag", ""}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}}},
+	// --save with --msg-file is allowed; it controls VALSET layers, not the configurator.
+	{"ttyS0", []string{"--msg-file", "test.toml", "--save"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgSave: true}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--save", "--tag", "setup"}, flagVars{msgFilePath: "test.toml", msgTags: []string{"setup"}, msgSave: true}},
+	// --port with --msg-file is allowed and normalized to lower case.
+	{"ttyS0", []string{"--msg-file", "test.toml", "--port", "usb"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgPort: "usb"}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--port", "USB"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgPort: "usb"}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--port", "Uart1"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgPort: "uart1"}},
+	{"ttyS0", []string{"--msg-file", "test.toml", "--port", "i2c", "--save"}, flagVars{msgFilePath: "test.toml", msgTags: []string{""}, msgPort: "i2c", msgSave: true}},
+	// --show-tags does not require --port.
+	{"ttyS0", []string{"--msg-file", "test.toml", "--show-tags"}, flagVars{msgFilePath: "test.toml", showTags: true}},
 }
 
 func TestParseFlagsValid(t *testing.T) {
@@ -338,6 +412,8 @@ func TestParseFlagsConfigSupport(t *testing.T) {
 		{"pvt ntp", []string{"--pvt-out", "ntp"}, gpsprot.ConfigSupportSurveyMsg, 0},
 		{"fixed position default accuracy", []string{"--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"}, gpsprot.ConfigSupportFixedPos, 0},
 		{"fixed position explicit accuracy", []string{"--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "5"}, gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc, 0},
+		{"fixed position LLH default accuracy", []string{"--fixed-pos-llh", "51.5007,-0.1246,11"}, gpsprot.ConfigSupportFixedPos, 0},
+		{"fixed position LLH explicit accuracy", []string{"--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "5"}, gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc, 0},
 		{"raw obs", []string{"--raw-out", "obs"}, gpsprot.ConfigSupportRaw, 0},
 		{"raw none", []string{"--raw-out", "none"}, 0, 0},
 		{"rtcm msm4", []string{"--rtcm-out", "MSM4"}, gpsprot.ConfigSupportRTCMMSM4, 0},
@@ -508,6 +584,28 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--survey"}, // can't use with survey
 	{"--serial-device", "ttyS0", "--mobile", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"}, // can't use mobile with fixed-pos
 	{"--serial-device", "ttyS0", "--survey", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"}, // can't use survey with fixed-pos
+	// Test invalid --fixed-pos-llh values
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", ""},                // empty value
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5,-0.12"},      // too few coordinates
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5,-0.12,11,1"}, // too many coordinates
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "abc,def,ghi"},     // invalid numbers
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5,abc,11"},     // partially invalid numbers
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "91,0,0"},          // latitude above 90
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "-91,0,0"},         // latitude below -90
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "0,181,0"},         // longitude above 180
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "0,-181,0"},        // longitude below -180
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "0,0,-501"},        // height below -500m
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "0,0,10001"},       // height above 10000m
+	// Test invalid --fixed-pos-acc with --fixed-pos-llh
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0"},      // accuracy too small
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0.0005"}, // accuracy below minimum
+	// Test mutual exclusion of --fixed-pos-llh with --fixed-pos-ecef, --mobile, --survey
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"},
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-llh", "51.5007,-0.1246,11"},
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--mobile"},
+	{"--serial-device", "ttyS0", "--mobile", "--fixed-pos-llh", "51.5007,-0.1246,11"},
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--survey"},
+	{"--serial-device", "ttyS0", "--survey", "--fixed-pos-llh", "51.5007,-0.1246,11"},
 	// Test invalid --ant-cable-delay values
 	{"--serial-device", "ttyS0", "--ant-cable-delay", "abc"}, // invalid number
 	{"--serial-device", "ttyS0", "--ant-cable-delay", "1.5"}, // floating point not allowed
@@ -526,15 +624,19 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--reset", "-c"},                                     // can't use reset with short form
 	{"--serial-device", "ttyS0", "--reload", "-c"},                                    // can't use reload with short form
 	{"--serial-device", "ttyS0", "--show-config", "--factory-reset", "--gnss", "GPS"}, // multiple incompatible options
+	// Test invalid --show-port combinations
+	{"--serial-device", "ttyS0", "--show-port", "--factory-reset"},                    // can't use show-port with factory-reset
+	{"--serial-device", "ttyS0", "--show-port", "--reset"},                            // can't use show-port with reset
+	{"--serial-device", "ttyS0", "--show-port", "--reload"},                           // can't use show-port with reload
 	// Test --msg-file mutual exclusivity with config flags
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--gnss", "GPS"},                                      // can't use with --gnss
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--pps", "0.1"},                                       // can't use with --pps
-	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--save"},                                             // can't use with --save
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--save-all"},                                         // can't use with --save-all
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--reset"},                                            // can't use with --reset
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--reload"},                                           // can't use with --reload
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--factory-reset"},                                    // can't use with --factory-reset
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-config"},                                      // can't use with --show-config
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-port"},                                        // can't use with --show-port
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--nmea"},                                             // can't use with --nmea
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--binary"},                                           // can't use with --binary
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--mobile"},                                           // can't use with --mobile
@@ -557,6 +659,11 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--rtcm-base-id", "1"}, // can't use with --msg-file
 	// Test --tag requires --msg-file
 	{"--serial-device", "ttyS0", "--tag", "setup"}, // --tag without --msg-file
+	// Test --port requires --msg-file
+	{"--serial-device", "ttyS0", "--port", "usb"},
+	// Test --port value must be a known u-blox port name
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--port", "bogus"},
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--port", ""},
 	// Test --msg-file cannot be combined with --show-receiver
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-receiver"}, // can't use with --show-receiver
 	// Test --config-file mutual exclusivity with --serial-device and --device-speed
