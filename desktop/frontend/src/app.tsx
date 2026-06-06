@@ -68,6 +68,8 @@ export interface MsgFileTag {
     tag: string;
     desc?: string;
     msgCount: number;
+    needsPort?: boolean;
+    saveAware?: boolean;
 }
 
 export interface MsgSendEvent {
@@ -669,6 +671,7 @@ export function App() {
                         setSelectedResponseIndex={setSelectedResponseIndex}
                         clearRespSession={() => { respSessionRef.current = 0; }}
                         addToast={addToast}
+                        defaultPort={typeof configProps?.port === 'string' ? configProps.port : ''}
                     />
                 </div>
             </div>

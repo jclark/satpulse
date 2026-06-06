@@ -2,7 +2,7 @@ import {h, Fragment} from 'preact';
 import {useCallback, useEffect, useRef} from 'preact/hooks';
 import {LoadMsgFile, SendMsgFile, DecodePacket} from '../wailsjs/go/main/App';
 import type {ConnState, MsgFileTag, SendLine, ResponseLine} from './app';
-import {Button, Card} from './ui';
+import {Button, Card, Select, fieldLabelText, labeledControlText} from './ui';
 import {useState} from 'preact/hooks';
 
 interface Props {
@@ -25,7 +25,13 @@ interface Props {
     setSelectedResponseIndex: (i: number) => void;
     clearRespSession: () => void;
     addToast: (msg: string, type: 'success' | 'error') => void;
+    defaultPort: string;
 }
+
+// ubxPorts lists the five u-blox ports a ubxvalport message can target.
+// Upper-case to match the names the receiver reports on readback;
+// ubxPortOffset matches case-insensitively when encoding.
+const ubxPorts = ['I2C', 'UART1', 'UART2', 'USB', 'SPI'];
 
 function formatSendStatus(sendLines: SendLine[], connState: ConnState): string {
     if (sendLines.length === 0) return '';
@@ -72,9 +78,18 @@ export function MsgFilePanel({
     setSelectedResponseIndex,
     clearRespSession,
     addToast,
+    defaultPort,
 }: Props) {
     const [decodeResult, setDecodeResult] = useState<string | null>(null);
+    const [selectedPort, setSelectedPort] = useState('');
+    const [save, setSave] = useState(false);
     const leftPaneRef = useRef<HTMLDivElement>(null);
+
+    // Seed the port from the config-tab readback once it arrives, without
+    // overriding a port the user has already chosen.
+    useEffect(() => {
+        if (defaultPort) setSelectedPort(p => p || defaultPort);
+    }, [defaultPort]);
 
     // Auto-scroll left pane when new entries appear.
     useEffect(() => {
@@ -133,12 +148,13 @@ export function MsgFilePanel({
         setResponseLines([]);
         setSelectedResponseIndex(-1);
         setDecodeResult(null);
+        const t = msgFileTags[selectedTagIndex];
         try {
-            await SendMsgFile(tag);
+            await SendMsgFile(tag, t.needsPort ? selectedPort : '', !!t.saveAware && save);
         } catch (e: any) {
             addToast(e.message || 'Send failed', 'error');
         }
-    }, [selectedTagIndex, msgFileTags, setSendLines, setResponseLines, setSelectedResponseIndex, setActiveTagIndex, setTagArmed, addToast]);
+    }, [selectedTagIndex, msgFileTags, selectedPort, save, setSendLines, setResponseLines, setSelectedResponseIndex, setActiveTagIndex, setTagArmed, addToast]);
 
     // Decode selected response.
     useEffect(() => {
@@ -166,7 +182,18 @@ export function MsgFilePanel({
         setSelectedResponseIndex(idx);
     }, [responseLines, selectedResponseIndex, setSelectedResponseIndex]);
 
-    const sendEnabled = connState === 'connected' && tagArmed && selectedTagIndex >= 0 && !!msgFilePath;
+    const selectedTag = selectedTagIndex >= 0 && selectedTagIndex < msgFileTags.length
+        ? msgFileTags[selectedTagIndex] : undefined;
+    const needsPort = !!selectedTag?.needsPort;
+    const saveAware = !!selectedTag?.saveAware;
+    // Show the port dropdown if we have a readback port or the loaded file
+    // has any port-using tag; show save if the file has any save-aware tag.
+    // Visibility tracks the loaded file/readback (not selection); selection
+    // only controls greying, so the Send button never moves on selection.
+    const showPort = !!defaultPort || msgFileTags.some(t => t.needsPort);
+    const showSave = msgFileTags.some(t => t.saveAware);
+    const sendEnabled = connState === 'connected' && tagArmed && selectedTagIndex >= 0 && !!msgFilePath
+        && (!needsPort || selectedPort !== '');
     const hasResults = activeTagIndex >= 0;
     const selectedResponse = selectedResponseIndex >= 0 && selectedResponseIndex < responseLines.length
         ? responseLines[selectedResponseIndex] : null;
@@ -217,6 +244,32 @@ export function MsgFilePanel({
                 <Button variant="primary" disabled={!sendEnabled} onClick={handleSend}>
                     Send
                 </Button>
+                {showPort && (
+                    <label class={`flex items-center gap-1.5 ${fieldLabelText(!needsPort)}`}>
+                        Port
+                        <Select
+                            class="w-24"
+                            disabled={!needsPort}
+                            value={selectedPort}
+                            onChange={e => setSelectedPort((e.target as HTMLSelectElement).value)}
+                        >
+                            <option value="">-</option>
+                            {ubxPorts.map(p => <option key={p} value={p}>{p}</option>)}
+                        </Select>
+                    </label>
+                )}
+                {showSave && (
+                    <label class={`flex items-center gap-1.5 ${labeledControlText(!saveAware)}`}>
+                        <input
+                            type="checkbox"
+                            class="accent-accent"
+                            disabled={!saveAware}
+                            checked={saveAware && save}
+                            onChange={e => setSave((e.target as HTMLInputElement).checked)}
+                        />
+                        Save
+                    </label>
+                )}
                 {sendStatus && (
                     <span class={`text-xs ${sendLines[sendLines.length - 1]?.status === 'error' ? 'text-danger' : 'text-text-secondary'}`}>
                         {sendStatus}

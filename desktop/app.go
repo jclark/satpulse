@@ -636,7 +636,8 @@ const readProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDAntennaCableDelay |
 	gpsprot.PropIDMinElevation |
 	gpsprot.PropIDNavMsgAuth |
-	gpsprot.PropIDBaudRate
+	gpsprot.PropIDBaudRate |
+	gpsprot.PropIDPort
 
 // ReadConfig reads back the current configuration from the receiver.
 func (a *App) ReadConfig() (*gpsprot.ConfigProps, error) {
@@ -707,9 +708,11 @@ func (a *App) DecodePacket(data string, opts DecodeOptions) (*gpsdecode.DecodeRe
 
 // MsgFileTag is a tag from a loaded message file.
 type MsgFileTag struct {
-	Tag      string `json:"tag"`
-	Desc     string `json:"desc,omitempty"`
-	MsgCount int    `json:"msgCount"`
+	Tag       string `json:"tag"`
+	Desc      string `json:"desc,omitempty"`
+	MsgCount  int    `json:"msgCount"`
+	NeedsPort bool   `json:"needsPort"` // ubxvalport: requires a --port
+	SaveAware bool   `json:"saveAware"` // ubxval/ubxvalport: honors --save
 }
 
 // MsgFileInfo is the result of loading a message file.
@@ -745,13 +748,33 @@ func (a *App) LoadMsgFile() (*MsgFileInfo, error) {
 	descs, _ := mf.TagDescs()
 	tags := make([]MsgFileTag, len(descs))
 	for i, td := range descs {
-		tags[i] = MsgFileTag{Tag: td.Tag, Desc: td.Desc, MsgCount: td.MsgCount}
+		needsPort, saveAware := msgTagCaps(mf, td.Tag)
+		tags[i] = MsgFileTag{Tag: td.Tag, Desc: td.Desc, MsgCount: td.MsgCount,
+			NeedsPort: needsPort, SaveAware: saveAware}
 	}
 	a.mu.Lock()
 	a.msgFile = mf
 	a.msgFilePath = path
 	a.mu.Unlock()
 	return &MsgFileInfo{Path: filepath.Base(path), Tags: tags}, nil
+}
+
+// msgTagCaps reports whether the messages for tag take a port argument
+// (ubxvalport) and whether they honor the save flag (ubxval or
+// ubxvalport). A single tag always maps to one message type, so a type
+// switch on the filtered slice is sufficient.
+func msgTagCaps(mf *msgfile.Parsed, tag string) (needsPort, saveAware bool) {
+	msgs, err := mf.TaggedMsgs([]string{tag})
+	if err != nil {
+		return false, false
+	}
+	switch msgs.(type) {
+	case []msgfile.UBXValPortMsg:
+		return true, true
+	case []msgfile.UBXValMsg:
+		return false, true
+	}
+	return false, false
 }
 
 // MsgSendEvent is emitted as "gps:msgsend" during SendMsgFile.
@@ -778,7 +801,7 @@ type ResponseEvent struct {
 
 // SendMsgFile sends messages for the given tag from the loaded message file.
 // Returns immediately after starting the coordinator and worker goroutines.
-func (a *App) SendMsgFile(tag string) error {
+func (a *App) SendMsgFile(tag string, port string, save bool) error {
 	a.mu.Lock()
 	if a.state != StateConnected {
 		a.mu.Unlock()
@@ -802,7 +825,7 @@ func (a *App) SendMsgFile(tag string) error {
 	if err != nil {
 		return err
 	}
-	rawMsgs, err := msgfile.ToRaw(msgs)
+	rawMsgs, err := msgfile.ToRaw(msgs, port, save)
 	if err != nil {
 		return err
 	}
