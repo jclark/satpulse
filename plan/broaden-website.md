@@ -480,8 +480,5 @@ release-sensitive features.
 
 #### Reframe related software after capabilities are clear
 
-Build the Other software page around boundaries and integration
-points: chrony, ntpd-rs, ptp4l, gpsd, RTKLIB, Ntrip tools, vendor
-tools, and SatPulse. This should answer "which tool owns which job?"
-rather than repeat setup instructions. It should not imply that
-future positioning workflows are already released.
+Describe other software in the same space as SatPulse i.e. Precision timing and positioning for computer systems with modern GNSS receivers, or that SatPulse needs to work with.
+Explain how it works with or is an alternative to SatPulse.

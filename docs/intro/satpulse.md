@@ -9,6 +9,10 @@ The SatPulse software consists of two programs:
 
 Both programs are written in Go and use a common Go library.
 
+## Platform support
+
+TODO
+
 ## Timing
 
 SatPulse can be used for timing both with and without a PHC.
@@ -87,6 +91,7 @@ so that the user can tell whether a message was accepted by the receiver.
 
 `satpulsed` uses its configuration file to intelligently perform certain non-disruptive kinds of configuration.
 For example, if `satpulsed` is configured to synchronize a PHC, it will ensure PPS output and the needed timing messages are enabled.
+Configuration changes made by `satpulsed` are made only in RAM, and will be undone if the receiver is power cycled.
 
 ## Observability
 
@@ -114,7 +119,9 @@ A single byte stream can mix protocols.
 - the proxy can use either TCP or Unix domain sockets
 - the proxy can be read-only or read-write
 - the `gps` tool can use Unix domain sockets and a read-write proxy to enable configuration while `satpulsed` is running
-- a read-write proxy using TCP can allow programs like `u-center` to access the GPS receiver
+- a read-write proxy using TCP can allow programs like `u-center` or Lady Heather to access the GPS receiver
+
+This is similar to what the existing `ser2net` program does, but is protocol-aware.
 
 SatPulse defines a JSONL format for capturing packets, which includes the content of the packet together with metadata.
 Packet logs can be captured by `satpulsed` or by the `gps` tool.

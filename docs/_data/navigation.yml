@@ -8,7 +8,19 @@ main:
 
 docs:
   - title: "Introduction"
-    url: "/intro.html"
+    children:
+      - title: "Overview"
+        url: "/intro/index.html"
+      - title: "GNSS"
+        url: "/intro/gnss.html"
+      - title: "Precision timing"
+        url: "/intro/timing.html"
+      - title: "Precision positioning"
+        url: "/intro/positioning.html"
+      - title: "SatPulse"
+        url: "/intro/satpulse.html"
+      - title: "Other software"
+        url: "/intro/other-software.html"
   - title: "Hardware"
     children:
       - title: "Introduction"

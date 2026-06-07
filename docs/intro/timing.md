@@ -25,6 +25,7 @@ This is well short of the accuracy of a GPS receiver,
 which is about 5ns for a high-end model, or about 30ns for an inexpensive model.
 
 In the last few years, inexpensive hardware has become available that makes it possible to do much better than this.
+A precision in the low tens of nanoseconds is achievable with hardware with a total cost in the low hundreds of dollars.
 This hardware is designed to support the Precision Time Protocol (PTP), but its use is not restricted to PTP,
 and, in fact, the hardware can be used to improve the performance of NTP.
 
@@ -128,3 +129,4 @@ To preserve GNSS accuracy, each link in the chain needs hardware support:
 - PTM for cross timestamping
 
 With all of these in place, end-to-end accuracy in the tens of nanoseconds is achievable.
+
