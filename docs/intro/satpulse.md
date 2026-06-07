@@ -189,7 +189,3 @@ Finally, there are vendors using protocols that use NMEA proprietary sentences s
 - PQTM protocol defined by Quectel, which has been validated with the LG290P and LC29H
 - PAIR protocol defined by Airoha, which has been validated on the Quectel LC29H (which uses the Airoha AG3335 chipset)
 
-## Where SatPulse fits
-
-- SatPulse is strongest when a GNSS receiver is part of a computer system that needs receiver configuration, timing, correction-stream routing, packet access and observability.
-- The related software page should explain the boundaries between SatPulse, PTP/NTP daemons, GPSd, RTK tools, Ntrip tools and vendor tools.
