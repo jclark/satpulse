@@ -19,7 +19,7 @@ Precision timing remains the most mature part of SatPulse.
 A typical NTP stratum-1 server, running on, for example, a Raspberry Pi, connects the PPS (pulse-per-second) output of a GPS receiver to a GPIO or a serial port pin.
 SatPulse can take advantage of hardware designed for PTP (Precision Time Protocol).
 The key difference is that the PPS output of the GPS is connected to a PPS input pin *on the ethernet controller*.
-For more details, please read the [Introduction]({% link intro.md %}).
+For more details, please read the [Introduction]({% link intro/index.md %}).
 
 In release 0.1, SatPulse required this special kind of ethernet controller.
 But since 0.2, this is no longer the case. In particular, since 0.2 SatPulse can supply timing information to an NTP server without any special hardware.
