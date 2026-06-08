@@ -33,6 +33,7 @@ type GPSConfig struct {
 	SurveyTime         uint32        `toml:"surveyTime"`
 	SurveyAcc          float64       `toml:"surveyAcc"`
 	FixedPosECEF       geopos.ECEF   `toml:"fixedPosECEF"`
+	FixedPosLLH        *[3]float64   `toml:"fixedPosLLH"`
 	FixedPosAcc        float64       `toml:"fixedPosAcc"`
 	AntennaCableDelay  float64       `toml:"antennaCableDelay"`  // in nanoseconds
 	AntennaCableLength float64       `toml:"antennaCableLength"` // in meters
@@ -164,10 +165,20 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 		cp.SetMode(gpsprot.Mode{Static: false})
 		return nil
 	}
-	if c.FixedPosECEF.IsZero() {
+	if c.FixedPosECEF.IsZero() && c.FixedPosLLH == nil {
 		opts.SetStatic = true
 		return nil
 	}
+	if !c.FixedPosECEF.IsZero() && c.FixedPosLLH != nil {
+		return configErrorf("must not specify both fixedPosECEF and fixedPosLLH")
+	}
+	if c.FixedPosLLH != nil {
+		return c.setFixedModeLLH(cp)
+	}
+	return c.setFixedModeECEF(cp)
+}
+
+func (c *GPSConfig) setFixedModeECEF(cp *gpsprot.ConfigProps) error {
 	err := c.FixedPosECEF.CheckOnEarth()
 	if err != nil {
 		return configErrorf("%v: invalid fixed position: %w", c.FixedPosECEF, err)
@@ -176,12 +187,9 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 	for i := 0; i < 3; i++ {
 		fixedPos[i] = gpsprot.Meters(c.FixedPosECEF[i])
 	}
-	acc := gpsprot.Meters(c.FixedPosAcc)
-	if acc < gpsprot.Millimeter {
-		return configErrorf("fixed position accuracy %v is too small", c.FixedPosAcc)
-	}
-	if acc > gpsprot.Meter*1000 {
-		return configErrorf("fixed position accuracy %v is too large", c.FixedPosAcc)
+	acc, err := c.getFixedPosAcc()
+	if err != nil {
+		return err
 	}
 	cp.SetMode(gpsprot.Mode{
 		Static:       true,
@@ -190,6 +198,45 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 		FixedPosAcc:  acc,
 	})
 	return nil
+}
+
+func (c *GPSConfig) setFixedModeLLH(cp *gpsprot.ConfigProps) error {
+	coords := c.FixedPosLLH
+	lat := gpsprot.DegreesFromFloat(coords[0])
+	lon := gpsprot.DegreesFromFloat(coords[1])
+	height := gpsprot.Meters(coords[2])
+	if lat < -90*gpsprot.Degrees || lat > 90*gpsprot.Degrees {
+		return configErrorf("fixed position latitude %v out of range [-90, 90]", coords[0])
+	}
+	if lon < -180*gpsprot.Degrees || lon > 180*gpsprot.Degrees {
+		return configErrorf("fixed position longitude %v out of range [-180, 180]", coords[1])
+	}
+	if height < -500*gpsprot.Meter || height > 10000*gpsprot.Meter {
+		return configErrorf("fixed position height %v out of range [-500, 10000]", coords[2])
+	}
+	acc, err := c.getFixedPosAcc()
+	if err != nil {
+		return err
+	}
+	cp.SetMode(gpsprot.Mode{
+		Static:      true,
+		PosType:     gpsprot.PosTypeLLH,
+		FixedPosLLH: [2]gpsprot.Angle{lat, lon},
+		Height:      height,
+		FixedPosAcc: acc,
+	})
+	return nil
+}
+
+func (c *GPSConfig) getFixedPosAcc() (gpsprot.Length, error) {
+	acc := gpsprot.Meters(c.FixedPosAcc)
+	if acc < gpsprot.Millimeter {
+		return 0, configErrorf("fixed position accuracy %v is too small", c.FixedPosAcc)
+	}
+	if acc > gpsprot.Meter*1000 {
+		return 0, configErrorf("fixed position accuracy %v is too large", c.FixedPosAcc)
+	}
+	return acc, nil
 }
 
 func (c *GPSConfig) getTimeGNSS(cp *gpsprot.ConfigProps) error {

@@ -105,6 +105,28 @@
           "minItems": 3,
           "maxItems": 3
         },
+        "fixedPosLLH": {
+          "type": "array",
+          "items": [
+            {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            },
+            {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            },
+            {
+              "type": "number",
+              "minimum": -500,
+              "maximum": 10000
+            }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        },
         "minElevation": {
           "type": "number",
           "minimum": -90,

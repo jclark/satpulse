@@ -96,18 +96,18 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
    * `"GLO"`, `"GLONASS"` for the GNSS system operated by Russia
 * `mobile` - a boolean saying whether the GPS receiver is mobile; if this is false, the receiver will be configured to assume a stationary
    position; on a timing receiver, time mode will be enabled, which is a mode in which a fixed position is established for the receiver,
-   and thereafter the time is computed using  a single satellite;
-   the position can be established by having the GPS spend some time determing the position itself (called a survey)
-   or by explicitly specifying the position (using `fixedPosECEF`); the default is `false`
+   and thereafter the time is computed using a single satellite;
+   the position can be established by having the GPS spend some time determining the position itself (called a survey)
+   or by explicitly specifying the position (using `fixedPosECEF` or `fixedPosLLH`); the default is `false`
 * `surveyTime` - a number giving the time in seconds to perform a survey to establish the position of the GPS receiver antenna;
    SatPulse will only do a survey when `mobile` is false and no fixed position has been set; the default is 2000
 * `surveyAcc` - a number giving the accuracy in meters that the survey must achieve; the survey will continue until this accuracy
    is reached and the survey time has elapsed; the default is 20
 * `resurvey` - a boolean saying whether to force a new survey even if a survey has already been completed; the default is `false`
-* `fixedPosECEF` - an array of three numbers giving the ECEF coordinates in meters of the GPS receiver's antenna receiver; if SatPulse initiaties a survey,
+* `fixedPosECEF` - an array of three numbers giving the ECEF coordinates in meters of the GPS receiver's antenna; this must not be specified with `fixedPosLLH`; if SatPulse initiates a survey,
   then it will log the position determined by the survey when the survey finishes
-* `fixedPosAcc` - a number giving the accuracy in meters of the `fixedPosECEF` coordinates; SatPulse will log the accuracy along with the position when
-  a survey finishes
+* `fixedPosLLH` - an array of three numbers giving latitude in degrees, longitude in degrees, and WGS84 ellipsoid height in meters of the GPS receiver's antenna; this must not be specified with `fixedPosECEF`
+* `fixedPosAcc` - a number giving the accuracy in meters of the fixed position coordinates; SatPulse will log the accuracy along with the position when a survey finishes
 * `minElevation` - a number giving the minimum elevation in degrees for satellites to be used by the GPS receiver; the default is to not change the GPS receiver's configuration
 * `antennaCableLength` - a number giving the length in meters of the antenna cable; this is used to set the antenna cable delay in conjunction with the
   `antennaCableVF` key; the default is to not change the GPS receiver's configuration of the antenna cable delay
@@ -125,8 +125,8 @@ Example
 ```
 [gps]
 config = true
-gnss = "GAL"
-fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
+fixedPosLLH = [51.5007, -0.1246, 11.0]
+fixedPosAcc = 0.05
 ```
 
 ## `leapSecond` table
