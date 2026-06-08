@@ -1,0 +1,10 @@
+# Serial input that can disappear. The runner backs ${SATPULSE_TEST_SERIAL}
+# with a pty (not a FIFO -- a FIFO cannot model a device going away), so
+# closing the pty master unplugs the device. The HTTP endpoint's ctx-bound
+# goroutines are what make a missing shutdown observable: if losing the input
+# does not bring the daemon down, the HTTP server keeps it alive.
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[[http]]
+listen = "127.0.0.1:${SATPULSE_TEST_HTTP_PORT}"

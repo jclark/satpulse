@@ -1,7 +1,7 @@
 # Ntrip push: the daemon forwards RTCM to a remote caster (the fake caster
 # run.py starts on SATPULSE_TEST_REMOTE_CASTER_PORT).
 [serial]
-device = "${SATPULSE_TEST_FIFO}"
+device = "${SATPULSE_TEST_SERIAL}"
 
 [[stream.push]]
 protocol = "RTCM"

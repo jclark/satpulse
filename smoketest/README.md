@@ -30,6 +30,10 @@ Output is one line per scenario:
 - `FAIL` -- a check failed; the traceback is printed and the run
   directory is kept for inspection.
 - `SKIP` -- a scenario needs root and neither root nor `--sudo` was used.
+- `XFAIL` -- a scenario that declares `XFAIL = "<reason>"` failed as
+  expected (e.g. a bug not yet fixed); it does not fail the suite.
+- `XPASS` -- an `XFAIL` scenario unexpectedly passed; this *does* fail the
+  suite, as a prompt to remove the `XFAIL` marker once the fix lands.
 
 Root-required scenarios are skipped by default when the runner is not root.
 Use `--sudo` to run them through passwordless `sudo -n`, as in CI. If `--sudo`
@@ -44,14 +48,16 @@ For each scenario the runner (`run.py`):
    scenarios are parallel-safe;
 2. renders the scenario's `<name>.toml.in` template, substituting the
    `SATPULSE_TEST_*` resource variables;
-3. creates the FIFO and starts `satpulsed`;
+3. creates the serial input transport (a FIFO by default, or a pty for a
+   scenario that needs to disconnect) and starts `satpulsed`;
 4. starts a single `satpulsetool pack --realtime <factor>` replay of the
-   scenario's packet log into the FIFO, in the background;
+   scenario's packet log into that input, in the background;
 5. calls the scenario's `run(ctx)`, which performs its checks while the
    replay flows (live checks such as SSE and Ntrip) and after it
    finishes (`ctx.wait_replay()`, then log and error checks);
 6. stops `satpulsed` with `SIGINT` and verifies it exits and releases its
-   ports.
+   ports -- except a self-shutdown scenario, which makes the daemon exit on
+   its own (see Transports) and verifies that without sending a signal.
 
 Only **one** replay runs per daemon lifetime: concatenating replays
 corrupts the RTCM frame boundary at the junction, so live checks observe
@@ -61,6 +67,30 @@ the single replay rather than triggering their own.
 inter-packet timing, larger values compress it. Scenarios use a factor
 that keeps the replay flowing long enough for the live checks while
 staying fast in CI.
+
+## Transports
+
+The serial input is one of two transports, chosen per scenario with the
+`INPUT` attribute:
+
+- **FIFO** (`INPUT` unset, the default) -- a read-only replay sink. satpulsed
+  opens it `O_RDWR` and holds its own write end, so the daemon and the replayer
+  can start and stop in any order and an idle FIFO looks like a silent-but-
+  connected receiver. That convenience is also a limit: a FIFO can never look
+  *disconnected*, so it cannot test what happens when the input goes away.
+- **pty** (`INPUT = "pty"`) -- a real TTY (so satpulsed takes the same code path
+  as a USB serial receiver) and full-duplex. Closing the master is a genuine
+  disconnect: the slave reads fail and the scan worker exits. Being writable,
+  it can also carry the daemon's own writes (the master is drained, and can be
+  captured), which a read-only FIFO cannot -- this is what a future stream.pull
+  scenario needs.
+
+A scenario whose daemon should exit on its own when the input disappears sets
+`SELF_SHUTDOWN = True`. That requires a pty (only a pty can disconnect); the
+runner then closes the master, expects the daemon to exit with no signal and a
+restartable failure code, and reports a hang (goroutine dump via SIGQUIT) as a
+failure. Using a pty does **not** imply `SELF_SHUTDOWN`: a write-path scenario
+will use a pty and still stop via the normal `SIGINT` path.
 
 ## Layout
 
@@ -136,6 +166,13 @@ make update-deps
   caster (the pushed stream matches the source log's RTCM), and a second push
   entry with a wrong password is permanently rejected, so the daemon gives up
   on it rather than reconnecting forever.
+- `shutdown/serial-loss` -- the serial input disappears (a pty whose master is
+  closed mid-run) and the daemon must shut down on its own and exit with a
+  restartable code, with an HTTP endpoint configured. Guards the scan-worker-
+  exit -> daemon-shutdown path (issue #172); the only scenario using the pty
+  transport and `SELF_SHUTDOWN`. Currently `XFAIL` -- the daemon does not yet
+  shut down when the scan worker exits, so it fails as expected until #172 is
+  fixed.
 
 The Ntrip caster scenarios use `satpulsetool ntrip` as the client. The
 `stream/push` scenario uses the built-in Ntrip fake caster

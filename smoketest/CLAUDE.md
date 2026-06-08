@@ -120,10 +120,48 @@ A scenario ID `family/name` maps to two files and one registry entry:
   - optional `REQUIRES_ROOT = True` -- the scenario is skipped unless the runner
     is already root or `--sudo` was passed; use `ctx.root_cmd(...)` for helper
     subprocesses that also need root.
+  - optional `INPUT = "pty"` -- back the serial device with a pty instead of the
+    default FIFO (see Transports below). A pty is a real TTY and is writable and
+    disconnectable; a FIFO is a read-only replay sink that cannot disconnect.
+  - optional `SELF_SHUTDOWN = True` -- the daemon is expected to exit on its own
+    when the input goes away, so the runner closes the pty master, asserts a
+    self-exit with a restartable non-zero code (not `0/64/77/78`), and reports a
+    hang as a failure -- it does **not** send SIGINT. Requires `INPUT = "pty"`
+    (only a pty can disconnect); a pty alone does not imply `SELF_SHUTDOWN`.
+  - optional `XFAIL = "<reason>"` -- the scenario is known to fail (e.g. a bug
+    not yet fixed). It then reports `XFAIL` instead of `FAIL` and does not fail
+    the suite; if it unexpectedly passes it reports `XPASS`, which *does* fail
+    the suite, prompting removal of the marker once the fix lands.
 - `scenarios/family/name.toml.in` -- config template using `${SATPULSE_TEST_*}`.
 - An entry in the `SCENARIOS` list in `run.py` (IDs are explicit, not globbed).
 
 Then update the scenario list in `README.md`.
+
+### Transports
+
+The serial input is either a FIFO or a pty (`INPUT`), and the distinction is
+load-bearing, not cosmetic:
+
+- **FIFO** (default) -- satpulsed opens it `O_RDWR` (`gps/lib/term/polling_linux.go`)
+  and holds its own write end, so it never reaches EOF: an idle FIFO reads as a
+  silent-but-connected receiver, and the daemon and replayer can start/stop in
+  any order. By the same token a FIFO can never look *disconnected*, so it
+  cannot drive the input-loss / shutdown path. It is also read-only at the gpsio
+  layer (`DevFIFO` -> `ReadOnly()`), so it cannot test write-path behaviour.
+- **pty** -- a real TTY (term.Term, the path real serial hardware uses) and
+  full-duplex. The runner holds the master, feeds replay into it, and a drain
+  thread reads the daemon's upstream writes (discarded, or captured for a
+  write-path check). Closing the master is a real disconnect (slave reads fail,
+  scan worker exits). This is the only transport that can model a device going
+  away, and the only one a stream.pull-style write-path scenario could use.
+
+`SELF_SHUTDOWN` is a property of the *lifecycle* (does the daemon exit without a
+signal?), not the transport: it depends on a pty (only a pty disconnects) but a
+pty does not require it. Keep the two attributes independent.
+
+`ctx.disconnect()` (pty-only) closes the master; `ctx.wait_exit()` waits for the
+no-signal exit and escalates to SIGQUIT on a hang. Both live on the runner's
+`Context` and are mirrored in `common.SmokeContext` for the scenario type.
 
 ### Where checks live
 
@@ -142,8 +180,9 @@ it.
 
 Set per run by the runner; reference as `${NAME}`:
 
-- `SATPULSE_TEST_FIFO` -- serial device FIFO (every scenario sets
-  `[serial] device` to this).
+- `SATPULSE_TEST_SERIAL` -- the serial device path the daemon opens (every
+  scenario sets `[serial] device` to this). The runner points it at the FIFO
+  path for FIFO scenarios and at the pty slave name for `INPUT = "pty"`.
 - `SATPULSE_TEST_LOG_DIR`, `SATPULSE_TEST_RUN_DIR`, `SATPULSE_TEST_CONFIG`.
 - Ports (each scenario gets a private block): `SATPULSE_TEST_HTTP_PORT`,
   `SATPULSE_TEST_NTRIP_PORT`, `SATPULSE_TEST_PROXY_TCP_PORT`,

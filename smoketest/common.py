@@ -43,7 +43,7 @@ class SmokeContext(Protocol):
     satpulsetool: str
 
     @property
-    def fifo(self) -> str: ...
+    def serial(self) -> str: ...
 
     @property
     def log_dir(self) -> str: ...
@@ -64,6 +64,10 @@ class SmokeContext(Protocol):
     def root_cmd(self, cmd: Sequence[str]) -> list[str]: ...
 
     def wait_replay(self, timeout: float = 60) -> None: ...
+
+    def disconnect(self) -> None: ...
+
+    def wait_exit(self, timeout: float = 10) -> int: ...
 
 
 def poll(fn: Callable[[], T | None], timeout: float = DEFAULT_TIMEOUT, interval: float = 0.1) -> T | None:
@@ -193,7 +197,7 @@ def check_sse(ctx: SmokeContext, expect: Iterable[str] = (), read_seconds: float
 
 
 def _log_path(ctx: SmokeContext, kind: str) -> str:
-    base = os.path.basename(ctx.fifo)
+    base = os.path.basename(ctx.serial)
     return os.path.join(ctx.log_dir, f"{kind}.{base}.jsonl")
 
 

@@ -23,6 +23,7 @@ import fcntl
 import importlib.util
 import os
 import platform
+import select
 import shutil
 import signal
 import socket
@@ -33,6 +34,7 @@ import threading
 import time
 import tomllib
 import traceback
+import tty
 from typing import IO, Literal, Protocol, Sequence, cast
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -54,6 +56,7 @@ SCENARIOS = [
     "proxy/tcp",
     "proxy/socket",
     "stream/push",
+    "shutdown/serial-loss",
 ]
 
 
@@ -63,7 +66,7 @@ class ScenarioModule(Protocol):
 
     def run(self, ctx: Context) -> None: ...
 
-Status = Literal["PASS", "FAIL", "SKIP"]
+Status = Literal["PASS", "FAIL", "SKIP", "XFAIL", "XPASS"]
 
 # Named resources mapped to offsets within each scenario's port block.
 PORT_OFFSETS = {
@@ -76,6 +79,11 @@ PORT_OFFSETS = {
     "SATPULSE_TEST_REMOTE_CASTER_PORT2": 6,
 }
 PORT_BLOCK = 16
+
+# Exit codes the systemd unit treats as non-restartable (RestartPreventExitStatus
+# in configs/satpulse@.service). A SELF_SHUTDOWN scenario expects a restartable
+# failure: non-zero, and not one of these.
+RESTART_PREVENT_CODES = {64, 77, 78}
 
 
 def _ephemeral_floor() -> int:
@@ -145,6 +153,22 @@ def bin_path(name: str) -> str:
     return os.path.join(REPO, "out", arch(), name)
 
 
+def make_pty() -> tuple[int, int, str]:
+    """Create a pty whose slave stands in for a serial device.
+
+    Returns (master_fd, slave_fd, slave_name). The daemon opens slave_name as
+    its serial device; a pty slave is a real TTY, so it takes the term.Term
+    path a USB serial receiver uses, not the FIFO replay path. Writing to the
+    master feeds the daemon; closing every master fd makes the slave reads fail
+    (EIO), which is how a pty -- unlike a FIFO -- can model the device being
+    unplugged. The slave is put in raw mode so binary GPS packets pass through
+    untranslated and the daemon's own writes are not echoed back to the master.
+    """
+    master, slave = os.openpty()
+    tty.setraw(slave)
+    return master, slave, os.ttyname(slave)
+
+
 class Context:
     """Resolved resources and helpers passed to a scenario's run(ctx)."""
 
@@ -162,10 +186,15 @@ class Context:
         has_push: bool,
         requires_root: bool,
         use_sudo: bool,
+        input_kind: str = "fifo",
     ) -> None:
         self.name = name
         self.run_dir = run_dir
         self.env = env
+        # Serial input transport: "fifo" (read-only replay sink, the default) or
+        # "pty" (full-duplex; can be written to and can be disconnected). See
+        # attach_pty/disconnect.
+        self.input_kind = input_kind
         self.factor = factor
         self.packet_log = packet_log
         self.daemon_log = daemon_log
@@ -182,6 +211,16 @@ class Context:
         self.replay_proc: subprocess.Popen[bytes] | None = None
         self._replay_fifo: IO[bytes] | None = None
         self._replay_err_file: IO[bytes] | None = None
+        # pty transport state (input_kind == "pty"). The master is the write
+        # side we feed and later close to disconnect; the slave is held open so
+        # the master never sees a transient "no slave" hangup before the daemon
+        # opens the device by name. A background thread drains the daemon's
+        # upstream writes into _pty_capture (when set) or discards them.
+        self._pty_master = -1
+        self._pty_slave = -1
+        self._pty_drain: threading.Thread | None = None
+        self._pty_drain_stop = threading.Event()
+        self._pty_capture: bytearray | None = None
         # Chrony SOCK consumer: a separate ntpsock.py process binds the socket
         # before the daemon starts and logs received samples to ntp_log.
         self.ntp_log = os.path.join(run_dir, "ntp.jsonl")
@@ -197,8 +236,9 @@ class Context:
         self._caster_log_file: IO[bytes] | None = None
 
     @property
-    def fifo(self) -> str:
-        return self.env["SATPULSE_TEST_FIFO"]
+    def serial(self) -> str:
+        """The serial device path the daemon opens (FIFO path or pty slave)."""
+        return self.env["SATPULSE_TEST_SERIAL"]
 
     @property
     def log_dir(self) -> str:
@@ -391,11 +431,21 @@ class Context:
         rather than triggering their own bursts. pack's stderr is captured
         so wait_replay can surface a malformed-log or broken-replay failure.
         """
-        f = self._open_fifo_write(open_timeout)
         cmd = [self.satpulsetool, "pack", "--realtime", str(self.factor), self.packet_log]
         errf = open(self.replay_err, "wb")
-        p = subprocess.Popen(cmd, stdout=f, stderr=errf)
-        self._replay_fifo = f
+        if self.input_kind == "pty":
+            # pack writes into its own dup of the pty master; the runner keeps
+            # the original master for draining and for disconnect(), so pack
+            # exiting (closing its dup) is not on its own a disconnect.
+            wfd = os.dup(self._pty_master)
+            try:
+                p = subprocess.Popen(cmd, stdout=wfd, stderr=errf)
+            finally:
+                os.close(wfd)
+        else:
+            f = self._open_fifo_write(open_timeout)
+            self._replay_fifo = f
+            p = subprocess.Popen(cmd, stdout=f, stderr=errf)
         self._replay_err_file = errf
         self.replay_proc = p
         return p
@@ -412,7 +462,7 @@ class Context:
         deadline = time.time() + timeout
         while True:
             try:
-                fd = os.open(self.fifo, os.O_WRONLY | os.O_NONBLOCK)
+                fd = os.open(self.serial, os.O_WRONLY | os.O_NONBLOCK)
                 break
             except OSError as e:
                 if e.errno != errno.ENXIO:
@@ -462,6 +512,98 @@ class Context:
         except OSError:
             return "(no stderr)"
 
+    # --- pty transport ------------------------------------------------------
+    #
+    # A pty is the one transport that can model a serial device disappearing: a
+    # FIFO cannot, because satpulsed opens it O_RDWR and holds its own write end
+    # so an idle FIFO stays "connected" by design. The pty is also full-duplex,
+    # so unlike the read-only FIFO it can carry the daemon's writes -- needed by
+    # future write-path scenarios such as stream.pull. disconnect() requires a
+    # pty; using a pty does not require disconnect().
+
+    def attach_pty(self, master_fd: int, slave_fd: int) -> None:
+        """Take ownership of the pty fds and start draining the daemon's writes.
+
+        The slave fd is held open so the master never sees a transient "no
+        slave" hangup before the daemon opens the device by name. The drain
+        thread reads whatever the daemon writes upstream -- probe output during
+        detection now, stream.pull corrections later -- into _pty_capture when
+        set, otherwise discarding it. Draining also keeps the daemon's writes
+        from blocking on a full pty buffer.
+        """
+        self._pty_master = master_fd
+        self._pty_slave = slave_fd
+        self._pty_drain_stop.clear()
+        self._pty_drain = threading.Thread(target=self._drain_pty, daemon=True)
+        self._pty_drain.start()
+
+    def _drain_pty(self) -> None:
+        # select() with a timeout lets the loop notice the stop flag, so the fd
+        # is never read after _close_pty() is about to close it.
+        while not self._pty_drain_stop.is_set():
+            try:
+                r, _, _ = select.select([self._pty_master], [], [], 0.1)
+            except OSError:
+                return
+            if not r:
+                continue
+            try:
+                data = os.read(self._pty_master, 4096)
+            except OSError:
+                return
+            if not data:
+                return
+            if self._pty_capture is not None:
+                self._pty_capture.extend(data)
+
+    def disconnect(self) -> None:
+        """Disconnect the serial input, as if the device were unplugged.
+
+        pty-only: closing every master fd makes the daemon's slave reads fail
+        (EIO), so the scan worker exits -- the same trigger as a vanished USB
+        serial device. After this the daemon should shut down on its own;
+        assert that with wait_exit().
+        """
+        if self.input_kind != "pty":
+            raise RuntimeError("disconnect() is only meaningful for pty input")
+        self._close_pty()
+
+    def _close_pty(self) -> None:
+        """Stop the drain thread and close the pty fds. Idempotent."""
+        if self._pty_drain is not None:
+            self._pty_drain_stop.set()
+            self._pty_drain.join(timeout=2)
+            self._pty_drain = None
+        for attr in ("_pty_master", "_pty_slave"):
+            fd = getattr(self, attr)
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                setattr(self, attr, -1)
+
+    def wait_exit(self, timeout: float = 10) -> int:
+        """Wait for the daemon to exit on its own, sending it no signal.
+
+        For SELF_SHUTDOWN scenarios after disconnect(): the daemon must shut
+        down because its serial input went away. A hang is exactly the bug we
+        guard against, so on timeout escalate to SIGQUIT -- Go dumps every
+        goroutine stack to the daemon log -- and fail, the same diagnostic
+        stop_daemon gives for a stuck shutdown.
+        """
+        assert self.daemon is not None
+        try:
+            return self.daemon.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            self.daemon.send_signal(signal.SIGQUIT)
+            self.daemon.wait()
+            raise RuntimeError(
+                f"daemon did not exit on its own within {timeout:g}s after the "
+                "serial input disconnected; SIGQUIT dumped goroutines to "
+                "satpulsed.log"
+            )
+
 
 def load_scenario(name: str) -> ScenarioModule:
     path = os.path.join(SCENARIOS_DIR, f"{name}.py")
@@ -479,7 +621,7 @@ def allocate_env(name: str, run_dir: str) -> dict[str, str]:
     env = {
         "SATPULSE_TEST_RUN_DIR": run_dir,
         "SATPULSE_TEST_CONFIG": os.path.join(run_dir, "satpulse.toml"),
-        "SATPULSE_TEST_FIFO": os.path.join(run_dir, "gps.fifo"),
+        "SATPULSE_TEST_SERIAL": os.path.join(run_dir, "gps.fifo"),
         "SATPULSE_TEST_LOG_DIR": log_dir,
         "SATPULSE_TEST_PROXY_SOCKET": os.path.join(run_dir, "proxy.sock"),
         "SATPULSE_TEST_NTP_SOCK": os.path.join(run_dir, "chrony.sock"),
@@ -578,21 +720,44 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         packet_log = os.path.join(REPO, packet_log)
     config_tmpl = os.path.join(SCENARIOS_DIR, f"{name}.toml.in")
 
+    # Serial input transport. "fifo" (default) is a read-only replay sink;
+    # "pty" is full-duplex and can be disconnected. SELF_SHUTDOWN -- the daemon
+    # is expected to exit on its own when its input goes away -- only makes
+    # sense over a pty, since only a pty can disconnect. A pty does not imply
+    # SELF_SHUTDOWN: write-path scenarios (e.g. stream.pull) will use a pty and
+    # still stop via SIGINT.
+    input_kind = getattr(scen, "INPUT", "fifo")
+    self_shutdown = bool(getattr(scen, "SELF_SHUTDOWN", False))
+    if self_shutdown and input_kind != "pty":
+        return (name, "FAIL", "SELF_SHUTDOWN requires INPUT='pty' (only a pty can disconnect)")
+    # A scenario known to fail (e.g. a bug not yet fixed) declares XFAIL = reason.
+    xfail = getattr(scen, "XFAIL", None)
+
     run_dir = tempfile.mkdtemp(prefix=f"satpulse-smoke-{name.replace('/', '-')}-")
     env = allocate_env(name, run_dir)
     env["SATPULSE_TEST_PACKET_LOG"] = packet_log
     os.makedirs(env["SATPULSE_TEST_LOG_DIR"], exist_ok=True)
-    os.mkfifo(env["SATPULSE_TEST_FIFO"])
+    pty_fds: tuple[int, int] | None = None
+    if input_kind == "pty":
+        master, slave, slave_name = make_pty()
+        pty_fds = (master, slave)
+        env["SATPULSE_TEST_SERIAL"] = slave_name
+    else:
+        os.mkfifo(env["SATPULSE_TEST_SERIAL"])
     has_http, has_ntrip, has_ntp_sock, has_push = render_config(config_tmpl, env["SATPULSE_TEST_CONFIG"], env)
 
     daemon_log = os.path.join(run_dir, "satpulsed.log")
     ctx = Context(
         name, run_dir, env, factor, packet_log, daemon_log,
         has_http, has_ntrip, has_ntp_sock, has_push, requires_root, use_sudo,
+        input_kind=input_kind,
     )
+    if pty_fds is not None:
+        ctx.attach_pty(*pty_fds)
 
     daemon: subprocess.Popen[bytes] | None = None
-    keep = False
+    status: Status = "PASS"
+    detail = ""
     try:
         # Bind the chrony SOCK consumer before the daemon starts, so its first
         # refclock sample lands in a listening socket rather than warning.
@@ -639,14 +804,29 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         # finishes against a live daemon rather than dying of SIGPIPE.
         ctx.wait_replay()
 
-        # Graceful shutdown: SIGINT should terminate the daemon promptly
-        # and release its ports. A hang escalates to SIGQUIT (goroutine
-        # dump) and is reported as a failure.
-        err = stop_daemon(daemon, process_group=requires_root)
-        if err is not None:
-            raise RuntimeError(err)
-        if daemon.returncode not in (0, -signal.SIGINT):
-            raise RuntimeError(f"daemon exited with code {daemon.returncode} on SIGINT")
+        if self_shutdown:
+            # No signal: losing the serial input must be enough to make the
+            # daemon exit. The scenario already disconnected and waited via
+            # ctx.wait_exit(), so the daemon should be gone, with a restartable
+            # failure code (non-zero, not one systemd treats as terminal) so
+            # the unit restarts it.
+            if daemon.poll() is None:
+                raise RuntimeError("self-shutdown scenario: daemon still running after run()")
+            rc = daemon.returncode
+            if rc <= 0 or rc in RESTART_PREVENT_CODES:
+                raise RuntimeError(
+                    "self-shutdown scenario: expected a restartable non-zero exit "
+                    f"(not 0 or {sorted(RESTART_PREVENT_CODES)}), got {rc}"
+                )
+        else:
+            # Graceful shutdown: SIGINT should terminate the daemon promptly
+            # and release its ports. A hang escalates to SIGQUIT (goroutine
+            # dump) and is reported as a failure.
+            err = stop_daemon(daemon, process_group=requires_root)
+            if err is not None:
+                raise RuntimeError(err)
+            if daemon.returncode not in (0, -signal.SIGINT):
+                raise RuntimeError(f"daemon exited with code {daemon.returncode} on SIGINT")
         if ctx.has_http and not port_free(ctx.http_port):
             raise RuntimeError(f"HTTP port {ctx.http_port} still in use after shutdown")
         # Scan the daemon log only now, so shutdown-time warnings/errors
@@ -658,14 +838,13 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
             err = ctx.remove_ntp_shm()
             if err is not None:
                 raise RuntimeError(f"failed to remove NTP SHM segment {ctx.ntp_shm_segment}: {err}")
-        return (name, "PASS", "")
     except Exception:
-        keep = True
-        return (name, "FAIL", traceback.format_exc())
+        status, detail = "FAIL", traceback.format_exc()
     finally:
         if ctx.replay_proc is not None and ctx.replay_proc.poll() is None:
             ctx.replay_proc.kill()
         ctx._close_replay_files()
+        ctx._close_pty()
         if daemon is not None and daemon.poll() is None:
             stop_daemon(daemon, process_group=requires_root)
         ctx.stop_ntp_sock()
@@ -674,10 +853,22 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
             err = ctx.remove_ntp_shm()
             if err is not None:
                 print(f"[{name}] failed to remove NTP SHM segment: {err}", file=sys.stderr)
-        if keep:
-            print(f"[{name}] artifacts kept in {run_dir}", file=sys.stderr)
-        else:
-            shutil.rmtree(run_dir, ignore_errors=True)
+
+    # Map an expected failure: an XFAIL scenario reports XFAIL when it fails as
+    # expected, and XPASS -- counted as a failure -- when it unexpectedly
+    # passes, prompting removal of the marker once the bug is fixed.
+    if xfail:
+        if status == "FAIL":
+            status, detail = "XFAIL", xfail
+        elif status == "PASS":
+            status, detail = "XPASS", f"expected to fail ({xfail}) but passed; remove XFAIL"
+    # Keep the run dir for anything worth investigating -- a real failure or an
+    # unexpected pass. A clean pass or an expected failure leaves nothing behind.
+    if status in ("FAIL", "XPASS"):
+        print(f"[{name}] artifacts kept in {run_dir}", file=sys.stderr)
+    else:
+        shutil.rmtree(run_dir, ignore_errors=True)
+    return (name, status, detail)
 
 
 def main() -> int:
@@ -729,19 +920,25 @@ def main() -> int:
         for fut in concurrent.futures.as_completed(futs):
             name, status, detail = fut.result()
             results.append((name, status, detail))
-            emit(f"{status} {name}" + (f" ({detail})" if status == "SKIP" else ""))
+            emit(f"{status} {name}" + (f" ({detail})" if status in ("SKIP", "XFAIL", "XPASS") else ""))
 
-    failed = sorted((name, detail) for name, status, detail in results if status == "FAIL")
-    for name, detail in failed:
+    # FAIL and XPASS (expected-to-fail but passed) both fail the suite.
+    failures = sorted((name, detail) for name, status, detail in results if status in ("FAIL", "XPASS"))
+    for name, detail in failures:
         print(f"\n--- {name} ---")
         print("    " + detail.replace("\n", "\n    ").rstrip())
-    skipped = sum(1 for _, status, _ in results if status == "SKIP")
-    ran = len(results) - skipped
-    summary = f"\n{ran - len(failed)}/{ran} scenarios passed"
-    if skipped:
-        summary += f", {skipped} skipped"
-    print(summary)
-    return 1 if failed else 0
+    counts = {s: sum(1 for _, st, _ in results if st == s) for s in ("PASS", "FAIL", "XFAIL", "XPASS", "SKIP")}
+    parts = [f"{counts['PASS']} passed"]
+    if counts["FAIL"]:
+        parts.append(f"{counts['FAIL']} failed")
+    if counts["XPASS"]:
+        parts.append(f"{counts['XPASS']} unexpectedly passed")
+    if counts["XFAIL"]:
+        parts.append(f"{counts['XFAIL']} xfail")
+    if counts["SKIP"]:
+        parts.append(f"{counts['SKIP']} skipped")
+    print("\n" + ", ".join(parts))
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

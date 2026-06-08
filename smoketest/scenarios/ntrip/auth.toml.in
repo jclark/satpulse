@@ -1,6 +1,6 @@
 # Ntrip caster with an authenticated mountpoint.
 [serial]
-device = "${SATPULSE_TEST_FIFO}"
+device = "${SATPULSE_TEST_SERIAL}"
 
 [[user]]
 name = "rover"
