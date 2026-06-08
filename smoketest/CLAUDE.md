@@ -123,6 +123,14 @@ A scenario ID `family/name` maps to two files and one registry entry:
   - optional `INPUT = "pty"` -- back the serial device with a pty instead of the
     default FIFO (see Transports below). A pty is a real TTY and is writable and
     disconnectable; a FIFO is a read-only replay sink that cannot disconnect.
+  - optional `CAPTURE_WRITES = True` -- record the daemon's serial writes to
+    `ctx.serial_writes` (requires `INPUT = "pty"`), so a write-path scenario
+    (stream/pull) can scan what the daemon wrote back to the receiver. The
+    daemon's non-RTCM detection probes are filtered out by tag. Independent of
+    `SELF_SHUTDOWN`.
+  - optional `PULL_SOURCE_LOG` -- for a `[stream.pull]` scenario, the RTCM log
+    the runner's fake correction source streams to the daemon (path relative to
+    the repo root, like `PACKET_LOG`).
   - optional `SELF_SHUTDOWN = True` -- the daemon is expected to exit on its own
     when the input goes away, so the runner closes the pty master, asserts a
     self-exit with a restartable non-zero code (not `0/64/77/78`), and reports a
@@ -150,10 +158,11 @@ load-bearing, not cosmetic:
   layer (`DevFIFO` -> `ReadOnly()`), so it cannot test write-path behaviour.
 - **pty** -- a real TTY (term.Term, the path real serial hardware uses) and
   full-duplex. The runner holds the master, feeds replay into it, and a drain
-  thread reads the daemon's upstream writes (discarded, or captured for a
-  write-path check). Closing the master is a real disconnect (slave reads fail,
-  scan worker exits). This is the only transport that can model a device going
-  away, and the only one a stream.pull-style write-path scenario could use.
+  thread reads the daemon's upstream writes (discarded by default, or captured
+  to `ctx.serial_writes` when `CAPTURE_WRITES` is set). Closing the master is a
+  real disconnect (slave reads fail, scan worker exits). This is the only
+  transport that can model a device going away, and the only one the
+  `stream/pull` write-path scenario can use.
 
 `SELF_SHUTDOWN` is a property of the *lifecycle* (does the daemon exit without a
 signal?), not the transport: it depends on a pty (only a pty disconnects) but a
@@ -211,6 +220,11 @@ These are also usable by hand for debugging, independent of the suite:
 - `scenarios/ntrip/fakecaster.py` -- minimal Ntrip v1 caster: accepts a SOURCE
   handshake, replies `ICY 200 OK`, and appends the pushed payload to a file
   (feed it to `satpulsetool scan`). Optional `--mountpoint`/`--password` checks.
+- `scenarios/stream/fakesource.py` -- minimal Ntrip v1 correction source (the
+  pull counterpart): answers a GET handshake, replies `ICY 200 OK`, and streams
+  an RTCM packet log to the client via `satpulsetool pack`, then holds the
+  connection open so the client does not reconnect and re-send. Optional
+  `--mountpoint`/`--username`/`--password` checks.
 
 ## Code style (Python here)
 

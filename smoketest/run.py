@@ -56,6 +56,7 @@ SCENARIOS = [
     "proxy/tcp",
     "proxy/socket",
     "stream/push",
+    "stream/pull",
     "shutdown/serial-loss",
 ]
 
@@ -187,6 +188,8 @@ class Context:
         requires_root: bool,
         use_sudo: bool,
         input_kind: str = "fifo",
+        has_pull: bool = False,
+        pull_source_log: str = "",
     ) -> None:
         self.name = name
         self.run_dir = run_dir
@@ -202,6 +205,10 @@ class Context:
         self.has_ntrip = has_ntrip
         self.has_ntp_sock = has_ntp_sock
         self.has_push = has_push
+        self.has_pull = has_pull
+        # Absolute path to the RTCM log the fake correction source streams to the
+        # daemon's stream.pull client (set only for pull scenarios).
+        self.pull_source_log = pull_source_log
         self.requires_root = requires_root
         self.use_sudo = use_sudo
         self.replay_err = os.path.join(run_dir, "replay.err")
@@ -220,7 +227,12 @@ class Context:
         self._pty_slave = -1
         self._pty_drain: threading.Thread | None = None
         self._pty_drain_stop = threading.Event()
-        self._pty_capture: bytearray | None = None
+        # When capture is enabled (start_write_capture), the drain thread writes
+        # the daemon's upstream serial output to serial_writes instead of
+        # discarding it, so a write-path scenario (stream.pull) can scan what the
+        # daemon sent back to the receiver.
+        self.serial_writes = os.path.join(run_dir, "serial-out.bin")
+        self._pty_capture: IO[bytes] | None = None
         # Chrony SOCK consumer: a separate ntpsock.py process binds the socket
         # before the daemon starts and logs received samples to ntp_log.
         self.ntp_log = os.path.join(run_dir, "ntp.jsonl")
@@ -234,6 +246,14 @@ class Context:
         self.caster_log = os.path.join(run_dir, "caster.log")
         self.caster_procs: list[subprocess.Popen[bytes]] = []
         self._caster_log_file: IO[bytes] | None = None
+        # Fake Ntrip correction source: one scenarios/stream/fakesource.py process
+        # listening before the daemon, which the daemon's [stream.pull] client
+        # connects out to and reads RTCM from. The daemon writes those corrections
+        # back over the serial port, where the pty drain captures them to
+        # serial_writes; the source's diagnostics go to source_log.
+        self.source_log = os.path.join(run_dir, "source.log")
+        self.source_proc: subprocess.Popen[bytes] | None = None
+        self._source_log_file: IO[bytes] | None = None
 
     @property
     def serial(self) -> str:
@@ -396,6 +416,52 @@ class Context:
         if self._caster_log_file is not None:
             self._caster_log_file.close()
 
+    def start_source(self, timeout: float = 5) -> None:
+        """Start the fake Ntrip correction source for [stream.pull], before the daemon.
+
+        The daemon's pull client connects out to this source after GPS
+        detection, so it must be listening first; otherwise the connect fails,
+        the daemon logs a reconnect warning (which check_no_unexpected_errors
+        would flag), and backs off. The source answers the Ntrip GET with
+        "ICY 200 OK" and streams the scenario's RTCM log (paced by pack), which
+        the daemon writes back over the serial port. A readiness probe that does
+        not complete the GET handshake is ignored, so polling the port is safe.
+        """
+        if not self.pull_source_log:
+            raise RuntimeError("[stream.pull] configured but the scenario set no PULL_SOURCE_LOG")
+        with open(self.env["SATPULSE_TEST_CONFIG"], "rb") as cf:
+            ntrip = tomllib.load(cf)["stream"]["pull"]["ntrip"]
+        port = int(ntrip["address"].rsplit(":", 1)[1])
+        cmd = [
+            sys.executable, os.path.join(SCENARIOS_DIR, "stream", "fakesource.py"),
+            f"127.0.0.1:{port}", "--mountpoint", ntrip["mountpoint"],
+            "--pack", self.satpulsetool, "--factor", str(self.factor), self.pull_source_log,
+        ]
+        if ntrip.get("username"):
+            cmd += ["--username", ntrip["username"]]
+        if ntrip.get("password"):
+            cmd += ["--password", ntrip["password"]]
+        self._source_log_file = open(self.source_log, "wb")
+        self.source_proc = subprocess.Popen(cmd, stdout=self._source_log_file, stderr=subprocess.STDOUT)
+        deadline = time.time() + timeout
+        while port_free(port):
+            if self.source_proc.poll() is not None:
+                raise RuntimeError("fake correction source exited before listening")
+            if time.time() >= deadline:
+                raise RuntimeError(f"fake correction source did not listen on {port} within {timeout}s")
+            time.sleep(0.02)
+
+    def stop_source(self) -> None:
+        if self.source_proc is not None and self.source_proc.poll() is None:
+            self.source_proc.terminate()
+            try:
+                self.source_proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.source_proc.kill()
+        if self._source_log_file is not None:
+            self._source_log_file.close()
+            self._source_log_file = None
+
     def http_url(self, path: str) -> str:
         return f"http://127.0.0.1:{self.http_port}{path}"
 
@@ -517,9 +583,19 @@ class Context:
     # A pty is the one transport that can model a serial device disappearing: a
     # FIFO cannot, because satpulsed opens it O_RDWR and holds its own write end
     # so an idle FIFO stays "connected" by design. The pty is also full-duplex,
-    # so unlike the read-only FIFO it can carry the daemon's writes -- needed by
-    # future write-path scenarios such as stream.pull. disconnect() requires a
-    # pty; using a pty does not require disconnect().
+    # so unlike the read-only FIFO it can carry the daemon's writes -- used by
+    # the stream/pull write-path scenario (see start_write_capture). disconnect()
+    # requires a pty; using a pty does not require disconnect().
+
+    def start_write_capture(self) -> None:
+        """Record the daemon's serial writes to serial_writes (pty only).
+
+        Call before attach_pty so the drain thread captures from the first byte.
+        A write-path scenario (stream.pull) scans the result for the RTCM
+        corrections the daemon wrote back to the receiver; the non-RTCM probe
+        bytes the daemon emits during detection are filtered out by tag.
+        """
+        self._pty_capture = open(self.serial_writes, "wb")
 
     def attach_pty(self, master_fd: int, slave_fd: int) -> None:
         """Take ownership of the pty fds and start draining the daemon's writes.
@@ -554,7 +630,8 @@ class Context:
             if not data:
                 return
             if self._pty_capture is not None:
-                self._pty_capture.extend(data)
+                self._pty_capture.write(data)
+                self._pty_capture.flush()
 
     def disconnect(self) -> None:
         """Disconnect the serial input, as if the device were unplugged.
@@ -574,6 +651,9 @@ class Context:
             self._pty_drain_stop.set()
             self._pty_drain.join(timeout=2)
             self._pty_drain = None
+        if self._pty_capture is not None:
+            self._pty_capture.close()
+            self._pty_capture = None
         for attr in ("_pty_master", "_pty_slave"):
             fd = getattr(self, attr)
             if fd >= 0:
@@ -632,12 +712,13 @@ def allocate_env(name: str, run_dir: str) -> dict[str, str]:
     return env
 
 
-def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tuple[bool, bool, bool, bool]:
-    """Render the config template; report which listeners it configures.
+def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tuple[bool, bool, bool, bool, bool]:
+    """Render the config template; report which listeners/peers it configures.
 
-    Returns (has_http, has_ntrip, has_ntp_sock, has_push), detected from
-    non-comment lines so a comment that merely mentions a section is not
-    mistaken for it.
+    Returns (has_http, has_ntrip, has_ntp_sock, has_push, has_pull), detected
+    from non-comment lines so a comment that merely mentions a section is not
+    mistaken for it. has_pull keys off the [stream.pull...] table prefix so the
+    runner knows to start a fake correction source for it.
     """
     with open(template_path) as f:
         text = f.read()
@@ -652,7 +733,8 @@ def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tup
     ]
     return ("[[http]]" in headers, "[ntrip]" in headers,
             any(line.startswith("sock.path") for line in headers),
-            "[[stream.push]]" in headers)
+            "[[stream.push]]" in headers,
+            any(line.startswith("[stream.pull") for line in headers))
 
 
 def port_free(port: int) -> bool:
@@ -724,12 +806,21 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
     # "pty" is full-duplex and can be disconnected. SELF_SHUTDOWN -- the daemon
     # is expected to exit on its own when its input goes away -- only makes
     # sense over a pty, since only a pty can disconnect. A pty does not imply
-    # SELF_SHUTDOWN: write-path scenarios (e.g. stream.pull) will use a pty and
-    # still stop via SIGINT.
+    # SELF_SHUTDOWN: the stream/pull write-path scenario uses a pty and still
+    # stops via SIGINT.
     input_kind = getattr(scen, "INPUT", "fifo")
     self_shutdown = bool(getattr(scen, "SELF_SHUTDOWN", False))
     if self_shutdown and input_kind != "pty":
         return (name, "FAIL", "SELF_SHUTDOWN requires INPUT='pty' (only a pty can disconnect)")
+    # A write-path scenario (stream.pull) sets CAPTURE_WRITES to record what the
+    # daemon writes back to the receiver; only a pty carries those writes.
+    capture_writes = bool(getattr(scen, "CAPTURE_WRITES", False))
+    if capture_writes and input_kind != "pty":
+        return (name, "FAIL", "CAPTURE_WRITES requires INPUT='pty' (only a pty carries the daemon's writes)")
+    # The RTCM log a [stream.pull] correction source streams to the daemon.
+    pull_source_log = getattr(scen, "PULL_SOURCE_LOG", "")
+    if pull_source_log and not os.path.isabs(pull_source_log):
+        pull_source_log = os.path.join(REPO, pull_source_log)
     # A scenario known to fail (e.g. a bug not yet fixed) declares XFAIL = reason.
     xfail = getattr(scen, "XFAIL", None)
 
@@ -744,15 +835,19 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         env["SATPULSE_TEST_SERIAL"] = slave_name
     else:
         os.mkfifo(env["SATPULSE_TEST_SERIAL"])
-    has_http, has_ntrip, has_ntp_sock, has_push = render_config(config_tmpl, env["SATPULSE_TEST_CONFIG"], env)
+    has_http, has_ntrip, has_ntp_sock, has_push, has_pull = render_config(
+        config_tmpl, env["SATPULSE_TEST_CONFIG"], env)
 
     daemon_log = os.path.join(run_dir, "satpulsed.log")
     ctx = Context(
         name, run_dir, env, factor, packet_log, daemon_log,
         has_http, has_ntrip, has_ntp_sock, has_push, requires_root, use_sudo,
-        input_kind=input_kind,
+        input_kind=input_kind, has_pull=has_pull, pull_source_log=pull_source_log,
     )
     if pty_fds is not None:
+        # Enable capture before draining starts so no early write is missed.
+        if capture_writes:
+            ctx.start_write_capture()
         ctx.attach_pty(*pty_fds)
 
     daemon: subprocess.Popen[bytes] | None = None
@@ -767,6 +862,11 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         # connect succeeds immediately instead of failing and backing off.
         if has_push:
             ctx.start_caster()
+        # Likewise start the fake correction source before the daemon, so the
+        # daemon's pull connect succeeds at once rather than warning and backing
+        # off. Pull has no listener of its own and does not gate replay.
+        if has_pull:
+            ctx.start_source()
         with open(daemon_log, "wb") as out:
             cmd = [ctx.satpulsed, "-v", "-f", env["SATPULSE_TEST_CONFIG"]]
             if requires_root:
@@ -849,6 +949,7 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
             stop_daemon(daemon, process_group=requires_root)
         ctx.stop_ntp_sock()
         ctx.stop_caster()
+        ctx.stop_source()
         if requires_root:
             err = ctx.remove_ntp_shm()
             if err is not None:

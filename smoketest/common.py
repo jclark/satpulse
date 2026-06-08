@@ -41,6 +41,8 @@ class SmokeContext(Protocol):
     caster_capture: str
     caster_log: str
     satpulsetool: str
+    serial_writes: str
+    pull_source_log: str
 
     @property
     def serial(self) -> str: ...

@@ -30,6 +30,42 @@ def check_pushed_rtcm(ctx: common.SmokeContext, mountpoint: str | None = None) -
     return len(want)
 
 
+def check_pull_connected(ctx: common.SmokeContext) -> None:
+    """The daemon's [stream.pull] client connects to the correction source."""
+    def attempt() -> bool:
+        with open(ctx.daemon_log, errors="replace") as f:
+            return "stream pull connected" in f.read()
+
+    assert common.poll(attempt), "daemon did not connect to the pull correction source"
+
+
+def check_pulled_rtcm(ctx: common.SmokeContext) -> int:
+    """The pull source's RTCM is written back to the receiver over the serial port.
+
+    The fake source streams the scenario's RTCM log to the daemon's pull client;
+    the daemon writes each correction to the serial port, where the pty drain
+    captures it to serial_writes. Scanning that capture must yield exactly the
+    source log's RTCM packets, in order, the same way push matches its source:
+    the pull pruning queue only drops a stale same-type packet under serial-write
+    backpressure, which a prompt pty sink never applies. The daemon's non-RTCM
+    detection probes are filtered out by tag. Polls because the last corrections
+    may still be in flight when the scenario calls this.
+    """
+    want = [d for (_, _, d) in common.log_packets(ctx.pull_source_log, "RTCM")]
+    assert want, "pull source log has no RTCM packets"
+    got = common.poll(lambda: _pulled(ctx) == want or None, interval=0.25)
+    if got is None:
+        n = len(_pulled(ctx))
+        raise AssertionError(
+            f"pulled RTCM does not match source log: captured {n} of {len(want)} packets"
+        )
+    return len(want)
+
+
+def _pulled(ctx: common.SmokeContext) -> list[bytes]:
+    return [d for (_, _, d) in common.scan_packets(ctx, ctx.serial_writes, "RTCM")]
+
+
 def check_push_gave_up(ctx: common.SmokeContext) -> None:
     """A push entry the caster permanently rejects makes the daemon give up.
 
