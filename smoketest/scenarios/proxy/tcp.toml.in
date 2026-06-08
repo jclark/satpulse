@@ -1,0 +1,14 @@
+# Two read-only TCP serial proxies with different protocol filters: one
+# forwards only UBX, the other only RTCM.
+[serial]
+device = "${SATPULSE_TEST_FIFO}"
+
+[[proxy.tcp]]
+listen = "127.0.0.1:${SATPULSE_TEST_PROXY_TCP_PORT}"
+protocol = "UBX"
+readOnly = true
+
+[[proxy.tcp]]
+listen = "127.0.0.1:${SATPULSE_TEST_PROXY_TCP_RTCM_PORT}"
+protocol = "RTCM"
+readOnly = true

@@ -1,0 +1,6 @@
+# Default HTTP endpoint: GUI, metrics, and position all enabled.
+[serial]
+device = "${SATPULSE_TEST_FIFO}"
+
+[[http]]
+listen = "127.0.0.1:${SATPULSE_TEST_HTTP_PORT}"
