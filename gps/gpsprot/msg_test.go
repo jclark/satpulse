@@ -1318,13 +1318,36 @@ func TestGenericHandlerCorReport(t *testing.T) {
 	}
 }
 
+func TestUnmarshalMsg(t *testing.T) {
+	for name, factory := range msgRegistry {
+		msg := factory()
+		if msg.MsgType() != name {
+			t.Errorf("registry %q: MsgType() = %q", name, msg.MsgType())
+		}
+		data, err := json.Marshal(msg)
+		if err != nil {
+			t.Fatalf("%q: marshal: %v", name, err)
+		}
+		got, err := UnmarshalMsg(name, data)
+		if err != nil {
+			t.Fatalf("%q: UnmarshalMsg: %v", name, err)
+		}
+		if got.MsgType() != name {
+			t.Errorf("%q: round-tripped MsgType() = %q", name, got.MsgType())
+		}
+	}
+	if _, err := UnmarshalMsg("bogus", []byte(`{}`)); err == nil {
+		t.Error("UnmarshalMsg(bogus): expected error")
+	}
+}
+
 func TestEventMarshal(t *testing.T) {
 	msg := &PosGeoMsg{
 		LatLon: [2]Angle{47 * Degrees, 8 * Degrees},
 		Tag:    "UBX",
 	}
 	tRead := time.Date(2026, 3, 27, 10, 0, 0, 500000, time.UTC)
-	ev := NewEvent(msg, tRead, 123456*Microsecond)
+	ev := NewMsgEvent(msg, tRead, 123456*Microsecond)
 	b, err := json.Marshal(&ev)
 	if err != nil {
 		t.Fatal(err)

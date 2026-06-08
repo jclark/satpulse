@@ -1,5 +1,4 @@
 //go:build ignore
-// +build ignore
 
 package main
 
@@ -12,51 +11,60 @@ import (
 	"os"
 	"time"
 
-	"github.com/jclark/satpulse/time/internal/gpsevent"
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/time/phctime"
-	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/internal/gpsevent"
 )
 
-// OldLogEvent represents the old log format
+// OldLogEvent is the old sparse event-log format: one optional field per
+// message type, with nanos as integer nanoseconds since session start.
 type OldLogEvent struct {
 	T          time.Time              `json:"t"`
 	Nanos      time.Duration          `json:"nanos"`
-	Timestamp  *OldTimestamp          `json:"timestamp,omitempty"`
+	PulseEdge  *gpsevent.PulseEdge    `json:"pulseEdge,omitempty"`
 	Time       *gpsprot.TimeMsg       `json:"time,omitempty"`
+	PosGeo     *gpsprot.PosGeoMsg     `json:"posGeo,omitempty"`
+	PosECEF    *gpsprot.PosECEFMsg    `json:"posECEF,omitempty"`
+	VelGeo     *gpsprot.VelGeoMsg     `json:"velGeo,omitempty"`
+	VelECEF    *gpsprot.VelECEFMsg    `json:"velECEF,omitempty"`
 	Survey     *gpsprot.SurveyMsg     `json:"survey,omitempty"`
 	LeapSecond *gpsprot.LeapSecondMsg `json:"leapSecond,omitempty"`
 	Satellites *gpsprot.SatellitesMsg `json:"satellites,omitempty"`
+	NavEpoch   *gpsprot.NavEpochMsg   `json:"navEpoch,omitempty"`
+	CorReport  *gpsprot.CorReportMsg  `json:"corReport,omitempty"`
 }
 
-type OldTimestamp struct {
-	T     ptime.Time    `json:"t"`
-	Era   phctime.Era   `json:"era"`
-	Delay time.Duration `json:"delay,omitempty"`
-}
-
-func migrateEvent(oldEvent OldLogEvent) gpsevent.LogEvent {
-	newEvent := gpsevent.LogEvent{
-		T:          oldEvent.T.UTC(), // Convert to UTC (old logs had timezone)
-		Nanos:      oldEvent.Nanos,
-		Time:       oldEvent.Time,
-		Survey:     oldEvent.Survey,
-		LeapSecond: oldEvent.LeapSecond,
-		Satellites: oldEvent.Satellites,
+// migrateEvent converts an old sparse event into a new envelope event.
+// It returns false when the old event carries no recognized payload.
+func migrateEvent(old OldLogEvent) (gpsevent.LogEvent, bool) {
+	e := gpsevent.LogEvent{T: old.T.UTC(), Mono: gpsprot.Duration(old.Nanos)}
+	switch {
+	case old.PulseEdge != nil:
+		e.Type = "pulseEdge"
+		e.Data = old.PulseEdge
+	case old.Time != nil:
+		e.Type, e.Data = old.Time.MsgType(), old.Time
+	case old.PosGeo != nil:
+		e.Type, e.Data = old.PosGeo.MsgType(), old.PosGeo
+	case old.PosECEF != nil:
+		e.Type, e.Data = old.PosECEF.MsgType(), old.PosECEF
+	case old.VelGeo != nil:
+		e.Type, e.Data = old.VelGeo.MsgType(), old.VelGeo
+	case old.VelECEF != nil:
+		e.Type, e.Data = old.VelECEF.MsgType(), old.VelECEF
+	case old.Survey != nil:
+		e.Type, e.Data = old.Survey.MsgType(), old.Survey
+	case old.LeapSecond != nil:
+		e.Type, e.Data = old.LeapSecond.MsgType(), old.LeapSecond
+	case old.Satellites != nil:
+		e.Type, e.Data = old.Satellites.MsgType(), old.Satellites
+	case old.NavEpoch != nil:
+		e.Type, e.Data = old.NavEpoch.MsgType(), old.NavEpoch
+	case old.CorReport != nil:
+		e.Type, e.Data = old.CorReport.MsgType(), old.CorReport
+	default:
+		return e, false
 	}
-	// Migrate timestamp to PulseEdge
-	if oldEvent.Timestamp != nil {
-		// Old format only had timestamp and delay
-		// We don't have the PHC read time, so we approximate:
-		// TRead ≈ T + Delay
-		tReadApprox := oldEvent.Timestamp.T.Add(oldEvent.Timestamp.Delay)
-		newEvent.PulseEdge = &gpsevent.PulseEdge{
-			T:     oldEvent.Timestamp.T,
-			Era:   oldEvent.Timestamp.Era,
-			TRead: tReadApprox, // approximation
-		}
-	}
-	return newEvent
+	return e, true
 }
 
 func main() {
@@ -66,49 +74,39 @@ func main() {
 		log.Fatalf("Usage: %s <input.jsonl> <output.jsonl>", os.Args[0])
 	}
 
-	inputFile := flag.Arg(0)
-	outputFile := flag.Arg(1)
-
-	// Open input
-	in, err := os.Open(inputFile)
+	in, err := os.Open(flag.Arg(0))
 	if err != nil {
 		log.Fatalf("Failed to open input: %v", err)
 	}
 	defer in.Close()
 
-	// Create output
-	out, err := os.Create(outputFile)
+	out, err := os.Create(flag.Arg(1))
 	if err != nil {
 		log.Fatalf("Failed to create output: %v", err)
 	}
 	defer out.Close()
 
 	scanner := bufio.NewScanner(in)
+	scanner.Buffer(make([]byte, 256*1024), 256*1024)
 	lineNum := 0
 	migratedCount := 0
-
 	for scanner.Scan() {
 		lineNum++
-		line := scanner.Bytes()
-
-		// Try to unmarshal as old format
-		var oldEvent OldLogEvent
-		if err := json.Unmarshal(line, &oldEvent); err != nil {
+		var old OldLogEvent
+		if err := json.Unmarshal(scanner.Bytes(), &old); err != nil {
 			log.Printf("Warning: line %d: failed to parse: %v", lineNum, err)
 			continue
 		}
-
-		// Migrate to new format
-		newEvent := migrateEvent(oldEvent)
-
-		// Marshal new format
+		newEvent, ok := migrateEvent(old)
+		if !ok {
+			log.Printf("Warning: line %d: no recognized payload, skipping", lineNum)
+			continue
+		}
 		newLine, err := json.Marshal(newEvent)
 		if err != nil {
 			log.Printf("Warning: line %d: failed to marshal: %v", lineNum, err)
 			continue
 		}
-
-		// Write to output
 		fmt.Fprintf(out, "%s\n", newLine)
 		migratedCount++
 	}

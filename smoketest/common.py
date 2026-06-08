@@ -203,14 +203,14 @@ def _log_path(ctx: SmokeContext, kind: str) -> str:
     return os.path.join(ctx.log_dir, f"{kind}.{base}.jsonl")
 
 
-def check_event_log(ctx: SmokeContext, expect_keys: Iterable[str] = ()) -> set[str]:
-    """The event log exists and contains entries with the expected keys.
+def check_event_log(ctx: SmokeContext, expect_types: Iterable[str] = ()) -> set[str]:
+    """The event log exists and contains entries of the expected types.
 
-    Event-log entries carry observation data under top-level keys such as
-    "time", "posGeo", "velGeo", "navEpoch".
+    Each event-log entry is an envelope with a top-level "type" discriminator
+    (such as "time", "posGeo", "navEpoch", "pulseEdge") and a "data" payload.
     """
     path = _log_path(ctx, "event")
-    want = set(expect_keys)
+    want = set(expect_types)
 
     def attempt() -> set[str] | None:
         if not os.path.exists(path):
@@ -221,13 +221,15 @@ def check_event_log(ctx: SmokeContext, expect_keys: Iterable[str] = ()) -> set[s
                 line = line.strip()
                 if not line:
                     continue
-                seen.update(cast(JsonObject, json.loads(line)).keys())
+                t = cast(JsonObject, json.loads(line)).get("type")
+                if isinstance(t, str):
+                    seen.add(t)
         if want.issubset(seen):
             return seen
         return None
 
     seen = poll(attempt)
-    assert seen is not None, f"event log {path} missing keys {sorted(want)}"
+    assert seen is not None, f"event log {path} missing types {sorted(want)}"
     return seen
 
 

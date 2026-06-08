@@ -8,6 +8,6 @@ FACTOR = 10
 
 def run(ctx: common.SmokeContext) -> None:
     ctx.wait_replay()
-    common.check_event_log(ctx, expect_keys=["time", "posGeo", "navEpoch"])
+    common.check_event_log(ctx, expect_types=["time", "posGeo", "navEpoch"])
     common.check_track_log(ctx)
     common.check_packet_log(ctx)
