@@ -509,6 +509,57 @@ func TestPruningQueueMSMAndNonMSM(t *testing.T) {
 	}
 }
 
+// TestPullQueuePrunesUnderBackpressure drives the queue goroutine with a writer
+// side that never drains -- exactly a stalled serial sink -- and confirms it
+// drops stale same-type corrections rather than buffering them all. The
+// TestPruningQueue* tests above exercise the data structure directly; this one
+// exercises the live queue() select loop under backpressure, which is what the
+// pruning queue exists for.
+func TestPullQueuePrunesUnderBackpressure(t *testing.T) {
+	sink := NewPull()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var wg sync.WaitGroup
+	wg.Go(func() { sink.Packets.Run(ctx, testLogger()) })
+	subCh := sink.Packets.Subscribe()
+	// Same single-slot buffer as Run uses; leaving it undrained is the stall.
+	writerCh := make(chan scan.Packet, 1)
+	go sink.queue(subCh, writerCh)
+
+	pf := rtcm.PacketFormat
+	const n = 12
+	// A burst of distinct 1005 corrections (non-MSM, so deduped by message
+	// type) while nothing drains writerCh: all but the couple already past the
+	// queue pile up, and the stale ones are dropped.
+	var newest string
+	for i := range n {
+		pkt := makeRTCM(1005, 10+i)
+		newest = string(pkt)
+		sink.pktCh <- scan.Packet{Format: pf, Data: string(pkt), ChecksumValid: true}
+	}
+	// A different-type sentinel marks the end of the burst in FIFO order.
+	sentinel := makeRTCM(1006, 10)
+	sink.pktCh <- scan.Packet{Format: pf, Data: string(sentinel), ChecksumValid: true}
+
+	var got []scan.Packet
+	for {
+		pkt := <-writerCh
+		if pkt.Data == string(sentinel) {
+			break
+		}
+		got = append(got, pkt)
+	}
+	cancel()
+	wg.Wait()
+
+	if len(got) >= n {
+		t.Fatalf("queue did not prune under backpressure: %d of %d 1005 packets reached the writer", len(got), n)
+	}
+	if len(got) == 0 || got[len(got)-1].Data != newest {
+		t.Fatalf("newest 1005 did not survive pruning: %d packets through, last != newest", len(got))
+	}
+}
+
 func TestCleanShutdownOnCancel(t *testing.T) {
 	src, client := newPipeSource()
 	defer src.close()
