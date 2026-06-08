@@ -75,6 +75,7 @@ Testing:
 - Individual package: `go test -v ./internal/packagename`
 - All tests: `make test`
 - Test files follow `*_test.go` convention
+- When requested to review code, do not run tests unless explicitly requested.
 
 Black-box smoke tests of the real `satpulsed` binary live in `smoketest/`
 (daemon-level config wiring, endpoints, logging, Ntrip, shutdown; no root or GPS
