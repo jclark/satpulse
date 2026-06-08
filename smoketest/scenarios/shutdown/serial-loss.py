@@ -18,9 +18,6 @@ import common
 
 INPUT = "pty"
 SELF_SHUTDOWN = True
-# The daemon does not yet cancel its context when the scan worker exits, so the
-# HTTP server keeps it alive and shutdown hangs. Remove this once #172 is fixed.
-XFAIL = "daemon does not shut down when the scan worker exits (#172)"
 PACKET_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon.jsonl"
 FACTOR = 10
 

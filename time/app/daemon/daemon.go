@@ -69,15 +69,25 @@ func Cmd(progName string, args []string) {
 	ver, buildDate := cmd.Version()
 	lg.Info("starting", "version", ver, "buildDate", buildDate, "configPath", configPath)
 	ctx := context.Background()
-	ctx, cancel := cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, cancel, cfg)
+	ctx, _ = cmd.CancelOnSignal(ctx, lg)
+	ctx, cancelCause := context.WithCancelCause(ctx)
+	err = run(ctx, lg, cancelCause, cfg)
+	// run returns only after shutdown completes, so the cancellation cause is
+	// settled. A non-signal cause -- the scan worker sets one when the serial
+	// input disappears -- becomes the process error, so exitCode picks a
+	// non-zero status and systemd restarts us.
+	if err == nil {
+		if cause := context.Cause(ctx); cause != nil && cause != context.Canceled {
+			err = cause
+		}
+	}
 	if err != nil {
 		cmd.ErrPrintln(progName, err)
 		os.Exit(exitCode(err))
 	}
 }
 
-func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *Config) error {
+func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, cfg *Config) error {
 	tStart := time.Now()
 	if err := cfg.Validate(lg); err != nil {
 		return err
@@ -145,7 +155,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if pLog != nil {
 		conn.SetPacketLog(pLog)
 	}
-	pCh := startScan(ctx, lg, &wg, conn, pLog, pktFormats)
+	pCh := startScan(ctx, lg, &wg, cancel, conn, pLog, pktFormats)
 
 	pb := startBcast(ctx, lg, &wg, pCh)
 
@@ -169,11 +179,11 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		if r := recover(); r != nil {
 			panic(r)
 		}
-		// startScan starts a goroutine sending to pCh and reading from conn
-		// calling cancel here will cause reads from conn to return with an io.EOF error
-		// which will cause pCh to be closed
+		// startScan starts a goroutine sending to pCh and reading from conn;
+		// cancelling here makes those reads fail so pCh is closed and the
+		// workers unwind. The cause is irrelevant on this path: run returns err.
 		if err != nil {
-			cancel()
+			cancel(nil)
 		}
 		// ensure that the sseCh gets closed
 		// even if we don't reach the point where the syncWorker does this
@@ -418,9 +428,18 @@ func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.L
 	return logobs.NewClockLogObserver(lg, clockLogPath, ls)
 }
 
-func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog, pktFormats []gpsprot.PacketFormat) <-chan scan.Packet {
+func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cancel context.CancelCauseFunc, conn gpsio.Conn, pLog *gpsio.PacketLog, pktFormats []gpsprot.PacketFormat) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog, pktFormats) })
+	wg.Go(func() {
+		gpsio.Scan(ctx, lg, conn, msg, pLog, pktFormats)
+		// Scan returns only when the GPS data source is gone. If we weren't
+		// already shutting down, the serial input reached EOF (the device
+		// disappeared): cancel with a cause so the daemon shuts down and Cmd
+		// exits non-zero to be restarted.
+		if ctx.Err() == nil {
+			cancel(fmt.Errorf("serial device no longer providing input: %s", conn.LocalAddr()))
+		}
+	})
 	return msg
 }
 

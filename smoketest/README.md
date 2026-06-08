@@ -170,9 +170,7 @@ make update-deps
   closed mid-run) and the daemon must shut down on its own and exit with a
   restartable code, with an HTTP endpoint configured. Guards the scan-worker-
   exit -> daemon-shutdown path (issue #172); the only scenario using the pty
-  transport and `SELF_SHUTDOWN`. Currently `XFAIL` -- the daemon does not yet
-  shut down when the scan worker exits, so it fails as expected until #172 is
-  fixed.
+  transport and `SELF_SHUTDOWN`.
 
 The Ntrip caster scenarios use `satpulsetool ntrip` as the client. The
 `stream/push` scenario uses the built-in Ntrip fake caster
