@@ -24,10 +24,11 @@ fi
 
 # Normalize / validate GOARCH
 case $GOARCH in
-    amd64|arm64|arm) ;;
+    amd64|arm64|arm|386) ;;
     x86_64)  GOARCH=amd64 ;;
     aarch64) GOARCH=arm64 ;;
     armv6l|armv7l) GOARCH=arm ;;
+    i386|i486|i586|i686) GOARCH=386 ;;
     *) echo "Error: Unsupported architecture $GOARCH"; exit 1 ;;
 esac
 export GOARCH
