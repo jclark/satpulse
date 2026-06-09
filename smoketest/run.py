@@ -146,6 +146,15 @@ def emit(msg: str) -> None:
 
 
 def arch() -> str:
+    """Name of the out/<arch>/ subdir holding the binaries under test.
+
+    Honour GOARCH when set so a cross-built tree (e.g. GOARCH=386 on an
+    x86_64 host, as in the 32-bit CI workflow) is exercised against its own
+    binaries rather than the host's.
+    """
+    goarch = os.environ.get("GOARCH")
+    if goarch:
+        return goarch
     m = platform.machine()
     return {"x86_64": "amd64", "aarch64": "arm64"}.get(m, m)
 
@@ -292,7 +301,11 @@ class Context:
             return list(cmd)
         if not self.use_sudo:
             raise RuntimeError("root command requested without --sudo")
-        return ["sudo", "-n", *cmd]
+        # sudo scrubs the environment, so forward GOARCH explicitly: root
+        # helpers (ntpshm.py) need it to pick the cross-built daemon's layout.
+        goarch = os.environ.get("GOARCH")
+        env = ["env", f"GOARCH={goarch}"] if goarch else []
+        return ["sudo", "-n", *env, *cmd]
 
     def remove_ntp_shm(self) -> str | None:
         """Remove the test NTP SHM segment if it exists."""

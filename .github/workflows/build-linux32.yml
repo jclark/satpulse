@@ -27,3 +27,6 @@ jobs:
 
     - name: Test
       run: env GOARCH=386 go test ./...
+
+    - name: Smoke test
+      run: env GOARCH=386 python3 smoketest/run.py --sudo
