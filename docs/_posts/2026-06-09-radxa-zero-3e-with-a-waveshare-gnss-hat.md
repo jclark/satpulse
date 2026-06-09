@@ -72,7 +72,9 @@ sudo systemctl mask serial-getty@ttyS2.service
 
 ### PPS
 
-To enable PPS, we have to create a device overlay.
+Most Waveshare HATs wire the GNSS PPS output to pin 12.
+(The L76K does not wire PPS up at all, so it won't work well for timing applications.)
+To make PPS work, we therefore have to create a device overlay that wires up pin 12 on the Radxa as a PPS input.
 
 Create a file `/tmp/rk3566-zero3e-pps-gpio12.dts`:
 
@@ -126,6 +128,7 @@ Create a file `/tmp/rk3566-zero3e-pps-gpio12.dts`:
 	};
 };
 ```
+(ChatGPT was able to create something that worked first time, slightly to my surprise.)
 
 To install this overlay:
 
