@@ -66,7 +66,7 @@ Build system uses GNU Make:
 - `make pkg` - Build both deb and rpm packages
 - `make clean` - Remove build artifacts
 
-It builds on Linux only. On macOS, use `bsd-build.sh` instead.
+It builds on Linux only. On macOS, use `unix-build.sh` instead.
 
 Web interface is build using npm in `web/` directory.
 - `npm run build` - Rebuilds .js and .css files that are embedded.
