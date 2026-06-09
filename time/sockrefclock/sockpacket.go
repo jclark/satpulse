@@ -27,7 +27,10 @@ type sockSample struct {
 	magic  int32 // must be sockMagic
 }
 
-const sizeofSockSample = (64*3 + 32*4) / 8 // timeval is 2 64-bit ints
+// sizeofSockSample is the wire size of C struct sock_sample. Derive it from the
+// Go struct so it tracks unix.Timeval, whose two ints are 32-bit on 32-bit
+// platforms and 64-bit on 64-bit ones; a fixed size would over-read on 32-bit.
+const sizeofSockSample = unsafe.Sizeof(sockSample{})
 
 // sockPacket creates a Chrony refclock SOCK sample packet.
 func sockPacket(sys time.Time, offset float64, leap ptime.LeapSecondKind) ([]byte, error) {
