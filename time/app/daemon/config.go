@@ -69,7 +69,7 @@ type LeapSecondConfig struct {
 }
 
 type PTPConfig struct {
-	ClockAccuracy           int          `toml:"clockAccuracy"`
+	ClockAccuracy           int64        `toml:"clockAccuracy"`
 	OffsetScaledLogVariance uint16       `toml:"offsetScaledLogVariance"`
 	AllanDeviation          float64      `toml:"allanDeviation"`
 	DomainNumber            uint8        `toml:"domainNumber"`

@@ -2,6 +2,7 @@ package opt
 
 import (
 	"encoding/json"
+	"math"
 	"reflect"
 	"testing"
 )
@@ -248,7 +249,7 @@ func TestTextRoundTrip(t *testing.T) {
 		{"int zero", int(0)},
 		{"int positive", int(42)},
 		{"int negative", int(-123)},
-		{"int max", int(9223372036854775807)},
+		{"int max", int(math.MaxInt)},
 		{"int8", int8(-128)},
 		{"int16", int16(32767)},
 		{"int32", int32(-2147483648)},
