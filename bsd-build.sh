@@ -1,5 +1,6 @@
 #!/bin/sh
-# Build satpulsetool for BSD/Darwin systems
+# Build satpulse for unix-like systems (BSD, Darwin, and 32-bit ARM Linux).
+# For packaged Linux builds (amd64/arm64), use the Makefile instead.
 
 set -e
 
@@ -11,8 +12,7 @@ fi
 
 # Validate GOOS
 case $GOOS in
-    darwin|freebsd) ;;
-    linux) echo Use Makefile on Linux 1>&2; exit 1;;
+    darwin|freebsd|linux) ;;
     *) echo "Error: Unsupported OS $GOOS"; exit 1 ;;
 esac
 
@@ -20,16 +20,17 @@ esac
 # Detect or use provided GOARCH
 if [ -z "$GOARCH" ]; then
     GOARCH=$(uname -m)
-    export GOARCH
 fi
 
-# Validate GOARCH
+# Normalize / validate GOARCH
 case $GOARCH in
-    amd64|arm64) ;;
-    x86_64) GOARCH=amd64 ;;
+    amd64|arm64|arm) ;;
+    x86_64)  GOARCH=amd64 ;;
     aarch64) GOARCH=arm64 ;;
+    armv6l|armv7l) GOARCH=arm ;;
     *) echo "Error: Unsupported architecture $GOARCH"; exit 1 ;;
 esac
+export GOARCH
 
 # Commands and output directory
 cmddirs="cmd/satpulsed cmd/satpulsetool cmd/pollpps"
@@ -39,7 +40,11 @@ for d in $cmddirs; do
     targets="$targets ./$d"
     cmds="$cmds $(basename $d)"
 done
-outdir="out/${GOOS}_${GOARCH}"
+if [ "$GOOS" = linux ]; then
+    outdir="out/${GOARCH}"
+else
+    outdir="out/${GOOS}_${GOARCH}"
+fi
 
 # Build info
 version=$(cat VERSION)
