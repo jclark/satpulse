@@ -20,8 +20,9 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from analyze import DISRUPTIVE_KEYS, analyze_run
+from analyze import DISRUPTIVE_KEYS, analyze_run, load_steps
 from characterize import to_json
+from model import emissions
 from probes import PROPS, ProbeRun
 from tool import Tool, ToolFailure
 
@@ -42,6 +43,9 @@ def main() -> int:
     ap.add_argument("--baseline", type=Path,
                     help="characterization to compare against "
                          "(default: gpshwtest/baselines/<receiver>.json if present)")
+    ap.add_argument("--restore-from", type=Path, metavar="RUNDIR",
+                    help="run only the restore tail derived from a crashed "
+                         "run's records, then verify the receiver state")
     ap.add_argument("--disruptive", action="store_true",
                     help="also run the probes that write NVM and reboot the "
                          "receiver (--save, --save-all, --reset), with recovery")
@@ -62,6 +66,15 @@ def main() -> int:
     run_dir = args.runs / f"{stamp}-{device_slug(args)}"
     tool = Tool(exe, conn, run_dir)
     print(f"run artifacts: {run_dir}", file=sys.stderr)
+    if args.restore_from:
+        restore_from(tool, args.restore_from)
+        a = analyze_run(run_dir, exe)
+        for f in a.failures:
+            print(f"FAILURE: {f}", file=sys.stderr)
+        if not a.failures:
+            print("receiver restored to the crashed run's as-found state",
+                  file=sys.stderr)
+        return 1 if a.failures else 0
     status = 0
     try:
         drive(tool, resolve_phc(args), args.sudo, args.disruptive)
@@ -139,6 +152,42 @@ def running_satpulsed() -> bool:
     return False
 
 
+def restore_from(tool: Tool, crashed: Path) -> None:
+    """Run only the restore tail, driven by a crashed run's records: its
+    initial readback defines the target state, its baseline observation the
+    message output to restore. This is the recovery path for runs that died
+    without their in-process tail (kill -9, power loss)."""
+    steps = load_steps(crashed)
+    initial = None
+    base = None
+    port_baud = None
+    as_found_speed = None
+    for s in steps:
+        op, role = s.intent.get("op"), s.intent.get("role")
+        if s.error is not None:
+            continue
+        if op == "config" and role == "initial" and initial is None:
+            initial = s.config()
+        elif op == "observe" and role == "baseline" and s.log is not None:
+            base = emissions(s.log)
+        elif op == "show-port":
+            port_baud = s.config().get("baudRate")
+        elif op == "session-speed" and role == "raise":
+            as_found_speed = s.intent.get("from")
+    if initial is None:
+        raise SystemExit(f"{crashed}: no initial configuration recorded; "
+                         "nothing to restore from")
+    pr = ProbeRun(tool)
+    ident = tool.gps("show-receiver", ["--show-receiver"], {"op": "identify"})
+    if ident.error is not None:
+        if pr.rediscover_speed() is None:
+            return
+        tool.gps("show-receiver", ["--show-receiver"], {"op": "identify"})
+    pr.emergency_restore(initial, base, port_baud != 0)
+    if isinstance(as_found_speed, int):
+        pr.session_speed_restore(as_found_speed)
+
+
 def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
           disruptive: bool) -> None:
     """Execute the probe sequence, recording every step. No verdicts here:
@@ -163,6 +212,8 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
     as_found_speed = pr.session_speed_raise(port_cfg, ident.out.get("supports") or [])
     if as_found_speed is not None:
         print(f"session speed raised from {as_found_speed}", file=sys.stderr)
+    base = None
+    done = False
     try:
         for p in PROPS:
             print(f"probing {p.name}", file=sys.stderr)
@@ -201,7 +252,13 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
                 print("running disruptive NVM probes", file=sys.stderr)
                 pr.probe_disruptive(initial, nvm, base, uart, as_found_speed)
         pr.show_config("final-config", "final")
+        done = True
     finally:
+        if not done:
+            # The run is aborting (tool failure, interrupt, crash): restore
+            # the receiver best-effort, recorded like everything else.
+            print("run aborted; restoring the receiver", file=sys.stderr)
+            pr.emergency_restore(initial, base, port_cfg.get("baudRate") != 0)
         if as_found_speed is not None:
             pr.session_speed_restore(as_found_speed)
 

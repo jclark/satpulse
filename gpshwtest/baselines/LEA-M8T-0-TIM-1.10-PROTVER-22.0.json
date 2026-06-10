@@ -1,0 +1,231 @@
+{
+  "limitations": {
+    "antennaCableDelay": {
+      "observations": [
+        {
+          "achieved": 50,
+          "requested": 1
+        },
+        {
+          "achieved": 50,
+          "requested": 123
+        },
+        {
+          "achieved": 50,
+          "requested": 32767
+        }
+      ]
+    },
+    "mode.fixedPosAcc": {
+      "quantum": 0.001
+    },
+    "mode.fixedPosECEF[0]": {
+      "quantum": 0.01
+    },
+    "mode.fixedPosECEF[1]": {
+      "quantum": 0.01
+    },
+    "mode.fixedPosECEF[2]": {
+      "quantum": 0.01
+    },
+    "mode.fixedPosLLH[0]": {
+      "observations": [
+        {
+          "achieved": null,
+          "requested": 13.7318284567
+        }
+      ]
+    },
+    "mode.fixedPosLLH[1]": {
+      "observations": [
+        {
+          "achieved": null,
+          "requested": 100.6447407891
+        }
+      ]
+    },
+    "mode.height": {
+      "observations": [
+        {
+          "achieved": null,
+          "requested": 12.34567
+        }
+      ]
+    },
+    "rtcmBaseID": {
+      "unsupported": true
+    },
+    "rtcmOut": {
+      "refused": [
+        [
+          "MSM4",
+          "ARP"
+        ],
+        [
+          "MSM7"
+        ]
+      ]
+    },
+    "satsOut": {
+      "missing": [
+        {
+          "missing": [
+            "perSignal",
+            "satellites"
+          ],
+          "requested": [
+            "sig"
+          ]
+        }
+      ]
+    },
+    "signals": {
+      "adjusted": [
+        {
+          "achieved": {
+            "BDS": [
+              "B1I"
+            ],
+            "GAL": [
+              "E1"
+            ],
+            "GPS": [
+              "L1"
+            ],
+            "QZSS": [
+              "L1",
+              "L1S"
+            ],
+            "SBAS": [
+              "L1"
+            ]
+          },
+          "requested": {
+            "BDS": [
+              "B1I"
+            ],
+            "GAL": [
+              "E1"
+            ],
+            "GLO": [
+              "L1"
+            ],
+            "GPS": [
+              "L1"
+            ],
+            "QZSS": [
+              "L1",
+              "L1S"
+            ],
+            "SBAS": [
+              "L1"
+            ]
+          }
+        }
+      ],
+      "refused": [
+        {
+          "signals": {
+            "BDS": [],
+            "GAL": [],
+            "GLO": [],
+            "GPS": [],
+            "QZSS": [],
+            "SBAS": []
+          }
+        },
+        {
+          "signals": {
+            "BDS": []
+          }
+        },
+        {
+          "signals": {
+            "GAL": []
+          }
+        },
+        {
+          "signals": {
+            "GLO": []
+          }
+        },
+        {
+          "signals": {
+            "GPS": []
+          }
+        },
+        {
+          "signals": {
+            "QZSS": [
+              "L1",
+              "L1S"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "QZSS": []
+          }
+        },
+        {
+          "signals": {
+            "SBAS": [
+              "L1"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "SBAS": []
+          }
+        }
+      ],
+      "signalSet": {
+        "BDS": [
+          "B1I"
+        ],
+        "GAL": [
+          "E1"
+        ],
+        "GLO": [
+          "L1"
+        ],
+        "GPS": [
+          "L1"
+        ],
+        "QZSS": [
+          "L1",
+          "L1S"
+        ],
+        "SBAS": [
+          "L1"
+        ]
+      }
+    },
+    "timePulse.width": {
+      "quantum": 1e-06
+    }
+  },
+  "receiver": {
+    "firmware": "TIM 1.10 PROTVER 22.0",
+    "hardware": "LEA-M8T-0",
+    "supportedGNSS": [
+      "GPS",
+      "GAL",
+      "BDS",
+      "GLO",
+      "QZSS",
+      "SBAS"
+    ],
+    "vendor": "u-blox"
+  },
+  "supports": [
+    "fixedPos",
+    "fixedPosAcc",
+    "raw",
+    "speed",
+    "survey",
+    "surveyAcc",
+    "surveyMsg"
+  ]
+}

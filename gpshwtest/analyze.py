@@ -254,10 +254,13 @@ class Analyzer:
         self.supports = sup if isinstance(sup, list) else []
 
     def show_port(self, s: Step) -> None:
+        """--show-port must answer; a backend that does not implement port
+        reporting yet (the Unicore backend) omits the fields, which is a
+        limitation recorded in the characterization, not a failure."""
         if s.error is not None:
             self.failures.append(f"--show-port failed: {s.error}")
         elif not s.config().get("port"):
-            self.failures.append(f"--show-port reported no port: {s.config()!r}")
+            self.observations.append(Observation("showPort", "port", None, None, None))
 
     def config_step(self, s: Step) -> None:
         role = s.intent.get("role")
@@ -266,9 +269,13 @@ class Analyzer:
             return
         if role == "initial":
             self.initial = s.config()
-        elif role == "final" and s.config() != self.initial:
-            self.failures.append(f"receiver not left as found: "
-                                 f"initial {self.initial!r}, final {s.config()!r}")
+        elif role == "final":
+            # A restore-tail run carries the crashed run's as-found state
+            # in the intent; a normal run compares to its own initial.
+            want = s.intent.get("want", self.initial)
+            if want and s.config() != want:
+                self.failures.append(f"receiver not left as found: "
+                                     f"initial {want!r}, final {s.config()!r}")
         elif role == "reload":
             self.reload_readback(s)
         elif role == "gran-s":
@@ -485,11 +492,14 @@ class Analyzer:
             if not set().union(*(self.raw_found.get(k, set()) for k in want)) <= raw_set(d):
                 self.failures.append(f"raw: restore to {want!r} not emitting as before")
         elif group == "protocol":
-            base_nmea = [t for t in nmea_set(self.baseline) if t in NMEA_VOCAB]
+            want_nmea = s.intent.get(
+                "nmea", [t for t in nmea_set(self.baseline) if t in NMEA_VOCAB])
+            want_rtcm = s.intent.get("rtcm", rtcm_set(self.baseline))
+            want_raw = s.intent.get("raw", sorted(raw_set(self.baseline)))
             for what, got, wanted in [
-                    ("NMEA types", [t for t in nmea_set(d) if t in NMEA_VOCAB], base_nmea),
-                    ("RTCM types", rtcm_set(d), rtcm_set(self.baseline)),
-                    ("messages", sorted(raw_set(d)), sorted(raw_set(self.baseline)))]:
+                    ("NMEA types", [t for t in nmea_set(d) if t in NMEA_VOCAB], want_nmea),
+                    ("RTCM types", rtcm_set(d), want_rtcm),
+                    ("messages", sorted(raw_set(d)), want_raw)]:
                 if got != wanted:
                     self.failures.append(
                         f"messages: {what} after restore {got!r} != initial {wanted!r}")

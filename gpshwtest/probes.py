@@ -11,11 +11,12 @@ for live runs and archived runs alike.
 import sys
 import time
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Callable
 
 from model import (NMEA_VOCAB, Value, config_value, emissions, fmt_value, has_fix,
                    mode_args, nmea_set, raw_set, rtcm_set, transient)
-from tool import Invocation, Tool, replay
+from tool import Invocation, Tool, ToolFailure, replay
 
 # Settle time after a successful signal-set change: u-blox documents an
 # internal GNSS-subsystem restart (wait for the ACK plus 0.5 s); 2 s has
@@ -448,8 +449,12 @@ class ProbeRun:
             inv = self.tool.gps(name, args, {"op": "restore-protocol"})
             if inv.error is not None:
                 return
+        # The expectations ride in the intent: a restore-tail run's analyzer
+        # has no baseline observation of its own to derive them from.
         self.observe("verify-restore-messages",
-                     {"op": "observe", "role": "verify", "group": "protocol"})
+                     {"op": "observe", "role": "verify", "group": "protocol",
+                      "nmea": base_nmea, "rtcm": rtcm_set(base),
+                      "raw": sorted(raw_set(base))})
 
     def probe_reload(self, initial: dict[str, Any],
                      base: dict[tuple[str, str], int] | None,
@@ -649,6 +654,34 @@ class ProbeRun:
         baud = self.rediscover_speed()
         if raised and baud is not None and baud < RAISED_SPEED:
             self.raise_speed(baud)
+
+    def emergency_restore(self, initial: dict[str, Any],
+                          base: dict[tuple[str, str], int] | None,
+                          uart: bool) -> None:
+        """Best-effort restoration of the as-found running configuration
+        when a run aborts. Every restore is attempted even when earlier
+        ones fail (a ToolFailure normally aborts the run; here it must not
+        cut the tail short), everything is recorded as usual, and the final
+        readback lets analysis judge the result loudly."""
+        if uart:
+            self.attempt(self.rediscover_speed)
+        for p in PROPS:
+            self.attempt(partial(self.restore, p, initial))
+        self.attempt(lambda: self.restore_mode(initial))
+        self.attempt(lambda: self.restore_signals(initial))
+        if base is not None:
+            self.attempt(lambda: self.restore_protocol(base))
+        self.attempt(lambda: self.tool.gps(
+            "final-config", ["--show-config"],
+            {"op": "config", "role": "final", "want": initial}))
+
+    def attempt(self, fn: Callable[[], object]) -> None:
+        """Run one step of the emergency tail; a tool failure is recorded
+        (timeouts land in raw.jsonl) but must not stop the tail."""
+        try:
+            fn()
+        except ToolFailure as e:
+            print(f"emergency restore: {e}", file=sys.stderr)
 
     def probe_pulse_physical(self, initial: dict[str, Any],
                              phc: tuple[str, int, int], use_sudo: bool) -> None:
