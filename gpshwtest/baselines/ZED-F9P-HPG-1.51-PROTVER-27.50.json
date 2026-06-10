@@ -1,13 +1,5 @@
 {
   "limitations": {
-    "baudRate": {
-      "observations": [
-        {
-          "achieved": 0,
-          "requested": 57600
-        }
-      ]
-    },
     "mode.fixedPosAcc": {
       "quantum": 0.0001
     },
@@ -43,207 +35,20 @@
       ]
     },
     "signals": {
-      "refused": [
-        {
-          "signals": {
-            "BDS": [
-              "B1I"
-            ],
-            "GAL": [
-              "E1"
-            ],
-            "GLO": [
-              "L1",
-              "L2"
-            ],
-            "GPS": [
-              "L1",
-              "L2C"
-            ],
-            "QZSS": [
-              "L1",
-              "L1S",
-              "L2C"
-            ],
-            "SBAS": [
-              "L1"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "BDS": [
-              "B1I"
-            ],
-            "GAL": [
-              "E1"
-            ],
-            "GLO": [
-              "L1"
-            ],
-            "GPS": [
-              "L1"
-            ],
-            "QZSS": [
-              "L1",
-              "L1S"
-            ],
-            "SBAS": [
-              "L1"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "BDS": [
-              "B2I"
-            ],
-            "GAL": [
-              "E5b"
-            ],
-            "GLO": [],
-            "GPS": [],
-            "QZSS": [],
-            "SBAS": []
-          }
-        },
-        {
-          "signals": {
-            "BDS": [
-              "B2I"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "BDS": [],
-            "GAL": [],
-            "GLO": [
-              "L2"
-            ],
-            "GPS": [
-              "L2C"
-            ],
-            "QZSS": [
-              "L2C"
-            ],
-            "SBAS": []
-          }
-        },
-        {
-          "signals": {
-            "BDS": [],
-            "GAL": [],
-            "GLO": [],
-            "GPS": [],
-            "QZSS": [],
-            "SBAS": []
-          }
-        },
-        {
-          "signals": {
-            "BDS": []
-          }
-        },
-        {
-          "signals": {
-            "GAL": [
-              "E1"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "GAL": [
-              "E5b"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "GAL": []
-          }
-        },
-        {
-          "signals": {
-            "GLO": [
-              "L1"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "GLO": [
-              "L2"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "GLO": []
-          }
-        },
-        {
-          "signals": {
-            "GPS": [
-              "L1"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "GPS": [
-              "L2C"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "GPS": []
-          }
-        },
-        {
-          "signals": {
-            "QZSS": [
-              "L1",
-              "L1S",
-              "L2C"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "QZSS": [
-              "L1",
-              "L1S"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "QZSS": [
-              "L2C"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "QZSS": []
-          }
-        },
-        {
-          "signals": {
-            "SBAS": [
-              "L1"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "SBAS": []
-          }
-        }
+      "cannotBeAlone": [
+        "QZSS",
+        "SBAS"
       ],
+      "emptySelectionRefused": true,
+      "partialSelectionRefused": {
+        "except": {
+          "BDS": [
+            [
+              "B1I"
+            ]
+          ]
+        }
+      },
       "signalSet": {
         "BDS": [
           "B1I",

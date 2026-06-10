@@ -196,63 +196,11 @@
           }
         }
       ],
-      "refused": [
-        {
-          "signals": {
-            "BDS": [],
-            "GAL": [],
-            "GLO": [],
-            "GPS": [],
-            "QZSS": [],
-            "SBAS": []
-          }
-        },
-        {
-          "signals": {
-            "BDS": []
-          }
-        },
-        {
-          "signals": {
-            "GAL": []
-          }
-        },
-        {
-          "signals": {
-            "GLO": []
-          }
-        },
-        {
-          "signals": {
-            "GPS": []
-          }
-        },
-        {
-          "signals": {
-            "QZSS": [
-              "L1",
-              "L1S"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "QZSS": []
-          }
-        },
-        {
-          "signals": {
-            "SBAS": [
-              "L1"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "SBAS": []
-          }
-        }
+      "cannotBeAlone": [
+        "QZSS",
+        "SBAS"
       ],
+      "emptySelectionRefused": true,
       "signalSet": {
         "BDS": [
           "B1I"

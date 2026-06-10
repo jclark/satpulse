@@ -62,124 +62,16 @@
     "signals": {
       "adjusted": [
         {
-          "achieved": {
-            "BDS": [
-              "B2I",
-              "B2a",
-              "B2b"
-            ],
-            "GAL": [
-              "E5a",
-              "E5b"
-            ],
-            "GPS": [
-              "L5"
-            ],
-            "QZSS": [
-              "L5"
-            ]
-          },
-          "requested": {
-            "BDS": [
-              "B2I",
-              "B2a",
-              "B2b"
-            ],
-            "GAL": [
-              "E5a",
-              "E5b"
-            ],
-            "GLO": [],
-            "GPS": [
-              "L5"
-            ],
-            "QZSS": [
-              "L5"
-            ]
-          }
-        },
-        {
-          "achieved": {
-            "BDS": [
-              "B2a"
-            ],
-            "GAL": [
-              "E5a"
-            ],
-            "GPS": [
-              "L5"
-            ],
-            "QZSS": [
-              "L5"
-            ]
-          },
-          "requested": {
-            "BDS": [
-              "B2a"
-            ],
-            "GAL": [
-              "E5a"
-            ],
-            "GLO": [],
-            "GPS": [
-              "L5"
-            ],
-            "QZSS": [
-              "L5"
-            ]
-          }
-        },
-        {
-          "achieved": {
-            "BDS": [
-              "B3I"
-            ]
-          },
-          "requested": {
-            "BDS": [
-              "B3I"
-            ],
-            "GAL": [],
-            "GLO": [],
-            "GPS": [],
-            "QZSS": []
-          }
-        },
-        {
-          "achieved": {
-            "GLO": [
-              "L2"
-            ],
-            "GPS": [
-              "L2C",
-              "L2P"
-            ],
-            "QZSS": [
-              "L2C"
-            ]
-          },
-          "requested": {
-            "BDS": [],
-            "GAL": [],
-            "GLO": [
-              "L2"
-            ],
-            "GPS": [
-              "L2C",
-              "L2P"
-            ],
-            "QZSS": [
-              "L2C"
-            ]
-          }
-        },
-        {
           "achieved": {},
           "requested": {
             "GLO": []
           }
         }
       ],
+      "cannotBeAlone": [
+        "QZSS"
+      ],
+      "emptyConstellationsDropped": true,
       "refused": [
         {
           "signals": {
@@ -194,29 +86,6 @@
         {
           "signals": {
             "GPS": []
-          }
-        },
-        {
-          "signals": {
-            "QZSS": [
-              "L1",
-              "L2C",
-              "L5"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "QZSS": [
-              "L1"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "QZSS": [
-              "L2C"
-            ]
           }
         },
         {

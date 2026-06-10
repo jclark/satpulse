@@ -155,11 +155,93 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
         entry["signalSet"] = supported
     if inconsistent:
         entry["inconsistent"] = inconsistent
-    if refused:
-        entry["refused"] = dedup(refused)
-    if adjusted:
-        entry["adjusted"] = dedup(adjusted)
+    signal_patterns(entry, obs, supported, dedup(refused), dedup(adjusted))
     return entry if entry else None
+
+
+def signal_patterns(entry: dict[str, Any], obs: list[SignalObservation],
+                    supported: dict[str, list[str]],
+                    refused: list[dict[str, Any]],
+                    adjusted: list[dict[str, Any]]) -> None:
+    """Express the refused and adjusted signal sets as receiver validity
+    patterns where the observations support them, in the spirit of "an
+    enabled constellation must have all its signals enabled, except BDS".
+    Entries no pattern explains stay verbatim - patterns reduce the noise,
+    never the information. The patterns, each emitted only when observed
+    and never contradicted:
+
+    - cannotBeAlone: constellations refused as the only enabled ones but
+      accepted in combination (augmentation systems needing GPS).
+    - partialSelectionRefused: a request giving some constellation a
+      nonempty strict subset of its signals is refused; "except" lists the
+      subsets observed to be accepted exactly.
+    - emptySelectionRefused: a request that would enable a constellation
+      with no signals is refused.
+    - emptyConstellationsDropped: constellations denoted with no signals
+      are dropped from the request rather than refused."""
+    full = {c: tuple(s) for c, s in supported.items()}
+    enabled_in_combination = set()
+    allowed_subsets: dict[str, list[list[str]]] = {}
+    empty_accepted = False
+    for o in obs:
+        if o.error is not None or o.achieved is None:
+            continue
+        req = requested_signals(o.gnss, o.band, supported)
+        if len([c for c, s in (req or {}).items() if s]) > 1:
+            enabled_in_combination |= set(o.achieved)
+        if req is not None and any(not s for s in req.values()):
+            empty_accepted = True
+        for c, sigs in o.achieved.items():
+            t = sorted(sigs)
+            if c in full and tuple(t) != full[c] and req is not None \
+                    and {k: sorted(v) for k, v in o.achieved.items()} == req:
+                if t not in allowed_subsets.setdefault(c, []):
+                    allowed_subsets[c].append(t)
+    cannot_alone = sorted(
+        c for c in supported if c in enabled_in_combination
+        and any(r.get("signals") == {c: list(full[c])} for r in refused))
+    saw_partial = False
+    saw_empty = False
+    residual_refused = []
+    for r in refused:
+        req = r.get("signals")
+        if not isinstance(req, dict):
+            residual_refused.append(r)
+            continue
+        nonempty = {c for c, s in req.items() if s}
+        if nonempty and nonempty <= set(cannot_alone):
+            continue
+        if any(s and tuple(sorted(s)) != full.get(c)
+               and sorted(s) not in allowed_subsets.get(c, [])
+               for c, s in req.items()):
+            saw_partial = True
+            continue
+        if any(not s for s in req.values()) and not empty_accepted:
+            saw_empty = True
+            continue
+        residual_refused.append(r)
+    saw_dropped = False
+    residual_adjusted = []
+    for a in adjusted:
+        req = a.get("requested")
+        if isinstance(req, dict) and any(req.values()) \
+                and a.get("achieved") == {c: s for c, s in req.items() if s}:
+            saw_dropped = True
+            continue
+        residual_adjusted.append(a)
+    if cannot_alone:
+        entry["cannotBeAlone"] = cannot_alone
+    if saw_partial:
+        entry["partialSelectionRefused"] = \
+            {"except": allowed_subsets} if allowed_subsets else True
+    if saw_empty:
+        entry["emptySelectionRefused"] = True
+    if saw_dropped:
+        entry["emptyConstellationsDropped"] = True
+    if residual_refused:
+        entry["refused"] = residual_refused
+    if residual_adjusted:
+        entry["adjusted"] = residual_adjusted
 
 
 def dedup(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
