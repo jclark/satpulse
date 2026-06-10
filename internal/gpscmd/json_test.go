@@ -80,7 +80,7 @@ func TestPrintJSON(t *testing.T) {
 						"fixedPosAcc":  10.0,
 					},
 					"minElevation":      10.0,
-					"antennaCableDelay": 50.0 / 1e9,
+					"antennaCableDelay": 50.0,
 				},
 			},
 		},
