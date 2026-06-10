@@ -38,6 +38,6 @@ A signal-set change triggers an internal GNSS-subsystem restart; allow ~2 s afte
 
 ## Testing notes
 
-As-found running configuration: NMEA GGA, GLL, GSA, GSV, RMC, VTG; mobile mode; all supported constellations at full band. A full gpshwtest run takes about 4 minutes (80 observations) and consecutive runs produce byte-identical characterizations.
+As-found running configuration: NMEA GGA, GLL, GSA, GSV, RMC, VTG; mobile mode; all supported constellations at full band. A full gpshwtest run takes about 4 minutes (77 observations) and consecutive runs produce byte-identical characterizations. The vetted characterization is checked in at `baselines/ZED-F9P-HPG-1.51-PROTVER-27.50.json`.
 
 `--nmea-out none` is realized on this receiver by disabling the NMEA protocol on the port, so with binary output not enabled the receiver emits nothing at all. Quirk: in that silent state the receiver intermittently fails to answer UBX polls - measured 9 of 10 MON-VER polls answered across fresh port opens while silent (and one earlier incident of two consecutive unanswered polls), versus 10 of 10 with NMEA flowing. Detection of a silenced receiver can therefore fail spuriously; satpulsetool behaves correctly (polls, retries, reports truthfully). Recovery: `--nmea`, then `--nmea-out <set>`.

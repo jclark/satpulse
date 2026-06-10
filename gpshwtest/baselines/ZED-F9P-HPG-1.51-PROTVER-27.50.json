@@ -1,0 +1,296 @@
+{
+  "limitations": {
+    "mode.fixedPosAcc": {
+      "quantum": 0.0001
+    },
+    "mode.fixedPosECEF[0]": {
+      "quantum": 0.0001
+    },
+    "mode.fixedPosECEF[1]": {
+      "quantum": 0.0001
+    },
+    "mode.fixedPosECEF[2]": {
+      "quantum": 0.0001
+    },
+    "mode.fixedPosLLH[0]": {
+      "quantum": 1e-09
+    },
+    "mode.fixedPosLLH[1]": {
+      "quantum": 1e-09
+    },
+    "mode.height": {
+      "quantum": 0.0001
+    },
+    "rtcmOut": {
+      "missing": [
+        {
+          "missing": [
+            "1005"
+          ],
+          "requested": [
+            "MSM4",
+            "ARP"
+          ]
+        }
+      ]
+    },
+    "signals": {
+      "refused": [
+        {
+          "signals": {
+            "BDS": [
+              "B1I"
+            ],
+            "GAL": [
+              "E1"
+            ],
+            "GLO": [
+              "L1",
+              "L2"
+            ],
+            "GPS": [
+              "L1",
+              "L2C"
+            ],
+            "QZSS": [
+              "L1",
+              "L1S",
+              "L2C"
+            ],
+            "SBAS": [
+              "L1"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "BDS": [
+              "B1I"
+            ],
+            "GAL": [
+              "E1"
+            ],
+            "GLO": [
+              "L1"
+            ],
+            "GPS": [
+              "L1"
+            ],
+            "QZSS": [
+              "L1",
+              "L1S"
+            ],
+            "SBAS": [
+              "L1"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "BDS": [
+              "B2I"
+            ],
+            "GAL": [
+              "E5b"
+            ],
+            "GLO": [],
+            "GPS": [],
+            "QZSS": [],
+            "SBAS": []
+          }
+        },
+        {
+          "signals": {
+            "BDS": [
+              "B2I"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "BDS": [],
+            "GAL": [],
+            "GLO": [
+              "L2"
+            ],
+            "GPS": [
+              "L2C"
+            ],
+            "QZSS": [
+              "L2C"
+            ],
+            "SBAS": []
+          }
+        },
+        {
+          "signals": {
+            "BDS": [],
+            "GAL": [],
+            "GLO": [],
+            "GPS": [],
+            "QZSS": [],
+            "SBAS": []
+          }
+        },
+        {
+          "signals": {
+            "BDS": []
+          }
+        },
+        {
+          "signals": {
+            "GAL": [
+              "E1"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "GAL": [
+              "E5b"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "GAL": []
+          }
+        },
+        {
+          "signals": {
+            "GLO": [
+              "L1"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "GLO": [
+              "L2"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "GLO": []
+          }
+        },
+        {
+          "signals": {
+            "GPS": [
+              "L1"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "GPS": [
+              "L2C"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "GPS": []
+          }
+        },
+        {
+          "signals": {
+            "QZSS": [
+              "L1",
+              "L1S",
+              "L2C"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "QZSS": [
+              "L1",
+              "L1S"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "QZSS": [
+              "L2C"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "QZSS": []
+          }
+        },
+        {
+          "signals": {
+            "SBAS": [
+              "L1"
+            ]
+          }
+        },
+        {
+          "signals": {
+            "SBAS": []
+          }
+        }
+      ],
+      "signalSet": {
+        "BDS": [
+          "B1I",
+          "B2I"
+        ],
+        "GAL": [
+          "E1",
+          "E5b"
+        ],
+        "GLO": [
+          "L1",
+          "L2"
+        ],
+        "GPS": [
+          "L1",
+          "L2C"
+        ],
+        "QZSS": [
+          "L1",
+          "L1S",
+          "L2C"
+        ],
+        "SBAS": [
+          "L1"
+        ]
+      }
+    },
+    "timePulse.width": {
+      "quantum": 1e-06
+    }
+  },
+  "receiver": {
+    "firmware": "HPG 1.51 PROTVER 27.50",
+    "hardware": "ZED-F9P",
+    "supportedGNSS": [
+      "GPS",
+      "GAL",
+      "BDS",
+      "GLO",
+      "QZSS",
+      "SBAS"
+    ],
+    "vendor": "u-blox"
+  },
+  "supports": [
+    "band",
+    "fixedPos",
+    "fixedPosAcc",
+    "raw",
+    "rtcmBaseID",
+    "rtcmMSM4",
+    "rtcmMSM7",
+    "speed",
+    "survey",
+    "surveyAcc",
+    "surveyMsg"
+  ]
+}
