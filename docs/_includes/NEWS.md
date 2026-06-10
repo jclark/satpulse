@@ -44,7 +44,7 @@ _Not yet released_
 
 ### Time synchronization
 
-- The PHC sync controller has a new gap mode, entered from tracking mode when samples go missing during a brief signal loss. The clock runs at the averaged frequency during the gap, and after longer gaps outlier detection is temporarily relaxed so that legitimate samples reflecting clock drift across the gap are no longer rejected. PTP clock quality is unchanged in gap mode. The new `[sync.gap]` table in `satpulse.toml` configures the recovery behaviour. (#188)
+- The PHC sync controller has a new gap mode, entered from tracking mode when samples go missing during a brief signal loss. The clock runs at the averaged frequency during the gap, and after longer gaps outlier detection is temporarily relaxed so that legitimate samples reflecting clock drift across the gap are no longer rejected. PTP clock quality is unchanged in gap mode. The new `[sync.gap]` table in `satpulse.toml` configures the recovery behaviour. This makes it useful to raise `sync.track.badSampleRunLimit` on hardware whose clock drifts slowly during signal loss, riding out longer gaps at full synchronization quality; the reference configurations in `configs/syncsim` include values derived for specific hardware. (#188)
 
 ### Miscellaneous
 
