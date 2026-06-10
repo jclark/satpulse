@@ -10,7 +10,7 @@ import json
 from typing import Any
 
 from probes import (EmissionObservation, NMEA_VOCAB, Observation, ProbeRun,
-                    SignalObservation)
+                    PVT_CASES, PVT_EXTRA_KINDS, SATS_CASES, SignalObservation)
 
 # RTCM MSM message numbers are <decade><level> with a fixed decade per
 # constellation (RTCM 10403 standard numbering, not receiver-specific).
@@ -43,6 +43,16 @@ def characterize(receiver: dict[str, Any], supports: list[str],
     raw = characterize_raw(by_group["rawOut"])
     if raw:
         limits["rawOut"] = raw
+    pvt = characterize_expected(
+        [o for o in run.emission_observations if o.group == "pvtOut"],
+        {tuple(c.flags): c.expect for c in PVT_CASES})
+    if pvt:
+        limits["pvtOut"] = pvt
+    sats = characterize_expected(
+        [o for o in run.emission_observations if o.group == "satsOut"],
+        {tuple(c): e for c, e in SATS_CASES})
+    if sats:
+        limits["satsOut"] = sats
     return {"receiver": receiver, "supports": sorted(supports), "limitations": limits}
 
 
@@ -181,6 +191,35 @@ def characterize_raw(obs: list[EmissionObservation]) -> dict[str, Any] | None:
     overlap = sorted(by_kind.get("obs", set()) & by_kind.get("nav", set()))
     if overlap:
         entry["overlap"] = overlap
+    return entry if entry else None
+
+
+def characterize_expected(obs: list[EmissionObservation],
+                          expect: dict[tuple[str, ...], set[str]]) -> dict[str, Any] | None:
+    """Characterize information-level message output against per-case
+    expected kinds: missing expected information, and unrequested
+    information that was delivered anyway."""
+    entry: dict[str, Any] = {}
+    refused = [o.requested for o in obs if o.error is not None]
+    if refused:
+        entry["refused"] = refused
+    mismatched = []
+    for o in obs:
+        if o.error is not None:
+            continue
+        want = expect.get(tuple(o.requested), set())
+        got = set(o.emitted)
+        missing = sorted(want - got)
+        extra = sorted((got & PVT_EXTRA_KINDS) - want)
+        if missing or extra:
+            m: dict[str, Any] = {"requested": o.requested}
+            if missing:
+                m["missing"] = missing
+            if extra:
+                m["extra"] = extra
+            mismatched.append(m)
+    if mismatched:
+        entry["mismatched"] = mismatched
     return entry if entry else None
 
 

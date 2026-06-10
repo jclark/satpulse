@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from tool import Tool
+from tool import Invocation, Tool
 
 Value = Any
 
@@ -98,6 +98,70 @@ NMEA_VOCAB = ["RMC", "GGA", "GSA", "GSV", "ZDA", "VTG", "GLL"]
 NMEA_CASES = [["RMC"], ["GGA", "ZDA"], ["none"]]
 
 RTCM_CASES = [["MSM4", "ARP"], ["MSM7"], ["none"]]
+
+
+@dataclass
+class PVTCase:
+    """One PVT output request and the information kinds it should deliver.
+
+    Kinds are derived from the replayed event stream: pos/vel from the
+    position and velocity events, time from solution-time events, tp from
+    pulse-time events (TimeRef PrePulse/PostPulse), leap from leapSecond,
+    navEpoch from epoch markers (covers qual and epoch), tai/ecef when the
+    corresponding content selector is honored. The survey flag is excluded:
+    survey events only flow during a survey-in, so a mobile-mode probe
+    cannot verify them.
+    """
+
+    flags: list[str]
+    expect: set[str]
+
+
+PVT_CASES = [
+    PVTCase(["pos", "vel", "time", "off"], {"pos", "vel", "time"}),
+    PVTCase(["pos", "vel", "time", "ecef", "tai", "off"],
+            {"pos", "vel", "time", "ecef", "tai"}),
+    PVTCase(["ptp"], {"tp", "time", "tai", "leap", "navEpoch"}),
+    PVTCase(["ntp"], {"time", "leap", "navEpoch"}),
+    PVTCase(["off"], set()),
+]
+
+# Kinds whose unrequested presence is reported as extra information.
+# navEpoch is excluded: the decode pipeline emits an epoch marker for any
+# per-epoch stream, so its presence does not indicate extra receiver output.
+PVT_EXTRA_KINDS = {"pos", "vel", "time", "tp", "leap", "satellites"}
+
+SATS_CASES = [(["sat"], {"satellites"}),
+              (["sig"], {"satellites", "perSignal"}),
+              (["none"], set())]
+
+
+def event_kinds(events: list[dict[str, Any]]) -> set[str]:
+    """The information kinds present in a replayed event stream."""
+    kinds = set()
+    for e in events:
+        t = e.get("type")
+        d = e.get("data") or {}
+        if t in ("posGeo", "posECEF"):
+            kinds.add("pos")
+            if t == "posECEF":
+                kinds.add("ecef")
+        elif t in ("velGeo", "velECEF"):
+            kinds.add("vel")
+        elif t == "time":
+            kinds.add("tp" if d.get("ref") else "time")
+            if "taiTime" in d:
+                kinds.add("tai")
+        elif t == "leapSecond":
+            kinds.add("leap")
+        elif t == "satellites":
+            kinds.add("satellites")
+            info = d.get("info") or []
+            if any(len(sv.get("signals") or []) >= 2 for sv in info):
+                kinds.add("perSignal")
+        elif t == "navEpoch":
+            kinds.add("navEpoch")
+    return kinds
 
 # Seconds of packet capture used to observe what the receiver emits;
 # the message kinds under test are all per-epoch (1 Hz), so this spans
@@ -287,29 +351,33 @@ class ProbeRun:
                 prev = back
         self.restore(p, initial)
 
-    def observe_emissions(self, name: str) -> dict[tuple[str, str], int] | None:
-        """Capture for a few seconds and return what the receiver emits.
-        Message output configuration is not readable back, so observation
-        is both the verification and the restore baseline."""
+    def observe_capture(self, name: str) -> Invocation | None:
+        """Capture for a few seconds; the packet log is what the receiver
+        emits. Message output configuration is not readable back, so
+        observation is both the verification and the restore baseline."""
         inv = self.tool.gps(name, ["--show-receiver", "--capture", str(OBSERVE_SECONDS)])
         if inv.error is not None:
             self.failures.append(f"{name}: capture failed: {inv.error}")
             return None
-        return emissions(inv.packet_log)
+        return inv
 
-    def set_and_observe(self, group: str, flag: str, case: list[str]) -> \
-            dict[tuple[str, str], int] | None:
+    def observe_emissions(self, name: str) -> dict[tuple[str, str], int] | None:
+        inv = self.observe_capture(name)
+        return emissions(inv.packet_log) if inv is not None else None
+
+    def set_and_observe(self, group: str, flag: str, case: list[str],
+                        pre: list[str] | None = None) -> Invocation | None:
         """Apply one message-output case and observe the result; None when
         the request was refused (recorded as an observation) or the
         observation capture failed (recorded as a failure)."""
         name = "-".join(case)
-        inv = self.tool.gps(f"set-{group}-{name}", [flag, ",".join(case)])
+        inv = self.tool.gps(f"set-{group}-{name}", (pre or []) + [flag, ",".join(case)])
         if inv.error is not None:
             self.emission_observations.append(
                 EmissionObservation(group, case, inv.error, []))
             return None
         time.sleep(MSG_SETTLE)
-        return self.observe_emissions(f"observe-{group}-{name}")
+        return self.observe_capture(f"observe-{group}-{name}")
 
     def probe_messages(self) -> None:
         """Probe NMEA, RTCM, and raw message output from one shared baseline
@@ -320,14 +388,18 @@ class ProbeRun:
         self.probe_nmea(nmea_set(base))
         self.probe_rtcm(rtcm_set(base))
         self.probe_raw(raw_set(base))
+        self.probe_pvt()
+        self.probe_sats()
+        self.restore_protocol(base)
 
     def probe_nmea(self, initial: list[str]) -> None:
         """Probe NMEA output selection, then restore the initial sentence set."""
         for case in NMEA_CASES:
-            d = self.set_and_observe("nmeaOut", "--nmea-out", case)
-            if d is not None:
+            inv = self.set_and_observe("nmeaOut", "--nmea-out", case)
+            if inv is not None:
                 self.emission_observations.append(
-                    EmissionObservation("nmeaOut", case, None, nmea_set(d)))
+                    EmissionObservation("nmeaOut", case, None,
+                                        nmea_set(emissions(inv.packet_log))))
         want = [t for t in initial if t in NMEA_VOCAB]
         inv = self.tool.gps("restore-nmea", ["--nmea-out", ",".join(want) if want else "none"])
         if inv.error is not None:
@@ -342,10 +414,11 @@ class ProbeRun:
     def probe_rtcm(self, initial: list[str]) -> None:
         """Probe RTCM output selection, then restore the initial emission."""
         for case in RTCM_CASES:
-            d = self.set_and_observe("rtcmOut", "--rtcm-out", case)
-            if d is not None:
+            inv = self.set_and_observe("rtcmOut", "--rtcm-out", case)
+            if inv is not None:
                 self.emission_observations.append(
-                    EmissionObservation("rtcmOut", case, None, rtcm_set(d)))
+                    EmissionObservation("rtcmOut", case, None,
+                                        rtcm_set(emissions(inv.packet_log))))
         want = []
         if any(t.endswith("4") and t.startswith("1") for t in initial):
             want.append("MSM4")
@@ -369,16 +442,17 @@ class ProbeRun:
         receiver-specific knowledge."""
         found: dict[str, set[str]] = {}
         for kind in ("obs", "nav"):
-            d = self.set_and_observe("rawOut", "--raw-out", [kind])
-            if d is None:
+            inv = self.set_and_observe("rawOut", "--raw-out", [kind])
+            if inv is None:
                 continue
-            found[kind] = raw_set(d) - initial
+            found[kind] = raw_set(emissions(inv.packet_log)) - initial
             self.emission_observations.append(
                 EmissionObservation("rawOut", [kind], None, sorted(found[kind])))
-        d = self.set_and_observe("rawOut", "--raw-out", ["none"])
-        if d is not None:
+        inv = self.set_and_observe("rawOut", "--raw-out", ["none"])
+        if inv is not None:
             self.emission_observations.append(
-                EmissionObservation("rawOut", ["none"], None, sorted(raw_set(d) - initial)))
+                EmissionObservation("rawOut", ["none"], None,
+                                    sorted(raw_set(emissions(inv.packet_log)) - initial)))
         want = [k for k, msgs in found.items() if msgs and msgs <= initial]
         if not want:
             return
@@ -389,6 +463,57 @@ class ProbeRun:
         d = self.observe_emissions("verify-restore-raw")
         if d is not None and not set().union(*(found[k] for k in want)) <= raw_set(d):
             self.failures.append(f"raw: restore to {want!r} not emitting as before")
+
+    def probe_pvt(self) -> None:
+        """Probe PVT message output at the information level: apply each
+        case in binary mode, replay the capture, and record the information
+        kinds delivered."""
+        for case in PVT_CASES:
+            inv = self.set_and_observe("pvtOut", "--pvt-out", case.flags, pre=["--binary"])
+            if inv is not None:
+                kinds = event_kinds(self.tool.replay(inv.packet_log))
+                self.emission_observations.append(
+                    EmissionObservation("pvtOut", case.flags, None, sorted(kinds)))
+
+    def probe_sats(self) -> None:
+        """Probe satellite information output at the information level."""
+        for case, _ in SATS_CASES:
+            inv = self.set_and_observe("satsOut", "--sats-out", case,
+                                       pre=["--binary", "--pvt-out", "off"])
+            if inv is not None:
+                kinds = event_kinds(self.tool.replay(inv.packet_log))
+                self.emission_observations.append(
+                    EmissionObservation("satsOut", case, None, sorted(kinds)))
+
+    def restore_protocol(self, base: dict[tuple[str, str], int]) -> None:
+        """Return the receiver to its pre-probe output mode. --nmea resets
+        the sentence set (to RMC only on u-blox) as well as switching
+        protocol, so the observed initial sentence set is restored after it.
+        A receiver found in binary mode is switched back with --binary, but
+        its PVT message selection cannot be reconstructed from observation;
+        the verification below reports that honestly as a restore failure."""
+        base_nmea = [t for t in nmea_set(base) if t in NMEA_VOCAB]
+        if not base_nmea and raw_set(base):
+            steps = [("restore-binary-mode", ["--binary"])]
+        else:
+            steps = [("restore-nmea-mode", ["--nmea"]),
+                     ("restore-nmea-types",
+                      ["--nmea-out", ",".join(base_nmea) if base_nmea else "none"])]
+        for name, args in steps:
+            inv = self.tool.gps(name, args)
+            if inv.error is not None:
+                self.failures.append(f"{name}: {inv.error}")
+                return
+        d = self.observe_emissions("verify-restore-messages")
+        if d is None:
+            return
+        for what, got, want in [
+                ("NMEA types", [t for t in nmea_set(d) if t in NMEA_VOCAB], base_nmea),
+                ("RTCM types", rtcm_set(d), rtcm_set(base)),
+                ("messages", sorted(raw_set(d)), sorted(raw_set(base)))]:
+            if got != want:
+                self.failures.append(
+                    f"messages: {what} after restore {got!r} != initial {want!r}")
 
     def probe_signals(self, initial: dict[str, Any], supported: list[str]) -> None:
         """Probe constellation/band combinations, then restore the initial set."""

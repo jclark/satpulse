@@ -54,6 +54,14 @@ RTCM and raw output probes (same session):
 - --raw-out obs is realized as UBX RXM-RAWX (~1 Hz), nav as UBX RXM-SFRBX (bursts, >20/s); the kinds are absolute (setting nav alone disables obs), realizations are disjoint, and none silences both.
 - One transient: a combined "--rtcm-out none --raw-out obs" invocation once produced no RAWX afterwards, not reproducible. The program now settles 1 s after each message-output change before observing.
 
+PVT and satellite output probes via replay (same session):
+
+- --nmea and --binary are mode switches with canonical baselines, not just protocol toggles: --nmea enables the NMEA protocol, disables the UBX periodic messages, and resets the sentence set to RMC only; --binary disables NMEA and enables NAV-PVT plus a leap-second message. Neither can be combined with the message-output flags in one invocation, so restoring "NMEA with sentence set X" takes two invocations (--nmea, then --nmea-out X).
+- In binary mode pos/vel/time/leap information always flows: "--binary --pvt-out off" leaves NAV-PVT and the leap message enabled, while "--pvt-out pos,vel,time,off" does disable the leap message. Possible satpulsetool quirk: off seems not to remove what --binary's baseline just enabled.
+- ptp/ntp deliver position and velocity even though they imply off, because quality/epoch information on u-blox rides in NAV-PVT. Recorded as extra information in the characterization, correctly.
+- ptp is realized as NAV-PVT + NAV-TIMEGPS + TIM-TP: pulse time arrives as a time event with ref=PrePulse and taiTime; tai and ecef content selectors are honored; sat/sig produce satellites events, sig with per-signal entries.
+- Survey progress messages cannot be verified in mobile mode (NAV-SVIN only flows during a survey-in); the survey flag is excluded from PVT expectations.
+
 ## u-blox M8T, /dev/ttyS0 (UART)
 
 Not yet probed. Baud rate unknown; discover by scanning (9600 is the M8 UART default).

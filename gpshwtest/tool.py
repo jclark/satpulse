@@ -94,6 +94,25 @@ class Tool:
             raise ToolFailure(f"{name}: exit 0 but no JSON output")
         return inv
 
+    def replay(self, log: Path, timeout: float = 60.0) -> list[dict[str, Any]]:
+        """Convert a packet log offline into the typed gpsprot event stream."""
+        argv = [str(self.exe), "replay", str(log)]
+        try:
+            p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise ToolFailure(f"replay {log.name}: no response within {timeout}s")
+        if p.returncode != 0:
+            raise ToolFailure(f"replay {log.name}: exit {p.returncode}: {p.stderr.strip()}")
+        events = []
+        for line in p.stdout.splitlines():
+            try:
+                v = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(v, dict):
+                events.append(v)
+        return events
+
     def record(self, entry: dict[str, Any]) -> None:
         """Append an entry to the raw observation log."""
         json.dump(entry, self.raw)
