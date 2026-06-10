@@ -7,12 +7,18 @@ between the two, or state changed by a reported error, is a failure
 clipping - is recorded as an observation for the characterization.
 """
 
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from tool import Tool
 
 Value = Any
+
+# Settle time after a successful signal-set change: u-blox documents an
+# internal GNSS-subsystem restart (wait for the ACK plus 0.5 s); 2 s has
+# been reliable on real hardware.
+SIGNAL_SETTLE = 2.0
 
 
 @dataclass
@@ -79,6 +85,34 @@ class ModeCase:
     name: str
     args: list[str]
     request: dict[str, Value]
+
+
+@dataclass
+class SignalObservation:
+    """Outcome of requesting one constellation/band combination."""
+
+    gnss: list[str]
+    band: list[str] | None
+    error: str | None
+    achieved: dict[str, list[str]] | None
+
+
+BANDS_ALL = [["L1"], ["L2"], ["L5"], ["E5"], ["L6"], ["L1", "L2"]]
+BANDS_SINGLE = [["L1"], ["L2"], ["E5b"]]
+
+
+def signal_cases(supported: list[str]) -> list[tuple[list[str], list[str] | None]]:
+    """Build the signal probe set from the discovered constellation list:
+    each constellation alone and with band subsets, augmentation systems
+    paired with GPS (they are commonly coupled to it), all constellations
+    together, and band subsets of all."""
+    cases: list[tuple[list[str], list[str] | None]] = [([g], None) for g in supported]
+    cases += [([g], b) for g in supported for b in BANDS_SINGLE]
+    if "GPS" in supported:
+        cases += [(["GPS", g], None) for g in ("QZSS", "SBAS") if g in supported]
+    cases.append((list(supported), None))
+    cases += [(list(supported), b) for b in BANDS_ALL]
+    return cases
 
 
 MODE_CASES = [
@@ -151,6 +185,7 @@ class ProbeRun:
 
     tool: Tool
     observations: list[Observation] = field(default_factory=list)
+    signal_observations: list[SignalObservation] = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
 
     def show_config(self, name: str) -> dict[str, Any]:
@@ -178,6 +213,48 @@ class ProbeRun:
                         f"{p.name}: reported {reported!r} but readback says {back!r}")
                 prev = back
         self.restore(p, initial)
+
+    def probe_signals(self, initial: dict[str, Any], supported: list[str]) -> None:
+        """Probe constellation/band combinations, then restore the initial set."""
+        prev = config_value(initial, ("signalsEnabled",))
+        for gnss, band in signal_cases(supported):
+            name = "-".join(gnss) + ("-" + "-".join(band) if band else "")
+            args = ["--gnss", ",".join(gnss)]
+            if band:
+                args += ["--band", ",".join(band)]
+            inv = self.tool.gps(f"set-signals-{name}", args)
+            reported = config_value(inv.config(), ("signalsEnabled",))
+            back = config_value(self.show_config(f"readback-signals-{name}"),
+                                ("signalsEnabled",))
+            if inv.error is not None:
+                self.signal_observations.append(SignalObservation(gnss, band, inv.error, None))
+                if back != prev:
+                    self.failures.append(
+                        f"signals {name}: refusal changed state: {prev!r} -> {back!r}")
+                continue
+            time.sleep(SIGNAL_SETTLE)
+            if reported != back:
+                self.failures.append(
+                    f"signals {name}: reported {reported!r} but readback says {back!r}")
+            self.signal_observations.append(SignalObservation(gnss, band, None, back))
+            prev = back
+        self.restore_signals(initial)
+
+    def restore_signals(self, initial: dict[str, Any]) -> None:
+        """Re-enable the initial constellation set. Band subsetting within a
+        constellation cannot be reproduced generically, so a band-limited
+        initial set shows up as a restore failure rather than silently passing."""
+        want = config_value(initial, ("signalsEnabled",))
+        if not isinstance(want, dict):
+            return
+        inv = self.tool.gps("restore-signals", ["--gnss", ",".join(want)])
+        if inv.error is not None:
+            self.failures.append(f"signals: restore to {want!r} failed: {inv.error}")
+            return
+        time.sleep(SIGNAL_SETTLE)
+        back = config_value(self.show_config("verify-restore-signals"), ("signalsEnabled",))
+        if back != want:
+            self.failures.append(f"signals: restore to {want!r} read back as {back!r}")
 
     def probe_modes(self, initial: dict[str, Any]) -> None:
         """Probe each positioning-mode case, then restore the initial mode."""

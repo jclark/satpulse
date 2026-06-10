@@ -33,6 +33,13 @@ Positioning mode probes (same session):
 - Positioning mode is set as a whole: --fixed-pos-llh without --fixed-pos-acc resets the accuracy to its default (20 m). Probes must always pass the accuracy explicitly.
 - The port/baudRate fields appear in the JSON config object only with --show-port, not with plain --show-config.
 
+Signal combination probes via the program (same session; extends the manual findings above):
+
+- QZSS-only and SBAS-only are refused; GPS+QZSS and GPS+SBAS are accepted. Augmentation systems need a major constellation enabled (only probed paired with GPS).
+- The only accepted band-limited combination in the whole probe set (singles x L1/L2/E5b, all x L1/L2/L5/E5/L6/L1+L2) is BDS+L1 -> B1I. Even BDS+E5b (B2I alone) is refused: no constellation runs on only its second signal either.
+- Full signal sets at full band: GPS [L1,L2C], GAL [E1,E5b], GLO [L1,L2], BDS [B1I,B2I], QZSS [L1,L1S,L2C], SBAS [L1]. Enabling GPS alone does not pull in QZSS or SBAS (no coupling).
+- A signals run (63 observations total) takes just under 2 min including 2 s settles after each accepted signal change; still byte-identical across consecutive runs.
+
 ## u-blox M8T, /dev/ttyS0 (UART)
 
 Not yet probed. Baud rate unknown; discover by scanning (9600 is the M8 UART default).
