@@ -12,12 +12,12 @@ The program's job decomposes into a loop: figure out what to execute, execute it
 
 Status: the execute/analyze split is implemented. Every step is recorded with its intent in raw.jsonl (`tool.py`), the driving in `probes.py` renders no verdicts, and `analyze.py` derives failures and the characterization purely from a run directory - a live run analyzes its own records through the same path `--analyze` uses on archived ones, so there is one verdict pipeline and it is exercised on every run. Plan is not yet data: driving is still imperative (adaptive choices read invocation results directly), and restores are interleaved per probe family rather than planned up front as an unconditional tail. Moving to plan-as-data is worth it when save-granularity discovery needs hypothesis-driven experiment selection, or when resumability (below) is tackled.
 
-Save-granularity discovery is the purest fit: plan a discriminating experiment among the candidate partitions (per-property, gen 8-like sections, single group - the candidates are visible in satpulse's own backends), execute the save/reload cycle, analyze the survivors, repeat until one hypothesis stands.
+Save-granularity discovery was implemented without plan-as-data: one experiment per property, with each experiment's post-reload readback threading in as the next baseline, turned out to be conclusive in a single pass (no hypothesis iteration needed). What the experiments found also broke the assumed model: the persists-together relation is not a partition when a property's realization spans NVM sections (the gen 8 timeGNSS case), so the characterization records groups when the observations form a partition and the per-property observations verbatim when they do not.
 
 ## Robustness for unattended runs
 
 The receiver must end up restored even when a run dies. Ideas:
 
-- Plan the restore tail before making any change (the initial readback determines it) and execute it unconditionally - on success, on failure, on crash.
-- Make runs resumable: with the plan as data and every completed step recorded, a crashed run can be picked up at the first unexecuted step, or at worst its restore tail can be run alone.
-- Treat a failed restore as loud: the next run's initial readback can verify the world matches some recorded as-found state and refuse quietly to compound the damage.
+- Plan the restore tail before making any change (the initial readback determines it) and execute it unconditionally - on success, on failure, on crash. [Done as an emergency tail: a run that aborts in-process (tool failure, interrupt) restores everything best-effort, recorded as usual.]
+- Make runs resumable: with the plan as data and every completed step recorded, a crashed run can be picked up at the first unexecuted step, or at worst its restore tail can be run alone. [The restore tail alone is done: --restore-from RUNDIR derives the tail from a crashed run's records, for deaths no in-process tail can cover (kill -9); validated with a real kill. Resume-at-first-unexecuted-step remains an idea, and would need plan-as-data.]
+- Treat a failed restore as loud: the next run's initial readback can verify the world matches some recorded as-found state and refuse quietly to compound the damage. [Open; in practice a poisoned state has shown up loudly anyway, as identification or baseline failures.]
