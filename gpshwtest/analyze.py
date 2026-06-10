@@ -124,6 +124,7 @@ class Analyzer:
     start_vals: dict[str, Value] = field(default_factory=dict)
     accepted: dict[str, list[Observation]] = field(default_factory=dict)
     baseline: dict[tuple[str, str], int] = field(default_factory=dict)
+    raw_base: set[str] | None = None
     raw_found: dict[str, set[str]] = field(default_factory=dict)
     ident_error: str | None = None
     reload_nvm: dict[str, Any] | None = None
@@ -426,6 +427,8 @@ class Analyzer:
         role, group = s.intent.get("role"), s.intent.get("group")
         if role == "baseline" and s.log is not None:
             self.baseline = emissions(s.log)
+        elif role == "raw-baseline" and s.log is not None:
+            self.raw_base = raw_set(emissions(s.log))
         elif role == "verify" and s.log is not None:
             self.verify_restore_msg(s, group)
 
@@ -462,7 +465,8 @@ class Analyzer:
             return nmea_set(d)
         if group == "rtcmOut":
             return rtcm_set(d)
-        new = raw_set(d) - raw_set(self.baseline)
+        base = self.raw_base if self.raw_base is not None else raw_set(self.baseline)
+        new = raw_set(d) - base
         if case != ["none"]:
             self.raw_found[case[0]] = new
         return sorted(new)

@@ -166,9 +166,12 @@ def signal_cases(supported: list[str]) -> list[tuple[list[str], list[str] | None
 @dataclass
 class ProbeRun:
     """Drives probes against one receiver. Pure execution: every step is
-    recorded with its intent; verdicts come from offline analysis."""
+    recorded with its intent; verdicts come from offline analysis.
+    line_dead is set when a message-output change stops getting through
+    (a flooding receiver); the message phase stops there."""
 
     tool: Tool
+    line_dead: bool = False
 
     def show_config(self, name: str, role: str,
                     prop: str | None = None) -> dict[str, Any] | None:
@@ -237,18 +240,23 @@ class ProbeRun:
         the port at its current termios state), so try the candidates
         explicitly and pin the first that answers. Individual attempts are
         expected to fail; analysis reports a failure only when the whole
-        rediscovery does."""
-        for sp in self.REDISCOVER_SPEEDS:
-            self.tool.set_speed(sp)
-            inv = self.tool.gps(f"rediscover-at-{sp}", ["--show-port"],
-                                {"op": "session-speed", "role": "rediscover-try",
-                                 "speed": sp}, retry=False)
-            if inv.error is None:
-                baud = inv.config().get("baudRate")
-                if isinstance(baud, int) and baud > 0 and baud != sp:
-                    self.tool.set_speed(baud)
-                    return baud
-                return sp
+        rediscovery does. A receiver that answers at no speed may simply be
+        rebooting (the Unicore reload is realized as a receiver RESET), so
+        a silent first sweep is repeated after a settle."""
+        for attempt in range(2):
+            for sp in self.REDISCOVER_SPEEDS:
+                self.tool.set_speed(sp)
+                inv = self.tool.gps(f"rediscover-at-{sp}", ["--show-port"],
+                                    {"op": "session-speed", "role": "rediscover-try",
+                                     "speed": sp}, retry=False)
+                if inv.error is None:
+                    baud = inv.config().get("baudRate")
+                    if isinstance(baud, int) and baud > 0 and baud != sp:
+                        self.tool.set_speed(baud)
+                        return baud
+                    return sp
+            if attempt == 0:
+                time.sleep(RESET_SETTLE)
         self.tool.set_speed(None)
         return None
 
@@ -340,10 +348,14 @@ class ProbeRun:
                         expect: set[str] | None = None) -> Invocation | None:
         """Apply one message-output case and observe the result; None when
         the request was refused or the observation capture failed (both
-        visible to analysis in the records)."""
+        visible to analysis in the records). A transient set failure means
+        the link itself is in trouble (a flooding receiver answers
+        nothing), so the message phase stops."""
         name = "-".join(case)
         inv = self.tool.gps(f"set-{group}-{name}", (pre or []) + [flag, ",".join(case)],
                             {"op": "set-msg", "group": group, "case": case})
+        if transient(inv.error):
+            self.line_dead = True
         if inv.error is not None:
             return None
         time.sleep(MSG_SETTLE)
@@ -354,18 +366,24 @@ class ProbeRun:
         return self.observe(f"observe-{group}-{name}", intent)
 
     def probe_messages(self) -> dict[tuple[str, str], int] | None:
-        """Probe NMEA, RTCM, raw, PVT, and satellite output from one shared
-        baseline observation, restoring each group afterwards. Returns the
-        baseline emissions, which later restores (after --reload) reuse."""
+        """Probe NMEA, RTCM, PVT, satellite, and raw output from one shared
+        baseline observation, restoring each group afterwards. Raw runs
+        last: it is the one group that can saturate the link beyond
+        recovery (UM980 ephemeris output, see HW/um980.md), so a wedge
+        poisons the least. A disable that cannot get through stops the
+        phase rather than dragging every later probe down with it. Returns
+        the baseline emissions, which later restores (after --reload) reuse."""
         base_inv = self.observe("messages-initial", {"op": "observe", "role": "baseline"})
         if base_inv is None:
             return None
         base = emissions(base_inv.packet_log)
-        self.probe_nmea(nmea_set(base))
-        self.probe_rtcm(rtcm_set(base))
-        self.probe_raw(raw_set(base))
-        self.probe_pvt()
-        self.probe_sats()
+        for probe in (partial(self.probe_nmea, nmea_set(base)),
+                      partial(self.probe_rtcm, rtcm_set(base)),
+                      self.probe_pvt, self.probe_sats,
+                      partial(self.probe_raw, raw_set(base))):
+            if self.line_dead:
+                break
+            probe()
         self.restore_protocol(base)
         return base
 
@@ -399,14 +417,23 @@ class ProbeRun:
 
     def probe_raw(self, initial: set[str]) -> None:
         """Probe raw output kinds, then restore the initial emission. The
-        messages realizing each kind are discovered from the probe itself
-        (whatever appears beyond the baseline), so restoring needs no
-        receiver-specific knowledge."""
+        messages realizing each kind are discovered from the probe itself,
+        so restoring needs no receiver-specific knowledge. Raw runs after
+        the binary-mode semantic probes, so what counts as new is diffed
+        against a fresh observation rather than the session baseline; the
+        restore decision still uses the session baseline (the kinds that
+        were on as-found)."""
+        pre_inv = self.observe("raw-baseline", {"op": "observe", "role": "raw-baseline"})
+        if pre_inv is None:
+            return
+        pre = raw_set(emissions(pre_inv.packet_log))
         found: dict[str, set[str]] = {}
         for kind in ("obs", "nav"):
             inv = self.set_and_observe("rawOut", "--raw-out", [kind])
             if inv is not None:
-                found[kind] = raw_set(emissions(inv.packet_log)) - initial
+                found[kind] = raw_set(emissions(inv.packet_log)) - pre
+            if self.line_dead:
+                return
         self.set_and_observe("rawOut", "--raw-out", ["none"])
         want = [k for k, msgs in found.items() if msgs and msgs <= initial]
         if not want:
