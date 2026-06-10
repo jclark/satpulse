@@ -88,20 +88,25 @@ def run(tool: Tool, baseline: Path | None) -> int:
           f"{receiver.get('firmware')}", file=sys.stderr)
     pr = ProbeRun(tool)
     initial = pr.show_config("initial-config")
+    if initial is None:
+        print("FAILURE: cannot read initial configuration", file=sys.stderr)
+        return 1
     check_show_port(tool, pr)
     for p in PROPS:
         print(f"probing {p.name}", file=sys.stderr)
         pr.probe_scalar(p, initial)
     print("probing positioning mode", file=sys.stderr)
     pr.probe_modes(initial)
+    print("probing NMEA output", file=sys.stderr)
+    pr.probe_nmea()
     supported = receiver.get("supportedGNSS")
     if isinstance(supported, list):
         print("probing signal combinations", file=sys.stderr)
         pr.probe_signals(initial, supported)
     final = pr.show_config("final-config")
-    if final != initial:
+    if final is not None and final != initial:
         pr.failures.append(f"receiver not left as found: initial {initial!r}, final {final!r}")
-    doc = characterize(receiver, supports, pr.observations, pr.signal_observations)
+    doc = characterize(receiver, supports, pr)
     text = to_json(doc)
     (tool.run_dir / "characterization.json").write_text(text)
     sys.stdout.write(text)
@@ -110,7 +115,8 @@ def run(tool: Tool, baseline: Path | None) -> int:
         print(f"FAILURE: {f}", file=sys.stderr)
         status = 1
     if not pr.failures:
-        n = len(pr.observations) + len(pr.signal_observations)
+        n = (len(pr.observations) + len(pr.signal_observations)
+             + len(pr.nmea_observations))
         print(f"ok: {n} observations, no failures", file=sys.stderr)
     return max(status, compare_baseline(receiver, baseline, text))
 

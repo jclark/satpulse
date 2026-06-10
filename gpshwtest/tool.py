@@ -7,6 +7,7 @@ raw.jsonl in the run directory.
 
 import json
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -58,7 +59,19 @@ class Tool:
         """Run satpulsetool gps with the given high-level args plus --json
         and a per-invocation packet log. Raises ToolFailure on timeout or
         on success without JSON output; a configuration error is not a
-        failure and is reported through Invocation.error."""
+        failure and is reported through Invocation.error.
+
+        Detection of a receiver whose periodic output is all disabled is
+        intermittent (observed on a ZED-F9P after NMEA output was turned
+        off), so a detection failure is retried once; the flake stays
+        visible in raw.jsonl and the packet logs."""
+        inv = self.gps_once(name, args, timeout)
+        if inv.error is not None and "detection failed" in inv.error:
+            time.sleep(2.0)
+            inv = self.gps_once(f"{name}-retry", args, timeout)
+        return inv
+
+    def gps_once(self, name: str, args: list[str], timeout: float) -> Invocation:
         self.seq += 1
         log = self.run_dir / f"{self.seq:03d}-{name}.jsonl"
         argv = [str(self.exe), "gps", *self.conn, "--json", "--packet-log", str(log), *args]

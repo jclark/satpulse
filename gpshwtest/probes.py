@@ -7,8 +7,10 @@ between the two, or state changed by a reported error, is a failure
 clipping - is recorded as an observation for the characterization.
 """
 
+import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 from tool import Tool
@@ -85,6 +87,40 @@ class ModeCase:
     name: str
     args: list[str]
     request: dict[str, Value]
+
+
+@dataclass
+class NMEAObservation:
+    """Outcome of one NMEA output request, at the sentence-type level."""
+
+    requested: list[str]
+    error: str | None
+    emitted: list[str]
+
+
+# The NMEA sentence types in the model vocabulary. Types outside it (such
+# as event-driven TXT diagnostics) are excluded from comparisons because
+# their appearance in a short capture window is not deterministic; they
+# remain visible in the packet-log artifacts.
+NMEA_VOCAB = ["RMC", "GGA", "GSA", "GSV", "ZDA", "VTG", "GLL"]
+
+NMEA_CASES = [["RMC"], ["GGA", "ZDA"], ["none"]]
+
+# Seconds of packet capture used to observe what the receiver emits;
+# standard NMEA output is per-epoch (1 Hz), so this spans several epochs.
+OBSERVE_SECONDS = 4
+
+
+def nmea_types(log: Path) -> list[str]:
+    """The NMEA sentence types the receiver emitted in a packet log."""
+    types = set()
+    for line in log.read_text().splitlines():
+        e = json.loads(line)
+        msg = e.get("msg")
+        if (e.get("tag") == "NMEA" and not e.get("out")
+                and isinstance(msg, str) and len(msg) == 5):
+            types.add(msg[2:])
+    return sorted(types)
 
 
 @dataclass
@@ -186,13 +222,17 @@ class ProbeRun:
     tool: Tool
     observations: list[Observation] = field(default_factory=list)
     signal_observations: list[SignalObservation] = field(default_factory=list)
+    nmea_observations: list[NMEAObservation] = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
 
-    def show_config(self, name: str) -> dict[str, Any]:
-        """Read the full current configuration in a separate invocation."""
+    def show_config(self, name: str) -> dict[str, Any] | None:
+        """Read the full current configuration in a separate invocation.
+        Returns None when the invocation itself fails (recorded as a
+        failure); callers must then skip comparisons rather than cascade."""
         inv = self.tool.gps(name, ["--show-config"])
         if inv.error is not None:
             self.failures.append(f"{name}: --show-config failed: {inv.error}")
+            return None
         return inv.config()
 
     def probe_scalar(self, p: ScalarProp, initial: dict[str, Any]) -> None:
@@ -201,7 +241,10 @@ class ProbeRun:
         for v in p.values:
             inv = self.tool.gps(f"set-{p.name}", [p.flag, p.to_cli(v)])
             reported = config_value(inv.config(), p.path)
-            back = config_value(self.show_config(f"readback-{p.name}"), p.path)
+            cfg = self.show_config(f"readback-{p.name}")
+            if cfg is None:
+                continue
+            back = config_value(cfg, p.path)
             self.observations.append(Observation(p.name, v, inv.error, reported, back))
             if inv.error is not None:
                 if back != prev:
@@ -214,6 +257,39 @@ class ProbeRun:
                 prev = back
         self.restore(p, initial)
 
+    def observe_nmea(self, name: str) -> list[str]:
+        """Capture for a few seconds and return the NMEA types emitted.
+        Message output configuration is not readable back, so observation
+        is both the verification and the restore baseline."""
+        inv = self.tool.gps(name, ["--show-receiver", "--capture", str(OBSERVE_SECONDS)])
+        if inv.error is not None:
+            self.failures.append(f"{name}: capture failed: {inv.error}")
+            return []
+        return nmea_types(inv.packet_log)
+
+    def probe_nmea(self) -> None:
+        """Probe NMEA output selection, then restore the initial sentence set."""
+        initial = self.observe_nmea("nmea-initial")
+        for case in NMEA_CASES:
+            inv = self.tool.gps(f"set-nmea-{'-'.join(case)}", ["--nmea-out", ",".join(case)])
+            if inv.error is not None:
+                self.nmea_observations.append(NMEAObservation(case, inv.error, []))
+                continue
+            emitted = self.observe_nmea(f"observe-nmea-{'-'.join(case)}")
+            self.nmea_observations.append(NMEAObservation(case, None, emitted))
+        self.restore_nmea(initial)
+
+    def restore_nmea(self, initial: list[str]) -> None:
+        """Re-enable the NMEA types observed before probing."""
+        want = [t for t in initial if t in NMEA_VOCAB]
+        inv = self.tool.gps("restore-nmea", ["--nmea-out", ",".join(want) if want else "none"])
+        if inv.error is not None:
+            self.failures.append(f"nmea: restore to {want!r} failed: {inv.error}")
+            return
+        back = [t for t in self.observe_nmea("verify-restore-nmea") if t in NMEA_VOCAB]
+        if back != sorted(want):
+            self.failures.append(f"nmea: restore to {want!r} read back as {back!r}")
+
     def probe_signals(self, initial: dict[str, Any], supported: list[str]) -> None:
         """Probe constellation/band combinations, then restore the initial set."""
         prev = config_value(initial, ("signalsEnabled",))
@@ -224,15 +300,18 @@ class ProbeRun:
                 args += ["--band", ",".join(band)]
             inv = self.tool.gps(f"set-signals-{name}", args)
             reported = config_value(inv.config(), ("signalsEnabled",))
-            back = config_value(self.show_config(f"readback-signals-{name}"),
-                                ("signalsEnabled",))
+            if inv.error is None:
+                time.sleep(SIGNAL_SETTLE)
+            cfg = self.show_config(f"readback-signals-{name}")
+            if cfg is None:
+                continue
+            back = config_value(cfg, ("signalsEnabled",))
             if inv.error is not None:
                 self.signal_observations.append(SignalObservation(gnss, band, inv.error, None))
                 if back != prev:
                     self.failures.append(
                         f"signals {name}: refusal changed state: {prev!r} -> {back!r}")
                 continue
-            time.sleep(SIGNAL_SETTLE)
             if reported != back:
                 self.failures.append(
                     f"signals {name}: reported {reported!r} but readback says {back!r}")
@@ -252,9 +331,11 @@ class ProbeRun:
             self.failures.append(f"signals: restore to {want!r} failed: {inv.error}")
             return
         time.sleep(SIGNAL_SETTLE)
-        back = config_value(self.show_config("verify-restore-signals"), ("signalsEnabled",))
-        if back != want:
-            self.failures.append(f"signals: restore to {want!r} read back as {back!r}")
+        cfg = self.show_config("verify-restore-signals")
+        if cfg is not None and config_value(cfg, ("signalsEnabled",)) != want:
+            self.failures.append(
+                f"signals: restore to {want!r} read back as "
+                f"{config_value(cfg, ('signalsEnabled',))!r}")
 
     def probe_modes(self, initial: dict[str, Any]) -> None:
         """Probe each positioning-mode case, then restore the initial mode."""
@@ -262,7 +343,10 @@ class ProbeRun:
         for case in MODE_CASES:
             inv = self.tool.gps(f"set-mode-{case.name}", case.args)
             reported = config_value(inv.config(), ("mode",))
-            back = config_value(self.show_config(f"readback-mode-{case.name}"), ("mode",))
+            cfg = self.show_config(f"readback-mode-{case.name}")
+            if cfg is None:
+                continue
+            back = config_value(cfg, ("mode",))
             if inv.error is not None:
                 for k, v in case.request.items():
                     self.observations.append(Observation(f"mode.{k}", v, inv.error, None, None))
@@ -288,9 +372,10 @@ class ProbeRun:
         if inv.error is not None:
             self.failures.append(f"mode: restore to {mode!r} failed: {inv.error}")
             return
-        back = config_value(self.show_config("verify-restore-mode"), ("mode",))
-        if back != mode:
-            self.failures.append(f"mode: restore to {mode!r} read back as {back!r}")
+        cfg = self.show_config("verify-restore-mode")
+        if cfg is not None and config_value(cfg, ("mode",)) != mode:
+            self.failures.append(
+                f"mode: restore to {mode!r} read back as {config_value(cfg, ('mode',))!r}")
 
     def restore(self, p: ScalarProp, initial: dict[str, Any]) -> None:
         """Set p back to its value in the initial configuration."""
@@ -301,6 +386,7 @@ class ProbeRun:
         if inv.error is not None:
             self.failures.append(f"{p.name}: restore to {v!r} failed: {inv.error}")
             return
-        back = config_value(self.show_config(f"verify-restore-{p.name}"), p.path)
-        if back != v:
-            self.failures.append(f"{p.name}: restore to {v!r} read back as {back!r}")
+        cfg = self.show_config(f"verify-restore-{p.name}")
+        if cfg is not None and config_value(cfg, p.path) != v:
+            self.failures.append(
+                f"{p.name}: restore to {v!r} read back as {config_value(cfg, p.path)!r}")

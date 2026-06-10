@@ -9,22 +9,24 @@ verbatim rather than dropped.
 import json
 from typing import Any
 
-from probes import Observation, SignalObservation
+from probes import NMEA_VOCAB, NMEAObservation, Observation, ProbeRun, SignalObservation
 
 
 
 def characterize(receiver: dict[str, Any], supports: list[str],
-                 observations: list[Observation],
-                 signal_observations: list[SignalObservation]) -> dict[str, Any]:
+                 run: ProbeRun) -> dict[str, Any]:
     """Build the characterization document for one receiver+firmware."""
     limits: dict[str, Any] = {}
-    for prop in sorted({o.prop for o in observations}):
-        entry = characterize_prop([o for o in observations if o.prop == prop])
+    for prop in sorted({o.prop for o in run.observations}):
+        entry = characterize_prop([o for o in run.observations if o.prop == prop])
         if entry:
             limits[prop] = entry
-    signals = characterize_signals(signal_observations)
+    signals = characterize_signals(run.signal_observations)
     if signals:
         limits["signals"] = signals
+    nmea = characterize_nmea(run.nmea_observations)
+    if nmea:
+        limits["nmeaOut"] = nmea
     return {"receiver": receiver, "supports": sorted(supports), "limitations": limits}
 
 
@@ -83,6 +85,26 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
               for o in obs if o.error is None and o.band is not None]
     if banded:
         entry["bands"] = banded
+    return entry if entry else None
+
+
+def characterize_nmea(obs: list[NMEAObservation]) -> dict[str, Any] | None:
+    """Characterize NMEA output selection: requests whose emitted sentence
+    types differ from what was asked, within the model vocabulary."""
+    entry: dict[str, Any] = {}
+    refused = [o.requested for o in obs if o.error is not None]
+    if refused:
+        entry["refused"] = refused
+    mismatched = []
+    for o in obs:
+        if o.error is not None:
+            continue
+        requested = [] if o.requested == ["none"] else sorted(o.requested)
+        emitted = sorted(t for t in o.emitted if t in NMEA_VOCAB)
+        if emitted != requested:
+            mismatched.append({"requested": requested, "emitted": emitted})
+    if mismatched:
+        entry["mismatched"] = mismatched
     return entry if entry else None
 
 

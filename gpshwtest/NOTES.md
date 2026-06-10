@@ -40,6 +40,13 @@ Signal combination probes via the program (same session; extends the manual find
 - Full signal sets at full band: GPS [L1,L2C], GAL [E1,E5b], GLO [L1,L2], BDS [B1I,B2I], QZSS [L1,L1S,L2C], SBAS [L1]. Enabling GPS alone does not pull in QZSS or SBAS (no coupling).
 - A signals run (63 observations total) takes just under 2 min including 2 s settles after each accepted signal change; still byte-identical across consecutive runs.
 
+NMEA output probes (same session):
+
+- --nmea-out realizes exactly at the sentence-type level: RMC alone, GGA+ZDA, and none all emit precisely what was requested (observed over 4 s captures). Default set on this receiver: GGA, GLL, GSA, GSV, RMC, VTG.
+- --nmea-out none is realized as disabling the NMEA protocol on the port (CFG-USBOUTPROT-NMEA=0), not as per-message disables. With binary output not enabled, the receiver then emits nothing at all.
+- satpulsetool detection of a fully-silenced receiver is intermittent: in one session the MON-VER poll went unanswered twice 1.5 s apart (-> "GPS detection failed: no output detected from GPS") while identical polls 5 s earlier and 4 s later were answered instantly. Cause not yet diagnosed (possibly a port reopen/DTR timing interaction). The program retries a detection failure once after 2 s; worth investigating in satpulsetool itself.
+- Recovery from the silent state: satpulsetool gps --nmea --nmea-out GGA,GLL,GSA,GSV,RMC,VTG (UBX polls still work, sometimes needing the retry).
+
 ## u-blox M8T, /dev/ttyS0 (UART)
 
 Not yet probed. Baud rate unknown; discover by scanning (9600 is the M8 UART default).
