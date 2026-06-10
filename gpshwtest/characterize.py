@@ -9,13 +9,21 @@ verbatim rather than dropped.
 import json
 from typing import Any
 
-from probes import NMEA_VOCAB, NMEAObservation, Observation, ProbeRun, SignalObservation
+from probes import (EmissionObservation, NMEA_VOCAB, Observation, ProbeRun,
+                    SignalObservation)
+
+# RTCM MSM message numbers are <decade><level> with a fixed decade per
+# constellation (RTCM 10403 standard numbering, not receiver-specific).
+RTCM_DECADE = {"GPS": 107, "GLO": 108, "GAL": 109, "SBAS": 110, "QZSS": 111,
+               "BDS": 112, "NAVIC": 113}
 
 
 
 def characterize(receiver: dict[str, Any], supports: list[str],
-                 run: ProbeRun) -> dict[str, Any]:
-    """Build the characterization document for one receiver+firmware."""
+                 run: ProbeRun, enabled_gnss: list[str]) -> dict[str, Any]:
+    """Build the characterization document for one receiver+firmware.
+    enabled_gnss is the constellation set that was enabled while message
+    output was probed; it scopes the expected RTCM MSM types."""
     limits: dict[str, Any] = {}
     for prop in sorted({o.prop for o in run.observations}):
         entry = characterize_prop([o for o in run.observations if o.prop == prop])
@@ -24,9 +32,17 @@ def characterize(receiver: dict[str, Any], supports: list[str],
     signals = characterize_signals(run.signal_observations)
     if signals:
         limits["signals"] = signals
-    nmea = characterize_nmea(run.nmea_observations)
+    by_group = {g: [o for o in run.emission_observations if o.group == g]
+                for g in ("nmeaOut", "rtcmOut", "rawOut")}
+    nmea = characterize_nmea(by_group["nmeaOut"])
     if nmea:
         limits["nmeaOut"] = nmea
+    rtcm = characterize_rtcm(by_group["rtcmOut"], enabled_gnss)
+    if rtcm:
+        limits["rtcmOut"] = rtcm
+    raw = characterize_raw(by_group["rawOut"])
+    if raw:
+        limits["rawOut"] = raw
     return {"receiver": receiver, "supports": sorted(supports), "limitations": limits}
 
 
@@ -88,7 +104,7 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
     return entry if entry else None
 
 
-def characterize_nmea(obs: list[NMEAObservation]) -> dict[str, Any] | None:
+def characterize_nmea(obs: list[EmissionObservation]) -> dict[str, Any] | None:
     """Characterize NMEA output selection: requests whose emitted sentence
     types differ from what was asked, within the model vocabulary."""
     entry: dict[str, Any] = {}
@@ -105,6 +121,66 @@ def characterize_nmea(obs: list[NMEAObservation]) -> dict[str, Any] | None:
             mismatched.append({"requested": requested, "emitted": emitted})
     if mismatched:
         entry["mismatched"] = mismatched
+    return entry if entry else None
+
+
+def characterize_rtcm(obs: list[EmissionObservation],
+                      enabled: list[str]) -> dict[str, Any] | None:
+    """Characterize RTCM output: emitted message types compared against the
+    types implied by the request for the enabled constellations."""
+    entry: dict[str, Any] = {}
+    refused = [o.requested for o in obs if o.error is not None]
+    if refused:
+        entry["refused"] = refused
+    mismatched = []
+    for o in obs:
+        if o.error is not None:
+            continue
+        expected: set[str] = set()
+        for f in o.requested:
+            if f in ("MSM4", "MSM7"):
+                expected |= {f"{RTCM_DECADE[c]}{f[-1]}" for c in enabled
+                             if c in RTCM_DECADE}
+            elif f == "ARP":
+                expected.add("1005")
+        missing = sorted(expected - set(o.emitted))
+        extra = sorted(set(o.emitted) - expected)
+        if missing or extra:
+            m: dict[str, Any] = {"requested": o.requested}
+            if missing:
+                m["missing"] = missing
+            if extra:
+                m["extra"] = extra
+            mismatched.append(m)
+    if mismatched:
+        entry["mismatched"] = mismatched
+    return entry if entry else None
+
+
+def characterize_raw(obs: list[EmissionObservation]) -> dict[str, Any] | None:
+    """Characterize raw output: each kind must produce some new emission,
+    none must produce none, and the kinds' realizations must be distinct."""
+    entry: dict[str, Any] = {}
+    refused = [o.requested for o in obs if o.error is not None]
+    if refused:
+        entry["refused"] = refused
+    mismatched = []
+    by_kind: dict[str, set[str]] = {}
+    for o in obs:
+        if o.error is not None:
+            continue
+        if o.requested == ["none"]:
+            if o.emitted:
+                mismatched.append({"requested": [], "emitted": o.emitted})
+        else:
+            by_kind[o.requested[0]] = set(o.emitted)
+            if not o.emitted:
+                mismatched.append({"requested": o.requested, "emitted": []})
+    if mismatched:
+        entry["mismatched"] = mismatched
+    overlap = sorted(by_kind.get("obs", set()) & by_kind.get("nav", set()))
+    if overlap:
+        entry["overlap"] = overlap
     return entry if entry else None
 
 

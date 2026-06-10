@@ -89,15 +89,6 @@ class ModeCase:
     request: dict[str, Value]
 
 
-@dataclass
-class NMEAObservation:
-    """Outcome of one NMEA output request, at the sentence-type level."""
-
-    requested: list[str]
-    error: str | None
-    emitted: list[str]
-
-
 # The NMEA sentence types in the model vocabulary. Types outside it (such
 # as event-driven TXT diagnostics) are excluded from comparisons because
 # their appearance in a short capture window is not deterministic; they
@@ -106,21 +97,60 @@ NMEA_VOCAB = ["RMC", "GGA", "GSA", "GSV", "ZDA", "VTG", "GLL"]
 
 NMEA_CASES = [["RMC"], ["GGA", "ZDA"], ["none"]]
 
+RTCM_CASES = [["MSM4", "ARP"], ["MSM7"], ["none"]]
+
 # Seconds of packet capture used to observe what the receiver emits;
-# standard NMEA output is per-epoch (1 Hz), so this spans several epochs.
+# the message kinds under test are all per-epoch (1 Hz), so this spans
+# several epochs.
 OBSERVE_SECONDS = 4
 
+# Settle time after changing message output before observing, so the
+# observation window does not straddle the change.
+MSG_SETTLE = 1.0
 
-def nmea_types(log: Path) -> list[str]:
-    """The NMEA sentence types the receiver emitted in a packet log."""
-    types = set()
+
+@dataclass
+class EmissionObservation:
+    """Outcome of one message-output request, observed by packet capture."""
+
+    group: str
+    requested: list[str]
+    error: str | None
+    emitted: list[str]
+
+
+def emissions(log: Path) -> dict[tuple[str, str], int]:
+    """Counts of inbound (tag, msg) packets in a packet log. Replies to
+    polls are excluded by dropping inbound messages whose name was also
+    sent outbound."""
+    counts: dict[tuple[str, str], int] = {}
+    sent = set()
     for line in log.read_text().splitlines():
         e = json.loads(line)
-        msg = e.get("msg")
-        if (e.get("tag") == "NMEA" and not e.get("out")
-                and isinstance(msg, str) and len(msg) == 5):
-            types.add(msg[2:])
-    return sorted(types)
+        tag, msg = e.get("tag"), e.get("msg")
+        if not isinstance(tag, str) or not isinstance(msg, str):
+            continue
+        if e.get("out"):
+            sent.add(msg)
+        else:
+            k = (tag, msg)
+            counts[k] = counts.get(k, 0) + 1
+    return {k: n for k, n in counts.items() if k[1] not in sent}
+
+
+def nmea_set(d: dict[tuple[str, str], int]) -> list[str]:
+    """NMEA sentence types in an emission map."""
+    return sorted({msg[2:] for tag, msg in d if tag == "NMEA" and len(msg) == 5})
+
+
+def rtcm_set(d: dict[tuple[str, str], int]) -> list[str]:
+    """RTCM message types in an emission map."""
+    return sorted({msg for tag, msg in d if tag == "RTCM"})
+
+
+def raw_set(d: dict[tuple[str, str], int]) -> set[str]:
+    """Non-NMEA, non-RTCM periodic messages in an emission map, as tag:msg."""
+    return {f"{tag}:{msg}" for tag, msg in d if tag not in ("NMEA", "RTCM")}
 
 
 @dataclass
@@ -222,7 +252,7 @@ class ProbeRun:
     tool: Tool
     observations: list[Observation] = field(default_factory=list)
     signal_observations: list[SignalObservation] = field(default_factory=list)
-    nmea_observations: list[NMEAObservation] = field(default_factory=list)
+    emission_observations: list[EmissionObservation] = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
 
     def show_config(self, name: str) -> dict[str, Any] | None:
@@ -257,38 +287,108 @@ class ProbeRun:
                 prev = back
         self.restore(p, initial)
 
-    def observe_nmea(self, name: str) -> list[str]:
-        """Capture for a few seconds and return the NMEA types emitted.
+    def observe_emissions(self, name: str) -> dict[tuple[str, str], int] | None:
+        """Capture for a few seconds and return what the receiver emits.
         Message output configuration is not readable back, so observation
         is both the verification and the restore baseline."""
         inv = self.tool.gps(name, ["--show-receiver", "--capture", str(OBSERVE_SECONDS)])
         if inv.error is not None:
             self.failures.append(f"{name}: capture failed: {inv.error}")
-            return []
-        return nmea_types(inv.packet_log)
+            return None
+        return emissions(inv.packet_log)
 
-    def probe_nmea(self) -> None:
+    def set_and_observe(self, group: str, flag: str, case: list[str]) -> \
+            dict[tuple[str, str], int] | None:
+        """Apply one message-output case and observe the result; None when
+        the request was refused (recorded as an observation) or the
+        observation capture failed (recorded as a failure)."""
+        name = "-".join(case)
+        inv = self.tool.gps(f"set-{group}-{name}", [flag, ",".join(case)])
+        if inv.error is not None:
+            self.emission_observations.append(
+                EmissionObservation(group, case, inv.error, []))
+            return None
+        time.sleep(MSG_SETTLE)
+        return self.observe_emissions(f"observe-{group}-{name}")
+
+    def probe_messages(self) -> None:
+        """Probe NMEA, RTCM, and raw message output from one shared baseline
+        observation, restoring each group afterwards."""
+        base = self.observe_emissions("messages-initial")
+        if base is None:
+            return
+        self.probe_nmea(nmea_set(base))
+        self.probe_rtcm(rtcm_set(base))
+        self.probe_raw(raw_set(base))
+
+    def probe_nmea(self, initial: list[str]) -> None:
         """Probe NMEA output selection, then restore the initial sentence set."""
-        initial = self.observe_nmea("nmea-initial")
         for case in NMEA_CASES:
-            inv = self.tool.gps(f"set-nmea-{'-'.join(case)}", ["--nmea-out", ",".join(case)])
-            if inv.error is not None:
-                self.nmea_observations.append(NMEAObservation(case, inv.error, []))
-                continue
-            emitted = self.observe_nmea(f"observe-nmea-{'-'.join(case)}")
-            self.nmea_observations.append(NMEAObservation(case, None, emitted))
-        self.restore_nmea(initial)
-
-    def restore_nmea(self, initial: list[str]) -> None:
-        """Re-enable the NMEA types observed before probing."""
+            d = self.set_and_observe("nmeaOut", "--nmea-out", case)
+            if d is not None:
+                self.emission_observations.append(
+                    EmissionObservation("nmeaOut", case, None, nmea_set(d)))
         want = [t for t in initial if t in NMEA_VOCAB]
         inv = self.tool.gps("restore-nmea", ["--nmea-out", ",".join(want) if want else "none"])
         if inv.error is not None:
             self.failures.append(f"nmea: restore to {want!r} failed: {inv.error}")
             return
-        back = [t for t in self.observe_nmea("verify-restore-nmea") if t in NMEA_VOCAB]
-        if back != sorted(want):
-            self.failures.append(f"nmea: restore to {want!r} read back as {back!r}")
+        d = self.observe_emissions("verify-restore-nmea")
+        if d is not None:
+            back = [t for t in nmea_set(d) if t in NMEA_VOCAB]
+            if back != sorted(want):
+                self.failures.append(f"nmea: restore to {want!r} read back as {back!r}")
+
+    def probe_rtcm(self, initial: list[str]) -> None:
+        """Probe RTCM output selection, then restore the initial emission."""
+        for case in RTCM_CASES:
+            d = self.set_and_observe("rtcmOut", "--rtcm-out", case)
+            if d is not None:
+                self.emission_observations.append(
+                    EmissionObservation("rtcmOut", case, None, rtcm_set(d)))
+        want = []
+        if any(t.endswith("4") and t.startswith("1") for t in initial):
+            want.append("MSM4")
+        if any(t.endswith("7") and t.startswith("1") for t in initial):
+            want.append("MSM7")
+        if "1005" in initial:
+            want.append("ARP")
+        inv = self.tool.gps("restore-rtcm", ["--rtcm-out", ",".join(want) if want else "none"])
+        if inv.error is not None:
+            self.failures.append(f"rtcm: restore to {want!r} failed: {inv.error}")
+            return
+        d = self.observe_emissions("verify-restore-rtcm")
+        if d is not None and rtcm_set(d) != initial:
+            self.failures.append(
+                f"rtcm: restore to {initial!r} reads back as {rtcm_set(d)!r}")
+
+    def probe_raw(self, initial: set[str]) -> None:
+        """Probe raw output kinds, then restore the initial emission. The
+        messages realizing each kind are discovered from the probe itself
+        (whatever appears beyond the baseline), so restoring needs no
+        receiver-specific knowledge."""
+        found: dict[str, set[str]] = {}
+        for kind in ("obs", "nav"):
+            d = self.set_and_observe("rawOut", "--raw-out", [kind])
+            if d is None:
+                continue
+            found[kind] = raw_set(d) - initial
+            self.emission_observations.append(
+                EmissionObservation("rawOut", [kind], None, sorted(found[kind])))
+        d = self.set_and_observe("rawOut", "--raw-out", ["none"])
+        if d is not None:
+            self.emission_observations.append(
+                EmissionObservation("rawOut", ["none"], None, sorted(raw_set(d) - initial)))
+        want = [k for k, msgs in found.items() if msgs and msgs <= initial]
+        if not want:
+            return
+        inv = self.tool.gps("restore-raw", ["--raw-out", ",".join(want)])
+        if inv.error is not None:
+            self.failures.append(f"raw: restore to {want!r} failed: {inv.error}")
+            return
+        d = self.observe_emissions("verify-restore-raw")
+        if d is not None and not set().union(*(found[k] for k in want)) <= raw_set(d):
+            self.failures.append(f"raw: restore to {want!r} not emitting as before")
 
     def probe_signals(self, initial: dict[str, Any], supported: list[str]) -> None:
         """Probe constellation/band combinations, then restore the initial set."""

@@ -97,8 +97,8 @@ def run(tool: Tool, baseline: Path | None) -> int:
         pr.probe_scalar(p, initial)
     print("probing positioning mode", file=sys.stderr)
     pr.probe_modes(initial)
-    print("probing NMEA output", file=sys.stderr)
-    pr.probe_nmea()
+    print("probing message output", file=sys.stderr)
+    pr.probe_messages()
     supported = receiver.get("supportedGNSS")
     if isinstance(supported, list):
         print("probing signal combinations", file=sys.stderr)
@@ -106,7 +106,8 @@ def run(tool: Tool, baseline: Path | None) -> int:
     final = pr.show_config("final-config")
     if final is not None and final != initial:
         pr.failures.append(f"receiver not left as found: initial {initial!r}, final {final!r}")
-    doc = characterize(receiver, supports, pr)
+    enabled = sorted(initial.get("signalsEnabled") or {})
+    doc = characterize(receiver, supports, pr, enabled)
     text = to_json(doc)
     (tool.run_dir / "characterization.json").write_text(text)
     sys.stdout.write(text)
@@ -116,7 +117,7 @@ def run(tool: Tool, baseline: Path | None) -> int:
         status = 1
     if not pr.failures:
         n = (len(pr.observations) + len(pr.signal_observations)
-             + len(pr.nmea_observations))
+             + len(pr.emission_observations))
         print(f"ok: {n} observations, no failures", file=sys.stderr)
     return max(status, compare_baseline(receiver, baseline, text))
 

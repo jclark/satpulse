@@ -47,6 +47,13 @@ NMEA output probes (same session):
 - satpulsetool detection of a fully-silenced receiver is intermittent: in one session the MON-VER poll went unanswered twice 1.5 s apart (-> "GPS detection failed: no output detected from GPS") while identical polls 5 s earlier and 4 s later were answered instantly. Cause not yet diagnosed (possibly a port reopen/DTR timing interaction). The program retries a detection failure once after 2 s; worth investigating in satpulsetool itself.
 - Recovery from the silent state: satpulsetool gps --nmea --nmea-out GGA,GLL,GSA,GSV,RMC,VTG (UBX polls still work, sometimes needing the retry).
 
+RTCM and raw output probes (same session):
+
+- The packet log carries the RTCM message type number in the msg field (e.g. "1074"), so RTCM checks need no payload parsing.
+- --rtcm-out MSM4 emits the x4 MSM for each enabled constellation plus 1230 (GLONASS code-phase biases), which was not requested; MSM7 likewise adds 1230. ARP (1005) is not emitted in mobile positioning mode - no station position to report - so a mobile-mode probe records it as missing.
+- --raw-out obs is realized as UBX RXM-RAWX (~1 Hz), nav as UBX RXM-SFRBX (bursts, >20/s); the kinds are absolute (setting nav alone disables obs), realizations are disjoint, and none silences both.
+- One transient: a combined "--rtcm-out none --raw-out obs" invocation once produced no RAWX afterwards, not reproducible. The program now settles 1 s after each message-output change before observing.
+
 ## u-blox M8T, /dev/ttyS0 (UART)
 
 Not yet probed. Baud rate unknown; discover by scanning (9600 is the M8 UART default).
