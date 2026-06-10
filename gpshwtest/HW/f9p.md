@@ -1,6 +1,6 @@
 # ZED-F9P limitations
 
-How device-independent configuration is realized on the u-blox ZED-F9P, relative to perfect realization of the full model (`docs/gps-config-semantics.md`). Measured on firmware HPG 1.51 PROTVER 27.50 (2026-06-10, USB at 38400). Perfectly-realized behavior is not listed: everything not mentioned here realized requests exactly.
+How device-independent configuration is realized on the u-blox ZED-F9P, relative to perfect realization of the full model (`SEMANTICS.md`). Measured on firmware HPG 1.51 PROTVER 27.50 (2026-06-10, USB at 38400). Perfectly-realized behavior is not listed: everything not mentioned here realized requests exactly.
 
 ## Signals
 

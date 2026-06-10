@@ -1,6 +1,6 @@
 # LEA-M8T limitations
 
-How device-independent configuration is realized on the u-blox LEA-M8T-0, relative to perfect realization of the full model (`docs/gps-config-semantics.md`). Measured on firmware TIM 1.10 PROTVER 22.0 (2026-06-10, UART at 9600). Perfectly-realized behavior is not listed. Two satpulsetool gen 8 backend bugs found on this receiver are in `BUGS.md` (antenna cable delay ignored; fixed position echoed as LLH but stored as ECEF), so those properties are not yet fully characterized.
+How device-independent configuration is realized on the u-blox LEA-M8T-0, relative to perfect realization of the full model (`SEMANTICS.md`). Measured on firmware TIM 1.10 PROTVER 22.0 (2026-06-10, UART at 9600). Perfectly-realized behavior is not listed. Two satpulsetool gen 8 backend bugs found on this receiver are in `BUGS.md` (antenna cable delay ignored; fixed position echoed as LLH but stored as ECEF), so those properties are not yet fully characterized.
 
 ## Signals
 

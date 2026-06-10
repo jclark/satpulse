@@ -1,6 +1,4 @@
----
-title: Semantics of device-independent GPS configuration
----
+# Semantics of device-independent GPS configuration
 
 This document defines the semantics of high-level (device-independent) GPS receiver configuration, as exposed by **satpulsetool gps** and implemented by the `gps/gpsprot` configuration model (`ConfigTarget` in `configtarget.go`). It describes what a request *means* and what is guaranteed, independent of any particular receiver. How a particular receiver realizes these semantics, and bugs in the implementation, are deliberately out of scope.
 

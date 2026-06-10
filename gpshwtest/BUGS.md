@@ -1,6 +1,6 @@
 # Bugs found by hardware testing
 
-Clear satpulsetool bugs found while running gpshwtest against real receivers, with the evidence. Receiver limitations belong in `HW/`, and the intended semantics in `docs/gps-config-semantics.md`.
+Clear satpulsetool bugs found while running gpshwtest against real receivers, with the evidence. Receiver limitations belong in `HW/`, and the intended semantics in `SEMANTICS.md`.
 
 ## gen 8 backend ignores antenna cable delay sets
 
