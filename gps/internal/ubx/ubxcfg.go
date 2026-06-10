@@ -667,17 +667,17 @@ func (c *Configurator) reloadCfg() error {
 	if c.target.Opts.Reset != gpsprot.ResetReload {
 		return nil
 	}
-	return c.addRequest(msgRequest{c.newCfgCfgRequest(0, 0, ubxbin.CfgCfgSectionMaskAll, 0)})
+	return c.addRequest(msgRequest{c.newCfgCfgRequest(0, 0, ubxbin.CfgCfgSectionMaskAll)})
 }
 
-func (*Configurator) newCfgCfgRequest(clearMask, saveMask, loadMask ubxbin.CfgCfgSectionMask, deviceMask ubxbin.CfgCfgDeviceMask) *ubxbin.CfgCfg {
+func (*Configurator) newCfgCfgRequest(clearMask, saveMask, loadMask ubxbin.CfgCfgSectionMask, deviceMask ...ubxbin.CfgCfgDeviceMask) *ubxbin.CfgCfg {
 	return &ubxbin.CfgCfg{
 		CfgCfgFixed: ubxbin.CfgCfgFixed{
 			ClearMask: clearMask,
 			SaveMask:  saveMask,
 			LoadMask:  loadMask,
 		},
-		DeviceMask: []ubxbin.CfgCfgDeviceMask{deviceMask},
+		DeviceMask: deviceMask,
 	}
 }
 
