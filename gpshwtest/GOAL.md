@@ -93,6 +93,8 @@ For each receiver+firmware the program produces a machine-readable characterizat
 
 - The characterization covers every property and operation in the coverage list above.
 - Running against a supported receiver completes unattended with exit 0 and no spurious failures; a genuine tool bug or broken receiver session is reported as a failure.
+- Runs are robust unattended: however a run ends - success, failure, or crash - the receiver is restored, and a run that could not restore says so loudly rather than leaving the next run to be poisoned.
+- Analysis is repeatable offline: the run artifacts contain everything needed to re-derive the failure verdicts and the characterization without touching hardware, so improving the analysis never requires re-running receivers. (`IDEAS.md` sketches a program shape for this and for robustness; treat it as a suggestion to beat, not a specification.)
 - The characterization for a receiver we know well (ZED-F9P) states the things we know to be true of it, in a form a human can check against the integration manual in minutes.
 - Pointing the program at a receiver family it has never seen requires no new code for the common path, and produces a characterization plus, at worst, verbatim unexplained observations.
 - Two consecutive runs on the same receiver produce the same characterization.
