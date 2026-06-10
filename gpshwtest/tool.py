@@ -94,6 +94,30 @@ class Tool:
             raise ToolFailure(f"{name}: exit 0 but no JSON output")
         return inv
 
+    def sdp_extts(self, name: str, iface: str, pin: int, chan: int, seconds: float,
+                  use_sudo: bool) -> list[dict[str, Any]] | None:
+        """Read external timestamp events from a PHC pin for a few seconds.
+        Requires root; run with sudo -n when use_sudo is set. Returns None
+        when sdp itself fails (the caller decides what that means)."""
+        argv = (["sudo", "-n"] if use_sudo else []) + \
+            [str(self.exe), "sdp", "--extts", "--jsonl", "-p", str(pin),
+             "--chan", str(chan), "-t", str(seconds), iface]
+        try:
+            p = subprocess.run(argv, capture_output=True, text=True, timeout=seconds + 30)
+        except subprocess.TimeoutExpired:
+            raise ToolFailure(f"{name}: sdp did not finish within {seconds + 30}s")
+        events = []
+        for line in p.stdout.splitlines():
+            try:
+                v = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(v, dict):
+                events.append(v)
+        self.record({"name": name, "argv": argv, "exit": p.returncode,
+                     "events": events, "stderr": p.stderr})
+        return events if p.returncode == 0 else None
+
     def replay(self, log: Path, timeout: float = 60.0) -> list[dict[str, Any]]:
         """Convert a packet log offline into the typed gpsprot event stream."""
         argv = [str(self.exe), "replay", str(log)]

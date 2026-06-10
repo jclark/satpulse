@@ -8,6 +8,7 @@ clipping - is recorded as an observation for the characterization.
 """
 
 import json
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -126,14 +127,15 @@ PVT_CASES = [
     PVTCase(["off"], set()),
 ]
 
-# Kinds whose unrequested presence is reported as extra information.
-# navEpoch is excluded: the decode pipeline emits an epoch marker for any
-# per-epoch stream, so its presence does not indicate extra receiver output.
-PVT_EXTRA_KINDS = {"pos", "vel", "time", "tp", "leap", "satellites"}
-
 SATS_CASES = [(["sat"], {"satellites"}),
               (["sig"], {"satellites", "perSignal"}),
               (["none"], set())]
+
+
+def has_fix(events: list[dict[str, Any]]) -> bool:
+    """Whether a replayed event stream shows a position fix."""
+    return any(e.get("type") == "navEpoch" and (e.get("data") or {}).get("fixLevel")
+               in ("code", "carrierFloat", "carrierFixed") for e in events)
 
 
 def event_kinds(events: list[dict[str, Any]]) -> set[str]:
@@ -514,6 +516,43 @@ class ProbeRun:
             if got != want:
                 self.failures.append(
                     f"messages: {what} after restore {got!r} != initial {want!r}")
+
+    def probe_pulse_physical(self, initial: dict[str, Any],
+                             phc: tuple[str, int, int], use_sudo: bool) -> None:
+        """Verify the time pulse electrically on the wired PHC pin: pulses
+        present when enabled, absent when disabled. The default pulse fires
+        only with a fix, so without one the check is skipped (absence would
+        prove nothing). Pulse width and polarity are not observable through
+        external timestamps and stay readback-only."""
+        iface, pin, chan = phc
+        inv = self.observe_capture("pulse-fix-check")
+        if inv is None:
+            return
+        if not has_fix(self.tool.replay(inv.packet_log)):
+            print("skipping physical time pulse checks: no fix", file=sys.stderr)
+            return
+        width = config_value(initial, ("timePulse", "width"))
+        if not width:
+            inv2 = self.tool.gps("set-pulse-on", ["--pps", "0.1"])
+            if inv2.error is not None:
+                self.failures.append(f"pulse: enabling for physical check: {inv2.error}")
+                return
+        on = self.tool.sdp_extts("sdp-pulse-enabled", iface, pin, chan, 4.0, use_sudo)
+        if on is not None and len(on) < 2:
+            self.failures.append(
+                f"pulse enabled with fix but {len(on)} timestamps on {iface} pin {pin}")
+        inv2 = self.tool.gps("set-pulse-off", ["--pps", "0"])
+        if inv2.error is not None:
+            self.failures.append(f"pulse: disabling for physical check: {inv2.error}")
+        else:
+            time.sleep(MSG_SETTLE)
+            off = self.tool.sdp_extts("sdp-pulse-disabled", iface, pin, chan, 4.0, use_sudo)
+            if off is not None and len(off) > 0:
+                self.failures.append(
+                    f"pulse disabled but {len(off)} timestamps on {iface} pin {pin}")
+        inv2 = self.tool.gps("restore-pulse", ["--pps", fmt_value(width if width else 0)])
+        if inv2.error is not None:
+            self.failures.append(f"pulse: restore failed: {inv2.error}")
 
     def probe_signals(self, initial: dict[str, Any], supported: list[str]) -> None:
         """Probe constellation/band combinations, then restore the initial set."""

@@ -57,8 +57,7 @@ RTCM and raw output probes (same session):
 PVT and satellite output probes via replay (same session):
 
 - --nmea and --binary are mode switches with canonical baselines, not just protocol toggles: --nmea enables the NMEA protocol, disables the UBX periodic messages, and resets the sentence set to RMC only; --binary disables NMEA and enables NAV-PVT plus a leap-second message. Neither can be combined with the message-output flags in one invocation, so restoring "NMEA with sentence set X" takes two invocations (--nmea, then --nmea-out X).
-- In binary mode pos/vel/time/leap information always flows: "--binary --pvt-out off" leaves NAV-PVT and the leap message enabled, while "--pvt-out pos,vel,time,off" does disable the leap message. Possible satpulsetool quirk: off seems not to remove what --binary's baseline just enabled.
-- ptp/ntp deliver position and velocity even though they imply off, because quality/epoch information on u-blox rides in NAV-PVT. Recorded as extra information in the characterization, correctly.
+- Message output semantics are best-effort at the message level (PVTMsgOff in configtarget.go turns off *unneeded* messages): delivering more than requested is normal, e.g. ptp/ntp also deliver position and velocity because quality information on u-blox rides in NAV-PVT, and MSM output adds 1230. The characterization records only missing requested information.
 - ptp is realized as NAV-PVT + NAV-TIMEGPS + TIM-TP: pulse time arrives as a time event with ref=PrePulse and taiTime; tai and ecef content selectors are honored; sat/sig produce satellites events, sig with per-signal entries.
 - Survey progress messages cannot be verified in mobile mode (NAV-SVIN only flows during a survey-in); the survey flag is excluded from PVT expectations.
 

@@ -10,7 +10,9 @@ import argparse
 import datetime
 import difflib
 import platform
+import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +34,11 @@ def main() -> int:
     ap.add_argument("--baseline", type=Path,
                     help="characterization to compare against "
                          "(default: gpshwtest/baselines/<receiver>.json if present)")
+    ap.add_argument("--sudo", action="store_true",
+                    help="use sudo -n for physical time pulse checks (needs root)")
+    ap.add_argument("--phc", help="PHC pin the receiver's PPS is wired to, as "
+                                  "iface:pin[:chan] (default: the [phc] table of the "
+                                  "config file, or /etc/satpulse.toml)")
     args = ap.parse_args()
     if running_satpulsed():
         print("satpulsed is running; stop it before touching the receiver", file=sys.stderr)
@@ -42,7 +49,7 @@ def main() -> int:
     tool = Tool(exe, conn, run_dir)
     print(f"run artifacts: {run_dir}", file=sys.stderr)
     try:
-        return run(tool, args.baseline)
+        return run(tool, args.baseline, resolve_phc(args), args.sudo)
     except ToolFailure as e:
         print(f"FAILURE: {e}", file=sys.stderr)
         return 1
@@ -67,6 +74,37 @@ def find_satpulsetool() -> Path:
     raise SystemExit(f"satpulsetool not found at {p}; build with make or pass --satpulsetool")
 
 
+def resolve_phc(args: argparse.Namespace) -> tuple[str, int, int] | None:
+    """Find where the receiver's PPS is wired: the --phc argument, or the
+    [phc] table of the connection config file or /etc/satpulse.toml."""
+    if args.phc:
+        iface, _, rest = args.phc.partition(":")
+        pin, _, chan = rest.partition(":")
+        if not pin:
+            raise SystemExit("--phc must be iface:pin[:chan]")
+        return iface, int(pin), int(chan) if chan else 0
+    for path in (args.config_file, "/etc/satpulse.toml"):
+        if not path:
+            continue
+        try:
+            with open(path, "rb") as f:
+                phc = tomllib.load(f).get("phc")
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        if isinstance(phc, dict) and "interface" in phc and "pin" in phc:
+            return str(phc["interface"]), int(phc["pin"]), int(phc.get("channel", 0))
+    return None
+
+
+def sudo_ok() -> bool:
+    """Whether sudo -n works without a password right now."""
+    try:
+        return subprocess.run(["sudo", "-n", "true"], capture_output=True,
+                              timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def running_satpulsed() -> bool:
     for comm in Path("/proc").glob("[0-9]*/comm"):
         try:
@@ -77,7 +115,8 @@ def running_satpulsed() -> bool:
     return False
 
 
-def run(tool: Tool, baseline: Path | None) -> int:
+def run(tool: Tool, baseline: Path | None, phc: tuple[str, int, int] | None,
+        use_sudo: bool) -> int:
     ident = tool.gps("show-receiver", ["--show-receiver"])
     if ident.error is not None:
         print(f"FAILURE: receiver detection failed: {ident.error}", file=sys.stderr)
@@ -99,6 +138,12 @@ def run(tool: Tool, baseline: Path | None) -> int:
     pr.probe_modes(initial)
     print("probing message output", file=sys.stderr)
     pr.probe_messages()
+    if phc is not None and use_sudo and sudo_ok():
+        print(f"checking physical time pulse on {phc[0]} pin {phc[1]}", file=sys.stderr)
+        pr.probe_pulse_physical(initial, phc, True)
+    else:
+        print("skipping physical time pulse checks (need --sudo, passwordless "
+              "sudo -n, and PHC wiring)", file=sys.stderr)
     supported = receiver.get("supportedGNSS")
     if isinstance(supported, list):
         print("probing signal combinations", file=sys.stderr)

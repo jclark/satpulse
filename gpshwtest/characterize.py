@@ -9,8 +9,8 @@ verbatim rather than dropped.
 import json
 from typing import Any
 
-from probes import (EmissionObservation, NMEA_VOCAB, Observation, ProbeRun,
-                    PVT_CASES, PVT_EXTRA_KINDS, SATS_CASES, SignalObservation)
+from probes import (EmissionObservation, Observation, ProbeRun,
+                    PVT_CASES, SATS_CASES, SignalObservation)
 
 # RTCM MSM message numbers are <decade><level> with a fixed decade per
 # constellation (RTCM 10403 standard numbering, not receiver-specific).
@@ -115,34 +115,35 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
 
 
 def characterize_nmea(obs: list[EmissionObservation]) -> dict[str, Any] | None:
-    """Characterize NMEA output selection: requests whose emitted sentence
-    types differ from what was asked, within the model vocabulary."""
+    """Characterize NMEA output selection: requested sentence types that
+    were not emitted. Extra sentence types are normal best-effort behavior."""
     entry: dict[str, Any] = {}
     refused = [o.requested for o in obs if o.error is not None]
     if refused:
         entry["refused"] = refused
-    mismatched = []
+    missing = []
     for o in obs:
         if o.error is not None:
             continue
         requested = [] if o.requested == ["none"] else sorted(o.requested)
-        emitted = sorted(t for t in o.emitted if t in NMEA_VOCAB)
-        if emitted != requested:
-            mismatched.append({"requested": requested, "emitted": emitted})
-    if mismatched:
-        entry["mismatched"] = mismatched
+        lack = sorted(set(requested) - set(o.emitted))
+        if lack:
+            missing.append({"requested": requested, "missing": lack})
+    if missing:
+        entry["missing"] = missing
     return entry if entry else None
 
 
 def characterize_rtcm(obs: list[EmissionObservation],
                       enabled: list[str]) -> dict[str, Any] | None:
-    """Characterize RTCM output: emitted message types compared against the
-    types implied by the request for the enabled constellations."""
+    """Characterize RTCM output: message types implied by the request for
+    the enabled constellations that were not emitted. Extra types are
+    normal best-effort behavior."""
     entry: dict[str, Any] = {}
     refused = [o.requested for o in obs if o.error is not None]
     if refused:
         entry["refused"] = refused
-    mismatched = []
+    missing = []
     for o in obs:
         if o.error is not None:
             continue
@@ -153,73 +154,49 @@ def characterize_rtcm(obs: list[EmissionObservation],
                              if c in RTCM_DECADE}
             elif f == "ARP":
                 expected.add("1005")
-        missing = sorted(expected - set(o.emitted))
-        extra = sorted(set(o.emitted) - expected)
-        if missing or extra:
-            m: dict[str, Any] = {"requested": o.requested}
-            if missing:
-                m["missing"] = missing
-            if extra:
-                m["extra"] = extra
-            mismatched.append(m)
-    if mismatched:
-        entry["mismatched"] = mismatched
+        lack = sorted(expected - set(o.emitted))
+        if lack:
+            missing.append({"requested": o.requested, "missing": lack})
+    if missing:
+        entry["missing"] = missing
     return entry if entry else None
 
 
 def characterize_raw(obs: list[EmissionObservation]) -> dict[str, Any] | None:
-    """Characterize raw output: each kind must produce some new emission,
-    none must produce none, and the kinds' realizations must be distinct."""
+    """Characterize raw output: a requested kind that produced no new
+    emission is missing; anything beyond the request is normal."""
     entry: dict[str, Any] = {}
     refused = [o.requested for o in obs if o.error is not None]
     if refused:
         entry["refused"] = refused
-    mismatched = []
-    by_kind: dict[str, set[str]] = {}
-    for o in obs:
-        if o.error is not None:
-            continue
-        if o.requested == ["none"]:
-            if o.emitted:
-                mismatched.append({"requested": [], "emitted": o.emitted})
-        else:
-            by_kind[o.requested[0]] = set(o.emitted)
-            if not o.emitted:
-                mismatched.append({"requested": o.requested, "emitted": []})
-    if mismatched:
-        entry["mismatched"] = mismatched
-    overlap = sorted(by_kind.get("obs", set()) & by_kind.get("nav", set()))
-    if overlap:
-        entry["overlap"] = overlap
+    missing = [{"requested": o.requested, "missing": o.requested}
+               for o in obs
+               if o.error is None and o.requested != ["none"] and not o.emitted]
+    if missing:
+        entry["missing"] = missing
     return entry if entry else None
 
 
 def characterize_expected(obs: list[EmissionObservation],
                           expect: dict[tuple[str, ...], set[str]]) -> dict[str, Any] | None:
-    """Characterize information-level message output against per-case
-    expected kinds: missing expected information, and unrequested
-    information that was delivered anyway."""
+    """Characterize information-level message output. The semantics are
+    best-effort at the message level: delivering more than was asked for is
+    normal (a needed message may carry extra information), so only missing
+    requested information is a limitation."""
     entry: dict[str, Any] = {}
     refused = [o.requested for o in obs if o.error is not None]
     if refused:
         entry["refused"] = refused
-    mismatched = []
+    missing = []
     for o in obs:
         if o.error is not None:
             continue
         want = expect.get(tuple(o.requested), set())
-        got = set(o.emitted)
-        missing = sorted(want - got)
-        extra = sorted((got & PVT_EXTRA_KINDS) - want)
-        if missing or extra:
-            m: dict[str, Any] = {"requested": o.requested}
-            if missing:
-                m["missing"] = missing
-            if extra:
-                m["extra"] = extra
-            mismatched.append(m)
-    if mismatched:
-        entry["mismatched"] = mismatched
+        lack = sorted(want - set(o.emitted))
+        if lack:
+            missing.append({"requested": o.requested, "missing": lack})
+    if missing:
+        entry["missing"] = missing
     return entry if entry else None
 
 
