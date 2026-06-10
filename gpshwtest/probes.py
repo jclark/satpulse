@@ -8,10 +8,14 @@ the characterization are derived offline from the records by analyze.py,
 for live runs and archived runs alike.
 """
 
+import json
+import re
 import sys
 import time
+import tomllib
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 from typing import Any, Callable
 
 from model import (NMEA_VOCAB, Value, config_value, emissions, fmt_value, has_fix,
@@ -61,10 +65,16 @@ PROPS = [
     ScalarProp("antennaCableDelay", "--ant-cable-delay", [1, 123, 32767],
                ("antennaCableDelay",)),
     ScalarProp("minElevation", "--min-elev", [1, 7, 45], ("minElevation",)),
-    ScalarProp("rtcmBaseID", "--rtcm-base-id", [1, 1234, 4095], ("rtcmBaseID",)),
     ScalarProp("timeGNSS", "--time-gnss", ["GAL", "BDS", "GLO", "GPS"], ("timeGNSS",)),
     ScalarProp("timePulse.width", "--pps", [0.25, 0.000123456, 0.1], ("timePulse", "width")),
 ]
+
+# The RTCM base station ID only means something with a fixed position (on
+# the UM980 it is the optional ID of MODE BASE), so it is probed during the
+# positioning-mode phase while a fixed position is set, not in the plain
+# scalar sweep.
+RTCM_BASE_ID = ScalarProp("rtcmBaseID", "--rtcm-base-id", [1, 1234, 4095],
+                          ("rtcmBaseID",))
 
 
 @dataclass
@@ -172,6 +182,8 @@ class ProbeRun:
 
     tool: Tool
     line_dead: bool = False
+    speed_msg_path: Path | None = None
+    speed_msg_port: str = "com1"
 
     def show_config(self, name: str, role: str,
                     prop: str | None = None) -> dict[str, Any] | None:
@@ -184,20 +196,119 @@ class ProbeRun:
         inv = self.tool.gps(name, ["--show-config"], intent)
         return None if inv.error is not None else inv.config()
 
-    def session_speed_raise(self, port_cfg: dict[str, Any],
-                            supports: list[str]) -> int | None:
-        """Raise a slow UART link to RAISED_SPEED for the session. Returns
-        the as-found speed to restore at session end, or None when there is
-        nothing to do (not a UART, already fast, no speed capability, or
-        the receiver refused - then the session just runs slow). After a
+    def session_speed_raise(self, port_cfg: dict[str, Any], supports: list[str],
+                            receiver: dict[str, Any]) -> int | None:
+        """Raise a slow UART link for the session. Returns the as-found
+        speed to restore at session end, or None when there is nothing to
+        do (not a UART, already fast, no way to change the speed, or the
+        receiver refused - then the session just runs slow). After a
         transient failure the link speed is unknown (the change may have
         applied with its confirmation lost), so the speed is rediscovered
-        by scanning; the as-found speed still gets restored at the end."""
+        by scanning; the as-found speed still gets restored at the end.
+
+        Backends without the speed capability fall back to the receiver's
+        shipped low-level message file when it carries speed tags
+        (configs/gpsmsg, currently the Unicore files): the link-speed
+        command is sent with -m/-t and verified by talking at the new
+        speed. A backend that also cannot report its port (no baudRate)
+        is trusted to be at the pinned connection speed."""
         baud = port_cfg.get("baudRate")
-        if "speed" not in supports or not isinstance(baud, int) \
-                or not 0 < baud < RAISED_SPEED:
+        if baud == 0:
             return None
-        return baud if self.raise_speed(baud) else None
+        if not isinstance(baud, int):
+            baud = self.tool.speed()
+        if not isinstance(baud, int) or baud <= 0:
+            return None
+        if "speed" in supports:
+            if baud >= RAISED_SPEED:
+                return None
+            return baud if self.raise_speed(baud) else None
+        return self.raise_speed_msgs(baud, receiver)
+
+    # Speed used for sessions raised through low-level message files; the
+    # shipped Unicore files carry tags for 115200/230400/460800, and raw
+    # output (full-constellation 1 Hz ephemeris) needs more than 115200.
+    MSGS_RAISED_SPEED = 460800
+
+    def raise_speed_msgs(self, baud: int, receiver: dict[str, Any]) -> int | None:
+        """Raise the link with the speed tags of the receiver's shipped
+        low-level message file. Self-verifying: after sending the speed
+        command, the receiver must answer at the new speed, else the speed
+        is rediscovered and the session continues as found."""
+        mf = self.speed_msg_file(receiver)
+        target = self.MSGS_RAISED_SPEED
+        if mf is None or not 0 < baud < target:
+            return None
+        port = self.active_port(mf)
+        if port is None or not self.speed_tags_exist(
+                mf, [f"speed-{baud}-{port}", f"speed-{target}-{port}"]):
+            return None
+        self.speed_msg_path = mf
+        self.speed_msg_port = port
+        if self.send_speed_msgs(baud, target):
+            return baud
+        found = self.rediscover_speed()
+        if found == baud:
+            self.speed_msg_path = None
+            return None
+        return baud
+
+    def active_port(self, mf: Path) -> str | None:
+        """Which receiver port this session is connected to, from the
+        header of a long-format query response (the backend cannot report
+        the port yet). The speed command must name the right port: the
+        receiver happily reconfigures an unconnected one."""
+        inv = self.tool.gps("query-active-port", ["-m", str(mf), "-t", "get-loglist"],
+                            {"op": "session-speed", "role": "port-query"},
+                            retry=False, json_out=False)
+        try:
+            for line in inv.packet_log.read_text().splitlines():
+                e = json.loads(line)
+                a = e.get("ascii", "")
+                if not e.get("out") and a[:1] in "<#":
+                    m = re.search(r"\b(COM\d)\b", a)
+                    if m:
+                        return m.group(1).lower()
+        except OSError:
+            pass
+        return None
+
+    def send_speed_msgs(self, baud: int, target: int) -> bool:
+        """Send the message-file link-speed command and verify the receiver
+        answers at the new speed."""
+        assert self.speed_msg_path is not None
+        self.tool.gps("session-speed-raise-msgs",
+                      ["-m", str(self.speed_msg_path), "-t",
+                       f"speed-{target}-{self.speed_msg_port}"],
+                      {"op": "session-speed", "role": "raise-msgs",
+                       "from": baud, "to": target}, retry=False, json_out=False)
+        self.tool.set_speed(target)
+        chk = self.tool.gps("verify-speed-raise-msgs", ["--show-receiver"],
+                            {"op": "session-speed", "role": "raise-verify",
+                             "to": target}, retry=False)
+        return chk.error is None
+
+    def speed_msg_file(self, receiver: dict[str, Any]) -> Path | None:
+        """The shipped low-level message file for this receiver, when one
+        with speed tags exists (the receiver-specific knowledge lives in
+        the shipped file, not here)."""
+        vendor = str(receiver.get("vendor", "")).lower()
+        hw = str(receiver.get("hardware", "")).lower()
+        if not vendor or not hw:
+            return None
+        mf = self.tool.exe.resolve().parent.parent.parent / "configs" / "gpsmsg" \
+            / vendor / f"{hw}.toml"
+        return mf if mf.exists() else None
+
+    def speed_tags_exist(self, mf: Path, wanted: list[str]) -> bool:
+        """Whether the message file carries every wanted tag."""
+        try:
+            with open(mf, "rb") as f:
+                lines = tomllib.load(f).get("line", [])
+        except (OSError, tomllib.TOMLDecodeError):
+            return False
+        tags = {ln.get("tag") for ln in lines if isinstance(ln, dict)}
+        return all(t in tags for t in wanted)
 
     def raise_speed(self, baud: int) -> bool:
         """Try to raise the link from baud to RAISED_SPEED. Returns whether
@@ -220,7 +331,20 @@ class ProbeRun:
         """Restore the as-found UART speed at session end. Runs whatever
         happened to the session, so the next run is not poisoned; a failed
         restore is rediscovered so the verification can still report the
-        truth."""
+        truth. A session raised through a message file restores the same
+        way and verifies by answering at the restored speed (the backend
+        cannot report its port)."""
+        if self.speed_msg_path is not None:
+            self.tool.gps("session-speed-restore-msgs",
+                          ["-m", str(self.speed_msg_path), "-t",
+                           f"speed-{as_found}-{self.speed_msg_port}"],
+                          {"op": "session-speed", "role": "restore-msgs",
+                           "to": as_found}, retry=False, json_out=False)
+            self.tool.set_speed(as_found)
+            self.tool.gps("verify-session-speed-msgs", ["--show-receiver"],
+                          {"op": "session-speed", "role": "verify-msgs",
+                           "want": as_found})
+            return
         inv = self.tool.gps("session-speed-restore", ["--speed", str(as_found)],
                             {"op": "session-speed", "role": "restore", "to": as_found})
         if inv.error is None:
@@ -261,13 +385,22 @@ class ProbeRun:
         return None
 
     def probe_scalar(self, p: ScalarProp, initial: dict[str, Any]) -> None:
-        """Probe each value of p, then restore its initial value. A readback
-        follows every answered set - refusals included, so analysis can
-        verify a refusal changed nothing."""
+        """Probe each value of p, then restore its value in initial. A
+        readback follows every answered set - refusals included, so analysis
+        can verify a refusal changed nothing. initial is whatever
+        configuration is in effect when the probe starts: the run's initial
+        readback for the plain sweep, or a context readback for properties
+        that exist only in a particular state (rtcmBaseID with a fixed
+        position); the first set carries the prior value so analysis does
+        not assume the run-initial one."""
+        first = True
         for v in p.values:
-            inv = self.tool.gps(f"set-{p.name}", [p.flag, p.to_cli(v)],
-                                {"op": "set", "prop": p.name, "path": list(p.path),
-                                 "requested": v})
+            intent: dict[str, Any] = {"op": "set", "prop": p.name,
+                                      "path": list(p.path), "requested": v}
+            if first:
+                intent["prev"] = config_value(initial, p.path)
+                first = False
+            inv = self.tool.gps(f"set-{p.name}", [p.flag, p.to_cli(v)], intent)
             if transient(inv.error):
                 continue
             self.show_config(f"readback-{p.name}", "readback", p.name)
@@ -292,7 +425,14 @@ class ProbeRun:
                                  "request": case.request})
             if transient(inv.error):
                 continue
-            self.show_config(f"readback-mode-{case.name}", "readback", "mode")
+            cfg = self.show_config(f"readback-mode-{case.name}", "readback", "mode")
+            if case.name == "fixed-ecef" and inv.error is None and cfg is not None:
+                # The RTCM base station ID means something only with a fixed
+                # position (it is the base ID of that mode), so probe it
+                # while one is set; the mode restore below removes it again
+                # on receivers where it exists only in that state.
+                print("probing rtcmBaseID (with fixed position)", file=sys.stderr)
+                self.probe_scalar(RTCM_BASE_ID, cfg)
         self.restore_mode(initial)
 
     def restore_mode(self, initial: dict[str, Any]) -> None:
@@ -679,7 +819,12 @@ class ProbeRun:
         if not uart:
             return
         baud = self.rediscover_speed()
-        if raised and baud is not None and baud < RAISED_SPEED:
+        if not raised or baud is None:
+            return
+        if self.speed_msg_path is not None:
+            if baud < self.MSGS_RAISED_SPEED:
+                self.send_speed_msgs(baud, self.MSGS_RAISED_SPEED)
+        elif baud < RAISED_SPEED:
             self.raise_speed(baud)
 
     def emergency_restore(self, initial: dict[str, Any],

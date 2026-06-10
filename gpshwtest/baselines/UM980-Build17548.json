@@ -45,100 +45,11 @@
         }
       ]
     },
-    "rtcmBaseID": {
-      "unsupported": true
-    },
     "showPort": {
       "unsupported": true
     },
     "signals": {
       "adjusted": [
-        {
-          "achieved": {
-            "BDS": [
-              "B1C",
-              "B1I"
-            ],
-            "GAL": [
-              "E1"
-            ],
-            "GLO": [
-              "L1",
-              "L2"
-            ],
-            "GPS": [
-              "L1",
-              "L2C",
-              "L2P"
-            ],
-            "QZSS": [
-              "L1",
-              "L2C",
-              "L5"
-            ]
-          },
-          "requested": {
-            "BDS": [
-              "B1C",
-              "B1I"
-            ],
-            "GAL": [
-              "E1"
-            ],
-            "GLO": [
-              "L1",
-              "L2"
-            ],
-            "GPS": [
-              "L1",
-              "L2C",
-              "L2P"
-            ],
-            "QZSS": [
-              "L1",
-              "L2C"
-            ]
-          }
-        },
-        {
-          "achieved": {
-            "BDS": [
-              "B1C",
-              "B1I"
-            ],
-            "GAL": [
-              "E1"
-            ],
-            "GLO": [
-              "L1"
-            ],
-            "GPS": [
-              "L1"
-            ],
-            "QZSS": [
-              "L1",
-              "L5"
-            ]
-          },
-          "requested": {
-            "BDS": [
-              "B1C",
-              "B1I"
-            ],
-            "GAL": [
-              "E1"
-            ],
-            "GLO": [
-              "L1"
-            ],
-            "GPS": [
-              "L1"
-            ],
-            "QZSS": [
-              "L1"
-            ]
-          }
-        },
         {
           "achieved": {
             "BDS": [
@@ -233,8 +144,7 @@
               "L2P"
             ],
             "QZSS": [
-              "L2C",
-              "L5"
+              "L2C"
             ]
           },
           "requested": {

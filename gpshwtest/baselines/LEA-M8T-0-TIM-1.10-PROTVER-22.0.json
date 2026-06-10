@@ -79,6 +79,79 @@
         }
       ]
     },
+    "saveGranularity": {
+      "observations": [
+        {
+          "anomalies": [],
+          "independent": [
+            "minElevation",
+            "mode"
+          ],
+          "indeterminate": [
+            "timeGNSS"
+          ],
+          "prop": "antennaCableDelay",
+          "saved": [
+            "timePulse.width"
+          ]
+        },
+        {
+          "anomalies": [],
+          "independent": [
+            "timePulse.width"
+          ],
+          "indeterminate": [
+            "antennaCableDelay",
+            "timeGNSS"
+          ],
+          "prop": "minElevation",
+          "saved": [
+            "mode"
+          ]
+        },
+        {
+          "anomalies": [],
+          "independent": [],
+          "indeterminate": [
+            "antennaCableDelay"
+          ],
+          "prop": "timeGNSS",
+          "saved": [
+            "minElevation",
+            "mode",
+            "timePulse.width"
+          ]
+        },
+        {
+          "anomalies": [],
+          "independent": [
+            "minElevation",
+            "mode"
+          ],
+          "indeterminate": [
+            "antennaCableDelay"
+          ],
+          "prop": "timePulse.width",
+          "saved": [
+            "timeGNSS"
+          ]
+        },
+        {
+          "anomalies": [],
+          "independent": [
+            "timePulse.width"
+          ],
+          "indeterminate": [
+            "antennaCableDelay",
+            "timeGNSS"
+          ],
+          "prop": "mode",
+          "saved": [
+            "minElevation"
+          ]
+        }
+      ]
+    },
     "signals": {
       "adjusted": [
         {

@@ -60,7 +60,8 @@ class Tool:
         self.raw = (run_dir / "raw.jsonl").open("a", encoding="utf-8")
 
     def gps(self, name: str, args: list[str], intent: dict[str, Any],
-            timeout: float = 90.0, retry: bool = True) -> Invocation:
+            timeout: float = 90.0, retry: bool = True,
+            json_out: bool = True) -> Invocation:
         """Run satpulsetool gps with the given high-level args plus --json
         and a per-invocation packet log. Raises ToolFailure on timeout or
         on success without JSON output; a configuration error is not a
@@ -70,21 +71,25 @@ class Tool:
         receiver on USB, unanswered requests on a slow UART), so a
         transient error is retried once; the flake stays visible in
         raw.jsonl and the packet logs."""
-        inv = self.gps_once(name, args, intent, timeout, retry=False)
+        inv = self.gps_once(name, args, intent, timeout, retry=False, json_out=json_out)
         if retry and transient(inv.error):
             time.sleep(2.0)
-            inv = self.gps_once(f"{name}-retry", args, intent, timeout, retry=True)
+            inv = self.gps_once(f"{name}-retry", args, intent, timeout, retry=True,
+                                json_out=json_out)
         return inv
 
     def gps_once(self, name: str, args: list[str], intent: dict[str, Any],
-                 timeout: float, retry: bool) -> Invocation:
+                 timeout: float, retry: bool, json_out: bool = True) -> Invocation:
         self.seq += 1
         log = self.run_dir / f"{self.seq:03d}-{name}.jsonl"
-        argv = [str(self.exe), "gps", *self.conn, "--json", "--packet-log", str(log), *args]
-        entry = {"seq": self.seq, "name": name, "intent": intent, "argv": argv,
-                 "log": log.name}
+        argv = [str(self.exe), "gps", *self.conn,
+                *(["--json"] if json_out else []), "--packet-log", str(log), *args]
+        entry: dict[str, Any] = {"seq": self.seq, "name": name, "intent": intent,
+                                 "argv": argv, "log": log.name}
         if retry:
             entry["retry"] = True
+        if not json_out:
+            entry["nojson"] = True
         try:
             p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -101,7 +106,7 @@ class Tool:
         inv = Invocation(name, argv, p.returncode, out, p.stderr, log)
         self.record({**entry, "exit": p.returncode, "json": out if out else p.stdout,
                      "stderr": p.stderr})
-        if p.returncode == 0 and not out:
+        if json_out and p.returncode == 0 and not out:
             raise ToolFailure(f"{name}: exit 0 but no JSON output")
         return inv
 

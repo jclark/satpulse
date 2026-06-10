@@ -209,7 +209,8 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
     if initial is None:
         return
     port_cfg = check_show_port(tool, pr)
-    as_found_speed = pr.session_speed_raise(port_cfg, ident.out.get("supports") or [])
+    as_found_speed = pr.session_speed_raise(port_cfg, ident.out.get("supports") or [],
+                                            receiver)
     if as_found_speed is not None:
         print(f"session speed raised from {as_found_speed}", file=sys.stderr)
     base = None

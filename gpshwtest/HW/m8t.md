@@ -37,7 +37,7 @@ Raw output saturates the 9600 baud line: the receiver's transmit side overruns, 
 
 ## NVM and saving
 
-The first disruptive run found the gen 8 reload defect now in `BUGS.md` (`--reload` loads factory defaults, not NVM), which makes save-granularity discovery impossible on this backend until it is fixed: every experiment's reload wipes the running configuration to defaults, so the subject appears not to persist and the runs report `save: X saved as ... but reads ... after reload` failures. On this unit the as-found NVM configuration happens to equal the factory defaults (UART1 9600, minimum elevation 5, time GNSS GPS, pulse width 0.1, mobile), which had masked the defect in the default-path reload probe.
+The first disruptive run found a gen 8 reload defect (`--reload` sent CFG-CFG with deviceMask 0x00 and loaded factory defaults, not NVM), since fixed; on this unit the as-found NVM configuration happens to equal the factory defaults, which had masked it in the default-path reload probe. With the fix, save granularity is discovered: minimum elevation and positioning mode persist via the navConf section, antenna cable delay and pulse width via rxmConf, and the time GNSS realization spans both sections, so saving it persists the union. The persists-together relation is therefore not a partition (the NVM sections partition, but the property-to-section mapping is many-to-many), and the characterization carries the per-property observations verbatim - a mismatch with the partition model in SEMANTICS.md worth a semantics decision.
 
 As on the F9P, NVM held a QZSS signal set without L1S, which the constellation-level vocabulary cannot reproduce; NVM now holds the full QZSS set (loudly reported once).
 

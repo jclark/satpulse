@@ -35,6 +35,7 @@ class Step:
     log: Path | None
     events: list[dict[str, Any]] | None
     timeout: float | None
+    nojson: bool
 
     @property
     def error(self) -> str | None:
@@ -70,7 +71,8 @@ def load_steps(run_dir: Path) -> list[Step]:
                  out=out if isinstance(out, dict) else {},
                  stderr=e.get("stderr", ""),
                  log=run_dir / log if isinstance(log, str) else None,
-                 events=e.get("events"), timeout=e.get("timeout"))
+                 events=e.get("events"), timeout=e.get("timeout"),
+                 nojson=bool(e.get("nojson")))
         if e.get("retry") and steps and steps[-1].intent == s.intent:
             steps.pop()
         steps.append(s)
@@ -142,7 +144,7 @@ class Analyzer:
                 self.failures.append(
                     f"{s.name}: no response within {s.timeout}s: {' '.join(s.argv)}")
                 continue
-            if s.events is None and s.exit_code == 0 and not s.out:
+            if s.events is None and s.exit_code == 0 and not s.out and not s.nojson:
                 self.failures.append(f"{s.name}: exit 0 but no JSON output")
                 continue
             self.step(s)
@@ -302,8 +304,9 @@ class Analyzer:
         if cfg is None:
             return
         back = config_value(cfg, path)
-        self.start_vals.setdefault(prop, config_value(self.initial, path))
-        prev = self.prev_vals.get(prop, config_value(self.initial, path))
+        start = s.intent.get("prev", config_value(self.initial, path))
+        self.start_vals.setdefault(prop, start)
+        prev = self.prev_vals.get(prop, start)
         obs = Observation(prop, v, s.error, config_value(s.config(), path), back)
         self.observations.append(obs)
         if s.error is not None:
@@ -644,6 +647,16 @@ class Analyzer:
                 self.failures.append(
                     f"session speed: receiver not rediscovered at any "
                     f"candidate speed: {s.error}")
+        elif role in ("raise-msgs", "raise-verify", "restore-msgs", "port-query"):
+            # Message-file speed changes cannot be confirmed in-invocation
+            # (the link switches mid-session); the following verify or
+            # rediscovery carries the verdict.
+            pass
+        elif role == "verify-msgs":
+            if s.error is not None:
+                self.failures.append(
+                    f"session speed: restored to {s.intent['want']} but the "
+                    f"receiver does not answer: {s.error}")
         elif role == "rediscover":
             if s.error is not None:
                 self.failures.append(
