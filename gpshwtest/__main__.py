@@ -148,41 +148,49 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool) -> None:
     initial = pr.show_config("initial-config", "initial")
     if initial is None:
         return
-    check_show_port(tool, pr)
-    for p in PROPS:
-        print(f"probing {p.name}", file=sys.stderr)
-        pr.probe_scalar(p, initial)
-    print("probing positioning mode", file=sys.stderr)
-    pr.probe_modes(initial)
-    print("probing message output", file=sys.stderr)
-    pr.probe_messages()
-    if phc is not None and use_sudo and sudo_ok():
-        print(f"checking physical time pulse on {phc[0]} pin {phc[1]}", file=sys.stderr)
-        pr.probe_pulse_physical(initial, phc, True)
-    else:
-        print("skipping physical time pulse checks (need --sudo, passwordless "
-              "sudo -n, and PHC wiring)", file=sys.stderr)
-    supported = receiver.get("supportedGNSS")
-    if not supported:
-        # The backend deduced no supported set (empty on the UM980); the
-        # constellations enabled in the as-found configuration are a
-        # discovered lower bound to probe instead.
-        supported = sorted(initial.get("signalsEnabled") or {})
-    if isinstance(supported, list) and supported:
-        print("probing signal combinations", file=sys.stderr)
-        pr.probe_signals(initial, supported)
-    pr.show_config("final-config", "final")
+    port_cfg = check_show_port(tool, pr)
+    as_found_speed = pr.session_speed_raise(port_cfg, ident.out.get("supports") or [])
+    if as_found_speed is not None:
+        print(f"session speed raised from {as_found_speed}", file=sys.stderr)
+    try:
+        for p in PROPS:
+            print(f"probing {p.name}", file=sys.stderr)
+            pr.probe_scalar(p, initial)
+        print("probing positioning mode", file=sys.stderr)
+        pr.probe_modes(initial)
+        print("probing message output", file=sys.stderr)
+        pr.probe_messages()
+        if phc is not None and use_sudo and sudo_ok():
+            print(f"checking physical time pulse on {phc[0]} pin {phc[1]}", file=sys.stderr)
+            pr.probe_pulse_physical(initial, phc, True)
+        else:
+            print("skipping physical time pulse checks (need --sudo, passwordless "
+                  "sudo -n, and PHC wiring)", file=sys.stderr)
+        supported = receiver.get("supportedGNSS")
+        if not supported:
+            # The backend deduced no supported set (empty on the UM980); the
+            # constellations enabled in the as-found configuration are a
+            # discovered lower bound to probe instead.
+            supported = sorted(initial.get("signalsEnabled") or {})
+        if isinstance(supported, list) and supported:
+            print("probing signal combinations", file=sys.stderr)
+            pr.probe_signals(initial, supported)
+        pr.show_config("final-config", "final")
+    finally:
+        if as_found_speed is not None:
+            pr.session_speed_restore(as_found_speed)
 
 
-def check_show_port(tool: Tool, pr: ProbeRun) -> None:
-    """Probe --show-port. The port fields appear only with --show-port, so
-    there is no readback to cross-check. On a UART connection with no speed
-    given, the reported speed is locked in for the rest of the run, saving
-    a baud scan per invocation."""
+def check_show_port(tool: Tool, pr: ProbeRun) -> dict[str, Any]:
+    """Probe --show-port and return its config. The port fields appear only
+    with --show-port, so there is no readback to cross-check. On a UART
+    connection with no speed given, the reported speed is locked in for
+    the rest of the run, saving a baud scan per invocation."""
     inv = tool.gps("show-port", ["--show-port"], {"op": "show-port"})
     baud = inv.config().get("baudRate")
     if "-s" not in tool.conn and isinstance(baud, int) and baud > 0:
-        tool.conn += ["-s", str(baud)]
+        tool.set_speed(baud)
+    return inv.config()
 
 
 def report(run_dir: Path, exe: Path, baseline: Path | None) -> int:

@@ -130,6 +130,15 @@ class Tool:
                      "exit": p.returncode, "events": events, "stderr": p.stderr})
         return events if p.returncode == 0 else None
 
+    def set_speed(self, bps: int | None) -> None:
+        """Pin the connection speed used by subsequent invocations, or
+        remove the pin (None) so the next invocation scans for the baud rate."""
+        if "-s" in self.conn:
+            i = self.conn.index("-s")
+            del self.conn[i:i + 2]
+        if bps is not None:
+            self.conn += ["-s", str(bps)]
+
     def record(self, entry: dict[str, Any]) -> None:
         """Append an entry to the raw observation log."""
         json.dump(entry, self.raw)

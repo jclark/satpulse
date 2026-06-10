@@ -168,6 +168,8 @@ class Analyzer:
         elif op == "restore-protocol":
             if s.error is not None:
                 self.failures.append(f"{s.name}: {s.error}")
+        elif op == "session-speed":
+            self.session_speed(s)
         elif op == "pulse-set":
             self.pulse_set(s)
         elif op == "sdp":
@@ -442,6 +444,33 @@ class Analyzer:
                 want = s.intent["want"]
                 return want if isinstance(want, list) else []
         return []
+
+    def session_speed(self, s: Step) -> None:
+        """Session speed management. A refused raise just leaves the session
+        slow (the receiver may not accept the speed); everything else here
+        must work, or the receiver risks being lost or left at the wrong
+        speed for the next run."""
+        role = s.intent["role"]
+        if role == "raise":
+            if transient(s.error):
+                self.failures.append(f"{s.name}: {s.error}")
+        elif role == "rediscover":
+            if s.error is not None:
+                self.failures.append(
+                    f"session speed: receiver not rediscovered after a failed "
+                    f"speed change: {s.error}")
+        elif role == "restore":
+            if s.error is not None:
+                self.failures.append(
+                    f"session speed: restore to {s.intent['to']} failed: {s.error}")
+        elif role == "verify":
+            want = s.intent["want"]
+            if s.error is not None:
+                self.failures.append(f"{s.name}: --show-port failed: {s.error}")
+            elif s.config().get("baudRate") != want:
+                self.failures.append(
+                    f"session speed: restored to {want} but the port reports "
+                    f"{s.config().get('baudRate')!r}")
 
     def pulse_set(self, s: Step) -> None:
         role = s.intent["role"]

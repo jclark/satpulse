@@ -31,6 +31,10 @@ OBSERVE_SECONDS = 4
 # observation window does not straddle the change.
 MSG_SETTLE = 1.0
 
+# Speed a slow UART session is raised to for its duration (a ground rule
+# in GOAL.md): faster runs, and raw output cannot saturate the line.
+RAISED_SPEED = 115200
+
 
 @dataclass
 class ScalarProp:
@@ -171,6 +175,54 @@ class ProbeRun:
             intent["prop"] = prop
         inv = self.tool.gps(name, ["--show-config"], intent)
         return None if inv.error is not None else inv.config()
+
+    def session_speed_raise(self, port_cfg: dict[str, Any],
+                            supports: list[str]) -> int | None:
+        """Raise a slow UART link to RAISED_SPEED for the session. Returns
+        the as-found speed to restore at session end, or None when there is
+        nothing to do (not a UART, already fast, no speed capability, or
+        the receiver refused - then the session just runs slow). After a
+        transient failure the link speed is unknown (the change may have
+        applied with its confirmation lost), so the speed is rediscovered
+        by scanning; the as-found speed still gets restored at the end."""
+        baud = port_cfg.get("baudRate")
+        if "speed" not in supports or not isinstance(baud, int) \
+                or not 0 < baud < RAISED_SPEED:
+            return None
+        inv = self.tool.gps("session-speed-raise", ["--speed", str(RAISED_SPEED)],
+                            {"op": "session-speed", "role": "raise",
+                             "from": baud, "to": RAISED_SPEED})
+        if inv.error is None:
+            self.tool.set_speed(RAISED_SPEED)
+            return baud
+        if transient(inv.error):
+            self.rediscover_speed()
+            return baud
+        return None
+
+    def session_speed_restore(self, as_found: int) -> None:
+        """Restore the as-found UART speed at session end. Runs whatever
+        happened to the session, so the next run is not poisoned; a failed
+        restore is rediscovered so the verification can still report the
+        truth."""
+        inv = self.tool.gps("session-speed-restore", ["--speed", str(as_found)],
+                            {"op": "session-speed", "role": "restore", "to": as_found})
+        if inv.error is None:
+            self.tool.set_speed(as_found)
+        elif transient(inv.error):
+            self.rediscover_speed()
+        self.tool.gps("verify-session-speed", ["--show-port"],
+                      {"op": "session-speed", "role": "verify", "want": as_found})
+
+    def rediscover_speed(self) -> None:
+        """Find the receiver again when the link speed is unknown: drop the
+        pinned speed so the invocation scans, then pin what it found."""
+        self.tool.set_speed(None)
+        inv = self.tool.gps("session-speed-rediscover", ["--show-port"],
+                            {"op": "session-speed", "role": "rediscover"})
+        baud = inv.config().get("baudRate")
+        if isinstance(baud, int) and baud > 0:
+            self.tool.set_speed(baud)
 
     def probe_scalar(self, p: ScalarProp, initial: dict[str, Any]) -> None:
         """Probe each value of p, then restore its initial value. A readback
