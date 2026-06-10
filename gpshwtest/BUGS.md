@@ -13,5 +13,4 @@ Setting a fixed position as LLH on the LEA-M8T echoes the achieved position in L
 ## unresolved observations
 
 - `--binary --pvt-out off` in one invocation leaves the messages of `--binary`'s baseline enabled, while `--pvt-out pos,vel,time,off` does disable the leap-second message: the combination of `--binary` with an explicit `off` looks order-dependent.
-- With the F9P fully silenced (see `HW/f9p.md`), MON-VER polls intermittently went unanswered - twice 1.5 s apart, while identical polls 5 s before and 4 s after were answered instantly. No evidence satpulsetool misbehaved (it polled, retried, and reported truthfully); cause undiagnosed, possibly receiver or USB-stack behavior on port reopen.
 - One unreproduced transient on the F9P: a combined `--rtcm-out none --raw-out obs` invocation produced no raw observations afterwards, though the same invocation succeeds in isolation.
