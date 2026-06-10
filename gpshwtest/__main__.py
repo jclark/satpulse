@@ -88,9 +88,12 @@ def run(tool: Tool, baseline: Path | None) -> int:
           f"{receiver.get('firmware')}", file=sys.stderr)
     pr = ProbeRun(tool)
     initial = pr.show_config("initial-config")
+    check_show_port(tool, pr)
     for p in PROPS:
         print(f"probing {p.name}", file=sys.stderr)
         pr.probe_scalar(p, initial)
+    print("probing positioning mode", file=sys.stderr)
+    pr.probe_modes(initial)
     final = pr.show_config("final-config")
     if final != initial:
         pr.failures.append(f"receiver not left as found: initial {initial!r}, final {final!r}")
@@ -105,6 +108,16 @@ def run(tool: Tool, baseline: Path | None) -> int:
     if not pr.failures:
         print(f"ok: {len(pr.observations)} observations, no failures", file=sys.stderr)
     return max(status, compare_baseline(receiver, baseline, text))
+
+
+def check_show_port(tool: Tool, pr: ProbeRun) -> None:
+    """Check that --show-port responds and reports a port. The port fields
+    appear only with --show-port, so there is no readback to cross-check."""
+    inv = tool.gps("show-port", ["--show-port"])
+    if inv.error is not None:
+        pr.failures.append(f"--show-port failed: {inv.error}")
+    elif not inv.config().get("port"):
+        pr.failures.append(f"--show-port reported no port: {inv.config()!r}")
 
 
 def compare_baseline(receiver: dict[str, Any], baseline: Path | None, text: str) -> int:
