@@ -218,12 +218,12 @@ var maskSignalList = []maskSignalEntry{
 	{"Q1", gpsprot.SignalSetOf(
 		gpsprot.SigQZSSL1CA, gpsprot.SigQZSSL1C, // When masking Q1, it disables QZSS L1C/A and QZSS L1C
 	)},
-	{"Q2", gpsprot.SignalSetOf(gpsprot.SigQZSSL2C)}, // When masking Q2, it disables QZSS L2C
-	{"Q5", gpsprot.SignalSetOf(gpsprot.SigQZSSL5)},  // When masking Q5, it disables QZSS L5
+	{"Q2", gpsprot.SignalSetOf(gpsprot.SigQZSSL2C)},    // When masking Q2, it disables QZSS L2C
+	{"Q5", gpsprot.SignalSetOf(gpsprot.SigQZSSL5)},     // When masking Q5, it disables QZSS L5
 	{"Q1CA", gpsprot.SignalSetOf(gpsprot.SigQZSSL1CA)}, // QZSS L1C/A
-	{"Q1C", gpsprot.SignalSetOf(gpsprot.SigQZSSL1C)},  // QZSS L1C
-	{"Q2C", gpsprot.SignalSetOf(gpsprot.SigQZSSL2C)},  // QZSS L2C
-	{"Q6", gpsprot.SignalSetOf(gpsprot.SigQZSSL6)},    // QZSS L6
+	{"Q1C", gpsprot.SignalSetOf(gpsprot.SigQZSSL1C)},   // QZSS L1C
+	{"Q2C", gpsprot.SignalSetOf(gpsprot.SigQZSSL2C)},   // QZSS L2C
+	{"Q6", gpsprot.SignalSetOf(gpsprot.SigQZSSL6)},     // QZSS L6
 
 	// IRNSS frequency-specific masks
 	{"I5", gpsprot.SignalSetOf(gpsprot.SigNAVICL5)}, // When masking I5, it disables IRNSS L5
@@ -243,23 +243,24 @@ var signalAliases = map[string]string{
 	"GPSL2P":  "L2P",
 	"GPSL5":   "L5",
 	// BDS aliases
-	"BDSB1I":  "B1I",
-	"BDSB2I":  "B2I",
-	"BDSB3I":  "B3I",
+	"BDSB1I": "B1I",
+	"BDSB2I": "B2I",
+	"BDSB3I": "B3I",
 	// BD3B1C, BD3B2A, BD3B2B are already standard names
 	// GLO aliases
 	"GLOL1": "R1",
 	"GLOL2": "R2",
 	"GLOL3": "R3",
 	// GAL aliases
-	"GALE1":   "E1",
-	"GALE5a":  "E5a",
-	"GALE5b":  "E5b",
-	"GALE6c":  "E6C",
+	"GALE1":  "E1",
+	"GALE5a": "E5a",
+	"GALE5b": "E5b",
+	"GALE6c": "E6C",
 	// QZSS aliases
 	"QZSSL1CA": "Q1CA",
 	"QZSSL1C":  "Q1C",
 	"QZSSL2C":  "Q2C",
+	"QZSSL5":   "Q5",
 	"QZSSL6D":  "Q6", // Map both L6D and L6E to Q6
 	"QZSSL6E":  "Q6",
 }
