@@ -105,6 +105,7 @@ For each receiver+firmware the program produces a machine-readable characterizat
 - The disruptive probes (`--speed`, `--save`, `--save-all`, `--reset`, `--factory-reset`) run only when enabled by the program flag, and must include recovery: rediscovering a receiver whose speed changed, and restoring a sane NVM state afterwards.
 - `--reload` is safe and runs by default, but it may change the link speed (the NVM configuration can hold a different baud rate), so it needs the same speed-rediscovery recovery as `--speed`.
 - Locally attached receivers: ZED-F9P on /dev/ttyACM0 (native USB; baud rate irrelevant, immune to wedging), u-blox M8T on /dev/ttyS0 (UART at 9600; baud discovered by scanning), Unicore UM980 on /dev/ttyUSB0 at 115200 (UART-to-USB bridge; speed matters and can be wedged, so speed recovery applies).
+- On a slow UART (the M8T at 9600), run the session at a higher speed: raise it (38400 at least) at session start and restore the as-found speed at the end. This is session management, not a disruptive probe; it runs by default, makes runs much faster, and avoids saturating the line when raw output is enabled.
 - On this host the F9P's PPS is wired to PHC pin 1 of enp4s0 (the `[phc]` table in /etc/satpulse.toml); physical time pulse checks need root (`sudo -n`, the smoketest convention).
 
 ## Working method
