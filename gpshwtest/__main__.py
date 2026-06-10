@@ -159,7 +159,7 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool) -> None:
         print("probing positioning mode", file=sys.stderr)
         pr.probe_modes(initial)
         print("probing message output", file=sys.stderr)
-        pr.probe_messages()
+        base = pr.probe_messages()
         if phc is not None and use_sudo and sudo_ok():
             print(f"checking physical time pulse on {phc[0]} pin {phc[1]}", file=sys.stderr)
             pr.probe_pulse_physical(initial, phc, True)
@@ -175,6 +175,12 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool) -> None:
         if isinstance(supported, list) and supported:
             print("probing signal combinations", file=sys.stderr)
             pr.probe_signals(initial, supported)
+        print("probing reload", file=sys.stderr)
+        # A non-UART link reports baud rate 0; anything else (including a
+        # backend that cannot report its port) gets speed rediscovery after
+        # each reload, since NVM may hold a different baud rate.
+        pr.probe_reload(initial, base, uart=port_cfg.get("baudRate") != 0,
+                        raised=as_found_speed is not None)
         pr.show_config("final-config", "final")
     finally:
         if as_found_speed is not None:

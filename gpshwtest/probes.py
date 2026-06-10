@@ -189,16 +189,24 @@ class ProbeRun:
         if "speed" not in supports or not isinstance(baud, int) \
                 or not 0 < baud < RAISED_SPEED:
             return None
+        return baud if self.raise_speed(baud) else None
+
+    def raise_speed(self, baud: int) -> bool:
+        """Try to raise the link from baud to RAISED_SPEED. Returns whether
+        the as-found speed now needs restoring: True on success, and after a
+        transient failure (the change may have applied with its confirmation
+        lost, so the speed is rediscovered by scanning and the restore must
+        still run). A refusal returns False."""
         inv = self.tool.gps("session-speed-raise", ["--speed", str(RAISED_SPEED)],
                             {"op": "session-speed", "role": "raise",
                              "from": baud, "to": RAISED_SPEED})
         if inv.error is None:
             self.tool.set_speed(RAISED_SPEED)
-            return baud
+            return True
         if transient(inv.error):
             self.rediscover_speed()
-            return baud
-        return None
+            return True
+        return False
 
     def session_speed_restore(self, as_found: int) -> None:
         """Restore the as-found UART speed at session end. Runs whatever
@@ -214,7 +222,7 @@ class ProbeRun:
         self.tool.gps("verify-session-speed", ["--show-port"],
                       {"op": "session-speed", "role": "verify", "want": as_found})
 
-    def rediscover_speed(self) -> None:
+    def rediscover_speed(self) -> int | None:
         """Find the receiver again when the link speed is unknown: drop the
         pinned speed so the invocation scans, then pin what it found."""
         self.tool.set_speed(None)
@@ -223,6 +231,8 @@ class ProbeRun:
         baud = inv.config().get("baudRate")
         if isinstance(baud, int) and baud > 0:
             self.tool.set_speed(baud)
+            return baud
+        return None
 
     def probe_scalar(self, p: ScalarProp, initial: dict[str, Any]) -> None:
         """Probe each value of p, then restore its initial value. A readback
@@ -257,6 +267,10 @@ class ProbeRun:
             if transient(inv.error):
                 continue
             self.show_config(f"readback-mode-{case.name}", "readback", "mode")
+        self.restore_mode(initial)
+
+    def restore_mode(self, initial: dict[str, Any]) -> None:
+        """Set the positioning mode back to its initial readback."""
         mode = config_value(initial, ("mode",))
         if not isinstance(mode, dict):
             return
@@ -321,12 +335,13 @@ class ProbeRun:
             intent["expect"] = sorted(expect)
         return self.observe(f"observe-{group}-{name}", intent)
 
-    def probe_messages(self) -> None:
+    def probe_messages(self) -> dict[tuple[str, str], int] | None:
         """Probe NMEA, RTCM, raw, PVT, and satellite output from one shared
-        baseline observation, restoring each group afterwards."""
+        baseline observation, restoring each group afterwards. Returns the
+        baseline emissions, which later restores (after --reload) reuse."""
         base_inv = self.observe("messages-initial", {"op": "observe", "role": "baseline"})
         if base_inv is None:
-            return
+            return None
         base = emissions(base_inv.packet_log)
         self.probe_nmea(nmea_set(base))
         self.probe_rtcm(rtcm_set(base))
@@ -334,6 +349,7 @@ class ProbeRun:
         self.probe_pvt()
         self.probe_sats()
         self.restore_protocol(base)
+        return base
 
     def probe_nmea(self, initial: list[str]) -> None:
         """Probe NMEA output selection, then restore the initial sentence set."""
@@ -417,6 +433,44 @@ class ProbeRun:
                 return
         self.observe("verify-restore-messages",
                      {"op": "observe", "role": "verify", "group": "protocol"})
+
+    def probe_reload(self, initial: dict[str, Any],
+                     base: dict[tuple[str, str], int] | None,
+                     uart: bool, raised: bool) -> None:
+        """Probe --reload: the first reload discovers the NVM state, then an
+        unsaved canary change plus a second reload verify conclusively that
+        unsaved changes do not survive a reload and that reloading is
+        deterministic. A reload can change the link speed (NVM may hold a
+        different baud rate, and it discards a raised session speed), so on
+        a UART each reload is followed by rediscovery; satpulsetool may
+        truthfully be unable to confirm the reload it performed, so the
+        reload invocation's own error is judged by the analyzer against the
+        readback, not taken at face value. Afterwards the as-found running
+        configuration is restored: a reload replaces the running
+        configuration with NVM contents, which need not match what was
+        found running."""
+        self.tool.gps("reload-1", ["--reload"], {"op": "reload", "round": 1, "uart": uart})
+        if uart:
+            self.rediscover_speed()
+        nvm = self.show_config("readback-reload-1", "reload", "reload-1")
+        if nvm is not None:
+            canary = next(p for p in PROPS if p.name == "minElevation")
+            if config_value(nvm, canary.path) is not None:
+                v = 7 if config_value(nvm, canary.path) != 7 else 12
+                self.tool.gps("canary-set-minElevation", [canary.flag, canary.to_cli(v)],
+                              {"op": "canary-set", "prop": canary.name,
+                               "path": list(canary.path), "value": v})
+        self.tool.gps("reload-2", ["--reload"], {"op": "reload", "round": 2, "uart": uart})
+        baud = self.rediscover_speed() if uart else None
+        self.show_config("readback-reload-2", "reload", "reload-2")
+        if raised and baud is not None and baud < RAISED_SPEED:
+            self.raise_speed(baud)
+        for p in PROPS:
+            self.restore(p, initial)
+        self.restore_mode(initial)
+        self.restore_signals(initial)
+        if base is not None:
+            self.restore_protocol(base)
 
     def probe_pulse_physical(self, initial: dict[str, Any],
                              phc: tuple[str, int, int], use_sudo: bool) -> None:

@@ -117,6 +117,8 @@ class Analyzer:
     accepted: dict[str, list[Observation]] = field(default_factory=dict)
     baseline: dict[tuple[str, str], int] = field(default_factory=dict)
     raw_found: dict[str, set[str]] = field(default_factory=dict)
+    reload_nvm: dict[str, Any] | None = None
+    canary: tuple[tuple[str, ...], Value] | None = None
 
     def run(self) -> Analysis:
         while self.i < len(self.steps):
@@ -170,6 +172,10 @@ class Analyzer:
                 self.failures.append(f"{s.name}: {s.error}")
         elif op == "session-speed":
             self.session_speed(s)
+        elif op == "reload":
+            self.reload(s)
+        elif op == "canary-set":
+            self.canary_set(s)
         elif op == "pulse-set":
             self.pulse_set(s)
         elif op == "sdp":
@@ -226,6 +232,8 @@ class Analyzer:
         elif role == "final" and s.config() != self.initial:
             self.failures.append(f"receiver not left as found: "
                                  f"initial {self.initial!r}, final {s.config()!r}")
+        elif role == "reload":
+            self.reload_readback(s)
 
     def set_scalar(self, s: Step) -> None:
         prop, path = s.intent["prop"], tuple(s.intent["path"])
@@ -444,6 +452,41 @@ class Analyzer:
                 want = s.intent["want"]
                 return want if isinstance(want, list) else []
         return []
+
+    def reload(self, s: Step) -> None:
+        """The reload invocation itself. On a UART satpulsetool may
+        truthfully fail to confirm a reload it performed (the reload can
+        change the link speed mid-invocation), so the verdict comes from
+        the readback that follows rediscovery, not from this step's error.
+        On a non-UART link there is no such excuse."""
+        if s.error is not None and not s.intent.get("uart"):
+            self.failures.append(f"{s.name}: {s.error}")
+
+    def canary_set(self, s: Step) -> None:
+        """The unsaved change whose survival the second reload tests."""
+        if transient(s.error):
+            self.failures.append(f"{s.name}: {s.error}")
+        elif s.error is None:
+            self.canary = tuple(s.intent["path"]), s.intent["value"]
+
+    def reload_readback(self, s: Step) -> None:
+        """The configuration read after a reload (and speed rediscovery).
+        The first read is the NVM state; after the second, the canary must
+        have reverted and the configuration must match the NVM state."""
+        cfg = s.config()
+        if s.intent.get("prop") == "reload-1":
+            self.reload_nvm = cfg
+            return
+        if self.canary is not None:
+            path, v = self.canary
+            if config_value(cfg, path) == v:
+                self.failures.append(
+                    f"reload: unsaved {'.'.join(path)} change to {v!r} survived reload")
+                return
+        if self.reload_nvm is not None and cfg != self.reload_nvm:
+            self.failures.append(
+                f"reload: configuration after second reload differs from the "
+                f"NVM state: {self.reload_nvm!r} -> {cfg!r}")
 
     def session_speed(self, s: Step) -> None:
         """Session speed management. A refused raise just leaves the session
