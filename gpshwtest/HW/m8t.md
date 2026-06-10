@@ -34,3 +34,11 @@ Supported signal set (single-band):
 As-found running configuration: NMEA GGA, GLL, GSA, GSV, RMC, VTG, ZDA; mobile mode; GPS, GLO, and QZSS (L1 C/A only) enabled. satpulsetool finds the UART speed by scanning; gpshwtest locks in the speed reported by `--show-port`. A full run takes about 8.5 minutes.
 
 Raw output saturates the 9600 baud line: the receiver's transmit side overruns, and packets - including poll replies and ACKs - are lost or corrupted. Configuration then becomes unreliable in a way satpulse cannot help: invocations fail with "no response" while the write may actually have applied with only its ACK lost, so on a saturated link a reported error does not imply an unchanged configuration; detection can fail outright. Recovery needed low-level CFG-MSG writes (`-m`) to disable the raw messages. Raising the serial speed for the session avoids all of this. gpshwtest now does so by default (raises the link to 115200 at session start and restores the as-found speed at the end); with that in place a full sweep completes with no saturation failures, leaving only the gen 8 backend bugs in `BUGS.md`.
+
+## NVM and saving
+
+The first disruptive run found the gen 8 reload defect now in `BUGS.md` (`--reload` loads factory defaults, not NVM), which makes save-granularity discovery impossible on this backend until it is fixed: every experiment's reload wipes the running configuration to defaults, so the subject appears not to persist and the runs report `save: X saved as ... but reads ... after reload` failures. On this unit the as-found NVM configuration happens to equal the factory defaults (UART1 9600, minimum elevation 5, time GNSS GPS, pulse width 0.1, mobile), which had masked the defect in the default-path reload probe.
+
+As on the F9P, NVM held a QZSS signal set without L1S, which the constellation-level vocabulary cannot reproduce; NVM now holds the full QZSS set (loudly reported once).
+
+satpulsetool does not scan baud rates: with no `-s` it opens the port at its current termios state. A receiver left at a non-resting speed (for example 115200 in NVM after a save-all at the raised session speed) is unreachable until the right `-s` is given; gpshwtest's speed rediscovery therefore tries candidate speeds explicitly.

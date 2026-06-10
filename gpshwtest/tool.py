@@ -60,7 +60,7 @@ class Tool:
         self.raw = (run_dir / "raw.jsonl").open("a", encoding="utf-8")
 
     def gps(self, name: str, args: list[str], intent: dict[str, Any],
-            timeout: float = 90.0) -> Invocation:
+            timeout: float = 90.0, retry: bool = True) -> Invocation:
         """Run satpulsetool gps with the given high-level args plus --json
         and a per-invocation packet log. Raises ToolFailure on timeout or
         on success without JSON output; a configuration error is not a
@@ -71,7 +71,7 @@ class Tool:
         transient error is retried once; the flake stays visible in
         raw.jsonl and the packet logs."""
         inv = self.gps_once(name, args, intent, timeout, retry=False)
-        if transient(inv.error):
+        if retry and transient(inv.error):
             time.sleep(2.0)
             inv = self.gps_once(f"{name}-retry", args, intent, timeout, retry=True)
         return inv

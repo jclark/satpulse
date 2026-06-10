@@ -142,13 +142,19 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
           disruptive: bool) -> None:
     """Execute the probe sequence, recording every step. No verdicts here:
     the records are analyzed offline afterwards (also on a live run)."""
+    pr = ProbeRun(tool)
     ident = tool.gps("show-receiver", ["--show-receiver"], {"op": "identify"})
     if ident.error is not None:
-        return
+        # satpulsetool does not scan baud rates, so a UART resting at the
+        # wrong speed (a crashed run, another program) looks like a dead
+        # receiver. Rediscover the speed and identify again.
+        if pr.rediscover_speed() is not None:
+            ident = tool.gps("show-receiver", ["--show-receiver"], {"op": "identify"})
+        if ident.error is not None:
+            return
     receiver = ident.out.get("receiver", {})
     print(f"receiver: {receiver.get('vendor')} {receiver.get('hardware')} "
           f"{receiver.get('firmware')}", file=sys.stderr)
-    pr = ProbeRun(tool)
     initial = pr.show_config("initial-config", "initial")
     if initial is None:
         return
@@ -192,7 +198,7 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
                       "(reload readback failed)", file=sys.stderr)
             else:
                 print("running disruptive NVM probes", file=sys.stderr)
-                pr.probe_disruptive(initial, nvm, base, uart, raised)
+                pr.probe_disruptive(initial, nvm, base, uart, as_found_speed)
         pr.show_config("final-config", "final")
     finally:
         if as_found_speed is not None:

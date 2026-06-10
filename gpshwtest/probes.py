@@ -226,16 +226,29 @@ class ProbeRun:
         self.tool.gps("verify-session-speed", ["--show-port"],
                       {"op": "session-speed", "role": "verify", "want": as_found})
 
+    # Candidate link speeds for rediscovery, most likely first: the raised
+    # session speed, the near-universal default, then other common rates.
+    REDISCOVER_SPEEDS = [RAISED_SPEED, 9600, 38400, 57600, 19200, 230400]
+
     def rediscover_speed(self) -> int | None:
-        """Find the receiver again when the link speed is unknown: drop the
-        pinned speed so the invocation scans, then pin what it found."""
+        """Find the receiver again when the link speed is unknown.
+        satpulsetool does not scan baud rates (with no speed given it opens
+        the port at its current termios state), so try the candidates
+        explicitly and pin the first that answers. Individual attempts are
+        expected to fail; analysis reports a failure only when the whole
+        rediscovery does."""
+        for sp in self.REDISCOVER_SPEEDS:
+            self.tool.set_speed(sp)
+            inv = self.tool.gps(f"rediscover-at-{sp}", ["--show-port"],
+                                {"op": "session-speed", "role": "rediscover-try",
+                                 "speed": sp}, retry=False)
+            if inv.error is None:
+                baud = inv.config().get("baudRate")
+                if isinstance(baud, int) and baud > 0 and baud != sp:
+                    self.tool.set_speed(baud)
+                    return baud
+                return sp
         self.tool.set_speed(None)
-        inv = self.tool.gps("session-speed-rediscover", ["--show-port"],
-                            {"op": "session-speed", "role": "rediscover"})
-        baud = inv.config().get("baudRate")
-        if isinstance(baud, int) and baud > 0:
-            self.tool.set_speed(baud)
-            return baud
         return None
 
     def probe_scalar(self, p: ScalarProp, initial: dict[str, Any]) -> None:
@@ -477,13 +490,14 @@ class ProbeRun:
 
     def probe_disruptive(self, initial: dict[str, Any], nvm: dict[str, Any],
                          base: dict[tuple[str, str], int] | None,
-                         uart: bool, raised: bool) -> None:
+                         uart: bool, as_found_speed: int | None) -> None:
         """Flag-gated NVM probes: save-granularity experiments (each uses
         --save, so they are also the --save probe), then recovery of the
         as-found NVM state through --save-all (which is thereby the
         --save-all probe), then --reset. nvm is the NVM state discovered by
         the reload probe; the experiments mutate NVM and the recovery puts
         it back, verified by a final reload readback."""
+        raised = as_found_speed is not None
         subjects = [p for p in PROPS if config_value(nvm, p.path) is not None]
         r = nvm
         ok = True
@@ -501,6 +515,16 @@ class ProbeRun:
             self.restore(p, nvm)
         self.restore_mode(nvm)
         self.restore_signals(nvm)
+        if as_found_speed is not None:
+            # --save-all persists the port configuration too, so the link
+            # must be back at the as-found speed when NVM is written.
+            inv = self.tool.gps("speed-for-save-all", ["--speed", str(as_found_speed)],
+                                {"op": "session-speed", "role": "restore",
+                                 "to": as_found_speed})
+            if inv.error is None:
+                self.tool.set_speed(as_found_speed)
+            elif transient(inv.error):
+                self.rediscover_speed()
         inv = self.tool.gps("save-all", ["--save-all"], {"op": "save-all"})
         if inv.error is None:
             self.tool.gps("recovery-reload", ["--reload"],

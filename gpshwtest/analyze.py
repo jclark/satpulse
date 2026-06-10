@@ -117,6 +117,7 @@ class Analyzer:
     accepted: dict[str, list[Observation]] = field(default_factory=dict)
     baseline: dict[tuple[str, str], int] = field(default_factory=dict)
     raw_found: dict[str, set[str]] = field(default_factory=dict)
+    ident_error: str | None = None
     reload_nvm: dict[str, Any] | None = None
     canary: tuple[tuple[str, ...], Value] | None = None
     gran_r: dict[str, Any] | None = None
@@ -136,6 +137,8 @@ class Analyzer:
                 self.failures.append(f"{s.name}: exit 0 but no JSON output")
                 continue
             self.step(s)
+        if self.ident_error is not None:
+            self.failures.append(f"receiver detection failed: {self.ident_error}")
         self.check_values_move()
         enabled = sorted(self.initial.get("signalsEnabled") or {})
         doc = characterize(self.receiver, self.supports, self.observations,
@@ -222,9 +225,13 @@ class Analyzer:
         return s.config()
 
     def identify(self, s: Step) -> None:
+        """Identification may be attempted again after speed rediscovery,
+        so a failed attempt counts only when no identify ever succeeded
+        (checked at the end of the walk)."""
         if s.error is not None:
-            self.failures.append(f"receiver detection failed: {s.error}")
+            self.ident_error = s.error
             return
+        self.ident_error = None
         rec = s.out.get("receiver")
         self.receiver = rec if isinstance(rec, dict) else {}
         sup = s.out.get("supports")
@@ -563,13 +570,23 @@ class Analyzer:
 
     def session_speed(self, s: Step) -> None:
         """Session speed management. A refused raise just leaves the session
-        slow (the receiver may not accept the speed); everything else here
-        must work, or the receiver risks being lost or left at the wrong
-        speed for the next run."""
+        slow (the receiver may not accept the speed), and individual
+        rediscovery attempts are expected to fail; everything else here must
+        work, or the receiver risks being lost or left at the wrong speed
+        for the next run."""
         role = s.intent["role"]
         if role == "raise":
             if transient(s.error):
                 self.failures.append(f"{s.name}: {s.error}")
+        elif role == "rediscover-try":
+            if s.error is None:
+                return
+            nxt = self.steps[self.i].intent if self.i < len(self.steps) else {}
+            if not (nxt.get("op") == "session-speed"
+                    and nxt.get("role") == "rediscover-try"):
+                self.failures.append(
+                    f"session speed: receiver not rediscovered at any "
+                    f"candidate speed: {s.error}")
         elif role == "rediscover":
             if s.error is not None:
                 self.failures.append(
