@@ -18,6 +18,13 @@ Other observations from the same session:
 - Time pulse, antenna cable delay, min elevation, time GNSS (GPS/GAL/BDS/GLO), survey, fixed ECEF, fixed LLH, and RTCM base ID all set and read back consistently through `satpulsetool gps` (probed with round values only; resolution/quantization not yet measured).
 - Changing the GNSS signal set triggers an internal GNSS-subsystem restart (documented in the interface description: wait for the ACK plus 0.5 s before the next command); a ~2 s settle worked reliably.
 
+Scalar property probes via the gpshwtest program (2026-06-10, same firmware):
+
+- Time pulse width is quantized to 1 us (requested 123.456 us reads back 123 us).
+- Antenna cable delay (ns granularity, up to 32767 ns), min elevation (integer degrees), RTCM base ID (0-4095), and time GNSS (GPS/GAL/BDS/GLO) all realize exactly as requested.
+- Units: the `--json` config object reports antennaCableDelay and timePulse.width in seconds; the CLI flags take nanoseconds (`--ant-cable-delay`) and seconds (`--pps`). Probe values must be compared in model (JSON) units.
+- A full scalar-probe run (16 observations, ~45 invocations) takes about 45 s; two consecutive runs produced byte-identical characterizations.
+
 ## u-blox M8T, /dev/ttyS0 (UART)
 
 Not yet probed. Baud rate unknown; discover by scanning (9600 is the M8 UART default).
