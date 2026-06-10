@@ -43,11 +43,6 @@ def fmt_value(v: Value) -> str:
     return str(v)
 
 
-def fmt_nanos(v: Value) -> str:
-    """Render a model value in seconds as integer nanoseconds for the CLI."""
-    return str(round(float(v) * 1e9))
-
-
 @dataclass
 class ScalarProp:
     """A property settable by one flag and readable at one config JSON path.
@@ -65,8 +60,8 @@ class ScalarProp:
 
 
 PROPS = [
-    ScalarProp("antennaCableDelay", "--ant-cable-delay", [1e-9, 1.23e-7, 3.2767e-5],
-               ("antennaCableDelay",), to_cli=fmt_nanos),
+    ScalarProp("antennaCableDelay", "--ant-cable-delay", [1, 123, 32767],
+               ("antennaCableDelay",)),
     ScalarProp("minElevation", "--min-elev", [1, 7, 45], ("minElevation",)),
     ScalarProp("rtcmBaseID", "--rtcm-base-id", [1, 1234, 4095], ("rtcmBaseID",)),
     ScalarProp("timeGNSS", "--time-gnss", ["GAL", "BDS", "GLO", "GPS"], ("timeGNSS",)),
@@ -78,9 +73,11 @@ PROPS = [
 class ModeCase:
     """One positioning-mode request: flags plus the mode fields it implies.
 
-    Request keys use the mode JSON vocabulary, flattened (survey.* fields
-    exist in the model but not in the readable mode object). Values have
-    more decimals than any receiver resolution so quantization shows.
+    Request keys use the mode JSON vocabulary, flattened. Only properties
+    are listed: survey duration and accuracy are parameters of the
+    survey-in operation (ConfigOptions in gpsprot/configtarget.go), not
+    configuration properties, so readback never applies to them. Values
+    have more decimals than any receiver resolution so quantization shows.
     The fixed positions are an arbitrary plausible point; receivers store
     the position without checking it against the actual location.
     """
@@ -118,12 +115,19 @@ class PVTCase:
     expect: set[str]
 
 
+# ptp and ntp are exact abbreviations of flag sets (see the man page), so
+# they are not probed; the underlying flags are. survey is excluded per the
+# docstring above; qual and epoch information both appear as navEpoch events.
+# after requires time information that follows the pulse: a pre-pulse
+# message (UBX-TIM-TP) is not enough by itself, while a post-pulse message
+# (UBX-TIM-TOS) is; solution-time messages also satisfy it. event_kinds
+# derives the "after" kind accordingly.
 PVT_CASES = [
     PVTCase(["pos", "vel", "time", "off"], {"pos", "vel", "time"}),
     PVTCase(["pos", "vel", "time", "ecef", "tai", "off"],
             {"pos", "vel", "time", "ecef", "tai"}),
-    PVTCase(["ptp"], {"tp", "time", "tai", "leap", "navEpoch"}),
-    PVTCase(["ntp"], {"time", "leap", "navEpoch"}),
+    PVTCase(["tp", "after", "tai", "leap", "qual", "epoch", "off"],
+            {"tp", "after", "tai", "leap", "navEpoch"}),
     PVTCase(["off"], set()),
 ]
 
@@ -151,7 +155,10 @@ def event_kinds(events: list[dict[str, Any]]) -> set[str]:
         elif t in ("velGeo", "velECEF"):
             kinds.add("vel")
         elif t == "time":
-            kinds.add("tp" if d.get("ref") else "time")
+            ref = d.get("ref", 0)
+            kinds.add("tp" if ref else "time")
+            if ref == 2:
+                kinds.add("tpPost")
             if "taiTime" in d:
                 kinds.add("tai")
         elif t == "leapSecond":
@@ -163,6 +170,8 @@ def event_kinds(events: list[dict[str, Any]]) -> set[str]:
                 kinds.add("perSignal")
         elif t == "navEpoch":
             kinds.add("navEpoch")
+    if "tpPost" in kinds or "time" in kinds:
+        kinds.add("after")
     return kinds
 
 # Seconds of packet capture used to observe what the receiver emits;
@@ -249,7 +258,7 @@ def signal_cases(supported: list[str]) -> list[tuple[list[str], list[str] | None
 
 MODE_CASES = [
     ModeCase("survey", ["--survey", "--survey-time", "300", "--survey-acc", "2.345"],
-             {"static": True, "survey.minDuration": 300, "survey.accLimit": 2.345}),
+             {"static": True}),
     ModeCase("fixed-llh",
              ["--fixed-pos-llh", "13.7318284567,100.6447407891,12.34567",
               "--fixed-pos-acc", "0.12345"],
@@ -277,7 +286,7 @@ def config_value(cfg: dict[str, Any], path: tuple[str, ...]) -> Value:
 
 
 def flat_value(obj: Value, key: str) -> Value:
-    """Extract a value by flattened key like "fixedPosLLH[0]" or "survey.minDuration"."""
+    """Extract a value by flattened key like "fixedPosLLH[0]"."""
     cur = obj
     for part in key.split("."):
         name, _, idx = part.partition("[")
@@ -294,14 +303,13 @@ def flat_value(obj: Value, key: str) -> Value:
 
 def mode_disagreements(reported: Value, back: Value) -> list[str]:
     """Keys on which a mode set response and the independent readback
-    disagree. Only keys present in both are compared: a backend may store
-    the position in a different coordinate system than it was set in
-    (gen 8 u-blox stores ECEF however set), so a reported field absent
-    from the readback is unconfirmable, not a contradiction - it shows up
-    in the characterization as not readable."""
+    disagree. Every reported field must read back identically: mode is a
+    property, so an achieved value the readback cannot confirm (such as a
+    fixed position echoed as LLH but stored and read back as ECEF) is a
+    guarantee violation, not a representation detail."""
     if not isinstance(reported, dict) or not isinstance(back, dict):
         return [] if reported == back else ["mode"]
-    return sorted(k for k in reported.keys() & back.keys() if reported[k] != back[k])
+    return sorted(k for k in reported if back.get(k) != reported[k])
 
 
 def mode_args(mode: dict[str, Any]) -> list[str]:
@@ -346,6 +354,8 @@ class ProbeRun:
     def probe_scalar(self, p: ScalarProp, initial: dict[str, Any]) -> None:
         """Probe each value of p, then restore its initial value."""
         prev = config_value(initial, p.path)
+        start = prev
+        accepted: list[Observation] = []
         for v in p.values:
             inv = self.tool.gps(f"set-{p.name}", [p.flag, p.to_cli(v)])
             reported = config_value(inv.config(), p.path)
@@ -356,7 +366,8 @@ class ProbeRun:
             if cfg is None:
                 continue
             back = config_value(cfg, p.path)
-            self.observations.append(Observation(p.name, v, inv.error, reported, back))
+            obs = Observation(p.name, v, inv.error, reported, back)
+            self.observations.append(obs)
             if inv.error is not None:
                 if back != prev:
                     self.failures.append(
@@ -365,8 +376,24 @@ class ProbeRun:
                 if reported != back:
                     self.failures.append(
                         f"{p.name}: reported {reported!r} but readback says {back!r}")
+                accepted.append(obs)
                 prev = back
+        self.check_value_moves(p, start, accepted)
         self.restore(p, initial)
+
+    def check_value_moves(self, p: ScalarProp, start: Value,
+                          accepted: list[Observation]) -> None:
+        """An accepted set that leaves a property's value unchanged can be
+        legitimate only as range clamping. When the requests bracket the
+        prior value and it still never moved, no range limit explains it:
+        the set was silently ignored, which is a bug."""
+        if not isinstance(start, (int, float)) or not accepted:
+            return
+        vals = [o.requested for o in accepted if isinstance(o.requested, (int, float))]
+        if (all(o.readback == start for o in accepted)
+                and any(v < start for v in vals) and any(v > start for v in vals)):
+            self.failures.append(
+                f"{p.name}: accepted sets never changed the value from {start!r}")
 
     def observe_capture(self, name: str) -> Invocation | None:
         """Capture for a few seconds; the packet log is what the receiver

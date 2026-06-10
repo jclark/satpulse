@@ -17,6 +17,40 @@ from probes import (EmissionObservation, Observation, ProbeRun,
 RTCM_DECADE = {"GPS": 107, "GLO": 108, "GAL": 109, "SBAS": 110, "QZSS": 111,
                "BDS": 112, "NAVIC": 113}
 
+# Frequency band of a signal name, by prefix, ported from the model's
+# signalIDBandTable (gps/gpsprot/signal.go). Order matters: longer or more
+# specific prefixes come first.
+SIGNAL_BAND_PREFIXES = [
+    ("B2a", "L5"), ("E5b", "E5b"), ("E5a", "L5"), ("L5", "L5"),
+    ("B2", "E5b"), ("L3", "E5b"), ("L1", "L1"), ("E1", "L1"), ("B1", "L1"),
+    ("L2", "L2"), ("E6", "E6"), ("L6", "E6"), ("B3", "E6"),
+]
+
+# The signal-band keys denoted by each band name a request can use.
+REQUEST_BANDS = {"L1": {"L1"}, "L2": {"L2"}, "L5": {"L5"}, "E5b": {"E5b"},
+                 "E5": {"L5", "E5b"}, "E6": {"E6"}, "L6": {"E6"}}
+
+
+def signal_band(name: str) -> str:
+    for prefix, band in SIGNAL_BAND_PREFIXES:
+        if name.startswith(prefix):
+            return band
+    return ""
+
+
+def requested_signals(gnss: list[str], band: list[str] | None,
+                      supported: dict[str, list[str]]) -> dict[str, list[str]] | None:
+    """The signal set a constellation/band request denotes, intersected with
+    the receiver's supported set - what satpulse actually requests. None when
+    the supported set does not cover a named constellation (then the request
+    cannot be expressed in discovered signals and is carried verbatim)."""
+    if any(c not in supported for c in gnss):
+        return None
+    if band is None:
+        return {c: supported[c] for c in gnss}
+    keys = set().union(*(REQUEST_BANDS.get(b, set()) for b in band))
+    return {c: [s for s in supported[c] if signal_band(s) in keys] for c in gnss}
+
 
 
 def characterize(receiver: dict[str, Any], supports: list[str],
@@ -63,12 +97,12 @@ def characterize_prop(obs: list[Observation]) -> dict[str, Any] | None:
     if refused:
         entry["refused"] = [o.requested for o in refused]
     ok = [o for o in obs if o.error is None]
-    if ok and all(o.readback is None for o in ok):
-        entry["notReadable"] = True
-        return entry
-    if (len(ok) > 1 and len({json.dumps(o.readback) for o in ok}) == 1
-            and all(o.readback != o.requested for o in ok)):
-        entry["notSettable"] = True
+    if ok and all(o.reported is None and o.readback is None for o in ok):
+        # Setting reported nothing achieved and readback shows no such
+        # property: the backend does not have this property. (A reported
+        # value that cannot be read back is a guarantee violation, caught
+        # as a failure by the probes, never a characterization category.)
+        entry["unsupported"] = True
         return entry
     inexact = [o for o in ok if o.readback != o.requested]
     if inexact:
@@ -82,39 +116,47 @@ def characterize_prop(obs: list[Observation]) -> dict[str, Any] | None:
 
 
 def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
-    """Characterize constellation/band realization.
+    """Characterize signal-set realization, in signal-set vocabulary.
 
-    The per-constellation signal sets achieved at full band are the
-    receiver's signal vocabulary; refusals are recorded as the requested
-    combination only (error wording is satpulsetool presentation, not
-    receiver behavior); accepted band-limited combinations are carried
-    verbatim until patterns earn their own vocabulary."""
+    The supported set is what full requests achieve per constellation.
+    Requests are expressed as the signal sets they denote (intersected
+    with the supported set, which is what satpulse requests): refusals
+    record the refused set, and accepted requests whose achieved set
+    differs from the requested one record both. Exact realization gets
+    no entry. Error wording is satpulsetool presentation and is omitted."""
     entry: dict[str, Any] = {}
-    sets: dict[str, list[str]] = {}
+    supported: dict[str, list[str]] = {}
     inconsistent = []
-    coupled = []
     for o in obs:
         if o.error is not None or o.band is not None or o.achieved is None:
             continue
         for c, sigs in o.achieved.items():
-            if c in sets and sets[c] != sigs:
+            if c in supported and supported[c] != sorted(sigs):
                 inconsistent.append({"gnss": o.gnss, "achieved": o.achieved})
-            sets.setdefault(c, sigs)
-        if sorted(o.achieved) != sorted(o.gnss):
-            coupled.append({"gnss": o.gnss, "enabled": sorted(o.achieved)})
-    if sets:
-        entry["signalSet"] = sets
+            supported.setdefault(c, sorted(sigs))
+    refused = []
+    adjusted = []
+    for o in obs:
+        req = requested_signals(o.gnss, o.band, supported)
+        if o.error is not None:
+            refused.append({"signals": req} if req is not None
+                           else {"gnss": o.gnss, "band": o.band})
+        elif o.achieved is not None:
+            achieved = {c: sorted(s) for c, s in o.achieved.items()}
+            if req is None:
+                if sorted(achieved) != sorted(o.gnss):
+                    adjusted.append({"gnss": o.gnss, "band": o.band,
+                                     "achieved": achieved})
+            elif achieved != req:
+                adjusted.append({"requested": req, "achieved": achieved})
+    if supported:
+        entry["signalSet"] = supported
     if inconsistent:
         entry["inconsistent"] = inconsistent
-    if coupled:
-        entry["coupled"] = coupled
-    refused = [{"gnss": o.gnss, "band": o.band} for o in obs if o.error is not None]
     if refused:
         entry["refused"] = refused
-    banded = [{"gnss": o.gnss, "band": o.band, "achieved": o.achieved}
-              for o in obs if o.error is None and o.band is not None]
-    if banded:
-        entry["bands"] = banded
+    if adjusted:
+        entry["adjusted"] = adjusted
     return entry if entry else None
 
 
