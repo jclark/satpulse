@@ -3,11 +3,26 @@ package syncsim
 import (
 	"io"
 	"log/slog"
+	"math"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 )
+
+// sampleRecorder records every sample the controller serves, for assertions
+// on sample identity (refs, kinds) rather than aggregate statistics.
+type sampleRecorder struct {
+	obs.DefaultObserver
+	samples []phcsync.Sample
+}
+
+func (r *sampleRecorder) Sample(s phcsync.Sample) {
+	r.samples = append(r.samples, s)
+}
 
 func TestPHCSync(t *testing.T) {
 	tests := []struct {
@@ -25,6 +40,9 @@ func TestPHCSync(t *testing.T) {
 		expectResetEntered       *int          // expected times reset mode entered (nil = don't check)
 		expectConvergingEntered  *int          // expected times converging mode entered (nil = don't check)
 		expectTrackingEntered    *int          // expected times tracking mode entered (nil = don't check)
+		expectNMissing           *int          // expected in-sync missing-sample count (nil = don't check)
+		expectOutlierSeconds     []int         // expected sim seconds of in-sync outlier samples (nil = don't check)
+		expectIncreasingRefs     bool          // assert non-missing sample refs strictly increase (no stale/duplicate delivery)
 		modifyConfig             func(*Config) // optional function to modify config (nil = use defaults)
 	}{
 		{
@@ -542,6 +560,8 @@ func TestPHCSync(t *testing.T) {
 			expectTrackingEntered:    ptr(2), // initial + after shift ends
 			expectResetEntered:       ptr(2), // initial + after excursion triggers exit
 			expectMinTrackingSamples: 500,    // ~8+ minutes of tracking out of 10
+			expectNMissing:           ptr(0), // every edge delivered, no synthetic missing samples
+			expectIncreasingRefs:     true,   // no edge delivered as the wrong second
 			modifyConfig: func(cfg *Config) {
 				cfg.Sync.Track.PersistThreshold = 300.0   // 5 minutes
 				cfg.Sync.Track.BadSampleRunLimit = 5      // exit tracking after 5 consecutive bad samples
@@ -557,6 +577,27 @@ func TestPHCSync(t *testing.T) {
 			},
 			// Issue #193: Reset mode rejects phase shifts implying impossible drift rates.
 			// 5ms over 30s = 166,667 PPB, exceeds 100,000 PPB limit → rejected.
+			// The 5ms shift also exceeds the max pulse delay (250us), so this case
+			// additionally guards against stale pulse delivery: before the fix the
+			// simulator handed each delivery event the previous second's edge,
+			// producing duplicate refs and synthetic missing samples.
+		},
+		{
+			name:                 "outlier exceeding pulse delay delivered for its own second",
+			duration:             60.0,
+			maxTrackingStdDev:    20,
+			expectNMissing:       ptr(0),    // no synthetic missing sample around the outlier
+			expectOutlierSeconds: []int{40}, // exactly one outlier, attributed to second 40
+			expectIncreasingRefs: true,      // no edge delivered as the wrong second
+			modifyConfig: func(cfg *Config) {
+				cfg.Fault.Outlier = []OutlierConfig{
+					{Time: 40, Offset: 300_000}, // 300us, beyond the 250us max pulse delay
+				}
+			},
+			// An edge displaced past its scheduled delivery event is delivered
+			// (slightly late) as one outlier for its own second. Before the stale
+			// pulse delivery fix, the delivery event was handed the previous
+			// second's edge and the displaced edge was silently skipped.
 		},
 	}
 
@@ -601,10 +642,16 @@ func TestPHCSync(t *testing.T) {
 
 			curTime := time.Date(2017, 1, 1, 0, 0, 0, 0, time.UTC)
 
+			// TAI start time, replicating the conversion in Simulate;
+			// computed before Simulate mutates curTime.
+			ls := ptime.LeapSecond{UTCOffBefore: 37, UTCOffAfter: 37, OffChangeTime: 1483228800}
+			taiStart, _ := ls.SysToTime(curTime)
+
 			// Discard logs during test
 			lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-			stats, err := Simulate(nil, cfg, nil, &curTime, lg)
+			rec := &sampleRecorder{}
+			stats, err := Simulate([]obs.Observer{rec}, cfg, nil, &curTime, lg)
 			if err != nil {
 				t.Fatalf("Simulate failed: %v", err)
 			}
@@ -670,6 +717,34 @@ func TestPHCSync(t *testing.T) {
 			}
 			if tt.expectTrackingEntered != nil && trackingEntered != *tt.expectTrackingEntered {
 				t.Errorf("TrackingEntered = %d, want %d", trackingEntered, *tt.expectTrackingEntered)
+			}
+
+			// Check pulse delivery integrity
+			if tt.expectNMissing != nil && stats.NMissing != *tt.expectNMissing {
+				t.Errorf("NMissing = %d, want %d", stats.NMissing, *tt.expectNMissing)
+			}
+			if tt.expectOutlierSeconds != nil {
+				var secs []int
+				for _, s := range rec.samples {
+					if s.Kind == phcsync.SampleOutlier && s.Mode.InSync() {
+						secs = append(secs, int(math.Round(s.Ref.Sub(taiStart).Seconds())))
+					}
+				}
+				if !reflect.DeepEqual(secs, tt.expectOutlierSeconds) {
+					t.Errorf("outlier seconds = %v, want %v", secs, tt.expectOutlierSeconds)
+				}
+			}
+			if tt.expectIncreasingRefs {
+				prev := ptime.Time(0)
+				for i, s := range rec.samples {
+					if s.Kind == phcsync.SampleMissing {
+						continue
+					}
+					if prev != 0 && s.Ref <= prev {
+						t.Errorf("sample %d ref %d not after previous ref %d", i, s.Ref, prev)
+					}
+					prev = s.Ref
+				}
 			}
 
 			t.Logf("Simulation completed: %d samples (reset=%d, converging=%d, tracking=%d), entered (reset=%d, converging=%d, tracking=%d), tracking stddev = %v, tracking absmax = %v",
