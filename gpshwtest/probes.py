@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from tool import Invocation, Tool
+from tool import Invocation, Tool, transient
 
 Value = Any
 
@@ -292,6 +292,18 @@ def flat_value(obj: Value, key: str) -> Value:
     return cur
 
 
+def mode_disagreements(reported: Value, back: Value) -> list[str]:
+    """Keys on which a mode set response and the independent readback
+    disagree. Only keys present in both are compared: a backend may store
+    the position in a different coordinate system than it was set in
+    (gen 8 u-blox stores ECEF however set), so a reported field absent
+    from the readback is unconfirmable, not a contradiction - it shows up
+    in the characterization as not readable."""
+    if not isinstance(reported, dict) or not isinstance(back, dict):
+        return [] if reported == back else ["mode"]
+    return sorted(k for k in reported.keys() & back.keys() if reported[k] != back[k])
+
+
 def mode_args(mode: dict[str, Any]) -> list[str]:
     """Build the flags that reproduce a mode readback. Survey parameters are
     not readable, so a surveyed mode is restored with default survey settings."""
@@ -337,6 +349,9 @@ class ProbeRun:
         for v in p.values:
             inv = self.tool.gps(f"set-{p.name}", [p.flag, p.to_cli(v)])
             reported = config_value(inv.config(), p.path)
+            if transient(inv.error):
+                self.failures.append(f"set-{p.name}: {inv.error}")
+                continue
             cfg = self.show_config(f"readback-{p.name}")
             if cfg is None:
                 continue
@@ -375,8 +390,11 @@ class ProbeRun:
         name = "-".join(case)
         inv = self.tool.gps(f"set-{group}-{name}", (pre or []) + [flag, ",".join(case)])
         if inv.error is not None:
-            self.emission_observations.append(
-                EmissionObservation(group, case, inv.error, []))
+            if transient(inv.error):
+                self.failures.append(f"set-{group}-{name}: {inv.error}")
+            else:
+                self.emission_observations.append(
+                    EmissionObservation(group, case, inv.error, []))
             return None
         time.sleep(MSG_SETTLE)
         return self.observe_capture(f"observe-{group}-{name}")
@@ -563,6 +581,9 @@ class ProbeRun:
             if band:
                 args += ["--band", ",".join(band)]
             inv = self.tool.gps(f"set-signals-{name}", args)
+            if transient(inv.error):
+                self.failures.append(f"set-signals-{name}: {inv.error}")
+                continue
             reported = config_value(inv.config(), ("signalsEnabled",))
             if inv.error is None:
                 time.sleep(SIGNAL_SETTLE)
@@ -606,6 +627,9 @@ class ProbeRun:
         prev = config_value(initial, ("mode",))
         for case in MODE_CASES:
             inv = self.tool.gps(f"set-mode-{case.name}", case.args)
+            if transient(inv.error):
+                self.failures.append(f"set-mode-{case.name}: {inv.error}")
+                continue
             reported = config_value(inv.config(), ("mode",))
             cfg = self.show_config(f"readback-mode-{case.name}")
             if cfg is None:
@@ -618,9 +642,10 @@ class ProbeRun:
                     self.failures.append(
                         f"mode {case.name}: refusal changed state: {prev!r} -> {back!r}")
                 continue
-            if reported != back:
+            for k in mode_disagreements(reported, back):
                 self.failures.append(
-                    f"mode {case.name}: reported {reported!r} but readback says {back!r}")
+                    f"mode {case.name}: reported {k}={flat_value(reported, k)!r} "
+                    f"but readback says {flat_value(back, k)!r}")
             for k, v in case.request.items():
                 self.observations.append(Observation(
                     f"mode.{k}", v, None, flat_value(reported, k), flat_value(back, k)))

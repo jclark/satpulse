@@ -66,6 +66,10 @@ def characterize_prop(obs: list[Observation]) -> dict[str, Any] | None:
     if ok and all(o.readback is None for o in ok):
         entry["notReadable"] = True
         return entry
+    if (len(ok) > 1 and len({json.dumps(o.readback) for o in ok}) == 1
+            and all(o.readback != o.requested for o in ok)):
+        entry["notSettable"] = True
+        return entry
     inexact = [o for o in ok if o.readback != o.requested]
     if inexact:
         dp = fit_quantum(ok)

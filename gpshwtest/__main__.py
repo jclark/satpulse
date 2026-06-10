@@ -169,12 +169,18 @@ def run(tool: Tool, baseline: Path | None, phc: tuple[str, int, int] | None,
 
 def check_show_port(tool: Tool, pr: ProbeRun) -> None:
     """Check that --show-port responds and reports a port. The port fields
-    appear only with --show-port, so there is no readback to cross-check."""
+    appear only with --show-port, so there is no readback to cross-check.
+    On a UART connection with no speed given, the reported speed is locked
+    in for the rest of the run, saving a baud scan per invocation."""
     inv = tool.gps("show-port", ["--show-port"])
     if inv.error is not None:
         pr.failures.append(f"--show-port failed: {inv.error}")
-    elif not inv.config().get("port"):
+        return
+    if not inv.config().get("port"):
         pr.failures.append(f"--show-port reported no port: {inv.config()!r}")
+    baud = inv.config().get("baudRate")
+    if "-s" not in tool.conn and isinstance(baud, int) and baud > 0:
+        tool.conn += ["-s", str(baud)]
 
 
 def compare_baseline(receiver: dict[str, Any], baseline: Path | None, text: str) -> int:

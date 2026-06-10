@@ -61,6 +61,14 @@ PVT and satellite output probes via replay (same session):
 - ptp is realized as NAV-PVT + NAV-TIMEGPS + TIM-TP: pulse time arrives as a time event with ref=PrePulse and taiTime; tai and ecef content selectors are honored; sat/sig produce satellites events, sig with per-signal entries.
 - Survey progress messages cannot be verified in mobile mode (NAV-SVIN only flows during a survey-in); the survey flag is excluded from PVT expectations.
 
-## u-blox M8T, /dev/ttyS0 (UART)
+## u-blox LEA-M8T-0, TIM 1.10 PROTVER 22.0 (2026-06-10, /dev/ttyS0 UART 9600)
 
-Not yet probed. Baud rate unknown; discover by scanning (9600 is the M8 UART default).
+First full program runs (the unfamiliar-receiver test: no new code needed; two bugs in generic comparisons fixed). Run takes ~8.5 min at 9600 baud. Findings:
+
+- satpulsetool detects it without -s (scan finds 9600); the program locks in the speed reported by --show-port for the rest of the run.
+- Fixed position is stored in ECEF however it is set: a position set as LLH reads back converted to ECEF (TMODE2). ECEF quantized to 0.01 m (cm fields), fixed-position accuracy to 0.001 m. The set response echoes the requested LLH form (quantized to 1e-7 deg), which an independent readback cannot confirm - the program compares only the representation-shared mode fields.
+- Antenna cable delay is not settable: requests are accepted but the value never changes (stayed at the receiver's 50 ns). Characterized as notSettable.
+- Signal sets are single-band as expected. Requesting all six constellations enables five: GLO is clipped when BDS is also requested (M8 concurrent-GNSS limit). QZSS enable turns on L1+L1S; a receiver found with QZSS L1-only (the factory default) cannot be put back, because per-signal selection is not in the configuration vocabulary - the as-found state is unreachable and the first run reports an honest restore failure. satpulsetool design question: should enabling QZSS include L1S?
+- sats-out sig delivers nothing (PROTVER 22 has no NAV-SIG); sat works. RTCM output and band selection are refused, matching the absent supports flags.
+- Reproducible satpulsetool issue: setting --raw-out nav right after raw observations were enabled times out with "no response to request" (twice, including the retry), while the same invocation on a quiet line succeeds. Likely the ~1.2 s response wait expiring behind RXM-RAWX transmissions (~0.6 s each) saturating the 9600 baud line.
+- Transient "no response"/"detection failed" errors are now retried once and reported as failures when they persist, never as receiver limitations (they would otherwise pollute the characterization).

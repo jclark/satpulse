@@ -17,6 +17,14 @@ class ToolFailure(Exception):
     """A violation of the tool guarantees: no response or no parseable output."""
 
 
+def transient(err: str | None) -> bool:
+    """Whether an error is a communication flake (detection failure or a
+    request the receiver never answered) rather than a refusal of the
+    requested configuration. Transient errors are retried, and recorded as
+    failures rather than receiver limitations when they persist."""
+    return err is not None and ("detection failed" in err or "no response" in err)
+
+
 @dataclass
 class Invocation:
     """One satpulsetool gps invocation and its machine-readable result."""
@@ -61,12 +69,12 @@ class Tool:
         on success without JSON output; a configuration error is not a
         failure and is reported through Invocation.error.
 
-        Detection of a receiver whose periodic output is all disabled is
-        intermittent (observed on a ZED-F9P after NMEA output was turned
-        off), so a detection failure is retried once; the flake stays
-        visible in raw.jsonl and the packet logs."""
+        Communication flakes happen (intermittent detection of a silenced
+        receiver on USB, unanswered requests on a slow UART), so a
+        transient error is retried once; the flake stays visible in
+        raw.jsonl and the packet logs."""
         inv = self.gps_once(name, args, timeout)
-        if inv.error is not None and "detection failed" in inv.error:
+        if transient(inv.error):
             time.sleep(2.0)
             inv = self.gps_once(f"{name}-retry", args, timeout)
         return inv
