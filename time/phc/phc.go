@@ -69,7 +69,7 @@ func (clk *Clock) ReadExtts() (ptime.Time, uint32, error) {
 	if n != size {
 		return 0, 0, clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, size), "read")
 	}
-	return ptime.TimespecToTime(unix.Timespec{Sec: kernelLong(event.T.Sec), Nsec: kernelLong(event.T.Nsec)}), event.Index, nil
+	return ptpClockTimeToTimePHC(event.T), event.Index, nil
 }
 
 // This is only safe when any ReadWorker has closed its tsEvents channel
