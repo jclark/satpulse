@@ -1,9 +1,12 @@
 """Test GPS high-level configuration against real hardware.
 
 See GOAL.md for what this program is for. It probes a receiver through
-satpulsetool gps, verifies the device-independent tool guarantees (failures),
-and emits a characterization of how configuration is realized on the
-receiver (data). Run in-repo as: python3 gpshwtest -d /dev/ttyACM0 -s 38400
+satpulsetool gps, recording every step with its intent, then derives the
+verdicts offline from the records: tool-guarantee violations (failures)
+and a characterization of how configuration is realized on the receiver
+(data). The same offline analysis re-runs over any archived run directory
+with --analyze, so improving the checks never requires re-running
+hardware. Run in-repo as: python3 gpshwtest -d /dev/ttyACM0 -s 38400
 """
 
 import argparse
@@ -16,7 +19,8 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from characterize import characterize, to_json
+from analyze import analyze_run
+from characterize import to_json
 from probes import PROPS, ProbeRun
 from tool import Tool, ToolFailure
 
@@ -28,6 +32,9 @@ def main() -> int:
     ap.add_argument("-d", "--serial-device", help="serial device of the receiver")
     ap.add_argument("-s", "--device-speed", type=int, help="serial speed in bps")
     ap.add_argument("-f", "--config-file", help="read device and speed from a satpulse.toml")
+    ap.add_argument("--analyze", type=Path, metavar="RUNDIR",
+                    help="re-analyze a recorded run directory offline, "
+                         "without touching hardware")
     ap.add_argument("--satpulsetool", type=Path, help="path to the satpulsetool binary")
     ap.add_argument("--runs", type=Path, default=HERE / "runs",
                     help="directory for run artifacts (default: gpshwtest/runs)")
@@ -40,19 +47,32 @@ def main() -> int:
                                   "iface:pin[:chan] (default: the [phc] table of the "
                                   "config file, or /etc/satpulse.toml)")
     args = ap.parse_args()
+    exe = args.satpulsetool if args.satpulsetool else find_satpulsetool()
+    if args.analyze:
+        return report(args.analyze, exe, args.baseline)
     if running_satpulsed():
         print("satpulsed is running; stop it before touching the receiver", file=sys.stderr)
         return 1
     conn = conn_args(args)
-    exe = args.satpulsetool if args.satpulsetool else find_satpulsetool()
-    run_dir = args.runs / datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = args.runs / f"{stamp}-{device_slug(args)}"
     tool = Tool(exe, conn, run_dir)
     print(f"run artifacts: {run_dir}", file=sys.stderr)
+    status = 0
     try:
-        return run(tool, args.baseline, resolve_phc(args), args.sudo)
+        drive(tool, resolve_phc(args), args.sudo)
     except ToolFailure as e:
         print(f"FAILURE: {e}", file=sys.stderr)
-        return 1
+        status = 1
+    return max(status, report(run_dir, exe, args.baseline))
+
+
+def device_slug(args: argparse.Namespace) -> str:
+    """A run-directory name component identifying the receiver, so
+    concurrent runs on different receivers cannot collide."""
+    if args.serial_device:
+        return Path(args.serial_device).name
+    return Path(args.config_file).stem
 
 
 def conn_args(args: argparse.Namespace) -> list[str]:
@@ -115,21 +135,19 @@ def running_satpulsed() -> bool:
     return False
 
 
-def run(tool: Tool, baseline: Path | None, phc: tuple[str, int, int] | None,
-        use_sudo: bool) -> int:
-    ident = tool.gps("show-receiver", ["--show-receiver"])
+def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool) -> None:
+    """Execute the probe sequence, recording every step. No verdicts here:
+    the records are analyzed offline afterwards (also on a live run)."""
+    ident = tool.gps("show-receiver", ["--show-receiver"], {"op": "identify"})
     if ident.error is not None:
-        print(f"FAILURE: receiver detection failed: {ident.error}", file=sys.stderr)
-        return 1
+        return
     receiver = ident.out.get("receiver", {})
-    supports = ident.out.get("supports", [])
     print(f"receiver: {receiver.get('vendor')} {receiver.get('hardware')} "
           f"{receiver.get('firmware')}", file=sys.stderr)
     pr = ProbeRun(tool)
-    initial = pr.show_config("initial-config")
+    initial = pr.show_config("initial-config", "initial")
     if initial is None:
-        print("FAILURE: cannot read initial configuration", file=sys.stderr)
-        return 1
+        return
     check_show_port(tool, pr)
     for p in PROPS:
         print(f"probing {p.name}", file=sys.stderr)
@@ -148,39 +166,36 @@ def run(tool: Tool, baseline: Path | None, phc: tuple[str, int, int] | None,
     if isinstance(supported, list):
         print("probing signal combinations", file=sys.stderr)
         pr.probe_signals(initial, supported)
-    final = pr.show_config("final-config")
-    if final is not None and final != initial:
-        pr.failures.append(f"receiver not left as found: initial {initial!r}, final {final!r}")
-    enabled = sorted(initial.get("signalsEnabled") or {})
-    doc = characterize(receiver, supports, pr, enabled)
-    text = to_json(doc)
-    (tool.run_dir / "characterization.json").write_text(text)
-    sys.stdout.write(text)
-    status = 0
-    for f in pr.failures:
-        print(f"FAILURE: {f}", file=sys.stderr)
-        status = 1
-    if not pr.failures:
-        n = (len(pr.observations) + len(pr.signal_observations)
-             + len(pr.emission_observations))
-        print(f"ok: {n} observations, no failures", file=sys.stderr)
-    return max(status, compare_baseline(receiver, baseline, text))
+    pr.show_config("final-config", "final")
 
 
 def check_show_port(tool: Tool, pr: ProbeRun) -> None:
-    """Check that --show-port responds and reports a port. The port fields
-    appear only with --show-port, so there is no readback to cross-check.
-    On a UART connection with no speed given, the reported speed is locked
-    in for the rest of the run, saving a baud scan per invocation."""
-    inv = tool.gps("show-port", ["--show-port"])
-    if inv.error is not None:
-        pr.failures.append(f"--show-port failed: {inv.error}")
-        return
-    if not inv.config().get("port"):
-        pr.failures.append(f"--show-port reported no port: {inv.config()!r}")
+    """Probe --show-port. The port fields appear only with --show-port, so
+    there is no readback to cross-check. On a UART connection with no speed
+    given, the reported speed is locked in for the rest of the run, saving
+    a baud scan per invocation."""
+    inv = tool.gps("show-port", ["--show-port"], {"op": "show-port"})
     baud = inv.config().get("baudRate")
     if "-s" not in tool.conn and isinstance(baud, int) and baud > 0:
         tool.conn += ["-s", str(baud)]
+
+
+def report(run_dir: Path, exe: Path, baseline: Path | None) -> int:
+    """Analyze a run directory and report: write and print the
+    characterization, print the failures, compare against the baseline."""
+    a = analyze_run(run_dir, exe)
+    print(f"receiver: {a.receiver.get('vendor')} {a.receiver.get('hardware')} "
+          f"{a.receiver.get('firmware')}", file=sys.stderr)
+    text = to_json(a.characterization)
+    (run_dir / "characterization.json").write_text(text)
+    sys.stdout.write(text)
+    status = 0
+    for f in a.failures:
+        print(f"FAILURE: {f}", file=sys.stderr)
+        status = 1
+    if not a.failures:
+        print(f"ok: {a.observation_count} observations, no failures", file=sys.stderr)
+    return max(status, compare_baseline(a.receiver, baseline, text))
 
 
 def compare_baseline(receiver: dict[str, Any], baseline: Path | None, text: str) -> int:

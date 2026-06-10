@@ -2,7 +2,9 @@
 
 All receiver I/O goes through here: each invocation runs satpulsetool gps
 with --json and a per-invocation packet log, and is recorded verbatim in
-raw.jsonl in the run directory.
+raw.jsonl in the run directory together with its intent - what the step
+requests, in model vocabulary. The records plus the packet logs are
+everything offline analysis needs (see analyze.py).
 """
 
 import json
@@ -12,17 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from model import transient
+
 
 class ToolFailure(Exception):
     """A violation of the tool guarantees: no response or no parseable output."""
-
-
-def transient(err: str | None) -> bool:
-    """Whether an error is a communication flake (detection failure or a
-    request the receiver never answered) rather than a refusal of the
-    requested configuration. Transient errors are retried, and recorded as
-    failures rather than receiver limitations when they persist."""
-    return err is not None and ("detection failed" in err or "no response" in err)
 
 
 @dataclass
@@ -63,7 +59,8 @@ class Tool:
         run_dir.mkdir(parents=True, exist_ok=True)
         self.raw = (run_dir / "raw.jsonl").open("a", encoding="utf-8")
 
-    def gps(self, name: str, args: list[str], timeout: float = 90.0) -> Invocation:
+    def gps(self, name: str, args: list[str], intent: dict[str, Any],
+            timeout: float = 90.0) -> Invocation:
         """Run satpulsetool gps with the given high-level args plus --json
         and a per-invocation packet log. Raises ToolFailure on timeout or
         on success without JSON output; a configuration error is not a
@@ -73,19 +70,25 @@ class Tool:
         receiver on USB, unanswered requests on a slow UART), so a
         transient error is retried once; the flake stays visible in
         raw.jsonl and the packet logs."""
-        inv = self.gps_once(name, args, timeout)
+        inv = self.gps_once(name, args, intent, timeout, retry=False)
         if transient(inv.error):
             time.sleep(2.0)
-            inv = self.gps_once(f"{name}-retry", args, timeout)
+            inv = self.gps_once(f"{name}-retry", args, intent, timeout, retry=True)
         return inv
 
-    def gps_once(self, name: str, args: list[str], timeout: float) -> Invocation:
+    def gps_once(self, name: str, args: list[str], intent: dict[str, Any],
+                 timeout: float, retry: bool) -> Invocation:
         self.seq += 1
         log = self.run_dir / f"{self.seq:03d}-{name}.jsonl"
         argv = [str(self.exe), "gps", *self.conn, "--json", "--packet-log", str(log), *args]
+        entry = {"seq": self.seq, "name": name, "intent": intent, "argv": argv,
+                 "log": log.name}
+        if retry:
+            entry["retry"] = True
         try:
             p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
+            self.record({**entry, "timeout": timeout})
             raise ToolFailure(f"{name}: no response within {timeout}s: {' '.join(argv)}")
         out: dict[str, Any] = {}
         if p.stdout:
@@ -96,17 +99,18 @@ class Tool:
             except ValueError:
                 pass
         inv = Invocation(name, argv, p.returncode, out, p.stderr, log)
-        self.record({"seq": self.seq, "name": name, "argv": argv, "exit": p.returncode,
-                     "json": out if out else p.stdout, "stderr": p.stderr})
+        self.record({**entry, "exit": p.returncode, "json": out if out else p.stdout,
+                     "stderr": p.stderr})
         if p.returncode == 0 and not out:
             raise ToolFailure(f"{name}: exit 0 but no JSON output")
         return inv
 
     def sdp_extts(self, name: str, iface: str, pin: int, chan: int, seconds: float,
-                  use_sudo: bool) -> list[dict[str, Any]] | None:
+                  use_sudo: bool, intent: dict[str, Any]) -> list[dict[str, Any]] | None:
         """Read external timestamp events from a PHC pin for a few seconds.
         Requires root; run with sudo -n when use_sudo is set. Returns None
         when sdp itself fails (the caller decides what that means)."""
+        self.seq += 1
         argv = (["sudo", "-n"] if use_sudo else []) + \
             [str(self.exe), "sdp", "--extts", "--jsonl", "-p", str(pin),
              "--chan", str(chan), "-t", str(seconds), iface]
@@ -122,31 +126,32 @@ class Tool:
                 continue
             if isinstance(v, dict):
                 events.append(v)
-        self.record({"name": name, "argv": argv, "exit": p.returncode,
-                     "events": events, "stderr": p.stderr})
+        self.record({"seq": self.seq, "name": name, "intent": intent, "argv": argv,
+                     "exit": p.returncode, "events": events, "stderr": p.stderr})
         return events if p.returncode == 0 else None
-
-    def replay(self, log: Path, timeout: float = 60.0) -> list[dict[str, Any]]:
-        """Convert a packet log offline into the typed gpsprot event stream."""
-        argv = [str(self.exe), "replay", str(log)]
-        try:
-            p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            raise ToolFailure(f"replay {log.name}: no response within {timeout}s")
-        if p.returncode != 0:
-            raise ToolFailure(f"replay {log.name}: exit {p.returncode}: {p.stderr.strip()}")
-        events = []
-        for line in p.stdout.splitlines():
-            try:
-                v = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(v, dict):
-                events.append(v)
-        return events
 
     def record(self, entry: dict[str, Any]) -> None:
         """Append an entry to the raw observation log."""
         json.dump(entry, self.raw)
         self.raw.write("\n")
         self.raw.flush()
+
+
+def replay(exe: Path, log: Path, timeout: float = 60.0) -> list[dict[str, Any]]:
+    """Convert a packet log offline into the typed gpsprot event stream."""
+    argv = [str(exe), "replay", str(log)]
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise ToolFailure(f"replay {log.name}: no response within {timeout}s")
+    if p.returncode != 0:
+        raise ToolFailure(f"replay {log.name}: exit {p.returncode}: {p.stderr.strip()}")
+    events = []
+    for line in p.stdout.splitlines():
+        try:
+            v = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(v, dict):
+            events.append(v)
+    return events

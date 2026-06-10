@@ -9,8 +9,7 @@ verbatim rather than dropped.
 import json
 from typing import Any
 
-from probes import (EmissionObservation, Observation, ProbeRun,
-                    PVT_CASES, SATS_CASES, SignalObservation)
+from model import EmissionObservation, Observation, SignalObservation
 
 # RTCM MSM message numbers are <decade><level> with a fixed decade per
 # constellation (RTCM 10403 standard numbering, not receiver-specific).
@@ -54,20 +53,23 @@ def requested_signals(gnss: list[str], band: list[str] | None,
 
 
 def characterize(receiver: dict[str, Any], supports: list[str],
-                 run: ProbeRun, enabled_gnss: list[str]) -> dict[str, Any]:
+                 observations: list[Observation],
+                 signal_observations: list[SignalObservation],
+                 emission_observations: list[EmissionObservation],
+                 enabled_gnss: list[str]) -> dict[str, Any]:
     """Build the characterization document for one receiver+firmware.
     enabled_gnss is the constellation set that was enabled while message
     output was probed; it scopes the expected RTCM MSM types."""
     limits: dict[str, Any] = {}
-    for prop in sorted({o.prop for o in run.observations}):
-        entry = characterize_prop([o for o in run.observations if o.prop == prop])
+    for prop in sorted({o.prop for o in observations}):
+        entry = characterize_prop([o for o in observations if o.prop == prop])
         if entry:
             limits[prop] = entry
-    signals = characterize_signals(run.signal_observations)
+    signals = characterize_signals(signal_observations)
     if signals:
         limits["signals"] = signals
-    by_group = {g: [o for o in run.emission_observations if o.group == g]
-                for g in ("nmeaOut", "rtcmOut", "rawOut")}
+    by_group = {g: [o for o in emission_observations if o.group == g]
+                for g in ("nmeaOut", "rtcmOut", "rawOut", "pvtOut", "satsOut")}
     nmea = characterize_nmea(by_group["nmeaOut"])
     if nmea:
         limits["nmeaOut"] = nmea
@@ -77,14 +79,10 @@ def characterize(receiver: dict[str, Any], supports: list[str],
     raw = characterize_raw(by_group["rawOut"])
     if raw:
         limits["rawOut"] = raw
-    pvt = characterize_expected(
-        [o for o in run.emission_observations if o.group == "pvtOut"],
-        {tuple(c.flags): c.expect for c in PVT_CASES})
+    pvt = characterize_expected(by_group["pvtOut"])
     if pvt:
         limits["pvtOut"] = pvt
-    sats = characterize_expected(
-        [o for o in run.emission_observations if o.group == "satsOut"],
-        {tuple(c): e for c, e in SATS_CASES})
+    sats = characterize_expected(by_group["satsOut"])
     if sats:
         limits["satsOut"] = sats
     return {"receiver": receiver, "supports": sorted(supports), "limitations": limits}
@@ -154,10 +152,20 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
     if inconsistent:
         entry["inconsistent"] = inconsistent
     if refused:
-        entry["refused"] = refused
+        entry["refused"] = dedup(refused)
     if adjusted:
-        entry["adjusted"] = adjusted
+        entry["adjusted"] = dedup(adjusted)
     return entry if entry else None
+
+
+def dedup(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse duplicates and order canonically. Distinct requests can
+    denote the same signal set; the characterization records the sets, not
+    the probe outcomes, so duplicates and probe order must not show."""
+    seen: dict[str, dict[str, Any]] = {}
+    for e in entries:
+        seen.setdefault(json.dumps(e, sort_keys=True), e)
+    return [seen[k] for k in sorted(seen)]
 
 
 def characterize_nmea(obs: list[EmissionObservation]) -> dict[str, Any] | None:
@@ -223,12 +231,12 @@ def characterize_raw(obs: list[EmissionObservation]) -> dict[str, Any] | None:
     return entry if entry else None
 
 
-def characterize_expected(obs: list[EmissionObservation],
-                          expect: dict[tuple[str, ...], set[str]]) -> dict[str, Any] | None:
-    """Characterize information-level message output. The semantics are
-    best-effort at the message level: delivering more than was asked for is
-    normal (a needed message may carry extra information), so only missing
-    requested information is a limitation."""
+def characterize_expected(obs: list[EmissionObservation]) -> dict[str, Any] | None:
+    """Characterize information-level message output against the information
+    kinds the request should deliver (recorded with the observation). The
+    semantics are best-effort at the message level: delivering more than was
+    asked for is normal (a needed message may carry extra information), so
+    only missing requested information is a limitation."""
     entry: dict[str, Any] = {}
     refused = [o.requested for o in obs if o.error is not None]
     if refused:
@@ -237,8 +245,7 @@ def characterize_expected(obs: list[EmissionObservation],
     for o in obs:
         if o.error is not None:
             continue
-        want = expect.get(tuple(o.requested), set())
-        lack = sorted(want - set(o.emitted))
+        lack = sorted(set(o.expect or []) - set(o.emitted))
         if lack:
             missing.append({"requested": o.requested, "missing": lack})
     if missing:

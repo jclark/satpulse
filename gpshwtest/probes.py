@@ -1,46 +1,35 @@
-"""Probes for scalar configuration properties.
+"""Probe driving: plan and execute invocations against the receiver.
 
-Each probe sets a property, reads the achieved value from the set
-invocation, and confirms it with an independent readback. Disagreement
-between the two, or state changed by a reported error, is a failure
-(a tool-guarantee violation); everything else - refusals, quantization,
-clipping - is recorded as an observation for the characterization.
+This layer decides what to run - the probe cases, adaptive choices such
+as signal combinations from the discovered supported set, and the restore
+steps derived from the initial readback - and executes it, recording each
+step's intent in model vocabulary. It renders no verdicts: failures and
+the characterization are derived offline from the records by analyze.py,
+for live runs and archived runs alike.
 """
 
-import json
 import sys
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Callable
 
-from tool import Invocation, Tool, transient
-
-Value = Any
+from model import (NMEA_VOCAB, Value, config_value, emissions, fmt_value, has_fix,
+                   mode_args, nmea_set, raw_set, rtcm_set, transient)
+from tool import Invocation, Tool, replay
 
 # Settle time after a successful signal-set change: u-blox documents an
 # internal GNSS-subsystem restart (wait for the ACK plus 0.5 s); 2 s has
 # been reliable on real hardware.
 SIGNAL_SETTLE = 2.0
 
+# Seconds of packet capture used to observe what the receiver emits;
+# the message kinds under test are all per-epoch (1 Hz), so this spans
+# several epochs.
+OBSERVE_SECONDS = 4
 
-@dataclass
-class Observation:
-    """One probe outcome in device-independent terms."""
-
-    prop: str
-    requested: Value
-    error: str | None
-    reported: Value
-    readback: Value
-
-
-def fmt_value(v: Value) -> str:
-    """Format a model value as a satpulsetool command-line argument."""
-    if isinstance(v, float):
-        s = f"{v:.9f}".rstrip("0").rstrip(".")
-        return s if s else "0"
-    return str(v)
+# Settle time after changing message output before observing, so the
+# observation window does not straddle the change.
+MSG_SETTLE = 1.0
 
 
 @dataclass
@@ -87,11 +76,23 @@ class ModeCase:
     request: dict[str, Value]
 
 
-# The NMEA sentence types in the model vocabulary. Types outside it (such
-# as event-driven TXT diagnostics) are excluded from comparisons because
-# their appearance in a short capture window is not deterministic; they
-# remain visible in the packet-log artifacts.
-NMEA_VOCAB = ["RMC", "GGA", "GSA", "GSV", "ZDA", "VTG", "GLL"]
+MODE_CASES = [
+    ModeCase("survey", ["--survey", "--survey-time", "300", "--survey-acc", "2.345"],
+             {"static": True}),
+    ModeCase("fixed-llh",
+             ["--fixed-pos-llh", "13.7318284567,100.6447407891,12.34567",
+              "--fixed-pos-acc", "0.12345"],
+             {"static": True, "fixedPosLLH[0]": 13.7318284567,
+              "fixedPosLLH[1]": 100.6447407891, "height": 12.34567,
+              "fixedPosAcc": 0.12345}),
+    ModeCase("fixed-ecef",
+             ["--fixed-pos-ecef", "-1132881.12345,6092270.56789,1504542.90123",
+              "--fixed-pos-acc", "1.23456"],
+             {"static": True, "fixedPosECEF[0]": -1132881.12345,
+              "fixedPosECEF[1]": 6092270.56789, "fixedPosECEF[2]": 1504542.90123,
+              "fixedPosAcc": 1.23456}),
+    ModeCase("mobile", ["--mobile"], {"static": False}),
+]
 
 NMEA_CASES = [["RMC"], ["GGA", "ZDA"], ["none"]]
 
@@ -102,13 +103,13 @@ RTCM_CASES = [["MSM4", "ARP"], ["MSM7"], ["none"]]
 class PVTCase:
     """One PVT output request and the information kinds it should deliver.
 
-    Kinds are derived from the replayed event stream: pos/vel from the
-    position and velocity events, time from solution-time events, tp from
-    pulse-time events (TimeRef PrePulse/PostPulse), leap from leapSecond,
-    navEpoch from epoch markers (covers qual and epoch), tai/ecef when the
-    corresponding content selector is honored. The survey flag is excluded:
-    survey events only flow during a survey-in, so a mobile-mode probe
-    cannot verify them.
+    Kinds are derived from the replayed event stream (see
+    model.event_kinds): pos/vel from the position and velocity events,
+    time from solution-time events, tp from pulse-time events (TimeRef
+    PrePulse/PostPulse), leap from leapSecond, navEpoch from epoch markers
+    (covers qual and epoch), tai/ecef when the corresponding content
+    selector is honored. The survey flag is excluded: survey events only
+    flow during a survey-in, so a mobile-mode probe cannot verify them.
     """
 
     flags: list[str]
@@ -135,109 +136,6 @@ SATS_CASES = [(["sat"], {"satellites"}),
               (["sig"], {"satellites", "perSignal"}),
               (["none"], set())]
 
-
-def has_fix(events: list[dict[str, Any]]) -> bool:
-    """Whether a replayed event stream shows a position fix."""
-    return any(e.get("type") == "navEpoch" and (e.get("data") or {}).get("fixLevel")
-               in ("code", "carrierFloat", "carrierFixed") for e in events)
-
-
-def event_kinds(events: list[dict[str, Any]]) -> set[str]:
-    """The information kinds present in a replayed event stream."""
-    kinds = set()
-    for e in events:
-        t = e.get("type")
-        d = e.get("data") or {}
-        if t in ("posGeo", "posECEF"):
-            kinds.add("pos")
-            if t == "posECEF":
-                kinds.add("ecef")
-        elif t in ("velGeo", "velECEF"):
-            kinds.add("vel")
-        elif t == "time":
-            ref = d.get("ref", 0)
-            kinds.add("tp" if ref else "time")
-            if ref == 2:
-                kinds.add("tpPost")
-            if "taiTime" in d:
-                kinds.add("tai")
-        elif t == "leapSecond":
-            kinds.add("leap")
-        elif t == "satellites":
-            kinds.add("satellites")
-            info = d.get("info") or []
-            if any(len(sv.get("signals") or []) >= 2 for sv in info):
-                kinds.add("perSignal")
-        elif t == "navEpoch":
-            kinds.add("navEpoch")
-    if "tpPost" in kinds or "time" in kinds:
-        kinds.add("after")
-    return kinds
-
-# Seconds of packet capture used to observe what the receiver emits;
-# the message kinds under test are all per-epoch (1 Hz), so this spans
-# several epochs.
-OBSERVE_SECONDS = 4
-
-# Settle time after changing message output before observing, so the
-# observation window does not straddle the change.
-MSG_SETTLE = 1.0
-
-
-@dataclass
-class EmissionObservation:
-    """Outcome of one message-output request, observed by packet capture."""
-
-    group: str
-    requested: list[str]
-    error: str | None
-    emitted: list[str]
-
-
-def emissions(log: Path) -> dict[tuple[str, str], int]:
-    """Counts of inbound (tag, msg) packets in a packet log. Replies to
-    polls are excluded by dropping inbound messages whose name was also
-    sent outbound."""
-    counts: dict[tuple[str, str], int] = {}
-    sent = set()
-    for line in log.read_text().splitlines():
-        e = json.loads(line)
-        tag, msg = e.get("tag"), e.get("msg")
-        if not isinstance(tag, str) or not isinstance(msg, str):
-            continue
-        if e.get("out"):
-            sent.add(msg)
-        else:
-            k = (tag, msg)
-            counts[k] = counts.get(k, 0) + 1
-    return {k: n for k, n in counts.items() if k[1] not in sent}
-
-
-def nmea_set(d: dict[tuple[str, str], int]) -> list[str]:
-    """NMEA sentence types in an emission map."""
-    return sorted({msg[2:] for tag, msg in d if tag == "NMEA" and len(msg) == 5})
-
-
-def rtcm_set(d: dict[tuple[str, str], int]) -> list[str]:
-    """RTCM message types in an emission map."""
-    return sorted({msg for tag, msg in d if tag == "RTCM"})
-
-
-def raw_set(d: dict[tuple[str, str], int]) -> set[str]:
-    """Non-NMEA, non-RTCM periodic messages in an emission map, as tag:msg."""
-    return {f"{tag}:{msg}" for tag, msg in d if tag not in ("NMEA", "RTCM")}
-
-
-@dataclass
-class SignalObservation:
-    """Outcome of requesting one constellation/band combination."""
-
-    gnss: list[str]
-    band: list[str] | None
-    error: str | None
-    achieved: dict[str, list[str]] | None
-
-
 BANDS_ALL = [["L1"], ["L2"], ["L5"], ["E5"], ["L6"], ["L1", "L2"]]
 BANDS_SINGLE = [["L1"], ["L2"], ["E5b"]]
 
@@ -256,182 +154,128 @@ def signal_cases(supported: list[str]) -> list[tuple[list[str], list[str] | None
     return cases
 
 
-MODE_CASES = [
-    ModeCase("survey", ["--survey", "--survey-time", "300", "--survey-acc", "2.345"],
-             {"static": True}),
-    ModeCase("fixed-llh",
-             ["--fixed-pos-llh", "13.7318284567,100.6447407891,12.34567",
-              "--fixed-pos-acc", "0.12345"],
-             {"static": True, "fixedPosLLH[0]": 13.7318284567,
-              "fixedPosLLH[1]": 100.6447407891, "height": 12.34567,
-              "fixedPosAcc": 0.12345}),
-    ModeCase("fixed-ecef",
-             ["--fixed-pos-ecef", "-1132881.12345,6092270.56789,1504542.90123",
-              "--fixed-pos-acc", "1.23456"],
-             {"static": True, "fixedPosECEF[0]": -1132881.12345,
-              "fixedPosECEF[1]": 6092270.56789, "fixedPosECEF[2]": 1504542.90123,
-              "fixedPosAcc": 1.23456}),
-    ModeCase("mobile", ["--mobile"], {"static": False}),
-]
-
-
-def config_value(cfg: dict[str, Any], path: tuple[str, ...]) -> Value:
-    """Extract a value from the config JSON object, None if absent."""
-    v: Value = cfg
-    for k in path:
-        if not isinstance(v, dict):
-            return None
-        v = v.get(k)
-    return v
-
-
-def flat_value(obj: Value, key: str) -> Value:
-    """Extract a value by flattened key like "fixedPosLLH[0]"."""
-    cur = obj
-    for part in key.split("."):
-        name, _, idx = part.partition("[")
-        if not isinstance(cur, dict):
-            return None
-        cur = cur.get(name)
-        if idx:
-            i = int(idx.rstrip("]"))
-            if not isinstance(cur, list) or i >= len(cur):
-                return None
-            cur = cur[i]
-    return cur
-
-
-def mode_disagreements(reported: Value, back: Value) -> list[str]:
-    """Keys on which a mode set response and the independent readback
-    disagree. Every reported field must read back identically: mode is a
-    property, so an achieved value the readback cannot confirm (such as a
-    fixed position echoed as LLH but stored and read back as ECEF) is a
-    guarantee violation, not a representation detail."""
-    if not isinstance(reported, dict) or not isinstance(back, dict):
-        return [] if reported == back else ["mode"]
-    return sorted(k for k in reported if back.get(k) != reported[k])
-
-
-def mode_args(mode: dict[str, Any]) -> list[str]:
-    """Build the flags that reproduce a mode readback. Survey parameters are
-    not readable, so a surveyed mode is restored with default survey settings."""
-    if not mode.get("static"):
-        return ["--mobile"]
-    args: list[str]
-    if "fixedPosECEF" in mode:
-        x, y, z = mode["fixedPosECEF"]
-        args = ["--fixed-pos-ecef", f"{x},{y},{z}"]
-    elif "fixedPosLLH" in mode:
-        lat, lon = mode["fixedPosLLH"]
-        args = ["--fixed-pos-llh", f"{lat},{lon},{mode.get('height', 0)}"]
-    else:
-        args = ["--survey"]
-    if "fixedPosAcc" in mode:
-        args += ["--fixed-pos-acc", fmt_value(mode["fixedPosAcc"])]
-    return args
-
-
 @dataclass
 class ProbeRun:
-    """Drives probes against one receiver, collecting observations and failures."""
+    """Drives probes against one receiver. Pure execution: every step is
+    recorded with its intent; verdicts come from offline analysis."""
 
     tool: Tool
-    observations: list[Observation] = field(default_factory=list)
-    signal_observations: list[SignalObservation] = field(default_factory=list)
-    emission_observations: list[EmissionObservation] = field(default_factory=list)
-    failures: list[str] = field(default_factory=list)
 
-    def show_config(self, name: str) -> dict[str, Any] | None:
+    def show_config(self, name: str, role: str,
+                    prop: str | None = None) -> dict[str, Any] | None:
         """Read the full current configuration in a separate invocation.
-        Returns None when the invocation itself fails (recorded as a
-        failure); callers must then skip comparisons rather than cascade."""
-        inv = self.tool.gps(name, ["--show-config"])
-        if inv.error is not None:
-            self.failures.append(f"{name}: --show-config failed: {inv.error}")
-            return None
-        return inv.config()
+        Returns None when the invocation itself fails; callers then skip
+        steps that depend on the result rather than cascade."""
+        intent: dict[str, Any] = {"op": "config", "role": role}
+        if prop is not None:
+            intent["prop"] = prop
+        inv = self.tool.gps(name, ["--show-config"], intent)
+        return None if inv.error is not None else inv.config()
 
     def probe_scalar(self, p: ScalarProp, initial: dict[str, Any]) -> None:
-        """Probe each value of p, then restore its initial value."""
-        prev = config_value(initial, p.path)
-        start = prev
-        accepted: list[Observation] = []
+        """Probe each value of p, then restore its initial value. A readback
+        follows every answered set - refusals included, so analysis can
+        verify a refusal changed nothing."""
         for v in p.values:
-            inv = self.tool.gps(f"set-{p.name}", [p.flag, p.to_cli(v)])
-            reported = config_value(inv.config(), p.path)
+            inv = self.tool.gps(f"set-{p.name}", [p.flag, p.to_cli(v)],
+                                {"op": "set", "prop": p.name, "path": list(p.path),
+                                 "requested": v})
             if transient(inv.error):
-                self.failures.append(f"set-{p.name}: {inv.error}")
                 continue
-            cfg = self.show_config(f"readback-{p.name}")
-            if cfg is None:
-                continue
-            back = config_value(cfg, p.path)
-            obs = Observation(p.name, v, inv.error, reported, back)
-            self.observations.append(obs)
-            if inv.error is not None:
-                if back != prev:
-                    self.failures.append(
-                        f"{p.name}: refusal of {v!r} changed state: {prev!r} -> {back!r}")
-            else:
-                if reported != back:
-                    self.failures.append(
-                        f"{p.name}: reported {reported!r} but readback says {back!r}")
-                accepted.append(obs)
-                prev = back
-        self.check_value_moves(p, start, accepted)
+            self.show_config(f"readback-{p.name}", "readback", p.name)
         self.restore(p, initial)
 
-    def check_value_moves(self, p: ScalarProp, start: Value,
-                          accepted: list[Observation]) -> None:
-        """An accepted set that leaves a property's value unchanged can be
-        legitimate only as range clamping. When the requests bracket the
-        prior value and it still never moved, no range limit explains it:
-        the set was silently ignored, which is a bug."""
-        if not isinstance(start, (int, float)) or not accepted:
+    def restore(self, p: ScalarProp, initial: dict[str, Any]) -> None:
+        """Set p back to its value in the initial configuration."""
+        v = config_value(initial, p.path)
+        if v is None:
             return
-        vals = [o.requested for o in accepted if isinstance(o.requested, (int, float))]
-        if (all(o.readback == start for o in accepted)
-                and any(v < start for v in vals) and any(v > start for v in vals)):
-            self.failures.append(
-                f"{p.name}: accepted sets never changed the value from {start!r}")
+        inv = self.tool.gps(f"restore-{p.name}", [p.flag, p.to_cli(v)],
+                            {"op": "restore", "prop": p.name, "path": list(p.path),
+                             "value": v})
+        if inv.error is None:
+            self.show_config(f"verify-restore-{p.name}", "verify-restore", p.name)
 
-    def observe_capture(self, name: str) -> Invocation | None:
+    def probe_modes(self, initial: dict[str, Any]) -> None:
+        """Probe each positioning-mode case, then restore the initial mode."""
+        for case in MODE_CASES:
+            inv = self.tool.gps(f"set-mode-{case.name}", case.args,
+                                {"op": "set-mode", "case": case.name,
+                                 "request": case.request})
+            if transient(inv.error):
+                continue
+            self.show_config(f"readback-mode-{case.name}", "readback", "mode")
+        mode = config_value(initial, ("mode",))
+        if not isinstance(mode, dict):
+            return
+        inv = self.tool.gps("restore-mode", mode_args(mode),
+                            {"op": "restore-mode", "mode": mode})
+        if inv.error is None:
+            self.show_config("verify-restore-mode", "verify-restore", "mode")
+
+    def probe_signals(self, initial: dict[str, Any], supported: list[str]) -> None:
+        """Probe constellation/band combinations, then restore the initial set."""
+        for gnss, band in signal_cases(supported):
+            name = "-".join(gnss) + ("-" + "-".join(band) if band else "")
+            args = ["--gnss", ",".join(gnss)]
+            if band:
+                args += ["--band", ",".join(band)]
+            inv = self.tool.gps(f"set-signals-{name}", args,
+                                {"op": "set-signals", "gnss": gnss, "band": band})
+            if transient(inv.error):
+                continue
+            if inv.error is None:
+                time.sleep(SIGNAL_SETTLE)
+            self.show_config(f"readback-signals-{name}", "readback", "signals")
+        self.restore_signals(initial)
+
+    def restore_signals(self, initial: dict[str, Any]) -> None:
+        """Re-enable the initial constellation set. Band subsetting within a
+        constellation cannot be reproduced generically, so a band-limited
+        initial set shows up in analysis as a restore failure rather than
+        silently passing."""
+        want = config_value(initial, ("signalsEnabled",))
+        if not isinstance(want, dict):
+            return
+        inv = self.tool.gps("restore-signals", ["--gnss", ",".join(want)],
+                            {"op": "restore-signals", "want": want})
+        if inv.error is None:
+            time.sleep(SIGNAL_SETTLE)
+            self.show_config("verify-restore-signals", "verify-restore", "signals")
+
+    def observe(self, name: str, intent: dict[str, Any]) -> Invocation | None:
         """Capture for a few seconds; the packet log is what the receiver
         emits. Message output configuration is not readable back, so
         observation is both the verification and the restore baseline."""
-        inv = self.tool.gps(name, ["--show-receiver", "--capture", str(OBSERVE_SECONDS)])
-        if inv.error is not None:
-            self.failures.append(f"{name}: capture failed: {inv.error}")
-            return None
-        return inv
-
-    def observe_emissions(self, name: str) -> dict[tuple[str, str], int] | None:
-        inv = self.observe_capture(name)
-        return emissions(inv.packet_log) if inv is not None else None
+        inv = self.tool.gps(name, ["--show-receiver", "--capture", str(OBSERVE_SECONDS)],
+                            intent)
+        return None if inv.error is not None else inv
 
     def set_and_observe(self, group: str, flag: str, case: list[str],
-                        pre: list[str] | None = None) -> Invocation | None:
+                        pre: list[str] | None = None,
+                        expect: set[str] | None = None) -> Invocation | None:
         """Apply one message-output case and observe the result; None when
-        the request was refused (recorded as an observation) or the
-        observation capture failed (recorded as a failure)."""
+        the request was refused or the observation capture failed (both
+        visible to analysis in the records)."""
         name = "-".join(case)
-        inv = self.tool.gps(f"set-{group}-{name}", (pre or []) + [flag, ",".join(case)])
+        inv = self.tool.gps(f"set-{group}-{name}", (pre or []) + [flag, ",".join(case)],
+                            {"op": "set-msg", "group": group, "case": case})
         if inv.error is not None:
-            if transient(inv.error):
-                self.failures.append(f"set-{group}-{name}: {inv.error}")
-            else:
-                self.emission_observations.append(
-                    EmissionObservation(group, case, inv.error, []))
             return None
         time.sleep(MSG_SETTLE)
-        return self.observe_capture(f"observe-{group}-{name}")
+        intent: dict[str, Any] = {"op": "observe", "role": "case", "group": group,
+                                  "case": case}
+        if expect is not None:
+            intent["expect"] = sorted(expect)
+        return self.observe(f"observe-{group}-{name}", intent)
 
     def probe_messages(self) -> None:
-        """Probe NMEA, RTCM, and raw message output from one shared baseline
-        observation, restoring each group afterwards."""
-        base = self.observe_emissions("messages-initial")
-        if base is None:
+        """Probe NMEA, RTCM, raw, PVT, and satellite output from one shared
+        baseline observation, restoring each group afterwards."""
+        base_inv = self.observe("messages-initial", {"op": "observe", "role": "baseline"})
+        if base_inv is None:
             return
+        base = emissions(base_inv.packet_log)
         self.probe_nmea(nmea_set(base))
         self.probe_rtcm(rtcm_set(base))
         self.probe_raw(raw_set(base))
@@ -442,30 +286,18 @@ class ProbeRun:
     def probe_nmea(self, initial: list[str]) -> None:
         """Probe NMEA output selection, then restore the initial sentence set."""
         for case in NMEA_CASES:
-            inv = self.set_and_observe("nmeaOut", "--nmea-out", case)
-            if inv is not None:
-                self.emission_observations.append(
-                    EmissionObservation("nmeaOut", case, None,
-                                        nmea_set(emissions(inv.packet_log))))
+            self.set_and_observe("nmeaOut", "--nmea-out", case)
         want = [t for t in initial if t in NMEA_VOCAB]
-        inv = self.tool.gps("restore-nmea", ["--nmea-out", ",".join(want) if want else "none"])
-        if inv.error is not None:
-            self.failures.append(f"nmea: restore to {want!r} failed: {inv.error}")
-            return
-        d = self.observe_emissions("verify-restore-nmea")
-        if d is not None:
-            back = [t for t in nmea_set(d) if t in NMEA_VOCAB]
-            if back != sorted(want):
-                self.failures.append(f"nmea: restore to {want!r} read back as {back!r}")
+        inv = self.tool.gps("restore-nmea", ["--nmea-out", ",".join(want) if want else "none"],
+                            {"op": "restore-msg", "group": "nmeaOut", "want": want})
+        if inv.error is None:
+            self.observe("verify-restore-nmea",
+                         {"op": "observe", "role": "verify", "group": "nmeaOut"})
 
     def probe_rtcm(self, initial: list[str]) -> None:
         """Probe RTCM output selection, then restore the initial emission."""
         for case in RTCM_CASES:
-            inv = self.set_and_observe("rtcmOut", "--rtcm-out", case)
-            if inv is not None:
-                self.emission_observations.append(
-                    EmissionObservation("rtcmOut", case, None,
-                                        rtcm_set(emissions(inv.packet_log))))
+            self.set_and_observe("rtcmOut", "--rtcm-out", case)
         want = []
         if any(t.endswith("4") and t.startswith("1") for t in initial):
             want.append("MSM4")
@@ -473,14 +305,11 @@ class ProbeRun:
             want.append("MSM7")
         if "1005" in initial:
             want.append("ARP")
-        inv = self.tool.gps("restore-rtcm", ["--rtcm-out", ",".join(want) if want else "none"])
-        if inv.error is not None:
-            self.failures.append(f"rtcm: restore to {want!r} failed: {inv.error}")
-            return
-        d = self.observe_emissions("verify-restore-rtcm")
-        if d is not None and rtcm_set(d) != initial:
-            self.failures.append(
-                f"rtcm: restore to {initial!r} reads back as {rtcm_set(d)!r}")
+        inv = self.tool.gps("restore-rtcm", ["--rtcm-out", ",".join(want) if want else "none"],
+                            {"op": "restore-msg", "group": "rtcmOut", "want": want})
+        if inv.error is None:
+            self.observe("verify-restore-rtcm",
+                         {"op": "observe", "role": "verify", "group": "rtcmOut"})
 
     def probe_raw(self, initial: set[str]) -> None:
         """Probe raw output kinds, then restore the initial emission. The
@@ -490,47 +319,31 @@ class ProbeRun:
         found: dict[str, set[str]] = {}
         for kind in ("obs", "nav"):
             inv = self.set_and_observe("rawOut", "--raw-out", [kind])
-            if inv is None:
-                continue
-            found[kind] = raw_set(emissions(inv.packet_log)) - initial
-            self.emission_observations.append(
-                EmissionObservation("rawOut", [kind], None, sorted(found[kind])))
-        inv = self.set_and_observe("rawOut", "--raw-out", ["none"])
-        if inv is not None:
-            self.emission_observations.append(
-                EmissionObservation("rawOut", ["none"], None,
-                                    sorted(raw_set(emissions(inv.packet_log)) - initial)))
+            if inv is not None:
+                found[kind] = raw_set(emissions(inv.packet_log)) - initial
+        self.set_and_observe("rawOut", "--raw-out", ["none"])
         want = [k for k, msgs in found.items() if msgs and msgs <= initial]
         if not want:
             return
-        inv = self.tool.gps("restore-raw", ["--raw-out", ",".join(want)])
-        if inv.error is not None:
-            self.failures.append(f"raw: restore to {want!r} failed: {inv.error}")
-            return
-        d = self.observe_emissions("verify-restore-raw")
-        if d is not None and not set().union(*(found[k] for k in want)) <= raw_set(d):
-            self.failures.append(f"raw: restore to {want!r} not emitting as before")
+        inv = self.tool.gps("restore-raw", ["--raw-out", ",".join(want)],
+                            {"op": "restore-msg", "group": "rawOut", "want": want})
+        if inv.error is None:
+            self.observe("verify-restore-raw",
+                         {"op": "observe", "role": "verify", "group": "rawOut"})
 
     def probe_pvt(self) -> None:
         """Probe PVT message output at the information level: apply each
-        case in binary mode, replay the capture, and record the information
-        kinds delivered."""
+        case in binary mode and capture; analysis replays the capture and
+        checks the information kinds delivered."""
         for case in PVT_CASES:
-            inv = self.set_and_observe("pvtOut", "--pvt-out", case.flags, pre=["--binary"])
-            if inv is not None:
-                kinds = event_kinds(self.tool.replay(inv.packet_log))
-                self.emission_observations.append(
-                    EmissionObservation("pvtOut", case.flags, None, sorted(kinds)))
+            self.set_and_observe("pvtOut", "--pvt-out", case.flags, pre=["--binary"],
+                                 expect=case.expect)
 
     def probe_sats(self) -> None:
         """Probe satellite information output at the information level."""
-        for case, _ in SATS_CASES:
-            inv = self.set_and_observe("satsOut", "--sats-out", case,
-                                       pre=["--binary", "--pvt-out", "off"])
-            if inv is not None:
-                kinds = event_kinds(self.tool.replay(inv.packet_log))
-                self.emission_observations.append(
-                    EmissionObservation("satsOut", case, None, sorted(kinds)))
+        for flags, expect in SATS_CASES:
+            self.set_and_observe("satsOut", "--sats-out", flags,
+                                 pre=["--binary", "--pvt-out", "off"], expect=expect)
 
     def restore_protocol(self, base: dict[tuple[str, str], int]) -> None:
         """Return the receiver to its pre-probe output mode. --nmea resets
@@ -538,7 +351,7 @@ class ProbeRun:
         protocol, so the observed initial sentence set is restored after it.
         A receiver found in binary mode is switched back with --binary, but
         its PVT message selection cannot be reconstructed from observation;
-        the verification below reports that honestly as a restore failure."""
+        analysis reports that honestly as a restore failure."""
         base_nmea = [t for t in nmea_set(base) if t in NMEA_VOCAB]
         if not base_nmea and raw_set(base):
             steps = [("restore-binary-mode", ["--binary"])]
@@ -547,20 +360,11 @@ class ProbeRun:
                      ("restore-nmea-types",
                       ["--nmea-out", ",".join(base_nmea) if base_nmea else "none"])]
         for name, args in steps:
-            inv = self.tool.gps(name, args)
+            inv = self.tool.gps(name, args, {"op": "restore-protocol"})
             if inv.error is not None:
-                self.failures.append(f"{name}: {inv.error}")
                 return
-        d = self.observe_emissions("verify-restore-messages")
-        if d is None:
-            return
-        for what, got, want in [
-                ("NMEA types", [t for t in nmea_set(d) if t in NMEA_VOCAB], base_nmea),
-                ("RTCM types", rtcm_set(d), rtcm_set(base)),
-                ("messages", sorted(raw_set(d)), sorted(raw_set(base)))]:
-            if got != want:
-                self.failures.append(
-                    f"messages: {what} after restore {got!r} != initial {want!r}")
+        self.observe("verify-restore-messages",
+                     {"op": "observe", "role": "verify", "group": "protocol"})
 
     def probe_pulse_physical(self, initial: dict[str, Any],
                              phc: tuple[str, int, int], use_sudo: bool) -> None:
@@ -570,139 +374,25 @@ class ProbeRun:
         prove nothing). Pulse width and polarity are not observable through
         external timestamps and stay readback-only."""
         iface, pin, chan = phc
-        inv = self.observe_capture("pulse-fix-check")
+        inv = self.observe("pulse-fix-check", {"op": "observe", "role": "fix-check"})
         if inv is None:
             return
-        if not has_fix(self.tool.replay(inv.packet_log)):
+        if not has_fix(replay(self.tool.exe, inv.packet_log)):
             print("skipping physical time pulse checks: no fix", file=sys.stderr)
             return
         width = config_value(initial, ("timePulse", "width"))
         if not width:
-            inv2 = self.tool.gps("set-pulse-on", ["--pps", "0.1"])
+            inv2 = self.tool.gps("set-pulse-on", ["--pps", "0.1"],
+                                 {"op": "pulse-set", "role": "on", "width": 0.1})
             if inv2.error is not None:
-                self.failures.append(f"pulse: enabling for physical check: {inv2.error}")
                 return
-        on = self.tool.sdp_extts("sdp-pulse-enabled", iface, pin, chan, 4.0, use_sudo)
-        if on is not None and len(on) < 2:
-            self.failures.append(
-                f"pulse enabled with fix but {len(on)} timestamps on {iface} pin {pin}")
-        inv2 = self.tool.gps("set-pulse-off", ["--pps", "0"])
-        if inv2.error is not None:
-            self.failures.append(f"pulse: disabling for physical check: {inv2.error}")
-        else:
+        self.tool.sdp_extts("sdp-pulse-enabled", iface, pin, chan, 4.0, use_sudo,
+                            {"op": "sdp", "role": "enabled", "iface": iface, "pin": pin})
+        inv2 = self.tool.gps("set-pulse-off", ["--pps", "0"],
+                             {"op": "pulse-set", "role": "off", "width": 0})
+        if inv2.error is None:
             time.sleep(MSG_SETTLE)
-            off = self.tool.sdp_extts("sdp-pulse-disabled", iface, pin, chan, 4.0, use_sudo)
-            if off is not None and len(off) > 0:
-                self.failures.append(
-                    f"pulse disabled but {len(off)} timestamps on {iface} pin {pin}")
-        inv2 = self.tool.gps("restore-pulse", ["--pps", fmt_value(width if width else 0)])
-        if inv2.error is not None:
-            self.failures.append(f"pulse: restore failed: {inv2.error}")
-
-    def probe_signals(self, initial: dict[str, Any], supported: list[str]) -> None:
-        """Probe constellation/band combinations, then restore the initial set."""
-        prev = config_value(initial, ("signalsEnabled",))
-        for gnss, band in signal_cases(supported):
-            name = "-".join(gnss) + ("-" + "-".join(band) if band else "")
-            args = ["--gnss", ",".join(gnss)]
-            if band:
-                args += ["--band", ",".join(band)]
-            inv = self.tool.gps(f"set-signals-{name}", args)
-            if transient(inv.error):
-                self.failures.append(f"set-signals-{name}: {inv.error}")
-                continue
-            reported = config_value(inv.config(), ("signalsEnabled",))
-            if inv.error is None:
-                time.sleep(SIGNAL_SETTLE)
-            cfg = self.show_config(f"readback-signals-{name}")
-            if cfg is None:
-                continue
-            back = config_value(cfg, ("signalsEnabled",))
-            if inv.error is not None:
-                self.signal_observations.append(SignalObservation(gnss, band, inv.error, None))
-                if back != prev:
-                    self.failures.append(
-                        f"signals {name}: refusal changed state: {prev!r} -> {back!r}")
-                continue
-            if reported != back:
-                self.failures.append(
-                    f"signals {name}: reported {reported!r} but readback says {back!r}")
-            self.signal_observations.append(SignalObservation(gnss, band, None, back))
-            prev = back
-        self.restore_signals(initial)
-
-    def restore_signals(self, initial: dict[str, Any]) -> None:
-        """Re-enable the initial constellation set. Band subsetting within a
-        constellation cannot be reproduced generically, so a band-limited
-        initial set shows up as a restore failure rather than silently passing."""
-        want = config_value(initial, ("signalsEnabled",))
-        if not isinstance(want, dict):
-            return
-        inv = self.tool.gps("restore-signals", ["--gnss", ",".join(want)])
-        if inv.error is not None:
-            self.failures.append(f"signals: restore to {want!r} failed: {inv.error}")
-            return
-        time.sleep(SIGNAL_SETTLE)
-        cfg = self.show_config("verify-restore-signals")
-        if cfg is not None and config_value(cfg, ("signalsEnabled",)) != want:
-            self.failures.append(
-                f"signals: restore to {want!r} read back as "
-                f"{config_value(cfg, ('signalsEnabled',))!r}")
-
-    def probe_modes(self, initial: dict[str, Any]) -> None:
-        """Probe each positioning-mode case, then restore the initial mode."""
-        prev = config_value(initial, ("mode",))
-        for case in MODE_CASES:
-            inv = self.tool.gps(f"set-mode-{case.name}", case.args)
-            if transient(inv.error):
-                self.failures.append(f"set-mode-{case.name}: {inv.error}")
-                continue
-            reported = config_value(inv.config(), ("mode",))
-            cfg = self.show_config(f"readback-mode-{case.name}")
-            if cfg is None:
-                continue
-            back = config_value(cfg, ("mode",))
-            if inv.error is not None:
-                for k, v in case.request.items():
-                    self.observations.append(Observation(f"mode.{k}", v, inv.error, None, None))
-                if back != prev:
-                    self.failures.append(
-                        f"mode {case.name}: refusal changed state: {prev!r} -> {back!r}")
-                continue
-            for k in mode_disagreements(reported, back):
-                self.failures.append(
-                    f"mode {case.name}: reported {k}={flat_value(reported, k)!r} "
-                    f"but readback says {flat_value(back, k)!r}")
-            for k, v in case.request.items():
-                self.observations.append(Observation(
-                    f"mode.{k}", v, None, flat_value(reported, k), flat_value(back, k)))
-            prev = back
-        self.restore_mode(initial)
-
-    def restore_mode(self, initial: dict[str, Any]) -> None:
-        """Set the positioning mode back to its initial readback."""
-        mode = config_value(initial, ("mode",))
-        if not isinstance(mode, dict):
-            return
-        inv = self.tool.gps("restore-mode", mode_args(mode))
-        if inv.error is not None:
-            self.failures.append(f"mode: restore to {mode!r} failed: {inv.error}")
-            return
-        cfg = self.show_config("verify-restore-mode")
-        if cfg is not None and config_value(cfg, ("mode",)) != mode:
-            self.failures.append(
-                f"mode: restore to {mode!r} read back as {config_value(cfg, ('mode',))!r}")
-
-    def restore(self, p: ScalarProp, initial: dict[str, Any]) -> None:
-        """Set p back to its value in the initial configuration."""
-        v = config_value(initial, p.path)
-        if v is None:
-            return
-        inv = self.tool.gps(f"restore-{p.name}", [p.flag, p.to_cli(v)])
-        if inv.error is not None:
-            self.failures.append(f"{p.name}: restore to {v!r} failed: {inv.error}")
-            return
-        cfg = self.show_config(f"verify-restore-{p.name}")
-        if cfg is not None and config_value(cfg, p.path) != v:
-            self.failures.append(
-                f"{p.name}: restore to {v!r} read back as {config_value(cfg, p.path)!r}")
+            self.tool.sdp_extts("sdp-pulse-disabled", iface, pin, chan, 4.0, use_sudo,
+                                {"op": "sdp", "role": "disabled", "iface": iface, "pin": pin})
+        self.tool.gps("restore-pulse", ["--pps", fmt_value(width if width else 0)],
+                      {"op": "pulse-set", "role": "restore", "width": width if width else 0})
