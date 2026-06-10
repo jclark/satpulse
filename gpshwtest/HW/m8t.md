@@ -31,4 +31,6 @@ Supported signal set (single-band):
 
 ## Testing notes
 
-As-found running configuration: NMEA GGA, GLL, GSA, GSV, RMC, VTG, ZDA; mobile mode; GPS, GLO, and QZSS (L1 C/A only) enabled. satpulsetool finds the UART speed by scanning; gpshwtest locks in the speed reported by `--show-port`. Raw output saturates the 9600 baud line and makes configuration unreliable (see `BUGS.md`); raising the speed for the session would avoid this. A full run takes about 8.5 minutes.
+As-found running configuration: NMEA GGA, GLL, GSA, GSV, RMC, VTG, ZDA; mobile mode; GPS, GLO, and QZSS (L1 C/A only) enabled. satpulsetool finds the UART speed by scanning; gpshwtest locks in the speed reported by `--show-port`. A full run takes about 8.5 minutes.
+
+Raw output saturates the 9600 baud line: the receiver's transmit side overruns, and packets - including poll replies and ACKs - are lost or corrupted. Configuration then becomes unreliable in a way satpulse cannot help: invocations fail with "no response" while the write may actually have applied with only its ACK lost, so on a saturated link a reported error does not imply an unchanged configuration; detection can fail outright. Recovery needed low-level CFG-MSG writes (`-m`) to disable the raw messages. Raising the serial speed for the session avoids all of this.

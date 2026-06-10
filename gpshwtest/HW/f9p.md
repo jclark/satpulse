@@ -39,3 +39,5 @@ A signal-set change triggers an internal GNSS-subsystem restart; allow ~2 s afte
 ## Testing notes
 
 As-found running configuration: NMEA GGA, GLL, GSA, GSV, RMC, VTG; mobile mode; all supported constellations at full band. A full gpshwtest run takes about 4 minutes (80 observations) and consecutive runs produce byte-identical characterizations.
+
+`--nmea-out none` is realized on this receiver by disabling the NMEA protocol on the port, so with binary output not enabled the receiver emits nothing at all. It still answers UBX polls (detection of the silent receiver was intermittent once; see `BUGS.md` unresolved observations). Recovery: `--nmea`, then `--nmea-out <set>`.
