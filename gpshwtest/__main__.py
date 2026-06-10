@@ -41,6 +41,9 @@ def main() -> int:
     ap.add_argument("--baseline", type=Path,
                     help="characterization to compare against "
                          "(default: gpshwtest/baselines/<receiver>.json if present)")
+    ap.add_argument("--disruptive", action="store_true",
+                    help="also run the probes that write NVM and reboot the "
+                         "receiver (--save, --save-all, --reset), with recovery")
     ap.add_argument("--sudo", action="store_true",
                     help="use sudo -n for physical time pulse checks (needs root)")
     ap.add_argument("--phc", help="PHC pin the receiver's PPS is wired to, as "
@@ -60,7 +63,7 @@ def main() -> int:
     print(f"run artifacts: {run_dir}", file=sys.stderr)
     status = 0
     try:
-        drive(tool, resolve_phc(args), args.sudo)
+        drive(tool, resolve_phc(args), args.sudo, args.disruptive)
     except ToolFailure as e:
         print(f"FAILURE: {e}", file=sys.stderr)
         status = 1
@@ -135,7 +138,8 @@ def running_satpulsed() -> bool:
     return False
 
 
-def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool) -> None:
+def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
+          disruptive: bool) -> None:
     """Execute the probe sequence, recording every step. No verdicts here:
     the records are analyzed offline afterwards (also on a live run)."""
     ident = tool.gps("show-receiver", ["--show-receiver"], {"op": "identify"})
@@ -179,8 +183,16 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool) -> None:
         # A non-UART link reports baud rate 0; anything else (including a
         # backend that cannot report its port) gets speed rediscovery after
         # each reload, since NVM may hold a different baud rate.
-        pr.probe_reload(initial, base, uart=port_cfg.get("baudRate") != 0,
-                        raised=as_found_speed is not None)
+        uart = port_cfg.get("baudRate") != 0
+        raised = as_found_speed is not None
+        nvm = pr.probe_reload(initial, base, uart=uart, raised=raised)
+        if disruptive:
+            if nvm is None:
+                print("skipping disruptive probes: NVM state unknown "
+                      "(reload readback failed)", file=sys.stderr)
+            else:
+                print("running disruptive NVM probes", file=sys.stderr)
+                pr.probe_disruptive(initial, nvm, base, uart, raised)
         pr.show_config("final-config", "final")
     finally:
         if as_found_speed is not None:

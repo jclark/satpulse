@@ -119,6 +119,10 @@ class Analyzer:
     raw_found: dict[str, set[str]] = field(default_factory=dict)
     reload_nvm: dict[str, Any] | None = None
     canary: tuple[tuple[str, ...], Value] | None = None
+    gran_r: dict[str, Any] | None = None
+    gran_exp: dict[str, Any] | None = None
+    gran_s: dict[str, Any] | None = None
+    save_results: list[dict[str, Any]] = field(default_factory=list)
 
     def run(self) -> Analysis:
         while self.i < len(self.steps):
@@ -136,7 +140,7 @@ class Analyzer:
         enabled = sorted(self.initial.get("signalsEnabled") or {})
         doc = characterize(self.receiver, self.supports, self.observations,
                            self.signal_observations, self.emission_observations,
-                           enabled)
+                           enabled, self.save_results)
         n = (len(self.observations) + len(self.signal_observations)
              + len(self.emission_observations))
         return Analysis(self.receiver, self.supports, self.failures, n, doc)
@@ -176,6 +180,16 @@ class Analyzer:
             self.reload(s)
         elif op == "canary-set":
             self.canary_set(s)
+        elif op == "gran-set":
+            if transient(s.error):
+                self.failures.append(f"{s.name}: {s.error}")
+        elif op == "gran-save":
+            self.gran_save(s)
+        elif op == "save-all":
+            if s.error is not None:
+                self.failures.append(f"save-all: {s.error}")
+        elif op == "reset":
+            pass  # the receiver reboots; verify-reset carries the verdict
         elif op == "pulse-set":
             self.pulse_set(s)
         elif op == "sdp":
@@ -234,6 +248,16 @@ class Analyzer:
                                  f"initial {self.initial!r}, final {s.config()!r}")
         elif role == "reload":
             self.reload_readback(s)
+        elif role == "gran-s":
+            self.gran_s = s.config()
+        elif role == "gran-f":
+            self.gran_evaluate(s.config())
+        elif role in ("save-all", "reset"):
+            if self.reload_nvm is not None and s.config() != self.reload_nvm:
+                what = "--save-all recovery" if role == "save-all" else "state after --reset"
+                self.failures.append(
+                    f"{what} does not match the NVM state: "
+                    f"{self.reload_nvm!r} -> {s.config()!r}")
 
     def set_scalar(self, s: Step) -> None:
         prop, path = s.intent["prop"], tuple(s.intent["path"])
@@ -487,6 +511,55 @@ class Analyzer:
             self.failures.append(
                 f"reload: configuration after second reload differs from the "
                 f"NVM state: {self.reload_nvm!r} -> {cfg!r}")
+
+    def gran_save(self, s: Step) -> None:
+        """The set-with---save of one granularity experiment. A refusal
+        voids the experiment (recorded verbatim); on success the experiment
+        becomes current, to be evaluated by the gran-f readback."""
+        self.gran_exp = None
+        self.gran_s = None
+        if transient(s.error):
+            self.failures.append(f"{s.name}: {s.error}")
+        elif s.error is not None:
+            self.save_results.append({"prop": s.intent["exp"], "error": s.error})
+        else:
+            self.gran_exp = s.intent
+
+    def gran_evaluate(self, f: dict[str, Any]) -> None:
+        """Evaluate one granularity experiment from its three states: the
+        baseline NVM state R, the running state at save time S, and the
+        post-reload state F. The subject must persist (F == S at its path,
+        the --save guarantee); every other property either kept its running
+        value (same save group), reverted to R (independent), could not be
+        distinguished (its running value never left R), or did something
+        else entirely (carried verbatim as an anomaly)."""
+        r, scfg, exp = self.gran_r if self.gran_r is not None else self.reload_nvm, \
+            self.gran_s, self.gran_exp
+        self.gran_r = f
+        self.gran_exp = None
+        self.gran_s = None
+        if r is None or scfg is None or exp is None:
+            return
+        prop, path = exp["exp"], tuple(exp["path"])
+        if config_value(f, path) != config_value(scfg, path):
+            self.failures.append(
+                f"save: {prop} saved as {config_value(scfg, path)!r} but reads "
+                f"{config_value(f, path)!r} after reload")
+        result: dict[str, Any] = {"prop": prop, "saved": [], "independent": [],
+                                  "indeterminate": [], "anomalies": []}
+        for q, qpath_list in sorted(exp["others"].items()):
+            qpath = tuple(qpath_list)
+            rv, sv, fv = (config_value(c, qpath) for c in (r, scfg, f))
+            if sv == rv:
+                result["indeterminate"].append(q)
+            elif fv == sv:
+                result["saved"].append(q)
+            elif fv == rv:
+                result["independent"].append(q)
+            else:
+                result["anomalies"].append(
+                    {"prop": q, "nvm": rv, "running": sv, "afterReload": fv})
+        self.save_results.append(result)
 
     def session_speed(self, s: Step) -> None:
         """Session speed management. A refused raise just leaves the session

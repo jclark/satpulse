@@ -41,3 +41,12 @@ A signal-set change triggers an internal GNSS-subsystem restart; allow ~2 s afte
 As-found running configuration: NMEA GGA, GLL, GSA, GSV, RMC, VTG; mobile mode; all supported constellations at full band. A full gpshwtest run takes about 4 minutes (77 observations) and consecutive runs produce byte-identical characterizations. The vetted characterization is checked in at `baselines/ZED-F9P-HPG-1.51-PROTVER-27.50.json`.
 
 `--nmea-out none` is realized on this receiver by disabling the NMEA protocol on the port, so with binary output not enabled the receiver emits nothing at all. Quirk: in that silent state the receiver intermittently fails to answer UBX polls - measured 9 of 10 MON-VER polls answered across fresh port opens while silent (and one earlier incident of two consecutive unanswered polls), versus 10 of 10 with NMEA flowing. Detection of a silenced receiver can therefore fail spuriously; satpulsetool behaves correctly (polls, retries, reports truthfully). Recovery: `--nmea`, then `--nmea-out <set>`.
+
+## NVM and saving
+
+Save granularity is perfectly selective (the val-based configuration saves per key): every save-granularity experiment found every other property independent, so the characterization carries no `saveGranularity` entry. `--save-all`, `--reload`, and `--reset` behave as specified.
+
+The first disruptive run found this unit's NVM diverged from its running configuration (old unsaved state): NVM held minimum elevation 10 versus 5 running, a QZSS signal set without L1S, and time pulse grid UTC. Two of those exposed general limits, loudly reported as that run's failures and gone once NVM was rewritten:
+
+- A stored signal subset within a constellation (QZSS without L1S) cannot be reproduced through the high-level vocabulary: `--gnss` is constellation-level and L1S shares the L1 band, so NVM recovery wrote the full QZSS set.
+- A time pulse grid of UTC has no representation in the `timeGNSS` vocabulary, so configuration readback omits the property entirely while the receiver is in that state (observed: post-reload readbacks lacked `timeGNSS`; CFG-TP-TIMEGRID_TP1 was 0=UTC in NVM). Setting the pulse width (`--pps`) realizes the whole time pulse bundle including grid=GPS, which is how the property reappeared. Worth a semantics decision: should `timeGNSS` have a UTC value?

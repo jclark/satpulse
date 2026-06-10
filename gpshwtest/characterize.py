@@ -56,7 +56,8 @@ def characterize(receiver: dict[str, Any], supports: list[str],
                  observations: list[Observation],
                  signal_observations: list[SignalObservation],
                  emission_observations: list[EmissionObservation],
-                 enabled_gnss: list[str]) -> dict[str, Any]:
+                 enabled_gnss: list[str],
+                 save_results: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Build the characterization document for one receiver+firmware.
     enabled_gnss is the constellation set that was enabled while message
     output was probed; it scopes the expected RTCM MSM types."""
@@ -85,6 +86,9 @@ def characterize(receiver: dict[str, Any], supports: list[str],
     sats = characterize_expected(by_group["satsOut"])
     if sats:
         limits["satsOut"] = sats
+    save = characterize_save(save_results or [])
+    if save:
+        limits["saveGranularity"] = save
     return {"receiver": receiver, "supports": sorted(supports), "limitations": limits}
 
 
@@ -251,6 +255,70 @@ def characterize_expected(obs: list[EmissionObservation]) -> dict[str, Any] | No
     if missing:
         entry["missing"] = missing
     return entry if entry else None
+
+
+def characterize_save(results: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Characterize save granularity from the per-property experiments.
+    Perfect realization is one save group per property, which gets no
+    entry: only groups of properties that persist together are limitations.
+    The pairwise observations must be consistent (saving p persisted q iff
+    saving q persisted p, and the together-relation is transitive); if they
+    are not, the receiver's behavior is not a partition and the experiments
+    are carried verbatim. Pairs no experiment could decide (a property's
+    running value never left its NVM value) are listed as indeterminate."""
+    if not results:
+        return None
+    entry: dict[str, Any] = {}
+    errors = [r for r in results if "error" in r]
+    anomalies = [a for r in results for a in r.get("anomalies", [])]
+    together: dict[tuple[str, str], bool] = {}
+    consistent = True
+    props = set()
+    for r in results:
+        if "saved" not in r:
+            continue
+        props.add(r["prop"])
+        for q, val in [(q, True) for q in r["saved"]] + \
+                      [(q, False) for q in r["independent"]]:
+            props.add(q)
+            k = (min(r["prop"], q), max(r["prop"], q))
+            if together.setdefault(k, val) != val:
+                consistent = False
+    groups = merge_groups(props, together)
+    for g in groups:
+        for a in g:
+            for b in g:
+                if a < b and together.get((a, b)) is False:
+                    consistent = False
+    if not consistent:
+        entry["observations"] = [r for r in results if "saved" in r]
+    else:
+        grouped = sorted(sorted(g) for g in groups if len(g) > 1)
+        if grouped:
+            entry["groups"] = grouped
+        undecided = sorted(f"{a}/{b}" for a in props for b in props
+                           if a < b and (a, b) not in together)
+        if undecided and grouped:
+            entry["indeterminate"] = undecided
+    if errors:
+        entry["refused"] = [{"prop": r["prop"], "error": r["error"]} for r in errors]
+    if anomalies:
+        entry["anomalies"] = anomalies
+    return entry if entry else None
+
+
+def merge_groups(props: set[str], together: dict[tuple[str, str], bool]) -> list[set[str]]:
+    """Connected components of the persists-together relation."""
+    groups = [{p} for p in sorted(props)]
+    for (a, b), v in together.items():
+        if not v:
+            continue
+        ga = next(g for g in groups if a in g)
+        gb = next(g for g in groups if b in g)
+        if ga is not gb:
+            ga |= gb
+            groups.remove(gb)
+    return groups
 
 
 def fit_quantum(obs: list[Observation]) -> int | None:

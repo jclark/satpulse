@@ -35,6 +35,10 @@ MSG_SETTLE = 1.0
 # in GOAL.md): faster runs, and raw output cannot saturate the line.
 RAISED_SPEED = 115200
 
+# Settle time after --reset before talking to the rebooting receiver
+# (covers USB re-enumeration as well as the restart itself).
+RESET_SETTLE = 5.0
+
 
 @dataclass
 class ScalarProp:
@@ -436,7 +440,7 @@ class ProbeRun:
 
     def probe_reload(self, initial: dict[str, Any],
                      base: dict[tuple[str, str], int] | None,
-                     uart: bool, raised: bool) -> None:
+                     uart: bool, raised: bool) -> dict[str, Any] | None:
         """Probe --reload: the first reload discovers the NVM state, then an
         unsaved canary change plus a second reload verify conclusively that
         unsaved changes do not survive a reload and that reloading is
@@ -461,16 +465,114 @@ class ProbeRun:
                               {"op": "canary-set", "prop": canary.name,
                                "path": list(canary.path), "value": v})
         self.tool.gps("reload-2", ["--reload"], {"op": "reload", "round": 2, "uart": uart})
-        baud = self.rediscover_speed() if uart else None
-        self.show_config("readback-reload-2", "reload", "reload-2")
-        if raised and baud is not None and baud < RAISED_SPEED:
-            self.raise_speed(baud)
+        self.resync_speed(uart, raised)
+        nvm2 = self.show_config("readback-reload-2", "reload", "reload-2")
         for p in PROPS:
             self.restore(p, initial)
         self.restore_mode(initial)
         self.restore_signals(initial)
         if base is not None:
             self.restore_protocol(base)
+        return nvm2 if nvm2 is not None else nvm
+
+    def probe_disruptive(self, initial: dict[str, Any], nvm: dict[str, Any],
+                         base: dict[tuple[str, str], int] | None,
+                         uart: bool, raised: bool) -> None:
+        """Flag-gated NVM probes: save-granularity experiments (each uses
+        --save, so they are also the --save probe), then recovery of the
+        as-found NVM state through --save-all (which is thereby the
+        --save-all probe), then --reset. nvm is the NVM state discovered by
+        the reload probe; the experiments mutate NVM and the recovery puts
+        it back, verified by a final reload readback."""
+        subjects = [p for p in PROPS if config_value(nvm, p.path) is not None]
+        r = nvm
+        ok = True
+        for p in subjects:
+            print(f"save granularity: {p.name}", file=sys.stderr)
+            nxt = self.gran_experiment(p, subjects, r, uart, raised)
+            if nxt is None:
+                ok = False
+                break
+            r = nxt
+        if ok and isinstance(config_value(nvm, ("mode",)), dict):
+            print("save granularity: mode", file=sys.stderr)
+            self.gran_experiment(None, subjects, r, uart, raised)
+        for p in subjects:
+            self.restore(p, nvm)
+        self.restore_mode(nvm)
+        self.restore_signals(nvm)
+        inv = self.tool.gps("save-all", ["--save-all"], {"op": "save-all"})
+        if inv.error is None:
+            self.tool.gps("recovery-reload", ["--reload"],
+                          {"op": "reload", "round": 0, "uart": uart})
+            self.resync_speed(uart, raised)
+            self.show_config("verify-save-all", "save-all")
+        self.probe_reset(uart, raised)
+        for p in subjects:
+            self.restore(p, initial)
+        self.restore_mode(initial)
+        self.restore_signals(initial)
+        if base is not None:
+            self.restore_protocol(base)
+
+    def gran_experiment(self, p: ScalarProp | None, subjects: list[ScalarProp],
+                        r: dict[str, Any], uart: bool,
+                        raised: bool) -> dict[str, Any] | None:
+        """One save-granularity experiment with subject p (None probes the
+        positioning mode as the subject): move every other property off its
+        NVM value unsaved, set the subject with --save in one invocation,
+        snapshot the running state, reload, and read what survived. The
+        post-reload readback is the NVM state the next experiment starts
+        from, so NVM drift between experiments cannot corrupt the analysis."""
+        name = p.name if p is not None else "mode"
+        others: dict[str, list[str]] = {}
+        for q in subjects:
+            if p is not None and q.name == p.name:
+                continue
+            v = next(x for x in q.values if x != config_value(r, q.path))
+            self.tool.gps(f"gran-set-{q.name}", [q.flag, q.to_cli(v)],
+                          {"op": "gran-set", "exp": name, "prop": q.name})
+            others[q.name] = list(q.path)
+        mode = config_value(r, ("mode",))
+        flip = ["--survey"] if isinstance(mode, dict) and not mode.get("static") \
+            else ["--mobile"]
+        if p is not None:
+            if isinstance(mode, dict):
+                self.tool.gps("gran-set-mode", flip,
+                              {"op": "gran-set", "exp": name, "prop": "mode"})
+                others["mode"] = ["mode"]
+            v = next(x for x in p.values if x != config_value(r, p.path))
+            args = [p.flag, p.to_cli(v), "--save"]
+            path = list(p.path)
+        else:
+            args = flip + ["--save"]
+            path = ["mode"]
+        self.tool.gps(f"gran-save-{name}", args,
+                      {"op": "gran-save", "exp": name, "path": path, "others": others})
+        self.show_config(f"gran-S-{name}", "gran-s", name)
+        self.tool.gps(f"gran-reload-{name}", ["--reload"],
+                      {"op": "reload", "round": 0, "uart": uart})
+        self.resync_speed(uart, raised)
+        return self.show_config(f"gran-F-{name}", "gran-f", name)
+
+    def probe_reset(self, uart: bool, raised: bool) -> None:
+        """Probe --reset: the receiver reboots (the link drops whatever its
+        kind, so the invocation's own error proves nothing), reloads its
+        configuration from NVM, and discards acquired position/time/orbit
+        data. The readback after rediscovery must show the NVM state."""
+        self.tool.gps("reset", ["--reset"], {"op": "reset"})
+        time.sleep(RESET_SETTLE)
+        self.resync_speed(True, raised)
+        self.show_config("verify-reset", "reset")
+
+    def resync_speed(self, uart: bool, raised: bool) -> None:
+        """Re-pin the link speed after an operation that may have changed
+        it, and raise it again for sessions that run raised."""
+        if not uart:
+            return
+        baud = self.rediscover_speed()
+        if raised and baud is not None and baud < RAISED_SPEED:
+            self.raise_speed(baud)
 
     def probe_pulse_physical(self, initial: dict[str, Any],
                              phc: tuple[str, int, int], use_sudo: bool) -> None:
