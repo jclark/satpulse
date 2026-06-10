@@ -12,6 +12,7 @@ hardware. Run in-repo as: python3 gpshwtest -d /dev/ttyACM0 -s 38400
 import argparse
 import datetime
 import difflib
+import json
 import platform
 import subprocess
 import sys
@@ -19,7 +20,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from analyze import analyze_run
+from analyze import DISRUPTIVE_KEYS, analyze_run
 from characterize import to_json
 from probes import PROPS, ProbeRun
 from tool import Tool, ToolFailure
@@ -232,12 +233,15 @@ def report(run_dir: Path, exe: Path, baseline: Path | None) -> int:
         status = 1
     if not a.failures:
         print(f"ok: {a.observation_count} observations, no failures", file=sys.stderr)
-    return max(status, compare_baseline(a.receiver, baseline, text))
+    return max(status, compare_baseline(a.receiver, baseline, text, a.disruptive))
 
 
-def compare_baseline(receiver: dict[str, Any], baseline: Path | None, text: str) -> int:
+def compare_baseline(receiver: dict[str, Any], baseline: Path | None, text: str,
+                     disruptive: bool) -> int:
     """Compare against the checked-in characterization; differences are
-    regressions to investigate. Absence of a baseline is not a failure."""
+    regressions to investigate. Absence of a baseline is not a failure.
+    The baseline holds the full characterization from a disruptive run; a
+    default run is compared with the disruptive-only entries stripped."""
     if baseline is None:
         slug = "-".join(str(receiver.get(k, "")) for k in ("hardware", "firmware"))
         baseline = HERE / "baselines" / (slug.replace(" ", "-").replace("/", "-") + ".json")
@@ -246,6 +250,11 @@ def compare_baseline(receiver: dict[str, Any], baseline: Path | None, text: str)
                   file=sys.stderr)
             return 0
     want = baseline.read_text()
+    if not disruptive:
+        doc = json.loads(want)
+        for k in DISRUPTIVE_KEYS:
+            doc.get("limitations", {}).pop(k, None)
+        want = to_json(doc)
     if want == text:
         print(f"matches baseline {baseline}", file=sys.stderr)
         return 0

@@ -515,29 +515,81 @@ class ProbeRun:
             self.restore(p, nvm)
         self.restore_mode(nvm)
         self.restore_signals(nvm)
-        if as_found_speed is not None:
-            # --save-all persists the port configuration too, so the link
-            # must be back at the as-found speed when NVM is written.
-            inv = self.tool.gps("speed-for-save-all", ["--speed", str(as_found_speed)],
-                                {"op": "session-speed", "role": "restore",
-                                 "to": as_found_speed})
-            if inv.error is None:
-                self.tool.set_speed(as_found_speed)
-            elif transient(inv.error):
-                self.rediscover_speed()
-        inv = self.tool.gps("save-all", ["--save-all"], {"op": "save-all"})
-        if inv.error is None:
-            self.tool.gps("recovery-reload", ["--reload"],
-                          {"op": "reload", "round": 0, "uart": uart})
-            self.resync_speed(uart, raised)
-            self.show_config("verify-save-all", "save-all")
+        self.recover_nvm(nvm, subjects, uart, as_found_speed)
         self.probe_reset(uart, raised)
+        self.probe_speed(self.tool.speed() if uart else None)
+        print("probing factory reset", file=sys.stderr)
+        self.probe_factory_reset(uart, raised)
+        self.recover_nvm(nvm, subjects, uart, as_found_speed)
         for p in subjects:
             self.restore(p, initial)
         self.restore_mode(initial)
         self.restore_signals(initial)
         if base is not None:
             self.restore_protocol(base)
+
+    def recover_nvm(self, nvm: dict[str, Any], subjects: list[ScalarProp],
+                    uart: bool, as_found_speed: int | None) -> None:
+        """Restore the running configuration to the discovered NVM state and
+        persist it with --save-all (which is thereby the --save-all probe,
+        verified by the reload readback). --save-all persists the port
+        configuration too, so the link is put back at the as-found speed
+        before NVM is written."""
+        for p in subjects:
+            self.restore(p, nvm)
+        self.restore_mode(nvm)
+        self.restore_signals(nvm)
+        if as_found_speed is not None:
+            self.set_link_speed(as_found_speed, "speed-for-save-all")
+        inv = self.tool.gps("save-all", ["--save-all"], {"op": "save-all"})
+        if inv.error is None:
+            self.tool.gps("recovery-reload", ["--reload"],
+                          {"op": "reload", "round": 0, "uart": uart})
+            self.resync_speed(uart, as_found_speed is not None)
+            self.show_config("verify-save-all", "save-all")
+
+    def set_link_speed(self, bps: int, name: str) -> None:
+        """Move the link to bps; on a transient failure the actual speed is
+        unknown, so rediscover."""
+        inv = self.tool.gps(name, ["--speed", str(bps)],
+                            {"op": "session-speed", "role": "restore", "to": bps})
+        if inv.error is None:
+            self.tool.set_speed(bps)
+        elif transient(inv.error):
+            self.rediscover_speed()
+
+    # The serial speed value probed beyond the session speeds; one value
+    # keeps the disruptive run short, and the session machinery already
+    # exercises the raised and as-found speeds.
+    SPEED_VALUES = [57600]
+
+    def probe_speed(self, cur: int | None) -> None:
+        """Probe the serial speed property. cur is the current operating
+        speed on a UART (each accepted value moves the link, restored at
+        the end); on a non-UART link cur is None - the achieved value is 0,
+        nothing changes, and there is nothing to restore."""
+        for v in self.SPEED_VALUES:
+            inv = self.tool.gps(f"set-speed-{v}", ["--speed", str(v)],
+                                {"op": "set-speed", "requested": v, "prev": cur or 0})
+            if transient(inv.error):
+                self.rediscover_speed()
+                continue
+            if inv.error is None and cur is not None:
+                self.tool.set_speed(v)
+            self.tool.gps("readback-speed", ["--show-port"], {"op": "speed-readback"})
+        if cur is not None:
+            self.set_link_speed(cur, "restore-speed-session")
+
+    def probe_factory_reset(self, uart: bool, raised: bool) -> None:
+        """Probe --factory-reset: NVM is replaced by factory defaults and
+        the receiver reboots, so the link needs rediscovery and the verdict
+        is that the readback responds. The factory state itself is receiver
+        data, kept in the run artifacts rather than compared; the caller
+        must recover NVM afterwards."""
+        self.tool.gps("factory-reset", ["--factory-reset"], {"op": "factory-reset"})
+        time.sleep(RESET_SETTLE)
+        self.resync_speed(True, raised)
+        self.show_config("readback-factory", "factory")
 
     def gran_experiment(self, p: ScalarProp | None, subjects: list[ScalarProp],
                         r: dict[str, Any], uart: bool,

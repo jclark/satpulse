@@ -1,5 +1,13 @@
 {
   "limitations": {
+    "baudRate": {
+      "observations": [
+        {
+          "achieved": 0,
+          "requested": 57600
+        }
+      ]
+    },
     "mode.fixedPosAcc": {
       "quantum": 0.0001
     },

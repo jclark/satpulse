@@ -130,6 +130,12 @@ class Tool:
                      "exit": p.returncode, "events": events, "stderr": p.stderr})
         return events if p.returncode == 0 else None
 
+    def speed(self) -> int | None:
+        """The currently pinned connection speed, None when unpinned."""
+        if "-s" in self.conn:
+            return int(self.conn[self.conn.index("-s") + 1])
+        return None
+
     def set_speed(self, bps: int | None) -> None:
         """Pin the connection speed used by subsequent invocations, or
         remove the pin (None) so the next invocation scans for the baud rate."""

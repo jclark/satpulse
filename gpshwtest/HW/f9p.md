@@ -46,7 +46,9 @@ As-found running configuration: NMEA GGA, GLL, GSA, GSV, RMC, VTG; mobile mode; 
 
 Save granularity is perfectly selective (the val-based configuration saves per key): every save-granularity experiment found every other property independent, so the characterization carries no `saveGranularity` entry. `--save-all`, `--reload`, and `--reset` behave as specified.
 
-The first disruptive run found this unit's NVM diverged from its running configuration (old unsaved state): NVM held minimum elevation 10 versus 5 running, a QZSS signal set without L1S, and time pulse grid UTC. Two of those exposed general limits, loudly reported as that run's failures and gone once NVM was rewritten:
+The first disruptive run found this unit's NVM diverged from its running configuration: NVM held minimum elevation 10 versus 5 running, a QZSS signal set without L1S, and time pulse grid UTC. The --factory-reset probe later showed that state to be exactly the factory configuration (gen 9 defaults include minimum elevation 10 and antenna cable delay 50 ns) - the unit's NVM had never been written. Two of those exposed general limits, loudly reported as that run's failures and gone once NVM was rewritten:
 
 - A stored signal subset within a constellation (QZSS without L1S) cannot be reproduced through the high-level vocabulary: `--gnss` is constellation-level and L1S shares the L1 band, so NVM recovery wrote the full QZSS set.
 - A time pulse grid of UTC has no representation in the `timeGNSS` vocabulary, so configuration readback omits the property entirely while the receiver is in that state (observed: post-reload readbacks lacked `timeGNSS`; CFG-TP-TIMEGRID_TP1 was 0=UTC in NVM). Setting the pulse width (`--pps`) realizes the whole time pulse bundle including grid=GPS, which is how the property reappeared. Worth a semantics decision: should `timeGNSS` have a UTC value?
+
+`--factory-reset` verified: NVM reverts to the factory configuration above and recovery rewrites the discovered NVM state, all checked by readbacks. `--speed` on the native-USB connection is accepted and achieves 0 (no serial speed applies to the port), recorded verbatim in the characterization.

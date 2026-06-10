@@ -79,13 +79,21 @@ def load_steps(run_dir: Path) -> list[Step]:
 
 @dataclass
 class Analysis:
-    """The derived verdicts and characterization of one run."""
+    """The derived verdicts and characterization of one run. disruptive
+    records whether the run included the flag-gated NVM/speed probes, whose
+    characterization entries only a disruptive run can produce."""
 
     receiver: dict[str, Any]
     supports: list[str]
     failures: list[str]
     observation_count: int
     characterization: dict[str, Any]
+    disruptive: bool
+
+
+# The limitation entries only a disruptive run produces: a baseline from a
+# disruptive run is compared in full, a default run with these stripped.
+DISRUPTIVE_KEYS = ("baudRate", "saveGranularity")
 
 
 def analyze_run(run_dir: Path, exe: Path) -> Analysis:
@@ -146,7 +154,11 @@ class Analyzer:
                            enabled, self.save_results)
         n = (len(self.observations) + len(self.signal_observations)
              + len(self.emission_observations))
-        return Analysis(self.receiver, self.supports, self.failures, n, doc)
+        disruptive = any(s.intent.get("op") in ("gran-save", "set-speed",
+                                                "factory-reset", "save-all")
+                         for s in self.steps)
+        return Analysis(self.receiver, self.supports, self.failures, n, doc,
+                        disruptive)
 
     def step(self, s: Step) -> None:
         op = s.intent.get("op")
@@ -191,8 +203,12 @@ class Analyzer:
         elif op == "save-all":
             if s.error is not None:
                 self.failures.append(f"save-all: {s.error}")
-        elif op == "reset":
-            pass  # the receiver reboots; verify-reset carries the verdict
+        elif op in ("reset", "factory-reset"):
+            pass  # the receiver reboots; the readback carries the verdict
+        elif op == "set-speed":
+            self.set_speed_step(s)
+        elif op == "speed-readback":
+            pass  # consumed by set-speed; alone it carries no verdict
         elif op == "pulse-set":
             self.pulse_set(s)
         elif op == "sdp":
@@ -259,6 +275,8 @@ class Analyzer:
             self.gran_s = s.config()
         elif role == "gran-f":
             self.gran_evaluate(s.config())
+        elif role == "factory":
+            pass  # factory state is receiver data, recorded, not compared
         elif role in ("save-all", "reset"):
             if self.reload_nvm is not None and s.config() != self.reload_nvm:
                 what = "--save-all recovery" if role == "save-all" else "state after --reset"
@@ -518,6 +536,31 @@ class Analyzer:
             self.failures.append(
                 f"reload: configuration after second reload differs from the "
                 f"NVM state: {self.reload_nvm!r} -> {cfg!r}")
+
+    def set_speed_step(self, s: Step) -> None:
+        """The serial speed property, read back through --show-port (the
+        only place the active port's speed appears). prev is the operating
+        speed before the set, for the refusal-changed-nothing check."""
+        v, prev = s.intent["requested"], s.intent.get("prev")
+        if transient(s.error):
+            self.failures.append(f"{s.name}: {s.error}")
+            return
+        rb = self.take("speed-readback")
+        if rb is None:
+            return
+        if rb.error is not None:
+            self.failures.append(f"{rb.name}: --show-port failed: {rb.error}")
+            return
+        back = rb.config().get("baudRate")
+        obs = Observation("baudRate", v, s.error, s.config().get("baudRate"), back)
+        self.observations.append(obs)
+        if s.error is not None:
+            if back != prev:
+                self.failures.append(
+                    f"baudRate: refusal of {v!r} changed state: {prev!r} -> {back!r}")
+        elif obs.reported != back:
+            self.failures.append(
+                f"baudRate: reported {obs.reported!r} but readback says {back!r}")
 
     def gran_save(self, s: Step) -> None:
         """The set-with---save of one granularity experiment. A refusal
