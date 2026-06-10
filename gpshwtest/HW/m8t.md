@@ -42,3 +42,5 @@ The first disruptive run found the gen 8 reload defect now in `BUGS.md` (`--relo
 As on the F9P, NVM held a QZSS signal set without L1S, which the constellation-level vocabulary cannot reproduce; NVM now holds the full QZSS set (loudly reported once).
 
 satpulsetool does not scan baud rates: with no `-s` it opens the port at its current termios state. A receiver left at a non-resting speed (for example 115200 in NVM after a save-all at the raised session speed) is unreachable until the right `-s` is given; gpshwtest's speed rediscovery therefore tries candidate speeds explicitly.
+
+The full disruptive sweep (save granularity, save-all recovery, reset, the 57600 speed probe, factory reset, NVM recovery) completes end to end with the receiver verified left as found at 9600; every reported failure traces to the gen 8 satpulsetool defects in `BUGS.md`. A vetted characterization baseline for this receiver waits on those fixes.
