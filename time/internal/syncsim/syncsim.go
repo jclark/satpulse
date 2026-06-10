@@ -45,6 +45,7 @@ import (
 	"log/slog"
 	"math"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/time/lib/allan"
@@ -112,6 +113,7 @@ type modeObserver struct {
 	prevMode    phcsync.Mode
 	samples     [phcsync.NModes]int
 	transitions [phcsync.NModes]int
+	sequence    []phcsync.Mode
 }
 
 func (m *modeObserver) Sample(s phcsync.Sample) {
@@ -120,6 +122,12 @@ func (m *modeObserver) Sample(s phcsync.Sample) {
 		m.transitions[s.Mode]++
 		m.prevMode = s.Mode
 	}
+}
+
+// ModeChanged records the full sequence of controller modes, including
+// modes that produce no samples.
+func (m *modeObserver) ModeChanged(_, newMode phcsync.Mode) {
+	m.sequence = append(m.sequence, newMode)
 }
 
 // Stats holds simulation results
@@ -132,6 +140,7 @@ type Stats struct {
 	TrackingADev    float64              // Allan deviation of tracking offsets (simulation-only)
 	ModeSamples     map[phcsync.Mode]int // samples per mode (non-zero only)
 	ModeTransitions map[phcsync.Mode]int // transitions into each mode (non-zero only)
+	ModeSequence    []phcsync.Mode       // sequence of controller modes entered
 }
 
 // String formats Stats for human-readable output.
@@ -157,6 +166,11 @@ func (s Stats) String() string {
 			str += fmt.Sprintf("%sEntered = %d\n", m, n)
 		}
 	}
+	modes := make([]string, len(s.ModeSequence))
+	for i, m := range s.ModeSequence {
+		modes[i] = m.String()
+	}
+	str += fmt.Sprintf("modeSequence = %s\n", strings.Join(modes, " "))
 	return str
 }
 
@@ -335,8 +349,10 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 				}
 			}
 
-			// Track offset for leading edge in tracking mode
-			if data.EdgeIdx == 0 && ctrl.Mode() == phcsync.ModeTracking {
+			// Track offset for leading edge while in sync (tracking or gap
+			// mode): this measures PHC error while serving synchronized time,
+			// including drift during brief signal gaps.
+			if data.EdgeIdx == 0 && ctrl.Mode().InSync() {
 				stats.add(offset)
 			}
 
@@ -458,6 +474,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 		TrackingADev:    stats.adev.ADev(),
 		ModeSamples:     modeSamples,
 		ModeTransitions: modeTransitions,
+		ModeSequence:    modeObs.sequence,
 	}, nil
 }
 

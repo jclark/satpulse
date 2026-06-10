@@ -54,6 +54,7 @@ type Config struct {
 	Reset    ResetConfig      `toml:"reset" comment:"Reset mode parameters"`
 	Converge ConvergingConfig `toml:"converge" comment:"Converging mode parameters"`
 	Track    TrackingConfig   `toml:"track" comment:"Tracking mode parameters"`
+	Gap      GapConfig        `toml:"gap" comment:"Gap mode parameters"`
 	Share    SharedConfig     `toml:"share" comment:"Cross-mode parameters"`
 }
 
@@ -84,6 +85,7 @@ func DefaultConfig() Config {
 		Reset:    defaultResetConfig(),
 		Converge: defaultConvergingConfig(),
 		Track:    defaultTrackingConfig(),
+		Gap:      defaultGapConfig(),
 		Share:    defaultSharedConfig(),
 	}
 }
@@ -96,6 +98,7 @@ const (
 	ModeReset
 	ModeConverging
 	ModeTracking
+	ModeGap
 	NModes
 )
 
@@ -111,14 +114,18 @@ func (m Mode) String() string {
 		return "converging"
 	case ModeTracking:
 		return "tracking"
+	case ModeGap:
+		return "gap"
 	default:
 		return fmt.Sprintf("unknown(%d)", m)
 	}
 }
 
-// InSync returns true if the mode represents a synchronized state
+// InSync returns true if the mode represents a synchronized state.
+// Gap mode counts as synchronized: it is a brief signal loss during which
+// PTP clock quality is unchanged.
 func (m Mode) InSync() bool {
-	return m == ModeTracking
+	return m == ModeTracking || m == ModeGap
 }
 
 // Controller coordinates PHC synchronization.
@@ -320,8 +327,9 @@ func (c *Controller) Tick(now time.Time) {
 		return
 	}
 
-	// Check for pending pulse timeout in tracking mode
-	if c.mode == ModeTracking {
+	// Check for pending pulse timeout in tracking and gap mode
+	// (gap mode keeps the tracking generator alive)
+	if c.mode == ModeTracking || c.mode == ModeGap {
 		if tsg, ok := c.sampleGen.(*trackingSampleGenerator); ok {
 			sample := tsg.tickSample(now)
 			if sample != nil {
@@ -388,12 +396,14 @@ func (c *Controller) changeMode(mode Mode) {
 		}
 	}
 
-	// Extract persist sample when leaving tracking mode
+	// Extract persist sample when leaving tracking or gap mode
+	// (gap mode preserves the live tracking processor)
 	var persistSample *phctime.Sample
-	if c.mode == ModeTracking {
-		if tsp, ok := c.sampleProc.(*trackingSampleProcessor); ok {
-			persistSample = tsp.getPersistSample()
-		}
+	switch sp := c.sampleProc.(type) {
+	case *trackingSampleProcessor:
+		persistSample = sp.getPersistSample()
+	case *gapSampleProcessor:
+		persistSample = sp.trackingProc.getPersistSample()
 	}
 
 	// Initialize sampleGen and sampleProc for the new mode
@@ -408,8 +418,18 @@ func (c *Controller) changeMode(mode Mode) {
 		c.sampleGen = newConvergingSampleGenerator(c.cfg.Converge, c.pt, c.lastSample, c.freq, c.maxFreq, c.lg)
 		c.sampleProc = newConvergingSampleProcessor(c.cfg.Converge, c.lastSample, c.freq, c.maxFreq, c.lg)
 	case ModeTracking:
-		c.sampleGen = newTrackingSampleGenerator(c.cfg.Track, c.pt, c.lastSample, c.freq, c.maxFreq, c.timeMsgBuffer, c.lg)
-		c.sampleProc = newTrackingSampleProcessor(c.cfg.Track, c.estimatedFreq, c.maxFreq, c.lg)
+		if gsp, ok := c.sampleProc.(*gapSampleProcessor); ok {
+			// Returning from a gap: restore the preserved tracking processor.
+			// The generator is already the tracking generator.
+			c.sampleProc = gsp.trackingProc
+		} else {
+			c.sampleGen = newTrackingSampleGenerator(c.cfg.Track, c.pt, c.lastSample, c.freq, c.maxFreq, c.timeMsgBuffer, c.lg)
+			c.sampleProc = newTrackingSampleProcessor(c.cfg.Track, c.estimatedFreq, c.maxFreq, c.lg)
+		}
+	case ModeGap:
+		// Entered only from tracking. Keep the live generator and wrap the
+		// processor so its state survives the gap for use during recovery.
+		c.sampleProc = newGapSampleProcessor(c.cfg.Gap, c.sampleProc.(*trackingSampleProcessor), c.lg)
 	default:
 		panic("changing to invalid mode")
 	}
@@ -470,7 +490,7 @@ func (c *Controller) gmUpdate() {
 }
 
 func gmSyncState(mode Mode) ptpgm.SyncState {
-	if mode == ModeTracking {
+	if mode.InSync() {
 		return ptpgm.InSync
 	}
 	return ptpgm.NoSync
@@ -491,6 +511,10 @@ func (c *Controller) RequiredMsgWindow() time.Duration {
 
 func (cfg *Config) Validate() error {
 	msgs := check.Validate(cfg)
+	if cfg.Gap.RecoveryThreshold >= cfg.Track.BadSampleRunLimit {
+		msgs = append(msgs, fmt.Sprintf("gap.recoveryThreshold (%d) must be less than track.badSampleRunLimit (%d)",
+			cfg.Gap.RecoveryThreshold, cfg.Track.BadSampleRunLimit))
+	}
 	switch len(msgs) {
 	case 0:
 		return nil

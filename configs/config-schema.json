@@ -841,6 +841,33 @@
             }
           }
         },
+        "gap": {
+          "description": "Gap mode parameters",
+          "type": "object",
+          "properties": {
+            "recoveryThreshold": {
+              "description": "Missing samples before MAD recovery is used",
+              "type": "integer",
+              "default": 3,
+              "minimum": 1,
+              "exclusiveMaximum": 1000
+            },
+            "driftLimit": {
+              "description": "Max median shift from pre-gap baseline (ns)",
+              "type": "integer",
+              "default": 100,
+              "exclusiveMinimum": 0,
+              "maximum": 1000000
+            },
+            "recoverySamples": {
+              "description": "Samples to collect before shifting MAD window",
+              "type": "integer",
+              "default": 5,
+              "minimum": 1,
+              "exclusiveMaximum": 100
+            }
+          }
+        },
         "share": {
           "description": "Cross-mode parameters",
           "type": "object",
