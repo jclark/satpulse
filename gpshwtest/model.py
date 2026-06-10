@@ -6,6 +6,7 @@ device-independent terms, config JSON access, and packet-log
 interpretation. Nothing here touches hardware.
 """
 
+import datetime
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,7 +60,8 @@ def transient(err: str | None) -> bool:
     request the receiver never answered) rather than a refusal of the
     requested configuration. Transient errors are retried, and recorded as
     failures rather than receiver limitations when they persist."""
-    return err is not None and ("detection failed" in err or "no response" in err)
+    return err is not None and ("detection failed" in err or "no response" in err
+                                or "abandoned after timeout" in err)
 
 
 def fmt_value(v: Value) -> str:
@@ -126,23 +128,36 @@ def mode_args(mode: dict[str, Any]) -> list[str]:
     return args
 
 
+# Replies to the session's own queries arrive well under this many seconds
+# after the query; periodic output continues throughout the capture.
+EMISSION_GRACE = datetime.timedelta(seconds=0.5)
+
+
 def emissions(log: Path) -> dict[tuple[str, str], int]:
-    """Counts of inbound (tag, msg) packets in a packet log. Replies to
-    polls are excluded by dropping inbound messages whose name was also
-    sent outbound."""
+    """Counts of inbound (tag, msg) packets in the observation window of a
+    packet log: strictly after the session's last outbound packet plus a
+    grace period. The capture phase sends nothing, so this window contains
+    exactly the receiver's unsolicited periodic output; replies to the
+    session's own queries (which need not echo the query's message name,
+    e.g. Unicore CONFIG dumps) fall before it."""
+    entries = [json.loads(line) for line in log.read_text().splitlines()]
+    last_out = max((parse_t(e["t"]) for e in entries if e.get("out")),
+                   default=None)
     counts: dict[tuple[str, str], int] = {}
-    sent = set()
-    for line in log.read_text().splitlines():
-        e = json.loads(line)
+    for e in entries:
         tag, msg = e.get("tag"), e.get("msg")
-        if not isinstance(tag, str) or not isinstance(msg, str):
+        if e.get("out") or not isinstance(tag, str) or not isinstance(msg, str):
             continue
-        if e.get("out"):
-            sent.add(msg)
-        else:
-            k = (tag, msg)
-            counts[k] = counts.get(k, 0) + 1
-    return {k: n for k, n in counts.items() if k[1] not in sent}
+        if last_out is not None and parse_t(e["t"]) <= last_out + EMISSION_GRACE:
+            continue
+        k = (tag, msg)
+        counts[k] = counts.get(k, 0) + 1
+    return counts
+
+
+def parse_t(s: str) -> datetime.datetime:
+    """Parse a packet log timestamp (RFC 3339)."""
+    return datetime.datetime.fromisoformat(s)
 
 
 def nmea_set(d: dict[tuple[str, str], int]) -> list[str]:

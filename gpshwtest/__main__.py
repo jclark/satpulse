@@ -163,7 +163,12 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool) -> None:
         print("skipping physical time pulse checks (need --sudo, passwordless "
               "sudo -n, and PHC wiring)", file=sys.stderr)
     supported = receiver.get("supportedGNSS")
-    if isinstance(supported, list):
+    if not supported:
+        # The backend deduced no supported set (empty on the UM980); the
+        # constellations enabled in the as-found configuration are a
+        # discovered lower bound to probe instead.
+        supported = sorted(initial.get("signalsEnabled") or {})
+    if isinstance(supported, list) and supported:
         print("probing signal combinations", file=sys.stderr)
         pr.probe_signals(initial, supported)
     pr.show_config("final-config", "final")
