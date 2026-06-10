@@ -1,4 +1,4 @@
-PY_FILES = __main__.py runner.py compare.py cases.py
+PY_FILES = $(wildcard *.py)
 
 .PHONY: dev-deps update-deps typecheck
 
@@ -9,4 +9,4 @@ update-deps:
 	uv sync --extra dev --upgrade
 
 typecheck:
-	uv run --extra dev mypy $(PY_FILES)
+	test -z "$(PY_FILES)" || uv run --extra dev mypy $(PY_FILES)

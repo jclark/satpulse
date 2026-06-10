@@ -244,4 +244,4 @@ This package provides the web interface. It is in the application layer.
 
 ## Test harnesses
 
-`gpshwtest` is a stdlib-only Python harness that tests `satpulsetool gps` high-level configuration against live GPS receivers. It shells out to `satpulsetool gps --json` for all receiver I/O, running an independent set invocation and readback invocation per test case, with support-aware comparators keyed on the receiver's configuration support flags. See `plan/gps-config-hwtest.md` (#310) and `gpshwtest/README.md`.
+`gpshwtest` is a stdlib-only Python program that tests GPS high-level configuration against real receivers. Because receivers are diverse and high-level configuration has best-effort semantics, it characterizes how device-independent configuration is realized on each receiver rather than rendering pass/fail verdicts; vetted characterizations are checked in and compared on later runs. All receiver I/O goes through `satpulsetool gps --json`. The goal and success criteria are defined in `gpshwtest/GOAL.md` (#310).
