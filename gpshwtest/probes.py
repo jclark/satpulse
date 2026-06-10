@@ -355,8 +355,8 @@ class ProbeRun:
                       {"op": "session-speed", "role": "verify", "want": as_found})
 
     # Candidate link speeds for rediscovery, most likely first: the raised
-    # session speed, the near-universal default, then other common rates.
-    REDISCOVER_SPEEDS = [RAISED_SPEED, 9600, 38400, 57600, 19200, 230400]
+    # session speeds, the near-universal default, then other common rates.
+    REDISCOVER_SPEEDS = [RAISED_SPEED, 460800, 9600, 38400, 57600, 19200, 230400]
 
     def rediscover_speed(self) -> int | None:
         """Find the receiver again when the link speed is unknown.
@@ -662,7 +662,8 @@ class ProbeRun:
 
     def probe_disruptive(self, initial: dict[str, Any], nvm: dict[str, Any],
                          base: dict[tuple[str, str], int] | None,
-                         uart: bool, as_found_speed: int | None) -> None:
+                         uart: bool, as_found_speed: int | None,
+                         speed_supported: bool) -> None:
         """Flag-gated NVM probes: save-granularity experiments (each uses
         --save, so they are also the --save probe), then recovery of the
         as-found NVM state through --save-all (which is thereby the
@@ -689,7 +690,8 @@ class ProbeRun:
         self.restore_signals(nvm)
         self.recover_nvm(nvm, subjects, uart, as_found_speed)
         self.probe_reset(uart, raised)
-        self.probe_speed(self.tool.speed() if uart else None)
+        if speed_supported:
+            self.probe_speed(self.tool.speed() if uart else None)
         print("probing factory reset", file=sys.stderr)
         self.probe_factory_reset(uart, raised)
         self.recover_nvm(nvm, subjects, uart, as_found_speed)
@@ -722,7 +724,22 @@ class ProbeRun:
 
     def set_link_speed(self, bps: int, name: str) -> None:
         """Move the link to bps; on a transient failure the actual speed is
-        unknown, so rediscover."""
+        unknown, so rediscover. Sessions raised through a message file use
+        the same mechanism (the backend has no speed capability), verified
+        by the receiver answering at the new speed."""
+        if self.speed_msg_path is not None:
+            self.tool.gps(f"{name}-msgs",
+                          ["-m", str(self.speed_msg_path), "-t",
+                           f"speed-{bps}-{self.speed_msg_port}"],
+                          {"op": "session-speed", "role": "restore-msgs", "to": bps},
+                          retry=False, json_out=False)
+            self.tool.set_speed(bps)
+            chk = self.tool.gps(f"verify-{name}", ["--show-receiver"],
+                                {"op": "session-speed", "role": "raise-verify",
+                                 "to": bps}, retry=False)
+            if chk.error is not None:
+                self.rediscover_speed()
+            return
         inv = self.tool.gps(name, ["--speed", str(bps)],
                             {"op": "session-speed", "role": "restore", "to": bps})
         if inv.error is None:

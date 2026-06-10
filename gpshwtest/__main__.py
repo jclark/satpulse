@@ -254,7 +254,8 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
                       "(reload readback failed)", file=sys.stderr)
             else:
                 print("running disruptive NVM probes", file=sys.stderr)
-                pr.probe_disruptive(initial, nvm, base, uart, as_found_speed)
+                pr.probe_disruptive(initial, nvm, base, uart, as_found_speed,
+                                    "speed" in (ident.out.get("supports") or []))
         pr.show_config("final-config", "final")
         done = True
     finally:

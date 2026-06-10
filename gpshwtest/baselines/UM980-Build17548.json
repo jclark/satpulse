@@ -45,6 +45,17 @@
         }
       ]
     },
+    "saveGranularity": {
+      "groups": [
+        [
+          "antennaCableDelay",
+          "minElevation",
+          "mode",
+          "timeGNSS",
+          "timePulse.width"
+        ]
+      ]
+    },
     "showPort": {
       "unsupported": true
     },
