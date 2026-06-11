@@ -205,7 +205,10 @@ def event_kinds(events: list[dict[str, Any]]) -> set[str]:
         elif t == "satellites":
             kinds.add("satellites")
             info = d.get("info") or []
-            if any(len(sv.get("signals") or []) >= 2 for sv in info):
+            # Per-signal information means signal-level records are
+            # present; on a single-band receiver that is one per satellite,
+            # so counting records per satellite would be wrong.
+            if any(sv.get("signals") for sv in info):
                 kinds.add("perSignal")
         elif t == "navEpoch":
             kinds.add("navEpoch")

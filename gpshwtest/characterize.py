@@ -78,7 +78,7 @@ def characterize(receiver: dict[str, Any], supports: list[str],
     rtcm = characterize_rtcm(by_group["rtcmOut"], enabled_gnss, supports)
     if rtcm:
         limits["rtcmOut"] = rtcm
-    raw = characterize_raw(by_group["rawOut"])
+    raw = characterize_raw(by_group["rawOut"], supports)
     if raw:
         limits["rawOut"] = raw
     pvt = characterize_expected(by_group["pvtOut"])
@@ -306,12 +306,14 @@ def characterize_rtcm(obs: list[EmissionObservation], enabled: list[str],
     return entry if entry else None
 
 
-def characterize_raw(obs: list[EmissionObservation]) -> dict[str, Any] | None:
+def characterize_raw(obs: list[EmissionObservation],
+                     supports: list[str]) -> dict[str, Any] | None:
     """Characterize raw output: a requested kind that produced no new
-    emission is missing; anything beyond the request is normal."""
+    emission is missing; anything beyond the request is normal. Refusals
+    that the absent raw capability flag already predicts are excluded."""
     entry: dict[str, Any] = {}
     observed = [{"request": o.requested, "error": "refused"}
-                for o in obs if o.error is not None]
+                for o in obs if o.error is not None and "raw" in supports]
     if observed:
         entry["observed"] = observed
     missing = [{"request": o.requested, "missing": o.requested}

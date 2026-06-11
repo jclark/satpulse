@@ -1,0 +1,40 @@
+{
+  "limitations": {
+    "mode.fixedPosAcc": {"unsupported": true},
+    "mode.fixedPosECEF[0]": {"unsupported": true},
+    "mode.fixedPosECEF[1]": {"unsupported": true},
+    "mode.fixedPosECEF[2]": {"unsupported": true},
+    "mode.fixedPosLLH[0]": {"unsupported": true},
+    "mode.fixedPosLLH[1]": {"unsupported": true},
+    "mode.height": {"unsupported": true},
+    "rtcmBaseID": {"unsupported": true},
+    "signals": {
+      "observed": [
+        {"band": ["E5"], "error": "refused", "gnss": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"]},
+        {"band": ["E5b"], "error": "refused", "gnss": ["BDS"]},
+        {
+          "band": ["L1", "L2"],
+          "error": "refused",
+          "gnss": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"]
+        },
+        {"band": ["L1"], "error": "refused", "gnss": ["BDS"]},
+        {"band": ["L1"], "error": "refused", "gnss": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"]},
+        {"band": ["L2"], "error": "refused", "gnss": ["BDS"]},
+        {"band": ["L2"], "error": "refused", "gnss": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"]},
+        {"band": ["L5"], "error": "refused", "gnss": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"]},
+        {"band": ["L6"], "error": "refused", "gnss": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"]},
+        {"band": null, "error": "refused", "gnss": ["BDS"]},
+        {"band": null, "error": "refused", "gnss": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"]}
+      ],
+      "signalSet": {"GAL": ["E1"], "GLO": ["L1"], "GPS": ["L1"], "QZSS": ["L1", "L1S"], "SBAS": ["L1"]}
+    },
+    "timePulse.width": {"quantum": 1e-06}
+  },
+  "receiver": {
+    "firmware": "SPG 5.10 PROTVER 34.10",
+    "hardware": "EVK-M101",
+    "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"],
+    "vendor": "u-blox"
+  },
+  "supports": ["speed"]
+}

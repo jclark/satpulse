@@ -15,7 +15,6 @@
     "mode.fixedPosLLH[1]": {"observed": [{"request": 100.6447407891}]},
     "mode.height": {"observed": [{"request": 12.34567}]},
     "rtcmBaseID": {"unsupported": true},
-    "satsOut": {"missing": ["perSignal"]},
     "saveGranularity": {
       "anomalous": ["timeGNSS"],
       "groups": [["minElevation", "mode"]],
