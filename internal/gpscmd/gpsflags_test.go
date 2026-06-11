@@ -109,6 +109,11 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--gnss", "GPS", "--band", "L1", "--except-signal", "GPSL2C"}, flagVars{
 		enabledSignals: gpsprot.BandL1.SignalSet(gpsprot.GPS),
 	}},
+	// --time-gnss is checked against the signal set from --signal
+	{"ttyS0", []string{"--signal", "GPSL1,GALE1", "--time-gnss", "GAL"}, flagVars{
+		enabledSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1),
+		timeGNSS:       gpsprot.GAL,
+	}},
 	{"ttyS0", []string{"--save-all"}, flagVars{configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveAll}}},
 	{"ttyS0", []string{"--factory-reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Reset: gpsprot.ResetFactory}}},
 	// Need configuration changes with --save
@@ -600,6 +605,7 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--gnss", "GPS", "--time-gnss", "GLO"},     // GLO not in enabled GNSS
 	{"--serial-device", "ttyS0", "--gnss", "GAL,BDS", "--time-gnss", "GPS"}, // GPS not in enabled GNSS
 	{"--serial-device", "ttyS0", "--gnss", "BDS", "--time-gnss", "GAL"},     // GAL not in enabled GNSS
+	{"--serial-device", "ttyS0", "--signal", "GPSL1", "--time-gnss", "GAL"}, // no GAL signal enabled
 	// Test invalid --fixed-pos-ecef values
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", ""},                        // empty value
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "1,2"},                     // too few coordinates

@@ -453,9 +453,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 	}
 	vars.timeGNSS = gpsprot.GNSS(timeGNSS)
-	if vars.timeGNSS != 0 && len(gl.gnss) != 0 {
+	if vars.timeGNSS != 0 && !vars.enabledSignals.IsZero() {
 		if vars.enabledSignals.GNSSSet()&gpsprot.GNSSSetOf(vars.timeGNSS) == 0 {
-			return nil, nil, fmt.Errorf("%s specified as --time-gnss but not included in --gnss", vars.timeGNSS)
+			return nil, nil, fmt.Errorf("%s specified as --time-gnss but none of its signals are enabled", vars.timeGNSS)
 		}
 	}
 	if flags.Lookup("pps").Changed {
