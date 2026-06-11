@@ -58,11 +58,16 @@ def characterize(receiver: dict[str, Any], supports: list[str],
                  signal_observations: list[SignalObservation],
                  emission_observations: list[EmissionObservation],
                  enabled_gnss: list[str],
-                 save_results: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                 save_results: list[dict[str, Any]] | None = None,
+                 stored_forms: dict[str, str] | None = None) -> dict[str, Any]:
     """Build the characterization document for one receiver+firmware.
     enabled_gnss is the constellation set that was enabled while message
-    output was probed; it scopes the expected RTCM MSM types."""
+    output was probed; it scopes the expected RTCM MSM types. stored_forms
+    records properties the receiver stores in a different representation
+    than it accepted (re-expressions of the same value, not changes)."""
     limits: dict[str, Any] = {}
+    for prop, form in (stored_forms or {}).items():
+        limits[prop] = {"storedAs": form}
     for prop in sorted({o.prop for o in observations}):
         entry = characterize_prop([o for o in observations if o.prop == prop])
         if entry:
@@ -102,9 +107,9 @@ def characterize_prop(obs: list[Observation]) -> dict[str, Any] | None:
     ok = [o for o in obs if o.error is None]
     if ok and all(o.reported is None and o.readback is None for o in ok):
         # Setting reported nothing achieved and readback shows no such
-        # property: the backend does not have this property. (A reported
-        # value that cannot be read back is a guarantee violation, caught
-        # as a failure by the probes, never a characterization category.)
+        # property: the backend does not have this property. (Accepted and
+        # stored values that differ are surfaced below as observations -
+        # both reports are truthful, each at its own stage.)
         entry["unsupported"] = True
         return entry
     inexact = [o for o in ok if o.readback != o.requested]
@@ -116,6 +121,8 @@ def characterize_prop(obs: list[Observation]) -> dict[str, Any] | None:
             observed += [{"request": o.requested,
                           **({} if o.readback is None
                              else {"result": o.readback})} for o in inexact]
+    observed += [{"request": o.requested, "accepted": o.reported, "stored": o.readback}
+                 for o in ok if o.reported != o.readback]
     if observed:
         entry["observed"] = observed
     return entry if entry else None
@@ -160,6 +167,16 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
     if inconsistent:
         entry["inconsistent"] = inconsistent
     signal_patterns(entry, obs, supported, dedup(refused), dedup(adjusted))
+    mismatched: list[dict[str, Any]] = []
+    for o in obs:
+        if o.accepted is None:
+            continue
+        req = requested_signals(o.gnss, o.band, supported)
+        mismatched.append({
+            "request": req if req is not None else {"gnss": o.gnss, "band": o.band},
+            "accepted": o.accepted, "stored": o.achieved})
+    if mismatched:
+        entry["observed"] = dedup(entry.get("observed", []) + mismatched)
     return entry if entry else None
 
 

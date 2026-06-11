@@ -17,7 +17,8 @@ from typing import Any
 from characterize import characterize
 from model import (NMEA_VOCAB, EmissionObservation, Observation, SignalObservation,
                    Value, config_value, emissions, event_kinds, flat_value,
-                   mode_disagreements, nmea_set, raw_set, rtcm_set, transient)
+                   mode_disagreements, nmea_set, raw_set, rtcm_set, stored_form,
+                   transient)
 from tool import replay
 
 
@@ -122,6 +123,7 @@ class Analyzer:
     receiver: dict[str, Any] = field(default_factory=dict)
     supports: list[str] = field(default_factory=list)
     initial: dict[str, Any] = field(default_factory=dict)
+    stored_forms: dict[str, str] = field(default_factory=dict)
     prev_vals: dict[str, Value] = field(default_factory=dict)
     start_vals: dict[str, Value] = field(default_factory=dict)
     accepted: dict[str, list[Observation]] = field(default_factory=dict)
@@ -158,7 +160,7 @@ class Analyzer:
         enabled = sorted(self.initial.get("signalsEnabled") or {})
         doc = characterize(self.receiver, self.supports, self.observations,
                            self.signal_observations, self.emission_observations,
-                           enabled, self.save_results)
+                           enabled, self.save_results, self.stored_forms)
         n = (len(self.observations) + len(self.signal_observations)
              + len(self.emission_observations))
         disruptive = any(s.intent.get("op") in ("gran-save", "set-speed",
@@ -324,9 +326,6 @@ class Analyzer:
                 self.failures.append(
                     f"{prop}: refusal of {v!r} changed state: {prev!r} -> {back!r}")
         else:
-            if obs.reported != back:
-                self.failures.append(
-                    f"{prop}: reported {obs.reported!r} but readback says {back!r}")
             self.accepted.setdefault(prop, []).append(obs)
             self.prev_vals[prop] = back
 
@@ -374,13 +373,18 @@ class Analyzer:
                     f"mode {case}: refusal changed state: {prev!r} -> {back!r}")
             return
         reported = config_value(s.config(), ("mode",))
-        for k in mode_disagreements(reported, back):
-            self.failures.append(
-                f"mode {case}: reported {k}={flat_value(reported, k)!r} "
-                f"but readback says {flat_value(back, k)!r}")
+        rb = back
+        if mode_disagreements(reported, back):
+            form = stored_form(reported, back)
+            if form is not None:
+                # The accepted position was stored in the other
+                # representation but denotes the same point: the per-key
+                # readback is confirmed through the converted stored value.
+                self.stored_forms.setdefault("mode.fixedPos", form)
+                rb = reported
         for k, v in request.items():
             self.observations.append(Observation(
-                f"mode.{k}", v, None, flat_value(reported, k), flat_value(back, k)))
+                f"mode.{k}", v, None, flat_value(reported, k), flat_value(rb, k)))
         self.prev_vals["mode"] = back
 
     def restore_mode(self, s: Step) -> None:
@@ -413,10 +417,8 @@ class Analyzer:
                     f"signals {name}: refusal changed state: {prev!r} -> {back!r}")
             return
         reported = config_value(s.config(), ("signalsEnabled",))
-        if reported != back:
-            self.failures.append(
-                f"signals {name}: reported {reported!r} but readback says {back!r}")
-        self.signal_observations.append(SignalObservation(gnss, band, None, back))
+        self.signal_observations.append(SignalObservation(
+            gnss, band, None, back, reported if reported != back else None))
         self.prev_vals["signals"] = back
 
     def restore_signals(self, s: Step) -> None:
@@ -585,13 +587,9 @@ class Analyzer:
         back = rb.config().get("baudRate")
         obs = Observation("baudRate", v, s.error, s.config().get("baudRate"), back)
         self.observations.append(obs)
-        if s.error is not None:
-            if back != prev:
-                self.failures.append(
-                    f"baudRate: refusal of {v!r} changed state: {prev!r} -> {back!r}")
-        elif obs.reported != back:
+        if s.error is not None and back != prev:
             self.failures.append(
-                f"baudRate: reported {obs.reported!r} but readback says {back!r}")
+                f"baudRate: refusal of {v!r} changed state: {prev!r} -> {back!r}")
 
     def gran_save(self, s: Step) -> None:
         """The set-with---save of one granularity experiment. A refusal

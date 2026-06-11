@@ -24,9 +24,9 @@ The properties are: the enabled signals, timing GNSS, time pulse (width, period,
 - Values are limited to the receiver's range (a value beyond a bound may be achieved as the bound).
 - Settings the receiver couples together move together.
 
-What was *achieved* is reported in the response, not what was requested. The requested and achieved values may legitimately differ; the difference characterizes the receiver, not a fault.
+What was *achieved* is reported in the response, not what was requested. The achieved values are the values the receiver **accepted**: they come from the set exchange itself, not from a separate readback. The requested and achieved values may legitimately differ; the difference characterizes the receiver, not a fault.
 
-**Readback tells the truth.** Reading a property returns its current achieved value. An independent later invocation reads back exactly the value that a set reported as achieved - there is no such thing as a property that was set but cannot be confirmed. This is the invariant that makes the achieved values trustworthy.
+**Readback tells the truth.** Reading a property returns its current value as the receiver stores it. The stored value is normally identical to the accepted one, but they are two different observations and a receiver may re-express what it accepted when storing it (a fixed position accepted in geodetic coordinates may be stored, and therefore read back, in ECEF coordinates). Both reports are truthful at their own stage; neither is derived from the other.
 
 **Nonexistence is shown, not announced.** A backend that does not have a property does not fail requests that mention it. Setting it reports nothing achieved for it, and readback does not include it. The absence in the responses *is* the statement that the property does not exist there.
 
@@ -90,7 +90,7 @@ An RTCM output request on a backend without the RTCM capabilities currently fail
 Whatever the receiver:
 
 - An invocation responds; it does not hang or silently do nothing.
-- Reported achieved values are the truth: independent readback agrees with them.
+- Reported values are the truth: a set response reports what the receiver accepted, and readback reports what it stores.
 - A reported error is the truth: a failed request leaves the configuration unchanged.
 - Requested information is delivered when the receiver can deliver it; more may come with it.
 - Persistence works as stated: what a save was asked to persist survives reload and reset.

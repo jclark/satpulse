@@ -34,7 +34,7 @@ Hidden/experimental flags (`--osnma`, `--static`, `--sys-time-trusted`) are out 
 
 ## The semantics under test
 
-The semantics of high-level configuration are defined in `SEMANTICS.md`; read it before interpreting receiver behavior. The short version: properties are set best-effort with truthful achieved values confirmed by readback; the enabled-signals property is a single signal set, realized as the intersection with the receiver's deduced supported set plus protocol-reported limits; message output comes in two kinds (wire-format and semantic); survey parameters, saves, and resets are operations, not state.
+The semantics of high-level configuration are defined in `SEMANTICS.md`; read it before interpreting receiver behavior. The short version: properties are set best-effort, with the set response truthfully reporting what the receiver accepted and readback truthfully reporting what it stores; the enabled-signals property is a single signal set, realized as the intersection with the receiver's deduced supported set plus protocol-reported limits; message output comes in two kinds (wire-format and semantic); survey parameters, saves, and resets are operations, not state.
 
 Consequences that the tester must treat as normal, not as errors:
 
@@ -48,7 +48,7 @@ Consequences that the tester must treat as normal, not as errors:
 What the tool guarantees, and therefore what a tester can check without any receiver-specific knowledge:
 
 - An invocation responds: it does not crash, hang, or silently produce nothing.
-- The achieved values it reports are the truth: an independent readback (a separate invocation) agrees with them.
+- Its reports are the truth, each at its own stage: a set response reports the values the receiver accepted (it is not a readback and must not become one), and configuration readback reports the values the receiver stores. The two are usually identical but need not be - a receiver may re-express an accepted value when storing it (the M8T stores a fixed position accepted in LLH form as ECEF). An accepted/stored difference is characterization data to vet, never by itself a failure; the stored value remains subject to the changed-what-it-could and persistence checks below.
 - A reported error is the truth: nothing changed when it says configuration failed.
 - An accepted set changed what it could: a set accepted without error that demonstrably changed nothing (requests bracketing the prior value, value never moves) is a violation, not a limitation.
 - Persistence works as stated: what `--save` was asked to persist survives reload/reset (it may persist more, per the granularity limitation above); `--save-all` persists the whole running configuration; changes made after the last save do not survive reload.
@@ -68,7 +68,7 @@ Where the receiver's PPS output is wired to a PHC pin (declared by the `[phc]` t
 
 The single most important property of this program: **a receiver limitation is never reported as a test failure.** A tool that goes red because a receiver cannot do something is useless as a regression signal.
 
-- **Failures** (errors, nonzero exit) are violations of the tool guarantees above: no response, timeout, crash; achieved values contradicted by readback; state changed by a reported failure; a set accepted without error that changed nothing; persistence guarantees broken.
+- **Failures** (errors, nonzero exit) are violations of the tool guarantees above: no response, timeout, crash; state changed by a reported failure; a set accepted without error that changed nothing; persistence guarantees broken.
 - **Limitations** (data, the program's main output) are everything the receiver cannot do or does imprecisely: refused combinations, quantization, clipping, couplings, ranges, properties that do not exist, save granularity.
 
 Failures that are diagnosed down to a satpulsetool defect get recorded in `BUGS.md` with their evidence; receiver quirks and limitations worth prose go in `HW/<receiver>.md`.

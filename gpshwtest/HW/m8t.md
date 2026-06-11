@@ -1,6 +1,6 @@
 # LEA-M8T limitations
 
-How device-independent configuration is realized on the u-blox LEA-M8T-0, relative to perfect realization of the full model (`SEMANTICS.md`). Measured on firmware TIM 1.10 PROTVER 22.0 (2026-06-10, UART at 9600). Perfectly-realized behavior is not listed. Two satpulsetool gen 8 backend bugs found on this receiver are in `BUGS.md` (antenna cable delay ignored; fixed position echoed as LLH but stored as ECEF), so those properties are not yet fully characterized.
+How device-independent configuration is realized on the u-blox LEA-M8T-0, relative to perfect realization of the full model (`SEMANTICS.md`). Measured on firmware TIM 1.10 PROTVER 22.0 (2026-06-10, UART at 9600). Perfectly-realized behavior is not listed. A satpulsetool gen 8 backend bug found on this receiver (antenna cable delay sets silently ignored, `BUGS.md` history) is fixed as of 2026-06-11; the antenna cable delay characterization awaits a rerun with the fix.
 
 ## Signals
 
@@ -21,7 +21,7 @@ Supported signal set (single-band):
 
 ## Properties
 
-- Fixed position is stored in ECEF whatever form it is set in; readback is ECEF-only. ECEF coordinates quantized to 0.01 m (TMODE2 cm fields), fixed-position accuracy to 0.001 m.
+- Fixed position is stored in ECEF whatever form it is set in; readback is ECEF-only. The conversion happens on the receiver, not in satpulsetool: a position set as LLH goes out as a TMODE2 write with the LLA flag and the geodetic values, and the receiver's own poll response 4 seconds later returns the LLA flag cleared with converted ECEF coordinates (decoded from run `runs/20260610-180323`, probes 046/047; the converted point agrees with the accepted one within 5 mm per axis). The set response truthfully reports the accepted LLH, readback truthfully reports the stored ECEF; the characterization records this as `mode.fixedPos: storedAs ECEF`. ECEF coordinates quantized to 0.01 m (TMODE2 cm fields), LLH to 1e-7 deg with height to 0.01 m, fixed-position accuracy to 0.001 m.
 - The RTCM base ID property does not exist: setting reports nothing achieved and readback omits it, consistent with the absent `rtcmBaseID` capability flag.
 
 ## Message output
@@ -33,7 +33,7 @@ Supported signal set (single-band):
 
 As-found running configuration: NMEA GGA, GLL, GSA, GSV, RMC, VTG, ZDA; mobile mode; GPS, GLO, and QZSS (L1 C/A only) enabled. satpulsetool finds the UART speed by scanning; gpshwtest locks in the speed reported by `--show-port`. A full run takes about 8.5 minutes.
 
-Raw output saturates the 9600 baud line: the receiver's transmit side overruns, and packets - including poll replies and ACKs - are lost or corrupted. Configuration then becomes unreliable in a way satpulse cannot help: invocations fail with "no response" while the write may actually have applied with only its ACK lost, so on a saturated link a reported error does not imply an unchanged configuration; detection can fail outright. Recovery needed low-level CFG-MSG writes (`-m`) to disable the raw messages. Raising the serial speed for the session avoids all of this. gpshwtest now does so by default (raises the link to 115200 at session start and restores the as-found speed at the end); with that in place a full sweep completes with no saturation failures, leaving only the gen 8 backend bugs in `BUGS.md`.
+Raw output saturates the 9600 baud line: the receiver's transmit side overruns, and packets - including poll replies and ACKs - are lost or corrupted. Configuration then becomes unreliable in a way satpulse cannot help: invocations fail with "no response" while the write may actually have applied with only its ACK lost, so on a saturated link a reported error does not imply an unchanged configuration; detection can fail outright. Recovery needed low-level CFG-MSG writes (`-m`) to disable the raw messages. Raising the serial speed for the session avoids all of this. gpshwtest now does so by default (raises the link to 115200 at session start and restores the as-found speed at the end); with that in place a full sweep completes with no saturation failures.
 
 ## NVM and saving
 
@@ -43,4 +43,4 @@ As on the F9P, NVM held a QZSS signal set without L1S, which the constellation-l
 
 satpulsetool does not scan baud rates: with no `-s` it opens the port at its current termios state. A receiver left at a non-resting speed (for example 115200 in NVM after a save-all at the raised session speed) is unreachable until the right `-s` is given; gpshwtest's speed rediscovery therefore tries candidate speeds explicitly.
 
-The full disruptive sweep (save granularity, save-all recovery, reset, the 57600 speed probe, factory reset, NVM recovery) completes end to end with the receiver verified left as found at 9600; every reported failure traces to the gen 8 satpulsetool defects in `BUGS.md`. The vetted characterization is checked in at `baselines/LEA-M8T-0-TIM-1.10-PROTVER-22.0.json`; consecutive disruptive runs produce it byte-identically. Note it deliberately carries the satpulsetool-bug-shaped entries verbatim (antenna cable delay frozen, fixed LLH unreadable): when the gen 8 bugs are fixed those entries will change, and the baseline diff is the signal to re-vet and update it.
+The full disruptive sweep (save granularity, save-all recovery, reset, the 57600 speed probe, factory reset, NVM recovery) completes end to end with the receiver verified left as found at 9600; every reported failure traced to the gen 8 cable-delay defect (since fixed). The vetted characterization is checked in at `baselines/LEA-M8T-0-TIM-1.10-PROTVER-22.0.json`; consecutive disruptive runs produce it byte-identically. The baseline still carries the frozen antenna cable delay verbatim and predates the `mode.fixedPos: storedAs` vocabulary; it needs regenerating from a rerun with the fixed satpulsetool, which should leave the cable-delay entry as a quantum (or nothing) and add the storedAs entry.

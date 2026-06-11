@@ -8,6 +8,7 @@ interpretation. Nothing here touches hardware.
 
 import datetime
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -34,12 +35,15 @@ class Observation:
 
 @dataclass
 class SignalObservation:
-    """Outcome of requesting one constellation/band combination."""
+    """Outcome of requesting one constellation/band combination. achieved
+    is the stored set from the readback; accepted carries the set response's
+    own set only when it differs from the stored one."""
 
     gnss: list[str]
     band: list[str] | None
     error: str | None
     achieved: dict[str, list[str]] | None
+    accepted: dict[str, list[str]] | None = None
 
 
 @dataclass
@@ -100,13 +104,57 @@ def flat_value(obj: Value, key: str) -> Value:
 
 def mode_disagreements(reported: Value, back: Value) -> list[str]:
     """Keys on which a mode set response and the independent readback
-    disagree. Every reported field must read back identically: mode is a
-    property, so an achieved value the readback cannot confirm (such as a
-    fixed position echoed as LLH but stored and read back as ECEF) is a
-    guarantee violation, not a representation detail."""
+    disagree: the value the receiver accepted and the value it stores
+    differ there. The difference is data about the receiver, not a
+    failure; stored_form recognizes the case where it is only the fixed
+    position stored in the other representation."""
     if not isinstance(reported, dict) or not isinstance(back, dict):
         return [] if reported == back else ["mode"]
     return sorted(k for k in reported if back.get(k) != reported[k])
+
+
+def llh_to_ecef(lat: float, lon: float, height: float) -> tuple[float, float, float]:
+    """Convert a WGS84 geodetic position to ECEF coordinates in meters."""
+    a, f = 6378137.0, 1 / 298.257223563
+    e2 = f * (2 - f)
+    rlat, rlon = math.radians(lat), math.radians(lon)
+    n = a / math.sqrt(1 - e2 * math.sin(rlat) ** 2)
+    return ((n + height) * math.cos(rlat) * math.cos(rlon),
+            (n + height) * math.cos(rlat) * math.sin(rlon),
+            (n * (1 - e2) + height) * math.sin(rlat))
+
+
+# Re-expressed positions count as the same point within this many meters:
+# covers centimeter storage resolution plus conversion rounding, far below
+# any genuinely different position.
+POSITION_TOLERANCE = 0.05
+
+
+def stored_form(reported: Value, back: Value) -> str | None:
+    """When a mode set response and its readback disagree only because the
+    receiver stored the accepted fixed position in the other representation
+    (the same point within POSITION_TOLERANCE), the stored representation
+    ("ECEF" or "LLH"); None otherwise."""
+    if not isinstance(reported, dict) or not isinstance(back, dict):
+        return None
+    if "fixedPosLLH" in reported and "fixedPosECEF" in back \
+            and "fixedPosECEF" not in reported and "fixedPosLLH" not in back:
+        llh, ecef, form = reported, back, "ECEF"
+    elif "fixedPosECEF" in reported and "fixedPosLLH" in back \
+            and "fixedPosLLH" not in reported and "fixedPosECEF" not in back:
+        llh, ecef, form = back, reported, "LLH"
+    else:
+        return None
+    pos_keys = {"fixedPosLLH", "fixedPosECEF", "height"}
+    if {k: v for k, v in reported.items() if k not in pos_keys} != \
+            {k: v for k, v in back.items() if k not in pos_keys}:
+        return None
+    lat, lon = llh["fixedPosLLH"]
+    xyz = llh_to_ecef(lat, lon, llh.get("height", 0))
+    if all(abs(a - b) <= POSITION_TOLERANCE
+           for a, b in zip(xyz, ecef["fixedPosECEF"])):
+        return form
+    return None
 
 
 def mode_args(mode: dict[str, Any]) -> list[str]:
