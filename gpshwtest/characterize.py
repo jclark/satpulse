@@ -180,18 +180,22 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
     return entry if entry else None
 
 
-# Augmentation constellations in the model: satpulsetool itself refuses any
-# request whose denoted set enables no non-augmentation signal ("at least
-# one non-augmentation signal must be enabled"), regardless of receiver.
-AUGMENTATIONS = {"QZSS", "SBAS"}
+# satpulsetool itself refuses any request whose denoted set enables no
+# non-augmentation signal from a major constellation (SigSetMajor minus
+# SigSetAugment in gps/gpsprot/signal.go): the major constellations are
+# GPS, GLO, GAL, and BDS, and within them GAL E6 and BDS B2b count as
+# augmentation. QZSS, NAVIC, and SBAS cannot anchor a request.
+MAJORS = {"GPS", "GLO", "GAL", "BDS"}
+AUGMENT_SIGNALS = {"GAL": {"E6"}, "BDS": {"B2b"}}
 
 
 def valid_request(req: dict[str, list[str]]) -> bool:
     """Whether a denoted signal set is a valid request under satpulsetool's
-    own semantics: at least one non-augmentation signal enabled. Invalid
-    requests are refused by the tool on every receiver, so their refusals
-    are not receiver limitations."""
-    return any(s for c, s in req.items() if c not in AUGMENTATIONS)
+    own semantics: at least one non-augmentation signal from a major
+    constellation enabled. Invalid requests are refused by the tool on
+    every receiver, so their refusals are not receiver limitations."""
+    return any(set(s) - AUGMENT_SIGNALS.get(c, set())
+               for c, s in req.items() if c in MAJORS)
 
 
 def signal_patterns(entry: dict[str, Any], obs: list[SignalObservation],
