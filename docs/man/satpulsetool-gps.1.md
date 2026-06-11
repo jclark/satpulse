@@ -9,7 +9,8 @@ satpulsetool-gps - configure a GPS receiver
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-f**\|**\-\-config\-file** *path*] [**\-\-socket** *path*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-c**\|**\-\-show\-config**] [**\-\-show\-port**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**\|**QZSS**\|**NAVIC**\|**SBAS**,...]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...] [**\-\-min\-elev** *degrees*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-signal** *signal*,...] [**\-\-except\-signal** *signal*,...] [**\-\-min\-elev** *degrees*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps** *width*] [**\-\-ant\-cable\-delay** *nanos*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-time\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-survey**] [**\-\-survey\-time** *seconds*] [**\-\-survey\-acc** *meters*]\
@@ -115,7 +116,10 @@ The following options control which satellites and signals the receiver uses.
   : Satellite-Based Augmentation Systems (various countries)
 
 **\-b**, **\-\-band** *list*
-: List of frequency bands that should be enabled for the specified GNSS constellations. The *list* parameter is a comma-separated list of:
+: List of frequency bands that should be enabled for the GNSS constellations specified with **\-\-gnss**.
+Signals from those constellations are enabled only if they are in one of the listed bands;
+**\-\-band** does not affect what signals are enabled by **\-\-signal**.
+The *list* parameter is a comma-separated list of:
 
   **L1**
   : 1559-1610 MHz band, including L1 C/A, L1C, E1, B1C signals at 1575.42 MHz, GLONASS L1, and BeiDou B1I
@@ -134,6 +138,21 @@ The following options control which satellites and signals the receiver uses.
 
   **E6** or **L6**
   : 1260-1300 MHz band
+
+**\-\-signal** *list*
+: List of individual GNSS signals that should be enabled, in addition to the signals enabled by **\-\-gnss** and **\-\-band**.
+When **\-\-gnss** is not specified, the *list* specifies all the enabled signals.
+The *list* parameter is a comma-separated list of signal names.
+A signal name is the GNSS constellation name (as with **\-\-gnss**) immediately followed by the name of the signal,
+for example **GPSL1C**, **QZSSL1S** or **GLOL3**; **GPSL1** means the GPS L1 C/A signal.
+Galileo and BeiDou signal names start with **E** and **B** and so identify the constellation by themselves;
+they are used without the constellation name, for example **E5b** or **B1C**.
+Signal names are case-insensitive.
+
+**\-\-except\-signal** *list*
+: List of GNSS signals that should be excluded from the signals enabled by **\-\-gnss** and **\-\-band**.
+The *list* parameter is a comma-separated list of signal names, as with **\-\-signal**.
+Requires **\-\-gnss**.
 
 **\-\-min\-elev** *degrees*
 : Set the minimum elevation angle in degrees for satellites to be used. Satellites below this angle above the horizon are ignored.

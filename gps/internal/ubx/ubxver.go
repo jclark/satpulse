@@ -146,6 +146,9 @@ func (v *Version) configSupport() gpsprot.ConfigSupportFlags {
 	if v.bandsConfigSupport() {
 		flags |= gpsprot.ConfigSupportBand
 	}
+	if v.genAtLeast9() {
+		flags |= gpsprot.ConfigSupportSignal
+	}
 	tmode := v.tmodeLevel()
 	if tmode > 0 {
 		flags |= gpsprot.ConfigSupportSurvey |

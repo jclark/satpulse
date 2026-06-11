@@ -31,6 +31,7 @@ type ConfigSupportFlags uint32
 
 const (
 	ConfigSupportBand ConfigSupportFlags = 1 << iota
+	ConfigSupportSignal
 	ConfigSupportSpeed
 	ConfigSupportSurvey
 	ConfigSupportSurveyAcc
@@ -52,6 +53,7 @@ var configSupportFlagNames = [...]struct {
 	name string
 }{
 	{ConfigSupportBand, "band"},
+	{ConfigSupportSignal, "signal"},
 	{ConfigSupportSpeed, "speed"},
 	{ConfigSupportSurvey, "survey"},
 	{ConfigSupportSurveyAcc, "surveyAcc"},

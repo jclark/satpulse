@@ -14,6 +14,7 @@ import (
 const Vendor = "Unicore"
 
 const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportBand |
+	gpsprot.ConfigSupportSignal |
 	gpsprot.ConfigSupportSurvey |
 	gpsprot.ConfigSupportFixedPos |
 	gpsprot.ConfigSupportRaw |
