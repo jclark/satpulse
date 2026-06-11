@@ -18,8 +18,7 @@ Supported signal set:
 Receiver validity rules (requested sets the receiver refuses; refusals are transactional - configuration confirmed unchanged):
 
 - A major constellation cannot be enabled on a single signal, with one exception: every set giving GPS, GAL, GLO, or QZSS only one of its signals is refused, including single-signal disables; BDS on B1I alone is accepted (B2I alone is refused).
-- QZSS-only and SBAS-only sets are refused; either is accepted together with GPS.
-- No coupling: GPS alone, with QZSS and SBAS disabled, is accepted.
+- No coupling: GPS alone, with QZSS and SBAS disabled, is accepted. (QZSS-only and SBAS-only requests are refused, but by satpulsetool's own validation - augmentations need a non-augmentation signal enabled - uniformly on every receiver, so that is not part of this receiver's characterization.)
 
 The refusal appears on the wire as an ACK-NAK plus `GPTXT inv sig cfg` / `bad cfg RAM`. The valid-combination table is in the ZED-F9P integration manual (not in `../gps-protocol-docs`; the interface description defers to it). Replay testdata from HPG 1.12 (`internal/gpscmd/testdata/f9p-signal.jsonl`) agrees where it overlaps, so this is not firmware drift.
 
@@ -49,6 +48,6 @@ Save granularity is perfectly selective (the val-based configuration saves per k
 The first disruptive run found this unit's NVM diverged from its running configuration: NVM held minimum elevation 10 versus 5 running, a QZSS signal set without L1S, and time pulse grid UTC. The --factory-reset probe later showed that state to be exactly the factory configuration (gen 9 defaults include minimum elevation 10 and antenna cable delay 50 ns) - the unit's NVM had never been written. Two of those exposed general limits, loudly reported as that run's failures and gone once NVM was rewritten:
 
 - A stored signal subset within a constellation (QZSS without L1S) cannot be reproduced through the high-level vocabulary: `--gnss` is constellation-level and L1S shares the L1 band, so NVM recovery wrote the full QZSS set.
-- A time pulse grid of UTC has no representation in the `timeGNSS` vocabulary, so configuration readback omits the property entirely while the receiver is in that state (observed: post-reload readbacks lacked `timeGNSS`; CFG-TP-TIMEGRID_TP1 was 0=UTC in NVM). Setting the pulse width (`--pps`) realizes the whole time pulse bundle including grid=GPS, which is how the property reappeared. Worth a semantics decision: should `timeGNSS` have a UTC value?
+- A time pulse grid of UTC has no representation in the `timeGNSS` vocabulary, so configuration readback omits the property entirely while the receiver is in that state (observed: post-reload readbacks lacked `timeGNSS`; CFG-TP-TIMEGRID_TP1 was 0=UTC in NVM). Setting the pulse width (`--pps`) realizes the whole time pulse bundle including grid=GPS, which is how the property reappeared. This is correct behavior: the timeGNSS value is absent exactly when time is not aligned to a GNSS.
 
 `--factory-reset` verified: NVM reverts to the factory configuration above and recovery rewrites the discovered NVM state, all checked by readbacks. `--speed` on the native-USB connection is accepted and achieves 0 (no serial speed applies to the port), recorded verbatim in the characterization.

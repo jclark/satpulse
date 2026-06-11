@@ -60,40 +60,7 @@
       "unsupported": true
     },
     "signals": {
-      "adjusted": [
-        {
-          "achieved": {},
-          "requested": {
-            "GLO": []
-          }
-        }
-      ],
-      "cannotBeAlone": [
-        "QZSS"
-      ],
       "emptyConstellationsDropped": true,
-      "refused": [
-        {
-          "signals": {
-            "BDS": []
-          }
-        },
-        {
-          "signals": {
-            "GAL": []
-          }
-        },
-        {
-          "signals": {
-            "GPS": []
-          }
-        },
-        {
-          "signals": {
-            "QZSS": []
-          }
-        }
-      ],
       "signalSet": {
         "BDS": [
           "B1C",

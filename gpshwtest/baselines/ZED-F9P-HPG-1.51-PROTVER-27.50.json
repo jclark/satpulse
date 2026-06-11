@@ -35,11 +35,6 @@
       ]
     },
     "signals": {
-      "cannotBeAlone": [
-        "QZSS",
-        "SBAS"
-      ],
-      "emptySelectionRefused": true,
       "partialSelectionRefused": {
         "except": {
           "BDS": [

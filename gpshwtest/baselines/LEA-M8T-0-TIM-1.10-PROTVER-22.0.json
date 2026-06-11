@@ -196,11 +196,6 @@
           }
         }
       ],
-      "cannotBeAlone": [
-        "QZSS",
-        "SBAS"
-      ],
-      "emptySelectionRefused": true,
       "signalSet": {
         "BDS": [
           "B1I"
