@@ -7,6 +7,7 @@ verbatim rather than dropped.
 """
 
 import json
+from itertools import combinations
 from typing import Any
 
 from model import EmissionObservation, Observation, SignalObservation
@@ -350,58 +351,73 @@ def characterize_expected(obs: list[EmissionObservation]) -> dict[str, Any] | No
 def characterize_save(results: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Characterize save granularity from the per-property experiments.
     Perfect realization is one save group per property, which gets no
-    entry: only groups of properties that persist together are limitations.
-    The pairwise observations must be consistent (saving p persisted q iff
-    saving q persisted p, and the together-relation is transitive); if they
-    are not, the receiver's behavior is not a partition and the experiments
-    are carried verbatim. Pairs no experiment could decide (a property's
-    running value never left its NVM value) are listed as indeterminate."""
+    entry. Each property is classified: member of an equivalence class of
+    properties that persist together (groups, or singleGroup when one
+    class covers everything), anomalous (its observations contradict any
+    partition - a property whose save realization spans several of the
+    receiver's save sections), or unsaved (its own persistence was never
+    observable because its value never moved off NVM)."""
     if not results:
         return None
     entry: dict[str, Any] = {}
     errors = [r for r in results if "error" in r]
     anomalies = [a for r in results for a in r.get("anomalies", [])]
     together: dict[tuple[str, str], bool] = {}
-    consistent = True
-    props = set()
+    determined = set()
+    indeterminate = set()
+    subjects = []
     for r in results:
         if "saved" not in r:
             continue
-        props.add(r["prop"])
+        subjects.append(r["prop"])
         for q, val in [(q, True) for q in r["saved"]] + \
                       [(q, False) for q in r["independent"]]:
-            props.add(q)
-            k = (min(r["prop"], q), max(r["prop"], q))
-            if together.setdefault(k, val) != val:
-                consistent = False
-    groups = merge_groups(props, together)
-    for g in groups:
-        for a in g:
-            for b in g:
-                if a < b and together.get((a, b)) is False:
-                    consistent = False
-    if not consistent:
-        entry["verbatim"] = [{k: v for k, v in r.items() if v or k == "prop"}
-                             for r in results if "saved" in r]
-    else:
-        grouped = sorted(sorted(g) for g in groups if len(g) > 1)
-        if len(grouped) == 1 and set(grouped[0]) == props:
-            # Everything probed persists together: saving anything saves
-            # the whole configuration. Stated as such rather than by
-            # enumerating the probed properties, so the entry does not
-            # depend on the probe set.
-            entry["singleGroup"] = True
-        elif grouped:
-            entry["groups"] = grouped
-        undecided = sorted(f"{a}/{b}" for a in props for b in props
-                           if a < b and (a, b) not in together)
-        if undecided and grouped:
-            entry["indeterminate"] = undecided
+            determined.add(q)
+            together[(min(r["prop"], q), max(r["prop"], q))] = \
+                together.get((min(r["prop"], q), max(r["prop"], q)), val) and val
+        indeterminate |= set(r.get("indeterminate", []))
+    unsaved = sorted(indeterminate - determined)
+    classified = sorted(set(subjects) - set(unsaved))
+    anomalous: list[str] = []
+    for k in range(len(classified) + 1):
+        done = False
+        for combo in combinations(classified, k):
+            remaining = set(classified) - set(combo)
+            if partition_consistent(remaining, together):
+                anomalous = sorted(combo)
+                done = True
+                break
+        if done:
+            break
+    remaining = set(classified) - set(anomalous)
+    groups = merge_groups(remaining, {k: v for k, v in together.items()
+                                      if set(k) <= remaining})
+    grouped = sorted(sorted(g) for g in groups if len(g) > 1)
+    if not anomalous and not unsaved and len(grouped) == 1 \
+            and set(grouped[0]) == remaining:
+        entry["singleGroup"] = True
+    elif grouped:
+        entry["groups"] = grouped
+    if anomalous:
+        entry["anomalous"] = anomalous
+    if unsaved:
+        entry["unsaved"] = unsaved
     if errors:
         entry["refused"] = [{"prop": r["prop"], "error": r["error"]} for r in errors]
     if anomalies:
         entry["anomalies"] = anomalies
     return entry if entry else None
+
+
+def partition_consistent(props: set[str],
+                         together: dict[tuple[str, str], bool]) -> bool:
+    """Whether the persists-together observations restricted to props are
+    consistent with some partition: no two properties both joined (perhaps
+    transitively) and observed apart."""
+    rel = {k: v for k, v in together.items() if set(k) <= props}
+    groups = merge_groups(props, rel)
+    return not any(a != b and rel.get((min(a, b), max(a, b))) is False
+                   for g in groups for a in g for b in g)
 
 
 def merge_groups(props: set[str], together: dict[tuple[str, str], bool]) -> list[set[str]]:

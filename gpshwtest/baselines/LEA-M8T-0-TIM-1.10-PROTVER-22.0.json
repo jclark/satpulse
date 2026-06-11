@@ -17,37 +17,9 @@
     "rtcmBaseID": {"unsupported": true},
     "satsOut": {"missing": ["perSignal"]},
     "saveGranularity": {
-      "verbatim": [
-        {
-          "independent": ["minElevation", "mode"],
-          "indeterminate": ["timeGNSS"],
-          "prop": "antennaCableDelay",
-          "saved": ["timePulse.width"]
-        },
-        {
-          "independent": ["timePulse.width"],
-          "indeterminate": ["antennaCableDelay", "timeGNSS"],
-          "prop": "minElevation",
-          "saved": ["mode"]
-        },
-        {
-          "indeterminate": ["antennaCableDelay"],
-          "prop": "timeGNSS",
-          "saved": ["minElevation", "mode", "timePulse.width"]
-        },
-        {
-          "independent": ["minElevation", "mode"],
-          "indeterminate": ["antennaCableDelay"],
-          "prop": "timePulse.width",
-          "saved": ["timeGNSS"]
-        },
-        {
-          "independent": ["timePulse.width"],
-          "indeterminate": ["antennaCableDelay", "timeGNSS"],
-          "prop": "mode",
-          "saved": ["minElevation"]
-        }
-      ]
+      "anomalous": ["timeGNSS"],
+      "groups": [["minElevation", "mode"]],
+      "unsaved": ["antennaCableDelay"]
     },
     "signals": {
       "observed": [
