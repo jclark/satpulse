@@ -74,7 +74,7 @@ def characterize(receiver: dict[str, Any], supports: list[str],
     nmea = characterize_nmea(by_group["nmeaOut"])
     if nmea:
         limits["nmeaOut"] = nmea
-    rtcm = characterize_rtcm(by_group["rtcmOut"], enabled_gnss)
+    rtcm = characterize_rtcm(by_group["rtcmOut"], enabled_gnss, supports)
     if rtcm:
         limits["rtcmOut"] = rtcm
     raw = characterize_raw(by_group["rawOut"])
@@ -95,9 +95,9 @@ def characterize(receiver: dict[str, Any], supports: list[str],
 def characterize_prop(obs: list[Observation]) -> dict[str, Any] | None:
     """Characterize one property; None when realization was perfect."""
     entry: dict[str, Any] = {}
-    refused = [o for o in obs if o.error is not None]
-    if refused:
-        entry["refused"] = [o.requested for o in refused]
+    observed: list[dict[str, Any]] = [
+        {"request": o.requested, "error": "refused"}
+        for o in obs if o.error is not None]
     ok = [o for o in obs if o.error is None]
     if ok and all(o.reported is None and o.readback is None for o in ok):
         # Setting reported nothing achieved and readback shows no such
@@ -112,8 +112,10 @@ def characterize_prop(obs: list[Observation]) -> dict[str, Any] | None:
         if dp is not None:
             entry["quantum"] = 10 ** -dp
         else:
-            entry["verbatim"] = [
-                {"request": o.requested, "result": o.readback} for o in inexact]
+            observed += [{"request": o.requested, "result": o.readback}
+                         for o in inexact]
+    if observed:
+        entry["observed"] = observed
     return entry if entry else None
 
 
@@ -204,11 +206,11 @@ def signal_patterns(entry: dict[str, Any], obs: list[SignalObservation],
                 if t not in allowed_subsets.setdefault(c, []):
                     allowed_subsets[c].append(t)
     saw_partial = False
-    residual_refused = []
+    observed = []
     for r in refused:
         req = r.get("signals")
         if not isinstance(req, dict):
-            residual_refused.append(r)
+            observed.append({**r, "error": "refused"})
             continue
         if not valid_request(req):
             continue
@@ -217,9 +219,8 @@ def signal_patterns(entry: dict[str, Any], obs: list[SignalObservation],
                for c, s in req.items()):
             saw_partial = True
             continue
-        residual_refused.append(r)
+        observed.append({"request": req, "error": "refused"})
     saw_dropped = False
-    residual_adjusted = []
     for a in adjusted:
         req = a.get("request")
         if isinstance(req, dict) and not valid_request(req):
@@ -228,16 +229,14 @@ def signal_patterns(entry: dict[str, Any], obs: list[SignalObservation],
                 and a.get("result") == {c: s for c, s in req.items() if s}:
             saw_dropped = True
             continue
-        residual_adjusted.append(a)
+        observed.append(a)
     if saw_partial:
         entry["partialSelectionRefused"] = \
             {"except": allowed_subsets} if allowed_subsets else True
     if saw_dropped:
         entry["emptyConstellationsDropped"] = True
-    if residual_refused:
-        entry["refused"] = residual_refused
-    if residual_adjusted:
-        entry["adjusted"] = residual_adjusted
+    if observed:
+        entry["observed"] = dedup(observed)
 
 
 def dedup(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -254,9 +253,10 @@ def characterize_nmea(obs: list[EmissionObservation]) -> dict[str, Any] | None:
     """Characterize NMEA output selection: requested sentence types that
     were not emitted. Extra sentence types are normal best-effort behavior."""
     entry: dict[str, Any] = {}
-    refused = [o.requested for o in obs if o.error is not None]
-    if refused:
-        entry["refused"] = refused
+    observed = [{"request": o.requested, "error": "refused"}
+                for o in obs if o.error is not None]
+    if observed:
+        entry["observed"] = observed
     missing = []
     for o in obs:
         if o.error is not None:
@@ -270,15 +270,21 @@ def characterize_nmea(obs: list[EmissionObservation]) -> dict[str, Any] | None:
     return entry if entry else None
 
 
-def characterize_rtcm(obs: list[EmissionObservation],
-                      enabled: list[str]) -> dict[str, Any] | None:
+def characterize_rtcm(obs: list[EmissionObservation], enabled: list[str],
+                      supports: list[str]) -> dict[str, Any] | None:
     """Characterize RTCM output: message types implied by the request for
     the enabled constellations that were not emitted. Extra types are
-    normal best-effort behavior."""
+    normal best-effort behavior. A refusal that an absent capability flag
+    already predicts (MSM4 without rtcmMSM4, MSM7 without rtcmMSM7) is
+    excluded: the declared interface in supports carries that information."""
     entry: dict[str, Any] = {}
-    refused = [o.requested for o in obs if o.error is not None]
-    if refused:
-        entry["refused"] = refused
+    predicted = {f for f, cap in (("MSM4", "rtcmMSM4"), ("MSM7", "rtcmMSM7"))
+                 if cap not in supports}
+    observed = [{"request": o.requested, "error": "refused"}
+                for o in obs if o.error is not None
+                and not (set(o.requested) & predicted)]
+    if observed:
+        entry["observed"] = observed
     missing = []
     for o in obs:
         if o.error is not None:
@@ -302,9 +308,10 @@ def characterize_raw(obs: list[EmissionObservation]) -> dict[str, Any] | None:
     """Characterize raw output: a requested kind that produced no new
     emission is missing; anything beyond the request is normal."""
     entry: dict[str, Any] = {}
-    refused = [o.requested for o in obs if o.error is not None]
-    if refused:
-        entry["refused"] = refused
+    observed = [{"request": o.requested, "error": "refused"}
+                for o in obs if o.error is not None]
+    if observed:
+        entry["observed"] = observed
     missing = [{"request": o.requested, "missing": o.requested}
                for o in obs
                if o.error is None and o.requested != ["none"] and not o.emitted]
@@ -323,9 +330,10 @@ def characterize_expected(obs: list[EmissionObservation]) -> dict[str, Any] | No
     delivered (it has no message carrying them), independent of the probe
     cases. Per-request oddities worth prose belong in HW/<receiver>.md."""
     entry: dict[str, Any] = {}
-    refused = [o.requested for o in obs if o.error is not None]
-    if refused:
-        entry["refused"] = refused
+    observed = [{"request": o.requested, "error": "refused"}
+                for o in obs if o.error is not None]
+    if observed:
+        entry["observed"] = observed
     expected = set()
     emitted = set()
     for o in obs:

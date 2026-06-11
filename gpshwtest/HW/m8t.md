@@ -27,7 +27,7 @@ Supported signal set (single-band):
 ## Message output
 
 - Per-signal satellite information (`sig`) delivers nothing: this firmware has no per-signal message. Per-satellite (`sat`) delivers.
-- RTCM output requests fail with an error, consistent with the absent RTCM capability flags (the error rather than silent non-realization is the historical behavior noted in the semantics doc).
+- RTCM output requests fail with an error, consistent with the absent RTCM capability flags (the error rather than silent non-realization is the historical behavior noted in the semantics doc). These refusals are excluded from the characterization: the absent capability flags in `supports` already declare them.
 
 ## Testing notes
 

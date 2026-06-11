@@ -1,7 +1,7 @@
 {
   "limitations": {
     "mode.fixedPosAcc": {
-      "verbatim": [
+      "observed": [
         {
           "request": 0.12345,
           "result": 0

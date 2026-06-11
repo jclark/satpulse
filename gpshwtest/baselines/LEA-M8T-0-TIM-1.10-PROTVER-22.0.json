@@ -1,7 +1,7 @@
 {
   "limitations": {
     "antennaCableDelay": {
-      "verbatim": [
+      "observed": [
         {
           "request": 1,
           "result": 50
@@ -29,7 +29,7 @@
       "quantum": 0.01
     },
     "mode.fixedPosLLH[0]": {
-      "verbatim": [
+      "observed": [
         {
           "request": 13.7318284567,
           "result": null
@@ -37,7 +37,7 @@
       ]
     },
     "mode.fixedPosLLH[1]": {
-      "verbatim": [
+      "observed": [
         {
           "request": 100.6447407891,
           "result": null
@@ -45,7 +45,7 @@
       ]
     },
     "mode.height": {
-      "verbatim": [
+      "observed": [
         {
           "request": 12.34567,
           "result": null
@@ -54,17 +54,6 @@
     },
     "rtcmBaseID": {
       "unsupported": true
-    },
-    "rtcmOut": {
-      "refused": [
-        [
-          "MSM4",
-          "ARP"
-        ],
-        [
-          "MSM7"
-        ]
-      ]
     },
     "satsOut": {
       "missing": [
@@ -139,7 +128,7 @@
       ]
     },
     "signals": {
-      "adjusted": [
+      "observed": [
         {
           "request": {
             "BDS": [
