@@ -15,6 +15,7 @@ import argparse
 import datetime
 import difflib
 import json
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -38,8 +39,12 @@ def main() -> int:
                          "without touching hardware")
     ap.add_argument("--satpulsetool", type=Path, default=Path("satpulsetool"),
                     help="path to the satpulsetool binary (default: from PATH)")
-    ap.add_argument("--logdir", type=Path, default=Path("/tmp"),
-                    help="parent directory for per-run log directories (default: /tmp)")
+    ap.add_argument("--logdir", type=Path,
+                    help="parent directory for per-run log directories "
+                         "(default: /tmp, with the directory removed on a clean exit)")
+    ap.add_argument("--keep-logdir", action="store_true",
+                    help="keep the log directory even on a clean exit "
+                         "(implied when --logdir is given)")
     ap.add_argument("--baseline", type=Path,
                     help="characterization to compare against "
                          "(default: no comparison)")
@@ -59,8 +64,9 @@ def main() -> int:
     if args.analyze:
         return report(args.analyze, exe, args.baseline)
     conn = conn_args(args)
+    keep = args.keep_logdir or args.logdir is not None
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_dir = args.logdir / f"gpshwtest-{stamp}-{device_slug(args)}"
+    log_dir = (args.logdir or Path("/tmp")) / f"gpshwtest-{stamp}-{device_slug(args)}"
     tool = Tool(exe, conn, log_dir)
     print(f"log directory: {log_dir}", file=sys.stderr)
     if args.restore_from:
@@ -71,14 +77,18 @@ def main() -> int:
         if not a.failures:
             print("receiver restored to the crashed run's as-found state",
                   file=sys.stderr)
-        return 2 if a.failures else 0
-    status = 0
-    try:
-        drive(tool, resolve_phc(args), args.sudo, args.disruptive)
-    except ToolFailure as e:
-        print(f"FAILURE: {e}", file=sys.stderr)
-        status = 2
-    return max(status, report(log_dir, exe, args.baseline))
+        status = 2 if a.failures else 0
+    else:
+        status = 0
+        try:
+            drive(tool, resolve_phc(args), args.sudo, args.disruptive)
+        except ToolFailure as e:
+            print(f"FAILURE: {e}", file=sys.stderr)
+            status = 2
+        status = max(status, report(log_dir, exe, args.baseline))
+    if status == 0 and not keep:
+        shutil.rmtree(log_dir, ignore_errors=True)
+    return status
 
 
 def device_slug(args: argparse.Namespace) -> str:
