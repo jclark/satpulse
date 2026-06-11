@@ -162,12 +162,16 @@ BANDS_SINGLE = [["L1"], ["L2"], ["E5b"]]
 def signal_cases(supported: list[str]) -> list[tuple[list[str], list[str] | None]]:
     """Build the signal probe set from the discovered constellation list:
     each constellation alone and with band subsets, augmentation systems
-    paired with GPS (they are commonly coupled to it), all constellations
-    together, and band subsets of all."""
+    paired with each major constellation (receivers couple them - commonly
+    to GPS, but the rules vary per family and constellation, and only the
+    non-GPS pairings make them visible), all constellations together, and
+    band subsets of all."""
     cases: list[tuple[list[str], list[str] | None]] = [([g], None) for g in supported]
     cases += [([g], b) for g in supported for b in BANDS_SINGLE]
-    if "GPS" in supported:
-        cases += [(["GPS", g], None) for g in ("QZSS", "SBAS") if g in supported]
+    for aug in ("QZSS", "SBAS"):
+        if aug in supported:
+            cases += [([m, aug], None)
+                      for m in ("GPS", "GAL", "BDS", "GLO") if m in supported]
     cases.append((list(supported), None))
     cases += [(list(supported), b) for b in BANDS_ALL]
     return cases

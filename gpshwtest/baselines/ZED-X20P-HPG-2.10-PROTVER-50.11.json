@@ -15,6 +15,18 @@
     },
     "signals": {
       "emptyConstellationsDropped": true,
+      "observed": [
+        {
+          "error": "refused",
+          "request": {"BDS": ["B1C", "B1I", "B2a", "B3I"], "QZSS": ["L1", "L1S", "L2C", "L5"]}
+        },
+        {
+          "error": "refused",
+          "request": {"GAL": ["E1", "E5a", "E6"], "QZSS": ["L1", "L1S", "L2C", "L5"]}
+        },
+        {"error": "refused", "request": {"GLO": ["L1", "L2"], "QZSS": ["L1", "L1S", "L2C", "L5"]}},
+        {"error": "refused", "request": {"GLO": ["L1", "L2"], "SBAS": ["L1"]}}
+      ],
       "partialSelectionRefused": {"except": {"BDS": [["B1C", "B1I"]], "GAL": [["E1"]], "GLO": [["L1"]], "GPS": [["L1"]]}},
       "signalSet": {
         "BDS": ["B1C", "B1I", "B2a", "B3I"],

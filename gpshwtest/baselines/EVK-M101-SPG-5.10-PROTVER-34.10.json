@@ -20,7 +20,11 @@
             "QZSS": ["L1", "L1S"],
             "SBAS": ["L1"]
           }
-        }
+        },
+        {"error": "refused", "request": {"BDS": ["B1I"], "QZSS": ["L1", "L1S"]}},
+        {"error": "refused", "request": {"GAL": ["E1"], "QZSS": ["L1", "L1S"]}},
+        {"error": "refused", "request": {"GLO": ["L1"], "QZSS": ["L1", "L1S"]}},
+        {"error": "refused", "request": {"GLO": ["L1"], "SBAS": ["L1"]}}
       ],
       "signalSet": {
         "BDS": ["B1I"],

@@ -16,6 +16,7 @@ Supported signal set (single-band):
 | SBAS | L1 C/A |
 
 - The protocol reports a limit on simultaneously enabled major constellations: a request for all six constellations realizes five, with GLONASS dropped (satpulse's documented fixup preference). No error; the achieved set shows it.
+- No augmentation coupling: QZSS and SBAS pair with any single major without complaint, unlike gen 9 and later, which require GPS for QZSS and one of GPS/GAL/BDS for SBAS.
 - Band-restricted requests realize the same sets (everything is L1-band); requests restricted to other bands have an empty intersection with the supported set.
 - The unit was found with QZSS L1 C/A enabled but L1S disabled. That signal set is not denotable in the constellation-by-band request syntax, so after signal probing the as-found state cannot be restored (QZSS comes back as L1 C/A + L1S); gpshwtest reports this as an honest restore failure.
 

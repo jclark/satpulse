@@ -18,7 +18,8 @@ Supported signal set:
 Receiver validity rules (requested sets the receiver refuses; refusals are transactional - configuration confirmed unchanged):
 
 - A major constellation cannot be enabled on a single signal, with one exception: every set giving GPS, GAL, GLO, or QZSS only one of its signals is refused, including single-signal disables; BDS on B1I alone is accepted (B2I alone is refused).
-- No coupling: GPS alone, with QZSS and SBAS disabled, is accepted. (QZSS-only and SBAS-only requests are refused, but by satpulsetool's own validation - augmentations need a non-augmentation signal enabled - uniformly on every receiver, so that is not part of this receiver's characterization.)
+- No downward coupling: GPS alone, with QZSS and SBAS disabled, is accepted. (QZSS-only and SBAS-only requests are refused, but by satpulsetool's own validation - augmentations need a non-augmentation signal enabled - uniformly on every receiver, so that is not part of this receiver's characterization.)
+- Upward coupling: QZSS can be enabled only together with GPS (refused with BDS, GAL, or GLO alone), and SBAS only with at least one of GPS, GAL, or BDS (refused with GLO alone). The interface description states the QZSS pairing as a cross-correlation recommendation; the firmware enforces it. The same rules hold on the M10 and X20P; the gen 8 M8T enforces neither.
 
 The refusal appears on the wire as an ACK-NAK plus `GPTXT inv sig cfg` / `bad cfg RAM`. The valid-combination table is in the ZED-F9P integration manual (not in `../gps-protocol-docs`; the interface description defers to it). Replay testdata from HPG 1.12 (`internal/gpscmd/testdata/f9p-signal.jsonl`) agrees where it overlaps, so this is not firmware drift.
 
