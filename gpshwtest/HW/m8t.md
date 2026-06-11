@@ -33,6 +33,8 @@ Supported signal set (single-band):
 
 As-found running configuration: NMEA GGA, GLL, GSA, GSV, RMC, VTG, ZDA; mobile mode; GPS, GLO, and QZSS (L1 C/A only) enabled. satpulsetool finds the UART speed by scanning; gpshwtest locks in the speed reported by `--show-port`. A full run takes about 8.5 minutes.
 
+The unit was found resting at the factory 9600 baud, but its intended persistent speed is 38400 (`/etc/satpulse.d/ttyS0.toml`) - most plausibly lost to the gen 8 reload defect below before gpshwtest first measured, then faithfully preserved as "as found" by every run since. The 38400 resting speed was restored and saved on 2026-06-11 (verified to survive a reload), so runs now find the receiver at 38400; sessions still raise the link to 115200.
+
 Raw output saturates the 9600 baud line: the receiver's transmit side overruns, and packets - including poll replies and ACKs - are lost or corrupted. Configuration then becomes unreliable in a way satpulse cannot help: invocations fail with "no response" while the write may actually have applied with only its ACK lost, so on a saturated link a reported error does not imply an unchanged configuration; detection can fail outright. Recovery needed low-level CFG-MSG writes (`-m`) to disable the raw messages. Raising the serial speed for the session avoids all of this. gpshwtest now does so by default (raises the link to 115200 at session start and restores the as-found speed at the end); with that in place a full sweep completes with no saturation failures.
 
 ## NVM and saving
