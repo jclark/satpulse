@@ -37,6 +37,9 @@ type requestOps interface {
 	AwaitingResponse(sentSeq uint64) bool
 	Done()
 	ID() string
+	// NakError returns a request-specific error to report when the receiver
+	// NAKs the request, or nil to report a generic error.
+	NakError() error
 }
 
 // configRequest is the UBX implementation of gpsprot.ConfigRequest
@@ -533,7 +536,10 @@ func (c *Configurator) processAckNak(msgID ubxbin.MsgID, ok bool, t time.Time, e
 				} else {
 					// NACK received
 					cr.state = stateFailed
-					cr.err = fmt.Errorf("GPS receiver sent NACK for request %s", cr.ops.ID())
+					cr.err = cr.ops.NakError()
+					if cr.err == nil {
+						cr.err = fmt.Errorf("GPS receiver sent NACK for request %s", cr.ops.ID())
+					}
 				}
 				break
 			}
@@ -748,7 +754,10 @@ func (c *Configurator) valSetSignals() error {
 	if err != nil {
 		return err
 	}
-	return c.addMsgSetPauseRequest(val, pauseAfterGNSSReset)
+	return c.addRequest(nakErrRequest{
+		msgSetPauseRequest{msgSetRequest{msgRequest{val}, &c.raw}, pauseAfterGNSSReset},
+		errors.New("receiver rejected the requested combination of signals as invalid"),
+	})
 }
 
 func andIfNonZero(ss1, ss2 gpsprot.SignalSet) gpsprot.SignalSet {
@@ -1205,6 +1214,8 @@ func (r msgRequest) AwaitingResponse(uint64) bool { return false }
 
 func (r msgRequest) Done() {}
 
+func (r msgRequest) NakError() error { return nil }
+
 func (c *Configurator) addMsgSetRequest(msg ubxbin.Msg) error {
 	return c.addRequest(msgSetRequest{msgRequest{msg}, &c.raw})
 }
@@ -1286,6 +1297,16 @@ func (r msgSetPauseRequest) Pause() time.Duration {
 
 var _ requestOps = (*msgSetPauseRequest)(nil)
 
+// nakErrRequest overrides the error reported when the receiver NAKs the request.
+type nakErrRequest struct {
+	requestOps
+	nakErr error
+}
+
+func (r nakErrRequest) NakError() error { return r.nakErr }
+
+var _ requestOps = (*nakErrRequest)(nil)
+
 type pollRequest struct {
 	msgSeq map[ubxbin.MsgID]uint64
 	msgID  ubxbin.MsgID
@@ -1302,6 +1323,8 @@ func (r pollRequest) Pause() time.Duration { return 0 }
 func (r pollRequest) ID() string { return r.msgID.String() }
 
 func (r pollRequest) Done() {}
+
+func (r pollRequest) NakError() error { return nil }
 
 func (r pollRequest) Ackable() bool {
 	return r.msgID.Ackable()
@@ -1347,6 +1370,8 @@ func (r msgRateRequest) Ackable() bool { return true }
 func (r msgRateRequest) AwaitingResponse(uint64) bool { return false }
 
 func (r msgRateRequest) ID() string { return ubxbin.CfgMsgID.String() }
+
+func (r msgRateRequest) NakError() error { return nil }
 
 // lengthHP converts a high-precision coordinate (cm main + 0.1mm HP)
 // used by NAV-HPPOSECEF for ECEF coordinates.
