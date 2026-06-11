@@ -1,9 +1,9 @@
 """Offline analysis of a recorded run.
 
-A pure pass over a run directory's records (raw.jsonl plus the
+A pure pass over a log directory's records (raw.jsonl plus the
 per-invocation packet logs), answering two separate questions: were the
 tool guarantees violated (failures), and what is the characterization.
-It never touches hardware: live runs call it on their own run directory
+It never touches hardware: live runs call it on their own log directory
 after probing, and it re-runs over archived runs whenever the checks or
 the characterization vocabulary improve. Replay of packet logs uses
 satpulsetool offline.
@@ -56,14 +56,14 @@ class Step:
         return cfg if isinstance(cfg, dict) else {}
 
 
-def load_steps(run_dir: Path) -> list[Step]:
+def load_steps(log_dir: Path) -> list[Step]:
     """Load the recorded steps of a run. A retry record supersedes the
     attempt it retried."""
     steps: list[Step] = []
-    for line in (run_dir / "raw.jsonl").read_text().splitlines():
+    for line in (log_dir / "raw.jsonl").read_text().splitlines():
         e = json.loads(line)
         if "intent" not in e:
-            raise SystemExit(f"{run_dir}: records lack intents "
+            raise SystemExit(f"{log_dir}: records lack intents "
                              "(run predates offline analysis); cannot analyze")
         out = e.get("json")
         log = e.get("log")
@@ -71,7 +71,7 @@ def load_steps(run_dir: Path) -> list[Step]:
                  argv=e.get("argv", []), exit_code=e.get("exit", -1),
                  out=out if isinstance(out, dict) else {},
                  stderr=e.get("stderr", ""),
-                 log=run_dir / log if isinstance(log, str) else None,
+                 log=log_dir / log if isinstance(log, str) else None,
                  events=e.get("events"), timeout=e.get("timeout"),
                  nojson=bool(e.get("nojson")))
         if e.get("retry") and steps and steps[-1].intent == s.intent:
@@ -99,10 +99,10 @@ class Analysis:
 DISRUPTIVE_KEYS = ("baudRate", "saveGranularity")
 
 
-def analyze_run(run_dir: Path, exe: Path) -> Analysis:
-    """Analyze a run directory: load its records and derive failures and
+def analyze_run(log_dir: Path, exe: Path) -> Analysis:
+    """Analyze a log directory: load its records and derive failures and
     the characterization."""
-    return Analyzer(load_steps(run_dir), exe).run()
+    return Analyzer(load_steps(log_dir), exe).run()
 
 
 @dataclass

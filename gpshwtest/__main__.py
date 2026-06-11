@@ -13,7 +13,6 @@ import argparse
 import datetime
 import difflib
 import json
-import platform
 import subprocess
 import sys
 import tomllib
@@ -26,24 +25,23 @@ from model import emissions
 from probes import PROPS, ProbeRun
 from tool import Tool, ToolFailure
 
-HERE = Path(__file__).resolve().parent
-
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="gpshwtest", description=__doc__)
     ap.add_argument("-d", "--serial-device", help="serial device of the receiver")
     ap.add_argument("-s", "--device-speed", type=int, help="serial speed in bps")
     ap.add_argument("-f", "--config-file", help="read device and speed from a satpulse.toml")
-    ap.add_argument("--analyze", type=Path, metavar="RUNDIR",
-                    help="re-analyze a recorded run directory offline, "
+    ap.add_argument("--analyze", type=Path, metavar="LOGDIR",
+                    help="re-analyze a recorded log directory offline, "
                          "without touching hardware")
-    ap.add_argument("--satpulsetool", type=Path, help="path to the satpulsetool binary")
-    ap.add_argument("--runs", type=Path, default=HERE / "runs",
-                    help="directory for run artifacts (default: gpshwtest/runs)")
+    ap.add_argument("--satpulsetool", type=Path, default=Path("satpulsetool"),
+                    help="path to the satpulsetool binary (default: from PATH)")
+    ap.add_argument("--logdir", type=Path, default=Path("/tmp"),
+                    help="parent directory for per-run log directories (default: /tmp)")
     ap.add_argument("--baseline", type=Path,
                     help="characterization to compare against "
-                         "(default: gpshwtest/baselines/<receiver>.json if present)")
-    ap.add_argument("--restore-from", type=Path, metavar="RUNDIR",
+                         "(default: no comparison)")
+    ap.add_argument("--restore-from", type=Path, metavar="LOGDIR",
                     help="run only the restore tail derived from a crashed "
                          "run's records, then verify the receiver state")
     ap.add_argument("--disruptive", action="store_true",
@@ -55,20 +53,17 @@ def main() -> int:
                                   "iface:pin[:chan] (default: the [phc] table of the "
                                   "config file, or /etc/satpulse.toml)")
     args = ap.parse_args()
-    exe = args.satpulsetool if args.satpulsetool else find_satpulsetool()
+    exe = args.satpulsetool
     if args.analyze:
         return report(args.analyze, exe, args.baseline)
-    if running_satpulsed():
-        print("satpulsed is running; stop it before touching the receiver", file=sys.stderr)
-        return 1
     conn = conn_args(args)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = args.runs / f"{stamp}-{device_slug(args)}"
-    tool = Tool(exe, conn, run_dir)
-    print(f"run artifacts: {run_dir}", file=sys.stderr)
+    log_dir = args.logdir / f"gpshwtest-{stamp}-{device_slug(args)}"
+    tool = Tool(exe, conn, log_dir)
+    print(f"log directory: {log_dir}", file=sys.stderr)
     if args.restore_from:
         restore_from(tool, args.restore_from)
-        a = analyze_run(run_dir, exe)
+        a = analyze_run(log_dir, exe)
         for f in a.failures:
             print(f"FAILURE: {f}", file=sys.stderr)
         if not a.failures:
@@ -81,7 +76,7 @@ def main() -> int:
     except ToolFailure as e:
         print(f"FAILURE: {e}", file=sys.stderr)
         status = 1
-    return max(status, report(run_dir, exe, args.baseline))
+    return max(status, report(log_dir, exe, args.baseline))
 
 
 def device_slug(args: argparse.Namespace) -> str:
@@ -101,14 +96,6 @@ def conn_args(args: argparse.Namespace) -> list[str]:
     if args.device_speed:
         conn += ["-s", str(args.device_speed)]
     return conn
-
-
-def find_satpulsetool() -> Path:
-    arch = {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())
-    p = HERE.parent / "out" / arch / "satpulsetool"
-    if p.exists():
-        return p
-    raise SystemExit(f"satpulsetool not found at {p}; build with make or pass --satpulsetool")
 
 
 def resolve_phc(args: argparse.Namespace) -> tuple[str, int, int] | None:
@@ -140,16 +127,6 @@ def sudo_ok() -> bool:
                               timeout=10).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
-
-
-def running_satpulsed() -> bool:
-    for comm in Path("/proc").glob("[0-9]*/comm"):
-        try:
-            if comm.read_text().strip() == "satpulsed":
-                return True
-        except OSError:
-            pass
-    return False
 
 
 def restore_from(tool: Tool, crashed: Path) -> None:
@@ -280,14 +257,15 @@ def check_show_port(tool: Tool, pr: ProbeRun) -> dict[str, Any]:
     return inv.config()
 
 
-def report(run_dir: Path, exe: Path, baseline: Path | None) -> int:
-    """Analyze a run directory and report: write and print the
-    characterization, print the failures, compare against the baseline."""
-    a = analyze_run(run_dir, exe)
+def report(log_dir: Path, exe: Path, baseline: Path | None) -> int:
+    """Analyze a log directory and report: write and print the
+    characterization, print the failures, compare against the baseline
+    when one was given."""
+    a = analyze_run(log_dir, exe)
     print(f"receiver: {a.receiver.get('vendor')} {a.receiver.get('hardware')} "
           f"{a.receiver.get('firmware')}", file=sys.stderr)
     text = to_json(a.characterization)
-    (run_dir / "characterization.json").write_text(text)
+    (log_dir / "characterization.json").write_text(text)
     sys.stdout.write(text)
     status = 0
     for f in a.failures:
@@ -295,22 +273,16 @@ def report(run_dir: Path, exe: Path, baseline: Path | None) -> int:
         status = 1
     if not a.failures:
         print(f"ok: {a.observation_count} observations, no failures", file=sys.stderr)
-    return max(status, compare_baseline(a.receiver, baseline, text, a.disruptive))
-
-
-def compare_baseline(receiver: dict[str, Any], baseline: Path | None, text: str,
-                     disruptive: bool) -> int:
-    """Compare against the checked-in characterization; differences are
-    regressions to investigate. Absence of a baseline is not a failure.
-    The baseline holds the full characterization from a disruptive run; a
-    default run is compared with the disruptive-only entries stripped."""
     if baseline is None:
-        slug = "-".join(str(receiver.get(k, "")) for k in ("hardware", "firmware"))
-        baseline = HERE / "baselines" / (slug.replace(" ", "-").replace("/", "-") + ".json")
-        if not baseline.exists():
-            print(f"no baseline at {baseline}; vet and check in the characterization",
-                  file=sys.stderr)
-            return 0
+        return status
+    return max(status, compare_baseline(baseline, text, a.disruptive))
+
+
+def compare_baseline(baseline: Path, text: str, disruptive: bool) -> int:
+    """Compare against the checked-in characterization; differences are
+    regressions to investigate. The baseline holds the full characterization
+    from a disruptive run; a default run is compared with the
+    disruptive-only entries stripped."""
     want = baseline.read_text()
     if not disruptive:
         doc = json.loads(want)

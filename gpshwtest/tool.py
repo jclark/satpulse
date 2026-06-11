@@ -2,7 +2,7 @@
 
 All receiver I/O goes through here: each invocation runs satpulsetool gps
 with --json and a per-invocation packet log, and is recorded verbatim in
-raw.jsonl in the run directory together with its intent - what the step
+raw.jsonl in the log directory together with its intent - what the step
 requests, in model vocabulary. The records plus the packet logs are
 everything offline analysis needs (see analyze.py).
 """
@@ -51,13 +51,13 @@ class Invocation:
 class Tool:
     """Runs satpulsetool gps against one receiver, archiving every invocation."""
 
-    def __init__(self, exe: Path, conn: list[str], run_dir: Path) -> None:
+    def __init__(self, exe: Path, conn: list[str], log_dir: Path) -> None:
         self.exe = exe
         self.conn = conn
-        self.run_dir = run_dir
+        self.log_dir = log_dir
         self.seq = 0
-        run_dir.mkdir(parents=True, exist_ok=True)
-        self.raw = (run_dir / "raw.jsonl").open("a", encoding="utf-8")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        self.raw = (log_dir / "raw.jsonl").open("a", encoding="utf-8")
 
     def gps(self, name: str, args: list[str], intent: dict[str, Any],
             timeout: float = 90.0, retry: bool = True,
@@ -81,7 +81,7 @@ class Tool:
     def gps_once(self, name: str, args: list[str], intent: dict[str, Any],
                  timeout: float, retry: bool, json_out: bool = True) -> Invocation:
         self.seq += 1
-        log = self.run_dir / f"{self.seq:03d}-{name}.jsonl"
+        log = self.log_dir / f"{self.seq:03d}-{name}.jsonl"
         argv = [str(self.exe), "gps", *self.conn,
                 *(["--json"] if json_out else []), "--packet-log", str(log), *args]
         entry: dict[str, Any] = {"seq": self.seq, "name": name, "intent": intent,
