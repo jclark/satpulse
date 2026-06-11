@@ -7,6 +7,8 @@ and a characterization of how configuration is realized on the receiver
 (data). The same offline analysis re-runs over any archived run directory
 with --analyze, so improving the checks never requires re-running
 hardware. Run in-repo as: python3 gpshwtest -d /dev/ttyACM0 -s 38400
+Exit status: 0 clean; 1 the characterization differs from the baseline;
+2 failures or errors.
 """
 
 import argparse
@@ -69,13 +71,13 @@ def main() -> int:
         if not a.failures:
             print("receiver restored to the crashed run's as-found state",
                   file=sys.stderr)
-        return 1 if a.failures else 0
+        return 2 if a.failures else 0
     status = 0
     try:
         drive(tool, resolve_phc(args), args.sudo, args.disruptive)
     except ToolFailure as e:
         print(f"FAILURE: {e}", file=sys.stderr)
-        status = 1
+        status = 2
     return max(status, report(log_dir, exe, args.baseline))
 
 
@@ -270,7 +272,7 @@ def report(log_dir: Path, exe: Path, baseline: Path | None) -> int:
     status = 0
     for f in a.failures:
         print(f"FAILURE: {f}", file=sys.stderr)
-        status = 1
+        status = 2
     if not a.failures:
         print(f"ok: {a.observation_count} observations, no failures", file=sys.stderr)
     if baseline is None:
@@ -295,7 +297,7 @@ def compare_baseline(baseline: Path, text: str, disruptive: bool) -> int:
     sys.stderr.writelines(difflib.unified_diff(
         want.splitlines(keepends=True), text.splitlines(keepends=True),
         fromfile=str(baseline), tofile="this run"))
-    print("FAILURE: characterization differs from baseline", file=sys.stderr)
+    print("characterization differs from baseline", file=sys.stderr)
     return 1
 
 

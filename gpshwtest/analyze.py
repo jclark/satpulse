@@ -10,6 +10,7 @@ satpulsetool offline.
 """
 
 import json
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -66,8 +67,9 @@ def load_steps(log_dir: Path) -> list[Step]:
     for line in record.read_text().splitlines():
         e = json.loads(line)
         if "intent" not in e:
-            raise SystemExit(f"{log_dir}: records lack intents "
-                             "(run predates offline analysis); cannot analyze")
+            print(f"{log_dir}: records lack intents "
+                  "(run predates offline analysis); cannot analyze", file=sys.stderr)
+            raise SystemExit(2)
         out = e.get("json")
         log = e.get("log")
         s = Step(seq=e.get("seq", 0), name=e["name"], intent=e["intent"],
