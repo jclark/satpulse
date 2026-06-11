@@ -295,7 +295,11 @@ func (tb *txnBuilder) build() error {
 	}
 
 	if v, ok := cp.GetAntennaCableDelay(); ok {
-		txnAddItem(tb, ucv.KTpAntCabledelay, int64(v))
+		n, err := antCableDelayNanos(v)
+		if err != nil {
+			return err
+		}
+		txnAddItem(tb, ucv.KTpAntCabledelay, n)
 	}
 	if v, ok := cp.GetMinElevation(); ok {
 		if deg, ok := angleToInt8Degrees(v); ok {

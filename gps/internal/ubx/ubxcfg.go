@@ -1070,7 +1070,10 @@ func (c *Configurator) setTmode() error {
 }
 
 func (c *Configurator) setTp5() error {
-	tp5 := c.raw.changeTp5(&c.target.Props)
+	tp5, err := c.raw.changeTp5(&c.target.Props)
+	if err != nil {
+		return err
+	}
 	if tp5 == nil {
 		return nil
 	}
@@ -1369,4 +1372,12 @@ func angleToInt8Degrees(a gpsprot.Angle) (int8, bool) {
 		return 0, false
 	}
 	return int8(v), true
+}
+
+func antCableDelayNanos(v time.Duration) (int64, error) {
+	n := v.Nanoseconds()
+	if n < math.MinInt16 || n > math.MaxInt16 {
+		return 0, fmt.Errorf("antenna cable delay out of range: %v", v)
+	}
+	return n, nil
 }
