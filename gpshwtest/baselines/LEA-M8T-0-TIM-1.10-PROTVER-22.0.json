@@ -1,24 +1,17 @@
 {
   "limitations": {
-    "antennaCableDelay": {
-      "observed": [
-        {"request": 1, "result": 50},
-        {"request": 123, "result": 50},
-        {"request": 32767, "result": 50}
-      ]
-    },
+    "mode.fixedPos": {"storedAs": "ECEF"},
     "mode.fixedPosAcc": {"quantum": 0.001},
     "mode.fixedPosECEF[0]": {"quantum": 0.01},
     "mode.fixedPosECEF[1]": {"quantum": 0.01},
     "mode.fixedPosECEF[2]": {"quantum": 0.01},
-    "mode.fixedPosLLH[0]": {"observed": [{"request": 13.7318284567}]},
-    "mode.fixedPosLLH[1]": {"observed": [{"request": 100.6447407891}]},
-    "mode.height": {"observed": [{"request": 12.34567}]},
+    "mode.fixedPosLLH[0]": {"quantum": 1e-07},
+    "mode.fixedPosLLH[1]": {"quantum": 1e-07},
+    "mode.height": {"quantum": 0.01},
     "rtcmBaseID": {"unsupported": true},
     "saveGranularity": {
       "anomalous": ["timeGNSS"],
-      "groups": [["messageOutput", "minElevation", "mode"]],
-      "unsaved": ["antennaCableDelay"]
+      "groups": [["antennaCableDelay", "timePulse.width"], ["messageOutput", "minElevation", "mode"]]
     },
     "signals": {
       "observed": [
