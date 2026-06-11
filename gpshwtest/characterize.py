@@ -372,7 +372,13 @@ def characterize_save(results: list[dict[str, Any]]) -> dict[str, Any] | None:
         entry["observations"] = [r for r in results if "saved" in r]
     else:
         grouped = sorted(sorted(g) for g in groups if len(g) > 1)
-        if grouped:
+        if len(grouped) == 1 and set(grouped[0]) == props:
+            # Everything probed persists together: saving anything saves
+            # the whole configuration. Stated as such rather than by
+            # enumerating the probed properties, so the entry does not
+            # depend on the probe set.
+            entry["singleGroup"] = True
+        elif grouped:
             entry["groups"] = grouped
         undecided = sorted(f"{a}/{b}" for a in props for b in props
                            if a < b and (a, b) not in together)
