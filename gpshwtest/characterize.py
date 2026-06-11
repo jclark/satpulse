@@ -112,8 +112,9 @@ def characterize_prop(obs: list[Observation]) -> dict[str, Any] | None:
         if dp is not None:
             entry["quantum"] = 10 ** -dp
         else:
-            observed += [{"request": o.requested, "result": o.readback}
-                         for o in inexact]
+            observed += [{"request": o.requested,
+                          **({} if o.readback is None
+                             else {"result": o.readback})} for o in inexact]
     if observed:
         entry["observed"] = observed
     return entry if entry else None

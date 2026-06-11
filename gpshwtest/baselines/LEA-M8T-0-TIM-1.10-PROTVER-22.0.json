@@ -11,9 +11,9 @@
     "mode.fixedPosECEF[0]": {"quantum": 0.01},
     "mode.fixedPosECEF[1]": {"quantum": 0.01},
     "mode.fixedPosECEF[2]": {"quantum": 0.01},
-    "mode.fixedPosLLH[0]": {"observed": [{"request": 13.7318284567, "result": null}]},
-    "mode.fixedPosLLH[1]": {"observed": [{"request": 100.6447407891, "result": null}]},
-    "mode.height": {"observed": [{"request": 12.34567, "result": null}]},
+    "mode.fixedPosLLH[0]": {"observed": [{"request": 13.7318284567}]},
+    "mode.fixedPosLLH[1]": {"observed": [{"request": 100.6447407891}]},
+    "mode.height": {"observed": [{"request": 12.34567}]},
     "rtcmBaseID": {"unsupported": true},
     "satsOut": {"missing": ["perSignal"]},
     "saveGranularity": {
