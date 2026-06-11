@@ -21,3 +21,12 @@ The receiver must end up restored even when a run dies. Ideas:
 - Plan the restore tail before making any change (the initial readback determines it) and execute it unconditionally - on success, on failure, on crash. [Done as an emergency tail: a run that aborts in-process (tool failure, interrupt) restores everything best-effort, recorded as usual.]
 - Make runs resumable: with the plan as data and every completed step recorded, a crashed run can be picked up at the first unexecuted step, or at worst its restore tail can be run alone. [The restore tail alone is done: --restore-from RUNDIR derives the tail from a crashed run's records, for deaths no in-process tail can cover (kill -9); validated with a real kill. Resume-at-first-unexecuted-step remains an idea, and would need plan-as-data.]
 - Treat a failed restore as loud: the next run's initial readback can verify the world matches some recorded as-found state and refuse quietly to compound the damage. [Open; in practice a poisoned state has shown up loudly anyway, as identification or baseline failures.]
+
+## Systest integration
+
+The systest workflow goal is in `GOAL.md` (playbooks for regression-checking against a baseline named in `inventory.yml`, a separate workflow for generating a new baseline). Ideas for realizing it:
+
+- Ship the program to the target as a zipapp: `python3 -m zipapp` bundles the package into a single `.pyz` the playbook copies over and runs with the target's Python 3. The program is stdlib-only at runtime by design, so the zipapp needs no environment on the target beyond the interpreter, and the CLI is already untied from the source tree (satpulsetool from PATH, log directories in /tmp, baselines passed explicitly). The build stages the `.py` files into a clean directory first - the source directory also holds archived log directories, baselines, and docs that do not belong in the app. Verified: a staged `.pyz` runs the CLI as-is.
+- The playbook passes `--baseline` from per-host inventory data and collects the log directory back as an artifact when the exit status is nonzero (1 = re-vet the characterization, 2 = investigate the failure; the directory is kept on nonzero exits exactly for this).
+- Running under systest means root, which unlocks the physical time pulse checks (`--sudo --phc` from the host's satpulse config) that have never executed in local runs.
+
