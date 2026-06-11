@@ -212,6 +212,8 @@ These packages are reusable libraries for time synchronization. They are in the 
 
 `time/lib/median` provides efficient median computation for a fixed-size moving window using a circular buffer with a sorted index array. It supports 64-bit integers, floats, and time.Duration.
 
+`time/lib/ntime` provides a domain-neutral nanosecond timestamp type for the refclock sample path. The domain of a value (UTC, TAI, PHC-raw) is determined by the producer and consumer, not by the type. It depends only on the standard library.
+
 ### internal/
 
 These packages implement subcommands of satpulsetool. They are in the command-line layer and can import from both `gps/` and `time/`.
