@@ -633,6 +633,37 @@ func TestSeqOwnership_AckNackBoundaryPredicate(t *testing.T) {
 	}
 }
 
+// TestValSetSignalsNakError verifies that a NACK for the signals CFG-VALSET
+// reports a signals-specific error rather than the generic NACK message.
+func TestValSetSignalsNakError(t *testing.T) {
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA))
+	c := newConfigurator(target, &m10Version)
+	vals := c.raw.valsPtr()
+	cfgValSet(vals, ucv.KSignalGpsEna, true)
+	cfgValSet(vals, ucv.KSignalGpsL1caEna, true)
+	if err := c.valSetSignals(); err != nil {
+		t.Fatalf("valSetSignals: %v", err)
+	}
+	if len(c.reqs) != 1 {
+		t.Fatalf("got %d requests, want 1", len(c.reqs))
+	}
+	cr := c.reqs[0]
+	T0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	cr.state = stateReadyToSend
+	cr.SetSentTime(T0)
+	if _, err := c.processMsg(&ubxbin.AckNak{MsgID: ubxbin.CfgValsetID}, T0); err != nil {
+		t.Fatalf("processMsg nak: %v", err)
+	}
+	if got := cr.state; got != stateFailed {
+		t.Fatalf("state after NACK: got %v, want stateFailed", got)
+	}
+	expect := "receiver rejected the requested combination of signals as invalid"
+	if got := cr.GetError().Error(); got != expect {
+		t.Errorf("got  %q\nwant %q", got, expect)
+	}
+}
+
 func TestMonCommsPort(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -703,9 +734,9 @@ func TestMonCommsPort(t *testing.T) {
 // populate PropIDPort.
 func TestPortName(t *testing.T) {
 	tests := []struct {
-		port    ucv.Port
-		want    string
-		wantOK  bool
+		port   ucv.Port
+		want   string
+		wantOK bool
 	}{
 		{ucv.I2C, "I2C", true},
 		{ucv.UART1, "UART1", true},
