@@ -88,6 +88,44 @@ func TestBandsConfigSupport(t *testing.T) {
 	}
 }
 
+func TestSingleBDSL1Signal(t *testing.T) {
+	tests := []struct {
+		name string
+		ver  *Version
+		want gpsprot.Signal
+		ok   bool
+	}{
+		{
+			name: "SPG",
+			ver:  &Version{Prot: &ProtVer{Major: 34, Minor: 10}, FW: &FWVer{ProductCategory: "SPG"}},
+			want: gpsprot.SigBDSB1I,
+			ok:   true,
+		},
+		{
+			name: "SPGL1L5",
+			ver:  &Version{Prot: &ProtVer{Major: 40, Minor: 0}, FW: &FWVer{ProductCategory: "SPGL1L5"}},
+			want: gpsprot.SigBDSB1C,
+			ok:   true,
+		},
+		{
+			name: "HPG",
+			ver:  &Version{Prot: &ProtVer{Major: 34, Minor: 10}, FW: &FWVer{ProductCategory: "HPG"}},
+		},
+		{
+			name: "protocol 50",
+			ver:  &Version{Prot: &ProtVer{Major: 50, Minor: 0}, FW: &FWVer{ProductCategory: "SPG"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := tt.ver.singleBDSL1Signal()
+			if got != tt.want || ok != tt.ok {
+				t.Errorf("got %v, %v; want %v, %v", got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
 func TestVersionConfigSupport(t *testing.T) {
 	tmode := gpsprot.ConfigSupportSpeed |
 		gpsprot.ConfigSupportSurvey |

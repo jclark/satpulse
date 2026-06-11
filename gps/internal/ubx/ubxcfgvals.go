@@ -943,6 +943,17 @@ func portBaudRateKey(port ucv.Port, portOK bool) ucv.KeyU {
 	return 0
 }
 
+func resolveSignalConstraints(ver *Version, enabled, supported gpsprot.SignalSet) gpsprot.SignalSet {
+	if sig, ok := ver.singleBDSL1Signal(); ok {
+		b1 := gpsprot.SignalSetOf(gpsprot.SigBDSB1I, gpsprot.SigBDSB1C)
+		if enabled&supported&b1 != 0 {
+			enabled &^= b1
+			enabled |= gpsprot.SignalSetOf(sig)
+		}
+	}
+	return enabled
+}
+
 // EnableSignals returns the items needed to enable the given signals,
 // constrained by the supported signal set.
 func (known *CfgVals) EnableSignals(enabled, supported gpsprot.SignalSet) (gpsprot.SignalSet, []ucv.Item) {

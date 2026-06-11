@@ -736,6 +736,7 @@ func (c *Configurator) valSetSignals() error {
 	if supported == 0 {
 		return errors.New("could not determine supported GNSS signals")
 	}
+	targetEnabled = resolveSignalConstraints(c.ver, targetEnabled, supported)
 	enabled, items := c.raw.valsPtr().EnableSignals(targetEnabled, supported)
 	// Ensure we have one non-augmentation signal from a major GNSS
 	enabled &= gpsprot.SigSetMajor

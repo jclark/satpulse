@@ -184,6 +184,18 @@ func (v *Version) bandsConfigSupport() bool {
 	}
 }
 
+func (v *Version) singleBDSL1Signal() (gpsprot.Signal, bool) {
+	if !v.protVerAtLeast(50, 0) {
+		switch v.ProductCategory() {
+		case "SPG":
+			return gpsprot.SigBDSB1I, true
+		case "SPGL1L5":
+			return gpsprot.SigBDSB1C, true
+		}
+	}
+	return 0, false
+}
+
 // tpIndex returns the time pulse index: 0 for TIMEPULSE, 1 for TIMEPULSE2.
 func (v *Version) tpIndex() int {
 	if v.genAtLeast9() {
