@@ -70,13 +70,15 @@
       "missing": [
         {
           "missing": [
-            "perSignal",
             "satellites"
           ],
           "requested": [
             "sig"
           ]
         }
+      ],
+      "unavailable": [
+        "perSignal"
       ]
     },
     "saveGranularity": {

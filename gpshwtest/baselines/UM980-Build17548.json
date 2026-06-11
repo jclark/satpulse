@@ -28,33 +28,12 @@
       "quantum": 1e-09
     },
     "pvtOut": {
-      "missing": [
-        {
-          "missing": [
-            "tp"
-          ],
-          "requested": [
-            "tp",
-            "after",
-            "tai",
-            "leap",
-            "qual",
-            "epoch",
-            "off"
-          ]
-        }
+      "unavailable": [
+        "tp"
       ]
     },
     "saveGranularity": {
-      "groups": [
-        [
-          "antennaCableDelay",
-          "minElevation",
-          "mode",
-          "timeGNSS",
-          "timePulse.width"
-        ]
-      ]
+      "singleGroup": true
     },
     "showPort": {
       "unsupported": true
