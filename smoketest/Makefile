@@ -1,4 +1,4 @@
-PY_FILES = run.py ntpsock.py ntpshm.py common.py scenarios
+PY_FILES = run.py system.py ntpsock.py ntpshm.py common.py scenarios
 
 .PHONY: dev-deps update-deps typecheck
 
