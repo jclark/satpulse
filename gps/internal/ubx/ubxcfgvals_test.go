@@ -177,6 +177,17 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 	}
 }
 
+func TestConfigItems_AntennaCableDelayRange(t *testing.T) {
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetAntennaCableDelay(32768 * time.Nanosecond)
+	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
+
+	_, _, err := newCfgVals().Transaction(target, ver, ucv.UART1, true, 0)
+	if err == nil {
+		t.Fatal("Transaction accepted out-of-range antenna cable delay")
+	}
+}
+
 func TestConfigItems_Survey(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
 	target.Opts.Survey = gpsprot.Survey{
