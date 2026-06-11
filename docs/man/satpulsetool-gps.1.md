@@ -142,12 +142,18 @@ The *list* parameter is a comma-separated list of:
 **\-\-signal** *list*
 : List of individual GNSS signals that should be enabled, in addition to the signals enabled by **\-\-gnss** and **\-\-band**.
 When **\-\-gnss** is not specified, the *list* specifies all the enabled signals.
-The *list* parameter is a comma-separated list of signal names.
-A signal name is the GNSS constellation name (as with **\-\-gnss**) immediately followed by the name of the signal,
-for example **GPSL1C**, **QZSSL1S** or **GLOL3**; **GPSL1** means the GPS L1 C/A signal.
-Galileo and BeiDou signal names start with **E** and **B** and so identify the constellation by themselves;
-they are used without the constellation name, for example **E5b** or **B1C**.
+A signal name is the GNSS constellation name (as with **\-\-gnss**) immediately followed by the name of the signal.
 Signal names are case-insensitive.
+The *list* parameter is a comma-separated list of:
+**GPSL1**, **GPSL1C**, **GPSL2P**, **GPSL2C**, **GPSL5**,
+**GLOL1**, **GLOL1OC**, **GLOL2**, **GLOL2OC**, **GLOL3**,
+**GALE1**, **GALE5a**, **GALE5b**, **GALE6**,
+**BDSB1I**, **BDSB1C**, **BDSB2I**, **BDSB2b**, **BDSB2a**, **BDSB3I**,
+**QZSSL1**, **QZSSL1C**, **QZSSL1S**, **QZSSL2C**, **QZSSL5**, **QZSSL5S**, **QZSSL6**,
+**NAVICL1**, **NAVICL5**,
+**SBASL1**, **SBASL5**.
+The **GAL** and **BDS** prefixes can be omitted.
+**GPSL1**, **QZSSL1** and **SBASL1** mean the L1 C/A signal.
 
 **\-\-except\-signal** *list*
 : List of GNSS signals that should be excluded from the signals enabled by **\-\-gnss** and **\-\-band**.
