@@ -683,12 +683,17 @@ class ProbeRun:
             r = nxt
         if ok and isinstance(config_value(nvm, ("mode",)), dict):
             print("save granularity: mode", file=sys.stderr)
-            self.gran_experiment(None, subjects, r, uart, raised)
-        for p in subjects:
-            self.restore(p, nvm)
-        self.restore_mode(nvm)
-        self.restore_signals(nvm)
+            r2 = self.gran_experiment(None, subjects, r, uart, raised)
+            if r2 is not None and base is not None:
+                print("save granularity: messageOutput", file=sys.stderr)
+                self.gran_messages(r2, base, uart, raised)
         self.recover_nvm(nvm, subjects, uart, as_found_speed)
+        if base is not None:
+            # recover_nvm's --save-all persisted whatever message state the
+            # experiments left; put the running message state back to the
+            # session baseline (its persistence rides the save-all above on
+            # the next disruptive run; the running state is what matters).
+            self.restore_protocol(base)
         self.probe_reset(uart, raised)
         if speed_supported:
             self.probe_speed(self.tool.speed() if uart else None)
@@ -779,6 +784,38 @@ class ProbeRun:
         time.sleep(RESET_SETTLE)
         self.resync_speed(True, raised)
         self.show_config("readback-factory", "factory")
+
+    def gran_messages(self, r: dict[str, Any], base: dict[tuple[str, str], int],
+                      uart: bool, raised: bool) -> None:
+        """One save-granularity experiment with message output as the
+        subject: move a property off its NVM value unsaved, set a
+        distinctive NMEA sentence set with --save, reload, and observe by
+        capture whether the sentence set survived - message persistence is
+        only observable by emission, never readback. The property canary
+        classifies message output against the property groups. The NVM
+        message state is left changed; the recovery save-all that follows
+        persists the restored baseline."""
+        canary = next(q for q in PROPS if q.name == "minElevation")
+        v = next(x for x in canary.values if x != config_value(r, canary.path))
+        self.tool.gps(f"gran-set-{canary.name}", [canary.flag, canary.to_cli(v)],
+                      {"op": "gran-set", "exp": "messageOutput",
+                       "prop": canary.name})
+        target = ["RMC"] if nmea_set(base) != ["RMC"] else ["GGA"]
+        self.tool.gps("gran-save-messages",
+                      ["--nmea-out", ",".join(target), "--save"],
+                      {"op": "gran-save-msg", "case": target,
+                       "prop": canary.name, "path": list(canary.path)})
+        time.sleep(MSG_SETTLE)
+        self.observe("gran-S-messages",
+                     {"op": "observe", "role": "gran-msg-s", "case": target})
+        self.show_config("gran-S-messages-cfg", "gran-msg-scfg", canary.name)
+        self.tool.gps("gran-reload-messages", ["--reload"],
+                      {"op": "reload", "round": 0, "uart": uart})
+        self.resync_speed(uart, raised)
+        time.sleep(MSG_SETTLE)
+        self.observe("gran-F-messages",
+                     {"op": "observe", "role": "gran-msg-f", "case": target})
+        self.show_config("gran-F-messages-cfg", "gran-msg-fcfg", canary.name)
 
     def gran_experiment(self, p: ScalarProp | None, subjects: list[ScalarProp],
                         r: dict[str, Any], uart: bool,

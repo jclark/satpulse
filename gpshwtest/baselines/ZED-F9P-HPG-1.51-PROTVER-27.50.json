@@ -1,5 +1,6 @@
 {
   "limitations": {
+    "baudRate": {"observed": [{"request": 57600, "result": 0}]},
     "mode.fixedPosAcc": {"quantum": 0.0001},
     "mode.fixedPosECEF[0]": {"quantum": 0.0001},
     "mode.fixedPosECEF[1]": {"quantum": 0.0001},

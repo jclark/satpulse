@@ -134,6 +134,10 @@ class Analyzer:
     gran_r: dict[str, Any] | None = None
     gran_exp: dict[str, Any] | None = None
     gran_s: dict[str, Any] | None = None
+    gran_msg: dict[str, Any] | None = None
+    gran_msg_s: list[str] | None = None
+    gran_msg_f: list[str] | None = None
+    gran_msg_scfg: dict[str, Any] | None = None
     save_results: list[dict[str, Any]] = field(default_factory=list)
 
     def run(self) -> Analysis:
@@ -203,6 +207,8 @@ class Analyzer:
                 self.failures.append(f"{s.name}: {s.error}")
         elif op == "gran-save":
             self.gran_save(s)
+        elif op == "gran-save-msg":
+            self.gran_save_msg(s)
         elif op == "save-all":
             if s.error is not None:
                 self.failures.append(f"save-all: {s.error}")
@@ -285,6 +291,10 @@ class Analyzer:
             self.gran_s = s.config()
         elif role == "gran-f":
             self.gran_evaluate(s.config())
+        elif role == "gran-msg-scfg":
+            self.gran_msg_scfg = s.config()
+        elif role == "gran-msg-fcfg":
+            self.gran_msg_evaluate(s.config())
         elif role == "factory":
             pass  # factory state is receiver data, recorded, not compared
         elif role in ("save-all", "reset"):
@@ -432,6 +442,10 @@ class Analyzer:
             self.baseline = emissions(s.log)
         elif role == "raw-baseline" and s.log is not None:
             self.raw_base = raw_set(emissions(s.log))
+        elif role == "gran-msg-s" and s.log is not None:
+            self.gran_msg_s = nmea_set(emissions(s.log))
+        elif role == "gran-msg-f" and s.log is not None:
+            self.gran_msg_f = nmea_set(emissions(s.log))
         elif role == "verify" and s.log is not None:
             self.verify_restore_msg(s, group)
 
@@ -591,6 +605,55 @@ class Analyzer:
             self.save_results.append({"prop": s.intent["exp"], "error": s.error})
         else:
             self.gran_exp = s.intent
+
+    def gran_save_msg(self, s: Step) -> None:
+        """The set-with---save of the message-output granularity experiment."""
+        self.gran_msg = None
+        self.gran_msg_s = None
+        self.gran_msg_f = None
+        self.gran_msg_scfg = None
+        if transient(s.error):
+            self.failures.append(f"{s.name}: {s.error}")
+        elif s.error is not None:
+            self.save_results.append({"prop": "messageOutput", "error": s.error})
+        else:
+            self.gran_msg = s.intent
+
+    def gran_msg_evaluate(self, fcfg: dict[str, Any]) -> None:
+        """Evaluate the message-output granularity experiment: the saved
+        sentence set must still be emitted after the reload (persistence is
+        observable only by emission), and the unsaved property canary
+        classifies message output against the property save groups."""
+        exp, s_nmea, f_nmea = self.gran_msg, self.gran_msg_s, self.gran_msg_f
+        scfg, r = self.gran_msg_scfg, self.gran_r
+        self.gran_msg = None
+        self.gran_msg_s = None
+        self.gran_msg_f = None
+        self.gran_msg_scfg = None
+        if exp is None or s_nmea is None or f_nmea is None or scfg is None \
+                or r is None:
+            self.gran_r = fcfg
+            return
+        target = exp["case"]
+        if not set(target) <= set(s_nmea):
+            self.gran_r = fcfg
+            return  # the set never took effect; delivery is characterized elsewhere
+        if not set(target) <= set(f_nmea):
+            self.failures.append(
+                f"save: message output saved as {target!r} but emits "
+                f"{f_nmea!r} after reload")
+        path = tuple(exp["path"])
+        rv, sv, fv = (config_value(c, path) for c in (r, scfg, fcfg))
+        result: dict[str, Any] = {"prop": "messageOutput", "saved": [],
+                                  "independent": [], "indeterminate": []}
+        if sv == rv:
+            result["indeterminate"].append(exp["prop"])
+        elif fv == sv:
+            result["saved"].append(exp["prop"])
+        elif fv == rv:
+            result["independent"].append(exp["prop"])
+        self.save_results.append(result)
+        self.gran_r = fcfg
 
     def gran_evaluate(self, f: dict[str, Any]) -> None:
         """Evaluate one granularity experiment from its three states: the
