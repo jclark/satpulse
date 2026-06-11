@@ -394,6 +394,77 @@ func TestEnableSignals(t *testing.T) {
 	}
 }
 
+func TestResolveSignalConstraints(t *testing.T) {
+	b1i := gpsprot.SignalSetOf(gpsprot.SigBDSB1I)
+	b1c := gpsprot.SignalSetOf(gpsprot.SigBDSB1C)
+	b1 := b1i | b1c
+	tests := []struct {
+		name      string
+		ver       Version
+		enabled   gpsprot.SignalSet
+		supported gpsprot.SignalSet
+		want      gpsprot.SignalSet
+	}{
+		{
+			name:      "SPG M10 prefers B1I",
+			ver:       Version{Prot: &ProtVer{Major: 34, Minor: 10}, FW: &FWVer{ProductCategory: "SPG"}},
+			enabled:   b1,
+			supported: b1,
+			want:      b1i,
+		},
+		{
+			name:      "SPGL1L5 F10 prefers B1C",
+			ver:       Version{Prot: &ProtVer{Major: 40, Minor: 0}, FW: &FWVer{ProductCategory: "SPGL1L5"}},
+			enabled:   b1,
+			supported: b1,
+			want:      b1c,
+		},
+		{
+			name:      "HPG unchanged",
+			ver:       Version{Prot: &ProtVer{Major: 34, Minor: 10}, FW: &FWVer{ProductCategory: "HPG"}},
+			enabled:   b1,
+			supported: b1,
+			want:      b1,
+		},
+		{
+			name:      "B1I only unchanged",
+			ver:       Version{Prot: &ProtVer{Major: 34, Minor: 10}, FW: &FWVer{ProductCategory: "SPG"}},
+			enabled:   b1i,
+			supported: b1,
+			want:      b1i,
+		},
+		{
+			name:      "SPG maps B1C to B1I",
+			ver:       Version{Prot: &ProtVer{Major: 34, Minor: 10}, FW: &FWVer{ProductCategory: "SPG"}},
+			enabled:   b1c,
+			supported: b1,
+			want:      b1i,
+		},
+		{
+			name:      "SPGL1L5 maps B1I to B1C",
+			ver:       Version{Prot: &ProtVer{Major: 40, Minor: 0}, FW: &FWVer{ProductCategory: "SPGL1L5"}},
+			enabled:   b1i,
+			supported: b1,
+			want:      b1c,
+		},
+		{
+			name:      "SPGL1L5 B1C only unchanged",
+			ver:       Version{Prot: &ProtVer{Major: 40, Minor: 0}, FW: &FWVer{ProductCategory: "SPGL1L5"}},
+			enabled:   b1c,
+			supported: b1,
+			want:      b1c,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveSignalConstraints(&tt.ver, tt.enabled, tt.supported)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // Test timeModeBuild function - case where missing keys need to be fetched
 func TestTimeModeBuild_MissingKeys(t *testing.T) {
 	tests := []struct {
