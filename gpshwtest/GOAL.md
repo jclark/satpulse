@@ -89,6 +89,10 @@ For each receiver+firmware the program produces a machine-readable characterizat
 3. The characterization is checked in (per receiver model + firmware), with a human-readable companion describing the receiver's limitations in `HW/<receiver>.md`.
 4. Subsequent runs regenerate it and compare automatically against the checked-in version; differences are regressions to investigate (in satpulsetool, in the program, or a firmware change). Identical output across repeated runs on the same receiver is required for this to work.
 
+### Systest integration
+
+The end state is that this workflow runs unattended through `systest/`: a playbook runs gpshwtest on a target host against its receivers, which also unlocks the physical time pulse checks since systest runs as root. The baseline a receiver is checked against is specified in `inventory.yml`. Generating and vetting a baseline for a new receiver is a different workflow from regression-checking against an existing one, so this probably means separate playbooks for the two cases. This is a goal, not a design; nothing here prescribes how the playbooks are structured.
+
 ## How we measure success
 
 - The characterization covers every property and operation in the coverage list above.
