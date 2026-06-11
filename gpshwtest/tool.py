@@ -2,7 +2,7 @@
 
 All receiver I/O goes through here: each invocation runs satpulsetool gps
 with --json and a per-invocation packet log, and is recorded verbatim in
-raw.jsonl in the log directory together with its intent - what the step
+runs.jsonl in the log directory together with its intent - what the step
 requests, in model vocabulary. The records plus the packet logs are
 everything offline analysis needs (see analyze.py).
 """
@@ -57,7 +57,7 @@ class Tool:
         self.log_dir = log_dir
         self.seq = 0
         log_dir.mkdir(parents=True, exist_ok=True)
-        self.raw = (log_dir / "raw.jsonl").open("a", encoding="utf-8")
+        self.raw = (log_dir / "runs.jsonl").open("a", encoding="utf-8")
 
     def gps(self, name: str, args: list[str], intent: dict[str, Any],
             timeout: float = 90.0, retry: bool = True,
@@ -70,7 +70,7 @@ class Tool:
         Communication flakes happen (intermittent detection of a silenced
         receiver on USB, unanswered requests on a slow UART), so a
         transient error is retried once; the flake stays visible in
-        raw.jsonl and the packet logs."""
+        runs.jsonl and the packet logs."""
         inv = self.gps_once(name, args, intent, timeout, retry=False, json_out=json_out)
         if retry and transient(inv.error):
             time.sleep(2.0)

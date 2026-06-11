@@ -903,7 +903,7 @@ class ProbeRun:
 
     def attempt(self, fn: Callable[[], object]) -> None:
         """Run one step of the emergency tail; a tool failure is recorded
-        (timeouts land in raw.jsonl) but must not stop the tail."""
+        (timeouts land in runs.jsonl) but must not stop the tail."""
         try:
             fn()
         except ToolFailure as e:

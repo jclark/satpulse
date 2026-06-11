@@ -1,6 +1,6 @@
 """Offline analysis of a recorded run.
 
-A pure pass over a log directory's records (raw.jsonl plus the
+A pure pass over a log directory's records (runs.jsonl plus the
 per-invocation packet logs), answering two separate questions: were the
 tool guarantees violated (failures), and what is the characterization.
 It never touches hardware: live runs call it on their own log directory
@@ -60,7 +60,10 @@ def load_steps(log_dir: Path) -> list[Step]:
     """Load the recorded steps of a run. A retry record supersedes the
     attempt it retried."""
     steps: list[Step] = []
-    for line in (log_dir / "raw.jsonl").read_text().splitlines():
+    record = log_dir / "runs.jsonl"
+    if not record.exists():
+        record = log_dir / "raw.jsonl"  # the record's name before the rename
+    for line in record.read_text().splitlines():
         e = json.loads(line)
         if "intent" not in e:
             raise SystemExit(f"{log_dir}: records lack intents "
