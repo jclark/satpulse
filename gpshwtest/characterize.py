@@ -318,11 +318,10 @@ def characterize_expected(obs: list[EmissionObservation]) -> dict[str, Any] | No
     kinds the request should deliver (recorded with the observation). The
     semantics are best-effort at the message level: delivering more than was
     asked for is normal (a needed message may carry extra information), so
-    only missing requested information is a limitation. A kind the receiver
-    never delivered at all is stated kind-level as unavailable (the receiver
-    has no message carrying it), independent of the probe cases; per-case
-    missing entries remain only where a deliverable kind was not delivered
-    for that particular request."""
+    only missing requested information is a limitation, stated in the
+    device-independent information model: the kinds the receiver never
+    delivered (it has no message carrying them), independent of the probe
+    cases. Per-request oddities worth prose belong in HW/<receiver>.md."""
     entry: dict[str, Any] = {}
     refused = [o.requested for o in obs if o.error is not None]
     if refused:
@@ -333,16 +332,7 @@ def characterize_expected(obs: list[EmissionObservation]) -> dict[str, Any] | No
         if o.error is None:
             expected |= set(o.expect or [])
             emitted |= set(o.emitted)
-    unavailable = sorted(expected - emitted)
-    if unavailable:
-        entry["unavailable"] = unavailable
-    missing = []
-    for o in obs:
-        if o.error is not None:
-            continue
-        lack = sorted(set(o.expect or []) - set(o.emitted) - set(unavailable))
-        if lack:
-            missing.append({"requested": o.requested, "missing": lack})
+    missing = sorted(expected - emitted)
     if missing:
         entry["missing"] = missing
     return entry if entry else None

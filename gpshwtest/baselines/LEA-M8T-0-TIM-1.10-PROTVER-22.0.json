@@ -68,16 +68,6 @@
     },
     "satsOut": {
       "missing": [
-        {
-          "missing": [
-            "satellites"
-          ],
-          "requested": [
-            "sig"
-          ]
-        }
-      ],
-      "unavailable": [
         "perSignal"
       ]
     },
