@@ -17,7 +17,7 @@
     "rtcmBaseID": {"unsupported": true},
     "saveGranularity": {
       "anomalous": ["timeGNSS"],
-      "groups": [["minElevation", "mode"]],
+      "groups": [["messageOutput", "minElevation", "mode"]],
       "unsaved": ["antennaCableDelay"]
     },
     "signals": {
