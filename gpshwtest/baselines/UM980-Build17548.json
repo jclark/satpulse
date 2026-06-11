@@ -1,14 +1,14 @@
 {
   "limitations": {
     "mode.fixedPosAcc": {
-      "observations": [
+      "verbatim": [
         {
-          "achieved": 0,
-          "requested": 0.12345
+          "request": 0.12345,
+          "result": 0
         },
         {
-          "achieved": 0,
-          "requested": 1.23456
+          "request": 1.23456,
+          "result": 0
         }
       ]
     },

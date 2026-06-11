@@ -112,8 +112,8 @@ def characterize_prop(obs: list[Observation]) -> dict[str, Any] | None:
         if dp is not None:
             entry["quantum"] = 10 ** -dp
         else:
-            entry["observations"] = [
-                {"requested": o.requested, "achieved": o.readback} for o in inexact]
+            entry["verbatim"] = [
+                {"request": o.requested, "result": o.readback} for o in inexact]
     return entry if entry else None
 
 
@@ -134,7 +134,7 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
             continue
         for c, sigs in o.achieved.items():
             if c in supported and supported[c] != sorted(sigs):
-                inconsistent.append({"gnss": o.gnss, "achieved": o.achieved})
+                inconsistent.append({"gnss": o.gnss, "result": o.achieved})
             supported.setdefault(c, sorted(sigs))
     refused = []
     adjusted = []
@@ -148,9 +148,9 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
             if req is None:
                 if sorted(achieved) != sorted(o.gnss):
                     adjusted.append({"gnss": o.gnss, "band": o.band,
-                                     "achieved": achieved})
+                                     "result": achieved})
             elif achieved != req:
-                adjusted.append({"requested": req, "achieved": achieved})
+                adjusted.append({"request": req, "result": achieved})
     if supported:
         entry["signalSet"] = supported
     if inconsistent:
@@ -221,11 +221,11 @@ def signal_patterns(entry: dict[str, Any], obs: list[SignalObservation],
     saw_dropped = False
     residual_adjusted = []
     for a in adjusted:
-        req = a.get("requested")
+        req = a.get("request")
         if isinstance(req, dict) and not valid_request(req):
             continue
         if isinstance(req, dict) and any(req.values()) \
-                and a.get("achieved") == {c: s for c, s in req.items() if s}:
+                and a.get("result") == {c: s for c, s in req.items() if s}:
             saw_dropped = True
             continue
         residual_adjusted.append(a)
@@ -264,7 +264,7 @@ def characterize_nmea(obs: list[EmissionObservation]) -> dict[str, Any] | None:
         requested = [] if o.requested == ["none"] else sorted(o.requested)
         lack = sorted(set(requested) - set(o.emitted))
         if lack:
-            missing.append({"requested": requested, "missing": lack})
+            missing.append({"request": requested, "missing": lack})
     if missing:
         entry["missing"] = missing
     return entry if entry else None
@@ -292,7 +292,7 @@ def characterize_rtcm(obs: list[EmissionObservation],
                 expected.add("1005")
         lack = sorted(expected - set(o.emitted))
         if lack:
-            missing.append({"requested": o.requested, "missing": lack})
+            missing.append({"request": o.requested, "missing": lack})
     if missing:
         entry["missing"] = missing
     return entry if entry else None
@@ -305,7 +305,7 @@ def characterize_raw(obs: list[EmissionObservation]) -> dict[str, Any] | None:
     refused = [o.requested for o in obs if o.error is not None]
     if refused:
         entry["refused"] = refused
-    missing = [{"requested": o.requested, "missing": o.requested}
+    missing = [{"request": o.requested, "missing": o.requested}
                for o in obs
                if o.error is None and o.requested != ["none"] and not o.emitted]
     if missing:
@@ -372,7 +372,8 @@ def characterize_save(results: list[dict[str, Any]]) -> dict[str, Any] | None:
                 if a < b and together.get((a, b)) is False:
                     consistent = False
     if not consistent:
-        entry["observations"] = [r for r in results if "saved" in r]
+        entry["verbatim"] = [{k: v for k, v in r.items() if v or k == "prop"}
+                             for r in results if "saved" in r]
     else:
         grouped = sorted(sorted(g) for g in groups if len(g) > 1)
         if len(grouped) == 1 and set(grouped[0]) == props:
