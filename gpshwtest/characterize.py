@@ -436,5 +436,21 @@ def quantum_fits(dp: int, requested: float, achieved: float) -> bool:
 
 
 def to_json(doc: dict[str, Any]) -> str:
-    """Render a characterization canonically so runs compare byte-for-byte."""
-    return json.dumps(doc, indent=2, sort_keys=True) + "\n"
+    """Render a characterization canonically so runs compare byte-for-byte:
+    sorted keys, and containers on one line whenever they fit the width."""
+    return fmt_json(doc, 0) + "\n"
+
+
+def fmt_json(v: Any, indent: int) -> str:
+    flat = json.dumps(v, sort_keys=True, separators=(", ", ": "))
+    if indent + len(flat) <= 100:
+        return flat
+    pad = " " * (indent + 2)
+    if isinstance(v, dict):
+        items = [f"{pad}{json.dumps(k)}: {fmt_json(x, indent + 2)}"
+                 for k, x in sorted(v.items())]
+        return "{\n" + ",\n".join(items) + "\n" + " " * indent + "}"
+    if isinstance(v, list):
+        items = [f"{pad}{fmt_json(x, indent + 2)}" for x in v]
+        return "[\n" + ",\n".join(items) + "\n" + " " * indent + "]"
+    return flat
