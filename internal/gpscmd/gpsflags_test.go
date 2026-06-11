@@ -196,6 +196,10 @@ var validFlagsTestCases = []validFlagsTestCase{
 		NMEAMsg: opt.Make(gpsprot.NMEAMsgNone),
 		PVTMsg:  gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgLeapSecond,
 	}}},
+	{"ttyS0", []string{"--binary", "--pvt-out", "off"}, flagVars{configOpts: gpsprot.ConfigOptions{
+		NMEAMsg: opt.Make(gpsprot.NMEAMsgNone),
+		PVTMsg:  gpsprot.PVTMsgOff,
+	}}},
 	// Test --binary with --rtcm-out (should not set default pvt)
 	{"ttyS0", []string{"--binary", "--rtcm-out", "MSM4"}, flagVars{configOpts: gpsprot.ConfigOptions{
 		NMEAMsg: opt.Make(gpsprot.NMEAMsgNone),

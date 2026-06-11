@@ -353,7 +353,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			nmeaMsg.Set(gpsprot.NMEAMsgNone)
 		}
 		// ensure we have some non-NMEA output
-		if rtcmMsg.Get()&gpsprot.RTCMMsgAny == 0 && pvtMsg.Get()&gpsprot.PVTMsgAny == 0 {
+		if rtcmMsg.Get()&gpsprot.RTCMMsgAny == 0 && !pvtMsg.IsSet() {
 			pvtMsg.Set(gpsprot.PVTMsgPos | gpsprot.PVTMsgTime) // analogous to NMEA RMC
 		}
 	}
