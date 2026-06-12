@@ -40,16 +40,17 @@ const (
 
 // Protocol tags for external use
 const (
-	TagUBX          = ubx.Tag
-	TagNMEA         = nmea.Tag
-	TagRTCM         = rtcm.Tag
-	TagCASICBin     = casic.Tag
-	TagAllystarBin  = as.Tag
-	TagSDBP         = sdbp.Tag
-	TagUnicoreBin   = unc.TagBinary
-	TagUnicoreAscii = unc.TagAscii
-	TagNovAtelBin   = nov.TagBinary
-	TagNovAtelAscii = nov.TagAscii
+	TagUBX           = ubx.Tag
+	TagNMEA          = nmea.Tag
+	TagRTCM          = rtcm.Tag
+	TagCASICBin      = casic.Tag
+	TagAllystarBin   = as.Tag
+	TagSDBP          = sdbp.Tag
+	TagUnicoreBin    = unc.TagBinary
+	TagUnicoreAscii  = unc.TagAscii
+	TagNovAtelBin    = nov.TagBinary
+	TagNovAtelAscii  = nov.TagAscii
+	TagNovAtelAbbrevAscii = nov.TagAbbrevAscii
 )
 
 // RTCMPacketFormat is the RTCM packet format, re-exported for
@@ -85,6 +86,7 @@ var allVendorPacketFormats = []gpsprot.PacketFormat{
 	unc.AsciiPacketFormat,
 	nov.BinPacketFormat,
 	nov.AsciiPacketFormat,
+	nov.AbbrevAsciiPacketFormat,
 }
 
 // allVendorPacketFormats maps each vendor to the packet formats they are known to use.
@@ -93,12 +95,12 @@ var allVendorPacketFormatsMap = map[Vendor][]gpsprot.PacketFormat{
 	VendorUnknown: allVendorPacketFormats,
 	// no entry needed for VendorOther, since it is treated like vendors we do not currently support
 	VendorAllystar:  {as.PacketFormat},
-	VendorBynav:     {nov.BinPacketFormat, nov.AsciiPacketFormat},
-	VendorNovAtel:   {nov.BinPacketFormat, nov.AsciiPacketFormat},
-	VendorSinoGNSS:  {nov.BinPacketFormat, nov.AsciiPacketFormat},
+	VendorBynav:     {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
+	VendorNovAtel:   {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
+	VendorSinoGNSS:  {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
 	VendorTechtotop: {sdbp.PacketFormat},
 	VendorUblox:     {ubx.PacketFormat},
-	VendorUnicore:   {unc.BinPacketFormat, unc.AsciiPacketFormat, nov.BinPacketFormat, nov.AsciiPacketFormat},
+	VendorUnicore:   {unc.BinPacketFormat, unc.AsciiPacketFormat, nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
 	VendorZhongke:   {casic.PacketFormat},
 }
 
@@ -170,6 +172,7 @@ func CreatePacketProcessors(vendor Vendor) map[gpsprot.Tag]gpsprot.PacketProcess
 		unc.TagAscii:  unc.NewAsciiPacketProcessor(mgr),
 		nov.TagBinary: nov.NewBinPacketProcessor(mgr),
 		nov.TagAscii:  nov.NewAsciiPacketProcessor(mgr),
+		nov.TagAbbrevAscii: nov.NewAbbrevAsciiPacketProcessor(),
 	}
 	if vendor != VendorUnknown {
 		SetVendor(procs, vendor)
