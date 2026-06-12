@@ -27,11 +27,13 @@ type Configurator struct {
 	ver     *casbin.MonVer // nil when MON-VER is unsupported (V5)
 	family  fwFamily
 	reqs    []*casReq
-	phase   int               // index into genPhases of the next phase to generate
-	touched uint16            // CfgSection* bits of the sections set requests touched
-	tp      *casbin.CfgTP     // latest CFG-TP readback; nil if never answered
-	tm5     *casbin.CfgTMode  // latest V5 CFG-TMODE readback
-	tm6     *casbin.CfgTMode2 // latest V6 CFG-TMODE2 readback
+	phase   int                // index into genPhases of the next phase to generate
+	touched uint16             // CfgSection* bits of the sections set requests touched
+	tp      *casbin.CfgTP      // latest CFG-TP readback; nil if never answered
+	tm5     *casbin.CfgTMode   // latest V5 CFG-TMODE readback
+	tm6     *casbin.CfgTMode2  // latest V6 CFG-TMODE2 readback
+	navx    *casbin.CfgNavx    // latest V5 CFG-NAVX readback
+	navBand *casbin.CfgNavBand // latest V6 CFG-NAVBAND readback
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -102,8 +104,12 @@ func (c *Configurator) supportedGNSS() gpsprot.GNSSSet {
 // ConfigSupport returns the configuration options this implementation
 // supports.
 func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
-	return gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+	flags := gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc
+	if c.family == familyV6 {
+		flags |= gpsprot.ConfigSupportBand
+	}
+	return flags
 }
 
 // ConfigProps returns the current configuration of the GPS receiver,
@@ -113,6 +119,7 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	props := &gpsprot.ConfigProps{}
 	c.tpConfigProps(props)
 	c.tmodeConfigProps(props)
+	c.signalConfigProps(props)
 	return props
 }
 
@@ -121,6 +128,7 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 func (c *Configurator) generateQueryReqs() {
 	c.generateTPQuery()
 	c.generateTModeQuery()
+	c.generateSignalQuery()
 }
 
 // generateSetReqs generates the property set requests, computed from
@@ -128,6 +136,7 @@ func (c *Configurator) generateQueryReqs() {
 func (c *Configurator) generateSetReqs() {
 	c.generateTPSet()
 	c.generateTModeSet()
+	c.generateSignalSet()
 }
 
 // generateVerifyReqs re-polls what the set phase changed, so that
@@ -135,6 +144,7 @@ func (c *Configurator) generateSetReqs() {
 func (c *Configurator) generateVerifyReqs() {
 	c.generateTPVerify()
 	c.generateTModeVerify()
+	c.generateSignalVerify()
 }
 
 // genPhases are the request generation phases, each gated on all

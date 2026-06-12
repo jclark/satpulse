@@ -90,14 +90,18 @@ id = 0x0F
 payload.types = "U1U1U2U4U4"
 payload.values = [0, 0, 0, 0x00A8CDBD, 0x00A8CDBD]
 
-# Auto signal band selection (let receiver decide)
+# Auto signal band selection (let receiver decide).
+# CAUTION: sigBandAuto=1 with zero masks is NAKed (verified on
+# ATGM332D-F8N); send the full known-signal mask instead - the receiver
+# clamps the reception mask to what its hardware supports.
+# Verified ACK received on ATGM332D-F8N
 [[casbin]]
 tag = "gnss-auto"
 description = "Enable automatic signal band selection"
 class = 0x06
 id = 0x0F
 payload.types = "U1U1U2U4U4"
-payload.values = [1, 0, 0, 0, 0]
+payload.values = [1, 0, 0, 0x00A8CDBD, 0x00A8CDBD]
 
 # CFG-TP: Time pulse (PPS) configuration
 # Payload: U4 interval_us, U4 width_us, U1 ppsOutMode, I1 polarity, U1 tBase,

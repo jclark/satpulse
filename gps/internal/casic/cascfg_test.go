@@ -29,6 +29,9 @@ type testReceiver struct {
 	tp         *casbin.CfgTP // nil: CFG-TP unsupported (poll gets NAK)
 	tm5        *casbin.CfgTMode
 	tm6        *casbin.CfgTMode2
+	navx       *casbin.CfgNavx
+	navBand    *casbin.CfgNavBand
+	sigCap     uint32 // hardware-receivable signals; clamps written SigIDMask
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -66,6 +69,21 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(m.ID())})}
 	}
 	switch mt := m.(type) {
+	case *casbin.CfgNavBand:
+		if r.navBand == nil {
+			return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgNavBandID)})}
+		}
+		*r.navBand = *mt
+		r.navBand.SigIDMask &= r.sigCap
+		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgNavBandID)})}
+	case *casbin.CfgNavx:
+		if r.navx == nil {
+			return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgNavxID)})}
+		}
+		if mt.Mask&casbin.NavxNavSystem != 0 {
+			r.navx.NavSystem = mt.NavSystem
+		}
+		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgNavxID)})}
 	case *casbin.CfgTMode:
 		if r.tm5 == nil {
 			return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgTModeID)})}
@@ -138,6 +156,14 @@ func (r *testReceiver) respondPoll(mid casbin.MsgID) [][]byte {
 	case casbin.CfgTMode2ID:
 		if r.tm6 != nil {
 			m = r.tm6
+		}
+	case casbin.CfgNavxID:
+		if r.navx != nil {
+			m = r.navx
+		}
+	case casbin.CfgNavBandID:
+		if r.navBand != nil {
+			m = r.navBand
 		}
 	}
 	if m == nil {
@@ -920,5 +946,95 @@ func TestSurveyAgainRestarts(t *testing.T) {
 	}
 	if sets != 2 {
 		t.Errorf("CFG-TMODE2 sets = %d, want 2 (auto then survey)", sets)
+	}
+}
+
+func TestSignalSelection(t *testing.T) {
+	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
+	const f8nMask = 0x0028CDAD   // dual-band: GPS L1CA+L5, SBAS, GLO L1, GAL E1+E5a, BDS B1I+B1C+B2a, QZSS L1CA+L5
+	const at632Mask = 0x00084CA9 // L1-band only (the AT632's clamped reception set)
+	tests := []struct {
+		name          string
+		monVer        *casbin.MonVer
+		navx          *casbin.CfgNavx
+		navBand       *casbin.CfgNavBand
+		request       gpsprot.SignalSet
+		expectMaskFix uint32
+		expectSys     uint8
+		expectSignals gpsprot.SignalSet
+	}{
+		{
+			name:          "V6 dual-band GPS and GAL",
+			monVer:        v6,
+			navBand:       &casbin.CfgNavBand{SigBandAuto: 1, SigIDMaskFix: f8nMask, SigIDMask: f8nMask},
+			request:       gpsprot.SigSetGPS | gpsprot.SigSetGAL,
+			expectMaskFix: 1<<casbin.SigGPSL1CA | 1<<casbin.SigGPSL5 | 1<<casbin.SigGALE1 | 1<<casbin.SigGALE5a,
+			expectSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGPSL5,
+				gpsprot.SigGALE1, gpsprot.SigGALE5a),
+		},
+		{
+			// The receiver clamps the written reception list to its
+			// hardware: L5-band signals drop out in the readback.
+			name:          "V6 L1-only hardware clamps GPS L5 and GAL E5a away",
+			monVer:        v6,
+			navBand:       &casbin.CfgNavBand{SigBandAuto: 1, SigIDMaskFix: at632Mask, SigIDMask: at632Mask},
+			request:       gpsprot.SigSetGPS | gpsprot.SigSetGAL,
+			expectMaskFix: 1<<casbin.SigGPSL1CA | 1<<casbin.SigGPSL5 | 1<<casbin.SigGALE1 | 1<<casbin.SigGALE5a,
+			expectSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1),
+		},
+		{
+			name:          "V5 constellation level",
+			navx:          &casbin.CfgNavx{NavSystem: casbin.NavSysGPS | casbin.NavSysBDS | casbin.NavSysGLN},
+			request:       gpsprot.SigSetGPS | gpsprot.SigSetGAL,
+			expectSys:     casbin.NavSysGPS,
+			expectSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tc.monVer, navx: tc.navx, navBand: tc.navBand}
+			if tc.navBand != nil {
+				rcvr.sigCap = tc.navBand.SigIDMask
+			}
+			cp := probe(t, rcvr)
+			target := gpsprot.NewConfigTarget()
+			target.Props.SetSignalsEnabled(tc.request)
+			cfg, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if tc.navBand != nil {
+				if rcvr.navBand.SigBandAuto != 0 || rcvr.navBand.SigIDMaskFix != tc.expectMaskFix {
+					t.Errorf("NAVBAND auto=%d maskFix=%#x, want auto=0 maskFix=%#x",
+						rcvr.navBand.SigBandAuto, rcvr.navBand.SigIDMaskFix, tc.expectMaskFix)
+				}
+			}
+			if tc.navx != nil && rcvr.navx.NavSystem != tc.expectSys {
+				t.Errorf("NavSystem = %#x, want %#x", rcvr.navx.NavSystem, tc.expectSys)
+			}
+			got, ok := cfg.ConfigProps().GetSignalsEnabled()
+			if !ok || got != tc.expectSignals {
+				t.Errorf("SignalsEnabled = %v,%v\nwant %v", got, ok, tc.expectSignals)
+			}
+		})
+	}
+}
+
+func TestSignalGetWithAutoBand(t *testing.T) {
+	rcvr := &testReceiver{
+		monVer:  &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
+		navBand: &casbin.CfgNavBand{SigBandAuto: 1, SigIDMask: 1<<casbin.SigGPSL1CA | 1<<casbin.SigGLOL1},
+	}
+	cp := probe(t, rcvr)
+	target := gpsprot.NewConfigTarget()
+	target.Get = gpsprot.PropIDSignalsEnabled
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	got, ok := cfg.ConfigProps().GetSignalsEnabled()
+	want := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGLOL1)
+	if !ok || got != want {
+		t.Errorf("SignalsEnabled = %v,%v, want %v", got, ok, want)
 	}
 }
