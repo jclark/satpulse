@@ -27,9 +27,11 @@ type Configurator struct {
 	ver     *casbin.MonVer // nil when MON-VER is unsupported (V5)
 	family  fwFamily
 	reqs    []*casReq
-	phase   int    // index into genPhases of the next phase to generate
-	touched uint16 // CfgSection* bits of the sections set requests touched
-	tp      *casbin.CfgTP // latest CFG-TP readback; nil if never answered
+	phase   int               // index into genPhases of the next phase to generate
+	touched uint16            // CfgSection* bits of the sections set requests touched
+	tp      *casbin.CfgTP     // latest CFG-TP readback; nil if never answered
+	tm5     *casbin.CfgTMode  // latest V5 CFG-TMODE readback
+	tm6     *casbin.CfgTMode2 // latest V6 CFG-TMODE2 readback
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -98,9 +100,10 @@ func (c *Configurator) supportedGNSS() gpsprot.GNSSSet {
 }
 
 // ConfigSupport returns the configuration options this implementation
-// supports. None of the optional capabilities are implemented yet.
+// supports.
 func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
-	return 0
+	return gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+		gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc
 }
 
 // ConfigProps returns the current configuration of the GPS receiver,
@@ -109,6 +112,7 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	props := &gpsprot.ConfigProps{}
 	c.tpConfigProps(props)
+	c.tmodeConfigProps(props)
 	return props
 }
 
@@ -116,18 +120,21 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 // phase needs (read-modify-write) or the target asks to read.
 func (c *Configurator) generateQueryReqs() {
 	c.generateTPQuery()
+	c.generateTModeQuery()
 }
 
 // generateSetReqs generates the property set requests, computed from
 // the query phase's readbacks.
 func (c *Configurator) generateSetReqs() {
 	c.generateTPSet()
+	c.generateTModeSet()
 }
 
 // generateVerifyReqs re-polls what the set phase changed, so that
 // ConfigProps reports achieved values as the receiver holds them.
 func (c *Configurator) generateVerifyReqs() {
 	c.generateTPVerify()
+	c.generateTModeVerify()
 }
 
 // genPhases are the request generation phases, each gated on all

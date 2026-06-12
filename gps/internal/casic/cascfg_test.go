@@ -27,6 +27,8 @@ type testReceiver struct {
 	saves      []casbin.CfgCfg
 	resets     []casbin.CfgRst
 	tp         *casbin.CfgTP // nil: CFG-TP unsupported (poll gets NAK)
+	tm5        *casbin.CfgTMode
+	tm6        *casbin.CfgTMode2
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -64,6 +66,18 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(m.ID())})}
 	}
 	switch mt := m.(type) {
+	case *casbin.CfgTMode:
+		if r.tm5 == nil {
+			return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgTModeID)})}
+		}
+		*r.tm5 = *mt
+		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgTModeID)})}
+	case *casbin.CfgTMode2:
+		if r.tm6 == nil {
+			return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgTMode2ID)})}
+		}
+		*r.tm6 = *mt
+		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgTMode2ID)})}
 	case *casbin.CfgTP:
 		if r.tp == nil {
 			return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgTPID)})}
@@ -108,13 +122,31 @@ func (r *testReceiver) respondPoll(mid casbin.MsgID) [][]byte {
 	if r.silent[mid] {
 		return nil
 	}
-	if mid == casbin.CfgTPID && r.tp != nil && !r.naks[mid] {
-		return [][]byte{
-			r.pack(r.tp),
-			r.pack(&casbin.AckAck{AckPayload: ackOf(mid)}),
+	if r.naks[mid] {
+		return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(mid)})}
+	}
+	var m casbin.Msg
+	switch mid {
+	case casbin.CfgTPID:
+		if r.tp != nil {
+			m = r.tp
+		}
+	case casbin.CfgTModeID:
+		if r.tm5 != nil {
+			m = r.tm5
+		}
+	case casbin.CfgTMode2ID:
+		if r.tm6 != nil {
+			m = r.tm6
 		}
 	}
-	return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(mid)})}
+	if m == nil {
+		return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(mid)})}
+	}
+	return [][]byte{
+		r.pack(m),
+		r.pack(&casbin.AckAck{AckPayload: ackOf(mid)}),
+	}
 }
 
 func (r *testReceiver) pack(m casbin.Msg) []byte {
@@ -755,5 +787,138 @@ func TestTimePulseUnsupported(t *testing.T) {
 	}
 	if _, ok := cfg.ConfigProps().GetTimePulse(); ok {
 		t.Error("ConfigProps reports TimePulse despite NAKed poll")
+	}
+}
+
+func TestTimeMode(t *testing.T) {
+	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
+	tests := []struct {
+		name    string
+		monVer  *casbin.MonVer
+		tm5     *casbin.CfgTMode
+		tm6     *casbin.CfgTMode2
+		setup   func(*gpsprot.ConfigTarget)
+		expect5 *casbin.CfgTMode
+		expect6 *casbin.CfgTMode2
+		static  bool
+		hasMode bool
+	}{
+		{
+			name:   "V6 setStatic starts survey",
+			monVer: v6,
+			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime, BandMode: 1, TSrcMode: 2},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Opts.SetStatic = true
+				target.Opts.Survey = gpsprot.Survey{MinDur: 2000 * time.Second, AccLimit: 20 * gpsprot.Meter}
+			},
+			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Survey, BandMode: 1, TSrcMode: 2,
+				SvinMinDur: 2000, SvinPaccLim: 20000},
+			static:  true,
+			hasMode: true,
+		},
+		{
+			name:   "V6 setStatic leaves running survey alone",
+			monVer: v6,
+			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Survey, SvinMinDur: 300},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Opts.SetStatic = true
+			},
+			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Survey, SvinMinDur: 300},
+			static:  true,
+			hasMode: true,
+		},
+		{
+			name:   "V6 fixed position",
+			monVer: v6,
+			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{
+					Static:  true,
+					PosType: gpsprot.PosTypeECEF,
+					FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(-1144700.25),
+						gpsprot.Meters(6090345.5), gpsprot.Meters(1504171)},
+					FixedPosAcc: 3 * gpsprot.Meter,
+				})
+			},
+			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Fixed,
+				XFixed: -114470025, YFixed: 609034550, ZFixed: 150417100, FixedPacc: 3000},
+			static:  true,
+			hasMode: true,
+		},
+		{
+			name: "V5 survey uses variances",
+			tm5:  &casbin.CfgTMode{Mode: casbin.TModeAuto},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second, AccLimit: 20 * gpsprot.Meter}
+			},
+			expect5: &casbin.CfgTMode{Mode: casbin.TModeSurvey, SvinMinDur: 300, SvinVarLimit: 400},
+			static:  true,
+			hasMode: true,
+		},
+		{
+			name:   "V6 mobile",
+			monVer: v6,
+			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Survey, SvinMinDur: 300},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: false})
+			},
+			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
+			static:  false,
+			hasMode: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tc.monVer, tm5: tc.tm5, tm6: tc.tm6}
+			cp := probe(t, rcvr)
+			target := gpsprot.NewConfigTarget()
+			tc.setup(target)
+			cfg, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if tc.expect5 != nil && !reflect.DeepEqual(rcvr.tm5, tc.expect5) {
+				t.Errorf("CFG-TMODE\ngot  %+v\nwant %+v", rcvr.tm5, tc.expect5)
+			}
+			if tc.expect6 != nil && !reflect.DeepEqual(rcvr.tm6, tc.expect6) {
+				t.Errorf("CFG-TMODE2\ngot  %+v\nwant %+v", rcvr.tm6, tc.expect6)
+			}
+			m, ok := cfg.ConfigProps().GetMode()
+			if ok != tc.hasMode || m.Static != tc.static {
+				t.Errorf("Mode = %+v,%v, want static=%v,%v", m, ok, tc.static, tc.hasMode)
+			}
+		})
+	}
+}
+
+func TestSurveyAgainRestarts(t *testing.T) {
+	rcvr := &testReceiver{
+		monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
+		tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Survey, SvinMinDur: 300},
+	}
+	cp := probe(t, rcvr)
+	target := gpsprot.NewConfigTarget()
+	target.Opts.SetStatic = true
+	target.Opts.Survey = gpsprot.Survey{
+		Flags:    gpsprot.SurveyAgain,
+		MinDur:   600 * time.Second,
+		AccLimit: 10 * gpsprot.Meter,
+	}
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if rcvr.tm6.TimFixMode != casbin.CfgTMode2Survey || rcvr.tm6.SvinMinDur != 600 {
+		t.Errorf("final CFG-TMODE2 = %+v, want survey with 600 s", rcvr.tm6)
+	}
+	sets := 0
+	for i := 0; i < len(cfg.reqs); i++ {
+		if cfg.reqs[i].mid == casbin.CfgTMode2ID && len(cfg.reqs[i].packet) > casbin.PacketMinLen {
+			sets++
+		}
+	}
+	if sets != 2 {
+		t.Errorf("CFG-TMODE2 sets = %d, want 2 (auto then survey)", sets)
 	}
 }
