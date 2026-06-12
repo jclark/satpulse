@@ -4,20 +4,22 @@ This applies to all receivers. Message files provide protocol-specific commands 
 
 ## Message file library
 
-Existing message files are in `configs/gpsmsg/`. Each file targets a specific receiver or family:
+Existing message files are in per-vendor subdirectories of `configs/gpsmsg/`. Each file targets a specific receiver or family:
 
-- `ubx.toml` -- u-blox receivers (all generations)
-- `ubx9.toml` -- u-blox Gen9+ receivers (includes `ubx.toml`; adds CFG-VALSET MSGOUT tags for USB port)
-- `um980.toml` -- Unicore UM980/981/982
-- `allystar.toml` -- Allystar TAU1201 and similar
-- `techtotop.toml` -- Techtotop/Taidou receivers
-- `atgm332d-v5.toml`, `atgm332d-v6.toml` -- Zhongke ATGM332D variants
-- `lc29h.toml`, `lg290p.toml` -- Quectel receivers
-- `bynav.toml` -- Bynav receivers
-- `sinognss.toml` -- SinoGNSS receivers
-- `at632.toml` -- Allystar AT6558/AT632x
+- `u-blox/ubx.toml` -- u-blox receivers (all generations)
+- `u-blox/gen9.toml` -- u-blox Gen9+ receivers (includes `ubx.toml`; adds CFG-VALSET MSGOUT tags)
+- `u-blox/gen8.toml` -- u-blox Gen8 and earlier (CFG-MSG rate tags)
+- `unicore/um980.toml` -- Unicore UM980 and related Nebulas IV receivers
+- `unicore/um982.toml` -- Unicore UM982 dual-antenna receivers
+- `allystar/allystar.toml` -- Allystar TAU1201 and similar
+- `techtotop/techtotop.toml` -- Techtotop/Taidou receivers
+- `zhongke/atgm332d-v5.toml`, `zhongke/atgm332d-v6.toml` -- Zhongke ATGM332D/ATGM336H V5/V6 firmware
+- `zhongke/at632.toml` -- Zhongke AT632-6T-30 timing receiver
+- `quectel/lc29h.toml`, `quectel/lg290p.toml` -- Quectel receivers
+- `bynav/bynav.toml` -- Bynav receivers
+- `sinognss/sinognss.toml` -- SinoGNSS receivers
 
-See `configs/gpsmsg/format.md` for the TOML format specification and `configs/gpsmsg/tags.md` for tag naming conventions.
+See `configs/gpsmsg/README.md` for the directory layout, `configs/gpsmsg/format.md` for the TOML format specification, and `configs/gpsmsg/tags.md` for tag naming conventions.
 
 The tag naming conventions in `tags.md` define standard tag names for common operations (e.g., enabling/disabling specific messages, setting output rates). These standard names allow packet capture to work in a reasonably uniform way across receivers -- the same tag names (e.g., `get-version`, `enable-nav-pvt`) map to vendor-specific commands in each message file.
 
@@ -25,16 +27,18 @@ The tag naming conventions in `tags.md` define standard tag names for common ope
 
 ```
 satpulsetool gps -d <device> -s <baud> --vendor <vendor> \
-  -m configs/gpsmsg/<file>.toml -t <tag1>,<tag2>,... \
+  -m configs/gpsmsg/<vendor>/<file>.toml -t <tag1>,<tag2>,... \
+  --port <port> \
   --packet-log <output>.jsonl --capture 30
 ```
 
 Key points:
-- `-m` specifies the message file path.
+- `-m` specifies the message file path (now under a per-vendor subdirectory, e.g. `configs/gpsmsg/u-blox/gen9.toml`).
 - `-t` selects which tags to send (comma-separated, sent in order listed).
 - `--vendor` restricts protocol probing to the correct vendor.
+- `--port <i2c|uart1|uart2|usb|spi>` supplies the active receiver port for port-dependent entries (u-blox `[[ubxvalport]]` MSGOUT tags). The `-m` invocation does not probe, so it cannot detect the port itself. Find the active port with `--show-port`. Omit `--port` only when no selected tag is port-dependent.
 - `-m` cannot be combined with high-level config flags in the same invocation, but can follow a prior high-level config invocation.
-- Use `--show-tags` to list available tags: `satpulsetool gps -m <file> --show-tags`
+- Use `--show-tags` to list available tags: `satpulsetool gps -m configs/gpsmsg/<vendor>/<file>.toml --show-tags`
 
 ## When to use low-level config
 

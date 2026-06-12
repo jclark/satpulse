@@ -58,11 +58,11 @@ Messages not reachable via high-level config:
 
 ## Baud rate changes
 
-`--speed` is a no-op on Unicore (`gps/internal/unc/config.go`: "Unicore doesn't yet use speed changes"). To change baud, use the `speed-<rate>-com<N>` tags in `configs/gpsmsg/um980.toml`:
+`--speed` is a no-op on Unicore (`gps/internal/unc/config.go`: "Unicore doesn't yet use speed changes"). To change baud, use the `speed-<rate>-com<N>` tags in `configs/gpsmsg/unicore/um980.toml`:
 
 ```
 satpulsetool gps -d <device> -s <current_baud> --vendor unicore \
-  -m configs/gpsmsg/um980.toml -t speed-460800-com3
+  -m configs/gpsmsg/unicore/um980.toml -t speed-460800-com3
 ```
 
 The COM port number depends on how the receiver is wired. Determine the current port by querying `LOGLIST`:
