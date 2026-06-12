@@ -32,29 +32,42 @@ func (edge pulseEdge) IsZero() bool {
 var ErrNotReady = errors.New("phcsample: not enough labelled edges")
 
 // pulseCorrector is the interface implemented by timemsg.Buffer's
-// phase-2 UTC-keyed pulse-correction accessor. Callers that have no
+// TAI-keyed pulse-correction accessor. Callers that have no
 // correction source leave g.pc nil; the arithmetic path then behaves
-// as if every correction were zero (the phase-1 fallback).
+// as if every correction were zero.
 type pulseCorrector interface {
-	GetUTCPulseCorrection(refTime time.Time) (float64, bool)
+	GetTAIPulseCorrection(refTime ptime.Time) (float64, bool)
 }
 
-// Generator constructs (true time - sys) samples for chrony's SOCK
-// refclock in PHC free-running mode. All three entry points are thin
-// pass-throughs to internal collaborators.
+// Sampler receives the PHC-referenced refclock samples the Generator
+// produces, one per admitted pulse edge. It is a pipe between the
+// Generator and the refclock, not an interpreter of the timestamp's
+// domain; the dispatcher implements it by forwarding to the refclock.
+type Sampler interface {
+	PHCSample(phc ntime.Time, offset float64, leap ptime.LeapSecondKind)
+}
+
+// Generator constructs PHC-referenced samples for chrony's SOCK
+// refclock in free-running mode (phc.sync = false). The PHC is read
+// but never stepped or slewed. Each admitted pulse edge becomes its own
+// sample: the PHC timestamp of the edge paired with
+// (offset = TAI at the edge - PHC reading), emitted to the Sampler as
+// soon as the edge can be labelled from the TAI message stream.
 type Generator struct {
 	cfg           Config
 	wc            wallClock
 	win           phcWindow
 	pc            pulseCorrector // nil if no sawtooth correction source is installed
+	sampler       Sampler        // nil until SetSampler
+	leap          ptime.LeapSecondKind
 	edgesPerPulse int
 	lg            *slog.Logger
 }
 
 // NewGenerator constructs a Generator. edgesPerPulse is 1 for single-edge
 // or 2 for dual-edge mode; it is discovered by the dispatcher the same
-// way as for phcsync. The sawtooth-correction source is installed
-// separately via SetPulseCorrector.
+// way as for phcsync. The sawtooth-correction source and the sample
+// sink are installed separately via SetPulseCorrector and SetSampler.
 func NewGenerator(cfg Config, edgesPerPulse int, lg *slog.Logger) *Generator {
 	return &Generator{
 		cfg:           cfg,
@@ -65,46 +78,66 @@ func NewGenerator(cfg Config, edgesPerPulse int, lg *slog.Logger) *Generator {
 	}
 }
 
-// SetPulseCorrector installs the source of UTC-keyed pulse-offset
-// corrections used to shift pulse-edge labels to the true top-of-second
-// during PHC calibration. Typically wired by the dispatcher to the
-// timemsg.Buffer. Pass nil to disable sawtooth correction.
+// SetPulseCorrector installs the source of TAI-keyed pulse-offset
+// corrections used to shift pulse-edge labels to the true top-of-second.
+// Typically wired by the dispatcher to the timemsg.Buffer. Pass nil to
+// disable sawtooth correction.
 func (g *Generator) SetPulseCorrector(pc pulseCorrector) {
 	g.pc = pc
 }
 
+// SetSampler installs the sink that receives the PHC-referenced samples.
+func (g *Generator) SetSampler(s Sampler) {
+	g.sampler = s
+}
+
 // NewInstance returns a fresh Generator with the same configuration,
-// edgesPerPulse, pulse-corrector, and logger as g, but with empty
-// wallClock and phcWindow state. Used by the dispatcher on PHC era
-// transitions, where nothing in the prior instance is worth preserving:
-// the wallClock regression re-warms from subsequent MsgUTCTime calls
-// and pre-pause phcWindow entries would reference a stepped PHC.
+// edgesPerPulse, pulse-corrector, sampler, and logger as g, but with
+// empty wallClock and phcWindow state. Used by the dispatcher on PHC
+// era transitions, where nothing in the prior instance is worth
+// preserving: the wallClock regression re-warms from subsequent
+// MsgTAITime calls and pre-pause phcWindow entries would reference a
+// stepped PHC.
 func (g *Generator) NewInstance() *Generator {
 	n := NewGenerator(g.cfg, g.edgesPerPulse, g.lg)
 	n.pc = g.pc
+	n.sampler = g.sampler
 	return n
 }
 
-// MsgUTCTime implements the MsgUTCTimer sink: every eligible UTC
-// observation from the message stream feeds the wallClock regression.
-func (g *Generator) MsgUTCTime(utc time.Time, tRead time.Time, _ ptime.LeapSecondKind) {
-	g.wc.Add(tRead, ntime.Sys(utc))
+// MsgTAITime implements the MsgTAITimer sink: every eligible TAI
+// observation from the message stream feeds the wallClock regression
+// and may make buffered edges labellable.
+func (g *Generator) MsgTAITime(tai ptime.Time, tRead time.Time, leap ptime.LeapSecondKind) {
+	g.leap = leap
+	g.wc.Add(tRead, ntime.Time(tai))
+	g.emit()
 }
 
-// Pulse records a pulse-edge event. Per plan, edges are buffered cheaply
-// here; labelling and admission happen lazily inside Generate. Implements
-// gpsevent.PulseReceiver so the dispatcher can deliver edges without
-// knowing which runtime mode is active.
+// Pulse records a pulse-edge event. Edges are buffered cheaply here;
+// labelling and admission happen inside emit.
 func (g *Generator) Pulse(ts phctime.Time, tr phctime.Sample) {
 	g.win.Pulse(pulseEdge{Timestamp: ts, TRead: tr})
+	g.emit()
 }
 
-// Generate returns the offset (true time - sys) in seconds at the PHC
-// cross-sample. Returns ErrNotReady while warming up.
-func (g *Generator) Generate(phc ptime.Time, sys time.Time) (float64, error) {
+// emit sends any newly labellable edges to the Sampler.
+func (g *Generator) emit() {
+	if g.sampler == nil {
+		return
+	}
 	pc := g.pc
 	if g.cfg.IgnoreSawtoothCorrection {
 		pc = nil
 	}
-	return g.win.TrueTimeOffset(phc, sys, &g.wc, pc, g.lg)
+	samples, err := g.win.Samples(&g.wc, pc)
+	if err != nil {
+		if !errors.Is(err, ErrNotReady) {
+			g.lg.Warn("could not derive offset from PHC", "err", err)
+		}
+		return
+	}
+	for _, s := range samples {
+		g.sampler.PHCSample(ntime.Time(s.phc), s.offset, g.leap)
+	}
 }

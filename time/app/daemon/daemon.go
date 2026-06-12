@@ -304,7 +304,6 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	}
 	gpsObs := logobs.NewGPSLogObserver(lg)
 	ubxObs := logobs.NewUBXLogObserver(lg)
-	ntpObs := logobs.NewNTPSampleLogObserver(lg)
 
 	var oc obs.ObserverCombiner
 	obs.AddObserver(&oc, statsObs)
@@ -312,7 +311,6 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	obs.AddObserver(&oc, trackObs)
 	obs.AddObserver(&oc, gpsObs)
 	obs.AddObserver(&oc, ubxObs)
-	obs.AddObserver(&oc, ntpObs)
 	obs.AddObserver(&oc, promObs)
 	obs.AddObserver(&oc, sseObs)
 	obs.AddObserver(&oc, posObs)
@@ -357,11 +355,12 @@ func NewDispatcher(
 	tStart time.Time,
 ) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
-	var pulse gpsevent.PulseReceiver
+	var controller *phcsync.Controller
+	var generator *phcsample.Generator
 	if clk != nil {
 		edges := clk.DriverFlags.Edges()
 		if !cfg.PHC.Sync {
-			pulse = phcsample.NewGenerator(cfg.Sample.PHC, edges, lg)
+			generator = phcsample.NewGenerator(cfg.Sample.PHC, edges, lg)
 		} else {
 			ctrl, err := phcsync.NewController(
 				clk,
@@ -375,12 +374,12 @@ func NewDispatcher(
 			if err != nil {
 				return nil, err
 			}
-			pulse = ctrl
+			controller = ctrl
 		}
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
 	shmWriter := gpsevent.NewSHMWriter(shm, cfg.shmFixedPrecision())
-	return gpsevent.NewDispatcher(lg, pktProcs, pulse, rc, shmWriter, ls, obs, eventLogPath, tStart)
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, generator, rc, shmWriter, ls, obs, eventLogPath, tStart)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI

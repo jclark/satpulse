@@ -41,9 +41,11 @@ func (in wallClockTestInput) run() (utc ntime.Time, ok bool, wc *wallClock, err 
 		wc.Add(tRead, ntime.Sys(utc))
 	}
 	queryMono := monoBaseTime.Add(in.queryOffset)
-	utc, err = wc.SecondAt(queryMono)
-	ok = err == nil
-	return utc, ok, wc, err
+	pred, err := wc.predictRef(queryMono)
+	if err != nil {
+		return 0, false, wc, err
+	}
+	return pred.Round(time.Second), true, wc, nil
 }
 
 func TestWallClockWarmUp(t *testing.T) {
@@ -194,7 +196,7 @@ func TestWallClockClockRateMismatch(t *testing.T) {
 		tRead := monoBaseTime.Add(time.Duration(i) * 1200 * time.Millisecond).Add(100 * time.Millisecond)
 		wc.Add(tRead, ntime.Sys(utc))
 	}
-	_, err := wc.SecondAt(monoBaseTime)
+	_, err := wc.predictRef(monoBaseTime)
 	if err == nil {
 		t.Fatalf("expected clock rate error, got nil")
 	}
@@ -246,23 +248,6 @@ func TestWallClockMsgTimingScatterRejectsMajority(t *testing.T) {
 	}
 	if errors.Is(err, ErrNotReady) {
 		t.Errorf("scatter should not surface as ErrNotReady; got %v", err)
-	}
-}
-
-func TestWallClockReset(t *testing.T) {
-	cfg := DefaultConfig()
-	wc := newWallClock(&cfg)
-	for i := range 5 {
-		utc := utcBaseTime.Add(time.Duration(i) * time.Second)
-		tRead := monoBaseTime.Add(time.Duration(i) * time.Second).Add(100 * time.Millisecond)
-		wc.Add(tRead, ntime.Sys(utc))
-	}
-	if _, err := wc.SecondAt(monoBaseTime); err != nil {
-		t.Fatalf("pre-reset: unexpected err: %v", err)
-	}
-	wc.Reset()
-	if _, err := wc.SecondAt(monoBaseTime); !errors.Is(err, ErrNotReady) {
-		t.Errorf("post-reset: err = %v, want ErrNotReady", err)
 	}
 }
 

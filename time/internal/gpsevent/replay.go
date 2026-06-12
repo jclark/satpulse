@@ -42,19 +42,19 @@ func (r *Replayer) replayEvent(bytes []byte) error {
 	}
 	switch data := event.Data.(type) {
 	case *PulseEdge:
-		r.ctrl.Pulse(
-			phctime.Time{
+		r.ctrl.PulseEdge(phcsync.PulseEdge{
+			Timestamp: phctime.Time{
 				T:   data.T,
 				Era: data.Era,
 			},
-			phctime.Sample{
+			TRead: phctime.Sample{
 				PHC: phctime.Time{
 					T:   data.TRead,
 					Era: data.Era,
 				},
 				Sys: tRead, // reconstructed monotonic time
 			},
-		)
+		})
 	case *gpsprot.TimeMsg:
 		r.timeMsgBuffer.Time(data, tRead)
 		r.ctrl.TimeMessage()

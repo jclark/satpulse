@@ -89,7 +89,9 @@ type TrackingConfig struct {
 	// feature (no frequency adjustment on missing samples).
 	AvgFreqTimeConstant float64 `toml:"avgFreqTimeConstant" check:">=0.0,<1000.0" comment:"EMA time constant for avg frequency (s)"`
 
-	// IgnoreSawtoothCorrection, when true, disables the use of pulse offset corrections.
+	// IgnoreSawtoothCorrection, when true, disables the use of pulse offset corrections
+	// from PrePulse messages. This is primarily for testing to verify that sawtooth
+	// correction improves synchronization accuracy. Default: false (use corrections).
 	IgnoreSawtoothCorrection bool `toml:"ignoreSawtoothCorrection" comment:"Ignore sawtooth corrections"`
 
 	// PulseCorrectionTimeout is maximum time in seconds to wait for a PostPulse correction
@@ -137,7 +139,7 @@ type trackingSampleGenerator struct {
 	lastSample   *Sample // last accepted sample, used for edge filtering
 	timeMsgBuf   TimeMsgBuffer
 	pendingPulse *struct {
-		pulseEdge
+		PulseEdge
 		edgeIndex uint64
 	}
 }
@@ -159,7 +161,7 @@ func newTrackingSampleGenerator(cfg TrackingConfig, pt PulseType, lastSample *Sa
 
 // ignoreEdge determines whether to ignore an edge based on dual-edge filtering.
 // Returns true if the edge should be ignored (filtered out).
-func (g *trackingSampleGenerator) ignoreEdge(edge pulseEdge, edgeIndex uint64) bool {
+func (g *trackingSampleGenerator) ignoreEdge(edge PulseEdge, edgeIndex uint64) bool {
 	// If not dual-edge mode, accept all edges
 	if g.pt.EdgesPerPulse != 2 {
 		return false
@@ -204,7 +206,7 @@ func (g *trackingSampleGenerator) ignoreEdge(edge pulseEdge, edgeIndex uint64) b
 	return parityIgnore
 }
 
-func (g *trackingSampleGenerator) pulseEdgeSample(edge pulseEdge, edgeIndex uint64) *Sample {
+func (g *trackingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64) *Sample {
 	// Filter dual edges
 	if g.ignoreEdge(edge, edgeIndex) {
 		return nil
@@ -218,10 +220,10 @@ func (g *trackingSampleGenerator) pulseEdgeSample(edge pulseEdge, edgeIndex uint
 	sample := g.pulseSample(edge, edgeIndex, g.cfg.IgnoreSawtoothCorrection)
 	if sample == nil {
 		pendingPulse := &struct {
-			pulseEdge
+			PulseEdge
 			edgeIndex uint64
 		}{
-			pulseEdge: edge,
+			PulseEdge: edge,
 			edgeIndex: edgeIndex,
 		}
 		g.pendingPulse = pendingPulse
@@ -233,7 +235,7 @@ func (g *trackingSampleGenerator) timeMessageSample() *Sample {
 	if g.pendingPulse == nil {
 		return nil
 	}
-	sample := g.pulseSample(g.pendingPulse.pulseEdge, g.pendingPulse.edgeIndex, g.cfg.IgnoreSawtoothCorrection)
+	sample := g.pulseSample(g.pendingPulse.PulseEdge, g.pendingPulse.edgeIndex, g.cfg.IgnoreSawtoothCorrection)
 	if sample != nil {
 		g.pendingPulse = nil
 	}
@@ -249,12 +251,12 @@ func (g *trackingSampleGenerator) tickSample(now time.Time) *Sample {
 		return nil
 	}
 	// we have passed the deadline
-	sample := g.pulseSample(g.pendingPulse.pulseEdge, g.pendingPulse.edgeIndex, true)
+	sample := g.pulseSample(g.pendingPulse.PulseEdge, g.pendingPulse.edgeIndex, true)
 	g.pendingPulse = nil
 	return sample
 }
 
-func (g *trackingSampleGenerator) pulseSample(edge pulseEdge, edgeIndex uint64, ignoreCorr bool) *Sample {
+func (g *trackingSampleGenerator) pulseSample(edge PulseEdge, edgeIndex uint64, ignoreCorr bool) *Sample {
 	// Round to nearest second
 	sec := edge.Timestamp.T.Round(time.Second)
 

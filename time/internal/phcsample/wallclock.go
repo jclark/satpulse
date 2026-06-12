@@ -12,28 +12,30 @@ import (
 )
 
 // errStale indicates a wallClock query is more than MaxMsgGap past the
-// most recent observation. mapEdgesToUTC uses this as a stop-iterating
+// most recent observation. labelEdges uses this as a stop-iterating
 // signal: later edges in chronological order are also stale.
 var errStale = errors.New("phcsample: wallClock query beyond max message gap")
 
 // maxBackwardCoverage is how far before the earliest retained message
 // read-time the wallClock fit is allowed to extrapolate. The fit only
-// needs to identify the UTC second of a pulse edge, so a small bounded
+// needs to identify the reference second of a pulse edge, so a small bounded
 // backward extrapolation is acceptable and avoids startup sensitivity
 // to whether the first actual message delay lands slightly above or
 // below ExpectedDelay.
 const maxBackwardCoverage = 500 * time.Millisecond
 
-// wallClock maps monotonic time to integer-second UTC from the
-// MsgUTCTime stream. Internally it maintains a sliding linear
-// regression over (tRead - expectedDelay, utc) pairs.
+// wallClock maps monotonic time to an integer-second reference time
+// from the message-time stream. The reference domain is whatever the
+// feeding sink delivers (TAI in PHC-base-clock mode). Internally it
+// maintains a sliding linear regression over
+// (tRead - expectedDelay, ref) pairs.
 //
 // Design note on absolute delay. wallClock does not attempt to measure
 // the absolute pulse-to-message delay from its inputs. tRead carries a
-// monotonic-clock reading and utc is a wall-clock value; their raw
+// monotonic-clock reading and ref is a wall-clock value; their raw
 // difference folds in the current CLOCK_REALTIME error, which is
 // precisely what phcsample exists to fix. An OLS fit through
-// (tRead, utc) absorbs any constant delay into the intercept, so no
+// (tRead, ref) absorbs any constant delay into the intercept, so no
 // absolute-delay quantity can be recovered from the fit either.
 // Consequently the configured gates validate only quantities that are
 // meaningful purely from the message stream: enough data, data span,
@@ -57,7 +59,7 @@ type wallClock struct {
 
 type wallPoint struct {
 	tRead time.Time
-	utc   ntime.Time
+	ref   ntime.Time
 }
 
 func newWallClock(cfg *Config) *wallClock {
@@ -71,12 +73,12 @@ func newWallClock(cfg *Config) *wallClock {
 	}
 }
 
-// Add observes a MsgUTCTime sample. tRead is the monotonic read time
-// (with ReadDelay already subtracted by timemsg.Buffer); utc is the
-// ms-rounded UTC reported for that message. Observations older than
-// MsgWindow are discarded.
-func (c *wallClock) Add(tRead time.Time, utc ntime.Time) {
-	c.points = append(c.points, wallPoint{tRead: tRead, utc: utc})
+// Add observes a message-time sample. tRead is the monotonic read time
+// (with ReadDelay already subtracted by timemsg.Buffer); ref is the
+// ms-rounded reference time reported for that message. Observations
+// older than MsgWindow are discarded.
+func (c *wallClock) Add(tRead time.Time, ref ntime.Time) {
+	c.points = append(c.points, wallPoint{tRead: tRead, ref: ref})
 	cutoff := tRead.Add(-c.msgWindow)
 	drop := 0
 	for drop < len(c.points) && c.points[drop].tRead.Before(cutoff) {
@@ -88,25 +90,14 @@ func (c *wallClock) Add(tRead time.Time, utc ntime.Time) {
 	c.fitValid = false
 }
 
-// SecondAt returns the integer UTC second the wall clock reads at the
-// given monotonic instant. On failure it returns an error describing
-// which gate rejected the fit; the sentinel ErrNotReady is returned
-// when there isn't yet enough observation to answer (too few points,
-// or observations span too little real time), which callers treat as
-// a quiet transient state.
-func (c *wallClock) SecondAt(mono time.Time) (ntime.Time, error) {
-	t, err := c.predictUTC(mono)
-	if err != nil {
-		return 0, err
-	}
-	return t.Round(time.Second), nil
-}
-
-// predictUTC returns the fit-predicted UTC (unrounded) at mono. The
-// gates and their errors are the same as SecondAt; mapEdgesToUTC uses
-// the unrounded prediction to apply cfg.EdgeSecondTolerance before
-// rounding.
-func (c *wallClock) predictUTC(mono time.Time) (ntime.Time, error) {
+// predictRef returns the fit-predicted reference time (unrounded) at
+// the given monotonic instant. On failure it returns an error
+// describing which gate rejected the fit; the sentinel ErrNotReady is
+// returned when there isn't yet enough observation to answer (too few
+// points, or observations span too little real time), which callers
+// treat as a quiet transient state. labelEdges applies
+// cfg.EdgeSecondTolerance to the unrounded prediction before rounding.
+func (c *wallClock) predictRef(mono time.Time) (ntime.Time, error) {
 	if len(c.points) < 2 {
 		return 0, ErrNotReady
 	}
@@ -147,24 +138,18 @@ func (c *wallClock) predictUTC(mono time.Time) (ntime.Time, error) {
 	return c.anchorY.Add(offset), nil
 }
 
-// Reset clears the window (used on leap transition in phase 2).
-func (c *wallClock) Reset() {
-	c.points = nil
-	c.fitValid = false
-}
-
 func (c *wallClock) refit() {
 	c.fitValid = true
 	n := len(c.points)
 	c.anchorX = c.points[0].tRead.Add(-c.expectedDelay)
-	c.anchorY = c.points[0].utc
+	c.anchorY = c.points[0].ref
 
 	var sumX, sumY time.Duration
 	xs := make([]time.Duration, n)
 	ys := make([]time.Duration, n)
 	for i, p := range c.points {
 		xs[i] = p.tRead.Add(-c.expectedDelay).Sub(c.anchorX)
-		ys[i] = p.utc.Sub(c.anchorY)
+		ys[i] = p.ref.Sub(c.anchorY)
 		sumX += xs[i]
 		sumY += ys[i]
 	}
@@ -192,7 +177,7 @@ func (c *wallClock) medianAbsResidual() time.Duration {
 	absRes := make([]time.Duration, n)
 	for i, p := range c.points {
 		x := p.tRead.Add(-c.expectedDelay).Sub(c.anchorX)
-		y := p.utc.Sub(c.anchorY)
+		y := p.ref.Sub(c.anchorY)
 		pred := c.a + time.Duration(c.b*float64(x))
 		r := y - pred
 		if r < 0 {

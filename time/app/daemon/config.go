@@ -212,6 +212,9 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if err := cfg.Sample.PHC.Validate(); err != nil {
 		return &configError{err: err}
 	}
+	if err := cfg.validatePHCSync(); err != nil {
+		return &configError{err: err}
+	}
 	users, err := cfg.userSet()
 	if err != nil {
 		return &configError{err: err}
@@ -221,6 +224,24 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	}
 	if err := cfg.Stream.Validate(); err != nil {
 		return &configError{err: err}
+	}
+	return nil
+}
+
+// validatePHCSync checks the free-running combination. With
+// phc.sync = false satpulse leaves the PHC alone and sends
+// PHC-referenced (TAI) samples over the refclock SOCK protocol, so a
+// SOCK path is required and the SHM protocol (whose timestamps are
+// system-clock by definition) is excluded.
+func (cfg *Config) validatePHCSync() error {
+	if cfg.PHC.Sync || cfg.PHC.Interface == "" {
+		return nil
+	}
+	if cfg.NTP.Sock == nil || cfg.NTP.Sock.Path == "" {
+		return errors.New(`phc.sync = false requires ntp.sock.path`)
+	}
+	if cfg.NTP.SHM != nil {
+		return errors.New(`phc.sync = false cannot be used with ntp.shm: the SHM protocol carries system-clock timestamps`)
 	}
 	return nil
 }

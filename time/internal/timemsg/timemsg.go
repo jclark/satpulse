@@ -11,10 +11,16 @@ import (
 )
 
 // MsgUTCTimer receives UTC time samples derived from GPS time messages.
-// Used in serial timing mode (no PHC) to feed chrony SOCK samples, and
-// in PHC free-running mode to feed phcsample's labelling regression.
+// Used in serial timing mode (no PHC) to feed chrony SOCK samples.
 type MsgUTCTimer interface {
 	MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind)
+}
+
+// MsgTAITimer receives TAI time samples derived from GPS time messages.
+// Used in PHC free-running mode (phc.sync = false) to feed phcsample's
+// edge labelling.
+type MsgTAITimer interface {
+	MsgTAITime(tai ptime.Time, tRead time.Time, leap ptime.LeapSecondKind)
 }
 
 // Buffer stores recent time messages from a GPS receiver.
@@ -31,8 +37,10 @@ type Buffer struct {
 	lastPreCorrMsg  *gpsprot.TimeMsg // last PrePulse msg with a correction
 	lastPostCorrMsg *gpsprot.TimeMsg // PostPulse msg with PulseOffset with the greatest TAI time
 	msgLevel        bufMsgLevel
-	msgUTCTimer     MsgUTCTimer // UTC message sink; nil in PHC-disciplined mode
+	msgUTCTimer     MsgUTCTimer // UTC message sink; nil unless serial timing mode
 	lastMsgUTC      time.Time   // UTC second already sent to msgUTCTimer
+	msgTAITimer     MsgTAITimer // TAI message sink; nil unless PHC-base-clock mode
+	lastMsgTAI      ptime.Time  // TAI second already sent to msgTAITimer
 }
 
 type entry struct {
@@ -97,6 +105,7 @@ func (buf *Buffer) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 	}
 	buf.entries = append(buf.entries, entry{msg: msg, tRead: tRead})
 	buf.msgUTCTime(msg, tRead)
+	buf.msgTAITime(msg, tRead)
 }
 
 // SetMsgUTCTimer sets the MsgUTCTimer sink.
@@ -105,16 +114,14 @@ func (buf *Buffer) SetMsgUTCTimer(t MsgUTCTimer) {
 	buf.msgUTCTimer = t
 }
 
+// SetMsgTAITimer sets the MsgTAITimer sink.
+// When set, Buffer.Time() calls the sink for each new eligible second.
+func (buf *Buffer) SetMsgTAITimer(t MsgTAITimer) {
+	buf.msgTAITimer = t
+}
+
 func (buf *Buffer) msgUTCTime(msg *gpsprot.TimeMsg, tRead time.Time) {
 	if buf.msgUTCTimer == nil || !msg.UTCTime.IsSet() {
-		return
-	}
-	// PrePulse messages arrive before the pulse and carry the UTC of
-	// the upcoming pulse; pairing that UTC with the receive-time tRead
-	// would feed misaligned points into downstream wallClock/SOCK
-	// regressions. PulseOffset lookup consumes PrePulse messages
-	// through a separate UTC-keyed accessor.
-	if msg.Ref == gpsprot.PrePulse {
 		return
 	}
 	ut := msg.UTCTime.Get()
@@ -139,6 +146,29 @@ func (buf *Buffer) msgUTCTime(msg *gpsprot.TimeMsg, tRead time.Time) {
 	}
 	buf.lastMsgUTC = utc
 	buf.msgUTCTimer.MsgUTCTime(utc, tRead.Add(-time.Duration(msg.ReadDelay)), buf.ls.UTCStateAt(ut).LeapTonight)
+}
+
+func (buf *Buffer) msgTAITime(msg *gpsprot.TimeMsg, tRead time.Time) {
+	if buf.msgTAITimer == nil {
+		return
+	}
+	// PrePulse messages arrive before the pulse and carry the time of
+	// the upcoming pulse; pairing that with the receive-time tRead would
+	// feed misaligned points into the wallClock fit.
+	if msg.Ref == gpsprot.PrePulse {
+		return
+	}
+	t, ok := buf.msgTAI(msg)
+	if !ok {
+		return
+	}
+	// Round to the nominal time; see msgUTCTime for why.
+	tai := t.Round(time.Millisecond)
+	if tai <= buf.lastMsgTAI {
+		return
+	}
+	buf.lastMsgTAI = tai
+	buf.msgTAITimer.MsgTAITime(tai, tRead.Add(-time.Duration(msg.ReadDelay)), buf.ls.StateAt(tai).LeapTonight)
 }
 
 // LeapSecond implements gpsprot.MsgHandler.
@@ -459,34 +489,23 @@ func (buf *Buffer) getPulseCorrectionLast(lastCorr *gpsprot.TimeMsg, refTime pti
 	return 0, false
 }
 
-// GetUTCPulseCorrection retrieves the PrePulse pulse-offset correction for
-// a given UTC reference time, as float64 nanoseconds with no rounding.
-// Returns (0, false) if no suitable correction is available.
-//
-// PostPulse correction messages are not consulted: in PostPulse mode the
-// correction for pulse N arrives after pulse N's edge event, which is a
-// different pipeline. See the phase-2 plan for PostPulse handling.
-//
-// Lookup uses each candidate message's TAITime (converted via buf.ls to
-// UTC sys-time for comparison), so PrePulse messages that only carry
-// TAI (as real UBX TIM-TP messages may) are still matchable. This also
-// keeps the PrePulse delivery out of Buffer.msgUTCTime, which should
-// only fire for PostPulse/NAV messages.
-//
-// The returned correction satisfies: true_time_of_second = pulse_time + correction
-func (buf *Buffer) GetUTCPulseCorrection(refTime time.Time) (float64, bool) {
+// GetTAIPulseCorrection retrieves the PrePulse pulse-offset correction
+// for the pulse whose top-of-second has the given TAI time, as float64
+// nanoseconds with no rounding. Used in PHC-base-clock mode, where edge
+// labels are TAI. PostPulse correction messages are not consulted: in
+// PostPulse mode the correction for pulse N arrives after pulse N's
+// edge event, which is a different pipeline. The returned correction
+// satisfies: true_time_of_second = pulse_time + correction
+func (buf *Buffer) GetTAIPulseCorrection(refTime ptime.Time) (float64, bool) {
 	lastCorr := buf.lastPreCorrMsg
 	if lastCorr == nil {
 		return 0, false
 	}
-	lastUTC, ok := buf.msgUTC(lastCorr)
-	if !ok {
+	lastTAI, ok := buf.msgTAI(lastCorr)
+	if !ok || refTime > lastTAI {
 		return 0, false
 	}
-	if refTime.After(lastUTC) {
-		return 0, false
-	}
-	if refTime.Equal(lastUTC) {
+	if refTime == lastTAI {
 		return buf.pulseOffsetNs(lastCorr)
 	}
 	entries := buf.validEntries()
@@ -495,32 +514,31 @@ func (buf *Buffer) GetUTCPulseCorrection(refTime time.Time) (float64, bool) {
 		if !m.PulseOffset.IsSet() || m.Ref != gpsprot.PrePulse {
 			continue
 		}
-		t, ok := buf.msgUTC(m)
+		t, ok := buf.msgTAI(m)
 		if !ok {
 			continue
 		}
-		if refTime.Equal(t) {
+		if t == refTime {
 			return buf.pulseOffsetNs(m)
 		}
-		if t.Before(refTime) {
+		if t < refTime {
 			break
 		}
 	}
 	return 0, false
 }
 
-// msgUTC returns msg's UTC as a sys-time, preferring an explicit UTCTime
-// field but falling back to a TAI-derived value via buf.ls. Returns
+// msgTAI returns msg's TAI time, preferring the explicit TAITime field
+// but falling back to a UTC-derived value via buf.ls. Returns
 // (zero, false) when neither is available.
-func (buf *Buffer) msgUTC(msg *gpsprot.TimeMsg) (time.Time, bool) {
-	if msg.UTCTime.IsSet() {
-		return msg.UTCTime.Get().SysTime(), true
-	}
+func (buf *Buffer) msgTAI(msg *gpsprot.TimeMsg) (ptime.Time, bool) {
 	if !msg.TAITime.IsZero() {
-		u := buf.ls.TimeToUTC(msg.TAITime)
-		return u.SysTime(), true
+		return msg.TAITime, true
 	}
-	return time.Time{}, false
+	if msg.UTCTime.IsSet() {
+		return buf.ls.UTCtoTime(msg.UTCTime.Get()), true
+	}
+	return 0, false
 }
 
 // maxPulseOffset is the maximum acceptable pulse offset in nanoseconds.

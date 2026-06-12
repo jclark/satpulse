@@ -80,7 +80,7 @@ func newConvergingSampleGenerator(cfg ConvergingConfig, pt PulseType, lastSample
 	}
 }
 
-func (g *convergingSampleGenerator) pulseEdgeSample(edge pulseEdge, edgeIndex uint64) *Sample {
+func (g *convergingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex uint64) *Sample {
 	// Wait for any step to take effect
 	if edge.Timestamp.Era.Uncertain() {
 		return nil

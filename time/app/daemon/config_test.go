@@ -332,3 +332,66 @@ func TestPTPConfigClockQuality(t *testing.T) {
 		})
 	}
 }
+
+func TestPHCSyncValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfgStr    string
+		expectErr bool
+	}{
+		{
+			name:   "default",
+			cfgStr: "",
+		},
+		{
+			name: "free-running phc with sock",
+			cfgStr: `[phc]
+interface = "eth0"
+sync = false
+
+[ntp]
+sock.path = "/run/chrony.sock"`,
+		},
+		{
+			name: "free-running phc requires sock",
+			cfgStr: `[phc]
+interface = "eth0"
+sync = false`,
+			expectErr: true,
+		},
+		{
+			name: "free-running phc rejects shm",
+			cfgStr: `[phc]
+interface = "eth0"
+sync = false
+
+[ntp]
+sock.path = "/run/chrony.sock"
+shm.segment = 2`,
+			expectErr: true,
+		},
+		{
+			name: "sync false without phc is ignored",
+			cfgStr: `[phc]
+sync = false`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader(tc.cfgStr))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = cfg.validatePHCSync()
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}

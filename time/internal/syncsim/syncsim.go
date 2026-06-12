@@ -345,9 +345,12 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 				tSys := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
 				tReadPHC := testClock.Now()
 
-				tr := phctime.Sample{
-					PHC: tReadPHC,
-					Sys: tSys,
+				edge := phcsync.PulseEdge{
+					Timestamp: lastReading.Timestamp,
+					TRead: phctime.Sample{
+						PHC: tReadPHC,
+						Sys: tSys,
+					},
 				}
 				lg.Debug("delivering pulse to controller",
 					"second", int(data.PPS),
@@ -355,7 +358,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 					"timestamp", lastReading.Timestamp.T,
 					"era", lastReading.Timestamp.Era,
 					"offset", offset)
-				ctrl.Pulse(lastReading.Timestamp, tr)
+				ctrl.PulseEdge(edge)
 			}
 		}
 

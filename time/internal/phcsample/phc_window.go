@@ -2,7 +2,6 @@ package phcsample
 
 import (
 	"errors"
-	"log/slog"
 	"math"
 	"slices"
 	"time"
@@ -11,23 +10,14 @@ import (
 	"github.com/jclark/satpulse/time/lib/ntime"
 )
 
-// minFitEntries is the minimum number of admitted calibration entries
-// required for an OLS fit to produce a meaningful result. Below this
-// phcWindow surfaces ErrNotReady.
-const minFitEntries = 3
-
-// errExtrapolation indicates phc is too far past the last admitted
-// entry's PHC position for the fit to be trusted.
-var errExtrapolation = errors.New("phcsample: phc beyond extrapolation range")
-
 // phcWindow holds recent pulse edges, labels them via the wallClock
-// at query time, admits those that pass pre-admission filtering, fits
-// the PHC-to-UTC regression, and combines with the cross-sample's sys
-// reading to produce the refclock offset.
+// at query time, and turns each edge that passes pre-admission
+// filtering into its own PHC-referenced refclock sample.
 type phcWindow struct {
 	cfg           *Config
 	edgesPerPulse int
 	buf           []pulseEdge
+	lastEmitted   ptime.Time // PHC timestamp of the newest edge already returned by Samples
 }
 
 func newPhcWindow(cfg *Config, edgesPerPulse int) *phcWindow {
@@ -49,34 +39,29 @@ func (w *phcWindow) Pulse(edge pulseEdge) {
 	}
 }
 
-// Reset clears recorded edges. Used on leap transition in phase 2.
-func (w *phcWindow) Reset() {
-	w.buf = nil
+// refSample is one PHC-referenced refclock sample: the PHC timestamp
+// of a pulse edge and the offset (true time - PHC reading) in seconds
+// at that instant.
+type refSample struct {
+	phc    ptime.Time
+	offset float64
 }
 
-// TrueTimeOffset returns the refclock offset in seconds:
-//
-//	offset = true_time_at(phc) - sys
-//
-// A positive value means true time is ahead of sys; the system clock
-// is behind real time and needs to advance by this amount. Returns
-// ErrNotReady while the pipeline does not yet have enough admissible
-// data, and other sentinels (errExtrapolation, wallClock gates) for
-// less routine failures.
-func (w *phcWindow) TrueTimeOffset(phc ptime.Time, sys time.Time, wc *wallClock, po pulseCorrector, lg *slog.Logger) (float64, error) {
+// Samples labels admitted edges via the wallClock and returns one
+// refSample per edge not returned by a previous call, oldest first.
+// Returns ErrNotReady while the pipeline does not yet have enough
+// admissible data, and other sentinels (wallClock gates) for less
+// routine failures; an empty slice with a nil error means the pipeline
+// is healthy but has no new labelled edge yet.
+func (w *phcWindow) Samples(wc *wallClock, po pulseCorrector) ([]refSample, error) {
 	if len(w.buf) == 0 {
-		return 0, ErrNotReady
+		return nil, ErrNotReady
 	}
 	timing, medianInterval, err := timingEdges(w.buf, w.edgesPerPulse, w.cfg)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	basePHC := w.buf[0].Timestamp.T
-	entries, err := mapEdgesToUTC(timing, medianInterval, basePHC, wc, po, w.cfg.EdgeSecondTolerance)
-	if err != nil {
-		return 0, err
-	}
-	return fitAndEvaluate(entries, basePHC, phc, sys, w.cfg.maxExtrapolation())
+	return w.labelEdges(timing, medianInterval, wc, po)
 }
 
 // timingEdges runs pre-admission stride filtering and (in dual-edge
@@ -103,8 +88,7 @@ func timingEdges(buf []pulseEdge, edgesPerPulse int, cfg *Config) ([]pulseEdge, 
 // same-length slice where rejected edges are replaced by the pulseEdge
 // zero value, along with the stream's median interval. Admitted edges
 // keep their original indices so callers pairing two polarity streams
-// can assume positional alignment. See "consistentEdges (6a)" in
-// plan/phc-sample.md for the algorithm.
+// can assume positional alignment.
 func consistentEdges(stream []pulseEdge, tolPPB float64, discThresh time.Duration) ([]pulseEdge, time.Duration) {
 	n := len(stream)
 	out := make([]pulseEdge, n)
@@ -282,35 +266,29 @@ func crossPolarityGap(a, b []pulseEdge) (time.Duration, bool) {
 	return total / time.Duration(n), true
 }
 
-// calibEntry is one point on the PHC-to-true-time ruler. X is PHC
-// nanoseconds relative to the per-call basePHC anchor, shifted by the
-// PHC-scaled pulse-offset correction (phase 2) so the ruler mark lands
-// at the exact top-of-second rather than at the physical edge; Y is
-// the integer-second UTC label of that top-of-second.
-type calibEntry struct {
-	X float64
-	Y ntime.Time
-}
-
-// mapEdgesToUTC labels each admitted edge with an integer-second UTC
-// via the wallClock fit. Edges whose predicted UTC is too far from an
-// integer second are dropped (EdgeSecondTolerance). wallClock errors
+// labelEdges labels each not-yet-emitted admitted edge with an
+// integer-second TAI label via the wallClock fit and turns it into a
+// refSample. Edges whose predicted label is too far from an integer
+// second are dropped (EdgeSecondTolerance). wallClock errors
 // propagate: ErrNotReady surfaces immediately, errStale stops
 // iteration (later edges are also stale) but returns the admitted
 // prefix, others abort with the error.
-func mapEdgesToUTC(edges []pulseEdge, medianInterval time.Duration, basePHC ptime.Time, wc *wallClock, po pulseCorrector, edgeSecTol float64) ([]calibEntry, error) {
+func (w *phcWindow) labelEdges(edges []pulseEdge, medianInterval time.Duration, wc *wallClock, po pulseCorrector) ([]refSample, error) {
 	if medianInterval <= 0 {
 		return nil, ErrNotReady
 	}
-	tolNs := int64(edgeSecTol * float64(time.Second))
-	entries := make([]calibEntry, 0, len(edges))
+	tolNs := int64(w.cfg.EdgeSecondTolerance * float64(time.Second))
+	var samples []refSample
 	scale := float64(time.Second) / float64(medianInterval)
 	for _, edge := range edges {
+		if edge.Timestamp.T <= w.lastEmitted {
+			continue
+		}
 		phcDelta := edge.TRead.PHC.T.Sub(edge.Timestamp.T)
 		realDelta := time.Duration(float64(phcDelta) * scale)
 		edgeMono := edge.TRead.Sys.Add(-realDelta)
 
-		pred, err := wc.predictUTC(edgeMono)
+		pred, err := wc.predictRef(edgeMono)
 		if err != nil {
 			if errors.Is(err, ErrNotReady) {
 				return nil, ErrNotReady
@@ -321,8 +299,8 @@ func mapEdgesToUTC(edges []pulseEdge, medianInterval time.Duration, basePHC ptim
 			return nil, err
 		}
 
-		rounded := pred.Round(time.Second)
-		r := pred.Sub(rounded)
+		ref := pred.Round(time.Second)
+		r := pred.Sub(ref)
 		if r < 0 {
 			r = -r
 		}
@@ -330,81 +308,21 @@ func mapEdgesToUTC(edges []pulseEdge, medianInterval time.Duration, basePHC ptim
 			continue
 		}
 
-		var pulseOffsetPHCNs float64
+		var corrNs float64
 		if po != nil {
-			if v, ok := po.GetUTCPulseCorrection(rounded.SysTime()); ok {
-				// PulseOffset is true-time ns: true_second = pulse_time + PulseOffset,
-				// so the physical edge sits PulseOffset true-time ns before the top
-				// of second. Convert into PHC ns (scale = realPerPHC, so PHC ns per
-				// real ns = 1/scale = medianInterval/Second) and add to the edge's
-				// PHC coordinate, shifting the ruler mark from the physical edge
-				// to the top-of-second that Y labels.
-				pulseOffsetPHCNs = v / scale
-			}
+			corrNs, _ = po.GetTAIPulseCorrection(ptime.Time(ref))
 		}
 
-		x := float64(edge.Timestamp.T.Sub(basePHC).Nanoseconds()) + pulseOffsetPHCNs
-		entries = append(entries, calibEntry{X: x, Y: rounded})
+		// offset = true time - PHC reading at the edge. The label
+		// marks the top-of-second; the physical edge sits corrNs
+		// true-time ns before it (true_second = pulse_time +
+		// correction), so the true time at the edge is ref - corrNs.
+		// The int64 Duration carries the (possibly huge) PHC-to-TAI
+		// distance exactly; converting to float64 seconds at the end
+		// matches the double the SOCK protocol carries anyway.
+		d := ref.Sub(ntime.Time(edge.Timestamp.T))
+		samples = append(samples, refSample{phc: edge.Timestamp.T, offset: d.Seconds() - corrNs*1e-9})
+		w.lastEmitted = edge.Timestamp.T
 	}
-	if len(entries) < minFitEntries {
-		return nil, ErrNotReady
-	}
-	return entries, nil
-}
-
-// fitAndEvaluate fits a plain OLS line to the calibration entries and
-// evaluates it at phc, subtracting sys to yield the refclock offset in
-// seconds. The entire pipeline after mapEdgesToUTC stays in float64
-// nanoseconds so the phase-2 sub-ns pulse-offset correction is carried
-// through to the returned seconds value.
-func fitAndEvaluate(entries []calibEntry, basePHC ptime.Time, phc ptime.Time, sys time.Time, maxExtrap time.Duration) (float64, error) {
-	if len(entries) < minFitEntries {
-		return 0, ErrNotReady
-	}
-	xQuery := float64(phc.Sub(basePHC).Nanoseconds())
-	if xQuery-entries[len(entries)-1].X > float64(maxExtrap.Nanoseconds()) {
-		return 0, errExtrapolation
-	}
-	yRef := entries[0].Y
-
-	n := float64(len(entries))
-	ys := make([]float64, len(entries))
-	var sumX, sumY float64
-	for i, e := range entries {
-		ys[i] = float64(e.Y.Sub(yRef).Nanoseconds())
-		sumX += e.X
-		sumY += ys[i]
-	}
-	meanX := sumX / n
-	meanY := sumY / n
-
-	var sxy, sxx float64
-	for i, e := range entries {
-		dx := e.X - meanX
-		dy := ys[i] - meanY
-		sxy += dx * dy
-		sxx += dx * dx
-	}
-	var slope, intercept float64
-	if sxx == 0 {
-		slope = 1
-		intercept = meanY - meanX
-	} else {
-		slope = sxy / sxx
-		intercept = meanY - slope*meanX
-	}
-	yQueryNs := intercept + slope*xQuery
-	// Keep the big (yRef - sys) delta as an int64 Duration until the
-	// very end, then convert via Duration.Seconds() (which splits
-	// sec/nsec internally). This matches how the refclock-sample
-	// consumer sees offsets in production where sys and true time
-	// differ by at most a few seconds, and is the only way to stay
-	// below the float64 nanosecond quantization floor (~240 ns at
-	// 1.5e9-second offsets) that simulations deliberately exercise.
-	// Sub-ns precision from the phase-2 pulse-offset correction
-	// survives via yQFracNs.
-	yQIntNs := int64(yQueryNs)
-	yQFracNs := yQueryNs - float64(yQIntNs)
-	totalDur := yRef.Sub(ntime.Sys(sys)) + time.Duration(yQIntNs)
-	return totalDur.Seconds() + yQFracNs*1e-9, nil
+	return samples, nil
 }

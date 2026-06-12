@@ -1,14 +1,15 @@
 // Package phcsample generates chrony SOCK refclock samples when the PHC is
 // left free-running. The PHC is read but never stepped or slewed;
-// phcsample correlates PHC timestamps and GPS time messages to construct
-// an (offset = true time - sys) sample for each cross-sample.
+// phcsample correlates PHC pulse-edge timestamps and GPS time messages
+// to construct a PHC-referenced (offset = TAI - PHC) sample for each
+// admitted pulse edge. Chrony maps the PHC domain to the system clock
+// on its side (multi-clock with a PHC base clock).
 package phcsample
 
 import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/jclark/satpulse/time/lib/check"
 )
@@ -115,21 +116,6 @@ type Config struct {
 	DiscontinuityThreshold float64 `toml:"discontinuityThreshold" check:">=1e-9,<1.0" comment:"PHC discontinuity detection threshold (s)"`
 }
 
-// maxExtrapolation is how far past the last admitted edge's PHC
-// timestamp phcWindow will extrapolate the PHC-to-UTC fit when
-// evaluating Generate. The query is normally at the latest edge's
-// PHC timestamp, but pre-admission can reject a trailing run of
-// edges (the outlier edge and its immediate neighbour), pushing the
-// last admitted entry up to two pulse intervals behind. Three
-// seconds accommodates that case for single-edge 1 Hz pulses while
-// still catching pathologically stale windows. Held as a method so
-// the plan's w.cfg.maxExtrapolation() call-site signature is
-// preserved even though the value is not a tunable Config field
-// today.
-func (cfg Config) maxExtrapolation() time.Duration {
-	return 3 * time.Second
-}
-
 // DefaultConfig returns a Config with sensible default values.
 func DefaultConfig() Config {
 	return Config{
@@ -141,7 +127,7 @@ func DefaultConfig() Config {
 		MaxMsgGap:             10.0,
 		// Slightly below 3s so normal message-timing variation does not
 		// push startup from pulse 5 to pulse 6 when using 1 Hz messages.
-		MinMsgSpan:          2.9,
+		MinMsgSpan:             2.9,
 		ClockRateLimit:         0.1,
 		MsgTimingVariation:     0.2,
 		EdgeSecondTolerance:    0.4,
