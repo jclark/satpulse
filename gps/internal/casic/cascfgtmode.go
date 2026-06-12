@@ -66,8 +66,9 @@ func (c *Configurator) curTModeMode() (uint8, bool) {
 	return 0, false
 }
 
-// generateTModeSet computes and sends the time mode configuration.
-// Adapted from the UBX configurator's createTmodeConfigs.
+// generateTModeSet computes and sends the time mode configuration,
+// applying the same mode-transition rules as the UBX configurator
+// (preserve a fixed position, restart a survey only when asked).
 func (c *Configurator) generateTModeSet() {
 	mode, haveMode := c.target.Props.GetMode()
 	setStatic := c.target.Opts.SetStatic

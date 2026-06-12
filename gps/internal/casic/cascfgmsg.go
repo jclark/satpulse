@@ -71,16 +71,19 @@ func (c *Configurator) generateRawReqs(flags gpsprot.RawMsgFlags) {
 	if c.family != familyV6 {
 		return
 	}
-	for _, m := range []struct {
-		mid  casbin.MsgID
-		flag gpsprot.RawMsgFlags
-	}{{casbin.Rxm2MeasxID, gpsprot.RawMsgObs}, {casbin.Rxm2SfrbxID, gpsprot.RawMsgNavData}} {
-		var rate uint16
-		if flags&m.flag != 0 {
-			rate = 1
-		}
-		c.addReqNakOK(&casbin.CfgMsg{Target: m.mid, Rate: rate}, nil)
+	c.addMsgRate(casbin.Rxm2MeasxID, flags&gpsprot.RawMsgObs != 0)
+	c.addMsgRate(casbin.Rxm2SfrbxID, flags&gpsprot.RawMsgNavData != 0)
+}
+
+// addMsgRate sets a message's output rate to 1 or 0 via CFG-MSG. A NAK
+// is acceptable: the message may not exist on this firmware, and
+// undeliverable information shows as absence.
+func (c *Configurator) addMsgRate(mid casbin.MsgID, on bool) {
+	var rate uint16
+	if on {
+		rate = 1
 	}
+	c.addReqNakOK(&casbin.CfgMsg{Target: mid, Rate: rate}, nil)
 }
 
 // generateSatsReqs configures the messages carrying satellite
@@ -92,19 +95,12 @@ func (c *Configurator) generateRawReqs(flags gpsprot.RawMsgFlags) {
 // information is not deliverable, which shows as absence).
 func (c *Configurator) generateSatsReqs(flags gpsprot.SatsMsgFlags) {
 	if c.family == familyV6 {
-		var rate uint16
-		if flags&(gpsprot.SatsMsgSat|gpsprot.SatsMsgSignal) != 0 {
-			rate = 1
-		}
-		c.addReqNakOK(&casbin.CfgMsg{Target: casbin.Nav2SigID, Rate: rate}, nil)
+		c.addMsgRate(casbin.Nav2SigID, flags&(gpsprot.SatsMsgSat|gpsprot.SatsMsgSignal) != 0)
 		return
 	}
-	var rate uint16
-	if flags&gpsprot.SatsMsgSat != 0 {
-		rate = 1
-	}
+	on := flags&gpsprot.SatsMsgSat != 0
 	for _, mid := range []casbin.MsgID{casbin.NavGPSInfoID, casbin.NavBDSInfoID, casbin.NavGLNInfoID} {
-		c.addReqNakOK(&casbin.CfgMsg{Target: mid, Rate: rate}, nil)
+		c.addMsgRate(mid, on)
 	}
 }
 
@@ -145,10 +141,8 @@ func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 	}
 	off := flags&gpsprot.PVTMsgOff != 0
 	set := func(mid casbin.MsgID, want bool) {
-		if want {
-			c.addReqNakOK(&casbin.CfgMsg{Target: mid, Rate: 1}, nil)
-		} else if off {
-			c.addReqNakOK(&casbin.CfgMsg{Target: mid, Rate: 0}, nil)
+		if want || off {
+			c.addMsgRate(mid, want)
 		}
 	}
 	set(sol, wantSol)
@@ -180,16 +174,18 @@ func (c *Configurator) generateTimTPReqs(tp, off bool) {
 	case tp:
 		c.addReqNakOK(&casbin.CfgMsg{Target: casbin.TimTPID, Rate: 1}, nil)
 	case off:
-		c.addReqNakOK(&casbin.CfgMsg{Target: casbin.TimTPID, Rate: 0}, nil)
+		c.addMsgRate(casbin.TimTPID, false)
 		if c.family == familyV6 {
-			c.addReqNakOK(&casbin.CfgMsg{Target: casbin.Tim2TpxID, Rate: 0}, nil)
+			c.addMsgRate(casbin.Tim2TpxID, false)
 		}
 	}
 }
 
 // generateNMEAReqs sets the rate of each standard NMEA sentence via
 // CFG-MSG: named sentences on, the rest off (a wire-format request is
-// complete). GSV goes first because it carries the most traffic, so
+// complete). Unlike binary message enables these are not nakOK: every
+// CASIC firmware emits the standard sentences, so a NAK is a genuine
+// refusal. GSV goes first because it carries the most traffic, so
 // turning it off frees a saturated line soonest.
 func (c *Configurator) generateNMEAReqs(flags gpsprot.NMEAMsgFlags) {
 	zda := casbin.NmeaZdaID

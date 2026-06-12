@@ -82,20 +82,19 @@ func (c *Configurator) generateVerQuery() {
 	if c.ver != nil {
 		return
 	}
-	c.addTextReq(casmsg.Query(casmsg.QueryFirmwareVersion), func(payload string) bool {
+	c.addInfoQuery(casmsg.QueryFirmwareVersion, "SW", &c.pcasSW)
+	c.addInfoQuery(casmsg.QueryHardware, "HW", &c.pcasHW)
+}
+
+// addInfoQuery sends a PCAS06 query and stores the value of the GPTXT
+// reply carrying the given key.
+func (c *Configurator) addInfoQuery(query int, key string, dst *string) {
+	c.addTextReq(casmsg.Query(query), func(payload string) bool {
 		k, v, ok := casmsg.ParseTxtInfo(payload)
-		if !ok || k != "SW" {
+		if !ok || k != key {
 			return false
 		}
-		c.pcasSW = v
-		return true
-	})
-	c.addTextReq(casmsg.Query(casmsg.QueryHardware), func(payload string) bool {
-		k, v, ok := casmsg.ParseTxtInfo(payload)
-		if !ok || k != "HW" {
-			return false
-		}
-		c.pcasHW = v
+		*dst = v
 		return true
 	})
 }

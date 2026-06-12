@@ -40,6 +40,18 @@ var navBandSignals = []struct {
 	{casbin.SigNAVICL5, gpsprot.SigNAVICL5},
 }
 
+// v5NavSystems maps CFG-NAVX NavSystem bits to the single signal each
+// V5 constellation carries.
+var v5NavSystems = []struct {
+	bit  uint8
+	gnss gpsprot.GNSS
+	sig  gpsprot.Signal
+}{
+	{casbin.NavSysGPS, gpsprot.GPS, gpsprot.SigGPSL1CA},
+	{casbin.NavSysBDS, gpsprot.BDS, gpsprot.SigBDSB1I},
+	{casbin.NavSysGLN, gpsprot.GLO, gpsprot.SigGLOL1},
+}
+
 // v5Signals is the V5 supported signal set.
 const v5Signals = gpsprot.SignalSet(1<<gpsprot.SigGPSL1CA) |
 	gpsprot.SignalSet(1<<gpsprot.SigBDSB1I) |
@@ -137,14 +149,10 @@ func (c *Configurator) generateSignalSet() {
 	}
 	want := (requested & v5Signals).GNSSSet()
 	var sys uint8
-	if want.Contains(gpsprot.GPS) {
-		sys |= casbin.NavSysGPS
-	}
-	if want.Contains(gpsprot.BDS) {
-		sys |= casbin.NavSysBDS
-	}
-	if want.Contains(gpsprot.GLO) {
-		sys |= casbin.NavSysGLN
+	for _, e := range v5NavSystems {
+		if want.Contains(e.gnss) {
+			sys |= e.bit
+		}
 	}
 	c.addSetReq(&casbin.CfgNavx{Mask: casbin.NavxNavSystem, NavSystem: sys},
 		func() { c.navx.NavSystem = sys })
@@ -164,14 +172,10 @@ func (c *Configurator) signalConfigProps(props *gpsprot.ConfigProps) {
 	}
 	if c.navx != nil {
 		var ss gpsprot.SignalSet
-		if c.navx.NavSystem&casbin.NavSysGPS != 0 {
-			ss |= gpsprot.SignalSetOf(gpsprot.SigGPSL1CA)
-		}
-		if c.navx.NavSystem&casbin.NavSysBDS != 0 {
-			ss |= gpsprot.SignalSetOf(gpsprot.SigBDSB1I)
-		}
-		if c.navx.NavSystem&casbin.NavSysGLN != 0 {
-			ss |= gpsprot.SignalSetOf(gpsprot.SigGLOL1)
+		for _, e := range v5NavSystems {
+			if c.navx.NavSystem&e.bit != 0 {
+				ss |= gpsprot.SignalSetOf(e.sig)
+			}
 		}
 		props.SetSignalsEnabled(ss)
 	}

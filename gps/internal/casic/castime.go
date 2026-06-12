@@ -96,30 +96,9 @@ func timeNav2Sol(m *casbin.Nav2Sol, gnss gpsprot.GNSS) *gpsprot.TimeMsg {
 	return &t
 }
 
-// tim2TOW combines a TIM2 message's integer-millisecond TOW and its
-// 2^-30-scaled fractional-millisecond field into a duration.
-func tim2TOW(tow uint32, subms int32) time.Duration {
-	return time.Duration(tow)*time.Millisecond +
-		time.Duration(math.Round(float64(subms)*math.Exp2(-30)*1e6))
-}
-
-// gnssTime converts CASIC GNSS ID, week number, and TOW to gpsprot.GNSS and TAI time.
-// Returns zero GNSS and Time for unsupported GNSS IDs.
-func gnssTime(id casbin.GNSSID, week uint16, towSec float64) (gpsprot.GNSS, ptime.Time) {
-	tow := ptime.Seconds(towSec)
-	switch id {
-	case casbin.GPS:
-		return gpsprot.GPS, ptime.GPS(int16(week), tow)
-	case casbin.BDS:
-		return gpsprot.BDS, ptime.BeiDou(int16(week), tow)
-	case casbin.GLN:
-		return gpsprot.GLO, ptime.GLONASSWeek(int16(week), tow)
-	}
-	return 0, 0
-}
-
-// timeNav2TimeUTC converts Nav2TimeUTC to TimeMsg.
-// Returns nil when the time solution is not usable.
+// timeNav2TimeUTC converts Nav2TimeUTC to TimeMsg. Always returns a
+// TimeMsg, but with nil UTCTime and zero GNSS when the time solution
+// is not usable.
 func timeNav2TimeUTC(m *casbin.Nav2TimeUTC) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{NativeMsgID: "NAV2-TIMEUTC"}
 	if m.TFlags&(casbin.Nav2TimeTOWValid|casbin.Nav2TimeReliable) != casbin.Nav2TimeTOWValid|casbin.Nav2TimeReliable {
@@ -191,44 +170,6 @@ func leapTim2TimeGNSS(m *casbin.Tim2TimeGNSS, gnss gpsprot.GNSS, taiMinusGNSS in
 		LeapSecond: ptime.LeapSecondOnDate(date, utcOffBefore, utcOffAfter),
 		GNSS:       gnss,
 	}
-}
-
-// gnssIDToGNSS maps CASIC GNSSID to gpsprot.GNSS.
-func gnssIDToGNSS(id casbin.GNSSID) gpsprot.GNSS {
-	switch id {
-	case casbin.GPS:
-		return gpsprot.GPS
-	case casbin.BDS:
-		return gpsprot.BDS
-	case casbin.GLN:
-		return gpsprot.GLO
-	case casbin.GAL:
-		return gpsprot.GAL
-	case casbin.QZSS:
-		return gpsprot.QZSS
-	case casbin.SBAS:
-		return gpsprot.SBAS
-	case casbin.NAVIC:
-		return gpsprot.NAVIC
-	}
-	return 0
-}
-
-// nav2TimeSrcToGNSS maps V6 Nav2TimeSrc to gpsprot.GNSS.
-func nav2TimeSrcToGNSS(id casbin.Nav2TimeSrc) gpsprot.GNSS {
-	switch id {
-	case casbin.Nav2TimeSrcGPS:
-		return gpsprot.GPS
-	case casbin.Nav2TimeSrcBDS:
-		return gpsprot.BDS
-	case casbin.Nav2TimeSrcGLN:
-		return gpsprot.GLO
-	case casbin.Nav2TimeSrcGAL:
-		return gpsprot.GAL
-	case casbin.Nav2TimeSrcIRN:
-		return gpsprot.NAVIC
-	}
-	return 0
 }
 
 // leapTim2Ls extracts a LeapSecondMsg from TIM2-LS. The week of the
@@ -316,4 +257,64 @@ func surveyTim2TimePos(m *casbin.Tim2TimePos) *gpsprot.SurveyMsg {
 		InProgress: m.FixFlag != casbin.PVTTimingFixed && m.SurTimer > 0,
 	}
 	return sv
+}
+
+// tim2TOW combines a TIM2 message's integer-millisecond TOW and its
+// 2^-30-scaled fractional-millisecond field into a duration.
+func tim2TOW(tow uint32, subms int32) time.Duration {
+	return time.Duration(tow)*time.Millisecond +
+		time.Duration(math.Round(float64(subms)*math.Exp2(-30)*1e6))
+}
+
+// gnssTime converts CASIC GNSS ID, week number, and TOW to gpsprot.GNSS and TAI time.
+// Returns zero GNSS and Time for unsupported GNSS IDs.
+func gnssTime(id casbin.GNSSID, week uint16, towSec float64) (gpsprot.GNSS, ptime.Time) {
+	tow := ptime.Seconds(towSec)
+	switch id {
+	case casbin.GPS:
+		return gpsprot.GPS, ptime.GPS(int16(week), tow)
+	case casbin.BDS:
+		return gpsprot.BDS, ptime.BeiDou(int16(week), tow)
+	case casbin.GLN:
+		return gpsprot.GLO, ptime.GLONASSWeek(int16(week), tow)
+	}
+	return 0, 0
+}
+
+// gnssIDToGNSS maps CASIC GNSSID to gpsprot.GNSS.
+func gnssIDToGNSS(id casbin.GNSSID) gpsprot.GNSS {
+	switch id {
+	case casbin.GPS:
+		return gpsprot.GPS
+	case casbin.BDS:
+		return gpsprot.BDS
+	case casbin.GLN:
+		return gpsprot.GLO
+	case casbin.GAL:
+		return gpsprot.GAL
+	case casbin.QZSS:
+		return gpsprot.QZSS
+	case casbin.SBAS:
+		return gpsprot.SBAS
+	case casbin.NAVIC:
+		return gpsprot.NAVIC
+	}
+	return 0
+}
+
+// nav2TimeSrcToGNSS maps V6 Nav2TimeSrc to gpsprot.GNSS.
+func nav2TimeSrcToGNSS(id casbin.Nav2TimeSrc) gpsprot.GNSS {
+	switch id {
+	case casbin.Nav2TimeSrcGPS:
+		return gpsprot.GPS
+	case casbin.Nav2TimeSrcBDS:
+		return gpsprot.BDS
+	case casbin.Nav2TimeSrcGLN:
+		return gpsprot.GLO
+	case casbin.Nav2TimeSrcGAL:
+		return gpsprot.GAL
+	case casbin.Nav2TimeSrcIRN:
+		return gpsprot.NAVIC
+	}
+	return 0
 }

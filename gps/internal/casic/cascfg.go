@@ -473,6 +473,9 @@ func (c *Configurator) handleAck(mid casbin.MsgID, ack bool, tRead time.Time) {
 		}
 		delay := tRead.Sub(req.tBase)
 		if delay < 0 || delay > maxResponseDelay {
+			// A response outside the window belongs to an earlier
+			// send of this (since resent) request; it must not
+			// confirm the resend.
 			return
 		}
 		if ack {
@@ -493,22 +496,30 @@ func (c *Configurator) handleAck(mid casbin.MsgID, ack bool, tRead time.Time) {
 	}
 }
 
-func (req *casReq) invalidStatePanic(method string) string {
+func (req *casReq) invalidStateMsg(method string) string {
 	return fmt.Sprintf("%s called when state is %v", method, req.state)
 }
 
+// GetPacket returns the packet bytes for this request.
 func (req *casReq) GetPacket() []byte {
 	switch req.state {
 	case reqReady, reqMayResend, reqFailed:
 		return req.packet
 	}
-	panic(req.invalidStatePanic("GetPacket"))
+	panic(req.invalidStateMsg("GetPacket"))
 }
 
+// GetSpeedChangeAfter returns the baud rate the host must switch to
+// after sending this request, or 0.
 func (req *casReq) GetSpeedChangeAfter() int {
-	return req.speedAfter
+	switch req.state {
+	case reqReady, reqMayResend, reqFailed:
+		return req.speedAfter
+	}
+	panic(req.invalidStateMsg("GetSpeedChangeAfter"))
 }
 
+// GetState reports the request state to the director.
 func (req *casReq) GetState() gpsprot.ConfigRequestState {
 	switch req.state {
 	case reqNotReady:
@@ -528,20 +539,24 @@ func (req *casReq) GetState() gpsprot.ConfigRequestState {
 	}
 }
 
+// GetDeadline returns the absolute time by which a response is expected.
 func (req *casReq) GetDeadline() time.Time {
 	if req.state != reqAwaitingAck {
-		panic(req.invalidStatePanic("GetDeadline"))
+		panic(req.invalidStateMsg("GetDeadline"))
 	}
 	return req.tBase.Add(maxResponseDelay)
 }
 
+// GetError returns why the request failed.
 func (req *casReq) GetError() error {
 	if req.state != reqFailed {
-		panic(req.invalidStatePanic("GetError"))
+		panic(req.invalidStateMsg("GetError"))
 	}
 	return req.err
 }
 
+// SetSentTime records when the request packet was transmitted. A
+// request that expects no acknowledgement succeeds at this point.
 func (req *casReq) SetSentTime(tSent time.Time) {
 	switch req.state {
 	case reqReady, reqMayResend:
@@ -552,20 +567,23 @@ func (req *casReq) SetSentTime(tSent time.Time) {
 		req.state = reqAwaitingAck
 		req.tBase = tSent
 	default:
-		panic(req.invalidStatePanic("SetSentTime"))
+		panic(req.invalidStateMsg("SetSentTime"))
 	}
 }
 
+// SetDeadlinePassed marks the response window as expired.
 func (req *casReq) SetDeadlinePassed() {
 	if req.state != reqAwaitingAck {
-		panic(req.invalidStatePanic("SetDeadlinePassed"))
+		panic(req.invalidStateMsg("SetDeadlinePassed"))
 	}
 	req.state = reqMayResend
 }
 
+// SetWontResend gives up on the request: failure, unless the request
+// was optional (an unanswered PCAS06 query just leaves info empty).
 func (req *casReq) SetWontResend() {
 	if req.state != reqMayResend {
-		panic(req.invalidStatePanic("SetWontResend"))
+		panic(req.invalidStateMsg("SetWontResend"))
 	}
 	if req.optional {
 		req.state = reqSucceeded

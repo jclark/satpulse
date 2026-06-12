@@ -161,21 +161,8 @@ func (c *Configurator) tSrcMode(g gpsprot.GNSS) (uint8, bool) {
 }
 
 // timeGNSS interprets a TSrcMode readback, covering both the forced
-// and the primary ("main") encodings.
+// and the primary ("main") encodings. The GAL values exist on V6 only.
 func (c *Configurator) timeGNSS(src uint8) (gpsprot.GNSS, bool) {
-	if c.family == familyV6 {
-		switch src {
-		case 0, 5:
-			return gpsprot.GPS, true
-		case 1, 4:
-			return gpsprot.BDS, true
-		case 2, 6:
-			return gpsprot.GLO, true
-		case 3, 7:
-			return gpsprot.GAL, true
-		}
-		return 0, false
-	}
 	switch src {
 	case 0, 5:
 		return gpsprot.GPS, true
@@ -183,6 +170,10 @@ func (c *Configurator) timeGNSS(src uint8) (gpsprot.GNSS, bool) {
 		return gpsprot.BDS, true
 	case 2, 6:
 		return gpsprot.GLO, true
+	case 3, 7:
+		if c.family == familyV6 {
+			return gpsprot.GAL, true
+		}
 	}
 	return 0, false
 }

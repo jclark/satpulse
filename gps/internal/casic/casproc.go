@@ -8,9 +8,6 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
-// Ensure PacketProcessor implements gpsprot.PacketProcessor
-var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
-
 // PacketProcessor implements the gpsprot.PacketProcessor interface for CASIC binary packets
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
@@ -23,9 +20,11 @@ type PacketProcessor struct {
 	curNavEpochMsg   *gpsprot.NavEpochMsg // accumulated NavEpochMsg for current epoch
 	curNavEpochStart time.Time            // tRead of first message in current epoch
 	pendingNav2Dop   *casbin.Nav2Dop      // buffered until FlushNavEpoch (no TOW field)
-	lastTimeGNSS     gpsprot.GNSS         // from most recent Nav2TimeUTC
+	lastTimeGNSS     gpsprot.GNSS         // from most recent valid Nav2TimeUTC
 	satAccum         satAccum             // satellite info accumulator
 }
+
+var _ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
 
 // NewPacketProcessor creates a new CASIC binary packet processor
 func NewPacketProcessor(mgr *gpsprot.NavEpochManager) *PacketProcessor {
@@ -89,51 +88,15 @@ func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
 func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 	switch mt := m.(type) {
 	case *casbin.NavSol:
-		tm := timeNavSol(mt)
-		posE := posECEFNavSol(p.curNavEpochMsg, mt)
-		velE := velECEFNavSol(p.curNavEpochMsg, mt)
-		if p.mh != nil {
-			if tm != nil {
-				tm.Tag = Tag
-				if ne := p.curNavEpochMsg; ne != nil {
-					tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-				}
-				p.mh.Time(tm, tRead)
-			}
-			if posE != nil {
-				posE.Tag = Tag
-				posE.Priority = gpsprot.PriVendorLow
-				p.mh.PosECEF(posE, tRead)
-			}
-			if velE != nil {
-				velE.Tag = Tag
-				velE.Priority = gpsprot.PriVendorLow
-				p.mh.VelECEF(velE, tRead)
-			}
-		}
+		p.emitTime(timeNavSol(mt), tRead)
+		p.emitPosECEF(posECEFNavSol(p.curNavEpochMsg, mt), gpsprot.PriVendorLow, tRead)
+		p.emitVelECEF(velECEFNavSol(p.curNavEpochMsg, mt), gpsprot.PriVendorLow, tRead)
 		return true
 	case *casbin.NavTimeUTC:
-		tm := timeNavTimeUTC(mt)
-		if tm == nil {
-			return false
-		}
-		if p.mh != nil {
-			tm.Tag = Tag
-			if ne := p.curNavEpochMsg; ne != nil {
-				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-			}
-			p.mh.Time(tm, tRead)
-		}
+		p.emitTime(timeNavTimeUTC(mt), tRead)
 		return true
 	case *casbin.TimTP:
-		tm := timeTimTP(mt)
-		if tm == nil {
-			return false
-		}
-		if p.mh != nil {
-			tm.Tag = Tag
-			p.mh.Time(tm, tRead)
-		}
+		p.emitTime(timeTimTP(mt), tRead)
 		return true
 	case *casbin.NavGPSInfo:
 		p.satAccum.accum(&mt.NavSatInfoFixed, mt.SVs, p.mh, tRead)
@@ -150,59 +113,23 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		if posG == nil && velG == nil {
 			return false
 		}
-		if p.mh != nil {
-			if posG != nil {
-				posG.Tag = Tag
-				posG.Priority = gpsprot.PriVendorLow
-				p.mh.PosGeo(posG, tRead)
-			}
-			if velG != nil {
-				velG.Tag = Tag
-				velG.Priority = gpsprot.PriVendorLow
-				p.mh.VelGeo(velG, tRead)
-			}
-		}
+		p.emitPosGeo(posG, gpsprot.PriVendorLow, tRead)
+		p.emitVelGeo(velG, gpsprot.PriVendorLow, tRead)
 		return true
 	case *casbin.NavDop:
 		dopNavDop(p.curNavEpochMsg, mt)
 		return true
 	case *casbin.Nav2TimeUTC:
 		tm := timeNav2TimeUTC(mt)
-		if tm == nil {
-			return false
+		if tm.GNSS != 0 {
+			p.lastTimeGNSS = tm.GNSS
 		}
-		p.lastTimeGNSS = tm.GNSS
-		if p.mh != nil {
-			tm.Tag = Tag
-			if ne := p.curNavEpochMsg; ne != nil {
-				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-			}
-			p.mh.Time(tm, tRead)
-		}
+		p.emitTime(tm, tRead)
 		return true
 	case *casbin.Nav2Sol:
-		tm := timeNav2Sol(mt, p.lastTimeGNSS)
-		posE := posECEFNav2Sol(p.curNavEpochMsg, mt)
-		velE := velECEFNav2Sol(p.curNavEpochMsg, mt)
-		if p.mh != nil {
-			if tm != nil {
-				tm.Tag = Tag
-				if ne := p.curNavEpochMsg; ne != nil {
-					tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-				}
-				p.mh.Time(tm, tRead)
-			}
-			if posE != nil {
-				posE.Tag = Tag
-				posE.Priority = gpsprot.PriVendorLow
-				p.mh.PosECEF(posE, tRead)
-			}
-			if velE != nil {
-				velE.Tag = Tag
-				velE.Priority = gpsprot.PriVendorLow
-				p.mh.VelECEF(velE, tRead)
-			}
-		}
+		p.emitTime(timeNav2Sol(mt, p.lastTimeGNSS), tRead)
+		p.emitPosECEF(posECEFNav2Sol(p.curNavEpochMsg, mt), gpsprot.PriVendorLow, tRead)
+		p.emitVelECEF(velECEFNav2Sol(p.curNavEpochMsg, mt), gpsprot.PriVendorLow, tRead)
 		return true
 	case *casbin.Nav2Pvh:
 		posG := posGeoNav2Pvh(p.curNavEpochMsg, mt)
@@ -210,18 +137,8 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		if posG == nil && velG == nil {
 			return false
 		}
-		if p.mh != nil {
-			if posG != nil {
-				posG.Tag = Tag
-				posG.Priority = gpsprot.PriVendorHigh
-				p.mh.PosGeo(posG, tRead)
-			}
-			if velG != nil {
-				velG.Tag = Tag
-				velG.Priority = gpsprot.PriVendorHigh
-				p.mh.VelGeo(velG, tRead)
-			}
-		}
+		p.emitPosGeo(posG, gpsprot.PriVendorHigh, tRead)
+		p.emitVelGeo(velG, gpsprot.PriVendorHigh, tRead)
 		return true
 	case *casbin.Nav2Dop:
 		p.pendingNav2Dop = mt
@@ -240,11 +157,7 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		corrFromNav2Sig(p.curNavEpochMsg, mt)
 		return true
 	case *casbin.Tim2Ls:
-		if p.mh != nil {
-			if ls := leapTim2Ls(mt, tRead); ls != nil {
-				p.mh.LeapSecond(ls, tRead)
-			}
-		}
+		p.emitLeap(leapTim2Ls(mt, tRead), tRead)
 		return true
 	case *casbin.Tim2TimePos:
 		if p.mh != nil {
@@ -252,30 +165,15 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		}
 		return true
 	case *casbin.MsgGPSUTC:
-		if p.mh != nil {
-			if ls := leapMsgUTC(mt.Dtls, mt.Dtlsf, mt.Wnlsf, mt.Dn, mt.Valid,
-				gpsprot.GPS, ptime.TAIMinusGPS, 1, tRead); ls != nil {
-				p.mh.LeapSecond(ls, tRead)
-			}
-		}
+		p.emitLeap(leapMsgUTC(mt.Dtls, mt.Dtlsf, mt.Wnlsf, mt.Dn, mt.Valid,
+			gpsprot.GPS, ptime.TAIMinusGPS, 1, tRead), tRead)
 		return true
 	case *casbin.MsgBDSUTC:
-		if p.mh != nil {
-			if ls := leapMsgUTC(mt.Dtls, mt.Dtlsf, mt.Wnlsf, mt.Dn, mt.Valid,
-				gpsprot.BDS, ptime.TAIMinusBeiDou, 0, tRead); ls != nil {
-				p.mh.LeapSecond(ls, tRead)
-			}
-		}
+		p.emitLeap(leapMsgUTC(mt.Dtls, mt.Dtlsf, mt.Wnlsf, mt.Dn, mt.Valid,
+			gpsprot.BDS, ptime.TAIMinusBeiDou, 0, tRead), tRead)
 		return true
 	case *casbin.Tim2Tpx:
-		tm := timeTim2Tpx(mt)
-		if p.mh != nil {
-			tm.Tag = Tag
-			if ne := p.curNavEpochMsg; ne != nil {
-				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-			}
-			p.mh.Time(tm, tRead)
-		}
+		p.emitTime(timeTim2Tpx(mt), tRead)
 		return true
 	case *casbin.Tim2TimeGPS:
 		return p.dispatchTim2Time(&mt.Tim2TimeGNSS, gpsprot.GPS, ptime.GPS, ptime.TAIMinusGPS, "TIM2-TIMEGPS", tRead)
@@ -283,14 +181,7 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		return p.dispatchTim2Time(&mt.Tim2TimeGNSS, gpsprot.BDS, ptime.BeiDou, ptime.TAIMinusBeiDou, "TIM2-TIMEBDS", tRead)
 	case *casbin.Tim2TimeGLN:
 		// GLONASS time tracks UTC; use dedicated conversion that produces UTCTime
-		tm := timeTim2TimeGLN(&mt.Tim2TimeGNSS)
-		if p.mh != nil {
-			tm.Tag = Tag
-			if ne := p.curNavEpochMsg; ne != nil {
-				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-			}
-			p.mh.Time(tm, tRead)
-		}
+		p.emitTime(timeTim2TimeGLN(&mt.Tim2TimeGNSS), tRead)
 		return true
 	case *casbin.Tim2TimeGAL:
 		return p.dispatchTim2Time(&mt.Tim2TimeGNSS, gpsprot.GAL, ptime.Galileo, ptime.TAIMinusGalileo, "TIM2-TIMEGAL", tRead)
@@ -301,17 +192,68 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 
 func (p *PacketProcessor) dispatchTim2Time(m *casbin.Tim2TimeGNSS, gnss gpsprot.GNSS, toTAI func(int16, time.Duration) ptime.Time, taiMinusGNSS int16, msgID string, tRead time.Time) bool {
 	// Dispatch leap second before time so consumers have it available
-	ls := leapTim2TimeGNSS(m, gnss, taiMinusGNSS)
-	if ls != nil && p.mh != nil {
-		p.mh.LeapSecond(ls, tRead)
-	}
-	tm := timeTim2TimeGNSS(m, gnss, toTAI, taiMinusGNSS, msgID)
-	if p.mh != nil {
-		tm.Tag = Tag
-		if ne := p.curNavEpochMsg; ne != nil {
-			tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-		}
-		p.mh.Time(tm, tRead)
-	}
+	p.emitLeap(leapTim2TimeGNSS(m, gnss, taiMinusGNSS), tRead)
+	p.emitTime(timeTim2TimeGNSS(m, gnss, toTAI, taiMinusGNSS, msgID), tRead)
 	return true
+}
+
+// emitTime stamps and delivers a time message, recording how long after
+// the start of the current navigation epoch it was read.
+func (p *PacketProcessor) emitTime(tm *gpsprot.TimeMsg, tRead time.Time) {
+	if tm == nil || p.mh == nil {
+		return
+	}
+	tm.Tag = Tag
+	if p.curNavEpochMsg != nil {
+		tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
+	}
+	p.mh.Time(tm, tRead)
+}
+
+// emitLeap delivers a leap second message when one was extracted.
+func (p *PacketProcessor) emitLeap(ls *gpsprot.LeapSecondMsg, tRead time.Time) {
+	if ls == nil || p.mh == nil {
+		return
+	}
+	p.mh.LeapSecond(ls, tRead)
+}
+
+// emitPosECEF delivers an ECEF position message at the given priority.
+func (p *PacketProcessor) emitPosECEF(m *gpsprot.PosECEFMsg, pri gpsprot.MsgPriority, tRead time.Time) {
+	if m == nil || p.mh == nil {
+		return
+	}
+	m.Tag = Tag
+	m.Priority = pri
+	p.mh.PosECEF(m, tRead)
+}
+
+// emitVelECEF delivers an ECEF velocity message at the given priority.
+func (p *PacketProcessor) emitVelECEF(m *gpsprot.VelECEFMsg, pri gpsprot.MsgPriority, tRead time.Time) {
+	if m == nil || p.mh == nil {
+		return
+	}
+	m.Tag = Tag
+	m.Priority = pri
+	p.mh.VelECEF(m, tRead)
+}
+
+// emitPosGeo delivers a geodetic position message at the given priority.
+func (p *PacketProcessor) emitPosGeo(m *gpsprot.PosGeoMsg, pri gpsprot.MsgPriority, tRead time.Time) {
+	if m == nil || p.mh == nil {
+		return
+	}
+	m.Tag = Tag
+	m.Priority = pri
+	p.mh.PosGeo(m, tRead)
+}
+
+// emitVelGeo delivers a geodetic velocity message at the given priority.
+func (p *PacketProcessor) emitVelGeo(m *gpsprot.VelGeoMsg, pri gpsprot.MsgPriority, tRead time.Time) {
+	if m == nil || p.mh == nil {
+		return
+	}
+	m.Tag = Tag
+	m.Priority = pri
+	p.mh.VelGeo(m, tRead)
 }
