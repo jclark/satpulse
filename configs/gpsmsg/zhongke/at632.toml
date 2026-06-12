@@ -310,3 +310,41 @@ tag = "get-nmea-ver"
 description = "Query NMEA output configuration"
 class = 0x06
 id = 0x12
+
+# RXM2 raw data output via CFG-MSG (RXM2 class is 0x13)
+
+# Verified ACK received on AT632-6T-30
+# Verified RXM2-MEASX messages appear at 1Hz in capture after enable on AT632-6T-30
+[[casbin]]
+tag = "casbin-rxm2-measx"
+description = "Enable RXM2-MEASX (raw measurements) at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x13, 0x00, 1]
+
+[[casbin]]
+tag = "casbin-rxm2-measx-off"
+description = "Disable RXM2-MEASX output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x13, 0x00, 0]
+
+# Verified ACK received on AT632-6T-30
+# Verified RXM2-SFRBX messages appear in capture after enable on AT632-6T-30
+[[casbin]]
+tag = "casbin-rxm2-sfrbx"
+description = "Enable RXM2-SFRBX (raw nav subframes) output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x13, 0x06, 1]
+
+[[casbin]]
+tag = "casbin-rxm2-sfrbx-off"
+description = "Disable RXM2-SFRBX output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x13, 0x06, 0]

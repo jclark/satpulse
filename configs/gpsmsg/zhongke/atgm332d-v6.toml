@@ -616,3 +616,39 @@ tag = "get-survey"
 description = "Query timing mode configuration"
 class = 0x06
 id = 0x16
+
+# RXM2 raw data output via CFG-MSG (RXM2 class is 0x13).
+# CAUTION: on ATGM332D-F8N the enables are ACKed but NO RXM2 output ever
+# appears (6 s capture, receiver tracking) - ACK does not mean the message
+# is implemented. The AT632-6T-30 does emit both (see at632.toml).
+[[casbin]]
+tag = "casbin-rxm2-measx"
+description = "Enable RXM2-MEASX (raw measurements) at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x13, 0x00, 1]
+
+[[casbin]]
+tag = "casbin-rxm2-measx-off"
+description = "Disable RXM2-MEASX output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x13, 0x00, 0]
+
+[[casbin]]
+tag = "casbin-rxm2-sfrbx"
+description = "Enable RXM2-SFRBX (raw nav subframes) output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x13, 0x06, 1]
+
+[[casbin]]
+tag = "casbin-rxm2-sfrbx-off"
+description = "Disable RXM2-SFRBX output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x13, 0x06, 0]
