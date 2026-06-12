@@ -12,13 +12,17 @@ Dual-band CASIC navigation receiver, UART at 115200. Characterized
   enabled. The chip silently clamps the requested reception list to
   its hardware (the model's silent intersection, performed by the
   silicon).
-- Time-of-pulse and leap-second output (`tp`, `leap`): the firmware
-  acknowledges enabling TIM-TP's fallback TIM2-TPX and TIM2-TIMEGPS
-  but never emits them - pulse-time and leap information is not
-  deliverable on this unit (it is on the AT632 timing variant).
+- Time-of-pulse, leap-second, and survey output (`tp`, `leap`,
+  `survey`): the firmware acknowledges enabling TIM-TP's fallback
+  TIM2-TPX, TIM2-LS, and TIM2-TIMEPOS but never emits them - this
+  information is not deliverable on this unit (pulse time and survey
+  are on the AT632 timing variant).
 - Raw output (`obs`, `nav`): same acknowledge-but-never-emit firmware
   limitation; RXM2-MEASX/RXM2-SFRBX never appear.
-- RTCM output: none; rtcmBaseID does not exist.
+- RTCM output: CFG-RTCM exists and is acknowledged, and the port
+  protocol-mask RTCM bit sticks in readback, but no RTCM is emitted
+  in mobile, survey, or fixed-position mode. rtcmBaseID does not
+  exist in the protocol.
 - Fixed position: stored as ECEF in 1 cm steps with accuracy in 1 mm
   steps; an LLH request is realized by conversion to ECEF, so the LLH
   form never reads back (the position does, as ECEF).
@@ -29,9 +33,6 @@ Dual-band CASIC navigation receiver, UART at 115200. Characterized
 
 ## Notes
 
-- Probing quiets NMEA output (RAM only) to keep saturated lines
-  answerable; an invocation that does not name NMEA output leaves it
-  quiet.
 - The mask field of the save command is documented as reserved but is
   honoured: zero saves nothing. The load command restarts the
   receiver without acknowledging.

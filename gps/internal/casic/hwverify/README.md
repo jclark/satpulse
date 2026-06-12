@@ -24,4 +24,7 @@ The V5 invocation is deliberately modest: its 9600 line carries about
 full NMEA) saturates the receiver's transmit queue to the point where
 it splices packets mid-stream and acknowledgements are lost. The
 configurator reports such failures honestly; the configuration itself
-must fit the line budget.
+must fit the line budget. (These logs predate the removal of the
+probe's NMEA-quiet preamble; probing is now state-neutral, and
+detection on a saturated V5 line is best-effort - raise the baud rate
+persistently for reliable configuration there.)

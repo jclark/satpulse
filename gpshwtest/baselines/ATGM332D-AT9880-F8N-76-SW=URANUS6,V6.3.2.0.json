@@ -288,8 +288,11 @@
     "fixedPos",
     "fixedPosAcc",
     "raw",
+    "rtcmMSM4",
+    "rtcmMSM7",
     "speed",
     "survey",
-    "surveyAcc"
+    "surveyAcc",
+    "surveyMsg"
   ]
 }
