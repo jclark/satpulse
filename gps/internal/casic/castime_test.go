@@ -9,6 +9,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -35,7 +36,7 @@ func TestTimeNav2TimeUTC(t *testing.T) {
 	if tm.NativeMsgID != "NAV2-TIMEUTC" {
 		t.Errorf("NativeMsgID = %v, want NAV2-TIMEUTC", tm.NativeMsgID)
 	}
-	if tm.UTCTime == nil {
+	if !tm.UTCTime.IsSet() {
 		t.Fatal("UTCTime is nil")
 	}
 	if tm.GNSS != gpsprot.GPS {
@@ -61,7 +62,7 @@ func TestTimeNav2TimeUTCInvalid(t *testing.T) {
 	if tm == nil {
 		t.Fatal("timeNav2TimeUTC() returned nil")
 	}
-	if tm.UTCTime != nil {
+	if tm.UTCTime.IsSet() {
 		t.Error("UTCTime should be nil when TFlags missing Reliable")
 	}
 }
@@ -261,7 +262,7 @@ func TestTimeTim2TimeGLN(t *testing.T) {
 	if tm.TAITime != 0 {
 		t.Errorf("TAITime should be zero for GLONASS, got %v", tm.TAITime)
 	}
-	if tm.UTCTime == nil {
+	if !tm.UTCTime.IsSet() {
 		t.Fatal("UTCTime is nil")
 	}
 	if tm.GNSS != gpsprot.GLO {
@@ -269,16 +270,16 @@ func TestTimeTim2TimeGLN(t *testing.T) {
 	}
 	// Captured at 2026-03-22T03:49:56Z
 	wantDate := time.Date(2026, 3, 22, 0, 0, 0, 0, time.UTC)
-	if tm.UTCTime.Date != wantDate {
-		t.Errorf("Date = %v, want %v", tm.UTCTime.Date, wantDate)
+	if tm.UTCTime.Get().Date != wantDate {
+		t.Errorf("Date = %v, want %v", tm.UTCTime.Get().Date, wantDate)
 	}
 	wantTOD := 3*time.Hour + 49*time.Minute + 56*time.Second
-	if math.Abs(float64(tm.UTCTime.TimeOfDay-wantTOD)) > float64(time.Millisecond) {
-		t.Errorf("TimeOfDay = %v, want ~%v", tm.UTCTime.TimeOfDay, wantTOD)
+	if math.Abs(float64(tm.UTCTime.Get().TimeOfDay-wantTOD)) > float64(time.Millisecond) {
+		t.Errorf("TimeOfDay = %v, want ~%v", tm.UTCTime.Get().TimeOfDay, wantTOD)
 	}
 }
 
-func ptr[T any](v T) *T { return &v }
+func ptr[T any](v T) opt.Val[T] { return opt.Make(v) }
 
 func TestTimeTim2Tpx(t *testing.T) {
 	tests := []struct {

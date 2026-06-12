@@ -192,6 +192,29 @@ func TestAsciiPacketValidation(t *testing.T) {
 	}
 }
 
+func TestAsciiPacketMsgID(t *testing.T) {
+	// The ASCII MsgID is normalized to the suffix-less vendor message name, so
+	// it matches the binary MsgID for the same logical message (the "A"/"B"
+	// transport suffix is carried by the UNCA/UNCB tag, not the MsgID).
+	tests := []struct {
+		name   string
+		packet string
+		want   string
+	}{
+		{"OBSVMA normalizes to OBSVM", "#OBSVMA,97,GPS,FINE,2419,522335000,17548,0,18,23;112,0,6*00\r\n", "OBSVM"},
+		{"PPSSTATUSA normalizes to PPSSTATUS", "#PPSSTATUSA,93,GPS,FINE,2376,540337000,0,0,18,29;3,2376,540336000*0bbaac1a\r\n", "PPSSTATUS"},
+		{"MODE has no suffix and is kept", "#MODE,81,GPS,FINE,2230,547967000,0,0,18,518;MODE ROVER SURVEY*1b\r\n", "MODE"},
+		{"unknown message keeps its wire name", "#NOSUCHMSGA,1,x;y*00\r\n", "NOSUCHMSGA"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AsciiPacketFormat.MsgID([]byte(tt.packet)); got != tt.want {
+				t.Errorf("MsgID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAsciiPacketChecksum(t *testing.T) {
 	t.Run("PPSSTATUSA_CRC32", func(t *testing.T) {
 		pkt := []byte("#PPSSTATUSA,93,GPS,FINE,2376,540337000,0,0,18,29;3,2376,540336000,-4,-27676000,0x03E80020,0x00000015,0,0x00666669,0x2B000000,0x0110D2BC,0x00000000,0x2CB0ECAC,0x00000000,0x00000000*0bbaac1a\r\n")

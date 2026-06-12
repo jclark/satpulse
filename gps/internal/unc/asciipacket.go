@@ -5,6 +5,7 @@ package unc
 import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nov"
+	"github.com/jclark/satpulse/gps/lib/uncmsg"
 )
 
 // TagAscii is the identifier for Unicore ASCII packets
@@ -21,7 +22,16 @@ const TagAscii gpsprot.Tag = "UNCA"
 //    b) '*' followed by exactly 8 lowercase hex digits (32-bit CRC) (this is the normal case)
 // 5. Contains only printable ASCII characters (0x20-0x7E) before the terminating CR/LF
 // 6. First field in header after message name starts with numeric character (CPU idle %)
-var AsciiPacketFormat gpsprot.PacketFormat = nov.MakePacketFormat(TagAscii, isDigit, true)
+var AsciiPacketFormat gpsprot.PacketFormat = nov.MakePacketFormat(TagAscii, isDigit, true, normalizeAsciiName)
+
+// normalizeAsciiName maps a Unicore ASCII wire name to its canonical suffix-less
+// name (e.g. "OBSVMA" -> "OBSVM"), leaving unknown names (and MODE) unchanged.
+func normalizeAsciiName(name string) string {
+	if id := uncmsg.AsciiMsgID(name); id != 0 {
+		return id.String()
+	}
+	return name
+}
 
 // isDigit checks if a byte is a numeric character (for Unicore CPU idle %)
 func isDigit(b byte) bool {

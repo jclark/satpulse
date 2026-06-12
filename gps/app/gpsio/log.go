@@ -8,15 +8,21 @@ import (
 	"os/signal"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/logfile"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/scan"
-	"golang.org/x/sys/unix"
 )
 
-const PacketLogExtension = ".jsonl"
+const (
+	PacketLogExtension = ".jsonl"
+
+	// MinPacketLogChannelSize is the minimum channel buffer needed because
+	// LogInput and LogOutput can be called from separate goroutines.
+	MinPacketLogChannelSize = 2
+)
 
 type HexString []byte
 
@@ -27,8 +33,11 @@ type OutPacket struct {
 }
 
 // NewPacketLog creates a PacketLog and returns the consumer channel.
-func NewPacketLog(fmts []gpsprot.PacketFormat) (*PacketLog, <-chan PacketLogEntry) {
-	ch := make(chan PacketLogEntry, 2) // 2 because LogInput and LogOutput can be called from separate goroutines
+func NewPacketLog(fmts []gpsprot.PacketFormat, channelSize int) (*PacketLog, <-chan PacketLogEntry) {
+	if channelSize < MinPacketLogChannelSize {
+		channelSize = MinPacketLogChannelSize
+	}
+	ch := make(chan PacketLogEntry, channelSize)
 	return &PacketLog{ch: ch, pktFormats: fmts}, ch
 }
 
@@ -43,7 +52,7 @@ func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string, append bool
 	if err != nil {
 		return nil, nil, err
 	}
-	pl, ch := NewPacketLog(fmts)
+	pl, ch := NewPacketLog(fmts, MinPacketLogChannelSize)
 	wg.Go(func() {
 		doLogPackets(lg, lf, ch)
 	})
@@ -53,7 +62,7 @@ func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string, append bool
 func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, ch <-chan PacketLogEntry) {
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, unix.SIGHUP)
+	signal.Notify(sig, syscall.SIGHUP)
 	for {
 		select {
 		case entry, ok := <-ch:
@@ -257,6 +266,14 @@ func (hs HexString) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements json.Unmarshaler for HexString
 // Expects a string of hex digits, two characters per byte
 func (hs *HexString) UnmarshalJSON(data []byte) error {
+	// convobs unmarshals large packet logs; avoid allocating the hex string on the hot path.
+	if len(data) >= 2 && data[0] == '"' && data[len(data)-1] == '"' && (len(data)-2)%2 == 0 {
+		b := make([]byte, hex.DecodedLen(len(data)-2))
+		if _, err := hex.Decode(b, data[1:len(data)-1]); err == nil {
+			*hs = HexString(b)
+			return nil
+		}
+	}
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
 		return err

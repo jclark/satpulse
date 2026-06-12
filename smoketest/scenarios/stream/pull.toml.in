@@ -1,0 +1,13 @@
+# Ntrip pull: the daemon connects out to a correction source (the fake source
+# run.py starts on SATPULSE_TEST_REMOTE_CASTER_PORT), reads RTCM MSM corrections,
+# and writes them back to the receiver over the serial port. A pty backs the
+# serial device so the write path exists -- a read-only FIFO cannot carry the
+# daemon's writes.
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[stream.pull.ntrip]
+address = "127.0.0.1:${SATPULSE_TEST_REMOTE_CASTER_PORT}"
+mountpoint = "RTCM"
+username = "smoke"
+password = "smoketest"

@@ -52,6 +52,11 @@ const (
 	TagNovAtelAscii = nov.TagAscii
 )
 
+// RTCMPacketFormat is the RTCM packet format, re-exported for
+// callers that need to scan RTCM without depending on
+// gps/internal/rtcm directly.
+var RTCMPacketFormat = rtcm.PacketFormat
+
 var vendorNames = []string{
 	"other",
 	"Allystar",
@@ -85,7 +90,7 @@ var allVendorPacketFormats = []gpsprot.PacketFormat{
 // allVendorPacketFormats maps each vendor to the packet formats they are known to use.
 // NMEA and RTCM are added to these automatically, so they are not included here.
 var allVendorPacketFormatsMap = map[Vendor][]gpsprot.PacketFormat{
-	VendorUnknown:   allVendorPacketFormats,
+	VendorUnknown: allVendorPacketFormats,
 	// no entry needed for VendorOther, since it is treated like vendors we do not currently support
 	VendorAllystar:  {as.PacketFormat},
 	VendorBynav:     {nov.BinPacketFormat, nov.AsciiPacketFormat},
@@ -241,23 +246,30 @@ func FindNMEASVNumbering(vendor Vendor) []gpsprot.NMEASVNumberingRange {
 // and enforces that the tag is one of the known protocols.
 type Protocol gpsprot.Tag
 
+var protocolMap = func() map[string]gpsprot.Tag {
+	m := make(map[string]gpsprot.Tag)
+	for _, f := range CreatePacketFormats(VendorUnknown) {
+		tag := f.Tag()
+		m[strings.ToUpper(string(tag))] = tag
+	}
+	return m
+}()
+
+// Tag returns the protocol tag.
 func (prot Protocol) Tag() gpsprot.Tag {
 	return gpsprot.Tag(prot)
 }
 
+// UnmarshalText implements encoding.TextUnmarshaler for Protocol.
 func (prot *Protocol) UnmarshalText(data []byte) error {
 	s := string(data)
-	switch strings.ToUpper(s) {
-	case "UBX":
-		*prot = Protocol(ubx.Tag)
-	case "NMEA":
-		*prot = Protocol(nmea.Tag)
-	case "RTCM":
-		*prot = Protocol(rtcm.Tag)
-	case "":
+	if s == "" {
 		*prot = Protocol("")
-	default:
-		return fmt.Errorf("unknown protocol: %s", s)
+		return nil
 	}
-	return nil
+	if tag, ok := protocolMap[strings.ToUpper(s)]; ok {
+		*prot = Protocol(tag)
+		return nil
+	}
+	return fmt.Errorf("unknown protocol: %s", s)
 }

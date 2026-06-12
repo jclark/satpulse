@@ -137,7 +137,7 @@ func (raw *CfgVals) AddData(cfgData []byte) (map[uint8]struct{}, error) {
 	return groups, nil
 }
 
-func (raw *CfgVals) Cook(ver *Version, cp *gpsprot.ConfigProps) {
+func (raw *CfgVals) Cook(ver *Version, cp *gpsprot.ConfigProps, port *ubxbin.PortID) {
 	if ver.tpIndex() == 1 {
 		raw = &CfgVals{ucv.RemapMap(raw.Map, ucv.KeyRemap(ucv.TPKeyPairs, 1, 0))}
 	}
@@ -162,6 +162,9 @@ func (raw *CfgVals) Cook(ver *Version, cp *gpsprot.ConfigProps) {
 	if v, ok := cfgValGet(raw, ucv.KRtcmDf003Out); ok {
 		cp.SetRTCMBaseID(uint16(v))
 	}
+	if v, ok := raw.getBaudRate(port); ok {
+		cp.SetBaudRate(v)
+	}
 }
 
 // Transaction determines the transaction to achieve the specified target.
@@ -171,18 +174,25 @@ func (raw *CfgVals) Cook(ver *Version, cp *gpsprot.ConfigProps) {
 // Typically this function will get called twice.
 // The first time, known will be empty, and some more keys will be needed.
 // The caller will then fetch the additional keys, add them to known and call again.
-func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, port ucv.Port, monEnabledGNSS gpsprot.GNSSSet) ([]ucv.Item, []ucv.Key, error) {
+//
+// portOK is false when the active receiver port could not be
+// discovered. In that case Transaction returns an error if the
+// transaction would have included any port-specific item (per-port
+// message rates or protocol enables); other items are emitted
+// normally. The read path (addGetKeys) silently omits the UART
+// baud-rate key when portOK is false.
+func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, port ucv.Port, portOK bool, monEnabledGNSS gpsprot.GNSSSet) ([]ucv.Item, []ucv.Key, error) {
 	var tp1to2 map[ucv.Key]ucv.Key
 	if ver.tpIndex() == 1 {
 		tp1to2 = ucv.KeyRemap(ucv.TPKeyPairs, 0, 1)
 		known = &CfgVals{ucv.RemapMap(known.Map, ucv.KeyRemap(ucv.TPKeyPairs, 1, 0))}
 	}
-	tb := newTxnBuilder(known, target, ver, port, monEnabledGNSS)
+	tb := newTxnBuilder(known, target, ver, port, portOK, monEnabledGNSS)
 	err := tb.build()
 	if err != nil {
 		return nil, nil, err
 	}
-	keys := known.addGetKeys(target.Get, ver, tb.keys)
+	keys := known.addGetKeys(target.Get, ver, port, portOK, tb.keys)
 	slices.Sort(keys)
 	keys = slices.Compact(keys)
 	if tp1to2 != nil {
@@ -193,8 +203,21 @@ func (known *CfgVals) Transaction(target *gpsprot.ConfigTarget, ver *Version, po
 
 // addGetKeys adds the keys that are needed to get the specified properties.
 // This doesn't handle the SignalsEnabled or NMAMsgAuth properties, which are handled separately.
-func (known *CfgVals) addGetKeys(ids gpsprot.PropIDs, ver *Version, keys []ucv.Key) []ucv.Key {
+//
+// For PropIDBaudRate: if the active port is a UART, add the matching
+// KUart{N}Baudrate key; for USB / I2C / SPI no key is needed because
+// CfgVals.getBaudRate reports those as zero. When portOK is false,
+// no baud-rate key is added; the result then omits baudRate rather
+// than reporting a guessed speed.
+func (known *CfgVals) addGetKeys(ids gpsprot.PropIDs, ver *Version, port ucv.Port, portOK bool, keys []ucv.Key) []ucv.Key {
 	tks := []ucv.AnyTypedKey{}
+	if ids&gpsprot.PropIDBaudRate != 0 && portOK {
+		if k := portBaudRateKey(port, portOK); k != 0 {
+			if !known.Contains(k.Key()) {
+				keys = append(keys, k.Key())
+			}
+		}
+	}
 	switch ids & gpsprot.PropIDTimePulse {
 	// we handle a few of these properties individually
 	case gpsprot.PropIDAntennaCableDelay, 0:
@@ -238,18 +261,20 @@ type txnBuilder struct {
 	target         *gpsprot.ConfigTarget
 	ver            *Version
 	port           ucv.Port
+	portOK         bool
 	items          []ucv.Item
 	keys           []ucv.Key
 	survey         bool
 }
 
-func newTxnBuilder(known *CfgVals, target *gpsprot.ConfigTarget, ver *Version, port ucv.Port, monEnabledGNSS gpsprot.GNSSSet) *txnBuilder {
+func newTxnBuilder(known *CfgVals, target *gpsprot.ConfigTarget, ver *Version, port ucv.Port, portOK bool, monEnabledGNSS gpsprot.GNSSSet) *txnBuilder {
 	return &txnBuilder{
 		known:          known,
 		monEnabledGNSS: monEnabledGNSS,
 		target:         target,
 		ver:            ver,
 		port:           port,
+		portOK:         portOK,
 		items:          []ucv.Item{},
 		keys:           []ucv.Key{},
 	}
@@ -270,7 +295,11 @@ func (tb *txnBuilder) build() error {
 	}
 
 	if v, ok := cp.GetAntennaCableDelay(); ok {
-		txnAddItem(tb, ucv.KTpAntCabledelay, int64(v))
+		n, err := antCableDelayNanos(v)
+		if err != nil {
+			return err
+		}
+		txnAddItem(tb, ucv.KTpAntCabledelay, n)
 	}
 	if v, ok := cp.GetMinElevation(); ok {
 		if deg, ok := angleToInt8Degrees(v); ok {
@@ -359,19 +388,25 @@ func (tb *txnBuilder) messagesBuild() error {
 	if err != nil {
 		return err
 	}
+	if !tb.portOK && (msgChanges.usesRate() || msgChanges.hasPortItems()) {
+		return errors.New("message configuration requested but receiver port unknown")
+	}
 	if msgChanges.usesRate() {
 		txnAddItem(tb, ucv.KRateMeas, 1000)
 		txnAddItem(tb, ucv.KRateNav, 1)
 	}
-	tb.items = append(tb.items, msgChanges.items(tb.port)...)
+	tb.items = append(tb.items, msgChanges.items(tb.port, tb.portOK)...)
 	return nil
 }
 
+// BaudRate returns the items required to set the target baud rate on
+// port. Callers must only invoke this with a known port (see
+// valBaudRate); for non-UART ports the result is empty.
 func (known *CfgVals) BaudRate(target *gpsprot.ConfigTarget, port ucv.Port) []ucv.Item {
 	items := []ucv.Item{}
-	baudRate := target.Opts.BaudRate
-	if baudRate != 0 {
-		k := portBaudRateKey(port)
+	baudRate, ok := target.Props.GetBaudRate()
+	if ok && baudRate != 0 {
+		k := portBaudRateKey(port, true)
 		if k != 0 {
 			ucv.AddItem(&items, k, uint64(baudRate))
 		}
@@ -583,12 +618,29 @@ func (raw *CfgVals) getTimePulse() (gpsprot.TimePulse, bool) {
 	return tp, true
 }
 
-
 func (raw *CfgVals) getTimeGNSS() (gpsprot.GNSS, bool) {
 	if tg, ok := cfgValGet(raw, ucv.KTpTimegridTp1); ok {
 		if g := timegridTp1ToGNSS(tg); g != 0 {
 			return g, true
 		}
+	}
+	return 0, false
+}
+
+// getBaudRate returns the baud rate for the active port. USB / I2C / SPI
+// return (0, true) ("not applicable"). UART returns the value if it is
+// in the val map (post-write); otherwise the result is unset since we
+// don't poll KUart{N}Baudrate.
+func (raw *CfgVals) getBaudRate(port *ubxbin.PortID) (uint32, bool) {
+	if port == nil {
+		return 0, false
+	}
+	k := portBaudRateKey(ucv.Port(*port), true)
+	if k == 0 {
+		return 0, true
+	}
+	if v, ok := cfgValGet(raw, k); ok {
+		return uint32(v), true
 	}
 	return 0, false
 }
@@ -878,7 +930,14 @@ func portOutprotRtcm3xKey(port ucv.Port) ucv.KeyL {
 	return 0
 }
 
-func portBaudRateKey(port ucv.Port) ucv.KeyU {
+// portBaudRateKey returns the val key for the UART baud rate of port,
+// or 0 if port is not a UART or portOK is false. !portOK and
+// non-UART collapse to the same "no key" result; callers that need
+// to distinguish them must check portOK separately.
+func portBaudRateKey(port ucv.Port, portOK bool) ucv.KeyU {
+	if !portOK {
+		return 0
+	}
 	switch port {
 	case ucv.UART1:
 		return ucv.KUart1Baudrate
@@ -886,6 +945,17 @@ func portBaudRateKey(port ucv.Port) ucv.KeyU {
 		return ucv.KUart2Baudrate
 	}
 	return 0
+}
+
+func resolveSignalConstraints(ver *Version, enabled, supported gpsprot.SignalSet) gpsprot.SignalSet {
+	if sig, ok := ver.singleBDSL1Signal(); ok {
+		b1 := gpsprot.SignalSetOf(gpsprot.SigBDSB1I, gpsprot.SigBDSB1C)
+		if enabled&supported&b1 != 0 {
+			enabled &^= b1
+			enabled |= gpsprot.SignalSetOf(sig)
+		}
+	}
+	return enabled
 }
 
 // EnableSignals returns the items needed to enable the given signals,
@@ -931,7 +1001,7 @@ func (raw *CfgVals) signalsSupported(ver *Version) gpsprot.SignalSet {
 			supported |= gpsprot.SignalSetOf(sig)
 		}
 	}
-	if ver.Mod == "NEO-F10T" {
+	if ver.isModel("NEO-F10T") {
 		// The NEO-F10T does not support BDS B1I,
 		// despite the fact that it has a key for it. Argh!
 		// This must be a bug in the firmware.

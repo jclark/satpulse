@@ -6,10 +6,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/jclark/satpulse/time/internal/phcsync"
-	"github.com/jclark/satpulse/time/phctime"
+	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/timemsg"
+	"github.com/jclark/satpulse/time/phctime"
 )
 
 type Replayer struct {
@@ -23,7 +24,7 @@ func (r *Replayer) tStartInit(event *LogEvent) {
 	// Keep existing subtle logic - it still works!
 	now := time.Now()
 	replayDelay := now.Sub(event.T)
-	r.tStart = now.Add(-replayDelay).Add(-event.Nanos)
+	r.tStart = now.Add(-replayDelay).Add(-time.Duration(event.Mono))
 }
 
 func (r *Replayer) replayEvent(bytes []byte) error {
@@ -35,36 +36,32 @@ func (r *Replayer) replayEvent(bytes []byte) error {
 	if r.tStart.IsZero() {
 		r.tStartInit(&event)
 	}
-	tRead := r.tStart.Add(event.Nanos)
+	tRead := r.tStart.Add(time.Duration(event.Mono))
 	if r.tPtr != nil {
 		*r.tPtr = tRead
 	}
-	// Replay pulse edges
-	if event.PulseEdge != nil {
+	switch data := event.Data.(type) {
+	case *PulseEdge:
 		r.ctrl.Pulse(
 			phctime.Time{
-				T:   event.PulseEdge.T,
-				Era: event.PulseEdge.Era,
+				T:   data.T,
+				Era: data.Era,
 			},
 			phctime.Sample{
 				PHC: phctime.Time{
-					T:   event.PulseEdge.TRead,
-					Era: event.PulseEdge.Era,
+					T:   data.TRead,
+					Era: data.Era,
 				},
 				Sys: tRead, // reconstructed monotonic time
 			},
 		)
-	}
-	// Replay time messages
-	if event.Time != nil {
-		r.timeMsgBuffer.Time(event.Time, tRead)
+	case *gpsprot.TimeMsg:
+		r.timeMsgBuffer.Time(data, tRead)
 		r.ctrl.TimeMessage()
-	}
-	// Replay leap second messages
-	if event.LeapSecond != nil {
+	case *gpsprot.LeapSecondMsg:
 		var ls ptime.LeapSecond
-		if event.LeapSecond.UpdateLeapSecond(&ls) {
-			r.timeMsgBuffer.LeapSecond(event.LeapSecond, tRead)
+		if data.UpdateLeapSecond(&ls) {
+			r.timeMsgBuffer.LeapSecond(data, tRead)
 			r.ctrl.LeapSecond(ls)
 		}
 	}

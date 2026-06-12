@@ -656,7 +656,22 @@ func (r *replayer) verify() {
 			r.t.Errorf("rtcmBaseID mismatch: got %v, want %v", rtcmBaseID, *cfg.RTCMBaseID)
 		}
 	}
-
+	if cfg.BaudRate != nil {
+		baudRate, ok := props.GetBaudRate()
+		if !ok {
+			r.t.Error("baudRate not set")
+		} else if baudRate != *cfg.BaudRate {
+			r.t.Errorf("baudRate mismatch: got %v, want %v", baudRate, *cfg.BaudRate)
+		}
+	}
+	if cfg.Port != "" {
+		port, ok := props.GetPort()
+		if !ok {
+			r.t.Error("port not set")
+		} else if port != cfg.Port {
+			r.t.Errorf("port mismatch: got %q, want %q", port, cfg.Port)
+		}
+	}
 }
 
 func equalSignalMaps(a, b map[string][]string) bool {

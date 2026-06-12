@@ -40,6 +40,8 @@ type ConfigProps struct {
 	navMsgAuth        NavMsgAuth
 	rtcmBaseID        uint16
 	minElevation      Angle
+	baudRate          uint32
+	port              string
 }
 
 const (
@@ -56,9 +58,18 @@ const (
 	PropIDNavMsgAuth
 	PropIDRTCMBaseID
 	PropIDMinElevation
+	PropIDBaudRate
+	PropIDPort
 	PropIDTimePulse PropIDs = PropIDTimePulseWidth | PropIDTimePulsePeriod |
 		PropIDTimePulseAlignToGNSS | PropIDTimePulseOnlyWhenLocked | PropIDTimePulsePolarityRising
 )
+
+// PropIDsReadOnly is the bitmask of properties that can only be
+// retrieved, not set. Callers must not include any of these bits in
+// target.Props; the contract is enforced at the public entry point in
+// gpscfg.Configure (panic on violation). Backends populate these
+// values on the result with the normal setter.
+const PropIDsReadOnly PropIDs = PropIDPort
 
 // propNames lists the property names in the same order as the bit constants
 var propNames = []string{
@@ -74,6 +85,8 @@ var propNames = []string{
 	"NavMsgAuth",
 	"RTCMBaseID",
 	"MinElevation",
+	"BaudRate",
+	"Port",
 }
 
 // IsEmpty returns true if no properties are set
@@ -121,6 +134,15 @@ const (
 )
 
 const PVTMsgAny PVTMsgFlags = PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond | PVTMsgSurvey | PVTMsgQuality | PVTMsgEpoch // any message (not option)
+
+// PVTMsgTimingPTP is the PVT message set required to drive a PTP
+// grandmaster from a receiver's hardware time pulse.
+const PVTMsgTimingPTP PVTMsgFlags = PVTMsgTimePulse | PVTMsgTimePulseAfter | PVTMsgTAI | PVTMsgLeapSecond | PVTMsgSurvey | PVTMsgQuality | PVTMsgEpoch
+
+// PVTMsgTimingSerialUTC is the PVT message set required when time is
+// delivered in UTC over the serial stream only, without a hardware
+// time pulse.
+const PVTMsgTimingSerialUTC PVTMsgFlags = PVTMsgTime | PVTMsgLeapSecond | PVTMsgSurvey | PVTMsgQuality | PVTMsgEpoch
 
 // These methods are to make PVTMsgFlags more consistent with Option[*Flags] for the other flags.
 
@@ -180,9 +202,10 @@ const (
 	RTCMMsgLax                            // Do the best we can on enabling RTCM messages
 	RTCMMsgOther RTCMMsgFlags = 1 << 15   // other unspecified RTCM messages
 	// may have flags for rate
-	RTCMMsgNone RTCMMsgFlags = 0
-	RTCMMsgAuto RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgARP | RTCMMsgLax                 // enable intelligently
-	RTCMMsgAny  RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgMSM7 | RTCMMsgARP | RTCMMsgOther // any message (not flag)
+	RTCMMsgNone     RTCMMsgFlags = 0
+	RTCMMsgAuto     RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgARP | RTCMMsgLax                 // enable intelligently
+	RTCMMsgAutoMSM7 RTCMMsgFlags = RTCMMsgMSM7 | RTCMMsgARP | RTCMMsgLax                 // enable intelligently, preferring MSM7
+	RTCMMsgAny      RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgMSM7 | RTCMMsgARP | RTCMMsgOther // any message (not flag)
 )
 
 type RawMsgFlags uint8
@@ -206,7 +229,6 @@ type ConfigOptions struct {
 	RawMsg     opt.Val[RawMsgFlags]  `json:",omitzero"`
 	Survey     Survey
 	SetStatic  bool         // ensure receiver is in static mode without changing existing fixed position
-	BaudRate   uint32       // serial port baud rate, 0 means do not change
 	TimeAssist TimeEstimate // provide time assistance to the receiver
 	OSNMA      OSNMAOptions // options for OSNMA authentication
 }
@@ -274,6 +296,8 @@ var propIDJSON = map[string]PropIDs{
 	"navMsgAuth":               PropIDNavMsgAuth,
 	"rtcmBaseID":               PropIDRTCMBaseID,
 	"minElevation":             PropIDMinElevation,
+	"baudRate":                 PropIDBaudRate,
+	"port":                     PropIDPort,
 }
 
 // propIDJSONNames lists the JSON names in a stable order for marshaling.
@@ -282,7 +306,7 @@ var propIDJSONNames = []string{
 	"signalsEnabled", "timeGNSS",
 	"timePulse", "timePulse.width", "timePulse.period",
 	"timePulse.alignToGNSS", "timePulse.onlyWhenLocked", "timePulse.polarityRising",
-	"mode", "antennaCableDelay", "navMsgAuth", "rtcmBaseID", "minElevation",
+	"mode", "antennaCableDelay", "navMsgAuth", "rtcmBaseID", "minElevation", "baudRate", "port",
 }
 
 // MarshalJSON marshals PropIDs as a JSON array of property name strings.
@@ -504,6 +528,54 @@ func (cp *ConfigProps) SetMinElevation(val Angle) {
 	cp.valid |= PropIDMinElevation
 }
 
+// GetBaudRate returns the baud rate and whether it's set.
+// In a result, value 0 means the port type has no baud rate (USB / I2C / SPI).
+func (cp *ConfigProps) GetBaudRate() (uint32, bool) {
+	if cp.valid&PropIDBaudRate != 0 {
+		return cp.baudRate, true
+	}
+	return 0, false
+}
+
+// SetBaudRate sets the baud rate. In a target, the value is the new
+// speed to configure.
+func (cp *ConfigProps) SetBaudRate(val uint32) {
+	cp.baudRate = val
+	cp.valid |= PropIDBaudRate
+}
+
+// GetPort returns the active receiver port name and whether it is
+// set. Port is a read-only property: it can appear on a result, but
+// must not appear in target.Props.
+func (cp *ConfigProps) GetPort() (string, bool) {
+	if cp.valid&PropIDPort != 0 {
+		return cp.port, true
+	}
+	return "", false
+}
+
+// SetPort records the active receiver port name on a result.
+// Public so backends can populate it; callers building a target must
+// not use this. See PropIDsReadOnly.
+func (cp *ConfigProps) SetPort(val string) {
+	cp.port = val
+	cp.valid |= PropIDPort
+}
+
+// ReadOnlyProps returns the subset of PropIDsReadOnly that are set on
+// cp. Used by gpscfg.Configure to detect API misuse (read-only
+// properties in target.Props).
+func (cp *ConfigProps) ReadOnlyProps() PropIDs {
+	return cp.valid & PropIDsReadOnly
+}
+
+// ClearReadOnlyProps removes all read-only properties from cp so it
+// can safely be reused as target.Props (e.g. after deserializing a
+// prior result).
+func (cp *ConfigProps) ClearReadOnlyProps() {
+	cp.valid &^= PropIDsReadOnly
+}
+
 // SetsAny returns true if any of the specified properties are set in the ConfigProps
 func (cp *ConfigProps) SetsAny(props ...PropIDs) bool {
 	for _, p := range props {
@@ -598,6 +670,18 @@ func (cp *ConfigProps) UnmarshalJSON(data []byte) error {
 				return fmt.Errorf("minElevation: %w", err)
 			}
 			tmp.SetMinElevation(DegreesFromFloat(deg))
+		case "baudRate":
+			var v uint32
+			if err := json.Unmarshal(val, &v); err != nil {
+				return fmt.Errorf("baudRate: %w", err)
+			}
+			tmp.SetBaudRate(v)
+		case "port":
+			var s string
+			if err := json.Unmarshal(val, &s); err != nil {
+				return fmt.Errorf("port: %w", err)
+			}
+			tmp.SetPort(s)
 		default:
 			return fmt.Errorf("unknown property %q", key)
 		}
@@ -752,6 +836,12 @@ func (cp *ConfigProps) CopyFrom(other *ConfigProps) {
 	if other.valid&PropIDMinElevation != 0 {
 		cp.minElevation = other.minElevation
 	}
+	if other.valid&PropIDBaudRate != 0 {
+		cp.baudRate = other.baudRate
+	}
+	if other.valid&PropIDPort != 0 {
+		cp.port = other.port
+	}
 	cp.valid |= other.valid
 }
 
@@ -799,6 +889,12 @@ func (cp *ConfigProps) Inconsistent(other *ConfigProps) *ConfigProps {
 	}
 	if both&PropIDMinElevation != 0 && cp.minElevation != other.minElevation {
 		result.SetMinElevation(other.minElevation)
+	}
+	if both&PropIDBaudRate != 0 && cp.baudRate != other.baudRate {
+		result.SetBaudRate(other.baudRate)
+	}
+	if both&PropIDPort != 0 && cp.port != other.port {
+		result.SetPort(other.port)
 	}
 	return result
 }
@@ -884,6 +980,12 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 	}
 	if cp.valid&PropIDMinElevation != 0 {
 		m["minElevation"] = cp.minElevation.Degrees()
+	}
+	if cp.valid&PropIDBaudRate != 0 {
+		m["baudRate"] = cp.baudRate
+	}
+	if cp.valid&PropIDPort != 0 {
+		m["port"] = cp.port
 	}
 	return m
 }

@@ -42,6 +42,7 @@ func (m *LeapSecondMsg) Dispatch(h MsgHandler, t time.Time) { h.LeapSecond(m, t)
 func (m *SurveyMsg) Dispatch(h MsgHandler, t time.Time)     { h.Survey(m, t) }
 func (m *SatellitesMsg) Dispatch(h MsgHandler, t time.Time) { h.Satellites(m, t) }
 func (m *NavEpochMsg) Dispatch(h MsgHandler, t time.Time)   { h.NavEpoch(m, t) }
+func (m *CorReportMsg) Dispatch(h MsgHandler, t time.Time)  { h.CorReport(m, t) }
 
 func (m *PosGeoMsg) MsgType() string     { return "posGeo" }
 func (m *PosECEFMsg) MsgType() string    { return "posECEF" }
@@ -52,6 +53,7 @@ func (m *LeapSecondMsg) MsgType() string { return "leapSecond" }
 func (m *SurveyMsg) MsgType() string     { return "survey" }
 func (m *SatellitesMsg) MsgType() string { return "satellites" }
 func (m *NavEpochMsg) MsgType() string   { return "navEpoch" }
+func (m *CorReportMsg) MsgType() string  { return "corReport" }
 
 // SetPriority implements PVMsg for the four position/velocity types.
 func (m *PosGeoMsg) SetPriority(pri MsgPriority)  { m.Priority = pri }
@@ -96,6 +98,15 @@ type MsgHandler interface {
 	Survey(msg *SurveyMsg, tRead time.Time)
 	Satellites(msg *SatellitesMsg, tRead time.Time)
 	NavEpoch(msg *NavEpochMsg, tRead time.Time)
+	CorReporter
+}
+
+// CorReporter is implemented by consumers that handle correction
+// reports. It is embedded in MsgHandler so correction reports flow through
+// the normal gpsprot.Msg path, but can also be used on its own by a
+// protocol-independent correlator that only needs correction reports.
+type CorReporter interface {
+	CorReport(msg *CorReportMsg, tRead time.Time)
 }
 
 // NativeMsgHandler handles protocol-specific messages that don't map to standard messages.
@@ -119,6 +130,7 @@ func (h *DefaultHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) {}
 func (h *DefaultHandler) Survey(msg *SurveyMsg, tRead time.Time)         {}
 func (h *DefaultHandler) Satellites(msg *SatellitesMsg, tRead time.Time) {}
 func (h *DefaultHandler) NavEpoch(msg *NavEpochMsg, tRead time.Time)     {}
+func (h *DefaultHandler) CorReport(msg *CorReportMsg, tRead time.Time)   {}
 
 // GenericHandler adapts a single callback into the MsgHandler interface.
 // Every message type is dispatched to the same Handle function.
@@ -135,18 +147,55 @@ func (h *GenericHandler) LeapSecond(msg *LeapSecondMsg, tRead time.Time) { h.Han
 func (h *GenericHandler) Survey(msg *SurveyMsg, tRead time.Time)         { h.Handle(msg, tRead) }
 func (h *GenericHandler) Satellites(msg *SatellitesMsg, tRead time.Time) { h.Handle(msg, tRead) }
 func (h *GenericHandler) NavEpoch(msg *NavEpochMsg, tRead time.Time)     { h.Handle(msg, tRead) }
+func (h *GenericHandler) CorReport(msg *CorReportMsg, tRead time.Time) {
+	h.Handle(msg, tRead)
+}
 
-// Event is the universal envelope for all gpsprot messages.
-type Event struct {
+// Event is a JSON event envelope. T is the wall-clock time the event was
+// read; Mono is the monotonic elapsed time since session start; Data is the
+// event payload, whose JSON type is named by Type.
+type Event[T any] struct {
 	Type string    `json:"type"`
 	T    time.Time `json:"t"`
 	Mono Duration  `json:"mono"`
-	Data Msg       `json:"data"`
+	Data T         `json:"data"`
 }
 
-// NewEvent constructs an Event from a message, wall-clock time, and monotonic offset.
-func NewEvent(msg Msg, t time.Time, mono Duration) Event {
-	return Event{Type: msg.MsgType(), T: t, Mono: mono, Data: msg}
+// MsgEvent is an Event carrying a gpsprot Msg.
+type MsgEvent Event[Msg]
+
+// NewMsgEvent constructs a MsgEvent from a message, wall-clock time, and monotonic offset.
+func NewMsgEvent(msg Msg, t time.Time, mono Duration) MsgEvent {
+	return MsgEvent{Type: msg.MsgType(), T: t, Mono: mono, Data: msg}
+}
+
+// msgRegistry maps each message type name to a factory for an empty value
+// of the corresponding concrete Msg type.
+var msgRegistry = map[string]func() Msg{
+	"posGeo":     func() Msg { return &PosGeoMsg{} },
+	"posECEF":    func() Msg { return &PosECEFMsg{} },
+	"velGeo":     func() Msg { return &VelGeoMsg{} },
+	"velECEF":    func() Msg { return &VelECEFMsg{} },
+	"time":       func() Msg { return &TimeMsg{} },
+	"leapSecond": func() Msg { return &LeapSecondMsg{} },
+	"survey":     func() Msg { return &SurveyMsg{} },
+	"satellites": func() Msg { return &SatellitesMsg{} },
+	"navEpoch":   func() Msg { return &NavEpochMsg{} },
+	"corReport":  func() Msg { return &CorReportMsg{} },
+}
+
+// UnmarshalMsg decodes a GPS message payload of the named type from its JSON
+// data, returning the concrete Msg.
+func UnmarshalMsg(typeName string, data json.RawMessage) (Msg, error) {
+	factory, ok := msgRegistry[typeName]
+	if !ok {
+		return nil, fmt.Errorf("unknown message type %q", typeName)
+	}
+	msg := factory()
+	if err := json.Unmarshal(data, msg); err != nil {
+		return nil, err
+	}
+	return msg, nil
 }
 
 type MultiHandler struct {
@@ -204,6 +253,12 @@ func (h *MultiHandler) VelECEF(msg *VelECEFMsg, tRead time.Time) {
 func (h *MultiHandler) NavEpoch(msg *NavEpochMsg, tRead time.Time) {
 	for _, handler := range h.handlers {
 		handler.NavEpoch(msg, tRead)
+	}
+}
+
+func (h *MultiHandler) CorReport(msg *CorReportMsg, tRead time.Time) {
+	for _, handler := range h.handlers {
+		handler.CorReport(msg, tRead)
 	}
 }
 
@@ -354,6 +409,8 @@ func GNSSSetOf(gs ...GNSS) GNSSSet {
 
 const MajorGNSSSet GNSSSet = 1<<GPS | 1<<GAL | 1<<BDS | 1<<GLO
 
+const AllGNSSSet GNSSSet = MajorGNSSSet | 1<<QZSS | 1<<NAVIC | 1<<SBAS
+
 // IsZero returns true when the set is empty.
 func (s GNSSSet) IsZero() bool { return s == 0 }
 
@@ -496,10 +553,10 @@ func (sv SVID) IsValid() bool {
 }
 
 type SVInfo struct {
-	ID         SVID         `json:"id"`
-	LookAngles *LookAngles  `json:"lookAngles,omitempty"` // look angle of the satellite
-	Signals    []SignalInfo `json:"signals"`              // signals being transmitted by a satellite
-	Used       bool         `json:"used,omitempty"`       // true if the satellite is used in the navigation solution
+	ID         SVID                `json:"id"`
+	LookAngles opt.Val[LookAngles] `json:"lookAngles,omitzero"` // look angle of the satellite
+	Signals    []SignalInfo        `json:"signals"`             // signals being transmitted by a satellite
+	Used       bool                `json:"used,omitempty"`      // true if the satellite is used in the navigation solution
 }
 
 type LookAngles struct {
@@ -588,16 +645,16 @@ const (
 )
 
 type TimeMsg struct {
-	TAITime     ptime.Time     `json:"taiTime,omitempty"`
-	UTCTime     *ptime.UTCTime `json:"utcTime,omitempty"`
-	Accuracy    time.Duration  `json:"accuracy,omitempty"`
-	UTCOffset   uint8          `json:"utcOffset,omitempty"`
-	PulseOffset *float64       `json:"pulseOffset,omitempty"` // ns; the true time of the top of second is the time of the pulse plus the PulseOffset
-	GNSS        GNSS           `json:"gnss,omitempty"`
-	Ref         TimeRef        `json:"ref,omitempty"`
-	Tag         Tag            `json:"tag,omitempty"`
-	NativeMsgID string         `json:"nativeMsgID,omitempty"`
-	ReadDelay   Duration       `json:"readDelay,omitempty"` // time between epoch start and when this message was read
+	TAITime     ptime.Time             `json:"taiTime,omitempty"`
+	UTCTime     opt.Val[ptime.UTCTime] `json:"utcTime,omitzero"`
+	Accuracy    time.Duration          `json:"accuracy,omitempty"`
+	UTCOffset   uint8                  `json:"utcOffset,omitempty"`
+	PulseOffset opt.Val[float64]       `json:"pulseOffset,omitzero"` // ns; the true time of the top of second is the time of the pulse plus the PulseOffset
+	GNSS        GNSS                   `json:"gnss,omitempty"`
+	Ref         TimeRef                `json:"ref,omitempty"`
+	Tag         Tag                    `json:"tag,omitempty"`
+	NativeMsgID string                 `json:"nativeMsgID,omitempty"`
+	ReadDelay   Duration               `json:"readDelay,omitempty"` // time between epoch start and when this message was read
 }
 
 // ComputeTAITime computes the TAI time from this message, using the leap second for UTC conversion if needed
@@ -605,10 +662,10 @@ func (msg *TimeMsg) ComputeTAITime(ls ptime.LeapSecond) (ptime.Time, bool) {
 	if !msg.TAITime.IsZero() {
 		return msg.TAITime, true
 	}
-	if msg.UTCTime == nil {
+	if !msg.UTCTime.IsSet() {
 		return 0, false
 	}
-	return ls.UTCtoTime(*msg.UTCTime), true
+	return ls.UTCtoTime(msg.UTCTime.Get()), true
 }
 
 // PosGeoMsg is a geodetic position (latitude, longitude, height above WGS-84 ellipsoid).
@@ -1102,9 +1159,9 @@ func (a *AuxSrc) UnmarshalJSON(data []byte) error {
 // be synthesized from multiple messages within an epoch (e.g. UBX-NAV-DOP
 // provides all five, while NMEA GSA provides only PDOP/HDOP/VDOP).
 type DOP struct {
-	Geom opt.Val[float64] `json:"geom,omitzero"` // geometric DOP
-	Pos  opt.Val[float64] `json:"pos,omitzero"`  // position (3D) DOP
-	Hor  opt.Val[float64] `json:"hor,omitzero"`  // horizontal DOP
+	Geom  opt.Val[float64] `json:"geom,omitzero"`  // geometric DOP
+	Pos   opt.Val[float64] `json:"pos,omitzero"`   // position (3D) DOP
+	Hor   opt.Val[float64] `json:"hor,omitzero"`   // horizontal DOP
 	Vert  opt.Val[float64] `json:"vert,omitzero"`  // vertical DOP
 	Time  opt.Val[float64] `json:"time,omitzero"`  // time DOP
 	North opt.Val[float64] `json:"north,omitzero"` // northing DOP
@@ -1439,10 +1496,6 @@ func (t *TimeTicker) Time(msg *TimeMsg, tRead time.Time) {
 		return
 	}
 	m := *msg
-	if m.UTCTime != nil {
-		ut := *m.UTCTime
-		m.UTCTime = &ut
-	}
 	t.fill(&m)
 	t.time.Set(m)
 	t.h.Time(&m, tRead)
@@ -1457,15 +1510,14 @@ func (t *TimeTicker) fill(m *TimeMsg) {
 	if !m.TAITime.IsZero() {
 		m.TAITime = m.TAITime.Round(time.Millisecond)
 	}
-	if m.UTCTime != nil {
-		m.UTCTime.TimeOfDay = m.UTCTime.TimeOfDay.Round(time.Millisecond)
+	if ut := m.UTCTime.Ptr(); ut != nil {
+		ut.TimeOfDay = ut.TimeOfDay.Round(time.Millisecond)
 	}
-	if m.TAITime.IsZero() && m.UTCTime != nil {
-		m.TAITime = t.ls.UTCtoTime(*m.UTCTime)
+	if m.TAITime.IsZero() && m.UTCTime.IsSet() {
+		m.TAITime = t.ls.UTCtoTime(m.UTCTime.Get())
 	}
-	if m.UTCTime == nil && !m.TAITime.IsZero() {
-		ut := t.ls.TimeToUTC(m.TAITime)
-		m.UTCTime = &ut
+	if !m.UTCTime.IsSet() && !m.TAITime.IsZero() {
+		m.UTCTime.Set(t.ls.TimeToUTC(m.TAITime))
 	}
 	if m.UTCOffset == 0 && !m.TAITime.IsZero() {
 		state := t.ls.StateAt(m.TAITime)
@@ -1473,4 +1525,83 @@ func (t *TimeTicker) fill(m *TimeMsg) {
 			m.UTCOffset = uint8(state.UTCOffset)
 		}
 	}
+}
+
+// CorReportSource indicates where a CorReportMsg was observed.
+type CorReportSource uint8
+
+const (
+	// CorReportSourcePull means the report was scanned from a
+	// correction packet pulled from a network source (e.g. stream.pull).
+	// It does not imply the receiver used the packet.
+	CorReportSourcePull CorReportSource = iota
+
+	// CorReportSourceReceiver means the receiver reported the
+	// correction input status. It does not imply the receiver emitted
+	// the correction packet itself.
+	CorReportSourceReceiver
+)
+
+func (s CorReportSource) String() string {
+	switch s {
+	case CorReportSourcePull:
+		return "pull"
+	case CorReportSourceReceiver:
+		return "receiver"
+	}
+	return fmt.Sprintf("CorReportSource(%d)", s)
+}
+
+func (s CorReportSource) MarshalText() ([]byte, error) {
+	return []byte(s.String()), nil
+}
+
+func (s *CorReportSource) UnmarshalText(text []byte) error {
+	switch string(text) {
+	case "pull":
+		*s = CorReportSourcePull
+	case "receiver":
+		*s = CorReportSourceReceiver
+	default:
+		return fmt.Errorf("unknown CorReportSource %q", text)
+	}
+	return nil
+}
+
+// CorReportMsg is a protocol-independent observation of a
+// correction packet (typically RTCM). It is emitted by both pulled
+// network sources and by receivers reporting their correction input
+// status; the two cases are distinguished by Source.
+type CorReportMsg struct {
+	Source CorReportSource `json:"source"`
+
+	Tag   Tag    `json:"tag"`
+	MsgID string `json:"msgID"`
+
+	NativeMsg any `json:"nativeMsg,omitempty"`
+
+	NBytes     opt.Val[int]  `json:"nBytes,omitzero"`
+	ChecksumOK opt.Val[bool] `json:"checksumOK,omitzero"`
+	// FinalFragment reports whether this packet is the final fragment of a
+	// logical correction message that may be split across multiple consecutive
+	// packets with the same Tag.
+	//
+	// Absent -- the report carries no information about fragmentation. This is
+	// the case for every receiver-source report (the receiver does not report
+	// on-the-wire fragmentation), and for every pull-source report whose message
+	// type cannot be fragmented across consecutive same-Tag packets.
+	//
+	// false -- a producer that can observe fragmentation determined this is a
+	// non-final fragment; more packets follow for this logical message.
+	//
+	// true -- this is the final fragment. A logical message carried in a single
+	// packet is true, not absent.
+	//
+	// The three states are deliberately chosen so a consumer can decide
+	// statelessly: a logical message is complete iff FinalFragment is true;
+	// incomplete iff false; and absent means the consumer has no fragmentation
+	// information and must fall back to its own policy.
+	FinalFragment opt.Val[bool]   `json:"finalFragment,omitzero"`
+	Used          opt.Val[bool]   `json:"used,omitzero"`
+	RTCMRefBaseID opt.Val[uint16] `json:"rtcmRefBaseID,omitzero"`
 }

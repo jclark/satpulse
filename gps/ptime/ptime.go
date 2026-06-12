@@ -1,13 +1,10 @@
 package ptime
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 // Time in TAI timescale represented as nanoseconds since 1970-01-01T00:00:00 TAI
@@ -22,6 +19,21 @@ type UTCTime struct {
 // SysTime converts a UTCTime to a time.Time (system time).
 func (ut UTCTime) SysTime() time.Time {
 	return ut.Date.Add(ut.TimeOfDay)
+}
+
+// Sub subtracts two UTCTimes using the civil labels encoded in the values.
+// It handles an explicitly represented positive leap second
+// (TimeOfDay >= 24h) at either endpoint. It cannot infer negative leap
+// seconds or unrepresented positive leap seconds elsewhere in the interval.
+func (ut1 UTCTime) Sub(ut2 UTCTime) time.Duration {
+	d := ut1.Date.Sub(ut2.Date) + (ut1.TimeOfDay - ut2.TimeOfDay)
+	if ut2.TimeOfDay >= 24*time.Hour && ut1.Date.After(ut2.Date) {
+		d += time.Second
+	}
+	if ut1.TimeOfDay >= 24*time.Hour && ut2.Date.After(ut1.Date) {
+		d -= time.Second
+	}
+	return d
 }
 
 type LeapSecond struct {
@@ -350,9 +362,9 @@ func (ls LeapSecond) UTCStateAt(ut UTCTime) LeapSecondState {
 	return state
 }
 
-// MarshalJSON marshals UTCTime to ISO8601 format like "2025-03-24T06:19:00Z".
+// String formats UTCTime in ISO8601 format like "2025-03-24T06:19:00Z".
 // For leap seconds (TimeOfDay >= 24h), produces "2025-06-30T23:59:60Z" format.
-func (ut UTCTime) MarshalJSON() ([]byte, error) {
+func (ut UTCTime) String() string {
 	t := ut.SysTime()
 	// Check if TimeOfDay represents a leap second (>= 86400s = 24h)
 	if ut.TimeOfDay >= 24*time.Hour {
@@ -364,19 +376,21 @@ func (ut UTCTime) MarshalJSON() ([]byte, error) {
 		if colonPos >= 0 && len(s) >= colonPos+3 {
 			s = s[:colonPos+1] + "60" + s[colonPos+3:]
 		}
-		return json.Marshal(s)
+		return s
 	}
 	// Normal case: use standard RFC3339Nano
-	return json.Marshal(t.Format(time.RFC3339Nano))
+	return t.Format(time.RFC3339Nano)
 }
 
-// UnmarshalJSON unmarshals from ISO8601 format.
+// MarshalText marshals UTCTime to ISO8601 format. json.Marshal picks this up automatically.
+func (ut UTCTime) MarshalText() ([]byte, error) {
+	return []byte(ut.String()), nil
+}
+
+// UnmarshalText unmarshals from ISO8601 format.
 // Handles leap seconds (sec=60) correctly.
-func (ut *UTCTime) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return err
-	}
+func (ut *UTCTime) UnmarshalText(data []byte) error {
+	s := string(data)
 	// Check for leap second (":60")
 	colonPos := strings.LastIndex(s, ":")
 	isLeapSecond := false
@@ -407,14 +421,6 @@ func (ut *UTCTime) UnmarshalJSON(data []byte) error {
 
 func Unix(sec int64, nsec int64) Time {
 	return Time(sec*1e9 + nsec)
-}
-
-func TimespecToTime(t unix.Timespec) Time {
-	return Time(t.Nano())
-}
-
-func (t Time) Timespec() unix.Timespec {
-	return unix.NsecToTimespec(int64(t))
 }
 
 func (t Time) String() string {

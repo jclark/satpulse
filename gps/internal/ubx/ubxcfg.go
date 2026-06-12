@@ -34,16 +34,21 @@ type requestOps interface {
 	ChangeSpeed() int
 	Pause() time.Duration
 	Ackable() bool
-	AwaitingResponse(tSent time.Time) bool
+	AwaitingResponse(sentSeq uint64) bool
 	Done()
 	ID() string
+	// NakError returns a request-specific error to report when the receiver
+	// NAKs the request, or nil to report a generic error.
+	NakError() error
 }
 
 // configRequest is the UBX implementation of gpsprot.ConfigRequest
 type configRequest struct {
 	ops            requestOps         // Request-specific operations
+	cfg            *Configurator      // Back-reference for event sequence lookup
 	state          configRequestState // Internal state for ACK/response tracking
 	sentTime       time.Time          // When the request was sent
+	sentSeq        uint64             // Event sequence visible when the request was sent
 	pauseStartTime time.Time          // When the pause period started
 	err            error              // Error details for failed requests
 }
@@ -51,6 +56,8 @@ type configRequest struct {
 type Configurator struct {
 	ver         *Version // never nil
 	tRead       map[ubxbin.MsgID]time.Time
+	msgSeq      map[ubxbin.MsgID]uint64
+	eventSeq    uint64
 	raw         RawConfig
 	origPrt     *ubxbin.CfgPrt
 	portID      *ubxbin.PortID
@@ -202,10 +209,11 @@ func (cr *configRequest) SetSentTime(tSent time.Time) {
 	}
 
 	cr.sentTime = tSent
+	cr.sentSeq = cr.cfg.eventSeq
 
 	// Determine initial awaiting state based on what this request needs
 	needsAck := cr.ops.Ackable()
-	needsResponse := cr.ops.AwaitingResponse(tSent)
+	needsResponse := cr.ops.AwaitingResponse(cr.sentSeq)
 
 	if needsAck && needsResponse {
 		cr.state = stateAwaitingAckAndResponse
@@ -274,7 +282,7 @@ func (cr *configRequest) checkComplete(ackTime time.Time) {
 		}
 	case stateAwaitingResponse:
 		// Check if we have the response
-		if !cr.ops.AwaitingResponse(cr.sentTime) {
+		if !cr.ops.AwaitingResponse(cr.sentSeq) {
 			if cr.ops.Pause() > 0 {
 				cr.state = statePausing
 				cr.pauseStartTime = ackTime
@@ -284,16 +292,12 @@ func (cr *configRequest) checkComplete(ackTime time.Time) {
 			}
 		}
 	case stateAwaitingAckAndResponse:
-		// Need to check if we have both
-		// This will be called when either ACK arrives or response data updates
-		// For now, transition to appropriate single-waiting state
-		if !cr.ops.AwaitingResponse(cr.sentTime) {
-			// Got response, still waiting for ACK
+		// If the response arrived, wait for the ACK before completing.
+		// Do not recursively call checkComplete here: the ACK path in
+		// processAckNak is responsible for advancing stateAwaitingAck.
+		if !cr.ops.AwaitingResponse(cr.sentSeq) {
 			cr.state = stateAwaitingAck
-			cr.checkComplete(ackTime)
 		}
-		// If only ACK arrived, we stay in stateAwaitingAckAndResponse
-		// The processAckNak will handle transitioning when ACK arrives
 	}
 }
 
@@ -307,11 +311,50 @@ func newConfigurator(target *gpsprot.ConfigTarget, ver *Version) *Configurator {
 		target: target,
 		steps:  steps,
 		tRead:  make(map[ubxbin.MsgID]time.Time),
+		msgSeq: make(map[ubxbin.MsgID]uint64),
 	}
 }
 
+func (c *Configurator) nextEventSeq() uint64 {
+	c.eventSeq++
+	return c.eventSeq
+}
+
+func (c *Configurator) noteMsg(mid ubxbin.MsgID, t time.Time) {
+	seq := c.nextEventSeq()
+	c.tRead[mid] = t
+	c.msgSeq[mid] = seq
+}
+
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
-	return c.raw.Config(c.ver)
+	cp := c.raw.Config(c.ver, c.portID)
+	if cp != nil && c.target.Get&gpsprot.PropIDPort != 0 {
+		if port, ok := c.valPort(); ok {
+			if name, ok := portName(port); ok {
+				cp.SetPort(name)
+			}
+		}
+	}
+	return cp
+}
+
+// portName maps a u-blox port identifier to the user-facing port
+// name. Returns false for unrecognised values; the result then leaves
+// PropIDPort unset rather than emitting a synthetic name.
+func portName(p ucv.Port) (string, bool) {
+	switch p {
+	case ucv.I2C:
+		return "I2C", true
+	case ucv.UART1:
+		return "UART1", true
+	case ucv.UART2:
+		return "UART2", true
+	case ucv.USB:
+		return "USB", true
+	case ucv.SPI:
+		return "SPI", true
+	}
+	return "", false
 }
 
 // ReceiverInfo returns static information about the GPS receiver.
@@ -340,6 +383,11 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	}
 
 	return &rcvrInfo
+}
+
+// ConfigSupport returns configuration support for this implementation.
+func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
+	return c.ver.configSupport()
 }
 
 // GetRequestCount returns the current number of requests and whether the slice is complete.
@@ -451,6 +499,7 @@ func (c *Configurator) handleFailedRequest(index int) {
 	msg := c.origPrt
 	c.reqs = append(c.reqs, &configRequest{
 		ops:   msgSetRequest{msgRequest{msg}, &c.raw},
+		cfg:   c,
 		state: stateReadyToSend,
 	})
 }
@@ -459,20 +508,21 @@ func (c *Configurator) handleFailedRequest(index int) {
 func (c *Configurator) addRequest(ops requestOps) error {
 	c.reqs = append(c.reqs, &configRequest{
 		ops:   ops,
+		cfg:   c,
 		state: stateNotReady,
 	})
 	return nil
 }
 
 // processAckNak handles both positive and negative acknowledgments
-func (c *Configurator) processAckNak(msgID ubxbin.MsgID, ok bool, t time.Time) {
+func (c *Configurator) processAckNak(msgID ubxbin.MsgID, ok bool, t time.Time, eventSeq uint64) {
 	// Find the request that matches this ACK/NACK
 	for i := 0; i < len(c.reqs); i++ {
 		cr := c.reqs[i]
 		// Check if this request is awaiting an ACK
 		if cr.state == stateAwaitingAck || cr.state == stateAwaitingAckAndResponse {
 			packet := cr.ops.Packet()
-			if ubxbin.PacketMsgId(packet) == msgID && !t.Before(cr.sentTime) {
+			if ubxbin.PacketMsgId(packet) == msgID && eventSeq > cr.sentSeq {
 				if ok {
 					// ACK received
 					if cr.state == stateAwaitingAckAndResponse {
@@ -486,7 +536,10 @@ func (c *Configurator) processAckNak(msgID ubxbin.MsgID, ok bool, t time.Time) {
 				} else {
 					// NACK received
 					cr.state = stateFailed
-					cr.err = fmt.Errorf("GPS receiver sent NACK for request %s", cr.ops.ID())
+					cr.err = cr.ops.NakError()
+					if cr.err == nil {
+						cr.err = fmt.Errorf("GPS receiver sent NACK for request %s", cr.ops.ID())
+					}
 				}
 				break
 			}
@@ -494,42 +547,48 @@ func (c *Configurator) processAckNak(msgID ubxbin.MsgID, ok bool, t time.Time) {
 	}
 }
 
-// checkPollResponses checks if any awaiting poll requests are now satisfied
+// checkPollResponses checks if any awaiting poll requests are now satisfied.
+// It intentionally skips stateAwaitingAck so that a response event cannot
+// complete a request that is only waiting for an ACK.
 func (c *Configurator) checkPollResponses(t time.Time) {
 	for i := 0; i < len(c.reqs); i++ {
-		c.reqs[i].checkComplete(t)
+		cr := c.reqs[i]
+		if cr.state == stateAwaitingAck {
+			continue
+		}
+		cr.checkComplete(t)
 	}
 }
 
 func (c *Configurator) processMsg(msg ubxbin.Msg, t time.Time) (bool, error) {
 	switch mt := msg.(type) {
 	case *ubxbin.AckAck:
-		c.processAckNak(mt.MsgID, true, t)
+		c.processAckNak(mt.MsgID, true, t, c.nextEventSeq())
 		return true, nil
 	case *ubxbin.AckNak:
-		c.processAckNak(mt.MsgID, false, t)
+		c.processAckNak(mt.MsgID, false, t, c.nextEventSeq())
 		return true, nil
 	case *ubxbin.MonComms:
-		c.tRead[mt.ID()] = t
+		c.noteMsg(mt.ID(), t)
 		if pid, ok := monCommsPort(mt); ok {
 			c.portID = &pid
 		}
 		c.checkPollResponses(t)
 		return true, nil
 	case *ubxbin.MonGnss:
-		c.tRead[mt.ID()] = t
+		c.noteMsg(mt.ID(), t)
 		c.monGNSS = c.newMonGNSS(mt)
 		c.checkPollResponses(t)
 		return true, nil
 	case *ubxbin.MonGnss1:
-		c.tRead[mt.ID()] = t
+		c.noteMsg(mt.ID(), t)
 		c.planSignals = monGnss1Signals(mt)
 		c.checkPollResponses(t)
 		return true, nil
 	}
 	mid := msg.ID()
 	if mid.CfgClass() {
-		c.tRead[mid] = t
+		c.noteMsg(mid, t)
 		_, err := c.raw.AddMsg(msg)
 		c.checkPollResponses(t)
 		return err == nil, err
@@ -575,7 +634,7 @@ func (c *Configurator) saveMinimal() error {
 		return nil
 	}
 	// Port has bits for wther NMEA/RTCM output is enabled at all on the port.
-	if c.target.Opts.BaudRate != 0 || c.target.Opts.NMEAMsg.IsSet() || c.target.Opts.RTCMMsg.IsSet() {
+	if c.target.Props.SetsAny(gpsprot.PropIDBaudRate) || c.target.Opts.NMEAMsg.IsSet() || c.target.Opts.RTCMMsg.IsSet() {
 		saveMask |= ubxbin.CfgCfgIOPort
 	}
 	if c.target.Opts.SetsMsgs() {
@@ -614,17 +673,17 @@ func (c *Configurator) reloadCfg() error {
 	if c.target.Opts.Reset != gpsprot.ResetReload {
 		return nil
 	}
-	return c.addRequest(msgRequest{c.newCfgCfgRequest(0, 0, ubxbin.CfgCfgSectionMaskAll, 0)})
+	return c.addRequest(msgRequest{c.newCfgCfgRequest(0, 0, ubxbin.CfgCfgSectionMaskAll)})
 }
 
-func (*Configurator) newCfgCfgRequest(clearMask, saveMask, loadMask ubxbin.CfgCfgSectionMask, deviceMask ubxbin.CfgCfgDeviceMask) *ubxbin.CfgCfg {
+func (*Configurator) newCfgCfgRequest(clearMask, saveMask, loadMask ubxbin.CfgCfgSectionMask, deviceMask ...ubxbin.CfgCfgDeviceMask) *ubxbin.CfgCfg {
 	return &ubxbin.CfgCfg{
 		CfgCfgFixed: ubxbin.CfgCfgFixed{
 			ClearMask: clearMask,
 			SaveMask:  saveMask,
 			LoadMask:  loadMask,
 		},
-		DeviceMask: []ubxbin.CfgCfgDeviceMask{deviceMask},
+		DeviceMask: deviceMask,
 	}
 }
 
@@ -639,7 +698,8 @@ func (c *Configurator) reset() error {
 }
 
 func (c *Configurator) valGet() error {
-	_, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.valPort(), c.monEnabledGNSS())
+	port, portOK := c.valPort()
+	_, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, port, portOK, c.monEnabledGNSS())
 	if err != nil {
 		return err
 	}
@@ -682,6 +742,7 @@ func (c *Configurator) valSetSignals() error {
 	if supported == 0 {
 		return errors.New("could not determine supported GNSS signals")
 	}
+	targetEnabled = resolveSignalConstraints(c.ver, targetEnabled, supported)
 	enabled, items := c.raw.valsPtr().EnableSignals(targetEnabled, supported)
 	// Ensure we have one non-augmentation signal from a major GNSS
 	enabled &= gpsprot.SigSetMajor
@@ -693,7 +754,10 @@ func (c *Configurator) valSetSignals() error {
 	if err != nil {
 		return err
 	}
-	return c.addMsgSetPauseRequest(val, pauseAfterGNSSReset)
+	return c.addRequest(nakErrRequest{
+		msgSetPauseRequest{msgSetRequest{msgRequest{val}, &c.raw}, pauseAfterGNSSReset},
+		errors.New("receiver rejected the requested combination of signals as invalid"),
+	})
 }
 
 func andIfNonZero(ss1, ss2 gpsprot.SignalSet) gpsprot.SignalSet {
@@ -729,7 +793,8 @@ func (c *Configurator) valSetNMA() error {
 }
 
 func (c *Configurator) valSet() error {
-	items, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, c.valPort(), c.monEnabledGNSS())
+	port, portOK := c.valPort()
+	items, missing, err := c.raw.valsPtr().Transaction(c.target, c.ver, port, portOK, c.monEnabledGNSS())
 	if err != nil {
 		return err
 	}
@@ -767,7 +832,14 @@ func (c *Configurator) monEnabledGNSS() gpsprot.GNSSSet {
 }
 
 func (c *Configurator) valBaudRate() error {
-	items := c.raw.valsPtr().BaudRate(c.target, c.valPort())
+	if !c.target.Props.SetsAny(gpsprot.PropIDBaudRate) {
+		return nil
+	}
+	port, ok := c.valPort()
+	if !ok {
+		return errors.New("baud-rate change requested but receiver port unknown")
+	}
+	items := c.raw.valsPtr().BaudRate(c.target, port)
 	if len(items) == 0 {
 		return nil
 	}
@@ -778,15 +850,18 @@ func (c *Configurator) valBaudRate() error {
 	return c.addMsgSetSpeedRequest(val, int(items[0].Value))
 }
 
-func (c *Configurator) valPort() ucv.Port {
+// valPort returns the active receiver port and true when known, or
+// (0, false) when it has not been discovered. The zero value must not
+// be treated as a guess: callers that need a real port for a write
+// must surface an error on !ok rather than silently substituting one.
+func (c *Configurator) valPort() (ucv.Port, bool) {
 	if c.portID != nil {
-		return ucv.Port(*c.portID)
+		return ucv.Port(*c.portID), true
 	}
 	if c.raw.prt != nil {
-		return ucv.Port(c.raw.prt.PortID)
+		return ucv.Port(c.raw.prt.PortID), true
 	}
-	// XXX what to do here
-	return ucv.Port(ucv.UART1)
+	return 0, false
 }
 
 func newCfgValgetRequest(keys []ucv.Key, layer ubxbin.CfgValgetLayer) *ubxbin.CfgValget {
@@ -823,7 +898,7 @@ func (c *Configurator) pollMonComms() error {
 	if !c.ver.protVerAtLeast(50, 0) {
 		return nil
 	}
-	if c.target.Opts.BaudRate == 0 && !c.target.Opts.SetsMsgs() {
+	if !c.needsPort() {
 		return nil
 	}
 	return c.addPollRequest(ubxbin.MonCommsID)
@@ -833,10 +908,20 @@ func (c *Configurator) pollPrt() error {
 	if c.portID != nil {
 		return nil
 	}
-	if c.target.Opts.BaudRate == 0 && !c.target.Opts.SetsMsgs() {
+	if !c.needsPort() {
 		return nil
 	}
 	return c.addPollRequest(ubxbin.CfgPrtID)
+}
+
+// needsPort reports whether any downstream step requires the active
+// receiver port. PropIDPort is read-only so target.Get is checked
+// directly rather than via UsesAny.
+func (c *Configurator) needsPort() bool {
+	if c.target.Get&gpsprot.PropIDPort != 0 {
+		return true
+	}
+	return c.target.UsesAny(gpsprot.PropIDBaudRate) || c.target.Opts.SetsMsgs()
 }
 
 func (c *Configurator) pollGNSS() error {
@@ -951,11 +1036,12 @@ func (c *Configurator) setMsgChanges(mc *msgChanges) {
 }
 
 func (c *Configurator) setBaudRate() error {
-	prt := c.raw.changePrtBaudRate(&c.target.Opts)
+	prt := c.raw.changePrtBaudRate(c.target)
 	if prt == nil {
 		return nil
 	}
-	return c.addMsgSetSpeedRequest(prt, int(c.target.Opts.BaudRate))
+	baudRate, _ := c.target.Props.GetBaudRate()
+	return c.addMsgSetSpeedRequest(prt, int(baudRate))
 }
 
 func (c *Configurator) setNav5() error {
@@ -993,7 +1079,10 @@ func (c *Configurator) setTmode() error {
 }
 
 func (c *Configurator) setTp5() error {
-	tp5 := c.raw.changeTp5(&c.target.Props)
+	tp5, err := c.raw.changeTp5(&c.target.Props)
+	if err != nil {
+		return err
+	}
 	if tp5 == nil {
 		return nil
 	}
@@ -1027,20 +1116,25 @@ func (c *Configurator) osnmaAssist() error {
 	return c.addRequest(msgRequest{mga})
 }
 
-func (raw *RawConfig) Config(ver *Version) *gpsprot.ConfigProps {
+func (raw *RawConfig) Config(ver *Version, portID *ubxbin.PortID) *gpsprot.ConfigProps {
 	if raw == nil {
 		return nil
 	}
 	cm := &gpsprot.ConfigProps{}
 	if !raw.CfgVals.isNil() {
-		raw.CfgVals.Cook(ver, cm)
+		// Active port for val-based: MON-COMMS first, CFG-PRT second.
+		port := portID
+		if port == nil && raw.prt != nil {
+			port = &raw.prt.PortID
+		}
+		raw.CfgVals.Cook(ver, cm, port)
 	} else {
-
 		raw.cookTmode(cm)
 		raw.cookTp5(cm)
 		raw.cookGNSS(cm)
 		// must call cookNav5 after cookTp5, because we want to prefer primary GNSS from TP5
 		raw.cookNav5(cm, ver)
+		raw.cookPrt(cm)
 	}
 	return cm
 }
@@ -1116,9 +1210,11 @@ func (r msgRequest) ID() string { return r.msg.ID().String() }
 
 func (r msgRequest) Ackable() bool { return r.msg.ID().Ackable() }
 
-func (r msgRequest) AwaitingResponse(time.Time) bool { return false }
+func (r msgRequest) AwaitingResponse(uint64) bool { return false }
 
 func (r msgRequest) Done() {}
+
+func (r msgRequest) NakError() error { return nil }
 
 func (c *Configurator) addMsgSetRequest(msg ubxbin.Msg) error {
 	return c.addRequest(msgSetRequest{msgRequest{msg}, &c.raw})
@@ -1133,27 +1229,27 @@ func (c *Configurator) addMsgSetPauseRequest(msg ubxbin.Msg, pause time.Duration
 }
 
 func (c *Configurator) addMsgPollRequest(msg ubxbin.Msg) error {
-	return c.addRequest(msgPollRequest{msgRequest: msgRequest{msg}, tRead: c.tRead})
+	return c.addRequest(msgPollRequest{msgRequest: msgRequest{msg}, msgSeq: c.msgSeq})
 }
 
 func (c *Configurator) addPollRequest(mid ubxbin.MsgID) error {
-	return c.addRequest(pollRequest{c.tRead, mid})
+	return c.addRequest(pollRequest{c.msgSeq, mid})
 }
 
 func (c *Configurator) addPollTp5Request(tpIdx int) error {
 	return c.addRequest(pollTp5Request{
-		pollRequest: pollRequest{c.tRead, ubxbin.CfgTp5ID},
+		pollRequest: pollRequest{c.msgSeq, ubxbin.CfgTp5ID},
 		tpIdx:       tpIdx,
 	})
 }
 
 type msgPollRequest struct {
 	msgRequest
-	tRead map[ubxbin.MsgID]time.Time
+	msgSeq map[ubxbin.MsgID]uint64
 }
 
-func (r msgPollRequest) AwaitingResponse(tSent time.Time) bool {
-	return r.tRead[r.msg.ID()].Before(tSent)
+func (r msgPollRequest) AwaitingResponse(sentSeq uint64) bool {
+	return r.msgSeq[r.msg.ID()] <= sentSeq
 }
 
 var _ requestOps = (*msgPollRequest)(nil)
@@ -1201,9 +1297,19 @@ func (r msgSetPauseRequest) Pause() time.Duration {
 
 var _ requestOps = (*msgSetPauseRequest)(nil)
 
+// nakErrRequest overrides the error reported when the receiver NAKs the request.
+type nakErrRequest struct {
+	requestOps
+	nakErr error
+}
+
+func (r nakErrRequest) NakError() error { return r.nakErr }
+
+var _ requestOps = (*nakErrRequest)(nil)
+
 type pollRequest struct {
-	tRead map[ubxbin.MsgID]time.Time
-	msgID ubxbin.MsgID
+	msgSeq map[ubxbin.MsgID]uint64
+	msgID  ubxbin.MsgID
 }
 
 func (r pollRequest) Packet() []byte {
@@ -1218,12 +1324,14 @@ func (r pollRequest) ID() string { return r.msgID.String() }
 
 func (r pollRequest) Done() {}
 
+func (r pollRequest) NakError() error { return nil }
+
 func (r pollRequest) Ackable() bool {
 	return r.msgID.Ackable()
 }
 
-func (r pollRequest) AwaitingResponse(tSent time.Time) bool {
-	return r.tRead[r.msgID].Before(tSent)
+func (r pollRequest) AwaitingResponse(sentSeq uint64) bool {
+	return r.msgSeq[r.msgID] <= sentSeq
 }
 
 type pollTp5Request struct {
@@ -1259,9 +1367,11 @@ func (r msgRateRequest) Done() {
 
 func (r msgRateRequest) Ackable() bool { return true }
 
-func (r msgRateRequest) AwaitingResponse(time.Time) bool { return false }
+func (r msgRateRequest) AwaitingResponse(uint64) bool { return false }
 
 func (r msgRateRequest) ID() string { return ubxbin.CfgMsgID.String() }
+
+func (r msgRateRequest) NakError() error { return nil }
 
 // lengthHP converts a high-precision coordinate (cm main + 0.1mm HP)
 // used by NAV-HPPOSECEF for ECEF coordinates.
@@ -1287,4 +1397,12 @@ func angleToInt8Degrees(a gpsprot.Angle) (int8, bool) {
 		return 0, false
 	}
 	return int8(v), true
+}
+
+func antCableDelayNanos(v time.Duration) (int64, error) {
+	n := v.Nanoseconds()
+	if n < math.MinInt16 || n > math.MaxInt16 {
+		return 0, fmt.Errorf("antenna cable delay out of range: %v", v)
+	}
+	return n, nil
 }

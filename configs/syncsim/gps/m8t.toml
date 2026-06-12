@@ -1,0 +1,16 @@
+# LEA-M8T (single-frequency L1)
+[gps]
+jitter = 0.24
+sawtooth.amp = 21
+
+[[gps.sinusoid]]
+period = 86400
+amp = 7.5
+
+[[gps.sinusoid]]
+period = 43200
+amp = 2.5
+
+[[gps.ar1]]
+tau = 2200
+sigma = 4.7

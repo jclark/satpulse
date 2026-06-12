@@ -60,7 +60,9 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/bcast` provides a concurrency abstraction that broadcasts a channel to multiple other channels. This is used for routing packets inside the application. At the moment it is used by `satpulsed` rather than `satpulsetool`, but it is useful for applications dealing with GPS packets.
 
-`gps/app/stream` fetches correction data from a network source and feeds it to the GPS receiver over the serial port.
+`gps/app/stream` manages RTCM packet streams. It pulls streams from an Ntrip or TCP network endpoint and feeds them to the GPS receiver over the serial port, and pushes streams from the GPS receiver to a remote Ntrip network endpoint.
+
+`gps/app/ntrip` implements an Ntrip caster for serving RTCM packet streams from a GPS receiver to Ntrip clients. It includes an STR record generation capability, which is also used by `gps/app/stream`.
 
 ### gps/internal/
 
@@ -104,6 +106,14 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/rtcmbin` parses and serializes RTCM binary packets using `gps/lib/bitsenc`, including message types 1005/1006, 1230, and MSM. It also provides MSM7-to-MSM4 conversion.
 
+`gps/lib/rinex` defines an intermediate, RINEX-adjacent representation of observation data as JSON-serializable Go types, and reads and writes it as RINEX observation files.
+
+`gps/lib/rnxrtcm` converts RTCM MSM7 observation messages to `gps/lib/rinex` records. It uses `gps/lib/rtcmbin` to decode the source messages.
+
+`gps/lib/rnxubx` converts u-blox raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/ubxbin` to decode the source messages.
+
+`gps/lib/rnxunc` converts Unicore raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/uncmsg` to decode the source messages.
+
 `gps/lib/novmsg` provides parsing and serialization of NovAtel GPS receiver messages in binary and ASCII formats. It defines message header and body types and implements CRC32 validation.
 
 `gps/lib/uncmsg` parses Unicore protocol messages in binary and ASCII formats. It defines message structures and provides parsing/serialization using `gps/lib/novmsg`.
@@ -135,6 +145,8 @@ These packages provide the public API for time synchronization. They are in the 
 `time/phc` provides low level abstractions to access the PTP hardware clock. It is highly Linux dependent. It uses `gps/ptime`.
 
 `time/sockrefclock` implements the chrony refclock protocol. It uses `gps/ptime`.
+
+`time/lib/ntpshm` implements the ntpd/NTPsec SHM refclock writer. It uses `gps/ptime`.
 
 `time/clocksim` provides discrete-time simulation of PTP hardware clocks and GNSS PPS signals. It includes simulator functions for oscillators (modeling frequency errors like white noise, flicker noise, random walk, drift) and for GPS/PPS timing errors (jitter, sawtooth, sinusoids, colored noise).
 
@@ -200,6 +212,8 @@ These packages are reusable libraries for time synchronization. They are in the 
 
 `time/lib/median` provides efficient median computation for a fixed-size moving window using a circular buffer with a sorted index array. It supports 64-bit integers, floats, and time.Duration.
 
+`time/lib/ntime` provides a domain-neutral nanosecond timestamp type for the refclock sample path. The domain of a value (UTC, TAI, PHC-raw) is determined by the producer and consumer, not by the type. It depends only on the standard library.
+
 ### internal/
 
 These packages implement subcommands of satpulsetool. They are in the command-line layer and can import from both `gps/` and `time/`.
@@ -208,9 +222,19 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 
 `internal/annotatecmd` implements `annotate` subcommand of satpulsetool. It annotates JSONL packet logs with decoded payload fields (header, payload, cfgData).
 
+`internal/convobscmd` implements `convobs` subcommand of satpulsetool. It converts raw and JSON observation streams.
+
 `internal/decodecmd` implements `decode` subcommand of satpulsetool. It decodes a single GPS packet from hex or ASCII data into JSON.
 
+`internal/ntripcmd` implements `ntrip` subcommand of satpulsetool. It fetches data from an Ntrip caster and writes either a JSONL packet log or raw bytes to stdout.
+
+`internal/packcmd` implements `pack` subcommand of satpulsetool. It reads a JSONL packet log and writes selected packets as a raw byte stream, optionally preserving inter-packet timing.
+
+`internal/scancmd` implements `scan` subcommand of satpulsetool. It reads a raw packet byte stream, splits it using the GPS packet scanner, and writes a JSONL packet log.
+
 `internal/pmccmd` implements `pmc` subcommand of satpulsetool.
+
+`internal/replaycmd` implements `replay` subcommand of satpulsetool. It replays a JSONL packet log, generating JSONL events similar to an event log.
 
 `internal/sdpcmd` implements the `sdp` subcommand of satpulsetool. It provides interfaces to manage software-defined pins (SDPs) on PTP hardware clocks, including listing available interfaces and pins, capturing external timestamps, configuring periodic output, and disabling pins.
 

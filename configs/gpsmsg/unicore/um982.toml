@@ -1,0 +1,32 @@
+#:schema ../gpsmsg-schema.json
+# Unicore UM982 GPS message file
+#
+# The UM982 is a dual-antenna variant of the UM980.  It shares the
+# UM980 command set but uses the two-parameter form of CONFIG
+# SIGNALGROUP (master + slave antenna).
+#
+# The single-parameter signalgroup-* tags inherited from um980.toml
+# are not valid on the UM982; use the tags defined here instead.
+
+[[include]]
+src = "um980.toml"
+
+# SIGNALGROUP for UM982 (master slave)
+# Changing signalgroup causes an automatic reset.
+# See Unicore Reference Commands 1.13, Table 4-60.
+[[line]]
+tag = "signalgroup-4-5"
+description = "Set SIGNALGROUP 4 5 (UM982 default, causes reset)"
+text = "CONFIG SIGNALGROUP 4 5"
+[[line]]
+tag = "signalgroup-3-6"
+description = "Set SIGNALGROUP 3 6 (B2b-PPP, MADOCA-PPP, E6-HAS; 20Hz on Build10979+, causes reset)"
+text = "CONFIG SIGNALGROUP 3 6"
+[[line]]
+tag = "signalgroup-5-0"
+description = "Set SIGNALGROUP 5 0 (low power, slave disabled, causes reset)"
+text = "CONFIG SIGNALGROUP 5 0"
+[[line]]
+tag = "signalgroup-7-0"
+description = "Set SIGNALGROUP 7 0 (base station, supports B2b-PPP, slave disabled, causes reset)"
+text = "CONFIG SIGNALGROUP 7 0"

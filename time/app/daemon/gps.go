@@ -11,7 +11,6 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/opt"
-	"github.com/jclark/satpulse/time/internal/gpsevent"
 )
 
 // cfgFeatures describes aspects of the non-GPS daemon configuration
@@ -23,31 +22,29 @@ const (
 	cfgTimePulseMsg                         // configure messages reporting the time pulse
 	cfgPosition                             // position data is used
 	cfgSatellites                           // satellite data is used
+	cfgNtripStream                          // Ntrip caster or push needs signals/mode read back from receiver
+	cfgRTCMMSM7To4                          // Ntrip caster or push converts MSM7 output to MSM4
 )
 
-// PTPMsgFlags are the PVT message flags for PTP mode (with time pulse/PHC).
-const PTPMsgFlags = gpsevent.TimePulsePVTMsgFlags
-
-// NTPMsgFlags are the PVT message flags for NTP mode (serial timing, no PHC).
-const NTPMsgFlags = gpsevent.NoTimePulsePVTMsgFlags
-
 type GPSConfig struct {
-	Config             bool         `toml:"config"`
-	Mobile             bool         `toml:"mobile"`
-	Resurvey           bool         `toml:"resurvey"`
-	SurveyTime         uint32       `toml:"surveyTime"`
-	SurveyAcc          float64      `toml:"surveyAcc"`
-	FixedPosECEF       geopos.ECEF  `toml:"fixedPosECEF"`
-	FixedPosAcc        float64      `toml:"fixedPosAcc"`
-	AntennaCableDelay  float64      `toml:"antennaCableDelay"`  // in nanoseconds
-	AntennaCableLength float64      `toml:"antennaCableLength"` // in meters
-	AntennaCableVF     float64      `toml:"antennaCableVF"`     // velocity factor
-	TimeGNSS           gpsprot.GNSS `toml:"timeGNSS"`
-	MinElevation       float64      `toml:"minElevation"` // in degrees
-	RTCMBaseID         uint16       `toml:"rtcmBaseID"`
-	PulseWidth         float64      `toml:"pulseWidth"`
-	SatellitesOutput   *bool        `toml:"satellitesOutput"`
-	RTCMOutput         *bool        `toml:"rtcmOutput"`
+	Config             bool          `toml:"config"`
+	Mobile             bool          `toml:"mobile"`
+	Resurvey           bool          `toml:"resurvey"`
+	SurveyTime         uint32        `toml:"surveyTime"`
+	SurveyAcc          float64       `toml:"surveyAcc"`
+	FixedPosECEF       geopos.ECEF   `toml:"fixedPosECEF"`
+	FixedPosLLH        *[3]float64   `toml:"fixedPosLLH"`
+	FixedPosAcc        float64       `toml:"fixedPosAcc"`
+	AntennaCableDelay  float64       `toml:"antennaCableDelay"`  // in nanoseconds
+	AntennaCableLength float64       `toml:"antennaCableLength"` // in meters
+	AntennaCableVF     float64       `toml:"antennaCableVF"`     // velocity factor
+	TimeGNSS           gpsprot.GNSS  `toml:"timeGNSS"`
+	MinElevation       float64       `toml:"minElevation"` // in degrees
+	RTCMBaseID         uint16        `toml:"rtcmBaseID"`
+	PulseWidth         float64       `toml:"pulseWidth"`
+	SatellitesOutput   *bool         `toml:"satellitesOutput"`
+	RTCMOutput         *bool         `toml:"rtcmOutput"`
+	RTCMPreferMSM7     *bool         `toml:"rtcmPreferMSM7"`
 	Vendor             gpsreg.Vendor `toml:"vendor"`
 }
 
@@ -101,6 +98,15 @@ func (c *GPSConfig) target(speed int, cf cfgFeatures) (*gpsprot.ConfigTarget, er
 	if err != nil {
 		return nil, err
 	}
+	if cf&cfgNtripStream != 0 {
+		// Both properties feed STR-record fields built by
+		// ntrip.StreamRecordBuilder: SignalsEnabled drives the
+		// nav-system, carrier, and synthesised format-details
+		// fields; Mode supplies the receiver's fixed position so
+		// the lat/lon fields can be derived (Mode is otherwise
+		// only in props when the operator set gps.fixedPosECEF).
+		target.Get |= gpsprot.PropIDSignalsEnabled | gpsprot.PropIDMode
+	}
 	// setMsgOptions last because its error may be a non-fatal warning
 	err = c.setMsgOptions(&target.Opts, speed, cf)
 	return target, err
@@ -111,9 +117,9 @@ func (c *GPSConfig) setMsgOptions(opts *gpsprot.ConfigOptions, speed int, cf cfg
 	// Config is very slow on 8th gen if NMEA is enabled
 	opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
 	if cf&cfgTimePulseMsg != 0 {
-		opts.PVTMsg = gpsevent.TimePulsePVTMsgFlags
+		opts.PVTMsg = gpsprot.PVTMsgTimingPTP
 	} else {
-		opts.PVTMsg = gpsevent.NoTimePulsePVTMsgFlags
+		opts.PVTMsg = gpsprot.PVTMsgTimingSerialUTC
 	}
 	if cf&cfgPosition != 0 {
 		opts.PVTMsg |= gpsprot.PVTMsgPos
@@ -121,7 +127,7 @@ func (c *GPSConfig) setMsgOptions(opts *gpsprot.ConfigOptions, speed int, cf cfg
 			opts.PVTMsg |= gpsprot.PVTMsgVel
 		}
 	}
-	opts.RTCMMsg = c.rtcmMsg()
+	opts.RTCMMsg = c.rtcmMsg(cf)
 	var err error
 	opts.SatsMsg, err = c.satsMsg(speed, cf&cfgSatellites != 0)
 	return err
@@ -159,10 +165,20 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 		cp.SetMode(gpsprot.Mode{Static: false})
 		return nil
 	}
-	if c.FixedPosECEF.IsZero() {
+	if c.FixedPosECEF.IsZero() && c.FixedPosLLH == nil {
 		opts.SetStatic = true
 		return nil
 	}
+	if !c.FixedPosECEF.IsZero() && c.FixedPosLLH != nil {
+		return configErrorf("must not specify both fixedPosECEF and fixedPosLLH")
+	}
+	if c.FixedPosLLH != nil {
+		return c.setFixedModeLLH(cp)
+	}
+	return c.setFixedModeECEF(cp)
+}
+
+func (c *GPSConfig) setFixedModeECEF(cp *gpsprot.ConfigProps) error {
 	err := c.FixedPosECEF.CheckOnEarth()
 	if err != nil {
 		return configErrorf("%v: invalid fixed position: %w", c.FixedPosECEF, err)
@@ -171,12 +187,9 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 	for i := 0; i < 3; i++ {
 		fixedPos[i] = gpsprot.Meters(c.FixedPosECEF[i])
 	}
-	acc := gpsprot.Meters(c.FixedPosAcc)
-	if acc < gpsprot.Millimeter {
-		return configErrorf("fixed position accuracy %v is too small", c.FixedPosAcc)
-	}
-	if acc > gpsprot.Meter*1000 {
-		return configErrorf("fixed position accuracy %v is too large", c.FixedPosAcc)
+	acc, err := c.getFixedPosAcc()
+	if err != nil {
+		return err
 	}
 	cp.SetMode(gpsprot.Mode{
 		Static:       true,
@@ -185,6 +198,45 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 		FixedPosAcc:  acc,
 	})
 	return nil
+}
+
+func (c *GPSConfig) setFixedModeLLH(cp *gpsprot.ConfigProps) error {
+	coords := c.FixedPosLLH
+	lat := gpsprot.DegreesFromFloat(coords[0])
+	lon := gpsprot.DegreesFromFloat(coords[1])
+	height := gpsprot.Meters(coords[2])
+	if lat < -90*gpsprot.Degrees || lat > 90*gpsprot.Degrees {
+		return configErrorf("fixed position latitude %v out of range [-90, 90]", coords[0])
+	}
+	if lon < -180*gpsprot.Degrees || lon > 180*gpsprot.Degrees {
+		return configErrorf("fixed position longitude %v out of range [-180, 180]", coords[1])
+	}
+	if height < -500*gpsprot.Meter || height > 10000*gpsprot.Meter {
+		return configErrorf("fixed position height %v out of range [-500, 10000]", coords[2])
+	}
+	acc, err := c.getFixedPosAcc()
+	if err != nil {
+		return err
+	}
+	cp.SetMode(gpsprot.Mode{
+		Static:      true,
+		PosType:     gpsprot.PosTypeLLH,
+		FixedPosLLH: [2]gpsprot.Angle{lat, lon},
+		Height:      height,
+		FixedPosAcc: acc,
+	})
+	return nil
+}
+
+func (c *GPSConfig) getFixedPosAcc() (gpsprot.Length, error) {
+	acc := gpsprot.Meters(c.FixedPosAcc)
+	if acc < gpsprot.Millimeter {
+		return 0, configErrorf("fixed position accuracy %v is too small", c.FixedPosAcc)
+	}
+	if acc > gpsprot.Meter*1000 {
+		return 0, configErrorf("fixed position accuracy %v is too large", c.FixedPosAcc)
+	}
+	return acc, nil
 }
 
 func (c *GPSConfig) getTimeGNSS(cp *gpsprot.ConfigProps) error {
@@ -279,14 +331,22 @@ func (c *GPSConfig) satsMsg(speed int, wantSatellitesOutput bool) (v opt.Val[gps
 	return
 }
 
-func (c *GPSConfig) rtcmMsg() (v opt.Val[gpsprot.RTCMMsgFlags]) {
+func (c *GPSConfig) rtcmMsg(cf cfgFeatures) (v opt.Val[gpsprot.RTCMMsgFlags]) {
 	if c.RTCMOutput == nil {
 		return
 	}
-	if *c.RTCMOutput {
-		v.Set(gpsprot.RTCMMsgAuto)
-	} else {
+	if !*c.RTCMOutput {
 		v.Set(gpsprot.RTCMMsgNone)
+		return
+	}
+	preferMSM7 := cf&cfgRTCMMSM7To4 != 0
+	if c.RTCMPreferMSM7 != nil {
+		preferMSM7 = *c.RTCMPreferMSM7
+	}
+	if preferMSM7 {
+		v.Set(gpsprot.RTCMMsgAutoMSM7)
+	} else {
+		v.Set(gpsprot.RTCMMsgAuto)
 	}
 	return
 }

@@ -6,7 +6,7 @@ Collect packet logs (JSONL files) that exercise every implemented decode path in
 
 ## Principles
 
-- Every capture must include at least one time message (for timemsg sync testing).
+- Every capture must include at least one time message (for timemsg sync testing). The one exception is the raw cross-format comparison capture (see "What to capture" item 6), which is deliberately time-free.
 - A capture of a single time message type is fine -- testing that a lone time message works is valuable.
 - Don't capture a single non-time message plus only an end-of-epoch marker (if the receiver has one); combine it with something useful.
 - If the receiver supports end-of-epoch markers (currently u-blox and Quectel), some captures should include them and some should lack them -- testing epoch detection both ways matters. Most receivers do not have end-of-epoch markers.
@@ -21,10 +21,12 @@ The captures should cover:
 2. **Daemon set** -- the message set that satpulsed typically enables. This is the most important UBX/binary trace.
 3. **Individual message coverage** -- messages that are implemented in the lib layer but not covered by the daemon set. Group these sensibly with time messages.
 4. **Low-level-only messages** -- messages that high-level config cannot enable. These need message file tags.
-5. **Per-constellation time** -- if the receiver supports configuring which GNSS system the time pulse references, capture one trace per constellation with all time message variants enabled.
-6. **NMEA subsets** -- specific NMEA sentence combinations needed for testing (e.g., RMC+GGA for timing correlation, GLL for future parsing).
-7. **Survey** -- if the receiver supports survey-in, a short survey capture to exercise survey messages.
-8. **Cross-protocol satellites** -- NMEA GSV/GSA alongside native satellite messages in the same capture. This enables cross-protocol validation: verify-replay.py checks that NMEA and native satellite lists are consistent in IDs, look angles, and CN0.
+5. **Raw observations and navigation data** -- on receivers that support `--raw-out`, capture raw observations (RXM-RAWX/OBSVMB) and raw navigation data (RXM-SFRBX or per-GNSS `*EPHB`). These feed RINEX conversion and downstream positioning work. Pair raw captures with a minimal time message set so they satisfy the "every capture must include at least one time message" rule. On Unicore, follow the dual ASCII+binary convention and include compressed and NovAtel-compatible variants too -- see `unicore-config.md`.
+6. **Raw cross-format comparison** -- on receivers that emit raw observations in multiple formats simultaneously, capture all the formats in one binary-only trace, with no time message. The purpose is to test that the same physical epoch decodes consistently across formats (e.g., MSM7 vs UBX-RXM-RAWX, or OBSVMB vs RANGECMPB vs MSM7). The capture is deliberately time-free because each raw observation message carries its own GPS time; the cross-format test compares those embedded times. On u-blox F9P (PROTVER 27+): UBX-RXM-RAWX + RTCM MSM7. On Unicore (UM980 and similar): OBSVMB + RANGECMPB + RTCM MSM7. Receivers that don't emit MSM (e.g., LEA-M8T) get no cross-format capture.
+7. **Per-constellation time** -- if the receiver supports configuring which GNSS system the time pulse references, capture one trace per constellation with all time message variants enabled.
+8. **NMEA subsets** -- specific NMEA sentence combinations needed for testing (e.g., RMC+GGA for timing correlation, GLL for future parsing).
+9. **Survey** -- if the receiver supports survey-in, a short survey capture to exercise survey messages.
+10. **Cross-protocol satellites** -- NMEA GSV/GSA alongside native satellite messages in the same capture. This enables cross-protocol validation: verify-replay.py checks that NMEA and native satellite lists are consistent in IDs, look angles, and CN0.
 
 ## Cold-start capture
 
@@ -43,6 +45,20 @@ The sequence is:
 Name the file `coldstart.jsonl`.
 
 ## Troubleshooting
+
+### Receiver still flooding after reload
+
+If `--reload` is followed by configuration probes that time out, or probes that keep reporting active packet formats from a prior capture, the receiver buffer is likely still flushing high-bandwidth messages. Reload restores NVM state but does not drain the output buffer or stop messages that were already queued.
+
+Recovery: send `UNLOGALL` explicitly and wait a few seconds before further configuration. Example for Unicore:
+
+```
+printf '[default.line]\nresponsePattern = "unicore"\ndelay = 0.2\n[[line]]\ntext = "UNLOGALL"\n' | \
+  satpulsetool gps -d <device> -s <baud> --vendor unicore -m -
+sleep 3
+```
+
+After this, probes should report only NMEA (the receiver's response format), with no UNCA/UNCB lingering.
 
 ### Baud rate confusion
 
@@ -83,6 +99,8 @@ File names indicate the content and baud rate:
 - `time-gal-38400.jsonl` -- per-constellation time capture at 38400
 - `nmea-rmc-gga.jsonl` -- specific NMEA sentence subset
 - `survey-38400.jsonl` -- survey-in capture at 38400
+- `raw-obs.jsonl`, `raw-nav.jsonl`, `raw-obs-nav.jsonl` -- raw observation / navigation captures (`-dual` suffix on Unicore for ASCII+binary, e.g. `raw-obs-dual.jsonl`)
+- `raw-cross.jsonl` -- raw cross-format comparison capture (binary only, no time message)
 
 Include baud rate suffix when it differs from the default/factory rate.
 

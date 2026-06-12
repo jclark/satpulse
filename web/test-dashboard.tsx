@@ -41,7 +41,11 @@ const phcEvent = {
   stepCount: 5,
   stepCountChanging: false,
   outlier: false,
-  syncState: "in sync"
+  mode: "tracking"
+};
+
+const modeEvent = {
+  mode: "tracking",
 };
 
 const posvelEvent = {
@@ -57,6 +61,20 @@ const posvelEvent = {
   velE: -0.028,
   velD: 0.005,
 };
+
+const corReportEvents = [
+  { tag: "RTCM", source: "pull", msgID: "1077", checksumOK: true },
+  { tag: "RTCM", source: "pull", msgID: "1087", checksumOK: true },
+  { tag: "RTCM", source: "pull", msgID: "1077", checksumOK: true },
+  { tag: "RTCM", source: "pull", msgID: "4072.0", checksumOK: true },
+  { tag: "RTCM", source: "pull", msgID: "4072.1", checksumOK: true },
+  { tag: "RTCM", source: "pull", msgID: "1230", checksumOK: true },
+  { tag: "RTCM", source: "receiver", msgID: "1077", checksumOK: true, used: true },
+  { tag: "RTCM", source: "receiver", msgID: "1087", checksumOK: true, used: true },
+  { tag: "RTCM", source: "receiver", msgID: "1077", checksumOK: true, used: true },
+  { tag: "RTCM", source: "receiver", msgID: "1230", checksumOK: true, used: false },
+  { tag: "RTCM", source: "receiver", msgID: "4072.1", checksumOK: true, used: true },
+];
 
 const qualityEvent = {
   fixLevel: "carrierFixed",
@@ -147,6 +165,10 @@ class MockEventSource implements MinimalEventSource {
       setTimeout(() => {
         listener(new MessageEvent('phc', { data: JSON.stringify(phcEvent) }));
       }, 400);
+    } else if (type === 'mode') {
+      setTimeout(() => {
+        listener(new MessageEvent('mode', { data: JSON.stringify(modeEvent) }));
+      }, 380);
     } else if (type === 'init') {
       setTimeout(() => {
         listener(new MessageEvent('init', { data: JSON.stringify(initEvent) }));
@@ -175,6 +197,12 @@ class MockEventSource implements MinimalEventSource {
       setTimeout(() => {
         listener(new MessageEvent('quality', { data: JSON.stringify(qualityEvent) }));
       }, 330);
+    } else if (type === 'corReport') {
+      corReportEvents.forEach((ev, i) => {
+        setTimeout(() => {
+          listener(new MessageEvent('corReport', { data: JSON.stringify(ev) }));
+        }, 600 + i * 200);
+      });
     }
   }
 

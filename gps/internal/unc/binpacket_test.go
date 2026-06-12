@@ -141,6 +141,16 @@ func testIsValidPacket(t *testing.T, pf gpsprot.PacketFormat, packet []byte) boo
 	return expected
 }
 
+func TestBinPacketMsgIDObsVM(t *testing.T) {
+	// Minimal binary header carrying message ID 12 (OBSVM) at offset 4. The
+	// binary MsgID is suffix-less, matching the vendor message name (the "B"
+	// transport suffix is encoded by the UNCB tag, not the MsgID).
+	pkt := []byte{sync1, sync2, sync3, 0, 0x0c, 0x00}
+	if got := BinPacketFormat.MsgID(pkt); got != "OBSVM" {
+		t.Errorf("MsgID() = %q, want %q", got, "OBSVM")
+	}
+}
+
 func TestLoggedPacket(t *testing.T) {
 	// This is a packet from the live log that was not being recognized
 	loggedPacket := mustHexDecode("aa44b55c28233c0000a0480920c86d220000000000122100030000004809000038c46d2203000000b0e94efe2000e80315000000ffffffff696666000000002bbcd2100100000000f8d7b02c0000000000000000118f1252")

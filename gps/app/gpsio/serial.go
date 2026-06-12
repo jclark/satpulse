@@ -24,7 +24,7 @@ import (
 // before restoring serial settings and closing the underlying file descriptor.
 type SerialConn struct {
 	file      ioFile
-	isUART    bool
+	kind      term.DevKind
 	mu        sync.Mutex
 	stopped   bool // protected by mu
 	readLock  chan struct{}
@@ -52,28 +52,48 @@ var _ SerialOutPort = (*SerialConn)(nil)
 func OpenSerial(path string, speed int) (*SerialConn, int, error) {
 	t, err := openTerm(path, speed)
 	if err == nil {
-		return newSerialConn(t, t.DevKind() == term.DevUART), t.Speed(), nil
+		return newSerialConn(t, t.DevKind()), t.Speed(), nil
 	}
 	if !errors.Is(err, term.ErrNotATTY) {
 		return nil, 0, err
 	}
-	f, perr := term.OpenPolling(path)
+	f, kind, perr := term.OpenPolling(path)
 	if perr != nil {
 		return nil, 0, fmt.Errorf("%s and %w", perr, term.ErrNotATTY)
 	}
-	return newSerialConn(newPollingFile(f, readTimeout), false), 0, nil
+	return newSerialConn(newPollingFile(f, readTimeout), kind), 0, nil
 }
 
-func newSerialConn(f ioFile, isUART bool) *SerialConn {
+func newSerialConn(f ioFile, kind term.DevKind) *SerialConn {
 	readLock := make(chan struct{}, 1)
 	readLock <- struct{}{}
 	writeLock := make(chan struct{}, 1)
 	writeLock <- struct{}{}
-	return &SerialConn{file: f, readLock: readLock, writeLock: writeLock, isUART: isUART}
+	return &SerialConn{file: f, readLock: readLock, writeLock: writeLock, kind: kind}
 }
 
 func (c *SerialConn) LocalAddr() string {
 	return c.file.Path()
+}
+
+// ReadOnly reports whether writes to this port are rejected.
+// True only for FIFOs today.
+func (c *SerialConn) ReadOnly() bool {
+	return c.kind == term.DevFIFO
+}
+
+// Direct reports whether this port is a classified hardware
+// attachment -- a UART, USB serial receiver, USB-to-UART bridge, or
+// Bluetooth RFCOMM device -- that will produce data continuously
+// when healthy. Anything unclassified (including /dev/gnss0,
+// pseudo-terminals, and unknown TTY majors) and FIFOs return false
+// on the conservative assumption that we cannot promise prompt input.
+func (c *SerialConn) Direct() bool {
+	switch c.kind {
+	case term.DevUART, term.DevUSB, term.DevUSBtoUART, term.DevBT:
+		return true
+	}
+	return false
 }
 
 // term returns the underlying *term.Term if this SerialConn is backed by a
@@ -82,6 +102,15 @@ func (c *SerialConn) LocalAddr() string {
 func (c *SerialConn) term() *term.Term {
 	t, _ := c.file.(*term.Term)
 	return t
+}
+
+// Speed returns the current termios speed of the underlying TTY,
+// or 0 if this connection is not backed by a TTY.
+func (c *SerialConn) Speed() int {
+	if t := c.term(); t != nil {
+		return t.Speed()
+	}
+	return 0
 }
 
 func (c *SerialConn) Read(p []byte) (int, error) {
@@ -101,7 +130,7 @@ func (c *SerialConn) Read(p []byte) (int, error) {
 	if c.isStopped() {
 		return 0, io.EOF
 	}
-	return ioRead(c.file, p)
+	return c.file.Read(p)
 }
 
 func (c *SerialConn) Write(p []byte) (int, error) {
@@ -122,6 +151,9 @@ func (c *SerialConn) WriteThenChangeSpeed(p []byte, speed int) (int, error) {
 func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.PacketFormat) (int, error) {
 	if c.isStopped() {
 		return 0, net.ErrClosed
+	}
+	if c.ReadOnly() {
+		return 0, fmt.Errorf("%s: device is not writable", c.file.Path())
 	}
 	select {
 	case <-c.writeLock:
@@ -152,7 +184,7 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 				// But we can recover from a lost ACK.
 				const minDelay = time.Millisecond
 				delay := minDelay
-				if !c.isUART {
+				if c.kind != term.DevUART {
 					delay += t.TransmitTime(n)
 				}
 				time.Sleep(delay)
@@ -293,52 +325,4 @@ func (pf *pollingFile) Path() string {
 
 func (pf *pollingFile) Buffered() (int, error) {
 	return 0, nil
-}
-
-type timeoutError struct {
-	path string
-}
-
-func (e timeoutError) Error() string {
-	return e.path + ": timeout error"
-}
-
-func (e timeoutError) Timeout() bool {
-	return true
-}
-
-type TermError struct {
-	path   string
-	counts term.ErrorCounts
-}
-
-func (e TermError) Error() string {
-	return e.path + ": serial errors:" + e.counts.String()
-}
-
-func (e TermError) FramingErrs() int {
-	return int(e.counts.FrameErrs)
-}
-
-func (e TermError) Temporary() bool {
-	return true
-}
-
-// ioRead reads from f and, for *term.Term inputs, attaches serial
-// error or timeout information. For non-TTY files, the underlying
-// Read is expected to report timeouts itself (e.g. via
-// os.ErrDeadlineExceeded).
-func ioRead(f ioFile, p []byte) (n int, err error) {
-	n, err = f.Read(p)
-	if err != nil {
-		return
-	}
-	if t, ok := f.(*term.Term); ok {
-		if errCounts := t.GetErrorCounts(); !errCounts.IsZero() {
-			err = TermError{path: t.Path(), counts: errCounts}
-		} else if n == 0 {
-			err = timeoutError{path: t.Path()}
-		}
-	}
-	return
 }

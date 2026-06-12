@@ -709,6 +709,75 @@ func TestComputeDriftRate(t *testing.T) {
 	}
 }
 
+// TestGenSampleCapturesDetectLeap exercises the production path
+// where resetSampleGenerator.genSample reads detectLeap from the time
+// message buffer and stores it on g.detectLeap on a successful
+// sample. Companion to TestChangeModeWiringDetectLeap, which covers
+// the controller-level transfer from g.detectLeap to c.detectLeap.
+func TestGenSampleCapturesDetectLeap(t *testing.T) {
+	cfg := defaultResetConfig()
+	numEdges := cfg.PulseWindow
+	interval := time.Second
+	msgDelay := 100 * time.Millisecond
+
+	t.Run("SuccessCapturesClosure", func(t *testing.T) {
+		gen := setupGenerator(cfg, numEdges, interval, msgDelay, 0, 0, false)
+
+		// Build (lastSec, tRead) matching setupGenerator's edge schedule.
+		// setupGenerator and this test each call time.Now() independently;
+		// the resulting offset is well inside the alignment tolerance.
+		baseTime := time.Now()
+		tRead := make([]time.Time, numEdges)
+		for i := 0; i < numEdges; i++ {
+			tRead[i] = baseTime.Add(time.Duration(i)*interval + msgDelay)
+		}
+		lastSec := ptime.Time(0).Add(time.Duration(numEdges-1) * time.Second)
+
+		var markerCalled bool
+		marker := func(time.Duration) bool { markerCalled = true; return false }
+		gen.timeMsgBuffer = &fakeBuffer{
+			lastSec:    lastSec,
+			tRead:      tRead,
+			detectLeap: marker,
+		}
+
+		sample := gen.genSample()
+		if sample == nil {
+			t.Fatalf("genSample returned nil; expected a successful sample")
+		}
+		if gen.detectLeap == nil {
+			t.Fatalf("expected gen.detectLeap to be captured from the buffer")
+		}
+		gen.detectLeap(0)
+		if !markerCalled {
+			t.Errorf("captured closure does not match the one returned from the buffer")
+		}
+	})
+
+	t.Run("FailurePreservesPriorClosure", func(t *testing.T) {
+		gen := setupGenerator(cfg, numEdges, interval, msgDelay, 0, 0, false)
+
+		var sentinelCalled bool
+		sentinel := func(time.Duration) bool { sentinelCalled = true; return false }
+		gen.detectLeap = sentinel
+
+		// Empty buffer -> genSample short-circuits at the IsZero check
+		// and must NOT update gen.detectLeap.
+		gen.timeMsgBuffer = &fakeBuffer{}
+
+		if sample := gen.genSample(); sample != nil {
+			t.Fatalf("expected nil sample when the buffer has no messages; got %+v", sample)
+		}
+		if gen.detectLeap == nil {
+			t.Fatalf("gen.detectLeap was cleared on failure; expected the prior closure to be preserved")
+		}
+		gen.detectLeap(0)
+		if !sentinelCalled {
+			t.Errorf("gen.detectLeap was overwritten on failure; expected the sentinel to be preserved")
+		}
+	})
+}
+
 // TestLastEdgeIndexUpdated verifies that genSampleForMessages updates lastEdgeIndex
 // to match the selected edge list's parity after filtering in dual-edge mode.
 func TestLastEdgeIndexUpdated(t *testing.T) {

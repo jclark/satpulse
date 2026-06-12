@@ -85,6 +85,7 @@ const (
 	FreqQZSSL1CP FreqID = 3  // L1C pilot
 	FreqQZSSL1S  FreqID = 4  // L1S
 	FreqQZSSL5D  FreqID = 6  // L5 data
+	FreqQZSSL2CM FreqID = 9  // L2C(M); undocumented for QZSS but receiver mirrors GPS sigType=9 with L2C flag set
 	FreqQZSSL1CD FreqID = 11 // L1C data
 	FreqQZSSL5P  FreqID = 14 // L5 pilot
 	FreqQZSSL2CL FreqID = 17 // L2C(L)

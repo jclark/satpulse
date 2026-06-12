@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +34,115 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("no config files found in %s", configsDir)
 	} else {
 		t.Logf("tested %d config files from %s", count, configsDir)
+	}
+}
+
+// TestConfigValidate covers the daemon-level config validations
+// that bridge top-level users with per-feature references (currently
+// Ntrip mountpoint auth.users).  Internal ntrip validation is
+// covered in gps/app/ntrip; this test focuses on cross-table checks
+// that only the daemon Config can perform.
+func TestConfigValidate(t *testing.T) {
+	tests := []struct {
+		name      string
+		toml      string
+		expectErr bool
+	}{
+		{
+			name: "no users, no ntrip auth",
+			toml: `
+[[ntrip.mountpoint]]
+name = "BKK"
+`,
+		},
+		{
+			name: "valid user + mountpoint auth.users",
+			toml: `
+[[user]]
+name = "rover1"
+password = "p1"
+
+[[ntrip.mountpoint]]
+name = "BKK"
+auth.users = ["rover1"]
+`,
+		},
+		{
+			name: "user without name",
+			toml: `
+[[user]]
+password = "p"
+`,
+			expectErr: true,
+		},
+		{
+			name: "duplicate user names",
+			toml: `
+[[user]]
+name = "rover1"
+[[user]]
+name = "rover1"
+`,
+			expectErr: true,
+		},
+		{
+			name: "mountpoint references undefined user",
+			toml: `
+[[user]]
+name = "rover1"
+
+[[ntrip.mountpoint]]
+name = "BKK"
+auth.users = ["ghost"]
+`,
+			expectErr: true,
+		},
+		{
+			name: "auth.anyUser does not need any top-level user",
+			toml: `
+[[ntrip.mountpoint]]
+name = "BKK"
+auth.anyUser = true
+`,
+		},
+	}
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader(tc.toml))
+			if err != nil {
+				t.Fatalf("readConfig: %v", err)
+			}
+			err = cfg.Validate(lg)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestStreamPullConfig(t *testing.T) {
+	cfgStr := `[stream.pull]
+ntrip.address = "caster.example.com:2101"
+ntrip.mountpoint = "RTCM"
+ntrip.username = "u"
+ntrip.password = "p"`
+	cfg, err := readConfig(strings.NewReader(cfgStr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Stream.Pull == nil || cfg.Stream.Pull.Ntrip == nil {
+		t.Fatalf("expected stream.pull.ntrip to be set, got %+v", cfg.Stream)
+	}
+	n := cfg.Stream.Pull.Ntrip
+	if n.Address != "caster.example.com:2101" || n.Mountpoint != "RTCM" || n.Username != "u" || n.Password != "p" {
+		t.Errorf("ntrip = %+v", n)
 	}
 }
 
@@ -93,6 +204,50 @@ func TestPHCSyncDefaultsTrue(t *testing.T) {
 	}
 	if !cfg.PHC.Sync {
 		t.Errorf("PHC.Sync = false by default, want true")
+	}
+}
+
+func TestNTPShmConfig(t *testing.T) {
+	cfgStr := `[ntp]
+shm.segment = 0
+shm.precision = -23`
+	cfg, err := readConfig(strings.NewReader(cfgStr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NTP.SHM == nil || cfg.NTP.SHM.Segment == nil || *cfg.NTP.SHM.Segment != 0 {
+		t.Fatalf("NTP SHM segment = %+v, want explicit 0", cfg.NTP.SHM)
+	}
+	if cfg.NTP.SHM.Precision == nil || *cfg.NTP.SHM.Precision != -23 {
+		t.Fatalf("NTP SHM precision = %+v, want -23", cfg.NTP.SHM.Precision)
+	}
+}
+
+func TestConfigSHMFixedPrecision(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.PHC.Interface = "eth0"
+	if got := cfg.shmFixedPrecision(); got != nil {
+		t.Fatalf("PHC-mode default SHM fixed precision = %v, want nil", *got)
+	}
+	cfg.PHC.Interface = ""
+	got := cfg.shmFixedPrecision()
+	if got == nil || *got != serialSHMPrecision {
+		t.Fatalf("serial-mode SHM fixed precision = %v, want %d", got, serialSHMPrecision)
+	}
+	cfg, err := readConfig(strings.NewReader(`[ntp]
+shm.segment = 2
+shm.precision = -23`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = cfg.shmFixedPrecision()
+	if got == nil || *got != -23 {
+		t.Fatalf("configured serial-mode SHM fixed precision = %v, want -23", got)
+	}
+	cfg.PHC.Interface = "eth0"
+	got = cfg.shmFixedPrecision()
+	if got == nil || *got != -23 {
+		t.Fatalf("configured PHC-mode SHM fixed precision = %v, want -23", got)
 	}
 }
 

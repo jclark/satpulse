@@ -5,3 +5,4 @@ tmp/
 .fastembed*
 .claude/settings.local.json
 CLAUDE.local.md
+.codex

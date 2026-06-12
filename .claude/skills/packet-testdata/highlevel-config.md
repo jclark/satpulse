@@ -16,11 +16,13 @@ Use `--binary` to switch to binary output protocol (disables NMEA). Use `--pvt-o
 
 ### Key flags
 
-- `--pvt-out daemon` -- the set satpulsed uses (includes tp, after, tai, leap, survey, qual, epoch, off)
-- `--pvt-out daemon,pos` -- daemon + position (satpulsed enables this when track log or HTTP is configured)
+- `--pvt-out ptp` -- the set satpulsed uses for PTP/PHC timing (equivalent to tp,after,tai,leap,survey,qual,epoch,off)
+- `--pvt-out ntp` -- the set satpulsed uses for NTP timing without a PHC (equivalent to time,leap,survey,qual,epoch,off)
+- `--pvt-out ptp,pos` -- ptp + position (satpulsed enables position when a track log or HTTP is configured)
 - `--sats-out sat,sig` -- satellite and signal info (bandwidth-sensitive, may need higher baud)
 - `--pvt-out tp,after,tai,off` -- minimal time-only set
 - `--pvt-out pos,ecef,time,epoch,off` -- ECEF position + time
+- `--raw-out obs,nav` -- raw observations and navigation data (RXM-RAWX/RXM-SFRBX on u-blox; OBSVMB and per-GNSS `*EPHB` on Unicore). High bandwidth -- typically needs 38400+. Combine with a minimal time set, e.g. `--pvt-out tp,after,tai,off --raw-out obs,nav`. See `ubx-config.md` and `unicore-config.md` for per-vendor details.
 - `--survey --survey-time 60 --survey-acc 50` -- short survey for testing (generous accuracy so it stays in progress during capture)
 
 ### Baud rate considerations

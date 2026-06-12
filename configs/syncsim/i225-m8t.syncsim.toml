@@ -1,0 +1,30 @@
+#:schema syncsim-schema.json
+# Intel i225-T1 PCIe NIC with u-blox LEA-M8T (single-frequency L1)
+
+[sim]
+duration = 86400
+
+[phc]
+whiteNoise = 2.5
+randomWalk = 2.9
+
+[gps]
+jitter = 0.24
+sawtooth.amp = 21
+
+[[gps.sinusoid]]
+period = 86400
+amp = 7.5
+
+[[gps.sinusoid]]
+period = 43200
+amp = 2.5
+
+[[gps.ar1]]
+tau = 2200
+sigma = 4.7
+
+[sync]
+track.kp = 0.8
+track.ki = 0.3
+track.ignoreSawtoothCorrection = false

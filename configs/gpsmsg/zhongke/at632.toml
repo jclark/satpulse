@@ -1,0 +1,263 @@
+#:schema ../gpsmsg-schema.json
+# AT632-6T-30 timing receiver configuration messages
+# Zhongke Microelectronics (icofchina.com) CASIC binary protocol
+# Firmware V6.x timing variant
+# Default baud rate: 115200
+
+# TIM2 binary message control via CFG-MSG (0x06 0x01)
+# TIM2 class is 0x12
+
+# Enable TIM2-TPX (timing pulse info) at 1Hz
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "casbin-tim2-tpx"
+description = "Enable TIM2-TPX output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x00, 1]
+
+# Disable TIM2-TPX
+[[casbin]]
+tag = "casbin-tim2-tpx-off"
+description = "Disable TIM2-TPX output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x00, 0]
+
+# Enable TIM2-TIMEGPS (GPS time info) at 1Hz
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "casbin-tim2-timegps"
+description = "Enable TIM2-TIMEGPS output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x01, 1]
+
+# Disable TIM2-TIMEGPS
+[[casbin]]
+tag = "casbin-tim2-timegps-off"
+description = "Disable TIM2-TIMEGPS output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x01, 0]
+
+# Enable TIM2-TIMEBDS (BDS time info) at 1Hz
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "casbin-tim2-timebds"
+description = "Enable TIM2-TIMEBDS output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x02, 1]
+
+# Disable TIM2-TIMEBDS
+[[casbin]]
+tag = "casbin-tim2-timebds-off"
+description = "Disable TIM2-TIMEBDS output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x02, 0]
+
+# Enable TIM2-TIMEGLN (GLONASS time info) at 1Hz
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "casbin-tim2-timegln"
+description = "Enable TIM2-TIMEGLN output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x03, 1]
+
+# Disable TIM2-TIMEGLN
+[[casbin]]
+tag = "casbin-tim2-timegln-off"
+description = "Disable TIM2-TIMEGLN output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x03, 0]
+
+# Enable TIM2-TIMEGAL (Galileo time info) at 1Hz
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "casbin-tim2-timegal"
+description = "Enable TIM2-TIMEGAL output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x04, 1]
+
+# Disable TIM2-TIMEGAL
+[[casbin]]
+tag = "casbin-tim2-timegal-off"
+description = "Disable TIM2-TIMEGAL output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x04, 0]
+
+# Enable TIM2-TIMEIRN (NavIC/IRNSS time info) at 1Hz
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "casbin-tim2-timeirn"
+description = "Enable TIM2-TIMEIRN output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x05, 1]
+
+# Disable TIM2-TIMEIRN
+[[casbin]]
+tag = "casbin-tim2-timeirn-off"
+description = "Disable TIM2-TIMEIRN output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x05, 0]
+
+# Enable TIM2-TIMEPOS (timing engine position status) at 1Hz
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "casbin-tim2-timepos"
+description = "Enable TIM2-TIMEPOS output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x06, 1]
+
+# Disable TIM2-TIMEPOS
+[[casbin]]
+tag = "casbin-tim2-timepos-off"
+description = "Disable TIM2-TIMEPOS output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x06, 0]
+
+# Enable TIM2-LS (leap second alarm) at 1Hz
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "casbin-tim2-ls"
+description = "Enable TIM2-LS output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x07, 1]
+
+# Disable TIM2-LS
+[[casbin]]
+tag = "casbin-tim2-ls-off"
+description = "Disable TIM2-LS output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x07, 0]
+
+# Enable TIM2-LY (leap year alarm) at 1Hz
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "casbin-tim2-ly"
+description = "Enable TIM2-LY output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x08, 1]
+
+# Disable TIM2-LY
+[[casbin]]
+tag = "casbin-tim2-ly-off"
+description = "Disable TIM2-LY output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x08, 0]
+
+# Enable TIM2-TCXO (oscillator frequency offset) at 1Hz
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "casbin-tim2-tcxo"
+description = "Enable TIM2-TCXO output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x09, 1]
+
+# Disable TIM2-TCXO
+[[casbin]]
+tag = "casbin-tim2-tcxo-off"
+description = "Disable TIM2-TCXO output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x12, 0x09, 0]
+
+# Timing mode configuration via CFG-TMODE2 (0x06 0x16)
+# timFixMode: 0=realtime, 1=survey-in, 2=fixed position
+# Payload: U1 timFixMode, U1 bandMode, U1 antDetMode, U1 tsrcMode,
+#          I4 xFixed (0.01m), I4 yFixed, I4 zFixed,
+#          U4 fixedPacc (mm), U4 svinMinDur (s), U4 svinPaccLim (mm)
+
+# Query timing mode
+# Verified CFG-TMODE2 response received on AT632-6T-30
+[[casbin]]
+tag = "get-survey"
+description = "Query timing mode configuration"
+class = 0x06
+id = 0x16
+
+[[casbin]]
+tag = "get-fixed-pos"
+description = "Query timing mode configuration"
+class = 0x06
+id = 0x16
+
+# Survey-in: 2000s, 20m accuracy
+# Verified ACK received on AT632-6T-30
+# Verified get-survey returns expected values on AT632-6T-30
+[[casbin]]
+tag = "survey"
+description = "Start survey-in (2000s, 20m accuracy)"
+class = 0x06
+id = 0x16
+payload.types = "U1U1U1U1I4I4I4U4U4U4"
+payload.values = [1, 0, 0, 0, 0, 0, 0, 0, 2000, 20000]
+
+# Disable survey / return to realtime mode
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "survey-off"
+description = "Return to realtime positioning mode"
+class = 0x06
+id = 0x16
+payload.types = "U1U1U1U1I4I4I4U4U4U4"
+payload.values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+# Fixed position (example ECEF coordinates in 0.01m)
+# X=-1144700m, Y=6090345m, Z=1504171m, accuracy 3000mm
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "fixed-pos-example"
+description = "Set fixed ECEF position (example coordinates)"
+class = 0x06
+id = 0x16
+payload.types = "U1U1U1U1I4I4I4U4U4U4"
+payload.values = [2, 0, 0, 0, -114470000, 609034500, 150417100, 3000, 0, 0]
+
+# Clear fixed position (back to realtime)
+# Verified ACK received on AT632-6T-30
+[[casbin]]
+tag = "fixed-pos-off"
+description = "Clear fixed position (realtime mode)"
+class = 0x06
+id = 0x16
+payload.types = "U1U1U1U1I4I4I4U4U4U4"
+payload.values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[include]]
+src = "atgm332d-v6.toml"

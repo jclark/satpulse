@@ -63,7 +63,7 @@ func NewStatsObserver() *StatsObserver {
 	return &StatsObserver{}
 }
 
-// Sample implements phcsync.Sampler
+// Sample implements phcsync.Observer
 func (o *StatsObserver) Sample(data phcsync.Sample) {
 	// Only accumulate when in sync
 	if !data.Mode.InSync() {

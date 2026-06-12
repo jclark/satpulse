@@ -1,5 +1,5 @@
 [Unit]
-Description=Synchronize PTP hardware clock to GPS on /dev/%I
+Description=Integrated GPS daemon on /dev/%I
 After=time-set.target
 After=dev-%i.device
 BindsTo=dev-%i.device
@@ -15,6 +15,22 @@ TimeoutStopSec=5
 # which will be useful in determing why graceful shutdown got stuck.
 FinalKillSignal=SIGQUIT
 
+# Security hardening: restrict the privileges available to the root process.
+# CAP_SYS_TIME is needed for setting the PHC clock.
+# CAP_CHOWN is needed to chown proxy listener sockets to a configured group.
+# CAP_NET_BIND_SERVICE allows binding HTTP/proxy listeners to low ports.
+CapabilityBoundingSet=CAP_SYS_TIME CAP_CHOWN CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=full
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+ProtectControlGroups=yes
+SystemCallArchitectures=native
+
 [Install]
-WantedBy=multi-user.target
+WantedBy=dev-%i.device
 #DefaultInstance=ttyAMA0

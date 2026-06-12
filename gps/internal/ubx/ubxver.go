@@ -117,7 +117,7 @@ func (v *Version) rtcmSupport() rtcmSupport {
 	case "TIM":
 		// ZED-F9T has differential timing support
 		// NEO-F10T doesn't
-		if v.Mod != "ZED-F9T" {
+		if !v.isModel("ZED-F9T") {
 			break
 		}
 		// 29.25 added support for MSM4
@@ -138,16 +138,83 @@ func (v *Version) rtcmSupport() rtcmSupport {
 	return rtcmSupport{}
 }
 
+func (v *Version) configSupport() gpsprot.ConfigSupportFlags {
+	if v == nil {
+		return 0
+	}
+	flags := gpsprot.ConfigSupportSpeed
+	if v.bandsConfigSupport() {
+		flags |= gpsprot.ConfigSupportBand
+	}
+	tmode := v.tmodeLevel()
+	if tmode > 0 {
+		flags |= gpsprot.ConfigSupportSurvey |
+			gpsprot.ConfigSupportSurveyAcc |
+			gpsprot.ConfigSupportFixedPos |
+			gpsprot.ConfigSupportFixedPosAcc
+		if v.protVerAtLeast(15, 0) && (tmode == 2 || tmode == 3) {
+			flags |= gpsprot.ConfigSupportSurveyMsg
+		}
+	}
+	if v.rawLevel() > 0 {
+		flags |= gpsprot.ConfigSupportRaw
+	}
+	rtcm := v.rtcmSupport()
+	if rtcm.msgs&gpsprot.RTCMMsgMSM4 != 0 {
+		flags |= gpsprot.ConfigSupportRTCMMSM4
+	}
+	if rtcm.msgs&gpsprot.RTCMMsgMSM7 != 0 {
+		flags |= gpsprot.ConfigSupportRTCMMSM7
+	}
+	if rtcm.df003Out {
+		flags |= gpsprot.ConfigSupportRTCMBaseID
+	}
+	return flags
+}
+
+func (v *Version) bandsConfigSupport() bool {
+	if !v.genAtLeast9() {
+		return false
+	}
+	switch v.ProductCategory() {
+	case "HPG", "TIM", "SPGL1L5":
+		return true
+	default:
+		return false
+	}
+}
+
+func (v *Version) singleBDSL1Signal() (gpsprot.Signal, bool) {
+	if !v.protVerAtLeast(50, 0) {
+		switch v.ProductCategory() {
+		case "SPG":
+			return gpsprot.SigBDSB1I, true
+		case "SPGL1L5":
+			return gpsprot.SigBDSB1C, true
+		}
+	}
+	return 0, false
+}
+
 // tpIndex returns the time pulse index: 0 for TIMEPULSE, 1 for TIMEPULSE2.
 func (v *Version) tpIndex() int {
 	if v.genAtLeast9() {
-		if v.Mod == "ZED-X20P" {
+		if v.isModel("ZED-X20P") {
 			return 1
 		}
 	} else if v.ProductCategory() == "FTS" {
 		return 1
 	}
 	return 0
+}
+
+// isModel reports whether v.Mod is name, optionally followed by a "-" variant suffix
+// (e.g. "ZED-F9T" matches both "ZED-F9T" and "ZED-F9T-20B").
+func (v *Version) isModel(name string) bool {
+	if v == nil {
+		return false
+	}
+	return v.Mod == name || strings.HasPrefix(v.Mod, name+"-")
 }
 
 func (v *Version) protVerAtLeast(major, minor byte) bool {

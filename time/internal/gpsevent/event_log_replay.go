@@ -1,5 +1,4 @@
 //go:build ignore
-// +build ignore
 
 package main
 
@@ -12,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/time/internal/gpsevent"
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/time/internal/phcsync"
-	"github.com/jclark/satpulse/time/phctime"
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/internal/gpsevent"
+	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/timemsg"
+	"github.com/jclark/satpulse/time/phctime"
 )
 
 // mockClock implements phcsync.Clock interface for replay (no actual PHC adjustment)
@@ -42,7 +41,7 @@ func (m *mockClock) AdjTime(d time.Duration) (phctime.Era, error) {
 	return phctime.Era(1), nil
 }
 
-// replaySampler implements phcsync.Sampler to collect samples during replay
+// replaySampler implements phcsync.Observer to collect samples during replay
 type replaySampler struct {
 	ref    ptime.Time
 	ls     ptime.LeapSecond
@@ -66,6 +65,8 @@ func (rs *replaySampler) Sample(data phcsync.Sample) {
 	rs.ref = data.Ref
 	rs.count++
 }
+
+func (rs *replaySampler) ModeChanged(_, _ phcsync.Mode) {}
 
 func (rs *replaySampler) logDateTime(ref ptime.Time) string {
 	// Round because the reference time may have had a pulse offset applied
@@ -136,25 +137,21 @@ func main() {
 	// Create controller config
 	cfg := phcsync.DefaultConfig()
 
-	// Create pulse type
+	// Edges per pulse: rising only, or rising and falling
 	edgesPerPulse := 1
 	if twoEdges {
 		edgesPerPulse = 2
 	}
-	pt := phcsync.PulseType{
-		EdgesPerPulse: edgesPerPulse,
-		PulseWidth:    100 * time.Millisecond,
-	}
 
 	// Create controller
-	ctrl, err := phcsync.NewController(clock, rs, nil, cfg, ls, pt, lg)
+	ctrl, err := phcsync.NewController(clock, rs, nil, cfg, ls, edgesPerPulse, lg)
 	if err != nil {
 		log.Fatalf("Failed to create controller: %v", err)
 	}
 	defer ctrl.Close()
 
 	// Create time message buffer
-	timeMsgBuffer := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
+	timeMsgBuffer := timemsg.NewBuffer(lg, ctrl.RequiredMsgWindow(), ls, gpsprot.GPS)
 
 	// Inject buffer into controller
 	ctrl.SetTimeMsgBuffer(timeMsgBuffer)

@@ -1,7 +1,9 @@
 package gpsprot
 
 import (
+	"encoding/json"
 	"iter"
+	"strings"
 	"time"
 )
 
@@ -24,6 +26,66 @@ type ConfigProtocol interface {
 	Configure(target *ConfigTarget) (Configurator, error)
 }
 
+// ConfigSupportFlags describes supported configuration options.
+type ConfigSupportFlags uint32
+
+const (
+	ConfigSupportBand ConfigSupportFlags = 1 << iota
+	ConfigSupportSpeed
+	ConfigSupportSurvey
+	ConfigSupportSurveyAcc
+	ConfigSupportSurveyMsg
+	ConfigSupportFixedPos
+	ConfigSupportFixedPosAcc
+	ConfigSupportRaw
+	ConfigSupportRTCMMSM4
+	ConfigSupportRTCMMSM7
+	ConfigSupportRTCMBaseID
+	ConfigSupportRTCMQZSS
+	ConfigSupportLast = ConfigSupportRTCMQZSS
+)
+
+const ConfigSupportRTCMMSM = ConfigSupportRTCMMSM4 | ConfigSupportRTCMMSM7
+
+var configSupportFlagNames = [...]struct {
+	flag ConfigSupportFlags
+	name string
+}{
+	{ConfigSupportBand, "band"},
+	{ConfigSupportSpeed, "speed"},
+	{ConfigSupportSurvey, "survey"},
+	{ConfigSupportSurveyAcc, "surveyAcc"},
+	{ConfigSupportSurveyMsg, "surveyMsg"},
+	{ConfigSupportFixedPos, "fixedPos"},
+	{ConfigSupportFixedPosAcc, "fixedPosAcc"},
+	{ConfigSupportRaw, "raw"},
+	{ConfigSupportRTCMMSM4, "rtcmMSM4"},
+	{ConfigSupportRTCMMSM7, "rtcmMSM7"},
+	{ConfigSupportRTCMBaseID, "rtcmBaseID"},
+	{ConfigSupportRTCMQZSS, "rtcmQZSS"},
+}
+
+// Items returns the supported configuration item names in stable order.
+func (f ConfigSupportFlags) Items() []string {
+	items := make([]string, 0, len(configSupportFlagNames))
+	for _, entry := range configSupportFlagNames {
+		if f&entry.flag != 0 {
+			items = append(items, entry.name)
+		}
+	}
+	return items
+}
+
+// String returns the supported configuration item names as a comma-separated list.
+func (f ConfigSupportFlags) String() string {
+	return strings.Join(f.Items(), ", ")
+}
+
+// MarshalJSON marshals the supported configuration items as a JSON array.
+func (f ConfigSupportFlags) MarshalJSON() ([]byte, error) {
+	return json.Marshal(f.Items())
+}
+
 // Configurator manages the generation and interpretation of configuration-related packets.
 //
 // The Configurator maintains a slice of ConfigRequest instances, each with its own state.
@@ -38,6 +100,9 @@ type Configurator interface {
 
 	// ReceiverInfo returns static information about the GPS receiver.
 	ReceiverInfo() *ReceiverInfo
+
+	// ConfigSupport returns the configuration options this implementation supports.
+	ConfigSupport() ConfigSupportFlags
 
 	// GenerateRequests attempts to generate more requests, potentially increasing the slice size.
 	// This is the only method that can increase the slice size.
@@ -216,6 +281,7 @@ type ConfigDirector struct {
 	maxRetries          int
 	ErrorCount          int       // Number of ConfigActionError actions yielded
 	currentTime         time.Time // Current time as reported by client
+	advanceCount        int       // Number of times AdvanceTimeTo has been called
 }
 
 // ConfigActionType specifies the type of action the client should take.
@@ -260,6 +326,7 @@ func (cd *ConfigDirector) AdvanceTimeTo(t time.Time) {
 		panic("ConfigDirector: AdvanceTime moved backwards")
 	}
 	cd.currentTime = t
+	cd.advanceCount++
 	cd.processTimeouts()
 }
 
@@ -307,7 +374,7 @@ func (cd *ConfigDirector) ValidPacketReceived(t time.Time) {
 // next action without executing the actions itself.
 func (cd *ConfigDirector) Actions() iter.Seq[ConfigAction] {
 	return func(yield func(ConfigAction) bool) {
-		var lastWaitTime time.Time
+		lastWaitAdvanceCount := -1
 		for {
 			// Try to generate more requests
 			if err := cd.cfgtor.GenerateRequests(); err != nil {
@@ -377,12 +444,11 @@ func (cd *ConfigDirector) Actions() iter.Seq[ConfigAction] {
 
 			// If we have any awaiting requests, yield wait action
 			if !earliestDeadline.IsZero() {
-				// Robustness check: ensure time advances between wait actions
-				// Allow equal times on first iteration (both zero) but require advancement thereafter
-				if !lastWaitTime.IsZero() && !cd.currentTime.After(lastWaitTime) {
-					panic("ConfigDirector API misuse: client must call AdvanceTimeTo() to advance time after ConfigActionWaitUntil")
+				// Robustness check: ensure the client reported time after waiting.
+				if cd.advanceCount == lastWaitAdvanceCount {
+					panic("ConfigDirector API misuse: client must call AdvanceTimeTo() after ConfigActionWaitUntil")
 				}
-				lastWaitTime = cd.currentTime
+				lastWaitAdvanceCount = cd.advanceCount
 
 				if !yield(ConfigAction{Type: ConfigActionWaitUntil, Deadline: earliestDeadline}) {
 					return

@@ -1,0 +1,564 @@
+#:schema ../gpsmsg-schema.json
+# Unicore UM980 GPS message file
+
+[default.line]
+delay = 0.1
+responsePattern = "unicore"
+
+# Version query
+[[line]]
+tag = "get-version"
+description = "Query firmware version"
+text = "VERSION"
+
+# Configuration queries
+[[line]]
+tag = "get-mask"
+description = "Query mask settings"
+text = "MASK"
+[[line]]
+tag = "get-config"
+description = "Query receiver configuration"
+text = "CONFIG"
+[[line]]
+tag = "get-loglist"
+description = "Query active log list (includes current port)"
+text = "LOGLIST"
+
+# Serial port speed (COM1, COM2, COM3)
+[[line]]
+tag = "speed-115200-com1"
+text = "CONFIG COM1 115200"
+[[line]]
+tag = "speed-230400-com1"
+text = "CONFIG COM1 230400"
+[[line]]
+tag = "speed-460800-com1"
+text = "CONFIG COM1 460800"
+[[line]]
+tag = "speed-115200-com2"
+text = "CONFIG COM2 115200"
+[[line]]
+tag = "speed-230400-com2"
+text = "CONFIG COM2 230400"
+[[line]]
+tag = "speed-460800-com2"
+text = "CONFIG COM2 460800"
+[[line]]
+tag = "speed-115200-com3"
+text = "CONFIG COM3 115200"
+[[line]]
+tag = "speed-230400-com3"
+text = "CONFIG COM3 230400"
+[[line]]
+tag = "speed-460800-com3"
+text = "CONFIG COM3 460800"
+
+# RECTIME (receiver clock and UTC time)
+[[line]]
+tag = "unc-rectimeb"
+description = "Enable RECTIME binary at 1Hz"
+text = "RECTIMEB 1"
+[[line]]
+tag = "unc-rectimeb-off"
+description = "Disable RECTIME binary"
+text = "UNLOG RECTIMEB"
+[[line]]
+tag = "unc-rectimea"
+description = "Enable RECTIME ASCII at 1Hz"
+text = "RECTIMEA 1"
+[[line]]
+tag = "unc-rectimea-off"
+description = "Disable RECTIME ASCII"
+text = "UNLOG RECTIMEA"
+
+# PPSSTATUS (PPS output status)
+[[line]]
+tag = "unc-ppsstatusb"
+description = "Enable PPSSTATUS binary at 1Hz"
+text = "PPSSTATUSB 1"
+[[line]]
+tag = "unc-ppsstatusb-off"
+description = "Disable PPSSTATUS binary"
+text = "UNLOG PPSSTATUSB"
+[[line]]
+tag = "unc-ppsstatusa"
+description = "Enable PPSSTATUS ASCII at 1Hz"
+text = "PPSSTATUSA 1"
+[[line]]
+tag = "unc-ppsstatusa-off"
+description = "Disable PPSSTATUS ASCII"
+text = "UNLOG PPSSTATUSA"
+
+# SATSINFO (satellite tracking info)
+[[line]]
+tag = "unc-satsinfob"
+description = "Enable SATSINFO binary at 1Hz"
+text = "SATSINFOB 1"
+[[line]]
+tag = "unc-satsinfob-off"
+description = "Disable SATSINFO binary"
+text = "UNLOG SATSINFOB"
+[[line]]
+tag = "unc-satsinfoa"
+description = "Enable SATSINFO ASCII at 1Hz"
+text = "SATSINFOA 1"
+[[line]]
+tag = "unc-satsinfoa-off"
+description = "Disable SATSINFO ASCII"
+text = "UNLOG SATSINFOA"
+
+# BESTSAT (best satellite selection)
+[[line]]
+tag = "unc-bestsatb"
+description = "Enable BESTSAT binary at 1Hz"
+text = "BESTSATB 1"
+[[line]]
+tag = "unc-bestsatb-off"
+description = "Disable BESTSAT binary"
+text = "UNLOG BESTSATB"
+[[line]]
+tag = "unc-bestsata"
+description = "Enable BESTSAT ASCII at 1Hz"
+text = "BESTSATA 1"
+[[line]]
+tag = "unc-bestsata-off"
+description = "Disable BESTSAT ASCII"
+text = "UNLOG BESTSATA"
+
+# BESTNAV (geodetic position + velocity)
+[[line]]
+tag = "unc-bestnavb"
+description = "Enable BESTNAV binary at 1Hz"
+text = "BESTNAVB 1"
+[[line]]
+tag = "unc-bestnavb-off"
+description = "Disable BESTNAV binary"
+text = "UNLOG BESTNAVB"
+[[line]]
+tag = "unc-bestnava"
+description = "Enable BESTNAV ASCII at 1Hz"
+text = "BESTNAVA 1"
+[[line]]
+tag = "unc-bestnava-off"
+description = "Disable BESTNAV ASCII"
+text = "UNLOG BESTNAVA"
+
+# PPPNAV (PPP position solution)
+[[line]]
+tag = "unc-pppnavb"
+description = "Enable PPPNAV binary at 1Hz"
+text = "PPPNAVB 1"
+[[line]]
+tag = "unc-pppnavb-off"
+description = "Disable PPPNAV binary"
+text = "UNLOG PPPNAVB"
+[[line]]
+tag = "unc-pppnava"
+description = "Enable PPPNAV ASCII at 1Hz"
+text = "PPPNAVA 1"
+[[line]]
+tag = "unc-pppnava-off"
+description = "Disable PPPNAV ASCII"
+text = "UNLOG PPPNAVA"
+
+# BESTNAVXYZ (ECEF position + velocity)
+[[line]]
+tag = "unc-bestnavxyzb"
+description = "Enable BESTNAVXYZ binary at 1Hz"
+text = "BESTNAVXYZB 1"
+[[line]]
+tag = "unc-bestnavxyzb-off"
+description = "Disable BESTNAVXYZ binary"
+text = "UNLOG BESTNAVXYZB"
+[[line]]
+tag = "unc-bestnavxyza"
+description = "Enable BESTNAVXYZ ASCII at 1Hz"
+text = "BESTNAVXYZA 1"
+[[line]]
+tag = "unc-bestnavxyza-off"
+description = "Disable BESTNAVXYZ ASCII"
+text = "UNLOG BESTNAVXYZA"
+
+# GPSUTC (GPS UTC parameters / leap seconds)
+[[line]]
+tag = "unc-gpsutcb"
+description = "Enable GPSUTC binary at 1Hz"
+text = "GPSUTCB 1"
+[[line]]
+tag = "unc-gpsutcb-off"
+description = "Disable GPSUTC binary"
+text = "UNLOG GPSUTCB"
+[[line]]
+tag = "unc-gpsutca"
+description = "Enable GPSUTC ASCII at 1Hz"
+text = "GPSUTCA 1"
+[[line]]
+tag = "unc-gpsutca-off"
+description = "Disable GPSUTC ASCII"
+text = "UNLOG GPSUTCA"
+
+# GALUTC (Galileo UTC parameters)
+[[line]]
+tag = "unc-galutcb"
+description = "Enable GALUTC binary at 1Hz"
+text = "GALUTCB 1"
+[[line]]
+tag = "unc-galutcb-off"
+description = "Disable GALUTC binary"
+text = "UNLOG GALUTCB"
+[[line]]
+tag = "unc-galutca"
+description = "Enable GALUTC ASCII at 1Hz"
+text = "GALUTCA 1"
+[[line]]
+tag = "unc-galutca-off"
+description = "Disable GALUTC ASCII"
+text = "UNLOG GALUTCA"
+
+# BD3UTC (BDS-3 UTC parameters)
+[[line]]
+tag = "unc-bd3utcb"
+description = "Enable BD3UTC binary at 1Hz"
+text = "BD3UTCB 1"
+[[line]]
+tag = "unc-bd3utcb-off"
+description = "Disable BD3UTC binary"
+text = "UNLOG BD3UTCB"
+[[line]]
+tag = "unc-bd3utca"
+description = "Enable BD3UTC ASCII at 1Hz"
+text = "BD3UTCA 1"
+[[line]]
+tag = "unc-bd3utca-off"
+description = "Disable BD3UTC ASCII"
+text = "UNLOG BD3UTCA"
+
+# BDSUTC (BDS UTC parameters)
+[[line]]
+tag = "unc-bdsutcb"
+description = "Enable BDSUTC binary at 1Hz"
+text = "BDSUTCB 1"
+[[line]]
+tag = "unc-bdsutcb-off"
+description = "Disable BDSUTC binary"
+text = "UNLOG BDSUTCB"
+[[line]]
+tag = "unc-bdsutca"
+description = "Enable BDSUTC ASCII at 1Hz"
+text = "BDSUTCA 1"
+[[line]]
+tag = "unc-bdsutca-off"
+description = "Disable BDSUTC ASCII"
+text = "UNLOG BDSUTCA"
+
+# BESTPOS (NovAtel format geodetic position)
+[[line]]
+tag = "nov-bestposb"
+description = "Enable BESTPOS binary at 1Hz"
+text = "BESTPOSB 1"
+[[line]]
+tag = "nov-bestposb-off"
+description = "Disable BESTPOS binary"
+text = "UNLOG BESTPOSB"
+[[line]]
+tag = "nov-bestposa"
+description = "Enable BESTPOS ASCII at 1Hz"
+text = "BESTPOSA 1"
+[[line]]
+tag = "nov-bestposa-off"
+description = "Disable BESTPOS ASCII"
+text = "UNLOG BESTPOSA"
+
+# BESTXYZ (NovAtel format ECEF position+velocity)
+[[line]]
+tag = "nov-bestxyzb"
+description = "Enable BESTXYZ binary at 1Hz"
+text = "BESTXYZB 1"
+[[line]]
+tag = "nov-bestxyzb-off"
+description = "Disable BESTXYZ binary"
+text = "UNLOG BESTXYZB"
+[[line]]
+tag = "nov-bestxyza"
+description = "Enable BESTXYZ ASCII at 1Hz"
+text = "BESTXYZA 1"
+[[line]]
+tag = "nov-bestxyza-off"
+description = "Disable BESTXYZ ASCII"
+text = "UNLOG BESTXYZA"
+
+# RANGECMP (NovAtel compressed range, ID 140)
+[[line]]
+tag = "nov-rangecmpb"
+description = "Enable RANGECMP binary every 30s"
+text = "RANGECMPB 30"
+[[line]]
+tag = "nov-rangecmpb-off"
+description = "Disable RANGECMP binary"
+text = "UNLOG RANGECMPB"
+
+# SIGNALGROUP (signal combination tracked by receiver)
+# Changing signalgroup causes an automatic reset
+[[line]]
+tag = "signalgroup-1"
+description = "Set SIGNALGROUP 1 (default, causes reset)"
+text = "CONFIG SIGNALGROUP 1"
+[[line]]
+tag = "signalgroup-2"
+description = "Set SIGNALGROUP 2 (needed for B2b-PPP and E6-HAS, causes reset)"
+text = "CONFIG SIGNALGROUP 2"
+[[line]]
+tag = "signalgroup-8"
+description = "Set SIGNALGROUP 8 (needed for 50Hz output, causes reset)"
+text = "CONFIG SIGNALGROUP 8"
+[[line]]
+tag = "signalgroup-10"
+description = "Set SIGNALGROUP 10 (needed for MADOCA-PPP, causes reset)"
+text = "CONFIG SIGNALGROUP 10"
+
+# PPP (Precise Point Positioning)
+# Convergence recommended: horiz >= 10cm, vert >= 15cm
+
+# E6-HAS: UM980 Build11833+, requires SIGNALGROUP 2
+[[line]]
+tag = "ppp-has"
+description = "Enable PPP with Galileo E6 HAS source (requires SIGNALGROUP 2)"
+text = "CONFIG PPP ENABLE E6-HAS"
+[[line]]
+tag = "ppp-has"
+text = "CONFIG PPP TIMEOUT 120"
+[[line]]
+tag = "ppp-has"
+text = "CONFIG PPP CONVERGE 10 20"
+
+# B2b-PPP: UM980 Build7923+, requires SIGNALGROUP 2
+[[line]]
+tag = "ppp-b2b"
+description = "Enable PPP with BeiDou B2b source (requires SIGNALGROUP 2)"
+text = "CONFIG PPP ENABLE B2b-PPP"
+[[line]]
+tag = "ppp-b2b"
+text = "CONFIG PPP TIMEOUT 120"
+[[line]]
+tag = "ppp-b2b"
+text = "CONFIG PPP CONVERGE 10 20"
+
+# L6MDCPPP (QZSS L6E MADOCA): UM980 Build16606+, requires SIGNALGROUP 10 (Build17548+)
+[[line]]
+tag = "ppp-mdc"
+description = "Enable PPP with QZSS MADOCA-PPP source (requires SIGNALGROUP 10)"
+text = "CONFIG PPP ENABLE L6MDCPPP"
+[[line]]
+tag = "ppp-mdc"
+text = "CONFIG PPP TIMEOUT 120"
+[[line]]
+tag = "ppp-mdc"
+text = "CONFIG PPP CONVERGE 10 20"
+
+[[line]]
+tag = "ppp-off"
+description = "Disable PPP"
+text = "CONFIG PPP DISABLE"
+
+# NMEA message control
+[[line]]
+tag = "nmea-rmc"
+description = "Enable NMEA RMC at 1Hz"
+text = "GPRMC 1"
+[[line]]
+tag = "nmea-rmc-off"
+description = "Disable NMEA RMC"
+text = "UNLOG GPRMC"
+[[line]]
+tag = "nmea-gga"
+description = "Enable NMEA GGA at 1Hz"
+text = "GPGGA 1"
+[[line]]
+tag = "nmea-gga-off"
+description = "Disable NMEA GGA"
+text = "UNLOG GPGGA"
+[[line]]
+tag = "nmea-gll"
+description = "Enable NMEA GLL at 1Hz"
+text = "GPGLL 1"
+[[line]]
+tag = "nmea-gll-off"
+description = "Disable NMEA GLL"
+text = "UNLOG GPGLL"
+[[line]]
+tag = "nmea-gsa"
+description = "Enable NMEA GSA at 1Hz"
+text = "GPGSA 1"
+[[line]]
+tag = "nmea-gsa-off"
+description = "Disable NMEA GSA"
+text = "UNLOG GPGSA"
+[[line]]
+tag = "nmea-gsv"
+description = "Enable NMEA GSV at 1Hz"
+text = "GPGSV 1"
+[[line]]
+tag = "nmea-gsv-off"
+description = "Disable NMEA GSV"
+text = "UNLOG GPGSV"
+[[line]]
+tag = "nmea-vtg"
+description = "Enable NMEA VTG at 1Hz"
+text = "GPVTG 1"
+[[line]]
+tag = "nmea-vtg-off"
+description = "Disable NMEA VTG"
+text = "UNLOG GPVTG"
+[[line]]
+tag = "nmea-zda"
+description = "Enable NMEA ZDA at 1Hz"
+text = "GPZDA 1"
+[[line]]
+tag = "nmea-zda-off"
+description = "Disable NMEA ZDA"
+text = "UNLOG GPZDA"
+
+# NMEA daemon set (RMC, GGA, GSV, GSA)
+[[line]]
+tag = "nmea-daemon"
+description = "Enable NMEA daemon set (RMC, GGA, GSV, GSA)"
+text = "GPRMC 1"
+[[line]]
+tag = "nmea-daemon"
+text = "GPGGA 1"
+[[line]]
+tag = "nmea-daemon"
+text = "GPGSV 1"
+[[line]]
+tag = "nmea-daemon"
+text = "GPGSA 1"
+
+# Disable all NMEA messages
+[[line]]
+tag = "nmea-off"
+description = "Disable all NMEA messages"
+text = "UNLOG GPRMC"
+[[line]]
+tag = "nmea-off"
+text = "UNLOG GPGGA"
+[[line]]
+tag = "nmea-off"
+text = "UNLOG GPGLL"
+[[line]]
+tag = "nmea-off"
+text = "UNLOG GPGSA"
+[[line]]
+tag = "nmea-off"
+text = "UNLOG GPGSV"
+[[line]]
+tag = "nmea-off"
+text = "UNLOG GPVTG"
+[[line]]
+tag = "nmea-off"
+text = "UNLOG GPZDA"
+
+# RTCM ephemeris messages
+# Enables ephemeris output for GPS, GLONASS, BeiDou, QZSS, and
+# Galileo (both F/NAV and I/NAV).  RTCM1041 (NavIC) is rejected by
+# UM982 firmware Build13495.
+# Each message is emitted round-robin one satellite per second.
+[[line]]
+tag = "rtcm-eph"
+description = "Enable RTCM ephemeris messages at 1Hz"
+text = "RTCM1019 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1020 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1042 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1044 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1045 1"
+[[line]]
+tag = "rtcm-eph"
+text = "RTCM1046 1"
+[[line]]
+tag = "rtcm-eph-off"
+description = "Disable RTCM ephemeris messages"
+text = "UNLOG RTCM1019"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1020"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1042"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1044"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1045"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1046"
+
+# Legacy RTCM observables
+# MT1001-1004 are GPS L1/L1+L2 basic/extended observables;
+# MT1009-1012 are the GLONASS equivalents.  MSM (107x/108x)
+# supersedes these but some base stations still emit them.
+[[line]]
+tag = "rtcm-legacy"
+description = "Enable legacy RTCM observables at 1Hz"
+text = "RTCM1001 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1002 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1003 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1004 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1009 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1010 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1011 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "RTCM1012 1"
+[[line]]
+tag = "rtcm-legacy-off"
+description = "Disable legacy RTCM observables"
+text = "UNLOG RTCM1001"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1002"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1003"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1004"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1009"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1010"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1011"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1012"
+
+# Disable all messages
+[[line]]
+tag = "msg-all-off"
+description = "Disable all logged messages"
+text = "UNLOGALL"

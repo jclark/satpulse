@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/lib/ntime"
 )
 
 // minFitEntries is the minimum number of admitted calibration entries
@@ -288,7 +289,7 @@ func crossPolarityGap(a, b []pulseEdge) (time.Duration, bool) {
 // the integer-second UTC label of that top-of-second.
 type calibEntry struct {
 	X float64
-	Y time.Time
+	Y ntime.Time
 }
 
 // mapEdgesToUTC labels each admitted edge with an integer-second UTC
@@ -331,7 +332,7 @@ func mapEdgesToUTC(edges []pulseEdge, medianInterval time.Duration, basePHC ptim
 
 		var pulseOffsetPHCNs float64
 		if po != nil {
-			if v, ok := po.GetUTCPulseCorrection(rounded); ok {
+			if v, ok := po.GetUTCPulseCorrection(rounded.SysTime()); ok {
 				// PulseOffset is true-time ns: true_second = pulse_time + PulseOffset,
 				// so the physical edge sits PulseOffset true-time ns before the top
 				// of second. Convert into PHC ns (scale = realPerPHC, so PHC ns per
@@ -404,6 +405,6 @@ func fitAndEvaluate(entries []calibEntry, basePHC ptime.Time, phc ptime.Time, sy
 	// survives via yQFracNs.
 	yQIntNs := int64(yQueryNs)
 	yQFracNs := yQueryNs - float64(yQIntNs)
-	totalDur := yRef.Sub(sys) + time.Duration(yQIntNs)
+	totalDur := yRef.Sub(ntime.Sys(sys)) + time.Duration(yQIntNs)
 	return totalDur.Seconds() + yQFracNs*1e-9, nil
 }

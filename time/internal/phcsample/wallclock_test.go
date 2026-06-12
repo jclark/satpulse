@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/jclark/satpulse/time/lib/ntime"
 )
 
 // monoBaseTime and utcBaseTime are deliberately far apart so the tests
@@ -23,7 +25,7 @@ type wallClockTestInput struct {
 	queryOffset time.Duration
 }
 
-func (in wallClockTestInput) run() (utc time.Time, ok bool, wc *wallClock, err error) {
+func (in wallClockTestInput) run() (utc ntime.Time, ok bool, wc *wallClock, err error) {
 	cfg := in.cfg
 	wc = newWallClock(&cfg)
 	step := in.step
@@ -36,7 +38,7 @@ func (in wallClockTestInput) run() (utc time.Time, ok bool, wc *wallClock, err e
 		if i < len(in.residuals) {
 			tRead = tRead.Add(in.residuals[i])
 		}
-		wc.Add(tRead, utc)
+		wc.Add(tRead, ntime.Sys(utc))
 	}
 	queryMono := monoBaseTime.Add(in.queryOffset)
 	utc, err = wc.SecondAt(queryMono)
@@ -110,8 +112,8 @@ func TestWallClockDelaySweep(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected err: %v", err)
 			}
-			if !utc.Equal(tc.expectUTC) {
-				t.Errorf("utc = %v, want %v", utc, tc.expectUTC)
+			if utc != ntime.Sys(tc.expectUTC) {
+				t.Errorf("utc = %v, want %v", utc, ntime.Sys(tc.expectUTC))
 			}
 		})
 	}
@@ -132,8 +134,8 @@ func TestWallClockToleratesDivergentMonoUtcFrames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected err despite legal mono/utc divergence: %v", err)
 	}
-	if !utc.Equal(utcBaseTime) {
-		t.Errorf("utc = %v, want %v", utc, utcBaseTime)
+	if utc != ntime.Sys(utcBaseTime) {
+		t.Errorf("utc = %v, want %v", utc, ntime.Sys(utcBaseTime))
 	}
 }
 
@@ -164,8 +166,8 @@ func TestWallClockBackwardCoverageAllowsSmallExtrapolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected err for small backward extrapolation: %v", err)
 	}
-	if !utc.Equal(utcBaseTime) {
-		t.Errorf("utc = %v, want %v", utc, utcBaseTime)
+	if utc != ntime.Sys(utcBaseTime) {
+		t.Errorf("utc = %v, want %v", utc, ntime.Sys(utcBaseTime))
 	}
 }
 
@@ -190,7 +192,7 @@ func TestWallClockClockRateMismatch(t *testing.T) {
 	for i := range 8 {
 		utc := utcBaseTime.Add(time.Duration(i) * time.Second)
 		tRead := monoBaseTime.Add(time.Duration(i) * 1200 * time.Millisecond).Add(100 * time.Millisecond)
-		wc.Add(tRead, utc)
+		wc.Add(tRead, ntime.Sys(utc))
 	}
 	_, err := wc.SecondAt(monoBaseTime)
 	if err == nil {
@@ -253,7 +255,7 @@ func TestWallClockReset(t *testing.T) {
 	for i := range 5 {
 		utc := utcBaseTime.Add(time.Duration(i) * time.Second)
 		tRead := monoBaseTime.Add(time.Duration(i) * time.Second).Add(100 * time.Millisecond)
-		wc.Add(tRead, utc)
+		wc.Add(tRead, ntime.Sys(utc))
 	}
 	if _, err := wc.SecondAt(monoBaseTime); err != nil {
 		t.Fatalf("pre-reset: unexpected err: %v", err)
@@ -271,7 +273,7 @@ func TestWallClockMsgWindowPruning(t *testing.T) {
 	for i := range 20 {
 		utc := utcBaseTime.Add(time.Duration(i) * time.Second)
 		tRead := monoBaseTime.Add(time.Duration(i) * time.Second).Add(100 * time.Millisecond)
-		wc.Add(tRead, utc)
+		wc.Add(tRead, ntime.Sys(utc))
 	}
 	// After 20 1-second additions with 5-second retention, at most 6 points
 	// remain (the window accepts observations whose tRead is within 5s of the

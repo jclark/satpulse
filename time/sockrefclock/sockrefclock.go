@@ -5,7 +5,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/lib/ntime"
 )
 
 type SockRefClock struct {
@@ -39,7 +39,7 @@ func (c *SockRefClock) RemotePath() string {
 
 const sockRefClockTimeout = time.Second / 10
 
-func (c *SockRefClock) Sample(sys time.Time, offset float64, leap ptime.LeapSecondKind) error {
+func (c *SockRefClock) Sample(sys ntime.Time, offset float64, leap Leap) error {
 	pkt, err := sockPacket(sys, offset, leap)
 	if err != nil {
 		return err

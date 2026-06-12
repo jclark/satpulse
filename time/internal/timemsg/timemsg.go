@@ -54,11 +54,19 @@ const (
 	levelConsecutive               // have the requested messages and they are consecutive
 )
 
-// NewBuffer creates a new Buffer with the specified read window.
-// The readWindow determines how far back in time to keep messages.
+// minReadWindow is the lower bound on the read window the Buffer will use,
+// regardless of what the caller requests. It must be large enough to cover
+// the package's own internal lookback needs (detectInvalidLeap looks back
+// ~2s for a same-type entry; getPulseCorrectionLast looks back ~1s for a
+// matching refTime).
+const minReadWindow = 3 * time.Second
+
+// NewBuffer creates a new Buffer with at least the given read window.
+// readWindow is the minimum the caller requires; the Buffer may use a
+// larger window to satisfy its own internal needs.
 func NewBuffer(lg *slog.Logger, readWindow time.Duration, ls ptime.LeapSecond, timeGNSS gpsprot.GNSS) *Buffer {
 	return &Buffer{
-		readWindow: readWindow,
+		readWindow: max(readWindow, minReadWindow),
 		ls:         ls,
 		lg:         lg,
 		timeGNSS:   timeGNSS,
@@ -68,7 +76,7 @@ func NewBuffer(lg *slog.Logger, readWindow time.Duration, ls ptime.LeapSecond, t
 // Time implements gpsprot.MsgHandler.
 func (buf *Buffer) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 	cutoff := tRead.Add(-buf.readWindow)
-	if msg.PulseOffset != nil {
+	if msg.PulseOffset.IsSet() {
 		switch msg.Ref {
 		case gpsprot.PrePulse:
 			buf.lastPreCorrMsg = msg
@@ -98,7 +106,7 @@ func (buf *Buffer) SetMsgUTCTimer(t MsgUTCTimer) {
 }
 
 func (buf *Buffer) msgUTCTime(msg *gpsprot.TimeMsg, tRead time.Time) {
-	if buf.msgUTCTimer == nil || msg.UTCTime == nil {
+	if buf.msgUTCTimer == nil || !msg.UTCTime.IsSet() {
 		return
 	}
 	// PrePulse messages arrive before the pulse and carry the UTC of
@@ -109,7 +117,7 @@ func (buf *Buffer) msgUTCTime(msg *gpsprot.TimeMsg, tRead time.Time) {
 	if msg.Ref == gpsprot.PrePulse {
 		return
 	}
-	ut := *msg.UTCTime
+	ut := msg.UTCTime.Get()
 	// Skip leap second (23:59:60)
 	if ut.TimeOfDay >= 24*time.Hour {
 		return
@@ -146,7 +154,12 @@ func (buf *Buffer) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 // the reference time of each time message is one greater than the previous one.
 // The messages must be the same GNSS message type, which must be of a type that follows the time pulse.
 // If there are insufficient messages in the buffer, the slice will be nil and lastSec will be zero.
-func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.Time) {
+//
+// detectLeap is non-nil only when the selected time messages are
+// UTC-source (i.e. start.TAITime.IsZero()). When non-nil, calling it
+// with a minDelta runs the invalid-leap check on the buffer's current
+// contents for the captured (Tag, NativeMsgID).
+func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.Time, detectLeap func(minDelta time.Duration) bool) {
 	level := levelEmpty
 	defer func() {
 		buf.noteBufMsgLevel(level)
@@ -154,7 +167,7 @@ func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.
 	entries := buf.bestEntries(&level)
 	start := epochStartMsg(entries)
 	if start == nil {
-		return 0, nil
+		return 0, nil, nil
 	}
 	level = levelMultipleTimes
 	entries = entriesSameType(entries, start)
@@ -164,7 +177,7 @@ func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.
 	for _, e := range entries {
 		sec := e.msg.TAITime
 		if sec.IsZero() {
-			sec = buf.ls.UTCtoTime(*e.msg.UTCTime)
+			sec = buf.ls.UTCtoTime(e.msg.UTCTime.Get())
 		}
 		// With u-blox UBX, the time in navigation solution messages is not-exactly on the second:
 		// it's the time of the navigation solution, which is slightly different.
@@ -181,18 +194,24 @@ func (buf *Buffer) GetPostTimeMessages(n int) (lastSec ptime.Time, tRead []time.
 		tRead = append(tRead, e.tRead.Add(-time.Duration(e.msg.ReadDelay)))
 	}
 	if len(secs) < n {
-		return 0, nil
+		return 0, nil, nil
 	}
 	level = levelSufficient
 	secs = secs[len(secs)-n:]
 	tRead = tRead[len(tRead)-n:]
 	for i := 1; i < len(secs); i++ {
 		if secs[i].Sub(secs[i-1]) != time.Second {
-			return 0, nil
+			return 0, nil, nil
 		}
 	}
 	level = levelConsecutive
-	return secs[len(secs)-1], tRead
+	if start.TAITime.IsZero() {
+		tag, msgID := start.Tag, start.NativeMsgID
+		detectLeap = func(minDelta time.Duration) bool {
+			return buf.detectInvalidLeap(tag, msgID, minDelta)
+		}
+	}
+	return secs[len(secs)-1], tRead, detectLeap
 }
 
 func (buf *Buffer) noteBufMsgLevel(level bufMsgLevel) {
@@ -325,7 +344,7 @@ func epochStartMsg(entries []entry) *gpsprot.TimeMsg {
 				continue
 			}
 		} else {
-			if *entries[i].msg.UTCTime == *utc {
+			if entries[i].msg.UTCTime.Get() == utc.Get() {
 				continue
 			}
 		}
@@ -345,7 +364,7 @@ func entriesSameType(entries []entry, msg *gpsprot.TimeMsg) []entry {
 }
 
 func (e *entry) eligible(level *bufMsgLevel) bool {
-	if e.msg.TAITime.IsZero() && e.msg.UTCTime == nil {
+	if e.msg.TAITime.IsZero() && !e.msg.UTCTime.IsSet() {
 		return false
 	}
 	*level = max(*level, levelTime)
@@ -353,6 +372,54 @@ func (e *entry) eligible(level *bufMsgLevel) bool {
 		return false
 	}
 	*level = levelPost
+	return true
+}
+
+// detectInvalidLeap detects a backwards leap in the sequence of messages due to out of date firmware
+// this needs to be called after each message is added to the buffer
+func (buf *Buffer) detectInvalidLeap(tag gpsprot.Tag, nativeMsgID string, minDelta time.Duration) bool {
+	entries := buf.validEntries()
+	if len(entries) == 0 {
+		return false
+	}
+	last := entries[len(entries)-1]
+	if m := last.msg; m.Tag != tag || m.NativeMsgID != nativeMsgID || !m.UTCTime.IsSet() {
+		return false
+	}
+	t2 := last.msg.UTCTime.Get()
+
+	i := len(entries) - 2
+	for {
+		if i < 0 {
+			return false
+		}
+		if msg := entries[i].msg; msg.Tag == tag && msg.NativeMsgID == nativeMsgID {
+			if !msg.UTCTime.IsSet() {
+				return false
+			}
+			break
+		}
+		i--
+	}
+	t1 := entries[i].msg.UTCTime.Get()
+	delta := t2.Sub(t1)
+	if delta > 0 {
+		return false
+	}
+	if delta < 0 {
+		// the GPS reported UTC time has actually gone backwards; definitely an invalid leap second
+		buf.lg.Warn("detected backwards leap in GPS UTC time; likely due to out of date firmware", "tag", tag, "nativeMsgID", nativeMsgID, "t1", t1, "t2", t2, "leap", delta)
+		return true
+	}
+	tRead1 := entries[i].tRead.Add(-time.Duration(entries[i].msg.ReadDelay))
+	tRead2 := last.tRead.Add(-time.Duration(last.msg.ReadDelay))
+	tReadDelta := tRead2.Sub(tRead1)
+	if tReadDelta < minDelta {
+		// not quite strong enough evidence that this is an invalid leap, but duplicate message of same msg ID and same UTC time is suspicious
+		buf.lg.Info("suspicious duplicate GPS UTC time message", "tag", tag, "nativeMsgID", nativeMsgID, "t", t1)
+		return false
+	}
+	buf.lg.Warn("detected duplicate GPS UTC time message with same UTC time; likely due to out of date firmware", "tag", tag, "nativeMsgID", nativeMsgID, "t", t1, "tReadDelta", tReadDelta)
 	return true
 }
 
@@ -381,7 +448,7 @@ func (buf *Buffer) getPulseCorrectionLast(lastCorr *gpsprot.TimeMsg, refTime pti
 	for i := len(entries) - 1; i >= 0; i-- {
 		m := entries[i].msg
 		t := m.TAITime
-		if m.PulseOffset != nil && t == refTime {
+		if m.PulseOffset.IsSet() && t == refTime {
 			return buf.validatePulseOffset(m)
 		}
 		// Since pulse offsets of each Ref type are in order, stop if we've gone past the time we're looking for
@@ -425,7 +492,7 @@ func (buf *Buffer) GetUTCPulseCorrection(refTime time.Time) (float64, bool) {
 	entries := buf.validEntries()
 	for i := len(entries) - 1; i >= 0; i-- {
 		m := entries[i].msg
-		if m.PulseOffset == nil || m.Ref != gpsprot.PrePulse {
+		if !m.PulseOffset.IsSet() || m.Ref != gpsprot.PrePulse {
 			continue
 		}
 		t, ok := buf.msgUTC(m)
@@ -446,8 +513,8 @@ func (buf *Buffer) GetUTCPulseCorrection(refTime time.Time) (float64, bool) {
 // field but falling back to a TAI-derived value via buf.ls. Returns
 // (zero, false) when neither is available.
 func (buf *Buffer) msgUTC(msg *gpsprot.TimeMsg) (time.Time, bool) {
-	if msg.UTCTime != nil {
-		return msg.UTCTime.SysTime(), true
+	if msg.UTCTime.IsSet() {
+		return msg.UTCTime.Get().SysTime(), true
 	}
 	if !msg.TAITime.IsZero() {
 		u := buf.ls.TimeToUTC(msg.TAITime)
@@ -463,10 +530,10 @@ const maxPulseOffset = 100
 // or (0, false) if missing or out of range. Shared validation core for
 // both the rounded-Duration accessor and the float64 accessor.
 func (buf *Buffer) pulseOffsetNs(msg *gpsprot.TimeMsg) (float64, bool) {
-	if msg.PulseOffset == nil {
+	if !msg.PulseOffset.IsSet() {
 		return 0, false
 	}
-	off := *msg.PulseOffset
+	off := msg.PulseOffset.Get()
 	if math.Abs(off) > maxPulseOffset {
 		buf.lg.Warn("pulse offset exceeds acceptable limit", "pulseOffset", off, "limit", maxPulseOffset, "tag", msg.Tag, "msgID", msg.NativeMsgID, "tai", msg.TAITime)
 		return 0, false

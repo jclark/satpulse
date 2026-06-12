@@ -2,6 +2,7 @@ package sseobs
 
 import (
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpscfg"
@@ -19,6 +20,12 @@ import (
 // InitSSE is the type of the SSE for the initialization event
 type InitSSE struct {
 	Receiver *gpsprot.ReceiverInfo `json:"receiver,omitempty"`
+}
+
+// ModeSSE is the SSE event data for sync mode changes.
+// Carries the controller's current mode (post-transition).
+type ModeSSE struct {
+	Mode string `json:"mode"`
 }
 
 // TimeSSE is the type of the SSE for time events
@@ -53,7 +60,7 @@ type SampleSSE struct {
 	StepCount         uint32  `json:"stepCount"`
 	StepCountChanging bool    `json:"stepCountChanging,omitempty"`
 	Outlier           bool    `json:"outlier,omitempty"`
-	SyncState         string  `json:"syncState"`
+	Mode              string  `json:"mode"`
 }
 
 // PosVelSSE is the SSE event data for position and velocity.
@@ -112,6 +119,26 @@ type QualitySSE struct {
 	RTCMRefBaseID opt.Val[uint16]  `json:"rtcmRefBaseID,omitzero"`
 }
 
+// CorReportSSE is the SSE event data for a correction-report
+// observation. Field names mirror gpsprot.CorReportMsg so that a
+// future migration to direct *CorReportMsg payloads is a drop-in for
+// the frontend. NativeMsg and NBytes are intentionally omitted.
+type CorReportSSE struct {
+	Tag           gpsprot.Tag             `json:"tag"`
+	MsgID         string                  `json:"msgID"`
+	Source        gpsprot.CorReportSource `json:"source"`
+	ChecksumOK    opt.Val[bool]           `json:"checksumOK,omitzero"`
+	Used          opt.Val[bool]           `json:"used,omitzero"`
+	RTCMRefBaseID opt.Val[uint16]         `json:"rtcmRefBaseID,omitzero"`
+}
+
+// corReportSourceTimeout is how long the SSE observer stays in
+// receiver mode after the last receiver-source CorReport before a
+// pull-source event can switch it back to pull mode. Long enough to
+// absorb brief gaps in UBX-RXM-COR (~1 Hz), short enough that operator
+// config changes recover within a sensible window.
+const corReportSourceTimeout = 30 * time.Second
+
 // SSEObserver implements obs.Observer for Server-Sent Events
 type SSEObserver struct {
 	obs.DefaultObserver
@@ -119,6 +146,16 @@ type SSEObserver struct {
 	lg        *slog.Logger
 	ls        ptime.LeapSecond
 	initEvent sse.Event
+	// modeEvent caches the most recent "mode" event so new SSE clients
+	// can be told the current mode at connect time. nil before the first
+	// ModeChanged is observed.
+	modeEvent atomic.Pointer[sse.Event]
+	// Source-preference state for CorReport. corMode is the source the
+	// observer is currently emitting; lastReceiverTime is the tRead of
+	// the most recent receiver-source event. Zero values mean pull mode
+	// with no receiver event seen.
+	corMode          gpsprot.CorReportSource
+	lastReceiverTime time.Time
 }
 
 // New creates a new SSE observer with the provided channel and leap second.
@@ -127,22 +164,47 @@ func New(sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger, cfgResult
 	if sseCh == nil {
 		panic("sseCh must be non-nil")
 	}
-	initEvent, err := sse.Make("init", InitSSE{
-		Receiver: cfgResult.ReceiverInfo,
-	})
-	if err != nil {
-		lg.Error("failed to create SSE event", "name", "init", "err", err)
+	o := &SSEObserver{
+		sseCh: sseCh,
+		ls:    ls,
+		lg:    lg,
 	}
-	return &SSEObserver{
-		sseCh:     sseCh,
-		ls:        ls,
-		lg:        lg,
-		initEvent: initEvent,
+	if cfgResult != nil && cfgResult.ReceiverInfo != nil {
+		ev, err := sse.Make("init", InitSSE{Receiver: cfgResult.ReceiverInfo})
+		if err != nil {
+			lg.Error("failed to create SSE event", "name", "init", "err", err)
+		} else {
+			o.initEvent = ev
+		}
 	}
+	return o
 }
 
-func (o *SSEObserver) InitEvent() sse.Event {
-	return o.initEvent
+// InitEvents returns the events to write to a new SSE client before it
+// starts receiving live broadcast events. Currently the static init
+// event (if any receiver info is available), plus the most recent mode
+// event if one has been observed.
+func (o *SSEObserver) InitEvents() []sse.Event {
+	var events []sse.Event
+	if !o.initEvent.IsZero() {
+		events = append(events, o.initEvent)
+	}
+	if p := o.modeEvent.Load(); p != nil {
+		events = append(events, *p)
+	}
+	return events
+}
+
+// ModeChanged implements phcsync.Observer. Stores the latest mode event
+// for delivery to new clients and broadcasts it to current subscribers.
+func (o *SSEObserver) ModeChanged(_, newMode phcsync.Mode) {
+	ev, err := sse.Make("mode", ModeSSE{Mode: newMode.String()})
+	if err != nil {
+		o.lg.Error("failed to create SSE event", "name", "mode", "err", err)
+		return
+	}
+	o.modeEvent.Store(&ev)
+	o.sseCh <- ev
 }
 
 // Release implements Observer - closes the SSE channel
@@ -150,7 +212,7 @@ func (o *SSEObserver) Release() {
 	close(o.sseCh)
 }
 
-// Sample implements phcsync.Sampler - generates PHC sample SSE events
+// Sample implements phcsync.Observer - generates PHC sample SSE events
 func (o *SSEObserver) Sample(data phcsync.Sample) {
 	stepCount, changing := data.Era.StepCount()
 	event := SampleSSE{
@@ -159,7 +221,7 @@ func (o *SSEObserver) Sample(data phcsync.Sample) {
 		StepCountChanging: changing,
 		Freq:              data.Freq,
 		Outlier:           data.Kind == phcsync.SampleOutlier,
-		SyncState:         data.Mode.String(),
+		Mode:              data.Mode.String(),
 	}
 	o.sendSSE("phc", event)
 }
@@ -218,6 +280,37 @@ func (o *SSEObserver) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 // LeapSecond updates the local leap second used for time formatting.
 func (o *SSEObserver) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	msg.UpdateLeapSecond(&o.ls)
+}
+
+// CorReport implements gpsprot.CorReporter. Applies a source-preference
+// latch so the dashboard only sees one source at a time: start in pull
+// mode, switch to receiver on any receiver-source event, and switch
+// back to pull on a pull-source event only if corReportSourceTimeout
+// has elapsed since the last receiver-source event. No content
+// filtering (tag, message ID, checksum) -- the dashboard handles that.
+func (o *SSEObserver) CorReport(msg *gpsprot.CorReportMsg, tRead time.Time) {
+	switch msg.Source {
+	case gpsprot.CorReportSourceReceiver:
+		o.corMode = gpsprot.CorReportSourceReceiver
+		o.lastReceiverTime = tRead
+	case gpsprot.CorReportSourcePull:
+		if o.corMode == gpsprot.CorReportSourceReceiver {
+			if tRead.Sub(o.lastReceiverTime) <= corReportSourceTimeout {
+				return
+			}
+			o.corMode = gpsprot.CorReportSourcePull
+		}
+	default:
+		return
+	}
+	o.sendSSE("corReport", CorReportSSE{
+		Tag:           msg.Tag,
+		MsgID:         msg.MsgID,
+		Source:        msg.Source,
+		ChecksumOK:    msg.ChecksumOK,
+		Used:          msg.Used,
+		RTCMRefBaseID: msg.RTCMRefBaseID,
+	})
 }
 
 // NavEpochPV emits posvel and quality SSE events from the accumulated bundle.

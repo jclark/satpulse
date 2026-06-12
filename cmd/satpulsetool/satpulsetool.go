@@ -3,19 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
-	"github.com/jclark/satpulse/internal/annotatecmd"
-	"github.com/jclark/satpulse/internal/decodecmd"
-	"github.com/jclark/satpulse/internal/gpscmd"
-	"github.com/jclark/satpulse/internal/ntripcmd"
-	"github.com/jclark/satpulse/internal/pmccmd"
-	"github.com/jclark/satpulse/internal/replaycmd"
-	"github.com/jclark/satpulse/internal/sdpcmd"
-	"github.com/jclark/satpulse/time/app/syncsimcmd"
 	"github.com/spf13/pflag"
 )
 
@@ -68,26 +59,8 @@ func main() {
 	logWriter := os.Stderr
 
 	exitCode := 0
-	var exec func(logWriter io.Writer, logLevel slog.Level, progName string, cmdName string, cmdArgs []string) (usage string, err error)
-	switch cmdName {
-	case "annotate":
-		exec = annotatecmd.Cmd
-	case "decode":
-		exec = decodecmd.Cmd
-	case "gps":
-		exec = gpscmd.Cmd
-	case "ntrip":
-		exec = ntripcmd.Cmd
-	case "pmc":
-		exec = pmccmd.Cmd
-	case "replay":
-		exec = replaycmd.Cmd
-	case "sdp":
-		exec = sdpcmd.Cmd
-	case "syncsim":
-		exec = syncsimcmd.Cmd
-	}
-	if exec != nil {
+	exec, ok := commands[cmdName]
+	if ok {
 		usage, err := exec(logWriter, logLevel, progName, cmdName, cmdArgs)
 		if err != nil {
 			cmd.ErrPrintlnWithDetail(progName, err)
@@ -112,17 +85,34 @@ func main() {
 	}
 }
 
+// descriptions lists every possible subcommand and its one-line description,
+// in the order they should appear in usage. usage() only prints entries whose
+// name is present in commands, so the help text reflects what this build
+// actually supports.
+var descriptions = []struct {
+	name, desc string
+}{
+	{"gps", "configure a GPS device"},
+	{"sdp", "control software-defined pins on PTP hardware clocks"},
+	{"syncsim", "run clock synchronization simulation"},
+	{"convobs", "convert raw and JSON observations"},
+	{"decode", "decode a GPS packet"},
+	{"annotate", "annotate a JSONL packet log with decoded fields"},
+	{"pack", "convert a JSONL packet log to a packet byte stream"},
+	{"scan", "convert a packet byte stream to a JSONL packet log"},
+	{"replay", "replay a JSONL packet log through the processing pipeline"},
+	{"ntrip", "Ntrip client"},
+	{"pmc", "send a PTP management message to ptp4l process"},
+}
+
 func usage(progName string, flags *pflag.FlagSet) {
 	fmt.Fprintln(os.Stderr, "Usage:", progName, "[global-options] command [options] arg...")
 	fmt.Fprintln(os.Stderr, "Commands:")
-	fmt.Fprintln(os.Stderr, "  gps - configure a GPS device")
-	fmt.Fprintln(os.Stderr, "  sdp - control software-defined pins on PTP hardware clocks")
-	fmt.Fprintln(os.Stderr, "  syncsim - run clock synchronization simulation")
-	fmt.Fprintln(os.Stderr, "  decode - decode a GPS packet")
-	fmt.Fprintln(os.Stderr, "  annotate - annotate a JSONL packet log with decoded fields")
-	fmt.Fprintln(os.Stderr, "  replay - replay a JSONL packet log through the processing pipeline")
-	fmt.Fprintln(os.Stderr, "  ntrip - NTRIP client")
-	fmt.Fprintln(os.Stderr, "  pmc - send a PTP management message to ptp4l process")
+	for _, d := range descriptions {
+		if _, ok := commands[d.name]; ok {
+			fmt.Fprintf(os.Stderr, "  %s - %s\n", d.name, d.desc)
+		}
+	}
 	fmt.Fprintln(os.Stderr, "Global options:")
 	flags.PrintDefaults()
 }

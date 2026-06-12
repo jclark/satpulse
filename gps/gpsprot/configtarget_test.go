@@ -82,6 +82,111 @@ func TestPoint3DRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfigPropsBaudRate(t *testing.T) {
+	t.Run("CopyFrom", func(t *testing.T) {
+		var dst, src ConfigProps
+		src.SetBaudRate(115200)
+		dst.CopyFrom(&src)
+		if v, ok := dst.GetBaudRate(); !ok || v != 115200 {
+			t.Errorf("after CopyFrom: got (%d, %v), want (115200, true)", v, ok)
+		}
+	})
+	t.Run("Inconsistent", func(t *testing.T) {
+		var a, b ConfigProps
+		a.SetBaudRate(9600)
+		b.SetBaudRate(38400)
+		got := a.Inconsistent(&b)
+		if v, ok := got.GetBaudRate(); !ok || v != 38400 {
+			t.Errorf("Inconsistent: got (%d, %v), want (38400, true)", v, ok)
+		}
+		var c ConfigProps
+		c.SetBaudRate(9600)
+		got = a.Inconsistent(&c)
+		if _, ok := got.GetBaudRate(); ok {
+			t.Errorf("Inconsistent with equal values must not flag")
+		}
+	})
+	t.Run("Missing", func(t *testing.T) {
+		var a, b ConfigProps
+		b.SetBaudRate(9600)
+		got := a.Missing(&b)
+		if v, ok := got.GetBaudRate(); !ok || v != 9600 {
+			t.Errorf("Missing: got (%d, %v), want (9600, true)", v, ok)
+		}
+	})
+}
+
+func TestConfigPropsPort(t *testing.T) {
+	t.Run("GetSet", func(t *testing.T) {
+		var cp ConfigProps
+		if _, ok := cp.GetPort(); ok {
+			t.Errorf("port should be unset on a zero ConfigProps")
+		}
+		cp.SetPort("USB")
+		v, ok := cp.GetPort()
+		if !ok || v != "USB" {
+			t.Errorf("GetPort: got (%q, %v), want (\"USB\", true)", v, ok)
+		}
+	})
+	t.Run("ReadOnlyProps", func(t *testing.T) {
+		var cp ConfigProps
+		if ro := cp.ReadOnlyProps(); ro != 0 {
+			t.Errorf("ReadOnlyProps: got %v, want 0", ro)
+		}
+		cp.SetPort("UART1")
+		if ro := cp.ReadOnlyProps(); ro != PropIDPort {
+			t.Errorf("ReadOnlyProps after SetPort: got %v, want PropIDPort", ro)
+		}
+		cp.SetBaudRate(9600)
+		if ro := cp.ReadOnlyProps(); ro != PropIDPort {
+			t.Errorf("ReadOnlyProps must only include PropIDsReadOnly bits: got %v", ro)
+		}
+	})
+	t.Run("ClearReadOnlyProps", func(t *testing.T) {
+		var cp ConfigProps
+		cp.SetPort("UART1")
+		cp.SetBaudRate(9600)
+		cp.ClearReadOnlyProps()
+		if _, ok := cp.GetPort(); ok {
+			t.Errorf("port should be cleared")
+		}
+		if _, ok := cp.GetBaudRate(); !ok {
+			t.Errorf("baud rate must not be cleared (not a read-only prop)")
+		}
+	})
+	t.Run("CopyFrom", func(t *testing.T) {
+		var dst, src ConfigProps
+		src.SetPort("UART2")
+		dst.CopyFrom(&src)
+		if v, ok := dst.GetPort(); !ok || v != "UART2" {
+			t.Errorf("after CopyFrom: got (%q, %v), want (\"UART2\", true)", v, ok)
+		}
+	})
+	t.Run("Inconsistent", func(t *testing.T) {
+		var a, b ConfigProps
+		a.SetPort("UART1")
+		b.SetPort("USB")
+		got := a.Inconsistent(&b)
+		if v, ok := got.GetPort(); !ok || v != "USB" {
+			t.Errorf("Inconsistent: got (%q, %v), want (\"USB\", true)", v, ok)
+		}
+		var c ConfigProps
+		c.SetPort("UART1")
+		got = a.Inconsistent(&c)
+		if _, ok := got.GetPort(); ok {
+			t.Errorf("Inconsistent with equal port values must not flag")
+		}
+	})
+	t.Run("Missing", func(t *testing.T) {
+		var a, b ConfigProps
+		b.SetPort("USB")
+		got := a.Missing(&b)
+		if v, ok := got.GetPort(); !ok || v != "USB" {
+			t.Errorf("Missing: got (%q, %v), want (\"USB\", true)", v, ok)
+		}
+	})
+}
+
 func TestPropIDOperations(t *testing.T) {
 	props := PropIDSignalsEnabled | PropIDTimePulsePeriod
 
@@ -217,6 +322,30 @@ func TestConfigPropsJSONRoundTrip(t *testing.T) {
 			},
 		},
 		{
+			"baudRate",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetBaudRate(9600)
+				return cp
+			},
+		},
+		{
+			"baudRate zero",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetBaudRate(0)
+				return cp
+			},
+		},
+		{
+			"port",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetPort("USB")
+				return cp
+			},
+		},
+		{
 			"all properties",
 			func() ConfigProps {
 				var cp ConfigProps
@@ -299,8 +428,10 @@ func TestPropIDsJSONRoundTrip(t *testing.T) {
 		{"timePulse single", PropIDTimePulseWidth},
 		{"timePulse partial", PropIDTimePulseWidth | PropIDTimePulsePeriod},
 		{"multiple", PropIDSignalsEnabled | PropIDMode | PropIDMinElevation},
+		{"baudRate", PropIDBaudRate},
+		{"port", PropIDPort},
 		{"all", PropIDSignalsEnabled | PropIDTimeGNSS | PropIDTimePulse | PropIDMode |
-			PropIDAntennaCableDelay | PropIDNavMsgAuth | PropIDRTCMBaseID | PropIDMinElevation},
+			PropIDAntennaCableDelay | PropIDNavMsgAuth | PropIDRTCMBaseID | PropIDMinElevation | PropIDBaudRate | PropIDPort},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

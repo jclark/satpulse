@@ -1,5 +1,5 @@
 // Package ntripcmd implements the satpulsetool ntrip subcommand, which
-// fetches data from an NTRIP caster and writes either a JSONL packet log or
+// fetches data from an Ntrip caster and writes either a JSONL packet log or
 // raw bytes to stdout.
 package ntripcmd
 
@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"os"
 	"strings"
 
@@ -23,8 +22,6 @@ import (
 )
 
 const summary = `[-h|--help] [--user user[:password]] [--bin] <address[:port]> <mountpoint>`
-
-const defaultPort = "2101"
 
 // scanBufSize matches stream.scanBufSize.
 const scanBufSize = 16
@@ -42,7 +39,7 @@ func parseFlags(cmdName string, args []string) (cfg *flagConfig, help bool, usag
 	var bin bool
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
-	flags.StringVar(&user, "user", "", "NTRIP credentials (password may be omitted)")
+	flags.StringVar(&user, "user", "", "Ntrip credentials (password may be omitted)")
 	flags.BoolVar(&bin, "bin", false, "emit raw bytes to stdout (default: packet log JSONL)")
 	usageFunc = cmd.UsageFunc(cmdName, summary, flags)
 	if err = flags.Parse(args); err != nil {
@@ -56,19 +53,12 @@ func parseFlags(cmdName string, args []string) (cfg *flagConfig, help bool, usag
 		return
 	}
 	cfg = &flagConfig{
-		Addr:       ensurePort(flags.Arg(0), defaultPort),
+		Addr:       stream.NtripNormalizeAddress(flags.Arg(0)),
 		Mountpoint: flags.Arg(1),
 		Bin:        bin,
 	}
 	cfg.Username, cfg.Password = splitUserPass(user)
 	return
-}
-
-func ensurePort(addr, port string) string {
-	if _, _, err := net.SplitHostPort(addr); err == nil {
-		return addr
-	}
-	return net.JoinHostPort(addr, port)
 }
 
 func splitUserPass(user string) (string, string) {
@@ -88,12 +78,12 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 	}
 	ctx, _ := cmd.CancelOnSignal(context.Background(), lg)
 	version, _ := cmd.Version()
-	src := &stream.NTRIPSource{
+	src := &stream.NtripSource{
 		Addr:       cfg.Addr,
 		Mountpoint: cfg.Mountpoint,
 		Username:   cfg.Username,
 		Password:   cfg.Password,
-		UserAgent:  stream.NTRIPUserAgent{Version: version},
+		UserAgent:  stream.NtripUserAgent{Version: version},
 	}
 	rc, err := src.Connect(ctx)
 	if err != nil {
@@ -101,7 +91,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 	}
 	defer rc.Close()
 	// Close rc on ctx cancellation so a blocked Read returns.
-	// NTRIPSource only watches ctx during the handshake.
+	// NtripSource only watches ctx during the handshake.
 	go func() {
 		<-ctx.Done()
 		rc.Close()

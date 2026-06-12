@@ -65,6 +65,54 @@ func TestMultipleMessageBitString(t *testing.T) {
 	}
 }
 
+func TestExtractMsgTypeSubtype(t *testing.T) {
+	tests := []struct {
+		name       string
+		pkt        []byte
+		wantMT     MsgType
+		wantSub    uint16
+		wantHasSub bool
+	}{
+		{"1005", []byte(rtcm1005), 1005, 0, false},
+		{"MSM7 1077", makeMSM(1077, false), 1077, 0, false},
+		// Real 4072.1 prefix from a u-blox capture.
+		{"4072.1", []byte{0xD3, 0x00, 0x4A, 0xFE, 0x80, 0x01, 0x00}, 4072, 1, true},
+		{"4072.0", []byte{0xD3, 0x00, 0x00, 0xFE, 0x80, 0x00, 0x00}, 4072, 0, true},
+		{"4072 max subtype", []byte{0xD3, 0x00, 0x00, 0xFE, 0x8F, 0xFF, 0x00}, 4072, 0xFFF, true},
+		{"too short", []byte{0xD3, 0x00, 0x01, 0xFE, 0x80, 0x01}, 0, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt, sub, hasSub := ExtractMsgTypeSubtype(tt.pkt)
+			if mt != tt.wantMT || sub != tt.wantSub || hasSub != tt.wantHasSub {
+				t.Errorf("ExtractMsgTypeSubtype() = (%d, %d, %v), want (%d, %d, %v)",
+					mt, sub, hasSub, tt.wantMT, tt.wantSub, tt.wantHasSub)
+			}
+		})
+	}
+}
+
+func TestExtractMsgID(t *testing.T) {
+	tests := []struct {
+		name string
+		pkt  []byte
+		want string
+	}{
+		{"1005", []byte(rtcm1005), "1005"},
+		{"MSM7 1077", makeMSM(1077, false), "1077"},
+		{"4072.1", []byte{0xD3, 0x00, 0x4A, 0xFE, 0x80, 0x01, 0x00}, "4072.1"},
+		{"4072.0", []byte{0xD3, 0x00, 0x00, 0xFE, 0x80, 0x00, 0x00}, "4072.0"},
+		{"too short", []byte{0xD3, 0x00, 0x01, 0xFE, 0x80, 0x01}, "0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ExtractMsgID(tt.pkt); got != tt.want {
+				t.Errorf("ExtractMsgID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestReferenceStationID(t *testing.T) {
 	tests := []struct {
 		name   string

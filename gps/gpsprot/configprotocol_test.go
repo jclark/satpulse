@@ -1,6 +1,7 @@
 package gpsprot
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -18,6 +19,57 @@ type mockRequest struct {
 	err          error
 	sentTime     time.Time
 	responseTime time.Time // For MaybeComplete state
+}
+
+func TestConfigSupportFlagsItems(t *testing.T) {
+	flags := ConfigSupportBand |
+		ConfigSupportSurveyMsg |
+		ConfigSupportFixedPos |
+		ConfigSupportRTCMMSM7 |
+		ConfigSupportRTCMQZSS
+	want := []string{"band", "surveyMsg", "fixedPos", "rtcmMSM7", "rtcmQZSS"}
+	if got := flags.Items(); !slices.Equal(got, want) {
+		t.Errorf("Items() = %v, want %v", got, want)
+	}
+}
+
+func TestConfigSupportLast(t *testing.T) {
+	var highest ConfigSupportFlags
+	for _, entry := range configSupportFlagNames {
+		if entry.flag > highest {
+			highest = entry.flag
+		}
+	}
+	if ConfigSupportLast != highest {
+		t.Errorf("ConfigSupportLast = %v, want highest declared flag %v", ConfigSupportLast, highest)
+	}
+}
+
+func TestConfigSupportFlagsString(t *testing.T) {
+	flags := ConfigSupportSpeed | ConfigSupportRaw | ConfigSupportRTCMBaseID
+	want := "speed, raw, rtcmBaseID"
+	if got := flags.String(); got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
+func TestConfigSupportFlagsMarshalJSON(t *testing.T) {
+	tests := []struct {
+		flags ConfigSupportFlags
+		want  string
+	}{
+		{0, `[]`},
+		{ConfigSupportBand | ConfigSupportFixedPos | ConfigSupportRaw, `["band","fixedPos","raw"]`},
+	}
+	for _, tt := range tests {
+		b, err := json.Marshal(tt.flags)
+		if err != nil {
+			t.Fatalf("Marshal(%v): %v", tt.flags, err)
+		}
+		if got := string(b); got != tt.want {
+			t.Errorf("Marshal(%v) = %s, want %s", tt.flags, got, tt.want)
+		}
+	}
 }
 
 func (r *mockRequest) GetPacket() []byte {
@@ -125,6 +177,7 @@ type mockConfigurator struct {
 	generateCalls int
 	props         *ConfigProps
 	info          *ReceiverInfo
+	support       ConfigSupportFlags
 }
 
 func (c *mockConfigurator) GenerateRequests() error {
@@ -155,6 +208,10 @@ func (c *mockConfigurator) ReceiverInfo() *ReceiverInfo {
 		c.info = &ReceiverInfo{}
 	}
 	return c.info
+}
+
+func (c *mockConfigurator) ConfigSupport() ConfigSupportFlags {
+	return c.support
 }
 
 // Test basic ConfigDirector operation with simple requests
@@ -325,6 +382,69 @@ func TestConfigDirectorMultiResponse(t *testing.T) {
 	if cfg.requests[0].state != ConfigRequestSucceeded {
 		t.Errorf("expected request to succeed, got state %v", cfg.requests[0].state)
 	}
+}
+
+func TestConfigDirectorEqualTimeAdvanceAfterWait(t *testing.T) {
+	testTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{
+			{
+				packet:   []byte("req1"),
+				state:    ConfigRequestAwaitingResponse,
+				deadline: testTime.Add(time.Second),
+			},
+		},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 3)
+	waitCount := 0
+	for action := range director.Actions() {
+		if action.Type != ConfigActionWaitUntil {
+			t.Fatalf("action.Type = %v, want ConfigActionWaitUntil", action.Type)
+		}
+		waitCount++
+		director.AdvanceTimeTo(testTime)
+		if waitCount == 2 {
+			cfg.requests[0].state = ConfigRequestSucceeded
+		}
+	}
+
+	if waitCount != 2 {
+		t.Fatalf("waitCount = %d, want 2", waitCount)
+	}
+}
+
+func TestConfigDirectorPanicWithoutAdvanceAfterWait(t *testing.T) {
+	testTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := &mockConfigurator{
+		requests: []*mockRequest{
+			{
+				packet:   []byte("req1"),
+				state:    ConfigRequestAwaitingResponse,
+				deadline: testTime.Add(time.Second),
+			},
+		},
+		complete: true,
+	}
+
+	director := NewConfigDirector(cfg, 3)
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Actions() did not panic without AdvanceTimeTo after WaitUntil")
+		}
+		const want = "ConfigDirector API misuse: client must call AdvanceTimeTo() after ConfigActionWaitUntil"
+		if r != want {
+			t.Fatalf("panic = %q, want %q", r, want)
+		}
+	}()
+	director.Actions()(func(action ConfigAction) bool {
+		if action.Type != ConfigActionWaitUntil {
+			t.Fatalf("action.Type = %v, want ConfigActionWaitUntil", action.Type)
+		}
+		return true
+	})
 }
 
 // Test pausing state

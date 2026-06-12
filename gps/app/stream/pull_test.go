@@ -2,6 +2,7 @@ package stream
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -23,7 +24,7 @@ import (
 // makeRTCM builds a valid RTCM packet with the given message type and
 // payload length (excluding the 3-byte header and 3-byte CRC).
 func makeRTCM(msgType uint16, payloadLen int) []byte {
-	totalPayload := max(payloadLen+3, 3) // +3 for header
+	totalPayload := max(payloadLen+3, 3)  // +3 for header
 	pkt := make([]byte, 3+totalPayload+3) // preamble+len + payload + crc
 	pkt[0] = 0xD3
 	pkt[1] = byte(totalPayload >> 8)
@@ -47,6 +48,123 @@ func makeRTCMMSM(msgType uint16, mmb bool, payloadLen int) []byte {
 	crc := rtcmbin.Checksum(pkt[:3+totalPayload])
 	copy(pkt[3+totalPayload:], crc[:])
 	return pkt
+}
+
+const testRTCM1005 = "\xD3\x00\x13\x3E\xD7\xD3\x02\x02\x98\x0E\xDE\xEF\x34\xB4\xBD\x62\xAC\x09\x41\x98\x6F\x33\x36\x0B\x98"
+
+func TestCorReportFromPacket(t *testing.T) {
+	tRead := time.Unix(1, 2)
+	pkt := scan.Packet{
+		Format:        rtcm.PacketFormat,
+		Data:          testRTCM1005,
+		TRead:         tRead,
+		ChecksumValid: true,
+	}
+
+	msg, err := CorReportFromPacket(pkt)
+	if err != nil {
+		t.Fatalf("CorReportFromPacket returned error: %v", err)
+	}
+	if msg == nil {
+		t.Fatal("CorReportFromPacket returned nil")
+	}
+	if msg.Source != gpsprot.CorReportSourcePull {
+		t.Errorf("Source = %v, want %v", msg.Source, gpsprot.CorReportSourcePull)
+	}
+	if msg.Tag != rtcm.Tag || msg.MsgID != "1005" {
+		t.Errorf("Tag/MsgID = %q/%q, want RTCM/1005", msg.Tag, msg.MsgID)
+	}
+	if !msg.NBytes.IsSet() || msg.NBytes.Get() != len(testRTCM1005) {
+		t.Errorf("NBytes = (%v, %v), want set %d", msg.NBytes.Get(), msg.NBytes.IsSet(), len(testRTCM1005))
+	}
+	if !msg.ChecksumOK.IsSet() || !msg.ChecksumOK.Get() {
+		t.Errorf("ChecksumOK = (%v, %v), want set true", msg.ChecksumOK.Get(), msg.ChecksumOK.IsSet())
+	}
+	if msg.FinalFragment.IsSet() {
+		t.Errorf("FinalFragment set for non-MSM packet: %v", msg.FinalFragment.Get())
+	}
+	wantBaseID, ok := rtcmbin.ReferenceStationID(testRTCM1005)
+	if !ok {
+		t.Fatal("ReferenceStationID returned false for test packet")
+	}
+	if !msg.RTCMRefBaseID.IsSet() || msg.RTCMRefBaseID.Get() != wantBaseID {
+		t.Errorf("RTCMRefBaseID = (%v, %v), want set %d",
+			msg.RTCMRefBaseID.Get(), msg.RTCMRefBaseID.IsSet(), wantBaseID)
+	}
+	if _, ok := msg.NativeMsg.(*rtcmbin.MT1005); !ok {
+		t.Fatalf("NativeMsg = %T, want *rtcmbin.MT1005", msg.NativeMsg)
+	}
+}
+
+func TestCorReportFromPacketInvalidChecksum(t *testing.T) {
+	data := []byte(testRTCM1005)
+	data[len(data)-1] ^= 0x01
+	pkt := scan.Packet{
+		Format:        rtcm.PacketFormat,
+		Data:          string(data),
+		ChecksumValid: false,
+	}
+
+	msg, err := CorReportFromPacket(pkt)
+	if err != nil {
+		t.Fatalf("CorReportFromPacket returned error: %v", err)
+	}
+	if msg == nil {
+		t.Fatal("CorReportFromPacket returned nil")
+	}
+	if msg.MsgID != "1005" {
+		t.Errorf("MsgID = %q, want 1005", msg.MsgID)
+	}
+	if !msg.ChecksumOK.IsSet() || msg.ChecksumOK.Get() {
+		t.Errorf("ChecksumOK = (%v, %v), want set false", msg.ChecksumOK.Get(), msg.ChecksumOK.IsSet())
+	}
+	if msg.NativeMsg != nil {
+		t.Errorf("NativeMsg = %T, want nil", msg.NativeMsg)
+	}
+	if msg.RTCMRefBaseID.IsSet() {
+		t.Errorf("RTCMRefBaseID set for invalid checksum: %d", msg.RTCMRefBaseID.Get())
+	}
+}
+
+func TestCorReportFromPacketMSMFinalFragment(t *testing.T) {
+	tests := []struct {
+		name string
+		mmb  bool
+		want bool
+	}{
+		{"more follow", true, false},
+		{"final", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := makeRTCMMSM(1077, tt.mmb, 19)
+			msg, err := CorReportFromPacket(scan.Packet{
+				Format:        rtcm.PacketFormat,
+				Data:          string(data),
+				ChecksumValid: true,
+			})
+			if err != nil {
+				t.Fatalf("CorReportFromPacket returned error: %v", err)
+			}
+			if msg == nil {
+				t.Fatal("CorReportFromPacket returned nil")
+			}
+			if !msg.FinalFragment.IsSet() || msg.FinalFragment.Get() != tt.want {
+				t.Errorf("FinalFragment = (%v, %v), want set %v",
+					msg.FinalFragment.Get(), msg.FinalFragment.IsSet(), tt.want)
+			}
+		})
+	}
+}
+
+func TestCorReportFromPacketNonRTCM(t *testing.T) {
+	msg, err := CorReportFromPacket(scan.Packet{})
+	if err != nil {
+		t.Fatalf("CorReportFromPacket returned error: %v", err)
+	}
+	if msg != nil {
+		t.Fatalf("CorReportFromPacket returned %#v, want nil", msg)
+	}
 }
 
 // pipeSource returns a Source backed by net.Pipe.  The caller writes
@@ -121,6 +239,8 @@ type mockOutPort struct{}
 
 func (mockOutPort) Write(p []byte) (int, error) { return len(p), nil }
 func (mockOutPort) Buffered() (int, error)      { return 0, nil }
+func (mockOutPort) ReadOnly() bool              { return false }
+func (mockOutPort) Direct() bool                { return false }
 
 func testLogger() *slog.Logger {
 	return slog.Default()
@@ -219,6 +339,38 @@ func TestPacketsFlowToWriter(t *testing.T) {
 	runErr := <-done
 	if runErr != nil && !errors.Is(runErr, context.Canceled) {
 		t.Errorf("unexpected Run error: %v", runErr)
+	}
+}
+
+func TestReadLoopLogsInvalidChecksum(t *testing.T) {
+	valid := makeRTCM(1005, 16)
+	invalid := append([]byte(nil), valid...)
+	invalid[len(invalid)-1] ^= 0x01
+	var logBuf bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&logBuf, nil))
+	sink := &Pull{pktCh: make(chan scan.Packet, 3)}
+	err := sink.readLoop(context.Background(), lg, io.NopCloser(bytes.NewReader(append(valid, invalid...))),
+		[]gpsprot.PacketFormat{rtcm.PacketFormat}, newBackoff())
+	if err != nil {
+		t.Fatalf("readLoop returned error: %v", err)
+	}
+	gotLog := logBuf.String()
+	if !strings.Contains(gotLog, "invalid correction checksum") {
+		t.Fatalf("log output %q does not contain invalid checksum message", gotLog)
+	}
+	if !strings.Contains(gotLog, "msg=1005") {
+		t.Fatalf("log output %q does not contain RTCM message ID", gotLog)
+	}
+	if !strings.Contains(gotLog, "tag=RTCM") {
+		t.Fatalf("log output %q does not contain packet tag", gotLog)
+	}
+	pkt := <-sink.pktCh
+	if !pkt.ChecksumValid {
+		t.Fatal("first packet checksum invalid, want valid")
+	}
+	pkt = <-sink.pktCh
+	if pkt.ChecksumValid {
+		t.Fatal("second packet checksum valid, want invalid")
 	}
 }
 
@@ -354,6 +506,65 @@ func TestPruningQueueMSMAndNonMSM(t *testing.T) {
 	p2 := q.dequeue()
 	if p2.Data != string(pkt1005b) {
 		t.Error("expected updated 1005 packet")
+	}
+}
+
+// TestPullQueuePrunesUnderBackpressure drives the queue goroutine with a writer
+// side that never drains -- exactly a stalled serial sink -- and confirms it
+// drops stale same-type corrections rather than buffering them all. The
+// TestPruningQueue* tests above exercise the data structure directly; this one
+// exercises the live queue() select loop under backpressure, which is what the
+// pruning queue exists for.
+func TestPullQueuePrunesUnderBackpressure(t *testing.T) {
+	sink := NewPull()
+	subCh := make(chan scan.Packet)
+	// Same single-slot buffer as Run uses; leaving it undrained is the stall.
+	writerCh := make(chan scan.Packet, 1)
+	done := make(chan struct{})
+	go func() {
+		sink.queue(subCh, writerCh)
+		close(done)
+	}()
+	defer func() {
+		close(subCh)
+		<-done
+	}()
+
+	pf := rtcm.PacketFormat
+	const n = 12
+	// A burst of distinct 1005 corrections (non-MSM, so deduped by message
+	// type) while nothing drains writerCh: all but the couple already past the
+	// queue pile up, and the stale ones are dropped.
+	var newest string
+	for i := range n {
+		pkt := makeRTCM(1005, 10+i)
+		newest = string(pkt)
+		subCh <- scan.Packet{Format: pf, Data: string(pkt), ChecksumValid: true}
+	}
+	// A different-type sentinel marks the end of the burst in FIFO order.
+	sentinel := makeRTCM(1006, 10)
+	subCh <- scan.Packet{Format: pf, Data: string(sentinel), ChecksumValid: true}
+
+	var got []scan.Packet
+	timeout := time.After(time.Second)
+	for {
+		var pkt scan.Packet
+		select {
+		case pkt = <-writerCh:
+		case <-timeout:
+			t.Fatalf("timed out waiting for sentinel after %d packets", len(got))
+		}
+		if pkt.Data == string(sentinel) {
+			break
+		}
+		got = append(got, pkt)
+	}
+
+	if len(got) >= n {
+		t.Fatalf("queue did not prune under backpressure: %d of %d 1005 packets reached the writer", len(got), n)
+	}
+	if len(got) == 0 || got[len(got)-1].Data != newest {
+		t.Fatalf("newest 1005 did not survive pruning: %d packets through, last != newest", len(got))
 	}
 }
 
@@ -539,7 +750,7 @@ func (s *reconnectSource) waitConn(t *testing.T) net.Conn {
 }
 
 // ntripListener wraps a local TCP listener that scripts a single
-// NTRIP handshake.  It captures the request bytes and writes the
+// Ntrip handshake.  It captures the request bytes and writes the
 // configured response.
 type ntripListener struct {
 	ln       net.Listener
@@ -549,7 +760,7 @@ type ntripListener struct {
 	wg       sync.WaitGroup
 }
 
-func newNTRIPListener(t *testing.T, respond func(conn net.Conn, req []byte)) *ntripListener {
+func newNtripListener(t *testing.T, respond func(conn net.Conn, req []byte)) *ntripListener {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -601,15 +812,15 @@ func (l *ntripListener) close() {
 	l.wg.Wait()
 }
 
-func TestNTRIPConnectV1Handshake(t *testing.T) {
+func TestNtripConnectV1Handshake(t *testing.T) {
 	// Single write combines status and body so the buffered-body
 	// (over-read) branch is exercised deterministically.
 	body := []byte{0xD3, 0x00, 0x04, 0x41, 0x02, 0x03, 0x04, 0x99, 0x88, 0x77}
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write(append([]byte("ICY 200 OK\r\n"), body...))
 	})
 	defer ln.close()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	rc, err := src.Connect(context.Background())
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -624,15 +835,15 @@ func TestNTRIPConnectV1Handshake(t *testing.T) {
 	}
 }
 
-func TestNTRIPConnectV1HandshakeSplitWrites(t *testing.T) {
+func TestNtripConnectV1HandshakeSplitWrites(t *testing.T) {
 	body := []byte{0xD3, 0x00, 0x04, 0x41, 0x02, 0x03, 0x04, 0x99, 0x88, 0x77}
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("ICY 200 OK\r\n"))
 		time.Sleep(50 * time.Millisecond)
 		conn.Write(body)
 	})
 	defer ln.close()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	rc, err := src.Connect(context.Background())
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -647,17 +858,17 @@ func TestNTRIPConnectV1HandshakeSplitWrites(t *testing.T) {
 	}
 }
 
-func TestNTRIPRequestHeaders(t *testing.T) {
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+func TestNtripRequestHeaders(t *testing.T) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("ICY 200 OK\r\n"))
 	})
 	defer ln.close()
-	src := &NTRIPSource{
+	src := &NtripSource{
 		Addr:       ln.addr(),
 		Mountpoint: "MNT",
 		Username:   "user",
 		Password:   "pw",
-		UserAgent:  NTRIPUserAgent{Version: "1.2.3"},
+		UserAgent:  NtripUserAgent{Version: "1.2.3"},
 	}
 	rc, err := src.Connect(context.Background())
 	if err != nil {
@@ -677,7 +888,7 @@ func TestNTRIPRequestHeaders(t *testing.T) {
 	if !strings.HasPrefix(req, "GET /MNT HTTP/1.0\r\n") {
 		t.Errorf("bad request line: %q", req)
 	}
-	if !strings.Contains(req, "\r\nUser-Agent: NTRIP SatPulse/1.2.3\r\n") {
+	if !strings.Contains(req, "\r\nUser-Agent: NTRIP satpulse/1.2.3\r\n") {
 		t.Errorf("missing User-Agent: %q", req)
 	}
 	wantCreds := base64.StdEncoding.EncodeToString([]byte("user:pw"))
@@ -689,12 +900,12 @@ func TestNTRIPRequestHeaders(t *testing.T) {
 	}
 }
 
-func TestNTRIPUserAgentNoVersion(t *testing.T) {
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+func TestNtripUserAgentNoVersion(t *testing.T) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("ICY 200 OK\r\n"))
 	})
 	defer ln.close()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	rc, err := src.Connect(context.Background())
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -709,17 +920,17 @@ func TestNTRIPUserAgentNoVersion(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !strings.Contains(req, "\r\nUser-Agent: NTRIP SatPulse\r\n") {
+	if !strings.Contains(req, "\r\nUser-Agent: NTRIP satpulse\r\n") {
 		t.Errorf("unexpected User-Agent: %q", req)
 	}
 }
 
-func TestNTRIPNoAuthHeaderWhenNoUsername(t *testing.T) {
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+func TestNtripNoAuthHeaderWhenNoUsername(t *testing.T) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("ICY 200 OK\r\n"))
 	})
 	defer ln.close()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT", Password: "ignored"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT", Password: "ignored"}
 	rc, err := src.Connect(context.Background())
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -739,12 +950,12 @@ func TestNTRIPNoAuthHeaderWhenNoUsername(t *testing.T) {
 	}
 }
 
-func TestNTRIPErrorResponse(t *testing.T) {
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+func TestNtripErrorResponse(t *testing.T) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("ERROR - Bad Password\r\n"))
 	})
 	defer ln.close()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	_, err := src.Connect(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -754,12 +965,12 @@ func TestNTRIPErrorResponse(t *testing.T) {
 	}
 }
 
-func TestNTRIPHTTPErrorResponse(t *testing.T) {
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+func TestNtripHTTPErrorResponse(t *testing.T) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n"))
 	})
 	defer ln.close()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	_, err := src.Connect(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -769,17 +980,17 @@ func TestNTRIPHTTPErrorResponse(t *testing.T) {
 	}
 }
 
-func TestNTRIPCtxCancelMidHandshake(t *testing.T) {
+func TestNtripCtxCancelMidHandshake(t *testing.T) {
 	// listener that accepts but never responds
 	release := make(chan struct{})
-	ln := newNTRIPListener(t, func(conn net.Conn, _ []byte) {
+	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		<-release
 	})
 	defer func() {
 		close(release)
 		ln.close()
 	}()
-	src := &NTRIPSource{Addr: ln.addr(), Mountpoint: "MNT"}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -798,7 +1009,7 @@ func TestNTRIPCtxCancelMidHandshake(t *testing.T) {
 	}
 }
 
-func TestNTRIPConnectionRefused(t *testing.T) {
+func TestNtripConnectionRefused(t *testing.T) {
 	// Pick an unused port by listening and immediately closing.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -806,7 +1017,7 @@ func TestNTRIPConnectionRefused(t *testing.T) {
 	}
 	addr := ln.Addr().String()
 	ln.Close()
-	src := &NTRIPSource{Addr: addr, Mountpoint: "MNT"}
+	src := &NtripSource{Addr: addr, Mountpoint: "MNT"}
 	_, err = src.Connect(context.Background())
 	if err == nil {
 		t.Fatal("expected dial error")

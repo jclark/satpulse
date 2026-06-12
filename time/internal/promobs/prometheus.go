@@ -16,6 +16,8 @@ import (
 	"github.com/jclark/satpulse/time/internal/phcsync"
 )
 
+const rtcmTag gpsprot.Tag = "RTCM"
+
 // PrometheusObserver implements obs.Observer for Prometheus metrics
 type PrometheusObserver struct {
 	obs.DefaultObserver
@@ -26,6 +28,7 @@ type PrometheusObserver struct {
 
 	// PHC metrics
 	inSyncGauge           prometheus.Gauge
+	syncModeGauge         prometheus.Gauge
 	offsetHistogram       prometheus.Histogram
 	offsetGauge           prometheus.Gauge
 	frequencyGauge        prometheus.Gauge
@@ -36,26 +39,37 @@ type PrometheusObserver struct {
 	freqDeltaSumGauge     prometheus.Counter
 	freqDeltaSumSqCounter prometheus.Counter
 
+	// RTCM input metrics
+	rtcmInputMessages        *prometheus.CounterVec
+	rtcmInputPacketsObserved *prometheus.CounterVec
+	rtcmInputBytes           prometheus.Counter
+	rtcmInputErrorsObserved  prometheus.Counter
+	rtcmInputPacketsReported *prometheus.CounterVec
+	rtcmInputPacketsUsed     *prometheus.CounterVec
+	rtcmInputPacketsUnused   *prometheus.CounterVec
+	rtcmInputErrorsReported  prometheus.Counter
+	rtcmInputRefStationID    prometheus.Gauge
+
 	// Position metrics (lazily registered)
 	positionDegrees *prometheus.GaugeVec
 	heightMeters    *prometheus.GaugeVec
 
 	// Solution quality metrics (lazily registered)
-	gnssFix            *prometheus.GaugeVec
-	seenFixLevels      map[string]struct{}
-	gnssSolution       *prometheus.GaugeVec
-	seenSolutionDims   map[string]struct{}
-	numSatellites      *prometheus.GaugeVec
-	dop                *prometheus.GaugeVec
-	positionAccuracy   *prometheus.GaugeVec
-	speedAccuracy      *prometheus.GaugeVec
-	courseAccuracy      *prometheus.GaugeVec
-	gnssCorrection     *prometheus.GaugeVec
-	seenCorrExpanded   map[string]struct{}
-	gnssCorrectionLeaf *prometheus.GaugeVec
-	seenCorrLeaf       map[string]struct{}
-	correctionAge      *prometheus.GaugeVec
-	correctionBaseID   *prometheus.GaugeVec
+	gnssFix               *prometheus.GaugeVec
+	seenFixLevels         map[string]struct{}
+	gnssSolution          *prometheus.GaugeVec
+	seenSolutionDims      map[string]struct{}
+	numSatellites         *prometheus.GaugeVec
+	dop                   *prometheus.GaugeVec
+	positionAccuracy      *prometheus.GaugeVec
+	speedAccuracy         *prometheus.GaugeVec
+	courseAccuracy        *prometheus.GaugeVec
+	gnssCorrection        *prometheus.GaugeVec
+	seenCorrExpanded      map[string]struct{}
+	gnssCorrectionLeaf    *prometheus.GaugeVec
+	seenCorrLeaf          map[string]struct{}
+	correctionAge         *prometheus.GaugeVec
+	correctionBaseID      *prometheus.GaugeVec
 	navAuxSource          *prometheus.GaugeVec
 	seenAuxSrc            map[string]struct{}
 	constellationUsed     *prometheus.GaugeVec
@@ -80,6 +94,13 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 	})
 	// It takes a while for samples to start coming through: during this period we should be observed as out of sync.
 	inSyncGauge.Set(0)
+
+	// Sync mode gauge: holds the raw phcsync.Mode integer.
+	syncModeGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "satpulse_phc_sync_mode",
+		Help: syncModeHelp(),
+	})
+	syncModeGauge.Set(0)
 
 	// Clock offset histogram
 	offsetHistogram := prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -131,6 +152,39 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 		Help: "Sum of squares of frequency delta values from OK samples (for stddev calculation)",
 	})
 
+	rtcmInputMessages := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "satpulse_rtcm_input_messages_total",
+		Help: "Total complete logical RTCM input messages observed from the correction feed",
+	}, []string{"msg_id"})
+	rtcmInputPacketsObserved := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "satpulse_rtcm_input_packets_observed_total",
+		Help: "Total valid RTCM input packets observed from the correction feed",
+	}, []string{"msg_id"})
+	rtcmInputBytes := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "satpulse_rtcm_input_bytes_total",
+		Help: "Total valid RTCM input bytes observed from the correction feed",
+	})
+	rtcmInputErrorsObserved := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "satpulse_rtcm_input_errors_observed_total",
+		Help: "Total RTCM input packets observed from the correction feed with failed checksums",
+	})
+	rtcmInputPacketsReported := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "satpulse_rtcm_input_packets_reported_total",
+		Help: "Total valid RTCM input packets reported by the receiver",
+	}, []string{"msg_id"})
+	rtcmInputPacketsUsed := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "satpulse_rtcm_input_packets_used_total",
+		Help: "Total valid RTCM input packets reported as used by the receiver",
+	}, []string{"msg_id"})
+	rtcmInputPacketsUnused := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "satpulse_rtcm_input_packets_unused_total",
+		Help: "Total valid RTCM input packets reported as unused by the receiver",
+	}, []string{"msg_id"})
+	rtcmInputErrorsReported := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "satpulse_rtcm_input_errors_reported_total",
+		Help: "Total RTCM input packets reported by the receiver with failed checksums",
+	})
+
 	lookAngleGauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "satpulse_satellite_look_angle_degrees",
 		Help: "Look angle (direction) of satellite in degrees",
@@ -148,6 +202,7 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 
 	// Register metrics
 	reg.MustRegister(inSyncGauge)
+	reg.MustRegister(syncModeGauge)
 	reg.MustRegister(offsetHistogram)
 	reg.MustRegister(offsetGauge)
 	reg.MustRegister(frequencyGauge)
@@ -157,26 +212,43 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 	reg.MustRegister(freqDeltaCountCounter)
 	reg.MustRegister(freqDeltaSumGauge)
 	reg.MustRegister(freqDeltaSumSqCounter)
+	reg.MustRegister(rtcmInputMessages)
+	reg.MustRegister(rtcmInputPacketsObserved)
+	reg.MustRegister(rtcmInputBytes)
+	reg.MustRegister(rtcmInputErrorsObserved)
+	reg.MustRegister(rtcmInputPacketsReported)
+	reg.MustRegister(rtcmInputPacketsUsed)
+	reg.MustRegister(rtcmInputPacketsUnused)
+	reg.MustRegister(rtcmInputErrorsReported)
 	reg.MustRegister(lookAngleGauge)
 	reg.MustRegister(satelliteUsedGauge)
 	reg.MustRegister(signalLevelGauge)
 
 	return &PrometheusObserver{
-		reg:                   reg,
-		activeSatellites:      make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{}),
-		inSyncGauge:           inSyncGauge,
-		offsetHistogram:       offsetHistogram,
-		offsetGauge:           offsetGauge,
-		frequencyGauge:        frequencyGauge,
-		offsetAbsSumCounter:   offsetAbsSumCounter,
-		offsetSumSqCounter:    offsetSumSqCounter,
-		samplesCounter:        samplesCounter,
-		freqDeltaCountCounter: freqDeltaCountCounter,
-		freqDeltaSumGauge:     freqDeltaSumGauge,
-		freqDeltaSumSqCounter: freqDeltaSumSqCounter,
-		lookAngleGauge:        lookAngleGauge,
-		satelliteUsedGauge:    satelliteUsedGauge,
-		signalLevelGauge:      signalLevelGauge,
+		reg:                      reg,
+		activeSatellites:         make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{}),
+		inSyncGauge:              inSyncGauge,
+		syncModeGauge:            syncModeGauge,
+		offsetHistogram:          offsetHistogram,
+		offsetGauge:              offsetGauge,
+		frequencyGauge:           frequencyGauge,
+		offsetAbsSumCounter:      offsetAbsSumCounter,
+		offsetSumSqCounter:       offsetSumSqCounter,
+		samplesCounter:           samplesCounter,
+		freqDeltaCountCounter:    freqDeltaCountCounter,
+		freqDeltaSumGauge:        freqDeltaSumGauge,
+		freqDeltaSumSqCounter:    freqDeltaSumSqCounter,
+		rtcmInputMessages:        rtcmInputMessages,
+		rtcmInputPacketsObserved: rtcmInputPacketsObserved,
+		rtcmInputBytes:           rtcmInputBytes,
+		rtcmInputErrorsObserved:  rtcmInputErrorsObserved,
+		rtcmInputPacketsReported: rtcmInputPacketsReported,
+		rtcmInputPacketsUsed:     rtcmInputPacketsUsed,
+		rtcmInputPacketsUnused:   rtcmInputPacketsUnused,
+		rtcmInputErrorsReported:  rtcmInputErrorsReported,
+		lookAngleGauge:           lookAngleGauge,
+		satelliteUsedGauge:       satelliteUsedGauge,
+		signalLevelGauge:         signalLevelGauge,
 	}
 }
 
@@ -209,23 +281,47 @@ func makeBuckets(clockAccuracyNanos float64) []float64 {
 	return slices.Insert(buckets, i, clockAccuracySeconds)
 }
 
+// ModeChanged drives sync_mode and sync_status from the new controller
+// mode. Both gauges therefore reflect current state — including transitions
+// that aren't sample-driven, such as a Pause() on carrier loss.
+func (p *PrometheusObserver) ModeChanged(_, newMode phcsync.Mode) {
+	p.syncModeGauge.Set(float64(newMode))
+	if newMode.InSync() {
+		p.inSyncGauge.Set(1)
+		p.everInSync = true
+	} else {
+		p.inSyncGauge.Set(0)
+	}
+}
+
+// syncModeHelp builds the help text for the satpulse_phc_sync_mode metric
+// from the phcsync.Mode enum, so the documentation stays in lock-step with
+// the underlying constants.
+func syncModeHelp() string {
+	var b strings.Builder
+	b.WriteString("PHC time sync mode (")
+	for m := phcsync.ModeReset; m < phcsync.NModes; m++ {
+		if m > phcsync.ModeReset {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%d = %s", int(m), m)
+	}
+	b.WriteString(")")
+	return b.String()
+}
+
 // Handler returns the HTTP handler for /metrics endpoint
 func (p *PrometheusObserver) Handler() http.Handler {
 	return promhttp.HandlerFor(p.reg, promhttp.HandlerOpts{})
 }
 
-// Sample implements phcsync.Sampler interface
+// Sample implements phcsync.Observer interface
 func (p *PrometheusObserver) Sample(data phcsync.Sample) {
 	// Always update frequency gauge (convert ppb to dimensionless)
 	p.frequencyGauge.Set(data.Freq / 1e9)
 
-	if data.Mode.InSync() {
-		p.inSyncGauge.Set(1)
-		if !p.everInSync {
-			p.everInSync = true
-		}
-	} else {
-		p.inSyncGauge.Set(0)
+	// data.Mode is sample-attribution: was this sample served in sync?
+	if !data.Mode.InSync() {
 		if p.everInSync {
 			p.samplesCounter.WithLabelValues("out_of_sync").Inc()
 		} else {
@@ -252,6 +348,77 @@ func (p *PrometheusObserver) Sample(data phcsync.Sample) {
 		p.freqDeltaSumGauge.Add(data.FreqDelta)
 		p.freqDeltaSumSqCounter.Add(data.FreqDelta * data.FreqDelta)
 	}
+}
+
+// CorReport implements gpsprot.CorReporter for RTCM input metrics.
+func (p *PrometheusObserver) CorReport(msg *gpsprot.CorReportMsg, _ time.Time) {
+	if msg.Tag != rtcmTag {
+		return
+	}
+	switch msg.Source {
+	case gpsprot.CorReportSourcePull:
+		p.corReportPull(msg)
+	case gpsprot.CorReportSourceReceiver:
+		p.corReportReceiver(msg)
+	}
+}
+
+func (p *PrometheusObserver) corReportPull(msg *gpsprot.CorReportMsg) {
+	if rtcmChecksumFailed(msg) {
+		p.rtcmInputErrorsObserved.Inc()
+		return
+	}
+	p.setRTCMInputRefStationID(msg)
+	if msg.NBytes.IsSet() {
+		if n := msg.NBytes.Get(); n >= 0 {
+			p.rtcmInputBytes.Add(float64(n))
+		}
+	}
+	if msg.MsgID == "" {
+		return
+	}
+	p.rtcmInputPacketsObserved.WithLabelValues(msg.MsgID).Inc()
+	if !msg.FinalFragment.IsSet() || msg.FinalFragment.Get() {
+		p.rtcmInputMessages.WithLabelValues(msg.MsgID).Inc()
+	}
+}
+
+func (p *PrometheusObserver) corReportReceiver(msg *gpsprot.CorReportMsg) {
+	if rtcmChecksumFailed(msg) {
+		p.rtcmInputErrorsReported.Inc()
+		return
+	}
+	p.setRTCMInputRefStationID(msg)
+	if msg.MsgID == "" {
+		return
+	}
+	p.rtcmInputPacketsReported.WithLabelValues(msg.MsgID).Inc()
+	if !msg.Used.IsSet() {
+		return
+	}
+	if msg.Used.Get() {
+		p.rtcmInputPacketsUsed.WithLabelValues(msg.MsgID).Inc()
+	} else {
+		p.rtcmInputPacketsUnused.WithLabelValues(msg.MsgID).Inc()
+	}
+}
+
+func (p *PrometheusObserver) setRTCMInputRefStationID(msg *gpsprot.CorReportMsg) {
+	if !msg.RTCMRefBaseID.IsSet() {
+		return
+	}
+	if p.rtcmInputRefStationID == nil {
+		p.rtcmInputRefStationID = prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "satpulse_rtcm_input_ref_station_id",
+			Help: "Most recent RTCM input reference station ID",
+		})
+		p.reg.MustRegister(p.rtcmInputRefStationID)
+	}
+	p.rtcmInputRefStationID.Set(float64(msg.RTCMRefBaseID.Get()))
+}
+
+func rtcmChecksumFailed(msg *gpsprot.CorReportMsg) bool {
+	return msg.ChecksumOK.IsSet() && !msg.ChecksumOK.Get()
 }
 
 // NavEpochPV sets position and solution quality gauges.
@@ -604,10 +771,10 @@ func (p *PrometheusObserver) Satellites(msg *gpsprot.SatellitesMsg, _ time.Time)
 			usedValue = 1
 		}
 		p.satelliteUsedGauge.WithLabelValues(gnss, sv).Set(usedValue)
-		if s.LookAngles == nil {
+		if !s.LookAngles.IsSet() {
 			continue
 		}
-		lookAngles := s.LookAngles
+		lookAngles := s.LookAngles.Get()
 		p.lookAngleGauge.WithLabelValues(gnss, sv, "azimuth").Set(float64(lookAngles.Azimuth))
 		p.lookAngleGauge.WithLabelValues(gnss, sv, "elevation").Set(float64(lookAngles.Elevation))
 	}

@@ -1,7 +1,3 @@
-// Package stream connects to a correction source, scans packets, and writes
-// them to a serial port.  It handles reconnection internally and exposes a
-// bcast of scanned packets so callers can subscribe for UI updates, logging,
-// or other purposes.
 package stream
 
 import (
@@ -14,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -23,9 +18,46 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/scan"
 )
+
+// defaultPullFormats are the packet formats stream pull recognises
+// from a correction source.  RTCM is currently the only one.
+var defaultPullFormats = []gpsprot.PacketFormat{gpsreg.RTCMPacketFormat}
+
+// CorReportFromPacket converts a scanned correction-source packet into a
+// pull-source correction report. Non-RTCM packets return nil. The MsgID
+// field is extracted even when ChecksumOK is false; consumers must treat it
+// as advisory for checksum-invalid packets.
+func CorReportFromPacket(pkt scan.Packet) (*gpsprot.CorReportMsg, error) {
+	if !pkt.HasTag(gpsreg.TagRTCM) {
+		return nil, nil
+	}
+	msg := &gpsprot.CorReportMsg{
+		Source:     gpsprot.CorReportSourcePull,
+		Tag:        gpsreg.TagRTCM,
+		MsgID:      rtcmbin.ExtractMsgID(pkt.Data),
+		NBytes:     opt.Make(len(pkt.Data)),
+		ChecksumOK: opt.Make(pkt.ChecksumValid),
+	}
+	if mmb, ok := rtcmbin.MultipleMessageBit(pkt.Data); ok {
+		msg.FinalFragment = opt.Make(!mmb)
+	}
+	if !pkt.ChecksumValid {
+		return msg, nil
+	}
+	if id, ok := rtcmbin.ReferenceStationID(pkt.Data); ok {
+		msg.RTCMRefBaseID = opt.Make(id)
+	}
+	native, err := rtcmbin.ParseMsg(pkt.Data)
+	if err != nil {
+		return msg, err
+	}
+	msg.NativeMsg = native
+	return msg, nil
+}
 
 // PacketWriter writes a packet to the serial port.
 // gpsio.SerialConn satisfies this interface.
@@ -51,26 +83,26 @@ func (s *TCPSource) Connect(ctx context.Context) (io.ReadCloser, error) {
 	return (&net.Dialer{}).DialContext(ctx, "tcp", s.Addr)
 }
 
-// NTRIPUserAgent carries the fields used to build an NTRIP client's
-// User-Agent header.  NTRIP requires the header to start with "NTRIP ".
-type NTRIPUserAgent struct {
+// NtripUserAgent carries the fields used to build an Ntrip client's
+// User-Agent header.  Ntrip requires the header to start with "NTRIP ".
+type NtripUserAgent struct {
 	Version string // e.g. "1.2.3"
 }
 
-// NTRIPSource is an NTRIP v1 client.  It connects to an NTRIP caster,
+// NtripSource is an Ntrip v1 client.  It connects to an Ntrip caster,
 // sends a v1 request, and returns a stream of RTCM bytes on success.
 // Only "ICY 200 OK" is accepted as a successful response.
-type NTRIPSource struct {
+type NtripSource struct {
 	Addr       string // "host:port"
 	Mountpoint string
 	Username   string
 	Password   string
-	UserAgent  NTRIPUserAgent
+	UserAgent  NtripUserAgent
 }
 
-// Connect dials the caster, performs the NTRIP v1 handshake, and
+// Connect dials the caster, performs the Ntrip v1 handshake, and
 // returns a reader over the RTCM body.
-func (s *NTRIPSource) Connect(ctx context.Context) (io.ReadCloser, error) {
+func (s *NtripSource) Connect(ctx context.Context) (io.ReadCloser, error) {
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", s.Addr)
 	if err != nil {
 		return nil, err
@@ -94,10 +126,10 @@ func (s *NTRIPSource) Connect(ctx context.Context) (io.ReadCloser, error) {
 	return rc, nil
 }
 
-// handshake writes the NTRIP v1 request, reads the status line, and
+// handshake writes the Ntrip v1 request, reads the status line, and
 // returns an io.ReadCloser over the body.  On error, the caller
 // closes conn.
-func (s *NTRIPSource) handshake(conn net.Conn) (io.ReadCloser, error) {
+func (s *NtripSource) handshake(conn net.Conn) (io.ReadCloser, error) {
 	if _, err := conn.Write([]byte(s.request())); err != nil {
 		return nil, err
 	}
@@ -107,7 +139,7 @@ func (s *NTRIPSource) handshake(conn net.Conn) (io.ReadCloser, error) {
 		return nil, err
 	}
 	if !bytes.Equal(line, []byte("ICY 200 OK\r\n")) {
-		return nil, fmt.Errorf("NTRIP: %s", strings.TrimSuffix(string(line), "\r\n"))
+		return nil, fmt.Errorf("Ntrip: %s", strings.TrimSuffix(string(line), "\r\n"))
 	}
 	if br.Buffered() == 0 {
 		return conn, nil
@@ -119,8 +151,8 @@ func (s *NTRIPSource) handshake(conn net.Conn) (io.ReadCloser, error) {
 	}{io.MultiReader(bytes.NewReader(leftover), conn), conn}, nil
 }
 
-// request builds the NTRIP v1 request bytes.
-func (s *NTRIPSource) request() string {
+// request builds the Ntrip v1 request bytes.
+func (s *NtripSource) request() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "GET /%s HTTP/1.0\r\n", s.Mountpoint)
 	fmt.Fprintf(&b, "User-Agent: %s\r\n", s.userAgent())
@@ -132,33 +164,11 @@ func (s *NTRIPSource) request() string {
 	return b.String()
 }
 
-func (s *NTRIPSource) userAgent() string {
+func (s *NtripSource) userAgent() string {
 	if s.UserAgent.Version == "" {
-		return "NTRIP SatPulse"
+		return "NTRIP satpulse"
 	}
-	return "NTRIP SatPulse/" + s.UserAgent.Version
-}
-
-// State represents the connection state of a Pull.
-type State int
-
-const (
-	Connecting   State = iota
-	Connected
-	Reconnecting
-)
-
-func (s State) String() string {
-	switch s {
-	case Connecting:
-		return "connecting"
-	case Connected:
-		return "connected"
-	case Reconnecting:
-		return "reconnecting"
-	default:
-		return "unknown"
-	}
+	return "NTRIP satpulse/" + s.UserAgent.Version
 }
 
 // Pull reads correction packets from a Source and writes them to a
@@ -182,6 +192,35 @@ func NewPull() *Pull {
 		Packets: bcast.New(ch),
 		pktCh:   ch,
 	}
+}
+
+// PullSetup is a Pull paired with the resources it needs to run
+// (source, packet writer, output port lock, and packet formats).
+// Built by (*PullConfig).Prepare.
+type PullSetup struct {
+	pull       *Pull
+	source     Source
+	addr       string
+	pktFormats []gpsprot.PacketFormat
+	pw         PacketWriter
+	portLock   gpsio.OutPortLock
+}
+
+// Addr returns the source address string, for use in log lines.
+func (s *PullSetup) Addr() string {
+	return s.addr
+}
+
+// Bcast returns the packet broadcast for pull-observer subscribers.
+func (s *PullSetup) Bcast() *bcast.Bcast[scan.Packet] {
+	return s.pull.Packets
+}
+
+// Run runs the prepared Pull.  It blocks until ctx is cancelled or
+// the serial writer returns a fatal error.
+func (s *PullSetup) Run(ctx context.Context, lg *slog.Logger,
+	onState func(State, error)) error {
+	return s.pull.Run(ctx, lg, s.source, s.pw, s.portLock, s.pktFormats, onState)
 }
 
 const scanBufSize = 16
@@ -284,7 +323,7 @@ func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 			case <-done:
 			}
 		}()
-		readErr := s.readLoop(ctx, conn, pktFormats, b)
+		readErr := s.readLoop(ctx, lg, conn, pktFormats, b)
 		conn.Close()
 		close(done)
 		select {
@@ -313,12 +352,17 @@ func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 // channel.  Returns nil on clean EOF, the read error otherwise, or
 // nil if cancelled via ctx.  It calls b.decrease periodically while
 // the connection is healthy.
-func (s *Pull) readLoop(ctx context.Context,
+func (s *Pull) readLoop(ctx context.Context, lg *slog.Logger,
 	conn io.ReadCloser, pktFormats []gpsprot.PacketFormat, b *backoff) error {
 	scanner := scan.New(conn, scanBufSize, pktFormats)
 	lastDecay := time.Now()
 	for {
 		pkt, err := scanner.Scan()
+		if pkt.Format != nil && !pkt.ChecksumValid {
+			msgID := pkt.Format.MsgID([]byte(pkt.Data))
+			lg.Warn("invalid correction checksum", "tag", pkt.Format.Tag(), "msg", msgID,
+				"len", len(pkt.Data), "err", pkt.ChecksumError())
+		}
 		select {
 		case s.pktCh <- pkt:
 		case <-ctx.Done():
@@ -398,52 +442,4 @@ func (s *Pull) writer(ctx context.Context, lg *slog.Logger,
 		}
 	}
 	return nil
-}
-
-// pruningQueue is a FIFO that deduplicates by message type.  When a
-// packet with the same message type is enqueued, the older entry is
-// removed -- unless both entries belong to the same MSM epoch, in
-// which case a single epoch can legitimately contain multiple packets
-// with the same message type.
-type pruningQueue struct {
-	entries  []pqEntry
-	msmEpoch uint64
-}
-
-type pqEntry struct {
-	pkt      scan.Packet
-	msgID    string
-	msmEpoch *uint64
-}
-
-func (q *pruningQueue) len() int {
-	return len(q.entries)
-}
-
-func (q *pruningQueue) reconnect() {
-	q.msmEpoch++
-}
-
-func (q *pruningQueue) enqueue(pkt scan.Packet) {
-	msgID := pkt.Format.MsgID([]byte(pkt.Data))
-	var epoch *uint64
-	if pkt.Format.Tag() == gpsreg.TagRTCM {
-		if mmb, ok := rtcmbin.MultipleMessageBit(pkt.Data); ok {
-			ep := q.msmEpoch
-			epoch = &ep
-			if !mmb {
-				q.msmEpoch++
-			}
-		}
-	}
-	q.entries = slices.DeleteFunc(q.entries, func(e pqEntry) bool {
-		return e.msgID == msgID && (epoch == nil || e.msmEpoch == nil || *epoch != *e.msmEpoch)
-	})
-	q.entries = append(q.entries, pqEntry{pkt: pkt, msgID: msgID, msmEpoch: epoch})
-}
-
-func (q *pruningQueue) dequeue() scan.Packet {
-	e := q.entries[0]
-	q.entries = q.entries[1:]
-	return e.pkt
 }

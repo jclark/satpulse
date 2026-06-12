@@ -51,6 +51,17 @@ func (c *NetConn) Buffered() (int, error) {
 	return 0, nil
 }
 
+func (c *NetConn) ReadOnly() bool {
+	return false
+}
+
+// Direct reports that a unix-socket port is not a direct hardware
+// attachment: there is a process at the far end, so callers cannot
+// assume prompt input.
+func (c *NetConn) Direct() bool {
+	return false
+}
+
 func (c *NetConn) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

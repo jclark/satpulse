@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/lib/ntime"
 	"github.com/jclark/satpulse/time/phctime"
 )
 
@@ -87,7 +88,7 @@ func (g *Generator) NewInstance() *Generator {
 // MsgUTCTime implements the MsgUTCTimer sink: every eligible UTC
 // observation from the message stream feeds the wallClock regression.
 func (g *Generator) MsgUTCTime(utc time.Time, tRead time.Time, _ ptime.LeapSecondKind) {
-	g.wc.Add(tRead, utc)
+	g.wc.Add(tRead, ntime.Sys(utc))
 }
 
 // Pulse records a pulse-edge event. Per plan, edges are buffered cheaply

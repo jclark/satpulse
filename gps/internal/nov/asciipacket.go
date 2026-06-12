@@ -19,21 +19,33 @@ const TagAscii gpsprot.Tag = "NOVA"
 // 4. Before the CR/LF, the packet ends with '*' followed by exactly 8 lowercase hex digits (32-bit CRC)
 // 5. Contains only printable ASCII characters (0x20-0x7E) before the terminating CR/LF
 // 6. First field in header after message name starts with alphabetic character (port name)
-var AsciiPacketFormat gpsprot.PacketFormat = MakePacketFormat(TagAscii, isAlpha, false)
+var AsciiPacketFormat gpsprot.PacketFormat = MakePacketFormat(TagAscii, isAlpha, false, normalizeAsciiName)
+
+// normalizeAsciiName maps a NovAtel ASCII wire name to its canonical suffix-less
+// name (e.g. "BESTPOSA" -> "BESTPOS"), leaving unknown names unchanged.
+func normalizeAsciiName(name string) string {
+	if id := novmsg.AsciiMsgID(name); id != 0 {
+		return id.String()
+	}
+	return name
+}
 
 // asciiPacketFormat implements the gpsprot.PacketFormat interface for ASCII packets
 type asciiPacketFormat struct {
 	tag                 gpsprot.Tag
-	dataFieldValidStart func(byte) bool // validates first character after comma
-	allow2DigitChecksum bool            // whether to allow 2-digit XOR checksums
+	dataFieldValidStart func(byte) bool     // validates first character after comma
+	allow2DigitChecksum bool                // whether to allow 2-digit XOR checksums
+	nameNormalizer      func(string) string // maps the wire name to its canonical (suffix-less) name; nil is identity
 }
 
-// MakePacketFormat creates an ASCII packet format with the given tag and validation function
-func MakePacketFormat(tag gpsprot.Tag, dataFieldValidStart func(byte) bool, allow2DigitChecksum bool) gpsprot.PacketFormat {
+// MakePacketFormat creates an ASCII packet format with the given tag and validation function.
+// nameNormalizer maps the wire message name to its canonical form for MsgID (nil leaves it as-is).
+func MakePacketFormat(tag gpsprot.Tag, dataFieldValidStart func(byte) bool, allow2DigitChecksum bool, nameNormalizer func(string) string) gpsprot.PacketFormat {
 	return asciiPacketFormat{
 		tag:                 tag,
 		dataFieldValidStart: dataFieldValidStart,
 		allow2DigitChecksum: allow2DigitChecksum,
+		nameNormalizer:      nameNormalizer,
 	}
 }
 
@@ -149,7 +161,11 @@ func (f asciiPacketFormat) MsgID(pkt []byte) string {
 	// Find the first comma or semicolon to extract message name
 	for i := 1; i < len(pkt); i++ {
 		if pkt[i] == ',' || pkt[i] == ';' {
-			return string(pkt[1:i])
+			name := string(pkt[1:i])
+			if f.nameNormalizer != nil {
+				return f.nameNormalizer(name)
+			}
+			return name
 		}
 	}
 	return ""

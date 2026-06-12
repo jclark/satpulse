@@ -17,6 +17,17 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
+func TestConfigurePanicsOnReadOnlyProps(t *testing.T) {
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetPort("USB")
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic when read-only properties appear in target.Props")
+		}
+	}()
+	_, _ = Configure(context.Background(), slog.Default(), nil, nil, target, nil, &fakeOutPort{})
+}
+
 func TestNativeOnlyDetection(t *testing.T) {
 	mh := msgHandler{
 		lg:          slog.Default(),
@@ -52,6 +63,10 @@ func (p *fakeOutPort) Write(b []byte) (int, error) {
 
 func (p *fakeOutPort) Buffered() (int, error) { return 0, nil }
 
+func (p *fakeOutPort) ReadOnly() bool { return false }
+
+func (p *fakeOutPort) Direct() bool { return false }
+
 // fakeConfigProtocol implements gpsprot.ConfigProtocol for testing.
 type fakeConfigProtocol struct {
 	probePacket []byte
@@ -71,11 +86,11 @@ func (p *fakeConfigProtocol) Configure(*gpsprot.ConfigTarget) (gpsprot.Configura
 
 // fakeSerialError implements SerialError for testing.
 type fakeSerialError struct {
-	framingErrs int
+	framing bool
 }
 
-func (e *fakeSerialError) Error() string    { return fmt.Sprintf("%d framing errors", e.framingErrs) }
-func (e *fakeSerialError) FramingErrs() int { return e.framingErrs }
+func (e *fakeSerialError) Error() string       { return fmt.Sprintf("framing=%v", e.framing) }
+func (e *fakeSerialError) SerialFraming() bool { return e.framing }
 
 // makeNMEAPacket constructs a valid scan.Packet with a GPZDA sentence.
 func makeNMEAPacket() scan.Packet {
@@ -92,7 +107,7 @@ func makeNMEAPacket() scan.Packet {
 // makeFramingErrorPacket constructs a scan.Packet with a framing error.
 func makeFramingErrorPacket() scan.Packet {
 	return scan.Packet{
-		ReadError: &fakeSerialError{framingErrs: 1},
+		ReadError: &fakeSerialError{framing: true},
 		Data:      "\xff\xff",
 	}
 }

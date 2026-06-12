@@ -135,19 +135,24 @@ current_version=$(cat VERSION)
 # Create maintenance branch from release tag
 git checkout -b v${current_version} v${current_version}
 # Set up for patch releases on branch
-echo "${current_version}.1" > VERSION
-git add VERSION
+echo -n "${current_version}.1" >VERSION
+git add docs/_includes/VERSION
 git commit -m "Prepare for $(cat VERSION) patch release"
 # Push the maintenance branch (use refs/heads/ to disambiguate from tag)
 git push -u origin refs/heads/v${current_version}
 # Switch back to master and bump minor version
 git checkout master
 next_version=$(awk -F. '{print $1"."$2+1}' VERSION)
-echo "${next_version}" > VERSION
-git add VERSION
+echo -n "${next_version}" >VERSION
+git add docs/_includes/VERSION
 git commit -m "Bump version to ${next_version} for next development cycle"
 git push origin master
 ```
+
+Also set `man_prerelease_notice: false` in `docs/_config.yml` to remove
+the pre-release banner from the man pages on the website.
+Turn it back on later if and when the man pages on master diverge
+significantly from the last release.
 
 #### For patch release (e.g., 0.1.1)
 

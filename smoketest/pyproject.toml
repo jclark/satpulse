@@ -1,0 +1,14 @@
+[project]
+name = "satpulse-smoketest"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.0.0",
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true

@@ -1,0 +1,8 @@
+# A read-only Unix-socket serial proxy, filtered to UNCB (Unicore binary).
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[[proxy.socket]]
+path = "${SATPULSE_TEST_PROXY_SOCKET}"
+protocol = "UNCB"
+readOnly = true

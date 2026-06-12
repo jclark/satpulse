@@ -1,26 +1,24 @@
+//go:build !windows
+
 package term
 
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
-
-// ErrNotATTY is returned when a device does not support termios.
-// Callers can check for it with errors.Is.
-var ErrNotATTY = errors.New("not a serial device")
 
 type Term struct {
 	fd      int
 	path    string
 	attr    Attr
 	tsSaved unix.Termios
-	iCount  *SerialICounter
+	iCount  *serialICounter
 }
 
 type Attr struct {
@@ -79,7 +77,7 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	// XXX turn of IXOFF
 	err = t.setAttrNow(&attr.ts)
 	t.attr = attr
-	_ = t.GetErrorCounts()
+	_ = t.readError()
 	return
 }
 
@@ -237,17 +235,49 @@ func uint8Clamp(v int64) uint8 {
 	return uint8(v)
 }
 
+// readCanTimeout reports whether a zero-byte read can mean a VTIME timeout,
+// i.e. whether reads are configured with VMIN=0 and VTIME!=0 as ReadTimeout does.
+func (attr *Attr) readCanTimeout() bool {
+	return attr.ts.Cc[unix.VMIN] == 0 && attr.ts.Cc[unix.VTIME] != 0
+}
+
+const earlyZeroRead = time.Millisecond
+const earlyZeroReadLimit = 5
+
 func (t *Term) Read(buf []byte) (n int, err error) {
-	for {
-		n, err = unix.Read(t.fd, buf)
-		if err != unix.EINTR {
-			break
+	if len(buf) == 0 {
+		return 0, nil
+	}
+	// A zero-byte read on a TTY with VMIN=0, VTIME!=0 normally means the VTIME
+	// timeout expired, which takes around 100ms. But a removed serial device
+	// (fd open, device node gone) returns zero immediately and forever. To tell
+	// the cases apart, treat a zero read returned in well under VTIME as suspicious
+	// and report io.EOF once we see earlyZeroReadLimit of them in a row, so the
+	// scan worker exits instead of spinning. A real timeout always exceeds
+	// earlyZeroRead, and one anomalously fast zero read is tolerated.
+	for range earlyZeroReadLimit {
+		start := time.Now()
+		for {
+			n, err = unix.Read(t.fd, buf)
+			if err != unix.EINTR {
+				break
+			}
+		}
+		if err != nil {
+			return n, t.wrapErr(err, "read")
+		}
+		if n != 0 {
+			if serr := t.readError(); serr != nil {
+				err = serr
+			}
+			return
+		}
+		if !t.attr.readCanTimeout() || time.Since(start) >= earlyZeroRead {
+			// VTIME expired with no data available.
+			return 0, &os.PathError{Op: "read", Path: t.path, Err: os.ErrDeadlineExceeded}
 		}
 	}
-	if err != nil {
-		err = t.wrapErr(err, "read")
-	}
-	return
+	return 0, io.EOF
 }
 
 func (t *Term) Write(buf []byte) (int, error) {
@@ -290,37 +320,6 @@ func (t *Term) ModemStatus() (int, error) {
 	return status, nil
 }
 
-type ErrorCounts struct {
-	FrameErrs, OverrunErrs, ParityErrs, BreakErrs, BufOverrunErrs int32
-}
-
-func (c ErrorCounts) IsZero() bool {
-	return c.FrameErrs == 0 && c.OverrunErrs == 0 && c.ParityErrs == 0 && c.BreakErrs == 0 && c.BufOverrunErrs == 0
-}
-
-func (c ErrorCounts) String() string {
-	var s []string = make([]string, 0, 5)
-	if c.FrameErrs != 0 {
-		s = append(s, fmt.Sprintf("fe=%d", c.FrameErrs))
-	}
-	if c.OverrunErrs != 0 {
-		s = append(s, fmt.Sprintf("oe=%d", c.OverrunErrs))
-	}
-	if c.ParityErrs != 0 {
-		s = append(s, fmt.Sprintf("pe=%d", c.ParityErrs))
-	}
-	if c.BreakErrs != 0 {
-		s = append(s, fmt.Sprintf("brk=%d", c.BreakErrs))
-	}
-	if c.BufOverrunErrs != 0 {
-		s = append(s, fmt.Sprintf("bo=%d", c.BufOverrunErrs))
-	}
-	if len(s) == 0 {
-		return "none"
-	}
-	return strings.Join(s, " ")
-}
-
 func (t *Term) Restore() error {
 	return t.setAttrNow(&t.tsSaved)
 }
@@ -346,12 +345,3 @@ func (t *Term) wrapErr(err error, op string) error {
 	}
 }
 
-type DevKind int
-
-const (
-	DevUnknown DevKind = iota
-	DevUART
-	DevUSB
-	DevUSBtoUART
-	DevBT
-)

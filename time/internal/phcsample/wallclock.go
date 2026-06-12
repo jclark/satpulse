@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/lib/ntime"
 )
 
 // errStale indicates a wallClock query is more than MaxMsgGap past the
@@ -49,14 +50,14 @@ type wallClock struct {
 
 	fitValid bool
 	anchorX  time.Time
-	anchorY  time.Time
+	anchorY  ntime.Time
 	a        time.Duration
 	b        float64
 }
 
 type wallPoint struct {
 	tRead time.Time
-	utc   time.Time
+	utc   ntime.Time
 }
 
 func newWallClock(cfg *Config) *wallClock {
@@ -74,7 +75,7 @@ func newWallClock(cfg *Config) *wallClock {
 // (with ReadDelay already subtracted by timemsg.Buffer); utc is the
 // ms-rounded UTC reported for that message. Observations older than
 // MsgWindow are discarded.
-func (c *wallClock) Add(tRead, utc time.Time) {
+func (c *wallClock) Add(tRead time.Time, utc ntime.Time) {
 	c.points = append(c.points, wallPoint{tRead: tRead, utc: utc})
 	cutoff := tRead.Add(-c.msgWindow)
 	drop := 0
@@ -93,10 +94,10 @@ func (c *wallClock) Add(tRead, utc time.Time) {
 // when there isn't yet enough observation to answer (too few points,
 // or observations span too little real time), which callers treat as
 // a quiet transient state.
-func (c *wallClock) SecondAt(mono time.Time) (time.Time, error) {
+func (c *wallClock) SecondAt(mono time.Time) (ntime.Time, error) {
 	t, err := c.predictUTC(mono)
 	if err != nil {
-		return time.Time{}, err
+		return 0, err
 	}
 	return t.Round(time.Second), nil
 }
@@ -105,17 +106,17 @@ func (c *wallClock) SecondAt(mono time.Time) (time.Time, error) {
 // gates and their errors are the same as SecondAt; mapEdgesToUTC uses
 // the unrounded prediction to apply cfg.EdgeSecondTolerance before
 // rounding.
-func (c *wallClock) predictUTC(mono time.Time) (time.Time, error) {
+func (c *wallClock) predictUTC(mono time.Time) (ntime.Time, error) {
 	if len(c.points) < 2 {
-		return time.Time{}, ErrNotReady
+		return 0, ErrNotReady
 	}
 	span := c.points[len(c.points)-1].tRead.Sub(c.points[0].tRead)
 	if span < c.minSpan {
-		return time.Time{}, ErrNotReady
+		return 0, ErrNotReady
 	}
 	last := c.points[len(c.points)-1].tRead
 	if gap := mono.Sub(last); gap > c.maxGap {
-		return time.Time{}, fmt.Errorf("phcsample: wallClock query %v past most recent message (limit %v): %w",
+		return 0, fmt.Errorf("phcsample: wallClock query %v past most recent message (limit %v): %w",
 			gap, c.maxGap, errStale)
 	}
 	// Backward coverage: reject queries that fall too far before the
@@ -128,17 +129,17 @@ func (c *wallClock) predictUTC(mono time.Time) (time.Time, error) {
 	// stop-iterating behaviour, which is not what we want here.
 	firstCoveredMono := c.points[0].tRead.Add(-maxBackwardCoverage)
 	if mono.Before(firstCoveredMono) {
-		return time.Time{}, ErrNotReady
+		return 0, ErrNotReady
 	}
 	if !c.fitValid {
 		c.refit()
 	}
 	if math.Abs(c.b-1) > c.rateLimit {
-		return time.Time{}, fmt.Errorf("phcsample: wallClock fitted rate mismatch %.4f exceeds limit %.4f",
+		return 0, fmt.Errorf("phcsample: wallClock fitted rate mismatch %.4f exceeds limit %.4f",
 			c.b-1, c.rateLimit)
 	}
 	if medAbs := c.medianAbsResidual(); medAbs > c.timingVar {
-		return time.Time{}, fmt.Errorf("phcsample: wallClock median residual %v exceeds limit %v",
+		return 0, fmt.Errorf("phcsample: wallClock median residual %v exceeds limit %v",
 			medAbs, c.timingVar)
 	}
 	dx := mono.Sub(c.anchorX)

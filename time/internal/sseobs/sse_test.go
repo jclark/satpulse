@@ -30,11 +30,22 @@ func TestSSEObserver_Events(t *testing.T) {
 		{
 			name: "init",
 			action: func(obs *SSEObserver) {
-				event := obs.InitEvent()
-				obs.sseCh <- event
+				events := obs.InitEvents()
+				if len(events) != 1 {
+					panic("expected single init event before any ModeChanged")
+				}
+				obs.sseCh <- events[0]
 			},
 			eventType:    "init",
 			expectedJSON: `{"receiver":{"vendor":"u-blox","firmware":"HPG 1.32 PROTVER 27.31","hardware":"ZED-F9P","supportedGNSS":["GPS","GLO"]}}`,
+		},
+		{
+			name: "mode_changed",
+			action: func(obs *SSEObserver) {
+				obs.ModeChanged(phcsync.ModeReset, phcsync.ModeTracking)
+			},
+			eventType:    "mode",
+			expectedJSON: `{"mode":"tracking"}`,
 		},
 		{
 			name: "sample_ok",
@@ -48,7 +59,7 @@ func TestSSEObserver_Events(t *testing.T) {
 				})
 			},
 			eventType:    "phc",
-			expectedJSON: `{"offset":123,"freq":1.5,"stepCount":0,"stepCountChanging":true,"syncState":"tracking"}`,
+			expectedJSON: `{"offset":123,"freq":1.5,"stepCount":0,"stepCountChanging":true,"mode":"tracking"}`,
 		},
 		{
 			name: "sample_outlier",
@@ -62,7 +73,7 @@ func TestSSEObserver_Events(t *testing.T) {
 				})
 			},
 			eventType:    "phc",
-			expectedJSON: `{"offset":-456,"freq":-2.3,"stepCount":0,"stepCountChanging":true,"outlier":true,"syncState":"reset"}`,
+			expectedJSON: `{"offset":-456,"freq":-2.3,"stepCount":0,"stepCountChanging":true,"outlier":true,"mode":"reset"}`,
 		},
 		{
 			name: "time",
@@ -111,10 +122,10 @@ func TestSSEObserver_Events(t *testing.T) {
 					SVs: []gpsprot.SVInfo{
 						{
 							ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1},
-							LookAngles: &gpsprot.LookAngles{
+							LookAngles: opt.Make(gpsprot.LookAngles{
 								Azimuth:   45,
 								Elevation: 30,
-							},
+							}),
 							Signals: []gpsprot.SignalInfo{{ID: "L1"}},
 							Used:    true,
 						},
@@ -389,6 +400,162 @@ func TestNavEpochPVSSE(t *testing.T) {
 	quality := <-ch
 	if !strings.Contains(quality.Format(), "event: quality\n") {
 		t.Errorf("expected quality event, got: %s", quality.Format())
+	}
+}
+
+// TestInitEventsAfterModeChanged checks that once ModeChanged has been
+// observed, InitEvents includes the cached mode event so a fresh client
+// learns the current mode at connect time.
+func TestInitEventsAfterModeChanged(t *testing.T) {
+	ch := make(chan sse.Event, 1)
+	cfgResult := &gpscfg.Result{ReceiverInfo: &gpsprot.ReceiverInfo{Vendor: "test"}}
+	obs := New(ch, ptime.LeapSecond{}, slog.Default(), cfgResult)
+	if got := obs.InitEvents(); len(got) != 1 {
+		t.Fatalf("expected 1 init event before ModeChanged, got %d", len(got))
+	}
+	obs.ModeChanged(phcsync.ModeInvalid, phcsync.ModeReset)
+	<-ch // drain the broadcast emit
+	events := obs.InitEvents()
+	if len(events) != 2 {
+		t.Fatalf("expected 2 init events after ModeChanged, got %d", len(events))
+	}
+	if !strings.Contains(events[0].Format(), "event: init\n") {
+		t.Errorf("first init event should be init, got: %s", events[0].Format())
+	}
+	wire := events[1].Format()
+	if !strings.Contains(wire, "event: mode\n") {
+		t.Errorf("second init event should be mode, got: %s", wire)
+	}
+	if !strings.Contains(wire, `{"mode":"reset"}`) {
+		t.Errorf("mode event payload should be {\"mode\":\"reset\"}, got: %s", wire)
+	}
+	// A subsequent transition replaces the cached mode.
+	obs.ModeChanged(phcsync.ModeReset, phcsync.ModeTracking)
+	<-ch
+	events = obs.InitEvents()
+	if len(events) != 2 {
+		t.Fatalf("expected 2 init events, got %d", len(events))
+	}
+	if !strings.Contains(events[1].Format(), `{"mode":"tracking"}`) {
+		t.Errorf("expected mode=tracking after second ModeChanged, got: %s", events[1].Format())
+	}
+}
+
+// TestSSEObserverCorReportLatch exercises the source-preference state
+// machine in SSEObserver.CorReport: starts in pull, switches to
+// receiver on any receiver-source event, and switches back to pull
+// only on a pull-source event arriving more than corReportSourceTimeout
+// after the last receiver-source event.
+func TestSSEObserverCorReportLatch(t *testing.T) {
+	t0 := time.Date(2026, 5, 16, 12, 0, 0, 0, time.UTC)
+	pull := gpsprot.CorReportSourcePull
+	recv := gpsprot.CorReportSourceReceiver
+
+	type input struct {
+		source gpsprot.CorReportSource
+		tRead  time.Time
+	}
+	tests := []struct {
+		name   string
+		events []input
+		expect []string
+	}{
+		{
+			name: "pull stays in pull mode",
+			events: []input{
+				{pull, t0},
+				{pull, t0.Add(time.Second)},
+			},
+			expect: []string{"pull", "pull"},
+		},
+		{
+			name: "receiver switches and drops pull within timeout",
+			events: []input{
+				{pull, t0},
+				{recv, t0.Add(time.Second)},
+				{pull, t0.Add(2 * time.Second)},
+			},
+			expect: []string{"pull", "receiver"},
+		},
+		{
+			name: "pull at exactly timeout still dropped",
+			events: []input{
+				{recv, t0},
+				{pull, t0.Add(corReportSourceTimeout)},
+			},
+			expect: []string{"receiver"},
+		},
+		{
+			name: "pull past timeout switches back to pull",
+			events: []input{
+				{recv, t0},
+				{pull, t0.Add(corReportSourceTimeout + time.Nanosecond)},
+				{pull, t0.Add(corReportSourceTimeout + time.Second)},
+			},
+			expect: []string{"receiver", "pull", "pull"},
+		},
+		{
+			name: "receiver refreshes timeout",
+			events: []input{
+				{recv, t0},
+				{recv, t0.Add(corReportSourceTimeout - time.Second)},
+				{pull, t0.Add(corReportSourceTimeout + time.Second)},
+			},
+			expect: []string{"receiver", "receiver"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := make(chan sse.Event, len(tc.events))
+			obs := New(ch, ptime.LeapSecond{}, slog.Default(), &gpscfg.Result{})
+			for _, ev := range tc.events {
+				obs.CorReport(&gpsprot.CorReportMsg{
+					Source: ev.source,
+					Tag:    "RTCM",
+					MsgID:  "1077",
+				}, ev.tRead)
+			}
+			close(ch)
+			var got []string
+			for ev := range ch {
+				got = append(got, parseCorReportSource(t, ev))
+			}
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
+			}
+		})
+	}
+}
+
+// parseCorReportSource extracts the source field from a corReport SSE event.
+func parseCorReportSource(t *testing.T, ev sse.Event) string {
+	t.Helper()
+	var data string
+	for line := range strings.SplitSeq(ev.Format(), "\n") {
+		if d, ok := strings.CutPrefix(line, "data: "); ok {
+			data = d
+			break
+		}
+	}
+	var payload struct {
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal([]byte(data), &payload); err != nil {
+		t.Fatalf("unmarshal %q: %v", data, err)
+	}
+	return payload.Source
+}
+
+// TestNewNilCfgResult checks that New tolerates a nil cfgResult and
+// emits no init event in that case. This happens in degraded startup
+// when GPS detection fails but the daemon continues running because no
+// PHC is configured.
+func TestNewNilCfgResult(t *testing.T) {
+	ch := make(chan sse.Event, 1)
+	obs := New(ch, ptime.LeapSecond{}, slog.Default(), nil)
+	if got := obs.InitEvents(); len(got) != 0 {
+		t.Fatalf("expected 0 init events with nil cfgResult, got %d", len(got))
 	}
 }
 

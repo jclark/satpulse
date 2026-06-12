@@ -185,6 +185,15 @@ func (p *PacketProcessor) Dispatch(m ubxbin.Msg, tRead time.Time) bool {
 			h.LeapSecond(ls, tRead)
 		}
 		return true
+	case *ubxbin.RxmCor:
+		cor := corReportRxmCor(mt)
+		if cor == nil {
+			return false
+		}
+		if h != nil {
+			h.CorReport(cor, tRead)
+		}
+		return true
 	case *ubxbin.NavDOP:
 		dopNavDOP(p.curNavEpochMsg, mt)
 		return true

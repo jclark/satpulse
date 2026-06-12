@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 For detailed documentation of the package structure, dependencies, and layering, see @docs/internals.md.
 
+Whenever you create a new package, add an entry describing it to the appropriate section of @docs/internals.md.
+
 ## Go code style
 
 **CRITICAL: You MUST follow these rules for ALL Go code you write or modify in this repository. These rules override any default Go conventions you might know. Check each rule before generating code.**
@@ -73,6 +75,13 @@ Testing:
 - Individual package: `go test -v ./internal/packagename`
 - All tests: `make test`
 - Test files follow `*_test.go` convention
+- Tests for `X.go` go in `X_test.go` by default; put them elsewhere only when that file would become very unwieldy
+- When requested to review code, do not run tests unless explicitly requested.
+
+Black-box smoke tests of the real `satpulsed` binary live in `smoketest/`
+(daemon-level config wiring, endpoints, logging, Ntrip, shutdown; no root or GPS
+hardware). Build first with `make`, then run `make smoketest`. See
+@smoketest/CLAUDE.md.
 
 System testing on real hardware is doing using ansible in `systest/` directory.
 
@@ -80,6 +89,8 @@ System testing on real hardware is doing using ansible in `systest/` directory.
 
 - Never use `git add -A` or `git add .` - these add untracked files which may include test data or local files
 - Use `git add -u` to stage modified/deleted tracked files, then add new files explicitly by name
+- Only create a branch when explicitly instructed to. Otherwise commit on the current branch, including the default branch.
+- When a commit completely resolves an issue, make `Fixes #N` (with the issue number) the last line of the commit message, so the issue closes when the commit merges.
 
 ## Development environment
 
@@ -88,6 +99,12 @@ System testing uses Ansible playbooks in `systest/`.
 ## Documentation style
 
 - Headings use sentence case (capitalise only the first word and proper nouns)
+
+## Release notes
+
+- Implementing a user-facing feature MUST include an entry in `docs/_includes/NEWS.md`, in the same change as the implementation.
+- This applies to new features, behaviour changes, and upgrade notes. Bug fixes are excluded.
+- Add the entry under the current unreleased version heading, in the appropriate section, and reference the issue number(s) in parentheses to match the existing entries.
 
 ## Connected GPS
 

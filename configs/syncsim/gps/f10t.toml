@@ -1,0 +1,8 @@
+# NEO-F10T (dual-frequency L1/L5)
+[gps]
+jitter = 0.16
+sawtooth.amp = 16
+
+[[gps.ar1]]
+tau = 3400
+sigma = 3.4

@@ -23,6 +23,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/clocksim"
 	"github.com/jclark/satpulse/time/internal/phcsample"
@@ -462,7 +463,7 @@ func deliverPrePulseMsg(buf *timemsg.Buffer, data PrePulseMsgEventData, sawNext 
 		Ref:         gpsprot.PrePulse,
 		Tag:         gpsreg.TagUBX,
 		NativeMsgID: "TIM-TP",
-		PulseOffset: &pulseOffset,
+		PulseOffset: opt.Make(pulseOffset),
 	}
 	tRead := monoBase.Add(time.Duration(eventTime * 1e9))
 	buf.Time(msg, tRead)
@@ -473,7 +474,7 @@ func deliverMessage(buf *timemsg.Buffer, data MessageEventData, eventTime float6
 	utc := ls.TimeToUTC(taiAtMsg)
 	msg := &gpsprot.TimeMsg{
 		TAITime:     taiAtMsg,
-		UTCTime:     &utc,
+		UTCTime:     opt.Make(utc),
 		GNSS:        gpsprot.GPS,
 		Ref:         gpsprot.PostPulse,
 		Tag:         gpsreg.TagUBX,

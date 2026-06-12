@@ -10,6 +10,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/logfile"
+	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
@@ -19,17 +20,67 @@ import (
 	"github.com/jclark/satpulse/time/internal/refclock"
 	"github.com/jclark/satpulse/time/internal/timemsg"
 	"github.com/jclark/satpulse/time/internal/ts"
+	"github.com/jclark/satpulse/time/lib/median"
+	"github.com/jclark/satpulse/time/lib/ntime"
+	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/phctime"
 	"golang.org/x/sys/unix"
 )
 
 const LogExtension = ".jsonl"
+const precisionCalibrationSamples = 61
 
-// TimePulsePVTMsgFlags are the PVT message flags when time pulse is enabled.
-const TimePulsePVTMsgFlags = gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgTimePulseAfter | gpsprot.PVTMsgTAI | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgQuality | gpsprot.PVTMsgEpoch
+// SHMWriter writes samples to an NTP SHM segment.
+type SHMWriter interface {
+	Write(clockTime, receiveTime time.Time, leap ptime.LeapSecondKind)
+	Close() error
+}
 
-// NoTimePulsePVTMsgFlags are the PVT message flags when time pulse is not enabled.
-const NoTimePulsePVTMsgFlags = gpsprot.PVTMsgTime | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgQuality | gpsprot.PVTMsgEpoch
+type samplePrecisionSetter interface {
+	setSamplePrecision(time.Duration)
+}
+
+type calibratingSHMWriter struct {
+	w   *ntpshm.Writer
+	win *median.Window[time.Duration]
+}
+
+// NewSHMWriter configures precision handling for an NTP SHM writer.
+func NewSHMWriter(w *ntpshm.Writer, precision *int8) SHMWriter {
+	if w == nil {
+		return nil
+	}
+	if precision != nil {
+		w.SetPrecision(*precision)
+		return w
+	}
+	return &calibratingSHMWriter{
+		w:   w,
+		win: median.New[time.Duration](precisionCalibrationSamples),
+	}
+}
+
+func (w *calibratingSHMWriter) Write(clockTime, receiveTime time.Time, leap ptime.LeapSecondKind) {
+	w.w.Write(clockTime, receiveTime, leap)
+}
+
+func (w *calibratingSHMWriter) Close() error {
+	return w.w.Close()
+}
+
+func (w *calibratingSHMWriter) setSamplePrecision(p time.Duration) {
+	if w.win == nil {
+		return
+	}
+	if w.win.Len() == 0 {
+		w.w.SetPrecision(ntpshm.Precision(p))
+	}
+	w.win.Add(p)
+	if w.win.Len() == precisionCalibrationSamples {
+		w.w.SetPrecision(ntpshm.Precision(w.win.Median()))
+		w.win = nil
+	}
+}
 
 // PulseReceiver is the dispatcher's sink for PHC pulse-edge events.
 // phcsync.Controller (disciplined mode) and phcsample.Generator
@@ -58,6 +109,8 @@ type Dispatcher struct {
 	controller            *phcsync.Controller
 	generator             *phcsample.Generator
 	rc                    *refclock.ProxyRefClock
+	shm                   SHMWriter
+	sps                   samplePrecisionSetter
 	timeMsgBuffer         *timemsg.Buffer
 	timeTicker            gpsprot.TimeTicker
 	pvAccum               gpsprot.PVMsgAccum
@@ -74,7 +127,17 @@ type Dispatcher struct {
 //   - *phcsync.Controller: PHC-disciplined (phcsync steers the PHC).
 //   - *phcsample.Generator: PHC free-running (phcsample emits samples).
 //   - nil:                 serial timing (samples come from time messages).
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, pulse PulseReceiver, rc *refclock.ProxyRefClock, ls ptime.LeapSecond, obs obs.Observer, eventLogPath string, tStart time.Time) (*Dispatcher, error) {
+func NewDispatcher(
+	lg *slog.Logger,
+	pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor,
+	pulse PulseReceiver,
+	rc *refclock.ProxyRefClock,
+	shm SHMWriter,
+	ls ptime.LeapSecond,
+	obs obs.Observer,
+	eventLogPath string,
+	tStart time.Time,
+) (*Dispatcher, error) {
 	var controller *phcsync.Controller
 	var generator *phcsample.Generator
 	switch p := pulse.(type) {
@@ -88,7 +151,11 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		panic("gpsevent: unexpected PulseReceiver type")
 	}
 	// Always create timeMsgBuffer (useful even without PHC)
-	timeMsgBuffer := timemsg.NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
+	var minWindow time.Duration
+	if controller != nil {
+		minWindow = controller.RequiredMsgWindow()
+	}
+	timeMsgBuffer := timemsg.NewBuffer(lg, minWindow, ls, gpsprot.GPS)
 
 	// Inject buffer into controller (for pulse/message correlation) or
 	// into generator (as sawtooth pulse-correction source).
@@ -110,15 +177,19 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		obs:           obs,
 		tStart:        tStart,
 	}
+	d.shm = shm
+	if p, ok := shm.(samplePrecisionSetter); ok {
+		d.sps = p
+	}
 	multiHandler := gpsprot.NewMultiHandler(&d, obs)
 	for _, pp := range pktProcs {
 		pp.SetMsgHandler(multiHandler)
 		pp.SetNativeMsgHandler(&d)
 	}
 	// Route UTC time-message samples. In serial mode the Dispatcher
-	// forwards them to rc.Sample; in free-running mode it routes them
-	// to the generator; in PHC-disciplined mode no sink is installed.
-	if generator != nil || (controller == nil && rc != nil) {
+	// forwards them to rc.Sample and SHM; in free-running mode it routes
+	// them to the generator; in PHC-disciplined mode no sink is installed.
+	if generator != nil || (controller == nil && (rc != nil || shm != nil)) {
 		timeMsgBuffer.SetMsgUTCTimer(&d)
 	}
 	err := d.lf.Open(eventLogPath, true)
@@ -130,11 +201,18 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 
 const tickPeriod = time.Second / 4
 
-func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
-	// loop until both channels are closed
+func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
+	// loop until all input channels are closed
 	defer d.obs.Release()
 	if d.rc != nil {
 		defer d.rc.Close()
+	}
+	if d.shm != nil {
+		defer func() {
+			if err := d.shm.Close(); err != nil {
+				d.lg.Warn("SHM detach failed", "err", err)
+			}
+		}()
 	}
 	// close the controller before the observer, since the controller uses the observer
 	if d.controller != nil {
@@ -162,7 +240,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 	staleEra := ts.StaleEra
 	nSkipped := 0
 
-	for tsCh != nil || pktCh != nil {
+	for tsCh != nil || pktCh != nil || pullPktCh != nil {
 		select {
 		case e, ok := <-tsCh:
 			if !ok {
@@ -212,6 +290,13 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet) {
 				lg.Debug("packet channel of event dispatcher goroutine was closed")
 				pktCh = nil
 			}
+		case pkt, ok := <-pullPktCh:
+			if ok {
+				d.handlePulledPacket(pkt)
+			} else {
+				lg.Debug("pull packet channel of event dispatcher goroutine was closed")
+				pullPktCh = nil
+			}
 		case t := <-tickerCh:
 			d.controller.Tick(t)
 		case <-firstTsDeadline:
@@ -258,25 +343,69 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 	}
 }
 
-type LogEvent struct {
-	T          time.Time              `json:"t"`
-	Nanos      time.Duration          `json:"nanos"`
-	PulseEdge  *PulseEdge             `json:"pulseEdge,omitempty"`
-	Time       *gpsprot.TimeMsg       `json:"time,omitempty"`
-	PosGeo     *gpsprot.PosGeoMsg     `json:"posGeo,omitempty"`
-	PosECEF    *gpsprot.PosECEFMsg    `json:"posECEF,omitempty"`
-	VelGeo     *gpsprot.VelGeoMsg     `json:"velGeo,omitempty"`
-	VelECEF    *gpsprot.VelECEFMsg    `json:"velECEF,omitempty"`
-	Survey     *gpsprot.SurveyMsg     `json:"survey,omitempty"`
-	LeapSecond *gpsprot.LeapSecondMsg `json:"leapSecond,omitempty"`
-	Satellites *gpsprot.SatellitesMsg `json:"satellites,omitempty"`
-	NavEpoch   *gpsprot.NavEpochMsg   `json:"navEpoch,omitempty"`
+func (d *Dispatcher) handlePulledPacket(pkt scan.Packet) {
+	msg, err := stream.CorReportFromPacket(pkt)
+	if err != nil {
+		msgID := ""
+		if msg != nil {
+			msgID = msg.MsgID
+		}
+		d.lg.Warn("error processing pulled correction packet", gpsio.PacketWarnAttrs(err, pkt, msgID)...)
+	}
+	if msg == nil {
+		return
+	}
+	// Packet processors emit through MultiHandler(&d, obs). Pull reports are
+	// created here, so mirror that logger/observer fan-out explicitly.
+	d.CorReport(msg, pkt.TRead)
+	d.obs.CorReport(msg, pkt.TRead)
 }
+
+// LogEvent is a daemon event-log entry: the universal gpsprot event envelope
+// with a payload that is either a gpsprot.Msg (GPS message records) or a
+// *PulseEdge (pulse-edge records, with Type "pulseEdge").
+type LogEvent gpsprot.Event[any]
+
+// pulseEdgeType is the LogEvent.Type value for pulse-edge records.
+const pulseEdgeType = "pulseEdge"
 
 type PulseEdge struct {
 	T     ptime.Time  `json:"t"`
 	Era   phctime.Era `json:"era"`
 	TRead ptime.Time  `json:"tRead"`
+}
+
+// UnmarshalJSON decodes a LogEvent, dispatching on the type discriminator:
+// "pulseEdge" records decode Data as *PulseEdge, all others as the gpsprot.Msg
+// named by Type. It accepts only the new envelope format; old sparse event
+// logs are handled by gpsevent/migrate_log.go.
+func (e *LogEvent) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Type string           `json:"type"`
+		T    time.Time        `json:"t"`
+		Mono gpsprot.Duration `json:"mono"`
+		Data json.RawMessage  `json:"data"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	e.Type = raw.Type
+	e.T = raw.T
+	e.Mono = raw.Mono
+	if raw.Type == pulseEdgeType {
+		var pe PulseEdge
+		if err := json.Unmarshal(raw.Data, &pe); err != nil {
+			return err
+		}
+		e.Data = &pe
+		return nil
+	}
+	msg, err := gpsprot.UnmarshalMsg(raw.Type, raw.Data)
+	if err != nil {
+		return err
+	}
+	e.Data = msg
+	return nil
 }
 
 func (d *Dispatcher) timestamp(e ts.Event) {
@@ -285,15 +414,16 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 	// (free-running). The cross-sample hop is mode-specific.
 	d.pulse.Pulse(e.Ts, e.TReadMono)
 	if d.controller != nil {
-		d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys)
+		d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys, e.Precision)
 	} else if d.generator != nil {
 		d.genSample(e.TReadWall.PHC.T, e.TReadWall.Sys)
 	}
 
 	// Log event with monotonic time and full sample info
 	d.logEvent(LogEvent{
-		T: e.TReadMono.Sys,
-		PulseEdge: &PulseEdge{
+		Type: pulseEdgeType,
+		T:    e.TReadMono.Sys,
+		Data: &PulseEdge{
 			T:     e.Ts.T,
 			Era:   e.Ts.Era,
 			TRead: e.TReadMono.PHC.T,
@@ -302,17 +432,24 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 }
 
 // sysSample generates a sample of system time vs true time (based on PHC)
-func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time) {
+func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time, samplePrecision time.Duration) {
 	// Send refclock sample if in tracking mode
-	if d.rc == nil || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
+	if (d.rc == nil && d.shm == nil) || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
 		return
 	}
-	offset := d.ls.TimeToSys(ref).Sub(sys).Seconds()
+	if d.sps != nil {
+		d.sps.setSamplePrecision(samplePrecision)
+	}
+	clockTime := d.ls.TimeToSys(ref)
+	offset := clockTime.Sub(sys).Seconds()
 	leap := d.ls.StateAt(ref).LeapTonight
-	err := d.rc.Sample(sys, offset, leap)
-	if err != nil {
-		d.lg.Warn("refclock sample failed", "err", err)
-		return
+	if d.rc != nil {
+		if err := d.rc.Sample(ntime.Sys(sys), offset, leap); err != nil {
+			d.lg.Warn("refclock sample failed", "err", err)
+		}
+	}
+	if d.shm != nil {
+		d.shm.Write(clockTime, sys, leap)
 	}
 	d.obs.NTPSample(sys, offset, leap, ref)
 }
@@ -331,7 +468,7 @@ func (d *Dispatcher) genSample(ref ptime.Time, sys time.Time) {
 		return
 	}
 	leap := d.ls.StateAt(ref).LeapTonight
-	if err := d.rc.Sample(sys, off, leap); err != nil {
+	if err := d.rc.Sample(ntime.Sys(sys), off, leap); err != nil {
 		d.lg.Warn("refclock sample failed", "err", err)
 		return
 	}
@@ -339,24 +476,27 @@ func (d *Dispatcher) genSample(ref ptime.Time, sys time.Time) {
 }
 
 // MsgUTCTime implements timemsg.MsgUTCTimer. In serial timing mode it
-// feeds chrony SOCK samples directly; in PHC free-running mode it
-// forwards to the Generator.
+// feeds chrony SOCK samples and SHM directly; in PHC free-running mode
+// it forwards to the Generator.
 func (d *Dispatcher) MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind) {
 	if d.generator != nil {
 		d.generator.MsgUTCTime(utc, tRead, leap)
 		return
 	}
 	offset := utc.Sub(tRead).Seconds()
-	err := d.rc.Sample(tRead, offset, leap)
-	if err != nil {
-		d.lg.Warn("refclock sample failed", "err", err)
-		return
+	if d.rc != nil {
+		if err := d.rc.Sample(ntime.Sys(tRead), offset, leap); err != nil {
+			d.lg.Warn("refclock sample failed", "err", err)
+		}
+	}
+	if d.shm != nil {
+		d.shm.Write(utc, tRead, leap)
 	}
 	d.obs.NTPSample(tRead, offset, leap, ptime.Time(0))
 }
 
 func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, Time: mt})
+	d.logMsg(mt, tRead)
 
 	d.timeMsgBuffer.Time(mt, tRead)
 
@@ -369,7 +509,7 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 }
 
 func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, Survey: m})
+	d.logMsg(m, tRead)
 	if m.InProgress || !d.loggedSurveyComplete {
 		d.loggedSurveyComplete = !m.InProgress
 		d.lg.Info("survey progress",
@@ -383,31 +523,31 @@ func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 }
 
 func (d *Dispatcher) PosGeo(msg *gpsprot.PosGeoMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, PosGeo: msg})
+	d.logMsg(msg, tRead)
 	d.pvAccum.PosGeo(msg, tRead)
 }
 
 func (d *Dispatcher) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, PosECEF: msg})
+	d.logMsg(msg, tRead)
 	d.pvAccum.PosECEF(msg, tRead)
 }
 
 func (d *Dispatcher) VelGeo(msg *gpsprot.VelGeoMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, VelGeo: msg})
+	d.logMsg(msg, tRead)
 	d.pvAccum.VelGeo(msg, tRead)
 }
 
 func (d *Dispatcher) VelECEF(msg *gpsprot.VelECEFMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, VelECEF: msg})
+	d.logMsg(msg, tRead)
 	d.pvAccum.VelECEF(msg, tRead)
 }
 
 func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, Satellites: msg})
+	d.logMsg(msg, tRead)
 }
 
 func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, NavEpoch: msg})
+	d.logMsg(msg, tRead)
 	d.timeTicker.NavEpoch(msg, tRead)
 	d.pvAccum.PVMsgBundle.FillDerived()
 	pv := d.pvAccum.PVMsgBundle // copy before clearing
@@ -415,8 +555,14 @@ func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 	d.obs.NavEpochPV(msg, &pv, tRead)
 }
 
+func (d *Dispatcher) CorReport(msg *gpsprot.CorReportMsg, tRead time.Time) {
+	// Receiver-derived reports already reach observers through
+	// MultiHandler(&d, obs), so the dispatcher side only records the event log.
+	d.logMsg(msg, tRead)
+}
+
 func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, LeapSecond: msg})
+	d.logMsg(msg, tRead)
 	d.timeTicker.LeapSecond(msg, tRead)
 	if msg.UpdateLeapSecond(&d.ls) {
 		// Update timemsg.Buffer (always exists)
@@ -430,15 +576,22 @@ func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 }
 
 func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
-	d.lg.Debug("unused message from GPS receiver", "protocol", tag, "msgID", msgID)
+	if !d.obs.NativeMsg(tag, msgID, msg, tRead) {
+		d.lg.Debug("unused message from GPS receiver", "protocol", tag, "msgID", msgID)
+	}
 	return nil
+}
+
+// logMsg records a gpsprot.Msg as a GPS message event-log record.
+func (d *Dispatcher) logMsg(msg gpsprot.Msg, tRead time.Time) {
+	d.logEvent(LogEvent{Type: msg.MsgType(), T: tRead, Data: msg})
 }
 
 func (d *Dispatcher) logEvent(event LogEvent) {
 	if d.lf.File == nil {
 		return
 	}
-	event.Nanos = event.T.Sub(d.tStart)
+	event.Mono = gpsprot.Duration(event.T.Sub(d.tStart)) / gpsprot.Microsecond * gpsprot.Microsecond
 	bytes, err := json.Marshal(event)
 	if err != nil {
 		d.lg.Warn("failed to convert event to JSON", "event", event, "err", err)

@@ -2,7 +2,13 @@
 
 Implement `gpsprot.ConfigProtocol` and `gpsprot.Configurator` for CASIC receivers (Zhongke Microelectronics), enabling `satpulsetool gps` and `satpulsed` to configure CASIC receivers (probe, enable messages, set time pulse, time mode, signal selection).
 
-Follows the UBX configurator architecture (`gps/internal/ubx/ubxcfgprot.go`, `ubxcfg.go`) for the gpsprot interface implementation. Uses [casictool](https://github.com/jclark/casictool) (Python, V5 only) as reference for what configuration packets to send.
+Uses [casictool](https://github.com/jclark/casictool) (Python, V5 only) as reference for what configuration packets to send.
+
+## Design constraints
+
+- **Not a port of the UBX configurator.** UBX (`gps/internal/ubx`) was adapted onto the `gpsprot.ConfigDirector` interface from an interface designed for something else and carries baggage. Its shape - a long roster of single-purpose step functions (`valGet`, `valSet`, `setCfg`, `reset`, ...), each producing one request - is not natural; functions can each do more. Compare the Unicore configurator (`gps/internal/unc`), which is completely different: a few `generate*Commands` functions each build a whole batch of commands, and the configurator turns them into requests in one place. Study both to learn the ConfigDirector contract (retries, pausing, multi-response, time windows via `AdvanceTimeTo()`), then design the CASIC shape on its own merits - closer in spirit to unc than to ubx.
+- **Fallback is first-class.** The documentation is not good enough to know up front which models support which CFG messages. The configurator makes a reasonable guess that the receiver supports the preferred configuration, sends it, and treats a NAK as an expected, recoverable outcome: fall back to the next best thing and carry on. This is not a condition to surface to the user; it is how configuration normally proceeds.
+- **Feature scope is everything staged below:** binary/NMEA output control, PVT and satellite message enabling, nav rate, NVM save/load/reset, time pulse, time mode / survey-in, GNSS and signal-band selection, baud-rate change. Raw-measurement and RTCM output depend on stage 0 evidence of receiver support (see stage 2b).
 
 ## V5 vs V6 firmware
 
@@ -57,7 +63,7 @@ Both use the same packet framing (0xBA 0xCE sync, same checksum) and share most 
 - `gps/lib/casbin/nav.go` - NAV (V5) and NAV2 (V6) navigation messages
 - `gps/lib/casbin/tim.go` - TIM-TP
 - `gps/internal/casic/` - packet processing and message conversion for both V5 and V6
-- `configs/gpsmsg/atgm332d-v5.toml`, `atgm332d-v6.toml` - reference command packets
+- `configs/gpsmsg/zhongke/` message files (`atgm332d-v5.toml`, `atgm332d-v6.toml`, `at632.toml`) - provide a basis for much of the configurator's command set, and can be used for experimentation on hardware via `satpulsetool gps -m <file> -t <tag>`
 
 ## Stage 0: Hardware validation with message files
 
@@ -69,18 +75,25 @@ Before writing configurator code, validate receiver behaviour on real hardware u
 - Discover firmware quirks (e.g. MON-VER NAK, CFG-TMODE garbage bytes)
 - Ensure the TOML message files cover all commands needed by later stages
 
+**Design-shaping unknowns to resolve here** - these may affect the internal shape of the code; document the findings:
+
+- How many configuration requests can be in flight at once? Working rule: multiple in-flight requests are fine, but avoid two whose ACKs would be ambiguous - a CASIC ACK/NAK identifies the request only by class+id, so never have two unacknowledged requests with the same class+id outstanding. This is what `gps/msgfile` already implements (`Correlator.ReadyToSend`). Crucial: before committing to the concurrency model, run tests on both firmware families confirming that pipelining requests with distinct class+id actually works - every request ACKed, nothing dropped or misattributed, including across a mix of sets and polls. If pipelining turns out not to work, the configurator must serialize instead, and that shapes the code.
+- How is a response correlated to a request - ACK/NAK by class+id, poll-response echo, or both? How are failures signalled?
+- What is the baud-rate-change handshake, and what is its timing? When is it safe to resume sending at the new rate?
+- Does re-sending CFG-TMODE/TMODE2 with mode=1 restart an in-progress survey, or is mode=0 then mode=1 needed? (Determines the `SurveyAgain` implementation; see stage 5.)
+- Where do V5 and V6 diverge in enum semantics (e.g. CFG-TP polarity, TSrcMode ranges, NMEA message ids)? Confirm against silicon, not just docs.
+
 **V5:** `atgm332d-v5.toml` — verify tags emit the same bytes as casictool (see `casic_hwtest.py`).
 
 **Both:** Check completeness of both TOML files against `configs/gpsmsg/tags.md`.
 
-**V6:** `atgm332d-v6.toml` — hardware validation of untested messages. Key things to validate:
+**V6:** `configs/gpsmsg/zhongke/atgm332d-v6.toml` — hardware validation of untested messages. Key things to validate:
 - CFG-TP ppsOutMode values and timeRef/tBase polarity
 - CFG-TMODE2 (not yet in TOML file — add and test)
 - CFG-NAVBAND signal masks for each constellation
 - CFG-NAVLIMIT min elevation
 - MON-VER response via CFG-MSG poll
 - RXM2/RTCM output support (V6 spec documents these; test whether any receiver we have supports them)
-- Whether re-sending CFG-TMODE/TMODE2 with mode=1 restarts a survey, or if mode=0 then mode=1 is needed (determines `SurveyAgain` implementation)
 
 Add any missing message file entries for commands that will be needed. With stage 0 and stage 1 complete, users can already configure receivers manually via `satpulsetool gps -m <file> -t <tag>`, which sends the commands and displays decoded responses.
 
@@ -124,7 +137,7 @@ As each CFG struct is implemented, add the corresponding get-* poll tags to the 
 **Files to create:**
 - `gps/internal/casic/cascfgprot.go` - ConfigProtocol
 - `gps/internal/casic/cascfg.go` - Configurator
-- `gps/internal/casic/cascfgmsg.go` - message enabling (like `ubxcfgmsg.go`)
+- `gps/internal/casic/cascfgmsg.go` - message enabling
 
 **Files to modify:**
 - `gps/gpsreg/reg.go` - add to `CreateConfigProtocols()`
@@ -254,6 +267,12 @@ Step: `setPrt` - CFG-PRT to change baud rate. This is separate because the seria
 
 ---
 
+## Verification
+
+- Every CFG the configurator sends to a real receiver (both firmware families) is acknowledged - or handled by a documented fallback - and the resulting receiver state matches intent.
+- Deterministic offline tests using a CASIC fake-receiver test double driven through the real `PacketProcessor` -> `ConfigProtocol` -> `ConfigDirector` path, mirroring `gps/gpsprot/configprotocol_test.go` and the ubx/unc configurator tests.
+- Round-trip serialize/parse tests for every new CFG struct in `gps/lib/casbin`.
+
 ## Known errata
 
 1. **Checksum byte order**: already handled in `casbin.Checksum()`
@@ -263,10 +282,8 @@ Step: `setPrt` - CFG-PRT to change baud rate. This is separate because the seria
 
 ## Reference materials
 
-- Python prototype (V5 only): https://github.com/jclark/casictool (`casic.py`, `connection.py`, `job.py`); typically checked out as `../casictool/`
-- Firmware manual (NMEA sentence IDs, PCAS commands): `../gps-protocol-docs/casic/casic-fm.md`
-- V5 protocol spec: `../gps-protocol-docs/casic/casic2.md`
-- V6 protocol spec: `../gps-protocol-docs/casic/zkw3.md`
+- Python prototype (V5 only): https://github.com/jclark/casictool (`casic.py`, `connection.py`, `job.py`)
+- V5 protocol spec (`casic2.md`), V6 protocol spec (`zkw3.md`), firmware manual with NMEA sentence IDs and PCAS commands (`casic-fm.md`): in the local gps-protocol-docs collection, not committed here
 - Errata/notes: https://github.com/jclark/casictool (`spec/notes.md`)
-- UBX configurator (gpsprot interface pattern): `gps/internal/ubx/ubxcfgprot.go`, `ubxcfg.go`
-- TOML message files: `configs/gpsmsg/atgm332d-v5.toml`, `atgm332d-v6.toml`
+- UBX and Unicore configurators (gpsprot interface implementations): `gps/internal/ubx`, `gps/internal/unc`
+- TOML message files: `configs/gpsmsg/zhongke/atgm332d-v5.toml`, `configs/gpsmsg/zhongke/atgm332d-v6.toml`

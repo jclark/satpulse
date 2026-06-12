@@ -1,6 +1,4 @@
-# Plan: Add `--show-default-config` to satpulsed
-
-Fixes #169
+# Add `--show-default-config` to satpulsed (#169)
 
 ## Summary
 Add `-C/--show-default-config` flag to satpulsed that outputs a TOML file with default configuration and helpful comments, similar to syncsim's implementation.

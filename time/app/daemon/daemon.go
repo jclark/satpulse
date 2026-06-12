@@ -27,6 +27,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/refclock"
 	"github.com/jclark/satpulse/time/internal/sseobs"
 	"github.com/jclark/satpulse/time/internal/ts"
+	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/lib/pmc"
 	"github.com/jclark/satpulse/time/lib/sse"
 	"github.com/jclark/satpulse/time/phc"
@@ -69,15 +70,25 @@ func Cmd(progName string, args []string) {
 	ver, buildDate := cmd.Version()
 	lg.Info("starting", "version", ver, "buildDate", buildDate, "configPath", configPath)
 	ctx := context.Background()
-	ctx, cancel := cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, cancel, cfg)
+	ctx, _ = cmd.CancelOnSignal(ctx, lg)
+	ctx, cancelCause := context.WithCancelCause(ctx)
+	err = run(ctx, lg, cancelCause, cfg)
+	// run returns only after shutdown completes, so the cancellation cause is
+	// settled. A non-signal cause -- the scan worker sets one when the serial
+	// input disappears -- becomes the process error, so exitCode picks a
+	// non-zero status and systemd restarts us.
+	if err == nil {
+		if cause := context.Cause(ctx); cause != nil && cause != context.Canceled {
+			err = cause
+		}
+	}
 	if err != nil {
 		cmd.ErrPrintln(progName, err)
 		os.Exit(exitCode(err))
 	}
 }
 
-func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *Config) error {
+func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, cfg *Config) error {
 	tStart := time.Now()
 	if err := cfg.Validate(lg); err != nil {
 		return err
@@ -132,9 +143,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}()
 
 	var wg sync.WaitGroup
+	pktFormats := cfg.GPS.CreatePacketFormats()
 	// pLog must be closed by both the startScan goroutine and the conn
 	// gpsio.Scan starts a goroutine that calls conn.Stop() when the context is cancelled
-	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), true, cfg.GPS.CreatePacketFormats())
+	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), true, pktFormats)
 	if err != nil {
 		return err
 	}
@@ -144,13 +156,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	if pLog != nil {
 		conn.SetPacketLog(pLog)
 	}
-	pCh := startScan(ctx, lg, &wg, conn, pLog, cfg.GPS.CreatePacketFormats())
+	pCh := startScan(ctx, lg, &wg, cancel, conn, pLog, pktFormats)
 
 	pb := startBcast(ctx, lg, &wg, pCh)
 
 	var sseCh chan sse.Event
 	var eb *bcast.Bcast[sse.Event]
-	if len(cfg.HTTP) > 0 {
+	if cfg.anyHTTP(HTTPConfig.gui) {
 		sseCh = make(chan sse.Event, 1)
 		eb = startBcast(ctx, lg, &wg, sseCh)
 	}
@@ -168,11 +180,11 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		if r := recover(); r != nil {
 			panic(r)
 		}
-		// startScan starts a goroutine sending to pCh and reading from conn
-		// calling cancel here will cause reads from conn to return with an io.EOF error
-		// which will cause pCh to be closed
+		// startScan starts a goroutine sending to pCh and reading from conn;
+		// cancelling here makes those reads fail so pCh is closed and the
+		// workers unwind. The cause is irrelevant on this path: run returns err.
 		if err != nil {
-			cancel()
+			cancel(nil)
 		}
 		// ensure that the sseCh gets closed
 		// even if we don't reach the point where the syncWorker does this
@@ -184,18 +196,19 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}()
 
 	pktProcs := cfg.GPS.CreatePacketProcessors()
-	// Install a MsgHandler to capture leap second during configuration
-	var lsc leapSecondCapture
-	gpsprot.SetAllMsgHandlers(pktProcs, &lsc)
-	// Let the compiler check that TermError implements the SerialError interface
-	// gpsInit relies on this
-	var _ gpscfg.SerialError = gpsio.TermError{}
+	// Install a MsgHandler to capture leap second and position during
+	// configuration; consumed after gpscfg.Configure returns.
+	var cc configCapture
+	gpsprot.SetAllMsgHandlers(pktProcs, &cc)
+	// Compile-time check: serial faults surfaced by gpsio satisfy the
+	// gpscfg.SerialError interface. gpsInit relies on this.
+	var _ gpscfg.SerialError = (*gpsio.SerialError)(nil)
 	gct, err := createConfigTarget(lg, cfg, speed, clk != nil)
 	if err != nil {
 		return err
 	}
 	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, cfg.GPS.CreateConfigProtocols(), gct, pCh, conn)
-	lsc.logLeapSecond(lg)
+	cc.logLeapSecond(lg)
 	if err != nil {
 		if errors.Is(err, gpscfg.ErrNoProbeResponse) {
 			lg.Info(err.Error())
@@ -215,10 +228,22 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 
+	version, _ := cmd.Version()
+	pullSetup := cfg.Stream.Pull.Prepare(version, conn, portLock)
+	var pullPktCh <-chan scan.Packet
+	if pullSetup != nil {
+		pullPktCh = pullSetup.Bcast().Subscribe()
+	}
+
+	if err := startNtrip(ctx, lg, &wg, cfg, gcfg, pb, cc.pos); err != nil {
+		return err
+	}
+	startPush(ctx, lg, &wg, cfg, gcfg, pb, cc.pos, packetTagSet(pktFormats))
+
 	promObs := newPrometheusObserver(cfg)
 	sseObs := newSSEObserver(cfg, sseCh, lg, gcfg)
 	posObs := newPositionObserver(cfg)
-	if eb != nil {
+	if len(cfg.HTTP) > 0 {
 		err = startHTTP(ctx, lg, &wg, cfg.HTTP, eb, sseObs, promObs, posObs)
 		if err != nil {
 			return err
@@ -247,6 +272,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 
 	rc, err := cfg.NTP.NewRefClock(lg)
+	if err != nil {
+		return err
+	}
+	shm, err := cfg.NTP.NewSHMWriter(lg)
+	if err != nil {
+		return err
+	}
 	var (
 		rcProxy *refclock.ProxyRefClock
 		rcCh    <-chan refclock.RefClockSample
@@ -271,11 +303,22 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 		return err
 	}
 	gpsObs := logobs.NewGPSLogObserver(lg)
+	ubxObs := logobs.NewUBXLogObserver(lg)
 	ntpObs := logobs.NewNTPSampleLogObserver(lg)
 
-	observer := combineObservers(promObs, sseObs, posObs, statsObs, clockObs, trackObs, gpsObs, ntpObs)
+	var oc obs.ObserverCombiner
+	obs.AddObserver(&oc, statsObs)
+	obs.AddObserver(&oc, clockObs)
+	obs.AddObserver(&oc, trackObs)
+	obs.AddObserver(&oc, gpsObs)
+	obs.AddObserver(&oc, ubxObs)
+	obs.AddObserver(&oc, ntpObs)
+	obs.AddObserver(&oc, promObs)
+	obs.AddObserver(&oc, sseObs)
+	obs.AddObserver(&oc, posObs)
+	observer := oc.Observer()
 
-	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, observer, tStart)
+	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, observer, tStart)
 	if err != nil {
 		return err
 	}
@@ -288,19 +331,31 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelFunc, cfg *C
 	}
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
-	ls := lsc.msg
+	ls := cc.leapSecond
+	startPull(ctx, lg, &wg, pullSetup)
 	wg.Go(func() {
 		if ls != nil {
 			d.LeapSecond(ls, time.Time{})
 		}
 		// Dispatcher is responsible for closing rcProxy via defer in Run()
-		d.Run(tsCh, pCh)
+		d.Run(tsCh, pCh, pullPktCh)
 	})
 
 	return nil
 }
 
-func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor, clk *ts.Clock, cfg *Config, gm *ptpgm.Grandmaster, rc *refclock.ProxyRefClock, obs obs.Observer, tStart time.Time) (*gpsevent.Dispatcher, error) {
+// NewDispatcher creates the GPS event dispatcher for the daemon.
+func NewDispatcher(
+	lg *slog.Logger,
+	pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor,
+	clk *ts.Clock,
+	cfg *Config,
+	gm *ptpgm.Grandmaster,
+	rc *refclock.ProxyRefClock,
+	shm *ntpshm.Writer,
+	obs obs.Observer,
+	tStart time.Time,
+) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
 	var pulse gpsevent.PulseReceiver
 	if clk != nil {
@@ -324,35 +379,30 @@ func NewDispatcher(lg *slog.Logger, pktProcs map[gpsprot.Tag]gpsprot.PacketProce
 		}
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
-	return gpsevent.NewDispatcher(lg, pktProcs, pulse, rc, ls, obs, eventLogPath, tStart)
+	shmWriter := gpsevent.NewSHMWriter(shm, cfg.shmFixedPrecision())
+	return gpsevent.NewDispatcher(lg, pktProcs, pulse, rc, shmWriter, ls, obs, eventLogPath, tStart)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
 func newSSEObserver(cfg *Config, sseCh chan<- sse.Event, lg *slog.Logger, gcfg *gpscfg.Result) *sseobs.SSEObserver {
-	for _, hc := range cfg.HTTP {
-		if hc.gui() {
-			return sseobs.New(sseCh, cfg.LeapSecond.leapSecond(), lg, gcfg)
-		}
+	if cfg.anyHTTP(HTTPConfig.gui) {
+		return sseobs.New(sseCh, cfg.LeapSecond.leapSecond(), lg, gcfg)
 	}
 	return nil
 }
 
 // newPrometheusObserver creates Prometheus observer if any HTTP endpoint needs metrics
 func newPrometheusObserver(cfg *Config) *promobs.PrometheusObserver {
-	for _, hc := range cfg.HTTP {
-		if hc.metrics() {
-			return promobs.New(cfg.PTP.ClockAccuracy)
-		}
+	if cfg.anyHTTP(HTTPConfig.metrics) {
+		return promobs.New(cfg.PTP.ClockAccuracy)
 	}
 	return nil
 }
 
 // newPositionObserver creates a positionObserver if any HTTP endpoint has position enabled.
 func newPositionObserver(cfg *Config) *positionObserver {
-	for _, hc := range cfg.HTTP {
-		if hc.position() {
-			return &positionObserver{}
-		}
+	if cfg.anyHTTP(HTTPConfig.position) {
+		return &positionObserver{}
 	}
 	return nil
 }
@@ -386,53 +436,18 @@ func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.L
 	return logobs.NewClockLogObserver(lg, clockLogPath, ls)
 }
 
-// combineObservers combines individual observers into appropriate single observer
-func combineObservers(promObs *promobs.PrometheusObserver, sseObs *sseobs.SSEObserver,
-	posObs *positionObserver, statsObs *logobs.StatsLogObserver, clockObs *logobs.ClockLogObserver,
-	trackObs *logobs.TrackLogObserver, gpsObs *logobs.GPSLogObserver,
-	ntpObs *logobs.NTPSampleLogObserver) obs.Observer {
-
-	var observers []obs.Observer
-
-	// Add observers if they exist (typed nils will be properly handled)
-	if statsObs != nil {
-		observers = append(observers, statsObs)
-	}
-	if clockObs != nil {
-		observers = append(observers, clockObs)
-	}
-	if trackObs != nil {
-		observers = append(observers, trackObs)
-	}
-	if gpsObs != nil {
-		observers = append(observers, gpsObs)
-	}
-	if ntpObs != nil {
-		observers = append(observers, ntpObs)
-	}
-	if promObs != nil {
-		observers = append(observers, promObs)
-	}
-	if sseObs != nil {
-		observers = append(observers, sseObs)
-	}
-	if posObs != nil {
-		observers = append(observers, posObs)
-	}
-
-	// Return combined observer or default
-	if len(observers) == 0 {
-		return &obs.DefaultObserver{}
-	} else if len(observers) == 1 {
-		return observers[0]
-	} else {
-		return obs.NewMultiObserver(observers...)
-	}
-}
-
-func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, conn gpsio.Conn, pLog *gpsio.PacketLog, pktFormats []gpsprot.PacketFormat) <-chan scan.Packet {
+func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cancel context.CancelCauseFunc, conn gpsio.Conn, pLog *gpsio.PacketLog, pktFormats []gpsprot.PacketFormat) <-chan scan.Packet {
 	msg := make(chan scan.Packet, 1)
-	wg.Go(func() { gpsio.Scan(ctx, lg, conn, msg, pLog, pktFormats) })
+	wg.Go(func() {
+		gpsio.Scan(ctx, lg, conn, msg, pLog, pktFormats)
+		// Scan returns only when the GPS data source is gone. If we weren't
+		// already shutting down, the serial input reached EOF (the device
+		// disappeared): cancel with a cause so the daemon shuts down and Cmd
+		// exits non-zero to be restarted.
+		if ctx.Err() == nil {
+			cancel(fmt.Errorf("serial device no longer providing input: %s", conn.LocalAddr()))
+		}
+	})
 	return msg
 }
 
@@ -442,38 +457,32 @@ func startBcast[T any](ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	return b
 }
 
-// leapSecondCapture is a MsgHandler that captures leap second messages
-// received during GPS configuration.
-type leapSecondCapture struct {
+// configCapture is a MsgHandler that opportunistically captures
+// leap second and geodetic position messages received during GPS
+// configuration, for use by code that runs after gpscfg.Configure.
+type configCapture struct {
 	gpsprot.DefaultHandler
-	msg *gpsprot.LeapSecondMsg
+	leapSecond *gpsprot.LeapSecondMsg
+	pos        *gpsprot.PosGeoMsg
 }
 
-func (h *leapSecondCapture) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
-	h.msg = msg
+func (h *configCapture) LeapSecond(msg *gpsprot.LeapSecondMsg, _ time.Time) {
+	h.leapSecond = msg
 }
 
-func (h *leapSecondCapture) logLeapSecond(lg *slog.Logger) {
-	if h.msg != nil {
-		lsdStr := h.msg.Date().Format("2006-01-02")
-		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", h.msg.UTCOffBefore, "utcOffAfter", h.msg.UTCOffAfter)
+func (h *configCapture) PosGeo(msg *gpsprot.PosGeoMsg, _ time.Time) {
+	h.pos = msg
+}
+
+func (h *configCapture) logLeapSecond(lg *slog.Logger) {
+	if h.leapSecond != nil {
+		lsdStr := h.leapSecond.Date().Format("2006-01-02")
+		lg.Info("leap second information received from GPS", "date", lsdStr, "utcOffBefore", h.leapSecond.UTCOffBefore, "utcOffAfter", h.leapSecond.UTCOffAfter)
 	}
 }
 
 func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, usingPHC bool) (*gpsprot.ConfigTarget, error) {
-	var cf cfgFeatures
-	if usingPHC {
-		cf |= cfgTimePulse | cfgTimePulseMsg
-	} else if cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "" {
-		cf |= cfgTimePulse
-	}
-	if cfg.Log.Track || len(cfg.HTTP) > 0 {
-		cf |= cfgPosition
-	}
-	if cfg.httpWantsSatellites() {
-		cf |= cfgSatellites
-	}
-	gct, err := cfg.GPS.target(speed, cf)
+	gct, err := cfg.GPS.target(speed, configFeatures(cfg, usingPHC))
 	lg.Debug("GPS configure input", "target", gct)
 	if err != nil {
 		if errors.Is(err, errSatsOutNotEnabled) {
@@ -483,4 +492,26 @@ func createConfigTarget(lg *slog.Logger, cfg *Config, speed int, usingPHC bool) 
 		}
 	}
 	return gct, nil
+}
+
+func configFeatures(cfg *Config, usingPHC bool) cfgFeatures {
+	var cf cfgFeatures
+	if usingPHC {
+		cf |= cfgTimePulse | cfgTimePulseMsg
+	} else if (cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "") || (cfg.NTP.SHM != nil && cfg.NTP.SHM.Segment != nil) {
+		cf |= cfgTimePulse
+	}
+	if cfg.Log.Track || len(cfg.HTTP) > 0 {
+		cf |= cfgPosition
+	}
+	if cfg.httpWantsSatellites() {
+		cf |= cfgSatellites
+	}
+	if cfg.hasNtripStream() {
+		cf |= cfgNtripStream
+	}
+	if cfg.hasRTCMMSM7To4() {
+		cf |= cfgRTCMMSM7To4
+	}
+	return cf
 }

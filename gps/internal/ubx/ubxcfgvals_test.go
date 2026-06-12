@@ -17,7 +17,7 @@ func TestConfigItems_Sane(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
 	target.Props.SetPPS(100 * time.Millisecond)
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
-	_, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
+	_, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, true, 0)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestConfigItems_Sane(t *testing.T) {
 }
 
 func testSanity(t *testing.T, target *gpsprot.ConfigTarget, ver *Version, known *CfgVals) *CfgVals {
-	items, missing, err := known.Transaction(target, ver, ucv.UART1, 0)
+	items, missing, err := known.Transaction(target, ver, ucv.UART1, true, 0)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -88,7 +88,7 @@ func expectMissing[T comparable](t *testing.T, m *CfgVals, key ucv.TypedKey[T]) 
 func TestConfigItems_Empty(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
-	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
+	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, true, 0)
 
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
@@ -106,7 +106,7 @@ func TestConfigItems_Get(t *testing.T) {
 	target.Get = gpsprot.PropIDTimePulseWidth
 	vals := newCfgVals()
 	ver := &Version{}
-	items, missing, err := vals.Transaction(target, ver, ucv.UART1, 0)
+	items, missing, err := vals.Transaction(target, ver, ucv.UART1, true, 0)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestConfigItems_Get(t *testing.T) {
 	}
 	cfgValsInit(vals)
 	cp := new(gpsprot.ConfigProps)
-	vals.Cook(ver, cp)
+	vals.Cook(ver, cp, nil)
 	val, ok := cp.GetTimePulseWidth()
 	if !ok || val != time.Duration(1e5*time.Microsecond) {
 		t.Errorf("expected pulse width to be 0.1s, got %v", val)
@@ -140,7 +140,7 @@ func TestConfigItems_GNSS(t *testing.T) {
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 	target := gpsprot.NewConfigTarget()
 	target.Props.SetTimeGNSS(gpsprot.GAL)
-	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
+	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, true, 0)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 	target.Props.SetAntennaCableDelay(nanos * time.Nanosecond)
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
 
-	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
+	items, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, true, 0)
 	if err != nil {
 		t.Fatalf("configItems: %v", err)
 	}
@@ -177,6 +177,17 @@ func TestConfigItems_AntennaCableDelay(t *testing.T) {
 	}
 }
 
+func TestConfigItems_AntennaCableDelayRange(t *testing.T) {
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetAntennaCableDelay(32768 * time.Nanosecond)
+	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
+
+	_, _, err := newCfgVals().Transaction(target, ver, ucv.UART1, true, 0)
+	if err == nil {
+		t.Fatal("Transaction accepted out-of-range antenna cable delay")
+	}
+}
+
 func TestConfigItems_Survey(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
 	target.Opts.Survey = gpsprot.Survey{
@@ -188,7 +199,7 @@ func TestConfigItems_Survey(t *testing.T) {
 		GNSS: gpsprot.MajorGNSSSet,
 		FW:   &FWVer{ProductCategory: "TIM", Major: 8, Minor: 01},
 	}
-	_, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
+	_, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, true, 0)
 	if err != nil {
 		t.Fatalf("configItems[1]: %v", err)
 	}
@@ -200,7 +211,7 @@ func TestConfigItems_Survey(t *testing.T) {
 	}
 	m := newCfgVals()
 	cfgValSet(m, ucv.KTmodeMode, ucv.ETmodeModeDisabled)
-	items, _, err := m.Transaction(target, ver, ucv.UART1, 0)
+	items, _, err := m.Transaction(target, ver, ucv.UART1, true, 0)
 	if err != nil {
 		t.Fatalf("configItems[2]: %v", err)
 	}
@@ -389,6 +400,77 @@ func TestEnableSignals(t *testing.T) {
 			result, _ := m.getSignalsEnabled()
 			if tt.enabled&supported != result {
 				t.Errorf("expected signals to be %v, got %v", tt.enabled&supported, result)
+			}
+		})
+	}
+}
+
+func TestResolveSignalConstraints(t *testing.T) {
+	b1i := gpsprot.SignalSetOf(gpsprot.SigBDSB1I)
+	b1c := gpsprot.SignalSetOf(gpsprot.SigBDSB1C)
+	b1 := b1i | b1c
+	tests := []struct {
+		name      string
+		ver       Version
+		enabled   gpsprot.SignalSet
+		supported gpsprot.SignalSet
+		want      gpsprot.SignalSet
+	}{
+		{
+			name:      "SPG M10 prefers B1I",
+			ver:       Version{Prot: &ProtVer{Major: 34, Minor: 10}, FW: &FWVer{ProductCategory: "SPG"}},
+			enabled:   b1,
+			supported: b1,
+			want:      b1i,
+		},
+		{
+			name:      "SPGL1L5 F10 prefers B1C",
+			ver:       Version{Prot: &ProtVer{Major: 40, Minor: 0}, FW: &FWVer{ProductCategory: "SPGL1L5"}},
+			enabled:   b1,
+			supported: b1,
+			want:      b1c,
+		},
+		{
+			name:      "HPG unchanged",
+			ver:       Version{Prot: &ProtVer{Major: 34, Minor: 10}, FW: &FWVer{ProductCategory: "HPG"}},
+			enabled:   b1,
+			supported: b1,
+			want:      b1,
+		},
+		{
+			name:      "B1I only unchanged",
+			ver:       Version{Prot: &ProtVer{Major: 34, Minor: 10}, FW: &FWVer{ProductCategory: "SPG"}},
+			enabled:   b1i,
+			supported: b1,
+			want:      b1i,
+		},
+		{
+			name:      "SPG maps B1C to B1I",
+			ver:       Version{Prot: &ProtVer{Major: 34, Minor: 10}, FW: &FWVer{ProductCategory: "SPG"}},
+			enabled:   b1c,
+			supported: b1,
+			want:      b1i,
+		},
+		{
+			name:      "SPGL1L5 maps B1I to B1C",
+			ver:       Version{Prot: &ProtVer{Major: 40, Minor: 0}, FW: &FWVer{ProductCategory: "SPGL1L5"}},
+			enabled:   b1i,
+			supported: b1,
+			want:      b1c,
+		},
+		{
+			name:      "SPGL1L5 B1C only unchanged",
+			ver:       Version{Prot: &ProtVer{Major: 40, Minor: 0}, FW: &FWVer{ProductCategory: "SPGL1L5"}},
+			enabled:   b1c,
+			supported: b1,
+			want:      b1c,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveSignalConstraints(&tt.ver, tt.enabled, tt.supported)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -717,7 +799,7 @@ func TestTimePulseRoundTrip(t *testing.T) {
 			// Transaction may need two passes: the first returns missing keys,
 			// the second uses those keys to produce items.
 			known := newCfgVals()
-			items, missing, err := known.Transaction(target, ver, ucv.UART1, 0)
+			items, missing, err := known.Transaction(target, ver, ucv.UART1, true, 0)
 			if err != nil {
 				t.Fatalf("Transaction[1]: %v", err)
 			}
@@ -726,7 +808,7 @@ func TestTimePulseRoundTrip(t *testing.T) {
 				known.Map[k] = 0
 			}
 			if len(missing) > 0 {
-				items, missing, err = known.Transaction(target, ver, ucv.UART1, 0)
+				items, missing, err = known.Transaction(target, ver, ucv.UART1, true, 0)
 				if err != nil {
 					t.Fatalf("Transaction[2]: %v", err)
 				}
@@ -738,7 +820,7 @@ func TestTimePulseRoundTrip(t *testing.T) {
 			cv := newCfgVals()
 			cv.AddItems(items)
 			cp := new(gpsprot.ConfigProps)
-			cv.Cook(ver, cp)
+			cv.Cook(ver, cp, nil)
 			got, ok := cp.GetTimePulse()
 			if !ok {
 				t.Fatal("expected all TimePulse properties to be set")
@@ -958,7 +1040,7 @@ func TestTimePulseCook(t *testing.T) {
 			cv := newCfgVals()
 			cv.AddItems(tt.items)
 			cp := new(gpsprot.ConfigProps)
-			cv.Cook(ver, cp)
+			cv.Cook(ver, cp, nil)
 			got, ok := cp.GetTimePulse()
 			if !ok {
 				t.Fatal("expected all TimePulse properties to be set")
@@ -990,7 +1072,7 @@ func TestTimePulseCookMissing(t *testing.T) {
 	cv := newCfgVals()
 	cv.AddItems(full)
 	cp := new(gpsprot.ConfigProps)
-	cv.Cook(ver, cp)
+	cv.Cook(ver, cp, nil)
 	if _, ok := cp.GetTimePulse(); !ok {
 		t.Fatal("full set should produce a valid TimePulse")
 	}
@@ -1013,7 +1095,7 @@ func TestTimePulseCookMissing(t *testing.T) {
 				}
 			}
 			cp := new(gpsprot.ConfigProps)
-			cv.Cook(ver, cp)
+			cv.Cook(ver, cp, nil)
 			if _, ok := cp.GetTimePulse(); ok {
 				t.Errorf("expected GetTimePulse to fail without %v", drop)
 			}
@@ -1066,7 +1148,7 @@ func TestTP2RoundTrip(t *testing.T) {
 			target := gpsprot.NewConfigTarget()
 			target.Props.SetTimePulse(tt.tp)
 			known := newCfgVals()
-			items, missing, err := known.Transaction(target, ver, ucv.UART1, 0)
+			items, missing, err := known.Transaction(target, ver, ucv.UART1, true, 0)
 			if err != nil {
 				t.Fatalf("Transaction[1]: %v", err)
 			}
@@ -1075,7 +1157,7 @@ func TestTP2RoundTrip(t *testing.T) {
 				known.Map[k] = 0
 			}
 			if len(missing) > 0 {
-				items, missing, err = known.Transaction(target, ver, ucv.UART1, 0)
+				items, missing, err = known.Transaction(target, ver, ucv.UART1, true, 0)
 				if err != nil {
 					t.Fatalf("Transaction[2]: %v", err)
 				}
@@ -1093,7 +1175,7 @@ func TestTP2RoundTrip(t *testing.T) {
 			cv := newCfgVals()
 			cv.AddItems(items)
 			cp := new(gpsprot.ConfigProps)
-			cv.Cook(ver, cp)
+			cv.Cook(ver, cp, nil)
 			got, ok := cp.GetTimePulse()
 			if !ok {
 				t.Fatal("expected all TimePulse properties to be set")
@@ -1120,7 +1202,7 @@ func TestTP2Cook(t *testing.T) {
 	cfgValSet(cv, ucv.KTpUseLockedTp2, true)
 	cfgValSet(cv, ucv.KTpPolTp2, true)
 	cp := new(gpsprot.ConfigProps)
-	cv.Cook(ver, cp)
+	cv.Cook(ver, cp, nil)
 	got, ok := cp.GetTimePulse()
 	if !ok {
 		t.Fatal("expected all TimePulse properties to be set")
@@ -1144,7 +1226,7 @@ func TestTP2TransactionMissingKeys(t *testing.T) {
 	tp1to2 := ucv.KeyRemap(ucv.TPKeyPairs, 0, 1)
 	target := gpsprot.NewConfigTarget()
 	target.Get = gpsprot.PropIDTimePulse
-	_, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, 0)
+	_, missing, err := newCfgVals().Transaction(target, ver, ucv.UART1, true, 0)
 	if err != nil {
 		t.Fatalf("Transaction: %v", err)
 	}
@@ -1323,5 +1405,68 @@ func TestMonGnssPlanSignals(t *testing.T) {
 				t.Errorf("got  %v\nwant %v", got, tc.expect)
 			}
 		})
+	}
+}
+
+// TestAddGetKeys_BaudRate exercises the read-path baud-rate key
+// selection: UART ports add their KUart{N}Baudrate key; non-UART
+// and !portOK silently add no key.
+func TestAddGetKeys_BaudRate(t *testing.T) {
+	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
+	tests := []struct {
+		name    string
+		port    ucv.Port
+		portOK  bool
+		wantKey ucv.Key
+	}{
+		{"UART1", ucv.UART1, true, ucv.KUart1Baudrate.Key()},
+		{"UART2", ucv.UART2, true, ucv.KUart2Baudrate.Key()},
+		{"USB", ucv.USB, true, 0},
+		{"I2C", ucv.I2C, true, 0},
+		{"SPI", ucv.SPI, true, 0},
+		{"unknown", 0, false, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			vals := newCfgVals()
+			keys := vals.addGetKeys(gpsprot.PropIDBaudRate, ver, tc.port, tc.portOK, nil)
+			var got ucv.Key
+			for _, k := range keys {
+				switch k {
+				case ucv.KUart1Baudrate.Key(), ucv.KUart2Baudrate.Key():
+					got = k
+				}
+			}
+			if got != tc.wantKey {
+				t.Errorf("got %v, want %v", got, tc.wantKey)
+			}
+		})
+	}
+}
+
+// TestTransaction_PortUnknownWritePath verifies that Transaction
+// errors when the transaction would emit port-specific items but
+// portOK is false. !portOK is an internal-invariant violation so
+// we fail loudly rather than dropping the write silently.
+func TestTransaction_PortUnknownWritePath(t *testing.T) {
+	ver := &m10Version
+	target := gpsprot.NewConfigTarget()
+	target.Opts.PVTMsg = gpsprot.PVTMsgPos
+	_, _, err := newCfgVals().Transaction(target, ver, 0, false, 0)
+	if err == nil {
+		t.Errorf("expected error when port-specific items requested and portOK=false")
+	}
+}
+
+// TestTransaction_PortUnknownReadPath verifies that Transaction
+// succeeds when the only requested work is port-independent, even
+// when portOK is false.
+func TestTransaction_PortUnknownReadPath(t *testing.T) {
+	ver := &m10Version
+	target := gpsprot.NewConfigTarget()
+	target.Get = gpsprot.PropIDTimePulseWidth
+	_, _, err := newCfgVals().Transaction(target, ver, 0, false, 0)
+	if err != nil {
+		t.Errorf("unexpected error for port-independent read with portOK=false: %v", err)
 	}
 }

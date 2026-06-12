@@ -413,20 +413,20 @@ func finalizeNavEpoch(epoch *NavEpoch) {
 }
 
 // parseDateTime parses NMEA time (HHMMSS.sss) and date (DDMMYY)
-// fields into a UTCTime. Returns nil (not an error) when either field
-// is empty.
-func parseDateTime(timeStr, dateStr string) (*ptime.UTCTime, error) {
+// fields into a UTCTime. Returns an unset value (not an error) when
+// either field is empty.
+func parseDateTime(timeStr, dateStr string) (opt.Val[ptime.UTCTime], error) {
 	if timeStr == "" || dateStr == "" {
-		return nil, nil
+		return opt.Val[ptime.UTCTime]{}, nil
 	}
 	var year uint16
 	var month, day, hour, min, sec uint8
 	var nanos int32
 	if !scanTime(timeStr, &hour, &min, &sec, &nanos) {
-		return nil, fmt.Errorf("%s: invalid time", timeStr)
+		return opt.Val[ptime.UTCTime]{}, fmt.Errorf("%s: invalid time", timeStr)
 	}
 	if len(dateStr) != 6 || !isDigits(dateStr) {
-		return nil, fmt.Errorf("%s: invalid date", dateStr)
+		return opt.Val[ptime.UTCTime]{}, fmt.Errorf("%s: invalid date", dateStr)
 	}
 	// Sscanf is very forgiving, so we check for length and all digits first, so that Sscanf is guaranteed to succeed.
 	_, _ = fmt.Sscanf(dateStr, "%02d%02d%02d", &day, &month, &year)
@@ -437,8 +437,7 @@ func parseDateTime(timeStr, dateStr string) (*ptime.UTCTime, error) {
 	} else {
 		year += 2000
 	}
-	utc := ptime.UTC(year, month, day, hour, min, sec, nanos)
-	return &utc, nil
+	return opt.Make(ptime.UTC(year, month, day, hour, min, sec, nanos)), nil
 }
 
 // parseGGA parses a GGA sentence into a PosGeoMsg and populates
@@ -654,32 +653,32 @@ func parseUintField(s string) (uint64, bool) {
 	return n, true
 }
 
-func parseZDA(sen *ApprovedSentence) (*ptime.UTCTime, error) {
+func parseZDA(sen *ApprovedSentence) (opt.Val[ptime.UTCTime], error) {
 	k := sen.TalkerID + "ZDA"
 	if len(sen.Fields) < 4 {
-		return nil, fmt.Errorf("%s: too few fields", k)
+		return opt.Val[ptime.UTCTime]{}, fmt.Errorf("%s: too few fields", k)
 	}
 	timeStr := sen.Fields[0]
 	if timeStr == "" {
-		return nil, nil
+		return opt.Val[ptime.UTCTime]{}, nil
 	}
 	var year uint16
 	var month, day, hour, min, sec uint8
 	var nanos int32
 	if !scanTime(timeStr, &hour, &min, &sec, &nanos) {
-		return nil, fmt.Errorf("%s: %s: invalid time", k, timeStr)
+		return opt.Val[ptime.UTCTime]{}, fmt.Errorf("%s: %s: invalid time", k, timeStr)
 	}
 	for i := 1; i < 4; i++ {
 		d := sen.Fields[i]
 		if d == "" {
-			return nil, nil
+			return opt.Val[ptime.UTCTime]{}, nil
 		}
 		expectLen := 2
 		if i == 3 {
 			expectLen = 4
 		}
 		if !isDigits(d) || len(d) != expectLen {
-			return nil, fmt.Errorf("%s: %s: invalid date field", k, d)
+			return opt.Val[ptime.UTCTime]{}, fmt.Errorf("%s: %s: invalid date field", k, d)
 		}
 	}
 	_, _ = fmt.Sscanf(sen.Fields[1], "%02d", &day)
@@ -688,10 +687,9 @@ func parseZDA(sen *ApprovedSentence) (*ptime.UTCTime, error) {
 	// Need a limit on year to ensure ptime.Time isn't out of range
 	// Allow 1980 since first version of NMEA was issued was 1980.
 	if year < 1980 || year > 2099 {
-		return nil, fmt.Errorf("%s: %s: invalid year", k, sen.Fields[3])
+		return opt.Val[ptime.UTCTime]{}, fmt.Errorf("%s: %s: invalid year", k, sen.Fields[3])
 	}
-	utc := ptime.UTC(year, month, day, hour, min, sec, nanos)
-	return &utc, nil
+	return opt.Make(ptime.UTC(year, month, day, hour, min, sec, nanos)), nil
 }
 
 func scanTime(s string, hour, min, sec *uint8, nanos *int32) bool {

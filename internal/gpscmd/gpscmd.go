@@ -34,7 +34,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	if err != nil {
 		return
 	}
-	var msgs any
+	var raw []msgfile.RawMsg
 	if v.msgFilePath != "" {
 		var mf *msgfile.Parsed
 		mf, err = msgfile.Load(v.msgFilePath)
@@ -52,7 +52,16 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 			msgfile.PrintTagDescs(os.Stdout, tds)
 			return
 		}
+		var msgs any
 		msgs, err = mf.TaggedMsgs(v.msgTags)
+		if err != nil {
+			return
+		}
+		// Convert to raw bytes before opening the GPS connection so that
+		// configuration errors (including --save against non-save-aware
+		// messages, or ubxvalport without --port) surface without first
+		// touching the device.
+		raw, err = msgfile.ToRaw(msgs, v.msgPort, v.msgSave)
 		if err != nil {
 			return
 		}
@@ -68,7 +77,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, msgs, conn, v.vendor, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, args)
+	err = run(ctx, lg, target, raw, conn, v.vendor, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, v.configSupport, args)
 	return
 }
 
@@ -106,6 +115,9 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.rtcmBaseID.IsSet() {
 		cp.SetRTCMBaseID(v.rtcmBaseID.Get())
 	}
+	if v.baudRate.IsSet() {
+		cp.SetBaudRate(v.baudRate.Get())
+	}
 	// If nothing requires the configurator, return nil (passive capture mode)
 	if !v.showReceiver && target.NoOp() {
 		return nil, nil
@@ -131,15 +143,15 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 
 // run executes the GPS command.
 //
-// Modes based on target and msgs:
+// Modes based on target and raw:
 //   - target non-nil: config mode (runs GPS configuration)
-//   - msgs non-nil: message file mode (sends user-defined messages)
+//   - raw non-nil: message file mode (sends user-defined messages)
 //   - both nil: passive capture mode (just logs packets, no interaction)
 //
 // Parameter dependencies:
-//   - logMode: must not be testLogMode when msgs is non-nil
+//   - logMode: must not be testLogMode when raw is non-nil
 //   - args: only used for test log header when logMode is testLogMode
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msgs any, conn gpsio.Conn, vendor gpsreg.Vendor, logPath string, logMode packetLogMode, capture opt.Val[time.Duration], showReceiver bool, args []string) error {
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw []msgfile.RawMsg, conn gpsio.Conn, vendor gpsreg.Vendor, logPath string, logMode packetLogMode, capture opt.Val[time.Duration], showReceiver bool, support configSupportReq, args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
@@ -175,10 +187,10 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msg
 	pCh := startScan(ctx, lg, &wg, conn, pktLog, pktFormats)
 
 	var rslt *gpscfg.Result
-	if msgs != nil {
-		err = runMsgs(ctx, lg, conn, pCh, msgs, capture)
+	if raw != nil {
+		err = runMsgs(ctx, lg, conn, pCh, raw, capture)
 	} else if target != nil {
-		rslt, err = runConfig(ctx, lg, target, pCh, conn, vendor, capture, showReceiver)
+		rslt, err = runConfig(ctx, lg, target, pCh, conn, vendor, capture, showReceiver, support)
 	} else {
 		// Passive capture mode: just read and log packets
 		if capture.IsSet() {
@@ -200,10 +212,10 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, msg
 	return err
 }
 
-func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, vendor gpsreg.Vendor, capture opt.Val[time.Duration], showReceiver bool) (*gpscfg.Result, error) {
-	// Let the compiler check that TermError implements the SerialError interface
-	// gpscfg relies on this
-	var _ gpscfg.SerialError = gpsio.TermError{}
+func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, vendor gpsreg.Vendor, capture opt.Val[time.Duration], showReceiver bool, support configSupportReq) (*gpscfg.Result, error) {
+	// Compile-time check: serial faults surfaced by gpsio satisfy the
+	// gpscfg.SerialError interface. gpscfg relies on this.
+	var _ gpscfg.SerialError = (*gpsio.SerialError)(nil)
 	pktProcs := gpsreg.CreatePacketProcessors(vendor)
 	gpsprot.SetAllMsgHandlers(pktProcs, &gpsprot.DefaultHandler{})
 	rslt, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(vendor), target, pCh, conn)
@@ -213,8 +225,10 @@ func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	if err == nil && rslt != nil {
 		if showReceiver {
 			printReceiverInfo(os.Stdout, rslt.ReceiverInfo)
+			printConfigSupport(os.Stdout, rslt.ConfigSupport)
 			printPacketFormats(os.Stdout, rslt.PacketFormatsDetected)
 		}
+		warnMissingConfigSupport(lg, support, rslt.ConfigSupport)
 		if !configTargetIsProbeOnly(target) {
 			logFailedProps(lg, &target.Props, rslt.ConfigProps)
 		}
@@ -226,13 +240,18 @@ func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	return rslt, err
 }
 
-func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, msgs any, capture opt.Val[time.Duration]) error {
-	raw, err := msgfile.ToRaw(msgs)
-	if err != nil {
-		return err
+func warnMissingConfigSupport(lg *slog.Logger, req configSupportReq, supported gpsprot.ConfigSupportFlags) {
+	if req.isZero() {
+		return
 	}
+	for _, opt := range req.unsupportedOptions(supported) {
+		lg.Warn("receiver does not support the following option", "option", opt)
+	}
+}
+
+func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, raw []msgfile.RawMsg, capture opt.Val[time.Duration]) error {
 	rh := newResponseHandler(os.Stdout, lg)
-	err = sendAllMsgs(ctx, lg, conn, pCh, raw, rh)
+	err := sendAllMsgs(ctx, lg, conn, pCh, raw, rh)
 	if capture.IsSet() {
 		keepReading(ctx, lg, pCh, capture.Get(), rh)
 	}
@@ -383,6 +402,12 @@ func printReceiverInfo(f *os.File, info *gpsprot.ReceiverInfo) {
 	}
 }
 
+func printConfigSupport(f *os.File, support gpsprot.ConfigSupportFlags) {
+	if support != 0 {
+		fmt.Fprintf(f, "Supports: %s\n", support)
+	}
+}
+
 func printPacketFormats(f *os.File, tags []gpsprot.Tag) {
 	if len(tags) == 0 {
 		return
@@ -419,6 +444,12 @@ func printProps(f *os.File, p *gpsprot.ConfigProps) {
 	if rtcmBaseID, ok := p.GetRTCMBaseID(); ok {
 		printRTCMBaseID(f, rtcmBaseID)
 	}
+	if port, ok := p.GetPort(); ok {
+		printPort(f, port)
+	}
+	if baudRate, ok := p.GetBaudRate(); ok {
+		printBaudRate(f, baudRate)
+	}
 }
 
 func printSignals(f *os.File, sigs gpsprot.SignalSet) {
@@ -454,6 +485,8 @@ func printMode(f *os.File, mode gpsprot.Mode) {
 		return
 	case gpsprot.PosTypeECEF:
 		fmt.Fprintf(f, "Fixed position ECEF: %s\n", mode.FixedPosECEF.String())
+	case gpsprot.PosTypeLLH:
+		fmt.Fprintf(f, "Fixed position LLH: %s,%s,%s\n", mode.FixedPosLLH[0].String(), mode.FixedPosLLH[1].String(), mode.Height.String())
 	}
 	fmt.Fprintf(f, "Fixed position accuracy: %s m\n", mode.FixedPosAcc.String())
 }
@@ -472,6 +505,17 @@ func printMinElevation(f *os.File, elev gpsprot.Angle) {
 
 func printRTCMBaseID(f *os.File, id uint16) {
 	fmt.Fprintf(f, "RTCM base station ID: %d\n", id)
+}
+
+func printPort(f *os.File, name string) {
+	fmt.Fprintf(f, "Port: %s\n", name)
+}
+
+func printBaudRate(f *os.File, baudRate uint32) {
+	if baudRate == 0 {
+		return
+	}
+	fmt.Fprintf(f, "Serial speed: %d\n", baudRate)
 }
 
 func printTimePulse(f *os.File, tp gpsprot.TimePulse) {

@@ -27,8 +27,10 @@ satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m um980-has.toml
 The `-m` flag specifies the message file.
 Each line will be terminated with CR/LF and sent to the receiver.
 
-The `-m` flag cannot be combined with config flags like `--gnss`, `--pps`, `--save`, etc.
+The `-m` flag cannot be combined with config flags like `--gnss`, `--pps`, etc.
 This avoids ambiguity about ordering of manual messages versus higher-level configuration.
+The `--save` flag is permitted with `-m`, but only for save-aware message types (`[[ubxval]]` and `[[ubxvalport]]`);
+see [u-blox Gen9+ CFG-VALSET](#u-blox-gen9-cfg-valset) below.
 
 ## Delay key
 
@@ -300,6 +302,119 @@ Type specifiers are two characters each:
 - `I1`, `I2`, `I4` - signed integers (1, 2, or 4 bytes)
 - `R4`, `R8` - floating point (4 or 8 bytes)
 
+## u-blox Gen9+ CFG-VALSET
+
+The `[[ubxval]]` message type writes one or more items to the u-blox Gen9+
+configuration database using `UBX-CFG-VALSET`. Unlike raw `[[ubx]]` entries,
+the layer byte is chosen by the `--save` command-line option, so the same
+TOML file can be used for either a RAM-only or persistent write.
+
+```toml
+[[ubxval]]
+tag = "osnma-on"
+description = "Enable Galileo OSNMA authentication"
+keys = [0x10350005]
+types = "U1"
+values = [1]
+```
+
+Without `--save`, this writes the item to RAM only. With `--save`, the
+same item is written to `RAM|BBR|Flash`.
+
+A single `[[ubxval]]` entry can carry several items: provide parallel
+`keys`, `types`, and `values` arrays of equal length, with one type
+specifier per value (two characters each, matching the `payload.types`
+grammar described above). All items are sent in one CFG-VALSET packet.
+
+```toml
+[[ubxval]]
+tag = "osnma-and-only-auth"
+keys = [0x10350005, 0x101100DD]
+types = "U1U1"
+values = [1, 1]
+```
+
+The `types` grammar mirrors `payload.types`: `U1`, `U2`, `U4`, `I1`, `I2`,
+`I4`, `R4`, `R8`. Supplied SatPulse UBX TOML files use the prefix that
+matches the scalar type in the u-blox specification:
+
+| u-blox scalar | `[[ubxval]]` type |
+|---------------|----------------------|
+| `Un`, `Xn`, `E1` | `U1`, `U2`, or `U4` |
+| `In` | `I1`, `I2`, or `I4` |
+| `Rn` | `R4` or `R8` |
+| `L` (boolean) | `U1` with value `0` or `1` |
+
+For each item the encoded byte width must match the value width encoded
+in the Key ID; for example `CFG-MSGOUT_*` keys have width 1 and must use
+`U1` with `0` or `1`. 8-byte integer types are not currently accepted
+in this format.
+
+Raw `[[ubx]]` packets are not interpreted, so `--save` does not rewrite a
+hard-coded `CFG-VALSET` layer byte inside a raw `payload`. Persistent
+configuration writes from a message file must use `[[ubxval]]` or
+`[[ubxvalport]]`.
+
+## u-blox Gen9+ port-dependent CFG-VALSET
+
+The `[[ubxvalport]]` message type is a port-aware variant of `[[ubxval]]`
+for one-byte port-dependent CFG keys such as `CFG-MSGOUT-*_<PORT>` and
+`CFG-INFMSG-*_<PORT>`. The message file supplies one or more port-specific
+key IDs and a single one-byte `value`. The receiver port is chosen by
+the command-line `--port` argument when the file is sent, not by the
+message file:
+
+```toml
+[[ubxvalport]]
+tag = "ubx-nav-timeutc"
+description = "Enable UBX-NAV-TIMEUTC"
+key.usb = 0x2091005e
+value = 1
+```
+
+Send it with `--port`:
+
+```
+satpulsetool gps -d /dev/ttyACM0 -m u-blox/gen9.toml -t ubx-nav-timeutc --port usb
+```
+
+`--port` accepts `i2c`, `uart1`, `uart2`, `usb`, and `spi` (case
+insensitive).
+
+When fewer than five `key.<port>` values are supplied, the helper
+infers the keys for the other ports using the standard u-blox port
+offset (`i2c=0`, `uart1=1`, `uart2=2`, `usb=3`, `spi=4`). Only known
+inferable families are accepted in this mode:
+
+| Family | Group ID |
+|--------|----------|
+| `CFG-MSGOUT` | `0x2091` |
+| `CFG-INFMSG` | `0x2092` |
+
+If multiple keys are supplied they must imply the same port-neutral
+base key.
+
+When all five `key.<port>` values are supplied explicitly, no family or
+offset-pattern check is performed. The helper picks the key matching
+`--port` directly. This supports port-dependent keys that do not follow
+the offset pattern, such as `CFG-*OUTPROT-*`:
+
+```toml
+[[ubxvalport]]
+tag = "ubx-outprot-ubx"
+description = "Enable UBX output protocol"
+key.i2c   = 0x10720001
+key.uart1 = 0x10740001
+key.uart2 = 0x10760001
+key.usb   = 0x10780001
+key.spi   = 0x107a0001
+value = 1
+```
+
+Like `[[ubxval]]`, `--save` controls the CFG-VALSET layer mask. Without
+`--save`, items are written to RAM only. With `--save`, items are
+written to `RAM|BBR|Flash`.
+
 ## Message types summary
 
 | Type | Keys | Framing |
@@ -308,6 +423,8 @@ Type specifiers are two characters each:
 | `[[binary]]` | `hex`, `delay`, `waitLimit`, `tag`, `description` | none |
 | `[[nmea]]` | `text`, `delay`, `waitLimit`, `tag`, `description` | prepends `$`, appends `*XX\r\n` checksum |
 | `[[ubx]]` | `class`, `id`, `payload`, `delay`, `waitLimit`, `tag`, `description` | UBX binary packets |
+| `[[ubxval]]` | `keys`, `types`, `values`, `delay`, `waitLimit`, `tag`, `description` | UBX-CFG-VALSET (layer chosen by `--save`) |
+| `[[ubxvalport]]` | `key.<port>`, `value`, `delay`, `waitLimit`, `tag`, `description` | UBX-CFG-VALSET with one-byte port-dependent key (port chosen by `--port`, layer by `--save`) |
 | `[[casbin]]` | `class`, `id`, `payload`, `delay`, `waitLimit`, `tag`, `description` | CASIC binary packets |
 | `[[asbin]]` | `class`, `id`, `payload`, `delay`, `waitLimit`, `tag`, `description` | Allystar binary packets |
 | `[[sdbp]]` | `class`, `id`, `payload`, `delay`, `waitLimit`, `tag`, `description` | Techtotop/Taidou SDBP binary packets |
@@ -329,12 +446,12 @@ Tags in an including file override tags in an included file. Apart from this, it
 
 ## Schema
 
-There is a JSON schema for message files at `gpsmsg-schema.json` in this directory.
+There is a JSON schema for message files at `gpsmsg-schema.json` in the root `gpsmsg` directory.
 With Visual Studio Code, the [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
 extension supports schema-sensitive editing. The first line of the TOML file can have a line like this:
 
 ```
-#:schema ./gpsmsg-schema.json
+#:schema ../gpsmsg-schema.json
 ```
 
-to tell the extension which schema to use.
+to tell the extension which schema to use from a vendor subdirectory.

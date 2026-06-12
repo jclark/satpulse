@@ -7,14 +7,13 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/opt"
-	"github.com/jclark/satpulse/time/internal/gpsevent"
 )
 
 func TestGPSConfig(t *testing.T) {
 	// Baseline target that represents the common structure
 	var baseline gpsprot.ConfigTarget
 	baseline.Props.SetPPS(defaultPPSWidth)
-	baseline.Opts.PVTMsg = gpsevent.TimePulsePVTMsgFlags
+	baseline.Opts.PVTMsg = gpsprot.PVTMsgTimingPTP
 	baseline.Opts.NMEAMsg = opt.Make(gpsprot.NMEAMsgNone)
 
 	tests := []struct {
@@ -104,6 +103,47 @@ fixedPosAcc = 3`,
 			},
 		},
 		{
+			name: "fixed position LLH mode",
+			config: `[gps]
+config = true
+surveyTime = 1000
+surveyAcc = 5
+fixedPosLLH = [51.5007, -0.1246, 11]
+fixedPosAcc = 0.05`,
+			speed: 9600,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{
+					Static:      true,
+					PosType:     gpsprot.PosTypeLLH,
+					FixedPosLLH: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(51.5007), gpsprot.DegreesFromFloat(-0.1246)},
+					Height:      gpsprot.Meters(11),
+					FixedPosAcc: gpsprot.Meters(0.05),
+				})
+				target.Opts.Survey.MinDur = 1000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(5)
+			},
+		},
+		{
+			name: "fixed position LLH zero",
+			config: `[gps]
+config = true
+fixedPosLLH = [0, 0, 0]`,
+			speed: 9600,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{
+					Static:      true,
+					PosType:     gpsprot.PosTypeLLH,
+					FixedPosLLH: [2]gpsprot.Angle{0, 0},
+					Height:      0,
+					FixedPosAcc: gpsprot.Meters(20),
+				})
+				target.Opts.Survey.MinDur = 2000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
+			},
+		},
+		{
 			name: "mobile with position enables velocity",
 			config: `[gps]
 config = true
@@ -132,13 +172,37 @@ fixedPosECEF = [3978578.17, -8652.15, 4968410.94]`,
 			},
 		},
 		{
+			name: "mobile=true overrides fixed position LLH",
+			config: `[gps]
+config = true
+mobile = true
+fixedPosLLH = [51.5007, -0.1246, 11]`,
+			speed: 9600,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: false})
+				target.Opts.Survey.MinDur = 2000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
+			},
+		},
+		{
+			name: "fixed position ECEF and LLH conflict",
+			config: `[gps]
+config = true
+fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
+fixedPosLLH = [51.5007, -0.1246, 11]`,
+			speed:         9600,
+			cf:            cfgTimePulse | cfgTimePulseMsg,
+			expectedError: "error",
+		},
+		{
 			name: "survey accuracy too small",
 			config: `[gps]
 config = true
 surveyAcc = 0.0001`,
-			speed: 9600,
-			cf:    cfgTimePulse | cfgTimePulseMsg,
-			expectedError:        "error", // any error
+			speed:         9600,
+			cf:            cfgTimePulse | cfgTimePulseMsg,
+			expectedError: "error", // any error
 		},
 		{
 			name: "fixed position accuracy too small",
@@ -146,9 +210,36 @@ surveyAcc = 0.0001`,
 config = true
 fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
 fixedPosAcc = 0.0001`,
-			speed: 9600,
-			cf:    cfgTimePulse | cfgTimePulseMsg,
-			expectedError:        "error", // any error
+			speed:         9600,
+			cf:            cfgTimePulse | cfgTimePulseMsg,
+			expectedError: "error", // any error
+		},
+		{
+			name: "fixed position LLH latitude too large",
+			config: `[gps]
+config = true
+fixedPosLLH = [91, 0, 0]`,
+			speed:         9600,
+			cf:            cfgTimePulse | cfgTimePulseMsg,
+			expectedError: "error",
+		},
+		{
+			name: "fixed position LLH longitude too small",
+			config: `[gps]
+config = true
+fixedPosLLH = [0, -181, 0]`,
+			speed:         9600,
+			cf:            cfgTimePulse | cfgTimePulseMsg,
+			expectedError: "error",
+		},
+		{
+			name: "fixed position LLH height too large",
+			config: `[gps]
+config = true
+fixedPosLLH = [0, 0, 10001]`,
+			speed:         9600,
+			cf:            cfgTimePulse | cfgTimePulseMsg,
+			expectedError: "error",
 		},
 		{
 			name: "fixed position with resurvey and survey params",
@@ -190,7 +281,7 @@ minElevation = 5.0`,
 			},
 		},
 		{
-			name:          "min elevation out of range",
+			name: "min elevation out of range",
 			config: `[gps]
 config = true
 minElevation = 100`,
@@ -273,7 +364,7 @@ mobile = true`,
 				target.Props.SetMode(gpsprot.Mode{Static: false})
 				target.Opts.Survey.MinDur = 2000 * time.Second   // default
 				target.Opts.Survey.AccLimit = gpsprot.Meters(20) // default
-				target.Opts.PVTMsg = gpsevent.NoTimePulsePVTMsgFlags
+				target.Opts.PVTMsg = gpsprot.PVTMsgTimingSerialUTC
 			},
 		},
 		{
@@ -289,7 +380,7 @@ surveyAcc = 8`,
 				target.Opts.Survey.MinDur = 1800 * time.Second
 				target.Opts.Survey.AccLimit = gpsprot.Meters(8)
 				target.Opts.SetStatic = true
-				target.Opts.PVTMsg = gpsevent.NoTimePulsePVTMsgFlags
+				target.Opts.PVTMsg = gpsprot.PVTMsgTimingSerialUTC
 			},
 		},
 		{
@@ -304,13 +395,13 @@ surveyAcc = 8`,
 				target.Opts.Survey.MinDur = 1800 * time.Second
 				target.Opts.Survey.AccLimit = gpsprot.Meters(8)
 				target.Opts.SetStatic = true
-				target.Opts.PVTMsg = gpsevent.NoTimePulsePVTMsgFlags
+				target.Opts.PVTMsg = gpsprot.PVTMsgTimingSerialUTC
 			},
 		},
 		{
-			name:                 "no config without time pulse",
-			config:               `[gps]`,
-			speed: 9600,
+			name:   "no config without time pulse",
+			config: `[gps]`,
+			speed:  9600,
 			modifyTarget: func(target *gpsprot.ConfigTarget) {
 				// When config=false, target should be empty except for NMEAMsg
 				*target = gpsprot.ConfigTarget{}
@@ -377,47 +468,211 @@ func TestSatellitesInfo(t *testing.T) {
 }
 
 func TestRTCMOutput(t *testing.T) {
-	cfgStr := `[gps]
-	rtcmOutput = true`
-	r := strings.NewReader(cfgStr)
-	cfg, err := readConfig(r)
-	if err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name       string
+		config     string
+		cf         cfgFeatures
+		wantOutput bool
+		outputSet  bool
+		wantPrefer bool
+		preferSet  bool
+		wantSet    bool
+		wantMsg    gpsprot.RTCMMsgFlags
+	}{
+		{
+			name: "true uses MSM4 auto by default",
+			config: `[gps]
+rtcmOutput = true`,
+			outputSet:  true,
+			wantOutput: true,
+			wantSet:    true,
+			wantMsg:    gpsprot.RTCMMsgAuto,
+		},
+		{
+			name: "auto detects MSM7-to-MSM4 conversion",
+			config: `[gps]
+rtcmOutput = true`,
+			cf:         cfgRTCMMSM7To4,
+			outputSet:  true,
+			wantOutput: true,
+			wantSet:    true,
+			wantMsg:    gpsprot.RTCMMsgAutoMSM7,
+		},
+		{
+			name: "explicit prefer true",
+			config: `[gps]
+rtcmOutput = true
+rtcmPreferMSM7 = true`,
+			outputSet:  true,
+			wantOutput: true,
+			preferSet:  true,
+			wantPrefer: true,
+			wantSet:    true,
+			wantMsg:    gpsprot.RTCMMsgAutoMSM7,
+		},
+		{
+			name: "explicit prefer false overrides conversion",
+			config: `[gps]
+rtcmOutput = true
+rtcmPreferMSM7 = false`,
+			cf:         cfgRTCMMSM7To4,
+			outputSet:  true,
+			wantOutput: true,
+			preferSet:  true,
+			wantSet:    true,
+			wantMsg:    gpsprot.RTCMMsgAuto,
+		},
+		{
+			name: "false disables RTCM",
+			config: `[gps]
+rtcmOutput = false
+rtcmPreferMSM7 = true`,
+			outputSet:  true,
+			preferSet:  true,
+			wantPrefer: true,
+			wantSet:    true,
+			wantMsg:    gpsprot.RTCMMsgNone,
+		},
+		{
+			name: "unset output leaves RTCM unset",
+			config: `[gps]
+rtcmPreferMSM7 = true`,
+			preferSet:  true,
+			wantPrefer: true,
+		},
 	}
-	if cfg.GPS.RTCMOutput == nil || *cfg.GPS.RTCMOutput != true {
-		t.Errorf("RTCMOutput: got %v, want true", cfg.GPS.RTCMOutput)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader(tt.config))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (cfg.GPS.RTCMOutput != nil) != tt.outputSet {
+				t.Fatalf("RTCMOutput set = %t, want %t", cfg.GPS.RTCMOutput != nil, tt.outputSet)
+			}
+			if tt.outputSet && *cfg.GPS.RTCMOutput != tt.wantOutput {
+				t.Errorf("RTCMOutput: got %v, want %v", *cfg.GPS.RTCMOutput, tt.wantOutput)
+			}
+			if (cfg.GPS.RTCMPreferMSM7 != nil) != tt.preferSet {
+				t.Fatalf("RTCMPreferMSM7 set = %t, want %t", cfg.GPS.RTCMPreferMSM7 != nil, tt.preferSet)
+			}
+			if tt.preferSet && *cfg.GPS.RTCMPreferMSM7 != tt.wantPrefer {
+				t.Errorf("RTCMPreferMSM7: got %v, want %v", *cfg.GPS.RTCMPreferMSM7, tt.wantPrefer)
+			}
+			opt := cfg.GPS.rtcmMsg(tt.cf)
+			if opt.IsSet() != tt.wantSet {
+				t.Fatalf("rtcmMsg set = %t, want %t", opt.IsSet(), tt.wantSet)
+			}
+			if tt.wantSet && opt.Get() != tt.wantMsg {
+				t.Errorf("rtcmMsg: got %v, want %v", opt.Get(), tt.wantMsg)
+			}
+		})
 	}
-	opt := cfg.GPS.rtcmMsg()
-	if opt.Get() != gpsprot.RTCMMsgAuto {
-		t.Errorf("rtcmMsg: got %v, want RTCMMsgAuto", opt.Get())
-	}
+}
 
-	cfgStr = `[gps]
-	rtcmOutput = false`
-	r = strings.NewReader(cfgStr)
-	cfg, err = readConfig(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.GPS.RTCMOutput == nil || *cfg.GPS.RTCMOutput != false {
-		t.Errorf("RTCMOutput: got %v, want false", cfg.GPS.RTCMOutput)
-	}
-	opt = cfg.GPS.rtcmMsg()
-	if opt.Get() != gpsprot.RTCMMsgNone {
-		t.Errorf("rtcmMsg: got %v, want RTCMMsgNone", opt.Get())
-	}
+func TestRTCMOutputAutoMSM7FromConfigTarget(t *testing.T) {
+	tests := []struct {
+		name   string
+		config string
+		set    bool
+		want   gpsprot.RTCMMsgFlags
+	}{
+		{
+			name: "caster mountpoint conversion",
+			config: `[gps]
+config = true
+rtcmOutput = true
 
-	cfgStr = `[gps]`
-	r = strings.NewReader(cfgStr)
-	cfg, err = readConfig(r)
-	if err != nil {
-		t.Fatal(err)
+[[ntrip.mountpoint]]
+name = "MSM4"
+msm7to4 = true`,
+			set:  true,
+			want: gpsprot.RTCMMsgAutoMSM7,
+		},
+		{
+			name: "stream push conversion",
+			config: `[gps]
+config = true
+rtcmOutput = true
+
+[[stream.push]]
+ntrip.address = "caster.example.com:2101"
+ntrip.mountpoint = "MSM4"
+ntrip.password = "secret"
+ntrip.msm7to4 = true`,
+			set:  true,
+			want: gpsprot.RTCMMsgAutoMSM7,
+		},
+		{
+			name: "explicit false keeps old default",
+			config: `[gps]
+config = true
+rtcmOutput = true
+rtcmPreferMSM7 = false
+
+[[ntrip.mountpoint]]
+name = "MSM4"
+msm7to4 = true`,
+			set:  true,
+			want: gpsprot.RTCMMsgAuto,
+		},
+		{
+			name: "no conversion keeps old default",
+			config: `[gps]
+config = true
+rtcmOutput = true
+
+[[ntrip.mountpoint]]
+name = "MSM7"`,
+			set:  true,
+			want: gpsprot.RTCMMsgAuto,
+		},
+		{
+			name: "prefer true ignored when output false",
+			config: `[gps]
+config = true
+rtcmOutput = false
+rtcmPreferMSM7 = true
+
+[[ntrip.mountpoint]]
+name = "MSM4"
+msm7to4 = true`,
+			set:  true,
+			want: gpsprot.RTCMMsgNone,
+		},
+		{
+			name: "prefer true ignored when output unset",
+			config: `[gps]
+config = true
+rtcmPreferMSM7 = true
+
+[[ntrip.mountpoint]]
+name = "MSM4"
+msm7to4 = true`,
+		},
 	}
-	if cfg.GPS.RTCMOutput != nil {
-		t.Errorf("RTCMOutput: got %v, want nil", cfg.GPS.RTCMOutput)
-	}
-	opt = cfg.GPS.rtcmMsg()
-	if opt.IsSet() {
-		t.Errorf("rtcmMsg: got set option, want unset option")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader(tt.config))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := cfg.Stream.Validate(); err != nil {
+				t.Fatalf("Stream.Validate: %v", err)
+			}
+			target, err := cfg.GPS.target(38400, configFeatures(cfg, false))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if target.Opts.RTCMMsg.IsSet() != tt.set {
+				t.Fatalf("RTCMMsg set = %t, want %t", target.Opts.RTCMMsg.IsSet(), tt.set)
+			}
+			if !tt.set {
+				return
+			}
+			if got := target.Opts.RTCMMsg.Get(); got != tt.want {
+				t.Errorf("RTCMMsg = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
