@@ -25,7 +25,8 @@ type testReceiver struct {
 	silent     map[casbin.MsgID]bool // requests not answered at all
 	pending    [][]byte              // delivered before the next request's responses
 	saves      []casbin.CfgCfg
-	saveBaud   uint32 // newBaud at the time of the first save
+	saveBaud   uint32        // newBaud at the time of the first save
+	switchLag  time.Duration // simulated host-side gap after a speed change (default 200ms)
 	resets     []casbin.CfgRst
 	tp         *casbin.CfgTP // nil: CFG-TP unsupported (poll gets NAK)
 	tm5        *casbin.CfgTMode
@@ -281,7 +282,11 @@ func configure(t *testing.T, cp *ConfigProtocol, rcvr *testReceiver, target *gps
 			cfg.Request(action.Index).SetSentTime(t0)
 			if action.Speed != 0 {
 				// the next responses arrive after the host switched speed
-				t0 = t0.Add(200 * time.Millisecond)
+				lag := 200 * time.Millisecond
+				if rcvr.switchLag != 0 {
+					lag = rcvr.switchLag
+				}
+				t0 = t0.Add(lag)
 			}
 			for _, resp := range append(rcvr.takePending(), rcvr.respond(action.Packet)...) {
 				t0 = t0.Add(5 * time.Millisecond)
@@ -1131,9 +1136,18 @@ func TestBaudChange(t *testing.T) {
 	tests := []struct {
 		name      string
 		silentPrt bool
+		switchLag time.Duration
 	}{
 		{name: "ACK arrives at new speed and is matched"},
 		{name: "no ACK, confirm poll traffic confirms", silentPrt: true},
+		{
+			// The garbled-ACK case on a quiet line: the poll answers
+			// within the unsolicited-traffic exclusion window, but it
+			// was solicited at the new rate, so it must confirm.
+			name:      "no ACK, poll answers inside the exclusion window",
+			silentPrt: true,
+			switchLag: 20 * time.Millisecond,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1142,6 +1156,7 @@ func TestBaudChange(t *testing.T) {
 				ports:     append([]casbin.CfgPrt{}, ports...),
 				rate:      &casbin.CfgRate{FixIntervalMs: 1000, FixRateHz: 1},
 				silentPrt: tc.silentPrt,
+				switchLag: tc.switchLag,
 			}
 			cp := probe(t, rcvr)
 			target := gpsprot.NewConfigTarget()

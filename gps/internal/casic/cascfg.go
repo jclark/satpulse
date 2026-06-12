@@ -286,10 +286,14 @@ func (c *Configurator) addRstReq(startMode uint8) {
 // generateSpeedReqs generates the baud rate change. The set uses port
 // id 0xFF (the port in use) with the other port settings preserved
 // from the readback. The receiver switches speed immediately and sends
-// its ACK at the new rate, so the request is followed by a CFG-RATE
-// poll whose answer guarantees traffic at the new speed for
-// confirmation; only then does the NVM phase proceed, so a requested
-// save persists the new rate.
+// its ACK at the new rate, where the switch can garble it, so the
+// request is followed by a CFG-RATE poll sent after the host switched:
+// the poll is retried like any request, and because it is solicited at
+// the new rate, its answer confirms the speed change conclusively and
+// immediately (incidental traffic confirms too, but only after the
+// exclusion delay that rules out packets buffered from before the
+// switch). Only when the change is confirmed does the NVM phase
+// proceed, so a requested save persists the new rate.
 func (c *Configurator) generateSpeedReqs() {
 	baud, ok := c.target.Props.GetBaudRate()
 	if !ok {
@@ -301,7 +305,11 @@ func (c *Configurator) generateSpeedReqs() {
 	}
 	m := &casbin.CfgPrt{PortID: casbin.PortCurrent, ProtoMask: base.ProtoMask, Mode: base.Mode, BaudRate: baud}
 	c.speedReq = c.addMsg(m, casReq{speedAfter: int(baud)})
-	c.addPollReq(casbin.CfgRateID, nil)
+	c.addPollReq(casbin.CfgRateID, func(casbin.Msg) {
+		if c.speedReq.state == reqAwaitingAck {
+			c.speedReq.state = reqSucceeded
+		}
+	})
 }
 
 // basePort returns the polled port entry whose settings a port write
