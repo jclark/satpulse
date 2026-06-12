@@ -63,6 +63,12 @@ class Tool:
         run_dir.mkdir(parents=True, exist_ok=True)
         self.raw = (run_dir / "raw.jsonl").open("a", encoding="utf-8")
 
+    def speed(self) -> int | None:
+        """The serial speed of the connection, when one is in use."""
+        if "-s" in self.conn:
+            return int(self.conn[self.conn.index("-s") + 1])
+        return None
+
     def set_speed(self, bps: int) -> None:
         """Point subsequent invocations at a new serial speed."""
         if "-s" in self.conn:

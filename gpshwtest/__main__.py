@@ -153,7 +153,7 @@ def run(tool: Tool, baseline: Path | None, phc: tuple[str, int, int] | None,
         pr.probe_signals(initial, supported)
     if disruptive:
         print("probing serial speed", file=sys.stderr)
-        pr.probe_speed(initial)
+        pr.probe_speed(supports)
     final = pr.show_config("final-config")
     if final is not None and final != initial:
         pr.failures.append(f"receiver not left as found: initial {initial!r}, final {final!r}")

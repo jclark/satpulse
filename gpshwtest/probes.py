@@ -693,16 +693,18 @@ class ProbeRun:
             self.failures.append(
                 f"mode: restore to {mode!r} read back as {config_value(cfg, ('mode',))!r}")
 
-    def probe_speed(self, initial: dict[str, Any]) -> None:
+    def probe_speed(self, supports: list[str]) -> None:
         """Probe the serial speed property [disruptive]. The speed is a
         property like any other, so --speed with --save in one invocation
         must make the new rate both the running and the persisted rate;
-        --reload then restarts the configuration from NVM, proving
-        persistence when the receiver is still reachable at the new rate.
+        --reload then restarts the configuration from NVM, and the
+        receiver still being reachable at the new rate is the proof of
+        persistence (a receiver that cannot identify its active port
+        reports no baudRate, so the link itself is the readback).
         Recovery: the original rate is restored and saved at the end."""
-        orig = config_value(initial, ("baudRate",))
-        if not isinstance(orig, int) or orig <= 0:
-            return  # no UART speed reported: the property does not exist
+        orig = self.tool.speed()
+        if "speed" not in supports or orig is None:
+            return  # not configurable, or no UART speed in use
         alt = 38400 if orig != 38400 else 115200
         inv = self.tool.gps("set-speed", ["--speed", str(alt), "--save"])
         if inv.error is not None:
@@ -722,7 +724,7 @@ class ProbeRun:
         else:
             cfg = self.show_config("readback-speed")
             if cfg is not None:
-                back = config_value(cfg, ("baudRate",))
+                back = config_value(cfg, ("baudRate",)) or alt
                 if back != alt:
                     self.failures.append(
                         f"speed: saved {alt} but post-reload readback says {back!r}")
