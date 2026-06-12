@@ -63,6 +63,13 @@ class Tool:
         run_dir.mkdir(parents=True, exist_ok=True)
         self.raw = (run_dir / "raw.jsonl").open("a", encoding="utf-8")
 
+    def set_speed(self, bps: int) -> None:
+        """Point subsequent invocations at a new serial speed."""
+        if "-s" in self.conn:
+            self.conn[self.conn.index("-s") + 1] = str(bps)
+        else:
+            self.conn += ["-s", str(bps)]
+
     def gps(self, name: str, args: list[str], timeout: float = 90.0) -> Invocation:
         """Run satpulsetool gps with the given high-level args plus --json
         and a per-invocation packet log. Raises ToolFailure on timeout or

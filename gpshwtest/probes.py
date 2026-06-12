@@ -693,6 +693,54 @@ class ProbeRun:
             self.failures.append(
                 f"mode: restore to {mode!r} read back as {config_value(cfg, ('mode',))!r}")
 
+    def probe_speed(self, initial: dict[str, Any]) -> None:
+        """Probe the serial speed property [disruptive]. The speed is a
+        property like any other, so --speed with --save in one invocation
+        must make the new rate both the running and the persisted rate;
+        --reload then restarts the configuration from NVM, proving
+        persistence when the receiver is still reachable at the new rate.
+        Recovery: the original rate is restored and saved at the end."""
+        orig = config_value(initial, ("baudRate",))
+        if not isinstance(orig, int) or orig <= 0:
+            return  # no UART speed reported: the property does not exist
+        alt = 38400 if orig != 38400 else 115200
+        inv = self.tool.gps("set-speed", ["--speed", str(alt), "--save"])
+        if inv.error is not None:
+            if transient(inv.error):
+                self.failures.append(f"set-speed: {inv.error}")
+            else:
+                self.observations.append(Observation("speed", alt, inv.error, None, None))
+            return
+        reported = config_value(inv.config(), ("baudRate",))
+        self.tool.set_speed(alt)
+        if reported != alt:
+            self.failures.append(f"speed: reported {reported!r}, requested {alt}")
+        back: Value = None
+        rel = self.tool.gps("speed-reload", ["--reload"])
+        if rel.error is not None:
+            self.failures.append(f"speed: reload at {alt} failed: {rel.error}")
+        else:
+            cfg = self.show_config("readback-speed")
+            if cfg is not None:
+                back = config_value(cfg, ("baudRate",))
+                if back != alt:
+                    self.failures.append(
+                        f"speed: saved {alt} but post-reload readback says {back!r}")
+        self.observations.append(Observation("speed", alt, None, reported, back))
+        inv = self.tool.gps("restore-speed", ["--speed", str(orig), "--save"])
+        if inv.error is not None:
+            self.failures.append(f"speed: restore to {orig!r} failed: {inv.error}")
+            self.tool.set_speed(orig)  # the receiver may have reverted; rediscover
+            if self.show_config("speed-recover") is None:
+                self.failures.append(f"speed: receiver unreachable at {orig!r} after failed restore")
+            return
+        self.tool.set_speed(orig)
+        cfg = self.show_config("verify-restore-speed")
+        if cfg is not None and config_value(cfg, ("baudRate",)) != orig:
+            self.failures.append(
+                f"speed: restore to {orig!r} read back as "
+                f"{config_value(cfg, ('baudRate',))!r}")
+
     def restore(self, p: ScalarProp, initial: dict[str, Any]) -> None:
         """Set p back to its value in the initial configuration."""
         v = config_value(initial, p.path)
