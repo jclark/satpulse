@@ -1,8 +1,7 @@
 // Package casmsg builds CASIC proprietary PCAS NMEA sentences and
 // interprets their GPTXT responses. The binary CASIC protocol is in
-// gps/lib/casbin; PCAS text commands matter because some operations
-// (quieting NMEA output, querying the version of V5 firmware that does
-// not answer MON-VER) are only available, or only reliable, as text.
+// gps/lib/casbin; the configurator uses PCAS only to query the version
+// of V5 firmware, which does not answer the binary MON-VER poll.
 package casmsg
 
 import (
@@ -16,27 +15,6 @@ import (
 // complete NMEA sentence with checksum and CR/LF.
 func Sentence(payload string) string {
 	return fmt.Sprintf("$%s*%02X\r\n", payload, nmeamsg.Checksum([]byte(payload)))
-}
-
-// OutputRates returns the PCAS03 command setting the output rates of
-// the standard NMEA sentences (in fixes per sentence, 0=off). The
-// remaining outputs (ANT/TXT, DHV, LPS, UTC, GST, TIM) are turned off,
-// matching QuietAll. The receiver applies a PCAS03 command
-// asynchronously, taking up to about a second, but successive PCAS03
-// commands are applied in order; rates set via CFG-MSG within that
-// window can be overwritten by an in-flight PCAS03 (observed on the
-// ATGM332D-F8N).
-func OutputRates(gga, gll, gsa, gsv, rmc, vtg, zda int) string {
-	return Sentence(fmt.Sprintf("PCAS03,%d,%d,%d,%d,%d,%d,%d,0,0,0,,,0,0,,,,0",
-		gga, gll, gsa, gsv, rmc, vtg, zda))
-}
-
-// QuietAll returns the PCAS03 command that disables all NMEA output.
-// The setting is RAM-only: the receiver reverts on restart or reload.
-// On a V5 receiver at its default 9600 baud this is the only way to
-// keep the line from saturating (see CONTEXT in gps/internal/casic).
-func QuietAll() string {
-	return OutputRates(0, 0, 0, 0, 0, 0, 0)
 }
 
 // PCAS06 query info values. The reply is a GPTXT sentence whose text

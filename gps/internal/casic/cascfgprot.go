@@ -6,7 +6,6 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/lib/casbin"
-	"github.com/jclark/satpulse/gps/lib/casmsg"
 )
 
 // Vendor is the receiver vendor name reported in ReceiverInfo.
@@ -92,18 +91,18 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 	return nil
 }
 
-// ProbePacket returns the PCAS03 quiet-all-NMEA command followed by a
-// CFG-MSG poll of MON-VER. A V5 receiver at its default 9600 baud
-// cannot carry the default NMEA load: its TX queue runs several
-// seconds deep and probe responses may never emerge. Quieting first
-// bounds the response delay to the queue drain time (measured ~6 s
-// worst case); non-CASIC receivers ignore the sentence. The cost is
-// that probing a CASIC receiver turns off its NMEA output until
-// reconfigured or restarted.
+// ProbePacket returns a CFG-MSG poll of MON-VER. A receiver on a
+// healthy line answers within tens of milliseconds; probing relies on
+// repeated probes rather than on changing receiver state. A V5
+// receiver at its default 9600 baud with the default NMEA load
+// saturates its line, delaying responses by about six seconds or
+// losing them entirely; detection there is best-effort, and reliable
+// configuration needs the baud rate persistently raised first (see
+// the receiver notes).
 func (cp *ConfigProtocol) ProbePacket() []byte {
 	cp.pollsPending++
 	pkt, _ := casbin.Serialize(&casbin.CfgMsg{Target: casbin.MonVerID, Rate: casbin.PollRate})
-	return append([]byte(casmsg.QuietAll()), pkt...)
+	return pkt
 }
 
 // ProbeOK reports whether a CASIC receiver has been identified.

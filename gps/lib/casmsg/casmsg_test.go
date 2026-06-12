@@ -9,7 +9,6 @@ func TestSentences(t *testing.T) {
 		expect string
 	}{
 		// Expected strings verified on ATGM332D-5N71 hardware.
-		{"quiet all", QuietAll(), "$PCAS03,0,0,0,0,0,0,0,0,0,0,,,0,0,,,,0*32\r\n"},
 		{"query version", Query(QueryFirmwareVersion), "$PCAS06,0*1B\r\n"},
 		{"query mode", Query(QueryWorkingMode), "$PCAS06,2*19\r\n"},
 	}

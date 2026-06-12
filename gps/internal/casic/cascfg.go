@@ -9,14 +9,13 @@ import (
 	"github.com/jclark/satpulse/gps/lib/casbin"
 )
 
-// maxResponseDelay is how long to wait for the ACK/NAK of a request.
-// On a quiet line CASIC receivers answer within tens of milliseconds,
-// but a V5 at 9600 with full NMEA output saturates its line and the
-// ACK can queue behind about six seconds of pending output (the
-// receiver's transmit queue, measured on the ATGM332D-5N71). Waiting
-// stops as soon as the response arrives, so the long limit costs
-// nothing on a healthy line.
-const maxResponseDelay = 8 * time.Second
+// maxResponseDelay is how long one attempt waits for the ACK/NAK of a
+// request. On a healthy line CASIC receivers answer within tens of
+// milliseconds. A V5 at 9600 with full NMEA output saturates its line
+// and queues responses for seconds; patience for that comes from the
+// director's retries, not from a long per-attempt wait - a late ACK
+// still matches the retried request, and a healthy line fails fast.
+const maxResponseDelay = 2 * time.Second
 
 // speedChangeDelay is how long after sending a baud change until a
 // valid packet counts as confirmation. The host switches speed right
