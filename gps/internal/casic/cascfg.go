@@ -134,7 +134,9 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc
 	if c.family == familyV6 {
-		flags |= gpsprot.ConfigSupportBand | gpsprot.ConfigSupportRaw
+		flags |= gpsprot.ConfigSupportBand | gpsprot.ConfigSupportRaw |
+			gpsprot.ConfigSupportSurveyMsg |
+			gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7
 	}
 	return flags
 }
@@ -162,7 +164,8 @@ func (c *Configurator) generateQueryReqs() {
 	c.generateTModeQuery()
 	c.generateSignalQuery()
 	c.generateMinElevQuery()
-	if _, ok := c.target.Props.GetBaudRate(); ok {
+	_, wantBaud := c.target.Props.GetBaudRate()
+	if wantBaud || c.target.Opts.RTCMMsg.IsSet() {
 		c.addPollReq(casbin.CfgPrtID, func(m casbin.Msg) {
 			if prt, ok := m.(*casbin.CfgPrt); ok {
 				c.ports = append(c.ports, *prt)

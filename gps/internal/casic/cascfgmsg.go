@@ -20,6 +20,48 @@ func (c *Configurator) generateMsgReqs() {
 	if opts.RawMsg.IsSet() {
 		c.generateRawReqs(opts.RawMsg.Get())
 	}
+	if opts.RTCMMsg.IsSet() {
+		c.generateRTCMReqs(opts.RTCMMsg.Get())
+	}
+}
+
+// generateRTCMReqs configures RTCM output on V6: CFG-RTCM selects the
+// message types and MSM version, and the port's protocol mask gates
+// RTCM output as a whole. There is no GLONASS MSM enable in CFG-RTCM,
+// so GLONASS corrections are not available. Whether a given unit
+// actually emits RTCM is its own affair: the enables are acknowledged
+// and emission is checked by observation, like raw output.
+func (c *Configurator) generateRTCMReqs(flags gpsprot.RTCMMsgFlags) {
+	if c.family != familyV6 {
+		return
+	}
+	var en uint32
+	ver := uint8(4)
+	if flags&(gpsprot.RTCMMsgMSM4|gpsprot.RTCMMsgMSM7) != 0 {
+		en |= casbin.RtcmEnGPSMSM | casbin.RtcmEnGALMSM | casbin.RtcmEnQZSSMSM | casbin.RtcmEnBDSMSM
+		if flags&gpsprot.RTCMMsgMSM7 != 0 {
+			ver = 7
+		}
+	}
+	if flags&gpsprot.RTCMMsgARP != 0 {
+		en |= casbin.RtcmEn1005
+	}
+	c.addReqNakOK(&casbin.CfgRtcm{MsgEnable: en, MsmVer: ver}, nil)
+	if len(c.ports) == 0 {
+		return
+	}
+	base := c.ports[0]
+	for _, p := range c.ports {
+		if p.PortID == 0 {
+			base = p
+		}
+	}
+	mask := base.ProtoMask &^ uint8(casbin.PrtProtoRTCMOut)
+	if en != 0 {
+		mask = base.ProtoMask | casbin.PrtProtoRTCMOut
+	}
+	c.addReqNakOK(&casbin.CfgPrt{PortID: casbin.PortCurrent, ProtoMask: mask,
+		Mode: base.Mode, BaudRate: base.BaudRate}, nil)
 }
 
 // generateRawReqs configures raw data output on V6: RXM2-MEASX carries
@@ -76,11 +118,10 @@ func (c *Configurator) generateSatsReqs(flags gpsprot.SatsMsgFlags) {
 // NAV-SOL/NAV2-SOL carries ECEF pos+vel, TAI time, and fix quality;
 // NAV-PV/NAV2-PVH carries geodetic pos+vel; NAV-TIMEUTC/NAV2-TIMEUTC
 // carries UTC time; NAV-DOP/NAV2-DOP the full DOP set; TIM-TP the time
-// of the next pulse; TIM2-TIMEGPS (V6 only) carries leap second
-// information. Epoch and survey information have no CASIC messages to
-// enable, and V5 firmware never emits its leap-carrying messages (the
-// MSG class is acknowledged but not implemented). Without the off flag
-// the request is incremental: unneeded messages are left alone.
+// of the next pulse; TIM2-LS (V6) and MSG-GPSUTC (V5) carry leap
+// second events; TIM2-TIMEPOS (V6 only) carries survey progress.
+// Epoch markers have no CASIC message. Without the off flag the
+// request is incremental: unneeded messages are left alone.
 func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 	pv, sol, timeUTC, dop := casbin.NavPvID, casbin.NavSolID, casbin.NavTimeUTCID, casbin.NavDopID
 	if c.family == familyV6 {
@@ -118,11 +159,21 @@ func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 			c.addReqNakOK(&casbin.CfgMsg{Target: m.mid, Rate: 0}, nil)
 		}
 	}
+	leap, survey := casbin.MsgGPSUTCID, casbin.MsgID(0)
 	if c.family == familyV6 {
-		if flags&gpsprot.PVTMsgLeapSecond != 0 {
-			c.addReqNakOK(&casbin.CfgMsg{Target: casbin.Tim2TimeGPSID, Rate: 1}, nil)
+		leap, survey = casbin.Tim2LsID, casbin.Tim2TimePosID
+	}
+	for _, m := range []struct {
+		mid  casbin.MsgID
+		flag gpsprot.PVTMsgFlags
+	}{{leap, gpsprot.PVTMsgLeapSecond}, {survey, gpsprot.PVTMsgSurvey}} {
+		if m.mid == 0 {
+			continue
+		}
+		if flags&m.flag != 0 {
+			c.addReqNakOK(&casbin.CfgMsg{Target: m.mid, Rate: 1}, nil)
 		} else if off {
-			c.addReqNakOK(&casbin.CfgMsg{Target: casbin.Tim2TimeGPSID, Rate: 0}, nil)
+			c.addReqNakOK(&casbin.CfgMsg{Target: m.mid, Rate: 0}, nil)
 		}
 	}
 	c.generateTimTPReqs(tp, off)

@@ -469,12 +469,12 @@ func TestPVTOut(t *testing.T) {
 			monVer: v6,
 			flags:  gpsprot.PVTMsgTimingPTP | gpsprot.PVTMsgOff,
 			// tp+after+TAI: SOL for TAI time, TIM-TP for the pulse;
-			// quality adds DOP; leap adds TIM2-TIMEGPS; PVH and
-			// TIMEUTC turned off.
+			// quality adds DOP; leap adds TIM2-LS; survey adds
+			// TIM2-TIMEPOS; PVH and TIMEUTC turned off.
 			expect: map[casbin.MsgID]uint16{
 				casbin.Nav2SolID: 1, casbin.TimTPID: 1, casbin.Nav2DopID: 1,
-				casbin.Tim2TimeGPSID: 1,
-				casbin.Nav2PvhID:     0, casbin.Nav2TimeUTCID: 0,
+				casbin.Tim2LsID: 1, casbin.Tim2TimePosID: 1,
+				casbin.Nav2PvhID: 0, casbin.Nav2TimeUTCID: 0,
 			},
 		},
 		{
@@ -484,15 +484,21 @@ func TestPVTOut(t *testing.T) {
 			expect: map[casbin.MsgID]uint16{casbin.Nav2SolID: 1},
 		},
 		{
-			name:   "V6 leap enables TIM2-TIMEGPS",
+			name:   "V6 leap enables TIM2-LS",
 			monVer: v6,
 			flags:  gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgTimePulse,
-			expect: map[casbin.MsgID]uint16{casbin.Tim2TimeGPSID: 1, casbin.TimTPID: 1},
+			expect: map[casbin.MsgID]uint16{casbin.Tim2LsID: 1, casbin.TimTPID: 1},
 		},
 		{
-			name:   "V5 leap enables nothing",
+			name:   "V5 leap enables MSG-GPSUTC",
 			flags:  gpsprot.PVTMsgLeapSecond,
-			expect: nil,
+			expect: map[casbin.MsgID]uint16{casbin.MsgGPSUTCID: 1},
+		},
+		{
+			name:   "V6 survey enables TIM2-TIMEPOS",
+			monVer: v6,
+			flags:  gpsprot.PVTMsgSurvey,
+			expect: map[casbin.MsgID]uint16{casbin.Tim2TimePosID: 1},
 		},
 	}
 	for _, tc := range tests {

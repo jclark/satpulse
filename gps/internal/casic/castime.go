@@ -228,3 +228,90 @@ func nav2TimeSrcToGNSS(id casbin.Nav2TimeSrc) gpsprot.GNSS {
 	}
 	return 0
 }
+
+// leapTim2Ls extracts a LeapSecondMsg from TIM2-LS. The week of the
+// event carries only the bottom 8 bits, resolved against the read time
+// like the UBX configurator resolves UBX-NAV-TIMELS: take the
+// candidate at or before now and walk back in 256-week steps until the
+// date lands on the last day of a quarter, where leap seconds occur.
+func leapTim2Ls(m *casbin.Tim2Ls, tRead time.Time) *gpsprot.LeapSecondMsg {
+	if m.RaimType != casbin.Tim2RaimLsNormal {
+		return nil
+	}
+	utcOffBefore := int16(m.Dtls) + ptime.TAIMinusGPS
+	utcOffAfter := int16(m.Dtlsf) + ptime.TAIMinusGPS
+	date, ok := leapDate8BitWeek(m.Wnlsf, m.Dn, tRead)
+	if !ok {
+		return nil
+	}
+	return &gpsprot.LeapSecondMsg{
+		LeapSecond: ptime.LeapSecondOnDate(date, utcOffBefore, utcOffAfter),
+		GNSS:       gnssIDToGNSS(m.GNSSID),
+	}
+}
+
+// leapMsgUTC extracts a LeapSecondMsg from the V5 MSG-GPSUTC and
+// MSG-BDSUTC navigation-data messages, which share the leap second
+// fields. dnBase is 1 for GPS (day numbers 1-7) and 0 for BeiDou.
+func leapMsgUTC(dtls, dtlsf int8, wnlsf, dn uint8, valid casbin.MsgUTCValid,
+	gnss gpsprot.GNSS, taiMinusGNSS int16, dnBase uint8, tRead time.Time) *gpsprot.LeapSecondMsg {
+	if valid != casbin.MsgUTCValidOK {
+		return nil
+	}
+	date, ok := leapDate8BitWeek(wnlsf, dn-dnBase+1, tRead)
+	if !ok {
+		return nil
+	}
+	utcOffBefore := int16(dtls) + taiMinusGNSS
+	utcOffAfter := int16(dtlsf) + taiMinusGNSS
+	return &gpsprot.LeapSecondMsg{
+		LeapSecond: ptime.LeapSecondOnDate(date, utcOffBefore, utcOffAfter),
+		GNSS:       gnss,
+	}
+}
+
+// leapDate8BitWeek resolves a leap second event date from an 8-bit
+// week number and a 1-based day number. The candidate week at or
+// before the week of tRead is tried first, then earlier 256-week
+// epochs, accepting the first date on the last day of a quarter.
+func leapDate8BitWeek(wnlsf, dn uint8, tRead time.Time) (time.Time, bool) {
+	if dn < 1 || dn > 7 {
+		return time.Time{}, false
+	}
+	nowWeek := int(tRead.Sub(ptime.GPSDate(0, 0)) / (7 * 24 * time.Hour))
+	week := nowWeek - int(uint8(nowWeek)-wnlsf)
+	if week > nowWeek {
+		week -= 0x100
+	}
+	for i := 0; i <= 2; i++ {
+		t := ptime.GPSDate(uint16(week), time.Weekday(dn-1))
+		if isLastDayOfQuarter(t) {
+			return t, true
+		}
+		week -= 0x100
+	}
+	return time.Time{}, false
+}
+
+func isLastDayOfQuarter(t time.Time) bool {
+	return t.AddDate(0, 0, 1).Day() == 1 && t.Month()%3 == 0
+}
+
+// surveyTim2TimePos converts TIM2-TIMEPOS to a SurveyMsg. The protocol
+// reports the survey running time and current accuracy but no
+// observation count; position validity flag 15 means the timing
+// position is fixed (survey complete or position set).
+func surveyTim2TimePos(m *casbin.Tim2TimePos) *gpsprot.SurveyMsg {
+	sv := &gpsprot.SurveyMsg{
+		Position: gpsprot.Point3D{
+			gpsprot.Meters(m.XTim),
+			gpsprot.Meters(m.YTim),
+			gpsprot.Meters(m.ZTim),
+		},
+		Accuracy:   gpsprot.Meters(float64(m.SurPacc)),
+		ObsTime:    gpsprot.Duration(time.Duration(m.SurTimer) * time.Second),
+		Valid:      m.FixFlag == casbin.PVTTimingFixed,
+		InProgress: m.FixFlag != casbin.PVTTimingFixed && m.SurTimer > 0,
+	}
+	return sv
+}

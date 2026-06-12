@@ -34,6 +34,7 @@ const (
 	PrtProtoTextIn    = 0x02
 	PrtProtoBinaryOut = 0x10
 	PrtProtoTextOut   = 0x20
+	PrtProtoRTCMOut   = 0x80 // V6 only
 )
 
 // CfgRate is CFG-RATE (0x06 0x04) - navigation rate (4 bytes).
@@ -261,6 +262,34 @@ type CfgNavLimit struct {
 
 func (m *CfgNavLimit) ID() MsgID { return CfgNavLimID }
 
+// CfgRtcm is CFG-RTCM (0x06 0x14) - V6 RTCM output configuration
+// (16 bytes). RTCM output additionally requires the RTCM bit in the
+// port's protocol mask.
+type CfgRtcm struct {
+	MsgEnable uint32 // see RtcmEn* bits
+	MsmVer    uint8  // MSM version: 4, 5, 6 or 7
+	Res       uint8
+	Res2      uint16
+	Res3      uint32
+	Res4      uint32
+}
+
+func (m *CfgRtcm) ID() MsgID { return CfgRtcmID }
+
+// CfgRtcm.MsgEnable bits.
+const (
+	RtcmEn1005    = 1 << 0  // station ARP
+	RtcmEnGPSEph  = 1 << 2  // 1019
+	RtcmEnBDSEph  = 1 << 3  // 1042
+	RtcmEnQZSSEph = 1 << 4  // 1044
+	RtcmEnGALFNav = 1 << 5  // 1045
+	RtcmEnGALINav = 1 << 6  // 1046
+	RtcmEnGPSMSM  = 1 << 13 // 107x
+	RtcmEnGALMSM  = 1 << 17 // 109x
+	RtcmEnQZSSMSM = 1 << 19 // 111x
+	RtcmEnBDSMSM  = 1 << 21 // 112x
+)
+
 // CfgTMode2Mode selects the timing mode.
 type CfgTMode2Mode uint8
 
@@ -283,16 +312,16 @@ const (
 
 // CfgTMode2 is CFG-TMODE2 (0x06 0x16) - timing mode configuration (28 bytes)
 type CfgTMode2 struct {
-	TimFixMode CfgTMode2Mode // 0=realtime, 1=survey, 2=fixed
-	BandMode   CfgTMode2Band // signal band selection
-	AntDetMode uint8         // 0=internal, 1=external pin
-	TSrcMode   uint8         // 0-3=force single sys, 4-7=priority sys
-	XFixed     int32         // 0.01 m, ECEF X
-	YFixed     int32         // 0.01 m, ECEF Y
-	ZFixed     int32         // 0.01 m, ECEF Z
-	FixedPacc  uint32        // mm, position accuracy
-	SvinMinDur uint32        // s, min survey-in duration
-	SvinPaccLim uint32       // mm, survey-in accuracy limit
+	TimFixMode  CfgTMode2Mode // 0=realtime, 1=survey, 2=fixed
+	BandMode    CfgTMode2Band // signal band selection
+	AntDetMode  uint8         // 0=internal, 1=external pin
+	TSrcMode    uint8         // 0-3=force single sys, 4-7=priority sys
+	XFixed      int32         // 0.01 m, ECEF X
+	YFixed      int32         // 0.01 m, ECEF Y
+	ZFixed      int32         // 0.01 m, ECEF Z
+	FixedPacc   uint32        // mm, position accuracy
+	SvinMinDur  uint32        // s, min survey-in duration
+	SvinPaccLim uint32        // mm, survey-in accuracy limit
 }
 
 func (m *CfgTMode2) ID() MsgID { return CfgTMode2ID }
@@ -320,5 +349,6 @@ func init() {
 	regMsg[CfgNavBand]("NAVBAND")
 	regMsg[CfgNmea]("NMEA")
 	regMsg[CfgNavLimit]("NAVLIMIT")
+	regMsg[CfgRtcm]("RTCM")
 	regMsg[CfgTMode2]("TMODE2")
 }

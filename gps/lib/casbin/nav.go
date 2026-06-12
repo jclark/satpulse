@@ -29,26 +29,26 @@ func (m *NavRunTime) NavEpoch() uint32 {
 // NavSol is NAV-SOL (0x01 0x02) - reduced PVT navigation information (72 bytes)
 type NavSol struct {
 	NavRunTime
-	PosValid  NavPosValid
-	VelValid  NavVelValid
-	TimeSrc   GNSSID
-	System    NavSystem
-	NumSV     uint8
-	NumSVGPS  uint8
-	NumSVBDS  uint8
-	NumSVGLN  uint8
-	_         uint16 // reserved
-	Week      uint16
-	TOW       float64 // seconds
-	ECEFX     float64 // meters
-	ECEFY     float64 // meters
-	ECEFZ     float64 // meters
-	PAcc      float32 // m², variance of 3D position
-	ECEFVX    float32 // m/s
-	ECEFVY    float32 // m/s
-	ECEFVZ    float32 // m/s
-	SAcc      float32 // (m/s)², variance of 3D velocity
-	PDOP      float32
+	PosValid NavPosValid
+	VelValid NavVelValid
+	TimeSrc  GNSSID
+	System   NavSystem
+	NumSV    uint8
+	NumSVGPS uint8
+	NumSVBDS uint8
+	NumSVGLN uint8
+	_        uint16 // reserved
+	Week     uint16
+	TOW      float64 // seconds
+	ECEFX    float64 // meters
+	ECEFY    float64 // meters
+	ECEFZ    float64 // meters
+	PAcc     float32 // m², variance of 3D position
+	ECEFVX   float32 // m/s
+	ECEFVY   float32 // m/s
+	ECEFVZ   float32 // m/s
+	SAcc     float32 // (m/s)², variance of 3D velocity
+	PDOP     float32
 }
 
 func (m *NavSol) ID() MsgID { return NavSolID }
@@ -56,29 +56,29 @@ func (m *NavSol) ID() MsgID { return NavSolID }
 // NavPv is NAV-PV (0x01 0x03) - geodetic position and velocity (80 bytes)
 type NavPv struct {
 	NavRunTime
-	PosValid  NavPosValid
-	VelValid  NavVelValid
-	System    NavSystem
-	NumSV     uint8
-	NumSVGPS  uint8
-	NumSVBDS  uint8
-	NumSVGLN  uint8
-	_         uint8   // reserved
-	PDOP      float32
-	Lon       float64 // deg
-	Lat       float64 // deg
-	Height    float32 // m, ellipsoidal
-	SepGeoid  float32 // m, geoid separation (ellipsoidal minus MSL)
-	HAcc      float32 // m^2, variance of horizontal position accuracy
-	VAcc      float32 // m^2, variance of vertical position accuracy
-	VelN      float32 // m/s
-	VelE      float32 // m/s
-	VelU      float32 // m/s (UP, not down -- negate for NED)
-	Speed3D   float32 // m/s
-	Speed2D   float32 // m/s, ground speed
-	Heading   float32 // deg
-	SAcc      float32 // (m/s)^2, variance of ground speed accuracy
-	CAcc      float32 // deg^2, variance of heading accuracy
+	PosValid NavPosValid
+	VelValid NavVelValid
+	System   NavSystem
+	NumSV    uint8
+	NumSVGPS uint8
+	NumSVBDS uint8
+	NumSVGLN uint8
+	_        uint8 // reserved
+	PDOP     float32
+	Lon      float64 // deg
+	Lat      float64 // deg
+	Height   float32 // m, ellipsoidal
+	SepGeoid float32 // m, geoid separation (ellipsoidal minus MSL)
+	HAcc     float32 // m^2, variance of horizontal position accuracy
+	VAcc     float32 // m^2, variance of vertical position accuracy
+	VelN     float32 // m/s
+	VelE     float32 // m/s
+	VelU     float32 // m/s (UP, not down -- negate for NED)
+	Speed3D  float32 // m/s
+	Speed2D  float32 // m/s, ground speed
+	Heading  float32 // deg
+	SAcc     float32 // (m/s)^2, variance of ground speed accuracy
+	CAcc     float32 // deg^2, variance of heading accuracy
 }
 
 func (m *NavPv) ID() MsgID { return NavPvID }
@@ -123,7 +123,6 @@ const (
 	NavVel3D
 	NavVelGNSSDR // GNSS+DR integrated navigation
 )
-
 
 type NavSystem uint8
 
@@ -172,10 +171,10 @@ const (
 // NavClock is NAV-CLOCK (0x01 0x11) - clock solution information (64 bytes)
 type NavClock struct {
 	NavRunTime
-	FreqBias float32         // s², clock drift
-	TAcc     float32         // 1/c², time accuracy variance
-	FAcc     float32         // 1/c², frequency accuracy variance
-	Systems  [3]NavClockSys  // GPS=0, BDS=1, GLN=2
+	FreqBias float32        // s², clock drift
+	TAcc     float32        // 1/c², time accuracy variance
+	FAcc     float32        // 1/c², frequency accuracy variance
+	Systems  [3]NavClockSys // GPS=0, BDS=1, GLN=2
 }
 
 func (m *NavClock) ID() MsgID { return NavClockID }
@@ -200,8 +199,8 @@ type NavSatInfoFixed struct {
 
 // NavSVInfo is common satellite info structure used by NAV-GPSINFO, NAV-BDSINFO, NAV-GLNINFO
 type NavSVInfo struct {
-	Chn     uint8   // channel number
-	SVID    uint8   // satellite ID
+	Chn     uint8 // channel number
+	SVID    uint8 // satellite ID
 	Flags   NavSVFlags
 	Quality NavSVQuality
 	CNO     uint8   // dB-Hz
@@ -236,12 +235,12 @@ const (
 type NavSVQuality uint8
 
 const (
-	NavSVQualityPRValid    NavSVQuality = 1 << iota // pseudorange valid
-	NavSVQualityCPValid                             // carrier phase valid
-	NavSVQualityHalfCycleValid                      // half-cycle ambiguity valid
-	NavSVQualityHalfCycleSubtracted                 // half-cycle subtracted
-	_                                               // reserved
-	NavSVQualityFreqValid                           // carrier frequency valid
+	NavSVQualityPRValid             NavSVQuality = 1 << iota // pseudorange valid
+	NavSVQualityCPValid                                      // carrier phase valid
+	NavSVQualityHalfCycleValid                               // half-cycle ambiguity valid
+	NavSVQualityHalfCycleSubtracted                          // half-cycle subtracted
+	_                                                        // reserved
+	NavSVQualityFreqValid                                    // carrier frequency valid
 )
 
 // NavGPSInfo is NAV-GPSINFO (0x01 0x20) - GPS satellite information
@@ -373,10 +372,10 @@ const (
 type Nav2Sol struct {
 	Nav2TOW
 	Wn         uint16
-	_          uint16       // reserved
+	_          uint16 // reserved
 	FixFlags   PVTValid
 	VelFlags   Nav2VelFlags
-	_          uint8        // reserved
+	_          uint8 // reserved
 	GnssMask   Nav2GnssMask
 	NumFixTot  uint8
 	NumFixGPS  uint8
@@ -386,15 +385,15 @@ type Nav2Sol struct {
 	NumFixQZSS uint8
 	NumFixSBAS uint8
 	NumFixIRN  uint8
-	_          uint32       // reserved
-	X          float64      // m, ECEF X
-	Y          float64      // m, ECEF Y
-	Z          float64      // m, ECEF Z
-	PAcc       float32      // m, 3D position accuracy (std dev)
-	VX         float32      // m/s, ECEF X velocity
-	VY         float32      // m/s, ECEF Y velocity
-	VZ         float32      // m/s, ECEF Z velocity
-	SAcc       float32      // m/s, 3D speed accuracy (std dev)
+	_          uint32  // reserved
+	X          float64 // m, ECEF X
+	Y          float64 // m, ECEF Y
+	Z          float64 // m, ECEF Z
+	PAcc       float32 // m, 3D position accuracy (std dev)
+	VX         float32 // m/s, ECEF X velocity
+	VY         float32 // m/s, ECEF Y velocity
+	VZ         float32 // m/s, ECEF Z velocity
+	SAcc       float32 // m/s, 3D speed accuracy (std dev)
 	PDOP       float32
 }
 
@@ -404,10 +403,10 @@ func (m *Nav2Sol) ID() MsgID { return Nav2SolID }
 type Nav2Pvh struct {
 	Nav2TOW
 	Wn         uint16
-	_          uint16       // reserved
+	_          uint16 // reserved
 	FixFlags   PVTValid
 	VelFlags   Nav2VelFlags
-	_          uint8        // reserved
+	_          uint8 // reserved
 	GnssMask   Nav2GnssMask
 	NumFixTot  uint8
 	NumFixGPS  uint8
@@ -417,21 +416,21 @@ type Nav2Pvh struct {
 	NumFixQZSS uint8
 	NumFixSBAS uint8
 	NumFixIRN  uint8
-	_          uint32       // reserved
-	Lon        float64      // deg
-	Lat        float64      // deg
-	Height     float32      // m, ellipsoidal
-	SepGeoid   float32      // m, geoid separation
-	VelE       float32      // m/s, East velocity
-	VelN       float32      // m/s, North velocity
-	VelU       float32      // m/s, Up velocity (negate for NED down)
-	Speed3D    float32      // m/s
-	Speed2D    float32      // m/s, ground speed
-	Heading    float32      // deg
-	HAcc       float32      // m, horizontal position accuracy (std dev)
-	VAcc       float32      // m, vertical position accuracy (std dev)
-	SAcc       float32      // m/s, 3D speed accuracy (std dev)
-	CAcc       float32      // deg, heading accuracy (std dev)
+	_          uint32  // reserved
+	Lon        float64 // deg
+	Lat        float64 // deg
+	Height     float32 // m, ellipsoidal
+	SepGeoid   float32 // m, geoid separation
+	VelE       float32 // m/s, East velocity
+	VelN       float32 // m/s, North velocity
+	VelU       float32 // m/s, Up velocity (negate for NED down)
+	Speed3D    float32 // m/s
+	Speed2D    float32 // m/s, ground speed
+	Heading    float32 // deg
+	HAcc       float32 // m, horizontal position accuracy (std dev)
+	VAcc       float32 // m, vertical position accuracy (std dev)
+	SAcc       float32 // m/s, 3D speed accuracy (std dev)
+	CAcc       float32 // deg, heading accuracy (std dev)
 }
 
 func (m *Nav2Pvh) ID() MsgID { return Nav2PvhID }
@@ -450,10 +449,10 @@ func (m *Nav2Dop) ID() MsgID { return Nav2DopID }
 
 // Nav2TimeUTC is NAV2-TIMEUTC (0x11 0x05) - UTC time information (20 bytes)
 type Nav2TimeUTC struct {
-	TAcc    float32       // ns, time accuracy estimate
-	Subms   int32         // ms, fractional ms (scale 2^-30)
-	Subcs   int8          // ms, centisecond error (-5 to 5 ms)
-	Cs      uint8         // centiseconds (0-99)
+	TAcc    float32 // ns, time accuracy estimate
+	Subms   int32   // ms, fractional ms (scale 2^-30)
+	Subcs   int8    // ms, centisecond error (-5 to 5 ms)
+	Cs      uint8   // centiseconds (0-99)
 	Year    uint16
 	Month   uint8
 	Day     uint8
@@ -470,7 +469,7 @@ func (m *Nav2TimeUTC) ID() MsgID { return Nav2TimeUTCID }
 type Nav2TimeFlags uint8
 
 const (
-	Nav2TimeTOWValid  Nav2TimeFlags = 1 << iota
+	Nav2TimeTOWValid Nav2TimeFlags = 1 << iota
 	Nav2TimeWNValid
 	Nav2TimeLeapValid
 	Nav2TimeReliable
@@ -499,19 +498,19 @@ func (m *Nav2SigFixed) NavEpoch() uint32 { return m.TOW }
 
 // Nav2SigInfo is a per-signal entry in NAV2-SIG (16 bytes each)
 type Nav2SigInfo struct {
-	GNSSID   GNSSID
-	SVID     uint8  // satellite ID (raw PRN, except QZSS=PRN-192)
-	SigID    SigID  // signal band ID
-	FreqID   uint8  // GLONASS frequency ID; undefined for other constellations
-	PRRes    int16  // dm, pseudorange residual
-	CNO      uint8  // dBHz
-	TrkInd   uint8  // signal quality
-	CorFlags uint8  // correction flag
-	SolFlags uint8  // solution flag
-	Chn      uint8  // tracking channel number
-	Elev     uint8  // deg
-	Azim     uint16 // deg
-	IonoDelay int16 // dm, ionosphere delay correction
+	GNSSID    GNSSID
+	SVID      uint8  // satellite ID (raw PRN, except QZSS=PRN-192)
+	SigID     SigID  // signal band ID
+	FreqID    uint8  // GLONASS frequency ID; undefined for other constellations
+	PRRes     int16  // dm, pseudorange residual
+	CNO       uint8  // dBHz
+	TrkInd    uint8  // signal quality
+	CorFlags  uint8  // correction flag
+	SolFlags  uint8  // solution flag
+	Chn       uint8  // tracking channel number
+	Elev      uint8  // deg
+	Azim      uint16 // deg
+	IonoDelay int16  // dm, ionosphere delay correction
 }
 
 // Nav2Sig is NAV2-SIG (0x11 0x06) - per-signal tracking information.
@@ -529,8 +528,8 @@ func (m *Nav2Sig) InitVaryingPart(payloadLen int) error {
 	return nil
 }
 
-func (m *Nav2Sig) FixedPart() any   { return &m.Nav2SigFixed }
-func (m *Nav2Sig) VaryingPart() any { return &m.Sigs }
+func (m *Nav2Sig) FixedPart() any      { return &m.Nav2SigFixed }
+func (m *Nav2Sig) VaryingPart() any    { return &m.Sigs }
 func (m *Nav2Sig) AllowTrailingBytes() {}
 
 var _ VaryingMsg = (*Nav2Sig)(nil)

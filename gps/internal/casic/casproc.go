@@ -239,6 +239,39 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		}
 		corrFromNav2Sig(p.curNavEpochMsg, mt)
 		return true
+	case *casbin.Tim2Ls:
+		if p.mh != nil {
+			if ls := leapTim2Ls(mt, tRead); ls != nil {
+
+				p.mh.LeapSecond(ls, tRead)
+			}
+		}
+		return true
+	case *casbin.Tim2TimePos:
+		if p.mh != nil {
+			sv := surveyTim2TimePos(mt)
+
+			p.mh.Survey(sv, tRead)
+		}
+		return true
+	case *casbin.MsgGPSUTC:
+		if p.mh != nil {
+			if ls := leapMsgUTC(mt.Dtls, mt.Dtlsf, mt.Wnlsf, mt.Dn, mt.Valid,
+				gpsprot.GPS, ptime.TAIMinusGPS, 1, tRead); ls != nil {
+
+				p.mh.LeapSecond(ls, tRead)
+			}
+		}
+		return true
+	case *casbin.MsgBDSUTC:
+		if p.mh != nil {
+			if ls := leapMsgUTC(mt.Dtls, mt.Dtlsf, mt.Wnlsf, mt.Dn, mt.Valid,
+				gpsprot.BDS, ptime.TAIMinusBeiDou, 0, tRead); ls != nil {
+
+				p.mh.LeapSecond(ls, tRead)
+			}
+		}
+		return true
 	case *casbin.Tim2Tpx:
 		tm := timeTim2Tpx(mt)
 		if p.mh != nil {
