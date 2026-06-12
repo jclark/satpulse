@@ -469,6 +469,29 @@ func TestConfigurator(t *testing.T) {
 			},
 		},
 		{
+			name: "speed change ACK lost, repeat confirms",
+			initialState: []string{
+				"MODE ROVER",
+				"CONFIG COM3 115200",
+			},
+			targetProps: func(p *gpsprot.ConfigProps) {
+				p.SetBaudRate(460800)
+			},
+			noAckQuery: stringPtr("CONFIG COM3 460800"),
+			expectedSent: []string{
+				"CONFIG", "MASK", "MODE", "LOGLIST", // Query phase
+				"CONFIG COM3 460800", // ACK lost in the speed switch
+				"CONFIG COM3 460800", // repeat at the new speed; its ACK confirms
+			},
+			expectedStates: map[string]configRequestState{
+				"CONFIG":             stateSucceeded,
+				"MASK":               stateSucceeded,
+				"MODE":               stateSucceeded,
+				"LOGLIST":            stateSucceeded,
+				"CONFIG COM3 460800": stateSucceeded, // both the original and the repeat
+			},
+		},
+		{
 			name: "no baud rate change when speed already matches",
 			initialState: []string{
 				"MODE ROVER",
@@ -912,6 +935,13 @@ func TestMaybeSpeedChangeSucceeded(t *testing.T) {
 			expectState: stateAwaitingAck,
 		},
 		{
+			name:        "confirms before the repeat delay was processed",
+			speed:       460800,
+			state:       stateAwaitingAckBeforeRepeat,
+			delay:       500 * time.Millisecond,
+			expectState: stateSucceeded,
+		},
+		{
 			name:        "not a speed change",
 			speed:       0,
 			state:       stateAwaitingAck,
@@ -938,6 +968,66 @@ func TestMaybeSpeedChangeSucceeded(t *testing.T) {
 			req.MaybeSpeedChangeSucceeded(t0.Add(tt.delay))
 			if req.state != tt.expectState {
 				t.Errorf("state = %v, want %v", req.state, tt.expectState)
+			}
+		})
+	}
+}
+
+func TestSpeedChangeStagedDeadline(t *testing.T) {
+	t0 := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	req := &ConfigRequest{cmd: "CONFIG COM3 460800", speed: 460800, state: stateReadyToSendCommand}
+	req.SetSentTime(t0)
+	if req.state != stateAwaitingAckBeforeRepeat {
+		t.Fatalf("state after send = %v, want %v", req.state, stateAwaitingAckBeforeRepeat)
+	}
+	if got, want := req.GetDeadline(), t0.Add(speedChangeRepeatDelay); !got.Equal(want) {
+		t.Errorf("first deadline = %v, want %v", got, want)
+	}
+	req.SetDeadlinePassed()
+	if req.state != stateAwaitingAck {
+		t.Fatalf("state after repeat delay = %v, want %v", req.state, stateAwaitingAck)
+	}
+	if got, want := req.GetDeadline(), t0.Add(maxResponseDelay); !got.Equal(want) {
+		t.Errorf("second deadline = %v, want %v", got, want)
+	}
+}
+
+func TestRepeatAckAbsorption(t *testing.T) {
+	t0 := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name          string
+		primaryState  configRequestState
+		expectPrimary configRequestState
+		expectRepeat  configRequestState
+	}{
+		{
+			name:          "primary still awaiting takes the ACK",
+			primaryState:  stateAwaitingAck,
+			expectPrimary: stateSucceeded,
+			expectRepeat:  stateRepeatSent,
+		},
+		{
+			name:          "repeat absorbs the ACK when primary is done",
+			primaryState:  stateSucceeded,
+			expectPrimary: stateSucceeded,
+			expectRepeat:  stateSucceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			primary := &ConfigRequest{cmd: "CONFIG COM3 460800", speed: 460800, state: tt.primaryState, tBase: t0}
+			repeat := &ConfigRequest{cmd: "CONFIG COM3 460800", state: stateRepeatSent, tBase: t0.Add(speedChangeRepeatDelay)}
+			c := &Configurator{reqs: []*ConfigRequest{primary, repeat}}
+			err := c.commandResponse([]string{"CONFIG COM3 460800", "response: OK"}, t0.Add(150*time.Millisecond))
+			if err != nil {
+				t.Fatalf("commandResponse failed: %v", err)
+			}
+			if primary.state != tt.expectPrimary {
+				t.Errorf("primary state = %v, want %v", primary.state, tt.expectPrimary)
+			}
+			if repeat.state != tt.expectRepeat {
+				t.Errorf("repeat state = %v, want %v", repeat.state, tt.expectRepeat)
 			}
 		})
 	}
