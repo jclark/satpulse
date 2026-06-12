@@ -10,6 +10,13 @@
 # - Only GPS, BDS, GLONASS supported (no Galileo, QZSS, SBAS, IRNSS)
 # - Navigation messages use NAV class (0x01), not NAV2 (0x11)
 
+# The default NMEA load oversaturates the default 9600 line, so responses
+# can lag by several seconds (see the nmea-quiet tag below). The long
+# waitLimit covers that; on a quiet line responses arrive in ~30 ms and
+# waiting stops as soon as they do.
+[default.casbin]
+waitLimit = 6.0
+
 # CFG-NAVX: Navigation engine configuration
 # Payload (44 bytes):
 #   U4 mask, U1 dynModel, U1 fixMode, U1 minSVs, U1 maxSVs,
@@ -516,3 +523,65 @@ class = 0x06
 id = 0x01
 payload.types = "U1U1U2"
 payload.values = [0x4E, 0x01, 0]
+
+# Line management for the default 9600 baud rate.
+# The default NMEA load (~1050 bytes/s) oversaturates a 9600 line
+# (~960 bytes/s): the receiver's TX queue runs full and binary responses
+# are delayed many seconds or dropped. Quiet the line before binary work
+# and restore afterwards. Both are RAM-only (not persistent).
+
+# Verified on ATGM332D-5N71: with the line quiet, CFG polls answer in ~30 ms
+[[nmea]]
+tag = "nmea-quiet"
+description = "Disable all NMEA output (RAM only, frees a saturated 9600 line)"
+text = "PCAS03,0,0,0,0,0,0,0,0,0,0,,,0,0,,,,0"
+
+# Verified on ATGM332D-5N71: default sentence set resumes
+[[nmea]]
+tag = "nmea-default"
+description = "Restore the default NMEA output set (RAM only)"
+text = "PCAS03,1,1,1,1,1,1,1,1,0,0,,,0,0,,,,0"
+
+# Configuration query polls.
+# A CFG message is polled by sending it with an empty payload; the receiver
+# answers with a data response (same class/id) followed by ACK.
+# All polls below verified on ATGM332D-5N71 (V5.3.0.0) on a quiet line,
+# including 4 requests pipelined back-to-back (responses in request order).
+# Use a long waitLimit (>= 3 s) at 9600 if the line is not quiet.
+
+# Verified two CFG-PRT data responses then ACK on ATGM332D-5N71:
+# portID=1 (baud 115200) first, then portID=0 (baud 9600, the port in use)
+# - one response per port, port 1 first.
+[[casbin]]
+tag = "get-port"
+description = "Query port configuration (one response per port)"
+class = 0x06
+id = 0x00
+
+# Verified CFG-TP response and ACK on ATGM332D-5N71
+[[casbin]]
+tag = "get-pps"
+description = "Query time pulse configuration"
+class = 0x06
+id = 0x03
+
+# Verified CFG-RATE response and ACK on ATGM332D-5N71
+[[casbin]]
+tag = "get-rate"
+description = "Query navigation rate"
+class = 0x06
+id = 0x04
+
+# Verified CFG-NAVX response and ACK on ATGM332D-5N71
+[[casbin]]
+tag = "get-gnss"
+description = "Query navigation engine and GNSS selection"
+class = 0x06
+id = 0x07
+
+# Verified CFG-TMODE response and ACK on ATGM332D-5N71
+[[casbin]]
+tag = "get-survey"
+description = "Query timing mode configuration"
+class = 0x06
+id = 0x06
