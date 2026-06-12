@@ -10,13 +10,15 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nmea"
+	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 )
 
 // testResponse represents a typed response from the test receiver
 type testResponse struct {
-	nmea *nmea.Sentence
-	unc  *uncmsg.Msg
+	nmea   *nmea.Sentence
+	unc    *uncmsg.Msg
+	abbrev *novmsg.AbbrevAsciiLine
 }
 
 func TestConfigSupport(t *testing.T) {
@@ -27,7 +29,8 @@ func TestConfigSupport(t *testing.T) {
 		gpsprot.ConfigSupportRTCMMSM4 |
 		gpsprot.ConfigSupportRTCMMSM7 |
 		gpsprot.ConfigSupportRTCMBaseID |
-		gpsprot.ConfigSupportRTCMQZSS
+		gpsprot.ConfigSupportRTCMQZSS |
+		gpsprot.ConfigSupportSpeed
 	if configSupport != want {
 		t.Errorf("configSupport = %v, want %v", configSupport.Items(), want.Items())
 	}
@@ -45,6 +48,9 @@ func processResponse(cp *ConfigProtocol, resp testResponse, t0 time.Time) error 
 	if resp.unc != nil {
 		return cp.NativeMsg("UNCA", "", resp.unc, t0)
 	}
+	if resp.abbrev != nil {
+		return cp.NativeMsg("NOVAA", "", resp.abbrev, t0)
+	}
 	return nil
 }
 
@@ -52,6 +58,7 @@ func processResponse(cp *ConfigProtocol, resp testResponse, t0 time.Time) error 
 type testReceiver struct {
 	nativeProps nativeConfigProps
 	version     *uncmsg.Version
+	port        string // current port reported by LOGLIST; default COM3
 	nSent       int
 	sentPackets []string // Track all packets sent for verification
 
@@ -220,6 +227,18 @@ func (r *testReceiver) generateResponses(cmd string) []testResponse {
 			},
 		})
 
+		// COM port responses for ports with known speeds
+		for i, speed := range r.nativeProps.com.speeds {
+			if speed != 0 {
+				port := fmt.Sprintf("COM%d", i+1)
+				responses = append(responses, testResponse{
+					nmea: &nmea.Sentence{
+						Payload: fmt.Sprintf("CONFIG,%s,CONFIG %s %d", port, port, speed),
+					},
+				})
+			}
+		}
+
 	case "MASK":
 		// First send ACK
 		responses = append(responses, testResponse{
@@ -276,6 +295,26 @@ func (r *testReceiver) generateResponses(cmd string) []testResponse {
 				},
 			},
 		})
+
+	case "LOGLIST":
+		// First send ACK
+		responses = append(responses, testResponse{
+			nmea: &nmea.Sentence{
+				Payload: fmt.Sprintf("command,%s,response: OK", cmd),
+			},
+		})
+		// Then send the multi-line abbreviated ASCII response
+		port := r.port
+		if port == "" {
+			port = "COM3"
+		}
+		for _, line := range []string{
+			"<LOGLIST " + port + " 17548 95.000000 FINE 2413 3196.000000 42155794 830 18\r\n",
+			"<\t1\r\n",
+			"<\tRECTIMEB COM3 1 \r\n",
+		} {
+			responses = append(responses, testResponse{abbrev: novmsg.ParseAbbrevAsciiLine([]byte(line))})
+		}
 
 	default:
 		// Commands - just send ACK
@@ -406,6 +445,46 @@ func TestConfigurator(t *testing.T) {
 				"MASK":       stateSucceeded,
 				"MODE":       stateSucceeded,
 				"MODE ROVER": stateSucceeded,
+			},
+		},
+		{
+			name: "baud rate change on current port",
+			initialState: []string{
+				"MODE ROVER",
+				"CONFIG COM3 115200",
+			},
+			targetProps: func(p *gpsprot.ConfigProps) {
+				p.SetBaudRate(460800)
+			},
+			expectedSent: []string{
+				"CONFIG", "MASK", "MODE", "LOGLIST", // Query phase
+				"CONFIG COM3 460800",
+			},
+			expectedStates: map[string]configRequestState{
+				"CONFIG":             stateSucceeded,
+				"MASK":               stateSucceeded,
+				"MODE":               stateSucceeded,
+				"LOGLIST":            stateSucceeded,
+				"CONFIG COM3 460800": stateSucceeded,
+			},
+		},
+		{
+			name: "no baud rate change when speed already matches",
+			initialState: []string{
+				"MODE ROVER",
+				"CONFIG COM3 115200",
+			},
+			targetProps: func(p *gpsprot.ConfigProps) {
+				p.SetBaudRate(115200)
+			},
+			expectedSent: []string{
+				"CONFIG", "MASK", "MODE", "LOGLIST", // Query phase only
+			},
+			expectedStates: map[string]configRequestState{
+				"CONFIG":  stateSucceeded,
+				"MASK":    stateSucceeded,
+				"MODE":    stateSucceeded,
+				"LOGLIST": stateSucceeded,
 			},
 		},
 
@@ -738,5 +817,128 @@ func TestModeResponseBug(t *testing.T) {
 		} else {
 			t.Errorf("Bug may be partially fixed but command is still wrong.\nGot: %q\nExpected: %q", storedCommand, expectedCommand)
 		}
+	}
+}
+
+func TestPortQuery(t *testing.T) {
+	tests := []struct {
+		name       string
+		port       string
+		comConfig  string
+		get        gpsprot.PropIDs
+		expectSent []string
+		expectPort string // "" means port absent in result
+		expectBaud uint32 // checked only if expectPort != ""
+	}{
+		{
+			name:       "get port and speed",
+			port:       "COM2",
+			comConfig:  "CONFIG COM2 230400",
+			get:        gpsprot.PropIDPort | gpsprot.PropIDBaudRate,
+			expectSent: []string{"CONFIG", "LOGLIST"},
+			expectPort: "COM2",
+			expectBaud: 230400,
+		},
+		{
+			name:       "no LOGLIST query without port or speed in target",
+			port:       "COM2",
+			comConfig:  "CONFIG COM2 230400",
+			get:        0,
+			expectSent: []string{"CONFIG", "MASK", "MODE"},
+			expectPort: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rcvr := &testReceiver{
+				version:     &uncmsg.Version{},
+				nativeProps: makeNativeProps(),
+				port:        tt.port,
+			}
+			if err := rcvr.nativeProps.updateFromQueryResponse("COM2", tt.comConfig); err != nil {
+				t.Fatalf("setup failed: %v", err)
+			}
+			target := &gpsprot.ConfigTarget{Get: tt.get}
+			cfg, processErrors, err := runConfiguration(rcvr, target)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if processErrors != 0 {
+				t.Errorf("process errors: %d", processErrors)
+			}
+			if !slices.Equal(rcvr.sentPackets, tt.expectSent) {
+				t.Errorf("sent packets mismatch\ngot:  %v\nwant: %v", rcvr.sentPackets, tt.expectSent)
+			}
+			props := cfg.ConfigProps()
+			port, ok := props.GetPort()
+			if ok != (tt.expectPort != "") || port != tt.expectPort {
+				t.Errorf("port = %q (valid %v), want %q", port, ok, tt.expectPort)
+			}
+			if tt.expectPort != "" {
+				baud, ok := props.GetBaudRate()
+				if !ok || baud != tt.expectBaud {
+					t.Errorf("baud rate = %d (valid %v), want %d", baud, ok, tt.expectBaud)
+				}
+				if _, ok := props.GetTimePulse(); ok {
+					t.Errorf("port-only result contains time pulse config")
+				}
+			}
+		})
+	}
+}
+
+func TestMaybeSpeedChangeSucceeded(t *testing.T) {
+	t0 := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name        string
+		speed       int
+		state       configRequestState
+		delay       time.Duration
+		expectState configRequestState
+	}{
+		{
+			name:        "valid packet after delay confirms",
+			speed:       460800,
+			state:       stateAwaitingAck,
+			delay:       500 * time.Millisecond,
+			expectState: stateSucceeded,
+		},
+		{
+			name:        "valid packet too soon does not confirm",
+			speed:       460800,
+			state:       stateAwaitingAck,
+			delay:       300 * time.Millisecond,
+			expectState: stateAwaitingAck,
+		},
+		{
+			name:        "not a speed change",
+			speed:       0,
+			state:       stateAwaitingAck,
+			delay:       500 * time.Millisecond,
+			expectState: stateAwaitingAck,
+		},
+		{
+			name:        "already succeeded",
+			speed:       460800,
+			state:       stateSucceeded,
+			delay:       500 * time.Millisecond,
+			expectState: stateSucceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &ConfigRequest{
+				cmd:   "CONFIG COM3 460800",
+				speed: tt.speed,
+				state: tt.state,
+				tBase: t0,
+			}
+			req.MaybeSpeedChangeSucceeded(t0.Add(tt.delay))
+			if req.state != tt.expectState {
+				t.Errorf("state = %v, want %v", req.state, tt.expectState)
+			}
+		})
 	}
 }

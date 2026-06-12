@@ -8,6 +8,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nmea"
+	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 )
 
@@ -20,7 +21,8 @@ const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportBand |
 	gpsprot.ConfigSupportRTCMMSM4 |
 	gpsprot.ConfigSupportRTCMMSM7 |
 	gpsprot.ConfigSupportRTCMBaseID |
-	gpsprot.ConfigSupportRTCMQZSS
+	gpsprot.ConfigSupportRTCMQZSS |
+	gpsprot.ConfigSupportSpeed
 
 type ConfigProtocol struct {
 	ver *uncmsg.Version // Stored from VERSIONB response for probing
@@ -40,8 +42,9 @@ type Configurator struct {
 type configPhase int
 
 const (
-	phaseInit configPhase = iota
-	phaseQuery
+	phaseInit   configPhase = iota
+	phaseQuery              // sending state queries
+	phaseConfig             // sending config commands; a speed change comes after these finish
 	phaseFinal
 )
 
@@ -49,6 +52,7 @@ type ConfigRequest struct {
 	state configRequestState
 	cmd   string           // not including CR/LF
 	prop  nativeConfigProp // if non-nil, then this means it's a command that updates that prop
+	speed int              // new baud rate to switch to after sending (0 if not a speed change)
 	tBase time.Time        // base time for calculating response deadline (sent time or last response time)
 	err   error            // error in handling this request
 }
@@ -94,6 +98,11 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 		case *uncmsg.Version:
 			cp.ver = body
 		}
+
+	case *novmsg.AbbrevAsciiLine:
+		if cp.cfg != nil {
+			return cp.cfg.abbrevAsciiResponse(mt, tRead)
+		}
 	}
 	return nil
 }
@@ -115,10 +124,16 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 	return configSupport
 }
 
-// ConfigProps returns the current configuration of the GPS receiver
+// ConfigProps returns the current configuration of the GPS receiver.
+// For a target that only reads the port and serial speed, the result is
+// restricted to those: the CONFIG query reports every CONFIG property,
+// not just the COM port baud rates it was sent for.
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	props := &gpsprot.ConfigProps{}
 	c.nativeProps.convertToProps(props)
+	if portQueryOnly(c.target) {
+		props.Retain(gpsprot.PropIDPort | gpsprot.PropIDBaudRate)
+	}
 	return props
 }
 
@@ -176,10 +191,28 @@ func (c *Configurator) GenerateRequests() error {
 		// All requests are final
 		c.nFinished = len(c.reqs)
 
-		// Generate config requests if none failed
-		if !anyFailed {
-			c.generateConfigReqs()
+		// Generate config requests only if no query failed
+		if anyFailed {
+			c.complete = true
+			c.phase = phaseFinal
+			return nil
 		}
+		c.generateConfigReqs()
+		c.phase = phaseConfig
+		return nil
+
+	case phaseConfig:
+		// Wait for the config commands to finish, then generate the speed
+		// change: it must be sent on its own, so that no other commands or
+		// responses are in transit when the host switches speed.
+		for i := c.nFinished; i < len(c.reqs); i++ {
+			if !c.reqs[i].state.isFinal() {
+				c.nFinished = i
+				return nil
+			}
+		}
+		c.nFinished = len(c.reqs)
+		c.generateSpeedReq()
 		c.complete = true
 		c.phase = phaseFinal
 		return nil
@@ -208,6 +241,26 @@ func (c *Configurator) generateConfigReqs() {
 			state: stateReadyToSendCommand,
 		})
 	}
+}
+
+// generateSpeedReq generates the baud rate change request when the target
+// asks for a speed different from the current one.
+func (c *Configurator) generateSpeedReq() {
+	port := c.nativeProps.port.name
+	i := comIndex(port)
+	if i < 0 {
+		return
+	}
+	speed, ok := c.target.Props.GetBaudRate()
+	if !ok || speed == 0 || speed == c.nativeProps.com.speeds[i] {
+		return
+	}
+	c.reqs = append(c.reqs, &ConfigRequest{
+		cmd:   fmt.Sprintf("CONFIG %s %d", port, speed),
+		prop:  &c.nativeProps.com,
+		speed: int(speed),
+		state: stateReadyToSendCommand,
+	})
 }
 
 func (c *Configurator) nmeaSentence(sentence *nmea.Sentence, tRead time.Time) error {
@@ -246,9 +299,9 @@ func (req *ConfigRequest) GetPacket() []byte {
 	return append([]byte(req.cmd), '\r', '\n')
 }
 
+// GetSpeedChangeAfter returns the new baud rate to configure after sending this request.
 func (req *ConfigRequest) GetSpeedChangeAfter() int {
-	// Unicore doesn't yet use speed changes
-	return 0
+	return req.speed
 }
 
 func (req *ConfigRequest) GetState() gpsprot.ConfigRequestState {
@@ -333,9 +386,24 @@ func (req *ConfigRequest) SetWontResend() {
 	}
 }
 
+// speedChangeDelay is how long after sending a speed change command until we
+// can accept a valid packet as confirmation that the speed change succeeded.
+// This accounts for the time it takes the receiver to process and apply the
+// speed change.
+const speedChangeDelay = 400 * time.Millisecond
+
 // MaybeSpeedChangeSucceeded checks if a valid packet can confirm a speed change.
+// The ACK for a speed change on the current port arrives around the moment the
+// receiver switches speed, so it may be garbled; any valid packet received
+// sufficiently long after sending confirms the change instead.
 func (req *ConfigRequest) MaybeSpeedChangeSucceeded(validPacketTime time.Time) {
-	// UNC doesn't support speed changes yet, so this is a no-op
+	if req.speed == 0 || req.state != stateAwaitingAck {
+		return
+	}
+	if validPacketTime.Sub(req.tBase) > speedChangeDelay {
+		req.state = stateSucceeded
+		req.updateProp()
+	}
 }
 
 func (req *ConfigRequest) GetDeadline() time.Time {
@@ -415,14 +483,20 @@ func (req *ConfigRequest) handleAck(cmd string, responseErr string, tRead time.T
 	}
 
 	// ACK was positive - update our state to reflect the successful command
+	req.updateProp()
+
+	return true
+}
+
+// updateProp updates the tracked native state to reflect successful
+// execution of the request's command.
+func (req *ConfigRequest) updateProp() {
 	if req.prop != nil {
 		err := req.prop.updateFromCommand(req.cmd)
 		if err != nil {
 			panic(fmt.Sprintf("could not parse generated command: %s: %v", req.cmd, err))
 		}
 	}
-
-	return true
 }
 
 // configQueryResponse handles a response to a query.
@@ -453,6 +527,18 @@ func (c *Configurator) modeResponse(mode *uncmsg.Mode, tRead time.Time) error {
 	return c.queryResponse("MODE", "MODE", mode.Command(), tRead)
 }
 
+// abbrevAsciiResponse handles a NovAtel abbreviated ASCII (NOVAA) line. Only the
+// LOGLIST header line is significant: its first field is the port the
+// receiver is currently communicating on. The count and log entry lines that
+// trail in after it are indented (empty Name) and ignored, as is any other
+// abbreviated ASCII output.
+func (c *Configurator) abbrevAsciiResponse(ab *novmsg.AbbrevAsciiLine, tRead time.Time) error {
+	if ab.Name != "LOGLIST" || len(ab.Fields) == 0 {
+		return nil
+	}
+	return c.queryResponse("LOGLIST", idPropPort, ab.Fields[0], tRead)
+}
+
 func (c *Configurator) queryResponse(query, key, command string, tRead time.Time) error {
 	// Find the matching request and determine its index
 	var reqIndex int = -1
@@ -481,7 +567,7 @@ func (c *Configurator) queryResponse(query, key, command string, tRead time.Time
 					req.state = stateMaybeComplete
 					req.tBase = tRead
 				} else {
-					// MODE query - single response expected
+					// MODE and LOGLIST queries - single significant response
 					req.state = stateSucceeded
 				}
 			case stateMaybeComplete:

@@ -576,6 +576,13 @@ func (cp *ConfigProps) ClearReadOnlyProps() {
 	cp.valid &^= PropIDsReadOnly
 }
 
+// Retain keeps only the properties in ids, clearing any others.
+// Backends can use it to restrict a result to the properties the
+// target asked about.
+func (cp *ConfigProps) Retain(ids PropIDs) {
+	cp.valid &= ids
+}
+
 // SetsAny returns true if any of the specified properties are set in the ConfigProps
 func (cp *ConfigProps) SetsAny(props ...PropIDs) bool {
 	for _, p := range props {
