@@ -84,12 +84,18 @@ func (c *Configurator) generateSignalQuery() {
 			}
 		})
 	} else {
-		c.addPollReq(casbin.CfgNavxID, func(m casbin.Msg) {
-			if nx, ok := m.(*casbin.CfgNavx); ok {
-				c.navx = nx
-			}
-		})
+		c.pollNavx()
 	}
+}
+
+// pollNavx polls CFG-NAVX, which carries both the V5 constellation
+// selection and the V5 minimum elevation.
+func (c *Configurator) pollNavx() {
+	c.addPollReq(casbin.CfgNavxID, func(m casbin.Msg) {
+		if nx, ok := m.(*casbin.CfgNavx); ok {
+			c.navx = nx
+		}
+	})
 }
 
 // generateSignalSet sends the requested signal selection. On V6 both

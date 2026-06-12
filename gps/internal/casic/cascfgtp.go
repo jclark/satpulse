@@ -24,8 +24,9 @@ import (
 // phase re-polls so reported achieved values are what the receiver
 // actually holds.
 
-// tpProps are the properties realized by CFG-TP.
-const tpProps = gpsprot.PropIDTimePulse | gpsprot.PropIDTimeGNSS
+// tpProps are the properties realized by CFG-TP. The antenna cable
+// delay maps to the CFG-TP user time delay field.
+const tpProps = gpsprot.PropIDTimePulse | gpsprot.PropIDTimeGNSS | gpsprot.PropIDAntennaCableDelay
 
 // needsTP reports whether the target involves the time pulse.
 func (c *Configurator) needsTP() bool {
@@ -88,6 +89,9 @@ func (c *Configurator) generateTPSet() {
 		if src, ok := c.tSrcMode(g); ok {
 			tp.TSrcMode = src
 		}
+	}
+	if d, ok := props.GetAntennaCableDelay(); ok {
+		tp.UserDelay = float32(d.Seconds())
 	}
 	c.addReq(&tp)
 }
@@ -214,4 +218,5 @@ func (c *Configurator) tpConfigProps(props *gpsprot.ConfigProps) {
 	if g, ok := c.timeGNSS(c.tp.TSrcMode); ok {
 		props.SetTimeGNSS(g)
 	}
+	props.SetAntennaCableDelay(time.Duration(float64(c.tp.UserDelay) * float64(time.Second)))
 }

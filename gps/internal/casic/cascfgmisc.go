@@ -1,0 +1,120 @@
+package casic
+
+import (
+	"math"
+
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/lib/casmsg"
+)
+
+// Minimum elevation lives in CFG-NAVLIMIT on V6 and in CFG-NAVX on V5.
+// The V6 set is a read-modify-write of CFG-NAVLIMIT; the V5 set is
+// mask-applied (only the minimum elevation field takes effect), but the
+// readback still comes from the CFG-NAVX poll shared with signal
+// selection.
+
+// needsMinElev reports whether the target involves minimum elevation.
+func (c *Configurator) needsMinElev() bool {
+	return c.target.UsesAny(gpsprot.PropIDMinElevation)
+}
+
+// generateMinElevQuery polls the message holding minimum elevation.
+// On V5 the signal query may already poll CFG-NAVX.
+func (c *Configurator) generateMinElevQuery() {
+	if !c.needsMinElev() {
+		return
+	}
+	if c.family == familyV6 {
+		c.addPollReq(casbin.CfgNavLimID, func(m casbin.Msg) {
+			if nl, ok := m.(*casbin.CfgNavLimit); ok {
+				c.navLimit = nl
+			}
+		})
+		return
+	}
+	if !c.needsSignals() {
+		c.pollNavx()
+	}
+}
+
+// generateMinElevSet sends the minimum elevation.
+func (c *Configurator) generateMinElevSet() {
+	elev, ok := c.target.Props.GetMinElevation()
+	if !ok {
+		return
+	}
+	deg := int8(math.Round(elev.Degrees()))
+	if c.family == familyV6 {
+		if c.navLimit == nil {
+			return // property absent on this receiver
+		}
+		nl := *c.navLimit
+		nl.MinElev = deg
+		c.addReq(&nl)
+		return
+	}
+	if c.navx == nil {
+		return
+	}
+	c.addReq(&casbin.CfgNavx{Mask: casbin.NavxMinElev, MinElev: deg})
+}
+
+// generateMinElevVerify re-polls minimum elevation after a set. On V5
+// the signal verify re-polls CFG-NAVX already when signals were set.
+func (c *Configurator) generateMinElevVerify() {
+	if _, ok := c.target.Props.GetMinElevation(); !ok {
+		return
+	}
+	if c.family == familyV6 {
+		if c.navLimit != nil {
+			c.generateMinElevQuery()
+		}
+		return
+	}
+	if c.navx == nil {
+		return
+	}
+	if _, ok := c.target.Props.GetSignalsEnabled(); !ok {
+		c.pollNavx()
+	}
+}
+
+// minElevConfigProps reports minimum elevation from the readback.
+func (c *Configurator) minElevConfigProps(props *gpsprot.ConfigProps) {
+	if c.family == familyV6 {
+		if c.navLimit != nil {
+			props.SetMinElevation(gpsprot.DegreesFromFloat(float64(c.navLimit.MinElev)))
+		}
+		return
+	}
+	if c.navx != nil && c.needsMinElev() {
+		props.SetMinElevation(gpsprot.DegreesFromFloat(float64(c.navx.MinElev)))
+	}
+}
+
+// generateVerQuery asks a V5 receiver for its version over NMEA: V5
+// firmware does not answer MON-VER, but PCAS06 queries reply with
+// GPTXT key=value sentences. The replies are optional - a receiver
+// that never answers just leaves ReceiverInfo empty.
+func (c *Configurator) generateVerQuery() {
+	if c.ver != nil {
+		return
+	}
+	c.addTextReq(casmsg.Query(casmsg.QueryFirmwareVersion), func(payload string) bool {
+		k, v, ok := casmsg.ParseTxtInfo(payload)
+		if !ok || k != "SW" {
+			return false
+		}
+		c.pcasSW = v
+		return true
+	})
+	c.addTextReq(casmsg.Query(casmsg.QueryHardware), func(payload string) bool {
+		k, v, ok := casmsg.ParseTxtInfo(payload)
+		if !ok || k != "HW" {
+			return false
+		}
+		c.pcasHW = v
+		return true
+	})
+}

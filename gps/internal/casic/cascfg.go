@@ -46,6 +46,9 @@ type Configurator struct {
 	navBand  *casbin.CfgNavBand // latest V6 CFG-NAVBAND readback
 	ports    []casbin.CfgPrt    // CFG-PRT readback, one entry per port
 	speedReq *casReq            // the baud change request, when one was generated
+	navLimit *casbin.CfgNavLimit // latest V6 CFG-NAVLIMIT readback
+	pcasSW   string              // V5 firmware version from PCAS06 query
+	pcasHW   string              // V5 hardware info from PCAS06 query
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -73,11 +76,13 @@ type casReq struct {
 	packet     []byte
 	tBase      time.Time // time request was sent
 	err        error
-	nakOK      bool             // NAK is acceptable, not a failure
-	onNak      func()           // generates the fallback request when NAKed
-	noAck      bool             // no response expected (CFG-RST): sending is success
-	onData     func(casbin.Msg) // receives data responses (polls); ACK still completes
-	speedAfter int              // new baud rate to switch to after sending
+	nakOK      bool              // NAK is acceptable, not a failure
+	onNak      func()            // generates the fallback request when NAKed
+	noAck      bool              // no response expected (CFG-RST): sending is success
+	onData     func(casbin.Msg)  // receives data responses (polls); ACK still completes
+	onText     func(string) bool // matches NMEA replies; true completes the request
+	optional   bool              // a timed-out request succeeds rather than fails
+	speedAfter int               // new baud rate to switch to after sending
 }
 
 var _ gpsprot.ConfigRequest = (*casReq)(nil)
@@ -91,14 +96,22 @@ func newConfigurator(target *gpsprot.ConfigTarget, ver *casbin.MonVer) *Configur
 }
 
 // ReceiverInfo returns static information about the GPS receiver.
-// A V5 receiver does not answer MON-VER, so its firmware and hardware
-// strings are unknown and reported empty.
+// A V5 receiver does not answer MON-VER; its version comes from PCAS06
+// text queries instead, reported in the same key=value form MON-VER
+// strings use, and stays empty if the receiver never answered.
 func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	info := &gpsprot.ReceiverInfo{Vendor: Vendor, SupportedGNSS: c.supportedGNSS()}
 	if c.ver != nil {
 		info.Firmware = c.ver.SwVersion.String()
 		info.Hardware = c.ver.HwVersion.String()
 		info.VendorSpecific = c.ver
+		return info
+	}
+	if c.pcasSW != "" {
+		info.Firmware = "SW=" + c.pcasSW
+	}
+	if c.pcasHW != "" {
+		info.Hardware = "HW=" + c.pcasHW
 	}
 	return info
 }
@@ -121,7 +134,7 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc
 	if c.family == familyV6 {
-		flags |= gpsprot.ConfigSupportBand
+		flags |= gpsprot.ConfigSupportBand | gpsprot.ConfigSupportRaw
 	}
 	return flags
 }
@@ -134,6 +147,7 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	c.tpConfigProps(props)
 	c.tmodeConfigProps(props)
 	c.signalConfigProps(props)
+	c.minElevConfigProps(props)
 	if c.speedReq != nil && c.speedReq.state == reqSucceeded {
 		props.SetBaudRate(uint32(c.speedReq.speedAfter))
 	}
@@ -143,9 +157,11 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 // generateQueryReqs polls the messages whose current values the set
 // phase needs (read-modify-write) or the target asks to read.
 func (c *Configurator) generateQueryReqs() {
+	c.generateVerQuery()
 	c.generateTPQuery()
 	c.generateTModeQuery()
 	c.generateSignalQuery()
+	c.generateMinElevQuery()
 	if _, ok := c.target.Props.GetBaudRate(); ok {
 		c.addPollReq(casbin.CfgPrtID, func(m casbin.Msg) {
 			if prt, ok := m.(*casbin.CfgPrt); ok {
@@ -189,6 +205,7 @@ func (c *Configurator) generateSetReqs() {
 	c.generateTPSet()
 	c.generateTModeSet()
 	c.generateSignalSet()
+	c.generateMinElevSet()
 }
 
 // generateVerifyReqs re-polls what the set phase changed, so that
@@ -197,6 +214,7 @@ func (c *Configurator) generateVerifyReqs() {
 	c.generateTPVerify()
 	c.generateTModeVerify()
 	c.generateSignalVerify()
+	c.generateMinElevVerify()
 }
 
 // genPhases are the request generation phases, each gated on all
@@ -388,6 +406,25 @@ func (c *Configurator) nativeMsg(m casbin.Msg, tRead time.Time) error {
 	return nil
 }
 
+// nativeText offers an NMEA sentence payload to outstanding text
+// requests (PCAS06 queries awaiting their GPTXT reply).
+func (c *Configurator) nativeText(payload string, tRead time.Time) error {
+	for _, req := range c.reqs {
+		if req.state == reqAwaitingAck && req.onText != nil && req.onText(payload) {
+			req.state = reqSucceeded
+			break
+		}
+	}
+	return nil
+}
+
+// addTextReq appends an NMEA text request whose reply is matched by
+// onText. There is no acknowledgement and no reply is guaranteed, so
+// the request is optional: silence is acceptable.
+func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
+	c.reqs = append(c.reqs, &casReq{state: reqNotReady, packet: []byte(sentence), onText: onText, optional: true})
+}
+
 // addPollReq appends an empty-payload poll of the given CFG message.
 // The data response is passed to onData; a NAK means the message does
 // not exist in this firmware, which is acceptable (shown by absence).
@@ -497,6 +534,10 @@ func (req *casReq) SetDeadlinePassed() {
 func (req *casReq) SetWontResend() {
 	if req.state != reqMayResend {
 		panic(req.invalidStatePanic("SetWontResend"))
+	}
+	if req.optional {
+		req.state = reqSucceeded
+		return
 	}
 	req.state = reqFailed
 	if req.err == nil {

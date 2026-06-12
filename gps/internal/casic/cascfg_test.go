@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/lib/casmsg"
 	"github.com/jclark/satpulse/gps/lib/latin1z"
@@ -34,8 +35,11 @@ type testReceiver struct {
 	sigCap     uint32 // hardware-receivable signals; clamps written SigIDMask
 	ports      []casbin.CfgPrt
 	rate       *casbin.CfgRate
-	newBaud    uint32 // recorded from a CFG-PRT set
-	silentPrt  bool   // CFG-PRT set gets no ACK (it arrives at the new speed)
+	navLimit   *casbin.CfgNavLimit
+	sw, hw     string   // PCAS06 replies, when non-empty
+	textOut    []string // queued GPTXT payloads to deliver
+	newBaud    uint32   // recorded from a CFG-PRT set
+	silentPrt  bool     // CFG-PRT set gets no ACK (it arrives at the new speed)
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -53,7 +57,14 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		if i < 0 {
 			r.t.Fatalf("unterminated NMEA sentence in request: %q", data)
 		}
-		r.nmea = append(r.nmea, strings.TrimRight(string(data[:i]), "\r"))
+		sentence := strings.TrimRight(string(data[:i]), "\r")
+		r.nmea = append(r.nmea, sentence)
+		if strings.HasPrefix(sentence, "$PCAS06,0") && r.sw != "" {
+			r.textOut = append(r.textOut, "GPTXT,01,01,02,SW="+r.sw)
+		}
+		if strings.HasPrefix(sentence, "$PCAS06,1") && r.hw != "" {
+			r.textOut = append(r.textOut, "GPTXT,01,01,02,HW="+r.hw)
+		}
 		data = data[i+1:]
 	}
 	if len(data) == 0 {
@@ -93,7 +104,16 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		if mt.Mask&casbin.NavxNavSystem != 0 {
 			r.navx.NavSystem = mt.NavSystem
 		}
+		if mt.Mask&casbin.NavxMinElev != 0 {
+			r.navx.MinElev = mt.MinElev
+		}
 		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgNavxID)})}
+	case *casbin.CfgNavLimit:
+		if r.navLimit == nil {
+			return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgNavLimID)})}
+		}
+		*r.navLimit = *mt
+		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgNavLimID)})}
 	case *casbin.CfgTMode:
 		if r.tm5 == nil {
 			return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgTModeID)})}
@@ -179,6 +199,10 @@ func (r *testReceiver) respondPoll(mid casbin.MsgID) [][]byte {
 		if r.rate != nil {
 			m = r.rate
 		}
+	case casbin.CfgNavLimID:
+		if r.navLimit != nil {
+			m = r.navLimit
+		}
 	case casbin.CfgPrtID:
 		if len(r.ports) > 0 {
 			var out [][]byte
@@ -261,6 +285,13 @@ func configure(t *testing.T, cp *ConfigProtocol, rcvr *testReceiver, target *gps
 				}
 				director.ValidPacketReceived(t0)
 			}
+			for _, payload := range rcvr.textOut {
+				t0 = t0.Add(5 * time.Millisecond)
+				if err := cp.NativeMsg(nmea.Tag, "GPTXT", &nmea.Sentence{Payload: payload}, t0); err != nil {
+					t.Fatalf("NativeMsg text: %v", err)
+				}
+			}
+			rcvr.textOut = nil
 		case gpsprot.ConfigActionWaitUntil:
 			if action.Deadline.After(t0) {
 				t0 = action.Deadline.Add(time.Millisecond)
@@ -1100,5 +1131,121 @@ func TestBaudChange(t *testing.T) {
 				t.Errorf("achieved baud = %d,%v, want 38400", got, ok)
 			}
 		})
+	}
+}
+
+func TestRawOut(t *testing.T) {
+	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
+	tests := []struct {
+		name   string
+		monVer *casbin.MonVer
+		flags  gpsprot.RawMsgFlags
+		expect map[casbin.MsgID]uint16
+	}{
+		{
+			name:   "V6 obs and nav",
+			monVer: v6,
+			flags:  gpsprot.RawMsgObs | gpsprot.RawMsgNavData,
+			expect: map[casbin.MsgID]uint16{casbin.Rxm2MeasxID: 1, casbin.Rxm2SfrbxID: 1},
+		},
+		{
+			name:   "V6 obs only turns nav off",
+			monVer: v6,
+			flags:  gpsprot.RawMsgObs,
+			expect: map[casbin.MsgID]uint16{casbin.Rxm2MeasxID: 1, casbin.Rxm2SfrbxID: 0},
+		},
+		{
+			name:   "V5 generates nothing",
+			flags:  gpsprot.RawMsgObs,
+			expect: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tc.monVer}
+			cp := probe(t, rcvr)
+			target := gpsprot.NewConfigTarget()
+			target.Opts.RawMsg.Set(tc.flags)
+			_, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if !reflect.DeepEqual(rcvr.rates, tc.expect) {
+				t.Errorf("rates\ngot  %v\nwant %v", rcvr.rates, tc.expect)
+			}
+		})
+	}
+}
+
+func TestMinElevation(t *testing.T) {
+	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
+	t.Run("V6 read-modify-write of CFG-NAVLIMIT", func(t *testing.T) {
+		rcvr := &testReceiver{
+			monVer:   v6,
+			navLimit: &casbin.CfgNavLimit{MinSVs: 4, MaxSVs: 40, MinCNO: 8, MinElev: 5},
+		}
+		cp := probe(t, rcvr)
+		target := gpsprot.NewConfigTarget()
+		target.Props.SetMinElevation(gpsprot.DegreesFromFloat(15))
+		cfg, errCount := configure(t, cp, rcvr, target)
+		if errCount != 0 {
+			t.Errorf("ErrorCount = %d, want 0", errCount)
+		}
+		want := casbin.CfgNavLimit{MinSVs: 4, MaxSVs: 40, MinCNO: 8, MinElev: 15}
+		if !reflect.DeepEqual(*rcvr.navLimit, want) {
+			t.Errorf("CFG-NAVLIMIT\ngot  %+v\nwant %+v", *rcvr.navLimit, want)
+		}
+		if got, ok := cfg.ConfigProps().GetMinElevation(); !ok || got.Degrees() != 15 {
+			t.Errorf("MinElevation = %v,%v, want 15", got.Degrees(), ok)
+		}
+	})
+	t.Run("V5 mask-applied CFG-NAVX", func(t *testing.T) {
+		rcvr := &testReceiver{navx: &casbin.CfgNavx{NavSystem: casbin.NavSysGPS, MinElev: 5}}
+		cp := probe(t, rcvr)
+		target := gpsprot.NewConfigTarget()
+		target.Props.SetMinElevation(gpsprot.DegreesFromFloat(10))
+		cfg, errCount := configure(t, cp, rcvr, target)
+		if errCount != 0 {
+			t.Errorf("ErrorCount = %d, want 0", errCount)
+		}
+		if rcvr.navx.MinElev != 10 {
+			t.Errorf("NAVX MinElev = %d, want 10", rcvr.navx.MinElev)
+		}
+		if got, ok := cfg.ConfigProps().GetMinElevation(); !ok || got.Degrees() != 10 {
+			t.Errorf("MinElevation = %v,%v, want 10", got.Degrees(), ok)
+		}
+	})
+}
+
+func TestAntennaCableDelay(t *testing.T) {
+	rcvr := &testReceiver{
+		monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
+		tp:     defaultTP(),
+	}
+	cp := probe(t, rcvr)
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetAntennaCableDelay(50 * time.Nanosecond)
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if rcvr.tp.UserDelay != 5e-8 {
+		t.Errorf("UserDelay = %g, want 5e-08", rcvr.tp.UserDelay)
+	}
+	if got, ok := cfg.ConfigProps().GetAntennaCableDelay(); !ok || got != 50*time.Nanosecond {
+		t.Errorf("AntennaCableDelay = %v,%v, want 50ns", got, ok)
+	}
+}
+
+func TestV5VersionFromPCAS06(t *testing.T) {
+	rcvr := &testReceiver{sw: "URANUS5,V5.3.0.0", hw: "AT6558D,0000000000000"}
+	cp := probe(t, rcvr)
+	cfg, errCount := configure(t, cp, rcvr, gpsprot.NewConfigTarget())
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	info := cfg.ReceiverInfo()
+	if info.Firmware != "SW=URANUS5,V5.3.0.0" || info.Hardware != "HW=AT6558D,0000000000000" {
+		t.Errorf("ReceiverInfo = %q / %q, want PCAS06 values", info.Firmware, info.Hardware)
 	}
 }

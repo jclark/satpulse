@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/lib/casmsg"
 )
@@ -49,8 +50,15 @@ func NewConfigProtocol() *ConfigProtocol {
 	return &ConfigProtocol{}
 }
 
-// NativeMsg processes CASIC messages routed from the packet processor.
+// NativeMsg processes CASIC messages routed from the packet processor,
+// and NMEA sentences for the GPTXT replies to PCAS06 version queries.
 func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
+	if tag == nmea.Tag {
+		if s, ok := msg.(*nmea.Sentence); ok && cp.cfg != nil {
+			return cp.cfg.nativeText(s.Payload, tRead)
+		}
+		return nil
+	}
 	if tag != Tag {
 		return nil
 	}

@@ -18,6 +18,33 @@ func (c *Configurator) generateMsgReqs() {
 	if opts.SatsMsg.IsSet() {
 		c.generateSatsReqs(opts.SatsMsg.Get())
 	}
+	if opts.RawMsg.IsSet() {
+		c.generateRawReqs(opts.RawMsg.Get())
+	}
+}
+
+// generateRawReqs configures raw data output on V6: RXM2-MEASX carries
+// raw observations, RXM2-SFRBX raw navigation subframes. A raw request
+// is complete: the group message not named is turned off. The dual-band
+// F8N acknowledges these enables without ever emitting the messages - a
+// firmware limitation that is deliberately not worked around. V5
+// firmware likewise acknowledges its RXM messages but never emits them
+// (per the casictool notes), so raw output does not exist there and no
+// requests are generated.
+func (c *Configurator) generateRawReqs(flags gpsprot.RawMsgFlags) {
+	if c.family != familyV6 {
+		return
+	}
+	for _, m := range []struct {
+		mid  casbin.MsgID
+		flag gpsprot.RawMsgFlags
+	}{{casbin.Rxm2MeasxID, gpsprot.RawMsgObs}, {casbin.Rxm2SfrbxID, gpsprot.RawMsgNavData}} {
+		var rate uint16
+		if flags&m.flag != 0 {
+			rate = 1
+		}
+		c.addReqNakOK(&casbin.CfgMsg{Target: m.mid, Rate: rate}, nil)
+	}
 }
 
 // generateSatsReqs configures the messages carrying satellite
