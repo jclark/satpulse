@@ -8,6 +8,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/lib/casmsg"
 	"github.com/jclark/satpulse/gps/lib/latin1z"
 )
 
@@ -230,10 +231,11 @@ func nmeaTarget(flags gpsprot.NMEAMsgFlags) *gpsprot.ConfigTarget {
 
 func TestNMEAOut(t *testing.T) {
 	tests := []struct {
-		name   string
-		monVer *casbin.MonVer
-		flags  gpsprot.NMEAMsgFlags
-		expect map[casbin.MsgID]uint16
+		name       string
+		monVer     *casbin.MonVer
+		flags      gpsprot.NMEAMsgFlags
+		expect     map[casbin.MsgID]uint16
+		expectPcas string
 	}{
 		{
 			name:   "V6 RMC and ZDA",
@@ -244,6 +246,7 @@ func TestNMEAOut(t *testing.T) {
 				casbin.NmeaGsaID: 0, casbin.NmeaZdaV6ID: 1, casbin.NmeaVtgID: 0,
 				casbin.NmeaGllID: 0,
 			},
+			expectPcas: casmsg.OutputRates(0, 0, 0, 0, 1, 0, 1),
 		},
 		{
 			name:  "V5 ZDA uses 0x08",
@@ -253,6 +256,7 @@ func TestNMEAOut(t *testing.T) {
 				casbin.NmeaGsaID: 0, casbin.NmeaZdaID: 1, casbin.NmeaVtgID: 0,
 				casbin.NmeaGllID: 0,
 			},
+			expectPcas: casmsg.OutputRates(0, 0, 0, 0, 0, 0, 1),
 		},
 		{
 			name:  "all off",
@@ -262,6 +266,7 @@ func TestNMEAOut(t *testing.T) {
 				casbin.NmeaGsaID: 0, casbin.NmeaZdaID: 0, casbin.NmeaVtgID: 0,
 				casbin.NmeaGllID: 0,
 			},
+			expectPcas: casmsg.QuietAll(),
 		},
 	}
 	for _, tc := range tests {
@@ -274,6 +279,10 @@ func TestNMEAOut(t *testing.T) {
 			}
 			if !reflect.DeepEqual(rcvr.rates, tc.expect) {
 				t.Errorf("rates\ngot  %v\nwant %v", rcvr.rates, tc.expect)
+			}
+			last := rcvr.nmea[len(rcvr.nmea)-1] + "\r\n"
+			if last != tc.expectPcas {
+				t.Errorf("final PCAS03 = %q, want %q", last, tc.expectPcas)
 			}
 		})
 	}

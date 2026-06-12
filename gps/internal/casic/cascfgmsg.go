@@ -3,6 +3,7 @@ package casic
 import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/lib/casmsg"
 )
 
 // generateMsgReqs generates the message output requests for the target.
@@ -143,4 +144,26 @@ func (c *Configurator) generateNMEAReqs(flags gpsprot.NMEAMsgFlags) {
 		}
 		c.addReq(&casbin.CfgMsg{Target: m.mid, Rate: rate})
 	}
+	c.addNMEARatesReq(flags)
+}
+
+// addNMEARatesReq appends a PCAS03 command restating the target NMEA
+// rates. The receiver applies PCAS03 asynchronously over up to about a
+// second, so the probe's quiet command can overwrite CFG-MSG rate sets
+// that follow it closely (observed on the F8N: rates set within 50 ms
+// of the quiet were lost, after 1 s they stuck). PCAS03 commands are
+// applied in order, so restating the rates after the sets guarantees
+// the final state regardless of timing. The command produces no
+// acknowledgement; the preceding CFG-MSG sets carry the ACK semantics.
+func (c *Configurator) addNMEARatesReq(flags gpsprot.NMEAMsgFlags) {
+	rate := func(f gpsprot.NMEAMsgFlags) int {
+		if flags&f != 0 {
+			return 1
+		}
+		return 0
+	}
+	s := casmsg.OutputRates(rate(gpsprot.NMEAMsgGGA), rate(gpsprot.NMEAMsgGLL),
+		rate(gpsprot.NMEAMsgGSA), rate(gpsprot.NMEAMsgGSV), rate(gpsprot.NMEAMsgRMC),
+		rate(gpsprot.NMEAMsgVTG), rate(gpsprot.NMEAMsgZDA))
+	c.reqs = append(c.reqs, &casReq{state: reqNotReady, packet: []byte(s), noAck: true})
 }

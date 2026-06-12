@@ -18,12 +18,25 @@ func Sentence(payload string) string {
 	return fmt.Sprintf("$%s*%02X\r\n", payload, nmeamsg.Checksum([]byte(payload)))
 }
 
+// OutputRates returns the PCAS03 command setting the output rates of
+// the standard NMEA sentences (in fixes per sentence, 0=off). The
+// remaining outputs (ANT/TXT, DHV, LPS, UTC, GST, TIM) are turned off,
+// matching QuietAll. The receiver applies a PCAS03 command
+// asynchronously, taking up to about a second, but successive PCAS03
+// commands are applied in order; rates set via CFG-MSG within that
+// window can be overwritten by an in-flight PCAS03 (observed on the
+// ATGM332D-F8N).
+func OutputRates(gga, gll, gsa, gsv, rmc, vtg, zda int) string {
+	return Sentence(fmt.Sprintf("PCAS03,%d,%d,%d,%d,%d,%d,%d,0,0,0,,,0,0,,,,0",
+		gga, gll, gsa, gsv, rmc, vtg, zda))
+}
+
 // QuietAll returns the PCAS03 command that disables all NMEA output.
 // The setting is RAM-only: the receiver reverts on restart or reload.
 // On a V5 receiver at its default 9600 baud this is the only way to
 // keep the line from saturating (see CONTEXT in gps/internal/casic).
 func QuietAll() string {
-	return Sentence("PCAS03,0,0,0,0,0,0,0,0,0,0,,,0,0,,,,0")
+	return OutputRates(0, 0, 0, 0, 0, 0, 0)
 }
 
 // PCAS06 query info values. The reply is a GPTXT sentence whose text
