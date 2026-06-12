@@ -32,6 +32,10 @@ type testReceiver struct {
 	navx       *casbin.CfgNavx
 	navBand    *casbin.CfgNavBand
 	sigCap     uint32 // hardware-receivable signals; clamps written SigIDMask
+	ports      []casbin.CfgPrt
+	rate       *casbin.CfgRate
+	newBaud    uint32 // recorded from a CFG-PRT set
+	silentPrt  bool   // CFG-PRT set gets no ACK (it arrives at the new speed)
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -69,6 +73,12 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(m.ID())})}
 	}
 	switch mt := m.(type) {
+	case *casbin.CfgPrt:
+		r.newBaud = mt.BaudRate
+		if r.silentPrt {
+			return nil
+		}
+		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgPrtID)})}
 	case *casbin.CfgNavBand:
 		if r.navBand == nil {
 			return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgNavBandID)})}
@@ -165,6 +175,18 @@ func (r *testReceiver) respondPoll(mid casbin.MsgID) [][]byte {
 		if r.navBand != nil {
 			m = r.navBand
 		}
+	case casbin.CfgRateID:
+		if r.rate != nil {
+			m = r.rate
+		}
+	case casbin.CfgPrtID:
+		if len(r.ports) > 0 {
+			var out [][]byte
+			for i := range r.ports {
+				out = append(out, r.pack(&r.ports[i]))
+			}
+			return append(out, r.pack(&casbin.AckAck{AckPayload: ackOf(mid)}))
+		}
 	}
 	if m == nil {
 		return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(mid)})}
@@ -228,11 +250,16 @@ func configure(t *testing.T, cp *ConfigProtocol, rcvr *testReceiver, target *gps
 		case gpsprot.ConfigActionSendRequest:
 			t0 = t0.Add(10 * time.Millisecond)
 			cfg.Request(action.Index).SetSentTime(t0)
+			if action.Speed != 0 {
+				// the next responses arrive after the host switched speed
+				t0 = t0.Add(200 * time.Millisecond)
+			}
 			for _, resp := range append(rcvr.takePending(), rcvr.respond(action.Packet)...) {
 				t0 = t0.Add(5 * time.Millisecond)
 				if _, err := pp.ProcessPacket(string(resp), t0); err != nil {
 					t.Fatalf("ProcessPacket: %v", err)
 				}
+				director.ValidPacketReceived(t0)
 			}
 		case gpsprot.ConfigActionWaitUntil:
 			if action.Deadline.After(t0) {
@@ -1036,5 +1063,42 @@ func TestSignalGetWithAutoBand(t *testing.T) {
 	want := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGLOL1)
 	if !ok || got != want {
 		t.Errorf("SignalsEnabled = %v,%v, want %v", got, ok, want)
+	}
+}
+
+func TestBaudChange(t *testing.T) {
+	ports := []casbin.CfgPrt{
+		{PortID: 0, ProtoMask: 0x33, Mode: 0x0003, BaudRate: 115200},
+		{PortID: 1, ProtoMask: 0x33, Mode: 0x0003, BaudRate: 115200},
+	}
+	tests := []struct {
+		name      string
+		silentPrt bool
+	}{
+		{name: "ACK arrives at new speed and is matched"},
+		{name: "no ACK, confirm poll traffic confirms", silentPrt: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{
+				monVer:    &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
+				ports:     append([]casbin.CfgPrt{}, ports...),
+				rate:      &casbin.CfgRate{FixIntervalMs: 1000, FixRateHz: 1},
+				silentPrt: tc.silentPrt,
+			}
+			cp := probe(t, rcvr)
+			target := gpsprot.NewConfigTarget()
+			target.Props.SetBaudRate(38400)
+			cfg, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if rcvr.newBaud != 38400 {
+				t.Errorf("receiver baud = %d, want 38400", rcvr.newBaud)
+			}
+			if got, ok := cfg.ConfigProps().GetBaudRate(); !ok || got != 38400 {
+				t.Errorf("achieved baud = %d,%v, want 38400", got, ok)
+			}
+		})
 	}
 }

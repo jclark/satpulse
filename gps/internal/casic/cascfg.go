@@ -15,6 +15,13 @@ import (
 // second or so of pending output.
 const maxResponseDelay = 2 * time.Second
 
+// speedChangeDelay is how long after sending a baud change until a
+// valid packet counts as confirmation. The host switches speed right
+// after the write, so any later valid packet must have arrived at the
+// new speed; the delay only excludes packets buffered before the
+// switch.
+const speedChangeDelay = 150 * time.Millisecond
+
 // Configurator implements gpsprot.Configurator for CASIC receivers.
 //
 // Requests are generated in one batch. A CASIC ACK/NAK identifies the
@@ -23,17 +30,19 @@ const maxResponseDelay = 2 * time.Second
 // promoted to ready only when no earlier live request shares their
 // class+id (see promote).
 type Configurator struct {
-	target  *gpsprot.ConfigTarget
-	ver     *casbin.MonVer // nil when MON-VER is unsupported (V5)
-	family  fwFamily
-	reqs    []*casReq
-	phase   int                // index into genPhases of the next phase to generate
-	touched uint16             // CfgSection* bits of the sections set requests touched
-	tp      *casbin.CfgTP      // latest CFG-TP readback; nil if never answered
-	tm5     *casbin.CfgTMode   // latest V5 CFG-TMODE readback
-	tm6     *casbin.CfgTMode2  // latest V6 CFG-TMODE2 readback
-	navx    *casbin.CfgNavx    // latest V5 CFG-NAVX readback
-	navBand *casbin.CfgNavBand // latest V6 CFG-NAVBAND readback
+	target   *gpsprot.ConfigTarget
+	ver      *casbin.MonVer // nil when MON-VER is unsupported (V5)
+	family   fwFamily
+	reqs     []*casReq
+	phase    int                // index into genPhases of the next phase to generate
+	touched  uint16             // CfgSection* bits of the sections set requests touched
+	tp       *casbin.CfgTP      // latest CFG-TP readback; nil if never answered
+	tm5      *casbin.CfgTMode   // latest V5 CFG-TMODE readback
+	tm6      *casbin.CfgTMode2  // latest V6 CFG-TMODE2 readback
+	navx     *casbin.CfgNavx    // latest V5 CFG-NAVX readback
+	navBand  *casbin.CfgNavBand // latest V6 CFG-NAVBAND readback
+	ports    []casbin.CfgPrt    // CFG-PRT readback, one entry per port
+	speedReq *casReq            // the baud change request, when one was generated
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -56,15 +65,16 @@ const (
 // fallback request via onNak first; this is how NAK-driven fallback
 // stays out of the error path.
 type casReq struct {
-	state  casReqState
-	mid    casbin.MsgID // class+id, for ACK correlation
-	packet []byte
-	tBase  time.Time // time request was sent
-	err    error
-	nakOK  bool             // NAK is acceptable, not a failure
-	onNak  func()           // generates the fallback request when NAKed
-	noAck  bool             // no response expected (CFG-RST): sending is success
-	onData func(casbin.Msg) // receives data responses (polls); ACK still completes
+	state      casReqState
+	mid        casbin.MsgID // class+id, for ACK correlation
+	packet     []byte
+	tBase      time.Time // time request was sent
+	err        error
+	nakOK      bool             // NAK is acceptable, not a failure
+	onNak      func()           // generates the fallback request when NAKed
+	noAck      bool             // no response expected (CFG-RST): sending is success
+	onData     func(casbin.Msg) // receives data responses (polls); ACK still completes
+	speedAfter int              // new baud rate to switch to after sending
 }
 
 var _ gpsprot.ConfigRequest = (*casReq)(nil)
@@ -104,7 +114,8 @@ func (c *Configurator) supportedGNSS() gpsprot.GNSSSet {
 // ConfigSupport returns the configuration options this implementation
 // supports.
 func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
-	flags := gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+	flags := gpsprot.ConfigSupportSpeed |
+		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc
 	if c.family == familyV6 {
 		flags |= gpsprot.ConfigSupportBand
@@ -120,6 +131,9 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	c.tpConfigProps(props)
 	c.tmodeConfigProps(props)
 	c.signalConfigProps(props)
+	if c.speedReq != nil && c.speedReq.state == reqSucceeded {
+		props.SetBaudRate(uint32(c.speedReq.speedAfter))
+	}
 	return props
 }
 
@@ -129,6 +143,41 @@ func (c *Configurator) generateQueryReqs() {
 	c.generateTPQuery()
 	c.generateTModeQuery()
 	c.generateSignalQuery()
+	if _, ok := c.target.Props.GetBaudRate(); ok {
+		c.addPollReq(casbin.CfgPrtID, func(m casbin.Msg) {
+			if prt, ok := m.(*casbin.CfgPrt); ok {
+				c.ports = append(c.ports, *prt)
+			}
+		})
+	}
+}
+
+// generateSpeedReqs generates the baud rate change, which must be the
+// last request: communication breaks if it fails. The set uses port id
+// 0xFF (the port in use) with the other port settings preserved from
+// the readback. The receiver switches speed immediately and sends its
+// ACK at the new rate, so the request is followed by a CFG-RATE poll
+// whose answer guarantees traffic at the new speed for confirmation.
+// When a save was also requested it runs before the change and thus
+// persists the old baud rate; persisting the new rate needs a save in
+// a later invocation at the new speed.
+func (c *Configurator) generateSpeedReqs() {
+	baud, ok := c.target.Props.GetBaudRate()
+	if !ok || len(c.ports) == 0 {
+		return
+	}
+	base := c.ports[0]
+	for _, p := range c.ports {
+		if p.PortID == 0 {
+			base = p
+		}
+	}
+	m := &casbin.CfgPrt{PortID: casbin.PortCurrent, ProtoMask: base.ProtoMask, Mode: base.Mode, BaudRate: baud}
+	req := &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m), speedAfter: int(baud)}
+	c.touched |= casbin.CfgSectionPort
+	c.reqs = append(c.reqs, req)
+	c.speedReq = req
+	c.addPollReq(casbin.CfgRateID, nil)
 }
 
 // generateSetReqs generates the property set requests, computed from
@@ -158,6 +207,7 @@ var genPhases = []func(*Configurator){
 	(*Configurator).generateSetReqs,
 	(*Configurator).generateVerifyReqs,
 	(*Configurator).generateNVMReqs,
+	(*Configurator).generateSpeedReqs,
 }
 
 // GenerateRequests generates configuration requests and promotes
@@ -382,7 +432,7 @@ func (req *casReq) GetPacket() []byte {
 }
 
 func (req *casReq) GetSpeedChangeAfter() int {
-	return 0
+	return req.speedAfter
 }
 
 func (req *casReq) GetState() gpsprot.ConfigRequestState {
@@ -449,5 +499,14 @@ func (req *casReq) SetWontResend() {
 	}
 }
 
+// MaybeSpeedChangeSucceeded confirms a baud change: once the host has
+// switched speed, a valid packet read after the exclusion delay can
+// only have arrived at the new speed.
 func (req *casReq) MaybeSpeedChangeSucceeded(validPacketTime time.Time) {
+	if req.state != reqAwaitingAck || req.speedAfter == 0 {
+		return
+	}
+	if validPacketTime.Sub(req.tBase) > speedChangeDelay {
+		req.state = reqSucceeded
+	}
 }
