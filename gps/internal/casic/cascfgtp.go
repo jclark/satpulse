@@ -1,6 +1,7 @@
 package casic
 
 import (
+	"math"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -218,5 +219,5 @@ func (c *Configurator) tpConfigProps(props *gpsprot.ConfigProps) {
 	if g, ok := c.timeGNSS(c.tp.TSrcMode); ok {
 		props.SetTimeGNSS(g)
 	}
-	props.SetAntennaCableDelay(time.Duration(float64(c.tp.UserDelay) * float64(time.Second)))
+	props.SetAntennaCableDelay(time.Duration(math.Round(float64(c.tp.UserDelay) * float64(time.Second))))
 }
