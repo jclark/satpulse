@@ -14,6 +14,34 @@ func (c *Configurator) generateMsgReqs() {
 	if opts.NMEAMsg.IsSet() {
 		c.generateNMEAReqs(opts.NMEAMsg.Get())
 	}
+	if opts.SatsMsg.IsSet() {
+		c.generateSatsReqs(opts.SatsMsg.Get())
+	}
+}
+
+// generateSatsReqs configures the messages carrying satellite
+// information. A satellite request is complete: group messages not
+// carrying requested information are turned off. On V6, NAV2-SIG
+// carries both per-satellite and per-signal information; on V5 the
+// per-constellation NAV-*INFO messages carry satellite information
+// only, so a signal-only request enables nothing there (per-signal
+// information is not deliverable, which shows as absence).
+func (c *Configurator) generateSatsReqs(flags gpsprot.SatsMsgFlags) {
+	if c.family == familyV6 {
+		var rate uint16
+		if flags&(gpsprot.SatsMsgSat|gpsprot.SatsMsgSignal) != 0 {
+			rate = 1
+		}
+		c.addReqNakOK(&casbin.CfgMsg{Target: casbin.Nav2SigID, Rate: rate}, nil)
+		return
+	}
+	var rate uint16
+	if flags&gpsprot.SatsMsgSat != 0 {
+		rate = 1
+	}
+	for _, mid := range []casbin.MsgID{casbin.NavGPSInfoID, casbin.NavBDSInfoID, casbin.NavGLNInfoID} {
+		c.addReqNakOK(&casbin.CfgMsg{Target: mid, Rate: rate}, nil)
+	}
 }
 
 // generatePVTReqs configures the native messages that deliver the

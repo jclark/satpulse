@@ -351,6 +351,58 @@ func TestPVTOut(t *testing.T) {
 	}
 }
 
+func TestSatsOut(t *testing.T) {
+	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
+	tests := []struct {
+		name   string
+		monVer *casbin.MonVer
+		flags  gpsprot.SatsMsgFlags
+		expect map[casbin.MsgID]uint16
+	}{
+		{
+			name:   "V6 sat",
+			monVer: v6,
+			flags:  gpsprot.SatsMsgSat,
+			expect: map[casbin.MsgID]uint16{casbin.Nav2SigID: 1},
+		},
+		{
+			name:   "V6 none turns off",
+			monVer: v6,
+			flags:  gpsprot.SatsMsgNone,
+			expect: map[casbin.MsgID]uint16{casbin.Nav2SigID: 0},
+		},
+		{
+			name:  "V5 sat",
+			flags: gpsprot.SatsMsgSat,
+			expect: map[casbin.MsgID]uint16{
+				casbin.NavGPSInfoID: 1, casbin.NavBDSInfoID: 1, casbin.NavGLNInfoID: 1,
+			},
+		},
+		{
+			name:  "V5 signal only enables nothing",
+			flags: gpsprot.SatsMsgSignal,
+			expect: map[casbin.MsgID]uint16{
+				casbin.NavGPSInfoID: 0, casbin.NavBDSInfoID: 0, casbin.NavGLNInfoID: 0,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tc.monVer}
+			cp := probe(t, rcvr)
+			target := gpsprot.NewConfigTarget()
+			target.Opts.SatsMsg.Set(tc.flags)
+			_, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if !reflect.DeepEqual(rcvr.rates, tc.expect) {
+				t.Errorf("rates\ngot  %v\nwant %v", rcvr.rates, tc.expect)
+			}
+		})
+	}
+}
+
 // TestTimTPFallback covers the hardware divergence found on the F8N:
 // enabling TIM-TP is NAKed, and the configurator falls back to
 // TIM2-TPX; if that is NAKed too, pulse-time output is simply absent.
