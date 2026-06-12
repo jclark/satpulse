@@ -315,6 +315,9 @@ The following option configures the receiver's serial port speed.
 
 **\-\-speed** *bps*
 : Configure the GPS receiver's serial speed in bits per second.
+The speed is part of the receiver configuration like any other property:
+combined with **\-\-save** or **\-\-save\-all**, the new speed is what is saved,
+and is the speed the receiver will use after a restart.
 
 The following options control use of the receiver's non-volatile memory.
 
