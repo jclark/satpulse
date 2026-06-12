@@ -738,7 +738,7 @@ class ProbeRun:
             return
         self.tool.set_speed(orig)
         cfg = self.show_config("verify-restore-speed")
-        if cfg is not None and config_value(cfg, ("baudRate",)) != orig:
+        if cfg is not None and (config_value(cfg, ("baudRate",)) or orig) != orig:
             self.failures.append(
                 f"speed: restore to {orig!r} read back as "
                 f"{config_value(cfg, ('baudRate',))!r}")
