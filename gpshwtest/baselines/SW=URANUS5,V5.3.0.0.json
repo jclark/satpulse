@@ -1,0 +1,263 @@
+{
+  "limitations": {
+    "mode.fixedPosLLH[0]": {
+      "unsupported": true
+    },
+    "mode.fixedPosLLH[1]": {
+      "unsupported": true
+    },
+    "mode.height": {
+      "unsupported": true
+    },
+    "port": {
+      "unsupported": true
+    },
+    "pvtOut": {
+      "missing": [
+        {
+          "missing": [
+            "leap"
+          ],
+          "requested": [
+            "tp",
+            "after",
+            "tai",
+            "leap",
+            "qual",
+            "epoch",
+            "off"
+          ]
+        }
+      ]
+    },
+    "rawOut": {
+      "missing": [
+        {
+          "missing": [
+            "obs"
+          ],
+          "requested": [
+            "obs"
+          ]
+        },
+        {
+          "missing": [
+            "nav"
+          ],
+          "requested": [
+            "nav"
+          ]
+        }
+      ]
+    },
+    "rtcmBaseID": {
+      "unsupported": true
+    },
+    "rtcmOut": {
+      "missing": [
+        {
+          "missing": [
+            "1005",
+            "1074",
+            "1084",
+            "1124"
+          ],
+          "requested": [
+            "MSM4",
+            "ARP"
+          ]
+        },
+        {
+          "missing": [
+            "1077",
+            "1087",
+            "1127"
+          ],
+          "requested": [
+            "MSM7"
+          ]
+        }
+      ]
+    },
+    "satsOut": {
+      "missing": [
+        {
+          "missing": [
+            "perSignal",
+            "satellites"
+          ],
+          "requested": [
+            "sig"
+          ]
+        }
+      ]
+    },
+    "signals": {
+      "adjusted": [
+        {
+          "achieved": {
+            "GPS": [
+              "L1"
+            ]
+          },
+          "requested": {
+            "GPS": []
+          }
+        },
+        {
+          "achieved": {
+            "BDS": [
+              "B1I"
+            ]
+          },
+          "requested": {
+            "BDS": []
+          }
+        },
+        {
+          "achieved": {
+            "GLO": [
+              "L1"
+            ]
+          },
+          "requested": {
+            "GLO": []
+          }
+        },
+        {
+          "achieved": {
+            "GLO": [
+              "L1"
+            ]
+          },
+          "requested": {
+            "GLO": []
+          }
+        },
+        {
+          "achieved": {
+            "BDS": [
+              "B1I"
+            ],
+            "GLO": [
+              "L1"
+            ],
+            "GPS": [
+              "L1"
+            ]
+          },
+          "requested": {
+            "BDS": [],
+            "GLO": [],
+            "GPS": []
+          }
+        },
+        {
+          "achieved": {
+            "BDS": [
+              "B1I"
+            ],
+            "GLO": [
+              "L1"
+            ],
+            "GPS": [
+              "L1"
+            ]
+          },
+          "requested": {
+            "BDS": [],
+            "GLO": [],
+            "GPS": []
+          }
+        },
+        {
+          "achieved": {
+            "BDS": [
+              "B1I"
+            ],
+            "GLO": [
+              "L1"
+            ],
+            "GPS": [
+              "L1"
+            ]
+          },
+          "requested": {
+            "BDS": [],
+            "GLO": [],
+            "GPS": []
+          }
+        },
+        {
+          "achieved": {
+            "BDS": [
+              "B1I"
+            ],
+            "GLO": [
+              "L1"
+            ],
+            "GPS": [
+              "L1"
+            ]
+          },
+          "requested": {
+            "BDS": [],
+            "GLO": [],
+            "GPS": []
+          }
+        }
+      ],
+      "refused": [
+        {
+          "signals": {
+            "GPS": []
+          }
+        },
+        {
+          "signals": {
+            "BDS": []
+          }
+        }
+      ],
+      "signalSet": {
+        "BDS": [
+          "B1I"
+        ],
+        "GLO": [
+          "L1"
+        ],
+        "GPS": [
+          "L1"
+        ]
+      }
+    },
+    "timeGNSS": {
+      "observations": [
+        {
+          "achieved": "GPS",
+          "requested": "GAL"
+        }
+      ]
+    },
+    "timePulse.width": {
+      "quantum": 1e-06
+    }
+  },
+  "receiver": {
+    "firmware": "SW=URANUS5,V5.3.0.0",
+    "hardware": "",
+    "supportedGNSS": [
+      "GPS",
+      "BDS",
+      "GLO"
+    ],
+    "vendor": "Zhongke"
+  },
+  "supports": [
+    "fixedPos",
+    "fixedPosAcc",
+    "speed",
+    "survey",
+    "surveyAcc"
+  ]
+}
