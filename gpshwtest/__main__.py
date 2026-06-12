@@ -193,7 +193,7 @@ def compare_baseline(receiver: dict[str, Any], baseline: Path | None, text: str)
     """Compare against the checked-in characterization; differences are
     regressions to investigate. Absence of a baseline is not a failure."""
     if baseline is None:
-        slug = "-".join(str(receiver.get(k, "")) for k in ("hardware", "firmware"))
+        slug = "-".join(s for k in ("hardware", "firmware") if (s := str(receiver.get(k, ""))))
         baseline = HERE / "baselines" / (slug.replace(" ", "-").replace("/", "-") + ".json")
         if not baseline.exists():
             print(f"no baseline at {baseline}; vet and check in the characterization",
