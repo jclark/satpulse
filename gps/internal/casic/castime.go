@@ -56,8 +56,7 @@ func timeTim2Tpx(m *casbin.Tim2Tpx) *gpsprot.TimeMsg {
 	if m.PPSFlag&(casbin.Tim2PPSTOWValid|casbin.Tim2PPSWnValid) != casbin.Tim2PPSTOWValid|casbin.Tim2PPSWnValid {
 		return &t
 	}
-	towSubNs := time.Duration(math.Round(float64(m.TOWSubms) * math.Exp2(-30) * 1e6))
-	tow := time.Duration(m.TOW)*time.Millisecond + towSubNs
+	tow := tim2TOW(m.TOW, m.TOWSubms)
 	var taiMinusGNSS int16
 	switch m.TSrc {
 	case casbin.Tim2TSrcGPS:
@@ -95,6 +94,13 @@ func timeNav2Sol(m *casbin.Nav2Sol, gnss gpsprot.GNSS) *gpsprot.TimeMsg {
 	t.GNSS = gnss
 	t.TAITime = ptime.GPS(int16(m.Wn), time.Duration(m.TOW)*time.Millisecond)
 	return &t
+}
+
+// tim2TOW combines a TIM2 message's integer-millisecond TOW and its
+// 2^-30-scaled fractional-millisecond field into a duration.
+func tim2TOW(tow uint32, subms int32) time.Duration {
+	return time.Duration(tow)*time.Millisecond +
+		time.Duration(math.Round(float64(subms)*math.Exp2(-30)*1e6))
 }
 
 // gnssTime converts CASIC GNSS ID, week number, and TOW to gpsprot.GNSS and TAI time.
@@ -141,9 +147,7 @@ func timeTim2TimeGNSS(m *casbin.Tim2TimeGNSS, gnss gpsprot.GNSS, toTAI func(int1
 	if m.TFlag&(casbin.Tim2TimeFlagTOWValid|casbin.Tim2TimeFlagWnValid) != casbin.Tim2TimeFlagTOWValid|casbin.Tim2TimeFlagWnValid {
 		return &t
 	}
-	towSubNs := time.Duration(math.Round(float64(m.TOWSubms) * math.Exp2(-30) * 1e6))
-	tow := time.Duration(m.TOW)*time.Millisecond + towSubNs
-	t.TAITime = toTAI(int16(m.Wn), tow)
+	t.TAITime = toTAI(int16(m.Wn), tim2TOW(uint32(m.TOW), m.TOWSubms))
 	if m.TAcc > 0 {
 		t.Accuracy = time.Duration(math.Round(float64(m.TAcc)))
 	}
@@ -160,9 +164,7 @@ func timeTim2TimeGLN(m *casbin.Tim2TimeGNSS) *gpsprot.TimeMsg {
 	if m.TFlag&(casbin.Tim2TimeFlagTOWValid|casbin.Tim2TimeFlagWnValid) != casbin.Tim2TimeFlagTOWValid|casbin.Tim2TimeFlagWnValid {
 		return &t
 	}
-	towSubNs := time.Duration(math.Round(float64(m.TOWSubms) * math.Exp2(-30) * 1e6))
-	tow := time.Duration(m.TOW)*time.Millisecond + towSubNs
-	t.UTCTime.Set(ptime.GLONASSWeekUTC(m.Wn, tow))
+	t.UTCTime.Set(ptime.GLONASSWeekUTC(m.Wn, tim2TOW(uint32(m.TOW), m.TOWSubms)))
 	if m.TAcc > 0 {
 		t.Accuracy = time.Duration(math.Round(float64(m.TAcc)))
 	}
