@@ -53,8 +53,8 @@ type wallClock struct {
 	fitValid bool
 	anchorX  time.Time
 	anchorY  ntime.Time
-	a        time.Duration
-	b        float64
+	line     fittedLine[time.Duration, time.Duration]
+	lineOK   bool
 }
 
 type wallPoint struct {
@@ -125,51 +125,36 @@ func (c *wallClock) predictRef(mono time.Time) (ntime.Time, error) {
 	if !c.fitValid {
 		c.refit()
 	}
-	if math.Abs(c.b-1) > c.rateLimit {
+	if !c.lineOK {
+		return 0, ErrNotReady
+	}
+	if math.Abs(c.line.slope-1) > c.rateLimit {
 		return 0, fmt.Errorf("phcsample: wallClock fitted rate mismatch %.4f exceeds limit %.4f",
-			c.b-1, c.rateLimit)
+			c.line.slope-1, c.rateLimit)
 	}
 	if medAbs := c.medianAbsResidual(); medAbs > c.timingVar {
 		return 0, fmt.Errorf("phcsample: wallClock median residual %v exceeds limit %v",
 			medAbs, c.timingVar)
 	}
-	dx := mono.Sub(c.anchorX)
-	offset := c.a + time.Duration(c.b*float64(dx))
-	return c.anchorY.Add(offset), nil
+	return c.anchorY.Add(lineAt(c.line, mono.Sub(c.anchorX))), nil
 }
 
+// refit refreshes the fit from the current points. A degenerate fit
+// (no x spread) leaves lineOK false; predictRef reports ErrNotReady.
+// In practice the MinMsgSpan gate guarantees x spread before the fit
+// is ever consulted.
 func (c *wallClock) refit() {
 	c.fitValid = true
 	n := len(c.points)
 	c.anchorX = c.points[0].tRead.Add(-c.expectedDelay)
 	c.anchorY = c.points[0].ref
-
-	var sumX, sumY time.Duration
 	xs := make([]time.Duration, n)
 	ys := make([]time.Duration, n)
 	for i, p := range c.points {
 		xs[i] = p.tRead.Add(-c.expectedDelay).Sub(c.anchorX)
 		ys[i] = p.ref.Sub(c.anchorY)
-		sumX += xs[i]
-		sumY += ys[i]
 	}
-	meanX := sumX / time.Duration(n)
-	meanY := sumY / time.Duration(n)
-
-	var sxy, sxx float64
-	for i := range xs {
-		dx := float64(xs[i] - meanX)
-		dy := float64(ys[i] - meanY)
-		sxy += dx * dy
-		sxx += dx * dx
-	}
-	if sxx == 0 {
-		c.b = 1
-		c.a = meanY - meanX
-		return
-	}
-	c.b = sxy / sxx
-	c.a = meanY - time.Duration(c.b*float64(meanX))
+	c.line, c.lineOK = fitLine(xs, ys)
 }
 
 func (c *wallClock) medianAbsResidual() time.Duration {
@@ -177,9 +162,7 @@ func (c *wallClock) medianAbsResidual() time.Duration {
 	absRes := make([]time.Duration, n)
 	for i, p := range c.points {
 		x := p.tRead.Add(-c.expectedDelay).Sub(c.anchorX)
-		y := p.ref.Sub(c.anchorY)
-		pred := c.a + time.Duration(c.b*float64(x))
-		r := y - pred
+		r := lineResidual(c.line, x, p.ref.Sub(c.anchorY))
 		if r < 0 {
 			r = -r
 		}
