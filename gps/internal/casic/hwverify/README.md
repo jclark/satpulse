@@ -27,4 +27,7 @@ configurator reports such failures honestly; the configuration itself
 must fit the line budget. (These logs predate the removal of the
 probe's NMEA-quiet preamble; probing is now state-neutral, and
 detection on a saturated V5 line is best-effort - raise the baud rate
-persistently for reliable configuration there.)
+persistently for reliable configuration there. A practical way to do
+that when the line is already saturated: disconnect the antenna, so
+the receiver loses its fix and its NMEA output shrinks to near
+nothing, then change the speed, save, and reconnect the antenna.)
