@@ -156,6 +156,10 @@ func (c *Configurator) generateSignalSet() {
 	}
 	c.addSetReq(&casbin.CfgNavx{Mask: casbin.NavxNavSystem, NavSystem: sys},
 		func() { c.navx.NavSystem = sys })
+	// The acknowledged values are not the whole truth here either: the
+	// 5N71 acknowledges an empty constellation set without applying it,
+	// so the achieved set needs one readback.
+	c.pollNavx()
 }
 
 // signalConfigProps reports the enabled signal set from the readback.

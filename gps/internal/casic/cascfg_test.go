@@ -100,7 +100,9 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		if r.navx == nil {
 			return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgNavxID)})}
 		}
-		if mt.Mask&casbin.NavxNavSystem != 0 {
+		if mt.Mask&casbin.NavxNavSystem != 0 && mt.NavSystem != 0 {
+			// Like the 5N71: an empty constellation set is acknowledged
+			// but not applied.
 			r.navx.NavSystem = mt.NavSystem
 		}
 		if mt.Mask&casbin.NavxMinElev != 0 {
@@ -1056,6 +1058,16 @@ func TestSignalSelection(t *testing.T) {
 			request:       gpsprot.SigSetGPS | gpsprot.SigSetGAL,
 			expectSys:     casbin.NavSysGPS,
 			expectSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA),
+		},
+		{
+			// An all-GAL request empties to NavSystem 0, which the
+			// receiver acknowledges without applying; the readback must
+			// report the set actually in force.
+			name:          "V5 empty intersection ACKed but not applied",
+			navx:          &casbin.CfgNavx{NavSystem: casbin.NavSysGPS | casbin.NavSysGLN},
+			request:       gpsprot.SigSetGAL,
+			expectSys:     casbin.NavSysGPS | casbin.NavSysGLN,
+			expectSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGLOL1),
 		},
 	}
 	for _, tc := range tests {
