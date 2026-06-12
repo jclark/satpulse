@@ -45,13 +45,18 @@ const (
 )
 
 // casReq is a single configuration request: one CASIC packet expecting
-// an ACK or NAK correlated by class+id.
+// an ACK or NAK correlated by class+id. When nakOK is set a NAK is an
+// acceptable outcome (the request succeeds), optionally generating a
+// fallback request via onNak first; this is how NAK-driven fallback
+// stays out of the error path.
 type casReq struct {
 	state  casReqState
 	mid    casbin.MsgID // class+id, for ACK correlation
 	packet []byte
 	tBase  time.Time // time request was sent
 	err    error
+	nakOK  bool   // NAK is acceptable, not a failure
+	onNak  func() // generates the fallback request when NAKed
 }
 
 var _ gpsprot.ConfigRequest = (*casReq)(nil)
@@ -129,9 +134,19 @@ func (c *Configurator) promote() {
 }
 
 // GetRequestCount returns the current number of requests and whether
-// the slice is complete.
+// the slice is complete. The slice is complete only when every request
+// is final: a NAK on a live request may still generate a fallback
+// request.
 func (c *Configurator) GetRequestCount() (int, bool) {
-	return len(c.reqs), c.generated
+	if !c.generated {
+		return len(c.reqs), false
+	}
+	for _, req := range c.reqs {
+		if req.state != reqSucceeded && req.state != reqFailed {
+			return len(c.reqs), false
+		}
+	}
+	return len(c.reqs), true
 }
 
 // Request returns the ConfigRequest at the given index.
@@ -140,13 +155,24 @@ func (c *Configurator) Request(index int) gpsprot.ConfigRequest {
 }
 
 // addReq appends a request for the given message, to be sent once no
-// earlier request with the same class+id is outstanding.
+// earlier request with the same class+id is outstanding. A NAK fails
+// the request.
 func (c *Configurator) addReq(m casbin.Msg) {
+	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m)})
+}
+
+// addReqNakOK is addReq for requests where a NAK is an acceptable
+// outcome; onNak (optional) generates a fallback request first.
+func (c *Configurator) addReqNakOK(m casbin.Msg, onNak func()) {
+	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m), nakOK: true, onNak: onNak})
+}
+
+func serialize(m casbin.Msg) []byte {
 	pkt, err := casbin.Serialize(m)
 	if err != nil {
 		panic(fmt.Sprintf("serializing %v: %v", m.ID(), err))
 	}
-	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: pkt})
+	return pkt
 }
 
 // nativeMsg processes receiver messages routed from the ConfigProtocol.
@@ -174,6 +200,11 @@ func (c *Configurator) handleAck(mid casbin.MsgID, ack bool, tRead time.Time) {
 			return
 		}
 		if ack {
+			req.state = reqSucceeded
+		} else if req.nakOK {
+			if req.onNak != nil {
+				req.onNak()
+			}
 			req.state = reqSucceeded
 		} else {
 			req.state = reqFailed
