@@ -182,6 +182,7 @@ OBSERVE_SECONDS = 4
 # Settle time after changing message output before observing, so the
 # observation window does not straddle the change.
 MSG_SETTLE = 1.0
+RESET_SETTLE = 2.0  # boot time after a cold restart
 
 
 @dataclass
@@ -696,11 +697,13 @@ class ProbeRun:
     def probe_speed(self, supports: list[str]) -> None:
         """Probe the serial speed property [disruptive]. The speed is a
         property like any other, so --speed with --save in one invocation
-        must make the new rate both the running and the persisted rate;
-        --reload then restarts the configuration from NVM, and the
-        receiver still being reachable at the new rate is the proof of
-        persistence (a receiver that cannot identify its active port
-        reports no baudRate, so the link itself is the readback).
+        must make the new rate both the running and the persisted rate.
+        Persistence is proven by --reset: a cold restart boots from NVM,
+        and the receiver still being reachable at the new rate is the
+        proof (a receiver that cannot identify its active port reports
+        no baudRate, so the link itself is the readback; --reload is not
+        enough, since a reload does not necessarily re-apply the saved
+        rate to the live port - observed on the ATGM332D-5N71).
         Recovery: the original rate is restored and saved at the end."""
         orig = self.tool.speed()
         if "speed" not in supports or orig is None:
@@ -718,16 +721,17 @@ class ProbeRun:
         if reported != alt:
             self.failures.append(f"speed: reported {reported!r}, requested {alt}")
         back: Value = None
-        rel = self.tool.gps("speed-reload", ["--reload"])
-        if rel.error is not None:
-            self.failures.append(f"speed: reload at {alt} failed: {rel.error}")
+        rst = self.tool.gps("speed-reset", ["--reset"])
+        if rst.error is not None:
+            self.failures.append(f"speed: reset at {alt} failed: {rst.error}")
         else:
+            time.sleep(RESET_SETTLE)
             cfg = self.show_config("readback-speed")
             if cfg is not None:
                 back = config_value(cfg, ("baudRate",)) or alt
                 if back != alt:
                     self.failures.append(
-                        f"speed: saved {alt} but post-reload readback says {back!r}")
+                        f"speed: saved {alt} but post-reset readback says {back!r}")
         self.observations.append(Observation("speed", alt, None, reported, back))
         inv = self.tool.gps("restore-speed", ["--speed", str(orig), "--save"])
         if inv.error is not None:
