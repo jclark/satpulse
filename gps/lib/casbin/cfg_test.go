@@ -146,4 +146,5 @@ func TestCfgRoundtrip(t *testing.T) {
 	testMsgType(t, CfgNavBand{SigBandAuto: 0, SigIDMaskFix: 0x00880CA1, SigIDMask: 0x0028CDAD})
 	testMsgType(t, CfgNmea{NmeaVer: 2, LatLonReso: 7, HeightReso: 3, GsaPlus: 4})
 	testMsgType(t, CfgNavLimit{MinSVs: 4, MaxSVs: 40, MinCNO: 8, MinElev: -5})
+	testMsgType(t, CfgRtcm{MsgEnable: RtcmEn1005 | RtcmEnGPSMSM | RtcmEnBDSMSM, MsmVer: 7})
 }
