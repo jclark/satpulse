@@ -23,6 +23,8 @@ type testReceiver struct {
 	nakTargets map[casbin.MsgID]bool // CFG-MSG set targets answered with NAK
 	silent     map[casbin.MsgID]bool // requests not answered at all
 	pending    [][]byte              // delivered before the next request's responses
+	saves      []casbin.CfgCfg
+	resets     []casbin.CfgRst
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -57,6 +59,12 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(m.ID())})}
 	}
 	switch mt := m.(type) {
+	case *casbin.CfgCfg:
+		r.saves = append(r.saves, *mt)
+		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgCfgID)})}
+	case *casbin.CfgRst:
+		r.resets = append(r.resets, *mt)
+		return nil
 	case *casbin.CfgMsg:
 		if mt.Rate == casbin.PollRate && mt.Target == casbin.MonVerID {
 			if r.monVer == nil {
@@ -400,6 +408,116 @@ func TestSatsOut(t *testing.T) {
 				t.Errorf("rates\ngot  %v\nwant %v", rcvr.rates, tc.expect)
 			}
 		})
+	}
+}
+
+func TestNVMOps(t *testing.T) {
+	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
+	tests := []struct {
+		name         string
+		monVer       *casbin.MonVer
+		nmea         gpsprot.NMEAMsgFlags
+		setNMEA      bool
+		save         gpsprot.SaveType
+		reset        gpsprot.ResetType
+		expectSaves  []casbin.CfgCfg
+		expectResets []casbin.CfgRst
+	}{
+		{
+			name:        "V5 minimal save of message changes",
+			nmea:        gpsprot.NMEAMsgRMC,
+			setNMEA:     true,
+			save:        gpsprot.SaveMinimal,
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionMsg, OpMode: casbin.CfgOpSave}},
+		},
+		{
+			name:        "V5 minimal save with no changes saves nothing",
+			save:        gpsprot.SaveMinimal,
+			expectSaves: nil,
+		},
+		{
+			name:        "V5 save all",
+			save:        gpsprot.SaveAll,
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpSave}},
+		},
+		{
+			name:        "V6 save always uses the all-sections mask",
+			monVer:      v6,
+			nmea:        gpsprot.NMEAMsgRMC,
+			setNMEA:     true,
+			save:        gpsprot.SaveMinimal,
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpSave}},
+		},
+		{
+			name:        "V6 reload sends load without expecting an ACK",
+			monVer:      v6,
+			reset:       gpsprot.ResetReload,
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpLoad}},
+		},
+		{
+			name:        "V5 reload",
+			reset:       gpsprot.ResetReload,
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpLoad}},
+		},
+		{
+			name:  "V5 cold reset",
+			reset: gpsprot.ResetCold,
+			expectResets: []casbin.CfgRst{{NavBbrMask: bbrReset,
+				ResetMode: casbin.ResetHWImmediate, StartMode: casbin.StartCold}},
+		},
+		{
+			name:   "V6 factory reset",
+			monVer: v6,
+			reset:  gpsprot.ResetFactory,
+			expectResets: []casbin.CfgRst{{NavBbrMask: 0,
+				ResetMode: casbin.ResetHWImmediate, StartMode: casbin.StartFactory}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tc.monVer}
+			cp := probe(t, rcvr)
+			target := gpsprot.NewConfigTarget()
+			if tc.setNMEA {
+				target.Opts.NMEAMsg.Set(tc.nmea)
+			}
+			target.Opts.Save = tc.save
+			target.Opts.Reset = tc.reset
+			_, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if !reflect.DeepEqual(rcvr.saves, tc.expectSaves) {
+				t.Errorf("saves\ngot  %+v\nwant %+v", rcvr.saves, tc.expectSaves)
+			}
+			if !reflect.DeepEqual(rcvr.resets, tc.expectResets) {
+				t.Errorf("resets\ngot  %+v\nwant %+v", rcvr.resets, tc.expectResets)
+			}
+		})
+	}
+}
+
+// TestSaveAfterFallback ensures the save request is generated only
+// after a NAK-driven fallback request has completed, so the fallback's
+// effect is included in what is saved.
+func TestSaveAfterFallback(t *testing.T) {
+	rcvr := &testReceiver{
+		monVer:     &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
+		nakTargets: map[casbin.MsgID]bool{casbin.TimTPID: true},
+	}
+	cp := probe(t, rcvr)
+	target := gpsprot.NewConfigTarget()
+	target.Opts.PVTMsg = gpsprot.PVTMsgTimePulse
+	target.Opts.Save = gpsprot.SaveMinimal
+	_, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if rcvr.rates[casbin.Tim2TpxID] != 1 {
+		t.Errorf("TIM2-TPX rate = %d, want 1 (fallback before save)", rcvr.rates[casbin.Tim2TpxID])
+	}
+	if len(rcvr.saves) != 1 {
+		t.Fatalf("saves = %+v, want one", rcvr.saves)
 	}
 }
 

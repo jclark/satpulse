@@ -23,11 +23,13 @@ const maxResponseDelay = 2 * time.Second
 // promoted to ready only when no earlier live request shares their
 // class+id (see promote).
 type Configurator struct {
-	target    *gpsprot.ConfigTarget
-	ver       *casbin.MonVer // nil when MON-VER is unsupported (V5)
-	family    fwFamily
-	reqs      []*casReq
-	generated bool
+	target       *gpsprot.ConfigTarget
+	ver          *casbin.MonVer // nil when MON-VER is unsupported (V5)
+	family       fwFamily
+	reqs         []*casReq
+	generated    bool
+	nvmGenerated bool
+	touched      uint16 // CfgSection* bits of the sections set requests touched
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -57,6 +59,7 @@ type casReq struct {
 	err    error
 	nakOK  bool   // NAK is acceptable, not a failure
 	onNak  func() // generates the fallback request when NAKed
+	noAck  bool   // no response expected (CFG-RST): sending is success
 }
 
 var _ gpsprot.ConfigRequest = (*casReq)(nil)
@@ -104,15 +107,91 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	return &gpsprot.ConfigProps{}
 }
 
-// GenerateRequests generates configuration requests on the first call
-// and promotes requests that have become unambiguous to send.
+// GenerateRequests generates configuration requests and promotes
+// requests that have become unambiguous to send. Save and reset
+// requests are generated only when all earlier requests are final, so
+// that NAK-driven fallback requests are issued (and thus saved) first.
 func (c *Configurator) GenerateRequests() error {
 	if !c.generated {
 		c.generateMsgReqs()
 		c.generated = true
 	}
+	if !c.nvmGenerated && c.allFinal() {
+		c.generateNVMReqs()
+		c.nvmGenerated = true
+	}
 	c.promote()
 	return nil
+}
+
+func (c *Configurator) allFinal() bool {
+	for _, req := range c.reqs {
+		if req.state != reqSucceeded && req.state != reqFailed {
+			return false
+		}
+	}
+	return true
+}
+
+// generateNVMReqs generates the save and reset requests.
+func (c *Configurator) generateNVMReqs() {
+	opts := &c.target.Opts
+	switch opts.Save {
+	case gpsprot.SaveAll:
+		c.addReq(&casbin.CfgCfg{Mask: c.saveMask(casbin.CfgSectionAll), OpMode: casbin.CfgOpSave})
+	case gpsprot.SaveMinimal:
+		if c.touched != 0 {
+			c.addReq(&casbin.CfgCfg{Mask: c.saveMask(c.touched), OpMode: casbin.CfgOpSave})
+		}
+	}
+	switch opts.Reset {
+	case gpsprot.ResetReload:
+		m := &casbin.CfgCfg{Mask: c.saveMask(casbin.CfgSectionAll), OpMode: casbin.CfgOpLoad}
+		if c.family == familyV6 {
+			// V6 firmware restarts the receiver on load without
+			// acknowledging first (observed on the F8N: boot banner,
+			// no ACK).
+			c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m), noAck: true})
+		} else {
+			c.addReq(m)
+		}
+	case gpsprot.ResetCold:
+		c.addRstReq(casbin.StartCold)
+	case gpsprot.ResetFactory:
+		c.addRstReq(casbin.StartFactory)
+	}
+}
+
+// saveMask returns the CFG-CFG section mask to send. V5 firmware
+// honours the section bits. V6 documents the field as reserved but
+// does NOT ignore it: mask 0 is ACKed and saves nothing (observed on
+// the F8N), so V6 always gets the all-sections mask - its save
+// granularity is a single group.
+func (c *Configurator) saveMask(mask uint16) uint16 {
+	if c.family == familyV6 {
+		return casbin.CfgSectionAll
+	}
+	return mask
+}
+
+// bbrReset clears everything learned from satellites plus saved
+// position and config, but keeps clock drift and oscillator parameters
+// (learned locally, not from satellites). Matches the casictool
+// reference. V6 firmware's verified reset command clears no BBR
+// sections; its start mode implies the scope.
+const bbrReset = casbin.BbrEphemeris | casbin.BbrAlmanac | casbin.BbrHealth |
+	casbin.BbrIonosphere | casbin.BbrPosition | casbin.BbrUTCParams |
+	casbin.BbrRTC | casbin.BbrConfig
+
+// addRstReq appends a CFG-RST request. The receiver restarts without
+// acknowledging, so the request succeeds when sent.
+func (c *Configurator) addRstReq(startMode uint8) {
+	bbr := uint16(0)
+	if c.family == familyV5 {
+		bbr = bbrReset
+	}
+	m := &casbin.CfgRst{NavBbrMask: bbr, ResetMode: casbin.ResetHWImmediate, StartMode: startMode}
+	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m), noAck: true})
 }
 
 // promote readies notReady requests whose class+id no earlier live
@@ -136,17 +215,9 @@ func (c *Configurator) promote() {
 // GetRequestCount returns the current number of requests and whether
 // the slice is complete. The slice is complete only when every request
 // is final: a NAK on a live request may still generate a fallback
-// request.
+// request, and the save/reset requests are generated last.
 func (c *Configurator) GetRequestCount() (int, bool) {
-	if !c.generated {
-		return len(c.reqs), false
-	}
-	for _, req := range c.reqs {
-		if req.state != reqSucceeded && req.state != reqFailed {
-			return len(c.reqs), false
-		}
-	}
-	return len(c.reqs), true
+	return len(c.reqs), c.generated && c.nvmGenerated && c.allFinal()
 }
 
 // Request returns the ConfigRequest at the given index.
@@ -158,13 +229,32 @@ func (c *Configurator) Request(index int) gpsprot.ConfigRequest {
 // earlier request with the same class+id is outstanding. A NAK fails
 // the request.
 func (c *Configurator) addReq(m casbin.Msg) {
+	c.touched |= setSection(m)
 	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m)})
 }
 
 // addReqNakOK is addReq for requests where a NAK is an acceptable
 // outcome; onNak (optional) generates a fallback request first.
 func (c *Configurator) addReqNakOK(m casbin.Msg, onNak func()) {
+	c.touched |= setSection(m)
 	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m), nakOK: true, onNak: onNak})
+}
+
+// setSection returns the CFG-CFG save-section bit a set request
+// touches, for minimal saves. V6-only CFG messages return 0: the V6
+// save command has no section mask.
+func setSection(m casbin.Msg) uint16 {
+	switch m.ID() {
+	case casbin.CfgMsgID:
+		return casbin.CfgSectionMsg
+	case casbin.CfgPrtID:
+		return casbin.CfgSectionPort
+	case casbin.CfgTPID:
+		return casbin.CfgSectionTP
+	case casbin.CfgRateID, casbin.CfgTModeID, casbin.CfgNavxID:
+		return casbin.CfgSectionNav
+	}
+	return 0
 }
 
 func serialize(m casbin.Msg) []byte {
@@ -266,6 +356,10 @@ func (req *casReq) GetError() error {
 func (req *casReq) SetSentTime(tSent time.Time) {
 	switch req.state {
 	case reqReady, reqMayResend:
+		if req.noAck {
+			req.state = reqSucceeded
+			return
+		}
 		req.state = reqAwaitingAck
 		req.tBase = tSent
 	default:

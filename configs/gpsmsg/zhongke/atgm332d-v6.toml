@@ -149,23 +149,29 @@ payload.values = [1000000, 0, 0, 0, 0, 0, 0.0]
 # Payload: U2 reserved, U1 opMode, U1 reserved
 # opMode: 0=clear flash, 1=save to flash, 2=load from flash
 
-# Save configuration to NVM
+# Save configuration to NVM.
+# CAUTION: the mask field is documented as reserved on V6, but mask 0 is
+# ACKed and saves NOTHING. Mask 0xFFFF actually persists (verified on
+# ATGM332D-F8N: saved message rates survive a CFG-CFG load restart).
 [[casbin]]
 tag = "save"
 description = "Save configuration to NVM"
 class = 0x06
 id = 0x05
 payload.types = "U2U1U1"
-payload.values = [0, 1, 0]
+payload.values = [0xFFFF, 1, 0]
 
 # Load configuration from NVM (undo unsaved changes)
+# CAUTION: on V6 a load with mask 0xFFFF RESTARTS the receiver (boot
+# banner) without sending an ACK; mask 0 does nothing. (Verified on
+# ATGM332D-F8N.)
 [[casbin]]
 tag = "reload"
-description = "Reload configuration from NVM"
+description = "Reload configuration from NVM (restarts the receiver)"
 class = 0x06
 id = 0x05
 payload.types = "U2U1U1"
-payload.values = [0, 2, 0]
+payload.values = [0xFFFF, 2, 0]
 
 # CFG-NAVLIMIT: Satellite filtering for positioning
 # Payload: U1 minSVs, U1 maxSVs, U1 minCNO, I1 minEle, U4 reserved
