@@ -160,17 +160,19 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 // earlier requests being final: property sets need the query phase's
 // readback (read-modify-write), message enabling comes after the
 // property work because enabling NMEA output can saturate a 9600 line
-// and delay every later acknowledgement, the NVM phase comes after
-// everything it persists (including NAK-driven fallback requests),
-// and the baud change is last because communication breaks if it
-// fails. Acknowledged sets record their accepted values as the
-// assumed configuration, so no re-polling is needed.
+// and delay every later acknowledgement, the baud change comes after
+// all the work whose acknowledgements it would endanger, and the NVM
+// phase is last so that it persists everything - NAK-driven fallback
+// outcomes and the new baud rate alike (a save runs on the confirmed
+// line at the new speed, as in the UBX configurator). Acknowledged
+// sets record their accepted values as the assumed configuration, so
+// no re-polling is needed.
 var genPhases = []func(*Configurator){
 	(*Configurator).generateQueryReqs,
 	(*Configurator).generateSetReqs,
 	(*Configurator).generateMsgReqs,
-	(*Configurator).generateNVMReqs,
 	(*Configurator).generateSpeedReqs,
+	(*Configurator).generateNVMReqs,
 }
 
 // GenerateRequests generates configuration requests and promotes
@@ -281,15 +283,13 @@ func (c *Configurator) addRstReq(startMode uint8) {
 	c.addMsg(m, casReq{noAck: true})
 }
 
-// generateSpeedReqs generates the baud rate change, which must be the
-// last request: communication breaks if it fails. The set uses port id
-// 0xFF (the port in use) with the other port settings preserved from
-// the readback. The receiver switches speed immediately and sends its
-// ACK at the new rate, so the request is followed by a CFG-RATE poll
-// whose answer guarantees traffic at the new speed for confirmation.
-// When a save was also requested it runs before the change and thus
-// persists the old baud rate; persisting the new rate needs a save in
-// a later invocation at the new speed.
+// generateSpeedReqs generates the baud rate change. The set uses port
+// id 0xFF (the port in use) with the other port settings preserved
+// from the readback. The receiver switches speed immediately and sends
+// its ACK at the new rate, so the request is followed by a CFG-RATE
+// poll whose answer guarantees traffic at the new speed for
+// confirmation; only then does the NVM phase proceed, so a requested
+// save persists the new rate.
 func (c *Configurator) generateSpeedReqs() {
 	baud, ok := c.target.Props.GetBaudRate()
 	if !ok {

@@ -25,6 +25,7 @@ type testReceiver struct {
 	silent     map[casbin.MsgID]bool // requests not answered at all
 	pending    [][]byte              // delivered before the next request's responses
 	saves      []casbin.CfgCfg
+	saveBaud   uint32 // newBaud at the time of the first save
 	resets     []casbin.CfgRst
 	tp         *casbin.CfgTP // nil: CFG-TP unsupported (poll gets NAK)
 	tm5        *casbin.CfgTMode
@@ -134,6 +135,9 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		*r.tp = *mt
 		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgTPID)})}
 	case *casbin.CfgCfg:
+		if len(r.saves) == 0 {
+			r.saveBaud = r.newBaud
+		}
 		r.saves = append(r.saves, *mt)
 		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgCfgID)})}
 	case *casbin.CfgRst:
@@ -1142,6 +1146,7 @@ func TestBaudChange(t *testing.T) {
 			cp := probe(t, rcvr)
 			target := gpsprot.NewConfigTarget()
 			target.Props.SetBaudRate(38400)
+			target.Opts.Save = gpsprot.SaveAll
 			cfg, errCount := configure(t, cp, rcvr, target)
 			if errCount != 0 {
 				t.Errorf("ErrorCount = %d, want 0", errCount)
@@ -1151,6 +1156,10 @@ func TestBaudChange(t *testing.T) {
 			}
 			if got, ok := cfg.ConfigProps().GetBaudRate(); !ok || got != 38400 {
 				t.Errorf("achieved baud = %d,%v, want 38400", got, ok)
+			}
+			if len(rcvr.saves) != 1 || rcvr.saveBaud != 38400 {
+				t.Errorf("saves = %d at baud %d, want 1 at 38400",
+					len(rcvr.saves), rcvr.saveBaud)
 			}
 		})
 	}
