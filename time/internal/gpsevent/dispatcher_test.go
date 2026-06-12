@@ -12,6 +12,7 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/refclock"
+	"github.com/jclark/satpulse/time/lib/ntime"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 )
 
@@ -192,7 +193,7 @@ func TestDispatcherMsgUTCTimeWritesBothSinks(t *testing.T) {
 	}
 	select {
 	case s := <-ch:
-		if !s.Sys.Equal(tRead) || s.Offset != utc.Sub(tRead).Seconds() || s.Leap != ptime.LeapSecondNegative {
+		if s.Sys != ntime.Sys(tRead) || s.Offset != utc.Sub(tRead).Seconds() || s.Leap != ptime.LeapSecondNegative {
 			t.Fatalf("refclock sample = %+v", s)
 		}
 	default:
