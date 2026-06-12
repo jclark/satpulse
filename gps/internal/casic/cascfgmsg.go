@@ -144,32 +144,22 @@ func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 		wantDop = true
 	}
 	off := flags&gpsprot.PVTMsgOff != 0
-	for _, m := range []struct {
-		mid  casbin.MsgID
-		want bool
-	}{{sol, wantSol}, {pv, wantPv}, {timeUTC, wantTimeUTC}, {dop, wantDop}} {
-		if m.want {
-			c.addReqNakOK(&casbin.CfgMsg{Target: m.mid, Rate: 1}, nil)
+	set := func(mid casbin.MsgID, want bool) {
+		if want {
+			c.addReqNakOK(&casbin.CfgMsg{Target: mid, Rate: 1}, nil)
 		} else if off {
-			c.addReqNakOK(&casbin.CfgMsg{Target: m.mid, Rate: 0}, nil)
+			c.addReqNakOK(&casbin.CfgMsg{Target: mid, Rate: 0}, nil)
 		}
 	}
-	leap, survey := casbin.MsgGPSUTCID, casbin.MsgID(0)
+	set(sol, wantSol)
+	set(pv, wantPv)
+	set(timeUTC, wantTimeUTC)
+	set(dop, wantDop)
 	if c.family == familyV6 {
-		leap, survey = casbin.Tim2LsID, casbin.Tim2TimePosID
-	}
-	for _, m := range []struct {
-		mid  casbin.MsgID
-		flag gpsprot.PVTMsgFlags
-	}{{leap, gpsprot.PVTMsgLeapSecond}, {survey, gpsprot.PVTMsgSurvey}} {
-		if m.mid == 0 {
-			continue
-		}
-		if flags&m.flag != 0 {
-			c.addReqNakOK(&casbin.CfgMsg{Target: m.mid, Rate: 1}, nil)
-		} else if off {
-			c.addReqNakOK(&casbin.CfgMsg{Target: m.mid, Rate: 0}, nil)
-		}
+		set(casbin.Tim2LsID, flags&gpsprot.PVTMsgLeapSecond != 0)
+		set(casbin.Tim2TimePosID, flags&gpsprot.PVTMsgSurvey != 0)
+	} else {
+		set(casbin.MsgGPSUTCID, flags&gpsprot.PVTMsgLeapSecond != 0)
 	}
 	c.generateTimTPReqs(tp, off)
 }
