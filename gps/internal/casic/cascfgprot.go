@@ -65,10 +65,19 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 	return nil
 }
 
-// ProbePacket returns a CFG-MSG poll of MON-VER.
+// nmeaQuiet disables all NMEA output (RAM only). A V5 receiver at its
+// default 9600 baud cannot carry the default NMEA load: its TX queue
+// runs several seconds deep and probe responses may never emerge.
+// Quieting first bounds the response delay to the queue drain time
+// (measured ~6 s worst case). Non-CASIC receivers ignore the sentence.
+const nmeaQuiet = "$PCAS03,0,0,0,0,0,0,0,0,0,0,,,0,0,,,,0*32\r\n"
+
+// ProbePacket returns the NMEA quiet command followed by a CFG-MSG poll
+// of MON-VER. The cost of the quiet preamble is that probing a CASIC
+// receiver turns off its NMEA output until reconfigured or restarted.
 func (cp *ConfigProtocol) ProbePacket() []byte {
 	pkt, _ := casbin.Serialize(&casbin.CfgMsg{Target: casbin.MonVerID, Rate: casbin.PollRate})
-	return pkt
+	return append([]byte(nmeaQuiet), pkt...)
 }
 
 // ProbeOK reports whether a CASIC receiver has been identified.

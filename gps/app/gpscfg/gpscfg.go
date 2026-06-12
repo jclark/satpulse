@@ -244,8 +244,11 @@ const (
 	silentWaitTimeout = 1 * time.Second
 	// probeRetryDelay is how long to wait after sending a probe before retrying
 	probeRetryDelay = 1500 * time.Millisecond
-	// probeResponseTimeout is how long to wait after the final probe before giving up
-	probeResponseTimeout = 3 * time.Second
+	// probeResponseTimeout is how long to wait after the final probe before giving up.
+	// A receiver on a saturated low-baud line answers only after its TX queue
+	// drains: a CASIC V5 at 9600 was measured taking up to ~4.3 s after the
+	// second probe (~5.8 s after the first), so allow 6 s.
+	probeResponseTimeout = 6 * time.Second
 )
 
 // listeningDetector detects by listening for a suitable packet.
