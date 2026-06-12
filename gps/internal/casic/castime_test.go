@@ -416,4 +416,3 @@ func TestTim2TimeGPSDispatch(t *testing.T) {
 		t.Errorf("NativeMsgID = %v, want TIM2-TIMEGPS", tm.NativeMsgID)
 	}
 }
-

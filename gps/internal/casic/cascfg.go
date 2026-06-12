@@ -37,15 +37,15 @@ type Configurator struct {
 	ver      *casbin.MonVer // nil when MON-VER is unsupported (V5)
 	family   fwFamily
 	reqs     []*casReq
-	phase    int                // index into genPhases of the next phase to generate
-	touched  uint16             // CfgSection* bits of the sections set requests touched
-	tp       *casbin.CfgTP      // latest CFG-TP readback; nil if never answered
-	tm5      *casbin.CfgTMode   // latest V5 CFG-TMODE readback
-	tm6      *casbin.CfgTMode2  // latest V6 CFG-TMODE2 readback
-	navx     *casbin.CfgNavx    // latest V5 CFG-NAVX readback
-	navBand  *casbin.CfgNavBand // latest V6 CFG-NAVBAND readback
-	ports    []casbin.CfgPrt    // CFG-PRT readback, one entry per port
-	speedReq *casReq            // the baud change request, when one was generated
+	phase    int                 // index into genPhases of the next phase to generate
+	touched  uint16              // CfgSection* bits of the sections set requests touched
+	tp       *casbin.CfgTP       // latest CFG-TP readback; nil if never answered
+	tm5      *casbin.CfgTMode    // latest V5 CFG-TMODE readback
+	tm6      *casbin.CfgTMode2   // latest V6 CFG-TMODE2 readback
+	navx     *casbin.CfgNavx     // latest V5 CFG-NAVX readback
+	navBand  *casbin.CfgNavBand  // latest V6 CFG-NAVBAND readback
+	ports    []casbin.CfgPrt     // CFG-PRT readback, one entry per port
+	speedReq *casReq             // the baud change request, when one was generated
 	navLimit *casbin.CfgNavLimit // latest V6 CFG-NAVLIMIT readback
 	pcasSW   string              // V5 firmware version from PCAS06 query
 	pcasHW   string              // V5 hardware info from PCAS06 query

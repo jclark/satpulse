@@ -77,9 +77,11 @@ func (c *Configurator) generateSatsReqs(flags gpsprot.SatsMsgFlags) {
 // NAV-SOL/NAV2-SOL carries ECEF pos+vel, TAI time, and fix quality;
 // NAV-PV/NAV2-PVH carries geodetic pos+vel; NAV-TIMEUTC/NAV2-TIMEUTC
 // carries UTC time; NAV-DOP/NAV2-DOP the full DOP set; TIM-TP the time
-// of the next pulse. Leap second, epoch, and survey information have
-// no CASIC messages to enable. Without the off flag the request is
-// incremental: unneeded messages are left alone.
+// of the next pulse; TIM2-TIMEGPS (V6 only) carries leap second
+// information. Epoch and survey information have no CASIC messages to
+// enable, and V5 firmware never emits its leap-carrying messages (the
+// MSG class is acknowledged but not implemented). Without the off flag
+// the request is incremental: unneeded messages are left alone.
 func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 	pv, sol, timeUTC, dop := casbin.NavPvID, casbin.NavSolID, casbin.NavTimeUTCID, casbin.NavDopID
 	if c.family == familyV6 {
@@ -115,6 +117,13 @@ func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 			c.addReqNakOK(&casbin.CfgMsg{Target: m.mid, Rate: 1}, nil)
 		} else if off {
 			c.addReqNakOK(&casbin.CfgMsg{Target: m.mid, Rate: 0}, nil)
+		}
+	}
+	if c.family == familyV6 {
+		if flags&gpsprot.PVTMsgLeapSecond != 0 {
+			c.addReqNakOK(&casbin.CfgMsg{Target: casbin.Tim2TimeGPSID, Rate: 1}, nil)
+		} else if off {
+			c.addReqNakOK(&casbin.CfgMsg{Target: casbin.Tim2TimeGPSID, Rate: 0}, nil)
 		}
 	}
 	c.generateTimTPReqs(tp, off)

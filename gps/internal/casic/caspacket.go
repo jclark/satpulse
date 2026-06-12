@@ -3,8 +3,8 @@ package casic
 import (
 	"encoding/binary"
 
-	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/casbin"
 )
 
 // Tag is the identifier for CASIC binary protocol packets

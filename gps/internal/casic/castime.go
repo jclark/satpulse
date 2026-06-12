@@ -4,8 +4,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 

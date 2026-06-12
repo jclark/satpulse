@@ -119,4 +119,3 @@ func (cp *ConfigProtocol) Configure(target *gpsprot.ConfigTarget) (gpsprot.Confi
 	cp.cfg = newConfigurator(target, cp.ver)
 	return cp.cfg, nil
 }
-
