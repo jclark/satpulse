@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from characterize import characterize, to_json
-from probes import PROPS, ProbeRun
+from probes import PROPS, Observation, ProbeRun
 from tool import Tool, ToolFailure
 
 HERE = Path(__file__).resolve().parent
@@ -168,16 +168,22 @@ def run(tool: Tool, baseline: Path | None, phc: tuple[str, int, int] | None,
 
 
 def check_show_port(tool: Tool, pr: ProbeRun) -> None:
-    """Check that --show-port responds and reports a port. The port fields
-    appear only with --show-port, so there is no readback to cross-check.
-    On a UART connection with no speed given, the reported speed is locked
-    in for the rest of the run, saving a baud scan per invocation."""
+    """Check that --show-port responds. The port fields appear only with
+    --show-port, so there is no readback to cross-check. Port is a
+    read-only property: a backend whose protocol cannot identify the
+    active port reports no port at all, which is the property's
+    nonexistence - a limitation, not a failure (CASIC receivers answer a
+    port query with one entry per UART and nothing marks the one in
+    use). On a UART connection with no speed given, a reported speed is
+    locked in for the rest of the run, saving a baud scan per
+    invocation."""
     inv = tool.gps("show-port", ["--show-port"])
     if inv.error is not None:
         pr.failures.append(f"--show-port failed: {inv.error}")
         return
     if not inv.config().get("port"):
-        pr.failures.append(f"--show-port reported no port: {inv.config()!r}")
+        pr.observations.append(Observation(
+            prop="port", requested=None, error=None, reported=None, readback=None))
     baud = inv.config().get("baudRate")
     if "-s" not in tool.conn and isinstance(baud, int) and baud > 0:
         tool.conn += ["-s", str(baud)]
@@ -187,7 +193,7 @@ def compare_baseline(receiver: dict[str, Any], baseline: Path | None, text: str)
     """Compare against the checked-in characterization; differences are
     regressions to investigate. Absence of a baseline is not a failure."""
     if baseline is None:
-        slug = "-".join(str(receiver.get(k, "")) for k in ("hardware", "firmware"))
+        slug = "-".join(s for k in ("hardware", "firmware") if (s := str(receiver.get(k, ""))))
         baseline = HERE / "baselines" / (slug.replace(" ", "-").replace("/", "-") + ".json")
         if not baseline.exists():
             print(f"no baseline at {baseline}; vet and check in the characterization",
