@@ -23,13 +23,13 @@ const maxResponseDelay = 2 * time.Second
 // promoted to ready only when no earlier live request shares their
 // class+id (see promote).
 type Configurator struct {
-	target       *gpsprot.ConfigTarget
-	ver          *casbin.MonVer // nil when MON-VER is unsupported (V5)
-	family       fwFamily
-	reqs         []*casReq
-	generated    bool
-	nvmGenerated bool
-	touched      uint16 // CfgSection* bits of the sections set requests touched
+	target  *gpsprot.ConfigTarget
+	ver     *casbin.MonVer // nil when MON-VER is unsupported (V5)
+	family  fwFamily
+	reqs    []*casReq
+	phase   int    // index into genPhases of the next phase to generate
+	touched uint16 // CfgSection* bits of the sections set requests touched
+	tp      *casbin.CfgTP // latest CFG-TP readback; nil if never answered
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -57,9 +57,10 @@ type casReq struct {
 	packet []byte
 	tBase  time.Time // time request was sent
 	err    error
-	nakOK  bool   // NAK is acceptable, not a failure
-	onNak  func() // generates the fallback request when NAKed
-	noAck  bool   // no response expected (CFG-RST): sending is success
+	nakOK  bool             // NAK is acceptable, not a failure
+	onNak  func()           // generates the fallback request when NAKed
+	noAck  bool             // no response expected (CFG-RST): sending is success
+	onData func(casbin.Msg) // receives data responses (polls); ACK still completes
 }
 
 var _ gpsprot.ConfigRequest = (*casReq)(nil)
@@ -102,23 +103,52 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 	return 0
 }
 
-// ConfigProps returns the current configuration of the GPS receiver.
+// ConfigProps returns the current configuration of the GPS receiver,
+// from the readbacks gathered while configuring. Properties that were
+// never read back (unsupported or not involved) are absent.
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
-	return &gpsprot.ConfigProps{}
+	props := &gpsprot.ConfigProps{}
+	c.tpConfigProps(props)
+	return props
+}
+
+// generateQueryReqs polls the messages whose current values the set
+// phase needs (read-modify-write) or the target asks to read.
+func (c *Configurator) generateQueryReqs() {
+	c.generateTPQuery()
+}
+
+// generateSetReqs generates the property set requests, computed from
+// the query phase's readbacks.
+func (c *Configurator) generateSetReqs() {
+	c.generateTPSet()
+}
+
+// generateVerifyReqs re-polls what the set phase changed, so that
+// ConfigProps reports achieved values as the receiver holds them.
+func (c *Configurator) generateVerifyReqs() {
+	c.generateTPVerify()
+}
+
+// genPhases are the request generation phases, each gated on all
+// earlier requests being final: property sets need the query phase's
+// readback (read-modify-write), the verify phase re-polls what the
+// sets changed so achieved values are truthful, and the NVM phase
+// must come last so NAK-driven fallback requests are saved too.
+var genPhases = []func(*Configurator){
+	(*Configurator).generateQueryReqs,
+	(*Configurator).generateMsgReqs,
+	(*Configurator).generateSetReqs,
+	(*Configurator).generateVerifyReqs,
+	(*Configurator).generateNVMReqs,
 }
 
 // GenerateRequests generates configuration requests and promotes
-// requests that have become unambiguous to send. Save and reset
-// requests are generated only when all earlier requests are final, so
-// that NAK-driven fallback requests are issued (and thus saved) first.
+// requests that have become unambiguous to send.
 func (c *Configurator) GenerateRequests() error {
-	if !c.generated {
-		c.generateMsgReqs()
-		c.generated = true
-	}
-	if !c.nvmGenerated && c.allFinal() {
-		c.generateNVMReqs()
-		c.nvmGenerated = true
+	for c.phase < len(genPhases) && c.allFinal() {
+		genPhases[c.phase](c)
+		c.phase++
 	}
 	c.promote()
 	return nil
@@ -215,9 +245,9 @@ func (c *Configurator) promote() {
 // GetRequestCount returns the current number of requests and whether
 // the slice is complete. The slice is complete only when every request
 // is final: a NAK on a live request may still generate a fallback
-// request, and the save/reset requests are generated last.
+// request, and later phases generate more requests.
 func (c *Configurator) GetRequestCount() (int, bool) {
-	return len(c.reqs), c.generated && c.nvmGenerated && c.allFinal()
+	return len(c.reqs), c.phase == len(genPhases) && c.allFinal()
 }
 
 // Request returns the ConfigRequest at the given index.
@@ -266,14 +296,32 @@ func serialize(m casbin.Msg) []byte {
 }
 
 // nativeMsg processes receiver messages routed from the ConfigProtocol.
+// Non-ACK messages are offered to the oldest outstanding poll request
+// with the same class+id (a poll's data response echoes the request's
+// class+id and precedes its ACK).
 func (c *Configurator) nativeMsg(m casbin.Msg, tRead time.Time) error {
 	switch mt := m.(type) {
 	case *casbin.AckAck:
 		c.handleAck(casbin.MakeMsgID(mt.ClsID, mt.MsgID), true, tRead)
 	case *casbin.AckNak:
 		c.handleAck(casbin.MakeMsgID(mt.ClsID, mt.MsgID), false, tRead)
+	default:
+		for _, req := range c.reqs {
+			if req.mid == m.ID() && req.state == reqAwaitingAck && req.onData != nil {
+				req.onData(m)
+				break
+			}
+		}
 	}
 	return nil
+}
+
+// addPollReq appends an empty-payload poll of the given CFG message.
+// The data response is passed to onData; a NAK means the message does
+// not exist in this firmware, which is acceptable (shown by absence).
+func (c *Configurator) addPollReq(mid casbin.MsgID, onData func(casbin.Msg)) {
+	pkt, _ := casbin.PackMsg(mid, nil)
+	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: mid, packet: pkt, nakOK: true, onData: onData})
 }
 
 // handleAck resolves an ACK/NAK against the oldest outstanding request

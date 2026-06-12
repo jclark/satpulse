@@ -26,6 +26,7 @@ type testReceiver struct {
 	pending    [][]byte              // delivered before the next request's responses
 	saves      []casbin.CfgCfg
 	resets     []casbin.CfgRst
+	tp         *casbin.CfgTP // nil: CFG-TP unsupported (poll gets NAK)
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -49,6 +50,9 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 	if len(data) == 0 {
 		return nil
 	}
+	if len(data) == casbin.PacketMinLen {
+		return r.respondPoll(casbin.PacketMsgID(string(data)))
+	}
 	m, err := casbin.ParseMsg(string(data))
 	if err != nil {
 		r.t.Fatalf("receiver could not parse request: %v", err)
@@ -60,6 +64,12 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(m.ID())})}
 	}
 	switch mt := m.(type) {
+	case *casbin.CfgTP:
+		if r.tp == nil {
+			return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgTPID)})}
+		}
+		*r.tp = *mt
+		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgTPID)})}
 	case *casbin.CfgCfg:
 		r.saves = append(r.saves, *mt)
 		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgCfgID)})}
@@ -91,6 +101,20 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(m.ID())})}
 	}
 	return nil
+}
+
+// respondPoll answers an empty-payload CFG query.
+func (r *testReceiver) respondPoll(mid casbin.MsgID) [][]byte {
+	if r.silent[mid] {
+		return nil
+	}
+	if mid == casbin.CfgTPID && r.tp != nil && !r.naks[mid] {
+		return [][]byte{
+			r.pack(r.tp),
+			r.pack(&casbin.AckAck{AckPayload: ackOf(mid)}),
+		}
+	}
+	return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(mid)})}
 }
 
 func (r *testReceiver) pack(m casbin.Msg) []byte {
@@ -617,5 +641,119 @@ func TestProbeIgnoresUnrelatedNak(t *testing.T) {
 	}
 	if cp.ProbeOK() {
 		t.Error("ProbeOK = true after NAK of unrelated CFG-RATE")
+	}
+}
+
+func defaultTP() *casbin.CfgTP {
+	return &casbin.CfgTP{Interval: 1000000, Width: 100000, PPSOutMode: 3, TBase: 1, TSrcMode: 5}
+}
+
+func TestTimePulseSet(t *testing.T) {
+	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
+	tests := []struct {
+		name     string
+		monVer   *casbin.MonVer
+		tp       *casbin.CfgTP
+		setup    func(*gpsprot.ConfigTarget)
+		expectTP casbin.CfgTP
+	}{
+		{
+			name:   "V6 PPS with GPS time",
+			monVer: v6,
+			tp:     defaultTP(),
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetPPS(100 * time.Millisecond)
+				target.Props.SetTimeGNSS(gpsprot.GPS)
+			},
+			expectTP: casbin.CfgTP{Interval: 1000000, Width: 100000,
+				PPSOutMode: 5, Polarity: 0, TBase: 0, TSrcMode: 0},
+		},
+		{
+			name: "V5 PPS inverts TBase and uses fix-only mode",
+			tp:   &casbin.CfgTP{Interval: 1000000, Width: 100000, PPSOutMode: 1, TBase: 0, TSrcMode: 0},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetPPS(200 * time.Millisecond)
+			},
+			expectTP: casbin.CfgTP{Interval: 1000000, Width: 200000,
+				PPSOutMode: 3, Polarity: 0, TBase: 1, TSrcMode: 0},
+		},
+		{
+			name:   "disable pulse",
+			monVer: v6,
+			tp:     defaultTP(),
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetTimePulseWidth(0)
+			},
+			expectTP: casbin.CfgTP{Interval: 1000000, Width: 100000,
+				PPSOutMode: 0, TBase: 1, TSrcMode: 5},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tc.monVer, tp: tc.tp}
+			cp := probe(t, rcvr)
+			target := gpsprot.NewConfigTarget()
+			tc.setup(target)
+			cfg, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if !reflect.DeepEqual(*rcvr.tp, tc.expectTP) {
+				t.Errorf("receiver CFG-TP\ngot  %+v\nwant %+v", *rcvr.tp, tc.expectTP)
+			}
+			got := cfg.ConfigProps()
+			gotTP, ok := got.GetTimePulse()
+			if !ok {
+				t.Fatal("ConfigProps has no TimePulse")
+			}
+			wantWidth := time.Duration(tc.expectTP.Width) * time.Microsecond
+			if tc.expectTP.PPSOutMode == 0 {
+				wantWidth = 0
+			}
+			if gotTP.Width != wantWidth {
+				t.Errorf("achieved width = %v, want %v", gotTP.Width, wantWidth)
+			}
+		})
+	}
+}
+
+func TestTimePulseGet(t *testing.T) {
+	rcvr := &testReceiver{
+		monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
+		tp:     &casbin.CfgTP{Interval: 1000000, Width: 100000, PPSOutMode: 5, TBase: 0, TSrcMode: 1},
+	}
+	cp := probe(t, rcvr)
+	target := gpsprot.NewConfigTarget()
+	target.Get = gpsprot.PropIDTimePulse | gpsprot.PropIDTimeGNSS
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	props := cfg.ConfigProps()
+	tp, ok := props.GetTimePulse()
+	if !ok {
+		t.Fatal("ConfigProps has no TimePulse")
+	}
+	want := gpsprot.TimePulse{Width: 100 * time.Millisecond, Period: time.Second,
+		AlignToGNSS: true, OnlyWhenLocked: true, PolarityRising: true}
+	if !reflect.DeepEqual(tp, want) {
+		t.Errorf("TimePulse\ngot  %+v\nwant %+v", tp, want)
+	}
+	if g, ok := props.GetTimeGNSS(); !ok || g != gpsprot.BDS {
+		t.Errorf("TimeGNSS = %v,%v, want BDS", g, ok)
+	}
+}
+
+func TestTimePulseUnsupported(t *testing.T) {
+	rcvr := &testReceiver{} // V5 with no CFG-TP at all: poll gets NAK
+	cp := probe(t, rcvr)
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetPPS(100 * time.Millisecond)
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0 (nonexistence is not an error)", errCount)
+	}
+	if _, ok := cfg.ConfigProps().GetTimePulse(); ok {
+		t.Error("ConfigProps reports TimePulse despite NAKed poll")
 	}
 }
