@@ -156,72 +156,6 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	return props
 }
 
-// generateQueryReqs polls the messages whose current values the set
-// phase needs (read-modify-write) or the target asks to read.
-func (c *Configurator) generateQueryReqs() {
-	c.generateVerQuery()
-	c.generateTPQuery()
-	c.generateTModeQuery()
-	c.generateSignalQuery()
-	c.generateMinElevQuery()
-	_, wantBaud := c.target.Props.GetBaudRate()
-	if wantBaud || c.target.Opts.RTCMMsg.IsSet() {
-		c.addPollReq(casbin.CfgPrtID, func(m casbin.Msg) {
-			if prt, ok := m.(*casbin.CfgPrt); ok {
-				c.ports = append(c.ports, *prt)
-			}
-		})
-	}
-}
-
-// generateSpeedReqs generates the baud rate change, which must be the
-// last request: communication breaks if it fails. The set uses port id
-// 0xFF (the port in use) with the other port settings preserved from
-// the readback. The receiver switches speed immediately and sends its
-// ACK at the new rate, so the request is followed by a CFG-RATE poll
-// whose answer guarantees traffic at the new speed for confirmation.
-// When a save was also requested it runs before the change and thus
-// persists the old baud rate; persisting the new rate needs a save in
-// a later invocation at the new speed.
-func (c *Configurator) generateSpeedReqs() {
-	baud, ok := c.target.Props.GetBaudRate()
-	if !ok {
-		return
-	}
-	base, haveBase := c.basePort()
-	if !haveBase {
-		return
-	}
-	m := &casbin.CfgPrt{PortID: casbin.PortCurrent, ProtoMask: base.ProtoMask, Mode: base.Mode, BaudRate: baud}
-	c.speedReq = c.addMsg(m, casReq{speedAfter: int(baud)})
-	c.addPollReq(casbin.CfgRateID, nil)
-}
-
-// basePort returns the polled port entry whose settings a port write
-// preserves: port 0 (the wired UART on all known boards), or the
-// first entry reported.
-func (c *Configurator) basePort() (casbin.CfgPrt, bool) {
-	if len(c.ports) == 0 {
-		return casbin.CfgPrt{}, false
-	}
-	base := c.ports[0]
-	for _, p := range c.ports {
-		if p.PortID == 0 {
-			base = p
-		}
-	}
-	return base, true
-}
-
-// generateSetReqs generates the property set requests, computed from
-// the query phase's readbacks.
-func (c *Configurator) generateSetReqs() {
-	c.generateTPSet()
-	c.generateTModeSet()
-	c.generateSignalSet()
-	c.generateMinElevSet()
-}
-
 // genPhases are the request generation phases, each gated on all
 // earlier requests being final: property sets need the query phase's
 // readback (read-modify-write), message enabling comes after the
@@ -257,6 +191,33 @@ func (c *Configurator) allFinal() bool {
 		}
 	}
 	return true
+}
+
+// generateQueryReqs polls the messages whose current values the set
+// phase needs (read-modify-write) or the target asks to read.
+func (c *Configurator) generateQueryReqs() {
+	c.generateVerQuery()
+	c.generateTPQuery()
+	c.generateTModeQuery()
+	c.generateSignalQuery()
+	c.generateMinElevQuery()
+	_, wantBaud := c.target.Props.GetBaudRate()
+	if wantBaud || c.target.Opts.RTCMMsg.IsSet() {
+		c.addPollReq(casbin.CfgPrtID, func(m casbin.Msg) {
+			if prt, ok := m.(*casbin.CfgPrt); ok {
+				c.ports = append(c.ports, *prt)
+			}
+		})
+	}
+}
+
+// generateSetReqs generates the property set requests, computed from
+// the query phase's readbacks.
+func (c *Configurator) generateSetReqs() {
+	c.generateTPSet()
+	c.generateTModeSet()
+	c.generateSignalSet()
+	c.generateMinElevSet()
 }
 
 // generateNVMReqs generates the save and reset requests.
@@ -318,6 +279,45 @@ func (c *Configurator) addRstReq(startMode uint8) {
 	}
 	m := &casbin.CfgRst{NavBbrMask: bbr, ResetMode: casbin.ResetHWImmediate, StartMode: startMode}
 	c.addMsg(m, casReq{noAck: true})
+}
+
+// generateSpeedReqs generates the baud rate change, which must be the
+// last request: communication breaks if it fails. The set uses port id
+// 0xFF (the port in use) with the other port settings preserved from
+// the readback. The receiver switches speed immediately and sends its
+// ACK at the new rate, so the request is followed by a CFG-RATE poll
+// whose answer guarantees traffic at the new speed for confirmation.
+// When a save was also requested it runs before the change and thus
+// persists the old baud rate; persisting the new rate needs a save in
+// a later invocation at the new speed.
+func (c *Configurator) generateSpeedReqs() {
+	baud, ok := c.target.Props.GetBaudRate()
+	if !ok {
+		return
+	}
+	base, haveBase := c.basePort()
+	if !haveBase {
+		return
+	}
+	m := &casbin.CfgPrt{PortID: casbin.PortCurrent, ProtoMask: base.ProtoMask, Mode: base.Mode, BaudRate: baud}
+	c.speedReq = c.addMsg(m, casReq{speedAfter: int(baud)})
+	c.addPollReq(casbin.CfgRateID, nil)
+}
+
+// basePort returns the polled port entry whose settings a port write
+// preserves: port 0 (the wired UART on all known boards), or the
+// first entry reported.
+func (c *Configurator) basePort() (casbin.CfgPrt, bool) {
+	if len(c.ports) == 0 {
+		return casbin.CfgPrt{}, false
+	}
+	base := c.ports[0]
+	for _, p := range c.ports {
+		if p.PortID == 0 {
+			base = p
+		}
+	}
+	return base, true
 }
 
 // promote readies notReady requests whose class+id no earlier live
@@ -389,6 +389,21 @@ func (c *Configurator) addSetReq(m casbin.Msg, onAck func()) {
 	c.addMsg(m, casReq{onAck: onAck})
 }
 
+// addPollReq appends an empty-payload poll of the given CFG message.
+// The data response is passed to onData; a NAK means the message does
+// not exist in this firmware, which is acceptable (shown by absence).
+func (c *Configurator) addPollReq(mid casbin.MsgID, onData func(casbin.Msg)) {
+	pkt, _ := casbin.PackMsg(mid, nil)
+	c.add(&casReq{mid: mid, packet: pkt, nakOK: true, onData: onData})
+}
+
+// addTextReq appends an NMEA text request whose reply is matched by
+// onText. There is no acknowledgement and no reply is guaranteed, so
+// the request is optional: silence is acceptable.
+func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
+	c.add(&casReq{packet: []byte(sentence), onText: onText, optional: true})
+}
+
 // setSection returns the CFG-CFG save-section bit a set request
 // touches, for minimal saves. V6-only CFG messages return 0: the V6
 // save command has no section mask.
@@ -445,21 +460,6 @@ func (c *Configurator) nativeText(payload string, tRead time.Time) error {
 		}
 	}
 	return nil
-}
-
-// addTextReq appends an NMEA text request whose reply is matched by
-// onText. There is no acknowledgement and no reply is guaranteed, so
-// the request is optional: silence is acceptable.
-func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
-	c.add(&casReq{packet: []byte(sentence), onText: onText, optional: true})
-}
-
-// addPollReq appends an empty-payload poll of the given CFG message.
-// The data response is passed to onData; a NAK means the message does
-// not exist in this firmware, which is acceptable (shown by absence).
-func (c *Configurator) addPollReq(mid casbin.MsgID, onData func(casbin.Msg)) {
-	pkt, _ := casbin.PackMsg(mid, nil)
-	c.add(&casReq{mid: mid, packet: pkt, nakOK: true, onData: onData})
 }
 
 // handleAck resolves an ACK/NAK against the oldest outstanding request
