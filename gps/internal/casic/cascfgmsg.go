@@ -47,14 +47,9 @@ func (c *Configurator) generateRTCMReqs(flags gpsprot.RTCMMsgFlags) {
 		en |= casbin.RtcmEn1005
 	}
 	c.addReqNakOK(&casbin.CfgRtcm{MsgEnable: en, MsmVer: ver}, nil)
-	if len(c.ports) == 0 {
+	base, haveBase := c.basePort()
+	if !haveBase {
 		return
-	}
-	base := c.ports[0]
-	for _, p := range c.ports {
-		if p.PortID == 0 {
-			base = p
-		}
 	}
 	mask := base.ProtoMask &^ uint8(casbin.PrtProtoRTCMOut)
 	if en != 0 {

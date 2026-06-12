@@ -185,8 +185,24 @@ func (c *Configurator) generateQueryReqs() {
 // a later invocation at the new speed.
 func (c *Configurator) generateSpeedReqs() {
 	baud, ok := c.target.Props.GetBaudRate()
-	if !ok || len(c.ports) == 0 {
+	if !ok {
 		return
+	}
+	base, haveBase := c.basePort()
+	if !haveBase {
+		return
+	}
+	m := &casbin.CfgPrt{PortID: casbin.PortCurrent, ProtoMask: base.ProtoMask, Mode: base.Mode, BaudRate: baud}
+	c.speedReq = c.addMsg(m, casReq{speedAfter: int(baud)})
+	c.addPollReq(casbin.CfgRateID, nil)
+}
+
+// basePort returns the polled port entry whose settings a port write
+// preserves: port 0 (the wired UART on all known boards), or the
+// first entry reported.
+func (c *Configurator) basePort() (casbin.CfgPrt, bool) {
+	if len(c.ports) == 0 {
+		return casbin.CfgPrt{}, false
 	}
 	base := c.ports[0]
 	for _, p := range c.ports {
@@ -194,12 +210,7 @@ func (c *Configurator) generateSpeedReqs() {
 			base = p
 		}
 	}
-	m := &casbin.CfgPrt{PortID: casbin.PortCurrent, ProtoMask: base.ProtoMask, Mode: base.Mode, BaudRate: baud}
-	req := &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m), speedAfter: int(baud)}
-	c.touched |= casbin.CfgSectionPort
-	c.reqs = append(c.reqs, req)
-	c.speedReq = req
-	c.addPollReq(casbin.CfgRateID, nil)
+	return base, true
 }
 
 // generateSetReqs generates the property set requests, computed from
@@ -266,7 +277,7 @@ func (c *Configurator) generateNVMReqs() {
 			// V6 firmware restarts the receiver on load without
 			// acknowledging first (observed on the F8N: boot banner,
 			// no ACK).
-			c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m), noAck: true})
+			c.addMsg(m, casReq{noAck: true})
 		} else {
 			c.addReq(m)
 		}
@@ -306,7 +317,7 @@ func (c *Configurator) addRstReq(startMode uint8) {
 		bbr = bbrReset
 	}
 	m := &casbin.CfgRst{NavBbrMask: bbr, ResetMode: casbin.ResetHWImmediate, StartMode: startMode}
-	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m), noAck: true})
+	c.addMsg(m, casReq{noAck: true})
 }
 
 // promote readies notReady requests whose class+id no earlier live
@@ -340,19 +351,33 @@ func (c *Configurator) Request(index int) gpsprot.ConfigRequest {
 	return c.reqs[index]
 }
 
-// addReq appends a request for the given message, to be sent once no
-// earlier request with the same class+id is outstanding. A NAK fails
-// the request.
-func (c *Configurator) addReq(m casbin.Msg) {
+// add appends a request, to be sent once no earlier request with the
+// same class+id is outstanding (see promote). All requests enter the
+// slice through here.
+func (c *Configurator) add(req *casReq) *casReq {
+	req.state = reqNotReady
+	c.reqs = append(c.reqs, req)
+	return req
+}
+
+// addMsg is add for a request carrying a serialized message, tracking
+// the configuration section it touches for minimal saves.
+func (c *Configurator) addMsg(m casbin.Msg, req casReq) *casReq {
 	c.touched |= setSection(m)
-	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m)})
+	req.mid = m.ID()
+	req.packet = serialize(m)
+	return c.add(&req)
+}
+
+// addReq appends a request for the given message. A NAK fails it.
+func (c *Configurator) addReq(m casbin.Msg) {
+	c.addMsg(m, casReq{})
 }
 
 // addReqNakOK is addReq for requests where a NAK is an acceptable
 // outcome; onNak (optional) generates a fallback request first.
 func (c *Configurator) addReqNakOK(m casbin.Msg, onNak func()) {
-	c.touched |= setSection(m)
-	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m), nakOK: true, onNak: onNak})
+	c.addMsg(m, casReq{nakOK: true, onNak: onNak})
 }
 
 // addSetReq appends a property set request. When the receiver
@@ -361,8 +386,7 @@ func (c *Configurator) addReqNakOK(m casbin.Msg, onNak func()) {
 // value a set reports is what the receiver accepted, and a refusal
 // (NAK) leaves the assumed configuration unchanged.
 func (c *Configurator) addSetReq(m casbin.Msg, onAck func()) {
-	c.touched |= setSection(m)
-	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m), onAck: onAck})
+	c.addMsg(m, casReq{onAck: onAck})
 }
 
 // setSection returns the CFG-CFG save-section bit a set request
@@ -427,7 +451,7 @@ func (c *Configurator) nativeText(payload string, tRead time.Time) error {
 // onText. There is no acknowledgement and no reply is guaranteed, so
 // the request is optional: silence is acceptable.
 func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
-	c.reqs = append(c.reqs, &casReq{state: reqNotReady, packet: []byte(sentence), onText: onText, optional: true})
+	c.add(&casReq{packet: []byte(sentence), onText: onText, optional: true})
 }
 
 // addPollReq appends an empty-payload poll of the given CFG message.
@@ -435,7 +459,7 @@ func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
 // not exist in this firmware, which is acceptable (shown by absence).
 func (c *Configurator) addPollReq(mid casbin.MsgID, onData func(casbin.Msg)) {
 	pkt, _ := casbin.PackMsg(mid, nil)
-	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: mid, packet: pkt, nakOK: true, onData: onData})
+	c.add(&casReq{mid: mid, packet: pkt, nakOK: true, onData: onData})
 }
 
 // handleAck resolves an ACK/NAK against the oldest outstanding request
