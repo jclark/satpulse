@@ -10,10 +10,13 @@ import (
 )
 
 // maxResponseDelay is how long to wait for the ACK/NAK of a request.
-// On a quiet line CASIC receivers answer within tens of milliseconds;
-// at 9600 with NMEA output flowing the ACK can queue behind up to a
-// second or so of pending output.
-const maxResponseDelay = 2 * time.Second
+// On a quiet line CASIC receivers answer within tens of milliseconds,
+// but a V5 at 9600 with full NMEA output saturates its line and the
+// ACK can queue behind about six seconds of pending output (the
+// receiver's transmit queue, measured on the ATGM332D-5N71). Waiting
+// stops as soon as the response arrives, so the long limit costs
+// nothing on a healthy line.
+const maxResponseDelay = 8 * time.Second
 
 // speedChangeDelay is how long after sending a baud change until a
 // valid packet counts as confirmation. The host switches speed right
@@ -199,13 +202,15 @@ func (c *Configurator) generateVerifyReqs() {
 // genPhases are the request generation phases, each gated on all
 // earlier requests being final: property sets need the query phase's
 // readback (read-modify-write), the verify phase re-polls what the
-// sets changed so achieved values are truthful, and the NVM phase
-// must come last so NAK-driven fallback requests are saved too.
+// sets changed so achieved values are truthful, message enabling
+// comes after the property work because enabling NMEA output can
+// saturate a 9600 line and delay every later acknowledgement, and the
+// NVM phase comes last so NAK-driven fallback requests are saved too.
 var genPhases = []func(*Configurator){
 	(*Configurator).generateQueryReqs,
-	(*Configurator).generateMsgReqs,
 	(*Configurator).generateSetReqs,
 	(*Configurator).generateVerifyReqs,
+	(*Configurator).generateMsgReqs,
 	(*Configurator).generateNVMReqs,
 	(*Configurator).generateSpeedReqs,
 }

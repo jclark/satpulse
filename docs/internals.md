@@ -74,7 +74,7 @@ These packages implement the `gpsprot` interface for specific protocols. They ar
 
 `gps/internal/rtcm` implements `gps/gpsprot` abstractions for the RTCM protocol. It uses `gps/lib/rtcmbin` for field extraction.
 
-`gps/internal/casic` implements `gps/gpsprot` abstractions for the CASIC binary protocol. It uses `gps/lib/casbin` to do this.
+`gps/internal/casic` implements `gps/gpsprot` abstractions for the CASIC binary protocol, including the configuration protocol for CASIC receivers. It uses `gps/lib/casbin` and `gps/lib/casmsg` to do this.
 
 `gps/internal/unc` implements `gps/gpsprot` abstractions for the Unicore protocol. It uses `gps/lib/uncmsg` to parse Unicore binary and ASCII message formats.
 

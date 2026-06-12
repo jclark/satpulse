@@ -28,6 +28,7 @@ _Not yet released_
 
 ### GPS high-level configuration
 
+- High-level configuration now supports CASIC (Zhongke Microelectronics) receivers, covering both the V5 (URANUS5) and V6 (URANUS6) firmware families: probing, NMEA and binary message output, time pulse, time mode and survey-in, GNSS signal selection, save/reload/reset, and baud rate. `satpulsetool gps` and `satpulsed` can now configure receivers such as the ATGM332D and AT632. (#229)
 - `satpulsetool gps` has a new `--fixed-pos-llh` option for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#146)
 - The `[gps]` table in `satpulse.toml` has a new `fixedPosLLH` key for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#147)
 - `satpulsetool gps --show-receiver` now prints a `Supports:` line listing the receiver configuration features that SatPulse can use. (#203)
