@@ -34,6 +34,9 @@ def main() -> int:
     ap.add_argument("--baseline", type=Path,
                     help="characterization to compare against "
                          "(default: gpshwtest/baselines/<receiver>.json if present)")
+    ap.add_argument("--disruptive", action="store_true",
+                    help="run the disruptive probes (speed changes and NVM"
+                    " writes); NVM is modified and restored to a sane state")
     ap.add_argument("--sudo", action="store_true",
                     help="use sudo -n for physical time pulse checks (needs root)")
     ap.add_argument("--phc", help="PHC pin the receiver's PPS is wired to, as "
@@ -49,7 +52,7 @@ def main() -> int:
     tool = Tool(exe, conn, run_dir)
     print(f"run artifacts: {run_dir}", file=sys.stderr)
     try:
-        return run(tool, args.baseline, resolve_phc(args), args.sudo)
+        return run(tool, args.baseline, resolve_phc(args), args.sudo, args.disruptive)
     except ToolFailure as e:
         print(f"FAILURE: {e}", file=sys.stderr)
         return 1
@@ -116,7 +119,7 @@ def running_satpulsed() -> bool:
 
 
 def run(tool: Tool, baseline: Path | None, phc: tuple[str, int, int] | None,
-        use_sudo: bool) -> int:
+        use_sudo: bool, disruptive: bool) -> int:
     ident = tool.gps("show-receiver", ["--show-receiver"])
     if ident.error is not None:
         print(f"FAILURE: receiver detection failed: {ident.error}", file=sys.stderr)
@@ -148,6 +151,9 @@ def run(tool: Tool, baseline: Path | None, phc: tuple[str, int, int] | None,
     if isinstance(supported, list):
         print("probing signal combinations", file=sys.stderr)
         pr.probe_signals(initial, supported)
+    if disruptive:
+        print("probing serial speed", file=sys.stderr)
+        pr.probe_speed(initial)
     final = pr.show_config("final-config")
     if final is not None and final != initial:
         pr.failures.append(f"receiver not left as found: initial {initial!r}, final {final!r}")
@@ -164,6 +170,10 @@ def run(tool: Tool, baseline: Path | None, phc: tuple[str, int, int] | None,
         n = (len(pr.observations) + len(pr.signal_observations)
              + len(pr.emission_observations))
         print(f"ok: {n} observations, no failures", file=sys.stderr)
+    if disruptive:
+        print("disruptive coverage included; not compared against the"
+              " routine baseline", file=sys.stderr)
+        return status
     return max(status, compare_baseline(receiver, baseline, text))
 
 
