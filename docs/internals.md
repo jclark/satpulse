@@ -100,6 +100,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/casbin` translates binary packets in the CASIC protocol to and from Go structs.
 
+`gps/lib/casmsg` builds CASIC proprietary PCAS NMEA sentences and interprets their GPTXT responses.
+
 `gps/lib/asbin` translates binary packets in the Allystar binary protocol to and from Go structs.
 
 `gps/lib/bitsenc` provides reflection-based decoding of bit-packed binary data into Go structs. It supports unsigned and signed integers, bools, and embedded structs.

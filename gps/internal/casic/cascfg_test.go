@@ -18,6 +18,16 @@ type testReceiver struct {
 	t      *testing.T
 	monVer *casbin.MonVer // nil simulates V5: MON-VER poll gets NAK
 	nmea   []string       // NMEA sentences received (e.g. the probe quiet command)
+	rates   map[casbin.MsgID]uint16
+	naks    map[casbin.MsgID]bool // requests answered with NAK
+	silent  map[casbin.MsgID]bool // requests not answered at all
+	pending [][]byte              // delivered before the next request's responses
+}
+
+func (r *testReceiver) takePending() [][]byte {
+	p := r.pending
+	r.pending = nil
+	return p
 }
 
 // respond interprets one request write (which may have NMEA sentences
@@ -39,6 +49,12 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 	if err != nil {
 		r.t.Fatalf("receiver could not parse request: %v", err)
 	}
+	if r.silent[m.ID()] {
+		return nil
+	}
+	if r.naks[m.ID()] {
+		return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(m.ID())})}
+	}
 	switch mt := m.(type) {
 	case *casbin.CfgMsg:
 		if mt.Rate == casbin.PollRate && mt.Target == casbin.MonVerID {
@@ -49,6 +65,13 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 				r.pack(r.monVer),
 				r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)}),
 			}
+		}
+		if mt.Rate != casbin.PollRate {
+			if r.rates == nil {
+				r.rates = make(map[casbin.MsgID]uint16)
+			}
+			r.rates[mt.Target] = mt.Rate
+			return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)})}
 		}
 	}
 	if mid := m.ID(); mid.Ackable() {
@@ -110,7 +133,7 @@ func configure(t *testing.T, cp *ConfigProtocol, rcvr *testReceiver, target *gps
 		case gpsprot.ConfigActionSendRequest:
 			t0 = t0.Add(10 * time.Millisecond)
 			cfg.Request(action.Index).SetSentTime(t0)
-			for _, resp := range rcvr.respond(action.Packet) {
+			for _, resp := range append(rcvr.takePending(), rcvr.respond(action.Packet)...) {
 				t0 = t0.Add(5 * time.Millisecond)
 				if _, err := pp.ProcessPacket(string(resp), t0); err != nil {
 					t.Fatalf("ProcessPacket: %v", err)
@@ -184,6 +207,115 @@ func TestProbeV5(t *testing.T) {
 	}
 	if cfg.family != familyV5 {
 		t.Errorf("family = %v, want familyV5", cfg.family)
+	}
+}
+
+func nmeaTarget(flags gpsprot.NMEAMsgFlags) *gpsprot.ConfigTarget {
+	target := gpsprot.NewConfigTarget()
+	target.Opts.NMEAMsg.Set(flags)
+	return target
+}
+
+func TestNMEAOut(t *testing.T) {
+	tests := []struct {
+		name   string
+		monVer *casbin.MonVer
+		flags  gpsprot.NMEAMsgFlags
+		expect map[casbin.MsgID]uint16
+	}{
+		{
+			name:   "V6 RMC and ZDA",
+			monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
+			flags:  gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgZDA,
+			expect: map[casbin.MsgID]uint16{
+				casbin.NmeaGsvID: 0, casbin.NmeaRmcID: 1, casbin.NmeaGgaID: 0,
+				casbin.NmeaGsaID: 0, casbin.NmeaZdaV6ID: 1, casbin.NmeaVtgID: 0,
+				casbin.NmeaGllID: 0,
+			},
+		},
+		{
+			name:  "V5 ZDA uses 0x08",
+			flags: gpsprot.NMEAMsgZDA,
+			expect: map[casbin.MsgID]uint16{
+				casbin.NmeaGsvID: 0, casbin.NmeaRmcID: 0, casbin.NmeaGgaID: 0,
+				casbin.NmeaGsaID: 0, casbin.NmeaZdaID: 1, casbin.NmeaVtgID: 0,
+				casbin.NmeaGllID: 0,
+			},
+		},
+		{
+			name:  "all off",
+			flags: gpsprot.NMEAMsgNone,
+			expect: map[casbin.MsgID]uint16{
+				casbin.NmeaGsvID: 0, casbin.NmeaRmcID: 0, casbin.NmeaGgaID: 0,
+				casbin.NmeaGsaID: 0, casbin.NmeaZdaID: 0, casbin.NmeaVtgID: 0,
+				casbin.NmeaGllID: 0,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tc.monVer}
+			cp := probe(t, rcvr)
+			_, errCount := configure(t, cp, rcvr, nmeaTarget(tc.flags))
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if !reflect.DeepEqual(rcvr.rates, tc.expect) {
+				t.Errorf("rates\ngot  %v\nwant %v", rcvr.rates, tc.expect)
+			}
+		})
+	}
+}
+
+func TestNMEAOutNak(t *testing.T) {
+	rcvr := &testReceiver{naks: map[casbin.MsgID]bool{casbin.CfgMsgID: true}}
+	cp := probe(t, rcvr)
+	if !cp.ProbeOK() {
+		t.Fatal("ProbeOK = false")
+	}
+	_, errCount := configure(t, cp, rcvr, nmeaTarget(gpsprot.NMEAMsgRMC))
+	if errCount != 7 {
+		t.Errorf("ErrorCount = %d, want 7 (every CFG-MSG set refused)", errCount)
+	}
+}
+
+func TestNMEAOutNoResponse(t *testing.T) {
+	rcvr := &testReceiver{monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}}
+	cp := probe(t, rcvr)
+	rcvr.silent = map[casbin.MsgID]bool{casbin.CfgMsgID: true}
+	_, errCount := configure(t, cp, rcvr, nmeaTarget(gpsprot.NMEAMsgRMC))
+	if errCount != 7 {
+		t.Errorf("ErrorCount = %d, want 7 (every CFG-MSG set timed out)", errCount)
+	}
+}
+
+// TestLateProbeNak reproduces the V5 hazard: gpscfg sends a second
+// probe when the first answers slowly, and the second probe's NAK
+// arrives only after Configure, when the configurator's first CFG-MSG
+// set is already outstanding. The protocol must consume that NAK
+// rather than attribute it to the configurator's request.
+func TestLateProbeNak(t *testing.T) {
+	rcvr := &testReceiver{t: t}
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
+	cp := NewConfigProtocol()
+	pp.SetNativeMsgHandler(cp)
+	p1 := cp.ProbePacket()
+	cp.ProbePacket() // second probe, as gpscfg sends after probeRetryDelay
+	for _, resp := range rcvr.respond(p1) {
+		if _, err := pp.ProcessPacket(string(resp), time.Unix(1, 0)); err != nil {
+			t.Fatalf("ProcessPacket: %v", err)
+		}
+	}
+	if !cp.ProbeOK() {
+		t.Fatal("ProbeOK = false")
+	}
+	rcvr.pending = [][]byte{rcvr.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgMsgID)})}
+	_, errCount := configure(t, cp, rcvr, nmeaTarget(gpsprot.NMEAMsgRMC))
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0 (late probe NAK misattributed)", errCount)
+	}
+	if rcvr.rates[casbin.NmeaRmcID] != 1 {
+		t.Errorf("RMC rate = %d, want 1", rcvr.rates[casbin.NmeaRmcID])
 	}
 }
 

@@ -1,0 +1,263 @@
+package casic
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/casbin"
+)
+
+// maxResponseDelay is how long to wait for the ACK/NAK of a request.
+// On a quiet line CASIC receivers answer within tens of milliseconds;
+// at 9600 with NMEA output flowing the ACK can queue behind up to a
+// second or so of pending output.
+const maxResponseDelay = 2 * time.Second
+
+// Configurator implements gpsprot.Configurator for CASIC receivers.
+//
+// Requests are generated in one batch. A CASIC ACK/NAK identifies the
+// request only by class+id, so two outstanding requests with the same
+// class+id would be ambiguous; requests are created notReady and
+// promoted to ready only when no earlier live request shares their
+// class+id (see promote).
+type Configurator struct {
+	target    *gpsprot.ConfigTarget
+	ver       *casbin.MonVer // nil when MON-VER is unsupported (V5)
+	family    fwFamily
+	reqs      []*casReq
+	generated bool
+}
+
+var _ gpsprot.Configurator = (*Configurator)(nil)
+
+// casReqState is the internal request state; see mapping in GetState.
+type casReqState int
+
+const (
+	reqNotReady casReqState = iota
+	reqReady
+	reqAwaitingAck
+	reqMayResend
+	reqSucceeded
+	reqFailed
+)
+
+// casReq is a single configuration request: one CASIC packet expecting
+// an ACK or NAK correlated by class+id.
+type casReq struct {
+	state  casReqState
+	mid    casbin.MsgID // class+id, for ACK correlation
+	packet []byte
+	tBase  time.Time // time request was sent
+	err    error
+}
+
+var _ gpsprot.ConfigRequest = (*casReq)(nil)
+
+func newConfigurator(target *gpsprot.ConfigTarget, ver *casbin.MonVer) *Configurator {
+	family := familyV5
+	if ver != nil && !strings.Contains(ver.SwVersion.String(), "URANUS5") {
+		family = familyV6
+	}
+	return &Configurator{target: target, ver: ver, family: family}
+}
+
+// ReceiverInfo returns static information about the GPS receiver.
+// A V5 receiver does not answer MON-VER, so its firmware and hardware
+// strings are unknown and reported empty.
+func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
+	info := &gpsprot.ReceiverInfo{Vendor: Vendor, SupportedGNSS: c.supportedGNSS()}
+	if c.ver != nil {
+		info.Firmware = c.ver.SwVersion.String()
+		info.Hardware = c.ver.HwVersion.String()
+		info.VendorSpecific = c.ver
+	}
+	return info
+}
+
+// supportedGNSS returns the constellations the firmware family can use.
+// V5 supports GPS/BDS/GLONASS only; the V6 supported set should be
+// refined from CFG-NAVBAND query results once implemented.
+func (c *Configurator) supportedGNSS() gpsprot.GNSSSet {
+	set := gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.BDS, gpsprot.GLO)
+	if c.family == familyV6 {
+		set |= gpsprot.GNSSSetOf(gpsprot.GAL, gpsprot.QZSS, gpsprot.SBAS, gpsprot.NAVIC)
+	}
+	return set
+}
+
+// ConfigSupport returns the configuration options this implementation
+// supports. None of the optional capabilities are implemented yet.
+func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
+	return 0
+}
+
+// ConfigProps returns the current configuration of the GPS receiver.
+func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
+	return &gpsprot.ConfigProps{}
+}
+
+// GenerateRequests generates configuration requests on the first call
+// and promotes requests that have become unambiguous to send.
+func (c *Configurator) GenerateRequests() error {
+	if !c.generated {
+		c.generateMsgReqs()
+		c.generated = true
+	}
+	c.promote()
+	return nil
+}
+
+// promote readies notReady requests whose class+id no earlier live
+// request shares. Requests sharing a class+id thus go out one at a
+// time, in order; requests with distinct ids may be pipelined.
+func (c *Configurator) promote() {
+	live := make(map[casbin.MsgID]bool)
+	for _, req := range c.reqs {
+		switch req.state {
+		case reqNotReady:
+			if !live[req.mid] {
+				req.state = reqReady
+			}
+			live[req.mid] = true
+		case reqReady, reqAwaitingAck, reqMayResend:
+			live[req.mid] = true
+		}
+	}
+}
+
+// GetRequestCount returns the current number of requests and whether
+// the slice is complete.
+func (c *Configurator) GetRequestCount() (int, bool) {
+	return len(c.reqs), c.generated
+}
+
+// Request returns the ConfigRequest at the given index.
+func (c *Configurator) Request(index int) gpsprot.ConfigRequest {
+	return c.reqs[index]
+}
+
+// addReq appends a request for the given message, to be sent once no
+// earlier request with the same class+id is outstanding.
+func (c *Configurator) addReq(m casbin.Msg) {
+	pkt, err := casbin.Serialize(m)
+	if err != nil {
+		panic(fmt.Sprintf("serializing %v: %v", m.ID(), err))
+	}
+	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: pkt})
+}
+
+// nativeMsg processes receiver messages routed from the ConfigProtocol.
+func (c *Configurator) nativeMsg(m casbin.Msg, tRead time.Time) error {
+	switch mt := m.(type) {
+	case *casbin.AckAck:
+		c.handleAck(casbin.MakeMsgID(mt.ClsID, mt.MsgID), true, tRead)
+	case *casbin.AckNak:
+		c.handleAck(casbin.MakeMsgID(mt.ClsID, mt.MsgID), false, tRead)
+	}
+	return nil
+}
+
+// handleAck resolves an ACK/NAK against the oldest outstanding request
+// with the acknowledged class+id. Responses arrive in request order on
+// all tested receivers, and promote ensures at most one request per
+// class+id is outstanding.
+func (c *Configurator) handleAck(mid casbin.MsgID, ack bool, tRead time.Time) {
+	for _, req := range c.reqs {
+		if req.mid != mid || req.state != reqAwaitingAck {
+			continue
+		}
+		delay := tRead.Sub(req.tBase)
+		if delay < 0 || delay > maxResponseDelay {
+			return
+		}
+		if ack {
+			req.state = reqSucceeded
+		} else {
+			req.state = reqFailed
+			req.err = fmt.Errorf("receiver refused %v", mid)
+		}
+		return
+	}
+}
+
+func (req *casReq) invalidStatePanic(method string) string {
+	return fmt.Sprintf("%s called when state is %v", method, req.state)
+}
+
+func (req *casReq) GetPacket() []byte {
+	switch req.state {
+	case reqReady, reqMayResend, reqFailed:
+		return req.packet
+	}
+	panic(req.invalidStatePanic("GetPacket"))
+}
+
+func (req *casReq) GetSpeedChangeAfter() int {
+	return 0
+}
+
+func (req *casReq) GetState() gpsprot.ConfigRequestState {
+	switch req.state {
+	case reqNotReady:
+		return gpsprot.ConfigRequestNotReady
+	case reqReady:
+		return gpsprot.ConfigRequestReadyToSend
+	case reqAwaitingAck:
+		return gpsprot.ConfigRequestAwaitingResponse
+	case reqMayResend:
+		return gpsprot.ConfigRequestMayResend
+	case reqSucceeded:
+		return gpsprot.ConfigRequestSucceeded
+	case reqFailed:
+		return gpsprot.ConfigRequestFailed
+	default:
+		panic(fmt.Sprintf("unexpected internal state: %v", req.state))
+	}
+}
+
+func (req *casReq) GetDeadline() time.Time {
+	if req.state != reqAwaitingAck {
+		panic(req.invalidStatePanic("GetDeadline"))
+	}
+	return req.tBase.Add(maxResponseDelay)
+}
+
+func (req *casReq) GetError() error {
+	if req.state != reqFailed {
+		panic(req.invalidStatePanic("GetError"))
+	}
+	return req.err
+}
+
+func (req *casReq) SetSentTime(tSent time.Time) {
+	switch req.state {
+	case reqReady, reqMayResend:
+		req.state = reqAwaitingAck
+		req.tBase = tSent
+	default:
+		panic(req.invalidStatePanic("SetSentTime"))
+	}
+}
+
+func (req *casReq) SetDeadlinePassed() {
+	if req.state != reqAwaitingAck {
+		panic(req.invalidStatePanic("SetDeadlinePassed"))
+	}
+	req.state = reqMayResend
+}
+
+func (req *casReq) SetWontResend() {
+	if req.state != reqMayResend {
+		panic(req.invalidStatePanic("SetWontResend"))
+	}
+	req.state = reqFailed
+	if req.err == nil {
+		req.err = fmt.Errorf("no response to %v", req.mid)
+	}
+}
+
+func (req *casReq) MaybeSpeedChangeSucceeded(validPacketTime time.Time) {
+}

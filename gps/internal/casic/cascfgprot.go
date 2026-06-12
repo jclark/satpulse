@@ -1,11 +1,11 @@
 package casic
 
 import (
-	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/lib/casmsg"
 )
 
 // Vendor is the receiver vendor name reported in ReceiverInfo.
@@ -24,14 +24,22 @@ const (
 // ConfigProtocol implements gpsprot.ConfigProtocol for CASIC receivers.
 //
 // Probing polls MON-VER via CFG-MSG (rate 0xFFFF). V6 firmware answers
-// with MON-VER (then ACK); V5 firmware does not support MON-VER and
-// answers ACK-NAK - either response proves a CASIC receiver. The NAK
-// carries only the class/id of the request, so any NAK of CFG-MSG is
-// accepted: during probing no other CFG-MSG request is outstanding.
+// with MON-VER then ACK; V5 firmware does not support MON-VER and
+// answers ACK-NAK - either response proves a CASIC receiver.
+//
+// Every probe poll is eventually acknowledged, and responses arrive in
+// request order, so the ACK/NAK of a slow probe can arrive after
+// Configure when the Configurator already has its own CFG-MSG request
+// outstanding (seen on the V5, whose saturated 9600 line delays probe
+// responses by several seconds). pollsPending counts unacknowledged
+// probe polls; their CFG-MSG acknowledgements are consumed here and
+// never forwarded to the Configurator.
 type ConfigProtocol struct {
-	probed bool           // some response identified a CASIC receiver
-	ver    *casbin.MonVer // nil when MON-VER is unsupported (V5)
-	cfg    *Configurator
+	probed       bool           // some response identified a CASIC receiver
+	ver          *casbin.MonVer // nil when MON-VER is unsupported (V5)
+	cfg          *Configurator
+	pollsPending int // probe polls sent and not yet acknowledged
+	verPending   int // MON-VER responses received whose ACK is still due
 }
 
 var _ gpsprot.ConfigProtocol = (*ConfigProtocol)(nil)
@@ -54,9 +62,20 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 	case *casbin.MonVer:
 		cp.ver = mt
 		cp.probed = true
+		if cp.pollsPending > 0 {
+			cp.verPending++
+		}
+	case *casbin.AckAck:
+		if casbin.MakeMsgID(mt.ClsID, mt.MsgID) == casbin.CfgMsgID && cp.verPending > 0 {
+			cp.verPending--
+			cp.pollsPending--
+			return nil
+		}
 	case *casbin.AckNak:
-		if casbin.MakeMsgID(mt.ClsID, mt.MsgID) == casbin.CfgMsgID && cp.cfg == nil {
+		if casbin.MakeMsgID(mt.ClsID, mt.MsgID) == casbin.CfgMsgID && cp.pollsPending > 0 {
+			cp.pollsPending--
 			cp.probed = true
+			return nil
 		}
 	}
 	if cp.cfg != nil {
@@ -65,19 +84,18 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 	return nil
 }
 
-// nmeaQuiet disables all NMEA output (RAM only). A V5 receiver at its
-// default 9600 baud cannot carry the default NMEA load: its TX queue
-// runs several seconds deep and probe responses may never emerge.
-// Quieting first bounds the response delay to the queue drain time
-// (measured ~6 s worst case). Non-CASIC receivers ignore the sentence.
-const nmeaQuiet = "$PCAS03,0,0,0,0,0,0,0,0,0,0,,,0,0,,,,0*32\r\n"
-
-// ProbePacket returns the NMEA quiet command followed by a CFG-MSG poll
-// of MON-VER. The cost of the quiet preamble is that probing a CASIC
-// receiver turns off its NMEA output until reconfigured or restarted.
+// ProbePacket returns the PCAS03 quiet-all-NMEA command followed by a
+// CFG-MSG poll of MON-VER. A V5 receiver at its default 9600 baud
+// cannot carry the default NMEA load: its TX queue runs several
+// seconds deep and probe responses may never emerge. Quieting first
+// bounds the response delay to the queue drain time (measured ~6 s
+// worst case); non-CASIC receivers ignore the sentence. The cost is
+// that probing a CASIC receiver turns off its NMEA output until
+// reconfigured or restarted.
 func (cp *ConfigProtocol) ProbePacket() []byte {
+	cp.pollsPending++
 	pkt, _ := casbin.Serialize(&casbin.CfgMsg{Target: casbin.MonVerID, Rate: casbin.PollRate})
-	return append([]byte(nmeaQuiet), pkt...)
+	return append([]byte(casmsg.QuietAll()), pkt...)
 }
 
 // ProbeOK reports whether a CASIC receiver has been identified.
@@ -94,75 +112,3 @@ func (cp *ConfigProtocol) Configure(target *gpsprot.ConfigTarget) (gpsprot.Confi
 	return cp.cfg, nil
 }
 
-// Configurator implements gpsprot.Configurator for CASIC receivers.
-type Configurator struct {
-	target *gpsprot.ConfigTarget
-	ver    *casbin.MonVer // nil when MON-VER is unsupported (V5)
-	family fwFamily
-}
-
-var _ gpsprot.Configurator = (*Configurator)(nil)
-
-func newConfigurator(target *gpsprot.ConfigTarget, ver *casbin.MonVer) *Configurator {
-	family := familyV5
-	if ver != nil && !strings.Contains(ver.SwVersion.String(), "URANUS5") {
-		family = familyV6
-	}
-	return &Configurator{target: target, ver: ver, family: family}
-}
-
-// ReceiverInfo returns static information about the GPS receiver.
-// A V5 receiver does not answer MON-VER, so its firmware and hardware
-// strings are unknown and reported empty.
-func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
-	info := &gpsprot.ReceiverInfo{Vendor: Vendor, SupportedGNSS: c.supportedGNSS()}
-	if c.ver != nil {
-		info.Firmware = c.ver.SwVersion.String()
-		info.Hardware = c.ver.HwVersion.String()
-		info.VendorSpecific = c.ver
-	}
-	return info
-}
-
-// supportedGNSS returns the constellations the firmware family can use.
-// V5 supports GPS/BDS/GLONASS only; the V6 supported set should be
-// refined from CFG-NAVBAND query results once implemented.
-func (c *Configurator) supportedGNSS() gpsprot.GNSSSet {
-	set := gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.BDS, gpsprot.GLO)
-	if c.family == familyV6 {
-		set |= gpsprot.GNSSSetOf(gpsprot.GAL, gpsprot.QZSS, gpsprot.SBAS, gpsprot.NAVIC)
-	}
-	return set
-}
-
-// ConfigSupport returns the configuration options this implementation
-// supports. None of the optional capabilities are implemented yet.
-func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
-	return 0
-}
-
-// ConfigProps returns the current configuration of the GPS receiver.
-func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
-	return &gpsprot.ConfigProps{}
-}
-
-// GenerateRequests generates configuration requests. No configuration
-// steps are implemented yet.
-func (c *Configurator) GenerateRequests() error {
-	return nil
-}
-
-// GetRequestCount returns the current number of requests and whether
-// the slice is complete.
-func (c *Configurator) GetRequestCount() (int, bool) {
-	return 0, true
-}
-
-// Request returns the ConfigRequest at the given index.
-func (c *Configurator) Request(index int) gpsprot.ConfigRequest {
-	panic("no requests")
-}
-
-func (c *Configurator) nativeMsg(m casbin.Msg, tRead time.Time) error {
-	return nil
-}

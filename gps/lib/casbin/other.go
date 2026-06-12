@@ -62,14 +62,16 @@ const (
 	MsgGPSIonID MsgID = clsMsg | (0x06 << 8)
 	MsgGPSEphID MsgID = clsMsg | (0x07 << 8)
 	MsgGLNEphID MsgID = clsMsg | (0x08 << 8)
-	// NMEA message IDs (for CFG-MSG rate configuration)
-	NmeaGgaID MsgID = clsNmea | (0x00 << 8)
-	NmeaGllID MsgID = clsNmea | (0x01 << 8)
-	NmeaGsaID MsgID = clsNmea | (0x02 << 8)
-	NmeaGsvID MsgID = clsNmea | (0x03 << 8)
-	NmeaRmcID MsgID = clsNmea | (0x04 << 8)
-	NmeaVtgID MsgID = clsNmea | (0x05 << 8)
-	NmeaZdaID MsgID = clsNmea | (0x08 << 8)
+	// NMEA message IDs (for CFG-MSG rate configuration).
+	// ZDA differs between firmware families: 0x08 on V5, 0x06 on V6.
+	NmeaGgaID   MsgID = clsNmea | (0x00 << 8)
+	NmeaGllID   MsgID = clsNmea | (0x01 << 8)
+	NmeaGsaID   MsgID = clsNmea | (0x02 << 8)
+	NmeaGsvID   MsgID = clsNmea | (0x03 << 8)
+	NmeaRmcID   MsgID = clsNmea | (0x04 << 8)
+	NmeaVtgID   MsgID = clsNmea | (0x05 << 8)
+	NmeaZdaID   MsgID = clsNmea | (0x08 << 8)
+	NmeaZdaV6ID MsgID = clsNmea | (0x06 << 8)
 )
 
 func init() {
@@ -149,4 +151,5 @@ func init() {
 	idNameMap[NmeaRmcID] = "RMC"
 	idNameMap[NmeaVtgID] = "VTG"
 	idNameMap[NmeaZdaID] = "ZDA"
+	idNameMap[NmeaZdaV6ID] = "ZDA6"
 }
