@@ -141,10 +141,10 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget) {
 		m.FixedPacc = uint32(math.Round(tt.posAcc * 1000))
 		m.SvinMinDur = tt.svinDur
 		m.SvinPaccLim = uint32(math.Round(tt.svinAcc * 1000))
-		c.addReq(&m)
+		c.addSetReq(&m, func() { c.tm6 = &m })
 		return
 	}
-	c.addReq(&casbin.CfgTMode{
+	m := &casbin.CfgTMode{
 		Mode:         uint16(tt.mode),
 		EcefX:        tt.ecef[0],
 		EcefY:        tt.ecef[1],
@@ -152,25 +152,8 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget) {
 		PosVar:       float32(tt.posAcc * tt.posAcc),
 		SvinMinDur:   tt.svinDur,
 		SvinVarLimit: float32(tt.svinAcc * tt.svinAcc),
-	})
-}
-
-// generateTModeVerify re-polls the time mode after a set.
-func (c *Configurator) generateTModeVerify() {
-	if c.tm5 == nil && c.tm6 == nil {
-		return
 	}
-	wrote := false
-	for _, req := range c.reqs {
-		if req.mid == casbin.CfgTModeID || req.mid == casbin.CfgTMode2ID {
-			if len(req.packet) > casbin.PacketMinLen {
-				wrote = true
-			}
-		}
-	}
-	if wrote {
-		c.generateTModeQuery()
-	}
+	c.addSetReq(m, func() { c.tm5 = m })
 }
 
 // tmodeConfigProps reports the positioning mode from the readback.

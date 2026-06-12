@@ -77,6 +77,7 @@ type casReq struct {
 	tBase      time.Time // time request was sent
 	err        error
 	nakOK      bool              // NAK is acceptable, not a failure
+	onAck      func()            // records the accepted values on ACK
 	onNak      func()            // generates the fallback request when NAKed
 	noAck      bool              // no response expected (CFG-RST): sending is success
 	onData     func(casbin.Msg)  // receives data responses (polls); ACK still completes
@@ -208,26 +209,18 @@ func (c *Configurator) generateSetReqs() {
 	c.generateMinElevSet()
 }
 
-// generateVerifyReqs re-polls what the set phase changed, so that
-// ConfigProps reports achieved values as the receiver holds them.
-func (c *Configurator) generateVerifyReqs() {
-	c.generateTPVerify()
-	c.generateTModeVerify()
-	c.generateSignalVerify()
-	c.generateMinElevVerify()
-}
-
 // genPhases are the request generation phases, each gated on all
 // earlier requests being final: property sets need the query phase's
-// readback (read-modify-write), the verify phase re-polls what the
-// sets changed so achieved values are truthful, message enabling
-// comes after the property work because enabling NMEA output can
-// saturate a 9600 line and delay every later acknowledgement, and the
-// NVM phase comes last so NAK-driven fallback requests are saved too.
+// readback (read-modify-write), message enabling comes after the
+// property work because enabling NMEA output can saturate a 9600 line
+// and delay every later acknowledgement, the NVM phase comes after
+// everything it persists (including NAK-driven fallback requests),
+// and the baud change is last because communication breaks if it
+// fails. Acknowledged sets record their accepted values as the
+// assumed configuration, so no re-polling is needed.
 var genPhases = []func(*Configurator){
 	(*Configurator).generateQueryReqs,
 	(*Configurator).generateSetReqs,
-	(*Configurator).generateVerifyReqs,
 	(*Configurator).generateMsgReqs,
 	(*Configurator).generateNVMReqs,
 	(*Configurator).generateSpeedReqs,
@@ -360,6 +353,16 @@ func (c *Configurator) addReqNakOK(m casbin.Msg, onNak func()) {
 	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m), nakOK: true, onNak: onNak})
 }
 
+// addSetReq appends a property set request. When the receiver
+// acknowledges it, onAck records the accepted values as the
+// receiver's assumed configuration - per the semantics, the achieved
+// value a set reports is what the receiver accepted, and a refusal
+// (NAK) leaves the assumed configuration unchanged.
+func (c *Configurator) addSetReq(m casbin.Msg, onAck func()) {
+	c.touched |= setSection(m)
+	c.reqs = append(c.reqs, &casReq{state: reqNotReady, mid: m.ID(), packet: serialize(m), onAck: onAck})
+}
+
 // setSection returns the CFG-CFG save-section bit a set request
 // touches, for minimal saves. V6-only CFG messages return 0: the V6
 // save command has no section mask.
@@ -447,6 +450,9 @@ func (c *Configurator) handleAck(mid casbin.MsgID, ack bool, tRead time.Time) {
 			return
 		}
 		if ack {
+			if req.onAck != nil {
+				req.onAck()
+			}
 			req.state = reqSucceeded
 		} else if req.nakOK {
 			if req.onNak != nil {

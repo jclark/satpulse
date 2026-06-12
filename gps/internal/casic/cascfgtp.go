@@ -20,10 +20,11 @@ import (
 // TSrcMode: V5 0=GPS, 1=BDS, 2=GLN (forced), 4-6 primary BDS/GPS/GLN;
 // V6 0-3 force GPS/BDS/GLN/GAL, 4-8 primary, 9 auto.
 //
-// A set is a read-modify-write: the query phase polls CFG-TP, the set
-// phase merges the target properties into the readback, and the verify
-// phase re-polls so reported achieved values are what the receiver
-// actually holds.
+// A set is a read-modify-write: the query phase polls CFG-TP and the
+// set phase merges the target properties into the readback. The
+// encoding fully determines what the receiver stores (microsecond
+// fields, float32 delay), so the acknowledged set is recorded as the
+// assumed configuration.
 
 // tpProps are the properties realized by CFG-TP. The antenna cable
 // delay maps to the CFG-TP user time delay field.
@@ -94,20 +95,7 @@ func (c *Configurator) generateTPSet() {
 	if d, ok := props.GetAntennaCableDelay(); ok {
 		tp.UserDelay = float32(d.Seconds())
 	}
-	c.addReq(&tp)
-}
-
-// generateTPVerify re-polls CFG-TP after a set so that ConfigProps
-// reports what the receiver actually holds.
-func (c *Configurator) generateTPVerify() {
-	if !c.setsTP() || c.tp == nil {
-		return
-	}
-	c.addPollReq(casbin.CfgTPID, func(m casbin.Msg) {
-		if tp, ok := m.(*casbin.CfgTP); ok {
-			c.tp = tp
-		}
-	})
+	c.addSetReq(&tp, func() { c.tp = &tp })
 }
 
 // ppsOutMode returns the pulse output mode for an enabled pulse.

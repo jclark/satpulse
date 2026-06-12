@@ -78,14 +78,18 @@ func (c *Configurator) generateSignalQuery() {
 		return
 	}
 	if c.family == familyV6 {
-		c.addPollReq(casbin.CfgNavBandID, func(m casbin.Msg) {
-			if nb, ok := m.(*casbin.CfgNavBand); ok {
-				c.navBand = nb
-			}
-		})
+		c.pollNavBand()
 	} else {
 		c.pollNavx()
 	}
+}
+
+func (c *Configurator) pollNavBand() {
+	c.addPollReq(casbin.CfgNavBandID, func(m casbin.Msg) {
+		if nb, ok := m.(*casbin.CfgNavBand); ok {
+			c.navBand = nb
+		}
+	})
 }
 
 // pollNavx polls CFG-NAVX, which carries both the V5 constellation
@@ -120,7 +124,12 @@ func (c *Configurator) generateSignalSet() {
 		mask := signalsToNavBand(requested)
 		nb.SigIDMaskFix = mask
 		nb.SigIDMask = mask
-		c.addReq(&nb)
+		c.addSetReq(&nb, func() { c.navBand = &nb })
+		// The acknowledged values are not the whole truth here: the
+		// silicon clamps the written reception list to the hardware's
+		// capability (verified on the AT632), which is not knowable in
+		// advance, so the achieved set needs one readback.
+		c.pollNavBand()
 		return
 	}
 	if c.navx == nil {
@@ -137,18 +146,8 @@ func (c *Configurator) generateSignalSet() {
 	if want.Contains(gpsprot.GLO) {
 		sys |= casbin.NavSysGLN
 	}
-	c.addReq(&casbin.CfgNavx{Mask: casbin.NavxNavSystem, NavSystem: sys})
-}
-
-// generateSignalVerify re-polls the signal selection after a set.
-func (c *Configurator) generateSignalVerify() {
-	if _, ok := c.target.Props.GetSignalsEnabled(); !ok {
-		return
-	}
-	if c.navBand == nil && c.navx == nil {
-		return
-	}
-	c.generateSignalQuery()
+	c.addSetReq(&casbin.CfgNavx{Mask: casbin.NavxNavSystem, NavSystem: sys},
+		func() { c.navx.NavSystem = sys })
 }
 
 // signalConfigProps reports the enabled signal set from the readback.

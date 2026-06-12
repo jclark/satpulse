@@ -51,33 +51,14 @@ func (c *Configurator) generateMinElevSet() {
 		}
 		nl := *c.navLimit
 		nl.MinElev = deg
-		c.addReq(&nl)
+		c.addSetReq(&nl, func() { c.navLimit = &nl })
 		return
 	}
 	if c.navx == nil {
 		return
 	}
-	c.addReq(&casbin.CfgNavx{Mask: casbin.NavxMinElev, MinElev: deg})
-}
-
-// generateMinElevVerify re-polls minimum elevation after a set. On V5
-// the signal verify re-polls CFG-NAVX already when signals were set.
-func (c *Configurator) generateMinElevVerify() {
-	if _, ok := c.target.Props.GetMinElevation(); !ok {
-		return
-	}
-	if c.family == familyV6 {
-		if c.navLimit != nil {
-			c.generateMinElevQuery()
-		}
-		return
-	}
-	if c.navx == nil {
-		return
-	}
-	if _, ok := c.target.Props.GetSignalsEnabled(); !ok {
-		c.pollNavx()
-	}
+	c.addSetReq(&casbin.CfgNavx{Mask: casbin.NavxMinElev, MinElev: deg},
+		func() { c.navx.MinElev = deg })
 }
 
 // minElevConfigProps reports minimum elevation from the readback.
