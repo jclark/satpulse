@@ -193,7 +193,7 @@ func leapTim2TimeGNSS(m *casbin.Tim2TimeGNSS, gnss gpsprot.GNSS, taiMinusGNSS in
 
 // leapTim2Ls extracts a LeapSecondMsg from Tim2Ls.
 // Returns nil when the message does not contain usable leap second data.
-func leapTim2Ls(m *casbin.Tim2Ls, tRead time.Time) *gpsprot.LeapSecondMsg {
+func leapTim2Ls(m *casbin.Tim2Ls, now ptime.Time) *gpsprot.LeapSecondMsg {
 	if m.RaimType == casbin.Tim2RaimNoLsInfo && m.Dtls != m.Dtlsf {
 		return nil
 	}
@@ -206,7 +206,6 @@ func leapTim2Ls(m *casbin.Tim2Ls, tRead time.Time) *gpsprot.LeapSecondMsg {
 		DeltaLS:  m.Dtls,
 		DeltaLSF: m.Dtlsf,
 	}
-	now := ptime.Unix(tRead.Unix()+int64(ptime.LeapSecond2016UTCOffAfter), int64(tRead.Nanosecond()))
 	var gnss gpsprot.GNSS
 	var ls ptime.LeapSecond
 	var err error

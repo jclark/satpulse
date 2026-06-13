@@ -95,18 +95,17 @@ const (
 	Tim2UtcAuxiliary
 )
 
-// Tim2LsEventFlag indicates leap second event validity.
+// Tim2LsEventFlag indicates whether TIM2-TIME* reports a leap second event date.
+// Ls and Lsf may still report current/forecast offsets when there is no event date.
 type Tim2LsEventFlag uint8
 
 const (
-	Tim2LsEventNone Tim2LsEventFlag = iota
-	Tim2LsEventNoEvent
-	Tim2LsEventNormal
-	Tim2LsEventAbnormal
+	Tim2LsEventNone     Tim2LsEventFlag = iota
+	Tim2LsEventNoEvent                  // no event date in LsYear; Ls and Lsf are offset state only
+	Tim2LsEventNormal                   // leap second event, normal; LsYear gives the event date
+	Tim2LsEventAbnormal                 // leap second event, abnormal
 )
 
-// Tim2TimeGNSS is the shared structure for TIM2-TIMEGPS/BDS/GLN/GAL/IRN
-// (0x12 0x01-0x05) - GNSS system time information (36 bytes)
 // Tim2TimeGNSS is the shared structure for TIM2-TIMEGPS/BDS/GLN/GAL/IRN
 // (0x12 0x01-0x05) - GNSS system time information (36 bytes)
 type Tim2TimeGNSS struct {
@@ -119,13 +118,13 @@ type Tim2TimeGNSS struct {
 	TAcc     float32         // ns, time error estimate
 	Dt2Utc   float32         // ns, offset to UTC
 	DtLsfUtc int32           // s, time until leap second event
-	Ls       int8            // s, current leap seconds
-	Lsf      int8            // s, forecast leap seconds
+	Ls       int8            // s, current GNSS-UTC offset
+	Lsf      int8            // s, forecast GNSS-UTC offset
 	TFlag    Tim2TimeFlag    // time status flags
 	TSrc     Tim2TSrc        // timing source
 	UtcFlag  Tim2UtcFlag     // UTC parameter valid flag
-	LsFlag   Tim2LsEventFlag // leap second event valid flag
-	LsYear   uint16          // BIT[15:1]=year, BIT0=0(Jun30)/1(Dec31)
+	LsFlag   Tim2LsEventFlag // leap second event status
+	LsYear   uint16          // BIT[15:1]=year, BIT0=0(Jun30)/1(Dec31); zero when no event date is reported
 }
 
 // Tim2TimeGPS is TIM2-TIMEGPS (0x12 0x01)
@@ -183,11 +182,13 @@ type Tim2TimePos struct {
 func (m *Tim2TimePos) ID() MsgID { return Tim2TimePosID }
 
 // Tim2RaimType is the TIM2-LS/TIM2-LY RAIM alarm type (section 3.7.6).
+// Tim2RaimNoLsInfo in TIM2-LS means the referenced leap event is in the past;
+// unlike Tim2LsEventNoEvent, Wnlsf, Dn, Dtls, and Dtlsf may still identify it.
 type Tim2RaimType uint8
 
 const (
-	Tim2RaimNone       Tim2RaimType = iota // no RAIM alarm; TIM2-LS fields may be zero before UTC almanac decode
-	Tim2RaimNoLsInfo                       // most recently announced leap second is in the past; AT632 reports this with Dtls == Dtlsf
+	Tim2RaimNone       Tim2RaimType = iota // no leap second date available; Wnlsf and Dn zero
+	Tim2RaimNoLsInfo                       // most recently announced leap second is in the past; Wnlsf and Dn valid
 	Tim2RaimLsNormal                       // leap second alarm, normal
 	Tim2RaimLsAbnormal                     // leap second alarm, abnormal
 	Tim2RaimWnNormal                       // week number alarm, normal
@@ -200,10 +201,10 @@ type Tim2Ls struct {
 	GNSSID        GNSSID       // system ID (section 1.4)
 	SigID         uint8        // signal ID (section 1.4)
 	SVID          uint8        // satellite ID
-	RaimType      Tim2RaimType // alarm type; 0 means no usable data, 1 means the announced leap is in the past
+	RaimType      Tim2RaimType // alarm type
 	Wnlsf         uint8        // low 8 bits of GNSS week number for the leap second reference/event
 	Dn            uint8        // GNSS day number of leap second reference/event
-	Dtls          int8         // s, GNSS-UTC offset before the leap second reference/event
+	Dtls          int8         // s, GNSS-UTC offset before a future event; same as Dtlsf for a past event
 	Dtlsf         int8         // s, GNSS-UTC offset after the leap second reference/event
 }
 

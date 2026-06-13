@@ -396,39 +396,39 @@ func TestLeapTim2TimeGNSSEvent(t *testing.T) {
 
 func TestLeapTim2Ls(t *testing.T) {
 	tests := []struct {
-		name  string
-		tRead time.Time
-		hex   string
-		want  *gpsprot.LeapSecondMsg
+		name string
+		now  ptime.Time
+		hex  string
+		want *gpsprot.LeapSecondMsg
 	}{
 		{
-			name:  "time-glo GPS past-announced leap",
-			tRead: time.Date(2026, time.June, 13, 3, 21, 33, 26915000, time.UTC),
-			hex:   "bace10001207000000000000000000000001890712129907241a",
+			name: "time-glo GPS past-announced leap",
+			now:  ptime.GPS(2422, 530154*time.Second),
+			hex:  "bace10001207000000000000000000000001890712129907241a",
 			want: &gpsprot.LeapSecondMsg{
 				LeapSecond: ptime.LeapSecond2016(),
 				GNSS:       gpsprot.GPS,
 			},
 		},
 		{
-			name:  "time-bds Galileo past-announced leap",
-			tRead: time.Date(2026, time.June, 13, 3, 20, 12, 44735000, time.UTC),
-			hex:   "bace10001207000000000000000003000001890712129c07241a",
+			name: "time-bds Galileo past-announced leap",
+			now:  ptime.GPS(2422, 530154*time.Second),
+			hex:  "bace10001207000000000000000003000001890712129c07241a",
 			want: &gpsprot.LeapSecondMsg{
 				LeapSecond: ptime.LeapSecond2016(),
 				GNSS:       gpsprot.GAL,
 			},
 		},
 		{
-			name:  "time-bds no data",
-			tRead: time.Date(2026, time.June, 13, 3, 20, 12, 42480000, time.UTC),
-			hex:   "bace100012070000000000000000000000000000000010001207",
-			want:  nil,
+			name: "time-bds no data",
+			now:  ptime.GPS(2422, 530154*time.Second),
+			hex:  "bace100012070000000000000000000000000000000010001207",
+			want: nil,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := leapTim2Ls(parseTim2LsHex(t, tt.hex), tt.tRead)
+			got := leapTim2Ls(parseTim2LsHex(t, tt.hex), tt.now)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("leapTim2Ls:\n  got  %+v\n  want %+v", got, tt.want)
 			}
@@ -478,34 +478,67 @@ func TestTim2TimeGPSDispatch(t *testing.T) {
 
 func TestTim2LsDispatch(t *testing.T) {
 	tests := []struct {
-		name  string
-		tRead time.Time
-		hex   string
-		want  *gpsprot.LeapSecondMsg
+		name     string
+		timeRead time.Time
+		timeHex  string
+		lsRead   time.Time
+		lsHex    string
+		want     *gpsprot.LeapSecondMsg
 	}{
 		{
-			name:  "time-glo GPS past-announced leap",
-			tRead: time.Date(2026, time.June, 13, 3, 21, 33, 26915000, time.UTC),
-			hex:   "bace10001207000000000000000000000001890712129907241a",
+			name:     "time-glo GPS past-announced leap",
+			timeRead: time.Date(2026, time.June, 13, 3, 21, 33, 12895000, time.UTC),
+			timeHex:  "bace4800110298f49e1f760900000707020509070002000000000000000061055ad4797731c12205f6a5983b574169d50b8aaff336414b91da409132843d9fbbdb3d7783abbc267fb23e295a2440536f8a68",
+			lsRead:   time.Date(2026, time.June, 13, 3, 21, 33, 26915000, time.UTC),
+			lsHex:    "bace10001207000000000000000000000001890712129907241a",
 			want: &gpsprot.LeapSecondMsg{
 				LeapSecond: ptime.LeapSecond2016(),
 				GNSS:       gpsprot.GPS,
 			},
 		},
 		{
-			name:  "time-bds Galileo past-announced leap",
-			tRead: time.Date(2026, time.June, 13, 3, 20, 12, 44735000, time.UTC),
-			hex:   "bace10001207000000000000000003000001890712129c07241a",
+			name:     "time-bds Galileo past-announced leap",
+			timeRead: time.Date(2026, time.June, 13, 3, 20, 12, 36235000, time.UTC),
+			timeHex:  "bace2400120280819d1f1995ffff2a040703f0b07526782bd14079283b3f147ab00004040b0101010000e19ef3cc",
+			lsRead:   time.Date(2026, time.June, 13, 3, 20, 12, 44735000, time.UTC),
+			lsHex:    "bace10001207000000000000000003000001890712129c07241a",
 			want: &gpsprot.LeapSecondMsg{
 				LeapSecond: ptime.LeapSecond2016(),
 				GNSS:       gpsprot.GAL,
 			},
 		},
 		{
-			name:  "time-bds no data",
-			tRead: time.Date(2026, time.June, 13, 3, 20, 12, 42480000, time.UTC),
-			hex:   "bace100012070000000000000000000000000000000010001207",
-			want:  nil,
+			name:     "time-bds no data",
+			timeRead: time.Date(2026, time.June, 13, 3, 20, 12, 36235000, time.UTC),
+			timeHex:  "bace2400120280819d1f1995ffff2a040703f0b07526782bd14079283b3f147ab00004040b0101010000e19ef3cc",
+			lsRead:   time.Date(2026, time.June, 13, 3, 20, 12, 42480000, time.UTC),
+			lsHex:    "bace100012070000000000000000000000000000000010001207",
+			want:     nil,
+		},
+		{
+			name:     "UTC receiver time",
+			timeRead: time.Date(2026, time.June, 13, 3, 2, 56, 18181000, time.UTC),
+			timeHex:  "bace14001105da0d6c406d68ffff0000ea07060d0302380f031299926c61",
+			lsRead:   time.Date(2026, time.June, 13, 3, 20, 12, 40245000, time.UTC),
+			lsHex:    "bace10001207000000000000000000000001890712129907241a",
+			want: &gpsprot.LeapSecondMsg{
+				LeapSecond: ptime.LeapSecond2016(),
+				GNSS:       gpsprot.GPS,
+			},
+		},
+		{
+			name:     "stale receiver time",
+			timeRead: time.Date(2026, time.June, 13, 3, 20, 12, 36235000, time.UTC),
+			timeHex:  "bace2400120280819d1f1995ffff2a040703f0b07526782bd14079283b3f147ab00004040b0101010000e19ef3cc",
+			lsRead:   time.Date(2026, time.June, 13, 4, 20, 12, 36235001, time.UTC),
+			lsHex:    "bace10001207000000000000000000000001890712129907241a",
+			want:     nil,
+		},
+		{
+			name:   "missing receiver time",
+			lsRead: time.Date(2026, time.June, 13, 3, 20, 12, 40245000, time.UTC),
+			lsHex:  "bace10001207000000000000000000000001890712129907241a",
+			want:   nil,
 		},
 	}
 	for _, tt := range tests {
@@ -514,10 +547,16 @@ func TestTim2LsDispatch(t *testing.T) {
 			pp := NewPacketProcessor(mgr)
 			h := &leapMsgHandler{}
 			pp.SetMsgHandler(h)
-			b, _ := hex.DecodeString(tt.hex)
-			_, err := pp.ProcessPacket(string(b), tt.tRead)
+			if tt.timeHex != "" {
+				b, _ := hex.DecodeString(tt.timeHex)
+				if _, err := pp.ProcessPacket(string(b), tt.timeRead); err != nil {
+					t.Fatalf("ProcessPacket time: %v", err)
+				}
+			}
+			b, _ := hex.DecodeString(tt.lsHex)
+			_, err := pp.ProcessPacket(string(b), tt.lsRead)
 			if err != nil {
-				t.Fatalf("ProcessPacket: %v", err)
+				t.Fatalf("ProcessPacket leap: %v", err)
 			}
 			if tt.want == nil {
 				if len(h.leaps) != 0 {
