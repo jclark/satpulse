@@ -34,7 +34,7 @@ Hidden/experimental flags (`--osnma`, `--static`, `--sys-time-trusted`) are out 
 
 ## The semantics under test
 
-The semantics of high-level configuration are defined in `SEMANTICS.md`; read it before interpreting receiver behavior. The short version: properties are set best-effort with truthful achieved values confirmed by readback; the enabled-signals property is a single signal set, realized as the intersection with the receiver's deduced supported set plus protocol-reported limits; message output comes in two kinds (wire-format and semantic); survey parameters, saves, and resets are operations, not state.
+The semantics of high-level configuration are defined in `SEMANTICS.md`; read it before interpreting receiver behavior. The short version: properties are set best-effort, with the set response truthfully reporting what the receiver accepted and readback truthfully reporting what it stores; the enabled-signals property is a single signal set, realized as the intersection with the receiver's deduced supported set plus protocol-reported limits; message output comes in two kinds (wire-format and semantic); survey parameters, saves, and resets are operations, not state.
 
 Consequences that the tester must treat as normal, not as errors:
 
@@ -48,7 +48,7 @@ Consequences that the tester must treat as normal, not as errors:
 What the tool guarantees, and therefore what a tester can check without any receiver-specific knowledge:
 
 - An invocation responds: it does not crash, hang, or silently produce nothing.
-- The achieved values it reports are the truth: an independent readback (a separate invocation) agrees with them.
+- Its reports are the truth, each at its own stage: a set response reports the values the receiver accepted (it is not a readback and must not become one), and configuration readback reports the values the receiver stores. The two are usually identical but need not be - a receiver may re-express an accepted value when storing it (the M8T stores a fixed position accepted in LLH form as ECEF). An accepted/stored difference is characterization data to vet, never by itself a failure; the stored value remains subject to the changed-what-it-could and persistence checks below.
 - A reported error is the truth: nothing changed when it says configuration failed.
 - An accepted set changed what it could: a set accepted without error that demonstrably changed nothing (requests bracketing the prior value, value never moves) is a violation, not a limitation.
 - Persistence works as stated: what `--save` was asked to persist survives reload/reset (it may persist more, per the granularity limitation above); `--save-all` persists the whole running configuration; changes made after the last save do not survive reload.
@@ -68,7 +68,7 @@ Where the receiver's PPS output is wired to a PHC pin (declared by the `[phc]` t
 
 The single most important property of this program: **a receiver limitation is never reported as a test failure.** A tool that goes red because a receiver cannot do something is useless as a regression signal.
 
-- **Failures** (errors, nonzero exit) are violations of the tool guarantees above: no response, timeout, crash; achieved values contradicted by readback; state changed by a reported failure; a set accepted without error that changed nothing; persistence guarantees broken.
+- **Failures** (errors, nonzero exit) are violations of the tool guarantees above: no response, timeout, crash; state changed by a reported failure; a set accepted without error that changed nothing; persistence guarantees broken.
 - **Limitations** (data, the program's main output) are everything the receiver cannot do or does imprecisely: refused combinations, quantization, clipping, couplings, ranges, properties that do not exist, save granularity.
 
 Failures that are diagnosed down to a satpulsetool defect get recorded in `BUGS.md` with their evidence; receiver quirks and limitations worth prose go in `HW/<receiver>.md`.
@@ -89,6 +89,10 @@ For each receiver+firmware the program produces a machine-readable characterizat
 3. The characterization is checked in (per receiver model + firmware), with a human-readable companion describing the receiver's limitations in `HW/<receiver>.md`.
 4. Subsequent runs regenerate it and compare automatically against the checked-in version; differences are regressions to investigate (in satpulsetool, in the program, or a firmware change). Identical output across repeated runs on the same receiver is required for this to work.
 
+### Systest integration
+
+The end state is that this workflow runs unattended through `systest/`: a playbook runs gpshwtest on a target host against its receivers, which also unlocks the physical time pulse checks since systest runs as root. The baseline a receiver is checked against is specified in `inventory.yml`. Generating and vetting a baseline for a new receiver is a different workflow from regression-checking against an existing one, so this probably means separate playbooks for the two cases. This is a goal, not a design; nothing here prescribes how the playbooks are structured.
+
 ## How we measure success
 
 - The characterization covers every property and operation in the coverage list above.
@@ -106,8 +110,8 @@ For each receiver+firmware the program produces a machine-readable characterizat
 - Verify satpulsed is not running before touching a receiver (`ps ax | grep satpulsed`).
 - The disruptive probes (`--speed`, `--save`, `--save-all`, `--reset`, `--factory-reset`) run only when enabled by the program flag, and must include recovery: rediscovering a receiver whose speed changed, and restoring a sane NVM state afterwards.
 - `--reload` is safe and runs by default, but it may change the link speed (the NVM configuration can hold a different baud rate), so it needs the same speed-rediscovery recovery as `--speed`.
-- Locally attached receivers: ZED-F9P on /dev/ttyACM0 (native USB; baud rate irrelevant, immune to wedging), u-blox M8T on /dev/ttyS0 (UART at 9600; baud discovered by scanning), Unicore UM980 on /dev/ttyUSB0 at 115200 (UART-to-USB bridge; speed matters and can be wedged, so speed recovery applies).
-- On a slow UART (the M8T at 9600), run the session at a higher speed: raise it (38400 at least) at session start and restore the as-found speed at the end. This is session management, not a disruptive probe; it runs by default, makes runs much faster, and avoids saturating the line when raw output is enabled.
+- Locally attached receivers: ZED-F9P on /dev/ttyACM0 (native USB; baud rate irrelevant, immune to wedging), u-blox M8T on /dev/ttyS0 (UART resting at 38400, saved in NVM to match /etc/satpulse.d/ttyS0.toml; baud discovered by scanning), Unicore UM980 on /dev/ttyUSB0 at 115200 (UART-to-USB bridge; speed matters and can be wedged, so speed recovery applies), u-blox EVK-M101 (M10) on /dev/ttyUSB1 at 38400 (UART-to-USB bridge; front-panel switch must be at position 0, see HW/m10.md).
+- On a slow UART (below 115200), run the session at a higher speed: raise it at session start and restore the as-found speed at the end. This is session management, not a disruptive probe; it runs by default, makes runs much faster, and avoids saturating the line when raw output is enabled.
 - Sweeps on different receivers run in parallel: the ports are independent and the program holds no shared state. One receiver per program invocation, parallelized by the caller; run directories must be collision-free under concurrent starts (include the device in the name, not just a timestamp).
 - On this host the F9P's PPS is wired to PHC pin 1 of enp4s0 (the `[phc]` table in /etc/satpulse.toml); physical time pulse checks need root (`sudo -n`, the smoketest convention).
 

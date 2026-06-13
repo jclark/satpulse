@@ -1,0 +1,47 @@
+{
+  "limitations": {
+    "mode.fixedPosAcc": {"unsupported": true},
+    "mode.fixedPosECEF[0]": {"unsupported": true},
+    "mode.fixedPosECEF[1]": {"unsupported": true},
+    "mode.fixedPosECEF[2]": {"unsupported": true},
+    "mode.fixedPosLLH[0]": {"unsupported": true},
+    "mode.fixedPosLLH[1]": {"unsupported": true},
+    "mode.height": {"unsupported": true},
+    "rtcmBaseID": {"unsupported": true},
+    "signals": {
+      "observed": [
+        {
+          "error": "refused",
+          "request": {
+            "BDS": ["B1I"],
+            "GAL": ["E1"],
+            "GLO": ["L1"],
+            "GPS": ["L1"],
+            "QZSS": ["L1", "L1S"],
+            "SBAS": ["L1"]
+          }
+        },
+        {"error": "refused", "request": {"BDS": ["B1I"], "QZSS": ["L1", "L1S"]}},
+        {"error": "refused", "request": {"GAL": ["E1"], "QZSS": ["L1", "L1S"]}},
+        {"error": "refused", "request": {"GLO": ["L1"], "QZSS": ["L1", "L1S"]}},
+        {"error": "refused", "request": {"GLO": ["L1"], "SBAS": ["L1"]}}
+      ],
+      "signalSet": {
+        "BDS": ["B1I"],
+        "GAL": ["E1"],
+        "GLO": ["L1"],
+        "GPS": ["L1"],
+        "QZSS": ["L1", "L1S"],
+        "SBAS": ["L1"]
+      }
+    },
+    "timePulse.width": {"quantum": 1e-06}
+  },
+  "receiver": {
+    "firmware": "SPG 5.10 PROTVER 34.10",
+    "hardware": "EVK-M101",
+    "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"],
+    "vendor": "u-blox"
+  },
+  "supports": ["speed"]
+}

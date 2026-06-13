@@ -24,9 +24,9 @@ The properties are: the enabled signals, timing GNSS, time pulse (width, period,
 - Values are limited to the receiver's range (a value beyond a bound may be achieved as the bound).
 - Settings the receiver couples together move together.
 
-What was *achieved* is reported in the response, not what was requested. The requested and achieved values may legitimately differ; the difference characterizes the receiver, not a fault.
+What was *achieved* is reported in the response, not what was requested. The achieved values are the values the receiver **accepted**: they come from the set exchange itself, not from a separate readback. The requested and achieved values may legitimately differ; the difference characterizes the receiver, not a fault.
 
-**Readback tells the truth.** Reading a property returns its current achieved value. An independent later invocation reads back exactly the value that a set reported as achieved - there is no such thing as a property that was set but cannot be confirmed. This is the invariant that makes the achieved values trustworthy.
+**Readback tells the truth.** Reading a property returns its current value as the receiver stores it. The stored value is normally identical to the accepted one, but they are two different observations and a receiver may re-express what it accepted when storing it (a fixed position accepted in geodetic coordinates may be stored, and therefore read back, in ECEF coordinates). Both reports are truthful at their own stage; neither is derived from the other.
 
 **Nonexistence is shown, not announced.** A backend that does not have a property does not fail requests that mention it. Setting it reports nothing achieved for it, and readback does not include it. The absence in the responses *is* the statement that the property does not exist there.
 
@@ -62,6 +62,8 @@ There are two completely different kinds of message output request, and they mus
 
 The meaning is: *the receiver is configured so that the named information is delivered*. Which receiver messages deliver it is the realization's business. Message granularity belongs to the receiver - one native message often carries several kinds of information - so a message enabled because it delivers requested information may deliver other information along with it. **Delivering more than was asked for is normal and meaningless; the guarantee is that what was asked for is delivered.** Asking what messages realized a request is asking the wrong question; the right question is whether the requested information arrived.
 
+Raw navigation data is event output, not solution-rate output: the request means each item of navigation data is delivered as the receiver obtains it (a subframe as decoded, an ephemeris when new or changed), not re-delivered at a fixed rate. A receiver may additionally deliver the navigation data it already holds when output is enabled; data it has not yet decoded appears only as broadcast. Re-delivery of unchanged navigation data is not requested and is not significant.
+
 Content preferences select *within* the delivered information rather than adding kinds of it: TAI time rather than UTC, ECEF coordinates rather than geodetic. The `after` preference concerns the time pulse: a pulse-time message that precedes its pulse is not sufficient on its own; there must be time information following the pulse, which a post-pulse message satisfies by itself and a pre-pulse message satisfies only in combination with time messages after the pulse.
 
 **Turning off.** A request also says what happens to the rest of its group: messages other than those carrying requested information are turned off. For the wire-format groups and the satellite and raw groups this is implicit in every request. For the PVT group it is explicit (`off`), and a PVT request without `off` is incremental: it enables what it names and leaves the rest of the group alone. The asymmetry is deliberate, for efficiency - PVT messages are the high-rate operational core, and incremental requests let one message be added without reconfiguring and disrupting the rest. The convenience values `ptp` and `ntp` are exact abbreviations of flag sets (see **satpulsetool-gps(1)**) and mean nothing beyond their expansion.
@@ -90,7 +92,7 @@ An RTCM output request on a backend without the RTCM capabilities currently fail
 Whatever the receiver:
 
 - An invocation responds; it does not hang or silently do nothing.
-- Reported achieved values are the truth: independent readback agrees with them.
+- Reported values are the truth: a set response reports what the receiver accepted, and readback reports what it stores.
 - A reported error is the truth: a failed request leaves the configuration unchanged.
 - Requested information is delivered when the receiver can deliver it; more may come with it.
 - Persistence works as stated: what a save was asked to persist survives reload and reset.
