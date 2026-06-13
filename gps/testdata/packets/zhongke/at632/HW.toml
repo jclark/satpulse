@@ -1,0 +1,4 @@
+vendor = "zhongke"
+model = "AT362-AT6668-6T-30"
+firmware = "SW=URANUS6,V6.3.0.0"
+default-baud = 115200
