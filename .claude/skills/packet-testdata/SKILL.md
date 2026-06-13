@@ -14,7 +14,7 @@ This is NOT for ad-hoc packet capture during development. It is for building the
 
 There are two ways to configure GPS receivers for captures, corresponding to the two configuration modes of `satpulsetool gps` (see `docs/man/satpulsetool-gps.1.md`):
 
-- **High-level configuration** uses device-independent flags like `--pvt-out`, `--sats-out`, `--binary`, `--nmea-out`, `--raw-out`, `--time-gnss`, `--gnss`, `--survey`, `--reload`. Currently supported on u-blox receivers (u-blox 6 through X20) and Unicore Nebulas IV (UM980, UM981, UM982, UM960). See `highlevel-config.md`.
+- **High-level configuration** uses device-independent flags like `--pvt-out`, `--sats-out`, `--binary`, `--nmea-out`, `--raw-out`, `--time-gnss`, `--gnss`, `--survey`, `--reload`. Currently supported on u-blox receivers (u-blox 6 through X20), Unicore Nebulas IV (UM980, UM981, UM982, UM960), and CASIC (Zhongke) V5/V6. See `highlevel-config.md`.
 
 - **Low-level configuration** uses a TOML message file (`-m`) containing protocol-specific commands. This works with all receivers. Message files are in per-vendor subdirectories of `configs/gpsmsg/` (e.g., `configs/gpsmsg/u-blox/ubx.toml`, `configs/gpsmsg/unicore/um980.toml`, `configs/gpsmsg/allystar/allystar.toml`). See `lowlevel-config.md`.
 
@@ -74,6 +74,8 @@ For receivers with high-level configuration support (u-blox, Unicore), read `hig
 For u-blox receivers specifically, also read `ubx-config.md`.
 
 For Unicore receivers (UM980, UM981, UM982), also read `unicore-config.md`.
+
+For CASIC (Zhongke) receivers, read `casic-config.md` - it maps which captures are possible on which attached unit (CASIC firmware acknowledges enabling messages it never emits).
 
 For all receivers, message files in the per-vendor subdirectories of `configs/gpsmsg/` provide low-level message tags. Read `lowlevel-config.md` for how to use these.
 
