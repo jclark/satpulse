@@ -270,7 +270,7 @@
     }
   },
   "receiver": {
-    "firmware": "SW=URANUS6,V6.3.2.0",
+    "firmware": "URANUS6,V6.3.2.0",
     "hardware": "ATGM332D-AT9880-F8N-76",
     "supportedGNSS": [
       "GPS",

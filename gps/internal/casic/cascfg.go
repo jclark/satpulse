@@ -97,22 +97,21 @@ func newConfigurator(target *gpsprot.ConfigTarget, ver *casbin.MonVer) *Configur
 
 // ReceiverInfo returns static information about the GPS receiver.
 // A V5 receiver does not answer MON-VER; its version comes from PCAS06
-// text queries instead, reported in the same key=value form MON-VER
-// strings use, and stays empty if the receiver never answered.
+// text queries instead, and stays empty if the receiver never answered.
+// Firmware and hardware are reported as bare values. The vendor's own
+// formats carry key prefixes - V6 MON-VER puts "SW=" on its software
+// field, and the V5 GPTXT replies are "SW=.."/"HW=.." - which are
+// stripped here so the fields hold just the value.
 func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	info := &gpsprot.ReceiverInfo{Vendor: Vendor, SupportedGNSS: c.supportedGNSS()}
 	if c.ver != nil {
-		info.Firmware = c.ver.SwVersion.String()
-		info.Hardware = c.ver.HwVersion.String()
+		info.Firmware = strings.TrimPrefix(c.ver.SwVersion.String(), "SW=")
+		info.Hardware = strings.TrimPrefix(c.ver.HwVersion.String(), "HW=")
 		info.VendorSpecific = c.ver
 		return info
 	}
-	if c.pcasSW != "" {
-		info.Firmware = "SW=" + c.pcasSW
-	}
-	if c.pcasHW != "" {
-		info.Hardware = "HW=" + c.pcasHW
-	}
+	info.Firmware = c.pcasSW
+	info.Hardware = c.pcasHW
 	return info
 }
 

@@ -333,7 +333,7 @@ func TestProbeV6(t *testing.T) {
 	got := cfg.ReceiverInfo()
 	want := &gpsprot.ReceiverInfo{
 		Vendor:   Vendor,
-		Firmware: "SW=URANUS6,V6.3.2.0",
+		Firmware: "URANUS6,V6.3.2.0",
 		Hardware: "ATGM332D-AT9880-F8N-76",
 		SupportedGNSS: gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.BDS, gpsprot.GLO,
 			gpsprot.GAL, gpsprot.QZSS, gpsprot.SBAS, gpsprot.NAVIC),
@@ -1291,7 +1291,7 @@ func TestV5VersionFromPCAS06(t *testing.T) {
 		t.Errorf("ErrorCount = %d, want 0", errCount)
 	}
 	info := cfg.ReceiverInfo()
-	if info.Firmware != "SW=URANUS5,V5.3.0.0" || info.Hardware != "HW=AT6558D,0000000000000" {
+	if info.Firmware != "URANUS5,V5.3.0.0" || info.Hardware != "AT6558D,0000000000000" {
 		t.Errorf("ReceiverInfo = %q / %q, want PCAS06 values", info.Firmware, info.Hardware)
 	}
 }

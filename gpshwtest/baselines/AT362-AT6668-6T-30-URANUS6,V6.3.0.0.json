@@ -381,7 +381,7 @@
     }
   },
   "receiver": {
-    "firmware": "SW=URANUS6,V6.3.0.0",
+    "firmware": "URANUS6,V6.3.0.0",
     "hardware": "AT362-AT6668-6T-30",
     "supportedGNSS": [
       "GPS",

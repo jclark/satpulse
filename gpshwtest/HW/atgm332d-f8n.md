@@ -1,7 +1,7 @@
 # ATGM332D-AT9880-F8N-76 (URANUS6 V6.3.2.0)
 
 Dual-band CASIC navigation receiver, UART at 115200. Characterized
-2026-06-13; baseline `ATGM332D-AT9880-F8N-76-SW=URANUS6,V6.3.2.0.json`.
+2026-06-13; baseline `ATGM332D-AT9880-F8N-76-URANUS6,V6.3.2.0.json`.
 
 ## Limitations relative to the model
 
