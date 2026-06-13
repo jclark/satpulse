@@ -26,7 +26,7 @@ CASIC firmware acknowledges enabling messages it never emits, so the
 | Output | F8N (V6 nav) | AT632 (V6 timing) | 5N71 (V5) |
 |---|---|---|---|
 | Time of pulse (TIM2-TPX / TIM-TP) | acked, never emits | EMITS | EMITS (TIM-TP) |
-| Leap second (TIM2-LS / MSG-GPSUTC) | acked, never emits | EMITS (event-shaped) | acked, never emits |
+| Leap second (TIM2-LS / MSG-GPSUTC) | acked, never emits | EMITS (current leap, no pending event) | acked, never emits |
 | Survey (TIM2-TIMEPOS) | acked, never emits | EMITS | n/a |
 | Raw (RXM2-MEASX/SFRBX) | acked, never emits | EMITS | n/a |
 | RTCM | acked, never emits | CFG NAKed | n/a |
@@ -34,8 +34,16 @@ CASIC firmware acknowledges enabling messages it never emits, so the
 So: pulse-time, leap, survey, and raw captures come from the AT632;
 the F8N contributes PVT/satellite/NMEA/dual-band captures; the V5
 contributes the whole NAV-class side. No attached CASIC unit emits
-RTCM. TIM2-LS is event-shaped (emitted when an event is announced),
-so a leap capture may legitimately contain none; do not wait for one.
+RTCM.
+
+TIM2-LS on the AT632 is emitted (roughly once per second per monitored
+constellation) when `leap` is enabled and at least one non-GPS
+constellation is active; a GPS-only fix emits none. Its RaimType field
+is 0 before the UTC almanac is decoded (zero leap fields) and 1 once
+decoded (carrying the current leap, Dtls==Dtlsf, no pending change). It
+does not reach RaimType 2 (a pending leap event) without an actual
+scheduled leap, so a leap capture exercises the current-leap path but
+not a pending-event one.
 
 ## How `--pvt-out` maps to CASIC messages
 
@@ -74,28 +82,76 @@ invocation with `-m` after the high-level one:
 `--time-gnss` accepts GPS/BDS/GLO on V5, plus GAL on V6 (the AT632
 also accepts GAL for the pulse source). Pattern per constellation:
 
-1. `--reload` (see reload behavior below)
-2. `--binary --pvt-out tp,after,tai,leap,off --time-gnss <gnss>
-   --gnss GPS,<gnss>`
-3. `-m configs/gpsmsg/zhongke/<file>.toml -t casbin-tim2-time<gnss>`
-   (V6) for the matching TIM2-TIME message
-4. Capture, then verify the time source: replay the file and check
-   the `gnss` of the time events; TIM2-TPX carries it in TSrc.
+1. `--binary --pvt-out tp,after,tai,leap,off --sats-out none
+   --raw-out none --time-gnss <gnss> --gnss GPS,<gnss>` (no reload -
+   see the V6 strategy below; on V5 use `--reload` first as normal)
+2. (V6) `-m configs/gpsmsg/zhongke/<file>.toml -t <the three OTHER
+   casbin-tim2-time*-off tags>,casbin-tim2-time<gnss>` - enable the
+   target TIM2-TIME message AND disable the other three, since V6
+   leaves prior message-file enables in place
+3. Settle until time is valid (the `--gnss` change briefly drops the
+   fix), then capture
+4. Verify the time source: replay the file and check the `gnss` of the
+   time events; TIM2-TPX carries it in TSrc, TIM2-TIME<gnss> in its own
+   field. Note: on V6 a GPS-only capture (`--gnss GPS`) emits no
+   TIM2-LS (see the leap note above).
 
-## Reload behavior
+## Reset/reload behavior and the V6 capture strategy
 
-`--reload` differs by family: V5 acknowledges in place; V6 RESTARTS
-the receiver without acknowledging - allow 2-3 s before the next
-invocation. Neither family re-applies the NVM-saved baud rate to the
-live port on reload, so the link survives a reload at a changed rate.
+V5: `--reload` works - it reverts unsaved RAM config to the NVM-saved
+state in place, without restarting. Reset between V5 captures with
+`--reload` as normal. (Neither family re-applies the NVM-saved baud to
+the live port on reload, so the link survives a reload at a changed
+rate.)
 
-CAUTION: on V6 units, reload does NOT reliably revert unsaved
-configuration (observed: an unsaved minimum-elevation change survived
-reload and even a cold reset on the F8N). Do not rely on reload to
-clear configuration between captures on V6 - reconfigure explicitly
-in each capture's setup and verify the capture contents. The V5
-reverts unsaved changes on reload normally (except the live port
-rate).
+V6: there is NO working "load config from flash". `--reload` sends
+CFG-CFG (0x06 0x05) opMode 2 ("load FLASH config to current"), but the
+firmware ACKs it and does NOT apply it - it merely RESTARTS the GNSS
+engine. `--reset` (CFG-RST) likewise restarts without loading config.
+So a V6 reload/reset is the worst of both: it does NOT restore a clean
+config (prior RAM config - enabled messages, the sats/raw axes, the
+message-file TIM2-TIME enables - all persist), AND it drops the time
+lock, producing a re-acquisition transient at the start of the next
+capture where NAV2-TIMEUTC/NMEA time is not-yet-valid (TFlags lacks
+TOWValid|Reliable) and the decoder correctly emits empty TimeMsgs.
+(Firmware limitation, per the gpshwtest HW characterizations in
+`gpshwtest/HW/`. CFG-RST has only a resetMode field
+{hot,warm,cold,factory} - no BBR mask to force a flash reload; PCAS10
+restart modes preserve the live config; only a factory reset or a power
+cycle replaces the working config wholesale.)
+
+Therefore DO NOT reload or reset between V6 captures. Keep the receiver
+continuously LOCKED and make every capture self-describing:
+
+1. Disable everything not wanted. High-level `--pvt-out off
+   --sats-out none --raw-out none` clears the PVT/sat/raw axes. The
+   message-file-only items are NOT cleared by that, so also disable
+   them via `-m` `-off` tags: the four
+   `casbin-tim2-time{gps,bds,gln,gal}-off` (plus
+   `casbin-tim2-timeirn-off`), `survey-off`, `fixed-pos-off`, and
+   `casbin-rxm2-{measx,sfrbx}-off` if raw was on.
+2. Enable exactly what the capture wants (high-level flags, plus `-m`
+   enables for TIM2-TIME*/TIM2-TPX).
+3. Settle to valid time before capturing. Changing `--gnss` (the
+   per-constellation captures) briefly drops the fix; a plain message
+   reconfig does not (the receiver stays locked). Gate the capture on a
+   short probe: capture ~5 s, replay, confirm the latest time events
+   carry taiTime/utcTime; retry until valid.
+4. Capture, then verify the message set matches (no leakage) and the
+   FIRST time event already has valid time (no leading empty-time
+   transient). Re-capture if either fails.
+
+This is deterministic regardless of prior state and yields clean config
+plus valid time throughout. A true `factory.jsonl` cannot be reached
+without a reset on V6, so capture the default NMEA set explicitly
+(`--pvt-out off --sats-out none --raw-out none --nmea-out
+GGA,GLL,GSA,GSV,RMC,VTG,ZDA`) rather than relying on reload to expose
+it.
+
+V6 `--reload` IS still useful in one spot: it is the only way to force
+the engine restart for a deliberate cold-start capture - save the
+desired set to NVM first (the restart keeps it), then capture the
+re-acquisition.
 
 ## V5 line budget
 
@@ -121,8 +177,8 @@ Lib layer (`gps/lib/casbin`) and domain layer
 - Both: NMEA alongside binary for the cross-protocol satellite
   capture (GSV/GSA vs native satellite info)
 - Unobtainable on attached hardware (lib coverage only via synthetic
-  tests, not captures): MSG-GPSUTC/BDSUTC, TIM2-LS event payloads,
-  RTCM output
+  tests, not captures): MSG-GPSUTC/BDSUTC, a TIM2-LS with a pending
+  leap event (RaimType 2), RTCM output
 
 ## Output directories
 
@@ -133,6 +189,5 @@ gps/testdata/packets/zhongke/atgm332d-5n71/  (V5)
 ```
 
 Device paths, verified identities, and speeds are in
-CLAUDE.local.md. All three are UART-to-USB; reload restarts (V6) do
-not drop the USB device, no sleep-for-reenumeration needed beyond
-the V6 restart wait above.
+CLAUDE.local.md. All three are UART-to-USB; a V6 engine restart does
+not drop the USB device, so no sleep-for-reenumeration is needed.
