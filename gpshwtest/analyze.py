@@ -465,9 +465,9 @@ class Analyzer:
             self.emission_observations.append(
                 EmissionObservation(group, case, s.error, []))
             return
-        o = self.take("observe", role="case", group=group, case=case)
-        if o is None:
-            return
+        # The configuring invocation now captures its own observation;
+        # older recorded runs observed in a separate following step.
+        o = self.take("observe", role="case", group=group, case=case) or s
         if o.error is not None:
             self.failures.append(f"{o.name}: capture failed: {o.error}")
             return

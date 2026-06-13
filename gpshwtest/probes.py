@@ -229,18 +229,14 @@ class ProbeRun:
             return baud if self.raise_speed(baud) else None
         return self.raise_speed_msgs(baud, receiver)
 
-    # Speed used for sessions raised through low-level message files; the
-    # shipped Unicore files carry tags for 115200/230400/460800, and raw
-    # output (full-constellation 1 Hz ephemeris) needs more than 115200.
-    MSGS_RAISED_SPEED = 460800
-
     def raise_speed_msgs(self, baud: int, receiver: dict[str, Any]) -> int | None:
-        """Raise the link with the speed tags of the receiver's shipped
-        low-level message file. Self-verifying: after sending the speed
-        command, the receiver must answer at the new speed, else the speed
-        is rediscovered and the session continues as found."""
+        """Raise the link to RAISED_SPEED with the speed tags of the
+        receiver's shipped low-level message file. Self-verifying: after
+        sending the speed command, the receiver must answer at the new
+        speed, else the speed is rediscovered and the session continues
+        as found."""
         mf = self.speed_msg_file(receiver)
-        target = self.MSGS_RAISED_SPEED
+        target = RAISED_SPEED
         if mf is None or not 0 < baud < target:
             return None
         port = self.active_port(mf)
@@ -359,7 +355,9 @@ class ProbeRun:
                       {"op": "session-speed", "role": "verify", "want": as_found})
 
     # Candidate link speeds for rediscovery, most likely first: the raised
-    # session speeds, the near-universal default, then other common rates.
+    # session speed, the near-universal default, then other common rates
+    # (460800 covers receivers left raised by runs predating ONCHANGED raw
+    # output, when Unicore sessions ran at 460800).
     REDISCOVER_SPEEDS = [RAISED_SPEED, 460800, 9600, 38400, 57600, 19200, 230400]
 
     def rediscover_speed(self) -> int | None:
@@ -490,24 +488,26 @@ class ProbeRun:
     def set_and_observe(self, group: str, flag: str, case: list[str],
                         pre: list[str] | None = None,
                         expect: set[str] | None = None) -> Invocation | None:
-        """Apply one message-output case and observe the result; None when
-        the request was refused or the observation capture failed (both
-        visible to analysis in the records). A transient set failure means
-        the link itself is in trouble (a flooding receiver answers
+        """Apply one message-output case and observe the result with
+        --capture in the same invocation: event output (raw navigation
+        data per SEMANTICS.md) is delivered as a snapshot when the request
+        is applied plus changes thereafter, so output emitted between a
+        configuring invocation and a separate observing one would be lost
+        with the port closed. Returns None when the request was refused
+        (visible to analysis in the records). A transient set failure
+        means the link itself is in trouble (a flooding receiver answers
         nothing), so the message phase stops."""
         name = "-".join(case)
-        inv = self.tool.gps(f"set-{group}-{name}", (pre or []) + [flag, ",".join(case)],
-                            {"op": "set-msg", "group": group, "case": case})
-        if transient(inv.error):
-            self.line_dead = True
-        if inv.error is not None:
-            return None
-        time.sleep(MSG_SETTLE)
-        intent: dict[str, Any] = {"op": "observe", "role": "case", "group": group,
-                                  "case": case}
+        intent: dict[str, Any] = {"op": "set-msg", "group": group, "case": case}
         if expect is not None:
             intent["expect"] = sorted(expect)
-        return self.observe(f"observe-{group}-{name}", intent)
+        inv = self.tool.gps(f"set-{group}-{name}",
+                            (pre or []) + [flag, ",".join(case),
+                                           "--capture", str(OBSERVE_SECONDS)],
+                            intent)
+        if transient(inv.error):
+            self.line_dead = True
+        return None if inv.error is not None else inv
 
     def probe_messages(self) -> dict[tuple[str, str], int] | None:
         """Probe NMEA, RTCM, PVT, satellite, and raw output from one shared
@@ -879,10 +879,11 @@ class ProbeRun:
         baud = self.rediscover_speed()
         if not raised or baud is None:
             return
+        if baud >= RAISED_SPEED:
+            return
         if self.speed_msg_path is not None:
-            if baud < self.MSGS_RAISED_SPEED:
-                self.send_speed_msgs(baud, self.MSGS_RAISED_SPEED)
-        elif baud < RAISED_SPEED:
+            self.send_speed_msgs(baud, RAISED_SPEED)
+        else:
             self.raise_speed(baud)
 
     def emergency_restore(self, initial: dict[str, Any],
