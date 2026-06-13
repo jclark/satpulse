@@ -266,6 +266,12 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		return true
 	case *casbin.Tim2TimeGAL:
 		return p.dispatchTim2Time(&mt.Tim2TimeGNSS, gpsprot.GAL, ptime.Galileo, ptime.TAIMinusGalileo, "TIM2-TIMEGAL", tRead)
+	case *casbin.Tim2Ls:
+		ls := leapTim2Ls(mt, tRead)
+		if ls != nil && p.mh != nil {
+			p.mh.LeapSecond(ls, tRead)
+		}
+		return true
 	default:
 		return false
 	}

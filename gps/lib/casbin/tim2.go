@@ -69,7 +69,7 @@ func (m *Tim2Tpx) ID() MsgID { return Tim2TpxID }
 type Tim2WnValid uint8
 
 const (
-	Tim2WnInvalid      Tim2WnValid = iota
+	Tim2WnInvalid Tim2WnValid = iota
 	Tim2WnExternal
 	Tim2WnFromGNSS
 	Tim2WnFromGNSSGood
@@ -79,17 +79,17 @@ const (
 type Tim2TimeFlag uint8
 
 const (
-	Tim2TimeFlagTOWValid  Tim2TimeFlag = 1 << iota // B0: TOW valid
-	Tim2TimeFlagWnValid                            // B1: week number valid
-	Tim2TimeFlagLsValid                            // B2: leap second info valid
-	Tim2TimeFlagReliable                           // B3: time reliable
+	Tim2TimeFlagTOWValid Tim2TimeFlag = 1 << iota // B0: TOW valid
+	Tim2TimeFlagWnValid                           // B1: week number valid
+	Tim2TimeFlagLsValid                           // B2: leap second info valid
+	Tim2TimeFlagReliable                          // B3: time reliable
 )
 
 // Tim2UtcFlag indicates UTC parameter validity.
 type Tim2UtcFlag uint8
 
 const (
-	Tim2UtcNone      Tim2UtcFlag = iota
+	Tim2UtcNone Tim2UtcFlag = iota
 	Tim2UtcUpdated
 	Tim2UtcExpired
 	Tim2UtcAuxiliary
@@ -99,7 +99,7 @@ const (
 type Tim2LsEventFlag uint8
 
 const (
-	Tim2LsEventNone     Tim2LsEventFlag = iota
+	Tim2LsEventNone Tim2LsEventFlag = iota
 	Tim2LsEventNoEvent
 	Tim2LsEventNormal
 	Tim2LsEventAbnormal
@@ -110,10 +110,10 @@ const (
 // Tim2TimeGNSS is the shared structure for TIM2-TIMEGPS/BDS/GLN/GAL/IRN
 // (0x12 0x01-0x05) - GNSS system time information (36 bytes)
 type Tim2TimeGNSS struct {
-	Nav2TOW                         // ms, integer TOW
+	Nav2TOW                  // ms, integer TOW
 	TOWSubms int32           // scaled 2^-30 ms, fractional TOW
 	Wn       uint16          // week number
-	TOWFlag  PVTValid    // TOW valid flag
+	TOWFlag  PVTValid        // TOW valid flag
 	WnFlag   Tim2WnValid     // week number valid flag
 	TotSec   uint32          // s, total seconds
 	TAcc     float32         // ns, time error estimate
@@ -164,34 +164,34 @@ const (
 
 // Tim2TimePos is TIM2-TIMEPOS (0x12 0x06) - timing engine position status (64 bytes)
 type Tim2TimePos struct {
-	XTim       float64      // m, timing engine fixed position X
-	YTim       float64      // m, timing engine fixed position Y
-	ZTim       float64      // m, timing engine fixed position Z
-	XFix       float64      // m, positioning engine real-time position X
-	YFix       float64      // m, positioning engine real-time position Y
-	ZFix       float64      // m, positioning engine real-time position Z
-	SurTimer   uint32       // s, survey-in running time
-	SurPacc    float32      // m, survey-in position accuracy
-	FixFlag    PVTValid // position validity flag
-	TimFixMode Tim2FixMode  // how timing position was determined
-	PRResiRms  uint16       // m, pseudorange residual RMS
-	PosBias    uint16       // m, deviation between timing and real-time position
-	PDOP       uint8        // scaled 0.1
+	XTim       float64     // m, timing engine fixed position X
+	YTim       float64     // m, timing engine fixed position Y
+	ZTim       float64     // m, timing engine fixed position Z
+	XFix       float64     // m, positioning engine real-time position X
+	YFix       float64     // m, positioning engine real-time position Y
+	ZFix       float64     // m, positioning engine real-time position Z
+	SurTimer   uint32      // s, survey-in running time
+	SurPacc    float32     // m, survey-in position accuracy
+	FixFlag    PVTValid    // position validity flag
+	TimFixMode Tim2FixMode // how timing position was determined
+	PRResiRms  uint16      // m, pseudorange residual RMS
+	PosBias    uint16      // m, deviation between timing and real-time position
+	PDOP       uint8       // scaled 0.1
 	_          uint8
 }
 
 func (m *Tim2TimePos) ID() MsgID { return Tim2TimePosID }
 
-// Tim2RaimType is the RAIM alarm type (section 3.7.6).
+// Tim2RaimType is the TIM2-LS/TIM2-LY RAIM alarm type (section 3.7.6).
 type Tim2RaimType uint8
 
 const (
-	Tim2RaimNone       Tim2RaimType = iota
-	Tim2RaimNoLsInfo
-	Tim2RaimLsNormal
-	Tim2RaimLsAbnormal
-	Tim2RaimWnNormal
-	Tim2RaimWnAbnormal
+	Tim2RaimNone       Tim2RaimType = iota // no RAIM alarm; TIM2-LS fields may be zero before UTC almanac decode
+	Tim2RaimNoLsInfo                       // most recently announced leap second is in the past; AT632 reports this with Dtls == Dtlsf
+	Tim2RaimLsNormal                       // leap second alarm, normal
+	Tim2RaimLsAbnormal                     // leap second alarm, abnormal
+	Tim2RaimWnNormal                       // week number alarm, normal
+	Tim2RaimWnAbnormal                     // week number alarm, abnormal
 )
 
 // Tim2Ls is TIM2-LS (0x12 0x07) - leap second exception alarm (16 bytes)
@@ -200,11 +200,11 @@ type Tim2Ls struct {
 	GNSSID        GNSSID       // system ID (section 1.4)
 	SigID         uint8        // signal ID (section 1.4)
 	SVID          uint8        // satellite ID
-	RaimType      Tim2RaimType // alarm type
-	Wnlsf         uint8        // week number of leap second event
-	Dn            uint8        // day number of leap second event
-	Dtls          int8         // leap second value before event
-	Dtlsf         int8         // leap second value after event
+	RaimType      Tim2RaimType // alarm type; 0 means no usable data, 1 means the announced leap is in the past
+	Wnlsf         uint8        // low 8 bits of GNSS week number for the leap second reference/event
+	Dn            uint8        // GNSS day number of leap second reference/event
+	Dtls          int8         // s, GNSS-UTC offset before the leap second reference/event
+	Dtlsf         int8         // s, GNSS-UTC offset after the leap second reference/event
 }
 
 func (m *Tim2Ls) ID() MsgID { return Tim2LsID }
@@ -224,12 +224,12 @@ func (m *Tim2Ly) ID() MsgID { return Tim2LyID }
 
 // Tim2Tcxo is TIM2-TCXO (0x12 0x09) - TCXO frequency offset info (20 bytes)
 type Tim2Tcxo struct {
-	DfuRatio  float32      // relative frequency offset of sampling clock
-	Dfu2Tcxo  float32      // difference between sampling clock and TCXO offset
-	DfxRatio  float32      // TCXO frequency offset (DfuRatio + Dfu2Tcxo)
-	VcBias    int32        // scaled 2^-28, VCTCXO voltage control offset
+	DfuRatio  float32  // relative frequency offset of sampling clock
+	Dfu2Tcxo  float32  // difference between sampling clock and TCXO offset
+	DfxRatio  float32  // TCXO frequency offset (DfuRatio + Dfu2Tcxo)
+	VcBias    int32    // scaled 2^-28, VCTCXO voltage control offset
 	FrqFlag   PVTValid // frequency valid flag
-	TcxoDoCnt uint8        // VCTCXO taming convergence count
+	TcxoDoCnt uint8    // VCTCXO taming convergence count
 	_         uint16
 }
 

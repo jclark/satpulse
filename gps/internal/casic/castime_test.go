@@ -203,6 +203,23 @@ func parseTimHex(t *testing.T, hexStr string) *casbin.Tim2TimeGNSS {
 	}
 }
 
+func parseTim2LsHex(t *testing.T, hexStr string) *casbin.Tim2Ls {
+	t.Helper()
+	b, err := hex.DecodeString(hexStr)
+	if err != nil {
+		t.Fatalf("bad hex: %v", err)
+	}
+	msg, err := casbin.ParseMsg(string(b))
+	if err != nil {
+		t.Fatalf("ParseMsg: %v", err)
+	}
+	ls, ok := msg.(*casbin.Tim2Ls)
+	if !ok {
+		t.Fatalf("unexpected type %T", msg)
+	}
+	return ls
+}
+
 // Captured at 2026-03-22T03:49:56Z (UTC) = 2026-03-22T03:50:33 TAI
 var tim2CapturedHex = map[string]string{
 	"GPS": "bace24001201f0c8d2003e81ffff6b0907037629ea56df8810410c3f93bf9cdf1d0112120f0001010000cd37a65d",
@@ -377,6 +394,48 @@ func TestLeapTim2TimeGNSSEvent(t *testing.T) {
 	}
 }
 
+func TestLeapTim2Ls(t *testing.T) {
+	tests := []struct {
+		name  string
+		tRead time.Time
+		hex   string
+		want  *gpsprot.LeapSecondMsg
+	}{
+		{
+			name:  "time-glo GPS past-announced leap",
+			tRead: time.Date(2026, time.June, 13, 3, 21, 33, 26915000, time.UTC),
+			hex:   "bace10001207000000000000000000000001890712129907241a",
+			want: &gpsprot.LeapSecondMsg{
+				LeapSecond: ptime.LeapSecond2016(),
+				GNSS:       gpsprot.GPS,
+			},
+		},
+		{
+			name:  "time-bds Galileo past-announced leap",
+			tRead: time.Date(2026, time.June, 13, 3, 20, 12, 44735000, time.UTC),
+			hex:   "bace10001207000000000000000003000001890712129c07241a",
+			want: &gpsprot.LeapSecondMsg{
+				LeapSecond: ptime.LeapSecond2016(),
+				GNSS:       gpsprot.GAL,
+			},
+		},
+		{
+			name:  "time-bds no data",
+			tRead: time.Date(2026, time.June, 13, 3, 20, 12, 42480000, time.UTC),
+			hex:   "bace100012070000000000000000000000000000000010001207",
+			want:  nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := leapTim2Ls(parseTim2LsHex(t, tt.hex), tt.tRead)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("leapTim2Ls:\n  got  %+v\n  want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
 // leapMsgHandler captures LeapSecondMsg for test verification.
 type leapMsgHandler struct {
 	gpsprot.DefaultHandler
@@ -417,3 +476,61 @@ func TestTim2TimeGPSDispatch(t *testing.T) {
 	}
 }
 
+func TestTim2LsDispatch(t *testing.T) {
+	tests := []struct {
+		name  string
+		tRead time.Time
+		hex   string
+		want  *gpsprot.LeapSecondMsg
+	}{
+		{
+			name:  "time-glo GPS past-announced leap",
+			tRead: time.Date(2026, time.June, 13, 3, 21, 33, 26915000, time.UTC),
+			hex:   "bace10001207000000000000000000000001890712129907241a",
+			want: &gpsprot.LeapSecondMsg{
+				LeapSecond: ptime.LeapSecond2016(),
+				GNSS:       gpsprot.GPS,
+			},
+		},
+		{
+			name:  "time-bds Galileo past-announced leap",
+			tRead: time.Date(2026, time.June, 13, 3, 20, 12, 44735000, time.UTC),
+			hex:   "bace10001207000000000000000003000001890712129c07241a",
+			want: &gpsprot.LeapSecondMsg{
+				LeapSecond: ptime.LeapSecond2016(),
+				GNSS:       gpsprot.GAL,
+			},
+		},
+		{
+			name:  "time-bds no data",
+			tRead: time.Date(2026, time.June, 13, 3, 20, 12, 42480000, time.UTC),
+			hex:   "bace100012070000000000000000000000000000000010001207",
+			want:  nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mgr := gpsprot.NewNavEpochManager()
+			pp := NewPacketProcessor(mgr)
+			h := &leapMsgHandler{}
+			pp.SetMsgHandler(h)
+			b, _ := hex.DecodeString(tt.hex)
+			_, err := pp.ProcessPacket(string(b), tt.tRead)
+			if err != nil {
+				t.Fatalf("ProcessPacket: %v", err)
+			}
+			if tt.want == nil {
+				if len(h.leaps) != 0 {
+					t.Fatalf("got %d LeapSecondMsgs, want 0", len(h.leaps))
+				}
+				return
+			}
+			if len(h.leaps) != 1 {
+				t.Fatalf("got %d LeapSecondMsgs, want 1", len(h.leaps))
+			}
+			if !reflect.DeepEqual(h.leaps[0], tt.want) {
+				t.Errorf("LeapSecondMsg:\n  got  %+v\n  want %+v", h.leaps[0], tt.want)
+			}
+		})
+	}
+}
