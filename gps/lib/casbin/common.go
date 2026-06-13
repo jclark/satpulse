@@ -20,14 +20,14 @@ var Endian = binary.LittleEndian
 type MsgID uint16
 
 const (
-	clsNav = 0x01
-	clsTim = 0x02
-	clsRxm = 0x03
-	clsAck = 0x05
-	clsCfg = 0x06
-	clsMsg = 0x08
-	clsMon = 0x0A
-	clsAid = 0x0B
+	clsNav   = 0x01
+	clsTim   = 0x02
+	clsRxm   = 0x03
+	clsAck   = 0x05
+	clsCfg   = 0x06
+	clsMsg   = 0x08
+	clsMon   = 0x0A
+	clsAid   = 0x0B
 	// these are in ZKW F8 dual-band receivers
 	clsNav2  = 0x11
 	clsTim2  = 0x12
@@ -40,7 +40,7 @@ const (
 type GNSSID uint8
 
 const (
-	GPS GNSSID = iota
+	GPS   GNSSID = iota
 	BDS
 	GLN
 	GAL
@@ -163,8 +163,8 @@ func regMsg[T any, PT interface {
 }
 
 const (
-	HeaderLen    = 6 // sync(2) + length(2) + class(1) + id(1)
-	TrailerLen   = 4 // checksum(4)
+	HeaderLen    = 6  // sync(2) + length(2) + class(1) + id(1)
+	TrailerLen   = 4  // checksum(4)
 	PacketMinLen = HeaderLen + TrailerLen
 )
 

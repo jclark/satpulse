@@ -15,9 +15,9 @@ type TimTP struct {
 	_        uint32 // reserved
 }
 
-func (m *TimTP) ID() MsgID                  { return TimTPID }
-func (m *TimTP) RefTimeGNSS() GNSSID        { return GNSSID(m.RefTime & 0x0F) }
-func (m *TimTP) RefTimeBase() TimTPTimeBase { return TimTPTimeBase(m.RefTime >> 4) }
+func (m *TimTP) ID() MsgID                    { return TimTPID }
+func (m *TimTP) RefTimeGNSS() GNSSID          { return GNSSID(m.RefTime & 0x0F) }
+func (m *TimTP) RefTimeBase() TimTPTimeBase   { return TimTPTimeBase(m.RefTime >> 4) }
 func (m *TimTP) SetRefTime(gnss GNSSID, base TimTPTimeBase) {
 	m.RefTime = TimTPRefTime(gnss) | TimTPRefTime(base<<4)
 }
