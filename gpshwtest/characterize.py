@@ -128,6 +128,13 @@ def characterize_prop(obs: list[Observation]) -> dict[str, Any] | None:
     return entry if entry else None
 
 
+def drop_empty(signals: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Drop constellations with no signals: a request that denotes no
+    signals for a constellation and an achieved set that omits it are
+    the same signal set, not an adjustment."""
+    return {c: s for c, s in signals.items() if s}
+
+
 def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
     """Characterize signal-set realization, in signal-set vocabulary.
 
@@ -155,12 +162,12 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
             refused.append({"signals": req} if req is not None
                            else {"gnss": o.gnss, "band": o.band})
         elif o.achieved is not None:
-            achieved = {c: sorted(s) for c, s in o.achieved.items()}
+            achieved = drop_empty({c: sorted(s) for c, s in o.achieved.items()})
             if req is None:
                 if sorted(achieved) != sorted(o.gnss):
                     adjusted.append({"gnss": o.gnss, "band": o.band,
                                      "result": achieved})
-            elif achieved != req:
+            elif achieved != drop_empty(req):
                 adjusted.append({"request": req, "result": achieved})
     if supported:
         entry["signalSet"] = supported
