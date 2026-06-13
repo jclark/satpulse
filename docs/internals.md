@@ -243,3 +243,7 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 This package provides the web interface. It is in the application layer.
 
 `web` embeds the HTML/JavaScript code for the web interface. This code is transpiled from TypeScript and uses Preact JavaScript library.
+
+## Test harnesses
+
+`gpshwtest` is a stdlib-only Python program that tests GPS high-level configuration against real receivers. Because receivers are diverse and high-level configuration has best-effort semantics, it characterizes how device-independent configuration is realized on each receiver rather than rendering pass/fail verdicts; vetted characterizations are checked in and compared on later runs. All receiver I/O goes through `satpulsetool gps --json`. The goal and success criteria are defined in `gpshwtest/GOAL.md` (#310).
