@@ -228,6 +228,25 @@ func leapTim2Ls(m *casbin.Tim2Ls, now ptime.Time) *gpsprot.LeapSecondMsg {
 	return &gpsprot.LeapSecondMsg{LeapSecond: ls, GNSS: gnss}
 }
 
+// surveyTim2TimePos converts TIM2-TIMEPOS to a SurveyMsg. The protocol
+// reports the survey running time and current accuracy but no
+// observation count; position validity flag 15 means the timing
+// position is fixed (survey complete or position set).
+func surveyTim2TimePos(m *casbin.Tim2TimePos) *gpsprot.SurveyMsg {
+	sv := &gpsprot.SurveyMsg{
+		Position: gpsprot.Point3D{
+			gpsprot.Meters(m.XTim),
+			gpsprot.Meters(m.YTim),
+			gpsprot.Meters(m.ZTim),
+		},
+		Accuracy:   gpsprot.Meters(float64(m.SurPacc)),
+		ObsTime:    gpsprot.Duration(time.Duration(m.SurTimer) * time.Second),
+		Valid:      m.FixFlag == casbin.PVTTimingFixed,
+		InProgress: m.FixFlag != casbin.PVTTimingFixed && m.SurTimer > 0,
+	}
+	return sv
+}
+
 // gnssIDToGNSS maps CASIC GNSSID to gpsprot.GNSS.
 func gnssIDToGNSS(id casbin.GNSSID) gpsprot.GNSS {
 	switch id {
