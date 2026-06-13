@@ -573,3 +573,41 @@ func TestTim2LsDispatch(t *testing.T) {
 		})
 	}
 }
+
+func TestSurveyTim2TimePos(t *testing.T) {
+	tests := []struct {
+		name   string
+		m      casbin.Tim2TimePos
+		expect *gpsprot.SurveyMsg
+	}{
+		{
+			name: "survey in progress",
+			m: casbin.Tim2TimePos{XTim: 1, YTim: 2, ZTim: 3, SurTimer: 120,
+				SurPacc: 5.5, FixFlag: casbin.PVT3D},
+			expect: &gpsprot.SurveyMsg{
+				Position:   gpsprot.Point3D{gpsprot.Meter, 2 * gpsprot.Meter, 3 * gpsprot.Meter},
+				Accuracy:   gpsprot.Meters(5.5),
+				ObsTime:    gpsprot.Duration(2 * time.Minute),
+				InProgress: true,
+			},
+		},
+		{
+			name: "timing position fixed",
+			m: casbin.Tim2TimePos{SurTimer: 300, SurPacc: 1.5,
+				FixFlag: casbin.PVTTimingFixed},
+			expect: &gpsprot.SurveyMsg{
+				Accuracy: gpsprot.Meters(1.5),
+				ObsTime:  gpsprot.Duration(5 * time.Minute),
+				Valid:    true,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := surveyTim2TimePos(&tc.m)
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
+			}
+		})
+	}
+}

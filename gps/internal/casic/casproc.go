@@ -251,6 +251,11 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 			}
 		}
 		return true
+	case *casbin.Tim2TimePos:
+		if p.mh != nil {
+			p.mh.Survey(surveyTim2TimePos(mt), tRead)
+		}
+		return true
 	default:
 		return false
 	}
