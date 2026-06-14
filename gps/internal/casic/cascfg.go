@@ -153,6 +153,14 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	c.minElevConfigProps(props)
 	if c.speedReq != nil && c.speedReq.state == reqSucceeded {
 		props.SetBaudRate(uint32(c.speedReq.speedAfter))
+	} else if c.target.Get&gpsprot.PropIDBaudRate != 0 {
+		// --show-port: report the wired UART's baud (the speed the host
+		// is communicating at) from the CFG-PRT readback. CASIC cannot
+		// identify which port is the active one, so the port name itself
+		// is left unset (ConfigSupportPort is not advertised).
+		if base, ok := c.basePort(); ok {
+			props.SetBaudRate(base.BaudRate)
+		}
 	}
 	return props
 }
@@ -204,8 +212,7 @@ func (c *Configurator) generateQueryReqs() {
 	c.generateTModeQuery()
 	c.generateSignalQuery()
 	c.generateMinElevQuery()
-	_, wantBaud := c.target.Props.GetBaudRate()
-	if wantBaud || c.target.Opts.RTCMMsg.IsSet() {
+	if c.target.UsesAny(gpsprot.PropIDBaudRate) || c.target.Opts.RTCMMsg.IsSet() {
 		c.addPollReq(casbin.CfgPrtID, func(m casbin.Msg) {
 			if prt, ok := m.(*casbin.CfgPrt); ok {
 				c.ports = append(c.ports, *prt)

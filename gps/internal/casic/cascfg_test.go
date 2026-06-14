@@ -1204,6 +1204,35 @@ func TestBaudChange(t *testing.T) {
 	}
 }
 
+func TestShowPort(t *testing.T) {
+	rcvr := &testReceiver{
+		monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
+		ports: []casbin.CfgPrt{
+			{PortID: 0, ProtoMask: 0x33, Mode: 0x0003, BaudRate: 115200},
+			{PortID: 1, ProtoMask: 0x33, Mode: 0x0003, BaudRate: 9600},
+		},
+	}
+	cp := probe(t, rcvr)
+	target := gpsprot.NewConfigTarget()
+	target.Get = gpsprot.PropIDPort | gpsprot.PropIDBaudRate
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	// The serial speed is reported from the wired UART (port 0).
+	if got, ok := cfg.ConfigProps().GetBaudRate(); !ok || got != 115200 {
+		t.Errorf("baud = %d,%v, want 115200,true", got, ok)
+	}
+	// CASIC cannot identify the active port, so it reports no port name
+	// and does not advertise ConfigSupportPort.
+	if _, ok := cfg.ConfigProps().GetPort(); ok {
+		t.Error("ConfigProps reports a port despite CASIC being unable to identify it")
+	}
+	if cfg.ConfigSupport()&gpsprot.ConfigSupportPort != 0 {
+		t.Error("CASIC must not advertise ConfigSupportPort")
+	}
+}
+
 func TestRawOut(t *testing.T) {
 	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
 	tests := []struct {
