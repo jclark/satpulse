@@ -43,6 +43,9 @@ func TestConfigSupportLast(t *testing.T) {
 	if ConfigSupportLast != highest {
 		t.Errorf("ConfigSupportLast = %v, want highest declared flag %v", ConfigSupportLast, highest)
 	}
+	if ConfigSupportFull != ConfigSupportLast<<1-1 {
+		t.Errorf("ConfigSupportFull = %v, want all flags %v", ConfigSupportFull, ConfigSupportLast<<1-1)
+	}
 }
 
 func TestConfigSupportFlagsString(t *testing.T) {

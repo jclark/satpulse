@@ -70,7 +70,7 @@ func (r configSupportReq) isZero() bool {
 func (r *configSupportReq) require(flags gpsprot.ConfigSupportFlags, option string) {
 	r.init()
 	r.all |= flags
-	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportLast; flag <<= 1 {
+	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportFull; flag <<= 1 {
 		if flags&flag != 0 {
 			r.options[flag] = option
 		}
@@ -98,7 +98,7 @@ func (r configSupportReq) flags() (gpsprot.ConfigSupportFlags, gpsprot.ConfigSup
 func (r configSupportReq) unsupportedOptions(supported gpsprot.ConfigSupportFlags) []string {
 	var opts []string
 	seen := make(map[string]bool)
-	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportLast; flag <<= 1 {
+	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportFull; flag <<= 1 {
 		if r.all&flag == 0 || supported&flag != 0 {
 			continue
 		}

@@ -43,6 +43,12 @@ const (
 	ConfigSupportRTCMBaseID
 	ConfigSupportRTCMQZSS
 	ConfigSupportLast = ConfigSupportRTCMQZSS
+	// ConfigSupportFull is every configuration flag set - the support of a
+	// maximally capable receiver. A new flag joins it automatically, so a
+	// backend may declare its support as ConfigSupportFull with the flags
+	// it lacks cleared, and then gains future capabilities without being
+	// edited.
+	ConfigSupportFull = (ConfigSupportLast << 1) - 1
 )
 
 const ConfigSupportRTCMMSM = ConfigSupportRTCMMSM4 | ConfigSupportRTCMMSM7
