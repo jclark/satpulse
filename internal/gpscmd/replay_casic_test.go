@@ -7,6 +7,7 @@ import (
 )
 
 var casicReplayFiles = []string{
+	// ATGM332D-5N71 (V5)
 	"atgm332d-5n71-noop",
 	"atgm332d-5n71-binary",
 	"atgm332d-5n71-signal",
@@ -15,6 +16,28 @@ var casicReplayFiles = []string{
 	"atgm332d-5n71-tmode",
 	"atgm332d-5n71-min-elev",
 	"atgm332d-5n71-show-port",
+	// AT362-AT6668-6T-30 / AT632 (V6 timing)
+	"at632-noop",
+	"at632-binary",
+	"at632-signal",
+	"at632-pps",
+	"at632-pvt-out",
+	"at632-tmode",
+	"at632-min-elev",
+	"at632-show-port",
+	"at632-raw-out",
+	"at632-rtcm-out",
+	// ATGM332D-AT9880-F8N-76 (V6 dual-band nav)
+	"atgm332d-f8n-noop",
+	"atgm332d-f8n-binary",
+	"atgm332d-f8n-signal",
+	"atgm332d-f8n-pps",
+	"atgm332d-f8n-pvt-out",
+	"atgm332d-f8n-tmode",
+	"atgm332d-f8n-min-elev",
+	"atgm332d-f8n-show-port",
+	"atgm332d-f8n-raw-out",
+	"atgm332d-f8n-rtcm-out",
 }
 
 func TestReplayCASIC(t *testing.T) {
