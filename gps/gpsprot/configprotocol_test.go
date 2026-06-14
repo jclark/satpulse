@@ -22,13 +22,13 @@ type mockRequest struct {
 }
 
 func TestConfigSupportFlagsItems(t *testing.T) {
-	flags := ConfigSupportBand |
+	flags := ConfigSupportSignal |
 		ConfigSupportSurveyMsg |
 		ConfigSupportFixedPos |
 		ConfigSupportRTCMMSM7 |
 		ConfigSupportRTCMQZSS |
 		ConfigSupportReload
-	want := []string{"band", "surveyMsg", "fixedPos", "rtcmMSM7", "rtcmQZSS", "reload"}
+	want := []string{"signal", "surveyMsg", "fixedPos", "rtcmMSM7", "rtcmQZSS", "reload"}
 	if got := flags.Items(); !slices.Equal(got, want) {
 		t.Errorf("Items() = %v, want %v", got, want)
 	}
@@ -63,7 +63,7 @@ func TestConfigSupportFlagsMarshalJSON(t *testing.T) {
 		want  string
 	}{
 		{0, `[]`},
-		{ConfigSupportBand | ConfigSupportFixedPos | ConfigSupportRaw | ConfigSupportReload, `["band","fixedPos","raw","reload"]`},
+		{ConfigSupportSignal | ConfigSupportFixedPos | ConfigSupportRaw | ConfigSupportReload, `["signal","fixedPos","raw","reload"]`},
 	}
 	for _, tt := range tests {
 		b, err := json.Marshal(tt.flags)

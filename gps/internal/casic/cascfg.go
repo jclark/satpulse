@@ -133,7 +133,7 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc
 	if c.family == familyV6 {
-		flags |= gpsprot.ConfigSupportBand | gpsprot.ConfigSupportRaw |
+		flags |= gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportRaw |
 			gpsprot.ConfigSupportSurveyMsg |
 			gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7
 	} else {

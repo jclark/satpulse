@@ -240,13 +240,58 @@ func (sig Signal) GNSS() GNSS {
 	return GNSS(sig/sigIndexCount + 1)
 }
 
+// String returns the unique name of the signal, e.g. "GPSL1" or "E5b".
+// The unqualified signal name is qualified by the GNSS name, except for
+// names starting with B or E, which belong to exactly one constellation
+// (BeiDou and Galileo respectively) and are left unqualified.
+// ParseSignal parses this representation.
 func (sig Signal) String() string {
+	n := sig.UnqualifiedName()
+	if n == "" || n[0] == 'B' || n[0] == 'E' {
+		return n
+	}
+	return sig.GNSS().String() + n
+}
+
+// UnqualifiedName returns the signal name without the GNSS qualifier, e.g. "L1" or "E5b".
+// The name is unique only within a single GNSS constellation.
+// L1 C/A signals are named just "L1".
+func (sig Signal) UnqualifiedName() string {
 	if sig < 0 || int(sig) >= len(sigName) {
 		return ""
 	}
 	// Remove the " C/A" suffix
 	name, _, _ := strings.Cut(sigName[sig], " ")
 	return name
+}
+
+// ParseSignal parses a signal name in the format returned by Signal.String.
+// The qualifying GNSS name can be any name accepted by ParseGNSS;
+// it is optional for signal names starting with B or E.
+// Parsing is case-insensitive.
+func ParseSignal(s string) (Signal, error) {
+	u := strings.ToUpper(s)
+	if sig, ok := sigNameMap[u]; ok {
+		return sig, nil
+	}
+	// Normalize a GNSS alias prefix (e.g. GLONASS) to the canonical name.
+	for i := 3; i < len(u); i++ {
+		if g, err := ParseGNSS(u[:i]); err == nil {
+			if sig, ok := sigNameMap[g.String()+u[i:]]; ok {
+				return sig, nil
+			}
+		}
+	}
+	var qual []string
+	for sig := range SigSetAll.Signals() {
+		if strings.EqualFold(s, sig.UnqualifiedName()) {
+			qual = append(qual, sig.String())
+		}
+	}
+	if len(qual) > 0 {
+		return 0, fmt.Errorf("%s: GNSS prefix required (e.g. %s)", s, strings.Join(qual, " or "))
+	}
+	return 0, fmt.Errorf("%s: unknown signal", s)
 }
 
 // Signals returns an iterator that yields each signal in the SignalSet.
@@ -315,13 +360,14 @@ func (ss *SignalSet) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// GNSSSignalMap returns the signal set as a map from GNSS constellation name to signal name list.
+// GNSSSignalMap returns the signal set as a map from GNSS constellation name
+// to unqualified signal name list.
 func (ss SignalSet) GNSSSignalMap() map[string][]string {
 	m := make(map[string][]string)
 	for sig := range ss.Signals() {
 		g := sig.GNSS()
 		name := g.String()
-		m[name] = append(m[name], sig.String())
+		m[name] = append(m[name], sig.UnqualifiedName())
 	}
 	return m
 }
@@ -335,7 +381,7 @@ func ParseSignalMap(m map[string][]string) (SignalSet, error) {
 			return 0, err
 		}
 		for _, sn := range sigNames {
-			sig, ok := sigNameMap[g][sn]
+			sig, ok := gnssSigNameMap[g][sn]
 			if !ok {
 				return 0, fmt.Errorf("unknown signal %q for %s", sn, gnssName)
 			}
@@ -385,10 +431,10 @@ const (
 	SigIDGPSL1CP SignalID = "L1C-P" // L1C pilot
 
 	// GLONASS SignalID constants
-	SigIDGLOL1  SignalID = "L1"  // friendlier name for L1 C/A
-	SigIDGLOL1P SignalID = "L1P" // restricted
-	SigIDGLOL2  SignalID = "L2"  // friendlier name for L2 C/A
-	SigIDGLOL2P SignalID = "L2P" // restricted
+	SigIDGLOL1  SignalID = "L1"   // friendlier name for L1 C/A
+	SigIDGLOL1P SignalID = "L1P"  // restricted
+	SigIDGLOL2  SignalID = "L2"   // friendlier name for L2 C/A
+	SigIDGLOL2P SignalID = "L2P"  // restricted
 	SigIDGLOL3I SignalID = "L3-I" // L3 data
 	SigIDGLOL3Q SignalID = "L3-Q" // L3 pilot
 
@@ -462,8 +508,12 @@ const (
 // sigName provides human-readable names for each signal
 var sigName [64]string
 
-// sigNameMap maps GNSS -> short name -> Signal for reverse lookup, built in init()
-var sigNameMap map[GNSS]map[string]Signal
+// gnssSigNameMap maps GNSS -> unqualified name -> Signal for reverse lookup, built in init()
+var gnssSigNameMap map[GNSS]map[string]Signal
+
+// sigNameMap maps uppercase signal names accepted by ParseSignal to signals.
+// Qualified names use the canonical GNSS name; B and E names also appear unqualified.
+var sigNameMap map[string]Signal
 
 func init() {
 	// GPS signals
@@ -511,15 +561,24 @@ func init() {
 	sigName[SigSBASL1CA] = "L1 C/A"
 	sigName[SigSBASL5] = "L5"
 
-	// Build reverse lookup map
-	sigNameMap = make(map[GNSS]map[string]Signal)
+	// Build reverse lookup maps
+	gnssSigNameMap = make(map[GNSS]map[string]Signal)
+	sigNameMap = make(map[string]Signal)
 	for sig := range SigSetAll.Signals() {
 		g := sig.GNSS()
-		if sigNameMap[g] == nil {
-			sigNameMap[g] = make(map[string]Signal)
+		if gnssSigNameMap[g] == nil {
+			gnssSigNameMap[g] = make(map[string]Signal)
 		}
-		n, _, _ := strings.Cut(sigName[sig], " ")
-		sigNameMap[g][n] = sig
+		n := sig.UnqualifiedName()
+		gnssSigNameMap[g][n] = sig
+		u := strings.ToUpper(n)
+		sigNameMap[g.String()+u] = sig
+		if n[0] == 'B' || n[0] == 'E' {
+			if _, ok := sigNameMap[u]; ok {
+				panic("signal name " + n + " is not unique across constellations")
+			}
+			sigNameMap[u] = sig
+		}
 	}
 }
 
@@ -543,8 +602,8 @@ var signalIDBandTable = [...]struct {
 	{"E5a", true, BandL5},
 	// E5b band
 	{"E5b", true, BandE5b},
-	{"B2", true, BandE5b},  // remaining B2: B2I, B2Q, B2b
-	{"L3", true, BandE5b},  // GLONASS L3
+	{"B2", true, BandE5b}, // remaining B2: B2I, B2Q, B2b
+	{"L3", true, BandE5b}, // GLONASS L3
 	// E6 band
 	{"E6", true, BandE6},
 	{"L6", true, BandE6},

@@ -30,7 +30,7 @@ type ConfigProtocol interface {
 type ConfigSupportFlags uint32
 
 const (
-	ConfigSupportBand ConfigSupportFlags = 1 << iota
+	ConfigSupportSignal ConfigSupportFlags = 1 << iota
 	ConfigSupportSpeed
 	ConfigSupportSurvey
 	ConfigSupportSurveyAcc
@@ -59,7 +59,7 @@ var configSupportFlagNames = [...]struct {
 	flag ConfigSupportFlags
 	name string
 }{
-	{ConfigSupportBand, "band"},
+	{ConfigSupportSignal, "signal"},
 	{ConfigSupportSpeed, "speed"},
 	{ConfigSupportSurvey, "survey"},
 	{ConfigSupportSurveyAcc, "surveyAcc"},

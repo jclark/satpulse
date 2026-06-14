@@ -385,7 +385,7 @@ func TestConfigSupport(t *testing.T) {
 		want gpsprot.ConfigSupportFlags
 	}{
 		{"V5", v5, base | gpsprot.ConfigSupportReload},
-		{"V6", v6, base | gpsprot.ConfigSupportBand | gpsprot.ConfigSupportRaw |
+		{"V6", v6, base | gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportRaw |
 			gpsprot.ConfigSupportSurveyMsg |
 			gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7},
 	}

@@ -194,6 +194,100 @@ func TestSignalSetString(t *testing.T) {
 	}
 }
 
+func TestSignalString(t *testing.T) {
+	tests := []struct {
+		sig        Signal
+		expect     string
+		expectName string
+	}{
+		{SigGPSL1CA, "GPSL1", "L1"},
+		{SigGPSL1C, "GPSL1C", "L1C"},
+		{SigGPSL2P, "GPSL2P", "L2P"},
+		{SigGPSL5, "GPSL5", "L5"},
+		{SigGLOL2, "GLOL2", "L2"},
+		{SigGLOL1OC, "GLOL1OC", "L1OC"},
+		{SigGALE1, "E1", "E1"},
+		{SigGALE5b, "E5b", "E5b"},
+		{SigBDSB1C, "B1C", "B1C"},
+		{SigBDSB2a, "B2a", "B2a"},
+		{SigQZSSL1CA, "QZSSL1", "L1"},
+		{SigQZSSL1S, "QZSSL1S", "L1S"},
+		{SigNAVICL5, "NAVICL5", "L5"},
+		{SigSBASL1CA, "SBASL1", "L1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.expect, func(t *testing.T) {
+			if got := tt.sig.String(); got != tt.expect {
+				t.Errorf("Signal.String() = %q, want %q", got, tt.expect)
+			}
+			if got := tt.sig.UnqualifiedName(); got != tt.expectName {
+				t.Errorf("Signal.UnqualifiedName() = %q, want %q", got, tt.expectName)
+			}
+		})
+	}
+}
+
+func TestParseSignal(t *testing.T) {
+	tests := []struct {
+		s         string
+		expect    Signal
+		expectErr bool
+	}{
+		{s: "GPSL1", expect: SigGPSL1CA},
+		{s: "gpsl1c", expect: SigGPSL1C},
+		{s: "GPSL5", expect: SigGPSL5},
+		{s: "GALE1", expect: SigGALE1},
+		{s: "GALILEOE1", expect: SigGALE1},
+		{s: "E5b", expect: SigGALE5b},
+		{s: "e5A", expect: SigGALE5a},
+		{s: "B2b", expect: SigBDSB2b},
+		{s: "BEIDOUB1C", expect: SigBDSB1C},
+		{s: "GLONASSL2", expect: SigGLOL2},
+		{s: "glol1oc", expect: SigGLOL1OC},
+		{s: "QZSSL5S", expect: SigQZSSL5S},
+		{s: "NAVICL1", expect: SigNAVICL1},
+		{s: "SBASL5", expect: SigSBASL5},
+		{s: "L1", expectErr: true},
+		{s: "L2", expectErr: true},
+		{s: "L2C", expectErr: true},
+		{s: "L5", expectErr: true},
+		{s: "GPSE1", expectErr: true},
+		{s: "GALL1", expectErr: true},
+		{s: "X99", expectErr: true},
+		{s: "GPS", expectErr: true},
+		{s: "", expectErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.s, func(t *testing.T) {
+			got, err := ParseSignal(tt.s)
+			if tt.expectErr {
+				if err == nil {
+					t.Fatalf("ParseSignal(%q) = %s, expected error", tt.s, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseSignal(%q): %v", tt.s, err)
+			}
+			if got != tt.expect {
+				t.Errorf("ParseSignal(%q) = %s, want %s", tt.s, got, tt.expect)
+			}
+		})
+	}
+}
+
+func TestParseSignalStringRoundTrip(t *testing.T) {
+	for sig := range SigSetAll.Signals() {
+		got, err := ParseSignal(sig.String())
+		if err != nil {
+			t.Fatalf("ParseSignal(%q): %v", sig.String(), err)
+		}
+		if got != sig {
+			t.Errorf("ParseSignal(%q) = %s, want %s", sig.String(), got, sig)
+		}
+	}
+}
+
 func TestSignalSetMapRoundTrip(t *testing.T) {
 	tests := []struct {
 		name string
