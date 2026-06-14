@@ -51,7 +51,7 @@ func TestPrintJSON(t *testing.T) {
 			name: "full result",
 			rslt: &gpscfg.Result{
 				ReceiverInfo:          rcvr,
-				ConfigSupport:         gpsprot.ConfigSupportBand | gpsprot.ConfigSupportSpeed,
+				ConfigSupport:         gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportSpeed,
 				ConfigProps:           props,
 				PacketFormatsDetected: []gpsprot.Tag{"UBX", "NMEA"},
 			},
@@ -62,7 +62,7 @@ func TestPrintJSON(t *testing.T) {
 					"hardware":      "ZED-F9P",
 					"supportedGNSS": []any{"GPS", "GAL"},
 				},
-				"supports":      []any{"band", "speed"},
+				"supports":      []any{"signal", "speed"},
 				"packetFormats": []any{"UBX", "NMEA"},
 				"config": map[string]any{
 					"signalsEnabled": map[string]any{"GPS": []any{"L1", "L2C"}},

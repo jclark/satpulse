@@ -59,7 +59,7 @@ type flagVars struct {
 
 type configSupportReq struct {
 	all       gpsprot.ConfigSupportFlags
-	options   map[gpsprot.ConfigSupportFlags]string
+	options   map[gpsprot.ConfigSupportFlags][]string
 	msmOption string
 }
 
@@ -72,7 +72,7 @@ func (r *configSupportReq) require(flags gpsprot.ConfigSupportFlags, option stri
 	r.all |= flags
 	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportFull; flag <<= 1 {
 		if flags&flag != 0 {
-			r.options[flag] = option
+			r.options[flag] = append(r.options[flag], option)
 		}
 	}
 }
@@ -83,7 +83,7 @@ func (r *configSupportReq) requireMSM(option string) {
 
 func (r *configSupportReq) init() {
 	if r.options == nil {
-		r.options = make(map[gpsprot.ConfigSupportFlags]string)
+		r.options = make(map[gpsprot.ConfigSupportFlags][]string)
 	}
 }
 
@@ -102,9 +102,11 @@ func (r configSupportReq) unsupportedOptions(supported gpsprot.ConfigSupportFlag
 		if r.all&flag == 0 || supported&flag != 0 {
 			continue
 		}
-		if opt := r.options[flag]; opt != "" && !seen[opt] {
-			opts = append(opts, opt)
-			seen[opt] = true
+		for _, opt := range r.options[flag] {
+			if opt != "" && !seen[opt] {
+				opts = append(opts, opt)
+				seen[opt] = true
+			}
 		}
 	}
 	if r.msmOption != "" && supported&gpsprot.ConfigSupportRTCMMSM == 0 && !seen[r.msmOption] {
@@ -333,7 +335,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 		configChanged = true
 		if flags.Lookup("band").Changed {
-			vars.configSupport.require(gpsprot.ConfigSupportBand, "--band")
+			vars.configSupport.require(gpsprot.ConfigSupportSignal, "--band")
 		}
 		if addSigs != 0 {
 			vars.configSupport.require(gpsprot.ConfigSupportSignal, "--signal")

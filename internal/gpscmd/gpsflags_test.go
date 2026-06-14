@@ -438,7 +438,7 @@ func TestParseFlagsConfigSupport(t *testing.T) {
 	}{
 		{"no config", nil, 0, 0},
 		{"speed", []string{"--speed", "9600"}, gpsprot.ConfigSupportSpeed, 0},
-		{"band", []string{"--gnss", "GPS", "--band", "L5"}, gpsprot.ConfigSupportBand, 0},
+		{"band", []string{"--gnss", "GPS", "--band", "L5"}, gpsprot.ConfigSupportSignal, 0},
 		{"signal", []string{"--signal", "GPSL1"}, gpsprot.ConfigSupportSignal, 0},
 		{"signal with gnss", []string{"--gnss", "GPS", "--signal", "QZSSL1S"}, gpsprot.ConfigSupportSignal, 0},
 		{"except-signal", []string{"--gnss", "GPS", "--except-signal", "GPSL1C"}, gpsprot.ConfigSupportSignal, 0},
@@ -518,6 +518,16 @@ func TestConfigSupportReqUnsupportedOptions(t *testing.T) {
 				return req
 			}(),
 			want: []string{"--fixed-pos-ecef", "--survey"},
+		},
+		{
+			name: "multiple options for same flag",
+			req: func() configSupportReq {
+				var req configSupportReq
+				req.require(gpsprot.ConfigSupportSignal, "--band")
+				req.require(gpsprot.ConfigSupportSignal, "--signal")
+				return req
+			}(),
+			want: []string{"--band", "--signal"},
 		},
 	}
 	for _, tt := range tests {

@@ -20,8 +20,7 @@ type testResponse struct {
 }
 
 func TestConfigSupport(t *testing.T) {
-	want := gpsprot.ConfigSupportBand |
-		gpsprot.ConfigSupportSignal |
+	want := gpsprot.ConfigSupportSignal |
 		gpsprot.ConfigSupportSurvey |
 		gpsprot.ConfigSupportFixedPos |
 		gpsprot.ConfigSupportRaw |
