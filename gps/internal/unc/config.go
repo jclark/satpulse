@@ -130,15 +130,9 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 }
 
 // ConfigProps returns the current configuration of the GPS receiver.
-// For a target that only reads the port and serial speed, the result is
-// restricted to those: the CONFIG query reports every CONFIG property,
-// not just the COM port baud rates it was sent for.
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	props := &gpsprot.ConfigProps{}
 	c.nativeProps.convertToProps(props)
-	if portQueryOnly(c.target) {
-		props.Retain(gpsprot.PropIDPort | gpsprot.PropIDBaudRate)
-	}
 	return props
 }
 
@@ -274,9 +268,9 @@ func (c *Configurator) generateConfigReqs() {
 
 // generateSpeedReq generates the baud rate change request when the target
 // asks for a speed different from the current one, and reports whether it
-// did so. The request uses a staged deadline: the receiver's ACK may be
-// garbled by the speed switch, so if nothing confirms the change within
-// speedChangeRepeatDelay, the command is repeated (see phaseSpeed).
+// did so. The receiver's ACK may be garbled by the speed switch, so if
+// nothing confirms the change within speedChangeRepeatDelay the request
+// extends its deadline and repeats the command (see phaseSpeed).
 func (c *Configurator) generateSpeedReq() bool {
 	port := c.nativeProps.port.name
 	i := comIndex(port)
@@ -408,10 +402,9 @@ func (req *ConfigRequest) SetDeadlinePassed() {
 		// Command timed out waiting for ACK
 		req.state = stateMayResendCommand
 	case stateAwaitingAckBeforeRepeat:
-		// Staged deadline: the repeat delay passed without confirmation.
-		// Keep awaiting with the normal deadline (tBase is unchanged, so it
-		// is relative to the original send); phaseSpeed sees this state
-		// change and generates the repeat.
+		// The repeat delay passed without confirmation. Keep awaiting with the
+		// normal deadline (tBase is unchanged, so it is relative to the original
+		// send); phaseSpeed sees this state change and generates the repeat.
 		req.state = stateAwaitingAck
 	case stateAwaitingAckAndResponse, stateAwaitingResponse:
 		// Query timed out waiting for ACK and/or response

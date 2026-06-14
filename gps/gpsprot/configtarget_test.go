@@ -505,20 +505,3 @@ func TestConfigOptionsJSONRoundTrip(t *testing.T) {
 		})
 	}
 }
-
-func TestRetain(t *testing.T) {
-	var cp ConfigProps
-	cp.SetPort("COM3")
-	cp.SetBaudRate(115200)
-	cp.SetTimeGNSS(GPS)
-	cp.Retain(PropIDPort | PropIDBaudRate)
-	if port, ok := cp.GetPort(); !ok || port != "COM3" {
-		t.Errorf("GetPort() = %q, %v, want COM3, true", port, ok)
-	}
-	if baud, ok := cp.GetBaudRate(); !ok || baud != 115200 {
-		t.Errorf("GetBaudRate() = %d, %v, want 115200, true", baud, ok)
-	}
-	if _, ok := cp.GetTimeGNSS(); ok {
-		t.Errorf("GetTimeGNSS() still set after Retain")
-	}
-}

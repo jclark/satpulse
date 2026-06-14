@@ -230,8 +230,9 @@ type ConfigRequest interface {
 	// GetDeadline returns the absolute time by which response packets are expected.
 	// Precondition: request state is ConfigRequestAwaitingResponse, ConfigRequestMaybeComplete, or ConfigRequestPausing
 	// The returned time is non-zero and includes monotonic time for accurate timeout comparisons.
-	// For ConfigRequestAwaitingResponse: deadline for receiving first/only response (based on
-	// SetSentTime timestamp); a protocol may stage deadlines (see SetDeadlinePassed)
+	// For ConfigRequestAwaitingResponse: deadline for receiving the first/only response (based on
+	// SetSentTime timestamp); when it passes the request may extend the deadline instead of timing
+	// out (see SetDeadlinePassed)
 	// For ConfigRequestMaybeComplete: deadline for receiving next response in burst (based on last response time + idle period)
 	// For ConfigRequestPausing: deadline for when pause completes and GPS receiver is ready for next command
 	GetDeadline() time.Time
@@ -257,9 +258,9 @@ type ConfigRequest interface {
 	// Precondition: request state is ConfigRequestAwaitingResponse, ConfigRequestMaybeComplete, or ConfigRequestPausing
 	// State transitions:
 	//   - ConfigRequestAwaitingResponse → ConfigRequestMayResend (timeout, can retry)
-	//   - ConfigRequestAwaitingResponse → ConfigRequestAwaitingResponse (staged deadline:
-	//     an intermediate deadline passed, triggering protocol-internal action such as
-	//     generating a follow-up request; GetDeadline now returns a later deadline)
+	//   - ConfigRequestAwaitingResponse → ConfigRequestAwaitingResponse (the deadline passed but
+	//     the request is not giving up: it takes a protocol-internal action such as sending a
+	//     follow-up packet and extends its deadline; GetDeadline now returns the later deadline)
 	//   - ConfigRequestMaybeComplete → ConfigRequestSucceeded (idle period over, no more responses expected)
 	//   - ConfigRequestPausing → ConfigRequestSucceeded (pause duration elapsed, ready for next request)
 	// The client should call this when GetDeadline() time has passed.

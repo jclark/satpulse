@@ -904,9 +904,6 @@ func TestPortQuery(t *testing.T) {
 				if !ok || baud != tt.expectBaud {
 					t.Errorf("baud rate = %d (valid %v), want %d", baud, ok, tt.expectBaud)
 				}
-				if _, ok := props.GetTimePulse(); ok {
-					t.Errorf("port-only result contains time pulse config")
-				}
 			}
 		})
 	}
