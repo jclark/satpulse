@@ -562,11 +562,11 @@ func TestRawMessages(t *testing.T) {
 			},
 			expectedCmds: []string{
 				"UNLOG OBSVMB",
-				"GPSEPHB 1",
-				"BDSEPHB 1",
-				"GLOEPHB 1",
-				"GALEPHB 1",
-				"QZSSEPHB 1",
+				"GPSEPHB ONCHANGED",
+				"BDSEPHB ONCHANGED",
+				"GLOEPHB ONCHANGED",
+				"GALEPHB ONCHANGED",
+				"QZSSEPHB ONCHANGED",
 			},
 		},
 		{
@@ -581,7 +581,7 @@ func TestRawMessages(t *testing.T) {
 			},
 			expectedCmds: []string{
 				"UNLOG OBSVMB",
-				"GPSEPHB 1",
+				"GPSEPHB ONCHANGED",
 			},
 		},
 		{
@@ -595,8 +595,8 @@ func TestRawMessages(t *testing.T) {
 			},
 			expectedCmds: []string{
 				"UNLOG OBSVMB",
-				"GPSEPHB 1",
-				"BDSEPHB 1",
+				"GPSEPHB ONCHANGED",
+				"BDSEPHB ONCHANGED",
 			},
 		},
 		{
@@ -613,7 +613,7 @@ func TestRawMessages(t *testing.T) {
 			},
 			expectedCmds: []string{
 				"UNLOG OBSVMB",
-				"GPSEPHB 1",
+				"GPSEPHB ONCHANGED",
 			},
 		},
 		{

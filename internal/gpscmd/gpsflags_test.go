@@ -20,6 +20,9 @@ type validFlagsTestCase struct {
 
 var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{}, flagVars{showReceiver: true}},
+	{"ttyS0", []string{"--json"}, flagVars{showReceiver: true, jsonOut: true}},
+	{"ttyS0", []string{"--show-config", "--json"}, flagVars{configGet: showProps, jsonOut: true}},
+	{"ttyS0", []string{"--json", "--gnss", "GPS"}, flagVars{jsonOut: true, enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS)}},
 	{"ttyS0", []string{"--reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Reset: gpsprot.ResetCold}}},
 	{"ttyS0", []string{"--nmea"}, flagVars{configOpts: gpsprot.ConfigOptions{
 		NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC),
@@ -223,6 +226,10 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--binary", "--pvt-out", "tp,leap"}, flagVars{configOpts: gpsprot.ConfigOptions{
 		NMEAMsg: opt.Make(gpsprot.NMEAMsgNone),
 		PVTMsg:  gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgLeapSecond,
+	}}},
+	{"ttyS0", []string{"--binary", "--pvt-out", "off"}, flagVars{configOpts: gpsprot.ConfigOptions{
+		NMEAMsg: opt.Make(gpsprot.NMEAMsgNone),
+		PVTMsg:  gpsprot.PVTMsgOff,
 	}}},
 	// Test --binary with --rtcm-out (should not set default pvt)
 	{"ttyS0", []string{"--binary", "--rtcm-out", "MSM4"}, flagVars{configOpts: gpsprot.ConfigOptions{
@@ -454,6 +461,7 @@ func TestParseFlagsConfigSupport(t *testing.T) {
 		{"rtcm none", []string{"--rtcm-out", "none"}, 0, 0},
 		{"rtcm qzss", []string{"--gnss", "GPS,QZSS", "--rtcm-out", "MSM4"}, gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMQZSS, 0},
 		{"rtcm base id", []string{"--rtcm-base-id", "1234"}, gpsprot.ConfigSupportRTCMBaseID, 0},
+		{"show-port", []string{"--show-port"}, gpsprot.ConfigSupportPort, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -705,6 +713,10 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--port", ""},
 	// Test --msg-file cannot be combined with --show-receiver
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-receiver"}, // can't use with --show-receiver
+	// Test --json cannot be combined with --msg-file or passive capture
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--json"},                      // can't use with --msg-file
+	{"--serial-device", "ttyS0", "--json", "--packet-log", "pkt.jsonl", "--capture", "10"}, // passive capture has no result to report
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-tags", "--json"},       // can't use with --msg-file even with --show-tags
 	// Test --config-file mutual exclusivity with --serial-device and --device-speed
 	{"--config-file", "test.toml", "--serial-device", "ttyS0"}, // can't use with --serial-device
 	{"--config-file", "test.toml", "--device-speed", "9600"},   // can't use with --device-speed

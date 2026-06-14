@@ -85,8 +85,17 @@ func generatePVTMsgCommands(flags gpsprot.PVTMsgFlags, enabledGNSS gpsprot.GNSSS
 
 // appendMsgCmd appends either "msgName 1" or "UNLOG msgName" depending on enable.
 func appendMsgCmd(cmds *[]string, msgName string, enable bool) {
+	rate := ""
 	if enable {
-		*cmds = append(*cmds, msgName+" 1")
+		rate = "1"
+	}
+	appendMsgCmdRate(cmds, msgName, rate)
+}
+
+// appendMsgCmdRate appends either "msgName rate" or "UNLOG msgName" if rate is empty.
+func appendMsgCmdRate(cmds *[]string, msgName, rate string) {
+	if rate != "" {
+		*cmds = append(*cmds, msgName+" "+rate)
 	} else {
 		*cmds = append(*cmds, "UNLOG "+msgName)
 	}
@@ -178,9 +187,13 @@ func generateRawMsgCommands(flags gpsprot.RawMsgFlags, enabledGNSS gpsprot.GNSSS
 		{gpsprot.GAL, "GALEPHB"},
 		{gpsprot.QZSS, "QZSSEPHB"},
 	}
+	rate := ""
+	if navData {
+		rate = "ONCHANGED"
+	}
 	for _, e := range ephs {
 		if enabledGNSS.Contains(e.gnss) {
-			appendMsgCmd(&cmds, e.msgName, navData)
+			appendMsgCmdRate(&cmds, e.msgName, rate)
 		}
 	}
 	return cmds

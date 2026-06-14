@@ -41,7 +41,7 @@ Find the domain package for a protocol:
    - **Post-pulse** (e.g., UBX NAV-TIMEGPS): `Ref: gpsprot.PostPulse` or no ref
    - **Combined** (e.g., UBX NAV-PVT produces TimeMsg alongside PosGeo and VelGeo)
 
-4. **Identify what high-level config enables**: Check the domain layer's config code to see which messages get enabled by `--pvt-out`, `--sats-out`, etc. Messages not reachable via high-level config need low-level message files.
+4. **Identify what high-level config enables**: Check the domain layer's config code to see which messages get enabled by `--pvt-out`, `--sats-out`, etc. Messages not reachable via high-level config need low-level message files. For the coarse capability question -- does this receiver support survey, raw, RTCM/MSM, band selection at all? -- read the `Supports:` line from `--show-receiver` first (see `highlevel-config.md`); it is authoritative and saves inferring unsupported features from source.
 
 5. **Check for mutual exclusivity**: Some messages are alternatives (e.g., NavPosLLH vs NavHPPosLLH on HPG receivers, NavVelNED vs NavVelECEF). These need separate captures.
 

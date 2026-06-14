@@ -1,0 +1,26 @@
+{
+  "limitations": {
+    "mode.fixedPosAcc": {"observed": [{"request": 0.12345, "result": 0}, {"request": 1.23456, "result": 0}]},
+    "mode.fixedPosECEF[0]": {"quantum": 0.0001},
+    "mode.fixedPosECEF[1]": {"quantum": 0.0001},
+    "mode.fixedPosECEF[2]": {"quantum": 0.0001},
+    "mode.fixedPosLLH[0]": {"quantum": 1e-09},
+    "mode.fixedPosLLH[1]": {"quantum": 1e-09},
+    "pvtOut": {"missing": ["tp"]},
+    "saveGranularity": {"singleGroup": true},
+    "showPort": {"unsupported": true},
+    "signals": {
+      "emptyConstellationsDropped": true,
+      "signalSet": {
+        "BDS": ["B1C", "B1I", "B2I", "B2a", "B2b", "B3I"],
+        "GAL": ["E1", "E5a", "E5b"],
+        "GLO": ["L1", "L2"],
+        "GPS": ["L1", "L2C", "L2P", "L5"],
+        "QZSS": ["L1", "L2C", "L5"]
+      }
+    },
+    "timePulse.width": {"quantum": 1e-06}
+  },
+  "receiver": {"firmware": "Build17548", "hardware": "UM980", "supportedGNSS": [], "vendor": "Unicore"},
+  "supports": ["band", "fixedPos", "raw", "rtcmBaseID", "rtcmMSM4", "rtcmMSM7", "rtcmQZSS", "survey"]
+}

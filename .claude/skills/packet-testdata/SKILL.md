@@ -16,7 +16,7 @@ There are two ways to configure GPS receivers for captures, corresponding to the
 
 - **High-level configuration** uses device-independent flags like `--pvt-out`, `--sats-out`, `--binary`, `--nmea-out`, `--raw-out`, `--time-gnss`, `--gnss`, `--survey`, `--reload`. Currently supported on u-blox receivers (u-blox 6 through X20) and Unicore Nebulas IV (UM980, UM981, UM982, UM960). See `highlevel-config.md`.
 
-- **Low-level configuration** uses a TOML message file (`-m`) containing protocol-specific commands. This works with all receivers. Message files are in `configs/gpsmsg/` (e.g., `ubx.toml`, `um980.toml`, `allystar.toml`). See `lowlevel-config.md`.
+- **Low-level configuration** uses a TOML message file (`-m`) containing protocol-specific commands. This works with all receivers. Message files are in per-vendor subdirectories of `configs/gpsmsg/` (e.g., `configs/gpsmsg/u-blox/ubx.toml`, `configs/gpsmsg/unicore/um980.toml`, `configs/gpsmsg/allystar/allystar.toml`). See `lowlevel-config.md`.
 
 Both approaches can be combined: use high-level config first, then a second invocation with `-m` to add messages that high-level config cannot reach.
 
@@ -75,7 +75,7 @@ For u-blox receivers specifically, also read `ubx-config.md`.
 
 For Unicore receivers (UM980, UM981, UM982), also read `unicore-config.md`.
 
-For all receivers, message files in `configs/gpsmsg/` provide low-level message tags. Read `lowlevel-config.md` for how to use these.
+For all receivers, message files in the per-vendor subdirectories of `configs/gpsmsg/` provide low-level message tags. Read `lowlevel-config.md` for how to use these.
 
 ## Capture procedure
 
