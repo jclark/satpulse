@@ -151,8 +151,10 @@ func TestVersionConfigSupport(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.ver.configSupport(); got != tt.want {
-				t.Errorf("configSupport() = %v, want %v", got.Items(), tt.want.Items())
+			// Every u-blox version can identify the active port.
+			want := tt.want | gpsprot.ConfigSupportPort
+			if got := tt.ver.configSupport(); got != want {
+				t.Errorf("configSupport() = %v, want %v", got.Items(), want.Items())
 			}
 		})
 	}

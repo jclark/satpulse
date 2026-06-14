@@ -15,11 +15,13 @@ const Vendor = "Unicore"
 
 // configSupport is everything except the capabilities the Nebulas IV
 // firmware does not offer: baud-rate change, the survey/fixed-position
-// accuracy variants, and survey message output. Declaring it as full
-// minus these gains future universally supported flags automatically.
+// accuracy variants, survey message output, and identifying the active
+// port. Declaring it as full minus these gains future universally
+// supported flags automatically.
 const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportFull &^
 	(gpsprot.ConfigSupportSpeed | gpsprot.ConfigSupportSurveyAcc |
-		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPosAcc)
+		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPosAcc |
+		gpsprot.ConfigSupportPort)
 
 type ConfigProtocol struct {
 	ver *uncmsg.Version // Stored from VERSIONB response for probing
