@@ -78,17 +78,17 @@
 {"t":"2026-04-05T02:10:39.202583Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK 5.0*25\r\n"}
 {"t":"2026-04-05T02:10:39.203361Z","tag":"UNCA","msg":"MODE","ascii":"#MODE,96,GPS,FINE,2413,7857000,17548,0,18,148;MODE ROVER SURVEY,*17\r\n"}
 {"t":"2026-04-05T02:10:39.206943Z","ascii":"UNLOG OBSVMB\r\n","out":true}
-{"t":"2026-04-05T02:10:39.206965Z","ascii":"GPSEPHB 1\r\n","out":true}
-{"t":"2026-04-05T02:10:39.206976Z","ascii":"BDSEPHB 1\r\n","out":true}
-{"t":"2026-04-05T02:10:39.206981Z","ascii":"GLOEPHB 1\r\n","out":true}
-{"t":"2026-04-05T02:10:39.207034Z","ascii":"GALEPHB 1\r\n","out":true}
-{"t":"2026-04-05T02:10:39.207041Z","ascii":"QZSSEPHB 1\r\n","out":true}
+{"t":"2026-04-05T02:10:39.206965Z","ascii":"GPSEPHB ONCHANGED\r\n","out":true}
+{"t":"2026-04-05T02:10:39.206976Z","ascii":"BDSEPHB ONCHANGED\r\n","out":true}
+{"t":"2026-04-05T02:10:39.206981Z","ascii":"GLOEPHB ONCHANGED\r\n","out":true}
+{"t":"2026-04-05T02:10:39.207034Z","ascii":"GALEPHB ONCHANGED\r\n","out":true}
+{"t":"2026-04-05T02:10:39.207041Z","ascii":"QZSSEPHB ONCHANGED\r\n","out":true}
 {"t":"2026-04-05T02:10:39.232019Z","tag":"NMEA","msg":"command","ascii":"$command,UNLOG OBSVMB,response: OK*26\r\n"}
-{"t":"2026-04-05T02:10:39.232762Z","tag":"NMEA","msg":"command","ascii":"$command,GPSEPHB 1,response: OK*14\r\n"}
-{"t":"2026-04-05T02:10:39.233535Z","tag":"NMEA","msg":"command","ascii":"$command,BDSEPHB 1,response: OK*05\r\n"}
-{"t":"2026-04-05T02:10:39.234297Z","tag":"NMEA","msg":"command","ascii":"$command,GLOEPHB 1,response: OK*14\r\n"}
-{"t":"2026-04-05T02:10:39.235063Z","tag":"NMEA","msg":"command","ascii":"$command,GALEPHB 1,response: OK*1A\r\n"}
-{"t":"2026-04-05T02:10:39.235807Z","tag":"NMEA","msg":"command","ascii":"$command,QZSSEPHB 1,response: OK*5B\r\n"}
+{"t":"2026-04-05T02:10:39.232762Z","tag":"NMEA","msg":"command","ascii":"$command,GPSEPHB ONCHANGED,response: OK*42\r\n"}
+{"t":"2026-04-05T02:10:39.233535Z","tag":"NMEA","msg":"command","ascii":"$command,BDSEPHB ONCHANGED,response: OK*53\r\n"}
+{"t":"2026-04-05T02:10:39.234297Z","tag":"NMEA","msg":"command","ascii":"$command,GLOEPHB ONCHANGED,response: OK*42\r\n"}
+{"t":"2026-04-05T02:10:39.235063Z","tag":"NMEA","msg":"command","ascii":"$command,GALEPHB ONCHANGED,response: OK*4C\r\n"}
+{"t":"2026-04-05T02:10:39.235807Z","tag":"NMEA","msg":"command","ascii":"$command,QZSSEPHB ONCHANGED,response: OK*0D\r\n"}
 {"type":"receiver","vendor":"Unicore","hardware":"UM980","firmware":"Build17548"}
 {"type":"config","signalsEnabled":{"BDS":["B1I","B1C","B2a","B2I","B2b","B3I"],"GAL":["E1","E5a","E5b","E6"],"GLO":["L1","L2","L3"],"GPS":["L1","L1C","L2P","L2C","L5"],"NAVIC":["L5"],"QZSS":["L1","L1C","L2C","L5"]},"timeGNSS":"GPS","antennaCableDelay":0,"timePulse":{"enabled":true,"width":0.5,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":false}
 {"type":"env","args":["-d","/dev/ttyUSB0","-s","460800","--vendor","unicore","--test-log","unicore/um980-raw-out.jsonl","--raw-out","obs,nav"],"version":"satpulse version 0.2-pre.20260405.b36f8980.dirty, build date 2026-04-05 01:09:24+00:00","hostname":"abondance"}
@@ -195,17 +195,17 @@
 {"t":"2026-04-05T02:10:40.522595Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK 5.0*25\r\n"}
 {"t":"2026-04-05T02:10:40.523375Z","tag":"UNCA","msg":"MODE","ascii":"#MODE,96,GPS,FINE,2413,7858000,17548,0,18,469;MODE ROVER SURVEY,*1E\r\n"}
 {"t":"2026-04-05T02:10:40.526941Z","ascii":"OBSVMB 1\r\n","out":true}
-{"t":"2026-04-05T02:10:40.526968Z","ascii":"GPSEPHB 1\r\n","out":true}
-{"t":"2026-04-05T02:10:40.526974Z","ascii":"BDSEPHB 1\r\n","out":true}
-{"t":"2026-04-05T02:10:40.526979Z","ascii":"GLOEPHB 1\r\n","out":true}
-{"t":"2026-04-05T02:10:40.526984Z","ascii":"GALEPHB 1\r\n","out":true}
-{"t":"2026-04-05T02:10:40.527031Z","ascii":"QZSSEPHB 1\r\n","out":true}
+{"t":"2026-04-05T02:10:40.526968Z","ascii":"GPSEPHB ONCHANGED\r\n","out":true}
+{"t":"2026-04-05T02:10:40.526974Z","ascii":"BDSEPHB ONCHANGED\r\n","out":true}
+{"t":"2026-04-05T02:10:40.526979Z","ascii":"GLOEPHB ONCHANGED\r\n","out":true}
+{"t":"2026-04-05T02:10:40.526984Z","ascii":"GALEPHB ONCHANGED\r\n","out":true}
+{"t":"2026-04-05T02:10:40.527031Z","ascii":"QZSSEPHB ONCHANGED\r\n","out":true}
 {"t":"2026-04-05T02:10:40.552082Z","tag":"NMEA","msg":"command","ascii":"$command,OBSVMB 1,response: OK*48\r\n"}
-{"t":"2026-04-05T02:10:40.552911Z","tag":"NMEA","msg":"command","ascii":"$command,GPSEPHB 1,response: OK*14\r\n"}
-{"t":"2026-04-05T02:10:40.553648Z","tag":"NMEA","msg":"command","ascii":"$command,BDSEPHB 1,response: OK*05\r\n"}
-{"t":"2026-04-05T02:10:40.554356Z","tag":"NMEA","msg":"command","ascii":"$command,GLOEPHB 1,response: OK*14\r\n"}
-{"t":"2026-04-05T02:10:40.555101Z","tag":"NMEA","msg":"command","ascii":"$command,GALEPHB 1,response: OK*1A\r\n"}
-{"t":"2026-04-05T02:10:40.555872Z","tag":"NMEA","msg":"command","ascii":"$command,QZSSEPHB 1,response: OK*5B\r\n"}
+{"t":"2026-04-05T02:10:40.552911Z","tag":"NMEA","msg":"command","ascii":"$command,GPSEPHB ONCHANGED,response: OK*42\r\n"}
+{"t":"2026-04-05T02:10:40.553648Z","tag":"NMEA","msg":"command","ascii":"$command,BDSEPHB ONCHANGED,response: OK*53\r\n"}
+{"t":"2026-04-05T02:10:40.554356Z","tag":"NMEA","msg":"command","ascii":"$command,GLOEPHB ONCHANGED,response: OK*42\r\n"}
+{"t":"2026-04-05T02:10:40.555101Z","tag":"NMEA","msg":"command","ascii":"$command,GALEPHB ONCHANGED,response: OK*4C\r\n"}
+{"t":"2026-04-05T02:10:40.555872Z","tag":"NMEA","msg":"command","ascii":"$command,QZSSEPHB ONCHANGED,response: OK*0D\r\n"}
 {"type":"receiver","vendor":"Unicore","hardware":"UM980","firmware":"Build17548"}
 {"type":"config","signalsEnabled":{"BDS":["B1I","B1C","B2a","B2I","B2b","B3I"],"GAL":["E1","E5a","E5b","E6"],"GLO":["L1","L2","L3"],"GPS":["L1","L1C","L2P","L2C","L5"],"NAVIC":["L5"],"QZSS":["L1","L1C","L2C","L5"]},"timeGNSS":"GPS","antennaCableDelay":0,"timePulse":{"enabled":true,"width":0.5,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":false}
 {"type":"env","args":["-d","/dev/ttyUSB0","-s","460800","--vendor","unicore","--test-log","unicore/um980-raw-out.jsonl","--raw-out","none"],"version":"satpulse version 0.2-pre.20260405.b36f8980.dirty, build date 2026-04-05 01:09:24+00:00","hostname":"abondance"}

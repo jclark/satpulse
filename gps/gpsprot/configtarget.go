@@ -647,11 +647,11 @@ func (cp *ConfigProps) UnmarshalJSON(data []byte) error {
 				return fmt.Errorf("mode: %w", err)
 			}
 		case "antennaCableDelay":
-			var secs float64
-			if err := json.Unmarshal(val, &secs); err != nil {
+			var nanos int64
+			if err := json.Unmarshal(val, &nanos); err != nil {
 				return fmt.Errorf("antennaCableDelay: %w", err)
 			}
-			tmp.SetAntennaCableDelay(time.Duration(secs * float64(time.Second)))
+			tmp.SetAntennaCableDelay(time.Duration(nanos))
 		case "navMsgAuth":
 			var s string
 			if err := json.Unmarshal(val, &s); err != nil {
@@ -972,7 +972,7 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 		m["mode"] = mm
 	}
 	if cp.valid&PropIDAntennaCableDelay != 0 {
-		m["antennaCableDelay"] = float64(cp.antennaCableDelay) / float64(time.Second)
+		m["antennaCableDelay"] = cp.antennaCableDelay.Nanoseconds()
 	}
 	if cp.valid&PropIDNavMsgAuth != 0 {
 		switch cp.navMsgAuth {

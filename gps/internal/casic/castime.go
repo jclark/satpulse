@@ -4,8 +4,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -189,6 +189,62 @@ func leapTim2TimeGNSS(m *casbin.Tim2TimeGNSS, gnss gpsprot.GNSS, taiMinusGNSS in
 		LeapSecond: ptime.LeapSecondOnDate(date, utcOffBefore, utcOffAfter),
 		GNSS:       gnss,
 	}
+}
+
+// leapTim2Ls extracts a LeapSecondMsg from Tim2Ls.
+// Returns nil when the message does not contain usable leap second data.
+func leapTim2Ls(m *casbin.Tim2Ls, now ptime.Time) *gpsprot.LeapSecondMsg {
+	if m.RaimType == casbin.Tim2RaimNoLsInfo && m.Dtls != m.Dtlsf {
+		return nil
+	}
+	if m.RaimType != casbin.Tim2RaimNoLsInfo && m.RaimType != casbin.Tim2RaimLsNormal {
+		return nil
+	}
+	g := ptime.GNSSLeapSecond{
+		WNLSF:    m.Wnlsf,
+		DN:       m.Dn,
+		DeltaLS:  m.Dtls,
+		DeltaLSF: m.Dtlsf,
+	}
+	var gnss gpsprot.GNSS
+	var ls ptime.LeapSecond
+	var err error
+	switch m.GNSSID {
+	case casbin.GPS:
+		gnss = gpsprot.GPS
+		ls, err = ptime.GPSLeapSecond(g, now)
+	case casbin.BDS:
+		gnss = gpsprot.BDS
+		ls, err = ptime.BeiDouLeapSecond(g, now)
+	case casbin.GAL:
+		gnss = gpsprot.GAL
+		ls, err = ptime.GalileoLeapSecond(g, now)
+	default:
+		return nil
+	}
+	if err != nil {
+		return nil
+	}
+	return &gpsprot.LeapSecondMsg{LeapSecond: ls, GNSS: gnss}
+}
+
+// surveyTim2TimePos converts TIM2-TIMEPOS to a SurveyMsg. The protocol
+// reports the survey running time and current accuracy but no
+// observation count; position validity flag 15 means the timing
+// position is fixed (survey complete or position set).
+func surveyTim2TimePos(m *casbin.Tim2TimePos) *gpsprot.SurveyMsg {
+	sv := &gpsprot.SurveyMsg{
+		Position: gpsprot.Point3D{
+			gpsprot.Meters(m.XTim),
+			gpsprot.Meters(m.YTim),
+			gpsprot.Meters(m.ZTim),
+		},
+		Accuracy:   gpsprot.Meters(float64(m.SurPacc)),
+		ObsTime:    gpsprot.Duration(time.Duration(m.SurTimer) * time.Second),
+		Valid:      m.FixFlag == casbin.PVTTimingFixed,
+		InProgress: m.FixFlag != casbin.PVTTimingFixed && m.SurTimer > 0,
+	}
+	return sv
 }
 
 // gnssIDToGNSS maps CASIC GNSSID to gpsprot.GNSS.

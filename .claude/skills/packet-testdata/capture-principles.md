@@ -41,6 +41,7 @@ The sequence is:
 3. Cold start
 4. Capture immediately for 120 seconds
 5. Factory reset (with user approval)
+6. Verify the factory reset took effect: capture a few seconds and confirm the receiver is back to its factory output (e.g. default NMEA). On u-blox Gen9+/M10 a single `--factory-reset` has been observed not to revert the saved configuration (the clear and the hardware reset can race); if the receiver is still emitting the saved set, run `--factory-reset` again and re-verify.
 
 Name the file `coldstart.jsonl`.
 

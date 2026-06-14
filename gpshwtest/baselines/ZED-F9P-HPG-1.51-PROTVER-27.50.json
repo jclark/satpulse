@@ -1,0 +1,49 @@
+{
+  "limitations": {
+    "mode.fixedPosAcc": {"quantum": 0.0001},
+    "mode.fixedPosECEF[0]": {"quantum": 0.0001},
+    "mode.fixedPosECEF[1]": {"quantum": 0.0001},
+    "mode.fixedPosECEF[2]": {"quantum": 0.0001},
+    "mode.fixedPosLLH[0]": {"quantum": 1e-09},
+    "mode.fixedPosLLH[1]": {"quantum": 1e-09},
+    "mode.height": {"quantum": 0.0001},
+    "rtcmOut": {"missing": [{"missing": ["1005"], "request": ["MSM4", "ARP"]}]},
+    "signals": {
+      "observed": [
+        {"error": "refused", "request": {"BDS": ["B1I", "B2I"], "QZSS": ["L1", "L1S", "L2C"]}},
+        {"error": "refused", "request": {"GAL": ["E1", "E5b"], "QZSS": ["L1", "L1S", "L2C"]}},
+        {"error": "refused", "request": {"GLO": ["L1", "L2"], "QZSS": ["L1", "L1S", "L2C"]}},
+        {"error": "refused", "request": {"GLO": ["L1", "L2"], "SBAS": ["L1"]}}
+      ],
+      "partialSelectionRefused": {"except": {"BDS": [["B1I"]]}},
+      "signalSet": {
+        "BDS": ["B1I", "B2I"],
+        "GAL": ["E1", "E5b"],
+        "GLO": ["L1", "L2"],
+        "GPS": ["L1", "L2C"],
+        "QZSS": ["L1", "L1S", "L2C"],
+        "SBAS": ["L1"]
+      }
+    },
+    "timePulse.width": {"quantum": 1e-06}
+  },
+  "receiver": {
+    "firmware": "HPG 1.51 PROTVER 27.50",
+    "hardware": "ZED-F9P",
+    "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"],
+    "vendor": "u-blox"
+  },
+  "supports": [
+    "band",
+    "fixedPos",
+    "fixedPosAcc",
+    "raw",
+    "rtcmBaseID",
+    "rtcmMSM4",
+    "rtcmMSM7",
+    "speed",
+    "survey",
+    "surveyAcc",
+    "surveyMsg"
+  ]
+}

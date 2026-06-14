@@ -19,6 +19,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/timemsg"
 	"github.com/jclark/satpulse/time/internal/ts"
 	"github.com/jclark/satpulse/time/lib/median"
+	"github.com/jclark/satpulse/time/lib/ntime"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/phctime"
 	"golang.org/x/sys/unix"
@@ -398,7 +399,7 @@ func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time, samplePrecision ti
 	offset := clockTime.Sub(sys).Seconds()
 	leap := d.ls.StateAt(ref).LeapTonight
 	if d.rc != nil {
-		if err := d.rc.Sample(sys, offset, leap); err != nil {
+		if err := d.rc.Sample(ntime.Sys(sys), offset, leap); err != nil {
 			d.lg.Warn("refclock sample failed", "err", err)
 		}
 	}
@@ -412,7 +413,7 @@ func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time, samplePrecision ti
 func (d *Dispatcher) MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind) {
 	offset := utc.Sub(tRead).Seconds()
 	if d.rc != nil {
-		if err := d.rc.Sample(tRead, offset, leap); err != nil {
+		if err := d.rc.Sample(ntime.Sys(tRead), offset, leap); err != nil {
 			d.lg.Warn("refclock sample failed", "err", err)
 		}
 	}

@@ -138,11 +138,23 @@ func (v *Version) rtcmSupport() rtcmSupport {
 	return rtcmSupport{}
 }
 
+// ubxVariable are the capabilities that depend on the u-blox model or
+// protocol version. The rest of ConfigSupportFull is supported by every
+// u-blox receiver, so configSupport starts from full minus these and
+// adds back the ones a given version has - a new universally supported
+// flag then applies to u-blox without editing this code.
+const ubxVariable = gpsprot.ConfigSupportBand |
+	gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+	gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
+	gpsprot.ConfigSupportFixedPosAcc | gpsprot.ConfigSupportRaw |
+	gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7 |
+	gpsprot.ConfigSupportRTCMBaseID | gpsprot.ConfigSupportRTCMQZSS
+
 func (v *Version) configSupport() gpsprot.ConfigSupportFlags {
 	if v == nil {
 		return 0
 	}
-	flags := gpsprot.ConfigSupportSpeed
+	flags := gpsprot.ConfigSupportFull &^ ubxVariable
 	if v.bandsConfigSupport() {
 		flags |= gpsprot.ConfigSupportBand
 	}

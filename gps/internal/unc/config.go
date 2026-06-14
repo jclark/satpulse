@@ -14,15 +14,15 @@ import (
 
 const Vendor = "Unicore"
 
-const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportBand |
-	gpsprot.ConfigSupportSurvey |
-	gpsprot.ConfigSupportFixedPos |
-	gpsprot.ConfigSupportRaw |
-	gpsprot.ConfigSupportRTCMMSM4 |
-	gpsprot.ConfigSupportRTCMMSM7 |
-	gpsprot.ConfigSupportRTCMBaseID |
-	gpsprot.ConfigSupportRTCMQZSS |
-	gpsprot.ConfigSupportSpeed
+// configSupport is everything except the capabilities the Nebulas IV
+// firmware does not offer: the survey/fixed-position accuracy variants
+// and survey message output. The Nebulas IV does change baud rate and
+// can identify its active port, so unlike CASIC it keeps speed and port.
+// Declaring it as full minus these gains future universally supported
+// flags automatically.
+const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportFull &^
+	(gpsprot.ConfigSupportSurveyAcc | gpsprot.ConfigSupportSurveyMsg |
+		gpsprot.ConfigSupportFixedPosAcc)
 
 type ConfigProtocol struct {
 	ver *uncmsg.Version // Stored from VERSIONB response for probing

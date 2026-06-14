@@ -54,6 +54,7 @@ type flagVars struct {
 	vendor         gpsreg.Vendor
 	showReceiver   bool
 	showTags       bool
+	jsonOut        bool
 }
 
 type configSupportReq struct {
@@ -69,7 +70,7 @@ func (r configSupportReq) isZero() bool {
 func (r *configSupportReq) require(flags gpsprot.ConfigSupportFlags, option string) {
 	r.init()
 	r.all |= flags
-	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportLast; flag <<= 1 {
+	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportFull; flag <<= 1 {
 		if flags&flag != 0 {
 			r.options[flag] = option
 		}
@@ -97,7 +98,7 @@ func (r configSupportReq) flags() (gpsprot.ConfigSupportFlags, gpsprot.ConfigSup
 func (r configSupportReq) unsupportedOptions(supported gpsprot.ConfigSupportFlags) []string {
 	var opts []string
 	seen := make(map[string]bool)
-	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportLast; flag <<= 1 {
+	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportFull; flag <<= 1 {
 		if r.all&flag == 0 || supported&flag != 0 {
 			continue
 		}
@@ -115,7 +116,7 @@ func (r configSupportReq) unsupportedOptions(supported gpsprot.ConfigSupportFlag
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [-f|--config-file path]
        	    [--socket path] [--packet-log path] [--capture seconds] [--save] [--speed bps] [--nmea] [--binary]
-            [-c|--show-config] [--show-port] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
+            [-c|--show-config] [--show-port] [--json] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-llh lat,lon,height] [--fixed-pos-acc meters]
@@ -183,6 +184,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.BoolVarP(&showConfig, "show-config", "c", false, "show current GPS receiver configuration")
 	flags.BoolVar(&showPort, "show-port", false, "show the receiver port the host is communicating on and its serial speed when applicable")
+	flags.BoolVar(&vars.jsonOut, "json", false, "write receiver information and configuration results to stdout as a single JSON object")
 	flags.BoolVar(&save, "save", false, "save configuration changes to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&saveAll, "save-all", false, "save the current configuration to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&reset, "reset", false, "reset the GPS receiver and perform a cold start")
@@ -244,6 +246,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if flags.NArg() != 0 {
 		return nil, usage, fmt.Errorf("%s command must not have non-option arguments", cmdName)
+	}
+	if vars.jsonOut && vars.msgFilePath != "" {
+		return nil, nil, fmt.Errorf("--json cannot be combined with --msg-file")
 	}
 	if vars.showTags {
 		if vars.msgFilePath == "" {
@@ -489,6 +494,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if showPort {
 		vars.configGet |= gpsprot.PropIDPort | gpsprot.PropIDBaudRate
+		vars.configSupport.require(gpsprot.ConfigSupportPort, "--show-port")
 	}
 	if save {
 		if saveAll {
@@ -560,6 +566,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 		if !doConfigure && !vars.capture.IsSet() {
 			vars.showReceiver = true
+		}
+		if vars.jsonOut && !doConfigure && !vars.showReceiver {
+			return nil, nil, fmt.Errorf("--json cannot be used with passive packet capture")
 		}
 	}
 	return &vars, nil, nil

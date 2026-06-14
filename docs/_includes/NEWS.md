@@ -34,6 +34,7 @@ _Not yet released_
 - `satpulsetool gps` now warns if a specified configuration option could not be applied because it is not supported by the receiver. (#203)
 - Unicore receivers now support baud rate configuration with `--speed`. (#167)
 - `satpulsetool gps --show-port` now works on Unicore receivers. (#167)
+- `satpulsetool gps` has a new `--json` option that writes receiver information, supported configuration features, detected packet formats, and configuration properties to stdout as a single JSON object, for use by scripts and test harnesses. (#310)
 
 ### RINEX observation conversion
 

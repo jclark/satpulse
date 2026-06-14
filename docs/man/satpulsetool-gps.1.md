@@ -7,7 +7,7 @@ satpulsetool-gps - configure a GPS receiver
 **satpulsetool** [*global options*] **gps** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-f**\|**\-\-config\-file** *path*] [**\-\-socket** *path*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-c**\|**\-\-show\-config**] [**\-\-show\-port**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-c**\|**\-\-show\-config**] [**\-\-show\-port**] [**\-\-json**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**\|**QZSS**\|**NAVIC**\|**SBAS**,...]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...] [**\-\-min\-elev** *degrees*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps** *width*] [**\-\-ant\-cable\-delay** *nanos*]\
@@ -87,6 +87,20 @@ and, for UART ports, the serial speed in bits per second. The line for the seria
 for ports without a baud rate (**USB**, **I2C**, **SPI**).
 Useful for determining the value to pass to **\-\-port** for **\-\-msg\-file** entries that depend on the active port.
 Composes with **\-c**\|**\-\-show\-config**. Cannot be combined with **\-\-reset**, **\-\-reload**, **\-\-factory\-reset**, or **\-\-msg\-file**.
+
+The following option selects machine-readable output.
+
+**\-\-json**
+: Write the results of high-level configuration to stdout as a single JSON object
+instead of the human-readable output.
+The object can have the following fields, omitted when there is nothing to report:
+`receiver` (vendor, hardware, firmware, and supported GNSS constellations),
+`supports` (the configuration features the receiver supports, as listed by the `Supports:` line of **\-\-show\-receiver**),
+`packetFormats` (the packet formats detected),
+`config` (the configuration properties that were set or queried),
+and `error` (the error message when configuration fails; the exit code is unaffected).
+Applies to high-level configuration and the show options; cannot be combined with **\-\-msg\-file**
+or with passive packet capture.
 
 The following options control which satellites and signals the receiver uses.
 
