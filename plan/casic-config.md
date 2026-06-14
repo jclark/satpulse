@@ -232,8 +232,8 @@ assumption that the binary resets were no-ops on V6 (and that PCAS10 was
 the only working path) was wrong: only `--reload` is broken. The replay
 harness accordingly uses `reset_args="--factory-reset"` for the V6
 receiver stubs to start each scenario from a clean factory baseline; no
-NMEA message file is needed. The broken `--reload` is the subject of a
-follow-up; see "Things still to do".
+NMEA message file is needed. The broken `--reload` is surfaced to the
+user via a capability flag; see "Follow-ups (implemented)".
 
 ---
 
@@ -297,56 +297,29 @@ Step: `setPrt` - CFG-PRT to change baud rate. This is separate because the seria
 - Deterministic offline tests using a CASIC fake-receiver test double driven through the real `PacketProcessor` -> `ConfigProtocol` -> `ConfigDirector` path, mirroring `gps/gpsprot/configprotocol_test.go` and the ubx/unc configurator tests.
 - Round-trip serialize/parse tests for every new CFG struct in `gps/lib/casbin`.
 
-## Things still to do
+## Follow-ups (implemented)
 
-The configurator is implemented and exercised by replay tests, but the
-following items remain. They are follow-ups under #229.
+Two capability flags were added after the core configurator landed. Each
+lets a receiver advertise whether it supports an option, so `gpscmd`
+warns (via the `req.require` / `warnMissingConfigSupport` machinery)
+rather than failing silently when the option needs a capability the
+receiver lacks.
 
-### 1. Surface an unsupported `--reload` via a `ConfigSupportReload` flag
-
-`--reload` maps to `gpsprot.ResetReload` ("reload the configuration from
-non-volatile memory without a reset/start"). On CASIC V6 (URANUS6) this
-is a firmware no-op, confirmed on hardware (AT632, 2026-06-14): CFG-CFG
-opMode 2 ("load FLASH config to current") is acknowledged but never
-applied. With NAV2-PVH enabled in RAM and *disabled* in flash, `--reload`
-restarted the receiver yet left NAV2-PVH still emitting - so flash was
-not loaded into RAM. The only observable effect is that the GNSS engine
-restarts *without* loading config (dropping the time lock). So `--reload`
-on a V6 receiver silently does nothing useful and the user gets no
-signal. (CASIC V5 URANUS5 reload works in place; u-blox and Unicore
-reload work.)
-
-`--reload` is the *only* broken V6 reset, and notably the only one
-without a PCAS equivalent (see "V6 reset behaviour" under stage 3) -
-binary `--reset` and `--factory-reset` work correctly.
-
-Add a capability flag and warn on use when it is absent:
-
-1. `gps/gpsprot/configprotocol.go`: add `ConfigSupportReload` to
-   `ConfigSupportFlags` (append after `ConfigSupportRTCMQZSS`; bump
-   `ConfigSupportLast`) and a `{ConfigSupportReload, "reload"}` entry in
-   the flag-name table so it appears on the `Supports:` line.
-2. Each backend declares it. u-blox, Unicore, and CASIC V5 set it; CASIC
-   V6 does not - the firmware family already gates capabilities, so V6's
-   support set simply omits it.
-3. `internal/gpscmd`: `req.require(ConfigSupportReload, "--reload")` so
-   `warnMissingConfigSupport` emits a warning when `--reload` is used on
-   a receiver that lacks the flag. The command still proceeds for any
-   other requested operations.
-4. CASIC V6 `ResetReload` becomes a true no-op: the configurator must
-   not issue the ineffective CFG-CFG opMode 2. With (3)'s warning,
-   `--reload` on V6 is then an honest, documented no-op rather than a
-   silent restart.
-
-Notes: the `req.require` / `warnMissingConfigSupport` machinery already
-implements "this option needs capability X; warn if absent" (see
-`TestWarnMissingConfigSupport`). The decision is WARNING + no-op, not an
-error, so combined invocations still succeed. The `Supports:` line
-vocabulary gains `reload`; update the man page
-(`docs/man/satpulsetool-gps.1.md`) and any Supports-line tests. Testing:
-unit test that an omitting support set triggers the warning and that the
-`Supports:` line shows `reload` only where present; gpscmd replay test
-that `--reload` on a V6 receiver warns and emits no CFG-CFG opMode 2.
+- **`ConfigSupportReload`**. `--reload` maps to `gpsprot.ResetReload`,
+  but on V6 the CFG-CFG opMode 2 ("load FLASH to current") is ACKed and
+  never applied - confirmed on hardware (with NAV2-PVH enabled in RAM and
+  *disabled* in flash, `--reload` restarted the receiver yet kept
+  emitting NAV2-PVH, so flash was not loaded). It is the only broken V6
+  reset, and the only one without a PCAS equivalent (see "V6 reset
+  behaviour" under stage 3); binary `--reset` and `--factory-reset` work.
+  u-blox, Unicore, and CASIC V5 set the flag; CASIC V6 omits it and
+  treats `ResetReload` as a true no-op instead of sending the ineffective
+  command.
+- **`ConfigSupportPort`**. `--show-port` names the active port, but CASIC
+  cannot identify which UART is active, so it omits the flag and
+  `--show-port` warns. The serial speed is independent of port
+  identification and is reported regardless: CASIC polls CFG-PRT and
+  reports the wired UART's baud. u-blox sets the flag.
 
 ## Known errata
 
