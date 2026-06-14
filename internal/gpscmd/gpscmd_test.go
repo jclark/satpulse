@@ -113,6 +113,7 @@ func TestWarnMissingConfigSupport(t *testing.T) {
 	req.require(gpsprot.ConfigSupportFixedPos, "--fixed-pos-ecef")
 	req.require(gpsprot.ConfigSupportRaw, "--raw-out")
 	req.require(gpsprot.ConfigSupportReload, "--reload")
+	req.require(gpsprot.ConfigSupportPort, "--show-port")
 	req.requireMSM("--rtcm-out")
 	var b bytes.Buffer
 	lg := slog.New(slog.NewTextHandler(&b, nil))
@@ -126,6 +127,9 @@ func TestWarnMissingConfigSupport(t *testing.T) {
 	}
 	if !strings.Contains(s, "option=--reload") {
 		t.Errorf("log output missing reload option: %q", s)
+	}
+	if !strings.Contains(s, "option=--show-port") {
+		t.Errorf("log output missing show-port option: %q", s)
 	}
 	if strings.Contains(s, "option=--raw-out") || strings.Contains(s, "option=--rtcm-out") {
 		t.Errorf("log output contains supported option: %q", s)

@@ -494,6 +494,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if showPort {
 		vars.configGet |= gpsprot.PropIDPort | gpsprot.PropIDBaudRate
+		vars.configSupport.require(gpsprot.ConfigSupportPort, "--show-port")
 	}
 	if save {
 		if saveAll {

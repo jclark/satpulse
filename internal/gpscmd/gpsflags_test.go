@@ -431,6 +431,7 @@ func TestParseFlagsConfigSupport(t *testing.T) {
 		{"rtcm qzss", []string{"--gnss", "GPS,QZSS", "--rtcm-out", "MSM4"}, gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMQZSS, 0},
 		{"rtcm base id", []string{"--rtcm-base-id", "1234"}, gpsprot.ConfigSupportRTCMBaseID, 0},
 		{"reload", []string{"--reload"}, gpsprot.ConfigSupportReload, 0},
+		{"show-port", []string{"--show-port"}, gpsprot.ConfigSupportPort, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

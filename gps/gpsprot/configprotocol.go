@@ -43,7 +43,8 @@ const (
 	ConfigSupportRTCMBaseID
 	ConfigSupportRTCMQZSS
 	ConfigSupportReload
-	ConfigSupportLast = ConfigSupportReload
+	ConfigSupportPort
+	ConfigSupportLast = ConfigSupportPort
 	// ConfigSupportFull is every configuration flag set - the support of a
 	// maximally capable receiver. A new flag joins it automatically, so a
 	// backend may declare its support as ConfigSupportFull with the flags
@@ -71,6 +72,7 @@ var configSupportFlagNames = [...]struct {
 	{ConfigSupportRTCMBaseID, "rtcmBaseID"},
 	{ConfigSupportRTCMQZSS, "rtcmQZSS"},
 	{ConfigSupportReload, "reload"},
+	{ConfigSupportPort, "port"},
 }
 
 // Items returns the supported configuration item names in stable order.
