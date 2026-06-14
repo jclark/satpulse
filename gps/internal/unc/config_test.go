@@ -27,7 +27,8 @@ func TestConfigSupport(t *testing.T) {
 		gpsprot.ConfigSupportRTCMMSM4 |
 		gpsprot.ConfigSupportRTCMMSM7 |
 		gpsprot.ConfigSupportRTCMBaseID |
-		gpsprot.ConfigSupportRTCMQZSS
+		gpsprot.ConfigSupportRTCMQZSS |
+		gpsprot.ConfigSupportReload
 	if configSupport != want {
 		t.Errorf("configSupport = %v, want %v", configSupport.Items(), want.Items())
 	}

@@ -529,6 +529,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, nil, fmt.Errorf("cannot use both --reset and --reload")
 		}
 		if reload {
+			vars.configSupport.require(gpsprot.ConfigSupportReload, "--reload")
 			vars.configOpts.Reset = gpsprot.ResetReload
 		} else {
 			vars.configOpts.Reset = gpsprot.ResetCold

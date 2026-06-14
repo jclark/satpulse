@@ -20,7 +20,8 @@ const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportBand |
 	gpsprot.ConfigSupportRTCMMSM4 |
 	gpsprot.ConfigSupportRTCMMSM7 |
 	gpsprot.ConfigSupportRTCMBaseID |
-	gpsprot.ConfigSupportRTCMQZSS
+	gpsprot.ConfigSupportRTCMQZSS |
+	gpsprot.ConfigSupportReload
 
 type ConfigProtocol struct {
 	ver *uncmsg.Version // Stored from VERSIONB response for probing

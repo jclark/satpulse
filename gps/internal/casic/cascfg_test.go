@@ -373,6 +373,31 @@ func TestProbeV5(t *testing.T) {
 	}
 }
 
+func TestConfigSupport(t *testing.T) {
+	v5 := newConfigurator(gpsprot.NewConfigTarget(), nil)
+	v6 := newConfigurator(gpsprot.NewConfigTarget(), &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")})
+	base := gpsprot.ConfigSupportSpeed |
+		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+		gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc
+	tests := []struct {
+		name string
+		cfg  *Configurator
+		want gpsprot.ConfigSupportFlags
+	}{
+		{"V5", v5, base | gpsprot.ConfigSupportReload},
+		{"V6", v6, base | gpsprot.ConfigSupportBand | gpsprot.ConfigSupportRaw |
+			gpsprot.ConfigSupportSurveyMsg |
+			gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.ConfigSupport(); got != tc.want {
+				t.Errorf("ConfigSupport() = %v, want %v", got.Items(), tc.want.Items())
+			}
+		})
+	}
+}
+
 func nmeaTarget(flags gpsprot.NMEAMsgFlags) *gpsprot.ConfigTarget {
 	target := gpsprot.NewConfigTarget()
 	target.Opts.NMEAMsg.Set(flags)
@@ -619,10 +644,9 @@ func TestNVMOps(t *testing.T) {
 			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpSave}},
 		},
 		{
-			name:        "V6 reload sends load without expecting an ACK",
-			monVer:      v6,
-			reset:       gpsprot.ResetReload,
-			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpLoad}},
+			name:   "V6 reload is unsupported and sends nothing",
+			monVer: v6,
+			reset:  gpsprot.ResetReload,
 		},
 		{
 			name:        "V5 reload",

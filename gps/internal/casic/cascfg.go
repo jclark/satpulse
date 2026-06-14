@@ -136,6 +136,8 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 		flags |= gpsprot.ConfigSupportBand | gpsprot.ConfigSupportRaw |
 			gpsprot.ConfigSupportSurveyMsg |
 			gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7
+	} else {
+		flags |= gpsprot.ConfigSupportReload
 	}
 	return flags
 }
@@ -234,15 +236,11 @@ func (c *Configurator) generateNVMReqs() {
 	}
 	switch opts.Reset {
 	case gpsprot.ResetReload:
-		m := &casbin.CfgCfg{Mask: c.saveMask(casbin.CfgSectionAll), OpMode: casbin.CfgOpLoad}
 		if c.family == familyV6 {
-			// V6 firmware restarts the receiver on load without
-			// acknowledging first (observed on the F8N: boot banner,
-			// no ACK).
-			c.addMsg(m, casReq{noAck: true})
-		} else {
-			c.addReq(m)
+			return
 		}
+		m := &casbin.CfgCfg{Mask: c.saveMask(casbin.CfgSectionAll), OpMode: casbin.CfgOpLoad}
+		c.addReq(m)
 	case gpsprot.ResetCold:
 		c.addRstReq(casbin.StartCold)
 	case gpsprot.ResetFactory:

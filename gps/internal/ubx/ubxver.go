@@ -142,7 +142,7 @@ func (v *Version) configSupport() gpsprot.ConfigSupportFlags {
 	if v == nil {
 		return 0
 	}
-	flags := gpsprot.ConfigSupportSpeed
+	flags := gpsprot.ConfigSupportSpeed | gpsprot.ConfigSupportReload
 	if v.bandsConfigSupport() {
 		flags |= gpsprot.ConfigSupportBand
 	}

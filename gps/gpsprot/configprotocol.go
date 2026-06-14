@@ -42,7 +42,8 @@ const (
 	ConfigSupportRTCMMSM7
 	ConfigSupportRTCMBaseID
 	ConfigSupportRTCMQZSS
-	ConfigSupportLast = ConfigSupportRTCMQZSS
+	ConfigSupportReload
+	ConfigSupportLast = ConfigSupportReload
 )
 
 const ConfigSupportRTCMMSM = ConfigSupportRTCMMSM4 | ConfigSupportRTCMMSM7
@@ -63,6 +64,7 @@ var configSupportFlagNames = [...]struct {
 	{ConfigSupportRTCMMSM7, "rtcmMSM7"},
 	{ConfigSupportRTCMBaseID, "rtcmBaseID"},
 	{ConfigSupportRTCMQZSS, "rtcmQZSS"},
+	{ConfigSupportReload, "reload"},
 }
 
 // Items returns the supported configuration item names in stable order.
