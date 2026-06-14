@@ -94,7 +94,7 @@ func TestPrintConfigSupport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	printConfigSupport(f, gpsprot.ConfigSupportBand|gpsprot.ConfigSupportSpeed)
+	printConfigSupport(f, gpsprot.ConfigSupportSignal|gpsprot.ConfigSupportSpeed)
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestPrintConfigSupport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Supports: band, speed\n"
+	want := "Supports: signal, speed\n"
 	if got := string(b); got != want {
 		t.Errorf("printConfigSupport output = %q, want %q", got, want)
 	}

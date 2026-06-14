@@ -143,7 +143,7 @@ func (v *Version) rtcmSupport() rtcmSupport {
 // u-blox receiver, so configSupport starts from full minus these and
 // adds back the ones a given version has - a new universally supported
 // flag then applies to u-blox without editing this code.
-const ubxVariable = gpsprot.ConfigSupportBand |
+const ubxVariable = gpsprot.ConfigSupportSignal |
 	gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 	gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
 	gpsprot.ConfigSupportFixedPosAcc | gpsprot.ConfigSupportRaw |
@@ -156,7 +156,7 @@ func (v *Version) configSupport() gpsprot.ConfigSupportFlags {
 	}
 	flags := gpsprot.ConfigSupportFull &^ ubxVariable
 	if v.bandsConfigSupport() {
-		flags |= gpsprot.ConfigSupportBand
+		flags |= gpsprot.ConfigSupportSignal
 	}
 	tmode := v.tmodeLevel()
 	if tmode > 0 {
