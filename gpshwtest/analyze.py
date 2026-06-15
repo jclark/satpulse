@@ -19,8 +19,8 @@ from characterize import characterize
 from model import (NMEA_VOCAB, EmissionObservation, Observation, SignalObservation,
                    Value, config_model_equal, config_value, emissions,
                    event_kinds, flat_value, mode_disagreements, nmea_set,
-                   normalize_signal_map, raw_set, requested_signals, rtcm_set,
-                   stored_form, transient)
+                   normalize_signal_map, raw_set, rtcm_set, stored_form,
+                   transient)
 from tool import replay
 
 
@@ -439,22 +439,13 @@ class Analyzer:
         self.prev_vals["signals"] = achieved
 
     def signal_request(self, s: Step) -> dict[str, list[str]] | None:
-        """The model signal set recorded for this step, or reconstructed
-        from old gnss/band intents when possible."""
+        """The explicitly recorded model signal set for this step."""
         req = normalize_signal_map(s.intent.get("request"))
-        if req:
-            return req
-        gnss = s.intent.get("gnss")
-        if not isinstance(gnss, list):
-            return None
-        band = s.intent.get("band")
-        bands = band if isinstance(band, list) else None
-        supported = self.discovered_signal_set()
-        return requested_signals([str(g) for g in gnss], bands, supported)
+        return req if req else None
 
     def discovered_signal_set(self) -> dict[str, list[str]]:
         """Best current supported signal set from discovery observations,
-        falling back to the initial readback for old/truncated runs."""
+        falling back to the initial readback for truncated runs."""
         supported: dict[str, list[str]] = {}
         for o in self.signal_observations:
             if o.error is not None or o.achieved is None:

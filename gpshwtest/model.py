@@ -59,8 +59,9 @@ class SignalObservation:
     """Outcome of requesting an enabled-signal set. requested is in model
     vocabulary; syntax records which command-line spelling was used. achieved
     is the stored set from the readback; accepted carries the set response's
-    own set only when it differs from the stored one. gnss/band are kept for
-    older records that predate direct signal-set intents."""
+    own set only when it differs from the stored one. gnss/band preserve the
+    command spelling for observations whose model request is intentionally
+    unknown."""
 
     requested: SignalMap | None
     syntax: str

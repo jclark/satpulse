@@ -12,7 +12,7 @@ from typing import Any
 
 from model import (MAJORS, EmissionObservation, Observation, SignalMap,
                    SignalObservation, l1_signals, l2_signals, l5_signals,
-                   normalize_signal_map, requested_signals, signal_request_valid)
+                   normalize_signal_map, signal_request_valid)
 
 # RTCM MSM message numbers are <decade><level> with a fixed decade per
 # constellation (RTCM 10403 standard numbering, not receiver-specific).
@@ -97,11 +97,10 @@ def characterize_prop(obs: list[Observation]) -> dict[str, Any] | None:
 def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
     """Characterize signal-set realization, in signal-set vocabulary.
 
-    The supported set comes from discovery cases. Requests are already
-    recorded as the signal sets they denote; old gnss/band records are
-    reconstructed from the discovered supported set when possible. Exact
-    realization gets no entry. Error wording is satpulsetool presentation
-    and is omitted."""
+    The supported set comes from discovery cases. Requests are recorded as
+    the signal sets they denote; discovery observations can leave the
+    request unknown. Exact realization gets no entry. Error wording is
+    satpulsetool presentation and is omitted."""
     entry: dict[str, Any] = {}
     supported, inconsistent = supported_signals(obs)
     refused = []
@@ -159,11 +158,7 @@ def supported_signals(obs: list[SignalObservation]) -> tuple[SignalMap, list[dic
 def observation_request(o: SignalObservation, supported: SignalMap) -> SignalMap | None:
     """The model signal set requested by an observation."""
     req = normalize_signal_map(o.requested)
-    if req:
-        return req
-    if o.gnss is None:
-        return None
-    return requested_signals(o.gnss, o.band, supported)
+    return req if req else None
 
 
 def signal_union(a: SignalMap, b: SignalMap) -> SignalMap:
