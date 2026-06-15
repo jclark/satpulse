@@ -9,7 +9,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/internal/ubx"
 	"github.com/jclark/satpulse/gps/lib/asbin"
-	casicbin "github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/sdbpbin"
@@ -21,14 +21,14 @@ import (
 // packetSyncBytes contains the first sync byte of each binary packet format.
 // Used to generate invalid packets that won't be mistaken for valid ones.
 var packetSyncBytes = []byte{
-	'$',               // NMEA
-	ubxbin.Sync1,      // UBX
+	'$',                  // NMEA
+	ubxbin.Sync1,         // UBX
 	rtcmbin.PreambleByte, // RTCM
-	casicbin.Sync1,    // CASIC
-	uncmsg.Sync1,      // Unicore
-	novmsg.Sync1,      // NovAtel
-	asbin.Sync1,       // Allystar
-	sdbpbin.Sync1,     // SDBP (Techtotop/Taidou)
+	casbin.Sync1,         // CASIC
+	uncmsg.Sync1,         // Unicore
+	novmsg.Sync1,         // NovAtel
+	asbin.Sync1,          // Allystar
+	sdbpbin.Sync1,        // SDBP (Techtotop/Taidou)
 }
 
 // randomUBXPacket generates a random UBX packet for testing purposes.

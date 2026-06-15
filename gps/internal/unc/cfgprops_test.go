@@ -88,3 +88,62 @@ func testNativeConfigProps(t *testing.T, tests []nativeConfigPropsTestCase) {
 		})
 	}
 }
+
+func TestComPropUpdateFromCommand(t *testing.T) {
+	tests := []struct {
+		name      string
+		cmd       string
+		expect    [3]uint32
+		expectErr bool
+	}{
+		{
+			name:   "plain baud rate",
+			cmd:    "CONFIG COM1 115200",
+			expect: [3]uint32{115200, 0, 0},
+		},
+		{
+			name:   "baud rate with framing parameters",
+			cmd:    "CONFIG COM2 460800 8 n 1",
+			expect: [3]uint32{0, 460800, 0},
+		},
+		{
+			name:   "COM3 high speed",
+			cmd:    "CONFIG COM3 921600",
+			expect: [3]uint32{0, 0, 921600},
+		},
+		{
+			name:   "untracked port ignored",
+			cmd:    "CONFIG COM4 115200",
+			expect: [3]uint32{},
+		},
+		{
+			name:      "not a COM port config",
+			cmd:       "CONFIG PPS DISABLE",
+			expectErr: true,
+		},
+		{
+			name:      "missing baud rate",
+			cmd:       "CONFIG COM1",
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var p comProp
+			err := p.updateFromCommand(tt.cmd)
+			if tt.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p.speeds != tt.expect {
+				t.Errorf("speeds = %v, want %v", p.speeds, tt.expect)
+			}
+		})
+	}
+}

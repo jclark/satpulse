@@ -75,6 +75,7 @@ Testing:
 - Individual package: `go test -v ./internal/packagename`
 - All tests: `make test`
 - Test files follow `*_test.go` convention
+- Tests for `X.go` go in `X_test.go` by default; put them elsewhere only when that file would become very unwieldy
 - When requested to review code, do not run tests unless explicitly requested.
 
 Black-box smoke tests of the real `satpulsed` binary live in `smoketest/`

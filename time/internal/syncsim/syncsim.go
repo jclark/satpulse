@@ -31,6 +31,11 @@
 //
 // 5. Single-edge and dual-edge modes are handled uniformly - the generator produces
 // 1 or 2 pulse events per PPS, and the event loop processes them identically.
+//
+// 6. Pulse delivery events pair with PHC timestamp readings in FIFO order. If an
+// injected fault delays an edge past its scheduled delivery event, delivery is
+// deferred to the first event after the edge fires, so a pulse is never delivered
+// with a stale timestamp.
 package syncsim
 
 import (
@@ -294,6 +299,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	stats := &offsetStats{adev: *allan.NewAccum(1.0)}
 	var lastReading clocksim.TimestampReading
 	trackingStarted := false
+	var pending []Event
 
 	for event := range events {
 		// Update current time for logging
@@ -303,9 +309,57 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 		// Main loop is responsible for ALL vclock advancement
 		vclock.AdvanceTo(event.Time)
 
-		// Read timestamp if available (after vclock advancement)
-		if vclock.TimestampAvailable() {
+		// Pulse events pair with timestamp readings in FIFO order. A pulse
+		// whose edge has not yet fired (injected shift exceeding the pulse
+		// delay) stays pending until the first event after the edge, then
+		// is processed here at the current event's time.
+		if event.Type == EventPulse {
+			pending = append(pending, event)
+		}
+		for len(pending) > 0 && vclock.TimestampAvailable() {
 			lastReading, _ = testClock.ReadTimestamp()
+			data := pending[0].Data.(PulseEventData)
+			pending = pending[1:]
+
+			tTrue := tStart.Add(time.Duration(lastReading.TrueTime * 1e9))
+			offset := lastReading.Timestamp.T.Sub(tTrue)
+
+			// Output PHC timestamp if writer configured (leading edge, after first tracking)
+			if data.EdgeIdx == 0 {
+				if !trackingStarted && ctrl.Mode() == phcsync.ModeTracking {
+					trackingStarted = true
+				}
+				if trackingStarted && tsLog != nil {
+					nsec := int64(lastReading.Timestamp.T - tStart)
+					fmt.Fprintf(tsLog, `{"chan":"A","timestamp":"%d.%09d"}`+"\n", nsec/1e9, nsec%1e9)
+				}
+			}
+
+			// Track offset for leading edge in tracking mode
+			if data.EdgeIdx == 0 && ctrl.Mode() == phcsync.ModeTracking {
+				stats.add(offset)
+			}
+
+			// Deliver to controller if not in outage
+			if !InOutage(outages, data.PPS) {
+				tSys := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
+				tReadPHC := testClock.Now()
+
+				edge := phcsync.PulseEdge{
+					Timestamp: lastReading.Timestamp,
+					TRead: phctime.Sample{
+						PHC: tReadPHC,
+						Sys: tSys,
+					},
+				}
+				lg.Debug("delivering pulse to controller",
+					"second", int(data.PPS),
+					"edgeIdx", data.EdgeIdx,
+					"timestamp", lastReading.Timestamp.T,
+					"era", lastReading.Timestamp.Era,
+					"offset", offset)
+				ctrl.PulseEdge(edge)
+			}
 		}
 
 		// Dispatch based on event type
@@ -369,50 +423,6 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 						"taiTime", tMsg,
 						"pulseOffset", pulseOffset)
 				}
-			}
-
-		case EventPulse:
-			data := event.Data.(PulseEventData)
-
-			// Use stored timestamp reading from tick
-			tTrue := tStart.Add(time.Duration(lastReading.TrueTime * 1e9))
-			offset := lastReading.Timestamp.T.Sub(tTrue)
-
-			// Output PHC timestamp if writer configured (leading edge, after first tracking)
-			if data.EdgeIdx == 0 {
-				if !trackingStarted && ctrl.Mode() == phcsync.ModeTracking {
-					trackingStarted = true
-				}
-				if trackingStarted && tsLog != nil {
-					nsec := int64(lastReading.Timestamp.T - tStart)
-					fmt.Fprintf(tsLog, `{"chan":"A","timestamp":"%d.%09d"}`+"\n", nsec/1e9, nsec%1e9)
-				}
-			}
-
-			// Track offset for leading edge in tracking mode
-			if data.EdgeIdx == 0 && ctrl.Mode() == phcsync.ModeTracking {
-				stats.add(offset)
-			}
-
-			// Deliver to controller if not in outage
-			if !InOutage(outages, data.PPS) {
-				tSys := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
-				tReadPHC := testClock.Now()
-
-				edge := phcsync.PulseEdge{
-					Timestamp: lastReading.Timestamp,
-					TRead: phctime.Sample{
-						PHC: tReadPHC,
-						Sys: tSys,
-					},
-				}
-				lg.Debug("delivering pulse to controller",
-					"second", int(data.PPS),
-					"edgeIdx", data.EdgeIdx,
-					"timestamp", lastReading.Timestamp.T,
-					"era", lastReading.Timestamp.Era,
-					"offset", offset)
-				ctrl.PulseEdge(edge)
 			}
 
 		case EventNavSolutionMsg:
@@ -651,9 +661,7 @@ func mergeEvents(
 	}
 }
 
-// readPulseTimestamp reads the timestamp from vclock and calculates offset.
-// Called for ALL pulse events (even during outages) to track PHC drift.
-// Returns timestamp data that can optionally be delivered to controller.
+// handleNavSolutionMsgEvent delivers a NAV-PVT style time message to the controller.
 func handleNavSolutionMsgEvent(
 	eventTime float64,
 	data NavSolutionMsgEventData,

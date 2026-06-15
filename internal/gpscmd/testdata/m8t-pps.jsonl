@@ -110,8 +110,10 @@
 {"t":"2026-04-25T03:16:01.514476Z","tag":"UBX","msg":"CFG-TP5","bin":"b562063101000038e5","out":true}
 {"t":"2026-04-25T03:16:01.552158Z","tag":"UBX","msg":"CFG-TP5","bin":"b56206312000000100003200000040420f0040420f00000000001027000000000000f7000000dad7"}
 {"t":"2026-04-25T03:16:01.59378Z","tag":"UBX","msg":"ACK-ACK","bin":"b5620501020006313f68"}
+{"t":"2026-04-25T03:16:01.6Z","tag":"UBX","msg":"CFG-TP5","bin":"b56206312000000100009600000040420f0040420f00000000001027000000000000f70000003ec7","out":true}
+{"t":"2026-04-25T03:16:01.665Z","tag":"UBX","msg":"ACK-ACK","bin":"b5620501020006313f68"}
 {"type":"receiver","vendor":"u-blox","hardware":"LEA-M8T-0","firmware":"TIM 1.10 PROTVER 22.0","gnss":["GPS","GAL","BDS","GLO","QZSS","SBAS"]}
-{"type":"config","timeGNSS":"GPS","antennaCableDelay":50,"timePulse":{"enabled":true,"width":0.01,"period":1,"polarityRising":true,"onlyWhenLocked":true}}
+{"type":"config","timeGNSS":"GPS","antennaCableDelay":150,"timePulse":{"enabled":true,"width":0.01,"period":1,"polarityRising":true,"onlyWhenLocked":true}}
 {"type":"env","args":["-d","/dev/ttyS0","-s","9600","--test-log","m8t-pps.jsonl","--pps","0.1","--ant-cable-delay","100","--time-gnss","GPS"],"version":"satpulse version 0.2-pre.20260425.7b6db847.dirty, build date 2026-04-25 03:15:01+00:00","hostname":"abondance"}
 {"t":"2026-04-25T03:16:02.151999Z","tag":"UBX","msg":"NAV-PVT","bin":"b56201075c00a0e7991fea070419031002f79c0500006e5d040003012a0e872afd3b7b4f2f08efb0ffff251c000022110000861d00000800000008000000100000000b000000000000007200000013897100940000004a64230000000000000000001687"}
 {"t":"2026-04-25T03:16:02.252203Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
@@ -121,9 +123,9 @@
 {"t":"2026-04-25T03:16:02.591306Z","tag":"UBX","msg":"CFG-GNSS","bin":"b562063e3c000020200700081000010001010101030000000101020408000000010103081000000001010400080000000103050003000100010506080e00010001015403"}
 {"t":"2026-04-25T03:16:02.658063Z","tag":"UBX","msg":"ACK-ACK","bin":"b56205010200063e4c75"}
 {"t":"2026-04-25T03:16:02.668545Z","tag":"UBX","msg":"CFG-TP5","bin":"b562063101000038e5","out":true}
-{"t":"2026-04-25T03:16:02.706508Z","tag":"UBX","msg":"CFG-TP5","bin":"b56206312000000100003200000040420f0040420f00000000001027000000000000f7000000dad7"}
+{"t":"2026-04-25T03:16:02.706508Z","tag":"UBX","msg":"CFG-TP5","bin":"b56206312000000100009600000040420f0040420f00000000001027000000000000f70000003ec7"}
 {"t":"2026-04-25T03:16:02.748037Z","tag":"UBX","msg":"ACK-ACK","bin":"b5620501020006313f68"}
-{"t":"2026-04-25T03:16:02.754347Z","tag":"UBX","msg":"CFG-TP5","bin":"b56206312000000100003200000040420f0040420f0000000000a086010000000000f7000000cab6","out":true}
+{"t":"2026-04-25T03:16:02.754347Z","tag":"UBX","msg":"CFG-TP5","bin":"b56206312000000100006400000040420f0040420f0000000000a086010000000000f7000000fc2e","out":true}
 {"t":"2026-04-25T03:16:02.819462Z","tag":"UBX","msg":"ACK-ACK","bin":"b5620501020006313f68"}
 {"t":"2026-04-25T03:16:02.825787Z","tag":"UBX","msg":"CFG-RATE","bin":"b562060800000e30","out":true}
 {"t":"2026-04-25T03:16:02.864511Z","tag":"UBX","msg":"CFG-RATE","bin":"b56206080600e80301000300033d"}
@@ -137,4 +139,4 @@
 {"t":"2026-04-25T03:16:03.080649Z","tag":"UBX","msg":"ACK-ACK","bin":"b562050102000608163f"}
 {"t":"2026-04-25T03:16:03.119241Z","bin":"b56201075c0088eb"}
 {"type":"receiver","vendor":"u-blox","hardware":"LEA-M8T-0","firmware":"TIM 1.10 PROTVER 22.0","gnss":["GPS","GAL","BDS","GLO","QZSS","SBAS"]}
-{"type":"config","signalsEnabled":{"GLO":["L1"],"GPS":["L1"],"QZSS":["L1"]},"timeGNSS":"GPS","antennaCableDelay":50,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true}}
+{"type":"config","signalsEnabled":{"GLO":["L1"],"GPS":["L1"],"QZSS":["L1"]},"timeGNSS":"GPS","antennaCableDelay":100,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true}}

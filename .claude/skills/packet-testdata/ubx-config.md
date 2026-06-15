@@ -82,13 +82,13 @@ Gen9+ u-blox receivers (protocol >= 27) use CFG-VALSET (class 0x06, id 0x8A) to 
 - Key formula: `0x20910000 + KeyM + port_offset`
 - KeyM values are defined in `gps/lib/ubxcfgval/msgkey.go`
 
-Message file tags for Gen9+ messages are in `configs/gpsmsg/ubx9.toml` (which includes `ubx.toml` for generic u-blox commands). Tag naming convention: `ubx-<msg>-usb` (enable) and `ubx-<msg>-usb-off` (disable). For UART connections, equivalent `-uart1` tags would be needed.
+Message file tags for Gen9+ messages are in `configs/gpsmsg/u-blox/gen9.toml` (which includes `ubx.toml` for generic u-blox commands). The tags are now port-independent: `ubx-<msg>` (enable) and `ubx-<msg>-off` (disable), e.g. `ubx-nav-timebds` / `ubx-nav-timebds-off`. These resolve to `[[ubxvalport]]` entries, and the active port is supplied at the command line with `--port <i2c|uart1|uart2|usb|spi>` -- the port offset above is applied by the tool, not baked into the tag. Determine the active port with `--show-port` (the `Port:` line). On an evaluation kit such as the EVK-M101, the USB connector is a USB-serial adapter wired to the module's UART1, so use `--port uart1`, not `usb`.
 
-CFG-VALSET payload: version=0 (U1), layers=1 for RAM (U1), transaction=0 (U2), then key (U4) + value (U1).
+CFG-VALSET payload: version=0 (U1), layers=1 for RAM (U1), transaction=0 (U2), then key (U4) + value (U1). `--save` with these tags persists to `RAM|BBR|Flash` instead of just RAM.
 
 ## Older u-blox receivers (pre-Gen9)
 
-Pre-Gen9 receivers (protocol < 27) use CFG-MSG (class 0x06, id 0x01) to set message rates. The payload is: message class (U1), message id (U1), rate for each port (6x U1). Message file tags for these would need different payloads.
+Pre-Gen9 receivers (protocol < 27) use CFG-MSG (class 0x06, id 0x01) to set message rates. The payload is: message class (U1), message id (U1), rate for each port (6x U1). Message file tags for these are in `configs/gpsmsg/u-blox/gen8.toml` (CFG-MSG rate tags), as distinct from the CFG-VALSET tags in `gen9.toml`.
 
 Pre-Gen9 differences:
 - No NavSig (protocol < 27)
@@ -110,18 +110,18 @@ To avoid overload: if you have enabled extra messages at a higher baud rate, dis
 To recover from an overloaded link, use the message file `reload` tag (which doesn't need probing):
 
 ```
-satpulsetool gps -d <device> -s 9600 --vendor u-blox -m configs/gpsmsg/ubx8.toml -t reload --capture 3
+satpulsetool gps -d <device> -s 9600 --vendor u-blox -m configs/gpsmsg/u-blox/gen8.toml -t reload --capture 3
 ```
 
 ### Per-constellation capture verification
 
-After each per-constellation time capture, immediately verify the TIM-TP RefInfo field shows the expected GNSS:
+After each per-constellation time capture, immediately verify the TIM-TP `refInfo` field shows the expected GNSS:
 
 ```
-satpulsetool annotate <file> | grep TIM-TP | tail -1 | jq .payload.RefInfo
+satpulsetool annotate <file> | jq -rc 'select(.msg=="TIM-TP") | (.payload.refInfo % 16)' | sort | uniq -c
 ```
 
-RefInfo encodes the GNSS ID in the lower nibble. If it shows the wrong GNSS, the constellation may not have been acquired yet. Allow 10-15 seconds after a constellation change before starting the capture.
+`refInfo` encodes the GNSS ID in the lower nibble: 0=GPS, 1=GLONASS, 2=BeiDou, 3=Galileo. If it shows the wrong GNSS, the constellation may not have been acquired yet. Allow 10-15 seconds after a constellation change before starting the capture (GLONASS, being FDMA, can take notably longer to lock).
 
 ## Completed captures
 

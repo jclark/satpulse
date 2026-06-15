@@ -28,10 +28,14 @@ _Not yet released_
 
 ### GPS high-level configuration
 
+- `satpulsetool gps` has new `--signal` and `--except-signal` options for controlling individual GNSS signals. `--signal` enables individual signals, in addition to the constellations enabled by `--gnss`; `--except-signal` excludes individual signals from those constellations. `--band` does not affect what signals are enabled by `--signal`. Signals are named by the constellation name followed by the signal name (`GPSL1C`, `QZSSL1S`); the constellation name is not required for Galileo and BeiDou signal names (`E5b`, `B1C`). (#97)
 - `satpulsetool gps` has a new `--fixed-pos-llh` option for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#146)
 - The `[gps]` table in `satpulse.toml` has a new `fixedPosLLH` key for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#147)
 - `satpulsetool gps --show-receiver` now prints a `Supports:` line listing the receiver configuration features that SatPulse can use. (#203)
 - `satpulsetool gps` now warns if a specified configuration option could not be applied because it is not supported by the receiver. (#203)
+- Unicore receivers now support baud rate configuration with `--speed`. (#167)
+- `satpulsetool gps --show-port` now works on Unicore receivers. (#167)
+- `satpulsetool gps` has a new `--json` option that writes receiver information, supported configuration features, detected packet formats, and configuration properties to stdout as a single JSON object, for use by scripts and test harnesses. (#310)
 
 ### RINEX observation conversion
 

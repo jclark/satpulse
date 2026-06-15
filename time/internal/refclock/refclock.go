@@ -5,19 +5,25 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"time"
 
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/lib/ntime"
+	"github.com/jclark/satpulse/time/sockrefclock"
 	"golang.org/x/sys/unix"
 )
 
 type RefClock interface {
 	io.Closer
-	Sample(sys time.Time, offset float64, leap ptime.LeapSecondKind) error
+	Sample(sys ntime.Time, offset float64, leap ptime.LeapSecondKind) error
 }
 
+// SockRefClock is the interface to a chrony SOCK protocol speaker such
+// as sockrefclock.SockRefClock. Its Sample takes the wire-level leap
+// value; LoggingSockRefClock converts from the domain-level
+// ptime.LeapSecondKind, keeping the wire format hidden from producers.
 type SockRefClock interface {
-	RefClock
+	io.Closer
+	Sample(sys ntime.Time, offset float64, leap sockrefclock.Leap) error
 	RemotePath() string
 }
 
@@ -26,7 +32,7 @@ type ProxyRefClock struct {
 }
 
 type RefClockSample struct {
-	Sys    time.Time
+	Sys    ntime.Time
 	Offset float64
 	Leap   ptime.LeapSecondKind
 }
@@ -40,7 +46,7 @@ func (rc *ProxyRefClock) Close() {
 	close(rc.sampleCh)
 }
 
-func (rc *ProxyRefClock) Sample(sys time.Time, offset float64, leap ptime.LeapSecondKind) error {
+func (rc *ProxyRefClock) Sample(sys ntime.Time, offset float64, leap ptime.LeapSecondKind) error {
 	select {
 	case rc.sampleCh <- RefClockSample{Sys: sys, Offset: offset, Leap: leap}:
 		return nil
@@ -85,8 +91,8 @@ func (rc *LoggingSockRefClock) Close() error {
 	return rc.sock.Close()
 }
 
-func (rc *LoggingSockRefClock) Sample(sys time.Time, offset float64, leap ptime.LeapSecondKind) error {
-	err := rc.sock.Sample(sys, offset, leap)
+func (rc *LoggingSockRefClock) Sample(sys ntime.Time, offset float64, leap ptime.LeapSecondKind) error {
+	err := rc.sock.Sample(sys, offset, sockLeap(leap))
 	lg := rc.lg
 	path := rc.sock.RemotePath()
 	if err != nil {
@@ -108,4 +114,17 @@ func (rc *LoggingSockRefClock) Sample(sys time.Time, offset float64, leap ptime.
 		lg.Debug("successfully sent sample to refclock socket", "path", path, "sys", sys, "offset", offset)
 	}
 	return nil
+}
+
+// sockLeap maps the domain-level leap-second state to the SOCK
+// protocol's wire value.
+func sockLeap(leap ptime.LeapSecondKind) sockrefclock.Leap {
+	switch leap {
+	case ptime.LeapSecondPositive:
+		return sockrefclock.LeapInsert
+	case ptime.LeapSecondNegative:
+		return sockrefclock.LeapDelete
+	default:
+		return sockrefclock.LeapNone
+	}
 }
