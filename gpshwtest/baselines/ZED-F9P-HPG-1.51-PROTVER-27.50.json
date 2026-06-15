@@ -7,7 +7,6 @@
     "mode.fixedPosLLH[0]": {"quantum": 1e-09},
     "mode.fixedPosLLH[1]": {"quantum": 1e-09},
     "mode.height": {"quantum": 0.0001},
-    "rtcmOut": {"missing": [{"missing": ["1005"], "request": ["MSM4", "ARP"]}]},
     "signals": {
       "observed": [
         {"error": "refused", "request": {"GPS": ["L1", "L2C"], "QZSS": ["L1", "L1S"]}},

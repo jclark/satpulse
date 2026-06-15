@@ -19,8 +19,8 @@ from characterize import characterize
 from model import (NMEA_VOCAB, EmissionObservation, Observation, SignalObservation,
                    Value, config_model_equal, config_value, emissions,
                    event_kinds, flat_value, mode_disagreements, nmea_set,
-                   normalize_signal_map, raw_set, rtcm_set, stored_form,
-                   transient)
+                   normalize_signal_map, pvt_event_kinds, raw_set, rtcm_set,
+                   stored_form, transient)
 from tool import replay
 
 
@@ -202,6 +202,9 @@ class Analyzer:
             self.set_msg(s)
         elif op == "restore-msg":
             self.restore_msg(s)
+        elif op == "rtcm-fixed-mode":
+            if s.error is not None:
+                self.failures.append(f"{s.name}: {s.error}")
         elif op == "restore-protocol":
             if s.error is not None:
                 self.failures.append(f"{s.name}: {s.error}")
@@ -533,7 +536,9 @@ class Analyzer:
         group's vocabulary: sentence/message types for the wire-format
         groups, replayed information kinds for the semantic ones."""
         assert o.log is not None
-        if group in ("pvtOut", "satsOut"):
+        if group == "pvtOut":
+            return sorted(pvt_event_kinds(o.log, replay(self.exe, o.log)))
+        if group == "satsOut":
             return sorted(event_kinds(replay(self.exe, o.log)))
         d = emissions(o.log)
         if group == "nmeaOut":

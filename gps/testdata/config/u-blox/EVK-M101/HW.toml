@@ -1,0 +1,4 @@
+vendor = "u-blox"
+model = "EVK-M101"
+firmware = "SPG 5.10 PROTVER 34.10"
+default-baud = 38400

@@ -20,9 +20,9 @@ from typing import Any, Callable
 
 from model import (NMEA_VOCAB, SignalMap, Value, config_value, emissions, fmt_value,
                    has_fix, l1_signals, l2_signals, l5_signals, mode_args, nmea_set,
-                   normalize_signal_map, raw_set, requested_signals, rtcm_set,
-                   signal_map_cli_arg, signal_map_union, signal_map_without,
-                   signal_request_valid, transient)
+                   normalize_signal_map, port_has_serial_speed, raw_set,
+                   requested_signals, rtcm_set, signal_map_cli_arg, signal_map_union,
+                   signal_map_without, signal_request_valid, transient)
 from tool import Invocation, Tool, ToolFailure, replay
 
 # Settle time after a successful signal-set change: u-blox documents an
@@ -438,15 +438,11 @@ class ProbeRun:
         shipped low-level message file when it carries speed tags
         (configs/gpsmsg, currently the Unicore files): the link-speed
         command is sent with -m/-t and verified by talking at the new
-        speed. A backend that also cannot report its port (no baudRate)
-        is trusted to be at the pinned connection speed."""
+        speed."""
+        if not port_has_serial_speed(port_cfg):
+            return None
         baud = port_cfg.get("baudRate")
-        if baud == 0:
-            return None
-        if not isinstance(baud, int):
-            baud = self.tool.speed()
-        if not isinstance(baud, int) or baud <= 0:
-            return None
+        assert isinstance(baud, int)
         if "speed" in supports:
             if baud >= RAISED_SPEED:
                 return None
@@ -741,7 +737,8 @@ class ProbeRun:
             self.line_dead = True
         return None if inv.error is not None else inv
 
-    def probe_messages(self) -> dict[tuple[str, str], int] | None:
+    def probe_messages(self, initial_cfg: dict[str, Any],
+                       rtcm_fixed_pos_ecef: str | None) -> dict[tuple[str, str], int] | None:
         """Probe NMEA, RTCM, PVT, satellite, and raw output from one shared
         baseline observation, restoring each group afterwards. Raw runs
         last: it is the one group that can saturate the link beyond
@@ -754,7 +751,8 @@ class ProbeRun:
             return None
         base = emissions(base_inv.packet_log)
         for probe in (partial(self.probe_nmea, nmea_set(base)),
-                      partial(self.probe_rtcm, rtcm_set(base)),
+                      partial(self.probe_rtcm, rtcm_set(base), initial_cfg,
+                              rtcm_fixed_pos_ecef),
                       self.probe_pvt, self.probe_sats,
                       partial(self.probe_raw, raw_set(base))):
             if self.line_dead:
@@ -774,22 +772,38 @@ class ProbeRun:
             self.observe("verify-restore-nmea",
                          {"op": "observe", "role": "verify", "group": "nmeaOut"})
 
-    def probe_rtcm(self, initial: list[str]) -> None:
+    def probe_rtcm(self, initial: list[str], initial_cfg: dict[str, Any],
+                   fixed_pos_ecef: str | None) -> None:
         """Probe RTCM output selection, then restore the initial emission."""
-        for case in RTCM_CASES:
-            self.set_and_observe("rtcmOut", "--rtcm-out", case)
-        want = []
-        if any(t.endswith("4") and t.startswith("1") for t in initial):
-            want.append("MSM4")
-        if any(t.endswith("7") and t.startswith("1") for t in initial):
-            want.append("MSM7")
-        if "1005" in initial:
-            want.append("ARP")
-        inv = self.tool.gps("restore-rtcm", ["--rtcm-out", ",".join(want) if want else "none"],
-                            {"op": "restore-msg", "group": "rtcmOut", "want": want})
-        if inv.error is None:
-            self.observe("verify-restore-rtcm",
-                         {"op": "observe", "role": "verify", "group": "rtcmOut"})
+        fixed = False
+        if fixed_pos_ecef is not None:
+            inv = self.tool.gps("rtcm-fixed-mode",
+                                ["--fixed-pos-ecef", fixed_pos_ecef,
+                                 "--fixed-pos-acc", "1"],
+                                {"op": "rtcm-fixed-mode",
+                                 "fixedPosECEF": fixed_pos_ecef})
+            fixed = inv.error is None
+        cases = RTCM_CASES if fixed else [c for c in RTCM_CASES if "ARP" not in c]
+        try:
+            for case in cases:
+                self.set_and_observe("rtcmOut", "--rtcm-out", case)
+            want = []
+            if any(t.endswith("4") and t.startswith("1") for t in initial):
+                want.append("MSM4")
+            if any(t.endswith("7") and t.startswith("1") for t in initial):
+                want.append("MSM7")
+            if fixed and "1005" in initial:
+                want.append("ARP")
+            inv = self.tool.gps("restore-rtcm",
+                                ["--rtcm-out", ",".join(want) if want else "none"],
+                                {"op": "restore-msg", "group": "rtcmOut",
+                                 "want": want})
+            if inv.error is None:
+                self.observe("verify-restore-rtcm",
+                             {"op": "observe", "role": "verify", "group": "rtcmOut"})
+        finally:
+            if fixed:
+                self.restore_mode(initial_cfg)
 
     def probe_raw(self, initial: set[str]) -> None:
         """Probe raw output kinds, then restore the initial emission. The
@@ -931,8 +945,8 @@ class ProbeRun:
             # the next disruptive run; the running state is what matters).
             self.restore_protocol(base)
         self.probe_reset(uart, raised)
-        if speed_supported:
-            self.probe_speed(self.tool.speed() if uart else None)
+        if speed_supported and uart:
+            self.probe_speed(self.tool.speed())
         print("probing factory reset", file=sys.stderr)
         self.probe_factory_reset(uart, raised)
         self.recover_nvm(nvm, subjects, uart, as_found_speed)
@@ -995,9 +1009,8 @@ class ProbeRun:
 
     def probe_speed(self, cur: int | None) -> None:
         """Probe the serial speed property. cur is the current operating
-        speed on a UART (each accepted value moves the link, restored at
-        the end); on a non-UART link cur is None - the achieved value is 0,
-        nothing changes, and there is nothing to restore."""
+        speed on a UART; each accepted value moves the link, restored at
+        the end."""
         for v in self.SPEED_VALUES:
             inv = self.tool.gps(f"set-speed-{v}", ["--speed", str(v)],
                                 {"op": "set-speed", "requested": v, "prev": cur or 0})

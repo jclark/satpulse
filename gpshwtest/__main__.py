@@ -18,15 +18,16 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 import tomllib
 from pathlib import Path
 from typing import Any
 
 from analyze import DISRUPTIVE_KEYS, analyze_run, load_steps
 from characterize import to_json
-from model import emissions
-from probes import PROPS, ProbeRun
-from tool import Tool, ToolFailure
+from model import emissions, port_has_serial_speed
+from probes import PROPS, RESET_SETTLE, ProbeRun
+from tool import Invocation, Tool, ToolFailure
 
 
 def main() -> int:
@@ -59,6 +60,10 @@ def main() -> int:
     ap.add_argument("--phc", help="PHC pin the receiver's PPS is wired to, as "
                                   "iface:pin[:chan] (default: the [phc] table of the "
                                   "config file, or /etc/satpulse.toml)")
+    ap.add_argument("--rtcm-fixed-pos-ecef", type=ecef_arg,
+                    default="-1144697.93,6090335.51,1504171.28",
+                    help="ECEF fixed position used while probing RTCM output "
+                         "(default: %(default)s)")
     args = ap.parse_args()
     exe = args.satpulsetool
     if args.analyze:
@@ -81,7 +86,8 @@ def main() -> int:
     else:
         status = 0
         try:
-            drive(tool, resolve_phc(args), args.sudo, args.disruptive)
+            drive(tool, resolve_phc(args), args.sudo, args.disruptive,
+                  args.rtcm_fixed_pos_ecef)
         except ToolFailure as e:
             print(f"FAILURE: {e}", file=sys.stderr)
             status = 2
@@ -132,6 +138,18 @@ def resolve_phc(args: argparse.Namespace) -> tuple[str, int, int] | None:
     return None
 
 
+def ecef_arg(s: str) -> str:
+    parts = s.split(",")
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError("must be X,Y,Z")
+    try:
+        for p in parts:
+            float(p)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError("must contain numeric X,Y,Z") from e
+    return s
+
+
 def sudo_ok() -> bool:
     """Whether sudo -n works without a password right now."""
     try:
@@ -149,7 +167,7 @@ def restore_from(tool: Tool, crashed: Path) -> None:
     steps = load_steps(crashed)
     initial = None
     base = None
-    port_baud = None
+    port_cfg: dict[str, Any] = {}
     as_found_speed = None
     for s in steps:
         op, role = s.intent.get("op"), s.intent.get("role")
@@ -160,7 +178,7 @@ def restore_from(tool: Tool, crashed: Path) -> None:
         elif op == "observe" and role == "baseline" and s.log is not None:
             base = emissions(s.log)
         elif op == "show-port":
-            port_baud = s.config().get("baudRate")
+            port_cfg = s.config()
         elif op == "session-speed" and role == "raise":
             as_found_speed = s.intent.get("from")
     if initial is None:
@@ -172,34 +190,33 @@ def restore_from(tool: Tool, crashed: Path) -> None:
         if pr.rediscover_speed() is None:
             return
         tool.gps("show-receiver", ["--show-receiver"], {"op": "identify"})
-    pr.emergency_restore(initial, base, port_baud != 0)
+    pr.emergency_restore(initial, base, port_has_serial_speed(port_cfg))
     if isinstance(as_found_speed, int):
         pr.session_speed_restore(as_found_speed)
 
 
 def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
-          disruptive: bool) -> None:
+          disruptive: bool, rtcm_fixed_pos_ecef: str) -> None:
     """Execute the probe sequence, recording every step. No verdicts here:
     the records are analyzed offline afterwards (also on a live run)."""
     pr = ProbeRun(tool)
-    ident = tool.gps("show-receiver", ["--show-receiver"], {"op": "identify"})
-    if ident.error is not None:
-        # satpulsetool does not scan baud rates, so a UART resting at the
-        # wrong speed (a crashed run, another program) looks like a dead
-        # receiver. Rediscover the speed and identify again.
-        if pr.rediscover_speed() is not None:
-            ident = tool.gps("show-receiver", ["--show-receiver"], {"op": "identify"})
-        if ident.error is not None:
+    ident = identify_receiver(tool, pr, setup=disruptive)
+    if ident is None:
+        return
+    if disruptive:
+        start_from_factory_defaults(tool, pr)
+        ident = identify_receiver(tool, pr, setup=False)
+        if ident is None:
             return
     receiver = ident.out.get("receiver", {})
+    supports = ident.out.get("supports") or []
     print(f"receiver: {receiver.get('vendor')} {receiver.get('hardware')} "
           f"{receiver.get('firmware')}", file=sys.stderr)
     initial = pr.show_config("initial-config", "initial")
     if initial is None:
         return
     port_cfg = check_show_port(tool, pr)
-    as_found_speed = pr.session_speed_raise(port_cfg, ident.out.get("supports") or [],
-                                            receiver)
+    as_found_speed = pr.session_speed_raise(port_cfg, supports, receiver)
     if as_found_speed is not None:
         print(f"session speed raised from {as_found_speed}", file=sys.stderr)
     base = None
@@ -229,12 +246,12 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
         # in-band recovery on some receivers (HW/um980.md), so the probes
         # that can wedge the session come after everything else.
         print("probing message output", file=sys.stderr)
-        base = pr.probe_messages()
+        fixed = rtcm_fixed_pos_ecef if "fixedPos" in supports else None
+        base = pr.probe_messages(initial, fixed)
         print("probing reload", file=sys.stderr)
-        # A non-UART link reports baud rate 0; anything else (including a
-        # backend that cannot report its port) gets speed rediscovery after
-        # each reload, since NVM may hold a different baud rate.
-        uart = port_cfg.get("baudRate") != 0
+        # Serial links get speed rediscovery after each reload, since NVM
+        # may hold a different baud rate. Native USB has no baud rate.
+        uart = port_has_serial_speed(port_cfg)
         raised = as_found_speed is not None
         nvm = pr.probe_reload(initial, base, uart=uart, raised=raised)
         if disruptive:
@@ -244,7 +261,7 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
             else:
                 print("running disruptive NVM probes", file=sys.stderr)
                 pr.probe_disruptive(initial, nvm, base, uart, as_found_speed,
-                                    "speed" in (ident.out.get("supports") or []))
+                                    "speed" in supports)
         pr.show_config("final-config", "final")
         done = True
     finally:
@@ -252,9 +269,38 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
             # The run is aborting (tool failure, interrupt, crash): restore
             # the receiver best-effort, recorded like everything else.
             print("run aborted; restoring the receiver", file=sys.stderr)
-            pr.emergency_restore(initial, base, port_cfg.get("baudRate") != 0)
+            pr.emergency_restore(initial, base, port_has_serial_speed(port_cfg))
         if as_found_speed is not None:
             pr.session_speed_restore(as_found_speed)
+
+
+def identify_receiver(tool: Tool, pr: ProbeRun, setup: bool) -> Invocation | None:
+    name = "setup-show-receiver" if setup else "show-receiver"
+    intent = {"op": "identify"}
+    if setup:
+        intent["role"] = "setup"
+    ident = tool.gps(name, ["--show-receiver"], intent)
+    if ident.error is not None:
+        # satpulsetool does not scan baud rates, so a UART resting at the
+        # wrong speed (a crashed run, another program) looks like a dead
+        # receiver. Rediscover the speed and identify again.
+        if pr.rediscover_speed() is not None:
+            ident = tool.gps(name, ["--show-receiver"], intent)
+        if ident.error is not None:
+            return None
+    return ident
+
+
+def start_from_factory_defaults(tool: Tool, pr: ProbeRun) -> None:
+    """Put a disruptive run into a known starting state before probing."""
+    print("resetting receiver to factory defaults", file=sys.stderr)
+    tool.gps("setup-factory-reset", ["--factory-reset"],
+             {"op": "factory-reset", "role": "setup"})
+    time.sleep(RESET_SETTLE)
+    pr.rediscover_speed()
+    tool.gps("setup-reset", ["--reset"], {"op": "reset", "role": "setup"})
+    time.sleep(RESET_SETTLE)
+    pr.rediscover_speed()
 
 
 def check_show_port(tool: Tool, pr: ProbeRun) -> dict[str, Any]:
@@ -263,10 +309,11 @@ def check_show_port(tool: Tool, pr: ProbeRun) -> dict[str, Any]:
     connection with no speed given, the reported speed is locked in for
     the rest of the run, saving a baud scan per invocation."""
     inv = tool.gps("show-port", ["--show-port"], {"op": "show-port"})
-    baud = inv.config().get("baudRate")
-    if "-s" not in tool.conn and isinstance(baud, int) and baud > 0:
+    cfg = inv.config()
+    baud = cfg.get("baudRate")
+    if "-s" not in tool.conn and port_has_serial_speed(cfg):
         tool.set_speed(baud)
-    return inv.config()
+    return cfg
 
 
 def report(log_dir: Path, exe: Path, baseline: Path | None) -> int:

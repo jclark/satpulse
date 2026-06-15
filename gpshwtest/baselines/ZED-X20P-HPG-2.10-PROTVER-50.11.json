@@ -7,12 +7,6 @@
     "mode.fixedPosLLH[0]": {"quantum": 1e-09},
     "mode.fixedPosLLH[1]": {"quantum": 1e-09},
     "mode.height": {"quantum": 0.0001},
-    "rtcmOut": {
-      "missing": [
-        {"missing": ["1005", "1104"], "request": ["MSM4", "ARP"]},
-        {"missing": ["1107"], "request": ["MSM7"]}
-      ]
-    },
     "signals": {
       "mutuallyExclusiveSignalGroups": [{"gnss": "GPS", "groups": [["L2C"], ["L5"]]}],
       "observed": [

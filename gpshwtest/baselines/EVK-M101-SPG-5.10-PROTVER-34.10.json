@@ -10,7 +10,10 @@
     "rtcmBaseID": {"unsupported": true},
     "signals": {
       "mutuallyExclusiveSignals": [{"BDS": ["B1I"], "GLO": ["L1"]}],
-      "observed": [{"error": "refused", "request": {"GPS": ["L1"], "QZSS": ["L1S"]}}],
+      "observed": [
+        {"error": "refused", "gnss": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"]},
+        {"error": "refused", "request": {"GPS": ["L1"], "QZSS": ["L1S"]}}
+      ],
       "requiresGNSS": {"QZSS": ["GPS"], "SBAS": ["BDS", "GAL", "GPS"]},
       "signalSet": {
         "BDS": ["B1I"],
