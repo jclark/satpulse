@@ -68,7 +68,7 @@ func (lm *LineMsg) analyzeRequestUnicore() requestAnalysis {
 		uncExpectUNCA(&a, "VERSION", expectDataSingle)
 	case "LOGLIST":
 		a.expectData = expectDataMultiple
-		a.dataMatch = func(d string) bool { return len(d) > 0 && d[0] == '<' }
+		a.dataTag = gpsreg.TagNovAtelAbbrevAscii
 	default:
 		last := cmdWord[len(cmdWord)-1]
 		if last == 'A' || last == 'B' {

@@ -160,10 +160,13 @@ const (
 	// is expecting to receive one or more packets in response from the receiver.
 	ConfigRequestAwaitingResponse
 
-	// ConfigRequestMaybeComplete means the request has received at least one response packet
-	// and may be waiting for more. This state is used for queries that can produce multiple
-	// response packets where the total number is not known in advance. The request will
-	// transition to Succeeded when the response deadline passes without new responses.
+	// ConfigRequestMaybeComplete means the request may be complete but can still accept
+	// further response packets. This state is used for queries that can produce multiple
+	// response packets where the total number is not known in advance (entered when the
+	// first response is received), and for requests that expect no response of their own
+	// but may still absorb one (entered when the request is sent, see SetSentTime). The
+	// request will transition to Succeeded when the response deadline passes without new
+	// responses.
 	ConfigRequestMaybeComplete
 
 	// ConfigRequestPausing means the request received its acknowledgment/response and is
@@ -202,6 +205,8 @@ const (
 //   - ConfigRequestAwaitingResponse → ConfigRequestSucceeded (complete response received)
 //   - ConfigRequestAwaitingResponse → ConfigRequestPausing (acknowledgment received, pause required)
 //   - ConfigRequestAwaitingResponse → ConfigRequestFailed (negative acknowledgment received)
+//   - ConfigRequestMaybeComplete → ConfigRequestSucceeded (response received that completes the request)
+//   - ConfigRequestMaybeComplete → ConfigRequestFailed (negative acknowledgment received)
 //
 // All precondition failures result in panics. All Get* methods are side-effect free.
 type ConfigRequest interface {
@@ -225,7 +230,9 @@ type ConfigRequest interface {
 	// GetDeadline returns the absolute time by which response packets are expected.
 	// Precondition: request state is ConfigRequestAwaitingResponse, ConfigRequestMaybeComplete, or ConfigRequestPausing
 	// The returned time is non-zero and includes monotonic time for accurate timeout comparisons.
-	// For ConfigRequestAwaitingResponse: deadline for receiving first/only response (based on SetSentTime timestamp)
+	// For ConfigRequestAwaitingResponse: deadline for receiving the first/only response (based on
+	// SetSentTime timestamp); when it passes the request may extend the deadline instead of timing
+	// out (see SetDeadlinePassed)
 	// For ConfigRequestMaybeComplete: deadline for receiving next response in burst (based on last response time + idle period)
 	// For ConfigRequestPausing: deadline for when pause completes and GPS receiver is ready for next command
 	GetDeadline() time.Time
@@ -241,6 +248,8 @@ type ConfigRequest interface {
 	// State transitions:
 	//   - ConfigRequestReadyToSend → ConfigRequestAwaitingResponse (if response expected)
 	//   - ConfigRequestReadyToSend → ConfigRequestSucceeded (if no response expected)
+	//   - ConfigRequestReadyToSend → ConfigRequestMaybeComplete (if no response of its own
+	//     is expected but the request may absorb one, e.g. the repeat of a speed change)
 	//   - ConfigRequestMayResend → ConfigRequestAwaitingResponse (retry)
 	// The timestamp is used for timeout calculations and protocol timing requirements.
 	SetSentTime(tSent time.Time)
@@ -249,6 +258,9 @@ type ConfigRequest interface {
 	// Precondition: request state is ConfigRequestAwaitingResponse, ConfigRequestMaybeComplete, or ConfigRequestPausing
 	// State transitions:
 	//   - ConfigRequestAwaitingResponse → ConfigRequestMayResend (timeout, can retry)
+	//   - ConfigRequestAwaitingResponse → ConfigRequestAwaitingResponse (the deadline passed but
+	//     the request is not giving up: it takes a protocol-internal action such as sending a
+	//     follow-up packet and extends its deadline; GetDeadline now returns the later deadline)
 	//   - ConfigRequestMaybeComplete → ConfigRequestSucceeded (idle period over, no more responses expected)
 	//   - ConfigRequestPausing → ConfigRequestSucceeded (pause duration elapsed, ready for next request)
 	// The client should call this when GetDeadline() time has passed.
