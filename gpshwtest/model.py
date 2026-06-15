@@ -9,11 +9,32 @@ interpretation. Nothing here touches hardware.
 import datetime
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 Value = Any
+SignalMap = dict[str, list[str]]
+
+GNSS_ORDER = ["GPS", "GAL", "BDS", "GLO", "QZSS", "NAVIC", "SBAS"]
+
+# Frequency band of a signal name, by prefix, ported from the model's
+# signalIDBandTable (gps/gpsprot/signal.go). Order matters: longer or more
+# specific prefixes come first.
+SIGNAL_BAND_PREFIXES = [
+    ("B2a", "L5"), ("E5b", "E5b"), ("E5a", "L5"), ("L5", "L5"),
+    ("B2", "E5b"), ("L3", "E5b"), ("L1", "L1"), ("E1", "L1"), ("B1", "L1"),
+    ("L2", "L2"), ("E6", "E6"), ("L6", "E6"), ("B3", "E6"),
+]
+
+# The signal-band keys denoted by each band name a request can use.
+REQUEST_BANDS = {"L1": {"L1"}, "L2": {"L2"}, "L5": {"L5"}, "E5b": {"E5b"},
+                 "E5": {"L5", "E5b"}, "E6": {"E6"}, "L6": {"E6"}}
+
+# satpulsetool refuses any request whose denoted set enables no
+# non-augmentation signal from a major constellation.
+MAJORS = {"GPS", "GLO", "GAL", "BDS"}
+AUGMENT_SIGNALS = {"GAL": {"E6"}, "BDS": {"B2b"}}
 
 # The NMEA sentence types in the model vocabulary. Types outside it (such
 # as event-driven TXT diagnostics) are excluded from comparisons because
@@ -35,15 +56,20 @@ class Observation:
 
 @dataclass
 class SignalObservation:
-    """Outcome of requesting one constellation/band combination. achieved
+    """Outcome of requesting an enabled-signal set. requested is in model
+    vocabulary; syntax records which command-line spelling was used. achieved
     is the stored set from the readback; accepted carries the set response's
-    own set only when it differs from the stored one."""
+    own set only when it differs from the stored one. gnss/band are kept for
+    older records that predate direct signal-set intents."""
 
-    gnss: list[str]
-    band: list[str] | None
+    requested: SignalMap | None
+    syntax: str
     error: str | None
-    achieved: dict[str, list[str]] | None
-    accepted: dict[str, list[str]] | None = None
+    achieved: SignalMap | None
+    accepted: SignalMap | None = None
+    gnss: list[str] | None = None
+    band: list[str] | None = None
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -74,6 +100,145 @@ def fmt_value(v: Value) -> str:
         s = f"{v:.9f}".rstrip("0").rstrip(".")
         return s if s else "0"
     return str(v)
+
+
+def normalize_signal_map(v: Any) -> SignalMap:
+    """Return a canonical signal map: known GNSS order, sorted unique
+    signal names, and no empty constellations."""
+    if not isinstance(v, dict):
+        return {}
+    out: SignalMap = {}
+    keys = [g for g in GNSS_ORDER if g in v] + sorted(
+        str(g) for g in v if str(g) not in GNSS_ORDER)
+    for g in keys:
+        sigs = v.get(g)
+        if isinstance(sigs, list):
+            ss = sorted({str(s) for s in sigs})
+            if ss:
+                out[str(g)] = ss
+    return out
+
+
+def normalize_config(v: Any) -> dict[str, Any]:
+    """Return a config JSON object in canonical form for comparisons."""
+    if not isinstance(v, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for k, val in sorted(v.items()):
+        if k == "signalsEnabled":
+            sigs = normalize_signal_map(val)
+            if sigs:
+                out[k] = sigs
+        elif isinstance(val, dict):
+            out[k] = normalize_config(val)
+        elif isinstance(val, list):
+            out[k] = [normalize_config(x) if isinstance(x, dict) else x
+                      for x in val]
+        else:
+            out[k] = val
+    return out
+
+
+def config_model_equal(want: Any, got: Any) -> bool:
+    """Whether two configs are equal in the device-independent model.
+
+    Some non-timing u-blox receivers default the time pulse grid to UTC.
+    satpulsetool reports that as an absent timeGNSS because the model has
+    only GNSS grids, and setting the represented time pulse bundle can move
+    the receiver to GPS with no way to express a restore to UTC."""
+    a, b = normalize_config(want), normalize_config(got)
+    if a == b:
+        return True
+    if "timeGNSS" not in a and b.get("timeGNSS") == "GPS":
+        b = dict(b)
+        del b["timeGNSS"]
+        return a == b
+    return False
+
+
+def signal_map_union(*maps: SignalMap) -> SignalMap:
+    """Union signal maps in canonical form."""
+    out: dict[str, set[str]] = {}
+    for m in maps:
+        for g, sigs in normalize_signal_map(m).items():
+            out.setdefault(g, set()).update(sigs)
+    return normalize_signal_map({g: sorted(sigs) for g, sigs in out.items()})
+
+
+def signal_map_without(m: SignalMap, remove: SignalMap) -> SignalMap:
+    """Return m with remove's signals subtracted."""
+    rem = {g: set(sigs) for g, sigs in normalize_signal_map(remove).items()}
+    out: SignalMap = {}
+    for g, sigs in normalize_signal_map(m).items():
+        keep = [s for s in sigs if s not in rem.get(g, set())]
+        if keep:
+            out[g] = keep
+    return out
+
+
+def signal_map_subset(m: SignalMap, gnss: str) -> SignalMap:
+    """Return just one constellation's signals."""
+    sigs = normalize_signal_map(m).get(gnss, [])
+    return {gnss: sigs} if sigs else {}
+
+
+def signal_map_cli_arg(m: SignalMap) -> str:
+    """Render a signal map as a --signal/--except-signal argument."""
+    parts = []
+    for g, sigs in normalize_signal_map(m).items():
+        parts += [g + s for s in sigs]
+    return ",".join(parts)
+
+
+def signal_band(name: str) -> str:
+    """Return the model band key of a signal name."""
+    for prefix, band in SIGNAL_BAND_PREFIXES:
+        if name.startswith(prefix):
+            return band
+    return ""
+
+
+def signals_in_bands(sigs: list[str], bands: set[str]) -> list[str]:
+    """Signals whose band is in bands."""
+    return [s for s in sigs if signal_band(s) in bands]
+
+
+def l1_signals(sigs: list[str]) -> list[str]:
+    """Signals in the L1/E1/B1 family."""
+    return signals_in_bands(sigs, {"L1"})
+
+
+def l2_signals(sigs: list[str]) -> list[str]:
+    """Signals in the L2/E5b/B2I low-band family."""
+    return [s for s in sigs if signal_band(s) in {"L2", "E5b"} and s != "B2b"]
+
+
+def l5_signals(sigs: list[str]) -> list[str]:
+    """Signals in the L5/E5a/B2a/NavIC L5 family."""
+    return signals_in_bands(sigs, {"L5"})
+
+
+def signal_request_valid(req: SignalMap) -> bool:
+    """Whether a signal-set request is valid under satpulsetool's own
+    semantics: at least one non-augmentation signal from a major
+    constellation enabled."""
+    return any(set(s) - AUGMENT_SIGNALS.get(c, set())
+               for c, s in normalize_signal_map(req).items() if c in MAJORS)
+
+
+def requested_signals(gnss: list[str], band: list[str] | None,
+                      supported: SignalMap) -> SignalMap | None:
+    """The signal set a constellation/band request denotes, intersected with
+    the discovered supported set. None when the supported set does not
+    cover a named constellation."""
+    sup = normalize_signal_map(supported)
+    if any(c not in sup for c in gnss):
+        return None
+    if band is None:
+        return normalize_signal_map({c: sup[c] for c in gnss})
+    keys = set().union(*(REQUEST_BANDS.get(b, set()) for b in band))
+    return normalize_signal_map(
+        {c: [s for s in sup[c] if signal_band(s) in keys] for c in gnss})
 
 
 def config_value(cfg: dict[str, Any], path: tuple[str, ...]) -> Value:

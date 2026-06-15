@@ -25,6 +25,18 @@
             "SBAS": ["L1"]
           },
           "result": {"BDS": ["B1I"], "GAL": ["E1"], "GPS": ["L1"], "QZSS": ["L1", "L1S"], "SBAS": ["L1"]}
+        },
+        {
+          "request": {"BDS": ["B1I"], "GAL": ["E1"], "GLO": ["L1"], "QZSS": ["L1", "L1S"], "SBAS": ["L1"]},
+          "result": {"BDS": ["B1I"], "GAL": ["E1"], "QZSS": ["L1", "L1S"], "SBAS": ["L1"]}
+        },
+        {
+          "request": {"BDS": ["B1I"], "GAL": ["E1"], "GLO": ["L1"]},
+          "result": {"BDS": ["B1I"], "GAL": ["E1"]}
+        },
+        {
+          "request": {"BDS": ["B1I"], "GLO": ["L1"], "GPS": ["L1"]},
+          "result": {"BDS": ["B1I"], "GPS": ["L1"]}
         }
       ],
       "signalSet": {
@@ -44,5 +56,5 @@
     "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"],
     "vendor": "u-blox"
   },
-  "supports": ["fixedPos", "fixedPosAcc", "raw", "speed", "survey", "surveyAcc", "surveyMsg"]
+  "supports": ["fixedPos", "fixedPosAcc", "port", "raw", "speed", "survey", "surveyAcc", "surveyMsg"]
 }

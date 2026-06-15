@@ -16,7 +16,7 @@ This file defines the goal and how to measure progress toward it. It deliberatel
 
 The program must cover the entire documented high-level configuration vocabulary of `satpulsetool gps` (see `docs/man/satpulsetool-gps.1.md`). Characterization that covers only some properties is not done. The vocabulary:
 
-- Enabled constellations and bands (`--gnss`, `--band`)
+- Enabled signals (`--gnss`, `--band`, `--signal`, `--except-signal`)
 - Timing constellation (`--time-gnss`)
 - Time pulse (`--pps`)
 - Antenna cable delay (`--ant-cable-delay`)
@@ -78,7 +78,7 @@ Failures that are diagnosed down to a satpulsetool defect get recorded in `BUGS.
 For each receiver+firmware the program produces a machine-readable characterization of how device-independent configuration works on that receiver. Its content is the receiver's limitations relative to perfect realization of the model - what cannot be done, what is coupled, what is quantized, how coarsely saving persists - because the perfectly-realized parts need no description. Requirements:
 
 - Expressed in the device-independent vocabulary (model properties and values), never in terms of satpulsetool command-line syntax or the program's internal test cases.
-- High level: patterns and parameters (for example "an enabled constellation must have all its signals enabled, except BDS", "pulse width quantized to 1 us", "fixed position stored to 1 cm"), not a list of probe outcomes.
+- High level: patterns and parameters (for example "QZSS requires GPS", "an enabled constellation must include an L1-family signal", "BDS B1I and B1C are mutually exclusive", "pulse width quantized to 1 us", "fixed position stored to 1 cm"), not a list of probe outcomes.
 - Stable: its content describes the receiver and the configuration semantics, so it must be substantially unchanged when the program's exact probe values or test set change, and when satpulsetool's implementation of configuration changes without changing behavior. Only genuine behavior differences may move it; that stability is what makes the checked-in characterization usable as a regression baseline.
 - Honest: observations the program cannot express in its current vocabulary are carried verbatim rather than forced into a pattern or dropped.
 
@@ -118,6 +118,6 @@ The end state is that this workflow runs unattended through `systest/`: a playbo
 ## Working method
 
 - Probe first, then derive vocabulary: do not invent characterization vocabulary for a property before looking at raw observations from real receivers. Keep the raw-observation output available permanently; it is how unfamiliar receivers get examined.
-- Build the easiest properties first to establish the probe/characterize/vet/compare pipeline end to end; signal combinations and save granularity are the hardest parts.
+- Build the easiest properties first to establish the probe/characterize/vet/compare pipeline end to end; signal coexistence rules and save granularity are the hardest parts.
 - Keep `make typecheck` (mypy strict) passing; commit coherent increments.
 - If these goals turn out to be wrong or ambiguous on contact with reality, flag it to the user rather than silently reinterpreting them.

@@ -36,7 +36,7 @@ What was *achieved* is reported in the response, not what was requested. The ach
 
 The enabled-signals property looks like it has two dimensions - constellations and bands - but it does not. Its value is a single *set of signals*, where each signal is a concrete broadcast belonging to one constellation and one frequency band: GPS L1 C/A, GPS L2C, Galileo E1, Galileo E5b, BeiDou B1I, GLONASS L1, QZSS L1S, and so on (`signal.go` defines the full universe).
 
-**Constellations and bands are request syntax, not settings.** A request names constellations, and optionally bands, and that denotes a signal set: the named constellations' signals in the named bands. Naming no bands means all bands. So `GPS,GAL` denotes every GPS and Galileo signal; `GPS,GAL` with band `L1` denotes their L1-band signals only. There is no way to request different bands for different constellations in one invocation, and no notion of enabling a constellation apart from enabling its signals.
+**Constellations and bands are request syntax, not settings.** A request names constellations, and optionally bands, and that denotes a signal set: the named constellations' signals in the named bands. Naming no bands means all bands. So `GPS,GAL` denotes every GPS and Galileo signal; `GPS,GAL` with band `L1` denotes their L1-band signals only. Individual signal syntax can add concrete signals to that set or, without `--gnss`, name the complete enabled set directly; `--except-signal` subtracts concrete signals from a `--gnss`/`--band` expansion. There is no notion of enabling a constellation apart from enabling its signals.
 
 **Realization is a pipeline with a precise meaning of best effort:**
 
@@ -83,7 +83,7 @@ Changes made after the last save do not survive a reload or reset. That is not a
 
 ## Capabilities
 
-A backend declares which optional capabilities it offers as a set of flags (`supports` in the JSON output): band selection, speed configuration, survey and survey accuracy, survey progress messages, fixed position and its accuracy, raw output, RTCM MSM4/MSM7 output, RTCM base ID. The flags bound what can be expected of requests in advance; they do not gate them. Properties show their own nonexistence in the responses, as above.
+A backend declares which optional capabilities it offers as a set of flags (`supports` in the JSON output): signal selection, speed configuration, survey and survey accuracy, survey progress messages, fixed position and its accuracy, raw output, RTCM MSM4/MSM7 output, RTCM base ID. The flags bound what can be expected of requests in advance; they do not gate them. Properties show their own nonexistence in the responses, as above.
 
 An RTCM output request on a backend without the RTCM capabilities currently fails with an error. That behavior predates the capability flags and exists because a message request has no property through which the failure could show; the intended direction is for the flags to carry this information instead of an error.
 

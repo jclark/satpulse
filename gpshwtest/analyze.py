@@ -17,9 +17,10 @@ from typing import Any
 
 from characterize import characterize
 from model import (NMEA_VOCAB, EmissionObservation, Observation, SignalObservation,
-                   Value, config_value, emissions, event_kinds, flat_value,
-                   mode_disagreements, nmea_set, raw_set, rtcm_set, stored_form,
-                   transient)
+                   Value, config_model_equal, config_value, emissions,
+                   event_kinds, flat_value, mode_disagreements, nmea_set,
+                   normalize_signal_map, raw_set, requested_signals, rtcm_set,
+                   stored_form, transient)
 from tool import replay
 
 
@@ -162,6 +163,7 @@ class Analyzer:
         if self.ident_error is not None:
             self.failures.append(f"receiver detection failed: {self.ident_error}")
         self.check_values_move()
+        self.check_signal_equivalence()
         enabled = sorted(self.initial.get("signalsEnabled") or {})
         doc = characterize(self.receiver, self.supports, self.observations,
                            self.signal_observations, self.emission_observations,
@@ -289,7 +291,7 @@ class Analyzer:
             # A restore-tail run carries the crashed run's as-found state
             # in the intent; a normal run compares to its own initial.
             want = s.intent.get("want", self.initial)
-            if want and s.config() != want:
+            if want and not config_model_equal(want, s.config()):
                 self.failures.append(f"receiver not left as found: "
                                      f"initial {want!r}, final {s.config()!r}")
         elif role == "reload":
@@ -305,7 +307,8 @@ class Analyzer:
         elif role == "factory":
             pass  # factory state is receiver data, recorded, not compared
         elif role in ("save-all", "reset"):
-            if self.reload_nvm is not None and s.config() != self.reload_nvm:
+            if self.reload_nvm is not None \
+                    and not config_model_equal(self.reload_nvm, s.config()):
                 what = "--save-all recovery" if role == "save-all" else "state after --reset"
                 self.failures.append(
                     f"{what} does not match the NVM state: "
@@ -404,38 +407,95 @@ class Analyzer:
                 f"{config_value(cfg, ('mode',))!r}")
 
     def set_signals(self, s: Step) -> None:
-        gnss, band = s.intent["gnss"], s.intent["band"]
-        name = "-".join(gnss) + ("-" + "-".join(band) if band else "")
+        req = self.signal_request(s)
+        syntax = str(s.intent.get("syntax", "gnss"))
+        tags = s.intent.get("tags")
+        name = s.name.removeprefix("set-signals-")
         if transient(s.error):
             self.failures.append(f"{s.name}: {s.error}")
             return
         cfg = self.take_config("readback", "signals")
         if cfg is None:
             return
-        back = config_value(cfg, ("signalsEnabled",))
+        back = normalize_signal_map(config_value(cfg, ("signalsEnabled",)))
         prev = self.prev_vals.get("signals",
-                                  config_value(self.initial, ("signalsEnabled",)))
+                                  normalize_signal_map(config_value(
+                                      self.initial, ("signalsEnabled",))))
         if s.error is not None:
-            self.signal_observations.append(SignalObservation(gnss, band, s.error, None))
+            self.signal_observations.append(SignalObservation(
+                req, syntax, s.error, None,
+                gnss=s.intent.get("gnss"), band=s.intent.get("band"),
+                tags=tags if isinstance(tags, list) else []))
             if back != prev:
                 self.failures.append(
                     f"signals {name}: refusal changed state: {prev!r} -> {back!r}")
             return
-        reported = config_value(s.config(), ("signalsEnabled",))
+        reported = normalize_signal_map(config_value(s.config(), ("signalsEnabled",)))
+        achieved = back
         self.signal_observations.append(SignalObservation(
-            gnss, band, None, back, reported if reported != back else None))
-        self.prev_vals["signals"] = back
+            req, syntax, None, achieved, reported if reported != achieved else None,
+            gnss=s.intent.get("gnss"), band=s.intent.get("band"),
+            tags=tags if isinstance(tags, list) else []))
+        self.prev_vals["signals"] = achieved
+
+    def signal_request(self, s: Step) -> dict[str, list[str]] | None:
+        """The model signal set recorded for this step, or reconstructed
+        from old gnss/band intents when possible."""
+        req = normalize_signal_map(s.intent.get("request"))
+        if req:
+            return req
+        gnss = s.intent.get("gnss")
+        if not isinstance(gnss, list):
+            return None
+        band = s.intent.get("band")
+        bands = band if isinstance(band, list) else None
+        supported = self.discovered_signal_set()
+        return requested_signals([str(g) for g in gnss], bands, supported)
+
+    def discovered_signal_set(self) -> dict[str, list[str]]:
+        """Best current supported signal set from discovery observations,
+        falling back to the initial readback for old/truncated runs."""
+        supported: dict[str, list[str]] = {}
+        for o in self.signal_observations:
+            if o.error is not None or o.achieved is None:
+                continue
+            if "discover" in o.tags or o.syntax == "gnss":
+                for g, sigs in o.achieved.items():
+                    supported.setdefault(g, sigs)
+        if supported:
+            return supported
+        return normalize_signal_map(config_value(self.initial, ("signalsEnabled",)))
+
+    def check_signal_equivalence(self) -> None:
+        """Equivalent signal sets must behave the same regardless of CLI
+        syntax; otherwise the bug is in satpulsetool, not the receiver."""
+        groups: dict[str, list[SignalObservation]] = {}
+        for o in self.signal_observations:
+            if o.requested is None:
+                continue
+            groups.setdefault(json.dumps(o.requested, sort_keys=True), []).append(o)
+        for rows in groups.values():
+            if len({o.syntax for o in rows}) < 2:
+                continue
+            outcomes = {json.dumps({"error": o.error is not None,
+                                    "achieved": o.achieved},
+                                   sort_keys=True) for o in rows}
+            if len(outcomes) > 1:
+                req = rows[0].requested
+                detail = [(o.syntax, o.error is not None, o.achieved) for o in rows]
+                self.failures.append(
+                    f"signals: equivalent request {req!r} differed by syntax: {detail!r}")
 
     def restore_signals(self, s: Step) -> None:
-        want = s.intent["want"]
+        want = normalize_signal_map(s.intent["want"])
         if s.error is not None:
             self.failures.append(f"signals: restore to {want!r} failed: {s.error}")
             return
         cfg = self.take_config("verify-restore", "signals")
-        if cfg is not None and config_value(cfg, ("signalsEnabled",)) != want:
+        back = normalize_signal_map(config_value(cfg or {}, ("signalsEnabled",)))
+        if cfg is not None and back != want:
             self.failures.append(
-                f"signals: restore to {want!r} read back as "
-                f"{config_value(cfg, ('signalsEnabled',))!r}")
+                f"signals: restore to {want!r} read back as {back!r}")
 
     def observe_step(self, s: Step) -> None:
         """An observe step reached directly (not consumed by a set-like
@@ -570,7 +630,7 @@ class Analyzer:
                 self.failures.append(
                     f"reload: unsaved {'.'.join(path)} change to {v!r} survived reload")
                 return
-        if self.reload_nvm is not None and cfg != self.reload_nvm:
+        if self.reload_nvm is not None and not config_model_equal(self.reload_nvm, cfg):
             self.failures.append(
                 f"reload: configuration after second reload differs from the "
                 f"NVM state: {self.reload_nvm!r} -> {cfg!r}")

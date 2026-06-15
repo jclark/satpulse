@@ -18,8 +18,11 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable
 
-from model import (NMEA_VOCAB, Value, config_value, emissions, fmt_value, has_fix,
-                   mode_args, nmea_set, raw_set, rtcm_set, transient)
+from model import (NMEA_VOCAB, SignalMap, Value, config_value, emissions, fmt_value,
+                   has_fix, l1_signals, l2_signals, l5_signals, mode_args, nmea_set,
+                   normalize_signal_map, raw_set, requested_signals, rtcm_set,
+                   signal_map_cli_arg, signal_map_union, signal_map_without,
+                   signal_request_valid, transient)
 from tool import Invocation, Tool, ToolFailure, replay
 
 # Settle time after a successful signal-set change: u-blox documents an
@@ -156,25 +159,246 @@ SATS_CASES = [(["sat"], {"satellites"}),
               (["none"], set())]
 
 BANDS_ALL = [["L1"], ["L2"], ["L5"], ["E5"], ["L6"], ["L1", "L2"]]
-BANDS_SINGLE = [["L1"], ["L2"], ["E5b"]]
 
 
-def signal_cases(supported: list[str]) -> list[tuple[list[str], list[str] | None]]:
-    """Build the signal probe set from the discovered constellation list:
-    each constellation alone and with band subsets, augmentation systems
-    paired with each major constellation (receivers couple them - commonly
-    to GPS, but the rules vary per family and constellation, and only the
-    non-GPS pairings make them visible), all constellations together, and
-    band subsets of all."""
-    cases: list[tuple[list[str], list[str] | None]] = [([g], None) for g in supported]
-    cases += [([g], b) for g in supported for b in BANDS_SINGLE]
-    for aug in ("QZSS", "SBAS"):
-        if aug in supported:
-            cases += [([m, aug], None)
-                      for m in ("GPS", "GAL", "BDS", "GLO") if m in supported]
-    cases.append((list(supported), None))
-    cases += [(list(supported), b) for b in BANDS_ALL]
+@dataclass
+class SignalCase:
+    """One signal-set request. requested is the model signal set the flags
+    denote when it is known before execution; discovery cases can leave it
+    absent and let analysis derive it from the run."""
+
+    name: str
+    args: list[str]
+    syntax: str
+    requested: SignalMap | None
+    tags: list[str]
+    gnss: list[str] | None = None
+    band: list[str] | None = None
+
+
+SignalHypothesis = Callable[[SignalMap], list[SignalCase]]
+
+
+def signal_discovery_cases(constellations: list[str],
+                           known: SignalMap) -> list[SignalCase]:
+    """Cases that discover the full signal set before the hypothesis
+    generators run. Augmentation constellations are paired with an anchor
+    because they cannot form a valid signal-set request on their own."""
+    cases = []
+    majors = [g for g in ("GPS", "GAL", "BDS", "GLO") if g in constellations]
+    for g in majors:
+        cases.append(gnss_signal_case(f"discover-{g}", [g], None, known, ["discover"]))
+    anchor = "GPS" if "GPS" in constellations else majors[0] if majors else None
+    if anchor is not None:
+        for g in ("QZSS", "SBAS", "NAVIC"):
+            if g in constellations:
+                cases.append(gnss_signal_case(f"discover-{anchor}-{g}", [anchor, g],
+                                              None, known, ["discover"]))
+    if constellations:
+        cases.append(gnss_signal_case("discover-all", constellations, None, known,
+                                      ["discover", "all"]))
+    for c in cases:
+        c.requested = None
     return cases
+
+
+def signal_cases(supported: SignalMap) -> list[SignalCase]:
+    """Build a bounded, hypothesis-driven signal probe set."""
+    cases: list[SignalCase] = []
+    for hyp in SIGNAL_HYPOTHESES:
+        cases += hyp(supported)
+    return dedup_signal_cases(cases)
+
+
+def syntax_hypothesis(supported: SignalMap) -> list[SignalCase]:
+    cases = []
+    gnss = list(supported)
+    if gnss:
+        cases.append(gnss_signal_case("syntax-gnss-all", gnss, None, supported,
+                                      ["syntax"]))
+        cases.append(direct_signal_case("syntax-signal-all", supported, ["syntax"]))
+        for band in BANDS_ALL:
+            cases.append(gnss_signal_case("syntax-band-" + "-".join(band), gnss,
+                                          band, supported, ["syntax"]))
+        first = first_signal(supported)
+        if first:
+            cases.append(except_signal_case("syntax-except-one", supported, first,
+                                            ["syntax"]))
+    return compact_cases(cases)
+
+
+def anchor_hypothesis(supported: SignalMap) -> list[SignalCase]:
+    cases = []
+    for target in ("QZSS", "SBAS", "NAVIC"):
+        if target not in supported:
+            continue
+        for anchor in ("GPS", "GAL", "BDS", "GLO"):
+            if anchor in supported:
+                req = signal_map_union(signal_subset(supported, anchor),
+                                       signal_subset(supported, target))
+                cases.append(direct_signal_case(
+                    f"anchor-{target}-with-{anchor}", req,
+                    [f"requires-gnss:{target}"]))
+    return compact_cases(cases)
+
+
+def l1_required_hypothesis(supported: SignalMap) -> list[SignalCase]:
+    cases = []
+    for g, sigs in supported.items():
+        l1 = l1_signals(sigs)
+        non_l1 = [s for s in sigs if s not in l1]
+        cases.append(anchored_direct_case(
+            f"l1-only-{g}", supported, g, l1, [f"l1-required:{g}"]))
+        for s in l1:
+            cases.append(anchored_direct_case(
+                f"single-{g}-{s}", supported, g, [s], [f"l1-required:{g}"]))
+        for s in non_l1:
+            cases.append(anchored_direct_case(
+                f"single-{g}-{s}", supported, g, [s], [f"l1-required:{g}"]))
+        for s in l1:
+            base = signal_subset(supported, g)
+            if not signal_request_valid(base) and g != "GPS" and "GPS" in supported:
+                base = signal_map_union(signal_subset(supported, "GPS"), base)
+            cases.append(except_signal_case(
+                f"without-{g}-{s}", base, {g: [s]}, [f"l1-required:{g}"]))
+    return compact_cases(cases)
+
+
+def l2_l5_hypothesis(supported: SignalMap) -> list[SignalCase]:
+    cases = []
+    for g, sigs in supported.items():
+        l1, l2, l5 = l1_signals(sigs), l2_signals(sigs), l5_signals(sigs)
+        if l1 and l2:
+            cases.append(anchored_direct_case(
+                f"l1-l2-{g}", supported, g, l1 + l2, [f"l2-l5:{g}"]))
+        if l1 and l5:
+            cases.append(anchored_direct_case(
+                f"l1-l5-{g}", supported, g, l1 + l5, [f"l2-l5:{g}"]))
+        if l1 and l2 and l5:
+            cases.append(anchored_direct_case(
+                f"l1-l2-l5-{g}", supported, g, l1 + l2 + l5, [f"l2-l5:{g}"]))
+    l1_all = family_map(supported, l1_signals)
+    l2_all = family_map(supported, l2_signals)
+    l5_all = family_map(supported, l5_signals)
+    cases.append(direct_signal_case("all-l1-l2", signal_map_union(l1_all, l2_all),
+                                    ["l2-l5:all"]))
+    cases.append(direct_signal_case("all-l1-l5", signal_map_union(l1_all, l5_all),
+                                    ["l2-l5:all"]))
+    cases.append(direct_signal_case("all-l1-l2-l5",
+                                    signal_map_union(l1_all, l2_all, l5_all),
+                                    ["l2-l5:all"]))
+    return compact_cases(cases)
+
+
+def ublox_conflict_hypothesis(supported: SignalMap) -> list[SignalCase]:
+    cases = []
+    bds = supported.get("BDS", [])
+    glo = supported.get("GLO", [])
+    gps = supported.get("GPS", [])
+    gal = supported.get("GAL", [])
+    if "B1I" in bds and "L1" in glo:
+        base = {"BDS": ["B1I"], "GLO": ["L1"]}
+        cases.append(direct_signal_case("conflict-bds-b1i-glo-l1", base,
+                                        ["ublox-conflict:m8-m10"]))
+        if gps:
+            cases.append(direct_signal_case(
+                "conflict-gps-bds-b1i-glo-l1",
+                signal_map_union(signal_subset(supported, "GPS"), base),
+                ["ublox-conflict:m8-m10"]))
+        if gal:
+            cases.append(direct_signal_case(
+                "conflict-gal-bds-b1i-glo-l1",
+                signal_map_union({"GAL": l1_signals(gal) or gal}, base),
+                ["ublox-conflict:m8"]))
+    if bds:
+        cases.append(direct_signal_case("candidate-bds-b1i", {"BDS": ["B1I"]},
+                                        ["ublox-conflict:m10"]))
+        cases.append(direct_signal_case("candidate-bds-b1c", {"BDS": ["B1C"]},
+                                        ["ublox-conflict:m10"]))
+        cases.append(direct_signal_case("conflict-bds-b1i-b1c",
+                                        {"BDS": ["B1I", "B1C"]},
+                                        ["ublox-conflict:m10"]))
+    l5_all = family_map(supported, l5_signals)
+    if "L1" in glo and l5_all:
+        cases.append(direct_signal_case(
+            "conflict-glo-l1-with-l5",
+            signal_map_union({"GLO": ["L1"]}, l5_all), ["ublox-conflict:f10"]))
+    return compact_cases(cases)
+
+
+SIGNAL_HYPOTHESES: list[SignalHypothesis] = [
+    syntax_hypothesis,
+    anchor_hypothesis,
+    l1_required_hypothesis,
+    l2_l5_hypothesis,
+    ublox_conflict_hypothesis,
+]
+
+
+def gnss_signal_case(name: str, gnss: list[str], band: list[str] | None,
+                     supported: SignalMap, tags: list[str]) -> SignalCase:
+    args = ["--gnss", ",".join(gnss)]
+    if band:
+        args += ["--band", ",".join(band)]
+    return SignalCase(name, args, "band" if band else "gnss",
+                      requested_signals(gnss, band, supported), tags, gnss, band)
+
+
+def direct_signal_case(name: str, req: SignalMap,
+                       tags: list[str]) -> SignalCase:
+    r = normalize_signal_map(req)
+    return SignalCase(name, ["--signal", signal_map_cli_arg(r)], "signal", r, tags)
+
+
+def except_signal_case(name: str, base: SignalMap, remove: SignalMap,
+                       tags: list[str]) -> SignalCase:
+    b = normalize_signal_map(base)
+    r = normalize_signal_map(remove)
+    req = signal_map_without(b, r)
+    args = ["--gnss", ",".join(b), "--except-signal", signal_map_cli_arg(r)]
+    return SignalCase(name, args, "except-signal", req, tags, list(b), None)
+
+
+def anchored_direct_case(name: str, supported: SignalMap, gnss: str,
+                         sigs: list[str], tags: list[str]) -> SignalCase:
+    req = normalize_signal_map({gnss: sigs})
+    if signal_request_valid(req) or gnss == "GPS" or "GPS" not in supported:
+        return direct_signal_case(name, req, tags)
+    return direct_signal_case(name, signal_map_union(signal_subset(supported, "GPS"), req),
+                              tags)
+
+
+def compact_cases(cases: list[SignalCase]) -> list[SignalCase]:
+    return [c for c in cases if c.requested and signal_request_valid(c.requested)]
+
+
+def dedup_signal_cases(cases: list[SignalCase]) -> list[SignalCase]:
+    seen: set[str] = set()
+    out = []
+    for c in cases:
+        k = json.dumps({"args": c.args, "request": c.requested, "syntax": c.syntax},
+                       sort_keys=True)
+        if k not in seen:
+            seen.add(k)
+            out.append(c)
+    return out
+
+
+def signal_subset(supported: SignalMap, gnss: str) -> SignalMap:
+    sigs = supported.get(gnss, [])
+    return {gnss: sigs} if sigs else {}
+
+
+def family_map(supported: SignalMap,
+               family: Callable[[list[str]], list[str]]) -> SignalMap:
+    return normalize_signal_map({g: family(sigs) for g, sigs in supported.items()})
+
+
+def first_signal(m: SignalMap) -> SignalMap:
+    for g, sigs in m.items():
+        if sigs:
+            return {g: [sigs[0]]}
+    return {}
 
 
 @dataclass
@@ -448,30 +672,38 @@ class ProbeRun:
             self.show_config("verify-restore-mode", "verify-restore", "mode")
 
     def probe_signals(self, initial: dict[str, Any], supported: list[str]) -> None:
-        """Probe constellation/band combinations, then restore the initial set."""
-        for gnss, band in signal_cases(supported):
-            name = "-".join(gnss) + ("-" + "-".join(band) if band else "")
-            args = ["--gnss", ",".join(gnss)]
-            if band:
-                args += ["--band", ",".join(band)]
-            inv = self.tool.gps(f"set-signals-{name}", args,
-                                {"op": "set-signals", "gnss": gnss, "band": band})
-            if transient(inv.error):
-                continue
-            if inv.error is None:
-                time.sleep(SIGNAL_SETTLE)
-            self.show_config(f"readback-signals-{name}", "readback", "signals")
+        """Probe signal-set hypotheses, then restore the initial set."""
+        known = normalize_signal_map(config_value(initial, ("signalsEnabled",)))
+        for case in signal_discovery_cases(supported, known):
+            cfg = self.probe_signal_case(case)
+            if cfg is not None:
+                known = signal_map_union(known, normalize_signal_map(
+                    config_value(cfg, ("signalsEnabled",))))
+        for case in signal_cases(known):
+            self.probe_signal_case(case)
         self.restore_signals(initial)
 
+    def probe_signal_case(self, case: SignalCase) -> dict[str, Any] | None:
+        """Run one signal case and return its readback config when present."""
+        intent: dict[str, Any] = {"op": "set-signals", "syntax": case.syntax,
+                                  "request": case.requested, "tags": case.tags}
+        if case.gnss is not None:
+            intent["gnss"] = case.gnss
+        if case.band is not None:
+            intent["band"] = case.band
+        inv = self.tool.gps(f"set-signals-{case.name}", case.args, intent)
+        if transient(inv.error):
+            return None
+        if inv.error is None:
+            time.sleep(SIGNAL_SETTLE)
+        return self.show_config(f"readback-signals-{case.name}", "readback", "signals")
+
     def restore_signals(self, initial: dict[str, Any]) -> None:
-        """Re-enable the initial constellation set. Band subsetting within a
-        constellation cannot be reproduced generically, so a band-limited
-        initial set shows up in analysis as a restore failure rather than
-        silently passing."""
-        want = config_value(initial, ("signalsEnabled",))
-        if not isinstance(want, dict):
+        """Re-enable the exact initial signal set."""
+        want = normalize_signal_map(config_value(initial, ("signalsEnabled",)))
+        if not want:
             return
-        inv = self.tool.gps("restore-signals", ["--gnss", ",".join(want)],
+        inv = self.tool.gps("restore-signals", ["--signal", signal_map_cli_arg(want)],
                             {"op": "restore-signals", "want": want})
         if inv.error is None:
             time.sleep(SIGNAL_SETTLE)

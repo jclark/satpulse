@@ -9,23 +9,9 @@
     "mode.height": {"unsupported": true},
     "rtcmBaseID": {"unsupported": true},
     "signals": {
-      "observed": [
-        {
-          "error": "refused",
-          "request": {
-            "BDS": ["B1I"],
-            "GAL": ["E1"],
-            "GLO": ["L1"],
-            "GPS": ["L1"],
-            "QZSS": ["L1", "L1S"],
-            "SBAS": ["L1"]
-          }
-        },
-        {"error": "refused", "request": {"BDS": ["B1I"], "QZSS": ["L1", "L1S"]}},
-        {"error": "refused", "request": {"GAL": ["E1"], "QZSS": ["L1", "L1S"]}},
-        {"error": "refused", "request": {"GLO": ["L1"], "QZSS": ["L1", "L1S"]}},
-        {"error": "refused", "request": {"GLO": ["L1"], "SBAS": ["L1"]}}
-      ],
+      "mutuallyExclusiveSignals": [{"BDS": ["B1I"], "GLO": ["L1"]}],
+      "observed": [{"error": "refused", "request": {"GPS": ["L1"], "QZSS": ["L1S"]}}],
+      "requiresGNSS": {"QZSS": ["GPS"], "SBAS": ["BDS", "GAL", "GPS"]},
       "signalSet": {
         "BDS": ["B1I"],
         "GAL": ["E1"],
@@ -43,5 +29,5 @@
     "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"],
     "vendor": "u-blox"
   },
-  "supports": ["speed"]
+  "supports": ["port", "speed"]
 }
