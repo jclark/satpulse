@@ -10,7 +10,6 @@
     "saveGranularity": {"singleGroup": true},
     "showPort": {"unsupported": true},
     "signals": {
-      "emptyConstellationsDropped": true,
       "signalSet": {
         "BDS": ["B1C", "B1I", "B2I", "B2a", "B2b", "B3I"],
         "GAL": ["E1", "E5a", "E5b"],
@@ -22,5 +21,5 @@
     "timePulse.width": {"quantum": 1e-06}
   },
   "receiver": {"firmware": "Build17548", "hardware": "UM980", "supportedGNSS": [], "vendor": "Unicore"},
-  "supports": ["band", "fixedPos", "raw", "rtcmBaseID", "rtcmMSM4", "rtcmMSM7", "rtcmQZSS", "survey"]
+  "supports": ["fixedPos", "raw", "rtcmBaseID", "rtcmMSM4", "rtcmMSM7", "rtcmQZSS", "signal", "survey"]
 }

@@ -1,6 +1,6 @@
 # gpshwtest
 
-Tests satpulsetool's device-independent GPS configuration against real receivers. It probes a receiver through `satpulsetool gps --json` invocations, records every step, and derives two outputs offline: **failures** (violations of the tool's device-independent guarantees) and a **characterization** of how configuration is realized on that receiver (its limitations relative to the full model). Receiver limitations are never failures. `GOAL.md` defines the goal and the workflow; `SEMANTICS.md` defines the semantics under test.
+Tests satpulsetool's device-independent GPS configuration against real receivers. It probes a receiver through `satpulsetool gps --json` invocations, records every step, and derives two outputs offline: **failures** (violations of the tool's device-independent guarantees) and a **characterization** of how configuration is realized on that receiver (its limitations relative to the full model). Signal-set probing uses targeted coexistence hypotheses rather than exhaustive subset sweeps. Receiver limitations are never failures. `GOAL.md` defines the goal and the workflow; `SEMANTICS.md` defines the semantics under test.
 
 Python 3, stdlib-only at runtime. Type checking: `make typecheck` (mypy strict via uv).
 

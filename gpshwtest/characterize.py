@@ -10,48 +10,14 @@ import json
 from itertools import combinations
 from typing import Any
 
-from model import EmissionObservation, Observation, SignalObservation
+from model import (MAJORS, EmissionObservation, Observation, SignalMap,
+                   SignalObservation, l1_signals, l2_signals, l5_signals,
+                   normalize_signal_map, signal_request_valid)
 
 # RTCM MSM message numbers are <decade><level> with a fixed decade per
 # constellation (RTCM 10403 standard numbering, not receiver-specific).
 RTCM_DECADE = {"GPS": 107, "GLO": 108, "GAL": 109, "SBAS": 110, "QZSS": 111,
                "BDS": 112, "NAVIC": 113}
-
-# Frequency band of a signal name, by prefix, ported from the model's
-# signalIDBandTable (gps/gpsprot/signal.go). Order matters: longer or more
-# specific prefixes come first.
-SIGNAL_BAND_PREFIXES = [
-    ("B2a", "L5"), ("E5b", "E5b"), ("E5a", "L5"), ("L5", "L5"),
-    ("B2", "E5b"), ("L3", "E5b"), ("L1", "L1"), ("E1", "L1"), ("B1", "L1"),
-    ("L2", "L2"), ("E6", "E6"), ("L6", "E6"), ("B3", "E6"),
-]
-
-# The signal-band keys denoted by each band name a request can use.
-REQUEST_BANDS = {"L1": {"L1"}, "L2": {"L2"}, "L5": {"L5"}, "E5b": {"E5b"},
-                 "E5": {"L5", "E5b"}, "E6": {"E6"}, "L6": {"E6"}}
-
-
-def signal_band(name: str) -> str:
-    for prefix, band in SIGNAL_BAND_PREFIXES:
-        if name.startswith(prefix):
-            return band
-    return ""
-
-
-def requested_signals(gnss: list[str], band: list[str] | None,
-                      supported: dict[str, list[str]]) -> dict[str, list[str]] | None:
-    """The signal set a constellation/band request denotes, intersected with
-    the receiver's supported set - what satpulse actually requests. None when
-    the supported set does not cover a named constellation (then the request
-    cannot be expressed in discovered signals and is carried verbatim)."""
-    if any(c not in supported for c in gnss):
-        return None
-    if band is None:
-        return {c: supported[c] for c in gnss}
-    keys = set().union(*(REQUEST_BANDS.get(b, set()) for b in band))
-    return {c: [s for s in supported[c] if signal_band(s) in keys] for c in gnss}
-
-
 
 def characterize(receiver: dict[str, Any], supports: list[str],
                  observations: list[Observation],
@@ -128,46 +94,29 @@ def characterize_prop(obs: list[Observation]) -> dict[str, Any] | None:
     return entry if entry else None
 
 
-def drop_empty(signals: dict[str, list[str]]) -> dict[str, list[str]]:
-    """Drop constellations with no signals: a request that denotes no
-    signals for a constellation and an achieved set that omits it are
-    the same signal set, not an adjustment."""
-    return {c: s for c, s in signals.items() if s}
-
-
 def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
     """Characterize signal-set realization, in signal-set vocabulary.
 
-    The supported set is what full requests achieve per constellation.
-    Requests are expressed as the signal sets they denote (intersected
-    with the supported set, which is what satpulse requests): refusals
-    record the refused set, and accepted requests whose achieved set
-    differs from the requested one record both. Exact realization gets
-    no entry. Error wording is satpulsetool presentation and is omitted."""
+    The supported set comes from discovery cases. Requests are recorded as
+    the signal sets they denote; discovery observations can leave the
+    request unknown. Exact realization gets no entry. Error wording is
+    satpulsetool presentation and is omitted."""
     entry: dict[str, Any] = {}
-    supported: dict[str, list[str]] = {}
-    inconsistent = []
-    for o in obs:
-        if o.error is not None or o.band is not None or o.achieved is None:
-            continue
-        for c, sigs in o.achieved.items():
-            if c in supported and supported[c] != sorted(sigs):
-                inconsistent.append({"gnss": o.gnss, "result": o.achieved})
-            supported.setdefault(c, sorted(sigs))
+    supported, inconsistent = supported_signals(obs)
     refused = []
     adjusted = []
     for o in obs:
-        req = requested_signals(o.gnss, o.band, supported)
+        req = observation_request(o, supported)
         if o.error is not None:
-            refused.append({"signals": req} if req is not None
+            refused.append({"request": req} if req is not None
                            else {"gnss": o.gnss, "band": o.band})
         elif o.achieved is not None:
-            achieved = drop_empty({c: sorted(s) for c, s in o.achieved.items()})
+            achieved = normalize_signal_map(o.achieved)
             if req is None:
-                if sorted(achieved) != sorted(o.gnss):
+                if o.gnss is not None and sorted(achieved) != sorted(o.gnss):
                     adjusted.append({"gnss": o.gnss, "band": o.band,
                                      "result": achieved})
-            elif achieved != drop_empty(req):
+            elif achieved != supported_part(req, supported):
                 adjusted.append({"request": req, "result": achieved})
     if supported:
         entry["signalSet"] = supported
@@ -178,7 +127,7 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
     for o in obs:
         if o.accepted is None:
             continue
-        req = requested_signals(o.gnss, o.band, supported)
+        req = observation_request(o, supported)
         mismatched.append({
             "request": req if req is not None else {"gnss": o.gnss, "band": o.band},
             "accepted": o.accepted, "stored": o.achieved})
@@ -187,86 +136,215 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
     return entry if entry else None
 
 
-# satpulsetool itself refuses any request whose denoted set enables no
-# non-augmentation signal from a major constellation (SigSetMajor minus
-# SigSetAugment in gps/gpsprot/signal.go): the major constellations are
-# GPS, GLO, GAL, and BDS, and within them GAL E6 and BDS B2b count as
-# augmentation. QZSS, NAVIC, and SBAS cannot anchor a request.
-MAJORS = {"GPS", "GLO", "GAL", "BDS"}
-AUGMENT_SIGNALS = {"GAL": {"E6"}, "BDS": {"B2b"}}
+def supported_signals(obs: list[SignalObservation]) -> tuple[SignalMap, list[dict[str, Any]]]:
+    """The discovered full signal set plus inconsistent discovery results."""
+    supported: SignalMap = {}
+    inconsistent = []
+    for o in obs:
+        if o.error is not None or o.achieved is None:
+            continue
+        if "discover" not in o.tags and not (o.syntax == "gnss" and o.band is None):
+            continue
+        for c, sigs in normalize_signal_map(o.achieved).items():
+            if c in supported and supported[c] != sigs:
+                inconsistent.append({"request": o.requested, "result": o.achieved})
+            supported.setdefault(c, sigs)
+    for o in obs:
+        if o.error is None and o.achieved is not None:
+            supported = signal_union(supported, o.achieved)
+    return normalize_signal_map(supported), inconsistent
 
 
-def valid_request(req: dict[str, list[str]]) -> bool:
-    """Whether a denoted signal set is a valid request under satpulsetool's
-    own semantics: at least one non-augmentation signal from a major
-    constellation enabled. Invalid requests are refused by the tool on
-    every receiver, so their refusals are not receiver limitations."""
-    return any(set(s) - AUGMENT_SIGNALS.get(c, set())
-               for c, s in req.items() if c in MAJORS)
+def observation_request(o: SignalObservation, supported: SignalMap) -> SignalMap | None:
+    """The model signal set requested by an observation."""
+    req = normalize_signal_map(o.requested)
+    return req if req else None
+
+
+def signal_union(a: SignalMap, b: SignalMap) -> SignalMap:
+    out = {g: list(sigs) for g, sigs in normalize_signal_map(a).items()}
+    for g, sigs in normalize_signal_map(b).items():
+        out[g] = sorted(set(out.get(g, [])) | set(sigs))
+    return normalize_signal_map(out)
 
 
 def signal_patterns(entry: dict[str, Any], obs: list[SignalObservation],
                     supported: dict[str, list[str]],
                     refused: list[dict[str, Any]],
                     adjusted: list[dict[str, Any]]) -> None:
-    """Express the refused and adjusted signal sets as receiver validity
-    patterns where the observations support them, in the spirit of "an
-    enabled constellation must have all its signals enabled, except BDS".
-    Refusals of requests that are invalid under satpulsetool's own
-    semantics (no non-augmentation signal) are excluded entirely: the tool
-    guarantees those refusals on every receiver, so they say nothing about
-    this one. Entries no pattern explains stay verbatim - patterns reduce
-    the noise, never the information. The patterns:
-
-    - partialSelectionRefused: a request giving some constellation a
-      nonempty strict subset of its signals is refused; "except" lists the
-      subsets observed to be accepted exactly.
-    - emptyConstellationsDropped: constellations denoted with no signals
-      are dropped from the request rather than refused."""
-    full = {c: tuple(s) for c, s in supported.items()}
-    allowed_subsets: dict[str, list[list[str]]] = {}
-    for o in obs:
-        if o.error is not None or o.achieved is None:
-            continue
-        req = requested_signals(o.gnss, o.band, supported)
-        for c, sigs in o.achieved.items():
-            t = sorted(sigs)
-            if c in full and tuple(t) != full[c] and req is not None \
-                    and {k: sorted(v) for k, v in o.achieved.items()} == req:
-                if t not in allowed_subsets.setdefault(c, []):
-                    allowed_subsets[c].append(t)
-    saw_partial = False
+    """Express refused and adjusted signal sets as conservative receiver
+    validity patterns. Unexplained entries stay verbatim."""
+    patterns = {
+        "requiresGNSS": requires_gnss(obs, supported),
+        "requiresSignalAnyOf": requires_signal_any_of(obs, supported),
+        "mutuallyExclusiveSignals": mutually_exclusive_signals(obs, supported),
+        "mutuallyExclusiveSignalGroups": mutually_exclusive_signal_groups(obs, supported),
+    }
+    for k, v in patterns.items():
+        if v:
+            entry[k] = v
     observed = []
     for r in refused:
-        req = r.get("signals")
-        if not isinstance(req, dict):
+        req = normalize_signal_map(r.get("request"))
+        if not req:
             observed.append({**r, "error": "refused"})
-            continue
-        if not valid_request(req):
-            continue
-        if any(s and tuple(sorted(s)) != full.get(c)
-               and sorted(s) not in allowed_subsets.get(c, [])
-               for c, s in req.items()):
-            saw_partial = True
-            continue
-        observed.append({"request": req, "error": "refused"})
-    saw_dropped = False
+        elif req == supported_part(req, supported) and signal_request_valid(req) \
+                and not refusal_explained(req, patterns):
+            observed.append({"request": req, "error": "refused"})
     for a in adjusted:
-        req = a.get("request")
-        if isinstance(req, dict) and not valid_request(req):
-            continue
-        if isinstance(req, dict) and any(req.values()) \
-                and a.get("result") == {c: s for c, s in req.items() if s}:
-            saw_dropped = True
-            continue
-        observed.append(a)
-    if saw_partial:
-        entry["partialSelectionRefused"] = \
-            {"except": allowed_subsets} if allowed_subsets else True
-    if saw_dropped:
-        entry["emptyConstellationsDropped"] = True
+        req = normalize_signal_map(a.get("request"))
+        if not req or req == supported_part(req, supported) and signal_request_valid(req):
+            observed.append(a)
     if observed:
         entry["observed"] = dedup(observed)
+
+
+def requires_gnss(obs: list[SignalObservation], supported: SignalMap) -> dict[str, list[str]]:
+    """Augmentation-style constellations that require one of a set of
+    major-constellation anchors."""
+    result: dict[str, list[str]] = {}
+    for target in ("QZSS", "SBAS", "NAVIC"):
+        if target not in supported:
+            continue
+        ok: set[str] = set()
+        refused: set[str] = set()
+        for o in obs:
+            req = observation_request(o, supported)
+            if req is None or target not in req:
+                continue
+            if req != supported_part(req, supported):
+                continue
+            anchors = [g for g in req if g in MAJORS and g != target]
+            if len(anchors) != 1:
+                continue
+            if o.error is None:
+                ok.add(anchors[0])
+            else:
+                refused.add(anchors[0])
+        if ok and refused:
+            result[target] = sorted(ok)
+    return result
+
+
+def requires_signal_any_of(obs: list[SignalObservation],
+                           supported: SignalMap) -> dict[str, list[list[str]]]:
+    """Per-constellation signal groups where at least one signal from each
+    group is required."""
+    result: dict[str, list[list[str]]] = {}
+    for g, sigs in supported.items():
+        rows = signal_rows_for_gnss(obs, supported, g)
+        ok = [r for r, err in rows if not err]
+        bad = [r for r, err in rows if err]
+        groups = []
+        l1 = l1_signals(sigs)
+        if l1 and any(not set(r) & set(l1) for r in bad) \
+                and any(set(r) & set(l1) for r in ok):
+            groups.append(l1)
+        secondary = l2_signals(sigs) + l5_signals(sigs)
+        if l1 and secondary and any(set(r) <= set(l1) for r in bad) \
+                and any(set(r) & set(l1) and set(r) & set(secondary) for r in ok):
+            alts = sorted({s for r in ok for s in r if s in secondary})
+            if alts:
+                groups.append(alts)
+        if groups:
+            result[g] = groups
+    return result
+
+
+def mutually_exclusive_signals(obs: list[SignalObservation],
+                               supported: SignalMap) -> list[SignalMap]:
+    """Two-signal requests that are refused while their individual signals
+    are accepted."""
+    singles = set()
+    refused_pairs = []
+    for o in obs:
+        req = normalize_signal_map(o.requested)
+        if not req:
+            continue
+        if req != supported_part(req, supported):
+            continue
+        atoms = signal_atoms(req)
+        if len(atoms) == 1 and o.error is None:
+            singles.add(atoms[0])
+        elif len(atoms) == 2 and o.error is not None:
+            refused_pairs.append((atoms, req))
+    return dedup([req for atoms, req in refused_pairs
+                  if all(atom in singles for atom in atoms)])
+
+
+def mutually_exclusive_signal_groups(obs: list[SignalObservation],
+                                     supported: SignalMap) -> list[dict[str, Any]]:
+    """L2-family and L5-family requests that work separately but not
+    together with L1."""
+    result = []
+    for g, sigs in supported.items():
+        l1, l2, l5 = set(l1_signals(sigs)), set(l2_signals(sigs)), set(l5_signals(sigs))
+        if not l1 or not l2 or not l5:
+            continue
+        rows = signal_rows_for_gnss(obs, supported, g)
+        ok_l2 = any(not err and set(r) & l1 and set(r) & l2 and not set(r) & l5
+                    for r, err in rows)
+        ok_l5 = any(not err and set(r) & l1 and set(r) & l5 and not set(r) & l2
+                    for r, err in rows)
+        bad_both = any(err and set(r) & l1 and set(r) & l2 and set(r) & l5
+                       for r, err in rows)
+        if ok_l2 and ok_l5 and bad_both:
+            result.append({"gnss": g, "groups": [sorted(l2), sorted(l5)]})
+    return result
+
+
+def signal_rows_for_gnss(obs: list[SignalObservation], supported: SignalMap,
+                         gnss: str) -> list[tuple[list[str], bool]]:
+    rows = []
+    for o in obs:
+        req = observation_request(o, supported)
+        if req is None or gnss not in req:
+            continue
+        if req != supported_part(req, supported):
+            continue
+        if any(g in req and g != gnss and g in MAJORS for g in req):
+            continue
+        rows.append((req[gnss], o.error is not None))
+    return rows
+
+
+def signal_atoms(req: SignalMap) -> list[tuple[str, str]]:
+    return [(g, s) for g, sigs in normalize_signal_map(req).items() for s in sigs]
+
+
+def supported_part(req: SignalMap, supported: SignalMap) -> SignalMap:
+    sup = normalize_signal_map(supported)
+    return normalize_signal_map(
+        {g: [s for s in sigs if s in sup.get(g, [])]
+         for g, sigs in normalize_signal_map(req).items()})
+
+
+def refusal_explained(req: SignalMap, patterns: dict[str, Any]) -> bool:
+    req = normalize_signal_map(req)
+    requires_g = patterns.get("requiresGNSS") or {}
+    if isinstance(requires_g, dict):
+        for g, anchors in requires_g.items():
+            if g in req and not (set(req) & set(anchors)):
+                return True
+    requires_s = patterns.get("requiresSignalAnyOf") or {}
+    if isinstance(requires_s, dict):
+        for g, groups in requires_s.items():
+            if g in req and any(not set(req[g]) & set(group) for group in groups):
+                return True
+    mutex = patterns.get("mutuallyExclusiveSignals") or []
+    for m in mutex:
+        mm = normalize_signal_map(m)
+        if all(set(req.get(g, [])) >= set(sigs) for g, sigs in mm.items()):
+            return True
+    for m in patterns.get("mutuallyExclusiveSignalGroups") or []:
+        if not isinstance(m, dict):
+            continue
+        g = m.get("gnss")
+        groups = m.get("groups")
+        if isinstance(g, str) and isinstance(groups, list) and g in req \
+                and all(set(req[g]) & set(group) for group in groups):
+            return True
+    return False
 
 
 def dedup(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:

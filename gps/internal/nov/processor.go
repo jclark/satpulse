@@ -92,6 +92,33 @@ func (p *AsciiPacketProcessor) ProcessPacket(data string, tRead time.Time) (stri
 	return msgID, p.processMsg(&res.Common, res.Body, res.Msg, tRead, TagAscii, msgID)
 }
 
+// AbbrevAsciiPacketProcessor implements the gpsprot.PacketProcessor interface for
+// NovAtel abbreviated ASCII packets. The lines carry no navigation data; each
+// line is parsed and forwarded to the NativeMsgHandler.
+type AbbrevAsciiPacketProcessor struct {
+	gpsprot.DefaultPacketProcessor
+}
+
+// NewAbbrevAsciiPacketProcessor creates a new NovAtel abbreviated ASCII packet processor
+func NewAbbrevAsciiPacketProcessor() *AbbrevAsciiPacketProcessor {
+	return &AbbrevAsciiPacketProcessor{}
+}
+
+// ProcessPacket processes an abbreviated ASCII packet's data and returns the message ID and any error
+func (p *AbbrevAsciiPacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
+	b := []byte(data)
+	msgID := AbbrevAsciiPacketFormat.MsgID(b)
+	if nmh := p.GetNativeMsgHandler(); nmh != nil {
+		return msgID, nmh.NativeMsg(TagAbbrevAscii, msgID, novmsg.ParseAbbrevAsciiLine(b), tRead)
+	}
+	return msgID, nil
+}
+
+// NativeOnly returns true: abbreviated ASCII lines never produce protocol-agnostic messages.
+func (p *AbbrevAsciiPacketProcessor) NativeOnly() bool {
+	return true
+}
+
 // binParser returns a parse closure for binary messages with a specific port type.
 func binParser[P ~uint8]() func([]byte, map[novmsg.MsgID]func() novmsg.MsgBody) (parseResult, error) {
 	return func(pkt []byte, ctors map[novmsg.MsgID]func() novmsg.MsgBody) (parseResult, error) {

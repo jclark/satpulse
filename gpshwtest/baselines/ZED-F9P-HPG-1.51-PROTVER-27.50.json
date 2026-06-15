@@ -10,12 +10,19 @@
     "rtcmOut": {"missing": [{"missing": ["1005"], "request": ["MSM4", "ARP"]}]},
     "signals": {
       "observed": [
-        {"error": "refused", "request": {"BDS": ["B1I", "B2I"], "QZSS": ["L1", "L1S", "L2C"]}},
-        {"error": "refused", "request": {"GAL": ["E1", "E5b"], "QZSS": ["L1", "L1S", "L2C"]}},
-        {"error": "refused", "request": {"GLO": ["L1", "L2"], "QZSS": ["L1", "L1S", "L2C"]}},
-        {"error": "refused", "request": {"GLO": ["L1", "L2"], "SBAS": ["L1"]}}
+        {"error": "refused", "request": {"GPS": ["L1", "L2C"], "QZSS": ["L1", "L1S"]}},
+        {"error": "refused", "request": {"GPS": ["L1", "L2C"], "QZSS": ["L1"]}},
+        {"error": "refused", "request": {"GPS": ["L1", "L2C"], "QZSS": ["L1S", "L2C"]}},
+        {"error": "refused", "request": {"GPS": ["L1", "L2C"], "QZSS": ["L1S"]}},
+        {"error": "refused", "request": {"GPS": ["L1", "L2C"], "QZSS": ["L2C"]}}
       ],
-      "partialSelectionRefused": {"except": {"BDS": [["B1I"]]}},
+      "requiresGNSS": {"QZSS": ["GPS"], "SBAS": ["BDS", "GAL", "GPS"]},
+      "requiresSignalAnyOf": {
+        "BDS": [["B1I"]],
+        "GAL": [["E1"], ["E5b"]],
+        "GLO": [["L1"], ["L2"]],
+        "GPS": [["L1"], ["L2C"]]
+      },
       "signalSet": {
         "BDS": ["B1I", "B2I"],
         "GAL": ["E1", "E5b"],
@@ -34,13 +41,14 @@
     "vendor": "u-blox"
   },
   "supports": [
-    "band",
     "fixedPos",
     "fixedPosAcc",
+    "port",
     "raw",
     "rtcmBaseID",
     "rtcmMSM4",
     "rtcmMSM7",
+    "signal",
     "speed",
     "survey",
     "surveyAcc",
