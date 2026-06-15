@@ -252,6 +252,20 @@ def config_value(cfg: dict[str, Any], path: tuple[str, ...]) -> Value:
     return v
 
 
+def port_is_usb(cfg: dict[str, Any]) -> bool:
+    """Whether a --show-port config describes native USB."""
+    port = cfg.get("port")
+    return isinstance(port, str) and port.upper() == "USB"
+
+
+def port_has_serial_speed(cfg: dict[str, Any]) -> bool:
+    """Whether a --show-port config describes a baud-rate-bearing port."""
+    if port_is_usb(cfg):
+        return False
+    baud = cfg.get("baudRate")
+    return isinstance(baud, int) and baud > 0
+
+
 def flat_value(obj: Value, key: str) -> Value:
     """Extract a value by flattened key like "fixedPosLLH[0]"."""
     cur = obj
@@ -429,3 +443,28 @@ def event_kinds(events: list[dict[str, Any]]) -> set[str]:
     if "tpPost" in kinds or "time" in kinds:
         kinds.add("after")
     return kinds
+
+
+def pvt_event_kinds(log: Path, events: list[dict[str, Any]]) -> set[str]:
+    """The PVT information kinds present in a packet log.
+
+    Most kinds are semantic gpsprot events. For UBX leap-second output,
+    the wire contract is UBX-NAV-TIMELS; older receivers can emit a
+    TIMELS payload that is not convertible to the stronger LeapSecondMsg
+    abstraction, but still satisfies --pvt-out leap."""
+    kinds = event_kinds(events)
+    if packet_present(log, "UBX", "NAV-TIMELS"):
+        kinds.add("leap")
+    return kinds
+
+
+def packet_present(log: Path, tag: str, msg: str) -> bool:
+    """Whether an inbound packet with tag/msg is present in a packet log."""
+    for line in log.read_text().splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if not e.get("out") and e.get("tag") == tag and e.get("msg") == msg:
+            return True
+    return False

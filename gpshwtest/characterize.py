@@ -15,9 +15,9 @@ from model import (MAJORS, EmissionObservation, Observation, SignalMap,
                    normalize_signal_map, signal_request_valid)
 
 # RTCM MSM message numbers are <decade><level> with a fixed decade per
-# constellation (RTCM 10403 standard numbering, not receiver-specific).
-RTCM_DECADE = {"GPS": 107, "GLO": 108, "GAL": 109, "SBAS": 110, "QZSS": 111,
-               "BDS": 112, "NAVIC": 113}
+# constellation. SBAS and NavIC are intentionally absent: no backend configures
+# those RTCM families, so gpshwtest does not expect them.
+RTCM_DECADE = {"GPS": 107, "GLO": 108, "GAL": 109, "QZSS": 111, "BDS": 112}
 
 def characterize(receiver: dict[str, Any], supports: list[str],
                  observations: list[Observation],
@@ -109,13 +109,12 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
         req = observation_request(o, supported)
         if o.error is not None:
             refused.append({"request": req} if req is not None
-                           else {"gnss": o.gnss, "band": o.band})
+                           else signal_syntax_request(o))
         elif o.achieved is not None:
             achieved = normalize_signal_map(o.achieved)
             if req is None:
                 if o.gnss is not None and sorted(achieved) != sorted(o.gnss):
-                    adjusted.append({"gnss": o.gnss, "band": o.band,
-                                     "result": achieved})
+                    adjusted.append({**signal_syntax_request(o), "result": achieved})
             elif achieved != supported_part(req, supported):
                 adjusted.append({"request": req, "result": achieved})
     if supported:
@@ -129,11 +128,21 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
             continue
         req = observation_request(o, supported)
         mismatched.append({
-            "request": req if req is not None else {"gnss": o.gnss, "band": o.band},
+            "request": req if req is not None else signal_syntax_request(o),
             "accepted": o.accepted, "stored": o.achieved})
     if mismatched:
         entry["observed"] = dedup(entry.get("observed", []) + mismatched)
     return entry if entry else None
+
+
+def signal_syntax_request(o: SignalObservation) -> dict[str, Any]:
+    """The GNSS/band request syntax, omitting fields that were not present."""
+    req: dict[str, Any] = {}
+    if o.gnss is not None:
+        req["gnss"] = o.gnss
+    if o.band is not None:
+        req["band"] = o.band
+    return req
 
 
 def supported_signals(obs: list[SignalObservation]) -> tuple[SignalMap, list[dict[str, Any]]]:
@@ -400,8 +409,8 @@ def characterize_rtcm(obs: list[EmissionObservation], enabled: list[str],
         expected: set[str] = set()
         for f in o.requested:
             if f in ("MSM4", "MSM7"):
-                expected |= {f"{RTCM_DECADE[c]}{f[-1]}" for c in enabled
-                             if c in RTCM_DECADE}
+                expected |= {f"{RTCM_DECADE[c]}{f[-1]}"
+                             for c in rtcm_enabled_gnss(enabled, supports)}
             elif f == "ARP":
                 expected.add("1005")
         lack = sorted(expected - set(o.emitted))
@@ -410,6 +419,11 @@ def characterize_rtcm(obs: list[EmissionObservation], enabled: list[str],
     if missing:
         entry["missing"] = missing
     return entry if entry else None
+
+
+def rtcm_enabled_gnss(enabled: list[str], supports: list[str]) -> list[str]:
+    return [c for c in enabled if c in RTCM_DECADE
+            and (c != "QZSS" or "rtcmQZSS" in supports)]
 
 
 def characterize_raw(obs: list[EmissionObservation],

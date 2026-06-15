@@ -8,7 +8,6 @@
     "mode.fixedPosLLH[1]": {"quantum": 1e-09},
     "pvtOut": {"missing": ["tp"]},
     "saveGranularity": {"singleGroup": true},
-    "showPort": {"unsupported": true},
     "signals": {
       "signalSet": {
         "BDS": ["B1C", "B1I", "B2I", "B2a", "B2b", "B3I"],
@@ -21,5 +20,16 @@
     "timePulse.width": {"quantum": 1e-06}
   },
   "receiver": {"firmware": "Build17548", "hardware": "UM980", "supportedGNSS": [], "vendor": "Unicore"},
-  "supports": ["fixedPos", "raw", "rtcmBaseID", "rtcmMSM4", "rtcmMSM7", "rtcmQZSS", "signal", "survey"]
+  "supports": [
+    "fixedPos",
+    "port",
+    "raw",
+    "rtcmBaseID",
+    "rtcmMSM4",
+    "rtcmMSM7",
+    "rtcmQZSS",
+    "signal",
+    "speed",
+    "survey"
+  ]
 }
