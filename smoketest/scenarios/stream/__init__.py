@@ -62,6 +62,31 @@ def check_pulled_rtcm(ctx: common.SmokeContext) -> int:
     return len(want)
 
 
+def check_udp_pushed_all(ctx: common.SmokeContext) -> int:
+    """The daemon's unfiltered UDP [[stream.push]] feed delivers exact bytes."""
+    packets = common.log_packet_data(ctx.packet_log)
+    want = b"".join(packets)
+    want_lengths = [len(p) for p in packets]
+    assert want, "source log has no packet bytes to push"
+    got = common.poll(
+        lambda: (_udp_pushed_all(ctx) == want and _udp_datagram_lengths(ctx) == want_lengths) or None,
+        interval=0.25,
+    )
+    if got is None:
+        got_bytes = _udp_pushed_all(ctx)
+        got_lengths = _udp_datagram_lengths(ctx)
+        if got_bytes != want:
+            n = len(got_bytes)
+            raise AssertionError(
+                f"UDP pushed bytes do not match source log: captured {n} of {len(want)} bytes"
+            )
+        detail = _datagram_mismatch(got_lengths, want_lengths)
+        raise AssertionError(
+            f"UDP datagrams do not match source packets: {detail}"
+        )
+    return len(want)
+
+
 def _pulled(ctx: common.SmokeContext) -> list[bytes]:
     return [d for (_, _, d) in common.scan_packets(ctx, ctx.serial_writes, "RTCM")]
 
@@ -82,3 +107,37 @@ def check_push_gave_up(ctx: common.SmokeContext) -> None:
 
 def _pushed_rtcm(ctx: common.SmokeContext) -> list[bytes]:
     return [d for (_, _, d) in common.scan_packets(ctx, ctx.caster_capture, "RTCM")]
+
+
+def _udp_pushed_all(ctx: common.SmokeContext) -> bytes:
+    try:
+        with open(ctx.udp_capture, "rb") as f:
+            return f.read()
+    except OSError:
+        return b""
+
+
+def _udp_datagram_lengths(ctx: common.SmokeContext) -> list[int]:
+    out: list[int] = []
+    try:
+        with open(ctx.udp_log, errors="replace") as f:
+            for line in f:
+                _, sep, tail = line.rpartition(" len=")
+                if not sep:
+                    continue
+                try:
+                    out.append(int(tail.strip()))
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    return out
+
+
+def _datagram_mismatch(got: list[int], want: list[int]) -> str:
+    if len(got) != len(want):
+        return f"captured {len(got)} datagrams, want {len(want)}"
+    for i, (g, w) in enumerate(zip(got, want), 1):
+        if g != w:
+            return f"datagram {i} has {g} bytes, want {w}"
+    return "lengths differ"

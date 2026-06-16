@@ -55,17 +55,17 @@ func packetTagSet(formats []gpsprot.PacketFormat) map[gpsprot.Tag]struct{} {
 	return tags
 }
 
-// startPush wires Ntrip stream.push entries into the daemon.  It is
+// startPush wires stream.push entries into the daemon.  It is
 // independent of startNtrip -- the two share GPS state inputs but
-// build their own StreamRecordBuilder closures.  No-op when no
-// [[stream.push]] entry uses ntrip.*.  validTags is the set of tags
-// supported by the receiver's configured packet formats; an entry
-// whose protocol tag is absent is skipped with a warning.
+// build their own StreamRecordBuilder closures.  validTags is the
+// set of tags supported by the receiver's configured packet formats;
+// an entry whose non-empty protocol tag is absent is skipped with a
+// warning.
 func startPush(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	cfg *Config, gcfg *gpscfg.Result, pb *bcast.Bcast[scan.Packet],
 	configCapturePos *gpsprot.PosGeoMsg,
 	validTags map[gpsprot.Tag]struct{}) {
-	if !cfg.Stream.HasNtripPush() {
+	if len(cfg.Stream.Push) == 0 {
 		return
 	}
 	var buildSTR func(sc *ntrip.StreamConfig, name string, hasAuth, msm7to4 bool) string
@@ -83,25 +83,35 @@ func startPush(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	version, _ := cmd.Version()
 	for i := range cfg.Stream.Push {
 		p := &cfg.Stream.Push[i]
-		if p.Ntrip == nil {
-			continue
-		}
 		tag := p.Protocol.Tag()
-		if _, ok := validTags[tag]; !ok {
-			lg.Warn("ntrip push skipped: protocol not supported by this vendor",
-				"mountpoint", p.Ntrip.Mountpoint, "protocol", tag)
-			continue
+		if !tag.IsZero() {
+			if _, ok := validTags[tag]; !ok {
+				switch {
+				case p.Ntrip != nil:
+					lg.Warn("ntrip push skipped: protocol not supported by this vendor",
+						"mountpoint", p.Ntrip.Mountpoint, "protocol", tag)
+				case p.UDP != nil:
+					lg.Warn("udp push skipped: protocol not supported by this vendor",
+						"addr", p.UDP.Address, "protocol", tag)
+				}
+				continue
+			}
 		}
-		dest := &stream.NtripDestination{
-			Addr:       stream.NtripNormalizeAddress(p.Ntrip.Address),
-			Mountpoint: p.Ntrip.Mountpoint,
-			Password:   p.Ntrip.Password,
-			UserAgent:  stream.NtripUserAgent{Version: version},
+		switch {
+		case p.Ntrip != nil:
+			dest := &stream.NtripDestination{
+				Addr:       stream.NtripNormalizeAddress(p.Ntrip.Address),
+				Mountpoint: p.Ntrip.Mountpoint,
+				Password:   p.Ntrip.Password,
+				UserAgent:  stream.NtripUserAgent{Version: version},
+			}
+			if tag == gpsreg.TagRTCM && buildSTR != nil {
+				dest.STR = buildSTR(&p.Ntrip.StreamConfig, p.Ntrip.Mountpoint, false, p.Ntrip.MSM7to4)
+			}
+			runPushEntry(ctx, lg, wg, pb, dest, tag, p.Ntrip.MSM7to4)
+		case p.UDP != nil:
+			runUDPPushEntry(ctx, lg, wg, pb, p.UDP.Address, tag)
 		}
-		if tag == gpsreg.TagRTCM && buildSTR != nil {
-			dest.STR = buildSTR(&p.Ntrip.StreamConfig, p.Ntrip.Mountpoint, false, p.Ntrip.MSM7to4)
-		}
-		runPushEntry(ctx, lg, wg, pb, dest, tag, p.Ntrip.MSM7to4)
 	}
 }
 
@@ -131,6 +141,18 @@ func runPushEntry(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 		err := push.Run(ctx, lg, pb, dest, pktTag, msm7to4, onState)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			lg.Error("ntrip push exited with error", "addr", addr, "mountpoint", mnt, "err", err)
+		}
+	})
+}
+
+func runUDPPushEntry(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
+	pb *bcast.Bcast[scan.Packet], addr string, pktTag gpsprot.Tag) {
+	sink := &stream.UDPSink{Addr: addr}
+	wg.Go(func() {
+		lg.Info("udp push starting", "addr", addr, "protocol", pktTag)
+		err := sink.Run(ctx, lg, pb, pktTag)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			lg.Error("udp push exited with error", "addr", addr, "protocol", pktTag, "err", err)
 		}
 	})
 }

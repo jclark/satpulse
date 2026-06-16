@@ -416,11 +416,15 @@ protocol = "RTCM"
 
 The `stream.push` table array allows streams of packets from the GPS receiver to be sent to network endpoints.
 Each `[[stream.push]]` table specifies one endpoint.
-Currently the only kind of endpoint is Ntrip: SatPulse acts as an Ntrip server, sending to an Ntrip caster.
+Two kinds of endpoint are supported: Ntrip and UDP.
 
-The `[[stream.push]]` table has the following keys:
+The `[[stream.push]]` table can have the following key:
 
-* `protocol` - a string giving the packet protocol to forward; recognized values are `"RTCM"`, `"NMEA"`, `"UBX"`, `"CASBIN"`, `"ASBIN"`, `"SDBP"`, `"UNCB"`, `"UNCA"`, `"NOVB"` and `"NOVA"`; the receiver must output packets using this protocol; the default is `"RTCM"`
+* `protocol` - a string giving the packet protocol to forward; recognized values are `"RTCM"`, `"NMEA"`, `"UBX"`, `"CASBIN"`, `"ASBIN"`, `"SDBP"`, `"UNCB"`, `"UNCA"`, `"NOVB"` and `"NOVA"`; the receiver must output packets using this protocol
+
+With an Ntrip endpoint, SatPulse acts as an Ntrip server, sending to an Ntrip caster.
+The following keys may be specified:
+
 * `ntrip.address` - a string giving the address of the remote Ntrip caster, in the form *host* or *host*`:`*port*; when the port is omitted, the default is 2101; this key is required
 * `ntrip.mountpoint` - a string giving the mountpoint to push to on the remote caster; this key is required and must be a single URL path component
 * `ntrip.password` - a string giving the password for uploading to the remote caster; this key is required
@@ -428,9 +432,10 @@ The `[[stream.push]]` table has the following keys:
 * `ntrip.bitrate` - an integer giving the bitrate sent to the remote caster; the default is the `bitrate` key in the top-level `ntrip` table
 * `ntrip.msm7to4` - a boolean saying whether MSM7 RTCM packets should be converted to MSM4 before being pushed; non-MSM7 packets are forwarded unchanged; this can be used only when `protocol` is `RTCM`; the default is false
 
+For Ntrip endpoints, `protocol` defaults to `"RTCM"`.
 When the protocol is `RTCM`, the source table information sent to the remote caster uses the fields from the `ntrip` table together with the `ntrip.description`, `ntrip.bitrate`, and `ntrip.msm7to4` keys from the push entry.
 
-Example
+Example using Ntrip
 
 ```
 [ntrip]
@@ -441,6 +446,18 @@ ntrip.address = "caster.example.com"
 ntrip.mountpoint = "BKK"
 ntrip.password = "secret"
 ntrip.description = "Bangkok"
+```
+
+With a UDP endpoint, SatPulse acts as a UDP client, sending packets to a UDP address.
+The following key must be specified:
+
+* `udp.address` - a string giving the UDP destination, in the form *host*`:`*port*
+
+Example using UDP
+
+```
+[[stream.push]]
+udp.address = "127.0.0.1:10110"
 ```
 
 ## `sync` table

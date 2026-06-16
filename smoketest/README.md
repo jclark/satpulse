@@ -49,13 +49,14 @@ For each scenario the runner (`run.py`):
 2. renders the scenario's `<name>.toml.in` template, substituting the
    `SATPULSE_TEST_*` resource variables;
 3. creates the serial input transport (a FIFO by default, or a pty for a
-   scenario that needs to disconnect) and starts `satpulsed`;
-4. starts a single `satpulsetool pack --realtime <factor>` replay of the
+   scenario that needs to disconnect) and starts any required fake peers;
+4. starts `satpulsed`;
+5. starts a single `satpulsetool pack --realtime <factor>` replay of the
    scenario's packet log into that input, in the background;
-5. calls the scenario's `run(ctx)`, which performs its checks while the
+6. calls the scenario's `run(ctx)`, which performs its checks while the
    replay flows (live checks such as SSE and Ntrip) and after it
    finishes (`ctx.wait_replay()`, then log and error checks);
-6. stops `satpulsed` with `SIGINT` and verifies it exits and releases its
+7. stops `satpulsed` with `SIGINT` and verifies it exits and releases its
    ports -- except a self-shutdown scenario, which makes the daemon exit on
    its own (see Transports) and verifies that without sending a signal.
 
@@ -162,10 +163,12 @@ make update-deps
   `--sudo`; the SHM reader helper also needs the system `libatomic` library.
 - `proxy/tcp` -- read-only TCP serial proxies with protocol filters.
 - `proxy/socket` -- read-only Unix-socket serial proxy with a protocol filter.
-- `stream/push` -- Ntrip push: the daemon forwards the log's RTCM to a remote
-  caster (the pushed stream matches the source log's RTCM), and a second push
-  entry with a wrong password is permanently rejected, so the daemon gives up
-  on it rather than reconnecting forever.
+- `stream/push-ntrip` -- Ntrip push: the daemon forwards the log's RTCM to a
+  remote caster (the pushed stream matches the source log's RTCM), and a second
+  push entry with a wrong password is permanently rejected, so the daemon gives
+  up on it rather than reconnecting forever.
+- `stream/push-udp` -- UDP push: the daemon forwards the log's packet bytes to
+  a remote UDP receiver.
 - `stream/pull` -- Ntrip pull: the daemon pulls RTCM MSM4 corrections from a
   fake correction source and writes them back to the receiver over the serial
   port; the captured serial writes match the source's RTCM. The only scenario
@@ -178,11 +181,13 @@ make update-deps
   transport and `SELF_SHUTDOWN`.
 
 The Ntrip caster scenarios use `satpulsetool ntrip` as the client. The
-`stream/push` scenario uses the built-in Ntrip fake caster
+`stream/push-ntrip` scenario uses the built-in Ntrip fake caster
 (`scenarios/ntrip/fakecaster.py`) as the remote peer, so it needs no external
 dependency: it accepts the daemon's Ntrip v1 SOURCE feed and captures the
-payload, which the check scans back into RTCM. The `stream/pull` scenario uses
-the matching fake correction source (`scenarios/stream/fakesource.py`): it
+payload, which the check scans back into RTCM. The `stream/push-udp` scenario
+uses the built-in UDP receiver (`scenarios/stream/fakeudp.py`) as its remote
+peer. The `stream/pull` scenario uses the matching fake correction source
+(`scenarios/stream/fakesource.py`): it
 answers the daemon's Ntrip v1 GET and streams an RTCM log, which the daemon
 writes back to the receiver over the pty write path that a read-only FIFO
 cannot provide. A real-peer variant using `str2str` from RTKLIB could be added

@@ -76,8 +76,8 @@ lifecycle. Per scenario `family/name`:
    listeners are configured (`[[http]]`, `[ntrip]`, `[ntp]`, `[[stream.push]]`)
    and sets up only the helpers each needs.
 3. Start auxiliary consumers/peers that must exist *before* the daemon: the
-   chrony SOCK consumer (`ntpsock.py`) for `[ntp]`, and a fake Ntrip caster
-   (`scenarios/ntrip/fakecaster.py`) per `[[stream.push]]` entry.
+   chrony SOCK consumer (`ntpsock.py`) for `[ntp]`, fake Ntrip casters for
+   Ntrip `[[stream.push]]` entries, and fake UDP receivers for UDP push entries.
 4. Start `satpulsed -v -f <config>` (stdout+stderr -> `satpulsed.log`).
 5. Wait for the daemon's listeners (`wait_listeners`) / outbound push
    (`wait_push`) before replay, so observers exist before any packet flows.
@@ -196,7 +196,8 @@ Set per run by the runner; reference as `${NAME}`:
 - Ports (each scenario gets a private block): `SATPULSE_TEST_HTTP_PORT`,
   `SATPULSE_TEST_NTRIP_PORT`, `SATPULSE_TEST_PROXY_TCP_PORT`,
   `SATPULSE_TEST_PROXY_TCP_RTCM_PORT`, `SATPULSE_TEST_REMOTE_CASTER_PORT`,
-  `SATPULSE_TEST_REMOTE_CASTER_PORT2`, `SATPULSE_TEST_TOOL_PORT`.
+  `SATPULSE_TEST_REMOTE_CASTER_PORT2`, `SATPULSE_TEST_TOOL_PORT`,
+  `SATPULSE_TEST_REMOTE_UDP_PORT`.
 - `SATPULSE_TEST_PROXY_SOCKET`, `SATPULSE_TEST_NTP_SOCK` -- Unix socket paths.
 - `SATPULSE_TEST_NTP_SHM_SEGMENT` -- high-numbered test SHM segment for
   root-required NTP SHM scenarios.

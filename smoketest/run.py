@@ -55,7 +55,8 @@ SCENARIOS = [
     "ntp/shm",
     "proxy/tcp",
     "proxy/socket",
-    "stream/push",
+    "stream/push-ntrip",
+    "stream/push-udp",
     "stream/pull",
     "shutdown/serial-loss",
 ]
@@ -78,6 +79,7 @@ PORT_OFFSETS = {
     "SATPULSE_TEST_REMOTE_CASTER_PORT": 4,
     "SATPULSE_TEST_TOOL_PORT": 5,
     "SATPULSE_TEST_REMOTE_CASTER_PORT2": 6,
+    "SATPULSE_TEST_REMOTE_UDP_PORT": 7,
 }
 PORT_BLOCK = 16
 
@@ -246,6 +248,13 @@ class Context:
         self.caster_log = os.path.join(run_dir, "caster.log")
         self.caster_procs: list[subprocess.Popen[bytes]] = []
         self._caster_log_file: IO[bytes] | None = None
+        # Fake UDP push destinations: one scenarios/stream/fakeudp.py process
+        # per UDP [[stream.push]] entry. The first entry writes packet bytes to
+        # udp_capture; diagnostics go to udp_log.
+        self.udp_capture = os.path.join(run_dir, "udp-pushed.bin")
+        self.udp_log = os.path.join(run_dir, "udp.log")
+        self.udp_procs: list[subprocess.Popen[bytes]] = []
+        self._udp_log_file: IO[bytes] | None = None
         # Fake Ntrip correction source: one scenarios/stream/fakesource.py process
         # listening before the daemon, which the daemon's [stream.pull] client
         # connects out to and reads RTCM from. The daemon writes those corrections
@@ -343,8 +352,13 @@ class Context:
             self._ntp_log_file.close()
             self._ntp_log_file = None
 
+    def start_push_peers(self, timeout: float = 5) -> None:
+        """Start fake remote peers for configured stream.push entries."""
+        self.start_caster(timeout)
+        self.start_udp_push_server(timeout)
+
     def start_caster(self, timeout: float = 5) -> None:
-        """Start one fake Ntrip caster per [[stream.push]] entry, before the daemon.
+        """Start one fake Ntrip caster per Ntrip [[stream.push]] entry.
 
         The daemon's push writers connect out at startup, so the casters must
         be listening first; otherwise a connect fails, logs an error (which
@@ -360,13 +374,16 @@ class Context:
         """
         with open(self.env["SATPULSE_TEST_CONFIG"], "rb") as cf:
             push = tomllib.load(cf)["stream"]["push"]
-        good = push[0]["ntrip"]
+        entries = [(i, entry) for i, entry in enumerate(push) if "ntrip" in entry]
+        if not entries:
+            return
+        good = entries[0][1]["ntrip"]
         self._caster_log_file = open(self.caster_log, "wb")
         ports = []
-        for i, entry in enumerate(push):
+        for j, (i, entry) in enumerate(entries):
             port = int(entry["ntrip"]["address"].rsplit(":", 1)[1])
             ports.append(port)
-            capture = self.caster_capture if i == 0 else os.path.join(self.run_dir, f"pushed-{i}.bin")
+            capture = self.caster_capture if j == 0 else os.path.join(self.run_dir, f"pushed-{i}.bin")
             self.caster_procs.append(subprocess.Popen(
                 [sys.executable, os.path.join(SCENARIOS_DIR, "ntrip", "fakecaster.py"),
                  f"127.0.0.1:{port}", "-o", capture,
@@ -382,21 +399,59 @@ class Context:
                     raise RuntimeError(f"fake caster did not listen on {port} within {timeout}s")
                 time.sleep(0.02)
 
-    def wait_push(self, timeout: float = 15) -> None:
-        """Wait until the daemon has completed its SOURCE handshake to the caster.
-
-        Gates replay: Push subscribes to the packet bcast as it connects, so
-        waiting for the caster to accept the SOURCE feed guarantees the
-        subscription exists before any packet flows. Without this, a fast
-        replay could publish packets the push subscriber never sees, and the
-        captured stream would be missing its leading packets.
-        """
+    def start_udp_push_server(self, timeout: float = 5) -> None:
+        """Start one fake UDP receiver per UDP [[stream.push]] entry."""
+        with open(self.env["SATPULSE_TEST_CONFIG"], "rb") as cf:
+            push = tomllib.load(cf)["stream"]["push"]
+        entries = [(i, entry) for i, entry in enumerate(push) if "udp" in entry]
+        if not entries:
+            return
+        self._udp_log_file = open(self.udp_log, "wb")
+        ports = []
+        for j, (i, entry) in enumerate(entries):
+            port = int(entry["udp"]["address"].rsplit(":", 1)[1])
+            ports.append(port)
+            capture = self.udp_capture if j == 0 else os.path.join(self.run_dir, f"udp-pushed-{i}.bin")
+            self.udp_procs.append(subprocess.Popen(
+                [sys.executable, os.path.join(SCENARIOS_DIR, "stream", "fakeudp.py"),
+                 f"127.0.0.1:{port}", "-o", capture],
+                stdout=self._udp_log_file, stderr=subprocess.STDOUT,
+            ))
         deadline = time.time() + timeout
-        while True:
+        for port in ports:
+            want = f"listening 127.0.0.1:{port}"
+            while True:
+                if any(p.poll() is not None for p in self.udp_procs):
+                    raise RuntimeError("fake UDP receiver exited before listening")
+                try:
+                    with open(self.udp_log, errors="replace") as f:
+                        if want in f.read():
+                            break
+                except OSError:
+                    pass
+                if time.time() >= deadline:
+                    raise RuntimeError(f"fake UDP receiver did not listen on {port} within {timeout}s")
+                time.sleep(0.02)
+
+    def wait_push(self, timeout: float = 15) -> None:
+        """Wait until outbound stream.push senders are ready.
+
+        Gates replay: push paths subscribe to the packet bcast during startup,
+        so waiting for each configured remote path to connect guarantees the
+        subscription exists before any packet flows. Without this, a fast replay
+        could publish packets the push subscriber never sees, and the captured
+        stream would be missing its leading packets.
+        """
+        with open(self.env["SATPULSE_TEST_CONFIG"], "rb") as cf:
+            push = tomllib.load(cf)["stream"]["push"]
+        want_caster = any("ntrip" in entry for entry in push)
+        want_udp = any("udp" in entry for entry in push)
+        deadline = time.time() + timeout
+        while want_caster:
             try:
                 with open(self.caster_log, errors="replace") as fh:
                     if "accepted SOURCE" in fh.read():
-                        return
+                        break
             except OSError:
                 pass
             if self.daemon is not None and self.daemon.poll() is not None:
@@ -404,6 +459,22 @@ class Context:
             if time.time() >= deadline:
                 raise RuntimeError(f"daemon did not push to the caster within {timeout}s")
             time.sleep(0.05)
+        while want_udp:
+            try:
+                with open(self.daemon_log, errors="replace") as fh:
+                    if "udp push connected" in fh.read():
+                        break
+            except OSError:
+                pass
+            if self.daemon is not None and self.daemon.poll() is not None:
+                raise RuntimeError("daemon exited before starting UDP push")
+            if time.time() >= deadline:
+                raise RuntimeError(f"daemon did not start UDP push within {timeout}s")
+            time.sleep(0.05)
+
+    def stop_push_peers(self) -> None:
+        self.stop_caster()
+        self.stop_udp_push_server()
 
     def stop_caster(self) -> None:
         for p in self.caster_procs:
@@ -415,6 +486,19 @@ class Context:
                     p.kill()
         if self._caster_log_file is not None:
             self._caster_log_file.close()
+            self._caster_log_file = None
+
+    def stop_udp_push_server(self) -> None:
+        for p in self.udp_procs:
+            if p.poll() is None:
+                p.terminate()
+                try:
+                    p.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+        if self._udp_log_file is not None:
+            self._udp_log_file.close()
+            self._udp_log_file = None
 
     def start_source(self, timeout: float = 5) -> None:
         """Start the fake Ntrip correction source for [stream.pull], before the daemon.
@@ -858,10 +942,10 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         # refclock sample lands in a listening socket rather than warning.
         if has_ntp_sock:
             ctx.start_ntp_sock()
-        # Start the fake Ntrip caster before the daemon, so the daemon's push
-        # connect succeeds immediately instead of failing and backing off.
+        # Start fake remote push peers before the daemon, so outbound push
+        # setup succeeds immediately instead of failing and backing off.
         if has_push:
-            ctx.start_caster()
+            ctx.start_push_peers()
         # Likewise start the fake correction source before the daemon, so the
         # daemon's pull connect succeeds at once rather than warning and backing
         # off. Pull has no listener of its own and does not gate replay.
@@ -886,8 +970,8 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         if daemon.poll() is not None:
             raise RuntimeError(f"daemon exited at startup (code {daemon.returncode})")
         ctx.wait_listeners()
-        # Push has no listener of its own; wait for its outbound SOURCE feed so
-        # the bcast subscription is in place before replay, like wait_listeners
+        # Push has no listener of its own; wait for outbound push setup so the
+        # bcast subscription is in place before replay, like wait_listeners
         # does for the inbound observers.
         if has_push:
             ctx.wait_push()
@@ -948,7 +1032,7 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         if daemon is not None and daemon.poll() is None:
             stop_daemon(daemon, process_group=requires_root)
         ctx.stop_ntp_sock()
-        ctx.stop_caster()
+        ctx.stop_push_peers()
         ctx.stop_source()
         if requires_root:
             err = ctx.remove_ntp_shm()

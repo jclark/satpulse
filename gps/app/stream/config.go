@@ -35,12 +35,13 @@ type NtripConfig struct {
 }
 
 // PushConfig is one [[stream.push]] entry.  Transport is selected
-// by which sub-table is present; currently only ntrip is supported.
-// Protocol is the packet format forwarded to the destination; an
-// unset value defaults per transport.
+// by which sub-table is present.  Protocol is the packet format
+// forwarded to the destination; an unset value defaults per
+// transport.
 type PushConfig struct {
 	Protocol gpsreg.Protocol  `toml:"protocol"`
 	Ntrip    *NtripPushConfig `toml:"ntrip"`
+	UDP      *UDPPushConfig   `toml:"udp"`
 }
 
 // NtripPushConfig is the operator-facing TOML for one Ntrip push
@@ -51,6 +52,12 @@ type NtripPushConfig struct {
 	Password           string `toml:"password"`
 	ntrip.StreamConfig        // embedded: Description, Bitrate
 	MSM7to4            bool   `toml:"msm7to4"`
+}
+
+// UDPPushConfig is the operator-facing TOML for one UDP push
+// destination.
+type UDPPushConfig struct {
+	Address string `toml:"address"`
 }
 
 // Validate checks the [stream] configuration.  Absent [stream.pull]
@@ -72,14 +79,19 @@ func (cfg *Config) Validate() error {
 // Validate checks one [[stream.push]] entry and fills in the
 // transport-specific default for an unset protocol.
 func (cfg *PushConfig) Validate() error {
-	if cfg.Ntrip == nil {
-		return fmt.Errorf("must configure ntrip")
+	hasNtrip := cfg.Ntrip != nil
+	hasUDP := cfg.UDP != nil
+	switch {
+	case hasNtrip && hasUDP:
+		return fmt.Errorf("ntrip and udp are mutually exclusive")
+	case !hasNtrip && !hasUDP:
+		return fmt.Errorf("must configure either ntrip or udp")
+	case hasUDP:
+		if cfg.UDP.Address == "" {
+			return fmt.Errorf("udp.address is required")
+		}
+		return nil
 	}
-	// Ntrip is currently the only transport, so defaulting Protocol
-	// to RTCM here is correct.  When a second transport is added,
-	// move this defaulting into a per-transport step (TCP, for
-	// example, has no obvious default and should require an
-	// explicit protocol).
 	if cfg.Protocol == "" {
 		cfg.Protocol = gpsreg.Protocol(gpsreg.TagRTCM)
 	}
@@ -125,7 +137,7 @@ func checkSourcePassword(s string) error {
 	return nil
 }
 
-// hasNtrip reports whether any [[stream.push]] entry uses ntrip.*.
+// HasNtripPush reports whether any [[stream.push]] entry uses ntrip.*.
 // Used by the daemon to decide whether to wire push and (via
 // Config.hasNtripStream) whether STR-record GPS state is needed.
 func (cfg *Config) HasNtripPush() bool {
