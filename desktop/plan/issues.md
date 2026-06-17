@@ -109,3 +109,13 @@ Hide vs. disable rule: hiding changes layout, so only hide elements that occupy 
 - RTCM message group -> `rtcmMSM4`/`rtcmMSM7` for the corresponding MSM dropdown options (disable individual options in place). `ConfigSupportRTCMMSM` covers "either MSM supported". `rtcmBaseID` and `rtcmQZSS` have no current UI counterpart and can be ignored.
 - Raw message `ConfigGroup` -> `raw`: hide when absent.
 
+## macos-github-build: Build a macOS .dmg in GitHub Actions
+
+The desktop GUI has no macOS distribution -- users clone the repo and build it themselves. Provide a downloadable `.dmg`, built in GitHub Actions on a macOS runner rather than on a developer's Mac. macOS cannot be containerised, so a clean, ephemeral, versioned CI runner (with pinned toolchain versions) is the practical way to get a reproducible build; an accreted local machine is not. This deliberately trades GitHub dependency for reproducibility, which is the priority here.
+
+The workflow runs `wails build`, packages the result into a `.dmg`, and publishes it as a release asset.
+
+Signing is an optional, slot-in stage. With no Apple Developer ID, produce an unsigned `.dmg` (quarantined by Gatekeeper, so right-click-to-open). When the signing secrets are present -- a Developer ID Application certificate plus notarization credentials -- `codesign` with the hardened runtime, submit with `notarytool`, and `staple`. So the pipeline works now and gains notarization once we have a Developer ID. A Homebrew cask could later point at the published `.dmg`, but a cask only installs cleanly once the artifact is notarized, so that follows signing.
+
+Still to decide: whether the build is a universal (arm64 + amd64) binary or arm64-only, and the workflow trigger.
+
