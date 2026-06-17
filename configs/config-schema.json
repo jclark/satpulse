@@ -334,6 +334,15 @@
           "minimum": 0,
           "maximum": 1000
         },
+        "offsetScaledLogVariance": {
+          "type": "integer",
+          "default": 65535,
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "allanDeviation": {
+          "type": "number"
+        },
         "domainNumber": {
           "type": "integer"
         },
