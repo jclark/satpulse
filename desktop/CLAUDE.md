@@ -54,8 +54,12 @@ Uses Tailwind 4.x via `@tailwindcss/vite` plugin. Same utility classes and `dark
 ## Build
 
 ```
-cd desktop && make                      # full app (produces SatPulse.app on macOS)
+cd desktop && make                      # full app (SatPulse.app on macOS, SatPulse on Linux)
 cd desktop/frontend && npm run build    # frontend only (tsc + vite build)
 ```
+
+On Linux the `Makefile` adds `-tags webkit2_41` automatically (only the
+WebKitGTK 4.1 headers are packaged on current distros). See the README
+prerequisites for the GTK/WebKitGTK packages to install.
 
 The Go embed directive in `main.go` embeds `all:frontend/dist`.
