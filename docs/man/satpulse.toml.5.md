@@ -157,7 +157,7 @@ The `ptp` table controls this. It can have the following keys:
 * `ptp4l.udsAddress` - a string giving the path of the Unix domain socket used by ptp4l for PTP management. By default
    ptp4l uses `/var/run/ptp4l`, but it can be changed with the ptp4l `uds_address` option. This key must be supplied
    to enable SatPulse to update ptp4l.
-* `domain` - the PTP domain number; this defaults to 0
+* `domainNumber` - the PTP domain number; this defaults to 0
 * `majorSdoId` - the PTP majorSdoId; this defaults to 0; in earlier versions of the PTP standard this is called `transportSpecific`
 * `minorSdoId` - the PTP minorSdoId; this defaults to 0
 * `clockAccuracy` - the accuracy in nanoseconds of the PTP grandmaster instance when synchronized to the GPS receiver.
@@ -221,7 +221,7 @@ shm.segment = 2
 ## `log` table
 
 The `log` table is about how SatPulse should log information. SatPulse does two kinds of logging: it logs through systemd,
-and it can also write its own applicaton-specific log files.
+and it can also write its own application-specific log files.
 
 The following keys relate to logging through systemd:
 
@@ -230,14 +230,16 @@ The following keys relate to logging through systemd:
   the default is 30; the status is computed once per second, and a value of 1 will log that status directly; a value
   of 0 will not log the synchronization status
 
-The following keys relate to its own log
+The following keys relate to its own log files:
 
 * `clock` - a boolean saying whether to create a *clock* log; the clock log is in text format and records offsets between the PHC and the GPS;
    it is intended to be convenient for statistical analysis
 * `packet` - a boolean saying whether to create a *packet* log; the packet log is in JSON Lines format and
   records packets received by and sent to the GPS receiver
-* `event` a boolean saying whether to create an  *event* log; the event log is in JSON Lines format and
+* `event` - a boolean saying whether to create an *event* log; the event log is in JSON Lines format and
   records the events input into the synchronization process (pulses and GPS messages)
+* `track` - a boolean saying whether to create a *track* log; the track log is in JSON Lines format and
+  records one trackpoint per navigation epoch
 * `dir` - a string giving the directory in which to write log files; this defaults to `/var/log/satpulse`
 
 ## `http` table array
