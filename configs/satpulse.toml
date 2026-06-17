@@ -1,71 +1,147 @@
 #:schema ./config-schema.json
-# Default config file for satpulse
-[phc]
-interface = "enp1s0"
-pin = 0
+
+# Configuration file for satpulsed
+
+# Comments without a space following the "#" are disabled settings.
+# Enable by deleting the "#"
+
+# The only entry you have to edit to get satpulsed to start is speed in the [serial] section.
+# After that, look at config in [gps] section and the [[http]] section.
+# For PTP, look at interface in [phc] section and ptp4l.udsAddress in [ptp] section.
+# For RTK, look at rtcmOutput in [gps] section and the [[ntrip.mountpoint]] section.
+
+############### GPS receiver ###############
 
 [serial]
-# This can be overridden with the -d option on the command-line
-device = "/dev/ttyUSB0"
+# Uncomment to specify the device to which the GPS receiver is connected.
+# Usually this is specified in the instance name of the satpulse@ service,
+# which is passed through to satpulsed as a -d option
+#device = "/dev/ttyUSB0"
+# Edit this to specify the speed in baud for the serial connection
 speed = 9600
 
 [gps]
-# Uncommenting the following line will enable configuration of the GPS
-# (changes are not persistent across GPS reboots)
+# Uncomment to configure the GPS (changes are not persistent across GPS reboots)
 #config = true
-# This specifies the vendor of your GPS module.
-# Setting this restricts which packet formats the scanner recognizes and which
-# configuration protocols are probed.
+# Uncomment to restrict recognized packet formats and config protocols to one vendor.
 # If not set, all packet formats and configuration protocols are tried.
-# The following values are supported:
-#   u-blox, Unicore, Allystar, Bynav, NovAtel, Quectel, SinoGNSS, Techtotop, Zhongke, other
-# In addition, the following values are allowed and currently treated as equivalent to "other":
-#   Furuno, MediaTek, Septentrio, SkyTraq, Trimble
+# One of: u-blox, Unicore, Allystar, Bynav, NovAtel, Quectel, SinoGNSS, Techtotop, Zhongke, other
+# (Furuno, MediaTek, Septentrio, SkyTraq, Trimble are treated as "other")
 #vendor = "u-blox"
+# Uncomment for a mobile receiver; default is to assume stationary
+#mobile = true
+# Uncomment and edit to set a fixed antenna position as ECEF coordinates in meters
+#fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
+# Uncomment and edit to set a fixed antenna position as latitude and longitude in degrees and height in meters
+#fixedPosLLH = [51.5007, -0.1246, 11.0]
+# Uncomment to set the accuracy of the fixed position in meters
+#fixedPosAcc = 0.05
+# Uncomment to configure the receiver to output RTCM messages
+#rtcmOutput = true
+# Uncomment to prefer MSM7 over MSM4 messages when outputting RTCM messages
+#rtcmPreferMSM7 = true
 
-[log]
-# Uncomment the following line to enable logging of PHC offsets (in /var/log/satpulse/)
-# clock = true
-# Uncomment the following line to enable logging of packets from the GPS receiver (in /var/log/satpulse)
-# packet = true
-# Uncomment the following line to enable JSONL track logging (in /var/log/satpulse)
-# track = true
+################## Timing ##################
 
+# This section controls use of a PTP hardware clock (PHC)
+[phc]
+# Uncomment to synchronize a PHC with the time from the GPS receiver.
+# The GPS PPS signal must be connected to a pin on the PHC.
+# The PHC is identified by the ethernet interface with which it is associated
+#interface = "enp1s0"
+# Uncomment and edit to specify the pin to which the PPS signal is attached
+#pin = 0
+
+# This section controls how to provide information to a PTP server
 [ptp]
 # Unix domain socket for PTP management
 # Corresponds to ptp4l uds_address config option
-# Comment this out to stop satpulse updating ptp4l
-ptp4l.udsAddress = "/var/run/ptp4l"
-# PTP domain number
-domainNumber = 0
-# This corresponds to ptp4l transportSpecific option
-# (It's called majorSdoId in latest version of PTP standard.) 
-majorSdoId = 0
-# Maximum of absolute value of offset in nanoseconds between PHC and GPS when in sync.
-# The offsets are smoothed, so it is OK if this is exceeded occasionally.
-# It will be rounded up to the next value supported by PTP (e.g. 10, 25, 100, 250, 1000)
-# and set as the clockAccuracy attribute of the PTP instance.
-# 150 is conservative. With a good GPS and sky view, 60 should be achievable
-# (rounding up to clockAccuracy of 100ns).
-clockAccuracy = 150
+# Uncomment to make satpulsed update ptp4l
+#ptp4l.udsAddress = "/var/run/ptp4l"
+# Uncomment and edit to change the PTP domain number
+#domainNumber = 0
+# Uncomment and edit to change the ptp4l transportSpecific option
+# (It's called majorSdoId in latest version of PTP standard)
+#majorSdoId = 0
+# Uncomment and edit to change the clockAccuracy value that the PTP server should use
+# when the PHC is in sync with the GPS receiver.
+# 150 is conservative. With a good GPS and sky view, 60 should be achievable.
+# It will be rounded up to the next value supported by PTP (e.g. 10, 25, 100, 250, 1000).
+# The value before being rounded up is used to choose buckets for Prometheus observability
+#clockAccuracy = 150
 
+# This section controls how to provide information to a NTP server
 [ntp]
-# Uncomment the sock.path line to act as a refclock SOCK for chrony
-# chrony.conf would need a line like:
-# refclock SOCK /var/run/chrony.satpulse.sock poll 2 filter 4 refid GNSS
+# Uncomment to act as a refclock SOCK for chrony. chrony.conf needs a line like:
+#   refclock SOCK /var/run/chrony.satpulse.sock poll 2 filter 4 refid GNSS
 #sock.path = "/var/run/chrony.satpulse.sock"
+# Uncomment to use the NTP SHM protocol; segment is the SHM segment index (0-255)
+#shm.segment = 2
 
-# Uncomment the following two lines to allow HTTP monitoring on port 2000
+################ Monitoring ################
+
+# Uncomment to enable HTTP monitoring on port 2000
 #[[http]]
 #listen = ":2000"
 
-# Uncomment this to allow a TCP connection to proxy the serial port
+[log]
+# Uncomment to log PHC offsets
+#clock = true
+# Uncomment to log packets to and from the receiver
+#packet = true
+# Uncomment to write a JSONL track log
+#track = true
+# Uncomment and edit to change the log file directory
+#dir = "/var/log/satpulse"
+
+############## Packet routing ##############
+
+# Uncomment to proxy the serial port on TCP port 2006
 #[[proxy.tcp]]
 #listen = ":2006"
 #readOnly = true
 
-# Uncomment this to allow a Unix domain socket to proxy the serial port
-# This can be used with
-#    satpulsetool gps --socket /var/run/satpulse.sock
+# Uncomment to proxy the serial port over a Unix domain socket
+# (use with: satpulsetool gps --socket /var/run/satpulse.sock)
 #[[proxy.socket]]
 #path = "/var/run/satpulse.sock"
+
+# Uncomment to run an Ntrip caster serving RTCM corrections
+#[[ntrip.mountpoint]]
+#name = "BKK"
+# Uncomment to require authentication as any user in the [[user]] table
+#auth.anyUser = true
+# Uncomment and edit to allow only specific users
+#auth.users = ["rover"]
+
+# This section affects the source table used by [[ntrip.mountpoint]] and [[stream.push]]
+[ntrip]
+# Uncomment and edit to specify the country
+#country = "XXX"
+
+# Uncomment and edit to define users for Ntrip mountpoint authentication
+#[[user]]
+#name = "rover"
+#password = "secret"
+
+# Uncomment and edit to act as an Ntrip server pushing packets to an Ntrip caster
+#[[stream.push]]
+#ntrip.address = "caster.example.com"
+#ntrip.mountpoint = "BKK"
+#ntrip.password = "secret"
+
+# Uncomment and edit to push receiver packets to a UDP address
+#[[stream.push]]
+#udp.address = "127.0.0.1:10110"
+
+# This section says how to provide the receiver with corrections
+[stream.pull]
+# Uncomment and edit to pull RTCM corrections from an Ntrip caster
+#ntrip.address = "caster.example.com"
+#ntrip.mountpoint = "RTCM"
+# Uncomment and edit to use authentication with the Ntrip caster
+#ntrip.username = "rover"
+#ntrip.password = "secret"
+
+# Uncomment and edit to pull RTCM corrections from a TCP server
+#tcp.address = "192.168.1.42:2006"
