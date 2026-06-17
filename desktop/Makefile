@@ -1,4 +1,4 @@
-.PHONY: build dev lint clean realclean setup
+.PHONY: build deb dev lint clean realclean setup
 
 # WebKitGTK version Wails links against on Linux. 4.1 (libsoup3) is shipped by
 # all current distros (Ubuntu 24.04+, Debian trixie+, Fedora 40+); use 4.0
@@ -13,6 +13,10 @@ TAGFLAG = $$([ "$$(uname -s)" = Linux ] && [ "$(WEBKIT)" = 4.1 ] && echo -tags w
 
 build:
 	wails build $(TAGFLAG)
+
+# Package a .deb for the Debian-based distro this runs on (builds first if needed).
+deb:
+	./build-deb.sh
 
 setup:
 	cd .. && go work init . ./desktop
