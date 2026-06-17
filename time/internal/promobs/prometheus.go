@@ -84,7 +84,7 @@ type PrometheusObserver struct {
 }
 
 // New creates a new PrometheusObserver with basic metrics
-func New(clockAccuracyNanos int) *PrometheusObserver {
+func New(clockAccuracyNanos int64) *PrometheusObserver {
 	reg := prometheus.NewRegistry()
 
 	// Sync state gauge

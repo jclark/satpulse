@@ -69,7 +69,7 @@ func (clk *Clock) ReadExtts() (ptime.Time, uint32, error) {
 	if n != size {
 		return 0, 0, clk.wrapErr(fmt.Errorf("unexpected number of bytes %d (expected %d)", n, size), "read")
 	}
-	return ptime.TimespecToTime(unix.Timespec{Sec: event.T.Sec, Nsec: int64(event.T.Nsec)}), event.Index, nil
+	return ptpClockTimeToTimePHC(event.T), event.Index, nil
 }
 
 // This is only safe when any ReadWorker has closed its tsEvents channel
@@ -286,8 +286,8 @@ func (clk *Clock) AdjTime(d time.Duration) error {
 	}
 	tx := unix.Timex{}
 	tx.Modes = unix.ADJ_SETOFFSET | unix.ADJ_NANO
-	tx.Time.Sec = secs
-	tx.Time.Usec = nsecs
+	tx.Time.Sec = kernelLong(secs)
+	tx.Time.Usec = kernelLong(nsecs)
 	_, err := clk.adjtimex(&tx, "(ADJ_SETOFFSET)")
 	return err
 }
@@ -305,9 +305,9 @@ func (clk *Clock) SetFreqOffset(fo float64) error {
 	tx := unix.Timex{}
 	tx.Modes = unix.ADJ_FREQUENCY
 	newFreq := int64(fo * 65.536)
-	tx.Freq = newFreq
+	tx.Freq = kernelLong(newFreq)
 	_, err := clk.adjtimex(&tx, "(ADJ_FREQUENCY)")
-	if tx.Freq != newFreq {
+	if int64(tx.Freq) != newFreq {
 		return fmt.Errorf("error setting freq offset to %vppb (got %v)", fo, float64(tx.Freq)/65.536)
 	}
 	return err
@@ -391,7 +391,7 @@ func durationToPtpClockTime(d time.Duration) unix.PtpClockTime {
 // timespecToPtpClockTime converts a unix.Timespec to unix.PtpClockTime
 func timespecToPtpClockTime(ts unix.Timespec) unix.PtpClockTime {
 	return unix.PtpClockTime{
-		Sec:  ts.Sec,
+		Sec:  int64(ts.Sec),
 		Nsec: uint32(ts.Nsec),
 	}
 }

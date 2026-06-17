@@ -25,3 +25,5 @@ struct shmTime {
 import "C"
 
 type shmTime C.struct_shmTime
+
+const expectedSize = C.sizeof_struct_shmTime
