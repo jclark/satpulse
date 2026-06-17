@@ -158,6 +158,8 @@ class Context:
         self.ntp_log = os.path.join(run_dir, "ntp.jsonl")
         self.caster_capture = os.path.join(run_dir, "pushed.bin")
         self.caster_log = os.path.join(run_dir, "caster.log")
+        self.udp_capture = os.path.join(run_dir, "udp-pushed.bin")
+        self.udp_log = os.path.join(run_dir, "udp.log")
         self.serial_writes = os.path.join(run_dir, "serial-out.bin")
         self.pull_source_log = ""
         self.satpulsetool = find_program("satpulsetool", ["/usr/bin/satpulsetool", "/usr/local/bin/satpulsetool"])

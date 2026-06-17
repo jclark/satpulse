@@ -98,6 +98,33 @@ func runPush(t *testing.T, ctx context.Context, dest Destination,
 	return pktCh, closeInput, wait
 }
 
+func runUDPPush(t *testing.T, ctx context.Context, addr string,
+	pktTag gpsprot.Tag) (chan<- scan.Packet, func(), func() error) {
+	t.Helper()
+	pktCh := make(chan scan.Packet)
+	b := bcast.New((<-chan scan.Packet)(pktCh))
+	bcastDone := make(chan struct{})
+	go func() {
+		b.Run(ctx, testLogger())
+		close(bcastDone)
+	}()
+	pushDone := make(chan error, 1)
+	sink := &UDPSink{Addr: addr}
+	go func() {
+		pushDone <- sink.Run(ctx, testLogger(), b, pktTag)
+	}()
+	var closeOnce sync.Once
+	closeInput := func() { closeOnce.Do(func() { close(pktCh) }) }
+	wait := func() error {
+		err := <-pushDone
+		closeInput()
+		b.Close()
+		<-bcastDone
+		return err
+	}
+	return pktCh, closeInput, wait
+}
+
 // readAllAvailable reads up to n bytes from r, blocking up to timeout.
 // Returns whatever was read (possibly less than n).
 func readAllAvailable(r net.Conn, n int, timeout time.Duration) []byte {
@@ -114,6 +141,43 @@ func readAllAvailable(r net.Conn, n int, timeout time.Duration) []byte {
 	return buf[:got]
 }
 
+func readUDPAvailable(t *testing.T, conn *net.UDPConn, timeout time.Duration) ([]byte, bool) {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	buf := make([]byte, 4096)
+	n, err := conn.Read(buf)
+	if err != nil {
+		if e, ok := err.(net.Error); ok && e.Timeout() {
+			return nil, false
+		}
+		t.Fatalf("Read: %v", err)
+	}
+	return buf[:n], true
+}
+
+func readUDP(t *testing.T, conn *net.UDPConn, timeout time.Duration) []byte {
+	t.Helper()
+	buf, ok := readUDPAvailable(t, conn, timeout)
+	if !ok {
+		t.Fatal("timed out waiting for UDP packet")
+	}
+	return buf
+}
+
+func waitUDPPushReady(t *testing.T, pktCh chan<- scan.Packet, conn *net.UDPConn, pkt scan.Packet) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		pktCh <- pkt
+		if got, ok := readUDPAvailable(t, conn, 20*time.Millisecond); ok && string(got) == pkt.Data {
+			return
+		}
+	}
+	t.Fatal("timed out waiting for UDP push to subscribe")
+}
+
 func TestPushPacketsFlowToDestination(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -126,6 +190,58 @@ func TestPushPacketsFlowToDestination(t *testing.T) {
 	got := readAllAvailable(server, len(pkt1005), 2*time.Second)
 	if string(got) != string(pkt1005) {
 		t.Errorf("got %x, want %x", got, pkt1005)
+	}
+	cancel()
+	if err := wait(); err != nil && !errors.Is(err, context.Canceled) {
+		t.Errorf("Run: %v", err)
+	}
+}
+
+func TestUDPPushNoFilterSendsEverything(t *testing.T) {
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatalf("ListenUDP: %v", err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pktCh, _, wait := runUDPPush(t, ctx, conn.LocalAddr().String(), gpsprot.EmptyTag)
+	waitUDPPushReady(t, pktCh, conn, scan.Packet{Data: "ready"})
+	raw := scan.Packet{Data: "raw bytes"}
+	bad := scan.Packet{Format: rtcm.PacketFormat, Data: string(makeRTCM(1005, 16))}
+	pktCh <- raw
+	if got := readUDP(t, conn, time.Second); string(got) != raw.Data {
+		t.Errorf("raw packet = %q, want %q", got, raw.Data)
+	}
+	pktCh <- bad
+	if got := readUDP(t, conn, time.Second); string(got) != bad.Data {
+		t.Errorf("checksum-invalid packet = %x, want %x", got, []byte(bad.Data))
+	}
+	cancel()
+	if err := wait(); err != nil && !errors.Is(err, context.Canceled) {
+		t.Errorf("Run: %v", err)
+	}
+}
+
+func TestUDPPushFilterRequiresTagAndValidChecksum(t *testing.T) {
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatalf("ListenUDP: %v", err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pktCh, _, wait := runUDPPush(t, ctx, conn.LocalAddr().String(), rtcm.Tag)
+	ready := scan.Packet{Format: rtcm.PacketFormat, Data: string(makeRTCM(1005, 16)), ChecksumValid: true}
+	waitUDPPushReady(t, pktCh, conn, ready)
+	raw := scan.Packet{Data: "raw bytes"}
+	bad := scan.Packet{Format: rtcm.PacketFormat, Data: string(makeRTCM(1077, 16))}
+	good := scan.Packet{Format: rtcm.PacketFormat, Data: string(makeRTCM(1087, 16)), ChecksumValid: true}
+	pktCh <- raw
+	pktCh <- bad
+	pktCh <- good
+	if got := readUDP(t, conn, time.Second); string(got) != good.Data {
+		t.Errorf("filtered packet = %x, want %x", got, []byte(good.Data))
 	}
 	cancel()
 	if err := wait(); err != nil && !errors.Is(err, context.Canceled) {

@@ -536,7 +536,7 @@
             "type": "object",
             "properties": {
               "protocol": {
-                "description": "Packet format to forward (default: RTCM for ntrip transport)",
+                "description": "Packet format to forward",
                 "type": "string",
                 "enum": ["", "RTCM", "NMEA", "UBX", "CASBIN", "ASBIN", "SDBP", "UNCB", "UNCA", "NOVB", "NOVA"]
               },
@@ -574,9 +574,23 @@
                   }
                 },
                 "required": ["address", "mountpoint", "password"]
+              },
+              "udp": {
+                "description": "UDP packet stream destination",
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "description": "host:port of the UDP destination",
+                    "type": "string"
+                  }
+                },
+                "required": ["address"]
               }
             },
-            "required": ["ntrip"],
+            "oneOf": [
+              {"required": ["ntrip"]},
+              {"required": ["udp"]}
+            ],
             "allOf": [
               {
                 "if": {
