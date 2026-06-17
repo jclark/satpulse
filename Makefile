@@ -51,7 +51,7 @@ $(ALL_GOARCH):
 	env GOOS=linux GOARCH=$@ GOARM=$(GOARM) go build -tags "$(TAGS)" -o out/$@/ -ldflags "$(XFLAGS)" ./...
 
 out/arm64/satpulse.toml out/arm/satpulse.toml: configs/satpulse.toml
-	sed -e '/^#:schema /s; \./; /usr/share/doc/satpulse/;' -e '/^interface/s/enp1s0/eth0/' -e '/^device/s/ttyUSB0/ttyAMA0/' $< > $@
+	sed -e '/^#:schema /s; \./; /usr/share/doc/satpulse/;' -e '/interface/s/"enp1s0"/"eth0"/' -e '/device/s;"/dev/ttyUSB0";"/dev/ttyAMA0";' $< > $@
 
 out/amd64/satpulse.toml: configs/satpulse.toml
 	sed -e '/^#:schema /s; \./; /usr/share/doc/satpulse/;' $< > $@
