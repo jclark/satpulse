@@ -495,7 +495,7 @@
       "type": "object",
       "properties": {
         "pull": {
-          "description": "Network correction source written to the receiver. Exactly one of tcp or ntrip must be configured.",
+          "description": "Network correction source written to the receiver. Configure at most one of tcp or ntrip; an empty table leaves it disabled.",
           "type": "object",
           "properties": {
             "tcp": {
@@ -533,10 +533,7 @@
               "required": ["address", "mountpoint"]
             }
           },
-          "oneOf": [
-            {"required": ["tcp"]},
-            {"required": ["ntrip"]}
-          ]
+          "not": {"required": ["tcp", "ntrip"]}
         },
         "push": {
           "description": "Outbound stream destinations. Each entry forwards scanned packets to a remote endpoint.",

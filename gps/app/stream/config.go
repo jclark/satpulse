@@ -10,12 +10,13 @@ import (
 
 // Config matches the [stream] TOML table.
 type Config struct {
-	Pull *PullConfig  `toml:"pull"`
+	Pull PullConfig   `toml:"pull"`
 	Push []PushConfig `toml:"push"`
 }
 
-// PullConfig matches the [stream.pull] TOML table.  Exactly one of
-// TCP or Ntrip must be set.
+// PullConfig matches the [stream.pull] TOML table.  At most one of
+// TCP or Ntrip is set; with neither set the pull is disabled, so an
+// empty table is valid.
 type PullConfig struct {
 	TCP   *TCPConfig   `toml:"tcp"`
 	Ntrip *NtripConfig `toml:"ntrip"`
@@ -63,10 +64,8 @@ type UDPPushConfig struct {
 // Validate checks the [stream] configuration.  Absent [stream.pull]
 // and absent [[stream.push]] are both valid (stream is optional).
 func (cfg *Config) Validate() error {
-	if cfg.Pull != nil {
-		if err := cfg.Pull.Validate(); err != nil {
-			return err
-		}
+	if err := cfg.Pull.Validate(); err != nil {
+		return err
 	}
 	for i := range cfg.Push {
 		if err := cfg.Push[i].Validate(); err != nil {
@@ -149,15 +148,12 @@ func (cfg *Config) HasNtripPush() bool {
 	return false
 }
 
-// Prepare builds a PullSetup for cfg, or returns nil when cfg is
-// nil.  version feeds the Ntrip User-Agent header.  pw and portLock
-// are the correction-output port (the receiver's main serial
-// connection in the simplest case).
+// Prepare builds a PullSetup for cfg, or returns nil when the pull
+// is disabled (neither tcp nor ntrip set).  version feeds the Ntrip
+// User-Agent header.  pw and portLock are the correction-output port
+// (the receiver's main serial connection in the simplest case).
 func (cfg *PullConfig) Prepare(version string,
 	pw PacketWriter, portLock gpsio.OutPortLock) *PullSetup {
-	if cfg == nil {
-		return nil
-	}
 	var src Source
 	var addr string
 	switch {
@@ -173,6 +169,8 @@ func (cfg *PullConfig) Prepare(version string,
 			Password:   cfg.Ntrip.Password,
 			UserAgent:  NtripUserAgent{Version: version},
 		}
+	default:
+		return nil
 	}
 	return &PullSetup{
 		pull:       NewPull(),
@@ -185,15 +183,16 @@ func (cfg *PullConfig) Prepare(version string,
 }
 
 // Validate checks [stream.pull] for transport selection and
-// required fields.
+// required fields.  An empty table (neither tcp nor ntrip) leaves
+// the pull disabled and is valid.
 func (cfg *PullConfig) Validate() error {
 	hasTCP := cfg.TCP != nil
 	hasNtrip := cfg.Ntrip != nil
 	switch {
+	case !hasTCP && !hasNtrip:
+		return nil
 	case hasTCP && hasNtrip:
 		return fmt.Errorf("stream.pull: tcp and ntrip are mutually exclusive")
-	case !hasTCP && !hasNtrip:
-		return fmt.Errorf("stream.pull: must configure either tcp or ntrip")
 	case hasTCP && cfg.TCP.Address == "":
 		return fmt.Errorf("stream.pull.tcp.address is required")
 	case hasNtrip:

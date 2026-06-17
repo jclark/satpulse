@@ -137,7 +137,7 @@ ntrip.password = "p"`
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Stream.Pull == nil || cfg.Stream.Pull.Ntrip == nil {
+	if cfg.Stream.Pull.Ntrip == nil {
 		t.Fatalf("expected stream.pull.ntrip to be set, got %+v", cfg.Stream)
 	}
 	n := cfg.Stream.Pull.Ntrip
