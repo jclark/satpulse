@@ -18,6 +18,7 @@ func TestLoadConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	count := 0
 	for _, f := range cfgFiles {
 		if strings.ToLower(filepath.Ext(f.Name())) != ".toml" {
@@ -25,9 +26,12 @@ func TestLoadConfig(t *testing.T) {
 		}
 		path := filepath.Join(configsDir, f.Name())
 		count++
-		_, _, err := LoadConfig(path)
+		cfg, _, err := LoadConfig(path)
 		if err != nil {
 			t.Fatalf("error loading %s: %v", path, err)
+		}
+		if err := cfg.Validate(lg); err != nil {
+			t.Fatalf("error validating %s: %v", path, err)
 		}
 	}
 	if count == 0 {
