@@ -31,7 +31,7 @@ func Get() (*State, error) {
 		ls = LeapSecondRecent
 	}
 	return &State{
-		Time:             time.Unix(tx.Time.Sec, tx.Time.Usec*1000),
+		Time:             time.Unix(int64(tx.Time.Sec), int64(tx.Time.Usec)*1000),
 		EstError:         time.Duration(tx.Esterror) * time.Microsecond,
 		MaxError:         time.Duration(tx.Maxerror) * time.Microsecond,
 		TAIOffset:        int(tx.Tai),

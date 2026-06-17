@@ -5,6 +5,9 @@
 # Zhongke Microelectronics  (icofchina.com and hzzkw.com) CASIC binary protocol
 # Default baud rate: 115200
 
+[[include]]
+src = "casic.toml"
+
 # Poll MON-VER via CFG-MSG with rate=0xFFFF for one-time output
 [[casbin]]
 tag = "get-version"
@@ -90,14 +93,18 @@ id = 0x0F
 payload.types = "U1U1U2U4U4"
 payload.values = [0, 0, 0, 0x00A8CDBD, 0x00A8CDBD]
 
-# Auto signal band selection (let receiver decide)
+# Auto signal band selection (let receiver decide).
+# CAUTION: sigBandAuto=1 with zero masks is NAKed (verified on
+# ATGM332D-F8N); send the full known-signal mask instead - the receiver
+# clamps the reception mask to what its hardware supports.
+# Verified ACK received on ATGM332D-F8N
 [[casbin]]
 tag = "gnss-auto"
 description = "Enable automatic signal band selection"
 class = 0x06
 id = 0x0F
 payload.types = "U1U1U2U4U4"
-payload.values = [1, 0, 0, 0, 0]
+payload.values = [1, 0, 0, 0x00A8CDBD, 0x00A8CDBD]
 
 # CFG-TP: Time pulse (PPS) configuration
 # Payload: U4 interval_us, U4 width_us, U1 ppsOutMode, I1 polarity, U1 tBase,
@@ -136,36 +143,21 @@ id = 0x03
 payload.types = "U4U4U1I1U1U1R4"
 payload.values = [1000000, 100000, 5, 0, 0, 1, 0.0]
 
-# Disable PPS
-[[casbin]]
-tag = "pps-off"
-description = "Disable PPS output"
-class = 0x06
-id = 0x03
-payload.types = "U4U4U1I1U1U1R4"
-payload.values = [1000000, 0, 0, 0, 0, 0, 0.0]
-
 # CFG-CFG: Save/load configuration
 # Payload: U2 reserved, U1 opMode, U1 reserved
 # opMode: 0=clear flash, 1=save to flash, 2=load from flash
 
-# Save configuration to NVM
-[[casbin]]
-tag = "save"
-description = "Save configuration to NVM"
-class = 0x06
-id = 0x05
-payload.types = "U2U1U1"
-payload.values = [0, 1, 0]
-
 # Load configuration from NVM (undo unsaved changes)
+# CAUTION: on V6 a load with mask 0xFFFF RESTARTS the receiver (boot
+# banner) without sending an ACK; mask 0 does nothing. (Verified on
+# ATGM332D-F8N.)
 [[casbin]]
 tag = "reload"
-description = "Reload configuration from NVM"
+description = "Reload configuration from NVM (restarts the receiver)"
 class = 0x06
 id = 0x05
 payload.types = "U2U1U1"
-payload.values = [0, 2, 0]
+payload.values = [0xFFFF, 2, 0]
 
 # CFG-NAVLIMIT: Satellite filtering for positioning
 # Payload: U1 minSVs, U1 maxSVs, U1 minCNO, I1 minEle, U4 reserved
@@ -213,39 +205,6 @@ class = 0x06
 id = 0x04
 payload.types = "U2U1U1"
 payload.values = [1000, 0, 0]
-
-
-# CFG-PRT: Serial port configuration
-# Payload: U1 portId, U1 protoMask, U2 mode, U4 baudRate
-# portId: 0=UART0, 1=UART1, 0xFF=current
-# protoMask: B0=binary in, B1=text in, B4=binary out, B5=text out
-
-# Set baud rate to 115200 (binary+NMEA in/out)
-[[casbin]]
-tag = "speed-115200"
-description = "Set baud rate to 115200"
-class = 0x06
-id = 0x00
-payload.types = "U1U1U2U4"
-payload.values = [0xFF, 0x33, 0x08C0, 115200]
-
-# Set baud rate to 38400 (binary+NMEA in/out)
-[[casbin]]
-tag = "speed-38400"
-description = "Set baud rate to 38400"
-class = 0x06
-id = 0x00
-payload.types = "U1U1U2U4"
-payload.values = [0xFF, 0x33, 0x08C0, 38400]
-
-# Set baud rate to 9600 (binary+NMEA in/out)
-[[casbin]]
-tag = "speed-9600"
-description = "Set baud rate to 9600"
-class = 0x06
-id = 0x00
-payload.types = "U1U1U2U4"
-payload.values = [0xFF, 0x33, 0x08C0, 9600]
 
 # CFG-MSG: Enable/disable message output
 # Payload: U1 class, U1 id, U2 rate
@@ -359,98 +318,8 @@ id = 0x01
 payload.types = "U1U1U2"
 payload.values = [0x11, 0x06, 0]
 
-# NMEA message class is 0x4E
-# GGA=0x00, GLL=0x01, GSA=0x02, GSV=0x03, RMC=0x04, VTG=0x05, ZDA=0x06 (V5 uses 0x08)
-
-# Enable GGA at 1Hz
-[[casbin]]
-tag = "nmea-gga"
-description = "Enable NMEA GGA output at 1Hz"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x00, 1]
-
-# Disable GGA
-[[casbin]]
-tag = "nmea-gga-off"
-description = "Disable NMEA GGA output"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x00, 0]
-
-# Enable GSV at 1Hz
-[[casbin]]
-tag = "nmea-gsv"
-description = "Enable NMEA GSV output at 1Hz"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x03, 1]
-
-# Disable GSV
-[[casbin]]
-tag = "nmea-gsv-off"
-description = "Disable NMEA GSV output"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x03, 0]
-
-# Enable RMC at 1Hz
-[[casbin]]
-tag = "nmea-rmc"
-description = "Enable NMEA RMC output at 1Hz"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x04, 1]
-
-# Disable RMC
-[[casbin]]
-tag = "nmea-rmc-off"
-description = "Disable NMEA RMC output"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x04, 0]
-
-# Enable GSA at 1Hz
-[[casbin]]
-tag = "nmea-gsa"
-description = "Enable NMEA GSA output at 1Hz"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x02, 1]
-
-# Disable GSA
-[[casbin]]
-tag = "nmea-gsa-off"
-description = "Disable NMEA GSA output"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x02, 0]
-
-# Enable GLL at 1Hz
-[[casbin]]
-tag = "nmea-gll"
-description = "Enable NMEA GLL output at 1Hz"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x01, 1]
-
-# Disable GLL
-[[casbin]]
-tag = "nmea-gll-off"
-description = "Disable NMEA GLL output"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x01, 0]
+# V6-specific NMEA message IDs.
+# VTG=0x05, ZDA=0x06 (V5 uses 0x08)
 
 # Enable VTG at 1Hz
 [[casbin]]
@@ -559,3 +428,71 @@ class = 0x06
 id = 0x12
 payload.types = "U1U1U1U1U1U1U2"
 payload.values = [2, 7, 3, 4, 0, 0, 0]
+
+# V6-specific configuration query polls.
+# All polls below verified on ATGM332D-F8N (V6.3.2.0) and AT632-6T-30
+# (V6.3.0.0): data response then ACK, responses in request order.
+
+# Verified CFG-NAVLIMIT response and ACK on ATGM332D-F8N
+[[casbin]]
+tag = "get-min-elev"
+description = "Query satellite filter (min elevation, min CNO)"
+class = 0x06
+id = 0x0A
+
+# Verified CFG-NAVBAND response and ACK on ATGM332D-F8N
+[[casbin]]
+tag = "get-gnss"
+description = "Query signal band configuration"
+class = 0x06
+id = 0x0F
+
+# Verified CFG-NMEA response and ACK on ATGM332D-F8N
+[[casbin]]
+tag = "get-nmea-ver"
+description = "Query NMEA output configuration"
+class = 0x06
+id = 0x12
+
+# Verified CFG-TMODE2 response and ACK on ATGM332D-F8N
+[[casbin]]
+tag = "get-survey"
+description = "Query timing mode configuration"
+class = 0x06
+id = 0x16
+
+# RXM2 raw data output via CFG-MSG (RXM2 class is 0x13).
+# CAUTION: on ATGM332D-F8N the enables are ACKed but NO RXM2 output ever
+# appears (6 s capture, receiver tracking) - ACK does not mean the message
+# is implemented. The AT632-6T-30 does emit both (see at632.toml).
+[[casbin]]
+tag = "casbin-rxm2-measx"
+description = "Enable RXM2-MEASX (raw measurements) at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x13, 0x00, 1]
+
+[[casbin]]
+tag = "casbin-rxm2-measx-off"
+description = "Disable RXM2-MEASX output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x13, 0x00, 0]
+
+[[casbin]]
+tag = "casbin-rxm2-sfrbx"
+description = "Enable RXM2-SFRBX (raw nav subframes) output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x13, 0x06, 1]
+
+[[casbin]]
+tag = "casbin-rxm2-sfrbx-off"
+description = "Disable RXM2-SFRBX output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x13, 0x06, 0]

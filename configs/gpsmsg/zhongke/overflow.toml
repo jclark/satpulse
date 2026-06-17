@@ -1,0 +1,34 @@
+#:schema ../gpsmsg-schema.json
+# Zhongke Microelectronics PCAS commands for a saturated serial line.
+#
+# Line management for the default 9600 baud rate.
+# The default NMEA load (~1050 bytes/s) oversaturates a 9600 line
+# (~960 bytes/s): the receiver's TX queue runs full and binary responses
+# are delayed many seconds or dropped. Quiet the line before binary work
+# and restore afterwards. Both are RAM-only (not persistent).
+
+[default.nmea]
+waitLimit = 6.0
+
+# Verified on ATGM332D-5N71: with the line quiet, CFG polls answer in ~30 ms
+[[nmea]]
+tag = "nmea-quiet"
+description = "Disable all NMEA output (RAM only, frees a saturated 9600 line)"
+text = "PCAS03,0,0,0,0,0,0,0,0,0,0,,,0,0,,,,0"
+
+# Query firmware version. V6 returns TXT-SW.
+[[nmea]]
+tag = "get-version"
+description = "Query firmware and hardware version"
+text = "PCAS06,0"
+
+# Query hardware model/serial. V6 returns TXT-HW; V5 may not return hardware.
+[[nmea]]
+tag = "get-version"
+text = "PCAS06,1"
+
+# Verified on ATGM332D-5N71: default sentence set resumes
+[[nmea]]
+tag = "nmea-default"
+description = "Restore the default NMEA output set (RAM only)"
+text = "PCAS03,1,1,1,1,1,1,1,1,0,0,,,0,0,,,,0"

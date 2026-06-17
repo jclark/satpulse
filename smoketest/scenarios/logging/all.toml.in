@@ -1,0 +1,9 @@
+# Event, track, and packet logging enabled.
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[log]
+dir = "${SATPULSE_TEST_LOG_DIR}"
+event = true
+track = true
+packet = true

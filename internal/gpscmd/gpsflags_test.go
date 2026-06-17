@@ -20,6 +20,9 @@ type validFlagsTestCase struct {
 
 var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{}, flagVars{showReceiver: true}},
+	{"ttyS0", []string{"--json"}, flagVars{showReceiver: true, jsonOut: true}},
+	{"ttyS0", []string{"--show-config", "--json"}, flagVars{configGet: showProps, jsonOut: true}},
+	{"ttyS0", []string{"--json", "--gnss", "GPS"}, flagVars{jsonOut: true, enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS)}},
 	{"ttyS0", []string{"--reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Reset: gpsprot.ResetCold}}},
 	{"ttyS0", []string{"--nmea"}, flagVars{configOpts: gpsprot.ConfigOptions{
 		NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC),
@@ -85,6 +88,34 @@ var validFlagsTestCases = []validFlagsTestCase{
 	}},
 	{"ttyS0", []string{"-g", "GPS,GAL,BDS", "--band", "L1,L2,L5,E5,E6"}, flagVars{
 		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS, gpsprot.GAL, gpsprot.BDS),
+	}},
+	// --signal without --gnss specifies the exact signal set
+	{"ttyS0", []string{"--signal", "GPSL1,GALE1"}, flagVars{
+		enabledSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1),
+	}},
+	{"ttyS0", []string{"--signal", "gpsl1, e1"}, flagVars{
+		enabledSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1),
+	}},
+	// --signal with --gnss adds to the GNSS/band set
+	{"ttyS0", []string{"--gnss", "GPS", "--band", "L1", "--signal", "QZSSL1S"}, flagVars{
+		enabledSignals: gpsprot.BandL1.SignalSet(gpsprot.GPS) | gpsprot.SignalSetOf(gpsprot.SigQZSSL1S),
+	}},
+	// --except-signal removes from the GNSS/band set
+	{"ttyS0", []string{"--gnss", "GPS", "--except-signal", "GPSL1C"}, flagVars{
+		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS) &^ gpsprot.SignalSetOf(gpsprot.SigGPSL1C),
+	}},
+	{"ttyS0", []string{"--gnss", "GPS,GAL", "--band", "L1,L5", "--signal", "B1C", "--except-signal", "GPSL1C,E5a"}, flagVars{
+		enabledSignals: ((gpsprot.BandL1|gpsprot.BandL5).SignalSet(gpsprot.GPS, gpsprot.GAL) |
+			gpsprot.SignalSetOf(gpsprot.SigBDSB1C)) &^ gpsprot.SignalSetOf(gpsprot.SigGPSL1C, gpsprot.SigGALE5a),
+	}},
+	// excluding a signal not in the base set is a no-op
+	{"ttyS0", []string{"--gnss", "GPS", "--band", "L1", "--except-signal", "GPSL2C"}, flagVars{
+		enabledSignals: gpsprot.BandL1.SignalSet(gpsprot.GPS),
+	}},
+	// --time-gnss is checked against the signal set from --signal
+	{"ttyS0", []string{"--signal", "GPSL1,GALE1", "--time-gnss", "GAL"}, flagVars{
+		enabledSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1),
+		timeGNSS:       gpsprot.GAL,
 	}},
 	{"ttyS0", []string{"--save-all"}, flagVars{configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveAll}}},
 	{"ttyS0", []string{"--factory-reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Reset: gpsprot.ResetFactory}}},
@@ -195,6 +226,10 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--binary", "--pvt-out", "tp,leap"}, flagVars{configOpts: gpsprot.ConfigOptions{
 		NMEAMsg: opt.Make(gpsprot.NMEAMsgNone),
 		PVTMsg:  gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgLeapSecond,
+	}}},
+	{"ttyS0", []string{"--binary", "--pvt-out", "off"}, flagVars{configOpts: gpsprot.ConfigOptions{
+		NMEAMsg: opt.Make(gpsprot.NMEAMsgNone),
+		PVTMsg:  gpsprot.PVTMsgOff,
 	}}},
 	// Test --binary with --rtcm-out (should not set default pvt)
 	{"ttyS0", []string{"--binary", "--rtcm-out", "MSM4"}, flagVars{configOpts: gpsprot.ConfigOptions{
@@ -403,7 +438,10 @@ func TestParseFlagsConfigSupport(t *testing.T) {
 	}{
 		{"no config", nil, 0, 0},
 		{"speed", []string{"--speed", "9600"}, gpsprot.ConfigSupportSpeed, 0},
-		{"band", []string{"--gnss", "GPS", "--band", "L5"}, gpsprot.ConfigSupportBand, 0},
+		{"band", []string{"--gnss", "GPS", "--band", "L5"}, gpsprot.ConfigSupportSignal, 0},
+		{"signal", []string{"--signal", "GPSL1"}, gpsprot.ConfigSupportSignal, 0},
+		{"signal with gnss", []string{"--gnss", "GPS", "--signal", "QZSSL1S"}, gpsprot.ConfigSupportSignal, 0},
+		{"except-signal", []string{"--gnss", "GPS", "--except-signal", "GPSL1C"}, gpsprot.ConfigSupportSignal, 0},
 		{"survey default accuracy", []string{"--survey"}, gpsprot.ConfigSupportSurvey, 0},
 		{"survey explicit accuracy", []string{"--survey", "--survey-acc", "5.5"}, gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc, 0},
 		{"survey time", []string{"--survey", "--survey-time", "300"}, gpsprot.ConfigSupportSurvey, 0},
@@ -423,6 +461,7 @@ func TestParseFlagsConfigSupport(t *testing.T) {
 		{"rtcm none", []string{"--rtcm-out", "none"}, 0, 0},
 		{"rtcm qzss", []string{"--gnss", "GPS,QZSS", "--rtcm-out", "MSM4"}, gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMQZSS, 0},
 		{"rtcm base id", []string{"--rtcm-base-id", "1234"}, gpsprot.ConfigSupportRTCMBaseID, 0},
+		{"show-port", []string{"--show-port"}, gpsprot.ConfigSupportPort, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -480,6 +519,16 @@ func TestConfigSupportReqUnsupportedOptions(t *testing.T) {
 			}(),
 			want: []string{"--fixed-pos-ecef", "--survey"},
 		},
+		{
+			name: "multiple options for same flag",
+			req: func() configSupportReq {
+				var req configSupportReq
+				req.require(gpsprot.ConfigSupportSignal, "--band")
+				req.require(gpsprot.ConfigSupportSignal, "--signal")
+				return req
+			}(),
+			want: []string{"--band", "--signal"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -510,45 +559,52 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--speed", "9600", "--pps", "1.5"},
 	{"--serial-device", "ttyS0", "--speed", "9600", "--pps"},
 	{"--serial-device", "ttyS0", "--speed", "9600", "--survey", "--mobile"},
-	{"--serial-device", "ttyS0", "--gnss", "SBAS"},                             // only augmentation signals
-	{"--serial-device", "ttyS0", "--gnss", "GLO", "--band", "L5"},              // no signals in GNSS+band
-	{"--serial-device", "ttyS0", "--gnss", "SBAS,QZSS"},                        // non-major GNSS
-	{"--serial-device", "ttyS0", "--gnss", "GAL", "--band", "E6"},              // only augmentation signals
-	{"--serial-device", "ttyS0", "--save", "--save-all"},                       // can't use both save and save-all
-	{"--serial-device", "ttyS0", "--factory-reset", "--save"},                  // can't use factory-reset with save
-	{"--serial-device", "ttyS0", "--factory-reset", "--reset"},                 // can't use factory-reset with reset
-	{"--serial-device", "ttyS0", "--factory-reset", "--nmea"},                  // can't use factory-reset with config changes
-	{"--serial-device", "ttyS0", "--factory-reset", "--gnss", "GPS"},           // can't use factory-reset with config changes
-	{"--serial-device", "ttyS0", "--reset", "--gnss", "GPS"},                   // reset without save would lose config changes
-	{"--serial-device", "ttyS0", "--save"},                                     // no config changes to save
-	{"--serial-device", "ttyS0", "--reset", "--save"},                          // no config changes to save with --save
-	{"--serial-device", "ttyS0", "--factory-reset", "--save"},                  // incompatible options
-	{"--serial-device", "ttyS0", "--factory-reset", "--save-all"},              // incompatible options
-	{"--serial-device", "ttyS0", "--rtcm-out", "MSM4,MSM7"},                    // MSM4 and MSM7 cannot be used together
-	{"--serial-device", "ttyS0", "--rtcm-out", "MSM4,MSM7,ARP"},                // MSM4 and MSM7 cannot be used together
-	{"--serial-device", "ttyS0", "--factory-reset", "--save", "--gnss", "GPS"}, // multiple incompatible options
-	{"--serial-device", "ttyS0", "--raw-out", ""},                              // empty raw-out value
-	{"--serial-device", "ttyS0", "--raw-out", "invalid"},                       // invalid raw-out flag
-	{"--serial-device", "ttyS0", "--raw-out", "obs,invalid"},                   // partially invalid raw-out flags
-	{"--serial-device", "ttyS0", "--pvt-out", ""},                              // empty pvt-out value
-	{"--serial-device", "ttyS0", "--pvt-out", "invalid"},                       // invalid pvt-out flag
-	{"--serial-device", "ttyS0", "--pvt-out", "time,after"},                    // after requires tp
-	{"--serial-device", "ttyS0", "--pvt-out", "pos,tai"},                       // tai requires after or time
-	{"--serial-device", "ttyS0", "--pvt-out", "time,ecef"},                     // ecef requires pos or vel
-	{"--serial-device", "ttyS0", "--pvt-out", "after,tai"},                     // after requires tp
-	{"--serial-device", "ttyS0", "--pvt-out", "ecef,tai"},                      // ecef requires pos or vel, tai requires after or time
-	{"--serial-device", "ttyS0", "--pvt-out", "pos,invalid"},                   // partially invalid pvt-out flags
-	{"--serial-device", "ttyS0", "--rtcm-out", ""},                             // empty rtcm-out value
-	{"--serial-device", "ttyS0", "--rtcm-out", "invalid"},                      // invalid rtcm-out flag
-	{"--serial-device", "ttyS0", "--rtcm-out", "msm4,invalid"},                 // partially invalid rtcm-out flags
-	{"--serial-device", "ttyS0", "--rtcm-out", "other"},                        // trying to use hidden "other" flag
-	{"--serial-device", "ttyS0", "--nmea-out", ""},                             // empty nmea-out value
-	{"--serial-device", "ttyS0", "--nmea-out", "invalid"},                      // invalid nmea-out flag
-	{"--serial-device", "ttyS0", "--nmea-out", "RMC,invalid"},                  // partially invalid nmea-out flags
-	{"--serial-device", "ttyS0", "--nmea-out", "other"},                        // trying to use hidden "other" flag
-	{"--serial-device", "ttyS0", "--sats-out", ""},                             // empty sats-out value
-	{"--serial-device", "ttyS0", "--sats-out", "invalid"},                      // invalid sats-out flag
-	{"--serial-device", "ttyS0", "--sats-out", "sat,invalid"},                  // partially invalid sats-out flags
+	{"--serial-device", "ttyS0", "--gnss", "SBAS"},                                                       // only augmentation signals
+	{"--serial-device", "ttyS0", "--gnss", "GLO", "--band", "L5"},                                        // no signals in GNSS+band
+	{"--serial-device", "ttyS0", "--gnss", "SBAS,QZSS"},                                                  // non-major GNSS
+	{"--serial-device", "ttyS0", "--gnss", "GAL", "--band", "E6"},                                        // only augmentation signals
+	{"--serial-device", "ttyS0", "--except-signal", "GPSL1C"},                                            // --except-signal requires --gnss
+	{"--serial-device", "ttyS0", "--band", "L1", "--signal", "GPSL1"},                                    // --band requires --gnss
+	{"--serial-device", "ttyS0", "--signal", "QZSSL1S"},                                                  // only augmentation signals
+	{"--serial-device", "ttyS0", "--signal", "L1"},                                                       // ambiguous unqualified signal name
+	{"--serial-device", "ttyS0", "--signal", "BOGUS"},                                                    // unknown signal name
+	{"--serial-device", "ttyS0", "--gnss", "GPS", "--signal", "GPSL5", "--except-signal", "GPSL5"},       // same signal in both
+	{"--serial-device", "ttyS0", "--gnss", "GPS", "--except-signal", "GPSL1,GPSL1C,GPSL2P,GPSL2C,GPSL5"}, // excludes whole base
+	{"--serial-device", "ttyS0", "--save", "--save-all"},                                                 // can't use both save and save-all
+	{"--serial-device", "ttyS0", "--factory-reset", "--save"},                                            // can't use factory-reset with save
+	{"--serial-device", "ttyS0", "--factory-reset", "--reset"},                                           // can't use factory-reset with reset
+	{"--serial-device", "ttyS0", "--factory-reset", "--nmea"},                                            // can't use factory-reset with config changes
+	{"--serial-device", "ttyS0", "--factory-reset", "--gnss", "GPS"},                                     // can't use factory-reset with config changes
+	{"--serial-device", "ttyS0", "--reset", "--gnss", "GPS"},                                             // reset without save would lose config changes
+	{"--serial-device", "ttyS0", "--save"},                                                               // no config changes to save
+	{"--serial-device", "ttyS0", "--reset", "--save"},                                                    // no config changes to save with --save
+	{"--serial-device", "ttyS0", "--factory-reset", "--save"},                                            // incompatible options
+	{"--serial-device", "ttyS0", "--factory-reset", "--save-all"},                                        // incompatible options
+	{"--serial-device", "ttyS0", "--rtcm-out", "MSM4,MSM7"},                                              // MSM4 and MSM7 cannot be used together
+	{"--serial-device", "ttyS0", "--rtcm-out", "MSM4,MSM7,ARP"},                                          // MSM4 and MSM7 cannot be used together
+	{"--serial-device", "ttyS0", "--factory-reset", "--save", "--gnss", "GPS"},                           // multiple incompatible options
+	{"--serial-device", "ttyS0", "--raw-out", ""},                                                        // empty raw-out value
+	{"--serial-device", "ttyS0", "--raw-out", "invalid"},                                                 // invalid raw-out flag
+	{"--serial-device", "ttyS0", "--raw-out", "obs,invalid"},                                             // partially invalid raw-out flags
+	{"--serial-device", "ttyS0", "--pvt-out", ""},                                                        // empty pvt-out value
+	{"--serial-device", "ttyS0", "--pvt-out", "invalid"},                                                 // invalid pvt-out flag
+	{"--serial-device", "ttyS0", "--pvt-out", "time,after"},                                              // after requires tp
+	{"--serial-device", "ttyS0", "--pvt-out", "pos,tai"},                                                 // tai requires after or time
+	{"--serial-device", "ttyS0", "--pvt-out", "time,ecef"},                                               // ecef requires pos or vel
+	{"--serial-device", "ttyS0", "--pvt-out", "after,tai"},                                               // after requires tp
+	{"--serial-device", "ttyS0", "--pvt-out", "ecef,tai"},                                                // ecef requires pos or vel, tai requires after or time
+	{"--serial-device", "ttyS0", "--pvt-out", "pos,invalid"},                                             // partially invalid pvt-out flags
+	{"--serial-device", "ttyS0", "--rtcm-out", ""},                                                       // empty rtcm-out value
+	{"--serial-device", "ttyS0", "--rtcm-out", "invalid"},                                                // invalid rtcm-out flag
+	{"--serial-device", "ttyS0", "--rtcm-out", "msm4,invalid"},                                           // partially invalid rtcm-out flags
+	{"--serial-device", "ttyS0", "--rtcm-out", "other"},                                                  // trying to use hidden "other" flag
+	{"--serial-device", "ttyS0", "--nmea-out", ""},                                                       // empty nmea-out value
+	{"--serial-device", "ttyS0", "--nmea-out", "invalid"},                                                // invalid nmea-out flag
+	{"--serial-device", "ttyS0", "--nmea-out", "RMC,invalid"},                                            // partially invalid nmea-out flags
+	{"--serial-device", "ttyS0", "--nmea-out", "other"},                                                  // trying to use hidden "other" flag
+	{"--serial-device", "ttyS0", "--sats-out", ""},                                                       // empty sats-out value
+	{"--serial-device", "ttyS0", "--sats-out", "invalid"},                                                // invalid sats-out flag
+	{"--serial-device", "ttyS0", "--sats-out", "sat,invalid"},                                            // partially invalid sats-out flags
 	// Test invalid combinations with --nmea and --binary
 	{"--serial-device", "ttyS0", "--nmea", "--binary"},            // can't use both --nmea and --binary
 	{"--serial-device", "ttyS0", "--binary", "--nmea"},            // can't use both --binary and --nmea
@@ -567,6 +623,7 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--gnss", "GPS", "--time-gnss", "GLO"},     // GLO not in enabled GNSS
 	{"--serial-device", "ttyS0", "--gnss", "GAL,BDS", "--time-gnss", "GPS"}, // GPS not in enabled GNSS
 	{"--serial-device", "ttyS0", "--gnss", "BDS", "--time-gnss", "GAL"},     // GAL not in enabled GNSS
+	{"--serial-device", "ttyS0", "--signal", "GPSL1", "--time-gnss", "GAL"}, // no GAL signal enabled
 	// Test invalid --fixed-pos-ecef values
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", ""},                        // empty value
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "1,2"},                     // too few coordinates
@@ -625,9 +682,9 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--reload", "-c"},                                    // can't use reload with short form
 	{"--serial-device", "ttyS0", "--show-config", "--factory-reset", "--gnss", "GPS"}, // multiple incompatible options
 	// Test invalid --show-port combinations
-	{"--serial-device", "ttyS0", "--show-port", "--factory-reset"},                    // can't use show-port with factory-reset
-	{"--serial-device", "ttyS0", "--show-port", "--reset"},                            // can't use show-port with reset
-	{"--serial-device", "ttyS0", "--show-port", "--reload"},                           // can't use show-port with reload
+	{"--serial-device", "ttyS0", "--show-port", "--factory-reset"}, // can't use show-port with factory-reset
+	{"--serial-device", "ttyS0", "--show-port", "--reset"},         // can't use show-port with reset
+	{"--serial-device", "ttyS0", "--show-port", "--reload"},        // can't use show-port with reload
 	// Test --msg-file mutual exclusivity with config flags
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--gnss", "GPS"},                                      // can't use with --gnss
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--pps", "0.1"},                                       // can't use with --pps
@@ -666,6 +723,10 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--port", ""},
 	// Test --msg-file cannot be combined with --show-receiver
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-receiver"}, // can't use with --show-receiver
+	// Test --json cannot be combined with --msg-file or passive capture
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--json"},                      // can't use with --msg-file
+	{"--serial-device", "ttyS0", "--json", "--packet-log", "pkt.jsonl", "--capture", "10"}, // passive capture has no result to report
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-tags", "--json"},       // can't use with --msg-file even with --show-tags
 	// Test --config-file mutual exclusivity with --serial-device and --device-speed
 	{"--config-file", "test.toml", "--serial-device", "ttyS0"}, // can't use with --serial-device
 	{"--config-file", "test.toml", "--device-speed", "9600"},   // can't use with --device-speed

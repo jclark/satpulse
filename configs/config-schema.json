@@ -105,6 +105,28 @@
           "minItems": 3,
           "maxItems": 3
         },
+        "fixedPosLLH": {
+          "type": "array",
+          "items": [
+            {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            },
+            {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            },
+            {
+              "type": "number",
+              "minimum": -500,
+              "maximum": 10000
+            }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        },
         "minElevation": {
           "type": "number",
           "minimum": -90,
@@ -312,6 +334,15 @@
           "minimum": 0,
           "maximum": 1000
         },
+        "offsetScaledLogVariance": {
+          "type": "integer",
+          "default": 65535,
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "allanDeviation": {
+          "type": "number"
+        },
         "domainNumber": {
           "type": "integer"
         },
@@ -464,7 +495,7 @@
       "type": "object",
       "properties": {
         "pull": {
-          "description": "Network correction source written to the receiver. Exactly one of tcp or ntrip must be configured.",
+          "description": "Network correction source written to the receiver. Configure at most one of tcp or ntrip; an empty table leaves it disabled.",
           "type": "object",
           "properties": {
             "tcp": {
@@ -502,10 +533,7 @@
               "required": ["address", "mountpoint"]
             }
           },
-          "oneOf": [
-            {"required": ["tcp"]},
-            {"required": ["ntrip"]}
-          ]
+          "not": {"required": ["tcp", "ntrip"]}
         },
         "push": {
           "description": "Outbound stream destinations. Each entry forwards scanned packets to a remote endpoint.",
@@ -514,7 +542,7 @@
             "type": "object",
             "properties": {
               "protocol": {
-                "description": "Packet format to forward (default: RTCM for ntrip transport)",
+                "description": "Packet format to forward",
                 "type": "string",
                 "enum": ["", "RTCM", "NMEA", "UBX", "CASBIN", "ASBIN", "SDBP", "UNCB", "UNCA", "NOVB", "NOVA"]
               },
@@ -552,9 +580,23 @@
                   }
                 },
                 "required": ["address", "mountpoint", "password"]
+              },
+              "udp": {
+                "description": "UDP packet stream destination",
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "description": "host:port of the UDP destination",
+                    "type": "string"
+                  }
+                },
+                "required": ["address"]
               }
             },
-            "required": ["ntrip"],
+            "oneOf": [
+              {"required": ["ntrip"]},
+              {"required": ["udp"]}
+            ],
             "allOf": [
               {
                 "if": {

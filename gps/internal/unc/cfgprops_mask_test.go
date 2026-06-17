@@ -476,6 +476,20 @@ func TestConfigMask(t *testing.T) {
 			},
 		},
 		{
+			name: "signal group 10 with QZSS L5 response alias",
+			currentState: []string{
+				"CONFIG SIGNALGROUP 10",
+				"MASK QZSSL5",
+			},
+			targetProps: func(props *gpsprot.ConfigProps) {
+				props.SetSignalsEnabled(gpsprot.SigSetQZSS)
+			},
+			expectedCmds: []string{
+				"MASK GPS", "MASK BDS", "MASK GLO", "MASK GAL",
+				"UNMASK Q5",
+			},
+		},
+		{
 			name: "target single specific signal - GPS L5 only",
 			currentState: []string{
 				"CONFIG SIGNALGROUP 2", // has full constellation set
@@ -767,6 +781,25 @@ func TestConfigMask(t *testing.T) {
 		},
 	}
 	testNativeConfigProps(t, tc)
+}
+
+func TestMaskReadbackQZSSL5Alias(t *testing.T) {
+	np := makeNativeProps()
+	if err := np.updateFromQueryResponse(idPropSignalGroup, "CONFIG SIGNALGROUP 2"); err != nil {
+		t.Fatalf("updateFromQueryResponse(CONFIG SIGNALGROUP 2) failed: %v", err)
+	}
+	if err := np.updateFromQueryResponse(idPropMask, "MASK QZSSL5"); err != nil {
+		t.Fatalf("updateFromQueryResponse(MASK QZSSL5) failed: %v", err)
+	}
+	var props gpsprot.ConfigProps
+	np.convertToProps(&props)
+	sigs, ok := props.GetSignalsEnabled()
+	if !ok {
+		t.Fatal("expected SignalsEnabled to be set")
+	}
+	if sigs.Contains(gpsprot.SigQZSSL5) {
+		t.Errorf("QZSS L5 is enabled after MASK QZSSL5 readback: %v", sigs)
+	}
 }
 
 func TestSBASProp(t *testing.T) {

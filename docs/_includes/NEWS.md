@@ -7,6 +7,7 @@ _Not yet released_
 - `satpulse.toml` has a new `[ntrip]` table and `[[ntrip.mountpoint]]` table array, which make `satpulsed` act as an Ntrip caster serving RTCM correction data from the receiver. Authentication is supported in conjunction with a new `[[user]]` table array. (#126)
 - `satpulse.toml` has a new `[stream.pull]` table, which makes `satpulsed` act as an Ntrip client, pulling correction data from an Ntrip caster and feeding it to the receiver. A plain TCP correction source can also be used. (#221)
 - `satpulse.toml` has a new `[[stream.push]]` table array, which makes `satpulsed` act as an Ntrip server, pushing receiver packet streams to a remote Ntrip caster. RTCM is the default payload, and NMEA or UBX can be selected explicitly. (#238)
+- `[[stream.push]]` entries can now use `udp.address` to send receiver packet data to a UDP destination. (#320)
 - `satpulse.toml` has new `msm7to4` options on Ntrip mountpoints and push entries, which make `satpulsed` convert RTCM MSM7 packets to MSM4 before forwarding them, while leaving non-MSM7 packets unchanged. (#126, #238, #288)
 - The `[gps]` table in `satpulse.toml` has a new `rtcmPreferMSM7` key, which lets `satpulsed` choose whether receiver RTCM output should prefer MSM7 or MSM4 when `rtcmOutput` is enabled and both are supported. (#288)
 - The device-independent GPS model now includes correction reports for RTCM correction data received by the system; these are exposed in the JSONL event log. Reports can come from correction data pulled from a network source, or from receiver-reported correction status when the receiver is configured to emit it. (#237)
@@ -28,9 +29,14 @@ _Not yet released_
 
 ### GPS high-level configuration
 
+- `satpulsetool gps` has new `--signal` and `--except-signal` options for controlling individual GNSS signals. `--signal` enables individual signals, in addition to the constellations enabled by `--gnss`; `--except-signal` excludes individual signals from those constellations. `--band` does not affect what signals are enabled by `--signal`. Signals are named by the constellation name followed by the signal name (`GPSL1C`, `QZSSL1S`); the constellation name is not required for Galileo and BeiDou signal names (`E5b`, `B1C`). (#97)
 - `satpulsetool gps` has a new `--fixed-pos-llh` option for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#146)
+- The `[gps]` table in `satpulse.toml` has a new `fixedPosLLH` key for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#147)
 - `satpulsetool gps --show-receiver` now prints a `Supports:` line listing the receiver configuration features that SatPulse can use. (#203)
 - `satpulsetool gps` now warns if a specified configuration option could not be applied because it is not supported by the receiver. (#203)
+- Unicore receivers now support baud rate configuration with `--speed`. (#167)
+- `satpulsetool gps --show-port` now works on Unicore receivers. (#167)
+- `satpulsetool gps` has a new `--json` option that writes receiver information, supported configuration features, detected packet formats, and configuration properties to stdout as a single JSON object, for use by scripts and test harnesses. (#310)
 
 ### RINEX observation conversion
 
@@ -43,9 +49,11 @@ _Not yet released_
 
 ### Miscellaneous
 
+- SatPulse now compiles and is tested on 32-bit architectures. Debian packages for `armhf` architecture are provided. These are built for ARMv6, and so will work on Raspberry Pi Zero with Raspberry Pi OS, as well as more powerful Raspberry Pi models which use ARMv7. (#305)
 - GPS message files are now installed by packages under `/usr/share/satpulse/gpsmsg`, and by `make install` under `/usr/local/share/satpulse/gpsmsg`. The files are organized by vendor directory. (#233)
 - The `satpulse@.service` has been improved so that if a USB GNSS receiver is unplugged, its `satpulse@...` service stops, and when the receiver is plugged back in, its service is automatically restarted, provided it was enabled. To take advantage of this after installing the new unit file, previously enabled instances need to be reenabled, for example with `systemctl reenable satpulse@ttyS0`. (#172)
 - The packaged `satpulse@.service` unit now runs with improved systemd security hardening. (#254)
+- The JSONL event log now uses a natural event shape with a `type` discriminator and a `data` payload, replacing the previous one-field-per-type record shape. The `nanos` integer field is replaced by a `mono` field holding monotonic elapsed seconds. This matches the envelope already emitted by `satpulsetool replay`. Existing event logs in the old format can be converted with the `migrate_log.go` tool in `time/internal/gpsevent`. (#277)
 
 ## Changes in 0.2
 

@@ -36,6 +36,16 @@ const (
 	// 2. Queried using CONFIG with no additional parameters
 	// 3. The response comes back as $CONFIG,SBAS,CONFIG SBAS param...
 	idPropSBAS = "SBAS"
+	// idPropPort works like this
+	// 1. Read-only: there is no command to set it
+	// 2. Queried using LOGLIST (no CONFIG prefix)
+	// 3. The response is a multi-line abbreviated ASCII (NOVAA) log list;
+	//    the first field of its header line is the current port
+	idPropPort = "LOGLIST"
+	// The COM port baud rates are queried using CONFIG with no additional
+	// parameters; the response comes back as one $CONFIG,COMx,CONFIG COMx baud
+	// line per port. They are set using CONFIG COMx baud, which is a speed
+	// change when COMx is the current port.
 )
 
 // nativeCommand represents a command string paired with its property key
@@ -57,6 +67,8 @@ type nativeConfigProps struct {
 	mask        maskProp
 	mode        modeProp
 	sbas        sbasProp
+	port        portProp
+	com         comProp
 }
 
 func (np *nativeConfigProps) getProp(propID string) nativeConfigProp {
@@ -71,6 +83,10 @@ func (np *nativeConfigProps) getProp(propID string) nativeConfigProp {
 		return &np.mode
 	case idPropSBAS:
 		return &np.sbas
+	case idPropPort:
+		return &np.port
+	case "COM1", "COM2", "COM3":
+		return &np.com
 	}
 	return nil
 }
@@ -79,12 +95,33 @@ func makeNativeProps() nativeConfigProps {
 	return nativeConfigProps{}
 }
 
-func generateQueryCommands(_ *gpsprot.ConfigTarget) []string {
-	return []string{
-		"CONFIG",
-		"MASK",
-		"MODE", // must be last because it has a single response
+// generateQueryCommands returns the query commands for the target.
+// CONFIG and MASK produce open-ended response bursts, so they must not be
+// last: each burst is closed early by the response to the following query.
+// MODE and LOGLIST have a single significant response and belong at the end.
+// LOGLIST goes after MODE because its response is complete at the header
+// line, so nothing waits for the log entries that trail in after it.
+//
+// A target that does nothing but read the port and serial speed
+// (--show-port) needs only CONFIG, which carries the COM port baud rates,
+// and LOGLIST; all other targets query everything as before.
+func generateQueryCommands(target *gpsprot.ConfigTarget) []string {
+	if portQueryOnly(target) {
+		return []string{"CONFIG", "LOGLIST"}
 	}
+	cmds := []string{"CONFIG", "MASK", "MODE"}
+	if target.UsesAny(gpsprot.PropIDPort | gpsprot.PropIDBaudRate) {
+		cmds = append(cmds, "LOGLIST")
+	}
+	return cmds
+}
+
+// portQueryOnly reports whether the target does nothing except read the
+// current port and serial speed.
+func portQueryOnly(target *gpsprot.ConfigTarget) bool {
+	return target.Get != 0 &&
+		target.Get&^(gpsprot.PropIDPort|gpsprot.PropIDBaudRate) == 0 &&
+		target.Props.IsEmpty() && target.Opts.NoOp()
 }
 
 // error indicating toNative failed because the ConfigProps did not contain the necessary properties
@@ -142,13 +179,13 @@ func (np *nativeConfigProps) generateTargetCommands(target *gpsprot.ConfigTarget
 	}
 	// generate commands to turn current native props to target native props
 	cmds := targetNativeProps.generateUpdateCommands(np)
-	
+
 	// Determine enabled GNSS from the effective signals
 	var enabledGNSS gpsprot.GNSSSet
 	if sigs, ok := effectiveProps.GetSignalsEnabled(); ok {
 		enabledGNSS = sigs.GNSSSet()
 	}
-	
+
 	return append(cmds, generateOptsCommands(&target.Opts, enabledGNSS)...)
 }
 
@@ -186,6 +223,10 @@ func (np *nativeConfigProps) convertToProps(props *gpsprot.ConfigProps) {
 	np.sbas.convertToProps(props)
 	np.mask.convertElevationToProps(props)
 	np.mode.convertToProps(props)
+	if np.port.name != "" {
+		props.SetPort(np.port.name)
+		np.com.convertToProps(props, np.port.name)
+	}
 }
 
 // generateUpdateCommands generates commands to update the receiver to have the state in np starting from state prevProps
@@ -217,12 +258,12 @@ func (np *nativeConfigProps) updateFromProps(props *gpsprot.ConfigProps, survey 
 	if err != nil && err != errMissingProp {
 		return err
 	}
-	
+
 	err = np.sbas.updateFromProps(props)
 	if err != nil && err != errMissingProp {
 		return err
 	}
-	
+
 	np.mask.updateFromProps(props, np.signalGroup.signalSet())
 
 	return nil
@@ -401,7 +442,7 @@ func defaultTimeGNSS(props *gpsprot.ConfigProps) gpsprot.GNSS {
 }
 
 type signalGroupProp struct {
-	master uint8                 // 0 if not set
+	master uint8 // 0 if not set
 	slave  opt.Val[uint8]
 }
 
@@ -412,11 +453,11 @@ func (p *signalGroupProp) updateFromCommand(cmd string) error {
 	if matches == nil {
 		return fmt.Errorf("invalid CONFIG SIGNALGROUP format: %s", cmd)
 	}
-	
+
 	// Parse master group number - regexp guarantees it's a valid 1-2 digit number starting with 1-9
 	master, _ := strconv.Atoi(matches[1])
 	p.master = uint8(master)
-	
+
 	// Parse slave group number if present - regexp guarantees it's a valid 1-2 digit number
 	if matches[2] != "" {
 		slave, _ := strconv.Atoi(matches[2])
@@ -424,7 +465,7 @@ func (p *signalGroupProp) updateFromCommand(cmd string) error {
 	} else {
 		p.slave.Clear()
 	}
-	
+
 	return nil
 }
 
@@ -435,7 +476,7 @@ func (p *signalGroupProp) generateCommands(prev *signalGroupProp) []nativeComman
 	if p.master == 0 {
 		return nil
 	}
-	
+
 	cmd := fmt.Sprintf("CONFIG SIGNALGROUP %d", p.master)
 	if p.slave.IsSet() {
 		cmd = fmt.Sprintf("%s %d", cmd, p.slave.Get())
@@ -455,7 +496,7 @@ func (p *signalGroupProp) signalSet() gpsprot.SignalSet {
 var sbasRegexp = regexp.MustCompile(`^CONFIG SBAS (?:(DISABLE|ENABLE(?:| [A-Z][A-Z0-9_]*))|(TIMEOUT \d+))$`)
 
 type sbasProp struct {
-	enable string // e.g. "DISABLE" or "ENABLE AUTO"
+	enable  string // e.g. "DISABLE" or "ENABLE AUTO"
 	timeout string // e.g. "TIMEOUT 600"
 }
 
@@ -473,7 +514,7 @@ func (p *sbasProp) updateFromCommand(cmd string) error {
 	if matches == nil {
 		return fmt.Errorf("invalid SBAS command format: %s", cmd)
 	}
-	
+
 	// matches[1] is the enable/disable capture group
 	// matches[2] is the timeout capture group
 	if matches[1] != "" {
@@ -481,24 +522,24 @@ func (p *sbasProp) updateFromCommand(cmd string) error {
 	} else if matches[2] != "" {
 		p.timeout = matches[2]
 	}
-	
+
 	return nil
 }
 
 func (p *sbasProp) generateCommands(prev *sbasProp) []nativeCommand {
 	var cmds []nativeCommand
-	
+
 	// Generate enable/disable command if changed
 	// Don't generate a command when transitioning from uninitialized ("") to DISABLE
 	if p.enable != prev.enable && p.enable != "" && !(prev.enable == "" && p.enable == "DISABLE") {
 		cmds = append(cmds, nativeCommand{cmd: "CONFIG SBAS " + p.enable, key: idPropSBAS})
 	}
-	
+
 	// Generate timeout command if changed
 	if p.timeout != prev.timeout && p.timeout != "" {
 		cmds = append(cmds, nativeCommand{cmd: "CONFIG SBAS " + p.timeout, key: idPropSBAS})
 	}
-	
+
 	return cmds
 }
 
@@ -507,7 +548,7 @@ func (p *sbasProp) convertToProps(props *gpsprot.ConfigProps) {
 	if !p.enabled() {
 		return
 	}
-	
+
 	// Get current signals and add SBAS
 	sigs, ok := props.GetSignalsEnabled()
 	if !ok {
@@ -524,7 +565,7 @@ func (p *sbasProp) updateFromProps(props *gpsprot.ConfigProps) error {
 		// If no signals are specified, don't change SBAS state
 		return errMissingProp
 	}
-	
+
 	// Check if SBAS signals are enabled
 	if sigs&gpsprot.SigSetSBAS != 0 {
 		// Enable SBAS if not already enabled
@@ -538,7 +579,7 @@ func (p *sbasProp) updateFromProps(props *gpsprot.ConfigProps) error {
 		// Disable SBAS if signals are not requested
 		p.enable = "DISABLE"
 	}
-	
+
 	return nil
 }
 
@@ -603,19 +644,19 @@ func (p *maskProp) updateFromProps(props *gpsprot.ConfigProps, availSignals gpsp
 		p.signalMask = availSignals &^ signalsEnabled
 		hasSignals = true
 	}
-	
+
 	hasElevation := false
 	// Handle MinElevation property
 	if minElev, ok := props.GetMinElevation(); ok {
 		p.elevationMask.Set(minElev.Degrees())
 		hasElevation = true
 	}
-	
+
 	// Return errMissingProp only if neither property is present
 	if !hasSignals && !hasElevation {
 		return errMissingProp
 	}
-	
+
 	return nil
 }
 
@@ -821,4 +862,61 @@ func (p *modeProp) generateCommands(prevMode *modeProp) []nativeCommand {
 		return nil
 	}
 	return []nativeCommand{{cmd: p.command, key: idPropMode}}
+}
+
+// portProp records the port the receiver is communicating on, as reported by
+// the first header field of the LOGLIST response. It is read-only: there is
+// no command to set it, and the "command" it is updated from is just the
+// port name.
+type portProp struct {
+	name string // e.g. "COM3"; empty if not yet discovered
+}
+
+func (p *portProp) updateFromCommand(cmd string) error {
+	p.name = cmd
+	return nil
+}
+
+// comRegexp matches CONFIG COMx responses such as "CONFIG COM1 115200"
+// or "CONFIG COM1 115200 8 n 1".
+var comRegexp = regexp.MustCompile(`^CONFIG (COM[1-9]) ([1-9]\d{2,6})(?: .*)?$`)
+
+// comProp records the configured baud rate of each COM port from the
+// $CONFIG,COMx,... query responses.
+type comProp struct {
+	speeds [3]uint32 // baud rate of COM1..COM3; 0 = unknown
+}
+
+func comIndex(port string) int {
+	switch port {
+	case "COM1":
+		return 0
+	case "COM2":
+		return 1
+	case "COM3":
+		return 2
+	}
+	return -1
+}
+
+func (p *comProp) updateFromCommand(cmd string) error {
+	m := comRegexp.FindStringSubmatch(cmd)
+	if m == nil {
+		return fmt.Errorf("could not parse COM port config: %s", cmd)
+	}
+	if i := comIndex(m[1]); i >= 0 {
+		speed, err := strconv.ParseUint(m[2], 10, 32)
+		if err != nil {
+			return err
+		}
+		p.speeds[i] = uint32(speed)
+	}
+	return nil
+}
+
+// convertToProps reports the baud rate of the current port.
+func (p *comProp) convertToProps(props *gpsprot.ConfigProps, port string) {
+	if i := comIndex(port); i >= 0 && p.speeds[i] != 0 {
+		props.SetBaudRate(p.speeds[i])
+	}
 }

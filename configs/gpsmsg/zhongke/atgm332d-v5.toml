@@ -10,6 +10,9 @@
 # - Only GPS, BDS, GLONASS supported (no Galileo, QZSS, SBAS, IRNSS)
 # - Navigation messages use NAV class (0x01), not NAV2 (0x11)
 
+[[include]]
+src = "casic.toml"
+
 # CFG-NAVX: Navigation engine configuration
 # Payload (44 bytes):
 #   U4 mask, U1 dynModel, U1 fixMode, U1 minSVs, U1 maxSVs,
@@ -110,28 +113,10 @@ id = 0x03
 payload.types = "U4U4U1I1U1U1R4"
 payload.values = [1000000, 100000, 3, 0, 1, 1, 0.0]
 
-# Disable PPS
-[[casbin]]
-tag = "pps-off"
-description = "Disable PPS output"
-class = 0x06
-id = 0x03
-payload.types = "U4U4U1I1U1U1R4"
-payload.values = [1000000, 0, 0, 0, 0, 0, 0.0]
-
 # CFG-CFG: Save/load configuration
 # Payload: U2 mask, U1 mode, U1 reserved
 # mask: 0xFFFF = all sections
 # mode: 0=clear, 1=save, 2=load
-
-# Save configuration to NVM
-[[casbin]]
-tag = "save"
-description = "Save configuration to NVM"
-class = 0x06
-id = 0x05
-payload.types = "U2U1U1"
-payload.values = [0xFFFF, 1, 0]
 
 # Load configuration from NVM (undo unsaved changes)
 [[casbin]]
@@ -187,38 +172,6 @@ class = 0x06
 id = 0x04
 payload.types = "U2U2"
 payload.values = [1000, 0]
-
-# CFG-PRT: Serial port configuration
-# Payload: U1 portId, U1 protoMask, U2 mode, U4 baudRate
-# portId: 0=UART0, 1=UART1, 0xFF=current
-# protoMask: B0=binary in, B1=text in, B4=binary out, B5=text out
-
-# Set baud rate to 115200 (binary+NMEA in/out)
-[[casbin]]
-tag = "speed-115200"
-description = "Set baud rate to 115200"
-class = 0x06
-id = 0x00
-payload.types = "U1U1U2U4"
-payload.values = [0xFF, 0x33, 0x08C0, 115200]
-
-# Set baud rate to 38400 (binary+NMEA in/out)
-[[casbin]]
-tag = "speed-38400"
-description = "Set baud rate to 38400"
-class = 0x06
-id = 0x00
-payload.types = "U1U1U2U4"
-payload.values = [0xFF, 0x33, 0x08C0, 38400]
-
-# Set baud rate to 9600 (binary+NMEA in/out)
-[[casbin]]
-tag = "speed-9600"
-description = "Set baud rate to 9600"
-class = 0x06
-id = 0x00
-payload.types = "U1U1U2U4"
-payload.values = [0xFF, 0x33, 0x08C0, 9600]
 
 # CFG-MSG: Enable/disable message output
 # Payload: U1 class, U1 id, U2 rate
@@ -424,95 +377,21 @@ id = 0x01
 payload.types = "U1U1U2"
 payload.values = [0x08, 0x05, 0]
 
-# NMEA message class is 0x4E
-# GGA=0x00, GLL=0x01, GSA=0x02, GSV=0x03, RMC=0x04, VTG=0x05, ZDA=0x08
+# V5-specific configuration query polls.
+# All polls below verified on ATGM332D-5N71 (V5.3.0.0) on a quiet line.
+# Use overflow.toml first if the default 9600 baud NMEA output saturates
+# the line.
 
-# Enable GGA at 1Hz
+# Verified CFG-NAVX response and ACK on ATGM332D-5N71
 [[casbin]]
-tag = "nmea-gga"
-description = "Enable NMEA GGA output at 1Hz"
+tag = "get-gnss"
+description = "Query navigation engine and GNSS selection"
 class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x00, 1]
+id = 0x07
 
-# Disable GGA
+# Verified CFG-TMODE response and ACK on ATGM332D-5N71
 [[casbin]]
-tag = "nmea-gga-off"
-description = "Disable NMEA GGA output"
+tag = "get-survey"
+description = "Query timing mode configuration"
 class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x00, 0]
-
-# Enable GSV at 1Hz
-[[casbin]]
-tag = "nmea-gsv"
-description = "Enable NMEA GSV output at 1Hz"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x03, 1]
-
-# Disable GSV
-[[casbin]]
-tag = "nmea-gsv-off"
-description = "Disable NMEA GSV output"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x03, 0]
-
-# Enable RMC at 1Hz
-[[casbin]]
-tag = "nmea-rmc"
-description = "Enable NMEA RMC output at 1Hz"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x04, 1]
-
-# Disable RMC
-[[casbin]]
-tag = "nmea-rmc-off"
-description = "Disable NMEA RMC output"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x04, 0]
-
-# Enable GSA at 1Hz
-[[casbin]]
-tag = "nmea-gsa"
-description = "Enable NMEA GSA output at 1Hz"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x02, 1]
-
-# Disable GSA
-[[casbin]]
-tag = "nmea-gsa-off"
-description = "Disable NMEA GSA output"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x02, 0]
-
-# Enable GLL at 1Hz
-[[casbin]]
-tag = "nmea-gll"
-description = "Enable NMEA GLL output at 1Hz"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x01, 1]
-
-# Disable GLL
-[[casbin]]
-tag = "nmea-gll-off"
-description = "Disable NMEA GLL output"
-class = 0x06
-id = 0x01
-payload.types = "U1U1U2"
-payload.values = [0x4E, 0x01, 0]
+id = 0x06

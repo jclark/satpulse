@@ -1,0 +1,4 @@
+{"t":"2026-06-15T06:07:18.677534Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
+{"t":"2026-06-15T06:07:18.677583Z","ascii":"VERSIONB\r\n","out":true}
+{"t":"2026-06-15T06:07:20.178173Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
+{"t":"2026-06-15T06:07:20.178226Z","ascii":"VERSIONB\r\n","out":true}

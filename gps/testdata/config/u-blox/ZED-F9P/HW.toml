@@ -1,0 +1,4 @@
+vendor = "u-blox"
+model = "ZED-F9P"
+firmware = "HPG 1.51 PROTVER 27.50"
+default-baud = 38400

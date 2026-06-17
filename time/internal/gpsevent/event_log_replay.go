@@ -1,5 +1,4 @@
 //go:build ignore
-// +build ignore
 
 package main
 
@@ -12,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/time/internal/gpsevent"
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/time/internal/phcsync"
-	"github.com/jclark/satpulse/time/phctime"
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/internal/gpsevent"
+	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/timemsg"
+	"github.com/jclark/satpulse/time/phctime"
 )
 
 // mockClock implements phcsync.Clock interface for replay (no actual PHC adjustment)
@@ -138,18 +137,14 @@ func main() {
 	// Create controller config
 	cfg := phcsync.DefaultConfig()
 
-	// Create pulse type
+	// Edges per pulse: rising only, or rising and falling
 	edgesPerPulse := 1
 	if twoEdges {
 		edgesPerPulse = 2
 	}
-	pt := phcsync.PulseType{
-		EdgesPerPulse: edgesPerPulse,
-		PulseWidth:    100 * time.Millisecond,
-	}
 
 	// Create controller
-	ctrl, err := phcsync.NewController(clock, rs, nil, cfg, ls, pt, lg)
+	ctrl, err := phcsync.NewController(clock, rs, nil, cfg, ls, edgesPerPulse, lg)
 	if err != nil {
 		log.Fatalf("Failed to create controller: %v", err)
 	}

@@ -88,6 +88,44 @@ func TestBandsConfigSupport(t *testing.T) {
 	}
 }
 
+func TestSingleBDSL1Signal(t *testing.T) {
+	tests := []struct {
+		name string
+		ver  *Version
+		want gpsprot.Signal
+		ok   bool
+	}{
+		{
+			name: "SPG",
+			ver:  &Version{Prot: &ProtVer{Major: 34, Minor: 10}, FW: &FWVer{ProductCategory: "SPG"}},
+			want: gpsprot.SigBDSB1I,
+			ok:   true,
+		},
+		{
+			name: "SPGL1L5",
+			ver:  &Version{Prot: &ProtVer{Major: 40, Minor: 0}, FW: &FWVer{ProductCategory: "SPGL1L5"}},
+			want: gpsprot.SigBDSB1C,
+			ok:   true,
+		},
+		{
+			name: "HPG",
+			ver:  &Version{Prot: &ProtVer{Major: 34, Minor: 10}, FW: &FWVer{ProductCategory: "HPG"}},
+		},
+		{
+			name: "protocol 50",
+			ver:  &Version{Prot: &ProtVer{Major: 50, Minor: 0}, FW: &FWVer{ProductCategory: "SPG"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := tt.ver.singleBDSL1Signal()
+			if got != tt.want || ok != tt.ok {
+				t.Errorf("got %v, %v; want %v, %v", got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
 func TestVersionConfigSupport(t *testing.T) {
 	tmode := gpsprot.ConfigSupportSpeed |
 		gpsprot.ConfigSupportSurvey |
@@ -97,6 +135,7 @@ func TestVersionConfigSupport(t *testing.T) {
 	tmode2 := tmode | gpsprot.ConfigSupportSurveyMsg
 	raw := gpsprot.ConfigSupportRaw
 	msm := gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7
+	sig := gpsprot.ConfigSupportSignal
 	tests := []struct {
 		name string
 		ver  Version
@@ -105,16 +144,18 @@ func TestVersionConfigSupport(t *testing.T) {
 		{"LEA-6T", testVers.lea6t, tmode | raw},
 		{"M8F", testVers.m8f, tmode2 | raw},
 		{"M8P", testVers.m8p, tmode2 | raw | msm},
-		{"F9P", testVers.f9p, gpsprot.ConfigSupportBand | tmode2 | raw | msm},
-		{"F9T before MSM4", testVers.f9t, gpsprot.ConfigSupportBand | tmode2 | raw | gpsprot.ConfigSupportRTCMMSM7},
-		{"F9T with MSM4", testVers.f9t25, gpsprot.ConfigSupportBand | tmode2 | raw | msm | gpsprot.ConfigSupportRTCMBaseID},
-		{"F10S", testVers.f10s, gpsprot.ConfigSupportBand | gpsprot.ConfigSupportSpeed},
-		{"X20P", testVers.x20p, gpsprot.ConfigSupportBand | tmode2 | raw | msm | gpsprot.ConfigSupportRTCMBaseID},
+		{"F9P", testVers.f9p, sig | tmode2 | raw | msm},
+		{"F9T before MSM4", testVers.f9t, sig | tmode2 | raw | gpsprot.ConfigSupportRTCMMSM7},
+		{"F9T with MSM4", testVers.f9t25, sig | tmode2 | raw | msm | gpsprot.ConfigSupportRTCMBaseID},
+		{"F10S", testVers.f10s, sig | gpsprot.ConfigSupportSpeed},
+		{"X20P", testVers.x20p, sig | tmode2 | raw | msm | gpsprot.ConfigSupportRTCMBaseID},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.ver.configSupport(); got != tt.want {
-				t.Errorf("configSupport() = %v, want %v", got.Items(), tt.want.Items())
+			// Every u-blox version can identify the active port.
+			want := tt.want | gpsprot.ConfigSupportPort
+			if got := tt.ver.configSupport(); got != want {
+				t.Errorf("configSupport() = %v, want %v", got.Items(), want.Items())
 			}
 		})
 	}

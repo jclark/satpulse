@@ -37,6 +37,9 @@ type requestOps interface {
 	AwaitingResponse(sentSeq uint64) bool
 	Done()
 	ID() string
+	// NakError returns a request-specific error to report when the receiver
+	// NAKs the request, or nil to report a generic error.
+	NakError() error
 }
 
 // configRequest is the UBX implementation of gpsprot.ConfigRequest
@@ -533,7 +536,10 @@ func (c *Configurator) processAckNak(msgID ubxbin.MsgID, ok bool, t time.Time, e
 				} else {
 					// NACK received
 					cr.state = stateFailed
-					cr.err = fmt.Errorf("GPS receiver sent NACK for request %s", cr.ops.ID())
+					cr.err = cr.ops.NakError()
+					if cr.err == nil {
+						cr.err = fmt.Errorf("GPS receiver sent NACK for request %s", cr.ops.ID())
+					}
 				}
 				break
 			}
@@ -667,17 +673,17 @@ func (c *Configurator) reloadCfg() error {
 	if c.target.Opts.Reset != gpsprot.ResetReload {
 		return nil
 	}
-	return c.addRequest(msgRequest{c.newCfgCfgRequest(0, 0, ubxbin.CfgCfgSectionMaskAll, 0)})
+	return c.addRequest(msgRequest{c.newCfgCfgRequest(0, 0, ubxbin.CfgCfgSectionMaskAll)})
 }
 
-func (*Configurator) newCfgCfgRequest(clearMask, saveMask, loadMask ubxbin.CfgCfgSectionMask, deviceMask ubxbin.CfgCfgDeviceMask) *ubxbin.CfgCfg {
+func (*Configurator) newCfgCfgRequest(clearMask, saveMask, loadMask ubxbin.CfgCfgSectionMask, deviceMask ...ubxbin.CfgCfgDeviceMask) *ubxbin.CfgCfg {
 	return &ubxbin.CfgCfg{
 		CfgCfgFixed: ubxbin.CfgCfgFixed{
 			ClearMask: clearMask,
 			SaveMask:  saveMask,
 			LoadMask:  loadMask,
 		},
-		DeviceMask: []ubxbin.CfgCfgDeviceMask{deviceMask},
+		DeviceMask: deviceMask,
 	}
 }
 
@@ -736,6 +742,7 @@ func (c *Configurator) valSetSignals() error {
 	if supported == 0 {
 		return errors.New("could not determine supported GNSS signals")
 	}
+	targetEnabled = resolveSignalConstraints(c.ver, targetEnabled, supported)
 	enabled, items := c.raw.valsPtr().EnableSignals(targetEnabled, supported)
 	// Ensure we have one non-augmentation signal from a major GNSS
 	enabled &= gpsprot.SigSetMajor
@@ -747,7 +754,10 @@ func (c *Configurator) valSetSignals() error {
 	if err != nil {
 		return err
 	}
-	return c.addMsgSetPauseRequest(val, pauseAfterGNSSReset)
+	return c.addRequest(nakErrRequest{
+		msgSetPauseRequest{msgSetRequest{msgRequest{val}, &c.raw}, pauseAfterGNSSReset},
+		errors.New("receiver rejected the requested combination of signals as invalid"),
+	})
 }
 
 func andIfNonZero(ss1, ss2 gpsprot.SignalSet) gpsprot.SignalSet {
@@ -1069,7 +1079,10 @@ func (c *Configurator) setTmode() error {
 }
 
 func (c *Configurator) setTp5() error {
-	tp5 := c.raw.changeTp5(&c.target.Props)
+	tp5, err := c.raw.changeTp5(&c.target.Props)
+	if err != nil {
+		return err
+	}
 	if tp5 == nil {
 		return nil
 	}
@@ -1201,6 +1214,8 @@ func (r msgRequest) AwaitingResponse(uint64) bool { return false }
 
 func (r msgRequest) Done() {}
 
+func (r msgRequest) NakError() error { return nil }
+
 func (c *Configurator) addMsgSetRequest(msg ubxbin.Msg) error {
 	return c.addRequest(msgSetRequest{msgRequest{msg}, &c.raw})
 }
@@ -1282,6 +1297,16 @@ func (r msgSetPauseRequest) Pause() time.Duration {
 
 var _ requestOps = (*msgSetPauseRequest)(nil)
 
+// nakErrRequest overrides the error reported when the receiver NAKs the request.
+type nakErrRequest struct {
+	requestOps
+	nakErr error
+}
+
+func (r nakErrRequest) NakError() error { return r.nakErr }
+
+var _ requestOps = (*nakErrRequest)(nil)
+
 type pollRequest struct {
 	msgSeq map[ubxbin.MsgID]uint64
 	msgID  ubxbin.MsgID
@@ -1298,6 +1323,8 @@ func (r pollRequest) Pause() time.Duration { return 0 }
 func (r pollRequest) ID() string { return r.msgID.String() }
 
 func (r pollRequest) Done() {}
+
+func (r pollRequest) NakError() error { return nil }
 
 func (r pollRequest) Ackable() bool {
 	return r.msgID.Ackable()
@@ -1344,6 +1371,8 @@ func (r msgRateRequest) AwaitingResponse(uint64) bool { return false }
 
 func (r msgRateRequest) ID() string { return ubxbin.CfgMsgID.String() }
 
+func (r msgRateRequest) NakError() error { return nil }
+
 // lengthHP converts a high-precision coordinate (cm main + 0.1mm HP)
 // used by NAV-HPPOSECEF for ECEF coordinates.
 func lengthHP(l int32, h int8) gpsprot.Length {
@@ -1368,4 +1397,12 @@ func angleToInt8Degrees(a gpsprot.Angle) (int8, bool) {
 		return 0, false
 	}
 	return int8(v), true
+}
+
+func antCableDelayNanos(v time.Duration) (int64, error) {
+	n := v.Nanoseconds()
+	if n < math.MinInt16 || n > math.MaxInt16 {
+		return 0, fmt.Errorf("antenna cable delay out of range: %v", v)
+	}
+	return n, nil
 }

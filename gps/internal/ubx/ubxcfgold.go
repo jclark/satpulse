@@ -259,13 +259,21 @@ func tpPeriodWidth(freqPeriod, lenRatio uint32, flags ubxbin.CfgTp5Flags) (time.
 	return period, width
 }
 
-func (raw *CfgOld) changeTp5(cp *gpsprot.ConfigProps) *ubxbin.CfgTp5 {
+func (raw *CfgOld) changeTp5(cp *gpsprot.ConfigProps) (*ubxbin.CfgTp5, error) {
 	if raw.tp5 == nil {
-		return nil
+		return nil, nil
 	}
 
 	// Copy the current tp5
 	tp := *raw.tp5
+
+	if v, ok := cp.GetAntennaCableDelay(); ok {
+		n, err := antCableDelayNanos(v)
+		if err != nil {
+			return nil, err
+		}
+		tp.AntCableDelay = int16(n)
+	}
 
 	// Handle CfgTimePulsePolarityRising
 	rising, exists := cp.GetTimePulsePolarityRising()
@@ -386,9 +394,9 @@ func (raw *CfgOld) changeTp5(cp *gpsprot.ConfigProps) *ubxbin.CfgTp5 {
 
 	// if we didn't change anything, then there's nothing to do
 	if tp == *raw.tp5 {
-		return nil
+		return nil, nil
 	}
-	return &tp
+	return &tp, nil
 }
 
 func (raw *CfgOld) changeTp5GNSS(cp *gpsprot.ConfigProps) gpsprot.GNSS {

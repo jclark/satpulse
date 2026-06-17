@@ -1,0 +1,3 @@
+# Minimal config: only the serial input is configured.
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"

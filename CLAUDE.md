@@ -66,7 +66,7 @@ Build system uses GNU Make:
 - `make pkg` - Build both deb and rpm packages
 - `make clean` - Remove build artifacts
 
-It builds on Linux only. On macOS, use `bsd-build.sh` instead.
+It builds on Linux only. On macOS, use `unix-build.sh` instead.
 
 Web interface is build using npm in `web/` directory.
 - `npm run build` - Rebuilds .js and .css files that are embedded.
@@ -75,6 +75,13 @@ Testing:
 - Individual package: `go test -v ./internal/packagename`
 - All tests: `make test`
 - Test files follow `*_test.go` convention
+- Tests for `X.go` go in `X_test.go` by default; put them elsewhere only when that file would become very unwieldy
+- When requested to review code, do not run tests unless explicitly requested.
+
+Black-box smoke tests of the real `satpulsed` binary live in `smoketest/`
+(daemon-level config wiring, endpoints, logging, Ntrip, shutdown; no root or GPS
+hardware). Build first with `make`, then run `make smoketest`. See
+@smoketest/CLAUDE.md.
 
 System testing on real hardware is doing using ansible in `systest/` directory.
 
@@ -83,6 +90,7 @@ System testing on real hardware is doing using ansible in `systest/` directory.
 - Never use `git add -A` or `git add .` - these add untracked files which may include test data or local files
 - Use `git add -u` to stage modified/deleted tracked files, then add new files explicitly by name
 - Only create a branch when explicitly instructed to. Otherwise commit on the current branch, including the default branch.
+- When a commit completely resolves an issue, make `Fixes #N` (with the issue number) the last line of the commit message, so the issue closes when the commit merges.
 
 ## Development environment
 

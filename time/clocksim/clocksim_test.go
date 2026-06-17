@@ -545,8 +545,9 @@ func TestDualEdgeMode(t *testing.T) {
 		rising := timestamps[risingIdx]
 		trailing := timestamps[trailingIdx]
 
-		// Rising edge should be at ~(i+1) seconds
-		expectedRising := ptime.Time((i + 1) * 1e9)
+		// Rising edge should be at ~(i+1) seconds.
+		// Multiply in time.Duration (int64) to avoid int overflow on 32-bit.
+		expectedRising := ptime.Time(time.Duration(i+1) * time.Second)
 		if rising != expectedRising {
 			t.Errorf("rising edge %d = %v, want %v", i, rising, expectedRising)
 		}

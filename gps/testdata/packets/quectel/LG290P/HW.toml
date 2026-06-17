@@ -1,0 +1,4 @@
+vendor = "quectel"
+model = "LG290P"
+firmware = "LG290P03AANR02A01S 2025/12/12"
+default-baud = 460800

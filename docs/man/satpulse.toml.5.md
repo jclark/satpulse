@@ -96,18 +96,18 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
    * `"GLO"`, `"GLONASS"` for the GNSS system operated by Russia
 * `mobile` - a boolean saying whether the GPS receiver is mobile; if this is false, the receiver will be configured to assume a stationary
    position; on a timing receiver, time mode will be enabled, which is a mode in which a fixed position is established for the receiver,
-   and thereafter the time is computed using  a single satellite;
-   the position can be established by having the GPS spend some time determing the position itself (called a survey)
-   or by explicitly specifying the position (using `fixedPosECEF`); the default is `false`
+   and thereafter the time is computed using a single satellite;
+   the position can be established by having the GPS spend some time determining the position itself (called a survey)
+   or by explicitly specifying the position (using `fixedPosECEF` or `fixedPosLLH`); the default is `false`
 * `surveyTime` - a number giving the time in seconds to perform a survey to establish the position of the GPS receiver antenna;
    SatPulse will only do a survey when `mobile` is false and no fixed position has been set; the default is 2000
 * `surveyAcc` - a number giving the accuracy in meters that the survey must achieve; the survey will continue until this accuracy
    is reached and the survey time has elapsed; the default is 20
 * `resurvey` - a boolean saying whether to force a new survey even if a survey has already been completed; the default is `false`
-* `fixedPosECEF` - an array of three numbers giving the ECEF coordinates in meters of the GPS receiver's antenna receiver; if SatPulse initiaties a survey,
+* `fixedPosECEF` - an array of three numbers giving the ECEF coordinates in meters of the GPS receiver's antenna; this must not be specified with `fixedPosLLH`; if SatPulse initiates a survey,
   then it will log the position determined by the survey when the survey finishes
-* `fixedPosAcc` - a number giving the accuracy in meters of the `fixedPosECEF` coordinates; SatPulse will log the accuracy along with the position when
-  a survey finishes
+* `fixedPosLLH` - an array of three numbers giving latitude in degrees, longitude in degrees, and WGS84 ellipsoid height in meters of the GPS receiver's antenna; this must not be specified with `fixedPosECEF`
+* `fixedPosAcc` - a number giving the accuracy in meters of the fixed position coordinates; SatPulse will log the accuracy along with the position when a survey finishes
 * `minElevation` - a number giving the minimum elevation in degrees for satellites to be used by the GPS receiver; the default is to not change the GPS receiver's configuration
 * `antennaCableLength` - a number giving the length in meters of the antenna cable; this is used to set the antenna cable delay in conjunction with the
   `antennaCableVF` key; the default is to not change the GPS receiver's configuration of the antenna cable delay
@@ -125,8 +125,8 @@ Example
 ```
 [gps]
 config = true
-gnss = "GAL"
-fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
+fixedPosLLH = [51.5007, -0.1246, 11.0]
+fixedPosAcc = 0.05
 ```
 
 ## `leapSecond` table
@@ -157,7 +157,7 @@ The `ptp` table controls this. It can have the following keys:
 * `ptp4l.udsAddress` - a string giving the path of the Unix domain socket used by ptp4l for PTP management. By default
    ptp4l uses `/var/run/ptp4l`, but it can be changed with the ptp4l `uds_address` option. This key must be supplied
    to enable SatPulse to update ptp4l.
-* `domain` - the PTP domain number; this defaults to 0
+* `domainNumber` - the PTP domain number; this defaults to 0
 * `majorSdoId` - the PTP majorSdoId; this defaults to 0; in earlier versions of the PTP standard this is called `transportSpecific`
 * `minorSdoId` - the PTP minorSdoId; this defaults to 0
 * `clockAccuracy` - the accuracy in nanoseconds of the PTP grandmaster instance when synchronized to the GPS receiver.
@@ -221,7 +221,7 @@ shm.segment = 2
 ## `log` table
 
 The `log` table is about how SatPulse should log information. SatPulse does two kinds of logging: it logs through systemd,
-and it can also write its own applicaton-specific log files.
+and it can also write its own application-specific log files.
 
 The following keys relate to logging through systemd:
 
@@ -230,14 +230,16 @@ The following keys relate to logging through systemd:
   the default is 30; the status is computed once per second, and a value of 1 will log that status directly; a value
   of 0 will not log the synchronization status
 
-The following keys relate to its own log
+The following keys relate to its own log files:
 
 * `clock` - a boolean saying whether to create a *clock* log; the clock log is in text format and records offsets between the PHC and the GPS;
    it is intended to be convenient for statistical analysis
 * `packet` - a boolean saying whether to create a *packet* log; the packet log is in JSON Lines format and
   records packets received by and sent to the GPS receiver
-* `event` a boolean saying whether to create an  *event* log; the event log is in JSON Lines format and
+* `event` - a boolean saying whether to create an *event* log; the event log is in JSON Lines format and
   records the events input into the synchronization process (pulses and GPS messages)
+* `track` - a boolean saying whether to create a *track* log; the track log is in JSON Lines format and
+  records one trackpoint per navigation epoch
 * `dir` - a string giving the directory in which to write log files; this defaults to `/var/log/satpulse`
 
 ## `http` table array
@@ -416,11 +418,15 @@ protocol = "RTCM"
 
 The `stream.push` table array allows streams of packets from the GPS receiver to be sent to network endpoints.
 Each `[[stream.push]]` table specifies one endpoint.
-Currently the only kind of endpoint is Ntrip: SatPulse acts as an Ntrip server, sending to an Ntrip caster.
+Two kinds of endpoint are supported: Ntrip and UDP.
 
-The `[[stream.push]]` table has the following keys:
+The `[[stream.push]]` table can have the following key:
 
-* `protocol` - a string giving the packet protocol to forward; recognized values are `"RTCM"`, `"NMEA"`, `"UBX"`, `"CASBIN"`, `"ASBIN"`, `"SDBP"`, `"UNCB"`, `"UNCA"`, `"NOVB"` and `"NOVA"`; the receiver must output packets using this protocol; the default is `"RTCM"`
+* `protocol` - a string giving the packet protocol to forward; recognized values are `"RTCM"`, `"NMEA"`, `"UBX"`, `"CASBIN"`, `"ASBIN"`, `"SDBP"`, `"UNCB"`, `"UNCA"`, `"NOVB"` and `"NOVA"`; the receiver must output packets using this protocol
+
+With an Ntrip endpoint, SatPulse acts as an Ntrip server, sending to an Ntrip caster.
+The following keys may be specified:
+
 * `ntrip.address` - a string giving the address of the remote Ntrip caster, in the form *host* or *host*`:`*port*; when the port is omitted, the default is 2101; this key is required
 * `ntrip.mountpoint` - a string giving the mountpoint to push to on the remote caster; this key is required and must be a single URL path component
 * `ntrip.password` - a string giving the password for uploading to the remote caster; this key is required
@@ -428,9 +434,10 @@ The `[[stream.push]]` table has the following keys:
 * `ntrip.bitrate` - an integer giving the bitrate sent to the remote caster; the default is the `bitrate` key in the top-level `ntrip` table
 * `ntrip.msm7to4` - a boolean saying whether MSM7 RTCM packets should be converted to MSM4 before being pushed; non-MSM7 packets are forwarded unchanged; this can be used only when `protocol` is `RTCM`; the default is false
 
+For Ntrip endpoints, `protocol` defaults to `"RTCM"`.
 When the protocol is `RTCM`, the source table information sent to the remote caster uses the fields from the `ntrip` table together with the `ntrip.description`, `ntrip.bitrate`, and `ntrip.msm7to4` keys from the push entry.
 
-Example
+Example using Ntrip
 
 ```
 [ntrip]
@@ -441,6 +448,18 @@ ntrip.address = "caster.example.com"
 ntrip.mountpoint = "BKK"
 ntrip.password = "secret"
 ntrip.description = "Bangkok"
+```
+
+With a UDP endpoint, SatPulse acts as a UDP client, sending packets to a UDP address.
+The following key must be specified:
+
+* `udp.address` - a string giving the UDP destination, in the form *host*`:`*port*
+
+Example using UDP
+
+```
+[[stream.push]]
+udp.address = "127.0.0.1:10110"
 ```
 
 ## `sync` table

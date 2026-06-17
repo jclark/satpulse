@@ -19,6 +19,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/timemsg"
 	"github.com/jclark/satpulse/time/internal/ts"
 	"github.com/jclark/satpulse/time/lib/median"
+	"github.com/jclark/satpulse/time/lib/ntime"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/phctime"
 	"golang.org/x/sys/unix"
@@ -315,26 +316,51 @@ func (d *Dispatcher) handlePulledPacket(pkt scan.Packet) {
 	d.obs.CorReport(msg, pkt.TRead)
 }
 
-type LogEvent struct {
-	T          time.Time              `json:"t"`
-	Nanos      time.Duration          `json:"nanos"`
-	PulseEdge  *PulseEdge             `json:"pulseEdge,omitempty"`
-	Time       *gpsprot.TimeMsg       `json:"time,omitempty"`
-	PosGeo     *gpsprot.PosGeoMsg     `json:"posGeo,omitempty"`
-	PosECEF    *gpsprot.PosECEFMsg    `json:"posECEF,omitempty"`
-	VelGeo     *gpsprot.VelGeoMsg     `json:"velGeo,omitempty"`
-	VelECEF    *gpsprot.VelECEFMsg    `json:"velECEF,omitempty"`
-	Survey     *gpsprot.SurveyMsg     `json:"survey,omitempty"`
-	LeapSecond *gpsprot.LeapSecondMsg `json:"leapSecond,omitempty"`
-	Satellites *gpsprot.SatellitesMsg `json:"satellites,omitempty"`
-	NavEpoch   *gpsprot.NavEpochMsg   `json:"navEpoch,omitempty"`
-	CorReport  *gpsprot.CorReportMsg  `json:"corReport,omitempty"`
-}
+// LogEvent is a daemon event-log entry: the universal gpsprot event envelope
+// with a payload that is either a gpsprot.Msg (GPS message records) or a
+// *PulseEdge (pulse-edge records, with Type "pulseEdge").
+type LogEvent gpsprot.Event[any]
+
+// pulseEdgeType is the LogEvent.Type value for pulse-edge records.
+const pulseEdgeType = "pulseEdge"
 
 type PulseEdge struct {
 	T     ptime.Time  `json:"t"`
 	Era   phctime.Era `json:"era"`
 	TRead ptime.Time  `json:"tRead"`
+}
+
+// UnmarshalJSON decodes a LogEvent, dispatching on the type discriminator:
+// "pulseEdge" records decode Data as *PulseEdge, all others as the gpsprot.Msg
+// named by Type. It accepts only the new envelope format; old sparse event
+// logs are handled by gpsevent/migrate_log.go.
+func (e *LogEvent) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Type string           `json:"type"`
+		T    time.Time        `json:"t"`
+		Mono gpsprot.Duration `json:"mono"`
+		Data json.RawMessage  `json:"data"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	e.Type = raw.Type
+	e.T = raw.T
+	e.Mono = raw.Mono
+	if raw.Type == pulseEdgeType {
+		var pe PulseEdge
+		if err := json.Unmarshal(raw.Data, &pe); err != nil {
+			return err
+		}
+		e.Data = &pe
+		return nil
+	}
+	msg, err := gpsprot.UnmarshalMsg(raw.Type, raw.Data)
+	if err != nil {
+		return err
+	}
+	e.Data = msg
+	return nil
 }
 
 func (d *Dispatcher) timestamp(e ts.Event) {
@@ -350,8 +376,9 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 
 	// Log event with monotonic time and full sample info
 	d.logEvent(LogEvent{
-		T: e.TReadMono.Sys,
-		PulseEdge: &PulseEdge{
+		Type: pulseEdgeType,
+		T:    e.TReadMono.Sys,
+		Data: &PulseEdge{
 			T:     e.Ts.T,
 			Era:   e.Ts.Era,
 			TRead: e.TReadMono.PHC.T,
@@ -372,7 +399,7 @@ func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time, samplePrecision ti
 	offset := clockTime.Sub(sys).Seconds()
 	leap := d.ls.StateAt(ref).LeapTonight
 	if d.rc != nil {
-		if err := d.rc.Sample(sys, offset, leap); err != nil {
+		if err := d.rc.Sample(ntime.Sys(sys), offset, leap); err != nil {
 			d.lg.Warn("refclock sample failed", "err", err)
 		}
 	}
@@ -386,7 +413,7 @@ func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time, samplePrecision ti
 func (d *Dispatcher) MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind) {
 	offset := utc.Sub(tRead).Seconds()
 	if d.rc != nil {
-		if err := d.rc.Sample(tRead, offset, leap); err != nil {
+		if err := d.rc.Sample(ntime.Sys(tRead), offset, leap); err != nil {
 			d.lg.Warn("refclock sample failed", "err", err)
 		}
 	}
@@ -397,7 +424,7 @@ func (d *Dispatcher) MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.LeapS
 }
 
 func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, Time: mt})
+	d.logMsg(mt, tRead)
 
 	d.timeMsgBuffer.Time(mt, tRead)
 
@@ -410,7 +437,7 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 }
 
 func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, Survey: m})
+	d.logMsg(m, tRead)
 	if m.InProgress || !d.loggedSurveyComplete {
 		d.loggedSurveyComplete = !m.InProgress
 		d.lg.Info("survey progress",
@@ -424,31 +451,31 @@ func (d *Dispatcher) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 }
 
 func (d *Dispatcher) PosGeo(msg *gpsprot.PosGeoMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, PosGeo: msg})
+	d.logMsg(msg, tRead)
 	d.pvAccum.PosGeo(msg, tRead)
 }
 
 func (d *Dispatcher) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, PosECEF: msg})
+	d.logMsg(msg, tRead)
 	d.pvAccum.PosECEF(msg, tRead)
 }
 
 func (d *Dispatcher) VelGeo(msg *gpsprot.VelGeoMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, VelGeo: msg})
+	d.logMsg(msg, tRead)
 	d.pvAccum.VelGeo(msg, tRead)
 }
 
 func (d *Dispatcher) VelECEF(msg *gpsprot.VelECEFMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, VelECEF: msg})
+	d.logMsg(msg, tRead)
 	d.pvAccum.VelECEF(msg, tRead)
 }
 
 func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, Satellites: msg})
+	d.logMsg(msg, tRead)
 }
 
 func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, NavEpoch: msg})
+	d.logMsg(msg, tRead)
 	d.timeTicker.NavEpoch(msg, tRead)
 	d.pvAccum.PVMsgBundle.FillDerived()
 	pv := d.pvAccum.PVMsgBundle // copy before clearing
@@ -459,11 +486,11 @@ func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 func (d *Dispatcher) CorReport(msg *gpsprot.CorReportMsg, tRead time.Time) {
 	// Receiver-derived reports already reach observers through
 	// MultiHandler(&d, obs), so the dispatcher side only records the event log.
-	d.logEvent(LogEvent{T: tRead, CorReport: msg})
+	d.logMsg(msg, tRead)
 }
 
 func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
-	d.logEvent(LogEvent{T: tRead, LeapSecond: msg})
+	d.logMsg(msg, tRead)
 	d.timeTicker.LeapSecond(msg, tRead)
 	if msg.UpdateLeapSecond(&d.ls) {
 		// Update timemsg.Buffer (always exists)
@@ -483,11 +510,16 @@ func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, t
 	return nil
 }
 
+// logMsg records a gpsprot.Msg as a GPS message event-log record.
+func (d *Dispatcher) logMsg(msg gpsprot.Msg, tRead time.Time) {
+	d.logEvent(LogEvent{Type: msg.MsgType(), T: tRead, Data: msg})
+}
+
 func (d *Dispatcher) logEvent(event LogEvent) {
 	if d.lf.File == nil {
 		return
 	}
-	event.Nanos = event.T.Sub(d.tStart)
+	event.Mono = gpsprot.Duration(event.T.Sub(d.tStart)) / gpsprot.Microsecond * gpsprot.Microsecond
 	bytes, err := json.Marshal(event)
 	if err != nil {
 		d.lg.Warn("failed to convert event to JSON", "event", event, "err", err)

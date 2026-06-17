@@ -129,12 +129,32 @@ func TestParseFlags(t *testing.T) {
 		},
 		{
 			name: "tag msg realtime",
-			args: []string{"--tag", "UBX", "--msg", "NAV-PVT", "--realtime", "-"},
-			want: &flagVars{tag: "UBX", msg: "NAV-PVT", realtime: true, filePath: "-"},
+			args: []string{"--tag", "UBX", "--msg", "NAV-PVT", "--realtime", "2.5", "-"},
+			want: &flagVars{tag: "UBX", msg: "NAV-PVT", realtime: 2.5, filePath: "-"},
 		},
 		{
 			name:      "msg requires tag",
 			args:      []string{"--msg", "NAV-PVT", "-"},
+			expectErr: true,
+		},
+		{
+			name:      "realtime zero rejected",
+			args:      []string{"--realtime", "0", "-"},
+			expectErr: true,
+		},
+		{
+			name:      "realtime negative rejected",
+			args:      []string{"--realtime=-1", "-"},
+			expectErr: true,
+		},
+		{
+			name:      "realtime NaN rejected",
+			args:      []string{"--realtime", "NaN", "-"},
+			expectErr: true,
+		},
+		{
+			name:      "realtime Inf rejected",
+			args:      []string{"--realtime", "Inf", "-"},
 			expectErr: true,
 		},
 		{
@@ -175,7 +195,7 @@ func TestTimingSleepsFromEmittedPacketDeltas(t *testing.T) {
 		timedBin(base.Add(350*time.Millisecond), "UBX", "NAV-PVT", "03"),
 	)
 
-	err := run(strings.NewReader(input), out, runConfig{realtime: true, clock: fc})
+	err := run(strings.NewReader(input), out, runConfig{factor: 1, clock: fc})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -205,7 +225,7 @@ func TestTimingAnchorsFirstPacketAfterFlush(t *testing.T) {
 		timedBin(base.Add(2*time.Second), "UBX", "NAV-PVT", "03"),
 	)
 
-	err := run(strings.NewReader(input), out, runConfig{realtime: true, clock: fc})
+	err := run(strings.NewReader(input), out, runConfig{factor: 1, clock: fc})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -219,6 +239,26 @@ func TestTimingAnchorsFirstPacketAfterFlush(t *testing.T) {
 	}
 }
 
+func TestTimingFactorCompressesDelays(t *testing.T) {
+	base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
+	fc := &fakeClock{now: time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)}
+	out := &recordingOutput{clock: fc}
+	input := lines(
+		timedBin(base, "UBX", "NAV-PVT", "01"),
+		timedBin(base.Add(200*time.Millisecond), "UBX", "NAV-PVT", "02"),
+		timedBin(base.Add(600*time.Millisecond), "UBX", "NAV-PVT", "03"),
+	)
+
+	err := run(strings.NewReader(input), out, runConfig{factor: 4, clock: fc})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	wantSleeps := []time.Duration{50 * time.Millisecond, 100 * time.Millisecond}
+	if !reflect.DeepEqual(fc.sleeps, wantSleeps) {
+		t.Fatalf("sleeps = %v, want %v", fc.sleeps, wantSleeps)
+	}
+}
+
 func TestTimingUsesPreviousEmittedPacket(t *testing.T) {
 	base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
 	fc := &fakeClock{now: time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)}
@@ -229,7 +269,7 @@ func TestTimingUsesPreviousEmittedPacket(t *testing.T) {
 		timedBin(base.Add(300*time.Millisecond), "UBX", "NAV-PVT", "03"),
 	)
 
-	err := run(strings.NewReader(input), out, runConfig{tag: "UBX", realtime: true, clock: fc})
+	err := run(strings.NewReader(input), out, runConfig{tag: "UBX", factor: 1, clock: fc})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -244,7 +284,7 @@ func TestTimingUsesPreviousEmittedPacket(t *testing.T) {
 
 func TestTimingRequiresTimestampOnSelectedPackets(t *testing.T) {
 	input := lines(`{"event":"metadata"}`, `{"tag":"UBX","bin":"01"}`)
-	err := run(strings.NewReader(input), &recordingOutput{}, runConfig{realtime: true, clock: &fakeClock{}})
+	err := run(strings.NewReader(input), &recordingOutput{}, runConfig{factor: 1, clock: &fakeClock{}})
 	if err == nil {
 		t.Fatalf("expected error")
 	}

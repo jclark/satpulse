@@ -1,0 +1,6 @@
+# NTP SHM refclock fed from a pure 1 Hz RMC stream in serial timing mode.
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[ntp]
+shm.segment = ${SATPULSE_TEST_NTP_SHM_SEGMENT}
