@@ -6,9 +6,12 @@
 # runtime dependencies -- notably the WebKitGTK 4.1 stack -- are computed
 # automatically by dpkg-shlibdeps.
 #
+# It produces only the versioned .deb in build/. The friendly GH_RELEASE-named
+# symlink is created separately by deb-symlink.sh (so a container build can
+# export a single file).
+#
 # Usage: ./build-deb.sh [VERSION]
-#   VERSION defaults to the same scheme as the main satpulse .deb (see below).
-#   The .deb is written to build/.
+#   VERSION defaults to the scheme in deb-version.sh (same as the main .deb).
 set -eu
 
 PKG=satpulse-gui
@@ -31,28 +34,7 @@ if [ ! -x build/bin/SatPulse ]; then
 fi
 [ -x build/bin/SatPulse ] || { echo "build-deb.sh: build/bin/SatPulse missing" >&2; exit 1; }
 
-# Version: same convention as the main satpulse .deb (Makefile DEB_PKG_VERSION).
-# Released (HEAD on the exact vVERSION tag, clean tree): VERSION-1.
-# Otherwise a pre-release:                       VERSION~git<date>.<hash>[.dirty]-1.
-# ghrel is the friendly GH_RELEASE name used for the symlink (empty if VERSION
-# was overridden on the command line).
-ver=${1:-}
-ghrel=
-if [ -z "$ver" ]; then
-	root=$(git rev-parse --show-toplevel 2>/dev/null || echo "$here/..")
-	VERSION=$(cat "$root/VERSION")
-	DEB_REV=1
-	if git diff-index --quiet HEAD 2>/dev/null; then dirty=; else dirty=.dirty; fi
-	if [ "$(git describe --tags --exact-match 2>/dev/null || true)$dirty" = "v$VERSION" ]; then
-		ver="$VERSION-$DEB_REV"
-		ghrel="$VERSION"
-	else
-		date_ymd=$(env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d)
-		ver="$VERSION~git$date_ymd.$(git log -1 --format=%h)$dirty-$DEB_REV"
-		ghrel="$VERSION-pre-$date_ymd"
-	fi
-fi
-
+ver=${1:-$(./deb-version.sh | cut -d' ' -f1)}
 arch=$(dpkg --print-architecture)
 dist=$(. /etc/os-release && echo "${VERSION_CODENAME:-stable}")
 maint=$(git config user.name 2>/dev/null || echo SatPulse)
@@ -133,10 +115,3 @@ deb=$(ls "$work/${PKG}_${ver}_${arch}.deb")
 cp "$deb" build/
 echo
 echo "Built build/$(basename "$deb")"
-
-# Friendly symlink with the GH_RELEASE name, mirroring the main package.
-if [ -n "$ghrel" ]; then
-	pretty="${PKG}_${ghrel}_${arch}.deb"
-	ln -sf "$(basename "$deb")" "build/$pretty"
-	echo "Symlink build/$pretty -> $(basename "$deb")"
-fi

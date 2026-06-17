@@ -1,4 +1,4 @@
-.PHONY: build deb dev lint clean realclean setup
+.PHONY: build deb dev lint clean realclean setup deb-docker-amd64 deb-docker-arm64
 
 # WebKitGTK version Wails links against on Linux. 4.1 (libsoup3) is shipped by
 # all current distros (Ubuntu 24.04+, Debian trixie+, Fedora 40+); use 4.0
@@ -14,9 +14,19 @@ TAGFLAG = $$([ "$$(uname -s)" = Linux ] && [ "$(WEBKIT)" = 4.1 ] && echo -tags w
 build:
 	wails build $(TAGFLAG)
 
-# Package a .deb for the Debian-based distro this runs on (builds first if needed).
+# Package a .deb for the Debian-based distro this runs on (builds first if
+# needed), plus the friendly GH_RELEASE-named symlink.
 deb:
 	./build-deb.sh
+	./deb-symlink.sh
+
+# Build the .deb in a container for a specific architecture (default base
+# debian:trixie; override via env vars documented in docker-build-deb.sh).
+deb-docker-amd64:
+	./docker-build-deb.sh amd64
+
+deb-docker-arm64:
+	./docker-build-deb.sh arm64
 
 setup:
 	cd .. && go work init . ./desktop
