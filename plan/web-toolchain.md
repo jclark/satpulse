@@ -51,12 +51,26 @@ internal/web/                       # Go embed package
 | `build.mjs` | Remove; replaced by Vite build in dashboard package |
 | `embed.go` | `internal/web/embed.go` |
 | `test-dashboard.tsx`, `build-test-dashboard.mjs` | `webui/packages/dashboard/src/` (mock dev server) |
+| `dashboard.test.ts`, `timefmt.test.ts` | Move alongside their sources (dashboard test to dashboard package, timefmt test to shared package), migrated jest -> vitest |
 
 GPS message types (`SatellitesMsg`, `NavEpochMsg`, etc.) are **not** migrated — they are already defined in `@satpulse/gps` (`gps/ts/`). Code that currently uses inline type definitions for gpsprot JSON should import from `@satpulse/gps/gpsprot` instead.
 
 ## Vite build
 
 The dashboard package uses Vite with the Preact preset (matching the desktop GUI's setup). The Vite config disables content hashing so filenames are stable (`app.js`, `style.css`). This keeps git diffs clean since the checked-in assets only change when actual content changes.
+
+## Test tooling
+
+Replace jest/ts-jest/babel-jest with vitest, the natural test runner for a
+Vite project (it reuses the Vite config and the Preact preset, so there is no
+separate ts-jest/babel transform to maintain). This also drops the entire
+babel/istanbul dependency chain, which was the source of the js-yaml and
+@babel/core Dependabot alerts (worked around in `web/` with npm `overrides`
+pending this migration; the overrides go away with jest).
+
+Each package runs its own tests: `timefmt` and `viz` tests live in the shared
+package, `dashboard.test.ts` in the dashboard package. The workspace root
+exposes an aggregate `test` script.
 
 ## Go embed bridge
 
