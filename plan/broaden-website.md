@@ -151,10 +151,10 @@ the published stable binary and a build from master.
 
 The home page is not reworked once. It evolves in stages alongside the
 rest of the site, and its claims must never outrun what the other
-pages can back up. The first step puts an honest, vision-led
+pages can back up. The first step, now done, put an honest, vision-led
 transitional page in place; later steps each earn an additional
-home-page claim (the broader hardware-resource claim after the
-hardware split, the accessible no-PHC timing path after the setup
+home-page claim (the broader technical-resource claim after the intro
+and hardware slice, the accessible no-PHC timing path after the setup
 rework, and so on).
 
 Release handling: the line that matters is what is done, not what has
@@ -177,7 +177,13 @@ man-page banner is whole-page; the tutorial label is per-feature,
 because a single tutorial page often mixes stable and newer content.
 The version-sensitive steps below assume this label exists.
 
-### Transitional home page
+### Transitional home page (done)
+
+Done: the 0.1-era home page has been replaced with an honest,
+vision-led transitional page along the lines below. The broader
+"technical resource for GNSS hardware" claim is still held back, and is
+earned by the intro and hardware slice that follows. The notes below
+are kept as the record of the intent.
 
 Replace the 0.1-era home page with an honest, vision-led transitional
 page now, before the deeper rework. This step does not wait on other
@@ -221,73 +227,109 @@ Two wording decisions are left to the author: how broad the opening
 scope statement should be, and how bluntly to state that the narrative
 site currently documents 0.1.
 
-### Hardware split
+### Intro and hardware (current slice)
 
-The site has useful hardware material, but a reader needs to know
-whether they are choosing GNSS receiver hardware or the more niche
-precision-time computer hardware. This step is version-independent
-(the content is the same for the stable release and any pre-release),
-so it can proceed regardless of release timing, and completing it
-earns the broader "technical resource" claim on the home page.
+The introduction and hardware sections are reworked together as one
+slice, because they share content boundaries that have to be drawn
+once: the PTM concept (`intro/timing.md`) versus PTM hardware selection
+(`hardware/ptm.md`); positioning concepts (`intro/positioning.md`)
+versus module and receiver selection (`hardware/gnss-modules.md`); the
+timing mental model (`intro/timing.md`) versus the concrete builds and
+boards. Both sections are version-independent -- the content is the
+same for the stable release and any pre-release -- so they are written
+once now, regardless of the 0.3 release boundary. Completing this slice
+earns the broader "technical resource for GNSS hardware" claim on the
+home page.
 
-#### Split GNSS and precision-time hardware
+#### What is done
 
-Present the hardware pages as two top-level sections. The current
-`hardware/index.md` (and its URL) becomes the precision time hardware
-overview; a new `hardware/gnss.md` becomes the GNSS hardware overview,
-built by moving the GNSS-facing material out of `index.md`. GNSS
-hardware covers modules, receivers, GNSSDOs, antennas, and vendors;
-precision time hardware covers PHCs and SDPs, external timestamping,
-periodic output, PTM, switches, CM4/CM5 builds, Intel NIC builds,
-client hardware, and the in-case GNSS boards (see below). Most pages
-already exist, so this is mostly a navigation.yml change plus the new
-`gnss.md` overview. Do not rewrite the detailed build pages just to fit
-the split.
+The structural rework is in place and every page has content.
 
-#### Put the GNSS boards page on the timing side
+- Navigation is split into two top-level sections: "GNSS hardware"
+  (overview, modules, receivers, GNSSDOs, antennas, vendors) and
+  "Precision time hardware" (overview, selected GNSS boards, CM4/CM5
+  build, Intel build, client hardware, PTM, switches, timing vendors).
+- The old `hardware/index.md` is now the precision-time-hardware
+  overview, and a new `hardware/gnss.md` is the GNSS-hardware overview.
+- `hardware/gnss-boards.md` has moved to the precision-time-hardware
+  section, with the nav label "Selected GNSS boards".
+- The vendors page is split: GNSS vendors stay on `hardware/vendors.md`,
+  and timing-only vendors are in `hardware/timing-vendors.md`.
+- The introduction is split into six pages: overview, GNSS, precision
+  timing, precision positioning, SatPulse, and other software.
+- `intro/satpulse.md` is essentially complete: it covers
+  `satpulsed`/`satpulsetool`, timing with and without a PHC, positioning
+  (RTK/Ntrip, new in 0.3), receiver configuration, observability,
+  packet processing, and the tier 1/tier 2 protocol breakdown.
+- `intro/gnss.md`, `intro/timing.md`, and `hardware/gnss-modules.md`
+  carry substantial content.
 
-The existing `hardware/gnss-boards.md` is GNSS hardware only by name:
-it covers boards designed to mount inside a computer case for a timing
-build (CM4/CM5 sandwich boards, RCB timing boards, the ArduSimple M.2
-for an i226/i211 machine, SR1 boards for the CM IO case). Move it
-wholesale to the precision time hardware section and retitle it so the
-name signals that it is a curated set: the nav label is "Selected GNSS
-boards", and the page title and intro explain that these are boards
-chosen to work well in an in-case timing build (CM4/CM5 and Intel-NIC
-machines).
+#### Cross-linking the two sections
 
-#### Scope GNSS boards by use case
+The sections currently under-link each other, both from concept to
+example and from concept to how-to. The intended pattern:
 
-Cataloguing every GNSS board on the market is hopeless -- there are too
-many. Scope the board pages by form factor and use instead. The
-Selected GNSS boards page above stays limited to boards for the in-case
-PPS timing build. Separately, the GNSS hardware section can have a GNSS
-HATs page for boards that plug into the Raspberry Pi 40-pin header (used
-on a standard Pi for positioning or GPIO-PPS timing) -- a bounded
-category, unlike boards in general. The HATs page is all-new content,
-so it is a later step, not part of the immediate split.
+- Intro concept pages link out to the hardware pages for real examples:
+  the GNSS page to modules and receivers, the timing page to the CM4/CM5
+  and Intel builds and PTM, the positioning page to RTK-capable modules
+  and receivers.
+- Hardware pages link back to the intro concept pages for the
+  underlying concepts. A few of these exist already (`gnss-modules` ->
+  `intro/gnss`, `ptm` -> `intro/timing`); make the back-links
+  systematic.
+- For "how do I actually do it" links, start by linking
+  `intro/satpulse.md` to the relevant man pages, which are the current
+  reference. The positioning page can point at the existing RTK howto
+  until the RTK setup workflow exists.
 
-#### Split the vendors page
+#### Remaining work
 
-The broad vendors page stays in the GNSS hardware section. Identify the
-vendors on it that sell only timing-section hardware (PHCs, timecards,
-PTP switches, and the like) and move them into a new
-`hardware/timing-vendors.md` in the precision time hardware section,
-with a link back to the broad vendors page for GNSS vendors. This is a
-content move out of the existing page, not new writing, so it is part
-of the immediate split.
+The key things still to do, roughly in priority order.
 
-#### Beef up the GNSS modules page
+- Write `intro/positioning.md` (currently a stub). Cover base versus
+  rover, the need for a known base-station position, fixed versus float,
+  ambiguity resolution, RTK versus PPP, local OSR versus global SSR
+  corrections, and hardware RTK versus software positioning. Harvest the
+  conceptual parts of the current RTK howto (especially the base/rover
+  model and fixed-position extraction); leave command sequences and
+  SatPulse-specific setup in the howto/setup workflow, and point the
+  "how" at the existing RTK howto for now.
+- Fill `intro/other-software.md` (many stub entries). Complete the empty
+  entries -- statime, chrony, ntpd-rs, NTP/NTPSec, RTKLib, BKG Ntrip
+  Caster, BNC, SNIP, PyGPSClient, Lady Heather, Geoclue -- describing
+  each tool and how it works with or is an alternative to SatPulse. This
+  is stub completion, not a later reframing: it does not depend on the
+  SatPulse features page, which is already written.
+- Finish the precision timing page. Make the PHC mental model central
+  and complete: system clock versus PHC, hardware packet timestamping,
+  external PPS timestamping, PHC-capable NICs, PTP switches, PTM,
+  chrony/NTP, and the precision classes users can realistically expect.
+  SatPulse appears as one way to take advantage of the hardware, not the
+  reason it works. Keep the "synchronizing the system clock"/PTM concept
+  section solid, because `hardware/ptm.md` links back to it for the
+  concept while keeping concrete NIC/chipset/command selection on the
+  hardware side.
+- Finish the GNSS modules beef-up. Fold the per-vendor selection content
+  (form factor, bands, timing features, price, where to buy) from the
+  module-tour material into the page, keeping the site's voice but
+  dropping phrasing tied to that specific post. Route protocol internals
+  (CASIC NAV/NAV2 classes, NovAtel-style packet formats, the ComNav
+  configuration weaknesses) to the vendor configuration pages or
+  internals, not the buyer-facing page.
+- Retitle `hardware/gnss-boards.md`. The title and intro should signal
+  that these are boards curated for an in-case PPS timing build (CM4/CM5
+  and Intel-NIC machines), not a general catalogue. It is still titled
+  "GNSS boards and cards".
+- Clean up the overviews. Flesh out `hardware/timing-vendors.md` and
+  fix the "THis" typo. Leave the first-person and time-relative voice in
+  the overviews as is -- it is the site's own voice, not blog cruft to
+  strip.
+- Fill the "Platform support" TODO in `intro/satpulse.md`, and add the
+  man-page how-links described above.
 
-Fold the per-vendor module-selection content from the 2026-04-01
-module-tour post (u-blox through Techtotop) into the GNSS modules page,
-keeping it focused on choosing modules: form factor, bands, timing
-features, price, and where to buy. De-blog the prose (remove
-first-person and time-relative phrasing) so it reads as durable
-reference. Route protocol internals (CASIC NAV/NAV2 classes,
-NovAtel-style packet formats, the ComNav configuration weaknesses) to
-the vendor configuration pages or internals, not the buyer-facing
-page.
+Out of scope for this slice: the all-new GNSS HATs page (boards for the
+Raspberry Pi 40-pin header) stays a later step, and the setup,
+configuration, and RTK reworks below come after.
 
 ### Setup sequencing
 
@@ -398,87 +440,3 @@ corrections and compute an RTK position solution. Do not imply that
 RTCM output alone makes a receiver fully RTK-capable: typically a
 rover-capable receiver can also act as a base, but the reverse is not
 guaranteed.
-
-### Develop introduction section
-
-The final Introduction section should not be added all at once. The
-first pass should be a structural rework of the existing introduction
-material, not an excuse to add arbitrary amounts of useful background.
-The current `intro.md` mixes SatPulse-independent concepts, current
-SatPulse capabilities, and comparisons with other software. Split and
-rewrite that material into an overview landing page plus pages for
-GNSS, timing, positioning, SatPulse features, and other software.
-
-#### Create a short introduction overview
-
-Make `intro/index.md` a short landing page for the introduction
-section. It should point readers to GNSS, timing, positioning,
-SatPulse features, and related software, rather than trying to teach
-those topics itself. Source notes: the opening of the current
-`intro.md`, rewritten so it does not make the whole section look like
-only a SatPulse product introduction.
-
-#### Rewrite precision timing around low-cost hardware
-
-Create the Precision timing page around the message that recent low-cost
-hardware and Linux kernel support make much more precise network
-timing practical than used to be possible without specialist
-equipment. The page should make the PHC mental model central: system
-clock versus PHC, hardware packet timestamping, external PPS
-timestamping, PHC-capable NICs, PTP switches, PTM, chrony/NTP, and
-the precision classes users can realistically expect. SatPulse should
-appear as one way to take advantage of this hardware, not as the
-reason the hardware can achieve the precision. Source notes: the
-current `intro.md` hardware and "Basics of how it works" material,
-the time-server architecture post, the unpublished recent-hardware
-draft, the no-PHC timing post, the SatPulse 0.2 PHC architecture
-post, and the chrony/ntpd-rs hardware framing.
-
-The Precision timing page should explain what PTM is conceptually:
-why precise PHC synchronization is not enough for ordinary software,
-why the system clock still matters, and how PTM/cross-timestamping
-helps transfer precision between a NIC clock and the system clock.
-Keep concrete hardware-selection material in `hardware/ptm.md`: which
-NICs, chipsets, CPUs, motherboards, drivers, and commands can be used
-to tell whether PTM support is present and working.
-
-#### Split GNSS and positioning concepts
-
-Use the GNSS page for the receiver and signal concepts: GPS versus
-GNSS terminology, constellations, bands, timing mode, sawtooth error,
-raw observations, correction data as a GNSS data product, and
-authentication. RTK and PPP can be mentioned here as high-end receiver
-capability categories, but the positioning page should own the
-explanation of how they work.
-
-Use the Positioning page for the message that hardware RTK has become
-cheap enough to be relevant beyond specialist surveying equipment, but
-that RTK is relative positioning. It should explain base versus rover,
-the need for a known base-station position, fixed versus float RTK,
-ambiguity resolution, RTK versus PPP, local OSR corrections versus
-global SSR corrections, and hardware RTK versus software positioning.
-Harvest the conceptual parts of the current RTK howto, especially the
-base/rover model and fixed-position extraction, while leaving command
-sequences and SatPulse-specific setup in the setup workflow. The
-GNSS modules page should then apply these concepts to hardware
-selection rather than explaining them in depth.
-
-#### Add a current capability page before broadening the site
-
-Create the SatPulse features page before broadening the home page. It
-can describe the 0.3 feature set, with a caveat at the top that the
-page assumes 0.3 or a build from current master. This is better than
-peppering the page with release labels. Material can cover
-`satpulsed`, `satpulsetool`, PHC
-synchronization, PTP/chrony integration, no-PHC timing, receiver
-configuration, observability, packet capture, and current hardware
-support. Future work beyond 0.3 should still be clearly labelled
-rather than presented as current. Source notes: the
-current `intro.md` feature list, the recently rewritten
-`satpulsed(8)` description, `satpulsetool(1)`, and NEWS for
-release-sensitive features.
-
-#### Reframe related software after capabilities are clear
-
-Describe other software in the same space as SatPulse i.e. Precision timing and positioning for computer systems with modern GNSS receivers, or that SatPulse needs to work with.
-Explain how it works with or is an alternative to SatPulse.
