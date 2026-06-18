@@ -32,29 +32,25 @@ func TestReplay(t *testing.T) {
 	nSatellites := 0
 	for ev := range readLogEvents(t, "testdata/session.jsonl") {
 		tRead := ev.T
-		if ev.PosGeo != nil {
-			accum.PosGeo(ev.PosGeo, tRead)
-		}
-		if ev.PosECEF != nil {
-			accum.PosECEF(ev.PosECEF, tRead)
-		}
-		if ev.VelGeo != nil {
-			accum.VelGeo(ev.VelGeo, tRead)
-		}
-		if ev.VelECEF != nil {
-			accum.VelECEF(ev.VelECEF, tRead)
-		}
-		if ev.NavEpoch != nil {
+		switch m := ev.Data.(type) {
+		case *gpsprot.PosGeoMsg:
+			accum.PosGeo(m, tRead)
+		case *gpsprot.PosECEFMsg:
+			accum.PosECEF(m, tRead)
+		case *gpsprot.VelGeoMsg:
+			accum.VelGeo(m, tRead)
+		case *gpsprot.VelECEFMsg:
+			accum.VelECEF(m, tRead)
+		case *gpsprot.NavEpochMsg:
 			accum.PVMsgBundle.FillDerived()
 			pv := accum.PVMsgBundle
-			accum.NavEpoch(ev.NavEpoch, tRead)
-			obs.NavEpochPV(ev.NavEpoch, &pv, tRead)
-			lastNavEpoch = ev.NavEpoch
+			accum.NavEpoch(m, tRead)
+			obs.NavEpochPV(m, &pv, tRead)
+			lastNavEpoch = m
 			nNavEpoch++
-		}
-		if ev.Satellites != nil {
-			obs.Satellites(ev.Satellites, tRead)
-			lastSatellites = ev.Satellites
+		case *gpsprot.SatellitesMsg:
+			obs.Satellites(m, tRead)
+			lastSatellites = m
 			nSatellites++
 		}
 	}

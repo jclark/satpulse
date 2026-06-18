@@ -1,6 +1,7 @@
 package convobscmd
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
@@ -40,6 +41,12 @@ func testWriteMeta(date time.Time) rinex.Metadata {
 
 func testLogger(w io.Writer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(w, nil))
+}
+
+type packetInputFunc func(obsPacket, WeekConstraint) (bool, error)
+
+func (f packetInputFunc) ConvertPacket(pkt obsPacket, week WeekConstraint) (bool, error) {
+	return f(pkt, week)
 }
 
 func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, interval time.Duration) error {
@@ -525,7 +532,7 @@ func TestRunPacketLogInput(t *testing.T) {
 	rtcmT := rinex.TimeFromGPSWeekMillis(2397, tow)
 	uncT := rinex.TimeFromGPSWeekMillis(2419, 522335000)
 	uncb := packetLogEntryFromFixture(t, gpsreg.TagUnicoreBin, "OBSVM")
-	unca := packetLogEntryFromFixture(t, gpsreg.TagUnicoreAscii, "OBSVMA")
+	unca := packetLogEntryFromFixture(t, gpsreg.TagUnicoreAscii, "OBSVM")
 	uncbUntagged := uncb
 	uncbUntagged.Tag = ""
 	uncbUntagged.Msg = ""
@@ -643,6 +650,141 @@ func TestRunPacketLogInput(t *testing.T) {
 			}
 			assertObsJSON(t, got.String(), "PKTLOG", tt.comments, tt.sat, tt.sig, tt.t)
 		})
+	}
+}
+
+func TestRunPacketLogPrefilterSkipsInsignificantPacket(t *testing.T) {
+	rawx := rawxPacket(t)
+	bad := `{"t":"2026-01-01T00:00:00Z","tag":"UBX","msg":"NAV-PVT","bin":"zz"}`
+	good := packetLogLine(t, gpsio.PacketLogEntry{Tag: gpsreg.TagUBX, Msg: "RXM-RAWX", Bin: gpsio.HexString(rawx)})
+	var got bytes.Buffer
+	cj := convJob{
+		inputs: testInputs(strings.NewReader(bad + "\n" + good + "\n")),
+		out:    &got,
+		opts: convertOptions{
+			from:      inputRaw,
+			to:        outputObsJSON,
+			packetLog: true,
+		},
+		meta: testMetaMarker("PKTLOG"),
+	}
+	if err := cj.run(testLogger(io.Discard), time.Now().UTC()); err != nil {
+		t.Fatalf("run packet log: %v", err)
+	}
+	assertObsJSON(t, got.String(), "PKTLOG", nil, "G03", "1C", 0)
+}
+
+func TestMaybeSignificantPacketLogLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{name: "ubx rawx", line: `{"tag":"UBX","msg":"RXM-RAWX"}`, want: true},
+		{name: "unc obsvm", line: `{"tag":"UNCB","msg":"OBSVM"}`, want: true},
+		{name: "rtcm", line: `{"tag":"RTCM","msg":"1005"}`, want: true},
+		{name: "unicode escape", line: `{"tag":"UBX","msg":"RX\u004d-RAWX"}`, want: true},
+		{name: "escaped crlf", line: `{"tag":"UNCA","msg":"MODE","ascii":"#MODE\\r\\n"}`, want: false},
+		{name: "irrelevant", line: `{"tag":"UBX","msg":"NAV-PVT"}`, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := maybeSignificantPacketLogLine([]byte(tt.line)); got != tt.want {
+				t.Fatalf("maybeSignificantPacketLogLine = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadPacketLogLine(t *testing.T) {
+	long := strings.Repeat("x", 20) + "\n"
+	r := bufio.NewReaderSize(strings.NewReader(long+"tail"), 8)
+	var buf []byte
+	got, err := readPacketLogLine(r, &buf)
+	if err != nil {
+		t.Fatalf("read long line: %v", err)
+	}
+	if string(got) != long {
+		t.Fatalf("long line = %q, want %q", string(got), long)
+	}
+	got, err = readPacketLogLine(r, &buf)
+	if err != io.EOF {
+		t.Fatalf("read tail err = %v, want EOF", err)
+	}
+	if string(got) != "tail" {
+		t.Fatalf("tail = %q, want tail", string(got))
+	}
+	got, err = readPacketLogLine(r, &buf)
+	if err != io.EOF {
+		t.Fatalf("final err = %v, want EOF", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("final line = %q, want empty", string(got))
+	}
+}
+
+func TestConvertPacketDataRecognizesRawFormats(t *testing.T) {
+	rawx := rawxPacket(t)
+	rtcm := rtcmMSM7Packet(t, 345600000)
+	uncbEntry := packetLogEntryFromFixture(t, gpsreg.TagUnicoreBin, "OBSVM")
+	uncaEntry := packetLogEntryFromFixture(t, gpsreg.TagUnicoreAscii, "OBSVM")
+	uncb, ok := packetLogEntryData(&uncbEntry)
+	if !ok {
+		t.Fatal("UNCB fixture has no packet data")
+	}
+	unca, ok := packetLogEntryData(&uncaEntry)
+	if !ok {
+		t.Fatal("UNCA fixture has no packet data")
+	}
+	tests := []struct {
+		name string
+		tag  gpsprot.Tag
+		data []byte
+	}{
+		{name: "ubx", tag: gpsreg.TagUBX, data: rawx},
+		{name: "rtcm", tag: gpsreg.TagRTCM, data: rtcm},
+		{name: "uncb", tag: gpsreg.TagUnicoreBin, data: uncb},
+		{name: "unca", tag: gpsreg.TagUnicoreAscii, data: unca},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seen := false
+			ok, err := convertPacketData(tt.data, packetLogFormatsByTag[tt.tag], packetInputFunc(func(pkt obsPacket, week WeekConstraint) (bool, error) {
+				seen = true
+				if !pkt.HasTag(tt.tag) {
+					t.Fatalf("packet tag = %s, want %s", pkt.Tag(), tt.tag)
+				}
+				if !bytes.Equal(pkt.data, tt.data) {
+					t.Fatal("packet data changed")
+				}
+				return true, nil
+			}), WeekConstraint{})
+			if err != nil {
+				t.Fatalf("convertPacketData: %v", err)
+			}
+			if !ok || !seen {
+				t.Fatalf("convertPacketData ok = %v, seen = %v; want true, true", ok, seen)
+			}
+		})
+	}
+}
+
+func TestConvertPacketDataChecksumError(t *testing.T) {
+	data := rawxPacket(t)
+	data[len(data)-1] ^= 0xff
+	in := &tagInput{
+		tag: gpsreg.TagUBX,
+		convert: func([]byte, WeekConstraint) (bool, error) {
+			t.Fatal("convert called for packet with bad checksum")
+			return true, nil
+		},
+	}
+	ok, err := convertPacketData(data, packetLogFormatsByTag[gpsreg.TagUBX], in, WeekConstraint{})
+	if err == nil {
+		t.Fatal("convertPacketData error = nil, want checksum error")
+	}
+	if ok {
+		t.Fatal("convertPacketData ok = true, want false")
 	}
 }
 

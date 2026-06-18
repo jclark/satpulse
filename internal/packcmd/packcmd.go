@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -15,12 +16,12 @@ import (
 	"github.com/spf13/pflag"
 )
 
-const summary = `[-h|--help] [-t|--tag TAG] [-m|--msg MSG] [-r|--realtime] file|-`
+const summary = `[-h|--help] [-t|--tag TAG] [-m|--msg MSG] [-r|--realtime FACTOR] file|-`
 
 type flagVars struct {
 	tag      string
 	msg      string
-	realtime bool
+	realtime float64
 	filePath string
 }
 
@@ -49,10 +50,10 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 
 	out := bufio.NewWriter(os.Stdout)
 	return "", run(input, out, runConfig{
-		tag:      v.tag,
-		msg:      v.msg,
-		realtime: v.realtime,
-		clock:    realClock{},
+		tag:    v.tag,
+		msg:    v.msg,
+		factor: v.realtime,
+		clock:  realClock{},
 	})
 }
 
@@ -63,7 +64,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.StringVarP(&v.tag, "tag", "t", "", "packet log tag to include")
 	flags.StringVarP(&v.msg, "msg", "m", "", "packet log message ID to include")
-	flags.BoolVarP(&v.realtime, "realtime", "r", false, "preserve inter-packet timing")
+	flags.Float64VarP(&v.realtime, "realtime", "r", 0, "replay with realtime inter-packet spacing divided by FACTOR (1.0 = original timing)")
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
 	if err := flags.Parse(args); err != nil {
 		return nil, usageFunc, err
@@ -77,15 +78,20 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if v.msg != "" && v.tag == "" {
 		return nil, usageFunc, fmt.Errorf("--msg requires --tag")
 	}
+	if flags.Changed("realtime") {
+		if math.IsNaN(v.realtime) || math.IsInf(v.realtime, 0) || v.realtime <= 0 {
+			return nil, usageFunc, fmt.Errorf("--realtime factor must be a positive finite number")
+		}
+	}
 	v.filePath = flags.Arg(0)
 	return v, usageFunc, nil
 }
 
 type runConfig struct {
-	tag      string
-	msg      string
-	realtime bool
-	clock    clock
+	tag    string
+	msg    string
+	factor float64 // realtime speedup factor; 0 disables realtime spacing
+	clock  clock
 }
 
 type clock interface {
@@ -129,14 +135,14 @@ func run(input io.Reader, out writeFlusher, cfg runConfig) error {
 		if !ok {
 			continue
 		}
-		if cfg.realtime {
+		if cfg.factor > 0 {
 			entryT := time.Time(entry.T)
 			if entryT.IsZero() {
 				return fmt.Errorf("line %d: --realtime requires selected packets to have a non-zero t", lineNo)
 			}
 			var writeStart time.Time
 			if havePrev {
-				delta := entryT.Sub(prevEntryT)
+				delta := time.Duration(float64(entryT.Sub(prevEntryT)) / cfg.factor)
 				if delta > 0 {
 					targetWriteStart := prevWriteStart.Add(delta)
 					if sleepFor := targetWriteStart.Sub(cfg.clock.Now()); sleepFor > 0 {
@@ -171,7 +177,7 @@ func run(input io.Reader, out writeFlusher, cfg runConfig) error {
 	if err := scanner.Err(); err != nil {
 		return err
 	}
-	if !cfg.realtime {
+	if cfg.factor == 0 {
 		return out.Flush()
 	}
 	return nil

@@ -138,13 +138,25 @@ func (v *Version) rtcmSupport() rtcmSupport {
 	return rtcmSupport{}
 }
 
+// ubxVariable are the capabilities that depend on the u-blox model or
+// protocol version. The rest of ConfigSupportFull is supported by every
+// u-blox receiver, so configSupport starts from full minus these and
+// adds back the ones a given version has - a new universally supported
+// flag then applies to u-blox without editing this code.
+const ubxVariable = gpsprot.ConfigSupportSignal |
+	gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+	gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
+	gpsprot.ConfigSupportFixedPosAcc | gpsprot.ConfigSupportRaw |
+	gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7 |
+	gpsprot.ConfigSupportRTCMBaseID | gpsprot.ConfigSupportRTCMQZSS
+
 func (v *Version) configSupport() gpsprot.ConfigSupportFlags {
 	if v == nil {
 		return 0
 	}
-	flags := gpsprot.ConfigSupportSpeed
+	flags := gpsprot.ConfigSupportFull &^ ubxVariable
 	if v.bandsConfigSupport() {
-		flags |= gpsprot.ConfigSupportBand
+		flags |= gpsprot.ConfigSupportSignal
 	}
 	tmode := v.tmodeLevel()
 	if tmode > 0 {
@@ -182,6 +194,18 @@ func (v *Version) bandsConfigSupport() bool {
 	default:
 		return false
 	}
+}
+
+func (v *Version) singleBDSL1Signal() (gpsprot.Signal, bool) {
+	if !v.protVerAtLeast(50, 0) {
+		switch v.ProductCategory() {
+		case "SPG":
+			return gpsprot.SigBDSB1I, true
+		case "SPGL1L5":
+			return gpsprot.SigBDSB1C, true
+		}
+	}
+	return 0, false
 }
 
 // tpIndex returns the time pulse index: 0 for TIMEPULSE, 1 for TIMEPULSE2.

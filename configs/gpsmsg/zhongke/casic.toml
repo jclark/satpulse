@@ -1,0 +1,188 @@
+#:schema ../gpsmsg-schema.json
+# Shared Zhongke Microelectronics CASIC binary configuration messages.
+
+# CFG-TP: Disable time pulse output.
+# The full CFG-TP layout differs between V5 and V6, but this all-off form is
+# identical.
+[[casbin]]
+tag = "pps-off"
+description = "Disable PPS output"
+class = 0x06
+id = 0x03
+payload.types = "U4U4U1I1U1U1R4"
+payload.values = [1000000, 0, 0, 0, 0, 0, 0.0]
+
+# CFG-CFG: Save/load configuration
+# Payload: U2 mask/reserved, U1 mode, U1 reserved
+# mask: 0xFFFF = all sections on V5; on V6, mask 0xFFFF is the value observed
+# to persist configuration, despite the field being documented as reserved.
+# On V6, mask 0 is ACKed but saves nothing.
+# mode: 0=clear, 1=save, 2=load
+
+# Save configuration to NVM
+# Verified on ATGM332D-F8N: saved message rates survive a CFG-CFG load restart.
+[[casbin]]
+tag = "save"
+description = "Save configuration to NVM"
+class = 0x06
+id = 0x05
+payload.types = "U2U1U1"
+payload.values = [0xFFFF, 1, 0]
+
+# CFG-PRT: Serial port configuration
+# Payload: U1 portId, U1 protoMask, U2 mode, U4 baudRate
+# portId: 0=UART0, 1=UART1, 0xFF=current
+# protoMask: B0=binary in, B1=text in, B4=binary out, B5=text out
+
+# Set baud rate to 115200 (binary+NMEA in/out)
+[[casbin]]
+tag = "speed-115200"
+description = "Set baud rate to 115200"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U2U4"
+payload.values = [0xFF, 0x33, 0x08C0, 115200]
+
+# Set baud rate to 38400 (binary+NMEA in/out)
+[[casbin]]
+tag = "speed-38400"
+description = "Set baud rate to 38400"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U2U4"
+payload.values = [0xFF, 0x33, 0x08C0, 38400]
+
+# Set baud rate to 9600 (binary+NMEA in/out)
+[[casbin]]
+tag = "speed-9600"
+description = "Set baud rate to 9600"
+class = 0x06
+id = 0x00
+payload.types = "U1U1U2U4"
+payload.values = [0xFF, 0x33, 0x08C0, 9600]
+
+# CFG-MSG: Enable/disable message output
+# Payload: U1 class, U1 id, U2 rate
+# rate: 0=off, 1=every fix, N=every N fixes
+#
+# NMEA message class is 0x4E
+# GGA=0x00, GLL=0x01, GSA=0x02, GSV=0x03, RMC=0x04
+
+# Enable GGA at 1Hz
+[[casbin]]
+tag = "nmea-gga"
+description = "Enable NMEA GGA output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x00, 1]
+
+# Disable GGA
+[[casbin]]
+tag = "nmea-gga-off"
+description = "Disable NMEA GGA output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x00, 0]
+
+# Enable GSV at 1Hz
+[[casbin]]
+tag = "nmea-gsv"
+description = "Enable NMEA GSV output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x03, 1]
+
+# Disable GSV
+[[casbin]]
+tag = "nmea-gsv-off"
+description = "Disable NMEA GSV output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x03, 0]
+
+# Enable RMC at 1Hz
+[[casbin]]
+tag = "nmea-rmc"
+description = "Enable NMEA RMC output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x04, 1]
+
+# Disable RMC
+[[casbin]]
+tag = "nmea-rmc-off"
+description = "Disable NMEA RMC output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x04, 0]
+
+# Enable GSA at 1Hz
+[[casbin]]
+tag = "nmea-gsa"
+description = "Enable NMEA GSA output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x02, 1]
+
+# Disable GSA
+[[casbin]]
+tag = "nmea-gsa-off"
+description = "Disable NMEA GSA output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x02, 0]
+
+# Enable GLL at 1Hz
+[[casbin]]
+tag = "nmea-gll"
+description = "Enable NMEA GLL output at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x01, 1]
+
+# Disable GLL
+[[casbin]]
+tag = "nmea-gll-off"
+description = "Disable NMEA GLL output"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U2"
+payload.values = [0x4E, 0x01, 0]
+
+# Configuration query polls.
+# A CFG message is polled by sending it with an empty payload; the receiver
+# answers with a data response (same class/id) followed by ACK.
+
+# Query port configuration; receivers return one response per port.
+# Verified on ATGM332D-5N71, ATGM332D-F8N, and AT632-6T-30.
+# ATGM332D-5N71 returned port 1 then 0; V6 receivers returned port 0 and 1.
+[[casbin]]
+tag = "get-port"
+description = "Query port configuration (one response per port)"
+class = 0x06
+id = 0x00
+
+# Query time pulse configuration.
+# Verified on ATGM332D-5N71 and ATGM332D-F8N.
+[[casbin]]
+tag = "get-pps"
+description = "Query time pulse configuration"
+class = 0x06
+id = 0x03
+
+# Query navigation rate.
+# Verified on ATGM332D-5N71 and ATGM332D-F8N.
+[[casbin]]
+tag = "get-rate"
+description = "Query navigation rate"
+class = 0x06
+id = 0x04

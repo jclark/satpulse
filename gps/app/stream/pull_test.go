@@ -24,7 +24,7 @@ import (
 // makeRTCM builds a valid RTCM packet with the given message type and
 // payload length (excluding the 3-byte header and 3-byte CRC).
 func makeRTCM(msgType uint16, payloadLen int) []byte {
-	totalPayload := max(payloadLen+3, 3) // +3 for header
+	totalPayload := max(payloadLen+3, 3)  // +3 for header
 	pkt := make([]byte, 3+totalPayload+3) // preamble+len + payload + crc
 	pkt[0] = 0xD3
 	pkt[1] = byte(totalPayload >> 8)
@@ -506,6 +506,65 @@ func TestPruningQueueMSMAndNonMSM(t *testing.T) {
 	p2 := q.dequeue()
 	if p2.Data != string(pkt1005b) {
 		t.Error("expected updated 1005 packet")
+	}
+}
+
+// TestPullQueuePrunesUnderBackpressure drives the queue goroutine with a writer
+// side that never drains -- exactly a stalled serial sink -- and confirms it
+// drops stale same-type corrections rather than buffering them all. The
+// TestPruningQueue* tests above exercise the data structure directly; this one
+// exercises the live queue() select loop under backpressure, which is what the
+// pruning queue exists for.
+func TestPullQueuePrunesUnderBackpressure(t *testing.T) {
+	sink := NewPull()
+	subCh := make(chan scan.Packet)
+	// Same single-slot buffer as Run uses; leaving it undrained is the stall.
+	writerCh := make(chan scan.Packet, 1)
+	done := make(chan struct{})
+	go func() {
+		sink.queue(subCh, writerCh)
+		close(done)
+	}()
+	defer func() {
+		close(subCh)
+		<-done
+	}()
+
+	pf := rtcm.PacketFormat
+	const n = 12
+	// A burst of distinct 1005 corrections (non-MSM, so deduped by message
+	// type) while nothing drains writerCh: all but the couple already past the
+	// queue pile up, and the stale ones are dropped.
+	var newest string
+	for i := range n {
+		pkt := makeRTCM(1005, 10+i)
+		newest = string(pkt)
+		subCh <- scan.Packet{Format: pf, Data: string(pkt), ChecksumValid: true}
+	}
+	// A different-type sentinel marks the end of the burst in FIFO order.
+	sentinel := makeRTCM(1006, 10)
+	subCh <- scan.Packet{Format: pf, Data: string(sentinel), ChecksumValid: true}
+
+	var got []scan.Packet
+	timeout := time.After(time.Second)
+	for {
+		var pkt scan.Packet
+		select {
+		case pkt = <-writerCh:
+		case <-timeout:
+			t.Fatalf("timed out waiting for sentinel after %d packets", len(got))
+		}
+		if pkt.Data == string(sentinel) {
+			break
+		}
+		got = append(got, pkt)
+	}
+
+	if len(got) >= n {
+		t.Fatalf("queue did not prune under backpressure: %d of %d 1005 packets reached the writer", len(got), n)
+	}
+	if len(got) == 0 || got[len(got)-1].Data != newest {
+		t.Fatalf("newest 1005 did not survive pruning: %d packets through, last != newest", len(got))
 	}
 }
 

@@ -141,7 +141,7 @@ func (ev *DeviceEvent) setFromProperties(props map[string]string) bool {
 	return ev.Path != "" || (ev.IfName != "" && ev.IfIndex > 0)
 }
 
-const udevMonitorMagic = 0xfeedcafe
+const udevMonitorMagic uint32 = 0xfeedcafe
 
 func makeUdevPropertiesMap(data []byte) (map[string]string, error) {
 	// See struct monitor_netlink_header in systemd

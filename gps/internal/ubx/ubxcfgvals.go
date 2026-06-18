@@ -295,7 +295,11 @@ func (tb *txnBuilder) build() error {
 	}
 
 	if v, ok := cp.GetAntennaCableDelay(); ok {
-		txnAddItem(tb, ucv.KTpAntCabledelay, int64(v))
+		n, err := antCableDelayNanos(v)
+		if err != nil {
+			return err
+		}
+		txnAddItem(tb, ucv.KTpAntCabledelay, n)
 	}
 	if v, ok := cp.GetMinElevation(); ok {
 		if deg, ok := angleToInt8Degrees(v); ok {
@@ -941,6 +945,17 @@ func portBaudRateKey(port ucv.Port, portOK bool) ucv.KeyU {
 		return ucv.KUart2Baudrate
 	}
 	return 0
+}
+
+func resolveSignalConstraints(ver *Version, enabled, supported gpsprot.SignalSet) gpsprot.SignalSet {
+	if sig, ok := ver.singleBDSL1Signal(); ok {
+		b1 := gpsprot.SignalSetOf(gpsprot.SigBDSB1I, gpsprot.SigBDSB1C)
+		if enabled&supported&b1 != 0 {
+			enabled &^= b1
+			enabled |= gpsprot.SignalSetOf(sig)
+		}
+	}
+	return enabled
 }
 
 // EnableSignals returns the items needed to enable the given signals,

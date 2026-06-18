@@ -8,19 +8,21 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nmea"
+	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 )
 
 const Vendor = "Unicore"
 
-const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportBand |
-	gpsprot.ConfigSupportSurvey |
-	gpsprot.ConfigSupportFixedPos |
-	gpsprot.ConfigSupportRaw |
-	gpsprot.ConfigSupportRTCMMSM4 |
-	gpsprot.ConfigSupportRTCMMSM7 |
-	gpsprot.ConfigSupportRTCMBaseID |
-	gpsprot.ConfigSupportRTCMQZSS
+// configSupport is everything except the capabilities the Nebulas IV
+// firmware does not offer: the survey/fixed-position accuracy variants
+// and survey message output. The Nebulas IV does change baud rate and
+// can identify its active port, so unlike CASIC it keeps speed and port.
+// Declaring it as full minus these gains future universally supported
+// flags automatically.
+const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportFull &^
+	(gpsprot.ConfigSupportSurveyAcc | gpsprot.ConfigSupportSurveyMsg |
+		gpsprot.ConfigSupportFixedPosAcc)
 
 type ConfigProtocol struct {
 	ver *uncmsg.Version // Stored from VERSIONB response for probing
@@ -32,6 +34,7 @@ type Configurator struct {
 	ver         *uncmsg.Version
 	nativeProps nativeConfigProps
 	reqs        []*ConfigRequest
+	speedReq    *ConfigRequest // the speed change request, if the target asks for one
 	target      *gpsprot.ConfigTarget
 	complete    bool // no more requests will be added to req
 	nFinished   int  // all requests with index < nFinished are in final state
@@ -40,8 +43,10 @@ type Configurator struct {
 type configPhase int
 
 const (
-	phaseInit configPhase = iota
-	phaseQuery
+	phaseInit   configPhase = iota
+	phaseQuery              // sending state queries
+	phaseConfig             // sending config commands; a speed change comes after these finish
+	phaseSpeed              // speed change outstanding; its repeat is generated when the repeat delay passes
 	phaseFinal
 )
 
@@ -49,6 +54,7 @@ type ConfigRequest struct {
 	state configRequestState
 	cmd   string           // not including CR/LF
 	prop  nativeConfigProp // if non-nil, then this means it's a command that updates that prop
+	speed int              // new baud rate to switch to after sending (0 if not a speed change)
 	tBase time.Time        // base time for calculating response deadline (sent time or last response time)
 	err   error            // error in handling this request
 }
@@ -56,16 +62,19 @@ type ConfigRequest struct {
 type configRequestState int
 
 const (
-	stateReadyToSendCommand     configRequestState = iota // maps to ConfigRequestReadyToSend
-	stateReadyToSendQuery                                 // maps to ConfigRequestReadyToSend
-	stateAwaitingAckAndResponse                           // maps to ConfigRequestAwaitingResponse
-	stateAwaitingAck                                      // maps to ConfigRequestAwaitingResponse
-	stateAwaitingResponse                                 // maps to ConfigRequestAwaitingResponse
-	stateMaybeComplete                                    // maps to ConfigRequestMaybeComplete
-	stateMayResendCommand                                 // maps to ConfigRequestMayResend
-	stateMayResendQuery                                   // maps to ConfigRequestMayResend
-	stateFailed                                           // maps to ConfigRequestFailed
-	stateSucceeded                                        // maps to ConfigRequestSucceeded
+	stateReadyToSendCommand      configRequestState = iota // maps to ConfigRequestReadyToSend
+	stateReadyToSendQuery                                  // maps to ConfigRequestReadyToSend
+	stateReadyToSendRepeat                                 // maps to ConfigRequestReadyToSend
+	stateAwaitingAckAndResponse                            // maps to ConfigRequestAwaitingResponse
+	stateAwaitingAckBeforeRepeat                           // maps to ConfigRequestAwaitingResponse
+	stateAwaitingAck                                       // maps to ConfigRequestAwaitingResponse
+	stateAwaitingResponse                                  // maps to ConfigRequestAwaitingResponse
+	stateMaybeComplete                                     // maps to ConfigRequestMaybeComplete
+	stateRepeatSent                                        // maps to ConfigRequestMaybeComplete
+	stateMayResendCommand                                  // maps to ConfigRequestMayResend
+	stateMayResendQuery                                    // maps to ConfigRequestMayResend
+	stateFailed                                            // maps to ConfigRequestFailed
+	stateSucceeded                                         // maps to ConfigRequestSucceeded
 )
 
 // Compile-time interface compliance checks
@@ -94,6 +103,11 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 		case *uncmsg.Version:
 			cp.ver = body
 		}
+
+	case *novmsg.AbbrevAsciiLine:
+		if cp.cfg != nil {
+			return cp.cfg.abbrevAsciiResponse(mt, tRead)
+		}
 	}
 	return nil
 }
@@ -115,7 +129,7 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 	return configSupport
 }
 
-// ConfigProps returns the current configuration of the GPS receiver
+// ConfigProps returns the current configuration of the GPS receiver.
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	props := &gpsprot.ConfigProps{}
 	c.nativeProps.convertToProps(props)
@@ -176,9 +190,51 @@ func (c *Configurator) GenerateRequests() error {
 		// All requests are final
 		c.nFinished = len(c.reqs)
 
-		// Generate config requests if none failed
-		if !anyFailed {
-			c.generateConfigReqs()
+		// Generate config requests only if no query failed
+		if anyFailed {
+			c.complete = true
+			c.phase = phaseFinal
+			return nil
+		}
+		c.generateConfigReqs()
+		c.phase = phaseConfig
+		return nil
+
+	case phaseConfig:
+		// Wait for the config commands to finish, then generate the speed
+		// change: it must be sent on its own, so that no other commands or
+		// responses are in transit when the host switches speed.
+		for i := c.nFinished; i < len(c.reqs); i++ {
+			if !c.reqs[i].state.isFinal() {
+				c.nFinished = i
+				return nil
+			}
+		}
+		c.nFinished = len(c.reqs)
+		if c.generateSpeedReq() {
+			c.phase = phaseSpeed
+		} else {
+			c.complete = true
+			c.phase = phaseFinal
+		}
+		return nil
+
+	case phaseSpeed:
+		switch c.speedReq.state {
+		case stateReadyToSendCommand, stateAwaitingAckBeforeRepeat:
+			// not yet sent, or still within the repeat delay
+			return nil
+		case stateAwaitingAck:
+			// The repeat delay passed without confirmation. Send the same
+			// command again: the receiver is at the new speed by now, so
+			// re-applying it is a no-op whose ACK confirms the speed change
+			// request (acknowledgments are matched in request order). The
+			// repeat is a plain write, not a speed change, and expects no
+			// response of its own.
+			c.reqs = append(c.reqs, &ConfigRequest{
+				cmd:   c.speedReq.cmd,
+				state: stateReadyToSendRepeat,
+			})
 		}
 		c.complete = true
 		c.phase = phaseFinal
@@ -210,6 +266,31 @@ func (c *Configurator) generateConfigReqs() {
 	}
 }
 
+// generateSpeedReq generates the baud rate change request when the target
+// asks for a speed different from the current one, and reports whether it
+// did so. The receiver's ACK may be garbled by the speed switch, so if
+// nothing confirms the change within speedChangeRepeatDelay the request
+// extends its deadline and repeats the command (see phaseSpeed).
+func (c *Configurator) generateSpeedReq() bool {
+	port := c.nativeProps.port.name
+	i := comIndex(port)
+	if i < 0 {
+		return false
+	}
+	speed, ok := c.target.Props.GetBaudRate()
+	if !ok || speed == 0 || speed == c.nativeProps.com.speeds[i] {
+		return false
+	}
+	c.speedReq = &ConfigRequest{
+		cmd:   fmt.Sprintf("CONFIG %s %d", port, speed),
+		prop:  &c.nativeProps.com,
+		speed: int(speed),
+		state: stateReadyToSendCommand,
+	}
+	c.reqs = append(c.reqs, c.speedReq)
+	return true
+}
+
 func (c *Configurator) nmeaSentence(sentence *nmea.Sentence, tRead time.Time) error {
 	// Extract payload from the sentence (content between $ and *)
 	payload := sentence.Payload
@@ -238,7 +319,7 @@ func (req *ConfigRequest) invalidStatePanic(method string) string {
 func (req *ConfigRequest) GetPacket() []byte {
 	// Precondition: state maps to ConfigRequestReadyToSend, ConfigRequestMayResend, or ConfigRequestFailed
 	switch req.state {
-	case stateReadyToSendCommand, stateReadyToSendQuery, stateMayResendCommand, stateMayResendQuery, stateFailed:
+	case stateReadyToSendCommand, stateReadyToSendQuery, stateReadyToSendRepeat, stateMayResendCommand, stateMayResendQuery, stateFailed:
 		// Valid states
 	default:
 		panic(req.invalidStatePanic("GetPacket"))
@@ -246,19 +327,19 @@ func (req *ConfigRequest) GetPacket() []byte {
 	return append([]byte(req.cmd), '\r', '\n')
 }
 
+// GetSpeedChangeAfter returns the new baud rate to configure after sending this request.
 func (req *ConfigRequest) GetSpeedChangeAfter() int {
-	// Unicore doesn't yet use speed changes
-	return 0
+	return req.speed
 }
 
 func (req *ConfigRequest) GetState() gpsprot.ConfigRequestState {
 	// Map internal state to public ConfigRequestState
 	switch req.state {
-	case stateReadyToSendCommand, stateReadyToSendQuery:
+	case stateReadyToSendCommand, stateReadyToSendQuery, stateReadyToSendRepeat:
 		return gpsprot.ConfigRequestReadyToSend
-	case stateAwaitingAckAndResponse, stateAwaitingAck, stateAwaitingResponse:
+	case stateAwaitingAckAndResponse, stateAwaitingAck, stateAwaitingResponse, stateAwaitingAckBeforeRepeat:
 		return gpsprot.ConfigRequestAwaitingResponse
-	case stateMaybeComplete:
+	case stateMaybeComplete, stateRepeatSent:
 		return gpsprot.ConfigRequestMaybeComplete
 	case stateMayResendCommand, stateMayResendQuery:
 		return gpsprot.ConfigRequestMayResend
@@ -287,11 +368,22 @@ func (req *ConfigRequest) SetSentTime(tSent time.Time) {
 	// Precondition: state maps to ConfigRequestReadyToSend or ConfigRequestMayResend
 	switch req.state {
 	case stateReadyToSendCommand:
-		// Commands need ACKs only
-		req.state = stateAwaitingAck
+		if req.speed != 0 {
+			// Speed change: the ACK may be garbled by the switch, so the
+			// first deadline triggers a repeat of the command rather than
+			// a timeout (see phaseSpeed).
+			req.state = stateAwaitingAckBeforeRepeat
+		} else {
+			// Commands need ACKs only
+			req.state = stateAwaitingAck
+		}
 	case stateReadyToSendQuery:
 		// Queries need both ACK and response
 		req.state = stateAwaitingAckAndResponse
+	case stateReadyToSendRepeat:
+		// The repeat expects no response of its own, but can absorb the ACK
+		// it elicits when the original speed change request no longer needs it
+		req.state = stateRepeatSent
 	case stateMayResendCommand:
 		// Retry command - back to awaiting ACK
 		req.state = stateAwaitingAck
@@ -309,11 +401,19 @@ func (req *ConfigRequest) SetDeadlinePassed() {
 	case stateAwaitingAck:
 		// Command timed out waiting for ACK
 		req.state = stateMayResendCommand
+	case stateAwaitingAckBeforeRepeat:
+		// The repeat delay passed without confirmation. Keep awaiting with the
+		// normal deadline (tBase is unchanged, so it is relative to the original
+		// send); phaseSpeed sees this state change and generates the repeat.
+		req.state = stateAwaitingAck
 	case stateAwaitingAckAndResponse, stateAwaitingResponse:
 		// Query timed out waiting for ACK and/or response
 		req.state = stateMayResendQuery
 	case stateMaybeComplete:
 		// Idle period over - consider complete
+		req.state = stateSucceeded
+	case stateRepeatSent:
+		// Absorb window over - the repeat is done regardless
 		req.state = stateSucceeded
 	default:
 		panic(req.invalidStatePanic("SetDeadlinePassed"))
@@ -333,17 +433,36 @@ func (req *ConfigRequest) SetWontResend() {
 	}
 }
 
+// speedChangeDelay is how long after sending a speed change command until we
+// can accept a valid packet as confirmation that the speed change succeeded.
+// This accounts for the time it takes the receiver to process and apply the
+// speed change.
+const speedChangeDelay = 400 * time.Millisecond
+
 // MaybeSpeedChangeSucceeded checks if a valid packet can confirm a speed change.
+// The ACK for a speed change on the current port arrives around the moment the
+// receiver switches speed, so it may be garbled; any valid packet received
+// sufficiently long after sending confirms the change instead.
 func (req *ConfigRequest) MaybeSpeedChangeSucceeded(validPacketTime time.Time) {
-	// UNC doesn't support speed changes yet, so this is a no-op
+	if req.speed == 0 || (req.state != stateAwaitingAck && req.state != stateAwaitingAckBeforeRepeat) {
+		return
+	}
+	if validPacketTime.Sub(req.tBase) > speedChangeDelay {
+		req.state = stateSucceeded
+		req.updateProp()
+	}
 }
 
 func (req *ConfigRequest) GetDeadline() time.Time {
 	switch req.state {
 	case stateAwaitingAck, stateAwaitingAckAndResponse, stateAwaitingResponse:
 		return req.tBase.Add(maxResponseDelay)
+	case stateAwaitingAckBeforeRepeat:
+		return req.tBase.Add(speedChangeRepeatDelay)
 	case stateMaybeComplete:
 		return req.tBase.Add(idlePeriod)
+	case stateRepeatSent:
+		return req.tBase.Add(speedChangeRepeatAckDelay)
 	default:
 		panic(req.invalidStatePanic("GetDeadline"))
 	}
@@ -381,6 +500,14 @@ func (c *Configurator) commandResponse(fields []string, tRead time.Time) error {
 const (
 	maxResponseDelay = time.Second * 3 / 2
 	idlePeriod       = 50 * time.Millisecond
+	// speedChangeRepeatDelay is how long after sending a speed change to wait
+	// for its ACK before repeating the command. By then the receiver has
+	// applied the new speed, so the repeat is received intact.
+	speedChangeRepeatDelay = 100 * time.Millisecond
+	// speedChangeRepeatAckDelay is how long the repeat can absorb an ACK
+	// after being sent. The repeat never fails: an unconfirmed speed change
+	// is reported through the original request's own deadline.
+	speedChangeRepeatAckDelay = 300 * time.Millisecond
 )
 
 // handleAck processes an ACK response for this request.
@@ -397,9 +524,9 @@ func (req *ConfigRequest) handleAck(cmd string, responseErr string, tRead time.T
 		return false
 	}
 
-	// Check if we're in a state that expects an ACK and optimistically set success state
+	// Check if we're in a state that can take an ACK and optimistically set success state
 	switch req.state {
-	case stateAwaitingAck:
+	case stateAwaitingAck, stateAwaitingAckBeforeRepeat, stateRepeatSent:
 		req.state = stateSucceeded
 	case stateAwaitingAckAndResponse:
 		req.state = stateAwaitingResponse
@@ -415,14 +542,20 @@ func (req *ConfigRequest) handleAck(cmd string, responseErr string, tRead time.T
 	}
 
 	// ACK was positive - update our state to reflect the successful command
+	req.updateProp()
+
+	return true
+}
+
+// updateProp updates the tracked native state to reflect successful
+// execution of the request's command.
+func (req *ConfigRequest) updateProp() {
 	if req.prop != nil {
 		err := req.prop.updateFromCommand(req.cmd)
 		if err != nil {
 			panic(fmt.Sprintf("could not parse generated command: %s: %v", req.cmd, err))
 		}
 	}
-
-	return true
 }
 
 // configQueryResponse handles a response to a query.
@@ -453,6 +586,18 @@ func (c *Configurator) modeResponse(mode *uncmsg.Mode, tRead time.Time) error {
 	return c.queryResponse("MODE", "MODE", mode.Command(), tRead)
 }
 
+// abbrevAsciiResponse handles a NovAtel abbreviated ASCII (NOVAA) line. Only the
+// LOGLIST header line is significant: its first field is the port the
+// receiver is currently communicating on. The count and log entry lines that
+// trail in after it are indented (empty Name) and ignored, as is any other
+// abbreviated ASCII output.
+func (c *Configurator) abbrevAsciiResponse(ab *novmsg.AbbrevAsciiLine, tRead time.Time) error {
+	if ab.Name != "LOGLIST" || len(ab.Fields) == 0 {
+		return nil
+	}
+	return c.queryResponse("LOGLIST", idPropPort, ab.Fields[0], tRead)
+}
+
 func (c *Configurator) queryResponse(query, key, command string, tRead time.Time) error {
 	// Find the matching request and determine its index
 	var reqIndex int = -1
@@ -481,7 +626,7 @@ func (c *Configurator) queryResponse(query, key, command string, tRead time.Time
 					req.state = stateMaybeComplete
 					req.tBase = tRead
 				} else {
-					// MODE query - single response expected
+					// MODE and LOGLIST queries - single significant response
 					req.state = stateSucceeded
 				}
 			case stateMaybeComplete:

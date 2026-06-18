@@ -621,6 +621,24 @@ tag = "pqtm-r01a05-off"
 text = "PQTMCFGMSGRATE,W,PQTMDOP,0,1"
 tag = "pqtm-r01a05-off"
 
+# SBAS configuration
+# Bitmask: bit 0=WAAS, 1=SDCM, 2=EGNOS, 3=BDSBAS, 4=MSAS, 5=GAGAN,
+# 6=KASS, 7=ASECNA, 8=SouthPAN. Default 003F enables the first six.
+[[nmea]]
+text = "PQTMCFGSBAS,R"
+tag = "get-sbas"
+description = "Get SBAS configuration"
+
+[[nmea]]
+text = "PQTMCFGSBAS,W,0"
+tag = "sbas-off"
+description = "Disable all SBAS"
+
+[[nmea]]
+text = "PQTMCFGSBAS,W,003F"
+tag = "sbas-on"
+description = "Enable default SBAS set (WAAS, SDCM, EGNOS, BDSBAS, MSAS, GAGAN)"
+
 # PPP (Precise Point Positioning)
 # Mode=2 (E6 HAS), Datum=1 (WGS84), Timeout=120s,
 # Horizontal=0.10m, Vertical=0.15m convergence accuracy thresholds

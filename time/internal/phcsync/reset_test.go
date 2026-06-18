@@ -352,7 +352,8 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 		// Single-edge mode
 		for i := 0; i < numEdges; i++ {
 			realTime := baseTime.Add(time.Duration(i) * interval)
-			phcTime := basePHC.Add(time.Duration(float64(i*int(interval)) * (1.0 + phcDrift)))
+			// Multiply in time.Duration (int64) to avoid int overflow on 32-bit.
+			phcTime := basePHC.Add(time.Duration(float64(time.Duration(i)*interval) * (1.0 + phcDrift)))
 
 			readDelay := 1 * time.Millisecond
 			tRead := realTime.Add(readDelay)

@@ -22,12 +22,12 @@ type mockRequest struct {
 }
 
 func TestConfigSupportFlagsItems(t *testing.T) {
-	flags := ConfigSupportBand |
+	flags := ConfigSupportSignal |
 		ConfigSupportSurveyMsg |
 		ConfigSupportFixedPos |
 		ConfigSupportRTCMMSM7 |
 		ConfigSupportRTCMQZSS
-	want := []string{"band", "surveyMsg", "fixedPos", "rtcmMSM7", "rtcmQZSS"}
+	want := []string{"signal", "surveyMsg", "fixedPos", "rtcmMSM7", "rtcmQZSS"}
 	if got := flags.Items(); !slices.Equal(got, want) {
 		t.Errorf("Items() = %v, want %v", got, want)
 	}
@@ -42,6 +42,9 @@ func TestConfigSupportLast(t *testing.T) {
 	}
 	if ConfigSupportLast != highest {
 		t.Errorf("ConfigSupportLast = %v, want highest declared flag %v", ConfigSupportLast, highest)
+	}
+	if ConfigSupportFull != ConfigSupportLast<<1-1 {
+		t.Errorf("ConfigSupportFull = %v, want all flags %v", ConfigSupportFull, ConfigSupportLast<<1-1)
 	}
 }
 
@@ -59,7 +62,7 @@ func TestConfigSupportFlagsMarshalJSON(t *testing.T) {
 		want  string
 	}{
 		{0, `[]`},
-		{ConfigSupportBand | ConfigSupportFixedPos | ConfigSupportRaw, `["band","fixedPos","raw"]`},
+		{ConfigSupportSignal | ConfigSupportFixedPos | ConfigSupportRaw, `["signal","fixedPos","raw"]`},
 	}
 	for _, tt := range tests {
 		b, err := json.Marshal(tt.flags)

@@ -151,17 +151,51 @@ func (h *GenericHandler) CorReport(msg *CorReportMsg, tRead time.Time) {
 	h.Handle(msg, tRead)
 }
 
-// Event is the universal envelope for all gpsprot messages.
-type Event struct {
+// Event is a JSON event envelope. T is the wall-clock time the event was
+// read; Mono is the monotonic elapsed time since session start; Data is the
+// event payload, whose JSON type is named by Type.
+type Event[T any] struct {
 	Type string    `json:"type"`
 	T    time.Time `json:"t"`
 	Mono Duration  `json:"mono"`
-	Data Msg       `json:"data"`
+	Data T         `json:"data"`
 }
 
-// NewEvent constructs an Event from a message, wall-clock time, and monotonic offset.
-func NewEvent(msg Msg, t time.Time, mono Duration) Event {
-	return Event{Type: msg.MsgType(), T: t, Mono: mono, Data: msg}
+// MsgEvent is an Event carrying a gpsprot Msg.
+type MsgEvent Event[Msg]
+
+// NewMsgEvent constructs a MsgEvent from a message, wall-clock time, and monotonic offset.
+func NewMsgEvent(msg Msg, t time.Time, mono Duration) MsgEvent {
+	return MsgEvent{Type: msg.MsgType(), T: t, Mono: mono, Data: msg}
+}
+
+// msgRegistry maps each message type name to a factory for an empty value
+// of the corresponding concrete Msg type.
+var msgRegistry = map[string]func() Msg{
+	"posGeo":     func() Msg { return &PosGeoMsg{} },
+	"posECEF":    func() Msg { return &PosECEFMsg{} },
+	"velGeo":     func() Msg { return &VelGeoMsg{} },
+	"velECEF":    func() Msg { return &VelECEFMsg{} },
+	"time":       func() Msg { return &TimeMsg{} },
+	"leapSecond": func() Msg { return &LeapSecondMsg{} },
+	"survey":     func() Msg { return &SurveyMsg{} },
+	"satellites": func() Msg { return &SatellitesMsg{} },
+	"navEpoch":   func() Msg { return &NavEpochMsg{} },
+	"corReport":  func() Msg { return &CorReportMsg{} },
+}
+
+// UnmarshalMsg decodes a GPS message payload of the named type from its JSON
+// data, returning the concrete Msg.
+func UnmarshalMsg(typeName string, data json.RawMessage) (Msg, error) {
+	factory, ok := msgRegistry[typeName]
+	if !ok {
+		return nil, fmt.Errorf("unknown message type %q", typeName)
+	}
+	msg := factory()
+	if err := json.Unmarshal(data, msg); err != nil {
+		return nil, err
+	}
+	return msg, nil
 }
 
 type MultiHandler struct {
@@ -1520,6 +1554,18 @@ func (s CorReportSource) String() string {
 
 func (s CorReportSource) MarshalText() ([]byte, error) {
 	return []byte(s.String()), nil
+}
+
+func (s *CorReportSource) UnmarshalText(text []byte) error {
+	switch string(text) {
+	case "pull":
+		*s = CorReportSourcePull
+	case "receiver":
+		*s = CorReportSourceReceiver
+	default:
+		return fmt.Errorf("unknown CorReportSource %q", text)
+	}
+	return nil
 }
 
 // CorReportMsg is a protocol-independent observation of a

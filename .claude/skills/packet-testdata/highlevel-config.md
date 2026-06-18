@@ -6,6 +6,8 @@ This applies to receivers that support high-level configuration via satpulsetool
 
 Run `satpulsetool gps -d <device> -s <baud> --show-receiver` to get the receiver model, firmware, and protocol version. Use this information for the HW.toml file. The firmware field in HW.toml should match the full firmware string from `--show-receiver` (e.g., "HPG 1.51 PROTVER 27.50").
 
+`--show-receiver` also prints a `Supports:` line and a `Packet formats detected:` line. The `Supports:` line is the authoritative, fast capability check -- use it to decide which captures are possible, rather than inferring from source. Its vocabulary is: `band`, `speed`, `survey`, `surveyAcc`, `surveyMsg`, `fixedPos`, `fixedPosAcc`, `raw`, `rtcmMSM4`, `rtcmMSM7`, `rtcmBaseID`, `rtcmQZSS`. For example, an M10 SPG receiver reports `Supports: speed` only -- so there are no survey, raw, RTCM/MSM, or band captures for it. Append `--show-port` to also report the active receiver port (see below).
+
 ## Reload between captures
 
 `--reload` restores the receiver to its NVM-saved state. This is essential between captures to prevent configuration leakage. After `--reload` on USB, the device may briefly disappear -- add `sleep 2` before the next command.
@@ -16,13 +18,16 @@ Use `--binary` to switch to binary output protocol (disables NMEA). Use `--pvt-o
 
 ### Key flags
 
-- `--pvt-out daemon` -- the set satpulsed uses (includes tp, after, tai, leap, survey, qual, epoch, off)
-- `--pvt-out daemon,pos` -- daemon + position (satpulsed enables this when track log or HTTP is configured)
+- `--pvt-out ptp` -- the set satpulsed uses for PTP/PHC timing (equivalent to tp,after,tai,leap,survey,qual,epoch,off)
+- `--pvt-out ntp` -- the set satpulsed uses for NTP timing without a PHC (equivalent to time,leap,survey,qual,epoch,off)
+- `--pvt-out ptp,pos` -- ptp + position (satpulsed enables position when a track log or HTTP is configured)
 - `--sats-out sat,sig` -- satellite and signal info (bandwidth-sensitive, may need higher baud)
 - `--pvt-out tp,after,tai,off` -- minimal time-only set
 - `--pvt-out pos,ecef,time,epoch,off` -- ECEF position + time
 - `--raw-out obs,nav` -- raw observations and navigation data (RXM-RAWX/RXM-SFRBX on u-blox; OBSVMB and per-GNSS `*EPHB` on Unicore). High bandwidth -- typically needs 38400+. Combine with a minimal time set, e.g. `--pvt-out tp,after,tai,off --raw-out obs,nav`. See `ubx-config.md` and `unicore-config.md` for per-vendor details.
 - `--survey --survey-time 60 --survey-acc 50` -- short survey for testing (generous accuracy so it stays in progress during capture)
+
+Note: `ptp` bundles the `survey` sub-flag, so on a receiver without survey-message support (e.g. an M10 SPG, `Supports: speed`) `--pvt-out ptp` emits a benign `WARN ... "receiver does not support the following option" option=--pvt-out`. The warning is harmless -- every other message in the set still configures and saves; only the survey message is skipped. Verify the capture contents rather than treating the warning as a failure.
 
 ### Baud rate considerations
 
@@ -35,6 +40,8 @@ To temporarily change baud: `satpulsetool gps -d <device> -s <baud> --speed 9600
 `-m` (message file) cannot be combined with high-level config in a single invocation. But you can run high-level config first (without `--capture`), then a second invocation with `-m` to add extra messages. The `-m` invocation does not probe or reset the receiver.
 
 This two-step approach is used for per-constellation captures: high-level config sets `--time-gnss` and `--gnss`, then message file tags enable additional time messages.
+
+The `-m` invocation does not probe, so it does not detect the active receiver port on its own. For port-dependent message-file entries (u-blox `[[ubxvalport]]` MSGOUT tags), pass `--port <i2c|uart1|uart2|usb|spi>`. Determine the active port with `--show-port` (or read it from the `Port:` line of `--show-receiver --show-port`). On an evaluation kit such as the EVK-M101 the USB connector is a USB-serial adapter wired to the module's UART1, so the active port is `uart1`, not `usb`.
 
 ## Cross-protocol satellite capture
 

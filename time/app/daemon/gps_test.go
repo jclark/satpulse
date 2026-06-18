@@ -103,6 +103,47 @@ fixedPosAcc = 3`,
 			},
 		},
 		{
+			name: "fixed position LLH mode",
+			config: `[gps]
+config = true
+surveyTime = 1000
+surveyAcc = 5
+fixedPosLLH = [51.5007, -0.1246, 11]
+fixedPosAcc = 0.05`,
+			speed: 9600,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{
+					Static:      true,
+					PosType:     gpsprot.PosTypeLLH,
+					FixedPosLLH: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(51.5007), gpsprot.DegreesFromFloat(-0.1246)},
+					Height:      gpsprot.Meters(11),
+					FixedPosAcc: gpsprot.Meters(0.05),
+				})
+				target.Opts.Survey.MinDur = 1000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(5)
+			},
+		},
+		{
+			name: "fixed position LLH zero",
+			config: `[gps]
+config = true
+fixedPosLLH = [0, 0, 0]`,
+			speed: 9600,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{
+					Static:      true,
+					PosType:     gpsprot.PosTypeLLH,
+					FixedPosLLH: [2]gpsprot.Angle{0, 0},
+					Height:      0,
+					FixedPosAcc: gpsprot.Meters(20),
+				})
+				target.Opts.Survey.MinDur = 2000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
+			},
+		},
+		{
 			name: "mobile with position enables velocity",
 			config: `[gps]
 config = true
@@ -131,6 +172,30 @@ fixedPosECEF = [3978578.17, -8652.15, 4968410.94]`,
 			},
 		},
 		{
+			name: "mobile=true overrides fixed position LLH",
+			config: `[gps]
+config = true
+mobile = true
+fixedPosLLH = [51.5007, -0.1246, 11]`,
+			speed: 9600,
+			cf:    cfgTimePulse | cfgTimePulseMsg,
+			modifyTarget: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: false})
+				target.Opts.Survey.MinDur = 2000 * time.Second
+				target.Opts.Survey.AccLimit = gpsprot.Meters(20)
+			},
+		},
+		{
+			name: "fixed position ECEF and LLH conflict",
+			config: `[gps]
+config = true
+fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
+fixedPosLLH = [51.5007, -0.1246, 11]`,
+			speed:         9600,
+			cf:            cfgTimePulse | cfgTimePulseMsg,
+			expectedError: "error",
+		},
+		{
 			name: "survey accuracy too small",
 			config: `[gps]
 config = true
@@ -148,6 +213,33 @@ fixedPosAcc = 0.0001`,
 			speed:         9600,
 			cf:            cfgTimePulse | cfgTimePulseMsg,
 			expectedError: "error", // any error
+		},
+		{
+			name: "fixed position LLH latitude too large",
+			config: `[gps]
+config = true
+fixedPosLLH = [91, 0, 0]`,
+			speed:         9600,
+			cf:            cfgTimePulse | cfgTimePulseMsg,
+			expectedError: "error",
+		},
+		{
+			name: "fixed position LLH longitude too small",
+			config: `[gps]
+config = true
+fixedPosLLH = [0, -181, 0]`,
+			speed:         9600,
+			cf:            cfgTimePulse | cfgTimePulseMsg,
+			expectedError: "error",
+		},
+		{
+			name: "fixed position LLH height too large",
+			config: `[gps]
+config = true
+fixedPosLLH = [0, 0, 10001]`,
+			speed:         9600,
+			cf:            cfgTimePulse | cfgTimePulseMsg,
+			expectedError: "error",
 		},
 		{
 			name: "fixed position with resurvey and survey params",

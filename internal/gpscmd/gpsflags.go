@@ -54,11 +54,12 @@ type flagVars struct {
 	vendor         gpsreg.Vendor
 	showReceiver   bool
 	showTags       bool
+	jsonOut        bool
 }
 
 type configSupportReq struct {
 	all       gpsprot.ConfigSupportFlags
-	options   map[gpsprot.ConfigSupportFlags]string
+	options   map[gpsprot.ConfigSupportFlags][]string
 	msmOption string
 }
 
@@ -69,9 +70,9 @@ func (r configSupportReq) isZero() bool {
 func (r *configSupportReq) require(flags gpsprot.ConfigSupportFlags, option string) {
 	r.init()
 	r.all |= flags
-	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportLast; flag <<= 1 {
+	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportFull; flag <<= 1 {
 		if flags&flag != 0 {
-			r.options[flag] = option
+			r.options[flag] = append(r.options[flag], option)
 		}
 	}
 }
@@ -82,7 +83,7 @@ func (r *configSupportReq) requireMSM(option string) {
 
 func (r *configSupportReq) init() {
 	if r.options == nil {
-		r.options = make(map[gpsprot.ConfigSupportFlags]string)
+		r.options = make(map[gpsprot.ConfigSupportFlags][]string)
 	}
 }
 
@@ -97,13 +98,15 @@ func (r configSupportReq) flags() (gpsprot.ConfigSupportFlags, gpsprot.ConfigSup
 func (r configSupportReq) unsupportedOptions(supported gpsprot.ConfigSupportFlags) []string {
 	var opts []string
 	seen := make(map[string]bool)
-	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportLast; flag <<= 1 {
+	for flag := gpsprot.ConfigSupportFlags(1); flag <= gpsprot.ConfigSupportFull; flag <<= 1 {
 		if r.all&flag == 0 || supported&flag != 0 {
 			continue
 		}
-		if opt := r.options[flag]; opt != "" && !seen[opt] {
-			opts = append(opts, opt)
-			seen[opt] = true
+		for _, opt := range r.options[flag] {
+			if opt != "" && !seen[opt] {
+				opts = append(opts, opt)
+				seen[opt] = true
+			}
 		}
 	}
 	if r.msmOption != "" && supported&gpsprot.ConfigSupportRTCMMSM == 0 && !seen[r.msmOption] {
@@ -115,8 +118,9 @@ func (r configSupportReq) unsupportedOptions(supported gpsprot.ConfigSupportFlag
 
 const summary = `[-h|--help] [-d|--serial-device path] [-s|--device-speed bps] [-f|--config-file path]
        	    [--socket path] [--packet-log path] [--capture seconds] [--save] [--speed bps] [--nmea] [--binary]
-            [-c|--show-config] [--show-port] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
+            [-c|--show-config] [--show-port] [--json] [--save] [--save-all] [--reset] [--reload] [--factory-reset]
             [-g|--gnss GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...] [-b|--band L1|L2|L5|E5|L6,...]
+            [--signal signal,...] [--except-signal signal,...]
             [-p|--pps width] [--ant-cable-delay nanos] [--time-gnss GPS|GAL|BDS|GLO]
             [--mobile] [--fixed-pos-ecef x,y,z] [--fixed-pos-llh lat,lon,height] [--fixed-pos-acc meters]
             [--survey] [--survey-time seconds] [--survey-acc meters]
@@ -183,6 +187,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.BoolVarP(&showConfig, "show-config", "c", false, "show current GPS receiver configuration")
 	flags.BoolVar(&showPort, "show-port", false, "show the receiver port the host is communicating on and its serial speed when applicable")
+	flags.BoolVar(&vars.jsonOut, "json", false, "write receiver information and configuration results to stdout as a single JSON object")
 	flags.BoolVar(&save, "save", false, "save configuration changes to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&saveAll, "save-all", false, "save the current configuration to non-volatile memory on the GPS receiver")
 	flags.BoolVar(&reset, "reset", false, "reset the GPS receiver and perform a cold start")
@@ -209,6 +214,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Uint32Var(&baudRate, "speed", 0, "set GPS receiver baud-rate in `bps`")
 	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
 	flags.VarP(&bands, "band", "b", "enabled GNSS bands `list`: L1,L2,L5,E5,E6,...")
+	var addSignals, exceptSignals signalList
+	flags.Var(&addSignals, "signal", "enabled GNSS signals `list`: GPSL1|E1|B1C,...")
+	flags.Var(&exceptSignals, "except-signal", "excluded GNSS signals `list`: GPSL1C|E5b,...")
 	flags.Var(&timeGNSS, "time-gnss", "GNSS `constellation` used for timing: GPS|GAL|BDS|GLO")
 	flags.Var(&rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
 	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|survey|qual|epoch|tai|ecef|after|ptp|ntp|off,...")
@@ -244,6 +252,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if flags.NArg() != 0 {
 		return nil, usage, fmt.Errorf("%s command must not have non-option arguments", cmdName)
+	}
+	if vars.jsonOut && vars.msgFilePath != "" {
+		return nil, nil, fmt.Errorf("--json cannot be combined with --msg-file")
 	}
 	if vars.showTags {
 		if vars.msgFilePath == "" {
@@ -304,17 +315,34 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		vars.configSupport.require(gpsprot.ConfigSupportSpeed, "--speed")
 	}
 
-	if len(gl.gnss) != 0 {
-		vars.enabledSignals = gpsprot.Band(bands).SignalSet(gl.gnss...)
+	addSigs := gpsprot.SignalSet(addSignals)
+	exceptSigs := gpsprot.SignalSet(exceptSignals)
+	if len(gl.gnss) == 0 {
+		if flags.Lookup("band").Changed {
+			return nil, nil, fmt.Errorf("%s command must specify --gnss when --band is specified", cmdName)
+		}
+		if exceptSigs != 0 {
+			return nil, nil, fmt.Errorf("%s command must specify --gnss when --except-signal is specified", cmdName)
+		}
+	}
+	if both := addSigs & exceptSigs; both != 0 {
+		return nil, nil, fmt.Errorf("signals in both --signal and --except-signal: %s", both)
+	}
+	if len(gl.gnss) != 0 || addSigs != 0 {
+		vars.enabledSignals = (gpsprot.Band(bands).SignalSet(gl.gnss...) | addSigs) &^ exceptSigs
 		if (vars.enabledSignals&gpsprot.SigSetMajor)&^gpsprot.SigSetAugment == 0 {
 			return nil, nil, fmt.Errorf("at least one non-augmentation signal from a major GNSS must be enabled")
 		}
 		configChanged = true
 		if flags.Lookup("band").Changed {
-			vars.configSupport.require(gpsprot.ConfigSupportBand, "--band")
+			vars.configSupport.require(gpsprot.ConfigSupportSignal, "--band")
 		}
-	} else if flags.Lookup("band").Changed {
-		return nil, nil, fmt.Errorf("%s command must specify --gnss when --band is specified", cmdName)
+		if addSigs != 0 {
+			vars.configSupport.require(gpsprot.ConfigSupportSignal, "--signal")
+		}
+		if exceptSigs != 0 {
+			vars.configSupport.require(gpsprot.ConfigSupportSignal, "--except-signal")
+		}
 	}
 	pvtMsg := gpsprot.PVTMsgFlags(pvtOut)
 	rawMsg := (opt.Val[gpsprot.RawMsgFlags])(rawOut)
@@ -353,7 +381,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			nmeaMsg.Set(gpsprot.NMEAMsgNone)
 		}
 		// ensure we have some non-NMEA output
-		if rtcmMsg.Get()&gpsprot.RTCMMsgAny == 0 && pvtMsg.Get()&gpsprot.PVTMsgAny == 0 {
+		if rtcmMsg.Get()&gpsprot.RTCMMsgAny == 0 && !pvtMsg.IsSet() {
 			pvtMsg.Set(gpsprot.PVTMsgPos | gpsprot.PVTMsgTime) // analogous to NMEA RMC
 		}
 	}
@@ -432,9 +460,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 	}
 	vars.timeGNSS = gpsprot.GNSS(timeGNSS)
-	if vars.timeGNSS != 0 && len(gl.gnss) != 0 {
+	if vars.timeGNSS != 0 && !vars.enabledSignals.IsZero() {
 		if vars.enabledSignals.GNSSSet()&gpsprot.GNSSSetOf(vars.timeGNSS) == 0 {
-			return nil, nil, fmt.Errorf("%s specified as --time-gnss but not included in --gnss", vars.timeGNSS)
+			return nil, nil, fmt.Errorf("%s specified as --time-gnss but none of its signals are enabled", vars.timeGNSS)
 		}
 	}
 	if flags.Lookup("pps").Changed {
@@ -489,6 +517,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if showPort {
 		vars.configGet |= gpsprot.PropIDPort | gpsprot.PropIDBaudRate
+		vars.configSupport.require(gpsprot.ConfigSupportPort, "--show-port")
 	}
 	if save {
 		if saveAll {
@@ -560,6 +589,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		}
 		if !doConfigure && !vars.capture.IsSet() {
 			vars.showReceiver = true
+		}
+		if vars.jsonOut && !doConfigure && !vars.showReceiver {
+			return nil, nil, fmt.Errorf("--json cannot be used with passive packet capture")
 		}
 	}
 	return &vars, nil, nil
@@ -723,6 +755,35 @@ func (bp *bands) Set(s string) error {
 		b |= band
 	}
 	*bp = bands(b)
+	return nil
+}
+
+type signalList gpsprot.SignalSet
+
+var _ pflag.Value = (*signalList)(nil)
+
+func (sl *signalList) String() string {
+	var s []string
+	for sig := range gpsprot.SignalSet(*sl).Signals() {
+		s = append(s, sig.String())
+	}
+	return strings.Join(s, ",")
+}
+
+func (sl *signalList) Type() string {
+	return "signal-list"
+}
+
+func (sl *signalList) Set(s string) error {
+	ss := gpsprot.SignalSet(*sl)
+	for _, w := range strings.Split(s, ",") {
+		sig, err := gpsprot.ParseSignal(strings.Trim(w, " \t"))
+		if err != nil {
+			return err
+		}
+		ss |= gpsprot.SignalSetOf(sig)
+	}
+	*sl = signalList(ss)
 	return nil
 }
 

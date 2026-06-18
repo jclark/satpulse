@@ -19,11 +19,18 @@ func decode(t *testing.T, s string) *Config {
 
 func TestConfigEmpty(t *testing.T) {
 	cfg := decode(t, ``)
-	if cfg.Pull != nil {
-		t.Errorf("expected Pull nil, got %+v", cfg.Pull)
+	if cfg.Pull.TCP != nil || cfg.Pull.Ntrip != nil {
+		t.Errorf("expected Pull unset, got %+v", cfg.Pull)
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate empty: %v", err)
+	}
+}
+
+func TestConfigPullEmpty(t *testing.T) {
+	cfg := decode(t, "[pull]\n")
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate empty [pull]: %v", err)
 	}
 }
 
@@ -32,7 +39,7 @@ func TestConfigPullTCP(t *testing.T) {
 [pull]
 tcp.address = "10.0.0.1:2006"
 `)
-	if cfg.Pull == nil || cfg.Pull.TCP == nil {
+	if cfg.Pull.TCP == nil {
 		t.Fatalf("expected TCP set, got %+v", cfg.Pull)
 	}
 	if cfg.Pull.TCP.Address != "10.0.0.1:2006" {
@@ -105,8 +112,8 @@ ntrip.password = "p"
 	}
 }
 
-func TestPullConfigPrepareNil(t *testing.T) {
-	var pc *PullConfig
+func TestPullConfigPrepareDisabled(t *testing.T) {
+	pc := &PullConfig{}
 	if got := pc.Prepare("1.0", nil, nil); got != nil {
 		t.Errorf("expected nil, got %+v", got)
 	}
@@ -198,6 +205,29 @@ ntrip.msm7to4 = true
 	}
 }
 
+func TestConfigPushUDP(t *testing.T) {
+	cfg := decode(t, `
+[[push]]
+udp.address = "127.0.0.1:10110"
+`)
+	if len(cfg.Push) != 1 {
+		t.Fatalf("expected 1 push entry, got %d", len(cfg.Push))
+	}
+	p := cfg.Push[0]
+	if p.UDP == nil {
+		t.Fatal("expected udp set")
+	}
+	if p.UDP.Address != "127.0.0.1:10110" {
+		t.Errorf("address = %q", p.UDP.Address)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+	if cfg.Push[0].Protocol.Tag() != "" {
+		t.Errorf("Protocol after Validate = %q, want empty", cfg.Push[0].Protocol.Tag())
+	}
+}
+
 func TestConfigPushValidate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -207,7 +237,18 @@ func TestConfigPushValidate(t *testing.T) {
 		{
 			name:    "no transport",
 			toml:    `[[push]]`,
-			wantErr: "must configure ntrip",
+			wantErr: "must configure either ntrip or udp",
+		},
+		{
+			name: "multiple transports",
+			toml: `
+[[push]]
+ntrip.address = "h:1"
+ntrip.mountpoint = "M"
+ntrip.password = "p"
+udp.address = "127.0.0.1:10110"
+`,
+			wantErr: "mutually exclusive",
 		},
 		{
 			name: "missing address",
@@ -217,6 +258,14 @@ ntrip.mountpoint = "M"
 ntrip.password = "p"
 `,
 			wantErr: "ntrip.address is required",
+		},
+		{
+			name: "missing udp address",
+			toml: `
+[[push]]
+udp.address = ""
+`,
+			wantErr: "udp.address is required",
 		},
 		{
 			name: "missing mountpoint",
@@ -346,11 +395,6 @@ ntrip.address = "h:1"
 ntrip.mountpoint = "M"
 `,
 			wantErr: "mutually exclusive",
-		},
-		{
-			name:    "neither",
-			toml:    `[pull]`,
-			wantErr: "must configure either tcp or ntrip",
 		},
 		{
 			name: "tcp missing address",

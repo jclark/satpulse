@@ -146,7 +146,7 @@ func (h *replayHandler) handle(msg gpsprot.Msg, tRead time.Time) {
 		return
 	}
 	mono := gpsprot.Duration(tRead.Sub(h.tStart)) / gpsprot.Microsecond * gpsprot.Microsecond
-	ev := gpsprot.NewEvent(msg, tRead, mono)
+	ev := gpsprot.NewMsgEvent(msg, tRead, mono)
 	b, err := json.Marshal(&ev)
 	if err != nil {
 		h.lg.Warn("failed to marshal event", "err", err)

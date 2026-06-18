@@ -154,10 +154,6 @@ For example:
 [serial]
 device = "${SATPULSE_TEST_FIFO}"
 
-[gps]
-config = false
-vendor = "u-blox"
-
 [log]
 dir = "${SATPULSE_TEST_LOG_DIR}"
 event = true
@@ -179,11 +175,12 @@ The daemon writes logs to the paths specified by the rendered config. The
 execution environment should make those paths scenario-specific and pass the
 resolved locations to checks.
 
-FIFO-driven daemon scenarios must set `gps.config = false`. FIFO serial
-connections are read-only, so receiver configuration writes cannot work in this
-test mode. Testing `gps.config = true` requires a different path, such as
-`gpscmd` configuration replay, and is out of scope for this daemon FIFO replay
-suite.
+FIFO-driven daemon scenarios must leave GPS configuration disabled. This is the
+daemon default, so scenarios do not need a `[gps]` table unless they are testing
+another GPS option. FIFO serial connections are read-only, so receiver
+configuration writes cannot work in this test mode. Testing `gps.config = true`
+requires a different path, such as `gpscmd` configuration replay, and is out of
+scope for this daemon FIFO replay suite.
 
 ## Implementation language
 

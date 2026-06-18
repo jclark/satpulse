@@ -5,18 +5,18 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jclark/satpulse/gps/lib/asbin"
-	casicbin "github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/asbin"
+	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/sdbpbin"
-	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/ubxcfgval"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
+	"github.com/jclark/satpulse/gps/scan"
 )
 
 var (
@@ -90,6 +90,9 @@ checksumOK:
 	case gpsreg.TagNovAtelAscii:
 		r, err := novasciiDecode(data)
 		return pf, r, err
+	case gpsreg.TagNovAtelAbbrevAscii:
+		r, err := novabbrevDecode(data)
+		return pf, r, err
 	case gpsreg.TagUnicoreAscii:
 		r, err := uncasciiDecode(data)
 		return pf, r, err
@@ -161,11 +164,11 @@ func encodeCfgDataKeys(cfgData []byte) (any, error) {
 }
 
 func casicDecode(data []byte) (*DecodeResult, error) {
-	msg, err := casicbin.ParseMsg(string(data))
+	msg, err := casbin.ParseMsg(string(data))
 	if err != nil {
 		return nil, err
 	}
-	if _, isUnknown := msg.(*casicbin.UnknownMsg); isUnknown {
+	if _, isUnknown := msg.(*casbin.UnknownMsg); isUnknown {
 		return nil, ErrUnknownMsg
 	}
 	return &DecodeResult{Payload: msg}, nil
@@ -219,6 +222,10 @@ func novasciiDecode(data []byte) (*DecodeResult, error) {
 		Payload: msg.Body,
 		Header:  msg.Hdr,
 	}, nil
+}
+
+func novabbrevDecode(data []byte) (*DecodeResult, error) {
+	return &DecodeResult{Payload: novmsg.ParseAbbrevAsciiLine(data)}, nil
 }
 
 func uncasciiDecode(data []byte) (*DecodeResult, error) {

@@ -212,6 +212,8 @@ These packages are reusable libraries for time synchronization. They are in the 
 
 `time/lib/median` provides efficient median computation for a fixed-size moving window using a circular buffer with a sorted index array. It supports 64-bit integers, floats, and time.Duration.
 
+`time/lib/ntime` provides a domain-neutral nanosecond timestamp type for the refclock sample path. The domain of a value (UTC, TAI, PHC-raw) is determined by the producer and consumer, not by the type. It depends only on the standard library.
+
 ### internal/
 
 These packages implement subcommands of satpulsetool. They are in the command-line layer and can import from both `gps/` and `time/`.
@@ -241,3 +243,7 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 This package provides the web interface. It is in the application layer.
 
 `web` embeds the HTML/JavaScript code for the web interface. This code is transpiled from TypeScript and uses Preact JavaScript library.
+
+## Test harnesses
+
+`gpshwtest` is a stdlib-only Python program that tests GPS high-level configuration against real receivers. Because receivers are diverse and high-level configuration has best-effort semantics, it characterizes how device-independent configuration is realized on each receiver rather than rendering pass/fail verdicts; vetted characterizations are checked in and compared on later runs. All receiver I/O goes through `satpulsetool gps --json`. The goal and success criteria are defined in `gpshwtest/GOAL.md` (#310).

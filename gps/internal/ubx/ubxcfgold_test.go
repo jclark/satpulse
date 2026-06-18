@@ -15,7 +15,11 @@ func TestTp5(t *testing.T) {
 	cp := &gpsprot.ConfigProps{}
 	cp.SetPPS(100 * time.Millisecond)
 
-	raw.tp5 = raw.changeTp5(cp)
+	tp5, err := raw.changeTp5(cp)
+	if err != nil {
+		t.Fatalf("changeTp5 failed: %v", err)
+	}
+	raw.tp5 = tp5
 
 	ncp := gpsprot.ConfigProps{}
 	raw.cookTp5(&ncp)
@@ -24,15 +28,56 @@ func TestTp5(t *testing.T) {
 		t.Errorf("tp5 change failed: %v", bad)
 	}
 
-	rep := raw.changeTp5(cp)
+	rep, err := raw.changeTp5(cp)
+	if err != nil {
+		t.Fatalf("repeated changeTp5 failed: %v", err)
+	}
 
 	if rep != nil {
 		t.Errorf("repeated changeTp5 wasn't a no-op: %v", rep)
 	}
 
-	rep = raw.changeTp5(new(gpsprot.ConfigProps))
+	rep, err = raw.changeTp5(new(gpsprot.ConfigProps))
+	if err != nil {
+		t.Fatalf("empty changeTp5 failed: %v", err)
+	}
 	if rep != nil {
 		t.Errorf("changeTp5 with nothing wasn't a no-op: %v", rep)
+	}
+}
+
+func TestTp5AntennaCableDelay(t *testing.T) {
+	raw := &CfgOld{tp5: &ubxbin.CfgTp5{AntCableDelay: 50}}
+	cp := &gpsprot.ConfigProps{}
+	cp.SetAntennaCableDelay(123 * time.Nanosecond)
+
+	tp5, err := raw.changeTp5(cp)
+	if err != nil {
+		t.Fatalf("changeTp5 failed: %v", err)
+	}
+	if tp5 == nil {
+		t.Fatal("changeTp5 returned nil")
+	}
+	if tp5.AntCableDelay != 123 {
+		t.Errorf("AntCableDelay = %d, want 123", tp5.AntCableDelay)
+	}
+
+	raw.tp5 = tp5
+	ncp := gpsprot.ConfigProps{}
+	raw.cookTp5(&ncp)
+	bad := cp.Inconsistent(&ncp)
+	if !bad.IsEmpty() {
+		t.Errorf("tp5 antenna cable delay change failed: %v", bad)
+	}
+}
+
+func TestTp5AntennaCableDelayRange(t *testing.T) {
+	raw := &CfgOld{tp5: new(ubxbin.CfgTp5)}
+	cp := &gpsprot.ConfigProps{}
+	cp.SetAntennaCableDelay(32768 * time.Nanosecond)
+
+	if _, err := raw.changeTp5(cp); err == nil {
+		t.Fatal("changeTp5 accepted out-of-range antenna cable delay")
 	}
 }
 
@@ -158,6 +203,27 @@ func TestConfiguratorTimeGNSSOnly(t *testing.T) {
 	rcvr.raw.tp5.Flags |= ubxbin.CfgTp5GridGPS
 	rcvr.raw.gnss.Blocks[0].GNSSID = ubxbin.GAL
 	testConfigurator(t, rcvr, target)
+}
+
+func TestConfiguratorAntennaCableDelayLegacy(t *testing.T) {
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetAntennaCableDelay(123 * time.Nanosecond)
+	rcvr := newGpsReceiver(&m8tVersion)
+
+	c, naks, err := runConfiguration(rcvr, target)
+	if err != nil {
+		t.Fatalf("unexpected error from runConfiguration: %v", err)
+	}
+	if len(naks) > 0 {
+		t.Errorf("unexpected naks: %v", naks)
+	}
+	if rcvr.nSent != 2 {
+		t.Errorf("expected CFG-TP5 poll and set, got %d messages", rcvr.nSent)
+	}
+	got, ok := c.ConfigProps().GetAntennaCableDelay()
+	if !ok || got != 123*time.Nanosecond {
+		t.Errorf("antenna cable delay = %v, %v; want 123ns, true", got, ok)
+	}
 }
 
 func testConfigurator(t *testing.T, rcvr *gpsReceiver, target *gpsprot.ConfigTarget) {

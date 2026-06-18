@@ -26,6 +26,8 @@ import (
 // for transient hiccups, short enough that recovery is timely.
 const writeTimeout = 30 * time.Second
 
+const udpWriteTimeout = time.Millisecond
+
 // Destination is the push counterpart of Source: it returns a
 // writable net.Conn after a successful handshake.  Unlike Source, it
 // returns net.Conn (not io.ReadCloser) because Push only writes after
@@ -156,6 +158,61 @@ func (d *NtripDestination) sourceAgent() string {
 		return "NTRIP satpulse"
 	}
 	return "NTRIP satpulse/" + d.UserAgent.Version
+}
+
+// UDPSink is a UDP push destination: the address datagrams are sent
+// to.  Built once at startup; Run dials it and streams to it.
+type UDPSink struct {
+	Addr string // "host:port"
+}
+
+// Run dials the destination and forwards selected packets to it as
+// UDP datagrams until ctx is cancelled or packets closes.  UDP is
+// connectionless: there is no handshake, queue, or reconnect (unlike
+// Push), so dialing is all the setup there is.  When pktTag is empty
+// every non-empty packet is sent; otherwise only packets carrying
+// pktTag with a valid checksum.  A write failure drops the datagram
+// and is logged rather than returned -- UDP is fire-and-forget.
+func (s *UDPSink) Run(ctx context.Context, lg *slog.Logger,
+	packets *bcast.Bcast[scan.Packet], pktTag gpsprot.Tag) error {
+	conn, err := (&net.Dialer{}).DialContext(ctx, "udp", s.Addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	subCh := packets.Subscribe()
+	defer packets.Unsubscribe(subCh)
+	lg.Info("udp push connected", "addr", conn.RemoteAddr(), "protocol", pktTag)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case pkt, ok := <-subCh:
+			if !ok {
+				return nil
+			}
+			if pkt.Data == "" {
+				continue
+			}
+			if !pktTag.IsZero() && !(pkt.HasTag(pktTag) && pkt.ChecksumValid) {
+				continue
+			}
+			if err := conn.SetWriteDeadline(time.Now().Add(udpWriteTimeout)); err != nil {
+				lg.Warn("udp push set deadline failed", "addr", conn.RemoteAddr(), "err", err)
+				continue
+			}
+			n, err := conn.Write([]byte(pkt.Data))
+			if err != nil {
+				lg.Warn("udp push write failed", "addr", conn.RemoteAddr(),
+					"len", len(pkt.Data), "err", err)
+				continue
+			}
+			if n != len(pkt.Data) {
+				lg.Warn("udp push short write", "addr", conn.RemoteAddr(),
+					"wrote", n, "len", len(pkt.Data))
+			}
+		}
+	}
 }
 
 // Push consumes scanned packets from the receiver's packet bcast and
