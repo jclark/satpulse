@@ -26,3 +26,7 @@ In order to operate in timing mode, the position of the receiver must first be d
 This is convenient, but there is a more precise way to determine the antenna position, which can lead to improved performance. This involves collecting raw observation data from the receiver for a number of hours and then submitting this data to an online Precise Point Positioning (PPP) service. The online service has access to additional data about the satellite orbits and clocks, which enable it to produce a much more precise position. Final data about the satellite orbits at a particular time only becomes available about 2 weeks after that time. So for the best possible results it is necessary to wait for 2 weeks after the data is collected before submitting it to the service. But good results can also be obtained using a more rapid service using data that becomes available after about 2 days.
 
 Online PPP services typically expect the data to be in [RINEX](https://igs.org/wg/rinex/) format.
+
+## TODO
+
+L6 band

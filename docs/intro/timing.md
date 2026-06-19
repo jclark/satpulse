@@ -130,3 +130,38 @@ To preserve GNSS accuracy, each link in the chain needs hardware support:
 
 With all of these in place, end-to-end accuracy in the tens of nanoseconds is achievable.
 
+## TODO
+
+#### Protocols and timescale
+
+Use of a vendor-specific protocol allows one particular aspect of PTP to work more smoothly.
+PTP uses a timescale based on TAI.
+All GNSS systems other than GLONASS use a system time that is a fixed offset from TAI.
+Using a vendor-specific protocol allows the system time to be converted directly to PTP's timescale.
+NMEA provides time only in UTC.
+The offset between TAI and UTC varies depending on the occurrence of leap seconds.
+Using NMEA requires that the module convert the system time to UTC and
+the host software convert from UTC to PTP's timescale,
+which requires configuration of leap second occurrences to be maintained on the host.
+Using a vendor-specific protocol avoids the need for this.
+
+GLONASS worse fit for PTP.
+
+
+#### Timing mode
+
+Timing mode is, as the name suggests, a mode intended for timing applications.
+Normally, a GNSS receiver uses information from at least four satellites to compute its 3D position and the time.
+In timing mode, it assumes a fixed position and then uses information from one satellite to compute the time.
+There are usually two possibilities for determining the fixed position to be used.
+* It can be explicitly specified by the user, typically done using PPP 
+* The receiver can perform a survey-in process, where it computes its position once a second over a user-specified period of time, and then uses the average of the positions as the fixed position.
+
+#### Quantization/sawtooth error reporting
+
+When GNSS receivers generate a pulse to mark the start of a second, the pulse is constrained to be aligned to a tick of the receiver's internal clock, and so will not usually be precisely aligned to the true start of the second as determined by the receiver.
+The error in the pulse caused by this constraint is called a quantization error
+or sawtooth error.
+Some timing-oriented receivers are able to report these errors,
+thus allowing the host to correct for them.
+This error in modern receivers is of the order of a few nanoseconds.
