@@ -1,5 +1,5 @@
 ---
-title: GNSS receivers
+title: Enclosed GNSS receivers
 evk_gallery:
   - url: /assets/images/evk-f10t-top.jpg
     image_path: /assets/images/evk-f10t-top.jpg
@@ -16,9 +16,10 @@ evk_gallery:
 ---
 
 This page contains recommendations for GNSS boards that have their own enclosure, separate from the host PC.
-
-The most important requirement is that the receiver provide a PPS output using an SMA or BNC connector,
+At the moment, this covers only receivers that are convenient for timing applications,
+which means that they must provide a PPS output using an SMA or BNC connector,
 with the signal between 0 and 3.3V.
+These receivers also work well as an RTK base station.
 
 It will also need to provide a serial connection, which can be either USB (USB C or micro USB), or RS-232 (typically DB-9 female).
 When there is a serial USB connection, then that usually provides power also.

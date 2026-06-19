@@ -2,21 +2,10 @@
 title: GNSS modules
 ---
 
-A GNSS board is built around a *module*.
-Most of its capabilities come from the module it uses.
-A module is a small, thin, rectangular, metal‑shielded component with solder pads underneath, typically around 1–3 cm across and a few millimeters thick;
-it is built around a GNSS chip, which is the silicon that does the actual GNSS processing,
-and integrates other components such as flash memory and an oscillator.
-Designing a GNSS board around a module is relatively straightforward.
-Designing a module around a bare chip is significantly harder.
-Designing a GNSS chip is orders of magnitude more difficult and expensive; only a few companies do it.
-Some vendors make both modules and chips; others make modules only or chips only.
-
-A GNSS module cannot be connected to computer directly. It needs first to be integrated into a board.
-The board provides connections for antenna input, PPS output, serial IO and power.
-The board may be designed to go inside a computer's case, or it may have its own separate enclosure.
-
-See [GPS and GNSS]({% link intro/gnss.md %}) for the module features to consider when choosing a module.
+The capabilities of a GNSS receiver are mostly determined by the module it contains.
+This page describes GNSS modules organized by vendor.
+For background information on the module capabilities mentioned here,
+see the [GNSS basics]({% link intro/gnss-basics.md %}), [Precision timing]({% link intro/timing.md %}) and [Precision positioning]({% link intro/positioning.md %}) pages.
 
 ## u-blox
 
@@ -158,8 +147,3 @@ Unfortunately it does not support working over a TCP/IP connection.
 Their flagship product is the LG290P, which is an all-band receiver.
 
 They use a protocol based on NMEA, using proprietary sentences.
-
-
-
-
-

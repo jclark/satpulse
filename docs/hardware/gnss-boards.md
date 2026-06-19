@@ -1,5 +1,5 @@
 ---
-title: GNSS boards and cards
+title: GNSS boards and cards for timing
 types:
   - url: /assets/images/m2-f9p.jpg
     image_path: /assets/images/m2-f9p.jpg
@@ -67,7 +67,7 @@ timecard:
     title: "Sandwich board between CM5 and carrier board - side view"
 ---
 
-This page discusses GNSS boards and cards that are designed to be mounted inside a computer case.
+This page discusses GNSS boards and cards that are suitable for timing applications and are designed to be mounted inside a computer case.
 
 The following points should be considered for all boards:
 

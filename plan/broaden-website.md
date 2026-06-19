@@ -37,26 +37,20 @@ docs:
         url: "/intro/satpulse-features.html"
       - title: "Other software"
         url: "/intro/other-software.html"
-  - title: "GNSS hardware"
+  - title: "Hardware"
     children:
       - title: "Overview"
-        url: "/hardware/gnss.html"
+        url: "/hardware/index.html"
       - title: "GNSS modules"
         url: "/hardware/gnss-modules.html"
-      - title: "GNSS HATs"
-        url: "/hardware/gnss-hats.html"
+      - title: "Antennas"
+        url: "/hardware/antennas.html"
       - title: "GNSS receivers"
         url: "/hardware/gnss-receivers.html"
       - title: "GNSSDOs"
         url: "/hardware/gnssdos.html"
-      - title: "Antennas"
-        url: "/hardware/antennas.html"
-      - title: "Vendors"
-        url: "/hardware/vendors.html"
-  - title: "Precision time hardware"
-    children:
-      - title: "Overview"
-        url: "/hardware/index.html"
+      - title: "GNSS HATs"
+        url: "/hardware/gnss-hats.html"
       - title: "Selected GNSS boards"
         url: "/hardware/gnss-boards.html"
       - title: "Raspberry Pi CM4/CM5 builds"
@@ -70,7 +64,7 @@ docs:
       - title: "PTP switches"
         url: "/hardware/switches.html"
       - title: "Vendors"
-        url: "/hardware/timing-vendors.html"
+        url: "/hardware/vendors.html"
   - title: "Setup"
     children:
       - title: "Overview"
@@ -245,16 +239,21 @@ home page.
 
 The structural rework is in place and every page has content.
 
-- Navigation is split into two top-level sections: "GNSS hardware"
-  (overview, modules, receivers, GNSSDOs, antennas, vendors) and
-  "Precision time hardware" (overview, selected GNSS boards, CM4/CM5
-  build, Intel build, client hardware, PTM, switches, timing vendors).
-- The old `hardware/index.md` is now the precision-time-hardware
-  overview, and a new `hardware/gnss.md` is the GNSS-hardware overview.
-- `hardware/gnss-boards.md` has moved to the precision-time-hardware
-  section, with the nav label "Selected GNSS boards".
-- The vendors page is split: GNSS vendors stay on `hardware/vendors.md`,
-  and timing-only vendors are in `hardware/timing-vendors.md`.
+- Navigation is a single "Hardware" section: overview, GNSS modules,
+  antennas, GNSS receivers, GNSSDOs, selected GNSS boards, CM4/CM5
+  build, Intel build, PTP client hardware, PTM, switches, and vendors.
+  An earlier rework split this into separate "GNSS hardware" and
+  "Precision time hardware" sections; that split was undone because the
+  GNSS receiver and antenna serve timing and positioning alike, so
+  splitting them off left the non-timing side thin and put the
+  timing-curated pages in the wrong group.
+- `hardware/index.md` is the single section overview; the GNSS-hardware
+  overview content has been folded into the top of it, and the separate
+  `hardware/gnss.md` overview removed.
+- `hardware/gnss-boards.md` is in the section with the nav label
+  "Selected GNSS boards".
+- The vendors page is a single combined page (`hardware/vendors.md`)
+  covering GNSS and timing hardware vendors alike.
 - The introduction is split into six pages: overview, GNSS, precision
   timing, precision positioning, SatPulse, and other software.
 - `intro/satpulse.md` is essentially complete: it covers
@@ -320,10 +319,18 @@ The key things still to do, roughly in priority order.
   that these are boards curated for an in-case PPS timing build (CM4/CM5
   and Intel-NIC machines), not a general catalogue. It is still titled
   "GNSS boards and cards".
-- Clean up the overviews. Flesh out `hardware/timing-vendors.md` and
-  fix the "THis" typo. Leave the first-person and time-relative voice in
-  the overviews as is -- it is the site's own voice, not blog cruft to
-  strip.
+- Retitle `hardware/gnss-receivers.md` to signal its scope: it covers
+  enclosed receivers with a PPS SMA output, which is timing-specific. A
+  general or positioning enclosed-receiver page (no PPS, wider range) is
+  separate future work -- a new page, or a split of the existing one.
+- Rework `hardware/index.md` into a single combined overview: retitle it
+  from "Hardware for precision network timing", drop the framing that
+  treats the section as only "for a precision time server", and draw the
+  line the section is built around -- the GNSS receiver and antenna are
+  common to any use, and the rest is the extra hardware precise timing
+  needs. Fix the stale "previous page" reference in the folded-in GNSS
+  bullets. Leave the first-person and time-relative voice as is -- it is
+  the site's own voice, not blog cruft to strip.
 - Fill the "Platform support" TODO in `intro/satpulse.md`, and add the
   man-page how-links described above.
 
