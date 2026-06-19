@@ -263,7 +263,7 @@ func (s *Pull) Run(ctx context.Context, lg *slog.Logger,
 	})
 	// start pruning queue
 	pipelineWg.Go(func() {
-		s.queue(subCh, qCh)
+		s.queue(lg, subCh, qCh)
 	})
 	// start reader
 	pipelineWg.Go(func() {
@@ -382,18 +382,16 @@ func (s *Pull) readLoop(ctx context.Context, lg *slog.Logger,
 }
 
 // queue subscribes to the bcast and mediates between the reader and
-// the writer.  It maintains a FIFO ordered by insertion time, plus a
-// map from message type to queue position for O(1) dedup.  On
-// enqueue, if a packet of the same message type is already in the
-// queue, the old entry is removed.  When the subscription channel
-// closes, the queue discards remaining packets, closes the writer
-// channel, and returns.
-func (s *Pull) queue(subCh <-chan scan.Packet, writerCh chan<- scan.Packet) {
+// the writer using the shared pruning queue.  When the subscription
+// channel closes, the queue discards remaining packets, closes the
+// writer channel, and returns.
+func (s *Pull) queue(lg *slog.Logger, subCh <-chan scan.Packet, writerCh chan<- scan.Packet) {
 	defer close(writerCh)
 	defer s.Packets.Unsubscribe(subCh)
 	var q pruningQueue
-	var outCh chan<- scan.Packet
-	var front scan.Packet
+	// If sendCh is non-nil, it is writerCh and next is ready to send.
+	var sendCh chan<- scan.Packet
+	var next scan.Packet
 	for {
 		select {
 		case pkt, ok := <-subCh:
@@ -406,16 +404,23 @@ func (s *Pull) queue(subCh <-chan scan.Packet, writerCh chan<- scan.Packet) {
 				}
 				break
 			}
-			q.enqueue(pkt)
-			if outCh == nil {
-				front = q.dequeue()
-				outCh = writerCh
+			if dropped, ok := q.enqueue(pkt); ok {
+				msgID := ""
+				if dropped.Format != nil {
+					msgID = dropped.Format.MsgID([]byte(dropped.Data))
+				}
+				lg.Warn("stream pull queue full, dropped oldest packet",
+					"tag", dropped.Tag(), "msgid", msgID, "len", len(dropped.Data))
 			}
-		case outCh <- front:
+			if sendCh == nil {
+				next = q.dequeue()
+				sendCh = writerCh
+			}
+		case sendCh <- next:
 			if q.len() > 0 {
-				front = q.dequeue()
+				next = q.dequeue()
 			} else {
-				outCh = nil
+				sendCh = nil
 			}
 		}
 	}
