@@ -9,9 +9,8 @@ The initial focus of the project was on precision timing, specifically making it
 But since the initial 0.1 release, SatPulse has been developing rapidly.
 With the 0.2 release and upcoming 0.3 release, SatPulse provides a broad range of capabilities related to precision timing and positioning.
 Unfortunately, the tutorial documentation linked to from the navigation bar on the left has fallen behind the software.
-The current capabilities of the in-development version of the software on the master branch
-are described in the man pages.
-To use this version, you can [install from source]({% link setup/satpulse-install.md %}#install-from-source).
+The man pages accurately describe the capabilities of the upcoming 0.3 release.
+A [0.3 prerelease](https://github.com/jclark/satpulse/releases/tag/v0.3-pre-20260619) is available.
 The changes since 0.1 are described in detail in [recent changes]({% link recent-changes.md %}).
 The [blog]({% link blog.md %}) also has many posts about how SatPulse has evolved since 0.1.
 
