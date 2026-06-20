@@ -173,13 +173,6 @@ func MsgID(pkt []byte) string {
 	return fmt.Sprintf("%d-%d", Type(pkt), Subtype(pkt))
 }
 
-// KnownType reports whether the message type (TF002) is an assigned SPARTN
-// type: 0-4 (OCB, HPAC, GAD, BPAC, EAS) or proprietary 120-127.
-func KnownType(pkt []byte) bool {
-	t := Type(pkt)
-	return t <= 4 || (t >= 120 && t <= 127)
-}
-
 // crcLen returns the TF018 CRC length in bytes from TF005. Precondition:
 // len(pkt) >= 4.
 func crcLen(pkt []byte) int { return int(pkt[3]>>4&3) + 1 }

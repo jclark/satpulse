@@ -86,8 +86,14 @@ func (packetFormat) ComputeChecksum(pkt []byte) []byte {
 	return spartnbin.ComputeChecksum(pkt)
 }
 
+// RescanOnBadChecksum always rescans after a bad checksum. The SPARTN
+// preamble is the common ASCII byte 's' and TF006 is only a 4-bit header
+// CRC, so a checksum-bad frame is far more likely junk that happened to
+// frame than a corrupted real frame. Rescanning from the byte after the
+// preamble avoids advancing by a bogus TF003 length and skipping a real
+// frame that starts inside that span.
 func (packetFormat) RescanOnBadChecksum(prevPktValid bool, pkt []byte) bool {
-	return !prevPktValid || !spartnbin.KnownType(pkt)
+	return true
 }
 
 // PacketProcessor implements gpsprot.PacketProcessor for SPARTN packets.

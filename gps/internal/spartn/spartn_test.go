@@ -6,7 +6,6 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/scantest"
-	"github.com/jclark/satpulse/gps/lib/spartnbin"
 )
 
 // Real encrypted SPARTN frame (message 0-1) from a u-blox D9S receiver.
@@ -53,7 +52,9 @@ func TestBadChecksumNotFinal(t *testing.T) {
 	if bytes.Equal(PacketFormat.ComputeChecksum(bad), PacketFormat.ExtractChecksum(bad)) {
 		t.Fatalf("corrupted frame unexpectedly passed checksum")
 	}
-	if !spartnbin.KnownType(bad) {
-		t.Fatalf("type should be recognized as known")
+	// A bad checksum must always trigger a rescan, so a bogus framed length
+	// cannot skip a real frame that starts inside it.
+	if !PacketFormat.RescanOnBadChecksum(true, bad) {
+		t.Fatalf("RescanOnBadChecksum should always be true")
 	}
 }
