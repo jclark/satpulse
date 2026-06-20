@@ -49,6 +49,7 @@ _Not yet released_
 
 ### Miscellaneous
 
+- The default `satpulse.toml` no longer specifies a `phc.interface`, so `satpulsed` runs without a PHC by default; using a PHC now requires uncommenting and editing the `interface` line in the `[phc]` table. This will affect only fresh installs. (#309)
 - SatPulse now compiles and is tested on 32-bit architectures. Debian packages for `armhf` architecture are provided. These are built for ARMv6, and so will work on Raspberry Pi Zero with Raspberry Pi OS, as well as more powerful Raspberry Pi models which use ARMv7. (#305)
 - GPS message files are now installed by packages under `/usr/share/satpulse/gpsmsg`, and by `make install` under `/usr/local/share/satpulse/gpsmsg`. The files are organized by vendor directory. (#233)
 - The `satpulse@.service` has been improved so that if a USB GNSS receiver is unplugged, its `satpulse@...` service stops, and when the receiver is plugged back in, its service is automatically restarted, provided it was enabled. To take advantage of this after installing the new unit file, previously enabled instances need to be reenabled, for example with `systemctl reenable satpulse@ttyS0`. (#172)

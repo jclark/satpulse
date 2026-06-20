@@ -27,20 +27,21 @@ func startPull(ctx context.Context, lg *slog.Logger,
 		return
 	}
 	addr := setup.Addr()
+	lg = lg.With("addr", addr)
 	onState := func(st stream.State, err error) {
 		switch st {
 		case stream.Connecting:
-			lg.Info("stream pull connecting", "addr", addr)
+			lg.Info("stream pull connecting")
 		case stream.Connected:
-			lg.Info("stream pull connected", "addr", addr)
+			lg.Info("stream pull connected")
 		case stream.Reconnecting:
-			lg.Warn("stream pull reconnecting", "addr", addr, "err", err)
+			lg.Warn("stream pull reconnecting", "err", err)
 		}
 	}
 	wg.Go(func() {
 		err := setup.Run(ctx, lg, onState)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			lg.Error("stream pull exited with error", "addr", addr, "err", err)
+			lg.Error("stream pull exited with error", "err", err)
 		}
 	})
 }
@@ -124,33 +125,34 @@ func runPushEntry(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	pktTag gpsprot.Tag, msm7to4 bool) {
 	addr := dest.Addr
 	mnt := dest.Mountpoint
+	lg = lg.With("addr", addr, "mountpoint", mnt)
 	onState := func(st stream.State, err error) {
 		switch st {
 		case stream.Connecting:
-			lg.Info("ntrip push connecting", "addr", addr, "mountpoint", mnt)
+			lg.Info("ntrip push connecting")
 		case stream.Connected:
-			lg.Info("ntrip push connected", "addr", addr, "mountpoint", mnt)
+			lg.Info("ntrip push connected")
 		case stream.Reconnecting:
-			lg.Warn("ntrip push reconnecting", "addr", addr, "mountpoint", mnt, "err", err)
+			lg.Warn("ntrip push reconnecting", "err", err)
 		case stream.Failed:
-			lg.Error("ntrip push gave up", "addr", addr, "mountpoint", mnt, "err", err)
+			lg.Error("ntrip push gave up", "err", err)
 		}
 	}
-	push := stream.NewPush()
+	push := stream.NewPush(dest, lg, pktTag, msm7to4)
 	wg.Go(func() {
-		err := push.Run(ctx, lg, pb, dest, pktTag, msm7to4, onState)
+		err := push.Run(ctx, pb, onState)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			lg.Error("ntrip push exited with error", "addr", addr, "mountpoint", mnt, "err", err)
+			lg.Error("ntrip push exited with error", "err", err)
 		}
 	})
 }
 
 func runUDPPushEntry(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup,
 	pb *bcast.Bcast[scan.Packet], addr string, pktTag gpsprot.Tag) {
-	sink := &stream.UDPSink{Addr: addr}
+	sink := stream.NewUDPSink(addr, lg, pktTag)
 	wg.Go(func() {
 		lg.Info("udp push starting", "addr", addr, "protocol", pktTag)
-		err := sink.Run(ctx, lg, pb, pktTag)
+		err := sink.Run(ctx, pb)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			lg.Error("udp push exited with error", "addr", addr, "protocol", pktTag, "err", err)
 		}

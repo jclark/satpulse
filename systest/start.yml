@@ -19,19 +19,19 @@
               notifempty
               create 0644 root root
           }
-        dest: /tmp/satpulse-logrotate.conf
+        dest: /tmp/satpulse-logrotate-{{ instance }}.conf
         mode: '0644'
       when: interface != ""
 
     - name: Rotate log file if needed
-      command: logrotate -f -s /tmp/logrotate-{{ instance }}.state /tmp/satpulse-logrotate.conf
+      command: logrotate -f -s /tmp/logrotate-{{ instance }}.state /tmp/satpulse-logrotate-{{ instance }}.conf
       register: logrotate_result
       changed_when: logrotate_result.rc == 0
       when: interface != ""
 
     - name: Clean up temporary logrotate config
       file:
-        path: /tmp/satpulse-logrotate.conf
+        path: /tmp/satpulse-logrotate-{{ instance }}.conf
         state: absent
       when: interface != ""
 
