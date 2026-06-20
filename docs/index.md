@@ -3,6 +3,7 @@ layout: home
 title: "SatPulse"
 ---
 The goal of the SatPulse project is to provide a suite of open-source software that enables precision timing and positioning using modern GPS receivers on Linux and other general-purpose operating systems.
+SatPulse has especially deep support for the Raspberry Pi, from the Pi Zero to the Pi 5.
 
 The initial focus of the project was on precision timing, specifically making it easy to run a time server for your local network that enables much more precise synchronization than is possible in a typical NTP-based setup.
 
@@ -18,6 +19,7 @@ Precision timing remains the most mature part of SatPulse.
 A typical NTP stratum-1 server, running on, for example, a Raspberry Pi, connects the PPS (pulse-per-second) output of a GPS receiver to a GPIO or a serial port pin.
 SatPulse can take advantage of hardware designed for PTP (Precision Time Protocol).
 The key difference is that the PPS output of the GPS is connected to a PPS input pin *on the ethernet controller*.
+The Raspberry Pi CM4 and CM5 have this capability when used with a suitable IO board.
 For more details, please read the [Introduction]({% link intro.md %}).
 
 In release 0.1, SatPulse required this special kind of ethernet controller.
