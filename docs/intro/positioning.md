@@ -2,8 +2,8 @@
 title: "Precision positioning"
 ---
 
-A GNSS receiver using multiple bands can achieve an accuracy in the range of 1 to 2 meters.
-It is in fact possible to achieve accuracy in the range of 1 to 2 cm,
+A GNSS receiver using multiple bands can achieve an accuracy in the range of 1-2m.
+It is in fact possible to achieve accuracy in the range of 1-2cm,
 but it is not as simple as just plugging the GNSS receiver in and reading out the position.
 This page explains the techniques involved.
 
@@ -23,7 +23,7 @@ which we will describe below.
 After correcting for ionospheric error using multiple bands, the dominant remaining sources of error relate to satellite position and clocks.
 When a satellite transmits its position, it is not transmitting its actual position but its predicted position; its actual position will be slightly different from its predicted position.
 The clocks of satellites in a constellation are all synchronized to a common time,
-but the synchronization is not perfect; an error of even 1 nanosecond translates into a position error of 30 cm.
+but the synchronization is not perfect; an error of even 1 nanosecond translates into a position error of 30cm.
 
 It is possible to estimate these and other similar errors after the fact by collecting and analyzing raw observations from a network of ground stations, located in precisely known positions across the world.
 These error estimates are called *corrections*, specifically State-Space Representation (SSR) corrections.
@@ -61,6 +61,13 @@ The base emits correction data in the form of RTCM 3 messages, which are fed to 
 The rover uses the messages in conjunction with its own measurements to determine its position.
 RTCM corrections are categorized as Observation Space Representation (OSR) corrections,
 and are only applicable locally.
+RTK works reliably when the base and rover are within 10-20km of each other;
+in optimum conditions it can work up to 100km or so.
+
+The most common protocol used to transfer corrections from the base to the rover is Ntrip.
+The Ntrip protocol defines three roles. A Ntrip caster acts as an intermediary.
+An RTK base station acts as an Ntrip server pushing RTCM corrections to an Ntrip caster.
+An RTK rover acts as an Ntrip client pulling RTCM corrections from an Ntrip caster.
 
 In modern RTK, the correction messages emitted by the base consist mostly of raw observations made by the base.
 The RTCM messages with this information are called Multiple Signal Messages (MSM).
@@ -100,3 +107,18 @@ require different capabilities. A base receiver does not need to have the capabi
 and a rover receiver using hardware RTK does not need to have the capability to emit MSM RTCM messages.
 
 ## Carrier phase
+
+Raw observations include not only pseudorange but also carrier phase and this is what enables centimeter-level precision.
+GNSS signals are transmitted by modulating a sine-wave carrier; the wavelength of the carrier is between about 19 and 25cm.
+While a receiver is locked onto a GNSS signal, it keeps track of the number of cycles that have elapsed since it acquired lock.
+This is measured to a small fraction of a cycle.
+The important thing to understand is that the integer part of a carrier phase observation is not absolute.
+It is measured with respect to a receiver-dependent origin.
+The origin is guaranteed consistent only within a period during which the receiver maintained a continuous lock.
+
+Both PPP and RTK use carrier phase observations to estimate the distance from the satellite to the receiver in cycles.
+This process is called ambiguity resolution (AR),
+because it is resolving the integer ambiguity in the origin of the carrier phase observations.
+RTK normally resolves integer ambiguities in seconds, whereas PPP can take minutes or hours.
+An RTK solution where integer ambiguities have been resolved is called a fixed solution.
+
