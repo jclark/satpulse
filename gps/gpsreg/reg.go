@@ -114,6 +114,15 @@ func CreatePacketFormats(vendor Vendor) []gpsprot.PacketFormat {
 	return formats
 }
 
+// CreateCorrectionFormats returns the packet formats carried by a GNSS
+// correction stream from a network source (Ntrip caster or TCP), as opposed
+// to CreatePacketFormats, which autodetects the output of a connected
+// receiver. SPARTN is included here, but is intentionally absent from the
+// receiver autodetect set because its preamble is the common ASCII byte 's'.
+func CreateCorrectionFormats() []gpsprot.PacketFormat {
+	return []gpsprot.PacketFormat{rtcm.PacketFormat, spartn.PacketFormat}
+}
+
 var vendorMap = func() map[string]Vendor {
 	m := make(map[string]Vendor)
 	for i, name := range vendorNames {

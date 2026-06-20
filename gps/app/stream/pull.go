@@ -23,10 +23,6 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
-// defaultPullFormats are the packet formats stream pull recognises
-// from a correction source.  RTCM is currently the only one.
-var defaultPullFormats = []gpsprot.PacketFormat{gpsreg.RTCMPacketFormat}
-
 // CorReportFromPacket converts a scanned correction-source packet into a
 // pull-source correction report. Non-RTCM packets return nil. The MsgID
 // field is extracted even when ChecksumOK is false; consumers must treat it
