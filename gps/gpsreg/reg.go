@@ -13,6 +13,7 @@ import (
 	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/internal/sdbp"
 	"github.com/jclark/satpulse/gps/internal/sino"
+	"github.com/jclark/satpulse/gps/internal/spartn"
 	"github.com/jclark/satpulse/gps/internal/ubx"
 	"github.com/jclark/satpulse/gps/internal/unc"
 )
@@ -43,6 +44,7 @@ const (
 	TagUBX           = ubx.Tag
 	TagNMEA          = nmea.Tag
 	TagRTCM          = rtcm.Tag
+	TagSPARTN        = spartn.Tag
 	TagCASICBin      = casic.Tag
 	TagAllystarBin   = as.Tag
 	TagSDBP          = sdbp.Tag
