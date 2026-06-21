@@ -2,6 +2,9 @@ package novmsg
 
 import "strings"
 
+// AbbrevSync is the byte that starts every NovAtel abbreviated ASCII line.
+const AbbrevSync byte = '<'
+
 // AbbrevAsciiLine represents a line of a NovAtel abbreviated ASCII message.
 // A message spans one or more lines, each starting with '<': the header
 // line starts with a name directly after the '<' (e.g. "LOGLIST" or "OK");
