@@ -29,11 +29,18 @@ arch=${1:?usage: docker-build-deb.sh <amd64|arm64>}
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 root=$(git -C "$here" rev-parse --show-toplevel)
+
+# Compute the version here on the host, where git works, and pass it into the
+# container. The build context is a git worktree, so its .git is a pointer file
+# to a path outside the container; git inside the container therefore fails and
+# deb-version.sh cannot derive a version on its own.
+deb_version=$("$here/deb-version.sh" | cut -d' ' -f1)
 cd "$root"
 
 set -- -f desktop/Dockerfile \
 	--platform "linux/$arch" \
 	--build-arg "BASE_IMAGE=$BASE_IMAGE" \
+	--build-arg "DEB_VERSION=$deb_version" \
 	--target export \
 	-o "type=local,dest=$OUT/$arch"
 if [ -n "${GO_VERSION:-}" ];      then set -- "$@" --build-arg "GO_VERSION=$GO_VERSION"; fi

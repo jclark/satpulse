@@ -69,9 +69,14 @@ RUN wv="${WAILS_VERSION:-$(go mod edit -json /tmp/go.mod | jq -r '.Require[]|sel
 # The desktop module depends on the parent module (replace => ../), so the build
 # context is the repo root. build-deb.sh builds the app and packages it; it does
 # NOT create the friendly symlink, so the export stage holds a single .deb.
+# DEB_VERSION is computed on the host (where git works) and passed in, because
+# the build context is a git worktree whose .git points outside the container,
+# so deb-version.sh cannot derive the version here. See docker-build-deb.sh.
+ARG DEB_VERSION
 WORKDIR /src
 COPY . .
-RUN cd desktop && ./build-deb.sh
+RUN test -n "$DEB_VERSION" || { echo "DEB_VERSION build-arg is required" >&2; exit 1; } \
+ && cd desktop && ./build-deb.sh "$DEB_VERSION"
 
 # Final stage holds only the .deb artifacts, so
 #   --output type=local,dest=out
