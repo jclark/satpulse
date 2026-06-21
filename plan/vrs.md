@@ -25,10 +25,13 @@ reusable package (`nmeasyn`, stage 3) rather than VRS-specific code.
 
 ## Stage 1: GGA builder (`gps/lib/nmeamsg/gga.go`)
 
-A struct holding the GGA fields in wire order, serialised with `fieldenc`
-(the long-term direction for NMEA, as in `gps/lib/qtmmsg`). `nmeamsg` is
-a low-level syntax library with no `gpsprot` dependency; the builder keeps that
-property and takes primitive inputs.
+A typed field-set struct holding the GGA fields in wire order, serialised with
+`fieldenc` (the long-term direction for NMEA, as in `gps/lib/qtmmsg`).
+`nmeamsg` is a low-level syntax library with no `gpsprot` dependency; the
+builder keeps that property and takes primitive inputs. Follow the split used by
+`novmsg`: the wrapper carries sentence addressing, while the payload struct is
+what the field encoder sees. Do not put a `Sentence()` method on GGA data;
+packet construction (address, checksum, CRLF) belongs in `nmeamsg.Serialize`.
 
 `fieldenc` is strictly one struct field per output slot, but GGA latitude and
 longitude are each two wire fields (magnitude + hemisphere). So they are
@@ -36,23 +39,53 @@ separate struct fields, and the constructor splits the signed angle into a
 degrees/minutes magnitude and a hemisphere.
 
 ```go
-type GGA struct {
-    Time     todUTC // "hhmmss.ss"   (custom marshaler)
-    LatMin   latCoord // "ddmm.mmmmm"  (deg+min struct, 2-digit degrees)
-    LatNS    hemi     // "N"/"S"       (hemi is `type hemi string`, no marshaler)
-    LonMin   lonCoord // "dddmm.mmmmm" (deg+min struct, 3-digit degrees)
-    LonEW    hemi   // "E"/"W"
-    Quality  uint8  // 0..8 fix quality (0 = no fix)
-    NumSats  uint8
-    HDOP     dec    // fixed-point, formatted via decconv
-    Alt      string // empty (height not used)
-    AltUnit  string // empty
-    GeoidSep string // empty
-    GeoidU   string // empty
-    DGPSAge  string // empty
-    DGPSID   string // empty
+type TalkerID string
+
+const TalkerGP TalkerID = "GP"
+
+type SentenceFields interface {
+	SentenceFormat() string
 }
+
+type Sentence[F SentenceFields] struct {
+	TalkerID TalkerID
+	Fields   F
+}
+
+type GGAFields struct {
+	Time     todUTC   // "hhmmss.ss"   (custom marshaler)
+	LatMin   latCoord // "ddmm.mmmmm"  (deg+min struct, 2-digit degrees)
+	LatNS    hemi     // "N"/"S"       (hemi is `type hemi string`, no marshaler)
+	LonMin   lonCoord // "dddmm.mmmmm" (deg+min struct, 3-digit degrees)
+	LonEW    hemi     // "E"/"W"
+	Quality  uint8    // 0..8 fix quality (0 = no fix)
+	NumSats  uint8
+	HDOP     dec    // fixed-point, formatted via decconv
+	Alt      string // empty (height not used)
+	AltUnit  string // empty
+	GeoidSep string // empty
+	GeoidU   string // empty
+	DGPSAge  string // empty
+	DGPSID   string // empty
+}
+
+func (GGAFields) SentenceFormat() string { return "GGA" }
 ```
+
+`Sentence[F]` represents an addressed approved NMEA sentence. `F` is the typed
+field set and provides the NMEA sentence format (`"GGA"` here). `Serialize`
+applies `fieldenc.Encode` to `s.Fields`, then builds the sentence payload as
+`<talker><format>[,<fields>]`, appends `*` + `nmeamsg.Checksum` + CRLF, and
+returns the packet bytes:
+
+```go
+func Serialize[F SentenceFields](s Sentence[F]) ([]byte, error)
+```
+
+For `Sentence[GGAFields]` with `TalkerGP`, this yields an address of `GPGGA`.
+The talker ID is not baked into the serializer or the GGA field set, so adding
+RMC/GSA/etc. later is another `SentenceFields` implementation plus the same
+`Sentence[F]` wrapper.
 
 Custom types (each gets `MarshalText`, and `UnmarshalText` for parsing
 symmetry):
@@ -76,34 +109,25 @@ symmetry):
 API (primitive, `gpsprot`-free):
 
 ```go
-func MakeGGA(t time.Time, lat, lon float64, quality, numSats uint8, hdop float64) GGA
-func (g GGA) Sentence() string          // "$GPGGA,<fields>*hh\r\n"
-func (g GGA) LatLon() (lat, lon float64) // signed decimal degrees, from coord + hemisphere
+func MakeGGA(talker TalkerID, t time.Time, lat, lon float64, quality, numSats uint8, hdop float64) Sentence[GGAFields]
+func Serialize[F SentenceFields](s Sentence[F]) ([]byte, error) // "$<talker><format>,<fields>*hh\r\n"
+func (g GGAFields) LatLon() (lat, lon float64) // signed decimal degrees, from coord + hemisphere
 ```
 
-`Sentence` joins `fieldenc.Encode(g)` with commas, prepends `$GPGGA,`, and
-appends `*` + `nmeamsg.Checksum` + CRLF. Talker `$GPGGA` (matches the spec
-example). `LatLon` lets a consumer recover the position numerically without
-re-parsing the formatted sentence (used by the VRS move gate, stage 4).
-
-`GGA` satisfies a small interface in `nmeamsg` used as the synthesis sink's
-payload type, so other NMEA sentence types can be added later:
-
-```go
-type Msg interface { Sentence() string }
-```
+`LatLon` lets a consumer recover the position numerically without re-parsing the
+formatted sentence (used by the VRS move gate, stage 4).
 
 Tests:
 - Golden sentences for known positions in each hemisphere, exact bytes incl.
-  checksum.
+  checksum, produced through `Serialize`.
 - Minutes < 10 (zero-padding) and the degree/minute split boundary.
-- `LatLon` round-trips `MakeGGA` inputs within tolerance.
+- `LatLon` round-trips `MakeGGA(...).Fields` inputs within tolerance.
 - Encode -> decode -> encode round-trip is byte-exact (exercises the
   `UnmarshalText` halves; exactness follows from the integer deg/min coord
   representation).
 
-Follow-up (not required here): once `GGA` parses via `fieldenc.Decode`, it can
-replace the hand-rolled `parseGGA` in `gps/internal/nmea/nmea.go`.
+Follow-up (not required here): once `GGAFields` parses via `fieldenc.Decode`,
+it can replace the hand-rolled `parseGGA` in `gps/internal/nmea/nmea.go`.
 
 ## Stage 2: `ntripcmd --pos` option
 
@@ -112,12 +136,13 @@ uses `nmeamsg.MakeGGA` directly (not `nmeasyn`).
 
 - Add `--pos lat,lon` (two floats; no height). Presence of the flag marks
   VRS mode for the command.
-- When set, build a GGA with `nmeamsg.MakeGGA(time.Now().UTC(), lat, lon, 1,
-  nSats, hdop)` (quality 1 = GPS fix; nominal `nSats`/`hdop` constants) and
-  send it in the Ntrip v1 request body.
-- Mechanism: `stream.NtripSource` gains an optional initial-GGA string appended
+- When set, build a GGA with `nmeamsg.MakeGGA(nmeamsg.TalkerGP,
+  time.Now().UTC(), lat, lon, 1, nSats, hdop)` (quality 1 = GPS fix; nominal
+  `nSats`/`hdop` constants), serialize it with `nmeamsg.Serialize`, and send it
+  in the Ntrip v1 request body.
+- Mechanism: `stream.NtripSource` gains optional initial-GGA bytes appended
   after the request's blank line (`request()` / handshake); `ntripcmd`
-  constructs the source with that string. (At this stage `Source.Connect` is
+  constructs the source with those bytes. (At this stage `Source.Connect` is
   still read-only - the writer half arrives in stage 4 - so the request body is
   the only place to put the GGA. Stage 4 adds the writer and moves the initial
   GGA to a post-connect socket write, leaving this request-body path for the
@@ -144,7 +169,7 @@ GGA only, but as correctly as possible, and structured so other sentence types
 
 ```go
 // Sink receives synthesised NMEA messages (one method).
-type Sink interface { NMEA(msg nmeamsg.Msg) }
+type Sink interface { GGA(gga nmeamsg.Sentence[nmeamsg.GGAFields]) }
 
 func New(sink Sink) *Synth   // *Synth implements gpsprot.MsgHandler
 ```
@@ -152,9 +177,10 @@ func New(sink Sink) *Synth   // *Synth implements gpsprot.MsgHandler
 - Implements `gpsprot.MsgHandler` (embedding `gpsprot.DefaultHandler`, the no-op
   base, for the callbacks it ignores). It accumulates per-epoch state from
   `TimeMsg` and `PosGeoMsg`/`PosECEFMsg`, and on `NavEpochMsg` (the epoch
-  boundary) builds a `nmeamsg.GGA` from that state plus the `NavEpochMsg` fields
-  and calls `sink.NMEA(gga)`. (Later sentence types such as GSA/GSV would also
-  accumulate `SatellitesMsg`.)
+  boundary) builds a `nmeamsg.Sentence[nmeamsg.GGAFields]` from that state plus
+  the `NavEpochMsg` fields and calls `sink.GGA(gga)`. (Later sentence types such
+  as GSA/GSV would also accumulate `SatellitesMsg` and add their own sink
+  methods or a serialization adapter.)
 - Field sources, to keep the GGA non-bogus:
   - time from `TimeMsg`;
   - lat/lon from `PosGeoMsg.LatLon` (`Angle`, to decimal degrees);
@@ -174,7 +200,7 @@ func New(sink Sink) *Synth   // *Synth implements gpsprot.MsgHandler
     that would extend `MakeGGA` (the unexported field types mean callers build
     GGAs only through the constructor).
 - Emits a GGA every epoch; quality is `0` when there is no fix, so consumers
-  that care about validity read it off the sentence. This keeps `nmeasyn`
+  that care about validity read `gga.Fields.Quality`. This keeps `nmeasyn`
   general (a TCP-NMEA-server sink wants every epoch).
 - Wired into the dispatch fan-out (the `gpsprot.MultiHandler` built in
   `gpsevent.NewDispatcher`) as a `gpsprot.MsgHandler`. Because it joins via the
@@ -200,21 +226,24 @@ no separate ECEF / position feed.
    `NtripSource` uses it; `TCPSource` ignores it.
 
 3. **`ggaSender`** - a struct owning a goroutine and all of `(currentWriter,
-   lastSentLatLon)` plus the latest `GGA`; no shared mutable state. It
+   lastSentLatLon)` plus the latest `Sentence[GGAFields]`; no shared mutable
+   state. It
    `select`s on:
    - the GGA feed (cap-1, from the `nmeasyn` sink): hold it as latest; if
-     `currentWriter` is set, quality > 0, and the 2D distance from
-     `lastSentLatLon` exceeds the threshold, write the prebuilt `gga` with a
-     write deadline and update `lastSentLatLon`; on write error drop the
-     writer (the read side will detect the dead connection and reconnect).
+     `currentWriter` is set, `gga.Fields.Quality > 0`, and the 2D distance from
+     `lastSentLatLon` exceeds the threshold, serialize the latest GGA with
+     `nmeamsg.Serialize`, write those bytes with a write deadline, and update
+     `lastSentLatLon`; on write error drop the writer (the read side will detect
+     the dead connection and reconnect).
    - `connCh` (from `reader`, one value per successful dial: the new writer):
-     adopt the writer and immediately force-send the held latest `gga` (the
-     initial GGA the caster needs), setting `lastSentLatLon`.
+     adopt the writer and immediately serialize and force-send the held latest
+     GGA (the initial GGA the caster needs), setting `lastSentLatLon`.
    - `ctx.Done()`: exit.
 
-   The move gate uses `gga.LatLon()` and a 2D flat-earth (equirectangular)
-   distance - `dx = dLon*cos(lat)*k`, `dy = dLat*k`, `hypot` - ignoring height,
-   which is ample for a tens-of-metres threshold over short distances.
+   The move gate uses `gga.Fields.LatLon()` and a 2D flat-earth
+   (equirectangular) distance - `dx = dLon*cos(lat)*k`, `dy = dLat*k`,
+   `hypot` - ignoring height, which is ample for a tens-of-metres threshold over
+   short distances.
 
 4. **Reconnect (rides the existing loop)** - `reader()` is the only goroutine
    that dials, so it owns reconnection; the existing connect -> `readLoop` ->
@@ -258,9 +287,10 @@ Test: Add a scenario to smoketest/ for this.
   (daemon.go:318), so the daemon can build `nmeasyn.New(pullSetup.Sink())` and
   inject it. The sink bridges into the `ggaSender`; because Go satisfies
   interfaces implicitly, `gps/app/stream` only imports `gps/lib/nmeamsg` (to name
-  `nmeamsg.Msg`), never `gps/nmeasyn` - so no import cycle and `stream` stays
-  unaware of `nmeasyn`. The daemon also decides *whether* to build it at all (no
-  pull / no NMEA consumer -> no sink -> no handler). Remaining choice: have
+  `nmeamsg.Sentence[nmeamsg.GGAFields]`), never `gps/nmeasyn` - so no import
+  cycle and `stream` stays unaware of `nmeasyn`. The daemon also decides
+  *whether* to build it at all (no pull / no NMEA consumer -> no sink -> no
+  handler). Remaining choice: have
   `NewDispatcher` grow an `extraHandlers ...gpsprot.MsgHandler` parameter
   (preferred) vs. assembling the `MultiHandler` in the daemon. `PullSetup` must
   gain a method exposing the sink.
