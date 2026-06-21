@@ -42,10 +42,12 @@ known as the L1 band.
 Later, each GNSS started broadcasting on multiple bands,
 and receivers were developed that could receive signals on two bands simultaneously.
 This enables receivers to compensate for the ionospheric error,
-which can improve accuracy to about 1 m.
+which can improve accuracy to about 1-2 m.
 The earliest dual-band receivers are L1/L2, meaning they use the L2 band in addition to the L1 band.
 More modern dual-band receivers use the L5 band rather than the L2 band.
 High-end receivers can receive on all bands simultaneously.
+
+TODO: compare constellations; GLONASS odd one out; mention NMA
 
 When a GNSS receiver is used with a computer system, it almost always has some sort of serial connection,
 such as a UART, USB or I2C.
