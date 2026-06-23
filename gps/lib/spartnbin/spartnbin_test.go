@@ -2,54 +2,71 @@ package spartnbin
 
 import (
 	"bytes"
+	"encoding/hex"
 	"testing"
 )
 
-// Real SPARTN frames captured from a u-blox D9S L-band receiver. Both are
-// encrypted (EAF=1), CRC-24, 16-bit time tag.
-const (
-	frame01 = "\x73\x00\x1f\xed\x13\x2a\x38\x5c\x2b\xc8\x87\x01\xa8\xdd\x92\x95\x78\x80\x66\x33\x97\xa9\x3f\x46\xdc\x6b\x3a\x9a\x64\x19\x89\x58\xfd\x5e\xc6\x66\x2e\xcd\x50\xa5\x4e\xe3\x83\xff\xc9\xcd\xcb\x9d\x3f\x13\xac\x19\xf5\x09\x80\x66\xf4\x63\x71\x31\xcf\x98\xd8\xde\xd1\xb7\xa8\x17\xc2\x2e\xba\x31\x3a\xea\xf6\x44"
-	frame02 = "\x73\x00\x11\x63\x21\xd9\x48\x5c\x2c\x48\x2e\xb5\xa8\x27\xb0\x4c\xdb\xf7\xd8\x0f\xce\xe7\x5d\x93\x34\xb3\x8c\x25\x5b\x05\x29\x62\x7a\xa8\x74\x80\xec\x9d\xa8\x7e\x25\xfd\xe7\x47\x6f\xd7\x36"
-)
+func mustHexDecode(s string) []byte {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// realFrames holds real, unencrypted SPARTN frames captured from a u-blox
+// PointPerfect IP service: CRC-24, with 16-bit time tags for the OCB (type 0)
+// messages and 32-bit tags for the HPAC (type 1) and GAD (type 2) messages.
+var realFrames = []struct {
+	name    string
+	hexstr  string
+	msg     string // expected MsgID ("type-subtype")
+	crcType uint8
+	ttType  uint8
+	payLen  int
+}{
+	{"0-0", "73000f21036ce013ce8021a0811017f0b1a2fdf3245fbf7a8bf7f2117f0f822fddb345fc22e88506dd", "0-0", 2, 0, 30},
+	{"0-1", "73000d2014bdd013cec0030a0617f05ea25e8e745fb6808bf623117f3d222fdcbe403e2af6", "0-1", 2, 0, 26},
+	{"0-2", "73000fa8236ce013ce81001c4020a0be7f7117d274a2f9f0645fbf628bf8c9917ef71a2f9e9d40c5db1f", "0-2", 2, 0, 31},
+	{"0-3", "73001027336c7013ce8020810006018815b0baa2fe08545fc0de8bf7a9d17efe5a2fdf8145fc13289dd5f3", "0-3", 2, 0, 32},
+	{"1-0", "73020da208f7e7f98013ce8013a0141804e021a0811009f7054f82a7c15650a67091802a95578310", "1-0", 2, 1, 27},
+	{"1-1", "73020cab18f7e94a7013ce8013a0141804e0030a0633511b4a832e35978eda089913e0ecdcb1", "1-1", 2, 1, 25},
+	{"1-2", "73020e2328f7e7f98013ce8013a0141804e00038804140a5f58ff627311485b2a40d958894301ef12f", "1-2", 2, 1, 28},
+	{"1-3", "73020eaa38f7e7f91013ce8013a0141804e08204001806202b3b54a1aaab4529e2ac24575a29348a7093", "1-3", 2, 1, 29},
+	{"2-0", "730404a108f7e7f98013ce8013b651bc9b43405f9140", "2-0", 2, 1, 9},
+}
 
 func TestParseRealFrames(t *testing.T) {
-	tests := []struct {
-		data    string
-		msgID   string
-		crcType uint8
-		payLen  int
-	}{
-		{frame01, "0-1", 2, 63},
-		{frame02, "0-2", 2, 34},
-	}
-	for _, tt := range tests {
-		pkt := []byte(tt.data)
-		f, err := Parse(pkt)
-		if err != nil {
-			t.Fatalf("Parse(%s): %v", tt.msgID, err)
-		}
-		if f.MsgID() != tt.msgID {
-			t.Errorf("MsgID = %q, want %q", f.MsgID(), tt.msgID)
-		}
-		if !f.EAF {
-			t.Errorf("%s: EAF = false, want true", tt.msgID)
-		}
-		if f.CRCType != tt.crcType {
-			t.Errorf("%s: CRCType = %d, want %d", tt.msgID, f.CRCType, tt.crcType)
-		}
-		if len(f.Payload) != tt.payLen {
-			t.Errorf("%s: payload len = %d, want %d", tt.msgID, len(f.Payload), tt.payLen)
-		}
-		if total, ok := FrameLen(pkt); !ok || total != len(pkt) {
-			t.Errorf("%s: FrameLen = %d, %v, want %d, true", tt.msgID, total, ok, len(pkt))
-		}
-		if !VerifyHeaderCRC(pkt) {
-			t.Errorf("%s: TF006 header CRC not verified", tt.msgID)
-		}
-		if !bytes.Equal(ComputeChecksum(pkt), ExtractChecksum(pkt)) {
-			t.Errorf("%s: TF018 checksum mismatch: got %x want %x",
-				tt.msgID, ComputeChecksum(pkt), ExtractChecksum(pkt))
-		}
+	for _, tt := range realFrames {
+		t.Run(tt.name, func(t *testing.T) {
+			pkt := mustHexDecode(tt.hexstr)
+			f, err := Parse(pkt)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if f.MsgID() != tt.msg {
+				t.Errorf("MsgID = %q, want %q", f.MsgID(), tt.msg)
+			}
+			if f.CRCType != tt.crcType {
+				t.Errorf("CRCType = %d, want %d", f.CRCType, tt.crcType)
+			}
+			if f.TimeTagType != tt.ttType {
+				t.Errorf("TimeTagType = %d, want %d", f.TimeTagType, tt.ttType)
+			}
+			if len(f.Payload) != tt.payLen {
+				t.Errorf("payload len = %d, want %d", len(f.Payload), tt.payLen)
+			}
+			if total, ok := FrameLen(pkt); !ok || total != len(pkt) {
+				t.Errorf("FrameLen = %d, %v, want %d, true", total, ok, len(pkt))
+			}
+			if !VerifyHeaderCRC(pkt) {
+				t.Errorf("TF006 header CRC not verified")
+			}
+			if !bytes.Equal(ComputeChecksum(pkt), ExtractChecksum(pkt)) {
+				t.Errorf("TF018 checksum mismatch: got %x want %x",
+					ComputeChecksum(pkt), ExtractChecksum(pkt))
+			}
+		})
 	}
 }
 

@@ -2,26 +2,55 @@ package spartn
 
 import (
 	"bytes"
+	"encoding/hex"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/scantest"
 )
 
-// Real encrypted SPARTN frame (message 0-1) from a u-blox D9S receiver.
-const spartnEx = "\x73\x00\x1f\xed\x13\x2a\x38\x5c\x2b\xc8\x87\x01\xa8\xdd\x92\x95\x78\x80\x66\x33\x97\xa9\x3f\x46\xdc\x6b\x3a\x9a\x64\x19\x89\x58\xfd\x5e\xc6\x66\x2e\xcd\x50\xa5\x4e\xe3\x83\xff\xc9\xcd\xcb\x9d\x3f\x13\xac\x19\xf5\x09\x80\x66\xf4\x63\x71\x31\xcf\x98\xd8\xde\xd1\xb7\xa8\x17\xc2\x2e\xba\x31\x3a\xea\xf6\x44"
+func mustHexDecode(s string) []byte {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// spartnFrames holds real, unencrypted SPARTN frames captured from a u-blox
+// PointPerfect IP service: OCB (type 0), HPAC (type 1), and GAD (type 2)
+// messages across the GPS/GLONASS/Galileo/BeiDou subtypes.
+var spartnFrames = []struct {
+	name   string
+	hexstr string
+	msg    string // expected MsgID ("type-subtype")
+}{
+	{"ocb-gps", "73000f21036ce013ce8021a0811017f0b1a2fdf3245fbf7a8bf7f2117f0f822fddb345fc22e88506dd", "0-0"},
+	{"ocb-glonass", "73000d2014bdd013cec0030a0617f05ea25e8e745fb6808bf623117f3d222fdcbe403e2af6", "0-1"},
+	{"ocb-galileo", "73000fa8236ce013ce81001c4020a0be7f7117d274a2f9f0645fbf628bf8c9917ef71a2f9e9d40c5db1f", "0-2"},
+	{"ocb-beidou", "73001027336c7013ce8020810006018815b0baa2fe08545fc0de8bf7a9d17efe5a2fdf8145fc13289dd5f3", "0-3"},
+	{"hpac-gps", "73020da208f7e7f98013ce8013a0141804e021a0811009f7054f82a7c15650a67091802a95578310", "1-0"},
+	{"hpac-glonass", "73020cab18f7e94a7013ce8013a0141804e0030a0633511b4a832e35978eda089913e0ecdcb1", "1-1"},
+	{"hpac-galileo", "73020e2328f7e7f98013ce8013a0141804e00038804140a5f58ff627311485b2a40d958894301ef12f", "1-2"},
+	{"hpac-beidou", "73020eaa38f7e7f91013ce8013a0141804e08204001806202b3b54a1aaab4529e2ac24575a29348a7093", "1-3"},
+	{"gad", "730404a108f7e7f98013ce8013b651bc9b43405f9140", "2-0"},
+}
 
 func TestGoodSPARTN(t *testing.T) {
-	buf := []byte(spartnEx)
-	startPos, endPos, ok := scantest.FindPacket(PacketFormat, buf)
-	if startPos != 0 || endPos != len(buf) || !ok {
-		t.Fatalf("failed to scan valid SPARTN packet: start=%d end=%d ok=%v", startPos, endPos, ok)
-	}
-	if id := PacketFormat.MsgID(buf); id != "0-1" {
-		t.Fatalf("MsgID = %q, want %q", id, "0-1")
-	}
-	if !bytes.Equal(PacketFormat.ComputeChecksum(buf), PacketFormat.ExtractChecksum(buf)) {
-		t.Fatalf("SPARTN checksum not recognized as correct")
+	for _, tt := range spartnFrames {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := mustHexDecode(tt.hexstr)
+			startPos, endPos, ok := scantest.FindPacket(PacketFormat, buf)
+			if startPos != 0 || endPos != len(buf) || !ok {
+				t.Fatalf("failed to scan valid SPARTN packet: start=%d end=%d ok=%v", startPos, endPos, ok)
+			}
+			if id := PacketFormat.MsgID(buf); id != tt.msg {
+				t.Fatalf("MsgID = %q, want %q", id, tt.msg)
+			}
+			if !bytes.Equal(PacketFormat.ComputeChecksum(buf), PacketFormat.ExtractChecksum(buf)) {
+				t.Fatalf("SPARTN checksum not recognized as correct")
+			}
+		})
 	}
 }
 
@@ -29,7 +58,7 @@ func TestGoodSPARTN(t *testing.T) {
 // with a corrupted transport header (which a stray preamble byte amounts to) is
 // not recognized as valid, even though its framing arithmetic is unaffected.
 func TestHeaderCRCGate(t *testing.T) {
-	buf := []byte(spartnEx)
+	buf := mustHexDecode(spartnFrames[0].hexstr)
 	if !gpsprot.IsValidPacket(PacketFormat, buf) {
 		t.Fatalf("valid SPARTN frame not recognized")
 	}
@@ -43,7 +72,7 @@ func TestHeaderCRCGate(t *testing.T) {
 // TestBadChecksumNotFinal confirms a corrupted frame is still framed (Next is
 // structural) but fails the checksum comparison.
 func TestBadChecksumNotFinal(t *testing.T) {
-	buf := []byte(spartnEx)
+	buf := mustHexDecode(spartnFrames[0].hexstr)
 	bad := bytes.Clone(buf)
 	bad[20] ^= 0xFF // corrupt a payload byte
 	if _, _, ok := scantest.FindPacket(PacketFormat, bad); !ok {

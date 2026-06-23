@@ -13,36 +13,58 @@ import (
 
 var spartnFormats = []gpsprot.PacketFormat{spartn.PacketFormat}
 
-// Real encrypted SPARTN frame (message 0-1) from a u-blox D9S receiver.
-const spartnEx = "\x73\x00\x1f\xed\x13\x2a\x38\x5c\x2b\xc8\x87\x01\xa8\xdd\x92\x95\x78\x80\x66\x33\x97\xa9\x3f\x46\xdc\x6b\x3a\x9a\x64\x19\x89\x58\xfd\x5e\xc6\x66\x2e\xcd\x50\xa5\x4e\xe3\x83\xff\xc9\xcd\xcb\x9d\x3f\x13\xac\x19\xf5\x09\x80\x66\xf4\x63\x71\x31\xcf\x98\xd8\xde\xd1\xb7\xa8\x17\xc2\x2e\xba\x31\x3a\xea\xf6\x44"
+// spartnFrames holds real, unencrypted SPARTN frames captured from a u-blox
+// PointPerfect IP service, one per message type/subtype present in the capture.
+var spartnFrames = []struct {
+	name   string
+	hexstr string
+	msg    string // expected MsgID ("type-subtype")
+}{
+	{"ocb-gps", "73000f21036ce013ce8021a0811017f0b1a2fdf3245fbf7a8bf7f2117f0f822fddb345fc22e88506dd", "0-0"},
+	{"ocb-glonass", "73000d2014bdd013cec0030a0617f05ea25e8e745fb6808bf623117f3d222fdcbe403e2af6", "0-1"},
+	{"ocb-galileo", "73000fa8236ce013ce81001c4020a0be7f7117d274a2f9f0645fbf628bf8c9917ef71a2f9e9d40c5db1f", "0-2"},
+	{"ocb-beidou", "73001027336c7013ce8020810006018815b0baa2fe08545fc0de8bf7a9d17efe5a2fdf8145fc13289dd5f3", "0-3"},
+	{"hpac-gps", "73020da208f7e7f98013ce8013a0141804e021a0811009f7054f82a7c15650a67091802a95578310", "1-0"},
+	{"hpac-glonass", "73020cab18f7e94a7013ce8013a0141804e0030a0633511b4a832e35978eda089913e0ecdcb1", "1-1"},
+	{"hpac-galileo", "73020e2328f7e7f98013ce8013a0141804e00038804140a5f58ff627311485b2a40d958894301ef12f", "1-2"},
+	{"hpac-beidou", "73020eaa38f7e7f91013ce8013a0141804e08204001806202b3b54a1aaab4529e2ac24575a29348a7093", "1-3"},
+	{"gad", "730404a108f7e7f98013ce8013b651bc9b43405f9140", "2-0"},
+}
 
 func TestSpartn(t *testing.T) {
-	buf, packetIndex := scantest.InsertRandomPrefix(spartnEx, spartn.PreambleByte)
-	r := bytes.NewReader(buf)
-	result := make([]byte, 0, len(buf))
-	scanner := scan.New(r, 10, spartnFormats)
-	found := false
-	for {
-		pkt, err := scanner.Scan()
-		if pkt.HasTag(spartn.Tag) {
-			if len(result) != packetIndex {
-				t.Fatalf("Expected SPARTN after %d bytes, but got after %d bytes", packetIndex, len(result))
+	for _, tt := range spartnFrames {
+		t.Run(tt.name, func(t *testing.T) {
+			buf, packetIndex := scantest.InsertRandomPrefix(string(mustHexDecode(tt.hexstr)), spartn.PreambleByte)
+			r := bytes.NewReader(buf)
+			result := make([]byte, 0, len(buf))
+			scanner := scan.New(r, 10, spartnFormats)
+			found := false
+			for {
+				pkt, err := scanner.Scan()
+				if pkt.HasTag(spartn.Tag) {
+					if len(result) != packetIndex {
+						t.Fatalf("Expected SPARTN after %d bytes, but got after %d bytes", packetIndex, len(result))
+					}
+					if id := spartn.PacketFormat.MsgID([]byte(pkt.Data)); id != tt.msg {
+						t.Fatalf("MsgID = %q, want %q", id, tt.msg)
+					}
+					found = true
+				}
+				result = append(result, []byte(pkt.Data)...)
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					t.Fatalf("Error scanning packet: %v", err)
+				}
 			}
-			found = true
-		}
-		result = append(result, []byte(pkt.Data)...)
-		if err != nil {
-			if err == io.EOF {
-				break
+			if !bytes.Equal(result, buf) {
+				t.Fatalf("Expected %x, but got %x", buf, result)
 			}
-			t.Fatalf("Error scanning packet: %v", err)
-		}
-	}
-	if !bytes.Equal(result, buf) {
-		t.Fatalf("Expected %x, but got %x", buf, result)
-	}
-	if !found {
-		t.Fatalf("No SPARTN packet found")
+			if !found {
+				t.Fatalf("No SPARTN packet found")
+			}
+		})
 	}
 }
 
@@ -50,7 +72,7 @@ func TestSpartn(t *testing.T) {
 // byte (0x73 = 's', common in text) in the lead-in and still finds the frame.
 func TestSpartnStrayPreamble(t *testing.T) {
 	junk := []byte("press s to start\x73\x00\x00")
-	buf := append(junk, spartnEx...)
+	buf := append(junk, mustHexDecode(spartnFrames[0].hexstr)...)
 	r := bytes.NewReader(buf)
 	result := make([]byte, 0, len(buf))
 	scanner := scan.New(r, 10, spartnFormats)
