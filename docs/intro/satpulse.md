@@ -4,8 +4,8 @@ title: SatPulse
 
 The SatPulse software consists of two programs:
 
-- `satpulsed` - an integrated daemon, which connects to a GPS receiver over a serial port; the functions it performs are controlled by a configuration file in TOML format
-- `satpulsetool` - a suite of command-line tools, usable with or without the daemon; there is a subcommand for each tool
+- [`satpulsed`]({%link man/satpulsed.8.md%}) - an integrated daemon, which connects to a GPS receiver over a serial port; the functions it performs are controlled by a configuration file in [TOML format]({%link man/satpulse.toml.5.md%})
+- [`satpulsetool`]({%link man/satpulsetool.1.md%}) - a suite of command-line tools, usable with or without the daemon; there is a subcommand for each tool
 
 Both programs are written in Go and use a common Go library.
 
@@ -36,8 +36,8 @@ Most of SatPulse's timing functionality is designed to support use of a PHC. `sa
 
 `satpulsetool` provides two PHC-related tools:
 
-- the `sdp` tool provides a convenient way for working with PHC SDPs
-- the `syncsim` tool simulates synchronization and can be used to tune configuration parameters
+- the [`sdp`]({%link man/satpulsetool-sdp.1.md%}) tool provides a convenient way for working with PHC SDPs
+- the [`syncsim`]({%link man/satpulsetool-syncsim.1.md%}) tool simulates synchronization and can be used to tune configuration parameters
 
 ## Positioning
 
@@ -51,7 +51,7 @@ SatPulse is designed to support the use of hardware RTK. These features are new 
 
 `satpulsetool` provides the `ntrip` tool for fetching correction data from an Ntrip caster.
 
-Also new in 0.3, `satpulsetool` provides the `convobs` tool for converting raw observation data,
+Also new in 0.3, `satpulsetool` provides the [`convobs`]({%link man/satpulsetool-convobs.1.md%}) tool for converting raw observation data,
 in either RTCM MSM7 or vendor-specific formats, into RINEX.
 RINEX files can be sent to a post-processing service such as CSRS-PPP,
 in order to get the most accurate possible position estimate.
@@ -63,7 +63,7 @@ SatPulse also provides access to position data; `satpulsed` can
 
 ## GPS receiver configuration
 
-`satpulsetool` provides the `gps` tool for GPS receiver configuration.
+`satpulsetool` provides the [`gps`]({%link man/satpulsetool-gps.1.md%}) tool for GPS receiver configuration.
 It supports two styles of configuration:
 - high-level configuration is expressed in device-independent terms; it can be used without having any knowledge of vendor-specific protocols
 - low-level configuration is based on message files, which contain named collections of messages
@@ -128,8 +128,8 @@ Packet logs can be captured by `satpulsed` or by the `gps` tool.
 
 `satpulsetool` includes several tools for working with packet byte streams and packet logs:
 
-- `scan` converts a packet byte stream into a JSONL packet log
-- `pack` converts a JSONL packet log back into a packet byte stream
+- [`scan`]({%link man/satpulsetool-scan.1.md%}) converts a packet byte stream into a JSONL packet log
+- [`pack`]({%link man/satpulsetool-pack.1.md%}) converts a JSONL packet log back into a packet byte stream
 - `decode` decodes an individual packet into a JSON object
 - `annotate` adds decoded fields to a JSONL packet log
 - `replay` converts a packet log into the same JSONL event log format used by `satpulsed`
