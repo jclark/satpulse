@@ -1,0 +1,718 @@
+#:schema ../gpsmsg-schema.json
+# MC280 configuration messages
+# Qianxun MC280/MC282 GNSS receiver (QX "Buguang" ASCII protocol, spec V1.74)
+# Default baud rate: 115200
+#
+# Protocol notes:
+#  - All config messages are NMEA-framed proprietary sentences: a leading "$"
+#    and a trailing "*CS" checksum are added automatically by satpulsetool.
+#  - There is NO ",W,"/",R," mode field and NO numeric read/write mode. The
+#    SET-vs-GET distinction is by parameter PRESENCE:
+#      GET  = message name with no parameters (e.g. "QXCFGGNSS")
+#      SET  = message name followed by the full parameter list
+#  - A successful command is acknowledged with a bare "$ACK"; a failure with
+#    "$NACK,<errorCode>" (0=bad command/param, 1=checksum, 2=exec failure).
+#  - A GET is answered by the receiver echoing the same message name with the
+#    current values filled in, FOLLOWED by an "$ACK".
+#  - Hex literals use a leading "h", not "0x" (e.g. h2F, h01030909).
+#  - In QXCFGMSG,<class>,<id>[,<rate>] the two numbers are msgClass,msgID -
+#    NOT a read/write mode. rate 0 disables; 1..255 = output every N nav epochs.
+#    msgClass: 0=QX custom, 1=NMEA, 2=RTCM, 3=slave GSV, 4=QX binary.
+#
+# Testing: satpulsetool does not natively correlate QX $ACK/$NACK, so every tag
+# was verified by inspecting captured packet logs (--packet-log). Tested on a
+# remote MC280 on /dev/ttyUSB0 @115200 on 2026-06-23. The unit was in rover mode,
+# 10 Hz, NMEA 4.1, multi-GNSS (GPS+BDS+GAL+GLO+QZSS), antenna reporting "open"
+# but still tracking satellites (bench setup). All test changes were RAM-only
+# (no "save") and reverted with "reload" afterwards.
+#
+# Summary of what does and does not work on this firmware:
+#  - WORKS: every get-* query below except get-version and get-rtcm; all NMEA
+#    output control (QXCFGMSG class 1); fix-rate, nmea-ver, min-elev, gnss,
+#    pps, fixed-pos / base mode, reload.
+#  - DOES NOT WORK: get-version (QXMONVER -> $NACK,0, command not implemented);
+#    RTCM output (1005 enable -> $NACK; MSM4 type-enables ACK but emit nothing
+#    because the port output-protocol mask lacks the RTCM bit - see rtcm-* below;
+#    MSM7 unsupported). get-rtcm rate queries mostly $NACK.
+
+# Per-message spacing so $ACK/$NACK replies do not collide in the packet log.
+[default.nmea]
+delay = 0.2
+
+# ---------------------------------------------------------------------------
+# Version / probe
+# ---------------------------------------------------------------------------
+
+# Get firmware and hardware version.
+# Response would be: $QXMONVER,PN,swVersion,hwVersion,SN
+# DOES NOT WORK: $NACK,0 on MC280 - this firmware does not implement QXMONVER
+# (rejected on 3 attempts, incl. when not the first command sent). QX spec V1.74
+# documents no alternative version query. Kept for firmware that does support it.
+[[nmea]]
+text = "QXMONVER"
+tag = "get-version"
+description = "Get firmware and hardware version (unsupported on this MC280)"
+
+# ---------------------------------------------------------------------------
+# Read-only queries (safe to batch together as a probe)
+# ---------------------------------------------------------------------------
+
+# Get GNSS constellation/signal configuration.
+# Verified response on MC280: $QXCFGGNSS,h2F,h1B,h01030909,h00000000
+# (GPS+BDS+GAL+GLO+QZSS; freqID h1B = L1+L2+L5+L6).
+[[nmea]]
+text = "QXCFGGNSS"
+tag = "get-gnss"
+description = "Get GNSS constellation configuration"
+
+# Get measurement/navigation rate (QXCFGRATE,measRateMs,navRate).
+# Verified response on MC280: $QXCFGRATE,100,1 (10 Hz).
+[[nmea]]
+text = "QXCFGRATE"
+tag = "get-fix-rate"
+description = "Get fix (navigation) rate"
+
+# Get NMEA protocol version.
+# Verified response on MC280: $QXCFGNMEA,41 (NMEA 4.1).
+[[nmea]]
+text = "QXCFGNMEA"
+tag = "get-nmea-ver"
+description = "Get NMEA protocol version"
+
+# Get satellite elevation cutoff angle.
+# Verified response on MC280: $QXCFGELTH,5 (5 degrees).
+[[nmea]]
+text = "QXCFGELTH"
+tag = "get-min-elev"
+description = "Get elevation cutoff angle"
+
+# Get timing-pulse (PPS) configuration.
+# Verified response on MC280: $QXCFGTP,h1,1000,500000,0,0,800,0
+# (enabled, 1 s interval, 0.5 s pulse, UTC, rfDelay 800 ns).
+[[nmea]]
+text = "QXCFGTP"
+tag = "get-pps"
+description = "Get PPS (timing pulse) configuration"
+
+# Get base/rover mode and fixed/survey position (QXCFGMODE).
+# Verified response on MC280: $QXCFGMODE,1 (rover mode); in base mode it echoes
+# mode 0 with the fixed coordinates.
+[[nmea]]
+text = "QXCFGMODE"
+tag = "get-mode"
+description = "Get base/rover mode and position configuration"
+
+# Get current serial port configuration (queries the port we are talking on).
+# Verified response on MC280: $QXCFGPRT,0,0,,115200,h0000000D,h0000000B
+# (COM0, 115200; inProto h0D = QX+RTCM+ext; outProto h0B = QX+NMEA+debug, NO
+# RTCM output bit - this is why rtcm-* below produce no output, see below).
+[[nmea]]
+text = "QXCFGPRT"
+tag = "get-uart"
+description = "Get serial port configuration"
+
+# Get positioning mode (GNSS/AGNSS/RTK/PPP bitmask).
+# Verified response on MC280: $QXCFGPMD,h0F.
+[[nmea]]
+text = "QXCFGPMD"
+tag = "get-pmd"
+description = "Get positioning mode"
+
+# Get dynamic platform model.
+# Verified response on MC280: $QXCFGDYN,0,0 (vehicle, no static hold).
+[[nmea]]
+text = "QXCFGDYN"
+tag = "get-dyn"
+description = "Get dynamic model"
+
+# Get carrier-phase-smoothed pseudorange setting.
+# Verified response on MC280: $QXCFGCASMOOTH,1 (enabled).
+[[nmea]]
+text = "QXCFGCASMOOTH"
+tag = "get-casmooth"
+description = "Get carrier-smoothing setting"
+
+# Get antenna status (0=normal, 1=short, 2=open).
+# Verified response on MC280: $QXANTSTAT,2 (open - no antenna on the test bench).
+[[nmea]]
+text = "QXANTSTAT"
+tag = "get-antenna"
+description = "Get antenna status"
+
+# Get GPS leap-second info (sys 0=GPS).
+# Verified response on MC280: $QXLS,0,0,18,, (18 leap seconds).
+[[nmea]]
+text = "QXLS,0"
+tag = "get-leap-sec"
+description = "Get GPS leap-second info"
+
+# Get RTCM output rates for the common base-station message types.
+# DOES NOT WORK RELIABLY: on MC280 these return $NACK,0 (in both rover and base
+# mode); one query returned an unexpected echo "$QXCFGMSG,2,100,1" that does not
+# match the queried type. RTCM rate read-back appears unsupported on this firmware.
+[[nmea]]
+text = "QXCFGMSG,2,1005"
+tag = "get-rtcm"
+description = "Get RTCM message output rates (unreliable on this MC280)"
+[[nmea]]
+text = "QXCFGMSG,2,1074"
+tag = "get-rtcm"
+[[nmea]]
+text = "QXCFGMSG,2,1084"
+tag = "get-rtcm"
+[[nmea]]
+text = "QXCFGMSG,2,1094"
+tag = "get-rtcm"
+[[nmea]]
+text = "QXCFGMSG,2,1124"
+tag = "get-rtcm"
+
+# ---------------------------------------------------------------------------
+# NMEA output control (QXCFGMSG class 1: RMC=0 VTG=1 GGA=2 GSA=3 GSV=4 GLL=5
+# ZDA=6 GST=7 HDT=13). rate 1 = output every nav epoch, 0 = disable.
+# All tags in this group share the one QXCFGMSG,1,<id>,<rate> mechanism, verified
+# directly on MC280: enabling VTG/GLL/ZDA/GST made those sentences appear, and
+# nmea-rmc-off stopped GNRMC (first-half=14 -> second-half=0 in the capture).
+# GGA/GSV/GSA are in the receiver's default output stream.
+# ---------------------------------------------------------------------------
+
+# Verified GNRMC present in default stream on MC280
+[[nmea]]
+text = "QXCFGMSG,1,0,1"
+tag = "nmea-rmc"
+description = "Enable NMEA RMC"
+# Verified GNRMC stops after disable on MC280
+[[nmea]]
+text = "QXCFGMSG,1,0,0"
+tag = "nmea-rmc-off"
+description = "Disable NMEA RMC"
+
+# Verified GNVTG appears after enable on MC280
+[[nmea]]
+text = "QXCFGMSG,1,1,1"
+tag = "nmea-vtg"
+description = "Enable NMEA VTG"
+[[nmea]]
+text = "QXCFGMSG,1,1,0"
+tag = "nmea-vtg-off"
+description = "Disable NMEA VTG"
+
+# Verified GNGGA present in default stream on MC280
+[[nmea]]
+text = "QXCFGMSG,1,2,1"
+tag = "nmea-gga"
+description = "Enable NMEA GGA"
+[[nmea]]
+text = "QXCFGMSG,1,2,0"
+tag = "nmea-gga-off"
+description = "Disable NMEA GGA"
+
+# Verified GSA present in default stream on MC280
+[[nmea]]
+text = "QXCFGMSG,1,3,1"
+tag = "nmea-gsa"
+description = "Enable NMEA GSA"
+[[nmea]]
+text = "QXCFGMSG,1,3,0"
+tag = "nmea-gsa-off"
+description = "Disable NMEA GSA"
+
+# Verified GSV present in default stream on MC280
+[[nmea]]
+text = "QXCFGMSG,1,4,1"
+tag = "nmea-gsv"
+description = "Enable NMEA GSV"
+[[nmea]]
+text = "QXCFGMSG,1,4,0"
+tag = "nmea-gsv-off"
+description = "Disable NMEA GSV"
+
+# Verified GNGLL appears after enable on MC280
+[[nmea]]
+text = "QXCFGMSG,1,5,1"
+tag = "nmea-gll"
+description = "Enable NMEA GLL"
+[[nmea]]
+text = "QXCFGMSG,1,5,0"
+tag = "nmea-gll-off"
+description = "Disable NMEA GLL"
+
+# Verified GNZDA appears after enable on MC280
+[[nmea]]
+text = "QXCFGMSG,1,6,1"
+tag = "nmea-zda"
+description = "Enable NMEA ZDA"
+[[nmea]]
+text = "QXCFGMSG,1,6,0"
+tag = "nmea-zda-off"
+description = "Disable NMEA ZDA"
+
+# Verified GNGST appears after enable on MC280
+[[nmea]]
+text = "QXCFGMSG,1,7,1"
+tag = "nmea-gst"
+description = "Enable NMEA GST"
+[[nmea]]
+text = "QXCFGMSG,1,7,0"
+tag = "nmea-gst-off"
+description = "Disable NMEA GST"
+
+# Disable all standard NMEA sentences (same mechanism, verified via nmea-rmc-off).
+[[nmea]]
+text = "QXCFGMSG,1,0,0"
+tag = "nmea-off"
+description = "Disable all NMEA messages"
+[[nmea]]
+text = "QXCFGMSG,1,1,0"
+tag = "nmea-off"
+[[nmea]]
+text = "QXCFGMSG,1,2,0"
+tag = "nmea-off"
+[[nmea]]
+text = "QXCFGMSG,1,3,0"
+tag = "nmea-off"
+[[nmea]]
+text = "QXCFGMSG,1,4,0"
+tag = "nmea-off"
+[[nmea]]
+text = "QXCFGMSG,1,5,0"
+tag = "nmea-off"
+[[nmea]]
+text = "QXCFGMSG,1,6,0"
+tag = "nmea-off"
+
+# Enable the sentences the satpulse daemon consumes (RMC, GGA, GSV, GSA).
+# All four confirmed present on MC280 (default stream + nmea-rmc verified).
+[[nmea]]
+text = "QXCFGMSG,1,0,1"
+tag = "nmea-daemon"
+description = "Enable NMEA messages used by the satpulse daemon"
+[[nmea]]
+text = "QXCFGMSG,1,2,1"
+tag = "nmea-daemon"
+[[nmea]]
+text = "QXCFGMSG,1,4,1"
+tag = "nmea-daemon"
+[[nmea]]
+text = "QXCFGMSG,1,3,1"
+tag = "nmea-daemon"
+
+# ---------------------------------------------------------------------------
+# Fix (navigation) rate (QXCFGRATE,measRateMs,navRate). measRateMs is limited
+# to 100/200/500/1000, so the maximum is 10 Hz; 20 Hz is not supported.
+# Verified on MC280: fix-rate-1 -> get-fix-rate echoes $QXCFGRATE,1000,1.
+# All four tags share the QXCFGRATE mechanism.
+# ---------------------------------------------------------------------------
+
+[[nmea]]
+text = "QXCFGRATE,1000,1"
+tag = "fix-rate-1"
+description = "Set fix rate to 1 Hz"
+[[nmea]]
+text = "QXCFGRATE,500,1"
+tag = "fix-rate-2"
+description = "Set fix rate to 2 Hz"
+[[nmea]]
+text = "QXCFGRATE,200,1"
+tag = "fix-rate-5"
+description = "Set fix rate to 5 Hz"
+[[nmea]]
+text = "QXCFGRATE,100,1"
+tag = "fix-rate-10"
+description = "Set fix rate to 10 Hz"
+
+# ---------------------------------------------------------------------------
+# NMEA protocol version (QXCFGNMEA,nmeaVer). Only 41 (NMEA 4.1) is supported.
+# Verified on MC280: nmea-ver-410 ACKs and get-nmea-ver echoes $QXCFGNMEA,41.
+# ---------------------------------------------------------------------------
+
+[[nmea]]
+text = "QXCFGNMEA,41"
+tag = "nmea-ver-410"
+description = "Set NMEA version 4.1"
+
+# ---------------------------------------------------------------------------
+# Elevation cutoff angle (QXCFGELTH,minElev). Range 0 <= minElev < 45 degrees.
+# Verified on MC280: min-elev-20 -> get-min-elev echoes $QXCFGELTH,20. All tags
+# share the QXCFGELTH mechanism.
+# ---------------------------------------------------------------------------
+
+[[nmea]]
+text = "QXCFGELTH,0"
+tag = "min-elev-0"
+description = "Set elevation cutoff to 0 degrees"
+[[nmea]]
+text = "QXCFGELTH,5"
+tag = "min-elev-5"
+description = "Set elevation cutoff to 5 degrees (default)"
+[[nmea]]
+text = "QXCFGELTH,10"
+tag = "min-elev-10"
+description = "Set elevation cutoff to 10 degrees"
+[[nmea]]
+text = "QXCFGELTH,15"
+tag = "min-elev-15"
+description = "Set elevation cutoff to 15 degrees"
+[[nmea]]
+text = "QXCFGELTH,20"
+tag = "min-elev-20"
+description = "Set elevation cutoff to 20 degrees"
+[[nmea]]
+text = "QXCFGELTH,25"
+tag = "min-elev-25"
+description = "Set elevation cutoff to 25 degrees"
+[[nmea]]
+text = "QXCFGELTH,30"
+tag = "min-elev-30"
+description = "Set elevation cutoff to 30 degrees"
+[[nmea]]
+text = "QXCFGELTH,35"
+tag = "min-elev-35"
+description = "Set elevation cutoff to 35 degrees"
+[[nmea]]
+text = "QXCFGELTH,40"
+tag = "min-elev-40"
+description = "Set elevation cutoff to 40 degrees"
+
+# ---------------------------------------------------------------------------
+# GNSS constellation selection (QXCFGGNSS,gnssMask,freqID,sigMask1,sigMask2).
+# gnssMask bits: 0 GPS, 1 BDS, 2 GAL, 3 GLO, 4 IRNSS, 5 QZSS, 6 SBAS, 7 L-band.
+# Per-constellation signal nibbles mirror the factory default h01030909:
+# GPS=09(L1+L5) BDS=09(B1+B2a) GAL=03(E1+E5a) GLO=01(G1). freqID h09 = L1+L5.
+# Verified on MC280: gnss-gps -> get-gnss echoes $QXCFGGNSS,h01,h09,h00000009,
+# h00000000 (exact values accepted). NOTE: GSV "satellites in view" continues to
+# list BD/GA/GL satellites after gnss-gps - in-view reporting is independent of
+# the positioning constellation mask, so GSV is not a clean observable here; the
+# config echo is the reliable confirmation. All tags share the QXCFGGNSS mechanism.
+#
+# SIGNAL/BAND SUPPORT (probed by enabling one signal at a time): this unit is an
+# L1+L5 receiver and accepts ONLY GPS L1/L5,
+# GAL E1/E5a, BDS B1/B2a, GLO G1. Enabling GPS L2, GLO G2, GAL E5b, BDS B1C/B3I/
+# B2b or GPS L1C all return $NACK; setting all-bits masks ($QXCFGGNSS,hFF,...) is
+# also NACKed. The freqID byte reads h1B (advertising L2+L6) but NO L2/L6 signal
+# is accepted. The only valid band configs are L1-only (ACK) or L1+L5 (default):
+# L5-only is rejected ($NACK) - L1 is mandatory and L5
+# only runs on top of it. You cannot add signals beyond the L1+L5 default, and the
+# constellation set is limited to GPS/BDS/GAL/GLO/QZSS (gnssMask hFF -> $NACK, so
+# no IRNSS/SBAS/L-band). Band is therefore not a usable separate axis:
+# constellation (gnss-*) is the only real GNSS choice.
+# ---------------------------------------------------------------------------
+
+[[nmea]]
+text = "QXCFGGNSS,h01,h09,h00000009,h00000000"
+tag = "gnss-gps"
+description = "Enable GPS only"
+[[nmea]]
+text = "QXCFGGNSS,h02,h09,h00000900,h00000000"
+tag = "gnss-bds"
+description = "Enable BeiDou only"
+[[nmea]]
+text = "QXCFGGNSS,h04,h09,h00030000,h00000000"
+tag = "gnss-gal"
+description = "Enable Galileo only"
+[[nmea]]
+text = "QXCFGGNSS,h08,h09,h01000000,h00000000"
+tag = "gnss-glo"
+description = "Enable GLONASS only"
+[[nmea]]
+text = "QXCFGGNSS,h05,h09,h00030009,h00000000"
+tag = "gnss-gps-gal"
+description = "Enable GPS and Galileo"
+# gnss-all: GPS+BDS+GAL+GLO+QZSS. Verified ACK on MC280. (For the wider band set
+# the device runs by default, use freqID h1B = L1+L2+L5+L6 instead of h09.)
+[[nmea]]
+text = "QXCFGGNSS,h2F,h09,h01030909,h00000000"
+tag = "gnss-all"
+description = "Enable all constellations (GPS+BDS+GAL+GLO+QZSS)"
+
+# Band selection (all constellations). This receiver supports only L1-only or
+# L1+L5; L5-only is rejected. band-l1-l5 is the dual-band default (same bands as
+# gnss-all). Each tag asserts all five constellations since QXCFGGNSS writes the
+# whole mask at once.
+
+# L1 only, all constellations.
+# Verified on MC280: ACK; get-gnss reads back freq[L1], signals GPS-L1/BDS-B1/
+# GAL-E1/GLO-G1.
+[[nmea]]
+text = "QXCFGGNSS,h2F,h01,h01010101,h00000000"
+tag = "band-l1"
+description = "Enable L1 only (all constellations)"
+
+# L1+L5, all constellations (the device default dual-band set).
+# Verified on MC280: ACK; signals GPS L1/L5, BDS B1/B2a, GAL E1/E5a, GLO G1.
+[[nmea]]
+text = "QXCFGGNSS,h2F,h1B,h01030909,h00000000"
+tag = "band-l1-l5"
+description = "Enable L1+L5 (all constellations)"
+
+# ---------------------------------------------------------------------------
+# PPS / timing pulse (QXCFGTP,Flag,IntervalMs,WidthUs,TimeRef,antDly,rfDly,usrDly)
+# Flag bit0: 1=enable; bit1: 0=rising edge aligned to top of second.
+# TimeRef: 0 UTC, 1 GPS, 2 BDS, 3 GAL, 4 GLO.
+# Verified on MC280: pps -> get-pps echoes $QXCFGTP,h1,1000,100000,1,0,0,0
+# (enabled, 0.1 s width, TimeRef 1 = GPS); pps-off -> Flag h0. (Edge alignment
+# needs a scope to confirm.)
+# ---------------------------------------------------------------------------
+
+# Enable 1 Hz PPS, 0.1 s (100000 us) high pulse, rising edge, GPS time reference.
+# satpulse aligns timing to a GNSS system (default GPS), not UTC; TimeRef=1 = GPS.
+[[nmea]]
+text = "QXCFGTP,h1,1000,100000,1,0,0,0"
+tag = "pps"
+description = "Enable PPS (1 Hz, 0.1 s pulse, rising edge, GPS time)"
+
+# Disable PPS output (Flag bit0 = 0; TimeRef ignored when disabled).
+[[nmea]]
+text = "QXCFGTP,h0,1000,100000,1,0,0,0"
+tag = "pps-off"
+description = "Disable PPS output"
+
+# ---------------------------------------------------------------------------
+# Base-station positioning (QXCFGMODE,mode,id,Type,PARA1..4).
+# mode 0=BASE, 1=ROVER. For BASE: Type=TW -> self-survey, Type empty -> fixed
+# lat/lon/height. Survey PARA1 is averaging seconds (max 600).
+# ---------------------------------------------------------------------------
+
+# Start a self-survey: 600 s averaging, 2.5 m horiz / 3.5 m vert std limits.
+# Not exercised on the remote unit (would leave it surveying); shares the
+# QXCFGMODE mechanism verified by fixed-pos-example.
+[[nmea]]
+text = "QXCFGMODE,0,1,TW,600,2.5,3.5,0"
+tag = "survey"
+description = "Start survey-in (600 s, 2.5/3.5 m accuracy limits)"
+
+# Set a fixed base position (geodetic lat,lon,height - example coordinates).
+# Replace with your surveyed position. Height is ellipsoidal metres.
+# Verified on MC280: ACK, and get-mode then echoes
+# $QXCFGMODE,0,2,,40.4562847660,116.2859754970,58.098, (base mode + coords).
+[[nmea]]
+text = "QXCFGMODE,0,2,,40.45628476579,116.2859754968,58.0984,"
+tag = "fixed-pos-example"
+description = "Set fixed base position (example LLH - replace with yours)"
+
+# Return to rover (mobile) mode. Shares the QXCFGMODE mechanism; get-mode showed
+# the unit in rover mode ($QXCFGMODE,1) at the start of testing.
+[[nmea]]
+text = "QXCFGMODE,1,0,,,,,"
+tag = "mobile"
+description = "Return to rover (mobile) mode"
+
+# ---------------------------------------------------------------------------
+# RTCM output (QXCFGMSG class 2, msgID = literal RTCM type number).
+#
+# To emit ANY RTCM you must do all three: (1) turn on the RTCM output bit in the
+# port's output-protocol mask (rtcm-port-on below), (2) put the receiver in base
+# mode (fixed-pos-example or survey), and (3) keep the wanted constellations
+# active. With all three, the tested MC280 emits RTCM 1005 (ARP), ephemeris
+# (1019/1042/...) and the Qianxun PROPRIETARY message RTCM 4068 - its observation
+# format.
+#
+# RTCM OBSERVATION OUTPUT IS UNTESTED / INCONCLUSIVE: the test receiver never had
+# a position fix (RMC void, 0 satellites USED, HDOP 99.98, antenna status "open"),
+# so it had no observations to encode. Nothing here proves whether standard MSM
+# works once the unit is actually fixing. What WAS observed (all without a fix):
+#  - rtcm-port-on + base mode emits 1005 (ARP) and ephemeris (1019/1042).
+#  - Enabling a standard MSM type (rtcm-msm4 etc.) makes the receiver emit the
+#    Qianxun PROPRIETARY message RTCM 4068; with NO MSM enabled there is no 4068
+#    (confirmed by an A/B test). With no fix the 4068 frames are a 20-byte
+#    heartbeat with a zeroed body, and no standard MSM
+#    (1071..1127) appeared - but that is expected with no observations and says
+#    nothing about the fixed case. RETEST with a working antenna/fix.
+#  - Setting the real base position (from allystar/lg290p) did not change this -
+#    a base's configured coordinate does not generate observations.
+# Notes: per-type RTCM control is coarse (every class-2 query echoes one
+# "$QXCFGMSG,2,100,<rate>", a single global RTCM slot) and 4068 cannot be disabled
+# via QXCFGMSG,2,4068,0 ($NACK).
+# ---------------------------------------------------------------------------
+
+# Turn the RTCM output protocol on for COM0 WITHOUT changing baud. Uses only the
+# documented protocol bits: inProto h05 = QX+RTCM, outProto h07 = QX+NMEA+RTCM.
+# (The device reports inProto h0D / outProto h0B on read, but bit 3 is reserved
+# per the spec and is rejected on write - writing h0D/h0F gives $NACK,0; the
+# documented h05/h07 form is accepted.) 115200 baud is preserved so the link is
+# safe on a remote unit. 'reload' restores the original masks afterwards.
+# Verified on MC280: ACK, and in base mode RTCM 1005 + ephemeris + proprietary
+# 4068 then flow on the port.
+[[nmea]]
+text = "QXCFGPRT,0,0,,115200,h00000005,h00000007"
+tag = "rtcm-port-on"
+description = "Enable RTCM output protocol on COM0 (keeps 115200 baud)"
+
+# Disable RTCM output on COM0: outProto h03 = QX+NMEA (no RTCM). 'reload' also
+# restores the original port configuration.
+[[nmea]]
+text = "QXCFGPRT,0,0,,115200,h00000005,h00000003"
+tag = "rtcm-port-off"
+description = "Disable RTCM output protocol on COM0 (keeps 115200 baud)"
+
+# Enable stationary antenna reference point (1005).
+# The command is $NACK,0 on MC280, BUT 1005 is auto-emitted in base mode anyway
+# (it appears in the capture once rtcm-port-on + base mode are set).
+[[nmea]]
+text = "QXCFGMSG,2,1005,1"
+tag = "rtcm-arp"
+description = "Enable RTCM ARP (1005) - command rejected; 1005 auto-emits in base mode"
+
+# Enable MSM4 for GPS/GLO/GAL/QZSS/BDS (1074/1084/1094/1114/1124).
+# Commands ACK on MC280 but emit NO MSM (observations come out as proprietary
+# 4068 instead - see the RTCM note above).
+[[nmea]]
+text = "QXCFGMSG,2,1074,1"
+tag = "rtcm-msm4"
+description = "Enable RTCM MSM4 for all constellations (ACK but no MSM output - see note)"
+[[nmea]]
+text = "QXCFGMSG,2,1084,1"
+tag = "rtcm-msm4"
+[[nmea]]
+text = "QXCFGMSG,2,1094,1"
+tag = "rtcm-msm4"
+[[nmea]]
+text = "QXCFGMSG,2,1114,1"
+tag = "rtcm-msm4"
+[[nmea]]
+text = "QXCFGMSG,2,1124,1"
+tag = "rtcm-msm4"
+
+# Enable MSM5 for GPS/GLO/GAL/QZSS/BDS (1075/1085/1095/1115/1125).
+# Not separately captured; same caveat as MSM4 (gated by port outProto).
+[[nmea]]
+text = "QXCFGMSG,2,1075,1"
+tag = "rtcm-msm5"
+description = "Enable RTCM MSM5 for all constellations"
+[[nmea]]
+text = "QXCFGMSG,2,1085,1"
+tag = "rtcm-msm5"
+[[nmea]]
+text = "QXCFGMSG,2,1095,1"
+tag = "rtcm-msm5"
+[[nmea]]
+text = "QXCFGMSG,2,1115,1"
+tag = "rtcm-msm5"
+[[nmea]]
+text = "QXCFGMSG,2,1125,1"
+tag = "rtcm-msm5"
+
+# Enable MSM7 (1077/1087/1097/1117/1127).
+# DOES NOT WORK: not supported by MC280 firmware (QX spec lists only MSM4/MSM5
+# for base output); these returned $NACK on test. Kept to document the limit.
+[[nmea]]
+text = "QXCFGMSG,2,1077,1"
+tag = "rtcm-msm7"
+description = "Enable RTCM MSM7 (unsupported on MC280)"
+[[nmea]]
+text = "QXCFGMSG,2,1087,1"
+tag = "rtcm-msm7"
+[[nmea]]
+text = "QXCFGMSG,2,1097,1"
+tag = "rtcm-msm7"
+[[nmea]]
+text = "QXCFGMSG,2,1117,1"
+tag = "rtcm-msm7"
+[[nmea]]
+text = "QXCFGMSG,2,1127,1"
+tag = "rtcm-msm7"
+
+# Disable all RTCM output (class 2, id 0 = all). Not separately exercised.
+[[nmea]]
+text = "QXCFGMSG,2,0,0"
+tag = "rtcm-off"
+description = "Disable all RTCM output"
+
+# ---------------------------------------------------------------------------
+# Configuration management
+# ---------------------------------------------------------------------------
+
+# Reload user config from flash (reverts unsaved RAM changes). Non-destructive.
+# Verified on MC280: ACK; used to restore the unit after testing.
+[[nmea]]
+text = "QXCFGLOAD"
+tag = "reload"
+description = "Reload configuration from flash"
+waitLimit = 3.0
+
+# Save current config to flash. Persistent - NOT tested (confirm before sending).
+[[nmea]]
+text = "QXCFGSAVE"
+tag = "save"
+description = "Save configuration to flash"
+
+# Hot start (keep ephemeris/almanac/time). Not tested (disruptive); QXCFGRST
+# warm/cold checksums match the QX spec examples.
+[[nmea]]
+text = "QXCFGRST,1,0"
+tag = "hot-start"
+description = "Hot start (keep ephemeris)"
+waitLimit = 3.0
+
+# Warm start (clear ephemeris, keep almanac). Not tested (disruptive).
+[[nmea]]
+text = "QXCFGRST,1,1"
+tag = "warm-start"
+description = "Warm start (clear ephemeris)"
+waitLimit = 3.0
+
+# Cold start (clear all satellite data). Not tested (disruptive).
+[[nmea]]
+text = "QXCFGRST,1,2"
+tag = "cold-start"
+description = "Cold start (clear all satellite data)"
+waitLimit = 3.0
+
+# Reset: reload config from flash then cold start. Not tested (disruptive).
+[[nmea]]
+text = "QXCFGLOAD"
+tag = "reset"
+description = "Reload config from flash and cold start"
+waitLimit = 3.0
+[[nmea]]
+text = "QXCFGRST,1,2"
+tag = "reset"
+waitLimit = 3.0
+
+# Factory reset: restore factory config. Destructive - NOT tested.
+[[nmea]]
+text = "QXCFGCLEAR"
+tag = "factory-reset"
+description = "Restore factory configuration"
+waitLimit = 3.0
+
+# ---------------------------------------------------------------------------
+# Serial port baud rate (QXCFGPRT,Type,PortID,addr,baud,inProto,outProto).
+# WARNING: changing the baud rate of a remote receiver will break the link and
+# require physical access to recover. These are NOT tested here. inProto
+# h00000005 = QX+RTCM, outProto h00000007 = QX+NMEA+RTCM (note: this DOES enable
+# the RTCM output bit, unlike the device's current h0B - see RTCM section above).
+# ---------------------------------------------------------------------------
+
+[[nmea]]
+text = "QXCFGPRT,0,0,,9600,h00000005,h00000007"
+tag = "speed-9600"
+description = "Set serial port to 9600 baud (DO NOT run on remote receiver)"
+[[nmea]]
+text = "QXCFGPRT,0,0,,19200,h00000005,h00000007"
+tag = "speed-19200"
+description = "Set serial port to 19200 baud (DO NOT run on remote receiver)"
+[[nmea]]
+text = "QXCFGPRT,0,0,,38400,h00000005,h00000007"
+tag = "speed-38400"
+description = "Set serial port to 38400 baud (DO NOT run on remote receiver)"
+[[nmea]]
+text = "QXCFGPRT,0,0,,57600,h00000005,h00000007"
+tag = "speed-57600"
+description = "Set serial port to 57600 baud (DO NOT run on remote receiver)"
+[[nmea]]
+text = "QXCFGPRT,0,0,,115200,h00000005,h00000007"
+tag = "speed-115200"
+description = "Set serial port to 115200 baud (DO NOT run on remote receiver)"
+[[nmea]]
+text = "QXCFGPRT,0,0,,230400,h00000005,h00000007"
+tag = "speed-230400"
+description = "Set serial port to 230400 baud (DO NOT run on remote receiver)"
+[[nmea]]
+text = "QXCFGPRT,0,0,,460800,h00000005,h00000007"
+tag = "speed-460800"
+description = "Set serial port to 460800 baud (DO NOT run on remote receiver)"
+[[nmea]]
+text = "QXCFGPRT,0,0,,921600,h00000005,h00000007"
+tag = "speed-921600"
+description = "Set serial port to 921600 baud (DO NOT run on remote receiver)"
