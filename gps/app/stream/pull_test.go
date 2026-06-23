@@ -998,6 +998,37 @@ func TestNtripRequestHeaders(t *testing.T) {
 	}
 }
 
+func TestNtripSendsGGAAfterHandshake(t *testing.T) {
+	gga := "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n"
+	got := make(chan string, 1)
+	ln := newNtripListener(t, func(conn net.Conn, req []byte) {
+		conn.Write([]byte("ICY 200 OK\r\n"))
+		// The GGA is a separate write that arrives after the handshake,
+		// so it must not ride along in the request.
+		if strings.Contains(string(req), "GGA") {
+			t.Errorf("GGA leaked into request: %q", req)
+		}
+		buf := make([]byte, len(gga))
+		n, _ := io.ReadFull(conn, buf)
+		got <- string(buf[:n])
+	})
+	defer ln.close()
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT", GGA: gga}
+	rc, err := src.Connect(context.Background())
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer rc.Close()
+	select {
+	case s := <-got:
+		if s != gga {
+			t.Errorf("GGA mismatch: got %q, want %q", s, gga)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server did not receive GGA after handshake")
+	}
+}
+
 func TestNtripUserAgentNoVersion(t *testing.T) {
 	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("ICY 200 OK\r\n"))

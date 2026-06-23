@@ -21,9 +21,49 @@ Scope notes:
 
 Synthesising NMEA is generally useful beyond VRS (e.g. exposing NMEA over a TCP
 port from a receiver that only emits UBX), so the synthesis lives in its own
-reusable package (`nmeasyn`, stage 3) rather than VRS-specific code.
+reusable package (`nmeasyn`, stage 2) rather than VRS-specific code.
 
-## Stage 1: GGA builder (`gps/lib/nmeamsg/gga.go`)
+## Stage 1: `ntripcmd --gga` option
+
+Standalone diagnostic: forward a caller-supplied GGA so the ntrip pull path can
+be exercised against a VRS caster (such as PointPerfect) without a live receiver
+or position synthesis. The caller pastes a real GGA captured from a receiver;
+`ntripcmd` validates it and sends it verbatim. It needs only the existing
+`nmeamsg` syntax library, so it lands before the GGA synthesis (stage 2).
+
+- Add `--gga sentence`. The argument is a full NMEA GGA sentence without a line
+  terminator (e.g. `$GPGGA,...*47`); a trailing CRLF from copy-paste is
+  tolerated. Presence of the flag marks VRS mode for the command.
+- Validation (`validateGGA`) uses the existing `nmeamsg` syntax helpers, not the
+  stage 2 GGA builder: `nmeamsg.CheckSyntax(...).IsValidApprovedNMEA()` for a
+  well-formed approved sentence, that the address is a `GGA` sentence, and that
+  the `*hh` checksum matches `nmeamsg.Checksum`. On success it returns the wire
+  bytes with a single CRLF appended.
+- Mechanism: once the v1 handshake succeeds (`ICY 200 OK`), `NtripSource` sends
+  the GGA to the caster as a separate write on the accepted stream (the spec
+  allows a GGA after the request); `ntripcmd` constructs the source with the
+  validated bytes. The write happens inside the handshake, so `Source.Connect`
+  stays read-only (`io.ReadCloser`) - the writer half is not exposed yet.
+  Stage 3 keeps this same post-connect write but moves ownership to the
+  `ggaSender` goroutine, which also re-sends on reconnect and tracks a moving
+  client.
+- Per the spec one GGA suffices to start the stream; `ntripcmd` does not resend.
+
+Because it forwards a literal sentence, this stage depends only on the existing
+`nmeamsg` syntax library, not on the GGA synthesis (stage 2). It is the first
+end-to-end proof of the VRS request flow (GGA upload -> caster streams), and -
+because it already uses the post-connect socket write - the first confirmation
+that the caster accepts a GGA on the stream rather than in the request, the
+delivery mechanism stage 3 relies on.
+
+## Stage 2: GGA synthesis
+
+Generate GGA sentences from the receiver's own position, so the daemon can drive
+a VRS caster (and expose NMEA generally) without a hand-supplied sentence. Two
+parts: a low-level GGA builder in `nmeamsg`, and a domain-layer synthesiser
+(`nmeasyn`) that drives the builder from the gpsprot message stream.
+
+### GGA builder (`gps/lib/nmeamsg/gga.go`)
 
 A typed field-set struct holding the GGA fields in wire order, serialised with
 `fieldenc` (the long-term direction for NMEA, as in `gps/lib/qtmmsg`).
@@ -115,7 +155,7 @@ func (g GGAFields) LatLon() (lat, lon float64) // signed decimal degrees, from c
 ```
 
 `LatLon` lets a consumer recover the position numerically without re-parsing the
-formatted sentence (used by the VRS move gate, stage 4).
+formatted sentence (used by the VRS move gate, stage 3).
 
 Tests:
 - Golden sentences for known positions in each hemisphere, exact bytes incl.
@@ -129,29 +169,7 @@ Tests:
 Follow-up (not required here): once `GGAFields` parses via `fieldenc.Decode`,
 it can replace the hand-rolled `parseGGA` in `gps/internal/nmea/nmea.go`.
 
-## Stage 2: `ntripcmd --pos` option
-
-Standalone diagnostic; static faked position, no live message stream, so it
-uses `nmeamsg.MakeGGA` directly (not `nmeasyn`).
-
-- Add `--pos lat,lon` (two floats; no height). Presence of the flag marks
-  VRS mode for the command.
-- When set, build a GGA with `nmeamsg.MakeGGA(nmeamsg.TalkerGP,
-  time.Now().UTC(), lat, lon, 1, nSats, hdop)` (quality 1 = GPS fix; nominal
-  `nSats`/`hdop` constants), serialize it with `nmeamsg.Serialize`, and send it
-  in the Ntrip v1 request body.
-- Mechanism: `stream.NtripSource` gains optional initial-GGA bytes appended
-  after the request's blank line (`request()` / handshake); `ntripcmd`
-  constructs the source with those bytes. (At this stage `Source.Connect` is
-  still read-only - the writer half arrives in stage 4 - so the request body is
-  the only place to put the GGA. Stage 4 adds the writer and moves the initial
-  GGA to a post-connect socket write, leaving this request-body path for the
-  diagnostic only.)
-- Per the spec one GGA suffices to start the stream; `ntripcmd` does not resend.
-
-This is the first user-visible proof that the GGA builder works end to end.
-
-## Stage 3: NMEA synthesis package (`gps/nmeasyn`)
+### NMEA synthesis package (`gps/nmeasyn`)
 
 Placement is fixed by the layering in `docs/internals.md`: `nmeasyn` is a
 **domain-layer** package (bare `gps/`), alongside `gpsprot`. It uses the
@@ -210,7 +228,7 @@ func New(sink Sink) *Synth   // *Synth implements gpsprot.MsgHandler
 **Open: how `nmeasyn` joins the dispatch fan-out** - see Open decisions.
 (Placement is settled above: `gps/nmeasyn`.)
 
-## Stage 4: `stream` pull VRS support (mobile)
+## Stage 3: `stream` pull VRS support (mobile)
 
 The production path. Keeps working for a moving client: an initial GGA on
 connect and live updates as the position changes. The `nmeasyn` sink for pull
@@ -261,14 +279,13 @@ no separate ECEF / position feed.
    GGA with quality > 0 (a valid fix) exists, so there is something to
    force-send on connect; later reconnects use the held latest immediately. The
    initial GGA goes out as the `ggaSender`'s first socket write after connect
-   (v1 allows sending the GGA on the stream after the request), not in the
-   request body, keeping the GGA owned in one place.
+   (v1 allows sending the GGA on the stream after the request), moved out of the
+   handshake so the GGA is owned in one place (the `ggaSender`).
 
 6. **Significant-change gate** - 2D distance threshold (constant or config;
    order of tens of metres). No keepalive timer (spec does not require one).
 
-Dependencies: stage 1 (builder); stage 3 (`nmeasyn`); the read-write `Source`
-change.
+Dependencies: the GGA synthesis (stage 2); the read-write `Source` change.
 
 Behavioural note to document: in VRS mode pull does not connect until a valid
 position fix exists, so corrections are gated on the receiver first achieving a
@@ -279,7 +296,7 @@ Test: Add a scenario to smoketest/ for this.
 ## Open decisions
 
 - **How `nmeasyn` joins the dispatch fan-out** (placement settled: `gps/nmeasyn`,
-  domain layer - see stage 3). The daemon does the binding: `gpsevent` is blind
+  domain layer - see stage 2). The daemon does the binding: `gpsevent` is blind
   to pull (`NewDispatcher` takes no stream argument and `time/internal/gpsevent`
   does not import `gps/app/stream`), so only `time/app/daemon` sees both the pull
   setup and the dispatcher. Construction order already supports this:
@@ -295,21 +312,19 @@ Test: Add a scenario to smoketest/ for this.
   (preferred) vs. assembling the `MultiHandler` in the daemon. `PullSetup` must
   gain a method exposing the sink.
 - Significant-move threshold value, and whether it is configurable.
-- What `ntripcmd` synthesises for quality / `NumSats` / HDOP on a faked fix
-  (quality 1 = GPS, nominal `NumSats`/HDOP).
 - Confirm PointPerfect accepts the Ntrip v1 request, or whether it requires v2
   (`Ntrip-Version: Ntrip/2.0`, HTTP/1.1 status line). We currently only accept
   `ICY 200 OK`. If v2 is required, that is separate work.
 
 ## Testing
 
-- Stage 1: golden sentences, padding, `LatLon` round-trip, encode/decode
-  round-trip.
-- Stage 2: request bytes include the GGA line; optional integration against a
-  fake caster.
-- Stage 3: `nmeasyn` builds the expected GGA from a synthetic epoch (fix level
-  -> quality, DOP -> HDOP, used SVs -> NumSats, no-fix -> quality 0); ECEF-only
-  epoch exercises the conversion.
-- Stage 4: `ggaSender` - force-send on connect, send on significant 2D move,
+- Stage 1: `validateGGA` accepts good sentences and rejects bad-checksum /
+  non-GGA / non-NMEA input; the GGA is sent as a separate write after the
+  handshake (`ICY 200 OK`), not in the request.
+- Stage 2: golden sentences, padding, `LatLon` round-trip, encode/decode
+  round-trip (builder); `nmeasyn` builds the expected GGA from a synthetic epoch
+  (fix level -> quality, DOP -> HDOP, used SVs -> NumSats, no-fix -> quality 0),
+  ECEF-only epoch exercises the conversion.
+- Stage 3: `ggaSender` - force-send on connect, send on significant 2D move,
   silence when stationary or quality 0, write-deadline / write-error handling,
   reconnect re-send; config parsing.

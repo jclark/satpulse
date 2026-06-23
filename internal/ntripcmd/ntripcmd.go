@@ -11,17 +11,19 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/spf13/pflag"
 )
 
-const summary = `[-h|--help] [--user user[:password]] [--bin] <address[:port]> <mountpoint>`
+const summary = `[-h|--help] [--user user[:password]] [--bin] [--gga sentence] <address[:port]> <mountpoint>`
 
 // scanBufSize matches stream.scanBufSize.
 const scanBufSize = 16
@@ -32,15 +34,18 @@ type flagConfig struct {
 	Username   string
 	Password   string
 	Bin        bool
+	GGA        string // validated GGA sentence wire form (with CRLF), or empty
 }
 
 func parseFlags(cmdName string, args []string) (cfg *flagConfig, help bool, usageFunc func(string) string, err error) {
 	var user string
 	var bin bool
+	var gga string
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.StringVar(&user, "user", "", "Ntrip credentials (password may be omitted)")
 	flags.BoolVar(&bin, "bin", false, "emit raw bytes to stdout (default: packet log JSONL)")
+	flags.StringVar(&gga, "gga", "", "NMEA GGA sentence to send on connect (for VRS casters)")
 	usageFunc = cmd.UsageFunc(cmdName, summary, flags)
 	if err = flags.Parse(args); err != nil {
 		return
@@ -58,12 +63,42 @@ func parseFlags(cmdName string, args []string) (cfg *flagConfig, help bool, usag
 		Bin:        bin,
 	}
 	cfg.Username, cfg.Password = splitUserPass(user)
+	if gga != "" {
+		if cfg.GGA, err = validateGGA(gga); err != nil {
+			err = fmt.Errorf("--gga: %w", err)
+			return
+		}
+	}
 	return
 }
 
 func splitUserPass(user string) (string, string) {
 	name, pass, _ := strings.Cut(user, ":")
 	return name, pass
+}
+
+// validateGGA checks that s is a syntactically valid GGA sentence with a
+// matching checksum, and returns its wire form with a CRLF appended.  The
+// input is the sentence without a line terminator, e.g. "$GPGGA,...*47".
+func validateGGA(s string) (string, error) {
+	// Tolerate a trailing line terminator from copy-paste; the wire form
+	// always ends in exactly one CRLF.
+	s = strings.TrimRight(s, "\r\n")
+	wire := s + "\r\n"
+	if !nmeamsg.CheckSyntax(wire).IsValidApprovedNMEA() {
+		return "", fmt.Errorf("not a valid NMEA sentence: %q", s)
+	}
+	// IsValidApprovedNMEA guarantees a 5-char address: "$" + 2-char talker
+	// + 3-char sentence format, so the format is s[3:6].
+	if s[3:6] != "GGA" {
+		return "", fmt.Errorf("not a GGA sentence: %q", s)
+	}
+	payload, sum, _ := strings.Cut(s[1:], "*")
+	want, _ := strconv.ParseUint(sum, 16, 8)
+	if byte(want) != nmeamsg.Checksum([]byte(payload)) {
+		return "", fmt.Errorf("checksum mismatch in %q", s)
+	}
+	return wire, nil
 }
 
 // Cmd implements the ntrip subcommand.
@@ -84,6 +119,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		Username:   cfg.Username,
 		Password:   cfg.Password,
 		UserAgent:  stream.NtripUserAgent{Version: version},
+		GGA:        cfg.GGA,
 	}
 	rc, err := src.Connect(ctx)
 	if err != nil {
