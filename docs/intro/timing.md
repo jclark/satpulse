@@ -86,6 +86,9 @@ PTP uses the TAI time scale, which is a continuous time scale not affected by le
 TAI is currently ahead of UTC by 37 seconds.
 On Linux, the PHC is conventionally in TAI time, also with the start of 1970 as the epoch.
 
+GNSS constellations with the exception of GLONASS use continuous time scales, which are a fixed offset from TAI.
+The NMEA protocol always reports time in UTC, but vendor specific protocols can report the time in GNSS system time.
+
 There has not been a leap second since the end of 2016.
 The responsible international organizations are moving strongly in the direction of abolishing leap seconds,
 and the relevant technical committee has recommended that this happen in 2027.
@@ -162,6 +165,12 @@ Note that ionospheric error corrected by dual-band receivers is greater than qua
 particularly in locations close to the magnetic equator.
 
 ## TODO
+
+Still to do on this page:
+- Bring the NTP/chrony role into the "Synchronizing the system clock" discussion: how time reaches chrony/ntpd-rs both with a PHC and without one.
+
+
+The following draft material still needs to be folded in or placed.
 
 Use of a vendor-specific protocol allows one particular aspect of PTP to work more smoothly.
 PTP uses a timescale based on TAI.
