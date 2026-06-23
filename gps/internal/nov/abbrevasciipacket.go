@@ -2,6 +2,7 @@ package nov
 
 import (
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/novmsg"
 )
 
 // TagAbbrevAscii is the identifier for NovAtel abbreviated ASCII packets
@@ -53,7 +54,7 @@ func (f abbrevAsciiPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextS
 	b := buf[nextScanIndex]
 	switch state {
 	case abbrevStateSync:
-		if b == '<' {
+		if b == novmsg.AbbrevSync {
 			return abbrevStateBody
 		}
 	case abbrevStateBody:

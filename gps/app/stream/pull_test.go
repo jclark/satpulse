@@ -400,6 +400,104 @@ func TestPruningQueueDropsStale(t *testing.T) {
 	}
 }
 
+type fakePacketFormat struct {
+	tag   gpsprot.Tag
+	msgID string
+}
+
+func (f fakePacketFormat) Tag() gpsprot.Tag { return f.tag }
+
+func (f fakePacketFormat) Next(state gpsprot.ScanState, _ []byte, _, _ int) gpsprot.ScanState {
+	return state
+}
+
+func (f fakePacketFormat) IsFinal(gpsprot.ScanState) bool { return true }
+func (f fakePacketFormat) MsgID([]byte) string            { return f.msgID }
+func (f fakePacketFormat) ExtractChecksum([]byte) []byte  { return nil }
+func (f fakePacketFormat) ComputeChecksum([]byte) []byte  { return nil }
+
+func (f fakePacketFormat) RescanOnBadChecksum(bool, []byte) bool {
+	return false
+}
+
+func (f fakePacketFormat) IsBinary() bool { return false }
+
+func TestPruningQueueDoesNotPruneNonRTCM(t *testing.T) {
+	var q pruningQueue
+	pf := fakePacketFormat{tag: "NMEA", msgID: "GSV"}
+	q.enqueue(scan.Packet{Format: pf, Data: "first", ChecksumValid: true})
+	q.enqueue(scan.Packet{Format: pf, Data: "second", ChecksumValid: true})
+	if q.len() != 2 {
+		t.Fatalf("expected 2 entries, got %d", q.len())
+	}
+	if got := q.dequeue().Data; got != "first" {
+		t.Errorf("first dequeue = %q, want first", got)
+	}
+	if got := q.dequeue().Data; got != "second" {
+		t.Errorf("second dequeue = %q, want second", got)
+	}
+}
+
+func TestPruningQueuePrunesOnlyRTCMInMixedStream(t *testing.T) {
+	var q pruningQueue
+	rtcmPF := rtcm.PacketFormat
+	nmeaPF := fakePacketFormat{tag: "NMEA", msgID: "GSV"}
+	oldRTCM := string(makeRTCM(1005, 10))
+	newRTCM := string(makeRTCM(1005, 12))
+	q.enqueue(scan.Packet{Format: rtcmPF, Data: oldRTCM, ChecksumValid: true})
+	q.enqueue(scan.Packet{Format: nmeaPF, Data: "$GPGSV,1", ChecksumValid: true})
+	q.enqueue(scan.Packet{Format: rtcmPF, Data: newRTCM, ChecksumValid: true})
+	q.enqueue(scan.Packet{Format: nmeaPF, Data: "$GPGSV,2", ChecksumValid: true})
+	if q.len() != 3 {
+		t.Fatalf("expected 3 entries, got %d", q.len())
+	}
+	want := []string{"$GPGSV,1", newRTCM, "$GPGSV,2"}
+	for i := range want {
+		if got := q.dequeue().Data; got != want[i] {
+			t.Fatalf("dequeue %d = %q, want %q", i, got, want[i])
+		}
+	}
+}
+
+func TestPruningQueueKeepsUnformattedFIFO(t *testing.T) {
+	var q pruningQueue
+	q.enqueue(scan.Packet{Data: "raw1"})
+	q.enqueue(scan.Packet{Data: "raw2"})
+	if q.len() != 2 {
+		t.Fatalf("expected 2 entries, got %d", q.len())
+	}
+	if got := q.dequeue().Data; got != "raw1" {
+		t.Errorf("first dequeue = %q, want raw1", got)
+	}
+	if got := q.dequeue().Data; got != "raw2" {
+		t.Errorf("second dequeue = %q, want raw2", got)
+	}
+}
+
+func TestPruningQueueDropsOldestAtMaxLen(t *testing.T) {
+	var q pruningQueue
+	var dropped scan.Packet
+	var ok bool
+	for i := range pruningQueueMaxLen + 3 {
+		if pkt, droppedOK := q.enqueue(scan.Packet{Data: string([]byte{byte(i)})}); droppedOK {
+			dropped = pkt
+			ok = true
+		}
+	}
+	if !ok {
+		t.Fatal("expected a dropped packet")
+	}
+	if got := dropped.Data[0]; got != 2 {
+		t.Errorf("last dropped packet = %d, want 2", got)
+	}
+	if q.len() != pruningQueueMaxLen {
+		t.Fatalf("expected %d entries, got %d", pruningQueueMaxLen, q.len())
+	}
+	if got := q.dequeue().Data[0]; got != 3 {
+		t.Errorf("oldest surviving packet = %d, want 3", got)
+	}
+}
+
 func TestPruningQueueSameEpochNotPruned(t *testing.T) {
 	var q pruningQueue
 	pf := rtcm.PacketFormat
@@ -522,7 +620,7 @@ func TestPullQueuePrunesUnderBackpressure(t *testing.T) {
 	writerCh := make(chan scan.Packet, 1)
 	done := make(chan struct{})
 	go func() {
-		sink.queue(subCh, writerCh)
+		sink.queue(testLogger(), subCh, writerCh)
 		close(done)
 	}()
 	defer func() {
