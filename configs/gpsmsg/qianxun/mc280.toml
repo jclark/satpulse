@@ -280,6 +280,9 @@ tag = "nmea-off"
 [[nmea]]
 text = "QXCFGMSG,1,6,0"
 tag = "nmea-off"
+[[nmea]]
+text = "QXCFGMSG,1,7,0"
+tag = "nmea-off"
 
 # Enable the sentences the satpulse daemon consumes (RMC, GGA, GSV, GSA).
 # All four confirmed present on MC280 (default stream + nmea-rmc verified).
