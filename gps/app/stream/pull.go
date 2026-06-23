@@ -94,6 +94,11 @@ type NtripSource struct {
 	Username   string
 	Password   string
 	UserAgent  NtripUserAgent
+	// GGA, if non-empty, is an NMEA GGA sentence (already terminated
+	// with CRLF) sent to the caster as a separate write right after a
+	// successful handshake.  A Virtual Reference Station caster needs
+	// the client's position before it will start streaming.
+	GGA string
 }
 
 // Connect dials the caster, performs the Ntrip v1 handshake, and
@@ -136,6 +141,14 @@ func (s *NtripSource) handshake(conn net.Conn) (io.ReadCloser, error) {
 	}
 	if !bytes.Equal(line, []byte("ICY 200 OK\r\n")) {
 		return nil, fmt.Errorf("Ntrip: %s", strings.TrimSuffix(string(line), "\r\n"))
+	}
+	// A VRS caster needs the client's position before it streams; the
+	// spec allows sending the GGA after the request, so write it on the
+	// accepted stream as a separate write.
+	if len(s.GGA) > 0 {
+		if _, err := conn.Write([]byte(s.GGA)); err != nil {
+			return nil, err
+		}
 	}
 	if br.Buffered() == 0 {
 		return conn, nil

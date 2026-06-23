@@ -93,6 +93,20 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
+			name: "gga valid",
+			args: []string{"--gga", "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47", "caster.example", "MNT"},
+			expect: &flagConfig{
+				Addr:       "caster.example:2101",
+				Mountpoint: "MNT",
+				GGA:        "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n",
+			},
+		},
+		{
+			name:      "gga bad checksum",
+			args:      []string{"--gga", "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*00", "caster.example", "MNT"},
+			expectErr: true,
+		},
+		{
 			name:       "help short",
 			args:       []string{"-h"},
 			expectHelp: true,
@@ -143,6 +157,40 @@ func TestParseFlags(t *testing.T) {
 			}
 			if !reflect.DeepEqual(cfg, tc.expect) {
 				t.Errorf("got  %+v\nwant %+v", cfg, tc.expect)
+			}
+		})
+	}
+}
+
+func TestValidateGGA(t *testing.T) {
+	const gga = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47"
+	tests := []struct {
+		name string
+		in   string
+		want string // expected wire output; "" means expect an error
+	}{
+		{"gp", gga, gga + "\r\n"},
+		{"gn", "$GNGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*59", "$GNGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*59\r\n"},
+		{"trailing newline tolerated", gga + "\r\n", gga + "\r\n"},
+		{"bad checksum", "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*00", ""},
+		{"not gga", "$GPGLL,4916.45,N,12311.12,W,225444,A*31", ""},
+		{"not nmea", "GPGGA,nope", ""},
+		{"empty", "", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := validateGGA(tc.in)
+			if tc.want == "" {
+				if err == nil {
+					t.Fatalf("expected error, got %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
 			}
 		})
 	}
