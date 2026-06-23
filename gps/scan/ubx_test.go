@@ -18,10 +18,11 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
-// packetSyncBytes contains the first sync byte of each binary packet format.
+// packetSyncBytes contains the first sync byte of each packet format.
 // Used to generate invalid packets that won't be mistaken for valid ones.
 var packetSyncBytes = []byte{
 	'$',                  // NMEA
+	novmsg.AbbrevSync,    // NovAtel abbreviated ASCII
 	ubxbin.Sync1,         // UBX
 	rtcmbin.PreambleByte, // RTCM
 	casbin.Sync1,         // CASIC
