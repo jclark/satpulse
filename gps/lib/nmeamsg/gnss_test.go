@@ -116,23 +116,28 @@ func TestSerializeGGA(t *testing.T) {
 	}{
 		{
 			name:   "north-east",
-			in:     MakeGGA("GP", tm(12, 34, 56, 0), 13.731826167, 100.644802333, 1, pu8(8), pf64(1.2)),
+			in:     MakeGGA("GP", tm(12, 34, 56, 0), &[2]float64{13.731826167, 100.644802333}, 1, pu8(8), pf64(1.2)),
 			expect: "$GPGGA,123456.00,1343.90957,N,10038.68814,E,1,08,1.2,,,,,,*5E\r\n",
 		},
 		{
 			name:   "south-west",
-			in:     MakeGGA("GP", tm(23, 59, 59, 99), -33.8688, -151.2093, 4, pu8(12), pf64(0.8)),
+			in:     MakeGGA("GP", tm(23, 59, 59, 99), &[2]float64{-33.8688, -151.2093}, 4, pu8(12), pf64(0.8)),
 			expect: "$GPGGA,235959.99,3352.12800,S,15112.55800,W,4,12,0.8,,,,,,*5E\r\n",
 		},
 		{
 			name:   "zero position, no fix with metadata",
-			in:     MakeGGA("GN", tm(0, 0, 1, 50), 0, 0, 0, pu8(0), pf64(9.9)),
+			in:     MakeGGA("GN", tm(0, 0, 1, 50), &[2]float64{0, 0}, 0, pu8(0), pf64(9.9)),
 			expect: "$GNGGA,000001.50,0000.00000,N,00000.00000,E,0,00,9.9,,,,,,*47\r\n",
 		},
 		{
 			name:   "zero position, no fix without metadata",
-			in:     MakeGGA("GN", tm(0, 0, 1, 50), 0, 0, 0, nil, nil),
+			in:     MakeGGA("GN", tm(0, 0, 1, 50), &[2]float64{0, 0}, 0, nil, nil),
 			expect: "$GNGGA,000001.50,0000.00000,N,00000.00000,E,0,,,,,,,,*69\r\n",
+		},
+		{
+			name:   "absent position",
+			in:     MakeGGA("GN", tm(0, 0, 1, 50), nil, 0, nil, nil),
+			expect: "$GNGGA,000001.50,,,,,0,,,,,,,,*52\r\n",
 		},
 	}
 	for _, tc := range tests {
@@ -453,7 +458,7 @@ func TestLatLon(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			g := MakeGGA("GP", time.Time{}, tc.lat, tc.lon, 1, pu8(10), pf64(1.0)).Fields
+			g := MakeGGA("GP", time.Time{}, &[2]float64{tc.lat, tc.lon}, 1, pu8(10), pf64(1.0)).Fields
 			lat, lon := g.LatLon()
 			if math.Abs(lat-tc.lat) > tol || math.Abs(lon-tc.lon) > tol {
 				t.Errorf("got (%v, %v) want (%v, %v)", lat, lon, tc.lat, tc.lon)

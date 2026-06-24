@@ -64,6 +64,10 @@ func (s *Synth) PosECEF(msg *gpsprot.PosECEFMsg, _ time.Time) {
 // NavEpoch emits synthesized GGA for the epoch and clears accumulated state.
 func (s *Synth) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
 	latLon := s.position()
+	quality := ggaQuality(msg)
+	if latLon == nil {
+		quality = ggaQualityInvalid // no position, so report no fix
+	}
 	var numSats *uint8
 	if n := msg.NumSVUsed.Ptr(); n != nil {
 		v := ggaNumSats(*n)
@@ -73,22 +77,22 @@ func (s *Synth) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
 	if v := msg.DOP.Hor.Ptr(); v != nil {
 		hdop = v
 	}
-	s.sink.GGASentence(nmeamsg.MakeGGA("GN", s.time, latLon[0], latLon[1], ggaQuality(msg), numSats, hdop))
+	s.sink.GGASentence(nmeamsg.MakeGGA("GN", s.time, latLon, quality, numSats, hdop))
 	s.clear()
 }
 
-func (s *Synth) position() [2]float64 {
+func (s *Synth) position() *[2]float64 {
 	if s.latLon != nil {
-		return *s.latLon
+		return s.latLon
 	}
 	if s.ecef == nil {
-		return [2]float64{}
+		return nil
 	}
 	llh, err := geopos.WGS84.ECEFtoLLH(*s.ecef)
 	if err != nil {
-		return [2]float64{}
+		return nil
 	}
-	return [2]float64{llh.Lat, llh.Lon}
+	return &[2]float64{llh.Lat, llh.Lon}
 }
 
 func (s *Synth) clear() {

@@ -178,13 +178,12 @@ type GGASentence = Sentence[GGAFields]
 // SentenceFormat returns the NMEA sentence format for GGA.
 func (GGAFields) SentenceFormat() string { return "GGA" }
 
-// MakeGGA builds a complete GGA sentence from a synthesized fix. Hemispheres
-// come from the signs of lat and lon; nil optional values are left unset.
-func MakeGGA(talker string, t time.Time, lat, lon float64, quality uint8, numSats *uint8, hdop *float64) Sentence[GGAFields] {
+// MakeGGA builds a complete GGA sentence from a synthesized fix. A nil latLon
+// leaves the position fields empty, as in a no-fix sentence; hemispheres come
+// from the signs of latLon. nil optional values are left unset.
+func MakeGGA(talker string, t time.Time, latLon *[2]float64, quality uint8, numSats *uint8, hdop *float64) Sentence[GGAFields] {
 	f := GGAFields{
 		Time:    opt.Make(makeTodUTC(t)),
-		LatSign: 1,
-		LonSign: 1,
 		Quality: uint8Dec(quality),
 	}
 	if numSats != nil {
@@ -193,14 +192,18 @@ func MakeGGA(talker string, t time.Time, lat, lon float64, quality uint8, numSat
 	if hdop != nil {
 		f.HDOP = opt.Make(float32(*hdop))
 	}
-	if lat < 0 {
-		f.LatSign, lat = -1, -lat
+	if latLon != nil {
+		lat, lon := latLon[0], latLon[1]
+		f.LatSign, f.LonSign = 1, 1
+		if lat < 0 {
+			f.LatSign, lat = -1, -lat
+		}
+		if lon < 0 {
+			f.LonSign, lon = -1, -lon
+		}
+		f.Lat = opt.Make(latCoord{makeCoord(lat)})
+		f.Lon = opt.Make(lonCoord{makeCoord(lon)})
 	}
-	if lon < 0 {
-		f.LonSign, lon = -1, -lon
-	}
-	f.Lat = opt.Make(latCoord{makeCoord(lat)})
-	f.Lon = opt.Make(lonCoord{makeCoord(lon)})
 	return Sentence[GGAFields]{talkerID: talker, Fields: f}
 }
 
