@@ -62,8 +62,23 @@ func TestSynthGGANoFix(t *testing.T) {
 	if gga.Fields.NumSats.IsSet() || gga.Fields.HDOP.IsSet() {
 		t.Fatalf("optional metadata = %v/%v, want unset", gga.Fields.NumSats, gga.Fields.HDOP)
 	}
-	if payload := ggaPayload(t, gga); payload != "GNGGA,000000.00,0000.00000,N,00000.00000,E,0,,,,,,,," {
+	if payload := ggaPayload(t, gga); payload != "GNGGA,000000.00,,,,,0,,,,,,,," {
 		t.Fatalf("payload = %q", payload)
+	}
+}
+
+func TestSynthGGAFixWithoutPosition(t *testing.T) {
+	sink := &sink{}
+	s := New(sink)
+	// A fix level with no PosGeo/PosECEF in the epoch must not yield a
+	// quality > 0 GGA at 0,0; report no fix and leave the position empty.
+	s.NavEpoch(&gpsprot.NavEpochMsg{FixLevel: gpsprot.FixLevelCarrierFixed}, time.Time{})
+	gga := oneGGA(t, sink)
+	if uint8(gga.Fields.Quality) != ggaQualityInvalid {
+		t.Fatalf("quality = %d, want %d", gga.Fields.Quality, ggaQualityInvalid)
+	}
+	if gga.Fields.Lat.IsSet() || gga.Fields.Lon.IsSet() {
+		t.Fatalf("position set without a position message")
 	}
 }
 
