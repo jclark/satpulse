@@ -383,6 +383,7 @@ The following keys may be specified:
 * `ntrip.mountpoint` - a string giving the caster mountpoint to use; this key is required
 * `ntrip.username` - a string giving the user name for Ntrip basic authentication
 * `ntrip.password` - a string giving the password for Ntrip basic authentication
+* `ntrip.vrs` - a boolean saying whether the caster is a Virtual Reference Station, which requires the client to send its position before the caster will stream corrections; when true, SatPulse uploads the receiver's current position as an NMEA GGA sentence after connecting and again when it moves significantly; the default is false
 
 Example
 
