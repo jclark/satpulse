@@ -111,7 +111,8 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 	if help {
 		return usageFunc(progName), nil
 	}
-	ctx, _ := cmd.CancelOnSignal(context.Background(), lg)
+	ctx, cancel := cmd.CancelOnSignal(context.Background(), lg)
+	defer cancel()
 	version, _ := cmd.Version()
 	src := &stream.NtripSource{
 		Addr:       cfg.Addr,
@@ -119,13 +120,30 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		Username:   cfg.Username,
 		Password:   cfg.Password,
 		UserAgent:  stream.NtripUserAgent{Version: version},
-		GGA:        cfg.GGA,
+	}
+	var gs *stream.GGASender
+	if cfg.GGA != "" {
+		ch := make(chan scan.Packet, 1)
+		ch <- scan.Packet{
+			Format:        gpsreg.NMEAPacketFormat,
+			Data:          cfg.GGA,
+			ChecksumValid: true,
+		}
+		close(ch)
+		gs = stream.NewGGASender(ch)
+		go gs.Run(ctx, lg)
+		if err := gs.WaitReady(ctx); err != nil {
+			return "", err
+		}
 	}
 	rc, err := src.Connect(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer rc.Close()
+	if gs != nil && !gs.SetWriter(ctx, rc) {
+		return "", ctx.Err()
+	}
 	// Close rc on ctx cancellation so a blocked Read returns.
 	// NtripSource only watches ctx during the handshake.
 	go func() {

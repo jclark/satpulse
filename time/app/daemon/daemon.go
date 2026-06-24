@@ -229,6 +229,11 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 
 	version, _ := cmd.Version()
 	pullSetup := cfg.Stream.Pull.Prepare(version, conn, portLock)
+	var ggaSelector *gpsevent.GGASelector
+	if pullSetup != nil && pullSetup.VRS() {
+		ggaSelector = gpsevent.NewGGASelector()
+		pullSetup.SetSelectedGGA(ggaSelector.Packets())
+	}
 	var pullPktCh <-chan scan.Packet
 	if pullSetup != nil {
 		pullPktCh = pullSetup.Bcast().Subscribe()
@@ -315,7 +320,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	obs.AddObserver(&oc, posObs)
 	observer := oc.Observer()
 
-	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, observer, tStart)
+	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, observer, tStart, ggaSelector)
 	if err != nil {
 		return err
 	}
@@ -352,6 +357,7 @@ func NewDispatcher(
 	shm *ntpshm.Writer,
 	obs obs.Observer,
 	tStart time.Time,
+	ggaSelector *gpsevent.GGASelector,
 ) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
 	var controller *phcsync.Controller
@@ -372,7 +378,7 @@ func NewDispatcher(
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
 	shmWriter := gpsevent.NewSHMWriter(shm, cfg.shmFixedPrecision())
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ls, obs, eventLogPath, tStart)
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ls, obs, eventLogPath, tStart, ggaSelector)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
@@ -494,6 +500,9 @@ func configFeatures(cfg *Config, usingPHC bool) cfgFeatures {
 		cf |= cfgTimePulse
 	}
 	if cfg.Log.Track || len(cfg.HTTP) > 0 {
+		cf |= cfgPosition
+	}
+	if cfg.Stream.Pull.VRS() {
 		cf |= cfgPosition
 	}
 	if cfg.httpWantsSatellites() {

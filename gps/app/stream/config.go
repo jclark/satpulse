@@ -33,6 +33,7 @@ type NtripConfig struct {
 	Mountpoint string `toml:"mountpoint"`
 	Username   string `toml:"username"`
 	Password   string `toml:"password"`
+	VRS        bool   `toml:"vrs"`
 }
 
 // PushConfig is one [[stream.push]] entry.  Transport is selected
@@ -148,6 +149,11 @@ func (cfg *Config) HasNtripPush() bool {
 	return false
 }
 
+// VRS reports whether [stream.pull.ntrip] is configured for VRS upload.
+func (cfg *PullConfig) VRS() bool {
+	return cfg.Ntrip != nil && cfg.Ntrip.VRS
+}
+
 // Prepare builds a PullSetup for cfg, or returns nil when the pull
 // is disabled (neither tcp nor ntrip set).  version feeds the Ntrip
 // User-Agent header.  pw and portLock are the correction-output port
@@ -179,6 +185,7 @@ func (cfg *PullConfig) Prepare(version string,
 		pktFormats: defaultPullFormats,
 		pw:         pw,
 		portLock:   portLock,
+		vrs:        cfg.VRS(),
 	}
 }
 

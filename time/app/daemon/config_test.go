@@ -136,7 +136,8 @@ func TestStreamPullConfig(t *testing.T) {
 ntrip.address = "caster.example.com:2101"
 ntrip.mountpoint = "RTCM"
 ntrip.username = "u"
-ntrip.password = "p"`
+ntrip.password = "p"
+ntrip.vrs = true`
 	cfg, err := readConfig(strings.NewReader(cfgStr))
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +146,7 @@ ntrip.password = "p"`
 		t.Fatalf("expected stream.pull.ntrip to be set, got %+v", cfg.Stream)
 	}
 	n := cfg.Stream.Pull.Ntrip
-	if n.Address != "caster.example.com:2101" || n.Mountpoint != "RTCM" || n.Username != "u" || n.Password != "p" {
+	if n.Address != "caster.example.com:2101" || n.Mountpoint != "RTCM" || n.Username != "u" || n.Password != "p" || !n.VRS {
 		t.Errorf("ntrip = %+v", n)
 	}
 }

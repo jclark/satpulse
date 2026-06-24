@@ -5,9 +5,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/opt"
 )
+
+func TestConfigFeaturesVRSPullUsesPosition(t *testing.T) {
+	cfg := &Config{}
+	cfg.Stream.Pull.Ntrip = &stream.NtripConfig{VRS: true}
+	if got := configFeatures(cfg, false); got&cfgPosition == 0 {
+		t.Fatalf("configFeatures = %b, want cfgPosition set", got)
+	}
+}
 
 func TestGPSConfig(t *testing.T) {
 	// Baseline target that represents the common structure

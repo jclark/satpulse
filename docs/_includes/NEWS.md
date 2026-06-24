@@ -6,6 +6,7 @@ _Not yet released_
 
 - `satpulse.toml` has a new `[ntrip]` table and `[[ntrip.mountpoint]]` table array, which make `satpulsed` act as an Ntrip caster serving RTCM correction data from the receiver. Authentication is supported in conjunction with a new `[[user]]` table array. (#126)
 - `satpulse.toml` has a new `[stream.pull]` table, which makes `satpulsed` act as an Ntrip client, pulling correction data from an Ntrip caster and feeding it to the receiver. A plain TCP correction source can also be used. (#221)
+- `[stream.pull.ntrip]` has a new `vrs` option for Virtual Reference Station casters. When enabled, `satpulsed` waits for a usable receiver position, uploads a current GGA sentence after connecting, and resends it after reconnects or significant movement. (#325)
 - `satpulse.toml` has a new `[[stream.push]]` table array, which makes `satpulsed` act as an Ntrip server, pushing receiver packet streams to a remote Ntrip caster. RTCM is the default payload, and NMEA or UBX can be selected explicitly. (#238)
 - `[[stream.push]]` entries can now use `udp.address` to send receiver packet data to a UDP destination. (#320)
 - `satpulse.toml` has new `msm7to4` options on Ntrip mountpoints and push entries, which make `satpulsed` convert RTCM MSM7 packets to MSM4 before forwarding them, while leaving non-MSM7 packets unchanged. (#126, #238, #288)

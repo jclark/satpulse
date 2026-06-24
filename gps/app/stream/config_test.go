@@ -57,12 +57,13 @@ ntrip.address = "caster.example.com:2101"
 ntrip.mountpoint = "RTCM"
 ntrip.username = "u"
 ntrip.password = "p"
+ntrip.vrs = true
 `)
 	n := cfg.Pull.Ntrip
 	if n == nil {
 		t.Fatal("expected Ntrip set")
 	}
-	if n.Address != "caster.example.com:2101" || n.Mountpoint != "RTCM" || n.Username != "u" || n.Password != "p" {
+	if n.Address != "caster.example.com:2101" || n.Mountpoint != "RTCM" || n.Username != "u" || n.Password != "p" || !n.VRS {
 		t.Errorf("ntrip = %+v", n)
 	}
 	if err := cfg.Validate(); err != nil {
@@ -143,6 +144,7 @@ func TestPullConfigPrepareNtrip(t *testing.T) {
 		Mountpoint: "RTCM",
 		Username:   "u",
 		Password:   "p",
+		VRS:        true,
 	}}
 	s := pc.Prepare("9.9.9", nil, nil)
 	if s == nil {
@@ -158,6 +160,9 @@ func TestPullConfigPrepareNtrip(t *testing.T) {
 	}
 	if src.UserAgent.Version != "9.9.9" {
 		t.Errorf("UserAgent.Version = %q", src.UserAgent.Version)
+	}
+	if !s.VRS() {
+		t.Errorf("VRS() = false, want true")
 	}
 	if s.Addr() != "caster.example.com:2101" {
 		t.Errorf("Addr() = %q", s.Addr())
