@@ -40,18 +40,22 @@ const (
 
 // Protocol tags for external use
 const (
-	TagUBX           = ubx.Tag
-	TagNMEA          = nmea.Tag
-	TagRTCM          = rtcm.Tag
-	TagCASICBin      = casic.Tag
-	TagAllystarBin   = as.Tag
-	TagSDBP          = sdbp.Tag
-	TagUnicoreBin    = unc.TagBinary
-	TagUnicoreAscii  = unc.TagAscii
-	TagNovAtelBin    = nov.TagBinary
-	TagNovAtelAscii  = nov.TagAscii
+	TagUBX                = ubx.Tag
+	TagNMEA               = nmea.Tag
+	TagRTCM               = rtcm.Tag
+	TagCASICBin           = casic.Tag
+	TagAllystarBin        = as.Tag
+	TagSDBP               = sdbp.Tag
+	TagUnicoreBin         = unc.TagBinary
+	TagUnicoreAscii       = unc.TagAscii
+	TagNovAtelBin         = nov.TagBinary
+	TagNovAtelAscii       = nov.TagAscii
 	TagNovAtelAbbrevAscii = nov.TagAbbrevAscii
 )
+
+// NMEAPacketFormat is the NMEA packet format, re-exported for callers that
+// need to create NMEA packets without depending on gps/internal/nmea directly.
+var NMEAPacketFormat = nmea.PacketFormat
 
 // RTCMPacketFormat is the RTCM packet format, re-exported for
 // callers that need to scan RTCM without depending on
@@ -162,16 +166,16 @@ func CreatePacketProcessors(vendor Vendor) map[gpsprot.Tag]gpsprot.PacketProcess
 	nmeaPP := nmea.NewPacketProcessor(mgr)
 	nmeaPP.AddExtHandler(quectel.NewHandler())
 	procs := map[gpsprot.Tag]gpsprot.PacketProcessor{
-		ubx.Tag:       ubx.NewPacketProcessor(mgr),
-		casic.Tag:     casic.NewPacketProcessor(mgr),
-		as.Tag:        as.NewPacketProcessor(mgr),
-		sdbp.Tag:      sdbp.NewPacketProcessor(mgr),
-		nmea.Tag:      nmeaPP,
-		rtcm.Tag:      rtcm.NewPacketProcessor(),
-		unc.TagBinary: unc.NewBinPacketProcessor(mgr),
-		unc.TagAscii:  unc.NewAsciiPacketProcessor(mgr),
-		nov.TagBinary: nov.NewBinPacketProcessor(mgr),
-		nov.TagAscii:  nov.NewAsciiPacketProcessor(mgr),
+		ubx.Tag:            ubx.NewPacketProcessor(mgr),
+		casic.Tag:          casic.NewPacketProcessor(mgr),
+		as.Tag:             as.NewPacketProcessor(mgr),
+		sdbp.Tag:           sdbp.NewPacketProcessor(mgr),
+		nmea.Tag:           nmeaPP,
+		rtcm.Tag:           rtcm.NewPacketProcessor(),
+		unc.TagBinary:      unc.NewBinPacketProcessor(mgr),
+		unc.TagAscii:       unc.NewAsciiPacketProcessor(mgr),
+		nov.TagBinary:      nov.NewBinPacketProcessor(mgr),
+		nov.TagAscii:       nov.NewAsciiPacketProcessor(mgr),
 		nov.TagAbbrevAscii: nov.NewAbbrevAsciiPacketProcessor(),
 	}
 	if vendor != VendorUnknown {
