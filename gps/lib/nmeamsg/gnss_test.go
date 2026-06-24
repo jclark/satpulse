@@ -212,6 +212,22 @@ func TestParseRMC(t *testing.T) {
 		t.Errorf("Timestamp() = %v, %v; want 2025-05-04 11:46:50 UTC", ts, ok)
 	}
 
+	m12, err := parseSentence("$GNRMC,050400.00,A,1343.91095,N,10038.68425,E,0.028,,240625,,,A*64\r\n")
+	if err != nil {
+		t.Fatalf("parse 12-field RMC: %v", err)
+	}
+	want12 := RMCFields{
+		Time: tod(5, 4, 0, 0), Status: "A", Lat: lat(13, 4391095), LatSign: 1, Lon: lon(100, 3868425), LonSign: 1,
+		Speed: f64(0.028), Date: opt.Make(dateDMY(time.Date(2025, 6, 24, 0, 0, 0, 0, time.UTC))), Mode: "A",
+	}
+	r12 := m12.Body().(RMCFields)
+	if !reflect.DeepEqual(r12, want12) {
+		t.Errorf("12-field RMC\n got  %+v\n want %+v", r12, want12)
+	}
+	if ts, ok := r12.Timestamp(); !ok || !ts.Equal(time.Date(2025, 6, 24, 5, 4, 0, 0, time.UTC)) {
+		t.Errorf("Timestamp() = %v, %v; want 2025-06-24 05:04:00 UTC", ts, ok)
+	}
+
 	// No-fix RMC: status V and no position, but time and date are present,
 	// so a timestamp is still available.
 	m2, err := parseSentence("$GARMC,060651.00,V,,,,,,,150626,,,N,V*14\r\n")
@@ -356,6 +372,12 @@ func TestTodUTC(t *testing.T) {
 		}
 		if j, _ := v.MarshalJSON(); string(j) != tc.wantJSON {
 			t.Errorf("%q json -> %s, want %s", tc.in, j, tc.wantJSON)
+		}
+	}
+	for _, in := range []string{"240000.00", "126000.00", "120060.00", "235961.00"} {
+		var v todUTC
+		if err := v.UnmarshalText([]byte(in)); err == nil {
+			t.Errorf("UnmarshalText(%q) unexpectedly succeeded as %q", in, v)
 		}
 	}
 }

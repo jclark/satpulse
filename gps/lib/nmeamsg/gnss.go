@@ -70,7 +70,7 @@ func ParseGNSSTalkerPayload(payload string, flags SentenceSyntaxFlags) (GNSSTalk
 	case "GGA":
 		return asMsg(decode[GGAFields](talker, fields))
 	case "RMC":
-		return asMsg(decode[RMCFields](talker, fields))
+		return asMsg(decodeRange[RMCFields](talker, fields, 12, 13))
 	default:
 		return nil, ErrUnsupportedSentence
 	}
@@ -85,14 +85,27 @@ func ParseGNSSTalkerPayload(payload string, flags SentenceSyntaxFlags) (GNSSTalk
 // rejects truncated and over-long sentences as malformed.
 func decode[F SentenceFields](talker string, fields []string) (Sentence[F], error) {
 	var f F
+	want := reflect.TypeOf(f).NumField()
+	return decodeRange[F](talker, fields, want, want)
+}
+
+func decodeRange[F SentenceFields](talker string, fields []string, min, max int) (Sentence[F], error) {
+	var f F
 	n, err := fieldenc.PartialDecode(fields, &f)
 	if err != nil {
 		return Sentence[F]{}, fmt.Errorf("%s: %w", f.SentenceFormat(), err)
 	}
-	if want := reflect.TypeOf(f).NumField(); n != want || n != len(fields) {
-		return Sentence[F]{}, fmt.Errorf("%s: expected %d fields, got %d", f.SentenceFormat(), want, len(fields))
+	if n != len(fields) || n < min || n > max {
+		return Sentence[F]{}, fieldCountErr(f.SentenceFormat(), min, max, len(fields))
 	}
 	return Sentence[F]{talkerID: talker, Fields: f}, nil
+}
+
+func fieldCountErr(format string, min, max, got int) error {
+	if min == max {
+		return fmt.Errorf("%s: expected %d fields, got %d", format, min, got)
+	}
+	return fmt.Errorf("%s: expected %d or %d fields, got %d", format, min, max, got)
 }
 
 // asMsg boxes a decoded sentence as a GNSSTalkerIDMsg, returning a nil
@@ -286,6 +299,9 @@ func (t *todUTC) UnmarshalText(b []byte) error {
 	h, _ := strconv.Atoi(hms[0:2])
 	m, _ := strconv.Atoi(hms[2:4])
 	s, _ := strconv.Atoi(hms[4:6])
+	if h > 23 || m > 59 || s > 60 || (s == 60 && (h != 23 || m != 59)) {
+		return fmt.Errorf("invalid time-of-day %q", b)
+	}
 	*t = todUTC(h*360000 + m*6000 + s*100 + int(cc))
 	return nil
 }
