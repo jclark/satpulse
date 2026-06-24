@@ -1,4 +1,4 @@
-# NMEA GGA support: parsing, synthesis, and proxy (#329)
+# NMEA GGA support: synthesis and proxy (#329)
 
 ## Motivation
 
@@ -14,8 +14,10 @@ GGA handling in several places:
 - A TCP proxy serving NMEA should be able to include synthesized GGA when the
   receiver stream does not already include a real GGA for that UTC.
 
-This plan is for the general NMEA/GGA work. VRS pull support remains in
-`plan/vrs.md` and depends on stages 2, 3, and 4 here.
+This plan is for the general NMEA/GGA work. Everything after stage 1 depends on
+the NMEA decode layer (#330), which provides the typed `nmeamsg` GGA and sentence
+types. VRS pull support remains in `plan/vrs.md` and depends on #330 and stages 2
+and 3 here.
 
 ## Stage 1: `ntripcmd --gga` option (done)
 
@@ -44,167 +46,7 @@ static `NtripSource.GGA` field by routing `--gga` through the shared
 post-handshake GGA sender; this stage describes the completed first diagnostic,
 not the final writer architecture.
 
-## Stage 2: GGA parsing and serialisation with `fieldenc`
-
-Add typed GGA parsing and serialisation to `gps/lib/nmeamsg`. This is a
-low-level syntax/message package, so it must stay free of `gpsprot`
-dependencies. The GGA work should be shaped as the first reusable NMEA
-fieldenc-backed sentence implementation, not as a VRS helper.
-
-### Sentence wrapper
-
-Use the split used by `novmsg`: the wrapper carries sentence addressing, while
-the payload struct is what `fieldenc` sees. Do not put a `Sentence()` method on
-GGA data; packet construction (address, checksum, CRLF) belongs in the wrapper
-serialiser.
-
-```go
-type TalkerID string
-
-const TalkerGP TalkerID = "GP"
-
-type SentenceFields interface {
-	SentenceFormat() string
-}
-
-type Sentence[F SentenceFields] struct {
-	TalkerID TalkerID
-	Fields   F
-}
-```
-
-`Sentence[F]` represents an addressed approved NMEA sentence. `F` is the typed
-field set and provides the NMEA sentence format (`"GGA"` here). `Serialize`
-applies `fieldenc.Encode` to `s.Fields`, builds the checksum payload as
-`<talker><format>[,<fields>]`, computes `nmeamsg.Checksum` over that payload
-only (the bytes between `$` and `*`), and returns `$` + payload + `*` +
-checksum + CRLF:
-
-```go
-func Serialize[F SentenceFields](s Sentence[F]) ([]byte, error)
-func Parse[F SentenceFields](data string) (Sentence[F], error)
-```
-
-`Parse` checks the NMEA syntax and checksum, verifies that the address format
-matches `F.SentenceFormat()`, decodes the fields with `fieldenc`, and preserves
-the talker ID from the input. If the generic `Parse[F]` API turns out awkward in
-implementation, a GGA-specific parser is acceptable for the first step, but the
-field layout should still be reusable for later NMEA sentences.
-
-### GGA fields
-
-`fieldenc` is strictly one struct field per output slot, but GGA latitude and
-longitude are each two wire fields (magnitude + hemisphere). So they are
-separate struct fields, and the constructor splits the signed angle into a
-degrees/minutes magnitude and a hemisphere.
-
-```go
-type GGAFields struct {
-	Time     opt.Val[todUTC]   // "hhmmss.ss"
-	LatMin   opt.Val[latCoord] // "ddmm.mmmmm"  (deg+min struct, 2-digit degrees)
-	LatNS    string            // "N"/"S", empty when absent
-	LonMin   opt.Val[lonCoord] // "dddmm.mmmmm" (deg+min struct, 3-digit degrees)
-	LonEW    string            // "E"/"W", empty when absent
-	Quality  uint8Dec          // base-10 uint8, 0 = no fix
-	NumSats  opt.Val[uint8Dec2] // two-digit base-10 uint8
-	HDOP     opt.Val[float32]  // decimal number
-	Alt      opt.Val[float64]  // antenna altitude
-	AltUnit  string            // "M", empty when absent
-	GeoidSep opt.Val[float64]  // geoidal separation
-	GeoidU   string            // "M", empty when absent
-	DGPSAge  opt.Val[float32]  // seconds since DGPS update
-	DGPSID   opt.Val[uint16Dec4]
-}
-
-func (GGAFields) SentenceFormat() string { return "GGA" }
-```
-
-`gps/lib/nmeamsg` may import `gps/lib/opt`. Empty non-string fields are
-represented by wrapping the real wire type in `opt.Val[T]`, not by weakening
-numeric fields to strings. Fields whose wire type is already text, such as
-hemisphere and unit fields, remain plain `string`; the empty string is the empty
-wire field. Field-level semantic validation belongs in a later GGA validation
-layer, not in `fieldenc` decoding. Most GGA fields must be optional because
-valid no-fix receiver output can leave them empty. The NMEA 4.00 GGA definition
-explicitly says only field 6, the GPS quality indicator, should not be a null
-field. Cold-start logs confirm real receivers emit valid GGA with an empty time
-(`$GPGGA,,,,,,0,00,99.99,...`) and with time present but position, altitude,
-geoidal separation, and DGPS fields empty.
-
-Custom types (each gets `MarshalText`, and `UnmarshalText` for parsing
-symmetry):
-
-- `todUTC` - UTC time-of-day `time.Time` <-> `hhmmss.ss`. The date part of the
-  `time.Time` is not part of GGA and must not be significant after parsing.
-- `latCoord` / `lonCoord` - one lat/lon magnitude field (`ddmm.mmmmm` /
-  `dddmm.mmmmm`), represented as a small struct that mirrors the wire form:
-  whole `deg uint16` plus `min int64`, the minutes held as fixed-point scaled by
-  1e5 (so `0 <= min < 60e5`). Both types share one underlying `coord` struct
-  and differ only in degree-field width (2 vs 3 digits). `MarshalText` prints
-  `deg` zero-padded to that width, then the minutes as `%02d.%05d` from
-  `min/1e5` and `min%1e5`. No float and no `decconv`, so output is exact and
-  `UnmarshalText` round-trips it byte-for-byte.
-- `uint8Dec`, `uint8Dec2`, `uint16Dec4` - unsigned integer wire fields parsed
-  as base-10 with the named Go integer width; the suffix gives the serialized
-  zero-padded field width when the NMEA spec fixes one (`xx`, `xxxx`). These are
-  generic formatting types, not semantic field types: use them for NMEA fields
-  where zero-padded decimal input such as `08` or `0001` must parse as decimal.
-  Do not use bare unsigned integers for those fields, because `fieldenc` parses
-  unsigned integers with `strconv.ParseUint(..., 0, ...)`.
-
-`Parse` should validate the GGA field count explicitly before calling
-`fieldenc.Decode`, so non-standard extra fields and truncated sentences have a
-deliberate policy rather than falling out of `fieldenc`'s generic count rules.
-Exact preservation of the original decimal spelling is not a goal of
-`fieldenc` decoding; conversion into the appropriate wire type is enough. For
-decimal-number fields, use `float32` for HDOP and DGPS age, and `float64` for
-altitude and geoidal separation. This keeps the typed fields simple while
-matching the existing `gps/internal/nmea` parser's acceptance of float-valued
-fields.
-
-API:
-
-```go
-func MakeGGA(talker TalkerID, t time.Time, lat, lon float64, quality, numSats uint8, hdop float64) Sentence[GGAFields]
-func (g GGAFields) LatLon() (lat, lon float64)
-```
-
-`MakeGGA` derives the hemisphere from the original sign and splits the absolute
-float64 degrees into the exact wire coord representation: `deg = int(absA)`,
-`min = round((absA-deg)*60e5)`, carrying `min == 60e5` up into `deg`. It is a
-convenience for complete synthesized fixes and sets the optional fields it can
-populate. `LatLon` recombines the coord fields with the hemisphere fields,
-recovering exactly the position the sentence encodes.
-
-Tests:
-
-- Golden sentences for known positions in each hemisphere, exact bytes incl.
-  checksum, produced through `Serialize`.
-- Parse golden sentences and verify the typed fields.
-- Parse and serialize zero-padded decimal unsigned fields such as `08` and
-  `0001`.
-- Parse decimal fields with varied fractional digit counts and verify the typed
-  `float32`/`float64` values.
-- Parse captured no-fix GGA with empty time
-  (`$GPGGA,,,,,,0,00,99.99,,,,,,*48`) and with time but no position
-  (`$GNGGA,060713.00,,,,,0,06,4.88,,,,,,*49`).
-- Unset optional fields and empty string fields serialize as empty fields; parse
-  maps them back to unset optionals or empty strings respectively.
-- GGA field-count validation rejects the wrong number of fields explicitly.
-- Minutes < 10 (zero-padding) and the degree/minute split boundary.
-- `todUTC` parse/serialize preserves the time-of-day fields; parsed dates are
-  not significant.
-- `LatLon` round-trips `MakeGGA(...).Fields` inputs within tolerance.
-- Serialize -> parse checks typed fields; parsing captured receiver output does
-  not require byte-exact reserialization of decimal spelling.
-
-Follow-up: once `GGAFields` parses via `fieldenc.Decode`, it can replace the
-hand-rolled `parseGGA` internals in `gps/internal/nmea/nmea.go`. That replacement
-intentionally tightens empty-quality handling: `GGAFields.Quality` is
-non-optional, while the legacy parser treats empty quality like no fix, so make
-that compatibility decision explicitly when doing the replacement.
-
-## Stage 3: NMEA GGA synthesis from `gpsprot`
+## Stage 2: NMEA GGA synthesis from `gpsprot`
 
 Add a reusable `gpsprot.MsgHandler` that synthesizes GGA from decoded GPS
 messages and sends typed GGA sentences to a sink. This produces candidate GGA
@@ -276,7 +118,7 @@ Tests:
 - Later real NMEA selection is not tested here; this package only synthesizes
   candidates.
 
-## Stage 4: selected GGA feed
+## Stage 3: selected GGA feed
 
 Add the shared selection path that chooses the best GGA stream for consumers
 that need position upload. This stage is not a proxy feature.
@@ -284,7 +126,7 @@ that need position upload. This stage is not a proxy feature.
 Inputs:
 
 - original receiver GGA packets accepted by the normal NMEA packet processor;
-- synthesized GGA candidates from stage 3.
+- synthesized GGA candidates from stage 2.
 
 Output:
 
@@ -304,7 +146,7 @@ processing succeeds. That way the selector sees packets that the normal parser
 accepted.
 
 For selector input, "valid original GGA candidate" means checksum-valid approved
-NMEA GGA that also passes the stage 2 typed GGA parser, including the explicit
+NMEA GGA that also passes the #330 typed GGA parser, including the explicit
 GGA field-count check. A packet that the legacy parser accepts only because it is
 permissive must not enter the selected-GGA output.
 
@@ -388,10 +230,10 @@ Tests:
   newest pending GGA.
 - The daemon wires a selected-GGA feed when VRS pull or proxy synth needs it.
 
-## Stage 5: `proxy.tcp` NMEA synthesis option
+## Stage 4: `proxy.tcp` NMEA synthesis option
 
 Add a `synth` option to `[[proxy.tcp]]`. It applies only when
-`protocol = "NMEA"`. It uses the selected-GGA core from stage 4 but is unrelated
+`protocol = "NMEA"`. It uses the selected-GGA core from stage 3 but is unrelated
 to VRS.
 
 Example:
@@ -421,16 +263,16 @@ Architecture:
   broadcast. Other services subscribe to the raw receiver broadcast.
 - `gpsevent.Dispatcher` gets an optional NMEA selector path. It feeds valid
   original NMEA packets from `handlePacket` to the selected NMEA output and
-  feeds original GGA plus synthesized GGA candidates through the stage 4
+  feeds original GGA plus synthesized GGA candidates through the stage 3
   selected-GGA core.
 
-For proxy clients, the NMEA selector output is broader than the stage 4
+For proxy clients, the NMEA selector output is broader than the stage 3
 selected-GGA feed:
 
 - non-GGA original NMEA packets pass through immediately;
 - original GGA packets pass through immediately and update the shared
   selected-GGA state;
-- synthesized GGA packets are inserted only when stage 4 does not suppress them
+- synthesized GGA packets are inserted only when stage 3 does not suppress them
   for the same UTC as an original receiver GGA.
 
 Tests:
@@ -448,5 +290,5 @@ Tests:
 
 ## Open decisions
 
-- Whether to add `synth` to Unix socket proxy services later. Stage 5 only covers
+- Whether to add `synth` to Unix socket proxy services later. Stage 4 only covers
   `[[proxy.tcp]]`.
