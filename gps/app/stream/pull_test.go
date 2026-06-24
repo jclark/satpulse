@@ -1124,6 +1124,30 @@ func TestGGASenderRejectsQualityZero(t *testing.T) {
 	}
 }
 
+// A GGA with empty position fields is not usable even with a nonzero quality,
+// so a synthesized no-fix GGA (empty lat/lon) never starts a VRS upload.
+func TestGGASenderRejectsNoPosition(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch := make(chan scan.Packet, 1)
+	ch <- nmeaPacket("GPGGA,123519,,,,,1,08,0.9,545.4,M,46.9,M,,")
+	close(ch)
+	gs := NewGGASender(ch)
+	done := make(chan struct{})
+	go func() {
+		gs.Run(ctx, discardLogger())
+		close(done)
+	}()
+	if err := gs.WaitReady(ctx); !errors.Is(err, ErrNoUsableGGA) {
+		t.Fatalf("WaitReady = %v, want ErrNoUsableGGA", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sender did not exit after unusable one-shot GGA")
+	}
+}
+
 func TestGGASenderForceSendsOnConnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	gga := nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
