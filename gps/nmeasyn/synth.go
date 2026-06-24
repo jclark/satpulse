@@ -64,13 +64,14 @@ func (s *Synth) PosECEF(msg *gpsprot.PosECEFMsg, _ time.Time) {
 // NavEpoch emits synthesized GGA for the epoch and clears accumulated state.
 func (s *Synth) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
 	latLon := s.position()
-	var numSats uint8
+	var numSats *uint8
 	if n := msg.NumSVUsed.Ptr(); n != nil {
-		numSats = ggaNumSats(*n)
+		v := ggaNumSats(*n)
+		numSats = &v
 	}
-	var hdop float64
+	var hdop *float64
 	if v := msg.DOP.Hor.Ptr(); v != nil {
-		hdop = *v
+		hdop = v
 	}
 	s.sink.GGASentence(nmeamsg.MakeGGA("GN", s.time, latLon[0], latLon[1], ggaQuality(msg), numSats, hdop))
 	s.clear()

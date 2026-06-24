@@ -55,8 +55,15 @@ func TestSynthGGANoFix(t *testing.T) {
 	sink := &sink{}
 	s := New(sink)
 	s.NavEpoch(&gpsprot.NavEpochMsg{FixLevel: gpsprot.FixLevelNone}, time.Time{})
-	if gga := oneGGA(t, sink); uint8(gga.Fields.Quality) != ggaQualityInvalid {
+	gga := oneGGA(t, sink)
+	if uint8(gga.Fields.Quality) != ggaQualityInvalid {
 		t.Fatalf("quality = %d, want %d", gga.Fields.Quality, ggaQualityInvalid)
+	}
+	if gga.Fields.NumSats.IsSet() || gga.Fields.HDOP.IsSet() {
+		t.Fatalf("optional metadata = %v/%v, want unset", gga.Fields.NumSats, gga.Fields.HDOP)
+	}
+	if payload := ggaPayload(t, gga); payload != "GNGGA,000000.00,0000.00000,N,00000.00000,E,0,,,,,,,," {
+		t.Fatalf("payload = %q", payload)
 	}
 }
 

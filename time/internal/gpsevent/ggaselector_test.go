@@ -28,7 +28,7 @@ func TestGGASelectorOriginalSuppressesSynthSameUTC(t *testing.T) {
 		t.Fatal("OriginalGGA returned false")
 	}
 	oneSelectedGGA(t, s)
-	s.GGASentence(nmeamsg.MakeGGA("GN", time.Date(2026, 6, 24, 12, 35, 19, 0, time.UTC), 1, 2, 1, 8, 0.9))
+	s.GGASentence(nmeamsg.MakeGGA("GN", time.Date(2026, 6, 24, 12, 35, 19, 0, time.UTC), 1, 2, 1, pu8(8), pf64(0.9)))
 	if pkt, ok := trySelectedGGA(s); ok {
 		t.Fatalf("selected synthesized same-UTC GGA %q, want none", pkt.Data)
 	}
@@ -40,7 +40,7 @@ func TestGGASelectorOriginalEmptyUTCDoesNotSuppressSynth(t *testing.T) {
 		t.Fatal("OriginalGGA returned false")
 	}
 	oneSelectedGGA(t, s)
-	s.GGASentence(nmeamsg.MakeGGA("GN", time.Date(2026, 6, 24, 12, 35, 19, 0, time.UTC), 1, 2, 1, 8, 0.9))
+	s.GGASentence(nmeamsg.MakeGGA("GN", time.Date(2026, 6, 24, 12, 35, 19, 0, time.UTC), 1, 2, 1, pu8(8), pf64(0.9)))
 	if got := oneSelectedGGA(t, s); got.Format != gpsreg.NMEAPacketFormat {
 		t.Fatalf("Format = %v, want NMEA", got.Format)
 	}
@@ -52,7 +52,7 @@ func TestGGASelectorSynthDifferentUTCForwarded(t *testing.T) {
 		t.Fatal("OriginalGGA returned false")
 	}
 	oneSelectedGGA(t, s)
-	s.GGASentence(nmeamsg.MakeGGA("GN", time.Date(2026, 6, 24, 12, 35, 20, 0, time.UTC), 1, 2, 1, 8, 0.9))
+	s.GGASentence(nmeamsg.MakeGGA("GN", time.Date(2026, 6, 24, 12, 35, 20, 0, time.UTC), 1, 2, 1, pu8(8), pf64(0.9)))
 	if got := oneSelectedGGA(t, s); !hasGGAUTC(got.Data, "123520") {
 		t.Fatalf("selected GGA = %q, want UTC 123520", got.Data)
 	}
@@ -60,7 +60,7 @@ func TestGGASelectorSynthDifferentUTCForwarded(t *testing.T) {
 
 func TestGGASelectorSynthPacketValid(t *testing.T) {
 	s := NewGGASelector()
-	s.GGASentence(nmeamsg.MakeGGA("GN", time.Date(2026, 6, 24, 12, 35, 19, 0, time.UTC), 13.731826167, 100.644802333, 1, 8, 1.2))
+	s.GGASentence(nmeamsg.MakeGGA("GN", time.Date(2026, 6, 24, 12, 35, 19, 0, time.UTC), 13.731826167, 100.644802333, 1, pu8(8), pf64(1.2)))
 	pkt := oneSelectedGGA(t, s)
 	if pkt.Format != gpsreg.NMEAPacketFormat || !pkt.ChecksumValid {
 		t.Fatalf("packet format/checksum = %v/%v, want NMEA/true", pkt.Format, pkt.ChecksumValid)
@@ -114,6 +114,9 @@ func nmeaPacket(payload string) scan.Packet {
 		ChecksumValid: true,
 	}
 }
+
+func pu8(v uint8) *uint8      { return &v }
+func pf64(v float64) *float64 { return &v }
 
 func oneSelectedGGA(t *testing.T, s *GGASelector) scan.Packet {
 	t.Helper()
