@@ -176,16 +176,19 @@ type GGAFields struct {
 func (GGAFields) SentenceFormat() string { return "GGA" }
 
 // MakeGGA builds a complete GGA sentence from a synthesized fix. Hemispheres
-// come from the signs of lat and lon; height and differential fields are left
-// unset.
-func MakeGGA(talker string, t time.Time, lat, lon float64, quality, numSats uint8, hdop float64) Sentence[GGAFields] {
+// come from the signs of lat and lon; nil optional values are left unset.
+func MakeGGA(talker string, t time.Time, lat, lon float64, quality uint8, numSats *uint8, hdop *float64) Sentence[GGAFields] {
 	f := GGAFields{
 		Time:    opt.Make(makeTodUTC(t)),
 		LatSign: 1,
 		LonSign: 1,
 		Quality: uint8Dec(quality),
-		NumSats: opt.Make(uint8Dec2(numSats)),
-		HDOP:    opt.Make(float32(hdop)),
+	}
+	if numSats != nil {
+		f.NumSats = opt.Make(uint8Dec2(*numSats))
+	}
+	if hdop != nil {
+		f.HDOP = opt.Make(float32(*hdop))
 	}
 	if lat < 0 {
 		f.LatSign, lat = -1, -lat
