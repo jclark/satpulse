@@ -172,6 +172,9 @@ type GGAFields struct {
 	DGPSID    opt.Val[uint16Dec4] `json:"dgpsId,omitzero"`
 }
 
+// GGASentence is a typed NMEA GGA sentence.
+type GGASentence = Sentence[GGAFields]
+
 // SentenceFormat returns the NMEA sentence format for GGA.
 func (GGAFields) SentenceFormat() string { return "GGA" }
 
