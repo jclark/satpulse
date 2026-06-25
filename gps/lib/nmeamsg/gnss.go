@@ -175,10 +175,11 @@ type GGAFields struct {
 // SentenceFormat returns the NMEA sentence format for GGA.
 func (GGAFields) SentenceFormat() string { return "GGA" }
 
-// MakeGGA builds a complete GGA sentence from a synthesized fix. A nil latLon
-// leaves the position fields empty, as in a no-fix sentence; hemispheres come
-// from the signs of latLon. nil optional values are left unset.
-func MakeGGA(talker string, t time.Time, latLon *[2]float64, quality uint8, numSats *uint8, hdop *float64) Sentence[GGAFields] {
+// MakeGGA builds a GGA sentence from a fix. A nil latLon leaves the position
+// fields empty, as in a no-fix sentence; hemispheres come from the signs of
+// latLon. height is height above the ellipsoid, and heightMSL is height above
+// mean sea level. nil optional values are left unset.
+func MakeGGA(talker string, t time.Time, latLon *[2]float64, height, heightMSL *float64, quality uint8, numSats *uint8, hdop *float64) Sentence[GGAFields] {
 	f := GGAFields{
 		Time:    opt.Make(makeTodUTC(t)),
 		Quality: uint8Dec(quality),
@@ -200,6 +201,14 @@ func MakeGGA(talker string, t time.Time, latLon *[2]float64, quality uint8, numS
 		}
 		f.Lat = opt.Make(latCoord{makeCoord(lat)})
 		f.Lon = opt.Make(lonCoord{makeCoord(lon)})
+		if heightMSL != nil {
+			f.Alt = opt.Make(*heightMSL)
+			f.AltUnit = "M"
+			if height != nil {
+				f.GeoidSep = opt.Make(*height - *heightMSL)
+				f.GeoidUnit = "M"
+			}
+		}
 	}
 	return Sentence[GGAFields]{talkerID: talker, Fields: f}
 }
