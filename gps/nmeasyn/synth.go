@@ -81,7 +81,11 @@ func (s *Synth) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
 	if v := msg.DOP.Hor.Ptr(); v != nil {
 		hdop = v
 	}
-	s.sink.GGASentence(nmeamsg.MakeGGA("GN", s.time, latLon, height, s.heightMSL, quality, numSats, hdop))
+	heightMSL := s.heightMSL
+	if height != nil && heightMSL == nil {
+		heightMSL = height
+	}
+	s.sink.GGASentence(nmeamsg.MakeGGA("GN", s.time, latLon, height, heightMSL, quality, numSats, hdop))
 	s.clear()
 }
 
