@@ -46,7 +46,7 @@ _Not yet released_
 
 - `satpulsetool` has a new `pack` command, which reads a JSONL packet log and writes selected packets as a packet byte stream corresponding to the original packet contents. It can filter by packet `tag` and `msg`, and can preserve inter-packet timing for FIFO-based replay. (#247)
 - `satpulsetool` has a new `scan` command, which reads a raw GPS packet byte stream and writes a JSONL packet log that can be decoded with `satpulsetool annotate`. (#246)
-- `satpulsetool ntrip` has a new `--gga` option that sends an NMEA GGA sentence to the caster on connect, for use with Virtual Reference Station casters such as u-blox PointPerfect that need the client's position before they will stream. (#325)
+- `satpulsetool ntrip` has a new `--nmea-send-pos` option that takes `lat,lon[,hgt]` and sends a synthesized NMEA GGA sentence to the caster on connect, for Virtual Reference Station casters such as u-blox PointPerfect that need the client's position before they will stream. (#325)
 
 ### Miscellaneous
 
