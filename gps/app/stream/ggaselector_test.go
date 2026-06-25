@@ -1,4 +1,4 @@
-package gpsevent
+package stream
 
 import (
 	"bytes"
@@ -11,21 +11,21 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
-func TestGGASelectorOriginalForwarded(t *testing.T) {
+func TestGGASelectorPacketForwarded(t *testing.T) {
 	s := NewGGASelector()
 	pkt := ggaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
-	if !s.OriginalGGA(pkt) {
-		t.Fatal("OriginalGGA returned false")
+	if !s.Packet(pkt) {
+		t.Fatal("Packet returned false")
 	}
 	if got := oneSelectedGGA(t, s); got.Data != pkt.Data {
 		t.Fatalf("selected GGA = %q, want %q", got.Data, pkt.Data)
 	}
 }
 
-func TestGGASelectorOriginalSuppressesSynthSameUTC(t *testing.T) {
+func TestGGASelectorPacketSuppressesSynthSameUTC(t *testing.T) {
 	s := NewGGASelector()
-	if !s.OriginalGGA(ggaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")) {
-		t.Fatal("OriginalGGA returned false")
+	if !s.Packet(ggaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")) {
+		t.Fatal("Packet returned false")
 	}
 	oneSelectedGGA(t, s)
 	s.GGASentence(nmeamsg.MakeGGA("GN", time.Date(2026, 6, 24, 12, 35, 19, 0, time.UTC), &[2]float64{1, 2}, nil, nil, 1, pu8(8), pf64(0.9)))
@@ -34,10 +34,10 @@ func TestGGASelectorOriginalSuppressesSynthSameUTC(t *testing.T) {
 	}
 }
 
-func TestGGASelectorOriginalEmptyUTCDoesNotSuppressSynth(t *testing.T) {
+func TestGGASelectorPacketEmptyUTCDoesNotSuppressSynth(t *testing.T) {
 	s := NewGGASelector()
-	if !s.OriginalGGA(ggaPacket("GPGGA,,,,,,0,00,99.99,,,,,,")) {
-		t.Fatal("OriginalGGA returned false")
+	if !s.Packet(ggaPacket("GPGGA,,,,,,0,00,99.99,,,,,,")) {
+		t.Fatal("Packet returned false")
 	}
 	oneSelectedGGA(t, s)
 	s.GGASentence(nmeamsg.MakeGGA("GN", time.Date(2026, 6, 24, 12, 35, 19, 0, time.UTC), &[2]float64{1, 2}, nil, nil, 1, pu8(8), pf64(0.9)))
@@ -48,8 +48,8 @@ func TestGGASelectorOriginalEmptyUTCDoesNotSuppressSynth(t *testing.T) {
 
 func TestGGASelectorSynthDifferentUTCForwarded(t *testing.T) {
 	s := NewGGASelector()
-	if !s.OriginalGGA(ggaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")) {
-		t.Fatal("OriginalGGA returned false")
+	if !s.Packet(ggaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")) {
+		t.Fatal("Packet returned false")
 	}
 	oneSelectedGGA(t, s)
 	s.GGASentence(nmeamsg.MakeGGA("GN", time.Date(2026, 6, 24, 12, 35, 20, 0, time.UTC), &[2]float64{1, 2}, nil, nil, 1, pu8(8), pf64(0.9)))
@@ -74,7 +74,7 @@ func TestGGASelectorSynthPacketValid(t *testing.T) {
 	}
 }
 
-func TestGGASelectorRejectsInvalidOriginal(t *testing.T) {
+func TestGGASelectorRejectsInvalidPacket(t *testing.T) {
 	tests := []scan.Packet{
 		{Format: gpsreg.NMEAPacketFormat, Data: ggaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,").Data},
 		nmeaPacket("GPRMC,123519,A,4807.038,N,01131.000,E,0,,240626,,,A,V"),
@@ -82,11 +82,11 @@ func TestGGASelectorRejectsInvalidOriginal(t *testing.T) {
 	}
 	for _, pkt := range tests {
 		s := NewGGASelector()
-		if s.OriginalGGA(pkt) {
-			t.Fatalf("OriginalGGA(%q) returned true, want false", pkt.Data)
+		if s.Packet(pkt) {
+			t.Fatalf("Packet(%q) returned true, want false", pkt.Data)
 		}
 		if pkt, ok := trySelectedGGA(s); ok {
-			t.Fatalf("selected invalid original %q", pkt.Data)
+			t.Fatalf("selected invalid packet %q", pkt.Data)
 		}
 	}
 }
@@ -95,8 +95,8 @@ func TestGGASelectorLatestWins(t *testing.T) {
 	s := NewGGASelector()
 	oldPkt := ggaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
 	newPkt := ggaPacket("GPGGA,123520,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
-	if !s.OriginalGGA(oldPkt) || !s.OriginalGGA(newPkt) {
-		t.Fatal("OriginalGGA returned false")
+	if !s.Packet(oldPkt) || !s.Packet(newPkt) {
+		t.Fatal("Packet returned false")
 	}
 	if got := oneSelectedGGA(t, s); got.Data != newPkt.Data {
 		t.Fatalf("selected GGA = %q, want newest %q", got.Data, newPkt.Data)

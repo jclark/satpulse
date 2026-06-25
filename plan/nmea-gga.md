@@ -125,14 +125,16 @@ need position upload. This stage provides only the reusable selected-GGA core
 needed by `plan/vrs.md`; it does not change the daemon, dispatcher, stream pull,
 or proxy wiring.
 
-The selector belongs in `time/internal/gpsevent` as `GGASelector`: it owns a
-capacity-1 selected-GGA channel and sits at the application-layer join point
-where receiver packets and synthesized GPS events will later meet.
+The selector belongs in `gps/app/stream` as `GGASelector`: it owns a capacity-1
+selected-GGA channel and is reusable by both `satpulsed` and the desktop GUI.
+`gpsevent` must receive it through a small interface rather than depending on
+the concrete stream type.
 
 Inputs:
 
-- original receiver GGA packets that a later caller has already accepted
-  through the normal NMEA packet processor;
+- receiver packets that a later caller has already accepted through the normal
+  packet processor. The selector itself filters these down to valid NMEA GGA
+  packets;
 - synthesized GGA candidates from stage 2.
 
 Output:
@@ -142,22 +144,24 @@ Output:
   the selector publishes without blocking, and when the channel already contains
   a pending GGA it drops that old packet before trying to store the newer one.
 
-For selector input, "valid original GGA candidate" means checksum-valid approved
-NMEA GGA that also passes the #330 typed GGA parser, including the explicit
-GGA field-count check. A packet that the legacy parser accepts only because it is
-permissive must not enter the selected-GGA output.
+For selector input, "valid receiver GGA candidate" means checksum-valid approved
+NMEA GGA that also passes the #330 typed GGA parser, including the explicit GGA
+field-count check. Non-GGA packets return false and do not enter the selected
+feed. A packet that the legacy parser accepts only because it is permissive must
+not enter the selected-GGA output.
 
 The selector owns the selected-output channel and has two input methods:
 
-- `OriginalGGA(pkt scan.Packet)` forwards a valid original GGA packet
-  immediately and records its UTC field when it is comparable.
+- `Packet(pkt scan.Packet)` forwards a valid receiver GGA packet immediately and
+  records its UTC field when it is comparable. It returns false for non-GGA or
+  invalid packets.
 - `GGASentence(gga nmeamsg.Sentence[nmeamsg.GGAFields])` serializes the sentence,
   wraps it as a valid NMEA `scan.Packet`, and forwards it only if it is not for
   the same UTC as the last directly emitted original GGA.
 
 The selector is single-threaded. It does not need internal locking; the later
 VRS integration must call it from one owner goroutine, after normal packet
-processing has accepted an original GGA and from the stage 2 synthesizer sink
+processing has accepted a receiver packet and from the stage 2 synthesizer sink
 for synthesized GGA.
 
 Publishing selected GGA must never block the caller. The selector's output
@@ -170,8 +174,8 @@ The GGA comparison is intentionally simple. GGA has the fixed prefix `$xxGGA,`,
 so the UTC field's integer-second digits are at `pkt.Data[7:13]` for a normal
 approved GGA sentence with a non-empty `hhmmss` time. Use a helper that returns
 `(utc string, ok bool)` and checks both the fixed prefix and the six time
-digits. `OriginalGGA` forwards every valid original GGA immediately, but records
-the UTC only when that helper succeeds. `GGASentence` suppresses a synthesized
+digits. `Packet` forwards every valid receiver GGA immediately, but records the
+UTC only when that helper succeeds. `GGASentence` suppresses a synthesized
 packet only when the last directly emitted original GGA and the synthesized
 candidate both have comparable UTC seconds and those strings are equal; if
 either time is empty or malformed, the synthesized packet is forwarded. There is
@@ -183,7 +187,7 @@ midnight handling.
 Same-UTC suppression does not require a separate ordering mechanism. Synthesized
 GGA is emitted only from the `NavEpochMsg` end-of-epoch callback, after the
 messages that make up that epoch have been processed. Therefore any original
-receiver GGA in the epoch has already reached `OriginalGGA` before `GGASentence`
+receiver GGA in the epoch has already reached `Packet` before `GGASentence`
 can offer the synthesized candidate for that epoch.
 
 Wrapping synthesized output as a `scan.Packet` likely needs `gpsreg` to
@@ -199,7 +203,8 @@ Tests:
   later synthesized GGA.
 - Synthesized GGA with a different UTC is forwarded.
 - Synthesized output is a checksum-valid NMEA `scan.Packet`.
-- Invalid original GGA candidates are rejected before entering the selected feed.
+- Invalid receiver packets and non-GGA packets are rejected before entering the
+  selected feed.
 - Publishing selected GGA with a blocked consumer does not block and keeps the
   newest pending GGA.
 

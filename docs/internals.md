@@ -62,7 +62,7 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/bcast` provides a concurrency abstraction that broadcasts a channel to multiple other channels. This is used for routing packets inside the application. At the moment it is used by `satpulsed` rather than `satpulsetool`, but it is useful for applications dealing with GPS packets.
 
-`gps/app/stream` manages RTCM packet streams. It pulls streams from an Ntrip or TCP network endpoint and feeds them to the GPS receiver over the serial port, and pushes streams from the GPS receiver to a remote Ntrip network endpoint.
+`gps/app/stream` manages correction and packet streams. It pulls RTCM streams from an Ntrip or TCP network endpoint and feeds them to the GPS receiver over the serial port, pushes streams from the GPS receiver to a remote Ntrip network endpoint, and provides selected-GGA helpers for consumers that need current receiver position.
 
 `gps/app/ntrip` implements an Ntrip caster for serving RTCM packet streams from a GPS receiver to Ntrip clients. It includes an STR record generation capability, which is also used by `gps/app/stream`.
 

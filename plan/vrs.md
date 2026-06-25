@@ -71,21 +71,20 @@ vrs = true
 3. `time/app/daemon` is the VRS integration point for the selected-GGA core.
    After preparing `stream.PullSetup` and before creating `gpsevent.Dispatcher`,
    the daemon checks whether the prepared pull is VRS mode. If so, it creates
-   the capacity-1 selected-GGA channel and stage 3 selector, gives the receive
-   side to `PullSetup`, and passes the selector into `gpsevent.NewDispatcher` as
-   an optional receiver-side sink. `gps/app/stream` sees only
-   `<-chan scan.Packet`; it does not construct the selector, depend on
-   `gpsevent`, or import anything under `time/internal`.
+   the stage 3 `stream.GGASelector`, gives `selector.Packets()` to `PullSetup`,
+   and passes the selector into `gpsevent.NewDispatcher` as an optional
+   receiver-side `GGASelector` interface with `Packet` and `GGASentence`, not the
+   concrete stream type.
 
 4. When that optional sink is present, `gpsevent.Dispatcher` owns a
-   `nmeasyn.Synth` whose sink is the selector. The dispatcher fans out the same
+   `nmeasyn.Synth` whose sink is the same interface. The dispatcher fans out the same
    decoded `gpsprot` message callbacks it already receives to the synthesizer,
    in the same order, so `nmeasyn` sees the complete
    `TimeMsg`/position/`NavEpochMsg` epoch sequence. `Dispatcher.handlePacket`
-   also identifies checksum-valid approved NMEA GGA candidates, runs the normal
-   `ProcessPacket`, and feeds the original packet to the selector only when
-   processing succeeds, so receiver GGA wins over synthesized GGA for the same
-   UTC.
+   feeds each successfully processed receiver packet to `sink.Packet`; the
+   selector filters that stream to checksum-valid approved NMEA GGA packets. That
+   keeps receiver GGA ahead of synthesized GGA for the same UTC without making
+   `gpsevent` depend on the selector implementation.
 
 5. `PullSetup` grows an optional selected-GGA input. This is the receive side of
    the nonblocking capacity-1 latest-value channel owned by the selector.
