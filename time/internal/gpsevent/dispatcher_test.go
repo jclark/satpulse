@@ -2,13 +2,16 @@ package gpsevent
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/obs"
@@ -86,8 +89,8 @@ func TestDispatcherNativeMsgForwardsToObserver(t *testing.T) {
 	}
 }
 
-func TestDispatcherOriginalGGAAfterSuccessfulProcessing(t *testing.T) {
-	selector := NewGGASelector()
+func TestDispatcherSelectedGGAPacketAfterSuccessfulProcessing(t *testing.T) {
+	selector := stream.NewGGASelector()
 	d := &Dispatcher{
 		pktProcs: map[gpsprot.Tag]gpsprot.PacketProcessor{
 			gpsreg.TagNMEA: &fakePacketProcessor{},
@@ -107,8 +110,8 @@ func TestDispatcherOriginalGGAAfterSuccessfulProcessing(t *testing.T) {
 	}
 }
 
-func TestDispatcherOriginalGGARequiresSuccessfulProcessing(t *testing.T) {
-	selector := NewGGASelector()
+func TestDispatcherSelectedGGAPacketRequiresSuccessfulProcessing(t *testing.T) {
+	selector := stream.NewGGASelector()
 	d := &Dispatcher{
 		pktProcs: map[gpsprot.Tag]gpsprot.PacketProcessor{
 			gpsreg.TagNMEA: &fakePacketProcessor{err: errors.New("bad packet")},
@@ -121,6 +124,14 @@ func TestDispatcherOriginalGGARequiresSuccessfulProcessing(t *testing.T) {
 	case pkt := <-selector.Packets():
 		t.Fatalf("selected GGA after processing error: %q", pkt.Data)
 	default:
+	}
+}
+
+func ggaPacket(payload string) scan.Packet {
+	return scan.Packet{
+		Format:        gpsreg.NMEAPacketFormat,
+		Data:          fmt.Sprintf("$%s*%02X\r\n", payload, nmeamsg.Checksum([]byte(payload))),
+		ChecksumValid: true,
 	}
 }
 

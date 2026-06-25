@@ -1,4 +1,4 @@
-package gpsevent
+package stream
 
 import (
 	"strings"
@@ -8,10 +8,10 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
-// GGASelector chooses original receiver GGA over synthesized GGA for the same UTC.
+// GGASelector chooses receiver GGA over synthesized GGA for the same UTC.
 type GGASelector struct {
 	ch              chan scan.Packet
-	lastOriginalUTC string
+	lastReceiverUTC string
 }
 
 // NewGGASelector creates a selected-GGA selector with a capacity-1 output channel.
@@ -24,19 +24,19 @@ func (s *GGASelector) Packets() <-chan scan.Packet {
 	return s.ch
 }
 
-// OriginalGGA validates and publishes an original receiver GGA packet.
-func (s *GGASelector) OriginalGGA(pkt scan.Packet) bool {
-	if !validOriginalGGA(pkt) {
+// Packet validates a receiver packet and publishes it if it is NMEA GGA.
+func (s *GGASelector) Packet(pkt scan.Packet) bool {
+	if !validGGAPacket(pkt) {
 		return false
 	}
 	s.publish(pkt)
 	if utc, ok := ggaUTC(pkt.Data); ok {
-		s.lastOriginalUTC = utc
+		s.lastReceiverUTC = utc
 	}
 	return true
 }
 
-// GGASentence publishes a synthesized GGA unless it matches the last original UTC.
+// GGASentence publishes a synthesized GGA unless it matches the last receiver UTC.
 func (s *GGASelector) GGASentence(gga nmeamsg.GGASentence) {
 	b, err := nmeamsg.SerializeMsg(gga)
 	if err != nil {
@@ -47,7 +47,7 @@ func (s *GGASelector) GGASentence(gga nmeamsg.GGASentence) {
 		Data:          string(b),
 		ChecksumValid: true,
 	}
-	if utc, ok := ggaUTC(pkt.Data); ok && utc == s.lastOriginalUTC {
+	if utc, ok := ggaUTC(pkt.Data); ok && utc == s.lastReceiverUTC {
 		return
 	}
 	s.publish(pkt)
@@ -69,7 +69,7 @@ func (s *GGASelector) publish(pkt scan.Packet) {
 	}
 }
 
-func validOriginalGGA(pkt scan.Packet) bool {
+func validGGAPacket(pkt scan.Packet) bool {
 	if !pkt.HasTag(gpsreg.TagNMEA) || !pkt.ChecksumValid {
 		return false
 	}

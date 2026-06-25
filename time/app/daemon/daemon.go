@@ -13,6 +13,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
@@ -229,9 +230,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 
 	version, _ := cmd.Version()
 	pullSetup := cfg.Stream.Pull.Prepare(version, conn, portLock)
-	var ggaSelector *gpsevent.GGASelector
+	var ggaSelector *stream.GGASelector
 	if pullSetup != nil && pullSetup.NMEASend() {
-		ggaSelector = gpsevent.NewGGASelector()
+		ggaSelector = stream.NewGGASelector()
 		pullSetup.SetSelectedGGA(ggaSelector.Packets())
 	}
 	var pullPktCh <-chan scan.Packet
@@ -357,7 +358,7 @@ func NewDispatcher(
 	shm *ntpshm.Writer,
 	obs obs.Observer,
 	tStart time.Time,
-	ggaSelector *gpsevent.GGASelector,
+	ggaSelector gpsevent.GGASelector,
 ) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
 	var controller *phcsync.Controller

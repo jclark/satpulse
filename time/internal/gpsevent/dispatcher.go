@@ -91,6 +91,12 @@ func (h *tickHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 	h.obs.Tick(msg, tRead)
 }
 
+// GGASelector receives receiver packets and synthesized GGA candidates.
+type GGASelector interface {
+	nmeasyn.Sink
+	Packet(scan.Packet) bool
+}
+
 type Dispatcher struct {
 	gpsprot.DefaultHandler
 	pktProcs              map[gpsprot.Tag]gpsprot.PacketProcessor
@@ -105,7 +111,7 @@ type Dispatcher struct {
 	ls                    ptime.LeapSecond
 	lg                    *slog.Logger
 	lf                    logfile.LogFile
-	ggaSelector           *GGASelector
+	ggaSelector           GGASelector
 	ggaSynth              *nmeasyn.Synth
 	loggedUnknownProtocol bool
 	loggedSurveyComplete  bool
@@ -123,7 +129,7 @@ func NewDispatcher(
 	obs obs.Observer,
 	eventLogPath string,
 	tStart time.Time,
-	ggaSelector *GGASelector,
+	ggaSelector GGASelector,
 ) (*Dispatcher, error) {
 	// Always create timeMsgBuffer (useful even without PHC)
 	var minWindow time.Duration
@@ -310,7 +316,7 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 		return
 	}
 	if d.ggaSelector != nil {
-		d.ggaSelector.OriginalGGA(pkt)
+		d.ggaSelector.Packet(pkt)
 	}
 }
 
