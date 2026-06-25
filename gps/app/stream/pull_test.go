@@ -309,13 +309,17 @@ func primeSink(t *testing.T, client net.Conn, mw *mockWriter) {
 	t.Fatal("timed out warming up sink pipeline")
 }
 
+func newTestPull(src Source, mw *mockWriter, portLock gpsio.OutPortLock) *Pull {
+	return NewPull(src, testLogger(), mw, portLock, []gpsprot.PacketFormat{rtcm.PacketFormat}, 0)
+}
+
 func TestPacketsFlowToWriter(t *testing.T) {
 	src, client := newPipeSource()
 	defer src.close()
 	defer client.Close()
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewPull()
+	sink := newTestPull(src, mw, portLock)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	pkt1005 := makeRTCM(1005, 16)
@@ -323,8 +327,7 @@ func TestPacketsFlowToWriter(t *testing.T) {
 	onState, connected := connectedCh()
 	done := make(chan error, 1)
 	go func() {
-		done <- sink.Run(ctx, testLogger(), src, mw, portLock,
-			[]gpsprot.PacketFormat{rtcm.PacketFormat}, onState)
+		done <- sink.Run(ctx, nil, onState)
 	}()
 	<-connected
 	primeSink(t, client, mw)
@@ -621,7 +624,7 @@ func TestPruningQueueMSMAndNonMSM(t *testing.T) {
 // exercises the live queue() select loop under backpressure, which is what the
 // pruning queue exists for.
 func TestPullQueuePrunesUnderBackpressure(t *testing.T) {
-	sink := NewPull()
+	sink := NewPull(nil, testLogger(), nil, nil, nil, 0)
 	subCh := make(chan scan.Packet)
 	// Same single-slot buffer as Run uses; leaving it undrained is the stall.
 	writerCh := make(chan scan.Packet, 1)
@@ -679,13 +682,12 @@ func TestCleanShutdownOnCancel(t *testing.T) {
 	defer client.Close()
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewPull()
+	sink := newTestPull(src, mw, portLock)
 	ctx, cancel := context.WithCancel(context.Background())
 	onState, connected := connectedCh()
 	done := make(chan error, 1)
 	go func() {
-		done <- sink.Run(ctx, testLogger(), src, mw, portLock,
-			[]gpsprot.PacketFormat{rtcm.PacketFormat}, onState)
+		done <- sink.Run(ctx, nil, onState)
 	}()
 	<-connected
 	cancel()
@@ -706,12 +708,11 @@ func TestWriteErrorTriggersShutdown(t *testing.T) {
 	writeErr := errors.New("serial port gone")
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewPull()
+	sink := newTestPull(src, mw, portLock)
 	onState, connected := connectedCh()
 	done := make(chan error, 1)
 	go func() {
-		done <- sink.Run(t.Context(), testLogger(), src, mw, portLock,
-			[]gpsprot.PacketFormat{rtcm.PacketFormat}, onState)
+		done <- sink.Run(t.Context(), nil, onState)
 	}()
 	<-connected
 	primeSink(t, client, mw)
@@ -735,14 +736,13 @@ func TestPortLockAcquiredPerWrite(t *testing.T) {
 	defer client.Close()
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewPull()
+	sink := newTestPull(src, mw, portLock)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	onState, connected := connectedCh()
 	done := make(chan error, 1)
 	go func() {
-		done <- sink.Run(ctx, testLogger(), src, mw, portLock,
-			[]gpsprot.PacketFormat{rtcm.PacketFormat}, onState)
+		done <- sink.Run(ctx, nil, onState)
 	}()
 	<-connected
 	primeSink(t, client, mw)
@@ -773,7 +773,7 @@ func TestReconnectOnNetworkError(t *testing.T) {
 	rs := &reconnectSource{}
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewPull()
+	sink := newTestPull(rs, mw, portLock)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var states []State
@@ -785,8 +785,7 @@ func TestReconnectOnNetworkError(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		done <- sink.Run(ctx, testLogger(), rs, mw, portLock,
-			[]gpsprot.PacketFormat{rtcm.PacketFormat}, onState)
+		done <- sink.Run(ctx, nil, onState)
 	}()
 	// write a packet on the first connection, then close it
 	conn1 := rs.waitConn(t)

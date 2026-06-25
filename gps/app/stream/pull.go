@@ -198,61 +198,38 @@ type Pull struct {
 	// source.  The caller should subscribe before calling Run.
 	// The bcast lives for the entire duration of Run, surviving
 	// reconnects -- subscribers are not affected by network drops.
-	Packets *bcast.Bcast[scan.Packet]
-	pktCh   chan scan.Packet
+	Packets          *bcast.Bcast[scan.Packet]
+	source           Source
+	lg               *slog.Logger
+	pw               PacketWriter
+	portLock         gpsio.OutPortLock
+	pktFormats       []gpsprot.PacketFormat
+	nmeaSendInterval time.Duration
+	pktCh            chan scan.Packet
 }
 
-// NewPull creates a Pull.  The caller should subscribe to
-// s.Packets before calling Run.
-func NewPull() *Pull {
+// NewPull creates a Pull. The caller should subscribe to s.Packets before
+// calling Run.
+func NewPull(source Source, lg *slog.Logger,
+	pw PacketWriter,
+	portLock gpsio.OutPortLock,
+	pktFormats []gpsprot.PacketFormat,
+	nmeaSendInterval time.Duration,
+) *Pull {
+	if lg == nil {
+		lg = slog.Default()
+	}
 	ch := make(chan scan.Packet)
 	return &Pull{
-		Packets: bcast.New(ch),
-		pktCh:   ch,
+		Packets:          bcast.New(ch),
+		source:           source,
+		lg:               lg,
+		pw:               pw,
+		portLock:         portLock,
+		pktFormats:       pktFormats,
+		nmeaSendInterval: nmeaSendInterval,
+		pktCh:            ch,
 	}
-}
-
-// PullSetup is a Pull paired with the resources it needs to run
-// (source, packet writer, output port lock, and packet formats).
-// Built by (*PullConfig).Prepare.
-type PullSetup struct {
-	pull         *Pull
-	source       Source
-	addr         string
-	pktFormats   []gpsprot.PacketFormat
-	pw           PacketWriter
-	portLock     gpsio.OutPortLock
-	nmeaSend     bool
-	nmeaInterval time.Duration
-	selected     <-chan scan.Packet
-}
-
-// Addr returns the source address string, for use in log lines.
-func (s *PullSetup) Addr() string {
-	return s.addr
-}
-
-// Bcast returns the packet broadcast for pull-observer subscribers.
-func (s *PullSetup) Bcast() *bcast.Bcast[scan.Packet] {
-	return s.pull.Packets
-}
-
-// NMEASend reports whether this pull setup should upload selected GGA before
-// connecting to the correction source.
-func (s *PullSetup) NMEASend() bool {
-	return s.nmeaSend
-}
-
-// SetSelectedGGA sets the selected-GGA feed used for NMEA upload.
-func (s *PullSetup) SetSelectedGGA(ch <-chan scan.Packet) {
-	s.selected = ch
-}
-
-// Run runs the prepared Pull.  It blocks until ctx is cancelled or
-// the serial writer returns a fatal error.
-func (s *PullSetup) Run(ctx context.Context, lg *slog.Logger,
-	onState func(State, error)) error {
-	return s.pull.run(ctx, lg, s.source, s.pw, s.portLock, s.pktFormats, s.selected, s.nmeaInterval, onState)
 }
 
 const scanBufSize = 16
@@ -374,23 +351,7 @@ func (s *GGASender) SetWriter(ctx context.Context, w ReadWriteDeadlineCloser) bo
 // Run blocks until ctx is cancelled or serialConn errors.
 // On cancellation, Run waits for all internal goroutines to exit
 // before returning.
-func (s *Pull) Run(ctx context.Context, lg *slog.Logger,
-	source Source,
-	pw PacketWriter,
-	portLock gpsio.OutPortLock,
-	pktFormats []gpsprot.PacketFormat,
-	onState func(State, error)) error {
-	return s.run(ctx, lg, source, pw, portLock, pktFormats, nil, 0, onState)
-}
-
-func (s *Pull) run(ctx context.Context, lg *slog.Logger,
-	source Source,
-	pw PacketWriter,
-	portLock gpsio.OutPortLock,
-	pktFormats []gpsprot.PacketFormat,
-	selectedGGA <-chan scan.Packet,
-	nmeaInterval time.Duration,
-	onState func(State, error)) error {
+func (s *Pull) Run(ctx context.Context, selectedGGA <-chan scan.Packet, onState func(State, error)) error {
 	iCtx, iCancel := context.WithCancel(ctx)
 	defer iCancel()
 	// writeErr captures a fatal write error so Run can return it
@@ -400,13 +361,13 @@ func (s *Pull) run(ctx context.Context, lg *slog.Logger,
 	var bcastWg sync.WaitGroup
 	// start bcast goroutine
 	bcastWg.Go(func() {
-		s.Packets.Run(iCtx, lg)
+		s.Packets.Run(iCtx, s.lg)
 	})
 	var gs *GGASender
 	if selectedGGA != nil {
-		gs = NewGGASender(selectedGGA, nmeaInterval)
+		gs = NewGGASender(selectedGGA, s.nmeaSendInterval)
 		pipelineWg.Go(func() {
-			gs.Run(iCtx, lg)
+			gs.Run(iCtx, s.lg)
 		})
 	}
 	// subscribe to bcast before starting reader to avoid missing packets
@@ -415,15 +376,15 @@ func (s *Pull) run(ctx context.Context, lg *slog.Logger,
 	qCh := make(chan scan.Packet, 1)
 	// start writer
 	pipelineWg.Go(func() {
-		writeErr = s.writer(iCtx, lg, pw, portLock, qCh, iCancel)
+		writeErr = s.writer(iCtx, s.lg, s.pw, s.portLock, qCh, iCancel)
 	})
 	// start pruning queue
 	pipelineWg.Go(func() {
-		s.queue(lg, subCh, qCh)
+		s.queue(s.lg, subCh, qCh)
 	})
 	// start reader
 	pipelineWg.Go(func() {
-		s.reader(iCtx, lg, source, pktFormats, gs, onState)
+		s.reader(iCtx, s.lg, s.source, s.pktFormats, gs, onState)
 	})
 	pipelineWg.Wait()
 	s.Packets.Close()

@@ -75,13 +75,15 @@ so like other mode-dependent keys it has no effect (and is not rejected) when
    `SetWriteDeadline` forward to the underlying `conn`.
 
 2. `stream.NtripConfig` grows an `NMEASend bool` field with TOML tag `nmeaSend`.
-   `PullConfig.Prepare` records whether the prepared pull uses NMEA send, but does
-   not build any GGA selector itself.
+   `PullConfig.NewPull` is only a TOML convenience wrapper: it builds the `Source`,
+   resolves `nmeaSendInterval`, and calls `stream.NewPull`. Dynamic callers such
+   as the desktop GUI can build their own `Source` and call `stream.NewPull`
+   directly.
 
 3. `time/app/daemon` is the NMEA send integration point for the selected-GGA core.
-   After preparing `stream.PullSetup` and before creating `gpsevent.Dispatcher`,
-   the daemon checks whether the prepared pull uses NMEA send. If so, it creates
-   the stage 3 `stream.GGASelector`, gives `selector.Packets()` to `PullSetup`,
+   After building `stream.Pull` and before creating `gpsevent.Dispatcher`, the
+   daemon checks whether the configured pull uses NMEA send. If so, it creates
+   the stage 3 `stream.GGASelector`, keeps `selector.Packets()` for `Pull.Run`,
    and passes the selector into `gpsevent.NewDispatcher` as an optional
    receiver-side `GGASelector` interface with `Packet` and `GGASentence`, not the
    concrete stream type.
@@ -96,9 +98,9 @@ so like other mode-dependent keys it has no effect (and is not rejected) when
    keeps receiver GGA ahead of synthesized GGA for the same UTC without making
    `gpsevent` depend on the selector implementation.
 
-5. `PullSetup` grows an optional selected-GGA input. This is the receive side of
-   the nonblocking capacity-1 latest-value channel owned by the selector.
-   `PullSetup.Run` passes that receive-only channel into `Pull.Run`.
+5. `Pull.Run` takes an optional selected-GGA receive channel. This is the receive
+   side of the nonblocking capacity-1 latest-value channel owned by the selector.
+   A nil channel disables NMEA send for callers that do not need GGA upload.
 
 6. In NMEA send mode, pull owns a `ggaSender` goroutine. It consumes the selected-GGA
    feed built by `time/app/daemon` from receiver NMEA plus synthesized fill-ins.

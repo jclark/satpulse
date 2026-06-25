@@ -87,8 +87,8 @@ ntrip.nmeaSendInterval = 2.5
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate: %v", err)
 	}
-	if got := cfg.Pull.nmeaInterval(); got != 2500*time.Millisecond {
-		t.Errorf("nmeaInterval() = %v, want 2.5s", got)
+	if got := cfg.Pull.nmeaSendInterval(); got != 2500*time.Millisecond {
+		t.Errorf("nmeaSendInterval() = %v, want 2.5s", got)
 	}
 }
 
@@ -105,8 +105,8 @@ func TestPullConfigNMEAInterval(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pc := &PullConfig{Ntrip: tt.ntrip}
-			if got := pc.nmeaInterval(); got != tt.want {
-				t.Errorf("nmeaInterval() = %v, want %v", got, tt.want)
+			if got := pc.nmeaSendInterval(); got != tt.want {
+				t.Errorf("nmeaSendInterval() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -167,18 +167,19 @@ ntrip.password = "p"
 	}
 }
 
-func TestPullConfigPrepareDisabled(t *testing.T) {
+func TestPullConfigNewPullDisabled(t *testing.T) {
 	pc := &PullConfig{}
-	if got := pc.Prepare("1.0", nil, nil); got != nil {
-		t.Errorf("expected nil, got %+v", got)
+	got, addr := pc.NewPull("1.0", nil, nil, nil, nil)
+	if got != nil || addr != "" {
+		t.Errorf("NewPull() = %+v, %q; want nil, empty", got, addr)
 	}
 }
 
-func TestPullConfigPrepareTCP(t *testing.T) {
+func TestPullConfigNewPullTCP(t *testing.T) {
 	pc := &PullConfig{TCP: &TCPConfig{Address: "10.0.0.1:2006"}}
-	s := pc.Prepare("1.0", nil, nil)
+	s, addr := pc.NewPull("1.0", nil, nil, nil, nil)
 	if s == nil {
-		t.Fatal("expected setup, got nil")
+		t.Fatal("expected pull, got nil")
 	}
 	src, ok := s.source.(*TCPSource)
 	if !ok {
@@ -187,12 +188,12 @@ func TestPullConfigPrepareTCP(t *testing.T) {
 	if src.Addr != "10.0.0.1:2006" {
 		t.Errorf("addr = %q", src.Addr)
 	}
-	if s.Addr() != "10.0.0.1:2006" {
-		t.Errorf("Addr() = %q", s.Addr())
+	if addr != "10.0.0.1:2006" {
+		t.Errorf("returned addr = %q", addr)
 	}
 }
 
-func TestPullConfigPrepareNtrip(t *testing.T) {
+func TestPullConfigNewPullNtrip(t *testing.T) {
 	pc := &PullConfig{Ntrip: &NtripConfig{
 		Address:    "caster.example.com",
 		Mountpoint: "RTCM",
@@ -200,9 +201,9 @@ func TestPullConfigPrepareNtrip(t *testing.T) {
 		Password:   "p",
 		NMEASend:   true,
 	}}
-	s := pc.Prepare("9.9.9", nil, nil)
+	s, addr := pc.NewPull("9.9.9", nil, nil, nil, nil)
 	if s == nil {
-		t.Fatal("expected setup, got nil")
+		t.Fatal("expected pull, got nil")
 	}
 	src, ok := s.source.(*NtripSource)
 	if !ok {
@@ -215,14 +216,14 @@ func TestPullConfigPrepareNtrip(t *testing.T) {
 	if src.UserAgent.Version != "9.9.9" {
 		t.Errorf("UserAgent.Version = %q", src.UserAgent.Version)
 	}
-	if !s.NMEASend() {
+	if !pc.NMEASend() {
 		t.Errorf("NMEASend() = false, want true")
 	}
-	if s.nmeaInterval != 5*time.Second {
-		t.Errorf("nmeaInterval = %v, want 5s (default)", s.nmeaInterval)
+	if s.nmeaSendInterval != 5*time.Second {
+		t.Errorf("nmeaSendInterval = %v, want 5s (default)", s.nmeaSendInterval)
 	}
-	if s.Addr() != "caster.example.com:2101" {
-		t.Errorf("Addr() = %q", s.Addr())
+	if addr != "caster.example.com:2101" {
+		t.Errorf("returned addr = %q", addr)
 	}
 	if pc.Ntrip.Address != "caster.example.com" {
 		t.Errorf("config address = %q", pc.Ntrip.Address)

@@ -15,6 +15,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/gpsevent"
@@ -229,15 +230,17 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	}
 
 	version, _ := cmd.Version()
-	pullSetup := cfg.Stream.Pull.Prepare(version, conn, portLock)
+	pull, pullAddr := cfg.Stream.Pull.NewPull(version, lg,
+		[]gpsprot.PacketFormat{gpsreg.RTCMPacketFormat}, conn, portLock)
 	var ggaSelector *stream.GGASelector
-	if pullSetup != nil && pullSetup.NMEASend() {
+	var selectedGGA <-chan scan.Packet
+	if pull != nil && cfg.Stream.Pull.NMEASend() {
 		ggaSelector = stream.NewGGASelector()
-		pullSetup.SetSelectedGGA(ggaSelector.Packets())
+		selectedGGA = ggaSelector.Packets()
 	}
 	var pullPktCh <-chan scan.Packet
-	if pullSetup != nil {
-		pullPktCh = pullSetup.Bcast().Subscribe()
+	if pull != nil {
+		pullPktCh = pull.Packets.Subscribe()
 	}
 
 	if err := startNtrip(ctx, lg, &wg, cfg, gcfg, pb, cc.pos); err != nil {
@@ -335,7 +338,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
 	ls := cc.leapSecond
-	startPull(ctx, lg, &wg, pullSetup)
+	startPull(ctx, lg, &wg, pull, pullAddr, selectedGGA)
 	wg.Go(func() {
 		if ls != nil {
 			d.LeapSecond(ls, time.Time{})
