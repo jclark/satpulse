@@ -20,20 +20,20 @@ func mustHexDecode(s string) []byte {
 var realFrames = []struct {
 	name    string
 	hexstr  string
-	msg     string // expected MsgID ("type-subtype")
+	msg     string // expected MsgID ("type.subtype")
 	crcType uint8
 	ttType  uint8
 	payLen  int
 }{
-	{"0-0", "73000f21036ce013ce8021a0811017f0b1a2fdf3245fbf7a8bf7f2117f0f822fddb345fc22e88506dd", "0-0", 2, 0, 30},
-	{"0-1", "73000d2014bdd013cec0030a0617f05ea25e8e745fb6808bf623117f3d222fdcbe403e2af6", "0-1", 2, 0, 26},
-	{"0-2", "73000fa8236ce013ce81001c4020a0be7f7117d274a2f9f0645fbf628bf8c9917ef71a2f9e9d40c5db1f", "0-2", 2, 0, 31},
-	{"0-3", "73001027336c7013ce8020810006018815b0baa2fe08545fc0de8bf7a9d17efe5a2fdf8145fc13289dd5f3", "0-3", 2, 0, 32},
-	{"1-0", "73020da208f7e7f98013ce8013a0141804e021a0811009f7054f82a7c15650a67091802a95578310", "1-0", 2, 1, 27},
-	{"1-1", "73020cab18f7e94a7013ce8013a0141804e0030a0633511b4a832e35978eda089913e0ecdcb1", "1-1", 2, 1, 25},
-	{"1-2", "73020e2328f7e7f98013ce8013a0141804e00038804140a5f58ff627311485b2a40d958894301ef12f", "1-2", 2, 1, 28},
-	{"1-3", "73020eaa38f7e7f91013ce8013a0141804e08204001806202b3b54a1aaab4529e2ac24575a29348a7093", "1-3", 2, 1, 29},
-	{"2-0", "730404a108f7e7f98013ce8013b651bc9b43405f9140", "2-0", 2, 1, 9},
+	{"0.0", "73000f21036ce013ce8021a0811017f0b1a2fdf3245fbf7a8bf7f2117f0f822fddb345fc22e88506dd", "0.0", 2, 0, 30},
+	{"0.1", "73000d2014bdd013cec0030a0617f05ea25e8e745fb6808bf623117f3d222fdcbe403e2af6", "0.1", 2, 0, 26},
+	{"0.2", "73000fa8236ce013ce81001c4020a0be7f7117d274a2f9f0645fbf628bf8c9917ef71a2f9e9d40c5db1f", "0.2", 2, 0, 31},
+	{"0.3", "73001027336c7013ce8020810006018815b0baa2fe08545fc0de8bf7a9d17efe5a2fdf8145fc13289dd5f3", "0.3", 2, 0, 32},
+	{"1.0", "73020da208f7e7f98013ce8013a0141804e021a0811009f7054f82a7c15650a67091802a95578310", "1.0", 2, 1, 27},
+	{"1.1", "73020cab18f7e94a7013ce8013a0141804e0030a0633511b4a832e35978eda089913e0ecdcb1", "1.1", 2, 1, 25},
+	{"1.2", "73020e2328f7e7f98013ce8013a0141804e00038804140a5f58ff627311485b2a40d958894301ef12f", "1.2", 2, 1, 28},
+	{"1.3", "73020eaa38f7e7f91013ce8013a0141804e08204001806202b3b54a1aaab4529e2ac24575a29348a7093", "1.3", 2, 1, 29},
+	{"2.0", "730404a108f7e7f98013ce8013b651bc9b43405f9140", "2.0", 2, 1, 9},
 }
 
 func TestParseRealFrames(t *testing.T) {
@@ -46,6 +46,9 @@ func TestParseRealFrames(t *testing.T) {
 			}
 			if f.MsgID() != tt.msg {
 				t.Errorf("MsgID = %q, want %q", f.MsgID(), tt.msg)
+			}
+			if MsgID(pkt) != tt.msg {
+				t.Errorf("packet MsgID = %q, want %q", MsgID(pkt), tt.msg)
 			}
 			if f.CRCType != tt.crcType {
 				t.Errorf("CRCType = %d, want %d", f.CRCType, tt.crcType)

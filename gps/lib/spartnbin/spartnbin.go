@@ -28,6 +28,8 @@ import (
 // Preamble is the SPARTN frame preamble byte (TF001), ASCII 's'.
 const Preamble = 0x73
 
+const typeSubtypeSep = "."
+
 // Frame holds the parsed plaintext envelope of a SPARTN frame plus the
 // opaque (possibly encrypted) message payload.
 type Frame struct {
@@ -46,9 +48,9 @@ type Frame struct {
 	Payload        []byte // TF016, opaque (encrypted when EAF)
 }
 
-// MsgID returns the SPARTN message identifier "type-subtype" (e.g. "1-0").
+// MsgID returns the SPARTN message identifier "type.subtype" (e.g. "1.0").
 func (f *Frame) MsgID() string {
-	return fmt.Sprintf("%d-%d", f.Type, f.Subtype)
+	return formatMsgID(f.Type, f.Subtype)
 }
 
 // Parse decodes the transport envelope of a complete SPARTN frame and slices
@@ -168,9 +170,13 @@ func Type(pkt []byte) uint8 { return pkt[1] >> 1 }
 // Subtype returns the message subtype (TF007). Precondition: len(pkt) >= 5.
 func Subtype(pkt []byte) uint8 { return pkt[4] >> 4 }
 
-// MsgID returns the message identifier "type-subtype" for a frame.
+// MsgID returns the message identifier "type.subtype" for a frame.
 func MsgID(pkt []byte) string {
-	return fmt.Sprintf("%d-%d", Type(pkt), Subtype(pkt))
+	return formatMsgID(Type(pkt), Subtype(pkt))
+}
+
+func formatMsgID(t, st uint8) string {
+	return fmt.Sprintf("%d%s%d", t, typeSubtypeSep, st)
 }
 
 // crcLen returns the TF018 CRC length in bytes from TF005. Precondition:
