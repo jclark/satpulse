@@ -3,6 +3,7 @@
 package term
 
 import (
+	"errors"
 	"fmt"
 
 	"golang.org/x/sys/unix"
@@ -48,4 +49,8 @@ func (t *Term) getAttr() (tp *unix.Termios, err error) {
 	tp, err = unix.IoctlGetTermios(t.fd, unix.TIOCGETA)
 	err = t.wrapErr(err, "ioctl(TIOCGETA)")
 	return
+}
+
+func isLockErrNotTTY(err error) bool {
+	return errors.Is(err, unix.ENOTSUP)
 }

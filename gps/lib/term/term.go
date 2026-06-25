@@ -57,6 +57,9 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	// We could make this optional, but non-exclusive use of the serial port seems like a bad idea.
 	err = lock(fd, path)
 	if err != nil {
+		if isLockErrNotTTY(err) {
+			err = fmt.Errorf("%s: %w", t.path, ErrNotATTY)
+		}
 		return
 	}
 	tsp, err := t.getAttr()
@@ -344,4 +347,3 @@ func (t *Term) wrapErr(err error, op string) error {
 		Err:  err,
 	}
 }
-

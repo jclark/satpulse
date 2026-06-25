@@ -77,6 +77,10 @@ func (t *Term) getAttr() (tp *unix.Termios, err error) {
 	return
 }
 
+func isLockErrNotTTY(err error) bool {
+	return false
+}
+
 // readError returns a *Error describing serial errors that have occurred
 // since the previous call, or nil if none. It also establishes the
 // baseline counters on the first call after Init.
