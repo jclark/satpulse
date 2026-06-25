@@ -14,6 +14,7 @@ Needs implementation design before work can begin:
 | [position-scatter.md](position-scatter.md) | Position scatter panel | position/velocity messages, NavEpochMsg |
 | [msgfile-response.md](msgfile-response.md) | Message file response handling | msgfile-send |
 | [shared-webui.md](shared-webui.md) | Shared Preact component library | semantic-tokens |
+| [vrs.md](vrs.md) | Send position as NMEA to a VRS caster | vrs PR stack (#331-#333) landed and merged |
 
 ## Dependency graph
 ```

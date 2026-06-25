@@ -55,6 +55,18 @@ The work: override `msgHandler.CorReport` to emit receiver-source reports to the
 
 Pull and receiver are independent observations and must not be naively mixed: they may even describe different streams. `plan/rtcm-obs.md` resolves this for the web dashboard with a source-preference latch (prefer receiver; lazily fall back to pull after ~30 s of receiver silence) implemented in `sseobs`. The desktop does not go through `sseobs`, so it needs its own decision -- reuse that latch policy in the desktop backend, apply it in the frontend, or pick a deliberate equivalent.
 
+## spartn: Forward SPARTN corrections to the receiver
+
+The Corrections tab consume path forwards RTCM only. `StartCorrections` in `app.go` builds the pull scanner's packet-format list by filtering `gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)` down to `gpsreg.TagRTCM`, so SPARTN correction packets pulled from the source are never recognised or written to the receiver.
+
+SPARTN corrections (e.g. u-blox PointPerfect delivered over Ntrip) need no special handling on our side: pull the stream and write the packets to the receiver, which applies them itself. The F9P does not need decryption keys from us -- it works as is.
+
+The change is to scan correction packets with `gpsreg.CreateCorrectionFormats()` (RTCM + SPARTN) instead of the hand-rolled RTCM-only list, and pass that to `sink.Run`. The pull scanner then recognises SPARTN packets and the writer forwards them over the serial port. `emitCorrPacket` already routes packets through `stream.CorReportFromPacket`, which handles both RTCM and SPARTN, so the `gps:corrpacket` feed works unchanged (a SPARTN packet simply does not match the RTCM 1005/1006 base-ARP type switches).
+
+The frontend `rtcm-panel.tsx` hardcodes RTCM-shaped columns (Station ID, MSM, `rtcmInfo` Description, Splits) and renders that header before any packet arrives, so a SPARTN stream would sit under RTCM headings with most columns blank. Make it one protocol-neutral corrections table where the protocol is a per-row value, not a table shape: a leading narrow, unlabelled column with an `R`/`S` badge (from `CorReportMsg.tag`); a Type column holding the msgID verbatim (`1074` for RTCM, `type.subtype` such as `0.0` for SPARTN); Description from `rtcmInfo` or a new `spartnInfo` (a `spartn.ts` mapping `type.subtype` to OCB/HPAC/GAD/BPAC/EAS plus constellation); and Station ID/MSM/Splits left blank where they do not apply (always for SPARTN, already so for many RTCM types). Sort by protocol then number. The existing per-packet counting already covers SPARTN (`finalFragment` is nil, so it counts every packet, no MSM epoch/splits path). Rename the panel since it is no longer RTCM-only -- `rtcm-panel.tsx`/`RtcmPanel` to `cor-msg-panel.tsx`/`CorMsgPanel`; `rtcm.ts` stays as the RTCM lookup alongside the new `spartn.ts`. The scatter panel's base-ARP baseline rows are RTCM 1005/1006 only and simply stay empty for SPARTN.
+
+Depends on the `spartn` PR landing on master and being merged into desktop-gui first. This branch currently has none of the SPARTN support: `gps/lib/spartnbin`, the SPARTN packet format behind `gpsreg.CreateCorrectionFormats`, and the SPARTN case in `stream.CorReportFromPacket` are all absent here.
+
 ## map-tile-retry: Reload failed map tiles when connectivity is restored
 
 If the app starts without internet connectivity (or loses it), map tile `<img>` loads fail silently. When connectivity is restored the tiles remain broken because the browser does not retry failed image loads, and the tile URLs haven't changed so Preact reuses the existing DOM elements.
