@@ -528,6 +528,11 @@
                 "password": {
                   "description": "Password for basic authentication",
                   "type": "string"
+                },
+                "nmeaSend": {
+                  "description": "Send the receiver position as NMEA GGA to the caster",
+                  "type": "boolean",
+                  "default": false
                 }
               },
               "required": ["address", "mountpoint"]

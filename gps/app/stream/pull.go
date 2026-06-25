@@ -68,7 +68,7 @@ type PacketWriter interface {
 }
 
 // ReadWriteDeadlineCloser is a correction-source connection that can also
-// accept post-handshake client writes such as VRS GGA upload.
+// accept post-handshake client writes such as NMEA GGA upload.
 type ReadWriteDeadlineCloser interface {
 	io.Reader
 	io.Writer
@@ -223,7 +223,7 @@ type PullSetup struct {
 	pktFormats []gpsprot.PacketFormat
 	pw         PacketWriter
 	portLock   gpsio.OutPortLock
-	vrs        bool
+	nmeaSend   bool
 	selected   <-chan scan.Packet
 }
 
@@ -237,13 +237,13 @@ func (s *PullSetup) Bcast() *bcast.Bcast[scan.Packet] {
 	return s.pull.Packets
 }
 
-// VRS reports whether this pull setup should upload selected GGA before
+// NMEASend reports whether this pull setup should upload selected GGA before
 // connecting to the correction source.
-func (s *PullSetup) VRS() bool {
-	return s.vrs
+func (s *PullSetup) NMEASend() bool {
+	return s.nmeaSend
 }
 
-// SetSelectedGGA sets the selected-GGA feed used for VRS upload.
+// SetSelectedGGA sets the selected-GGA feed used for NMEA upload.
 func (s *PullSetup) SetSelectedGGA(ch <-chan scan.Packet) {
 	s.selected = ch
 }
@@ -316,7 +316,7 @@ func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
 			s.once.Do(func() { close(s.ready) })
 			if current != nil && ggaMoved(&gga, lastSent) {
 				if err := writeGGA(current, &gga); err != nil {
-					lg.Warn("VRS GGA upload failed", "err", err)
+					lg.Warn("NMEA GGA upload failed", "err", err)
 					current.Close()
 					current = nil
 				} else {
@@ -327,7 +327,7 @@ func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
 			current = conn
 			if latest != nil {
 				if err := writeGGA(current, latest); err != nil {
-					lg.Warn("VRS GGA upload failed", "err", err)
+					lg.Warn("NMEA GGA upload failed", "err", err)
 					current.Close()
 					current = nil
 				} else {
@@ -445,10 +445,10 @@ func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 		onState = func(State, error) {}
 	}
 	if gs != nil {
-		lg.Info("VRS pull waiting for first position fix before connecting")
+		lg.Info("NMEA send pull waiting for first position fix before connecting")
 		if err := gs.WaitReady(ctx); err != nil {
 			if ctx.Err() == nil {
-				lg.Warn("VRS pull stopped before first position fix", "err", err)
+				lg.Warn("NMEA send pull stopped before first position fix", "err", err)
 			}
 			return
 		}

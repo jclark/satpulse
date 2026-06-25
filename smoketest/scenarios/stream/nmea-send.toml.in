@@ -1,11 +1,11 @@
-# Ntrip VRS pull: the fake correction source waits for a post-handshake GGA
+# Ntrip NMEA send pull: the fake correction source waits for a post-handshake GGA
 # before streaming RTCM corrections to the daemon.
 [serial]
 device = "${SATPULSE_TEST_SERIAL}"
 
 [stream.pull.ntrip]
 address = "127.0.0.1:${SATPULSE_TEST_REMOTE_CASTER_PORT}"
-mountpoint = "VRS"
+mountpoint = "GGA"
 username = "smoke"
 password = "smoketest"
-vrs = true
+nmeaSend = true

@@ -1125,7 +1125,7 @@ func TestGGASenderRejectsQualityZero(t *testing.T) {
 }
 
 // A GGA with empty position fields is not usable even with a nonzero quality,
-// so a synthesized no-fix GGA (empty lat/lon) never starts a VRS upload.
+// so a synthesized no-fix GGA (empty lat/lon) never starts an NMEA upload.
 func TestGGASenderRejectsNoPosition(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

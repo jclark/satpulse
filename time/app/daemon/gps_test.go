@@ -10,9 +10,9 @@ import (
 	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
-func TestConfigFeaturesVRSPullUsesPosition(t *testing.T) {
+func TestConfigFeaturesNMEASendPullUsesPosition(t *testing.T) {
 	cfg := &Config{}
-	cfg.Stream.Pull.Ntrip = &stream.NtripConfig{VRS: true}
+	cfg.Stream.Pull.Ntrip = &stream.NtripConfig{NMEASend: true}
 	if got := configFeatures(cfg, false); got&cfgPosition == 0 {
 		t.Fatalf("configFeatures = %b, want cfgPosition set", got)
 	}

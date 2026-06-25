@@ -33,7 +33,7 @@ type NtripConfig struct {
 	Mountpoint string `toml:"mountpoint"`
 	Username   string `toml:"username"`
 	Password   string `toml:"password"`
-	VRS        bool   `toml:"vrs"`
+	NMEASend   bool   `toml:"nmeaSend"`
 }
 
 // PushConfig is one [[stream.push]] entry.  Transport is selected
@@ -149,9 +149,9 @@ func (cfg *Config) HasNtripPush() bool {
 	return false
 }
 
-// VRS reports whether [stream.pull.ntrip] is configured for VRS upload.
-func (cfg *PullConfig) VRS() bool {
-	return cfg.Ntrip != nil && cfg.Ntrip.VRS
+// NMEASend reports whether [stream.pull.ntrip] should upload NMEA GGA.
+func (cfg *PullConfig) NMEASend() bool {
+	return cfg.Ntrip != nil && cfg.Ntrip.NMEASend
 }
 
 // Prepare builds a PullSetup for cfg, or returns nil when the pull
@@ -185,7 +185,7 @@ func (cfg *PullConfig) Prepare(version string,
 		pktFormats: defaultPullFormats,
 		pw:         pw,
 		portLock:   portLock,
-		vrs:        cfg.VRS(),
+		nmeaSend:   cfg.NMEASend(),
 	}
 }
 

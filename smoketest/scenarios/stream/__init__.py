@@ -40,12 +40,12 @@ def check_pull_connected(ctx: common.SmokeContext) -> None:
 
 
 def check_pull_uploaded_gga(ctx: common.SmokeContext) -> None:
-    """The fake VRS source recorded a post-handshake GGA before streaming."""
+    """The fake correction source recorded a post-handshake GGA before streaming."""
     def attempt() -> bool:
         with open(ctx.source_log, errors="replace") as f:
             return "accepted GGA" in f.read()
 
-    assert common.poll(attempt), "pull correction source did not record a VRS GGA"
+    assert common.poll(attempt), "pull correction source did not record an NMEA GGA"
 
 
 def check_pulled_rtcm(ctx: common.SmokeContext) -> int:

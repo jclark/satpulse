@@ -1,4 +1,4 @@
-"""Ntrip VRS pull: the daemon uploads GGA before corrections stream."""
+"""Ntrip NMEA send pull: the daemon uploads GGA before corrections stream."""
 
 import common
 from scenarios import stream

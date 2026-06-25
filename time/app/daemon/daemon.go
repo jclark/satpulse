@@ -230,7 +230,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	version, _ := cmd.Version()
 	pullSetup := cfg.Stream.Pull.Prepare(version, conn, portLock)
 	var ggaSelector *gpsevent.GGASelector
-	if pullSetup != nil && pullSetup.VRS() {
+	if pullSetup != nil && pullSetup.NMEASend() {
 		ggaSelector = gpsevent.NewGGASelector()
 		pullSetup.SetSelectedGGA(ggaSelector.Packets())
 	}
@@ -502,7 +502,7 @@ func configFeatures(cfg *Config, usingPHC bool) cfgFeatures {
 	if cfg.Log.Track || len(cfg.HTTP) > 0 {
 		cf |= cfgPosition
 	}
-	if cfg.Stream.Pull.VRS() {
+	if cfg.Stream.Pull.NMEASend() {
 		cf |= cfgPosition
 	}
 	if cfg.httpWantsSatellites() {
