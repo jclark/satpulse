@@ -1108,7 +1108,7 @@ func TestGGASenderRejectsQualityZero(t *testing.T) {
 	ch := make(chan scan.Packet, 1)
 	ch <- nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,0,08,0.9,545.4,M,46.9,M,,")
 	close(ch)
-	gs := NewGGASender(ch)
+	gs := NewGGASender(ch, 0)
 	done := make(chan struct{})
 	go func() {
 		gs.Run(ctx, discardLogger())
@@ -1132,7 +1132,7 @@ func TestGGASenderRejectsNoPosition(t *testing.T) {
 	ch := make(chan scan.Packet, 1)
 	ch <- nmeaPacket("GPGGA,123519,,,,,1,08,0.9,545.4,M,46.9,M,,")
 	close(ch)
-	gs := NewGGASender(ch)
+	gs := NewGGASender(ch, 0)
 	done := make(chan struct{})
 	go func() {
 		gs.Run(ctx, discardLogger())
@@ -1154,7 +1154,7 @@ func TestGGASenderForceSendsOnConnect(t *testing.T) {
 	ch := make(chan scan.Packet, 1)
 	ch <- gga
 	close(ch)
-	gs := NewGGASender(ch)
+	gs := NewGGASender(ch, 0)
 	go gs.Run(ctx, discardLogger())
 	if err := gs.WaitReady(ctx); err != nil {
 		t.Fatalf("WaitReady: %v", err)
@@ -1177,10 +1177,39 @@ func TestGGASenderForceSendsOnConnect(t *testing.T) {
 	}
 }
 
-func TestGGASenderMovementGate(t *testing.T) {
+// With a positive interval the held GGA is resent periodically, even for a
+// stationary client, so a keepalive-hungry caster keeps streaming.
+func TestGGASenderPeriodicResend(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan scan.Packet)
-	gs := NewGGASender(ch)
+	gs := NewGGASender(ch, 20*time.Millisecond)
+	go gs.Run(ctx, discardLogger())
+	gga := nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
+	ch <- gga
+	if err := gs.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady: %v", err)
+	}
+	server, client := net.Pipe()
+	t.Cleanup(func() {
+		cancel()
+		server.Close()
+		client.Close()
+	})
+	if !gs.SetWriter(ctx, server) {
+		t.Fatal("SetWriter returned false")
+	}
+	// connect force-send, then at least one periodic resend of the same GGA
+	client.SetReadDeadline(time.Now().Add(2 * time.Second))
+	readGGA(t, client, gga.Data)
+	readGGA(t, client, gga.Data)
+}
+
+// With interval 0 the GGA is uploaded once per connection: no periodic resend,
+// and a later move does not trigger another send.
+func TestGGASenderSendsOnceWhenIntervalZero(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	ch := make(chan scan.Packet)
+	gs := NewGGASender(ch, 0)
 	go gs.Run(ctx, discardLogger())
 	first := nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
 	ch <- first
@@ -1197,16 +1226,12 @@ func TestGGASenderMovementGate(t *testing.T) {
 		t.Fatal("SetWriter returned false")
 	}
 	readGGA(t, client, first.Data)
-	ch <- nmeaPacket("GPGGA,123520,4807.039,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
+	ch <- nmeaPacket("GPGGA,123521,4808.000,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
 	client.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 	buf := make([]byte, 1)
 	if _, err := client.Read(buf); err == nil {
-		t.Fatal("read after insignificant movement succeeded, want timeout")
+		t.Fatal("unexpected send after interval-0 once-per-connection upload")
 	}
-	client.SetReadDeadline(time.Time{})
-	far := nmeaPacket("GPGGA,123521,4808.000,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
-	ch <- far
-	readGGA(t, client, far.Data)
 }
 
 func nmeaPacket(payload string) scan.Packet {

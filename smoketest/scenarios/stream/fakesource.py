@@ -143,10 +143,23 @@ def handle(conn: socket.socket, pack: str, factor: str, log_path: str,
     p = subprocess.run([pack, "pack", "--realtime", factor, log_path], stdout=conn.fileno())
     log(f"{iso(time.time())} streamed mount={mount} (pack exit {p.returncode})")
     # Hold the connection open until the client disconnects, so it does not see
-    # EOF and reconnect for a second copy of the corrections.
+    # EOF and reconnect for a second copy of the corrections. While it is open,
+    # log each periodic GGA keepalive the client uploads (same "accepted GGA"
+    # prefix as the first one), so a scenario can assert the client re-sends GGA
+    # on its interval rather than only once on connect.
+    conn.settimeout(None)
+    buf = b""
     try:
-        while conn.recv(4096):
-            pass
+        while True:
+            chunk = conn.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                raw, buf = buf.split(b"\n", 1)
+                gga = raw.rstrip(b"\r")
+                if gga.startswith(b"$") and b"GGA," in gga and b"*" in gga:
+                    log(f"{iso(time.time())} accepted GGA mount={mount} sentence={gga.decode('latin1')}")
     except OSError:
         pass
     log(f"{iso(time.time())} closed mount={mount}")

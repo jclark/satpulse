@@ -25,7 +25,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-const summary = `[-h|--help] [--user user[:password]] [--bin] [--nmea-send-pos lat,lon[,hgt]] <address[:port]> <mountpoint>`
+const summary = `[-h|--help] [--user user[:password]] [--bin] [--nmea-send-pos lat,lon[,hgt]] [--nmea-send-interval secs] <address[:port]> <mountpoint>`
 
 const (
 	// scanBufSize matches stream.scanBufSize.
@@ -43,23 +43,26 @@ type nmeaSendPos struct {
 }
 
 type flagConfig struct {
-	Addr        string
-	Mountpoint  string
-	Username    string
-	Password    string
-	Bin         bool
-	NMEASendPos *nmeaSendPos
+	Addr             string
+	Mountpoint       string
+	Username         string
+	Password         string
+	Bin              bool
+	NMEASendPos      *nmeaSendPos
+	NMEASendInterval time.Duration
 }
 
 func parseFlags(cmdName string, args []string) (cfg *flagConfig, help bool, usageFunc func(string) string, err error) {
 	var user string
 	var bin bool
 	var sendPos string
+	sendInterval := stream.DefaultNMEASendInterval.Seconds()
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.StringVar(&user, "user", "", "Ntrip credentials (password may be omitted)")
 	flags.BoolVar(&bin, "bin", false, "emit raw bytes to stdout (default: packet log JSONL)")
 	flags.StringVar(&sendPos, "nmea-send-pos", "", "receiver position as lat,lon[,hgt] for VRS casters")
+	flags.Float64Var(&sendInterval, "nmea-send-interval", sendInterval, "seconds between GGA re-sends (0 = once); requires --nmea-send-pos")
 	usageFunc = cmd.UsageFunc(cmdName, summary, flags)
 	if err = flags.Parse(args); err != nil {
 		return
@@ -83,6 +86,11 @@ func parseFlags(cmdName string, args []string) (cfg *flagConfig, help bool, usag
 			return
 		}
 	}
+	if sendInterval < 0 || math.IsNaN(sendInterval) || math.IsInf(sendInterval, 0) {
+		err = fmt.Errorf("--nmea-send-interval: must be a non-negative finite number")
+		return
+	}
+	cfg.NMEASendInterval = time.Duration(sendInterval * float64(time.Second))
 	return
 }
 
@@ -184,7 +192,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 			ChecksumValid: true,
 		}
 		close(ch)
-		gs = stream.NewGGASender(ch)
+		gs = stream.NewGGASender(ch, cfg.NMEASendInterval)
 		go gs.Run(ctx, lg)
 		if err := gs.WaitReady(ctx); err != nil {
 			return "", err

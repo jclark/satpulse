@@ -2,6 +2,8 @@ package stream
 
 import (
 	"fmt"
+	"math"
+	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/ntrip"
@@ -27,14 +29,23 @@ type TCPConfig struct {
 	Address string `toml:"address"`
 }
 
-// NtripConfig matches [stream.pull.ntrip].
+// NtripConfig matches [stream.pull.ntrip].  NMEASendInterval is the
+// GGA upload interval in seconds; an unset value defaults to
+// DefaultNMEASendInterval and a configured 0 means upload once per
+// connection.
 type NtripConfig struct {
-	Address    string `toml:"address"`
-	Mountpoint string `toml:"mountpoint"`
-	Username   string `toml:"username"`
-	Password   string `toml:"password"`
-	NMEASend   bool   `toml:"nmeaSend"`
+	Address          string   `toml:"address"`
+	Mountpoint       string   `toml:"mountpoint"`
+	Username         string   `toml:"username"`
+	Password         string   `toml:"password"`
+	NMEASend         bool     `toml:"nmeaSend"`
+	NMEASendInterval *float64 `toml:"nmeaSendInterval"`
 }
+
+// DefaultNMEASendInterval is the GGA upload interval used when nmeaSend
+// is enabled but nmeaSendInterval is unset.  The satpulsetool ntrip
+// diagnostic uses the same default.
+const DefaultNMEASendInterval = 5 * time.Second
 
 // PushConfig is one [[stream.push]] entry.  Transport is selected
 // by which sub-table is present.  Protocol is the packet format
@@ -154,6 +165,17 @@ func (cfg *PullConfig) NMEASend() bool {
 	return cfg.Ntrip != nil && cfg.Ntrip.NMEASend
 }
 
+// nmeaInterval returns the resolved GGA upload interval.  An unset
+// nmeaSendInterval defaults to DefaultNMEASendInterval; a configured 0
+// means upload once per connection.  Consulted only on the NMEASend
+// path, so it has no effect when nmeaSend is false.
+func (cfg *PullConfig) nmeaInterval() time.Duration {
+	if cfg.Ntrip != nil && cfg.Ntrip.NMEASendInterval != nil {
+		return time.Duration(*cfg.Ntrip.NMEASendInterval * float64(time.Second))
+	}
+	return DefaultNMEASendInterval
+}
+
 // Prepare builds a PullSetup for cfg, or returns nil when the pull
 // is disabled (neither tcp nor ntrip set).  version feeds the Ntrip
 // User-Agent header.  pw and portLock are the correction-output port
@@ -179,13 +201,14 @@ func (cfg *PullConfig) Prepare(version string,
 		return nil
 	}
 	return &PullSetup{
-		pull:       NewPull(),
-		source:     src,
-		addr:       addr,
-		pktFormats: defaultPullFormats,
-		pw:         pw,
-		portLock:   portLock,
-		nmeaSend:   cfg.NMEASend(),
+		pull:         NewPull(),
+		source:       src,
+		addr:         addr,
+		pktFormats:   defaultPullFormats,
+		pw:           pw,
+		portLock:     portLock,
+		nmeaSend:     cfg.NMEASend(),
+		nmeaInterval: cfg.nmeaInterval(),
 	}
 }
 
@@ -211,6 +234,14 @@ func (cfg *PullConfig) Validate() error {
 		}
 		if err := ntrip.CheckMountpointName(cfg.Ntrip.Mountpoint); err != nil {
 			return fmt.Errorf("stream.pull.ntrip.mountpoint: %w", err)
+		}
+		if iv := cfg.Ntrip.NMEASendInterval; iv != nil {
+			if math.IsNaN(*iv) || math.IsInf(*iv, 0) {
+				return fmt.Errorf("stream.pull.ntrip.nmeaSendInterval: must be finite")
+			}
+			if *iv < 0 {
+				return fmt.Errorf("stream.pull.ntrip.nmeaSendInterval: must be non-negative")
+			}
 		}
 	}
 	return nil

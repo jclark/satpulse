@@ -14,3 +14,4 @@ def run(ctx: common.SmokeContext) -> None:
     stream.check_pull_connected(ctx)
     stream.check_pull_uploaded_gga(ctx)
     stream.check_pulled_rtcm(ctx)
+    stream.check_pull_periodic_gga(ctx)

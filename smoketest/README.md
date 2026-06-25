@@ -175,7 +175,8 @@ make update-deps
   that captures the daemon's serial writes (`CAPTURE_WRITES`) and uses the pty
   as a write path rather than to model a disconnect, so it stops via `SIGINT`.
 - `stream/nmea-send` -- Ntrip NMEA send pull: the fake correction source waits for a
-  post-handshake GGA before streaming RTCM corrections, and the daemon's serial
+  post-handshake GGA before streaming RTCM corrections, the daemon re-sends GGA on
+  the `nmeaSendInterval` (the source records more than one), and the daemon's serial
   writes still match the source RTCM.
 - `shutdown/serial-loss` -- the serial input disappears (a pty whose master is
   closed mid-run) and the daemon must shut down on its own and exit with a

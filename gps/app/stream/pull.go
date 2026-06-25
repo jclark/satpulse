@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"net"
 	"strings"
 	"sync"
@@ -217,14 +216,15 @@ func NewPull() *Pull {
 // (source, packet writer, output port lock, and packet formats).
 // Built by (*PullConfig).Prepare.
 type PullSetup struct {
-	pull       *Pull
-	source     Source
-	addr       string
-	pktFormats []gpsprot.PacketFormat
-	pw         PacketWriter
-	portLock   gpsio.OutPortLock
-	nmeaSend   bool
-	selected   <-chan scan.Packet
+	pull         *Pull
+	source       Source
+	addr         string
+	pktFormats   []gpsprot.PacketFormat
+	pw           PacketWriter
+	portLock     gpsio.OutPortLock
+	nmeaSend     bool
+	nmeaInterval time.Duration
+	selected     <-chan scan.Packet
 }
 
 // Addr returns the source address string, for use in log lines.
@@ -252,11 +252,10 @@ func (s *PullSetup) SetSelectedGGA(ch <-chan scan.Packet) {
 // the serial writer returns a fatal error.
 func (s *PullSetup) Run(ctx context.Context, lg *slog.Logger,
 	onState func(State, error)) error {
-	return s.pull.run(ctx, lg, s.source, s.pw, s.portLock, s.pktFormats, s.selected, onState)
+	return s.pull.run(ctx, lg, s.source, s.pw, s.portLock, s.pktFormats, s.selected, s.nmeaInterval, onState)
 }
 
 const scanBufSize = 16
-const ggaMoveThresholdMeters = 25.0
 const ggaWriteTimeout = 5 * time.Second
 
 // errReconnect is sent as a scan.Packet.ReadError to signal the
@@ -266,15 +265,10 @@ var errReconnect = errors.New("reconnect")
 // ErrNoUsableGGA reports that a selected-GGA feed ended without a usable fix.
 var ErrNoUsableGGA = errors.New("no usable GGA with position fix")
 
-type selectedGGA struct {
-	data string
-	lat  float64
-	lon  float64
-}
-
 // GGASender uploads selected GGA packets to a connected correction source.
 type GGASender struct {
 	selected <-chan scan.Packet
+	interval time.Duration
 	connCh   chan ReadWriteDeadlineCloser
 	ready    chan struct{}
 	done     chan struct{}
@@ -282,57 +276,63 @@ type GGASender struct {
 }
 
 // NewGGASender creates a GGA sender for a selected-GGA packet feed.
-func NewGGASender(selected <-chan scan.Packet) *GGASender {
+// interval is the resend period; 0 uploads the latest GGA once per
+// connection.
+func NewGGASender(selected <-chan scan.Packet, interval time.Duration) *GGASender {
 	return &GGASender{
 		selected: selected,
+		interval: interval,
 		connCh:   make(chan ReadWriteDeadlineCloser, 1),
 		ready:    make(chan struct{}),
 		done:     make(chan struct{}),
 	}
 }
 
-// Run consumes selected GGA packets and writes the latest usable one after
-// each connection.
+// Run holds the latest usable GGA and uploads it to the current
+// connection: once on connect, then every interval if interval > 0.
 func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
 	var current ReadWriteDeadlineCloser
-	var latest *selectedGGA
-	var lastSent *[2]float64
+	var latest string
+	var haveLatest bool
 	defer close(s.done)
+	var tickCh <-chan time.Time
+	if s.interval > 0 {
+		t := time.NewTicker(s.interval)
+		defer t.Stop()
+		tickCh = t.C
+	}
+	send := func() {
+		if err := writeGGA(current, latest); err != nil {
+			lg.Warn("NMEA GGA upload failed", "err", err)
+			current.Close()
+			current = nil
+		}
+	}
 	for {
 		select {
 		case pkt, ok := <-s.selected:
 			if !ok {
 				s.selected = nil
-				if latest == nil {
+				if !haveLatest {
 					return
 				}
 				continue
 			}
-			gga, ok := parseSelectedGGA(pkt)
+			data, ok := parseSelectedGGA(pkt)
 			if !ok {
 				continue
 			}
-			latest = &gga
+			latest = data
+			haveLatest = true
 			s.once.Do(func() { close(s.ready) })
-			if current != nil && ggaMoved(&gga, lastSent) {
-				if err := writeGGA(current, &gga); err != nil {
-					lg.Warn("NMEA GGA upload failed", "err", err)
-					current.Close()
-					current = nil
-				} else {
-					lastSent = &[2]float64{gga.lat, gga.lon}
-				}
+		case <-tickCh:
+			if current != nil && haveLatest {
+				send()
 			}
 		case conn := <-s.connCh:
 			current = conn
-			if latest != nil {
-				if err := writeGGA(current, latest); err != nil {
-					lg.Warn("NMEA GGA upload failed", "err", err)
-					current.Close()
-					current = nil
-				} else {
-					lastSent = &[2]float64{latest.lat, latest.lon}
-				}
+			if haveLatest {
+				send()
 			}
 		case <-ctx.Done():
 			return
@@ -380,7 +380,7 @@ func (s *Pull) Run(ctx context.Context, lg *slog.Logger,
 	portLock gpsio.OutPortLock,
 	pktFormats []gpsprot.PacketFormat,
 	onState func(State, error)) error {
-	return s.run(ctx, lg, source, pw, portLock, pktFormats, nil, onState)
+	return s.run(ctx, lg, source, pw, portLock, pktFormats, nil, 0, onState)
 }
 
 func (s *Pull) run(ctx context.Context, lg *slog.Logger,
@@ -389,6 +389,7 @@ func (s *Pull) run(ctx context.Context, lg *slog.Logger,
 	portLock gpsio.OutPortLock,
 	pktFormats []gpsprot.PacketFormat,
 	selectedGGA <-chan scan.Packet,
+	nmeaInterval time.Duration,
 	onState func(State, error)) error {
 	iCtx, iCancel := context.WithCancel(ctx)
 	defer iCancel()
@@ -403,7 +404,7 @@ func (s *Pull) run(ctx context.Context, lg *slog.Logger,
 	})
 	var gs *GGASender
 	if selectedGGA != nil {
-		gs = NewGGASender(selectedGGA)
+		gs = NewGGASender(selectedGGA, nmeaInterval)
 		pipelineWg.Go(func() {
 			gs.Run(iCtx, lg)
 		})
@@ -617,58 +618,44 @@ func (s *Pull) writer(ctx context.Context, lg *slog.Logger,
 	return nil
 }
 
-func parseSelectedGGA(pkt scan.Packet) (selectedGGA, bool) {
+// parseSelectedGGA returns the wire bytes of pkt when it is a usable GGA:
+// checksum-valid, with a position fix (quality > 0) and set lat/lon.
+func parseSelectedGGA(pkt scan.Packet) (string, bool) {
 	if !pkt.HasTag(gpsreg.TagNMEA) || !pkt.ChecksumValid {
-		return selectedGGA{}, false
+		return "", false
 	}
 	flags := nmeamsg.CheckSyntax(pkt.Data)
 	if !flags.IsValidGNSSTalkerNMEA() {
-		return selectedGGA{}, false
+		return "", false
 	}
 	i := strings.IndexByte(pkt.Data, '*')
 	if i < 0 {
-		return selectedGGA{}, false
+		return "", false
 	}
 	msg, err := nmeamsg.ParseGNSSTalkerPayload(pkt.Data[1:i], flags)
 	if err != nil {
-		return selectedGGA{}, false
+		return "", false
 	}
 	gga, ok := msg.(nmeamsg.GGASentence)
 	if !ok || gga.Fields.Quality == 0 || !gga.Fields.Lat.IsSet() || !gga.Fields.Lon.IsSet() {
-		return selectedGGA{}, false
+		return "", false
 	}
-	lat, lon := gga.Fields.LatLon()
-	return selectedGGA{data: pkt.Data, lat: lat, lon: lon}, true
+	return pkt.Data, true
 }
 
-func writeGGA(w ReadWriteDeadlineCloser, gga *selectedGGA) error {
+func writeGGA(w ReadWriteDeadlineCloser, data string) error {
 	if err := w.SetWriteDeadline(time.Now().Add(ggaWriteTimeout)); err != nil {
 		return err
 	}
-	n, err := io.WriteString(w, gga.data)
+	n, err := io.WriteString(w, data)
 	if e := w.SetWriteDeadline(time.Time{}); err == nil {
 		err = e
 	}
 	if err != nil {
 		return err
 	}
-	if n != len(gga.data) {
+	if n != len(data) {
 		return io.ErrShortWrite
 	}
 	return nil
-}
-
-func ggaMoved(gga *selectedGGA, last *[2]float64) bool {
-	return last == nil || flatDistanceMeters(gga.lat, gga.lon, last[0], last[1]) >= ggaMoveThresholdMeters
-}
-
-func flatDistanceMeters(lat1, lon1, lat2, lon2 float64) float64 {
-	const earthRadiusMeters = 6371000.0
-	lat1 *= math.Pi / 180
-	lon1 *= math.Pi / 180
-	lat2 *= math.Pi / 180
-	lon2 *= math.Pi / 180
-	x := (lon2 - lon1) * math.Cos((lat1+lat2)/2)
-	y := lat2 - lat1
-	return math.Hypot(x, y) * earthRadiusMeters
 }

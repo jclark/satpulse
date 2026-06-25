@@ -22,9 +22,10 @@ Scope notes:
   require any proxy service or `proxy.tcp synth` option.
 - Our own caster (`gps/app/ntrip`) is a physical base: field 12 `<nmea>` is
   hard-coded `"0"` in `strrec.go`. Nothing here changes that.
-- The spec requires only one GGA to start; sending more is allowed for a moving
-  client. There is no periodic-GGA keepalive requirement for the HTTP/TCP
-  streaming flow we use.
+- The spec requires only one GGA to start, but testing showed many
+  position-dependent casters stop streaming unless they keep receiving GGA, so
+  in practice we re-upload periodically (see `nmeaSendInterval`). Sending more
+  than one GGA is always spec-allowed.
 - The completed `satpulsetool ntrip --gga` diagnostic proved that u-blox
   PointPerfect accepts our Ntrip v1 request flow.
 
@@ -37,9 +38,18 @@ mountpoint = "GGA"
 username = "user"
 password = "pass"
 nmeaSend = true
+nmeaSendInterval = 5
 ```
 
 `nmeaSend = true` is meaningful only for ntrip pull.
+
+`nmeaSendInterval` is the GGA upload interval in seconds (`*float64` so an
+unset key is distinguishable from `0`). Many position-dependent casters drop
+the stream unless they keep receiving GGA, so the default behaviour is periodic
+re-upload, not one-shot. An unset key defaults to 5 seconds; a configured `0`
+means upload once per connection. It is consulted only on the `nmeaSend` path,
+so like other mode-dependent keys it has no effect (and is not rejected) when
+`nmeaSend` is false; only a negative or non-finite value is a config error.
 
 ## Implementation
 
@@ -95,15 +105,23 @@ nmeaSend = true
    feed built by `time/app/daemon` from receiver NMEA plus synthesized fill-ins.
    Receiver GGA wins for a UTC whenever present.
 
-7. `ggaSender` owns all mutable state: `(currentWriter, lastSentLatLon)` plus
-   the latest suitable GGA packet and a one-shot readiness signal. It selects on:
-   - selected-GGA feed: parse enough GGA fields to get quality and lat/lon, hold
-     the original wire packet as latest, signal readiness the first time it has a
-     quality > 0 packet, and if connected and moved enough, write those bytes
-     with a deadline;
+7. `ggaSender` owns all mutable state: `currentWriter` plus the latest suitable
+   GGA wire bytes and a one-shot readiness signal. `NewGGASender` takes the
+   resolved interval; when it is > 0 the sender runs a `time.Ticker`, otherwise
+   the tick channel is nil and never fires. It selects on:
+   - selected-GGA feed: parse the GGA to confirm it is usable (quality > 0, lat
+     and lon set), hold the original wire bytes as latest, and signal readiness
+     the first time it has a usable packet. It does not write on this case;
+     receiving a new GGA only updates the held latest;
+   - the ticker: if connected, write the held latest GGA bytes with a deadline;
    - `connCh`: adopt the new writer after each successful dial and immediately
      force-send the held latest GGA;
    - `ctx.Done()`: exit.
+
+   The ticker is the only periodic driver and `connCh` the only immediate
+   driver, so a stationary client still gets the periodic keepalive every
+   `nmeaSendInterval` seconds. When the receiver loses its fix the sender keeps
+   re-sending the last usable GGA, which keeps the stream alive.
 
 8. The existing `reader()` reconnect loop remains the only code that dials. On
    startup in NMEA send mode it waits for `ggaSender`'s readiness signal, rather than
@@ -115,17 +133,21 @@ nmeaSend = true
    quality > 0, signalled by `ggaSender`. Later reconnects use the held latest
    GGA immediately.
 
-10. Significant-change gate: use a 2D flat-earth/equirectangular distance from
-   parsed GGA lat/lon. Ignore height. A tens-of-metres threshold is enough.
+10. Periodic re-upload supersedes the earlier significant-movement gate. Repeat
+   sends come only from the `nmeaSendInterval` ticker (plus the per-connection
+   force-send), so there is no distance computation: a stationary client is
+   re-sent on every tick, and `nmeaSendInterval = 0` means once per connection
+   even if the client moves.
 
-11. After `ggaSender` exists, switch `satpulsetool ntrip --gga` onto the same
-   post-handshake GGA sender used by NMEA send. The command still accepts one literal
-   validated GGA and sends it once, but it feeds that packet through a one-shot
+11. After `ggaSender` exists, switch `satpulsetool ntrip` onto the same
+   post-handshake GGA sender used by NMEA send. The command builds one literal
+   validated GGA from `--nmea-send-pos` and feeds it through a one-shot
    selected-GGA channel instead of using a separate static `NtripSource.GGA`
-   mechanism. The shared sender's quality > 0 gate means a pasted quality-0 GGA
-   no longer starts a connection; the diagnostic becomes "upload a usable GGA
-   once" rather than "write any syntactically valid GGA once". This leaves only
-   one code path that writes GGA to an Ntrip caster.
+   mechanism. The shared sender's quality > 0 gate means a quality-0 GGA no
+   longer starts a connection. A `--nmea-send-interval secs` flag sets the
+   sender interval (default 5 to match the daemon, `0` uploads once on connect)
+   so the diagnostic exercises the same periodic flow real casters need. This
+   leaves only one code path that writes GGA to an Ntrip caster.
 
 Behavioral note to document: in NMEA send mode pull does not connect until a valid
 position fix exists, so corrections are gated on the receiver first achieving a
@@ -135,7 +157,9 @@ silent correction stream when the receiver never gets its first fix.
 
 ## Tests
 
-- Config parsing/validation for `nmeaSend = true`.
+- Config parsing/validation for `nmeaSend = true`, `nmeaSendInterval` parsing,
+  the unset-defaults-to-5s and explicit-0 resolution, and rejection of a
+  negative/non-finite interval.
 - NMEA send pull waits for a valid selected GGA before connecting.
 - A blocked GGA sender does not backpressure dispatcher processing; selected GGA
   delivery drops stale pending GGA under pressure.
@@ -146,18 +170,25 @@ silent correction stream when the receiver never gets its first fix.
 - Force-send selected GGA on connect and reconnect.
 - Receiver GGA is sent verbatim when present.
 - Synthesized GGA can be used when the receiver does not emit GGA.
-- Significant-move gate sends on movement and stays quiet when stationary.
+- Periodic re-upload: a positive interval re-sends the held GGA even for a
+  stationary client; `nmeaSendInterval = 0` uploads once per connection and a
+  later move does not trigger another send.
 - Quality 0 GGA does not start NMEA send connection.
-- `satpulsetool ntrip --gga` sends via the same post-handshake GGA sender as
-  NMEA send, with a one-shot literal-GGA input.
-- `satpulsetool ntrip --gga` with a quality-0 literal does not start the
-  connection after it moves to the shared sender.
+- `satpulsetool ntrip` sends via the same post-handshake GGA sender as NMEA
+  send, with a one-shot literal-GGA input, and `--nmea-send-interval` sets the
+  re-send period.
+- `satpulsetool ntrip` with a quality-0 literal does not start the connection
+  after it moves to the shared sender.
 - Write-deadline and write-error handling drops the writer and lets the reader
   reconnect path recover.
-- Add a `smoketest/scenarios/stream/nmea-send` scenario (`.py`, `.toml.in`,
-  `SCENARIOS` entry, and README list entry) using a fake correction source that waits
-  for GGA before streaming corrections.
+- The `smoketest/scenarios/stream/nmea-send` scenario uses a fake correction
+  source that waits for GGA before streaming corrections, and (with a small
+  `nmeaSendInterval`) asserts the daemon re-sends GGA periodically, not just
+  once on connect.
 
 ## Open decisions
 
-- Significant-move threshold value, and whether it is configurable.
+- None outstanding. No minimum `nmeaSendInterval` is enforced: the effective
+  re-send rate is bounded by the nav-epoch interval that drives the selected-GGA
+  feed, so a tiny configured value cannot make the held GGA churn faster than
+  the receiver produces fixes.

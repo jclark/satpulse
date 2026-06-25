@@ -3,6 +3,7 @@ package stream
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -68,6 +69,59 @@ ntrip.nmeaSend = true
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate: %v", err)
+	}
+}
+
+func TestConfigPullNtripNMEASendInterval(t *testing.T) {
+	cfg := decode(t, `
+[pull]
+ntrip.address = "caster.example.com:2101"
+ntrip.mountpoint = "RTCM"
+ntrip.nmeaSend = true
+ntrip.nmeaSendInterval = 2.5
+`)
+	n := cfg.Pull.Ntrip
+	if n.NMEASendInterval == nil || *n.NMEASendInterval != 2.5 {
+		t.Fatalf("NMEASendInterval = %v, want 2.5", n.NMEASendInterval)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+	if got := cfg.Pull.nmeaInterval(); got != 2500*time.Millisecond {
+		t.Errorf("nmeaInterval() = %v, want 2.5s", got)
+	}
+}
+
+func TestPullConfigNMEAInterval(t *testing.T) {
+	zero := 0.0
+	tests := []struct {
+		name  string
+		ntrip *NtripConfig
+		want  time.Duration
+	}{
+		{"unset defaults to 5s", &NtripConfig{NMEASend: true}, 5 * time.Second},
+		{"explicit zero means once", &NtripConfig{NMEASend: true, NMEASendInterval: &zero}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pc := &PullConfig{Ntrip: tt.ntrip}
+			if got := pc.nmeaInterval(); got != tt.want {
+				t.Errorf("nmeaInterval() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPullConfigValidateNMEAInterval(t *testing.T) {
+	neg := -1.0
+	pc := &PullConfig{Ntrip: &NtripConfig{
+		Address:          "caster.example.com",
+		Mountpoint:       "RTCM",
+		NMEASend:         true,
+		NMEASendInterval: &neg,
+	}}
+	if err := pc.Validate(); err == nil {
+		t.Error("expected error for negative nmeaSendInterval")
 	}
 }
 
@@ -163,6 +217,9 @@ func TestPullConfigPrepareNtrip(t *testing.T) {
 	}
 	if !s.NMEASend() {
 		t.Errorf("NMEASend() = false, want true")
+	}
+	if s.nmeaInterval != 5*time.Second {
+		t.Errorf("nmeaInterval = %v, want 5s (default)", s.nmeaInterval)
 	}
 	if s.Addr() != "caster.example.com:2101" {
 		t.Errorf("Addr() = %q", s.Addr())

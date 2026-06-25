@@ -6,7 +6,7 @@ _Not yet released_
 
 - `satpulse.toml` has a new `[ntrip]` table and `[[ntrip.mountpoint]]` table array, which make `satpulsed` act as an Ntrip caster serving RTCM correction data from the receiver. Authentication is supported in conjunction with a new `[[user]]` table array. (#126)
 - `satpulse.toml` has a new `[stream.pull]` table, which makes `satpulsed` act as an Ntrip client, pulling correction data from an Ntrip caster and feeding it to the receiver. A plain TCP correction source can also be used. (#221)
-- `[stream.pull.ntrip]` has a new `nmeaSend` option for Virtual Reference Station casters. When enabled, `satpulsed` waits for a usable receiver position, uploads a current GGA sentence after connecting, and resends it after reconnects or significant movement. (#325)
+- `[stream.pull.ntrip]` has new `nmeaSend` and `nmeaSendInterval` options for Virtual Reference Station casters. When `nmeaSend` is enabled, `satpulsed` waits for a usable receiver position, uploads a current GGA sentence after connecting, and then re-uploads it every `nmeaSendInterval` seconds (default 5; 0 means upload only once per connection) so that casters requiring a periodic GGA keep streaming. (#325)
 - `satpulse.toml` has a new `[[stream.push]]` table array, which makes `satpulsed` act as an Ntrip server, pushing receiver packet streams to a remote Ntrip caster. RTCM is the default payload, and NMEA or UBX can be selected explicitly. (#238)
 - `[[stream.push]]` entries can now use `udp.address` to send receiver packet data to a UDP destination. (#320)
 - `satpulse.toml` has new `msm7to4` options on Ntrip mountpoints and push entries, which make `satpulsed` convert RTCM MSM7 packets to MSM4 before forwarding them, while leaving non-MSM7 packets unchanged. (#126, #238, #288)
@@ -47,7 +47,7 @@ _Not yet released_
 
 - `satpulsetool` has a new `pack` command, which reads a JSONL packet log and writes selected packets as a packet byte stream corresponding to the original packet contents. It can filter by packet `tag` and `msg`, and can preserve inter-packet timing for FIFO-based replay. (#247)
 - `satpulsetool` has a new `scan` command, which reads a raw GPS packet byte stream and writes a JSONL packet log that can be decoded with `satpulsetool annotate`. (#246)
-- `satpulsetool ntrip` has a new `--nmea-send-pos` option that takes `lat,lon[,hgt]` and sends a synthesized NMEA GGA sentence to the caster on connect, for Virtual Reference Station casters such as u-blox PointPerfect that need the client's position before they will stream. (#325)
+- `satpulsetool ntrip` has a new `--nmea-send-pos` option that takes `lat,lon[,hgt]` and sends a synthesized NMEA GGA sentence to the caster on connect, for Virtual Reference Station casters such as u-blox PointPerfect that need the client's position before they will stream. A companion `--nmea-send-interval` option sets the re-send period for casters that require a periodic GGA (default 5 seconds, matching the daemon; 0 sends once). (#325)
 
 ### Miscellaneous
 
