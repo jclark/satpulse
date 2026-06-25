@@ -11,18 +11,19 @@ import (
 )
 
 // corReportRxmCor converts a UBX-RXM-COR message to a protocol-independent
-// CorReportMsg.  Returns nil if the correction protocol is not RTCM3:
-// only RTCM is currently mapped into the gpsprot.Tag space.
+// CorReportMsg.  Returns nil if the correction protocol is not mapped into
+// the gpsprot.Tag space.
 func corReportRxmCor(m *ubxbin.RxmCor) *gpsprot.CorReportMsg {
-	si := m.StatusInfo
-	if si&ubxbin.RxmCorProtocol != ubxbin.RxmCorProtocolRTCM3 {
+	tag, msgID := rxmCorTagMsgID(m)
+	if tag == gpsprot.EmptyTag {
 		return nil
 	}
 	msg := &gpsprot.CorReportMsg{
 		Source: gpsprot.CorReportSourceReceiver,
-		Tag:    rtcm.Tag,
-		MsgID:  rxmCorMsgID(m),
+		Tag:    tag,
+		MsgID:  msgID,
 	}
+	si := m.StatusInfo
 	switch si & ubxbin.RxmCorMsgUsed {
 	case ubxbin.RxmCorMsgUsedNotUsed:
 		msg.Used = opt.Make(false)
@@ -43,16 +44,20 @@ func corReportRxmCor(m *ubxbin.RxmCor) *gpsprot.CorReportMsg {
 	return msg
 }
 
-// rxmCorMsgID formats the RTCM message ID, including the subtype for
-// proprietary RTCM 4072 messages (e.g. "4072.1").
-func rxmCorMsgID(m *ubxbin.RxmCor) string {
+// rxmCorTagMsgID returns the protocol tag and message ID for a UBX-RXM-COR message.
+func rxmCorTagMsgID(m *ubxbin.RxmCor) (gpsprot.Tag, string) {
 	si := m.StatusInfo
-	if si&ubxbin.RxmCorMsgTypeValid == 0 {
-		return ""
+	switch si & ubxbin.RxmCorProtocol {
+	case ubxbin.RxmCorProtocolRTCM3:
+		if si&ubxbin.RxmCorMsgTypeValid == 0 {
+			return rtcm.Tag, ""
+		}
+		mt := rtcmbin.MsgType(m.MsgType)
+		if mt == 4072 && si&ubxbin.RxmCorMsgSubTypeValid != 0 {
+			return rtcm.Tag, fmt.Sprintf("%d.%d", mt, m.MsgSubType)
+		}
+		return rtcm.Tag, mt.String()
+	default:
+		return gpsprot.EmptyTag, ""
 	}
-	mt := rtcmbin.MsgType(m.MsgType)
-	if mt == 4072 && si&ubxbin.RxmCorMsgSubTypeValid != 0 {
-		return fmt.Sprintf("%d.%d", mt, m.MsgSubType)
-	}
-	return mt.String()
 }
