@@ -30,10 +30,12 @@ type Sink interface {
 // emits a synthesized GGA when the epoch ends.
 type Synth struct {
 	gpsprot.DefaultHandler
-	sink   Sink
-	time   time.Time
-	latLon *[2]float64
-	ecef   *geopos.ECEF
+	sink      Sink
+	time      time.Time
+	latLon    *[2]float64
+	height    *float64
+	heightMSL *float64
+	ecef      *geopos.ECEF
 }
 
 // New creates a GGA synthesizer.
@@ -53,6 +55,8 @@ func (s *Synth) Time(msg *gpsprot.TimeMsg, _ time.Time) {
 func (s *Synth) PosGeo(msg *gpsprot.PosGeoMsg, _ time.Time) {
 	ll := [2]float64{msg.LatLon[0].Degrees(), msg.LatLon[1].Degrees()}
 	s.latLon = &ll
+	s.height = lengthMeters(msg.Height.Ptr())
+	s.heightMSL = lengthMeters(msg.HeightMSL.Ptr())
 }
 
 // PosECEF records the ECEF position for the current epoch.
@@ -63,7 +67,7 @@ func (s *Synth) PosECEF(msg *gpsprot.PosECEFMsg, _ time.Time) {
 
 // NavEpoch emits synthesized GGA for the epoch and clears accumulated state.
 func (s *Synth) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
-	latLon := s.position()
+	latLon, height := s.position()
 	quality := ggaQuality(msg)
 	if latLon == nil {
 		quality = ggaQualityInvalid // no position, so report no fix
@@ -77,28 +81,38 @@ func (s *Synth) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
 	if v := msg.DOP.Hor.Ptr(); v != nil {
 		hdop = v
 	}
-	s.sink.GGASentence(nmeamsg.MakeGGA("GN", s.time, latLon, quality, numSats, hdop))
+	s.sink.GGASentence(nmeamsg.MakeGGA("GN", s.time, latLon, height, s.heightMSL, quality, numSats, hdop))
 	s.clear()
 }
 
-func (s *Synth) position() *[2]float64 {
+func (s *Synth) position() (*[2]float64, *float64) {
 	if s.latLon != nil {
-		return s.latLon
+		return s.latLon, s.height
 	}
 	if s.ecef == nil {
-		return nil
+		return nil, nil
 	}
 	llh, err := geopos.WGS84.ECEFtoLLH(*s.ecef)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
-	return &[2]float64{llh.Lat, llh.Lon}
+	return &[2]float64{llh.Lat, llh.Lon}, &llh.Height
 }
 
 func (s *Synth) clear() {
 	s.time = time.Time{}
 	s.latLon = nil
+	s.height = nil
+	s.heightMSL = nil
 	s.ecef = nil
+}
+
+func lengthMeters(l *gpsprot.Length) *float64 {
+	if l == nil {
+		return nil
+	}
+	v := l.Meters()
+	return &v
 }
 
 func ggaNumSats(n uint16) uint8 {

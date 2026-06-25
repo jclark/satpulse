@@ -51,6 +51,31 @@ func TestSynthGGAFromGeo(t *testing.T) {
 	}
 }
 
+func TestSynthGGAFromGeoHeights(t *testing.T) {
+	sink := &sink{}
+	s := New(sink)
+	tRead := time.Unix(1, 0)
+	s.Time(&gpsprot.TimeMsg{
+		UTCTime: opt.Make(ptime.UTC(2026, 6, 24, 12, 34, 56, 0)),
+	}, tRead)
+	s.PosGeo(&gpsprot.PosGeoMsg{
+		LatLon: [2]gpsprot.Angle{
+			gpsprot.DegreesFromFloat(13.731826167),
+			gpsprot.DegreesFromFloat(100.644802333),
+		},
+		Height:    opt.Make(gpsprot.Meters(100)),
+		HeightMSL: opt.Make(gpsprot.Meters(75.5)),
+	}, tRead)
+	s.NavEpoch(&gpsprot.NavEpochMsg{
+		FixLevel:  gpsprot.FixLevelCode,
+		NumSVUsed: opt.Make(uint16(8)),
+		DOP:       gpsprot.DOP{Hor: opt.Make(1.2)},
+	}, tRead)
+	if payload := ggaPayload(t, oneGGA(t, sink)); payload != "GNGGA,123456.00,1343.90957,N,10038.68814,E,1,08,1.2,75.5,M,24.5,M,," {
+		t.Fatalf("payload = %q", payload)
+	}
+}
+
 func TestSynthGGANoFix(t *testing.T) {
 	sink := &sink{}
 	s := New(sink)
