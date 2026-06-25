@@ -44,10 +44,16 @@ type NtripConfig struct {
 	NMEASendInterval *float64 `toml:"nmeaSendInterval"`
 }
 
-// DefaultNMEASendInterval is the GGA upload interval used when nmeaSend
-// is enabled but nmeaSendInterval is unset.  The satpulsetool ntrip
-// diagnostic uses the same default.
-const DefaultNMEASendInterval = 5 * time.Second
+const (
+	// DefaultNMEASendInterval is the GGA upload interval used when nmeaSend
+	// is enabled but nmeaSendInterval is unset.  The satpulsetool ntrip
+	// diagnostic uses the same default.
+	DefaultNMEASendInterval = 5 * time.Second
+
+	// MinNMEASendInterval is the smallest periodic GGA upload interval.  A
+	// configured 0 is still allowed and means upload once per connection.
+	MinNMEASendInterval = time.Second
+)
 
 // PushConfig is one [[stream.push]] entry.  Transport is selected
 // by which sub-table is present.  Protocol is the packet format
@@ -248,6 +254,9 @@ func (cfg *PullConfig) Validate() error {
 			}
 			if *iv < 0 {
 				return fmt.Errorf("stream.pull.ntrip.nmeaSendInterval: must be non-negative")
+			}
+			if *iv > 0 && *iv < MinNMEASendInterval.Seconds() {
+				return fmt.Errorf("stream.pull.ntrip.nmeaSendInterval: must be 0 or at least 1")
 			}
 		}
 	}

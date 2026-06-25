@@ -113,15 +113,25 @@ func TestPullConfigNMEAInterval(t *testing.T) {
 }
 
 func TestPullConfigValidateNMEAInterval(t *testing.T) {
-	neg := -1.0
-	pc := &PullConfig{Ntrip: &NtripConfig{
-		Address:          "caster.example.com",
-		Mountpoint:       "RTCM",
-		NMEASend:         true,
-		NMEASendInterval: &neg,
-	}}
-	if err := pc.Validate(); err == nil {
-		t.Error("expected error for negative nmeaSendInterval")
+	tests := []struct {
+		name string
+		v    float64
+	}{
+		{"negative", -1.0},
+		{"positive below minimum", 0.5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pc := &PullConfig{Ntrip: &NtripConfig{
+				Address:          "caster.example.com",
+				Mountpoint:       "RTCM",
+				NMEASend:         true,
+				NMEASendInterval: &tt.v,
+			}}
+			if err := pc.Validate(); err == nil {
+				t.Errorf("expected error for nmeaSendInterval %v", tt.v)
+			}
+		})
 	}
 }
 

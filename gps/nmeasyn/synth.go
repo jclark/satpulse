@@ -32,6 +32,7 @@ type Synth struct {
 	gpsprot.DefaultHandler
 	sink      Sink
 	time      time.Time
+	now       func() time.Time
 	latLon    *[2]float64
 	height    *float64
 	heightMSL *float64
@@ -40,7 +41,7 @@ type Synth struct {
 
 // New creates a GGA synthesizer.
 func New(sink Sink) *Synth {
-	return &Synth{sink: sink}
+	return &Synth{sink: sink, now: time.Now}
 }
 
 // Time records the UTC time for the current epoch.
@@ -85,7 +86,11 @@ func (s *Synth) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
 	if height != nil && heightMSL == nil {
 		heightMSL = height
 	}
-	s.sink.GGASentence(nmeamsg.MakeGGA("GN", s.time, latLon, height, heightMSL, quality, numSats, hdop))
+	t := s.time
+	if t.IsZero() {
+		t = s.now()
+	}
+	s.sink.GGASentence(nmeamsg.MakeGGA("GN", t, latLon, height, heightMSL, quality, numSats, hdop))
 	s.clear()
 }
 

@@ -533,6 +533,15 @@
                   "description": "Send the receiver position as NMEA GGA to the caster",
                   "type": "boolean",
                   "default": false
+                },
+                "nmeaSendInterval": {
+                  "description": "Seconds between NMEA GGA uploads; 0 sends once per connection",
+                  "type": "number",
+                  "default": 5,
+                  "oneOf": [
+                    {"const": 0},
+                    {"minimum": 1}
+                  ]
                 }
               },
               "required": ["address", "mountpoint"]

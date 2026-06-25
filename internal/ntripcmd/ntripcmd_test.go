@@ -151,6 +151,11 @@ func TestParseFlags(t *testing.T) {
 			expectErr: true,
 		},
 		{
+			name:      "nmea send interval positive below minimum",
+			args:      []string{"--nmea-send-interval", "0.5", "caster.example", "MNT"},
+			expectErr: true,
+		},
+		{
 			name:      "gga removed",
 			args:      []string{"--gga", "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47", "caster.example", "MNT"},
 			expectErr: true,

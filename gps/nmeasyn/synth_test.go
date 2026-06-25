@@ -51,6 +51,27 @@ func TestSynthGGAFromGeo(t *testing.T) {
 	}
 }
 
+func TestSynthGGAFromGeoWithoutTimeUsesNow(t *testing.T) {
+	sink := &sink{}
+	s := New(sink)
+	s.now = func() time.Time {
+		return time.Date(2026, 6, 24, 1, 2, 3, 40000000, time.UTC)
+	}
+	tRead := time.Unix(1, 0)
+	s.PosGeo(&gpsprot.PosGeoMsg{
+		LatLon: [2]gpsprot.Angle{
+			gpsprot.DegreesFromFloat(13.731826167),
+			gpsprot.DegreesFromFloat(100.644802333),
+		},
+	}, tRead)
+	s.NavEpoch(&gpsprot.NavEpochMsg{
+		FixLevel: gpsprot.FixLevelCode,
+	}, tRead)
+	if payload := ggaPayload(t, oneGGA(t, sink)); !strings.HasPrefix(payload, "GNGGA,010203.04,1343.90957,N,10038.68814,E,1,") {
+		t.Fatalf("payload = %q, want host-clock time", payload)
+	}
+}
+
 func TestSynthGGAFromGeoHeights(t *testing.T) {
 	sink := &sink{}
 	s := New(sink)
@@ -103,6 +124,9 @@ func TestSynthGGAFromGeoHeightWithoutMSL(t *testing.T) {
 func TestSynthGGANoFix(t *testing.T) {
 	sink := &sink{}
 	s := New(sink)
+	s.now = func() time.Time {
+		return time.Date(2026, 6, 24, 1, 2, 3, 0, time.UTC)
+	}
 	s.NavEpoch(&gpsprot.NavEpochMsg{FixLevel: gpsprot.FixLevelNone}, time.Time{})
 	gga := oneGGA(t, sink)
 	if uint8(gga.Fields.Quality) != ggaQualityInvalid {
@@ -111,7 +135,7 @@ func TestSynthGGANoFix(t *testing.T) {
 	if gga.Fields.NumSats.IsSet() || gga.Fields.HDOP.IsSet() {
 		t.Fatalf("optional metadata = %v/%v, want unset", gga.Fields.NumSats, gga.Fields.HDOP)
 	}
-	if payload := ggaPayload(t, gga); payload != "GNGGA,000000.00,,,,,0,,,,,,,," {
+	if payload := ggaPayload(t, gga); payload != "GNGGA,010203.00,,,,,0,,,,,,,," {
 		t.Fatalf("payload = %q", payload)
 	}
 }
