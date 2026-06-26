@@ -370,6 +370,11 @@ class Context:
 
         return send
 
+    def daemon_final_grace(self) -> float | None:
+        if self.uses_darwin_sudo_daemon():
+            return 5.0
+        return None
+
     def remove_ntp_shm(self) -> str | None:
         """Remove the test NTP SHM segment if it exists."""
         cmd = self.root_cmd([
@@ -901,17 +906,19 @@ def stop_daemon(
     grace: float = 5.0,
     process_group: bool = False,
     signaler: Callable[[signal.Signals], None] | None = None,
+    final_grace: float | None = None,
 ) -> str | None:
     """Stop the daemon, escalating the way the systemd unit does.
 
     satpulsed catches both SIGINT and SIGTERM and treats them as the same
     graceful-shutdown request, so SIGTERM cannot rescue a hung shutdown.
     The packaged unit uses TimeoutStopSec=5 with FinalKillSignal=SIGQUIT,
-    so on a hang we escalate to SIGQUIT and stop there: the daemon does not
-    catch it, and Go's default handler dumps all goroutine stacks (to the
-    daemon log) and aborts the process -- both the diagnostic we want for a
-    shutdown hang and a reliable terminator. SIGQUIT is the final backstop;
-    no SIGKILL follows.
+    so on a hang we escalate to SIGQUIT and normally stop there: the daemon
+    does not catch it, and Go's default handler dumps all goroutine stacks
+    (to the daemon log) and aborts the process -- both the diagnostic we want
+    for a shutdown hang and a reliable terminator. SIGQUIT is the final
+    backstop unless the caller sets final_grace for a platform wrapper that
+    needs its own bounded wait.
 
     Returns None on a clean SIGINT exit, otherwise an error string
     describing the escalation that was needed.
@@ -923,7 +930,24 @@ def stop_daemon(
     except subprocess.TimeoutExpired:
         pass
     send_daemon_signal(daemon, signal.SIGQUIT, process_group, signaler)
-    daemon.wait()
+    if final_grace is None:
+        daemon.wait()
+    else:
+        try:
+            daemon.wait(timeout=final_grace)
+        except subprocess.TimeoutExpired:
+            send_daemon_signal(daemon, signal.SIGKILL, process_group, signaler)
+            try:
+                daemon.wait(timeout=final_grace)
+            except subprocess.TimeoutExpired:
+                return (
+                    f"daemon did not exit within {grace:g}s of SIGINT, "
+                    f"{final_grace:g}s of SIGQUIT, or {final_grace:g}s of SIGKILL"
+                )
+            return (
+                f"daemon did not exit within {grace:g}s of SIGINT or "
+                f"{final_grace:g}s of SIGQUIT; SIGKILL stopped it"
+            )
     return (
         f"daemon did not exit within {grace:g}s of SIGINT; "
         "SIGQUIT dumped goroutines (see satpulsed.log) and aborted it"
@@ -1083,7 +1107,12 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
             # Graceful shutdown: SIGINT should terminate the daemon promptly
             # and release its ports. A hang escalates to SIGQUIT (goroutine
             # dump) and is reported as a failure.
-            err = stop_daemon(daemon, process_group=requires_root, signaler=ctx.daemon_signaler())
+            err = stop_daemon(
+                daemon,
+                process_group=requires_root,
+                signaler=ctx.daemon_signaler(),
+                final_grace=ctx.daemon_final_grace(),
+            )
             if err is not None:
                 raise RuntimeError(err)
             if daemon.returncode not in (0, -signal.SIGINT):
@@ -1107,7 +1136,12 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         ctx._close_replay_files()
         ctx._close_pty()
         if daemon is not None and daemon.poll() is None:
-            stop_daemon(daemon, process_group=requires_root, signaler=ctx.daemon_signaler())
+            stop_daemon(
+                daemon,
+                process_group=requires_root,
+                signaler=ctx.daemon_signaler(),
+                final_grace=ctx.daemon_final_grace(),
+            )
         ctx.stop_ntp_sock()
         ctx.stop_push_peers()
         ctx.stop_source()
