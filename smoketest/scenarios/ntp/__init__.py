@@ -60,8 +60,8 @@ def check_shm(ctx: common.SmokeContext) -> common.JsonObject:
 
 def check_sock(
     ctx: common.SmokeContext,
-    min_samples: int = 10,
-    max_spread: float = 0.15,
+    min_samples: int = 20,
+    max_spread: float = 0.1,
     max_time_error: float = 0.1,
 ) -> float:
     """The chrony SOCK refclock stream is well-formed, consistent, and correct.
@@ -73,9 +73,11 @@ def check_sock(
     land on an actual RMC instant from the log, proving the GPS time was parsed
     and represented correctly. This uses the daemon's own measurement time, so
     it does not depend on when the consumer was scheduled. Separately, a tight
-    offset spread shows consistent timestamping, the cadence is ~1 s, and the
-    receive time trails the measurement by under half a second (a delivery-
-    latency sanity check, which also catches tv not being the real system clock).
+    central-band offset spread (the most extreme reads dropped) shows consistent
+    timestamping without flaking on isolated scheduling stalls, the cadence is
+    ~1 s, and the receive time trails the measurement by under half a second (a
+    delivery-latency sanity check, which also catches tv not being the real
+    system clock).
     """
     samples = common.poll(lambda: (lambda s: s if len(s) >= min_samples else None)(_ntp_samples(ctx)))
     assert samples is not None, f"got fewer than {min_samples} NTP samples"
@@ -87,11 +89,16 @@ def check_sock(
         assert s["pulse"] == 0, f"unexpected pulse flag {s['pulse']}"
         assert s["leap"] in (0, 1, 2), f"bad leap {s['leap']}"
     tv = [s["sec"] + s["usec"] * 1e-6 for s in samples]
-    offs = [s["offset"] for s in samples]
-    spread = max(offs) - min(offs)
-    assert spread <= max_spread, (
-        f"offset spread {spread * 1000:.1f} ms exceeds {max_spread * 1000:.0f} ms"
-    )
+    # Spread of the central band, not full min-max. Under realtime replay the
+    # offset's variation is read-latency jitter, and contended CI cores (macOS
+    # runners especially) emit isolated multi-100ms scheduling stalls; max-min
+    # pins the bound to the single worst read, so it can never settle. Dropping
+    # the most extreme reads at each end (10th-90th percentile) reflects typical
+    # timestamping consistency, which is all this sanity check is for.
+    offs = sorted(s["offset"] for s in samples)
+    drop = len(offs) // 10
+    spread = offs[-1 - drop] - offs[drop]
+    assert spread <= max_spread, _spread_failure(spread, max_spread, samples, tv)
     for i in range(1, len(tv)):
         step = tv[i] - tv[i - 1]
         assert 0.5 < step < 1.5, f"measurement time step {step:.3f}s not ~1s at sample {i}"
@@ -108,6 +115,36 @@ def check_sock(
             f"(exceeds {max_time_error * 1000:.0f} ms): GPS time parsed or represented wrong"
         )
     return spread
+
+
+def _spread_failure(
+    spread: float, max_spread: float, samples: list[NtpSample], tv: list[float]
+) -> str:
+    """Full per-sample dump for a central-band offset-spread failure.
+
+    On a flake we want the whole replay visible in the CI log (the run dir is
+    kept too, but the log alone should suffice): which reads stalled and when.
+    Samples are in receive order; '*' marks reads excluded from the central
+    band. tv-t0 and lag are relative/ms to keep the table readable.
+    """
+    offs = sorted(s["offset"] for s in samples)
+    drop = len(offs) // 10
+    lo, hi = offs[drop], offs[-1 - drop]
+    full = offs[-1] - offs[0]
+    t0 = tv[0]
+    lines = [
+        f"central offset spread {spread * 1000:.1f} ms exceeds {max_spread * 1000:.0f} ms "
+        f"(full min-max {full * 1000:.1f} ms over {len(samples)} samples, "
+        f"{drop} dropped each end):",
+        f"{'i':>3} {'tv-t0':>9} {'offset_ms':>10} {'lag_ms':>8}",
+    ]
+    for i, (s, t) in enumerate(zip(samples, tv)):
+        mark = "*" if s["offset"] < lo or s["offset"] > hi else " "
+        lines.append(
+            f"{i:>3} {t - t0:>9.3f} {s['offset'] * 1000:>10.1f} "
+            f"{(s['recv'] - t) * 1000:>8.1f} {mark}"
+        )
+    return "\n".join(lines)
 
 
 def _ntpshm_helper() -> str:
