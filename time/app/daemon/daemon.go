@@ -14,6 +14,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/gpsevent"
@@ -228,7 +229,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	}
 
 	version, _ := cmd.Version()
-	pullSetup := cfg.Stream.Pull.Prepare(version, conn, portLock)
+	pullSetup := cfg.Stream.Pull.Prepare(version, gpsreg.CreateCorrectionFormats(), conn, portLock)
 	var pullPktCh <-chan scan.Packet
 	if pullSetup != nil {
 		pullPktCh = pullSetup.Bcast().Subscribe()

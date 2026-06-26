@@ -16,6 +16,10 @@ type EventType = typeof EVENT_TYPES[number];
 
 type Map = {[key: string]: any};
 
+// CORRECTION_TAG_ORDER fixes the display order of correction cards so
+// RTCM precedes SPARTN. validateEvent only admits these two tags.
+const CORRECTION_TAG_ORDER = ["RTCM", "SPARTN"];
+
 export const Dashboard: FunctionComponent = () => {
     const context = useContext(EventSourceContext) as EventSource;
     const [events, setEvents] = useState<Map>({});
@@ -24,7 +28,7 @@ export const Dashboard: FunctionComponent = () => {
     // arrival order, so a stale cached mode delivered at connect is
     // corrected by the next live event from either stream.
     const [phc, setPhc] = useState<Map | null>(null);
-    const [rtcm, setRTCM] = useState<RTCMState | null>(null);
+    const [corrections, setCorrections] = useState<{ [tag: string]: CorrectionsState }>({});
     const [haveLookAngles, setHaveLookAngles] = useState(false);
     const [everMoving, setEverMoving] = useState(false);
 
@@ -39,10 +43,12 @@ export const Dashboard: FunctionComponent = () => {
                         continue;
                     }
                     if (eventType === 'corReport') {
-                        const ev = obj as RTCMEvent;
-                        setRTCM(prev => {
-                            const next = prev ? prev.clone() : new RTCMState(ev.source);
-                            next.update(ev);
+                        const ev = obj as CorrectionEvent;
+                        setCorrections(prev => {
+                            const next = { ...prev };
+                            const st = next[ev.tag] ? next[ev.tag].clone() : new CorrectionsState(ev.tag, ev.source);
+                            st.update(ev);
+                            next[ev.tag] = st;
                             return next;
                         });
                         continue;
@@ -82,7 +88,9 @@ export const Dashboard: FunctionComponent = () => {
         {events.posvel && everMoving && <PropertyCard title="Velocity" data={events.posvel} format={velocityFormat} />}
         {events.quality && <PropertyCard title="Position Quality" data={events.quality} format={positionQualityFormat} />}
         {events.survey && <PropertyCard title="Survey-in Status" data={events.survey} format={surveyFormat} />}
-        {rtcm && <RTCMCard state={rtcm} />}
+        {Object.keys(corrections)
+            .sort((a, b) => CORRECTION_TAG_ORDER.indexOf(a) - CORRECTION_TAG_ORDER.indexOf(b))
+            .map(tag => <CorrectionsCard key={tag} state={corrections[tag]} />)}
         </CardsElement>
     );
 };
@@ -150,7 +158,7 @@ export function validateEvent(type: string, data: JSONValue): JSONObject | null 
             }
             break;
         case "corReport":
-            if (data.tag !== "RTCM") return null;
+            if (data.tag !== "RTCM" && data.tag !== "SPARTN") return null;
             if (typeof data.msgID !== "string" || data.msgID === "") return null;
             if (data.checksumOK === false) return null;
             if (data.source !== "pull" && data.source !== "receiver") return null;
@@ -413,33 +421,37 @@ const SignalGraphCard: FunctionComponent<SignalGraphCardProps> = ({ svs }) => {
     );
 };
 
-// RTCMEvent is the subset of the corReport SSE payload that the RTCM
-// card cares about. validateEvent has already enforced tag === "RTCM"
-// and a non-empty msgID.
-export type RTCMEvent = {
+// CorrectionEvent is the subset of the corReport SSE payload that the
+// correction card cares about. validateEvent has already enforced a
+// known tag and a non-empty msgID.
+export type CorrectionEvent = {
+    tag: string;
     source: 'pull' | 'receiver';
     msgID: string;
     used?: boolean;
 };
 
-// RTCMState is the per-msgID accumulator backing the RTCM card.
-// totalCount[id] is the number of accepted events for that msgID in
-// the current source session. unusedCount is null until at least one
-// event in the session has carried a `used` field, after which it
-// counts the `used === false` events; M = total - unused is the
-// "used" count shown as M/N. Both reset when source flips.
-export class RTCMState {
+// CorrectionState is the per-msgID accumulator backing one correction
+// card, identified by tag (e.g. "RTCM" or "SPARTN"). totalCount[id] is
+// the number of accepted events for that msgID in the current source
+// session. unusedCount is null until at least one event in the session
+// has carried a `used` field, after which it counts the `used === false`
+// events; M = total - unused is the "used" count shown as M/N. Both
+// reset when source flips.
+export class CorrectionsState {
+    tag: string;
     source: 'pull' | 'receiver';
     totalCount: { [msgID: string]: number } = {};
     unusedCount: { [msgID: string]: number } | null = null;
 
-    constructor(source: 'pull' | 'receiver') {
+    constructor(tag: string, source: 'pull' | 'receiver') {
+        this.tag = tag;
         this.source = source;
     }
 
     // update mutates this state to incorporate ev. A source flip
     // clears the counters before counting the new event.
-    update(ev: RTCMEvent) {
+    update(ev: CorrectionEvent) {
         if (this.source !== ev.source) {
             this.source = ev.source;
             this.totalCount = {};
@@ -455,18 +467,18 @@ export class RTCMState {
     }
 
     // clone returns a shallow copy of this state. Used by the React
-    // boundary so setRTCM sees a fresh reference each tick.
-    clone(): RTCMState {
-        const c = new RTCMState(this.source);
+    // boundary so setCorrections sees a fresh reference each tick.
+    clone(): CorrectionsState {
+        const c = new CorrectionsState(this.tag, this.source);
         c.totalCount = { ...this.totalCount };
         c.unusedCount = this.unusedCount === null ? null : { ...this.unusedCount };
         return c;
     }
 
     title(): string {
-        if (this.source !== 'receiver') return 'RTCM Messages Received';
-        if (this.unusedCount === null) return 'RTCM Messages Used';
-        return 'RTCM Messages Used/Received';
+        if (this.source !== 'receiver') return `${this.tag} Messages Received`;
+        if (this.unusedCount === null) return `${this.tag} Messages Used`;
+        return `${this.tag} Messages Used/Received`;
     }
 
     rowValue(id: string): string {
@@ -477,9 +489,9 @@ export class RTCMState {
     }
 }
 
-// sortRTCMMsgIDs sorts by [main, sub] pairs so '4072.0' precedes
+// sortCorrectionMsgIDs sorts by [main, sub] pairs so '4072.0' precedes
 // '4072.1' precedes '4072.10'.
-export function sortRTCMMsgIDs(ids: string[]): string[] {
+export function sortCorrectionMsgIDs(ids: string[]): string[] {
     return [...ids].sort((a, b) => {
         const [am, as] = parseMsgID(a);
         const [bm, bs] = parseMsgID(b);
@@ -492,12 +504,12 @@ function parseMsgID(id: string): [number, number] {
     return [Number(main), Number(sub)];
 }
 
-interface RTCMCardProps {
-    state: RTCMState;
+interface CorrectionsCardProps {
+    state: CorrectionsState;
 }
 
-const RTCMCard: FunctionComponent<RTCMCardProps> = ({ state }) => {
-    const ids = sortRTCMMsgIDs(Object.keys(state.totalCount));
+const CorrectionsCard: FunctionComponent<CorrectionsCardProps> = ({ state }) => {
+    const ids = sortCorrectionMsgIDs(Object.keys(state.totalCount));
     return (
         <CardElement title={state.title()}>
         {ids.map(id => (
