@@ -2,6 +2,9 @@ package term
 
 import (
 	"fmt"
+	"os"
+	"time"
+
 	"golang.org/x/sys/unix"
 )
 
@@ -77,8 +80,67 @@ func (t *Term) getAttr() (tp *unix.Termios, err error) {
 	return
 }
 
-func isLockErrNotTTY(err error) bool {
-	return false
+var errFlockNotSupported error
+
+// OpenFallback opens path as an *os.File suitable for reading with
+// SetReadDeadline-based timeouts. It is intended for GNSS devices that
+// speak a GPS protocol over a non-termios interface (e.g. /dev/gnss0)
+// and for FIFOs used as a replay sink.
+//
+// Character devices must have a driver that implements .poll; they are
+// opened O_RDWR|O_NOCTTY|O_CLOEXEC|O_NONBLOCK and classified as
+// DevUnknown (the UART/USB/BT classification applies only to TTYs).
+// FIFOs are opened O_RDWR|O_NONBLOCK -- so that our own fd keeps the
+// write side of the pipe open. This avoids EOF both before an external
+// writer connects and after it exits; an idle replay FIFO should look
+// like a silent receiver, not a disconnected one. Writes into a DevFIFO
+// port are rejected at the gpsio layer to prevent self-feeding.
+// The file descriptor is locked exclusively with flock.
+func OpenFallback(path string, timeout time.Duration) (*os.File, *File, DevKind, error) {
+	return openFallback(path, timeout, openPollingChar, openPollingFIFO)
+}
+
+func openPollingChar(path string, _ time.Duration) (*os.File, *File, DevKind, error) {
+	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, nil, DevUnknown, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	if err := probePoll(fd); err != nil {
+		unix.Close(fd)
+		return nil, nil, DevUnknown, fmt.Errorf("%s: device does not support polling: %w", path, err)
+	}
+	if err := lock(fd, path); err != nil {
+		unix.Close(fd)
+		return nil, nil, DevUnknown, err
+	}
+	return os.NewFile(uintptr(fd), path), nil, DevUnknown, nil
+}
+
+func openPollingFIFO(path string, _ time.Duration) (*os.File, *File, DevKind, error) {
+	fd, err := unix.Open(path, unix.O_RDWR|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, nil, DevUnknown, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	if err := lock(fd, path); err != nil {
+		unix.Close(fd)
+		return nil, nil, DevUnknown, err
+	}
+	return os.NewFile(uintptr(fd), path), nil, DevFIFO, nil
+}
+
+// probePoll verifies that the driver backing fd implements .poll by
+// attempting to register the fd with a throwaway epoll instance.
+func probePoll(fd int) error {
+	ep, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
+	if err != nil {
+		return fmt.Errorf("epoll_create1: %w", err)
+	}
+	defer unix.Close(ep)
+	ev := unix.EpollEvent{Events: unix.EPOLLIN, Fd: int32(fd)}
+	if err := unix.EpollCtl(ep, unix.EPOLL_CTL_ADD, fd, &ev); err != nil {
+		return fmt.Errorf("epoll_ctl: %w", err)
+	}
+	return nil
 }
 
 // readError returns a *Error describing serial errors that have occurred

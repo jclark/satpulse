@@ -3,6 +3,8 @@
 package term
 
 import (
+	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -66,5 +68,20 @@ func TestByteTransmitTime(t *testing.T) {
 	// Check that the actual duration matches the expected duration
 	if actual != expected {
 		t.Errorf("byteTransmitTime returned %v, want %v", actual, expected)
+	}
+}
+
+func TestFileWriteInvalid(t *testing.T) {
+	f := &File{path: "test"}
+	_, err := f.Write([]byte{0})
+	if !errors.Is(err, os.ErrInvalid) {
+		t.Fatalf("Write error = %v, want %v", err, os.ErrInvalid)
+	}
+	var pe *os.PathError
+	if !errors.As(err, &pe) {
+		t.Fatalf("Write returned %T, want *os.PathError", err)
+	}
+	if pe.Op != "write" {
+		t.Errorf("PathError.Op = %q, want %q", pe.Op, "write")
 	}
 }

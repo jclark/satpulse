@@ -3,8 +3,9 @@
 package term
 
 import (
-	"errors"
 	"fmt"
+	"os"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -51,6 +52,17 @@ func (t *Term) getAttr() (tp *unix.Termios, err error) {
 	return
 }
 
-func isLockErrNotTTY(err error) bool {
-	return errors.Is(err, unix.ENOTSUP)
+var errFlockNotSupported error = unix.ENOTSUP
+
+// OpenFallback opens supported non-TTY devices using OS readiness waiting.
+func OpenFallback(path string, timeout time.Duration) (*os.File, *File, DevKind, error) {
+	return openFallback(path, timeout, nil, openSelectFIFO)
+}
+
+func openSelectFIFO(path string, timeout time.Duration) (*os.File, *File, DevKind, error) {
+	f, err := openFile(path, unix.O_RDWR|unix.O_CLOEXEC|unix.O_NONBLOCK, timeout)
+	if err != nil {
+		return nil, nil, DevUnknown, err
+	}
+	return nil, f, DevFIFO, nil
 }
