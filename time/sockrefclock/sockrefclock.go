@@ -15,15 +15,10 @@ type SockRefClock struct {
 
 // New creates a new SockRefClock.
 func New(rPath string) (*SockRefClock, error) {
-	// Anonymous unixgram socket: no filesystem path, AppArmor can't complain
-	conn, err := net.ListenUnixgram("unixgram", &net.UnixAddr{
-		Name: "",
-		Net:  "unixgram",
-	})
+	conn, err := listenUnixgramUnbound()
 	if err != nil {
 		return nil, fmt.Errorf("could not create local unixgram socket: %w", err)
 	}
-
 	return &SockRefClock{
 		conn: conn,
 		remoteAddr: &net.UnixAddr{
