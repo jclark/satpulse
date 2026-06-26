@@ -13,6 +13,7 @@ import (
 	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/internal/sdbp"
 	"github.com/jclark/satpulse/gps/internal/sino"
+	"github.com/jclark/satpulse/gps/internal/spartn"
 	"github.com/jclark/satpulse/gps/internal/ubx"
 	"github.com/jclark/satpulse/gps/internal/unc"
 )
@@ -43,6 +44,7 @@ const (
 	TagUBX                = ubx.Tag
 	TagNMEA               = nmea.Tag
 	TagRTCM               = rtcm.Tag
+	TagSPARTN             = spartn.Tag
 	TagCASICBin           = casic.Tag
 	TagAllystarBin        = as.Tag
 	TagSDBP               = sdbp.Tag
@@ -114,6 +116,15 @@ func CreatePacketFormats(vendor Vendor) []gpsprot.PacketFormat {
 		formats = append(formats, vendorFormats...)
 	}
 	return formats
+}
+
+// CreateCorrectionFormats returns the packet formats carried by a GNSS
+// correction stream from a network source (Ntrip caster or TCP), as opposed
+// to CreatePacketFormats, which autodetects the output of a connected
+// receiver. SPARTN is included here, but is intentionally absent from the
+// receiver autodetect set because its preamble is the common ASCII byte 's'.
+func CreateCorrectionFormats() []gpsprot.PacketFormat {
+	return []gpsprot.PacketFormat{rtcm.PacketFormat, spartn.PacketFormat}
 }
 
 var vendorMap = func() map[string]Vendor {

@@ -224,7 +224,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 }
 
 func scanLoop(ctx context.Context, r io.Reader, w io.Writer) error {
-	formats := gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)
+	formats := gpsreg.CreateCorrectionFormats()
 	scanner := scan.New(r, scanBufSize, formats)
 	enc := json.NewEncoder(w)
 	for {

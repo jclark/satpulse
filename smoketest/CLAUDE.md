@@ -23,14 +23,27 @@ This is Python (stdlib only at runtime), testing a Go daemon. It is not part of
 
 ## Running
 
-The suite runs the binaries from `out/<arch>/`, so build first. `make` does NOT
-rebuild them as part of `make smoketest` -- the target only depends on the
-binaries existing, so run `make` yourself first (e.g. after any Go change).
+The suite runs the binaries from `out/<arch>/` on Linux and
+`out/<goos>_<arch>/` on macOS/FreeBSD, so build first. `make` does NOT rebuild
+them as part of `make smoketest` -- the target only depends on the binaries
+existing, so run the appropriate build yourself first (e.g. after any Go
+change).
 
 ```sh
 make            # from repo root: build satpulsed + satpulsetool
 make smoketest  # run all scenarios in parallel
 ```
+
+On macOS and FreeBSD:
+
+```sh
+./unix-build.sh
+python3 smoketest/run.py
+```
+
+The runner honours `GOOS` and `GOARCH` when set. Linux binaries live under
+`out/<arch>/`; non-Linux Unix binaries live under `out/<goos>_<arch>/`, matching
+`unix-build.sh`.
 
 For selecting scenarios, listing, or serial debugging, call `run.py` directly
 (the make target takes no args):
@@ -150,7 +163,7 @@ Then update the scenario list in `README.md`.
 The serial input is either a FIFO or a pty (`INPUT`), and the distinction is
 load-bearing, not cosmetic:
 
-- **FIFO** (default) -- satpulsed opens it `O_RDWR` (`gps/lib/term/polling_linux.go`)
+- **FIFO** (default) -- satpulsed opens it `O_RDWR` (`gps/lib/term/fallback_linux.go`)
   and holds its own write end, so it never reaches EOF: an idle FIFO reads as a
   silent-but-connected receiver, and the daemon and replayer can start/stop in
   any order. By the same token a FIFO can never look *disconnected*, so it

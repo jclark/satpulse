@@ -14,6 +14,7 @@ _Not yet released_
 - The device-independent GPS model now includes correction reports for RTCM correction data received by the system; these are exposed in the JSONL event log. Reports can come from correction data pulled from a network source, or from receiver-reported correction status when the receiver is configured to emit it. (#237)
 - The web dashboard has an RTCM card showing correction-report data, including per-message counts and receiver-reported usage when available. (#237)
 - Prometheus metrics now expose correction-report data. (#237)
+- SatPulse now supports the SPARTN correction protocol: `satpulsed` scans and decodes SPARTN packets, can pull SPARTN corrections from an Ntrip caster such as u-blox PointPerfect and feed them to the receiver, emits SPARTN correction reports in the JSONL event log, and shows them on the web dashboard alongside RTCM. (#324)
 
 ### u-blox protocol-specific support
 

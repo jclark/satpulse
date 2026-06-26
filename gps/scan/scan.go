@@ -123,7 +123,13 @@ Loop:
 						// timeout in middle of invalid packet - not an error
 						e = nil
 					} else {
-						p.ReadError = fmt.Errorf("error in the middle of a packet: %w", e)
+						n := s.nextScanIndex
+						packetLen = s.restart(packetLen)
+						if s.nextScanIndex == n {
+							p.ReadError = fmt.Errorf("error in the middle of a packet: %w", e)
+						} else {
+							e = nil
+						}
 					}
 				} else if temp, ok := e.(TemporaryError); ok && temp.Temporary() {
 					p.ReadError = e
@@ -166,15 +172,15 @@ Loop:
 					// It did, so rescan using that packet format from the second byte
 					curPktFormat = pf
 					curPktFormatIndex = i
+					state = nextState
 					s.nextScanIndex = startIndex + 1
 					packetLen = 1
 					goto Loop
 				}
 			}
-			// No more formats match the first byte, rescan from second byte
-			// This is sufficient for UBX and NMEA, because the $ which starts an NMEA packet
-			// isn't allowed within an NMEA packet. For UBX, the only way it's invalid is if the
-			// length is wrong or it didn't have the right second sync byte.
+			// No more formats match the first byte, so return bytes only up
+			// to the next possible packet start within the failed candidate.
+			packetLen = s.restart(packetLen)
 			break Loop
 		}
 		// accept this character
@@ -192,16 +198,30 @@ Loop:
 	if fmt := p.Format; fmt != nil {
 		p.ChecksumValid = bytes.Equal(fmt.ExtractChecksum(pkt), fmt.ComputeChecksum(pkt))
 		if !p.ChecksumValid && fmt.RescanOnBadChecksum(s.prevPktValid, pkt) {
-			s.nextScanIndex -= packetLen - 1
 			p.Format = nil
 			state = stateSync
-			packetLen = 1
+			packetLen = s.restart(packetLen)
 			goto Loop
 		}
 	}
 	s.prevPktValid = p.Format != nil && p.ChecksumValid
 	p.Data = string(pkt)
 	return
+}
+
+// restart moves the next scan point back to the first possible packet start
+// inside an abandoned candidate, so invalid data cannot hide a valid packet.
+func (s *Scanner) restart(packetLen int) int {
+	start := s.nextScanIndex - packetLen
+	for i := start + 1; i < s.nextScanIndex; i++ {
+		for _, pf := range s.pktFormats {
+			if pf.Next(stateSync, s.buf, i, 0) != stateSync {
+				s.nextScanIndex = i
+				return i - start
+			}
+		}
+	}
+	return packetLen
 }
 
 // This returns the error it got from the Read, except in the case of EINTR.

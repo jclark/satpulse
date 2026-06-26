@@ -231,7 +231,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 
 	version, _ := cmd.Version()
 	pull, pullAddr := cfg.Stream.Pull.NewPull(version, lg,
-		[]gpsprot.PacketFormat{gpsreg.RTCMPacketFormat}, conn, portLock)
+		gpsreg.CreateCorrectionFormats(), conn, portLock)
 	var ggaSelector *stream.GGASelector
 	var selectedGGA <-chan scan.Packet
 	if pull != nil && cfg.Stream.Pull.NMEASend() {

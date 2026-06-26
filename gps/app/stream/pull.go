@@ -21,28 +21,37 @@ import (
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
+	"github.com/jclark/satpulse/gps/lib/spartnbin"
 	"github.com/jclark/satpulse/gps/scan"
 )
 
-// defaultPullFormats are the packet formats stream pull recognises
-// from a correction source.  RTCM is currently the only one.
-var defaultPullFormats = []gpsprot.PacketFormat{gpsreg.RTCMPacketFormat}
-
 // CorReportFromPacket converts a scanned correction-source packet into a
-// pull-source correction report. Non-RTCM packets return nil. The MsgID
-// field is extracted even when ChecksumOK is false; consumers must treat it
-// as advisory for checksum-invalid packets.
+// pull-source correction report. Non-correction packets return nil. The
+// MsgID field is extracted even when ChecksumOK is false; consumers must
+// treat it as advisory for checksum-invalid packets.
 func CorReportFromPacket(pkt scan.Packet) (*gpsprot.CorReportMsg, error) {
-	if !pkt.HasTag(gpsreg.TagRTCM) {
+	switch {
+	case pkt.HasTag(gpsreg.TagRTCM):
+		return corReportFromRTCM(pkt)
+	case pkt.HasTag(gpsreg.TagSPARTN):
+		return corReportFromSPARTN(pkt)
+	default:
 		return nil, nil
 	}
-	msg := &gpsprot.CorReportMsg{
+}
+
+func corReportFromPacket(pkt scan.Packet) *gpsprot.CorReportMsg {
+	return &gpsprot.CorReportMsg{
 		Source:     gpsprot.CorReportSourcePull,
-		Tag:        gpsreg.TagRTCM,
-		MsgID:      rtcmbin.ExtractMsgID(pkt.Data),
+		Tag:        pkt.Tag(),
+		MsgID:      pkt.Format.MsgID([]byte(pkt.Data)),
 		NBytes:     opt.Make(len(pkt.Data)),
 		ChecksumOK: opt.Make(pkt.ChecksumValid),
 	}
+}
+
+func corReportFromRTCM(pkt scan.Packet) (*gpsprot.CorReportMsg, error) {
+	msg := corReportFromPacket(pkt)
 	if mmb, ok := rtcmbin.MultipleMessageBit(pkt.Data); ok {
 		msg.FinalFragment = opt.Make(!mmb)
 	}
@@ -53,6 +62,19 @@ func CorReportFromPacket(pkt scan.Packet) (*gpsprot.CorReportMsg, error) {
 		msg.RTCMRefBaseID = opt.Make(id)
 	}
 	native, err := rtcmbin.ParseMsg(pkt.Data)
+	if err != nil {
+		return msg, err
+	}
+	msg.NativeMsg = native
+	return msg, nil
+}
+
+func corReportFromSPARTN(pkt scan.Packet) (*gpsprot.CorReportMsg, error) {
+	msg := corReportFromPacket(pkt)
+	if !pkt.ChecksumValid {
+		return msg, nil
+	}
+	native, err := spartnbin.Parse([]byte(pkt.Data))
 	if err != nil {
 		return msg, err
 	}

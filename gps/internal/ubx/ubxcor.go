@@ -5,8 +5,10 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
+	"github.com/jclark/satpulse/gps/internal/spartn"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
+	"github.com/jclark/satpulse/gps/lib/spartnbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
@@ -57,6 +59,13 @@ func rxmCorTagMsgID(m *ubxbin.RxmCor) (gpsprot.Tag, string) {
 			return rtcm.Tag, fmt.Sprintf("%d.%d", mt, m.MsgSubType)
 		}
 		return rtcm.Tag, mt.String()
+	case ubxbin.RxmCorProtocolSPARTN:
+		// A SPARTN message ID is "type.subtype"; emit it only when both
+		// fields are valid so it matches the pull-side report.
+		if si&ubxbin.RxmCorMsgTypeValid == 0 || si&ubxbin.RxmCorMsgSubTypeValid == 0 {
+			return spartn.Tag, ""
+		}
+		return spartn.Tag, spartnbin.FormatMsgID(uint8(m.MsgType), uint8(m.MsgSubType))
 	default:
 		return gpsprot.EmptyTag, ""
 	}

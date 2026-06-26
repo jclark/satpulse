@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -19,10 +20,20 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
+	"github.com/jclark/satpulse/gps/internal/spartn"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
+	"github.com/jclark/satpulse/gps/lib/spartnbin"
 	"github.com/jclark/satpulse/gps/scan"
 )
+
+func mustHexDecode(s string) []byte {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
 
 // makeRTCM builds a valid RTCM packet with the given message type and
 // payload length (excluding the 3-byte header and 3-byte CRC).
@@ -54,6 +65,7 @@ func makeRTCMMSM(msgType uint16, mmb bool, payloadLen int) []byte {
 }
 
 const testRTCM1005 = "\xD3\x00\x13\x3E\xD7\xD3\x02\x02\x98\x0E\xDE\xEF\x34\xB4\xBD\x62\xAC\x09\x41\x98\x6F\x33\x36\x0B\x98"
+const testSPARTNHPACGPS = "73020da208f7e7f98013ce8013a0141804e021a0811009f7054f82a7c15650a67091802a95578310"
 
 func TestCorReportFromPacket(t *testing.T) {
 	tRead := time.Unix(1, 2)
@@ -160,7 +172,47 @@ func TestCorReportFromPacketMSMFinalFragment(t *testing.T) {
 	}
 }
 
-func TestCorReportFromPacketNonRTCM(t *testing.T) {
+func TestCorReportFromPacketSPARTN(t *testing.T) {
+	data := mustHexDecode(testSPARTNHPACGPS)
+	msg, err := CorReportFromPacket(scan.Packet{
+		Format:        spartn.PacketFormat,
+		Data:          string(data),
+		ChecksumValid: true,
+	})
+	if err != nil {
+		t.Fatalf("CorReportFromPacket returned error: %v", err)
+	}
+	if msg == nil {
+		t.Fatal("CorReportFromPacket returned nil")
+	}
+	if msg.Source != gpsprot.CorReportSourcePull {
+		t.Errorf("Source = %v, want %v", msg.Source, gpsprot.CorReportSourcePull)
+	}
+	if msg.Tag != spartn.Tag || msg.MsgID != "1.0" {
+		t.Errorf("Tag/MsgID = %q/%q, want SPARTN/1.0", msg.Tag, msg.MsgID)
+	}
+	if !msg.NBytes.IsSet() || msg.NBytes.Get() != len(data) {
+		t.Errorf("NBytes = (%v, %v), want set %d", msg.NBytes.Get(), msg.NBytes.IsSet(), len(data))
+	}
+	if !msg.ChecksumOK.IsSet() || !msg.ChecksumOK.Get() {
+		t.Errorf("ChecksumOK = (%v, %v), want set true", msg.ChecksumOK.Get(), msg.ChecksumOK.IsSet())
+	}
+	if msg.FinalFragment.IsSet() {
+		t.Errorf("FinalFragment set for SPARTN packet: %v", msg.FinalFragment.Get())
+	}
+	if msg.RTCMRefBaseID.IsSet() {
+		t.Errorf("RTCMRefBaseID set for SPARTN packet: %d", msg.RTCMRefBaseID.Get())
+	}
+	f, ok := msg.NativeMsg.(*spartnbin.Frame)
+	if !ok {
+		t.Fatalf("NativeMsg = %T, want *spartnbin.Frame", msg.NativeMsg)
+	}
+	if f.Type != 1 || f.Subtype != 0 {
+		t.Errorf("NativeMsg Type/Subtype = %d/%d, want 1/0", f.Type, f.Subtype)
+	}
+}
+
+func TestCorReportFromPacketNonCorrection(t *testing.T) {
 	msg, err := CorReportFromPacket(scan.Packet{})
 	if err != nil {
 		t.Fatalf("CorReportFromPacket returned error: %v", err)
