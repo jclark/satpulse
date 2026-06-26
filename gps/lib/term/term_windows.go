@@ -311,6 +311,33 @@ func (t *Term) wrapErr(err error, op string) error {
 	}
 }
 
+type File struct{}
+
+func (f *File) Read([]byte) (int, error) {
+	return 0, os.ErrInvalid
+}
+
+func (f *File) Write([]byte) (int, error) {
+	return 0, os.ErrInvalid
+}
+
+func (f *File) Close() error {
+	return os.ErrInvalid
+}
+
+func (f *File) Path() string {
+	return ""
+}
+
+func (f *File) Buffered() (int, error) {
+	return 0, nil
+}
+
+// OpenFallback is not supported on this platform.
+func OpenFallback(path string, _ time.Duration) (*os.File, *File, DevKind, error) {
+	return nil, nil, DevUnknown, fmt.Errorf("%s: fallback open not supported on this platform", path)
+}
+
 func RawMode(a *Attr) error {
 	a.dcb.ByteSize = 8
 	a.dcb.Parity = windows.NOPARITY

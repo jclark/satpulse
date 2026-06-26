@@ -40,6 +40,9 @@ func NewReader(data []byte) *Reader {
 	return &Reader{data: data}
 }
 
+// BitLen returns the number of bits read.
+func (r *Reader) BitLen() int { return r.pos }
+
 // Uint reads n unsigned bits and returns them as a uint64.
 func (r *Reader) Uint(n int) (uint64, error) {
 	if n <= 0 || n > 64 {

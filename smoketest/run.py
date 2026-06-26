@@ -35,7 +35,7 @@ import time
 import tomllib
 import traceback
 import tty
-from typing import IO, Literal, Protocol, Sequence, cast
+from typing import IO, Callable, Literal, Protocol, Sequence, cast
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)  # let run.py and scenarios import the shared checks module
@@ -147,22 +147,32 @@ def emit(msg: str) -> None:
         print(msg, flush=True)
 
 
-def arch() -> str:
-    """Name of the out/<arch>/ subdir holding the binaries under test.
+def emit_failure_detail(name: str, detail: str) -> None:
+    """Print a failure detail block atomically across parallel worker threads."""
+    with _out_lock:
+        print(f"\n--- {name} ---")
+        print("    " + detail.replace("\n", "\n    ").rstrip(), flush=True)
 
-    Honour GOARCH when set so a cross-built tree (e.g. GOARCH=386 on an
-    x86_64 host, as in the 32-bit CI workflow) is exercised against its own
-    binaries rather than the host's.
+
+def build_dir() -> str:
+    """Name of the out/ subdir holding the binaries under test.
+
+    Honour GOOS and GOARCH when set so a cross-built tree is exercised against
+    its own binaries rather than the host's. Linux builds use out/<arch>;
+    other Unix builds use out/<goos>_<arch>, matching unix-build.sh.
     """
+    goos = os.environ.get("GOOS") or platform.system().lower()
     goarch = os.environ.get("GOARCH")
-    if goarch:
+    if not goarch:
+        m = platform.machine()
+        goarch = {"x86_64": "amd64", "aarch64": "arm64"}.get(m, m)
+    if goos == "linux":
         return goarch
-    m = platform.machine()
-    return {"x86_64": "amd64", "aarch64": "arm64"}.get(m, m)
+    return f"{goos}_{goarch}"
 
 
 def bin_path(name: str) -> str:
-    return os.path.join(REPO, "out", arch(), name)
+    return os.path.join(REPO, "out", build_dir(), name)
 
 
 def make_pty() -> tuple[int, int, str]:
@@ -225,6 +235,7 @@ class Context:
         self.replay_err = os.path.join(run_dir, "replay.err")
         self.satpulsed = bin_path("satpulsed")
         self.satpulsetool = bin_path("satpulsetool")
+        self.daemon_pid_file = os.path.join(run_dir, "satpulsed.pid")
         self.daemon: subprocess.Popen[bytes] | None = None
         self.replay_proc: subprocess.Popen[bytes] | None = None
         self._replay_fifo: IO[bytes] | None = None
@@ -315,6 +326,61 @@ class Context:
         goarch = os.environ.get("GOARCH")
         env = ["env", f"GOARCH={goarch}"] if goarch else []
         return ["sudo", "-n", *env, *cmd]
+
+    def daemon_cmd(self, cmd: Sequence[str]) -> list[str]:
+        if self.uses_darwin_sudo_daemon():
+            return self.root_cmd([
+                "sh", "-c", 'echo $$ > "$1"; shift; exec "$@"',
+                "sh", self.daemon_pid_file, *cmd,
+            ])
+        if self.requires_root:
+            return self.root_cmd(cmd)
+        return list(cmd)
+
+    def uses_darwin_sudo_daemon(self) -> bool:
+        return (
+            self.requires_root
+            and sys.platform == "darwin"
+            and os.geteuid() != 0
+            and self.use_sudo
+        )
+
+    def wait_daemon_pid(self, timeout: float = 5) -> int:
+        deadline = time.time() + timeout
+        while True:
+            try:
+                return int(open(self.daemon_pid_file).read().strip())
+            except OSError:
+                pass
+            except ValueError as e:
+                raise RuntimeError(f"invalid daemon pid file {self.daemon_pid_file}") from e
+            if self.daemon is not None and self.daemon.poll() is not None:
+                raise RuntimeError(f"daemon exited before writing pid file (code {self.daemon.returncode})")
+            if time.time() >= deadline:
+                raise RuntimeError(f"daemon did not write pid file within {timeout:g}s")
+            time.sleep(0.02)
+
+    def daemon_signaler(self) -> Callable[[signal.Signals], None] | None:
+        if not self.uses_darwin_sudo_daemon():
+            return None
+
+        def send(sig: signal.Signals) -> None:
+            name = sig.name[3:] if sig.name.startswith("SIG") else str(int(sig))
+            p = subprocess.run(
+                self.root_cmd(["kill", f"-{name}", str(self.wait_daemon_pid())]),
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+            )
+            if p.returncode != 0:
+                err = p.stderr.decode("utf-8", "replace").strip()
+                out = p.stdout.decode("utf-8", "replace").strip()
+                raise RuntimeError(err or out or f"kill -{name} exited with code {p.returncode}")
+
+        return send
+
+    def daemon_final_grace(self) -> float | None:
+        if self.uses_darwin_sudo_daemon():
+            return 5.0
+        return None
 
     def remove_ntp_shm(self) -> str | None:
         """Remove the test NTP SHM segment if it exists."""
@@ -846,37 +912,65 @@ def stop_daemon(
     daemon: subprocess.Popen[bytes],
     grace: float = 5.0,
     process_group: bool = False,
+    signaler: Callable[[signal.Signals], None] | None = None,
+    final_grace: float | None = None,
 ) -> str | None:
     """Stop the daemon, escalating the way the systemd unit does.
 
     satpulsed catches both SIGINT and SIGTERM and treats them as the same
     graceful-shutdown request, so SIGTERM cannot rescue a hung shutdown.
     The packaged unit uses TimeoutStopSec=5 with FinalKillSignal=SIGQUIT,
-    so on a hang we escalate to SIGQUIT and stop there: the daemon does not
-    catch it, and Go's default handler dumps all goroutine stacks (to the
-    daemon log) and aborts the process -- both the diagnostic we want for a
-    shutdown hang and a reliable terminator. SIGQUIT is the final backstop;
-    no SIGKILL follows.
+    so on a hang we escalate to SIGQUIT and normally stop there: the daemon
+    does not catch it, and Go's default handler dumps all goroutine stacks
+    (to the daemon log) and aborts the process -- both the diagnostic we want
+    for a shutdown hang and a reliable terminator. SIGQUIT is the final
+    backstop unless the caller sets final_grace for a platform wrapper that
+    needs its own bounded wait.
 
     Returns None on a clean SIGINT exit, otherwise an error string
     describing the escalation that was needed.
     """
-    send_daemon_signal(daemon, signal.SIGINT, process_group)
+    send_daemon_signal(daemon, signal.SIGINT, process_group, signaler)
     try:
         daemon.wait(timeout=grace)
         return None
     except subprocess.TimeoutExpired:
         pass
-    send_daemon_signal(daemon, signal.SIGQUIT, process_group)
-    daemon.wait()
+    send_daemon_signal(daemon, signal.SIGQUIT, process_group, signaler)
+    if final_grace is None:
+        daemon.wait()
+    else:
+        try:
+            daemon.wait(timeout=final_grace)
+        except subprocess.TimeoutExpired:
+            send_daemon_signal(daemon, signal.SIGKILL, process_group, signaler)
+            try:
+                daemon.wait(timeout=final_grace)
+            except subprocess.TimeoutExpired:
+                return (
+                    f"daemon did not exit within {grace:g}s of SIGINT, "
+                    f"{final_grace:g}s of SIGQUIT, or {final_grace:g}s of SIGKILL"
+                )
+            return (
+                f"daemon did not exit within {grace:g}s of SIGINT or "
+                f"{final_grace:g}s of SIGQUIT; SIGKILL stopped it"
+            )
     return (
         f"daemon did not exit within {grace:g}s of SIGINT; "
         "SIGQUIT dumped goroutines (see satpulsed.log) and aborted it"
     )
 
 
-def send_daemon_signal(daemon: subprocess.Popen[bytes], sig: signal.Signals, process_group: bool) -> None:
+def send_daemon_signal(
+    daemon: subprocess.Popen[bytes],
+    sig: signal.Signals,
+    process_group: bool,
+    signaler: Callable[[signal.Signals], None] | None = None,
+) -> None:
     """Send sig to the daemon, or to its process group when launched through sudo."""
+    if signaler is not None:
+        signaler(sig)
+        return
     if process_group:
         os.killpg(daemon.pid, sig)
         return
@@ -966,8 +1060,7 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
             ctx.start_source()
         with open(daemon_log, "wb") as out:
             cmd = [ctx.satpulsed, "-v", "-f", env["SATPULSE_TEST_CONFIG"]]
-            if requires_root:
-                cmd = ctx.root_cmd(cmd)
+            cmd = ctx.daemon_cmd(cmd)
             daemon = subprocess.Popen(
                 cmd,
                 stdout=out,
@@ -975,6 +1068,8 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
                 start_new_session=requires_root,
             )
         ctx.daemon = daemon
+        if ctx.uses_darwin_sudo_daemon():
+            ctx.wait_daemon_pid()
 
         # Wait for the daemon's listeners before replaying so the HTTP/SSE
         # and Ntrip observers exist before any packet arrives; otherwise a
@@ -1019,7 +1114,12 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
             # Graceful shutdown: SIGINT should terminate the daemon promptly
             # and release its ports. A hang escalates to SIGQUIT (goroutine
             # dump) and is reported as a failure.
-            err = stop_daemon(daemon, process_group=requires_root)
+            err = stop_daemon(
+                daemon,
+                process_group=requires_root,
+                signaler=ctx.daemon_signaler(),
+                final_grace=ctx.daemon_final_grace(),
+            )
             if err is not None:
                 raise RuntimeError(err)
             if daemon.returncode not in (0, -signal.SIGINT):
@@ -1043,7 +1143,12 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         ctx._close_replay_files()
         ctx._close_pty()
         if daemon is not None and daemon.poll() is None:
-            stop_daemon(daemon, process_group=requires_root)
+            stop_daemon(
+                daemon,
+                process_group=requires_root,
+                signaler=ctx.daemon_signaler(),
+                final_grace=ctx.daemon_final_grace(),
+            )
         ctx.stop_ntp_sock()
         ctx.stop_push_peers()
         ctx.stop_source()
@@ -1119,12 +1224,11 @@ def main() -> int:
             name, status, detail = fut.result()
             results.append((name, status, detail))
             emit(f"{status} {name}" + (f" ({detail})" if status in ("SKIP", "XFAIL", "XPASS") else ""))
+            if status in ("FAIL", "XPASS"):
+                emit_failure_detail(name, detail)
 
     # FAIL and XPASS (expected-to-fail but passed) both fail the suite.
     failures = sorted((name, detail) for name, status, detail in results if status in ("FAIL", "XPASS"))
-    for name, detail in failures:
-        print(f"\n--- {name} ---")
-        print("    " + detail.replace("\n", "\n    ").rstrip())
     counts = {s: sum(1 for _, st, _ in results if st == s) for s in ("PASS", "FAIL", "XFAIL", "XPASS", "SKIP")}
     parts = [f"{counts['PASS']} passed"]
     if counts["FAIL"]:

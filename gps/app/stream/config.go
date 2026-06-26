@@ -5,6 +5,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/ntrip"
+	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 )
 
@@ -150,9 +151,11 @@ func (cfg *Config) HasNtripPush() bool {
 
 // Prepare builds a PullSetup for cfg, or returns nil when the pull
 // is disabled (neither tcp nor ntrip set).  version feeds the Ntrip
-// User-Agent header.  pw and portLock are the correction-output port
-// (the receiver's main serial connection in the simplest case).
-func (cfg *PullConfig) Prepare(version string,
+// User-Agent header.  pktFormats are the correction formats to scan
+// (see gpsreg.CreateCorrectionFormats).  pw and portLock are the
+// correction-output port (the receiver's main serial connection in
+// the simplest case).
+func (cfg *PullConfig) Prepare(version string, pktFormats []gpsprot.PacketFormat,
 	pw PacketWriter, portLock gpsio.OutPortLock) *PullSetup {
 	var src Source
 	var addr string
@@ -176,7 +179,7 @@ func (cfg *PullConfig) Prepare(version string,
 		pull:       NewPull(),
 		source:     src,
 		addr:       addr,
-		pktFormats: defaultPullFormats,
+		pktFormats: pktFormats,
 		pw:         pw,
 		portLock:   portLock,
 	}
