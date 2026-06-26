@@ -147,22 +147,25 @@ def emit(msg: str) -> None:
         print(msg, flush=True)
 
 
-def arch() -> str:
-    """Name of the out/<arch>/ subdir holding the binaries under test.
+def build_dir() -> str:
+    """Name of the out/ subdir holding the binaries under test.
 
-    Honour GOARCH when set so a cross-built tree (e.g. GOARCH=386 on an
-    x86_64 host, as in the 32-bit CI workflow) is exercised against its own
-    binaries rather than the host's.
+    Honour GOOS and GOARCH when set so a cross-built tree is exercised against
+    its own binaries rather than the host's. Linux builds use out/<arch>;
+    other Unix builds use out/<goos>_<arch>, matching unix-build.sh.
     """
+    goos = os.environ.get("GOOS") or platform.system().lower()
     goarch = os.environ.get("GOARCH")
-    if goarch:
+    if not goarch:
+        m = platform.machine()
+        goarch = {"x86_64": "amd64", "aarch64": "arm64"}.get(m, m)
+    if goos == "linux":
         return goarch
-    m = platform.machine()
-    return {"x86_64": "amd64", "aarch64": "arm64"}.get(m, m)
+    return f"{goos}_{goarch}"
 
 
 def bin_path(name: str) -> str:
-    return os.path.join(REPO, "out", arch(), name)
+    return os.path.join(REPO, "out", build_dir(), name)
 
 
 def make_pty() -> tuple[int, int, str]:
