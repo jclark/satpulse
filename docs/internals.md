@@ -122,7 +122,7 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/uncmsg` parses Unicore protocol messages in binary and ASCII formats. It defines message structures and provides parsing/serialization using `gps/lib/novmsg`.
 
-`gps/lib/nmeamsg` analyzes NMEA sentence syntax and computes checksums.
+`gps/lib/nmeamsg` analyzes NMEA sentence syntax, computes checksums, and decodes and serializes typed approved GNSS-talker sentences such as GGA and RMC.
 
 `gps/lib/airmsg` classifies responses to Airoha proprietary PAIR NMEA commands.
 
