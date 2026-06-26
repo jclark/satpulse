@@ -26,3 +26,6 @@ jobs:
 
     - name: Test
       run: go test ./...
+
+    - name: Smoke test
+      run: python3 smoketest/run.py --sudo
