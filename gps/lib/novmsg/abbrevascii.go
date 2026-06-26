@@ -1,6 +1,10 @@
 package novmsg
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/jclark/satpulse/gps/lib/ascii"
+)
 
 // AbbrevSync is the byte that starts every NovAtel abbreviated ASCII line.
 const AbbrevSync byte = '<'
@@ -20,12 +24,8 @@ type AbbrevAsciiLine struct {
 func ParseAbbrevAsciiLine(pkt []byte) *AbbrevAsciiLine {
 	s := strings.TrimSuffix(string(pkt[1:]), "\r\n")
 	i := 0
-	for i < len(s) && isAlnum(s[i]) {
+	for i < len(s) && ascii.IsAlnum(s[i]) {
 		i++
 	}
 	return &AbbrevAsciiLine{Name: s[:i], Fields: strings.Fields(s[i:])}
-}
-
-func isAlnum(b byte) bool {
-	return b >= '0' && b <= '9' || b >= 'A' && b <= 'Z' || b >= 'a' && b <= 'z'
 }

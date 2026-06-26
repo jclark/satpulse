@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg/testdata"
 )
 
@@ -145,13 +146,13 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 	}
 
 	// Check that the two chars after * are uppercase hex
-	if !isUpperHexDigit(data[asteriskIndex+1]) || !isUpperHexDigit(data[asteriskIndex+2]) {
+	if !ascii.IsUpperHexDigit(data[asteriskIndex+1]) || !ascii.IsUpperHexDigit(data[asteriskIndex+2]) {
 		return 0
 	}
 
 	// Constraint 3: All characters before line terminator must be printable ASCII (0x20-0x7E)
 	for i := 0; i < lineTerminatorIndex; i++ {
-		if !isPrintableASCII(data[i]) {
+		if !ascii.IsPrint(data[i]) {
 			return 0
 		}
 	}
@@ -228,7 +229,7 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 				validCaretEscaping = false
 				break
 			}
-			if !isUpperHexDigit(dataFields[i+1]) || !isUpperHexDigit(dataFields[i+2]) {
+			if !ascii.IsUpperHexDigit(dataFields[i+1]) || !ascii.IsUpperHexDigit(dataFields[i+2]) {
 				validCaretEscaping = false
 				break
 			}
@@ -259,15 +260,10 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 	return flags
 }
 
-// isPrintableASCII checks if character is in printable ASCII range (0x20-0x7E)
-func isPrintableASCII(c byte) bool {
-	return c >= 0x20 && c <= 0x7E
-}
-
 // isUpperAlphanumeric checks if string contains only uppercase letters and digits
 func isUpperAlphanumeric(s string) bool {
-	for _, c := range s {
-		if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+	for i := 0; i < len(s); i++ {
+		if !ascii.IsUpper(s[i]) && !ascii.IsDigit(s[i]) {
 			return false
 		}
 	}

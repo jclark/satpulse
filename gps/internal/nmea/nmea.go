@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
@@ -714,8 +715,8 @@ func scanTime(s string, hour, min, sec *uint8, nanos *int32) bool {
 }
 
 func isDigits(s string) bool {
-	for _, d := range s {
-		if d < '0' || d > '9' {
+	for i := 0; i < len(s); i++ {
+		if !ascii.IsDigit(s[i]) {
 			return false
 		}
 	}
@@ -742,14 +743,9 @@ func talkerIDToGNSS(t string) gpsprot.GNSS {
 }
 
 func hexToByte(digits string) byte {
-	return (hexWeight(digits[0]) << 4) | hexWeight(digits[1])
-}
-
-func hexWeight(b byte) byte {
-	if '0' <= b && b <= '9' {
-		return b - '0'
-	}
-	return (b - 'A') + 10
+	hi, _ := ascii.UpperHexVal(digits[0])
+	lo, _ := ascii.UpperHexVal(digits[1])
+	return hi<<4 | lo
 }
 
 func Trim(data string) string {
