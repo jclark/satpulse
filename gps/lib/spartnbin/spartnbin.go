@@ -21,6 +21,7 @@ package spartnbin
 
 import (
 	"fmt"
+	"iter"
 
 	"github.com/jclark/satpulse/gps/lib/bitsenc"
 )
@@ -30,22 +31,52 @@ const Preamble = 0x73
 
 const typeSubtypeSep = "."
 
-// Frame holds the parsed plaintext envelope of a SPARTN frame plus the
-// opaque (possibly encrypted) message payload.
+// FrameStart holds TF001-TF006.
+type FrameStart struct {
+	Preamble   uint8
+	Type       uint8  `bits:"7"`
+	PayloadLen uint16 `bits:"10"`
+	EAF        bool
+	CRCType    uint8 `bits:"2"`
+	FrameCRC   uint8 `bits:"4"`
+}
+
+// FrameMetadata holds TF007-TF011.
+type FrameMetadata struct {
+	Subtype        uint8  `bits:"4"`
+	TimeTagType    uint8  `bits:"1"`
+	TimeTag        uint32 `bits:"var"`
+	SolutionID     uint8  `bits:"7"`
+	SolutionProcID uint8  `bits:"4"`
+}
+
+// VarBits yields the bit width for TF009.
+func (m *FrameMetadata) VarBits() iter.Seq[int] {
+	return func(yield func(int) bool) { yield(timeTagBits(m.TimeTagType)) }
+}
+
+func timeTagBits(t uint8) int {
+	if t == 1 {
+		return 32
+	}
+	return 16
+}
+
+// FrameEncryption holds TF012-TF015.
+type FrameEncryption struct {
+	EncryptionID  uint8 `bits:"4"`
+	EncryptionSeq uint8 `bits:"6"`
+	AuthInd       uint8 `bits:"3"`
+	AuthLen       uint8 `bits:"3"`
+}
+
+// Frame holds the parsed plaintext envelope of a SPARTN frame plus the opaque
+// (possibly encrypted) message payload.
 type Frame struct {
-	Type           uint8  // TF002
-	Subtype        uint8  // TF007
-	EAF            bool   // TF004 encryption and authentication flag
-	CRCType        uint8  // TF005 (0:CRC-8 1:CRC-16 2:CRC-24 3:CRC-32)
-	TimeTagType    uint8  // TF008 (0:16-bit 1:32-bit)
-	TimeTag        uint32 // TF009
-	SolutionID     uint8  // TF010
-	SolutionProcID uint8  // TF011
-	EncryptionID   uint8  // TF012, valid when EAF
-	EncryptionSeq  uint8  // TF013, valid when EAF
-	AuthInd        uint8  // TF014, valid when EAF
-	AuthLen        uint8  // TF015, valid when EAF
-	Payload        []byte // TF016, opaque (encrypted when EAF)
+	FrameStart
+	FrameMetadata
+	FrameEncryption
+	Payload []byte
 }
 
 // MsgID returns the SPARTN message identifier "type.subtype" (e.g. "1.0").
@@ -61,89 +92,59 @@ func Parse(pkt []byte) (*Frame, error) {
 		return nil, fmt.Errorf("spartnbin: not a SPARTN frame")
 	}
 	r := bitsenc.NewReader(pkt)
-	var rerr error
-	u := func(n int) uint64 {
-		v, err := r.Uint(n)
-		if err != nil && rerr == nil {
-			rerr = err
-		}
-		return v
+	f := new(Frame)
+	if err := r.Read(&f.FrameStart); err != nil {
+		return nil, err
 	}
-	u(8) // TF001 preamble
-	f := &Frame{Type: uint8(u(7))}
-	payloadLen := int(u(10))
-	f.EAF = u(1) == 1
-	f.CRCType = uint8(u(2))
-	u(4) // TF006 frame CRC
-	f.Subtype = uint8(u(4))
-	f.TimeTagType = uint8(u(1))
-	ttBits := 16
-	if f.TimeTagType == 1 {
-		ttBits = 32
+	if err := r.Read(&f.FrameMetadata); err != nil {
+		return nil, err
 	}
-	f.TimeTag = uint32(u(ttBits))
-	f.SolutionID = uint8(u(7))
-	f.SolutionProcID = uint8(u(4))
 	if f.EAF {
-		f.EncryptionID = uint8(u(4))
-		f.EncryptionSeq = uint8(u(6))
-		f.AuthInd = uint8(u(3))
-		f.AuthLen = uint8(u(3))
+		if err := r.Read(&f.FrameEncryption); err != nil {
+			return nil, err
+		}
 	}
-	if rerr != nil {
-		return nil, rerr
-	}
-	hdr := headerLen(f.EAF, ttBits)
-	if hdr+payloadLen > len(pkt) {
+	hdrLen := byteLen(r.BitLen())
+	payloadEnd := hdrLen + int(f.PayloadLen)
+	if payloadEnd > len(pkt) {
 		return nil, fmt.Errorf("spartnbin: payload exceeds frame")
 	}
-	f.Payload = pkt[hdr : hdr+payloadLen]
+	f.Payload = pkt[hdrLen:payloadEnd]
 	return f, nil
 }
 
-// headerLen returns the byte length of the transport header (TF001-TF015).
-func headerLen(eaf bool, ttBits int) int {
-	bits := 32 + 16 + ttBits // TF001-TF006 + TF007,TF008,TF010,TF011 + TF009
-	if eaf {
-		bits += 16 // TF012-TF015
-	}
-	return bits / 8
-}
+func byteLen(bits int) int { return (bits + 7) / 8 }
 
 // FrameLen returns the total frame length in bytes, derived from the transport
-// header at the start of hdr. ok is false when hdr does not yet contain all the
-// length-determining fields (TF003-TF005, TF008, and when EAF the TF014/TF015
-// authentication fields). The scanner feeds successive header prefixes until ok.
+// header at the start of hdr. ok is false when hdr is not a valid SPARTN frame
+// prefix or does not yet contain enough header bytes to determine the payload,
+// authentication, and CRC lengths. The scanner feeds successive header prefixes
+// until ok.
 func FrameLen(hdr []byte) (n int, ok bool) {
-	if len(hdr) < 5 {
+	if len(hdr) < 5 || hdr[0] != Preamble || !VerifyHeaderCRC(hdr) {
 		return 0, false
 	}
-	payloadLen := int(hdr[1]&0x01)<<9 | int(hdr[2])<<1 | int(hdr[3])>>7
-	eaf := hdr[3]>>6&1 == 1
-	crcBytes := int(hdr[3]>>4&3) + 1
-	tag32 := hdr[4]>>3&1 == 1
-	n = 4
-	if tag32 {
-		n += 6
-	} else {
-		n += 4
+	var f Frame
+	r := bitsenc.NewReader(hdr)
+	if err := r.Read(&f.FrameStart); err != nil {
+		return 0, false
 	}
-	auth := 0
-	if eaf {
-		n += 2
-		off := 8
-		if tag32 {
-			off = 10
-		}
-		if len(hdr) < off+2 {
+	if err := r.Read(&f.FrameMetadata); err != nil {
+		return 0, false
+	}
+	if f.EAF {
+		if err := r.Read(&f.FrameEncryption); err != nil {
 			return 0, false
 		}
-		g := uint16(hdr[off])<<8 | uint16(hdr[off+1])
-		if ind := g >> 3 & 7; ind > 1 {
-			auth = authBytes(g & 7)
-		}
 	}
-	return n + payloadLen + auth + crcBytes, true
+	return byteLen(r.BitLen()) + int(f.PayloadLen) + f.authLen() + crcBytes(f.CRCType), true
+}
+
+func (f *Frame) authLen() int {
+	if f.EAF && f.AuthInd > 1 {
+		return authBytes(uint16(f.AuthLen))
+	}
+	return 0
 }
 
 // authBytes returns the embedded authentication data length (TF017) in bytes
@@ -179,10 +180,6 @@ func formatMsgID(t, st uint8) string {
 	return fmt.Sprintf("%d%s%d", t, typeSubtypeSep, st)
 }
 
-// crcLen returns the TF018 CRC length in bytes from TF005. Precondition:
-// len(pkt) >= 4.
-func crcLen(pkt []byte) int { return int(pkt[3]>>4&3) + 1 }
-
 // ExtractChecksum returns the TF018 message CRC from the frame.
 func ExtractChecksum(pkt []byte) []byte {
 	return pkt[len(pkt)-crcLen(pkt):]
@@ -198,7 +195,53 @@ func ComputeChecksum(pkt []byte) []byte {
 // VerifyHeaderCRC checks the TF006 frame CRC-4 over TF002-TF005. hdr must hold
 // at least the first 4 frame bytes.
 func VerifyHeaderCRC(hdr []byte) bool {
-	return crc4([]byte{hdr[1], hdr[2], hdr[3] & 0xF0}) == hdr[3]&0x0F
+	return headerCRC(hdr) == hdr[3]&0x0F
+}
+
+// Pack assembles a complete SPARTN frame from f, filling in the TF006 frame
+// CRC and TF018 message CRC. It does not support embedded authentication data
+// (TF017); f.AuthInd must be <= 1.
+func Pack(f *Frame) ([]byte, error) {
+	if len(f.Payload) > 1023 {
+		return nil, fmt.Errorf("spartnbin: payload too long (%d bytes)", len(f.Payload))
+	}
+	if f.EAF && f.AuthInd > 1 {
+		return nil, fmt.Errorf("spartnbin: embedded authentication not supported")
+	}
+	start := f.FrameStart
+	start.Preamble = Preamble
+	start.PayloadLen = uint16(len(f.Payload))
+	start.FrameCRC = 0
+	w := bitsenc.NewWriter(nil)
+	if err := w.Write(&start); err != nil {
+		return nil, err
+	}
+	if err := w.Write(&f.FrameMetadata); err != nil {
+		return nil, err
+	}
+	if f.EAF {
+		if err := w.Write(&f.FrameEncryption); err != nil {
+			return nil, err
+		}
+	}
+	pkt := w.Bytes()
+	putHeaderCRC(pkt)
+	pkt = append(pkt, f.Payload...)
+	return append(pkt, checksum(start.CRCType, pkt[1:])...), nil
+}
+
+// crcLen returns the TF018 CRC length in bytes from TF005. Precondition:
+// len(pkt) >= 4.
+func crcLen(pkt []byte) int { return crcBytes(pkt[3] >> 4 & 3) }
+
+func crcBytes(t uint8) int { return int(t) + 1 }
+
+func putHeaderCRC(pkt []byte) {
+	pkt[3] = pkt[3]&0xF0 | headerCRC(pkt)
+}
+
+func headerCRC(hdr []byte) uint8 {
+	return crc4([]byte{hdr[1], hdr[2], hdr[3] & 0xF0})
 }
 
 // checksum computes the TF018 CRC of the given type over data and returns it
@@ -253,42 +296,4 @@ func crc4(data []byte) uint8 {
 		}
 	}
 	return crc & 0x0F
-}
-
-// Pack assembles a complete SPARTN frame from f, filling in the TF006 frame
-// CRC and TF018 message CRC. It does not support embedded authentication data
-// (TF017); f.AuthInd must be <= 1.
-func Pack(f *Frame) ([]byte, error) {
-	if len(f.Payload) > 1023 {
-		return nil, fmt.Errorf("spartnbin: payload too long (%d bytes)", len(f.Payload))
-	}
-	if f.EAF && f.AuthInd > 1 {
-		return nil, fmt.Errorf("spartnbin: embedded authentication not supported")
-	}
-	w := bitsenc.NewWriter(nil)
-	w.PutUint(Preamble, 8)
-	w.PutUint(uint64(f.Type), 7)
-	w.PutUint(uint64(len(f.Payload)), 10)
-	w.PutBool(f.EAF)
-	w.PutUint(uint64(f.CRCType), 2)
-	w.PutUint(0, 4) // TF006 placeholder
-	w.PutUint(uint64(f.Subtype), 4)
-	w.PutUint(uint64(f.TimeTagType), 1)
-	ttBits := 16
-	if f.TimeTagType == 1 {
-		ttBits = 32
-	}
-	w.PutUint(uint64(f.TimeTag), ttBits)
-	w.PutUint(uint64(f.SolutionID), 7)
-	w.PutUint(uint64(f.SolutionProcID), 4)
-	if f.EAF {
-		w.PutUint(uint64(f.EncryptionID), 4)
-		w.PutUint(uint64(f.EncryptionSeq), 6)
-		w.PutUint(uint64(f.AuthInd), 3)
-		w.PutUint(uint64(f.AuthLen), 3)
-	}
-	pkt := w.Bytes()
-	pkt[3] = pkt[3]&0xF0 | crc4([]byte{pkt[1], pkt[2], pkt[3] & 0xF0})
-	pkt = append(pkt, f.Payload...)
-	return append(pkt, checksum(f.CRCType, pkt[1:])...), nil
 }

@@ -100,10 +100,27 @@ func TestCRCVectors(t *testing.T) {
 
 func TestPackRoundTrip(t *testing.T) {
 	tests := []*Frame{
-		{Type: 1, Subtype: 0, CRCType: 0, TimeTag: 0x1234, Payload: []byte("hello")},                                        // CRC-8, 16-bit tag
-		{Type: 2, Subtype: 0, CRCType: 1, TimeTagType: 1, TimeTag: 0xABCDEF, Payload: []byte{1, 2, 3}},                      // CRC-16, 32-bit tag
-		{Type: 0, Subtype: 3, CRCType: 3, Payload: bytes.Repeat([]byte{0xA5}, 40)},                                          // CRC-32
-		{Type: 4, Subtype: 0, EAF: true, CRCType: 2, EncryptionID: 5, EncryptionSeq: 9, AuthInd: 1, Payload: []byte("enc")}, // EAF, no embedded auth
+		{
+			FrameStart:    FrameStart{Type: 1, CRCType: 0},
+			FrameMetadata: FrameMetadata{Subtype: 0, TimeTag: 0x1234},
+			Payload:       []byte("hello"),
+		},
+		{
+			FrameStart:    FrameStart{Type: 2, CRCType: 1},
+			FrameMetadata: FrameMetadata{Subtype: 0, TimeTagType: 1, TimeTag: 0xABCDEF},
+			Payload:       []byte{1, 2, 3},
+		},
+		{
+			FrameStart:    FrameStart{Type: 0, CRCType: 3},
+			FrameMetadata: FrameMetadata{Subtype: 3},
+			Payload:       bytes.Repeat([]byte{0xA5}, 40),
+		},
+		{
+			FrameStart:      FrameStart{Type: 4, EAF: true, CRCType: 2},
+			FrameMetadata:   FrameMetadata{Subtype: 0},
+			FrameEncryption: FrameEncryption{EncryptionID: 5, EncryptionSeq: 9, AuthInd: 1},
+			Payload:         []byte("enc"),
+		},
 	}
 	for i, in := range tests {
 		pkt, err := Pack(in)
@@ -123,10 +140,70 @@ func TestPackRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("test %d: Parse: %v", i, err)
 		}
-		if out.Type != in.Type || out.Subtype != in.Subtype || out.EAF != in.EAF ||
-			out.CRCType != in.CRCType || out.TimeTagType != in.TimeTagType ||
-			out.TimeTag != in.TimeTag || !bytes.Equal(out.Payload, in.Payload) {
-			t.Errorf("test %d: round trip mismatch:\n got %+v\nwant %+v", i, out, in)
+		wantStart := in.FrameStart
+		wantStart.Preamble = Preamble
+		wantStart.PayloadLen = uint16(len(in.Payload))
+		wantStart.FrameCRC = headerCRC(pkt)
+		if out.FrameStart != wantStart {
+			t.Errorf("test %d: FrameStart = %+v, want %+v", i, out.FrameStart, wantStart)
+		}
+		if out.FrameMetadata != in.FrameMetadata {
+			t.Errorf("test %d: FrameMetadata = %+v, want %+v", i, out.FrameMetadata, in.FrameMetadata)
+		}
+		if out.FrameEncryption != in.FrameEncryption {
+			t.Errorf("test %d: FrameEncryption = %+v, want %+v", i, out.FrameEncryption, in.FrameEncryption)
+		}
+		if !bytes.Equal(out.Payload, in.Payload) {
+			t.Errorf("test %d: Payload = %x, want %x", i, out.Payload, in.Payload)
+		}
+	}
+}
+
+func TestFrameLenPrefixes(t *testing.T) {
+	var pkts [][]byte
+	for _, tt := range realFrames {
+		pkts = append(pkts, mustHexDecode(tt.hexstr))
+	}
+	pkt, err := Pack(&Frame{
+		FrameStart:      FrameStart{Type: 4, EAF: true, CRCType: 2},
+		FrameMetadata:   FrameMetadata{Subtype: 0},
+		FrameEncryption: FrameEncryption{EncryptionID: 5, EncryptionSeq: 9, AuthInd: 1},
+		Payload:         []byte("enc"),
+	})
+	if err != nil {
+		t.Fatalf("Pack EAF frame: %v", err)
+	}
+	pkts = append(pkts, pkt)
+	for i, pkt := range pkts {
+		f, err := Parse(pkt)
+		if err != nil {
+			t.Fatalf("test %d: Parse: %v", i, err)
+		}
+		hdrLen := len(pkt) - len(f.Payload) - f.authLen() - crcLen(pkt)
+		for n := 0; n < hdrLen; n++ {
+			if total, ok := FrameLen(pkt[:n]); ok {
+				t.Errorf("test %d prefix %d: FrameLen = %d, true, want false", i, n, total)
+			}
+		}
+		if total, ok := FrameLen(pkt[:hdrLen]); !ok || total != len(pkt) {
+			t.Errorf("test %d header: FrameLen = %d, %v, want %d, true", i, total, ok, len(pkt))
+		}
+	}
+}
+
+func TestFrameLenBadInput(t *testing.T) {
+	pkt := mustHexDecode(realFrames[0].hexstr)
+	tests := [][]byte{
+		nil,
+		{},
+		{Preamble},
+		{Preamble, 0, 0, 0, 0},
+		append([]byte{0}, pkt[1:8]...),
+		append(append([]byte(nil), pkt[:3]...), pkt[3]^1, pkt[4], pkt[5], pkt[6], pkt[7]),
+	}
+	for i, hdr := range tests {
+		if total, ok := FrameLen(hdr); ok {
+			t.Errorf("test %d: FrameLen = %d, true, want false", i, total)
 		}
 	}
 }
