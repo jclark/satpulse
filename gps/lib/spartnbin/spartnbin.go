@@ -81,7 +81,7 @@ type Frame struct {
 
 // MsgID returns the SPARTN message identifier "type.subtype" (e.g. "1.0").
 func (f *Frame) MsgID() string {
-	return formatMsgID(f.Type, f.Subtype)
+	return FormatMsgID(f.Type, f.Subtype)
 }
 
 // Parse decodes the transport envelope of a complete SPARTN frame and slices
@@ -173,10 +173,13 @@ func Subtype(pkt []byte) uint8 { return pkt[4] >> 4 }
 
 // MsgID returns the message identifier "type.subtype" for a frame.
 func MsgID(pkt []byte) string {
-	return formatMsgID(Type(pkt), Subtype(pkt))
+	return FormatMsgID(Type(pkt), Subtype(pkt))
 }
 
-func formatMsgID(t, st uint8) string {
+// FormatMsgID returns the SPARTN message identifier "type.subtype" for a
+// message type and subtype, for callers that have these values without the
+// frame bytes (e.g. a receiver's UBX-RXM-COR report).
+func FormatMsgID(t, st uint8) string {
 	return fmt.Sprintf("%d%s%d", t, typeSubtypeSep, st)
 }
 
