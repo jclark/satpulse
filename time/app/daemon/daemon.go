@@ -361,7 +361,7 @@ func NewDispatcher(
 	shm *ntpshm.Writer,
 	obs obs.Observer,
 	tStart time.Time,
-	ggaSelector gpsevent.GGASelector,
+	ggaSelector *stream.GGASelector,
 ) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
 	var controller *phcsync.Controller
@@ -382,7 +382,13 @@ func NewDispatcher(
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
 	shmWriter := gpsevent.NewSHMWriter(shm, cfg.shmFixedPrecision())
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ls, obs, eventLogPath, tStart, ggaSelector)
+	// Keep a nil selector a nil interface, not a non-nil interface wrapping a
+	// nil pointer, which would defeat the dispatcher's nil checks.
+	var gs gpsevent.GGASelector
+	if ggaSelector != nil {
+		gs = ggaSelector
+	}
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ls, obs, eventLogPath, tStart, gs)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
