@@ -118,7 +118,9 @@ func asMsg[F SentenceFields](s Sentence[F], err error) (GNSSTalkerIDMsg, error) 
 }
 
 // SerializeMsg encodes m as a complete NMEA sentence: '$', the talker, format,
-// and fieldenc-encoded fields, then '*', the checksum, and CRLF.
+// and fieldenc-encoded fields, then '*', the checksum, and CRLF. Fields are not
+// caret-escaped: no GGA or RMC field can hold a reserved character. A sentence
+// with free-text fields (e.g. TXT) would need escaping here, inverse to unescape.
 func SerializeMsg(m GNSSTalkerIDMsg) ([]byte, error) {
 	fields, err := fieldenc.Encode(m.Body())
 	if err != nil {
