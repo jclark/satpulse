@@ -147,6 +147,13 @@ def emit(msg: str) -> None:
         print(msg, flush=True)
 
 
+def emit_failure_detail(name: str, detail: str) -> None:
+    """Print a failure detail block atomically across parallel worker threads."""
+    with _out_lock:
+        print(f"\n--- {name} ---")
+        print("    " + detail.replace("\n", "\n    ").rstrip(), flush=True)
+
+
 def build_dir() -> str:
     """Name of the out/ subdir holding the binaries under test.
 
@@ -1217,12 +1224,11 @@ def main() -> int:
             name, status, detail = fut.result()
             results.append((name, status, detail))
             emit(f"{status} {name}" + (f" ({detail})" if status in ("SKIP", "XFAIL", "XPASS") else ""))
+            if status in ("FAIL", "XPASS"):
+                emit_failure_detail(name, detail)
 
     # FAIL and XPASS (expected-to-fail but passed) both fail the suite.
     failures = sorted((name, detail) for name, status, detail in results if status in ("FAIL", "XPASS"))
-    for name, detail in failures:
-        print(f"\n--- {name} ---")
-        print("    " + detail.replace("\n", "\n    ").rstrip())
     counts = {s: sum(1 for _, st, _ in results if st == s) for s in ("PASS", "FAIL", "XFAIL", "XPASS", "SKIP")}
     parts = [f"{counts['PASS']} passed"]
     if counts["FAIL"]:
