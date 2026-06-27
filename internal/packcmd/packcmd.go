@@ -121,9 +121,9 @@ func run(input io.Reader, out writeFlusher, cfg runConfig) error {
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
-	var prevEntryT time.Time
-	var prevWriteStart time.Time
-	havePrev := false
+	var baseEntryT time.Time
+	var baseWall time.Time
+	haveBase := false
 	lineNo := 0
 	for scanner.Scan() {
 		lineNo++
@@ -140,16 +140,18 @@ func run(input io.Reader, out writeFlusher, cfg runConfig) error {
 			if entryT.IsZero() {
 				return fmt.Errorf("line %d: --realtime requires selected packets to have a non-zero t", lineNo)
 			}
-			var writeStart time.Time
-			if havePrev {
-				delta := time.Duration(float64(entryT.Sub(prevEntryT)) / cfg.factor)
-				if delta > 0 {
-					targetWriteStart := prevWriteStart.Add(delta)
-					if sleepFor := targetWriteStart.Sub(cfg.clock.Now()); sleepFor > 0 {
-						cfg.clock.Sleep(sleepFor)
-					}
+			if haveBase {
+				// Schedule against a fixed base (the first packet's actual
+				// emission and log time), not the previous packet. Anchoring to
+				// the previous write re-added each Sleep's wakeup overshoot every
+				// packet, which accumulates into linear drift; on a virtualized
+				// host (macOS CI) it compounded to ~7 ms/packet. Absolute
+				// scheduling bounds the error to a single overshoot and catches
+				// up after a brief output stall.
+				target := baseWall.Add(time.Duration(float64(entryT.Sub(baseEntryT)) / cfg.factor))
+				if sleepFor := target.Sub(cfg.clock.Now()); sleepFor > 0 {
+					cfg.clock.Sleep(sleepFor)
 				}
-				writeStart = cfg.clock.Now()
 			}
 			if _, err := out.Write(data); err != nil {
 				return fmt.Errorf("line %d: write packet: %w", lineNo, err)
@@ -157,17 +159,14 @@ func run(input io.Reader, out writeFlusher, cfg runConfig) error {
 			if err := out.Flush(); err != nil {
 				return fmt.Errorf("line %d: flush packet: %w", lineNo, err)
 			}
-			prevEntryT = entryT
-			// The first Flush can block until a FIFO reader is ready.
-			// Anchor after it completes so the second packet is delayed
-			// relative to the first packet actually being emitted. Later
-			// packets keep write-start anchoring to avoid accumulating drift
-			// when output is briefly slow.
-			if writeStart.IsZero() {
-				writeStart = cfg.clock.Now()
+			if !haveBase {
+				// The first Flush can block until a FIFO reader attaches; anchor
+				// the base after it returns so that one-time wait is not charged
+				// against the schedule of later packets.
+				baseWall = cfg.clock.Now()
+				baseEntryT = entryT
+				haveBase = true
 			}
-			prevWriteStart = writeStart
-			havePrev = true
 			continue
 		}
 		if _, err := out.Write(data); err != nil {

@@ -239,6 +239,40 @@ func TestTimingAnchorsFirstPacketAfterFlush(t *testing.T) {
 	}
 }
 
+func TestTimingDoesNotAccumulateSleepOvershoot(t *testing.T) {
+	// Sleep on a loaded/virtualized host (notably macOS CI) wakes late by a
+	// roughly constant overshoot. Scheduling each packet against a fixed base
+	// keeps that overshoot from accumulating; anchoring to the previous packet
+	// re-adds it every time and drifts linearly (~7 ms/packet seen on macOS CI,
+	// ~200 ms over a 30 s replay).
+	base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
+	start := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	overshoot := 7 * time.Millisecond
+	fc := &fakeClock{now: start, overshoot: overshoot}
+	out := &recordingOutput{clock: fc}
+	input := lines(
+		timedBin(base, "UBX", "NAV-PVT", "01"),
+		timedBin(base.Add(time.Second), "UBX", "NAV-PVT", "02"),
+		timedBin(base.Add(2*time.Second), "UBX", "NAV-PVT", "03"),
+		timedBin(base.Add(3*time.Second), "UBX", "NAV-PVT", "04"),
+	)
+
+	err := run(strings.NewReader(input), out, runConfig{factor: 1, clock: fc})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	// Each packet lands one overshoot past its absolute slot, never N overshoots.
+	want := []time.Time{
+		start,
+		start.Add(time.Second + overshoot),
+		start.Add(2*time.Second + overshoot),
+		start.Add(3*time.Second + overshoot),
+	}
+	if !reflect.DeepEqual(out.writeTimes, want) {
+		t.Fatalf("writeTimes = %v, want %v", out.writeTimes, want)
+	}
+}
+
 func TestTimingFactorCompressesDelays(t *testing.T) {
 	base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
 	fc := &fakeClock{now: time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)}
@@ -302,8 +336,9 @@ func timedBin(t time.Time, tag, msg, bin string) string {
 }
 
 type fakeClock struct {
-	now    time.Time
-	sleeps []time.Duration
+	now       time.Time
+	overshoot time.Duration
+	sleeps    []time.Duration
 }
 
 func (c *fakeClock) Now() time.Time {
@@ -313,6 +348,9 @@ func (c *fakeClock) Now() time.Time {
 func (c *fakeClock) Sleep(d time.Duration) {
 	c.sleeps = append(c.sleeps, d)
 	c.now = c.now.Add(d)
+	if d > 0 {
+		c.now = c.now.Add(c.overshoot)
+	}
 }
 
 type recordingOutput struct {
