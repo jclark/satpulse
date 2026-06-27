@@ -37,6 +37,12 @@ and vrs PRs):
   `selectedGGA` feed via an internal `GGASender` (resend every interval;
   `WaitReady` waits for the first usable GGA before connecting). A `nil` feed
   means no NMEA send.
+- `stream.GGAPacketPosition(pkt scan.Packet) ([2]float64, bool)` -- returns the
+  lat/lon of a packet when it is a usable GGA fix (checksum-valid, quality > 0,
+  lat/lon set); `ok == false` otherwise. This is a small addition on the vrs
+  branch (see [Prerequisites](#prerequisites)): it factors the `GGASender`'s
+  existing usability check into one exported predicate, so the desktop monitor
+  and the uploader judge "usable" with the same code instead of two copies.
 
 The desktop already decodes the receiver stream into gpsprot messages in
 `packetWorker` (a `msgHandler` handling `Time`/`PosGeo`/`PosECEF`/`NavEpoch`), so
@@ -74,13 +80,14 @@ is running, it interposes a single backend component between `sel.Packets()` and
 `Pull.Run` (where the daemon hands `sel.Packets()` straight to the sender):
 
 - **GGA monitor** (connection-scoped, created in `packetWorker`): the sole
-  reader of `sel.Packets()`. It parses each GGA with public `nmeamsg` (which it
-  needs anyway for the lat/lon display) and treats one as *usable* when quality
-  > 0 with lat/lon set -- the same condition `GGASender` applies before
-  uploading, so the gate and the upload agree without sharing any code. On
-  change it emits a `gps:nmeaPosition` event ({lat, lon}, or cleared). When an
-  NMEA-send session is active it forwards the same feed into the channel passed
-  to `Pull.Run`, primed with the current latest.
+  reader of `sel.Packets()`. For each packet it calls
+  `stream.GGAPacketPosition(pkt)` -- the same predicate the `GGASender` uses
+  before uploading, so the gate and the upload agree by construction rather than
+  by two derivations happening to match. The returned lat/lon drives the
+  display; the returned `ok` drives readiness. On change it emits a
+  `gps:nmeaPosition` event ({lat, lon}, or cleared). When an NMEA-send session is
+  active it forwards the same feed into the channel passed to `Pull.Run`, primed
+  with the current latest.
 
 `StartCorrections` owns the connect-without-delay guarantee and enforces it
 atomically: with the checkbox on, it starts the session only if the monitor
@@ -123,18 +130,29 @@ output is on by default.)
   `issues.md`, which also switches `pktFormats` to
   `gpsreg.CreateCorrectionFormats()`.)
 
-No `gps/app/stream` changes are required. The monitor judges usability by
-parsing the feed itself with public `nmeamsg` (see Backend), so there is nothing
-to add or export on the stream side.
+- One `gps/app/stream` addition is required, and it lands on the vrs branch (not
+  this one, which changes only `desktop/`): export
+  `GGAPacketPosition(pkt scan.Packet) ([2]float64, bool)` by factoring the
+  private `parseSelectedGGA` usability check (checksum valid, NMEA, quality > 0,
+  lat/lon set) out into it. `GGAPacketPosition` returns the parsed lat/lon plus
+  that bool; the existing `GGASender` call site is refactored to use it (it keeps
+  resending `pkt.Data`, which it already holds, and ignores the position). This
+  must land on vrs and be merged in before the desktop monitor below can use it.
+
+The desktop side must not re-implement the usability check from public
+`nmeamsg`: doing so would be a second copy of the `GGASender` predicate that
+could silently diverge, breaking the single-owner invariant. The monitor calls
+`stream.GGAPacketPosition` instead.
 
 ### Backend (`desktop/app.go`)
 
 - `packetWorker`: create `sel`/`synth`, install via `NewMultiHandler`, feed
   `sel.Packet(pkt)`, start the GGA monitor goroutine, store `sel`/monitor on
   `App`.
-- GGA monitor: sole reader of `sel.Packets()`; tracks the latest usable GGA;
-  emits `gps:nmeaPosition`; provides a `ready()` check and a session-feed
-  registration (prime plus forward) for `StartCorrections`.
+- GGA monitor: sole reader of `sel.Packets()`; judges each packet with
+  `stream.GGAPacketPosition`; tracks the latest usable position; emits
+  `gps:nmeaPosition`; provides a `ready()` check and a session-feed registration
+  (prime plus forward) for `StartCorrections`.
 - `CorrectionSource`: add `NMEASend bool` (interval defaults to
   `stream.DefaultNMEASendInterval`); valid only with `Mode == "ntrip"`.
 - `StartCorrections`: migrate to the new `NewPull`/`Run`; when `NMEASend`, gate
