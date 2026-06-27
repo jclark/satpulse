@@ -4,7 +4,7 @@ import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
 import {GetCorrectionsState, StartCorrections, StopCorrections} from '../wailsjs/go/main/App';
 import type {ConnState} from './app';
 import {Button, Input, Select, cx, fieldLabelText} from './ui';
-import {RtcmPanel} from './rtcm-panel';
+import {CorMsgPanel} from './cor-msg-panel';
 
 type CorrState = 'stopped' | 'connecting' | 'connected' | 'reconnecting';
 type CorrMode = 'tcp' | 'ntrip';
@@ -244,7 +244,7 @@ export function CorrectionsPanel({connState}: Props) {
                 <span class={cx('ml-auto text-xs', statusClass)}>{statusText}</span>
             </div>
 
-            <RtcmPanel connected={connected} sessionSeq={sessionSeq} />
+            <CorMsgPanel connected={connected} sessionSeq={sessionSeq} />
         </div>
     );
 }

@@ -2,11 +2,13 @@ import {h} from 'preact';
 import {useState, useEffect, useRef, useMemo} from 'preact/hooks';
 import type {CorReportMsg} from '@satpulse/gps/gpsprot';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
-import {Button} from './ui';
+import {Button, Badge} from './ui';
 import {rtcmInfo} from './rtcm';
+import {spartnInfo} from './spartn';
 
 interface MsgRow {
-    msgType: string;
+    tag: string;        // protocol tag: "RTCM" or "SPARTN"
+    msgType: string;    // msgID verbatim ("1074" for RTCM, "0.0" for SPARTN)
     count: number;      // epochs for MSM, packets for non-MSM
     splits: number;     // extra packets beyond one-per-epoch (MSM only)
     lastEpoch: number;  // last epoch number seen (MSM only, -1 if none)
@@ -19,12 +21,19 @@ interface Props {
     sessionSeq: number;
 }
 
+// rowInfo returns the description and MSM label for a row, dispatching on its
+// protocol tag. SPARTN messages have no MSM concept, so msm is always empty.
+function rowInfo(row: MsgRow): {description: string; msm: string} {
+    if (row.tag === 'RTCM') return rtcmInfo(row.msgType);
+    return {description: spartnInfo(row.msgType).description, msm: ''};
+}
+
 function formatAge(ms: number): string {
     if (ms < 0) return '';
     return Math.floor(ms / 1000) + 's';
 }
 
-export function RtcmPanel({connected, sessionSeq}: Props) {
+export function CorMsgPanel({connected, sessionSeq}: Props) {
     const rowsRef = useRef<Map<string, MsgRow>>(new Map());
     // Epoch counter reconstructed from finalFragment: incremented after
     // each packet that completes a logical message (finalFragment true).
@@ -55,19 +64,20 @@ export function RtcmPanel({connected, sessionSeq}: Props) {
                     }
                 } else {
                     rows.set(evt.msgID, {
-                        msgType: evt.msgID, count: 1, splits: 0,
+                        tag: evt.tag, msgType: evt.msgID, count: 1, splits: 0,
                         lastEpoch: epoch, station: evt.rtcmRefBaseID ?? -1,
                         lastTime: now,
                     });
                 }
             } else {
-                // Non-fragmentable message: count every packet.
+                // Non-fragmentable message (non-MSM RTCM, all SPARTN): count
+                // every packet.
                 if (row) {
                     row.count++;
                     row.lastTime = now;
                 } else {
                     rows.set(evt.msgID, {
-                        msgType: evt.msgID, count: 1, splits: 0,
+                        tag: evt.tag, msgType: evt.msgID, count: 1, splits: 0,
                         lastEpoch: -1, station: evt.rtcmRefBaseID ?? -1,
                         lastTime: now,
                     });
@@ -108,9 +118,13 @@ export function RtcmPanel({connected, sessionSeq}: Props) {
         setDisplayed(new Map());
     };
 
+    // Sort by protocol ("RTCM" before "SPARTN") then by message number.
     const sortedRows = useMemo(() => {
         const arr = Array.from(displayed.values());
-        arr.sort((a, b) => a.msgType.localeCompare(b.msgType, undefined, {numeric: true}));
+        arr.sort((a, b) => {
+            if (a.tag !== b.tag) return a.tag < b.tag ? -1 : 1;
+            return a.msgType.localeCompare(b.msgType, undefined, {numeric: true});
+        });
         return arr;
     }, [displayed]);
 
@@ -122,6 +136,7 @@ export function RtcmPanel({connected, sessionSeq}: Props) {
                 <table class="w-full border-collapse">
                     <thead class="sticky top-0 z-10 bg-surface-2">
                         <tr class="text-left text-text-secondary">
+                            <th class="px-2 py-1.5"></th>
                             <th class="whitespace-nowrap px-2 py-1.5">Station ID</th>
                             <th class="whitespace-nowrap px-2 py-1.5">Type</th>
                             <th class="whitespace-nowrap px-2 py-1.5">MSM</th>
@@ -135,9 +150,10 @@ export function RtcmPanel({connected, sessionSeq}: Props) {
                         {sortedRows.map(row => {
                             const age = now - row.lastTime;
                             const textClass = age < 10000 ? 'text-text-primary' : 'text-text-muted';
-                            const info = rtcmInfo(row.msgType);
+                            const info = rowInfo(row);
                             return (
                                 <tr key={row.msgType} class={`hover:bg-surface-3 ${textClass}`}>
+                                    <td class="px-2 py-0.5"><Badge>{row.tag === 'RTCM' ? 'R' : 'S'}</Badge></td>
                                     <td class="whitespace-nowrap px-2 py-0.5 tabular-nums">{row.station >= 0 ? row.station : ''}</td>
                                     <td class="whitespace-nowrap px-2 py-0.5">{row.msgType}</td>
                                     <td class="whitespace-nowrap px-2 py-0.5">{info.msm}</td>

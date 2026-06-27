@@ -508,13 +508,6 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 		Port:       cfg.Port,
 		Mountpoint: cfg.Mountpoint,
 	})
-	// Find RTCM packet formats for the scanner.
-	var rtcmFormats []gpsprot.PacketFormat
-	for _, pf := range gpsreg.CreatePacketFormats(gpsreg.VendorUnknown) {
-		if pf.Tag() == gpsreg.TagRTCM {
-			rtcmFormats = append(rtcmFormats, pf)
-		}
-	}
 	onState := func(s stream.State, err error) {
 		ev := CorrEvent{
 			State:      s.String(),
@@ -542,7 +535,7 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 		}
 	})
 	wg.Go(func() {
-		sink.Run(corrCtx, a.lg, source, conn, portLock, rtcmFormats, onState)
+		sink.Run(corrCtx, a.lg, source, conn, portLock, gpsreg.CreateCorrectionFormats(), onState)
 		a.emitCorrState(CorrEvent{
 			State:      "stopped",
 			Mode:       cfg.Mode,
