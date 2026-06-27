@@ -3,8 +3,12 @@ import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
 import {GetCorrectionsState, StartCorrections, StopCorrections} from '../wailsjs/go/main/App';
 import type {ConnState} from './app';
-import {Button, Input, Select, cx, fieldLabelText} from './ui';
+import {Button, Input, Select, cx, fieldLabelText, labeledControlText} from './ui';
 import {CorMsgPanel} from './cor-msg-panel';
+
+function fmtDeg(deg: number, digits: number): string {
+    return deg.toFixed(digits);
+}
 
 type CorrState = 'stopped' | 'connecting' | 'connected' | 'reconnecting';
 type CorrMode = 'tcp' | 'ntrip';
@@ -18,6 +22,12 @@ interface CorrEvent {
     error?: string;
 }
 
+interface NMEAPositionEvent {
+    valid: boolean;
+    lat: number;
+    lon: number;
+}
+
 interface Props {
     connState: ConnState;
 }
@@ -29,6 +39,7 @@ const LS_PORT_NTRIP_KEY = 'corr-port-ntrip';
 const LS_MOUNTPOINT_KEY = 'corr-mountpoint';
 const LS_USERNAME_KEY = 'corr-username';
 const LS_PASSWORD_KEY = 'corr-password';
+const LS_NMEASEND_KEY = 'corr-nmea-send';
 
 const NTRIP_DEFAULT_PORT = '2101';
 
@@ -53,6 +64,8 @@ export function CorrectionsPanel({connState}: Props) {
     const [mountpoint, setMountpoint] = useState(() => localStorage.getItem(LS_MOUNTPOINT_KEY) || '');
     const [username, setUsername] = useState(() => localStorage.getItem(LS_USERNAME_KEY) || '');
     const [password, setPassword] = useState(() => localStorage.getItem(LS_PASSWORD_KEY) || '');
+    const [nmeaSend, setNmeaSend] = useState(() => localStorage.getItem(LS_NMEASEND_KEY) === '1');
+    const [nmeaPos, setNmeaPos] = useState<[number, number] | null>(null);
     const [corrState, setCorrState] = useState<CorrState | null>(null);
     const [corrError, setCorrError] = useState('');
     const [pending, setPending] = useState<'start' | 'stop' | null>(null);
@@ -72,6 +85,7 @@ export function CorrectionsPanel({connState}: Props) {
     useEffect(() => { localStorage.setItem(LS_MOUNTPOINT_KEY, mountpoint); }, [mountpoint]);
     useEffect(() => { localStorage.setItem(LS_USERNAME_KEY, username); }, [username]);
     useEffect(() => { localStorage.setItem(LS_PASSWORD_KEY, password); }, [password]);
+    useEffect(() => { localStorage.setItem(LS_NMEASEND_KEY, nmeaSend ? '1' : '0'); }, [nmeaSend]);
 
     const applyCorrEvent = useCallback((evt: CorrEvent) => {
         setCorrState(evt.state);
@@ -108,9 +122,18 @@ export function CorrectionsPanel({connState}: Props) {
     }, [connected, applyCorrEvent]);
 
     useEffect(() => {
+        const off = EventsOn('gps:nmeaPosition', (e: NMEAPositionEvent) =>
+            setNmeaPos(e.valid ? [e.lat, e.lon] : null));
+        return () => {
+            if (typeof off === 'function') off(); else EventsOff('gps:nmeaPosition');
+        };
+    }, []);
+
+    useEffect(() => {
         if (!connected) {
             setCorrState('stopped');
             setCorrError('');
+            setNmeaPos(null);
             setPendingSync(null);
         }
     }, [connected, setPendingSync]);
@@ -121,7 +144,8 @@ export function CorrectionsPanel({connState}: Props) {
     const portOk = !isNaN(portNum) && portNum > 0 && portNum <= 65535;
     const hostOk = !!host.trim();
     const mountpointOk = !!mountpoint.trim();
-    const canStart = hostOk && portOk && (mode === 'tcp' || mountpointOk);
+    const nmeaSendActive = mode === 'ntrip' && nmeaSend;
+    const canStart = hostOk && portOk && (mode === 'tcp' || mountpointOk) && (!nmeaSendActive || nmeaPos !== null);
 
     const handleModeChange = useCallback((next: CorrMode) => {
         setMode(next);
@@ -149,13 +173,14 @@ export function CorrectionsPanel({connState}: Props) {
                 mountpoint,
                 username,
                 password,
+                nmeaSend: nmeaSendActive,
             });
             if (!r.ok) {
                 setPendingSync(null);
                 if (r.error) setCorrError(r.error);
             }
         }
-    }, [running, canStart, mode, host, portNum, mountpoint, username, password, setPendingSync]);
+    }, [running, canStart, mode, host, portNum, mountpoint, username, password, nmeaSendActive, setPendingSync]);
 
     const locked = running || pending !== null;
     const fieldsDisabled = !connected || locked;
@@ -242,6 +267,26 @@ export function CorrectionsPanel({connState}: Props) {
                     disabled={ntripDisabled}
                 />
                 <span class={cx('ml-auto text-xs', statusClass)}>{statusText}</span>
+            </div>
+            <div class="flex shrink-0 items-center gap-3 px-4 pb-2">
+                <div class="w-24 shrink-0 invisible" />
+                <div class="h-2.5 w-2.5 shrink-0 invisible" />
+                {mode === 'ntrip' && (
+                    <label class={cx('flex items-center gap-1.5', labeledControlText(fieldsDisabled))}>
+                        <input
+                            type="checkbox"
+                            class="accent-accent"
+                            checked={nmeaSend}
+                            disabled={fieldsDisabled}
+                            onChange={e => setNmeaSend((e.target as HTMLInputElement).checked)}
+                        />
+                        Send position as NMEA
+                    </label>
+                )}
+                <span class={cx(fieldLabelText(!connected), mode === 'ntrip' ? 'ml-4' : '')}>Position:</span>
+                <span class="font-mono text-xs text-text-primary">
+                    {nmeaPos ? `${fmtDeg(nmeaPos[0], 7)}, ${fmtDeg(nmeaPos[1], 7)}` : ''}
+                </span>
             </div>
 
             <CorMsgPanel connected={connected} sessionSeq={sessionSeq} />

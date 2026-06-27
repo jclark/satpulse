@@ -29,6 +29,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/msgfile"
+	"github.com/jclark/satpulse/gps/nmeasyn"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 )
@@ -84,6 +85,7 @@ type App struct {
 	configCh     chan configRequest
 	probe        ReceiverEvent
 	mh           *msgHandler
+	gga          *ggaMonitor
 	msgFile      *msgfile.Parsed
 	msgFilePath  string
 	sendCancel   context.CancelFunc
@@ -222,6 +224,7 @@ func (a *App) closeLocked() {
 	a.connWg.Wait()
 	a.mu.Lock()
 	a.mh = nil
+	a.gga = nil
 	if a.conn != nil {
 		a.conn.Close()
 		a.conn = nil
@@ -286,13 +289,21 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 	te := &timeEmitter{ctx: a.ctx}
 	tt := gpsprot.NewTimeTicker(te, ptime.LeapSecond2016())
 	mh := &msgHandler{ctx: a.ctx, tt: tt}
+	// Synthesize a GGA each epoch into a selector, and monitor the selected
+	// feed for the live Position display and the VRS NMEA-send gate. Always
+	// on for the connection; the cost is one GGA per epoch into a cap-1 chan.
+	sel := stream.NewGGASelector()
+	synth := nmeasyn.New(sel)
 	a.mu.Lock()
 	a.mh = mh
 	a.probe = ReceiverEvent{}
 	connCtx := a.connCtx
+	mon := newGGAMonitor(a.ctx, connCtx, sel.Packets())
+	a.gga = mon
 	a.mu.Unlock()
 	runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{})
-	gpsprot.SetAllMsgHandlers(procs, mh)
+	gpsprot.SetAllMsgHandlers(procs, gpsprot.NewMultiHandler(mh, synth))
+	a.connWg.Go(mon.run)
 	a.mu.Lock()
 	conn := a.conn
 	a.mu.Unlock()
@@ -344,6 +355,7 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 			if !ok {
 				return
 			}
+			sel.Packet(pkt)
 			a.handleMsgPacket(procs, pkt)
 		case req, ok := <-configCh:
 			if !ok {
@@ -424,6 +436,7 @@ type CorrectionSource struct {
 	Mountpoint string `json:"mountpoint"` // ntrip only
 	Username   string `json:"username"`   // ntrip only, may be empty
 	Password   string `json:"password"`   // ntrip only, may be empty
+	NMEASend   bool   `json:"nmeaSend"`   // ntrip only: upload position as NMEA GGA (VRS)
 }
 
 // BaseARPEvent is the payload for "gps:basearp" events, emitted when
@@ -466,6 +479,9 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 	if cfg.Port <= 0 || cfg.Port > 65535 {
 		return Result{Error: "invalid port"}
 	}
+	if cfg.NMEASend && cfg.Mode != "ntrip" {
+		return Result{Error: "NMEA send requires ntrip"}
+	}
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	var source stream.Source
 	switch cfg.Mode {
@@ -495,14 +511,30 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 	conn := a.conn
 	portLock := a.portLock
 	connCtx := a.connCtx
+	// VRS: when sending position as NMEA, gate atomically on a usable
+	// position. startSession primes the sender's feed with the current
+	// selected GGA, so Pull uploads without delay (WaitReady returns at
+	// once); a nil feed means no usable fix, so refuse rather than stall.
+	var selectedGGA <-chan scan.Packet
+	nmeaInterval := time.Duration(0)
+	if cfg.NMEASend {
+		if a.gga == nil {
+			a.mu.Unlock()
+			return Result{Error: "not connected"}
+		}
+		selectedGGA = a.gga.startSession()
+		if selectedGGA == nil {
+			a.mu.Unlock()
+			return Result{Error: "waiting for a position fix"}
+		}
+		nmeaInterval = stream.DefaultNMEASendInterval
+	}
 	corrCtx, corrCancel := context.WithCancel(connCtx)
 	a.corrCtx = corrCtx
 	a.corrCancel = corrCancel
 	wg := &sync.WaitGroup{}
 	a.corrWg = wg
-	// nmeaSendInterval 0: no upstream GGA upload (no VRS yet); Run is
-	// passed a nil selected-GGA feed below.
-	sink := stream.NewPull(source, a.lg, conn, portLock, gpsreg.CreateCorrectionFormats(), 0)
+	sink := stream.NewPull(source, a.lg, conn, portLock, gpsreg.CreateCorrectionFormats(), nmeaInterval)
 	a.setCorrStateLocked(CorrEvent{
 		State:      "connecting",
 		Mode:       cfg.Mode,
@@ -537,7 +569,7 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 		}
 	})
 	wg.Go(func() {
-		sink.Run(corrCtx, nil, onState)
+		sink.Run(corrCtx, selectedGGA, onState)
 		a.emitCorrState(CorrEvent{
 			State:      "stopped",
 			Mode:       cfg.Mode,
@@ -569,6 +601,9 @@ func (a *App) StopCorrections() Result {
 // correction goroutines to exit. Must be called with a.mu held;
 // temporarily releases a.mu while waiting.
 func (a *App) stopCorrLocked() {
+	if a.gga != nil {
+		a.gga.endSession()
+	}
 	if a.corrCancel == nil {
 		a.setCorrStateLocked(CorrEvent{State: "stopped"})
 		return
@@ -1537,5 +1572,119 @@ func (a *App) handleMsgPacket(procs map[gpsprot.Tag]gpsprot.PacketProcessor, pkt
 	msgID, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
 	if err != nil {
 		a.lg.Warn("error processing packet", gpsio.PacketWarnAttrs(err, pkt, msgID)...)
+	}
+}
+
+// ggaMonitor is the sole reader of a connection's selected-GGA feed (the
+// GGASelector output). It tracks the latest usable GGA -- the exact packet
+// the VRS GGASender would upload -- emits gps:nmeaPosition for the live
+// Position display, and while an NMEA-send session is active forwards the
+// feed into the channel handed to Pull.Run. It is the single owner of
+// "ready": the Position display, the Connect gate, and the connect-without-
+// delay guarantee are all this one fact read three times.
+type ggaMonitor struct {
+	appCtx  context.Context // for EventsEmit (app lifetime)
+	ctx     context.Context // connection ctx; run exits when it is done
+	in      <-chan scan.Packet
+	mu      sync.Mutex
+	have    bool
+	latest  scan.Packet      // latest usable GGA packet
+	session chan scan.Packet // non-nil while a session is forwarding
+}
+
+func newGGAMonitor(appCtx, ctx context.Context, in <-chan scan.Packet) *ggaMonitor {
+	return &ggaMonitor{appCtx: appCtx, ctx: ctx, in: in}
+}
+
+// NMEAPositionEvent is the payload for "gps:nmeaPosition". Valid is false
+// when the receiver currently has no usable fix (Position blank, Connect
+// gated); otherwise Lat/Lon carry the live position.
+type NMEAPositionEvent struct {
+	Valid bool    `json:"valid"`
+	Lat   float64 `json:"lat"`
+	Lon   float64 `json:"lon"`
+}
+
+// run reads the selected-GGA feed until the connection ends.
+func (m *ggaMonitor) run() {
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case pkt, ok := <-m.in:
+			if !ok {
+				return
+			}
+			m.handle(pkt)
+		}
+	}
+}
+
+func (m *ggaMonitor) handle(pkt scan.Packet) {
+	pos, ok := stream.GGAPacketPosition(pkt)
+	m.mu.Lock()
+	if ok {
+		m.have = true
+		m.latest = pkt
+		if m.session != nil {
+			publishGGA(m.session, pkt)
+		}
+		m.mu.Unlock()
+		runtime.EventsEmit(m.appCtx, "gps:nmeaPosition", NMEAPositionEvent{Valid: true, Lat: pos[0], Lon: pos[1]})
+		return
+	}
+	// Unusable GGA: the receiver is reporting no fix. Drop the held position
+	// so the Connect gate and Position display track the current fix. A
+	// running session is unaffected -- GGASender keeps resending its own last
+	// GGA. Emit the cleared event only on the have->not transition.
+	wasHave := m.have
+	m.have = false
+	m.latest = scan.Packet{}
+	m.mu.Unlock()
+	if wasHave {
+		runtime.EventsEmit(m.appCtx, "gps:nmeaPosition", NMEAPositionEvent{Valid: false})
+	}
+}
+
+// startSession registers a primed selected-GGA channel for Pull.Run, or
+// returns nil if no usable GGA is currently held (the caller must refuse).
+// The channel is seeded with the latest usable GGA so the sender uploads
+// at once, then receives each subsequent usable GGA. Combines the readiness
+// check and the feed registration so StartCorrections gates atomically.
+func (m *ggaMonitor) startSession() <-chan scan.Packet {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.have {
+		return nil
+	}
+	ch := make(chan scan.Packet, 1)
+	ch <- m.latest
+	m.session = ch
+	return ch
+}
+
+// endSession stops forwarding to a channel registered by startSession.
+func (m *ggaMonitor) endSession() {
+	m.mu.Lock()
+	m.session = nil
+	m.mu.Unlock()
+}
+
+// publishGGA sends pkt on a capacity-1 channel, dropping a stale unread value
+// first -- mirroring GGASelector.publish so a slow sender never blocks the
+// monitor.
+func publishGGA(ch chan scan.Packet, pkt scan.Packet) {
+	select {
+	case ch <- pkt:
+		return
+	default:
+	}
+	select {
+	case <-ch:
+	default:
+	}
+	select {
+	case ch <- pkt:
+	default:
 	}
 }
