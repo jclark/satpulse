@@ -15,7 +15,9 @@ Scope notes:
 - This plan covers only the production `stream.pull.ntrip.vrs` work.
 - It depends on the NMEA decode layer (#330, typed GGA parsing/serialisation in
   `nmeamsg`), stage 2 of `plan/nmea-gga.md` (GGA synthesis from `gpsprot`
-  messages), and stage 3 of `plan/nmea-gga.md` (the selected-GGA feed).
+  messages), and stage 3 of `plan/nmea-gga.md` (the selected-GGA selector
+  core). This plan owns the VRS-specific wiring of that selector into the daemon
+  and stream pull path.
 - It does not depend on stage 4 of `plan/nmea-gga.md`; enabling VRS must not
   require any proxy service or `proxy.tcp synth` option.
 - Our own caster (`gps/app/ntrip`) is a physical base, never a VRS: field 12
@@ -66,17 +68,33 @@ vrs = true
    `PullConfig.Prepare` records whether the prepared pull is VRS mode, but does
    not build any GGA selector itself.
 
-3. `PullSetup` grows an optional selected-GGA input, set by `time/app/daemon`
-   after the daemon creates the stage 3 selector from `plan/nmea-gga.md`. This
-   is the receive side of the nonblocking capacity-1 latest-value channel owned
-   by the selector. `PullSetup.Run` passes that receive-only channel into
-   `Pull.Run`.
+3. `time/app/daemon` is the VRS integration point for the selected-GGA core.
+   After preparing `stream.PullSetup` and before creating `gpsevent.Dispatcher`,
+   the daemon checks whether the prepared pull is VRS mode. If so, it creates
+   the stage 3 `stream.GGASelector`, gives `selector.Packets()` to `PullSetup`,
+   and passes the selector into `gpsevent.NewDispatcher` as an optional
+   receiver-side `GGASelector` interface with `Packet` and `GGASentence`, not the
+   concrete stream type.
 
-4. In VRS mode, pull owns a `ggaSender` goroutine. It consumes the selected-GGA
+4. When that optional sink is present, `gpsevent.Dispatcher` owns a
+   `nmeasyn.Synth` whose sink is the same interface. The dispatcher fans out the same
+   decoded `gpsprot` message callbacks it already receives to the synthesizer,
+   in the same order, so `nmeasyn` sees the complete
+   `TimeMsg`/position/`NavEpochMsg` epoch sequence. `Dispatcher.handlePacket`
+   feeds each successfully processed receiver packet to `sink.Packet`; the
+   selector filters that stream to checksum-valid approved NMEA GGA packets. That
+   keeps receiver GGA ahead of synthesized GGA for the same UTC without making
+   `gpsevent` depend on the selector implementation.
+
+5. `PullSetup` grows an optional selected-GGA input. This is the receive side of
+   the nonblocking capacity-1 latest-value channel owned by the selector.
+   `PullSetup.Run` passes that receive-only channel into `Pull.Run`.
+
+6. In VRS mode, pull owns a `ggaSender` goroutine. It consumes the selected-GGA
    feed built by `time/app/daemon` from receiver NMEA plus synthesized fill-ins.
    Receiver GGA wins for a UTC whenever present.
 
-5. `ggaSender` owns all mutable state: `(currentWriter, lastSentLatLon)` plus
+7. `ggaSender` owns all mutable state: `(currentWriter, lastSentLatLon)` plus
    the latest suitable GGA packet and a one-shot readiness signal. It selects on:
    - selected-GGA feed: parse enough GGA fields to get quality and lat/lon, hold
      the original wire packet as latest, signal readiness the first time it has a
@@ -86,20 +104,20 @@ vrs = true
      force-send the held latest GGA;
    - `ctx.Done()`: exit.
 
-6. The existing `reader()` reconnect loop remains the only code that dials. On
+8. The existing `reader()` reconnect loop remains the only code that dials. On
    startup in VRS mode it waits for `ggaSender`'s readiness signal, rather than
    consuming the selected-GGA feed itself. On each successful connect, it sends
    the new writer to `ggaSender` over `connCh`. Reconnects therefore resend the
    latest GGA even for a stationary client.
 
-7. In VRS mode, `reader()` does not dial until there is a selected GGA with
+9. In VRS mode, `reader()` does not dial until there is a selected GGA with
    quality > 0, signalled by `ggaSender`. Later reconnects use the held latest
    GGA immediately.
 
-8. Significant-change gate: use a 2D flat-earth/equirectangular distance from
+10. Significant-change gate: use a 2D flat-earth/equirectangular distance from
    parsed GGA lat/lon. Ignore height. A tens-of-metres threshold is enough.
 
-9. After `ggaSender` exists, switch `satpulsetool ntrip --gga` onto the same
+11. After `ggaSender` exists, switch `satpulsetool ntrip --gga` onto the same
    post-handshake GGA sender used by VRS. The command still accepts one literal
    validated GGA and sends it once, but it feeds that packet through a one-shot
    selected-GGA channel instead of using a separate static `NtripSource.GGA`
