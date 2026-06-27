@@ -1,6 +1,7 @@
 package scan_test
 
 import (
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -9,6 +10,11 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/scan"
+)
+
+const (
+	fakeStateStarted gpsprot.ScanState = iota + gpsprot.ScanStateSync + 1
+	fakeStateComplete
 )
 
 // byteByByteReader wraps a reader and returns one byte at a time
@@ -21,6 +27,212 @@ func (b *byteByByteReader) Read(p []byte) (n int, err error) {
 		return 0, nil
 	}
 	return b.r.Read(p[:1])
+}
+
+type lateRejectFormat struct{}
+
+func (lateRejectFormat) Tag() gpsprot.Tag {
+	return "LATE"
+}
+
+func (lateRejectFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, packetLen int) gpsprot.ScanState {
+	switch state {
+	case gpsprot.ScanStateSync:
+		if buf[nextScanIndex] == 'x' {
+			return fakeStateStarted
+		}
+	case fakeStateStarted:
+		if packetLen < 3 {
+			return fakeStateStarted
+		}
+	}
+	return gpsprot.ScanStateSync
+}
+
+func (lateRejectFormat) IsFinal(gpsprot.ScanState) bool {
+	return false
+}
+
+func (lateRejectFormat) MsgID([]byte) string {
+	return ""
+}
+
+func (lateRejectFormat) ExtractChecksum([]byte) []byte {
+	return nil
+}
+
+func (lateRejectFormat) ComputeChecksum([]byte) []byte {
+	return nil
+}
+
+func (lateRejectFormat) RescanOnBadChecksum(bool, []byte) bool {
+	return false
+}
+
+func (lateRejectFormat) IsBinary() bool {
+	return false
+}
+
+type fakeValidFormat struct{}
+
+func (fakeValidFormat) Tag() gpsprot.Tag {
+	return "VALID"
+}
+
+func (fakeValidFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, packetLen int) gpsprot.ScanState {
+	switch state {
+	case gpsprot.ScanStateSync:
+		if buf[nextScanIndex] == 'v' {
+			return fakeStateStarted
+		}
+	case fakeStateStarted:
+		if packetLen < 2 {
+			return fakeStateStarted
+		}
+		return fakeStateComplete
+	}
+	return gpsprot.ScanStateSync
+}
+
+func (fakeValidFormat) IsFinal(state gpsprot.ScanState) bool {
+	return state == fakeStateComplete
+}
+
+func (fakeValidFormat) MsgID([]byte) string {
+	return ""
+}
+
+func (fakeValidFormat) ExtractChecksum([]byte) []byte {
+	return nil
+}
+
+func (fakeValidFormat) ComputeChecksum([]byte) []byte {
+	return nil
+}
+
+func (fakeValidFormat) RescanOnBadChecksum(bool, []byte) bool {
+	return false
+}
+
+func (fakeValidFormat) IsBinary() bool {
+	return false
+}
+
+func TestScanRestartsAtInteriorPacketStart(t *testing.T) {
+	s := scan.New(strings.NewReader("xvab"), 16, []gpsprot.PacketFormat{lateRejectFormat{}, fakeValidFormat{}})
+	pkt, err := s.Scan()
+	if err != nil {
+		t.Fatalf("scan invalid prefix: %v", err)
+	}
+	if pkt.Format != nil {
+		t.Fatalf("first packet tag = %q, want invalid", pkt.Tag())
+	}
+	if pkt.Data != "x" {
+		t.Fatalf("first packet data = %q, want %q", pkt.Data, "x")
+	}
+	pkt, err = s.Scan()
+	if err != nil {
+		t.Fatalf("scan valid packet: %v", err)
+	}
+	if !pkt.HasTag("VALID") {
+		t.Fatalf("second packet tag = %q, want VALID", pkt.Tag())
+	}
+	if pkt.Data != "vab" {
+		t.Fatalf("second packet data = %q, want %q", pkt.Data, "vab")
+	}
+}
+
+type timeoutError struct{}
+
+func (timeoutError) Error() string { return "read timeout" }
+
+func (timeoutError) Timeout() bool { return true }
+
+// scriptedReader returns a fixed sequence of reads. A step carrying an error
+// returns that error with no data; otherwise it returns the step's bytes.
+type scriptedReader struct {
+	steps []scriptStep
+	i     int
+}
+
+type scriptStep struct {
+	data string
+	err  error
+}
+
+func (r *scriptedReader) Read(p []byte) (int, error) {
+	if r.i >= len(r.steps) {
+		return 0, io.EOF
+	}
+	step := r.steps[r.i]
+	r.i++
+	if step.err != nil {
+		return 0, step.err
+	}
+	return copy(p, step.data), nil
+}
+
+// TestScanSalvagesInteriorStartOnTimeout checks that a read timeout in the
+// middle of a candidate packet still backs up to an interior packet start: the
+// leading bytes come back as a plain invalid packet with no ReadError (the
+// timeout is suppressed because those bytes were read successfully), and the
+// interior packet is recovered on the next Scan.
+func TestScanSalvagesInteriorStartOnTimeout(t *testing.T) {
+	r := &scriptedReader{steps: []scriptStep{
+		{data: "xv"},
+		{err: timeoutError{}},
+		{data: "ab"},
+	}}
+	s := scan.New(r, 16, []gpsprot.PacketFormat{lateRejectFormat{}, fakeValidFormat{}})
+
+	pkt, err := s.Scan()
+	if err != nil {
+		t.Fatalf("scan invalid prefix: %v", err)
+	}
+	if pkt.Format != nil {
+		t.Fatalf("first packet tag = %q, want invalid", pkt.Tag())
+	}
+	if pkt.ReadError != nil {
+		t.Fatalf("first packet ReadError = %v, want nil (timeout suppressed by resync)", pkt.ReadError)
+	}
+	if pkt.Data != "x" {
+		t.Fatalf("first packet data = %q, want %q", pkt.Data, "x")
+	}
+	pkt, err = s.Scan()
+	if err != nil {
+		t.Fatalf("scan recovered packet: %v", err)
+	}
+	if !pkt.HasTag("VALID") {
+		t.Fatalf("second packet tag = %q, want VALID", pkt.Tag())
+	}
+	if pkt.Data != "vab" {
+		t.Fatalf("second packet data = %q, want %q", pkt.Data, "vab")
+	}
+}
+
+// TestScanReportsTimeoutWithNoInteriorStart checks the other arm: a mid-packet
+// timeout with no possible interior start still surfaces as a ReadError
+// wrapping the timeout, with the partial candidate returned as the packet data.
+func TestScanReportsTimeoutWithNoInteriorStart(t *testing.T) {
+	r := &scriptedReader{steps: []scriptStep{
+		{data: "vz"},
+		{err: timeoutError{}},
+	}}
+	s := scan.New(r, 16, []gpsprot.PacketFormat{lateRejectFormat{}, fakeValidFormat{}})
+
+	pkt, err := s.Scan()
+	if err != nil {
+		t.Fatalf("scan: unexpected err %v", err)
+	}
+	if pkt.Format != nil {
+		t.Fatalf("packet tag = %q, want invalid", pkt.Tag())
+	}
+	if !errors.Is(pkt.ReadError, timeoutError{}) {
+		t.Fatalf("ReadError = %v, want wrapped timeout", pkt.ReadError)
+	}
+	if pkt.Data != "vz" {
+		t.Fatalf("packet data = %q, want %q", pkt.Data, "vz")
+	}
 }
 
 // TestInvalidBytesBatching verifies that when reading byte-by-byte,

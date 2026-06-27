@@ -114,14 +114,14 @@ ntrip.password = "p"
 
 func TestPullConfigPrepareDisabled(t *testing.T) {
 	pc := &PullConfig{}
-	if got := pc.Prepare("1.0", nil, nil); got != nil {
+	if got := pc.Prepare("1.0", nil, nil, nil); got != nil {
 		t.Errorf("expected nil, got %+v", got)
 	}
 }
 
 func TestPullConfigPrepareTCP(t *testing.T) {
 	pc := &PullConfig{TCP: &TCPConfig{Address: "10.0.0.1:2006"}}
-	s := pc.Prepare("1.0", nil, nil)
+	s := pc.Prepare("1.0", nil, nil, nil)
 	if s == nil {
 		t.Fatal("expected setup, got nil")
 	}
@@ -144,7 +144,7 @@ func TestPullConfigPrepareNtrip(t *testing.T) {
 		Username:   "u",
 		Password:   "p",
 	}}
-	s := pc.Prepare("9.9.9", nil, nil)
+	s := pc.Prepare("9.9.9", nil, nil, nil)
 	if s == nil {
 		t.Fatal("expected setup, got nil")
 	}

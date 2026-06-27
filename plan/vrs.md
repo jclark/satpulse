@@ -13,10 +13,10 @@ GGA.
 Scope notes:
 
 - This plan covers only the production `stream.pull.ntrip.vrs` work.
-- It depends on stage 2 of `plan/nmea-gga.md` (typed GGA parsing/serialisation),
-  stage 3 of `plan/nmea-gga.md` (GGA synthesis from `gpsprot` messages), and
-  stage 4 of `plan/nmea-gga.md` (the selected-GGA feed).
-- It does not depend on stage 5 of `plan/nmea-gga.md`; enabling VRS must not
+- It depends on the NMEA decode layer (#330, typed GGA parsing/serialisation in
+  `nmeamsg`), stage 2 of `plan/nmea-gga.md` (GGA synthesis from `gpsprot`
+  messages), and stage 3 of `plan/nmea-gga.md` (the selected-GGA feed).
+- It does not depend on stage 4 of `plan/nmea-gga.md`; enabling VRS must not
   require any proxy service or `proxy.tcp synth` option.
 - Our own caster (`gps/app/ntrip`) is a physical base, never a VRS: field 12
   `<nmea>` is hard-coded `"0"` in `strrec.go`. Nothing here changes that.
@@ -67,7 +67,7 @@ vrs = true
    not build any GGA selector itself.
 
 3. `PullSetup` grows an optional selected-GGA input, set by `time/app/daemon`
-   after the daemon creates the stage 4 selector from `plan/nmea-gga.md`. This
+   after the daemon creates the stage 3 selector from `plan/nmea-gga.md`. This
    is the receive side of the nonblocking capacity-1 latest-value channel owned
    by the selector. `PullSetup.Run` passes that receive-only channel into
    `Pull.Run`.

@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package ntpshm
 
@@ -11,8 +11,6 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 	"golang.org/x/sys/unix"
 )
-
-//go:generate sh -c "{ echo '//go:build linux && (amd64 || arm64)'; echo; go tool cgo -godefs types_linux.go; } | gofmt > ztypes_linux.go && rm -rf _obj"
 
 var _ [expectedSize - unsafe.Sizeof(shmTime{})]byte
 var _ [unsafe.Sizeof(shmTime{}) - expectedSize]byte

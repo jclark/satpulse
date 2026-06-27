@@ -720,11 +720,12 @@
   // dashboard.tsx
   var EventSourceContext = Q(null);
   var EVENT_TYPES = ["satellites", "time", "phc", "mode", "survey", "receiver", "posvel", "quality", "corReport", "init"];
+  var CORRECTION_TAG_ORDER = ["RTCM", "SPARTN"];
   var Dashboard = () => {
     const context = x2(EventSourceContext);
     const [events, setEvents] = d2({});
     const [phc, setPhc] = d2(null);
-    const [rtcm, setRTCM] = d2(null);
+    const [corrections, setCorrections] = d2({});
     const [haveLookAngles, setHaveLookAngles] = d2(false);
     const [everMoving, setEverMoving] = d2(false);
     y2(() => {
@@ -739,9 +740,11 @@
             }
             if (eventType === "corReport") {
               const ev = obj;
-              setRTCM((prev) => {
-                const next = prev ? prev.clone() : new RTCMState(ev.source);
-                next.update(ev);
+              setCorrections((prev) => {
+                const next = { ...prev };
+                const st = next[ev.tag] ? next[ev.tag].clone() : new CorrectionsState(ev.tag, ev.source);
+                st.update(ev);
+                next[ev.tag] = st;
                 return next;
               });
               continue;
@@ -778,7 +781,7 @@
       events.posvel && everMoving && /* @__PURE__ */ u3(PropertyCard, { title: "Velocity", data: events.posvel, format: velocityFormat }),
       events.quality && /* @__PURE__ */ u3(PropertyCard, { title: "Position Quality", data: events.quality, format: positionQualityFormat }),
       events.survey && /* @__PURE__ */ u3(PropertyCard, { title: "Survey-in Status", data: events.survey, format: surveyFormat }),
-      rtcm && /* @__PURE__ */ u3(RTCMCard, { state: rtcm })
+      Object.keys(corrections).sort((a3, b) => CORRECTION_TAG_ORDER.indexOf(a3) - CORRECTION_TAG_ORDER.indexOf(b)).map((tag) => /* @__PURE__ */ u3(CorrectionsCard, { state: corrections[tag] }, tag))
     ] });
   };
   function parseSSEMessage(type, data) {
@@ -823,7 +826,7 @@
         }
         break;
       case "corReport":
-        if (data.tag !== "RTCM") return null;
+        if (data.tag !== "RTCM" && data.tag !== "SPARTN") return null;
         if (typeof data.msgID !== "string" || data.msgID === "") return null;
         if (data.checksumOK === false) return null;
         if (data.source !== "pull" && data.source !== "receiver") return null;
@@ -991,10 +994,11 @@
     const rowSpanClass = isDoubleRow ? "md:row-span-2 lg:row-span-2" : "";
     return /* @__PURE__ */ u3("div", { className: `${rowSpanClass} h-full`, children: /* @__PURE__ */ u3(CardElement, { title: "Signal Levels", children: SignalGraph(svs, maxSatelliteCount, isDoubleRow) }) });
   };
-  var RTCMState = class _RTCMState {
-    constructor(source) {
+  var CorrectionsState = class _CorrectionsState {
+    constructor(tag, source) {
       this.totalCount = {};
       this.unusedCount = null;
+      this.tag = tag;
       this.source = source;
     }
     // update mutates this state to incorporate ev. A source flip
@@ -1014,17 +1018,17 @@
       }
     }
     // clone returns a shallow copy of this state. Used by the React
-    // boundary so setRTCM sees a fresh reference each tick.
+    // boundary so setCorrections sees a fresh reference each tick.
     clone() {
-      const c3 = new _RTCMState(this.source);
+      const c3 = new _CorrectionsState(this.tag, this.source);
       c3.totalCount = { ...this.totalCount };
       c3.unusedCount = this.unusedCount === null ? null : { ...this.unusedCount };
       return c3;
     }
     title() {
-      if (this.source !== "receiver") return "RTCM Messages Received";
-      if (this.unusedCount === null) return "RTCM Messages Used";
-      return "RTCM Messages Used/Received";
+      if (this.source !== "receiver") return `${this.tag} Messages Received`;
+      if (this.unusedCount === null) return `${this.tag} Messages Used`;
+      return `${this.tag} Messages Used/Received`;
     }
     rowValue(id) {
       const n2 = this.totalCount[id];
@@ -1033,7 +1037,7 @@
       return `${n2 - unused}/${n2}`;
     }
   };
-  function sortRTCMMsgIDs(ids) {
+  function sortCorrectionMsgIDs(ids) {
     return [...ids].sort((a3, b) => {
       const [am, as] = parseMsgID(a3);
       const [bm, bs] = parseMsgID(b);
@@ -1044,8 +1048,8 @@
     const [main, sub = "0"] = id.split(".");
     return [Number(main), Number(sub)];
   }
-  var RTCMCard = ({ state }) => {
-    const ids = sortRTCMMsgIDs(Object.keys(state.totalCount));
+  var CorrectionsCard = ({ state }) => {
+    const ids = sortCorrectionMsgIDs(Object.keys(state.totalCount));
     return /* @__PURE__ */ u3(CardElement, { title: state.title(), children: ids.map((id) => /* @__PURE__ */ u3(FieldElement, { desc: id, children: state.rowValue(id) })) });
   };
 
