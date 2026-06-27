@@ -28,7 +28,8 @@ and vrs PRs):
   `nmeamsg.GGASentence` each epoch from `Time`/`PosGeo`/`NavEpoch` and calls a
   sink.
 - `stream.GGASelector` -- `NewGGASelector()`, `Packet(pkt) bool` (offer an
-  original receiver GGA), `GGASentence(gga)` (the synth sink),
+  original receiver GGA), `Msg(m nmeamsg.GNSSTalkerIDMsg, phase)` (it implements
+  the `nmeasyn.Sink` interface, so the synth writes synthesized GGAs here),
   `Packets() <-chan scan.Packet` (the selected-GGA feed). It prefers an original
   receiver GGA over a synthesized one for the same UTC.
 - `stream.NewPull(source, lg, pw, portLock, pktFormats, nmeaSendInterval)` plus
