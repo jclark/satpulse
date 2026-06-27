@@ -53,7 +53,6 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 		tag:    v.tag,
 		msg:    v.msg,
 		factor: v.realtime,
-		clock:  realClock{},
 	})
 }
 
@@ -91,22 +90,6 @@ type runConfig struct {
 	tag    string
 	msg    string
 	factor float64 // realtime speedup factor; 0 disables realtime spacing
-	clock  clock
-}
-
-type clock interface {
-	Now() time.Time
-	Sleep(time.Duration)
-}
-
-type realClock struct{}
-
-func (realClock) Now() time.Time {
-	return time.Now()
-}
-
-func (realClock) Sleep(d time.Duration) {
-	time.Sleep(d)
 }
 
 type writeFlusher interface {
@@ -115,9 +98,6 @@ type writeFlusher interface {
 }
 
 func run(input io.Reader, out writeFlusher, cfg runConfig) error {
-	if cfg.clock == nil {
-		cfg.clock = realClock{}
-	}
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
@@ -149,8 +129,8 @@ func run(input io.Reader, out writeFlusher, cfg runConfig) error {
 				// scheduling bounds the error to a single overshoot and catches
 				// up after a brief output stall.
 				target := baseWall.Add(time.Duration(float64(entryT.Sub(baseEntryT)) / cfg.factor))
-				if sleepFor := target.Sub(cfg.clock.Now()); sleepFor > 0 {
-					cfg.clock.Sleep(sleepFor)
+				if sleepFor := time.Until(target); sleepFor > 0 {
+					time.Sleep(sleepFor)
 				}
 			}
 			if _, err := out.Write(data); err != nil {
@@ -163,7 +143,7 @@ func run(input io.Reader, out writeFlusher, cfg runConfig) error {
 				// The first Flush can block until a FIFO reader attaches; anchor
 				// the base after it returns so that one-time wait is not charged
 				// against the schedule of later packets.
-				baseWall = cfg.clock.Now()
+				baseWall = time.Now()
 				baseEntryT = entryT
 				haveBase = true
 			}
