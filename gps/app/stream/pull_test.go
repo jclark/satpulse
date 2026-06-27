@@ -1301,6 +1301,95 @@ func readGGA(t *testing.T, conn net.Conn, want string) {
 	}
 }
 
+// A clean write-deadline timeout must not tear down the connection on the first
+// stall (the correction read stream rides the same conn), but maxGGASendTimeouts
+// consecutive timeouts drop it so the reader reconnects.  A hard write error
+// drops the connection immediately.
+func TestGGASenderTimeoutTolerance(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantWrites int
+	}{
+		{"clean timeout tolerated then dropped", netTimeout{}, maxGGASendTimeouts},
+		{"hard error drops immediately", errors.New("broken pipe"), 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			ch := make(chan scan.Packet, 1)
+			ch <- nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
+			gs := NewGGASender(ch, 5*time.Millisecond)
+			go gs.Run(ctx, discardLogger())
+			if err := gs.WaitReady(ctx); err != nil {
+				t.Fatalf("WaitReady: %v", err)
+			}
+			conn := &failWriteConn{err: tt.err}
+			if !gs.SetWriter(ctx, conn) {
+				t.Fatal("SetWriter returned false")
+			}
+			deadline := time.Now().Add(2 * time.Second)
+			for time.Now().Before(deadline) {
+				if conn.isClosed() {
+					if got := conn.writeCount(); got != tt.wantWrites {
+						t.Errorf("writes before drop = %d, want %d", got, tt.wantWrites)
+					}
+					return
+				}
+				time.Sleep(2 * time.Millisecond)
+			}
+			t.Fatalf("connection not dropped after repeated upload failures (%d writes)", conn.writeCount())
+		})
+	}
+}
+
+// failWriteConn is a ReadWriteDeadlineCloser whose Write always fails with err.
+type failWriteConn struct {
+	err    error
+	mu     sync.Mutex
+	writes int
+	closed bool
+}
+
+func (c *failWriteConn) Read([]byte) (int, error) { return 0, io.EOF }
+
+func (c *failWriteConn) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	c.writes++
+	c.mu.Unlock()
+	return 0, c.err
+}
+
+func (c *failWriteConn) Close() error {
+	c.mu.Lock()
+	c.closed = true
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *failWriteConn) SetWriteDeadline(time.Time) error { return nil }
+
+func (c *failWriteConn) writeCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.writes
+}
+
+func (c *failWriteConn) isClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
+}
+
+// netTimeout is a net.Error reporting a timeout, simulating a write deadline
+// exceeded with nothing written.
+type netTimeout struct{}
+
+func (netTimeout) Error() string   { return "i/o timeout" }
+func (netTimeout) Timeout() bool   { return true }
+func (netTimeout) Temporary() bool { return true }
+
 func TestNtripErrorResponse(t *testing.T) {
 	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
 		conn.Write([]byte("ERROR - Bad Password\r\n"))

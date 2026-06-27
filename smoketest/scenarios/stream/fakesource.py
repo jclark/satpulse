@@ -72,8 +72,14 @@ def read_request(conn: socket.socket) -> bytes | None:
     return buf.split(b"\r\n\r\n", 1)[0]
 
 
-def read_gga(conn: socket.socket) -> bytes | None:
-    """Read one post-handshake GGA line; return it or None on timeout/bad data."""
+def read_gga(conn: socket.socket) -> tuple[bytes, bytes] | None:
+    """Read one post-handshake GGA line.
+
+    Returns (line, leftover) where leftover is any bytes received past the
+    first newline (a coalesced second GGA), so the caller can carry them into
+    the keepalive read loop instead of dropping them.  Returns None on
+    timeout/bad data.
+    """
     conn.settimeout(GGA_TIMEOUT)
     buf = b""
     while b"\n" not in buf:
@@ -86,10 +92,11 @@ def read_gga(conn: socket.socket) -> bytes | None:
         if not chunk:
             return None
         buf += chunk
-    line = buf.split(b"\n", 1)[0].rstrip(b"\r")
+    raw, leftover = buf.split(b"\n", 1)
+    line = raw.rstrip(b"\r")
     if b"GGA," not in line or not line.startswith(b"$") or b"*" not in line:
         return None
-    return line
+    return line, leftover
 
 
 def auth_ok(head: bytes, want_user: str, want_pw: str) -> bool:
@@ -131,11 +138,13 @@ def handle(conn: socket.socket, pack: str, factor: str, log_path: str,
         return
     conn.sendall(b"ICY 200 OK\r\n")
     log(f"{iso(time.time())} accepted GET mount={mount}")
+    leftover = b""
     if require_gga:
-        gga = read_gga(conn)
-        if gga is None:
+        result = read_gga(conn)
+        if result is None:
             log(f"{iso(time.time())} missing GGA mount={mount}")
             return
+        gga, leftover = result
         log(f"{iso(time.time())} accepted GGA mount={mount} sentence={gga.decode('latin1')}")
     # pack writes the on-wire packet stream straight to the socket, paced by the
     # log's inter-packet timing compressed by factor.
@@ -148,18 +157,20 @@ def handle(conn: socket.socket, pack: str, factor: str, log_path: str,
     # prefix as the first one), so a scenario can assert the client re-sends GGA
     # on its interval rather than only once on connect.
     conn.settimeout(None)
-    buf = b""
+    buf = leftover
     try:
         while True:
-            chunk = conn.recv(4096)
-            if not chunk:
-                break
-            buf += chunk
+            # Drain complete lines first, so a GGA carried over in leftover is
+            # logged even if the client then goes silent.
             while b"\n" in buf:
                 raw, buf = buf.split(b"\n", 1)
                 gga = raw.rstrip(b"\r")
                 if gga.startswith(b"$") and b"GGA," in gga and b"*" in gga:
                     log(f"{iso(time.time())} accepted GGA mount={mount} sentence={gga.decode('latin1')}")
+            chunk = conn.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
     except OSError:
         pass
     log(f"{iso(time.time())} closed mount={mount}")
