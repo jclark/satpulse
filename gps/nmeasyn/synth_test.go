@@ -14,11 +14,15 @@ import (
 )
 
 type sink struct {
-	ggas []nmeamsg.GGASentence
+	ggas   []nmeamsg.GGASentence
+	phases []Phase
 }
 
-func (s *sink) GGASentence(gga nmeamsg.GGASentence) {
-	s.ggas = append(s.ggas, gga)
+func (s *sink) Msg(m nmeamsg.GNSSTalkerIDMsg, phase Phase) {
+	if gga, ok := m.(nmeamsg.GGASentence); ok {
+		s.ggas = append(s.ggas, gga)
+		s.phases = append(s.phases, phase)
+	}
 }
 
 func TestSynthGGAFromGeo(t *testing.T) {
@@ -217,6 +221,9 @@ func oneGGA(t *testing.T, sink *sink) nmeamsg.GGASentence {
 	t.Helper()
 	if len(sink.ggas) != 1 {
 		t.Fatalf("got %d GGA messages, want 1", len(sink.ggas))
+	}
+	if sink.phases[0] != PhaseEpoch {
+		t.Fatalf("phase = %d, want PhaseEpoch", sink.phases[0])
 	}
 	return sink.ggas[0]
 }

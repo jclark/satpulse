@@ -60,19 +60,47 @@ cannot be `gps/internal/`. Implementation must add an entry under the `### gps/`
 section of `docs/internals.md`.
 
 ```go
+type Phase int
+
+const (
+	PhaseImmediate Phase = iota
+	PhaseEpoch
+)
+
 type Sink interface {
-	GGASentence(gga nmeamsg.Sentence[nmeamsg.GGAFields])
+	Msg(m nmeamsg.GNSSTalkerIDMsg, phase Phase)
 }
 
 func New(sink Sink) *Synth // *Synth implements gpsprot.MsgHandler
 ```
+
+The sink is deliberately general, not GGA-specific. `nmeamsg.GNSSTalkerIDMsg`
+is the interface that every typed NMEA sentence (`nmeamsg.Sentence[F]`, e.g. GGA
+and RMC) implements, and `nmeamsg.SerializeMsg` already serializes any of them.
+A sink consumer recovers the concrete sentence with a type assertion (e.g.
+`m.(nmeamsg.GGASentence)`). This lets the same synthesizer and sink carry RMC
+(stage 5) without an interface change.
+
+`Phase` distinguishes the timeliness contract of an emission:
+
+- `PhaseEpoch` is emitted at the end of a navigation epoch, with that epoch's
+  full metadata. It is what stage 2 emits.
+- `PhaseImmediate` (stage 6) is emitted as soon as the epoch has a time and a
+  position, favouring timeliness over fidelity by carrying slow-changing
+  metadata (HDOP, satellites, fix quality) forward from the last completed epoch.
+  It exists because `NavEpochMsg` is only prompt for protocols with an explicit
+  end-of-epoch marker (e.g. UBX-NAV-EOE); without one it is deferred to the next
+  cycle, which is too late for some consumers (notably RMC over a TCP proxy).
+
+Stage 2 emits only `PhaseEpoch` GGA. The synthesizer never decides which phase a
+consumer wants; the selector (stage 3) applies that policy.
 
 Behavior:
 
 - Embed `gpsprot.DefaultHandler` and implement only the callbacks it needs.
 - Accumulate per-epoch state from `TimeMsg` and `PosGeoMsg`/`PosECEFMsg`.
 - On `NavEpochMsg`, build a `nmeamsg.Sentence[nmeamsg.GGAFields]` and call
-  `sink.GGASentence(gga)`.
+  `sink.Msg(gga, PhaseEpoch)`.
 
 This relies on the `gpsprot` epoch ordering contract: `NavEpochMsg` is emitted
 once at the end of a navigation epoch, after the time, position, and velocity
@@ -150,12 +178,15 @@ field-count check. Non-GGA packets return false and do not enter the selected
 feed. A packet that the legacy parser accepts only because it is permissive must
 not enter the selected-GGA output.
 
-The selector owns the selected-output channel and has two input methods:
+The selector owns the selected-output channel, implements the stage 2
+`nmeasyn.Sink`, and has two input methods:
 
 - `Packet(pkt scan.Packet)` forwards a valid receiver GGA packet immediately and
   records its UTC field when it is comparable. It returns false for non-GGA or
   invalid packets.
-- `GGASentence(gga nmeamsg.Sentence[nmeamsg.GGAFields])` serializes the sentence,
+- `Msg(m nmeamsg.GNSSTalkerIDMsg, phase nmeasyn.Phase)` is the `nmeasyn.Sink`
+  method. It ignores anything that is not a `PhaseEpoch` `nmeamsg.GGASentence`
+  (the same GGA-only gate the packet path applies), then serializes the sentence,
   wraps it as a valid NMEA `scan.Packet`, and forwards it only if it is not for
   the same UTC as the last directly emitted original GGA.
 
@@ -175,7 +206,7 @@ so the UTC field's integer-second digits are at `pkt.Data[7:13]` for a normal
 approved GGA sentence with a non-empty `hhmmss` time. Use a helper that returns
 `(utc string, ok bool)` and checks both the fixed prefix and the six time
 digits. `Packet` forwards every valid receiver GGA immediately, but records the
-UTC only when that helper succeeds. `GGASentence` suppresses a synthesized
+UTC only when that helper succeeds. `Msg` suppresses a synthesized
 packet only when the last directly emitted original GGA and the synthesized
 candidate both have comparable UTC seconds and those strings are equal; if
 either time is empty or malformed, the synthesized packet is forwarded. There is
@@ -187,7 +218,7 @@ midnight handling.
 Same-UTC suppression does not require a separate ordering mechanism. Synthesized
 GGA is emitted only from the `NavEpochMsg` end-of-epoch callback, after the
 messages that make up that epoch have been processed. Therefore any original
-receiver GGA in the epoch has already reached `Packet` before `GGASentence`
+receiver GGA in the epoch has already reached `Packet` before `Msg`
 can offer the synthesized candidate for that epoch.
 
 Wrapping synthesized output as a `scan.Packet` likely needs `gpsreg` to
@@ -213,6 +244,10 @@ Tests:
 Add a `synth` option to `[[proxy.tcp]]`. It applies only when
 `protocol = "NMEA"`. It uses the selected-GGA core from stage 3 but is unrelated
 to VRS.
+
+Initially this is epoch-only, exactly as stages 2 and 3 stand: synthesized GGA
+is emitted at end of epoch. Lower-latency immediate-phase synthesis for the
+proxy is deferred to stage 6.
 
 Example:
 
@@ -265,6 +300,85 @@ Tests:
   `SCENARIOS` entry, and README list entry) for `protocol = "NMEA"` with
   `synth = true`, checking that a live TCP proxy client receives original NMEA
   and synthesized GGA fill-ins.
+
+## Stage 5: RMC synthesis
+
+Extend `nmeasyn.Synth` to also synthesize RMC, emitting it through the same
+`sink.Msg(m, phase)` with `m` an `nmeamsg.Sentence[nmeamsg.RMCFields]`. RMC
+carries time, status, lat/lon, speed, course, date and mode. Its sources are
+`TimeMsg` (time and date), `PosGeoMsg` (lat/lon), `VelGeoMsg` (speed and course
+over ground), and `NavEpochMsg.FixLevel` (status and mode). It omits GGA's
+dilution and satellite-count metadata (HDOP, satellites), but its status and
+mode derive from fix level, which is itself slow-changing metadata -- so like
+GGA, an immediate-phase RMC (stage 6) must carry the last known fix level
+forward rather than wait for the epoch's `NavEpochMsg`.
+
+Because the general sink and `Phase` are already in place from stage 2, this
+stage adds no interface change: it adds the RMC builder and the per-epoch
+velocity accumulation. Selectors choose which sentence types they care about via
+the same type assertion the GGA selector uses, so an RMC consumer ignores GGA
+and vice versa.
+
+At this point the synthesizer still emits only `PhaseEpoch`; RMC at end of epoch
+is correct but not yet timely for protocols without a prompt end-of-epoch marker.
+That timeliness is stage 6.
+
+## Stage 6: immediate-phase synthesis
+
+This is the substantial new piece. It has two halves: the synthesizer gains a
+`PhaseImmediate` emission, and the proxy gets a selector that races the immediate
+candidate against the epoch one with a short deadline.
+
+Synthesizer: emit `PhaseImmediate` as soon as an epoch has a time and a position
+(time being the field that must be timely), carrying the slow-changing metadata
+(GGA quality/HDOP/satellites, RMC fix-level status/mode) forward from the last
+completed epoch. The `PhaseEpoch` emission is unchanged. Both are emitted every
+epoch; the synthesizer stays policy-free.
+
+Proxy selector -- a deadline race that leverages EOE adaptively. When the
+selector receives a `PhaseImmediate` candidate it arms a short timer (say 0.1s)
+and holds the candidate.
+
+- If the `PhaseEpoch` candidate for that epoch arrives before the timer expires,
+  it is sent immediately and the held immediate one is dropped. Protocols with a
+  prompt end-of-epoch marker (UBX-NAV-EOE) take this path, so the higher-fidelity
+  epoch sentence is sent with no added latency.
+- If the timer expires first, the immediate candidate is sent. Protocols that
+  defer the epoch to the next cycle take this path, bounding latency to the
+  timeout rather than a full epoch.
+
+Invariant: at most one sentence is emitted per epoch per sentence type (GGA,
+RMC). The winner is whichever of the receiver sentence, the epoch candidate, or
+the timed-out immediate candidate is sent first; the others for that epoch and
+type are then suppressed. The timer goroutine is not cancelled -- on wake it
+simply does not send if a sentence for that epoch and type has already gone out.
+A real receiver sentence arriving in the window wins the same way, since the
+proxy already passes original NMEA through immediately. The race is tracked per
+sentence type, so a pending immediate GGA and a pending immediate RMC are
+independent.
+
+Concurrency: make the proxy NMEA selector an actor. A single goroutine owns all
+selector state: pending immediate candidates, which epoch/type has already won,
+and the selected NMEA output channel. No timer goroutine and no dispatch-facing
+input method publishes directly.
+
+The dispatch-facing input methods are adapters. They turn receiver NMEA packets
+and synthesized `PhaseImmediate`/`PhaseEpoch` candidates into events and send
+those events to the selector goroutine. When the selector goroutine receives a
+`PhaseImmediate` candidate, it holds the candidate and starts a short timer; the
+timer's only job is to send a timeout event back to the selector goroutine. If a
+receiver sentence or `PhaseEpoch` candidate wins first, the later timeout event
+is ignored by the goroutine that owns the state.
+
+This keeps the race serialized in one place while still using channels for the
+concurrent boundary. The selected NMEA packet channel produced by this actor
+feeds the broadcast used by TCP NMEA proxy services with `synth = true`.
+Services without `synth = true` continue to subscribe to the raw receiver packet
+broadcast.
+
+This selector is a separate implementation from the current selected-GGA feed
+used by GGA/VRS consumers. The selected-GGA feed keeps its existing latest-GGA
+semantics; the proxy NMEA selector owns the stream-level race needed by stage 6.
 
 ## Open decisions
 

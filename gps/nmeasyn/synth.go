@@ -21,9 +21,21 @@ const (
 	ggaQualitySimulator
 )
 
-// Sink receives synthesized NMEA GGA sentences.
+// Phase is the timeliness contract of a synthesized sentence. PhaseEpoch carries
+// an epoch's full metadata; PhaseImmediate (not yet emitted) favours timeliness
+// over fidelity. A sink applies its own policy for which phase to consume.
+type Phase int
+
+const (
+	PhaseImmediate Phase = iota
+	PhaseEpoch
+)
+
+// Sink receives synthesized NMEA sentences. The sentence is the general
+// nmeamsg.GNSSTalkerIDMsg; a sink recovers the concrete type (e.g.
+// nmeamsg.GGASentence) with a type assertion.
 type Sink interface {
-	GGASentence(gga nmeamsg.GGASentence)
+	Msg(m nmeamsg.GNSSTalkerIDMsg, phase Phase)
 }
 
 // Synth accumulates protocol-neutral messages for one navigation epoch and
@@ -85,7 +97,7 @@ func (s *Synth) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
 	if height != nil && heightMSL == nil {
 		heightMSL = height
 	}
-	s.sink.GGASentence(nmeamsg.MakeGGA("GN", s.time, latLon, height, heightMSL, quality, numSats, hdop))
+	s.sink.Msg(nmeamsg.MakeGGA("GN", s.time, latLon, height, heightMSL, quality, numSats, hdop), PhaseEpoch)
 	s.clear()
 }
 
