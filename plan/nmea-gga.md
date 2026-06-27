@@ -16,7 +16,7 @@ GGA handling in several places:
 
 This plan is for the general NMEA/GGA work. Everything after stage 1 depends on
 the NMEA decode layer (#330), which provides the typed `nmeamsg` GGA and sentence
-types. VRS pull support remains in `plan/vrs.md` and depends on #330 and stages 2
+types. NMEA send pull support remains in `plan/nmea-send.md` and depends on #330 and stages 2
 and 3 here.
 
 ## Stage 1: `ntripcmd --gga` option (done)
@@ -41,7 +41,7 @@ or position synthesis. The caller pastes a real GGA captured from a receiver;
 - Per the spec one GGA suffices to start the stream; `ntripcmd` does not resend.
 
 This stage depends only on existing NMEA syntax support. It proves the upload
-mechanism independently of GGA synthesis. The later VRS plan supersedes the
+mechanism independently of GGA synthesis. The later NMEA send plan supersedes the
 static `NtripSource.GGA` field by routing `--gga` through the shared
 post-handshake GGA sender; this stage describes the completed first diagnostic,
 not the final writer architecture.
@@ -150,7 +150,7 @@ Tests:
 
 Add the shared selector that chooses the best GGA stream for consumers that
 need position upload. This stage provides only the reusable selected-GGA core
-needed by `plan/vrs.md`; it does not change the daemon, dispatcher, stream pull,
+needed by `plan/nmea-send.md`; it does not change the daemon, dispatcher, stream pull,
 or proxy wiring.
 
 The selector belongs in `gps/app/stream` as `GGASelector`: it owns a capacity-1
@@ -191,7 +191,7 @@ The selector owns the selected-output channel, implements the stage 2
   the same UTC as the last directly emitted original GGA.
 
 The selector is single-threaded. It does not need internal locking; the later
-VRS integration must call it from one owner goroutine, after normal packet
+NMEA send integration must call it from one owner goroutine, after normal packet
 processing has accepted a receiver packet and from the stage 2 synthesizer sink
 for synthesized GGA.
 
@@ -243,7 +243,7 @@ Tests:
 
 Add a `synth` option to `[[proxy.tcp]]`. It applies only when
 `protocol = "NMEA"`. It uses the selected-GGA core from stage 3 but is unrelated
-to VRS.
+to NMEA send.
 
 Initially this is epoch-only, exactly as stages 2 and 3 stand: synthesized GGA
 is emitted at end of epoch. Lower-latency immediate-phase synthesis for the

@@ -39,6 +39,32 @@ def check_pull_connected(ctx: common.SmokeContext) -> None:
     assert common.poll(attempt), "daemon did not connect to the pull correction source"
 
 
+def check_pull_uploaded_gga(ctx: common.SmokeContext) -> None:
+    """The fake correction source recorded a post-handshake GGA before streaming."""
+    def attempt() -> bool:
+        with open(ctx.source_log, errors="replace") as f:
+            return "accepted GGA" in f.read()
+
+    assert common.poll(attempt), "pull correction source did not record an NMEA GGA"
+
+
+def check_pull_periodic_gga(ctx: common.SmokeContext, want: int = 2) -> None:
+    """The pull client re-sends GGA on its interval, not just once on connect.
+
+    The fake source logs every post-handshake GGA the client uploads. With a
+    small nmeaSendInterval the daemon must re-send, so at least `want` GGAs are
+    recorded over the connection's lifetime; one-shot-on-connect would record
+    exactly one.
+    """
+    def attempt() -> bool:
+        with open(ctx.source_log, errors="replace") as f:
+            return f.read().count("accepted GGA") >= want
+
+    assert common.poll(attempt), (
+        f"pull correction source recorded fewer than {want} GGA uploads (no periodic re-send)"
+    )
+
+
 def check_pulled_rtcm(ctx: common.SmokeContext) -> int:
     """The pull source's RTCM is written back to the receiver over the serial port.
 

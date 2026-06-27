@@ -94,8 +94,8 @@ func TestGGASelectorIgnoresNonGGA(t *testing.T) {
 func TestGGASelectorRejectsInvalidPacket(t *testing.T) {
 	tests := []scan.Packet{
 		{Format: gpsreg.NMEAPacketFormat, Data: ggaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,").Data},
-		nmeaPacket("GPRMC,123519,A,4807.038,N,01131.000,E,0,,240626,,,A,V"),
-		nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,1"),
+		selectorNMEAPacket("GPRMC,123519,A,4807.038,N,01131.000,E,0,,240626,,,A,V"),
+		selectorNMEAPacket("GPGGA,123519,4807.038,N,01131.000,E,1"),
 	}
 	for _, pkt := range tests {
 		s := NewGGASelector()
@@ -121,10 +121,10 @@ func TestGGASelectorLatestWins(t *testing.T) {
 }
 
 func ggaPacket(payload string) scan.Packet {
-	return nmeaPacket(payload)
+	return selectorNMEAPacket(payload)
 }
 
-func nmeaPacket(payload string) scan.Packet {
+func selectorNMEAPacket(payload string) scan.Packet {
 	return scan.Packet{
 		Format:        gpsreg.NMEAPacketFormat,
 		Data:          fmt.Sprintf("$%s*%02X\r\n", payload, nmeamsg.Checksum([]byte(payload))),

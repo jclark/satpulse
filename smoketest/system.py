@@ -161,6 +161,9 @@ class Context:
         self.udp_capture = os.path.join(run_dir, "udp-pushed.bin")
         self.udp_log = os.path.join(run_dir, "udp.log")
         self.serial_writes = os.path.join(run_dir, "serial-out.bin")
+        # The system test has no fake pull correction source; these satisfy the
+        # common.SmokeContext protocol but are unused here.
+        self.source_log = ""
         self.pull_source_log = ""
         self.satpulsetool = find_program("satpulsetool", ["/usr/bin/satpulsetool", "/usr/local/bin/satpulsetool"])
         self.replay_proc: subprocess.Popen[bytes] | None = None

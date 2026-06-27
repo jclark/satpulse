@@ -58,6 +58,7 @@ SCENARIOS = [
     "stream/push-ntrip",
     "stream/push-udp",
     "stream/pull",
+    "stream/nmea-send",
     "shutdown/serial-loss",
 ]
 
@@ -604,6 +605,8 @@ class Context:
             cmd += ["--username", ntrip["username"]]
         if ntrip.get("password"):
             cmd += ["--password", ntrip["password"]]
+        if ntrip.get("nmeaSend"):
+            cmd += ["--require-gga"]
         self._source_log_file = open(self.source_log, "wb")
         self.source_proc = subprocess.Popen(cmd, stdout=self._source_log_file, stderr=subprocess.STDOUT)
         deadline = time.time() + timeout
