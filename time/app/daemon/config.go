@@ -14,6 +14,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/ntrip"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/internal/phcsample"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/proxy"
 	"github.com/jclark/satpulse/time/internal/refclock"
@@ -31,6 +32,7 @@ type Config struct {
 	GPS        GPSConfig
 	PHC        PHCConfig
 	Sync       phcsync.Config
+	Sample     struct{ PHC phcsample.Config }
 	User       []UserConfig
 	Proxy      proxy.Config
 	Ntrip      ntrip.Config
@@ -60,6 +62,7 @@ type PHCConfig struct {
 	Pin       uint8  `toml:"pin"`
 	Channel   uint8  `toml:"channel"`
 	Wait      bool   `toml:"wait"`
+	Sync      bool   `toml:"sync"`
 }
 
 type LeapSecondConfig struct {
@@ -162,7 +165,9 @@ func defaultConfig() *Config {
 	cfg.Log.Dir = "/var/log/satpulse"
 	cfg.PTP.ClockAccuracy = 150
 	cfg.PTP.OffsetScaledLogVariance = pmc.OffsetScaledLogVarianceUnknown
+	cfg.PHC.Sync = true
 	cfg.Sync = phcsync.DefaultConfig()
+	cfg.Sample.PHC = phcsample.DefaultConfig()
 	return cfg
 }
 
@@ -204,6 +209,12 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
 	}
+	if err := cfg.Sample.PHC.Validate(); err != nil {
+		return &configError{err: err}
+	}
+	if err := cfg.validatePHCSync(); err != nil {
+		return &configError{err: err}
+	}
 	users, err := cfg.userSet()
 	if err != nil {
 		return &configError{err: err}
@@ -213,6 +224,24 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	}
 	if err := cfg.Stream.Validate(); err != nil {
 		return &configError{err: err}
+	}
+	return nil
+}
+
+// validatePHCSync checks the free-running combination. With
+// phc.sync = false satpulse leaves the PHC alone and sends
+// PHC-referenced (TAI) samples over the refclock SOCK protocol, so a
+// SOCK path is required and the SHM protocol (whose timestamps are
+// system-clock by definition) is excluded.
+func (cfg *Config) validatePHCSync() error {
+	if cfg.PHC.Sync || cfg.PHC.Interface == "" {
+		return nil
+	}
+	if cfg.NTP.Sock == nil || cfg.NTP.Sock.Path == "" {
+		return errors.New(`phc.sync = false requires ntp.sock.path`)
+	}
+	if cfg.NTP.SHM != nil {
+		return errors.New(`phc.sync = false cannot be used with ntp.shm: the SHM protocol carries system-clock timestamps`)
 	}
 	return nil
 }

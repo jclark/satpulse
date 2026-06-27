@@ -171,6 +171,46 @@ func TestPTPConfig(t *testing.T) {
 	}
 }
 
+func TestSamplePHCConfig(t *testing.T) {
+	cfgStr := `[phc]
+sync = false
+
+[sample.phc]
+pulseWindow = 7
+msgWindow = 60
+ignoreSawtoothCorrection = true`
+	cfg, err := readConfig(strings.NewReader(cfgStr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PHC.Sync {
+		t.Errorf("PHC.Sync = true, want false")
+	}
+	if cfg.Sample.PHC.PulseWindow != 7 {
+		t.Errorf("Sample.PHC.PulseWindow = %d, want 7", cfg.Sample.PHC.PulseWindow)
+	}
+	if cfg.Sample.PHC.MsgWindow != 60 {
+		t.Errorf("Sample.PHC.MsgWindow = %d, want 60", cfg.Sample.PHC.MsgWindow)
+	}
+	if !cfg.Sample.PHC.IgnoreSawtoothCorrection {
+		t.Errorf("Sample.PHC.IgnoreSawtoothCorrection = false, want true")
+	}
+	// Unset fields inherit from DefaultConfig.
+	if cfg.Sample.PHC.EdgeSecondTolerance == 0 {
+		t.Errorf("Sample.PHC.EdgeSecondTolerance = 0, want default")
+	}
+}
+
+func TestPHCSyncDefaultsTrue(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.PHC.Sync {
+		t.Errorf("PHC.Sync = false by default, want true")
+	}
+}
+
 func TestNTPShmConfig(t *testing.T) {
 	cfgStr := `[ntp]
 shm.segment = 0
@@ -292,6 +332,69 @@ func TestPTPConfigClockQuality(t *testing.T) {
 			}
 			if !tt.expectErr && got != tt.expect {
 				t.Errorf("ClockQuality() = %+v, expect %+v", got, tt.expect)
+			}
+		})
+	}
+}
+
+func TestPHCSyncValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfgStr    string
+		expectErr bool
+	}{
+		{
+			name:   "default",
+			cfgStr: "",
+		},
+		{
+			name: "free-running phc with sock",
+			cfgStr: `[phc]
+interface = "eth0"
+sync = false
+
+[ntp]
+sock.path = "/run/chrony.sock"`,
+		},
+		{
+			name: "free-running phc requires sock",
+			cfgStr: `[phc]
+interface = "eth0"
+sync = false`,
+			expectErr: true,
+		},
+		{
+			name: "free-running phc rejects shm",
+			cfgStr: `[phc]
+interface = "eth0"
+sync = false
+
+[ntp]
+sock.path = "/run/chrony.sock"
+shm.segment = 2`,
+			expectErr: true,
+		},
+		{
+			name: "sync false without phc is ignored",
+			cfgStr: `[phc]
+sync = false`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader(tc.cfgStr))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = cfg.validatePHCSync()
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}

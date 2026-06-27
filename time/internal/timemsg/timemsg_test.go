@@ -4,6 +4,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"reflect"
 	"testing"
 	"time"
 
@@ -1120,6 +1121,211 @@ func TestDetectInvalidLeap(t *testing.T) {
 			got := buf.detectInvalidLeap(gpsreg.TagNMEA, "GPRMC", minDelta)
 			if got != tc.expect {
 				t.Errorf("detectInvalidLeap() = %v, want %v", got, tc.expect)
+			}
+		})
+	}
+}
+
+type recordingTAITimer struct {
+	samples []msgTAISample
+}
+
+type msgTAISample struct {
+	tai  ptime.Time
+	read time.Time
+	leap ptime.LeapSecondKind
+}
+
+func (r *recordingTAITimer) MsgTAITime(tai ptime.Time, tRead time.Time, leap ptime.LeapSecondKind) {
+	r.samples = append(r.samples, msgTAISample{tai: tai, read: tRead, leap: leap})
+}
+
+func TestMsgTAITimer(t *testing.T) {
+	ls := ptime.LeapSecond{UTCOffAfter: 37}
+	date := time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC)
+	utcAt := func(h, m, s int) opt.Val[ptime.UTCTime] {
+		return opt.Make(ptime.UTCTime{
+			Date:      date,
+			TimeOfDay: time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(s)*time.Second,
+		})
+	}
+	tai := func(sec int64, ns int64) ptime.Time {
+		return ptime.Time(sec*int64(time.Second) + ns)
+	}
+	tRead := time.Now()
+	tests := []struct {
+		name   string
+		msgs   []*gpsprot.TimeMsg
+		expect []ptime.Time // expected delivered TAI values, in order
+	}{
+		{
+			name:   "tai source rounded to millisecond",
+			msgs:   []*gpsprot.TimeMsg{{TAITime: tai(100, 186550)}},
+			expect: []ptime.Time{tai(100, 0)},
+		},
+		{
+			name:   "utc source converted via leap second",
+			msgs:   []*gpsprot.TimeMsg{{UTCTime: utcAt(12, 0, 0)}},
+			expect: []ptime.Time{ls.UTCtoTime(ptime.UTCTime{Date: date, TimeOfDay: 12 * time.Hour})},
+		},
+		{
+			name:   "prepulse skipped",
+			msgs:   []*gpsprot.TimeMsg{{TAITime: tai(100, 0), Ref: gpsprot.PrePulse}},
+			expect: nil,
+		},
+		{
+			name: "duplicate second delivered once",
+			msgs: []*gpsprot.TimeMsg{
+				{TAITime: tai(100, 186550)},
+				{TAITime: tai(100, 250000)},
+				{TAITime: tai(101, 186550)},
+			},
+			expect: []ptime.Time{tai(100, 0), tai(101, 0)},
+		},
+		{
+			name:   "no time available",
+			msgs:   []*gpsprot.TimeMsg{{}},
+			expect: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+			buf := NewBuffer(lg, 5*time.Second, ls, gpsprot.GPS)
+			rec := &recordingTAITimer{}
+			buf.SetMsgTAITimer(rec)
+			for i, m := range tc.msgs {
+				buf.Time(m, tRead.Add(time.Duration(i)*time.Second))
+			}
+			got := make([]ptime.Time, 0, len(rec.samples))
+			for _, s := range rec.samples {
+				got = append(got, s.tai)
+			}
+			if !reflect.DeepEqual(got, tc.expect) && !(len(got) == 0 && len(tc.expect) == 0) {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestMsgTAITimerReadDelay(t *testing.T) {
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	buf := NewBuffer(lg, 5*time.Second, ptime.LeapSecond{UTCOffAfter: 37}, gpsprot.GPS)
+	rec := &recordingTAITimer{}
+	buf.SetMsgTAITimer(rec)
+	tRead := time.Now()
+	readDelay := 30 * time.Millisecond
+	buf.Time(&gpsprot.TimeMsg{TAITime: ptime.Time(100 * int64(time.Second)), ReadDelay: gpsprot.Duration(readDelay)}, tRead)
+	if len(rec.samples) != 1 {
+		t.Fatalf("got %d samples, want 1", len(rec.samples))
+	}
+	want := tRead.Add(-readDelay)
+	if !rec.samples[0].read.Equal(want) {
+		t.Errorf("tRead = %v, want %v (tRead - ReadDelay)", rec.samples[0].read, want)
+	}
+}
+
+func TestGetTAIPulseCorrection(t *testing.T) {
+	ls := ptime.LeapSecond{UTCOffAfter: 37}
+	date := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
+	tai := func(sec int64) ptime.Time {
+		return ptime.Time(sec * int64(time.Second))
+	}
+	pre := func(sec int64, off float64) *gpsprot.TimeMsg {
+		return &gpsprot.TimeMsg{
+			TAITime:     tai(sec),
+			GNSS:        gpsprot.GPS,
+			Ref:         gpsprot.PrePulse,
+			Tag:         gpsreg.TagUBX,
+			NativeMsgID: "TIM-TOS",
+			PulseOffset: opt.Make(off),
+		}
+	}
+	post := func(sec int64, off float64) *gpsprot.TimeMsg {
+		m := pre(sec, off)
+		m.Ref = gpsprot.PostPulse
+		return m
+	}
+	utcOnlyPre := func(h, m, s int, off float64) *gpsprot.TimeMsg {
+		return &gpsprot.TimeMsg{
+			UTCTime: opt.Make(ptime.UTCTime{
+				Date:      date,
+				TimeOfDay: time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(s)*time.Second,
+			}),
+			GNSS:        gpsprot.GPS,
+			Ref:         gpsprot.PrePulse,
+			Tag:         gpsreg.TagUBX,
+			NativeMsgID: "TIM-TOS",
+			PulseOffset: opt.Make(off),
+		}
+	}
+
+	tests := []struct {
+		name     string
+		msgs     []*gpsprot.TimeMsg
+		query    ptime.Time
+		expectNs float64
+		expectOK bool
+	}{
+		{
+			name:     "prepulse exact match returns unrounded ns",
+			msgs:     []*gpsprot.TimeMsg{pre(100, -5.5)},
+			query:    tai(100),
+			expectNs: -5.5,
+			expectOK: true,
+		},
+		{
+			name:     "walks back to earlier prepulse",
+			msgs:     []*gpsprot.TimeMsg{pre(100, -4.0), pre(101, -5.5)},
+			query:    tai(100),
+			expectNs: -4.0,
+			expectOK: true,
+		},
+		{
+			name:     "future refTime returns not-ok",
+			msgs:     []*gpsprot.TimeMsg{pre(100, -4.0)},
+			query:    tai(101),
+			expectOK: false,
+		},
+		{
+			name:     "postpulse alone is ignored",
+			msgs:     []*gpsprot.TimeMsg{post(100, -4.0)},
+			query:    tai(100),
+			expectOK: false,
+		},
+		{
+			name:     "out-of-range prepulse is rejected",
+			msgs:     []*gpsprot.TimeMsg{pre(400, 150.0)},
+			query:    tai(400),
+			expectOK: false,
+		},
+		{
+			name:     "utc-only prepulse matched via leap conversion",
+			msgs:     []*gpsprot.TimeMsg{utcOnlyPre(12, 0, 0, 7.25)},
+			query:    ls.UTCtoTime(ptime.UTCTime{Date: date, TimeOfDay: 12 * time.Hour}),
+			expectNs: 7.25,
+			expectOK: true,
+		},
+		{
+			name:     "no messages",
+			msgs:     nil,
+			query:    tai(100),
+			expectOK: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+			buf := NewBuffer(lg, 10*time.Second, ls, gpsprot.GPS)
+			for _, m := range tc.msgs {
+				buf.Time(m, time.Now())
+			}
+			got, ok := buf.GetTAIPulseCorrection(tc.query)
+			if ok != tc.expectOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.expectOK)
+			}
+			if ok && got != tc.expectNs {
+				t.Errorf("got %v ns, want %v ns", got, tc.expectNs)
 			}
 		})
 	}

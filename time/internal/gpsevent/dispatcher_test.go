@@ -237,3 +237,29 @@ func TestDispatcherSHMPrecisionOverride(t *testing.T) {
 		t.Fatalf("explicit precision writer = %T, want base writer", shm)
 	}
 }
+
+func TestDispatcherPHCSample(t *testing.T) {
+	rc, ch := refclock.NewProxyRefClock()
+	defer rc.Close()
+	d := &Dispatcher{
+		rc: rc,
+		lg: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	phc := ntime.Time(1234 * int64(time.Second))
+	d.PHCSample(phc, 1.5, ptime.LeapSecondPositive)
+	select {
+	case s := <-ch:
+		if s.Sys != phc || s.Offset != 1.5 || s.Leap != ptime.LeapSecondPositive {
+			t.Fatalf("refclock sample = %+v", s)
+		}
+	default:
+		t.Fatalf("refclock sample was not sent")
+	}
+}
+
+func TestDispatcherMsgTAITimeWithoutGenerator(t *testing.T) {
+	d := &Dispatcher{lg: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	// Must not panic when no generator is wired (defensive; the sink is
+	// only installed in PHC-base-clock mode).
+	d.MsgTAITime(ptime.Time(100*int64(time.Second)), time.Now(), ptime.LeapSecondNone)
+}

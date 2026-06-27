@@ -58,6 +58,12 @@ The `phc` table is about the PTP hardware clock. It can have following keys:
 * `pin` - an integer giving the index of the pin; the default is 0 (which is the only pin on the Raspberry Pi CM4)
 * `channel` - an integer giving the timestamping channel to use; the default is 0; the only case in which you need
   to change the default is if you have multiple pins in use; in this case, each pin must specify a distinct channel
+* `sync` - a boolean saying whether SatPulse synchronizes the PHC to the GPS receiver; the default is true;
+  when false, SatPulse leaves the PHC free-running and instead sends the NTP daemon samples whose
+  timestamps are readings of the PHC, treated as TAI, with the offset of each PPS pulse edge derived
+  from the GPS time messages, with sawtooth correction; chrony then maps the PHC to the system clock
+  itself, which requires chrony's multi-clock support with the `refclock SOCK` line bound to the PHC;
+  `sync = false` requires `sock.path` in the `ntp` table and cannot be combined with the SHM protocol
 
 Example
 

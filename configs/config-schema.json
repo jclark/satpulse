@@ -196,6 +196,10 @@
         "wait": {
           "type": "boolean",
           "default": false
+        },
+        "sync": {
+          "type": "boolean",
+          "default": true
         }
       }
     },
@@ -875,6 +879,99 @@
               "type": "number",
               "default": 0.8,
               "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1.0
+            }
+          }
+        }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "properties": {
+        "phc": {
+          "description": "Parameters for generating samples from the PHC",
+          "type": "object",
+          "properties": {
+            "pulseWindow": {
+              "description": "Number of pulses for alignment analysis",
+              "type": "integer",
+              "default": 5,
+              "minimum": 3,
+              "exclusiveMaximum": 100
+            },
+            "pulseVariation": {
+              "description": "Max pulse interval variation (ppb)",
+              "type": "number",
+              "default": 500.0,
+              "minimum": 5,
+              "exclusiveMaximum": 1000000
+            },
+            "expectedDelay": {
+              "description": "Expected pulse-to-message delay (s)",
+              "type": "number",
+              "default": 0.15,
+              "minimum": 0.0,
+              "exclusiveMaximum": 1.0
+            },
+            "pulseWidthDetectLimit": {
+              "description": "Max auto-detectable pulse width (s)",
+              "type": "number",
+              "default": 0.45,
+              "minimum": 0.1,
+              "exclusiveMaximum": 0.5
+            },
+            "msgWindow": {
+              "description": "Message history retained (s)",
+              "type": "integer",
+              "default": 30,
+              "minimum": 5,
+              "maximum": 300
+            },
+            "maxMsgGap": {
+              "description": "Max gap since last message before samples stop (s)",
+              "type": "number",
+              "default": 10.0,
+              "minimum": 1.0,
+              "maximum": 300.0
+            },
+            "minMsgSpan": {
+              "description": "Min message window span for usable fit (s)",
+              "type": "number",
+              "default": 2.9,
+              "minimum": 1.0,
+              "maximum": 60.0
+            },
+            "clockRateLimit": {
+              "description": "Max clock rate mismatch [0,1]",
+              "type": "number",
+              "default": 0.1,
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0
+            },
+            "msgTimingVariation": {
+              "description": "Max median residual around fit [0,1]",
+              "type": "number",
+              "default": 0.2,
+              "exclusiveMinimum": 0.0,
+              "exclusiveMaximum": 1.0
+            },
+            "edgeSecondTolerance": {
+              "description": "Max edge distance from integer second [0,0.5)",
+              "type": "number",
+              "default": 0.4,
+              "exclusiveMinimum": 0.0,
+              "exclusiveMaximum": 0.5
+            },
+            "ignoreSawtoothCorrection": {
+              "description": "Ignore sawtooth corrections",
+              "type": "boolean",
+              "default": false
+            },
+            "discontinuityThreshold": {
+              "description": "PHC discontinuity detection threshold (s)",
+              "type": "number",
+              "default": 0.001,
+              "minimum": 1e-9,
               "exclusiveMaximum": 1.0
             }
           }

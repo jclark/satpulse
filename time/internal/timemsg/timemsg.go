@@ -11,10 +11,16 @@ import (
 )
 
 // MsgUTCTimer receives UTC time samples derived from GPS time messages.
-// Used in serial timing mode (no PHC) to feed chrony SOCK samples, and
-// in PHC free-running mode to feed phcsample's labelling regression.
+// Used in serial timing mode (no PHC) to feed chrony SOCK samples.
 type MsgUTCTimer interface {
 	MsgUTCTime(utc time.Time, tRead time.Time, leap ptime.LeapSecondKind)
+}
+
+// MsgTAITimer receives TAI time samples derived from GPS time messages.
+// Used in PHC free-running mode (phc.sync = false) to feed phcsample's
+// edge labelling.
+type MsgTAITimer interface {
+	MsgTAITime(tai ptime.Time, tRead time.Time, leap ptime.LeapSecondKind)
 }
 
 // Buffer stores recent time messages from a GPS receiver.
@@ -31,8 +37,10 @@ type Buffer struct {
 	lastPreCorrMsg  *gpsprot.TimeMsg // last PrePulse msg with a correction
 	lastPostCorrMsg *gpsprot.TimeMsg // PostPulse msg with PulseOffset with the greatest TAI time
 	msgLevel        bufMsgLevel
-	msgUTCTimer     MsgUTCTimer // UTC message sink; nil in PHC-disciplined mode
+	msgUTCTimer     MsgUTCTimer // UTC message sink; nil unless serial timing mode
 	lastMsgUTC      time.Time   // UTC second already sent to msgUTCTimer
+	msgTAITimer     MsgTAITimer // TAI message sink; nil unless PHC-base-clock mode
+	lastMsgTAI      ptime.Time  // TAI second already sent to msgTAITimer
 }
 
 type entry struct {
@@ -97,12 +105,19 @@ func (buf *Buffer) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 	}
 	buf.entries = append(buf.entries, entry{msg: msg, tRead: tRead})
 	buf.msgUTCTime(msg, tRead)
+	buf.msgTAITime(msg, tRead)
 }
 
 // SetMsgUTCTimer sets the MsgUTCTimer sink.
 // When set, Buffer.Time() calls the sink for each new eligible second.
 func (buf *Buffer) SetMsgUTCTimer(t MsgUTCTimer) {
 	buf.msgUTCTimer = t
+}
+
+// SetMsgTAITimer sets the MsgTAITimer sink.
+// When set, Buffer.Time() calls the sink for each new eligible second.
+func (buf *Buffer) SetMsgTAITimer(t MsgTAITimer) {
+	buf.msgTAITimer = t
 }
 
 func (buf *Buffer) msgUTCTime(msg *gpsprot.TimeMsg, tRead time.Time) {
@@ -131,6 +146,29 @@ func (buf *Buffer) msgUTCTime(msg *gpsprot.TimeMsg, tRead time.Time) {
 	}
 	buf.lastMsgUTC = utc
 	buf.msgUTCTimer.MsgUTCTime(utc, tRead.Add(-time.Duration(msg.ReadDelay)), buf.ls.UTCStateAt(ut).LeapTonight)
+}
+
+func (buf *Buffer) msgTAITime(msg *gpsprot.TimeMsg, tRead time.Time) {
+	if buf.msgTAITimer == nil {
+		return
+	}
+	// PrePulse messages arrive before the pulse and carry the time of
+	// the upcoming pulse; pairing that with the receive-time tRead would
+	// feed misaligned points into the wallClock fit.
+	if msg.Ref == gpsprot.PrePulse {
+		return
+	}
+	t, ok := buf.msgTAI(msg)
+	if !ok {
+		return
+	}
+	// Round to the nominal time; see msgUTCTime for why.
+	tai := t.Round(time.Millisecond)
+	if tai <= buf.lastMsgTAI {
+		return
+	}
+	buf.lastMsgTAI = tai
+	buf.msgTAITimer.MsgTAITime(tai, tRead.Add(-time.Duration(msg.ReadDelay)), buf.ls.StateAt(tai).LeapTonight)
 }
 
 // LeapSecond implements gpsprot.MsgHandler.
@@ -451,18 +489,81 @@ func (buf *Buffer) getPulseCorrectionLast(lastCorr *gpsprot.TimeMsg, refTime pti
 	return 0, false
 }
 
+// GetTAIPulseCorrection retrieves the PrePulse pulse-offset correction
+// for the pulse whose top-of-second has the given TAI time, as float64
+// nanoseconds with no rounding. Used in PHC-base-clock mode, where edge
+// labels are TAI. PostPulse correction messages are not consulted: in
+// PostPulse mode the correction for pulse N arrives after pulse N's
+// edge event, which is a different pipeline. The returned correction
+// satisfies: true_time_of_second = pulse_time + correction
+func (buf *Buffer) GetTAIPulseCorrection(refTime ptime.Time) (float64, bool) {
+	lastCorr := buf.lastPreCorrMsg
+	if lastCorr == nil {
+		return 0, false
+	}
+	lastTAI, ok := buf.msgTAI(lastCorr)
+	if !ok || refTime > lastTAI {
+		return 0, false
+	}
+	if refTime == lastTAI {
+		return buf.pulseOffsetNs(lastCorr)
+	}
+	entries := buf.validEntries()
+	for i := len(entries) - 1; i >= 0; i-- {
+		m := entries[i].msg
+		if !m.PulseOffset.IsSet() || m.Ref != gpsprot.PrePulse {
+			continue
+		}
+		t, ok := buf.msgTAI(m)
+		if !ok {
+			continue
+		}
+		if t == refTime {
+			return buf.pulseOffsetNs(m)
+		}
+		if t < refTime {
+			break
+		}
+	}
+	return 0, false
+}
+
+// msgTAI returns msg's TAI time, preferring the explicit TAITime field
+// but falling back to a UTC-derived value via buf.ls. Returns
+// (zero, false) when neither is available.
+func (buf *Buffer) msgTAI(msg *gpsprot.TimeMsg) (ptime.Time, bool) {
+	if !msg.TAITime.IsZero() {
+		return msg.TAITime, true
+	}
+	if msg.UTCTime.IsSet() {
+		return buf.ls.UTCtoTime(msg.UTCTime.Get()), true
+	}
+	return 0, false
+}
+
 // maxPulseOffset is the maximum acceptable pulse offset in nanoseconds.
 const maxPulseOffset = 100
 
-// validatePulseOffset checks that the PulseOffset in the message is within acceptable limits.
-// It returns the PulseOffset as a time.Duration and true if valid, or (0, false) if invalid.
-func (buf *Buffer) validatePulseOffset(msg *gpsprot.TimeMsg) (time.Duration, bool) {
+// pulseOffsetNs returns msg.PulseOffset in nanoseconds if within limits,
+// or (0, false) if missing or out of range. Shared validation core for
+// both the rounded-Duration accessor and the float64 accessor.
+func (buf *Buffer) pulseOffsetNs(msg *gpsprot.TimeMsg) (float64, bool) {
 	if !msg.PulseOffset.IsSet() {
 		return 0, false
 	}
 	off := msg.PulseOffset.Get()
 	if math.Abs(off) > maxPulseOffset {
 		buf.lg.Warn("pulse offset exceeds acceptable limit", "pulseOffset", off, "limit", maxPulseOffset, "tag", msg.Tag, "msgID", msg.NativeMsgID, "tai", msg.TAITime)
+		return 0, false
+	}
+	return off, true
+}
+
+// validatePulseOffset checks that the PulseOffset in the message is within acceptable limits.
+// It returns the PulseOffset as a time.Duration and true if valid, or (0, false) if invalid.
+func (buf *Buffer) validatePulseOffset(msg *gpsprot.TimeMsg) (time.Duration, bool) {
+	off, ok := buf.pulseOffsetNs(msg)
+	if !ok {
 		return 0, false
 	}
 	return time.Duration(math.Round(off)), true

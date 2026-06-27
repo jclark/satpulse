@@ -176,6 +176,8 @@ These packages are the main building blocks for satpulsed; they are in the appli
 
 `time/internal/timemsg` buffers recent GPS time messages from a receiver and provides methods to retrieve consecutive, second-aligned messages and pulse offset corrections for time synchronization. It receives messages from `time/internal/gpsevent` and provides them to `time/internal/phcsync`. It isolates `time/internal/phcsync` from the complexities of `gps/gpsprot`.
 
+`time/internal/phcsample` generates chrony SOCK refclock samples when the PHC is left free-running (`phc.sync = false`). It correlates PHC pulse-edge timestamps with the GPS time-message stream (via `time/internal/timemsg`) to emit one PHC-referenced (offset = TAI - PHC) sample per admitted pulse edge.
+
 `time/internal/ptpgm` manages the PTP grandmaster state and synchronization status as seen by ptp4l. It provides a worker goroutine that sends updates to ptp4l via the PTP management protocol.
 
 `time/internal/refclock` provides abstractions for sending clock synchronization samples to external time synchronization services like chrony. It includes a worker goroutine that processes samples from a channel and delivers them to configured refclock implementations.

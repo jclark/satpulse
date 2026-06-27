@@ -27,6 +27,7 @@ _Not yet released_
 ### NTP support
 
 - SatPulse now supports the NTP SHM protocol in addition to the chrony refclock SOCK protocol for sending time information to an NTP server. `satpulse.toml` has a new `[ntp.shm]` table for configuring this. (#300)
+- `satpulse.toml`'s `[phc]` table has a new `sync` key. With `sync = false`, `satpulsed` leaves the PHC free-running and sends chrony refclock SOCK samples whose timestamps are PHC readings treated as TAI, with the offset of each pulse edge derived from GPS time messages with sawtooth correction. This is designed for chrony's multi-clock support, where chrony itself disciplines the PHC and maps it to the system clock. A new `[sample.phc]` table tunes the sample-generation algorithm. (#257)
 
 ### GPS high-level configuration
 
