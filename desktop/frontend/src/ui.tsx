@@ -96,7 +96,7 @@ export function Card({class: className, children, ...props}: JSX.HTMLAttributes<
 }
 
 
-export type BadgeTone = 'default' | 'info' | 'success' | 'warning' | 'error';
+export type BadgeTone = 'default' | 'info' | 'success' | 'warning' | 'error' | 'rtcm' | 'spartn';
 
 export interface BadgeProps extends JSX.HTMLAttributes<HTMLSpanElement> {
     tone?: BadgeTone;
@@ -108,6 +108,8 @@ const badgeTones: Record<BadgeTone, string> = {
     success: 'bg-success text-surface-2',
     warning: 'bg-warning text-surface-1',
     error: 'bg-danger text-surface-2',
+    rtcm: 'bg-rtcm text-surface-2',
+    spartn: 'bg-spartn text-surface-2',
 };
 
 export function Badge({tone = 'default', class: className, children, ...props}: BadgeProps) {

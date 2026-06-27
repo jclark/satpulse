@@ -14,11 +14,13 @@ interface MsgRow {
     lastEpoch: number;  // last epoch number seen (MSM only, -1 if none)
     station: number;    // last seen reference station ID, -1 if none
     lastTime: number;
+    interval: number;   // ms between the last two updates (0 until the second)
 }
 
 interface Props {
     connected: boolean;
     sessionSeq: number;
+    running: boolean;
 }
 
 // rowInfo returns the description and MSM label for a row, dispatching on its
@@ -33,13 +35,26 @@ function formatAge(ms: number): string {
     return Math.floor(ms / 1000) + 's';
 }
 
-export function CorMsgPanel({connected, sessionSeq}: Props) {
+// isStale reports whether a row is old enough to dim. The threshold adapts to
+// the row's own measured update interval, so slow types (e.g. SPARTN HPAC, sent
+// every ~30s) are not dimmed between arrivals while fast types still dim ~10s
+// after they stop. A row whose cadence is not yet known (only one message seen)
+// is never dimmed -- we have nothing to judge "late" against.
+function isStale(age: number, interval: number): boolean {
+    if (interval <= 0) return false;
+    return age >= Math.max(10000, interval * 2.5);
+}
+
+export function CorMsgPanel({connected, sessionSeq, running}: Props) {
     const rowsRef = useRef<Map<string, MsgRow>>(new Map());
     // Epoch counter reconstructed from finalFragment: incremented after
     // each packet that completes a logical message (finalFragment true).
     const epochRef = useRef(0);
     const [displayed, setDisplayed] = useState<Map<string, MsgRow>>(new Map());
     const [tick, setTick] = useState(0);
+    // "now" used for age display; frozen at the moment the session stops so
+    // ages do not keep climbing while corrections are disconnected.
+    const frozenNowRef = useRef<number | null>(null);
 
     // Listen for corrpacket events
     useEffect(() => {
@@ -58,6 +73,7 @@ export function CorMsgPanel({connected, sessionSeq}: Props) {
                     if (epoch !== row.lastEpoch) {
                         row.count++;
                         row.lastEpoch = epoch;
+                        row.interval = now - row.lastTime;
                         row.lastTime = now;
                     } else {
                         row.splits++;
@@ -66,7 +82,7 @@ export function CorMsgPanel({connected, sessionSeq}: Props) {
                     rows.set(evt.msgID, {
                         tag: evt.tag, msgType: evt.msgID, count: 1, splits: 0,
                         lastEpoch: epoch, station: evt.rtcmRefBaseID ?? -1,
-                        lastTime: now,
+                        lastTime: now, interval: 0,
                     });
                 }
             } else {
@@ -74,12 +90,13 @@ export function CorMsgPanel({connected, sessionSeq}: Props) {
                 // every packet.
                 if (row) {
                     row.count++;
+                    row.interval = now - row.lastTime;
                     row.lastTime = now;
                 } else {
                     rows.set(evt.msgID, {
                         tag: evt.tag, msgType: evt.msgID, count: 1, splits: 0,
                         lastEpoch: -1, station: evt.rtcmRefBaseID ?? -1,
-                        lastTime: now,
+                        lastTime: now, interval: 0,
                     });
                 }
             }
@@ -106,11 +123,18 @@ export function CorMsgPanel({connected, sessionSeq}: Props) {
         setDisplayed(new Map());
     }, [sessionSeq]);
 
-    // 1-second tick for age updates
+    // 1-second tick for age updates while a session runs. When it stops, freeze
+    // "now" so ages stop climbing for a disconnected session.
     useEffect(() => {
+        if (!running) {
+            frozenNowRef.current = Date.now();
+            setTick(t => t + 1);
+            return;
+        }
+        frozenNowRef.current = null;
         const id = setInterval(() => setTick(t => t + 1), 1000);
         return () => clearInterval(id);
-    }, []);
+    }, [running]);
 
     const handleClear = () => {
         rowsRef.current = new Map();
@@ -128,7 +152,7 @@ export function CorMsgPanel({connected, sessionSeq}: Props) {
         return arr;
     }, [displayed]);
 
-    const now = Date.now();
+    const now = running ? Date.now() : (frozenNowRef.current ?? Date.now());
 
     return (
         <div class="flex flex-1 flex-col text-xs">
@@ -149,11 +173,11 @@ export function CorMsgPanel({connected, sessionSeq}: Props) {
                     <tbody class="font-mono">
                         {sortedRows.map(row => {
                             const age = now - row.lastTime;
-                            const textClass = age < 10000 ? 'text-text-primary' : 'text-text-muted';
+                            const textClass = isStale(age, row.interval) ? 'text-text-muted' : 'text-text-primary';
                             const info = rowInfo(row);
                             return (
                                 <tr key={row.msgType} class={`hover:bg-surface-3 ${textClass}`}>
-                                    <td class="px-2 py-0.5"><Badge>{row.tag === 'RTCM' ? 'R' : 'S'}</Badge></td>
+                                    <td class="px-2 py-0.5"><Badge tone={row.tag === 'RTCM' ? 'rtcm' : 'spartn'}>{row.tag === 'RTCM' ? 'R' : 'S'}</Badge></td>
                                     <td class="whitespace-nowrap px-2 py-0.5 tabular-nums">{row.station >= 0 ? row.station : ''}</td>
                                     <td class="whitespace-nowrap px-2 py-0.5">{row.msgType}</td>
                                     <td class="whitespace-nowrap px-2 py-0.5">{info.msm}</td>

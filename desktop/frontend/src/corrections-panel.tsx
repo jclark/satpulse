@@ -289,7 +289,7 @@ export function CorrectionsPanel({connState}: Props) {
                 </span>
             </div>
 
-            <CorMsgPanel connected={connected} sessionSeq={sessionSeq} />
+            <CorMsgPanel connected={connected} sessionSeq={sessionSeq} running={running} />
         </div>
     );
 }

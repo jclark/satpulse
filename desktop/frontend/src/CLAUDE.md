@@ -50,6 +50,10 @@ them to `style.css` first.
 - `gnss-navic` -- NavIC/IRNSS
 - `gnss-unknown` -- unknown constellation
 
+**Correction protocols** (RTCM/SPARTN badge fills):
+- `rtcm` -- RTCM correction messages (blue)
+- `spartn` -- SPARTN correction messages (red)
+
 **Clock display**:
 - `clock-digit` -- active clock digit colour
 - `clock-ghost` -- faded/ghost digit colour
