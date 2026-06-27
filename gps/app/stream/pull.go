@@ -366,6 +366,17 @@ func sendGGA(lg *slog.Logger, conn ReadWriteDeadlineCloser, data string, nTimeou
 	return nil, 0
 }
 
+// Ready reports whether the sender has already seen a usable GGA packet,
+// so a caller can avoid logging that it is waiting when it is not.
+func (s *GGASender) Ready() bool {
+	select {
+	case <-s.ready:
+		return true
+	default:
+		return false
+	}
+}
+
 // WaitReady waits until the sender has seen a usable GGA packet.
 func (s *GGASender) WaitReady(ctx context.Context) error {
 	select {
@@ -456,7 +467,9 @@ func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 		onState = func(State, error) {}
 	}
 	if gs != nil {
-		lg.Info("NMEA send pull waiting for first position fix before connecting")
+		if !gs.Ready() {
+			lg.Info("NMEA send pull waiting for first position fix before connecting")
+		}
 		if err := gs.WaitReady(ctx); err != nil {
 			if ctx.Err() == nil {
 				lg.Warn("NMEA send pull stopped before first position fix", "err", err)
