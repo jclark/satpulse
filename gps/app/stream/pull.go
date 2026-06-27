@@ -317,11 +317,10 @@ func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
 				}
 				continue
 			}
-			data, ok := parseSelectedGGA(pkt)
-			if !ok {
+			if _, ok := GGAPacketPosition(pkt); !ok {
 				continue
 			}
-			latest = data
+			latest = pkt.Data
 			haveLatest = true
 			s.once.Do(func() { close(s.ready) })
 		case <-tickCh:
@@ -601,29 +600,31 @@ func (s *Pull) writer(ctx context.Context, lg *slog.Logger,
 	return nil
 }
 
-// parseSelectedGGA returns the wire bytes of pkt when it is a usable GGA:
-// checksum-valid, with a position fix (quality > 0) and set lat/lon.
-func parseSelectedGGA(pkt scan.Packet) (string, bool) {
+// GGAPacketPosition returns the lat/lon of pkt when it is a usable GGA
+// fix (checksum-valid, quality > 0, lat/lon set), and ok == false otherwise.
+func GGAPacketPosition(pkt scan.Packet) ([2]float64, bool) {
+	var pos [2]float64
 	if !pkt.HasTag(gpsreg.TagNMEA) || !pkt.ChecksumValid {
-		return "", false
+		return pos, false
 	}
 	flags := nmeamsg.CheckSyntax(pkt.Data)
 	if !flags.IsValidGNSSTalkerNMEA() {
-		return "", false
+		return pos, false
 	}
 	i := strings.IndexByte(pkt.Data, '*')
 	if i < 0 {
-		return "", false
+		return pos, false
 	}
 	msg, err := nmeamsg.ParseGNSSTalkerPayload(pkt.Data[1:i], flags)
 	if err != nil {
-		return "", false
+		return pos, false
 	}
 	gga, ok := msg.(nmeamsg.GGASentence)
 	if !ok || gga.Fields.Quality == 0 || !gga.Fields.Lat.IsSet() || !gga.Fields.Lon.IsSet() {
-		return "", false
+		return pos, false
 	}
-	return pkt.Data, true
+	pos[0], pos[1] = gga.Fields.LatLon()
+	return pos, true
 }
 
 func writeGGA(w ReadWriteDeadlineCloser, data string) error {

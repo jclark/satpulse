@@ -53,6 +53,11 @@ const (
 	// MinNMEASendInterval is the smallest periodic GGA upload interval.  A
 	// configured 0 is still allowed and means upload once per connection.
 	MinNMEASendInterval = time.Second
+
+	// MaxNMEASendInterval is the largest periodic GGA upload interval.  It
+	// is a sanity bound that also keeps the seconds-to-Duration conversion
+	// well clear of int64 overflow.
+	MaxNMEASendInterval = 366 * 24 * time.Hour
 )
 
 // PushConfig is one [[stream.push]] entry.  Transport is selected
@@ -257,6 +262,9 @@ func (cfg *PullConfig) Validate() error {
 			}
 			if *iv > 0 && *iv < MinNMEASendInterval.Seconds() {
 				return fmt.Errorf("stream.pull.ntrip.nmeaSendInterval: must be 0 or at least 1")
+			}
+			if *iv > MaxNMEASendInterval.Seconds() {
+				return fmt.Errorf("stream.pull.ntrip.nmeaSendInterval: must be at most %g", MaxNMEASendInterval.Seconds())
 			}
 		}
 	}

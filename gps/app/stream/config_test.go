@@ -119,6 +119,7 @@ func TestPullConfigValidateNMEAInterval(t *testing.T) {
 	}{
 		{"negative", -1.0},
 		{"positive below minimum", 0.5},
+		{"above maximum", MaxNMEASendInterval.Seconds() + 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -94,6 +94,10 @@ func parseFlags(cmdName string, args []string) (cfg *flagConfig, help bool, usag
 		err = fmt.Errorf("--nmea-send-interval: must be 0 or at least 1")
 		return
 	}
+	if sendInterval > stream.MaxNMEASendInterval.Seconds() {
+		err = fmt.Errorf("--nmea-send-interval: must be at most %g", stream.MaxNMEASendInterval.Seconds())
+		return
+	}
 	cfg.NMEASendInterval = time.Duration(sendInterval * float64(time.Second))
 	return
 }
