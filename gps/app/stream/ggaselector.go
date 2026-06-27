@@ -5,6 +5,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/nmeasyn"
 	"github.com/jclark/satpulse/gps/scan"
 )
 
@@ -36,8 +37,16 @@ func (s *GGASelector) Packet(pkt scan.Packet) bool {
 	return true
 }
 
-// GGASentence publishes a synthesized GGA unless it matches the last receiver UTC.
-func (s *GGASelector) GGASentence(gga nmeamsg.GGASentence) {
+// Msg publishes a synthesized GGA unless it matches the last receiver UTC. It
+// implements nmeasyn.Sink and ignores anything that is not an end-of-epoch GGA.
+func (s *GGASelector) Msg(m nmeamsg.GNSSTalkerIDMsg, phase nmeasyn.Phase) {
+	if phase != nmeasyn.PhaseEpoch {
+		return
+	}
+	gga, ok := m.(nmeamsg.GGASentence)
+	if !ok {
+		return
+	}
 	b, err := nmeamsg.SerializeMsg(gga)
 	if err != nil {
 		return
