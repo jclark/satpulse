@@ -500,7 +500,9 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 	a.corrCancel = corrCancel
 	wg := &sync.WaitGroup{}
 	a.corrWg = wg
-	sink := stream.NewPull()
+	// nmeaSendInterval 0: no upstream GGA upload (no VRS yet); Run is
+	// passed a nil selected-GGA feed below.
+	sink := stream.NewPull(source, a.lg, conn, portLock, gpsreg.CreateCorrectionFormats(), 0)
 	a.setCorrStateLocked(CorrEvent{
 		State:      "connecting",
 		Mode:       cfg.Mode,
@@ -535,7 +537,7 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 		}
 	})
 	wg.Go(func() {
-		sink.Run(corrCtx, a.lg, source, conn, portLock, gpsreg.CreateCorrectionFormats(), onState)
+		sink.Run(corrCtx, nil, onState)
 		a.emitCorrState(CorrEvent{
 			State:      "stopped",
 			Mode:       cfg.Mode,
