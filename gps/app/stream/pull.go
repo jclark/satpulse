@@ -257,6 +257,13 @@ func NewPull(source Source, lg *slog.Logger,
 const scanBufSize = 16
 const ggaWriteTimeout = 5 * time.Second
 
+// maxGGASendTimeouts is how many consecutive upload write-deadline timeouts the
+// GGA sender tolerates before dropping the connection to force a reconnect.  A
+// single transient stall keeps the correction read stream up; each timeout
+// takes up to ggaWriteTimeout, so a wedged upload recovers in roughly
+// maxGGASendTimeouts*ggaWriteTimeout.
+const maxGGASendTimeouts = 3
+
 // errReconnect is sent as a scan.Packet.ReadError to signal the
 // pruning queue that the connection was lost.
 var errReconnect = errors.New("reconnect")
@@ -271,7 +278,6 @@ type GGASender struct {
 	connCh   chan ReadWriteDeadlineCloser
 	ready    chan struct{}
 	done     chan struct{}
-	once     sync.Once
 }
 
 // NewGGASender creates a GGA sender for a selected-GGA packet feed.
@@ -290,9 +296,6 @@ func NewGGASender(selected <-chan scan.Packet, interval time.Duration) *GGASende
 // Run holds the latest usable GGA and uploads it to the current
 // connection: once on connect, then every interval if interval > 0.
 func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
-	var current ReadWriteDeadlineCloser
-	var latest string
-	var haveLatest bool
 	defer close(s.done)
 	var tickCh <-chan time.Time
 	if s.interval > 0 {
@@ -300,19 +303,18 @@ func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
 		defer t.Stop()
 		tickCh = t.C
 	}
-	send := func() {
-		if err := writeGGA(current, latest); err != nil {
-			lg.Warn("NMEA GGA upload failed", "err", err)
-			current.Close()
-			current = nil
-		}
-	}
+	// latest is the latest usable GGA wire bytes ("" until the first fix);
+	// conn is the upload connection (nil when none); nTimeouts counts
+	// consecutive upload write-deadline timeouts.
+	var latest string
+	var conn ReadWriteDeadlineCloser
+	var nTimeouts int
 	for {
 		select {
 		case pkt, ok := <-s.selected:
 			if !ok {
 				s.selected = nil
-				if !haveLatest {
+				if latest == "" {
 					return
 				}
 				continue
@@ -320,22 +322,48 @@ func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
 			if _, ok := GGAPacketPosition(pkt); !ok {
 				continue
 			}
-			latest = pkt.Data
-			haveLatest = true
-			s.once.Do(func() { close(s.ready) })
-		case <-tickCh:
-			if current != nil && haveLatest {
-				send()
+			if latest == "" {
+				close(s.ready) // first usable GGA; unblock reader()
 			}
-		case conn := <-s.connCh:
-			current = conn
-			if haveLatest {
-				send()
+			latest = pkt.Data
+		case <-tickCh:
+			if conn != nil && latest != "" {
+				conn, nTimeouts = sendGGA(lg, conn, latest, nTimeouts)
+			}
+		case conn = <-s.connCh:
+			nTimeouts = 0
+			if latest != "" {
+				conn, nTimeouts = sendGGA(lg, conn, latest, nTimeouts)
 			}
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+// sendGGA uploads data to conn and returns the connection (nil if it was
+// dropped) and the updated consecutive-timeout count.  A clean write timeout
+// keeps the connection through a transient stall; a hard error or
+// maxGGASendTimeouts consecutive timeouts drop it so the reader reconnects.
+func sendGGA(lg *slog.Logger, conn ReadWriteDeadlineCloser, data string, nTimeouts int) (ReadWriteDeadlineCloser, int) {
+	err := writeGGA(conn, data)
+	switch {
+	case err == nil:
+		return conn, 0
+	case errors.Is(err, errGGATimeout):
+		nTimeouts++
+		if nTimeouts == 1 {
+			lg.Warn("NMEA GGA upload timed out; keeping connection")
+		}
+		if nTimeouts < maxGGASendTimeouts {
+			return conn, nTimeouts
+		}
+		lg.Warn("NMEA GGA upload timed out repeatedly; dropping connection", "timeouts", nTimeouts)
+	default:
+		lg.Warn("NMEA GGA upload failed", "err", err)
+	}
+	conn.Close()
+	return nil, 0
 }
 
 // WaitReady waits until the sender has seen a usable GGA packet.
@@ -627,6 +655,11 @@ func GGAPacketPosition(pkt scan.Packet) ([2]float64, bool) {
 	return pos, true
 }
 
+// errGGATimeout reports a GGA upload that hit its write deadline without sending
+// any bytes.  The stream framing is intact, so the sender keeps the connection
+// and retries rather than reconnecting on a transient stall.
+var errGGATimeout = errors.New("NMEA GGA upload timed out")
+
 func writeGGA(w ReadWriteDeadlineCloser, data string) error {
 	if err := w.SetWriteDeadline(time.Now().Add(ggaWriteTimeout)); err != nil {
 		return err
@@ -636,6 +669,12 @@ func writeGGA(w ReadWriteDeadlineCloser, data string) error {
 		err = e
 	}
 	if err != nil {
+		// A clean timeout with nothing written is recoverable; a partial write
+		// corrupts framing, so report it as a hard error.
+		var ne net.Error
+		if n == 0 && errors.As(err, &ne) && ne.Timeout() {
+			return errGGATimeout
+		}
 		return err
 	}
 	if n != len(data) {
