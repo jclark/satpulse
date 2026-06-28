@@ -92,6 +92,17 @@ static char *string_prop(io_registry_entry_t e, CFStringRef key)
 	return buf[0] ? xstrdup(buf) : NULL;
 }
 
+static char *callout_device(io_registry_entry_t e)
+{
+	for (int i = 0; i < 5; i++) {
+		char *path = string_prop(e, CFSTR("IOCalloutDevice"));
+		if (path)
+			return path;
+		usleep(50000);
+	}
+	return NULL;
+}
+
 static int uint_prop(io_registry_entry_t e, CFStringRef key, unsigned *v)
 {
 	int n = 0, ok = 0;
@@ -155,7 +166,7 @@ static struct dev *scan1(const struct opts *o, int *valid)
 		fatal(EXIT_FAILURE, "IOServiceGetMatchingServices failed: %d", kr);
 	while ((s = IOIteratorNext(it))) {
 		unsigned vid = 0, pid = 0;
-		char *path = string_prop(s, CFSTR("IOCalloutDevice"));
+		char *path = callout_device(s);
 		if (path && usb_info(s, &vid, &pid) &&
 		    (!o->have_vid || o->vid == vid) && (!o->have_pid || o->pid == pid)) {
 			struct dev *d = make_dev(path, vid, pid);
