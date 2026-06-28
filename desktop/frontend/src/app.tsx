@@ -396,6 +396,14 @@ export function App() {
                 return next;
             });
         });
+        // The base ARP belongs to the active correction stream. Drop it when
+        // a session starts fresh or stops, so a stale RTCM ARP doesn't linger
+        // after switching to a source that sends no 1005/1006 (e.g. SPARTN).
+        const offCorrARP = EventsOn('gps:corrections', (evt: {state: string}) => {
+            if (evt.state === 'connecting' || evt.state === 'stopped') {
+                setBaseARPs(new Map());
+            }
+        });
         const offTime = EventsOn('gps:time', (msg: any) => {
             setTimeMsg(msg as TimeMsg);
         });
@@ -453,6 +461,7 @@ export function App() {
             if (typeof offInitialPos === 'function') offInitialPos(); else EventsOff('gps:initialPos');
             if (typeof offEpochPVT === 'function') offEpochPVT(); else EventsOff('gps:epochPVT');
             if (typeof offBaseARP === 'function') offBaseARP(); else EventsOff('gps:basearp');
+            if (typeof offCorrARP === 'function') offCorrARP(); else EventsOff('gps:corrections');
             if (typeof offTime === 'function') offTime(); else EventsOff('gps:time');
             if (typeof offMsgSend === 'function') offMsgSend(); else EventsOff('gps:msgsend');
             if (typeof offResponse === 'function') offResponse(); else EventsOff('gps:response');
