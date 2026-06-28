@@ -184,15 +184,18 @@ static struct dev *scan1(const struct opts *o, int *valid)
 	return head;
 }
 
-// scan enumerates matching devices, retrying when the I/O registry changes
-// mid-iteration. Delay doubles from 1ms, so 10 tries wait at most 511ms total.
+// scan enumerates matching devices. An empty result is reported even when the
+// iterator went invalid: nothing was found, so there is no device (this happens
+// with startup registry churn, e.g. on CI runners). Only a non-empty result
+// from a changing registry is retried, with a backoff doubling from 1ms, so 5
+// tries wait at most 15ms total.
 static struct dev *scan(const struct opts *o)
 {
 	useconds_t delay = 1000;
-	for (int tries = 10;;) {
+	for (int tries = 5;;) {
 		int valid;
 		struct dev *dev = scan1(o, &valid);
-		if (valid)
+		if (valid || !dev)
 			return dev;
 		free_dev(dev);
 		if (--tries == 0)
