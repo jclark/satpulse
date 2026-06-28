@@ -4,6 +4,7 @@
 #include <getopt.h>
 #include <limits.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,7 +20,7 @@ struct dev {
 };
 
 struct opts {
-	int have_vid, have_pid, do_exec, do_wait;
+	bool have_vid, have_pid, do_exec, do_wait;
 	unsigned vid, pid;
 };
 
@@ -103,9 +104,10 @@ static char *callout_device(io_registry_entry_t e)
 	return NULL;
 }
 
-static int uint_prop(io_registry_entry_t e, CFStringRef key, unsigned *v)
+static bool uint_prop(io_registry_entry_t e, CFStringRef key, unsigned *v)
 {
-	int n = 0, ok = 0;
+	int n = 0;
+	bool ok = false;
 	CFTypeRef p = IORegistryEntryCreateCFProperty(e, key, kCFAllocatorDefault, 0);
 	if (p) {
 		ok = CFGetTypeID(p) == CFNumberGetTypeID() &&
@@ -117,7 +119,7 @@ static int uint_prop(io_registry_entry_t e, CFStringRef key, unsigned *v)
 	return ok;
 }
 
-static int usb_info(io_registry_entry_t e, unsigned *vid, unsigned *pid)
+static bool usb_info(io_registry_entry_t e, unsigned *vid, unsigned *pid)
 {
 	io_registry_entry_t cur = e, parent;
 	kern_return_t kr;
@@ -127,7 +129,7 @@ static int usb_info(io_registry_entry_t e, unsigned *vid, unsigned *pid)
 		if (cur != e)
 			IOObjectRelease(cur);
 		if (kr != KERN_SUCCESS)
-			return 0;
+			return false;
 		cur = parent;
 		kr = IOObjectGetClass(cur, cls);
 		if (kr != KERN_SUCCESS)
@@ -137,7 +139,7 @@ static int usb_info(io_registry_entry_t e, unsigned *vid, unsigned *pid)
 			    !uint_prop(cur, CFSTR("idProduct"), pid))
 				fatal(EXIT_FAILURE, "USB device is missing idVendor or idProduct");
 			IOObjectRelease(cur);
-			return 1;
+			return true;
 		}
 	}
 }
@@ -161,7 +163,7 @@ static CFMutableDictionaryRef serial_matching(void)
 	return m;
 }
 
-static struct dev *scan1(const struct opts *o, int *valid)
+static struct dev *scan1(const struct opts *o, bool *valid)
 {
 	io_iterator_t it;
 	io_service_t s;
@@ -197,12 +199,12 @@ static struct dev *scan1(const struct opts *o, int *valid)
 // non-empty result from a changing registry is retried, with a backoff doubling
 // from 1ms, so 5 tries wait at most 15ms total; if it never settles, *stable is
 // cleared and NULL returned, leaving the caller to decide whether that is fatal.
-static struct dev *scan(const struct opts *o, int *stable)
+static struct dev *scan(const struct opts *o, bool *stable)
 {
 	useconds_t delay = 1000;
-	*stable = 1;
+	*stable = true;
 	for (int tries = 5;;) {
-		int valid;
+		bool valid;
 		struct dev *dev = scan1(o, &valid);
 		if (valid || !dev)
 			return dev;
@@ -212,7 +214,7 @@ static struct dev *scan(const struct opts *o, int *stable)
 		usleep(delay);
 		delay *= 2;
 	}
-	*stable = 0;
+	*stable = false;
 	return NULL;
 }
 
@@ -240,7 +242,7 @@ static void wait_cb(void *refcon, io_iterator_t iter)
 {
 	struct wait_ctx *ctx = refcon;
 	io_service_t s;
-	int stable;
+	bool stable;
 	while ((s = IOIteratorNext(iter)))
 		IOObjectRelease(s);
 	if (ctx->dev)
@@ -307,7 +309,7 @@ static int parse_opts(int argc, char **argv, struct opts *o)
 		switch (c) {
 		case 1:
 		case 'v':
-			o->have_vid = 1;
+			o->have_vid = true;
 			if (hexarg(optarg, &o->vid) < 0) {
 				usage(stderr);
 				return EX_USAGE;
@@ -315,16 +317,16 @@ static int parse_opts(int argc, char **argv, struct opts *o)
 			break;
 		case 2:
 		case 'p':
-			o->have_pid = 1;
+			o->have_pid = true;
 			if (hexarg(optarg, &o->pid) < 0) {
 				usage(stderr);
 				return EX_USAGE;
 			}
 			break;
 		case 3:
-		case 'e': o->do_exec = 1; break;
+		case 'e': o->do_exec = true; break;
 		case 5:
-		case 'w': o->do_wait = 1; break;
+		case 'w': o->do_wait = true; break;
 		case 4: usage(stdout); return 0;
 		default: usage(stderr); return EX_USAGE;
 		}
@@ -371,7 +373,7 @@ int main(int argc, char **argv)
 	int ret = parse_opts(argc, argv, &o);
 	if (ret >= 0)
 		return ret;
-	int stable;
+	bool stable;
 	dev = scan(&o, &stable);
 	if (!stable)
 		fatal(EXIT_FAILURE, "I/O registry changed during enumeration");
