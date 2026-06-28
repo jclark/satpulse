@@ -379,9 +379,9 @@ static int list_or_exec(struct dev *dev, const struct opts *o, char **argv)
 {
 	if (!o->do_exec) {
 		for (struct dev *d = dev; d; d = d->next) {
-			printf("DEVICE=%s VID=%04X PID=%04X", d->path, d->vid, d->pid);
-			print_field("MODEL", d->model);
-			print_field("VENDOR", d->vendor);
+			printf("device=%s vid=%04X pid=%04X", d->path, d->vid, d->pid);
+			print_field("model", d->model);
+			print_field("vendor", d->vendor);
 			putchar('\n');
 		}
 		return 0;
