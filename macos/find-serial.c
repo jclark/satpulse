@@ -17,6 +17,7 @@
 struct dev {
 	struct dev *next;
 	char *path;
+	char *model, *vendor;
 	uint16_t vid, pid;
 };
 
@@ -120,7 +121,13 @@ static bool uint_prop(io_registry_entry_t e, CFStringRef key, uint16_t *v)
 	return ok;
 }
 
-static bool usb_info(io_registry_entry_t e, uint16_t *vid, uint16_t *pid)
+// usb_info walks up from a serial service to its USB device node, returning its
+// vendor/product IDs and, when present, the device's own product and vendor
+// name strings (NULL otherwise). It reads kUSBProductString/kUSBVendorString
+// rather than the "USB Product Name"/"USB Vendor Name" keys, as the former carry
+// the descriptor strings faithfully while the latter mangle some characters.
+static bool usb_info(io_registry_entry_t e, uint16_t *vid, uint16_t *pid,
+                     char **model, char **vendor)
 {
 	io_registry_entry_t cur = e, parent;
 	kern_return_t kr;
@@ -139,18 +146,23 @@ static bool usb_info(io_registry_entry_t e, uint16_t *vid, uint16_t *pid)
 			if (!uint_prop(cur, CFSTR("idVendor"), vid) ||
 			    !uint_prop(cur, CFSTR("idProduct"), pid))
 				fatal(EXIT_FAILURE, "USB device is missing idVendor or idProduct");
+			*model = string_prop(cur, CFSTR("kUSBProductString"));
+			*vendor = string_prop(cur, CFSTR("kUSBVendorString"));
 			IOObjectRelease(cur);
 			return true;
 		}
 	}
 }
 
-static struct dev *make_dev(const char *path, uint16_t vid, uint16_t pid)
+static struct dev *make_dev(const char *path, uint16_t vid, uint16_t pid,
+                            const char *model, const char *vendor)
 {
 	struct dev *d = xcalloc(1, sizeof(*d));
 	d->path = xstrdup(path);
 	d->vid = vid;
 	d->pid = pid;
+	d->model = model ? xstrdup(model) : NULL;
+	d->vendor = vendor ? xstrdup(vendor) : NULL;
 	return d;
 }
 
@@ -175,10 +187,11 @@ static struct dev *scan1(const struct opts *o, bool *valid)
 		fatal(EXIT_FAILURE, "IOServiceGetMatchingServices failed: %d", kr);
 	while ((s = IOIteratorNext(it))) {
 		uint16_t vid = 0, pid = 0;
+		char *model = NULL, *vendor = NULL;
 		char *path = callout_device(s);
-		if (path && usb_info(s, &vid, &pid) &&
+		if (path && usb_info(s, &vid, &pid, &model, &vendor) &&
 		    (!o->have_vid || o->vid == vid) && (!o->have_pid || o->pid == pid)) {
-			struct dev *d = make_dev(path, vid, pid);
+			struct dev *d = make_dev(path, vid, pid, model, vendor);
 			if (tail)
 				tail->next = d;
 			else
@@ -186,6 +199,8 @@ static struct dev *scan1(const struct opts *o, bool *valid)
 			tail = d;
 		}
 		free(path);
+		free(model);
+		free(vendor);
 		IOObjectRelease(s);
 	}
 	*valid = IOIteratorIsValid(it);
@@ -224,6 +239,8 @@ static void free_dev(struct dev *dev)
 	while (dev) {
 		struct dev *next = dev->next;
 		free(dev->path);
+		free(dev->model);
+		free(dev->vendor);
 		free(dev);
 		dev = next;
 	}
@@ -344,11 +361,29 @@ static int parse_opts(int argc, char **argv, struct opts *o)
 	return -1;
 }
 
+// print_field writes ` KEY="value"` for a non-NULL value, mapping any double
+// quote or non-printable-ASCII byte to '_'. This keeps the quoted field
+// unambiguous (no embedded quote can close it early) without escaping; spaces
+// and other printable ASCII pass through verbatim.
+static void print_field(const char *key, const char *val)
+{
+	if (!val)
+		return;
+	printf(" %s=\"", key);
+	for (const unsigned char *p = (const unsigned char *)val; *p; p++)
+		putchar(*p == '"' || *p < 0x20 || *p > 0x7e ? '_' : *p);
+	putchar('"');
+}
+
 static int list_or_exec(struct dev *dev, const struct opts *o, char **argv)
 {
 	if (!o->do_exec) {
-		for (struct dev *d = dev; d; d = d->next)
-			printf("DEVICE=%s VID=%04X PID=%04X\n", d->path, d->vid, d->pid);
+		for (struct dev *d = dev; d; d = d->next) {
+			printf("DEVICE=%s VID=%04X PID=%04X", d->path, d->vid, d->pid);
+			print_field("MODEL", d->model);
+			print_field("VENDOR", d->vendor);
+			putchar('\n');
+		}
 		return 0;
 	}
 	if (!dev) {

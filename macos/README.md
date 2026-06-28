@@ -19,11 +19,16 @@ even when nothing matches (the output is just empty):
 
 ```sh
 $ find-serial
-DEVICE=/dev/cu.usbmodem11301 VID=1546 PID=01A9
+DEVICE=/dev/cu.usbmodem11301 VID=1546 PID=01A9 MODEL="u-blox GNSS receiver" VENDOR="u-blox AG - www.u-blox.com"
 
 $ find-serial --vid 1546 --pid 01A9
-DEVICE=/dev/cu.usbmodem11301 VID=1546 PID=01A9
+DEVICE=/dev/cu.usbmodem11301 VID=1546 PID=01A9 MODEL="u-blox GNSS receiver" VENDOR="u-blox AG - www.u-blox.com"
 ```
+
+`MODEL` and `VENDOR` are the device's own USB product and vendor strings; each is
+omitted when the device does not publish it. The quoted value can contain spaces;
+any double quote or non-printable byte in the string is replaced with `_`. VID/PID
+remain the reliable keys for matching.
 
 ## Exec mode
 
