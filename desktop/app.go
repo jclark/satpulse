@@ -611,7 +611,7 @@ func (a *App) GetAllSignals(gs gpsprot.GNSSSet) map[string][]string {
 		var names []string
 		for sig := range sigs.Signals() {
 			if sig.GNSS() == g {
-				names = append(names, sig.String())
+				names = append(names, sig.UnqualifiedName())
 			}
 		}
 		if len(names) > 0 {
