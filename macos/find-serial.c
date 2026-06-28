@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,12 +17,12 @@
 struct dev {
 	struct dev *next;
 	char *path;
-	unsigned vid, pid;
+	uint16_t vid, pid;
 };
 
 struct opts {
 	bool have_vid, have_pid, do_exec, do_wait;
-	unsigned vid, pid;
+	uint16_t vid, pid;
 };
 
 static void free_dev(struct dev *dev);
@@ -68,7 +69,7 @@ static void usage(FILE *f)
 	fprintf(f, "usage: find-serial [-v|--vid HEX] [-p|--pid HEX] [-w|--wait] [-e|--exec -- command ... {} ...]\n");
 }
 
-static int hexarg(const char *s, unsigned *v)
+static int hexarg(const char *s, uint16_t *v)
 {
 	char *end;
 	unsigned long n;
@@ -76,7 +77,7 @@ static int hexarg(const char *s, unsigned *v)
 	n = strtoul(s, &end, 16);
 	if (errno || end == s || *end || n > 0xffff)
 		return -1;
-	*v = (unsigned)n;
+	*v = (uint16_t)n;
 	return 0;
 }
 
@@ -104,7 +105,7 @@ static char *callout_device(io_registry_entry_t e)
 	return NULL;
 }
 
-static bool uint_prop(io_registry_entry_t e, CFStringRef key, unsigned *v)
+static bool uint_prop(io_registry_entry_t e, CFStringRef key, uint16_t *v)
 {
 	int n = 0;
 	bool ok = false;
@@ -115,11 +116,11 @@ static bool uint_prop(io_registry_entry_t e, CFStringRef key, unsigned *v)
 		CFRelease(p);
 	}
 	if (ok)
-		*v = (unsigned)n & 0xffff;
+		*v = (uint16_t)n;
 	return ok;
 }
 
-static bool usb_info(io_registry_entry_t e, unsigned *vid, unsigned *pid)
+static bool usb_info(io_registry_entry_t e, uint16_t *vid, uint16_t *pid)
 {
 	io_registry_entry_t cur = e, parent;
 	kern_return_t kr;
@@ -144,7 +145,7 @@ static bool usb_info(io_registry_entry_t e, unsigned *vid, unsigned *pid)
 	}
 }
 
-static struct dev *make_dev(const char *path, unsigned vid, unsigned pid)
+static struct dev *make_dev(const char *path, uint16_t vid, uint16_t pid)
 {
 	struct dev *d = xcalloc(1, sizeof(*d));
 	d->path = xstrdup(path);
@@ -173,7 +174,7 @@ static struct dev *scan1(const struct opts *o, bool *valid)
 	if (kr != KERN_SUCCESS)
 		fatal(EXIT_FAILURE, "IOServiceGetMatchingServices failed: %d", kr);
 	while ((s = IOIteratorNext(it))) {
-		unsigned vid = 0, pid = 0;
+		uint16_t vid = 0, pid = 0;
 		char *path = callout_device(s);
 		if (path && usb_info(s, &vid, &pid) &&
 		    (!o->have_vid || o->vid == vid) && (!o->have_pid || o->pid == pid)) {
