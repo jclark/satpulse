@@ -184,14 +184,21 @@ static struct dev *scan1(const struct opts *o, int *valid)
 	return head;
 }
 
+// scan enumerates matching devices, retrying when the I/O registry changes
+// mid-iteration. Delay doubles from 1ms, so 10 tries wait at most 511ms total.
 static struct dev *scan(const struct opts *o)
 {
-	for (int i = 0; i < 3; i++) {
+	useconds_t delay = 1000;
+	for (int tries = 10;;) {
 		int valid;
 		struct dev *dev = scan1(o, &valid);
 		if (valid)
 			return dev;
 		free_dev(dev);
+		if (--tries == 0)
+			break;
+		usleep(delay);
+		delay *= 2;
 	}
 	fatal(EXIT_FAILURE, "I/O registry changed during enumeration");
 	return NULL;
