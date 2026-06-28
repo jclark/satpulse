@@ -319,8 +319,6 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         setApplying(true);
         setOperation({status: 'running', label: 'Applying configuration'});
         clearRespSession();
-        const r = await ApplyConfig(cfg as any);
-        setApplying(false);
         setSaveType(0);
         setResetType(0);
         // Reset survey one-shot fields
@@ -328,15 +326,26 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         setSurveyAcc('');
         setSurveyAgain(false);
         setSurveyReport(true);
-        if (r.ok) {
-            setOperation({status: 'success', label: 'Applying configuration'});
-            setTimePulseTouched(false);
-            setTimeModeTouched(false);
-            setSignalsTouched(false);
-            setSpeedTouched(false);
-        } else {
-            addToast(r.error || 'Apply failed', 'error');
-            setOperation({status: 'failed', label: 'Applying configuration', error: r.error || 'Apply failed'});
+        try {
+            const r = await ApplyConfig(cfg as any);
+            if (r.ok) {
+                setOperation({status: 'success', label: 'Applying configuration'});
+                setTimePulseTouched(false);
+                setTimeModeTouched(false);
+                setSignalsTouched(false);
+                setSpeedTouched(false);
+            } else {
+                addToast(r.error || 'Apply failed', 'error');
+                setOperation({status: 'failed', label: 'Applying configuration', error: r.error || 'Apply failed'});
+            }
+        } catch (e) {
+            // A rejected binding call (e.g. the backend failed to unmarshal the
+            // request) must not leave the Apply button stuck on "Applying...".
+            const msg = e instanceof Error ? e.message : String(e);
+            addToast(msg || 'Apply failed', 'error');
+            setOperation({status: 'failed', label: 'Applying configuration', error: msg || 'Apply failed'});
+        } finally {
+            setApplying(false);
         }
     };
 
