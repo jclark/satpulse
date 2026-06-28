@@ -19,7 +19,7 @@ struct dev {
 };
 
 struct opts {
-	int have_vid, have_pid, do_exec;
+	int have_vid, have_pid, do_exec, do_wait;
 	unsigned vid, pid;
 };
 
@@ -64,7 +64,7 @@ static char *xstrdup(const char *s)
 
 static void usage(FILE *f)
 {
-	fprintf(f, "usage: find-serial [-v|--vid HEX] [-p|--pid HEX] [-e|--exec -- command ... {} ...]\n");
+	fprintf(f, "usage: find-serial [-v|--vid HEX] [-p|--pid HEX] [-w|--wait] [-e|--exec -- command ... {} ...]\n");
 }
 
 static int hexarg(const char *s, unsigned *v)
@@ -151,17 +151,23 @@ static struct dev *make_dev(const char *path, unsigned vid, unsigned pid)
 	return d;
 }
 
+// serial_matching returns a matching dictionary for serial-port devices. The
+// caller passes ownership to an IOKit function that consumes the reference.
+static CFMutableDictionaryRef serial_matching(void)
+{
+	CFMutableDictionaryRef m = IOServiceMatching("IOSerialBSDClient");
+	if (!m)
+		fatal(EXIT_FAILURE, "out of memory");
+	return m;
+}
+
 static struct dev *scan1(const struct opts *o, int *valid)
 {
-	CFMutableDictionaryRef m;
 	io_iterator_t it;
 	io_service_t s;
 	kern_return_t kr;
 	struct dev *head = NULL, *tail = NULL;
-	m = IOServiceMatching("IOSerialBSDClient");
-	if (!m)
-		fatal(EXIT_FAILURE, "out of memory");
-	kr = IOServiceGetMatchingServices(kIOMainPortDefault, m, &it);
+	kr = IOServiceGetMatchingServices(kIOMainPortDefault, serial_matching(), &it);
 	if (kr != KERN_SUCCESS)
 		fatal(EXIT_FAILURE, "IOServiceGetMatchingServices failed: %d", kr);
 	while ((s = IOIteratorNext(it))) {
@@ -184,14 +190,17 @@ static struct dev *scan1(const struct opts *o, int *valid)
 	return head;
 }
 
-// scan enumerates matching devices. An empty result is reported even when the
-// iterator went invalid: nothing was found, so there is no device (this happens
-// with startup registry churn, e.g. on CI runners). Only a non-empty result
-// from a changing registry is retried, with a backoff doubling from 1ms, so 5
-// tries wait at most 15ms total.
-static struct dev *scan(const struct opts *o)
+// scan enumerates matching devices, setting *stable to whether the registry
+// held still long enough to trust the result. An empty result is reported as
+// stable even when the iterator went invalid: nothing was found, so there is no
+// device (this happens with startup registry churn, e.g. on CI runners). Only a
+// non-empty result from a changing registry is retried, with a backoff doubling
+// from 1ms, so 5 tries wait at most 15ms total; if it never settles, *stable is
+// cleared and NULL returned, leaving the caller to decide whether that is fatal.
+static struct dev *scan(const struct opts *o, int *stable)
 {
 	useconds_t delay = 1000;
+	*stable = 1;
 	for (int tries = 5;;) {
 		int valid;
 		struct dev *dev = scan1(o, &valid);
@@ -203,7 +212,7 @@ static struct dev *scan(const struct opts *o)
 		usleep(delay);
 		delay *= 2;
 	}
-	fatal(EXIT_FAILURE, "I/O registry changed during enumeration");
+	*stable = 0;
 	return NULL;
 }
 
@@ -215,6 +224,54 @@ static void free_dev(struct dev *dev)
 		free(dev);
 		dev = next;
 	}
+}
+
+struct wait_ctx {
+	const struct opts *o;
+	struct dev *dev;
+};
+
+// wait_cb fires on each IOSerialBSDClient first-match notification. The
+// iterator must be fully drained to re-arm the notification; the drained
+// services are not used directly. Once at least one matching device is found
+// it stops the run loop, leaving the result in ctx->dev. A registry too
+// unstable to scan is ignored, so we keep waiting for the next notification.
+static void wait_cb(void *refcon, io_iterator_t iter)
+{
+	struct wait_ctx *ctx = refcon;
+	io_service_t s;
+	int stable;
+	while ((s = IOIteratorNext(iter)))
+		IOObjectRelease(s);
+	if (ctx->dev)
+		return;
+	ctx->dev = scan(ctx->o, &stable);
+	if (ctx->dev)
+		CFRunLoopStop(CFRunLoopGetCurrent());
+}
+
+// wait_for_dev blocks using IOKit notifications until scan() finds at least one
+// matching device, then returns the list. It does not poll.
+static struct dev *wait_for_dev(const struct opts *o)
+{
+	struct wait_ctx ctx = {o, NULL};
+	IONotificationPortRef np = IONotificationPortCreate(kIOMainPortDefault);
+	if (!np)
+		fatal(EXIT_FAILURE, "IONotificationPortCreate failed");
+	CFRunLoopSourceRef src = IONotificationPortGetRunLoopSource(np);
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), src, kCFRunLoopDefaultMode);
+	io_iterator_t iter;
+	kern_return_t kr = IOServiceAddMatchingNotification(np, kIOFirstMatchNotification,
+	    serial_matching(), wait_cb, &ctx, &iter);
+	if (kr != KERN_SUCCESS)
+		fatal(EXIT_FAILURE, "IOServiceAddMatchingNotification failed: %d", kr);
+	wait_cb(&ctx, iter);
+	if (!ctx.dev)
+		CFRunLoopRun();
+	IOObjectRelease(iter);
+	CFRunLoopRemoveSource(CFRunLoopGetCurrent(), src, kCFRunLoopDefaultMode);
+	IONotificationPortDestroy(np);
+	return ctx.dev;
 }
 
 static int check_exec(int argc, char **argv)
@@ -241,11 +298,12 @@ static int parse_opts(int argc, char **argv, struct opts *o)
 		{"pid", required_argument, 0, 2},
 		{"exec", no_argument, 0, 3},
 		{"help", no_argument, 0, 4},
+		{"wait", no_argument, 0, 5},
 		{0, 0, 0, 0},
 	};
 	int c;
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "v:p:e", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "v:p:ew", longopts, NULL)) != -1) {
 		switch (c) {
 		case 1:
 		case 'v':
@@ -265,6 +323,8 @@ static int parse_opts(int argc, char **argv, struct opts *o)
 			break;
 		case 3:
 		case 'e': o->do_exec = 1; break;
+		case 5:
+		case 'w': o->do_wait = 1; break;
 		case 4: usage(stdout); return 0;
 		default: usage(stderr); return EX_USAGE;
 		}
@@ -311,7 +371,12 @@ int main(int argc, char **argv)
 	int ret = parse_opts(argc, argv, &o);
 	if (ret >= 0)
 		return ret;
-	dev = scan(&o);
+	int stable;
+	dev = scan(&o, &stable);
+	if (!stable)
+		fatal(EXIT_FAILURE, "I/O registry changed during enumeration");
+	if (!dev && o.do_wait)
+		dev = wait_for_dev(&o);
 	ret = list_or_exec(dev, &o, argv);
 	free_dev(dev);
 	return ret;
