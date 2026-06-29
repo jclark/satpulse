@@ -5,7 +5,8 @@ CMD=github.com/jclark/satpulse/gps/app/cmd
 VERSION:=$(shell cat VERSION)
 VERSION_TAG:=v$(VERSION)
 BUILD_DATE:=$(shell date -u --rfc-3339=seconds)
-DIRTY:=$(shell git diff-index --quiet HEAD || echo .dirty)
+# Refresh the index so unchanged-but-touched files don't show as dirty.
+DIRTY:=$(shell git update-index -q --refresh; git diff-index --quiet HEAD || echo .dirty)
 GIT_VERSION:=$(shell env TZ=UTC git log -1 --format="%cd.%h" --date=format-local:%Y%m%d)$(DIRTY)
 DEB_VERSION=1
 RPM_RELEASE=1
@@ -210,6 +211,7 @@ release: $(GH_DEBS) $(GH_RPMS)
 		$^
 
 tag:
+	git update-index -q --refresh
 	git diff-index --exit-code HEAD
 	git tag -f -a "$(VERSION_TAG)" -m "Release $(VERSION_TAG)"
 
