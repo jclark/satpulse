@@ -6,3 +6,5 @@ See [NEWS](docs/_includes/NEWS.md) and the [blog](https://satpulse.net/blog.html
 Check the [Releases](https://github.com/jclark/satpulse/releases) page for the latest prerelease.
 
 The website is built from the [`docs`](docs/) directory.
+
+The [homebrew-satpulse](https://github.com/jclark/homebrew-satpulse) repository provides a [Homebrew](https://brew.sh/) tap for macOS.
