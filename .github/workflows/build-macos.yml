@@ -25,6 +25,12 @@ jobs:
     - name: Build
       run: ./bsd-build.sh
 
+    - name: Build find-serial
+      run: make -C macos OUTDIR=../out/darwin_arm64
+
+    - name: Run find-serial (list mode)
+      run: out/darwin_arm64/find-serial
+
     - name: Test
       run: go test ./...
 
