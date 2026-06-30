@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -59,6 +60,26 @@ const (
 	// well clear of int64 overflow.
 	MaxNMEASendInterval = 366 * 24 * time.Hour
 )
+
+// ValidateNMEASendInterval checks a GGA upload interval, in seconds: it must be
+// finite, and either 0 (upload once per connection) or between
+// MinNMEASendInterval and MaxNMEASendInterval.  The returned error has no
+// prefix so callers can wrap it with the relevant config key or flag name.
+func ValidateNMEASendInterval(secs float64) error {
+	if math.IsNaN(secs) || math.IsInf(secs, 0) {
+		return errors.New("must be a finite number")
+	}
+	if secs < 0 {
+		return errors.New("must be non-negative")
+	}
+	if secs > 0 && secs < MinNMEASendInterval.Seconds() {
+		return fmt.Errorf("must be 0 or at least %d", MinNMEASendInterval/time.Second)
+	}
+	if secs > MaxNMEASendInterval.Seconds() {
+		return fmt.Errorf("must be at most %d", MaxNMEASendInterval/time.Second)
+	}
+	return nil
+}
 
 // PushConfig is one [[stream.push]] entry.  Transport is selected
 // by which sub-table is present.  Protocol is the packet format
@@ -254,17 +275,8 @@ func (cfg *PullConfig) Validate() error {
 			return fmt.Errorf("stream.pull.ntrip.mountpoint: %w", err)
 		}
 		if iv := cfg.Ntrip.NMEASendInterval; iv != nil {
-			if math.IsNaN(*iv) || math.IsInf(*iv, 0) {
-				return fmt.Errorf("stream.pull.ntrip.nmeaSendInterval: must be finite")
-			}
-			if *iv < 0 {
-				return fmt.Errorf("stream.pull.ntrip.nmeaSendInterval: must be non-negative")
-			}
-			if *iv > 0 && *iv < MinNMEASendInterval.Seconds() {
-				return fmt.Errorf("stream.pull.ntrip.nmeaSendInterval: must be 0 or at least 1")
-			}
-			if *iv > MaxNMEASendInterval.Seconds() {
-				return fmt.Errorf("stream.pull.ntrip.nmeaSendInterval: must be at most %g", MaxNMEASendInterval.Seconds())
+			if err := ValidateNMEASendInterval(*iv); err != nil {
+				return fmt.Errorf("stream.pull.ntrip.nmeaSendInterval: %w", err)
 			}
 		}
 	}
