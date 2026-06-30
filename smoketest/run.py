@@ -51,6 +51,8 @@ SCENARIOS = [
     "http/disabled",
     "ntrip/basic",
     "ntrip/auth",
+    "ntrip/anyuser",
+    "ntrip/metadata",
     "ntp/sock",
     "ntp/shm",
     "proxy/tcp",

@@ -159,8 +159,16 @@ make update-deps
 - `http/full` -- default HTTP endpoint: `/position`, `/metrics`, GUI HTML, SSE.
 - `http/disabled` -- HTTP endpoint with GUI and metrics off, position
   only; also guards clean shutdown for GUI-disabled endpoints.
-- `ntrip/basic` -- Ntrip caster source table and RTCM streaming.
+- `ntrip/basic` -- Ntrip caster source table and RTCM streaming; the source
+  table's shared STR fields show their defaults.
 - `ntrip/auth` -- Ntrip caster with an authenticated mountpoint.
+- `ntrip/anyuser` -- Ntrip caster mountpoint with `auth.anyUser`: any valid
+  top-level user streams, while unauthenticated and wrong-credential requests
+  are rejected.
+- `ntrip/metadata` -- Ntrip caster source-table metadata: shared STR-record
+  overrides (network, country, generator, lat/lon, bitrate) apply to every
+  mountpoint, and per-mountpoint description and bitrate override or fall back
+  to them.
 - `ntp/sock` -- chrony SOCK refclock: a pure 1 Hz RMC stream drives serial timing
   mode, and the samples are well-formed, consistently timestamped, and carry
   the correct GPS time.

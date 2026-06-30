@@ -73,6 +73,31 @@ def check_sourcetable(ctx: common.SmokeContext, mount: str) -> bytes:
     return body
 
 
+# STR-record field indices, counting from the first field after the
+# "STR;<name>;" prefix (so identifier is 0). See gps/app/ntrip/strrec.go.
+STR_IDENTIFIER = 0
+STR_NETWORK = 5
+STR_COUNTRY = 6
+STR_LAT = 7
+STR_LON = 8
+STR_GENERATOR = 11
+STR_BITRATE = 15
+
+
+def sourcetable_record(ctx: common.SmokeContext, mount: str) -> list[str]:
+    """Return mount's STR record as a field list, identifier first.
+
+    Splits the mountpoint's STR line on ";" and drops the leading "STR"
+    and name tokens, so the result is indexable by the STR_* constants.
+    """
+    body = check_sourcetable(ctx, mount)
+    prefix = f"STR;{mount};".encode()
+    for raw in body.split(b"\r\n"):
+        if raw.startswith(prefix):
+            return raw.decode("latin1").split(";")[2:]
+    raise AssertionError(f"no STR record for mountpoint {mount}")
+
+
 def check_stream(
     ctx: common.SmokeContext,
     mount: str,
@@ -118,3 +143,16 @@ def check_unauthorized(ctx: common.SmokeContext, mount: str) -> None:
     """An unauthenticated request to a protected mountpoint is rejected."""
     status, _ = _request(ctx.ntrip_port, mount)
     assert status == 401, f"protected mount {mount} expected 401, got {status}"
+
+
+def check_credentials_rejected(
+    ctx: common.SmokeContext, mount: str, auth: common.Auth
+) -> None:
+    """Wrong credentials to a protected mountpoint are rejected with 401.
+
+    For an anyUser mountpoint this confirms the password is still
+    verified: any valid top-level user is allowed, but bad credentials
+    are not.
+    """
+    status, _ = _request(ctx.ntrip_port, mount, auth=auth)
+    assert status == 401, f"mount {mount} with bad credentials expected 401, got {status}"
