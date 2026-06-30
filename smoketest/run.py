@@ -54,6 +54,7 @@ SCENARIOS = [
     "ntrip/auth",
     "ntrip/anyuser",
     "ntrip/metadata",
+    "ntrip/msm7to4",
     "ntp/sock",
     "ntp/shm",
     "proxy/tcp",

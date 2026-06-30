@@ -98,17 +98,17 @@ def sourcetable_record(ctx: common.SmokeContext, mount: str) -> list[str]:
     raise AssertionError(f"no STR record for mountpoint {mount}")
 
 
-def check_stream(
+def _read_stream(
     ctx: common.SmokeContext,
     mount: str,
-    auth: common.Auth | None = None,
-    read_seconds: float = 4.0,
-) -> int:
-    """An Ntrip client receives RTCM packets from the caster mountpoint.
+    auth: common.Auth | None,
+    read_seconds: float,
+) -> list[common.JsonObject]:
+    """Read the mountpoint with satpulsetool ntrip and return its RTCM packets.
 
-    Uses satpulsetool ntrip as the client (also exercising that tool),
+    Runs satpulsetool ntrip as the client (also exercising that tool),
     reading the stream while the runner's background replay feeds RTCM
-    through the daemon.
+    through the daemon, and returns the RTCM packet objects it logged.
     """
     cmd = [ctx.satpulsetool, "ntrip"]
     if auth:
@@ -124,7 +124,7 @@ def check_stream(
         except subprocess.TimeoutExpired:
             client.kill()
             out, _ = client.communicate()
-    rtcm = 0
+    pkts: list[common.JsonObject] = []
     for line in out.decode("utf-8", "replace").splitlines():
         line = line.strip()
         if not line:
@@ -134,9 +134,40 @@ def check_stream(
         except json.JSONDecodeError:
             continue
         if e.get("tag") == "RTCM":
-            rtcm += 1
-    assert rtcm > 0, f"Ntrip client received no RTCM packets from {mount}"
-    return rtcm
+            pkts.append(e)
+    return pkts
+
+
+def check_stream(
+    ctx: common.SmokeContext,
+    mount: str,
+    auth: common.Auth | None = None,
+    read_seconds: float = 4.0,
+) -> int:
+    """An Ntrip client receives RTCM packets from the caster mountpoint."""
+    pkts = _read_stream(ctx, mount, auth, read_seconds)
+    assert pkts, f"Ntrip client received no RTCM packets from {mount}"
+    return len(pkts)
+
+
+def stream_rtcm_msgs(
+    ctx: common.SmokeContext,
+    mount: str,
+    auth: common.Auth | None = None,
+    read_seconds: float = 4.0,
+) -> set[str]:
+    """Return the set of RTCM message numbers received from the mountpoint.
+
+    Like check_stream, but reports which RTCM message types the caster
+    delivers, so a scenario can assert on conversions such as MSM7->MSM4.
+    """
+    msgs: set[str] = set()
+    for p in _read_stream(ctx, mount, auth, read_seconds):
+        m = p.get("msg")
+        if isinstance(m, str):
+            msgs.add(m)
+    assert msgs, f"Ntrip client received no RTCM messages from {mount}"
+    return msgs
 
 
 def check_unauthorized(ctx: common.SmokeContext, mount: str) -> None:

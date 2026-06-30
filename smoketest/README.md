@@ -172,6 +172,9 @@ make update-deps
   overrides (network, country, generator, lat/lon, bitrate) apply to every
   mountpoint, and per-mountpoint description and bitrate override or fall back
   to them.
+- `ntrip/msm7to4` -- Ntrip caster mountpoint with `msm7to4`: the receiver feed's
+  RTCM MSM7 observations are delivered to the client as MSM4, with no MSM7
+  message passing through.
 - `ntp/sock` -- chrony SOCK refclock: a pure 1 Hz RMC stream drives serial timing
   mode, and the samples are well-formed, consistently timestamped, and carry
   the correct GPS time.
