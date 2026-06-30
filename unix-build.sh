@@ -53,6 +53,8 @@ build_date=$(date -u -Iseconds | tr 'T' ' ')
 git_date=$(env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d)
 git_hash=$(git log -1 --format="%h")
 cmd_version="${version}-pre.${git_date}.${git_hash}"
+# Refresh the index so unchanged-but-touched files don't show as dirty.
+git update-index -q --refresh
 if ! git diff-index --quiet HEAD 2>/dev/null; then
     cmd_version="${cmd_version}.dirty"
 elif [ "$(git describe --tags --exact-match 2>/dev/null)" = "v${version}" ]; then

@@ -18,7 +18,6 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
-	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/spartnbin"
@@ -257,12 +256,12 @@ func NewPull(source Source, lg *slog.Logger,
 const scanBufSize = 16
 const ggaWriteTimeout = 5 * time.Second
 
-// maxGGASendTimeouts is how many consecutive upload write-deadline timeouts the
-// GGA sender tolerates before dropping the connection to force a reconnect.  A
-// single transient stall keeps the correction read stream up; each timeout
-// takes up to ggaWriteTimeout, so a wedged upload recovers in roughly
-// maxGGASendTimeouts*ggaWriteTimeout.
-const maxGGASendTimeouts = 3
+// maxGGASendTimeouts is the maximum number of consecutive upload write-deadline
+// timeouts the GGA sender tolerates; the next timeout drops the connection to
+// force a reconnect.  Transient stalls keep the correction read stream up; each
+// timeout takes up to ggaWriteTimeout, so a wedged upload is dropped within
+// about (maxGGASendTimeouts+1)*ggaWriteTimeout.
+const maxGGASendTimeouts = 2
 
 // errReconnect is sent as a scan.Packet.ReadError to signal the
 // pruning queue that the connection was lost.
@@ -343,8 +342,8 @@ func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
 
 // sendGGA uploads data to conn and returns the connection (nil if it was
 // dropped) and the updated consecutive-timeout count.  A clean write timeout
-// keeps the connection through a transient stall; a hard error or
-// maxGGASendTimeouts consecutive timeouts drop it so the reader reconnects.
+// keeps the connection through a transient stall; a hard error, or more than
+// maxGGASendTimeouts consecutive timeouts, drops it so the reader reconnects.
 func sendGGA(lg *slog.Logger, conn ReadWriteDeadlineCloser, data string, nTimeouts int) (ReadWriteDeadlineCloser, int) {
 	err := writeGGA(conn, data)
 	switch {
@@ -355,7 +354,7 @@ func sendGGA(lg *slog.Logger, conn ReadWriteDeadlineCloser, data string, nTimeou
 		if nTimeouts == 1 {
 			lg.Warn("NMEA GGA upload timed out; keeping connection")
 		}
-		if nTimeouts < maxGGASendTimeouts {
+		if nTimeouts <= maxGGASendTimeouts {
 			return conn, nTimeouts
 		}
 		lg.Warn("NMEA GGA upload timed out repeatedly; dropping connection", "timeouts", nTimeouts)
@@ -387,6 +386,11 @@ func (s *GGASender) WaitReady(ctx context.Context) error {
 		case <-s.ready:
 			return nil
 		default:
+			// Run closes done on ctx cancellation too; don't misreport a
+			// clean cancel as a missing fix.
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return ErrNoUsableGGA
 		}
 	case <-ctx.Done():
@@ -645,22 +649,7 @@ func (s *Pull) writer(ctx context.Context, lg *slog.Logger,
 // fix (checksum-valid, quality > 0, lat/lon set), and ok == false otherwise.
 func GGAPacketPosition(pkt scan.Packet) ([2]float64, bool) {
 	var pos [2]float64
-	if !pkt.HasTag(gpsreg.TagNMEA) || !pkt.ChecksumValid {
-		return pos, false
-	}
-	flags := nmeamsg.CheckSyntax(pkt.Data)
-	if !flags.IsValidGNSSTalkerNMEA() {
-		return pos, false
-	}
-	i := strings.IndexByte(pkt.Data, '*')
-	if i < 0 {
-		return pos, false
-	}
-	msg, err := nmeamsg.ParseGNSSTalkerPayload(pkt.Data[1:i], flags)
-	if err != nil {
-		return pos, false
-	}
-	gga, ok := msg.(nmeamsg.GGASentence)
+	gga, ok := packetGGASentence(pkt)
 	if !ok || gga.Fields.Quality == 0 || !gga.Fields.Lat.IsSet() || !gga.Fields.Lon.IsSet() {
 		return pos, false
 	}

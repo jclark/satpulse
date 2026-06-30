@@ -55,24 +55,67 @@ func TestSynthGGAFromGeo(t *testing.T) {
 	}
 }
 
-func TestSynthGGAFromGeoWithoutTimeUsesNow(t *testing.T) {
+func TestSynthGGAFromGeoWithoutTimeUsesEpochInstant(t *testing.T) {
 	sink := &sink{}
 	s := New(sink)
-	s.now = func() time.Time {
-		return time.Date(2026, 6, 24, 1, 2, 3, 40000000, time.UTC)
-	}
-	tRead := time.Unix(1, 0)
+	// With no UTC, the GGA time is the end-of-epoch read time minus the
+	// first-message-to-end delay, i.e. the first message's read time.
+	first := time.Date(2026, 6, 24, 9, 8, 7, 50000000, time.UTC)
 	s.PosGeo(&gpsprot.PosGeoMsg{
 		LatLon: [2]gpsprot.Angle{
 			gpsprot.DegreesFromFloat(13.731826167),
 			gpsprot.DegreesFromFloat(100.644802333),
 		},
-	}, tRead)
+	}, first)
 	s.NavEpoch(&gpsprot.NavEpochMsg{
 		FixLevel: gpsprot.FixLevelCode,
-	}, tRead)
-	if payload := ggaPayload(t, oneGGA(t, sink)); !strings.HasPrefix(payload, "GNGGA,010203.04,1343.90957,N,10038.68814,E,1,") {
-		t.Fatalf("payload = %q, want host-clock time", payload)
+	}, time.Date(2026, 6, 24, 9, 8, 8, 0, time.UTC))
+	if payload := ggaPayload(t, oneGGA(t, sink)); !strings.HasPrefix(payload, "GNGGA,090807.05,1343.90957,N,10038.68814,E,1,") {
+		t.Fatalf("payload = %q, want epoch-instant time", payload)
+	}
+}
+
+func TestSynthGGAEpochDelayFromFirstMessage(t *testing.T) {
+	sink := &sink{}
+	s := New(sink)
+	// The delay is measured from the first message (the no-UTC Time here), not a
+	// later one, so the reconstructed time is the first message's read time.
+	s.Time(&gpsprot.TimeMsg{}, time.Date(2026, 6, 24, 9, 8, 7, 0, time.UTC))
+	s.PosGeo(&gpsprot.PosGeoMsg{
+		LatLon: [2]gpsprot.Angle{
+			gpsprot.DegreesFromFloat(13.731826167),
+			gpsprot.DegreesFromFloat(100.644802333),
+		},
+	}, time.Date(2026, 6, 24, 9, 8, 8, 0, time.UTC))
+	s.NavEpoch(&gpsprot.NavEpochMsg{FixLevel: gpsprot.FixLevelCode}, time.Date(2026, 6, 24, 9, 8, 9, 0, time.UTC))
+	if payload := ggaPayload(t, oneGGA(t, sink)); !strings.HasPrefix(payload, "GNGGA,090807.00,") {
+		t.Fatalf("payload = %q, want first (Time) message read time", payload)
+	}
+}
+
+func TestSynthGGARemembersEpochDelay(t *testing.T) {
+	sink := &sink{}
+	s := New(sink)
+	pos := &gpsprot.PosGeoMsg{
+		LatLon: [2]gpsprot.Angle{
+			gpsprot.DegreesFromFloat(13.731826167),
+			gpsprot.DegreesFromFloat(100.644802333),
+		},
+	}
+	// Epoch 1 has a first message, fixing the 0.9s delay.
+	s.PosGeo(pos, time.Date(2026, 6, 24, 10, 0, 0, 0, time.UTC))
+	s.NavEpoch(&gpsprot.NavEpochMsg{FixLevel: gpsprot.FixLevelCode}, time.Date(2026, 6, 24, 10, 0, 0, 900000000, time.UTC))
+	// Epoch 2 has no message before NavEpoch, so the remembered 0.9s delay is
+	// subtracted from its end-of-epoch read time.
+	s.NavEpoch(&gpsprot.NavEpochMsg{FixLevel: gpsprot.FixLevelNone}, time.Date(2026, 6, 24, 10, 0, 1, 900000000, time.UTC))
+	if len(sink.ggas) != 2 {
+		t.Fatalf("got %d GGA messages, want 2", len(sink.ggas))
+	}
+	if got := ggaPayload(t, sink.ggas[0]); !strings.HasPrefix(got, "GNGGA,100000.00,") {
+		t.Fatalf("epoch 1 payload = %q, want 100000.00", got)
+	}
+	if got := ggaPayload(t, sink.ggas[1]); !strings.HasPrefix(got, "GNGGA,100001.00,,,,,0,") {
+		t.Fatalf("epoch 2 payload = %q, want 100001.00 no-fix", got)
 	}
 }
 
@@ -128,10 +171,9 @@ func TestSynthGGAFromGeoHeightWithoutMSL(t *testing.T) {
 func TestSynthGGANoFix(t *testing.T) {
 	sink := &sink{}
 	s := New(sink)
-	s.now = func() time.Time {
-		return time.Date(2026, 6, 24, 1, 2, 3, 0, time.UTC)
-	}
-	s.NavEpoch(&gpsprot.NavEpochMsg{FixLevel: gpsprot.FixLevelNone}, time.Time{})
+	// No prior message, so the delay is zero and the GGA time is the NavEpoch
+	// read time.
+	s.NavEpoch(&gpsprot.NavEpochMsg{FixLevel: gpsprot.FixLevelNone}, time.Date(2026, 6, 24, 1, 2, 3, 0, time.UTC))
 	gga := oneGGA(t, sink)
 	if uint8(gga.Fields.Quality) != ggaQualityInvalid {
 		t.Fatalf("quality = %d, want %d", gga.Fields.Quality, ggaQualityInvalid)

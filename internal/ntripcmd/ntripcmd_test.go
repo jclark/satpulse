@@ -147,17 +147,22 @@ func TestParseFlags(t *testing.T) {
 		},
 		{
 			name:      "nmea send interval negative",
-			args:      []string{"--nmea-send-interval", "-1", "caster.example", "MNT"},
+			args:      []string{"--nmea-send-pos", "13.7,100.6", "--nmea-send-interval", "-1", "caster.example", "MNT"},
 			expectErr: true,
 		},
 		{
 			name:      "nmea send interval positive below minimum",
-			args:      []string{"--nmea-send-interval", "0.5", "caster.example", "MNT"},
+			args:      []string{"--nmea-send-pos", "13.7,100.6", "--nmea-send-interval", "0.5", "caster.example", "MNT"},
 			expectErr: true,
 		},
 		{
 			name:      "nmea send interval above maximum",
-			args:      []string{"--nmea-send-interval", "40000000", "caster.example", "MNT"},
+			args:      []string{"--nmea-send-pos", "13.7,100.6", "--nmea-send-interval", "40000000", "caster.example", "MNT"},
+			expectErr: true,
+		},
+		{
+			name:      "nmea send interval without pos",
+			args:      []string{"--nmea-send-interval", "5", "caster.example", "MNT"},
 			expectErr: true,
 		},
 		{

@@ -47,9 +47,11 @@ nmeaSendInterval = 5
 unset key is distinguishable from `0`). Many position-dependent casters drop
 the stream unless they keep receiving GGA, so the default behaviour is periodic
 re-upload, not one-shot. An unset key defaults to 5 seconds; a configured `0`
-means upload once per connection. It is consulted only on the `nmeaSend` path,
-so like other mode-dependent keys it has no effect (and is not rejected) when
-`nmeaSend` is false; only a negative or non-finite value is a config error.
+means upload once per connection. The value has effect only on the `nmeaSend`
+path, but it is validated whenever the key is present, regardless of `nmeaSend`:
+a non-finite, negative, sub-1-second (but non-zero), or above-maximum value is a
+config error. Validating eagerly catches a typo'd interval even when the key is
+left in a config with `nmeaSend` off.
 
 ## Implementation
 
@@ -189,7 +191,9 @@ silent correction stream when the receiver never gets its first fix.
 
 ## Open decisions
 
-- None outstanding. No minimum `nmeaSendInterval` is enforced: the effective
-  re-send rate is bounded by the nav-epoch interval that drives the selected-GGA
-  feed, so a tiny configured value cannot make the held GGA churn faster than
-  the receiver produces fixes.
+- None outstanding. A 1-second minimum `nmeaSendInterval` is enforced (a
+  configured `0` is still allowed and means once per connection). The effective
+  re-send rate is in any case bounded by the nav-epoch interval that drives the
+  selected-GGA feed, so a sub-second value could not make the held GGA churn
+  faster than the receiver produces fixes; the minimum simply rejects a
+  nonsensical config up front rather than silently clamping it.

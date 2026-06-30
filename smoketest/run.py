@@ -57,7 +57,8 @@ SCENARIOS = [
     "proxy/socket",
     "stream/push-ntrip",
     "stream/push-udp",
-    "stream/pull",
+    "stream/pull-ntrip",
+    "stream/pull-tcp",
     "stream/nmea-send",
     "shutdown/serial-loss",
 ]
@@ -581,32 +582,42 @@ class Context:
             self._udp_log_file = None
 
     def start_source(self, timeout: float = 5) -> None:
-        """Start the fake Ntrip correction source for [stream.pull], before the daemon.
+        """Start the fake correction source for [stream.pull], before the daemon.
 
         The daemon's pull client connects out to this source after GPS
         detection, so it must be listening first; otherwise the connect fails,
         the daemon logs a reconnect warning (which check_no_unexpected_errors
-        would flag), and backs off. The source answers the Ntrip GET with
-        "ICY 200 OK" and streams the scenario's RTCM log (paced by pack), which
-        the daemon writes back over the serial port. A readiness probe that does
-        not complete the GET handshake is ignored, so polling the port is safe.
+        would flag), and backs off. For an Ntrip pull the source answers the GET
+        with "ICY 200 OK"; for a plain TCP pull (--raw) it streams immediately
+        with no handshake. Either way it streams the scenario's RTCM log (paced
+        by pack), which the daemon writes back over the serial port. An Ntrip
+        readiness probe that does not complete the GET handshake is ignored, so
+        polling the port is safe.
         """
         if not self.pull_source_log:
             raise RuntimeError("[stream.pull] configured but the scenario set no PULL_SOURCE_LOG")
         with open(self.env["SATPULSE_TEST_CONFIG"], "rb") as cf:
-            ntrip = tomllib.load(cf)["stream"]["pull"]["ntrip"]
-        port = int(ntrip["address"].rsplit(":", 1)[1])
-        cmd = [
-            sys.executable, os.path.join(SCENARIOS_DIR, "stream", "fakesource.py"),
-            f"127.0.0.1:{port}", "--mountpoint", ntrip["mountpoint"],
-            "--pack", self.satpulsetool, "--factor", str(self.factor), self.pull_source_log,
-        ]
-        if ntrip.get("username"):
-            cmd += ["--username", ntrip["username"]]
-        if ntrip.get("password"):
-            cmd += ["--password", ntrip["password"]]
-        if ntrip.get("nmeaSend"):
-            cmd += ["--require-gga"]
+            pull = tomllib.load(cf)["stream"]["pull"]
+        src = os.path.join(SCENARIOS_DIR, "stream", "fakesource.py")
+        if "tcp" in pull:
+            port = int(pull["tcp"]["address"].rsplit(":", 1)[1])
+            cmd = [
+                sys.executable, src, f"127.0.0.1:{port}", "--tcp",
+                "--pack", self.satpulsetool, "--factor", str(self.factor), self.pull_source_log,
+            ]
+        else:
+            ntrip = pull["ntrip"]
+            port = int(ntrip["address"].rsplit(":", 1)[1])
+            cmd = [
+                sys.executable, src, f"127.0.0.1:{port}", "--mountpoint", ntrip["mountpoint"],
+                "--pack", self.satpulsetool, "--factor", str(self.factor), self.pull_source_log,
+            ]
+            if ntrip.get("username"):
+                cmd += ["--username", ntrip["username"]]
+            if ntrip.get("password"):
+                cmd += ["--password", ntrip["password"]]
+            if ntrip.get("nmeaSend"):
+                cmd += ["--require-gga"]
         self._source_log_file = open(self.source_log, "wb")
         self.source_proc = subprocess.Popen(cmd, stdout=self._source_log_file, stderr=subprocess.STDOUT)
         deadline = time.time() + timeout
@@ -750,7 +761,7 @@ class Context:
     # FIFO cannot, because satpulsed opens it O_RDWR and holds its own write end
     # so an idle FIFO stays "connected" by design. The pty is also full-duplex,
     # so unlike the read-only FIFO it can carry the daemon's writes -- used by
-    # the stream/pull write-path scenario (see start_write_capture). disconnect()
+    # the stream/pull-* write-path scenarios (see start_write_capture). disconnect()
     # requires a pty; using a pty does not require disconnect().
 
     def start_write_capture(self) -> None:
@@ -1000,8 +1011,8 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
     # "pty" is full-duplex and can be disconnected. SELF_SHUTDOWN -- the daemon
     # is expected to exit on its own when its input goes away -- only makes
     # sense over a pty, since only a pty can disconnect. A pty does not imply
-    # SELF_SHUTDOWN: the stream/pull write-path scenario uses a pty and still
-    # stops via SIGINT.
+    # SELF_SHUTDOWN: the stream/pull-* write-path scenarios use a pty and still
+    # stop via SIGINT.
     input_kind = getattr(scen, "INPUT", "fifo")
     self_shutdown = bool(getattr(scen, "SELF_SHUTDOWN", False))
     if self_shutdown and input_kind != "pty":

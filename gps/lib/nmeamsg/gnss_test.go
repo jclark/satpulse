@@ -149,6 +149,11 @@ func TestSerializeGGA(t *testing.T) {
 			in:     MakeGGA("GN", tm(0, 0, 1, 50), nil, pf64(100), pf64(75.5), 0, nil, nil),
 			expect: "$GNGGA,000001.50,,,,,0,,,,,,,,*52\r\n",
 		},
+		{
+			name:   "zero time leaves the time field empty",
+			in:     MakeGGA("GN", time.Time{}, nil, nil, nil, 0, nil, nil),
+			expect: frame("GNGGA,,,,,,0,,,,,,,,"),
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

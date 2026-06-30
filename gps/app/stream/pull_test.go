@@ -1302,16 +1302,16 @@ func readGGA(t *testing.T, conn net.Conn, want string) {
 }
 
 // A clean write-deadline timeout must not tear down the connection on the first
-// stall (the correction read stream rides the same conn), but maxGGASendTimeouts
-// consecutive timeouts drop it so the reader reconnects.  A hard write error
-// drops the connection immediately.
+// stall (the correction read stream rides the same conn), but more than
+// maxGGASendTimeouts consecutive timeouts drop it so the reader reconnects.  A
+// hard write error drops the connection immediately.
 func TestGGASenderTimeoutTolerance(t *testing.T) {
 	tests := []struct {
 		name       string
 		err        error
 		wantWrites int
 	}{
-		{"clean timeout tolerated then dropped", netTimeout{}, maxGGASendTimeouts},
+		{"clean timeout tolerated then dropped", netTimeout{}, maxGGASendTimeouts + 1},
 		{"hard error drops immediately", errors.New("broken pipe"), 1},
 	}
 	for _, tt := range tests {

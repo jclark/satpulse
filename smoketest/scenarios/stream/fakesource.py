@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Minimal Ntrip v1 source that serves an RTCM log to a stream.pull client.
+"""Minimal correction source that serves an RTCM log to a stream.pull client.
 
-Plays the caster role for satpulsed's `[stream.pull].ntrip` correction source:
-it listens on a TCP port, accepts the Ntrip v1 GET request a pulling client
-sends, replies "ICY 200 OK", and then streams the RTCM body by running
-`satpulsetool pack` on a packet log so the corrections keep the log's
-inter-packet timing.
+Plays the source role for satpulsed's `[stream.pull]` correction source. It
+listens on a TCP port, accepts a pulling client, and streams the RTCM body by
+running `satpulsetool pack` on a packet log so the corrections keep the log's
+inter-packet timing. It serves both pull transports:
 
-It implements only what a pull client needs:
-  - read the request headers up to the blank line
-  - require the first line to be "GET /<mountpoint> HTTP/1.0"
-  - optionally check the mountpoint and Basic-auth credentials
-  - reply "ICY 200 OK\r\n" (or "ERROR - ...\r\n" on a mismatch)
-  - stream the packed RTCM log to the connection
+  - Ntrip (`[stream.pull.ntrip]`, the default): read the request headers up to
+    the blank line, require "GET /<mountpoint> HTTP/1.0", optionally check the
+    mountpoint and Basic-auth credentials, reply "ICY 200 OK\r\n" (or
+    "ERROR - ...\r\n" on a mismatch), then stream.
+  - plain TCP (`[stream.pull.tcp]`, with --tcp): no handshake at all -- the
+    client just connects and the source streams the log immediately.
 
 After streaming, the connection is held open until the client disconnects, so
 the daemon does not see EOF, reconnect, and replay the corrections a second
@@ -21,10 +20,11 @@ time (which would make the captured serial output no longer match the source).
     scenarios/stream/fakesource.py 127.0.0.1:2101 --pack satpulsetool log.jsonl
     scenarios/stream/fakesource.py 127.0.0.1:2101 --pack satpulsetool --factor 10 \
         --mountpoint RTCM --username smoke --password secret log.jsonl
+    scenarios/stream/fakesource.py 127.0.0.1:2101 --tcp --pack satpulsetool log.jsonl
 
-Diagnostic lines go to stdout (one per connection). Runs until signalled. A
-connection that does not complete a valid GET handshake (e.g. a readiness
-probe) is closed and ignored.
+Diagnostic lines go to stdout (one per connection). Runs until signalled. In
+Ntrip mode a connection that does not complete a valid GET handshake (e.g. a
+readiness probe) is closed and ignored.
 """
 from __future__ import annotations
 
@@ -114,28 +114,33 @@ def auth_ok(head: bytes, want_user: str, want_pw: str) -> bool:
     return False
 
 
-def handle(conn: socket.socket, pack: str, factor: str, log_path: str,
-           want_mount: str, want_user: str, want_pw: str, require_gga: bool) -> None:
-    """Run one GET handshake and stream the packed RTCM log to the client."""
+def ntrip_handshake(conn: socket.socket, want_mount: str, want_user: str,
+                    want_pw: str, require_gga: bool) -> tuple[str, bytes] | None:
+    """Run the Ntrip v1 GET handshake; return (mount, leftover) or None to drop.
+
+    leftover carries any bytes already received past the first GGA line (a
+    coalesced second GGA), so the caller's keepalive loop does not drop them.
+    Returns None on a probe, a bad handshake, or a missing required GGA.
+    """
     head = read_request(conn)
     if head is None:
-        return  # probe or incomplete handshake; nothing to serve
+        return None  # probe or incomplete handshake; nothing to serve
     line = head.split(b"\r\n", 1)[0].decode("latin1")
     # Ntrip v1 pull request: "GET /<mountpoint> HTTP/1.0".
     parts = line.split(" ")
     if len(parts) < 2 or parts[0] != "GET":
         conn.sendall(b"ERROR - Bad Request\r\n")
         log(f"{iso(time.time())} rejected: {line!r}")
-        return
+        return None
     mount = parts[1].lstrip("/")
     if want_mount and mount != want_mount:
         conn.sendall(b"ERROR - Bad Mountpoint\r\n")
         log(f"{iso(time.time())} rejected GET mount={mount}")
-        return
+        return None
     if not auth_ok(head, want_user, want_pw):
         conn.sendall(b"ERROR - Bad Password\r\n")
         log(f"{iso(time.time())} rejected GET mount={mount} (auth)")
-        return
+        return None
     conn.sendall(b"ICY 200 OK\r\n")
     log(f"{iso(time.time())} accepted GET mount={mount}")
     leftover = b""
@@ -143,9 +148,29 @@ def handle(conn: socket.socket, pack: str, factor: str, log_path: str,
         result = read_gga(conn)
         if result is None:
             log(f"{iso(time.time())} missing GGA mount={mount}")
-            return
+            return None
         gga, leftover = result
         log(f"{iso(time.time())} accepted GGA mount={mount} sentence={gga.decode('latin1')}")
+    return mount, leftover
+
+
+def handle(conn: socket.socket, pack: str, factor: str, log_path: str,
+           want_mount: str, want_user: str, want_pw: str, require_gga: bool, tcp: bool) -> None:
+    """Serve one pull client: optional Ntrip handshake, then stream the RTCM log.
+
+    In plain TCP mode (plain [stream.pull.tcp]) there is no handshake -- the
+    client connects and the source streams immediately. Otherwise it runs the
+    Ntrip v1 GET handshake (and optional GGA wait) first; a connection that
+    fails it is dropped.
+    """
+    if tcp:
+        log(f"{iso(time.time())} accepted TCP connection")
+        mount, leftover = "tcp", b""
+    else:
+        result = ntrip_handshake(conn, want_mount, want_user, want_pw, require_gga)
+        if result is None:
+            return  # probe, bad handshake, or missing GGA; nothing to serve
+        mount, leftover = result
     # pack writes the on-wire packet stream straight to the socket, paced by the
     # log's inter-packet timing compressed by factor.
     conn.settimeout(None)
@@ -186,7 +211,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--username", default="", help="require this Basic-auth username")
     ap.add_argument("--password", default="", help="require this Basic-auth password (default: accept any)")
     ap.add_argument("--require-gga", action="store_true", help="wait for post-handshake GGA before streaming")
+    ap.add_argument("--tcp", action="store_true", help="plain TCP: stream immediately, no Ntrip handshake")
     args = ap.parse_args(argv)
+    if args.tcp and (args.mountpoint or args.username or args.password or args.require_gga):
+        ap.error("--tcp takes no Ntrip handshake options (mountpoint/username/password/require-gga)")
 
     host, port = args.listen.rsplit(":", 1)
     stop = False
@@ -212,7 +240,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 continue
             try:
                 handle(conn, args.pack, args.factor, args.log,
-                       args.mountpoint, args.username, args.password, args.require_gga)
+                       args.mountpoint, args.username, args.password, args.require_gga, args.tcp)
             finally:
                 conn.close()
     finally:
