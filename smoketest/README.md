@@ -159,6 +159,9 @@ make update-deps
 - `http/full` -- default HTTP endpoint: `/position`, `/metrics`, GUI HTML, SSE.
 - `http/disabled` -- HTTP endpoint with GUI and metrics off, position
   only; also guards clean shutdown for GUI-disabled endpoints.
+- `http/multiple` -- two `[[http]]` endpoints with independent config (a full
+  GUI endpoint and a position-only one); both serve concurrently and each
+  reflects its own table.
 - `ntrip/basic` -- Ntrip caster source table and RTCM streaming; the source
   table's shared STR fields show their defaults.
 - `ntrip/auth` -- Ntrip caster with an authenticated mountpoint.

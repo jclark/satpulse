@@ -49,6 +49,7 @@ SCENARIOS = [
     "logging/all",
     "http/full",
     "http/disabled",
+    "http/multiple",
     "ntrip/basic",
     "ntrip/auth",
     "ntrip/anyuser",
@@ -84,6 +85,7 @@ PORT_OFFSETS = {
     "SATPULSE_TEST_TOOL_PORT": 5,
     "SATPULSE_TEST_REMOTE_CASTER_PORT2": 6,
     "SATPULSE_TEST_REMOTE_UDP_PORT": 7,
+    "SATPULSE_TEST_HTTP_PORT2": 8,
 }
 PORT_BLOCK = 16
 
@@ -207,6 +209,7 @@ class Context:
         packet_log: str,
         daemon_log: str,
         has_http: bool,
+        has_http2: bool,
         has_ntrip: bool,
         has_ntp_sock: bool,
         has_push: bool,
@@ -227,6 +230,7 @@ class Context:
         self.packet_log = packet_log
         self.daemon_log = daemon_log
         self.has_http = has_http
+        self.has_http2 = has_http2
         self.has_ntrip = has_ntrip
         self.has_ntp_sock = has_ntp_sock
         self.has_push = has_push
@@ -303,6 +307,10 @@ class Context:
     @property
     def http_port(self) -> int:
         return self.port("SATPULSE_TEST_HTTP_PORT")
+
+    @property
+    def http_port2(self) -> int:
+        return self.port("SATPULSE_TEST_HTTP_PORT2")
 
     @property
     def ntrip_port(self) -> int:
@@ -656,6 +664,8 @@ class Context:
         ports = []
         if self.has_http:
             ports.append(self.http_port)
+        if self.has_http2:
+            ports.append(self.http_port2)
         if self.has_ntrip:
             ports.append(self.ntrip_port)
         deadline = time.time() + timeout
@@ -891,13 +901,15 @@ def allocate_env(name: str, run_dir: str) -> dict[str, str]:
     return env
 
 
-def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tuple[bool, bool, bool, bool, bool]:
+def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tuple[bool, bool, bool, bool, bool, bool]:
     """Render the config template; report which listeners/peers it configures.
 
-    Returns (has_http, has_ntrip, has_ntp_sock, has_push, has_pull), detected
-    from non-comment lines so a comment that merely mentions a section is not
-    mistaken for it. has_pull keys off the [stream.pull...] table prefix so the
-    runner knows to start a fake correction source for it.
+    Returns (has_http, has_http2, has_ntrip, has_ntp_sock, has_push, has_pull),
+    detected from non-comment lines so a comment that merely mentions a section
+    is not mistaken for it. has_http2 is set when a second [[http]] table is
+    present, so the runner waits on and verifies the extra listener. has_pull
+    keys off the [stream.pull...] table prefix so the runner knows to start a
+    fake correction source for it.
     """
     with open(template_path) as f:
         text = f.read()
@@ -910,7 +922,8 @@ def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tup
         for line in text.splitlines()
         if not line.lstrip().startswith("#")
     ]
-    return ("[[http]]" in headers, "[ntrip]" in headers,
+    return ("[[http]]" in headers, headers.count("[[http]]") >= 2,
+            "[ntrip]" in headers,
             any(line.startswith("sock.path") for line in headers),
             "[[stream.push]]" in headers,
             any(line.startswith("[stream.pull") for line in headers))
@@ -1042,13 +1055,13 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         env["SATPULSE_TEST_SERIAL"] = slave_name
     else:
         os.mkfifo(env["SATPULSE_TEST_SERIAL"])
-    has_http, has_ntrip, has_ntp_sock, has_push, has_pull = render_config(
+    has_http, has_http2, has_ntrip, has_ntp_sock, has_push, has_pull = render_config(
         config_tmpl, env["SATPULSE_TEST_CONFIG"], env)
 
     daemon_log = os.path.join(run_dir, "satpulsed.log")
     ctx = Context(
         name, run_dir, env, factor, packet_log, daemon_log,
-        has_http, has_ntrip, has_ntp_sock, has_push, requires_root, use_sudo,
+        has_http, has_http2, has_ntrip, has_ntp_sock, has_push, requires_root, use_sudo,
         input_kind=input_kind, has_pull=has_pull, pull_source_log=pull_source_log,
     )
     if pty_fds is not None:
@@ -1142,6 +1155,8 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
                 raise RuntimeError(f"daemon exited with code {daemon.returncode} on SIGINT")
         if ctx.has_http and not port_free(ctx.http_port):
             raise RuntimeError(f"HTTP port {ctx.http_port} still in use after shutdown")
+        if ctx.has_http2 and not port_free(ctx.http_port2):
+            raise RuntimeError(f"HTTP port {ctx.http_port2} still in use after shutdown")
         # Scan the daemon log only now, so shutdown-time warnings/errors
         # (and any SIGQUIT goroutine dump) are included. A scenario may declare
         # ALLOWED_ERRORS for error lines it expects (e.g. a push it knows the

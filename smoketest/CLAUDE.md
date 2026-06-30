@@ -207,6 +207,7 @@ Set per run by the runner; reference as `${NAME}`:
   path for FIFO scenarios and at the pty slave name for `INPUT = "pty"`.
 - `SATPULSE_TEST_LOG_DIR`, `SATPULSE_TEST_RUN_DIR`, `SATPULSE_TEST_CONFIG`.
 - Ports (each scenario gets a private block): `SATPULSE_TEST_HTTP_PORT`,
+  `SATPULSE_TEST_HTTP_PORT2` (second `[[http]]` endpoint),
   `SATPULSE_TEST_NTRIP_PORT`, `SATPULSE_TEST_PROXY_TCP_PORT`,
   `SATPULSE_TEST_PROXY_TCP_RTCM_PORT`, `SATPULSE_TEST_REMOTE_CASTER_PORT`,
   `SATPULSE_TEST_REMOTE_CASTER_PORT2`, `SATPULSE_TEST_TOOL_PORT`,
