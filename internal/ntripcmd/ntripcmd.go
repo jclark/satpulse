@@ -86,6 +86,13 @@ func parseFlags(cmdName string, args []string) (cfg *flagConfig, help bool, usag
 			return
 		}
 	}
+	// Unlike the config file, where nmeaSendInterval is validated but accepted
+	// regardless of nmeaSend, the CLI has no position to send without
+	// --nmea-send-pos, so an interval alone is a user mistake worth flagging.
+	if flags.Changed("nmea-send-interval") && !flags.Changed("nmea-send-pos") {
+		err = fmt.Errorf("--nmea-send-interval requires --nmea-send-pos")
+		return
+	}
 	if sendInterval < 0 || math.IsNaN(sendInterval) || math.IsInf(sendInterval, 0) {
 		err = fmt.Errorf("--nmea-send-interval: must be a non-negative finite number")
 		return
