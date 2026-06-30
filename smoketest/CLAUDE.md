@@ -138,7 +138,7 @@ A scenario ID `family/name` maps to two files and one registry entry:
     disconnectable; a FIFO is a read-only replay sink that cannot disconnect.
   - optional `CAPTURE_WRITES = True` -- record the daemon's serial writes to
     `ctx.serial_writes` (requires `INPUT = "pty"`), so a write-path scenario
-    (stream/pull) can scan what the daemon wrote back to the receiver. The
+    (stream/pull-*) can scan what the daemon wrote back to the receiver. The
     daemon's non-RTCM detection probes are filtered out by tag. Independent of
     `SELF_SHUTDOWN`.
   - optional `PULL_SOURCE_LOG` -- for a `[stream.pull]` scenario, the RTCM log
@@ -175,7 +175,7 @@ load-bearing, not cosmetic:
   to `ctx.serial_writes` when `CAPTURE_WRITES` is set). Closing the master is a
   real disconnect (slave reads fail, scan worker exits). This is the only
   transport that can model a device going away, and the only one the
-  `stream/pull` write-path scenario can use.
+  `stream/pull-*` write-path scenarios can use.
 
 `SELF_SHUTDOWN` is a property of the *lifecycle* (does the daemon exit without a
 signal?), not the transport: it depends on a pty (only a pty disconnects) but a

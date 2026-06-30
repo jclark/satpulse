@@ -57,7 +57,7 @@ SCENARIOS = [
     "proxy/socket",
     "stream/push-ntrip",
     "stream/push-udp",
-    "stream/pull",
+    "stream/pull-ntrip",
     "stream/nmea-send",
     "shutdown/serial-loss",
 ]
@@ -750,7 +750,7 @@ class Context:
     # FIFO cannot, because satpulsed opens it O_RDWR and holds its own write end
     # so an idle FIFO stays "connected" by design. The pty is also full-duplex,
     # so unlike the read-only FIFO it can carry the daemon's writes -- used by
-    # the stream/pull write-path scenario (see start_write_capture). disconnect()
+    # the stream/pull-* write-path scenarios (see start_write_capture). disconnect()
     # requires a pty; using a pty does not require disconnect().
 
     def start_write_capture(self) -> None:
@@ -1000,8 +1000,8 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
     # "pty" is full-duplex and can be disconnected. SELF_SHUTDOWN -- the daemon
     # is expected to exit on its own when its input goes away -- only makes
     # sense over a pty, since only a pty can disconnect. A pty does not imply
-    # SELF_SHUTDOWN: the stream/pull write-path scenario uses a pty and still
-    # stops via SIGINT.
+    # SELF_SHUTDOWN: the stream/pull-* write-path scenarios use a pty and still
+    # stop via SIGINT.
     input_kind = getattr(scen, "INPUT", "fifo")
     self_shutdown = bool(getattr(scen, "SELF_SHUTDOWN", False))
     if self_shutdown and input_kind != "pty":
