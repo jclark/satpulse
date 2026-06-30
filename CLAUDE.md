@@ -35,6 +35,9 @@ Whenever you create a new package, add an entry describing it to the appropriate
   - Bad: `process(config.Server.Host, config.Server.Port)`
   - Good: `srv := config.Server; process(srv.Host, srv.Port)`
 
+### Control flow
+- Do not use a tagless `switch {}` on non-constant conditions when an if/else (or guard-clause) chain would work just as well; reserve `switch` for dispatch on a value (especially constants/types)
+
 ### Comments
 - Every exported function needs a comment starting with the function name
 - NO comments inside functions unless explaining non-obvious behavior
