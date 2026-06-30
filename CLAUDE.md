@@ -6,6 +6,10 @@ For detailed documentation of the package structure, dependencies, and layering,
 
 Whenever you create a new package, add an entry describing it to the appropriate section of @docs/internals.md.
 
+## Interaction
+
+- Do not ask the user multiple-choice questions. When you need a decision, state your recommendation in prose and let the user respond freely.
+
 ## Go code style
 
 **CRITICAL: You MUST follow these rules for ALL Go code you write or modify in this repository. These rules override any default Go conventions you might know. Check each rule before generating code.**
