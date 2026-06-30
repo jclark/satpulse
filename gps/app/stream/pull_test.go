@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -17,8 +18,10 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/internal/spartn"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/spartnbin"
 	"github.com/jclark/satpulse/gps/scan"
@@ -231,7 +234,7 @@ func newPipeSource() (*pipeSource, net.Conn) {
 	return &pipeSource{conn: server}, client
 }
 
-func (s *pipeSource) Connect(ctx context.Context) (io.ReadCloser, error) {
+func (s *pipeSource) Connect(ctx context.Context) (ReadWriteDeadlineCloser, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.conn == nil {
@@ -298,6 +301,10 @@ func testLogger() *slog.Logger {
 	return slog.Default()
 }
 
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
 // connectedCh returns an onState callback and a channel that closes
 // when the sink reaches Connected state.
 func connectedCh() (func(State, error), <-chan struct{}) {
@@ -354,13 +361,17 @@ func primeSink(t *testing.T, client net.Conn, mw *mockWriter) {
 	t.Fatal("timed out warming up sink pipeline")
 }
 
+func newTestPull(src Source, mw *mockWriter, portLock gpsio.OutPortLock) *Pull {
+	return NewPull(src, testLogger(), mw, portLock, []gpsprot.PacketFormat{rtcm.PacketFormat}, 0)
+}
+
 func TestPacketsFlowToWriter(t *testing.T) {
 	src, client := newPipeSource()
 	defer src.close()
 	defer client.Close()
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewPull()
+	sink := newTestPull(src, mw, portLock)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	pkt1005 := makeRTCM(1005, 16)
@@ -368,8 +379,7 @@ func TestPacketsFlowToWriter(t *testing.T) {
 	onState, connected := connectedCh()
 	done := make(chan error, 1)
 	go func() {
-		done <- sink.Run(ctx, testLogger(), src, mw, portLock,
-			[]gpsprot.PacketFormat{rtcm.PacketFormat}, onState)
+		done <- sink.Run(ctx, nil, onState)
 	}()
 	<-connected
 	primeSink(t, client, mw)
@@ -666,7 +676,7 @@ func TestPruningQueueMSMAndNonMSM(t *testing.T) {
 // exercises the live queue() select loop under backpressure, which is what the
 // pruning queue exists for.
 func TestPullQueuePrunesUnderBackpressure(t *testing.T) {
-	sink := NewPull()
+	sink := NewPull(nil, testLogger(), nil, nil, nil, 0)
 	subCh := make(chan scan.Packet)
 	// Same single-slot buffer as Run uses; leaving it undrained is the stall.
 	writerCh := make(chan scan.Packet, 1)
@@ -724,13 +734,12 @@ func TestCleanShutdownOnCancel(t *testing.T) {
 	defer client.Close()
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewPull()
+	sink := newTestPull(src, mw, portLock)
 	ctx, cancel := context.WithCancel(context.Background())
 	onState, connected := connectedCh()
 	done := make(chan error, 1)
 	go func() {
-		done <- sink.Run(ctx, testLogger(), src, mw, portLock,
-			[]gpsprot.PacketFormat{rtcm.PacketFormat}, onState)
+		done <- sink.Run(ctx, nil, onState)
 	}()
 	<-connected
 	cancel()
@@ -751,12 +760,11 @@ func TestWriteErrorTriggersShutdown(t *testing.T) {
 	writeErr := errors.New("serial port gone")
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewPull()
+	sink := newTestPull(src, mw, portLock)
 	onState, connected := connectedCh()
 	done := make(chan error, 1)
 	go func() {
-		done <- sink.Run(t.Context(), testLogger(), src, mw, portLock,
-			[]gpsprot.PacketFormat{rtcm.PacketFormat}, onState)
+		done <- sink.Run(t.Context(), nil, onState)
 	}()
 	<-connected
 	primeSink(t, client, mw)
@@ -780,14 +788,13 @@ func TestPortLockAcquiredPerWrite(t *testing.T) {
 	defer client.Close()
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewPull()
+	sink := newTestPull(src, mw, portLock)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	onState, connected := connectedCh()
 	done := make(chan error, 1)
 	go func() {
-		done <- sink.Run(ctx, testLogger(), src, mw, portLock,
-			[]gpsprot.PacketFormat{rtcm.PacketFormat}, onState)
+		done <- sink.Run(ctx, nil, onState)
 	}()
 	<-connected
 	primeSink(t, client, mw)
@@ -818,7 +825,7 @@ func TestReconnectOnNetworkError(t *testing.T) {
 	rs := &reconnectSource{}
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := NewPull()
+	sink := newTestPull(rs, mw, portLock)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var states []State
@@ -830,8 +837,7 @@ func TestReconnectOnNetworkError(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		done <- sink.Run(ctx, testLogger(), rs, mw, portLock,
-			[]gpsprot.PacketFormat{rtcm.PacketFormat}, onState)
+		done <- sink.Run(ctx, nil, onState)
 	}()
 	// write a packet on the first connection, then close it
 	conn1 := rs.waitConn(t)
@@ -878,7 +884,7 @@ func (s *reconnectSource) init() {
 	s.conns = make(chan net.Conn, 10)
 }
 
-func (s *reconnectSource) Connect(ctx context.Context) (io.ReadCloser, error) {
+func (s *reconnectSource) Connect(ctx context.Context) (ReadWriteDeadlineCloser, error) {
 	s.once.Do(s.init)
 	server, client := net.Pipe()
 	s.mu.Lock()
@@ -1050,27 +1056,43 @@ func TestNtripRequestHeaders(t *testing.T) {
 	}
 }
 
-func TestNtripSendsGGAAfterHandshake(t *testing.T) {
+func TestNtripConnectBufferedBodyForwardsWrites(t *testing.T) {
 	gga := "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n"
+	body := []byte{0xD3, 0x00, 0x04, 0x41, 0x02, 0x03, 0x04, 0x99, 0x88, 0x77}
 	got := make(chan string, 1)
 	ln := newNtripListener(t, func(conn net.Conn, req []byte) {
-		conn.Write([]byte("ICY 200 OK\r\n"))
-		// The GGA is a separate write that arrives after the handshake,
-		// so it must not ride along in the request.
+		conn.Write(append([]byte("ICY 200 OK\r\n"), body...))
 		if strings.Contains(string(req), "GGA") {
 			t.Errorf("GGA leaked into request: %q", req)
 		}
+		conn.SetReadDeadline(time.Now().Add(time.Second))
 		buf := make([]byte, len(gga))
 		n, _ := io.ReadFull(conn, buf)
 		got <- string(buf[:n])
 	})
 	defer ln.close()
-	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT", GGA: gga}
+	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
 	rc, err := src.Connect(context.Background())
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
 	defer rc.Close()
+	if err := rc.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("SetWriteDeadline: %v", err)
+	}
+	if n, err := io.WriteString(rc, gga); err != nil || n != len(gga) {
+		t.Fatalf("Write GGA = %d, %v; want %d, nil", n, err, len(gga))
+	}
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		t.Fatalf("clear write deadline: %v", err)
+	}
+	gotBody := make([]byte, len(body))
+	if _, err := io.ReadFull(rc, gotBody); err != nil {
+		t.Fatalf("ReadFull body: %v", err)
+	}
+	if !bytes.Equal(gotBody, body) {
+		t.Errorf("body mismatch: got %x, want %x", gotBody, body)
+	}
 	select {
 	case s := <-got:
 		if s != gga {
@@ -1130,6 +1152,243 @@ func TestNtripNoAuthHeaderWhenNoUsername(t *testing.T) {
 		t.Errorf("unexpected Authorization header: %q", req)
 	}
 }
+
+func TestGGASenderRejectsQualityZero(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch := make(chan scan.Packet, 1)
+	ch <- nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,0,08,0.9,545.4,M,46.9,M,,")
+	close(ch)
+	gs := NewGGASender(ch, 0)
+	done := make(chan struct{})
+	go func() {
+		gs.Run(ctx, discardLogger())
+		close(done)
+	}()
+	if err := gs.WaitReady(ctx); !errors.Is(err, ErrNoUsableGGA) {
+		t.Fatalf("WaitReady = %v, want ErrNoUsableGGA", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sender did not exit after unusable one-shot GGA")
+	}
+}
+
+// A GGA with empty position fields is not usable even with a nonzero quality,
+// so a synthesized no-fix GGA (empty lat/lon) never starts an NMEA upload.
+func TestGGASenderRejectsNoPosition(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch := make(chan scan.Packet, 1)
+	ch <- nmeaPacket("GPGGA,123519,,,,,1,08,0.9,545.4,M,46.9,M,,")
+	close(ch)
+	gs := NewGGASender(ch, 0)
+	done := make(chan struct{})
+	go func() {
+		gs.Run(ctx, discardLogger())
+		close(done)
+	}()
+	if err := gs.WaitReady(ctx); !errors.Is(err, ErrNoUsableGGA) {
+		t.Fatalf("WaitReady = %v, want ErrNoUsableGGA", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sender did not exit after unusable one-shot GGA")
+	}
+}
+
+func TestGGASenderForceSendsOnConnect(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	gga := nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
+	ch := make(chan scan.Packet, 1)
+	ch <- gga
+	close(ch)
+	gs := NewGGASender(ch, 0)
+	go gs.Run(ctx, discardLogger())
+	if err := gs.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady: %v", err)
+	}
+	server, client := net.Pipe()
+	t.Cleanup(func() {
+		cancel()
+		server.Close()
+		client.Close()
+	})
+	if !gs.SetWriter(ctx, server) {
+		t.Fatal("SetWriter returned false")
+	}
+	got := make([]byte, len(gga.Data))
+	if _, err := io.ReadFull(client, got); err != nil {
+		t.Fatalf("ReadFull GGA: %v", err)
+	}
+	if string(got) != gga.Data {
+		t.Fatalf("GGA = %q, want %q", got, gga.Data)
+	}
+}
+
+// With a positive interval the held GGA is resent periodically, even for a
+// stationary client, so a keepalive-hungry caster keeps streaming.
+func TestGGASenderPeriodicResend(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	ch := make(chan scan.Packet)
+	gs := NewGGASender(ch, 20*time.Millisecond)
+	go gs.Run(ctx, discardLogger())
+	gga := nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
+	ch <- gga
+	if err := gs.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady: %v", err)
+	}
+	server, client := net.Pipe()
+	t.Cleanup(func() {
+		cancel()
+		server.Close()
+		client.Close()
+	})
+	if !gs.SetWriter(ctx, server) {
+		t.Fatal("SetWriter returned false")
+	}
+	// connect force-send, then at least one periodic resend of the same GGA
+	client.SetReadDeadline(time.Now().Add(2 * time.Second))
+	readGGA(t, client, gga.Data)
+	readGGA(t, client, gga.Data)
+}
+
+// With interval 0 the GGA is uploaded once per connection: no periodic resend,
+// and a later move does not trigger another send.
+func TestGGASenderSendsOnceWhenIntervalZero(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	ch := make(chan scan.Packet)
+	gs := NewGGASender(ch, 0)
+	go gs.Run(ctx, discardLogger())
+	first := nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
+	ch <- first
+	if err := gs.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady: %v", err)
+	}
+	server, client := net.Pipe()
+	t.Cleanup(func() {
+		cancel()
+		server.Close()
+		client.Close()
+	})
+	if !gs.SetWriter(ctx, server) {
+		t.Fatal("SetWriter returned false")
+	}
+	readGGA(t, client, first.Data)
+	ch <- nmeaPacket("GPGGA,123521,4808.000,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
+	client.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	buf := make([]byte, 1)
+	if _, err := client.Read(buf); err == nil {
+		t.Fatal("unexpected send after interval-0 once-per-connection upload")
+	}
+}
+
+func nmeaPacket(payload string) scan.Packet {
+	data := fmt.Sprintf("$%s*%02X\r\n", payload, nmeamsg.Checksum([]byte(payload)))
+	return scan.Packet{Format: gpsreg.NMEAPacketFormat, Data: data, ChecksumValid: true}
+}
+
+func readGGA(t *testing.T, conn net.Conn, want string) {
+	t.Helper()
+	got := make([]byte, len(want))
+	if _, err := io.ReadFull(conn, got); err != nil {
+		t.Fatalf("ReadFull GGA: %v", err)
+	}
+	if string(got) != want {
+		t.Fatalf("GGA = %q, want %q", got, want)
+	}
+}
+
+// A clean write-deadline timeout must not tear down the connection on the first
+// stall (the correction read stream rides the same conn), but more than
+// maxGGASendTimeouts consecutive timeouts drop it so the reader reconnects.  A
+// hard write error drops the connection immediately.
+func TestGGASenderTimeoutTolerance(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantWrites int
+	}{
+		{"clean timeout tolerated then dropped", netTimeout{}, maxGGASendTimeouts + 1},
+		{"hard error drops immediately", errors.New("broken pipe"), 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			ch := make(chan scan.Packet, 1)
+			ch <- nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
+			gs := NewGGASender(ch, 5*time.Millisecond)
+			go gs.Run(ctx, discardLogger())
+			if err := gs.WaitReady(ctx); err != nil {
+				t.Fatalf("WaitReady: %v", err)
+			}
+			conn := &failWriteConn{err: tt.err}
+			if !gs.SetWriter(ctx, conn) {
+				t.Fatal("SetWriter returned false")
+			}
+			deadline := time.Now().Add(2 * time.Second)
+			for time.Now().Before(deadline) {
+				if conn.isClosed() {
+					if got := conn.writeCount(); got != tt.wantWrites {
+						t.Errorf("writes before drop = %d, want %d", got, tt.wantWrites)
+					}
+					return
+				}
+				time.Sleep(2 * time.Millisecond)
+			}
+			t.Fatalf("connection not dropped after repeated upload failures (%d writes)", conn.writeCount())
+		})
+	}
+}
+
+// failWriteConn is a ReadWriteDeadlineCloser whose Write always fails with err.
+type failWriteConn struct {
+	err    error
+	mu     sync.Mutex
+	writes int
+	closed bool
+}
+
+func (c *failWriteConn) Read([]byte) (int, error) { return 0, io.EOF }
+
+func (c *failWriteConn) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	c.writes++
+	c.mu.Unlock()
+	return 0, c.err
+}
+
+func (c *failWriteConn) Close() error {
+	c.mu.Lock()
+	c.closed = true
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *failWriteConn) SetWriteDeadline(time.Time) error { return nil }
+
+func (c *failWriteConn) writeCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.writes
+}
+
+func (c *failWriteConn) isClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
+}
+
+// netTimeout is a net.Error reporting a timeout, simulating a write deadline
+// exceeded with nothing written.
+type netTimeout struct{}
+
+func (netTimeout) Error() string   { return "i/o timeout" }
+func (netTimeout) Timeout() bool   { return true }
+func (netTimeout) Temporary() bool { return true }
 
 func TestNtripErrorResponse(t *testing.T) {
 	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {

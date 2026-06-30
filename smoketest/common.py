@@ -44,6 +44,7 @@ class SmokeContext(Protocol):
     udp_log: str
     satpulsetool: str
     serial_writes: str
+    source_log: str
     pull_source_log: str
 
     @property

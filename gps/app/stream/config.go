@@ -1,7 +1,11 @@
 package stream
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
+	"math"
+	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/ntrip"
@@ -28,12 +32,53 @@ type TCPConfig struct {
 	Address string `toml:"address"`
 }
 
-// NtripConfig matches [stream.pull.ntrip].
+// NtripConfig matches [stream.pull.ntrip].  NMEASendInterval is the
+// GGA upload interval in seconds; an unset value defaults to
+// DefaultNMEASendInterval and a configured 0 means upload once per
+// connection.
 type NtripConfig struct {
-	Address    string `toml:"address"`
-	Mountpoint string `toml:"mountpoint"`
-	Username   string `toml:"username"`
-	Password   string `toml:"password"`
+	Address          string   `toml:"address"`
+	Mountpoint       string   `toml:"mountpoint"`
+	Username         string   `toml:"username"`
+	Password         string   `toml:"password"`
+	NMEASend         bool     `toml:"nmeaSend"`
+	NMEASendInterval *float64 `toml:"nmeaSendInterval"`
+}
+
+const (
+	// DefaultNMEASendInterval is the GGA upload interval used when nmeaSend
+	// is enabled but nmeaSendInterval is unset.  The satpulsetool ntrip
+	// diagnostic uses the same default.
+	DefaultNMEASendInterval = 5 * time.Second
+
+	// MinNMEASendInterval is the smallest periodic GGA upload interval.  A
+	// configured 0 is still allowed and means upload once per connection.
+	MinNMEASendInterval = time.Second
+
+	// MaxNMEASendInterval is the largest periodic GGA upload interval.  It
+	// is a sanity bound that also keeps the seconds-to-Duration conversion
+	// well clear of int64 overflow.
+	MaxNMEASendInterval = 366 * 24 * time.Hour
+)
+
+// ValidateNMEASendInterval checks a GGA upload interval, in seconds: it must be
+// finite, and either 0 (upload once per connection) or between
+// MinNMEASendInterval and MaxNMEASendInterval.  The returned error has no
+// prefix so callers can wrap it with the relevant config key or flag name.
+func ValidateNMEASendInterval(secs float64) error {
+	if math.IsNaN(secs) || math.IsInf(secs, 0) {
+		return errors.New("must be a finite number")
+	}
+	if secs < 0 {
+		return errors.New("must be non-negative")
+	}
+	if secs > 0 && secs < MinNMEASendInterval.Seconds() {
+		return fmt.Errorf("must be 0 or at least %d", MinNMEASendInterval/time.Second)
+	}
+	if secs > MaxNMEASendInterval.Seconds() {
+		return fmt.Errorf("must be at most %d", MaxNMEASendInterval/time.Second)
+	}
+	return nil
 }
 
 // PushConfig is one [[stream.push]] entry.  Transport is selected
@@ -149,16 +194,25 @@ func (cfg *Config) HasNtripPush() bool {
 	return false
 }
 
-// Prepare builds a PullSetup for cfg, or returns nil when the pull
-// is disabled (neither tcp nor ntrip set).  version feeds the Ntrip
-// User-Agent header.  pktFormats are the correction formats to scan
-// (see gpsreg.CreateCorrectionFormats).  pw and portLock are the
-// correction-output port (the receiver's main serial connection in
-// the simplest case).
-func (cfg *PullConfig) Prepare(version string, pktFormats []gpsprot.PacketFormat,
-	pw PacketWriter, portLock gpsio.OutPortLock) *PullSetup {
-	var src Source
-	var addr string
+// NMEASend reports whether [stream.pull.ntrip] should upload NMEA GGA.
+func (cfg *PullConfig) NMEASend() bool {
+	return cfg.Ntrip != nil && cfg.Ntrip.NMEASend
+}
+
+// nmeaSendInterval returns the resolved GGA upload interval.  An unset
+// nmeaSendInterval defaults to DefaultNMEASendInterval; a configured 0
+// means upload once per connection.  Consulted only on the NMEASend
+// path, so it has no effect when nmeaSend is false.
+func (cfg *PullConfig) nmeaSendInterval() time.Duration {
+	if cfg.Ntrip != nil && cfg.Ntrip.NMEASendInterval != nil {
+		return time.Duration(*cfg.Ntrip.NMEASendInterval * float64(time.Second))
+	}
+	return DefaultNMEASendInterval
+}
+
+// Source builds the correction source for cfg. It returns ok=false when the
+// pull is disabled. version feeds the Ntrip User-Agent header.
+func (cfg *PullConfig) Source(version string) (src Source, addr string, ok bool) {
 	switch {
 	case cfg.TCP != nil:
 		addr = cfg.TCP.Address
@@ -173,16 +227,28 @@ func (cfg *PullConfig) Prepare(version string, pktFormats []gpsprot.PacketFormat
 			UserAgent:  NtripUserAgent{Version: version},
 		}
 	default:
-		return nil
+		return nil, "", false
 	}
-	return &PullSetup{
-		pull:       NewPull(),
-		source:     src,
-		addr:       addr,
-		pktFormats: pktFormats,
-		pw:         pw,
-		portLock:   portLock,
+	return src, addr, true
+}
+
+// NewPull builds a Pull for cfg, or returns nil when the pull is disabled.
+// pktFormats are the correction formats to scan. pw and portLock are the
+// correction-output port.
+func (cfg *PullConfig) NewPull(version string, lg *slog.Logger,
+	pktFormats []gpsprot.PacketFormat, pw PacketWriter, portLock gpsio.OutPortLock) (*Pull, string) {
+	src, addr, ok := cfg.Source(version)
+	if !ok {
+		return nil, ""
 	}
+	nmeaSendInterval := time.Duration(0)
+	if cfg.NMEASend() {
+		nmeaSendInterval = cfg.nmeaSendInterval()
+	}
+	if lg != nil && addr != "" {
+		lg = lg.With("addr", addr)
+	}
+	return NewPull(src, lg, pw, portLock, pktFormats, nmeaSendInterval), addr
 }
 
 // Validate checks [stream.pull] for transport selection and
@@ -207,6 +273,11 @@ func (cfg *PullConfig) Validate() error {
 		}
 		if err := ntrip.CheckMountpointName(cfg.Ntrip.Mountpoint); err != nil {
 			return fmt.Errorf("stream.pull.ntrip.mountpoint: %w", err)
+		}
+		if iv := cfg.Ntrip.NMEASendInterval; iv != nil {
+			if err := ValidateNMEASendInterval(*iv); err != nil {
+				return fmt.Errorf("stream.pull.ntrip.nmeaSendInterval: %w", err)
+			}
 		}
 	}
 	return nil

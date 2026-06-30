@@ -42,22 +42,24 @@ type Sink interface {
 // emits a synthesized GGA when the epoch ends.
 type Synth struct {
 	gpsprot.DefaultHandler
-	sink      Sink
-	time      time.Time
-	now       func() time.Time
-	latLon    *[2]float64
-	height    *float64
-	heightMSL *float64
-	ecef      *geopos.ECEF
+	sink       Sink
+	time       time.Time
+	tRead      time.Time
+	epochDelay time.Duration
+	latLon     *[2]float64
+	height     *float64
+	heightMSL  *float64
+	ecef       *geopos.ECEF
 }
 
 // New creates a GGA synthesizer.
 func New(sink Sink) *Synth {
-	return &Synth{sink: sink, now: time.Now}
+	return &Synth{sink: sink}
 }
 
 // Time records the UTC time for the current epoch.
-func (s *Synth) Time(msg *gpsprot.TimeMsg, _ time.Time) {
+func (s *Synth) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
+	s.noteTRead(tRead)
 	if msg.Ref == gpsprot.PrePulse || !msg.UTCTime.IsSet() {
 		return
 	}
@@ -65,7 +67,8 @@ func (s *Synth) Time(msg *gpsprot.TimeMsg, _ time.Time) {
 }
 
 // PosGeo records the geodetic position for the current epoch.
-func (s *Synth) PosGeo(msg *gpsprot.PosGeoMsg, _ time.Time) {
+func (s *Synth) PosGeo(msg *gpsprot.PosGeoMsg, tRead time.Time) {
+	s.noteTRead(tRead)
 	ll := [2]float64{msg.LatLon[0].Degrees(), msg.LatLon[1].Degrees()}
 	s.latLon = &ll
 	s.height = lengthMeters(msg.Height.Ptr())
@@ -73,13 +76,25 @@ func (s *Synth) PosGeo(msg *gpsprot.PosGeoMsg, _ time.Time) {
 }
 
 // PosECEF records the ECEF position for the current epoch.
-func (s *Synth) PosECEF(msg *gpsprot.PosECEFMsg, _ time.Time) {
+func (s *Synth) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
+	s.noteTRead(tRead)
 	ecef := geopos.ECEF{msg.Pos[0].Meters(), msg.Pos[1].Meters(), msg.Pos[2].Meters()}
 	s.ecef = &ecef
 }
 
+// noteTRead records the read time of the first message of the epoch, used at
+// NavEpoch to measure the epoch's first-message-to-end delay.
+func (s *Synth) noteTRead(tRead time.Time) {
+	if s.tRead.IsZero() {
+		s.tRead = tRead
+	}
+}
+
 // NavEpoch emits synthesized GGA for the epoch and clears accumulated state.
-func (s *Synth) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
+func (s *Synth) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
+	if !s.tRead.IsZero() {
+		s.epochDelay = tRead.Sub(s.tRead)
+	}
 	latLon, height := s.position()
 	quality := ggaQuality(msg)
 	if latLon == nil {
@@ -100,7 +115,11 @@ func (s *Synth) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
 	}
 	t := s.time
 	if t.IsZero() {
-		t = s.now()
+		// No UTC this epoch: reconstruct the epoch instant from the end-of-epoch
+		// read time minus the learned first-message-to-end delay, so the time
+		// stays consistent with UTC-stamped epochs and monotonic even if the
+		// system clock is offset.  A zero delay falls through to tRead.
+		t = tRead.Add(-s.epochDelay)
 	}
 	s.sink.Msg(nmeamsg.MakeGGA("GN", t, latLon, height, heightMSL, quality, numSats, hdop), PhaseEpoch)
 	s.clear()
@@ -122,6 +141,7 @@ func (s *Synth) position() (*[2]float64, *float64) {
 
 func (s *Synth) clear() {
 	s.time = time.Time{}
+	s.tRead = time.Time{}
 	s.latLon = nil
 	s.height = nil
 	s.heightMSL = nil

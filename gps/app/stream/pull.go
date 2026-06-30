@@ -87,12 +87,21 @@ type PacketWriter interface {
 	WritePacket(p []byte, fmt gpsprot.PacketFormat) (int, error)
 }
 
+// ReadWriteDeadlineCloser is a correction-source connection that can also
+// accept post-handshake client writes such as NMEA GGA upload.
+type ReadWriteDeadlineCloser interface {
+	io.Reader
+	io.Writer
+	io.Closer
+	SetWriteDeadline(time.Time) error
+}
+
 // Source provides a network connection for correction data.
 type Source interface {
 	// Connect establishes a connection to the correction source and
-	// returns an io.ReadCloser that delivers raw correction data.
+	// returns a connection that delivers raw correction data.
 	// Connect must respect ctx cancellation.
-	Connect(ctx context.Context) (io.ReadCloser, error)
+	Connect(ctx context.Context) (ReadWriteDeadlineCloser, error)
 }
 
 // TCPSource connects to a TCP address.
@@ -101,7 +110,7 @@ type TCPSource struct {
 }
 
 // Connect dials the TCP address.
-func (s *TCPSource) Connect(ctx context.Context) (io.ReadCloser, error) {
+func (s *TCPSource) Connect(ctx context.Context) (ReadWriteDeadlineCloser, error) {
 	return (&net.Dialer{}).DialContext(ctx, "tcp", s.Addr)
 }
 
@@ -120,16 +129,11 @@ type NtripSource struct {
 	Username   string
 	Password   string
 	UserAgent  NtripUserAgent
-	// GGA, if non-empty, is an NMEA GGA sentence (already terminated
-	// with CRLF) sent to the caster as a separate write right after a
-	// successful handshake.  A Virtual Reference Station caster needs
-	// the client's position before it will start streaming.
-	GGA string
 }
 
 // Connect dials the caster, performs the Ntrip v1 handshake, and
 // returns a reader over the RTCM body.
-func (s *NtripSource) Connect(ctx context.Context) (io.ReadCloser, error) {
+func (s *NtripSource) Connect(ctx context.Context) (ReadWriteDeadlineCloser, error) {
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", s.Addr)
 	if err != nil {
 		return nil, err
@@ -154,9 +158,9 @@ func (s *NtripSource) Connect(ctx context.Context) (io.ReadCloser, error) {
 }
 
 // handshake writes the Ntrip v1 request, reads the status line, and
-// returns an io.ReadCloser over the body.  On error, the caller
+// returns a connection over the body.  On error, the caller
 // closes conn.
-func (s *NtripSource) handshake(conn net.Conn) (io.ReadCloser, error) {
+func (s *NtripSource) handshake(conn net.Conn) (ReadWriteDeadlineCloser, error) {
 	if _, err := conn.Write([]byte(s.request())); err != nil {
 		return nil, err
 	}
@@ -168,22 +172,22 @@ func (s *NtripSource) handshake(conn net.Conn) (io.ReadCloser, error) {
 	if !bytes.Equal(line, []byte("ICY 200 OK\r\n")) {
 		return nil, fmt.Errorf("Ntrip: %s", strings.TrimSuffix(string(line), "\r\n"))
 	}
-	// A VRS caster needs the client's position before it streams; the
-	// spec allows sending the GGA after the request, so write it on the
-	// accepted stream as a separate write.
-	if len(s.GGA) > 0 {
-		if _, err := conn.Write([]byte(s.GGA)); err != nil {
-			return nil, err
-		}
-	}
 	if br.Buffered() == 0 {
 		return conn, nil
 	}
 	leftover, _ := br.Peek(br.Buffered())
-	return struct {
-		io.Reader
-		io.Closer
-	}{io.MultiReader(bytes.NewReader(leftover), conn), conn}, nil
+	return &readBufferedConn{Reader: io.MultiReader(bytes.NewReader(leftover), conn), conn: conn}, nil
+}
+
+type readBufferedConn struct {
+	io.Reader
+	conn net.Conn
+}
+
+func (c *readBufferedConn) Write(p []byte) (int, error) { return c.conn.Write(p) }
+func (c *readBufferedConn) Close() error                { return c.conn.Close() }
+func (c *readBufferedConn) SetWriteDeadline(t time.Time) error {
+	return c.conn.SetWriteDeadline(t)
 }
 
 // request builds the Ntrip v1 request bytes.
@@ -215,54 +219,194 @@ type Pull struct {
 	// source.  The caller should subscribe before calling Run.
 	// The bcast lives for the entire duration of Run, surviving
 	// reconnects -- subscribers are not affected by network drops.
-	Packets *bcast.Bcast[scan.Packet]
-	pktCh   chan scan.Packet
+	Packets          *bcast.Bcast[scan.Packet]
+	source           Source
+	lg               *slog.Logger
+	pw               PacketWriter
+	portLock         gpsio.OutPortLock
+	pktFormats       []gpsprot.PacketFormat
+	nmeaSendInterval time.Duration
+	pktCh            chan scan.Packet
 }
 
-// NewPull creates a Pull.  The caller should subscribe to
-// s.Packets before calling Run.
-func NewPull() *Pull {
+// NewPull creates a Pull. The caller should subscribe to s.Packets before
+// calling Run.
+func NewPull(source Source, lg *slog.Logger,
+	pw PacketWriter,
+	portLock gpsio.OutPortLock,
+	pktFormats []gpsprot.PacketFormat,
+	nmeaSendInterval time.Duration,
+) *Pull {
+	if lg == nil {
+		lg = slog.Default()
+	}
 	ch := make(chan scan.Packet)
 	return &Pull{
-		Packets: bcast.New(ch),
-		pktCh:   ch,
+		Packets:          bcast.New(ch),
+		source:           source,
+		lg:               lg,
+		pw:               pw,
+		portLock:         portLock,
+		pktFormats:       pktFormats,
+		nmeaSendInterval: nmeaSendInterval,
+		pktCh:            ch,
 	}
 }
 
-// PullSetup is a Pull paired with the resources it needs to run
-// (source, packet writer, output port lock, and packet formats).
-// Built by (*PullConfig).Prepare.
-type PullSetup struct {
-	pull       *Pull
-	source     Source
-	addr       string
-	pktFormats []gpsprot.PacketFormat
-	pw         PacketWriter
-	portLock   gpsio.OutPortLock
-}
-
-// Addr returns the source address string, for use in log lines.
-func (s *PullSetup) Addr() string {
-	return s.addr
-}
-
-// Bcast returns the packet broadcast for pull-observer subscribers.
-func (s *PullSetup) Bcast() *bcast.Bcast[scan.Packet] {
-	return s.pull.Packets
-}
-
-// Run runs the prepared Pull.  It blocks until ctx is cancelled or
-// the serial writer returns a fatal error.
-func (s *PullSetup) Run(ctx context.Context, lg *slog.Logger,
-	onState func(State, error)) error {
-	return s.pull.Run(ctx, lg, s.source, s.pw, s.portLock, s.pktFormats, onState)
-}
-
 const scanBufSize = 16
+const ggaWriteTimeout = 5 * time.Second
+
+// maxGGASendTimeouts is the maximum number of consecutive upload write-deadline
+// timeouts the GGA sender tolerates; the next timeout drops the connection to
+// force a reconnect.  Transient stalls keep the correction read stream up; each
+// timeout takes up to ggaWriteTimeout, so a wedged upload is dropped within
+// about (maxGGASendTimeouts+1)*ggaWriteTimeout.
+const maxGGASendTimeouts = 2
 
 // errReconnect is sent as a scan.Packet.ReadError to signal the
 // pruning queue that the connection was lost.
 var errReconnect = errors.New("reconnect")
+
+// ErrNoUsableGGA reports that a selected-GGA feed ended without a usable fix.
+var ErrNoUsableGGA = errors.New("no usable GGA with position fix")
+
+// GGASender uploads selected GGA packets to a connected correction source.
+type GGASender struct {
+	selected <-chan scan.Packet
+	interval time.Duration
+	connCh   chan ReadWriteDeadlineCloser
+	ready    chan struct{}
+	done     chan struct{}
+}
+
+// NewGGASender creates a GGA sender for a selected-GGA packet feed.
+// interval is the resend period; 0 uploads the latest GGA once per
+// connection.
+func NewGGASender(selected <-chan scan.Packet, interval time.Duration) *GGASender {
+	return &GGASender{
+		selected: selected,
+		interval: interval,
+		connCh:   make(chan ReadWriteDeadlineCloser, 1),
+		ready:    make(chan struct{}),
+		done:     make(chan struct{}),
+	}
+}
+
+// Run holds the latest usable GGA and uploads it to the current
+// connection: once on connect, then every interval if interval > 0.
+func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
+	defer close(s.done)
+	var tickCh <-chan time.Time
+	if s.interval > 0 {
+		t := time.NewTicker(s.interval)
+		defer t.Stop()
+		tickCh = t.C
+	}
+	// latest is the latest usable GGA wire bytes ("" until the first fix);
+	// conn is the upload connection (nil when none); nTimeouts counts
+	// consecutive upload write-deadline timeouts.
+	var latest string
+	var conn ReadWriteDeadlineCloser
+	var nTimeouts int
+	for {
+		select {
+		case pkt, ok := <-s.selected:
+			if !ok {
+				s.selected = nil
+				if latest == "" {
+					return
+				}
+				continue
+			}
+			if _, ok := GGAPacketPosition(pkt); !ok {
+				continue
+			}
+			if latest == "" {
+				close(s.ready) // first usable GGA; unblock reader()
+			}
+			latest = pkt.Data
+		case <-tickCh:
+			if conn != nil && latest != "" {
+				conn, nTimeouts = sendGGA(lg, conn, latest, nTimeouts)
+			}
+		case conn = <-s.connCh:
+			nTimeouts = 0
+			if latest != "" {
+				conn, nTimeouts = sendGGA(lg, conn, latest, nTimeouts)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// sendGGA uploads data to conn and returns the connection (nil if it was
+// dropped) and the updated consecutive-timeout count.  A clean write timeout
+// keeps the connection through a transient stall; a hard error, or more than
+// maxGGASendTimeouts consecutive timeouts, drops it so the reader reconnects.
+func sendGGA(lg *slog.Logger, conn ReadWriteDeadlineCloser, data string, nTimeouts int) (ReadWriteDeadlineCloser, int) {
+	err := writeGGA(conn, data)
+	switch {
+	case err == nil:
+		return conn, 0
+	case errors.Is(err, errGGATimeout):
+		nTimeouts++
+		if nTimeouts == 1 {
+			lg.Warn("NMEA GGA upload timed out; keeping connection")
+		}
+		if nTimeouts <= maxGGASendTimeouts {
+			return conn, nTimeouts
+		}
+		lg.Warn("NMEA GGA upload timed out repeatedly; dropping connection", "timeouts", nTimeouts)
+	default:
+		lg.Warn("NMEA GGA upload failed", "err", err)
+	}
+	conn.Close()
+	return nil, 0
+}
+
+// Ready reports whether the sender has already seen a usable GGA packet,
+// so a caller can avoid logging that it is waiting when it is not.
+func (s *GGASender) Ready() bool {
+	select {
+	case <-s.ready:
+		return true
+	default:
+		return false
+	}
+}
+
+// WaitReady waits until the sender has seen a usable GGA packet.
+func (s *GGASender) WaitReady(ctx context.Context) error {
+	select {
+	case <-s.ready:
+		return nil
+	case <-s.done:
+		select {
+		case <-s.ready:
+			return nil
+		default:
+			// Run closes done on ctx cancellation too; don't misreport a
+			// clean cancel as a missing fix.
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return ErrNoUsableGGA
+		}
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// SetWriter gives the sender the current post-handshake connection.
+func (s *GGASender) SetWriter(ctx context.Context, w ReadWriteDeadlineCloser) bool {
+	select {
+	case s.connCh <- w:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
 
 // Run connects to the correction source, scans packets, and writes
 // each to serialConn via WritePacket.  On network error, Run
@@ -271,12 +415,7 @@ var errReconnect = errors.New("reconnect")
 // Run blocks until ctx is cancelled or serialConn errors.
 // On cancellation, Run waits for all internal goroutines to exit
 // before returning.
-func (s *Pull) Run(ctx context.Context, lg *slog.Logger,
-	source Source,
-	pw PacketWriter,
-	portLock gpsio.OutPortLock,
-	pktFormats []gpsprot.PacketFormat,
-	onState func(State, error)) error {
+func (s *Pull) Run(ctx context.Context, selectedGGA <-chan scan.Packet, onState func(State, error)) error {
 	iCtx, iCancel := context.WithCancel(ctx)
 	defer iCancel()
 	// writeErr captures a fatal write error so Run can return it
@@ -286,23 +425,30 @@ func (s *Pull) Run(ctx context.Context, lg *slog.Logger,
 	var bcastWg sync.WaitGroup
 	// start bcast goroutine
 	bcastWg.Go(func() {
-		s.Packets.Run(iCtx, lg)
+		s.Packets.Run(iCtx, s.lg)
 	})
+	var gs *GGASender
+	if selectedGGA != nil {
+		gs = NewGGASender(selectedGGA, s.nmeaSendInterval)
+		pipelineWg.Go(func() {
+			gs.Run(iCtx, s.lg)
+		})
+	}
 	// subscribe to bcast before starting reader to avoid missing packets
 	subCh := s.Packets.Subscribe()
 	// queue channel from pruning queue to writer
 	qCh := make(chan scan.Packet, 1)
 	// start writer
 	pipelineWg.Go(func() {
-		writeErr = s.writer(iCtx, lg, pw, portLock, qCh, iCancel)
+		writeErr = s.writer(iCtx, s.lg, s.pw, s.portLock, qCh, iCancel)
 	})
 	// start pruning queue
 	pipelineWg.Go(func() {
-		s.queue(lg, subCh, qCh)
+		s.queue(s.lg, subCh, qCh)
 	})
 	// start reader
 	pipelineWg.Go(func() {
-		s.reader(iCtx, lg, source, pktFormats, onState)
+		s.reader(iCtx, s.lg, s.source, s.pktFormats, gs, onState)
 	})
 	pipelineWg.Wait()
 	s.Packets.Close()
@@ -319,10 +465,21 @@ func (s *Pull) Run(ctx context.Context, lg *slog.Logger,
 // exit.
 func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 	source Source, pktFormats []gpsprot.PacketFormat,
-	onState func(State, error)) {
+	gs *GGASender, onState func(State, error)) {
 	defer close(s.pktCh)
 	if onState == nil {
 		onState = func(State, error) {}
+	}
+	if gs != nil {
+		if !gs.Ready() {
+			lg.Info("NMEA send pull waiting for first position fix before connecting")
+		}
+		if err := gs.WaitReady(ctx); err != nil {
+			if ctx.Err() == nil {
+				lg.Warn("NMEA send pull stopped before first position fix", "err", err)
+			}
+			return
+		}
 	}
 	b := newBackoff()
 	first := true
@@ -348,6 +505,10 @@ func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 			continue
 		}
 		b.decrease()
+		if gs != nil && !gs.SetWriter(ctx, conn) {
+			conn.Close()
+			return
+		}
 		onState(Connected, nil)
 		// cancel goroutine: closes conn when ctx is done to unblock Scan
 		done := make(chan struct{})
@@ -480,6 +641,46 @@ func (s *Pull) writer(ctx context.Context, lg *slog.Logger,
 			cancel()
 			return err
 		}
+	}
+	return nil
+}
+
+// GGAPacketPosition returns the lat/lon of pkt when it is a usable GGA
+// fix (checksum-valid, quality > 0, lat/lon set), and ok == false otherwise.
+func GGAPacketPosition(pkt scan.Packet) ([2]float64, bool) {
+	var pos [2]float64
+	gga, ok := packetGGASentence(pkt)
+	if !ok || gga.Fields.Quality == 0 || !gga.Fields.Lat.IsSet() || !gga.Fields.Lon.IsSet() {
+		return pos, false
+	}
+	pos[0], pos[1] = gga.Fields.LatLon()
+	return pos, true
+}
+
+// errGGATimeout reports a GGA upload that hit its write deadline without sending
+// any bytes.  The stream framing is intact, so the sender keeps the connection
+// and retries rather than reconnecting on a transient stall.
+var errGGATimeout = errors.New("NMEA GGA upload timed out")
+
+func writeGGA(w ReadWriteDeadlineCloser, data string) error {
+	if err := w.SetWriteDeadline(time.Now().Add(ggaWriteTimeout)); err != nil {
+		return err
+	}
+	n, err := io.WriteString(w, data)
+	if e := w.SetWriteDeadline(time.Time{}); err == nil {
+		err = e
+	}
+	if err != nil {
+		// A clean timeout with nothing written is recoverable; a partial write
+		// corrupts framing, so report it as a hard error.
+		var ne net.Error
+		if n == 0 && errors.As(err, &ne) && ne.Timeout() {
+			return errGGATimeout
+		}
+		return err
+	}
+	if n != len(data) {
+		return io.ErrShortWrite
 	}
 	return nil
 }

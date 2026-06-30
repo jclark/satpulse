@@ -15,11 +15,12 @@ func frame(payload string) string {
 
 func TestParseFlags(t *testing.T) {
 	tests := []struct {
-		name       string
-		args       []string
-		expect     *flagConfig
-		expectHelp bool
-		expectErr  bool
+		name        string
+		args        []string
+		expect      *flagConfig
+		intervalSet bool // case sets --nmea-send-interval; else expect the default
+		expectHelp  bool
+		expectErr   bool
 	}{
 		{
 			name: "minimal",
@@ -124,6 +125,47 @@ func TestParseFlags(t *testing.T) {
 			expectErr: true,
 		},
 		{
+			name: "nmea send interval with pos",
+			args: []string{"--nmea-send-pos", "13.731826167,100.644802333", "--nmea-send-interval", "2.5", "caster.example", "MNT"},
+			expect: &flagConfig{
+				Addr:             "caster.example:2101",
+				Mountpoint:       "MNT",
+				NMEASendPos:      &nmeaSendPos{LatLon: [2]float64{13.731826167, 100.644802333}},
+				NMEASendInterval: 2500 * time.Millisecond,
+			},
+			intervalSet: true,
+		},
+		{
+			name: "nmea send interval zero",
+			args: []string{"--nmea-send-pos", "13.731826167,100.644802333", "--nmea-send-interval", "0", "caster.example", "MNT"},
+			expect: &flagConfig{
+				Addr:        "caster.example:2101",
+				Mountpoint:  "MNT",
+				NMEASendPos: &nmeaSendPos{LatLon: [2]float64{13.731826167, 100.644802333}},
+			},
+			intervalSet: true,
+		},
+		{
+			name:      "nmea send interval negative",
+			args:      []string{"--nmea-send-pos", "13.7,100.6", "--nmea-send-interval", "-1", "caster.example", "MNT"},
+			expectErr: true,
+		},
+		{
+			name:      "nmea send interval positive below minimum",
+			args:      []string{"--nmea-send-pos", "13.7,100.6", "--nmea-send-interval", "0.5", "caster.example", "MNT"},
+			expectErr: true,
+		},
+		{
+			name:      "nmea send interval above maximum",
+			args:      []string{"--nmea-send-pos", "13.7,100.6", "--nmea-send-interval", "40000000", "caster.example", "MNT"},
+			expectErr: true,
+		},
+		{
+			name:      "nmea send interval without pos",
+			args:      []string{"--nmea-send-interval", "5", "caster.example", "MNT"},
+			expectErr: true,
+		},
+		{
 			name:      "gga removed",
 			args:      []string{"--gga", "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47", "caster.example", "MNT"},
 			expectErr: true,
@@ -176,6 +218,10 @@ func TestParseFlags(t *testing.T) {
 			}
 			if help != tc.expectHelp {
 				t.Errorf("help = %v, want %v", help, tc.expectHelp)
+			}
+			// Cases that don't pass --nmea-send-interval expect the 5s default.
+			if tc.expect != nil && !tc.intervalSet {
+				tc.expect.NMEASendInterval = 5 * time.Second
 			}
 			if !reflect.DeepEqual(cfg, tc.expect) {
 				t.Errorf("got  %+v\nwant %+v", cfg, tc.expect)

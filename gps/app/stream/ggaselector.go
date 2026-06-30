@@ -27,7 +27,7 @@ func (s *GGASelector) Packets() <-chan scan.Packet {
 
 // Packet validates a receiver packet and publishes it if it is NMEA GGA.
 func (s *GGASelector) Packet(pkt scan.Packet) bool {
-	if !validGGAPacket(pkt) {
+	if _, ok := packetGGASentence(pkt); !ok {
 		return false
 	}
 	s.publish(pkt)
@@ -78,24 +78,26 @@ func (s *GGASelector) publish(pkt scan.Packet) {
 	}
 }
 
-func validGGAPacket(pkt scan.Packet) bool {
+// packetGGASentence parses pkt as a checksum-valid approved NMEA GGA sentence,
+// returning it with ok=true, or ok=false if pkt is not a valid GGA.
+func packetGGASentence(pkt scan.Packet) (nmeamsg.GGASentence, bool) {
 	if !pkt.HasTag(gpsreg.TagNMEA) || !pkt.ChecksumValid {
-		return false
+		return nmeamsg.GGASentence{}, false
 	}
 	flags := nmeamsg.CheckSyntax(pkt.Data)
 	if !flags.IsValidGNSSTalkerNMEA() {
-		return false
+		return nmeamsg.GGASentence{}, false
 	}
 	i := strings.IndexByte(pkt.Data, '*')
 	if i < 0 {
-		return false
+		return nmeamsg.GGASentence{}, false
 	}
 	msg, err := nmeamsg.ParseGNSSTalkerPayload(pkt.Data[1:i], flags)
 	if err != nil {
-		return false
+		return nmeamsg.GGASentence{}, false
 	}
-	_, ok := msg.(nmeamsg.GGASentence)
-	return ok
+	gga, ok := msg.(nmeamsg.GGASentence)
+	return gga, ok
 }
 
 func ggaUTC(data string) (string, bool) {
