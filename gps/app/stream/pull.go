@@ -18,7 +18,6 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
-	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/spartnbin"
@@ -650,22 +649,7 @@ func (s *Pull) writer(ctx context.Context, lg *slog.Logger,
 // fix (checksum-valid, quality > 0, lat/lon set), and ok == false otherwise.
 func GGAPacketPosition(pkt scan.Packet) ([2]float64, bool) {
 	var pos [2]float64
-	if !pkt.HasTag(gpsreg.TagNMEA) || !pkt.ChecksumValid {
-		return pos, false
-	}
-	flags := nmeamsg.CheckSyntax(pkt.Data)
-	if !flags.IsValidGNSSTalkerNMEA() {
-		return pos, false
-	}
-	i := strings.IndexByte(pkt.Data, '*')
-	if i < 0 {
-		return pos, false
-	}
-	msg, err := nmeamsg.ParseGNSSTalkerPayload(pkt.Data[1:i], flags)
-	if err != nil {
-		return pos, false
-	}
-	gga, ok := msg.(nmeamsg.GGASentence)
+	gga, ok := packetGGASentence(pkt)
 	if !ok || gga.Fields.Quality == 0 || !gga.Fields.Lat.IsSet() || !gga.Fields.Lon.IsSet() {
 		return pos, false
 	}
