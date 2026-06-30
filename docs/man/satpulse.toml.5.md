@@ -383,6 +383,8 @@ The following keys may be specified:
 * `ntrip.mountpoint` - a string giving the caster mountpoint to use; this key is required
 * `ntrip.username` - a string giving the user name for Ntrip basic authentication
 * `ntrip.password` - a string giving the password for Ntrip basic authentication
+* `ntrip.nmeaSend` - a boolean saying whether SatPulse should send the receiver's position to the caster as NMEA GGA; this is needed by Virtual Reference Station casters before they will stream corrections; when true, SatPulse uploads the receiver's current position after connecting and re-uploads it periodically (see `ntrip.nmeaSendInterval`); the default is false
+* `ntrip.nmeaSendInterval` - a number giving the interval in seconds between GGA uploads when `ntrip.nmeaSend` is true; a value of 0 means upload only once per connection; the default is 5
 
 Example
 

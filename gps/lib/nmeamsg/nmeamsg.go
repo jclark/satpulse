@@ -47,6 +47,10 @@ const (
 // in future firmware. We use 400 to allow headroom.
 const SentenceMaxLength = 400
 
+// MaxGGANumSats is the largest satellite count representable by GGA field 7's
+// two decimal digits.
+const MaxGGANumSats = 99
+
 // Composite flags (defined after iota sequence)
 const (
 	// Union of all GNSS talker flags for convenience

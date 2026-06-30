@@ -17,16 +17,15 @@ import (
 )
 
 // startPull spawns the stream.pull goroutine.  It is a no-op when
-// setup is nil.  A non-cancel error from Setup.Run is logged but
+// pull is nil.  A non-cancel error from Pull.Run is logged but
 // does not cancel the daemon: time/PHC sync is independent of
 // corrections, and the daemon should continue degraded rather than
 // tear down on a correction-side fault.
 func startPull(ctx context.Context, lg *slog.Logger,
-	wg *sync.WaitGroup, setup *stream.PullSetup) {
-	if setup == nil {
+	wg *sync.WaitGroup, pull *stream.Pull, addr string, selectedGGA <-chan scan.Packet) {
+	if pull == nil {
 		return
 	}
-	addr := setup.Addr()
 	lg = lg.With("addr", addr)
 	onState := func(st stream.State, err error) {
 		switch st {
@@ -39,7 +38,7 @@ func startPull(ctx context.Context, lg *slog.Logger,
 		}
 	}
 	wg.Go(func() {
-		err := setup.Run(ctx, lg, onState)
+		err := pull.Run(ctx, selectedGGA, onState)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			lg.Error("stream pull exited with error", "err", err)
 		}

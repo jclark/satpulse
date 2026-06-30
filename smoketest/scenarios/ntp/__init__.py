@@ -61,7 +61,7 @@ def check_shm(ctx: common.SmokeContext) -> common.JsonObject:
 def check_sock(
     ctx: common.SmokeContext,
     min_samples: int = 10,
-    max_spread: float = 0.15,
+    max_spread: float = 0.05,
     max_time_error: float = 0.1,
 ) -> float:
     """The chrony SOCK refclock stream is well-formed, consistent, and correct.

@@ -1,4 +1,4 @@
-# NMEA GGA support: parsing, synthesis, and proxy (#329)
+# NMEA GGA support: synthesis and proxy (#329)
 
 ## Motivation
 
@@ -14,8 +14,10 @@ GGA handling in several places:
 - A TCP proxy serving NMEA should be able to include synthesized GGA when the
   receiver stream does not already include a real GGA for that UTC.
 
-This plan is for the general NMEA/GGA work. VRS pull support remains in
-`plan/vrs.md` and depends on stages 2, 3, and 4 here.
+This plan is for the general NMEA/GGA work. Everything after stage 1 depends on
+the NMEA decode layer (#330), which provides the typed `nmeamsg` GGA and sentence
+types. NMEA send pull support remains in `plan/nmea-send.md` and depends on #330 and stages 2
+and 3 here.
 
 ## Stage 1: `ntripcmd --gga` option (done)
 
@@ -39,172 +41,12 @@ or position synthesis. The caller pastes a real GGA captured from a receiver;
 - Per the spec one GGA suffices to start the stream; `ntripcmd` does not resend.
 
 This stage depends only on existing NMEA syntax support. It proves the upload
-mechanism independently of GGA synthesis. The later VRS plan supersedes the
+mechanism independently of GGA synthesis. The later NMEA send plan supersedes the
 static `NtripSource.GGA` field by routing `--gga` through the shared
 post-handshake GGA sender; this stage describes the completed first diagnostic,
 not the final writer architecture.
 
-## Stage 2: GGA parsing and serialisation with `fieldenc`
-
-Add typed GGA parsing and serialisation to `gps/lib/nmeamsg`. This is a
-low-level syntax/message package, so it must stay free of `gpsprot`
-dependencies. The GGA work should be shaped as the first reusable NMEA
-fieldenc-backed sentence implementation, not as a VRS helper.
-
-### Sentence wrapper
-
-Use the split used by `novmsg`: the wrapper carries sentence addressing, while
-the payload struct is what `fieldenc` sees. Do not put a `Sentence()` method on
-GGA data; packet construction (address, checksum, CRLF) belongs in the wrapper
-serialiser.
-
-```go
-type TalkerID string
-
-const TalkerGP TalkerID = "GP"
-
-type SentenceFields interface {
-	SentenceFormat() string
-}
-
-type Sentence[F SentenceFields] struct {
-	TalkerID TalkerID
-	Fields   F
-}
-```
-
-`Sentence[F]` represents an addressed approved NMEA sentence. `F` is the typed
-field set and provides the NMEA sentence format (`"GGA"` here). `Serialize`
-applies `fieldenc.Encode` to `s.Fields`, builds the checksum payload as
-`<talker><format>[,<fields>]`, computes `nmeamsg.Checksum` over that payload
-only (the bytes between `$` and `*`), and returns `$` + payload + `*` +
-checksum + CRLF:
-
-```go
-func Serialize[F SentenceFields](s Sentence[F]) ([]byte, error)
-func Parse[F SentenceFields](data string) (Sentence[F], error)
-```
-
-`Parse` checks the NMEA syntax and checksum, verifies that the address format
-matches `F.SentenceFormat()`, decodes the fields with `fieldenc`, and preserves
-the talker ID from the input. If the generic `Parse[F]` API turns out awkward in
-implementation, a GGA-specific parser is acceptable for the first step, but the
-field layout should still be reusable for later NMEA sentences.
-
-### GGA fields
-
-`fieldenc` is strictly one struct field per output slot, but GGA latitude and
-longitude are each two wire fields (magnitude + hemisphere). So they are
-separate struct fields, and the constructor splits the signed angle into a
-degrees/minutes magnitude and a hemisphere.
-
-```go
-type GGAFields struct {
-	Time     opt.Val[todUTC]   // "hhmmss.ss"
-	LatMin   opt.Val[latCoord] // "ddmm.mmmmm"  (deg+min struct, 2-digit degrees)
-	LatNS    string            // "N"/"S", empty when absent
-	LonMin   opt.Val[lonCoord] // "dddmm.mmmmm" (deg+min struct, 3-digit degrees)
-	LonEW    string            // "E"/"W", empty when absent
-	Quality  uint8Dec          // base-10 uint8, 0 = no fix
-	NumSats  opt.Val[uint8Dec2] // two-digit base-10 uint8
-	HDOP     opt.Val[float32]  // decimal number
-	Alt      opt.Val[float64]  // antenna altitude
-	AltUnit  string            // "M", empty when absent
-	GeoidSep opt.Val[float64]  // geoidal separation
-	GeoidU   string            // "M", empty when absent
-	DGPSAge  opt.Val[float32]  // seconds since DGPS update
-	DGPSID   opt.Val[uint16Dec4]
-}
-
-func (GGAFields) SentenceFormat() string { return "GGA" }
-```
-
-`gps/lib/nmeamsg` may import `gps/lib/opt`. Empty non-string fields are
-represented by wrapping the real wire type in `opt.Val[T]`, not by weakening
-numeric fields to strings. Fields whose wire type is already text, such as
-hemisphere and unit fields, remain plain `string`; the empty string is the empty
-wire field. Field-level semantic validation belongs in a later GGA validation
-layer, not in `fieldenc` decoding. Most GGA fields must be optional because
-valid no-fix receiver output can leave them empty. The NMEA 4.00 GGA definition
-explicitly says only field 6, the GPS quality indicator, should not be a null
-field. Cold-start logs confirm real receivers emit valid GGA with an empty time
-(`$GPGGA,,,,,,0,00,99.99,...`) and with time present but position, altitude,
-geoidal separation, and DGPS fields empty.
-
-Custom types (each gets `MarshalText`, and `UnmarshalText` for parsing
-symmetry):
-
-- `todUTC` - UTC time-of-day `time.Time` <-> `hhmmss.ss`. The date part of the
-  `time.Time` is not part of GGA and must not be significant after parsing.
-- `latCoord` / `lonCoord` - one lat/lon magnitude field (`ddmm.mmmmm` /
-  `dddmm.mmmmm`), represented as a small struct that mirrors the wire form:
-  whole `deg uint16` plus `min int64`, the minutes held as fixed-point scaled by
-  1e5 (so `0 <= min < 60e5`). Both types share one underlying `coord` struct
-  and differ only in degree-field width (2 vs 3 digits). `MarshalText` prints
-  `deg` zero-padded to that width, then the minutes as `%02d.%05d` from
-  `min/1e5` and `min%1e5`. No float and no `decconv`, so output is exact and
-  `UnmarshalText` round-trips it byte-for-byte.
-- `uint8Dec`, `uint8Dec2`, `uint16Dec4` - unsigned integer wire fields parsed
-  as base-10 with the named Go integer width; the suffix gives the serialized
-  zero-padded field width when the NMEA spec fixes one (`xx`, `xxxx`). These are
-  generic formatting types, not semantic field types: use them for NMEA fields
-  where zero-padded decimal input such as `08` or `0001` must parse as decimal.
-  Do not use bare unsigned integers for those fields, because `fieldenc` parses
-  unsigned integers with `strconv.ParseUint(..., 0, ...)`.
-
-`Parse` should validate the GGA field count explicitly before calling
-`fieldenc.Decode`, so non-standard extra fields and truncated sentences have a
-deliberate policy rather than falling out of `fieldenc`'s generic count rules.
-Exact preservation of the original decimal spelling is not a goal of
-`fieldenc` decoding; conversion into the appropriate wire type is enough. For
-decimal-number fields, use `float32` for HDOP and DGPS age, and `float64` for
-altitude and geoidal separation. This keeps the typed fields simple while
-matching the existing `gps/internal/nmea` parser's acceptance of float-valued
-fields.
-
-API:
-
-```go
-func MakeGGA(talker TalkerID, t time.Time, lat, lon float64, quality, numSats uint8, hdop float64) Sentence[GGAFields]
-func (g GGAFields) LatLon() (lat, lon float64)
-```
-
-`MakeGGA` derives the hemisphere from the original sign and splits the absolute
-float64 degrees into the exact wire coord representation: `deg = int(absA)`,
-`min = round((absA-deg)*60e5)`, carrying `min == 60e5` up into `deg`. It is a
-convenience for complete synthesized fixes and sets the optional fields it can
-populate. `LatLon` recombines the coord fields with the hemisphere fields,
-recovering exactly the position the sentence encodes.
-
-Tests:
-
-- Golden sentences for known positions in each hemisphere, exact bytes incl.
-  checksum, produced through `Serialize`.
-- Parse golden sentences and verify the typed fields.
-- Parse and serialize zero-padded decimal unsigned fields such as `08` and
-  `0001`.
-- Parse decimal fields with varied fractional digit counts and verify the typed
-  `float32`/`float64` values.
-- Parse captured no-fix GGA with empty time
-  (`$GPGGA,,,,,,0,00,99.99,,,,,,*48`) and with time but no position
-  (`$GNGGA,060713.00,,,,,0,06,4.88,,,,,,*49`).
-- Unset optional fields and empty string fields serialize as empty fields; parse
-  maps them back to unset optionals or empty strings respectively.
-- GGA field-count validation rejects the wrong number of fields explicitly.
-- Minutes < 10 (zero-padding) and the degree/minute split boundary.
-- `todUTC` parse/serialize preserves the time-of-day fields; parsed dates are
-  not significant.
-- `LatLon` round-trips `MakeGGA(...).Fields` inputs within tolerance.
-- Serialize -> parse checks typed fields; parsing captured receiver output does
-  not require byte-exact reserialization of decimal spelling.
-
-Follow-up: once `GGAFields` parses via `fieldenc.Decode`, it can replace the
-hand-rolled `parseGGA` internals in `gps/internal/nmea/nmea.go`. That replacement
-intentionally tightens empty-quality handling: `GGAFields.Quality` is
-non-optional, while the legacy parser treats empty quality like no fix, so make
-that compatibility decision explicitly when doing the replacement.
-
-## Stage 3: NMEA GGA synthesis from `gpsprot`
+## Stage 2: NMEA GGA synthesis from `gpsprot`
 
 Add a reusable `gpsprot.MsgHandler` that synthesizes GGA from decoded GPS
 messages and sends typed GGA sentences to a sink. This produces candidate GGA
@@ -218,19 +60,47 @@ cannot be `gps/internal/`. Implementation must add an entry under the `### gps/`
 section of `docs/internals.md`.
 
 ```go
+type Phase int
+
+const (
+	PhaseImmediate Phase = iota
+	PhaseEpoch
+)
+
 type Sink interface {
-	SynthGGA(gga nmeamsg.Sentence[nmeamsg.GGAFields])
+	Msg(m nmeamsg.GNSSTalkerIDMsg, phase Phase)
 }
 
 func New(sink Sink) *Synth // *Synth implements gpsprot.MsgHandler
 ```
+
+The sink is deliberately general, not GGA-specific. `nmeamsg.GNSSTalkerIDMsg`
+is the interface that every typed NMEA sentence (`nmeamsg.Sentence[F]`, e.g. GGA
+and RMC) implements, and `nmeamsg.SerializeMsg` already serializes any of them.
+A sink consumer recovers the concrete sentence with a type assertion (e.g.
+`m.(nmeamsg.GGASentence)`). This lets the same synthesizer and sink carry RMC
+(stage 5) without an interface change.
+
+`Phase` distinguishes the timeliness contract of an emission:
+
+- `PhaseEpoch` is emitted at the end of a navigation epoch, with that epoch's
+  full metadata. It is what stage 2 emits.
+- `PhaseImmediate` (stage 6) is emitted as soon as the epoch has a time and a
+  position, favouring timeliness over fidelity by carrying slow-changing
+  metadata (HDOP, satellites, fix quality) forward from the last completed epoch.
+  It exists because `NavEpochMsg` is only prompt for protocols with an explicit
+  end-of-epoch marker (e.g. UBX-NAV-EOE); without one it is deferred to the next
+  cycle, which is too late for some consumers (notably RMC over a TCP proxy).
+
+Stage 2 emits only `PhaseEpoch` GGA. The synthesizer never decides which phase a
+consumer wants; the selector (stage 3) applies that policy.
 
 Behavior:
 
 - Embed `gpsprot.DefaultHandler` and implement only the callbacks it needs.
 - Accumulate per-epoch state from `TimeMsg` and `PosGeoMsg`/`PosECEFMsg`.
 - On `NavEpochMsg`, build a `nmeamsg.Sentence[nmeamsg.GGAFields]` and call
-  `sink.SynthGGA(gga)`.
+  `sink.Msg(gga, PhaseEpoch)`.
 
 This relies on the `gpsprot` epoch ordering contract: `NavEpochMsg` is emitted
 once at the end of a navigation epoch, after the time, position, and velocity
@@ -276,15 +146,24 @@ Tests:
 - Later real NMEA selection is not tested here; this package only synthesizes
   candidates.
 
-## Stage 4: selected GGA feed
+## Stage 3: selected GGA feed
 
-Add the shared selection path that chooses the best GGA stream for consumers
-that need position upload. This stage is not a proxy feature.
+Add the shared selector that chooses the best GGA stream for consumers that
+need position upload. This stage provides only the reusable selected-GGA core
+needed by `plan/nmea-send.md`; it does not change the daemon, dispatcher, stream pull,
+or proxy wiring.
+
+The selector belongs in `gps/app/stream` as `GGASelector`: it owns a capacity-1
+selected-GGA channel and is reusable by both `satpulsed` and the desktop GUI.
+`gpsevent` must receive it through a small interface rather than depending on
+the concrete stream type.
 
 Inputs:
 
-- original receiver GGA packets accepted by the normal NMEA packet processor;
-- synthesized GGA candidates from stage 3.
+- receiver packets that a later caller has already accepted through the normal
+  packet processor. The selector itself filters these down to valid NMEA GGA
+  packets;
+- synthesized GGA candidates from stage 2.
 
 Output:
 
@@ -293,46 +172,41 @@ Output:
   the selector publishes without blocking, and when the channel already contains
   a pending GGA it drops that old packet before trying to store the newer one.
 
-The selected-GGA feed is the part VRS needs. It is also the core used by the
-later proxy stage, but it does not create any proxy service and does not require
-`[[proxy.tcp]]`.
+For selector input, "valid receiver GGA candidate" means checksum-valid approved
+NMEA GGA that also passes the #330 typed GGA parser, including the explicit GGA
+field-count check. Non-GGA packets return false and do not enter the selected
+feed. A packet that the legacy parser accepts only because it is permissive must
+not enter the selected-GGA output.
 
-`Dispatcher.handlePacket` is the natural join point for original receiver GGA.
-It should identify a valid original GGA candidate in `handlePacket`, run the
-normal `ProcessPacket`, and feed the original packet to the selector only if
-processing succeeds. That way the selector sees packets that the normal parser
-accepted.
+The selector owns the selected-output channel, implements the stage 2
+`nmeasyn.Sink`, and has two input methods:
 
-For selector input, "valid original GGA candidate" means checksum-valid approved
-NMEA GGA that also passes the stage 2 typed GGA parser, including the explicit
-GGA field-count check. A packet that the legacy parser accepts only because it is
-permissive must not enter the selected-GGA output.
-
-The selector owns the selected-output channel and has two inputs:
-
-- `OriginalGGA(pkt scan.Packet)` forwards a valid original GGA packet
-  immediately and records its UTC field when it is comparable.
-- `SynthGGA(gga nmeamsg.Sentence[nmeamsg.GGAFields])` serializes the sentence,
+- `Packet(pkt scan.Packet)` forwards a valid receiver GGA packet immediately and
+  records its UTC field when it is comparable. It returns false for non-GGA or
+  invalid packets.
+- `Msg(m nmeamsg.GNSSTalkerIDMsg, phase nmeasyn.Phase)` is the `nmeasyn.Sink`
+  method. It ignores anything that is not a `PhaseEpoch` `nmeamsg.GGASentence`
+  (the same GGA-only gate the packet path applies), then serializes the sentence,
   wraps it as a valid NMEA `scan.Packet`, and forwards it only if it is not for
   the same UTC as the last directly emitted original GGA.
 
-The selector is single-threaded: `gpsevent.Dispatcher` is the only caller, and
-it calls `OriginalGGA` and `SynthGGA` from the event-dispatch goroutine. The
-selector does not need internal locking unless a later caller breaks that
-ownership model.
+The selector is single-threaded. It does not need internal locking; the later
+NMEA send integration must call it from one owner goroutine, after normal packet
+processing has accepted a receiver packet and from the stage 2 synthesizer sink
+for synthesized GGA.
 
-Publishing selected GGA must never block the dispatcher. The selector's output
-operation is latest-wins: try to send, and if the capacity-1 channel is full,
-do a nonblocking receive to discard the pending old GGA, then try to send the
-newer GGA. If the consumer races with this replacement, dropping a selected GGA
-is acceptable; GGA is current-position state, not a history stream.
+Publishing selected GGA must never block the caller. The selector's output
+operation is latest-wins: try to send, and if the capacity-1 channel is full, do
+a nonblocking receive to discard the pending old GGA, then try to send the newer
+GGA. If the consumer races with this replacement, dropping a selected GGA is
+acceptable; GGA is current-position state, not a history stream.
 
 The GGA comparison is intentionally simple. GGA has the fixed prefix `$xxGGA,`,
 so the UTC field's integer-second digits are at `pkt.Data[7:13]` for a normal
 approved GGA sentence with a non-empty `hhmmss` time. Use a helper that returns
 `(utc string, ok bool)` and checks both the fixed prefix and the six time
-digits. `OriginalGGA` forwards every valid original GGA immediately, but records
-the UTC only when that helper succeeds. `SynthGGA` suppresses a synthesized
+digits. `Packet` forwards every valid receiver GGA immediately, but records the
+UTC only when that helper succeeds. `Msg` suppresses a synthesized
 packet only when the last directly emitted original GGA and the synthesized
 candidate both have comparable UTC seconds and those strings are equal; if
 either time is empty or malformed, the synthesized packet is forwarded. There is
@@ -344,30 +218,8 @@ midnight handling.
 Same-UTC suppression does not require a separate ordering mechanism. Synthesized
 GGA is emitted only from the `NavEpochMsg` end-of-epoch callback, after the
 messages that make up that epoch have been processed. Therefore any original
-receiver GGA in the epoch has already reached `OriginalGGA` before `SynthGGA`
+receiver GGA in the epoch has already reached `Packet` before `Msg`
 can offer the synthesized candidate for that epoch.
-
-The daemon constructs this selected-GGA channel when any configured consumer
-needs it, currently VRS pull or the proxy synth stage. `time/app/daemon` can see
-both the receiver-side dispatcher and `stream.PullSetup`; `gps/app/stream` must
-only receive the selected-GGA channel and must not import `time/internal`.
-
-Daemon wiring:
-
-- `time/app/daemon` determines whether a selected-GGA feed is needed after
-  preparing `stream.PullSetup` and before creating `gpsevent.Dispatcher`.
-- If needed, the daemon creates the selected-GGA channel and selector, gives the
-  receive side to `stream.PullSetup` when VRS is enabled, and passes the selector
-  into `gpsevent.NewDispatcher` as an optional receiver-side sink.
-- When the selector is present, `gpsevent.Dispatcher` also owns a
-  `nmeasyn.Synth` whose sink is that selector. The dispatcher fans out the same
-  decoded `gpsprot` message callbacks it already receives to the synthesizer, in
-  the same order, so `nmeasyn` sees the complete `TimeMsg`/position/`NavEpochMsg`
-  epoch sequence.
-- `gpsevent.Dispatcher` feeds original receiver GGA from `handlePacket` and
-  synthesized GGA candidates from the embedded `nmeasyn` into that selector.
-- `gps/app/stream` sees only `<-chan scan.Packet`; it does not construct the
-  selector, depend on `gpsevent`, or import anything under `time/internal`.
 
 Wrapping synthesized output as a `scan.Packet` likely needs `gpsreg` to
 re-export the NMEA packet format, just as it already re-exports
@@ -378,21 +230,24 @@ Tests:
 - Original GGA is forwarded immediately.
 - Original GGA followed by synthesized GGA with the same UTC suppresses the
   synthesized packet.
-- Dispatcher fan-out drives `nmeasyn` with `TimeMsg`, position, and `NavEpochMsg`
-  in epoch order, and synthesized GGA is emitted from the end-of-epoch callback.
 - Original GGA with an empty UTC field is forwarded but does not suppress a
   later synthesized GGA.
 - Synthesized GGA with a different UTC is forwarded.
 - Synthesized output is a checksum-valid NMEA `scan.Packet`.
+- Invalid receiver packets and non-GGA packets are rejected before entering the
+  selected feed.
 - Publishing selected GGA with a blocked consumer does not block and keeps the
   newest pending GGA.
-- The daemon wires a selected-GGA feed when VRS pull or proxy synth needs it.
 
-## Stage 5: `proxy.tcp` NMEA synthesis option
+## Stage 4: `proxy.tcp` NMEA synthesis option
 
 Add a `synth` option to `[[proxy.tcp]]`. It applies only when
-`protocol = "NMEA"`. It uses the selected-GGA core from stage 4 but is unrelated
-to VRS.
+`protocol = "NMEA"`. It uses the selected-GGA core from stage 3 but is unrelated
+to NMEA send.
+
+Initially this is epoch-only, exactly as stages 2 and 3 stand: synthesized GGA
+is emitted at end of epoch. Lower-latency immediate-phase synthesis for the
+proxy is deferred to stage 6.
 
 Example:
 
@@ -421,16 +276,16 @@ Architecture:
   broadcast. Other services subscribe to the raw receiver broadcast.
 - `gpsevent.Dispatcher` gets an optional NMEA selector path. It feeds valid
   original NMEA packets from `handlePacket` to the selected NMEA output and
-  feeds original GGA plus synthesized GGA candidates through the stage 4
+  feeds original GGA plus synthesized GGA candidates through the stage 3
   selected-GGA core.
 
-For proxy clients, the NMEA selector output is broader than the stage 4
+For proxy clients, the NMEA selector output is broader than the stage 3
 selected-GGA feed:
 
 - non-GGA original NMEA packets pass through immediately;
 - original GGA packets pass through immediately and update the shared
   selected-GGA state;
-- synthesized GGA packets are inserted only when stage 4 does not suppress them
+- synthesized GGA packets are inserted only when stage 3 does not suppress them
   for the same UTC as an original receiver GGA.
 
 Tests:
@@ -446,7 +301,86 @@ Tests:
   `synth = true`, checking that a live TCP proxy client receives original NMEA
   and synthesized GGA fill-ins.
 
+## Stage 5: RMC synthesis
+
+Extend `nmeasyn.Synth` to also synthesize RMC, emitting it through the same
+`sink.Msg(m, phase)` with `m` an `nmeamsg.Sentence[nmeamsg.RMCFields]`. RMC
+carries time, status, lat/lon, speed, course, date and mode. Its sources are
+`TimeMsg` (time and date), `PosGeoMsg` (lat/lon), `VelGeoMsg` (speed and course
+over ground), and `NavEpochMsg.FixLevel` (status and mode). It omits GGA's
+dilution and satellite-count metadata (HDOP, satellites), but its status and
+mode derive from fix level, which is itself slow-changing metadata -- so like
+GGA, an immediate-phase RMC (stage 6) must carry the last known fix level
+forward rather than wait for the epoch's `NavEpochMsg`.
+
+Because the general sink and `Phase` are already in place from stage 2, this
+stage adds no interface change: it adds the RMC builder and the per-epoch
+velocity accumulation. Selectors choose which sentence types they care about via
+the same type assertion the GGA selector uses, so an RMC consumer ignores GGA
+and vice versa.
+
+At this point the synthesizer still emits only `PhaseEpoch`; RMC at end of epoch
+is correct but not yet timely for protocols without a prompt end-of-epoch marker.
+That timeliness is stage 6.
+
+## Stage 6: immediate-phase synthesis
+
+This is the substantial new piece. It has two halves: the synthesizer gains a
+`PhaseImmediate` emission, and the proxy gets a selector that races the immediate
+candidate against the epoch one with a short deadline.
+
+Synthesizer: emit `PhaseImmediate` as soon as an epoch has a time and a position
+(time being the field that must be timely), carrying the slow-changing metadata
+(GGA quality/HDOP/satellites, RMC fix-level status/mode) forward from the last
+completed epoch. The `PhaseEpoch` emission is unchanged. Both are emitted every
+epoch; the synthesizer stays policy-free.
+
+Proxy selector -- a deadline race that leverages EOE adaptively. When the
+selector receives a `PhaseImmediate` candidate it arms a short timer (say 0.1s)
+and holds the candidate.
+
+- If the `PhaseEpoch` candidate for that epoch arrives before the timer expires,
+  it is sent immediately and the held immediate one is dropped. Protocols with a
+  prompt end-of-epoch marker (UBX-NAV-EOE) take this path, so the higher-fidelity
+  epoch sentence is sent with no added latency.
+- If the timer expires first, the immediate candidate is sent. Protocols that
+  defer the epoch to the next cycle take this path, bounding latency to the
+  timeout rather than a full epoch.
+
+Invariant: at most one sentence is emitted per epoch per sentence type (GGA,
+RMC). The winner is whichever of the receiver sentence, the epoch candidate, or
+the timed-out immediate candidate is sent first; the others for that epoch and
+type are then suppressed. The timer goroutine is not cancelled -- on wake it
+simply does not send if a sentence for that epoch and type has already gone out.
+A real receiver sentence arriving in the window wins the same way, since the
+proxy already passes original NMEA through immediately. The race is tracked per
+sentence type, so a pending immediate GGA and a pending immediate RMC are
+independent.
+
+Concurrency: make the proxy NMEA selector an actor. A single goroutine owns all
+selector state: pending immediate candidates, which epoch/type has already won,
+and the selected NMEA output channel. No timer goroutine and no dispatch-facing
+input method publishes directly.
+
+The dispatch-facing input methods are adapters. They turn receiver NMEA packets
+and synthesized `PhaseImmediate`/`PhaseEpoch` candidates into events and send
+those events to the selector goroutine. When the selector goroutine receives a
+`PhaseImmediate` candidate, it holds the candidate and starts a short timer; the
+timer's only job is to send a timeout event back to the selector goroutine. If a
+receiver sentence or `PhaseEpoch` candidate wins first, the later timeout event
+is ignored by the goroutine that owns the state.
+
+This keeps the race serialized in one place while still using channels for the
+concurrent boundary. The selected NMEA packet channel produced by this actor
+feeds the broadcast used by TCP NMEA proxy services with `synth = true`.
+Services without `synth = true` continue to subscribe to the raw receiver packet
+broadcast.
+
+This selector is a separate implementation from the current selected-GGA feed
+used by GGA/VRS consumers. The selected-GGA feed keeps its existing latest-GGA
+semantics; the proxy NMEA selector owns the stream-level race needed by stage 6.
+
 ## Open decisions
 
-- Whether to add `synth` to Unix socket proxy services later. Stage 5 only covers
+- Whether to add `synth` to Unix socket proxy services later. Stage 4 only covers
   `[[proxy.tcp]]`.

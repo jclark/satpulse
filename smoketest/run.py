@@ -49,15 +49,23 @@ SCENARIOS = [
     "logging/all",
     "http/full",
     "http/disabled",
+    "http/multiple",
     "ntrip/basic",
     "ntrip/auth",
+    "ntrip/anyuser",
+    "ntrip/metadata",
+    "ntrip/msm7to4",
+    "ntrip/rtklib",
     "ntp/sock",
     "ntp/shm",
     "proxy/tcp",
     "proxy/socket",
     "stream/push-ntrip",
     "stream/push-udp",
-    "stream/pull",
+    "stream/pull-ntrip",
+    "stream/pull-tcp",
+    "stream/pull-rtklib",
+    "stream/nmea-send",
     "shutdown/serial-loss",
 ]
 
@@ -80,6 +88,7 @@ PORT_OFFSETS = {
     "SATPULSE_TEST_TOOL_PORT": 5,
     "SATPULSE_TEST_REMOTE_CASTER_PORT2": 6,
     "SATPULSE_TEST_REMOTE_UDP_PORT": 7,
+    "SATPULSE_TEST_HTTP_PORT2": 8,
 }
 PORT_BLOCK = 16
 
@@ -203,6 +212,7 @@ class Context:
         packet_log: str,
         daemon_log: str,
         has_http: bool,
+        has_http2: bool,
         has_ntrip: bool,
         has_ntp_sock: bool,
         has_push: bool,
@@ -211,6 +221,7 @@ class Context:
         input_kind: str = "fifo",
         has_pull: bool = False,
         pull_source_log: str = "",
+        pull_peer: str = "fake",
     ) -> None:
         self.name = name
         self.run_dir = run_dir
@@ -223,6 +234,7 @@ class Context:
         self.packet_log = packet_log
         self.daemon_log = daemon_log
         self.has_http = has_http
+        self.has_http2 = has_http2
         self.has_ntrip = has_ntrip
         self.has_ntp_sock = has_ntp_sock
         self.has_push = has_push
@@ -230,6 +242,8 @@ class Context:
         # Absolute path to the RTCM log the fake correction source streams to the
         # daemon's stream.pull client (set only for pull scenarios).
         self.pull_source_log = pull_source_log
+        # Correction-source implementation for stream.pull: "fake" or "str2str".
+        self.pull_peer = pull_peer
         self.requires_root = requires_root
         self.use_sudo = use_sudo
         self.replay_err = os.path.join(run_dir, "replay.err")
@@ -282,6 +296,9 @@ class Context:
         # serial_writes; the source's diagnostics go to source_log.
         self.source_log = os.path.join(run_dir, "source.log")
         self.source_proc: subprocess.Popen[bytes] | None = None
+        # The pack process feeding a str2str correction source (pull_peer ==
+        # "str2str"); None for the fake source, which runs pack itself.
+        self.pack_proc: subprocess.Popen[bytes] | None = None
         self._source_log_file: IO[bytes] | None = None
 
     @property
@@ -299,6 +316,10 @@ class Context:
     @property
     def http_port(self) -> int:
         return self.port("SATPULSE_TEST_HTTP_PORT")
+
+    @property
+    def http_port2(self) -> int:
+        return self.port("SATPULSE_TEST_HTTP_PORT2")
 
     @property
     def ntrip_port(self) -> int:
@@ -580,47 +601,95 @@ class Context:
             self._udp_log_file = None
 
     def start_source(self, timeout: float = 5) -> None:
-        """Start the fake Ntrip correction source for [stream.pull], before the daemon.
+        """Start the correction source for [stream.pull], before the daemon.
 
         The daemon's pull client connects out to this source after GPS
         detection, so it must be listening first; otherwise the connect fails,
         the daemon logs a reconnect warning (which check_no_unexpected_errors
-        would flag), and backs off. The source answers the Ntrip GET with
-        "ICY 200 OK" and streams the scenario's RTCM log (paced by pack), which
-        the daemon writes back over the serial port. A readiness probe that does
-        not complete the GET handshake is ignored, so polling the port is safe.
+        would flag), and backs off. The default fake source (fakesource.py)
+        speaks the pull protocol itself and streams the scenario's RTCM log
+        (paced by pack) only once a client connects, so the daemon receives the
+        whole log losslessly. The str2str peer (pull_peer == "str2str") is a
+        real RTKLIB Ntrip caster fed by pack, which serves from the client's
+        connect point on, so the daemon receives a contiguous window instead.
         """
         if not self.pull_source_log:
             raise RuntimeError("[stream.pull] configured but the scenario set no PULL_SOURCE_LOG")
         with open(self.env["SATPULSE_TEST_CONFIG"], "rb") as cf:
-            ntrip = tomllib.load(cf)["stream"]["pull"]["ntrip"]
-        port = int(ntrip["address"].rsplit(":", 1)[1])
-        cmd = [
-            sys.executable, os.path.join(SCENARIOS_DIR, "stream", "fakesource.py"),
-            f"127.0.0.1:{port}", "--mountpoint", ntrip["mountpoint"],
-            "--pack", self.satpulsetool, "--factor", str(self.factor), self.pull_source_log,
-        ]
-        if ntrip.get("username"):
-            cmd += ["--username", ntrip["username"]]
-        if ntrip.get("password"):
-            cmd += ["--password", ntrip["password"]]
+            pull = tomllib.load(cf)["stream"]["pull"]
         self._source_log_file = open(self.source_log, "wb")
-        self.source_proc = subprocess.Popen(cmd, stdout=self._source_log_file, stderr=subprocess.STDOUT)
+        if self.pull_peer == "str2str":
+            port = self._start_str2str_source(pull["ntrip"])
+        else:
+            port = self._start_fake_source(pull)
+        proc = self.source_proc
+        assert proc is not None
         deadline = time.time() + timeout
         while port_free(port):
-            if self.source_proc.poll() is not None:
-                raise RuntimeError("fake correction source exited before listening")
+            if proc.poll() is not None:
+                raise RuntimeError("correction source exited before listening")
             if time.time() >= deadline:
-                raise RuntimeError(f"fake correction source did not listen on {port} within {timeout}s")
+                raise RuntimeError(f"correction source did not listen on {port} within {timeout}s")
             time.sleep(0.02)
 
+    def _start_fake_source(self, pull: dict[str, object]) -> int:
+        """Launch fakesource.py for the pull config; return its listen port."""
+        src = os.path.join(SCENARIOS_DIR, "stream", "fakesource.py")
+        if "tcp" in pull:
+            tcp = cast("dict[str, str]", pull["tcp"])
+            port = int(tcp["address"].rsplit(":", 1)[1])
+            cmd = [
+                sys.executable, src, f"127.0.0.1:{port}", "--tcp",
+                "--pack", self.satpulsetool, "--factor", str(self.factor), self.pull_source_log,
+            ]
+        else:
+            ntrip = cast("dict[str, str]", pull["ntrip"])
+            port = int(ntrip["address"].rsplit(":", 1)[1])
+            cmd = [
+                sys.executable, src, f"127.0.0.1:{port}", "--mountpoint", ntrip["mountpoint"],
+                "--pack", self.satpulsetool, "--factor", str(self.factor), self.pull_source_log,
+            ]
+            if ntrip.get("username"):
+                cmd += ["--username", ntrip["username"]]
+            if ntrip.get("password"):
+                cmd += ["--password", ntrip["password"]]
+            if ntrip.get("nmeaSend"):
+                cmd += ["--require-gga"]
+        self.source_proc = subprocess.Popen(cmd, stdout=self._source_log_file, stderr=subprocess.STDOUT)
+        return port
+
+    def _start_str2str_source(self, ntrip: dict[str, object]) -> int:
+        """Launch a real RTKLIB str2str Ntrip caster fed by pack; return its port.
+
+        pack paces and extracts the RTCM log; str2str serves it as an Ntrip
+        caster, so the daemon's pull client talks to a real RTKLIB peer.
+        """
+        str2str = shutil.which("str2str")
+        if str2str is None:
+            raise RuntimeError("stream.pull str2str peer requires str2str on PATH")
+        addr = cast(str, ntrip["address"])
+        mountpoint = cast(str, ntrip["mountpoint"])
+        port = int(addr.rsplit(":", 1)[1])
+        self.pack_proc = subprocess.Popen(
+            [self.satpulsetool, "pack", "--realtime", str(self.factor), self.pull_source_log],
+            stdout=subprocess.PIPE,
+        )
+        assert self.pack_proc.stdout is not None
+        self.source_proc = subprocess.Popen(
+            [str2str, "-out", f"ntripc://:{port}/{mountpoint}"],
+            stdin=self.pack_proc.stdout, stdout=self._source_log_file, stderr=subprocess.STDOUT,
+        )
+        self.pack_proc.stdout.close()
+        return port
+
     def stop_source(self) -> None:
-        if self.source_proc is not None and self.source_proc.poll() is None:
-            self.source_proc.terminate()
-            try:
-                self.source_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self.source_proc.kill()
+        for proc in (self.source_proc, self.pack_proc):
+            if proc is not None and proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
         if self._source_log_file is not None:
             self._source_log_file.close()
             self._source_log_file = None
@@ -640,6 +709,8 @@ class Context:
         ports = []
         if self.has_http:
             ports.append(self.http_port)
+        if self.has_http2:
+            ports.append(self.http_port2)
         if self.has_ntrip:
             ports.append(self.ntrip_port)
         deadline = time.time() + timeout
@@ -747,7 +818,7 @@ class Context:
     # FIFO cannot, because satpulsed opens it O_RDWR and holds its own write end
     # so an idle FIFO stays "connected" by design. The pty is also full-duplex,
     # so unlike the read-only FIFO it can carry the daemon's writes -- used by
-    # the stream/pull write-path scenario (see start_write_capture). disconnect()
+    # the stream/pull-* write-path scenarios (see start_write_capture). disconnect()
     # requires a pty; using a pty does not require disconnect().
 
     def start_write_capture(self) -> None:
@@ -875,13 +946,15 @@ def allocate_env(name: str, run_dir: str) -> dict[str, str]:
     return env
 
 
-def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tuple[bool, bool, bool, bool, bool]:
+def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tuple[bool, bool, bool, bool, bool, bool]:
     """Render the config template; report which listeners/peers it configures.
 
-    Returns (has_http, has_ntrip, has_ntp_sock, has_push, has_pull), detected
-    from non-comment lines so a comment that merely mentions a section is not
-    mistaken for it. has_pull keys off the [stream.pull...] table prefix so the
-    runner knows to start a fake correction source for it.
+    Returns (has_http, has_http2, has_ntrip, has_ntp_sock, has_push, has_pull),
+    detected from non-comment lines so a comment that merely mentions a section
+    is not mistaken for it. has_http2 is set when a second [[http]] table is
+    present, so the runner waits on and verifies the extra listener. has_pull
+    keys off the [stream.pull...] table prefix so the runner knows to start a
+    fake correction source for it.
     """
     with open(template_path) as f:
         text = f.read()
@@ -894,7 +967,8 @@ def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tup
         for line in text.splitlines()
         if not line.lstrip().startswith("#")
     ]
-    return ("[[http]]" in headers, "[ntrip]" in headers,
+    return ("[[http]]" in headers, headers.count("[[http]]") >= 2,
+            "[ntrip]" in headers,
             any(line.startswith("sock.path") for line in headers),
             "[[stream.push]]" in headers,
             any(line.startswith("[stream.pull") for line in headers))
@@ -981,11 +1055,19 @@ def scenario_requires_root(scen: ScenarioModule) -> bool:
     return bool(getattr(scen, "REQUIRES_ROOT", False))
 
 
+def scenario_missing_binaries(scen: ScenarioModule) -> list[str]:
+    """Names from the scenario's REQUIRES that are not on PATH (e.g. str2str)."""
+    return [b for b in getattr(scen, "REQUIRES", ()) if shutil.which(b) is None]
+
+
 def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
     scen = load_scenario(name)
     requires_root = scenario_requires_root(scen)
     if requires_root and os.geteuid() != 0 and not use_sudo:
         return (name, "SKIP", "requires root; rerun with --sudo to use sudo -n")
+    missing = scenario_missing_binaries(scen)
+    if missing:
+        return (name, "SKIP", f"requires {', '.join(missing)} on PATH")
     emit(f"START {name}")
     factor = scen.FACTOR
     packet_log = scen.PACKET_LOG
@@ -997,8 +1079,8 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
     # "pty" is full-duplex and can be disconnected. SELF_SHUTDOWN -- the daemon
     # is expected to exit on its own when its input goes away -- only makes
     # sense over a pty, since only a pty can disconnect. A pty does not imply
-    # SELF_SHUTDOWN: the stream/pull write-path scenario uses a pty and still
-    # stops via SIGINT.
+    # SELF_SHUTDOWN: the stream/pull-* write-path scenarios use a pty and still
+    # stop via SIGINT.
     input_kind = getattr(scen, "INPUT", "fifo")
     self_shutdown = bool(getattr(scen, "SELF_SHUTDOWN", False))
     if self_shutdown and input_kind != "pty":
@@ -1012,6 +1094,9 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
     pull_source_log = getattr(scen, "PULL_SOURCE_LOG", "")
     if pull_source_log and not os.path.isabs(pull_source_log):
         pull_source_log = os.path.join(REPO, pull_source_log)
+    # The correction-source implementation: "fake" (scenarios/stream/fakesource.py,
+    # the default) or "str2str" (a real RTKLIB Ntrip caster, for interop).
+    pull_peer = getattr(scen, "PULL_PEER", "fake")
     # A scenario known to fail (e.g. a bug not yet fixed) declares XFAIL = reason.
     xfail = getattr(scen, "XFAIL", None)
 
@@ -1026,14 +1111,15 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         env["SATPULSE_TEST_SERIAL"] = slave_name
     else:
         os.mkfifo(env["SATPULSE_TEST_SERIAL"])
-    has_http, has_ntrip, has_ntp_sock, has_push, has_pull = render_config(
+    has_http, has_http2, has_ntrip, has_ntp_sock, has_push, has_pull = render_config(
         config_tmpl, env["SATPULSE_TEST_CONFIG"], env)
 
     daemon_log = os.path.join(run_dir, "satpulsed.log")
     ctx = Context(
         name, run_dir, env, factor, packet_log, daemon_log,
-        has_http, has_ntrip, has_ntp_sock, has_push, requires_root, use_sudo,
+        has_http, has_http2, has_ntrip, has_ntp_sock, has_push, requires_root, use_sudo,
         input_kind=input_kind, has_pull=has_pull, pull_source_log=pull_source_log,
+        pull_peer=pull_peer,
     )
     if pty_fds is not None:
         # Enable capture before draining starts so no early write is missed.
@@ -1126,6 +1212,8 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
                 raise RuntimeError(f"daemon exited with code {daemon.returncode} on SIGINT")
         if ctx.has_http and not port_free(ctx.http_port):
             raise RuntimeError(f"HTTP port {ctx.http_port} still in use after shutdown")
+        if ctx.has_http2 and not port_free(ctx.http_port2):
+            raise RuntimeError(f"HTTP port {ctx.http_port2} still in use after shutdown")
         # Scan the daemon log only now, so shutdown-time warnings/errors
         # (and any SIGQUIT goroutine dump) are included. A scenario may declare
         # ALLOWED_ERRORS for error lines it expects (e.g. a push it knows the

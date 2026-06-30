@@ -42,6 +42,8 @@ These packages provide the public API for GPS processing. They are in the domain
 
 `gps/gpsdecode` decodes binary GPS packets into JSON-serializable maps derived from the Go structs defined in the library layer packages.
 
+`gps/nmeasyn` synthesizes NMEA sentences from gpsprot messages.
+
 `gps/msgfile` parses TOML message files that describe GPS messages to send to a receiver. It handles multiple protocol types (UBX, CASBIN, ASBIN, NMEA, line, binary), applies per-type defaults, and converts typed messages into raw bytes ready to send. Messages are organized by tags for selective sending.
 
 `gps/ts` generates TypeScript type definitions for the JSON values serialized from types in the `gps/*` packages.
@@ -60,7 +62,7 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/bcast` provides a concurrency abstraction that broadcasts a channel to multiple other channels. This is used for routing packets inside the application. At the moment it is used by `satpulsed` rather than `satpulsetool`, but it is useful for applications dealing with GPS packets.
 
-`gps/app/stream` manages RTCM packet streams. It pulls streams from an Ntrip or TCP network endpoint and feeds them to the GPS receiver over the serial port, and pushes streams from the GPS receiver to a remote Ntrip network endpoint.
+`gps/app/stream` manages correction and packet streams. It pulls RTCM streams from an Ntrip or TCP network endpoint and feeds them to the GPS receiver over the serial port, pushes streams from the GPS receiver to a remote Ntrip network endpoint, and provides selected-GGA helpers for consumers that need current receiver position.
 
 `gps/app/ntrip` implements an Ntrip caster for serving RTCM packet streams from a GPS receiver to Ntrip clients. It includes an STR record generation capability, which is also used by `gps/app/stream`.
 
@@ -122,7 +124,7 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/uncmsg` parses Unicore protocol messages in binary and ASCII formats. It defines message structures and provides parsing/serialization using `gps/lib/novmsg`.
 
-`gps/lib/nmeamsg` analyzes NMEA sentence syntax and computes checksums.
+`gps/lib/nmeamsg` analyzes NMEA sentence syntax, computes checksums, and decodes and serializes typed approved GNSS-talker sentences such as GGA and RMC.
 
 `gps/lib/airmsg` classifies responses to Airoha proprietary PAIR NMEA commands.
 
