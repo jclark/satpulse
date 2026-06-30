@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/msgfile"
 	"github.com/jclark/satpulse/gps/scan"
 )
@@ -173,5 +174,5 @@ func (rh *responseHandler) reportMissing() {
 
 // isPrintable returns true if b is a printable ASCII char (0x20-0x7E) or tab.
 func isPrintable(b byte) bool {
-	return (b >= 0x20 && b <= 0x7E) || b == '\t'
+	return ascii.IsPrint(b) || b == '\t'
 }

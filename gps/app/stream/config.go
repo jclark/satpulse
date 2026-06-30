@@ -11,6 +11,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/ntrip"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 )
 
 // Config matches the [stream] TOML table.
@@ -175,7 +176,7 @@ func checkSourcePassword(s string) error {
 	}
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if c < 0x21 || c > 0x7E {
+		if !ascii.IsGraph(c) {
 			return fmt.Errorf("disallowed byte 0x%02x at offset %d", c, i)
 		}
 	}

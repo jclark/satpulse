@@ -12,6 +12,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsdecode"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/spf13/pflag"
 )
 
@@ -81,16 +82,12 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 }
 
 func isAllHex(s string) bool {
-	for _, c := range s {
-		if !isHexDigit(c) {
+	for i := 0; i < len(s); i++ {
+		if !ascii.IsHexDigit(s[i]) {
 			return false
 		}
 	}
 	return true
-}
-
-func isHexDigit(c rune) bool {
-	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }
 
 func runDecode(data []byte, out, compact bool) error {

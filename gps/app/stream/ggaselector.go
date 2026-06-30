@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/nmeasyn"
 	"github.com/jclark/satpulse/gps/scan"
@@ -105,7 +106,7 @@ func ggaUTC(data string) (string, bool) {
 		return "", false
 	}
 	for i := 7; i < 13; i++ {
-		if data[i] < '0' || data[i] > '9' {
+		if !ascii.IsDigit(data[i]) {
 			return "", false
 		}
 	}
