@@ -183,11 +183,14 @@ func (GGAFields) SentenceFormat() string { return "GGA" }
 // MakeGGA builds a GGA sentence from a fix. A nil latLon leaves the position
 // fields empty, as in a no-fix sentence; hemispheres come from the signs of
 // latLon. height is height above the ellipsoid, and heightMSL is height above
-// mean sea level. nil optional values are left unset.
+// mean sea level. nil optional values are left unset. A zero t leaves the time
+// field empty, as a receiver does before its clock is set.
 func MakeGGA(talker string, t time.Time, latLon *[2]float64, height, heightMSL *float64, quality uint8, numSats *uint8, hdop *float64) Sentence[GGAFields] {
 	f := GGAFields{
-		Time:    opt.Make(makeTodUTC(t)),
 		Quality: uint8Dec(quality),
+	}
+	if !t.IsZero() {
+		f.Time = opt.Make(makeTodUTC(t))
 	}
 	if numSats != nil {
 		f.NumSats = opt.Make(uint8Dec2(*numSats))
