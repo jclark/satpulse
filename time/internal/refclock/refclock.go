@@ -5,11 +5,11 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"syscall"
 
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/lib/ntime"
 	"github.com/jclark/satpulse/time/sockrefclock"
-	"golang.org/x/sys/unix"
 )
 
 type RefClock interface {
@@ -96,7 +96,7 @@ func (rc *LoggingSockRefClock) Sample(sys ntime.Time, offset float64, leap ptime
 	lg := rc.lg
 	path := rc.sock.RemotePath()
 	if err != nil {
-		if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ECONNREFUSED) {
+		if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
 			if rc.sockOK {
 				lg.Info("the refclock socket is not ready", "path", path)
 				rc.sockOK = false

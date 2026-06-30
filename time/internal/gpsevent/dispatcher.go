@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
@@ -23,7 +24,6 @@ import (
 	"github.com/jclark/satpulse/time/lib/ntime"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/phctime"
-	"golang.org/x/sys/unix"
 )
 
 const LogExtension = ".jsonl"
@@ -215,7 +215,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, unix.SIGHUP)
+	signal.Notify(sig, syscall.SIGHUP)
 	lg := d.lg
 	defer d.lf.Close(d.lg)
 	lg.Debug("event dispatcher goroutine started")
