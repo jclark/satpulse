@@ -181,6 +181,9 @@ make update-deps
   port; the captured serial writes match the source's RTCM. Captures the
   daemon's serial writes (`CAPTURE_WRITES`) and uses the pty as a write path
   rather than to model a disconnect, so it stops via `SIGINT`.
+- `stream/pull-tcp` -- plain TCP pull: the same write path as `stream/pull-ntrip`,
+  but the `[stream.pull.tcp]` client connects to a raw TCP source that streams
+  RTCM with no Ntrip handshake, covering the non-Ntrip pull transport.
 - `stream/nmea-send` -- Ntrip NMEA send pull: the fake correction source waits for a
   post-handshake GGA before streaming RTCM corrections, the daemon re-sends GGA on
   the `nmeaSendInterval` (the source records more than one), and the daemon's serial
@@ -197,10 +200,11 @@ The Ntrip caster scenarios use `satpulsetool ntrip` as the client. The
 dependency: it accepts the daemon's Ntrip v1 SOURCE feed and captures the
 payload, which the check scans back into RTCM. The `stream/push-udp` scenario
 uses the built-in UDP receiver (`scenarios/stream/fakeudp.py`) as its remote
-peer. The `stream/pull-ntrip` scenario uses the matching fake correction source
-(`scenarios/stream/fakesource.py`): it
-answers the daemon's Ntrip v1 GET and streams an RTCM log, which the daemon
-writes back to the receiver over the pty write path that a read-only FIFO
+peer. The `stream/pull-*` scenarios use the matching fake correction source
+(`scenarios/stream/fakesource.py`): for `pull-ntrip` it answers the daemon's
+Ntrip v1 GET and streams an RTCM log; for `pull-tcp` (`--tcp`) it skips the
+handshake and streams as soon as the daemon connects. The daemon writes the
+corrections back to the receiver over the pty write path that a read-only FIFO
 cannot provide. A real-peer variant using `str2str` from RTKLIB could be added
 later for either.
 
