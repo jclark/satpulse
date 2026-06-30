@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/fieldenc"
 	"github.com/jclark/satpulse/gps/lib/opt"
 )
@@ -540,26 +541,17 @@ func isAllDigits(s string) bool {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
+		if !ascii.IsDigit(s[i]) {
 			return false
 		}
 	}
 	return true
 }
 
-// hexByte combines two ASCII hex digits into a byte.
+// hexByte combines two ASCII hex digits into a byte. The input is assumed
+// well-formed, so a non-hex digit contributes zero.
 func hexByte(hi, lo byte) byte {
-	return hexVal(hi)<<4 | hexVal(lo)
-}
-
-func hexVal(b byte) byte {
-	switch {
-	case b >= '0' && b <= '9':
-		return b - '0'
-	case b >= 'A' && b <= 'F':
-		return b - 'A' + 10
-	case b >= 'a' && b <= 'f':
-		return b - 'a' + 10
-	}
-	return 0
+	h, _ := ascii.HexVal(hi)
+	l, _ := ascii.HexVal(lo)
+	return h<<4 | l
 }
