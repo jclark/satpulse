@@ -387,6 +387,11 @@ func (s *GGASender) WaitReady(ctx context.Context) error {
 		case <-s.ready:
 			return nil
 		default:
+			// Run closes done on ctx cancellation too; don't misreport a
+			// clean cancel as a missing fix.
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return ErrNoUsableGGA
 		}
 	case <-ctx.Done():
