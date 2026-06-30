@@ -144,6 +144,14 @@ A scenario ID `family/name` maps to two files and one registry entry:
   - optional `PULL_SOURCE_LOG` -- for a `[stream.pull]` scenario, the RTCM log
     the runner's fake correction source streams to the daemon (path relative to
     the repo root, like `PACKET_LOG`).
+  - optional `PULL_PEER` -- the `[stream.pull]` correction-source implementation:
+    `"fake"` (the default `fakesource.py`, which delivers the whole log
+    losslessly) or `"str2str"` (a real RTKLIB Ntrip caster fed by `pack`, which
+    serves only from the client's connect point on, so the daemon receives a
+    contiguous window). Use `stream.check_pulled_rtcm_window` for the str2str case.
+  - optional `REQUIRES` -- a tuple of external binary names that must be on PATH
+    (e.g. `("str2str",)`); the scenario is skipped with `SKIP` when any is
+    missing, so an optional real-peer interop test adds no hard dependency.
   - optional `SELF_SHUTDOWN = True` -- the daemon is expected to exit on its own
     when the input goes away, so the runner closes the pty master, asserts a
     self-exit with a restartable non-zero code (not `0/64/77/78`), and reports a

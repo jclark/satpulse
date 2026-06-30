@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import socket
 import subprocess
 import time
@@ -168,6 +170,49 @@ def stream_rtcm_msgs(
             msgs.add(m)
     assert msgs, f"Ntrip client received no RTCM messages from {mount}"
     return msgs
+
+
+def check_stream_str2str(
+    ctx: common.SmokeContext,
+    mount: str,
+    read_seconds: float = 4.0,
+    min_packets: int = 5,
+) -> int:
+    """A real RTKLIB str2str Ntrip client receives the mountpoint's RTCM.
+
+    Runs str2str as the Ntrip client against our caster, capturing the
+    stream while the background replay flows, then checks the captured RTCM
+    is a non-empty contiguous run of the caster's source-log RTCM. A real
+    client joining a live stream mid-flight sees a window, not the whole
+    log, relayed byte-for-byte -- interop proof that a real RTKLIB client
+    speaks our caster's protocol and gets the bytes faithfully.
+    """
+    str2str = shutil.which("str2str")
+    assert str2str, "str2str not on PATH"
+    capture = os.path.join(ctx.run_dir, f"str2str-{mount}.rtcm")
+    url = f"ntrip://127.0.0.1:{ctx.ntrip_port}/{mount}"
+    client = subprocess.Popen(
+        [str2str, "-in", url, "-out", capture],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    try:
+        time.sleep(read_seconds)
+    finally:
+        client.terminate()
+        try:
+            client.communicate(timeout=read_seconds)
+        except subprocess.TimeoutExpired:
+            client.kill()
+            client.communicate()
+    got = [d for (_, _, d) in common.scan_packets(ctx, capture, "RTCM")]
+    want = [d for (_, _, d) in common.log_packets(ctx.packet_log, "RTCM")]
+    assert len(got) >= min_packets, (
+        f"str2str received {len(got)} RTCM packets from {mount}, want >= {min_packets}"
+    )
+    assert common.is_contiguous_sublist(want, got), (
+        f"str2str RTCM from {mount} is not a contiguous run of the caster source log"
+    )
+    return len(got)
 
 
 def check_unauthorized(ctx: common.SmokeContext, mount: str) -> None:

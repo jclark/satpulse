@@ -1,0 +1,9 @@
+# Ntrip caster served to a real RTKLIB str2str client (interop).
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[ntrip]
+listen = "127.0.0.1:${SATPULSE_TEST_NTRIP_PORT}"
+
+[[ntrip.mountpoint]]
+name = "RTCM"

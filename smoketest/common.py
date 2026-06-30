@@ -412,3 +412,17 @@ def packet_data(e: JsonObject) -> bytes | None:
     if isinstance(s, str):
         return s.encode("latin1")
     return None
+
+
+def is_contiguous_sublist(whole: list[bytes], part: list[bytes]) -> bool:
+    """True if the non-empty part appears as a contiguous run within whole.
+
+    An empty part returns False: a real Ntrip peer joining a live stream
+    mid-flight relays a contiguous window of the source, byte-for-byte. An
+    interop check wants that non-empty window to match the source, not a
+    vacuous empty match.
+    """
+    n = len(part)
+    if n == 0:
+        return False
+    return any(whole[i:i + n] == part for i in range(len(whole) - n + 1))

@@ -175,6 +175,9 @@ make update-deps
 - `ntrip/msm7to4` -- Ntrip caster mountpoint with `msm7to4`: the receiver feed's
   RTCM MSM7 observations are delivered to the client as MSM4, with no MSM7
   message passing through.
+- `ntrip/rtklib` -- Ntrip caster interop with a real RTKLIB `str2str` client: it
+  connects as an Ntrip client and receives a contiguous window of the caster's
+  RTCM, relayed byte-for-byte. Skipped when `str2str` is not on PATH.
 - `ntp/sock` -- chrony SOCK refclock: a pure 1 Hz RMC stream drives serial timing
   mode, and the samples are well-formed, consistently timestamped, and carry
   the correct GPS time.
@@ -198,6 +201,10 @@ make update-deps
 - `stream/pull-tcp` -- plain TCP pull: the same write path as `stream/pull-ntrip`,
   but the `[stream.pull.tcp]` client connects to a raw TCP source that streams
   RTCM with no Ntrip handshake, covering the non-Ntrip pull transport.
+- `stream/pull-rtklib` -- the same write path as `stream/pull-ntrip`, but the
+  correction source is a real RTKLIB `str2str` Ntrip caster instead of
+  `fakesource.py`. The daemon writes back the contiguous window of source RTCM
+  it pulls. Skipped when `str2str` is not on PATH.
 - `stream/nmea-send` -- Ntrip NMEA send pull: the fake correction source waits for a
   post-handshake GGA before streaming RTCM corrections, the daemon re-sends GGA on
   the `nmeaSendInterval` (the source records more than one), and the daemon's serial
@@ -208,19 +215,26 @@ make update-deps
   exit -> daemon-shutdown path (issue #172); the only scenario using the pty
   transport and `SELF_SHUTDOWN`.
 
-The Ntrip caster scenarios use `satpulsetool ntrip` as the client. The
+Most Ntrip caster scenarios use `satpulsetool ntrip` as the client. The
 `stream/push-ntrip` scenario uses the built-in Ntrip fake caster
 (`scenarios/ntrip/fakecaster.py`) as the remote peer, so it needs no external
 dependency: it accepts the daemon's Ntrip v1 SOURCE feed and captures the
 payload, which the check scans back into RTCM. The `stream/push-udp` scenario
 uses the built-in UDP receiver (`scenarios/stream/fakeudp.py`) as its remote
-peer. The `stream/pull-*` scenarios use the matching fake correction source
-(`scenarios/stream/fakesource.py`): for `pull-ntrip` it answers the daemon's
-Ntrip v1 GET and streams an RTCM log; for `pull-tcp` (`--tcp`) it skips the
-handshake and streams as soon as the daemon connects. The daemon writes the
-corrections back to the receiver over the pty write path that a read-only FIFO
-cannot provide. A real-peer variant using `str2str` from RTKLIB could be added
-later for either.
+peer. The `stream/pull-{ntrip,tcp,nmea-send}` scenarios use the matching fake
+correction source (`scenarios/stream/fakesource.py`): for `pull-ntrip` it
+answers the daemon's Ntrip v1 GET and streams an RTCM log; for `pull-tcp`
+(`--tcp`) it skips the handshake and streams as soon as the daemon connects. The
+daemon writes the corrections back to the receiver over the pty write path that
+a read-only FIFO cannot provide.
+
+The `ntrip/rtklib` and `stream/pull-rtklib` scenarios instead use a real RTKLIB
+`str2str` as the peer (client and Ntrip caster respectively), for interop
+coverage. They declare `REQUIRES = ("str2str",)` and are skipped when `str2str`
+is not on PATH, so they add no hard dependency. Because a real Ntrip peer joins
+a live stream mid-flight, it relays a contiguous window of the RTCM rather than
+the whole log, so these checks match a non-empty contiguous run of the source
+rather than the exact stream the fake peers guarantee.
 
 ## Installed systemd environment
 
