@@ -62,7 +62,10 @@ Each is its own issue and plan, built on top of core:
   `ConfigProtocol` for device-independent `--gnss`/`--pps`/mode/etc.
   **Depends on `sbfbin.md`** (probe/`ReceiverSetup` decode) and,
   procedurally, on the rest of core (it drives the ASCII command channel
-  from `msgfile` and uses the signal table from `msg`).
+  from `msgfile`). Its signal configuration uses the device-independent
+  `gpsprot.Signal`/`SignalSet` (coarse, already in `gpsprot`), not the
+  finer signal-number -> `SignalID` reported-signal table that `msg`
+  builds -- so it does not depend on `msg`.
 - **#342, `plan/sbf-rinex.md`** -- `gps/lib/rnxsbf` RINEX observation
   conversion from `MeasEpoch`. **Depends on `sbfbin.md`** (just the
   `MeasEpoch`/`MeasExtra` decode) and `gps/lib/rinex`; nothing else.
@@ -76,8 +79,11 @@ need it. Each sub-plan is independently testable against the example SBF
 captures (and, for `msgfile`, hand-built reply bytes) before hardware
 arrives.
 
-The two add-ons come after core, in either order -- both only need
-`sbfbin`, so neither blocks the other, and neither blocks core.
+The two add-ons come after core, in either order, and are independent
+of each other. RINEX (#342) needs only `sbfbin`; high-level config
+(#341) needs `sbfbin` (probe/`ReceiverSetup` decode) plus `msgfile`'s
+`$R` reply `PacketFormat` to drive the ASCII command channel. Neither
+blocks the other, and neither blocks core.
 
 Issues: core is #340 (the three sub-plans are checkboxes in it); the
 add-ons are #341 (high-level config) and #342 (RINEX).

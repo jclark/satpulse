@@ -53,9 +53,12 @@ not specified in duplicate here.
   default intervals, and (c) is the single source for all capability
   gating below. State-neutral; may be repeated per the skill's probing
   ruling.
-- `ReceiverInfo()`: supported GNSS/signals from `grc`'s signal list (via
-  the same signal-name <-> `gpsprot` table the conversion layer built --
-  one table, not two); `Vendor = "Septentrio"`; `Hardware`/`Firmware`
+- `ReceiverInfo()`: supported GNSS/signals from `grc`'s signal list,
+  mapping Septentrio signal names to the device-independent
+  `gpsprot.Signal`/`SignalSet` -- config's own coarse table, distinct
+  from the conversion layer's finer signal-number -> `SignalID`
+  reported-signal table (two tables, not one); `Vendor = "Septentrio"`;
+  `Hardware`/`Firmware`
   from the SBF `ReceiverSetup` (5902) block, requested once via
   `exeSBFOnce` and read back through `NativeMsg` (`grc` doesn't carry
   them).
