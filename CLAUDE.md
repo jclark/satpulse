@@ -8,7 +8,7 @@ Whenever you create a new package, add an entry describing it to the appropriate
 
 ## Interaction
 
-- Do not ask the user multiple-choice questions. When you need a decision, state your recommendation in prose and let the user respond freely.
+- Do not ask the user multiple-choice questions, and never use the `AskUserQuestion` tool (the one that renders selectable options). When you need a decision, state your recommendation in prose and let the user respond freely in their own words.
 
 ## Go code style
 
