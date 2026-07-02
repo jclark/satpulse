@@ -1,0 +1,544 @@
+#:schema ../gpsmsg-schema.json
+# Septentrio mosaic-X5 / mosaic-G5 shared configuration messages
+#
+# Entries in this file were verified (against the mosaic-X5 v4.15.1 and
+# mosaic-G5 v1.1.0 reference guides, and the diff analysis in
+# plan/septentrio-analysis/x5-g5-differences.md) to work IDENTICALLY on both
+# models. Model-specific entries -- including PPP/Galileo HAS, which is
+# G5-only among the tags here -- live in the per-model file, e.g.
+# mosaic-g5.toml, which [[include]]s this file.
+#
+# DRAFT: hardware has not arrived yet (see CLAUDE.local.md). Commands are
+# transcribed from the reference guides but are UNTESTED. Verify against real
+# hardware before use.
+# Default baud rate: 115200 (8N1, no flow control)
+#
+# Connection descriptor COM1 is used throughout as a stand-in for "whichever
+# port satpulsetool is connected to" -- adjust the Cd argument in each command
+# to match your actual connection (COM1..COM4, USB1..USB2, etc).
+#
+# responsePattern = "septentrio" below is forward-looking: this analyzer does
+# not exist yet in gps/msgfile (see plan/septentrio-analysis/
+# config-response-handling.md, "Wiring" section). It is set here so this file
+# already reflects the intended end state once that analyzer is implemented.
+
+[default.line]
+eol = "\r\n"
+responsePattern = "septentrio"
+
+# Version / Identification query
+
+# lstInternalFile is an "lst" command: per the Septentrio ASCII command
+# reference (sec 3.1.3, identical on both models -- see the diff analysis'
+# "Command-line interface" point), its reply uses a DIFFERENT frame than
+# set/get/exe commands -- "$R;" (semicolon, not colon) followed by a
+# pseudo-prompt "---->" and one or more "$--BLOCK" sections, rather than the
+# "$R: <echo>" + state-line(s) shape the planned "septentrio" responsePattern
+# analyzer is designed around. This tag will need either a dedicated lst-reply
+# branch in that analyzer, or fall back to best-effort (no responsePattern)
+# handling, once implemented.
+[[line]]
+tag = "get-version"
+text = "lstInternalFile, Identification"
+description = "Query firmware/hardware identification (serial number, firmware version)"
+
+# NMEA message output control
+# All entries target Stream1/COM1 (see header). The "+"/"-" prefix on the
+# Messages argument adds/removes a single sentence from the stream's current
+# list without disturbing whatever else is enabled on that stream (the
+# reference guides describe this "+"/"-" convention generally for combinable
+# arguments; confirmed usage for setSatelliteTracking's Satellite argument).
+# GGA/GLL/GSA/GSV/RMC/ZDA are common sentences on both models (the diff
+# analysis flags SNC/LLK/LLQ/GMP as X5-only and GGAaux1 as G5-only -- none of
+# those are used here).
+
+[[line]]
+tag = "nmea-gga"
+text = "setNMEAOutput, Stream1, COM1, +GGA, sec1"
+description = "Enable NMEA GGA at 1Hz"
+[[line]]
+tag = "nmea-gga-off"
+text = "setNMEAOutput, Stream1, COM1, -GGA"
+description = "Disable NMEA GGA"
+
+[[line]]
+tag = "nmea-gll"
+text = "setNMEAOutput, Stream1, COM1, +GLL, sec1"
+description = "Enable NMEA GLL at 1Hz"
+[[line]]
+tag = "nmea-gll-off"
+text = "setNMEAOutput, Stream1, COM1, -GLL"
+description = "Disable NMEA GLL"
+
+[[line]]
+tag = "nmea-gsa"
+text = "setNMEAOutput, Stream1, COM1, +GSA, sec1"
+description = "Enable NMEA GSA at 1Hz"
+[[line]]
+tag = "nmea-gsa-off"
+text = "setNMEAOutput, Stream1, COM1, -GSA"
+description = "Disable NMEA GSA"
+
+[[line]]
+tag = "nmea-gsv"
+text = "setNMEAOutput, Stream1, COM1, +GSV, sec1"
+description = "Enable NMEA GSV at 1Hz"
+[[line]]
+tag = "nmea-gsv-off"
+text = "setNMEAOutput, Stream1, COM1, -GSV"
+description = "Disable NMEA GSV"
+
+[[line]]
+tag = "nmea-rmc"
+text = "setNMEAOutput, Stream1, COM1, +RMC, sec1"
+description = "Enable NMEA RMC at 1Hz"
+[[line]]
+tag = "nmea-rmc-off"
+text = "setNMEAOutput, Stream1, COM1, -RMC"
+description = "Disable NMEA RMC"
+
+[[line]]
+tag = "nmea-zda"
+text = "setNMEAOutput, Stream1, COM1, +ZDA, sec1"
+description = "Enable NMEA ZDA at 1Hz"
+[[line]]
+tag = "nmea-zda-off"
+text = "setNMEAOutput, Stream1, COM1, -ZDA"
+description = "Disable NMEA ZDA"
+
+# Disable all NMEA output on Stream1
+[[line]]
+tag = "nmea-off"
+text = "setNMEAOutput, Stream1, COM1, none"
+description = "Disable all NMEA messages"
+
+# Convenience: enable RMC, GGA, GSV, GSA (messages used by satpulse daemon)
+[[line]]
+tag = "nmea-daemon"
+text = "setNMEAOutput, Stream1, COM1, +RMC, sec1"
+description = "Enable NMEA messages used by satpulse daemon"
+[[line]]
+tag = "nmea-daemon"
+text = "setNMEAOutput, Stream1, COM1, +GGA"
+[[line]]
+tag = "nmea-daemon"
+text = "setNMEAOutput, Stream1, COM1, +GSV"
+[[line]]
+tag = "nmea-daemon"
+text = "setNMEAOutput, Stream1, COM1, +GSA"
+
+# NMEA version
+# setNMEAVersion only distinguishes two profiles, v3x and v4x -- not the finer
+# 3.01/4.00/4.10/4.11 versions some other vendors expose. Confirmed identical
+# command/enum on both models.
+
+[[line]]
+tag = "get-nmea-ver"
+text = "getNMEAVersion"
+description = "Query current NMEA version profile"
+
+[[line]]
+tag = "nmea-ver-3"
+text = "setNMEAVersion, v3x"
+description = "Set NMEA version to 3.01"
+
+[[line]]
+tag = "nmea-ver-410"
+text = "setNMEAVersion, v4x"
+description = "Set NMEA version to 4.x (adds system/signal ID fields, per NMEA 4.10)"
+
+# nmea-ver-400: TODO -- no separate "4.00" profile exists; setNMEAVersion only
+# offers v3x/v4x, so there is nothing between 3.01 and the "adds system/signal
+# ID" v4x profile to map this tag onto. Not implemented.
+
+# nmea-ver-411: TODO -- v4x (mapped to nmea-ver-410 above) adds signal ID
+# fields but the reference guides do not describe an NMEA-4.11-specific
+# talker ID change tied to version selection. setNMEATalkerID only offers
+# auto/GP/GN (auto picks GP/GN/GA/GB depending on solution -- no GQ for
+# QZSS), so the "GB for BeiDou, GQ for QZSS" behavior this tag implies is not
+# confirmed to exist. Needs hardware verification.
+
+# Elevation mask
+# Both models have two independent masks (Tracking, PVT); "all" sets/queries
+# both together, used here to match the single-mask semantics other vendors'
+# min-elev-* tags assume. Confirmed identical command/enum on both models.
+
+[[line]]
+tag = "get-min-elev"
+text = "getElevationMask, all"
+description = "Query current elevation mask (tracking and PVT)"
+
+[[line]]
+tag = "min-elev-0"
+text = "setElevationMask, all, 0"
+description = "Set elevation mask to 0 degrees"
+[[line]]
+tag = "min-elev-5"
+text = "setElevationMask, all, 5"
+description = "Set elevation mask to 5 degrees"
+[[line]]
+tag = "min-elev-10"
+text = "setElevationMask, all, 10"
+description = "Set elevation mask to 10 degrees"
+[[line]]
+tag = "min-elev-15"
+text = "setElevationMask, all, 15"
+description = "Set elevation mask to 15 degrees"
+[[line]]
+tag = "min-elev-20"
+text = "setElevationMask, all, 20"
+description = "Set elevation mask to 20 degrees"
+[[line]]
+tag = "min-elev-25"
+text = "setElevationMask, all, 25"
+description = "Set elevation mask to 25 degrees"
+[[line]]
+tag = "min-elev-30"
+text = "setElevationMask, all, 30"
+description = "Set elevation mask to 30 degrees"
+[[line]]
+tag = "min-elev-35"
+text = "setElevationMask, all, 35"
+description = "Set elevation mask to 35 degrees"
+[[line]]
+tag = "min-elev-40"
+text = "setElevationMask, all, 40"
+description = "Set elevation mask to 40 degrees"
+[[line]]
+tag = "min-elev-45"
+text = "setElevationMask, all, 45"
+description = "Set elevation mask to 45 degrees"
+
+# Constellation selection (setSatelliteTracking)
+# A satellite must also have at least one of its signals enabled via
+# setSignalTracking to be effectively tracked; these entries assume the
+# factory-default setSignalTracking already covers the constellations being
+# enabled here (true for GPS/GALILEO/GLONASS/BEIDOU out of the box on both
+# models). Confirmed identical command/enum on both models.
+
+[[line]]
+tag = "get-gnss"
+text = "getSatelliteTracking"
+description = "Query current constellation/satellite tracking settings"
+
+[[line]]
+tag = "gnss-gps"
+text = "setSatelliteTracking, GPS"
+description = "Enable GPS only (all available bands)"
+[[line]]
+tag = "gnss-gal"
+text = "setSatelliteTracking, GALILEO"
+description = "Enable Galileo only (all available bands)"
+[[line]]
+tag = "gnss-glo"
+text = "setSatelliteTracking, GLONASS"
+description = "Enable GLONASS only (all available bands)"
+[[line]]
+tag = "gnss-bds"
+text = "setSatelliteTracking, BEIDOU"
+description = "Enable BeiDou only (all available bands)"
+[[line]]
+tag = "gnss-gps-gal"
+text = "setSatelliteTracking, GPS+GALILEO"
+description = "Enable GPS and Galileo (all available bands)"
+[[line]]
+tag = "gnss-all"
+text = "setSatelliteTracking, all"
+description = "Enable all constellations (all available bands)"
+
+# PPS configuration
+#
+# setPPSParameters takes the same positional arguments on both models
+# (Interval, Polarity, Delay, TimeScale, [MaxSyncAge/MaxHoldover], PulseWidth)
+# -- per the diff analysis, only the *name* of the 4th argument differs
+# (X5: MaxSyncAge; G5: MaxHoldover, tied to G5's time-holdover/anti-spoofing
+# concept), not its position or its "0 means never time out" behavior, so the
+# command text below is safe to share. G5 additionally has a second,
+# independent PPS output (setPPS2Parameters/sps2) with no X5 equivalent; that
+# is not covered by any tag here and would need a model-aware addition if
+# ever exposed.
+
+[[line]]
+tag = "get-pps"
+text = "getPPSParameters"
+description = "Query current PPS configuration"
+
+# MaxSyncAge/MaxHoldover=1 approximates "only when locked": the pulse stops
+# within 1s of losing all satellites of the selected TimeScale, rather than
+# continuing indefinitely (a value of 0 would mean "never time out").
+[[line]]
+tag = "pps"
+text = "setPPSParameters, sec1, Low2High, 0, GPS, 1, 100"
+description = "Enable PPS with 100ms pulse width, rising edge, only when locked"
+
+[[line]]
+tag = "pps-off"
+text = "setPPSParameters, off"
+description = "Disable PPS output"
+
+# Fix rate
+# Neither model exposes a separate "PVT computation rate" command in this
+# reference; navigation solutions are computed continuously and only the SBF
+# *output* interval is configurable per stream. These entries set the
+# interval of a dedicated Stream3 carrying PVTGeodetic; adjust Cd/Stream to
+# match whichever stream you actually use for position output (e.g. combine
+# with sbf-daemon's Stream1 instead, if that is your position source).
+
+[[line]]
+tag = "get-fix-rate"
+text = "getSBFOutput, Stream3"
+description = "Query current PVTGeodetic output interval on Stream3"
+
+[[line]]
+tag = "fix-rate-1"
+text = "setSBFOutput, Stream3, COM1, PVTGeodetic, sec1"
+description = "Set fix (PVTGeodetic output) rate to 1 Hz"
+[[line]]
+tag = "fix-rate-2"
+text = "setSBFOutput, Stream3, COM1, PVTGeodetic, msec500"
+description = "Set fix (PVTGeodetic output) rate to 2 Hz"
+[[line]]
+tag = "fix-rate-5"
+text = "setSBFOutput, Stream3, COM1, PVTGeodetic, msec200"
+description = "Set fix (PVTGeodetic output) rate to 5 Hz"
+[[line]]
+tag = "fix-rate-10"
+text = "setSBFOutput, Stream3, COM1, PVTGeodetic, msec100"
+description = "Set fix (PVTGeodetic output) rate to 10 Hz"
+[[line]]
+tag = "fix-rate-20"
+text = "setSBFOutput, Stream3, COM1, PVTGeodetic, msec50"
+description = "Set fix (PVTGeodetic output) rate to 20 Hz"
+
+# Port configuration
+
+[[line]]
+tag = "get-uart"
+text = "getCOMSettings, COM1"
+description = "Query serial port configuration"
+
+[[line]]
+tag = "speed-9600"
+text = "setCOMSettings, COM1, baud9600, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 9600"
+[[line]]
+tag = "speed-19200"
+text = "setCOMSettings, COM1, baud19200, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 19200"
+[[line]]
+tag = "speed-38400"
+text = "setCOMSettings, COM1, baud38400, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 38400"
+[[line]]
+tag = "speed-57600"
+text = "setCOMSettings, COM1, baud57600, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 57600"
+[[line]]
+tag = "speed-115200"
+text = "setCOMSettings, COM1, baud115200, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 115200"
+[[line]]
+tag = "speed-230400"
+text = "setCOMSettings, COM1, baud230400, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 230400"
+[[line]]
+tag = "speed-460800"
+text = "setCOMSettings, COM1, baud460800, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 460800"
+[[line]]
+tag = "speed-921600"
+text = "setCOMSettings, COM1, baud921600, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 921600"
+
+# Restart commands
+
+[[line]]
+tag = "hot-start"
+text = "exeResetReceiver, Soft, none"
+description = "Hot start - firmware restart, keeps ephemeris and current config"
+delay = 3
+
+# warm-start: TODO -- exeResetReceiver's EraseMemory has no granular
+# "ephemeris only" option; SatData erases ephemeris, almanac, ionosphere
+# parameters and UTC data together (there is no way to clear ephemeris while
+# keeping almanac, as this tag implies). Not implemented.
+
+[[line]]
+tag = "cold-start"
+text = "exeResetReceiver, Hard, SatData"
+description = "Cold start - hardware reset, clears all satellite navigation data"
+delay = 5
+
+# Configuration management
+
+[[line]]
+tag = "save"
+text = "exeCopyConfigFile, Current, Boot"
+description = "Save current configuration to the boot configuration file"
+
+[[line]]
+tag = "reload"
+text = "exeResetReceiver, Hard, none"
+description = "Reload configuration from the boot configuration file"
+delay = 3
+
+# reset reuses the same command as cold-start: a Hard reset always boots from
+# the saved Boot config file, so "reload from NVM AND clear satellite data"
+# and "cold start" are the same operation on this receiver family.
+[[line]]
+tag = "reset"
+text = "exeResetReceiver, Hard, SatData"
+description = "Reload configuration from NVM and clear all satellite data"
+delay = 5
+
+# factory-reset requires an authenticated admin session (ref sec 1.3/3.2.1
+# "factoryReset"/"login", confirmed identical on both models); anonymous
+# sessions cannot run factoryReset. Replace "admin, admin" with your
+# receiver's actual administrator username/password before use.
+[[line]]
+tag = "factory-reset"
+text = "login, admin, admin"
+description = "Factory reset - clears all settings and satellite data (requires admin login; replace example credentials)"
+delay = 0.5
+[[line]]
+tag = "factory-reset"
+text = "factoryReset"
+delay = 5
+
+# Survey-in (base station)
+
+[[line]]
+tag = "get-survey"
+text = "getPVTMode"
+description = "Query current PVT mode (Static+auto indicates self-survey/auto-base is active)"
+
+# TODO: this receiver family's auto-base mode (RefPos=auto in Static PVT
+# mode) has no configurable survey duration or accuracy threshold -- unlike
+# this tag's usual "2000s/20m" semantics, the receiver just continuously
+# refines its self-determined position with no documented stop condition or
+# accuracy gate. Implemented as the closest available approximation.
+[[line]]
+tag = "survey"
+text = "setPVTMode, Static, , auto"
+description = "Start self-survey (auto-base); no duration/accuracy control available"
+
+[[line]]
+tag = "survey-off"
+text = "setPVTMode, Rover, StandAlone+RTK"
+description = "Stop survey / return to rover mode"
+
+[[line]]
+tag = "mobile"
+text = "setPVTMode, Rover, StandAlone+RTK"
+description = "Stop survey / return to rover mode"
+
+# Fixed position (base station)
+
+[[line]]
+tag = "get-fixed-pos"
+text = "getStaticPosGeodetic, Geodetic1"
+description = "Query current fixed geodetic position (Geodetic1 slot)"
+
+[[line]]
+tag = "fixed-pos-example"
+text = "setStaticPosGeodetic, Geodetic1, 13.7305, 100.6405, 50.0"
+description = "Set fixed position (example coordinates - replace with yours)"
+[[line]]
+tag = "fixed-pos-example"
+text = "setPVTMode, Static, , Geodetic1"
+
+[[line]]
+tag = "fixed-pos-off"
+text = "setPVTMode, Rover, StandAlone+RTK"
+description = "Clear fixed position, return to rover mode"
+
+# RTCM output (base station)
+# Note: RTCM output requires mode-base (Static PVT mode) and a reference
+# position (fixed-pos-example or survey) to be meaningful. Per the diff
+# analysis, the setRTCMv3Output message-type enum is byte-identical between
+# models (RTCMv2/sr2* is X5-only and is intentionally not used here).
+
+[[line]]
+tag = "rtcm-arp"
+text = "setRTCMv3Output, COM1, +RTCM1006"
+description = "Enable RTCM ARP message (1006, includes antenna height) at default interval"
+
+[[line]]
+tag = "rtcm-msm4"
+text = "setRTCMv3Output, COM1, +MSM4"
+description = "Enable RTCM MSM4 for all constellations at default interval"
+
+[[line]]
+tag = "rtcm-msm7"
+text = "setRTCMv3Output, COM1, +MSM7"
+description = "Enable RTCM MSM7 for all constellations at default interval"
+
+[[line]]
+tag = "rtcm-eph"
+text = "setRTCMv3Output, COM1, +Nav"
+description = "Enable RTCM ephemeris messages (1019/1020/1041/1042/1044/1045/1046)"
+[[line]]
+tag = "rtcm-eph-off"
+text = "setRTCMv3Output, COM1, -Nav"
+description = "Disable RTCM ephemeris messages"
+
+# rtcm-4072-0 / rtcm-4072-1: TODO -- RTCM message 4072 (u-blox's proprietary
+# Moving Base message) does not appear in either model's supported RTCMv3
+# message list (1001-1013, 1019, 1020, 1029, 1033, 1041-1046, 1071-1137,
+# 1230). Septentrio has no documented equivalent for this message; not
+# implemented. Moving-base operation on Septentrio uses setGNSSAttitude,
+# MovingBase instead (a different mechanism entirely).
+
+[[line]]
+tag = "rtcm-off"
+text = "setRTCMv3Output, COM1, none"
+description = "Disable all RTCM output"
+
+[[line]]
+tag = "get-rtcm-base-id"
+text = "getRTCMv3Formatting"
+description = "Query RTCM reference station ID"
+
+[[line]]
+tag = "rtcm-base-id-0"
+text = "setRTCMv3Formatting, 0"
+description = "Set RTCM reference station ID to 0"
+[[line]]
+tag = "rtcm-base-id-1234"
+text = "setRTCMv3Formatting, 1234"
+description = "Set RTCM reference station ID to 1234 (example)"
+
+# RTK mode
+# Unlike vendors with an explicit BASE/ROVER command, Septentrio's "mode" is
+# just the PVT Mode (Static = base-like fixed/self-surveyed position, Rover =
+# moving). Trailing arguments are omitted here (optional args keep their
+# current value per the reference guides' sec 3.1.2), so these compose
+# cleanly with the survey/fixed-pos tags above, which set RefPos separately.
+
+[[line]]
+tag = "mode-base"
+text = "setPVTMode, Static"
+description = "Set base station mode (static PVT)"
+[[line]]
+tag = "mode-rover"
+text = "setPVTMode, Rover"
+description = "Set rover mode"
+
+# satpulsed daemon SBF enablement
+# Septentrio-specific tag (not part of the standard tag set in tags.md),
+# analogous to other vendors' nmea-daemon / asbin-* convenience tags. Enables
+# the SBF blocks satpulsed needs: time/PPS (ReceiverTime, xPPSOffset),
+# position (PVTGeodetic), tracking/visibility (ChannelStatus, SatVisibility),
+# solution quality (DOP), receiver health (ReceiverStatus), and the PVT
+# epoch-end marker (EndOfPVT). All of these are core blocks present
+# identically on both models (none are in the G5-absent Meas3 group).
+
+[[line]]
+tag = "sbf-daemon"
+text = "setSBFOutput, Stream1, COM1, +ReceiverTime+xPPSOffset+PVTGeodetic+ChannelStatus+SatVisibility+DOP+ReceiverStatus+EndOfPVT, sec1"
+description = "Enable SBF blocks used by satpulsed daemon"
+
+[[line]]
+tag = "get-sbf-daemon"
+text = "getSBFOutput, Stream1"
+description = "Query SBF blocks currently enabled on Stream1"

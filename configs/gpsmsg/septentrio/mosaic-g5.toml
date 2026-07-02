@@ -1,0 +1,53 @@
+#:schema ../gpsmsg-schema.json
+# Septentrio mosaic-G5 configuration messages
+#
+# Includes the entries shared with mosaic-X5 (mosaic.toml) and adds
+# G5-specific entries: G5-only capabilities, or commands that differ from
+# X5. See plan/septentrio-analysis/x5-g5-differences.md for the full
+# model comparison this split is based on.
+#
+# DRAFT: hardware has not arrived yet (see CLAUDE.local.md). Commands are
+# transcribed from the mosaic-G5 v1.1.0 reference guide but are UNTESTED.
+# Verify against real hardware before use.
+
+[[include]]
+src = "mosaic.toml"
+
+# PPP (Precise Point Positioning) / Galileo HAS
+#
+# Unlike mosaic-X5 (whose RoverMode enum has no PPP value in the reference
+# guide used for that split), mosaic-G5 has the PPPGalileoHAS capability
+# (ref sec 1.1) and documents Galileo HAS activation in sec 1.10:
+#   setSignalUsage, , +GALE6BC  -- enable use of GALE6BC nav data (carries
+#                                  the PPP corrections); tracking of
+#                                  GALE6BC is enabled by default
+#   setPVTMode, , +PPP          -- add PPP to the allowed rover PVT modes
+# "+PPP" only ADDS PPP to the current RoverMode list (per the "+"/"-"
+# combinable-argument convention); it does not disturb StandAlone/RTK.
+
+[[line]]
+tag = "ppp-has"
+text = "setSignalUsage, , +GALE6BC"
+description = "Enable PPP with Galileo HAS source"
+[[line]]
+tag = "ppp-has"
+text = "setPVTMode, , +PPP"
+
+# ppp-off cannot use a "-PPP" subtraction: setPVTMode's RoverMode enum has no
+# "none" value, and the "-" removal syntax is only defined for enums that
+# support "none" (ref sec 3.1.2). So this sets RoverMode back to an explicit
+# list without PPP instead, matching mode-rover/survey-off in mosaic.toml.
+[[line]]
+tag = "ppp-off"
+text = "setPVTMode, , StandAlone+RTK"
+description = "Disable PPP over positioning mode; revert to StandAlone+RTK rover modes"
+
+# ppp-b2b / ppp-mdc / ppp-has-b2b: TODO -- mosaic-G5's only documented PPP
+# capability is PPPGalileoHAS (ref sec 1.1/1.10). Neither "PPPBeiDouB2b" nor
+# any MADOCA-PPP capability string appears anywhere in the G5 reference
+# guide, and there is no how-to section analogous to sec 1.10 for BeiDou
+# B2b or QZSS MADOCA. The BDSB2b signal itself can be tracked/used
+# (setSignalTracking/setSignalUsage list +BDSB2b), but that only supplies
+# raw signal data -- there is no documented PPP correction decode path tied
+# to it on this receiver. Not implemented; revisit once real G5 hardware
+# and getReceiverCapabilities output are available.
