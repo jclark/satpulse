@@ -1,9 +1,9 @@
 # Windows service support for satpulsed (#338)
 
-Depends on `plan/windows-port.md`: the whole tree, including `satpulsed`,
-must cross-compile and run from a console on Windows before this work
-adds service integration on top. That plan covers the compile fixes and
-CI; this one assumes them done.
+The Windows compile port is done: the whole tree, including `satpulsed`,
+cross-compiles and runs from a console on Windows (serial support, the
+config-panic fix, and the CI build workflow all landed). This plan adds
+service integration on top of that base.
 
 ## Goal
 
@@ -23,8 +23,8 @@ logging.
 - `daemon.run` already runs without a PHC (`clk == nil`); every PHC/PTP
   component is behind that check, so the macOS-style feature set is what
   Windows gets.
-- After `plan/windows-port.md`, `satpulsed.exe` builds and runs in the
-  foreground (stdout logging, signal-based shutdown). What remains is SCM
+- `satpulsed.exe` already builds and runs in the foreground on Windows
+  (stdout logging, signal-based shutdown). What remains is SCM
   integration: a service run mode, install/uninstall, a file/Event Log
   logging path, and the daemon refactor that lets the SCM drive shutdown.
 
@@ -258,8 +258,8 @@ existing `golang.org/x/sys` dependency):
 - `make test` / `go test ./...` on Linux and macOS are unchanged: the
   daemon refactor (step 1) is behaviour-preserving on the foreground
   path, and all the new code is Windows-tagged.
-- `build-windows.yml` (extended in `plan/windows-port.md`) stays green
-  with the daemon refactor and the new Windows-tagged files.
+- `build-windows.yml` stays green with the daemon refactor and the new
+  Windows-tagged files.
 - On a Windows host with a receiver on a `COM` port: `satpulsed
   --install -f <config> --log-file <path>`, `sc start satpulsed`, confirm
   the service reaches Running and writes the log file, scrape `/metrics`,
@@ -283,7 +283,7 @@ setup/tutorial docs should also gain a short Windows-service section.
 ## Files changed or added
 
 (The compile fixes, `win-build.ps1` satpulsed build, and CI changes are
-in `plan/windows-port.md`, not here.)
+part of the already-completed Windows compile port, not here.)
 
 - `time/app/daemon/daemon.go` -- new `Run(ctx, cfg, lg)`; `Cmd` slimmed
   or removed.
