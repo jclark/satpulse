@@ -1,6 +1,7 @@
 package term
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -108,6 +109,14 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	dcb.DCBlength = uint32(unsafe.Sizeof(dcb))
 	err = windows.GetCommState(h, &dcb)
 	if err != nil {
+		// GetCommState fails with ERROR_INVALID_FUNCTION on a handle that is
+		// not a serial device (e.g. a named pipe used as a replay sink), the
+		// Windows analog of tcgetattr returning ENOTTY. Map it to ErrNotATTY
+		// so OpenSerial falls through to the OpenFallback path.
+		if errors.Is(err, windows.ERROR_INVALID_FUNCTION) {
+			err = fmt.Errorf("%s: %w", t.path, ErrNotATTY)
+			return
+		}
 		return t.wrapErr(err, "GetCommState")
 	}
 	t.dcbSaved = dcb
