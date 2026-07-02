@@ -342,9 +342,35 @@ func (f *File) Buffered() (int, error) {
 	return 0, nil
 }
 
-// OpenFallback is not supported on this platform.
+// OpenFallback opens a non-serial GPS input, such as a named pipe used as a
+// replay sink, as an asynchronous *os.File. It skips the GetCommState/
+// SetCommState setup a COM port needs (and that fails on a pipe; see Init).
+// The handle is opened FILE_FLAG_OVERLAPPED so os.NewFile associates it with
+// the Go runtime poller, giving Read the SetReadDeadline support the scan loop
+// relies on (Go 1.25+). It is classified DevFIFO, so writes are rejected at
+// the gpsio layer, matching the Unix FIFO. The read timeout is applied later
+// by the caller via SetReadDeadline, so it is ignored here.
 func OpenFallback(path string, _ time.Duration) (*os.File, *File, DevKind, error) {
-	return nil, nil, DevUnknown, fmt.Errorf("%s: fallback open not supported on this platform", path)
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, nil, DevUnknown, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	// A freshly opened handle is not yet associated with a completion port; if
+	// it were, os.NewFile would silently downgrade it to synchronous I/O and
+	// the deadline methods would have no effect.
+	h, err := windows.CreateFile(
+		name,
+		windows.GENERIC_READ|windows.GENERIC_WRITE,
+		0, // exclusive: no sharing
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_OVERLAPPED,
+		0,
+	)
+	if err != nil {
+		return nil, nil, DevUnknown, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	return os.NewFile(uintptr(h), path), nil, DevFIFO, nil
 }
 
 func RawMode(a *Attr) error {
