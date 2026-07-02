@@ -144,115 +144,134 @@ const showProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDMinElevation |
 	gpsprot.PropIDRTCMBaseID
 
+type flagParser struct {
+	vars  flagVars
+	flags *pflag.FlagSet
+
+	help           bool
+	gl             gnssList
+	bands          bands
+	timeGNSS       majorGNSS
+	save           bool
+	saveAll        bool
+	reset          bool
+	factoryReset   bool
+	reload         bool
+	showConfig     bool
+	showPort       bool
+	testLogPath    string
+	nmea           bool
+	binary         bool
+	survey         bool
+	surveyTime     uint32
+	surveyAcc      length
+	sysTimeTrusted bool
+	osnma          bool
+	fixedPosECEF   ecef
+	fixedPosLLH    llh
+	fixedPosAcc    length
+	pps            float64
+	antCableDelay  int64
+	mobile         bool
+	capture        float64
+	rawOut         rawOutOpt
+	pvtOut         pvtOutOpt
+	rtcmOut        rtcmOutOpt
+	nmeaOut        nmeaOutOpt
+	satsOut        satsOutOpt
+	msgTags        string
+	vendorStr      string
+	baudRate       uint32
+	addSignals     signalList
+	exceptSignals  signalList
+	minElev        angle
+	rtcmBaseID     uint16
+}
+
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
-	help := false
-	vars := flagVars{}
-	gl := gnssList{}
-	bands := bands(gpsprot.BandAll)
-	var timeGNSS majorGNSS
+	p := newFlagParser(cmdName)
+	usage := cmd.UsageFunc(cmdName, summary, p.flags)
+	err := p.flags.Parse(args)
+	if err != nil {
+		return nil, usage, err
+	}
+	if p.help {
+		return nil, usage, nil
+	}
+	if p.flags.NArg() != 0 {
+		return nil, usage, fmt.Errorf("%s command must not have non-option arguments", cmdName)
+	}
+	return p.resolve(cmdName, usage)
+}
 
-	save := false
-	saveAll := false
-	reset := false
-	factoryReset := false
-	reload := false
-	showConfig := false
-	showPort := false
-	testLogPath := ""
-	nmea := false
-	binary := false
-	survey := false
-	surveyTime := uint32(defaultSurveyTime)
-	surveyAcc := length(defaultSurveyAcc)
-	sysTimeTrusted := false
-	osnma := false
-	var fixedPosECEF ecef
-	var fixedPosLLH llh
-	fixedPosAcc := length(defaultFixedPosAcc)
+func newFlagParser(cmdName string) *flagParser {
+	p := &flagParser{}
+	p.bands = bands(gpsprot.BandAll)
+	p.surveyTime = uint32(defaultSurveyTime)
+	p.surveyAcc = length(defaultSurveyAcc)
+	p.fixedPosAcc = length(defaultFixedPosAcc)
+	p.flags = pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
+	flags := p.flags
+	vars := &p.vars
 
-	pps := 0.0
-	antCableDelay := int64(0)
-	mobile := false
-	capture := 0.0
-
-	var rawOut rawOutOpt
-	var pvtOut pvtOutOpt
-	var rtcmOut rtcmOutOpt
-	var nmeaOut nmeaOutOpt
-	var satsOut satsOutOpt
-	msgTags := ""
-
-	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
-
-	flags.BoolVarP(&help, "help", "h", false, "show help")
-	flags.BoolVarP(&showConfig, "show-config", "c", false, "show current GPS receiver configuration")
-	flags.BoolVar(&showPort, "show-port", false, "show the receiver port the host is communicating on and its serial speed when applicable")
+	flags.BoolVarP(&p.help, "help", "h", false, "show help")
+	flags.BoolVarP(&p.showConfig, "show-config", "c", false, "show current GPS receiver configuration")
+	flags.BoolVar(&p.showPort, "show-port", false, "show the receiver port the host is communicating on and its serial speed when applicable")
 	flags.BoolVar(&vars.jsonOut, "json", false, "write receiver information and configuration results to stdout as a single JSON object")
-	flags.BoolVar(&save, "save", false, "save configuration changes to non-volatile memory on the GPS receiver")
-	flags.BoolVar(&saveAll, "save-all", false, "save the current configuration to non-volatile memory on the GPS receiver")
-	flags.BoolVar(&reset, "reset", false, "reset the GPS receiver and perform a cold start")
-	flags.BoolVar(&reload, "reload", false, "reload the GPS receiver configuration from non-volatile memory")
-	flags.BoolVar(&factoryReset, "factory-reset", false, "reset the GPS receiver to factory defaults")
-	flags.BoolVar(&nmea, "nmea", false, "enable NMEA output and disable binary output from the GPS receiver")
-	flags.BoolVar(&binary, "binary", false, "enable binary output and disable NMEA output from the GPS receiver")
+	flags.BoolVar(&p.save, "save", false, "save configuration changes to non-volatile memory on the GPS receiver")
+	flags.BoolVar(&p.saveAll, "save-all", false, "save the current configuration to non-volatile memory on the GPS receiver")
+	flags.BoolVar(&p.reset, "reset", false, "reset the GPS receiver and perform a cold start")
+	flags.BoolVar(&p.reload, "reload", false, "reload the GPS receiver configuration from non-volatile memory")
+	flags.BoolVar(&p.factoryReset, "factory-reset", false, "reset the GPS receiver to factory defaults")
+	flags.BoolVar(&p.nmea, "nmea", false, "enable NMEA output and disable binary output from the GPS receiver")
+	flags.BoolVar(&p.binary, "binary", false, "enable binary output and disable NMEA output from the GPS receiver")
 	flags.BoolVar(&vars.showReceiver, "show-receiver", false, "detect and display GPS receiver information")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
 	flags.StringVarP(&vars.configFile, "config-file", "f", "", "`path` to satpulse TOML configuration file")
 	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
 	flags.StringVarP(&vars.msgFilePath, "msg-file", "m", "", "`path` to TOML file containing message definitions")
-	flags.StringVarP(&msgTags, "tag", "t", "", "comma-separated `list` of tags to send (in order)")
+	flags.StringVarP(&p.msgTags, "tag", "t", "", "comma-separated `list` of tags to send (in order)")
 	flags.BoolVar(&vars.showTags, "show-tags", false, "list all tags in the message file with descriptions, then exit")
 	flags.StringVar(&vars.msgPort, "port", "", "u-blox receiver `port` for port-dependent message-file entries: i2c|uart1|uart2|usb|spi")
-	var vendorStr string
-	flags.StringVar(&vendorStr, "vendor", "", "GPS receiver `vendor` name")
-	flags.Float64Var(&capture, "capture", 0, "capture packets for `seconds` after config (0 = forever)")
-	flags.StringVar(&testLogPath, "test-log", "", "log test data to `path`")
+	flags.StringVar(&p.vendorStr, "vendor", "", "GPS receiver `vendor` name")
+	flags.Float64Var(&p.capture, "capture", 0, "capture packets for `seconds` after config (0 = forever)")
+	flags.StringVar(&p.testLogPath, "test-log", "", "log test data to `path`")
 	flags.MarkHidden("test-log")
 	flags.IntVarP(&vars.localSpeed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
-	var baudRate uint32
-	flags.Uint32Var(&baudRate, "speed", 0, "set GPS receiver baud-rate in `bps`")
-	flags.VarP(&gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
-	flags.VarP(&bands, "band", "b", "enabled GNSS bands `list`: L1,L2,L5,E5,E6,...")
-	var addSignals, exceptSignals signalList
-	flags.Var(&addSignals, "signal", "enabled GNSS signals `list`: GPSL1|E1|B1C,...")
-	flags.Var(&exceptSignals, "except-signal", "excluded GNSS signals `list`: GPSL1C|E5b,...")
-	flags.Var(&timeGNSS, "time-gnss", "GNSS `constellation` used for timing: GPS|GAL|BDS|GLO")
-	flags.Var(&rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
-	flags.Var(&pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|survey|qual|epoch|tai|ecef|after|ptp|ntp|off,...")
-	flags.Var(&rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|auto|none,...")
-	flags.Var(&nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|VTG|GLL|none,...")
-	flags.Var(&satsOut, "sats-out", "satellite data messages to output `flags`: sat|sig|none,...")
-	flags.Float64VarP(&pps, "pps", "p", 0, "configure the GPS receiver to enable a PPS signal with pulse `width` in seconds")
-	flags.Int64Var(&antCableDelay, "ant-cable-delay", 0, "antenna cable delay in nanoseconds")
-	flags.BoolVar(&mobile, "mobile", false, "the GPS receiver is not stationary; disable time mode")
-	flags.BoolVar(&survey, "survey", false, "instruct the GPS receiver to perform a survey")
-	flags.Uint32Var(&surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
-	flags.Var(&surveyAcc, "survey-acc", "survey accuracy in `meters`")
-	flags.Var(&fixedPosECEF, "fixed-pos-ecef", "fixed ECEF position as `x,y,z` in meters")
-	flags.Var(&fixedPosLLH, "fixed-pos-llh", "fixed LLH position as `lat,lon,height` in degrees and meters")
-	flags.Var(&fixedPosAcc, "fixed-pos-acc", "accuracy of fixed position in `meters`")
-	var minElev angle
-	flags.Var(&minElev, "min-elev", "minimum satellite elevation in `degrees`")
-	var rtcmBaseID uint16
-	flags.Uint16Var(&rtcmBaseID, "rtcm-base-id", 0, "RTCM reference station `id` (0-4095)")
+	flags.Uint32Var(&p.baudRate, "speed", 0, "set GPS receiver baud-rate in `bps`")
+	flags.VarP(&p.gl, "gnss", "g", "enabled GNSS constellations `list`: GPS|GAL|BDS|GLO|QZSS|NAVIC|SBAS,...")
+	flags.VarP(&p.bands, "band", "b", "enabled GNSS bands `list`: L1,L2,L5,E5,E6,...")
+	flags.Var(&p.addSignals, "signal", "enabled GNSS signals `list`: GPSL1|E1|B1C,...")
+	flags.Var(&p.exceptSignals, "except-signal", "excluded GNSS signals `list`: GPSL1C|E5b,...")
+	flags.Var(&p.timeGNSS, "time-gnss", "GNSS `constellation` used for timing: GPS|GAL|BDS|GLO")
+	flags.Var(&p.rawOut, "raw-out", "raw data messages to output `flags`: obs|nav|none,...")
+	flags.Var(&p.pvtOut, "pvt-out", "PVT messages to output `flags`: pos|vel|time|tp|leap|survey|qual|epoch|tai|ecef|after|ptp|ntp|off,...")
+	flags.Var(&p.rtcmOut, "rtcm-out", "RTCM messages to output `flags`: MSM4|MSM7|ARP|auto|none,...")
+	flags.Var(&p.nmeaOut, "nmea-out", "NMEA messages to output `flags`: RMC|GGA|GSA|GSV|ZDA|VTG|GLL|none,...")
+	flags.Var(&p.satsOut, "sats-out", "satellite data messages to output `flags`: sat|sig|none,...")
+	flags.Float64VarP(&p.pps, "pps", "p", 0, "configure the GPS receiver to enable a PPS signal with pulse `width` in seconds")
+	flags.Int64Var(&p.antCableDelay, "ant-cable-delay", 0, "antenna cable delay in nanoseconds")
+	flags.BoolVar(&p.mobile, "mobile", false, "the GPS receiver is not stationary; disable time mode")
+	flags.BoolVar(&p.survey, "survey", false, "instruct the GPS receiver to perform a survey")
+	flags.Uint32Var(&p.surveyTime, "survey-time", defaultSurveyTime, "survey time in seconds")
+	flags.Var(&p.surveyAcc, "survey-acc", "survey accuracy in `meters`")
+	flags.Var(&p.fixedPosECEF, "fixed-pos-ecef", "fixed ECEF position as `x,y,z` in meters")
+	flags.Var(&p.fixedPosLLH, "fixed-pos-llh", "fixed LLH position as `lat,lon,height` in degrees and meters")
+	flags.Var(&p.fixedPosAcc, "fixed-pos-acc", "accuracy of fixed position in `meters`")
+	flags.Var(&p.minElev, "min-elev", "minimum satellite elevation in `degrees`")
+	flags.Uint16Var(&p.rtcmBaseID, "rtcm-base-id", 0, "RTCM reference station `id` (0-4095)")
 	flags.BoolVar(&vars.configOpts.SetStatic, "static", false, "make the receiver use static positioning mode if it is not already doing so")
 	flags.MarkHidden("static")
-	flags.BoolVar(&sysTimeTrusted, "sys-time-trusted", false, "provide system time as trusted time to the GPS receiver")
+	flags.BoolVar(&p.sysTimeTrusted, "sys-time-trusted", false, "provide system time as trusted time to the GPS receiver")
 	flags.MarkHidden("sys-time-trusted")
-	flags.BoolVar(&osnma, "osnma", false, "enable OSNMA authentication for Galileo")
+	flags.BoolVar(&p.osnma, "osnma", false, "enable OSNMA authentication for Galileo")
 	flags.MarkHidden("osnma")
-	usage := cmd.UsageFunc(cmdName, summary, flags)
-	err := flags.Parse(args)
-	if err != nil {
-		return nil, usage, err
-	}
-	if help {
-		return nil, usage, nil
-	}
-	if flags.NArg() != 0 {
-		return nil, usage, fmt.Errorf("%s command must not have non-option arguments", cmdName)
-	}
+	return p
+}
+
+func (p *flagParser) resolve(cmdName string, usage func(string) string) (*flagVars, func(string) string, error) {
+	vars := &p.vars
 	if vars.jsonOut && vars.msgFilePath != "" {
 		return nil, nil, fmt.Errorf("--json cannot be combined with --msg-file")
 	}
@@ -261,77 +280,129 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			return nil, usage, fmt.Errorf("--show-tags requires --msg-file")
 		}
 		// --show-tags doesn't require --socket or --serial-device
-		return &vars, nil, nil
+		return vars, nil, nil
 	}
-	if vendorStr != "" {
-		v, err := gpsreg.ParseVendor(vendorStr)
+	configChanged, u, err := p.resolveConn(cmdName, usage)
+	if err != nil {
+		return nil, u, err
+	}
+	changed, err := p.resolveSignals(cmdName)
+	if err != nil {
+		return nil, nil, err
+	}
+	configChanged = configChanged || changed
+	changed, err = p.resolveMsgOut(cmdName)
+	if err != nil {
+		return nil, nil, err
+	}
+	configChanged = configChanged || changed
+	changed, err = p.resolveMode(cmdName)
+	if err != nil {
+		return nil, nil, err
+	}
+	configChanged = configChanged || changed
+	changed, err = p.resolveTimePulse()
+	if err != nil {
+		return nil, nil, err
+	}
+	configChanged = configChanged || changed
+	changed, err = p.resolveMisc()
+	if err != nil {
+		return nil, nil, err
+	}
+	configChanged = configChanged || changed
+	p.resolveShow()
+	if err := p.resolveSave(cmdName, configChanged); err != nil {
+		return nil, nil, err
+	}
+	doConfigure, err := p.resolveConfigure(cmdName, configChanged)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := p.resolveMsgFile(configChanged, doConfigure); err != nil {
+		return nil, nil, err
+	}
+	return vars, nil, nil
+}
+
+func (p *flagParser) resolveConn(cmdName string, usage func(string) string) (bool, func(string) string, error) {
+	vars := &p.vars
+	flags := p.flags
+	configChanged := false
+	if p.vendorStr != "" {
+		v, err := gpsreg.ParseVendor(p.vendorStr)
 		if err != nil {
-			return nil, nil, err
+			return false, nil, err
 		}
 		vars.vendor = v
 	}
 	if vars.configFile != "" {
 		if vars.serialDevice != "" || vars.localSpeed != 0 {
-			return nil, usage, fmt.Errorf("--config-file cannot be combined with --serial-device or --device-speed")
+			return false, usage, fmt.Errorf("--config-file cannot be combined with --serial-device or --device-speed")
 		}
-		if err := loadConfigFile(&vars); err != nil {
-			return nil, nil, err
+		if err := loadConfigFile(vars); err != nil {
+			return false, nil, err
 		}
 	}
 	if (vars.socketPath == "") == (vars.serialDevice == "") {
-		return nil, usage, fmt.Errorf("%s command must specify either --socket or --serial-device or --config-file", cmdName)
+		return false, usage, fmt.Errorf("%s command must specify either --socket or --serial-device or --config-file", cmdName)
 	}
-	if testLogPath != "" {
+	if p.testLogPath != "" {
 		if vars.packetLogPath != "" {
-			return nil, usage, fmt.Errorf("%s command must not specify both --packet-log and --test-log", cmdName)
+			return false, usage, fmt.Errorf("%s command must not specify both --packet-log and --test-log", cmdName)
 		}
-		vars.packetLogPath = testLogPath
+		vars.packetLogPath = p.testLogPath
 		vars.packetLogMode = testLogMode
 	}
 	if flags.Lookup("capture").Changed {
-		if capture < 0 {
-			return nil, usage, fmt.Errorf("--capture duration must not be negative")
+		if p.capture < 0 {
+			return false, usage, fmt.Errorf("--capture duration must not be negative")
 		}
 		if vars.packetLogPath == "" && vars.msgFilePath == "" {
-			return nil, usage, fmt.Errorf("--capture requires --packet-log")
+			return false, usage, fmt.Errorf("--capture requires --packet-log")
 		}
-		vars.capture.Set(ptime.Seconds(capture))
+		vars.capture.Set(ptime.Seconds(p.capture))
 	}
 
 	for _, s := range []string{"device-speed", "speed"} {
 		f := flags.Lookup(s)
 		if f.Changed && f.Value.String() == "0" {
-			return nil, usage, fmt.Errorf("0 is not a valid value for --%s", s)
+			return false, usage, fmt.Errorf("0 is not a valid value for --%s", s)
 		}
 	}
-	configChanged := false
 
-	if baudRate != 0 {
+	if p.baudRate != 0 {
 		configChanged = true
-		if !term.IsValidSpeed(int(baudRate)) {
-			return nil, nil, fmt.Errorf("invalid remote serial speed %d", baudRate)
+		if !term.IsValidSpeed(int(p.baudRate)) {
+			return false, nil, fmt.Errorf("invalid remote serial speed %d", p.baudRate)
 		}
-		vars.baudRate.Set(baudRate)
+		vars.baudRate.Set(p.baudRate)
 		vars.configSupport.require(gpsprot.ConfigSupportSpeed, "--speed")
 	}
+	return configChanged, nil, nil
+}
 
-	addSigs := gpsprot.SignalSet(addSignals)
-	exceptSigs := gpsprot.SignalSet(exceptSignals)
-	if len(gl.gnss) == 0 {
+func (p *flagParser) resolveSignals(cmdName string) (bool, error) {
+	vars := &p.vars
+	flags := p.flags
+	configChanged := false
+	addSigs := gpsprot.SignalSet(p.addSignals)
+	exceptSigs := gpsprot.SignalSet(p.exceptSignals)
+	if len(p.gl.gnss) == 0 {
 		if flags.Lookup("band").Changed {
-			return nil, nil, fmt.Errorf("%s command must specify --gnss when --band is specified", cmdName)
+			return false, fmt.Errorf("%s command must specify --gnss when --band is specified", cmdName)
 		}
 		if exceptSigs != 0 {
-			return nil, nil, fmt.Errorf("%s command must specify --gnss when --except-signal is specified", cmdName)
+			return false, fmt.Errorf("%s command must specify --gnss when --except-signal is specified", cmdName)
 		}
 	}
 	if both := addSigs & exceptSigs; both != 0 {
-		return nil, nil, fmt.Errorf("signals in both --signal and --except-signal: %s", both)
+		return false, fmt.Errorf("signals in both --signal and --except-signal: %s", both)
 	}
-	if len(gl.gnss) != 0 || addSigs != 0 {
-		vars.enabledSignals = (gpsprot.Band(bands).SignalSet(gl.gnss...) | addSigs) &^ exceptSigs
+	if len(p.gl.gnss) != 0 || addSigs != 0 {
+		vars.enabledSignals = (gpsprot.Band(p.bands).SignalSet(p.gl.gnss...) | addSigs) &^ exceptSigs
 		if (vars.enabledSignals&gpsprot.SigSetMajor)&^gpsprot.SigSetAugment == 0 {
-			return nil, nil, fmt.Errorf("at least one non-augmentation signal from a major GNSS must be enabled")
+			return false, fmt.Errorf("at least one non-augmentation signal from a major GNSS must be enabled")
 		}
 		configChanged = true
 		if flags.Lookup("band").Changed {
@@ -344,27 +415,33 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 			vars.configSupport.require(gpsprot.ConfigSupportSignal, "--except-signal")
 		}
 	}
-	pvtMsg := gpsprot.PVTMsgFlags(pvtOut)
-	rawMsg := (opt.Val[gpsprot.RawMsgFlags])(rawOut)
-	rtcmMsg := (opt.Val[gpsprot.RTCMMsgFlags])(rtcmOut)
-	nmeaMsg := (opt.Val[gpsprot.NMEAMsgFlags])(nmeaOut)
-	satsMsg := (opt.Val[gpsprot.SatsMsgFlags])(satsOut)
+	return configChanged, nil
+}
+
+func (p *flagParser) resolveMsgOut(cmdName string) (bool, error) {
+	vars := &p.vars
+	configChanged := false
+	pvtMsg := gpsprot.PVTMsgFlags(p.pvtOut)
+	rawMsg := (opt.Val[gpsprot.RawMsgFlags])(p.rawOut)
+	rtcmMsg := (opt.Val[gpsprot.RTCMMsgFlags])(p.rtcmOut)
+	nmeaMsg := (opt.Val[gpsprot.NMEAMsgFlags])(p.nmeaOut)
+	satsMsg := (opt.Val[gpsprot.SatsMsgFlags])(p.satsOut)
 
 	if rawMsg.IsSet() || pvtMsg.IsSet() || rtcmMsg.IsSet() || nmeaMsg.IsSet() || satsMsg.IsSet() {
 		configChanged = true
 	}
 	addMsgConfigSupport(&vars.configSupport, vars.enabledSignals, rawMsg, pvtMsg, rtcmMsg)
 
-	if nmea {
+	if p.nmea {
 		configChanged = true
 		// the concept of --nmea is to give NMEA output only
 		// we require that there is some NMEA output
 		// --nmea-out can be used to specify what; defaults to RMC
-		if binary {
-			return nil, nil, fmt.Errorf("%s command must not specify both --nmea and --binary options", cmdName)
+		if p.binary {
+			return false, fmt.Errorf("%s command must not specify both --nmea and --binary options", cmdName)
 		}
 		if rtcmMsg.IsSet() || pvtMsg.IsSet() || rawMsg.IsSet() || satsMsg.IsSet() {
-			return nil, nil, fmt.Errorf("%s command must not specify --nmea together with --rtcm-out, --pvt-out, --raw-out or --sats-out options", cmdName)
+			return false, fmt.Errorf("%s command must not specify --nmea together with --rtcm-out, --pvt-out, --raw-out or --sats-out options", cmdName)
 		}
 		if nmeaMsg.Get()&gpsprot.NMEAMsgAny == 0 {
 			nmeaMsg.Set(gpsprot.NMEAMsgRMC)
@@ -373,10 +450,10 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 		pvtMsg.Set(gpsprot.PVTMsgOff)
 		rawMsg.Set(gpsprot.RawMsgNone)
 		satsMsg.Set(gpsprot.SatsMsgNone)
-	} else if binary {
+	} else if p.binary {
 		configChanged = true
 		if nmeaMsg.IsSet() {
-			return nil, nil, fmt.Errorf("%s command must not specify both --nmea-out and --binary options", cmdName)
+			return false, fmt.Errorf("%s command must not specify both --nmea-out and --binary options", cmdName)
 		} else {
 			nmeaMsg.Set(gpsprot.NMEAMsgNone)
 		}
@@ -390,115 +467,131 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	vars.configOpts.PVTMsg = pvtMsg
 	vars.configOpts.RawMsg = rawMsg
 	vars.configOpts.SatsMsg = satsMsg
+	return configChanged, nil
+}
 
-	if survey || vars.configOpts.SetStatic {
+func (p *flagParser) resolveMode(cmdName string) (bool, error) {
+	vars := &p.vars
+	flags := p.flags
+	configChanged := false
+	if p.survey || vars.configOpts.SetStatic {
 		configChanged = true
-		vars.configOpts.Survey.MinDur = time.Duration(surveyTime) * time.Second
-		if gpsprot.Length(surveyAcc) < gpsprot.Millimeter {
-			return nil, nil, fmt.Errorf("--survey-acc must at least 0.001 (1 mm)")
+		vars.configOpts.Survey.MinDur = time.Duration(p.surveyTime) * time.Second
+		if gpsprot.Length(p.surveyAcc) < gpsprot.Millimeter {
+			return false, fmt.Errorf("--survey-acc must be at least 0.001 (1 mm)")
 		}
-		vars.configOpts.Survey.AccLimit = gpsprot.Length(surveyAcc)
-		if survey {
+		vars.configOpts.Survey.AccLimit = gpsprot.Length(p.surveyAcc)
+		if p.survey {
 			vars.configSupport.require(gpsprot.ConfigSupportSurvey, "--survey")
 			if flags.Lookup("survey-acc").Changed {
 				vars.configSupport.require(gpsprot.ConfigSupportSurveyAcc, "--survey-acc")
 			}
 			vars.configOpts.Survey.Flags |= gpsprot.SurveyAgain
 			vars.mode.Set(gpsprot.Mode{Static: true})
-			if mobile {
-				return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --survey", cmdName)
+			if p.mobile {
+				return false, fmt.Errorf("%s command must not specify both --mobile and --survey", cmdName)
 			}
 		}
-	} else if mobile {
+	} else if p.mobile {
 		configChanged = true
 		vars.mode.Set(gpsprot.Mode{Static: false})
 	}
-	if !gpsprot.Point3D(fixedPosECEF).IsZero() {
+	if !gpsprot.Point3D(p.fixedPosECEF).IsZero() {
 		configChanged = true
-		if gpsprot.Length(fixedPosAcc) < gpsprot.Millimeter {
-			return nil, nil, fmt.Errorf("--fixed-pos-acc must be at least 0.001 (1 mm)")
-		}
-		vars.configSupport.require(gpsprot.ConfigSupportFixedPos, "--fixed-pos-ecef")
-		if flags.Lookup("fixed-pos-acc").Changed {
-			vars.configSupport.require(gpsprot.ConfigSupportFixedPosAcc, "--fixed-pos-acc")
-		}
-		vars.mode.Set(gpsprot.Mode{
-			Static:       true,
+		if err := p.resolveFixedPos(cmdName, "--fixed-pos-ecef", gpsprot.Mode{
 			PosType:      gpsprot.PosTypeECEF,
-			FixedPosECEF: gpsprot.Point3D(fixedPosECEF),
-			FixedPosAcc:  gpsprot.Length(fixedPosAcc),
-		})
-		if mobile {
-			return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --fixed-pos-ecef", cmdName)
-		} else if survey {
-			return nil, nil, fmt.Errorf("%s command must not specify both --survey and --fixed-pos-ecef", cmdName)
+			FixedPosECEF: gpsprot.Point3D(p.fixedPosECEF),
+		}); err != nil {
+			return false, err
 		}
 	}
 	if flags.Lookup("fixed-pos-llh").Changed {
 		if flags.Lookup("fixed-pos-ecef").Changed {
-			return nil, nil, fmt.Errorf("%s command must not specify both --fixed-pos-ecef and --fixed-pos-llh", cmdName)
+			return false, fmt.Errorf("%s command must not specify both --fixed-pos-ecef and --fixed-pos-llh", cmdName)
 		}
 		configChanged = true
-		if gpsprot.Length(fixedPosAcc) < gpsprot.Millimeter {
-			return nil, nil, fmt.Errorf("--fixed-pos-acc must be at least 0.001 (1 mm)")
-		}
-		vars.configSupport.require(gpsprot.ConfigSupportFixedPos, "--fixed-pos-llh")
-		if flags.Lookup("fixed-pos-acc").Changed {
-			vars.configSupport.require(gpsprot.ConfigSupportFixedPosAcc, "--fixed-pos-acc")
-		}
-		vars.mode.Set(gpsprot.Mode{
-			Static:      true,
+		if err := p.resolveFixedPos(cmdName, "--fixed-pos-llh", gpsprot.Mode{
 			PosType:     gpsprot.PosTypeLLH,
-			FixedPosLLH: fixedPosLLH.latLon,
-			Height:      fixedPosLLH.height,
-			FixedPosAcc: gpsprot.Length(fixedPosAcc),
-		})
-		if mobile {
-			return nil, nil, fmt.Errorf("%s command must not specify both --mobile and --fixed-pos-llh", cmdName)
-		} else if survey {
-			return nil, nil, fmt.Errorf("%s command must not specify both --survey and --fixed-pos-llh", cmdName)
+			FixedPosLLH: p.fixedPosLLH.latLon,
+			Height:      p.fixedPosLLH.height,
+		}); err != nil {
+			return false, err
 		}
 	}
-	vars.timeGNSS = gpsprot.GNSS(timeGNSS)
+	return configChanged, nil
+}
+
+func (p *flagParser) resolveFixedPos(cmdName, flagName string, mode gpsprot.Mode) error {
+	vars := &p.vars
+	if gpsprot.Length(p.fixedPosAcc) < gpsprot.Millimeter {
+		return fmt.Errorf("--fixed-pos-acc must be at least 0.001 (1 mm)")
+	}
+	vars.configSupport.require(gpsprot.ConfigSupportFixedPos, flagName)
+	if p.flags.Lookup("fixed-pos-acc").Changed {
+		vars.configSupport.require(gpsprot.ConfigSupportFixedPosAcc, "--fixed-pos-acc")
+	}
+	mode.Static = true
+	mode.FixedPosAcc = gpsprot.Length(p.fixedPosAcc)
+	vars.mode.Set(mode)
+	if p.mobile {
+		return fmt.Errorf("%s command must not specify both --mobile and %s", cmdName, flagName)
+	} else if p.survey {
+		return fmt.Errorf("%s command must not specify both --survey and %s", cmdName, flagName)
+	}
+	return nil
+}
+
+func (p *flagParser) resolveTimePulse() (bool, error) {
+	vars := &p.vars
+	flags := p.flags
+	configChanged := false
+	vars.timeGNSS = gpsprot.GNSS(p.timeGNSS)
 	if vars.timeGNSS != 0 && !vars.enabledSignals.IsZero() {
 		if vars.enabledSignals.GNSSSet()&gpsprot.GNSSSetOf(vars.timeGNSS) == 0 {
-			return nil, nil, fmt.Errorf("%s specified as --time-gnss but none of its signals are enabled", vars.timeGNSS)
+			return false, fmt.Errorf("%s specified as --time-gnss but none of its signals are enabled", vars.timeGNSS)
 		}
 	}
+	if vars.timeGNSS != 0 {
+		configChanged = true
+	}
 	if flags.Lookup("pps").Changed {
-		if pps < 0 || pps >= 1 {
-			return nil, nil, fmt.Errorf("--pps pulse width must be >= 0 and < 1 second")
+		if p.pps < 0 || p.pps >= 1 {
+			return false, fmt.Errorf("--pps pulse width must be >= 0 and < 1 second")
 		}
-		vars.pps.Set(time.Duration(pps * float64(time.Second)))
+		vars.pps.Set(time.Duration(p.pps * float64(time.Second)))
 		configChanged = true
 	}
 	if flags.Lookup("ant-cable-delay").Changed {
-		vars.antCableDelay.Set(time.Duration(antCableDelay))
+		vars.antCableDelay.Set(time.Duration(p.antCableDelay))
 		configChanged = true
 	}
+	return configChanged, nil
+}
+
+func (p *flagParser) resolveMisc() (bool, error) {
+	vars := &p.vars
+	flags := p.flags
+	configChanged := false
 	if flags.Lookup("min-elev").Changed {
-		elev := gpsprot.Angle(minElev)
+		elev := gpsprot.Angle(p.minElev)
 		if elev < -90*gpsprot.Degrees || elev > 90*gpsprot.Degrees {
-			return nil, nil, fmt.Errorf("--min-elev must be between -90 and 90 degrees")
+			return false, fmt.Errorf("--min-elev must be between -90 and 90 degrees")
 		}
 		vars.minElev.Set(elev)
 		configChanged = true
 	}
 	if flags.Lookup("rtcm-base-id").Changed {
-		if rtcmBaseID > 4095 {
-			return nil, nil, fmt.Errorf("--rtcm-base-id must be between 0 and 4095")
+		if p.rtcmBaseID > 4095 {
+			return false, fmt.Errorf("--rtcm-base-id must be between 0 and 4095")
 		}
-		vars.rtcmBaseID.Set(rtcmBaseID)
+		vars.rtcmBaseID.Set(p.rtcmBaseID)
 		vars.configSupport.require(gpsprot.ConfigSupportRTCMBaseID, "--rtcm-base-id")
 		configChanged = true
 	}
-	if vars.timeGNSS != 0 {
-		configChanged = true
-	}
-	if sysTimeTrusted {
+	if p.sysTimeTrusted {
 		est, err := EstimateSystemTime()
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to estimate system time: %w", err)
+			return false, fmt.Errorf("failed to estimate system time: %w", err)
 		}
 		vars.configOpts.TimeAssist = *est
 		vars.configOpts.TimeAssist.Trusted = true
@@ -506,53 +599,67 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if flags.Lookup("osnma").Changed {
 		configChanged = true
 		nma := gpsprot.NavMsgAuthNone
-		if osnma {
+		if p.osnma {
 			nma |= gpsprot.NavMsgAuthOSNMA
 			copy(vars.configOpts.OSNMA.MerkleTreeRoot[:], OSNMAMerkleTreeRoot)
 		}
 		vars.navMsgAuth.Set(nma)
 	}
-	if showConfig {
+	return configChanged, nil
+}
+
+func (p *flagParser) resolveShow() {
+	vars := &p.vars
+	if p.showConfig {
 		vars.configGet = showProps
 	}
-	if showPort {
+	if p.showPort {
 		vars.configGet |= gpsprot.PropIDPort | gpsprot.PropIDBaudRate
 		vars.configSupport.require(gpsprot.ConfigSupportPort, "--show-port")
 	}
-	if save {
-		if saveAll {
-			return nil, nil, fmt.Errorf("%s command must not specify both --save and --save-all", cmdName)
+}
+
+func (p *flagParser) resolveSave(cmdName string, configChanged bool) error {
+	vars := &p.vars
+	if p.save {
+		if p.saveAll {
+			return fmt.Errorf("%s command must not specify both --save and --save-all", cmdName)
 		}
 		if !configChanged && vars.msgFilePath == "" {
-			return nil, nil, fmt.Errorf("no configuration changes and no message file: nothing for --save to do; use --save-all to save current configuration")
+			return fmt.Errorf("no configuration changes and no message file: nothing for --save to do; use --save-all to save current configuration")
 		}
 		// In message-file mode --save is a plain boolean for VALSET layers,
 		// not a configurator save; don't populate ConfigOptions.Save.
 		if vars.msgFilePath == "" {
 			vars.configOpts.Save = gpsprot.SaveMinimal
 		}
-	} else if saveAll {
+	} else if p.saveAll {
 		vars.configOpts.Save = gpsprot.SaveAll
 	}
+	return nil
+}
+
+func (p *flagParser) resolveConfigure(cmdName string, configChanged bool) (bool, error) {
+	vars := &p.vars
 	// tests whether configurator needs to run
-	doConfigure := save || saveAll || reset || reload || showConfig || showPort || configChanged
-	if factoryReset {
+	doConfigure := p.save || p.saveAll || p.reset || p.reload || p.showConfig || p.showPort || configChanged
+	if p.factoryReset {
 		if doConfigure {
-			return nil, nil, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config, --show-port or configuration changes", cmdName)
+			return false, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config, --show-port or configuration changes", cmdName)
 		}
 		doConfigure = true
 		vars.configOpts.Reset = gpsprot.ResetFactory
-	} else if reset || reload {
-		if configChanged && !save && !saveAll {
-			return nil, nil, fmt.Errorf("--reset or --reload without saving would lose configuration changes")
+	} else if p.reset || p.reload {
+		if configChanged && !p.save && !p.saveAll {
+			return false, fmt.Errorf("--reset or --reload without saving would lose configuration changes")
 		}
-		if showConfig || showPort {
-			return nil, nil, fmt.Errorf("cannot use --reset or --reload with --show-config or --show-port")
+		if p.showConfig || p.showPort {
+			return false, fmt.Errorf("cannot use --reset or --reload with --show-config or --show-port")
 		}
-		if reset && reload {
-			return nil, nil, fmt.Errorf("cannot use both --reset and --reload")
+		if p.reset && p.reload {
+			return false, fmt.Errorf("cannot use both --reset and --reload")
 		}
-		if reload {
+		if p.reload {
 			vars.configOpts.Reset = gpsprot.ResetReload
 		} else {
 			vars.configOpts.Reset = gpsprot.ResetCold
@@ -561,40 +668,46 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	} else if vars.showReceiver {
 		doConfigure = true
 	}
+	return doConfigure, nil
+}
+
+func (p *flagParser) resolveMsgFile(configChanged, doConfigure bool) error {
+	vars := &p.vars
+	flags := p.flags
 	if vars.msgFilePath != "" {
 		// In message-file mode --save is permitted (it controls VALSET
 		// layers for [[ubxval]]) but no other configuration flag is.
-		if saveAll || reset || reload || factoryReset || showConfig || showPort || configChanged || vars.showReceiver {
-			return nil, nil, fmt.Errorf("--msg-file cannot be combined with configuration flags")
+		if p.saveAll || p.reset || p.reload || p.factoryReset || p.showConfig || p.showPort || configChanged || vars.showReceiver {
+			return fmt.Errorf("--msg-file cannot be combined with configuration flags")
 		}
 		if vars.packetLogMode == testLogMode {
-			return nil, nil, fmt.Errorf("--msg-file cannot be combined with --test-log")
+			return fmt.Errorf("--msg-file cannot be combined with --test-log")
 		}
 		if flags.Lookup("port").Changed {
 			port, err := normalizeUBXPort(vars.msgPort)
 			if err != nil {
-				return nil, nil, err
+				return err
 			}
 			vars.msgPort = port
 		}
-		vars.msgSave = save
+		vars.msgSave = p.save
 		// Parse tags: split on comma, preserving empty strings for empty tags
-		vars.msgTags = strings.Split(msgTags, ",")
+		vars.msgTags = strings.Split(p.msgTags, ",")
 	} else {
-		if msgTags != "" {
-			return nil, nil, fmt.Errorf("--tag requires --msg-file")
+		if p.msgTags != "" {
+			return fmt.Errorf("--tag requires --msg-file")
 		}
 		if flags.Lookup("port").Changed {
-			return nil, nil, fmt.Errorf("--port requires --msg-file")
+			return fmt.Errorf("--port requires --msg-file")
 		}
 		if !doConfigure && !vars.capture.IsSet() {
 			vars.showReceiver = true
 		}
 		if vars.jsonOut && !doConfigure && !vars.showReceiver {
-			return nil, nil, fmt.Errorf("--json cannot be used with passive packet capture")
+			return fmt.Errorf("--json cannot be used with passive packet capture")
 		}
 	}
-	return &vars, nil, nil
+	return nil
 }
 
 // normalizeUBXPort lowercases s and verifies it is one of the u-blox port
@@ -714,8 +827,7 @@ func (gl *gnssList) Type() string {
 }
 
 func (gl *gnssList) Set(s string) error {
-	words := strings.Split(s, ",")
-	for _, w := range words {
+	for w := range strings.SplitSeq(s, ",") {
 		gnss, err := gpsprot.ParseGNSS(strings.Trim(w, " \t"))
 		if err != nil {
 			return err
@@ -746,7 +858,7 @@ func (bp *bands) Type() string {
 
 func (bp *bands) Set(s string) error {
 	var b gpsprot.Band
-	for _, w := range strings.Split(s, ",") {
+	for w := range strings.SplitSeq(s, ",") {
 		w = strings.Trim(w, " \t")
 		band, ok := gpsprot.ParseBandName(w)
 		if !ok {
@@ -776,7 +888,7 @@ func (sl *signalList) Type() string {
 
 func (sl *signalList) Set(s string) error {
 	ss := gpsprot.SignalSet(*sl)
-	for _, w := range strings.Split(s, ",") {
+	for w := range strings.SplitSeq(s, ",") {
 		sig, err := gpsprot.ParseSignal(strings.Trim(w, " \t"))
 		if err != nil {
 			return err
@@ -820,7 +932,7 @@ func (rawOut *rawOutOpt) Set(s string) error {
 	}
 	msg := (*opt.Val[gpsprot.RawMsgFlags])(rawOut)
 	flags := gpsprot.RawMsgFlags(0)
-	for _, w := range strings.Split(s, ",") {
+	for w := range strings.SplitSeq(s, ",") {
 		switch strings.ToLower(strings.TrimSpace(w)) {
 		case "obs":
 			flags |= gpsprot.RawMsgObs
@@ -894,7 +1006,7 @@ func (pvtOut *pvtOutOpt) Set(s string) error {
 		return fmt.Errorf("empty value for --pvt-out")
 	}
 	flags := gpsprot.PVTMsgFlags(*pvtOut)
-	for _, w := range strings.Split(s, ",") {
+	for w := range strings.SplitSeq(s, ",") {
 		switch strings.ToLower(strings.TrimSpace(w)) {
 		case "pos":
 			flags |= gpsprot.PVTMsgPos
@@ -987,7 +1099,7 @@ func (rtcmOut *rtcmOutOpt) Set(s string) error {
 	msg := (*opt.Val[gpsprot.RTCMMsgFlags])(rtcmOut)
 	flags := gpsprot.RTCMMsgFlags(0)
 	auto := false
-	for _, w := range strings.Split(s, ",") {
+	for w := range strings.SplitSeq(s, ",") {
 		switch strings.ToUpper(strings.TrimSpace(w)) {
 		case "MSM4":
 			flags |= gpsprot.RTCMMsgMSM4
@@ -1065,7 +1177,7 @@ func (nmeaOut *nmeaOutOpt) Set(s string) error {
 	}
 	msg := (*opt.Val[gpsprot.NMEAMsgFlags])(nmeaOut)
 	flags := gpsprot.NMEAMsgFlags(0)
-	for _, w := range strings.Split(s, ",") {
+	for w := range strings.SplitSeq(s, ",") {
 		switch strings.ToUpper(strings.TrimSpace(w)) {
 		case "RMC":
 			flags |= gpsprot.NMEAMsgRMC
@@ -1124,7 +1236,7 @@ func (satsOut *satsOutOpt) Set(s string) error {
 	}
 	msg := (*opt.Val[gpsprot.SatsMsgFlags])(satsOut)
 	flags := gpsprot.SatsMsgFlags(0)
-	for _, w := range strings.Split(s, ",") {
+	for w := range strings.SplitSeq(s, ",") {
 		switch strings.ToLower(strings.TrimSpace(w)) {
 		case "sat":
 			flags |= gpsprot.SatsMsgSat

@@ -1,10 +1,9 @@
 # Cleanup opportunities
 
-Concrete, behaviour-preserving tidies surfaced while auditing the "smoosh"
-candidates. None of these is a major refactor; they are dead-code removals and
-small local dedups that stand on their own merits. Line numbers are approximate
-and should be re-checked against the current tree. Run the affected package's
-tests after each change.
+Concrete, behaviour-preserving tidies: dead-code removals and small local
+dedups that stand on their own merits. Line numbers are approximate and should
+be re-checked against the current tree. Run the affected package's tests after
+each change.
 
 ## High value: dead code in `gps/internal/ubx/ubxcfgvals.go`
 
@@ -88,27 +87,10 @@ the thin `String()`/`Parse*()` wrappers. Behaviour is identical.
 
 ## Overly complex functions
 
-These are flagged by cognitive complexity (gocognit) and nesting depth, not by
-duplication - the problem is that they are hard to follow, not that they repeat.
-Flat dispatch switches are excluded: a long `switch` with one-line cases is not
-itself complexity. Each entry states the problem only.
-
-### `internal/gpscmd/gpsflags.go` `parseFlags` (line 147)
-
-The most complex function in the repository by a wide margin: cognitive
-complexity 169 and cyclomatic 133 (next highest is 80 and 54), 452 lines - the
-longest function in the tree. A single function interleaves three jobs - flag
-parsing, cross-flag validation, and config assembly - carrying several running
-accumulators (`configChanged`, `doConfigure`) through deeply interdependent
-validation branches. Low cohesion plus high branching makes it hard to follow
-and hard to change without side effects.
-
-## Tier 2: other tangled or oversized functions
-
-In rough priority order. Ordering blends the cognitive-complexity score with how
-much of the complexity looks structural (accidental) versus intrinsic to the
-domain (bit-level protocol work, reflection); the score is shown so the sort is
-visible.
+Flagged by cognitive complexity (gocognit) and nesting depth, not by
+duplication. Flat dispatch switches are excluded: a long `switch` with
+one-line cases is not itself complexity. In rough priority order; the
+score is shown so the sort is visible.
 
 - `gps/scan/scan.go` `Scan` (line 98) - cognitive 75, nesting depth 7 (the
   deepest in the repo), 113 lines. A packet-scanning state machine whose I/O
