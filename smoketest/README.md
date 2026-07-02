@@ -78,27 +78,30 @@ staying fast in CI.
 
 ## Transports
 
-The serial input is one of two transports, chosen per scenario with the
-`INPUT` attribute:
+A scenario does not name a transport; it declares the capabilities it needs and
+the runner picks one. The two capabilities are read-write (to capture the
+daemon's own writes) and disconnectable (to model the input going away), and on
+Unix they map to one of two transports:
 
-- **FIFO** (`INPUT` unset, the default) -- a read-only replay sink. satpulsed
-  opens it `O_RDWR` and holds its own write end, so the daemon and the replayer
-  can start and stop in any order and an idle FIFO looks like a silent-but-
-  connected receiver. That convenience is also a limit: a FIFO can never look
-  *disconnected*, so it cannot test what happens when the input goes away.
-- **pty** (`INPUT = "pty"`) -- a real TTY (so satpulsed takes the same code path
-  as a USB serial receiver) and full-duplex. Closing the master is a genuine
-  disconnect: the slave reads fail and the scan worker exits. Being writable,
-  it can also carry the daemon's own writes (the master is drained, and can be
-  captured), which a read-only FIFO cannot -- this is what the `stream/pull-*`
-  scenarios use.
+- **FIFO** (the default, no capability requested) -- a read-only replay sink.
+  satpulsed opens it `O_RDWR` and holds its own write end, so the daemon and the
+  replayer can start and stop in any order and an idle FIFO looks like a silent-
+  but-connected receiver. That convenience is also a limit: a FIFO can never
+  look *disconnected*, so it cannot test what happens when the input goes away.
+- **pty** (selected when a capability is requested) -- a real TTY (so satpulsed
+  takes the same code path as a USB serial receiver) and full-duplex. Closing
+  the master is a genuine disconnect: the slave reads fail and the scan worker
+  exits. Being writable, it can also carry the daemon's own writes (the master
+  is drained, and can be captured), which a read-only FIFO cannot -- this is
+  what the `stream/pull-*` scenarios use.
 
-A scenario whose daemon should exit on its own when the input disappears sets
-`SELF_SHUTDOWN = True`. That requires a pty (only a pty can disconnect); the
-runner then closes the master, expects the daemon to exit with no signal and a
-restartable failure code, and reports a hang (goroutine dump via SIGQUIT) as a
-failure. Using a pty does **not** imply `SELF_SHUTDOWN`: the `stream/pull-*`
-write-path scenarios use a pty and still stop via the normal `SIGINT` path.
+The two capabilities are orthogonal. A scenario that captures the daemon's
+writes sets `CAPTURE_WRITES = True` (read-write). A scenario whose daemon should
+exit on its own when the input disappears sets `SELF_SHUTDOWN = True`
+(disconnectable); the runner drops the input, expects the daemon to exit with no
+signal and a restartable failure code, and reports a hang (goroutine dump via
+SIGQUIT) as a failure. Neither implies the other: the `stream/pull-*` write-path
+scenarios are read-write yet still stop via the normal `SIGINT` path.
 
 ## Layout
 

@@ -3,7 +3,6 @@
 import common
 from scenarios import stream
 
-INPUT = "pty"
 CAPTURE_WRITES = True
 PACKET_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon.jsonl"
 PULL_SOURCE_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon-msm4-115200.jsonl"

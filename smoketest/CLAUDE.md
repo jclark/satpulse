@@ -133,14 +133,11 @@ A scenario ID `family/name` maps to two files and one registry entry:
   - optional `REQUIRES_ROOT = True` -- the scenario is skipped unless the runner
     is already root or `--sudo` was passed; use `ctx.root_cmd(...)` for helper
     subprocesses that also need root.
-  - optional `INPUT = "pty"` -- back the serial device with a pty instead of the
-    default FIFO (see Transports below). A pty is a real TTY and is writable and
-    disconnectable; a FIFO is a read-only replay sink that cannot disconnect.
   - optional `CAPTURE_WRITES = True` -- record the daemon's serial writes to
-    `ctx.serial_writes` (requires `INPUT = "pty"`), so a write-path scenario
-    (stream/pull-*) can scan what the daemon wrote back to the receiver. The
-    daemon's non-RTCM detection probes are filtered out by tag. Independent of
-    `SELF_SHUTDOWN`.
+    `ctx.serial_writes`, so a write-path scenario (stream/pull-*) can scan what
+    the daemon wrote back to the receiver. The daemon's non-RTCM detection
+    probes are filtered out by tag. Implies a read-write transport (see
+    Transports below); independent of `SELF_SHUTDOWN`.
   - optional `PULL_SOURCE_LOG` -- for a `[stream.pull]` scenario, the RTCM log
     the runner's fake correction source streams to the daemon (path relative to
     the repo root, like `PACKET_LOG`).
@@ -153,10 +150,10 @@ A scenario ID `family/name` maps to two files and one registry entry:
     (e.g. `("str2str",)`); the scenario is skipped with `SKIP` when any is
     missing, so an optional real-peer interop test adds no hard dependency.
   - optional `SELF_SHUTDOWN = True` -- the daemon is expected to exit on its own
-    when the input goes away, so the runner closes the pty master, asserts a
+    when the input goes away, so the runner disconnects the transport, asserts a
     self-exit with a restartable non-zero code (not `0/64/77/78`), and reports a
-    hang as a failure -- it does **not** send SIGINT. Requires `INPUT = "pty"`
-    (only a pty can disconnect); a pty alone does not imply `SELF_SHUTDOWN`.
+    hang as a failure -- it does **not** send SIGINT. Implies a disconnectable
+    transport (see Transports below); orthogonal to `CAPTURE_WRITES`.
   - optional `XFAIL = "<reason>"` -- the scenario is known to fail (e.g. a bug
     not yet fixed). It then reports `XFAIL` instead of `FAIL` and does not fail
     the suite; if it unexpectedly passes it reports `XPASS`, which *does* fail
@@ -168,8 +165,12 @@ Then update the scenario list in `README.md`.
 
 ### Transports
 
-The serial input is either a FIFO or a pty (`INPUT`), and the distinction is
-load-bearing, not cosmetic:
+A scenario never names a transport. It declares the *capabilities* it needs --
+`CAPTURE_WRITES` wants a read-write transport, `SELF_SHUTDOWN` a disconnectable
+one -- and the platform (`plat.make_transport` in `platform_unix.py`) maps those
+to a concrete transport, or reports the request unsupported (a SKIP). The two
+capabilities are orthogonal, and on Unix the choice is either a FIFO (neither)
+or a pty (both); the distinction is load-bearing, not cosmetic:
 
 - **FIFO** (default) -- satpulsed opens it `O_RDWR` (`gps/lib/term/fallback_linux.go`)
   and holds its own write end, so it never reaches EOF: an idle FIFO reads as a
@@ -186,12 +187,14 @@ load-bearing, not cosmetic:
   `stream/pull-*` write-path scenarios can use.
 
 `SELF_SHUTDOWN` is a property of the *lifecycle* (does the daemon exit without a
-signal?), not the transport: it depends on a pty (only a pty disconnects) but a
-pty does not require it. Keep the two attributes independent.
+signal?): it needs a disconnectable transport but does not follow from one --
+the `stream/pull-*` scenarios take a disconnectable transport (via the pty they
+get for read-write) yet stop via SIGINT. Keep the two attributes independent.
 
-`ctx.disconnect()` (pty-only) closes the master; `ctx.wait_exit()` waits for the
-no-signal exit and escalates to SIGQUIT on a hang. Both live on the runner's
-`Context` and are mirrored in `common.SmokeContext` for the scenario type.
+`ctx.disconnect()` (disconnectable transports only) drops the input;
+`ctx.wait_exit()` waits for the no-signal exit and escalates to SIGQUIT on a
+hang. Both live on the runner's `Context` and are mirrored in
+`common.SmokeContext` for the scenario type.
 
 ### Where checks live
 
@@ -211,8 +214,9 @@ it.
 Set per run by the runner; reference as `${NAME}`:
 
 - `SATPULSE_TEST_SERIAL` -- the serial device path the daemon opens (every
-  scenario sets `[serial] device` to this). The runner points it at the FIFO
-  path for FIFO scenarios and at the pty slave name for `INPUT = "pty"`.
+  scenario sets `[serial] device` to this). The runner points it at the
+  transport's path -- the FIFO path for a plain scenario, the pty slave name
+  when a capability (`CAPTURE_WRITES`/`SELF_SHUTDOWN`) selects a pty.
 - `SATPULSE_TEST_LOG_DIR`, `SATPULSE_TEST_RUN_DIR`, `SATPULSE_TEST_CONFIG`.
 - Ports (each scenario gets a private block): `SATPULSE_TEST_HTTP_PORT`,
   `SATPULSE_TEST_HTTP_PORT2` (second `[[http]]` endpoint),
