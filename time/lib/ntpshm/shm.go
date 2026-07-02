@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package ntpshm
 
@@ -11,10 +11,6 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 	"golang.org/x/sys/unix"
 )
-
-//go:generate sh -c "go tool cgo -godefs types_linux.go | gofmt > ztypes_linux.go && rm -rf _obj"
-
-const expectedSize = 96
 
 var _ [expectedSize - unsafe.Sizeof(shmTime{})]byte
 var _ [unsafe.Sizeof(shmTime{}) - expectedSize]byte
@@ -63,10 +59,10 @@ func (w shmWriter) write(clock, recv time.Time, leap ptime.LeapSecondKind, preci
 	s := w.t
 	atomic.StoreInt32(&s.Valid, 0)
 	atomic.AddInt32(&s.Count, 1)
-	s.ClockTimeStampSec = clock.Unix()
+	s.ClockTimeStampSec = shmSec(clock.Unix())
 	s.ClockTimeStampNSec = int32(clock.Nanosecond())
 	s.ClockTimeStampUSec = int32(clock.Nanosecond() / 1000)
-	s.ReceiveTimeStampSec = recv.Unix()
+	s.ReceiveTimeStampSec = shmSec(recv.Unix())
 	s.ReceiveTimeStampNSec = int32(recv.Nanosecond())
 	s.ReceiveTimeStampUSec = int32(recv.Nanosecond() / 1000)
 	s.Leap = shmLeap(leap)

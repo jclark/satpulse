@@ -39,6 +39,32 @@ def check_pull_connected(ctx: common.SmokeContext) -> None:
     assert common.poll(attempt), "daemon did not connect to the pull correction source"
 
 
+def check_pull_uploaded_gga(ctx: common.SmokeContext) -> None:
+    """The fake correction source recorded a post-handshake GGA before streaming."""
+    def attempt() -> bool:
+        with open(ctx.source_log, errors="replace") as f:
+            return "accepted GGA" in f.read()
+
+    assert common.poll(attempt), "pull correction source did not record an NMEA GGA"
+
+
+def check_pull_periodic_gga(ctx: common.SmokeContext, want: int = 2) -> None:
+    """The pull client re-sends GGA on its interval, not just once on connect.
+
+    The fake source logs every post-handshake GGA the client uploads. With a
+    small nmeaSendInterval the daemon must re-send, so at least `want` GGAs are
+    recorded over the connection's lifetime; one-shot-on-connect would record
+    exactly one.
+    """
+    def attempt() -> bool:
+        with open(ctx.source_log, errors="replace") as f:
+            return f.read().count("accepted GGA") >= want
+
+    assert common.poll(attempt), (
+        f"pull correction source recorded fewer than {want} GGA uploads (no periodic re-send)"
+    )
+
+
 def check_pulled_rtcm(ctx: common.SmokeContext) -> int:
     """The pull source's RTCM is written back to the receiver over the serial port.
 
@@ -58,6 +84,60 @@ def check_pulled_rtcm(ctx: common.SmokeContext) -> int:
         n = len(_pulled(ctx))
         raise AssertionError(
             f"pulled RTCM does not match source log: captured {n} of {len(want)} packets"
+        )
+    return len(want)
+
+
+def check_pulled_rtcm_window(ctx: common.SmokeContext, min_packets: int = 5) -> int:
+    """A real str2str caster's RTCM is written back to the receiver over serial.
+
+    Like check_pulled_rtcm, but the correction source is a real RTKLIB str2str
+    Ntrip caster rather than the prompt fakesource.py. A real caster serves only
+    from the daemon's connect point onward, so the daemon writes back a non-empty
+    contiguous window of the source RTCM, not the whole log. The captured serial
+    writes must therefore be a contiguous run within the source -- interop proof
+    that the pull client speaks the real caster's protocol and relays the bytes
+    faithfully. Polls because corrections may still be arriving.
+    """
+    want = [d for (_, _, d) in common.log_packets(ctx.pull_source_log, "RTCM")]
+    assert want, "pull source log has no RTCM packets"
+
+    def attempt() -> list[bytes] | None:
+        got = _pulled(ctx)
+        if len(got) >= min_packets and common.is_contiguous_sublist(want, got):
+            return got
+        return None
+
+    got = common.poll(attempt, interval=0.25)
+    if got is None:
+        n = len(_pulled(ctx))
+        raise AssertionError(
+            f"pulled RTCM is not a contiguous run of the source (captured {n} packets)"
+        )
+    return len(got)
+
+
+def check_udp_pushed_all(ctx: common.SmokeContext) -> int:
+    """The daemon's unfiltered UDP [[stream.push]] feed delivers exact bytes."""
+    packets = common.log_packet_data(ctx.packet_log)
+    want = b"".join(packets)
+    want_lengths = [len(p) for p in packets]
+    assert want, "source log has no packet bytes to push"
+    got = common.poll(
+        lambda: (_udp_pushed_all(ctx) == want and _udp_datagram_lengths(ctx) == want_lengths) or None,
+        interval=0.25,
+    )
+    if got is None:
+        got_bytes = _udp_pushed_all(ctx)
+        got_lengths = _udp_datagram_lengths(ctx)
+        if got_bytes != want:
+            n = len(got_bytes)
+            raise AssertionError(
+                f"UDP pushed bytes do not match source log: captured {n} of {len(want)} bytes"
+            )
+        detail = _datagram_mismatch(got_lengths, want_lengths)
+        raise AssertionError(
+            f"UDP datagrams do not match source packets: {detail}"
         )
     return len(want)
 
@@ -82,3 +162,37 @@ def check_push_gave_up(ctx: common.SmokeContext) -> None:
 
 def _pushed_rtcm(ctx: common.SmokeContext) -> list[bytes]:
     return [d for (_, _, d) in common.scan_packets(ctx, ctx.caster_capture, "RTCM")]
+
+
+def _udp_pushed_all(ctx: common.SmokeContext) -> bytes:
+    try:
+        with open(ctx.udp_capture, "rb") as f:
+            return f.read()
+    except OSError:
+        return b""
+
+
+def _udp_datagram_lengths(ctx: common.SmokeContext) -> list[int]:
+    out: list[int] = []
+    try:
+        with open(ctx.udp_log, errors="replace") as f:
+            for line in f:
+                _, sep, tail = line.rpartition(" len=")
+                if not sep:
+                    continue
+                try:
+                    out.append(int(tail.strip()))
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    return out
+
+
+def _datagram_mismatch(got: list[int], want: list[int]) -> str:
+    if len(got) != len(want):
+        return f"captured {len(got)} datagrams, want {len(want)}"
+    for i, (g, w) in enumerate(zip(got, want), 1):
+        if g != w:
+            return f"datagram {i} has {g} bytes, want {w}"
+    return "lengths differ"

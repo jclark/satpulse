@@ -10,6 +10,7 @@ import sys
 from typing import TypedDict, cast
 
 import common
+import ntpsock
 
 NTP_SOCK_MAGIC = 0x534F434B  # "SOCK"
 
@@ -79,7 +80,9 @@ def check_sock(
     samples = common.poll(lambda: (lambda s: s if len(s) >= min_samples else None)(_ntp_samples(ctx)))
     assert samples is not None, f"got fewer than {min_samples} NTP samples"
     for s in samples:
-        assert s["len"] == 40, f"NTP sample wrong size {s['len']} != 40"
+        assert s["len"] == ntpsock.SAMPLE_SIZE, (
+            f"NTP sample wrong size {s['len']} != {ntpsock.SAMPLE_SIZE}"
+        )
         assert s["magic"] == NTP_SOCK_MAGIC, f"bad magic {s['magic']:#x}"
         assert s["pulse"] == 0, f"unexpected pulse flag {s['pulse']}"
         assert s["leap"] in (0, 1, 2), f"bad leap {s['leap']}"

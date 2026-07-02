@@ -7,9 +7,9 @@ System V shared-memory segment keyed the same way as ntpd/NTPsec/gpsd
 count/valid protocol.
 
 Python maps the memory with ctypes, but the interprocess synchronization uses
-GCC libatomic functions so the consumer side has real atomic loads/stores and
-fences. The helper prints one JSON object for `read` and silently succeeds for
-`remove` when the segment is already absent.
+compiler atomic runtime functions so the consumer side has real atomic
+loads/stores and fences. The helper prints one JSON object for `read` and
+silently succeeds for `remove` when the segment is already absent.
 """
 
 from __future__ import annotations
@@ -28,18 +28,38 @@ ATOMIC_RELEASE = 3
 ATOMIC_SEQ_CST = 5
 IPC_RMID = 0
 SHM_KEY_BASE = 0x4E545030
-SHM_SIZE = 96
+
+
+def _is_32bit() -> bool:
+    """Whether the SHM writer uses the 32-bit struct layout.
+
+    Honour GOARCH, which the smoke-test runner forwards when exercising a
+    cross-built 32-bit daemon; otherwise fall back to this host's word size for
+    standalone use against a local writer.
+    """
+    goarch = os.environ.get("GOARCH")
+    if goarch:
+        return goarch in ("386", "arm")
+    return ctypes.sizeof(ctypes.c_void_p) == 4
+
+
+# struct shmTime, as written by ntpd/NTPsec/gpsd. The two timestamp-seconds
+# fields are time_t: 64-bit on 64-bit platforms, 32-bit on 32-bit ones; the
+# rest are plain int. ctypes' native alignment reproduces the C layout for
+# either width, matching the daemon's ztypes*.go.
+_SEC = ctypes.c_int32 if _is_32bit() else ctypes.c_int64
+SHM_SIZE = 80 if _is_32bit() else 96
 
 
 class ShmTime(ctypes.Structure):
-    """ctypes layout for ntpd/NTPsec `struct shmTime` on 64-bit Linux."""
+    """ctypes layout for ntpd/NTPsec `struct shmTime` on the target arch."""
 
     _fields_: ClassVar[list[tuple[str, Any]]] = [
         ("mode", ctypes.c_int),
         ("count", ctypes.c_int),
-        ("clockTimeStampSec", ctypes.c_long),
+        ("clockTimeStampSec", _SEC),
         ("clockTimeStampUSec", ctypes.c_int),
-        ("receiveTimeStampSec", ctypes.c_long),
+        ("receiveTimeStampSec", _SEC),
         ("receiveTimeStampUSec", ctypes.c_int),
         ("leap", ctypes.c_int),
         ("precision", ctypes.c_int),
@@ -75,26 +95,37 @@ _atomic_fence: Any | None = None
 
 
 def load_atomic() -> None:
-    """Load libatomic entry points used to mirror the C SHM reader protocol."""
+    """Load atomic entry points used to mirror the C SHM reader protocol."""
     global _atomic_lib, _atomic_load_4, _atomic_store_4, _atomic_fence
     if _atomic_load_4 is not None:
         return
+    libs: list[Any] = []
     name = ctypes.util.find_library("atomic")
-    if name is None:
-        raise RuntimeError("libatomic not found")
-    _atomic_lib = ctypes.CDLL(name)
-    load_4 = cast(Any, getattr(_atomic_lib, "__atomic_load_4"))
-    load_4.argtypes = [ctypes.c_void_p, ctypes.c_int]
-    load_4.restype = ctypes.c_uint32
-    store_4 = cast(Any, getattr(_atomic_lib, "__atomic_store_4"))
-    store_4.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int]
-    store_4.restype = None
-    fence = cast(Any, getattr(_atomic_lib, "atomic_thread_fence"))
-    fence.argtypes = [ctypes.c_int]
-    fence.restype = None
-    _atomic_load_4 = load_4
-    _atomic_store_4 = store_4
-    _atomic_fence = fence
+    if name is not None:
+        try:
+            libs.append(ctypes.CDLL(name))
+        except OSError:
+            pass
+    libs.append(libc)
+    for lib in libs:
+        try:
+            load_4 = cast(Any, getattr(lib, "__atomic_load_4"))
+            store_4 = cast(Any, getattr(lib, "__atomic_store_4"))
+            fence = cast(Any, getattr(lib, "atomic_thread_fence"))
+        except AttributeError:
+            continue
+        load_4.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        load_4.restype = ctypes.c_uint32
+        store_4.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int]
+        store_4.restype = None
+        fence.argtypes = [ctypes.c_int]
+        fence.restype = None
+        _atomic_lib = lib
+        _atomic_load_4 = load_4
+        _atomic_store_4 = store_4
+        _atomic_fence = fence
+        return
+    raise RuntimeError("atomic runtime functions not found")
 
 
 def ntp_key(segment: int) -> int:

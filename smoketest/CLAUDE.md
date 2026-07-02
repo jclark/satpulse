@@ -23,14 +23,27 @@ This is Python (stdlib only at runtime), testing a Go daemon. It is not part of
 
 ## Running
 
-The suite runs the binaries from `out/<arch>/`, so build first. `make` does NOT
-rebuild them as part of `make smoketest` -- the target only depends on the
-binaries existing, so run `make` yourself first (e.g. after any Go change).
+The suite runs the binaries from `out/<arch>/` on Linux and
+`out/<goos>_<arch>/` on macOS/FreeBSD, so build first. `make` does NOT rebuild
+them as part of `make smoketest` -- the target only depends on the binaries
+existing, so run the appropriate build yourself first (e.g. after any Go
+change).
 
 ```sh
 make            # from repo root: build satpulsed + satpulsetool
 make smoketest  # run all scenarios in parallel
 ```
+
+On macOS and FreeBSD:
+
+```sh
+./unix-build.sh
+python3 smoketest/run.py
+```
+
+The runner honours `GOOS` and `GOARCH` when set. Linux binaries live under
+`out/<arch>/`; non-Linux Unix binaries live under `out/<goos>_<arch>/`, matching
+`unix-build.sh`.
 
 For selecting scenarios, listing, or serial debugging, call `run.py` directly
 (the make target takes no args):
@@ -76,8 +89,8 @@ lifecycle. Per scenario `family/name`:
    listeners are configured (`[[http]]`, `[ntrip]`, `[ntp]`, `[[stream.push]]`)
    and sets up only the helpers each needs.
 3. Start auxiliary consumers/peers that must exist *before* the daemon: the
-   chrony SOCK consumer (`ntpsock.py`) for `[ntp]`, and a fake Ntrip caster
-   (`scenarios/ntrip/fakecaster.py`) per `[[stream.push]]` entry.
+   chrony SOCK consumer (`ntpsock.py`) for `[ntp]`, fake Ntrip casters for
+   Ntrip `[[stream.push]]` entries, and fake UDP receivers for UDP push entries.
 4. Start `satpulsed -v -f <config>` (stdout+stderr -> `satpulsed.log`).
 5. Wait for the daemon's listeners (`wait_listeners`) / outbound push
    (`wait_push`) before replay, so observers exist before any packet flows.
@@ -125,12 +138,20 @@ A scenario ID `family/name` maps to two files and one registry entry:
     disconnectable; a FIFO is a read-only replay sink that cannot disconnect.
   - optional `CAPTURE_WRITES = True` -- record the daemon's serial writes to
     `ctx.serial_writes` (requires `INPUT = "pty"`), so a write-path scenario
-    (stream/pull) can scan what the daemon wrote back to the receiver. The
+    (stream/pull-*) can scan what the daemon wrote back to the receiver. The
     daemon's non-RTCM detection probes are filtered out by tag. Independent of
     `SELF_SHUTDOWN`.
   - optional `PULL_SOURCE_LOG` -- for a `[stream.pull]` scenario, the RTCM log
     the runner's fake correction source streams to the daemon (path relative to
     the repo root, like `PACKET_LOG`).
+  - optional `PULL_PEER` -- the `[stream.pull]` correction-source implementation:
+    `"fake"` (the default `fakesource.py`, which delivers the whole log
+    losslessly) or `"str2str"` (a real RTKLIB Ntrip caster fed by `pack`, which
+    serves only from the client's connect point on, so the daemon receives a
+    contiguous window). Use `stream.check_pulled_rtcm_window` for the str2str case.
+  - optional `REQUIRES` -- a tuple of external binary names that must be on PATH
+    (e.g. `("str2str",)`); the scenario is skipped with `SKIP` when any is
+    missing, so an optional real-peer interop test adds no hard dependency.
   - optional `SELF_SHUTDOWN = True` -- the daemon is expected to exit on its own
     when the input goes away, so the runner closes the pty master, asserts a
     self-exit with a restartable non-zero code (not `0/64/77/78`), and reports a
@@ -150,7 +171,7 @@ Then update the scenario list in `README.md`.
 The serial input is either a FIFO or a pty (`INPUT`), and the distinction is
 load-bearing, not cosmetic:
 
-- **FIFO** (default) -- satpulsed opens it `O_RDWR` (`gps/lib/term/polling_linux.go`)
+- **FIFO** (default) -- satpulsed opens it `O_RDWR` (`gps/lib/term/fallback_linux.go`)
   and holds its own write end, so it never reaches EOF: an idle FIFO reads as a
   silent-but-connected receiver, and the daemon and replayer can start/stop in
   any order. By the same token a FIFO can never look *disconnected*, so it
@@ -162,7 +183,7 @@ load-bearing, not cosmetic:
   to `ctx.serial_writes` when `CAPTURE_WRITES` is set). Closing the master is a
   real disconnect (slave reads fail, scan worker exits). This is the only
   transport that can model a device going away, and the only one the
-  `stream/pull` write-path scenario can use.
+  `stream/pull-*` write-path scenarios can use.
 
 `SELF_SHUTDOWN` is a property of the *lifecycle* (does the daemon exit without a
 signal?), not the transport: it depends on a pty (only a pty disconnects) but a
@@ -194,9 +215,11 @@ Set per run by the runner; reference as `${NAME}`:
   path for FIFO scenarios and at the pty slave name for `INPUT = "pty"`.
 - `SATPULSE_TEST_LOG_DIR`, `SATPULSE_TEST_RUN_DIR`, `SATPULSE_TEST_CONFIG`.
 - Ports (each scenario gets a private block): `SATPULSE_TEST_HTTP_PORT`,
+  `SATPULSE_TEST_HTTP_PORT2` (second `[[http]]` endpoint),
   `SATPULSE_TEST_NTRIP_PORT`, `SATPULSE_TEST_PROXY_TCP_PORT`,
   `SATPULSE_TEST_PROXY_TCP_RTCM_PORT`, `SATPULSE_TEST_REMOTE_CASTER_PORT`,
-  `SATPULSE_TEST_REMOTE_CASTER_PORT2`, `SATPULSE_TEST_TOOL_PORT`.
+  `SATPULSE_TEST_REMOTE_CASTER_PORT2`, `SATPULSE_TEST_TOOL_PORT`,
+  `SATPULSE_TEST_REMOTE_UDP_PORT`.
 - `SATPULSE_TEST_PROXY_SOCKET`, `SATPULSE_TEST_NTP_SOCK` -- Unix socket paths.
 - `SATPULSE_TEST_NTP_SHM_SEGMENT` -- high-numbered test SHM segment for
   root-required NTP SHM scenarios.

@@ -1,13 +1,17 @@
 package gpsevent
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/obs"
@@ -24,6 +28,34 @@ type nativeMsgObserver struct {
 	msgID   string
 	msg     any
 	tRead   time.Time
+}
+
+type fakePacketProcessor struct {
+	msgHandler gpsprot.MsgHandler
+	native     gpsprot.NativeMsgHandler
+	err        error
+}
+
+func (p *fakePacketProcessor) ProcessPacket(_ string, _ time.Time) (string, error) {
+	return "GPGGA", p.err
+}
+
+func (p *fakePacketProcessor) Idle(time.Time) {}
+
+func (p *fakePacketProcessor) SetMsgHandler(h gpsprot.MsgHandler) {
+	p.msgHandler = h
+}
+
+func (p *fakePacketProcessor) SetNativeMsgHandler(h gpsprot.NativeMsgHandler) {
+	p.native = h
+}
+
+func (p *fakePacketProcessor) GetNativeMsgHandler() gpsprot.NativeMsgHandler {
+	return p.native
+}
+
+func (p *fakePacketProcessor) NativeOnly() bool {
+	return false
 }
 
 func (o *nativeMsgObserver) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) bool {
@@ -54,6 +86,52 @@ func TestDispatcherNativeMsgForwardsToObserver(t *testing.T) {
 	if obs.tag != "TEST" || obs.msgID != "MSG" || obs.msg != msg || !obs.tRead.Equal(tRead) {
 		t.Fatalf("NativeMsg observer got (%q, %q, %#v, %v), want (%q, %q, %#v, %v)",
 			obs.tag, obs.msgID, obs.msg, obs.tRead, gpsprot.Tag("TEST"), "MSG", msg, tRead)
+	}
+}
+
+func TestDispatcherSelectedGGAPacketAfterSuccessfulProcessing(t *testing.T) {
+	selector := stream.NewGGASelector()
+	d := &Dispatcher{
+		pktProcs: map[gpsprot.Tag]gpsprot.PacketProcessor{
+			gpsreg.TagNMEA: &fakePacketProcessor{},
+		},
+		ggaSelector: selector,
+		lg:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	pkt := ggaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
+	d.handlePacket(pkt)
+	select {
+	case got := <-selector.Packets():
+		if got.Data != pkt.Data {
+			t.Fatalf("selected GGA = %q, want %q", got.Data, pkt.Data)
+		}
+	default:
+		t.Fatal("dispatcher did not publish original GGA")
+	}
+}
+
+func TestDispatcherSelectedGGAPacketRequiresSuccessfulProcessing(t *testing.T) {
+	selector := stream.NewGGASelector()
+	d := &Dispatcher{
+		pktProcs: map[gpsprot.Tag]gpsprot.PacketProcessor{
+			gpsreg.TagNMEA: &fakePacketProcessor{err: errors.New("bad packet")},
+		},
+		ggaSelector: selector,
+		lg:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	d.handlePacket(ggaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,"))
+	select {
+	case pkt := <-selector.Packets():
+		t.Fatalf("selected GGA after processing error: %q", pkt.Data)
+	default:
+	}
+}
+
+func ggaPacket(payload string) scan.Packet {
+	return scan.Packet{
+		Format:        gpsreg.NMEAPacketFormat,
+		Data:          fmt.Sprintf("$%s*%02X\r\n", payload, nmeamsg.Checksum([]byte(payload))),
+		ChecksumValid: true,
 	}
 }
 

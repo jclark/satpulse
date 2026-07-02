@@ -8,6 +8,16 @@ import (
 	"github.com/jclark/satpulse/time/lib/ntime"
 )
 
+// Leap is the leap-second status field of a SOCK sample, using the
+// values defined by chrony's refclock SOCK protocol.
+type Leap int32
+
+const (
+	LeapNone Leap = iota
+	LeapInsert
+	LeapDelete
+)
+
 type SockRefClock struct {
 	conn       *net.UnixConn
 	remoteAddr *net.UnixAddr
@@ -15,15 +25,10 @@ type SockRefClock struct {
 
 // New creates a new SockRefClock.
 func New(rPath string) (*SockRefClock, error) {
-	// Anonymous unixgram socket: no filesystem path, AppArmor can't complain
-	conn, err := net.ListenUnixgram("unixgram", &net.UnixAddr{
-		Name: "",
-		Net:  "unixgram",
-	})
+	conn, err := listenUnixgramUnbound()
 	if err != nil {
 		return nil, fmt.Errorf("could not create local unixgram socket: %w", err)
 	}
-
 	return &SockRefClock{
 		conn: conn,
 		remoteAddr: &net.UnixAddr{

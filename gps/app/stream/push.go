@@ -26,6 +26,8 @@ import (
 // for transient hiccups, short enough that recovery is timely.
 const writeTimeout = 30 * time.Second
 
+const udpWriteTimeout = 200 * time.Millisecond
+
 // Destination is the push counterpart of Source: it returns a
 // writable net.Conn after a successful handshake.  Unlike Source, it
 // returns net.Conn (not io.ReadCloser) because Push only writes after
@@ -158,39 +160,50 @@ func (d *NtripDestination) sourceAgent() string {
 	return "NTRIP satpulse/" + d.UserAgent.Version
 }
 
-// Push consumes scanned packets from the receiver's packet bcast and
-// writes them to a remote Destination via a pruning queue and a
-// reconnecting writer.  Unlike Pull, Push does not own a packet
-// bcast.
-type Push struct{}
-
-// NewPush creates a Push.
-func NewPush() *Push {
-	return &Push{}
+// UDPSink is a UDP push destination: the address datagrams are sent
+// to.  Built once at startup; Run dials it and streams to it.
+type UDPSink struct {
+	Addr   string // "host:port"
+	pktTag gpsprot.Tag
+	lg     *slog.Logger
 }
 
-// Run subscribes to packets, filters by pktTag, queues with the
-// shared pruning policy, and writes to dest with adaptive reconnect.
-// Run blocks until ctx is cancelled or the input bcast is closed.
-// Returns ctx.Err() on parent ctx cancellation, nil on clean
-// bcast-close shutdown.
-func (s *Push) Run(ctx context.Context, lg *slog.Logger,
-	packets *bcast.Bcast[scan.Packet],
-	dest Destination,
-	pktTag gpsprot.Tag,
-	msm7to4 bool,
-	onState func(State, error)) error {
-	iCtx, iCancel := context.WithCancel(ctx)
-	defer iCancel()
-	subCh := packets.Subscribe()
+// NewUDPSink creates a UDP push destination.
+func NewUDPSink(addr string, lg *slog.Logger, pktTag gpsprot.Tag) *UDPSink {
+	if lg == nil {
+		lg = slog.Default()
+	}
+	return &UDPSink{Addr: addr, pktTag: pktTag, lg: lg}
+}
+
+// Run dials the destination and forwards selected packets to it as
+// UDP datagrams until ctx is cancelled or packets closes.  UDP is
+// connectionless: there is no handshake or reconnect, so dialing is
+// all the setup there is.  When pktTag is empty every non-empty
+// packet is sent; otherwise only packets carrying pktTag with a valid
+// checksum.  A write failure drops the datagram and is logged rather
+// than returned -- UDP is fire-and-forget.
+func (s *UDPSink) Run(ctx context.Context, packets *bcast.Bcast[scan.Packet]) error {
+	if s.lg == nil {
+		s.lg = slog.Default()
+	}
+	conn, err := (&net.Dialer{}).DialContext(ctx, "udp", s.Addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	qCtx, qCancel := context.WithCancel(ctx)
+	defer qCancel()
 	qCh := make(chan scan.Packet, 1)
-	reconnectCh := make(chan struct{}, 1)
+	qReady := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		s.queue(iCtx, iCancel, packets, subCh, reconnectCh, qCh, pktTag)
+		s.queue(qCtx, qCancel, packets, qCh, qReady)
 	})
+	<-qReady
+	s.lg.Info("udp push connected", "addr", conn.RemoteAddr(), "protocol", s.pktTag)
 	wg.Go(func() {
-		s.writer(iCtx, iCancel, lg, dest, qCh, reconnectCh, msm7to4, onState)
+		s.writer(qCtx, conn, qCh)
 	})
 	wg.Wait()
 	if ctx.Err() != nil {
@@ -199,35 +212,179 @@ func (s *Push) Run(ctx context.Context, lg *slog.Logger,
 	return nil
 }
 
-// queue reads scanned packets from subCh, filters by pktTag,
-// applies the pruning policy, and emits packets to writerCh.  On
-// reconnectCh it advances the MSM epoch so dedup never spans a
-// broken connection.  When subCh closes (bcast closed) it calls
-// iCancel to wake the writer regardless of where the writer is
-// blocked, then performs cleanup.
-func (s *Push) queue(iCtx context.Context, iCancel context.CancelFunc,
-	packets *bcast.Bcast[scan.Packet],
-	subCh <-chan scan.Packet,
-	reconnectCh <-chan struct{},
-	writerCh chan scan.Packet,
-	pktTag gpsprot.Tag) {
-	cleanup := func() {
-		close(writerCh)
-		packets.Unsubscribe(subCh)
+// queue subscribes to packets, filters for this UDP
+// destination, applies the shared queue policy, and emits packets to
+// writerCh.  When the subscription closes it cancels ctx so the
+// writer wakes even if it is blocked in a write.
+func (s *UDPSink) queue(ctx context.Context, cancel context.CancelFunc,
+	packets *bcast.Bcast[scan.Packet], writerCh chan<- scan.Packet, ready chan<- struct{}) {
+	defer close(writerCh)
+	subCh := packets.Subscribe()
+	defer packets.Unsubscribe(subCh)
+	if ready != nil {
+		close(ready)
 	}
 	var q pruningQueue
-	var outCh chan<- scan.Packet
-	var front scan.Packet
+	// If sendCh is non-nil, it is writerCh and next is ready to send.
+	var sendCh chan<- scan.Packet
+	var next scan.Packet
 	for {
 		select {
-		case <-iCtx.Done():
-			cleanup()
+		case <-ctx.Done():
+			return
+		case pkt, ok := <-subCh:
+			if !ok {
+				cancel()
+				return
+			}
+			if pkt.Data == "" {
+				continue
+			}
+			if !s.pktTag.IsZero() && !(pkt.HasTag(s.pktTag) && pkt.ChecksumValid) {
+				continue
+			}
+			if dropped, ok := q.enqueue(pkt); ok {
+				msgID := ""
+				if dropped.Format != nil {
+					msgID = dropped.Format.MsgID([]byte(dropped.Data))
+				}
+				s.lg.Warn("udp push queue full, dropped oldest packet",
+					"addr", s.Addr, "protocol", s.pktTag,
+					"tag", dropped.Tag(), "msgid", msgID, "len", len(dropped.Data))
+			}
+			if sendCh == nil {
+				next = q.dequeue()
+				sendCh = writerCh
+			}
+		case sendCh <- next:
+			if q.len() > 0 {
+				next = q.dequeue()
+			} else {
+				sendCh = nil
+			}
+		}
+	}
+}
+
+// writer receives packets from the queue and writes them as UDP
+// datagrams.  Write errors are logged and otherwise ignored.
+func (s *UDPSink) writer(ctx context.Context, conn net.Conn, qCh <-chan scan.Packet) {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-done:
+		}
+	}()
+	defer close(done)
+	for {
+		var pkt scan.Packet
+		var ok bool
+		select {
+		case <-ctx.Done():
+			return
+		case pkt, ok = <-qCh:
+			if !ok {
+				return
+			}
+		}
+		if err := conn.SetWriteDeadline(time.Now().Add(udpWriteTimeout)); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			s.lg.Warn("udp push set deadline failed", "addr", conn.RemoteAddr(), "err", err)
+			continue
+		}
+		n, err := conn.Write([]byte(pkt.Data))
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			s.lg.Warn("udp push write failed", "addr", conn.RemoteAddr(),
+				"len", len(pkt.Data), "err", err)
+			continue
+		}
+		if n != len(pkt.Data) {
+			s.lg.Warn("udp push short write", "addr", conn.RemoteAddr(),
+				"wrote", n, "len", len(pkt.Data))
+		}
+	}
+}
+
+// Push consumes scanned packets from the receiver's packet bcast and
+// writes them to a remote Destination via a pruning queue and a
+// reconnecting writer.  Unlike Pull, Push does not own a packet
+// bcast.
+type Push struct {
+	dest    Destination
+	pktTag  gpsprot.Tag
+	msm7to4 bool
+	lg      *slog.Logger
+}
+
+// NewPush creates a Push.
+func NewPush(dest Destination, lg *slog.Logger, pktTag gpsprot.Tag, msm7to4 bool) *Push {
+	if lg == nil {
+		lg = slog.Default()
+	}
+	return &Push{dest: dest, lg: lg, pktTag: pktTag, msm7to4: msm7to4}
+}
+
+// Run starts the packet queue and adaptive writer.  Run blocks until
+// ctx is cancelled or the input bcast is closed.  Returns ctx.Err()
+// on parent ctx cancellation, nil on clean bcast-close shutdown.
+func (s *Push) Run(ctx context.Context, packets *bcast.Bcast[scan.Packet], onState func(State, error)) error {
+	if s.lg == nil {
+		s.lg = slog.Default()
+	}
+	qCtx, qCancel := context.WithCancel(ctx)
+	defer qCancel()
+	qCh := make(chan scan.Packet, 1)
+	reconnectCh := make(chan struct{}, 1)
+	qReady := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		s.queue(qCtx, qCancel, packets, reconnectCh, qCh, qReady)
+	})
+	<-qReady
+	wg.Go(func() {
+		s.writer(qCtx, qCancel, qCh, reconnectCh, onState)
+	})
+	wg.Wait()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return nil
+}
+
+// queue subscribes to packets, filters by the configured packet tag,
+// applies the pruning policy, and emits packets to writerCh.  On
+// reconnectCh it advances the MSM epoch so dedup never spans a
+// broken connection.  When the subscription closes it calls
+// cancel to wake the writer regardless of where the writer is
+// blocked.
+func (s *Push) queue(ctx context.Context, cancel context.CancelFunc,
+	packets *bcast.Bcast[scan.Packet], reconnectCh <-chan struct{}, writerCh chan scan.Packet, ready chan<- struct{}) {
+	defer close(writerCh)
+	subCh := packets.Subscribe()
+	defer packets.Unsubscribe(subCh)
+	if ready != nil {
+		close(ready)
+	}
+	var q pruningQueue
+	// If sendCh is non-nil, it is writerCh and next is ready to send.
+	var sendCh chan<- scan.Packet
+	var next scan.Packet
+	for {
+		select {
+		case <-ctx.Done():
 			return
 		case <-reconnectCh:
 			// Best-effort drop of anything that was about to
 			// land on the broken connection: drain writerCh
 			// (we are its only sender, so a non-blocking
-			// receive is safe), reset front, and bump the MSM
+			// receive is safe), reset next, and bump the MSM
 			// epoch.  Packets enqueued by subCh between the
 			// writer's failure and our picking up reconnectCh
 			// remain in q under the old epoch and may still be
@@ -237,31 +394,38 @@ func (s *Push) queue(iCtx context.Context, iCancel context.CancelFunc,
 			case <-writerCh:
 			default:
 			}
-			outCh = nil
+			sendCh = nil
 			q.reconnect()
 			if q.len() > 0 {
-				front = q.dequeue()
-				outCh = writerCh
+				next = q.dequeue()
+				sendCh = writerCh
 			}
 		case pkt, ok := <-subCh:
 			if !ok {
-				iCancel()
-				cleanup()
+				cancel()
 				return
 			}
-			if pkt.Tag() != pktTag || !pkt.ChecksumValid {
+			if pkt.Tag() != s.pktTag || !pkt.ChecksumValid {
 				break
 			}
-			q.enqueue(pkt)
-			if outCh == nil {
-				front = q.dequeue()
-				outCh = writerCh
+			if dropped, ok := q.enqueue(pkt); ok {
+				msgID := ""
+				if dropped.Format != nil {
+					msgID = dropped.Format.MsgID([]byte(dropped.Data))
+				}
+				s.lg.Warn("stream push queue full, dropped oldest packet",
+					"protocol", s.pktTag,
+					"tag", dropped.Tag(), "msgid", msgID, "len", len(dropped.Data))
 			}
-		case outCh <- front:
+			if sendCh == nil {
+				next = q.dequeue()
+				sendCh = writerCh
+			}
+		case sendCh <- next:
 			if q.len() > 0 {
-				front = q.dequeue()
+				next = q.dequeue()
 			} else {
-				outCh = nil
+				sendCh = nil
 			}
 		}
 	}
@@ -272,15 +436,10 @@ func (s *Push) queue(iCtx context.Context, iCancel context.CancelFunc,
 // qCh; on write error it closes the connection, signals reconnectCh
 // (non-blocking) so the queue can advance the MSM epoch, and
 // reconnects.  On a fatal connect error (a permanent caster
-// rejection) it reports State Failed and calls iCancel to stop the
+// rejection) it reports State Failed and calls qCancel to stop the
 // whole Push instead of retrying.
-func (s *Push) writer(ctx context.Context, iCancel context.CancelFunc,
-	lg *slog.Logger,
-	dest Destination,
-	qCh <-chan scan.Packet,
-	reconnectCh chan<- struct{},
-	msm7to4 bool,
-	onState func(State, error)) {
+func (s *Push) writer(ctx context.Context, qCancel context.CancelFunc,
+	qCh <-chan scan.Packet, reconnectCh chan<- struct{}, onState func(State, error)) {
 	if onState == nil {
 		onState = func(State, error) {}
 	}
@@ -291,20 +450,20 @@ func (s *Push) writer(ctx context.Context, iCancel context.CancelFunc,
 			onState(Connecting, nil)
 			first = false
 		}
-		conn, err := dest.Connect(ctx)
+		conn, err := s.dest.Connect(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
 			if isFatalConnect(err) {
-				lg.Error("ntrip push giving up", "error", err)
+				s.lg.Error("ntrip push giving up", "error", err)
 				onState(Failed, err)
 				// Wake the queue so Run's wg.Wait returns; the
-				// queue cleans up the subscription on iCtx.Done.
-				iCancel()
+				// queue cleans up the subscription on qCtx.Done.
+				qCancel()
 				return
 			}
-			lg.Error("ntrip push connect failed", "error", err)
+			s.lg.Error("ntrip push connect failed", "error", err)
 			b.increase()
 			onState(Reconnecting, err)
 			select {
@@ -328,7 +487,7 @@ func (s *Push) writer(ctx context.Context, iCancel context.CancelFunc,
 			case <-done:
 			}
 		}()
-		writeErr := s.writeLoop(ctx, lg, conn, qCh, msm7to4, b)
+		writeErr := s.writeLoop(ctx, conn, qCh, b)
 		conn.Close()
 		close(done)
 		if ctx.Err() != nil {
@@ -337,7 +496,7 @@ func (s *Push) writer(ctx context.Context, iCancel context.CancelFunc,
 		if writeErr == nil {
 			return
 		}
-		lg.Error("ntrip push write failed", "error", writeErr)
+		s.lg.Error("ntrip push write failed", "error", writeErr)
 		select {
 		case reconnectCh <- struct{}{}:
 		default:
@@ -355,8 +514,7 @@ func (s *Push) writer(ctx context.Context, iCancel context.CancelFunc,
 
 // writeLoop streams packets from qCh to conn.  Returns nil on clean
 // exit (ctx cancelled or qCh closed), the write error otherwise.
-func (s *Push) writeLoop(ctx context.Context, lg *slog.Logger,
-	conn net.Conn, qCh <-chan scan.Packet, msm7to4 bool, b *backoff) error {
+func (s *Push) writeLoop(ctx context.Context, conn net.Conn, qCh <-chan scan.Packet, b *backoff) error {
 	lastDecay := time.Now()
 	for {
 		var pkt scan.Packet
@@ -370,10 +528,10 @@ func (s *Push) writeLoop(ctx context.Context, lg *slog.Logger,
 			}
 		}
 		data := pkt.Data
-		if msm7to4 {
+		if s.msm7to4 {
 			out, err := rtcmbin.MSM7ConvertPacket(data, 4)
 			if err != nil {
-				lg.Debug("MSM7->MSM4 conversion failed, forwarding unchanged",
+				s.lg.Debug("MSM7->MSM4 conversion failed, forwarding unchanged",
 					"msgType", rtcmbin.ExtractMsgType(data), "err", err)
 			} else {
 				data = out

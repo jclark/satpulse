@@ -1,0 +1,23 @@
+# Ntrip caster source-table metadata: shared overrides apply to every
+# mountpoint, and per-mountpoint fields override or fall back to them.
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[ntrip]
+listen = "127.0.0.1:${SATPULSE_TEST_NTRIP_PORT}"
+country = "THA"
+network = "SmokeNet"
+generator = "smoke-generator"
+lat = "13.76"
+lon = "100.50"
+bitrate = 4800
+
+# Overrides the shared description (via name) and bitrate.
+[[ntrip.mountpoint]]
+name = "FULL"
+description = "Full metadata mount"
+bitrate = 9600
+
+# Inherits the shared bitrate; description defaults to the name.
+[[ntrip.mountpoint]]
+name = "BASE"

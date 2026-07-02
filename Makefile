@@ -5,7 +5,8 @@ CMD=github.com/jclark/satpulse/gps/app/cmd
 VERSION:=$(shell cat VERSION)
 VERSION_TAG:=v$(VERSION)
 BUILD_DATE:=$(shell date -u --rfc-3339=seconds)
-DIRTY:=$(shell git diff-index --quiet HEAD || echo .dirty)
+# Refresh the index so unchanged-but-touched files don't show as dirty.
+DIRTY:=$(shell git update-index -q --refresh; git diff-index --quiet HEAD || echo .dirty)
 GIT_VERSION:=$(shell env TZ=UTC git log -1 --format="%cd.%h" --date=format-local:%Y%m%d)$(DIRTY)
 DEB_VERSION=1
 RPM_RELEASE=1
@@ -24,8 +25,10 @@ endif
 RPM_PKG_VERSION=$(RPM_VERSION)-$(RPM_RELEASE)
 XFLAGS:=-X \"$(CMD).version=$(CMD_VERSION)\" -X \"$(CMD).buildDate=$(BUILD_DATE)\"
 TAGS=netgo,osusergo
+# ARM architecture version for 32-bit arm builds; ignored when GOARCH is not arm.
+GOARM=6
 # The GOARCHs we support.
-ALL_GOARCH=arm64 amd64
+ALL_GOARCH=arm64 amd64 arm
 TOMLS:=$(patsubst %,out/%/satpulse.toml,$(ALL_GOARCH))
 ARCH:=$(shell uname -m)
 MAN_PAGES=satpulsetool.1 satpulsetool-gps.1 satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 satpulsetool-syncsim.1 satpulsetool-convobs.1 satpulse.toml.5 satpulsed.8
@@ -46,10 +49,10 @@ all: $(GOARCH) out/$(GOARCH)/satpulse.toml
 allarch: $(ALL_GOARCH) $(TOMLS)
 
 $(ALL_GOARCH):
-	env GOOS=linux GOARCH=$@ go build -tags "$(TAGS)" -o out/$@/ -ldflags "$(XFLAGS)" ./...
+	env GOOS=linux GOARCH=$@ GOARM=$(GOARM) go build -tags "$(TAGS)" -o out/$@/ -ldflags "$(XFLAGS)" ./...
 
-out/arm64/satpulse.toml: configs/satpulse.toml
-	sed -e '/^#:schema /s; \./; /usr/share/doc/satpulse/;' -e '/^interface/s/enp1s0/eth0/' -e '/^device/s/ttyUSB0/ttyAMA0/' $< > $@
+out/arm64/satpulse.toml out/arm/satpulse.toml: configs/satpulse.toml
+	sed -e '/^#:schema /s; \./; /usr/share/doc/satpulse/;' -e '/interface/s/"enp1s0"/"eth0"/' -e '/device/s;"/dev/ttyUSB0";"/dev/ttyAMA0";' $< > $@
 
 out/amd64/satpulse.toml: configs/satpulse.toml
 	sed -e '/^#:schema /s; \./; /usr/share/doc/satpulse/;' $< > $@
@@ -124,8 +127,9 @@ pkg: deb rpm
 
 DEB_PATTERN=out/satpulse_$(DEB_PKG_VERSION)_%.deb
 GH_DEB_PATTERN=out/satpulse_$(GH_RELEASE)_%.deb
-DEBS:=$(patsubst %,$(DEB_PATTERN), $(ALL_GOARCH))
-GH_DEBS:=$(patsubst %,$(GH_DEB_PATTERN), $(ALL_GOARCH))
+ALL_DEB_ARCH=arm64 amd64 armhf
+DEBS:=$(patsubst %,$(DEB_PATTERN), $(ALL_DEB_ARCH))
+GH_DEBS:=$(patsubst %,$(GH_DEB_PATTERN), $(ALL_DEB_ARCH))
 deb: $(GH_DEBS)
 
 $(GH_DEBS): $(DEBS)
@@ -133,13 +137,16 @@ $(GH_DEBS): $(DEBS)
 $(GH_DEB_PATTERN): $(DEB_PATTERN)
 	ln -sf $(notdir $<) $@
 
-$(DEB_PATTERN): % out/%/satpulse.toml $(MAN_GZ_TARGETS) gpsmsg
+# Debian's armhf is GOARCH=arm; map the package arch (the deb stem) to its build dir.
+DEB_GOARCH=$(subst armhf,arm,$*)
+
+$(DEB_PATTERN): $(ALL_GOARCH) $(TOMLS) $(MAN_GZ_TARGETS) gpsmsg
 	rm -fr out/$*/deb
 	install -D -m 644 debian/conffiles out/$*/deb/DEBIAN/conffiles
 	install -D debian/postinst out/$*/deb/DEBIAN/postinst
-	install -D out/$*/satpulsed out/$*/deb/usr/sbin/satpulsed
-	install -D out/$*/satpulsetool out/$*/deb/usr/bin/satpulsetool
-	install -D -m 644 out/$*/satpulse.toml out/$*/deb/etc/satpulse.toml
+	install -D out/$(DEB_GOARCH)/satpulsed out/$*/deb/usr/sbin/satpulsed
+	install -D out/$(DEB_GOARCH)/satpulsetool out/$*/deb/usr/bin/satpulsetool
+	install -D -m 644 out/$(DEB_GOARCH)/satpulse.toml out/$*/deb/etc/satpulse.toml
 	install -D -m 644 configs/ptp4l.service out/$*/deb/usr/share/doc/satpulse/ptp4l.service
 	install -D -m 644 configs/chrony.conf out/$*/deb/usr/share/doc/satpulse/chrony.conf
 	install -D -m 644 configs/config-schema.json out/$*/deb/usr/share/doc/satpulse/config-schema.json
@@ -204,6 +211,7 @@ release: $(GH_DEBS) $(GH_RPMS)
 		$^
 
 tag:
+	git update-index -q --refresh
 	git diff-index --exit-code HEAD
 	git tag -f -a "$(VERSION_TAG)" -m "Release $(VERSION_TAG)"
 

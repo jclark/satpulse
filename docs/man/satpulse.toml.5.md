@@ -157,7 +157,7 @@ The `ptp` table controls this. It can have the following keys:
 * `ptp4l.udsAddress` - a string giving the path of the Unix domain socket used by ptp4l for PTP management. By default
    ptp4l uses `/var/run/ptp4l`, but it can be changed with the ptp4l `uds_address` option. This key must be supplied
    to enable SatPulse to update ptp4l.
-* `domain` - the PTP domain number; this defaults to 0
+* `domainNumber` - the PTP domain number; this defaults to 0
 * `majorSdoId` - the PTP majorSdoId; this defaults to 0; in earlier versions of the PTP standard this is called `transportSpecific`
 * `minorSdoId` - the PTP minorSdoId; this defaults to 0
 * `clockAccuracy` - the accuracy in nanoseconds of the PTP grandmaster instance when synchronized to the GPS receiver.
@@ -221,7 +221,7 @@ shm.segment = 2
 ## `log` table
 
 The `log` table is about how SatPulse should log information. SatPulse does two kinds of logging: it logs through systemd,
-and it can also write its own applicaton-specific log files.
+and it can also write its own application-specific log files.
 
 The following keys relate to logging through systemd:
 
@@ -230,14 +230,16 @@ The following keys relate to logging through systemd:
   the default is 30; the status is computed once per second, and a value of 1 will log that status directly; a value
   of 0 will not log the synchronization status
 
-The following keys relate to its own log
+The following keys relate to its own log files:
 
 * `clock` - a boolean saying whether to create a *clock* log; the clock log is in text format and records offsets between the PHC and the GPS;
    it is intended to be convenient for statistical analysis
 * `packet` - a boolean saying whether to create a *packet* log; the packet log is in JSON Lines format and
   records packets received by and sent to the GPS receiver
-* `event` a boolean saying whether to create an  *event* log; the event log is in JSON Lines format and
+* `event` - a boolean saying whether to create an *event* log; the event log is in JSON Lines format and
   records the events input into the synchronization process (pulses and GPS messages)
+* `track` - a boolean saying whether to create a *track* log; the track log is in JSON Lines format and
+  records one trackpoint per navigation epoch
 * `dir` - a string giving the directory in which to write log files; this defaults to `/var/log/satpulse`
 
 ## `http` table array
@@ -381,6 +383,8 @@ The following keys may be specified:
 * `ntrip.mountpoint` - a string giving the caster mountpoint to use; this key is required
 * `ntrip.username` - a string giving the user name for Ntrip basic authentication
 * `ntrip.password` - a string giving the password for Ntrip basic authentication
+* `ntrip.nmeaSend` - a boolean saying whether SatPulse should send the receiver's position to the caster as NMEA GGA; this is needed by Virtual Reference Station casters before they will stream corrections; when true, SatPulse uploads the receiver's current position after connecting and re-uploads it periodically (see `ntrip.nmeaSendInterval`); the default is false
+* `ntrip.nmeaSendInterval` - a number giving the interval in seconds between GGA uploads when `ntrip.nmeaSend` is true; a value of 0 means upload only once per connection; the default is 5
 
 Example
 
@@ -416,11 +420,15 @@ protocol = "RTCM"
 
 The `stream.push` table array allows streams of packets from the GPS receiver to be sent to network endpoints.
 Each `[[stream.push]]` table specifies one endpoint.
-Currently the only kind of endpoint is Ntrip: SatPulse acts as an Ntrip server, sending to an Ntrip caster.
+Two kinds of endpoint are supported: Ntrip and UDP.
 
-The `[[stream.push]]` table has the following keys:
+The `[[stream.push]]` table can have the following key:
 
-* `protocol` - a string giving the packet protocol to forward; recognized values are `"RTCM"`, `"NMEA"`, `"UBX"`, `"CASBIN"`, `"ASBIN"`, `"SDBP"`, `"UNCB"`, `"UNCA"`, `"NOVB"` and `"NOVA"`; the receiver must output packets using this protocol; the default is `"RTCM"`
+* `protocol` - a string giving the packet protocol to forward; recognized values are `"RTCM"`, `"NMEA"`, `"UBX"`, `"CASBIN"`, `"ASBIN"`, `"SDBP"`, `"UNCB"`, `"UNCA"`, `"NOVB"` and `"NOVA"`; the receiver must output packets using this protocol
+
+With an Ntrip endpoint, SatPulse acts as an Ntrip server, sending to an Ntrip caster.
+The following keys may be specified:
+
 * `ntrip.address` - a string giving the address of the remote Ntrip caster, in the form *host* or *host*`:`*port*; when the port is omitted, the default is 2101; this key is required
 * `ntrip.mountpoint` - a string giving the mountpoint to push to on the remote caster; this key is required and must be a single URL path component
 * `ntrip.password` - a string giving the password for uploading to the remote caster; this key is required
@@ -428,9 +436,10 @@ The `[[stream.push]]` table has the following keys:
 * `ntrip.bitrate` - an integer giving the bitrate sent to the remote caster; the default is the `bitrate` key in the top-level `ntrip` table
 * `ntrip.msm7to4` - a boolean saying whether MSM7 RTCM packets should be converted to MSM4 before being pushed; non-MSM7 packets are forwarded unchanged; this can be used only when `protocol` is `RTCM`; the default is false
 
+For Ntrip endpoints, `protocol` defaults to `"RTCM"`.
 When the protocol is `RTCM`, the source table information sent to the remote caster uses the fields from the `ntrip` table together with the `ntrip.description`, `ntrip.bitrate`, and `ntrip.msm7to4` keys from the push entry.
 
-Example
+Example using Ntrip
 
 ```
 [ntrip]
@@ -441,6 +450,18 @@ ntrip.address = "caster.example.com"
 ntrip.mountpoint = "BKK"
 ntrip.password = "secret"
 ntrip.description = "Bangkok"
+```
+
+With a UDP endpoint, SatPulse acts as a UDP client, sending packets to a UDP address.
+The following key must be specified:
+
+* `udp.address` - a string giving the UDP destination, in the form *host*`:`*port*
+
+Example using UDP
+
+```
+[[stream.push]]
+udp.address = "127.0.0.1:10110"
 ```
 
 ## `sync` table

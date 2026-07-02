@@ -40,8 +40,11 @@ class SmokeContext(Protocol):
     ntp_log: str
     caster_capture: str
     caster_log: str
+    udp_capture: str
+    udp_log: str
     satpulsetool: str
     serial_writes: str
+    source_log: str
     pull_source_log: str
 
     @property
@@ -108,11 +111,22 @@ def http_get(url: str, timeout: float = 2.0, auth: Auth | None = None) -> tuple[
 # --- HTTP endpoint checks ---------------------------------------------------
 
 
-def check_position(ctx: SmokeContext) -> JsonObject:
+def _http_url(ctx: SmokeContext, path: str, port: int | None) -> str:
+    """URL for an HTTP check: the primary endpoint, or an explicit port.
+
+    A scenario with multiple [[http]] entries passes port to target a
+    secondary endpoint; the default reuses the primary one.
+    """
+    if port is None:
+        return ctx.http_url(path)
+    return f"http://127.0.0.1:{port}{path}"
+
+
+def check_position(ctx: SmokeContext, port: int | None = None) -> JsonObject:
     """/position eventually returns position JSON with a latitude."""
 
     def attempt() -> JsonObject | None:
-        status, body = http_get(ctx.http_url("/position"))
+        status, body = http_get(_http_url(ctx, "/position", port))
         if status == 200 and body:
             return cast(JsonObject, json.loads(body))
         return None
@@ -123,11 +137,11 @@ def check_position(ctx: SmokeContext) -> JsonObject:
     return pos
 
 
-def check_metrics(ctx: SmokeContext, expect: Iterable[str] = ()) -> str:
+def check_metrics(ctx: SmokeContext, expect: Iterable[str] = (), port: int | None = None) -> str:
     """/metrics returns Prometheus text containing the expected metric names."""
 
     def attempt() -> str | None:
-        status, body = http_get(ctx.http_url("/metrics"))
+        status, body = http_get(_http_url(ctx, "/metrics", port))
         if status != 200:
             return None
         text = body.decode("utf-8", "replace")
@@ -140,11 +154,11 @@ def check_metrics(ctx: SmokeContext, expect: Iterable[str] = ()) -> str:
     return text
 
 
-def check_html(ctx: SmokeContext, path: str = "/") -> bytes:
+def check_html(ctx: SmokeContext, path: str = "/", port: int | None = None) -> bytes:
     """An HTTP path returns 200 and looks like HTML."""
 
     def attempt() -> bytes | None:
-        status, body = http_get(ctx.http_url(path))
+        status, body = http_get(_http_url(ctx, path, port))
         if status == 200 and b"<html" in body.lower():
             return body
         return None
@@ -154,9 +168,9 @@ def check_html(ctx: SmokeContext, path: str = "/") -> bytes:
     return body
 
 
-def check_status(ctx: SmokeContext, path: str, want: int) -> None:
+def check_status(ctx: SmokeContext, path: str, want: int, port: int | None = None) -> None:
     """An HTTP path returns the wanted status code."""
-    status, _ = http_get(ctx.http_url(path))
+    status, _ = http_get(_http_url(ctx, path, port))
     assert status == want, f"{path} expected {want}, got {status}"
 
 
@@ -328,6 +342,31 @@ def log_packets(path: str, tag: str | None = None) -> list[Packet]:
     return out
 
 
+def log_packet_data(path: str) -> list[bytes]:
+    """Input packet data from a JSONL packet log, without protocol filtering."""
+    out: list[bytes] = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = cast(JsonObject, json.loads(line))
+            except json.JSONDecodeError:
+                continue
+            if e.get("out"):
+                continue
+            data = packet_data(e)
+            if data is not None:
+                out.append(data)
+    return out
+
+
+def log_packet_bytes(path: str) -> bytes:
+    """Input packet bytes from a JSONL packet log, without protocol filtering."""
+    return b"".join(log_packet_data(path))
+
+
 def scan_packets(ctx: SmokeContext, path: str, tag: str | None = None) -> list[Packet]:
     """Packets that `satpulsetool scan` finds in a raw byte-stream file.
 
@@ -373,3 +412,17 @@ def packet_data(e: JsonObject) -> bytes | None:
     if isinstance(s, str):
         return s.encode("latin1")
     return None
+
+
+def is_contiguous_sublist(whole: list[bytes], part: list[bytes]) -> bool:
+    """True if the non-empty part appears as a contiguous run within whole.
+
+    An empty part returns False: a real Ntrip peer joining a live stream
+    mid-flight relays a contiguous window of the source, byte-for-byte. An
+    interop check wants that non-empty window to match the source, not a
+    vacuous empty match.
+    """
+    n = len(part)
+    if n == 0:
+        return False
+    return any(whole[i:i + n] == part for i in range(len(whole) - n + 1))

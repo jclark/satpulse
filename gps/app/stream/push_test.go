@@ -1,8 +1,10 @@
 package stream
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
@@ -24,6 +26,23 @@ type fakeDest struct {
 	mu      sync.Mutex
 	servers []net.Conn
 	next    func(ctx context.Context) (net.Conn, error)
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func (d *fakeDest) Connect(ctx context.Context) (net.Conn, error) {
@@ -82,9 +101,36 @@ func runPush(t *testing.T, ctx context.Context, dest Destination,
 		close(bcastDone)
 	}()
 	pushDone := make(chan error, 1)
-	push := NewPush()
+	push := NewPush(dest, testLogger(), pktTag, false)
 	go func() {
-		pushDone <- push.Run(ctx, testLogger(), b, dest, pktTag, false, onState)
+		pushDone <- push.Run(ctx, b, onState)
+	}()
+	var closeOnce sync.Once
+	closeInput := func() { closeOnce.Do(func() { close(pktCh) }) }
+	wait := func() error {
+		err := <-pushDone
+		closeInput()
+		b.Close()
+		<-bcastDone
+		return err
+	}
+	return pktCh, closeInput, wait
+}
+
+func runUDPPush(t *testing.T, ctx context.Context, addr string,
+	pktTag gpsprot.Tag) (chan<- scan.Packet, func(), func() error) {
+	t.Helper()
+	pktCh := make(chan scan.Packet)
+	b := bcast.New((<-chan scan.Packet)(pktCh))
+	bcastDone := make(chan struct{})
+	go func() {
+		b.Run(ctx, testLogger())
+		close(bcastDone)
+	}()
+	pushDone := make(chan error, 1)
+	sink := NewUDPSink(addr, testLogger(), pktTag)
+	go func() {
+		pushDone <- sink.Run(ctx, b)
 	}()
 	var closeOnce sync.Once
 	closeInput := func() { closeOnce.Do(func() { close(pktCh) }) }
@@ -114,6 +160,125 @@ func readAllAvailable(r net.Conn, n int, timeout time.Duration) []byte {
 	return buf[:got]
 }
 
+func readUDPAvailable(t *testing.T, conn *net.UDPConn, timeout time.Duration) ([]byte, bool) {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	buf := make([]byte, 4096)
+	n, err := conn.Read(buf)
+	if err != nil {
+		if e, ok := err.(net.Error); ok && e.Timeout() {
+			return nil, false
+		}
+		t.Fatalf("Read: %v", err)
+	}
+	return buf[:n], true
+}
+
+func readUDP(t *testing.T, conn *net.UDPConn, timeout time.Duration) []byte {
+	t.Helper()
+	buf, ok := readUDPAvailable(t, conn, timeout)
+	if !ok {
+		t.Fatal("timed out waiting for UDP packet")
+	}
+	return buf
+}
+
+func waitUDPPushReady(t *testing.T, pktCh chan<- scan.Packet, conn *net.UDPConn, pkt scan.Packet) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		pktCh <- pkt
+		if got, ok := readUDPAvailable(t, conn, 20*time.Millisecond); ok && string(got) == pkt.Data {
+			return
+		}
+	}
+	t.Fatal("timed out waiting for UDP push to subscribe")
+}
+
+func startUDPQueueForTest(t *testing.T, sink *UDPSink, writerCh chan scan.Packet) chan<- scan.Packet {
+	t.Helper()
+	pktCh := make(chan scan.Packet)
+	packets := bcast.New((<-chan scan.Packet)(pktCh))
+	bCtx, bCancel := context.WithCancel(context.Background())
+	bcastDone := make(chan struct{})
+	go func() {
+		packets.Run(bCtx, testLogger())
+		close(bcastDone)
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	readyCh := make(chan struct{})
+	go func() {
+		sink.queue(ctx, cancel, packets, writerCh, readyCh)
+		close(done)
+	}()
+	<-readyCh
+	waitUDPQueueReady(t, pktCh, writerCh)
+	t.Cleanup(func() {
+		close(pktCh)
+		packets.Close()
+		bCancel()
+		<-done
+		<-bcastDone
+	})
+	return pktCh
+}
+
+func waitUDPQueueReady(t *testing.T, pktCh chan<- scan.Packet, writerCh <-chan scan.Packet) {
+	t.Helper()
+	ready := scan.Packet{Data: "ready"}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		pktCh <- ready
+		select {
+		case got, ok := <-writerCh:
+			if !ok {
+				t.Fatal("writer channel closed while waiting for ready packet")
+			}
+			if got.Data == ready.Data {
+				return
+			}
+			t.Fatalf("ready packet = %q, want %q", got.Data, ready.Data)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	t.Fatal("timed out waiting for UDP queue subscription")
+}
+
+func drainUDPQueueUntil(t *testing.T, writerCh <-chan scan.Packet, data string) []scan.Packet {
+	t.Helper()
+	var got []scan.Packet
+	timeout := time.After(time.Second)
+	for {
+		select {
+		case pkt, ok := <-writerCh:
+			if !ok {
+				t.Fatal("writer channel closed while draining UDP queue")
+			}
+			if pkt.Data == data {
+				return got
+			}
+			got = append(got, pkt)
+		case <-timeout:
+			t.Fatalf("timed out waiting for %q after %d packets", data, len(got))
+		}
+	}
+}
+
+func waitLogContains(t *testing.T, b *lockedBuffer, s string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(b.String(), s) {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for log containing %q; got %q", s, b.String())
+}
+
 func TestPushPacketsFlowToDestination(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -130,6 +295,168 @@ func TestPushPacketsFlowToDestination(t *testing.T) {
 	cancel()
 	if err := wait(); err != nil && !errors.Is(err, context.Canceled) {
 		t.Errorf("Run: %v", err)
+	}
+}
+
+func TestUDPPushNoFilterSendsEverything(t *testing.T) {
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatalf("ListenUDP: %v", err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pktCh, _, wait := runUDPPush(t, ctx, conn.LocalAddr().String(), gpsprot.EmptyTag)
+	waitUDPPushReady(t, pktCh, conn, scan.Packet{Data: "ready"})
+	raw := scan.Packet{Data: "raw bytes"}
+	bad := scan.Packet{Format: rtcm.PacketFormat, Data: string(makeRTCM(1005, 16))}
+	pktCh <- raw
+	if got := readUDP(t, conn, time.Second); string(got) != raw.Data {
+		t.Errorf("raw packet = %q, want %q", got, raw.Data)
+	}
+	pktCh <- bad
+	if got := readUDP(t, conn, time.Second); string(got) != bad.Data {
+		t.Errorf("checksum-invalid packet = %x, want %x", got, []byte(bad.Data))
+	}
+	cancel()
+	if err := wait(); err != nil && !errors.Is(err, context.Canceled) {
+		t.Errorf("Run: %v", err)
+	}
+}
+
+func TestUDPPushFilterRequiresTagAndValidChecksum(t *testing.T) {
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatalf("ListenUDP: %v", err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pktCh, _, wait := runUDPPush(t, ctx, conn.LocalAddr().String(), rtcm.Tag)
+	ready := scan.Packet{Format: rtcm.PacketFormat, Data: string(makeRTCM(1005, 16)), ChecksumValid: true}
+	waitUDPPushReady(t, pktCh, conn, ready)
+	raw := scan.Packet{Data: "raw bytes"}
+	bad := scan.Packet{Format: rtcm.PacketFormat, Data: string(makeRTCM(1077, 16))}
+	good := scan.Packet{Format: rtcm.PacketFormat, Data: string(makeRTCM(1087, 16)), ChecksumValid: true}
+	pktCh <- raw
+	pktCh <- bad
+	pktCh <- good
+	if got := readUDP(t, conn, time.Second); string(got) != good.Data {
+		t.Errorf("filtered packet = %x, want %x", got, []byte(good.Data))
+	}
+	cancel()
+	if err := wait(); err != nil && !errors.Is(err, context.Canceled) {
+		t.Errorf("Run: %v", err)
+	}
+}
+
+func TestUDPQueueDropsOldestAtMaxLenAndLogs(t *testing.T) {
+	tests := []struct {
+		name string
+		pkt  scan.Packet
+		want []string
+	}{
+		{
+			name: "nil format",
+			pkt:  scan.Packet{Data: "x"},
+			want: []string{"udp push queue full", "tag=\"\"", "msgid=\"\"", "len=1"},
+		},
+		{
+			name: "checksum invalid formatted packet",
+			pkt: scan.Packet{
+				Format: fakePacketFormat{tag: "NMEA", msgID: "GSV"},
+				Data:   "bad",
+			},
+			want: []string{"udp push queue full", "tag=NMEA", "msgid=GSV", "len=3"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logBuf lockedBuffer
+			lg := slog.New(slog.NewTextHandler(&logBuf, nil))
+			sink := NewUDPSink("test:0", lg, gpsprot.EmptyTag)
+			writerCh := make(chan scan.Packet)
+			pktCh := startUDPQueueForTest(t, sink, writerCh)
+			pktCh <- scan.Packet{Data: "block"}
+			const n = pruningQueueMaxLen + 4
+			for range n {
+				pktCh <- tt.pkt
+			}
+			sentinel := scan.Packet{Data: "sentinel"}
+			pktCh <- sentinel
+			waitLogContains(t, &logBuf, "udp push queue full")
+			got := drainUDPQueueUntil(t, writerCh, sentinel.Data)
+			if len(got) >= n+1 {
+				t.Fatalf("queue did not drop under backpressure: got %d packets before sentinel", len(got))
+			}
+			gotLog := logBuf.String()
+			for _, want := range tt.want {
+				if !strings.Contains(gotLog, want) {
+					t.Fatalf("log output %q does not contain %q", gotLog, want)
+				}
+			}
+		})
+	}
+}
+
+func TestUDPQueuePrunesRTCMUnderBackpressure(t *testing.T) {
+	var logBuf lockedBuffer
+	lg := slog.New(slog.NewTextHandler(&logBuf, nil))
+	sink := NewUDPSink("test:0", lg, gpsprot.EmptyTag)
+	writerCh := make(chan scan.Packet)
+	pktCh := startUDPQueueForTest(t, sink, writerCh)
+
+	// Park the writer so every following packet must sit in the pruning
+	// queue.  With the writer blocked, packets can only leave the queue
+	// by being pruned, which makes the test independent of how the
+	// producer and queue goroutines happen to interleave.
+	pktCh <- scan.Packet{Data: "block"}
+
+	// Layout: guard fillers, a burst of same-message-type RTCM packets
+	// (which must collapse to the newest), then enough trailing fillers
+	// to push the queue past its size bound.  The overflow trips the
+	// "queue full" log only after the whole RTCM burst has been
+	// enqueued, so the log is a reliable barrier: once it appears, dedup
+	// has run and we can drain without racing the queue.  The guard
+	// fillers sit at the front so dropOldest discards them rather than
+	// the surviving RTCM packet.
+	const (
+		guard = 8
+		burst = 20
+		// Below pruningQueueMaxLen so the surviving RTCM packet stays
+		// inside the retained window after the guards are dropped.
+		overflow = pruningQueueMaxLen - 4
+	)
+	filler := scan.Packet{Data: "filler"}
+	for range guard {
+		pktCh <- filler
+	}
+	var newest string
+	for i := range burst {
+		pkt := makeRTCM(1005, 10+i)
+		newest = string(pkt)
+		pktCh <- scan.Packet{Format: rtcm.PacketFormat, Data: string(pkt), ChecksumValid: true}
+	}
+	for range overflow {
+		pktCh <- filler
+	}
+	sentinel := scan.Packet{Data: "sentinel"}
+	pktCh <- sentinel
+
+	waitLogContains(t, &logBuf, "udp push queue full")
+	got := drainUDPQueueUntil(t, writerCh, sentinel.Data)
+
+	var rtcmGot []scan.Packet
+	for _, pkt := range got {
+		if pkt.Format != nil {
+			rtcmGot = append(rtcmGot, pkt)
+		}
+	}
+	if len(rtcmGot) != 1 {
+		t.Fatalf("RTCM burst did not collapse under backpressure: %d of %d packets survived", len(rtcmGot), burst)
+	}
+	if rtcmGot[0].Data != newest {
+		t.Fatal("newest RTCM packet did not survive pruning; survivor is a stale packet")
 	}
 }
 

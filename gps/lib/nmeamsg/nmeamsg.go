@@ -1,5 +1,7 @@
 package nmeamsg
 
+import "github.com/jclark/satpulse/gps/lib/ascii"
+
 // SentenceSyntaxFlags represents syntactic properties of an NMEA-like packet.
 type SentenceSyntaxFlags uint32
 
@@ -44,6 +46,10 @@ const (
 // firmware fields, and up to ~340 if the 16 reserved fields are populated
 // in future firmware. We use 400 to allow headroom.
 const SentenceMaxLength = 400
+
+// MaxGGANumSats is the largest satellite count representable by GGA field 7's
+// two decimal digits.
+const MaxGGANumSats = 99
 
 // Composite flags (defined after iota sequence)
 const (
@@ -112,19 +118,14 @@ func CheckSyntax(data string) SentenceSyntaxFlags {
 	if data[asteriskIndex] != '*' {
 		return 0
 	}
-	if !isUpperHexDigit(data[asteriskIndex+1]) || !isUpperHexDigit(data[asteriskIndex+2]) {
+	if !ascii.IsUpperHexDigit(data[asteriskIndex+1]) || !ascii.IsUpperHexDigit(data[asteriskIndex+2]) {
 		return 0
 	}
 	i := 1
-Loop:
 	for ; i < asteriskIndex; i++ {
-		switch data[i] {
-		case 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-			// Valid address character
-			// do nothing
-		default:
-			break Loop
+		// Address characters are uppercase letters and digits.
+		if !ascii.IsUpper(data[i]) && !ascii.IsDigit(data[i]) {
+			break
 		}
 	}
 	if i == asteriskIndex || data[i] == ',' {
@@ -150,11 +151,11 @@ Loop:
 		case '^':
 			flags &^= SentenceNoCarets
 			// This is safe because we already checked that there are at least 3 characters after the asterisk
-			if !isUpperHexDigit(data[i+1]) || !isUpperHexDigit(data[i+2]) {
+			if !ascii.IsUpperHexDigit(data[i+1]) || !ascii.IsUpperHexDigit(data[i+2]) {
 				flags &^= SentenceValidCaretEscaping
 			}
 		default:
-			if ch < 0x20 || ch > 0x7E { // Printable ASCII range
+			if !ascii.IsPrint(ch) {
 				return 0
 			}
 		}
@@ -183,17 +184,6 @@ Loop:
 		}
 	}
 	return flags
-}
-
-func isUpperHexDigit(b byte) bool {
-	if '0' <= b && b <= '9' {
-		return true
-	}
-	// NMEA requires checksum to use upper-case hex digits
-	if 'A' <= b && b <= 'F' {
-		return true
-	}
-	return false
 }
 
 func Checksum(data []byte) byte {

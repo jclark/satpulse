@@ -12,6 +12,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
@@ -173,7 +174,7 @@ func lcFirst(s string) string {
 	if s == "" {
 		return s
 	}
-	return string(s[0]|0x20) + s[1:]
+	return string(ascii.ToLower(s[0])) + s[1:]
 }
 
 func utcTime(year int, month time.Month, day, hour, min, sec int) opt.Val[ptime.UTCTime] {

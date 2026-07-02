@@ -22,6 +22,13 @@ python3 smoketest/run.py -j 1        # run serially
 python3 smoketest/run.py --sudo     # use sudo -n for root-required scenarios
 ```
 
+On macOS and FreeBSD, build with `./unix-build.sh` instead of `make`; the
+runner uses `out/<goos>_<goarch>/`, matching the build script.
+
+When `GOOS` or `GOARCH` is set, the runner uses those values to choose the
+binary directory. For example, `GOOS=freebsd GOARCH=amd64 python3
+smoketest/run.py --list` checks `out/freebsd_amd64/`.
+
 No third-party Python packages are required (standard library only).
 
 Output is one line per scenario:
@@ -49,13 +56,14 @@ For each scenario the runner (`run.py`):
 2. renders the scenario's `<name>.toml.in` template, substituting the
    `SATPULSE_TEST_*` resource variables;
 3. creates the serial input transport (a FIFO by default, or a pty for a
-   scenario that needs to disconnect) and starts `satpulsed`;
-4. starts a single `satpulsetool pack --realtime <factor>` replay of the
+   scenario that needs to disconnect) and starts any required fake peers;
+4. starts `satpulsed`;
+5. starts a single `satpulsetool pack --realtime <factor>` replay of the
    scenario's packet log into that input, in the background;
-5. calls the scenario's `run(ctx)`, which performs its checks while the
+6. calls the scenario's `run(ctx)`, which performs its checks while the
    replay flows (live checks such as SSE and Ntrip) and after it
    finishes (`ctx.wait_replay()`, then log and error checks);
-6. stops `satpulsed` with `SIGINT` and verifies it exits and releases its
+7. stops `satpulsed` with `SIGINT` and verifies it exits and releases its
    ports -- except a self-shutdown scenario, which makes the daemon exit on
    its own (see Transports) and verifies that without sending a signal.
 
@@ -82,15 +90,15 @@ The serial input is one of two transports, chosen per scenario with the
   as a USB serial receiver) and full-duplex. Closing the master is a genuine
   disconnect: the slave reads fail and the scan worker exits. Being writable,
   it can also carry the daemon's own writes (the master is drained, and can be
-  captured), which a read-only FIFO cannot -- this is what the `stream/pull`
-  scenario uses.
+  captured), which a read-only FIFO cannot -- this is what the `stream/pull-*`
+  scenarios use.
 
 A scenario whose daemon should exit on its own when the input disappears sets
 `SELF_SHUTDOWN = True`. That requires a pty (only a pty can disconnect); the
 runner then closes the master, expects the daemon to exit with no signal and a
 restartable failure code, and reports a hang (goroutine dump via SIGQUIT) as a
-failure. Using a pty does **not** imply `SELF_SHUTDOWN`: the `stream/pull`
-write-path scenario uses a pty and still stops via the normal `SIGINT` path.
+failure. Using a pty does **not** imply `SELF_SHUTDOWN`: the `stream/pull-*`
+write-path scenarios use a pty and still stop via the normal `SIGINT` path.
 
 ## Layout
 
@@ -151,8 +159,25 @@ make update-deps
 - `http/full` -- default HTTP endpoint: `/position`, `/metrics`, GUI HTML, SSE.
 - `http/disabled` -- HTTP endpoint with GUI and metrics off, position
   only; also guards clean shutdown for GUI-disabled endpoints.
-- `ntrip/basic` -- Ntrip caster source table and RTCM streaming.
+- `http/multiple` -- two `[[http]]` endpoints with independent config (a full
+  GUI endpoint and a position-only one); both serve concurrently and each
+  reflects its own table.
+- `ntrip/basic` -- Ntrip caster source table and RTCM streaming; the source
+  table's shared STR fields show their defaults.
 - `ntrip/auth` -- Ntrip caster with an authenticated mountpoint.
+- `ntrip/anyuser` -- Ntrip caster mountpoint with `auth.anyUser`: any valid
+  top-level user streams, while unauthenticated and wrong-credential requests
+  are rejected.
+- `ntrip/metadata` -- Ntrip caster source-table metadata: shared STR-record
+  overrides (network, country, generator, lat/lon, bitrate) apply to every
+  mountpoint, and per-mountpoint description and bitrate override or fall back
+  to them.
+- `ntrip/msm7to4` -- Ntrip caster mountpoint with `msm7to4`: the receiver feed's
+  RTCM MSM7 observations are delivered to the client as MSM4, with no MSM7
+  message passing through.
+- `ntrip/rtklib` -- Ntrip caster interop with a real RTKLIB `str2str` client: it
+  connects as an Ntrip client and receives a contiguous window of the caster's
+  RTCM, relayed byte-for-byte. Skipped when `str2str` is not on PATH.
 - `ntp/sock` -- chrony SOCK refclock: a pure 1 Hz RMC stream drives serial timing
   mode, and the samples are well-formed, consistently timestamped, and carry
   the correct GPS time.
@@ -162,31 +187,54 @@ make update-deps
   `--sudo`; the SHM reader helper also needs the system `libatomic` library.
 - `proxy/tcp` -- read-only TCP serial proxies with protocol filters.
 - `proxy/socket` -- read-only Unix-socket serial proxy with a protocol filter.
-- `stream/push` -- Ntrip push: the daemon forwards the log's RTCM to a remote
-  caster (the pushed stream matches the source log's RTCM), and a second push
-  entry with a wrong password is permanently rejected, so the daemon gives up
-  on it rather than reconnecting forever.
-- `stream/pull` -- Ntrip pull: the daemon pulls RTCM MSM4 corrections from a
+- `stream/push-ntrip` -- Ntrip push: the daemon forwards the log's RTCM to a
+  remote caster (the pushed stream matches the source log's RTCM), and a second
+  push entry with a wrong password is permanently rejected, so the daemon gives
+  up on it rather than reconnecting forever.
+- `stream/push-udp` -- UDP push: the daemon forwards the log's packet bytes to
+  a remote UDP receiver.
+- `stream/pull-ntrip` -- Ntrip pull: the daemon pulls RTCM MSM4 corrections from a
   fake correction source and writes them back to the receiver over the serial
-  port; the captured serial writes match the source's RTCM. The only scenario
-  that captures the daemon's serial writes (`CAPTURE_WRITES`) and uses the pty
-  as a write path rather than to model a disconnect, so it stops via `SIGINT`.
+  port; the captured serial writes match the source's RTCM. Captures the
+  daemon's serial writes (`CAPTURE_WRITES`) and uses the pty as a write path
+  rather than to model a disconnect, so it stops via `SIGINT`.
+- `stream/pull-tcp` -- plain TCP pull: the same write path as `stream/pull-ntrip`,
+  but the `[stream.pull.tcp]` client connects to a raw TCP source that streams
+  RTCM with no Ntrip handshake, covering the non-Ntrip pull transport.
+- `stream/pull-rtklib` -- the same write path as `stream/pull-ntrip`, but the
+  correction source is a real RTKLIB `str2str` Ntrip caster instead of
+  `fakesource.py`. The daemon writes back the contiguous window of source RTCM
+  it pulls. Skipped when `str2str` is not on PATH.
+- `stream/nmea-send` -- Ntrip NMEA send pull: the fake correction source waits for a
+  post-handshake GGA before streaming RTCM corrections, the daemon re-sends GGA on
+  the `nmeaSendInterval` (the source records more than one), and the daemon's serial
+  writes still match the source RTCM.
 - `shutdown/serial-loss` -- the serial input disappears (a pty whose master is
   closed mid-run) and the daemon must shut down on its own and exit with a
   restartable code, with an HTTP endpoint configured. Guards the scan-worker-
   exit -> daemon-shutdown path (issue #172); the only scenario using the pty
   transport and `SELF_SHUTDOWN`.
 
-The Ntrip caster scenarios use `satpulsetool ntrip` as the client. The
-`stream/push` scenario uses the built-in Ntrip fake caster
+Most Ntrip caster scenarios use `satpulsetool ntrip` as the client. The
+`stream/push-ntrip` scenario uses the built-in Ntrip fake caster
 (`scenarios/ntrip/fakecaster.py`) as the remote peer, so it needs no external
 dependency: it accepts the daemon's Ntrip v1 SOURCE feed and captures the
-payload, which the check scans back into RTCM. The `stream/pull` scenario uses
-the matching fake correction source (`scenarios/stream/fakesource.py`): it
-answers the daemon's Ntrip v1 GET and streams an RTCM log, which the daemon
-writes back to the receiver over the pty write path that a read-only FIFO
-cannot provide. A real-peer variant using `str2str` from RTKLIB could be added
-later for either.
+payload, which the check scans back into RTCM. The `stream/push-udp` scenario
+uses the built-in UDP receiver (`scenarios/stream/fakeudp.py`) as its remote
+peer. The `stream/pull-{ntrip,tcp,nmea-send}` scenarios use the matching fake
+correction source (`scenarios/stream/fakesource.py`): for `pull-ntrip` it
+answers the daemon's Ntrip v1 GET and streams an RTCM log; for `pull-tcp`
+(`--tcp`) it skips the handshake and streams as soon as the daemon connects. The
+daemon writes the corrections back to the receiver over the pty write path that
+a read-only FIFO cannot provide.
+
+The `ntrip/rtklib` and `stream/pull-rtklib` scenarios instead use a real RTKLIB
+`str2str` as the peer (client and Ntrip caster respectively), for interop
+coverage. They declare `REQUIRES = ("str2str",)` and are skipped when `str2str`
+is not on PATH, so they add no hard dependency. Because a real Ntrip peer joins
+a live stream mid-flight, it relays a contiguous window of the RTCM rather than
+the whole log, so these checks match a non-empty contiguous run of the source
+rather than the exact stream the fake peers guarantee.
 
 ## Installed systemd environment
 

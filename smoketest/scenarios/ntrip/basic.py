@@ -8,6 +8,9 @@ FACTOR = 10
 
 
 def run(ctx: common.SmokeContext) -> None:
-    ntrip.check_sourcetable(ctx, "RTCM")
+    rec = ntrip.sourcetable_record(ctx, "RTCM")
+    # Unset shared fields fall back to their documented defaults.
+    assert rec[ntrip.STR_NETWORK] == "Misc", rec
+    assert rec[ntrip.STR_COUNTRY] == "XXX", rec
     ntrip.check_stream(ctx, "RTCM")
     ctx.wait_replay()

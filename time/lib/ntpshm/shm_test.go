@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package ntpshm
 
@@ -27,10 +27,10 @@ func TestWriteRoundTrip(t *testing.T) {
 		if s.Count != count+2 {
 			t.Fatalf("count = %d, want %d", s.Count, count+2)
 		}
-		if s.ClockTimeStampSec != clock.Unix() || s.ClockTimeStampNSec != int32(clock.Nanosecond()) || s.ClockTimeStampUSec != int32(clock.Nanosecond()/1000) {
+		if int64(s.ClockTimeStampSec) != clock.Unix() || s.ClockTimeStampNSec != int32(clock.Nanosecond()) || s.ClockTimeStampUSec != int32(clock.Nanosecond()/1000) {
 			t.Fatalf("clock timestamp fields do not match %v: %+v", clock, s)
 		}
-		if s.ReceiveTimeStampSec != recv.Unix() || s.ReceiveTimeStampNSec != int32(recv.Nanosecond()) || s.ReceiveTimeStampUSec != int32(recv.Nanosecond()/1000) {
+		if int64(s.ReceiveTimeStampSec) != recv.Unix() || s.ReceiveTimeStampNSec != int32(recv.Nanosecond()) || s.ReceiveTimeStampUSec != int32(recv.Nanosecond()/1000) {
 			t.Fatalf("receive timestamp fields do not match %v: %+v", recv, s)
 		}
 		if s.Leap != 1 || s.Precision != int32(precision) {
@@ -75,10 +75,10 @@ func TestAttachExisting(t *testing.T) {
 	recv := time.Unix(1_710_000_001, 444_555_666)
 	w1.SetPrecision(-17)
 	w1.Write(clock, recv, ptime.LeapSecondNegative)
-	if w2.w.t.ClockTimeStampSec != clock.Unix() || w2.w.t.ClockTimeStampNSec != int32(clock.Nanosecond()) {
+	if int64(w2.w.t.ClockTimeStampSec) != clock.Unix() || w2.w.t.ClockTimeStampNSec != int32(clock.Nanosecond()) {
 		t.Fatalf("second attachment did not observe clock write: %+v", *w2.w.t)
 	}
-	if w2.w.t.ReceiveTimeStampSec != recv.Unix() || w2.w.t.ReceiveTimeStampNSec != int32(recv.Nanosecond()) {
+	if int64(w2.w.t.ReceiveTimeStampSec) != recv.Unix() || w2.w.t.ReceiveTimeStampNSec != int32(recv.Nanosecond()) {
 		t.Fatalf("second attachment did not observe receive write: %+v", *w2.w.t)
 	}
 	if w2.w.t.Leap != 2 || w2.w.t.Precision != -17 || w2.w.t.Valid != 1 {

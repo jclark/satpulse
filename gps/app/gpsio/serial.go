@@ -33,7 +33,7 @@ type SerialConn struct {
 }
 
 // ioFile is the minimal file-like interface SerialConn needs.
-// Both *term.Term and *pollingFile satisfy it.
+// *term.Term, *term.File, and *pollingFile satisfy it.
 // TTY-specific operations (speed change, flush, restore, error counts)
 // are performed via type assertion to *term.Term.
 type ioFile interface {
@@ -57,11 +57,15 @@ func OpenSerial(path string, speed int) (*SerialConn, int, error) {
 	if !errors.Is(err, term.ErrNotATTY) {
 		return nil, 0, err
 	}
-	f, kind, perr := term.OpenPolling(path)
+	pf, wf, kind, perr := term.OpenFallback(path, readTimeout)
 	if perr != nil {
 		return nil, 0, fmt.Errorf("%s and %w", perr, term.ErrNotATTY)
 	}
-	return newSerialConn(newPollingFile(f, readTimeout), kind), 0, nil
+	var f ioFile = wf
+	if pf != nil {
+		f = newPollingFile(pf, readTimeout)
+	}
+	return newSerialConn(f, kind), 0, nil
 }
 
 func newSerialConn(f ioFile, kind term.DevKind) *SerialConn {

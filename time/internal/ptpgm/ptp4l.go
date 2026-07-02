@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/jclark/satpulse/time/lib/pmc"
-	"golang.org/x/sys/unix"
 )
 
 // Time to send and receive a PTP management message to/from ptp4l.
@@ -33,7 +33,7 @@ func PTP4LWorker(client *pmc.Client, reqCh <-chan GrandmasterUpdateRequest, lg *
 		client.T.Conn.SetDeadline(tStart.Add(ptp4lTimeout))
 		err := sendRecv(client, props)
 		if err != nil {
-			if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ECONNREFUSED) {
+			if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
 				if sockOK {
 					lg.Info("the ptp4l management socket is not ready", "path", client.T.RemoteAddr)
 					sockOK = false

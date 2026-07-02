@@ -13,6 +13,7 @@ import (
 	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/internal/sdbp"
 	"github.com/jclark/satpulse/gps/internal/sino"
+	"github.com/jclark/satpulse/gps/internal/spartn"
 	"github.com/jclark/satpulse/gps/internal/ubx"
 	"github.com/jclark/satpulse/gps/internal/unc"
 )
@@ -40,18 +41,23 @@ const (
 
 // Protocol tags for external use
 const (
-	TagUBX           = ubx.Tag
-	TagNMEA          = nmea.Tag
-	TagRTCM          = rtcm.Tag
-	TagCASICBin      = casic.Tag
-	TagAllystarBin   = as.Tag
-	TagSDBP          = sdbp.Tag
-	TagUnicoreBin    = unc.TagBinary
-	TagUnicoreAscii  = unc.TagAscii
-	TagNovAtelBin    = nov.TagBinary
-	TagNovAtelAscii  = nov.TagAscii
+	TagUBX                = ubx.Tag
+	TagNMEA               = nmea.Tag
+	TagRTCM               = rtcm.Tag
+	TagSPARTN             = spartn.Tag
+	TagCASICBin           = casic.Tag
+	TagAllystarBin        = as.Tag
+	TagSDBP               = sdbp.Tag
+	TagUnicoreBin         = unc.TagBinary
+	TagUnicoreAscii       = unc.TagAscii
+	TagNovAtelBin         = nov.TagBinary
+	TagNovAtelAscii       = nov.TagAscii
 	TagNovAtelAbbrevAscii = nov.TagAbbrevAscii
 )
+
+// NMEAPacketFormat is the NMEA packet format, re-exported for callers that
+// need to create NMEA packets without depending on gps/internal/nmea directly.
+var NMEAPacketFormat = nmea.PacketFormat
 
 // RTCMPacketFormat is the RTCM packet format, re-exported for
 // callers that need to scan RTCM without depending on
@@ -112,6 +118,15 @@ func CreatePacketFormats(vendor Vendor) []gpsprot.PacketFormat {
 	return formats
 }
 
+// CreateCorrectionFormats returns the packet formats carried by a GNSS
+// correction stream from a network source (Ntrip caster or TCP), as opposed
+// to CreatePacketFormats, which autodetects the output of a connected
+// receiver. SPARTN is included here, but is intentionally absent from the
+// receiver autodetect set because its preamble is the common ASCII byte 's'.
+func CreateCorrectionFormats() []gpsprot.PacketFormat {
+	return []gpsprot.PacketFormat{rtcm.PacketFormat, spartn.PacketFormat}
+}
+
 var vendorMap = func() map[string]Vendor {
 	m := make(map[string]Vendor)
 	for i, name := range vendorNames {
@@ -162,16 +177,16 @@ func CreatePacketProcessors(vendor Vendor) map[gpsprot.Tag]gpsprot.PacketProcess
 	nmeaPP := nmea.NewPacketProcessor(mgr)
 	nmeaPP.AddExtHandler(quectel.NewHandler())
 	procs := map[gpsprot.Tag]gpsprot.PacketProcessor{
-		ubx.Tag:       ubx.NewPacketProcessor(mgr),
-		casic.Tag:     casic.NewPacketProcessor(mgr),
-		as.Tag:        as.NewPacketProcessor(mgr),
-		sdbp.Tag:      sdbp.NewPacketProcessor(mgr),
-		nmea.Tag:      nmeaPP,
-		rtcm.Tag:      rtcm.NewPacketProcessor(),
-		unc.TagBinary: unc.NewBinPacketProcessor(mgr),
-		unc.TagAscii:  unc.NewAsciiPacketProcessor(mgr),
-		nov.TagBinary: nov.NewBinPacketProcessor(mgr),
-		nov.TagAscii:  nov.NewAsciiPacketProcessor(mgr),
+		ubx.Tag:            ubx.NewPacketProcessor(mgr),
+		casic.Tag:          casic.NewPacketProcessor(mgr),
+		as.Tag:             as.NewPacketProcessor(mgr),
+		sdbp.Tag:           sdbp.NewPacketProcessor(mgr),
+		nmea.Tag:           nmeaPP,
+		rtcm.Tag:           rtcm.NewPacketProcessor(),
+		unc.TagBinary:      unc.NewBinPacketProcessor(mgr),
+		unc.TagAscii:       unc.NewAsciiPacketProcessor(mgr),
+		nov.TagBinary:      nov.NewBinPacketProcessor(mgr),
+		nov.TagAscii:       nov.NewAsciiPacketProcessor(mgr),
 		nov.TagAbbrevAscii: nov.NewAbbrevAsciiPacketProcessor(),
 	}
 	if vendor != VendorUnknown {

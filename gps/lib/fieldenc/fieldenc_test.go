@@ -2,6 +2,7 @@ package fieldenc
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -209,9 +210,9 @@ func TestCanonical(t *testing.T) {
 		},
 		{
 			name:   "signed integers max values",
-			fields: []string{"9223372036854775807", "127", "32767", "2147483647", "9223372036854775807"},
+			fields: []string{fmt.Sprint(math.MaxInt), "127", "32767", "2147483647", "9223372036854775807"},
 			value: SignedIntsStruct{
-				Int:   9223372036854775807,
+				Int:   math.MaxInt,
 				Int8:  127,
 				Int16: 32767,
 				Int32: 2147483647,
@@ -220,9 +221,9 @@ func TestCanonical(t *testing.T) {
 		},
 		{
 			name:   "signed integers min values",
-			fields: []string{"-9223372036854775808", "-128", "-32768", "-2147483648", "-9223372036854775808"},
+			fields: []string{fmt.Sprint(math.MinInt), "-128", "-32768", "-2147483648", "-9223372036854775808"},
 			value: SignedIntsStruct{
-				Int:   -9223372036854775808,
+				Int:   math.MinInt,
 				Int8:  -128,
 				Int16: -32768,
 				Int32: -2147483648,
@@ -231,9 +232,9 @@ func TestCanonical(t *testing.T) {
 		},
 		{
 			name:   "unsigned integers max values",
-			fields: []string{"18446744073709551615", "255", "65535", "4294967295", "18446744073709551615"},
+			fields: []string{fmt.Sprint(uint(math.MaxUint)), "255", "65535", "4294967295", "18446744073709551615"},
 			value: UnsignedIntsStruct{
-				Uint:   18446744073709551615,
+				Uint:   math.MaxUint,
 				Uint8:  255,
 				Uint16: 65535,
 				Uint32: 4294967295,
