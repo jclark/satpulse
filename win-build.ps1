@@ -26,6 +26,8 @@ $git_date = (git log -1 '--format=%cd' '--date=format-local:%Y%m%d').Trim()
 $git_hash = (git log -1 '--format=%h').Trim()
 
 $cmd_version = "$version-pre.$git_date.$git_hash"
+# Refresh the index so unchanged-but-touched files don't show as dirty.
+git update-index -q --refresh *> $null
 git diff-index --quiet HEAD 2>$null
 if ($LASTEXITCODE -ne 0) {
     $cmd_version = "$cmd_version.dirty"
