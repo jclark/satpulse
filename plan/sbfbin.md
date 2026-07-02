@@ -53,29 +53,41 @@ differs from casbin/ubxbin" below):
 
 - `common.go`: `Sync1`/`Sync2` byte constants (`0x24`/`0x40`, i.e. `$@`);
   `HeaderLen`/`PacketMinLen` constants; the `MsgID` type and its
-  `Unpack()` (13-bit block number + 3-bit revision); the embedded
-  `Header` struct (`TOW`/`WNc`/`Rev`); the `Msg` interface (`ID()
-  MsgID`) and the `Chunked` interface plus its `ReadBinChunked`/
-  `WriteBinChunked` drivers -- the binary half of `novmsg`'s `Chunk`
-  abstraction, copied here and tweaked (see "Message model" below);
-  `UnknownMsg` fallback; the `regMsg[T, PT]`/`msgMap`/`idNameMap`
-  registry, populated by each family file's `init()`, exactly as in
-  `casbin`/`ubxbin`.
+  `Unpack()` (13-bit block number + 3-bit revision); the `TimeStamp`
+  struct (`TOW`/`WNc`) and its `Epoch()`; the `Params` interface
+  (`BlockNumber() uint16`); the `Block` struct (`Rev`/`TimeStamp`/
+  `Params`) and its `ID()`; the `Chunked` interface plus its
+  `ReadBinChunked`/`WriteBinChunked` drivers -- the binary half of
+  `novmsg`'s `Chunk` abstraction, copied here and tweaked (see "Message
+  model" below); the `UnknownParams` fallback; the `regBlock[T, PT]`/
+  `blockMap`/`idNameMap` registry: each family file's `init()` populates
+  both (mirroring `casbin`/`ubxbin`'s `regMsg`), while `other.go`
+  populates `idNameMap` alone for the undecoded blocks (see below).
 - `crc.go`: table-driven CRC-16/CCITT (poly `0x1021`, seed `0`, no
-  input/output reflection, MSB-first), styled like `gps/lib/novmsg/crc.go`,
-  exposing `CRC16(data []byte) uint16` for both `sbfbin` itself and the
-  packet-format scanner in `gps/internal/septentrio` to share.
-- Entry points: `ParseMsg(packet string) (Msg, error)`,
-  `Serialize(msg Msg) ([]byte, error)`, `PackMsg(mid MsgID, payload []byte)
-  ([]byte, error)`, `Poll(mid MsgID) []byte`, `PacketMsgID[B ~string |
-  ~[]byte](packet B) MsgID` (extracts and masks the ID field without a
-  full parse, mirroring `ubxbin.PacketMsgId`).
+  input/output reflection, MSB-first), table-driven in the style of
+  `gps/lib/novmsg/crc.go` (structure only -- novmsg's is a CRC-32, a
+  different algorithm), exposing `CRC16(data []byte) uint16` for both
+  `sbfbin` itself and the packet-format scanner in
+  `gps/internal/septentrio` to share. (The exact CRC-16/CCITT parameters
+  already exist as `spartnbin`'s unexported, bit-wise `crcMSB`; a fresh
+  table-driven implementation here is warranted rather than
+  exporting/relocating that.)
+- Entry points: `ParseMsg(packet string) (*Block, error)`,
+  `Serialize(b *Block) ([]byte, error)`, `PackMsg(mid MsgID, payload
+  []byte) ([]byte, error)`, `PacketMsgID[B ~string | ~[]byte](packet B)
+  MsgID` (extracts and masks the ID field without a full parse, mirroring
+  `casbin.PacketMsgID` -- same capitalisation and `~` constraint; `ubxbin`
+  spells it `PacketMsgId`, without the tilde). No `Poll`: unlike UBX/CASIC
+  (where `Poll(mid)` emits an empty-payload block to request it), SBF has
+  no binary poll -- output is driven by the ASCII
+  `setSBFOutput`/`exeSBFOnce` commands (a sibling plan's config channel),
+  so an empty SBF block would request nothing.
 - Family files split by SBF group, matching the guide's own section
   numbering: `pvt.go` (PVTCartesian/PVTGeodetic/EndOfPVT/the four Cov
   blocks/DOP), `meas.go` (MeasEpoch/MeasExtra/EndOfMeas), `sat.go`
   (ChannelStatus/SatVisibility), `status.go` (ReceiverStatus/RFStatus/
   QualityInd/GALAuthStatus), `time.go` (ReceiverTime/xPPSOffset),
-  `corr.go` (DiffCorrIn/BaseStation), `other.go` (ReceiverSetup),
+  `corr.go` (DiffCorrIn/BaseStation), `setup.go` (ReceiverSetup),
   and `utc.go` for the three leap-second blocks (GPSUtc/GALUtc/BDSUtc,
   the only nav-message blocks in scope -- see "Blocks excluded" for why
   the rest of the nav-message family is not decoded). Each struct field
@@ -89,13 +101,23 @@ differs from casbin/ubxbin" below):
   methods**: they serialize as their raw numeric code, which is exactly
   what the guide's tables list (the only `String()` in those packages
   is on `MsgID`).
-- **Data-centric, light on methods.** Like `ubxbin`/`casbin`, block
-  structs expose their fields directly and `sbfbin` exports almost no
-  methods. The method surface is limited to interface conformance
-  (`ID()`, `Chunks()`), `MsgID` helpers (`Unpack`/`String`), and a
-  *few* small accessors where a consumer needs a derived value (e.g.
-  `Header.Epoch()`, or pulling a sub-field out of a packed bitfield).
-  Do not add getters/setters that merely wrap ordinary field access.
+- `other.go`: no decode structs -- the name-only registry for blocks
+  `sbfbin` recognizes but does not decode (the "Blocks excluded for the
+  G5 target" set below). Its `init()` defines each such block's number
+  as a named constant and registers just its name in `idNameMap`,
+  exactly as `casbin`/`sdbpbin`'s `other.go` and `ubxbin`'s `msg.go` do
+  for their unimplemented messages. This lets `MsgID.String()` -- and
+  thus `satpulsetool scan`/`annotate` -- name a block a G5 emits but this
+  phase does not decode (e.g. `GPSNav`) instead of printing a bare block
+  number.
+- **Data-centric, light on methods.** Like `ubxbin`/`casbin`, the
+  per-block `Params` structs expose their fields directly and `sbfbin`
+  exports almost no methods. The method surface is limited to interface
+  conformance (`Params.BlockNumber()`, and `Chunks()` on the
+  variable-length blocks), `Block`'s `ID()`/`Epoch()`, `MsgID` helpers
+  (`Unpack`/`String`), and a *few* small accessors where a consumer needs
+  a derived value (pulling a sub-field out of a packed bitfield). Do not
+  add getters/setters that merely wrap ordinary field access.
 - Layering (`docs/internals.md`): `gps/lib/sbfbin` imports only stdlib
   and sibling `gps/lib/*` packages -- it must not import `gpsprot`,
   `gps/scan`, or `gps/internal/*`. Consequence for this phase: struct
@@ -103,11 +125,14 @@ differs from casbin/ubxbin" below):
   never `gpsprot.SVID`/`gpsprot.SignalID`/`gpsprot.GNSS` -- `sbfbin`
   cannot import `gpsprot`, so mapping a raw SVID/signal number to those
   is the phase-3 conversion layer's job (the 4.1.9/4.1.10 tables below
-  are its reference). `sbfbin` *may* import the sibling `gps/lib/rinex`,
-  so -- mirroring `ubxbin.RINEXSatNum`/`RINEXSig` -- the raw-SVID-to-
-  `rinex.SatelliteID` and signal-number-to-RINEX-code mappings live
-  here, as the single wire-semantics source `rnxsbf`
-  (`plan/sbf-rinex.md`) uses.
+  are its reference). Mirroring `ubxbin.RINEXSatNum`/`RINEXSig` (which
+  return a plain `uint8`/`string` and do **not** import `rinex`),
+  `sbfbin` owns the raw-SVID-to-RINEX-number and signal-number-to-RINEX-
+  code mappings, returning plain integers/strings as the single
+  wire-semantics source `rnxsbf` (`plan/sbf-rinex.md`) uses; wrapping
+  those into `rinex.SatelliteID`/typed codes stays in `rnxsbf`, exactly
+  as `rnxubx` does over `ubxbin`. (`sbfbin` *may* import `gps/lib/rinex`
+  per the layering, but following the `ubxbin` precedent it need not.)
 - **`sbfbin` is the sole owner of SBF wire-format knowledge.** Every
   wire constant the later conversion package (`gps/internal/septentrio`,
   phase 3) needs -- block numbers, enum codes (`Mode`, `Error`,
@@ -159,65 +184,114 @@ advances by the wire `SBLength` via an explicit padding piece (never by
 `binary.Size` of the known fields), and a short older-revision stream
 is tolerated, leaving unread fields at their DNU.
 
-### Message model: shared header, chunks, decode/encode
+### Message model: block, chunks, decode/encode
 
-**Every block struct embeds a shared `Header` as its first field**,
-mirroring `ubxbin`'s `NavITOW` (embedded by every UBX NAV message) and
-`novmsg`'s `CommonHdr` (which carries a `Version`):
+**A decoded block is a `Block`: the revision and time stamp common to
+every SBF block, plus the block-specific parameter set.** This is the
+`novmsg`/`uncmsg` `Msg{Hdr, Body}` split (a common header vs. the
+per-message wire struct), flattened into one struct using SBF's own
+terms -- the "SBF Block Time Stamp" (guide 4.1.3) and the block
+"Parameters":
 
 ```go
-// Header is the leading TOW/WNc every SBF body starts with, plus the
-// block revision taken from the frame ID. Embedded first in every
-// block struct, so binary.Read/Write cover TOW/WNc in wire order for
-// free.
-type Header struct {
+// TimeStamp is the SBF Block Time Stamp (guide 4.1.3): the TOW/WNc that
+// follow the 8-byte block header on every SBF block.
+type TimeStamp struct {
 	TOW uint32 `json:"TOW"` // ms of GPS week, DNU 0xFFFFFFFF
 	WNc uint16 `json:"WNc"` // continuous GPS week, DNU 0xFFFF
-	Rev uint8  `json:"-"`   // block revision (ID>>13); set by ParseMsg, not a body field
 }
 
-func (h *Header) Epoch() (uint32, uint16) { return h.TOW, h.WNc }
+// Params is a block's parameter set (the fields after the time stamp);
+// it names its block number. One struct per block type implements it.
+type Params interface {
+	BlockNumber() uint16
+}
+
+// Block is a decoded SBF block: its revision (from the block header's
+// ID), its time stamp, and its parameters.
+type Block struct {
+	Rev uint8 `json:"-"` // revision (ID>>13); from the frame ID, not a wire field of the body
+	TimeStamp            // TOW, WNc -- on the wire immediately after the block header
+	Params Params        // block-specific parameters; the only per-block wire struct
+}
+
+func (b *Block) ID() MsgID               { return MsgID(b.Params.BlockNumber()) | MsgID(b.Rev)<<13 }
+func (b *Block) Epoch() (uint32, uint16) { return b.TOW, b.WNc }
 ```
 
-`Rev` is not a wire field of the body -- it is the revision from the
-frame `ID` (`ID>>13`), which `ParseMsg` records after dispatching by
-block number. It is what makes decode revision-aware and, crucially,
-lets encode reconstruct the exact frame (which trailer fields to
-write, which revision bits to set in the emitted `ID`). `Epoch()`
-hands the phase-3 conversion layer the `(TOW, WNc)` epoch key with no
-per-block boilerplate (the analogue of `NavITOW.NavEpoch()`).
-
-`Msg` stays minimal; `ID()` folds in the parsed revision so a frame
-round-trips to the revision it was parsed at:
+A concrete block is then just its parameters plus a one-line
+`BlockNumber()` (the analogue of `nmeamsg.Sentence`'s per-field-set
+`SentenceFormat()`). There is no per-block wrapper type: a block is
+identified by asserting `b.Params` to the concrete `Params` type (as
+`novmsg` callers assert `msg.Body`):
 
 ```go
-type Msg interface {
-	ID() MsgID // block number | Rev<<13
+type PVTGeodetic struct { // a Params; b.Params.(*PVTGeodetic) recovers it
+	Mode  Mode
+	Error ErrCode
+	// ... parameters after the time stamp
 }
+func (*PVTGeodetic) BlockNumber() uint16 { return 4007 }
 ```
+
+Only `TimeStamp` and the concrete `Params` value are ever on the wire.
+`ParseMsg` masks the frame `ID` into block number + `Rev`, then over a
+reader on the payload does one `binary.Read(r, &b.TimeStamp)` followed
+by `ReadBinChunked(r, b.Params, name)` (into the interface's
+`*PVTGeodetic` etc., exactly as `novmsg` reads its `MsgBody`); it
+*assigns* `b.Rev` from the ID, so `binary` never sees `Rev` or the
+`Params` interface. That is precisely why the frame-ID revision can live
+in the struct without corrupting the `binary` layout -- it is assigned,
+not decoded, mirroring how `novmsg`/`uncmsg` keep header metadata out of
+the body struct. `Serialize` reverses it -- `binary.Write(&b.TimeStamp)`,
+`WriteBinChunked(b.Params)`, then `PackMsg(b.ID(), payload)` frames it
+(padding to a multiple of 4, writing the ID with `Rev<<13`, computing
+the CRC). `ID()`/`Epoch()` are defined once on `Block`. The unknown-block
+fallback is a `*UnknownParams` (a `Number`+`Payload` `Params`, mirroring
+`novmsg.UnknownBinMsgBody`), special-cased in `ParseMsg`/`Serialize`
+rather than run through `binary`.
+
+`Rev` is what makes decode revision-aware and lets encode set the
+revision bits in the emitted `ID`; decode itself is `Length`-driven (the
+guide's authoritative rule, see "How SBF differs"), reading the
+parameters the payload has room for and tolerating both older-revision
+senders (trailing parameters stay at their pre-set DNU) and
+newer-revision senders (extra bytes ignored). Round-trip preserves the
+parsed `Rev`; whether `Serialize` re-emits an older-than-current
+revision at exactly that revision's length or the current full length is
+an encode-fidelity detail (see "Open decisions") -- value-level
+round-trip holds either way, since decode is `Length`-authoritative.
+
+The per-block field tables in "The block catalog" below describe the
+full wire layout (`TOW`/`WNc` at offsets 0/4, then the parameters); the
+`TimeStamp` covers `TOW`/`WNc` and each block's `Params` struct holds
+the parameters from offset 6 onward. `Epoch()` hands the phase-3
+conversion layer the `(TOW, WNc)` epoch key with no per-block
+boilerplate (the analogue of `NavITOW.NavEpoch()`).
 
 **`Chunked`: one mechanism for every variable-length block.** Copied
 (binary half only) from `novmsg`'s `chunk.go` into `common.go`; the
 ASCII/`fieldenc` half is dropped (SBF is binary-only):
 
 ```go
-// Chunked is implemented by blocks whose wire layout is not a single
-// fixed struct. Chunks yields each piece -- a struct pointer or a
-// slice-element pointer -- in wire order; a piece yielded later may
+// Chunked is implemented by the Params structs whose wire layout is not
+// a single fixed struct. Chunks yields each piece -- a struct pointer or
+// a slice-element pointer -- in wire order; a piece yielded later may
 // depend on a field read into an earlier piece (e.g. a count or an
 // SBLength).
 type Chunked interface {
-	Msg
 	Chunks() func(yield func(chunk any) bool)
 }
 ```
 
-`ReadBinChunked(r, msg)` / `WriteBinChunked(w, msg)` drive it: if `msg`
-is `Chunked`, iterate its pieces and `binary.Read`/`binary.Write` each
-against the shared stream; otherwise a single `binary.Read`/`Write` of
-the whole struct. **The same iterator drives decode and encode, so
-there is no separate encode path** -- `Serialize` is symmetric by
-construction.
+`ReadBinChunked(r, p)` / `WriteBinChunked(w, p)` drive it over a `Params`
+value `p`: if `p` is `Chunked`, iterate its pieces and
+`binary.Read`/`binary.Write` each against the shared stream; otherwise a
+single `binary.Read`/`Write` of the whole `Params` struct. **The same
+iterator drives decode and encode, so there is no separate encode path.**
+The `TimeStamp` is read/written by `Block` itself, before/after the
+`Params`, so the `Params` structs -- and their `Chunks()` -- cover only
+the fields after the time stamp.
 
 Two SBF-specific tweaks vs. the `novmsg` original:
 - **Tolerant end-of-stream (revision trailers).** `ReadBinChunked`
@@ -226,8 +300,18 @@ Two SBF-specific tweaks vs. the `novmsg` original:
   pre-initialised to. So an older-revision packet lacking its trailer
   is not an error -- those fields keep the Do-Not-Use sentinels they
   were pre-set to before decode (DNU is not always the Go zero: e.g.
-  `HAccuracy`/`Latency` DNU is `65535`). Newer-revision extra bytes are
-  ignored (the universal trailing-bytes rule).
+  `HAccuracy`/`Latency` DNU is `65535`). Since `blockMap` constructs a
+  zero-valued `Params`, a `Params` with a non-zero-DNU trailer field
+  implements an optional `defaulter` interface (`setDNUDefaults()`) that
+  the `regBlock` constructor calls on the freshly-`new`'d value, so the
+  seeds are in place before `ReadBinChunked` runs and the read overwrites
+  only the fields actually present. Exactly three blocks need it: the two
+  Shape-2 PVT blocks (`Latency`/`HAccuracy`/`VAccuracy` -> `65535`) and
+  `ReceiverSetup` (`Latitude`/`Longitude`/`Height` -> `-2e10`); every
+  other absent-field case (Shape-1 has none; older Shape-3/4 sub-block
+  fields are all zero-DNU or unused-when-zero) is correct at Go zero.
+  Newer-
+  revision extra bytes are ignored (the universal trailing-bytes rule).
 - **Runtime `SBLength` padding.** A sub-block may be wider on
   the wire than its known fields (a later revision appended fields
   inside it). `Chunks()` yields a `[]byte` padding piece of `SBLength -
@@ -238,16 +322,17 @@ Two SBF-specific tweaks vs. the `novmsg` original:
 
 One `Chunked` interface covers everything variable-length, so `sbfbin`
 needs no per-shape marker interfaces (unlike `ubxbin`/`casbin`'s
-`VaryingMsg`); flat blocks need nothing.
+`VaryingMsg`); a flat block's `Params` struct implements nothing extra.
 
 **The shapes, in `Chunked` terms** (the catalog tags each block with
 its shape):
 
 - **Shape 1 -- flat fixed.** `EndOfPVT`, `EndOfMeas`, `DOP`, the four
   Cov blocks, `GALAuthStatus`, `xPPSOffset`, `ReceiverTime`,
-  `BaseStation`, `GPSUtc`, `GALUtc`, `BDSUtc`. Not `Chunked`;
-  `ReadBinChunked` does one `binary.Read` into the whole struct
-  (embedded `Header` first). No revision-gated fields.
+  `BaseStation`, `GPSUtc`, `GALUtc`, `BDSUtc`. The `Params` struct is not
+  `Chunked`; `ReadBinChunked` does one `binary.Read` into the whole
+  `Params` struct (the `TimeStamp` having already been read by `Block`).
+  No revision-gated fields.
 - **Shape 2 -- fixed + revision trailer.** `PVTCartesian`,
   `PVTGeodetic` (Rev1 `PPPInfo`/`Latency`, Rev2 `HAccuracy`/
   `VAccuracy`/`Misc`), `ReceiverSetup` (Rev1-4). `Chunks()` yields the
@@ -860,8 +945,10 @@ adds `StationCode`(c1[10])+`MonumentIdx`(u1)+`ReceiverIdx`(u1)+
 `CountryCode`(c1[3])+`Reserved1`(c1[21]). 424 bytes total at Rev4 (the
 shape every real capture and the current guide show), no padding.
 String fields are nul-padded fixed-width Latin-1 -- use
-`gps/lib/latin1z.StringZ<N>`; add sizes 3, 20, 21, 40, 60 to that
-package's generated set (only 10 already exists). `OnChange` every 60 s
+`gps/lib/latin1z.StringZ<N>`; add sizes 3, 20, 21, 40, 60 (none of which
+exist yet -- the current set is 5, 10, 16, 30, 32, 33, 43, 66, 129) by
+extending the `sizes` slice in `latin1z/mksizes.go` and re-running
+`go generate` (do not hand-edit the generated `sizes.go`). `OnChange` every 60 s
 and on any command changing a reflected parameter; Receiver timestamp;
 esoc yes, Flex-Rate no.
 
@@ -900,6 +987,13 @@ unconfirmed on) mosaic-G5 firmware (per the guide-vs-guide comparison);
 others are present on the G5 but decode to no `gpsprot.Msg`, config
 tag, or RINEX observation, so are out of scope by the "decode only
 what's needed" principle:
+
+Each block below still gets a name-only `idNameMap` entry in `other.go`
+(see "Package layout"): registering a name is cheap, independent of
+decoding, and is what keeps `satpulsetool scan`/`annotate` readable for
+the "present on the G5" blocks this phase does not decode. Naming the
+firmware-absent blocks too is harmless and keeps the registry a complete
+SBF block-number catalog.
 
 - **`ExtEvent`/`ExtEventPVTCartesian`/`ExtEventPVTGeodetic`**
   (5924/4037/4038) -- external-event timestamping is not a satpulse
@@ -949,19 +1043,23 @@ G5, and **`AuxAntPositions`** (5942) -- multi-antenna attitude, G5-only.
 ## Registration
 
 `gps/gpsreg/reg.go`: add `TagSBF = septentrio.Tag` alongside the other
-`Tag*` re-exports; add `septentrio.PacketFormat` to
+`Tag*` re-exports (`septentrio.Tag` is `gpsprot.Tag "SBF"`, following
+`ubx.Tag`/`spartn.Tag`); add `septentrio.PacketFormat` to
 `allVendorPacketFormats` and to `allVendorPacketFormatsMap[VendorSeptentrio]`;
-add `septentrio.NewPacketProcessor(mgr)` to the map built in
-`CreatePacketProcessors`. `VendorSeptentrio` already exists
+add `septentrio.Tag: septentrio.NewPacketProcessor(mgr)` to the
+`map[gpsprot.Tag]gpsprot.PacketProcessor` that `CreatePacketProcessors`
+builds (the map is keyed by `Tag`, not by vendor -- vendor specialization
+is applied afterward via `SetVendor`). `VendorSeptentrio` already exists
 (`gps/gpsreg/reg.go:32`); no enum change needed.
 
 `gps/gpsdecode/gpsdecode.go`: add a `case gpsreg.TagSBF:` arm to the
 `Tag()` switch in `Decode`, calling a small `sbfDecode(data []byte)
 (*DecodeResult, error)` helper that wraps `sbfbin.ParseMsg(string(data))`
-(mirroring `ubxbinDecode`/`casicDecode`) and maps `*sbfbin.UnknownMsg`
-to `ErrUnknownMsg`. Without this, `satpulsetool decode`/`annotate` will
-recognize and frame SBF packets (via the scanner) but fail to decode
-their payload.
+(mirroring `ubxbinDecode`/`casicDecode`), returns `DecodeResult{Payload:
+b.Params, Header: b.TimeStamp}`, and maps a `*sbfbin.UnknownParams` body
+(`b.Params`) to `ErrUnknownMsg`. Without this, `satpulsetool
+decode`/`annotate` will recognize and frame SBF packets (via the scanner)
+but fail to decode their payload.
 
 ### `gpsprot.PacketFormat` (`gps/internal/septentrio`)
 
@@ -990,7 +1088,7 @@ byte is at 0-indexed offset `packetLen` within the candidate packet):
 | `stateStarted` | 1 (offset 1, Sync2) | `b == 0x40` | `stateStarted` |
 | `stateStarted` | 1 | else | `stateSync` (single-byte rejection, see below) |
 | `stateStarted` | 2-6 (CRC, ID, Length lo) | any | `stateStarted` |
-| `stateStarted` | 7 (offset 7, Length hi byte) | `length := u16le(buf[nextScanIndex-1], b)`; `bodyLen := length-8`; `bodyLen > 0 && bodyLen%4==0` | `stateExpectN + ScanState(bodyLen)` |
+| `stateStarted` | 7 (offset 7, Length hi byte) | `length := u16le(buf[nextScanIndex-1], b)`; `bodyLen := length-8`; `bodyLen > 0 && bodyLen%4==0` | `ScanState(int(stateExpectN) + bodyLen)` |
 | `stateStarted` | 7 | else (bad length) | `stateSync` |
 | `> stateExpectN` (countdown) | -- | any | `state - 1` |
 
@@ -1058,10 +1156,13 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 func (p *PacketProcessor) NativeOnly() bool { return true }
 ```
 
-`NewPacketProcessor` takes `*gpsprot.NavEpochManager` to match the
-signature `gps/gpsreg.CreatePacketProcessors` expects of every other
-vendor constructor, even though this phase's processor does not use it
-(a later phase's real conversion layer will). `NativeOnly() == true`
+`NewPacketProcessor` takes `*gpsprot.NavEpochManager` in anticipation of
+phase 3's real conversion layer, even though this phase's processor does
+not use it. (Not every vendor constructor takes the manager -- the
+native-only `spartn` and `nov`-abbrev processors take none -- so taking
+it now is a forward-looking choice, not a required signature. `spartn`,
+also native-only and returning `RescanOnBadChecksum` true, is the closest
+precedent; dropping the argument until phase 3 would be equally valid.) `NativeOnly() == true`
 for this phase specifically -- it genuinely produces zero
 protocol-agnostic messages right now, so `gpscfg`'s device-detection
 logic (`suitableMessageCount`/`nativeOnlyTags`,
@@ -1071,59 +1172,118 @@ logic (`suitableMessageCount`/`nativeOnlyTags`,
 
 ## Phasing within this plan
 
-1. `gps/lib/sbfbin` skeleton: `common.go` (Sync/HeaderLen/MsgID/registry/
-   `Header`/`Msg`/`Chunked` + `ReadBinChunked`/`WriteBinChunked`),
-   `crc.go` (`CRC16`), `ParseMsg`/`Serialize`/`PackMsg`/`Poll`/
-   `PacketMsgID`.
-2. Shape-1 blocks first (the majority): `EndOfPVT`, `EndOfMeas`, `DOP`,
-   the four Cov blocks, `GALAuthStatus`, `xPPSOffset`, `ReceiverTime`,
-   `BaseStation`, and the three `*Utc` leap-second blocks (`GPSUtc`,
-   `GALUtc`, `BDSUtc`) -- not `Chunked`, so they exercise only the
-   single-`binary.Read` path.
-3. `Chunked` single-level blocks: `SatVisibility`, `RFStatus`,
-   `ReceiverStatus`, `MeasExtra` (including the `NrSB` mod-256
-   reconstruction), plus `QualityInd` (count-prefixed array) and
-   `DiffCorrIn` (opaque `[]byte` tail).
-4. `Chunked` revision-trailer blocks: `PVTCartesian`, `PVTGeodetic`,
-   `ReceiverSetup` (plus the `latin1z` size additions `ReceiverSetup`
-   needs) -- exercises the tolerant end-of-stream behaviour.
-5. `Chunked` two-level blocks: `MeasEpoch`, `ChannelStatus`.
-6. `gps/internal/septentrio`'s `PacketFormat` (scanner) and do-nothing
-   `PacketProcessor`; registration in `gps/gpsreg` and the `Decode`
-   switch in `gps/gpsdecode`; `docs/internals.md` entries.
-7. Round-trip unit tests throughout (can be written alongside each
-   step above rather than deferred to the end -- see Testing).
+The ordering is driven by testability. `satpulsetool scan` is
+block-agnostic -- `scancmd` only frames packets (`scan.New` + `Scan`),
+never decoding a body -- so the scanner lands first and runs on every
+example capture before any block struct exists. Decode/pack then grows
+one block *shape* at a time, each validated against real (scan-filtered)
+traffic, so a machinery bug surfaces on four blocks rather than two
+dozen. Blocks split into Tier 1 (present in `~/SbfParser/sbf_files`,
+testable now) and Tier 2 (absent from every example capture, deferred
+behind G5 hardware); only `BaseStation` and `DiffCorrIn` are Tier 2.
 
-Steps 2-5 can proceed in any order relative to each other once step 1
-lands; the ordering above is by decreasing simplicity, not a hard
-dependency chain (nothing in steps 2-5 depends on another step's block
-structs, only on the shared `common.go` `Chunked` machinery from
-step 1).
+The four block shapes, referenced by the milestones below:
+
+- **Shape-1** (single `binary.Read`, not `Chunked`): `EndOfPVT`,
+  `EndOfMeas`, `DOP`, the four Cov blocks, `GALAuthStatus`, `xPPSOffset`,
+  `ReceiverTime`, the three `*Utc` leap-second blocks (`GPSUtc`,
+  `GALUtc`, `BDSUtc`); Tier 2: `BaseStation`.
+- **`Chunked` single-level**: `SatVisibility`, `RFStatus`,
+  `ReceiverStatus`, `MeasExtra` (including the `NrSB` mod-256
+  reconstruction), `QualityInd` (count-prefixed array); Tier 2:
+  `DiffCorrIn` (opaque `[]byte` tail).
+- **`Chunked` revision-trailer**: `PVTCartesian`, `PVTGeodetic`,
+  `ReceiverSetup` (plus the `latin1z` size additions `ReceiverSetup`
+  needs) -- exercises the tolerant end-of-stream behaviour.
+- **`Chunked` two-level**: `MeasEpoch`, `ChannelStatus`.
+
+**M0 -- scanner (block-agnostic; `scan` works on every capture).**
+`crc.go` (`CRC16`); `gps/internal/septentrio`'s `PacketFormat` (sync
+`$@`, `Length` multiple-of-4 and `> 8` validation, CRC, `MsgID`
+block-number masking, `RescanOnBadChecksum`) and do-nothing
+`PacketProcessor`; the minimal `common.go` the scanner needs
+(`Sync`/`HeaderLen`/`MsgID`/`PacketMsgID`); `other.go`'s name-only
+`idNameMap` covering all known block IDs (so `scan`/`annotate` name
+every frame, decoded or not); registration in `gps/gpsreg`;
+`docs/internals.md` entry. No block structs and no `Chunked` driver
+yet. At this point `satpulsetool scan` frames the `$@` packets in all
+five example captures, and the scanner unit tests run (including the
+`$R`/`$T`/`$-`/`$&`/NMEA byte-2 rejection and the unknown block 5942).
+
+**M1 -- machinery + one block per shape (decode/pack on real traffic).**
+The rest of `common.go` (registry, `TimeStamp`, `Params`, `Block`,
+`Chunked` + `ReadBinChunked`/`WriteBinChunked`/`UnknownParams`), plus
+`ParseMsg`/`Serialize`/`PackMsg` and the `Decode` switch in
+`gps/gpsdecode`. Implement exactly one Tier-1 block of each shape:
+`EndOfMeas` (shape-1), `MeasExtra` (`Chunked` single-level),
+`PVTGeodetic` (revision-trailer), `MeasEpoch` (two-level). Each
+machinery path is then exercised end-to-end by filtering `scan` output
+to those blocks (a `grep` on the JSONL) and running `decode`->`pack`.
+Undecoded blocks fall through to `UnknownParams` and round-trip opaque,
+so the filter only narrows what a failure implicates -- it is not needed
+for correctness.
+
+**M2 -- breadth-fill Tier 1.** The remaining Tier-1 blocks across all
+four shapes, in any order (nothing depends on another block's structs,
+only on M1's `Chunked` machinery). Milestone check: `decode`->`pack`
+the whole `log_0000.sbf` cleanly.
+
+**Tier 2 (deferred behind G5 hardware): `BaseStation`, `DiffCorrIn`.**
+They stay name-only in `idNameMap` -- `UnknownParams` round-trips them
+opaque -- until real captures exist, then graduate into the `Decode`
+switch and fold into the `packet-testdata` corpus.
+
+Round-trip unit tests are written alongside each block, not deferred
+(see Testing).
 
 ## Testing
 
 Same-package (`package sbfbin`) tests throughout, following the
 `go-unit-test` skill. No `testdata/` directory needed for the unit
 round-trips in this phase (hand-built `[]byte` literals suffice; a
-later phase's `packet-testdata` work handles real-capture corpora).
+later phase's `packet-testdata` work handles real-capture corpora), and
+the real-file end-to-end below uses the existing captures directly, so
+nothing is committed as a fixture.
 
-- **Round-trip**: a generic `testMsgType[M, PM]` helper (same shape as
-  `casbin`/`ubxbin`'s) that constructs a value, calls `Serialize`, then
-  `ParseMsg`, and checks the result matches -- one call per block type,
-  covering every field including at least one non-DNU and one DNU
-  sample value where practical. Because the same `Chunked` iterator
+- **End-to-end against the existing `.sbf` files, now (the backbone).**
+  The example captures in `~/SbfParser/sbf_files` (X5-line, per
+  `CLAUDE.local.md`) drive `satpulsetool` before any G5 hardware. At M0,
+  `scan` frames the `$@` packets out of all five captures immediately.
+  From M1 on, `decode`->`pack` runs on blocks filtered out of the `scan`
+  JSONL with an ordinary `grep` (the block number sits at the `ID`
+  offset in each entry's `bin` hex) -- no fixture files and no bespoke
+  filter tool, since `scan`'s per-packet log *is* the filterable form.
+  Blocks not yet decoded round-trip opaque through `UnknownParams`, so
+  the real captures exercise that path for free. Widen the filter as each
+  shape/block lands; the M2 check is a clean `decode`->`pack` of
+  `log_0000.sbf`. This complements the per-block unit round-trips below
+  and exercises the scanner and CRC on real traffic. Once G5 hardware and
+  captures exist, fold representative blocks into the `packet-testdata`
+  corpus per `plan/packet-testing.md` and repeat as a milestone smoke
+  check.
+- **Round-trip** (per block, Tier 1 first): a generic
+  `testBlock[P Params]` helper (analogous to `casbin`/`ubxbin`'s
+  per-message helper) that constructs a `Block` with a filled `*P` in
+  `Params` and a chosen `Rev`, calls `Serialize`, then `ParseMsg`, and
+  checks the result matches -- one call per block type, Tier-1 blocks
+  (those present in the captures) first, covering every field including
+  at least one non-DNU and one DNU sample value where practical. Because
+  the same `Chunked` iterator
   drives both directions, `Serialize` is the inverse of `ParseMsg` by
   construction; the check is *value*-level (the re-decoded struct
-  equals the original, including `Header.Rev`), not byte-exact --
+  equals the original, including `Block.Rev`), not byte-exact --
   padding and dropped newer-revision trailing bytes make byte-exact
   round-trip neither achievable nor meaningful.
 - **Revision tolerance** (`Chunked` trailer blocks): a test that
   `ParseMsg`s a hand-built packet truncated to the Rev0 length and
-  checks the trailer fields read as their DNU defaults (validating the
-  tolerant end-of-stream), not an error; and a test that a packet with
-  extra unknown trailing bytes (a future revision) parses successfully,
-  ignoring them. Serialize a struct with `Rev` set to 1 and 2 and
-  confirm the emitted `ID` revision bits and trailer length match.
+  checks the trailer parameters read as their DNU defaults (validating
+  the tolerant end-of-stream), not an error; and a test that a packet
+  with extra unknown trailing bytes (a future revision) parses
+  successfully, ignoring them. Confirm that a `Block` carrying a given
+  `Rev` serializes with matching `ID` revision bits, and that
+  parse->serialize->parse preserves `Rev` value-level (the exact emitted
+  `Length` for an older-than-current revision follows the encode-fidelity
+  choice in "Open decisions").
 - **`SBLength` tolerance** (`Chunked` sub-block blocks): a test where a
   sub-block's declared `SBLength` exceeds the known struct size (a
   newer-revision sender with an extra field this decoder doesn't
@@ -1145,17 +1305,11 @@ later phase's `packet-testdata` work handles real-capture corpora).
   body) does not cause the outer frame to mis-split; `$R`/`$T`/`$-`/
   `$&`/a plain NMEA sentence are all rejected at the second byte; a
   nonzero-revision `ID` still yields the correct masked block number
-  from `MsgID`.
-- **End-to-end against the existing `.sbf` files, now.** The example
-  captures in `~/SbfParser/sbf_files` (X5-line, per `CLAUDE.local.md`)
-  drive `satpulsetool scan`/`decode`/`pack` immediately, before any G5
-  hardware: `scan` frames the `$@` packets out of the real stream,
-  `decode` decodes each to JSON, and `pack` re-serializes -- so a
-  scan/decode/pack round-trip over a genuine interleaved capture
-  complements the per-block unit round-trips above and exercises the
-  scanner and CRC on real traffic. Once G5 hardware and captures exist,
-  fold representative blocks into the `packet-testdata` corpus per
-  `plan/packet-testing.md` and repeat as a milestone smoke check.
+  from `MsgID`, as does an unknown block number (e.g. 5942, present in
+  the captures). The example logs are pure SBF -- no interleaved NMEA
+  or `$R`/`$T` command traffic -- so these byte-2 rejections cannot be
+  reached by the real-file end-to-end above and must stay unit tests;
+  the interleaving they guard against only happens live on a port.
 
 ## Open decisions
 
@@ -1167,6 +1321,16 @@ later phase's `packet-testdata` work handles real-capture corpora).
   signalled (a sentinel piece vs. the driver checking remaining bytes)
   -- to settle when writing `common.go`. These are implementation
   details that do not change the block catalog above.
+- **Encode revision fidelity.** `Block.Rev` is preserved through
+  parse->serialize (the emitted `ID` carries `Rev<<13`), and decode is
+  `Length`-authoritative. What remains open is whether `Serialize`, for a
+  block whose `Rev` is below the current (most-recent) revision, emits
+  exactly that revision's shorter `Length` (writing only the trailer
+  groups up to `Rev`) or the current full `Length` (writing all trailer
+  parameters, with the not-received ones at their DNU defaults).
+  Value-level round-trip holds either way, and a real G5 emits the
+  current revision, so this only affects re-framing of hypothetical
+  older-revision captures; settle it when writing `Serialize`.
 - **`NavCart`/`NavGeod`/`AuxAntPositions`** are G5-only convenience/
   attitude blocks with no decode spec yet, deliberately deferred (see
   "Blocks excluded for the G5 target"). Worth a follow-up plan once
