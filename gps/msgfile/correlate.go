@@ -3,6 +3,7 @@ package msgfile
 import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/internal/septentrio"
 )
 
 // requestAnalyzer produces a requestAnalysis from outgoing message bytes.
@@ -133,6 +134,7 @@ func NewCorrelator() *Correlator {
 			gpsreg.TagSDBP:         sdbpAnalyzer{},
 			gpsreg.TagNMEA:         nmeaAnalyzer{},
 			gpsreg.TagUnicoreAscii: uncaAnalyzer{},
+			septentrio.TagSepReply: sepAnalyzer{},
 		},
 	}
 }

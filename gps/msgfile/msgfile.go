@@ -45,13 +45,15 @@ func (mc *MsgCommon) tagDesc() TagDesc {
 type ResponsePattern int
 
 const (
-	ResponsePatternNone    ResponsePattern = iota // zero value: no response matching
-	ResponsePatternUnicore                        // "unicore"
+	ResponsePatternNone       ResponsePattern = iota // zero value: no response matching
+	ResponsePatternUnicore                           // "unicore"
+	ResponsePatternSeptentrio                        // "septentrio"
 )
 
 var responsePatternStrings = [...]string{
-	ResponsePatternNone:    "none",
-	ResponsePatternUnicore: "unicore",
+	ResponsePatternNone:       "none",
+	ResponsePatternUnicore:    "unicore",
+	ResponsePatternSeptentrio: "septentrio",
 }
 
 // String returns the string representation of the ResponsePattern.
