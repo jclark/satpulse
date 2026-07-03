@@ -34,6 +34,8 @@ type Configurator struct {
 	fixedEcef *asbin.CfgFixedECEF // latest CFG-FIXEDECEF readback
 	survey    *asbin.CfgSurvey    // latest CFG-SURVEY readback
 	navSat    *asbin.CfgNavSat    // latest CFG-NAVSAT readback
+	speedReq  *asReq              // the baud change request, when one was generated
+	prt0      *asbin.CfgPrt       // CFG-PRT record 0 readback (show-port)
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -107,7 +109,7 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 		gpsprot.ConfigSupportRTCMMSM7 | gpsprot.ConfigSupportRTCMQZSS |
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
-		gpsprot.ConfigSupportSignal
+		gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportSpeed
 }
 
 // ConfigProps returns the current configuration of the GPS receiver,
@@ -118,6 +120,7 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	c.tpConfigProps(props)
 	c.tmodeConfigProps(props)
 	c.signalConfigProps(props)
+	c.speedConfigProps(props)
 	return props
 }
 
@@ -130,6 +133,7 @@ var genPhases = []func(*Configurator){
 	(*Configurator).generateQueryReqs,
 	(*Configurator).generateSetReqs,
 	(*Configurator).generateMsgReqs,
+	(*Configurator).generateSpeedReqs,
 	(*Configurator).generateNVMReqs,
 }
 
@@ -139,6 +143,7 @@ func (c *Configurator) generateQueryReqs() {
 	c.generateTPQuery()
 	c.generateTModeQuery()
 	c.generateSignalQuery()
+	c.generatePrtQuery()
 }
 
 // generateSetReqs generates the property set requests, computed from

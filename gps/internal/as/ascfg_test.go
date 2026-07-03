@@ -36,6 +36,8 @@ type testReceiver struct {
 	survey     *asbin.CfgSurvey     // nil: unsupported (poll is silent)
 	navSat     *asbin.CfgNavSat     // nil: unsupported (poll is silent)
 	sigCap     asbin.CfgNavSatMask  // hardware capability; clamps written masks
+	prt        [2]uint32            // stored CFG-PRT records
+	liveRate   uint32               // the live rate of the arriving port
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -123,6 +125,15 @@ func (r *testReceiver) respondOne(data []byte) [][]byte {
 		// the silicon ACKs and clamps to the hardware capability
 		r.navSat.EnableMask = mt.EnableMask & r.sigCap
 		return [][]byte{r.ack(asbin.CfgNavSatID)}
+	case *asbin.CfgPrt:
+		r.prt[mt.PortID&1] = mt.Baudrate
+		if mt.Baudrate != r.liveRate {
+			// the arriving port switches immediately; the ACK is
+			// destroyed by the transition (hardware behavior)
+			r.liveRate = mt.Baudrate
+			return nil
+		}
+		return [][]byte{r.ack(asbin.CfgPrtID)}
 	}
 	if mid.Ackable() {
 		return [][]byte{r.ack(mid)}
@@ -168,6 +179,11 @@ func (r *testReceiver) respondPoll(mid asbin.MsgID, data []byte) [][]byte {
 			return nil
 		}
 		return [][]byte{r.pack(r.navSat)}
+	case asbin.CfgPrtID:
+		port := data[asbin.HeaderLen] & 1
+		return [][]byte{r.pack(&asbin.CfgPrt{PortID: port, Baudrate: r.prt[port]})}
+	case asbin.CfgElevID:
+		return [][]byte{r.pack(&asbin.CfgElev{TrkMask: 0.0175, NaviMask: 0.0873})}
 	}
 	return nil
 }
@@ -805,6 +821,66 @@ func TestSignalsReadback(t *testing.T) {
 		gpsprot.SigBDSB1I, gpsprot.SigBDSB2I, gpsprot.SigGALE1)
 	if got, ok := cfg.ConfigProps().GetSignalsEnabled(); !ok || got != want {
 		t.Errorf("signals = %v/%v, want %v", got, ok, want)
+	}
+}
+
+func TestSpeedChange(t *testing.T) {
+	rcvr := &testReceiver{monVer: tau1201Ver(),
+		prt: [2]uint32{115200, 115200}, liveRate: 115200}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetBaudRate(230400)
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if rcvr.prt != [2]uint32{230400, 230400} {
+		t.Errorf("PRT records = %v, want both 230400", rcvr.prt)
+	}
+	if rcvr.liveRate != 230400 {
+		t.Errorf("live rate = %d, want 230400", rcvr.liveRate)
+	}
+	if b, ok := cfg.ConfigProps().GetBaudRate(); !ok || b != 230400 {
+		t.Errorf("achieved baud = %d/%v, want 230400", b, ok)
+	}
+}
+
+func TestSpeedChangeThenSave(t *testing.T) {
+	// A combined --speed --save persists the NEW rate: the save runs
+	// after the confirmed switch and its minimal mask covers baud.
+	rcvr := &testReceiver{monVer: tau1201Ver(),
+		prt: [2]uint32{115200, 115200}, liveRate: 115200}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetBaudRate(230400)
+	target.Opts.Save = gpsprot.SaveMinimal
+	_, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if len(rcvr.saves) != 1 || rcvr.saves[0].Mask&asbin.CfgCfgMaskBaudrate == 0 {
+		t.Errorf("saves = %v, want one save covering baud", rcvr.saves)
+	}
+	if rcvr.liveRate != 230400 {
+		t.Errorf("live rate = %d, want 230400 before the save", rcvr.liveRate)
+	}
+}
+
+func TestShowPort(t *testing.T) {
+	rcvr := &testReceiver{monVer: tau1201Ver(),
+		prt: [2]uint32{115200, 115200}, liveRate: 115200}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{Get: gpsprot.PropIDBaudRate}
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	props := cfg.ConfigProps()
+	if b, ok := props.GetBaudRate(); !ok || b != 115200 {
+		t.Errorf("baud = %d/%v, want 115200", b, ok)
+	}
+	if _, ok := props.GetPort(); ok {
+		t.Error("port name reported; the active UART is not identifiable")
 	}
 }
 
