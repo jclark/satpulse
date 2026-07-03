@@ -86,7 +86,7 @@ These packages implement the `gpsprot` interface for specific protocols. They ar
 
 `gps/internal/sino` provides satellite numbering schemes for SinoGNSS receivers, defining NMEA satellite ID mappings for GLONASS, NavIC, Galileo, QZSS, BeiDou, and SBAS.
 
-`gps/internal/as` provides NMEA satellite numbering configuration for Allystar GPS receivers.
+`gps/internal/as` implements `gps/gpsprot` abstractions for the Allystar binary protocol, including the packet processor, the high-level configuration protocol, and NMEA satellite numbering. It uses `gps/lib/asbin` to do this.
 
 `gps/internal/quectel` converts PQTM NMEA messages from Quectel GPS receivers into `gps/gpsprot` message format.
 
