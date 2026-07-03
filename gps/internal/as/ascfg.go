@@ -87,18 +87,18 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 		Vendor:         Vendor,
 		Firmware:       c.ver.SwVersion.String(),
 		Hardware:       c.ver.HwVersion.String(),
-		SupportedGNSS:  supportedGNSS,
+		SupportedGNSS:  c.supportedGNSS(),
 		VendorSpecific: c.ver,
 	}
 }
 
-// supportedGNSS is the constellation set the CFG-NAVSAT mask can
-// express. Which signals a particular unit can actually receive shows
-// in the achieved signal set (the silicon clamps the mask).
-const supportedGNSS = gpsprot.GNSSSet(1<<gpsprot.GPS) | gpsprot.GNSSSet(1<<gpsprot.BDS) |
-	gpsprot.GNSSSet(1<<gpsprot.GLO) | gpsprot.GNSSSet(1<<gpsprot.GAL) |
-	gpsprot.GNSSSet(1<<gpsprot.QZSS) | gpsprot.GNSSSet(1<<gpsprot.SBAS) |
-	gpsprot.GNSSSet(1<<gpsprot.NAVIC)
+// supportedGNSS returns the constellations of the identity-deduced
+// signal plan. For unknown hardware it is the full set the CFG-NAVSAT
+// mask can express; what such a unit can actually receive shows in the
+// achieved signal set (the silicon clamps the mask).
+func (c *Configurator) supportedGNSS() gpsprot.GNSSSet {
+	return navSatToSignals(c.signalPlan()).GNSSSet()
+}
 
 // ConfigSupport returns the configuration options this implementation
 // supports. The RTCM flags are declared for the whole vendor even

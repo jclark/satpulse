@@ -289,7 +289,7 @@ func TestProbe(t *testing.T) {
 		Vendor:        Vendor,
 		Firmware:      "3.018.aab95e7",
 		Hardware:      "HD8040D.9529b663",
-		SupportedGNSS: supportedGNSS,
+		SupportedGNSS: navSatToSignals(tau1201Cap).GNSSSet(),
 	}
 	if got.VendorSpecific == nil {
 		t.Error("VendorSpecific = nil, want MON-VER message")
@@ -808,6 +808,29 @@ func TestSignals(t *testing.T) {
 				t.Errorf("achieved = %v/%v, want %v", got, ok, navSatToSignals(tc.expectMask))
 			}
 		})
+	}
+}
+
+func TestSignalsUnknownHardware(t *testing.T) {
+	// An unknown model has no identity-deduced plan: the full request
+	// goes to the wire and the silicon's clamp, revealed by the verify
+	// poll, supplies the achieved set.
+	ver := &asbin.MonVer{SwVersion: z16("9.999"), HwVersion: z16("HD9999.0")}
+	rcvr := &testReceiver{monVer: ver,
+		navSat: &asbin.CfgNavSat{EnableMask: tau1201Cap}, sigCap: tau1201Cap}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetSignalsEnabled(gpsprot.SigSetGPS)
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if rcvr.navSat.EnableMask != 0x201 {
+		t.Errorf("receiver mask = %#x, want 0x201 (clamped by the silicon)", rcvr.navSat.EnableMask)
+	}
+	want := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGPSL5)
+	if got, ok := cfg.ConfigProps().GetSignalsEnabled(); !ok || got != want {
+		t.Errorf("achieved = %v/%v, want %v", got, ok, want)
 	}
 }
 

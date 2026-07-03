@@ -1,6 +1,8 @@
 package as
 
 import (
+	"strings"
+
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/asbin"
 )
@@ -91,11 +93,41 @@ func (c *Configurator) pollNavSat() {
 	})
 }
 
-// generateSignalSet sends the requested signal selection. The
-// acknowledged values are not the whole truth here: the silicon clamps
-// the written mask to the hardware's capability (verified on all three
-// units), which is not knowable in advance, so the achieved set needs
-// one readback.
+// signalPlans is the supported signal set per hardware family, deduced
+// from the MON-VER hardware string per the semantics (the supported
+// set comes from the receiver's identity). Established by writing the
+// full mask and reading back the clamp on each test unit. Intersecting
+// the request with this set before writing matters beyond neatness:
+// the TAU1302 silicon COUPLES - writing a GAL E5 bit it lacks switches
+// on GAL E1 - so unsupported bits must not reach the wire on known
+// hardware. Unknown hardware falls back to writing the full request
+// and letting the silicon clamp.
+var signalPlans = []struct {
+	hwPrefix string
+	mask     asbin.CfgNavSatMask
+}{
+	{"HD8040", 0x4108237}, // TAU1201: L1/L5 dual band
+	{"HD9510", 0x4108237}, // TAU951M: L1/L5 dual band
+	{"HD9310", 0x8042437}, // TAU1302: L1/L2 dual band
+}
+
+// signalPlan returns the hardware's supported mask, or the all-ones
+// mask when the model is unknown.
+func (c *Configurator) signalPlan() asbin.CfgNavSatMask {
+	hw := c.ver.HwVersion.String()
+	for _, p := range signalPlans {
+		if strings.HasPrefix(hw, p.hwPrefix) {
+			return p.mask
+		}
+	}
+	return ^asbin.CfgNavSatMask(0)
+}
+
+// generateSignalSet sends the requested signal selection, intersected
+// with the identity-deduced supported set. The acknowledged values are
+// still not the whole truth: on unknown hardware the silicon clamps
+// the written mask to its capability, and coupling is possible, so the
+// achieved set always comes from one readback.
 func (c *Configurator) generateSignalSet() {
 	requested, ok := c.target.Props.GetSignalsEnabled()
 	if !ok {
@@ -104,7 +136,7 @@ func (c *Configurator) generateSignalSet() {
 	if c.navSat == nil {
 		return // property absent on this receiver
 	}
-	ns := asbin.CfgNavSat{EnableMask: signalsToNavSat(requested)}
+	ns := asbin.CfgNavSat{EnableMask: signalsToNavSat(requested) & c.signalPlan()}
 	c.addSetReq(&ns, nil)
 	c.pollNavSat()
 }
