@@ -1,0 +1,174 @@
+package septentrio
+
+import (
+	"bufio"
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/sbfbin"
+)
+
+// collector records every gpsprot.Msg and native message the processor emits.
+type collector struct {
+	gpsprot.DefaultHandler
+	times   []*gpsprot.TimeMsg
+	leaps   []*gpsprot.LeapSecondMsg
+	posGeo  []*gpsprot.PosGeoMsg
+	posECEF []*gpsprot.PosECEFMsg
+	velGeo  []*gpsprot.VelGeoMsg
+	velECEF []*gpsprot.VelECEFMsg
+	sats    []*gpsprot.SatellitesMsg
+	surveys []*gpsprot.SurveyMsg
+	cors    []*gpsprot.CorReportMsg
+	epochs  []*gpsprot.NavEpochMsg
+	natives int
+}
+
+func (c *collector) Time(m *gpsprot.TimeMsg, _ time.Time)             { c.times = append(c.times, m) }
+func (c *collector) LeapSecond(m *gpsprot.LeapSecondMsg, _ time.Time) { c.leaps = append(c.leaps, m) }
+func (c *collector) PosGeo(m *gpsprot.PosGeoMsg, _ time.Time)         { c.posGeo = append(c.posGeo, m) }
+func (c *collector) PosECEF(m *gpsprot.PosECEFMsg, _ time.Time)       { c.posECEF = append(c.posECEF, m) }
+func (c *collector) VelGeo(m *gpsprot.VelGeoMsg, _ time.Time)         { c.velGeo = append(c.velGeo, m) }
+func (c *collector) VelECEF(m *gpsprot.VelECEFMsg, _ time.Time)       { c.velECEF = append(c.velECEF, m) }
+func (c *collector) Satellites(m *gpsprot.SatellitesMsg, _ time.Time) { c.sats = append(c.sats, m) }
+func (c *collector) Survey(m *gpsprot.SurveyMsg, _ time.Time)         { c.surveys = append(c.surveys, m) }
+func (c *collector) CorReport(m *gpsprot.CorReportMsg, _ time.Time)   { c.cors = append(c.cors, m) }
+func (c *collector) NavEpoch(m *gpsprot.NavEpochMsg, _ time.Time)     { c.epochs = append(c.epochs, m) }
+
+func (c *collector) NativeMsg(_ gpsprot.Tag, _ string, _ any, _ time.Time) error {
+	c.natives++
+	return nil
+}
+
+// newTestProcessor wires a processor to a fresh manager and collector.
+func newTestProcessor() (*PacketProcessor, *collector) {
+	c := &collector{}
+	p := NewPacketProcessor(gpsprot.NewNavEpochManager())
+	p.SetMsgHandler(c)
+	p.SetNativeMsgHandler(c)
+	return p, c
+}
+
+// captureRecord is one line of a *.jsonl packet capture.
+type captureRecord struct {
+	T   time.Time `json:"t"`
+	Msg string    `json:"msg"`
+	Bin string    `json:"bin"`
+}
+
+// readCapture returns the decoded binary packets from a capture file.
+func readCapture(t *testing.T, name string) []captureRecord {
+	t.Helper()
+	f, err := os.Open("../../testdata/packets/septentrio/mosaic-G5/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	var recs []captureRecord
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<20), 1<<20)
+	for sc.Scan() {
+		var r captureRecord
+		if json.Unmarshal(sc.Bytes(), &r) != nil || r.Bin == "" {
+			continue
+		}
+		recs = append(recs, r)
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return recs
+}
+
+// feed runs every packet in a capture through the processor.
+func feed(t *testing.T, p *PacketProcessor, recs []captureRecord) {
+	t.Helper()
+	for _, r := range recs {
+		data, err := hex.DecodeString(r.Bin)
+		if err != nil {
+			t.Fatalf("bad hex for %s: %v", r.Msg, err)
+		}
+		if _, err := p.ProcessPacket(string(data), r.T); err != nil {
+			t.Fatalf("ProcessPacket(%s): %v", r.Msg, err)
+		}
+	}
+}
+
+// findBlock decodes the first packet of the named message type in a capture.
+func findBlock(t *testing.T, capture, msg string) *sbfbin.Block {
+	t.Helper()
+	for _, r := range readCapture(t, capture) {
+		if r.Msg != msg {
+			continue
+		}
+		data, err := hex.DecodeString(r.Bin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := sbfbin.ParseMsg(string(data))
+		if err != nil {
+			t.Fatalf("ParseMsg(%s): %v", msg, err)
+		}
+		return b
+	}
+	t.Fatalf("no %s block in %s", msg, capture)
+	return nil
+}
+
+// TestProcessPVTCapture drives an SBF-only PVT capture end to end and checks
+// that each EndOfPVT flushes a NavEpochMsg (the required SBF-only path) and
+// that position/velocity/time messages are produced.
+func TestProcessPVTCapture(t *testing.T) {
+	p, c := newTestProcessor()
+	feed(t, p, readCapture(t, "pvt-cov.jsonl"))
+
+	if len(c.epochs) < 25 {
+		t.Errorf("NavEpoch count = %d, want >= 25 (one per EndOfPVT)", len(c.epochs))
+	}
+	if len(c.posGeo) < 25 || len(c.posECEF) < 25 {
+		t.Errorf("posGeo=%d posECEF=%d, want >= 25 each", len(c.posGeo), len(c.posECEF))
+	}
+	if len(c.velGeo) < 25 || len(c.velECEF) < 25 {
+		t.Errorf("velGeo=%d velECEF=%d, want >= 25 each", len(c.velGeo), len(c.velECEF))
+	}
+	if len(c.times) == 0 {
+		t.Error("no TimeMsg produced")
+	}
+	ne := c.epochs[0]
+	if ne.Tag != Tag {
+		t.Errorf("NavEpoch.Tag = %q, want %q", ne.Tag, Tag)
+	}
+	if ne.FixLevel != gpsprot.FixLevelCode { // Mode==1 standalone in this capture
+		t.Errorf("NavEpoch.FixLevel = %v, want %v", ne.FixLevel, gpsprot.FixLevelCode)
+	}
+	if ne.SolutionDim != gpsprot.SolutionDim3D {
+		t.Errorf("NavEpoch.SolutionDim = %v, want 3D", ne.SolutionDim)
+	}
+	if !ne.NumSVUsed.IsSet() {
+		t.Error("NavEpoch.NumSVUsed unset")
+	}
+	if ne.GNSSUsed.IsZero() {
+		t.Error("NavEpoch.GNSSUsed empty (SignalInfo mapping produced nothing)")
+	}
+}
+
+// TestProcessStatusCapture drives a capture rich in ChannelStatus and
+// SatVisibility, checking the independent SatellitesMsg stream fires.
+func TestProcessStatusCapture(t *testing.T) {
+	p, c := newTestProcessor()
+	feed(t, p, readCapture(t, "status.jsonl"))
+	if len(c.sats) == 0 {
+		t.Fatal("no SatellitesMsg produced")
+	}
+	s := c.sats[0]
+	if s.Tag != Tag {
+		t.Errorf("SatellitesMsg.Tag = %q, want %q", s.Tag, Tag)
+	}
+	if len(s.SVs) == 0 {
+		t.Error("SatellitesMsg has no SVs")
+	}
+}

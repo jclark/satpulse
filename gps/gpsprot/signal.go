@@ -487,10 +487,11 @@ const (
 	SigIDQZSSL1CD SignalID = "L1C (D)" // L1C data
 	SigIDQZSSL1CP SignalID = "L1C (P)" // L1C pilot
 	SigIDQZSSL1S  SignalID = "L1S"
-	SigIDQZSSL2CM SignalID = "L2C-M"  // L2C data
-	SigIDQZSSL2CL SignalID = "L2C-L"  // L2C pilot
-	SigIDQZSSL5I  SignalID = "L5-I"   // L5 data
-	SigIDQZSSL5Q  SignalID = "L5-Q"   // L5 pilot
+	SigIDQZSSL2CM SignalID = "L2C-M" // L2C data
+	SigIDQZSSL2CL SignalID = "L2C-L" // L2C pilot
+	SigIDQZSSL5I  SignalID = "L5-I"  // L5 data
+	SigIDQZSSL5Q  SignalID = "L5-Q"  // L5 pilot
+	SigIDQZSSL5S  SignalID = "L5S"
 	SigIDQZSSL6   SignalID = "L6"     // friendlier name for L6D
 	SigIDQZSSL6E  SignalID = "L6E"    // restricted
 	SigIDQZSSL1CB SignalID = "L1 C/B" // replacement for L1 C/A
