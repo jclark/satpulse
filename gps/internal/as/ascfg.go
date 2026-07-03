@@ -33,6 +33,7 @@ type Configurator struct {
 	pps       *asbin.CfgPps       // latest CFG-PPS readback; nil if never answered
 	fixedEcef *asbin.CfgFixedECEF // latest CFG-FIXEDECEF readback
 	survey    *asbin.CfgSurvey    // latest CFG-SURVEY readback
+	navSat    *asbin.CfgNavSat    // latest CFG-NAVSAT readback
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -105,7 +106,8 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 	return gpsprot.ConfigSupportRaw | gpsprot.ConfigSupportRTCMMSM4 |
 		gpsprot.ConfigSupportRTCMMSM7 | gpsprot.ConfigSupportRTCMQZSS |
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
-		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos
+		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
+		gpsprot.ConfigSupportSignal
 }
 
 // ConfigProps returns the current configuration of the GPS receiver,
@@ -115,6 +117,7 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	props := &gpsprot.ConfigProps{}
 	c.tpConfigProps(props)
 	c.tmodeConfigProps(props)
+	c.signalConfigProps(props)
 	return props
 }
 
@@ -135,6 +138,7 @@ var genPhases = []func(*Configurator){
 func (c *Configurator) generateQueryReqs() {
 	c.generateTPQuery()
 	c.generateTModeQuery()
+	c.generateSignalQuery()
 }
 
 // generateSetReqs generates the property set requests, computed from
@@ -142,6 +146,7 @@ func (c *Configurator) generateQueryReqs() {
 func (c *Configurator) generateSetReqs() {
 	c.generateTPSet()
 	c.generateTModeSet()
+	c.generateSignalSet()
 }
 
 // generateNVMReqs generates the save and reset requests. Reload is
