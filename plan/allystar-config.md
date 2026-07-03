@@ -151,10 +151,13 @@ each preserves undocumented. Default baud undocumented.
 
 Remaining hardware unknowns:
 
-- **CFG-PPS offset field**: reads 530 ns on TAU1201/TAU951M, 0 on TAU1302.
-  Doc says only "defined by user", ns, default 0. Determine what it does
-  (pulse offset? cable-delay analog?) and whether it maps to
-  `AntennaCableDelay`.
+- **CFG-PPS offset field**: behavioral probes DONE (TAU1201): accepts any
+  S4 ns value up to +-0.5 s, ACKed and echoed exactly, no clamping.
+  Physical pulse effect not measurable with this setup; factory 530 ns on
+  two units suggests RF-delay calibration. Remaining: analysis +
+  recommendation on mapping (AntennaCableDelay vs leaving it alone -
+  leaning leave-alone: overwriting a factory calibration value with a
+  user cable delay would destroy the calibration silently).
 - ~~Raw output~~: DONE - RXM-DUMPRAW (0x02 0x01 U1) works on all three:
   emits F1D9 frames class 0x02 id 0x57 at 1 Hz (2.2-5.4 KB payloads;
   format unknown, decode out of scope). QUIRK: TAU951M NAKs the disable
@@ -171,10 +174,12 @@ Remaining hardware unknowns:
 - **NAV emission on the other two units**: TAU1201 verified for
   TIME/TIMEUTC/CLOCK/CLOCK2/SVINFO/AUTO/SVSTATE; spot-check the same on
   TAU951M (no SVSTATE there) and TAU1302.
-- **CFG-NAVSAT semantics**: set masks including signals a unit lacks - ACK
-  and clamp, or refuse? Does readback echo the written mask or the
-  effective one? Any coupled signals? Determines whether the signal set
-  needs a post-set verify poll.
+- ~~CFG-NAVSAT semantics~~: DONE - ACK-and-clamp on all three units; the
+  readback shows the effective (clamped) mask, a zero mask is accepted
+  and applied, no coupling seen. The signal set NEEDS the post-set verify
+  poll. Per-unit supported sets recorded in CONTEXT.md (TAU1201/TAU951M
+  0x4108237 L1/L5; TAU1302 0x8042437 L1/L2, running a narrower as-found
+  selection).
 - **Survey/time-mode semantics**: how CFG-SURVEY, CFG-FIXEDLLA/ECEF interact
   (what does "mobile" look like - all zeros?); how to stop or restart an
   in-progress survey (writing zeros does NOT stop one on TAU1201);
@@ -190,9 +195,10 @@ Remaining hardware unknowns:
   place? how long? message file hints 3 s), what factory reset restores
   (default baud!), and a discriminating persistence oracle (USB
   unbind/rebind power cycle if soft resets preserve too much).
-- **ACK-without-apply spot checks**: for each property class, set a value
-  and independently poll once during stage 0 (not in the shipped
-  configurator) to confirm ACK means applied.
+- **ACK-without-apply spot checks**: ELEV, DOP, CARRSMOOTH, PPS done on
+  TAU1201 - ACK means applied, readback echoes exactly. NAVSAT is the
+  clamp case (above). Remaining classes: PRT (with the baud experiment),
+  SURVEY/FIXEDECEF (with the survey experiment).
 - ~~NMEA coverage~~: DONE - full F0 map per unit in CONTEXT.md. GST has
   the undocumented id 0x08 on all units (the doc-absence was a doc gap);
   DTM 0x0A and JAM 0x21 exist on newer units; TXT rate 0 silences
@@ -288,9 +294,12 @@ default static mode triggers survey-in.
 
 ## Stage 6: signal selection
 
-CFG-NAVSAT U4 per-signal mask <-> `gpsprot.SignalSet`: deduce the supported
-set per receiver (stage 0), intersect the request, set, record achieved
-from the ACK (plus post-set verify poll only if stage 0 showed clamping).
+CFG-NAVSAT U4 per-signal mask <-> `gpsprot.SignalSet`: the receiver
+clamps writes to its hardware capability (stage 0), performing the
+semantics' silent intersection itself, so the achieved set comes from a
+post-set verify poll (the earned readback exception). Supported sets per
+unit are in CONTEXT.md; SupportedGNSS in ReceiverInfo derives from the
+query-phase readback.
 
 Functionality: `--gnss --band --signal` work.
 
