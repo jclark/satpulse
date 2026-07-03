@@ -117,16 +117,37 @@ committing to the property mappings; record findings in CONTEXT.md and fold
 conclusions back into this plan. Audit the protocol document for each
 "absent" conclusion - "could not find it" is weaker than a documented audit.
 
-- **Documented absence audit**: time-of-pulse message (TIM-TP equivalent),
-  leap-second information (NAV-TIMEUTC flags? AID?), TAI/GNSS time carrier
-  (NAV-TIME per-navSys), epoch markers, RTCM base station id, active-port
-  identification, antenna cable delay. Whatever has no carrier is shown as
-  absence.
+**Documented-absence audit: DONE 2026-07-03** (full results in CONTEXT.md).
+Absent from the protocol: time-of-pulse message (no TIM class; POSTIME
+removed 2017), end-of-epoch marker, leap-second announcements (current
+leapSec lives in NAV-TIME 0x01 0x05, the GNSS/TAI time carrier; NAV-TIMEUTC
+has no leap field), RTCM base station id, active-port identification,
+antenna cable delay (only candidate: CFG-PPS Offset S4 ns, semantics
+undocumented), nav-rate configuration (no CFG-RATE), GST rate control (no
+0xF0 sub-id), INF/proprietary-NMEA channels. NAV-SVINFO is per-satellite
+only (flags/quality bits "Refer to manual"); NAV-SVSTATE is per-sat eph/alm
+state, NOT per-signal - so `--sats-out sig` has no documented carrier.
+Raw output is RXM-DUMPRAW (0x02 0x01), a SET with U1 enable - NOT a CFG-MSG
+target - and its output format is undocumented. Doc 0xF8 ids: 1005=0x05,
+MSM7 GPS/GLO/GAL/QZS/BDS = 0x4D/0x57/0x61/0x75/0x7F, eph 1019/1020/1042/
+1044/1046 = 0x13/0x14/0x2A/0x2C/0x2D, 4065=0x41; MSM4/MSM5 ids "TBD" in doc
+(hardware supplies MSM4 ids). CFG-CFG: action U4 0/1/2 = save/load/clear,
+mask bit0 baud, bit1 NMEA rates, bit2 nav settings, 0xFFFFFFFF factory;
+load semantics undocumented. SIMPLERST modes 0-3 documented no-ACK; what
+each preserves undocumented. Default baud undocumented.
+
+Remaining hardware unknowns:
+
 - **CFG-PPS offset field**: reads 530 ns on TAU1201/TAU951M, 0 on TAU1302.
-  Determine what it does (pulse offset? cable-delay analog?) and whether it
-  maps to `AntennaCableDelay`.
-- **Raw output**: RXM-DUMPRAW per receiver - enable via CFG-MSG, observe
-  whether anything is emitted (acknowledge-but-never-emit is common).
+  Doc says only "defined by user", ns, default 0. Determine what it does
+  (pulse offset? cable-delay analog?) and whether it maps to
+  `AntennaCableDelay`.
+- **Raw output**: RXM-DUMPRAW set (0x02 0x01 payload U1 0/1) per receiver -
+  enable, observe whether anything is emitted and in what framing
+  (acknowledge-but-never-emit is common; format undocumented).
+- **SVINFO per-signal probe**: on the dual-band units, does NAV-SVINFO emit
+  multiple rows per svid (one per signal)? Decides whether `sig` is truly
+  absent or realizable from SVINFO.
 - **RTCM output detail**: which MSM sets each of TAU1302/TAU951M emits
   (MSM4/MSM7/ARP), enable via CFG-MSG 0xF8 targets, confirm emission by
   observation. TAU1201 shows absence.
@@ -154,9 +175,10 @@ conclusions back into this plan. Audit the protocol document for each
 - **ACK-without-apply spot checks**: for each property class, set a value
   and independently poll once during stage 0 (not in the shipped
   configurator) to confirm ACK means applied.
-- **NMEA coverage**: which F0 ids each unit accepts (GGA GLL GSA GRS GSV RMC
-  VTG ZDA at 0x00-0x07; TXT 0x20 reportedly cannot be disabled; GST has no
-  documented CFG-MSG id - audit). Confirm NAK vs accept per unit.
+- **NMEA coverage**: which F0 ids each unit accepts (doc list is GGA GLL
+  GSA GRS GSV RMC VTG ZDA at 0x00-0x07 plus TXT 0x20; GST audited - it has
+  no CFG-MSG id, so it is not rate-controllable). Confirm NAK vs accept per
+  unit, and whether TXT 0x20 rate 0 actually silences $GNTXT.
 - **Default baud** out of the box (factory-reset consequences for recovery).
 
 ## Stage 1: missing asbin CFG structs
@@ -192,12 +214,15 @@ vel          -> NAV-VELNED   (ecef modifier -> NAV-VELECEF)
 time         -> NAV-TIMEUTC  (tai modifier -> NAV-TIME, GNSS time)
 qual         -> NAV-DOP + NAV-AUTO (fix state, sat counts)
 survey       -> NAV-SVIN
-tp, leap, epoch -> stage-0 audit; likely absent
+leap         -> NAV-TIME (carries current leapSec + validity bit;
+                announcements have no carrier - audited)
+tp, epoch    -> absent (audited: no time-of-pulse message, no EOE)
 ```
 
-`--sats-out sat` -> NAV-SVINFO; `sig` per stage-0 audit (SVSTATE decode does
-not exist; if SVINFO lacks per-signal data, `sig` is absent for now and
-SVSTATE processing is called out as separate master-side work).
+`--sats-out sat` -> NAV-SVINFO; `sig` has no documented carrier (SVINFO is
+per-satellite, SVSTATE is per-sat eph/alm state - audited); the stage-0
+SVINFO per-signal probe on dual-band hardware decides whether `sig` is
+shown as absence.
 
 Functionality: `satpulsetool gps --pvt-out pos,time --sats-out sat` works.
 
@@ -205,7 +230,8 @@ Functionality: `satpulsetool gps --pvt-out pos,time --sats-out sat` works.
 
 `--rtcm-out MSM4|MSM7|ARP|auto` via CFG-MSG 0xF8 targets with NAK-driven
 absence (TAU1201 reports nothing achieved, no error). `--raw-out` per
-stage-0 RXM-DUMPRAW findings. `--rtcm-base-id` expected absent (audit).
+stage-0 RXM-DUMPRAW findings (a set message 0x02 0x01, not a CFG-MSG
+target). `--rtcm-base-id` absent (audited: no DF003 carrier).
 
 Functionality: `satpulsetool gps --rtcm-out auto` works on TAU1302/TAU951M
 and shows absence on TAU1201.
@@ -224,8 +250,9 @@ Functionality: `--save --save-all --reset --reload --factory-reset` work.
 CFG-PPS (15-byte Cynosure II/III form on all three units): Width ->
 duty*period, Period -> period, PolarityRising -> polarity, OnlyWhenLocked ->
 sync, GPIO preserved from the query-phase readback. AlignToGNSS/TimeGNSS
-carriers per stage-0 audit. AntennaCableDelay iff the offset field proves
-to be that.
+have no CFG-PPS carrier (audited: the message has no time-base or
+GNSS-select fields) - both absent. AntennaCableDelay iff the offset field
+proves to be that (stage 0).
 
 Functionality: `satpulsetool gps --pps 0.1` works.
 
