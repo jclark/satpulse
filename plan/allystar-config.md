@@ -193,11 +193,16 @@ Remaining hardware unknowns:
   actually switches, whether setting the OTHER UART's rate disturbs the
   live link, whether we can identify which UART we are on (if not, --speed
   sets both, as the message file does today), safe resume timing.
-- **NVM model**: CFG-CFG mask bit semantics per unit (baud/NMEA-rate/nav
-  bits - what does each cover? is mask 0 vacuous?), reload behavior (ACK in
-  place? how long? message file hints 3 s), what factory reset restores
-  (default baud!), and a discriminating persistence oracle (USB
-  unbind/rebind power cycle if soft resets preserve too much).
+- ~~NVM model~~: RESOLVED except the disruptive tail (CONTEXT.md): save
+  works and honors the mask (bit0 baud, bit1 NMEA rates, bit2 nav;
+  mask 0 vacuous ACK); CFG-CFG load is ACKed everywhere but is a NO-OP
+  on TAU1201/TAU951M and a real in-place load on TAU1302 - so --reload
+  is realized as SIMPLERST 0 (soft reset: no ACK, ~0.3-0.7 s restart
+  banner, fix retained, NVM reloaded) on all units. Remaining: power-
+  cycle persistence proof, factory reset behavior, default baud (one
+  disruptive session, recovery plan required). The allystar.toml reload
+  tag's TAU1201 verification comment is wrong (weak oracle) - fix on
+  master.
 - **ACK-without-apply spot checks**: ELEV, DOP, CARRSMOOTH, PPS done on
   TAU1201 - ACK means applied, readback echoes exactly. NAVSAT is the
   clamp case (above). Remaining classes: PRT (with the baud experiment),
@@ -266,10 +271,13 @@ and shows absence on TAU1201.
 
 ## Stage 3: NVM operations
 
-CFG-CFG save (minimal via touched-section mask if stage 0 shows the mask is
-honored, else all), `--save-all`, reload, `--reset` (reload + SIMPLERST cold
-per the message file's reset recipe), `--factory-reset` (clear +
-SIMPLERST), no-ACK handling for SIMPLERST modes 0-3.
+CFG-CFG save (minimal via touched-section mask - stage 0 confirmed the
+mask is honored; bit0 baud, bit1 NMEA rates, bit2 nav), `--save-all`
+(mask 0x7), `--reload` = SIMPLERST 0 (CFG-CFG load is a no-op on two of
+three units - stage 0), `--reset` = SIMPLERST 1 (cold: clears sat data),
+`--factory-reset` = CFG-CFG clear 0xFFFFFFFF + SIMPLERST, no-ACK
+handling for SIMPLERST modes 0-3 (succeed on send; expect the ALLYSTAR
+restart banner within a second).
 
 Functionality: `--save --save-all --reset --reload --factory-reset` work.
 
