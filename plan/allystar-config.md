@@ -215,7 +215,15 @@ Remaining hardware unknowns:
   the undocumented id 0x08 on all units (the doc-absence was a doc gap);
   DTM 0x0A and JAM 0x21 exist on newer units; TXT rate 0 silences
   $GNTXT (verified). NAK-driven per-unit discovery works.
-- **Default baud** out of the box (factory-reset consequences for recovery).
+- ~~Default baud~~: RESOLVED - factory default is 115200 on both UARTs
+  (TAU951M, post factory reset). Factory defaults equal shipped config;
+  CFG-CFG clear is a NO-ACK request; the PPS offset survives a factory
+  wipe (factory calibration -> AntennaCableDelay is NOT mapped onto it,
+  and sets preserve it via read-modify-write). Save mask 0x7 does not
+  persist binary CFG-MSG rates (NMEA rates are covered).
+- **Power-cycle persistence**: the only stage-0 item left, and it needs
+  the owner (root USB reset or physical replug); soft-reset NVM reload
+  is already proven, so this is confirmation, not design input.
 
 ## Stage 1: missing asbin CFG structs
 
