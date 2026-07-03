@@ -18,27 +18,28 @@ import (
 // unknown CFG-MSG targets NAK both poll and set forms, and sets are
 // acknowledged with ACK-ACK/ACK-NAK naming class+id.
 type testReceiver struct {
-	t          *testing.T
-	monVer     *asbin.MonVer
-	rates      map[asbin.MsgID]uint8
-	naks       map[asbin.MsgID]bool // set requests answered with NAK
-	nakTargets map[asbin.MsgID]bool // CFG-MSG targets answered with NAK
-	silent     map[asbin.MsgID]bool // requests not answered at all
-	reorder    bool                 // deliver each burst's responses in reverse
-	pending    [][]byte             // delivered before the next request's responses
-	rawOn      uint8                // RXM-DUMPRAW state
-	nakRawOff  bool                 // TAU951M quirk: NAK the raw disable yet apply it
-	saves      []asbin.CfgCfg       // CFG-CFG save/load requests received (ACKed)
-	clears     []asbin.CfgCfg       // CFG-CFG clear requests received (silent, like hardware)
-	resets     []asbin.CfgSimpleRst // SIMPLERST requests received (silent)
-	pps        *asbin.CfgPps        // nil: CFG-PPS unsupported (poll is silent)
-	fixedEcef  *asbin.CfgFixedECEF  // nil: unsupported (poll is silent)
-	survey     *asbin.CfgSurvey     // nil: unsupported (poll is silent)
-	navSat     *asbin.CfgNavSat     // nil: unsupported (poll is silent)
-	sigCap     asbin.CfgNavSatMask  // hardware capability; clamps written masks
-	prt        [2]uint32            // stored CFG-PRT records
-	liveRate   uint32               // the live rate of the arriving port
-	elev       asbin.CfgElev        // CFG-ELEV store (always present: every unit has it)
+	t              *testing.T
+	monVer         *asbin.MonVer
+	rates          map[asbin.MsgID]uint8
+	naks           map[asbin.MsgID]bool // set requests answered with NAK
+	nakTargets     map[asbin.MsgID]bool // CFG-MSG targets answered with NAK
+	silent         map[asbin.MsgID]bool // requests not answered at all
+	reorder        bool                 // deliver each burst's responses in reverse
+	pending        [][]byte             // delivered before the next request's responses
+	rawOn          uint8                // RXM-DUMPRAW state
+	nakRawOff      bool                 // TAU951M quirk: NAK the raw disable yet apply it
+	saves          []asbin.CfgCfg       // CFG-CFG save/load requests received (ACKed)
+	clears         []asbin.CfgCfg       // CFG-CFG clear requests received (silent, like hardware)
+	resets         []asbin.CfgSimpleRst // SIMPLERST requests received (silent)
+	pps            *asbin.CfgPps        // nil: CFG-PPS unsupported (poll is silent)
+	fixedEcef      *asbin.CfgFixedECEF  // nil: unsupported (poll is silent)
+	survey         *asbin.CfgSurvey     // nil: unsupported (poll is silent)
+	navSat         *asbin.CfgNavSat     // nil: unsupported (poll is silent)
+	sigCap         asbin.CfgNavSatMask  // hardware capability; clamps written masks
+	prt            [2]uint32            // stored CFG-PRT records
+	liveRate       uint32               // the live rate of the arriving port
+	elev           asbin.CfgElev        // CFG-ELEV store (always present: every unit has it)
+	ignoreZeroDuty bool                 // TAU1302 quirk: ACK a zero duty cycle without applying it
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -104,6 +105,10 @@ func (r *testReceiver) respondOne(data []byte) [][]byte {
 	case *asbin.CfgPps:
 		if r.pps == nil {
 			return [][]byte{r.nak(asbin.CfgPpsID)}
+		}
+		if mt.DutyCycle == 0 && r.ignoreZeroDuty {
+			// TAU1302 quirk: a zero duty cycle is ACKed and ignored
+			return [][]byte{r.ack(asbin.CfgPpsID)}
 		}
 		*r.pps = *mt
 		return [][]byte{r.ack(asbin.CfgPpsID)}
@@ -613,6 +618,23 @@ func TestTimePulseSet(t *testing.T) {
 				t.Errorf("achieved width = %v/%v, want %v", w, ok, tc.width)
 			}
 		})
+	}
+}
+
+func TestTimePulseZeroDutyIgnored(t *testing.T) {
+	// TAU1302 quirk: a zero duty cycle is acknowledged and ignored.
+	// The post-set readback must report the truth: the width did not
+	// change.
+	rcvr := &testReceiver{monVer: tau1201Ver(), pps: tau951mPps(), ignoreZeroDuty: true}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetTimePulseWidth(0)
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if w, ok := cfg.ConfigProps().GetTimePulseWidth(); !ok || w != 10*time.Millisecond {
+		t.Errorf("achieved width = %v/%v, want the truthful unchanged 10ms", w, ok)
 	}
 }
 
