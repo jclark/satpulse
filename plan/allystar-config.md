@@ -60,6 +60,19 @@ Resolved on all three receivers with back-to-back single-write bursts:
   modes 0x10/0x11/0x80 (stop/start/clear-TRK) do ACK.
 - **Line budget**: default NMEA load (GGA/GSA/GSV/RMC/ZDA/TXT at 1 Hz) is
   comfortable at 115200. Out-of-box default baud not yet established.
+- **CFG-MSG discovery map** (poll sweep, all three units, 2026-07-03; full
+  tables in CONTEXT.md): discovery is fully NAK-driven (no silent
+  targets). F0 ids beyond the doc: GST 0x08 (all units), DTM 0x0A
+  (TAU1201/TAU951M), JAM 0x21 (TAU951M); TXT 0x20 rate 0 genuinely
+  silences $GNTXT (verified). F8 sub-id = RTCM type - 1000 (proprietary
+  type - 4000): TAU951M/TAU1302 expose 1005, eph 1019-1046, MSM4 and
+  MSM7 for GPS/GLO/GAL/SBAS/QZS/BDS, and 4065-family ids; TAU1201 NAKs
+  all F8. NAV-PVT (0xC1) NAKs on all three units; NAV-SVSTATE (0x32)
+  exists on TAU1201/TAU1302 only. NAV-TIME/TIMEUTC/CLOCK/CLOCK2/SVINFO/
+  SVIN/AUTO all emit at 1 Hz when enabled (verified on TAU1201).
+  NAV-SVINFO is one row per SATELLITE (dual-band sats appear once), so
+  per-signal satellite info has no carrier. TAU1302 as-found emits MSM7
+  + ephemerides (rate 1) - that is its baseline, not leftover state.
 
 ## Already implemented (master)
 
@@ -145,14 +158,14 @@ Remaining hardware unknowns:
 - **Raw output**: RXM-DUMPRAW set (0x02 0x01 payload U1 0/1) per receiver -
   enable, observe whether anything is emitted and in what framing
   (acknowledge-but-never-emit is common; format undocumented).
-- **SVINFO per-signal probe**: on the dual-band units, does NAV-SVINFO emit
-  multiple rows per svid (one per signal)? Decides whether `sig` is truly
-  absent or realizable from SVINFO.
-- **RTCM output detail**: which MSM sets each of TAU1302/TAU951M emits
-  (MSM4/MSM7/ARP), enable via CFG-MSG 0xF8 targets, confirm emission by
-  observation. TAU1201 shows absence.
-- **NAV-PVT / NAV-SVSTATE / NAV-CLOCK emission** per receiver (enable, then
-  observe; prefer already-processed messages for the pvt-out mapping).
+- ~~SVINFO per-signal probe~~: DONE - per-satellite only (dual-band sats
+  appear once); `sig` is absence.
+- **RTCM output detail**: MSM7 + eph emission OBSERVED on TAU1302
+  (as-found baseline). Still to observe: MSM4 and 1005 emission on both
+  RTCM units, MSM7 on TAU951M. TAU1201 shows absence (all F8 NAK).
+- **NAV emission on the other two units**: TAU1201 verified for
+  TIME/TIMEUTC/CLOCK/CLOCK2/SVINFO/AUTO/SVSTATE; spot-check the same on
+  TAU951M (no SVSTATE there) and TAU1302.
 - **CFG-NAVSAT semantics**: set masks including signals a unit lacks - ACK
   and clamp, or refuse? Does readback echo the written mask or the
   effective one? Any coupled signals? Determines whether the signal set
@@ -175,10 +188,10 @@ Remaining hardware unknowns:
 - **ACK-without-apply spot checks**: for each property class, set a value
   and independently poll once during stage 0 (not in the shipped
   configurator) to confirm ACK means applied.
-- **NMEA coverage**: which F0 ids each unit accepts (doc list is GGA GLL
-  GSA GRS GSV RMC VTG ZDA at 0x00-0x07 plus TXT 0x20; GST audited - it has
-  no CFG-MSG id, so it is not rate-controllable). Confirm NAK vs accept per
-  unit, and whether TXT 0x20 rate 0 actually silences $GNTXT.
+- ~~NMEA coverage~~: DONE - full F0 map per unit in CONTEXT.md. GST has
+  the undocumented id 0x08 on all units (the doc-absence was a doc gap);
+  DTM 0x0A and JAM 0x21 exist on newer units; TXT rate 0 silences
+  $GNTXT (verified). NAK-driven per-unit discovery works.
 - **Default baud** out of the box (factory-reset consequences for recovery).
 
 ## Stage 1: missing asbin CFG structs
@@ -219,18 +232,19 @@ leap         -> NAV-TIME (carries current leapSec + validity bit;
 tp, epoch    -> absent (audited: no time-of-pulse message, no EOE)
 ```
 
-`--sats-out sat` -> NAV-SVINFO; `sig` has no documented carrier (SVINFO is
-per-satellite, SVSTATE is per-sat eph/alm state - audited); the stage-0
-SVINFO per-signal probe on dual-band hardware decides whether `sig` is
-shown as absence.
+`--sats-out sat` -> NAV-SVINFO; `sig` is absence (audited AND verified on
+hardware: SVINFO is one row per satellite even for dual-band sats,
+SVSTATE is per-sat eph/alm state).
 
 Functionality: `satpulsetool gps --pvt-out pos,time --sats-out sat` works.
 
 ## Stage 2b: RTCM and raw output
 
 `--rtcm-out MSM4|MSM7|ARP|auto` via CFG-MSG 0xF8 targets with NAK-driven
-absence (TAU1201 reports nothing achieved, no error). `--raw-out` per
-stage-0 RXM-DUMPRAW findings (a set message 0x02 0x01, not a CFG-MSG
+absence (TAU1201 reports nothing achieved, no error). Sub-ids follow
+type-1000: MSM4 = 0x4A/0x54/0x5E/0x68/0x72/0x7C, MSM7 = 0x4D/0x57/0x61/
+0x6B/0x75/0x7F (GPS/GLO/GAL/SBAS/QZS/BDS), ARP 1005 = 0x05. `--raw-out`
+per stage-0 RXM-DUMPRAW findings (a set message 0x02 0x01, not a CFG-MSG
 target). `--rtcm-base-id` absent (audited: no DF003 carrier).
 
 Functionality: `satpulsetool gps --rtcm-out auto` works on TAU1302/TAU951M
