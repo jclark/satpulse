@@ -180,12 +180,15 @@ Remaining hardware unknowns:
   poll. Per-unit supported sets recorded in CONTEXT.md (TAU1201/TAU951M
   0x4108237 L1/L5; TAU1302 0x8042437 L1/L2, running a narrower as-found
   selection).
-- **Survey/time-mode semantics**: how CFG-SURVEY, CFG-FIXEDLLA/ECEF interact
-  (what does "mobile" look like - all zeros?); how to stop or restart an
-  in-progress survey (writing zeros does NOT stop one on TAU1201);
-  whether a fixed position while surveying is refused or queued; NAV-SVIN
-  as progress signal. Determines `SurveyAgain` and the SetStatic default
-  path.
+- ~~Survey/time-mode semantics~~: MODEL ESTABLISHED (TAU951M, details in
+  CONTEXT.md): no mode register - FIXEDECEF nonzero IS fixed mode, both
+  zero is mobile; CFG-SURVEY {mindur,acc} runs a survey whose completion
+  auto-writes the mean into FIXEDECEF; direct FIXEDECEF set freezes the
+  position immediately; zeros exit to mobile (verified); 1005 emits iff
+  FIXEDECEF nonzero; NAV-SVIN is continuous telemetry (posUsed ~ uptime,
+  never resets), not the survey state machine. Residual per-unit checks
+  (SURVEY-zeros cancel mid-survey, restart semantics with FIXEDECEF set,
+  TAU1201/TAU1302 parity) fold into stage 5 verification.
 - **Baud-change handshake**: at which rate the ACK arrives, when the port
   actually switches, whether setting the OTHER UART's rate disturbs the
   live link, whether we can identify which UART we are on (if not, --speed
@@ -283,11 +286,17 @@ Functionality: `satpulsetool gps --pps 0.1` works.
 
 ## Stage 5: time mode (survey / fixed position)
 
-CFG-SURVEY + CFG-FIXEDECEF/LLA per stage-0 semantics: `--survey`
-(+time/acc), `--fixed-pos-ecef/llh`, `--mobile`, SetStatic default path
-preserving an existing fixed position and a running survey unless
-SurveyAgain. Report achieved mode truthfully (survey params are not
-readable back as a mode; the resulting fixed position is).
+Per the stage-0 model (no mode register; FIXEDECEF nonzero = fixed):
+`--survey` writes CFG-SURVEY {mindur,acc} after zeroing FIXEDECEF (so
+completion re-transfers); `--fixed-pos-ecef/llh` writes CFG-FIXEDECEF/
+FIXEDLLA directly; `--mobile` zeros FIXEDECEF (+SURVEY). SetStatic
+default path: query FIXEDECEF+SURVEY; if FIXEDECEF nonzero preserve it;
+if SURVEY params nonzero and FIXEDECEF zero a survey is running -
+leave it unless SurveyAgain; else start a survey. Mode readback:
+FIXEDECEF nonzero -> static+fixed pos; SURVEY nonzero + FIXEDECEF zero
+-> static (survey in progress); both zero -> mobile. Verify on all
+three units the residual questions from stage 0 (cancel/restart
+semantics).
 
 Functionality: `--survey --fixed-pos-ecef --mobile` work; `satpulsed`
 default static mode triggers survey-in.
