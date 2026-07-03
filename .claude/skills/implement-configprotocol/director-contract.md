@@ -70,3 +70,10 @@ begins, especially on saturated lines. The ConfigProtocol must count
 outstanding probes and consume their acknowledgements so the
 configurator never attributes them to its own requests (the
 correlation key is shared).
+
+Check whether that bookkeeping is needed at all before building it:
+it exists only where the probe's correlation key collides with
+configurator requests. The Allystar probe is a poll that gets no ACK
+and answers with a message the configurator never requests, so late
+probe responses can collide with nothing and the pending-probe
+accounting disappears entirely.
