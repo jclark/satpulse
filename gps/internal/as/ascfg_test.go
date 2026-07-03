@@ -26,6 +26,8 @@ type testReceiver struct {
 	silent     map[asbin.MsgID]bool // requests not answered at all
 	reorder    bool                 // deliver each burst's responses in reverse
 	pending    [][]byte             // delivered before the next request's responses
+	rawOn      uint8                // RXM-DUMPRAW state
+	nakRawOff  bool                 // TAU951M quirk: NAK the raw disable yet apply it
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -72,6 +74,12 @@ func (r *testReceiver) respondOne(data []byte) [][]byte {
 		}
 		r.rates[target] = mt.Rate
 		return [][]byte{r.ack(asbin.CfgMsgID)}
+	case *asbin.RxmDumpRaw:
+		r.rawOn = mt.Enable
+		if mt.Enable == 0 && r.nakRawOff {
+			return [][]byte{r.nak(asbin.RxmDumpRawID)}
+		}
+		return [][]byte{r.ack(asbin.RxmDumpRawID)}
 	}
 	if mid.Ackable() {
 		return [][]byte{r.ack(mid)}
@@ -384,6 +392,91 @@ func TestPVTOutMissingMessage(t *testing.T) {
 	}
 	if rcvr.rates[asbin.NavTimeUtcID] != 1 {
 		t.Errorf("TIMEUTC rate = %d, want 1", rcvr.rates[asbin.NavTimeUtcID])
+	}
+}
+
+func TestRTCMOut(t *testing.T) {
+	rcvr := &testReceiver{monVer: tau1201Ver()}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP)
+	_, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	expect := map[asbin.MsgID]uint8{asbin.RtcmArpID: 1}
+	for _, mid := range rtcmMSM4IDs {
+		expect[mid] = 1
+	}
+	for _, mid := range rtcmMSM7IDs {
+		expect[mid] = 0
+	}
+	for _, mid := range rtcmEphIDs {
+		expect[mid] = 0
+	}
+	if !reflect.DeepEqual(rcvr.rates, expect) {
+		t.Errorf("rates\ngot  %v\nwant %v", rcvr.rates, expect)
+	}
+}
+
+func TestRTCMOutAbsent(t *testing.T) {
+	// The TAU1201 NAKs every 0xF8 target: an RTCM request achieves
+	// nothing and reports no error - absence, not failure.
+	nakAll := make(map[asbin.MsgID]bool)
+	for _, mid := range rtcmMSM4IDs {
+		nakAll[mid] = true
+	}
+	for _, mid := range rtcmMSM7IDs {
+		nakAll[mid] = true
+	}
+	for _, mid := range rtcmEphIDs {
+		nakAll[mid] = true
+	}
+	nakAll[asbin.RtcmArpID] = true
+	rcvr := &testReceiver{monVer: tau1201Ver(), nakTargets: nakAll}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgAuto)
+	_, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0: no RTCM output shows as absence", errCount)
+	}
+	if len(rcvr.rates) != 0 {
+		t.Errorf("rates = %v, want none applied", rcvr.rates)
+	}
+}
+
+func TestRawOut(t *testing.T) {
+	tests := []struct {
+		name      string
+		flags     gpsprot.RawMsgFlags
+		nakRawOff bool
+		expect    uint8
+	}{
+		{name: "obs", flags: gpsprot.RawMsgObs, expect: 1},
+		{name: "nav", flags: gpsprot.RawMsgNavData, expect: 1},
+		{name: "off", flags: gpsprot.RawMsgNone, expect: 0},
+		{
+			// TAU951M quirk: the disable is NAKed yet applied; the NAK
+			// must not surface as an error
+			name: "off_nak_quirk", flags: gpsprot.RawMsgNone,
+			nakRawOff: true, expect: 0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tau1201Ver(), rawOn: 1, nakRawOff: tc.nakRawOff}
+			cp := probe(t, rcvr)
+			target := &gpsprot.ConfigTarget{}
+			target.Opts.RawMsg.Set(tc.flags)
+			_, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if rcvr.rawOn != tc.expect {
+				t.Errorf("rawOn = %d, want %d", rcvr.rawOn, tc.expect)
+			}
+		})
 	}
 }
 

@@ -17,6 +17,61 @@ func (c *Configurator) generateMsgReqs() {
 	if opts.SatsMsg.IsSet() {
 		c.generateSatsReqs(opts.SatsMsg.Get())
 	}
+	if opts.RawMsg.IsSet() {
+		c.generateRawReqs(opts.RawMsg.Get())
+	}
+	if opts.RTCMMsg.IsSet() {
+		c.generateRTCMReqs(opts.RTCMMsg.Get())
+	}
+}
+
+// rtcmMSM4IDs and rtcmMSM7IDs list the per-constellation MSM targets,
+// index-aligned. Enabling covers every constellation the ids exist
+// for; the receiver emits MSM only for constellations it tracks.
+var rtcmMSM4IDs = []asbin.MsgID{asbin.RtcmMsm4GpsID, asbin.RtcmMsm4GloID,
+	asbin.RtcmMsm4GalID, asbin.RtcmMsm4SbasID, asbin.RtcmMsm4QzssID, asbin.RtcmMsm4BdsID}
+var rtcmMSM7IDs = []asbin.MsgID{asbin.RtcmMsm7GpsID, asbin.RtcmMsm7GloID,
+	asbin.RtcmMsm7GalID, asbin.RtcmMsm7SbasID, asbin.RtcmMsm7QzssID, asbin.RtcmMsm7BdsID}
+
+// rtcmEphIDs are the broadcast-ephemeris RTCM targets. They are not in
+// the device-independent RTCM group vocabulary, but they are part of
+// the receiver's RTCM output (the TAU1302 ships with them enabled), so
+// a complete RTCM request turns them off along with unnamed MSM types.
+var rtcmEphIDs = []asbin.MsgID{asbin.RtcmEphGpsID, asbin.RtcmEphGloID,
+	asbin.RtcmEphBdsID, asbin.RtcmEphQzssID, asbin.RtcmEphGalID}
+
+// generateRTCMReqs configures RTCM output via CFG-MSG 0xF8 targets. A
+// wire-format request is complete: named types on, everything else in
+// the group off. All enables are NAK-tolerant: a receiver without RTCM
+// output (the TAU1201) NAKs every 0xF8 target, and the absence of any
+// achieved RTCM output is the statement - not an error. ARP (1005) is
+// only emitted while a fixed position is set; enabling it without one
+// is accepted and silent.
+func (c *Configurator) generateRTCMReqs(flags gpsprot.RTCMMsgFlags) {
+	msm4 := flags&gpsprot.RTCMMsgMSM4 != 0
+	msm7 := flags&gpsprot.RTCMMsgMSM7 != 0
+	for i := range rtcmMSM4IDs {
+		c.addMsgRate(rtcmMSM4IDs[i], msm4)
+		c.addMsgRate(rtcmMSM7IDs[i], msm7)
+	}
+	c.addMsgRate(asbin.RtcmArpID, flags&gpsprot.RTCMMsgARP != 0)
+	for _, mid := range rtcmEphIDs {
+		c.addMsgRate(mid, false)
+	}
+}
+
+// generateRawReqs configures raw data output. Allystar has a single
+// switch, RXM-DUMPRAW, which turns on once-per-second RXM-RAW frames
+// in an undocumented format; both kinds of raw information map to it,
+// and a request naming neither turns it off (a raw request is
+// complete). NAK-tolerant because the TAU951M NAKs the disable while
+// still applying it.
+func (c *Configurator) generateRawReqs(flags gpsprot.RawMsgFlags) {
+	var enable uint8
+	if flags&(gpsprot.RawMsgObs|gpsprot.RawMsgNavData) != 0 {
+		enable = 1
+	}
+	c.addReqNakOK(&asbin.RxmDumpRaw{Enable: enable}, nil)
 }
 
 // generatePVTReqs configures the native messages that deliver the

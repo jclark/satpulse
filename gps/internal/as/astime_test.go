@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
@@ -142,10 +142,10 @@ func TestTimeNavTime(t *testing.T) {
 		{
 			name: "week overflow",
 			input: asbin.NavTime{
-				NavSys:  asbin.NavTimeSysGPS,
-				Flags:   asbin.NavTimeFlagWeekValid | asbin.NavTimeFlagSecondValid,
-				RefTow:  0,
-				Week:    0x8000, // > math.MaxInt16
+				NavSys: asbin.NavTimeSysGPS,
+				Flags:  asbin.NavTimeFlagWeekValid | asbin.NavTimeFlagSecondValid,
+				RefTow: 0,
+				Week:   0x8000, // > math.MaxInt16
 			},
 			expect: gpsprot.TimeMsg{NativeMsgID: "NAV-TIME"},
 		},

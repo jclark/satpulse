@@ -94,9 +94,13 @@ const supportedGNSS = gpsprot.GNSSSet(1<<gpsprot.GPS) | gpsprot.GNSSSet(1<<gpspr
 	gpsprot.GNSSSet(1<<gpsprot.NAVIC)
 
 // ConfigSupport returns the configuration options this implementation
-// supports.
+// supports. The RTCM flags are declared for the whole vendor even
+// though the TAU1201 has no RTCM output: capability differences show
+// per-unit as NAK-driven absence in the achieved output, which the
+// flags bound but do not gate.
 func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
-	return 0
+	return gpsprot.ConfigSupportRaw | gpsprot.ConfigSupportRTCMMSM4 |
+		gpsprot.ConfigSupportRTCMMSM7 | gpsprot.ConfigSupportRTCMQZSS
 }
 
 // ConfigProps returns the current configuration of the GPS receiver,
