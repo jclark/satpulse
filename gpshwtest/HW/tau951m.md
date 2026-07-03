@@ -52,7 +52,11 @@ cannot express (`--pps` realizes the full pulse bundle with rising
 polarity; see `BUGS.md`, unresolved observations). Every probing run
 therefore reports one honest not-left-as-found failure on
 `timePulse.polarityRising`; the polarity is restored out-of-band after
-runs. The characterization itself is run-to-run identical.
+runs (after a --disruptive run the NVM copy needs the same restore,
+since the run's saves persist the rising polarity). The
+characterization itself is run-to-run identical, and the disruptive
+NVM-comparison failures on this unit all reduce to the same polarity
+field.
 
 This unit silently drops requests beyond ~12 outstanding (same-id
 bursts, stage-0 finding); the configurator's per-id serialization

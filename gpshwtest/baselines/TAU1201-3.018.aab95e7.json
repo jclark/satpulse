@@ -24,6 +24,7 @@
         {"missing": ["1077", "1087", "1097", "1117", "1127"], "request": ["MSM7"]}
       ]
     },
+    "saveGranularity": {"groups": [["mode", "timePulse.width"]], "unsaved": ["minElevation"]},
     "showPort": {"unsupported": true},
     "signals": {
       "signalSet": {
