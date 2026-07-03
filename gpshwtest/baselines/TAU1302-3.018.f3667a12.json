@@ -1,0 +1,52 @@
+{
+  "limitations": {
+    "antennaCableDelay": {"unsupported": true},
+    "minElevation": {
+      "observed": [
+        {"request": 1, "result": 0.999999992},
+        {"request": 7, "result": 7.000000052},
+        {"request": 45, "result": 44.999997837},
+        {"accepted": 45.000001252, "request": 45, "stored": 44.999997837}
+      ]
+    },
+    "mode.fixedPosAcc": {"observed": [{"request": 0.12345, "result": 0}, {"request": 1.23456, "result": 0}]},
+    "mode.fixedPosECEF[0]": {"quantum": 0.01},
+    "mode.fixedPosECEF[1]": {"quantum": 0.01},
+    "mode.fixedPosECEF[2]": {"quantum": 0.01},
+    "mode.fixedPosLLH[0]": {"unsupported": true},
+    "mode.fixedPosLLH[1]": {"unsupported": true},
+    "mode.height": {"unsupported": true},
+    "pvtOut": {"missing": ["leap", "tp"]},
+    "rtcmBaseID": {"unsupported": true},
+    "showPort": {"unsupported": true},
+    "signals": {
+      "signalSet": {
+        "BDS": ["B1I", "B2I"],
+        "GAL": ["E1"],
+        "GLO": ["L1", "L2"],
+        "GPS": ["L1", "L2C"],
+        "QZSS": ["L1", "L2C"]
+      }
+    },
+    "timeGNSS": {"unsupported": true},
+    "timePulse.width": {"quantum": 1e-06}
+  },
+  "receiver": {
+    "firmware": "3.018.f3667a12",
+    "hardware": "HD9310.92257eed4",
+    "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS"],
+    "vendor": "Allystar"
+  },
+  "supports": [
+    "fixedPos",
+    "raw",
+    "rtcmMSM4",
+    "rtcmMSM7",
+    "rtcmQZSS",
+    "signal",
+    "speed",
+    "survey",
+    "surveyAcc",
+    "surveyMsg"
+  ]
+}
