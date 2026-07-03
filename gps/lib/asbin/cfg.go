@@ -8,6 +8,7 @@ const (
 	CfgElevID      MsgID = clsCfg | (0x0B << 8)
 	CfgNavSatID    MsgID = clsCfg | (0x0C << 8)
 	CfgSurveyID    MsgID = clsCfg | (0x12 << 8)
+	CfgFixedLLAID  MsgID = clsCfg | (0x13 << 8)
 	CfgFixedECEFID MsgID = clsCfg | (0x14 << 8)
 	CfgSimpleRstID MsgID = clsCfg | (0x40 << 8)
 	CfgNmeaVerID   MsgID = clsCfg | (0x43 << 8)
@@ -89,6 +90,15 @@ type CfgSurvey struct {
 
 func (m *CfgSurvey) ID() MsgID { return CfgSurveyID }
 
+// CFG-FIXEDLLA (0x06 0x13)
+type CfgFixedLLA struct {
+	Lat int32 // 1e-7 degrees, Latitude
+	Lon int32 // 1e-7 degrees, Longitude
+	Alt int32 // cm, Altitude
+}
+
+func (m *CfgFixedLLA) ID() MsgID { return CfgFixedLLAID }
+
 // CFG-FIXEDECEF (0x06 0x14)
 type CfgFixedECEF struct {
 	X int32 // cm, ECEF X coordinate
@@ -116,7 +126,10 @@ type CfgMsg struct {
 
 func (m *CfgMsg) ID() MsgID { return CfgMsgID }
 
-// NMEA sentence IDs for use with CfgMsg
+// NMEA sentence IDs for use with CfgMsg. GST, DTM, and JAM are not in
+// the protocol documentation; the ids were discovered by CFG-MSG poll
+// sweep and identified by enabling them (GST on all three test units,
+// DTM on TAU1201/TAU951M, JAM on TAU951M only).
 const (
 	NmeaGgaID MsgID = clsNmea | (iota << 8)
 	NmeaGllID
@@ -126,7 +139,36 @@ const (
 	NmeaRmcID
 	NmeaVtgID
 	NmeaZdaID
+	NmeaGstID MsgID = clsNmea | (0x08 << 8)
+	NmeaDtmID MsgID = clsNmea | (0x0A << 8)
 	NmeaTxtID MsgID = clsNmea | (0x20 << 8)
+	NmeaJamID MsgID = clsNmea | (0x21 << 8)
+)
+
+// RTCM message IDs for use with CfgMsg, on receivers with RTCM output.
+// The id byte is the RTCM message type minus 1000. MSM4/MSM7 emission
+// and 1005 (emitted only while a fixed position is set) are
+// hardware-verified on the TAU951M and TAU1302; ephemeris output is
+// part of the TAU1302's shipped configuration.
+const (
+	RtcmArpID      MsgID = clsRtcm | (0x05 << 8) // 1005 stationary ARP
+	RtcmEphGpsID   MsgID = clsRtcm | (0x13 << 8) // 1019 GPS ephemeris
+	RtcmEphGloID   MsgID = clsRtcm | (0x14 << 8) // 1020 GLONASS ephemeris
+	RtcmEphBdsID   MsgID = clsRtcm | (0x2A << 8) // 1042 BDS ephemeris
+	RtcmEphQzssID  MsgID = clsRtcm | (0x2C << 8) // 1044 QZSS ephemeris
+	RtcmEphGalID   MsgID = clsRtcm | (0x2D << 8) // 1046 Galileo ephemeris
+	RtcmMsm4GpsID  MsgID = clsRtcm | (0x4A << 8) // 1074
+	RtcmMsm7GpsID  MsgID = clsRtcm | (0x4D << 8) // 1077
+	RtcmMsm4GloID  MsgID = clsRtcm | (0x54 << 8) // 1084
+	RtcmMsm7GloID  MsgID = clsRtcm | (0x57 << 8) // 1087
+	RtcmMsm4GalID  MsgID = clsRtcm | (0x5E << 8) // 1094
+	RtcmMsm7GalID  MsgID = clsRtcm | (0x61 << 8) // 1097
+	RtcmMsm4SbasID MsgID = clsRtcm | (0x68 << 8) // 1104
+	RtcmMsm7SbasID MsgID = clsRtcm | (0x6B << 8) // 1107
+	RtcmMsm4QzssID MsgID = clsRtcm | (0x72 << 8) // 1114
+	RtcmMsm7QzssID MsgID = clsRtcm | (0x75 << 8) // 1117
+	RtcmMsm4BdsID  MsgID = clsRtcm | (0x7C << 8) // 1124
+	RtcmMsm7BdsID  MsgID = clsRtcm | (0x7F << 8) // 1127
 )
 
 // CfgPpsPolarity defines values for CfgPps.Polarity
@@ -244,6 +286,7 @@ func init() {
 	regMsg[CfgCfg]("CFG")
 	regMsg[CfgNavSat]("NAVSAT")
 	regMsg[CfgSurvey]("SURVEY")
+	regMsg[CfgFixedLLA]("FIXEDLLA")
 	regMsg[CfgFixedECEF]("FIXEDECEF")
 	regMsg[CfgPrt]("PRT")
 	regMsg[CfgMsg]("MSG")

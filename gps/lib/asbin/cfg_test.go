@@ -166,6 +166,34 @@ func TestCfgSurvey(t *testing.T) {
 	}})
 }
 
+func TestCfgFixedECEF(t *testing.T) {
+	// Position a TAU951M survey-in wrote into CFG-FIXEDECEF
+	runTests(t, []testCase{{
+		name:   "surveyed",
+		packet: "F1D906140C00 02552DF9 681C4D24 A12EF708 6600",
+		wantID: CfgFixedECEFID,
+		wantMsg: &CfgFixedECEF{
+			X: -114469630,
+			Y: 609033320,
+			Z: 150417057,
+		},
+	}})
+}
+
+func TestCfgFixedLLA(t *testing.T) {
+	// Bangkok test-bench position, altitude -2.26 m
+	runTests(t, []testCase{{
+		name:   "bangkok",
+		packet: "F1D906130C00 E04F2F08 8F2CFD3B 1EFFFFFF 995B",
+		wantID: CfgFixedLLAID,
+		wantMsg: &CfgFixedLLA{
+			Lat: 137318368,  // 13.7318368 deg
+			Lon: 1006447759, // 100.6447759 deg
+			Alt: -226,
+		},
+	}})
+}
+
 func TestCfgSimpleRst(t *testing.T) {
 	// Example from spec: warm start
 	runTests(t, []testCase{{
