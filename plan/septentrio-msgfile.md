@@ -52,8 +52,9 @@ state-line count is not fixed (guide: "one or more additional lines
 ... depending on the command"), the prompt is the *only* definitive
 "command done" marker -- the ack line and a fixed timeout are not
 enough to know processing finished. So the `COMx>` prompt must be
-framed and consumed, not treated as human-only decoration; Format 2
-below is therefore required, not optional.
+framed and consumed, not treated as human-only decoration; it is framed
+as the tail of the single reply packet (see "Packet framing"), which is
+what makes the packet's arrival the completion signal.
 
 The guide (sec 3.1.3) actually defines four distinct reply framings,
 not two:
@@ -91,76 +92,139 @@ not two:
 mechanically-derivable, echo of what was sent; the analyzer design
 below is built to not need one.
 
-## Packet framing: two ASCII reply formats
+## Packet framing: one reply packet
 
 None of the four reply shapes carries a checksum, so the NMEA
 `PacketFormat` cannot frame them: `nmeamsg.CheckSyntax` hard-requires
-the trailing `*HH` triplet as a framing precondition, so a bare `$R:
-setNMEAOutput, stream1, com1, GGA, sec1\r\n` reaches CR still unframed
-and is abandoned.
+the trailing `*HH` triplet, so a bare `$R: setNMEAOutput, stream1,
+com1, GGA, sec1\r\n` reaches CR still unframed and is abandoned. The
+reply channel needs its own real `PacketFormat`; it cannot ride the
+`EmptyTag` fallback, since `gps/scan` makes no guarantee about how
+unmatched bytes are divided into packets (the `bufferLines` re-slicing
+in `internal/gpscmd/response.go` is best-effort, not a reliable packet
+boundary).
 
-**The reply channel needs its own real `PacketFormat`(s) -- it cannot
-ride the `EmptyTag` fallback.** An earlier draft proposed hanging the
-analyzer off the `Format == nil` path (`gps/scan` returns unrecognized
-bytes as `Packet{Format: nil}`, and `internal/gpscmd/response.go`'s
-`bufferLines` re-slices them into CR/LF lines). That is unsound as a
-framing foundation: **`gps/scan` makes no guarantee about how bytes are
-divided into packets when no format matches** -- the `bufferLines`
-re-slicing is best-effort, not a reliable packet boundary.
+**A whole reply is one packet, from the leading `$R` through the
+terminating prompt's `>`.** Guide sec 3.1.3 licenses this directly: the
+ASCII reply to a `set`/`get`/`exe` command, *including the terminating
+prompt, is atomic* -- it "cannot be broken by other messages from the
+receivers". Every tag in the two message files issues `set`/`get`/`exe`
+(plus `login`), so the byte run from `$R` to the prompt always arrives
+contiguously, with no SBF or NMEA interleaved: it is one well-defined
+packet, and the prompt inside it is the "command done" signal. So there
+is a single format and a single tag (`TagSepReply`), framing the echo
+line, every state line, and the prompt together -- not the earlier
+sketch of a `$R` echo-line format plus a separate state-line/prompt
+format.
 
-**Format 1 -- the `$R` reply format (direction settled).** A
-checksum-free echo-line format modeled on `nov.AbbrevAsciiPacketFormat`
-(`gps/internal/nov/abbrevasciipacket.go`: printable chars, CRLF
-terminator, length-capped, `ExtractChecksum`/`ComputeChecksum` return
-nil). It syncs on `$` then requires `R` at the second byte --
-disambiguating from SBF's `$@` and from NMEA's checksummed `$`-led
-sentences at byte 2, the same way the SBF format syncs `$` then `@`. It
-frames all four ack/nak shapes (`$R:`/`$R;`/`$R!`/`$R?`; the char after
-`$R` is the discriminator the analyzer reads) under its own tag
-(`TagSepReply`). The three `$`-led formats (`$R` reply, `$@` SBF,
-`$`-NMEA) all begin with `$`. In sync state the scanner tries each
-format's `Next` in `pktFormats` order and activates the first that
-accepts (`scan.go:148-155`); if an activated candidate later fails back
-to sync, only the formats *after* it in the list get a shot at the same
-first byte (`scan.go:162-180`). NMEA is loose enough to start framing a
-`$R` line and only fail at the missing `*HH`, so order the `$R` format
-ahead of NMEA (and beside SBF) in `allVendorPacketFormats` so `$R`'s
-`$`+`R` is selected directly rather than via the post-failure retry.
-The *direction* -- `$R` as its own `PacketFormat` -- is fixed; the exact
-`Next`/`IsFinal` and how it accommodates in `scan` alongside the other
-`$`-led formats are details to work through when it is built.
+The format is checksum-free (modeled on `nov.AbbrevAsciiPacketFormat`
+in `gps/internal/nov/abbrevasciipacket.go`:
+`ExtractChecksum`/`ComputeChecksum` return nil). It syncs on `$` then
+`R`, disambiguating from SBF's `$@` and from NMEA's checksummed `$`-led
+sentences the same way the SBF format syncs `$` then `@`. Order it
+ahead of NMEA (and beside SBF) in `allVendorPacketFormats`: NMEA is
+loose enough to start framing a `$R` line and only fail at the missing
+`*HH`, so `$R` must be tried first and selected on its `$`+`R`
+directly.
 
-**Format 2 -- the state lines and the prompt.** Two things ride here,
-both required (see the wait-for-the-prompt requirement above); the open
-part is *how* to frame them, not *whether*:
+### What a valid packet is
 
-- **State lines** -- the headerless data a `get*` command returns (and
-  the `lst` `---->`/`$--BLOCK` output). Machine-relevant -- they *are*
-  the readback. They have no distinctive first byte, so what a
-  `PacketFormat`'s `Next` should sync on for an arbitrary-text line is
-  the open question. Left unframed they come back as `Format == nil`
-  packets whose boundaries the scanner sets by
-  `restart`/`minInvalidPacketLen` (`scan.go:110,183,214-225`) -- never
-  CR/LF -- which is exactly why the `EmptyTag` path cannot carry them.
-- **The `CD>` prompt** (`COMx>`, `USBx>`, `DSK1>`, ..., plus `STOP>`
-  after a reset and the `---->` `lst` pseudo-prompt). The protocol
-  requires waiting for it, so it must be framed and delivered as the
-  "command done" signal -- human-*readable*, but not human-*only*. The
-  framing is the open piece: the prompt has **no CR/LF terminator** and
-  no distinctive start marker, so it is hard to distinguish and may need
-  constraining. A candidate approach: frame the single trailing `>` byte
-  as the whole packet -- sync on `>`, immediately `IsFinal` -- since
-  every prompt variant ends in `>` and the `CD` prefix is not needed to
-  detect completion. A `>` *inside* a framed `$R` ack/nak or state line
-  is not a problem: those lines are CRLF-terminated (guide 3.1.3: the
-  reply "ends with `<CR><LF>` followed by the prompt"), so a content `>`
-  sits inside the framed line, and only the prompt's `>` stands alone
-  after the CRLF -- which is exactly what the `>`-format matches in sync
-  state (any `CD` prefix ahead of it falls out as a short unrecognised
-  chunk, harmless -- only the `>` is needed). This piece still needs a
-  closer look before committing.
+A reply packet is
 
-Only Format 1's direction is fixed; Format 2's framing is the open work.
+> `$R` <type> <body> <terminator>
+
+- **Header** -- the two bytes `$R`, then a **type char**, one of `:`
+  `;` `!` `?` (the four reply shapes of sec 3.1.3). The `R` and the
+  type char are what anchor the format against any other `$`-led run.
+- **Body** -- any (possibly empty) sequence of **content chars** and
+  strict `CR LF` pairs. A content char is printable ASCII `0x20`-`0x7E`
+  except `$`; a line break is always a `CR LF` pair, never a lone `CR`
+  or lone `LF`. (Replies are CRLF-delimited; only the commands we
+  *send* may use bare CR or LF.)
+- **Terminator** -- the *first* `CR LF` + **token** + `>` after the
+  header. A token is either `----` (four hyphens, the `lst`
+  pseudo-prompt) or four chars matching `[A-Z][A-Z0-9]{3}`. The packet
+  ends at that `>`: it is the last byte, and no trailing `CR LF` is
+  consumed, because the prompt has none -- the receiver waits after it.
+
+A 4096-byte length cap (tunable) bounds the packet; a candidate that
+reaches the cap with no terminator is not a packet. This cap only ever
+bounds `$R:`/`$R!`/`$R?` replies, which are small -- the largest in the
+guide, `getReceiverCapabilities`, is well under 200 bytes. `lst`
+content, the only reply that can run to kilobytes, never frames past
+its `---->` (see below), so its size never approaches the cap; the cap
+is a pure backstop, the way `nov`'s `abbrevMaxLength = 160` bounds a
+single line.
+
+Two properties make this definition well-formed:
+
+**Content never contains `$`, so a packet can never run across the next
+message boundary.** The character set the guide allows in reply strings
+(sec 3.1.4, `ABC...xyz0-9` plus `!#%@()*+-./:;<=>?[\]^_'{|}~`) has no
+`$` -- a literal `$` is reachable only inside a password, via the
+`%%DL` escape, and passwords are never echoed. So everything that
+begins with `$` is a *new* message (SBF `$@`, NMEA `$`, a Septentrio
+`$T*` event line such as `$TE`, broadcast before a reset, or `$TD`, the
+ASCII display, the next `$R`) or a `$--BLOCK` -- none of which carries a
+`$R<type>` header, so none can be mistaken for a continuation of the
+current body.
+
+**No reply body ever contains the sequence `CR LF <token> >`, so the
+first such match is always the true prompt.** This is what lets the
+terminator be a first-match without risking a premature cut. A state
+line is a comma-separated list of config items, never a bare 4-char
+token immediately followed by `>`; and the token alphabet -- every
+connection descriptor on both models (`COM1`-`COM4`, `USB1`-`USB2`,
+`DSK1` on G5, plus `IP10`-`IP17`/`NTR1`/`IPS1`/`IPR1` on X5), `STOP`
+(the reset/halt prompt), and `----` -- is exactly the set of tokens a
+prompt can be. In practice satpulse connects over a COM or USB port and
+the prompt reflects our own descriptor (sec 3.1.3), so only
+`COMx>`/`USBx>` (plus `STOP>` and `---->`) ever actually appear.
+
+### Tricky cases the definition covers
+
+- **A state line that begins with a 4-char uppercase run is body, not a
+  terminator.** `$R: grc\r\nReceiverCapabilities, Main, ...\r\nCOM1>` is
+  one packet: after the `CR LF`, `Rece` is four valid token chars, but
+  the fifth byte is a letter, not `>`, so it is not a terminator and the
+  body runs on to the real `COM1>`.
+- **A `$R:` reply with no state line still frames.** Some commands print
+  only the echo line: `$R: <cmd>\r\nCOM1>` -- empty body, immediate
+  terminator.
+- **`lst` output frames only its first unit.** `$R;
+  lstAsciiDisplay\r\n---->` frames (the `----` token terminates it); the
+  `$--BLOCK` tail begins `$-`, carries no `$R<type>` header, and is not
+  framed (see below).
+- **An unsolicited event abutting a reply does not extend it.**
+  `exeResetReceiver` yields `$R: erst, ...\r\nResetReceiver, Soft,
+  none\r\nSTOP>` (one packet -- `STOP` is a valid token) immediately
+  followed by an unsolicited `$TE ResetReceiver\r\nSTOP>`; the `$TE`
+  line has no `$R` header, so it is not part of the packet and its
+  trailing `STOP>` frames nothing.
+- **A bare prompt is not a packet.** The reply to a comment (`#...`) or
+  an empty command line is just `COMx>` with no `$R` (sec 3.1.3), which
+  the format does not frame -- harmless, since no tag sends comments or
+  empty lines. Likewise a mid-body `$`, a control or high-bit byte, an
+  unpaired `CR` or `LF`, a non-token 4-char group before `>`, or an
+  over-length run all mean "not a packet".
+
+**No `lst` reply frames past its pseudo-prompt -- single- and
+multi-`$--BLOCK` alike.** Per sec 3.1.3 *every* `lst` reply has the
+pseudo-prompt `---->` as its second line, before the first `$--BLOCK`
+section; the guide's own single-block example makes this concrete:
+`$R; lstAsciiDisplay\r\n---->\r\n$--BLOCK 1 / 1\r\n...\r\nCOM1>`. So the
+framing always closes the packet at that first `---->` terminator: only
+`$R; <cmd>\r\n---->` frames, and the trailing `$--BLOCK` sections --
+which begin `$-`, fail the byte-1 `R` check -- plus the reply's final
+real prompt are never delivered as a completion signal. The block count
+is irrelevant to this: it is the `---->` on line 2 that defeats the
+framing, not the interleaving the guide separately licenses for
+multi-block output. This is acceptable: no message-file tag issues a
+`lst` command (`get-version` uses the `get`-commands
+`getReceiverInterface`/`getReceiverCapabilities`, which are `$R:`
+replies), while every `set`/`get`/`exe`/user-management reply -- and
+the `$R! lstCurrentUser` reply, which despite its name uses the `$R!`
+shape, not `$R;` -- frames in full. Revisit if a `lst` tag is added.
 
 ## The `"septentrio"` responsePattern analyzer
 
@@ -171,25 +235,26 @@ classifier plus a `LineMsg.analyzeRequestSeptentrio` method.
 ### Ack/nak classification
 
 ```go
-func analyzeSeptentrioResponse(line string) responseAnalysis
+func analyzeSeptentrioResponse(pkt string) responseAnalysis
 ```
 
-operates on one CR/LF-terminated line (as delivered by `flushLine`) and
-classifies by prefix:
+operates on the whole reply packet -- the recognized `TagSepReply`
+packet handed straight to `CorrelatePacket`, not the `flushLine` path
+(which only re-slices unrecognized `Format == nil` bytes) -- and
+classifies on the `$R` type char at byte 2:
 
-- `$R: ` or `$R! ` -> `responseAck`.
-- `$R? ` -> `responseNak`, with `ackError` set to the remainder of the
-  line (the `<name>: <error text>` portion, kept intact rather than
-  trying to strip `<name>` -- see below).
-- `$R;` -> `responseAck` (the `lst` variant).
-- anything else (a headerless state line, the `---->` pseudo-prompt,
-  or a `$--BLOCK` line) -> `responseData`.
+- `:`, `!`, or `;` (`$R:`/`$R!`/`$R;`) -> `responseAck`.
+- `?` (`$R?`) -> `responseNak`, with `ackError` set to the reply's
+  message text: the `<name>: <error text>` between the `$R? ` prefix
+  and the terminating `\r\n<prompt>`, kept intact rather than trying to
+  strip `<name>` (see below).
 
-No special case is needed for `factoryReset`'s reply (`$R: factoryReset:
-Resetting receiver to factory defaults.`): it is just an ordinary
-`$R:` ack line whose remainder happens to contain an appended message
-after a colon. It is handled correctly by the general `$R: ` branch
-without extra code, because of the correlation design below.
+Every `TagSepReply` packet begins with `$R` plus one of those four
+chars, so byte 2 alone classifies it; no headerless state line arrives
+under this tag (the state lines ride inside the ack packet).
+`factoryReset`'s `$R: factoryReset: Resetting receiver to factory
+defaults.` needs no special case -- it is an ordinary `$R:` ack whose
+text happens to carry an appended message after a colon.
 
 ### Correlation key: a shared constant, not the echoed text
 
@@ -206,8 +271,9 @@ response side. Concretely:
 
 - `LineMsg.analyzeRequestSeptentrio()` returns `ackTag:
   septentrio.TagSepReply, ackCorrelate: "cmd", expectAck:
-  ExpectAckOrNak` -- the ack line is framed by the `$R` reply format
-  (Format 1), so it arrives under `TagSepReply`, not `EmptyTag`.
+  ExpectAckOrNak, expectData: expectDataWithAck` -- the whole reply is
+  framed as one packet by the `$R` reply format, so it arrives under
+  `TagSepReply`, not `EmptyTag`.
 - `analyzeSeptentrioResponse` sets `ackCorrelate: "cmd"` on every ack
   and nak it recognizes, regardless of what text follows the `$R:`/
   `$R!`/`$R;`/`$R?` prefix.
@@ -234,30 +300,21 @@ correlation string. So the shared key only simplifies matching; the
 displayed ack/nak text is exactly what the receiver sent, `<name>:
 <error text>` included.
 
-### Data (state-line) expectation
+### Data expectation: expectDataWithAck
 
-*Contingent on Format 2* (state-line/prompt framing is unresolved --
-see "Packet framing" above): the design below assumes the trailing
-state lines reach the correlator under a Septentrio tag the analyzer
-can accumulate. How Format 2 delivers them is what needs settling; the
-`expectData` shape itself is unaffected by that choice.
-
-Every Septentrio command sets `expectData: expectDataMultiple`,
-uniformly -- there is no attempt to predict, per command, whether zero,
-one, or several trailing state lines will follow. The guide is
-explicit that the count is not fixed ("one or more additional lines
-... depending on the command"), and modeling this precisely would mean
-building a per-command table from the syntax reference, which is out
-of proportion to what Tier 2 needs. `expectDataMultiple` accumulates
-whatever headerless lines arrive (state lines, `---->`, `$--BLOCK`
-sections alike) and, matching the existing `Unicore` `CONFIG`/`MASK`
-query pattern already in the correlator (`correlate.go`'s
-`requestComplete`), a successful ack does not by itself mark the
-request complete -- the prompt (delivered by Format 2) is the
-definitive "command done" marker per guide sec 3.1. Completion is the
-prompt, full stop; this is a single-flight protocol, so there is no
-timer-based pacing. (`exeResetReceiver` and friends end in `STOP>`
-instead of the normal prompt; Format 2 frames both.)
+The state lines and the prompt ride inside the single ack packet, so a
+Septentrio request expects no *separate* data response:
+`analyzeRequestSeptentrio` sets `expectData: expectDataWithAck` ("data
+combined in ack packet"). The correlator then completes the request on
+the ack or nak alone (`requestComplete`: `expectDataWithAck` is done at
+`ackSuccess`/`ackFailed`), and `correlateAck` marks the ack packet
+`LevelSoleResponse`, so its text -- the readback -- is displayed. There
+is no per-command modeling of how many state lines follow (the guide
+says the count is not fixed) and no `expectDataMultiple` accumulation:
+the prompt that ends the packet *is* the "command done" marker, so
+completion falls out of the framing itself. This is a single-flight
+protocol, so there is no timer-based pacing. `exeResetReceiver` and
+friends simply end their one packet in `STOP>` rather than `CD>`.
 
 ### Wiring
 
@@ -287,18 +344,22 @@ instead of the normal prompt; Format 2 frames both.)
    }
    ```
 
-3. The `$R` reply `PacketFormat` (Format 1) and its `TagSepReply` live
-   in `gps/internal/septentrio` (where vendor `PacketFormat`s live) and
+3. The `$R` reply `PacketFormat` and its `TagSepReply` live in
+   `gps/internal/septentrio` (where vendor `PacketFormat`s live) and
    are registered in `gps/gpsreg/reg.go`: a `Tag` re-export plus entries
    in `allVendorPacketFormats` and
    `allVendorPacketFormatsMap[VendorSeptentrio]`, ordered ahead of NMEA
-   (see "Packet framing"). Format 2 (state-line/prompt) is unresolved,
-   so its format/tag/registration is TBD.
+   (see "Packet framing").
 4. `NewCorrelator()` (`gps/msgfile/correlate.go`): add
    `septentrio.TagSepReply: sepAnalyzer{}` to the `analyzers` map (a
    small struct type, paralleling `uncaAnalyzer{}`, whose
-   `analyzeResponse` calls `analyzeSeptentrioResponse`). The state-line
-   data channel keys on Format 2's tag once that is settled.
+   `analyzeResponse` calls `analyzeSeptentrioResponse`).
+5. `formatText`/`formatPacket` (`internal/gpscmd/response.go`) assume a
+   single-line packet: `formatText` strips one trailing CR/LF and
+   hex-dumps if any remaining byte is non-printable. A `TagSepReply`
+   packet spans several CRLF-separated lines, so `formatText` must pass
+   internal `CR LF` through -- displaying the reply as its lines --
+   rather than falling back to the hex path.
 
 ## The existing message files
 
@@ -457,80 +518,97 @@ is ever supported.
 
 ## Phasing (within this plan)
 
-1. **Format 1 -- the `$R` reply `PacketFormat`** in
-   `gps/internal/septentrio` (+ `TagSepReply`), registered in
-   `gps/gpsreg/reg.go` ordered ahead of NMEA. Testable offline against
-   hand-built `$R:`/`$R;`/`$R!`/`$R?` reply bytes.
+1. **The `$R` reply `PacketFormat`** in `gps/internal/septentrio` (+
+   `TagSepReply`), framing the whole reply through the prompt,
+   registered in `gps/gpsreg/reg.go` ordered ahead of NMEA. Testable
+   offline against hand-built `$R:`/`$R;`/`$R!`/`$R?` reply-plus-prompt
+   byte sequences (including the not-a-packet cases: `$`, control byte,
+   non-token 4-char group, over-length; and the `STOP>` and `---->`
+   terminators).
 2. `gps/msgfile/msgfile.go` -- add `ResponsePatternSeptentrio`.
 3. `gps/msgfile/sep.go` -- `analyzeSeptentrioResponse`,
-   `LineMsg.analyzeRequestSeptentrio`, and the `sepAnalyzer` type.
+   `LineMsg.analyzeRequestSeptentrio` (`expectDataWithAck`), and the
+   `sepAnalyzer` type.
 4. `gps/msgfile/line.go` -- dispatch branch in `analyzeRequest`.
 5. `gps/msgfile/correlate.go` -- register `sepAnalyzer{}` under
    `septentrio.TagSepReply` in `NewCorrelator()`.
-6. **Format 2 -- state-line and prompt framing (required):** the prompt
-   is the single-flight completion signal, so it must be framed; settle
-   the framing mechanism (the `>`-as-packet candidate, see "Packet
-   framing") against a real captured session, then wire the prompt as
-   the request-complete signal and the state-line tag into the
-   correlator's data channel.
+6. `internal/gpscmd/response.go` -- let `formatText` display a
+   multi-line reply packet as its lines instead of hex-dumping on the
+   internal CR/LF.
 7. Re-verify the two existing TOML files against the finished
    analyzer (`satpulsetool gps -m ... --show-tags`, and dry runs
    against a captured/replayed session once available -- see
    Testing) and fill in any of the command-coverage TODOs above that
    turn out to be tractable without hardware.
 
-This phase adds the `$R` reply `PacketFormat` (and, once settled,
-Format 2) in `gps/internal/septentrio`; the rest is confined to
-`gps/msgfile` plus the two config TOML files.
+This phase adds the `$R` reply `PacketFormat` in
+`gps/internal/septentrio`; the rest is confined to `gps/msgfile` and
+`internal/gpscmd` plus the two config TOML files.
 
 ## Testing
 
+- Format-level tests in `gps/internal/septentrio` (offline, no
+  hardware): drive hand-built reply byte sequences through the scanner
+  and assert one `TagSepReply` packet per reply, from `$R` through the
+  prompt:
+  - a plain `$R: <cmd>\r\n<state>\r\nCOM1>` reply frames as one packet.
+  - a reply whose state line begins with a 4-char uppercase run --
+    `$R: grc\r\nReceiverCapabilities, ...\r\nCOM1>` -- frames in full,
+    i.e. the leading `Rece` is not mistaken for the terminator token
+    (the tricky case an implementation is most likely to botch).
+  - the `STOP>` and `---->` terminators each close a packet.
+  - not a packet (nothing framed): a mid-reply `$`, a control or
+    high-bit byte, an unpaired `CR`/`LF`, a non-token 4-char group
+    before `>`, and an over-length run.
 - Unit tests in `gps/msgfile/sep_test.go` (same package, following the
   `go-unit-test` skill and the existing `unc_test.go`/
-  `TestCorrelatorUnicore` shape for a `TestCorrelatorSeptentrio`):
-  - `$R: <cmd>` ack recognized and correlated to a pending request
-    sent with matching text.
-  - `$R? <name>: <error>` nak recognized, `ackError` carries the
-    full `<name>: <error>` text, correlated to the same pending
-    request despite no textual overlap with the sent command.
-  - `$R! <CanonicalName>` (e.g. a `login` request) treated as ack.
-  - `$R;` (`lst`) ack, followed by a `---->` line and one or more
-    `$--BLOCK` lines, all accepted as data without disrupting the
-    ack correlation.
-  - `factoryReset`'s combined `$R: factoryReset: <message>` line
-    handled as a plain ack, with completion driven by the following
-    `STOP>` prompt (Format 2), not by any state line.
-  - The prompt marks the request complete: a `$R:` ack plus state
-    lines are not "done" until the `CD>` prompt arrives.
+  `TestCorrelatorUnicore` shape for a `TestCorrelatorSeptentrio`),
+  feeding whole reply packets to the analyzer/correlator:
+  - `$R: <cmd>\r\n<state>\r\nCOM1>` ack recognized and correlated to a
+    pending request; the readback is surfaced (`LevelSoleResponse`).
+  - `$R? <name>: <error>\r\nCOM1>` nak recognized, `ackError` carries
+    the `<name>: <error>` text (prompt stripped), correlated to the
+    same pending request despite no textual overlap with the sent
+    command.
+  - `$R! <CanonicalName>\r\n...\r\nCOM1>` (e.g. a `login` request)
+    treated as ack.
+  - `$R; <cmd>\r\n---->` (`lst` first unit) treated as ack; the
+    multi-`$--BLOCK` continuation is out of scope (see "Packet
+    framing").
+  - `factoryReset`'s `$R: factoryReset: <message>\r\nCOM1>` handled as
+    an ordinary ack, completion driven by the packet's own terminating
+    prompt. (`factoryReset` ends in the *normal* prompt, not `STOP>`: it
+    only marks the config for reset on the next physical power-cycle, so
+    it does not halt the command line -- only the reset/halt commands
+    such as `exeResetReceiver` terminate in `STOP>`.)
+  - The completing ack inherently includes the prompt: the packet is
+    not emitted until its terminator (`IsFinal` at the `>`), so there
+    is no separate "wait for the prompt" step in the correlator.
   - Two Septentrio requests in sequence: the second is not
-    `ReadyToSend` until the first completes on its prompt (the
-    single-flight serialization).
+    `ReadyToSend` until the first completes (the single-flight
+    serialization).
 - `satpulsetool gps -m configs/gpsmsg/septentrio/mosaic-g5.toml
   --show-tags` (and `-m mosaic.toml` alone) to validate the TOML still
   parses and every tag/description is well-formed -- no hardware or
   receiver connection required.
 - Once hardware arrives: capture a real session for a representative
-  tag from each reply shape (`get-version` for `lst`, `factory-reset`
-  for `login`+`$R!`+plain-`$R:`, an ordinary `set*`/`get*` tag for the
-  common case), and compare against this design -- particularly
-  whether `$R?`'s `<name>` token behaves as the guide's few examples
-  suggest, since that was inferred from a handful of examples rather
-  than a documented grammar. Use the `gps-msg-test` skill for the
-  mechanics of sending a tagged subset and observing responses.
+  tag from each reply shape (`get-version` for a `get*`, `factory-reset`
+  for `login`+`$R!`+plain-`$R:`, an ordinary `set*` tag for the common
+  case), and compare against this design -- particularly whether
+  `$R?`'s `<name>` token behaves as the guide's few examples suggest,
+  and whether replies are strictly CRLF-delimited, since both were
+  inferred from prose rather than a documented grammar. Use the
+  `gps-msg-test` skill for the mechanics.
 
 ## Open decisions
 
-- **Format 2 -- how to frame the state lines and the prompt -- is the
-  main thing this phase cannot finalize without a captured session.**
-  Both must be framed (the prompt is the required single-flight
-  completion signal, guide sec 3.1); the open part is the *mechanism*,
-  not *whether*. (a) The headerless `get*` **state lines** have no
-  distinctive first byte -- what a `PacketFormat`'s `Next` syncs on for
-  an arbitrary-text line is open. (b) The **prompt** has no CR/LF
-  terminator and no start marker; the leading candidate is to frame the
-  bare trailing `>` as a one-byte packet (see "Packet framing"), which
-  needs a closer look and a capture to confirm the exact prompt shapes
-  and that nothing else emits a standalone `>`.
+- **A few framing details rest on the guide's prose and want a captured
+  session to confirm** -- none changes the design, since each degrades
+  to a return-to-sync (a re-abandoned packet), not a misattribution:
+  that replies are strictly CRLF-delimited (rule 2); that the prompt and
+  `lst` pseudo-prompt are exactly `\r\n` + a `[A-Z][A-Z0-9]{3}`-or-`----`
+  token + `>`, and that nothing else emits a standalone `\r\n<token>>`;
+  and that the 4096-byte cap comfortably clears the longest real reply.
 - **`$R?`'s `<name>` token is not modeled or stripped.** The analyzer
   treats the whole `<name>: <error text>` remainder as the nak's
   `ackError`, displayed verbatim. This avoids needing a per-command
@@ -540,7 +618,3 @@ Format 2) in `gps/internal/septentrio`; the rest is confined to
   rejecting `sso`/`setSBFOutput` shows `SBFOutput:`, not
   `setSBFOutput:` or `sso:`). Acceptable since the text is still
   human-readable and accurate about what was rejected.
-- **The always-`expectDataMultiple` choice produces a benign "no data
-  response received" notice for commands whose reply has no trailing
-  state line** (see the `factoryReset` example above) -- cosmetic,
-  nothing dropped or misattributed.
