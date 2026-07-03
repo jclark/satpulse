@@ -33,6 +33,8 @@
 # If a connection has stopped accepting user commands, the reference guide
 # says to send ten "S" characters followed by Enter. Use this as the first tag
 # in a sequence, e.g. "-t cmd-escape,get-version".
+# Verified on mosaic-G5: used as the prefix in every test run; subsequent
+# commands were accepted and ACKed (produces no $R reply of its own).
 [[line]]
 tag = "cmd-escape"
 text = "SSSSSSSSSS"
@@ -43,6 +45,9 @@ description = "Force the current Septentrio connection to accept user commands"
 # getReceiverInterface is the concise probe. It returns the receiver name and
 # command-line interface version as ordinary "$R:" command output, without
 # dumping the internal identification file.
+# Verified ACK on mosaic-G5: getReceiverInterface returns RxName "mosaic-G5";
+# getReceiverCapabilities lists ports DSK1+COM1+COM2+USB1+USB2 and capability
+# PPPGalileoHAS-SIS.
 [[line]]
 tag = "get-version"
 text = "getReceiverInterface"
@@ -61,6 +66,10 @@ text = "getReceiverCapabilities"
 # GGA/GLL/GSA/GSV/RMC/ZDA are common sentences on both models (the diff
 # analysis flags SNC/LLK/LLQ/GMP as X5-only and GGAaux1 as G5-only -- none of
 # those are used here).
+# Verified on mosaic-G5: all nmea-<sentence>-usb1 enable and -off pairs ACK.
+# With all six enabled, a USB1 capture showed GGA/GLL/GSA/GSV/RMC/ZDA present;
+# a per-sentence -off removed only that sentence (others kept flowing).
+# (GGA/GLL/GSA/RMC/ZDA appear under the GN combined talker; GSV per system.)
 
 [[line]]
 tag = "nmea-gga-usb1"
@@ -117,12 +126,14 @@ text = "setNMEAOutput, Stream1, USB1, -ZDA"
 description = "Disable NMEA ZDA"
 
 # Disable all NMEA output on Stream1
+# Verified ACK on mosaic-G5; capture confirmed all NMEA output stopped on USB1.
 [[line]]
 tag = "nmea-off-usb1"
 text = "setNMEAOutput, Stream1, USB1, none"
 description = "Disable all NMEA messages"
 
 # Convenience: enable RMC, GGA, GSV, GSA (messages used by satpulse daemon)
+# Verified ACK on mosaic-G5; capture confirmed RMC/GGA/GSV/GSA appear on USB1.
 [[line]]
 tag = "nmea-daemon-usb1"
 text = "setNMEAOutput, Stream1, USB1, +RMC, sec1"
@@ -145,11 +156,15 @@ text = "setNMEAOutput, Stream1, USB1, +GSA"
 # "4.10"; the command definition's "4.11" is the authoritative one.) Confirmed
 # identical command/enum on both models.
 
+# Verified ACK on mosaic-G5; getNMEAVersion returns the current profile (v4x by
+# default).
 [[line]]
 tag = "get-nmea-ver"
 text = "getNMEAVersion"
 description = "Query current NMEA version profile"
 
+# Verified both ACK with readback on mosaic-G5: nmea-ver-3 -> NMEAVersion v3x,
+# nmea-ver-411 -> NMEAVersion v4x (confirmed via get-nmea-ver).
 [[line]]
 tag = "nmea-ver-3"
 text = "setNMEAVersion, v3x"
@@ -169,11 +184,15 @@ description = "Set NMEA version to 4.11 (adds system/signal ID and navigational 
 # both together, used here to match the single-mask semantics other vendors'
 # min-elev-* tags assume. Confirmed identical command/enum on both models.
 
+# Verified ACK on mosaic-G5; getElevationMask returns Tracking and PVT masks
+# (default 5/5).
 [[line]]
 tag = "get-min-elev"
 text = "getElevationMask, all"
 description = "Query current elevation mask (tracking and PVT)"
 
+# Verified all min-elev-* (0..45) ACK with readback on mosaic-G5: setElevationMask
+# echoes the matching Tracking and PVT value.
 [[line]]
 tag = "min-elev-0"
 text = "setElevationMask, all, 0"
@@ -222,11 +241,17 @@ description = "Set elevation mask to 45 degrees"
 # enabled here (true for GPS/GALILEO/GLONASS/BEIDOU out of the box on both
 # models). Confirmed identical command/enum on both models.
 
+# Verified ACK on mosaic-G5; getSatelliteTracking lists the enabled satellites.
 [[line]]
 tag = "get-gnss"
 text = "getSatelliteTracking"
 description = "Query current constellation/satellite tracking settings"
 
+# Verified all gnss-* ACK with readback on mosaic-G5: getSatelliteTracking
+# reflects the selection (gnss-gps -> G-only, gnss-gps-gal -> G+E, gnss-all ->
+# all systems). NOTE: NMEA GSV is NOT a valid observable for this setting on the
+# G5 -- GSV reports in-view satellites for every constellation from the almanac
+# regardless of the tracking selection, so the GSV talker set did not change.
 [[line]]
 tag = "gnss-gps"
 text = "setSatelliteTracking, GPS"
@@ -264,6 +289,8 @@ description = "Enable all constellations (all available bands)"
 # is not covered by any tag here and would need a model-aware addition if
 # ever exposed.
 
+# Verified ACK on mosaic-G5; getPPSParameters returns the current config
+# (default: sec1, Low2High, 0.00, GPS, 60, 5.000000).
 [[line]]
 tag = "get-pps"
 text = "getPPSParameters"
@@ -272,11 +299,15 @@ description = "Query current PPS configuration"
 # MaxSyncAge/MaxHoldover=1 approximates "only when locked": the pulse stops
 # within 1s of losing all satellites of the selected TimeScale, rather than
 # continuing indefinitely (a value of 0 would mean "never time out").
+# Verified ACK with readback on mosaic-G5 (readback: sec1, Low2High, 0.00, GPS,
+# MaxHoldover 1, PulseWidth 100). NOTE: the actual PPS edge/width on the pin
+# needs an oscilloscope to verify (manual).
 [[line]]
 tag = "pps"
 text = "setPPSParameters, sec1, Low2High, 0, GPS, 1, 100"
 description = "Enable PPS with 100ms pulse width, rising edge, only when locked"
 
+# Verified ACK with readback on mosaic-G5 (Interval field set to off).
 [[line]]
 tag = "pps-off"
 text = "setPPSParameters, off"
@@ -290,11 +321,15 @@ description = "Disable PPS output"
 # match whichever stream you actually use for position output (e.g. combine
 # with sbf-daemon-usb1's Stream1 instead, if that is your position source).
 
+# Verified ACK on mosaic-G5; getSBFOutput Stream3 returns the current PVTGeodetic
+# interval.
 [[line]]
 tag = "get-fix-rate"
 text = "getSBFOutput, Stream3"
 description = "Query current PVTGeodetic output interval on Stream3"
 
+# Verified all fix-rate-*-usb1 ACK with readback on mosaic-G5: the interval is
+# echoed (sec1 / msec500 / msec200 / msec100 / msec50).
 [[line]]
 tag = "fix-rate-1-usb1"
 text = "setSBFOutput, Stream3, USB1, PVTGeodetic, sec1"
@@ -318,11 +353,15 @@ description = "Set fix (PVTGeodetic output) rate to 20 Hz"
 
 # Port configuration
 
+# Verified ACK on mosaic-G5; getCOMSettings COM1 returns the current settings.
 [[line]]
 tag = "get-uart-com1"
 text = "getCOMSettings, COM1"
 description = "Query serial port configuration"
 
+# Verified all speed-*-com1 ACK with readback on mosaic-G5: the baud is echoed
+# in COMSettings. The baud change itself is NOT observable from this USB1 host
+# port -- it targets the physical COM1 serial port, not this USB CDC connection.
 [[line]]
 tag = "speed-9600-com1"
 text = "setCOMSettings, COM1, baud9600, bits8, No, bit1, none"
@@ -358,6 +397,9 @@ description = "Set COM1 baud rate to 921600"
 
 # Restart commands
 
+# NOT hardware-tested on mosaic-G5: reboots the receiver (exeResetReceiver Soft),
+# which re-enumerates the USB device and would break /dev/ttyACM1 mid-run.
+# Verify manually.
 [[line]]
 tag = "hot-start"
 text = "exeResetReceiver, Soft, none"
@@ -369,6 +411,8 @@ delay = 3
 # parameters and UTC data together (there is no way to clear ephemeris while
 # keeping almanac, as this tag implies). Not implemented.
 
+# NOT hardware-tested on mosaic-G5: a Hard reset reboots the receiver and
+# re-enumerates USB, which would break /dev/ttyACM1 mid-run. Verify manually.
 [[line]]
 tag = "cold-start"
 text = "exeResetReceiver, Hard, SatData"
@@ -377,6 +421,8 @@ delay = 5
 
 # Configuration management
 
+# NOT hardware-tested on mosaic-G5: persists the Current config to the Boot file
+# in NVM, changing power-on state. Verify manually.
 [[line]]
 tag = "save"
 text = "exeCopyConfigFile, Current, Boot"
@@ -387,6 +433,9 @@ description = "Save current configuration to the boot configuration file"
 # receiver (and re-enumerates USB), whereas reload's semantics are just "load
 # NVM into RAM" -- no restart. Verified on a mosaic-G5 (v1.1.0): the receiver
 # stays up and Current is replaced by Boot.
+# Re-verified ACK on mosaic-G5 this session: exeCopyConfigFile Boot,Current ACKs,
+# the receiver stays up (no USB re-enumeration), and Current is restored to the
+# Boot values. Used at the end of testing to revert all RAM-only changes.
 [[line]]
 tag = "reload"
 text = "exeCopyConfigFile, Boot, Current"
@@ -396,6 +445,8 @@ description = "Reload the boot configuration into the current configuration (no 
 # receiver (booting from the saved Boot config file) and clears satellite
 # data, so "reset" and "cold start" are the same operation on this receiver
 # family. Unlike the reload tag above, this is a reboot.
+# NOT hardware-tested on mosaic-G5: a Hard reset reboots the receiver and
+# re-enumerates USB, which would break /dev/ttyACM1 mid-run. Verify manually.
 [[line]]
 tag = "reset"
 text = "exeResetReceiver, Hard, SatData"
@@ -406,6 +457,8 @@ delay = 5
 # "factoryReset"/"login", confirmed identical on both models); anonymous
 # sessions cannot run factoryReset. Replace "admin, admin" with your
 # receiver's actual administrator username/password before use.
+# NOT hardware-tested on mosaic-G5: requires an authenticated admin login and
+# reboots the receiver (re-enumerating USB). Verify manually.
 [[line]]
 tag = "factory-reset"
 text = "login, admin, admin"
@@ -418,6 +471,7 @@ delay = 5
 
 # Survey-in (base station)
 
+# Verified ACK on mosaic-G5; getPVTMode returns mode / RoverMode / RefPos.
 [[line]]
 tag = "get-survey"
 text = "getPVTMode"
@@ -428,16 +482,21 @@ description = "Query current PVT mode (Static+auto indicates self-survey/auto-ba
 # this tag's usual "2000s/20m" semantics, the receiver just continuously
 # refines its self-determined position with no documented stop condition or
 # accuracy gate. Implemented as the closest available approximation.
+# Verified ACK with readback on mosaic-G5 (PVTMode -> Static, RefPos auto).
 [[line]]
 tag = "survey"
 text = "setPVTMode, Static, , auto"
 description = "Start self-survey (auto-base); no duration/accuracy control available"
 
+# Verified ACK with readback on mosaic-G5 (PVTMode -> Rover, RoverMode expands to
+# StandAlone+RTKFloat+RTKFixed).
 [[line]]
 tag = "survey-off"
 text = "setPVTMode, Rover, StandAlone+RTK"
 description = "Stop survey / return to rover mode"
 
+# Verified ACK with readback on mosaic-G5 (PVTMode -> Rover; identical command to
+# survey-off).
 [[line]]
 tag = "mobile"
 text = "setPVTMode, Rover, StandAlone+RTK"
@@ -445,11 +504,15 @@ description = "Stop survey / return to rover mode"
 
 # Fixed position (base station)
 
+# Verified ACK on mosaic-G5; getStaticPosGeodetic Geodetic1 returns the stored
+# position (default 0/0/0, WGS84).
 [[line]]
 tag = "get-fixed-pos"
 text = "getStaticPosGeodetic, Geodetic1"
 description = "Query current fixed geodetic position (Geodetic1 slot)"
 
+# Verified ACK with readback on mosaic-G5: Geodetic1 stored as
+# 13.7305 / 100.6405 / 50.0, then PVTMode -> Static with RefPos Geodetic1.
 [[line]]
 tag = "fixed-pos-example"
 text = "setStaticPosGeodetic, Geodetic1, 13.7305, 100.6405, 50.0"
@@ -458,6 +521,10 @@ description = "Set fixed position (example coordinates - replace with yours)"
 tag = "fixed-pos-example"
 text = "setPVTMode, Static, , Geodetic1"
 
+# Verified ACK with readback on mosaic-G5 (PVTMode -> Rover). NOTE: this returns
+# to Rover mode but does NOT clear the Geodetic1 slot -- the stored position is
+# retained (unused while in Rover), so "clear fixed position" means only that
+# the fixed position is no longer applied.
 [[line]]
 tag = "fixed-pos-off"
 text = "setPVTMode, Rover, StandAlone+RTK"
@@ -469,21 +536,30 @@ description = "Clear fixed position, return to rover mode"
 # analysis, the setRTCMv3Output message-type enum is byte-identical between
 # models (RTCMv2/sr2* is X5-only and is intentionally not used here).
 
+# RTCM enable/disable tags below all verified ACK with readback on mosaic-G5:
+# the setRTCMv3Output reply echoes the resulting USB1 message list. (Actual
+# RTCM bytes on the wire additionally require base mode + a reference position;
+# the readback confirms enablement.)
+# Verified: rtcm-arp adds RTCM1006 to the USB1 output list.
 [[line]]
 tag = "rtcm-arp-usb1"
 text = "setRTCMv3Output, USB1, +RTCM1006"
 description = "Enable RTCM ARP message (1006, includes antenna height) at default interval"
 
+# Verified: MSM4 expands to RTCM1074/1084/1094/1104/1114/1124/1134.
 [[line]]
 tag = "rtcm-msm4-usb1"
 text = "setRTCMv3Output, USB1, +MSM4"
 description = "Enable RTCM MSM4 for all constellations at default interval"
 
+# Verified: MSM7 expands to the RTCM107x/108x/109x/110x/111x/112x/113x set.
 [[line]]
 tag = "rtcm-msm7-usb1"
 text = "setRTCMv3Output, USB1, +MSM7"
 description = "Enable RTCM MSM7 for all constellations at default interval"
 
+# Verified: Nav adds RTCM1019/1020/1041/1042/1044/1045/1046 (enable); -Nav
+# removes them (disable).
 [[line]]
 tag = "rtcm-eph-usb1"
 text = "setRTCMv3Output, USB1, +Nav"
@@ -500,16 +576,19 @@ description = "Disable RTCM ephemeris messages"
 # implemented. Moving-base operation on Septentrio uses setGNSSAttitude,
 # MovingBase instead (a different mechanism entirely).
 
+# Verified: rtcm-off sets the USB1 RTCM output list to none.
 [[line]]
 tag = "rtcm-off-usb1"
 text = "setRTCMv3Output, USB1, none"
 description = "Disable all RTCM output"
 
+# Verified ACK on mosaic-G5; getRTCMv3Formatting returns the reference station ID.
 [[line]]
 tag = "get-rtcm-base-id"
 text = "getRTCMv3Formatting"
 description = "Query RTCM reference station ID"
 
+# Verified both ACK with readback on mosaic-G5 (RTCMv3Formatting ID -> 0 / 1234).
 [[line]]
 tag = "rtcm-base-id-0"
 text = "setRTCMv3Formatting, 0"
@@ -526,6 +605,7 @@ description = "Set RTCM reference station ID to 1234 (example)"
 # current value per the reference guides' sec 3.1.2), so these compose
 # cleanly with the survey/fixed-pos tags above, which set RefPos separately.
 
+# Verified both ACK with readback on mosaic-G5 (PVTMode -> Static / Rover).
 [[line]]
 tag = "mode-base"
 text = "setPVTMode, Static"
@@ -544,11 +624,16 @@ description = "Set rover mode"
 # epoch-end marker (EndOfPVT). All of these are core blocks present
 # identically on both models (none are in the G5-absent Meas3 group).
 
+# Verified ACK with readback on mosaic-G5: getSBFOutput Stream1 shows all 8 blocks
+# enabled. A USB1 capture confirmed PVTGeodetic/DOP/EndOfPVT/ReceiverTime/
+# SatVisibility/ChannelStatus/ReceiverStatus flowing; xPPSOffset emits only on a
+# PPS edge (none seen because PPS was disabled during this test).
 [[line]]
 tag = "sbf-daemon-usb1"
 text = "setSBFOutput, Stream1, USB1, +ReceiverTime+xPPSOffset+PVTGeodetic+ChannelStatus+SatVisibility+DOP+ReceiverStatus+EndOfPVT, sec1"
 description = "Enable SBF blocks used by satpulsed daemon"
 
+# Verified ACK on mosaic-G5; getSBFOutput Stream1 returns the enabled blocks.
 [[line]]
 tag = "get-sbf-daemon"
 text = "getSBFOutput, Stream1"

@@ -25,6 +25,9 @@ src = "mosaic.toml"
 # "+PPP" only ADDS PPP to the current RoverMode list (per the "+"/"-"
 # combinable-argument convention); it does not disturb StandAlone/RTK.
 
+# Verified ACK with readback on mosaic-G5: setSignalUsage +GALE6BC adds GALE6BC
+# to the used-signal list; setPVTMode +PPP adds PPP to RoverMode (readback:
+# StandAlone+RTKFloat+RTKFixed+PPP).
 [[line]]
 tag = "ppp-has"
 text = "setSignalUsage, , +GALE6BC"
@@ -37,6 +40,9 @@ text = "setPVTMode, , +PPP"
 # "none" value, and the "-" removal syntax is only defined for enums that
 # support "none" (ref sec 3.1.2). So this sets RoverMode back to an explicit
 # list without PPP instead, matching mode-rover/survey-off in mosaic.toml.
+# Verified ACK with readback on mosaic-G5 (RoverMode -> StandAlone+RTKFloat+
+# RTKFixed; PPP removed). NOTE: this reverts only the PVT mode -- GALE6BC stays
+# enabled in SignalUsage from ppp-has (harmless; supplies raw signal only).
 [[line]]
 tag = "ppp-off"
 text = "setPVTMode, , StandAlone+RTK"
