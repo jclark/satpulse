@@ -112,9 +112,53 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 // genPhases are the request generation phases, each gated on all
 // earlier requests being final. Message enabling runs before the baud
 // change and the NVM save so that a save persists the message rates
-// and the new rate on the confirmed line.
+// and the new rate on the confirmed line; the NVM phase is last so
+// that it persists everything, fallback outcomes included.
 var genPhases = []func(*Configurator){
 	(*Configurator).generateMsgReqs,
+	(*Configurator).generateNVMReqs,
+}
+
+// generateNVMReqs generates the save and reset requests. Reload is
+// realized as a soft reset: CFG-CFG load is acknowledged by every
+// tested unit but actually loads on only one of three, while SIMPLERST
+// mode 0 reloads NVM everywhere, keeps satellite data, and restarts
+// within a second. Neither the resets nor the factory clear are
+// acknowledged (the clear was observed silent for 12 s), so all
+// succeed on send.
+func (c *Configurator) generateNVMReqs() {
+	opts := &c.target.Opts
+	switch opts.Save {
+	case gpsprot.SaveAll:
+		c.addReq(&asbin.CfgCfg{Action: asbin.CfgCfgActionSave, Mask: cfgCfgMaskAll})
+	case gpsprot.SaveMinimal:
+		if c.touched != 0 {
+			c.addReq(&asbin.CfgCfg{Action: asbin.CfgCfgActionSave, Mask: c.touched})
+		}
+	}
+	switch opts.Reset {
+	case gpsprot.ResetReload:
+		c.addRstReq(asbin.CfgSimpleRstModeReset)
+	case gpsprot.ResetCold:
+		c.addRstReq(asbin.CfgSimpleRstModeColdStart)
+	case gpsprot.ResetFactory:
+		m := &asbin.CfgCfg{Action: asbin.CfgCfgActionClear, Mask: asbin.CfgCfgMaskFactoryReset}
+		c.addMsg(m, asReq{noAck: true})
+		c.addRstReq(asbin.CfgSimpleRstModeColdStart)
+	}
+}
+
+// cfgCfgMaskAll covers every section the save mask selects: baud, NMEA
+// message rates, and navigation settings. Binary message rates have no
+// section and are not persistable (hardware finding).
+const cfgCfgMaskAll = asbin.CfgCfgMaskBaudrate | asbin.CfgCfgMaskNmeaMsgRate |
+	asbin.CfgCfgMaskNavSettings
+
+// addRstReq appends a SIMPLERST request. Modes 0-3 restart the
+// receiver without acknowledging (documented and observed), so the
+// request succeeds when sent; a restart banner follows within a second.
+func (c *Configurator) addRstReq(mode asbin.CfgSimpleRstMode) {
+	c.addMsg(&asbin.CfgSimpleRst{Mode: mode}, asReq{noAck: true})
 }
 
 // GenerateRequests generates configuration requests and promotes
@@ -218,12 +262,14 @@ func (c *Configurator) addPollReq(mid asbin.MsgID, onData func(asbin.Msg)) {
 }
 
 // setSection returns the CFG-CFG save-section bit a set request
-// touches, for minimal saves. Binary message rates have no save
-// section (the hardware does not persist them); only NMEA rates do.
+// touches, for minimal saves. The "NMEA message rate" section covers
+// the NMEA and RTCM rate tables (hardware-verified: an F8 rate saved
+// under it survives a reset) but NOT binary NAV rates, which the
+// hardware does not persist at all.
 func setSection(m asbin.Msg) asbin.CfgCfgMask {
 	switch mt := m.(type) {
 	case *asbin.CfgMsg:
-		if mt.MsgClass == 0xF0 {
+		if mt.MsgClass == 0xF0 || mt.MsgClass == 0xF8 {
 			return asbin.CfgCfgMaskNmeaMsgRate
 		}
 	case *asbin.CfgPrt:

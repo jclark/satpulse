@@ -28,6 +28,9 @@ type testReceiver struct {
 	pending    [][]byte             // delivered before the next request's responses
 	rawOn      uint8                // RXM-DUMPRAW state
 	nakRawOff  bool                 // TAU951M quirk: NAK the raw disable yet apply it
+	saves      []asbin.CfgCfg       // CFG-CFG save/load requests received (ACKed)
+	clears     []asbin.CfgCfg       // CFG-CFG clear requests received (silent, like hardware)
+	resets     []asbin.CfgSimpleRst // SIMPLERST requests received (silent)
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -80,6 +83,16 @@ func (r *testReceiver) respondOne(data []byte) [][]byte {
 			return [][]byte{r.nak(asbin.RxmDumpRawID)}
 		}
 		return [][]byte{r.ack(asbin.RxmDumpRawID)}
+	case *asbin.CfgCfg:
+		if mt.Action == asbin.CfgCfgActionClear {
+			r.clears = append(r.clears, *mt)
+			return nil
+		}
+		r.saves = append(r.saves, *mt)
+		return [][]byte{r.ack(asbin.CfgCfgID)}
+	case *asbin.CfgSimpleRst:
+		r.resets = append(r.resets, *mt)
+		return nil
 	}
 	if mid.Ackable() {
 		return [][]byte{r.ack(mid)}
@@ -475,6 +488,110 @@ func TestRawOut(t *testing.T) {
 			}
 			if rcvr.rawOn != tc.expect {
 				t.Errorf("rawOn = %d, want %d", rcvr.rawOn, tc.expect)
+			}
+		})
+	}
+}
+
+func TestNVMOps(t *testing.T) {
+	tests := []struct {
+		name         string
+		nmea         bool // request an NMEA change so minimal has something to save
+		pvt          bool // request a binary-only change (not persistable)
+		rtcm         bool // request an RTCM change (persists with NMEA rates)
+		save         gpsprot.SaveType
+		reset        gpsprot.ResetType
+		expectSaves  []asbin.CfgCfg
+		expectClears []asbin.CfgCfg
+		expectResets []asbin.CfgSimpleRst
+	}{
+		{
+			name: "save_minimal_nmea",
+			nmea: true,
+			save: gpsprot.SaveMinimal,
+			expectSaves: []asbin.CfgCfg{
+				{Action: asbin.CfgCfgActionSave, Mask: asbin.CfgCfgMaskNmeaMsgRate},
+			},
+		},
+		{
+			// binary message rates are not persistable, so a minimal
+			// save with nothing persistable to save sends nothing
+			name: "save_minimal_binary_only",
+			pvt:  true,
+			save: gpsprot.SaveMinimal,
+		},
+		{
+			// RTCM rates persist under the same section as NMEA rates
+			name: "save_minimal_rtcm",
+			rtcm: true,
+			save: gpsprot.SaveMinimal,
+			expectSaves: []asbin.CfgCfg{
+				{Action: asbin.CfgCfgActionSave, Mask: asbin.CfgCfgMaskNmeaMsgRate},
+			},
+		},
+		{
+			name: "save_all",
+			save: gpsprot.SaveAll,
+			expectSaves: []asbin.CfgCfg{
+				{Action: asbin.CfgCfgActionSave, Mask: cfgCfgMaskAll},
+			},
+		},
+		{
+			name:         "reload",
+			reset:        gpsprot.ResetReload,
+			expectResets: []asbin.CfgSimpleRst{{Mode: asbin.CfgSimpleRstModeReset}},
+		},
+		{
+			name:         "reset_cold",
+			reset:        gpsprot.ResetCold,
+			expectResets: []asbin.CfgSimpleRst{{Mode: asbin.CfgSimpleRstModeColdStart}},
+		},
+		{
+			name:  "factory",
+			reset: gpsprot.ResetFactory,
+			expectClears: []asbin.CfgCfg{
+				{Action: asbin.CfgCfgActionClear, Mask: asbin.CfgCfgMaskFactoryReset},
+			},
+			expectResets: []asbin.CfgSimpleRst{{Mode: asbin.CfgSimpleRstModeColdStart}},
+		},
+		{
+			name:  "save_all_then_reload",
+			save:  gpsprot.SaveAll,
+			reset: gpsprot.ResetReload,
+			expectSaves: []asbin.CfgCfg{
+				{Action: asbin.CfgCfgActionSave, Mask: cfgCfgMaskAll},
+			},
+			expectResets: []asbin.CfgSimpleRst{{Mode: asbin.CfgSimpleRstModeReset}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tau1201Ver()}
+			cp := probe(t, rcvr)
+			target := &gpsprot.ConfigTarget{}
+			target.Opts.Save = tc.save
+			target.Opts.Reset = tc.reset
+			if tc.nmea {
+				target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC)
+			}
+			if tc.pvt {
+				target.Opts.PVTMsg.Set(gpsprot.PVTMsgPos)
+			}
+			if tc.rtcm {
+				target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4)
+			}
+			_, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if !reflect.DeepEqual(rcvr.saves, tc.expectSaves) {
+				t.Errorf("saves\ngot  %v\nwant %v", rcvr.saves, tc.expectSaves)
+			}
+			if !reflect.DeepEqual(rcvr.clears, tc.expectClears) {
+				t.Errorf("clears\ngot  %v\nwant %v", rcvr.clears, tc.expectClears)
+			}
+			if !reflect.DeepEqual(rcvr.resets, tc.expectResets) {
+				t.Errorf("resets\ngot  %v\nwant %v", rcvr.resets, tc.expectResets)
 			}
 		})
 	}
