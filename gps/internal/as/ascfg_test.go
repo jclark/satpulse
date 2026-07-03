@@ -38,6 +38,7 @@ type testReceiver struct {
 	sigCap     asbin.CfgNavSatMask  // hardware capability; clamps written masks
 	prt        [2]uint32            // stored CFG-PRT records
 	liveRate   uint32               // the live rate of the arriving port
+	elev       asbin.CfgElev        // CFG-ELEV store (always present: every unit has it)
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -125,6 +126,9 @@ func (r *testReceiver) respondOne(data []byte) [][]byte {
 		// the silicon ACKs and clamps to the hardware capability
 		r.navSat.EnableMask = mt.EnableMask & r.sigCap
 		return [][]byte{r.ack(asbin.CfgNavSatID)}
+	case *asbin.CfgElev:
+		r.elev = *mt
+		return [][]byte{r.ack(asbin.CfgElevID)}
 	case *asbin.CfgPrt:
 		r.prt[mt.PortID&1] = mt.Baudrate
 		if mt.Baudrate != r.liveRate {
@@ -183,7 +187,7 @@ func (r *testReceiver) respondPoll(mid asbin.MsgID, data []byte) [][]byte {
 		port := data[asbin.HeaderLen] & 1
 		return [][]byte{r.pack(&asbin.CfgPrt{PortID: port, Baudrate: r.prt[port]})}
 	case asbin.CfgElevID:
-		return [][]byte{r.pack(&asbin.CfgElev{TrkMask: 0.0175, NaviMask: 0.0873})}
+		return [][]byte{r.pack(&r.elev)}
 	}
 	return nil
 }
@@ -821,6 +825,28 @@ func TestSignalsReadback(t *testing.T) {
 		gpsprot.SigBDSB1I, gpsprot.SigBDSB2I, gpsprot.SigGALE1)
 	if got, ok := cfg.ConfigProps().GetSignalsEnabled(); !ok || got != want {
 		t.Errorf("signals = %v/%v, want %v", got, ok, want)
+	}
+}
+
+func TestMinElev(t *testing.T) {
+	// as-found: trk 1 deg, navi 5 deg (all three units)
+	asFound := asbin.CfgElev{TrkMask: 0.017453, NaviMask: 0.087266}
+	rcvr := &testReceiver{monVer: tau1201Ver(), elev: asFound}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetMinElevation(gpsprot.DegreesFromFloat(10))
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if rcvr.elev.TrkMask != asFound.TrkMask {
+		t.Errorf("TrkMask = %v, want preserved %v", rcvr.elev.TrkMask, asFound.TrkMask)
+	}
+	if deg := float64(rcvr.elev.NaviMask) * 180 / 3.14159265358979; deg < 9.99 || deg > 10.01 {
+		t.Errorf("NaviMask = %v deg, want 10", deg)
+	}
+	if e, ok := cfg.ConfigProps().GetMinElevation(); !ok || e.Degrees() < 9.99 || e.Degrees() > 10.01 {
+		t.Errorf("achieved minElev = %v/%v, want ~10 deg", e, ok)
 	}
 }
 

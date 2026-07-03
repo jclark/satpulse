@@ -36,6 +36,7 @@ type Configurator struct {
 	navSat    *asbin.CfgNavSat    // latest CFG-NAVSAT readback
 	speedReq  *asReq              // the baud change request, when one was generated
 	prt0      *asbin.CfgPrt       // CFG-PRT record 0 readback (show-port)
+	elev      *asbin.CfgElev      // latest CFG-ELEV readback
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -120,6 +121,7 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	c.tpConfigProps(props)
 	c.tmodeConfigProps(props)
 	c.signalConfigProps(props)
+	c.minElevConfigProps(props)
 	c.speedConfigProps(props)
 	return props
 }
@@ -143,6 +145,7 @@ func (c *Configurator) generateQueryReqs() {
 	c.generateTPQuery()
 	c.generateTModeQuery()
 	c.generateSignalQuery()
+	c.generateMinElevQuery()
 	c.generatePrtQuery()
 }
 
@@ -152,6 +155,7 @@ func (c *Configurator) generateSetReqs() {
 	c.generateTPSet()
 	c.generateTModeSet()
 	c.generateSignalSet()
+	c.generateMinElevSet()
 }
 
 // generateNVMReqs generates the save and reset requests. Reload is
