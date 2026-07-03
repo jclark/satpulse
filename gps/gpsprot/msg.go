@@ -1305,6 +1305,11 @@ type EpochFlusher interface {
 // MsgHandler.NavEpoch.
 type NavEpochManager struct {
 	active map[EpochFlusher]struct{}
+	// lastEpoch is the set of processors that participated in the most
+	// recently flushed epoch. It is used by EndOfProtocolEpoch to decide
+	// whether another protocol (e.g. NMEA) is expected to contribute to the
+	// current epoch, since protocol participation is stable across epochs.
+	lastEpoch map[EpochFlusher]struct{}
 }
 
 // NewNavEpochManager creates a new NavEpochManager.
@@ -1334,7 +1339,37 @@ func (m *NavEpochManager) EndOfEpoch(tRead time.Time) {
 	m.flush(tRead)
 }
 
+// EndOfProtocolEpoch is called by a processor whose own epoch has ended but
+// which cannot assert the epoch is over for the whole receiver (e.g.
+// Septentrio's EndOfPVT). It flushes now only when f is the sole active
+// processor AND no other processor took part in the last epoch; otherwise it
+// defers to the next whole-receiver boundary, so a concurrently-active
+// protocol (e.g. NMEA whose sentences trail EndOfPVT) is not flushed
+// mid-epoch. NMEA presence is stable across epochs, so last epoch's
+// participation predicts this epoch's.
+func (m *NavEpochManager) EndOfProtocolEpoch(f EpochFlusher, tRead time.Time) {
+	for g := range m.active {
+		if g != f {
+			return // another protocol mid-epoch
+		}
+	}
+	for g := range m.lastEpoch {
+		if g != f {
+			return // another protocol present last epoch; wait for the merge
+		}
+	}
+	m.flush(tRead)
+}
+
 func (m *NavEpochManager) flush(tRead time.Time) {
+	if m.lastEpoch == nil {
+		m.lastEpoch = make(map[EpochFlusher]struct{})
+	} else {
+		clear(m.lastEpoch)
+	}
+	for f := range m.active {
+		m.lastEpoch[f] = struct{}{}
+	}
 	type flushed struct {
 		msg *NavEpochMsg
 		pri MsgPriority

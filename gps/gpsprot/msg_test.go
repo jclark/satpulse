@@ -876,6 +876,63 @@ func TestNavEpochManagerEndOfEpochMultiple(t *testing.T) {
 	}
 }
 
+// TestEndOfProtocolEpochSoleActive flushes immediately when the caller is the
+// only active processor and no other protocol took part in the last epoch (the
+// SBF-only Septentrio EndOfPVT case).
+func TestEndOfProtocolEpochSoleActive(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	f := &testFlusher{pri: PriVendorLow, mh: rec}
+	mgr.EpochStarted(f, t0)
+	f.msg = &NavEpochMsg{Tag: "SBF"}
+	mgr.EndOfProtocolEpoch(f, t0)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("sole-active EndOfProtocolEpoch should flush now, got %d epochs", len(rec.epochs))
+	}
+}
+
+// TestEndOfProtocolEpochDefersToOther does not flush when another protocol is
+// active in the current epoch.
+func TestEndOfProtocolEpochDefersToOther(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	sbf := &testFlusher{pri: PriVendorLow, mh: rec}
+	nmeaF := &testFlusher{pri: PriGenericHigh, mh: rec}
+	mgr.EpochStarted(sbf, t0)
+	mgr.EpochStarted(nmeaF, t0)
+	sbf.msg = &NavEpochMsg{Tag: "SBF"}
+	mgr.EndOfProtocolEpoch(sbf, t0)
+	if len(rec.epochs) != 0 {
+		t.Fatalf("EndOfProtocolEpoch must defer while another protocol is active, got %d epochs", len(rec.epochs))
+	}
+}
+
+// TestEndOfProtocolEpochDefersOnLastEpoch defers when another protocol took
+// part in the last epoch, even if it has not yet contributed to this one
+// (NMEA whose sentences trail EndOfPVT).
+func TestEndOfProtocolEpochDefersOnLastEpoch(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	sbf := &testFlusher{pri: PriVendorLow, mh: rec}
+	nmeaF := &testFlusher{pri: PriGenericHigh, mh: rec}
+	// Epoch 1: both participate, then a whole-receiver boundary flushes.
+	mgr.EpochStarted(sbf, t0)
+	mgr.EpochStarted(nmeaF, t0)
+	mgr.EndOfEpoch(t0) // records lastEpoch = {sbf, nmeaF}
+	before := len(rec.epochs)
+	// Epoch 2: SBF's blocks arrive first; NMEA's have not yet.
+	mgr.EpochStarted(sbf, t1)
+	sbf.msg = &NavEpochMsg{Tag: "SBF"}
+	mgr.EndOfProtocolEpoch(sbf, t1)
+	if len(rec.epochs) != before {
+		t.Fatalf("EndOfProtocolEpoch must defer when a protocol was present last epoch, got %d new epochs", len(rec.epochs)-before)
+	}
+}
+
 func TestNavEpochManagerNilContribution(t *testing.T) {
 	mgr := NewNavEpochManager()
 	rec := &epochRecorder{}
