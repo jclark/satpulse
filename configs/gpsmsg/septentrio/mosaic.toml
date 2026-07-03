@@ -13,9 +13,11 @@
 # hardware before use.
 # Default baud rate: 115200 (8N1, no flow control)
 #
-# Connection descriptor USB1 is used throughout as a stand-in for "whichever
-# port satpulsetool is connected to" -- adjust the Cd argument in each command
-# to match your actual connection (COM1..COM4, USB1..USB2, etc).
+# Port-specific tags carry the connection descriptor as a suffix. Output tags
+# (NMEA/SBF/RTCM) target USB1 and end in "-usb1"; the serial-port settings
+# (baud) target COM1 and end in "-com1" -- baud applies only to physical COM
+# ports, not to USB. To drive a different port, copy the entry and change both
+# the suffix and the Cd argument (e.g. "-usb2" with USB2, "-com2" with COM2).
 #
 # responsePattern = "septentrio" below is forward-looking: this analyzer does
 # not exist yet in gps/msgfile (see plan/septentrio-analysis/
@@ -61,84 +63,87 @@ text = "getReceiverCapabilities"
 # those are used here).
 
 [[line]]
-tag = "nmea-gga"
+tag = "nmea-gga-usb1"
 text = "setNMEAOutput, Stream1, USB1, +GGA, sec1"
 description = "Enable NMEA GGA at 1Hz"
 [[line]]
-tag = "nmea-gga-off"
+tag = "nmea-gga-off-usb1"
 text = "setNMEAOutput, Stream1, USB1, -GGA"
 description = "Disable NMEA GGA"
 
 [[line]]
-tag = "nmea-gll"
+tag = "nmea-gll-usb1"
 text = "setNMEAOutput, Stream1, USB1, +GLL, sec1"
 description = "Enable NMEA GLL at 1Hz"
 [[line]]
-tag = "nmea-gll-off"
+tag = "nmea-gll-off-usb1"
 text = "setNMEAOutput, Stream1, USB1, -GLL"
 description = "Disable NMEA GLL"
 
 [[line]]
-tag = "nmea-gsa"
+tag = "nmea-gsa-usb1"
 text = "setNMEAOutput, Stream1, USB1, +GSA, sec1"
 description = "Enable NMEA GSA at 1Hz"
 [[line]]
-tag = "nmea-gsa-off"
+tag = "nmea-gsa-off-usb1"
 text = "setNMEAOutput, Stream1, USB1, -GSA"
 description = "Disable NMEA GSA"
 
 [[line]]
-tag = "nmea-gsv"
+tag = "nmea-gsv-usb1"
 text = "setNMEAOutput, Stream1, USB1, +GSV, sec1"
 description = "Enable NMEA GSV at 1Hz"
 [[line]]
-tag = "nmea-gsv-off"
+tag = "nmea-gsv-off-usb1"
 text = "setNMEAOutput, Stream1, USB1, -GSV"
 description = "Disable NMEA GSV"
 
 [[line]]
-tag = "nmea-rmc"
+tag = "nmea-rmc-usb1"
 text = "setNMEAOutput, Stream1, USB1, +RMC, sec1"
 description = "Enable NMEA RMC at 1Hz"
 [[line]]
-tag = "nmea-rmc-off"
+tag = "nmea-rmc-off-usb1"
 text = "setNMEAOutput, Stream1, USB1, -RMC"
 description = "Disable NMEA RMC"
 
 [[line]]
-tag = "nmea-zda"
+tag = "nmea-zda-usb1"
 text = "setNMEAOutput, Stream1, USB1, +ZDA, sec1"
 description = "Enable NMEA ZDA at 1Hz"
 [[line]]
-tag = "nmea-zda-off"
+tag = "nmea-zda-off-usb1"
 text = "setNMEAOutput, Stream1, USB1, -ZDA"
 description = "Disable NMEA ZDA"
 
 # Disable all NMEA output on Stream1
 [[line]]
-tag = "nmea-off"
+tag = "nmea-off-usb1"
 text = "setNMEAOutput, Stream1, USB1, none"
 description = "Disable all NMEA messages"
 
 # Convenience: enable RMC, GGA, GSV, GSA (messages used by satpulse daemon)
 [[line]]
-tag = "nmea-daemon"
+tag = "nmea-daemon-usb1"
 text = "setNMEAOutput, Stream1, USB1, +RMC, sec1"
 description = "Enable NMEA messages used by satpulse daemon"
 [[line]]
-tag = "nmea-daemon"
+tag = "nmea-daemon-usb1"
 text = "setNMEAOutput, Stream1, USB1, +GGA"
 [[line]]
-tag = "nmea-daemon"
+tag = "nmea-daemon-usb1"
 text = "setNMEAOutput, Stream1, USB1, +GSV"
 [[line]]
-tag = "nmea-daemon"
+tag = "nmea-daemon-usb1"
 text = "setNMEAOutput, Stream1, USB1, +GSA"
 
 # NMEA version
-# setNMEAVersion only distinguishes two profiles, v3x and v4x -- not the finer
-# 3.01/4.00/4.10/4.11 versions some other vendors expose. Confirmed identical
-# command/enum on both models.
+# setNMEAVersion offers only two profiles: v3x (NMEA 3.01) and v4x. Per the
+# command definition in the reference guide, v4x adds system ID, signal ID and
+# navigational status fields according to NMEA 4.11 -- so there is no separate
+# 4.00 or 4.10 profile to expose. (The guide's overview text loosely calls v4x
+# "4.10"; the command definition's "4.11" is the authoritative one.) Confirmed
+# identical command/enum on both models.
 
 [[line]]
 tag = "get-nmea-ver"
@@ -151,20 +156,13 @@ text = "setNMEAVersion, v3x"
 description = "Set NMEA version to 3.01"
 
 [[line]]
-tag = "nmea-ver-410"
+tag = "nmea-ver-411"
 text = "setNMEAVersion, v4x"
-description = "Set NMEA version to 4.x (adds system/signal ID fields, per NMEA 4.10)"
+description = "Set NMEA version to 4.11 (adds system/signal ID and navigational status fields)"
 
-# nmea-ver-400: TODO -- no separate "4.00" profile exists; setNMEAVersion only
-# offers v3x/v4x, so there is nothing between 3.01 and the "adds system/signal
-# ID" v4x profile to map this tag onto. Not implemented.
-
-# nmea-ver-411: TODO -- v4x (mapped to nmea-ver-410 above) adds signal ID
-# fields but the reference guides do not describe an NMEA-4.11-specific
-# talker ID change tied to version selection. setNMEATalkerID only offers
-# auto/GP/GN (auto picks GP/GN/GA/GB depending on solution -- no GQ for
-# QZSS), so the "GB for BeiDou, GQ for QZSS" behavior this tag implies is not
-# confirmed to exist. Needs hardware verification.
+# nmea-ver-400 / nmea-ver-410: no separate 4.00 or 4.10 profile exists --
+# setNMEAVersion only offers v3x (3.01) and v4x (4.11), with nothing in
+# between. Not implemented.
 
 # Elevation mask
 # Both models have two independent masks (Tracking, PVT); "all" sets/queries
@@ -290,7 +288,7 @@ description = "Disable PPS output"
 # *output* interval is configurable per stream. These entries set the
 # interval of a dedicated Stream3 carrying PVTGeodetic; adjust Cd/Stream to
 # match whichever stream you actually use for position output (e.g. combine
-# with sbf-daemon's Stream1 instead, if that is your position source).
+# with sbf-daemon-usb1's Stream1 instead, if that is your position source).
 
 [[line]]
 tag = "get-fix-rate"
@@ -298,65 +296,65 @@ text = "getSBFOutput, Stream3"
 description = "Query current PVTGeodetic output interval on Stream3"
 
 [[line]]
-tag = "fix-rate-1"
+tag = "fix-rate-1-usb1"
 text = "setSBFOutput, Stream3, USB1, PVTGeodetic, sec1"
 description = "Set fix (PVTGeodetic output) rate to 1 Hz"
 [[line]]
-tag = "fix-rate-2"
+tag = "fix-rate-2-usb1"
 text = "setSBFOutput, Stream3, USB1, PVTGeodetic, msec500"
 description = "Set fix (PVTGeodetic output) rate to 2 Hz"
 [[line]]
-tag = "fix-rate-5"
+tag = "fix-rate-5-usb1"
 text = "setSBFOutput, Stream3, USB1, PVTGeodetic, msec200"
 description = "Set fix (PVTGeodetic output) rate to 5 Hz"
 [[line]]
-tag = "fix-rate-10"
+tag = "fix-rate-10-usb1"
 text = "setSBFOutput, Stream3, USB1, PVTGeodetic, msec100"
 description = "Set fix (PVTGeodetic output) rate to 10 Hz"
 [[line]]
-tag = "fix-rate-20"
+tag = "fix-rate-20-usb1"
 text = "setSBFOutput, Stream3, USB1, PVTGeodetic, msec50"
 description = "Set fix (PVTGeodetic output) rate to 20 Hz"
 
 # Port configuration
 
 [[line]]
-tag = "get-uart"
-text = "getCOMSettings, USB1"
+tag = "get-uart-com1"
+text = "getCOMSettings, COM1"
 description = "Query serial port configuration"
 
 [[line]]
-tag = "speed-9600"
-text = "setCOMSettings, USB1, baud9600, bits8, No, bit1, none"
-description = "Set USB1 baud rate to 9600"
+tag = "speed-9600-com1"
+text = "setCOMSettings, COM1, baud9600, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 9600"
 [[line]]
-tag = "speed-19200"
-text = "setCOMSettings, USB1, baud19200, bits8, No, bit1, none"
-description = "Set USB1 baud rate to 19200"
+tag = "speed-19200-com1"
+text = "setCOMSettings, COM1, baud19200, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 19200"
 [[line]]
-tag = "speed-38400"
-text = "setCOMSettings, USB1, baud38400, bits8, No, bit1, none"
-description = "Set USB1 baud rate to 38400"
+tag = "speed-38400-com1"
+text = "setCOMSettings, COM1, baud38400, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 38400"
 [[line]]
-tag = "speed-57600"
-text = "setCOMSettings, USB1, baud57600, bits8, No, bit1, none"
-description = "Set USB1 baud rate to 57600"
+tag = "speed-57600-com1"
+text = "setCOMSettings, COM1, baud57600, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 57600"
 [[line]]
-tag = "speed-115200"
-text = "setCOMSettings, USB1, baud115200, bits8, No, bit1, none"
-description = "Set USB1 baud rate to 115200"
+tag = "speed-115200-com1"
+text = "setCOMSettings, COM1, baud115200, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 115200"
 [[line]]
-tag = "speed-230400"
-text = "setCOMSettings, USB1, baud230400, bits8, No, bit1, none"
-description = "Set USB1 baud rate to 230400"
+tag = "speed-230400-com1"
+text = "setCOMSettings, COM1, baud230400, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 230400"
 [[line]]
-tag = "speed-460800"
-text = "setCOMSettings, USB1, baud460800, bits8, No, bit1, none"
-description = "Set USB1 baud rate to 460800"
+tag = "speed-460800-com1"
+text = "setCOMSettings, COM1, baud460800, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 460800"
 [[line]]
-tag = "speed-921600"
-text = "setCOMSettings, USB1, baud921600, bits8, No, bit1, none"
-description = "Set USB1 baud rate to 921600"
+tag = "speed-921600-com1"
+text = "setCOMSettings, COM1, baud921600, bits8, No, bit1, none"
+description = "Set COM1 baud rate to 921600"
 
 # Restart commands
 
@@ -384,19 +382,24 @@ tag = "save"
 text = "exeCopyConfigFile, Current, Boot"
 description = "Save current configuration to the boot configuration file"
 
+# reload loads the boot configuration into the active (Current) configuration,
+# the inverse of save. It must NOT use exeResetReceiver: a reset reboots the
+# receiver (and re-enumerates USB), whereas reload's semantics are just "load
+# NVM into RAM" -- no restart. Verified on a mosaic-G5 (v1.1.0): the receiver
+# stays up and Current is replaced by Boot.
 [[line]]
 tag = "reload"
-text = "exeResetReceiver, Hard, none"
-description = "Reload configuration from the boot configuration file"
-delay = 3
+text = "exeCopyConfigFile, Boot, Current"
+description = "Reload the boot configuration into the current configuration (no restart)"
 
-# reset reuses the same command as cold-start: a Hard reset always boots from
-# the saved Boot config file, so "reload from NVM AND clear satellite data"
-# and "cold start" are the same operation on this receiver family.
+# reset reuses the same command as cold-start: a Hard reset reboots the
+# receiver (booting from the saved Boot config file) and clears satellite
+# data, so "reset" and "cold start" are the same operation on this receiver
+# family. Unlike the reload tag above, this is a reboot.
 [[line]]
 tag = "reset"
 text = "exeResetReceiver, Hard, SatData"
-description = "Reload configuration from NVM and clear all satellite data"
+description = "Reset - hardware reset that clears all satellite navigation data (cold start)"
 delay = 5
 
 # factory-reset requires an authenticated admin session (ref sec 1.3/3.2.1
@@ -467,26 +470,26 @@ description = "Clear fixed position, return to rover mode"
 # models (RTCMv2/sr2* is X5-only and is intentionally not used here).
 
 [[line]]
-tag = "rtcm-arp"
+tag = "rtcm-arp-usb1"
 text = "setRTCMv3Output, USB1, +RTCM1006"
 description = "Enable RTCM ARP message (1006, includes antenna height) at default interval"
 
 [[line]]
-tag = "rtcm-msm4"
+tag = "rtcm-msm4-usb1"
 text = "setRTCMv3Output, USB1, +MSM4"
 description = "Enable RTCM MSM4 for all constellations at default interval"
 
 [[line]]
-tag = "rtcm-msm7"
+tag = "rtcm-msm7-usb1"
 text = "setRTCMv3Output, USB1, +MSM7"
 description = "Enable RTCM MSM7 for all constellations at default interval"
 
 [[line]]
-tag = "rtcm-eph"
+tag = "rtcm-eph-usb1"
 text = "setRTCMv3Output, USB1, +Nav"
 description = "Enable RTCM ephemeris messages (1019/1020/1041/1042/1044/1045/1046)"
 [[line]]
-tag = "rtcm-eph-off"
+tag = "rtcm-eph-off-usb1"
 text = "setRTCMv3Output, USB1, -Nav"
 description = "Disable RTCM ephemeris messages"
 
@@ -498,7 +501,7 @@ description = "Disable RTCM ephemeris messages"
 # MovingBase instead (a different mechanism entirely).
 
 [[line]]
-tag = "rtcm-off"
+tag = "rtcm-off-usb1"
 text = "setRTCMv3Output, USB1, none"
 description = "Disable all RTCM output"
 
@@ -542,7 +545,7 @@ description = "Set rover mode"
 # identically on both models (none are in the G5-absent Meas3 group).
 
 [[line]]
-tag = "sbf-daemon"
+tag = "sbf-daemon-usb1"
 text = "setSBFOutput, Stream1, USB1, +ReceiverTime+xPPSOffset+PVTGeodetic+ChannelStatus+SatVisibility+DOP+ReceiverStatus+EndOfPVT, sec1"
 description = "Enable SBF blocks used by satpulsed daemon"
 
