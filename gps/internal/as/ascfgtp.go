@@ -12,13 +12,17 @@ import (
 // form on every tested unit). A set is a read-modify-write: the query
 // phase polls CFG-PPS and the set phase merges the target properties
 // into the readback, preserving the GPIO pin and the Offset field.
-// The offset is a factory calibration value (530 ns on two of the
-// three test units, surviving even a factory reset), so it is
-// deliberately not exposed as AntennaCableDelay and never overwritten.
-// The pulse width maps to the duty cycle in 10^-6 of the period; sync
-// 0 means pulse-only-when-fixing, so OnlyWhenLocked is sync==0.
-// Alignment to GNSS vs UTC time has no CFG-PPS carrier: the
-// AlignToGNSS property is absent on this backend.
+// The offset is factory-set per unit (530 ns on two of the three test
+// units, surviving even a factory reset - evidently calibration, not
+// user config), so it is deliberately not exposed as AntennaCableDelay
+// and never overwritten. The pulse width maps to the duty cycle in
+// 10^-6 of the period; sync 0 means pulse-only-when-fixing, so
+// OnlyWhenLocked is sync==0. Alignment to GNSS vs UTC time has no
+// CFG-PPS carrier: the AlignToGNSS property is absent on this backend.
+//
+// All of this is register semantics: the physical pulse on the PPS pin
+// was never observed (no timing instrumentation on the test units), so
+// how the registers shape the actual pulse is the doc's word, not ours.
 
 // tpProps are the properties realized by CFG-PPS.
 const tpProps = gpsprot.PropIDTimePulseWidth | gpsprot.PropIDTimePulsePeriod |
@@ -47,8 +51,9 @@ func (c *Configurator) generateTPQuery() {
 // was unanswered) there is nothing to merge into: the property does
 // not exist on this receiver and nothing is sent. The acknowledged
 // values are not the whole truth for CFG-PPS: the TAU1302 acknowledges
-// a zero duty cycle without applying it, so the achieved values come
-// from one post-set readback.
+// a zero duty cycle while its readback sometimes shows the write had
+// no effect (and sometimes a fully cleared block), so the achieved
+// values come from one post-set readback.
 func (c *Configurator) generateTPSet() {
 	if !c.target.Props.SetsAny(tpProps) || c.pps == nil {
 		return
@@ -82,8 +87,8 @@ func (c *Configurator) generateTPSet() {
 }
 
 // dutyCycle converts a pulse width to the CFG-PPS duty cycle in 10^-6
-// units of the period. A zero width disables the pulse (duty 0, the
-// message file's verified pps-off form).
+// units of the period. A zero width requests duty 0, the message
+// file's pps-off form.
 func dutyCycle(width time.Duration, periodUs uint32) uint32 {
 	if periodUs == 0 {
 		return 0

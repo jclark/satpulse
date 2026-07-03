@@ -18,8 +18,10 @@ mask) backs the verify readback.
 ## Properties
 
 - Antenna cable delay does not exist; the CFG-PPS Offset field is
-  factory calibration (530 ns on this unit) and is preserved, never
-  exposed.
+  factory-set (530 ns on this unit, surviving factory reset -
+  evidently calibration) and is preserved, never exposed. Time-pulse
+  findings on this unit are CFG-PPS register readbacks; the PPS pin
+  itself was not observed (no timing instrumentation).
 - Fixed position is ECEF-only in storage (0.01 m quantum); no stored
   position accuracy (reads zero). LLH sets are converted.
 - Minimum elevation carries float32-radian rounding.
@@ -47,9 +49,9 @@ As-found running configuration: NMEA GGA, GSA, GSV, RMC, ZDA at 1 Hz
 PPS 1 s period, 1% duty, FALLING polarity, GPIO 13, offset 530 ns;
 NMEA version 4.11.
 
-The factory PPS polarity is falling, which the satpulsetool vocabulary
-cannot express (`--pps` realizes the full pulse bundle with rising
-polarity; see `BUGS.md`, unresolved observations). Every probing run
+The factory CFG-PPS polarity field is falling, which the satpulsetool
+vocabulary cannot express (`--pps` realizes the full pulse bundle with
+rising polarity; see `BUGS.md`, unresolved observations). Every probing run
 therefore reports one honest not-left-as-found failure on
 `timePulse.polarityRising`; the polarity is restored out-of-band after
 runs (after a --disruptive run the NVM copy needs the same restore,
