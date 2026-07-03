@@ -189,10 +189,14 @@ Remaining hardware unknowns:
   never resets), not the survey state machine. Residual per-unit checks
   (SURVEY-zeros cancel mid-survey, restart semantics with FIXEDECEF set,
   TAU1201/TAU1302 parity) fold into stage 5 verification.
-- **Baud-change handshake**: at which rate the ACK arrives, when the port
-  actually switches, whether setting the OTHER UART's rate disturbs the
-  live link, whether we can identify which UART we are on (if not, --speed
-  sets both, as the message file does today), safe resume timing.
+- ~~Baud-change handshake~~: RESOLVED (CONTEXT.md): a CFG-PRT baud set
+  always switches the ARRIVING port's live rate immediately; portID only
+  selects the stored record. The transition destroys the ACK (not intact
+  at either rate; no-op sets ACK fine), so confirmation is a solicited
+  poll at the new rate (works within ~1 s). There is no way to change
+  the other port's live rate, and no need to identify our UART: set
+  record 0 at the old rate (live switch), then record 1 at the new rate,
+  then poll both.
 - ~~NVM model~~: RESOLVED except the disruptive tail (CONTEXT.md): save
   works and honors the mask (bit0 baud, bit1 NMEA rates, bit2 nav;
   mask 0 vacuous ACK); CFG-CFG load is ACKed everywhere but is a NO-OP
@@ -322,10 +326,16 @@ Functionality: `--gnss --band --signal` work.
 
 ## Stage 7: speed change and show-port
 
-CFG-PRT set with `GetSpeedChangeAfter`, confirmation via solicited poll at
-the new rate, `MaybeSpeedChangeSucceeded` heuristic secondary; combined
-`--speed --save` persists the NEW rate (speed phase precedes NVM phase).
-`--show-port` reports what stage 0 established is knowable.
+Per the stage-0 model: the first CFG-PRT set (record 0) carries
+`GetSpeedChangeAfter` - it switches the arriving port's live rate
+immediately and its ACK never survives, so the request must not treat
+ACK silence as failure; a second set (record 1) at the new rate aligns
+the other record and ACKs normally; a solicited CFG-PRT poll at the new
+rate is the confirmation, with `MaybeSpeedChangeSucceeded` as the
+heuristic secondary. Combined `--speed --save` persists the NEW rate
+(speed phase precedes NVM phase; save mask bit0). `--show-port` reports
+baud only - the active UART is not identifiable (and irrelevant, since
+sets always target the arriving port).
 
 Functionality: `satpulsetool gps --speed 460800` works reliably.
 
