@@ -54,10 +54,11 @@ func (c *Configurator) pollPps() {
 // CFG-PPS readback and sends the result. Without a readback (the poll
 // was unanswered) there is nothing to merge into: the property does
 // not exist on this receiver and nothing is sent. The acknowledged
-// values are not the whole truth for CFG-PPS: the TAU1302 acknowledges
-// a zero duty cycle while its readback sometimes shows the write had
-// no effect (and sometimes a fully cleared block), so the achieved
-// values come from one post-set readback.
+// values are recorded as the achieved configuration per the semantics
+// (what the receiver accepted; no separate readback). The TAU1302
+// sometimes acknowledges a zero duty cycle without storing it - a
+// receiver defect recorded in its HW note, visible to anyone who
+// reads the property back later.
 func (c *Configurator) generateTPSet() {
 	if !c.target.Props.SetsAny(tpProps) || c.pps == nil {
 		return
@@ -82,8 +83,7 @@ func (c *Configurator) generateTPSet() {
 			pps.Sync = asbin.CfgPpsSyncOnlyWithFix
 		}
 	}
-	c.addSetReq(&pps, nil)
-	c.pollPps()
+	c.addSetReq(&pps, func() { c.pps = &pps })
 }
 
 // dutyCycle converts a pulse width to the CFG-PPS duty cycle in 10^-6

@@ -7,14 +7,17 @@ import (
 	"github.com/jclark/satpulse/gps/lib/asbin"
 )
 
-// Signal selection uses the CFG-NAVSAT per-signal mask. The silicon
-// ACKs any mask and clamps it to the hardware's capability - even a
-// zero mask is accepted and applied - so the achieved set comes from a
-// post-set verify poll (the narrow exception to on-ACK readback,
-// earned by hardware evidence on all three test units). The receiver
-// itself thus performs the semantics' silent intersection with the
-// supported set; requesting the full mask and reading back is how a
-// unit's signal plan is discovered.
+// Signal selection uses the CFG-NAVSAT per-signal mask. The ACK's
+// semantics here are intersection (established on all three test
+// units): the receiver acknowledges any mask and enables the
+// intersection with its capability - reasonable receiver semantics,
+// not a defect - so the acknowledgement means "enabled requested AND
+// supported" without naming the result, and the achieved set is read
+// back to report the value the receiver says it enabled (the
+// semantics require every silent intersection to be visible in the
+// achieved set). Requests are additionally intersected with the
+// identity-deduced plan before writing, so on known hardware
+// unsupported bits never reach the wire.
 
 // navSatSignals maps CFG-NAVSAT mask bits to signals. The protocol
 // documentation names the bits; "BEIDOU B2" is taken as B2I (the
@@ -148,10 +151,10 @@ func hwChipNumber(hw string) string {
 }
 
 // generateSignalSet sends the requested signal selection, intersected
-// with the identity-deduced supported set. The acknowledged values are
-// still not the whole truth: on unknown hardware the silicon clamps
-// the written mask to its capability, and coupling is possible, so the
-// achieved set always comes from one readback.
+// with the identity-deduced supported set. The achieved set comes
+// from the post-set readback, because the ACK means "enabled the
+// intersection with capability" without naming it (see the file
+// comment).
 func (c *Configurator) generateSignalSet() {
 	requested, ok := c.target.Props.GetSignalsEnabled()
 	if !ok {

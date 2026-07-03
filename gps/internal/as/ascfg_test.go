@@ -624,9 +624,11 @@ func TestTimePulseSet(t *testing.T) {
 }
 
 func TestTimePulseZeroDutyIgnored(t *testing.T) {
-	// TAU1302 quirk: a zero duty cycle is acknowledged and ignored.
-	// The post-set readback must report the truth: the width did not
-	// change.
+	// TAU1302 defect: a zero duty cycle can be acknowledged without
+	// being stored. Per the semantics the achieved value is what the
+	// receiver ACCEPTED - the set exchange reports width 0, with no
+	// verify roundtrip to work around the defect. The discrepancy is
+	// receiver characterization, visible on a later readback.
 	rcvr := &testReceiver{monVer: tau1201Ver(), pps: tau951mPps(), ignoreZeroDuty: true}
 	cp := probe(t, rcvr)
 	target := &gpsprot.ConfigTarget{}
@@ -635,8 +637,11 @@ func TestTimePulseZeroDutyIgnored(t *testing.T) {
 	if errCount != 0 {
 		t.Errorf("ErrorCount = %d, want 0", errCount)
 	}
-	if w, ok := cfg.ConfigProps().GetTimePulseWidth(); !ok || w != 10*time.Millisecond {
-		t.Errorf("achieved width = %v/%v, want the truthful unchanged 10ms", w, ok)
+	if w, ok := cfg.ConfigProps().GetTimePulseWidth(); !ok || w != 0 {
+		t.Errorf("achieved width = %v/%v, want the accepted 0", w, ok)
+	}
+	if rcvr.pps.DutyCycle == 0 {
+		t.Error("fake stored the zero duty; it must model the defect")
 	}
 }
 
