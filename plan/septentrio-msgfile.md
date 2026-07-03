@@ -310,9 +310,10 @@ entries. Both set `[default.line]` `eol = "\r\n"` and `responsePattern
 today, tag group by tag group (see `configs/gpsmsg/tags.md` for the
 naming convention each tag follows):
 
-- `get-version` -- `lstInternalFile, Identification`. This is itself
-  an `lst`-shaped (`$R;`/`---->`/`$--BLOCK`) reply, exercising that
-  branch of the analyzer.
+- `get-version` -- `getReceiverInterface` followed by
+  `getReceiverCapabilities`, compact ordinary command replies for receiver
+  name, command-line interface version, supported signals, ports, and
+  capabilities.
 - NMEA output control (`nmea-gga`/`-gll`/`-gsa`/`-gsv`/`-rmc`/`-zda`,
   each with an `-off` pair, plus `nmea-off` and the `nmea-daemon`
   convenience group) via `setNMEAOutput`'s `+`/`-` combinable syntax.

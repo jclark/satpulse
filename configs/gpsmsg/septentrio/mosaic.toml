@@ -13,7 +13,7 @@
 # hardware before use.
 # Default baud rate: 115200 (8N1, no flow control)
 #
-# Connection descriptor COM1 is used throughout as a stand-in for "whichever
+# Connection descriptor USB1 is used throughout as a stand-in for "whichever
 # port satpulsetool is connected to" -- adjust the Cd argument in each command
 # to match your actual connection (COM1..COM4, USB1..USB2, etc).
 #
@@ -23,27 +23,35 @@
 # already reflects the intended end state once that analyzer is implemented.
 
 [default.line]
-eol = "\r\n"
-responsePattern = "septentrio"
+#eol = "\r\n"
+#responsePattern = "septentrio"
 
-# Version / Identification query
+# Command input recovery
+#
+# If a connection has stopped accepting user commands, the reference guide
+# says to send ten "S" characters followed by Enter. Use this as the first tag
+# in a sequence, e.g. "-t cmd-escape,get-version".
+[[line]]
+tag = "cmd-escape"
+text = "SSSSSSSSSS"
+description = "Force the current Septentrio connection to accept user commands"
 
-# lstInternalFile is an "lst" command: per the Septentrio ASCII command
-# reference (sec 3.1.3, identical on both models -- see the diff analysis'
-# "Command-line interface" point), its reply uses a DIFFERENT frame than
-# set/get/exe commands -- "$R;" (semicolon, not colon) followed by a
-# pseudo-prompt "---->" and one or more "$--BLOCK" sections, rather than the
-# "$R: <echo>" + state-line(s) shape the planned "septentrio" responsePattern
-# analyzer is designed around. This tag will need either a dedicated lst-reply
-# branch in that analyzer, or fall back to best-effort (no responsePattern)
-# handling, once implemented.
+# Version / capability queries
+#
+# getReceiverInterface is the concise probe. It returns the receiver name and
+# command-line interface version as ordinary "$R:" command output, without
+# dumping the internal identification file.
 [[line]]
 tag = "get-version"
-text = "lstInternalFile, Identification"
-description = "Query firmware/hardware identification (serial number, firmware version)"
+text = "getReceiverInterface"
+description = "Query receiver name, command-line interface version, and capabilities"
+
+[[line]]
+tag = "get-version"
+text = "getReceiverCapabilities"
 
 # NMEA message output control
-# All entries target Stream1/COM1 (see header). The "+"/"-" prefix on the
+# All entries target Stream1/USB1 (see header). The "+"/"-" prefix on the
 # Messages argument adds/removes a single sentence from the stream's current
 # list without disturbing whatever else is enabled on that stream (the
 # reference guides describe this "+"/"-" convention generally for combinable
@@ -54,78 +62,78 @@ description = "Query firmware/hardware identification (serial number, firmware v
 
 [[line]]
 tag = "nmea-gga"
-text = "setNMEAOutput, Stream1, COM1, +GGA, sec1"
+text = "setNMEAOutput, Stream1, USB1, +GGA, sec1"
 description = "Enable NMEA GGA at 1Hz"
 [[line]]
 tag = "nmea-gga-off"
-text = "setNMEAOutput, Stream1, COM1, -GGA"
+text = "setNMEAOutput, Stream1, USB1, -GGA"
 description = "Disable NMEA GGA"
 
 [[line]]
 tag = "nmea-gll"
-text = "setNMEAOutput, Stream1, COM1, +GLL, sec1"
+text = "setNMEAOutput, Stream1, USB1, +GLL, sec1"
 description = "Enable NMEA GLL at 1Hz"
 [[line]]
 tag = "nmea-gll-off"
-text = "setNMEAOutput, Stream1, COM1, -GLL"
+text = "setNMEAOutput, Stream1, USB1, -GLL"
 description = "Disable NMEA GLL"
 
 [[line]]
 tag = "nmea-gsa"
-text = "setNMEAOutput, Stream1, COM1, +GSA, sec1"
+text = "setNMEAOutput, Stream1, USB1, +GSA, sec1"
 description = "Enable NMEA GSA at 1Hz"
 [[line]]
 tag = "nmea-gsa-off"
-text = "setNMEAOutput, Stream1, COM1, -GSA"
+text = "setNMEAOutput, Stream1, USB1, -GSA"
 description = "Disable NMEA GSA"
 
 [[line]]
 tag = "nmea-gsv"
-text = "setNMEAOutput, Stream1, COM1, +GSV, sec1"
+text = "setNMEAOutput, Stream1, USB1, +GSV, sec1"
 description = "Enable NMEA GSV at 1Hz"
 [[line]]
 tag = "nmea-gsv-off"
-text = "setNMEAOutput, Stream1, COM1, -GSV"
+text = "setNMEAOutput, Stream1, USB1, -GSV"
 description = "Disable NMEA GSV"
 
 [[line]]
 tag = "nmea-rmc"
-text = "setNMEAOutput, Stream1, COM1, +RMC, sec1"
+text = "setNMEAOutput, Stream1, USB1, +RMC, sec1"
 description = "Enable NMEA RMC at 1Hz"
 [[line]]
 tag = "nmea-rmc-off"
-text = "setNMEAOutput, Stream1, COM1, -RMC"
+text = "setNMEAOutput, Stream1, USB1, -RMC"
 description = "Disable NMEA RMC"
 
 [[line]]
 tag = "nmea-zda"
-text = "setNMEAOutput, Stream1, COM1, +ZDA, sec1"
+text = "setNMEAOutput, Stream1, USB1, +ZDA, sec1"
 description = "Enable NMEA ZDA at 1Hz"
 [[line]]
 tag = "nmea-zda-off"
-text = "setNMEAOutput, Stream1, COM1, -ZDA"
+text = "setNMEAOutput, Stream1, USB1, -ZDA"
 description = "Disable NMEA ZDA"
 
 # Disable all NMEA output on Stream1
 [[line]]
 tag = "nmea-off"
-text = "setNMEAOutput, Stream1, COM1, none"
+text = "setNMEAOutput, Stream1, USB1, none"
 description = "Disable all NMEA messages"
 
 # Convenience: enable RMC, GGA, GSV, GSA (messages used by satpulse daemon)
 [[line]]
 tag = "nmea-daemon"
-text = "setNMEAOutput, Stream1, COM1, +RMC, sec1"
+text = "setNMEAOutput, Stream1, USB1, +RMC, sec1"
 description = "Enable NMEA messages used by satpulse daemon"
 [[line]]
 tag = "nmea-daemon"
-text = "setNMEAOutput, Stream1, COM1, +GGA"
+text = "setNMEAOutput, Stream1, USB1, +GGA"
 [[line]]
 tag = "nmea-daemon"
-text = "setNMEAOutput, Stream1, COM1, +GSV"
+text = "setNMEAOutput, Stream1, USB1, +GSV"
 [[line]]
 tag = "nmea-daemon"
-text = "setNMEAOutput, Stream1, COM1, +GSA"
+text = "setNMEAOutput, Stream1, USB1, +GSA"
 
 # NMEA version
 # setNMEAVersion only distinguishes two profiles, v3x and v4x -- not the finer
@@ -291,64 +299,64 @@ description = "Query current PVTGeodetic output interval on Stream3"
 
 [[line]]
 tag = "fix-rate-1"
-text = "setSBFOutput, Stream3, COM1, PVTGeodetic, sec1"
+text = "setSBFOutput, Stream3, USB1, PVTGeodetic, sec1"
 description = "Set fix (PVTGeodetic output) rate to 1 Hz"
 [[line]]
 tag = "fix-rate-2"
-text = "setSBFOutput, Stream3, COM1, PVTGeodetic, msec500"
+text = "setSBFOutput, Stream3, USB1, PVTGeodetic, msec500"
 description = "Set fix (PVTGeodetic output) rate to 2 Hz"
 [[line]]
 tag = "fix-rate-5"
-text = "setSBFOutput, Stream3, COM1, PVTGeodetic, msec200"
+text = "setSBFOutput, Stream3, USB1, PVTGeodetic, msec200"
 description = "Set fix (PVTGeodetic output) rate to 5 Hz"
 [[line]]
 tag = "fix-rate-10"
-text = "setSBFOutput, Stream3, COM1, PVTGeodetic, msec100"
+text = "setSBFOutput, Stream3, USB1, PVTGeodetic, msec100"
 description = "Set fix (PVTGeodetic output) rate to 10 Hz"
 [[line]]
 tag = "fix-rate-20"
-text = "setSBFOutput, Stream3, COM1, PVTGeodetic, msec50"
+text = "setSBFOutput, Stream3, USB1, PVTGeodetic, msec50"
 description = "Set fix (PVTGeodetic output) rate to 20 Hz"
 
 # Port configuration
 
 [[line]]
 tag = "get-uart"
-text = "getCOMSettings, COM1"
+text = "getCOMSettings, USB1"
 description = "Query serial port configuration"
 
 [[line]]
 tag = "speed-9600"
-text = "setCOMSettings, COM1, baud9600, bits8, No, bit1, none"
-description = "Set COM1 baud rate to 9600"
+text = "setCOMSettings, USB1, baud9600, bits8, No, bit1, none"
+description = "Set USB1 baud rate to 9600"
 [[line]]
 tag = "speed-19200"
-text = "setCOMSettings, COM1, baud19200, bits8, No, bit1, none"
-description = "Set COM1 baud rate to 19200"
+text = "setCOMSettings, USB1, baud19200, bits8, No, bit1, none"
+description = "Set USB1 baud rate to 19200"
 [[line]]
 tag = "speed-38400"
-text = "setCOMSettings, COM1, baud38400, bits8, No, bit1, none"
-description = "Set COM1 baud rate to 38400"
+text = "setCOMSettings, USB1, baud38400, bits8, No, bit1, none"
+description = "Set USB1 baud rate to 38400"
 [[line]]
 tag = "speed-57600"
-text = "setCOMSettings, COM1, baud57600, bits8, No, bit1, none"
-description = "Set COM1 baud rate to 57600"
+text = "setCOMSettings, USB1, baud57600, bits8, No, bit1, none"
+description = "Set USB1 baud rate to 57600"
 [[line]]
 tag = "speed-115200"
-text = "setCOMSettings, COM1, baud115200, bits8, No, bit1, none"
-description = "Set COM1 baud rate to 115200"
+text = "setCOMSettings, USB1, baud115200, bits8, No, bit1, none"
+description = "Set USB1 baud rate to 115200"
 [[line]]
 tag = "speed-230400"
-text = "setCOMSettings, COM1, baud230400, bits8, No, bit1, none"
-description = "Set COM1 baud rate to 230400"
+text = "setCOMSettings, USB1, baud230400, bits8, No, bit1, none"
+description = "Set USB1 baud rate to 230400"
 [[line]]
 tag = "speed-460800"
-text = "setCOMSettings, COM1, baud460800, bits8, No, bit1, none"
-description = "Set COM1 baud rate to 460800"
+text = "setCOMSettings, USB1, baud460800, bits8, No, bit1, none"
+description = "Set USB1 baud rate to 460800"
 [[line]]
 tag = "speed-921600"
-text = "setCOMSettings, COM1, baud921600, bits8, No, bit1, none"
-description = "Set COM1 baud rate to 921600"
+text = "setCOMSettings, USB1, baud921600, bits8, No, bit1, none"
+description = "Set USB1 baud rate to 921600"
 
 # Restart commands
 
@@ -460,26 +468,26 @@ description = "Clear fixed position, return to rover mode"
 
 [[line]]
 tag = "rtcm-arp"
-text = "setRTCMv3Output, COM1, +RTCM1006"
+text = "setRTCMv3Output, USB1, +RTCM1006"
 description = "Enable RTCM ARP message (1006, includes antenna height) at default interval"
 
 [[line]]
 tag = "rtcm-msm4"
-text = "setRTCMv3Output, COM1, +MSM4"
+text = "setRTCMv3Output, USB1, +MSM4"
 description = "Enable RTCM MSM4 for all constellations at default interval"
 
 [[line]]
 tag = "rtcm-msm7"
-text = "setRTCMv3Output, COM1, +MSM7"
+text = "setRTCMv3Output, USB1, +MSM7"
 description = "Enable RTCM MSM7 for all constellations at default interval"
 
 [[line]]
 tag = "rtcm-eph"
-text = "setRTCMv3Output, COM1, +Nav"
+text = "setRTCMv3Output, USB1, +Nav"
 description = "Enable RTCM ephemeris messages (1019/1020/1041/1042/1044/1045/1046)"
 [[line]]
 tag = "rtcm-eph-off"
-text = "setRTCMv3Output, COM1, -Nav"
+text = "setRTCMv3Output, USB1, -Nav"
 description = "Disable RTCM ephemeris messages"
 
 # rtcm-4072-0 / rtcm-4072-1: TODO -- RTCM message 4072 (u-blox's proprietary
@@ -491,7 +499,7 @@ description = "Disable RTCM ephemeris messages"
 
 [[line]]
 tag = "rtcm-off"
-text = "setRTCMv3Output, COM1, none"
+text = "setRTCMv3Output, USB1, none"
 description = "Disable all RTCM output"
 
 [[line]]
@@ -535,7 +543,7 @@ description = "Set rover mode"
 
 [[line]]
 tag = "sbf-daemon"
-text = "setSBFOutput, Stream1, COM1, +ReceiverTime+xPPSOffset+PVTGeodetic+ChannelStatus+SatVisibility+DOP+ReceiverStatus+EndOfPVT, sec1"
+text = "setSBFOutput, Stream1, USB1, +ReceiverTime+xPPSOffset+PVTGeodetic+ChannelStatus+SatVisibility+DOP+ReceiverStatus+EndOfPVT, sec1"
 description = "Enable SBF blocks used by satpulsed daemon"
 
 [[line]]
