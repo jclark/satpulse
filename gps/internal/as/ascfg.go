@@ -25,12 +25,14 @@ const maxResponseDelay = 2 * time.Second
 // echoing the id - no ACK follows - so poll requests complete on
 // their data response.
 type Configurator struct {
-	target  *gpsprot.ConfigTarget
-	ver     *asbin.MonVer
-	reqs    []*asReq
-	phase   int              // index into genPhases of the next phase to generate
-	touched asbin.CfgCfgMask // sections set requests touched, for minimal saves
-	pps     *asbin.CfgPps    // latest CFG-PPS readback; nil if never answered
+	target    *gpsprot.ConfigTarget
+	ver       *asbin.MonVer
+	reqs      []*asReq
+	phase     int                 // index into genPhases of the next phase to generate
+	touched   asbin.CfgCfgMask    // sections set requests touched, for minimal saves
+	pps       *asbin.CfgPps       // latest CFG-PPS readback; nil if never answered
+	fixedEcef *asbin.CfgFixedECEF // latest CFG-FIXEDECEF readback
+	survey    *asbin.CfgSurvey    // latest CFG-SURVEY readback
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -101,7 +103,9 @@ const supportedGNSS = gpsprot.GNSSSet(1<<gpsprot.GPS) | gpsprot.GNSSSet(1<<gpspr
 // flags bound but do not gate.
 func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 	return gpsprot.ConfigSupportRaw | gpsprot.ConfigSupportRTCMMSM4 |
-		gpsprot.ConfigSupportRTCMMSM7 | gpsprot.ConfigSupportRTCMQZSS
+		gpsprot.ConfigSupportRTCMMSM7 | gpsprot.ConfigSupportRTCMQZSS |
+		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos
 }
 
 // ConfigProps returns the current configuration of the GPS receiver,
@@ -110,6 +114,7 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	props := &gpsprot.ConfigProps{}
 	c.tpConfigProps(props)
+	c.tmodeConfigProps(props)
 	return props
 }
 
@@ -129,12 +134,14 @@ var genPhases = []func(*Configurator){
 // phase needs (read-modify-write) or the target asks to read.
 func (c *Configurator) generateQueryReqs() {
 	c.generateTPQuery()
+	c.generateTModeQuery()
 }
 
 // generateSetReqs generates the property set requests, computed from
 // the query phase's readbacks.
 func (c *Configurator) generateSetReqs() {
 	c.generateTPSet()
+	c.generateTModeSet()
 }
 
 // generateNVMReqs generates the save and reset requests. Reload is
