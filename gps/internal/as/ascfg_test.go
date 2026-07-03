@@ -867,6 +867,34 @@ func TestSignalsReadback(t *testing.T) {
 	}
 }
 
+func TestConfigSupport(t *testing.T) {
+	base := gpsprot.ConfigSupportRaw |
+		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
+		gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportSpeed
+	rtcm := gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7 |
+		gpsprot.ConfigSupportRTCMQZSS
+	for _, tc := range []struct {
+		hw   string
+		want gpsprot.ConfigSupportFlags
+	}{
+		{"HD8040D.9529b663", base}, // TAU1201: no RTCM
+		{"HD8041.0", base},         // any HD80xx: no RTCM
+		{"HD9510.4740d9ec2", base | rtcm},
+		{"HD9310.92257eed4", base | rtcm},
+		{"HD9300.0", base | rtcm}, // all HD93xx do RTCM
+		{"HD9999.0", base | rtcm}, // unknown chip number: optimistic
+		{"XYZ12.34", base | rtcm}, // no HDxxxx at all
+		{"HD.n0dig", base | rtcm}, // HD without digits
+	} {
+		ver := &asbin.MonVer{SwVersion: z16("3.018"), HwVersion: z16(tc.hw)}
+		cfg := newConfigurator(&gpsprot.ConfigTarget{}, ver)
+		if got := cfg.ConfigSupport(); got != tc.want {
+			t.Errorf("%s: ConfigSupport = %v, want %v", tc.hw, got, tc.want)
+		}
+	}
+}
+
 func TestMinElev(t *testing.T) {
 	// as-found: trk 1 deg, navi 5 deg (all three units)
 	asFound := asbin.CfgElev{TrkMask: 0.017453, NaviMask: 0.087266}

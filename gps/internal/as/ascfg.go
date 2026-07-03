@@ -97,20 +97,24 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 // mask can express; what such a unit can actually receive shows in the
 // achieved signal set (the silicon clamps the mask).
 func (c *Configurator) supportedGNSS() gpsprot.GNSSSet {
-	return navSatToSignals(c.signalPlan()).GNSSSet()
+	return navSatToSignals(c.hwPlan().signals).GNSSSet()
 }
 
 // ConfigSupport returns the configuration options this implementation
-// supports. The RTCM flags are declared for the whole vendor even
-// though the TAU1201 has no RTCM output: capability differences show
-// per-unit as NAK-driven absence in the achieved output, which the
-// flags bound but do not gate.
+// supports. The RTCM flags come from the identity-deduced hardware
+// plan (owner ruling: key capability off MON-VER): the TAU1201 family
+// has no RTCM output at all - every 0xF8 CFG-MSG target NAKs - so it
+// must not claim the flags.
 func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
-	return gpsprot.ConfigSupportRaw | gpsprot.ConfigSupportRTCMMSM4 |
-		gpsprot.ConfigSupportRTCMMSM7 | gpsprot.ConfigSupportRTCMQZSS |
+	flags := gpsprot.ConfigSupportRaw |
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
 		gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportSpeed
+	if c.hwPlan().rtcm {
+		flags |= gpsprot.ConfigSupportRTCMMSM4 |
+			gpsprot.ConfigSupportRTCMMSM7 | gpsprot.ConfigSupportRTCMQZSS
+	}
+	return flags
 }
 
 // ConfigProps returns the current configuration of the GPS receiver,

@@ -93,34 +93,58 @@ func (c *Configurator) pollNavSat() {
 	})
 }
 
-// signalPlans is the supported signal set per hardware family, deduced
-// from the MON-VER hardware string per the semantics (the supported
-// set comes from the receiver's identity). Established by writing the
-// full mask and reading back the clamp on each test unit. Intersecting
-// the request with this set before writing matters beyond neatness:
-// the TAU1302 silicon COUPLES - writing a GAL E5 bit it lacks switches
-// on GAL E1 - so unsupported bits must not reach the wire on known
-// hardware. Unknown hardware falls back to writing the full request
-// and letting the silicon clamp.
-var signalPlans = []struct {
-	hwPrefix string
-	mask     asbin.CfgNavSatMask
-}{
-	{"HD8040", 0x4108237}, // TAU1201: L1/L5 dual band
-	{"HD9510", 0x4108237}, // TAU951M: L1/L5 dual band
-	{"HD9310", 0x8042437}, // TAU1302: L1/L2 dual band
+// hwPlan is the capability plan deduced from the HDxxxx chip number of
+// the MON-VER hardware string (owner ruling: capability keys off the
+// identity the receiver reports).
+type hwPlan struct {
+	signals asbin.CfgNavSatMask
+	rtcm    bool
 }
 
-// signalPlan returns the hardware's supported mask, or the all-ones
-// mask when the model is unknown.
-func (c *Configurator) signalPlan() asbin.CfgNavSatMask {
-	hw := c.ver.HwVersion.String()
-	for _, p := range signalPlans {
-		if strings.HasPrefix(hw, p.hwPrefix) {
-			return p.mask
+// signalPlans is the supported signal set per chip number, established
+// by writing the full mask and reading back the clamp on each test
+// unit. Intersecting a signal request with the plan before writing
+// matters beyond neatness: the TAU1302 silicon COUPLES - writing a GAL
+// E5 bit it lacks switches on GAL E1 - so unsupported bits must not
+// reach the wire on known hardware. An unknown chip gets the full
+// request and the silicon's clamp, revealed by the verify poll.
+var signalPlans = map[string]asbin.CfgNavSatMask{
+	"HD8040": 0x4108237, // TAU1201: L1/L5 dual band
+	"HD9510": 0x4108237, // TAU951M: L1/L5 dual band
+	"HD9310": 0x8042437, // TAU1302: L1/L2 dual band
+}
+
+// hwPlan returns the identity-deduced capability plan. RTCM capability
+// is family-granular (HD + two digits): the HD80xx have no RTCM output
+// (every 0xF8 CFG-MSG target NAKs on the TAU1201), while all HD93xx do
+// (owner) and the HD95xx TAU951M is hardware-verified. Unknown
+// families claim RTCM so NAK-driven absence can tell the truth.
+func (c *Configurator) hwPlan() hwPlan {
+	chip := hwChipNumber(c.ver.HwVersion.String())
+	plan := hwPlan{signals: ^asbin.CfgNavSatMask(0), rtcm: !strings.HasPrefix(chip, "HD80")}
+	if mask, ok := signalPlans[chip]; ok {
+		plan.signals = mask
+	}
+	return plan
+}
+
+// hwChipNumber extracts the leading HDxxxx chip number, or returns the
+// whole string unchanged if it does not start with HD plus a digit.
+func hwChipNumber(hw string) string {
+	if !strings.HasPrefix(hw, "HD") {
+		return hw
+	}
+	n := len(hw)
+	for i := 2; i < len(hw); i++ {
+		if hw[i] < '0' || hw[i] > '9' {
+			n = i
+			break
 		}
 	}
-	return ^asbin.CfgNavSatMask(0)
+	if n == 2 {
+		return hw
+	}
+	return hw[:n]
 }
 
 // generateSignalSet sends the requested signal selection, intersected
@@ -136,7 +160,7 @@ func (c *Configurator) generateSignalSet() {
 	if c.navSat == nil {
 		return // property absent on this receiver
 	}
-	ns := asbin.CfgNavSat{EnableMask: signalsToNavSat(requested) & c.signalPlan()}
+	ns := asbin.CfgNavSat{EnableMask: signalsToNavSat(requested) & c.hwPlan().signals}
 	c.addSetReq(&ns, nil)
 	c.pollNavSat()
 }
