@@ -155,14 +155,19 @@ Remaining hardware unknowns:
   Doc says only "defined by user", ns, default 0. Determine what it does
   (pulse offset? cable-delay analog?) and whether it maps to
   `AntennaCableDelay`.
-- **Raw output**: RXM-DUMPRAW set (0x02 0x01 payload U1 0/1) per receiver -
-  enable, observe whether anything is emitted and in what framing
-  (acknowledge-but-never-emit is common; format undocumented).
+- ~~Raw output~~: DONE - RXM-DUMPRAW (0x02 0x01 U1) works on all three:
+  emits F1D9 frames class 0x02 id 0x57 at 1 Hz (2.2-5.4 KB payloads;
+  format unknown, decode out of scope). QUIRK: TAU951M NAKs the disable
+  yet applies it (TAU1201/TAU1302 ACK both ways) - nakOK on disable.
+  The TAU951M frame is ~47% of the 115200 budget.
 - ~~SVINFO per-signal probe~~: DONE - per-satellite only (dual-band sats
   appear once); `sig` is absence.
 - **RTCM output detail**: MSM7 + eph emission OBSERVED on TAU1302
-  (as-found baseline). Still to observe: MSM4 and 1005 emission on both
-  RTCM units, MSM7 on TAU951M. TAU1201 shows absence (all F8 NAK).
+  (as-found baseline); MSM4 (1074/1124) and MSM7 (1077) OBSERVED on
+  TAU951M. TAU1201 shows absence (all F8 NAK). Open: 1005 is ACKed but
+  does not emit without a fixed base position - retest with the survey/
+  fixed-pos experiments; MSM4 emission on TAU1302 (expected same as
+  951M, spot-check when convenient).
 - **NAV emission on the other two units**: TAU1201 verified for
   TIME/TIMEUTC/CLOCK/CLOCK2/SVINFO/AUTO/SVSTATE; spot-check the same on
   TAU951M (no SVSTATE there) and TAU1302.
