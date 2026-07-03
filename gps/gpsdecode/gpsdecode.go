@@ -13,6 +13,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
+	"github.com/jclark/satpulse/gps/lib/sbfbin"
 	"github.com/jclark/satpulse/gps/lib/sdbpbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/ubxcfgval"
@@ -102,6 +103,9 @@ checksumOK:
 		return pf, r, err
 	case gpsreg.TagRTCM:
 		r, err := rtcmDecode(data)
+		return pf, r, err
+	case gpsreg.TagSBF:
+		r, err := sbfDecode(data)
 		return pf, r, err
 	default:
 		return pf, nil, ErrInvalidPacket
@@ -195,6 +199,17 @@ func sdbpDecode(data []byte) (*DecodeResult, error) {
 		return nil, ErrUnknownMsg
 	}
 	return &DecodeResult{Payload: msg}, nil
+}
+
+func sbfDecode(data []byte) (*DecodeResult, error) {
+	b, err := sbfbin.ParseMsg(string(data))
+	if err != nil {
+		return nil, err
+	}
+	if _, isUnknown := b.Params.(*sbfbin.UnknownParams); isUnknown {
+		return nil, ErrUnknownMsg
+	}
+	return &DecodeResult{Payload: b.Params, Header: b.TimeStamp}, nil
 }
 
 func uncbinDecode(data []byte) (*DecodeResult, error) {

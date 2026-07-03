@@ -10,6 +10,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
+	"github.com/jclark/satpulse/gps/lib/sbfbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 )
@@ -117,6 +118,43 @@ func TestDecodeUBXUnknown(t *testing.T) {
 	// Sync: B5 62, Class: FF, ID: FF, Length: 0, Checksum: FE F9
 	packet := []byte{0xB5, 0x62, 0xFF, 0xFF, 0x00, 0x00, 0xFE, 0xF9}
 	_, _, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	if err != ErrUnknownMsg {
+		t.Errorf("expected ErrUnknownMsg, got %v", err)
+	}
+}
+
+func TestDecodeSBF(t *testing.T) {
+	packet, err := sbfbin.Serialize(&sbfbin.Block{
+		TimeStamp: sbfbin.TimeStamp{TOW: 123456000, WNc: 2376},
+		Params:    &sbfbin.EndOfMeas{},
+	})
+	if err != nil {
+		t.Fatalf("failed to serialize: %v", err)
+	}
+	pf, result, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pf.Tag() != gpsreg.TagSBF {
+		t.Errorf("expected tag %s, got %s", gpsreg.TagSBF, pf.Tag())
+	}
+	if _, ok := result.Payload.(*sbfbin.EndOfMeas); !ok {
+		t.Fatalf("expected *sbfbin.EndOfMeas, got %T", result.Payload)
+	}
+	if result.Header != (sbfbin.TimeStamp{TOW: 123456000, WNc: 2376}) {
+		t.Fatalf("Header = %#v", result.Header)
+	}
+}
+
+func TestDecodeSBFUnknown(t *testing.T) {
+	packet, err := sbfbin.Serialize(&sbfbin.Block{
+		TimeStamp: sbfbin.TimeStamp{TOW: 1, WNc: 2},
+		Params:    &sbfbin.UnknownParams{Number: 7000, Payload: "\x01\x02"},
+	})
+	if err != nil {
+		t.Fatalf("failed to serialize: %v", err)
+	}
+	_, _, err = Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
 	if err != ErrUnknownMsg {
 		t.Errorf("expected ErrUnknownMsg, got %v", err)
 	}
