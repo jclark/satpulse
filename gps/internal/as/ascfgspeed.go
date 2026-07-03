@@ -35,21 +35,20 @@ func (c *Configurator) generateSpeedReqs() {
 	c.addSetReq(&asbin.CfgPrt{PortID: 1, Baudrate: baud}, nil)
 }
 
-// generatePrtQuery polls both CFG-PRT records when the target asks to
-// read the serial speed and no new speed is being set.
+// generatePrtQuery polls CFG-PRT record 0 when the target asks to read
+// the serial speed and no new speed is being set. Record 0 is what
+// speedConfigProps reports; record 1 tells the reader nothing (the
+// active UART is not identifiable), so it is not polled.
 func (c *Configurator) generatePrtQuery() {
 	if c.target.Get&gpsprot.PropIDBaudRate == 0 || c.target.Props.SetsAny(gpsprot.PropIDBaudRate) {
 		return
 	}
-	for port := range 2 {
-		pkt := asbin.PollPrt(port)
-		c.add(&asReq{mid: asbin.CfgPrtID, packet: pkt, optional: true,
-			onData: func(m asbin.Msg) {
-				if prt, ok := m.(*asbin.CfgPrt); ok && prt.PortID == 0 {
-					c.prt0 = prt
-				}
-			}})
-	}
+	c.add(&asReq{mid: asbin.CfgPrtID, packet: asbin.PollPrt(0), optional: true,
+		onData: func(m asbin.Msg) {
+			if prt, ok := m.(*asbin.CfgPrt); ok && prt.PortID == 0 {
+				c.prt0 = prt
+			}
+		}})
 }
 
 // speedConfigProps reports the serial speed: a confirmed change

@@ -15,6 +15,13 @@ import (
 // resent request.
 const maxResponseDelay = 2 * time.Second
 
+// speedChangeDelay is how long after sending a baud change until a
+// valid packet counts as confirmation. The receiver switches the
+// arriving port's rate immediately and the host follows right after
+// the write, so the delay only excludes packets buffered before the
+// switch.
+const speedChangeDelay = 150 * time.Millisecond
+
 // Configurator implements gpsprot.Configurator for Allystar receivers.
 //
 // An ACK/NAK identifies the request only by class+id, and responses to
@@ -56,9 +63,8 @@ const (
 // asReq is a single configuration request: one Allystar packet
 // expecting an ACK/NAK correlated by class+id, or (for polls) the data
 // message echoing the id. When nakOK is set a NAK is an acceptable
-// outcome (the request succeeds), optionally generating a fallback
-// request via onNak first; NAK-driven absence stays out of the error
-// path this way.
+// outcome (the request succeeds); NAK-driven absence stays out of the
+// error path this way.
 type asReq struct {
 	state      asReqState
 	mid        asbin.MsgID // class+id, for response correlation
@@ -67,7 +73,6 @@ type asReq struct {
 	err        error
 	nakOK      bool            // NAK is acceptable, not a failure
 	onAck      func()          // records the accepted values on ACK
-	onNak      func()          // generates the fallback request when NAKed
 	onData     func(asbin.Msg) // receives the data response, which completes a poll
 	noAck      bool            // no response expected (resets): sending is success
 	optional   bool            // a timed-out request succeeds rather than fails
@@ -143,6 +148,26 @@ var genPhases = []func(*Configurator){
 	(*Configurator).generateNVMReqs,
 }
 
+// GenerateRequests generates configuration requests and promotes
+// requests that have become unambiguous to send.
+func (c *Configurator) GenerateRequests() error {
+	for c.phase < len(genPhases) && c.allFinal() {
+		genPhases[c.phase](c)
+		c.phase++
+	}
+	c.promote()
+	return nil
+}
+
+func (c *Configurator) allFinal() bool {
+	for _, req := range c.reqs {
+		if req.state != reqSucceeded && req.state != reqFailed {
+			return false
+		}
+	}
+	return true
+}
+
 // generateQueryReqs polls the messages whose current values the set
 // phase needs (read-modify-write) or the target asks to read.
 func (c *Configurator) generateQueryReqs() {
@@ -204,26 +229,6 @@ func (c *Configurator) addRstReq(mode asbin.CfgSimpleRstMode) {
 	c.addMsg(&asbin.CfgSimpleRst{Mode: mode}, asReq{noAck: true})
 }
 
-// GenerateRequests generates configuration requests and promotes
-// requests that have become unambiguous to send.
-func (c *Configurator) GenerateRequests() error {
-	for c.phase < len(genPhases) && c.allFinal() {
-		genPhases[c.phase](c)
-		c.phase++
-	}
-	c.promote()
-	return nil
-}
-
-func (c *Configurator) allFinal() bool {
-	for _, req := range c.reqs {
-		if req.state != reqSucceeded && req.state != reqFailed {
-			return false
-		}
-	}
-	return true
-}
-
 // promote readies notReady requests whose class+id no earlier live
 // request shares. Requests sharing a class+id thus go out one at a
 // time, in order; requests with distinct ids may be pipelined (the
@@ -281,9 +286,9 @@ func (c *Configurator) addReq(m asbin.Msg) {
 }
 
 // addReqNakOK is addReq for requests where a NAK is an acceptable
-// outcome; onNak (optional) generates a fallback request first.
-func (c *Configurator) addReqNakOK(m asbin.Msg, onNak func()) {
-	c.addMsg(m, asReq{nakOK: true, onNak: onNak})
+// outcome.
+func (c *Configurator) addReqNakOK(m asbin.Msg) {
+	c.addMsg(m, asReq{nakOK: true})
 }
 
 // addSetReq appends a property set request. When the receiver
@@ -318,7 +323,7 @@ func setSection(m asbin.Msg) asbin.CfgCfgMask {
 	case *asbin.CfgPrt:
 		return asbin.CfgCfgMaskBaudrate
 	case *asbin.CfgElev, *asbin.CfgNavSat, *asbin.CfgNmeaVer,
-		*asbin.CfgSurvey, *asbin.CfgFixedLLA, *asbin.CfgFixedECEF, *asbin.CfgPps:
+		*asbin.CfgSurvey, *asbin.CfgFixedECEF, *asbin.CfgPps:
 		return asbin.CfgCfgMaskNavSettings
 	}
 	return 0
@@ -358,9 +363,10 @@ func (c *Configurator) nativeMsg(m asbin.Msg, tRead time.Time) error {
 }
 
 // handleAck resolves an ACK/NAK against the oldest outstanding request
-// with the acknowledged class+id. promote ensures at most one request
-// per class+id is outstanding, so cross-id response reordering (which
-// the hardware does) cannot misattribute a response.
+// with the acknowledged class+id. Correlation by class+id makes
+// cross-id response reordering (which the hardware does) harmless;
+// promote keeps at most one request per class+id outstanding, so the
+// match here is unambiguous.
 func (c *Configurator) handleAck(mid asbin.MsgID, ack bool, tRead time.Time) {
 	for _, req := range c.reqs {
 		if req.mid != mid || req.state != reqAwaitingAck {
@@ -378,9 +384,6 @@ func (c *Configurator) handleAck(mid asbin.MsgID, ack bool, tRead time.Time) {
 			}
 			req.state = reqSucceeded
 		} else if req.nakOK {
-			if req.onNak != nil {
-				req.onNak()
-			}
 			req.state = reqSucceeded
 		} else {
 			req.state = reqFailed
@@ -507,10 +510,3 @@ func (req *asReq) MaybeSpeedChangeSucceeded(validPacketTime time.Time) {
 		req.state = reqSucceeded
 	}
 }
-
-// speedChangeDelay is how long after sending a baud change until a
-// valid packet counts as confirmation. The receiver switches the
-// arriving port's rate immediately and the host follows right after
-// the write, so the delay only excludes packets buffered before the
-// switch.
-const speedChangeDelay = 150 * time.Millisecond

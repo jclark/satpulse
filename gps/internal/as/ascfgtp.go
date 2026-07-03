@@ -36,9 +36,13 @@ func (c *Configurator) needsTP() bool {
 // generateTPQuery polls CFG-PPS when the target involves the time
 // pulse (read-modify-write, and the readback cache serves ConfigProps).
 func (c *Configurator) generateTPQuery() {
-	if !c.needsTP() {
-		return
+	if c.needsTP() {
+		c.pollPps()
 	}
+}
+
+// pollPps polls CFG-PPS into the readback cache.
+func (c *Configurator) pollPps() {
 	c.addPollReq(asbin.CfgPpsID, func(m asbin.Msg) {
 		if pps, ok := m.(*asbin.CfgPps); ok {
 			c.pps = pps
@@ -79,11 +83,7 @@ func (c *Configurator) generateTPSet() {
 		}
 	}
 	c.addSetReq(&pps, nil)
-	c.addPollReq(asbin.CfgPpsID, func(m asbin.Msg) {
-		if pps, ok := m.(*asbin.CfgPps); ok {
-			c.pps = pps
-		}
-	})
+	c.pollPps()
 }
 
 // dutyCycle converts a pulse width to the CFG-PPS duty cycle in 10^-6

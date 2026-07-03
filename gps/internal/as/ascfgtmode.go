@@ -146,8 +146,9 @@ func (c *Configurator) tmodeConfigProps(props *gpsprot.ConfigProps) {
 	if c.fixedEcef == nil || c.survey == nil {
 		return
 	}
-	m := gpsprot.Mode{Static: c.haveFixedPos() || c.surveyRunning()}
-	if c.haveFixedPos() {
+	fixed := c.haveFixedPos()
+	m := gpsprot.Mode{Static: fixed || c.surveyRunning()}
+	if fixed {
 		m.PosType = gpsprot.PosTypeECEF
 		m.FixedPosECEF = gpsprot.Point3D{
 			gpsprot.Meters(float64(c.fixedEcef.X) / 100),

@@ -1,6 +1,7 @@
 package as
 
 import (
+	"math"
 	"reflect"
 	"testing"
 	"time"
@@ -24,8 +25,8 @@ type testReceiver struct {
 	naks           map[asbin.MsgID]bool // set requests answered with NAK
 	nakTargets     map[asbin.MsgID]bool // CFG-MSG targets answered with NAK
 	silent         map[asbin.MsgID]bool // requests not answered at all
-	reorder        bool                 // deliver each burst's responses in reverse
-	pending        [][]byte             // delivered before the next request's responses
+	deferIDs       map[asbin.MsgID]bool // ids whose responses are deferred (see pending)
+	pending        [][]byte             // deferred responses, delivered after a later request's responses
 	rawOn          uint8                // RXM-DUMPRAW state
 	nakRawOff      bool                 // TAU951M quirk: NAK the raw disable yet apply it
 	saves          []asbin.CfgCfg       // CFG-CFG save/load requests received (ACKed)
@@ -49,13 +50,14 @@ func (r *testReceiver) takePending() [][]byte {
 }
 
 // respond interprets one request write and returns the receiver's
-// response packets.
+// response packets. Responses to deferred ids are stashed and
+// delivered after a later request's responses (see configure),
+// simulating the cross-id response reordering the hardware does.
 func (r *testReceiver) respond(data []byte) [][]byte {
 	out := r.respondOne(data)
-	if r.reorder {
-		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-			out[i], out[j] = out[j], out[i]
-		}
+	if r.deferIDs[asbin.PacketMsgId(data)] {
+		r.pending = append(r.pending, out...)
+		return nil
 	}
 	return out
 }
@@ -262,7 +264,7 @@ func configure(t *testing.T, cp *ConfigProtocol, rcvr *testReceiver, target *gps
 		case gpsprot.ConfigActionSendRequest:
 			t0 = t0.Add(10 * time.Millisecond)
 			cfg.Request(action.Index).SetSentTime(t0)
-			for _, resp := range append(rcvr.takePending(), rcvr.respond(action.Packet)...) {
+			for _, resp := range append(rcvr.respond(action.Packet), rcvr.takePending()...) {
 				t0 = t0.Add(5 * time.Millisecond)
 				if _, err := pp.ProcessPacket(string(resp), t0); err != nil {
 					t.Fatalf("ProcessPacket: %v", err)
@@ -781,6 +783,42 @@ func TestTimeMode(t *testing.T) {
 // 0x4108237): GPS L1CA+L5, GLO G1, BDS B1I+B2a, GAL E1+E5a, QZSS L1+L5.
 const tau1201Cap = asbin.CfgNavSatMask(0x4108237)
 
+func TestTimeModeAbsent(t *testing.T) {
+	// A receiver without the registers is silent to both polls: the
+	// mode property shows as absence, nothing is written, no error.
+	rcvr := &testReceiver{monVer: tau1201Ver()}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetMode(gpsprot.Mode{Static: true})
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if _, ok := cfg.ConfigProps().GetMode(); ok {
+		t.Error("mode reported for a receiver without the registers")
+	}
+}
+
+func TestReorderedResponses(t *testing.T) {
+	// Cross-id response reordering (the hardware does it): the time-mode
+	// readback polls two distinct ids, and the CFG-FIXEDECEF answer is
+	// deferred until after the CFG-SURVEY answer. Correlation by
+	// class+id must attribute both correctly.
+	rcvr := &testReceiver{monVer: tau1201Ver(),
+		deferIDs:  map[asbin.MsgID]bool{asbin.CfgFixedECEFID: true},
+		fixedEcef: &asbin.CfgFixedECEF{X: -114469630, Y: 609033320, Z: 150417057},
+		survey:    &asbin.CfgSurvey{}}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{Get: gpsprot.PropIDMode}
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if m, ok := cfg.ConfigProps().GetMode(); !ok || !m.Static || m.PosType != gpsprot.PosTypeECEF {
+		t.Errorf("mode = %+v/%v, want static with a fixed ECEF position", m, ok)
+	}
+}
+
 func TestSignals(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -909,7 +947,7 @@ func TestMinElev(t *testing.T) {
 	if rcvr.elev.TrkMask != asFound.TrkMask {
 		t.Errorf("TrkMask = %v, want preserved %v", rcvr.elev.TrkMask, asFound.TrkMask)
 	}
-	if deg := float64(rcvr.elev.NaviMask) * 180 / 3.14159265358979; deg < 9.99 || deg > 10.01 {
+	if deg := float64(rcvr.elev.NaviMask) * 180 / math.Pi; deg < 9.99 || deg > 10.01 {
 		t.Errorf("NaviMask = %v deg, want 10", deg)
 	}
 	if e, ok := cfg.ConfigProps().GetMinElevation(); !ok || e.Degrees() < 9.99 || e.Degrees() > 10.01 {
@@ -974,22 +1012,6 @@ func TestShowPort(t *testing.T) {
 	}
 	if _, ok := props.GetPort(); ok {
 		t.Error("port name reported; the active UART is not identifiable")
-	}
-}
-
-func TestTimeModeAbsent(t *testing.T) {
-	// A receiver without the registers is silent to both polls: the
-	// mode property shows as absence, nothing is written, no error.
-	rcvr := &testReceiver{monVer: tau1201Ver()}
-	cp := probe(t, rcvr)
-	target := &gpsprot.ConfigTarget{}
-	target.Props.SetMode(gpsprot.Mode{Static: true})
-	cfg, errCount := configure(t, cp, rcvr, target)
-	if errCount != 0 {
-		t.Errorf("ErrorCount = %d, want 0", errCount)
-	}
-	if _, ok := cfg.ConfigProps().GetMode(); ok {
-		t.Error("mode reported for a receiver without the registers")
 	}
 }
 

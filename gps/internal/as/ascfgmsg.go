@@ -64,7 +64,7 @@ func (c *Configurator) generateRawReqs(flags gpsprot.RawMsgFlags) {
 	if flags&(gpsprot.RawMsgObs|gpsprot.RawMsgNavData) != 0 {
 		enable = 1
 	}
-	c.addReqNakOK(&asbin.RxmDumpRaw{Enable: enable}, nil)
+	c.addReqNakOK(&asbin.RxmDumpRaw{Enable: enable})
 }
 
 // generatePVTReqs configures the native messages that deliver the
@@ -124,7 +124,7 @@ func (c *Configurator) addMsgRate(mid asbin.MsgID, on bool) {
 		rate = 1
 	}
 	cls, id := mid.Unpack()
-	c.addReqNakOK(&asbin.CfgMsg{MsgClass: cls, MsgID: id, Rate: rate}, nil)
+	c.addReqNakOK(&asbin.CfgMsg{MsgClass: cls, MsgID: id, Rate: rate})
 }
 
 // generateNMEAReqs sets the rate of each standard NMEA sentence via

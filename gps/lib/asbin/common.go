@@ -61,7 +61,7 @@ func (mid MsgID) CfgClass() bool {
 // is the one acknowledged set outside the CFG class (hardware-verified
 // on TAU1201/TAU951M/TAU1302).
 func (mid MsgID) Ackable() bool {
-	return mid.CfgClass() && mid != CfgSimpleRstID || mid == RxmDumpRawID
+	return (mid.CfgClass() && mid != CfgSimpleRstID) || mid == RxmDumpRawID
 }
 
 type Msg interface {
@@ -248,4 +248,3 @@ func Checksum[B Bytes](bytes B) (ckA, ckB byte) {
 	}
 	return
 }
-
