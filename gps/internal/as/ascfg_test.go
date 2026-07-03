@@ -31,6 +31,7 @@ type testReceiver struct {
 	saves      []asbin.CfgCfg       // CFG-CFG save/load requests received (ACKed)
 	clears     []asbin.CfgCfg       // CFG-CFG clear requests received (silent, like hardware)
 	resets     []asbin.CfgSimpleRst // SIMPLERST requests received (silent)
+	pps        *asbin.CfgPps        // nil: CFG-PPS unsupported (poll is silent)
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -93,6 +94,12 @@ func (r *testReceiver) respondOne(data []byte) [][]byte {
 	case *asbin.CfgSimpleRst:
 		r.resets = append(r.resets, *mt)
 		return nil
+	case *asbin.CfgPps:
+		if r.pps == nil {
+			return [][]byte{r.nak(asbin.CfgPpsID)}
+		}
+		*r.pps = *mt
+		return [][]byte{r.ack(asbin.CfgPpsID)}
 	}
 	if mid.Ackable() {
 		return [][]byte{r.ack(mid)}
@@ -118,6 +125,11 @@ func (r *testReceiver) respondPoll(mid asbin.MsgID, data []byte) [][]byte {
 		pkt, _ := asbin.PackMsg(asbin.CfgMsgID,
 			[]byte{data[asbin.HeaderLen], data[asbin.HeaderLen+1], r.rates[target]})
 		return [][]byte{pkt}
+	case asbin.CfgPpsID:
+		if r.pps == nil {
+			return nil // unknown CFG ids are silent to polls
+		}
+		return [][]byte{r.pack(r.pps)}
 	}
 	return nil
 }
@@ -490,6 +502,107 @@ func TestRawOut(t *testing.T) {
 				t.Errorf("rawOn = %d, want %d", rcvr.rawOn, tc.expect)
 			}
 		})
+	}
+}
+
+// tau951mPps returns the TAU951M's as-found CFG-PPS values, factory
+// 530 ns offset included.
+func tau951mPps() *asbin.CfgPps {
+	return &asbin.CfgPps{
+		Period:    1000000,
+		Offset:    530,
+		DutyCycle: 10000,
+		Polarity:  asbin.CfgPpsPolarityFallingEdge,
+		GPIO:      13,
+		Sync:      asbin.CfgPpsSyncOnlyWithFix,
+	}
+}
+
+func TestTimePulseSet(t *testing.T) {
+	tests := []struct {
+		name       string
+		width      time.Duration
+		expectPps  asbin.CfgPps
+		expectWant gpsprot.TimePulse
+	}{
+		{
+			// setting the width merges into the readback: period, GPIO,
+			// and the factory offset are preserved
+			name:  "width_100ms",
+			width: 100 * time.Millisecond,
+			expectPps: asbin.CfgPps{Period: 1000000, Offset: 530, DutyCycle: 100000,
+				Polarity: asbin.CfgPpsPolarityFallingEdge, GPIO: 13,
+				Sync: asbin.CfgPpsSyncOnlyWithFix},
+		},
+		{
+			name:  "width_zero_disables",
+			width: 0,
+			expectPps: asbin.CfgPps{Period: 1000000, Offset: 530, DutyCycle: 0,
+				Polarity: asbin.CfgPpsPolarityFallingEdge, GPIO: 13,
+				Sync: asbin.CfgPpsSyncOnlyWithFix},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tau1201Ver(), pps: tau951mPps()}
+			cp := probe(t, rcvr)
+			target := &gpsprot.ConfigTarget{}
+			target.Props.SetTimePulseWidth(tc.width)
+			cfg, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if !reflect.DeepEqual(*rcvr.pps, tc.expectPps) {
+				t.Errorf("receiver PPS\ngot  %+v\nwant %+v", *rcvr.pps, tc.expectPps)
+			}
+			props := cfg.ConfigProps()
+			w, ok := props.GetTimePulseWidth()
+			if !ok || w != tc.width {
+				t.Errorf("achieved width = %v/%v, want %v", w, ok, tc.width)
+			}
+		})
+	}
+}
+
+func TestTimePulseReadback(t *testing.T) {
+	rcvr := &testReceiver{monVer: tau1201Ver(), pps: tau951mPps()}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{Get: tpProps}
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	props := cfg.ConfigProps()
+	if w, ok := props.GetTimePulseWidth(); !ok || w != 10*time.Millisecond {
+		t.Errorf("width = %v/%v, want 10ms", w, ok)
+	}
+	if p, ok := props.GetTimePulsePeriod(); !ok || p != time.Second {
+		t.Errorf("period = %v/%v, want 1s", p, ok)
+	}
+	if r, ok := props.GetTimePulsePolarityRising(); !ok || r {
+		t.Errorf("polarityRising = %v/%v, want false", r, ok)
+	}
+	if l, ok := props.GetTimePulseOnlyWhenLocked(); !ok || !l {
+		t.Errorf("onlyWhenLocked = %v/%v, want true", l, ok)
+	}
+	if _, ok := props.GetTimePulseAlignToGNSS(); ok {
+		t.Error("alignToGNSS reported; it has no carrier and must be absent")
+	}
+}
+
+func TestTimePulseAbsent(t *testing.T) {
+	// A receiver without CFG-PPS is silent to the poll: the property
+	// shows as absence - nothing set, nothing reported, no error.
+	rcvr := &testReceiver{monVer: tau1201Ver()}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetTimePulseWidth(100 * time.Millisecond)
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if _, ok := cfg.ConfigProps().GetTimePulseWidth(); ok {
+		t.Error("width reported for a receiver without CFG-PPS")
 	}
 }
 

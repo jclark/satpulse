@@ -30,6 +30,7 @@ type Configurator struct {
 	reqs    []*asReq
 	phase   int              // index into genPhases of the next phase to generate
 	touched asbin.CfgCfgMask // sections set requests touched, for minimal saves
+	pps     *asbin.CfgPps    // latest CFG-PPS readback; nil if never answered
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -104,9 +105,12 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 }
 
 // ConfigProps returns the current configuration of the GPS receiver,
-// from the readbacks gathered while configuring.
+// from the readbacks gathered while configuring. Properties that were
+// never read back (unsupported or not involved) are absent.
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
-	return &gpsprot.ConfigProps{}
+	props := &gpsprot.ConfigProps{}
+	c.tpConfigProps(props)
+	return props
 }
 
 // genPhases are the request generation phases, each gated on all
@@ -115,8 +119,22 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 // and the new rate on the confirmed line; the NVM phase is last so
 // that it persists everything, fallback outcomes included.
 var genPhases = []func(*Configurator){
+	(*Configurator).generateQueryReqs,
+	(*Configurator).generateSetReqs,
 	(*Configurator).generateMsgReqs,
 	(*Configurator).generateNVMReqs,
+}
+
+// generateQueryReqs polls the messages whose current values the set
+// phase needs (read-modify-write) or the target asks to read.
+func (c *Configurator) generateQueryReqs() {
+	c.generateTPQuery()
+}
+
+// generateSetReqs generates the property set requests, computed from
+// the query phase's readbacks.
+func (c *Configurator) generateSetReqs() {
+	c.generateTPSet()
 }
 
 // generateNVMReqs generates the save and reset requests. Reload is
