@@ -33,20 +33,16 @@ var rtcmMSM4IDs = []asbin.MsgID{asbin.RtcmMsm4GpsID, asbin.RtcmMsm4GloID,
 var rtcmMSM7IDs = []asbin.MsgID{asbin.RtcmMsm7GpsID, asbin.RtcmMsm7GloID,
 	asbin.RtcmMsm7GalID, asbin.RtcmMsm7SbasID, asbin.RtcmMsm7QzssID, asbin.RtcmMsm7BdsID}
 
-// rtcmEphIDs are the broadcast-ephemeris RTCM targets. They are not in
-// the device-independent RTCM group vocabulary, but they are part of
-// the receiver's RTCM output (the TAU1302 ships with them enabled), so
-// a complete RTCM request turns them off along with unnamed MSM types.
-var rtcmEphIDs = []asbin.MsgID{asbin.RtcmEphGpsID, asbin.RtcmEphGloID,
-	asbin.RtcmEphBdsID, asbin.RtcmEphQzssID, asbin.RtcmEphGalID}
-
 // generateRTCMReqs configures RTCM output via CFG-MSG 0xF8 targets. A
-// wire-format request is complete: named types on, everything else in
-// the group off. All enables are NAK-tolerant: a receiver without RTCM
-// output (the TAU1201) NAKs every 0xF8 target, and the absence of any
-// achieved RTCM output is the statement - not an error. ARP (1005) is
-// only emitted while a fixed position is set; enabling it without one
-// is accepted and silent.
+// wire-format request is complete over the modeled group - MSM4, MSM7,
+// ARP - and the receiver's broadcast-ephemeris targets are left alone,
+// like TXT in the NMEA group: they are outside the group vocabulary,
+// and the TAU1302 ships with them enabled. All enables are
+// NAK-tolerant: a receiver without RTCM output (the TAU1201) NAKs
+// every 0xF8 target, and the absence of any achieved RTCM output is
+// the statement - not an error. ARP (1005) is only emitted while a
+// fixed position is set; enabling it without one is accepted and
+// silent.
 func (c *Configurator) generateRTCMReqs(flags gpsprot.RTCMMsgFlags) {
 	msm4 := flags&gpsprot.RTCMMsgMSM4 != 0
 	msm7 := flags&gpsprot.RTCMMsgMSM7 != 0
@@ -55,9 +51,6 @@ func (c *Configurator) generateRTCMReqs(flags gpsprot.RTCMMsgFlags) {
 		c.addMsgRate(rtcmMSM7IDs[i], msm7)
 	}
 	c.addMsgRate(asbin.RtcmArpID, flags&gpsprot.RTCMMsgARP != 0)
-	for _, mid := range rtcmEphIDs {
-		c.addMsgRate(mid, false)
-	}
 }
 
 // generateRawReqs configures raw data output. Allystar has a single

@@ -494,9 +494,6 @@ func TestRTCMOut(t *testing.T) {
 	for _, mid := range rtcmMSM7IDs {
 		expect[mid] = 0
 	}
-	for _, mid := range rtcmEphIDs {
-		expect[mid] = 0
-	}
 	if !reflect.DeepEqual(rcvr.rates, expect) {
 		t.Errorf("rates\ngot  %v\nwant %v", rcvr.rates, expect)
 	}
@@ -510,9 +507,6 @@ func TestRTCMOutAbsent(t *testing.T) {
 		nakAll[mid] = true
 	}
 	for _, mid := range rtcmMSM7IDs {
-		nakAll[mid] = true
-	}
-	for _, mid := range rtcmEphIDs {
 		nakAll[mid] = true
 	}
 	nakAll[asbin.RtcmArpID] = true
