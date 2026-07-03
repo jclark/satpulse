@@ -1,0 +1,34 @@
+{"type":"env","args":["-d","/dev/ttyUSB1","-s","115200","--vendor","allystar","--test-log","allystar/tau951m-show-port.jsonl","--show-port"],"version":"satpulse version 0.3-pre.20260703.46cc7560.dirty, build date 2026-07-03 04:38:24+00:00","hostname":"edam"}
+{"t":"2026-07-03T04:43:39.061995Z","tag":"ASBIN","msg":"NAV-POSLLH","bin":"f1d901021c00d5c2c31af02afd3b6b4f2f08a07dffffd6e4ffff2d160000951300009432"}
+{"t":"2026-07-03T04:43:39.064537Z","tag":"ASBIN","msg":"NAV-TIMEUTC","bin":"f1d901211400d4c2c31a0000000006410e00ea070703042b2727768c"}
+{"t":"2026-07-03T04:43:39.064879Z","tag":"ASBIN","msg":"MON-VER","bin":"f1d90a0400000e34","out":true}
+{"t":"2026-07-03T04:43:39.068839Z","ascii":"\r\n"}
+{"t":"2026-07-03T04:43:39.068839Z","tag":"ASBIN","msg":"MON-VER","bin":"f1d90a042000332e3031382e326163656339316300004844393531302e343734306439656332d01b"}
+{"t":"2026-07-03T04:43:39.071873Z","tag":"ASBIN","msg":"CFG-PRT","bin":"f1d906000100000721","out":true}
+{"t":"2026-07-03T04:43:39.076588Z","tag":"ASBIN","msg":"CFG-PRT","bin":"f1d9060008000000000000c20100d1e0"}
+{"t":"2026-07-03T04:43:39.076747Z","tag":"ASBIN","msg":"CFG-PRT","bin":"f1d906000100010822","out":true}
+{"t":"2026-07-03T04:43:39.081931Z","tag":"ASBIN","msg":"CFG-PRT","bin":"f1d9060008000100000000c20100d2e8"}
+{"type":"receiver","vendor":"Allystar","hardware":"HD9510.4740d9ec2","firmware":"3.018.2acec91c","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":115200}
+{"type":"env","args":["-d","/dev/ttyUSB1","-s","115200","--vendor","allystar","--test-log","allystar/tau951m-show-port.jsonl","-c","--show-port"],"version":"satpulse version 0.3-pre.20260703.46cc7560.dirty, build date 2026-07-03 04:38:24+00:00","hostname":"edam"}
+{"t":"2026-07-03T04:43:40.051777Z","tag":"ASBIN","msg":"NAV-POSLLH","bin":"f1d901021c00b0c6c31acb2afd3b584f2f08bd7bfffff3e2ffff6611000023100000306a"}
+{"t":"2026-07-03T04:43:40.054851Z","tag":"ASBIN","msg":"NAV-TIMEUTC","bin":"f1d901211400afc6c31a0000000033420e00ea070703042b2827841d"}
+{"t":"2026-07-03T04:43:40.055186Z","tag":"ASBIN","msg":"MON-VER","bin":"f1d90a0400000e34","out":true}
+{"t":"2026-07-03T04:43:40.05661Z","ascii":"\r\n"}
+{"t":"2026-07-03T04:43:40.059722Z","tag":"ASBIN","msg":"MON-VER","bin":"f1d90a042000332e3031382e326163656339316300004844393531302e343734306439656332d01b"}
+{"t":"2026-07-03T04:43:40.062558Z","tag":"ASBIN","msg":"CFG-PPS","bin":"f1d9060700000d2d","out":true}
+{"t":"2026-07-03T04:43:40.062576Z","tag":"ASBIN","msg":"CFG-FIXEDECEF","bin":"f1d9061400001a54","out":true}
+{"t":"2026-07-03T04:43:40.062584Z","tag":"ASBIN","msg":"CFG-SURVEY","bin":"f1d906120000184e","out":true}
+{"t":"2026-07-03T04:43:40.062672Z","tag":"ASBIN","msg":"CFG-NAVSAT","bin":"f1d9060c0000123c","out":true}
+{"t":"2026-07-03T04:43:40.062695Z","tag":"ASBIN","msg":"CFG-ELEV","bin":"f1d9060b00001139","out":true}
+{"t":"2026-07-03T04:43:40.062703Z","tag":"ASBIN","msg":"CFG-PRT","bin":"f1d906000100000721","out":true}
+{"t":"2026-07-03T04:43:40.070889Z","tag":"ASBIN","msg":"CFG-PPS","bin":"f1d906070f0040420f001202000010270000000d00055c"}
+{"t":"2026-07-03T04:43:40.070889Z","tag":"ASBIN","msg":"CFG-FIXEDECEF","bin":"f1d906140c000000000000000000000000002634"}
+{"t":"2026-07-03T04:43:40.073856Z","tag":"ASBIN","msg":"CFG-SURVEY","bin":"f1d9061208000000000000000000205e"}
+{"t":"2026-07-03T04:43:40.073856Z","tag":"ASBIN","msg":"CFG-NAVSAT","bin":"f1d9060c040037821004e322"}
+{"t":"2026-07-03T04:43:40.076762Z","tag":"ASBIN","msg":"CFG-ELEV","bin":"f1d9060b080035fa8e3cc2b8b23d7be0"}
+{"t":"2026-07-03T04:43:40.076762Z","tag":"ASBIN","msg":"CFG-PRT","bin":"f1d9060008000000000000c20100d1e0"}
+{"t":"2026-07-03T04:43:40.079478Z","tag":"ASBIN","msg":"CFG-PRT","bin":"f1d906000100010822","out":true}
+{"t":"2026-07-03T04:43:40.084559Z","tag":"ASBIN","msg":"CFG-PRT","bin":"f1d9060008000100000000c20100d2e8"}
+{"type":"receiver","vendor":"Allystar","hardware":"HD9510.4740d9ec2","firmware":"3.018.2acec91c","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","signalsEnabled":{"BDS":["B1I","B2a"],"GAL":["E1","E5a"],"GLO":["L1"],"GPS":["L1","L5"],"QZSS":["L1","L5"]},"baudRate":115200,"static":false}
