@@ -133,16 +133,21 @@ func (*MeasExtra) BlockNumber() uint16 { return MeasExtraID }
 func (m *MeasExtra) Chunks() func(yield func(chunk any) bool) {
 	return func(yield func(chunk any) bool) {
 		if len(m.Channels) > 0 {
-			// MeasExtra.N is modulo 256; the true count is carried by Length/SBLength.
+			// On write Channels is authoritative. N is only the count modulo
+			// 256 (it wraps at 256), so neither N nor anything derived from it
+			// may size the write; the true count is recovered on read from the
+			// payload length and SBLength.
 			m.N = uint8(len(m.Channels))
-		}
-		if m.N > 0 && m.SBLength == 0 {
-			m.SBLength = uint8(binary.Size(MeasExtraChannelSub{}))
+			if m.SBLength == 0 {
+				m.SBLength = uint8(binary.Size(MeasExtraChannelSub{}))
+			}
 		}
 		if !yield(&m.measExtraHead) {
 			return
 		}
-		n := int(m.N)
+		// Write path uses len(Channels); read path starts empty and recovers
+		// the true count from the payload length below.
+		n := len(m.Channels)
 		payloadLen := m.payloadLen()
 		if m.SBLength > 0 && payloadLen > binary.Size(measExtraHead{}) {
 			n = (payloadLen - binary.Size(measExtraHead{})) / int(m.SBLength)
