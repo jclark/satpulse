@@ -11,20 +11,20 @@ const (
 	MeasSigIdxExtension        = 31
 	MeasType1CodeInvalidMSB    = 0
 	MeasType1CodeInvalidLSB    = 0
-	MeasType1DopplerDNU        = -2147483648
+	MeasType1DopplerDNU        = -0x80000000
 	MeasType1CarrierMSBDNU     = -128
 	MeasType1CN0DNU            = 255
-	MeasType1LockTimeDNU       = 65535
-	MeasType1LockTimeClipped   = 65534
+	MeasType1LockTimeDNU       = 0xFFFF
+	MeasType1LockTimeClipped   = 0xFFFE
 	MeasType2LockTimeDNU       = 255
 	MeasType2LockTimeClipped   = 254
 	MeasType2CarrierMSBDNU     = -128
-	MeasExtraCodeVarDNU        = 65535
-	MeasExtraCodeVarClipped    = 65534
-	MeasExtraCarrierVarDNU     = 65535
-	MeasExtraCarrierVarClipped = 65534
-	MeasExtraLockTimeDNU       = 65535
-	MeasExtraLockTimeClipped   = 65534
+	MeasExtraCodeVarDNU        = 0xFFFF
+	MeasExtraCodeVarClipped    = 0xFFFE
+	MeasExtraCarrierVarDNU     = 0xFFFF
+	MeasExtraCarrierVarClipped = 0xFFFE
+	MeasExtraLockTimeDNU       = 0xFFFF
+	MeasExtraLockTimeClipped   = 0xFFFE
 )
 
 type measEpochHead struct {
