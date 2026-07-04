@@ -9,10 +9,10 @@ type SlotStatus uint16
 const (
 	SatVisibilityAzimuthDNU   = 0xFFFF
 	SatVisibilityElevationDNU = -32768
-	SatVisibilityRiseSetDNU   = 255
+	SatVisibilityRiseSetDNU   = 0xFF
 	SatelliteInfoAlmanac      = 1
 	SatelliteInfoEphemeris    = 2
-	SatelliteInfoUnknown      = 255
+	SatelliteInfoUnknown      = 0xFF
 	ChannelElevationDNU       = -128
 )
 

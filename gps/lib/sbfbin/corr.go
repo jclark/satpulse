@@ -11,11 +11,11 @@ const (
 	DiffCorrModeRTCMv3
 	DiffCorrModeRTCMV
 	DiffCorrModeSPARTN
-	DiffCorrSourceDNU DiffCorrSource = 255
+	DiffCorrSourceDNU DiffCorrSource = 0xFF
 
 	BaseTypeFixed   BaseType = 0
 	BaseTypeMoving  BaseType = 1
-	BaseTypeUnknown BaseType = 255
+	BaseTypeUnknown BaseType = 0xFF
 	BasePositionDNU          = -2e10
 )
 

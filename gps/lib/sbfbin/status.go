@@ -11,7 +11,7 @@ type RxError uint32
 
 const (
 	QualityIndicatorUnknown = 15
-	ReceiverStatusCPUDNU    = 255
+	ReceiverStatusCPUDNU    = 0xFF
 	ReceiverStatusCmdDNU    = 0
 	ReceiverStatusTempDNU   = 0
 	AGCGainDNU              = -128
