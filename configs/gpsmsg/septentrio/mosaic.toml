@@ -19,14 +19,12 @@
 # ports, not to USB. To drive a different port, copy the entry and change both
 # the suffix and the Cd argument (e.g. "-usb2" with USB2, "-com2" with COM2).
 #
-# responsePattern = "septentrio" below is forward-looking: this analyzer does
-# not exist yet in gps/msgfile (see plan/septentrio-analysis/
-# config-response-handling.md, "Wiring" section). It is set here so this file
-# already reflects the intended end state once that analyzer is implemented.
+# responsePattern = "septentrio" matches the combined "$R" reply packet:
+# command echo, status/readback lines, and the receiver prompt all arrive as
+# one response that completes the command.
 
 [default.line]
-#eol = "\r\n"
-#responsePattern = "septentrio"
+responsePattern = "septentrio"
 
 # Command input recovery
 #

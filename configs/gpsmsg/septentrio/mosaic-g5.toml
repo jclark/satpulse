@@ -13,6 +13,9 @@
 [[include]]
 src = "mosaic.toml"
 
+[default.line]
+responsePattern = "septentrio"
+
 # PPP (Precise Point Positioning) / Galileo HAS
 #
 # Unlike mosaic-X5 (whose RoverMode enum has no PPP value in the reference
