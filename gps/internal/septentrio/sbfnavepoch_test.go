@@ -86,7 +86,7 @@ func TestQualityAccPrimaryWinsOverCov(t *testing.T) {
 	var ne gpsprot.NavEpochMsg
 	// Cov arrives first, then the direct reading must overwrite it.
 	accPosCovGeodetic(&ne, cov)
-	qualityPVT(&ne, pvtGeodeticCommon(pvt), opt.Val[uint16]{})
+	qualityPVT(&ne, pvtGeodeticCommon(pvt), opt.Val[uint16]{}, false)
 	approx(t, "Acc.Hor", ne.Acc.Hor.Get().Meters(), float64(pvt.HAccuracy)*0.01, 1e-9)
 	approx(t, "Acc.Vert", ne.Acc.Vert.Get().Meters(), float64(pvt.VAccuracy)*0.01, 1e-9)
 	if ne.GNSSUsed.IsZero() {
@@ -106,7 +106,7 @@ func TestQualityAccCovFallback(t *testing.T) {
 	g.MeanCorrAge = sbfbin.PVTMeanCorrAgeDNU
 	g.NrSV = 255
 	var ne gpsprot.NavEpochMsg
-	qualityPVT(&ne, pvtGeodeticCommon(&g), opt.Val[uint16]{})
+	qualityPVT(&ne, pvtGeodeticCommon(&g), opt.Val[uint16]{}, false)
 	if ne.Acc.Hor.IsSet() {
 		t.Error("Acc.Hor should be unset before cov fallback")
 	}
@@ -123,9 +123,30 @@ func TestRTCMRefBaseIDPrimary(t *testing.T) {
 	g.WACorrInfo = sbfbin.WACorrInfo(sbfbin.WACorrBasePhysical << 5)
 	g.ReferenceID = 99
 	var ne gpsprot.NavEpochMsg
-	qualityPVT(&ne, pvtGeodeticCommon(&g), opt.Make(uint16(33)))
+	qualityPVT(&ne, pvtGeodeticCommon(&g), opt.Make(uint16(33)), true)
 	if got := ne.RTCMRefBaseID.Get(); got != 33 {
 		t.Errorf("RTCMRefBaseID = %d, want 33 (BaseStation primary)", got)
+	}
+}
+
+// TestRTCMRefBaseIDPrimaryRequiresCurrentRTCM rejects a cached BaseStation
+// ID when either the current PVT or the BaseStation source is not RTCM-like.
+func TestRTCMRefBaseIDPrimaryRequiresCurrentRTCM(t *testing.T) {
+	var g sbfbin.PVTGeodetic
+	g.Mode = sbfbin.ModeStandalone
+	g.WACorrInfo = sbfbin.WACorrInfo(sbfbin.WACorrBaseNone << 5)
+	g.ReferenceID = sbfbin.PVTReferenceIDDNU
+	var ne gpsprot.NavEpochMsg
+	qualityPVT(&ne, pvtGeodeticCommon(&g), opt.Make(uint16(33)), true)
+	if ne.RTCMRefBaseID.IsSet() {
+		t.Error("standalone mode must not reuse cached RTCMRefBaseID")
+	}
+	g.Mode = sbfbin.ModeRTKFixed
+	g.WACorrInfo = sbfbin.WACorrInfo(sbfbin.WACorrBasePhysical << 5)
+	var ne2 gpsprot.NavEpochMsg
+	qualityPVT(&ne2, pvtGeodeticCommon(&g), opt.Make(uint16(33)), false)
+	if ne2.RTCMRefBaseID.IsSet() {
+		t.Error("non-RTCM BaseStation source must not become RTCMRefBaseID")
 	}
 }
 
@@ -137,7 +158,7 @@ func TestRTCMRefBaseIDFallback(t *testing.T) {
 	g.WACorrInfo = sbfbin.WACorrInfo(sbfbin.WACorrBasePhysical << 5)
 	g.ReferenceID = 77
 	var ne gpsprot.NavEpochMsg
-	qualityPVT(&ne, pvtGeodeticCommon(&g), opt.Val[uint16]{})
+	qualityPVT(&ne, pvtGeodeticCommon(&g), opt.Val[uint16]{}, false)
 	if got := ne.RTCMRefBaseID.Get(); got != 77 {
 		t.Errorf("RTCMRefBaseID = %d, want 77 (ReferenceID fallback)", got)
 	}
@@ -147,7 +168,7 @@ func TestRTCMRefBaseIDFallback(t *testing.T) {
 	s.WACorrInfo = sbfbin.WACorrInfo(sbfbin.WACorrBasePhysical << 5)
 	s.ReferenceID = 123
 	var ne2 gpsprot.NavEpochMsg
-	qualityPVT(&ne2, pvtGeodeticCommon(&s), opt.Val[uint16]{})
+	qualityPVT(&ne2, pvtGeodeticCommon(&s), opt.Val[uint16]{}, false)
 	if ne2.RTCMRefBaseID.IsSet() {
 		t.Error("SBAS mode ReferenceID must not become RTCMRefBaseID")
 	}

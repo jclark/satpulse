@@ -40,9 +40,9 @@ func pvtCartesianCommon(m *sbfbin.PVTCartesian) pvtCommon {
 
 // qualityPVT accumulates the PVT-family solution-quality fields into the epoch
 // message. It is idempotent, so calling it for both PVTGeodetic and
-// PVTCartesian in one epoch is safe. baseID is the last-seen RTCM base station
-// ID, the primary source for RTCMRefBaseID.
-func qualityPVT(ne *gpsprot.NavEpochMsg, c pvtCommon, baseID opt.Val[uint16]) {
+// PVTCartesian in one epoch is safe. baseID is the last-seen BaseStation ID;
+// baseRTCM says whether that BaseStation came from an RTCM correction source.
+func qualityPVT(ne *gpsprot.NavEpochMsg, c pvtCommon, baseID opt.Val[uint16], baseRTCM bool) {
 	ne.FixLevel, ne.SolutionDim = modeFixLevel(c.Mode)
 	ne.Correction |= modeCorrection(c)
 	if c.HAccuracy != sbfbin.PVTAccuracyDNU {
@@ -57,10 +57,9 @@ func qualityPVT(ne *gpsprot.NavEpochMsg, c pvtCommon, baseID opt.Val[uint16]) {
 	if c.NrSV != 255 {
 		ne.NumSVUsed.Set(uint16(c.NrSV))
 	}
-	if baseID.IsSet() {
+	if rtcmRefBaseCurrent(c) && baseRTCM && baseID.IsSet() {
 		ne.RTCMRefBaseID.Set(baseID.Get())
-	} else if bt := c.WACorrInfo.BaseType(); (bt == sbfbin.WACorrBasePhysical || bt == sbfbin.WACorrBaseVirtual) &&
-		!c.Mode.IsSBAS() && c.ReferenceID != sbfbin.PVTReferenceIDDNU && c.ReferenceID != sbfbin.PVTReferenceIDMulti {
+	} else if rtcmRefBaseCurrent(c) && c.ReferenceID != sbfbin.PVTReferenceIDDNU && c.ReferenceID != sbfbin.PVTReferenceIDMulti {
 		ne.RTCMRefBaseID.Set(c.ReferenceID)
 	}
 	for i := uint(0); i < 32; i++ {
@@ -72,6 +71,11 @@ func qualityPVT(ne *gpsprot.NavEpochMsg, c pvtCommon, baseID opt.Val[uint16]) {
 			ne.BandsUsed |= e.band
 		}
 	}
+}
+
+func rtcmRefBaseCurrent(c pvtCommon) bool {
+	bt := c.WACorrInfo.BaseType()
+	return (bt == sbfbin.WACorrBasePhysical || bt == sbfbin.WACorrBaseVirtual) && !c.Mode.IsSBAS()
 }
 
 // modeFixLevel derives FixLevel and SolutionDim from the PVT Mode field.

@@ -79,14 +79,14 @@ func (p *PacketProcessor) Dispatch(b *sbfbin.Block, tRead time.Time) bool {
 	switch m := b.Params.(type) {
 	case *sbfbin.PVTGeodetic:
 		ne := p.navEpoch(b.TimeStamp, tRead)
-		qualityPVT(ne, pvtGeodeticCommon(m), p.baseStationID)
+		qualityPVT(ne, pvtGeodeticCommon(m), p.baseStationID, p.baseStationRTCM)
 		p.emitTime(timePVTGeodetic(b, m), tRead)
 		p.emitPosGeo(posGeoPVTGeodetic(m), tRead)
 		p.emitVelGeo(velGeoPVTGeodetic(m), tRead)
 		return true
 	case *sbfbin.PVTCartesian:
 		ne := p.navEpoch(b.TimeStamp, tRead)
-		qualityPVT(ne, pvtCartesianCommon(m), p.baseStationID)
+		qualityPVT(ne, pvtCartesianCommon(m), p.baseStationID, p.baseStationRTCM)
 		p.emitTime(timePVTCartesian(b, m), tRead)
 		p.emitPosECEF(posECEFPVTCartesian(m), tRead)
 		p.emitVelECEF(velECEFPVTCartesian(m), tRead)
