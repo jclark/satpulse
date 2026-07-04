@@ -11,20 +11,20 @@ const (
 	MeasSigIdxExtension        = 31
 	MeasType1CodeInvalidMSB    = 0
 	MeasType1CodeInvalidLSB    = 0
-	MeasType1DopplerDNU        = -2147483648
+	MeasType1DopplerDNU        = -0x80000000
 	MeasType1CarrierMSBDNU     = -128
 	MeasType1CN0DNU            = 255
-	MeasType1LockTimeDNU       = 65535
-	MeasType1LockTimeClipped   = 65534
+	MeasType1LockTimeDNU       = 0xFFFF
+	MeasType1LockTimeClipped   = 0xFFFE
 	MeasType2LockTimeDNU       = 255
 	MeasType2LockTimeClipped   = 254
 	MeasType2CarrierMSBDNU     = -128
-	MeasExtraCodeVarDNU        = 65535
-	MeasExtraCodeVarClipped    = 65534
-	MeasExtraCarrierVarDNU     = 65535
-	MeasExtraCarrierVarClipped = 65534
-	MeasExtraLockTimeDNU       = 65535
-	MeasExtraLockTimeClipped   = 65534
+	MeasExtraCodeVarDNU        = 0xFFFF
+	MeasExtraCodeVarClipped    = 0xFFFE
+	MeasExtraCarrierVarDNU     = 0xFFFF
+	MeasExtraCarrierVarClipped = 0xFFFE
+	MeasExtraLockTimeDNU       = 0xFFFF
+	MeasExtraLockTimeClipped   = 0xFFFE
 )
 
 type measEpochHead struct {
@@ -133,16 +133,21 @@ func (*MeasExtra) BlockNumber() uint16 { return MeasExtraID }
 func (m *MeasExtra) Chunks() func(yield func(chunk any) bool) {
 	return func(yield func(chunk any) bool) {
 		if len(m.Channels) > 0 {
-			// MeasExtra.N is modulo 256; the true count is carried by Length/SBLength.
+			// On write Channels is authoritative. N is only the count modulo
+			// 256 (it wraps at 256), so neither N nor anything derived from it
+			// may size the write; the true count is recovered on read from the
+			// payload length and SBLength.
 			m.N = uint8(len(m.Channels))
-		}
-		if m.N > 0 && m.SBLength == 0 {
-			m.SBLength = uint8(binary.Size(MeasExtraChannelSub{}))
+			if m.SBLength == 0 {
+				m.SBLength = uint8(binary.Size(MeasExtraChannelSub{}))
+			}
 		}
 		if !yield(&m.measExtraHead) {
 			return
 		}
-		n := int(m.N)
+		// Write path uses len(Channels); read path starts empty and recovers
+		// the true count from the payload length below.
+		n := len(m.Channels)
 		payloadLen := m.payloadLen()
 		if m.SBLength > 0 && payloadLen > binary.Size(measExtraHead{}) {
 			n = (payloadLen - binary.Size(measExtraHead{})) / int(m.SBLength)
