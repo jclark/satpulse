@@ -18,12 +18,25 @@ set. Ruling: "completely bogus ... that is not the semantic of
 readback. When you set something, the value you report back is what
 the receiver accepted. See SEMANTICS.md" (now gpshwtest/SEMANTICS.md).
 
-EXCEPTION, narrowly drawn: when hardware demonstrably acknowledges a
-set without applying it faithfully, truthfulness requires one readback
-poll after that specific set. Observed twice on CASIC: V6 CFG-NAVBAND
-(silicon clamps the reception mask to hardware capability) and V5
-CFG-NAVX NavSystem=0 (ACKed and ignored). The exception is earned by
-hardware evidence, never assumed.
+A post-set readback is legitimate ONLY where the acknowledgement's
+own semantics leave the achieved value unnamed. The CASIC CFG-NAVBAND
+and Allystar CFG-NAVSAT ACK means "enabled the intersection of the
+request with my capability" - reasonable receiver semantics, not a
+bug - so the achieved signal set is read back to report the value the
+receiver says it enabled, which the semantics require to be visible.
+That is reading what the receiver is telling us, not checking up on
+it.
+
+A receiver that ACKs a value and does not store it is a DEFECT, and
+the engine never adds a roundtrip to work around defects: report the
+accepted values and record the defect in the HW note - a later
+readback shows the discrepancy to anyone who asks. Incident: the
+Allystar configurator verified CFG-PPS sets by readback because the
+TAU1302 sometimes ACKs a zero duty cycle without storing it. Ruling:
+"we are not doing an extra readback to work around bugs. What the
+receiver tells us is what we report." The CASIC V5 NavSystem=0
+ACK-and-ignore readback is the same wrong pattern - fix it when that
+branch is next touched.
 
 ## Probing is state-neutral
 

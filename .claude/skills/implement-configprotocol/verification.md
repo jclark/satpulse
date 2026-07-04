@@ -2,8 +2,9 @@
 
 Verification climbs four rungs. Each rung catches what the one below
 cannot; the top rung (gpshwtest) caught the only two real
-post-implementation bugs in the CASIC work, both invisible to the
-rungs below because they encode the implementor's own assumptions.
+post-implementation bugs in the CASIC work and all three in the
+Allystar work, each invisible to the rungs below because they encode
+the implementor's own assumptions.
 
 ## 1. Offline tests through the real path
 
@@ -62,6 +63,12 @@ Rules learned:
   ACKed but silently ignored yields dirty, non-reproducible traces. (V6
   CASIC --reload is exactly this trap - ACKed, no effect.)
 - One scenario per option area keeps a failing replay localized.
+- Enumerating the cmd/<area> scenarios against the property model is a
+  cheap SCOPE AUDIT: planning the Allystar replay areas exposed that
+  --min-elev had never been implemented despite its carrier being
+  present and verified. Traces must be recaptured whenever a fix
+  changes the configurator's wire output - byte-exact comparison makes
+  stale traces fail loudly, which is the point.
 
 ## 3. gpshwtest characterization
 
@@ -83,9 +90,21 @@ left as found. Process:
   achieved signal set; the save/speed ordering). It also caught a
   readback rounding bug that masqueraded as a receiver limitation -
   when a "limitation" looks odd, check our own conversion first.
+  All three Allystar finds were real too: silicon signal coupling
+  that made syntax-equivalent requests achieve different sets; a
+  complete RTCM request silencing broadcast-ephemeris output the
+  option could not re-enable (out-of-group targets must be left
+  alone); and an erratic PPS disable that forced readback
+  verification of time-pulse sets.
 - Disruptive coverage (--disruptive: speed, NVM persistence) is
   required coverage too, gated; it must include recovery (rediscover
-  a receiver whose speed changed; restore sane NVM).
+  a receiver whose speed changed; restore sane NVM). It earns its
+  cost: the erratic Allystar PPS-disable defect appeared ONLY under
+  disruptive runs.
+- A characterization may legitimately never be failure-free when the
+  receiver itself is erratic (byte-identical writes, differing
+  outcomes). Commit the clean non-disruptive baseline and record the
+  receiver defect in the HW note instead of chasing green.
 
 ## 4. Observation, not enablement
 
@@ -101,10 +120,19 @@ Before claiming verification, state what observation would differ if
 the claim were false; if nothing would, the test discriminates nothing
 (see rulings.md, "Evidence must discriminate"). Report results
 faithfully: failed runs with output, skipped checks as skipped, weak
-oracles as weak. Restore receivers after every hardware session and
+oracles as weak. A register readback is not physical behavior: without
+instrumentation on the PPS pin, every time-pulse finding is register
+semantics, and wording like "disables the pulse" overclaims what was
+seen (owner correction from the Allystar work) - write "the readback
+shows duty 0" and say the pin was not observed. gpshwtest can verify
+the pulse electrically through a PHC pin (--phc, needs root and
+wiring) when the setup allows. Restore receivers after every hardware session and
 verify the restoration (sample the line; check the state read back).
 The as-found state is not always reachable through the property
 interface - an auto/default mode can alias an explicit set, and writing
 a value can couple in others (CASIC V6 NAVBAND); when restore cannot
 reproduce the initial readback, record that rather than claiming a clean
-restore.
+restore. As-found can also be a nonzero shipped baseline (one Allystar
+unit ships emitting RTCM MSM7 plus ephemeris): restore means back to
+as-found, never "back to defaults" - do not restore a shipped
+configuration away.
