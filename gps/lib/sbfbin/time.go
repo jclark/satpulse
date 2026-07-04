@@ -3,9 +3,9 @@ package sbfbin
 type SyncLevel uint8
 type PPSTimescale uint8
 
-const (
-	UTCComponentDNU = -128
+const UTCComponentDNU = -128
 
+const (
 	PPSTimescaleGPS PPSTimescale = iota + 1
 	PPSTimescaleUTC
 	PPSTimescaleReceiver
