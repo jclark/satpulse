@@ -8,16 +8,16 @@ import (
 
 // Septentrio reply recv helper.
 
-type recvSEPREvent struct{ content string }
+type recvSEPTREvent struct{ content string }
 
-// recvSepReply feeds a whole Septentrio $R reply packet to the correlator.
-func recvSepReply(content string) recvSEPREvent {
-	return recvSEPREvent{content: content}
+// recvSeptReply feeds a whole Septentrio $R reply packet to the correlator.
+func recvSeptReply(content string) recvSEPTREvent {
+	return recvSEPTREvent{content: content}
 }
 
-func (e recvSEPREvent) run(t *testing.T, tc *testContext) {
+func (e recvSEPTREvent) run(t *testing.T, tc *testContext) {
 	t.Helper()
-	tc.last = tc.cor.CorrelatePacket(septentrio.TagSepReply, e.content)
+	tc.last = tc.cor.CorrelatePacket(septentrio.TagReply, e.content)
 }
 
 // expectNakError asserts the NakError of the most recent Correlation.
@@ -31,13 +31,13 @@ func (e expectNakError) run(t *testing.T, tc *testContext) {
 }
 
 func TestCorrelatorSeptentrio(t *testing.T) {
-	runCorrelatorTests(t, "sep-test.toml", []correlatorTest{
+	runCorrelatorTests(t, "sept-test.toml", []correlatorTest{
 		{
 			name: "set command ACK with readback",
 			tags: []string{"set-nmea"},
 			events: []event{
 				sendEvent{},
-				recvSepReply("$R: setNMEAOutput, Stream1, USB1, GGA, sec1\r\nNMEAOutput, Stream1, USB1, GGA, sec1\r\nCOM1>"),
+				recvSeptReply("$R: setNMEAOutput, Stream1, USB1, GGA, sec1\r\nNMEAOutput, Stream1, USB1, GGA, sec1\r\nCOM1>"),
 				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(0)},
 				checkDone{canAcceptMore: false},
 			},
@@ -47,7 +47,7 @@ func TestCorrelatorSeptentrio(t *testing.T) {
 			tags: []string{"set-nmea"},
 			events: []event{
 				sendEvent{},
-				recvSepReply("$R? SBFOutput: Not authorized!\r\nCOM1>"),
+				recvSeptReply("$R? SBFOutput: Not authorized!\r\nCOM1>"),
 				expect{ack: AckNak, relevance: LevelAckOnly, msgIndex: intptr(0)},
 				expectNakError{want: "SBFOutput: Not authorized!"},
 				checkDone{canAcceptMore: false},
@@ -58,7 +58,7 @@ func TestCorrelatorSeptentrio(t *testing.T) {
 			tags: []string{"login"},
 			events: []event{
 				sendEvent{},
-				recvSepReply("$R! LogIn\r\nUserLevel, User\r\nCOM1>"),
+				recvSeptReply("$R! LogIn\r\nUserLevel, User\r\nCOM1>"),
 				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(0)},
 				checkDone{canAcceptMore: false},
 			},
@@ -68,7 +68,7 @@ func TestCorrelatorSeptentrio(t *testing.T) {
 			tags: []string{"lst"},
 			events: []event{
 				sendEvent{},
-				recvSepReply("$R; lstAsciiDisplay\r\n---->"),
+				recvSeptReply("$R; lstAsciiDisplay\r\n---->"),
 				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(0)},
 				checkDone{canAcceptMore: false},
 			},
@@ -78,7 +78,7 @@ func TestCorrelatorSeptentrio(t *testing.T) {
 			tags: []string{"factory-reset"},
 			events: []event{
 				sendEvent{},
-				recvSepReply("$R: factoryReset: Resetting receiver to factory defaults.\r\nCOM1>"),
+				recvSeptReply("$R: factoryReset: Resetting receiver to factory defaults.\r\nCOM1>"),
 				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(0)},
 				checkDone{canAcceptMore: false},
 			},
@@ -89,11 +89,11 @@ func TestCorrelatorSeptentrio(t *testing.T) {
 			events: []event{
 				sendEvent{},
 				readyToSend{want: false},
-				recvSepReply("$R: setNMEAOutput, Stream1, USB1, GGA, sec1\r\nNMEAOutput, Stream1, USB1, GGA, sec1\r\nCOM1>"),
+				recvSeptReply("$R: setNMEAOutput, Stream1, USB1, GGA, sec1\r\nNMEAOutput, Stream1, USB1, GGA, sec1\r\nCOM1>"),
 				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(0)},
 				readyToSend{want: true},
 				sendEvent{},
-				recvSepReply("$R: setElevationMask, all, 5\r\nElevationMask, all, 5\r\nCOM1>"),
+				recvSeptReply("$R: setElevationMask, all, 5\r\nElevationMask, all, 5\r\nCOM1>"),
 				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(1)},
 				checkDone{canAcceptMore: false},
 			},

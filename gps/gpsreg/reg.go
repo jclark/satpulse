@@ -47,7 +47,7 @@ const (
 	TagRTCM               = rtcm.Tag
 	TagSPARTN             = spartn.Tag
 	TagSBF                = septentrio.Tag
-	TagSepReply           = septentrio.TagSepReply
+	TagSeptentrioReply    = septentrio.TagReply
 	TagCASICBin           = casic.Tag
 	TagAllystarBin        = as.Tag
 	TagSDBP               = sdbp.Tag

@@ -134,7 +134,7 @@ func NewCorrelator() *Correlator {
 			gpsreg.TagSDBP:         sdbpAnalyzer{},
 			gpsreg.TagNMEA:         nmeaAnalyzer{},
 			gpsreg.TagUnicoreAscii: uncaAnalyzer{},
-			septentrio.TagSepReply: sepAnalyzer{},
+			septentrio.TagReply:    septAnalyzer{},
 		},
 	}
 }

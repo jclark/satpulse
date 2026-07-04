@@ -5,8 +5,8 @@ import (
 	"github.com/jclark/satpulse/gps/lib/ascii"
 )
 
-// TagSepReply is the identifier for Septentrio ASCII command-reply packets.
-const TagSepReply gpsprot.Tag = "SEPR"
+// TagReply is the identifier for Septentrio ASCII command-reply packets.
+const TagReply gpsprot.Tag = "SEPTR"
 
 // ReplyPacketFormat is the Septentrio ASCII command-reply packet format. The
 // receiver answers each set/get/exe/lst command on its ASCII command line
@@ -61,7 +61,7 @@ const (
 const rMaxLength = 4096
 
 func (f replyPacketFormat) Tag() gpsprot.Tag {
-	return TagSepReply
+	return TagReply
 }
 
 func (f replyPacketFormat) IsBinary() bool {

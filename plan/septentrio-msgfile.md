@@ -28,7 +28,7 @@ What is missing, and what this plan designs, is:
 1. How the receiver's ASCII replies get from the wire into satpulse's
    packet framing (no new binary/checksummed format is needed).
 2. A new `responsePattern = "septentrio"` analyzer
-   (`gps/msgfile/sep.go`) implementing real ack/nak correlation for
+   (`gps/msgfile/sept.go`) implementing real ack/nak correlation for
    these replies, wired into the existing `ResponsePattern` enum,
    `LineMsg.analyzeRequest`, and the correlator's analyzer map.
 3. The remaining command-coverage gaps in the two message files, and
@@ -112,7 +112,7 @@ receivers". Every tag in the two message files issues `set`/`get`/`exe`
 (plus `login`), so the byte run from `$R` to the prompt always arrives
 contiguously, with no SBF or NMEA interleaved: it is one well-defined
 packet, and the prompt inside it is the "command done" signal. So there
-is a single format and a single tag (`TagSepReply`), framing the echo
+is a single format and a single tag (`TagReply`), framing the echo
 line, every state line, and the prompt together -- not the earlier
 sketch of a `$R` echo-line format plus a separate state-line/prompt
 format.
@@ -228,7 +228,7 @@ shape, not `$R;` -- frames in full. Revisit if a `lst` tag is added.
 
 ## The `"septentrio"` responsePattern analyzer
 
-New file `gps/msgfile/sep.go`, mirroring the shape of `unc.go` (the
+New file `gps/msgfile/sept.go`, mirroring the shape of `unc.go` (the
 Unicore analyzer): a package-level `analyzeUnicoreAck`-style response
 classifier plus a `LineMsg.analyzeRequestSeptentrio` method.
 
@@ -238,7 +238,7 @@ classifier plus a `LineMsg.analyzeRequestSeptentrio` method.
 func analyzeSeptentrioResponse(pkt string) responseAnalysis
 ```
 
-operates on the whole reply packet -- the recognized `TagSepReply`
+operates on the whole reply packet -- the recognized `TagReply`
 packet handed straight to `CorrelatePacket`, not the `flushLine` path
 (which only re-slices unrecognized `Format == nil` bytes) -- and
 classifies on the `$R` type char at byte 2:
@@ -249,7 +249,7 @@ classifies on the `$R` type char at byte 2:
   and the terminating `\r\n<prompt>`, kept intact rather than trying to
   strip `<name>` (see below).
 
-Every `TagSepReply` packet begins with `$R` plus one of those four
+Every `TagReply` packet begins with `$R` plus one of those four
 chars, so byte 2 alone classifies it; no headerless state line arrives
 under this tag (the state lines ride inside the ack packet).
 `factoryReset`'s `$R: factoryReset: Resetting receiver to factory
@@ -270,10 +270,10 @@ Instead, every Septentrio line message uses a single fixed
 response side. Concretely:
 
 - `LineMsg.analyzeRequestSeptentrio()` returns `ackTag:
-  septentrio.TagSepReply, ackCorrelate: "cmd", expectAck:
+  septentrio.TagReply, ackCorrelate: "cmd", expectAck:
   ExpectAckOrNak, expectData: expectDataWithAck` -- the whole reply is
   framed as one packet by the `$R` reply format, so it arrives under
-  `TagSepReply`, not `EmptyTag`.
+  `TagReply`, not `EmptyTag`.
 - `analyzeSeptentrioResponse` sets `ackCorrelate: "cmd"` on every ack
   and nak it recognizes, regardless of what text follows the `$R:`/
   `$R!`/`$R;`/`$R?` prefix.
@@ -344,19 +344,19 @@ friends simply end their one packet in `STOP>` rather than `CD>`.
    }
    ```
 
-3. The `$R` reply `PacketFormat` and its `TagSepReply` live in
+3. The `$R` reply `PacketFormat` and its `TagReply` live in
    `gps/internal/septentrio` (where vendor `PacketFormat`s live) and
    are registered in `gps/gpsreg/reg.go`: a `Tag` re-export plus entries
    in `allVendorPacketFormats` and
    `allVendorPacketFormatsMap[VendorSeptentrio]`, ordered ahead of NMEA
    (see "Packet framing").
 4. `NewCorrelator()` (`gps/msgfile/correlate.go`): add
-   `septentrio.TagSepReply: sepAnalyzer{}` to the `analyzers` map (a
+   `septentrio.TagReply: septAnalyzer{}` to the `analyzers` map (a
    small struct type, paralleling `uncaAnalyzer{}`, whose
    `analyzeResponse` calls `analyzeSeptentrioResponse`).
 5. `formatText`/`formatPacket` (`internal/gpscmd/response.go`) assume a
    single-line packet: `formatText` strips one trailing CR/LF and
-   hex-dumps if any remaining byte is non-printable. A `TagSepReply`
+   hex-dumps if any remaining byte is non-printable. A `TagReply`
    packet spans several CRLF-separated lines, so `formatText` must pass
    internal `CR LF` through -- displaying the reply as its lines --
    rather than falling back to the hex path.
@@ -519,19 +519,19 @@ is ever supported.
 ## Phasing (within this plan)
 
 1. **The `$R` reply `PacketFormat`** in `gps/internal/septentrio` (+
-   `TagSepReply`), framing the whole reply through the prompt,
+   `TagReply`), framing the whole reply through the prompt,
    registered in `gps/gpsreg/reg.go` ordered ahead of NMEA. Testable
    offline against hand-built `$R:`/`$R;`/`$R!`/`$R?` reply-plus-prompt
    byte sequences (including the not-a-packet cases: `$`, control byte,
    non-token 4-char group, over-length; and the `STOP>` and `---->`
    terminators).
 2. `gps/msgfile/msgfile.go` -- add `ResponsePatternSeptentrio`.
-3. `gps/msgfile/sep.go` -- `analyzeSeptentrioResponse`,
+3. `gps/msgfile/sept.go` -- `analyzeSeptentrioResponse`,
    `LineMsg.analyzeRequestSeptentrio` (`expectDataWithAck`), and the
-   `sepAnalyzer` type.
+   `septAnalyzer` type.
 4. `gps/msgfile/line.go` -- dispatch branch in `analyzeRequest`.
-5. `gps/msgfile/correlate.go` -- register `sepAnalyzer{}` under
-   `septentrio.TagSepReply` in `NewCorrelator()`.
+5. `gps/msgfile/correlate.go` -- register `septAnalyzer{}` under
+   `septentrio.TagReply` in `NewCorrelator()`.
 6. `internal/gpscmd/response.go` -- let `formatText` display a
    multi-line reply packet as its lines instead of hex-dumping on the
    internal CR/LF.
@@ -549,7 +549,7 @@ This phase adds the `$R` reply `PacketFormat` in
 
 - Format-level tests in `gps/internal/septentrio` (offline, no
   hardware): drive hand-built reply byte sequences through the scanner
-  and assert one `TagSepReply` packet per reply, from `$R` through the
+  and assert one `TagReply` packet per reply, from `$R` through the
   prompt:
   - a plain `$R: <cmd>\r\n<state>\r\nCOM1>` reply frames as one packet.
   - a reply whose state line begins with a 4-char uppercase run --
@@ -560,7 +560,7 @@ This phase adds the `$R` reply `PacketFormat` in
   - not a packet (nothing framed): a mid-reply `$`, a control or
     high-bit byte, an unpaired `CR`/`LF`, a non-token 4-char group
     before `>`, and an over-length run.
-- Unit tests in `gps/msgfile/sep_test.go` (same package, following the
+- Unit tests in `gps/msgfile/sept_test.go` (same package, following the
   `go-unit-test` skill and the existing `unc_test.go`/
   `TestCorrelatorUnicore` shape for a `TestCorrelatorSeptentrio`),
   feeding whole reply packets to the analyzer/correlator:
