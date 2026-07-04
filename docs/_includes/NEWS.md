@@ -18,7 +18,8 @@ _Not yet released_
 
 ### Septentrio protocol-specific support
 
-- SatPulse decodes the Septentrio Binary Format (SBF) from Septentrio receivers (such as the mosaic-G5) into the device-independent GPS model. Time, leap-second, position, velocity, per-epoch solution quality, satellite, survey, and correction-report information is extracted and exposed in the JSONL event log, the web dashboard, and the NTP/PPS timing path. (#340)
+- SatPulse now supports Septentrio receivers (such as the mosaic-G5): `satpulsed` recognizes them and scans and decodes their Septentrio Binary Format (SBF) binary output stream. (#340)
+- Decoded SBF blocks are translated into the device-independent GPS model: time, leap-second, position, velocity, per-epoch solution quality, satellite, survey, and correction-report information is extracted and exposed in the JSONL event log, the web dashboard, and the NTP/PPS timing path. (#340)
 
 ### u-blox protocol-specific support
 
