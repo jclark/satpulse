@@ -31,11 +31,18 @@ responsePattern = "septentrio"
 # If a connection has stopped accepting user commands, the reference guide
 # says to send ten "S" characters followed by Enter. Use this as the first tag
 # in a sequence, e.g. "-t cmd-escape,get-version".
+#
+# responsePattern = "none" overrides the file default: the receiver answers this
+# escape with a bare prompt, which is deliberately not a framed "$R" packet, so
+# cmd-escape must not expect a reply. Left on the default "septentrio" pattern it
+# reports a false "no response received" and, sharing the single-flight ack key,
+# breaks correlation of the command that follows it.
 # Verified on mosaic-G5: used as the prefix in every test run; subsequent
 # commands were accepted and ACKed (produces no $R reply of its own).
 [[line]]
 tag = "cmd-escape"
 text = "SSSSSSSSSS"
+responsePattern = "none"
 description = "Force the current Septentrio connection to accept user commands"
 
 # Version / capability queries
