@@ -61,10 +61,10 @@ const (
 	DatumUserDefined250    Datum  = 250
 	DatumUserDefined251    Datum  = 251
 	DatumDNU               Datum  = 255
-	PVTAccuracyDNU         uint16 = 65535
-	PVTReferenceIDMulti    uint16 = 65534
-	PVTReferenceIDDNU      uint16 = 65535
-	PVTMeanCorrAgeDNU      uint16 = 65535
+	PVTAccuracyDNU         uint16 = 0xFFFF
+	PVTReferenceIDMulti    uint16 = 0xFFFE
+	PVTReferenceIDDNU      uint16 = 0xFFFF
+	PVTMeanCorrAgeDNU      uint16 = 0xFFFF
 	PVTCoordinateDNU              = -2e10
 	PVTClockDNU                   = -2e10
 	PVTVelocityDNU                = -2e10

@@ -7,7 +7,7 @@ type SatelliteInfo uint8
 type SlotStatus uint16
 
 const (
-	SatVisibilityAzimuthDNU   = 65535
+	SatVisibilityAzimuthDNU   = 0xFFFF
 	SatVisibilityElevationDNU = -32768
 	SatVisibilityRiseSetDNU   = 255
 	SatelliteInfoAlmanac      = 1

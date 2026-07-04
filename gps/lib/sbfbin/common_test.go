@@ -89,6 +89,36 @@ func testBlock(t *testing.T, b *Block) *Block {
 	return got
 }
 
+// TestMeasExtraManyChannels checks that a MeasExtra with 256 channel
+// sub-blocks round-trips. MeasExtra.N is a u1 that wraps to 0 at 256, so the
+// channel count must come from Channels on write and from the payload length
+// on read, never from N.
+func TestMeasExtraManyChannels(t *testing.T) {
+	ts := TimeStamp{TOW: 0x11223344, WNc: 0x5566}
+	chans := make([]MeasExtraChannelSub, 256)
+	for i := range chans {
+		chans[i].measExtraBase = measExtraBase{RxChannel: uint8(i), Type: 3, LockTime: uint16(i)}
+	}
+	pkt, err := Serialize(&Block{Rev: 3, TimeStamp: ts, Params: &MeasExtra{
+		measExtraHead: measExtraHead{DopplerVarFactor: 1.5},
+		Channels:      chans,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseMsg(string(pkt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotChans := got.Params.(*MeasExtra).Channels
+	if len(gotChans) != 256 {
+		t.Fatalf("round trip produced %d channels, want 256 (N wraps to 0 at 256)", len(gotChans))
+	}
+	if !reflect.DeepEqual(gotChans, chans) {
+		t.Fatal("channel data changed across round trip")
+	}
+}
+
 func TestRoundTripM1Blocks(t *testing.T) {
 	ts := TimeStamp{TOW: 0x11223344, WNc: 0x5566}
 	testBlock(t, &Block{Rev: 0, TimeStamp: ts, Params: &EndOfMeas{}})
