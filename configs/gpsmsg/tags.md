@@ -136,7 +136,7 @@ set the message rate to 10.
 |-----|-------------|
 | `hot-start` | Keep ephemeris data (fastest restart) |
 | `warm-start` | Clear ephemeris, keep almanac |
-| `cold-start` | Clear all satellite data |
+| `cold-start` | Clear all satellite data and last known position/time |
 
 ## Configuration management
 
@@ -144,7 +144,7 @@ set the message rate to 10.
 |-----|-------------|
 | `save` | Save configuration to NVM |
 | `reload` | Reload configuration from NVM |
-| `reset` | Reload from NVM AND clear satellite data |
+| `reset` | Reload from NVM AND clear satellite data and last known position/time |
 | `factory-reset` | Restore factory defaults and reboot |
 
 ## Survey-in (base station)
