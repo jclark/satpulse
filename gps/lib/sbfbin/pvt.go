@@ -45,7 +45,7 @@ const (
 	TimeSystemBeiDou
 	TimeSystemQZSS
 	TimeSystemFugroAtomiChron TimeSystem = 100
-	TimeSystemDNU             TimeSystem = 255
+	TimeSystemDNU             TimeSystem = 0xFF
 )
 
 const (
@@ -60,7 +60,7 @@ const (
 	DatumJGD2011           Datum  = 36
 	DatumUserDefined250    Datum  = 250
 	DatumUserDefined251    Datum  = 251
-	DatumDNU               Datum  = 255
+	DatumDNU               Datum  = 0xFF
 	PVTAccuracyDNU         uint16 = 0xFFFF
 	PVTReferenceIDMulti    uint16 = 0xFFFE
 	PVTReferenceIDDNU      uint16 = 0xFFFF

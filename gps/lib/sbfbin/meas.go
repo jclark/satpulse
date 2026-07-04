@@ -13,11 +13,11 @@ const (
 	MeasType1CodeInvalidLSB    = 0
 	MeasType1DopplerDNU        = -0x80000000
 	MeasType1CarrierMSBDNU     = -128
-	MeasType1CN0DNU            = 255
+	MeasType1CN0DNU            = 0xFF
 	MeasType1LockTimeDNU       = 0xFFFF
 	MeasType1LockTimeClipped   = 0xFFFE
-	MeasType2LockTimeDNU       = 255
-	MeasType2LockTimeClipped   = 254
+	MeasType2LockTimeDNU       = 0xFF
+	MeasType2LockTimeClipped   = 0xFE
 	MeasType2CarrierMSBDNU     = -128
 	MeasExtraCodeVarDNU        = 0xFFFF
 	MeasExtraCodeVarClipped    = 0xFFFE
