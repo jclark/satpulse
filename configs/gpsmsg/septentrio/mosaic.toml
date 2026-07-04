@@ -406,17 +406,21 @@ text = "exeResetReceiver, Soft, none"
 description = "Hot start - firmware restart, keeps ephemeris and current config"
 delay = 3
 
-# warm-start: TODO -- exeResetReceiver's EraseMemory has no granular
-# "ephemeris only" option; SatData erases ephemeris, almanac, ionosphere
-# parameters and UTC data together (there is no way to clear ephemeris while
-# keeping almanac, as this tag implies). Not implemented.
+# warm-start: TODO -- this tag would keep the ephemeris but clear everything
+# else (almanac, ionosphere, UTC, and the last position/time). exeResetReceiver
+# cannot express it: SatData erases ephemeris and almanac together, so there is
+# no way to clear the almanac while preserving the ephemeris. Not implemented.
 
-# NOT hardware-tested on mosaic-G5: a Hard reset reboots the receiver and
-# re-enumerates USB, which would break /dev/ttyACM1 mid-run. Verify manually.
+# cold-start is a restart, not a reset: Soft keeps the running configuration
+# (unlike reset's Hard, which reloads the boot config from NVM), while
+# PVTData+SatData drops the last position/time and all satellite orbital data
+# so the receiver re-acquires from cold.
+# NOT hardware-tested on mosaic-G5: a Soft reset restarts the firmware (and may
+# re-enumerate USB), which could break /dev/ttyACM1 mid-run. Verify manually.
 [[line]]
 tag = "cold-start"
-text = "exeResetReceiver, Hard, SatData"
-description = "Cold start - hardware reset, clears all satellite navigation data"
+text = "exeResetReceiver, Soft, PVTData+SatData"
+description = "Cold start - firmware restart, keeps config; clears satellite data and last position/time"
 delay = 5
 
 # Configuration management
@@ -441,16 +445,18 @@ tag = "reload"
 text = "exeCopyConfigFile, Boot, Current"
 description = "Reload the boot configuration into the current configuration (no restart)"
 
-# reset reuses the same command as cold-start: a Hard reset reboots the
-# receiver (booting from the saved Boot config file) and clears satellite
-# data, so "reset" and "cold start" are the same operation on this receiver
-# family. Unlike the reload tag above, this is a reboot.
+# reset corresponds to "satpulsetool gps --reset": reload the configuration
+# from non-volatile memory and discard the last known position, current time,
+# and satellite orbital data (ephemeris and almanac). On this receiver a Hard
+# reset reboots from the saved Boot config file (the config reload), PVTData
+# clears the stored last position and time, and SatData clears the ephemeris
+# and almanac. Unlike the reload tag above, this reboots the receiver.
 # NOT hardware-tested on mosaic-G5: a Hard reset reboots the receiver and
 # re-enumerates USB, which would break /dev/ttyACM1 mid-run. Verify manually.
 [[line]]
 tag = "reset"
-text = "exeResetReceiver, Hard, SatData"
-description = "Reset - hardware reset that clears all satellite navigation data (cold start)"
+text = "exeResetReceiver, Hard, PVTData+SatData"
+description = "Reset - reload configuration from NVM and discard last position/time and satellite orbital data"
 delay = 5
 
 # factory-reset requires an authenticated admin session (ref sec 1.3/3.2.1
