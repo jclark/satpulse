@@ -19,6 +19,7 @@ _Not yet released_
 ### Septentrio protocol-specific support
 
 - SatPulse now supports Septentrio receivers (such as the mosaic-G5): `satpulsed` recognizes them and scans and decodes their Septentrio Binary Format (SBF) binary output stream. (#340)
+- `satpulsetool gps` can configure Septentrio receivers from a message file: it frames the receiver's ASCII command-line replies and reports whether each command succeeded or was rejected. Message files for the mosaic-G5 (and the shared mosaic entries) are included. (#340)
 
 ### u-blox protocol-specific support
 
