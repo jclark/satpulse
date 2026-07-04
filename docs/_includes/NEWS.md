@@ -16,6 +16,10 @@ _Not yet released_
 - Prometheus metrics now expose correction-report data. (#237)
 - SatPulse now supports the SPARTN correction protocol: `satpulsed` scans and decodes SPARTN packets, can pull SPARTN corrections from an Ntrip caster such as u-blox PointPerfect and feed them to the receiver, emits SPARTN correction reports in the JSONL event log, and shows them on the web dashboard alongside RTCM. (#324)
 
+### Septentrio protocol-specific support
+
+- SatPulse now supports Septentrio receivers (such as the mosaic-G5): `satpulsed` recognizes them and scans and decodes their Septentrio Binary Format (SBF) binary output stream. (#340)
+
 ### u-blox protocol-specific support
 
 - The existing `--save` option for `satpulsetool gps`, previously used with high-level configuration, now also works with message files. New u-blox-specific message types use this so the same tag can make either a RAM-only change or a persistent change. (#272)
