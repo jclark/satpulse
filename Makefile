@@ -6,7 +6,7 @@ VERSION:=$(shell cat VERSION)
 VERSION_TAG:=v$(VERSION)
 BUILD_DATE:=$(shell date -u --rfc-3339=seconds)
 # Refresh the index so unchanged-but-touched files don't show as dirty.
-DIRTY:=$(shell git update-index -q --refresh; git diff-index --quiet HEAD || echo .dirty)
+DIRTY:=$(shell git update-index -q --refresh >/dev/null 2>&1; git diff-index --quiet HEAD 2>/dev/null || echo .dirty)
 GIT_VERSION:=$(shell env TZ=UTC git log -1 --format="%cd.%h" --date=format-local:%Y%m%d)$(DIRTY)
 DEB_VERSION=1
 RPM_RELEASE=1

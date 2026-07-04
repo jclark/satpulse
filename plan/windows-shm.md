@@ -1,7 +1,7 @@
 # NTP SHM refclock support on Windows (#339)
 
-Depends on `plan/windows-port.md`: the tree must cross-compile and run on
-Windows first. Related to `plan/windows-svc.md` (#338): the SHM writer is
+Builds on the completed Windows compile port (the tree cross-compiles and
+runs on Windows). Related to `plan/windows-svc.md` (#338): the SHM writer is
 part of the macOS-style feature set the service plan assumes works on
 Windows, but it is independent of the service integration itself and can
 land separately.

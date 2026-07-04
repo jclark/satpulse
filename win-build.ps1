@@ -1,4 +1,4 @@
-# Build satpulsetool for Windows. Analogous to bsd-build.sh.
+# Build satpulsetool and satpulsed for Windows. Analogous to bsd-build.sh.
 
 $ErrorActionPreference = 'Stop'
 
@@ -26,11 +26,20 @@ $git_date = (git log -1 '--format=%cd' '--date=format-local:%Y%m%d').Trim()
 $git_hash = (git log -1 '--format=%h').Trim()
 
 $cmd_version = "$version-pre.$git_date.$git_hash"
+# Refresh the index so unchanged-but-touched files don't show as dirty.
+git update-index -q --refresh *> $null
 git diff-index --quiet HEAD 2>$null
 if ($LASTEXITCODE -ne 0) {
     $cmd_version = "$cmd_version.dirty"
 } else {
-    $exact_tag = (git describe --tags --exact-match 2>$null)
+    # git describe writes to stderr when HEAD has no exact tag. Under
+    # ErrorActionPreference=Stop, Windows PowerShell 5.1 turns that stderr into
+    # a terminating error, so catch it and fall through to the -pre version.
+    try {
+        $exact_tag = (git describe --tags --exact-match 2>$null)
+    } catch {
+        $exact_tag = ''
+    }
     if ($LASTEXITCODE -eq 0 -and $exact_tag.Trim() -eq "v$version") {
         $cmd_version = $version
     }
