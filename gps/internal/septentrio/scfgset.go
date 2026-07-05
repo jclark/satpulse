@@ -34,6 +34,7 @@ func (c *Configurator) generateSetReqs() {
 	c.generateScalarReqs()
 	c.generateModeReqs()
 	c.generatePPPReq()
+	c.generateOutputReqs()
 }
 
 // generateScalarReqs generates the set requests for the scalar properties.

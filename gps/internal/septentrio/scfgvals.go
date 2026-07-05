@@ -23,6 +23,8 @@ type nativeProps struct {
 	osnma        *osnmaUsage
 	rtcmBaseID   *int
 	cableDelayNs *float64
+	sbfStream    *streamState // owned SBF stream (Stream1)
+	nmeaStream   *streamState // owned NMEA stream (Stream1)
 }
 
 // ppsParams is the PPSParameters state line:
@@ -340,6 +342,12 @@ func (c *Configurator) generateQueryReqs() {
 	}
 	if t.UsesAny(gpsprot.PropIDAntennaCableDelay) {
 		c.addReq("getCalibCommonDelay", np.parseCalibCommonDelay)
+	}
+	if c.touchesSBFOutput() {
+		c.addReq("getSBFOutput, "+ownStream, np.parseSBFOutput)
+	}
+	if t.Opts.NMEAMsg.IsSet() {
+		c.addReq("getNMEAOutput, "+ownStream, np.parseNMEAOutput)
 	}
 }
 
