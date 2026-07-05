@@ -25,7 +25,7 @@ func TestSBFOutputList(t *testing.T) {
 			opts: func(o *gpsprot.ConfigOptions) {
 				o.PVTMsg = gpsprot.PVTMsgLeapSecond
 			},
-			expect: []string{"ReceiverSetup", "BDSUtc", "ChannelStatus", "EndOfPVT", "GALUtc", "GPSUtc", "MeasEpoch", "PVTGeodetic", "xPPSOffset"},
+			expect: []string{"BDSUtc", "ChannelStatus", "EndOfPVT", "GALUtc", "GPSUtc", "MeasEpoch", "PVTGeodetic", "xPPSOffset"},
 		},
 		{
 			name:    "pvt with Off replaces the pvt class only",
@@ -33,15 +33,15 @@ func TestSBFOutputList(t *testing.T) {
 			opts: func(o *gpsprot.ConfigOptions) {
 				o.PVTMsg = gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgEpoch | gpsprot.PVTMsgOff
 			},
-			expect: []string{"ReceiverSetup", "ChannelStatus", "EndOfPVT", "MeasEpoch", "xPPSOffset"},
+			expect: []string{"ChannelStatus", "EndOfPVT", "MeasEpoch", "xPPSOffset"},
 		},
 		{
-			name:    "sats off keeps MeasEpoch for the untouched raw class",
+			name:    "sats off drops MeasEpoch: an explicit disable wins",
 			current: asFoundStream,
 			opts: func(o *gpsprot.ConfigOptions) {
 				o.SatsMsg.Set(gpsprot.SatsMsgNone)
 			},
-			expect: []string{"ReceiverSetup", "EndOfPVT", "MeasEpoch", "PVTGeodetic", "xPPSOffset"},
+			expect: []string{"EndOfPVT", "PVTGeodetic", "xPPSOffset"},
 		},
 		{
 			name:    "raw off with sats signal keeps MeasEpoch for sats",
@@ -50,7 +50,7 @@ func TestSBFOutputList(t *testing.T) {
 				o.RawMsg.Set(gpsprot.RawMsgNone)
 				o.SatsMsg.Set(gpsprot.SatsMsgSat | gpsprot.SatsMsgSignal)
 			},
-			expect: []string{"ReceiverSetup", "ChannelStatus", "EndOfPVT", "MeasEpoch", "PVTGeodetic", "xPPSOffset"},
+			expect: []string{"ChannelStatus", "EndOfPVT", "MeasEpoch", "PVTGeodetic", "xPPSOffset"},
 		},
 		{
 			name:    "raw off with sats sat only drops MeasEpoch",
@@ -59,7 +59,7 @@ func TestSBFOutputList(t *testing.T) {
 				o.RawMsg.Set(gpsprot.RawMsgNone)
 				o.SatsMsg.Set(gpsprot.SatsMsgSat)
 			},
-			expect: []string{"ReceiverSetup", "ChannelStatus", "EndOfPVT", "PVTGeodetic", "xPPSOffset"},
+			expect: []string{"ChannelStatus", "EndOfPVT", "PVTGeodetic", "xPPSOffset"},
 		},
 		{
 			name:    "unclassified user block is preserved",
@@ -67,7 +67,7 @@ func TestSBFOutputList(t *testing.T) {
 			opts: func(o *gpsprot.ConfigOptions) {
 				o.PVTMsg = gpsprot.PVTMsgEpoch | gpsprot.PVTMsgOff
 			},
-			expect: []string{"ReceiverSetup", "AttEuler", "EndOfPVT"},
+			expect: []string{"AttEuler", "EndOfPVT"},
 		},
 		{
 			name:    "survey and ecef pick PVTCartesian",
@@ -75,7 +75,7 @@ func TestSBFOutputList(t *testing.T) {
 			opts: func(o *gpsprot.ConfigOptions) {
 				o.PVTMsg = gpsprot.PVTMsgPos | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgECEF | gpsprot.PVTMsgOff
 			},
-			expect: []string{"ReceiverSetup", "PVTCartesian"},
+			expect: []string{"PVTCartesian"},
 		},
 	}
 	for _, tc := range tests {
@@ -96,12 +96,12 @@ func TestSBFOutputList(t *testing.T) {
 // streams are queried, rewritten as one self-contained command each, and the
 // acked state lines are the readback.
 func TestConfigureOutputs(t *testing.T) {
-	sbfCmd := "setSBFOutput, Stream1, USB1, ReceiverSetup+ChannelStatus+EndOfPVT+MeasEpoch+PVTGeodetic+xPPSOffset, sec1"
+	sbfCmd := "setSBFOutput, Stream1, USB1, ChannelStatus+EndOfPVT+MeasEpoch+PVTGeodetic+xPPSOffset, sec1"
 	nmeaCmd := "setNMEAOutput, Stream1, USB1, RMC+GGA, sec1"
 	replies := map[string]string{
 		"getSBFOutput, Stream1":  "SBFOutput, Stream1, USB1, MeasEpoch+PVTGeodetic+EndOfPVT+xPPSOffset+ChannelStatus, sec1",
 		"getNMEAOutput, Stream1": "NMEAOutput, Stream1, USB1, none, sec1",
-		sbfCmd:                   "SBFOutput, Stream1, USB1, MeasEpoch+PVTGeodetic+EndOfPVT+xPPSOffset+ChannelStatus+ReceiverSetup, sec1",
+		sbfCmd:                   "SBFOutput, Stream1, USB1, MeasEpoch+PVTGeodetic+EndOfPVT+xPPSOffset+ChannelStatus, sec1",
 		nmeaCmd:                  "NMEAOutput, Stream1, USB1, RMC+GGA, sec1",
 	}
 	target := &gpsprot.ConfigTarget{}
@@ -117,7 +117,7 @@ func TestConfigureOutputs(t *testing.T) {
 			t.Errorf("command %q not sent; sent: %v", cmd, sent)
 		}
 	}
-	if got := cfg.np.sbfStream; got == nil || !slices.Contains(got.messages, "ReceiverSetup") {
+	if got := cfg.np.sbfStream; got == nil || !slices.Contains(got.messages, "ChannelStatus") {
 		t.Errorf("acked SBF stream state not recorded: %+v", got)
 	}
 }

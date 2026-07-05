@@ -121,10 +121,11 @@ func (c *Configurator) touchesSBFOutput() bool {
 }
 
 // sbfOutputList computes the owned stream's new block list: touched classes
-// contribute their desired blocks, untouched classes keep their current
-// blocks, and blocks outside every class (user additions) are preserved.
-// ReceiverSetup is always included: it feeds ReceiverInfo on its own
-// 60-second schedule.
+// contribute their desired blocks, and blocks outside every touched class
+// (user additions, untouched classes) are preserved. A touched class's
+// disable wins even when an untouched class's universe contains the block:
+// presence does not record which option enabled a block, so an explicit
+// disable is the only honest signal.
 func (c *Configurator) sbfOutputList() []string {
 	o := &c.target.Opts
 	var cur []string
@@ -148,11 +149,7 @@ func (c *Configurator) sbfOutputList() []string {
 	keep := func(block string) bool {
 		inTouched, wanted := false, false
 		for _, cl := range classes {
-			if !slices.Contains(cl.class, block) {
-				continue
-			}
-			if !cl.touched {
-				wanted = true // untouched class keeps its current blocks
+			if !cl.touched || !slices.Contains(cl.class, block) {
 				continue
 			}
 			inTouched = true
@@ -162,9 +159,9 @@ func (c *Configurator) sbfOutputList() []string {
 		}
 		return !inTouched || wanted
 	}
-	list := []string{"ReceiverSetup"}
+	var list []string
 	for _, b := range cur {
-		if b != "ReceiverSetup" && keep(b) {
+		if keep(b) {
 			list = append(list, b)
 		}
 	}
@@ -178,7 +175,7 @@ func (c *Configurator) sbfOutputList() []string {
 			}
 		}
 	}
-	slices.Sort(list[1:])
+	slices.Sort(list)
 	return list
 }
 
