@@ -10,129 +10,310 @@ hardware is the mosaic-G5; X5 differences are noted inline.
 
 **Build this with the `implement-configprotocol` skill.** That skill
 owns the *process* and the parts common to every backend: the
-`gpshwtest/SEMANTICS.md` contract (truthful achieved values,
-readback-is-the-ack not a re-poll, refusal leaves config unchanged,
-nonexistence shown not announced, best-effort realization), its
-rulings, and the `ConfigProtocol`/`Configurator`/`ConfigDirector`
-machinery. This plan stays deliberately light: it records only the
-Septentrio-specific inputs that process needs, and defers the "how" to
-the skill. It will be fleshed out when hardware arrives; until then it
-is derived from the mosaic-G5 v1.1.0 and mosaic-X5 v4.15.1 guides only,
-and every fact here is subject to the skill's re-verify-against-hardware
-step.
+`gpshwtest/SEMANTICS.md` contract, its rulings, and the
+`ConfigProtocol`/`Configurator`/`ConfigDirector` machinery. This plan
+records the Septentrio-specific inputs and the staged build order.
+
+Stage 0 ran against a real mosaic-G5 (v1.1.0, 2026-07-05); every
+protocol fact below marked "verified" was observed on that unit.
+The remaining stage-0 item is the disruptive save/reset session
+(stage 7 prerequisite).
 
 ## Prerequisites
 
 Core landed and hardware-verified (`plan/septentrio-core.md`):
 `gps/lib/sbfbin` decode, the `gps/internal/septentrio` conversion layer,
 and the Tier 2 message-file layer with the `"septentrio"` response
-analyzer (`plan/septentrio-msgfile.md`). The command knowledge
+analyzer (`plan/archive/septentrio-msgfile.md`). The command knowledge
 (mnemonics, argument shapes, the four `$R*` reply shapes) already exists
 there and is reused, not re-derived.
 
-**Reply framing is designed in `plan/septentrio-msgfile.md`, not here.**
-The ASCII reply channel needs real `PacketFormat`s (the `EmptyTag`
-fallback is unusable -- `gps/scan` gives no packet boundaries for
-unrecognized bytes): a settled `$R` reply format (Format 1) for the
-`$R:`/`$R;`/`$R!`/`$R?` acks, and an unresolved Format 2 for the
-headerless state lines and the unterminated `COMx>` prompt (needs a
-captured session). This Tier 1 plan reuses that framing; how the framed
-replies reach the config machinery as typed values is an implementation
-detail for the `implement-configprotocol` skill against real hardware,
-not specified in duplicate here.
+Reply framing is designed in `plan/archive/septentrio-msgfile.md` and
+implemented (`gps/internal/septentrio/rpacket.go`): a whole reply
+(echo + state lines + prompt) frames as ONE `TagReply` packet; `lst*`
+replies frame unit by unit (`$-- BLOCK n / m` sections ending at the
+prompt). What is still missing is delivery: `TagReply` has a
+`PacketFormat` but no `PacketProcessor`, so framed replies never reach
+a `NativeMsgHandler` (stage 1).
 
-## Septentrio-specific inputs
+## Protocol answers (hardware, 2026-07-05)
+
+- **Correlation**: the CLI has no queueing; one command, one framed
+  reply, completed by the prompt (`USB1>` on our connection). The
+  `Configurator` is single-flight: one outstanding request at a time
+  (model `ubx`'s `configRequest`/`requestOps` scaled to single-flight,
+  not `unc`'s phase enum). Correlation is by exact command-echo:
+  `$R:`/`$R;` reproduce the command verbatim; `$R?` carries real error
+  text (verified shape: `setSignalTracking: Argument 'Signal' is
+  invalid!`) that becomes `ConfigRequest.GetError()` directly.
+  Single-flight is itself the correlation key for anchor-less state
+  lines. Replies arrive in 1-3 ms on USB; no line saturation at the
+  default load.
+- **Probe**: `getReceiverCapabilities` (`grc`), no arguments. Verified
+  on a fresh USB connection with no escape prefix: repeatable,
+  byte-identical, state-neutral. One state line carrying the
+  supported-signal list (29 on the G5), the port list, the capability
+  list (`GalOSNMA` and `PPPGalileoHAS-SIS` present on this unit), and
+  the max measurement/PVT rates (50, 50). The ack is a family-wide
+  probe (CLI is byte-identical X5/G5) and the single source for all
+  capability gating. Late-probe bookkeeping: the probe's echo is
+  `getReceiverCapabilities` exactly; the configurator's own grc
+  request shares that correlation key, so pending-probe accounting is
+  needed (director-contract.md) unless the configurator reuses the
+  probe's parsed answer instead of re-asking - prefer reuse.
+- **Command escape**: a wedged connection (data-input mode) accepts
+  commands again after ten `S` characters + Enter, answered by a BARE
+  prompt (not a framed `$R` reply). The probe does NOT use it (probes
+  are state-neutral; grc works on fresh connections). `Configure()`
+  sends it once, first, as a no-reply request (succeed on send,
+  MaybeComplete-style absorption of the bare prompt), matching
+  verified message-file practice.
+- **Omitted arguments keep their current value** (verified throughout,
+  e.g. `setPPSParameters, , , , Galileo` changes only TimeScale). This
+  is the read-modify-write primitive: most sets need no prior query.
+- **`+`/`-` element ops**: `+X` adds one element (verified). `-X` is
+  NOT universal: `setSignalTracking, -GALE5` is REFUSED even though
+  `+GALE5` was accepted; removal from the tracking list requires
+  writing the explicit full list. NMEA sentence lists do support `-`
+  (verified in the msgfile work).
+- **Refusal leaves configuration unchanged** (verified:
+  out-of-range `setCalibCommonDelay, 10000.5` refused, prior value
+  intact). The receiver does not clamp; range clamping is the
+  configurator's job.
+- **grc does not bound set enums**: `setSignalTracking, +GALE5` (E5
+  AltBOC, absent from grc's supported list) is accepted and applied.
+  Do not blindly intersect requests with grc's list; intersect only
+  what the property model requires (unsupported gpsprot signals are
+  shown as absence via the ReceiverInfo signal set).
+- **exeSBFOnce never emits to the issuing connection** (verified
+  three blocks, raw capture; instant to another connection). The
+  receiver acks and stores the request but nothing arrives. So
+  `ReceiverInfo` CANNOT fetch `ReceiverSetup` (5902) that way;
+  instead: `lstInternalFile, Identification` (verified) - a 5-block
+  XML document carrying hwplatform product ("mosaic-G5 P3"), serial
+  number, firmware version ("1.1.0") and GNSS firmware version.
+  OnChange blocks also do not emit on stream enable (verified), so a
+  temporary stream is no alternative.
+- **Reads**: one `get` -> one reply; multi-value replies use one
+  state line per unit: `getElevationMask, all` -> 2 lines (Tracking,
+  PVT); no-arg `getSBFOutput` -> 14 lines (Stream1-10 + Res1-4);
+  no-arg `getNMEAOutput` -> 10 lines. `getSatelliteTracking` returns
+  ONE line with a per-satellite list (~230 entries), so constellation
+  state is derived, not read directly. `getSignalUsage` returns one
+  line with TWO lists (PVT, NavData).
+- **Defaults on this unit** (Boot config "Equal to RxDefault!"):
+  RoverMode `StandAlone+DGNSS+RTKFixed`; tracking list is a strict
+  20-of-29 subset of capability; PVTLevel=loose/MeasLevel=off OSNMA;
+  elevation masks 5/5; PPS sec1/Low2High/0.00/GPS/60/5.0 per doc
+  (this unit as-found runs MaxHoldover 1 / width 100 in RAM only).
+
+## Septentrio-specific design
 
 ### Probe and identification
 
-- `ProbePacket()` sends `getReceiverCapabilities` (`grc`), no arguments.
-  One round trip that (a) proves the receiver is present (the CLI is
-  byte-identical X5/G5, so an ack is a family-wide probe), (b) reports
-  the enabled *capabilities* (`SBAS`, `RTKRover`, `GalOSNMA`,
-  `PPPGalileoHAS-SIS`, `xPPSOutput`, ...), supported signals, ports, and
-  default intervals, and (c) is the single source for all capability
-  gating below. State-neutral; may be repeated per the skill's probing
-  ruling.
-- `ReceiverInfo()`: supported GNSS/signals from `grc`'s signal list,
-  mapping Septentrio signal names to the device-independent
-  `gpsprot.Signal`/`SignalSet` -- config's own coarse table, distinct
-  from the conversion layer's finer signal-number -> `SignalID`
-  reported-signal table (two tables, not one); `Vendor = "Septentrio"`;
-  `Hardware`/`Firmware`
-  from the SBF `ReceiverSetup` (5902) block, requested once via
-  `exeSBFOnce` and read back through `NativeMsg` (`grc` doesn't carry
-  them).
+- `ProbePacket()` sends `grc`; `ProbeOK()` parses the reply
+  (signals, ports, capabilities) and caches it.
+- `ReceiverInfo()`: supported GNSS/signals from grc's signal list via
+  the coarse signal table below; `Vendor = "Septentrio"`; `Hardware`
+  (product string) and `Firmware` (firmware version) from
+  `lstInternalFile, Identification`, requested during Configure and
+  parsed as XML (`encoding/xml` over the concatenated block payloads).
 
-### Sequential, exact-echo correlation
+### Coarse signal table (gpsprot.Signal <-> Septentrio name)
 
-The CLI has no queueing (wait for the prompt between commands), so the
-`Configurator` is single-flight: one outstanding request at a time
-(model `ubx`'s `configRequest`/`requestOps`, scaled to single-flight,
-rather than `unc`'s phase enum). Correlation is by exact command-echo --
-`$R:`/`$R;` reproduce the command verbatim; `$R?` carries real error
-text that becomes `ConfigRequest.GetError()` directly. Single-flight
-concurrency is itself the correlation key for anchor-less state lines.
-A command completes on its prompt -- the `CD>` "command done" signal
-(guide sec 3.1; framed by Format 2, see `plan/septentrio-msgfile.md`).
-Restart commands (`exeResetReceiver`) end in `STOP>` instead, after
-which the line goes quiet.
+```
+SigGPSL1CA  GPSL1CA     SigGALE1    GALE1BC     SigQZSSL1CA QZSL1CA
+SigGPSL1C   GPSL1C      SigGALE5a   GALE5a      SigQZSSL1C  QZSL1C
+SigGPSL2P   GPSL2PY     SigGALE5b   GALE5b      SigQZSSL1S  QZSL1S
+SigGPSL2C   GPSL2C      SigGALE6    GALE6BC     SigQZSSL2C  QZSL2C
+SigGPSL5    GPSL5       SigBDSB1I   BDSB1I      SigQZSSL5   QZSL5
+SigGLOL1    GLOL1CA     SigBDSB1C   BDSB1C      SigQZSSL6   QZSL6
+SigGLOL2    GLOL2CA     SigBDSB2I   BDSB2I      SigNAVICL5  NAVICL5
+SigGLOL3    GLOL3       SigBDSB2b   BDSB2b      SigSBASL1CA GEOL1
+                        SigBDSB2a   BDSB2a      SigSBASL5   GEOL5
+                        SigBDSB3I   BDSB3I
+```
+
+No Septentrio carrier (absence): SigGLOL1OC, SigGLOL2OC, SigNAVICL1,
+SigQZSSL5S. No gpsprot analogue (preserved, never touched): GALE5
+(AltBOC), GLOL2P, QZSL1CB. This is config's own coarse table, distinct
+from the conversion layer's signal-number -> `SignalID` table (two
+tables, not one).
 
 ### Property mapping
 
 | `PropID` | Septentrio command(s) | Notes |
 |---|---|---|
-| `SignalsEnabled` | `setSatelliteTracking` (`sst`) + `setSignalTracking` (`snt`) + `setSignalUsage` (`snu`) | Three commands realize one property: `sst` gates by constellation, `snt`/`snu` by concrete signal (the guide pairs them: both needed to track). Derive the constellation set from the target signals (`all` when all present); intersect with `grc`'s supported-signal list (best-effort). |
-| `TimeGNSS` | `setPPSParameters` `TimeScale` arg | Restricted to `gpsprot.GNSS`'s choices (GPS/Galileo/BeiDou/GLONASS); the protocol's `UTC`/`RxClock` have no device-independent analogue. |
-| `TimePulseWidth`/`Period`/`AlignToGNSS`/`OnlyWhenLocked`/`PolarityRising` | `setPPSParameters` (`Interval`, `PulseWidth`, `Polarity`) | Primary xPPS (PPS1) only -- see "Dual PPS". |
-| `Mode` (static/rover, fixed pos) | `setPVTMode` (`spm`) + `setStaticPosGeodetic`/`setStaticPosCartesian` | `Static==false` -> `setPVTMode, Rover, <RoverMode>, auto`. `Static==true, PosTypeNone` -> `setPVTMode, Static, , auto`. `Static==true` + LLH/ECEF -> write the static position, then `setPVTMode, Static, , GeodeticN`/`CartesianN`. |
-| `AntennaCableDelay` | `setCalibCommonDelay` (`scco`) | Pseudorange-level delay (ns, clamp -10000..10000) -- **not** `setPPSParameters`' `Delay` (which moves only the pulse). |
-| `NavMsgAuth` | `setGalOSNMAUsage` (`sou`) [+ `exeSetTime`] | See "OSNMA". |
-| `RTCMBaseID` | `setRTCMv3Formatting` `ReferenceID` | 0-4095 (clamp). |
-| `MinElevation` | `setElevationMask` (`sem`), `Engine = PVT` | Solution mask (the receiver's separate tracking mask is not exposed). |
-| `BaudRate` | `setCOMSettings` (`scs`) | `GetSpeedChangeAfter` + a repeat-confirmation of the identical command (the `unc` pattern); the change request itself is never retried. |
-| `Port` (read-only) | none | From the connection descriptor in the reply prompt. |
+| `SignalsEnabled` | `setSatelliteTracking` (`sst`) + `setSignalTracking` (`snt`) + `setSignalUsage` (`snu`) | See below. |
+| `TimeGNSS` | `setPPSParameters` `TimeScale` arg | GPS/Galileo/BeiDou/GLONASS all verified; `UTC`/`RxClock` have no device-independent analogue. |
+| `TimePulseWidth`/`Period`/`AlignToGNSS`/`OnlyWhenLocked`/`PolarityRising` | `setPPSParameters` (`Interval`, `PulseWidth`, `Polarity`, `MaxHoldover`) | PPS1 only. OnlyWhenLocked ~ MaxHoldover 1; !OnlyWhenLocked = 0 (never time out). Interval is an enum (off/msec10..sec10/...); non-representable periods are clamped to the nearest supported value and reported truthfully. |
+| `Mode` (static/rover, fixed pos) | `setPVTMode` (`spm`) + `setStaticPosGeodetic`/`setStaticPosCartesian` | `Static==false` -> `setPVTMode, Rover` (RoverMode arg OMITTED - keeps the receiver's current rover-mode list; verified default includes DGNSS). `Static==true, PosTypeNone` -> `setPVTMode, Static, , auto`. `Static==true` + LLH/ECEF -> write Geodetic1/Cartesian1, then `setPVTMode, Static, , Geodetic1`/`Cartesian1`. |
+| `AntennaCableDelay` | `setCalibCommonDelay` (`scco`) | ns; receiver REFUSES out-of-range (verified), so clamp to -10000..10000 client-side before the wire. |
+| `NavMsgAuth` | `setGalOSNMAUsage` (`sou`) | See "OSNMA". |
+| `RTCMBaseID` | `setRTCMv3Formatting` `ReferenceID` | 0-4095, clamp client-side (first reply field, verified readback). |
+| `MinElevation` | `setElevationMask` (`sem`), `Engine = PVT` | Solution mask only; the tracking mask is out-of-group, untouched (ubx precedent; readback shape verified). |
+| `BaudRate` | none on USB | Owner ruling: ubx USB model - reads back 0 ("not applicable"), sets are no-ops on USB connections. `setCOMSettings` affects only physical COM ports we cannot reach. |
+| `Port` (read-only) | none | From the connection descriptor in the reply prompt (`USB1>` verified). |
 
 `Survey` and its `ConfigSupport*` flags are unset: Septentrio has no
 parameterized/terminating/observable survey operation (`setPVTMode,
 Static, , auto` is an auto-computed reference, surfaced as
 `Mode.Static`+`PosTypeNone`, not a survey).
 
+**SignalsEnabled realization.** Three commands realize one property:
+`sst` gates by constellation, `snt` by signal (tracking), `snu` by
+signal (usage: PVT + NavData). Because `snt` has no `-` removal
+(verified), a set is read-modify-write: query `gnt`/`gnu` in the query
+phase, then write explicit full lists = (requested signals mapped
+through the table) UNION (unmapped signals currently present - GALE5,
+GLOL2P, QZSL1CB stay as found). `sst` gets the constellation list
+derived from the target signal set (`all` when every constellation has
+signals). Achieved value: the set's own readback state line names the
+achieved list (verified immediate and exact), reported through the
+table in reverse. Requested signals with no Septentrio carrier are
+absence; requested signals outside grc's supported list are still sent
+if they map (grc does not bound the enum) and the reply tells the
+truth.
+
 ### Capability-gated features
 
-- **Galileo HAS / PPP** -- no dedicated property. When `SignalsEnabled`
-  includes `SigGALE6` (Septentrio `GALE6BC`) **and** `grc` reports
+- **Galileo HAS / PPP** - no dedicated property. When `SignalsEnabled`
+  includes `SigGALE6` (GALE6BC) **and** grc reports
   `PPPGalileoHAS-SIS`, append `setPVTMode, , +PPP` after the signal
-  requests (composing into the `RoverMode` bitmask). Otherwise a no-op
-  (E6 still tracked if requested; nonexistence shown, not announced).
-  Convergence/HAS status is a *decode* concern (`NavEpochMsg.Correction`
-  = `CorrPPPHAS` once `Mode==PPP`), not configuration.
-- **OSNMA** -- `sou` has `off`/`loose`/`strict` vs `NavMsgAuth`'s
-  `None`/`OSNMA`. `None`->`off`; `OSNMA`->`loose` by default, or
-  `strict` if `ConfigOptions.TimeAssist` supplies a trusted time (send
-  `exeSetTime` first). The X5-`setNTPClient` vs G5-`exeSetTime`
-  difference collapses into "send `exeSetTime` if we have an estimate."
-  Gated on the `GalOSNMA` capability.
-- **Dual PPS** -- `gpsprot.TimePulse` models one output; map all
-  `TimePulse*` onto PPS1 (`setPPSParameters`) on both models. G5's PPS2
-  (`setPPS2Parameters`) is not exposed -- a second-pulse property is a
-  cross-backend gpsprot API change, out of scope (see Open decisions).
+  requests (verified: composes into RoverMode without disturbing the
+  rest). Otherwise a no-op (E6 still tracked if requested).
+- **OSNMA** - `sou` takes (PVTLevel off/loose/strict, MTRoot,
+  MeasLevel off/loose); factory default is PVTLevel=loose,
+  MeasLevel=off (verified readback `GalOSNMAUsage, loose, "", off`).
+  Mapping: report `OSNMA` iff PVTLevel != off OR MeasLevel != off
+  (truthful: loose PVT-level authentication is active by default on
+  this receiver); `None` -> `sou, off, , off`; `OSNMA` ->
+  `sou, loose` (PVTLevel only; MTRoot and MeasLevel left as found -
+  MTRoot is simulation-only and must stay blank in live operation).
+  Loose is the owner-ruled interim; strict (requires `exeSetTime`
+  trusted time) slots in once the osnma branch's
+  TrustedTimePacketBuilder machinery lands - keep the sou request
+  shape ready for a `strict` level but do not build a parallel
+  TimeAssist path. Gated on the `GalOSNMA` capability (present on
+  this unit).
+- **Dual PPS** - `gpsprot.TimePulse` models one output; map all
+  `TimePulse*` onto PPS1 (`setPPSParameters`) on both models. G5's
+  PPS2 (`setPPS2Parameters`) is not exposed (cross-backend gpsprot
+  API change, out of scope).
+
+### Message output control and stream ownership
+
+The configurator OWNS exactly two streams: **SBF Stream1** and **NMEA
+Stream1** (the same streams the verified message files and the
+shipped-daemon configuration use). All other streams (SBF Stream2-10 +
+Res1-4, NMEA Stream2-10) are out-of-group: never read-modified, never
+disabled (the Allystar lesson). A complete output request replaces the
+owned stream's message list, port (our own connection, from the
+prompt) and interval in one `setSBFOutput`/`setNMEAOutput` command;
+"off" sets the owned stream to `none, none, off`.
+
+- `--nmea-out`: NMEA Stream1 sentence list (GGA/GLL/GSA/GSV/RMC/ZDA
+  etc. per the message file's verified tags).
+- `--pvt-out`/`--sats-out`/`--raw-out`: SBF Stream1 block list, chosen
+  to match what the septentrio-msg branch decodes (PVTGeodetic,
+  EndOfPVT, xPPSOffset, ChannelStatus, MeasEpoch, ReceiverSetup, ...;
+  exact per-option lists fixed at stage 5 against the conversion
+  layer's registration list). FlexRate-exempt blocks (xPPSOffset,
+  ReceiverSetup, ...) ride the same list and emit OnChange (verified).
+- `--rtcm-out`/`--rtcm-base-id`: `setRTCMv3Output` message selection
+  (MSM4/MSM7/Nav expansion verified in the msgfile work) +
+  `setRTCMv3Formatting`. Actual emission additionally needs base mode
+  + reference position - observation, not enablement, is the
+  evidence.
 
 ### Save / reset
 
-- **Save** -- one granularity: `exeCopyConfigFile, Current, Boot`
-  (`eccf`); both `SaveMinimal` and `SaveAll` map to it (single-group
-  granularity is an allowed `SEMANTICS.md` point, not a limitation).
-- `ResetReload` -> `exeCopyConfigFile, Boot, Current`; `ResetCold` ->
-  `exeResetReceiver, Hard, +PVTData+SatData`; `ResetFactory` ->
-  `exeResetReceiver, Hard, all`.
+(Mappings from the guides + msgfile work; the disruptive stage-0
+session must verify each before stage 7 is implemented.)
 
-### `ConfigSupportFlags` and capability gating
+- **Save** - one granularity: `exeCopyConfigFile, Current, Boot`
+  (`eccf`); both `SaveMinimal` and `SaveAll` map to it.
+- `ResetReload` -> `exeCopyConfigFile, Boot, Current` (verified
+  in-place, no restart - but note Boot == RxDefault on the test unit,
+  so reload is factory-defaults there).
+- `ResetCold` -> `exeResetReceiver, Hard, +PVTData+SatData`;
+  `ResetFactory` -> `exeResetReceiver, Hard, all`. Both reboot:
+  reply ends in `STOP>`, USB re-enumerates (recovery via
+  /dev/serial/by-id paths). No-response-request handling per
+  director-contract.md (succeed on send after `STOP>`).
+
+### `ConfigSupportFlags`
 
 `ConfigSupportFull &^ (Survey | SurveyAcc | SurveyMsg)` (the `unc`
-pattern, so future flags are picked up automatically); everything else
-has a mapping above. Every G5-vs-X5 difference reduces to a
-capability/port/signal check against the `grc` reply -- **never** a
-`ReceiverInfo.Hardware` model-string test.
+pattern, so future flags are picked up automatically). Every G5-vs-X5
+difference reduces to a capability/port/signal check against the grc
+reply - **never** a `ReceiverInfo.Hardware` model-string test.
+
+## Stages
+
+Stage 0 (design unknowns) is DONE except the disruptive session; its
+findings are in this revision. Remaining stages, each ending with
+green `make test` and committed work:
+
+### Stage 1: reply delivery
+
+`gps/internal/septentrio/scfgproc.go`: a PacketProcessor for
+`TagReply` packets that parses the framed reply (ack kind, echo,
+state lines, prompt; `lst` block units) into a typed reply value and
+forwards it via `NativeMsg`. Registered in
+`gpsreg.CreatePacketProcessors`. Offline tests from the captured
+verbatim replies (grc, gets, `$R?` refusals, lif/lcf block units).
+
+### Stage 2: ConfigProtocol + probe + ReceiverInfo
+
+`scfgprot.go`: `septentrio.NewConfigProtocol()` - grc probe,
+ProbeOK parsing (signals/ports/capabilities), the coarse signal
+table, `lstInternalFile, Identification` XML parse for
+Hardware/Firmware. Registered in `gpsreg.CreateConfigProtocols`
+(VendorSeptentrio + the VendorUnknown probe list). Probe verified
+against the real G5.
+
+### Stage 3: Configurator core
+
+`scfg.go`: single-flight request engine (one request type with
+behavior flags; constructors funneling through one entry point),
+exact-echo correlation, prompt-is-completion, `$R?` text ->
+`GetError()`, the leading escape request, phase gating
+(escape -> queries -> sets -> output streams -> NVM), pending-probe
+reuse. Offline fake-receiver tests through the real
+PacketProcessor -> ConfigProtocol -> ConfigDirector path, the fake
+mimicking VERIFIED behavior (exact echo, 1-3 ms replies, refusal
+leaves state, no `-` removal on snt, omitted-args-keep-current).
+
+### Stage 4: properties
+
+Property mappings per the table: SignalsEnabled (read-modify-write,
+three commands), TimePulse* + TimeGNSS, MinElevation (PVT engine),
+AntennaCableDelay (client clamp), Mode + static position, NavMsgAuth,
+RTCMBaseID, BaudRate/Port per ruling. PPP composition. Fake tests per
+property including refusal and absence paths.
+
+### Stage 5: message output control
+
+Owned-stream realization of --nmea-out/--pvt-out/--sats-out/--raw-out/
+--rtcm-out/--rtcm-base-id; per-option block lists fixed against the
+conversion layer's actual decode set. Hardware observation of each
+enabled output (emission, not acks).
+
+### Stage 6: save / resets
+
+The disruptive stage-0 session first (STOP> timing, re-enumeration,
+recovery procedure, Boot restore, factory-wipe survival of
+setCalibCommonDelay); then --save/--reload/--reset/--factory-reset
+per the verified mappings, with no-response handling.
+
+### Stage 7: verification ladder
+
+Replay traces (internal/gpscmd/testdata/septentrio/, one scenario per
+option area, replay_septentrio_test.go, byte-exact outgoing packets);
+gpshwtest characterization on an integration-branch build to a clean
+run-to-run identical baseline, committed here with HW/mosaic-g5.md;
+NEWS entry.
 
 ## Open decisions
 
@@ -140,22 +321,21 @@ capability/port/signal check against the `grc` reply -- **never** a
   resolved here).
 - **Vendor-specific G5 knobs with no gpsprot analogue**
   (`setSignalAuthentication`, `setHoldoverTrigger`, per-signal
-  `setCalibSignalDelay`) are out of scope -- each would need a new
+  `setCalibSignalDelay`) are out of scope - each would need a new
   device-independent property.
-- **Default OSNMA level without `TimeAssist`** is `loose`; confirm
-  before landing (the guide frames `strict` as the more complete
-  behavior).
+- **NavMsgAuth on a default receiver reads back OSNMA** (PVTLevel
+  loose is the factory default). This is truthful readback of real
+  behavior; flagged for owner visibility, not blocking.
 
-## Testing
+## Reference materials
 
-Follow the `implement-configprotocol` skill's verification ladder:
-offline tests through the real `PacketProcessor` -> `ConfigProtocol` ->
-`ConfigDirector` path (encoding real quirks, not assumed behaviour);
-committed replay traces once hardware exists; `gpshwtest`
-characterization against the mosaic-G5 per `SEMANTICS.md` (receiver
-limitations recorded as data, not failures); and observe-don't-enable
-for anything message-related (enabling PPP is not evidence of a
-converged HAS solution). Hardware has not arrived; stage 0 must
-re-verify the guide-derived facts above -- notably the `setCOMSettings`
-baud-switch handshake and the state-line counts of multi-value `get*`
-commands.
+- Protocol docs: `~/gps-protocol-docs/septentrio/mosaic-G5-v1.1.0.md`
+  (authority for the test unit), `mosaic-X5-v4.15.1.md`.
+- Verified message files: `configs/gpsmsg/septentrio/mosaic.toml`,
+  `mosaic-g5.toml` (per-entry "Verified" notes are authoritative).
+- Reply framing: `plan/archive/septentrio-msgfile.md`,
+  `gps/internal/septentrio/rpacket.go`.
+- ConfigDirector contract: `gps/gpsprot/configprotocol.go`; semantics:
+  `gpshwtest/SEMANTICS.md`; reference configurators: `ubx`
+  (request/ops model), `unc` (sequencing), casic/allystar branches
+  (case law, via `git show`).
