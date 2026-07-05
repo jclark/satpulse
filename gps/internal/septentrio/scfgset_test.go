@@ -1,6 +1,7 @@
 package septentrio
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -103,5 +104,27 @@ func TestPPSSetCmd(t *testing.T) {
 				t.Errorf("got  %q\nwant %q", got, tc.expect)
 			}
 		})
+	}
+}
+
+// TestSignalUsageExcludesGEO pins the hardware finding that the PVT usage
+// argument's enum has no GEO entries: requesting SBAS signals must put
+// GEOL1/GEOL5 in the tracking list and the NavData usage list, never in the
+// PVT usage list (the receiver refuses it with "Argument 'PVT' is invalid").
+func TestSignalUsageExcludesGEO(t *testing.T) {
+	c := &Configurator{target: &gpsprot.ConfigTarget{}}
+	c.target.Props.SetSignalsEnabled(gpsprot.SignalSetOf(
+		gpsprot.SigGPSL1CA, gpsprot.SigSBASL1CA, gpsprot.SigSBASL5))
+	c.np.usage = &signalUsage{pvt: []string{"GPSL1CA", "GLOL2P"}, navData: []string{"GPSL1CA"}}
+	c.generateSignalReqs()
+	var snu string
+	for _, req := range c.reqs {
+		if strings.HasPrefix(req.cmd, "setSignalUsage") {
+			snu = req.cmd
+		}
+	}
+	want := "setSignalUsage, GPSL1CA+GLOL2P, GEOL1+GEOL5+GPSL1CA"
+	if snu != want {
+		t.Errorf("got  %q\nwant %q", snu, want)
 	}
 }

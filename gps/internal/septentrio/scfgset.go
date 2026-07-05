@@ -136,13 +136,27 @@ func (c *Configurator) generateSignalReqs() {
 	}
 	c.addReq("setSatelliteTracking, "+listOrNone(constList), nil)
 	c.addReq("setSignalTracking, "+listOrNone(strings.Join(tracking, "+")), c.np.parseSignalTracking)
-	pvt, nav := tracking, tracking
+	// The PVT usage argument's enum has no GEO entries (SBAS ranging is not
+	// a PVT input on this receiver; a GEO signal there is refused), so the
+	// SBAS signals go only in the NavData list.
+	pvt, nav := withoutGEO(names), names
 	if u := c.np.usage; u != nil {
-		pvt = append(slices.Clone(names), unmappedSignals(u.pvt)...)
+		pvt = append(pvt, unmappedSignals(u.pvt)...)
 		nav = append(slices.Clone(names), unmappedSignals(u.navData)...)
 	}
 	c.addReq("setSignalUsage, "+listOrNone(strings.Join(pvt, "+"))+", "+listOrNone(strings.Join(nav, "+")),
 		c.np.parseSignalUsage)
+}
+
+// withoutGEO returns names with the GEO (SBAS) signals removed.
+func withoutGEO(names []string) []string {
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		if n != "GEOL1" && n != "GEOL5" {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // unmappedSignals returns the signals in names that have no
