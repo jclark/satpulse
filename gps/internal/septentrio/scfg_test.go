@@ -46,6 +46,13 @@ const getAll = gpsprot.PropIDSignalsEnabled | gpsprot.PropIDTimeGNSS |
 // escape elicits no framed reply, queries are answered from replies, and
 // ReceiverSetup arrives as a normal SBF block on the block's own schedule.
 func runConfig(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]string) (*Configurator, []string, []error) {
+	return runConfigOpts(t, target, replies, true)
+}
+
+// runConfigOpts is runConfig with control over when the ReceiverSetup block
+// arrives: early (at the first wait, i.e. flowing before configuration) or
+// only in response to an identity one-shot.
+func runConfigOpts(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]string, rxSetupEarly bool) (*Configurator, []string, []error) {
 	t.Helper()
 	cp := NewConfigProtocol()
 	rp := NewReplyProcessor()
@@ -88,19 +95,18 @@ func runConfig(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]st
 				if _, err := rp.ProcessPacket(pkt, t0); err != nil {
 					t.Fatalf("reply to %q: %v", cmd, err)
 				}
+				if strings.HasPrefix(cmd, "exeSBFOnce") && !rxSetupFed {
+					rxSetupFed = true
+					t0 = t0.Add(time.Millisecond)
+					feedRxSetup(t, sp, t0)
+				}
 			}
 		case gpsprot.ConfigActionWaitUntil:
 			t0 = action.Deadline
-			if !rxSetupFed {
+			if !rxSetupFed && rxSetupEarly {
 				// The periodic ReceiverSetup block arrives mid-run.
 				rxSetupFed = true
-				pkt, err := hex.DecodeString(receiverSetupPacket)
-				if err != nil {
-					t.Fatalf("decoding ReceiverSetup hex: %v", err)
-				}
-				if _, err := sp.ProcessPacket(string(pkt), t0); err != nil {
-					t.Fatalf("ReceiverSetup packet: %v", err)
-				}
+				feedRxSetup(t, sp, t0)
 			}
 			director.AdvanceTimeTo(t0)
 		case gpsprot.ConfigActionError:
@@ -108,6 +114,19 @@ func runConfig(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]st
 		}
 	}
 	return cfg, sent, errs
+}
+
+// feedRxSetup delivers the corpus ReceiverSetup packet through the real SBF
+// packet processor.
+func feedRxSetup(t *testing.T, sp *PacketProcessor, t0 time.Time) {
+	t.Helper()
+	pkt, err := hex.DecodeString(receiverSetupPacket)
+	if err != nil {
+		t.Fatalf("decoding ReceiverSetup hex: %v", err)
+	}
+	if _, err := sp.ProcessPacket(string(pkt), t0); err != nil {
+		t.Fatalf("ReceiverSetup packet: %v", err)
+	}
 }
 
 func TestConfigureGetAll(t *testing.T) {
@@ -450,5 +469,47 @@ func TestConfigureReloadAndFactory(t *testing.T) {
 	}
 	if !slices.Contains(sent, "exeResetReceiver, Hard, all") {
 		t.Errorf("factory reset not sent; sent: %v", sent)
+	}
+}
+
+// TestConfigureIdentity checks the deterministic identity fetch: with no
+// ReceiverSetup block flowing, the configurator enables the block on the
+// owned stream (the one-shot is silently ignored otherwise - verified) and
+// requests it with exeSBFOnce; the block completes the request and fills
+// ReceiverInfo.
+func TestConfigureIdentity(t *testing.T) {
+	replies := map[string]string{
+		"getSBFOutput, Stream1": "SBFOutput, Stream1, USB1, MeasEpoch+PVTGeodetic+EndOfPVT+xPPSOffset+ChannelStatus, sec1",
+		"setSBFOutput, Stream1, USB1, ReceiverSetup+ChannelStatus+EndOfPVT+MeasEpoch+PVTGeodetic+xPPSOffset, sec1": "SBFOutput, Stream1, USB1, MeasEpoch+PVTGeodetic+EndOfPVT+xPPSOffset+ChannelStatus+ReceiverSetup, sec1",
+		"exeSBFOnce, USB1, ReceiverSetup": "SBFOnce, USB1, ReceiverSetup",
+	}
+	cfg, sent, errs := runConfigOpts(t, &gpsprot.ConfigTarget{}, replies, false)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	for _, cmd := range []string{"getSBFOutput, Stream1",
+		"setSBFOutput, Stream1, USB1, ReceiverSetup+ChannelStatus+EndOfPVT+MeasEpoch+PVTGeodetic+xPPSOffset, sec1",
+		"exeSBFOnce, USB1, ReceiverSetup"} {
+		if !slices.Contains(sent, cmd) {
+			t.Errorf("command %q not sent; sent: %v", cmd, sent)
+		}
+	}
+	info := cfg.ReceiverInfo()
+	if info.Hardware != "mosaic-G5 P3" || info.Firmware != "1.1.0" {
+		t.Errorf("identity: got %q %q", info.Hardware, info.Firmware)
+	}
+}
+
+// TestConfigureIdentitySkippedWhenFlowing checks that no identity requests
+// are generated when a ReceiverSetup block already arrived.
+func TestConfigureIdentitySkippedWhenFlowing(t *testing.T) {
+	_, sent, errs := runConfig(t, &gpsprot.ConfigTarget{}, nil)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	for _, cmd := range sent {
+		if strings.HasPrefix(cmd, "exeSBFOnce") || strings.HasPrefix(cmd, "setSBFOutput") {
+			t.Errorf("unexpected identity command %q", cmd)
+		}
 	}
 }

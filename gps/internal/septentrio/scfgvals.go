@@ -343,7 +343,7 @@ func (c *Configurator) generateQueryReqs() {
 	if t.UsesAny(gpsprot.PropIDAntennaCableDelay) {
 		c.addReq("getCalibCommonDelay", np.parseCalibCommonDelay)
 	}
-	if c.touchesSBFOutput() {
+	if c.touchesSBFOutput() || c.rxSetup == nil {
 		c.addReq("getSBFOutput, "+ownStream, np.parseSBFOutput)
 	}
 	if t.Opts.NMEAMsg.IsSet() {

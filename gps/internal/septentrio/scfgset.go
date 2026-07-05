@@ -35,7 +35,35 @@ func (c *Configurator) generateSetReqs() {
 	c.generateModeReqs()
 	c.generatePPPReq()
 	c.generateOutputReqs()
+	c.generateIdentReqs()
 	c.generateSaveResetReqs()
+}
+
+// generateIdentReqs fetches the receiver identity when no ReceiverSetup
+// block has arrived yet. The one-shot only delivers to this connection when
+// the block is enabled on a stream bound to it (verified: it is silently
+// ignored otherwise), so the owned stream gains ReceiverSetup first if
+// nothing else already put it there; the block then arrives within
+// milliseconds of the one-shot's ack.
+func (c *Configurator) generateIdentReqs() {
+	if c.rxSetup != nil {
+		return
+	}
+	if !c.touchesSBFOutput() {
+		st := c.np.sbfStream
+		if st == nil || !slices.Contains(st.messages, "ReceiverSetup") {
+			cd, interval := c.port, "sec1"
+			if st != nil && st.cd != "" && st.cd != "none" {
+				cd = st.cd
+			}
+			if st != nil && st.interval != "off" {
+				interval = st.interval
+			}
+			c.addReq("setSBFOutput, "+ownStream+", "+cd+", "+strings.Join(c.sbfOutputList(), "+")+", "+interval,
+				c.np.parseSBFOutput)
+		}
+	}
+	c.append(&sReq{cmd: "exeSBFOnce, " + c.port + ", ReceiverSetup", waitRxSetup: true})
 }
 
 // generateSaveResetReqs realizes the NVM operations, last: a save persists

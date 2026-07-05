@@ -74,13 +74,14 @@ func (s sReqState) isFinal() bool {
 
 // sReq is a single command request.
 type sReq struct {
-	state   sReqState
-	cmd     string       // command text, without CR LF
-	noReply bool         // expects no framed reply (the escape)
-	nakOK   bool         // a "$R?" refusal is an acceptable outcome, not a failure
-	onReply func(*Reply) // records achieved values from the matching reply
-	tBase   time.Time    // send time, for the reply deadline
-	err     error
+	state       sReqState
+	cmd         string       // command text, without CR LF
+	noReply     bool         // expects no framed reply (the escape)
+	nakOK       bool         // a "$R?" refusal is an acceptable outcome, not a failure
+	waitRxSetup bool         // after the ack, absorb until the ReceiverSetup block arrives
+	onReply     func(*Reply) // records achieved values from the matching reply
+	tBase       time.Time    // send time, for the reply deadline
+	err         error
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -222,6 +223,14 @@ func (c *Configurator) reply(r *Reply, tRead time.Time) error {
 		if r.Echo != req.cmd {
 			return nil // not ours: e.g. a late reply to a repeated probe
 		}
+		if req.waitRxSetup && c.rxSetup == nil {
+			// The acked one-shot delivers the ReceiverSetup block within
+			// milliseconds; absorb until it arrives (or the deadline
+			// passes - identity stays best-effort).
+			req.state = sStateSentNoReply
+			req.tBase = tRead
+			break
+		}
 		req.state = sStateSucceeded
 		if req.onReply != nil {
 			req.onReply(r)
@@ -240,9 +249,15 @@ func (c *Configurator) reply(r *Reply, tRead time.Time) error {
 	return nil
 }
 
-// receiverSetup records the latest ReceiverSetup block for ReceiverInfo.
+// receiverSetup records the latest ReceiverSetup block for ReceiverInfo and
+// completes an identity one-shot waiting for it.
 func (c *Configurator) receiverSetup(rs *sbfbin.ReceiverSetup) {
 	c.rxSetup = rs
+	for i := c.nFinished; i < len(c.reqs); i++ {
+		if req := c.reqs[i]; req.waitRxSetup && req.state == sStateSentNoReply {
+			req.state = sStateSucceeded
+		}
+	}
 }
 
 func (req *sReq) invalidStatePanic(method string) string {

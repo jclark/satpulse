@@ -117,9 +117,10 @@ func parseCaps(r *Reply) (*rxCaps, error) {
 
 // ConfigProtocol implements gpsprot.ConfigProtocol for Septentrio receivers.
 type ConfigProtocol struct {
-	caps *rxCaps       // stored from the grc probe reply
-	port string        // our connection descriptor, from the probe reply's prompt
-	cfg  *Configurator // created during Configure()
+	caps    *rxCaps // stored from the grc probe reply
+	port    string  // our connection descriptor, from the probe reply's prompt
+	rxSetup *sbfbin.ReceiverSetup
+	cfg     *Configurator // created during Configure()
 }
 
 var _ gpsprot.ConfigProtocol = (*ConfigProtocol)(nil)
@@ -154,8 +155,11 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRea
 			return cp.cfg.reply(m, tRead)
 		}
 	case *sbfbin.Block:
-		if rs, ok := m.Params.(*sbfbin.ReceiverSetup); ok && cp.cfg != nil {
-			cp.cfg.receiverSetup(rs)
+		if rs, ok := m.Params.(*sbfbin.ReceiverSetup); ok {
+			cp.rxSetup = rs
+			if cp.cfg != nil {
+				cp.cfg.receiverSetup(rs)
+			}
 		}
 	}
 	return nil
@@ -167,10 +171,11 @@ func (cp *ConfigProtocol) Configure(target *gpsprot.ConfigTarget) (gpsprot.Confi
 		panic("Configure called without successful ProbeOK()")
 	}
 	cp.cfg = &Configurator{
-		caps:   cp.caps,
-		target: target,
-		port:   cp.port,
-		phase:  phaseInit,
+		caps:    cp.caps,
+		target:  target,
+		port:    cp.port,
+		rxSetup: cp.rxSetup,
+		phase:   phaseInit,
 	}
 	return cp.cfg, nil
 }
