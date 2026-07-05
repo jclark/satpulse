@@ -283,19 +283,24 @@ prompt) and interval in one `setSBFOutput`/`setNMEAOutput` command;
 
 ### Save / reset
 
-(Mappings from the guides + msgfile work; the disruptive stage-0
-session must verify each before stage 7 is implemented.)
+(All hardware-verified in the disruptive session, 2026-07-05.)
 
 - **Save** - one granularity: `exeCopyConfigFile, Current, Boot`
-  (`eccf`); both `SaveMinimal` and `SaveAll` map to it.
+  (`eccf`); both `SaveMinimal` and `SaveAll` map to it. Verified:
+  lcf Boot shows the saved config; a later reload restores the
+  SAVED config, not defaults. `eccf, RxDefault, Boot` restores a
+  factory Boot (RxDefault is a valid source).
 - `ResetReload` -> `exeCopyConfigFile, Boot, Current` (verified
-  in-place, no restart - but note Boot == RxDefault on the test unit,
-  so reload is factory-defaults there).
-- `ResetCold` -> `exeResetReceiver, Hard, +PVTData+SatData`;
-  `ResetFactory` -> `exeResetReceiver, Hard, all`. Both reboot:
-  reply ends in `STOP>`, USB re-enumerates (recovery via
-  /dev/serial/by-id paths). No-response-request handling per
-  director-contract.md (succeed on send after `STOP>`).
+  in-place, no restart).
+- `ResetCold` -> `exeResetReceiver, Hard, PVTData+SatData`;
+  `ResetFactory` -> `exeResetReceiver, Hard, all` (the Config erase
+  resets Current AND Boot to defaults, permanent settings kept).
+  Both reboot, but the STOP>-terminated reply frames and ACKS
+  BEFORE the connection drops, so reset requests complete normally;
+  USB re-enumerates in ~1.5 s with stable ttyACM numbering, and the
+  CLI answers again after ~7 s (Soft) / ~25 s (Hard). The
+  standalone `factoryReset` command is NOT used (its reset-at-next-
+  power-cycle mark could fire long after the session).
 
 ### `ConfigSupportFlags`
 
