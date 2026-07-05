@@ -37,19 +37,22 @@ type configPhase int
 const (
 	phaseInit   configPhase = iota
 	phaseEscape             // the escape request is outstanding
+	phaseQuery              // reading current state for Get and read-modify-write
 	phaseFinal
 )
 
 // Configurator implements gpsprot.Configurator for Septentrio receivers.
 type Configurator struct {
-	caps      *rxCaps
-	target    *gpsprot.ConfigTarget
-	phase     configPhase
-	reqs      []*sReq
-	complete  bool   // no more requests will be added to reqs
-	nFinished int    // all requests with index < nFinished are in a final state
-	port      string // connection descriptor from reply prompts (e.g. "USB1")
-	rxSetup   *sbfbin.ReceiverSetup
+	caps          *rxCaps
+	target        *gpsprot.ConfigTarget
+	phase         configPhase
+	reqs          []*sReq
+	complete      bool   // no more requests will be added to reqs
+	nFinished     int    // all requests with index < nFinished are in a final state
+	port          string // connection descriptor from reply prompts (e.g. "USB1")
+	rxSetup       *sbfbin.ReceiverSetup
+	np            nativeProps
+	staticQueried bool // the static-position follow-up query was generated
 }
 
 type sReqState int
@@ -107,6 +110,7 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 // ConfigProps returns the current configuration of the GPS receiver.
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	props := &gpsprot.ConfigProps{}
+	c.np.convertToProps(props)
 	if c.port != "" {
 		props.SetPort(c.port)
 		if strings.HasPrefix(c.port, "USB") {
@@ -137,6 +141,12 @@ func (c *Configurator) GenerateRequests() error {
 		c.phase = phaseEscape
 	case phaseEscape:
 		if !c.allFinal() {
+			break
+		}
+		c.generateQueryReqs()
+		c.phase = phaseQuery
+	case phaseQuery:
+		if !c.allFinal() || c.generateFollowupQueries() {
 			break
 		}
 		c.complete = true
