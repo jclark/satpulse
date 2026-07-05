@@ -35,6 +35,30 @@ func (c *Configurator) generateSetReqs() {
 	c.generateModeReqs()
 	c.generatePPPReq()
 	c.generateOutputReqs()
+	c.generateSaveResetReqs()
+}
+
+// generateSaveResetReqs realizes the NVM operations, last: a save persists
+// everything realized before it, and a reset ends the conversation. All
+// mappings hardware-verified: eccf Current,Boot saves; eccf Boot,Current
+// reloads the SAVED configuration in place (no restart); exeResetReceiver
+// replies with a framed STOP>-terminated ack BEFORE the reboot drops the
+// connection, so reset requests complete normally - the receiver then goes
+// quiet for up to ~30 s while it reboots (Hard boots from the Boot config;
+// the erase argument resets the configuration to factory defaults).
+func (c *Configurator) generateSaveResetReqs() {
+	o := &c.target.Opts
+	if o.Save != gpsprot.SaveNone {
+		c.addReq("exeCopyConfigFile, Current, Boot", nil)
+	}
+	switch o.Reset {
+	case gpsprot.ResetReload:
+		c.addReq("exeCopyConfigFile, Boot, Current", nil)
+	case gpsprot.ResetCold:
+		c.addReq("exeResetReceiver, Hard, PVTData+SatData", nil)
+	case gpsprot.ResetFactory:
+		c.addReq("exeResetReceiver, Hard, all", nil)
+	}
 }
 
 // generateScalarReqs generates the set requests for the scalar properties.

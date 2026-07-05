@@ -208,7 +208,9 @@ func (c *Configurator) inflight() *sReq {
 // connection; acks correlate to the in-flight request by exact command echo,
 // and anchor-less refusals attribute to it by the single-flight discipline.
 func (c *Configurator) reply(r *Reply, tRead time.Time) error {
-	if r.Prompt != "" {
+	if r.Prompt != "" && r.Prompt != "STOP" {
+		// The prompt names our connection, except the "STOP>" that
+		// terminates a reset command's reply.
 		c.port = r.Prompt
 	}
 	req := c.inflight()

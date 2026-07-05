@@ -82,6 +82,9 @@ func runConfig(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]st
 				if nak, found := strings.CutPrefix(state, "!"); found {
 					pkt = "$R? " + nak + "\r\nUSB1>"
 				}
+				if stop, found := strings.CutPrefix(state, "@STOP "); found {
+					pkt = "$R: " + cmd + "\r\n  " + stop + "\r\nSTOP>"
+				}
 				if _, err := rp.ProcessPacket(pkt, t0); err != nil {
 					t.Fatalf("reply to %q: %v", cmd, err)
 				}
@@ -393,5 +396,59 @@ func TestConfigureSignalsAndMode(t *testing.T) {
 	mode, ok := props.GetMode()
 	if !ok || !mode.Static || mode.PosType != gpsprot.PosTypeLLH {
 		t.Errorf("Mode: got %+v, %v", mode, ok)
+	}
+}
+
+// TestConfigureSaveReset checks the NVM operations: save before reset, both
+// last, and the reset's STOP>-terminated reply completing the request
+// without disturbing the Port property.
+func TestConfigureSaveReset(t *testing.T) {
+	replies := map[string]string{
+		"exeCopyConfigFile, Current, Boot":        "CopyConfigFile, Current, Boot",
+		"exeResetReceiver, Hard, PVTData+SatData": "@STOP ResetReceiver, Hard, PVTData+SatData",
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.Save = gpsprot.SaveAll
+	target.Opts.Reset = gpsprot.ResetCold
+	cfg, sent, errs := runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	iSave := slices.Index(sent, "exeCopyConfigFile, Current, Boot")
+	iReset := slices.Index(sent, "exeResetReceiver, Hard, PVTData+SatData")
+	if iSave < 0 || iReset < 0 || iSave > iReset {
+		t.Errorf("save/reset order wrong; sent: %v", sent)
+	}
+	if port, ok := cfg.ConfigProps().GetPort(); !ok || port != "USB1" {
+		t.Errorf("Port: got %q, %v; the STOP prompt must not overwrite it", port, ok)
+	}
+}
+
+// TestConfigureReloadAndFactory checks the remaining reset mappings.
+func TestConfigureReloadAndFactory(t *testing.T) {
+	replies := map[string]string{
+		"exeCopyConfigFile, Boot, Current": "CopyConfigFile, Boot, Current",
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.Reset = gpsprot.ResetReload
+	_, sent, errs := runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if !slices.Contains(sent, "exeCopyConfigFile, Boot, Current") {
+		t.Errorf("reload not sent; sent: %v", sent)
+	}
+
+	replies = map[string]string{
+		"exeResetReceiver, Hard, all": "@STOP ResetReceiver, Hard, all",
+	}
+	target = &gpsprot.ConfigTarget{}
+	target.Opts.Reset = gpsprot.ResetFactory
+	_, sent, errs = runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if !slices.Contains(sent, "exeResetReceiver, Hard, all") {
+		t.Errorf("factory reset not sent; sent: %v", sent)
 	}
 }
