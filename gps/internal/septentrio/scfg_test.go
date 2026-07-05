@@ -376,8 +376,7 @@ func TestConfigureSetRefused(t *testing.T) {
 
 // TestConfigureSignalsAndMode drives the SignalsEnabled three-command
 // realization (constellation gate, explicit tracking list preserving the
-// receiver-only GALE5, usage lists), a fixed-position static mode, and the
-// PPP composition that E6 plus the HAS capability triggers.
+// receiver-only GALE5, usage lists) and a fixed-position static mode.
 func TestConfigureSignalsAndMode(t *testing.T) {
 	replies := make(map[string]string, len(asFoundReplies))
 	maps.Copy(replies, asFoundReplies)
@@ -387,7 +386,6 @@ func TestConfigureSignalsAndMode(t *testing.T) {
 	replies["setSignalUsage, GALE1BC+GALE6BC+GPSL1CA+GPSL5+GALE5, GALE1BC+GALE6BC+GPSL1CA+GPSL5"] = "SignalUsage, GPSL1CA+GPSL5+GALE1BC+GALE6BC+GALE5, GPSL1CA+GPSL5+GALE1BC+GALE6BC"
 	replies["setStaticPosGeodetic, Geodetic1, 13.732000000, 100.567000000, 12.3400"] = "StaticPosGeodetic, Geodetic1, 13.732000000, 100.567000000, 12.3400, WGS84"
 	replies["setPVTMode, Static, , Geodetic1"] = "PVTMode, Static, , Geodetic1"
-	replies["setPVTMode, , +PPP"] = "PVTMode, Static, StandAlone+RTKFloat+RTKFixed+PPP, Geodetic1"
 
 	requested := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGPSL5, gpsprot.SigGALE1, gpsprot.SigGALE6)
 	target := &gpsprot.ConfigTarget{}
@@ -407,7 +405,6 @@ func TestConfigureSignalsAndMode(t *testing.T) {
 		sntCmd,
 		"setStaticPosGeodetic, Geodetic1, 13.732000000, 100.567000000, 12.3400",
 		"setPVTMode, Static, , Geodetic1",
-		"setPVTMode, , +PPP",
 	}
 	pos := -1
 	for _, cmd := range wantOrder {

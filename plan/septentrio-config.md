@@ -236,11 +236,13 @@ truth.
 
 ### Capability-gated features
 
-- **Galileo HAS / PPP** - no dedicated property. When `SignalsEnabled`
-  includes `SigGALE6` (GALE6BC) **and** grc reports
-  `PPPGalileoHAS-SIS`, append `setPVTMode, , +PPP` after the signal
-  requests (verified: composes into RoverMode without disturbing the
-  rest). Otherwise a no-op (E6 still tracked if requested).
+- **Galileo HAS / PPP** -- NOT configured (owner ruling, 2026-07-06:
+  no implicit enablement; other backends do not infer it either). An
+  explicit device-independent PPP/corrections property is future
+  cross-backend work; when it exists, the Septentrio realization is
+  `setPVTMode, , +PPP` gated on the `PPPGalileoHAS-SIS` capability
+  (composition into RoverMode verified on hardware).
+
 - **OSNMA** - `sou` takes (PVTLevel off/loose/strict, MTRoot,
   MeasLevel off/loose); factory default is PVTLevel=loose,
   MeasLevel=off (verified readback `GalOSNMAUsage, loose, "", off`).

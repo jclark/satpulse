@@ -27,13 +27,11 @@ var gnssTimeScale = map[gpsprot.GNSS]string{
 }
 
 // generateSetReqs generates the set requests realizing the target's
-// properties: signals first (the PPP composition at the end depends on
-// them), the scalars, then the PVT mode.
+// properties: signals, the scalars, the PVT mode, then the outputs.
 func (c *Configurator) generateSetReqs() {
 	c.generateSignalReqs()
 	c.generateScalarReqs()
 	c.generateModeReqs()
-	c.generatePPPReq()
 	c.generateOutputReqs()
 	c.generateIdentReqs()
 	c.generateSaveResetReqs()
@@ -227,17 +225,6 @@ func (c *Configurator) generateModeReqs() {
 			np.parseStaticPos)
 		c.addReq("setPVTMode, Static, , Cartesian1", np.parsePVTMode)
 	}
-}
-
-// generatePPPReq composes PPP into the rover-mode list when the target
-// enables the Galileo E6 signal and the receiver has the Galileo HAS
-// capability; otherwise HAS support is shown as absence.
-func (c *Configurator) generatePPPReq() {
-	ss, ok := c.target.Props.GetSignalsEnabled()
-	if !ok || !ss.Contains(gpsprot.SigGALE6) || !c.caps.caps["PPPGalileoHAS-SIS"] {
-		return
-	}
-	c.addReq("setPVTMode, , +PPP", c.np.parsePVTMode)
 }
 
 // ppsSetCmd builds the setPPSParameters command for the target's TimePulse
