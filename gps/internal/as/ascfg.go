@@ -92,30 +92,28 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 		Vendor:         Vendor,
 		Firmware:       c.ver.SwVersion.String(),
 		Hardware:       c.ver.HwVersion.String(),
-		SupportedGNSS:  c.supportedGNSS(),
+		SupportedGNSS:  supportedGNSS,
 		VendorSpecific: c.ver,
 	}
 }
 
-// supportedGNSS returns the constellations of the identity-deduced
-// signal plan. For unknown hardware it is the full set the CFG-NAVSAT
-// mask can express; what such a unit can actually receive shows in the
-// achieved signal set (the silicon clamps the mask).
-func (c *Configurator) supportedGNSS() gpsprot.GNSSSet {
-	return navSatToSignals(c.hwPlan().signals).GNSSSet()
-}
+// supportedGNSS is the constellation set the Allystar family supports.
+// Hardware-verified across the TAU1201, TAU951M-P200, TAU1302, and D10P:
+// writing the full CFG-NAVSAT mask clamps SBAS and NavIC away on every
+// unit, leaving these five. What a given unit actually receives shows in
+// the achieved signal set (the silicon clamps the mask).
+var supportedGNSS = gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.GAL, gpsprot.BDS, gpsprot.GLO, gpsprot.QZSS)
 
 // ConfigSupport returns the configuration options this implementation
-// supports. The RTCM flags come from the identity-deduced hardware
-// plan (owner ruling: key capability off MON-VER): the TAU1201 family
-// has no RTCM output at all - every 0xF8 CFG-MSG target NAKs - so it
-// must not claim the flags.
+// supports. The RTCM flags key off the MON-VER chip number (owner
+// ruling): the TAU1201 family has no RTCM output at all - every 0xF8
+// CFG-MSG target NAKs - so it must not claim the flags.
 func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 	flags := gpsprot.ConfigSupportRaw |
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
 		gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportSpeed
-	if c.hwPlan().rtcm {
+	if c.supportsRTCM() {
 		flags |= gpsprot.ConfigSupportRTCMMSM4 |
 			gpsprot.ConfigSupportRTCMMSM7 | gpsprot.ConfigSupportRTCMQZSS
 	}
