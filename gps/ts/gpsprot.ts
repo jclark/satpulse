@@ -38,7 +38,7 @@ export interface SignalInfo {
 export interface SVInfo {
     id: SVID;
     lookAngles?: LookAngles;
-    signals: SignalInfo[];
+    signals?: SignalInfo[];
     used?: boolean;
 }
 

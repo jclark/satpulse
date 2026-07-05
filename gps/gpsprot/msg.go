@@ -555,7 +555,7 @@ func (sv SVID) IsValid() bool {
 type SVInfo struct {
 	ID         SVID                `json:"id"`
 	LookAngles opt.Val[LookAngles] `json:"lookAngles,omitzero"` // look angle of the satellite
-	Signals    []SignalInfo        `json:"signals"`             // signals being transmitted by a satellite
+	Signals    []SignalInfo        `json:"signals,omitempty"`   // observed signals with their CN0; empty if the receiver does not report CN0
 	Used       bool                `json:"used,omitempty"`      // true if the satellite is used in the navigation solution
 }
 
