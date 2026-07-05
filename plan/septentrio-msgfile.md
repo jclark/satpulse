@@ -121,11 +121,12 @@ The format is checksum-free (modeled on `nov.AbbrevAsciiPacketFormat`
 in `gps/internal/nov/abbrevasciipacket.go`:
 `ExtractChecksum`/`ComputeChecksum` return nil). It syncs on `$` then
 `R`, disambiguating from SBF's `$@` and from NMEA's checksummed `$`-led
-sentences the same way the SBF format syncs `$` then `@`. Order it
-ahead of NMEA (and beside SBF) in `allVendorPacketFormats`: NMEA is
-loose enough to start framing a `$R` line and only fail at the missing
-`*HH`, so `$R` must be tried first and selected on its `$`+`R`
-directly.
+sentences the same way the SBF format syncs `$` then `@`. It is
+registered beside the SBF format for the Septentrio vendor;
+`CreatePacketFormats` prepends the common NMEA and RTCM formats, so the
+reply format follows NMEA in scan order. That is harmless: a `$R` reply
+carries no `*HH`, so the NMEA format cannot frame it, and the reply
+format frames it on its `$`+`R` header.
 
 ### What a valid packet is
 
@@ -348,8 +349,9 @@ friends simply end their one packet in `STOP>` rather than `CD>`.
    `gps/internal/septentrio` (where vendor `PacketFormat`s live) and
    are registered in `gps/gpsreg/reg.go`: a `Tag` re-export plus entries
    in `allVendorPacketFormats` and
-   `allVendorPacketFormatsMap[VendorSeptentrio]`, ordered ahead of NMEA
-   (see "Packet framing").
+   `allVendorPacketFormatsMap[VendorSeptentrio]`, after the NMEA and
+   RTCM formats that `CreatePacketFormats` prepends (see "Packet
+   framing").
 4. `NewCorrelator()` (`gps/msgfile/correlate.go`): add
    `septentrio.TagReply: septAnalyzer{}` to the `analyzers` map (a
    small struct type, paralleling `uncaAnalyzer{}`, whose
@@ -375,10 +377,16 @@ naming convention each tag follows):
   `getReceiverCapabilities`, compact ordinary command replies for receiver
   name, command-line interface version, supported signals, ports, and
   capabilities.
-- NMEA output control (`nmea-gga`/`-gll`/`-gsa`/`-gsv`/`-rmc`/`-zda`,
-  each with an `-off` pair, plus `nmea-off` and the `nmea-daemon`
-  convenience group) via `setNMEAOutput`'s `+`/`-` combinable syntax.
-  Only sentences common to both models are used.
+- NMEA output control on NMEA Stream1: each of `GGA`/`GLL`/`GSA`/
+  `GSV`/`RMC`/`ZDA` has a self-contained `nmea-<s>-usb1` (sets USB1 +
+  1 Hz + the sentence in one command, so it works on a factory-fresh
+  stream), a composable `nmea-<s>-cur` (adds only the sentence, riding
+  the stream's current Cd and interval), and one port-neutral
+  `nmea-<s>-off`. Shared `nmea-port-usb1`/`-usb2`/`-com1`/`-com2` and
+  `nmea-rate-1`/`-2`/`-5`/`-10`/`-20` setters, a port-neutral
+  `nmea-off`, a `get-nmea` query, and the self-contained
+  `nmea-daemon-usb1` group, all via `setNMEAOutput`'s `+`/`-`
+  combinable syntax. Only sentences common to both models are used.
 - NMEA version (`get-nmea-ver`, `nmea-ver-3`, `nmea-ver-410`) via
   `setNMEAVersion`'s two-profile (`v3x`/`v4x`) enum.
 - Elevation mask (`get-min-elev`, `min-elev-0` through `-45`) via
@@ -397,10 +405,12 @@ naming convention each tag follows):
 - Restart (`hot-start`, `cold-start`) via `exeResetReceiver`.
   `warm-start` is not implemented (see TODOs below).
 - Configuration management (`save`, `reload`, `reset`, `factory-reset`)
-  via `exeCopyConfigFile`/`exeResetReceiver`/`login`+`factoryReset`.
-  `factory-reset` is the one tag that exercises the `$R!`
-  (`login`) and plain-`$R:`-with-trailing-message (`factoryReset`)
-  shapes together.
+  via `exeCopyConfigFile`/`exeResetReceiver`/`factoryReset`.
+  `factory-reset` is a plain `factoryReset` (a `$R:` reply with a
+  trailing message); it no longer prepends a `login` -- placeholder
+  admin credentials do not authenticate, and `factoryReset` itself
+  needs no session. No tag exercises the `$R!` (`login`) shape now;
+  `login`/`logout`/`lstCurrentUser` are reachable only by hand.
 - Survey-in (`get-survey`, `survey`, `survey-off`, `mobile`) via
   `getPVTMode`/`setPVTMode`, approximating auto-base self-survey
   (no duration/accuracy controls exist on this receiver family).
@@ -414,11 +424,14 @@ naming convention each tag follows):
   TODOs below).
 - RTK mode (`mode-base`, `mode-rover`) via `setPVTMode`, since
   Septentrio has no dedicated base/rover command, only PVT mode.
-- `sbf-daemon`/`get-sbf-daemon` -- a Septentrio-specific pair (not
-  part of the standard `tags.md` set, analogous to other vendors'
-  `nmea-daemon`/`asbin-*` convenience tags) that enables the SBF
-  blocks `satpulsed` itself needs (time/PPS, position, tracking,
-  quality, health, epoch-end marker) on `Stream1`.
+- SBF output control on SBF Stream1: per-block tags for every SBF
+  block satpulse decodes (`gps/lib/sbfbin`), each in the same three
+  forms as the NMEA sentences -- self-contained `sbf-<block>-usb1`,
+  composable `sbf-<block>-cur`, and port-neutral `sbf-<block>-off` --
+  plus shared `sbf-port-*`/`sbf-rate-*` setters, a port-neutral
+  `sbf-off`, and a `get-sbf` query. (The earlier `sbf-daemon`/
+  `get-sbf-daemon` convenience pair was dropped: no other message
+  file carries a binary daemon group.)
 
 `mosaic-g5.toml` adds the G5-only `ppp-has`/`ppp-off` pair (enabling
 Galileo HAS via `setSignalUsage,,+GALE6BC` and `setPVTMode,,+PPP`).
@@ -472,10 +485,10 @@ follows this rule; state it explicitly so future additions keep to it:
   between models, which is why `rtcm-*` tags are safe to share.
 - **G5 has no `Meas3`/`RinexMeas3` SBF group** and G5's `setSBFOutput`
   therefore has a narrower block-group vocabulary than X5's; this
-  matters for `sbf-daemon`/`get-sbf-daemon` and any future SBF-output
-  tag -- stick to blocks confirmed present on both (`ReceiverTime`,
-  `xPPSOffset`, `PVTGeodetic`, `ChannelStatus`, `SatVisibility`,
-  `DOP`, `ReceiverStatus`, `EndOfPVT`, all already in use).
+  matters for the `sbf-<block>-*` output tags. They cover the blocks
+  satpulse decodes, none of which is in the G5-absent `Meas3` group;
+  any future SBF-output addition should stay within blocks present on
+  both models.
 - **`setPPSParameters`'s fourth-from-last argument is renamed.** X5
   calls it `MaxSyncAge`; G5 calls it `MaxHoldover` (tied to a
   holdover/anti-spoofing concept G5 also adds `setHoldoverTrigger`/
@@ -520,7 +533,7 @@ is ever supported.
 
 1. **The `$R` reply `PacketFormat`** in `gps/internal/septentrio` (+
    `TagReply`), framing the whole reply through the prompt,
-   registered in `gps/gpsreg/reg.go` ordered ahead of NMEA. Testable
+   registered in `gps/gpsreg/reg.go` for the Septentrio vendor. Testable
    offline against hand-built `$R:`/`$R;`/`$R!`/`$R?` reply-plus-prompt
    byte sequences (including the not-a-packet cases: `$`, control byte,
    non-token 4-char group, over-length; and the `STOP>` and `---->`
@@ -593,8 +606,10 @@ This phase adds the `$R` reply `PacketFormat` in
   receiver connection required.
 - Once hardware arrives: capture a real session for a representative
   tag from each reply shape (`get-version` for a `get*`, `factory-reset`
-  for `login`+`$R!`+plain-`$R:`, an ordinary `set*` tag for the common
-  case), and compare against this design -- particularly whether
+  for the plain-`$R:`-with-trailing-message `factoryReset`, a manual
+  `login` for `$R!` since no tag issues one, and an ordinary `set*`
+  tag for the common case), and compare against this design --
+  particularly whether
   `$R?`'s `<name>` token behaves as the guide's few examples suggest,
   and whether replies are strictly CRLF-delimited, since both were
   inferred from prose rather than a documented grammar. Use the
