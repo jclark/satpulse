@@ -92,7 +92,7 @@ not two:
 mechanically-derivable, echo of what was sent; the analyzer design
 below is built to not need one.
 
-## Packet framing: one reply packet
+## Packet framing: one reply format
 
 None of the four reply shapes carries a checksum, so the NMEA
 `PacketFormat` cannot frame them: `nmeamsg.CheckSyntax` hard-requires
@@ -115,7 +115,9 @@ packet, and the prompt inside it is the "command done" signal. So there
 is a single format and a single tag (`TagReply`), framing the echo
 line, every state line, and the prompt together -- not the earlier
 sketch of a `$R` echo-line format plus a separate state-line/prompt
-format.
+format. (An `lst` reply is the one multi-unit case: its `$--BLOCK`
+sections frame as further `TagReply` packets, which the analyzer
+stitches back together -- see below.)
 
 The format is checksum-free (modeled on `nov.AbbrevAsciiPacketFormat`
 in `gps/internal/nov/abbrevasciipacket.go`:
@@ -132,11 +134,13 @@ format frames it on its `$`+`R` header.
 
 A reply packet is
 
-> `$R` <type> <body> <terminator>
+> ( `$R` <type> | `$--` ) <body> <terminator>
 
-- **Header** -- the two bytes `$R`, then a **type char**, one of `:`
-  `;` `!` `?` (the four reply shapes of sec 3.1.3). The `R` and the
-  type char are what anchor the format against any other `$`-led run.
+- **Header** -- either the two bytes `$R` then a **type char**, one of
+  `:` `;` `!` `?` (the four reply shapes of sec 3.1.3), or `$--`, which
+  opens a `$--BLOCK` section of an `lst` reply. The `R`+type char, or
+  the second `-`, is what anchors the format against any other `$`-led
+  run.
 - **Body** -- any (possibly empty) sequence of **content chars** and
   strict `CR LF` pairs. A content char is printable ASCII `0x20`-`0x7E`
   except `$`; a line break is always a `CR LF` pair, never a lone `CR`
@@ -148,14 +152,16 @@ A reply packet is
   ends at that `>`: it is the last byte, and no trailing `CR LF` is
   consumed, because the prompt has none -- the receiver waits after it.
 
-A 4096-byte length cap (tunable) bounds the packet; a candidate that
-reaches the cap with no terminator is not a packet. This cap only ever
-bounds `$R:`/`$R!`/`$R?` replies, which are small -- the largest in the
-guide, `getReceiverCapabilities`, is well under 200 bytes. `lst`
-content, the only reply that can run to kilobytes, never frames past
-its `---->` (see below), so its size never approaches the cap; the cap
-is a pure backstop, the way `nov`'s `abbrevMaxLength = 160` bounds a
-single line.
+A 4096-byte length cap (tunable) bounds each packet; a candidate that
+reaches the cap with no terminator is not a packet. `$R:`/`$R!`/`$R?`
+replies are small -- the largest in the guide,
+`getReceiverCapabilities`, is well under 200 bytes. An `lst` reply can
+run to kilobytes, but it frames unit by unit and each `$--BLOCK`
+section is bounded by its own `---->` (or the final prompt), so no
+single packet approaches the cap for config-style listings; the cap is
+a backstop, the way `nov`'s `abbrevMaxLength = 160` bounds a single
+line. A pathological single block larger than the cap -- e.g. a raw
+`lstRecordedFile` download -- would be dropped, which is out of scope.
 
 Two properties make this definition well-formed:
 
@@ -192,10 +198,11 @@ the prompt reflects our own descriptor (sec 3.1.3), so only
 - **A `$R:` reply with no state line still frames.** Some commands print
   only the echo line: `$R: <cmd>\r\nCOM1>` -- empty body, immediate
   terminator.
-- **`lst` output frames only its first unit.** `$R;
-  lstAsciiDisplay\r\n---->` frames (the `----` token terminates it); the
-  `$--BLOCK` tail begins `$-`, carries no `$R<type>` header, and is not
-  framed (see below).
+- **`lst` output frames unit by unit.** `$R;
+  lstAsciiDisplay\r\n---->` frames (the `----` token terminates it), and
+  each following `$--BLOCK` section frames as its own packet -- the
+  format also syncs on `$--` -- with the last section ending at the real
+  prompt (see below).
 - **An unsolicited event abutting a reply does not extend it.**
   `exeResetReceiver` yields `$R: erst, ...\r\nResetReceiver, Soft,
   none\r\nSTOP>` (one packet -- `STOP` is a valid token) immediately
@@ -209,23 +216,34 @@ the prompt reflects our own descriptor (sec 3.1.3), so only
   unpaired `CR` or `LF`, a non-token 4-char group before `>`, or an
   over-length run all mean "not a packet".
 
-**No `lst` reply frames past its pseudo-prompt -- single- and
-multi-`$--BLOCK` alike.** Per sec 3.1.3 *every* `lst` reply has the
+**A `lst` reply frames unit by unit, and the analyzer stitches the
+units back together.** Per sec 3.1.3 *every* `lst` reply has the
 pseudo-prompt `---->` as its second line, before the first `$--BLOCK`
 section; the guide's own single-block example makes this concrete:
-`$R; lstAsciiDisplay\r\n---->\r\n$--BLOCK 1 / 1\r\n...\r\nCOM1>`. So the
-framing always closes the packet at that first `---->` terminator: only
-`$R; <cmd>\r\n---->` frames, and the trailing `$--BLOCK` sections --
-which begin `$-`, fail the byte-1 `R` check -- plus the reply's final
-real prompt are never delivered as a completion signal. The block count
-is irrelevant to this: it is the `---->` on line 2 that defeats the
-framing, not the interleaving the guide separately licenses for
-multi-block output. This is acceptable: no message-file tag issues a
-`lst` command (`get-version` uses the `get`-commands
-`getReceiverInterface`/`getReceiverCapabilities`, which are `$R:`
-replies), while every `set`/`get`/`exe`/user-management reply -- and
-the `$R! lstCurrentUser` reply, which despite its name uses the `$R!`
-shape, not `$R;` -- frames in full. Revisit if a `lst` tag is added.
+`$R; lstAsciiDisplay\r\n---->\r\n$--BLOCK 1 / 1\r\n...\r\nCOM1>`. Each
+unit -- the `$R;` opener and each `$--BLOCK` section -- frames as its
+own packet: the format syncs on `$--` as well as `$R<type>`, and a
+`---->` closes a packet just as a real prompt does. The analyzer
+(next section) treats the `$R;` opener as the ack -- the command was
+accepted, so `OK` is reported immediately (`responseAckMore`) -- while
+keeping the request open so the read loop keeps reading and
+single-flight pacing holds. Each intermediate `$--BLOCK` (ending in
+`---->`) is shown but not correlated (`responseInfo`); the final
+`$--BLOCK`, ending at the real prompt, completes the command with no
+second ack line (`responseDone`). This frames cleanly for config-style
+`lst` output, which is printable with no mid-line `$` (the `$--BLOCK`
+header is the only `$`, and it opens each packet); a raw
+`lstRecordedFile` file download, whose block content is arbitrary
+bytes, will not frame and is out of scope. The `$R! lstCurrentUser`
+reply, which despite its name uses the `$R!` shape rather than `$R;`,
+frames as a single ordinary reply.
+
+Verified on a mosaic-G5: `lstInternalFile, Identification` returns a
+five-`$--BLOCK` XML identity dump; `get-identity: OK` is reported at the
+opener, all six units (opener plus five blocks, the fifth ending at
+`USB1>`) display in order, and the command completes at that final
+prompt. A normal command sent after it is held until the prompt, then
+acked cleanly.
 
 ## The `"septentrio"` responsePattern analyzer
 
@@ -585,9 +603,13 @@ This phase adds the `$R` reply `PacketFormat` in
     command.
   - `$R! <CanonicalName>\r\n...\r\nCOM1>` (e.g. a `login` request)
     treated as ack.
-  - `$R; <cmd>\r\n---->` (`lst` first unit) treated as ack; the
-    multi-`$--BLOCK` continuation is out of scope (see "Packet
-    framing").
+  - `$R; <cmd>\r\n---->` (`lst` opener) is the ack: the command was
+    accepted, so `OK` is reported now (`responseAckMore`), but the
+    request stays open for the blocks still to come. Each intermediate
+    `$--BLOCK <n> / <m>\r\n...\r\n---->` section is shown but not
+    correlated (`responseInfo`); the final `$--BLOCK ...\r\nCOM1>`
+    section, ending in the real prompt, completes the command with no
+    second ack line (`responseDone`). See "Packet framing".
   - `factoryReset`'s `$R: factoryReset: <message>\r\nCOM1>` handled as
     an ordinary ack, completion driven by the packet's own terminating
     prompt. (`factoryReset` ends in the *normal* prompt, not `STOP>`: it

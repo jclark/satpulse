@@ -57,6 +57,45 @@ func TestReplyLstPseudoPromptTerminator(t *testing.T) {
 	framesWhole(t, "$R; lstAsciiDisplay\r\n---->")
 }
 
+func TestReplyBlockSectionFinal(t *testing.T) {
+	// The last "$--BLOCK" section of an lst reply ends at the real prompt.
+	framesWhole(t, "$-- BLOCK 1 / 1\r\nGalOSNMAPublicKeys, Key0, \"\"\r\nCOM1>")
+}
+
+func TestReplyBlockSectionIntermediate(t *testing.T) {
+	// A non-final "$--BLOCK" section ends at its own "---->" pseudo-prompt.
+	framesWhole(t, "$-- BLOCK 1 / 2\r\nGalOSNMAPublicKeys, Key0, \"\"\r\n---->")
+}
+
+func TestReplyLstFramesIntoUnits(t *testing.T) {
+	// A whole lst reply frames as a sequence of units: the "$R;" opener, then
+	// each "$--BLOCK" section, ending at the last section's real prompt. The
+	// CRLF between units is inter-packet gap and not part of any unit.
+	units := []string{
+		"$R; lif, Identification\r\n---->",
+		"$-- BLOCK 1 / 2\r\nfoo\r\n---->",
+		"$-- BLOCK 2 / 2\r\nbar\r\nCOM1>",
+	}
+	full := strings.Join(units, "\r\n")
+	s := scan.New(strings.NewReader(full), 512, []gpsprot.PacketFormat{ReplyPacketFormat})
+	for _, want := range units {
+		var pkt scan.Packet
+		for {
+			var err error
+			pkt, err = s.Scan()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pkt.Format != nil {
+				break // skip the inter-unit CRLF gap emitted as unframed data
+			}
+		}
+		if pkt.Data != want {
+			t.Fatalf("Data = %q, want %q", pkt.Data, want)
+		}
+	}
+}
+
 func TestReplyEndsAtFirstPromptBeforeUnsolicited(t *testing.T) {
 	// An unsolicited "$TE" event abuts the reply; the packet ends at the
 	// reply's own STOP>, not the event's trailing prompt.

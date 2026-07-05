@@ -49,6 +49,8 @@ const (
 	responseAck                           // positive acknowledgement
 	responseNak                           // negative acknowledgement
 	responseWait                          // interim "still processing"
+	responseAckMore                       // positive ack, but more output follows; keep request open
+	responseDone                          // completes a request whose ack was already reported
 )
 
 type responseAnalysis struct {
@@ -206,7 +208,7 @@ func (c *Correlator) ReadyToSend(rm RawMsg) bool {
 func (c *Correlator) CorrelatePacket(tag gpsprot.Tag, data string) Correlation {
 	ra := c.classifyResponse(tag, data)
 	switch ra.kind {
-	case responseAck, responseNak, responseWait:
+	case responseAck, responseNak, responseWait, responseAckMore, responseDone:
 		return c.correlateAck(tag, ra)
 	case responseData:
 		return c.correlateData(tag, data, true)
@@ -282,6 +284,23 @@ func (c *Correlator) correlateAck(tag gpsprot.Tag, ra responseAnalysis) Correlat
 			InResponseTo: rs.msg,
 			Relevance:    LevelAckOnly,
 		}
+	case responseAckMore:
+		// Positive ack, reported now, but more output still follows (e.g. an
+		// lst reply's "$--BLOCK" sections). Keep the request open -- via
+		// ackWaitMore -- so the read loop keeps reading and single-flight pacing
+		// holds until the completing packet arrives.
+		rs.ack = ackWaitMore
+		return Correlation{
+			Ack:          AckAck,
+			InResponseTo: rs.msg,
+			Relevance:    LevelMaybeResponse,
+		}
+	case responseDone:
+		// Completes a request whose ack was already reported (responseAckMore).
+		// Surface the packet, but no second ack line.
+		rs.ack = ackSuccess
+		rs.data = dataReceived
+		return Correlation{Relevance: LevelSoleResponse}
 	}
 	return Correlation{Relevance: LevelNotResponse}
 }

@@ -17,10 +17,18 @@ const TagReply gpsprot.Tag = "SEPTR"
 // that ">" is the "command done" signal, so the reply's arrival marks the
 // completion of the command.
 //
+// An lst command's reply is a succession of units: the "$R;" echo line
+// followed by the "---->" pseudo-prompt, then one or more "$--BLOCK" sections,
+// each intermediate one ending with another "---->" and only the last ending
+// with the real prompt (sec 3.1.3). Each unit frames as its own packet: the
+// format also syncs on "$--" so the "$--BLOCK" sections frame, and a "---->"
+// closes a packet just as a real prompt does. The septAnalyzer stitches the
+// units back together, completing the command only at the real prompt.
+//
 // The format is checksum-free, modeled on nov.AbbrevAsciiPacketFormat:
-// ExtractChecksum and ComputeChecksum return nil. It syncs on '$' then 'R',
-// which disambiguates it from SBF's "$@" and from NMEA's checksummed '$'
-// sentences.
+// ExtractChecksum and ComputeChecksum return nil. It syncs on '$' then 'R' (or
+// "$--" for block sections), which disambiguates it from SBF's "$@" and from
+// NMEA's checksummed '$' sentences.
 var ReplyPacketFormat gpsprot.PacketFormat = replyPacketFormat{}
 
 type replyPacketFormat struct{}
@@ -32,6 +40,9 @@ const (
 	rStateDollar
 	// rStateType means we have seen "$R" and expect a type char (: ; ! ?).
 	rStateType
+	// rStateDash1 means we have seen "$-" and expect the second '-' of the
+	// "$--BLOCK" header that opens an lst reply's block section.
+	rStateDash1
 	// rStateBody means we are inside a body line (not at a line start).
 	rStateBody
 	// rStateCR means we have seen a CR and expect the paired LF.
@@ -82,8 +93,15 @@ func (f replyPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextScanInd
 		if b == 'R' {
 			return rStateType
 		}
+		if b == '-' {
+			return rStateDash1
+		}
 	case rStateType:
 		if b == ':' || b == ';' || b == '!' || b == '?' {
+			return rStateBody
+		}
+	case rStateDash1:
+		if b == '-' {
 			return rStateBody
 		}
 	case rStateBody:
