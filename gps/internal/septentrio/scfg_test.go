@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/gps/lib/sbfbin"
 )
 
 // grcReplyPacket is a framed grc reply as captured from the mosaic-G5.
@@ -96,10 +95,12 @@ func runConfigOpts(t *testing.T, target *gpsprot.ConfigTarget, replies map[strin
 				if _, err := rp.ProcessPacket(pkt, t0); err != nil {
 					t.Fatalf("reply to %q: %v", cmd, err)
 				}
-				if strings.HasPrefix(cmd, "exeSBFOnce") && !rxSetupFed {
-					rxSetupFed = true
+			} else if cmd == "lstInternalFile, Identification" {
+				for _, pkt := range lifIdentPackets {
 					t0 = t0.Add(time.Millisecond)
-					feedRxSetup(t, sp, t0)
+					if _, err := rp.ProcessPacket(pkt, t0); err != nil {
+						t.Fatalf("lst packet: %v", err)
+					}
 				}
 			}
 		case gpsprot.ConfigActionWaitUntil:
@@ -115,6 +116,17 @@ func runConfigOpts(t *testing.T, target *gpsprot.ConfigTarget, replies map[strin
 		}
 	}
 	return cfg, sent, errs
+}
+
+// lifIdentPackets are the verbatim framed packets of a "lstInternalFile,
+// Identification" reply captured from the mosaic-G5 (log 09).
+var lifIdentPackets = []string{
+	"$R; lstInternalFile, Identification\r\n---->",
+	"$-- BLOCK 1 / 5\r\n<?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?>\r\n<rxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\">\r\n\r\n---->",
+	"$-- BLOCK 2 / 5\r\n    <hwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\">\r\n        <mainboard type=\"GRB00601000AA0401\"/>\r\n    </hwplatform>\r\n\r\n---->",
+	"$-- BLOCK 3 / 5\r\n    <firmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\">\r\n        <bootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/>\r\n        <gnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\">\r\n        </gnssfw>\r\n    </firmware>\r\n\r\n---->",
+	"$-- BLOCK 4 / 5\r\n    <files>\r\n        <permfile permid=\"20251217b-100019577-1\"/>\r\n    </files>\r\n\r\n---->",
+	"$-- BLOCK 5 / 5\r\n</rxproduct>\r\n\r\nUSB1>",
 }
 
 // feedRxSetup delivers the corpus ReceiverSetup packet through the real SBF
@@ -473,26 +485,20 @@ func TestConfigureReloadAndFactory(t *testing.T) {
 	}
 }
 
-// TestConfigureIdentity checks the deterministic identity fetch: with no
-// ReceiverSetup block flowing, the configurator enables the block on the
-// owned stream (the one-shot is silently ignored otherwise - verified) and
-// requests it with exeSBFOnce; the block completes the request and fills
-// ReceiverInfo.
+// TestConfigureIdentity checks the identity fetch: with no ReceiverSetup
+// block flowing, the configurator requests the Identification internal file
+// (no configuration change, best-effort) and parses its XML block units.
 func TestConfigureIdentity(t *testing.T) {
-	replies := map[string]string{
-		"getSBFOutput, Stream1": "SBFOutput, Stream1, USB1, MeasEpoch+PVTGeodetic+EndOfPVT+xPPSOffset+ChannelStatus, sec1",
-		"setSBFOutput, Stream1, USB1, ReceiverSetup+ChannelStatus+EndOfPVT+MeasEpoch+PVTGeodetic+xPPSOffset, sec1": "SBFOutput, Stream1, USB1, MeasEpoch+PVTGeodetic+EndOfPVT+xPPSOffset+ChannelStatus+ReceiverSetup, sec1",
-		"exeSBFOnce, USB1, ReceiverSetup": "SBFOnce, USB1, ReceiverSetup",
-	}
-	cfg, sent, errs := runConfigOpts(t, &gpsprot.ConfigTarget{}, replies, false)
+	cfg, sent, errs := runConfigOpts(t, &gpsprot.ConfigTarget{}, nil, false)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	for _, cmd := range []string{"getSBFOutput, Stream1",
-		"setSBFOutput, Stream1, USB1, ReceiverSetup+ChannelStatus+EndOfPVT+MeasEpoch+PVTGeodetic+xPPSOffset, sec1",
-		"exeSBFOnce, USB1, ReceiverSetup"} {
-		if !slices.Contains(sent, cmd) {
-			t.Errorf("command %q not sent; sent: %v", cmd, sent)
+	if !slices.Contains(sent, "lstInternalFile, Identification") {
+		t.Fatalf("identity fetch not sent; sent: %v", sent)
+	}
+	for _, cmd := range sent {
+		if strings.HasPrefix(cmd, "set") || strings.HasPrefix(cmd, "exe") {
+			t.Errorf("identity fetch must not change configuration; sent %q", cmd)
 		}
 	}
 	info := cfg.ReceiverInfo()
@@ -509,43 +515,8 @@ func TestConfigureIdentitySkippedWhenFlowing(t *testing.T) {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 	for _, cmd := range sent {
-		if strings.HasPrefix(cmd, "exeSBFOnce") || strings.HasPrefix(cmd, "setSBFOutput") {
+		if strings.HasPrefix(cmd, "lstInternalFile") {
 			t.Errorf("unexpected identity command %q", cmd)
 		}
-	}
-}
-
-// TestConfigureIdentityRetry checks the one-shot's retry: the block missing
-// its absorb window makes the request eligible for resend, the retried
-// one-shot delivers, and a total miss is still success (best-effort
-// identity, never a failed run).
-func TestConfigureIdentityRetry(t *testing.T) {
-	req := &sReq{cmd: "exeSBFOnce, USB1, ReceiverSetup", waitRxSetup: true, optional: true, state: sStateReady}
-	c := &Configurator{reqs: []*sReq{req}}
-	req.SetSentTime(time.Time{}.Add(time.Second))
-	if err := c.reply(&Reply{Kind: ReplyAck, Echo: req.cmd, States: []string{"SBFOnce, USB1, ReceiverSetup"}, Prompt: "USB1"}, time.Time{}.Add(time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	if req.GetState() != gpsprot.ConfigRequestMaybeComplete {
-		t.Fatalf("after ack without block: %v", req.GetState())
-	}
-	req.SetDeadlinePassed()
-	if req.GetState() != gpsprot.ConfigRequestMayResend {
-		t.Fatalf("after missed absorb window: %v", req.GetState())
-	}
-	req.SetSentTime(time.Time{}.Add(2 * time.Second))
-	if err := c.reply(&Reply{Kind: ReplyAck, Echo: req.cmd, States: []string{"SBFOnce, USB1, ReceiverSetup"}, Prompt: "USB1"}, time.Time{}.Add(2*time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	c.receiverSetup(&sbfbin.ReceiverSetup{})
-	if req.GetState() != gpsprot.ConfigRequestSucceeded {
-		t.Fatalf("after block arrival: %v", req.GetState())
-	}
-
-	// Total miss: give-up is success.
-	req2 := &sReq{cmd: "exeSBFOnce, USB1, ReceiverSetup", waitRxSetup: true, optional: true, state: sStateMayResend}
-	req2.SetWontResend()
-	if req2.GetState() != gpsprot.ConfigRequestSucceeded {
-		t.Fatalf("give-up: %v", req2.GetState())
 	}
 }

@@ -1,6 +1,9 @@
 package septentrio
 
 import (
+	"encoding/xml"
+	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -343,7 +346,7 @@ func (c *Configurator) generateQueryReqs() {
 	if t.UsesAny(gpsprot.PropIDAntennaCableDelay) {
 		c.addReq("getCalibCommonDelay", np.parseCalibCommonDelay)
 	}
-	if c.touchesSBFOutput() || c.rxSetup == nil {
+	if c.touchesSBFOutput() {
 		c.addReq("getSBFOutput, "+ownStream, np.parseSBFOutput)
 	}
 	if t.Opts.NMEAMsg.IsSet() {
@@ -369,4 +372,62 @@ func (c *Configurator) generateFollowupQueries() bool {
 	}
 	c.addReq(cmd, c.np.parseStaticPos)
 	return true
+}
+
+// rxIdent is the receiver identity parsed from the Identification internal
+// file ("lstInternalFile, Identification"), an XML document delivered as lst
+// block units. It is the identity source when no ReceiverSetup SBF block
+// has arrived (owner ruling, revised: the same-connection one-shot fetch of
+// ReceiverSetup needs a stream-enable side effect, which reads like
+// --show-receiver changing the configuration).
+type rxIdent struct {
+	Product  string // hwplatform product, e.g. "mosaic-G5 P3"
+	Serial   string // hwplatform serialnr
+	Firmware string // firmware version, e.g. "1.1.0"
+	GNSSFW   string // GNSS firmware version, e.g. "2026.01.2-g83d1ca6770"
+}
+
+// parseIdent parses the Identification file content (the joined block units
+// of the lst reply).
+func parseIdent(content string) (*rxIdent, error) {
+	var doc struct {
+		HWPlatform struct {
+			Product  string `xml:"product,attr"`
+			SerialNr string `xml:"serialnr,attr"`
+		} `xml:"hwplatform"`
+		Firmware struct {
+			Version string `xml:"version,attr"`
+			GNSSFW  struct {
+				Version string `xml:"version,attr"`
+			} `xml:"gnssfw"`
+		} `xml:"firmware"`
+	}
+	dec := xml.NewDecoder(strings.NewReader(content))
+	dec.CharsetReader = latin1CharsetReader
+	if err := dec.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("septentrio: parsing Identification file: %v", err)
+	}
+	return &rxIdent{
+		Product:  doc.HWPlatform.Product,
+		Serial:   doc.HWPlatform.SerialNr,
+		Firmware: doc.Firmware.Version,
+		GNSSFW:   doc.Firmware.GNSSFW.Version,
+	}, nil
+}
+
+// latin1CharsetReader decodes the ISO-8859-1 charset the receiver declares
+// in its XML files by widening each byte to the equal Unicode code point.
+func latin1CharsetReader(charset string, input io.Reader) (io.Reader, error) {
+	if !strings.EqualFold(charset, "ISO-8859-1") {
+		return nil, fmt.Errorf("septentrio: unsupported XML charset %q", charset)
+	}
+	b, err := io.ReadAll(input)
+	if err != nil {
+		return nil, err
+	}
+	runes := make([]rune, len(b))
+	for i, c := range b {
+		runes[i] = rune(c)
+	}
+	return strings.NewReader(string(runes)), nil
 }

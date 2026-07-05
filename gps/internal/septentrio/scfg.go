@@ -53,7 +53,8 @@ type Configurator struct {
 	port          string // connection descriptor from reply prompts (e.g. "USB1")
 	rxSetup       *sbfbin.ReceiverSetup
 	np            nativeProps
-	staticQueried bool // the static-position follow-up query was generated
+	ident         *rxIdent // from the Identification file, when no ReceiverSetup block arrived
+	staticQueried bool     // the static-position follow-up query was generated
 }
 
 type sReqState int
@@ -74,15 +75,16 @@ func (s sReqState) isFinal() bool {
 
 // sReq is a single command request.
 type sReq struct {
-	state       sReqState
-	cmd         string       // command text, without CR LF
-	noReply     bool         // expects no framed reply (the escape)
-	nakOK       bool         // a "$R?" refusal is an acceptable outcome, not a failure
-	waitRxSetup bool         // after the ack, absorb until the ReceiverSetup block arrives
-	optional    bool         // giving up after retries is success, not failure
-	onReply     func(*Reply) // records achieved values from the matching reply
-	tBase       time.Time    // send time, for the reply deadline
-	err         error
+	state    sReqState
+	cmd      string       // command text, without CR LF
+	noReply  bool         // expects no framed reply (the escape)
+	nakOK    bool         // a "$R?" refusal is an acceptable outcome, not a failure
+	optional bool         // giving up after retries is success, not failure
+	onReply  func(*Reply) // records achieved values from the matching reply
+	onLst    func(string) // lst commands: called with the joined block contents
+	blocks   []string     // block units collected so far (lst commands)
+	tBase    time.Time    // send time, for the reply deadline
+	err      error
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -90,8 +92,8 @@ var _ gpsprot.ConfigRequest = (*sReq)(nil)
 
 // ReceiverInfo returns static information about the GPS receiver: supported
 // signals from the probe's capability reply, identity from the most recent
-// ReceiverSetup SBF block (which may not have arrived yet - the block's own
-// schedule emits it within a minute of being enabled on a stream).
+// ReceiverSetup SBF block when one has arrived, else from the fetched
+// Identification file.
 func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	info := &gpsprot.ReceiverInfo{
 		Vendor:        Vendor,
@@ -101,6 +103,10 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 		info.Hardware = rs.ProductName.String()
 		info.Firmware = rs.RxVersion.String()
 		info.VendorSpecific = rs
+	} else if id := c.ident; id != nil {
+		info.Hardware = id.Product
+		info.Firmware = id.Firmware
+		info.VendorSpecific = id
 	}
 	return info
 }
@@ -224,17 +230,21 @@ func (c *Configurator) reply(r *Reply, tRead time.Time) error {
 		if r.Echo != req.cmd {
 			return nil // not ours: e.g. a late reply to a repeated probe
 		}
-		if req.waitRxSetup && c.rxSetup == nil {
-			// The acked one-shot delivers the ReceiverSetup block within
-			// milliseconds; absorb until it arrives (or the deadline
-			// passes - identity stays best-effort).
-			req.state = sStateSentNoReply
-			req.tBase = tRead
-			break
+		if r.Kind == ReplyLst && req.onLst != nil {
+			break // accepted; the block units follow
 		}
 		req.state = sStateSucceeded
 		if req.onReply != nil {
 			req.onReply(r)
+		}
+	case ReplyBlock:
+		if req.onLst == nil {
+			break
+		}
+		req.blocks = append(req.blocks, r.Block)
+		if r.Prompt != "" {
+			req.state = sStateSucceeded
+			req.onLst(strings.Join(req.blocks, "\n"))
 		}
 	case ReplyNak:
 		if req.nakOK {
@@ -250,15 +260,9 @@ func (c *Configurator) reply(r *Reply, tRead time.Time) error {
 	return nil
 }
 
-// receiverSetup records the latest ReceiverSetup block for ReceiverInfo and
-// completes an identity one-shot waiting for it.
+// receiverSetup records the latest ReceiverSetup block for ReceiverInfo.
 func (c *Configurator) receiverSetup(rs *sbfbin.ReceiverSetup) {
 	c.rxSetup = rs
-	for i := c.nFinished; i < len(c.reqs); i++ {
-		if req := c.reqs[i]; req.waitRxSetup && req.state == sStateSentNoReply {
-			req.state = sStateSucceeded
-		}
-	}
 }
 
 func (req *sReq) invalidStatePanic(method string) string {
@@ -338,19 +342,13 @@ func (req *sReq) SetSentTime(tSent time.Time) {
 	}
 }
 
-// SetDeadlinePassed handles a passed reply or absorb deadline. An identity
-// one-shot whose block did not arrive within the absorb window becomes
-// eligible for retry: the one-shot is idempotent, and the block has been
-// observed to occasionally miss a window.
+// SetDeadlinePassed handles a passed reply or absorb deadline.
 func (req *sReq) SetDeadlinePassed() {
 	switch req.state {
 	case sStateAwaiting:
+		req.blocks = nil // a retried lst reply arrives in full
 		req.state = sStateMayResend
 	case sStateSentNoReply:
-		if req.waitRxSetup {
-			req.state = sStateMayResend
-			break
-		}
 		req.state = sStateSucceeded
 	default:
 		panic(req.invalidStatePanic("SetDeadlinePassed"))

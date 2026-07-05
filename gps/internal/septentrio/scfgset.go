@@ -40,30 +40,21 @@ func (c *Configurator) generateSetReqs() {
 }
 
 // generateIdentReqs fetches the receiver identity when no ReceiverSetup
-// block has arrived yet. The one-shot only delivers to this connection when
-// the block is enabled on a stream bound to it (verified: it is silently
-// ignored otherwise), so the owned stream gains ReceiverSetup first if
-// nothing else already put it there; the block then arrives within
-// milliseconds of the one-shot's ack.
+// block has arrived: the Identification internal file is the one ASCII
+// carrier of the firmware version, answers on this connection within
+// milliseconds, and changes nothing. (The ReceiverSetup one-shot was
+// rejected for this: its same-connection delivery requires enabling the
+// block on a stream, a side effect whose periodic emissions consumers see.)
+// Identity stays best-effort: give-up is success, with identity absent.
 func (c *Configurator) generateIdentReqs() {
 	if c.rxSetup != nil {
 		return
 	}
-	if !c.touchesSBFOutput() {
-		st := c.np.sbfStream
-		if st == nil || !slices.Contains(st.messages, "ReceiverSetup") {
-			cd, interval := c.port, "sec1"
-			if st != nil && st.cd != "" && st.cd != "none" {
-				cd = st.cd
-			}
-			if st != nil && st.interval != "off" {
-				interval = st.interval
-			}
-			c.addReq("setSBFOutput, "+ownStream+", "+cd+", "+strings.Join(c.sbfOutputList(), "+")+", "+interval,
-				c.np.parseSBFOutput)
+	c.append(&sReq{cmd: "lstInternalFile, Identification", optional: true, onLst: func(content string) {
+		if id, err := parseIdent(content); err == nil {
+			c.ident = id
 		}
-	}
-	c.append(&sReq{cmd: "exeSBFOnce, " + c.port + ", ReceiverSetup", waitRxSetup: true, optional: true})
+	}})
 }
 
 // generateSaveResetReqs realizes the NVM operations, last: a save persists

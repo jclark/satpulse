@@ -92,11 +92,12 @@ a `NativeMsgHandler` (stage 1).
   connection we configure over. The block's own OnChange schedule
   delivers it instead: per the SBF reference it is "generated every
   60 seconds and each time a user-command is entered to change one
-  or more values in the block", so once it is enabled on the owned
-  SBF stream it arrives within a minute (there is no emit-on-enable;
-  a 4 s stage-0 watch missed the 60 s period). Owner ruling: identity
-  comes from ReceiverSetup (normal SBF packets, already decoded by
-  sbfbin), NOT from parsing the Identification internal file's XML.
+  or more values in the block", so enabled on a stream it arrives
+  within a minute (there is no emit-on-enable; a 4 s stage-0 watch
+  missed the 60 s period). The one-shot DOES deliver same-connection
+  when the block is enabled on a stream bound to that connection -
+  but enabling it is a configuration change, so the active identity
+  fetch uses the Identification file instead (see above).
 - **Reads**: one `get` -> one reply; multi-value replies use one
   state line per unit: `getElevationMask, all` -> 2 lines (Tracking,
   PVT); no-arg `getSBFOutput` -> 14 lines (Stream1-10 + Res1-4);
@@ -118,15 +119,18 @@ a `NativeMsgHandler` (stage 1).
   (signals, ports, capabilities) and caches it.
 - `ReceiverInfo()`: supported GNSS/signals from grc's signal list via
   the coarse signal table below; `Vendor = "Septentrio"`; `Hardware`
-  (ProductName, e.g. "mosaic-G5 P3") and `Firmware` (RxVersion, e.g.
-  "1.1.0") from the SBF `ReceiverSetup` block (5902), which sbfbin
-  already decodes and the SBF PacketProcessor already forwards via
-  NativeMsg (owner ruling: no Identification-XML parsing). The
-  configurator keeps ReceiverSetup in the owned stream's block list;
-  the block's own schedule (every 60 s, plus immediately after any
-  command changing a block value) populates the fields - identity
-  may be unknown for up to a minute after a fresh enable, and the
-  daemon refreshes it continuously thereafter.
+  ("mosaic-G5 P3") and `Firmware` ("1.1.0") from a ReceiverSetup SBF
+  block when one arrives (a user configuration that emits it gets
+  identity for free), else fetched with `lstInternalFile,
+  Identification` - the one ASCII carrier of the firmware version -
+  parsed as XML from the lst block units. Owner ruling (revised
+  2026-07-06 after the one-shot's limits surfaced): identity must
+  not change the receiver configuration, even in RAM, and must not
+  delay `--show-receiver`; the lst fetch satisfies both (millisecond
+  reply, no side effects). The ReceiverSetup one-shot alternative
+  was rejected: `exeSBFOnce` delivers to its own connection ONLY
+  when the block is enabled on a stream bound to it, and enabling it
+  is a configuration change with observable periodic emissions.
 
 ### Coarse signal table (gpsprot.Signal <-> Septentrio name)
 
