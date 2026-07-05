@@ -170,3 +170,24 @@ func TestConfigureRTCMOut(t *testing.T) {
 		t.Errorf("RTCM clear not sent; sent: %v", sent)
 	}
 }
+
+// TestConfigureOutputsEmptyList pins the hardware finding that an empty
+// Messages argument KEEPS the current list (the omitted-argument rule): an
+// empty selection must be spelled none.
+func TestConfigureOutputsEmptyList(t *testing.T) {
+	cmd := "setSBFOutput, Stream1, USB1, none, sec1"
+	replies := map[string]string{
+		"getSBFOutput, Stream1": "SBFOutput, Stream1, USB1, ChannelStatus+MeasEpoch, sec1",
+		cmd:                     "SBFOutput, Stream1, USB1, none, sec1",
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.SatsMsg.Set(gpsprot.SatsMsgNone)
+	target.Opts.RawMsg.Set(gpsprot.RawMsgNone)
+	_, sent, errs := runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if !slices.Contains(sent, cmd) {
+		t.Errorf("empty selection not spelled none; sent: %v", sent)
+	}
+}

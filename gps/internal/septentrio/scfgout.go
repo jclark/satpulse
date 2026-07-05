@@ -221,8 +221,10 @@ func rtcmMessages(f gpsprot.RTCMMsgFlags) []string {
 func (c *Configurator) generateOutputReqs() {
 	np := &c.np
 	if c.touchesSBFOutput() {
-		list := c.sbfOutputList()
-		c.addReq("setSBFOutput, "+ownStream+", "+c.port+", "+strings.Join(list, "+")+", sec1",
+		// An empty Messages argument keeps the current list (the
+		// omitted-argument rule); an empty selection must be spelled none.
+		list := listOrNone(strings.Join(c.sbfOutputList(), "+"))
+		c.addReq("setSBFOutput, "+ownStream+", "+c.port+", "+list+", sec1",
 			np.parseSBFOutput)
 	}
 	if c.target.Opts.NMEAMsg.IsSet() {
