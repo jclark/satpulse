@@ -27,10 +27,6 @@ SIGNAL_BAND_PREFIXES = [
     ("L2", "L2"), ("E6", "E6"), ("L6", "E6"), ("B3", "E6"),
 ]
 
-# The signal-band keys denoted by each band name a request can use.
-REQUEST_BANDS = {"L1": {"L1"}, "L2": {"L2"}, "L5": {"L5"}, "E5b": {"E5b"},
-                 "E5": {"L5", "E5b"}, "E6": {"E6"}, "L6": {"E6"}}
-
 # satpulsetool refuses any request whose denoted set enables no
 # non-augmentation signal from a major constellation.
 MAJORS = {"GPS", "GLO", "GAL", "BDS"}
@@ -59,7 +55,7 @@ class SignalObservation:
     """Outcome of requesting an enabled-signal set. requested is in model
     vocabulary; syntax records which command-line spelling was used. achieved
     is the stored set from the readback; accepted carries the set response's
-    own set only when it differs from the stored one. gnss/band preserve the
+    own set only when it differs from the stored one. gnss preserves the
     command spelling for observations whose model request is intentionally
     unknown."""
 
@@ -69,7 +65,6 @@ class SignalObservation:
     achieved: SignalMap | None
     accepted: SignalMap | None = None
     gnss: list[str] | None = None
-    band: list[str] | None = None
     tags: list[str] = field(default_factory=list)
 
 
@@ -227,19 +222,14 @@ def signal_request_valid(req: SignalMap) -> bool:
                for c, s in normalize_signal_map(req).items() if c in MAJORS)
 
 
-def requested_signals(gnss: list[str], band: list[str] | None,
-                      supported: SignalMap) -> SignalMap | None:
-    """The signal set a constellation/band request denotes, intersected with
-    the discovered supported set. None when the supported set does not
-    cover a named constellation."""
+def requested_signals(gnss: list[str], supported: SignalMap) -> SignalMap | None:
+    """The signal set a --gnss request denotes, intersected with the
+    discovered supported set. None when the supported set does not cover a
+    named constellation."""
     sup = normalize_signal_map(supported)
     if any(c not in sup for c in gnss):
         return None
-    if band is None:
-        return normalize_signal_map({c: sup[c] for c in gnss})
-    keys = set().union(*(REQUEST_BANDS.get(b, set()) for b in band))
-    return normalize_signal_map(
-        {c: [s for s in sup[c] if signal_band(s) in keys] for c in gnss})
+    return normalize_signal_map({c: sup[c] for c in gnss})
 
 
 def config_value(cfg: dict[str, Any], path: tuple[str, ...]) -> Value:
