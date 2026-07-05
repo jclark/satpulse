@@ -427,7 +427,7 @@ class Analyzer:
         if s.error is not None:
             self.signal_observations.append(SignalObservation(
                 req, syntax, s.error, None,
-                gnss=s.intent.get("gnss"), band=s.intent.get("band"),
+                gnss=s.intent.get("gnss"),
                 tags=tags if isinstance(tags, list) else []))
             if back != prev:
                 self.failures.append(
@@ -437,7 +437,7 @@ class Analyzer:
         achieved = back
         self.signal_observations.append(SignalObservation(
             req, syntax, None, achieved, reported if reported != achieved else None,
-            gnss=s.intent.get("gnss"), band=s.intent.get("band"),
+            gnss=s.intent.get("gnss"),
             tags=tags if isinstance(tags, list) else []))
         self.prev_vals["signals"] = achieved
 
