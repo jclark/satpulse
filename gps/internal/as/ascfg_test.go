@@ -486,23 +486,40 @@ func TestPVTOutMissingMessage(t *testing.T) {
 }
 
 func TestRTCMOut(t *testing.T) {
-	rcvr := &testReceiver{monVer: tau1201Ver()}
-	cp := probe(t, rcvr)
-	target := &gpsprot.ConfigTarget{}
-	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP)
-	_, errCount := configure(t, cp, rcvr, target)
-	if errCount != 0 {
-		t.Errorf("ErrorCount = %d, want 0", errCount)
+	tests := []struct {
+		name  string
+		flags gpsprot.RTCMMsgFlags
+		eph   bool // expect eph targets turned off
+	}{
+		{name: "msm4_arp", flags: gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP, eph: true},
+		{name: "msm4_arp_other", flags: gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgOther},
 	}
-	expect := map[asbin.MsgID]uint8{asbin.RtcmArpID: 1}
-	for _, mid := range rtcmMSM4IDs {
-		expect[mid] = 1
-	}
-	for _, mid := range rtcmMSM7IDs {
-		expect[mid] = 0
-	}
-	if !reflect.DeepEqual(rcvr.rates, expect) {
-		t.Errorf("rates\ngot  %v\nwant %v", rcvr.rates, expect)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tau1201Ver()}
+			cp := probe(t, rcvr)
+			target := &gpsprot.ConfigTarget{}
+			target.Opts.RTCMMsg.Set(tc.flags)
+			_, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			expect := map[asbin.MsgID]uint8{asbin.RtcmArpID: 1}
+			for _, mid := range rtcmMSM4IDs {
+				expect[mid] = 1
+			}
+			for _, mid := range rtcmMSM7IDs {
+				expect[mid] = 0
+			}
+			if tc.eph {
+				for _, mid := range rtcmEphIDs {
+					expect[mid] = 0
+				}
+			}
+			if !reflect.DeepEqual(rcvr.rates, expect) {
+				t.Errorf("rates\ngot  %v\nwant %v", rcvr.rates, expect)
+			}
+		})
 	}
 }
 
@@ -514,6 +531,9 @@ func TestRTCMOutAbsent(t *testing.T) {
 		nakAll[mid] = true
 	}
 	for _, mid := range rtcmMSM7IDs {
+		nakAll[mid] = true
+	}
+	for _, mid := range rtcmEphIDs {
 		nakAll[mid] = true
 	}
 	nakAll[asbin.RtcmArpID] = true
