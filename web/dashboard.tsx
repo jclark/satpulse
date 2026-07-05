@@ -75,11 +75,12 @@ export const Dashboard: FunctionComponent = () => {
     }, []);
     
     const svs = events.satellites ? simplifySignals(events.satellites.svs) : [];
-    
+    const signalSVs = svs.filter(sv => sv.signals && sv.signals.length > 0);
+
     return (
         <CardsElement>
         {events.satellites && haveLookAngles && <SkyViewCard svs={svs} />}
-        {events.satellites && <SignalGraphCard svs={svs} />}
+        {events.satellites && signalSVs.length > 0 && <SignalGraphCard svs={signalSVs} />}
         {events.time && <PropertyCard title="Current GPS Time" data={events.time} format={timeFormat} />}
         {phc && <PropertyCard title="PTP Hardware Clock" data={phc} format={phcFormat} />}
         {events.receiver && <PropertyCard title="Receiver" data={events.receiver} format={receiverFormat} />}

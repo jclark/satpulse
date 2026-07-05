@@ -1,7 +1,7 @@
 export interface SVInfo {
     id: string;        // e.g., "G01"
     lookAngles?: LookAngles;  // look angle of the satellite
-    signals: SignalInfo[];  // Array of signal information
+    signals?: SignalInfo[];  // absent when the receiver reports no signal-strength (CN0) info
     used?: boolean;      // true if known to be used in navigation solution
 }
 
@@ -85,7 +85,10 @@ export function SkyView(satellites: SVInfo[]) {
                 // Mark unused satellites with "-" if known to be unused.
                 // Balance the trailing "-" with an invisible leading "-", so that the svid is centered.
                 const usedValid = satellites.some(s => s.used === true);
-                const unused = usedValid && !sv.used; // known unused             
+                const unused = usedValid && !sv.used; // known unused
+                // Fade by signal strength when it is known; a satellite with no
+                // signal-strength info gets no fade class, so it stays fully visible.
+                const fade = sv.signals && sv.signals.length > 0 ? opacityClassFor(sv.signals[0].cn0) : '';
                 return (
                     <text
                         key={sv.id}
@@ -93,7 +96,7 @@ export function SkyView(satellites: SVInfo[]) {
                         y={y}
                         text-anchor="middle"
                         dominant-baseline="middle"
-                        class={`text-[3px] font-bold ${colorClassFor(sv.id)} ${opacityClassFor(sv.signals[0].cn0)}`}
+                        class={`text-[3px] font-bold ${colorClassFor(sv.id)} ${fade}`}
                     >
                         {unused ? <tspan class="opacity-0">-</tspan> : ''}
                         {sv.id}
@@ -105,15 +108,15 @@ export function SkyView(satellites: SVInfo[]) {
     );
 }
 
+// simplifySignals collapses each satellite's signals to a single
+// representative CN0 for display. A satellite with no signal-strength info
+// keeps an empty signals array, so callers can tell "no strength reported"
+// apart from a reported strength of zero.
 export function simplifySignals(satellites: SVInfo[]): SVInfo[] {
-    return satellites
-        .map(sv => {
-            return {
-                ...sv,
-                signals: [{ cn0: signalsCN0(sv.signals) }]
-            };
-        })
-        .filter(sv => sv.signals[0].cn0 > 0);
+    return satellites.map(sv => ({
+        ...sv,
+        signals: sv.signals && sv.signals.length > 0 ? [{ cn0: signalsCN0(sv.signals) }] : []
+    }));
 }
 
 function signalsCN0(signals: SignalInfo[]): number {
@@ -247,7 +250,7 @@ export function SignalGraph(satellites: SVInfo[], maxSatelliteCount: number, isD
 
                 {/* Bars */}
                 {satellites.map((sv, i) => {
-                    const cno = Math.min(sv.signals[0].cn0, MAX_CNO);
+                    const cno = Math.min(sv.signals?.[0]?.cn0 ?? 0, MAX_CNO);
                     const barWidth = (cno / MAX_CNO) * CHART_WIDTH;
                     return (
                         <g key={sv.id} transform={`translate(0, ${i * spacedBarHeight})`}>
