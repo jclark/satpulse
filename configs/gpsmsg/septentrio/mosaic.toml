@@ -8,9 +8,11 @@
 # G5-only among the tags here -- live in the per-model file, e.g.
 # mosaic-g5.toml, which [[include]]s this file.
 #
-# DRAFT: hardware has not arrived yet (see CLAUDE.local.md). Commands are
-# transcribed from the reference guides but are UNTESTED. Verify against real
-# hardware before use.
+# Verified on real mosaic-G5 hardware (v1.1.0): most entries carry a per-entry
+# "Verified ..." note; the few commands that reboot or re-enumerate the receiver
+# are marked "NOT hardware-tested" and must be checked manually. mosaic-X5
+# behavior is inferred from the reference guides and the diff analysis above, not
+# from X5 hardware.
 # Default baud rate: 115200 (8N1, no flow control)
 #
 # Port-specific tags carry the connection descriptor as a suffix. Output tags

@@ -6,9 +6,8 @@
 # X5. See plan/septentrio-analysis/x5-g5-differences.md for the full
 # model comparison this split is based on.
 #
-# DRAFT: hardware has not arrived yet (see CLAUDE.local.md). Commands are
-# transcribed from the mosaic-G5 v1.1.0 reference guide but are UNTESTED.
-# Verify against real hardware before use.
+# Verified on real mosaic-G5 hardware (v1.1.0); see the per-entry "Verified ..."
+# notes. Any command not confirmed on hardware is flagged individually.
 
 [[include]]
 src = "mosaic.toml"
