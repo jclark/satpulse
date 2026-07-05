@@ -30,14 +30,9 @@ type PacketProcessor struct {
 	curEpochMsg   *gpsprot.NavEpochMsg
 	curEpochStart time.Time
 
-	// Independent SatellitesMsg stream, keyed by its own (TOW, WNc).
-	satValid bool
-	satTOW   uint32
-	satWNc   uint16
-	satChan  *sbfbin.ChannelStatus
-	satMeas  *sbfbin.MeasEpoch
-	satVis   *sbfbin.SatVisibility
-	satTRead time.Time
+	// Independent SatellitesMsg stream: ChannelStatus emits satellites, and
+	// the latest MeasEpoch supplies optional signal-strength enrichment once.
+	satMeas *sbfbin.MeasEpoch
 
 	// Last-seen RTCM base station, retained across epochs (BaseStation is
 	// event-driven, not epoch-keyed).
@@ -126,16 +121,10 @@ func (p *PacketProcessor) Dispatch(b *sbfbin.Block, tRead time.Time) bool {
 		p.emitLeap(leapBDSUtc(b, m), tRead)
 		return true
 	case *sbfbin.ChannelStatus:
-		p.satBoundary(b.TimeStamp, tRead)
-		p.satChan = m
+		p.emitChannelStatusSats(m, tRead)
 		return true
 	case *sbfbin.MeasEpoch:
-		p.satBoundary(b.TimeStamp, tRead)
 		p.satMeas = m
-		return true
-	case *sbfbin.SatVisibility:
-		p.satBoundary(b.TimeStamp, tRead)
-		p.satVis = m
 		return true
 	case *sbfbin.DiffCorrIn:
 		p.emitCorReport(corReportDiffCorrIn(m, p.baseStationID, p.baseStationRTCM), tRead)
@@ -176,34 +165,20 @@ func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, 
 	return msg, gpsprot.PriVendorLow, p.mh
 }
 
-// satBoundary flushes the accumulated SatellitesMsg when the sat-block (TOW,
-// WNc) changes, then records the new key.
-func (p *PacketProcessor) satBoundary(ts sbfbin.TimeStamp, tRead time.Time) {
-	if p.satValid && (ts.TOW != p.satTOW || ts.WNc != p.satWNc) {
-		p.flushSats()
-	}
-	p.satValid = true
-	p.satTOW = ts.TOW
-	p.satWNc = ts.WNc
-	if p.satTRead.IsZero() {
-		p.satTRead = tRead
-	}
+// emitChannelStatusSats emits immediately on ChannelStatus, consuming the
+// latest MeasEpoch for CN0 and signal identity when available.
+func (p *PacketProcessor) emitChannelStatusSats(chn *sbfbin.ChannelStatus, tRead time.Time) {
+	p.emitSats(satellitesCombine(chn, p.satMeas), tRead)
+	p.satMeas = nil
 }
 
-// flushSats combines the accumulated ChannelStatus/MeasEpoch/SatVisibility of
-// the completed sat-epoch into one SatellitesMsg and dispatches it.
-func (p *PacketProcessor) flushSats() {
-	chn, meas, vis := p.satChan, p.satMeas, p.satVis
-	tRead := p.satTRead
-	p.satChan, p.satMeas, p.satVis = nil, nil, nil
-	p.satTRead = time.Time{}
-	if chn == nil && meas == nil && vis == nil {
-		return
+func (p *PacketProcessor) emitSats(msg *gpsprot.SatellitesMsg, tRead time.Time) bool {
+	if msg == nil || p.mh == nil {
+		return false
 	}
-	if msg := satellitesCombine(chn, meas, vis); msg != nil && p.mh != nil {
-		msg.Tag = Tag
-		p.mh.Satellites(msg, tRead)
-	}
+	msg.Tag = Tag
+	p.mh.Satellites(msg, tRead)
+	return true
 }
 
 // observeBaseStation records the last-seen RTCM base station ID for cross-block

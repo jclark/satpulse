@@ -40,24 +40,17 @@ func TestSBFSVID(t *testing.T) {
 
 func TestSignalTableSpotChecks(t *testing.T) {
 	e, ok := sbfSignalNumber(sbfbin.SigNumGPSL1CA)
-	if !ok || e.gnss != gpsprot.GPS || e.id != gpsprot.SigIDGPSL1CA || e.band != gpsprot.BandL1 {
+	if !ok || e.gnss != gpsprot.GPS || e.band != gpsprot.BandL1 {
 		t.Errorf("signal 0 = %+v", e)
 	}
-	// Galileo E6 component resolves via CommonFlags.
-	if id, _ := measEpochSignalID(sbfbin.SigNumGalileoE6, 0); id != gpsprot.SigIDGALE6C {
-		t.Errorf("E6 default = %v, want E6-C", id)
-	}
-	if id, _ := measEpochSignalID(sbfbin.SigNumGalileoE6, sbfbin.CommonFlagsE6BUsed); id != gpsprot.SigIDGALE6B {
-		t.Errorf("E6 with E6B used = %v, want E6-B", id)
-	}
-	// E5AltBOC has no SignalID yet (gap).
-	if _, ok := measEpochSignalID(sbfbin.SigNumGalileoE5AltBOC, 0); ok {
-		t.Error("E5AltBOC should have no MeasEpoch SignalID")
+	e, ok = sbfSignalNumber(sbfbin.SigNumGalileoE5AltBOC)
+	if !ok || e.gnss != gpsprot.GAL || e.band != (gpsprot.BandL5|gpsprot.BandE5b) {
+		t.Errorf("E5AltBOC = %+v", e)
 	}
 }
 
-// TestCombineChannelStatusAndMeasEpoch builds a ChannelStatus base tracking a
-// used GPS L1CA signal and overlays MeasEpoch CN0 onto the matching slot.
+// TestCombineChannelStatusAndMeasEpoch joins used and look-angle data from
+// ChannelStatus to the MeasEpoch signal.
 func TestCombineChannelStatusAndMeasEpoch(t *testing.T) {
 	cs := &sbfbin.ChannelStatus{
 		SatInfo: []sbfbin.ChannelSatInfo{{SVID: 1, SVIDFull: 1, AzimuthRiseSet: 100, Elevation: 30}},
@@ -70,7 +63,7 @@ func TestCombineChannelStatusAndMeasEpoch(t *testing.T) {
 	me := &sbfbin.MeasEpoch{
 		Type1: []sbfbin.MeasEpochChannelType1{{SVID: 1, Type: sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 200}},
 	}
-	msg := satellitesCombine(cs, me, nil)
+	msg := satellitesCombine(cs, me)
 	if msg == nil || len(msg.SVs) != 1 {
 		t.Fatalf("combine SVs = %v", msg)
 	}
@@ -89,7 +82,7 @@ func TestCombineChannelStatusAndMeasEpoch(t *testing.T) {
 		t.Errorf("signal = %+v, want L1CA used", sig)
 	}
 	if sig.CN0 != 60 { // 200*0.25 + 10
-		t.Errorf("CN0 = %d, want 60 (overlaid from MeasEpoch)", sig.CN0)
+		t.Errorf("CN0 = %d, want 60", sig.CN0)
 	}
 	if !sv.LookAngles.IsSet() {
 		t.Error("LookAngles unset")
@@ -101,7 +94,7 @@ func TestCombineMeasEpochOnly(t *testing.T) {
 	me := &sbfbin.MeasEpoch{
 		Type1: []sbfbin.MeasEpochChannelType1{{SVID: 10, Type: sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 180}},
 	}
-	msg := satellitesCombine(nil, me, nil)
+	msg := satellitesCombine(nil, me)
 	if msg == nil || msg.NativeMsgID != "MeasEpoch" || msg.UsedValidity != gpsprot.SatelliteUsedInvalid {
 		t.Fatalf("combine = %+v", msg)
 	}
@@ -110,38 +103,138 @@ func TestCombineMeasEpochOnly(t *testing.T) {
 	}
 }
 
-// TestCombineSatVisibilityReal appends orbit-visible SVs with look angles and
-// no signals from a real SatVisibility block.
-func TestCombineSatVisibilityReal(t *testing.T) {
-	vis := findBlock(t, "status.jsonl", "SatVisibility").Params.(*sbfbin.SatVisibility)
-	msg := satellitesCombine(nil, nil, vis)
-	if msg == nil || msg.NativeMsgID != "SatVisibility" {
+func TestCombineMeasEpochType2(t *testing.T) {
+	me := &sbfbin.MeasEpoch{
+		Type1: []sbfbin.MeasEpochChannelType1{{SVID: 3, Type: sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 180}},
+		Type2: [][]sbfbin.MeasEpochChannelType2{{
+			{Type: sbfbin.MeasType(sbfbin.SigNumGPSL5), CN0: 160},
+		}},
+	}
+	msg := satellitesCombine(nil, me)
+	if msg == nil || len(msg.SVs) != 1 {
 		t.Fatalf("combine = %+v", msg)
 	}
-	if len(msg.SVs) == 0 {
-		t.Fatal("no SVs")
+	sv := msg.SVs[0]
+	if len(sv.Signals) != 2 {
+		t.Fatalf("signals = %+v", sv.Signals)
+	}
+	sig, ok := findSignal(sv, gpsprot.SigIDGPSL5Q)
+	if !ok || sig.CN0 != 50 {
+		t.Errorf("L5 signal = %+v ok=%v, want CN0 50", sig, ok)
+	}
+}
+
+func TestCombineMeasEpochSkipsUnmappedRINEXSignal(t *testing.T) {
+	me := &sbfbin.MeasEpoch{
+		Type1: []sbfbin.MeasEpochChannelType1{{SVID: 71, Type: sbfbin.MeasType(sbfbin.SigNumGalileoE5AltBOC), CN0: 180}},
+	}
+	if msg := satellitesCombine(nil, me); msg != nil {
+		t.Fatalf("combine = %+v, want nil", msg)
+	}
+}
+
+func TestCombineMeasEpochMainAntennaOnly(t *testing.T) {
+	me := &sbfbin.MeasEpoch{
+		Type1: []sbfbin.MeasEpochChannelType1{
+			{SVID: 1, Type: sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 180},
+			{SVID: 1, Type: sbfbin.MeasType(1<<5) | sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 220},
+		},
+		Type2: [][]sbfbin.MeasEpochChannelType2{
+			{{Type: sbfbin.MeasType(1<<5) | sbfbin.MeasType(sbfbin.SigNumGPSL5), CN0: 220}},
+			{{Type: sbfbin.MeasType(sbfbin.SigNumGPSL5), CN0: 160}},
+		},
+	}
+	msg := satellitesCombine(nil, me)
+	if msg == nil || len(msg.SVs) != 1 {
+		t.Fatalf("combine = %+v", msg)
+	}
+	sv := msg.SVs[0]
+	if len(sv.Signals) != 1 {
+		t.Fatalf("signals = %+v, want main antenna L1 only", sv.Signals)
+	}
+	sig := sv.Signals[0]
+	if sig.ID != gpsprot.SigIDGPSL1CA || sig.CN0 != 55 {
+		t.Errorf("signal = %+v, want main antenna L1 CN0 55", sig)
+	}
+}
+
+func TestCombineUsedRINEXCodesDistinguishBDSB1IAndB1C(t *testing.T) {
+	cs := &sbfbin.ChannelStatus{
+		SatInfo: []sbfbin.ChannelSatInfo{{SVID: 147, SVIDFull: 147}},
+		StateInfo: [][]sbfbin.ChannelStateInfo{{{
+			Antenna:   0,
+			PVTStatus: sbfbin.SlotStatus(sbfbin.PVTStatusUsed),
+		}}},
+	}
+	me := &sbfbin.MeasEpoch{
+		Type1: []sbfbin.MeasEpochChannelType1{{SVID: 147, Type: sbfbin.MeasType(sbfbin.SigNumBeiDouB1C), CN0: 149}},
+		Type2: [][]sbfbin.MeasEpochChannelType2{{
+			{Type: sbfbin.MeasType(sbfbin.SigNumBeiDouB1I), CN0: 148},
+		}},
+	}
+	msg := satellitesCombine(cs, me)
+	if msg == nil || len(msg.SVs) != 1 {
+		t.Fatalf("combine = %+v", msg)
+	}
+	sv := msg.SVs[0]
+	b1c, ok := findSignal(sv, gpsprot.SigIDBDSB1CP)
+	if !ok || b1c.Used {
+		t.Errorf("B1C = %+v ok=%v, want unused", b1c, ok)
+	}
+	b1i, ok := findSignal(sv, gpsprot.SigIDBDSB1I)
+	if !ok || !b1i.Used {
+		t.Errorf("B1I = %+v ok=%v, want used", b1i, ok)
+	}
+	if !sv.Used {
+		t.Error("SV.Used false, want true")
+	}
+}
+
+func TestCombineChannelStatusOnlyEmptySignals(t *testing.T) {
+	cs := &sbfbin.ChannelStatus{
+		SatInfo: []sbfbin.ChannelSatInfo{{SVID: 1, SVIDFull: 1}},
+		StateInfo: [][]sbfbin.ChannelStateInfo{{{
+			Antenna:   0,
+			PVTStatus: sbfbin.SlotStatus(sbfbin.PVTStatusUsed),
+		}}},
+	}
+	msg := satellitesCombine(cs, nil)
+	if msg == nil || msg.NativeMsgID != "ChannelStatus" || msg.UsedValidity != gpsprot.SatelliteUsedSV {
+		t.Fatalf("combine = %+v", msg)
+	}
+	if len(msg.SVs) != 1 {
+		t.Fatalf("SVs = %+v", msg.SVs)
+	}
+	sv := msg.SVs[0]
+	if !sv.Used {
+		t.Error("SV.Used false, want true")
+	}
+	if sv.Signals == nil || len(sv.Signals) != 0 {
+		t.Fatalf("signals = %+v, want empty non-nil slice", sv.Signals)
+	}
+}
+
+func TestCombineChannelStatusRealEmptySignals(t *testing.T) {
+	cs := findBlock(t, "status.jsonl", "ChannelStatus").Params.(*sbfbin.ChannelStatus)
+	msg := satellitesCombine(cs, nil)
+	if msg == nil || len(msg.SVs) == 0 {
+		t.Fatal("no SVs from real ChannelStatus")
+	}
+	if msg.UsedValidity != gpsprot.SatelliteUsedSV {
+		t.Errorf("UsedValidity = %v", msg.UsedValidity)
 	}
 	for _, sv := range msg.SVs {
-		if len(sv.Signals) != 0 {
-			t.Errorf("%s should have no signals from SatVisibility alone", sv.ID)
+		if sv.Signals == nil || len(sv.Signals) != 0 {
+			t.Errorf("%s signals = %+v, want empty non-nil slice", sv.ID, sv.Signals)
 		}
 	}
 }
 
-// TestCombineChannelStatusReal exercises the combine on a real ChannelStatus.
-func TestCombineChannelStatusReal(t *testing.T) {
-	cs := findBlock(t, "status.jsonl", "ChannelStatus").Params.(*sbfbin.ChannelStatus)
-	msg := satellitesCombine(cs, nil, nil)
-	if msg == nil || len(msg.SVs) == 0 {
-		t.Fatal("no SVs from real ChannelStatus")
-	}
-	if msg.UsedValidity != gpsprot.SatelliteUsedSignal {
-		t.Errorf("UsedValidity = %v", msg.UsedValidity)
-	}
-	// Every SV should have a valid decoded SVID and at least one tracked signal.
-	for _, sv := range msg.SVs {
-		if sv.ID.GNSS == 0 {
-			t.Errorf("SV with zero GNSS: %+v", sv)
+func findSignal(sv gpsprot.SVInfo, id gpsprot.SignalID) (gpsprot.SignalInfo, bool) {
+	for _, sig := range sv.Signals {
+		if sig.ID == id {
+			return sig, true
 		}
 	}
+	return gpsprot.SignalInfo{}, false
 }

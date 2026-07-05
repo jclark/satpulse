@@ -8,13 +8,13 @@ import (
 	"github.com/jclark/satpulse/gps/lib/sbfbin"
 )
 
-// satCombiner accumulates SVInfo while combining the three per-satellite
-// blocks, keeping the SVID index and the ChannelStatus (SVID, MeasEpoch signal
-// number) -> signal-slot join for the MeasEpoch overlay.
+// satCombiner accumulates SVInfo while combining ChannelStatus look angles and
+// used flags with MeasEpoch signals.
 type satCombiner struct {
-	svs   []gpsprot.SVInfo
-	index map[gpsprot.SVID]int
-	join  map[gpsprot.SVID]map[uint8]int
+	svs    []gpsprot.SVInfo
+	index  map[gpsprot.SVID]int
+	used   map[gpsprot.SVID]map[string]bool
+	usedSV map[gpsprot.SVID]bool
 }
 
 func (c *satCombiner) sv(id gpsprot.SVID) *gpsprot.SVInfo {
@@ -22,33 +22,33 @@ func (c *satCombiner) sv(id gpsprot.SVID) *gpsprot.SVInfo {
 		return &c.svs[i]
 	}
 	c.index[id] = len(c.svs)
-	c.svs = append(c.svs, gpsprot.SVInfo{ID: id})
+	c.svs = append(c.svs, gpsprot.SVInfo{ID: id, Signals: []gpsprot.SignalInfo{}})
 	return &c.svs[len(c.svs)-1]
 }
 
-// satellitesCombine merges ChannelStatus (structural base + Used), MeasEpoch
-// (CN0, precise SignalID) and SatVisibility (finer look angles + orbit-visible
-// SVs) into one SatellitesMsg. It returns nil when no SV is present.
-func satellitesCombine(chn *sbfbin.ChannelStatus, meas *sbfbin.MeasEpoch, vis *sbfbin.SatVisibility) *gpsprot.SatellitesMsg {
-	c := satCombiner{index: map[gpsprot.SVID]int{}, join: map[gpsprot.SVID]map[uint8]int{}}
+// satellitesCombine merges ChannelStatus (used + look angles) and MeasEpoch
+// (signals + CN0) into one SatellitesMsg.
+func satellitesCombine(chn *sbfbin.ChannelStatus, meas *sbfbin.MeasEpoch) *gpsprot.SatellitesMsg {
+	c := satCombiner{index: map[gpsprot.SVID]int{}, used: map[gpsprot.SVID]map[string]bool{}, usedSV: map[gpsprot.SVID]bool{}}
 	nativeID := ""
 	validity := gpsprot.SatelliteUsedInvalid
 	if chn != nil {
 		nativeID = "ChannelStatus"
-		validity = gpsprot.SatelliteUsedSignal
+		validity = gpsprot.SatelliteUsedSV
 		c.addChannelStatus(chn)
 	}
 	if meas != nil {
 		if nativeID == "" {
 			nativeID = "MeasEpoch"
+		} else {
+			validity = gpsprot.SatelliteUsedSignal
 		}
-		c.overlayMeasEpoch(meas, chn != nil)
+		c.addMeasEpoch(meas)
 	}
-	if vis != nil {
-		if nativeID == "" {
-			nativeID = "SatVisibility"
-		}
-		c.overlaySatVisibility(vis)
+	if meas != nil {
+		c.pruneEmpty()
+	} else if chn != nil {
+		c.setSVUsed()
 	}
 	if len(c.svs) == 0 {
 		return nil
@@ -60,8 +60,8 @@ func satellitesCombine(chn *sbfbin.ChannelStatus, meas *sbfbin.MeasEpoch, vis *s
 	}
 }
 
-// addChannelStatus builds the structural base: one SVInfo per satellite, one
-// SignalInfo per family slot being tracked, with Used from PVTStatus.
+// addChannelStatus records look angles and the RINEX codes of signals used in
+// the PVT solution.
 func (c *satCombiner) addChannelStatus(chn *sbfbin.ChannelStatus) {
 	for i := range chn.SatInfo {
 		si := &chn.SatInfo[i]
@@ -69,78 +69,91 @@ func (c *satCombiner) addChannelStatus(chn *sbfbin.ChannelStatus) {
 		if !ok {
 			continue
 		}
-		fams := chanFamilies[id.GNSS]
 		st := mainAntenna(chn.StateInfo[i])
 		sv := c.sv(id)
-		if st != nil && fams != nil {
-			jm := c.join[id]
-			if jm == nil {
-				jm = map[uint8]int{}
-				c.join[id] = jm
-			}
-			for slot, fam := range fams {
-				if fam.id == gpsprot.SigIDInvalid || st.TrackingStatus.Slot(slot) != sbfbin.TrackStatusTracking {
-					continue
-				}
-				used := st.PVTStatus.Slot(slot) == sbfbin.PVTStatusUsed
-				sv.Signals = append(sv.Signals, gpsprot.SignalInfo{ID: fam.id, Used: used})
-				if used {
-					sv.Used = true
-				}
-				if fam.sigNum != noJoin {
-					jm[fam.sigNum] = len(sv.Signals) - 1
-				}
-			}
-		}
 		if la, ok := channelLookAngles(si); ok {
 			sv.LookAngles = la
+		}
+		if st != nil {
+			c.addUsedCodes(id, st)
 		}
 	}
 }
 
-// overlayMeasEpoch overlays CN0 and precise SignalID from MeasEpoch. When
-// ChannelStatus contributed (haveBase), it only updates matching slots; when
-// it is the base, it adds one SignalInfo per measurement.
-func (c *satCombiner) overlayMeasEpoch(meas *sbfbin.MeasEpoch, haveBase bool) {
+// addMeasEpoch appends one signal for every Type1 master and Type2 slave
+// measurement.
+func (c *satCombiner) addMeasEpoch(meas *sbfbin.MeasEpoch) {
 	for i := range meas.Type1 {
 		t := &meas.Type1[i]
-		num := t.SignalNumber()
-		sigID, ok := measEpochSignalID(num, meas.CommonFlags)
-		if !ok {
+		if t.AntennaID() != 0 {
 			continue
 		}
 		id, ok := sbfSVID(uint16(t.SVID))
 		if !ok {
 			continue
 		}
-		cn0 := measCN0(t)
-		if haveBase {
-			if jm := c.join[id]; jm != nil {
-				if k, ok := jm[num]; ok {
-					c.svs[c.index[id]].Signals[k].ID = sigID
-					c.svs[c.index[id]].Signals[k].CN0 = cn0
-				}
-			}
+		c.addMeasSignal(id, t.SignalNumber(), meas.CommonFlags, measCN0(t.CN0dBHz()))
+		if i >= len(meas.Type2) {
 			continue
 		}
-		sv := c.sv(id)
-		sv.Signals = append(sv.Signals, gpsprot.SignalInfo{ID: sigID, CN0: cn0})
+		for j := range meas.Type2[i] {
+			t := &meas.Type2[i][j]
+			if t.AntennaID() != 0 {
+				continue
+			}
+			c.addMeasSignal(id, t.SignalNumber(), meas.CommonFlags, measCN0(t.CN0dBHz()))
+		}
 	}
 }
 
-// overlaySatVisibility overlays finer look angles onto known SVs and appends
-// orbit-visible-but-unallocated satellites with empty signals.
-func (c *satCombiner) overlaySatVisibility(vis *sbfbin.SatVisibility) {
-	for i := range vis.SatInfo {
-		si := &vis.SatInfo[i]
-		id, ok := sbfSVID(resolveSVID(uint16(si.SVID), si.SVIDFull))
-		if !ok {
+func (c *satCombiner) addUsedCodes(id gpsprot.SVID, st *sbfbin.ChannelStateInfo) {
+	used := c.used[id]
+	if used == nil {
+		used = map[string]bool{}
+		c.used[id] = used
+	}
+	sys := id.GNSS.SVIDPrefix()
+	for slot := 0; slot < 8; slot++ {
+		if st.PVTStatus.Slot(slot) != sbfbin.PVTStatusUsed {
 			continue
 		}
-		sv := c.sv(id)
-		if la, ok := visibilityLookAngles(si); ok {
-			sv.LookAngles = la
+		c.usedSV[id] = true
+		for _, code := range sbfbin.RINEXChannelStatusSignals(sys, slot) {
+			used[code] = true
 		}
+	}
+}
+
+func (c *satCombiner) addMeasSignal(id gpsprot.SVID, num uint8, flags sbfbin.CommonFlags, cn0 uint8) {
+	sys, code := sbfbin.RINEXSig(num, flags)
+	if sys == "" || code == "" || sys != id.GNSS.SVIDPrefix() {
+		return
+	}
+	sigID := gpsprot.RINEXSignalID(sys, code)
+	if sigID == gpsprot.SigIDInvalid {
+		return
+	}
+	sv := c.sv(id)
+	used := c.used[id][code]
+	sv.Signals = append(sv.Signals, gpsprot.SignalInfo{ID: sigID, CN0: cn0, Used: used})
+	if used {
+		sv.Used = true
+	}
+}
+
+func (c *satCombiner) pruneEmpty() {
+	svs := c.svs[:0]
+	for _, sv := range c.svs {
+		if len(sv.Signals) > 0 {
+			svs = append(svs, sv)
+		}
+	}
+	c.svs = svs
+}
+
+func (c *satCombiner) setSVUsed() {
+	for i := range c.svs {
+		c.svs[i].Used = c.usedSV[c.svs[i].ID]
 	}
 }
 
@@ -184,27 +197,7 @@ func channelLookAngles(si *sbfbin.ChannelSatInfo) (opt.Val[gpsprot.LookAngles], 
 	return opt.Make(la), true
 }
 
-// visibilityLookAngles returns the 0.01-degree look angles from a
-// SatVisibility SatInfo.
-func visibilityLookAngles(si *sbfbin.SatInfo) (opt.Val[gpsprot.LookAngles], bool) {
-	azOK := si.Azimuth != sbfbin.SatVisibilityAzimuthDNU
-	elOK := si.Elevation != sbfbin.SatVisibilityElevationDNU
-	if !azOK && !elOK {
-		return opt.Val[gpsprot.LookAngles]{}, false
-	}
-	var la gpsprot.LookAngles
-	if azOK {
-		la.Azimuth = int16(math.Round(float64(si.Azimuth) * 0.01))
-	}
-	if elOK {
-		la.Elevation = int8(math.Round(float64(si.Elevation) * 0.01))
-	}
-	return opt.Make(la), true
-}
-
-// measCN0 converts a MeasEpoch master channel C/N0 to a rounded uint8.
-func measCN0(t *sbfbin.MeasEpochChannelType1) uint8 {
-	cn0, ok := t.CN0dBHz()
+func measCN0(cn0 float64, ok bool) uint8 {
 	if !ok {
 		return 0
 	}

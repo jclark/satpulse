@@ -119,6 +119,23 @@ func findBlock(t *testing.T, capture, msg string) *sbfbin.Block {
 	return nil
 }
 
+func testMeasBlock(ts sbfbin.TimeStamp, svid uint8, sig uint8, cn0 uint8) *sbfbin.Block {
+	return &sbfbin.Block{TimeStamp: ts, Params: &sbfbin.MeasEpoch{
+		Type1: []sbfbin.MeasEpochChannelType1{{SVID: svid, Type: sbfbin.MeasType(sig), CN0: cn0}},
+	}}
+}
+
+func testChannelStatusBlock(ts sbfbin.TimeStamp, svid uint8, usedSlot int) *sbfbin.Block {
+	pvt := sbfbin.SlotStatus(sbfbin.PVTStatusUsed) << (2 * usedSlot)
+	return &sbfbin.Block{TimeStamp: ts, Params: &sbfbin.ChannelStatus{
+		SatInfo: []sbfbin.ChannelSatInfo{{SVID: svid, SVIDFull: uint16(svid), AzimuthRiseSet: 100, Elevation: 30}},
+		StateInfo: [][]sbfbin.ChannelStateInfo{{{
+			Antenna:   0,
+			PVTStatus: pvt,
+		}}},
+	}}
+}
+
 // TestProcessPVTCapture drives an SBF-only PVT capture end to end and checks
 // that each EndOfPVT flushes a NavEpochMsg (the required SBF-only path) and
 // that position/velocity/time messages are produced.
@@ -156,8 +173,8 @@ func TestProcessPVTCapture(t *testing.T) {
 	}
 }
 
-// TestProcessStatusCapture drives a capture rich in ChannelStatus and
-// SatVisibility, checking the independent SatellitesMsg stream fires.
+// TestProcessStatusCapture drives a status capture and checks
+// ChannelStatus-only SVs are emitted.
 func TestProcessStatusCapture(t *testing.T) {
 	p, c := newTestProcessor()
 	feed(t, p, readCapture(t, "status.jsonl"))
@@ -165,10 +182,67 @@ func TestProcessStatusCapture(t *testing.T) {
 		t.Fatal("no SatellitesMsg produced")
 	}
 	s := c.sats[0]
-	if s.Tag != Tag {
-		t.Errorf("SatellitesMsg.Tag = %q, want %q", s.Tag, Tag)
+	if s.Tag != Tag || s.NativeMsgID != "ChannelStatus" || s.UsedValidity != gpsprot.SatelliteUsedSV {
+		t.Errorf("SatellitesMsg header = %+v", s)
 	}
 	if len(s.SVs) == 0 {
-		t.Error("SatellitesMsg has no SVs")
+		t.Fatal("SatellitesMsg has no SVs")
+	}
+	for _, sv := range s.SVs {
+		if sv.Signals == nil || len(sv.Signals) != 0 {
+			t.Errorf("%s signals = %+v, want empty non-nil slice", sv.ID, sv.Signals)
+		}
+	}
+}
+
+func TestSatellitesEmitOnChannelStatusAndConsumeMeasEpoch(t *testing.T) {
+	p, c := newTestProcessor()
+	tRead := time.Unix(0, 0)
+	ts1 := sbfbin.TimeStamp{TOW: 1000, WNc: 1}
+	ts2 := sbfbin.TimeStamp{TOW: 2000, WNc: 1}
+	p.Dispatch(testMeasBlock(ts1, 1, sbfbin.SigNumGPSL1CA, 200), tRead)
+	if len(c.sats) != 0 {
+		t.Fatalf("SatellitesMsg count after MeasEpoch = %d, want 0", len(c.sats))
+	}
+	p.Dispatch(testChannelStatusBlock(ts1, 1, 0), tRead.Add(time.Millisecond))
+	if len(c.sats) != 1 {
+		t.Fatalf("SatellitesMsg count after ChannelStatus = %d, want 1", len(c.sats))
+	}
+	s := c.sats[0]
+	if s.Tag != Tag || s.NativeMsgID != "ChannelStatus" || s.UsedValidity != gpsprot.SatelliteUsedSignal {
+		t.Errorf("SatellitesMsg header = %+v", s)
+	}
+	if len(s.SVs) != 1 || len(s.SVs[0].Signals) != 1 || s.SVs[0].Signals[0].CN0 != 60 || !s.SVs[0].Signals[0].Used {
+		t.Errorf("SatellitesMsg SVs = %+v", s.SVs)
+	}
+	p.Dispatch(testChannelStatusBlock(ts2, 1, 0), tRead.Add(2*time.Millisecond))
+	if len(c.sats) != 2 {
+		t.Fatalf("SatellitesMsg count after next ChannelStatus = %d, want 2", len(c.sats))
+	}
+	s = c.sats[1]
+	if s.Tag != Tag || s.NativeMsgID != "ChannelStatus" || s.UsedValidity != gpsprot.SatelliteUsedSV {
+		t.Errorf("second SatellitesMsg header = %+v", s)
+	}
+	if len(s.SVs) != 1 || !s.SVs[0].Used || len(s.SVs[0].Signals) != 0 || s.SVs[0].Signals == nil {
+		t.Errorf("second SatellitesMsg SVs = %+v", s.SVs)
+	}
+}
+
+func TestSatellitesMeasEpochOverwriteWaitsForChannelStatus(t *testing.T) {
+	p, c := newTestProcessor()
+	tRead := time.Unix(0, 0)
+	ts1 := sbfbin.TimeStamp{TOW: 1000, WNc: 1}
+	ts2 := sbfbin.TimeStamp{TOW: 2000, WNc: 1}
+	p.Dispatch(testMeasBlock(ts1, 1, sbfbin.SigNumGPSL1CA, 200), tRead)
+	p.Dispatch(testMeasBlock(ts2, 1, sbfbin.SigNumGPSL1CA, 180), tRead.Add(time.Second))
+	if len(c.sats) != 0 {
+		t.Fatalf("SatellitesMsg count after MeasEpoch overwrite = %d, want 0", len(c.sats))
+	}
+	p.Dispatch(testChannelStatusBlock(ts2, 1, 0), tRead.Add(time.Second+time.Millisecond))
+	if len(c.sats) != 1 {
+		t.Fatalf("SatellitesMsg count after ChannelStatus = %d, want 1", len(c.sats))
+	}
+	if len(c.sats[0].SVs) != 1 || len(c.sats[0].SVs[0].Signals) != 1 || c.sats[0].SVs[0].Signals[0].CN0 != 55 {
+		t.Errorf("SatellitesMsg SVs = %+v", c.sats[0].SVs)
 	}
 }
