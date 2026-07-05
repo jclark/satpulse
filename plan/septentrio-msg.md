@@ -31,9 +31,9 @@ In scope:
   `PosCovCartesian`/`PosCovGeodetic`, `VelCovCartesian`/
   `VelCovGeodetic`). The per-satellite blocks do not feed it
   (section 4).
-- `SatellitesMsg`: the three-way combine of `ChannelStatus`,
-  `MeasEpoch`, and `SatVisibility`, and the SVID/`SignalID` mapping
-  tables both draw on.
+- `SatellitesMsg`: `ChannelStatus`-triggered satellite tracking,
+  optionally enriched with `MeasEpoch` signal strength and signal
+  identity.
 - `SurveyMsg` (from `PVTGeodetic`/`PVTCartesian.Mode` bits) and
   `CorReportMsg` (from `DiffCorrIn`/`BaseStation`).
 - Registration in `gps/gpsreg/reg.go`.
@@ -149,10 +149,10 @@ Every SBF block header carries `(TOW, WNc)` on the GPS convention
 
 `NavEpochMsg` is built **only from the PVT-family blocks**
 (`PVTGeodetic`/`PVTCartesian`, `DOP`, and the covariance blocks
-`PosCov*`/`VelCov*` -- section 8). Nothing from the per-satellite
-blocks (`ChannelStatus`, `SatVisibility`, `MeasEpoch`) feeds it; those
-feed the independent `SatellitesMsg` stream (section 9), which is not
-part of the epoch (section 4.3).
+`PosCov*`/`VelCov*` -- section 8). Nothing from the satellite tracking
+and measurement blocks feeds it; `ChannelStatus` and `MeasEpoch` feed
+the independent `SatellitesMsg` stream (section 9), which is not part
+of the epoch (section 4.3).
 
 ### 4.2 Flush triggers and coexistence with NMEA
 
@@ -260,10 +260,10 @@ This was the central open cross-protocol question; it is now decided.
 `SatellitesMsg` is a separate stream: it dispatches on its own
 boundary detection (section 9), is not consulted when building
 `NavEpochMsg`, and is not guaranteed to arrive before the epoch's
-`NavEpochMsg`. The observation that `ChannelStatus`/`SatVisibility`
-land after `EndOfPVT` in the sample captures is therefore not a
-problem to design around -- those blocks simply feed the independent
-`SatellitesMsg` path. This matches the existing NMEA path, where
+`NavEpochMsg`. The observation that `ChannelStatus` lands after
+`EndOfPVT` in the sample captures is therefore not a problem to design
+around -- it simply feeds the independent `SatellitesMsg` path. This
+matches the existing NMEA path, where
 satellite information is likewise not part of the epoch. The
 consequences for `NavEpochMsg`'s satellite-derived fields
 (`NumSVTracked`/`NumSVInView` have no PVT-family source and are left
@@ -664,227 +664,104 @@ sentinel -- note `ReferenceID` means an SBAS PRN instead when
 primary is DNU.
 
 `NumSVTracked` and `NumSVInView`: **left unset.** Their only sources
-are the per-satellite blocks (`ChannelStatus`'s tracked-channel count,
-`SatVisibility.N`), which are not part of the epoch (section 4.3) and
-so do not feed `NavEpochMsg`. The tracked/in-view picture still
-reaches observers via the independent `SatellitesMsg` (section 9); it
-is simply not duplicated onto the epoch summary -- a deliberate
-consequence of the section 4.3 decision.
+are outside the PVT-family epoch data, so they do not feed
+`NavEpochMsg`. The tracked-SV picture still reaches observers via the
+independent `SatellitesMsg` (section 9); it is simply not duplicated
+onto the epoch summary -- a deliberate consequence of the section 4.3
+decision.
 
 `GNSSUsed`/`BandsUsed`: derived from `PVTGeodetic`/
 `PVTCartesian.SignalInfo` (u4 bitmask, bit *i* = signal number *i*
-used) mapped through the section 9 signal table. `SignalInfo` is a
-PVT-family field, so this needs no per-satellite block (section 4.3).
-It is lossy -- the bitmask only covers signal numbers 0-31, while the
-guide documents numbers up to 39 (QZSS L1C/L1S/L1CB/L5S, BeiDou B2b,
-NavIC L1 are unrepresentable) -- but the fuller set is carried by the
-independent `SatellitesMsg`'s own `GNSSUsed()`/`BandsUsed()`
-(section 9).
+used) mapped through the observed-axis signal table used by
+`sbfSignalNumber`. `SignalInfo` is a PVT-family field, so this needs no
+per-satellite block (section 4.3). It is lossy -- the bitmask only
+covers signal numbers 0-31, while the guide documents numbers up to 39
+(QZSS L1C/L1S/L1CB/L5S, BeiDou B2b, NavIC L1 are unrepresentable) --
+but the fuller set is carried by the independent `SatellitesMsg`'s own
+`GNSSUsed()`/`BandsUsed()` (section 9).
 
 `Tag`: set centrally in `FlushNavEpoch`, not per block.
 
 ## 9. SatellitesMsg
 
-No single SBF block is sufficient (unlike the position/velocity Msgs'
-single-block case); this is a **three-way combine** across
-`ChannelStatus` (4013), `MeasEpoch` (4027), and `SatVisibility` (4012),
-generalizing UBX's two-way `NAV-SAT`+`NAV-SIG` `satellitesCombine`.
+`SatellitesMsg` is driven by `ChannelStatus` (4013), with `MeasEpoch`
+(4027) used only as optional signal-strength enrichment. This matches
+the `gpsprot` configuration split: satellite tracking/sky-view data is
+the `Sat` target and signal strength is the `Sig` target. It also keeps
+the runtime behavior stable when the two SBF blocks are configured at
+different rates or are triggered by different receiver events.
+
+`SatVisibility` (4012) is deliberately not part of this message. Its
+finer look-angle precision is not representable in `gpsprot.LookAngles`
+(whole degrees), and its extra orbit-visible-but-untracked SVs have no
+signal data. The dashboard and the other protocol implementations treat
+`SatellitesMsg` as tracked-satellite data, so adding visibility-only
+SVs would be more surprising than useful.
 
 ### 9.1 What each block contributes
 
 | Block | Granularity | Gives | Missing |
 |---|---|---|---|
-| `ChannelStatus` | Per-channel, per-signal-**family** | Only source of `Used` (`PVTStatus`); whole-degree look angles | No `CN0` at all |
-| `MeasEpoch` | Per-channel, per-signal-**number** (finer) | Only source of `CN0`; finest per-signal identity | No `Used`, no look angles |
-| `SatVisibility` | Per-satellite, orbit-data only (no channel needed) | Broadest SV set; 0.01-deg-precision look angles | No signal/CN0/`Used` data at all |
+| `ChannelStatus` | Per-SV plus per-family status bits | Tracked SV set, whole-degree look angles, satellite/signals used in PVT | No `CN0`, no fine signal identity |
+| `MeasEpoch` | Per measured signal (`Type1` master + `Type2` slaves) | Fine signal identity and `CN0` | No look angles, no independent used status |
 
-Combine order: **`ChannelStatus` is the structural base** (one
-`SVInfo` per `ChannelSatInfo`, one `SignalInfo` per family slot where
-`TrackingStatus==3` (Tracking), `Used` from `PVTStatus==2`,
-`UsedValidity = SatelliteUsedSignal`). **Overlay `MeasEpoch`** onto
-matching `(GNSS, family)` keys (section 9.3's join table) for `CN0`
-and, where available, a more precise `SignalID`; never touch `Used`
-from this source. **Overlay `SatVisibility`** for higher-precision
-look angles (prefer its 0.01-deg values over `ChannelStatus`'s
-whole-degree ones when both are present and valid), and append
-orbit-visible-but-unallocated SVs (present in `SatVisibility`, absent
-from the tracking set) with empty `Signals`, `Used: false`.
+`ChannelStatus` is the structural base. A `ChannelStatus`-only message
+is valid and emits one `SVInfo` per tracked SV, with look angles when
+available, `SVInfo.Used` from `PVTStatus`, `UsedValidity =
+SatelliteUsedSV`, and an empty non-nil `Signals` slice. This supports a
+sky view even when signal-strength output is disabled or unavailable.
 
-If `ChannelStatus` did not contribute this epoch at all,
-`UsedValidity` downgrades to `SatelliteUsedInvalid` for the whole
-message (neither `MeasEpoch` nor `SatVisibility` carries any `Used`
-concept). `NativeMsgID` is `"ChannelStatus"` when it contributed,
-else `"MeasEpoch"`, else `"SatVisibility"` -- a single string cannot
-represent "combination of 3 blocks"; this mirrors `ubxsats.go`'s
-equivalent choice.
+When a pending `MeasEpoch` is available, it enriches the
+`ChannelStatus` message with one `SignalInfo` per measured main-antenna
+signal. The processor walks both `Type1` and `Type2`; auxiliary antenna
+measurements are skipped so multi-antenna receivers do not duplicate
+the same SV/signal. Since `ChannelStatus` used bits are per-family and
+`MeasEpoch` observations are per-signal, the join is through RINEX
+codes rather than through frequency band. This keeps cases such as
+BeiDou B1I versus B1C distinct. With this enrichment present,
+`UsedValidity = SatelliteUsedSignal`; otherwise it remains
+`SatelliteUsedSV`.
 
-**Flush timing**: `SatellitesMsg` is a separate stream, not part of
-the epoch (section 4.3), so its combine flushes on its own boundary --
-a TOW change among the contributing blocks
-(`ChannelStatus`/`MeasEpoch`/`SatVisibility`) -- and dispatches
-directly via `h.Satellites(...)`, independent of the `NavEpochMsg`
-flush. It does **not** go through `FlushNavEpoch` (unlike `ubx.go`,
-which folds the combine into the epoch flush), and it is not tied to
-`EndOfPVT`. Since the per-satellite blocks land after `EndOfPVT`, the
-combine typically flushes when the next epoch's first
-satellite-block TOW arrives.
+Signal identity also pivots through RINEX: `sbfbin.RINEXSig` maps the
+SBF signal number to a RINEX system/code, and
+`gpsprot.RINEXSignalID` maps that code to a `gpsprot.SignalID`.
+Signals whose RINEX code has no `gpsprot.SignalID` are skipped rather
+than emitted with a blank ID.
+
+Flush timing is intentionally simple:
+
+- On `MeasEpoch`, retain it as the pending signal-strength block,
+  replacing any older pending one. Do not emit a `SatellitesMsg`.
+- On `ChannelStatus`, emit immediately using that `ChannelStatus` and
+  the pending `MeasEpoch`, if any. Then clear the pending `MeasEpoch`.
+
+This means a `MeasEpoch` can be used by at most one `ChannelStatus`, and
+a stream with `MeasEpoch` but no `ChannelStatus` produces no
+`SatellitesMsg`. If `MeasEpoch` runs faster than `ChannelStatus`, the
+latest measurement before the next `ChannelStatus` wins; intermediate
+measurements are not emitted as separate CN0-only satellite messages.
+That avoids a high-rate signal-strength stream accidentally becoming a
+high-rate satellite-message stream.
 
 ### 9.2 SVID mapping
 
-All three blocks share one SVID numbering table (guide sec 4.1.9),
-implemented as one shared helper, `sbfSVID(svid uint16, freqNr byte)
-(gpsprot.SVID, bool)`:
-
-| SVID range | GNSS | `Num` |
-|---|---|---|
-| 1-37 | GPS | `= SVID` |
-| 38-61 | GLONASS | `= SVID-37` |
-| 62 | GLONASS | `GLOUnknown` (0) |
-| 63-68 | GLONASS | `= SVID-38` |
-| 71-106 | Galileo | `= SVID-70` |
-| 107-119 | (L-band beam, not a GNSS SV) | skip |
-| 120-140 | SBAS | `= SVID-100` |
-| 141-180 | BeiDou | `= SVID-140` |
-| 181-190 | QZSS | `= SVID-180` |
-| 191-197 | NavIC | `= SVID-190` |
-| 198-215 | SBAS | `= SVID-157` |
-| 216-222 | NavIC | `= SVID-208` |
-| 223-245 | BeiDou | `= SVID-182` |
-| 250-251 (MeasEpoch only) | GPS | `= SVID-212` (G38/G39) |
-| 0 | escape: use `SVIDFull` instead (`ChannelStatus`; `SatVisibility` only at guide-documented revision 1, G5 doc only, unconfirmed on real hardware) |
-
-`FreqNr` (GLONASS FDMA channel number, offset +8) never feeds
-`SVID.Num` directly; it only disambiguates `62` (unknown slot) from
-`38-61`/`63-68` (known slot). GPS SVID 33-37 and `MeasEpoch`'s 250-251
-exceed `gpsprot.GNSS.IsValidSVNum(GPS)`'s `<=32` ceiling -- emit the
-`SVInfo` anyway (the wire format documents these as valid PRNs;
-silently dropping SVs the receiver reports would be real data loss),
-letting `IsValidSVNum` flag it downstream if a caller cares (open item,
-section 10). Multiple simultaneously-tracked GLONASS satellites with
-unknown slots collide onto the same `{GLO, GLOUnknown}` key and merge
-together -- an existing `gpsprot.SVID` model limitation, not
-introduced here.
-
-### 9.3 Signal mapping
-
-SBF has **two** signal namespaces that must not be conflated:
-
-- **Observed axis** (guide sec 4.1.10, "Signal Type"): `MeasEpoch`'s
-  per-signal-number identity. For most combo signals (Galileo E1,
-  E5a, E5b; BeiDou B1C, B2a; GPS L2C, L5, L1C; GLONASS L3), the
-  receiver only ever measures **one** physical component (documented
-  explicitly per-signal in guide sec 2.2.1) and reports it under one
-  signal number -- there is no separate SBF number for the
-  unmeasured component. Galileo E6 (signal 19) is the one dynamic
-  exception: the component (E6-B vs E6-C) depends on
-  `MeasEpoch.CommonFlags` bit 6 ("E6B used").
-- **Enablement/tracking axis**: `ChannelStatus`'s per-constellation
-  `HealthStatus`/`TrackingStatus`/`PVTStatus` bit-slot labels, spelled
-  identically to the `setSignalTracking`/`getReceiverCapabilities`
-  command-line names (`L1CA`, `P1(Y)`, `L2C`, ... for GPS; `E1BC`,
-  `E6BC`, `E5a`, `E5b`, `E5ab` for Galileo; etc.) -- this is a
-  **coarser, family-level** namespace than the observed axis, not the
-  same one at a different granularity.
-
-A decoder building `SatellitesMsg` from `ChannelStatus` works in the
-coarse (family) namespace; from `MeasEpoch`, the fine
-(signal-number) namespace. Do not conflate them when combining (section
-9.1) -- use the join table below to match a `ChannelStatus` bit-slot
-to its `MeasEpoch` signal number for the same `(GNSS, family)`.
-
-**Observed-axis master table** (signal number, guide `SignalType`
-label, constellation, component actually tracked per sec 2.2.1, RINEX
-obscode from the guide verbatim, best-fit `gpsprot.SignalID`):
-
-| # | Label | GNSS | Component | RINEX | `gpsprot.SignalID` |
-|---|---|---|---|---|---|
-| 0 | L1CA | GPS | -- | 1C | `SigIDGPSL1CA` |
-| 1 | L1P | GPS | -- | 1W | `SigIDGPSL1PY` |
-| 2 | L2P | GPS | -- | 2W | `SigIDGPSL2P` |
-| 3 | L2C | GPS | L2C-L (pilot) | 2L | `SigIDGPSL2CL` |
-| 4 | L5 | GPS | L5-Q (pilot) | 5Q | `SigIDGPSL5Q` |
-| 5 | L1C | GPS | L1C-P (pilot) | 1L | `SigIDGPSL1CP` |
-| 6 | L1CA | QZSS | -- | 1C | `SigIDQZSSL1CA` |
-| 7 | L2C | QZSS | L2C-L (pilot) | 2L | `SigIDQZSSL2CL` |
-| 8 | L1CA | GLONASS | -- | 1C | `SigIDGLOL1` |
-| 9 | L1P | GLONASS | -- | 1P | `SigIDGLOL1P` |
-| 10 | L2P | GLONASS | -- | 2P | `SigIDGLOL2P` |
-| 11 | L2CA | GLONASS | -- | 2C | `SigIDGLOL2` |
-| 12 | L3 | GLONASS | L3-Q (pilot) | 3Q | `SigIDGLOL3Q` |
-| 13 | B1C | BeiDou | B1C pilot | 1P | `SigIDBDSB1CP` (`SigIDBDSB1C` for `ChannelStatus`'s family slot) |
-| 14 | B2a | BeiDou | B2a pilot | 5P | `SigIDBDSB2aP` (`SigIDBDSB2a` for the family slot) |
-| 15 | L5 | NavIC | -- | 5A | `SigIDNAVICL5` |
-| 16 | reserved | -- | -- | -- | -- |
-| 17 | E1 | Galileo | E1-C (pilot) | 1C | `SigIDGALE1C` (`SigIDGALE1` for the family slot) |
-| 18 | reserved | -- | -- | -- | -- |
-| 19 | E6 | Galileo | E6-C default, E6-B if `CommonFlags` bit 6 set | 6C/6B | `SigIDGALE6C`/`SigIDGALE6B` (dynamic; `SigIDGALE6` for the family slot) |
-| 20 | E5a | Galileo | E5a-Q (pilot) | 5Q | `SigIDGALE5aQ` (`SigIDGALE5a` for the family slot) |
-| 21 | E5b | Galileo | E5b-Q (pilot) | 7Q | `SigIDGALE5bQ` (`SigIDGALE5b` for the family slot) |
-| 22 | E5AltBOC | Galileo | AltBOC joint E5a+E5b, Q component | 8Q | **none -- gap, section 10** |
-| 23 | LBand | MSS beam | -- (not a GNSS signal) | -- | n/a |
-| 24 | L1CA | SBAS | -- | 1C | `SigIDGPSL1CA` (reused) |
-| 25 | L5 | SBAS | data (I) | 5I | `SigIDGPSL5I` (reused) |
-| 26 | L5 | QZSS | L5-Q (pilot) | 5Q | `SigIDQZSSL5Q` |
-| 27 | L6 | QZSS | undocumented | *(blank in guide)* | `SigIDQZSSL6` (assumed L6D; guide gap, section 10) |
-| 28 | B1I | BeiDou | -- | 2I | `SigIDBDSB1I` |
-| 29 | B2I | BeiDou | -- | 7I | `SigIDBDSB2I` |
-| 30 | B3I | BeiDou | -- | 6I | `SigIDBDSB3I` |
-| 31 | (escape) | -- | -- | -- | not a signal: see `ObsInfo` bits 3-7, add 32 |
-| 32 | L1C | QZSS | L1C-P (pilot) | 1L | `SigIDQZSSL1CP` |
-| 33 | L1S | QZSS | -- | 1Z | `SigIDQZSSL1S` |
-| 34 | B2b | BeiDou | B2b-I (data) | 7D | `SigIDBDSB2bI` |
-| 35-36 | reserved | -- | -- | -- | -- |
-| 37 | L1 | NavIC | -- | 1P | `SigIDNAVICL1` |
-| 38 | L1CB | QZSS | -- | 1E | `SigIDQZSSL1CB` |
-| 39 | L5S | QZSS | -- | 5P | `SigIDQZSSL5S` |
-
-Confirmed byte-identical between the mosaic-X5 and mosaic-G5 guides for
-this table, so it needs no model branch. The RINEX-obscode column is
-the same mapping `sbfbin` exports for `rnxsbf` (`plan/sbf-rinex.md`) --
-one signal-number table serves both the gpsprot `SignalID` mapping here
-and the RINEX code mapping there.
-
-**`ChannelStatus` <-> `MeasEpoch` family join table** (used to
-overlay `MeasEpoch`'s `CN0`/precise `SignalID` onto the `ChannelStatus`
-base, section 9.1):
-
-| GNSS | Family (`ChannelStatus` slot) | Bit-slot | `MeasEpoch` # |
-|---|---|---|---|
-| GPS | L1CA / P1(Y) / P2(Y) / L2C / L5 / L1C | 0-5 | 0 / 1 / 2 / 3 / 4 / 5 |
-| GLONASS | L1CA / L1P / L2P / L2CA / L3 | 0-4 | 8 / 9 / 10 / 11 / 12 |
-| Galileo | E1BC / E6BC / E5a / E5b / E5ab | 1/3/4/5/6 | 17 / 19 / 20 / 21 / 22 |
-| SBAS | L1 / L5 | 0/1 | 24 / 25 |
-| BeiDou | B1I / B2I / B3I / B1C / B2a / B2b | 0-5 | 28 / 29 / 30 / 13 / 14 / 34 |
-| QZSS | L1CA / L2C / L5 / L6 / L1C / L1S / L1CB / L5S | 0-7 | 6 / 7 / 26 / 27 / 32 / 33 / 38 / 39 |
-| NavIC | L5 / L1 | 0/1 | 15 / 37 |
-
-Bit-slot numbers key into `ChannelStatus.ChannelStateInfo`'s 2-bit
-`TrackingStatus`/`PVTStatus`/`HealthStatus` fields
-(`0`=not tracked/used, `1`=waiting-for-ephemeris, `2`=used/tracking,
-`3`=rejected, exact meaning depends on which of the three 2-bit
-fields); consult `sbfbin`'s `ChannelStatus` decode for the exact bit
-offsets per constellation once that layer exists.
-
-`CN0`: only `MeasEpoch.CN0` (u1, DNU `255`) -> `cn0 := raw*0.25; if
-sigNum != 1 && sigNum != 2 { cn0 += 10 }` (the +10 correction applies
-to every signal number except GPS L1P/L2P), rounded to nearest int.
-Leave `CN0` at its Go zero value when only `ChannelStatus` contributed
-that slot -- there is no way to distinguish "known zero" from
-"unreported" on the current `SignalInfo.CN0` design, a pre-existing,
-not Septentrio-specific, ambiguity.
+Both contributing blocks use the guide's SVID numbering, normalized by
+the shared `sbfSVID` helper. `ChannelStatus` first resolves the SVID 0
+escape through `SVIDFull`; non-GNSS L-band beams are skipped. Extended
+documented ranges such as GPS G33-G39 are preserved rather than
+silently dropped. GLONASS SVID 62 maps to `GLOUnknown`, so multiple
+unknown-slot GLONASS satellites remain a `gpsprot.SVID` model
+limitation rather than a Septentrio-specific policy choice.
 
 ## 10. Open decisions
 
 These are recorded, not resolved, per the plan/CLAUDE.md convention of
 keeping speculation and unresolved forks explicit:
 
-- **GPS SVID 33-37 / `MeasEpoch` 250-251** vs. `gpsprot.GNSS.
-  IsValidSVNum(GPS)`'s `<=32` ceiling: this document recommends
-  emitting the `SVInfo` anyway (section 9.2); confirm before coding.
 - **Galileo E5AltBOC** (signal 22): needs a new `gpsprot.SignalID`
-  (e.g. `SigIDGALE5AltBOC`) or an explicit decision to drop AltBOC
-  measurements until one exists -- reusing `SigIDGALE5` ("combo of
-  E5a and E5b") would misrepresent the physical measurement.
+  (e.g. `SigIDGALE5AltBOC`) before it can be emitted as a
+  `SignalInfo`. Until then, measurements that map only to RINEX `8Q`
+  are skipped rather than emitted with a blank or misleading ID.
 - **QZSS L6 (signal 27) and SBAS L5 (signal 25)**: the guide itself
   leaves the RINEX-obscode cell blank for signal 27 on both models;
   `gpsprot.SignalID` has no SBAS-specific constants, so signal 25
@@ -918,11 +795,6 @@ keeping speculation and unresolved forks explicit:
   (section 8.2): no per-epoch SBF signal distinguishes these beyond
   `Mode==10` (bare PPP) and `WACorrInfo`'s OSR/SSR bits; leave unset
   for v1.
-- **Missing combo `gpsprot.SignalID` constants** for GPS L2C/L5/L1C,
-  GLONASS L3, SBAS L5, QZSS L2C/L5/L1C families (section 9.3): affects
-  only the `ChannelStatus`-only fallback path when `MeasEpoch` is not
-  enabled; the plain/family-level constants already in `gpsprot` are
-  adequate for `ChannelStatus`'s own bit-slot granularity.
 
 ## 11. SurveyMsg
 
@@ -1043,9 +915,10 @@ In `gps/gpsreg/reg.go` (note `VendorSeptentrio` already exists at
 3. Position/velocity family (section 7) and `NavEpochMsg`'s
    quality-field accumulation (section 8), sharing the `Mode`/`Error`
    extraction.
-4. `SatellitesMsg` three-way combine (section 9), as an independent
-   stream (section 4.3), dispatched on its own boundary rather than
-   through the epoch flush.
+4. `SatellitesMsg` `ChannelStatus` trigger with optional `MeasEpoch`
+   signal-strength enrichment (section 9), as an independent stream
+   (section 4.3), dispatched directly rather than through the epoch
+   flush.
 5. `SurveyMsg` (section 11) and `CorReportMsg` (section 12) -- lower
    priority, event-driven or config-mode-dependent, no timing-daemon
    correctness risk.
