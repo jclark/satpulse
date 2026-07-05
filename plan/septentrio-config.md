@@ -149,6 +149,52 @@ SigQZSSL5S. No gpsprot analogue (preserved, never touched): GALE5
 from the conversion layer's signal-number -> `SignalID` table (two
 tables, not one).
 
+### Configuration-state representation
+
+The key design question (owner directive): how to represent the
+receiver's internal configuration state. Chosen: **the reply state
+lines, one typed entry per configuration item, values kept in the
+receiver's own vocabulary** (`nativeProps` in `scfgvals.go`: interval
+enums, polarity names, signal-name lists verbatim; numerics parsed).
+Get replies and set acks update it through the SAME parser, because
+the CLI is symmetric: a get reply's state line carries exactly the
+set command's argument vector (`PPSParameters, sec1, Low2High, ...`
+answers both `getPPSParameters` and `setPPSParameters, ...`), so
+"the messages the receiver returns" and "the commands that produce
+the state" coincide. Device-independent properties are converted at
+this boundary, in both directions, on demand.
+
+Options considered:
+
+- **ubx-new key/value analogue**: a flat map item-name -> argument
+  vector, with generic get/set name derivation. Rejected: Septentrio
+  has no uniform key space - each item's fields need bespoke typed
+  conversion anyway (enums, floats, lists, slot references), so the
+  generic map only removes field names and type safety without
+  removing any conversion code.
+- **unc-style command strings with diff generation**: unc stores each
+  item's state as the command string that produces it and generates
+  updates by diffing target against current native state - necessary
+  there because Unicore read-modify-write requires regenerating the
+  whole command. Rejected for Septentrio: omitted arguments keep
+  their current value (verified), so the RECEIVER does the merge and
+  sets are built sparsely from the target properties alone; full
+  command reconstruction from stored state is never needed. The one
+  genuine read-modify-write (snt's explicit signal list - no `-`
+  removal) operates on a list value, not on command text.
+- **lstConfigFile Current as the state** (the receiver's own config
+  dump, which is literally a list of set commands): one query would
+  fetch everything. Rejected: the dump is a DIFF from RxDefault, so
+  default values are invisible without a fragile per-firmware
+  default table; it arrives in block units framed for humans; and
+  the per-item get commands are verified and trivially parseable.
+
+The chosen shape is the ubx-old philosophy (query-response messages
+as the state) adapted to an ASCII CLI, and matches unc in WHAT is
+stored (per-item native state, receiver vocabulary) while dropping
+unc's command-diff machinery, which Septentrio's omitted-argument
+semantics make unnecessary.
+
 ### Property mapping
 
 | `PropID` | Septentrio command(s) | Notes |
