@@ -63,82 +63,121 @@ tag = "get-version"
 text = "getReceiverCapabilities"
 
 # NMEA message output control
-# All entries target Stream1/USB1 (see header). The "+"/"-" prefix on the
-# Messages argument adds/removes a single sentence from the stream's current
-# list without disturbing whatever else is enabled on that stream (the
-# reference guides describe this "+"/"-" convention generally for combinable
-# arguments; confirmed usage for setSatelliteTracking's Satellite argument).
-# GGA/GLL/GSA/GSV/RMC/ZDA are common sentences on both models (the diff
-# analysis flags SNC/LLK/LLQ/GMP as X5-only and GGAaux1 as G5-only -- none of
-# those are used here).
-# Verified on mosaic-G5: all nmea-<sentence>-usb1 enable and -off pairs ACK.
-# With all six enabled, a USB1 capture showed GGA/GLL/GSA/GSV/RMC/ZDA present;
-# a per-sentence -off removed only that sentence (others kept flowing).
-# (GGA/GLL/GSA/RMC/ZDA appear under the GN combined talker; GSV per system.)
+# Septentrio routes NMEA through a "stream": one NMEA stream (Stream1..Stream10,
+# a pool separate from the SBF streams) carries a list of sentences to one
+# connection (Cd) at one interval. This file uses NMEA Stream1 throughout.
+# setNMEAOutput takes Stream, Cd, Messages, Interval; an omitted argument keeps
+# its current value (mosaic-G5 v1.1.0 guide sec 3.1.2), and the "+"/"-" prefix on
+# Messages adds/removes one sentence without disturbing the rest.
+#
+# Cd, Interval and the sentence list bind independently and live: setting one
+# leaves the others in place, and a sentence enabled with no interval emits
+# nothing until a rate is set. So there are two enable tags per sentence:
+#   nmea-<s>-usb1  self-contained -- sets USB1 + 1 Hz + the sentence in one tag,
+#                  so it works on a factory-fresh stream (Cd none, interval off).
+#   nmea-<s>-cur   adds the sentence only, riding the stream's current Cd and
+#                  interval; compose with nmea-port-*/nmea-rate-* for another
+#                  port or rate.
+# The single nmea-<s>-off disables the sentence (port-neutral).
+# Verified on mosaic-G5: rateless/portless toggles compose with nmea-port-*/
+# nmea-rate-*, and a Cd or Interval change moves/regates an already-enabled
+# sentence with no re-enable.
+# GGA/GLL/GSA/GSV/RMC/ZDA are common to both models (the diff analysis flags
+# SNC/LLK/LLQ/GMP as X5-only and GGAaux1 as G5-only -- none used here; GSV is
+# per-system, the others appear under the GN combined talker).
+
+[[line]]
+tag = "get-nmea"
+text = "getNMEAOutput, Stream1"
+description = "Query Stream1 NMEA output configuration"
 
 [[line]]
 tag = "nmea-gga-usb1"
 text = "setNMEAOutput, Stream1, USB1, +GGA, sec1"
-description = "Enable NMEA GGA at 1Hz"
+description = "Enable NMEA GGA at 1Hz on USB1"
 [[line]]
-tag = "nmea-gga-off-usb1"
-text = "setNMEAOutput, Stream1, USB1, -GGA"
+tag = "nmea-gga-cur"
+text = "setNMEAOutput, Stream1, , +GGA"
+description = "Enable NMEA GGA on Stream1's current port and rate"
+[[line]]
+tag = "nmea-gga-off"
+text = "setNMEAOutput, Stream1, , -GGA"
 description = "Disable NMEA GGA"
 
 [[line]]
 tag = "nmea-gll-usb1"
 text = "setNMEAOutput, Stream1, USB1, +GLL, sec1"
-description = "Enable NMEA GLL at 1Hz"
+description = "Enable NMEA GLL at 1Hz on USB1"
 [[line]]
-tag = "nmea-gll-off-usb1"
-text = "setNMEAOutput, Stream1, USB1, -GLL"
+tag = "nmea-gll-cur"
+text = "setNMEAOutput, Stream1, , +GLL"
+description = "Enable NMEA GLL on Stream1's current port and rate"
+[[line]]
+tag = "nmea-gll-off"
+text = "setNMEAOutput, Stream1, , -GLL"
 description = "Disable NMEA GLL"
 
 [[line]]
 tag = "nmea-gsa-usb1"
 text = "setNMEAOutput, Stream1, USB1, +GSA, sec1"
-description = "Enable NMEA GSA at 1Hz"
+description = "Enable NMEA GSA at 1Hz on USB1"
 [[line]]
-tag = "nmea-gsa-off-usb1"
-text = "setNMEAOutput, Stream1, USB1, -GSA"
+tag = "nmea-gsa-cur"
+text = "setNMEAOutput, Stream1, , +GSA"
+description = "Enable NMEA GSA on Stream1's current port and rate"
+[[line]]
+tag = "nmea-gsa-off"
+text = "setNMEAOutput, Stream1, , -GSA"
 description = "Disable NMEA GSA"
 
 [[line]]
 tag = "nmea-gsv-usb1"
 text = "setNMEAOutput, Stream1, USB1, +GSV, sec1"
-description = "Enable NMEA GSV at 1Hz"
+description = "Enable NMEA GSV at 1Hz on USB1"
 [[line]]
-tag = "nmea-gsv-off-usb1"
-text = "setNMEAOutput, Stream1, USB1, -GSV"
+tag = "nmea-gsv-cur"
+text = "setNMEAOutput, Stream1, , +GSV"
+description = "Enable NMEA GSV on Stream1's current port and rate"
+[[line]]
+tag = "nmea-gsv-off"
+text = "setNMEAOutput, Stream1, , -GSV"
 description = "Disable NMEA GSV"
 
 [[line]]
 tag = "nmea-rmc-usb1"
 text = "setNMEAOutput, Stream1, USB1, +RMC, sec1"
-description = "Enable NMEA RMC at 1Hz"
+description = "Enable NMEA RMC at 1Hz on USB1"
 [[line]]
-tag = "nmea-rmc-off-usb1"
-text = "setNMEAOutput, Stream1, USB1, -RMC"
+tag = "nmea-rmc-cur"
+text = "setNMEAOutput, Stream1, , +RMC"
+description = "Enable NMEA RMC on Stream1's current port and rate"
+[[line]]
+tag = "nmea-rmc-off"
+text = "setNMEAOutput, Stream1, , -RMC"
 description = "Disable NMEA RMC"
 
 [[line]]
 tag = "nmea-zda-usb1"
 text = "setNMEAOutput, Stream1, USB1, +ZDA, sec1"
-description = "Enable NMEA ZDA at 1Hz"
+description = "Enable NMEA ZDA at 1Hz on USB1"
 [[line]]
-tag = "nmea-zda-off-usb1"
-text = "setNMEAOutput, Stream1, USB1, -ZDA"
+tag = "nmea-zda-cur"
+text = "setNMEAOutput, Stream1, , +ZDA"
+description = "Enable NMEA ZDA on Stream1's current port and rate"
+[[line]]
+tag = "nmea-zda-off"
+text = "setNMEAOutput, Stream1, , -ZDA"
 description = "Disable NMEA ZDA"
 
-# Disable all NMEA output on Stream1
-# Verified ACK on mosaic-G5; capture confirmed all NMEA output stopped on USB1.
+# Disable all NMEA sentences on Stream1 (port-neutral).
 [[line]]
-tag = "nmea-off-usb1"
-text = "setNMEAOutput, Stream1, USB1, none"
+tag = "nmea-off"
+text = "setNMEAOutput, Stream1, , none"
 description = "Disable all NMEA messages"
 
-# Convenience: enable RMC, GGA, GSV, GSA (messages used by satpulse daemon)
-# Verified ACK on mosaic-G5; capture confirmed RMC/GGA/GSV/GSA appear on USB1.
+# Convenience: enable RMC, GGA, GSV, GSA at 1Hz on USB1 (the sentences the
+# satpulse daemon uses). Self-contained like the -usb1 tags: the first line sets
+# USB1 + 1 Hz, the rest add sentences at the port and rate it just set.
 [[line]]
 tag = "nmea-daemon-usb1"
 text = "setNMEAOutput, Stream1, USB1, +RMC, sec1"
@@ -152,6 +191,46 @@ text = "setNMEAOutput, Stream1, USB1, +GSV"
 [[line]]
 tag = "nmea-daemon-usb1"
 text = "setNMEAOutput, Stream1, USB1, +GSA"
+
+# Port: route Stream1 NMEA output to a connection (keeps sentence list and rate).
+[[line]]
+tag = "nmea-port-usb1"
+text = "setNMEAOutput, Stream1, USB1"
+description = "Route Stream1 NMEA output to USB1"
+[[line]]
+tag = "nmea-port-usb2"
+text = "setNMEAOutput, Stream1, USB2"
+description = "Route Stream1 NMEA output to USB2"
+[[line]]
+tag = "nmea-port-com1"
+text = "setNMEAOutput, Stream1, COM1"
+description = "Route Stream1 NMEA output to COM1"
+[[line]]
+tag = "nmea-port-com2"
+text = "setNMEAOutput, Stream1, COM2"
+description = "Route Stream1 NMEA output to COM2"
+
+# Rate: set Stream1's NMEA output interval (keeps port and sentence list).
+[[line]]
+tag = "nmea-rate-1"
+text = "setNMEAOutput, Stream1, , , sec1"
+description = "Set Stream1 NMEA output rate to 1 Hz"
+[[line]]
+tag = "nmea-rate-2"
+text = "setNMEAOutput, Stream1, , , msec500"
+description = "Set Stream1 NMEA output rate to 2 Hz"
+[[line]]
+tag = "nmea-rate-5"
+text = "setNMEAOutput, Stream1, , , msec200"
+description = "Set Stream1 NMEA output rate to 5 Hz"
+[[line]]
+tag = "nmea-rate-10"
+text = "setNMEAOutput, Stream1, , , msec100"
+description = "Set Stream1 NMEA output rate to 10 Hz"
+[[line]]
+tag = "nmea-rate-20"
+text = "setNMEAOutput, Stream1, , , msec50"
+description = "Set Stream1 NMEA output rate to 20 Hz"
 
 # NMEA version
 # setNMEAVersion offers only two profiles: v3x (NMEA 3.01) and v4x. Per the
@@ -324,7 +403,7 @@ description = "Disable PPS output"
 # *output* interval is configurable per stream. These entries set the
 # interval of a dedicated Stream3 carrying PVTGeodetic; adjust Cd/Stream to
 # match whichever stream you actually use for position output (e.g. combine
-# with sbf-daemon-usb1's Stream1 instead, if that is your position source).
+# with the sbf-* tags' Stream1 instead, if that is your position source).
 
 # Verified ACK on mosaic-G5; getSBFOutput Stream3 returns the current PVTGeodetic
 # interval.
@@ -464,21 +543,9 @@ text = "exeResetReceiver, Hard, PVTData+SatData"
 description = "Reset - reload configuration from NVM and discard last position/time and satellite orbital data"
 delay = 5
 
-# factory-reset requires an authenticated admin session (ref sec 1.3/3.2.1
-# "factoryReset"/"login", confirmed identical on both models); anonymous
-# sessions cannot run factoryReset. Replace "admin, admin" with your
-# receiver's actual administrator username/password before use.
-# NOT hardware-tested on mosaic-G5: requires an authenticated admin login and
-# reboots the receiver (re-enumerating USB). Verify manually.
-[[line]]
-tag = "factory-reset"
-text = "login, admin, admin"
-description = "Factory reset - clears all settings and satellite data (requires admin login; replace example credentials)"
-delay = 0.5
 [[line]]
 tag = "factory-reset"
 text = "factoryReset"
-delay = 5
 
 # Survey-in (base station)
 
@@ -626,26 +693,394 @@ tag = "mode-rover"
 text = "setPVTMode, Rover"
 description = "Set rover mode"
 
-# satpulsed daemon SBF enablement
-# Septentrio-specific tag (not part of the standard tag set in tags.md),
-# analogous to other vendors' nmea-daemon / asbin-* convenience tags. Enables
-# the SBF blocks satpulsed needs: time/PPS (ReceiverTime, xPPSOffset),
-# position (PVTGeodetic), tracking/visibility (ChannelStatus, SatVisibility),
-# solution quality (DOP), receiver health (ReceiverStatus), and the PVT
-# epoch-end marker (EndOfPVT). All of these are core blocks present
-# identically on both models (none are in the G5-absent Meas3 group).
+# SBF output (Septentrio Binary Format)
+#
+# SBF is scheduled through a "stream": one SBF stream (Stream1..Stream10, a pool
+# separate from the NMEA streams) carries a list of blocks to one connection (Cd)
+# at one interval. This file uses SBF Stream1 throughout. setSBFOutput takes
+# Stream, Cd, Messages, Interval; an omitted argument keeps its current value
+# (mosaic-G5 v1.1.0 guide sec 3.1.2), and "+"/"-" on Messages adds/removes one
+# block without disturbing the rest.
+#
+# Cd, Interval and the block list bind independently and live: setting one leaves
+# the others in place, and a block enabled with no interval emits nothing until a
+# rate is set. So there are two enable tags per block, mirroring the NMEA tags:
+#   sbf-<block>-usb1  self-contained -- USB1 + 1 Hz + the block in one tag, so it
+#                     works on a factory-fresh stream (Cd none, interval off).
+#   sbf-<block>-cur   adds the block only, riding the stream's current Cd and
+#                     interval; compose with sbf-port-*/sbf-rate-*.
+# The single sbf-<block>-off disables the block (port-neutral). One block per SBF
+# block satpulse decodes (gps/lib/sbfbin); tag name is the block lowercased, the
+# command text keeps the block's exact casing.
+#
+# The FlexRate-exempt blocks (xPPSOffset, GPSUtc, GALUtc, BDSUtc, ReceiverSetup,
+# DiffCorrIn, BaseStation) ignore the interval and always emit at their natural
+# OnChange rate, so the sec1 in their -usb1 tag is harmless but has no effect.
+# Verified on mosaic-G5: getSBFOutput readbacks plus USB1/USB2 captures confirmed
+# Cd, Interval and Messages each change independently, and a Cd or Interval change
+# moves/regates an already-enabled block with no re-enable.
 
-# Verified ACK with readback on mosaic-G5: getSBFOutput Stream1 shows all 8 blocks
-# enabled. A USB1 capture confirmed PVTGeodetic/DOP/EndOfPVT/ReceiverTime/
-# SatVisibility/ChannelStatus/ReceiverStatus flowing; xPPSOffset emits only on a
-# PPS edge (none seen because PPS was disabled during this test).
 [[line]]
-tag = "sbf-daemon-usb1"
-text = "setSBFOutput, Stream1, USB1, +ReceiverTime+xPPSOffset+PVTGeodetic+ChannelStatus+SatVisibility+DOP+ReceiverStatus+EndOfPVT, sec1"
-description = "Enable SBF blocks used by satpulsed daemon"
-
-# Verified ACK on mosaic-G5; getSBFOutput Stream1 returns the enabled blocks.
-[[line]]
-tag = "get-sbf-daemon"
+tag = "get-sbf"
 text = "getSBFOutput, Stream1"
-description = "Query SBF blocks currently enabled on Stream1"
+description = "Query Stream1 SBF output configuration"
+
+# PVT / position / velocity / DOP
+[[line]]
+tag = "sbf-pvtgeodetic-usb1"
+text = "setSBFOutput, Stream1, USB1, +PVTGeodetic, sec1"
+description = "Enable PVTGeodetic (geodetic position/velocity/time) at 1Hz on USB1"
+[[line]]
+tag = "sbf-pvtgeodetic-cur"
+text = "setSBFOutput, Stream1, , +PVTGeodetic"
+description = "Enable PVTGeodetic on Stream1's current port and rate"
+[[line]]
+tag = "sbf-pvtgeodetic-off"
+text = "setSBFOutput, Stream1, , -PVTGeodetic"
+description = "Disable PVTGeodetic"
+[[line]]
+tag = "sbf-pvtcartesian-usb1"
+text = "setSBFOutput, Stream1, USB1, +PVTCartesian, sec1"
+description = "Enable PVTCartesian (ECEF position/velocity/time) at 1Hz on USB1"
+[[line]]
+tag = "sbf-pvtcartesian-cur"
+text = "setSBFOutput, Stream1, , +PVTCartesian"
+description = "Enable PVTCartesian on Stream1's current port and rate"
+[[line]]
+tag = "sbf-pvtcartesian-off"
+text = "setSBFOutput, Stream1, , -PVTCartesian"
+description = "Disable PVTCartesian"
+[[line]]
+tag = "sbf-endofpvt-usb1"
+text = "setSBFOutput, Stream1, USB1, +EndOfPVT, sec1"
+description = "Enable EndOfPVT (end-of-PVT-epoch marker) at 1Hz on USB1"
+[[line]]
+tag = "sbf-endofpvt-cur"
+text = "setSBFOutput, Stream1, , +EndOfPVT"
+description = "Enable EndOfPVT on Stream1's current port and rate"
+[[line]]
+tag = "sbf-endofpvt-off"
+text = "setSBFOutput, Stream1, , -EndOfPVT"
+description = "Disable EndOfPVT"
+[[line]]
+tag = "sbf-poscovgeodetic-usb1"
+text = "setSBFOutput, Stream1, USB1, +PosCovGeodetic, sec1"
+description = "Enable PosCovGeodetic (geodetic position covariance) at 1Hz on USB1"
+[[line]]
+tag = "sbf-poscovgeodetic-cur"
+text = "setSBFOutput, Stream1, , +PosCovGeodetic"
+description = "Enable PosCovGeodetic on Stream1's current port and rate"
+[[line]]
+tag = "sbf-poscovgeodetic-off"
+text = "setSBFOutput, Stream1, , -PosCovGeodetic"
+description = "Disable PosCovGeodetic"
+[[line]]
+tag = "sbf-poscovcartesian-usb1"
+text = "setSBFOutput, Stream1, USB1, +PosCovCartesian, sec1"
+description = "Enable PosCovCartesian (Cartesian position covariance) at 1Hz on USB1"
+[[line]]
+tag = "sbf-poscovcartesian-cur"
+text = "setSBFOutput, Stream1, , +PosCovCartesian"
+description = "Enable PosCovCartesian on Stream1's current port and rate"
+[[line]]
+tag = "sbf-poscovcartesian-off"
+text = "setSBFOutput, Stream1, , -PosCovCartesian"
+description = "Disable PosCovCartesian"
+[[line]]
+tag = "sbf-velcovgeodetic-usb1"
+text = "setSBFOutput, Stream1, USB1, +VelCovGeodetic, sec1"
+description = "Enable VelCovGeodetic (geodetic velocity covariance) at 1Hz on USB1"
+[[line]]
+tag = "sbf-velcovgeodetic-cur"
+text = "setSBFOutput, Stream1, , +VelCovGeodetic"
+description = "Enable VelCovGeodetic on Stream1's current port and rate"
+[[line]]
+tag = "sbf-velcovgeodetic-off"
+text = "setSBFOutput, Stream1, , -VelCovGeodetic"
+description = "Disable VelCovGeodetic"
+[[line]]
+tag = "sbf-velcovcartesian-usb1"
+text = "setSBFOutput, Stream1, USB1, +VelCovCartesian, sec1"
+description = "Enable VelCovCartesian (Cartesian velocity covariance) at 1Hz on USB1"
+[[line]]
+tag = "sbf-velcovcartesian-cur"
+text = "setSBFOutput, Stream1, , +VelCovCartesian"
+description = "Enable VelCovCartesian on Stream1's current port and rate"
+[[line]]
+tag = "sbf-velcovcartesian-off"
+text = "setSBFOutput, Stream1, , -VelCovCartesian"
+description = "Disable VelCovCartesian"
+[[line]]
+tag = "sbf-dop-usb1"
+text = "setSBFOutput, Stream1, USB1, +DOP, sec1"
+description = "Enable DOP (dilution of precision) at 1Hz on USB1"
+[[line]]
+tag = "sbf-dop-cur"
+text = "setSBFOutput, Stream1, , +DOP"
+description = "Enable DOP on Stream1's current port and rate"
+[[line]]
+tag = "sbf-dop-off"
+text = "setSBFOutput, Stream1, , -DOP"
+description = "Disable DOP"
+
+# Measurements
+[[line]]
+tag = "sbf-measepoch-usb1"
+text = "setSBFOutput, Stream1, USB1, +MeasEpoch, sec1"
+description = "Enable MeasEpoch (pseudorange/carrier measurement epoch) at 1Hz on USB1"
+[[line]]
+tag = "sbf-measepoch-cur"
+text = "setSBFOutput, Stream1, , +MeasEpoch"
+description = "Enable MeasEpoch on Stream1's current port and rate"
+[[line]]
+tag = "sbf-measepoch-off"
+text = "setSBFOutput, Stream1, , -MeasEpoch"
+description = "Disable MeasEpoch"
+[[line]]
+tag = "sbf-measextra-usb1"
+text = "setSBFOutput, Stream1, USB1, +MeasExtra, sec1"
+description = "Enable MeasExtra (extra per-measurement information) at 1Hz on USB1"
+[[line]]
+tag = "sbf-measextra-cur"
+text = "setSBFOutput, Stream1, , +MeasExtra"
+description = "Enable MeasExtra on Stream1's current port and rate"
+[[line]]
+tag = "sbf-measextra-off"
+text = "setSBFOutput, Stream1, , -MeasExtra"
+description = "Disable MeasExtra"
+[[line]]
+tag = "sbf-endofmeas-usb1"
+text = "setSBFOutput, Stream1, USB1, +EndOfMeas, sec1"
+description = "Enable EndOfMeas (end-of-measurement-epoch marker) at 1Hz on USB1"
+[[line]]
+tag = "sbf-endofmeas-cur"
+text = "setSBFOutput, Stream1, , +EndOfMeas"
+description = "Enable EndOfMeas on Stream1's current port and rate"
+[[line]]
+tag = "sbf-endofmeas-off"
+text = "setSBFOutput, Stream1, , -EndOfMeas"
+description = "Disable EndOfMeas"
+
+# Time / PPS
+[[line]]
+tag = "sbf-receivertime-usb1"
+text = "setSBFOutput, Stream1, USB1, +ReceiverTime, sec1"
+description = "Enable ReceiverTime (receiver time) at 1Hz on USB1"
+[[line]]
+tag = "sbf-receivertime-cur"
+text = "setSBFOutput, Stream1, , +ReceiverTime"
+description = "Enable ReceiverTime on Stream1's current port and rate"
+[[line]]
+tag = "sbf-receivertime-off"
+text = "setSBFOutput, Stream1, , -ReceiverTime"
+description = "Disable ReceiverTime"
+[[line]]
+tag = "sbf-xppsoffset-usb1"
+text = "setSBFOutput, Stream1, USB1, +xPPSOffset, sec1"
+description = "Enable xPPSOffset (PPS pulse offset; emits per PPS edge) at 1Hz on USB1"
+[[line]]
+tag = "sbf-xppsoffset-cur"
+text = "setSBFOutput, Stream1, , +xPPSOffset"
+description = "Enable xPPSOffset on Stream1's current port and rate"
+[[line]]
+tag = "sbf-xppsoffset-off"
+text = "setSBFOutput, Stream1, , -xPPSOffset"
+description = "Disable xPPSOffset"
+
+# Satellites
+[[line]]
+tag = "sbf-satvisibility-usb1"
+text = "setSBFOutput, Stream1, USB1, +SatVisibility, sec1"
+description = "Enable SatVisibility (azimuth/elevation of visible satellites) at 1Hz on USB1"
+[[line]]
+tag = "sbf-satvisibility-cur"
+text = "setSBFOutput, Stream1, , +SatVisibility"
+description = "Enable SatVisibility on Stream1's current port and rate"
+[[line]]
+tag = "sbf-satvisibility-off"
+text = "setSBFOutput, Stream1, , -SatVisibility"
+description = "Disable SatVisibility"
+[[line]]
+tag = "sbf-channelstatus-usb1"
+text = "setSBFOutput, Stream1, USB1, +ChannelStatus, sec1"
+description = "Enable ChannelStatus (per-channel tracking status) at 1Hz on USB1"
+[[line]]
+tag = "sbf-channelstatus-cur"
+text = "setSBFOutput, Stream1, , +ChannelStatus"
+description = "Enable ChannelStatus on Stream1's current port and rate"
+[[line]]
+tag = "sbf-channelstatus-off"
+text = "setSBFOutput, Stream1, , -ChannelStatus"
+description = "Disable ChannelStatus"
+
+# UTC conversion parameters
+[[line]]
+tag = "sbf-gpsutc-usb1"
+text = "setSBFOutput, Stream1, USB1, +GPSUtc, sec1"
+description = "Enable GPSUtc (GPS-UTC conversion parameters) at 1Hz on USB1"
+[[line]]
+tag = "sbf-gpsutc-cur"
+text = "setSBFOutput, Stream1, , +GPSUtc"
+description = "Enable GPSUtc on Stream1's current port and rate"
+[[line]]
+tag = "sbf-gpsutc-off"
+text = "setSBFOutput, Stream1, , -GPSUtc"
+description = "Disable GPSUtc"
+[[line]]
+tag = "sbf-galutc-usb1"
+text = "setSBFOutput, Stream1, USB1, +GALUtc, sec1"
+description = "Enable GALUtc (Galileo-UTC conversion parameters) at 1Hz on USB1"
+[[line]]
+tag = "sbf-galutc-cur"
+text = "setSBFOutput, Stream1, , +GALUtc"
+description = "Enable GALUtc on Stream1's current port and rate"
+[[line]]
+tag = "sbf-galutc-off"
+text = "setSBFOutput, Stream1, , -GALUtc"
+description = "Disable GALUtc"
+[[line]]
+tag = "sbf-bdsutc-usb1"
+text = "setSBFOutput, Stream1, USB1, +BDSUtc, sec1"
+description = "Enable BDSUtc (BeiDou-UTC conversion parameters) at 1Hz on USB1"
+[[line]]
+tag = "sbf-bdsutc-cur"
+text = "setSBFOutput, Stream1, , +BDSUtc"
+description = "Enable BDSUtc on Stream1's current port and rate"
+[[line]]
+tag = "sbf-bdsutc-off"
+text = "setSBFOutput, Stream1, , -BDSUtc"
+description = "Disable BDSUtc"
+
+# Receiver status / setup / quality
+[[line]]
+tag = "sbf-receiverstatus-usb1"
+text = "setSBFOutput, Stream1, USB1, +ReceiverStatus, sec1"
+description = "Enable ReceiverStatus (receiver health/status) at 1Hz on USB1"
+[[line]]
+tag = "sbf-receiverstatus-cur"
+text = "setSBFOutput, Stream1, , +ReceiverStatus"
+description = "Enable ReceiverStatus on Stream1's current port and rate"
+[[line]]
+tag = "sbf-receiverstatus-off"
+text = "setSBFOutput, Stream1, , -ReceiverStatus"
+description = "Disable ReceiverStatus"
+[[line]]
+tag = "sbf-receiversetup-usb1"
+text = "setSBFOutput, Stream1, USB1, +ReceiverSetup, sec1"
+description = "Enable ReceiverSetup (receiver setup/identification) at 1Hz on USB1"
+[[line]]
+tag = "sbf-receiversetup-cur"
+text = "setSBFOutput, Stream1, , +ReceiverSetup"
+description = "Enable ReceiverSetup on Stream1's current port and rate"
+[[line]]
+tag = "sbf-receiversetup-off"
+text = "setSBFOutput, Stream1, , -ReceiverSetup"
+description = "Disable ReceiverSetup"
+[[line]]
+tag = "sbf-qualityind-usb1"
+text = "setSBFOutput, Stream1, USB1, +QualityInd, sec1"
+description = "Enable QualityInd (quality indicators) at 1Hz on USB1"
+[[line]]
+tag = "sbf-qualityind-cur"
+text = "setSBFOutput, Stream1, , +QualityInd"
+description = "Enable QualityInd on Stream1's current port and rate"
+[[line]]
+tag = "sbf-qualityind-off"
+text = "setSBFOutput, Stream1, , -QualityInd"
+description = "Disable QualityInd"
+[[line]]
+tag = "sbf-rfstatus-usb1"
+text = "setSBFOutput, Stream1, USB1, +RFStatus, sec1"
+description = "Enable RFStatus (RF band / interference status) at 1Hz on USB1"
+[[line]]
+tag = "sbf-rfstatus-cur"
+text = "setSBFOutput, Stream1, , +RFStatus"
+description = "Enable RFStatus on Stream1's current port and rate"
+[[line]]
+tag = "sbf-rfstatus-off"
+text = "setSBFOutput, Stream1, , -RFStatus"
+description = "Disable RFStatus"
+[[line]]
+tag = "sbf-galauthstatus-usb1"
+text = "setSBFOutput, Stream1, USB1, +GALAuthStatus, sec1"
+description = "Enable GALAuthStatus (Galileo OSNMA authentication status) at 1Hz on USB1"
+[[line]]
+tag = "sbf-galauthstatus-cur"
+text = "setSBFOutput, Stream1, , +GALAuthStatus"
+description = "Enable GALAuthStatus on Stream1's current port and rate"
+[[line]]
+tag = "sbf-galauthstatus-off"
+text = "setSBFOutput, Stream1, , -GALAuthStatus"
+description = "Disable GALAuthStatus"
+
+# Differential corrections / base station
+[[line]]
+tag = "sbf-diffcorrin-usb1"
+text = "setSBFOutput, Stream1, USB1, +DiffCorrIn, sec1"
+description = "Enable DiffCorrIn (incoming differential corrections) at 1Hz on USB1"
+[[line]]
+tag = "sbf-diffcorrin-cur"
+text = "setSBFOutput, Stream1, , +DiffCorrIn"
+description = "Enable DiffCorrIn on Stream1's current port and rate"
+[[line]]
+tag = "sbf-diffcorrin-off"
+text = "setSBFOutput, Stream1, , -DiffCorrIn"
+description = "Disable DiffCorrIn"
+[[line]]
+tag = "sbf-basestation-usb1"
+text = "setSBFOutput, Stream1, USB1, +BaseStation, sec1"
+description = "Enable BaseStation (base station position/info) at 1Hz on USB1"
+[[line]]
+tag = "sbf-basestation-cur"
+text = "setSBFOutput, Stream1, , +BaseStation"
+description = "Enable BaseStation on Stream1's current port and rate"
+[[line]]
+tag = "sbf-basestation-off"
+text = "setSBFOutput, Stream1, , -BaseStation"
+description = "Disable BaseStation"
+
+# Disable all SBF blocks on Stream1 (port-neutral).
+[[line]]
+tag = "sbf-off"
+text = "setSBFOutput, Stream1, , none"
+description = "Disable all SBF blocks on Stream1"
+
+# Port: route Stream1 SBF output to a connection (keeps block list and rate).
+[[line]]
+tag = "sbf-port-usb1"
+text = "setSBFOutput, Stream1, USB1"
+description = "Route Stream1 SBF output to USB1"
+[[line]]
+tag = "sbf-port-usb2"
+text = "setSBFOutput, Stream1, USB2"
+description = "Route Stream1 SBF output to USB2"
+[[line]]
+tag = "sbf-port-com1"
+text = "setSBFOutput, Stream1, COM1"
+description = "Route Stream1 SBF output to COM1"
+[[line]]
+tag = "sbf-port-com2"
+text = "setSBFOutput, Stream1, COM2"
+description = "Route Stream1 SBF output to COM2"
+
+# Rate: set Stream1's SBF output interval (keeps port and block list).
+[[line]]
+tag = "sbf-rate-1"
+text = "setSBFOutput, Stream1, , , sec1"
+description = "Set Stream1 SBF output rate to 1 Hz"
+[[line]]
+tag = "sbf-rate-2"
+text = "setSBFOutput, Stream1, , , msec500"
+description = "Set Stream1 SBF output rate to 2 Hz"
+[[line]]
+tag = "sbf-rate-5"
+text = "setSBFOutput, Stream1, , , msec200"
+description = "Set Stream1 SBF output rate to 5 Hz"
+[[line]]
+tag = "sbf-rate-10"
+text = "setSBFOutput, Stream1, , , msec100"
+description = "Set Stream1 SBF output rate to 10 Hz"
+[[line]]
+tag = "sbf-rate-20"
+text = "setSBFOutput, Stream1, , , msec50"
+description = "Set Stream1 SBF output rate to 20 Hz"
