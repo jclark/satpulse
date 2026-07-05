@@ -38,6 +38,7 @@ const (
 	phaseInit   configPhase = iota
 	phaseEscape             // the escape request is outstanding
 	phaseQuery              // reading current state for Get and read-modify-write
+	phaseSet                // realizing the target's properties
 	phaseFinal
 )
 
@@ -147,6 +148,12 @@ func (c *Configurator) GenerateRequests() error {
 		c.phase = phaseQuery
 	case phaseQuery:
 		if !c.allFinal() || c.generateFollowupQueries() {
+			break
+		}
+		c.generateSetReqs()
+		c.phase = phaseSet
+	case phaseSet:
+		if !c.allFinal() {
 			break
 		}
 		c.complete = true

@@ -45,7 +45,7 @@ const getAll = gpsprot.PropIDSignalsEnabled | gpsprot.PropIDTimeGNSS |
 // receiver: the probe reply carries the capability line and our prompt, the
 // escape elicits no framed reply, queries are answered from replies, and
 // ReceiverSetup arrives as a normal SBF block on the block's own schedule.
-func runConfig(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]string) (*Configurator, []string) {
+func runConfig(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]string) (*Configurator, []string, []error) {
 	t.Helper()
 	cp := NewConfigProtocol()
 	rp := NewReplyProcessor()
@@ -67,6 +67,7 @@ func runConfig(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]st
 	cfg := cfgIntf.(*Configurator)
 	director := gpsprot.NewConfigDirector(cfg, 2)
 	var sent []string
+	var errs []error
 	rxSetupFed := false
 	for action := range director.Actions() {
 		switch action.Type {
@@ -78,6 +79,9 @@ func runConfig(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]st
 			if state, ok := replies[cmd]; ok {
 				t0 = t0.Add(time.Millisecond)
 				pkt := "$R: " + cmd + "\r\n  " + state + "\r\nUSB1>"
+				if nak, found := strings.CutPrefix(state, "!"); found {
+					pkt = "$R? " + nak + "\r\nUSB1>"
+				}
 				if _, err := rp.ProcessPacket(pkt, t0); err != nil {
 					t.Fatalf("reply to %q: %v", cmd, err)
 				}
@@ -97,14 +101,17 @@ func runConfig(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]st
 			}
 			director.AdvanceTimeTo(t0)
 		case gpsprot.ConfigActionError:
-			t.Fatalf("unexpected error action: %v", action.Error)
+			errs = append(errs, action.Error)
 		}
 	}
-	return cfg, sent
+	return cfg, sent, errs
 }
 
 func TestConfigureGetAll(t *testing.T) {
-	cfg, sent := runConfig(t, &gpsprot.ConfigTarget{Get: getAll}, asFoundReplies)
+	cfg, sent, errs := runConfig(t, &gpsprot.ConfigTarget{Get: getAll}, asFoundReplies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
 	if sent[0] != escapeCmd {
 		t.Errorf("first packet: got %q want the escape", sent[0])
 	}
@@ -154,7 +161,10 @@ func TestConfigureGetStaticMode(t *testing.T) {
 	replies := make(map[string]string, len(asFoundReplies))
 	maps.Copy(replies, asFoundReplies)
 	replies["getPVTMode"] = "PVTMode, Static, , Geodetic1"
-	cfg, sent := runConfig(t, &gpsprot.ConfigTarget{Get: gpsprot.PropIDMode}, replies)
+	cfg, sent, errs := runConfig(t, &gpsprot.ConfigTarget{Get: gpsprot.PropIDMode}, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
 	if !slices.Contains(sent, "getStaticPosGeodetic, Geodetic1") {
 		t.Fatalf("no static-position follow-up query in %v", sent)
 	}
@@ -250,5 +260,81 @@ func TestPromote(t *testing.T) {
 	}
 	if got := c.reqs[2].state; got != sStateNotReady {
 		t.Errorf("reqs[2]: got %v want %v", got, sStateNotReady)
+	}
+}
+
+// TestConfigureSet drives property sets end to end: each set command is
+// built from the target, and the ACKED state line (not the request) is what
+// ConfigProps reports - including the receiver adjusting a value (the
+// elevation mask reply answers 8 for a requested 10).
+func TestConfigureSet(t *testing.T) {
+	replies := make(map[string]string, len(asFoundReplies))
+	maps.Copy(replies, asFoundReplies)
+	replies["setElevationMask, PVT, 10"] = "ElevationMask, PVT, 8"
+	replies["setPPSParameters, msec100, High2Low, , Galileo, 0, 0.2"] = "PPSParameters, msec100, High2Low, 0.00, Galileo, 0, 0.200000"
+	replies["setCalibCommonDelay, 51"] = "CalibCommonDelay, 51.000"
+	replies["setRTCMv3Formatting, 4095"] = `RTCMv3Formatting, 4095, GPSL1CA+GPSL2PY+GLOL1CA, L2CA, "default", 128`
+	replies["setGalOSNMAUsage, off, , off"] = `GalOSNMAUsage, off, "", off`
+
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetMinElevation(10 * gpsprot.Degrees)
+	target.Props.SetTimePulse(gpsprot.TimePulse{
+		Width:          200 * time.Microsecond,
+		Period:         100 * time.Millisecond,
+		AlignToGNSS:    true,
+		OnlyWhenLocked: false,
+		PolarityRising: false,
+	})
+	target.Props.SetTimeGNSS(gpsprot.GAL)
+	target.Props.SetAntennaCableDelay(51 * time.Nanosecond)
+	target.Props.SetRTCMBaseID(9999) // clamped to 4095 before the wire
+	target.Props.SetNavMsgAuth(gpsprot.NavMsgAuthNone)
+
+	cfg, sent, errs := runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	for cmd := range replies {
+		if strings.HasPrefix(cmd, "set") && !slices.Contains(sent, cmd) {
+			t.Errorf("set command %q not sent; sent: %v", cmd, sent)
+		}
+	}
+
+	props := cfg.ConfigProps()
+	expect := &gpsprot.ConfigProps{}
+	expect.SetMinElevation(8 * gpsprot.Degrees) // the acked value, not the requested 10
+	expect.SetTimePulse(gpsprot.TimePulse{
+		Width:          200 * time.Microsecond,
+		Period:         100 * time.Millisecond,
+		AlignToGNSS:    true,
+		OnlyWhenLocked: false,
+		PolarityRising: false,
+	})
+	expect.SetTimeGNSS(gpsprot.GAL)
+	expect.SetAntennaCableDelay(51 * time.Nanosecond)
+	expect.SetRTCMBaseID(4095)
+	expect.SetNavMsgAuth(gpsprot.NavMsgAuthNone)
+	expect.SetPort("USB1")
+	expect.SetBaudRate(0)
+	if !reflect.DeepEqual(props, expect) {
+		t.Errorf("ConfigProps:\ngot  %+v\nwant %+v", props, expect)
+	}
+}
+
+// TestConfigureSetRefused checks that a refusal surfaces the receiver's
+// error text and leaves the queried value standing.
+func TestConfigureSetRefused(t *testing.T) {
+	replies := make(map[string]string, len(asFoundReplies))
+	maps.Copy(replies, asFoundReplies)
+	replies["setCalibCommonDelay, 42"] = "!setCalibCommonDelay: Argument 'CommonDelay' is invalid!"
+
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetAntennaCableDelay(42 * time.Nanosecond)
+	cfg, _, errs := runConfig(t, target, replies)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "Argument 'CommonDelay' is invalid!") {
+		t.Fatalf("errors: got %v want one containing the receiver's text", errs)
+	}
+	if d, ok := cfg.ConfigProps().GetAntennaCableDelay(); !ok || d != 0 {
+		t.Errorf("AntennaCableDelay: got %v, %v; want the queried 0 (refusal leaves config unchanged)", d, ok)
 	}
 }

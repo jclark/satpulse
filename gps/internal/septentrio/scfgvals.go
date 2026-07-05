@@ -310,8 +310,8 @@ func (np *nativeProps) convertMode(props *gpsprot.ConfigProps) {
 	props.SetMode(m)
 }
 
-// query appends a get request whose reply is parsed by onReply.
-func (c *Configurator) query(cmd string, onReply func(*Reply)) {
+// addReq appends a command request whose reply is parsed by onReply.
+func (c *Configurator) addReq(cmd string, onReply func(*Reply)) {
 	c.append(&sReq{cmd: cmd, onReply: onReply})
 }
 
@@ -320,26 +320,26 @@ func (c *Configurator) query(cmd string, onReply func(*Reply)) {
 func (c *Configurator) generateQueryReqs() {
 	t, np := c.target, &c.np
 	if t.UsesAny(gpsprot.PropIDSignalsEnabled) {
-		c.query("getSignalTracking", np.parseSignalTracking)
-		c.query("getSignalUsage", np.parseSignalUsage)
+		c.addReq("getSignalTracking", np.parseSignalTracking)
+		c.addReq("getSignalUsage", np.parseSignalUsage)
 	}
 	if t.UsesAny(gpsprot.PropIDTimePulse | gpsprot.PropIDTimeGNSS) {
-		c.query("getPPSParameters", np.parsePPSParameters)
+		c.addReq("getPPSParameters", np.parsePPSParameters)
 	}
 	if t.UsesAny(gpsprot.PropIDMode) {
-		c.query("getPVTMode", np.parsePVTMode)
+		c.addReq("getPVTMode", np.parsePVTMode)
 	}
 	if t.UsesAny(gpsprot.PropIDMinElevation) {
-		c.query("getElevationMask, PVT", np.parseElevationMask)
+		c.addReq("getElevationMask, PVT", np.parseElevationMask)
 	}
 	if t.UsesAny(gpsprot.PropIDNavMsgAuth) && c.caps.caps["GalOSNMA"] {
-		c.query("getGalOSNMAUsage", np.parseGalOSNMAUsage)
+		c.addReq("getGalOSNMAUsage", np.parseGalOSNMAUsage)
 	}
 	if t.UsesAny(gpsprot.PropIDRTCMBaseID) {
-		c.query("getRTCMv3Formatting", np.parseRTCMv3Formatting)
+		c.addReq("getRTCMv3Formatting", np.parseRTCMv3Formatting)
 	}
 	if t.UsesAny(gpsprot.PropIDAntennaCableDelay) {
-		c.query("getCalibCommonDelay", np.parseCalibCommonDelay)
+		c.addReq("getCalibCommonDelay", np.parseCalibCommonDelay)
 	}
 }
 
@@ -359,6 +359,6 @@ func (c *Configurator) generateFollowupQueries() bool {
 	if strings.HasPrefix(ref, "Cartesian") {
 		cmd = "getStaticPosCartesian, " + ref
 	}
-	c.query(cmd, c.np.parseStaticPos)
+	c.addReq(cmd, c.np.parseStaticPos)
 	return true
 }
