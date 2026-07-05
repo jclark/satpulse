@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/sbfbin"
 )
 
 // grcReplyPacket is a framed grc reply as captured from the mosaic-G5.
@@ -511,5 +512,40 @@ func TestConfigureIdentitySkippedWhenFlowing(t *testing.T) {
 		if strings.HasPrefix(cmd, "exeSBFOnce") || strings.HasPrefix(cmd, "setSBFOutput") {
 			t.Errorf("unexpected identity command %q", cmd)
 		}
+	}
+}
+
+// TestConfigureIdentityRetry checks the one-shot's retry: the block missing
+// its absorb window makes the request eligible for resend, the retried
+// one-shot delivers, and a total miss is still success (best-effort
+// identity, never a failed run).
+func TestConfigureIdentityRetry(t *testing.T) {
+	req := &sReq{cmd: "exeSBFOnce, USB1, ReceiverSetup", waitRxSetup: true, optional: true, state: sStateReady}
+	c := &Configurator{reqs: []*sReq{req}}
+	req.SetSentTime(time.Time{}.Add(time.Second))
+	if err := c.reply(&Reply{Kind: ReplyAck, Echo: req.cmd, States: []string{"SBFOnce, USB1, ReceiverSetup"}, Prompt: "USB1"}, time.Time{}.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if req.GetState() != gpsprot.ConfigRequestMaybeComplete {
+		t.Fatalf("after ack without block: %v", req.GetState())
+	}
+	req.SetDeadlinePassed()
+	if req.GetState() != gpsprot.ConfigRequestMayResend {
+		t.Fatalf("after missed absorb window: %v", req.GetState())
+	}
+	req.SetSentTime(time.Time{}.Add(2 * time.Second))
+	if err := c.reply(&Reply{Kind: ReplyAck, Echo: req.cmd, States: []string{"SBFOnce, USB1, ReceiverSetup"}, Prompt: "USB1"}, time.Time{}.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	c.receiverSetup(&sbfbin.ReceiverSetup{})
+	if req.GetState() != gpsprot.ConfigRequestSucceeded {
+		t.Fatalf("after block arrival: %v", req.GetState())
+	}
+
+	// Total miss: give-up is success.
+	req2 := &sReq{cmd: "exeSBFOnce, USB1, ReceiverSetup", waitRxSetup: true, optional: true, state: sStateMayResend}
+	req2.SetWontResend()
+	if req2.GetState() != gpsprot.ConfigRequestSucceeded {
+		t.Fatalf("give-up: %v", req2.GetState())
 	}
 }

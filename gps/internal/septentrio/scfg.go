@@ -79,6 +79,7 @@ type sReq struct {
 	noReply     bool         // expects no framed reply (the escape)
 	nakOK       bool         // a "$R?" refusal is an acceptable outcome, not a failure
 	waitRxSetup bool         // after the ack, absorb until the ReceiverSetup block arrives
+	optional    bool         // giving up after retries is success, not failure
 	onReply     func(*Reply) // records achieved values from the matching reply
 	tBase       time.Time    // send time, for the reply deadline
 	err         error
@@ -337,22 +338,34 @@ func (req *sReq) SetSentTime(tSent time.Time) {
 	}
 }
 
-// SetDeadlinePassed handles a passed reply or absorb deadline.
+// SetDeadlinePassed handles a passed reply or absorb deadline. An identity
+// one-shot whose block did not arrive within the absorb window becomes
+// eligible for retry: the one-shot is idempotent, and the block has been
+// observed to occasionally miss a window.
 func (req *sReq) SetDeadlinePassed() {
 	switch req.state {
 	case sStateAwaiting:
 		req.state = sStateMayResend
 	case sStateSentNoReply:
+		if req.waitRxSetup {
+			req.state = sStateMayResend
+			break
+		}
 		req.state = sStateSucceeded
 	default:
 		panic(req.invalidStatePanic("SetDeadlinePassed"))
 	}
 }
 
-// SetWontResend marks a timed-out request as permanently failed.
+// SetWontResend marks a timed-out request as permanently failed, or as
+// succeeded when the request is optional (give-up is an acceptable outcome).
 func (req *sReq) SetWontResend() {
 	if req.state != sStateMayResend {
 		panic(req.invalidStatePanic("SetWontResend"))
+	}
+	if req.optional {
+		req.state = sStateSucceeded
+		return
 	}
 	req.state = sStateFailed
 }

@@ -63,7 +63,7 @@ func (c *Configurator) generateIdentReqs() {
 				c.np.parseSBFOutput)
 		}
 	}
-	c.append(&sReq{cmd: "exeSBFOnce, " + c.port + ", ReceiverSetup", waitRxSetup: true})
+	c.append(&sReq{cmd: "exeSBFOnce, " + c.port + ", ReceiverSetup", waitRxSetup: true, optional: true})
 }
 
 // generateSaveResetReqs realizes the NVM operations, last: a save persists
