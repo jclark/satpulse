@@ -183,18 +183,19 @@ func CreatePacketProcessors(vendor Vendor) map[gpsprot.Tag]gpsprot.PacketProcess
 	nmeaPP := nmea.NewPacketProcessor(mgr)
 	nmeaPP.AddExtHandler(quectel.NewHandler())
 	procs := map[gpsprot.Tag]gpsprot.PacketProcessor{
-		ubx.Tag:            ubx.NewPacketProcessor(mgr),
-		casic.Tag:          casic.NewPacketProcessor(mgr),
-		as.Tag:             as.NewPacketProcessor(mgr),
-		sdbp.Tag:           sdbp.NewPacketProcessor(mgr),
-		nmea.Tag:           nmeaPP,
-		rtcm.Tag:           rtcm.NewPacketProcessor(),
-		unc.TagBinary:      unc.NewBinPacketProcessor(mgr),
-		unc.TagAscii:       unc.NewAsciiPacketProcessor(mgr),
-		nov.TagBinary:      nov.NewBinPacketProcessor(mgr),
-		nov.TagAscii:       nov.NewAsciiPacketProcessor(mgr),
-		nov.TagAbbrevAscii: nov.NewAbbrevAsciiPacketProcessor(),
-		septentrio.Tag:     septentrio.NewPacketProcessor(mgr),
+		ubx.Tag:             ubx.NewPacketProcessor(mgr),
+		casic.Tag:           casic.NewPacketProcessor(mgr),
+		as.Tag:              as.NewPacketProcessor(mgr),
+		sdbp.Tag:            sdbp.NewPacketProcessor(mgr),
+		nmea.Tag:            nmeaPP,
+		rtcm.Tag:            rtcm.NewPacketProcessor(),
+		unc.TagBinary:       unc.NewBinPacketProcessor(mgr),
+		unc.TagAscii:        unc.NewAsciiPacketProcessor(mgr),
+		nov.TagBinary:       nov.NewBinPacketProcessor(mgr),
+		nov.TagAscii:        nov.NewAsciiPacketProcessor(mgr),
+		nov.TagAbbrevAscii:  nov.NewAbbrevAsciiPacketProcessor(),
+		septentrio.Tag:      septentrio.NewPacketProcessor(mgr),
+		septentrio.TagReply: septentrio.NewReplyProcessor(),
 	}
 	if vendor != VendorUnknown {
 		SetVendor(procs, vendor)
