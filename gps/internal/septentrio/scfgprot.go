@@ -12,12 +12,14 @@ import (
 // Vendor is the vendor name reported in ReceiverInfo.
 const Vendor = "Septentrio"
 
-// configSupport is everything except the survey capabilities: Septentrio has
-// no parameterized/terminating/observable survey operation ("setPVTMode,
-// Static, , auto" is an auto-computed reference, not a survey). Declaring it
-// as full minus these gains future universally supported flags automatically.
+// configSupport is everything except the survey capabilities - Septentrio
+// has no parameterized/terminating/observable survey operation
+// ("setPVTMode, Static, , auto" is an auto-computed reference, not a
+// survey) - and fixed-position accuracy, which has no command carrier.
+// Declaring it as full minus these gains future flags automatically.
 const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportFull &^
-	(gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc | gpsprot.ConfigSupportSurveyMsg)
+	(gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPosAcc)
 
 // septSignalNames maps each device-independent signal to its Septentrio
 // signal name (the coarse config table; distinct from the conversion layer's
