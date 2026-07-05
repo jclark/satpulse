@@ -196,9 +196,31 @@ var nmeaFlagSentences = []struct {
 	{gpsprot.NMEAMsgGLL, "GLL"},
 }
 
+// rtcmMessages returns the RTCMv3 message list realizing the flags. The
+// MSM4/MSM7 aliases expand receiver-side to the per-constellation message
+// set (verified: 1074-1134 for MSM4, including QZSS), so enabled-GNSS
+// filtering happens in the receiver; ARP is RTCM1006 (1005 plus antenna
+// height, the verified message-file choice); RTCMMsgLax changes nothing
+// because the receiver accepts every choice the flags can express.
+func rtcmMessages(f gpsprot.RTCMMsgFlags) []string {
+	var m []string
+	if f&gpsprot.RTCMMsgMSM4 != 0 {
+		m = append(m, "MSM4")
+	}
+	if f&gpsprot.RTCMMsgMSM7 != 0 {
+		m = append(m, "MSM7")
+	}
+	if f&gpsprot.RTCMMsgARP != 0 {
+		m = append(m, "RTCM1006")
+	}
+	return m
+}
+
 // generateOutputReqs realizes the message output options on the owned
-// streams. A stream write is one self-contained command (port, complete
-// list, 1 Hz); the acked state line is the readback.
+// streams and this connection's RTCM output list. A stream write is one
+// self-contained command (port, complete list, 1 Hz); the acked state line
+// is the readback. Actual RTCM emission additionally requires base mode and
+// a reference position - observation, not enablement, is the evidence.
 func (c *Configurator) generateOutputReqs() {
 	np := &c.np
 	if c.touchesSBFOutput() {
@@ -220,6 +242,10 @@ func (c *Configurator) generateOutputReqs() {
 			c.addReq("setNMEAOutput, "+ownStream+", "+c.port+", "+strings.Join(names, "+")+", sec1",
 				np.parseNMEAOutput)
 		}
+	}
+	if c.target.Opts.RTCMMsg.IsSet() {
+		list := rtcmMessages(c.target.Opts.RTCMMsg.Get())
+		c.addReq("setRTCMv3Output, "+c.port+", "+listOrNone(strings.Join(list, "+")), nil)
 	}
 }
 

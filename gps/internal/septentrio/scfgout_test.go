@@ -121,3 +121,52 @@ func TestConfigureOutputs(t *testing.T) {
 		t.Errorf("acked SBF stream state not recorded: %+v", got)
 	}
 }
+
+func TestRTCMMessages(t *testing.T) {
+	tests := []struct {
+		name   string
+		flags  gpsprot.RTCMMsgFlags
+		expect []string
+	}{
+		{name: "auto", flags: gpsprot.RTCMMsgAuto, expect: []string{"MSM4", "RTCM1006"}},
+		{name: "msm7 with arp", flags: gpsprot.RTCMMsgAutoMSM7, expect: []string{"MSM7", "RTCM1006"}},
+		{name: "none", flags: gpsprot.RTCMMsgNone, expect: nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rtcmMessages(tc.flags); !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got %v want %v", got, tc.expect)
+			}
+		})
+	}
+}
+
+// TestConfigureRTCMOut checks the RTCM output command, including the
+// explicit "none" that clears this connection's list.
+func TestConfigureRTCMOut(t *testing.T) {
+	replies := map[string]string{
+		"setRTCMv3Output, USB1, MSM4+RTCM1006": "RTCMv3Output, USB1, RTCM1006+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134",
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgAuto)
+	_, sent, errs := runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if !slices.Contains(sent, "setRTCMv3Output, USB1, MSM4+RTCM1006") {
+		t.Errorf("RTCM command not sent; sent: %v", sent)
+	}
+
+	replies = map[string]string{
+		"setRTCMv3Output, USB1, none": "RTCMv3Output, USB1, none",
+	}
+	target = &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgNone)
+	_, sent, errs = runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if !slices.Contains(sent, "setRTCMv3Output, USB1, none") {
+		t.Errorf("RTCM clear not sent; sent: %v", sent)
+	}
+}
