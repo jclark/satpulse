@@ -87,13 +87,16 @@ a `NativeMsgHandler` (stage 1).
   shown as absence via the ReceiverInfo signal set).
 - **exeSBFOnce never emits to the issuing connection** (verified
   three blocks, raw capture; instant to another connection). The
-  receiver acks and stores the request but nothing arrives. So
-  `ReceiverInfo` CANNOT fetch `ReceiverSetup` (5902) that way;
-  instead: `lstInternalFile, Identification` (verified) - a 5-block
-  XML document carrying hwplatform product ("mosaic-G5 P3"), serial
-  number, firmware version ("1.1.0") and GNSS firmware version.
-  OnChange blocks also do not emit on stream enable (verified), so a
-  temporary stream is no alternative.
+  receiver acks and stores the request but nothing arrives, so the
+  one-shot fetch of `ReceiverSetup` (5902) is unavailable on the
+  connection we configure over. The block's own OnChange schedule
+  delivers it instead: per the SBF reference it is "generated every
+  60 seconds and each time a user-command is entered to change one
+  or more values in the block", so once it is enabled on the owned
+  SBF stream it arrives within a minute (there is no emit-on-enable;
+  a 4 s stage-0 watch missed the 60 s period). Owner ruling: identity
+  comes from ReceiverSetup (normal SBF packets, already decoded by
+  sbfbin), NOT from parsing the Identification internal file's XML.
 - **Reads**: one `get` -> one reply; multi-value replies use one
   state line per unit: `getElevationMask, all` -> 2 lines (Tracking,
   PVT); no-arg `getSBFOutput` -> 14 lines (Stream1-10 + Res1-4);
@@ -115,9 +118,15 @@ a `NativeMsgHandler` (stage 1).
   (signals, ports, capabilities) and caches it.
 - `ReceiverInfo()`: supported GNSS/signals from grc's signal list via
   the coarse signal table below; `Vendor = "Septentrio"`; `Hardware`
-  (product string) and `Firmware` (firmware version) from
-  `lstInternalFile, Identification`, requested during Configure and
-  parsed as XML (`encoding/xml` over the concatenated block payloads).
+  (ProductName, e.g. "mosaic-G5 P3") and `Firmware` (RxVersion, e.g.
+  "1.1.0") from the SBF `ReceiverSetup` block (5902), which sbfbin
+  already decodes and the SBF PacketProcessor already forwards via
+  NativeMsg (owner ruling: no Identification-XML parsing). The
+  configurator keeps ReceiverSetup in the owned stream's block list;
+  the block's own schedule (every 60 s, plus immediately after any
+  command changing a block value) populates the fields - identity
+  may be unknown for up to a minute after a fresh enable, and the
+  daemon refreshes it continuously thereafter.
 
 ### Coarse signal table (gpsprot.Signal <-> Septentrio name)
 
@@ -268,10 +277,10 @@ verbatim replies (grc, gets, `$R?` refusals, lif/lcf block units).
 
 `scfgprot.go`: `septentrio.NewConfigProtocol()` - grc probe,
 ProbeOK parsing (signals/ports/capabilities), the coarse signal
-table, `lstInternalFile, Identification` XML parse for
-Hardware/Firmware. Registered in `gpsreg.CreateConfigProtocols`
-(VendorSeptentrio + the VendorUnknown probe list). Probe verified
-against the real G5.
+table, Hardware/Firmware capture from ReceiverSetup native
+messages. Registration in `gpsreg.CreateConfigProtocols`
+(VendorSeptentrio + the VendorUnknown probe list) lands with stage
+3, when Configure() is real. Probe verified against the real G5.
 
 ### Stage 3: Configurator core
 
