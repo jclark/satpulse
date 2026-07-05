@@ -506,6 +506,59 @@ const (
 	SigIDNAVICL5Q  SignalID = "L5-Q"  // L5 pilot
 )
 
+// RINEXSignalID returns the SignalID corresponding to a RINEX system
+// letter and two-character signal identifier.
+func RINEXSignalID(sys, code string) SignalID {
+	return rinexSignalIDTable[sys+code]
+}
+
+var rinexSignalIDTable = map[string]SignalID{
+	"G1C": SigIDGPSL1CA,
+	"G1P": SigIDGPSL1PY,
+	"G1W": SigIDGPSL1PY,
+	"G1S": SigIDGPSL1CD,
+	"G1L": SigIDGPSL1CP,
+	"G2P": SigIDGPSL2P,
+	"G2W": SigIDGPSL2P,
+	"G2S": SigIDGPSL2CM,
+	"G2L": SigIDGPSL2CL,
+	"G5I": SigIDGPSL5I,
+	"G5Q": SigIDGPSL5Q,
+	"R1C": SigIDGLOL1,
+	"R1P": SigIDGLOL1P,
+	"R2C": SigIDGLOL2,
+	"R2P": SigIDGLOL2P,
+	"R3I": SigIDGLOL3I,
+	"R3Q": SigIDGLOL3Q,
+	"E1B": SigIDGALE1B,
+	"E1C": SigIDGALE1C,
+	"E1X": SigIDGALE1,
+	"E5I": SigIDGALE5aI,
+	"E5Q": SigIDGALE5aQ,
+	"E7I": SigIDGALE5bI,
+	"E7Q": SigIDGALE5bQ,
+	"E6B": SigIDGALE6B,
+	"E6C": SigIDGALE6C,
+	"C2I": SigIDBDSB1I,
+	"C7I": SigIDBDSB2I,
+	"C6I": SigIDBDSB3I,
+	"C1P": SigIDBDSB1CP,
+	"C5P": SigIDBDSB2aP,
+	"C7D": SigIDBDSB2bI,
+	"J1C": SigIDQZSSL1CA,
+	"J2L": SigIDQZSSL2CL,
+	"J5Q": SigIDQZSSL5Q,
+	"J6S": SigIDQZSSL6,
+	"J1L": SigIDQZSSL1CP,
+	"J1Z": SigIDQZSSL1S,
+	"J1E": SigIDQZSSL1CB,
+	"J5P": SigIDQZSSL5S,
+	"I5A": SigIDNAVICL5,
+	"I1P": SigIDNAVICL1,
+	"S1C": SigIDGPSL1CA,
+	"S5I": SigIDGPSL5I,
+}
+
 // sigName provides human-readable names for each signal
 var sigName [64]string
 

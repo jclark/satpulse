@@ -1,6 +1,9 @@
 package sbfbin
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestRINEXSys(t *testing.T) {
 	tests := []struct {
@@ -121,7 +124,7 @@ func TestRINEXSig(t *testing.T) {
 		{"Galileo E1", 17, 0, "E", "1C"},
 		{"reserved 18", 18, 0, "", ""},
 		{"Galileo E6 default", 19, 0, "E", "6C"},
-		{"Galileo E6 E6B", 19, MeasCommonFlagE6BUsed, "E", "6B"},
+		{"Galileo E6 E6B", 19, CommonFlagsE6BUsed, "E", "6B"},
 		{"Galileo E5a", 20, 0, "E", "5Q"},
 		{"Galileo E5b", 21, 0, "E", "7Q"},
 		{"Galileo E5AltBOC", 22, 0, "E", "8Q"},
@@ -149,6 +152,31 @@ func TestRINEXSig(t *testing.T) {
 			gotSys, gotSig := RINEXSig(tt.sig, tt.flags)
 			if gotSys != tt.wantSys || gotSig != tt.wantSig {
 				t.Errorf("RINEXSig(%d, %d) = %q, %q, want %q, %q", tt.sig, tt.flags, gotSys, gotSig, tt.wantSys, tt.wantSig)
+			}
+		})
+	}
+}
+
+func TestRINEXChannelStatusSignals(t *testing.T) {
+	tests := []struct {
+		name string
+		sys  string
+		slot int
+		want []string
+	}{
+		{"GPS L1CA", "G", 0, []string{"1C"}},
+		{"Galileo E6 family", "E", 3, []string{"6B", "6C"}},
+		{"BeiDou B1I", "C", 0, []string{"2I"}},
+		{"BeiDou B1C", "C", 3, []string{"1P"}},
+		{"QZSS L1CB", "J", 6, []string{"1E"}},
+		{"reserved", "E", 0, nil},
+		{"bad slot", "G", 8, nil},
+		{"bad sys", "X", 0, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RINEXChannelStatusSignals(tt.sys, tt.slot); !slices.Equal(got, tt.want) {
+				t.Errorf("RINEXChannelStatusSignals(%q, %d) = %v, want %v", tt.sys, tt.slot, got, tt.want)
 			}
 		})
 	}

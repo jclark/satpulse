@@ -482,6 +482,31 @@ func TestSignalIDBand(t *testing.T) {
 	}
 }
 
+func TestRINEXSignalID(t *testing.T) {
+	tests := []struct {
+		sys  string
+		code string
+		want SignalID
+	}{
+		{"G", "1C", SigIDGPSL1CA},
+		{"G", "1L", SigIDGPSL1CP},
+		{"E", "6B", SigIDGALE6B},
+		{"E", "6C", SigIDGALE6C},
+		{"C", "2I", SigIDBDSB1I},
+		{"C", "1P", SigIDBDSB1CP},
+		{"J", "1E", SigIDQZSSL1CB},
+		{"E", "8Q", SigIDInvalid},
+		{"X", "1C", SigIDInvalid},
+	}
+	for _, tt := range tests {
+		t.Run(tt.sys+tt.code, func(t *testing.T) {
+			if got := RINEXSignalID(tt.sys, tt.code); got != tt.want {
+				t.Errorf("RINEXSignalID(%q, %q) = %q, want %q", tt.sys, tt.code, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSatellitesMsgGNSSUsedSignal(t *testing.T) {
 	msg := SatellitesMsg{
 		UsedValidity: SatelliteUsedSignal,

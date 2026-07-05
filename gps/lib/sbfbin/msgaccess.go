@@ -93,25 +93,58 @@ const (
 // SignalNumber returns the observed signal number for a MeasEpoch master
 // channel, resolving the SigIdxLo==31 extension via ObsInfo bits 3-7.
 func (t *MeasEpochChannelType1) SignalNumber() uint8 {
-	n := uint8(t.Type) & 0x1F
+	return measSignalNumber(t.Type, t.ObsInfo)
+}
+
+// SignalNumber returns the observed signal number for a MeasEpoch slave
+// channel, resolving the SigIdxLo==31 extension via ObsInfo bits 3-7.
+func (t *MeasEpochChannelType2) SignalNumber() uint8 {
+	return measSignalNumber(t.Type, t.ObsInfo)
+}
+
+// AntennaID returns the AntennaID field of a MeasEpoch master channel.
+func (t *MeasEpochChannelType1) AntennaID() uint8 {
+	return measAntennaID(t.Type)
+}
+
+// AntennaID returns the AntennaID field of a MeasEpoch slave channel.
+func (t *MeasEpochChannelType2) AntennaID() uint8 {
+	return measAntennaID(t.Type)
+}
+
+func measSignalNumber(typ MeasType, obs ObsInfo) uint8 {
+	n := uint8(typ) & 0x1F
 	if n == MeasSigIdxExtension {
-		return 32 + (uint8(t.ObsInfo)>>3)&0x1F
+		return 32 + (uint8(obs)>>3)&0x1F
 	}
 	return n
+}
+
+func measAntennaID(typ MeasType) uint8 {
+	return uint8(typ) >> 5
 }
 
 // CN0dBHz returns the C/N0 in dB-Hz for a MeasEpoch master channel, applying
 // the +10 dB offset that all signal numbers except GPS L1P/L2P use. It reports
 // false when the CN0 field is at its do-not-use sentinel.
 func (t *MeasEpochChannelType1) CN0dBHz() (float64, bool) {
-	if t.CN0 == MeasType1CN0DNU {
+	return measCN0dBHz(t.CN0, t.SignalNumber())
+}
+
+// CN0dBHz returns the C/N0 in dB-Hz for a MeasEpoch slave channel.
+func (t *MeasEpochChannelType2) CN0dBHz() (float64, bool) {
+	return measCN0dBHz(t.CN0, t.SignalNumber())
+}
+
+func measCN0dBHz(cn0, sig uint8) (float64, bool) {
+	if cn0 == MeasType1CN0DNU {
 		return 0, false
 	}
-	cn0 := float64(t.CN0) * 0.25
-	if n := t.SignalNumber(); n != SigNumGPSL1P && n != SigNumGPSL2P {
-		cn0 += 10
+	v := float64(cn0) * 0.25
+	if sig != SigNumGPSL1P && sig != SigNumGPSL2P {
+		v += 10
 	}
-	return cn0, true
+	return v, true
 }
 
 // ChannelStatus 2-bit slot-status values, guide ChannelStatus tables.
