@@ -2,6 +2,7 @@ package septentrio
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,8 +26,18 @@ var gnssTimeScale = map[gpsprot.GNSS]string{
 	gpsprot.GLO: "GLONASS",
 }
 
-// generateSetReqs generates the set requests for the scalar properties.
+// generateSetReqs generates the set requests realizing the target's
+// properties: signals first (the PPP composition at the end depends on
+// them), the scalars, then the PVT mode.
 func (c *Configurator) generateSetReqs() {
+	c.generateSignalReqs()
+	c.generateScalarReqs()
+	c.generateModeReqs()
+	c.generatePPPReq()
+}
+
+// generateScalarReqs generates the set requests for the scalar properties.
+func (c *Configurator) generateScalarReqs() {
 	props, np := &c.target.Props, &c.np
 	if v, ok := props.GetMinElevation(); ok {
 		deg := min(max(int((v+gpsprot.Degrees/2)/gpsprot.Degrees), 0), 90)
@@ -53,6 +64,122 @@ func (c *Configurator) generateSetReqs() {
 			c.addReq("setGalOSNMAUsage, off, , off", np.parseGalOSNMAUsage)
 		}
 	}
+}
+
+// sstGNSSNames maps device-independent GNSS values to the constellation
+// aliases setSatelliteTracking and setSignalTracking accept.
+var sstGNSSNames = map[gpsprot.GNSS]string{
+	gpsprot.GPS:   "GPS",
+	gpsprot.GLO:   "GLONASS",
+	gpsprot.GAL:   "GALILEO",
+	gpsprot.BDS:   "BEIDOU",
+	gpsprot.QZSS:  "QZSS",
+	gpsprot.NAVIC: "NAVIC",
+	gpsprot.SBAS:  "SBAS",
+}
+
+// generateSignalReqs realizes SignalsEnabled with three commands: the
+// constellation gate (sst), signal tracking (snt), and signal usage (snu).
+// snt has no "-" removal (verified), so tracking and usage are written as
+// explicit full lists: the mapped target signals plus whatever receiver-only
+// signals (GALE5, GLOL2P, QZSL1CB) the query phase found present - those have
+// no device-independent name and are preserved as found. The achieved value
+// comes from the snt ack's own state line.
+func (c *Configurator) generateSignalReqs() {
+	ss, ok := c.target.Props.GetSignalsEnabled()
+	if !ok {
+		return
+	}
+	var names []string
+	for sig := range septSignalNames {
+		if ss.Contains(sig) {
+			names = append(names, septSignalNames[sig])
+		}
+	}
+	slices.Sort(names)
+	tracking := append(names, unmappedSignals(c.np.tracking)...)
+	gset := ss.GNSSSet()
+	var consts []string
+	for _, g := range gset.Items() {
+		if n, ok := sstGNSSNames[g]; ok {
+			consts = append(consts, n)
+		}
+	}
+	constList := strings.Join(consts, "+")
+	if gset == gpsprot.AllGNSSSet {
+		constList = "all"
+	}
+	c.addReq("setSatelliteTracking, "+listOrNone(constList), nil)
+	c.addReq("setSignalTracking, "+listOrNone(strings.Join(tracking, "+")), c.np.parseSignalTracking)
+	pvt, nav := tracking, tracking
+	if u := c.np.usage; u != nil {
+		pvt = append(slices.Clone(names), unmappedSignals(u.pvt)...)
+		nav = append(slices.Clone(names), unmappedSignals(u.navData)...)
+	}
+	c.addReq("setSignalUsage, "+listOrNone(strings.Join(pvt, "+"))+", "+listOrNone(strings.Join(nav, "+")),
+		c.np.parseSignalUsage)
+}
+
+// unmappedSignals returns the signals in names that have no
+// device-independent analogue.
+func unmappedSignals(names []string) []string {
+	var out []string
+	for _, n := range names {
+		if _, ok := septSignalFromName[n]; !ok {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// listOrNone returns the receiver's empty-list spelling for an empty list.
+func listOrNone(list string) string {
+	if list == "" {
+		return "none"
+	}
+	return list
+}
+
+// generateModeReqs realizes the Mode property. A rover mode set omits the
+// RoverMode argument, preserving the receiver's current rover-mode list; a
+// static position is written to slot 1 before the mode switch references it
+// (verified order).
+func (c *Configurator) generateModeReqs() {
+	m, ok := c.target.Props.GetMode()
+	if !ok {
+		return
+	}
+	np := &c.np
+	if !m.Static {
+		c.addReq("setPVTMode, Rover", np.parsePVTMode)
+		return
+	}
+	switch m.PosType {
+	case gpsprot.PosTypeNone:
+		c.addReq("setPVTMode, Static, , auto", np.parsePVTMode)
+	case gpsprot.PosTypeLLH:
+		c.addReq(fmt.Sprintf("setStaticPosGeodetic, Geodetic1, %.9f, %.9f, %.4f",
+			float64(m.FixedPosLLH[0])/float64(gpsprot.Degrees),
+			float64(m.FixedPosLLH[1])/float64(gpsprot.Degrees),
+			m.Height.Meters()), np.parseStaticPos)
+		c.addReq("setPVTMode, Static, , Geodetic1", np.parsePVTMode)
+	case gpsprot.PosTypeECEF:
+		c.addReq(fmt.Sprintf("setStaticPosCartesian, Cartesian1, %.4f, %.4f, %.4f",
+			m.FixedPosECEF[0].Meters(), m.FixedPosECEF[1].Meters(), m.FixedPosECEF[2].Meters()),
+			np.parseStaticPos)
+		c.addReq("setPVTMode, Static, , Cartesian1", np.parsePVTMode)
+	}
+}
+
+// generatePPPReq composes PPP into the rover-mode list when the target
+// enables the Galileo E6 signal and the receiver has the Galileo HAS
+// capability; otherwise HAS support is shown as absence.
+func (c *Configurator) generatePPPReq() {
+	ss, ok := c.target.Props.GetSignalsEnabled()
+	if !ok || !ss.Contains(gpsprot.SigGALE6) || !c.caps.caps["PPPGalileoHAS-SIS"] {
+		return
+	}
+	c.addReq("setPVTMode, , +PPP", c.np.parsePVTMode)
 }
 
 // ppsSetCmd builds the setPPSParameters command for the target's TimePulse

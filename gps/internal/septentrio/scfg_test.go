@@ -24,7 +24,7 @@ const receiverSetupPacket = "244020a30e97a80140a9be1b790900005345505400000000000
 // gpsprot analogue and must not appear in the reported SignalSet).
 var asFoundReplies = map[string]string{
 	"getSignalTracking":               "SignalTracking, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GLOL1CA+GLOL2CA+GALE1BC+GALE6BC+GALE5a+GALE5b+GALE5+GEOL1+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+QZSL1CA+QZSL2C+QZSL5+NAVICL5",
-	"getSignalUsage":                  "SignalUsage, GPSL1CA+GPSL2PY+GLOL1CA, GPSL1CA+GALE6BC",
+	"getSignalUsage":                  "SignalUsage, GPSL1CA+GPSL2PY+GLOL1CA+GALE5, GPSL1CA+GALE6BC",
 	"getPPSParameters":                "PPSParameters, sec1, Low2High, 0.00, GPS, 1, 100.000000",
 	"getPVTMode":                      "PVTMode, Rover, StandAlone+DGNSS+RTKFixed, auto",
 	"getElevationMask, PVT":           "ElevationMask, PVT, 5",
@@ -336,5 +336,62 @@ func TestConfigureSetRefused(t *testing.T) {
 	}
 	if d, ok := cfg.ConfigProps().GetAntennaCableDelay(); !ok || d != 0 {
 		t.Errorf("AntennaCableDelay: got %v, %v; want the queried 0 (refusal leaves config unchanged)", d, ok)
+	}
+}
+
+// TestConfigureSignalsAndMode drives the SignalsEnabled three-command
+// realization (constellation gate, explicit tracking list preserving the
+// receiver-only GALE5, usage lists), a fixed-position static mode, and the
+// PPP composition that E6 plus the HAS capability triggers.
+func TestConfigureSignalsAndMode(t *testing.T) {
+	replies := make(map[string]string, len(asFoundReplies))
+	maps.Copy(replies, asFoundReplies)
+	sntCmd := "setSignalTracking, GALE1BC+GALE6BC+GPSL1CA+GPSL5+GALE5"
+	replies["setSatelliteTracking, GPS+GALILEO"] = "SatelliteTracking, G01+G02+E01+E02"
+	replies[sntCmd] = "SignalTracking, GPSL1CA+GPSL5+GALE1BC+GALE6BC+GALE5"
+	replies["setSignalUsage, GALE1BC+GALE6BC+GPSL1CA+GPSL5+GALE5, GALE1BC+GALE6BC+GPSL1CA+GPSL5"] = "SignalUsage, GPSL1CA+GPSL5+GALE1BC+GALE6BC+GALE5, GPSL1CA+GPSL5+GALE1BC+GALE6BC"
+	replies["setStaticPosGeodetic, Geodetic1, 13.732000000, 100.567000000, 12.3400"] = "StaticPosGeodetic, Geodetic1, 13.732000000, 100.567000000, 12.3400, WGS84"
+	replies["setPVTMode, Static, , Geodetic1"] = "PVTMode, Static, , Geodetic1"
+	replies["setPVTMode, , +PPP"] = "PVTMode, Static, StandAlone+RTKFloat+RTKFixed+PPP, Geodetic1"
+
+	requested := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGPSL5, gpsprot.SigGALE1, gpsprot.SigGALE6)
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetSignalsEnabled(requested)
+	target.Props.SetMode(gpsprot.Mode{
+		Static:      true,
+		PosType:     gpsprot.PosTypeLLH,
+		FixedPosLLH: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(13.732), gpsprot.DegreesFromFloat(100.567)},
+		Height:      gpsprot.Meters(12.34),
+	})
+	cfg, sent, errs := runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	wantOrder := []string{
+		"setSatelliteTracking, GPS+GALILEO",
+		sntCmd,
+		"setStaticPosGeodetic, Geodetic1, 13.732000000, 100.567000000, 12.3400",
+		"setPVTMode, Static, , Geodetic1",
+		"setPVTMode, , +PPP",
+	}
+	pos := -1
+	for _, cmd := range wantOrder {
+		i := slices.Index(sent, cmd)
+		if i < 0 {
+			t.Fatalf("command %q not sent; sent: %v", cmd, sent)
+		}
+		if i < pos {
+			t.Errorf("command %q sent out of order; sent: %v", cmd, sent)
+		}
+		pos = i
+	}
+
+	props := cfg.ConfigProps()
+	if ss, ok := props.GetSignalsEnabled(); !ok || ss != requested {
+		t.Errorf("SignalsEnabled: got %v, %v; want %v", ss, ok, requested)
+	}
+	mode, ok := props.GetMode()
+	if !ok || !mode.Static || mode.PosType != gpsprot.PosTypeLLH {
+		t.Errorf("Mode: got %+v, %v", mode, ok)
 	}
 }
