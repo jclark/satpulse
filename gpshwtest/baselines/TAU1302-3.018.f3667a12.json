@@ -18,6 +18,7 @@
     "mode.height": {"unsupported": true},
     "pvtOut": {"missing": ["leap", "tp"]},
     "rtcmBaseID": {"unsupported": true},
+    "saveGranularity": {"groups": [["mode", "timePulse.width"]], "unsaved": ["minElevation"]},
     "showPort": {"unsupported": true},
     "signals": {
       "signalSet": {
