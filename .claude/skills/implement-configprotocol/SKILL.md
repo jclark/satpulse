@@ -6,10 +6,11 @@ description: Implement gpsprot high-level (device-independent) configuration - t
 # Implementing high-level configuration for a GPS protocol
 
 This skill captures what was learned implementing the CASIC configurator
-(#229, the third configurator after ubx and unc): the semantics rulings
-the project owner handed down, the protocol questions that dictate the
-design, the verification ladder, and the working process. Read it before
-designing anything; most of it was learned by getting it wrong first.
+(#229, the third configurator after ubx and unc) and the Allystar
+configurator (#344, the fourth): the semantics rulings the project owner
+handed down, the protocol questions that dictate the design, the
+verification ladder, and the working process. Read it before designing
+anything; most of it was learned by getting it wrong first.
 
 The owner's eventual goal (not yet reached): plug in a receiver with
 the Markdown documentation for its protocol, and an agent brings up

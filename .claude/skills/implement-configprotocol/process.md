@@ -52,6 +52,9 @@ across context compaction and owner absence; reuse it.
 
 ## Operational gotchas (each cost real time)
 
+- `make` before EVERY hardware run of out/<arch> binaries: a hardware
+  test against a stale binary once triggered a phantom-bug hunt
+  through the tool plumbing (the code was fine; the binary was old).
 - Heredoc scripts do not survive nohup backgrounding (the script gets
   mangled); write a script file and run that.
 - `pkill -f`/`pgrep -f` patterns match the invoking shell's own
