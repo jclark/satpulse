@@ -13,9 +13,10 @@ import (
 // stream, each output option governs its own block CLASS: an option that is
 // present replaces its class's blocks (PVT messages replace only with the
 // PVTMsgOff flag, and add otherwise, per the flag's contract), an absent
-// option leaves its class as found, and blocks shared between classes (e.g.
-// MeasEpoch: satellite signal strengths and raw observations) stay enabled
-// while any class still wants them.
+// option leaves its class as found, and an explicit disable wins over an
+// untouched class's claim on a shared block (e.g. MeasEpoch: satellite
+// signal strengths and raw observations) - presence does not record which
+// option enabled a block.
 //
 // The block choices are fixed against the conversion layer's decode set
 // (gps/internal/septentrio on the septentrio-msg branch): PVTGeodetic/

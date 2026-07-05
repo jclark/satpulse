@@ -27,7 +27,9 @@ var gnssTimeScale = map[gpsprot.GNSS]string{
 }
 
 // generateSetReqs generates the set requests realizing the target's
-// properties: signals, the scalars, the PVT mode, then the outputs.
+// properties: signals, the scalars, the PVT mode, the message outputs
+// (scfgout.go), the identity fetch, and the NVM operations last, so a save
+// persists everything realized before it.
 func (c *Configurator) generateSetReqs() {
 	c.generateSignalReqs()
 	c.generateScalarReqs()
@@ -35,47 +37,6 @@ func (c *Configurator) generateSetReqs() {
 	c.generateOutputReqs()
 	c.generateIdentReqs()
 	c.generateSaveResetReqs()
-}
-
-// generateIdentReqs fetches the receiver identity when no ReceiverSetup
-// block has arrived: the Identification internal file is the one ASCII
-// carrier of the firmware version, answers on this connection within
-// milliseconds, and changes nothing. (The ReceiverSetup one-shot was
-// rejected for this: its same-connection delivery requires enabling the
-// block on a stream, a side effect whose periodic emissions consumers see.)
-// Identity stays best-effort: give-up is success, with identity absent.
-func (c *Configurator) generateIdentReqs() {
-	if c.rxSetup != nil {
-		return
-	}
-	c.append(&sReq{cmd: "lstInternalFile, Identification", optional: true, onLst: func(content string) {
-		if id, err := parseIdent(content); err == nil {
-			c.ident = id
-		}
-	}})
-}
-
-// generateSaveResetReqs realizes the NVM operations, last: a save persists
-// everything realized before it, and a reset ends the conversation. All
-// mappings hardware-verified: eccf Current,Boot saves; eccf Boot,Current
-// reloads the SAVED configuration in place (no restart); exeResetReceiver
-// replies with a framed STOP>-terminated ack BEFORE the reboot drops the
-// connection, so reset requests complete normally - the receiver then goes
-// quiet for up to ~30 s while it reboots (Hard boots from the Boot config;
-// the erase argument resets the configuration to factory defaults).
-func (c *Configurator) generateSaveResetReqs() {
-	o := &c.target.Opts
-	if o.Save != gpsprot.SaveNone {
-		c.addReq("exeCopyConfigFile, Current, Boot", nil)
-	}
-	switch o.Reset {
-	case gpsprot.ResetReload:
-		c.addReq("exeCopyConfigFile, Boot, Current", nil)
-	case gpsprot.ResetCold:
-		c.addReq("exeResetReceiver, Hard, PVTData+SatData", nil)
-	case gpsprot.ResetFactory:
-		c.addReq("exeResetReceiver, Hard, all", nil)
-	}
 }
 
 // generateScalarReqs generates the set requests for the scalar properties.
@@ -139,7 +100,7 @@ func (c *Configurator) generateSignalReqs() {
 		}
 	}
 	slices.Sort(names)
-	tracking := append(names, unmappedSignals(c.np.tracking)...)
+	tracking := append(slices.Clone(names), unmappedSignals(c.np.tracking)...)
 	gset := ss.GNSSSet()
 	var consts []string
 	for _, g := range gset.Items() {
@@ -224,6 +185,47 @@ func (c *Configurator) generateModeReqs() {
 			m.FixedPosECEF[0].Meters(), m.FixedPosECEF[1].Meters(), m.FixedPosECEF[2].Meters()),
 			np.parseStaticPos)
 		c.addReq("setPVTMode, Static, , Cartesian1", np.parsePVTMode)
+	}
+}
+
+// generateIdentReqs fetches the receiver identity when no ReceiverSetup
+// block has arrived: the Identification internal file is the one ASCII
+// carrier of the firmware version, answers on this connection within
+// milliseconds, and changes nothing. (The ReceiverSetup one-shot was
+// rejected for this: its same-connection delivery requires enabling the
+// block on a stream, a side effect whose periodic emissions consumers see.)
+// Identity stays best-effort: give-up is success, with identity absent.
+func (c *Configurator) generateIdentReqs() {
+	if c.rxSetup != nil {
+		return
+	}
+	c.append(&sReq{cmd: "lstInternalFile, Identification", optional: true, onLst: func(content string) {
+		if id, err := parseIdent(content); err == nil {
+			c.ident = id
+		}
+	}})
+}
+
+// generateSaveResetReqs realizes the NVM operations, last: a save persists
+// everything realized before it, and a reset ends the conversation. All
+// mappings hardware-verified: eccf Current,Boot saves; eccf Boot,Current
+// reloads the SAVED configuration in place (no restart); exeResetReceiver
+// replies with a framed STOP>-terminated ack BEFORE the reboot drops the
+// connection, so reset requests complete normally - the receiver then goes
+// quiet for up to ~30 s while it reboots (Hard boots from the Boot config;
+// the erase argument resets the configuration to factory defaults).
+func (c *Configurator) generateSaveResetReqs() {
+	o := &c.target.Opts
+	if o.Save != gpsprot.SaveNone {
+		c.addReq("exeCopyConfigFile, Current, Boot", nil)
+	}
+	switch o.Reset {
+	case gpsprot.ResetReload:
+		c.addReq("exeCopyConfigFile, Boot, Current", nil)
+	case gpsprot.ResetCold:
+		c.addReq("exeResetReceiver, Hard, PVTData+SatData", nil)
+	case gpsprot.ResetFactory:
+		c.addReq("exeResetReceiver, Hard, all", nil)
 	}
 }
 
