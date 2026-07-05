@@ -1,0 +1,80 @@
+{"type":"env","args":["-d","/dev/ttyACM1","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-reload.jsonl","--gnss","GPS","--pps","0.01","--ant-cable-delay","100","--time-gnss","GPS"],"version":"satpulse version 0.3-pre.20260705.5b0d5319.dirty, build date 2026-07-05 14:32:11+00:00","hostname":"abondance"}
+{"t":"2026-07-05T14:41:06.004426Z","tag":"SBF","msg":"PVTGeodetic","bin":"2440e04ea76f600020f226037a090100839b19e65fadce3ffa8303a3f51afc3f1221789e4e3c3dc07a01dbc13441d23b7bda093b90825b3bf90295d03192446a9343d33f0066ca3d00001800ffffffff15493250010000002a009201ec026000"}
+{"t":"2026-07-05T14:41:06.004668Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-07-05T14:41:06.037796Z","tag":"SEPTR","msg":"reply","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:06.038058Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-07-05T14:41:06.038552Z","ascii":"USB1\u003e"}
+{"t":"2026-07-05T14:41:06.238736Z","ascii":"getSignalTracking\r\n","out":true}
+{"t":"2026-07-05T14:41:06.239577Z","tag":"SEPTR","msg":"reply","ascii":"$R: getSignalTracking\r\n  SignalTracking, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GLOL1CA+GLOL2CA+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+QZSL1CA+QZSL2C+QZSL5+NAVICL5\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:06.239774Z","ascii":"getSignalUsage\r\n","out":true}
+{"t":"2026-07-05T14:41:06.240577Z","tag":"SEPTR","msg":"reply","ascii":"$R: getSignalUsage\r\n  SignalUsage, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GLOL1CA+GLOL2P+GLOL2CA+GALE1BC+GALE5a+GALE5b+GALE5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL1CB, GPSL1CA+GPSL2C+GPSL5+GLOL1CA+GLOL2CA+GALE1BC+GALE6BC+GALE5a+GALE5b+GALE5+GEOL1+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1CB+NAVICL5\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:06.240731Z","ascii":"getPPSParameters\r\n","out":true}
+{"t":"2026-07-05T14:41:06.241414Z","tag":"SEPTR","msg":"reply","ascii":"$R: getPPSParameters\r\n  PPSParameters, sec1, Low2High, 0.00, GPS, 60, 5.000000\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:06.241585Z","ascii":"getCalibCommonDelay\r\n","out":true}
+{"t":"2026-07-05T14:41:06.242444Z","tag":"SEPTR","msg":"reply","ascii":"$R: getCalibCommonDelay\r\n  CalibCommonDelay, 0.000\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:06.242539Z","ascii":"setSatelliteTracking, GPS\r\n","out":true}
+{"t":"2026-07-05T14:41:06.244044Z","tag":"SEPTR","msg":"reply","ascii":"$R: setSatelliteTracking, GPS\r\n  SatelliteTracking, G01+G02+G03+G04+G05+G06+G07+G08+G09+G10+G11+G12+G13+G14+G15+G16+G17+G18+G19+G20+G21+G22+G23+G24+G25+G26+G27+G28+G29+G30+G31+G32+G33+G34+G35+G36+G38+G39\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:06.244128Z","ascii":"setSignalTracking, GPSL1C+GPSL1CA+GPSL2C+GPSL2PY+GPSL5\r\n","out":true}
+{"t":"2026-07-05T14:41:06.248601Z","tag":"SBF","msg":"ReceiverSetup","bin":"2440b2a60e97a801e8f226037a090000534550540000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000556e6b6e6f776e00000000000000000000000000556e6b6e6f776e00000000000000000000000000556e6b6e6f776e00000000000000000000000000000000000000000000000000000000000000000031303030313935373700000000000000000000004752423030363000000000000000000000000000312e312e30000000000000000000000000000000556e6b6e6f776e00000000000000000000000000556e6b6e6f776e00000000000000000000000000000000000000000000000000556e6b6e6f776e00000000000000000000000000323032362e30312e322d6738336431636136373730000000000000000000000000000000000000006d6f736169632d473520503300000000000000000000000000000000000000000000000000000000839b19e65fadce3ffa8303a3f51afc3f75e2e9c1000000000000000000000000000000000000000000000000000000000000000000000000"}
+{"t":"2026-07-05T14:41:06.248884Z","tag":"SEPTR","msg":"reply","ascii":"$R: setSignalTracking, GPSL1C+GPSL1CA+GPSL2C+GPSL2PY+GPSL5\r\n  SignalTracking, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:06.249065Z","ascii":"setSignalUsage, GPSL1C+GPSL1CA+GPSL2C+GPSL2PY+GPSL5+GLOL2P+GALE5+QZSL1CB, GPSL1C+GPSL1CA+GPSL2C+GPSL2PY+GPSL5+GALE5+QZSL1CB\r\n","out":true}
+{"t":"2026-07-05T14:41:06.251055Z","tag":"SEPTR","msg":"reply","ascii":"$R: setSignalUsage, GPSL1C+GPSL1CA+GPSL2C+GPSL2PY+GPSL5+GLOL2P+GALE5+QZSL1CB, GPSL1C+GPSL1CA+GPSL2C+GPSL2PY+GPSL5+GALE5+QZSL1CB\r\n  SignalUsage, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL2P+GALE5+QZSL1CB, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GALE5+QZSL1CB\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:06.251282Z","ascii":"setPPSParameters, sec1, Low2High, , GPS, 1, 10\r\n","out":true}
+{"t":"2026-07-05T14:41:06.253178Z","tag":"SEPTR","msg":"reply","ascii":"$R: setPPSParameters, sec1, Low2High, , GPS, 1, 10\r\n  PPSParameters, sec1, Low2High, 0.00, GPS, 1, 10.000000\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:06.253343Z","ascii":"setCalibCommonDelay, 100\r\n","out":true}
+{"t":"2026-07-05T14:41:06.254637Z","tag":"SEPTR","msg":"reply","ascii":"$R: setCalibCommonDelay, 100\r\n  CalibCommonDelay, 100.000\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","signalsEnabled":{"GPS":["L1","L1C","L2P","L2C","L5"]},"timeGNSS":"GPS","antennaCableDelay":100,"timePulse":{"enabled":true,"width":0.01,"period":1,"polarityRising":true,"onlyWhenLocked":true},"baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttyACM1","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-reload.jsonl","--show-config"],"version":"satpulse version 0.3-pre.20260705.5b0d5319.dirty, build date 2026-07-05 14:32:11+00:00","hostname":"abondance"}
+{"t":"2026-07-05T14:41:07.002148Z","tag":"SBF","msg":"PVTGeodetic","bin":"2440e7bda76f600008f626037a090001000000205fa012c2000000205fa012c2000000205fa012c2f90295d0f90295d0f90295d0f90295d0f90295d0000000205fa012c2f90295d0ffffff00ffffffff00000000000000001500ffffffff0000"}
+{"t":"2026-07-05T14:41:07.002525Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-07-05T14:41:07.008025Z","tag":"SEPTR","msg":"reply","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:07.008255Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-07-05T14:41:07.00894Z","ascii":"USB1\u003e"}
+{"t":"2026-07-05T14:41:07.208754Z","ascii":"getSignalTracking\r\n","out":true}
+{"t":"2026-07-05T14:41:07.209513Z","tag":"SEPTR","msg":"reply","ascii":"$R: getSignalTracking\r\n  SignalTracking, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:07.209692Z","ascii":"getSignalUsage\r\n","out":true}
+{"t":"2026-07-05T14:41:07.210399Z","tag":"SEPTR","msg":"reply","ascii":"$R: getSignalUsage\r\n  SignalUsage, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL2P+GALE5+QZSL1CB, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GALE5+QZSL1CB\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:07.210608Z","ascii":"getPPSParameters\r\n","out":true}
+{"t":"2026-07-05T14:41:07.211266Z","tag":"SEPTR","msg":"reply","ascii":"$R: getPPSParameters\r\n  PPSParameters, sec1, Low2High, 0.00, GPS, 1, 10.000000\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:07.211434Z","ascii":"getPVTMode\r\n","out":true}
+{"t":"2026-07-05T14:41:07.211841Z","tag":"SEPTR","msg":"reply","ascii":"$R: getPVTMode\r\n  PVTMode, Rover, StandAlone+DGNSS+RTKFixed, auto\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:07.212046Z","ascii":"getElevationMask, PVT\r\n","out":true}
+{"t":"2026-07-05T14:41:07.212386Z","tag":"SEPTR","msg":"reply","ascii":"$R: getElevationMask, PVT\r\n  ElevationMask, PVT, 5\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:07.212537Z","ascii":"getRTCMv3Formatting\r\n","out":true}
+{"t":"2026-07-05T14:41:07.212845Z","tag":"SEPTR","msg":"reply","ascii":"$R: getRTCMv3Formatting\r\n  RTCMv3Formatting, 0, GPSL1CA+GPSL2PY+GLOL1CA+GLOL2CA+GALE1BC+GALE5a+GALE5b+BDSB1I+BDSB2I+BDSB3I+QZSL1CA+QZSL2C, L2CA, \"default\", 128\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:07.213043Z","ascii":"getCalibCommonDelay\r\n","out":true}
+{"t":"2026-07-05T14:41:07.213418Z","tag":"SEPTR","msg":"reply","ascii":"$R: getCalibCommonDelay\r\n  CalibCommonDelay, 100.000\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","signalsEnabled":{"GPS":["L1","L1C","L2P","L2C","L5"]},"timeGNSS":"GPS","antennaCableDelay":100,"timePulse":{"enabled":true,"width":0.01,"period":1,"polarityRising":true,"onlyWhenLocked":true},"baudRate":0,"port":"USB1","static":false,"rtcmBaseID":0}
+{"type":"env","args":["-d","/dev/ttyACM1","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-reload.jsonl","--reload"],"version":"satpulse version 0.3-pre.20260705.5b0d5319.dirty, build date 2026-07-05 14:32:11+00:00","hostname":"abondance"}
+{"t":"2026-07-05T14:41:08.002328Z","tag":"SBF","msg":"PVTGeodetic","bin":"2440fa04a76f6000f0f926037a090001000000205fa012c2000000205fa012c2000000205fa012c2f90295d0f90295d0f90295d0f90295d0f90295d0000000205fa012c2f90295d0ffffff00ffffffff00000000000000001500ffffffff0000"}
+{"t":"2026-07-05T14:41:08.002594Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-07-05T14:41:08.009411Z","tag":"SEPTR","msg":"reply","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:08.009619Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-07-05T14:41:08.009924Z","ascii":"USB1\u003e"}
+{"t":"2026-07-05T14:41:08.210221Z","ascii":"exeCopyConfigFile, Boot, Current\r\n","out":true}
+{"t":"2026-07-05T14:41:08.21925Z","tag":"SEPTR","msg":"reply","ascii":"$R: exeCopyConfigFile, Boot, Current\r\n  CopyConfigFile, Boot, Current\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttyACM1","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-reload.jsonl","--show-config"],"version":"satpulse version 0.3-pre.20260705.5b0d5319.dirty, build date 2026-07-05 14:32:11+00:00","hostname":"abondance"}
+{"t":"2026-07-05T14:41:09.345259Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-07-05T14:41:09.346297Z","tag":"SEPTR","msg":"reply","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:09.346586Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-07-05T14:41:09.347121Z","ascii":"USB1\u003e"}
+{"t":"2026-07-05T14:41:09.547064Z","ascii":"getSignalTracking\r\n","out":true}
+{"t":"2026-07-05T14:41:09.547864Z","tag":"SEPTR","msg":"reply","ascii":"$R: getSignalTracking\r\n  SignalTracking, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GLOL1CA+GLOL2CA+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+QZSL1CA+QZSL2C+QZSL5+NAVICL5\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:09.548Z","ascii":"getSignalUsage\r\n","out":true}
+{"t":"2026-07-05T14:41:09.548778Z","tag":"SEPTR","msg":"reply","ascii":"$R: getSignalUsage\r\n  SignalUsage, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GLOL1CA+GLOL2P+GLOL2CA+GALE1BC+GALE5a+GALE5b+GALE5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL1CB, GPSL1CA+GPSL2C+GPSL5+GLOL1CA+GLOL2CA+GALE1BC+GALE6BC+GALE5a+GALE5b+GALE5+GEOL1+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1CB+NAVICL5\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:09.548904Z","ascii":"getPPSParameters\r\n","out":true}
+{"t":"2026-07-05T14:41:09.549548Z","tag":"SEPTR","msg":"reply","ascii":"$R: getPPSParameters\r\n  PPSParameters, sec1, Low2High, 0.00, GPS, 60, 5.000000\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:09.549715Z","ascii":"getPVTMode\r\n","out":true}
+{"t":"2026-07-05T14:41:09.550419Z","tag":"SEPTR","msg":"reply","ascii":"$R: getPVTMode\r\n  PVTMode, Rover, StandAlone+DGNSS+RTKFixed, auto\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:09.550497Z","ascii":"getElevationMask, PVT\r\n","out":true}
+{"t":"2026-07-05T14:41:09.551018Z","tag":"SEPTR","msg":"reply","ascii":"$R: getElevationMask, PVT\r\n  ElevationMask, PVT, 5\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:09.551061Z","ascii":"getRTCMv3Formatting\r\n","out":true}
+{"t":"2026-07-05T14:41:09.551442Z","tag":"SEPTR","msg":"reply","ascii":"$R: getRTCMv3Formatting\r\n  RTCMv3Formatting, 0, GPSL1CA+GPSL2PY+GLOL1CA+GLOL2CA+GALE1BC+GALE5a+GALE5b+BDSB1I+BDSB2I+BDSB3I+QZSL1CA+QZSL2C, L2CA, \"default\", 128\r\nUSB1\u003e"}
+{"t":"2026-07-05T14:41:09.551515Z","ascii":"getCalibCommonDelay\r\n","out":true}
+{"t":"2026-07-05T14:41:09.551984Z","tag":"SEPTR","msg":"reply","ascii":"$R: getCalibCommonDelay\r\n  CalibCommonDelay, 0.000\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","signalsEnabled":{"BDS":["B1I","B1C","B2a","B2I","B3I"],"GAL":["E1","E5a","E5b","E6"],"GLO":["L1","L2"],"GPS":["L1","L2P","L2C","L5"],"NAVIC":["L5"],"QZSS":["L1","L2C","L5"],"SBAS":["L1"]},"timeGNSS":"GPS","antennaCableDelay":0,"timePulse":{"enabled":true,"width":0.005,"period":1,"polarityRising":true,"onlyWhenLocked":true},"baudRate":0,"port":"USB1","static":false,"rtcmBaseID":0}
