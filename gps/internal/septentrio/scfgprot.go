@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/sbfbin"
 )
 
 // Vendor is the vendor name reported in ReceiverInfo.
@@ -116,7 +117,9 @@ func parseCaps(r *Reply) (*rxCaps, error) {
 
 // ConfigProtocol implements gpsprot.ConfigProtocol for Septentrio receivers.
 type ConfigProtocol struct {
-	caps *rxCaps // stored from the grc probe reply
+	caps *rxCaps       // stored from the grc probe reply
+	port string        // our connection descriptor, from the probe reply's prompt
+	cfg  *Configurator // created during Configure()
 }
 
 var _ gpsprot.ConfigProtocol = (*ConfigProtocol)(nil)
@@ -136,22 +139,38 @@ func (cp *ConfigProtocol) ProbeOK() bool {
 	return cp.caps != nil
 }
 
-// NativeMsg processes reply messages delivered by the ReplyProcessor.
+// NativeMsg processes reply messages delivered by the ReplyProcessor and
+// ReceiverSetup blocks delivered by the SBF PacketProcessor.
 func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
-	r, ok := msg.(*Reply)
-	if !ok {
-		return nil
-	}
-	if r.Kind == ReplyAck && r.Echo == grcCmd {
-		if caps, err := parseCaps(r); err == nil {
-			cp.caps = caps
+	switch m := msg.(type) {
+	case *Reply:
+		if m.Kind == ReplyAck && m.Echo == grcCmd {
+			if caps, err := parseCaps(m); err == nil {
+				cp.caps = caps
+				cp.port = m.Prompt
+			}
+		}
+		if cp.cfg != nil {
+			return cp.cfg.reply(m, tRead)
+		}
+	case *sbfbin.Block:
+		if rs, ok := m.Params.(*sbfbin.ReceiverSetup); ok && cp.cfg != nil {
+			cp.cfg.receiverSetup(rs)
 		}
 	}
 	return nil
 }
 
 // Configure creates a Configurator for the given configuration target.
-// The Configurator is stage 3 of plan/septentrio-config.md.
 func (cp *ConfigProtocol) Configure(target *gpsprot.ConfigTarget) (gpsprot.Configurator, error) {
-	return nil, fmt.Errorf("septentrio configuration not yet implemented")
+	if cp.caps == nil {
+		panic("Configure called without successful ProbeOK()")
+	}
+	cp.cfg = &Configurator{
+		caps:   cp.caps,
+		target: target,
+		port:   cp.port,
+		phase:  phaseInit,
+	}
+	return cp.cfg, nil
 }

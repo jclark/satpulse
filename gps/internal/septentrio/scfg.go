@@ -1,0 +1,328 @@
+package septentrio
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/sbfbin"
+)
+
+// The receiver's command line is single-flight: it has no queueing and
+// answers each command with one framed reply completed by the prompt. The
+// Configurator therefore keeps at most one request outstanding; correlation
+// is by exact command echo, and the single-flight discipline itself
+// attributes the anchor-less "$R?" refusals (they carry no echo).
+
+const (
+	// escapeCmd forces the connection to accept commands (ten "S" plus
+	// Enter). It is answered by a bare prompt, deliberately not framed as a
+	// reply packet, so the request expects no reply and succeeds at its
+	// deadline.
+	escapeCmd = "SSSSSSSSSS"
+
+	// maxReplyDelay is the per-attempt reply window. Replies arrive within
+	// milliseconds on USB; patience comes from the director's retry budget.
+	maxReplyDelay = 1500 * time.Millisecond
+
+	// escapeDelay is how long after sending the escape until the connection
+	// is assumed ready (its bare-prompt answer is not observable).
+	escapeDelay = 200 * time.Millisecond
+)
+
+type configPhase int
+
+const (
+	phaseInit   configPhase = iota
+	phaseEscape             // the escape request is outstanding
+	phaseFinal
+)
+
+// Configurator implements gpsprot.Configurator for Septentrio receivers.
+type Configurator struct {
+	caps      *rxCaps
+	target    *gpsprot.ConfigTarget
+	phase     configPhase
+	reqs      []*sReq
+	complete  bool   // no more requests will be added to reqs
+	nFinished int    // all requests with index < nFinished are in a final state
+	port      string // connection descriptor from reply prompts (e.g. "USB1")
+	rxSetup   *sbfbin.ReceiverSetup
+}
+
+type sReqState int
+
+const (
+	sStateNotReady    sReqState = iota // waiting for earlier requests (single-flight)
+	sStateReady                        // maps to ConfigRequestReadyToSend
+	sStateAwaiting                     // sent, expecting the framed reply
+	sStateSentNoReply                  // sent, no framed reply expected; succeeds at deadline
+	sStateMayResend                    // reply window passed; eligible for retry
+	sStateSucceeded
+	sStateFailed
+)
+
+func (s sReqState) isFinal() bool {
+	return s == sStateSucceeded || s == sStateFailed
+}
+
+// sReq is a single command request.
+type sReq struct {
+	state   sReqState
+	cmd     string       // command text, without CR LF
+	noReply bool         // expects no framed reply (the escape)
+	nakOK   bool         // a "$R?" refusal is an acceptable outcome, not a failure
+	onReply func(*Reply) // records achieved values from the matching reply
+	tBase   time.Time    // send time, for the reply deadline
+	err     error
+}
+
+var _ gpsprot.Configurator = (*Configurator)(nil)
+var _ gpsprot.ConfigRequest = (*sReq)(nil)
+
+// ReceiverInfo returns static information about the GPS receiver: supported
+// signals from the probe's capability reply, identity from the most recent
+// ReceiverSetup SBF block (which may not have arrived yet - the block's own
+// schedule emits it within a minute of being enabled on a stream).
+func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
+	info := &gpsprot.ReceiverInfo{
+		Vendor:        Vendor,
+		SupportedGNSS: c.caps.sigSet.GNSSSet(),
+	}
+	if rs := c.rxSetup; rs != nil {
+		info.Hardware = rs.ProductName.String()
+		info.Firmware = rs.RxVersion.String()
+		info.VendorSpecific = rs
+	}
+	return info
+}
+
+// ConfigSupport returns the configuration options this implementation supports.
+func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
+	return configSupport
+}
+
+// ConfigProps returns the current configuration of the GPS receiver.
+func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
+	props := &gpsprot.ConfigProps{}
+	if c.port != "" {
+		props.SetPort(c.port)
+		if strings.HasPrefix(c.port, "USB") {
+			// Owner ruling, following the ubx USB model: baud rate is not
+			// applicable on USB connections and reads back as 0.
+			props.SetBaudRate(0)
+		}
+	}
+	return props
+}
+
+// Request returns the ConfigRequest at the given index.
+func (c *Configurator) Request(index int) gpsprot.ConfigRequest {
+	return c.reqs[index]
+}
+
+// GetRequestCount returns the current number of requests and whether the set is complete.
+func (c *Configurator) GetRequestCount() (int, bool) {
+	return len(c.reqs), c.complete
+}
+
+// GenerateRequests advances the phase machine and promotes the next request
+// under the single-flight rule.
+func (c *Configurator) GenerateRequests() error {
+	switch c.phase {
+	case phaseInit:
+		c.append(&sReq{cmd: escapeCmd, noReply: true})
+		c.phase = phaseEscape
+	case phaseEscape:
+		if !c.allFinal() {
+			break
+		}
+		c.complete = true
+		c.phase = phaseFinal
+	case phaseFinal:
+	}
+	c.promote()
+	return nil
+}
+
+func (c *Configurator) append(reqs ...*sReq) {
+	c.reqs = append(c.reqs, reqs...)
+}
+
+// allFinal reports whether every generated request is in a final state,
+// advancing nFinished.
+func (c *Configurator) allFinal() bool {
+	for c.nFinished < len(c.reqs) {
+		if !c.reqs[c.nFinished].state.isFinal() {
+			return false
+		}
+		c.nFinished++
+	}
+	return true
+}
+
+// promote moves the first non-final request from NotReady to Ready when
+// everything before it is final: the single-flight rule.
+func (c *Configurator) promote() {
+	for i := c.nFinished; i < len(c.reqs); i++ {
+		req := c.reqs[i]
+		if !req.state.isFinal() {
+			if req.state == sStateNotReady {
+				req.state = sStateReady
+			}
+			return
+		}
+	}
+}
+
+// inflight returns the request awaiting a reply, or nil.
+func (c *Configurator) inflight() *sReq {
+	for i := c.nFinished; i < len(c.reqs); i++ {
+		if c.reqs[i].state == sStateAwaiting {
+			return c.reqs[i]
+		}
+	}
+	return nil
+}
+
+// reply processes a framed command reply. Every reply's prompt names our own
+// connection; acks correlate to the in-flight request by exact command echo,
+// and anchor-less refusals attribute to it by the single-flight discipline.
+func (c *Configurator) reply(r *Reply, tRead time.Time) error {
+	if r.Prompt != "" {
+		c.port = r.Prompt
+	}
+	req := c.inflight()
+	if req == nil {
+		return nil
+	}
+	switch r.Kind {
+	case ReplyAck, ReplyLst:
+		if r.Echo != req.cmd {
+			return nil // not ours: e.g. a late reply to a repeated probe
+		}
+		req.state = sStateSucceeded
+		if req.onReply != nil {
+			req.onReply(r)
+		}
+	case ReplyNak:
+		if req.nakOK {
+			req.state = sStateSucceeded
+			if req.onReply != nil {
+				req.onReply(r)
+			}
+			break
+		}
+		req.state = sStateFailed
+		req.err = fmt.Errorf("%s: receiver refused: %s", req.cmd, r.Error)
+	}
+	return nil
+}
+
+// receiverSetup records the latest ReceiverSetup block for ReceiverInfo.
+func (c *Configurator) receiverSetup(rs *sbfbin.ReceiverSetup) {
+	c.rxSetup = rs
+}
+
+func (req *sReq) invalidStatePanic(method string) string {
+	return fmt.Sprintf("%s called when state is %v", method, req.state)
+}
+
+// GetPacket returns the packet bytes for this request.
+func (req *sReq) GetPacket() []byte {
+	switch req.state {
+	case sStateReady, sStateMayResend, sStateFailed:
+		return append([]byte(req.cmd), '\r', '\n')
+	}
+	panic(req.invalidStatePanic("GetPacket"))
+}
+
+// GetSpeedChangeAfter returns 0: baud rate is not applicable on USB
+// connections (owner ruling), so no request changes speed.
+func (req *sReq) GetSpeedChangeAfter() int {
+	return 0
+}
+
+// GetState maps the internal state to the public ConfigRequestState.
+func (req *sReq) GetState() gpsprot.ConfigRequestState {
+	switch req.state {
+	case sStateNotReady:
+		return gpsprot.ConfigRequestNotReady
+	case sStateReady:
+		return gpsprot.ConfigRequestReadyToSend
+	case sStateAwaiting:
+		return gpsprot.ConfigRequestAwaitingResponse
+	case sStateSentNoReply:
+		return gpsprot.ConfigRequestMaybeComplete
+	case sStateMayResend:
+		return gpsprot.ConfigRequestMayResend
+	case sStateSucceeded:
+		return gpsprot.ConfigRequestSucceeded
+	case sStateFailed:
+		return gpsprot.ConfigRequestFailed
+	}
+	panic(fmt.Sprintf("unexpected internal state: %v", req.state))
+}
+
+// GetDeadline returns the reply or absorb deadline.
+func (req *sReq) GetDeadline() time.Time {
+	switch req.state {
+	case sStateAwaiting:
+		return req.tBase.Add(maxReplyDelay)
+	case sStateSentNoReply:
+		return req.tBase.Add(escapeDelay)
+	}
+	panic(req.invalidStatePanic("GetDeadline"))
+}
+
+// GetError returns the error details for a failed request.
+func (req *sReq) GetError() error {
+	if req.state != sStateFailed {
+		panic(req.invalidStatePanic("GetError"))
+	}
+	if req.err == nil {
+		return errors.New(req.cmd + ": request abandoned after timeout")
+	}
+	return req.err
+}
+
+// SetSentTime records when the request packet was transmitted.
+func (req *sReq) SetSentTime(tSent time.Time) {
+	switch req.state {
+	case sStateReady, sStateMayResend:
+		if req.noReply {
+			req.state = sStateSentNoReply
+		} else {
+			req.state = sStateAwaiting
+		}
+		req.tBase = tSent
+	default:
+		panic(req.invalidStatePanic("SetSentTime"))
+	}
+}
+
+// SetDeadlinePassed handles a passed reply or absorb deadline.
+func (req *sReq) SetDeadlinePassed() {
+	switch req.state {
+	case sStateAwaiting:
+		req.state = sStateMayResend
+	case sStateSentNoReply:
+		req.state = sStateSucceeded
+	default:
+		panic(req.invalidStatePanic("SetDeadlinePassed"))
+	}
+}
+
+// SetWontResend marks a timed-out request as permanently failed.
+func (req *sReq) SetWontResend() {
+	if req.state != sStateMayResend {
+		panic(req.invalidStatePanic("SetWontResend"))
+	}
+	req.state = sStateFailed
+}
+
+// MaybeSpeedChangeSucceeded is a no-op: no request changes speed.
+func (req *sReq) MaybeSpeedChangeSucceeded(validPacketTime time.Time) {
+}

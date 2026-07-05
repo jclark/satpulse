@@ -245,11 +245,14 @@ func CreateConfigProtocols(vendor Vendor) []gpsprot.ConfigProtocol {
 		return []gpsprot.ConfigProtocol{
 			ubx.NewConfigProtocol(),
 			unc.NewConfigProtocol(),
+			septentrio.NewConfigProtocol(),
 		}
 	case VendorUblox:
 		return []gpsprot.ConfigProtocol{ubx.NewConfigProtocol()}
 	case VendorUnicore:
 		return []gpsprot.ConfigProtocol{unc.NewConfigProtocol()}
+	case VendorSeptentrio:
+		return []gpsprot.ConfigProtocol{septentrio.NewConfigProtocol()}
 	default:
 		return nil
 	}
