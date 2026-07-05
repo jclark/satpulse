@@ -97,7 +97,9 @@ func dutyCycle(width time.Duration, periodUs uint32) uint32 {
 }
 
 // tpConfigProps reports the time pulse properties from the latest
-// CFG-PPS readback. AlignToGNSS is left absent (no carrier).
+// CFG-PPS readback. AlignToGNSS is always true: the Allystar time pulse
+// is aligned to GNSS time (it would be useless otherwise), and reporting
+// it completes the property set so the pulse is shown in --show-config.
 func (c *Configurator) tpConfigProps(props *gpsprot.ConfigProps) {
 	if c.pps == nil {
 		return
@@ -107,4 +109,5 @@ func (c *Configurator) tpConfigProps(props *gpsprot.ConfigProps) {
 	props.SetTimePulseWidth(period / 1e6 * time.Duration(c.pps.DutyCycle))
 	props.SetTimePulsePolarityRising(c.pps.Polarity == asbin.CfgPpsPolarityRisingEdge)
 	props.SetTimePulseOnlyWhenLocked(c.pps.Sync == asbin.CfgPpsSyncOnlyWithFix)
+	props.SetTimePulseAlignToGNSS(true)
 }

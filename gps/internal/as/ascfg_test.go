@@ -666,8 +666,8 @@ func TestTimePulseReadback(t *testing.T) {
 	if l, ok := props.GetTimePulseOnlyWhenLocked(); !ok || !l {
 		t.Errorf("onlyWhenLocked = %v/%v, want true", l, ok)
 	}
-	if _, ok := props.GetTimePulseAlignToGNSS(); ok {
-		t.Error("alignToGNSS reported; it has no carrier and must be absent")
+	if a, ok := props.GetTimePulseAlignToGNSS(); !ok || !a {
+		t.Errorf("alignToGNSS = %v/%v, want true (the pulse is always GNSS-aligned)", a, ok)
 	}
 }
 
