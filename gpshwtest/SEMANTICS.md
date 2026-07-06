@@ -14,6 +14,8 @@ A configuration request is built from three kinds of things, and one invocation 
 
 The distinction matters because the guarantees differ. Properties have readback; operations and message requests do not - their effects are observed differently (a survey completes, saved configuration survives a reset, requested messages flow).
 
+**Showing changes nothing.** `--show-receiver` and `--show-config` never change the receiver's configuration, not even its running state, and are not delayed: they answer promptly rather than waiting on the receiver's own reporting schedules.
+
 ## Properties
 
 The properties are: the enabled signals, timing GNSS, time pulse (width, period, alignment to GNSS, only-when-locked behavior, polarity), positioning mode (mobile or static, with the fixed position and its accuracy), antenna cable delay, minimum elevation, RTCM base station ID, and serial speed.
@@ -48,6 +50,8 @@ The enabled-signals property looks like it has two dimensions - constellations a
 
 The achieved set is reported and reads back, so every silent intersection, every fixup, and every refusal is visible to the requester. A receiver's signal limitations need no documentation to be discovered: request and observe.
 
+**PPP is never enabled implicitly.** Enabling a signal that carries PPP corrections - Galileo E6 for HAS - does not enable PPP itself; an explicit PPP property is planned. This is a rule about PPP, not about corrections generally: SBAS is deliberately the opposite, and enabling an SBAS signal enables SBAS.
+
 ## Message output
 
 There are two completely different kinds of message output request, and they must not be conflated.
@@ -65,6 +69,8 @@ The meaning is: *the receiver is configured so that the named information is del
 Raw navigation data is event output, not solution-rate output: the request means each item of navigation data is delivered as the receiver obtains it (a subframe as decoded, an ephemeris when new or changed), not re-delivered at a fixed rate. A receiver may additionally deliver the navigation data it already holds when output is enabled; data it has not yet decoded appears only as broadcast. Re-delivery of unchanged navigation data is not requested and is not significant.
 
 Content preferences select *within* the delivered information rather than adding kinds of it: TAI time rather than UTC, ECEF coordinates rather than geodetic. The `after` preference concerns the time pulse: a pulse-time message that precedes its pulse is not sufficient on its own; there must be time information following the pulse, which a post-pulse message satisfies by itself and a pre-pulse message satisfies only in combination with time messages after the pulse.
+
+Satellite information is an independent stream, not part of the navigation epoch: the end-of-epoch marker asserts that the epoch's solution information has been delivered, and says nothing about satellite information, which may be delivered after it.
 
 **Turning off.** A request also says what happens to the rest of its group: messages other than those carrying requested information are turned off. For the wire-format groups and the satellite and raw groups this is implicit in every request. For the PVT group it is explicit (`off`), and a PVT request without `off` is incremental: it enables what it names and leaves the rest of the group alone. The asymmetry is deliberate, for efficiency - PVT messages are the high-rate operational core, and incremental requests let one message be added without reconfiguring and disrupting the rest. The convenience values `ptp` and `ntp` are exact abbreviations of flag sets (see **satpulsetool-gps(1)**) and mean nothing beyond their expansion.
 
@@ -92,6 +98,8 @@ An RTCM output request on a backend without the RTCM capabilities currently fail
 Whatever the receiver:
 
 - An invocation responds; it does not hang or silently do nothing.
+- `--show-receiver` and `--show-config` change nothing on the receiver and wait for nothing.
+- PPP is never enabled implicitly by a signal request.
 - Reported values are the truth: a set response reports what the receiver accepted, and readback reports what it stores.
 - A reported error is the truth: a failed request leaves the configuration unchanged.
 - Requested information is delivered when the receiver can deliver it; more may come with it.

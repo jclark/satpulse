@@ -63,6 +63,21 @@ beautiful elegant implementation", judged against the existing
 configurators; elegance comes from fitting the protocol, not from
 copying a previous shape.
 
+The crucial architectural choice, decided explicitly before coding
+(owner directive from the Septentrio bring-up): **how to represent the
+receiver's internal configuration state**. It affects the whole
+implementation. Representations used so far: ubx new style uses the
+config keys/values; ubx old style uses the messages the receiver
+returns to configuration queries; unc stores the command strings that
+produce the state and diffs them to generate updates (Unicore
+read-modify-write regenerates whole commands); Septentrio stores typed
+per-item reply state lines in the receiver's own vocabulary, updated
+identically by query replies and set acks (its CLI is symmetric and
+omitted arguments keep their current value, so the receiver merges
+partial sets and no command diffing is needed). Record the chosen
+representation, the options considered, and why, in the plan and the
+final report.
+
 What does transfer:
 
 - The inputs the owner must provide and the lower stages that should
