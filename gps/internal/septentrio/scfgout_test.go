@@ -266,6 +266,24 @@ func TestConfigureRTCMOut(t *testing.T) {
 			t.Errorf("RTCM message list changed for Other-only request: %q", cmd)
 		}
 	}
+
+	rtcmCmd = "setRTCMv3Output, USB1, RTCM1006+MSM4+RTCM1005"
+	replies = map[string]string{
+		"getRTCMv3Output, USB1": "RTCMv3Output, USB1, RTCM1006+RTCM1077+RTCM1087",
+		rtcmCmd:                 "RTCMv3Output, USB1, RTCM1006+RTCM1005+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134",
+		protoOn:                 "DataInOut, USB1, auto, RTCMv3+SBF+NMEA, (on)",
+	}
+	target = &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgOther)
+	_, sent, errs = runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	for _, cmd := range []string{rtcmCmd, protoOn} {
+		if !slices.Contains(sent, cmd) {
+			t.Errorf("command %q not sent; sent: %v", cmd, sent)
+		}
+	}
 }
 
 // TestConfigureRTCMOutUnsupported checks the capability gate on RTCM output:

@@ -235,7 +235,7 @@ func rtcmMessages(f gpsprot.RTCMMsgFlags) []string {
 }
 
 var rtcmMessageClass = []string{
-	"MSM4", "MSM7", "RTCM1005", "RTCM1006",
+	"MSM4", "MSM7", "RTCM1005",
 	"RTCM1074", "RTCM1084", "RTCM1094", "RTCM1104", "RTCM1114", "RTCM1124", "RTCM1134",
 	"RTCM1077", "RTCM1087", "RTCM1097", "RTCM1107", "RTCM1117", "RTCM1127", "RTCM1137",
 }
