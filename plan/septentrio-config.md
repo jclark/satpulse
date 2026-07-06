@@ -262,6 +262,26 @@ truth.
   PPS2 (`setPPS2Parameters`) is not exposed (cross-backend gpsprot
   API change, out of scope).
 
+**TODO: gating on capabilities is not yet implemented beyond OSNMA.**
+The probe's `getReceiverCapabilities` reply carries the authoritative
+signal list, port list, and feature flags (SBAS, DGNSSRover,
+RTKRover, RTKBase, RTCMv3x, ...), but today only OSNMA (and the PPP
+composition) is gated on it. Requested signals are NOT intersected
+with `caps.signals`, and Mode / RTCM are not gated on the RTK flags.
+So a receiver that lacks a requested feature - a timing model without
+RTK, or an older unit without a signal - is sent the command and
+refuses it (`$R?`), which fails that one request (reported to the
+caller; the rest proceed, and a refusal leaves state unchanged)
+instead of the request being dropped before the wire. The signal case
+is the sharpest: `sst`/`snt`/`snu` are three linked commands, so a
+refused `snt` leaves a partial signal state (the shape of the
+GEO-in-PVT bug gpshwtest caught, but for an unsupported *signal*
+rather than an unsupported usage slot). Implementing the gating -
+intersect requested signals with `caps.signals`, gate Mode / RTCM on
+the RTK capability flags, all data already in hand from the probe - is
+pending work, verified so far only against the mosaic-G5 (whose `grc`
+list does not bound the enums).
+
 ### Message output control and stream ownership
 
 The configurator OWNS exactly two streams: **SBF Stream1** and **NMEA
