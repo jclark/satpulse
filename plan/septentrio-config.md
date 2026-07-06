@@ -452,3 +452,25 @@ stands and shows the rest as absence.
   `gpsprot.TimePulse` models exactly one. Exposing a second pulse
   is a cross-backend API change (an index or a second TimePulse),
   demand-driven.
+- **The interface has no way to say whether identity is wanted.**
+  Every other backend probes with its identity message (u-blox
+  MON-VER, Unicore VERSIONB), so `ReceiverInfo` hardware/firmware
+  falls out of detection for free and `ReceiverInfo()` is a pure
+  getter. Septentrio's probe is `getReceiverCapabilities`, which is
+  the better probe for capability gating (an authoritative signal /
+  port / feature list instead of inferring from a model string) but
+  carries no identity. So identity needs a separate
+  `lstInternalFile, Identification` fetch, and because nothing in the
+  target expresses "I want identifier info" (`ConfigTarget.Get` is a
+  `ConfigProps` bitmask; `ReceiverInfo` is outside it), the backend
+  issues that fetch on every run - an unconditional round-trip whose
+  only real consumers are `--show-receiver` and the NTRIP generator
+  field (which falls back to the version string or "satpulse" when
+  identity is absent). The passive "consume a ReceiverSetup SBF block
+  if one arrives" fallback does not mitigate this: the configurator
+  only enables the messages the target requests, nothing requests
+  ReceiverSetup, so the block never fires - it is dead weight. The
+  model fix is to let the caller declare whether it wants identifier
+  info, so a backend that pays for identity separately can skip the
+  fetch when it is not wanted; backends that get identity from the
+  probe are unaffected.

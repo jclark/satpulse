@@ -376,10 +376,10 @@ func (c *Configurator) generateFollowupQueries() bool {
 
 // rxIdent is the receiver identity parsed from the Identification internal
 // file ("lstInternalFile, Identification"), an XML document delivered as lst
-// block units. It is the identity source when no ReceiverSetup SBF block
-// has arrived (owner ruling, revised: the same-connection one-shot fetch of
-// ReceiverSetup needs a stream-enable side effect, which reads like
-// --show-receiver changing the configuration).
+// block units. It is the identity source: the probe carries no identity, and
+// the same-connection ReceiverSetup one-shot was rejected because it needs a
+// stream-enable side effect that reads like --show-receiver changing the
+// configuration (owner ruling).
 type rxIdent struct {
 	Product  string // hwplatform product, e.g. "mosaic-G5 P3"
 	Serial   string // hwplatform serialnr

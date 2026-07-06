@@ -1,7 +1,6 @@
 package septentrio
 
 import (
-	"encoding/hex"
 	"maps"
 	"reflect"
 	"slices"
@@ -14,10 +13,6 @@ import (
 
 // grcReplyPacket is a framed grc reply as captured from the mosaic-G5.
 const grcReplyPacket = "$R: getReceiverCapabilities\r\n  " + grcStateLine + "\r\nUSB1>"
-
-// receiverSetupPacket is a verbatim ReceiverSetup SBF packet from the
-// committed mosaic-G5 corpus (gps/testdata/packets/septentrio/mosaic-G5).
-const receiverSetupPacket = "244020a30e97a80140a9be1b79090000534550540000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000556e6b6e6f776e00000000000000000000000000556e6b6e6f776e00000000000000000000000000556e6b6e6f776e00000000000000000000000000000000000000000000000000000000000000000031303030313935373700000000000000000000004752423030363000000000000000000000000000312e312e30000000000000000000000000000000556e6b6e6f776e00000000000000000000000000556e6b6e6f776e00000000000000000000000000000000000000000000000000556e6b6e6f776e00000000000000000000000000323032362e30312e322d6738336431636136373730000000000000000000000000000000000000006d6f736169632d4735205033000000000000000000000000000000000000000000000000000000001874ef155eadce3f541c41aff51afc3faaabc2c1000000000000000000000000000000000000000000000000000000000000000000000000"
 
 // asFoundReplies answers each query with the state line verified on the
 // as-found mosaic-G5 (the SignalTracking list includes GALE5, which has no
@@ -40,25 +35,16 @@ const getAll = gpsprot.PropIDSignalsEnabled | gpsprot.PropIDTimeGNSS |
 	gpsprot.PropIDNavMsgAuth | gpsprot.PropIDRTCMBaseID | gpsprot.PropIDMinElevation |
 	gpsprot.PropIDBaudRate | gpsprot.PropIDPort
 
-// runConfig probes and configures through the real ReplyProcessor / SBF
-// PacketProcessor -> ConfigProtocol -> ConfigDirector path against a fake
-// receiver: the probe reply carries the capability line and our prompt, the
-// escape elicits no framed reply, queries are answered from replies, and
-// ReceiverSetup arrives as a normal SBF block on the block's own schedule.
+// runConfig probes and configures through the real ReplyProcessor ->
+// ConfigProtocol -> ConfigDirector path against a fake receiver: the probe
+// reply carries the capability line and our prompt, the escape elicits no
+// framed reply, queries are answered from replies, and the identity fetch is
+// answered with the captured Identification file.
 func runConfig(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]string) (*Configurator, []string, []error) {
-	return runConfigOpts(t, target, replies, true)
-}
-
-// runConfigOpts is runConfig with control over when the ReceiverSetup block
-// arrives: early (at the first wait, i.e. flowing before configuration) or
-// only in response to an identity one-shot.
-func runConfigOpts(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]string, rxSetupEarly bool) (*Configurator, []string, []error) {
 	t.Helper()
 	cp := NewConfigProtocol()
 	rp := NewReplyProcessor()
 	rp.SetNativeMsgHandler(cp)
-	sp := NewPacketProcessor(nil)
-	sp.SetNativeMsgHandler(cp)
 	t0 := time.Date(2026, 7, 5, 0, 0, 0, 0, time.UTC)
 
 	if _, err := rp.ProcessPacket(grcReplyPacket, t0); err != nil {
@@ -75,7 +61,6 @@ func runConfigOpts(t *testing.T, target *gpsprot.ConfigTarget, replies map[strin
 	director := gpsprot.NewConfigDirector(cfg, 2)
 	var sent []string
 	var errs []error
-	rxSetupFed := false
 	for action := range director.Actions() {
 		switch action.Type {
 		case gpsprot.ConfigActionSendRequest:
@@ -105,11 +90,6 @@ func runConfigOpts(t *testing.T, target *gpsprot.ConfigTarget, replies map[strin
 			}
 		case gpsprot.ConfigActionWaitUntil:
 			t0 = action.Deadline
-			if !rxSetupFed && rxSetupEarly {
-				// The periodic ReceiverSetup block arrives mid-run.
-				rxSetupFed = true
-				feedRxSetup(t, sp, t0)
-			}
 			director.AdvanceTimeTo(t0)
 		case gpsprot.ConfigActionError:
 			errs = append(errs, action.Error)
@@ -127,19 +107,6 @@ var lifIdentPackets = []string{
 	"$-- BLOCK 3 / 5\r\n    <firmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\">\r\n        <bootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/>\r\n        <gnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\">\r\n        </gnssfw>\r\n    </firmware>\r\n\r\n---->",
 	"$-- BLOCK 4 / 5\r\n    <files>\r\n        <permfile permid=\"20251217b-100019577-1\"/>\r\n    </files>\r\n\r\n---->",
 	"$-- BLOCK 5 / 5\r\n</rxproduct>\r\n\r\nUSB1>",
-}
-
-// feedRxSetup delivers the corpus ReceiverSetup packet through the real SBF
-// packet processor.
-func feedRxSetup(t *testing.T, sp *PacketProcessor, t0 time.Time) {
-	t.Helper()
-	pkt, err := hex.DecodeString(receiverSetupPacket)
-	if err != nil {
-		t.Fatalf("decoding ReceiverSetup hex: %v", err)
-	}
-	if _, err := sp.ProcessPacket(string(pkt), t0); err != nil {
-		t.Fatalf("ReceiverSetup packet: %v", err)
-	}
 }
 
 func TestConfigureGetAll(t *testing.T) {
@@ -482,11 +449,11 @@ func TestConfigureReloadAndFactory(t *testing.T) {
 	}
 }
 
-// TestConfigureIdentity checks the identity fetch: with no ReceiverSetup
-// block flowing, the configurator requests the Identification internal file
-// (no configuration change, best-effort) and parses its XML block units.
+// TestConfigureIdentity checks the identity fetch: the configurator requests
+// the Identification internal file (no configuration change, best-effort) and
+// parses its XML block units.
 func TestConfigureIdentity(t *testing.T) {
-	cfg, sent, errs := runConfigOpts(t, &gpsprot.ConfigTarget{}, nil, false)
+	cfg, sent, errs := runConfig(t, &gpsprot.ConfigTarget{}, nil)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -501,19 +468,5 @@ func TestConfigureIdentity(t *testing.T) {
 	info := cfg.ReceiverInfo()
 	if info.Hardware != "mosaic-G5 P3" || info.Firmware != "1.1.0" {
 		t.Errorf("identity: got %q %q", info.Hardware, info.Firmware)
-	}
-}
-
-// TestConfigureIdentitySkippedWhenFlowing checks that no identity requests
-// are generated when a ReceiverSetup block already arrived.
-func TestConfigureIdentitySkippedWhenFlowing(t *testing.T) {
-	_, sent, errs := runConfig(t, &gpsprot.ConfigTarget{}, nil)
-	if len(errs) > 0 {
-		t.Fatalf("unexpected errors: %v", errs)
-	}
-	for _, cmd := range sent {
-		if strings.HasPrefix(cmd, "lstInternalFile") {
-			t.Errorf("unexpected identity command %q", cmd)
-		}
 	}
 }

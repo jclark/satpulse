@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/gps/lib/sbfbin"
 )
 
 // The receiver's command line is single-flight: it has no queueing and
@@ -51,9 +50,8 @@ type Configurator struct {
 	complete      bool   // no more requests will be added to reqs
 	nFinished     int    // all requests with index < nFinished are in a final state
 	port          string // connection descriptor from reply prompts (e.g. "USB1")
-	rxSetup       *sbfbin.ReceiverSetup
 	np            nativeProps
-	ident         *rxIdent // from the Identification file, when no ReceiverSetup block arrived
+	ident         *rxIdent // identity from the Identification file
 	staticQueried bool     // the static-position follow-up query was generated
 }
 
@@ -91,19 +89,14 @@ var _ gpsprot.Configurator = (*Configurator)(nil)
 var _ gpsprot.ConfigRequest = (*sReq)(nil)
 
 // ReceiverInfo returns static information about the GPS receiver: supported
-// signals from the probe's capability reply, identity from the most recent
-// ReceiverSetup SBF block when one has arrived, else from the fetched
+// signals from the probe's capability reply, and identity from the fetched
 // Identification file.
 func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	info := &gpsprot.ReceiverInfo{
 		Vendor:        Vendor,
 		SupportedGNSS: c.caps.sigSet.GNSSSet(),
 	}
-	if rs := c.rxSetup; rs != nil {
-		info.Hardware = rs.ProductName.String()
-		info.Firmware = rs.RxVersion.String()
-		info.VendorSpecific = rs
-	} else if id := c.ident; id != nil {
+	if id := c.ident; id != nil {
 		info.Hardware = id.Product
 		info.Firmware = id.Firmware
 		info.VendorSpecific = id
@@ -258,11 +251,6 @@ func (c *Configurator) reply(r *Reply, tRead time.Time) error {
 		req.err = fmt.Errorf("%s: receiver refused: %s", req.cmd, r.Error)
 	}
 	return nil
-}
-
-// receiverSetup records the latest ReceiverSetup block for ReceiverInfo.
-func (c *Configurator) receiverSetup(rs *sbfbin.ReceiverSetup) {
-	c.rxSetup = rs
 }
 
 func (req *sReq) invalidStatePanic(method string) string {

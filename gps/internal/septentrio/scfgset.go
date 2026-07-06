@@ -188,17 +188,14 @@ func (c *Configurator) generateModeReqs() {
 	}
 }
 
-// generateIdentReqs fetches the receiver identity when no ReceiverSetup
-// block has arrived: the Identification internal file is the one ASCII
-// carrier of the firmware version, answers on this connection within
-// milliseconds, and changes nothing. (The ReceiverSetup one-shot was
-// rejected for this: its same-connection delivery requires enabling the
-// block on a stream, a side effect whose periodic emissions consumers see.)
-// Identity stays best-effort: give-up is success, with identity absent.
+// generateIdentReqs fetches the receiver identity from the Identification
+// internal file: the one ASCII carrier of the firmware version, which answers
+// on this connection within milliseconds and changes nothing. The probe
+// (getReceiverCapabilities) carries no identity, so - unlike backends whose
+// probe is their identity message - this is a separate request on every run
+// (see the "no way to say whether identity is wanted" model mismatch in the
+// plan). Identity stays best-effort: give-up is success, with identity absent.
 func (c *Configurator) generateIdentReqs() {
-	if c.rxSetup != nil {
-		return
-	}
 	c.append(&sReq{cmd: "lstInternalFile, Identification", optional: true, onLst: func(content string) {
 		if id, err := parseIdent(content); err == nil {
 			c.ident = id
