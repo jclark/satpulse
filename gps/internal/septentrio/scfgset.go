@@ -28,7 +28,7 @@ var gnssTimeScale = map[gpsprot.GNSS]string{
 
 // generateSetReqs generates the set requests realizing the target's
 // properties: signals, the scalars, the PVT mode, the message outputs
-// (scfgout.go), the identity fetch, and the NVM operations last, so a save
+// (scfgmsg.go), the identity fetch, and the NVM operations last, so a save
 // persists everything realized before it.
 func (c *Configurator) generateSetReqs() {
 	c.generateSignalReqs()
