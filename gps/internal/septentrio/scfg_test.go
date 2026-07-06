@@ -1,6 +1,7 @@
 package septentrio
 
 import (
+	"encoding/xml"
 	"maps"
 	"reflect"
 	"slices"
@@ -516,5 +517,20 @@ func TestConfigureIdentity(t *testing.T) {
 	info := cfg.ReceiverInfo()
 	if info.Hardware != "mosaic-G5 P3" || info.Firmware != "1.1.0" {
 		t.Errorf("identity: got %q %q", info.Hardware, info.Firmware)
+	}
+	// VendorSpecific carries the whole token stream, so fields absent from the
+	// typed struct (here the serial number) remain recoverable.
+	toks, ok := info.VendorSpecific.([]xml.Token)
+	if !ok || len(toks) == 0 {
+		t.Fatalf("VendorSpecific: got %T, want non-empty []xml.Token", info.VendorSpecific)
+	}
+	var serial string
+	for _, tok := range toks {
+		if se, ok := tok.(xml.StartElement); ok && se.Name.Local == "hwplatform" {
+			serial, _ = attr(se, "", "serialnr")
+		}
+	}
+	if serial != "0100019577" {
+		t.Errorf("VendorSpecific serialnr: got %q want %q", serial, "0100019577")
 	}
 }

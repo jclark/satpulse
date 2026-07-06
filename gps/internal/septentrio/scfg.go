@@ -1,6 +1,7 @@
 package septentrio
 
 import (
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"strings"
@@ -51,7 +52,7 @@ type Configurator struct {
 	nFinished     int    // all requests with index < nFinished are in a final state
 	port          string // connection descriptor from reply prompts (e.g. "USB1")
 	np            nativeProps
-	ident         *rxIdent // identity from the Identification file
+	ident         []xml.Token // Identification file tokens, the identity source
 	staticQueried bool     // the static-position follow-up query was generated
 }
 
@@ -97,8 +98,7 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 		SupportedGNSS: c.caps.sigSet.GNSSSet(),
 	}
 	if id := c.ident; id != nil {
-		info.Hardware = id.Product
-		info.Firmware = id.Firmware
+		info.Hardware, info.Firmware = identInfo(id)
 		info.VendorSpecific = id
 	}
 	return info

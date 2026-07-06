@@ -374,45 +374,72 @@ func (c *Configurator) generateFollowupQueries() bool {
 	return true
 }
 
-// rxIdent is the receiver identity parsed from the Identification internal
-// file ("lstInternalFile, Identification"), an XML document delivered as lst
-// block units. It is the identity source: the probe carries no identity, and
-// the same-connection ReceiverSetup one-shot was rejected because it needs a
-// stream-enable side effect that reads like --show-receiver changing the
-// configuration (owner ruling).
-type rxIdent struct {
-	Product  string // hwplatform product, e.g. "mosaic-G5 P3"
-	Serial   string // hwplatform serialnr
-	Firmware string // firmware version, e.g. "1.1.0"
-	GNSSFW   string // GNSS firmware version, e.g. "2026.01.2-g83d1ca6770"
-}
-
-// parseIdent parses the Identification file content (the joined block units
-// of the lst reply).
-func parseIdent(content string) (*rxIdent, error) {
-	var doc struct {
-		HWPlatform struct {
-			Product  string `xml:"product,attr"`
-			SerialNr string `xml:"serialnr,attr"`
-		} `xml:"hwplatform"`
-		Firmware struct {
-			Version string `xml:"version,attr"`
-			GNSSFW  struct {
-				Version string `xml:"version,attr"`
-			} `xml:"gnssfw"`
-		} `xml:"firmware"`
-	}
+// parseIdent tokenizes the Identification internal file content (the joined
+// block units of the "lstInternalFile, Identification" reply) into a copied
+// token slice. The Identification file is the identity source: the probe
+// carries no identity, and the same-connection ReceiverSetup one-shot was
+// rejected because it needs a stream-enable side effect that reads like
+// --show-receiver changing the configuration (owner ruling). The file has no
+// published schema (its namespace URI does not resolve) and its shape shifts
+// across firmware, so we retain the whole token stream as the neutral identity
+// carrier and pull the few fields we need with identInfo. CopyToken is
+// required: Decoder.Token's byte slices alias an internal buffer reused on the
+// next call, so retained tokens must be copied.
+func parseIdent(content string) ([]xml.Token, error) {
 	dec := xml.NewDecoder(strings.NewReader(content))
 	dec.CharsetReader = latin1CharsetReader
-	if err := dec.Decode(&doc); err != nil {
-		return nil, fmt.Errorf("septentrio: parsing Identification file: %v", err)
+	var toks []xml.Token
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			return toks, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("septentrio: parsing Identification file: %v", err)
+		}
+		toks = append(toks, xml.CopyToken(tok))
 	}
-	return &rxIdent{
-		Product:  doc.HWPlatform.Product,
-		Serial:   doc.HWPlatform.SerialNr,
-		Firmware: doc.Firmware.Version,
-		GNSSFW:   doc.Firmware.GNSSFW.Version,
-	}, nil
+}
+
+// identInfo scans the Identification file tokens for the receiver hardware
+// (hwplatform product, e.g. "mosaic-G5 P3") and firmware (firmware version,
+// e.g. "1.1.0"), considering only elements in the root namespace so a stray
+// foreign-namespaced element cannot be taken for one of ours. Unprefixed
+// attributes are in no namespace, so they are looked up with an empty space.
+func identInfo(toks []xml.Token) (hardware, firmware string) {
+	var rootNS string
+	seenRoot := false
+	for _, tok := range toks {
+		se, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		if !seenRoot {
+			rootNS = se.Name.Space
+			seenRoot = true
+		}
+		if se.Name.Space != rootNS {
+			continue
+		}
+		switch se.Name.Local {
+		case "hwplatform":
+			hardware, _ = attr(se, "", "product")
+		case "firmware":
+			firmware, _ = attr(se, "", "version")
+		}
+	}
+	return
+}
+
+// attr returns the value of the (ns, local) attribute on se and whether it
+// was present.
+func attr(se xml.StartElement, ns, local string) (string, bool) {
+	for _, a := range se.Attr {
+		if a.Name.Space == ns && a.Name.Local == local {
+			return a.Value, true
+		}
+	}
+	return "", false
 }
 
 // latin1CharsetReader decodes the ISO-8859-1 charset the receiver declares
