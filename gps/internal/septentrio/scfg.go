@@ -104,9 +104,16 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	return info
 }
 
-// ConfigSupport returns the configuration options this implementation supports.
+// ConfigSupport returns the configuration options this implementation
+// supports on this receiver: the RTCMv3 output features additionally need
+// the correction-generation capabilities from the probe.
 func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
-	return configSupport
+	flags := configSupport
+	if !c.caps.rtcmV3Base() {
+		flags &^= gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7 |
+			gpsprot.ConfigSupportRTCMBaseID | gpsprot.ConfigSupportRTCMQZSS
+	}
+	return flags
 }
 
 // ConfigProps returns the current configuration of the GPS receiver.

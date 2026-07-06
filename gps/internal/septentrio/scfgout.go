@@ -1,6 +1,7 @@
 package septentrio
 
 import (
+	"errors"
 	"slices"
 	"strings"
 
@@ -245,7 +246,15 @@ func (c *Configurator) generateOutputReqs() {
 	}
 	if c.target.Opts.RTCMMsg.IsSet() {
 		list := rtcmMessages(c.target.Opts.RTCMMsg.Get())
-		c.addReq("setRTCMv3Output, "+c.port+", "+listOrNone(strings.Join(list, "+")), nil)
+		if c.caps.rtcmV3Base() {
+			c.addReq("setRTCMv3Output, "+c.port+", "+listOrNone(strings.Join(list, "+")), nil)
+		} else if len(list) > 0 {
+			// The capability is absent, so the request fails before the wire:
+			// a message request has no property through which the absence
+			// could show (SEMANTICS.md). An empty selection needs nothing.
+			c.append(&sReq{state: sStateFailed, cmd: "setRTCMv3Output",
+				err: errors.New("RTCM message output not supported by this receiver")})
+		}
 	}
 }
 

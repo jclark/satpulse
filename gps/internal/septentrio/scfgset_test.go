@@ -1,6 +1,7 @@
 package septentrio
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -107,14 +108,51 @@ func TestPPSSetCmd(t *testing.T) {
 	}
 }
 
+// TestConfigureSignalsCapabilityGate checks that requested signals are
+// intersected with the probe's supported list before any command is built:
+// unadvertised signals never reach the wire (a refused snt after sst has
+// applied would leave partial state), the sst constellation gate reflects
+// only constellations with a surviving signal, and the achieved set - the
+// snt ack's readback - simply omits what was dropped.
+func TestConfigureSignalsCapabilityGate(t *testing.T) {
+	sstCmd := "setSatelliteTracking, GPS+GALILEO"
+	sntCmd := "setSignalTracking, GALE1BC+GPSL1CA+GALE5"
+	snuCmd := "setSignalUsage, GALE1BC+GPSL1CA+GALE5, GALE1BC+GPSL1CA"
+	replies := map[string]string{
+		"getSignalTracking": "SignalTracking, GPSL1CA+GALE1BC+GALE5",
+		"getSignalUsage":    "SignalUsage, GPSL1CA+GALE5, GPSL1CA",
+		sstCmd:              "SatelliteTracking, G01+E01",
+		sntCmd:              "SignalTracking, GPSL1CA+GALE1BC+GALE5",
+		snuCmd:              "SignalUsage, GPSL1CA+GALE1BC+GALE5, GPSL1CA+GALE1BC",
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetSignalsEnabled(gpsprot.SignalSetOf(
+		gpsprot.SigGPSL1CA, gpsprot.SigGPSL5, gpsprot.SigGALE1, gpsprot.SigGALE6,
+		gpsprot.SigNAVICL5))
+	cfg, sent, errs := runConfigCaps(t, target, replies, trimmedCapsLine)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	for _, cmd := range []string{sstCmd, sntCmd, snuCmd} {
+		if !slices.Contains(sent, cmd) {
+			t.Errorf("command %q not sent; sent: %v", cmd, sent)
+		}
+	}
+	expect := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1)
+	if ss, ok := cfg.ConfigProps().GetSignalsEnabled(); !ok || ss != expect {
+		t.Errorf("SignalsEnabled: got %v, %v; want the supported subset %v", ss, ok, expect)
+	}
+}
+
 // TestSignalUsageExcludesGEO pins the hardware finding that the PVT usage
 // argument's enum has no GEO entries: requesting SBAS signals must put
 // GEOL1/GEOL5 in the tracking list and the NavData usage list, never in the
 // PVT usage list (the receiver refuses it with "Argument 'PVT' is invalid").
 func TestSignalUsageExcludesGEO(t *testing.T) {
 	c := &Configurator{target: &gpsprot.ConfigTarget{}}
-	c.target.Props.SetSignalsEnabled(gpsprot.SignalSetOf(
-		gpsprot.SigGPSL1CA, gpsprot.SigSBASL1CA, gpsprot.SigSBASL5))
+	requested := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigSBASL1CA, gpsprot.SigSBASL5)
+	c.caps = &rxCaps{sigSet: requested}
+	c.target.Props.SetSignalsEnabled(requested)
 	c.np.usage = &signalUsage{pvt: []string{"GPSL1CA", "GLOL2P"}, navData: []string{"GPSL1CA"}}
 	c.generateSignalReqs()
 	var snu string

@@ -340,7 +340,7 @@ func (c *Configurator) generateQueryReqs() {
 	if t.UsesAny(gpsprot.PropIDNavMsgAuth) && c.caps.caps["GalOSNMA"] {
 		c.addReq("getGalOSNMAUsage", np.parseGalOSNMAUsage)
 	}
-	if t.UsesAny(gpsprot.PropIDRTCMBaseID) {
+	if t.UsesAny(gpsprot.PropIDRTCMBaseID) && c.caps.rtcmV3Base() {
 		c.addReq("getRTCMv3Formatting", np.parseRTCMv3Formatting)
 	}
 	if t.UsesAny(gpsprot.PropIDAntennaCableDelay) {

@@ -11,8 +11,15 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 )
 
-// grcReplyPacket is a framed grc reply as captured from the mosaic-G5.
-const grcReplyPacket = "$R: getReceiverCapabilities\r\n  " + grcStateLine + "\r\nUSB1>"
+// grcReply frames a grc reply carrying the given capability state line.
+func grcReply(capsLine string) string {
+	return "$R: getReceiverCapabilities\r\n  " + capsLine + "\r\nUSB1>"
+}
+
+// trimmedCapsLine models a reduced receiver: no GPSL5, GALE6BC, or NAVIC
+// signals, and no correction-generation capabilities (RTKBase, DGNSSBase,
+// RTCMv3x all absent).
+const trimmedCapsLine = "ReceiverCapabilities, Main, GPSL1CA+GPSL2C+GLOL1CA+GALE1BC+GALE5a+GEOL1+BDSB1I+QZSL1CA, COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+xPPSOutput+APME+RAIM+GalOSNMA, 50, 50"
 
 // asFoundReplies answers each query with the state line verified on the
 // as-found mosaic-G5 (the SignalTracking list includes GALE5, which has no
@@ -36,18 +43,25 @@ const getAll = gpsprot.PropIDSignalsEnabled | gpsprot.PropIDTimeGNSS |
 	gpsprot.PropIDBaudRate | gpsprot.PropIDPort
 
 // runConfig probes and configures through the real ReplyProcessor ->
-// ConfigProtocol -> ConfigDirector path against a fake receiver: the probe
-// reply carries the capability line and our prompt, the escape elicits no
-// framed reply, queries are answered from replies, and the identity fetch is
-// answered with the captured Identification file.
+// ConfigProtocol -> ConfigDirector path against a fake receiver behaving as
+// the mosaic-G5 (its verbatim capability line).
 func runConfig(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]string) (*Configurator, []string, []error) {
+	t.Helper()
+	return runConfigCaps(t, target, replies, grcStateLine)
+}
+
+// runConfigCaps is runConfig with the fake receiver advertising the given
+// capability state line: the probe reply carries it and our prompt, the
+// escape elicits no framed reply, queries are answered from replies, and the
+// identity fetch is answered with the captured Identification file.
+func runConfigCaps(t *testing.T, target *gpsprot.ConfigTarget, replies map[string]string, capsLine string) (*Configurator, []string, []error) {
 	t.Helper()
 	cp := NewConfigProtocol()
 	rp := NewReplyProcessor()
 	rp.SetNativeMsgHandler(cp)
 	t0 := time.Date(2026, 7, 5, 0, 0, 0, 0, time.UTC)
 
-	if _, err := rp.ProcessPacket(grcReplyPacket, t0); err != nil {
+	if _, err := rp.ProcessPacket(grcReply(capsLine), t0); err != nil {
 		t.Fatalf("probe reply: %v", err)
 	}
 	if !cp.ProbeOK() {
@@ -153,6 +167,40 @@ func TestConfigureGetAll(t *testing.T) {
 	}
 	if info.SupportedGNSS != gpsprot.AllGNSSSet {
 		t.Errorf("SupportedGNSS: got %v want %v", info.SupportedGNSS, gpsprot.AllGNSSSet)
+	}
+}
+
+// TestConfigSupportRTCMGate checks that the RTCMv3 output features are
+// declared and realized only on receivers with the correction-generation
+// capabilities: without them the support flags are cleared and the
+// RTCMBaseID property shows absence (no query, no set, no error).
+func TestConfigSupportRTCMGate(t *testing.T) {
+	target := &gpsprot.ConfigTarget{Get: gpsprot.PropIDRTCMBaseID}
+	target.Props.SetRTCMBaseID(5)
+	cfg, sent, errs := runConfigCaps(t, target, nil, trimmedCapsLine)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	for _, cmd := range sent {
+		if strings.Contains(cmd, "RTCMv3Formatting") {
+			t.Errorf("RTCM base ID command sent without the capability: %q", cmd)
+		}
+	}
+	if v, ok := cfg.ConfigProps().GetRTCMBaseID(); ok {
+		t.Errorf("RTCMBaseID: got %v; want absence", v)
+	}
+	rtcmFlags := gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7 |
+		gpsprot.ConfigSupportRTCMBaseID | gpsprot.ConfigSupportRTCMQZSS
+	if got := cfg.ConfigSupport(); got&rtcmFlags != 0 {
+		t.Errorf("ConfigSupport: got %v; want no RTCM flags", got)
+	}
+
+	cfg, _, errs = runConfig(t, &gpsprot.ConfigTarget{}, nil)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if got := cfg.ConfigSupport(); got&rtcmFlags != rtcmFlags {
+		t.Errorf("ConfigSupport: got %v; want all RTCM flags on the full capability line", got)
 	}
 }
 

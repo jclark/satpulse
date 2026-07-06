@@ -3,6 +3,7 @@ package septentrio
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -168,6 +169,35 @@ func TestConfigureRTCMOut(t *testing.T) {
 	}
 	if !slices.Contains(sent, "setRTCMv3Output, USB1, none") {
 		t.Errorf("RTCM clear not sent; sent: %v", sent)
+	}
+}
+
+// TestConfigureRTCMOutUnsupported checks the capability gate on RTCM output:
+// without the correction-generation capabilities an enable request fails
+// before the wire, and an empty selection needs (and sends) nothing.
+func TestConfigureRTCMOutUnsupported(t *testing.T) {
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgAuto)
+	_, sent, errs := runConfigCaps(t, target, nil, trimmedCapsLine)
+	for _, cmd := range sent {
+		if strings.HasPrefix(cmd, "setRTCMv3Output") {
+			t.Errorf("RTCM command sent without the capability: %q", cmd)
+		}
+	}
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "RTCM message output not supported") {
+		t.Errorf("errors: got %v; want one unsupported-output error", errs)
+	}
+
+	target = &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgNone)
+	_, sent, errs = runConfigCaps(t, target, nil, trimmedCapsLine)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	for _, cmd := range sent {
+		if strings.HasPrefix(cmd, "setRTCMv3Output") {
+			t.Errorf("RTCM command sent for an empty selection without the capability: %q", cmd)
+		}
 	}
 }
 

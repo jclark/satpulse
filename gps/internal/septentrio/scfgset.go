@@ -53,7 +53,7 @@ func (c *Configurator) generateScalarReqs() {
 		ns := min(max(float64(v)/float64(time.Nanosecond), -10000), 10000)
 		c.addReq("setCalibCommonDelay, "+formatFloat(ns), np.parseCalibCommonDelay)
 	}
-	if v, ok := props.GetRTCMBaseID(); ok {
+	if v, ok := props.GetRTCMBaseID(); ok && c.caps.rtcmV3Base() {
 		c.addReq(fmt.Sprintf("setRTCMv3Formatting, %d", min(v, 4095)), np.parseRTCMv3Formatting)
 	}
 	if v, ok := props.GetNavMsgAuth(); ok && c.caps.caps["GalOSNMA"] {
@@ -93,6 +93,13 @@ func (c *Configurator) generateSignalReqs() {
 	if !ok {
 		return
 	}
+	// Intersect with the probe's supported-signal list: signals the receiver
+	// does not advertise are dropped silently, visible in the achieved set
+	// (the SEMANTICS.md best-effort pipeline). They are never sent because a
+	// refused snt after sst has applied would leave partial signal state -
+	// and the receiver-only signals preserved below came from the receiver,
+	// so they need no such filtering.
+	ss &= c.caps.sigSet
 	var names []string
 	for sig := range septSignalNames {
 		if ss.Contains(sig) {

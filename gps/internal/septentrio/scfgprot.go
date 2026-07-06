@@ -116,6 +116,16 @@ func parseCaps(r *Reply) (*rxCaps, error) {
 	return nil, fmt.Errorf("septentrio: no ReceiverCapabilities state line in grc reply")
 }
 
+// rtcmV3Base reports whether the receiver can generate RTCMv3 corrections.
+// The capability model separates format from role: RTCMv3x is
+// "generation/decoding of RTCMv3.x corrections", and the reference manual's
+// base-station chapter - the home of setRTCMv3Output/setRTCMv3Formatting -
+// applies only to receivers with the DGNSSBase and/or RTKBase
+// correction-generation role. Both halves are required.
+func (c *rxCaps) rtcmV3Base() bool {
+	return c.caps["RTCMv3x"] && (c.caps["RTKBase"] || c.caps["DGNSSBase"])
+}
+
 // ConfigProtocol implements gpsprot.ConfigProtocol for Septentrio receivers.
 type ConfigProtocol struct {
 	caps *rxCaps // stored from the grc probe reply
