@@ -218,9 +218,8 @@ func nmeaSentences(f gpsprot.NMEAMsgFlags) []string {
 // rtcmMessages returns the RTCMv3 message list realizing the flags. The
 // MSM4/MSM7 aliases expand receiver-side to the per-constellation message
 // set (verified: 1074-1134 for MSM4, including QZSS), so enabled-GNSS
-// filtering happens in the receiver; ARP is RTCM1006 (1005 plus antenna
-// height, the verified message-file choice); RTCMMsgLax changes nothing
-// because the receiver accepts every choice the flags can express.
+// filtering happens in the receiver; ARP is RTCM1005; RTCMMsgLax changes
+// nothing because the receiver accepts every choice the flags can express.
 func rtcmMessages(f gpsprot.RTCMMsgFlags) []string {
 	var m []string
 	if f&gpsprot.RTCMMsgMSM4 != 0 {
@@ -230,7 +229,7 @@ func rtcmMessages(f gpsprot.RTCMMsgFlags) []string {
 		m = append(m, "MSM7")
 	}
 	if f&gpsprot.RTCMMsgARP != 0 {
-		m = append(m, "RTCM1006")
+		m = append(m, "RTCM1005")
 	}
 	return m
 }

@@ -196,8 +196,8 @@ func TestRTCMMessages(t *testing.T) {
 		flags  gpsprot.RTCMMsgFlags
 		expect []string
 	}{
-		{name: "auto", flags: gpsprot.RTCMMsgAuto, expect: []string{"MSM4", "RTCM1006"}},
-		{name: "msm7 with arp", flags: gpsprot.RTCMMsgAutoMSM7, expect: []string{"MSM7", "RTCM1006"}},
+		{name: "auto", flags: gpsprot.RTCMMsgAuto, expect: []string{"MSM4", "RTCM1005"}},
+		{name: "msm7 with arp", flags: gpsprot.RTCMMsgAutoMSM7, expect: []string{"MSM7", "RTCM1005"}},
 		{name: "none", flags: gpsprot.RTCMMsgNone, expect: nil},
 	}
 	for _, tc := range tests {
@@ -212,10 +212,10 @@ func TestRTCMMessages(t *testing.T) {
 // TestConfigureRTCMOut checks the RTCM message-list command and the separate
 // RTCMv3 output protocol mask on this connection.
 func TestConfigureRTCMOut(t *testing.T) {
-	rtcmCmd := "setRTCMv3Output, USB1, MSM4+RTCM1006"
+	rtcmCmd := "setRTCMv3Output, USB1, MSM4+RTCM1005"
 	protoOn := "setDataInOut, USB1, , +RTCMv3"
 	replies := map[string]string{
-		rtcmCmd: "RTCMv3Output, USB1, RTCM1006+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134",
+		rtcmCmd: "RTCMv3Output, USB1, RTCM1005+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134",
 		protoOn: "DataInOut, USB1, auto, RTCMv3+SBF+NMEA, (on)",
 	}
 	target := &gpsprot.ConfigTarget{}
