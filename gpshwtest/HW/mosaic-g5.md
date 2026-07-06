@@ -22,9 +22,11 @@ The receiver is USB-connected, so runs need no speed discovery. A reproducible c
 
 The save probes write the Boot configuration file, and the sweep's recovery does not return Boot to its pre-run content. On an installation whose Boot is factory-default, finish a disruptive session with `exeCopyConfigFile, RxDefault, Boot` (verify with `lstConfigFile, Boot` reading "Equal to RxDefault!") before re-applying the as-found running configuration.
 
-## Known observation nondeterminism: leap
+## Known observation nondeterminism: leap (a gpshwtest limitation)
 
-Leap-second information rides the GPSUtc/GALUtc/BDSUtc blocks, whose OnChange schedule is the UTC-parameter renewal (minutes-scale; there is no dump-on-enable - verified: 10 s after enabling all three, only one GALUtc had arrived). A 4-second observation window therefore catches leap most but not all of the time: four of five characterization sweeps observed it, one reported `pvtOut: {missing: [leap]}`. The committed baseline carries the majority case (leap observed); a baseline diff showing only that entry is this artifact, not a behavior change. The deterministic fix is decode work on the message-conversion side (the 1 Hz ReceiverTime block carries the current leap count in `DeltaLS`, unconverted today), tracked as follow-up for the SBF conversion (#340); the configurator would then add ReceiverTime to the leap block list.
+Leap-second information rides the GPSUtc/GALUtc/BDSUtc blocks, whose OnChange schedule is the UTC-parameter renewal (minutes-scale; there is no dump-on-enable - verified: 10 s after enabling all three, only one GALUtc had arrived). A 4-second observation window therefore catches leap most but not all of the time: four of five characterization sweeps observed it, one reported `pvtOut: {missing: [leap]}`. The committed baseline carries the majority case (leap observed); a baseline diff showing only that entry is this artifact, not a behavior change.
+
+This is a limitation in the gpshwtest observation harness, not a defect in the configurator or the SBF conversion. `LeapSecondMsg` is a leap-second *announcement* (`OffChangeTime` plus the before/after TAI-UTC offsets); its content exists only in the GPSUtc/GALUtc/BDSUtc UTC-parameter blocks, which are inherently slow OnChange. No faster SBF block carries it: the 1 Hz `ReceiverTime` block holds only `DeltaLS`, the current integer offset, from which a `LeapSecondMsg` cannot be built. The receiver reports leap correctly; the harness's fixed short window simply cannot reliably observe a message on a minutes-scale schedule. The remedy is test-side (a longer window for slow-schedule messages, or excluding leap from the characterized set), not decode or configurator work.
 
 ## Defect history on this receiver
 
