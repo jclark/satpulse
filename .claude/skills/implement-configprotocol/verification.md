@@ -79,6 +79,15 @@ Contract: FAILURES are tool-guarantee violations only; receiver
 limitations are data; runs must be run-to-run identical; receivers are
 left as found. Process:
 
+- The characterization starting state is chosen, documented, and
+  scripted (gpshwtest/GOAL.md ground rule): pick a state the tool's
+  own requests can reproduce - semantic message output cannot be
+  reconstructed from observation, so an arbitrary as-found stream
+  reports an honest restore failure - document it in the HW note, and
+  provide setup/<receiver>.sh establishing it from factory defaults.
+  The starting state is a characterization precondition, distinct
+  from the receiver's real as-found configuration, which is restored
+  after the campaign.
 - Run until clean, then commit the baseline
   (gpshwtest/baselines/<identity>.json) and a per-receiver note
   (gpshwtest/HW/<receiver>.md) describing limitations relative to the
@@ -105,6 +114,13 @@ left as found. Process:
   a receiver whose speed changed; restore sane NVM). It earns its
   cost: the erratic Allystar PPS-disable defect appeared ONLY under
   disruptive runs.
+  A disruptive sweep's restore obligations include the NVM files
+  themselves, not just the running configuration: save probes write
+  the boot configuration, and the sweep's recovery does not return it
+  to its pre-run content. Capture the as-found NVM state before the
+  sweep and verify it after, using the receiver's own configuration
+  dump as the oracle (Septentrio: lstConfigFile Boot, restored with
+  exeCopyConfigFile RxDefault,Boot on a factory-default install).
 - A characterization may legitimately never be failure-free when the
   receiver itself is erratic (byte-identical writes, differing
   outcomes). Commit the clean non-disruptive baseline and record the
@@ -142,7 +158,15 @@ protocol's own schedules (GPS subframe data: 12.5 min).
 
 Before claiming verification, state what observation would differ if
 the claim were false; if nothing would, the test discriminates nothing
-(see rulings.md, "Evidence must discriminate"). Report results
+(see rulings.md, "Evidence must discriminate"). Be careful about
+unsubstantiated premature generalizations, especially of negative
+findings: an experiment establishes its result under the conditions it
+ran in, not universally. (Incident: "exeSBFOnce never delivers to the
+issuing connection" was observed with the block enabled on no stream
+and universalized; with the block enabled on a stream it delivers in
+milliseconds, and a design had meanwhile been built on the general
+claim.) Record the conditions a negative was observed under, and vary
+the plausible state dimensions before a negative becomes load-bearing. Report results
 faithfully: failed runs with output, skipped checks as skipped, weak
 oracles as weak. A register readback is not physical behavior: without
 instrumentation on the PPS pin, every time-pulse finding is register

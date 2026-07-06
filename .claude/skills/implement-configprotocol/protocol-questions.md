@@ -176,6 +176,21 @@ shapes probing strategy, response windows, message-enable ordering
 baud; free the line first by disconnecting the antenna or quieting
 output if it is already saturated).
 
+## Emission schedules
+
+Some messages are output only when something changes, and the change
+can be on a scale of minutes: the Septentrio ReceiverSetup block emits
+every 60 seconds, and the UTC-parameter blocks that carry leap-second
+data emit at the navigation-data renewal rate. A short watch after
+enabling such a message observes nothing and invites a false "never
+emits". Read the documentation and infer the scale first - finding the
+scale may itself be an experiment - and size the observation window to
+cover at least one period, or record the negative as bounded ("not
+within N seconds"), never as absolute. (Incident: a 4-second stage-0
+watch concluded ReceiverSetup was never delivered; the wrong "fact"
+shaped the receiver-identity design until a re-test found the
+60-second schedule.)
+
 ## Acknowledge-but-never-emit
 
 Some firmware acknowledges enabling messages it never emits (CASIC F8N:
