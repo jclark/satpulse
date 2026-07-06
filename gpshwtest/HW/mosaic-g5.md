@@ -4,7 +4,7 @@ How device-independent configuration is realized on the Septentrio mosaic-G5, re
 
 ## Session preconditions
 
-The receiver is USB-connected, so runs need no speed discovery. A reproducible characterization starts from a message state the tool can reconstruct: SBF Stream1 = `PVTGeodetic` at 1 Hz, NMEA Stream1 empty (`satpulsetool gps --binary` reproduces this after the probes; a richer as-found stream cannot be rebuilt from observation and reports an honest restore failure). Resets re-enumerate USB (~1.5 s, stable ttyACM numbering; `/dev/serial/by-id/usb-Septentrio_Septentrio_USB_Device_<serial>-if00` is the stable handle) and the command line answers again ~7 s after a soft reset and ~25 s after a hard one.
+The receiver is USB-connected, so runs need no speed discovery. A reproducible characterization starts from a message state the tool can reconstruct: SBF Stream1 = `PVTGeodetic` at 1 Hz, NMEA Stream1 empty (`satpulsetool gps --binary` reproduces this after the probes; a richer as-found stream cannot be rebuilt from observation and reports an honest restore failure). The state is established from factory defaults by `setup/mosaic-g5.sh`. Resets re-enumerate USB (~1.5 s, stable ttyACM numbering; `/dev/serial/by-id/usb-Septentrio_Septentrio_USB_Device_<serial>-if00` is the stable handle) and the command line answers again ~7 s after a soft reset and ~25 s after a hard one.
 
 ## Findings
 
