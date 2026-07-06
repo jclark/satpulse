@@ -93,17 +93,19 @@ func TestSBFOutputList(t *testing.T) {
 	}
 }
 
-// TestConfigureOutputs drives the output options end to end: the owned
-// streams are queried, rewritten as one self-contained command each, and the
-// acked state lines are the readback.
+// TestConfigureOutputs drives the output options end to end: the owned streams
+// are queried, rewritten when concrete messages are selected, and the output
+// protocol mask is enabled separately.
 func TestConfigureOutputs(t *testing.T) {
 	sbfCmd := "setSBFOutput, Stream1, USB1, ChannelStatus+EndOfPVT+MeasEpoch+PVTGeodetic+xPPSOffset, sec1"
 	nmeaCmd := "setNMEAOutput, Stream1, USB1, RMC+GGA, sec1"
+	nmeaProtoCmd := "setDataInOut, USB1, , +NMEA"
 	replies := map[string]string{
 		"getSBFOutput, Stream1":  "SBFOutput, Stream1, USB1, MeasEpoch+PVTGeodetic+EndOfPVT+xPPSOffset+ChannelStatus, sec1",
 		"getNMEAOutput, Stream1": "NMEAOutput, Stream1, USB1, none, sec1",
 		sbfCmd:                   "SBFOutput, Stream1, USB1, MeasEpoch+PVTGeodetic+EndOfPVT+xPPSOffset+ChannelStatus, sec1",
 		nmeaCmd:                  "NMEAOutput, Stream1, USB1, RMC+GGA, sec1",
+		nmeaProtoCmd:             "DataInOut, USB1, auto, SBF+NMEA, (on)",
 	}
 	target := &gpsprot.ConfigTarget{}
 	target.Opts.PVTMsg = gpsprot.PVTMsgPos | gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgEpoch
@@ -113,7 +115,7 @@ func TestConfigureOutputs(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	for _, cmd := range []string{"getSBFOutput, Stream1", "getNMEAOutput, Stream1", sbfCmd, nmeaCmd} {
+	for _, cmd := range []string{"getSBFOutput, Stream1", "getNMEAOutput, Stream1", sbfCmd, nmeaCmd, nmeaProtoCmd} {
 		if !slices.Contains(sent, cmd) {
 			t.Errorf("command %q not sent; sent: %v", cmd, sent)
 		}
@@ -121,6 +123,71 @@ func TestConfigureOutputs(t *testing.T) {
 	if got := cfg.np.sbfStream; got == nil || !slices.Contains(got.messages, "ChannelStatus") {
 		t.Errorf("acked SBF stream state not recorded: %+v", got)
 	}
+}
+
+func TestConfigureNMEAOutProtocolMask(t *testing.T) {
+	t.Run("none disables protocol only", func(t *testing.T) {
+		cmd := "setDataInOut, USB1, , -NMEA"
+		replies := map[string]string{
+			"getNMEAOutput, Stream1": "NMEAOutput, Stream1, USB1, RMC, sec1",
+			cmd:                      "DataInOut, USB1, auto, SBF, (on)",
+		}
+		target := &gpsprot.ConfigTarget{}
+		target.Opts.NMEAMsg = opt.Make(gpsprot.NMEAMsgNone)
+		_, sent, errs := runConfig(t, target, replies)
+		if len(errs) > 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+		if !slices.Contains(sent, cmd) {
+			t.Errorf("NMEA protocol disable not sent; sent: %v", sent)
+		}
+		for _, cmd := range sent {
+			if strings.HasPrefix(cmd, "setNMEAOutput") {
+				t.Errorf("NMEA message list changed for none: %q", cmd)
+			}
+		}
+	})
+	t.Run("other enables protocol only", func(t *testing.T) {
+		cmd := "setDataInOut, USB1, , +NMEA"
+		replies := map[string]string{
+			"getNMEAOutput, Stream1": "NMEAOutput, Stream1, USB1, GGAaux1, sec1",
+			cmd:                      "DataInOut, USB1, auto, SBF+NMEA, (on)",
+		}
+		target := &gpsprot.ConfigTarget{}
+		target.Opts.NMEAMsg = opt.Make(gpsprot.NMEAMsgOther)
+		_, sent, errs := runConfig(t, target, replies)
+		if len(errs) > 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+		if !slices.Contains(sent, cmd) {
+			t.Errorf("NMEA protocol enable not sent; sent: %v", sent)
+		}
+		for _, cmd := range sent {
+			if strings.HasPrefix(cmd, "setNMEAOutput") {
+				t.Errorf("NMEA message list changed for Other-only request: %q", cmd)
+			}
+		}
+	})
+	t.Run("known plus other preserves unknown sentences", func(t *testing.T) {
+		nmeaCmd := "setNMEAOutput, Stream1, USB1, GGAaux1+RMC, sec1"
+		protoCmd := "setDataInOut, USB1, , +NMEA"
+		replies := map[string]string{
+			"getNMEAOutput, Stream1": "NMEAOutput, Stream1, USB1, GGAaux1+GGA, sec1",
+			nmeaCmd:                  "NMEAOutput, Stream1, USB1, GGAaux1+RMC, sec1",
+			protoCmd:                 "DataInOut, USB1, auto, SBF+NMEA, (on)",
+		}
+		target := &gpsprot.ConfigTarget{}
+		target.Opts.NMEAMsg = opt.Make(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgOther)
+		_, sent, errs := runConfig(t, target, replies)
+		if len(errs) > 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+		for _, cmd := range []string{nmeaCmd, protoCmd} {
+			if !slices.Contains(sent, cmd) {
+				t.Errorf("command %q not sent; sent: %v", cmd, sent)
+			}
+		}
+	})
 }
 
 func TestRTCMMessages(t *testing.T) {
@@ -142,11 +209,14 @@ func TestRTCMMessages(t *testing.T) {
 	}
 }
 
-// TestConfigureRTCMOut checks the RTCM output command, including the
-// explicit "none" that clears this connection's list.
+// TestConfigureRTCMOut checks the RTCM message-list command and the separate
+// RTCMv3 output protocol mask on this connection.
 func TestConfigureRTCMOut(t *testing.T) {
+	rtcmCmd := "setRTCMv3Output, USB1, MSM4+RTCM1006"
+	protoOn := "setDataInOut, USB1, , +RTCMv3"
 	replies := map[string]string{
-		"setRTCMv3Output, USB1, MSM4+RTCM1006": "RTCMv3Output, USB1, RTCM1006+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134",
+		rtcmCmd: "RTCMv3Output, USB1, RTCM1006+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134",
+		protoOn: "DataInOut, USB1, auto, RTCMv3+SBF+NMEA, (on)",
 	}
 	target := &gpsprot.ConfigTarget{}
 	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgAuto)
@@ -154,12 +224,15 @@ func TestConfigureRTCMOut(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if !slices.Contains(sent, "setRTCMv3Output, USB1, MSM4+RTCM1006") {
-		t.Errorf("RTCM command not sent; sent: %v", sent)
+	for _, cmd := range []string{rtcmCmd, protoOn} {
+		if !slices.Contains(sent, cmd) {
+			t.Errorf("command %q not sent; sent: %v", cmd, sent)
+		}
 	}
 
+	protoOff := "setDataInOut, USB1, , -RTCMv3"
 	replies = map[string]string{
-		"setRTCMv3Output, USB1, none": "RTCMv3Output, USB1, none",
+		protoOff: "DataInOut, USB1, auto, SBF+NMEA, (on)",
 	}
 	target = &gpsprot.ConfigTarget{}
 	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgNone)
@@ -167,14 +240,37 @@ func TestConfigureRTCMOut(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if !slices.Contains(sent, "setRTCMv3Output, USB1, none") {
-		t.Errorf("RTCM clear not sent; sent: %v", sent)
+	if !slices.Contains(sent, protoOff) {
+		t.Errorf("RTCM protocol disable not sent; sent: %v", sent)
+	}
+	for _, cmd := range sent {
+		if strings.HasPrefix(cmd, "setRTCMv3Output") {
+			t.Errorf("RTCM message list changed for none: %q", cmd)
+		}
+	}
+
+	replies = map[string]string{
+		protoOn: "DataInOut, USB1, auto, RTCMv3+SBF+NMEA, (on)",
+	}
+	target = &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgOther)
+	_, sent, errs = runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if !slices.Contains(sent, protoOn) {
+		t.Errorf("RTCM protocol enable not sent; sent: %v", sent)
+	}
+	for _, cmd := range sent {
+		if strings.HasPrefix(cmd, "setRTCMv3Output") {
+			t.Errorf("RTCM message list changed for Other-only request: %q", cmd)
+		}
 	}
 }
 
 // TestConfigureRTCMOutUnsupported checks the capability gate on RTCM output:
 // without the correction-generation capabilities an enable request fails
-// before the wire, and an empty selection needs (and sends) nothing.
+// before the wire, and an empty selection still disables the port protocol.
 func TestConfigureRTCMOutUnsupported(t *testing.T) {
 	target := &gpsprot.ConfigTarget{}
 	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgAuto)
@@ -189,10 +285,28 @@ func TestConfigureRTCMOutUnsupported(t *testing.T) {
 	}
 
 	target = &gpsprot.ConfigTarget{}
-	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgNone)
+	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgOther)
 	_, sent, errs = runConfigCaps(t, target, nil, trimmedCapsLine)
+	for _, cmd := range sent {
+		if strings.HasPrefix(cmd, "setRTCMv3Output") || strings.HasPrefix(cmd, "setDataInOut") {
+			t.Errorf("RTCM command sent without the capability: %q", cmd)
+		}
+	}
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "RTCM message output not supported") {
+		t.Errorf("errors: got %v; want one unsupported-output error", errs)
+	}
+
+	protoOff := "setDataInOut, USB1, , -RTCMv3"
+	target = &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgNone)
+	_, sent, errs = runConfigCaps(t, target, map[string]string{
+		protoOff: "DataInOut, USB1, auto, SBF+NMEA, (on)",
+	}, trimmedCapsLine)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if !slices.Contains(sent, protoOff) {
+		t.Errorf("RTCM protocol disable not sent; sent: %v", sent)
 	}
 	for _, cmd := range sent {
 		if strings.HasPrefix(cmd, "setRTCMv3Output") {

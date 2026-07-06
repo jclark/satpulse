@@ -8,12 +8,7 @@
     "mode.fixedPosLLH[0]": {"quantum": 1e-09},
     "mode.fixedPosLLH[1]": {"quantum": 1e-09},
     "mode.height": {"quantum": 0.0001},
-    "rtcmOut": {
-      "missing": [
-        {"missing": ["1005", "1074", "1084", "1094", "1114", "1124"], "request": ["MSM4", "ARP"]},
-        {"missing": ["1077", "1087", "1097", "1117", "1127"], "request": ["MSM7"]}
-      ]
-    },
+    "rtcmOut": {"missing": [{"missing": ["1005"], "request": ["MSM4", "ARP"]}]},
     "saveGranularity": {"singleGroup": true},
     "signals": {
       "signalSet": {

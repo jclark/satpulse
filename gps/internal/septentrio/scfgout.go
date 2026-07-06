@@ -46,6 +46,14 @@ func (np *nativeProps) parseNMEAOutput(r *Reply) {
 	np.nmeaStream = parseStreamState(r, "NMEAOutput")
 }
 
+func (np *nativeProps) parseRTCMv3Output(r *Reply) {
+	f := findState(r, "RTCMv3Output")
+	if len(f) < 3 {
+		return
+	}
+	np.rtcmOutput = signalList(f[2])
+}
+
 func parseStreamState(r *Reply, name string) *streamState {
 	f := findState(r, name)
 	if len(f) < 5 || f[1] != ownStream {
@@ -195,6 +203,18 @@ var nmeaFlagSentences = []struct {
 	{gpsprot.NMEAMsgGLL, "GLL"},
 }
 
+var nmeaSentenceClass = []string{"RMC", "GGA", "GSA", "GSV", "ZDA", "VTG", "GLL"}
+
+func nmeaSentences(f gpsprot.NMEAMsgFlags) []string {
+	var names []string
+	for _, e := range nmeaFlagSentences {
+		if f&e.flag != 0 {
+			names = append(names, e.name)
+		}
+	}
+	return names
+}
+
 // rtcmMessages returns the RTCMv3 message list realizing the flags. The
 // MSM4/MSM7 aliases expand receiver-side to the per-constellation message
 // set (verified: 1074-1134 for MSM4, including QZSS), so enabled-GNSS
@@ -215,11 +235,17 @@ func rtcmMessages(f gpsprot.RTCMMsgFlags) []string {
 	return m
 }
 
+var rtcmMessageClass = []string{
+	"MSM4", "MSM7", "RTCM1005", "RTCM1006",
+	"RTCM1074", "RTCM1084", "RTCM1094", "RTCM1104", "RTCM1114", "RTCM1124", "RTCM1134",
+	"RTCM1077", "RTCM1087", "RTCM1097", "RTCM1107", "RTCM1117", "RTCM1127", "RTCM1137",
+}
+
 // generateOutputReqs realizes the message output options on the owned
-// streams and this connection's RTCM output list. A stream write is one
-// self-contained command (port, complete list, 1 Hz); the acked state line
-// is the readback. Actual RTCM emission additionally requires base mode and
-// a reference position - observation, not enablement, is the evidence.
+// streams and this connection's RTCM output list. Message-list commands select
+// content; setDataInOut gates whether that wire protocol can leave this port.
+// Actual RTCM emission also requires base mode and a reference position -
+// observation, not enablement, is the evidence.
 func (c *Configurator) generateOutputReqs() {
 	np := &c.np
 	if c.touchesSBFOutput() {
@@ -230,32 +256,65 @@ func (c *Configurator) generateOutputReqs() {
 			np.parseSBFOutput)
 	}
 	if c.target.Opts.NMEAMsg.IsSet() {
-		var names []string
 		f := c.target.Opts.NMEAMsg.Get()
-		for _, e := range nmeaFlagSentences {
-			if f&e.flag != 0 {
-				names = append(names, e.name)
+		names := nmeaSentences(f)
+		if len(names) > 0 {
+			if f&gpsprot.NMEAMsgOther != 0 && np.nmeaStream != nil {
+				names = outputList(np.nmeaStream.messages, names, nmeaSentenceClass)
 			}
-		}
-		if len(names) == 0 {
-			c.addReq("setNMEAOutput, "+ownStream+", , none", np.parseNMEAOutput)
-		} else {
 			c.addReq("setNMEAOutput, "+ownStream+", "+c.port+", "+strings.Join(names, "+")+", sec1",
 				np.parseNMEAOutput)
 		}
+		c.addOutputProtoReq("NMEA", f&gpsprot.NMEAMsgAny != 0)
 	}
 	if c.target.Opts.RTCMMsg.IsSet() {
-		list := rtcmMessages(c.target.Opts.RTCMMsg.Get())
-		if c.caps.rtcmV3Base() {
-			c.addReq("setRTCMv3Output, "+c.port+", "+listOrNone(strings.Join(list, "+")), nil)
-		} else if len(list) > 0 {
-			// The capability is absent, so the request fails before the wire:
-			// a message request has no property through which the absence
-			// could show (SEMANTICS.md). An empty selection needs nothing.
-			c.append(&sReq{state: sStateFailed, cmd: "setRTCMv3Output",
-				err: errors.New("RTCM message output not supported by this receiver")})
+		f := c.target.Opts.RTCMMsg.Get()
+		enable := f&gpsprot.RTCMMsgAny != 0
+		list := rtcmMessages(f)
+		if !c.caps.rtcmV3Base() {
+			if enable {
+				// The capability is absent, so the request fails before the wire:
+				// a message request has no property through which the absence
+				// could show (SEMANTICS.md). An empty selection still disables
+				// the port protocol mask.
+				c.append(&sReq{state: sStateFailed, cmd: "setRTCMv3Output",
+					err: errors.New("RTCM message output not supported by this receiver")})
+			} else {
+				c.addOutputProtoReq("RTCMv3", false)
+			}
+			return
+		}
+		if len(list) > 0 {
+			if f&gpsprot.RTCMMsgOther != 0 {
+				list = outputList(np.rtcmOutput, list, rtcmMessageClass)
+			}
+			c.addReq("setRTCMv3Output, "+c.port+", "+strings.Join(list, "+"), np.parseRTCMv3Output)
+		}
+		c.addOutputProtoReq("RTCMv3", enable)
+	}
+}
+
+func (c *Configurator) addOutputProtoReq(proto string, enable bool) {
+	op := "-"
+	if enable {
+		op = "+"
+	}
+	c.addReq("setDataInOut, "+c.port+", , "+op+proto, nil)
+}
+
+func outputList(cur, desired, class []string) []string {
+	var out []string
+	for _, v := range cur {
+		if !slices.Contains(class, v) && !slices.Contains(out, v) {
+			out = append(out, v)
 		}
 	}
+	for _, v := range desired {
+		if !slices.Contains(out, v) {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // intersect returns the elements of list that are in class.
