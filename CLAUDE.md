@@ -100,7 +100,7 @@ System testing on real hardware is doing using ansible in `systest/` directory.
 - Only create a branch when explicitly instructed to. Otherwise commit on the current branch, including the default branch.
 - Prefer merge to rebase. Never rebase unless explicitly told to (the repo is checked out on multiple machines with different hardware, so rewriting shared history causes conflicts). Integrate diverged branches with `git merge`, not `git rebase` or `git pull --rebase`.
 - When a commit completely resolves an issue, make `Fixes #N` (with the issue number) the last line of the commit message, so the issue closes when the commit merges.
-- Never add a link to a chat/conversation, or any "Generated with Claude Code" / co-authored-by attribution, to a commit message, PR description, or issue. These are public; linking a private chat leaks it. This content must describe only the change itself.
+- Never mention Claude, Claude Code, or any other AI agent or tool anywhere in a commit message, PR description, or issue - no co-authorship, attribution, "Generated with ..." line, chat/session link, emoji marker, or reference of any kind. These are public, so a private-chat link leaks it, and the history must read as the author's own work. Describe only the change itself.
 
 ## Development environment
 
