@@ -93,9 +93,13 @@ left as found. Process:
   All three Allystar finds were real too: silicon signal coupling
   that made syntax-equivalent requests achieve different sets; a
   complete RTCM request silencing broadcast-ephemeris output the
-  option could not re-enable (out-of-group targets must be left
-  alone); and an erratic PPS disable that forced readback
-  verification of time-pulse sets.
+  option could not re-enable; and an erratic PPS disable. A finding
+  being real does not make the reflexive fix right: all three first
+  fixes were later reversed or reworked by owner rulings (the
+  identity-plan intersection, the leave-ephemeris-alone rule, the
+  post-set verify readback - see rulings.md). Before fixing a find,
+  re-read rulings.md and SEMANTICS.md; prefer the fix that reports
+  honestly over one that compensates for the receiver.
 - Disruptive coverage (--disruptive: speed, NVM persistence) is
   required coverage too, gated; it must include recovery (rediscover
   a receiver whose speed changed; restore sane NVM). It earns its
@@ -105,6 +109,26 @@ left as found. Process:
   receiver itself is erratic (byte-identical writes, differing
   outcomes). Commit the clean non-disruptive baseline and record the
   receiver defect in the HW note instead of chasing green.
+- A shared-CLI vocabulary gap - a restore the flags cannot express (a
+  falling PPS polarity no flag names; out-of-group output before its
+  CLI exposure lands) - also makes runs fail honestly until the
+  vocabulary issue closes, and a --disruptive run's saves can PERSIST
+  the unrepresentable state into NVM. Where the shipped configuration
+  is the factory state, factory reset is the recovery. File the gap
+  as an issue, record it in the HW note, and do not chase green.
+- Baselines are per-UNIT, not per-model: a same-model replacement
+  unit can differ in factory state (one HD9510's factory PPS polarity
+  is falling, its batch replacement's rising) and in HW/SW hashes.
+  When a bench unit is swapped or replaced, recapture its baseline
+  and retire the stale one - a baseline matching no attached unit is
+  standing debt.
+- gpshwtest reads --json, which marshals per-field; the human text
+  renderer gates whole sections on COMPLETE property sets
+  (gpsprot.GetTimePulse wants all five time-pulse properties), so one
+  absent property can blank a --show-config section that JSON still
+  shows - and the ladder never sees it. Eyeball the text --show-config
+  once per receiver, and report fixed behaviors as constants rather
+  than absences (see protocol-questions.md).
 
 ## 4. Observation, not enablement
 

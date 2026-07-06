@@ -55,6 +55,13 @@ across context compaction and owner absence; reuse it.
 - `make` before EVERY hardware run of out/<arch> binaries: a hardware
   test against a stale binary once triggered a phantom-bug hunt
   through the tool plumbing (the code was fine; the binary was old).
+- Re-identify every attached unit (MON-VER) at the start of a
+  hardware session: the bench changes. Two units were found swapped
+  across USB ports, and one was later replaced by a same-model unit
+  with different HW/SW hashes and factory state. The device table in
+  CLAUDE.local.md is a cached identification, not truth. Wrong-unit
+  captures look plausible - the swap was caught only because a
+  "tau1201" trace contained no NAKs.
 - Heredoc scripts do not survive nohup backgrounding (the script gets
   mangled); write a script file and run that.
 - `pkill -f`/`pgrep -f` patterns match the invoking shell's own
