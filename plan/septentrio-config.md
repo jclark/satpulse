@@ -82,9 +82,9 @@ a `NativeMsgHandler` (stage 1).
   configurator's job.
 - **grc does not bound set enums**: `setSignalTracking, +GALE5` (E5
   AltBOC, absent from grc's supported list) is accepted and applied.
-  Do not blindly intersect requests with grc's list; intersect only
-  what the property model requires (unsupported gpsprot signals are
-  shown as absence via the ReceiverInfo signal set).
+  So on the G5 the SignalsEnabled intersection with grc's list (see
+  capability gating) is conservative, and receiver-only signals
+  preserved by read-modify-write must not be filtered against it.
 - **exeSBFOnce never emits to the issuing connection** (verified
   three blocks, raw capture; instant to another connection). The
   receiver acks and stores the request but nothing arrives, so the
@@ -230,9 +230,9 @@ derived from the target signal set (`all` when every constellation has
 signals). Achieved value: the set's own readback state line names the
 achieved list (verified immediate and exact), reported through the
 table in reverse. Requested signals with no Septentrio carrier are
-absence; requested signals outside grc's supported list are still sent
-if they map (grc does not bound the enum) and the reply tells the
-truth.
+absence; requested signals outside grc's supported list are dropped
+before the wire (see capability gating below) and the achieved set
+omits them.
 
 ### Capability-gated features
 
@@ -262,25 +262,51 @@ truth.
   PPS2 (`setPPS2Parameters`) is not exposed (cross-backend gpsprot
   API change, out of scope).
 
-**TODO: gating on capabilities is not yet implemented beyond OSNMA.**
-The probe's `getReceiverCapabilities` reply carries the authoritative
-signal list, port list, and feature flags (SBAS, DGNSSRover,
-RTKRover, RTKBase, RTCMv3x, ...), but today only OSNMA (and the PPP
-composition) is gated on it. Requested signals are NOT intersected
-with `caps.signals`, and Mode / RTCM are not gated on the RTK flags.
-So a receiver that lacks a requested feature - a timing model without
-RTK, or an older unit without a signal - is sent the command and
-refuses it (`$R?`), which fails that one request (reported to the
-caller; the rest proceed, and a refusal leaves state unchanged)
-instead of the request being dropped before the wire. The signal case
-is the sharpest: `sst`/`snt`/`snu` are three linked commands, so a
-refused `snt` leaves a partial signal state (the shape of the
-GEO-in-PVT bug gpshwtest caught, but for an unsupported *signal*
-rather than an unsupported usage slot). Implementing the gating -
-intersect requested signals with `caps.signals`, gate Mode / RTCM on
-the RTK capability flags, all data already in hand from the probe - is
-pending work, verified so far only against the mosaic-G5 (whose `grc`
-list does not bound the enums).
+- **Signals** - requested signals are intersected with the probe's
+  supported-signal list before the `sst`/`snt`/`snu` commands are
+  built (the SEMANTICS.md best-effort pipeline: absence is knowable
+  in advance, dropped silently, visible in the achieved set - the
+  ubx precedent). The intersection also protects against partial
+  state: the three commands are linked, so a refused `snt` after
+  `sst` has applied would leave a partial signal configuration (the
+  shape of the GEO-in-PVT bug gpshwtest caught). The `sst`
+  constellation gate reflects only constellations with a surviving
+  signal. The G5's `snt` enum is not bounded by its grc list
+  (verified: unadvertised `+GALE5` is accepted), so on this unit the
+  intersection is conservative - an unadvertised mapped signal would
+  have worked - but an unadvertised signal is never sent. The
+  receiver-only signals preserved by read-modify-write came from the
+  receiver itself and are not filtered.
+
+- **RTCM output** - `setRTCMv3Output` and `setRTCMv3Formatting` are
+  gated on `RTCMv3x` AND (`RTKBase` OR `DGNSSBase`). The reference
+  manual separates format from role: `RTCMv3x` is
+  "generation/decoding of RTCMv3.x corrections", `RTKBase`/
+  `DGNSSBase` are the correction-generation roles, and the
+  base-station chapter - where both commands live - applies only to
+  receivers with one of the roles. Without the capabilities,
+  `ConfigSupport()` clears the four RTCM flags (MSM4, MSM7, BaseID,
+  QZSS), the RTCMBaseID property shows absence (no query, no set),
+  and an RTCM output request fails before the wire with an
+  "output not supported" error (a message request has no property
+  through which absence could show; SEMANTICS.md records the error
+  as the current cross-backend behavior, ubx does the same). An
+  empty RTCM selection sends nothing.
+
+- **Mode** - deliberately NOT gated. No capability gates
+  `setPVTMode, Static` or `setStaticPosGeodetic`/`Cartesian`: the
+  manual's spoofing-detection chapter recommends `setPVTMode,
+  Static` unconditionally (static receivers get extra consistency
+  checks), so Static is a general positioning mode, not a
+  base-station privilege - the base capabilities gate correction
+  *generation* (the RTCM commands above), not static positioning.
+  The capability-dependent `RoverMode` values (SBAS, DGNSS,
+  RTKFloat/Fixed, PPP) are never sent: a rover set omits the
+  RoverMode argument, preserving the receiver's own list.
+
+Gating is verified offline against a trimmed capability line; the
+mosaic-G5 advertises every capability and signal in the coarse table,
+so none of the drop paths fire on it.
 
 ### Message output control and stream ownership
 
