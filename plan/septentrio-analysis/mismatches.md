@@ -1,6 +1,6 @@
-# Model mismatches
+# Septentrio configuration-model mismatches
 
-Places where the device-independent configuration model (`gps/gpsprot.ConfigTarget`/`ConfigProps`, semantics in `SEMANTICS.md`) fits a receiver's own configuration concepts awkwardly. These are candidates for model improvements, each separate cross-backend work; none is a defect in a backend, which must realize the model as it stands and show the rest as absence. Collected during the Septentrio mosaic-G5 bring-up (#341); add to this file as other bring-ups find more.
+Places where the device-independent configuration model (`gps/gpsprot.ConfigTarget`/`ConfigProps`, semantics in `gpshwtest/SEMANTICS.md`) fits Septentrio configuration concepts awkwardly, found during the mosaic-G5 bring-up (#341). Each is a candidate for a model improvement and separate cross-backend work; none is a defect in the backend, which realizes the model as it stands and shows the rest as absence.
 
 ## Corrections / PPP has no property
 
