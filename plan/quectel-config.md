@@ -221,9 +221,12 @@ protocol-questions.md:
    tracked and used in the fix >15 s; the setting took effect only
    after PQTMSAVEPAR + PQTMSRR (verified both directions). Owner
    ruling needed on how SignalsEnabled maps onto apply-at-restart
-   semantics (see PROGRESS.md). Live-vs-restart still untested for:
-   message rates, PPS, FIXRATE, ELETHD, RCVRMODE (message-file
-   history says rates/PPS/fixed-pos apply live).
+   semantics (see PROGRESS.md). Effect-timing table so far: LIVE =
+   CFGMSGRATE, CFGELETHD, CFGPROT (all observed immediate);
+   RESTART-ONLY = CFGSIGNAL, CFGCNST (verified applied after
+   SAVEPAR+SRR), CFGFIXRATE (stored, output unchanged after 9 s;
+   restart-apply presumed). Still untested: PPS (no pin
+   instrumentation this bench), RCVRMODE, RTCM, RSID.
 5. Baud-change handshake: at which rate does the CFGUART OK arrive;
    timing of the switch; confirm at the new rate with a solicited
    distinct-name query; does a saved rate re-apply after SRR? No
@@ -238,18 +241,26 @@ protocol-questions.md:
    (saved state was in effect after reboot). Still open: SAVEPAR
    coverage, RESTOREPAR, COLD/WARM/HOT effects, boot banner
    details, restart-discards-unsaved-changes confirmation.
-7. CFGPROT trap: if OutputProt's NMEA bit is cleared on the active
-   port, do PQTM command responses still arrive, or does the
-   configurator saw off the branch it sits on? Same question for
-   InputProt (can commands still be sent?).
+7. ANSWERED (output side). Clearing OutputProt's NMEA bit on the
+   active port silences all periodic output immediately but PQTM
+   command responses still arrive (set OK and get responses
+   verified) - no saw-off risk on output. InputProt on the active
+   port deliberately untested: lockout risk with no second UART
+   wired; treat as unknown and never clear it on the active port.
 8. Survey/base interplay: does CFGSVIN work in rover mode
    (ERROR,2?); what does RCVRMODE=2 actually change (LSTMSG dump
    before/after; NMEA off? MSM4+1005 on? fix rate forced 1 Hz);
    PQTMSVINSTATUS on R02A01S (message file says broken - retest);
    how survey completion manifests (Valid flag transition; does the
    result transfer into CFGSVIN readback?).
-9. LSTMSG as as-found read: exact dump format, End terminator,
-   whether disabled messages appear; CLRMSG semantics.
+9. MOSTLY ANSWERED. LSTMSG (bare, current port) dumps one
+   `,OK,1,1,<MsgName>,<Rate>[,<MsgVer>]` line per ENABLED message
+   only - disabled messages vanish (no rate-0 entries), so the
+   as-found read cannot distinguish "disabled" from "nonexistent";
+   terminator `,OK,End`. One dump line was observed aborted
+   mid-sentence with the dump restarting (rare, ~1 in 12); a reader
+   keys on End and re-issues if an entry may have been lost.
+   CLRMSG untested.
 10. PPS vs PPS2: do both address the same underlying state on
     R02A01S; Userdelay readback semantics (register only - no pin
     instrumentation planned; word findings accordingly).
