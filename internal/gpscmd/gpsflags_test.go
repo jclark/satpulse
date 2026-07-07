@@ -444,7 +444,7 @@ func TestParseFlagsConfigSupport(t *testing.T) {
 		{"except-signal", []string{"--gnss", "GPS", "--except-signal", "GPSL1C"}, gpsprot.ConfigSupportSignal, 0},
 		{"survey default accuracy", []string{"--survey"}, gpsprot.ConfigSupportSurvey, 0},
 		{"survey explicit accuracy", []string{"--survey", "--survey-acc", "5.5"}, gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc, 0},
-		{"survey time", []string{"--survey", "--survey-time", "300"}, gpsprot.ConfigSupportSurvey, 0},
+		{"survey time", []string{"--survey", "--survey-time", "300"}, gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyDur, 0},
 		{"pvt survey", []string{"--pvt-out", "survey"}, gpsprot.ConfigSupportSurveyMsg, 0},
 		{"pvt ptp", []string{"--pvt-out", "ptp"}, gpsprot.ConfigSupportSurveyMsg, 0},
 		{"pvt ntp", []string{"--pvt-out", "ntp"}, gpsprot.ConfigSupportSurveyMsg, 0},
