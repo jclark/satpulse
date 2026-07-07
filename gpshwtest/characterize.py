@@ -136,13 +136,8 @@ def characterize_signals(obs: list[SignalObservation]) -> dict[str, Any] | None:
 
 
 def signal_syntax_request(o: SignalObservation) -> dict[str, Any]:
-    """The GNSS/band request syntax, omitting fields that were not present."""
-    req: dict[str, Any] = {}
-    if o.gnss is not None:
-        req["gnss"] = o.gnss
-    if o.band is not None:
-        req["band"] = o.band
-    return req
+    """The GNSS request syntax, omitting fields that were not present."""
+    return {"gnss": o.gnss} if o.gnss is not None else {}
 
 
 def supported_signals(obs: list[SignalObservation]) -> tuple[SignalMap, list[dict[str, Any]]]:
@@ -152,7 +147,7 @@ def supported_signals(obs: list[SignalObservation]) -> tuple[SignalMap, list[dic
     for o in obs:
         if o.error is not None or o.achieved is None:
             continue
-        if "discover" not in o.tags and not (o.syntax == "gnss" and o.band is None):
+        if "discover" not in o.tags and o.syntax != "gnss":
             continue
         for c, sigs in normalize_signal_map(o.achieved).items():
             if c in supported and supported[c] != sigs:

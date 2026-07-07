@@ -38,6 +38,21 @@ receiver tells us is what we report." The CASIC V5 NavSystem=0
 ACK-and-ignore readback is the same wrong pattern - fix it when that
 branch is next touched.
 
+## Identity strings do not enumerate capability
+
+Do not key capability on a hardware-identity table where the identity
+does not determine the capability. Incident: to tame the TAU1302's
+signal coupling, the Allystar configurator intersected signal requests
+with a per-chip signal plan keyed on the MON-VER chip number. Owner
+reversal: the chip number does not determine the signal plan - an
+HD9310 ships in both L1/L2 and L1/L5 variants - so the table would
+silently strip L5 from a variant it had not met (an active bug, not
+mere fragility). Write the requested mask, let the silicon clamp, and
+report the achieved set from the readback the ACK semantics already
+earn. Identity-keyed capability is legitimate only where the identity
+truly determines it: Allystar RTCM presence follows the chip FAMILY
+(HD8* none, all others present).
+
 ## Probing is state-neutral
 
 A probe must not change receiver state. Reliability comes from
@@ -87,6 +102,22 @@ master; the duplicate, divergent decode then collided on merge and cost
 a session to disentangle (revert the decode off the config branch,
 re-land it on master, merge back). Configuration enables a message; a
 separate, independently-landing change makes the stack process it.
+
+## Receiver output beyond the model gets an explicit Other member
+
+When the receiver's output of a message kind is wider than the modeled
+group, neither blanket answer survives contact: turning the extra
+targets off on every request made the TAU1302's shipped
+broadcast-ephemeris RTCM output undeliverable through the option;
+leaving them alone (the first fix) made a complete request unable to
+silence them - "none" left ephemeris flowing. Owner resolution: an
+explicit Other member in the group model. A request WITHOUT Other is
+complete over the receiver's entire output of that kind and turns the
+extra targets off (NAK-tolerant); a request WITH Other is restricted
+to the modeled group and leaves them as found. Auto must NOT include
+Other. CLI exposure of "other" is its own follow-up issue; until it
+lands, a characterization restore that needs it fails honestly (see
+verification.md).
 
 ## Semantics are never device-dependent
 
