@@ -134,6 +134,9 @@ type Configurator struct {
 	// legacy PPS query after a refused PPS2 query.
 	protQueried bool
 	needPPS     bool
+	// pps2Refused records a refused PPS2 query, so the time-pulse
+	// write never targets PPS2 on firmware that lacks it.
+	pps2Refused bool
 	// msgWantState caches the desired message-output state computed
 	// by msgWant, keyed by message name.
 	msgWantState map[string]bool
@@ -143,6 +146,7 @@ type configPhase int
 
 const (
 	phaseQuery configPhase = iota // reading as-found state
+	phaseSet                      // property sets
 	phaseMsg                      // message-output rate sets
 	phaseFinal
 )
@@ -222,6 +226,10 @@ func (c *Configurator) GenerateRequests() error {
 			func(m qtmmsg.CfgMsg) { c.found.prot = m.(*qtmmsg.CfgProt) }))
 	}
 	if c.phase == phaseQuery && c.allFinal() {
+		c.phase = phaseSet
+		c.generatePropSets()
+	}
+	if c.phase == phaseSet && c.allFinal() {
 		c.phase = phaseMsg
 		c.generateMsgSets()
 	}
@@ -241,6 +249,7 @@ func (c *Configurator) generateQueries() {
 			func(m qtmmsg.CfgMsg) { c.found.pps2 = m.(*qtmmsg.CfgPPS2) })
 		pps2.onError = func(rc qtmmsg.ResponseClass) bool {
 			c.needPPS = true
+			c.pps2Refused = true
 			return true
 		}
 		c.reqs = append(c.reqs, pps2)

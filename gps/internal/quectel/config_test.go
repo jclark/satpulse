@@ -322,6 +322,108 @@ func TestConfiguratorSatsMsgUnion(t *testing.T) {
 	}
 }
 
+// TestConfiguratorPropSets checks the property set paths: elevation
+// and base ID writes with acknowledged assumed state, and the
+// time-pulse read-modify-write choosing the legacy PPS form (which
+// preserves the PPS2-only fields).
+func TestConfiguratorPropSets(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGELETHD,W,10.0"] = []string{"PQTMCFGELETHD,OK"}
+	responses["PQTMCFGRSID,W,1024"] = []string{"PQTMCFGRSID,OK"}
+	responses["PQTMCFGPPS,W,1,1,200,2,1,0"] = []string{"PQTMCFGPPS,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetMinElevation(gpsprot.DegreesFromFloat(10))
+	target.Props.SetRTCMBaseID(1024)
+	target.Props.SetTimePulseWidth(200 * time.Millisecond)
+	target.Props.SetTimePulseOnlyWhenLocked(true)
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	expect := []string{
+		"PQTMCFGELETHD,W,10.0",
+		"PQTMCFGRSID,W,1024",
+		"PQTMCFGPPS,W,1,1,200,2,1,0",
+	}
+	if got := wSent(sent); !reflect.DeepEqual(got, expect) {
+		t.Errorf("sets sent:\ngot  %v\nwant %v", got, expect)
+	}
+	props := c.ConfigProps()
+	if v, ok := props.GetMinElevation(); !ok || v.Degrees() != 10 {
+		t.Errorf("MinElevation = %v, %v", v, ok)
+	}
+	if v, ok := props.GetRTCMBaseID(); !ok || v != 1024 {
+		t.Errorf("RTCMBaseID = %v, %v", v, ok)
+	}
+	tp, ok := props.GetTimePulse()
+	expectTP := gpsprot.TimePulse{
+		Width:          200 * time.Millisecond,
+		Period:         time.Second, // preserved PPS2 field
+		AlignToGNSS:    true,
+		OnlyWhenLocked: true,
+		PolarityRising: true,
+	}
+	if !ok || tp != expectTP {
+		t.Errorf("TimePulse = %+v, %v, want %+v", tp, ok, expectTP)
+	}
+}
+
+// TestConfiguratorPropSetsNoChange checks that properties already at
+// their requested values generate no sets at all.
+func TestConfiguratorPropSetsNoChange(t *testing.T) {
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetMinElevation(gpsprot.DegreesFromFloat(5))
+	target.Props.SetRTCMBaseID(290)
+	target.Props.SetTimePulseWidth(100 * time.Millisecond)
+	target.Props.SetTimePulsePolarityRising(true)
+	_, errCount, sent := runConfigTarget(t, target, fakeResponses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if got := wSent(sent); got != nil {
+		t.Errorf("unexpected sets: %v", got)
+	}
+}
+
+// TestConfiguratorPPSDisable checks that a zero width disables the
+// pulse with the truncated form the spec requires.
+func TestConfiguratorPPSDisable(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGPPS,W,1,0"] = []string{"PQTMCFGPPS,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetTimePulseWidth(0)
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if got := wSent(sent); !reflect.DeepEqual(got, []string{"PQTMCFGPPS,W,1,0"}) {
+		t.Errorf("sets sent: %v", got)
+	}
+	props := c.ConfigProps()
+	if v, ok := props.GetTimePulseWidth(); !ok || v != 0 {
+		t.Errorf("TimePulseWidth = %v, %v, want 0", v, ok)
+	}
+}
+
+// TestConfiguratorPPS2Period checks that a non-default period selects
+// the PPS2 form with the full extended tuple.
+func TestConfiguratorPPS2Period(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGPPS2,W,1,1,100,1,1,0,2000,0,1,0,0,0"] = []string{"PQTMCFGPPS2,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetTimePulsePeriod(2 * time.Second)
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if got := wSent(sent); !reflect.DeepEqual(got, []string{"PQTMCFGPPS2,W,1,1,100,1,1,0,2000,0,1,0,0,0"}) {
+		t.Errorf("sets sent: %v", got)
+	}
+	if v, ok := c.ConfigProps().GetTimePulsePeriod(); !ok || v != 2*time.Second {
+		t.Errorf("TimePulsePeriod = %v, %v", v, ok)
+	}
+}
+
 // TestConfiguratorSilentReceiver checks that unanswered queries fail
 // through the retry budget without deadlocking the director.
 func TestConfiguratorSilentReceiver(t *testing.T) {
