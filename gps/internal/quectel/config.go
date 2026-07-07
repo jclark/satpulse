@@ -145,9 +145,14 @@ type Configurator struct {
 type configPhase int
 
 const (
-	phaseQuery configPhase = iota // reading as-found state
-	phaseSet                      // property sets
-	phaseMsg                      // message-output rate sets
+	phaseQuery   configPhase = iota // reading as-found state
+	phaseSet                        // property sets
+	phaseMsg                        // message-output rate sets
+	phaseNVM                        // PQTMSAVEPAR, after everything it must persist
+	phaseReset                      // PQTMRESTOREPAR, which acknowledges
+	phaseRestart                    // PQTMSRR/PQTMCOLD, which answer nothing; last,
+	// so a restart never races an acknowledgement (stage-0 lesson:
+	// pipelining SAVEPAR with SRR destroys the save's OK)
 	phaseFinal
 )
 
@@ -179,6 +184,7 @@ type request struct {
 	payload  string      // NMEA payload between $ and *
 	sentence string      // correlation key: the sentence name
 	multi    bool        // multi-line response (LSTMSG); MaybeComplete on first line
+	noReply  bool        // resets: answer nothing, succeed when sent
 	speed    int         // new baud rate to switch to after sending (0 if none)
 	onOK     func()                     // called on a bare OK acknowledgement
 	onOKData func(payload string) error // called with the full response payload
@@ -234,6 +240,31 @@ func (c *Configurator) GenerateRequests() error {
 		c.generateMsgSets()
 	}
 	if c.phase == phaseMsg && c.allFinal() {
+		c.phase = phaseNVM
+		if c.target.Opts.Save != gpsprot.SaveNone {
+			c.reqs = append(c.reqs, &request{phase: phaseNVM,
+				payload: "PQTMSAVEPAR", sentence: "PQTMSAVEPAR"})
+		}
+	}
+	if c.phase == phaseNVM && c.allFinal() {
+		c.phase = phaseReset
+		if c.target.Opts.Reset == gpsprot.ResetFactory {
+			c.reqs = append(c.reqs, &request{phase: phaseReset,
+				payload: "PQTMRESTOREPAR", sentence: "PQTMRESTOREPAR"})
+		}
+	}
+	if c.phase == phaseReset && c.allFinal() {
+		c.phase = phaseRestart
+		switch c.target.Opts.Reset {
+		case gpsprot.ResetReload, gpsprot.ResetFactory:
+			c.reqs = append(c.reqs, &request{phase: phaseRestart,
+				payload: "PQTMSRR", sentence: "PQTMSRR", noReply: true})
+		case gpsprot.ResetCold:
+			c.reqs = append(c.reqs, &request{phase: phaseRestart,
+				payload: "PQTMCOLD", sentence: "PQTMCOLD", noReply: true})
+		}
+	}
+	if c.phase == phaseRestart && c.allFinal() {
 		c.phase = phaseFinal
 		c.complete = true
 	}
@@ -477,11 +508,14 @@ func (r *request) GetError() error {
 	return r.err
 }
 
-// SetSentTime records the transmit time and moves the request to
-// AwaitingResponse. Every PQTM request in this configurator expects a
-// response.
+// SetSentTime records the transmit time. A noReply request (reset)
+// succeeds when sent; everything else awaits its response.
 func (r *request) SetSentTime(tSent time.Time) {
 	r.tBase = tSent
+	if r.noReply {
+		r.state = gpsprot.ConfigRequestSucceeded
+		return
+	}
 	r.state = gpsprot.ConfigRequestAwaitingResponse
 }
 

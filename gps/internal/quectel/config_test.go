@@ -485,6 +485,41 @@ func TestConfiguratorRTCMMSM7(t *testing.T) {
 	}
 }
 
+// TestConfiguratorSaveReload checks the NVM operations: SAVEPAR
+// completes on its acknowledgement before the unacknowledged SRR
+// goes out (phase-ordered, never pipelined - a reset would destroy
+// the save's OK).
+func TestConfiguratorSaveReload(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMSAVEPAR"] = []string{"PQTMSAVEPAR,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.Save = gpsprot.SaveAll
+	target.Opts.Reset = gpsprot.ResetReload
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if n := len(sent); n < 2 || sent[n-2] != "PQTMSAVEPAR" || sent[n-1] != "PQTMSRR" {
+		t.Errorf("tail of sent = %v, want [... PQTMSAVEPAR PQTMSRR]", sent[max(0, len(sent)-3):])
+	}
+}
+
+// TestConfiguratorFactoryReset checks the factory sequence: the
+// acknowledged PQTMRESTOREPAR completes before the PQTMSRR restart.
+func TestConfiguratorFactoryReset(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMRESTOREPAR"] = []string{"PQTMRESTOREPAR,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.Reset = gpsprot.ResetFactory
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if n := len(sent); n < 2 || sent[n-2] != "PQTMRESTOREPAR" || sent[n-1] != "PQTMSRR" {
+		t.Errorf("tail of sent = %v, want [... PQTMRESTOREPAR PQTMSRR]", sent[max(0, len(sent)-3):])
+	}
+}
+
 // TestConfiguratorSilentReceiver checks that unanswered queries fail
 // through the retry budget without deadlocking the director.
 func TestConfiguratorSilentReceiver(t *testing.T) {
