@@ -424,6 +424,67 @@ func TestConfiguratorPPS2Period(t *testing.T) {
 	}
 }
 
+// TestConfiguratorRTCMAuto checks RTCMMsgAuto: ARP and the MSM
+// families enable (MSM sets carry the required offset field), and no
+// CFGRTCM write is needed since the as-found MSM type is already 4.
+func TestConfiguratorRTCMAuto(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGMSGRATE,W,RTCM3-1005,1"] = []string{"PQTMCFGMSGRATE,OK"}
+	for _, name := range rtcmMSMNames {
+		responses["PQTMCFGMSGRATE,W,"+name+",1,0"] = []string{"PQTMCFGMSGRATE,OK"}
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgAuto)
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	expect := []string{
+		"PQTMCFGMSGRATE,W,RTCM3-1005,1",
+		"PQTMCFGMSGRATE,W,RTCM3-107X,1,0",
+		"PQTMCFGMSGRATE,W,RTCM3-108X,1,0",
+		"PQTMCFGMSGRATE,W,RTCM3-109X,1,0",
+		"PQTMCFGMSGRATE,W,RTCM3-111X,1,0",
+		"PQTMCFGMSGRATE,W,RTCM3-112X,1,0",
+		"PQTMCFGMSGRATE,W,RTCM3-113X,1,0",
+	}
+	if got := wSent(sent); !reflect.DeepEqual(got, expect) {
+		t.Errorf("sets sent:\ngot  %v\nwant %v", got, expect)
+	}
+	if !c.msgEnabled("RTCM3-1005") || !c.msgEnabled("RTCM3-112X") {
+		t.Error("RTCM messages missing from assumed state")
+	}
+}
+
+// TestConfiguratorRTCMMSM7 checks that requesting MSM7 rewrites
+// CFGRTCM with the new MSM type over the as-found tuple.
+func TestConfiguratorRTCMMSM7(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGMSGRATE,W,RTCM3-1005,1"] = []string{"PQTMCFGMSGRATE,OK"}
+	for _, name := range rtcmMSMNames {
+		responses["PQTMCFGMSGRATE,W,"+name+",1,0"] = []string{"PQTMCFGMSGRATE,OK"}
+	}
+	responses["PQTMCFGRTCM,W,7,0,-90.0,07,06,1,0"] = []string{"PQTMCFGRTCM,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgAutoMSM7)
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	found := false
+	for _, p := range wSent(sent) {
+		if p == "PQTMCFGRTCM,W,7,0,-90.0,07,06,1,0" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("CFGRTCM MSM7 write not sent: %v", wSent(sent))
+	}
+	if c.found.rtcm.MSMType != 7 {
+		t.Errorf("assumed MSMType = %d, want 7", c.found.rtcm.MSMType)
+	}
+}
+
 // TestConfiguratorSilentReceiver checks that unanswered queries fail
 // through the retry budget without deadlocking the director.
 func TestConfiguratorSilentReceiver(t *testing.T) {
