@@ -9,6 +9,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nmea"
+	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
 )
 
@@ -520,6 +521,111 @@ func TestConfiguratorSignalsSaveReload(t *testing.T) {
 	}
 	if v, ok := c.ConfigProps().GetSignalsEnabled(); !ok || v != lg290pDefaultSignals&^gpsprot.SigSetGLO {
 		t.Errorf("SignalsEnabled = %v, %v", v, ok)
+	}
+}
+
+// TestConfiguratorModeNoSaveReset checks the restart-only ruling for
+// the positioning mode: without an explicit save plus restart, mode
+// sets are silently omitted.
+func TestConfiguratorModeNoSaveReset(t *testing.T) {
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetMode(gpsprot.Mode{Static: true})
+	target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second, AccLimit: 2 * gpsprot.Meter}
+	_, errCount, sent := runConfigTarget(t, target, fakeResponses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if got := wSent(sent); len(got) != 0 {
+		t.Errorf("sets sent without save+restart: %v", got)
+	}
+}
+
+// TestConfiguratorModeSurvey checks the survey mode set: base receiver
+// mode plus a survey-in SVIN tuple carrying the survey parameters,
+// ordered before the save.
+func TestConfiguratorModeSurvey(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGRCVRMODE,W,2"] = []string{"PQTMCFGRCVRMODE,OK"}
+	responses["PQTMCFGSVIN,W,1,300,2.3,0.0000,0.0000,0.0000"] = []string{"PQTMCFGSVIN,OK"}
+	responses["PQTMSAVEPAR"] = []string{"PQTMSAVEPAR,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetMode(gpsprot.Mode{Static: true})
+	target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second,
+		AccLimit: gpsprot.Length(2.3 * float64(gpsprot.Meter))}
+	target.Opts.Save = gpsprot.SaveMinimal
+	target.Opts.Reset = gpsprot.ResetReload
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	want := []string{"PQTMCFGRCVRMODE,W,2", "PQTMCFGSVIN,W,1,300,2.3,0.0000,0.0000,0.0000"}
+	if got := wSent(sent); !reflect.DeepEqual(got, want) {
+		t.Errorf("sets sent: %v, want %v", got, want)
+	}
+	if n := len(sent); n < 2 || sent[n-2] != "PQTMSAVEPAR" || sent[n-1] != "PQTMSRR" {
+		t.Errorf("tail of sent = %v, want [... PQTMSAVEPAR PQTMSRR]", sent[max(0, len(sent)-3):])
+	}
+}
+
+// TestConfiguratorModeFixedLLH checks the fixed-position set from LLH
+// coordinates: converted to ECEF for the SVIN tuple, and the achieved
+// mode reads back as a fixed ECEF position.
+func TestConfiguratorModeFixedLLH(t *testing.T) {
+	mode := gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeLLH,
+		FixedPosLLH: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(13.7318284567),
+			gpsprot.DegreesFromFloat(100.6447407891)},
+		Height: gpsprot.Length(12.34567 * float64(gpsprot.Meter))}
+	svin := fixedSvin(geopos.WGS84.LLHtoECEF(geopos.LLH{
+		Lat: mode.FixedPosLLH[0].Degrees(), Lon: mode.FixedPosLLH[1].Degrees(),
+		Height: mode.Height.Meters()}))
+	payload, err := qtmmsg.EncodeWrite(&svin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	responses := maps.Clone(fakeResponses)
+	responses[payload] = []string{"PQTMCFGSVIN,OK"}
+	responses["PQTMCFGRCVRMODE,W,2"] = []string{"PQTMCFGRCVRMODE,OK"}
+	responses["PQTMSAVEPAR"] = []string{"PQTMSAVEPAR,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetMode(mode)
+	target.Opts.Save = gpsprot.SaveMinimal
+	target.Opts.Reset = gpsprot.ResetReload
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if got := wSent(sent); !reflect.DeepEqual(got, []string{"PQTMCFGRCVRMODE,W,2", payload}) {
+		t.Errorf("sets sent: %v, want RCVRMODE + %v", got, payload)
+	}
+	got, ok := c.ConfigProps().GetMode()
+	if !ok || !got.Static || got.PosType != gpsprot.PosTypeECEF ||
+		got.FixedPosECEF[0] != gpsprot.Meters(float64(svin.ECEFX)) {
+		t.Errorf("Mode readback = %+v, %v", got, ok)
+	}
+}
+
+// TestConfiguratorModeReadback checks the effective-mode conversion:
+// a stored SVIN mode is inert in rover mode and reads back mobile,
+// while base mode with a fixed position reads back static ECEF.
+func TestConfiguratorModeReadback(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGSVIN,R"] = []string{"PQTMCFGSVIN,OK,2,0,0.0,-1132881.1234,6092270.5678,1504542.9012,0.0"}
+	c, errCount := runConfig(t, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if m, ok := c.ConfigProps().GetMode(); !ok || m.Static {
+		t.Errorf("rover-mode readback = %+v, %v, want mobile (stored SVIN is inert)", m, ok)
+	}
+	responses["PQTMCFGRCVRMODE,R"] = []string{"PQTMCFGRCVRMODE,OK,2"}
+	c, errCount = runConfig(t, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	m, ok := c.ConfigProps().GetMode()
+	if !ok || !m.Static || m.PosType != gpsprot.PosTypeECEF ||
+		m.FixedPosECEF[0] != gpsprot.Meters(-1132881.1234) {
+		t.Errorf("base-mode readback = %+v, %v, want static fixed ECEF", m, ok)
 	}
 }
 

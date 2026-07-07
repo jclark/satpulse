@@ -387,6 +387,11 @@ func logFailedProps(lg *slog.Logger, target *gpsprot.ConfigTarget, rslt *gpscfg.
 			lg.Warn("only some of the requested constellations were enabled; the receiver does not support enabling all of them")
 		}
 	}
+	if _, ok := target.Props.GetMode(); ok {
+		if rslt.ConfigSupport&gpsprot.ConfigSupportModeOnlyWithReset != 0 && !target.Opts.SavesAndResets() {
+			lg.Warn("the positioning mode was not changed: on this receiver it takes effect only after a save and reset (add --save with --reload or --reset)")
+		}
+	}
 }
 
 func printReceiverInfo(f *os.File, info *gpsprot.ReceiverInfo) {

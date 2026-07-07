@@ -216,6 +216,11 @@ The following options control the time mode of the receiver. In time mode, the r
 **\-\-mobile**
 : Run in a normal mode, where the position of the antenna may change. This undoes the effect of **\-\-survey**, **\-\-fixed-pos-ecef** or **\-\-fixed-pos-llh**.
 
+On some receivers, positioning-mode changes take effect only after the configuration is saved to
+non-volatile memory and the receiver is reset; such receivers show `modeOnlyWithReset` in the
+`Supports:` list. On these receivers the time-mode options above are performed only when
+**\-\-save** is combined with **\-\-reload** or **\-\-reset**, and are otherwise skipped with a warning.
+
 The following options control which messages the receiver outputs.
 
 **\-\-nmea**

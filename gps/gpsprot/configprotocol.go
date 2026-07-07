@@ -64,8 +64,12 @@ const (
 	// target without save+reset leaves them unperformed.
 	ConfigSupportSignalOnlyWithReset ConfigSupportFlags = 1 << 31
 
+	// ConfigSupportModeOnlyWithReset is the same qualifier for the
+	// positioning mode (survey and fixed position).
+	ConfigSupportModeOnlyWithReset ConfigSupportFlags = 1 << 30
+
 	// configSupportQualifiers is the set of all qualifier flags.
-	configSupportQualifiers = ConfigSupportSignalOnlyWithReset
+	configSupportQualifiers = ConfigSupportSignalOnlyWithReset | ConfigSupportModeOnlyWithReset
 )
 
 var configSupportFlagNames = [...]struct {
@@ -86,6 +90,7 @@ var configSupportFlagNames = [...]struct {
 	{ConfigSupportRTCMQZSS, "rtcmQZSS"},
 	{ConfigSupportPort, "port"},
 	{ConfigSupportSignalOnlyWithReset, "signalOnlyWithReset"},
+	{ConfigSupportModeOnlyWithReset, "modeOnlyWithReset"},
 }
 
 // Items returns the supported configuration item names in stable order.

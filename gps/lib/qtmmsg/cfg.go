@@ -269,6 +269,13 @@ type CfgCnst struct {
 func (*CfgCnst) cfgMsg()          {}
 func (*CfgCnst) Sentence() string { return "PQTMCFGCNST" }
 
+// PQTMCFGSVIN mode values.
+const (
+	SvinModeDisable  = 0
+	SvinModeSurveyIn = 1
+	SvinModeFixed    = 2 // fixed ECEF position
+)
+
 // CfgSvin represents the PQTMCFGSVIN tuple (Survey-in feature).
 // Applies only after the configuration is saved and the module
 // restarted, and only in base receiver mode. The surveyed result
@@ -298,6 +305,13 @@ func (m *CfgSvin) writeFields() ([]string, error) {
 	}
 	return fields, nil
 }
+
+// PQTMCFGRCVRMODE mode values.
+const (
+	RcvrModeUnknown = 0
+	RcvrModeRover   = 1
+	RcvrModeBase    = 2 // base station
+)
 
 // CfgRcvrMode represents the PQTMCFGRCVRMODE tuple (receiver working
 // mode). Applies only after the configuration is saved and the module

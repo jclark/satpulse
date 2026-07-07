@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
 )
 
@@ -51,6 +52,26 @@ func (f *asFound) convertToProps(props *gpsprot.ConfigProps) {
 		props.SetBaudRate(f.uart.BaudRate)
 		props.SetPort(fmt.Sprintf("UART%d", f.uart.Index))
 	}
+	if f.rcvrMode != nil && f.svin != nil {
+		var m gpsprot.Mode
+		// Position modes exist only under base receiver mode: a stored
+		// SVIN mode is inert in rover mode (hardware-verified), so the
+		// effective mode is mobile unless the receiver is a base.
+		if f.rcvrMode.Mode == qtmmsg.RcvrModeBase {
+			switch f.svin.Mode {
+			case qtmmsg.SvinModeSurveyIn:
+				m.Static = true
+			case qtmmsg.SvinModeFixed:
+				m.Static = true
+				m.PosType = gpsprot.PosTypeECEF
+				m.FixedPosECEF = gpsprot.Point3D{
+					gpsprot.Meters(float64(f.svin.ECEFX)),
+					gpsprot.Meters(float64(f.svin.ECEFY)),
+					gpsprot.Meters(float64(f.svin.ECEFZ))}
+			}
+		}
+		props.SetMode(m)
+	}
 	if f.eleThd != nil {
 		props.SetMinElevation(gpsprot.DegreesFromFloat(float64(f.eleThd.Ele)))
 	}
@@ -86,7 +107,55 @@ func (c *Configurator) generatePropSets() error {
 		}
 	}
 	c.generateSignalSets()
+	c.generateModeSet()
 	return c.generateTimePulseSet()
+}
+
+// generateModeSet builds the RCVRMODE/SVIN writes for the target's
+// positioning mode. Both are stored-only, and position modes exist
+// only under base receiver mode (hardware-verified), so the writes
+// ride the same explicit save+reset gate as signals; without it the
+// configurator silently does nothing. Entering base mode swaps the
+// per-mode message table (NMEA off, RTCM on) and forces a 1 Hz fix
+// rate; message output stays configurable live in base mode, so a
+// daemon restores its feed on its next configuration pass.
+func (c *Configurator) generateModeSet() {
+	mode, ok := c.target.Props.GetMode()
+	if !ok || c.found.rcvrMode == nil || c.found.svin == nil || !c.target.Opts.SavesAndResets() {
+		return
+	}
+	var svin qtmmsg.CfgSvin
+	rcvr := uint8(qtmmsg.RcvrModeRover)
+	if mode.Static {
+		rcvr = qtmmsg.RcvrModeBase
+		switch mode.PosType {
+		case gpsprot.PosTypeECEF:
+			svin = fixedSvin(geopos.ECEF{mode.FixedPosECEF[0].Meters(),
+				mode.FixedPosECEF[1].Meters(), mode.FixedPosECEF[2].Meters()})
+		case gpsprot.PosTypeLLH:
+			svin = fixedSvin(geopos.WGS84.LLHtoECEF(geopos.LLH{
+				Lat: mode.FixedPosLLH[0].Degrees(), Lon: mode.FixedPosLLH[1].Degrees(),
+				Height: mode.Height.Meters()}))
+		default:
+			s := &c.target.Opts.Survey
+			svin = qtmmsg.CfgSvin{Mode: qtmmsg.SvinModeSurveyIn,
+				CfgCnt:     uint32(s.MinDur / time.Second),
+				AccLimit3D: qtmmsg.Fixed1(s.AccLimit.Meters())}
+		}
+	}
+	if c.found.rcvrMode.Mode != rcvr {
+		m := &qtmmsg.CfgRcvrMode{Mode: rcvr}
+		c.reqs = append(c.reqs, c.propSet(m, func() { c.found.rcvrMode = m }))
+	}
+	if *c.found.svin != svin {
+		m := svin
+		c.reqs = append(c.reqs, c.propSet(&m, func() { c.found.svin = &m }))
+	}
+}
+
+func fixedSvin(p geopos.ECEF) qtmmsg.CfgSvin {
+	return qtmmsg.CfgSvin{Mode: qtmmsg.SvinModeFixed, ECEFX: qtmmsg.Fixed4(p[0]),
+		ECEFY: qtmmsg.Fixed4(p[1]), ECEFZ: qtmmsg.Fixed4(p[2])}
 }
 
 // generateSignalSets builds the CFGSIGNAL/CFGCNST writes for the
