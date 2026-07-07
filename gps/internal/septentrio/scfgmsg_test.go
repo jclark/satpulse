@@ -63,6 +63,15 @@ func TestSBFOutputList(t *testing.T) {
 			expect: []string{"ChannelStatus", "EndOfPVT", "PVTGeodetic", "xPPSOffset"},
 		},
 		{
+			name:    "raw navdata excludes the pvt-owned Utc blocks",
+			current: nil,
+			opts: func(o *gpsprot.ConfigOptions) {
+				o.RawMsg.Set(gpsprot.RawMsgNavData)
+			},
+			expect: []string{"BDSIon", "BDSNav", "GALIon", "GALNav", "GEONav", "GLONav",
+				"GLOTime", "GPSCNav", "GPSIon", "GPSNav", "NavICLNav", "QZSNav"},
+		},
+		{
 			name:    "unclassified user block is preserved",
 			current: []string{"AttEuler", "PVTGeodetic"},
 			opts: func(o *gpsprot.ConfigOptions) {

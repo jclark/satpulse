@@ -27,7 +27,9 @@ import (
 // EndOfPVT (epoch), ChannelStatus (+MeasEpoch for signal strengths). Raw
 // output additionally enables MeasExtra and the navigation-data blocks,
 // which the stack does not decode: enabling them is configuration for
-// external consumers; their processing is out of scope here.
+// external consumers; their processing is out of scope here. The GPS/GAL/
+// BDSUtc blocks are pvt-out's alone (they feed LeapSecondMsg), so raw
+// navdata deliberately excludes them and the two classes stay disjoint.
 
 const ownStream = "Stream1"
 
@@ -113,16 +115,16 @@ func rawBlocks(f gpsprot.RawMsgFlags) []string {
 		b = append(b, "MeasEpoch", "MeasExtra")
 	}
 	if f&gpsprot.RawMsgNavData != 0 {
-		b = append(b, "GPSNav", "GPSCNav", "GPSIon", "GPSUtc", "GLONav", "GLOTime",
-			"GALNav", "GALIon", "GALUtc", "GEONav", "BDSNav", "BDSIon", "BDSUtc",
+		b = append(b, "GPSNav", "GPSCNav", "GPSIon", "GLONav", "GLOTime",
+			"GALNav", "GALIon", "GEONav", "BDSNav", "BDSIon",
 			"QZSNav", "NavICLNav")
 	}
 	return b
 }
 
 var rawClass = []string{"MeasEpoch", "MeasExtra", "GPSNav", "GPSCNav", "GPSIon",
-	"GPSUtc", "GLONav", "GLOTime", "GALNav", "GALIon", "GALUtc", "GEONav",
-	"BDSNav", "BDSIon", "BDSUtc", "QZSNav", "NavICLNav"}
+	"GLONav", "GLOTime", "GALNav", "GALIon", "GEONav",
+	"BDSNav", "BDSIon", "QZSNav", "NavICLNav"}
 
 // touchesSBFOutput reports whether the target changes the owned SBF stream.
 func (c *Configurator) touchesSBFOutput() bool {
