@@ -21,7 +21,7 @@ The program must cover the entire documented high-level configuration vocabulary
 - Time pulse (`--pps`)
 - Antenna cable delay (`--ant-cable-delay`)
 - Minimum elevation (`--min-elev`)
-- Positioning mode: mobile, survey with time/accuracy, fixed ECEF, fixed LLH, position accuracy (`--mobile`, `--survey`, `--survey-time`, `--survey-acc`, `--fixed-pos-ecef`, `--fixed-pos-llh`, `--fixed-pos-acc`)
+- Positioning mode: mobile, survey with time/accuracy, fixed ECEF, fixed LLH, position accuracy (`--mobile`, `--survey`, `--survey-time`, `--survey-acc`, `--fixed-pos-ecef`, `--fixed-pos-llh`, `--fixed-pos-acc`) [disruptive on receivers whose `supports` list carries `modeOnlyWithReset`, like the signals case above]
 - RTCM base station ID (`--rtcm-base-id`)
 - Receiver serial speed (`--speed`) [disruptive]
 - Message output (`--pvt-out`, `--sats-out`, `--nmea-out`, `--rtcm-out`, `--raw-out`, `--nmea`, `--binary`)

@@ -389,6 +389,15 @@ def family_map(supported: SignalMap,
     return normalize_signal_map({g: family(sigs) for g, sigs in supported.items()})
 
 
+def save_reset_args(enabled: bool, intent: dict[str, Any]) -> list[str]:
+    """Extra arguments making a stored-only change effective (the
+    onlyWithReset qualifiers), recorded in the step's intent."""
+    if not enabled:
+        return []
+    intent["saveReset"] = True
+    return ["--save", "--reload"]
+
+
 def first_signal(m: SignalMap) -> SignalMap:
     for g, sigs in m.items():
         if sigs:
@@ -407,10 +416,12 @@ class ProbeRun:
     line_dead: bool = False
     speed_msg_path: Path | None = None
     speed_msg_port: str = "com1"
-    # Signal changes need --save --reload to take effect (the
-    # signalOnlyWithReset qualifier). Set only on disruptive runs: it
-    # makes every signal request write NVM and reboot the receiver.
+    # Signal (mode) changes need --save --reload to take effect (the
+    # signalOnlyWithReset / modeOnlyWithReset qualifiers). Set only on
+    # disruptive runs: they make every such request write NVM and
+    # reboot the receiver.
     signal_save_reset: bool = False
+    mode_save_reset: bool = False
 
     def show_config(self, name: str, role: str,
                     prop: str | None = None) -> dict[str, Any] | None:
@@ -641,11 +652,14 @@ class ProbeRun:
     def probe_modes(self, initial: dict[str, Any]) -> None:
         """Probe each positioning-mode case, then restore the initial mode."""
         for case in MODE_CASES:
-            inv = self.tool.gps(f"set-mode-{case.name}", case.args,
-                                {"op": "set-mode", "case": case.name,
-                                 "request": case.request})
+            intent: dict[str, Any] = {"op": "set-mode", "case": case.name,
+                                      "request": case.request}
+            inv = self.tool.gps(f"set-mode-{case.name}",
+                                case.args + self.mode_save_reset_args(intent), intent)
             if transient(inv.error):
                 continue
+            if inv.error is None and self.mode_save_reset:
+                time.sleep(SAVE_RESET_SETTLE)
             cfg = self.show_config(f"readback-mode-{case.name}", "readback", "mode")
             if case.name == "fixed-ecef" and inv.error is None and cfg is not None:
                 # The RTCM base station ID means something only with a fixed
@@ -657,13 +671,17 @@ class ProbeRun:
         self.restore_mode(initial)
 
     def restore_mode(self, initial: dict[str, Any]) -> None:
-        """Set the positioning mode back to its initial readback."""
+        """Set the positioning mode back to its initial readback (and, when
+        mode changes needed --save --reload, leave NVM holding it too)."""
         mode = config_value(initial, ("mode",))
         if not isinstance(mode, dict):
             return
-        inv = self.tool.gps("restore-mode", mode_args(mode),
-                            {"op": "restore-mode", "mode": mode})
+        intent: dict[str, Any] = {"op": "restore-mode", "mode": mode}
+        inv = self.tool.gps("restore-mode",
+                            mode_args(mode) + self.mode_save_reset_args(intent), intent)
         if inv.error is None:
+            if self.mode_save_reset:
+                time.sleep(SAVE_RESET_SETTLE)
             self.show_config("verify-restore-mode", "verify-restore", "mode")
 
     def probe_signals(self, initial: dict[str, Any], supported: list[str]) -> None:
@@ -709,10 +727,12 @@ class ProbeRun:
     def signal_save_reset_args(self, intent: dict[str, Any]) -> list[str]:
         """Extra arguments making a signal change effective on a
         signalOnlyWithReset receiver, recorded in the step's intent."""
-        if not self.signal_save_reset:
-            return []
-        intent["saveReset"] = True
-        return ["--save", "--reload"]
+        return save_reset_args(self.signal_save_reset, intent)
+
+    def mode_save_reset_args(self, intent: dict[str, Any]) -> list[str]:
+        """Extra arguments making a mode change effective on a
+        modeOnlyWithReset receiver, recorded in the step's intent."""
+        return save_reset_args(self.mode_save_reset, intent)
 
     def observe(self, name: str, intent: dict[str, Any]) -> Invocation | None:
         """Capture for a few seconds; the packet log is what the receiver

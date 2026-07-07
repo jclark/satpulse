@@ -225,8 +225,17 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
         for p in PROPS:
             print(f"probing {p.name}", file=sys.stderr)
             pr.probe_scalar(p, initial)
-        print("probing positioning mode", file=sys.stderr)
-        pr.probe_modes(initial)
+        if "modeOnlyWithReset" not in supports:
+            print("probing positioning mode", file=sys.stderr)
+            pr.probe_modes(initial)
+        elif disruptive:
+            print("probing positioning mode (save+reset per case)", file=sys.stderr)
+            pr.mode_save_reset = True
+            pr.probe_modes(initial)
+        else:
+            print("skipping positioning mode: mode changes apply only with "
+                  "save+reset on this receiver (run with --disruptive)",
+                  file=sys.stderr)
         if phc is not None and use_sudo and sudo_ok():
             print(f"checking physical time pulse on {phc[0]} pin {phc[1]}", file=sys.stderr)
             pr.probe_pulse_physical(initial, phc, True)
