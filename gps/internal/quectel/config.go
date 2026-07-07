@@ -148,6 +148,7 @@ const (
 	phaseQuery   configPhase = iota // reading as-found state
 	phaseSet                        // property sets
 	phaseMsg                        // message-output rate sets
+	phaseSpeed                      // baud-rate change, before the save so a save persists the new rate
 	phaseNVM                        // PQTMSAVEPAR, after everything it must persist
 	phaseReset                      // PQTMRESTOREPAR, which acknowledges
 	phaseRestart                    // PQTMSRR/PQTMCOLD, which answer nothing; last,
@@ -240,6 +241,10 @@ func (c *Configurator) GenerateRequests() error {
 		c.generateMsgSets()
 	}
 	if c.phase == phaseMsg && c.allFinal() {
+		c.phase = phaseSpeed
+		c.generateSpeedChange()
+	}
+	if c.phase == phaseSpeed && c.allFinal() {
 		c.phase = phaseNVM
 		if c.target.Opts.Save != gpsprot.SaveNone {
 			c.reqs = append(c.reqs, &request{phase: phaseNVM,
@@ -350,6 +355,37 @@ func (c *Configurator) generateQueries() {
 func (c *Configurator) ppsQuery() *request {
 	return c.queryReq("PQTMCFGPPS,R,1", "PQTMCFGPPS",
 		func(m qtmmsg.CfgMsg) { c.found.pps = m.(*qtmmsg.CfgPPS) })
+}
+
+// generateSpeedChange appends the baud-rate change when the target
+// asks for a rate different from the as-found one. The current-port
+// CFGUART write (Index 0, baud only) produces no usable acknowledgement
+// at the old rate: the port switches ~2 ms after the request. So the
+// write carries the host speed change and succeeds when sent (noReply),
+// and a following CFGUART,R query at the new rate confirms the switch
+// and reads back the new rate (single-flight on the shared PQTMCFGUART
+// name sequences it after the write). Ordered before the NVM phase so a
+// save persists the new rate and any restart goes out at the new speed.
+func (c *Configurator) generateSpeedChange() {
+	baud, ok := c.target.Props.GetBaudRate()
+	if !ok || baud == 0 || c.found.uart == nil || baud == c.found.uart.BaudRate {
+		return
+	}
+	payload, err := qtmmsg.EncodeWrite(&qtmmsg.CfgUART{BaudRate: baud})
+	if err != nil {
+		panic(err)
+	}
+	c.reqs = append(c.reqs, &request{
+		phase:    phaseSpeed,
+		payload:  payload,
+		sentence: "PQTMCFGUART",
+		noReply:  true,
+		speed:    int(baud),
+	})
+	confirm := c.queryReq("PQTMCFGUART,R", "PQTMCFGUART",
+		func(m qtmmsg.CfgMsg) { c.found.uart = m.(*qtmmsg.CfgUART) })
+	confirm.phase = phaseSpeed
+	c.reqs = append(c.reqs, confirm)
 }
 
 // promote readies NotReady requests whose sentence name has no

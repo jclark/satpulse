@@ -56,6 +56,17 @@ func feed(t *testing.T, cp *ConfigProtocol, payload string, tm time.Time) {
 // director's error count, and the request payloads sent, in order.
 func runConfigTarget(t *testing.T, target *gpsprot.ConfigTarget, responses map[string][]string) (*Configurator, int, []string) {
 	t.Helper()
+	return runConfigTargetSeq(t, target, responses, nil)
+}
+
+// runConfigTargetSeq is runConfigTarget with an optional per-payload
+// response queue: seq[payload] holds successive response groups,
+// consumed one per request of that payload, taking precedence over the
+// static map while it lasts. It models a payload whose answer changes
+// between reads - the speed change reads PQTMCFGUART,R once at the old
+// rate (query phase) and again at the new rate (confirm).
+func runConfigTargetSeq(t *testing.T, target *gpsprot.ConfigTarget, responses map[string][]string, seq map[string][][]string) (*Configurator, int, []string) {
+	t.Helper()
 	cp := NewConfigProtocol()
 	now := time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC)
 	feed(t, cp, vernoPayload, now)
@@ -79,7 +90,12 @@ func runConfigTarget(t *testing.T, target *gpsprot.ConfigTarget, responses map[s
 			payload := string(act.Packet)
 			payload = payload[1:strings.IndexByte(payload, '*')]
 			sent = append(sent, payload)
-			for _, resp := range responses[payload] {
+			resps := responses[payload]
+			if q := seq[payload]; len(q) > 0 {
+				resps = q[0]
+				seq[payload] = q[1:]
+			}
+			for _, resp := range resps {
 				now = now.Add(time.Millisecond)
 				dir.AdvanceTimeTo(now)
 				feed(t, cp, resp, now)
@@ -482,6 +498,103 @@ func TestConfiguratorRTCMMSM7(t *testing.T) {
 	}
 	if c.found.rtcm.MSMType != 7 {
 		t.Errorf("assumed MSMType = %d, want 7", c.found.rtcm.MSMType)
+	}
+}
+
+// TestConfiguratorSpeedChange checks the baud-rate change: a
+// current-port CFGUART write carries the host speed change and gets no
+// acknowledgement (verbatim hardware: no usable ACK at the old rate,
+// the port switches ~2 ms after the request), and a following
+// CFGUART,R query at the new rate confirms the switch and reads back
+// the new rate. The change is ordered before the (absent) NVM phase.
+func TestConfiguratorSpeedChange(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	delete(responses, "PQTMCFGUART,R") // served sequentially below
+	seq := map[string][][]string{
+		"PQTMCFGUART,R": {
+			{"PQTMCFGUART,OK,1,460800,8,0,1,0"}, // query phase: as-found
+			{"PQTMCFGUART,OK,1,115200,8,0,1,0"}, // confirm at the new rate
+		},
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetBaudRate(115200)
+	c, errCount, sent := runConfigTargetSeq(t, target, responses, seq)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	// The write goes out with no response (noReply) and is immediately
+	// followed by the confirm query re-reading the UART at the new rate.
+	wi := -1
+	for i, p := range sent {
+		if p == "PQTMCFGUART,W,115200" {
+			wi = i
+		}
+	}
+	if wi < 0 {
+		t.Fatalf("speed change not sent: %v", sent)
+	}
+	if wi+1 >= len(sent) || sent[wi+1] != "PQTMCFGUART,R" {
+		t.Errorf("confirm query not sent after speed change: %v", sent[wi:])
+	}
+	if v, ok := c.ConfigProps().GetBaudRate(); !ok || v != 115200 {
+		t.Errorf("BaudRate readback = %v, %v, want 115200", v, ok)
+	}
+}
+
+// TestConfiguratorSpeedNoChange checks that a target baud equal to the
+// as-found rate generates no speed-change write and no confirm query.
+func TestConfiguratorSpeedNoChange(t *testing.T) {
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetBaudRate(460800)
+	_, errCount, sent := runConfigTarget(t, target, fakeResponses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	uartReads := 0
+	for _, p := range sent {
+		if p == "PQTMCFGUART,R" {
+			uartReads++
+		}
+		if strings.HasPrefix(p, "PQTMCFGUART,W") {
+			t.Errorf("unexpected speed change: %s", p)
+		}
+	}
+	if uartReads != 1 {
+		t.Errorf("PQTMCFGUART,R sent %d times, want 1 (query only)", uartReads)
+	}
+}
+
+// TestConfiguratorSpeedChangeSave checks the phase ordering: the speed
+// change and its confirm precede PQTMSAVEPAR, so a save persists the
+// new rate.
+func TestConfiguratorSpeedChangeSave(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	delete(responses, "PQTMCFGUART,R")
+	responses["PQTMSAVEPAR"] = []string{"PQTMSAVEPAR,OK"}
+	seq := map[string][][]string{
+		"PQTMCFGUART,R": {
+			{"PQTMCFGUART,OK,1,460800,8,0,1,0"},
+			{"PQTMCFGUART,OK,1,115200,8,0,1,0"},
+		},
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetBaudRate(115200)
+	target.Opts.Save = gpsprot.SaveAll
+	_, errCount, sent := runConfigTargetSeq(t, target, responses, seq)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	wi, si := -1, -1
+	for i, p := range sent {
+		switch p {
+		case "PQTMCFGUART,W,115200":
+			wi = i
+		case "PQTMSAVEPAR":
+			si = i
+		}
+	}
+	if wi < 0 || si < 0 || wi >= si {
+		t.Errorf("want speed change before save; W at %d, SAVEPAR at %d (%v)", wi, si, sent)
 	}
 }
 
