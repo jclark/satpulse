@@ -30,6 +30,11 @@ from tool import Invocation, Tool, ToolFailure, replay
 # been reliable on real hardware.
 SIGNAL_SETTLE = 2.0
 
+# Settle time after a signal-set change made with --save --reload (the
+# signalOnlyWithReset qualifier): the reset reboots the receiver, which
+# answers again within ~15 s on the LG290P; 20 s adds margin.
+SAVE_RESET_SETTLE = 20.0
+
 # Seconds of packet capture used to observe what the receiver emits;
 # the message kinds under test are all per-epoch (1 Hz), so this spans
 # several epochs.
@@ -402,6 +407,10 @@ class ProbeRun:
     line_dead: bool = False
     speed_msg_path: Path | None = None
     speed_msg_port: str = "com1"
+    # Signal changes need --save --reload to take effect (the
+    # signalOnlyWithReset qualifier). Set only on disruptive runs: it
+    # makes every signal request write NVM and reboot the receiver.
+    signal_save_reset: bool = False
 
     def show_config(self, name: str, role: str,
                     prop: str | None = None) -> dict[str, Any] | None:
@@ -675,23 +684,35 @@ class ProbeRun:
                                   "request": case.requested, "tags": case.tags}
         if case.gnss is not None:
             intent["gnss"] = case.gnss
-        inv = self.tool.gps(f"set-signals-{case.name}", case.args, intent)
+        inv = self.tool.gps(f"set-signals-{case.name}",
+                            case.args + self.signal_save_reset_args(intent), intent)
         if transient(inv.error):
             return None
         if inv.error is None:
-            time.sleep(SIGNAL_SETTLE)
+            time.sleep(SAVE_RESET_SETTLE if self.signal_save_reset else SIGNAL_SETTLE)
         return self.show_config(f"readback-signals-{case.name}", "readback", "signals")
 
     def restore_signals(self, initial: dict[str, Any]) -> None:
-        """Re-enable the exact initial signal set."""
+        """Re-enable the exact initial signal set (and, when signal changes
+        needed --save --reload, leave NVM holding it too)."""
         want = normalize_signal_map(config_value(initial, ("signalsEnabled",)))
         if not want:
             return
-        inv = self.tool.gps("restore-signals", ["--signal", signal_map_cli_arg(want)],
-                            {"op": "restore-signals", "want": want})
+        intent: dict[str, Any] = {"op": "restore-signals", "want": want}
+        inv = self.tool.gps("restore-signals",
+                            ["--signal", signal_map_cli_arg(want)]
+                            + self.signal_save_reset_args(intent), intent)
         if inv.error is None:
-            time.sleep(SIGNAL_SETTLE)
+            time.sleep(SAVE_RESET_SETTLE if self.signal_save_reset else SIGNAL_SETTLE)
             self.show_config("verify-restore-signals", "verify-restore", "signals")
+
+    def signal_save_reset_args(self, intent: dict[str, Any]) -> list[str]:
+        """Extra arguments making a signal change effective on a
+        signalOnlyWithReset receiver, recorded in the step's intent."""
+        if not self.signal_save_reset:
+            return []
+        intent["saveReset"] = True
+        return ["--save", "--reload"]
 
     def observe(self, name: str, intent: dict[str, Any]) -> Invocation | None:
         """Capture for a few seconds; the packet log is what the receiver

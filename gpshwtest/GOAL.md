@@ -16,7 +16,7 @@ This file defines the goal and how to measure progress toward it. It deliberatel
 
 The program must cover the entire documented high-level configuration vocabulary of `satpulsetool gps` (see `docs/man/satpulsetool-gps.1.md`). Characterization that covers only some properties is not done. The vocabulary:
 
-- Enabled signals (`--gnss`, `--band`, `--signal`, `--except-signal`)
+- Enabled signals (`--gnss`, `--band`, `--signal`, `--except-signal`) [disruptive on receivers whose `supports` list carries `signalOnlyWithReset`: there every signal change needs `--save --reload` to take effect, writing NVM and rebooting the receiver]
 - Timing constellation (`--time-gnss`)
 - Time pulse (`--pps`)
 - Antenna cable delay (`--ant-cable-delay`)
