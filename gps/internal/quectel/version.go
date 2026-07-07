@@ -35,6 +35,7 @@ var (
 	fwZDA     = fwVersion{1, 4} // GBS/GNS/GST/ZDA standard NMEA messages
 	fwRTCM33  = fwVersion{1, 4} // RTCM3-1033 message
 	fwEleThd  = fwVersion{1, 5} // PQTMCFGELETHD
+	fwQZSSL6  = fwVersion{1, 5} // PQTMCFGSIGNAL QZSS L6 bit
 	fwNAV     = fwVersion{1, 5} // PQTMNAV and PQTMEOE messages
 	fwLstMsg  = fwVersion{1, 6} // PQTMLSTMSG and PQTMCLRMSG
 	fwPPS2    = fwVersion{2, 1} // PQTMCFGPPS2

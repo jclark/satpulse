@@ -8,9 +8,45 @@ import (
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
 )
 
+// signalBits maps each PQTMCFGSIGNAL mask bit to its gpsprot signal,
+// in the sentence's field order (GPS, GLONASS, Galileo, BDS, QZSS,
+// NavIC); the slice index is the bit number.
+var signalBits = [6][]gpsprot.Signal{
+	{gpsprot.SigGPSL1CA, gpsprot.SigGPSL2C, gpsprot.SigGPSL5},
+	{gpsprot.SigGLOL1, gpsprot.SigGLOL2},
+	{gpsprot.SigGALE1, gpsprot.SigGALE5a, gpsprot.SigGALE5b, gpsprot.SigGALE6},
+	{gpsprot.SigBDSB1I, gpsprot.SigBDSB2I, gpsprot.SigBDSB3I, gpsprot.SigBDSB1C,
+		gpsprot.SigBDSB2a, gpsprot.SigBDSB2b},
+	{gpsprot.SigQZSSL1CA, gpsprot.SigQZSSL2C, gpsprot.SigQZSSL5, gpsprot.SigQZSSL6},
+	{gpsprot.SigNAVICL5},
+}
+
+func signalMasks(m *qtmmsg.CfgSignal) [6]*qtmmsg.HexByte {
+	return [6]*qtmmsg.HexByte{&m.GPSSig, &m.GLOSig, &m.GALSig, &m.BDSSig, &m.QZSSig, &m.NACSig}
+}
+
+func cnstGates(m *qtmmsg.CfgCnst) [6]*uint8 {
+	return [6]*uint8{&m.GPS, &m.GLONASS, &m.Galileo, &m.BDS, &m.QZSS, &m.NavIC}
+}
+
 // convertToProps populates props from the as-found tuples. A nil
 // tuple contributes nothing: its properties are absent.
 func (f *asFound) convertToProps(props *gpsprot.ConfigProps) {
+	if f.signal != nil && f.cnst != nil {
+		masks, gates := signalMasks(f.signal), cnstGates(f.cnst)
+		var ss gpsprot.SignalSet
+		for i, sigs := range signalBits {
+			if *gates[i] == 0 {
+				continue
+			}
+			for bit, sig := range sigs {
+				if *masks[i]&(1<<bit) != 0 {
+					ss |= 1 << sig
+				}
+			}
+		}
+		props.SetSignalsEnabled(ss)
+	}
 	if f.uart != nil {
 		props.SetBaudRate(f.uart.BaudRate)
 		props.SetPort(fmt.Sprintf("UART%d", f.uart.Index))
@@ -49,7 +85,57 @@ func (c *Configurator) generatePropSets() error {
 			c.reqs = append(c.reqs, c.propSet(m, func() { c.found.rsid = m }))
 		}
 	}
+	c.generateSignalSets()
 	return c.generateTimePulseSet()
+}
+
+// generateSignalSets builds the CFGSIGNAL/CFGCNST writes for the
+// target's SignalsEnabled. Both commands are stored-only: they take
+// effect at the next NVM reload, never live. Owner ruling: the writes
+// are performed only when the target also saves and restarts, so
+// persistence and the ~15 s outage are explicitly user-requested;
+// otherwise the configurator silently does nothing (warning the user
+// is the tools' job via support flags) and never leaves
+// stored-but-ineffective state behind. Requested signals the receiver
+// has no mask bit for are dropped by intersection; a constellation
+// with no requested signals is disabled via its CFGCNST gate, its
+// mask kept as found.
+func (c *Configurator) generateSignalSets() {
+	ss, ok := c.target.Props.GetSignalsEnabled()
+	if !ok || c.found.signal == nil || c.found.cnst == nil {
+		return
+	}
+	o := &c.target.Opts
+	if o.Save == gpsprot.SaveNone || (o.Reset != gpsprot.ResetReload && o.Reset != gpsprot.ResetCold) {
+		return
+	}
+	sig, cnst := *c.found.signal, *c.found.cnst
+	masks, gates := signalMasks(&sig), cnstGates(&cnst)
+	for i, sigs := range signalBits {
+		var mask qtmmsg.HexByte
+		for bit, s := range sigs {
+			if s == gpsprot.SigQZSSL6 && !c.fw.has(fwQZSSL6) {
+				continue
+			}
+			if ss.Contains(s) {
+				mask |= 1 << bit
+			}
+		}
+		if mask != 0 {
+			*masks[i] = mask
+			*gates[i] = 1
+		} else {
+			*gates[i] = 0
+		}
+	}
+	if sig != *c.found.signal {
+		m := sig
+		c.reqs = append(c.reqs, c.propSet(&m, func() { c.found.signal = &m }))
+	}
+	if cnst != *c.found.cnst {
+		m := cnst
+		c.reqs = append(c.reqs, c.propSet(&m, func() { c.found.cnst = &m }))
+	}
 }
 
 // propSet builds a property set request. A code 3 refusal

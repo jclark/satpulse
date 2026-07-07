@@ -450,6 +450,110 @@ func TestConfiguratorPeriodOneSecond(t *testing.T) {
 	}
 }
 
+// lg290pDefaultSignals is the signal set denoted by the as-found
+// masks (SIGNAL 07,03,0F,3F,0F,01 with every CNST gate on).
+var lg290pDefaultSignals = gpsprot.SignalSetOf(
+	gpsprot.SigGPSL1CA, gpsprot.SigGPSL2C, gpsprot.SigGPSL5,
+	gpsprot.SigGLOL1, gpsprot.SigGLOL2,
+	gpsprot.SigGALE1, gpsprot.SigGALE5a, gpsprot.SigGALE5b, gpsprot.SigGALE6,
+	gpsprot.SigBDSB1I, gpsprot.SigBDSB2I, gpsprot.SigBDSB3I, gpsprot.SigBDSB1C,
+	gpsprot.SigBDSB2a, gpsprot.SigBDSB2b,
+	gpsprot.SigQZSSL1CA, gpsprot.SigQZSSL2C, gpsprot.SigQZSSL5, gpsprot.SigQZSSL6,
+	gpsprot.SigNAVICL5)
+
+// TestConfiguratorSignalsReadback checks the SignalsEnabled conversion
+// from the as-found CFGSIGNAL masks and CFGCNST gates.
+func TestConfiguratorSignalsReadback(t *testing.T) {
+	c, errCount := runConfig(t, fakeResponses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if v, ok := c.ConfigProps().GetSignalsEnabled(); !ok || v != lg290pDefaultSignals {
+		t.Errorf("SignalsEnabled = %v, %v, want %v", v, ok, lg290pDefaultSignals)
+	}
+}
+
+// TestConfiguratorSignalsNoSaveReset checks the restart-only ruling:
+// without an explicit save plus restart, signal sets are silently
+// omitted and no stored-but-ineffective state is left behind.
+func TestConfiguratorSignalsNoSaveReset(t *testing.T) {
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetSignalsEnabled(lg290pDefaultSignals &^ gpsprot.SigSetGLO)
+	_, errCount, sent := runConfigTarget(t, target, fakeResponses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if got := wSent(sent); len(got) != 0 {
+		t.Errorf("sets sent without save+restart: %v", got)
+	}
+}
+
+// TestConfiguratorSignalsSaveReload checks disabling a constellation:
+// only the CFGCNST gate changes (the mask is kept as found), the write
+// precedes PQTMSAVEPAR, and the readback reports the new set.
+func TestConfiguratorSignalsSaveReload(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGCNST,W,1,0,1,1,1,1"] = []string{"PQTMCFGCNST,OK"}
+	responses["PQTMSAVEPAR"] = []string{"PQTMSAVEPAR,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetSignalsEnabled(lg290pDefaultSignals &^ gpsprot.SigSetGLO)
+	target.Opts.Save = gpsprot.SaveMinimal
+	target.Opts.Reset = gpsprot.ResetReload
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if got := wSent(sent); !reflect.DeepEqual(got, []string{"PQTMCFGCNST,W,1,0,1,1,1,1"}) {
+		t.Errorf("sets sent: %v", got)
+	}
+	wi, si := -1, -1
+	for i, p := range sent {
+		switch p {
+		case "PQTMCFGCNST,W,1,0,1,1,1,1":
+			wi = i
+		case "PQTMSAVEPAR":
+			si = i
+		}
+	}
+	if wi < 0 || si < 0 || wi >= si {
+		t.Errorf("want CNST write before save; W at %d, SAVEPAR at %d (%v)", wi, si, sent)
+	}
+	if v, ok := c.ConfigProps().GetSignalsEnabled(); !ok || v != lg290pDefaultSignals&^gpsprot.SigSetGLO {
+		t.Errorf("SignalsEnabled = %v, %v", v, ok)
+	}
+}
+
+// TestConfiguratorSignalsMasks checks per-signal masks: requested
+// signals set their mask bits, unrequested constellations are gated
+// off with their masks kept as found, and a requested signal the
+// receiver has no mask bit for (GPS L1C) is dropped by intersection.
+func TestConfiguratorSignalsMasks(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGSIGNAL,W,01,03,01,3F,0F,01"] = []string{"PQTMCFGSIGNAL,OK"}
+	responses["PQTMCFGCNST,W,1,0,1,0,0,0"] = []string{"PQTMCFGCNST,OK"}
+	responses["PQTMSAVEPAR"] = []string{"PQTMSAVEPAR,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetSignalsEnabled(gpsprot.SignalSetOf(
+		gpsprot.SigGPSL1CA, gpsprot.SigGPSL1C, gpsprot.SigGALE1))
+	target.Opts.Save = gpsprot.SaveMinimal
+	target.Opts.Reset = gpsprot.ResetCold
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	want := []string{"PQTMCFGSIGNAL,W,01,03,01,3F,0F,01", "PQTMCFGCNST,W,1,0,1,0,0,0"}
+	if got := wSent(sent); !reflect.DeepEqual(got, want) {
+		t.Errorf("sets sent: %v, want %v", got, want)
+	}
+	if n := len(sent); n < 2 || sent[n-2] != "PQTMSAVEPAR" || sent[n-1] != "PQTMCOLD" {
+		t.Errorf("tail of sent = %v, want [... PQTMSAVEPAR PQTMCOLD]", sent[max(0, len(sent)-3):])
+	}
+	if v, ok := c.ConfigProps().GetSignalsEnabled(); !ok ||
+		v != gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1) {
+		t.Errorf("SignalsEnabled = %v, %v", v, ok)
+	}
+}
+
 // TestConfiguratorRTCMAuto checks RTCMMsgAuto: ARP and the MSM
 // families enable (MSM sets carry the required offset field), and no
 // CFGRTCM write is needed since the as-found MSM type is already 4.
