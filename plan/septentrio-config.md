@@ -49,9 +49,12 @@ a `NativeMsgHandler` (stage 1).
   Single-flight is itself the correlation key for anchor-less state
   lines. Replies arrive in 1-3 ms on USB; no line saturation at the
   default load.
-- **Probe**: `getReceiverCapabilities` (`grc`), no arguments. Verified
-  on a fresh USB connection with no escape prefix: repeatable,
-  byte-identical, state-neutral. One state line carrying the
+- **Probe**: command escape (`SSSSSSSSSS`) then
+  `getReceiverCapabilities` (`grc`), no arguments, as separate writes
+  with a 10 ms gap. `grc` was verified on a fresh USB connection with
+  no escape prefix as repeatable, byte-identical, and state-neutral;
+  the escape is needed so the first probe also works when auto input
+  has latched on correction data. One state line carrying the
   supported-signal list (29 on the G5), the port list, the capability
   list (`GalOSNMA` and `PPPGalileoHAS-SIS` present on this unit), and
   the max measurement/PVT rates (50, 50). The ack is a family-wide
@@ -63,11 +66,9 @@ a `NativeMsgHandler` (stage 1).
   probe's parsed answer instead of re-asking - prefer reuse.
 - **Command escape**: a wedged connection (data-input mode) accepts
   commands again after ten `S` characters + Enter, answered by a BARE
-  prompt (not a framed `$R` reply). The probe does NOT use it (probes
-  are state-neutral; grc works on fresh connections). `Configure()`
-  sends it once, first, as a no-reply request (succeed on send,
-  MaybeComplete-style absorption of the bare prompt), matching
-  verified message-file practice.
+  prompt (not a framed `$R` reply). It is part of the probe sequence,
+  not `Configure()`, because probing is the first command exchange
+  that must recover a blocked connection.
 - **Omitted arguments keep their current value** (verified throughout,
   e.g. `setPPSParameters, , , , Galileo` changes only TimeScale). This
   is the read-modify-write primitive: most sets need no prior query.
@@ -115,7 +116,7 @@ a `NativeMsgHandler` (stage 1).
 
 ### Probe and identification
 
-- `ProbePacket()` sends `grc`; `ProbeOK()` parses the reply
+- `ProbePackets()` sends the command escape and `grc`; `ProbeOK()` parses the reply
   (signals, ports, capabilities) and caches it.
 - `ReceiverInfo()`: supported GNSS/signals from grc's signal list via
   the coarse signal table below; `Vendor = "Septentrio"`; `Hardware`

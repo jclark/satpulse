@@ -129,8 +129,8 @@ func TestConfigureGetAll(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if sent[0] != escapeCmd {
-		t.Errorf("first packet: got %q want the escape", sent[0])
+	if sent[0] != "getSignalTracking" {
+		t.Errorf("first configuration packet: got %q want getSignalTracking", sent[0])
 	}
 
 	expect := &gpsprot.ConfigProps{}

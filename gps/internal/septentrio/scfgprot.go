@@ -77,9 +77,19 @@ func signalSetFromNames(names []string) gpsprot.SignalSet {
 	return ss
 }
 
-// grcCmd is the probe command: state-neutral, repeatable, answered by every
-// receiver in the family with one ReceiverCapabilities state line.
-const grcCmd = "getReceiverCapabilities"
+const (
+	// escapeCmd forces the connection to accept commands (ten "S" plus
+	// Enter). It clears the receiver's command-input latch without changing
+	// configuration.
+	escapeCmd = "SSSSSSSSSS"
+
+	// grcCmd is the probe command: state-neutral, repeatable, answered by
+	// every receiver in the family with one ReceiverCapabilities state line.
+	grcCmd = "getReceiverCapabilities"
+
+	// probePacketDelay is the settle gap after the command escape.
+	probePacketDelay = 10 * time.Millisecond
+)
 
 // rxCaps is the parsed getReceiverCapabilities reply: the single source for
 // all capability gating (never gate on a hardware model string).
@@ -128,8 +138,8 @@ func (c *rxCaps) rtcmV3Base() bool {
 
 // ConfigProtocol implements gpsprot.ConfigProtocol for Septentrio receivers.
 type ConfigProtocol struct {
-	caps *rxCaps // stored from the grc probe reply
-	port string  // our connection descriptor, from the probe reply's prompt
+	caps *rxCaps       // stored from the grc probe reply
+	port string        // our connection descriptor, from the probe reply's prompt
 	cfg  *Configurator // created during Configure()
 }
 
@@ -140,9 +150,12 @@ func NewConfigProtocol() *ConfigProtocol {
 	return &ConfigProtocol{}
 }
 
-// ProbePacket returns the grc probe command.
-func (cp *ConfigProtocol) ProbePacket() []byte {
-	return []byte(grcCmd + "\r\n")
+// ProbePackets returns the command escape followed by the grc probe command.
+func (cp *ConfigProtocol) ProbePackets() ([][]byte, time.Duration) {
+	return [][]byte{
+		[]byte(escapeCmd + "\r\n"),
+		[]byte(grcCmd + "\r\n"),
+	}, probePacketDelay
 }
 
 // ProbeOK returns true once a grc reply has been parsed.

@@ -88,8 +88,18 @@ func TestParseCaps(t *testing.T) {
 
 func TestProbe(t *testing.T) {
 	cp := NewConfigProtocol()
-	if got, want := string(cp.ProbePacket()), "getReceiverCapabilities\r\n"; got != want {
-		t.Errorf("ProbePacket: got %q want %q", got, want)
+	packets, delay := cp.ProbePackets()
+	if delay != probePacketDelay {
+		t.Errorf("ProbePackets delay: got %v want %v", delay, probePacketDelay)
+	}
+	if len(packets) != 2 {
+		t.Fatalf("ProbePackets len: got %d want 2", len(packets))
+	}
+	if got, want := string(packets[0]), "SSSSSSSSSS\r\n"; got != want {
+		t.Errorf("ProbePackets[0]: got %q want %q", got, want)
+	}
+	if got, want := string(packets[1]), "getReceiverCapabilities\r\n"; got != want {
+		t.Errorf("ProbePackets[1]: got %q want %q", got, want)
 	}
 	if cp.ProbeOK() {
 		t.Fatalf("ProbeOK true before any reply")

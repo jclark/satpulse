@@ -17,28 +17,17 @@ import (
 // attributes the anchor-less "$R?" refusals (they carry no echo).
 
 const (
-	// escapeCmd forces the connection to accept commands (ten "S" plus
-	// Enter). It is answered by a bare prompt, deliberately not framed as a
-	// reply packet, so the request expects no reply and succeeds at its
-	// deadline.
-	escapeCmd = "SSSSSSSSSS"
-
 	// maxReplyDelay is the per-attempt reply window. Replies arrive within
 	// milliseconds on USB; patience comes from the director's retry budget.
 	maxReplyDelay = 1500 * time.Millisecond
-
-	// escapeDelay is how long after sending the escape until the connection
-	// is assumed ready (its bare-prompt answer is not observable).
-	escapeDelay = 200 * time.Millisecond
 )
 
 type configPhase int
 
 const (
-	phaseInit   configPhase = iota
-	phaseEscape             // the escape request is outstanding
-	phaseQuery              // reading current state for Get and read-modify-write
-	phaseSet                // realizing the target's properties
+	phaseInit  configPhase = iota
+	phaseQuery             // reading current state for Get and read-modify-write
+	phaseSet               // realizing the target's properties
 	phaseFinal
 )
 
@@ -53,17 +42,16 @@ type Configurator struct {
 	port          string // connection descriptor from reply prompts (e.g. "USB1")
 	np            nativeProps
 	ident         []xml.Token // Identification file tokens, the identity source
-	staticQueried bool     // the static-position follow-up query was generated
+	staticQueried bool        // the static-position follow-up query was generated
 }
 
 type sReqState int
 
 const (
-	sStateNotReady    sReqState = iota // waiting for earlier requests (single-flight)
-	sStateReady                        // maps to ConfigRequestReadyToSend
-	sStateAwaiting                     // sent, expecting the framed reply
-	sStateSentNoReply                  // sent, no framed reply expected; succeeds at deadline
-	sStateMayResend                    // reply window passed; eligible for retry
+	sStateNotReady  sReqState = iota // waiting for earlier requests (single-flight)
+	sStateReady                      // maps to ConfigRequestReadyToSend
+	sStateAwaiting                   // sent, expecting the framed reply
+	sStateMayResend                  // reply window passed; eligible for retry
 	sStateSucceeded
 	sStateFailed
 )
@@ -76,7 +64,6 @@ func (s sReqState) isFinal() bool {
 type sReq struct {
 	state    sReqState
 	cmd      string       // command text, without CR LF
-	noReply  bool         // expects no framed reply (the escape)
 	nakOK    bool         // a "$R?" refusal is an acceptable outcome, not a failure
 	optional bool         // giving up after retries is success, not failure
 	onReply  func(*Reply) // records achieved values from the matching reply
@@ -146,12 +133,6 @@ func (c *Configurator) GetRequestCount() (int, bool) {
 func (c *Configurator) GenerateRequests() error {
 	switch c.phase {
 	case phaseInit:
-		c.append(&sReq{cmd: escapeCmd, noReply: true})
-		c.phase = phaseEscape
-	case phaseEscape:
-		if !c.allFinal() {
-			break
-		}
 		c.generateQueryReqs()
 		c.phase = phaseQuery
 	case phaseQuery:
@@ -288,8 +269,6 @@ func (req *sReq) GetState() gpsprot.ConfigRequestState {
 		return gpsprot.ConfigRequestReadyToSend
 	case sStateAwaiting:
 		return gpsprot.ConfigRequestAwaitingResponse
-	case sStateSentNoReply:
-		return gpsprot.ConfigRequestMaybeComplete
 	case sStateMayResend:
 		return gpsprot.ConfigRequestMayResend
 	case sStateSucceeded:
@@ -305,8 +284,6 @@ func (req *sReq) GetDeadline() time.Time {
 	switch req.state {
 	case sStateAwaiting:
 		return req.tBase.Add(maxReplyDelay)
-	case sStateSentNoReply:
-		return req.tBase.Add(escapeDelay)
 	}
 	panic(req.invalidStatePanic("GetDeadline"))
 }
@@ -326,11 +303,7 @@ func (req *sReq) GetError() error {
 func (req *sReq) SetSentTime(tSent time.Time) {
 	switch req.state {
 	case sStateReady, sStateMayResend:
-		if req.noReply {
-			req.state = sStateSentNoReply
-		} else {
-			req.state = sStateAwaiting
-		}
+		req.state = sStateAwaiting
 		req.tBase = tSent
 	default:
 		panic(req.invalidStatePanic("SetSentTime"))
@@ -343,8 +316,6 @@ func (req *sReq) SetDeadlinePassed() {
 	case sStateAwaiting:
 		req.blocks = nil // a retried lst reply arrives in full
 		req.state = sStateMayResend
-	case sStateSentNoReply:
-		req.state = sStateSucceeded
 	default:
 		panic(req.invalidStatePanic("SetDeadlinePassed"))
 	}
