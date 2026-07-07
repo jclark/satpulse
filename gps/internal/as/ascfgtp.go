@@ -106,7 +106,7 @@ func (c *Configurator) tpConfigProps(props *gpsprot.ConfigProps) {
 	}
 	period := time.Duration(c.pps.Period) * time.Microsecond
 	props.SetTimePulsePeriod(period)
-	props.SetTimePulseWidth(period / 1e6 * time.Duration(c.pps.DutyCycle))
+	props.SetTimePulseWidth(period * time.Duration(c.pps.DutyCycle) / 1e6)
 	props.SetTimePulsePolarityRising(c.pps.Polarity == asbin.CfgPpsPolarityRisingEdge)
 	props.SetTimePulseOnlyWhenLocked(c.pps.Sync == asbin.CfgPpsSyncOnlyWithFix)
 	props.SetTimePulseAlignToGNSS(true)

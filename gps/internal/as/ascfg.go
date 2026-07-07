@@ -303,8 +303,7 @@ func (c *Configurator) addSetReq(m asbin.Msg, onAck func()) {
 // answers with SILENCE (not a NAK), so polls are optional and a
 // timeout means the message does not exist, which shows as absence.
 func (c *Configurator) addPollReq(mid asbin.MsgID, onData func(asbin.Msg)) {
-	pkt, _ := asbin.PackMsg(mid, nil)
-	c.add(&asReq{mid: mid, packet: pkt, onData: onData, optional: true})
+	c.add(&asReq{mid: mid, packet: asbin.Poll(mid), onData: onData, optional: true})
 }
 
 // setSection returns the CFG-CFG save-section bit a set request

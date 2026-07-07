@@ -116,6 +116,15 @@ func TestTimePulseReadback(t *testing.T) {
 	}
 }
 
+func TestTimePulseWidthSubMsPeriod(t *testing.T) {
+	// The width readback must not truncate away periods under 1 ms.
+	cfg := newConfigurator(&gpsprot.ConfigTarget{}, tau1201Ver())
+	cfg.pps = &asbin.CfgPps{Period: 100, DutyCycle: 500000}
+	if w, ok := cfg.ConfigProps().GetTimePulseWidth(); !ok || w != 50*time.Microsecond {
+		t.Errorf("width = %v/%v, want 50us", w, ok)
+	}
+}
+
 func TestTimePulseAbsent(t *testing.T) {
 	// A receiver without CFG-PPS is silent to the poll: the property
 	// shows as absence - nothing set, nothing reported, no error.

@@ -58,8 +58,7 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 // factory 115200 baud, so probing relies on repetition rather than
 // long waits.
 func (cp *ConfigProtocol) ProbePacket() []byte {
-	pkt, _ := asbin.PackMsg(asbin.MonVerID, nil)
-	return pkt
+	return asbin.Poll(asbin.MonVerID)
 }
 
 // ProbeOK reports whether an Allystar receiver has been identified.

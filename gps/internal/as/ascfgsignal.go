@@ -15,9 +15,8 @@ import (
 // supported" without naming the result, and the achieved set is read
 // back to report the value the receiver says it enabled (the
 // semantics require every silent intersection to be visible in the
-// achieved set). Requests are additionally intersected with the
-// identity-deduced plan before writing, so on known hardware
-// unsupported bits never reach the wire.
+// achieved set). The requested mask goes to the wire as-is; the
+// silicon's clamp, revealed by the readback, is the only intersection.
 
 // navSatSignals maps CFG-NAVSAT mask bits to signals. The protocol
 // documentation names the bits; "BEIDOU B2" is taken as B2I (the
