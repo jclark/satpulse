@@ -210,18 +210,20 @@ protocol-questions.md:
    Same-name concurrent depth is moot: the shared NMEA send path
    serializes per name (single-flight), which is the planned
    configurator policy anyway.
-3. ACK guarantee: set a value the receiver may clamp or refuse
-   (unsupported CFGSIGNAL bit; out-of-range values) and read back
-   independently - is there ACK-and-clamp or ACK-without-store?
-   Which error codes appear in practice?
-4. Effect timing per command: which sets apply live vs only after
-   restart (message rates, PPS, FIXRATE, CFGCNST/CFGSIGNAL via GSV
-   content, ELETHD, RCVRMODE)? The spec's blanket save+restart note
-   makes this per-command question load-bearing. Owner expectation:
-   most sets apply live; test CFGSIGNAL/CFGCNST specifically (watch
-   GSV signal content change) - if signal sets do NOT apply live,
-   that is a real problem to escalate to the owner, not design
-   around silently.
+3. ANSWERED. ACK guarantee: out-of-range sets (ELETHD 95.0,
+   FIXRATE 0) answer ERROR,1 and leave config unchanged
+   (readback-verified). No clamping observed. CFGSIGNAL ACKs and
+   stores masks the spec calls impossible (GPS L1 off stored and
+   read back as 06 while L1 tracking continued) - readback reflects
+   stored intent, not effective state. Error codes seen: 1, 3.
+4. PART-ANSWERED, ESCALATED. CFGSIGNAL and CFGCNST have NO live
+   effect: with GLO masked off by either command, GLONASS stayed
+   tracked and used in the fix >15 s; the setting took effect only
+   after PQTMSAVEPAR + PQTMSRR (verified both directions). Owner
+   ruling needed on how SignalsEnabled maps onto apply-at-restart
+   semantics (see PROGRESS.md). Live-vs-restart still untested for:
+   message rates, PPS, FIXRATE, ELETHD, RCVRMODE (message-file
+   history says rates/PPS/fixed-pos apply live).
 5. Baud-change handshake: at which rate does the CFGUART OK arrive;
    timing of the switch; confirm at the new rate with a solicited
    distinct-name query; does a saved rate re-apply after SRR? No
@@ -229,9 +231,13 @@ protocol-questions.md:
    NOT possible; where only a power cycle would discriminate
    persistence, record the finding as bounded ("not verified across
    power cycle") rather than claiming it.
-6. NVM model: what SAVEPAR covers; RESTOREPAR effect and timing; what
-   COLD/WARM/HOT preserve (config? NVM? live rates?); boot banner
-   behavior after each.
+6. PART-ANSWERED. SAVEPAR answers bare OK sent alone; pipelining
+   SAVEPAR+SRR loses both responses (SRR reboots first) though the
+   save completes - always wait for SAVEPAR's OK before SRR. SRR
+   answers nothing; module back within ~15 s; boot loads NVM
+   (saved state was in effect after reboot). Still open: SAVEPAR
+   coverage, RESTOREPAR, COLD/WARM/HOT effects, boot banner
+   details, restart-discards-unsaved-changes confirmation.
 7. CFGPROT trap: if OutputProt's NMEA bit is cleared on the active
    port, do PQTM command responses still arrive, or does the
    configurator saw off the branch it sits on? Same question for
