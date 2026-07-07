@@ -16,9 +16,12 @@ const Vendor = "Quectel"
 // configSupport is everything except raw observation output (the
 // protocol has none; RTCM MSM is the only observation carrier) and a
 // fixed-position accuracy input (CFGSVIN's accuracy limit applies to
-// Survey-in only).
-const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportFull &^
-	(gpsprot.ConfigSupportRaw | gpsprot.ConfigSupportFixedPosAcc)
+// Survey-in only). Signal changes are stored-only on this receiver
+// (they take effect at the next NVM reload, never live), so signal
+// support carries the only-with-reset qualifier.
+const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportFull&^
+	(gpsprot.ConfigSupportRaw|gpsprot.ConfigSupportFixedPosAcc) |
+	gpsprot.ConfigSupportSignalOnlyWithReset
 
 const (
 	// responseTimeout is the per-attempt response window. Responses

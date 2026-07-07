@@ -102,11 +102,7 @@ func (c *Configurator) generatePropSets() error {
 // mask kept as found.
 func (c *Configurator) generateSignalSets() {
 	ss, ok := c.target.Props.GetSignalsEnabled()
-	if !ok || c.found.signal == nil || c.found.cnst == nil {
-		return
-	}
-	o := &c.target.Opts
-	if o.Save == gpsprot.SaveNone || (o.Reset != gpsprot.ResetReload && o.Reset != gpsprot.ResetCold) {
+	if !ok || c.found.signal == nil || c.found.cnst == nil || !c.target.Opts.SavesAndResets() {
 		return
 	}
 	sig, cnst := *c.found.signal, *c.found.cnst

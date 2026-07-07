@@ -54,6 +54,20 @@ const (
 
 const ConfigSupportRTCMMSM = ConfigSupportRTCMMSM4 | ConfigSupportRTCMMSM7
 
+// Qualifier flags describe how a capability applies rather than
+// whether it exists. They grow down from the top bit so capability
+// flags can keep growing up, and are excluded from ConfigSupportFull.
+const (
+	// ConfigSupportSignalOnlyWithReset qualifies ConfigSupportSignal:
+	// signal changes are stored-only and take effect only when the
+	// target also saves and resets (ConfigOptions.SavesAndResets); a
+	// target without save+reset leaves them unperformed.
+	ConfigSupportSignalOnlyWithReset ConfigSupportFlags = 1 << 31
+
+	// configSupportQualifiers is the set of all qualifier flags.
+	configSupportQualifiers = ConfigSupportSignalOnlyWithReset
+)
+
 var configSupportFlagNames = [...]struct {
 	flag ConfigSupportFlags
 	name string
@@ -71,6 +85,7 @@ var configSupportFlagNames = [...]struct {
 	{ConfigSupportRTCMBaseID, "rtcmBaseID"},
 	{ConfigSupportRTCMQZSS, "rtcmQZSS"},
 	{ConfigSupportPort, "port"},
+	{ConfigSupportSignalOnlyWithReset, "signalOnlyWithReset"},
 }
 
 // Items returns the supported configuration item names in stable order.

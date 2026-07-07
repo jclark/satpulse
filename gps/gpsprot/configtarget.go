@@ -237,6 +237,15 @@ type OSNMAOptions struct {
 	MerkleTreeRoot [32]byte // all zeros means not set
 }
 
+// SavesAndResets reports whether the target both saves the
+// configuration to non-volatile memory and performs a reset that
+// reloads it - the condition under which stored-only settings (see
+// ConfigSupportSignalOnlyWithReset) take effect. A factory reset does
+// not qualify: it restores NVM defaults, discarding the save.
+func (co *ConfigOptions) SavesAndResets() bool {
+	return co.Save != SaveNone && (co.Reset == ResetReload || co.Reset == ResetCold)
+}
+
 func NewConfigTarget() *ConfigTarget {
 	return &ConfigTarget{}
 }

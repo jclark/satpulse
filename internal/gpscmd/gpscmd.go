@@ -225,7 +225,7 @@ func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	if err == nil && rslt != nil {
 		warnMissingConfigSupport(lg, support, rslt.ConfigSupport)
 		if !configTargetIsProbeOnly(target) {
-			logFailedProps(lg, &target.Props, rslt.ConfigProps)
+			logFailedProps(lg, target, rslt)
 		}
 	}
 	if jsonOut {
@@ -375,15 +375,16 @@ func waitForResponses(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Pack
 	}
 }
 
-func logFailedProps(lg *slog.Logger, reqProps *gpsprot.ConfigProps, rsltProps *gpsprot.ConfigProps) {
-	if reqProps == nil || rsltProps == nil {
+func logFailedProps(lg *slog.Logger, target *gpsprot.ConfigTarget, rslt *gpscfg.Result) {
+	rsltProps := rslt.ConfigProps
+	if rsltProps == nil {
 		return
 	}
-	if reqSigs, ok := reqProps.GetSignalsEnabled(); ok {
-		if rsltSigs, ok := rsltProps.GetSignalsEnabled(); ok {
-			if reqSigs.GNSSSet() != rsltSigs.GNSSSet() {
-				lg.Warn("only some of the requested constellations were enabled; the receiver does not support enabling all of them")
-			}
+	if reqSigs, ok := target.Props.GetSignalsEnabled(); ok {
+		if rslt.ConfigSupport&gpsprot.ConfigSupportSignalOnlyWithReset != 0 && !target.Opts.SavesAndResets() {
+			lg.Warn("signal changes were not performed: on this receiver they take effect only after a save and reset (add --save with --reload or --reset)")
+		} else if rsltSigs, ok := rsltProps.GetSignalsEnabled(); ok && reqSigs.GNSSSet() != rsltSigs.GNSSSet() {
+			lg.Warn("only some of the requested constellations were enabled; the receiver does not support enabling all of them")
 		}
 	}
 }

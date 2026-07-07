@@ -36,15 +36,18 @@ func TestConfigSupportFlagsItems(t *testing.T) {
 func TestConfigSupportLast(t *testing.T) {
 	var highest ConfigSupportFlags
 	for _, entry := range configSupportFlagNames {
-		if entry.flag > highest {
+		if entry.flag&configSupportQualifiers == 0 && entry.flag > highest {
 			highest = entry.flag
 		}
 	}
 	if ConfigSupportLast != highest {
-		t.Errorf("ConfigSupportLast = %v, want highest declared flag %v", ConfigSupportLast, highest)
+		t.Errorf("ConfigSupportLast = %v, want highest declared capability flag %v", ConfigSupportLast, highest)
 	}
 	if ConfigSupportFull != ConfigSupportLast<<1-1 {
-		t.Errorf("ConfigSupportFull = %v, want all flags %v", ConfigSupportFull, ConfigSupportLast<<1-1)
+		t.Errorf("ConfigSupportFull = %v, want all capability flags %v", ConfigSupportFull, ConfigSupportLast<<1-1)
+	}
+	if configSupportQualifiers&ConfigSupportFull != 0 {
+		t.Errorf("qualifier flags overlap ConfigSupportFull: %v", configSupportQualifiers&ConfigSupportFull)
 	}
 }
 
