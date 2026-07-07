@@ -60,8 +60,10 @@ const ConfigSupportRTCMMSM = ConfigSupportRTCMMSM4 | ConfigSupportRTCMMSM7
 const (
 	// ConfigSupportSignalOnlyWithReset qualifies ConfigSupportSignal:
 	// signal changes are stored-only and take effect only when the
-	// target also saves and resets (ConfigOptions.SavesAndResets); a
-	// target without save+reset leaves them unperformed.
+	// target also saves the configuration and performs a reset that
+	// reloads it (a factory reset does not qualify: it restores NVM
+	// defaults, discarding the save); a target without save+reset
+	// leaves them unperformed.
 	ConfigSupportSignalOnlyWithReset ConfigSupportFlags = 1 << 31
 
 	// ConfigSupportModeOnlyWithReset is the same qualifier for the
@@ -161,25 +163,14 @@ type Configurator interface {
 	Request(index int) ConfigRequest
 }
 
-// ConfigWarner is implemented by Configurators that report user-facing
-// warnings about requests they deliberately did not perform - for
-// example an only-with-reset setting (see the qualifier flags)
-// requested without save+reset. A warning is reported only when the
-// skip leaves the receiver differing from the request; a request the
-// receiver already satisfies warns nothing.
-type ConfigWarner interface {
-	// ConfigWarnings returns the warnings accumulated during
-	// configuration. Call after configuration completes.
-	ConfigWarnings() []string
-}
-
 // ReceiverInfo provides static information about the GPS receiver.
 type ReceiverInfo struct {
-	Vendor         string      `json:"vendor"`        // receiver vendor (e.g., "u-blox")
-	Firmware       string      `json:"firmware"`      // information about firmware; for u-blox, format would be e.g. "TIM 2.20 PROTVER 18.00"
-	Hardware       string      `json:"hardware"`      // information about hardware; for u-blox, this is the model (e.g., "ZED-F9T")
-	SupportedGNSS  GNSSSet     `json:"supportedGNSS"` // supported GNSS constellations
-	VendorSpecific interface{} `json:"-"`             // vendor-specific information, excluded from JSON
+	Vendor         string           `json:"vendor"`             // receiver vendor (e.g., "u-blox")
+	Firmware       string           `json:"firmware"`           // information about firmware; for u-blox, format would be e.g. "TIM 2.20 PROTVER 18.00"
+	Hardware       string           `json:"hardware"`           // information about hardware; for u-blox, this is the model (e.g., "ZED-F9T")
+	SupportedGNSS  GNSSSet          `json:"supportedGNSS"`      // supported GNSS constellations
+	MsgTypes       map[Tag][]string `json:"msgTypes,omitempty"` // message types received during configuration, sorted, per protocol; filled by the caller from observed traffic, not by the Configurator
+	VendorSpecific interface{}      `json:"-"`                  // vendor-specific information, excluded from JSON
 }
 
 // ConfigRequestState represents the current state of a configuration request.

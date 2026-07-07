@@ -139,10 +139,6 @@ type Configurator struct {
 	// legacy PPS query after a refused PPS2 query.
 	protQueried bool
 	needPPS     bool
-	// warnings collects user-facing notes about requests deliberately
-	// not performed (only-with-reset settings without save+reset that
-	// would have changed something).
-	warnings []string
 	// msgWantState caches the desired message-output state computed
 	// by msgWant, keyed by message name.
 	msgWantState map[string]bool
@@ -488,7 +484,7 @@ func (c *Configurator) Request(index int) gpsprot.ConfigRequest {
 // ReceiverInfo returns static information from the probe's PQTMVERNO
 // reply and the PQTMUNIQID query.
 func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
-	info := &gpsprot.ReceiverInfo{Vendor: Vendor}
+	info := &gpsprot.ReceiverInfo{Vendor: Vendor, SupportedGNSS: signalUniverse().GNSSSet()}
 	if c.verno != nil {
 		info.Firmware = c.verno.VerStr + " " + c.verno.BuildDate
 		info.Hardware = hardwareName(c.verno.VerStr)
@@ -520,17 +516,15 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	return props
 }
 
-// ConfigWarnings returns warnings about requests deliberately not
-// performed. A skip that leaves the receiver as requested warns
-// nothing.
-func (c *Configurator) ConfigWarnings() []string {
-	return c.warnings
-}
-
-// onlyWithReset warns that a stored-only setting was not changed for
-// lack of an explicit save+reset.
-func (c *Configurator) onlyWithReset(what string) {
-	c.warnings = append(c.warnings, what+" was not performed: on this receiver it takes effect only after a save and reset (add --save with --reload or --reset)")
+// savesAndResets reports whether the target both saves the
+// configuration to NVM and performs a reset that reloads it - the
+// gate for the stored-only settings (signals, positioning mode, RTCM
+// MSM type), so that persistence and the boot outage are explicitly
+// user-requested. A factory reset does not qualify: it restores NVM
+// defaults, discarding the save.
+func (c *Configurator) savesAndResets() bool {
+	o := &c.target.Opts
+	return o.Save != gpsprot.SaveNone && (o.Reset == gpsprot.ResetReload || o.Reset == gpsprot.ResetCold)
 }
 
 // ConfigRequest interface implementation on request.

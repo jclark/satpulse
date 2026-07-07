@@ -21,7 +21,7 @@ type jsonOutput struct {
 
 // printJSON writes the configuration result as a single JSON object.
 // On error it writes whatever partial results exist with the error field set.
-func printJSON(f *os.File, rslt *gpscfg.Result, err error) {
+func printJSON(f *os.File, rslt *gpscfg.Result, err error, warnings []string) {
 	var out jsonOutput
 	if rslt != nil {
 		out.Receiver = rslt.ReceiverInfo
@@ -30,7 +30,7 @@ func printJSON(f *os.File, rslt *gpscfg.Result, err error) {
 		if rslt.ConfigProps != nil && !rslt.ConfigProps.IsEmpty() {
 			out.Config = rslt.ConfigProps
 		}
-		out.Warnings = rslt.Warnings
+		out.Warnings = warnings
 	}
 	if err != nil {
 		out.Error = err.Error()

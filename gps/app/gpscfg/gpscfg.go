@@ -23,7 +23,6 @@ type Result struct {
 	ConfigSupport         gpsprot.ConfigSupportFlags
 	ConfigProps           *gpsprot.ConfigProps
 	PacketFormatsDetected []gpsprot.Tag
-	Warnings              []string // user-facing warnings from the Configurator (gpsprot.ConfigWarner)
 }
 
 type msgHandler struct {
@@ -33,7 +32,7 @@ type msgHandler struct {
 	packetCh    <-chan scan.Packet
 	msgCount    map[gpsprot.Tag]int
 	bad         badCount
-	msgIDs      map[gpsprot.Tag]map[string]bool
+	msgIDs      map[gpsprot.Tag]map[string]struct{}
 }
 
 type badCount struct {
@@ -86,15 +85,13 @@ func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag
 	// Now that we know which protocol succeeded, reset to just mh + that one protocol.
 	mnmh.Reset(&mh, configProt)
 
-	cfgProps, rcvrInfo, support, warnings, err := mh.configure(ctx, configProt, target, port)
+	cfgProps, rcvrInfo, support, err := mh.configure(ctx, configProt, target, port)
 	// We have no ConfigProps and no ReceiverInfo, so return a nil result.
 	if err != nil && cfgProps == nil {
 		return nil, err
 	}
 	// Return the configuration results, even if there were errors during configuration.
-	rslt := mh.finish(cfgProps, rcvrInfo, support)
-	rslt.Warnings = warnings
-	return rslt, err
+	return mh.finish(cfgProps, rcvrInfo, support), err
 }
 
 func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, packetCh <-chan scan.Packet) {
@@ -103,10 +100,10 @@ func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.
 	mh.packetCh = packetCh
 	mh.configProts = configProts
 	mh.msgCount = map[gpsprot.Tag]int{}
-	mh.msgIDs = map[gpsprot.Tag]map[string]bool{}
+	mh.msgIDs = map[gpsprot.Tag]map[string]struct{}{}
 	for tag := range packetProcs {
 		mh.msgCount[tag] = 0
-		mh.msgIDs[tag] = map[string]bool{}
+		mh.msgIDs[tag] = map[string]struct{}{}
 	}
 }
 
@@ -120,8 +117,17 @@ func (mh *msgHandler) finish(cfgProps *gpsprot.ConfigProps, rcvrInfo *gpsprot.Re
 			"firmware", rcvrInfo.Firmware, "gnss", rcvrInfo.SupportedGNSS, "configSupport", support)
 	}
 	for tag, msgIDs := range mh.msgIDs {
-		if len(msgIDs) > 0 {
-			lg.Info("message types received during configuration", "protocol", tag, "msgIDs", maps.Keys(msgIDs))
+		if len(msgIDs) == 0 {
+			continue
+		}
+		ids := maps.Keys(msgIDs)
+		slices.Sort(ids)
+		lg.Info("message types received during configuration", "protocol", tag, "msgIDs", ids)
+		if rcvrInfo != nil {
+			if rcvrInfo.MsgTypes == nil {
+				rcvrInfo.MsgTypes = map[gpsprot.Tag][]string{}
+			}
+			rcvrInfo.MsgTypes[tag] = ids
 		}
 	}
 	return &Result{
@@ -449,10 +455,10 @@ func (mh *msgHandler) installNativeMsgHandlers() (*gpsprot.MultiNativeMsgHandler
 // maximum number of times to retry a request that doesn't get a response
 const maxTries = 3
 
-func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, gpsprot.ConfigSupportFlags, []string, error) {
+func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, port gpsio.OutPort) (*gpsprot.ConfigProps, *gpsprot.ReceiverInfo, gpsprot.ConfigSupportFlags, error) {
 	cfgtor, err := prot.Configure(target)
 	if err != nil {
-		return nil, nil, 0, nil, err
+		return nil, nil, 0, err
 	}
 	director := gpsprot.NewConfigDirector(cfgtor, maxTries)
 	var knownErr error // error that we know how to handle
@@ -467,7 +473,7 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 				_, err = port.Write(action.Packet)
 			}
 			if err != nil {
-				return nil, nil, 0, nil, fmt.Errorf("failed to send configuration packet: %w", err)
+				return nil, nil, 0, fmt.Errorf("failed to send configuration packet: %w", err)
 			}
 			cfgtor.Request(action.Index).SetSentTime(time.Now())
 			mh.lg.Debug("sent configuration message", "index", action.Index, "len", len(action.Packet))
@@ -475,12 +481,12 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 			timerCh := time.After(time.Until(action.Deadline))
 			select {
 			case <-ctx.Done():
-				return nil, nil, 0, nil, ctx.Err()
+				return nil, nil, 0, ctx.Err()
 			case <-timerCh:
 				// Continue to next iteration to check for state changes
 			case packet, ok := <-mh.packetCh:
 				if !ok {
-					return nil, nil, 0, nil, mh.packetChClosed(ctx)
+					return nil, nil, 0, mh.packetChClosed(ctx)
 				}
 				mh.packet(packet)
 				if packet.ChecksumValid {
@@ -495,11 +501,7 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 			}
 		}
 	}
-	var warnings []string
-	if w, ok := cfgtor.(gpsprot.ConfigWarner); ok {
-		warnings = w.ConfigWarnings()
-	}
-	return cfgtor.ConfigProps(), cfgtor.ReceiverInfo(), cfgtor.ConfigSupport(), warnings, knownErr
+	return cfgtor.ConfigProps(), cfgtor.ReceiverInfo(), cfgtor.ConfigSupport(), knownErr
 }
 
 func (mh *msgHandler) suitableMessageCount() int {
@@ -557,7 +559,7 @@ func (mh *msgHandler) packet(pkt scan.Packet) {
 		return
 	}
 
-	mh.msgIDs[tag][msgID] = true
+	mh.msgIDs[tag][msgID] = struct{}{}
 }
 
 func (mh *msgHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {

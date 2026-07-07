@@ -476,8 +476,8 @@ func TestConfiguratorSignalsReadback(t *testing.T) {
 
 // TestConfiguratorSignalsNoSaveReset checks the restart-only ruling:
 // without an explicit save plus restart, a signal change is omitted
-// with a warning and no stored-but-ineffective state is left behind;
-// a request the receiver already satisfies warns nothing.
+// and no stored-but-ineffective state is left behind - the skip shows
+// in the unchanged readback, from which frontends derive warnings.
 func TestConfiguratorSignalsNoSaveReset(t *testing.T) {
 	target := &gpsprot.ConfigTarget{}
 	target.Props.SetSignalsEnabled(lg290pDefaultSignals &^ gpsprot.SigSetGLO)
@@ -488,20 +488,17 @@ func TestConfiguratorSignalsNoSaveReset(t *testing.T) {
 	if got := wSent(sent); len(got) != 0 {
 		t.Errorf("sets sent without save+restart: %v", got)
 	}
-	if w := c.ConfigWarnings(); len(w) != 1 || !strings.Contains(w[0], "signal") {
-		t.Errorf("warnings = %v, want one signal warning", w)
+	if v, ok := c.ConfigProps().GetSignalsEnabled(); !ok || v != lg290pDefaultSignals {
+		t.Errorf("readback = %v, %v, want as-found %v", v, ok, lg290pDefaultSignals)
 	}
 	target = &gpsprot.ConfigTarget{}
 	target.Props.SetSignalsEnabled(lg290pDefaultSignals)
-	c, errCount, sent = runConfigTarget(t, target, fakeResponses)
+	_, errCount, sent = runConfigTarget(t, target, fakeResponses)
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
 	if got := wSent(sent); len(got) != 0 {
 		t.Errorf("sets sent for the current signal set: %v", got)
-	}
-	if w := c.ConfigWarnings(); len(w) != 0 {
-		t.Errorf("warnings for a request already satisfied: %v", w)
 	}
 }
 
@@ -542,9 +539,9 @@ func TestConfiguratorSignalsSaveReload(t *testing.T) {
 
 // TestConfiguratorModeNoSaveReset checks the restart-only ruling for
 // the positioning mode: without an explicit save plus restart, a mode
-// change is omitted with a warning - but a mobile request on a rover
-// receiver warns nothing even when stored-but-inert SVIN state
-// differs, since the effective mode already matches.
+// change is omitted - including a mobile request on a rover receiver
+// with stored-but-inert SVIN state, whose effective mode already
+// matches. The effective-mode readback shows the skip to frontends.
 func TestConfiguratorModeNoSaveReset(t *testing.T) {
 	target := &gpsprot.ConfigTarget{}
 	target.Props.SetMode(gpsprot.Mode{Static: true})
@@ -556,22 +553,19 @@ func TestConfiguratorModeNoSaveReset(t *testing.T) {
 	if got := wSent(sent); len(got) != 0 {
 		t.Errorf("sets sent without save+restart: %v", got)
 	}
-	if w := c.ConfigWarnings(); len(w) != 1 || !strings.Contains(w[0], "mode") {
-		t.Errorf("warnings = %v, want one mode warning", w)
+	if m, ok := c.ConfigProps().GetMode(); !ok || m.Static {
+		t.Errorf("readback mode = %+v, %v, want as-found mobile", m, ok)
 	}
 	responses := maps.Clone(fakeResponses)
 	responses["PQTMCFGSVIN,R"] = []string{"PQTMCFGSVIN,OK,1,300,2.0,0.0000,0.0000,0.0000,0.0"}
 	target = &gpsprot.ConfigTarget{}
 	target.Props.SetMode(gpsprot.Mode{Static: false})
-	c, errCount, sent = runConfigTarget(t, target, responses)
+	_, errCount, sent = runConfigTarget(t, target, responses)
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
 	if got := wSent(sent); len(got) != 0 {
 		t.Errorf("sets sent without save+restart: %v", got)
-	}
-	if w := c.ConfigWarnings(); len(w) != 0 {
-		t.Errorf("warnings for an effectively mobile receiver: %v", w)
 	}
 }
 
@@ -765,36 +759,20 @@ func TestConfiguratorRTCMMSM7(t *testing.T) {
 		t.Errorf("assumed MSMType = %d, want 7", c.found.rtcm.MSMType)
 	}
 
-	// Preference without save+reset: suppressed silently.
-	target = &gpsprot.ConfigTarget{}
-	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgAutoMSM7)
-	c, errCount, sent = runConfigTarget(t, target, responses)
-	if errCount != 0 {
-		t.Errorf("director errors: %d", errCount)
-	}
-	for _, p := range wSent(sent) {
-		if strings.HasPrefix(p, "PQTMCFGRTCM,W") {
-			t.Errorf("CFGRTCM write sent without save+reset: %s", p)
+	// Without save+reset the CFGRTCM write is suppressed, for a
+	// preference and an explicit MSM type alike.
+	for _, flags := range []gpsprot.RTCMMsgFlags{gpsprot.RTCMMsgAutoMSM7, gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP} {
+		target = &gpsprot.ConfigTarget{}
+		target.Opts.RTCMMsg.Set(flags)
+		_, errCount, sent = runConfigTarget(t, target, responses)
+		if errCount != 0 {
+			t.Errorf("director errors: %d", errCount)
 		}
-	}
-	if w := c.ConfigWarnings(); len(w) != 0 {
-		t.Errorf("warnings for a preference: %v", w)
-	}
-
-	// Explicit MSM7 without save+reset: suppressed with a warning.
-	target = &gpsprot.ConfigTarget{}
-	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP)
-	c, errCount, sent = runConfigTarget(t, target, responses)
-	if errCount != 0 {
-		t.Errorf("director errors: %d", errCount)
-	}
-	for _, p := range wSent(sent) {
-		if strings.HasPrefix(p, "PQTMCFGRTCM,W") {
-			t.Errorf("CFGRTCM write sent without save+reset: %s", p)
+		for _, p := range wSent(sent) {
+			if strings.HasPrefix(p, "PQTMCFGRTCM,W") {
+				t.Errorf("CFGRTCM write sent without save+reset: %s", p)
+			}
 		}
-	}
-	if w := c.ConfigWarnings(); len(w) != 1 || !strings.Contains(w[0], "MSM7") {
-		t.Errorf("warnings = %v, want one MSM7 warning", w)
 	}
 }
 

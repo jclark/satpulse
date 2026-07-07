@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/msgfile"
 	"github.com/jclark/satpulse/gps/scan"
 )
@@ -222,17 +224,18 @@ func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	if errors.Is(err, gpscfg.ErrNoProbeResponse) && configTargetIsProbeOnly(target) {
 		err = nil
 	}
+	var warnings []string
 	if err == nil && rslt != nil {
 		warnMissingConfigSupport(lg, support, rslt.ConfigSupport)
-		for _, w := range rslt.Warnings {
-			lg.Warn(w)
-		}
 		if !configTargetIsProbeOnly(target) {
-			logFailedProps(lg, target, rslt)
+			warnings = configWarnings(target, rslt)
+			for _, w := range warnings {
+				lg.Warn(w)
+			}
 		}
 	}
 	if jsonOut {
-		printJSON(os.Stdout, rslt, err)
+		printJSON(os.Stdout, rslt, err, warnings)
 	} else if err == nil && rslt != nil {
 		if showReceiver {
 			printReceiverInfo(os.Stdout, rslt.ReceiverInfo)
@@ -378,21 +381,105 @@ func waitForResponses(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Pack
 	}
 }
 
-func logFailedProps(lg *slog.Logger, target *gpsprot.ConfigTarget, rslt *gpscfg.Result) {
-	rsltProps := rslt.ConfigProps
-	if rsltProps == nil {
-		return
+// configWarnings derives user-facing warnings by comparing what the
+// target asked for against the receiver's declared support and its
+// post-configuration state. Only real problems warn: a request the
+// receiver already satisfies produces nothing. On onlyWithReset
+// receivers (see the gpsprot qualifier flags) a stored-only setting
+// requested without --save plus --reload/--reset is skipped by the
+// Configurator; the skip shows up here as a request-vs-state
+// difference and warns with the missing flags.
+func configWarnings(target *gpsprot.ConfigTarget, rslt *gpscfg.Result) []string {
+	props := rslt.ConfigProps
+	if props == nil {
+		return nil
+	}
+	var ws []string
+	opts := &target.Opts
+	saveReset := opts.Save != gpsprot.SaveNone && (opts.Reset == gpsprot.ResetReload || opts.Reset == gpsprot.ResetCold)
+	onlyWithReset := func(what string) {
+		ws = append(ws, what+" was not performed: on this receiver it takes effect only after a save and reset (add --save with --reload or --reset)")
 	}
 	if reqSigs, ok := target.Props.GetSignalsEnabled(); ok {
-		// On a signalOnlyWithReset receiver the Configurator reports
-		// skipped signal changes itself (Result.Warnings), with exact
-		// knowledge of whether anything would have changed.
-		if rslt.ConfigSupport&gpsprot.ConfigSupportSignalOnlyWithReset == 0 {
-			if rsltSigs, ok := rsltProps.GetSignalsEnabled(); ok && reqSigs.GNSSSet() != rsltSigs.GNSSSet() {
-				lg.Warn("only some of the requested constellations were enabled; the receiver does not support enabling all of them")
+		if rsltSigs, ok := props.GetSignalsEnabled(); ok {
+			// Compare at constellation granularity, restricted to the
+			// constellations the receiver has: requesting one it lacks
+			// is unsupportedness, not a skipped change.
+			req := reqSigs.GNSSSet()
+			if info := rslt.ReceiverInfo; info != nil && info.SupportedGNSS != 0 {
+				req &= info.SupportedGNSS
+			}
+			if req != rsltSigs.GNSSSet() &&
+				rslt.ConfigSupport&gpsprot.ConfigSupportSignalOnlyWithReset != 0 && !saveReset {
+				onlyWithReset("the signal change")
+			} else if reqSigs.GNSSSet() != rsltSigs.GNSSSet() {
+				ws = append(ws, "only some of the requested constellations were enabled; the receiver does not support enabling all of them")
 			}
 		}
 	}
+	if rslt.ConfigSupport&gpsprot.ConfigSupportModeOnlyWithReset != 0 && !saveReset {
+		if m, ok := props.GetMode(); ok && modeUnmet(target, m) {
+			onlyWithReset("the positioning mode change")
+		}
+	}
+	if opts.RTCMMsg.IsSet() {
+		flags := opts.RTCMMsg.Get()
+		want := 0
+		if flags&gpsprot.RTCMMsgMSM7 != 0 {
+			want = 7
+		} else if flags&gpsprot.RTCMMsgMSM4 != 0 {
+			want = 4
+		}
+		// An explicit MSM type is a demand; RTCMMsgLax is a preference
+		// that degrades silently. The effective type is a boot-time
+		// constant, so any MSM message observed during configuration
+		// reveals it; with none observed, warn pessimistically.
+		if want != 0 && flags&gpsprot.RTCMMsgLax == 0 &&
+			rslt.ConfigSupport&gpsprot.ConfigSupportRTCMMSMOnlyWithReset != 0 && !saveReset &&
+			observedMSMLevel(rslt.ReceiverInfo) != want {
+			onlyWithReset(fmt.Sprintf("the MSM%d selection", want))
+		}
+	}
+	return ws
+}
+
+// modeUnmet reports whether the receiver's effective mode differs
+// from the requested positioning mode in kind (mobile, survey, or
+// fixed position). Positions are not compared: the receiver stores
+// them quantized, and LLH requests may be realized as ECEF.
+func modeUnmet(target *gpsprot.ConfigTarget, m gpsprot.Mode) bool {
+	if req, ok := target.Props.GetMode(); ok {
+		return modeKind(req) != modeKind(m)
+	}
+	// SetStatic asks for static mode without disturbing an existing
+	// fixed position, so any static mode satisfies it.
+	return target.Opts.SetStatic && !m.Static
+}
+
+func modeKind(m gpsprot.Mode) int {
+	if !m.Static {
+		return 0
+	}
+	if m.PosType == gpsprot.PosTypeNone {
+		return 1 // survey
+	}
+	return 2 // fixed position
+}
+
+// observedMSMLevel returns the MSM level of the RTCM messages
+// received during configuration, or 0 if none were seen.
+func observedMSMLevel(info *gpsprot.ReceiverInfo) int {
+	if info == nil {
+		return 0
+	}
+	for _, id := range info.MsgTypes[gpsreg.TagRTCM] {
+		if n, err := strconv.Atoi(id); err == nil {
+			if lvl := rtcmbin.MsgType(n).MSMLevel(); lvl != 0 {
+				return lvl
+			}
+		}
+	}
+	return 0
 }
 
 func printReceiverInfo(f *os.File, info *gpsprot.ReceiverInfo) {

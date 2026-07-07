@@ -95,7 +95,7 @@ The following option selects machine-readable output.
 : Write the results of high-level configuration to stdout as a single JSON object
 instead of the human-readable output.
 The object can have the following fields, omitted when there is nothing to report:
-`receiver` (vendor, hardware, firmware, and supported GNSS constellations),
+`receiver` (vendor, hardware, firmware, supported GNSS constellations, and the message types received during configuration, per protocol),
 `supports` (the configuration features the receiver supports, as listed by the `Supports:` line of **\-\-show\-receiver**),
 `packetFormats` (the packet formats detected),
 `config` (the configuration properties that were set or queried),
@@ -321,10 +321,10 @@ The following options control which messages the receiver outputs.
 
 On some receivers, switching between MSM4 and MSM7 takes effect only after the configuration is
 saved and the receiver reset; such receivers show `rtcmMSMOnlyWithReset` in the `Supports:` list.
-On these receivers an explicit **MSM4** or **MSM7** request whose type is not already in effect is
-performed only when **\-\-save** is combined with **\-\-reload** or **\-\-reset**, and is otherwise
-skipped with a warning; **auto** silently uses the type already in effect. Message enabling and
-disabling always applies immediately.
+On these receivers an explicit **MSM4** or **MSM7** request is performed only when **\-\-save** is
+combined with **\-\-reload** or **\-\-reset**, and is otherwise skipped, with a warning unless the
+RTCM output observed during configuration already has the requested type; **auto** silently uses
+the type already in effect. Message enabling and disabling always applies immediately.
 
 **\-\-rtcm\-base\-id** *id*
 : Set the RTCM reference station ID. The *id* must be an integer between 0 and 4095.

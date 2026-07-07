@@ -198,11 +198,16 @@ must never write NVM or restart behind the user's back. Ruling:
   these settings: no error, and no stored-but-ineffective writes
   left on the receiver. Readback of these properties reports the
   effective (as-found) state.
-- Warning the user is the tools' job, not the configurator's: new
-  ConfigSupport flags (applies-only-at-restart) let satpulsed and
-  satpulsetool say "cannot do that". The flags are shared framework
-  and go on their OWN branch; until they land, silence is
-  acceptable.
+- Warning the user is the tools' job, not the configurator's: the
+  ConfigSupport qualifier flags (signal/mode/rtcmMSM OnlyWithReset,
+  landed on this branch by owner ruling) declare the behavior, and
+  the tools derive warnings themselves from (a) what they asked for,
+  (b) the declared support, and (c) the post-config state - the
+  effective readback for signals and mode, the observed RTCM message
+  types (ReceiverInfo.MsgTypes) for the MSM type. satpulsetool warns
+  with the missing flags; satpulsed warns only for the static-mode
+  case (its config is volatile by contract, so signals are not its
+  business and MSM is only ever a preference there).
 - Mode additionally requires RCVRMODE=2 (base mode), which swaps to
   the per-mode message table (NMEA off, RTCM on) and forces 1 Hz.
   Message-rate sets are live even in base mode, so satpulsed's own

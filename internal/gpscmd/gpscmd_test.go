@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
 )
 
 func TestGnssListSet(t *testing.T) {
@@ -105,6 +107,85 @@ func TestPrintConfigSupport(t *testing.T) {
 	want := "Supports: signal, speed\n"
 	if got := string(b); got != want {
 		t.Errorf("printConfigSupport output = %q, want %q", got, want)
+	}
+}
+
+// TestConfigWarnings checks the request-vs-supports-vs-state warning
+// derivation: onlyWithReset skips warn with the missing flags, a
+// satisfied request warns nothing, unsupported constellations get the
+// generic warning, and the MSM warning defers to observed output.
+func TestConfigWarnings(t *testing.T) {
+	sigsGPSGLO := gpsprot.SignalSet((1 << gpsprot.SigGPSL1CA) | (1 << gpsprot.SigGLOL1))
+	sigsGPS := gpsprot.SignalSet(1 << gpsprot.SigGPSL1CA)
+	newRslt := func(support gpsprot.ConfigSupportFlags, sigs gpsprot.SignalSet, msgTypes []string) *gpscfg.Result {
+		info := &gpsprot.ReceiverInfo{SupportedGNSS: gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.GLO)}
+		if msgTypes != nil {
+			info.MsgTypes = map[gpsprot.Tag][]string{gpsreg.TagRTCM: msgTypes}
+		}
+		props := &gpsprot.ConfigProps{}
+		if sigs != 0 {
+			props.SetSignalsEnabled(sigs)
+		}
+		return &gpscfg.Result{ReceiverInfo: info, ConfigSupport: support, ConfigProps: props}
+	}
+	sigTarget := func(sigs gpsprot.SignalSet) *gpsprot.ConfigTarget {
+		target := gpsprot.NewConfigTarget()
+		target.Props.SetSignalsEnabled(sigs)
+		return target
+	}
+
+	// Skipped signal change on an onlyWithReset receiver.
+	ws := configWarnings(sigTarget(sigsGPS), newRslt(gpsprot.ConfigSupportSignalOnlyWithReset, sigsGPSGLO, nil))
+	if len(ws) != 1 || !strings.Contains(ws[0], "signal") || !strings.Contains(ws[0], "--save") {
+		t.Errorf("signal skip warnings = %v", ws)
+	}
+	// A request the receiver already satisfies warns nothing.
+	if ws := configWarnings(sigTarget(sigsGPSGLO), newRslt(gpsprot.ConfigSupportSignalOnlyWithReset, sigsGPSGLO, nil)); len(ws) != 0 {
+		t.Errorf("satisfied request warnings = %v", ws)
+	}
+	// An unsupported constellation is unsupportedness, not a skip.
+	ws = configWarnings(sigTarget(sigsGPSGLO|(1<<gpsprot.SigGALE1)), newRslt(gpsprot.ConfigSupportSignalOnlyWithReset, sigsGPSGLO, nil))
+	if len(ws) != 1 || strings.Contains(ws[0], "--save") || !strings.Contains(ws[0], "does not support") {
+		t.Errorf("unsupported constellation warnings = %v", ws)
+	}
+
+	// Skipped static mode, requested via SetStatic.
+	target := gpsprot.NewConfigTarget()
+	target.Opts.SetStatic = true
+	rslt := newRslt(gpsprot.ConfigSupportModeOnlyWithReset, 0, nil)
+	rslt.ConfigProps.SetMode(gpsprot.Mode{Static: false})
+	if ws := configWarnings(target, rslt); len(ws) != 1 || !strings.Contains(ws[0], "positioning mode") {
+		t.Errorf("mode skip warnings = %v", ws)
+	}
+	// An LLH fixed-position request realized as ECEF is satisfied.
+	target = gpsprot.NewConfigTarget()
+	target.Props.SetMode(gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeLLH})
+	rslt = newRslt(gpsprot.ConfigSupportModeOnlyWithReset, 0, nil)
+	rslt.ConfigProps.SetMode(gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeECEF})
+	if ws := configWarnings(target, rslt); len(ws) != 0 {
+		t.Errorf("fixed-position kind warnings = %v", ws)
+	}
+
+	// Explicit MSM7 without save+reset: pessimistic without observed
+	// output, silent when MSM7 messages were seen, lax always silent.
+	msmTarget := func(flags gpsprot.RTCMMsgFlags) *gpsprot.ConfigTarget {
+		target := gpsprot.NewConfigTarget()
+		target.Opts.RTCMMsg.Set(flags)
+		return target
+	}
+	ws = configWarnings(msmTarget(gpsprot.RTCMMsgMSM7|gpsprot.RTCMMsgARP), newRslt(gpsprot.ConfigSupportRTCMMSMOnlyWithReset, 0, nil))
+	if len(ws) != 1 || !strings.Contains(ws[0], "MSM7") {
+		t.Errorf("MSM pessimistic warnings = %v", ws)
+	}
+	if ws := configWarnings(msmTarget(gpsprot.RTCMMsgMSM7|gpsprot.RTCMMsgARP), newRslt(gpsprot.ConfigSupportRTCMMSMOnlyWithReset, 0, []string{"1005", "1077"})); len(ws) != 0 {
+		t.Errorf("MSM observed-match warnings = %v", ws)
+	}
+	ws = configWarnings(msmTarget(gpsprot.RTCMMsgMSM7|gpsprot.RTCMMsgARP), newRslt(gpsprot.ConfigSupportRTCMMSMOnlyWithReset, 0, []string{"1005", "1074"}))
+	if len(ws) != 1 || !strings.Contains(ws[0], "MSM7") {
+		t.Errorf("MSM observed-mismatch warnings = %v", ws)
+	}
+	if ws := configWarnings(msmTarget(gpsprot.RTCMMsgAutoMSM7), newRslt(gpsprot.ConfigSupportRTCMMSMOnlyWithReset, 0, nil)); len(ws) != 0 {
+		t.Errorf("MSM lax warnings = %v", ws)
 	}
 }
 

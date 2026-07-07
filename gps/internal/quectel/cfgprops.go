@@ -22,6 +22,17 @@ var signalBits = [6][]gpsprot.Signal{
 	{gpsprot.SigNAVICL5},
 }
 
+// signalUniverse returns every signal with a CFGSIGNAL mask bit.
+func signalUniverse() gpsprot.SignalSet {
+	var ss gpsprot.SignalSet
+	for _, sigs := range signalBits {
+		for _, sig := range sigs {
+			ss |= 1 << sig
+		}
+	}
+	return ss
+}
+
 func signalMasks(m *qtmmsg.CfgSignal) [6]*qtmmsg.HexByte {
 	return [6]*qtmmsg.HexByte{&m.GPSSig, &m.GLOSig, &m.GALSig, &m.BDSSig, &m.QZSSig, &m.NACSig}
 }
@@ -115,9 +126,8 @@ func (c *Configurator) generatePropSets() error {
 // positioning mode. Both are stored-only, and position modes exist
 // only under base receiver mode (hardware-verified), so the writes
 // ride the same explicit save+reset gate as signals; without it the
-// configurator does nothing, warning only when the effective mode
-// would have changed (clearing stored-but-inert SVIN state in rover
-// mode changes nothing and warns nothing). Entering base mode swaps
+// configurator does nothing, and the skip shows in the effective-mode
+// readback. Entering base mode swaps
 // the per-mode message table (NMEA off, RTCM on) and forces a 1 Hz
 // fix rate; message output stays configurable live in base mode, so
 // a daemon restores its feed on its next configuration pass.
@@ -148,10 +158,7 @@ func (c *Configurator) generateModeSet() {
 	if c.found.rcvrMode.Mode == rcvr && *c.found.svin == svin {
 		return
 	}
-	if !c.target.Opts.SavesAndResets() {
-		if rcvr != qtmmsg.RcvrModeRover || c.found.rcvrMode.Mode != qtmmsg.RcvrModeRover {
-			c.onlyWithReset("the positioning mode change")
-		}
+	if !c.savesAndResets() {
 		return
 	}
 	if c.found.rcvrMode.Mode != rcvr {
@@ -174,10 +181,10 @@ func fixedSvin(p geopos.ECEF) qtmmsg.CfgSvin {
 // effect at the next NVM reload, never live. Owner ruling: the writes
 // are performed only when the target also saves and restarts, so
 // persistence and the ~15 s outage are explicitly user-requested;
-// otherwise the configurator does nothing - with a warning when that
-// leaves the receiver differing from the request, silently when the
-// receiver already matches - and never leaves stored-but-ineffective
-// state behind. Requested signals the receiver has no mask bit for
+// otherwise the configurator does nothing and never leaves
+// stored-but-ineffective state behind - the skip shows in the
+// readback, from which frontends derive any warning. Requested
+// signals the receiver has no mask bit for
 // are dropped by intersection; a constellation with no requested
 // signals is disabled via its CFGCNST gate, its mask kept as found.
 func (c *Configurator) generateSignalSets() {
@@ -207,8 +214,7 @@ func (c *Configurator) generateSignalSets() {
 	if sig == *c.found.signal && cnst == *c.found.cnst {
 		return
 	}
-	if !c.target.Opts.SavesAndResets() {
-		c.onlyWithReset("the signal change")
+	if !c.savesAndResets() {
 		return
 	}
 	if sig != *c.found.signal {
