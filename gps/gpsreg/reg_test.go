@@ -134,8 +134,11 @@ func TestCreatePacketFormats(t *testing.T) {
 }
 
 func TestCreateConfigProtocols(t *testing.T) {
-	if n := len(CreateConfigProtocols(VendorUnknown)); n != 2 {
-		t.Errorf("VendorUnknown: got %d config protocols, want 2", n)
+	if n := len(CreateConfigProtocols(VendorUnknown)); n != 3 {
+		t.Errorf("VendorUnknown: got %d config protocols, want 3", n)
+	}
+	if n := len(CreateConfigProtocols(VendorQuectel)); n != 1 {
+		t.Errorf("VendorQuectel: got %d config protocols, want 1", n)
 	}
 	if n := len(CreateConfigProtocols(VendorUblox)); n != 1 {
 		t.Errorf("VendorUblox: got %d config protocols, want 1", n)
