@@ -215,10 +215,13 @@ semantics make unnecessary.
 | `BaudRate` | none on USB | Owner ruling: ubx USB model - reads back 0 ("not applicable"), sets are no-ops on USB connections. `setCOMSettings` affects only physical COM ports we cannot reach. |
 | `Port` (read-only) | none | From the connection descriptor in the reply prompt (`USB1>` verified). |
 
-`Survey` and its `ConfigSupport*` flags are unset: Septentrio has no
-parameterized/terminating/observable survey operation (`setPVTMode,
-Static, , auto` is an auto-computed reference, surfaced as
-`Mode.Static`+`PosTypeNone`, not a survey).
+`Survey` is supported: `setPVTMode, Static, , auto` IS the survey
+operation (the receiver determines its fixed position autonomously),
+realized by the `Mode.Static`+`PosTypeNone` row above. It takes no
+duration or accuracy arguments, so `ConfigSupportSurveyDur` and
+`ConfigSupportSurveyAcc` are unset and those parameters are ignored;
+progress is observable on the SBF stream (PVT mode "determining fixed
+position" bit), which is what realizes `SurveyMsg`.
 
 **SignalsEnabled realization.** Three commands realize one property:
 `sst` gates by constellation, `snt` by signal (tracking), `snu` by
@@ -357,8 +360,11 @@ prompt) and interval in one `setSBFOutput`/`setNMEAOutput` command;
 
 ### `ConfigSupportFlags`
 
-`ConfigSupportFull &^ (Survey | SurveyAcc | SurveyMsg)` (the `unc`
-pattern, so future flags are picked up automatically). Every G5-vs-X5
+`ConfigSupportFull &^ (SurveyAcc | SurveyDur | FixedPosAcc)` (the `unc`
+pattern, so future flags are picked up automatically): the survey
+operation and the survey message are supported, only the survey
+parameters (duration, accuracy) and fixed-position accuracy have no
+command carrier. Every G5-vs-X5
 difference reduces to a capability/port/signal check against the grc
 reply - **never** a `ReceiverInfo.Hardware` model-string test.
 
