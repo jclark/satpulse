@@ -246,15 +246,20 @@ protocol-questions.md:
    verified) - no saw-off risk on output. InputProt on the active
    port deliberately untested: lockout risk with no second UART
    wired; treat as unknown and never clear it on the active port.
-8. PART-ANSWERED. CFGSVIN,W mode 1 is ACKed and stored in rover
-   mode (no ERROR) - stored-but-inert. RCVRMODE is RESTART-ONLY
-   (stored as 2; NMEA still at full volume, no RTCM, 3+ s later).
-   PQTMSVINSTATUS enable answers ERROR,1 whenever base mode is not
-   yet EFFECTIVE - the message-file "broken on R02" note is really
-   mode-gating. Still open (needs a SAVEPAR+SRR cycle into
-   effective base mode): what base mode actually changes (LSTMSG,
-   NMEA off, MSM4+1005 on, 1 Hz), SVINSTATUS in effective base
-   mode, survey completion semantics.
+8. ANSWERED. RCVRMODE and CFGSVIN are both RESTART-ONLY. Effective
+   base mode (after save+SRR): NMEA off, RTCM3 on at 1 Hz (MSM4
+   1074/1084/1094/1124 + 1005 + 1033), PQTM responses unaffected,
+   and LSTMSG shows a PER-MODE table (RTCM entries only).
+   PQTMSVINSTATUS and its disable are mode-gated (ERROR,1 outside
+   effective base mode) - the message-file "broken on R02" note
+   explained. Survey: stored mode 1 is inert until restart
+   (SVINSTATUS means are continuous averaging telemetry, Valid=0,
+   CfgDur reads 0); after restart the survey runs (CfgDur=60 as
+   configured, Obs 1/s, Valid 1 -> 2 at Obs==CfgDur, mean+MeanAcc
+   frozen thereafter). The result does NOT transfer into CFGSVIN
+   readback - it lives only in SVINSTATUS (and the emitted 1005),
+   so a saved mode 1 presumably re-surveys every boot (not
+   separately verified).
 9. MOSTLY ANSWERED. LSTMSG (bare, current port) dumps one
    `,OK,1,1,<MsgName>,<Rate>[,<MsgVer>]` line per ENABLED message
    only - disabled messages vanish (no rate-0 entries), so the
@@ -275,9 +280,13 @@ protocol-questions.md:
     default load at 460800 in every run so far; state-neutrality
     assumed (read-only query), reliability under heavier load not
     yet stressed.
-12. Doc-audit confirmations: no raw obs output, no TimeGNSS knob, no
-    antenna cable delay other than PPS2 Userdelay, no leap-second/
-    UTC-parameter query (PQTMPVT carries LeapS).
+12. ANSWERED (documented audit over lg290p_1.3.md). No
+    raw-measurement PQTM message - the spec itself names RTCM as
+    the raw-measurement carrier - so ConfigSupportRaw is absent and
+    MSM stays under RTCMMsg. Leap seconds appear only as fields in
+    PQTMPVT/NAV/PPPNAV (no UTC-model query). No antenna-cable-delay
+    field beyond PPS2 Userdelay. No PPS time-reference knob:
+    TimeGNSS absent, align-to-GNSS is fixed behavior.
 
 Exit criteria: every design assumption above marked verified or
 corrected; the message file gains verified tags for every command the
