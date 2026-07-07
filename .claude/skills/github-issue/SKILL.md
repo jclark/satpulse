@@ -9,6 +9,8 @@ allowed-tools: Bash, Glob, Grep, Read, Write, WebSearch, WebFetch
 
 This skill covers all work with GitHub issues: creating new issues (`gh issue create`), editing existing ones (`gh issue edit`), commenting (`gh issue comment`), and managing labels. Whenever you write or revise issue text, follow the style conventions below.
 
+When reading an issue, use `gh issue view N --json title,body,state,labels,comments` rather than the bare command - the default template queries a deprecated GraphQL field (Projects classic) and fails on older gh versions.
+
 ## Title
 
 - Short and descriptive, under ~80 characters

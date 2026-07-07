@@ -103,6 +103,7 @@ The end state is that this workflow runs unattended through `systest/`: a playbo
 - Pointing the program at a receiver family it has never seen requires no new code for the common path, and produces a characterization plus, at worst, verbatim unexplained observations.
 - Two consecutive runs on the same receiver produce the same characterization.
 - The receiver is left as it was found (running configuration restored; NVM untouched except by the flag-gated disruptive probes, which must restore NVM to a sane state).
+- The starting state is the operator's job: each receiver bring-up chooses the configuration state a characterization run starts from - properties and message output both - documents it in `HW/<receiver>.md`, and provides a script that establishes it from factory defaults (`setup/<receiver>.sh`). gpshwtest restores to what it finds, so the starting state must be one the tool can restore: any property values work (properties restore through readback), but the message output state must be reproducible by the tool's own requests, since semantic message output cannot be reconstructed from observation. Without the documented state and script, applying gpshwtest to a receiver is not reproducible.
 - Per-invocation packet logs are kept as artifacts, usable as candidate replay-test data for `internal/gpscmd`.
 
 ## Ground rules for running against hardware
