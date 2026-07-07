@@ -3,6 +3,8 @@ package qtmmsg
 import (
 	"reflect"
 	"testing"
+
+	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
 // Response payloads are verbatim captures from an LG290P R02A01S.
@@ -48,6 +50,51 @@ func TestParseCfgResponse(t *testing.T) {
 			payload: "PQTMCFGELETHD,OK,5.0",
 			expect:  &CfgEleThd{Ele: 5.0},
 		},
+		{
+			name:    "CfgSignal",
+			payload: "PQTMCFGSIGNAL,OK,07,03,0F,3F,0F,01",
+			expect:  &CfgSignal{GPSSig: 0x07, GLOSig: 0x03, GALSig: 0x0F, BDSSig: 0x3F, QZSSig: 0x0F, NACSig: 0x01},
+		},
+		{
+			name:    "CfgCnst",
+			payload: "PQTMCFGCNST,OK,1,1,1,1,1,1",
+			expect:  &CfgCnst{GPS: 1, GLONASS: 1, Galileo: 1, BDS: 1, QZSS: 1, NavIC: 1},
+		},
+		{
+			name:    "CfgSvin disabled",
+			payload: "PQTMCFGSVIN,OK,0,0,0.0,0.0000,0.0000,0.0000,0.0",
+			expect:  &CfgSvin{},
+		},
+		{
+			name:    "CfgSvin survey",
+			payload: "PQTMCFGSVIN,OK,1,60,100.0,0.0000,0.0000,0.0000,0.0",
+			expect:  &CfgSvin{Mode: 1, CfgCnt: 60, AccLimit3D: 100.0},
+		},
+		{
+			name:    "CfgRcvrMode",
+			payload: "PQTMCFGRCVRMODE,OK,2",
+			expect:  &CfgRcvrMode{Mode: 2},
+		},
+		{
+			name:    "CfgMsgRate no version",
+			payload: "PQTMCFGMSGRATE,OK,GGA,1",
+			expect:  &CfgMsgRate{MsgName: "GGA", Rate: 1},
+		},
+		{
+			name:    "CfgMsgRate zero rate",
+			payload: "PQTMCFGMSGRATE,OK,ZDA,0",
+			expect:  &CfgMsgRate{MsgName: "ZDA", Rate: 0},
+		},
+		{
+			name:    "CfgProt",
+			payload: "PQTMCFGPROT,OK,1,1,00000007,00000006",
+			expect:  &CfgProt{PortType: 1, PortID: 1, InputProt: 0x7, OutputProt: 0x6},
+		},
+		{
+			name:    "CfgRSID",
+			payload: "PQTMCFGRSID,OK,1024",
+			expect:  &CfgRSID{ID: 1024},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -69,7 +116,7 @@ func TestParseCfgResponseNonCfg(t *testing.T) {
 	}{
 		{name: "set ack", payload: "PQTMCFGPPS,OK"},
 		{name: "error", payload: "PQTMCFGPPS,ERROR,1"},
-		{name: "unregistered sentence", payload: "PQTMCFGRCVRMODE,OK,1"},
+		{name: "unregistered sentence", payload: "PQTMCFGNAVMODE,OK,11"},
 		{name: "not PQTM", payload: "GNGGA,034418.00,1343.91295,N"},
 		{name: "verno data", payload: "PQTMVERNO,LG290P03AANR02A01S,2025/12/12,11:21:01"},
 	}
@@ -133,6 +180,51 @@ func TestEncodeWrite(t *testing.T) {
 			msg:    &CfgEleThd{Ele: 45},
 			expect: "PQTMCFGELETHD,W,45.0",
 		},
+		{
+			name:   "CfgSignal", // hw
+			msg:    &CfgSignal{GPSSig: 0x07, GLOSig: 0x00, GALSig: 0x0F, BDSSig: 0x3F, QZSSig: 0x0F, NACSig: 0x01},
+			expect: "PQTMCFGSIGNAL,W,07,00,0F,3F,0F,01",
+		},
+		{
+			name:   "CfgCnst", // hw
+			msg:    &CfgCnst{GPS: 1, GLONASS: 0, Galileo: 1, BDS: 1, QZSS: 1, NavIC: 1},
+			expect: "PQTMCFGCNST,W,1,0,1,1,1,1",
+		},
+		{
+			name:   "CfgSvin survey omits zero Distance",
+			msg:    &CfgSvin{Mode: 1, CfgCnt: 60, AccLimit3D: 100.0},
+			expect: "PQTMCFGSVIN,W,1,60,100.0,0.0000,0.0000,0.0000",
+		},
+		{
+			name:   "CfgSvin fixed position",
+			msg:    &CfgSvin{Mode: 2, ECEFX: -1144698.0455, ECEFY: 6090335.4099, ECEFZ: 1504171.3914},
+			expect: "PQTMCFGSVIN,W,2,0,0.0,-1144698.0455,6090335.4099,1504171.3914",
+		},
+		{
+			name:   "CfgRcvrMode", // hw
+			msg:    &CfgRcvrMode{Mode: 2},
+			expect: "PQTMCFGRCVRMODE,W,2",
+		},
+		{
+			name:   "CfgMsgRate no version", // hw
+			msg:    &CfgMsgRate{MsgName: "GLL", Rate: 0},
+			expect: "PQTMCFGMSGRATE,W,GLL,0",
+		},
+		{
+			name:   "CfgMsgRate with version", // hw
+			msg:    &CfgMsgRate{MsgName: "PQTMSVINSTATUS", Rate: 1, MsgVer: opt.Make[uint8](1)},
+			expect: "PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1",
+		},
+		{
+			name:   "CfgProt", // hw
+			msg:    &CfgProt{PortType: 1, PortID: 1, InputProt: 0x7, OutputProt: 0x6},
+			expect: "PQTMCFGPROT,W,1,1,00000007,00000006",
+		},
+		{
+			name:   "CfgRSID",
+			msg:    &CfgRSID{ID: 1024},
+			expect: "PQTMCFGRSID,W,1024",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -142,6 +234,84 @@ func TestEncodeWrite(t *testing.T) {
 			}
 			if got != tc.expect {
 				t.Errorf("got  %q\nwant %q", got, tc.expect)
+			}
+		})
+	}
+}
+
+// Payloads are verbatim R02A01S captures.
+func TestParseVerno(t *testing.T) {
+	got, err := ParseVerno("PQTMVERNO,LG290P03AANR02A01S,2025/12/12,11:21:01")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expect := &Verno{VerStr: "LG290P03AANR02A01S", BuildDate: "2025/12/12", BuildTime: "11:21:01"}
+	if !reflect.DeepEqual(got, expect) {
+		t.Errorf("got  %+v\nwant %+v", got, expect)
+	}
+	if got, err := ParseVerno("PQTMCFGPPS,OK,1,1,100,1,1,0"); got != nil || err != nil {
+		t.Errorf("non-VERNO: got (%+v, %v), want (nil, nil)", got, err)
+	}
+}
+
+func TestParseUniqID(t *testing.T) {
+	got, err := ParseUniqID("PQTMUNIQID,OK,8,0000183B31B3C252")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expect := &UniqID{Length: 8, ID: "0000183B31B3C252"}
+	if !reflect.DeepEqual(got, expect) {
+		t.Errorf("got  %+v\nwant %+v", got, expect)
+	}
+	if got, err := ParseUniqID("PQTMUNIQID,OK"); got != nil || err != nil {
+		t.Errorf("bare OK: got (%+v, %v), want (nil, nil)", got, err)
+	}
+}
+
+// Payloads are verbatim R02A01S captures from rover and base mode.
+func TestParseLstMsg(t *testing.T) {
+	tests := []struct {
+		name      string
+		payload   string
+		expect    *LstMsgLine
+		expectEnd bool
+	}{
+		{
+			name:    "nmea entry",
+			payload: "PQTMLSTMSG,OK,1,1,GGA,1",
+			expect:  &LstMsgLine{PortType: 1, PortID: 1, MsgName: "GGA", Rate: 1},
+		},
+		{
+			name:    "pqtm entry with version",
+			payload: "PQTMLSTMSG,OK,1,1,PQTMTXT,1,1",
+			expect:  &LstMsgLine{PortType: 1, PortID: 1, MsgName: "PQTMTXT", Rate: 1, MsgVer: opt.Make[uint8](1)},
+		},
+		{
+			name:    "rtcm entry with offset",
+			payload: "PQTMLSTMSG,OK,1,1,RTCM3-107X,1,0",
+			expect:  &LstMsgLine{PortType: 1, PortID: 1, MsgName: "RTCM3-107X", Rate: 1, MsgVer: opt.Make[uint8](0)},
+		},
+		{
+			name:      "end line",
+			payload:   "PQTMLSTMSG,OK,End",
+			expectEnd: true,
+		},
+		{
+			name:    "not lstmsg",
+			payload: "PQTMCFGPPS,OK,1,1,100,1,1,0",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			line, end, err := ParseLstMsg(tc.payload)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if end != tc.expectEnd {
+				t.Errorf("end = %v, want %v", end, tc.expectEnd)
+			}
+			if !reflect.DeepEqual(line, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", line, tc.expect)
 			}
 		})
 	}
