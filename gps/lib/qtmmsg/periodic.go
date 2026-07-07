@@ -109,7 +109,8 @@ func (*DOP) ID() (string, uint8) { return "DOP", 1 }
 type SVINStatus struct {
 	TOW     uint32           // ms, GPS time of week
 	Valid   uint8            // 0=invalid, 1=in-progress, 2=valid
-	Res0    string           // reserved (hex)
+	Res0    string           // reserved, always null
+	Res1    string           // reserved (hex)
 	Obs     uint32           // position observations used
 	CfgDur  uint32           // configured observation count
 	MeanX   opt.Val[float64] // m, ECEF
