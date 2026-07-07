@@ -596,6 +596,63 @@ func TestConfiguratorModeSurvey(t *testing.T) {
 	}
 }
 
+// TestConfiguratorSetStatic checks the SetStatic option: on a rover
+// receiver it acts as a static survey request under the save+reset
+// gate, and an effectively static receiver is left as found, so an
+// existing fixed position or survey is not disturbed.
+func TestConfiguratorSetStatic(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGRCVRMODE,W,2"] = []string{"PQTMCFGRCVRMODE,OK"}
+	responses["PQTMCFGSVIN,W,1,300,2.3,0.0000,0.0000,0.0000"] = []string{"PQTMCFGSVIN,OK"}
+	responses["PQTMSAVEPAR"] = []string{"PQTMSAVEPAR,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.SetStatic = true
+	target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second,
+		AccLimit: gpsprot.Length(2.3 * float64(gpsprot.Meter))}
+	target.Opts.Save = gpsprot.SaveMinimal
+	target.Opts.Reset = gpsprot.ResetReload
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	want := []string{"PQTMCFGRCVRMODE,W,2", "PQTMCFGSVIN,W,1,300,2.3,0.0000,0.0000,0.0000"}
+	if got := wSent(sent); !reflect.DeepEqual(got, want) {
+		t.Errorf("sets sent: %v, want %v", got, want)
+	}
+
+	// Without save+reset the request is skipped like any mode change.
+	target = &gpsprot.ConfigTarget{}
+	target.Opts.SetStatic = true
+	_, errCount, sent = runConfigTarget(t, target, fakeResponses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if got := wSent(sent); len(got) != 0 {
+		t.Errorf("sets sent without save+restart: %v", got)
+	}
+
+	// An effectively static receiver (base + fixed SVIN) is left as
+	// found even with save+reset.
+	responses = maps.Clone(fakeResponses)
+	responses["PQTMCFGRCVRMODE,R"] = []string{"PQTMCFGRCVRMODE,OK,2"}
+	responses["PQTMCFGSVIN,R"] = []string{"PQTMCFGSVIN,OK,2,0,0.0,-1132881.1235,6092270.5679,1504542.9012,0.0"}
+	responses["PQTMSAVEPAR"] = []string{"PQTMSAVEPAR,OK"}
+	target = &gpsprot.ConfigTarget{}
+	target.Opts.SetStatic = true
+	target.Opts.Save = gpsprot.SaveMinimal
+	target.Opts.Reset = gpsprot.ResetReload
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if got := wSent(sent); len(got) != 0 {
+		t.Errorf("sets sent for an effectively static receiver: %v", got)
+	}
+	if m, ok := c.ConfigProps().GetMode(); !ok || !m.Static {
+		t.Errorf("readback mode = %+v, %v, want static", m, ok)
+	}
+}
+
 // TestConfiguratorModeFixedLLH checks the fixed-position set from LLH
 // coordinates: converted to ECEF for the SVIN tuple, and the achieved
 // mode reads back as a fixed ECEF position.

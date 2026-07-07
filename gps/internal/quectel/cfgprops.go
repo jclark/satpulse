@@ -132,8 +132,21 @@ func (c *Configurator) generatePropSets() error {
 // fix rate; message output stays configurable live in base mode, so
 // a daemon restores its feed on its next configuration pass.
 func (c *Configurator) generateModeSet() {
+	if c.found.rcvrMode == nil || c.found.svin == nil {
+		return
+	}
 	mode, ok := c.target.Props.GetMode()
-	if !ok || c.found.rcvrMode == nil || c.found.svin == nil {
+	// SetStatic means static without disturbing an existing fixed
+	// position or survey: an effectively static receiver is left as
+	// found; anything else is treated as a Mode{Static: true} survey
+	// request, even over a non-static Mode property (ubx semantics).
+	if c.target.Opts.SetStatic && (!ok || !mode.Static) {
+		if c.effectivelyStatic() {
+			return
+		}
+		mode, ok = gpsprot.Mode{Static: true}, true
+	}
+	if !ok {
 		return
 	}
 	var svin qtmmsg.CfgSvin
@@ -169,6 +182,15 @@ func (c *Configurator) generateModeSet() {
 		m := svin
 		c.reqs = append(c.reqs, c.propSet(&m, func() { c.found.svin = &m }))
 	}
+}
+
+// effectivelyStatic reports whether the as-found state is an
+// effective static mode: base receiver mode with a survey-in or
+// fixed SVIN. A stored SVIN is inert in rover mode. Precondition:
+// found.rcvrMode and found.svin are non-nil.
+func (c *Configurator) effectivelyStatic() bool {
+	return c.found.rcvrMode.Mode == qtmmsg.RcvrModeBase &&
+		(c.found.svin.Mode == qtmmsg.SvinModeSurveyIn || c.found.svin.Mode == qtmmsg.SvinModeFixed)
 }
 
 func fixedSvin(p geopos.ECEF) qtmmsg.CfgSvin {
