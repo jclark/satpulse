@@ -11,14 +11,19 @@ import (
 // Vendor is the vendor name reported in ReceiverInfo.
 const Vendor = "Septentrio"
 
-// configSupport is everything except the survey parameters and
+// configSupport is everything except speed, the survey parameters, and
 // fixed-position accuracy - Septentrio's survey ("setPVTMode, Static, ,
 // auto": the receiver determines its fixed position autonomously) takes
 // no duration or accuracy arguments, and fixed-position accuracy has no
-// command carrier. Declaring it as full minus these gains future flags
-// automatically.
+// command carrier. Speed change (setCOMSettings, COM1/COM2 only) is not
+// implemented: the live baud switch on the connected port cannot be
+// verified without COM-port hardware access, so it is declared
+// unsupported rather than shipped untested; a message file can send
+// setCOMSettings directly. Declaring it as full minus these gains
+// future flags automatically.
 const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportFull &^
-	(gpsprot.ConfigSupportSurveyAcc | gpsprot.ConfigSupportSurveyDur |
+	(gpsprot.ConfigSupportSpeed |
+		gpsprot.ConfigSupportSurveyAcc | gpsprot.ConfigSupportSurveyDur |
 		gpsprot.ConfigSupportFixedPosAcc)
 
 // septSignalNames maps each device-independent signal to its Septentrio
