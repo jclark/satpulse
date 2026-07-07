@@ -144,14 +144,14 @@ Properties (readback-capable):
 
 | gpsprot property | carrier |
 |---|---|
-| SignalsEnabled | PQTMCFGSIGNAL (per-signal masks; PQTMCFGCNST constellation gates - relationship is a stage-0 question) |
+| SignalsEnabled | PQTMCFGSIGNAL (per-signal masks) + PQTMCFGCNST (constellation gates); RESTART-ONLY - see "Restart-only settings" below |
 | TimeGNSS | none - absent (no PPS time-reference knob in the protocol; doc audit done) |
 | TimePulseWidth | PQTMCFGPPS2 Duration (fallback PQTMCFGPPS on ERROR,3) |
 | TimePulsePeriod | PQTMCFGPPS2 Period; with PPS fallback, constant 1000 ms |
 | TimePulseAlignToGNSS | no knob - fixed behavior, report as constant (value from stage-0 doc audit/observation) |
 | TimePulseOnlyWhenLocked | PQTMCFGPPS/PPS2 Mode (1 = always, 2 = fix only) |
 | TimePulsePolarityRising | PQTMCFGPPS/PPS2 Polarity |
-| Mode (static/survey/fixed) | PQTMCFGSVIN (0 disable / 1 survey / 2 fixed ECEF), effective ONLY under base mode (PQTMCFGRCVRMODE=2) after save+restart - fixed mode saved+restarted in rover mode verifiably changes nothing. NMEA re-enables live in the base-mode table, so a mode change can keep the daemon's feed. Design blocked with signals on the apply-at-restart owner ruling (see PROGRESS.md) |
+| Mode (static/survey/fixed) | PQTMCFGSVIN (0 disable / 1 survey / 2 fixed ECEF), effective ONLY under base mode (PQTMCFGRCVRMODE=2) after save+restart - fixed mode saved+restarted in rover mode verifiably changes nothing. NMEA re-enables live in the base-mode table, so a mode change can keep the daemon's feed. RESTART-ONLY - see "Restart-only settings" below |
 | AntennaCableDelay | candidate: PQTMCFGPPS2 Userdelay (ns) - semantic check in stage 0; otherwise absent |
 | NavMsgAuth | none - absent |
 | RTCMBaseID | PQTMCFGRSID |
@@ -177,6 +177,39 @@ Message output (ConfigOptions, no readback):
   (RAW-PPPB2B/QZSSL6/HASE6 are PPP correction streams, RTCM MSM is
   the only observation carrier and belongs to RTCMMsg) - stage-0 doc
   audit to confirm, then ConfigSupportRaw absent.
+
+## Restart-only settings (owner ruling, 2026-07-07)
+
+CFGSIGNAL/CFGCNST (SignalsEnabled) and CFGSVIN/CFGRCVRMODE (Mode)
+are ACKed and stored but take effect only after PQTMSAVEPAR plus a
+restart. Daemon configuration is volatile by documented contract
+(satpulse.toml(5): power-cycle undoes all changes; the daemon never
+changes enabled GNSS per the timeGNSS note), so the configurator
+must never write NVM or restart behind the user's back. Ruling:
+
+- The configurator performs these sets ONLY when the target also
+  carries Save plus a restart operation (satpulsetool --save with
+  --reload, which maps to SRR here, or --reset; NOT --factory-reset,
+  which restores NVM defaults and cannot combine with save). The
+  stored sets ride the existing pipeline (sets -> SAVEPAR ->
+  restart) and take effect at boot: persistence and outage are both
+  explicitly user-requested.
+- Without save+restart the configurator silently does nothing for
+  these settings: no error, and no stored-but-ineffective writes
+  left on the receiver. Readback of these properties reports the
+  effective (as-found) state.
+- Warning the user is the tools' job, not the configurator's: new
+  ConfigSupport flags (applies-only-at-restart) let satpulsed and
+  satpulsetool say "cannot do that". The flags are shared framework
+  and go on their OWN branch; until they land, silence is
+  acceptable.
+- Mode additionally requires RCVRMODE=2 (base mode), which swaps to
+  the per-mode message table (NMEA off, RTCM on) and forces 1 Hz.
+  Message-rate sets are live even in base mode, so satpulsed's own
+  volatile message configuration restores its feed on the next run.
+- Verify item: --reset maps to PQTMCOLD; SRR is verified to load
+  NVM at boot, COLD is not yet - confirm saved sets apply after
+  COLD before relying on it.
 
 Operations:
 
@@ -216,12 +249,11 @@ protocol-questions.md:
    stores masks the spec calls impossible (GPS L1 off stored and
    read back as 06 while L1 tracking continued) - readback reflects
    stored intent, not effective state. Error codes seen: 1, 3.
-4. PART-ANSWERED, ESCALATED. CFGSIGNAL and CFGCNST have NO live
-   effect: with GLO masked off by either command, GLONASS stayed
-   tracked and used in the fix >15 s; the setting took effect only
-   after PQTMSAVEPAR + PQTMSRR (verified both directions). Owner
-   ruling needed on how SignalsEnabled maps onto apply-at-restart
-   semantics (see PROGRESS.md). Effect-timing table so far: LIVE =
+4. ANSWERED (escalation resolved - see "Restart-only settings").
+   CFGSIGNAL and CFGCNST have NO live effect: with GLO masked off
+   by either command, GLONASS stayed tracked and used in the fix
+   >15 s; the setting took effect only after PQTMSAVEPAR + PQTMSRR
+   (verified both directions). Effect-timing table so far: LIVE =
    CFGMSGRATE, CFGELETHD, CFGPROT (all observed immediate);
    RESTART-ONLY = CFGSIGNAL, CFGCNST (verified applied after
    SAVEPAR+SRR), CFGFIXRATE (stored, output unchanged after 9 s;
@@ -320,8 +352,10 @@ terminology.)
 4. RTCM output: CFGMSGRATE RTCM groups + CFGRTCM + RSID, with the
    Other-member group semantics.
 5. Time pulse: PPS2 with PPS fallback.
-6. Mode/survey/fixed position: CFGSVIN + RCVRMODE.
-7. Signals: CFGSIGNAL/CFGCNST.
+6. Mode/survey/fixed position: CFGSVIN + RCVRMODE, gated on
+   save+restart per "Restart-only settings".
+7. Signals: CFGSIGNAL/CFGCNST, gated on save+restart per
+   "Restart-only settings".
 8. MinElevation, remaining properties.
 9. Speed change, ordered before NVM.
 10. NVM save/reset (SAVEPAR, SRR, COLD, RESTOREPAR).
