@@ -198,12 +198,18 @@ Instrument: `satpulsetool gps -m configs/gpsmsg/quectel/lg290p.toml
 go to CONTEXT.md and this plan. Questions, per
 protocol-questions.md:
 
-1. Identity: PQTMVERNO / PQTMUNIQID / PQTMSN output on this unit;
-   re-verify firmware.
-2. Pipelining: back-to-back requests with distinct sentence names
-   (mixed sets and gets) - all answered, in what order? Same-name
-   queue depth (does the second same-name request get dropped,
-   queued, or answered)?
+1. ANSWERED. Identity: PQTMVERNO ->
+   `LG290P03AANR02A01S,2025/12/12,11:21:01` (data-only reply, no OK
+   field); PQTMUNIQID -> `OK,8,0000183B31B3C252`.
+2. ANSWERED. Pipelining: 8 distinct-name back-to-back requests
+   (and 16 mixed sets+gets) all answered, strictly in request
+   order; typical latency 1-3 ms, occasional ~100 ms stall behind
+   the periodic output burst. Set ACKs are bare `NAME,OK`;
+   multi-instance get responses echo their instance
+   (`PQTMCFGMSGRATE,OK,GGA,1`), so gets are self-identifying.
+   Same-name concurrent depth is moot: the shared NMEA send path
+   serializes per name (single-flight), which is the planned
+   configurator policy anyway.
 3. ACK guarantee: set a value the receiver may clamp or refuse
    (unsupported CFGSIGNAL bit; out-of-range values) and read back
    independently - is there ACK-and-clamp or ACK-without-store?
@@ -241,9 +247,13 @@ protocol-questions.md:
 10. PPS vs PPS2: do both address the same underlying state on
     R02A01S; Userdelay readback semantics (register only - no pin
     instrumentation planned; word findings accordingly).
-11. Probe: PQTMVERNO state-neutrality and reliability under default
-    message load at 460800; unknown-sentence behavior (silence or
-    ERROR?) - determines probe-timeout needs.
+11. PART-ANSWERED. Unknown sentence names answer `<name>,ERROR,3`
+    echoing the unknown name - never silence - so ERROR,3 capability
+    discovery is definitive and any PQTM-speaking firmware answers
+    the probe with something. PQTMVERNO answered reliably under
+    default load at 460800 in every run so far; state-neutrality
+    assumed (read-only query), reliability under heavier load not
+    yet stressed.
 12. Doc-audit confirmations: no raw obs output, no TimeGNSS knob, no
     antenna cable delay other than PPS2 Userdelay, no leap-second/
     UTC-parameter query (PQTMPVT carries LeapS).
