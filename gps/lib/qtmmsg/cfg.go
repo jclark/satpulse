@@ -160,6 +160,12 @@ func (m *CfgUART) writeFields() ([]string, error) {
 	return fields, nil
 }
 
+// PPS output modes (the CfgPPS/CfgPPS2 Mode field).
+const (
+	PPSModeAlways  = 1 // PPS always output
+	PPSModeFixOnly = 2 // PPS output only in 2D/3D fix mode
+)
+
 // CfgPPS represents the PQTMCFGPPS tuple (PPS feature).
 type CfgPPS struct {
 	Index    uint8  // 1=PPS1

@@ -416,11 +416,12 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 	return configSupport
 }
 
-// ConfigProps returns the achieved configuration. Property conversion
-// from the as-found tuples lands feature by feature; this skeleton
-// reports nothing yet.
+// ConfigProps returns the achieved configuration, converted from the
+// as-found tuples (updated by set acknowledgements as features land).
 func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
-	return &gpsprot.ConfigProps{}
+	props := &gpsprot.ConfigProps{}
+	c.found.convertToProps(props)
+	return props
 }
 
 // ConfigRequest interface implementation on request.

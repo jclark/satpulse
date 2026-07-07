@@ -26,7 +26,7 @@ var fakeResponses = map[string][]string{
 	"PQTMCFGSVIN,R":     {"PQTMCFGSVIN,OK,0,0,0.0,0.0000,0.0000,0.0000,0.0"},
 	"PQTMCFGRCVRMODE,R": {"PQTMCFGRCVRMODE,OK,1"},
 	"PQTMCFGRTCM,R":     {"PQTMCFGRTCM,OK,4,0,-90.0,07,06,1,0"},
-	"PQTMCFGRSID,R":     {"PQTMCFGRSID,OK,0"}, // synthesized: as-found RSID not captured
+	"PQTMCFGRSID,R":     {"PQTMCFGRSID,OK,290"},
 	"PQTMUNIQID":        {"PQTMUNIQID,OK,8,0000183B31B3C252"},
 	"PQTMCFGPROT,R,1,1": {"PQTMCFGPROT,OK,1,1,00000007,00000007"},
 	"PQTMLSTMSG": {
@@ -107,7 +107,7 @@ func TestConfiguratorQueryPhase(t *testing.T) {
 		rcvrMode: &qtmmsg.CfgRcvrMode{Mode: 1},
 		prot:     &qtmmsg.CfgProt{PortType: 1, PortID: 1, InputProt: 0x7, OutputProt: 0x7},
 		rtcm:     &qtmmsg.CfgRtcm{MSMType: 4, MSMElevThd: -90.0, Reserved0: "07", Reserved1: "06", EPHMode: 1},
-		rsid:     &qtmmsg.CfgRSID{},
+		rsid:     &qtmmsg.CfgRSID{ID: 290},
 		lstOK:    true,
 		msgRates: c.found.msgRates, // compared separately below
 	}
@@ -130,6 +130,56 @@ func TestConfiguratorQueryPhase(t *testing.T) {
 	if info.Vendor != "Quectel" || info.Hardware != "LG290P03" ||
 		info.Firmware != "LG290P03AANR02A01S 2025/12/12" {
 		t.Errorf("ReceiverInfo = %+v", info)
+	}
+	props := c.ConfigProps()
+	if v, ok := props.GetBaudRate(); !ok || v != 460800 {
+		t.Errorf("BaudRate = %v, %v", v, ok)
+	}
+	if v, ok := props.GetPort(); !ok || v != "UART1" {
+		t.Errorf("Port = %q, %v", v, ok)
+	}
+	if v, ok := props.GetMinElevation(); !ok || v.Degrees() != 5.0 {
+		t.Errorf("MinElevation = %v, %v", v, ok)
+	}
+	if v, ok := props.GetRTCMBaseID(); !ok || v != 290 {
+		t.Errorf("RTCMBaseID = %v, %v", v, ok)
+	}
+	tp, ok := props.GetTimePulse()
+	expectTP := gpsprot.TimePulse{
+		Width:          100 * time.Millisecond,
+		Period:         time.Second,
+		AlignToGNSS:    true,
+		OnlyWhenLocked: false, // as-found Mode 1 = always output
+		PolarityRising: true,
+	}
+	if !ok || tp != expectTP {
+		t.Errorf("TimePulse = %+v, %v, want %+v", tp, ok, expectTP)
+	}
+}
+
+// TestConfiguratorDisabledPPS checks the truncated disabled-PPS
+// readback (verbatim capture): only the zero width and the fixed
+// alignment constant are knowable, the other pulse properties stay
+// absent.
+func TestConfiguratorDisabledPPS(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGPPS2,R,1"] = []string{"PQTMCFGPPS2,OK,1,0"}
+	c, errCount := runConfig(t, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	props := c.ConfigProps()
+	if v, ok := props.GetTimePulseWidth(); !ok || v != 0 {
+		t.Errorf("TimePulseWidth = %v, %v, want 0, true", v, ok)
+	}
+	if v, ok := props.GetTimePulseAlignToGNSS(); !ok || !v {
+		t.Errorf("TimePulseAlignToGNSS = %v, %v, want true, true", v, ok)
+	}
+	if _, ok := props.GetTimePulsePeriod(); ok {
+		t.Error("TimePulsePeriod set despite disabled truncated readback")
+	}
+	if _, ok := props.GetTimePulseOnlyWhenLocked(); ok {
+		t.Error("TimePulseOnlyWhenLocked set despite disabled truncated readback")
 	}
 }
 
