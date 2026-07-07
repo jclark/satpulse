@@ -17,6 +17,8 @@ var qtmReplayFiles = []string{
 	"lg290p-speed",
 	"lg290p-reload",
 	"lg290p-show-port",
+	"lg290p-signals",
+	"lg290p-mode",
 }
 
 func TestReplayQTM(t *testing.T) {
