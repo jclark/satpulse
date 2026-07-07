@@ -19,6 +19,7 @@ _Not yet released_
 ### Septentrio protocol-specific support
 
 - SatPulse now supports Septentrio receivers (such as the mosaic-G5): `satpulsed` recognizes them and scans and decodes their Septentrio Binary Format (SBF) binary output stream. (#340)
+- `satpulsetool convobs` converts Septentrio SBF raw observations (MeasEpoch/MeasExtra) to RINEX, from raw SBF streams or packet logs, with a new `sbf` input format. (#342)
 
 ### u-blox protocol-specific support
 

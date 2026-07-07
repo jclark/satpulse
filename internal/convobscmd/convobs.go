@@ -26,9 +26,11 @@ import (
 	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/rinex"
 	"github.com/jclark/satpulse/gps/lib/rnxrtcm"
+	"github.com/jclark/satpulse/gps/lib/rnxsbf"
 	"github.com/jclark/satpulse/gps/lib/rnxubx"
 	"github.com/jclark/satpulse/gps/lib/rnxunc"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
+	"github.com/jclark/satpulse/gps/lib/sbfbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 	"github.com/jclark/satpulse/gps/scan"
@@ -50,10 +52,11 @@ var packetLogFormatsByTag = packetFormatsByTag(packetLogFormats)
 var packetLogRTCMMarker = []byte("RTCM")
 var packetLogUBXObsMarker = []byte("RXM-RAWX")
 var packetLogUNCObsMarker = []byte("OBSVM")
+var packetLogSBFObsMarker = []byte("Meas") // MeasEpoch and MeasExtra
 var packetLogJSONEscapeMarker = []byte(`\u`)
 
 const summary = `[-h|--help] [-o|--output path] [-H|--header-file path]
-           [-r|--from raw|ubx|rtcm|uncb|unca|rinex|obsj] [--packet-log] [--to rinex|obsj]
+           [-r|--from raw|ubx|rtcm|uncb|unca|sbf|rinex|obsj] [--packet-log] [--to rinex|obsj]
            [--date YYYYMMDD|--recent|-f|--date-from-filename]
            [--interval seconds] [-p|--ppp-ar]
            [--rinex-version version] [--program name] [--run-by name]
@@ -71,6 +74,7 @@ const (
 	inputRTCM    inputFormat = "rtcm"
 	inputUNCB    inputFormat = "uncb"
 	inputUNCA    inputFormat = "unca"
+	inputSBF     inputFormat = "sbf"
 	inputRINEX   inputFormat = "rinex"
 	inputObsJSON inputFormat = "obsj"
 )
@@ -80,6 +84,7 @@ var inputPacketTags = map[inputFormat]gpsprot.Tag{
 	inputRTCM: gpsreg.TagRTCM,
 	inputUNCB: gpsreg.TagUnicoreBin,
 	inputUNCA: gpsreg.TagUnicoreAscii,
+	inputSBF:  gpsreg.TagSBF,
 }
 
 var rawObservationNames = map[gpsprot.Tag]string{
@@ -87,6 +92,7 @@ var rawObservationNames = map[gpsprot.Tag]string{
 	gpsreg.TagRTCM:         "RTCM MSM7",
 	gpsreg.TagUnicoreBin:   "UNCB OBSVM",
 	gpsreg.TagUnicoreAscii: "UNCA OBSVM",
+	gpsreg.TagSBF:          "SBF MeasEpoch",
 }
 
 var noPacketObservationMsgs = map[inputFormat]string{
@@ -94,7 +100,8 @@ var noPacketObservationMsgs = map[inputFormat]string{
 	inputRTCM: "no RTCM MSM7 messages found",
 	inputUNCB: "no Unicore UNCB OBSVM messages found",
 	inputUNCA: "no Unicore UNCA OBSVM messages found",
-	inputRaw:  "no raw observation packets found (UBX RAWX, RTCM MSM7, UNCB OBSVM, UNCA OBSVM)",
+	inputSBF:  "no SBF MeasEpoch messages found",
+	inputRaw:  "no raw observation packets found (UBX RAWX, RTCM MSM7, UNCB OBSVM, UNCA OBSVM, SBF MeasEpoch)",
 }
 
 type outputFormat string
@@ -173,6 +180,8 @@ type weekWarning struct {
 
 type packetInput interface {
 	ConvertPacket(obsPacket, WeekConstraint) (bool, error)
+	// Finish flushes state held across packets after the last input.
+	Finish() error
 }
 
 type obsPacket struct {
@@ -195,6 +204,7 @@ type tagInput struct {
 	tag     gpsprot.Tag
 	convert func([]byte, WeekConstraint) (bool, error)
 	accept  func(obsPacket) bool
+	finish  func() error
 }
 
 type metadataBufferSink struct {
@@ -216,6 +226,7 @@ type rawPacketInput struct {
 	rtcm    *rnxrtcm.Converter
 	ubx     *rnxubx.Converter
 	unc     *rnxunc.Converter
+	sbf     *rnxsbf.Converter
 }
 
 var _ packetInput = (*rawPacketInput)(nil)
@@ -401,7 +412,7 @@ func packetFormatsByTag(fmts []gpsprot.PacketFormat) map[gpsprot.Tag][]gpsprot.P
 func (v *flagVars) setInputFormat(s string) error {
 	s = strings.ToLower(s)
 	switch inputFormat(s) {
-	case inputRaw, inputUBX, inputRTCM, inputUNCB, inputUNCA, inputRINEX, inputObsJSON:
+	case inputRaw, inputUBX, inputRTCM, inputUNCB, inputUNCA, inputSBF, inputRINEX, inputObsJSON:
 		v.from = inputFormat(s)
 		return nil
 	default:
@@ -612,6 +623,9 @@ func (cj convJob) run(lg *slog.Logger, now time.Time) error {
 		n += c
 		i++
 	}
+	if err := conv.Finish(); err != nil {
+		return err
+	}
 	if n == 0 {
 		return errors.New(noPacketObservationMsgs[opts.from])
 	}
@@ -714,6 +728,11 @@ func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, form
 		return &tagInput{tag: gpsreg.TagUBX, convert: func(data []byte, _ WeekConstraint) (bool, error) {
 			return convertUBXData(data, conv)
 		}}, nil
+	case inputSBF:
+		conv := rnxsbf.New(sink)
+		return &tagInput{tag: gpsreg.TagSBF, accept: isRawObsTag, convert: func(data []byte, _ WeekConstraint) (bool, error) {
+			return convertSBFData(data, conv)
+		}, finish: conv.Flush}, nil
 	case inputRTCM:
 		conv := rnxrtcm.New(sink, format.rtcm)
 		return &tagInput{tag: gpsreg.TagRTCM, convert: func(data []byte, week WeekConstraint) (bool, error) {
@@ -744,6 +763,7 @@ func newRawPacketInput(sink rinex.Sink, meta rinex.Metadata, format formatOption
 		rtcm:    rnxrtcm.New(buf, format.rtcm),
 		ubx:     rnxubx.New(sink, format.ubx),
 		unc:     rnxunc.New(sink, format.unc),
+		sbf:     rnxsbf.New(sink),
 	}
 }
 
@@ -892,6 +912,7 @@ func maybeSignificantPacketLogLine(b []byte) bool {
 	return bytes.Contains(b, packetLogRTCMMarker) ||
 		bytes.Contains(b, packetLogUBXObsMarker) ||
 		bytes.Contains(b, packetLogUNCObsMarker) ||
+		bytes.Contains(b, packetLogSBFObsMarker) ||
 		bytes.Contains(b, packetLogJSONEscapeMarker)
 }
 
@@ -919,7 +940,7 @@ func packetLogEntryData(entry *gpsio.PacketLogEntry) ([]byte, bool) {
 }
 
 func supportedRawPacketLogTag(tag gpsprot.Tag) bool {
-	return tag == gpsreg.TagUBX || tag == gpsreg.TagRTCM || tag == gpsreg.TagUnicoreBin || tag == gpsreg.TagUnicoreAscii
+	return tag == gpsreg.TagUBX || tag == gpsreg.TagRTCM || tag == gpsreg.TagUnicoreBin || tag == gpsreg.TagUnicoreAscii || tag == gpsreg.TagSBF
 }
 
 func convertPacketData(data []byte, fmts []gpsprot.PacketFormat, in packetInput, week WeekConstraint) (bool, error) {
@@ -954,6 +975,19 @@ func (in *tagInput) ConvertPacket(pkt obsPacket, week WeekConstraint) (bool, err
 	return in.convert(pkt.data, week)
 }
 
+// Finish flushes state held across packets after the last input.
+func (in *tagInput) Finish() error {
+	if in.finish == nil {
+		return nil
+	}
+	return in.finish()
+}
+
+// Finish flushes state held across packets after the last input.
+func (in *rawPacketInput) Finish() error {
+	return in.sbf.Flush()
+}
+
 func (in *rawPacketInput) ConvertPacket(pkt obsPacket, week WeekConstraint) (bool, error) {
 	if pkt.HasTag(gpsreg.TagRTCM) {
 		return in.convertRTCM(pkt.data, week)
@@ -973,6 +1007,9 @@ func isRawObs(pkt obsPacket) (gpsprot.Tag, bool) {
 		return tag, uncmsg.BinPacketMsgID(pkt.data) == uncmsg.ObsvMID
 	case gpsreg.TagUnicoreAscii:
 		return tag, pkt.format.MsgID(pkt.data) == uncmsg.ObsvMID.String()
+	case gpsreg.TagSBF:
+		mid := sbfbin.PacketMsgID(pkt.data)
+		return tag, mid == sbfbin.MeasEpochID || mid == sbfbin.MeasExtraID
 	default:
 		return gpsprot.EmptyTag, false
 	}
@@ -1006,6 +1043,8 @@ func (in *rawPacketInput) convertNonRTCMObservation(tag gpsprot.Tag, data []byte
 		return convertObsVMData(data, in.unc, uncmsg.ParseBinMsg)
 	case gpsreg.TagUnicoreAscii:
 		return convertObsVMData(data, in.unc, uncmsg.ParseAsciiMessage)
+	case gpsreg.TagSBF:
+		return convertSBFData(data, in.sbf)
 	}
 	return false, nil
 }
@@ -1053,6 +1092,14 @@ func warnMixedRawObservation(lg *slog.Logger, got, selected gpsprot.Tag) {
 		selectedName = "unknown"
 	}
 	lg.Warn("ignoring mixed raw observation input", "got", gotName, "selected", selectedName)
+}
+
+func convertSBFData(data []byte, conv *rnxsbf.Converter) (bool, error) {
+	blk, err := sbfbin.ParseMsg(string(data))
+	if err != nil {
+		return false, err
+	}
+	return conv.ConvertBlock(blk)
 }
 
 func convertUBXData(data []byte, conv *rnxubx.Converter) (bool, error) {
