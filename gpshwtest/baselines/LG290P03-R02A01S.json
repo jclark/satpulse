@@ -39,7 +39,14 @@
   "receiver": {
     "firmware": "LG290P03AANR02A01S 2025/12/12",
     "hardware": "LG290P03",
-    "supportedGNSS": [],
+    "supportedGNSS": [
+      "GPS",
+      "GAL",
+      "BDS",
+      "GLO",
+      "QZSS",
+      "NAVIC"
+    ],
     "vendor": "Quectel"
   },
   "supports": [
