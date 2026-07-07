@@ -172,7 +172,7 @@ func (mh *msgHandler) detect(ctx context.Context, port gpsio.OutPort, probeEnabl
 			silenceTimer: time.After(silentWaitTimeout),
 		}
 		if socket {
-			if err := pd.maybeSendProbe(0); err != nil {
+			if err := pd.maybeSendProbe(ctx, 0); err != nil {
 				return nil, err
 			}
 			pd.validPacketReceived = true
@@ -305,7 +305,7 @@ func (d *probingDetector) run(ctx context.Context) (gpsprot.ConfigProtocol, erro
 			if !ok {
 				return nil, mh.packetChClosed(ctx)
 			}
-			if err := d.processPacket(packet); err != nil {
+			if err := d.processPacket(ctx, packet); err != nil {
 				return nil, err
 			}
 			if prot := mh.probeSucceeded(); prot != nil {
@@ -315,13 +315,13 @@ func (d *probingDetector) run(ctx context.Context) (gpsprot.ConfigProtocol, erro
 		case <-d.silenceTimer:
 			d.silenceTimer = nil
 			mh.lg.Debug("silence timer fired")
-			if err := d.maybeSendProbe(0); err != nil {
+			if err := d.maybeSendProbe(ctx, 0); err != nil {
 				return nil, err
 			}
 		case <-d.deadlineTimer:
 			d.deadlineTimer = nil
 			mh.lg.Debug("deadline timer fired")
-			if err := d.maybeSendProbe(0); err != nil {
+			if err := d.maybeSendProbe(ctx, 0); err != nil {
 				return nil, err
 			}
 		case <-d.probeTimer:
@@ -330,7 +330,7 @@ func (d *probingDetector) run(ctx context.Context) (gpsprot.ConfigProtocol, erro
 				mh.lg.Debug("no response to probes, giving up")
 				return nil, nil
 			}
-			if err := d.maybeSendProbe(d.nProbesSent); err != nil {
+			if err := d.maybeSendProbe(ctx, d.nProbesSent); err != nil {
 				return nil, err
 			}
 		}
@@ -339,14 +339,14 @@ func (d *probingDetector) run(ctx context.Context) (gpsprot.ConfigProtocol, erro
 
 // processPacket extends the base to cancel the silence timer on input
 // and trigger the first probe when a valid packet arrives.
-func (d *probingDetector) processPacket(packet scan.Packet) error {
+func (d *probingDetector) processPacket(ctx context.Context, packet scan.Packet) error {
 	d.detector.processPacket(packet)
 	if d.silenceTimer != nil && (len(packet.Data) > 0 || isFramingError(packet.ReadError)) {
 		d.mh.lg.Debug("first input received, cancelling silence timer")
 		d.silenceTimer = nil
 	}
 	if d.validPacketReceived {
-		if err := d.maybeSendProbe(0); err != nil {
+		if err := d.maybeSendProbe(ctx, 0); err != nil {
 			return err
 		}
 	}
@@ -355,13 +355,23 @@ func (d *probingDetector) processPacket(packet scan.Packet) error {
 
 // maybeSendProbe sends probes if nProbesSent equals probeIndex.
 // It increments nProbesSent, nils deadline, and sets probeTimer for the next step.
-func (d *probingDetector) maybeSendProbe(probeIndex int) error {
+func (d *probingDetector) maybeSendProbe(ctx context.Context, probeIndex int) error {
 	if d.nProbesSent != probeIndex {
 		return nil
 	}
 	for _, prot := range d.mh.configProts {
-		if _, err := d.port.Write(prot.ProbePacket()); err != nil {
-			return err
+		packets, delay := prot.ProbePackets()
+		for i, packet := range packets {
+			if _, err := d.port.Write(packet); err != nil {
+				return err
+			}
+			if i+1 < len(packets) && delay > 0 {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(delay):
+				}
+			}
 		}
 	}
 	d.nProbesSent++
