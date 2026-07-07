@@ -19,6 +19,10 @@ const (
 	BasePositionDNU          = -2e10
 )
 
+// BaseSourceRTCM is the BaseStation.Source value for coordinates decoded from
+// an RTCM3 1005/1006 message.
+const BaseSourceRTCM BaseSource = 8
+
 type diffCorrInHead struct {
 	Mode   DiffCorrMode
 	Source DiffCorrSource
