@@ -50,10 +50,11 @@ func feed(t *testing.T, cp *ConfigProtocol, payload string, tm time.Time) {
 	}
 }
 
-// runConfig drives a ConfigProtocol through probe and Configure and
-// runs the real ConfigDirector against the fake receiver's response
-// map, returning the Configurator and the director's error count.
-func runConfig(t *testing.T, responses map[string][]string) (*Configurator, int) {
+// runConfigTarget drives a ConfigProtocol through probe and Configure
+// for the given target, running the real ConfigDirector against the
+// fake receiver's response map. It returns the Configurator, the
+// director's error count, and the request payloads sent, in order.
+func runConfigTarget(t *testing.T, target *gpsprot.ConfigTarget, responses map[string][]string) (*Configurator, int, []string) {
 	t.Helper()
 	cp := NewConfigProtocol()
 	now := time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC)
@@ -61,10 +62,11 @@ func runConfig(t *testing.T, responses map[string][]string) (*Configurator, int)
 	if !cp.ProbeOK() {
 		t.Fatal("ProbeOK false after PQTMVERNO response")
 	}
-	cfgtor, err := cp.Configure(&gpsprot.ConfigTarget{})
+	cfgtor, err := cp.Configure(target)
 	if err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
+	var sent []string
 	dir := gpsprot.NewConfigDirector(cfgtor, 3)
 	dir.AdvanceTimeTo(now)
 	for act := range dir.Actions() {
@@ -76,6 +78,7 @@ func runConfig(t *testing.T, responses map[string][]string) (*Configurator, int)
 			req.SetSentTime(now)
 			payload := string(act.Packet)
 			payload = payload[1:strings.IndexByte(payload, '*')]
+			sent = append(sent, payload)
 			for _, resp := range responses[payload] {
 				now = now.Add(time.Millisecond)
 				dir.AdvanceTimeTo(now)
@@ -88,7 +91,13 @@ func runConfig(t *testing.T, responses map[string][]string) (*Configurator, int)
 			t.Logf("config error: %v", act.Error)
 		}
 	}
-	return cfgtor.(*Configurator), dir.ErrorCount
+	return cfgtor.(*Configurator), dir.ErrorCount, sent
+}
+
+func runConfig(t *testing.T, responses map[string][]string) (*Configurator, int) {
+	t.Helper()
+	c, errCount, _ := runConfigTarget(t, &gpsprot.ConfigTarget{}, responses)
+	return c, errCount
 }
 
 func TestConfiguratorQueryPhase(t *testing.T) {
@@ -204,6 +213,112 @@ func TestConfiguratorReducedCapability(t *testing.T) {
 	}
 	if c.found.eleThd != nil {
 		t.Errorf("eleThd = %+v, want nil", c.found.eleThd)
+	}
+}
+
+// wSent filters the sent payloads down to the set commands.
+func wSent(sent []string) []string {
+	var w []string
+	for _, p := range sent {
+		if strings.Contains(p, ",W,") {
+			w = append(w, p)
+		}
+	}
+	return w
+}
+
+// TestConfiguratorNMEAMsgSets checks the complete-request semantics:
+// modeled members go to the requested state and unmodeled standard
+// NMEA messages in the as-found table turn off (no NMEAMsgOther).
+// Members already in the requested state generate no set.
+func TestConfiguratorNMEAMsgSets(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	for _, name := range []string{"GLL", "GSA", "GSV", "VTG"} {
+		responses["PQTMCFGMSGRATE,W,"+name+",0"] = []string{"PQTMCFGMSGRATE,OK"}
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	expect := []string{
+		"PQTMCFGMSGRATE,W,GLL,0",
+		"PQTMCFGMSGRATE,W,GSA,0",
+		"PQTMCFGMSGRATE,W,GSV,0",
+		"PQTMCFGMSGRATE,W,VTG,0",
+	}
+	if got := wSent(sent); !reflect.DeepEqual(got, expect) {
+		t.Errorf("sets sent:\ngot  %v\nwant %v", got, expect)
+	}
+	for _, name := range []string{"GLL", "GSA", "GSV", "VTG"} {
+		if c.msgEnabled(name) {
+			t.Errorf("%s still enabled in assumed state", name)
+		}
+	}
+	if !c.msgEnabled("RMC") || !c.msgEnabled("GGA") {
+		t.Error("RMC/GGA lost from assumed state")
+	}
+}
+
+// TestConfiguratorPVTMsgSets checks the PVT mapping for the serial-UTC
+// timing set: PQTMPVT, EPE+DOP, EOE and SVINSTATUS are enabled with
+// their versions; the mode-gated SVINSTATUS refusal (verbatim ERROR,1
+// capture) resolves as absence, not failure.
+func TestConfiguratorPVTMsgSets(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	for _, p := range []string{"PQTMPVT,1,1", "PQTMEPE,1,2", "PQTMDOP,1,1", "PQTMEOE,1,1"} {
+		responses["PQTMCFGMSGRATE,W,"+p] = []string{"PQTMCFGMSGRATE,OK"}
+	}
+	responses["PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1"] = []string{"PQTMCFGMSGRATE,ERROR,1"}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.PVTMsg = gpsprot.PVTMsgTimingSerialUTC | gpsprot.PVTMsgOff
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	expect := []string{
+		"PQTMCFGMSGRATE,W,PQTMDOP,1,1",
+		"PQTMCFGMSGRATE,W,PQTMEOE,1,1",
+		"PQTMCFGMSGRATE,W,PQTMEPE,1,2",
+		"PQTMCFGMSGRATE,W,PQTMPVT,1,1",
+		"PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1",
+	}
+	if got := wSent(sent); !reflect.DeepEqual(got, expect) {
+		t.Errorf("sets sent:\ngot  %v\nwant %v", got, expect)
+	}
+	for _, name := range []string{"PQTMPVT", "PQTMEPE", "PQTMDOP", "PQTMEOE"} {
+		if !c.msgEnabled(name) {
+			t.Errorf("%s not in assumed state", name)
+		}
+	}
+	if c.msgEnabled("PQTMSVINSTATUS") {
+		t.Error("refused SVINSTATUS recorded as enabled")
+	}
+}
+
+// TestConfiguratorSatsMsgUnion checks that SatsMsg keeps GSV on even
+// when the NMEA flags would turn it off, and that no redundant set is
+// sent when the union matches the as-found state.
+func TestConfiguratorSatsMsgUnion(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	for _, name := range []string{"GLL", "GSA", "VTG"} {
+		responses["PQTMCFGMSGRATE,W,"+name+",0"] = []string{"PQTMCFGMSGRATE,OK"}
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)
+	target.Opts.SatsMsg.Set(gpsprot.SatsMsgAny)
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	for _, p := range wSent(sent) {
+		if strings.Contains(p, "GSV") {
+			t.Errorf("unexpected GSV set: %s", p)
+		}
+	}
+	if !c.msgEnabled("GSV") {
+		t.Error("GSV lost despite SatsMsg request")
 	}
 }
 

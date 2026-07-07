@@ -134,12 +134,16 @@ type Configurator struct {
 	// legacy PPS query after a refused PPS2 query.
 	protQueried bool
 	needPPS     bool
+	// msgWantState caches the desired message-output state computed
+	// by msgWant, keyed by message name.
+	msgWantState map[string]bool
 }
 
 type configPhase int
 
 const (
 	phaseQuery configPhase = iota // reading as-found state
+	phaseMsg                      // message-output rate sets
 	phaseFinal
 )
 
@@ -167,10 +171,12 @@ type asFound struct {
 // gpsprot.ConfigRequestState directly.
 type request struct {
 	state    gpsprot.ConfigRequestState
-	payload  string // NMEA payload between $ and *
-	sentence string // correlation key: the sentence name
-	multi    bool   // multi-line response (LSTMSG); MaybeComplete on first line
-	speed    int    // new baud rate to switch to after sending (0 if none)
+	phase    configPhase // not sendable before this phase (zero = query)
+	payload  string      // NMEA payload between $ and *
+	sentence string      // correlation key: the sentence name
+	multi    bool        // multi-line response (LSTMSG); MaybeComplete on first line
+	speed    int         // new baud rate to switch to after sending (0 if none)
+	onOK     func()                     // called on a bare OK acknowledgement
 	onOKData func(payload string) error // called with the full response payload
 	onError  func(rc qtmmsg.ResponseClass) bool // true = absorbed (absence); false = fail
 	tBase    time.Time
@@ -216,6 +222,10 @@ func (c *Configurator) GenerateRequests() error {
 			func(m qtmmsg.CfgMsg) { c.found.prot = m.(*qtmmsg.CfgProt) }))
 	}
 	if c.phase == phaseQuery && c.allFinal() {
+		c.phase = phaseMsg
+		c.generateMsgSets()
+	}
+	if c.phase == phaseMsg && c.allFinal() {
 		c.phase = phaseFinal
 		c.complete = true
 	}
@@ -310,7 +320,7 @@ func (c *Configurator) promote() {
 	for _, r := range c.reqs {
 		switch r.state {
 		case gpsprot.ConfigRequestNotReady:
-			if !live[r.sentence] {
+			if r.phase <= c.phase && !live[r.sentence] {
 				r.state = gpsprot.ConfigRequestReadyToSend
 				live[r.sentence] = true
 			}
@@ -353,6 +363,9 @@ func (c *Configurator) response(rc qtmmsg.ResponseClass, payload string, tRead t
 func (r *request) respond(rc qtmmsg.ResponseClass, payload string, tRead time.Time) error {
 	switch rc.Kind {
 	case qtmmsg.ResponseOK:
+		if r.onOK != nil {
+			r.onOK()
+		}
 		r.state = gpsprot.ConfigRequestSucceeded
 	case qtmmsg.ResponseOKData:
 		if r.onOKData != nil {
