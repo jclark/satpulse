@@ -387,8 +387,9 @@ func waitForResponses(ctx context.Context, lg *slog.Logger, pCh <-chan scan.Pack
 // receiver already satisfies produces nothing. On onlyWithReset
 // receivers (see the gpsprot qualifier flags) a stored-only setting
 // requested without --save plus --reload/--reset is skipped by the
-// Configurator; the skip shows up here as a request-vs-state
-// difference and warns with the missing flags.
+// Configurator and warns with the missing flags: as a
+// request-vs-state difference where the skip is detectable, and
+// unconditionally for signals, where it is not.
 func configWarnings(target *gpsprot.ConfigTarget, rslt *gpscfg.Result) []string {
 	props := rslt.ConfigProps
 	if props == nil {
@@ -401,20 +402,15 @@ func configWarnings(target *gpsprot.ConfigTarget, rslt *gpscfg.Result) []string 
 		ws = append(ws, what+" was not performed: on this receiver it takes effect only after a save and reset (add --save with --reload or --reset)")
 	}
 	if reqSigs, ok := target.Props.GetSignalsEnabled(); ok {
-		if rsltSigs, ok := props.GetSignalsEnabled(); ok {
-			// Compare at constellation granularity, restricted to the
-			// constellations the receiver has: requesting one it lacks
-			// is unsupportedness, not a skipped change.
-			req := reqSigs.GNSSSet()
-			if info := rslt.ReceiverInfo; info != nil && info.SupportedGNSS != 0 {
-				req &= info.SupportedGNSS
-			}
-			if req != rsltSigs.GNSSSet() &&
-				rslt.ConfigSupport&gpsprot.ConfigSupportSignalOnlyWithReset != 0 && !saveReset {
-				onlyWithReset("the signal change")
-			} else if reqSigs.GNSSSet() != rsltSigs.GNSSSet() {
-				ws = append(ws, "only some of the requested constellations were enabled; the receiver does not support enabling all of them")
-			}
+		// A skipped signal change cannot be detected from the state:
+		// the request over-specifies (--gnss expands to every band)
+		// and the receiver's supported signals are unknown, so whether
+		// the as-found state already satisfies the request is
+		// undecidable. Warn pessimistically.
+		if rslt.ConfigSupport&gpsprot.ConfigSupportSignalOnlyWithReset != 0 && !saveReset {
+			ws = append(ws, "signals cannot be changed on this receiver without a save and reset (add --save with --reload or --reset)")
+		} else if rsltSigs, ok := props.GetSignalsEnabled(); ok && reqSigs.GNSSSet() != rsltSigs.GNSSSet() {
+			ws = append(ws, "only some of the requested constellations were enabled; the receiver does not support enabling all of them")
 		}
 	}
 	if rslt.ConfigSupport&gpsprot.ConfigSupportModeOnlyWithReset != 0 && !saveReset {

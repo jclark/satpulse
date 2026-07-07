@@ -111,9 +111,10 @@ func TestPrintConfigSupport(t *testing.T) {
 }
 
 // TestConfigWarnings checks the request-vs-supports-vs-state warning
-// derivation: onlyWithReset skips warn with the missing flags, a
-// satisfied request warns nothing, unsupported constellations get the
-// generic warning, and the MSM warning defers to observed output.
+// derivation: onlyWithReset skips warn with the missing flags
+// (pessimistically for signals), a satisfied request warns nothing,
+// unsupported constellations get the generic warning, and the MSM
+// warning defers to observed output.
 func TestConfigWarnings(t *testing.T) {
 	sigsGPSGLO := gpsprot.SignalSet((1 << gpsprot.SigGPSL1CA) | (1 << gpsprot.SigGLOL1))
 	sigsGPS := gpsprot.SignalSet(1 << gpsprot.SigGPSL1CA)
@@ -134,17 +135,28 @@ func TestConfigWarnings(t *testing.T) {
 		return target
 	}
 
-	// Skipped signal change on an onlyWithReset receiver.
+	// A signal request without save+reset on an onlyWithReset receiver
+	// warns pessimistically, even when the state already matches.
 	ws := configWarnings(sigTarget(sigsGPS), newRslt(gpsprot.ConfigSupportSignalOnlyWithReset, sigsGPSGLO, nil))
 	if len(ws) != 1 || !strings.Contains(ws[0], "signal") || !strings.Contains(ws[0], "--save") {
 		t.Errorf("signal skip warnings = %v", ws)
 	}
-	// A request the receiver already satisfies warns nothing.
-	if ws := configWarnings(sigTarget(sigsGPSGLO), newRslt(gpsprot.ConfigSupportSignalOnlyWithReset, sigsGPSGLO, nil)); len(ws) != 0 {
+	ws = configWarnings(sigTarget(sigsGPSGLO), newRslt(gpsprot.ConfigSupportSignalOnlyWithReset, sigsGPSGLO, nil))
+	if len(ws) != 1 || !strings.Contains(ws[0], "--save") {
+		t.Errorf("matching-state signal warnings = %v", ws)
+	}
+	// With save+reset the writes happen: a satisfied request warns
+	// nothing and an unsupported constellation gets the generic warning.
+	saveResetTarget := func(sigs gpsprot.SignalSet) *gpsprot.ConfigTarget {
+		target := sigTarget(sigs)
+		target.Opts.Save = gpsprot.SaveMinimal
+		target.Opts.Reset = gpsprot.ResetReload
+		return target
+	}
+	if ws := configWarnings(saveResetTarget(sigsGPSGLO), newRslt(gpsprot.ConfigSupportSignalOnlyWithReset, sigsGPSGLO, nil)); len(ws) != 0 {
 		t.Errorf("satisfied request warnings = %v", ws)
 	}
-	// An unsupported constellation is unsupportedness, not a skip.
-	ws = configWarnings(sigTarget(sigsGPSGLO|(1<<gpsprot.SigGALE1)), newRslt(gpsprot.ConfigSupportSignalOnlyWithReset, sigsGPSGLO, nil))
+	ws = configWarnings(saveResetTarget(sigsGPSGLO|(1<<gpsprot.SigGALE1)), newRslt(gpsprot.ConfigSupportSignalOnlyWithReset, sigsGPSGLO, nil))
 	if len(ws) != 1 || strings.Contains(ws[0], "--save") || !strings.Contains(ws[0], "does not support") {
 		t.Errorf("unsupported constellation warnings = %v", ws)
 	}
