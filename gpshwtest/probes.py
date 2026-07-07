@@ -158,8 +158,6 @@ SATS_CASES = [(["sat"], {"satellites"}),
               (["sig"], {"satellites", "perSignal"}),
               (["none"], set())]
 
-BANDS_ALL = [["L1"], ["L2"], ["L5"], ["E5"], ["L6"], ["L1", "L2"]]
-
 
 @dataclass
 class SignalCase:
@@ -173,7 +171,6 @@ class SignalCase:
     requested: SignalMap | None
     tags: list[str]
     gnss: list[str] | None = None
-    band: list[str] | None = None
 
 
 SignalHypothesis = Callable[[SignalMap], list[SignalCase]]
@@ -187,15 +184,15 @@ def signal_discovery_cases(constellations: list[str],
     cases = []
     majors = [g for g in ("GPS", "GAL", "BDS", "GLO") if g in constellations]
     for g in majors:
-        cases.append(gnss_signal_case(f"discover-{g}", [g], None, known, ["discover"]))
+        cases.append(gnss_signal_case(f"discover-{g}", [g], known, ["discover"]))
     anchor = "GPS" if "GPS" in constellations else majors[0] if majors else None
     if anchor is not None:
         for g in ("QZSS", "SBAS", "NAVIC"):
             if g in constellations:
                 cases.append(gnss_signal_case(f"discover-{anchor}-{g}", [anchor, g],
-                                              None, known, ["discover"]))
+                                              known, ["discover"]))
     if constellations:
-        cases.append(gnss_signal_case("discover-all", constellations, None, known,
+        cases.append(gnss_signal_case("discover-all", constellations, known,
                                       ["discover", "all"]))
     for c in cases:
         c.requested = None
@@ -214,12 +211,8 @@ def syntax_hypothesis(supported: SignalMap) -> list[SignalCase]:
     cases = []
     gnss = list(supported)
     if gnss:
-        cases.append(gnss_signal_case("syntax-gnss-all", gnss, None, supported,
-                                      ["syntax"]))
+        cases.append(gnss_signal_case("syntax-gnss-all", gnss, supported, ["syntax"]))
         cases.append(direct_signal_case("syntax-signal-all", supported, ["syntax"]))
-        for band in BANDS_ALL:
-            cases.append(gnss_signal_case("syntax-band-" + "-".join(band), gnss,
-                                          band, supported, ["syntax"]))
         first = first_signal(supported)
         if first:
             cases.append(except_signal_case("syntax-except-one", supported, first,
@@ -335,13 +328,10 @@ SIGNAL_HYPOTHESES: list[SignalHypothesis] = [
 ]
 
 
-def gnss_signal_case(name: str, gnss: list[str], band: list[str] | None,
-                     supported: SignalMap, tags: list[str]) -> SignalCase:
-    args = ["--gnss", ",".join(gnss)]
-    if band:
-        args += ["--band", ",".join(band)]
-    return SignalCase(name, args, "band" if band else "gnss",
-                      requested_signals(gnss, band, supported), tags, gnss, band)
+def gnss_signal_case(name: str, gnss: list[str], supported: SignalMap,
+                     tags: list[str]) -> SignalCase:
+    return SignalCase(name, ["--gnss", ",".join(gnss)], "gnss",
+                      requested_signals(gnss, supported), tags, gnss)
 
 
 def direct_signal_case(name: str, req: SignalMap,
@@ -356,7 +346,7 @@ def except_signal_case(name: str, base: SignalMap, remove: SignalMap,
     r = normalize_signal_map(remove)
     req = signal_map_without(b, r)
     args = ["--gnss", ",".join(b), "--except-signal", signal_map_cli_arg(r)]
-    return SignalCase(name, args, "except-signal", req, tags, list(b), None)
+    return SignalCase(name, args, "except-signal", req, tags, list(b))
 
 
 def anchored_direct_case(name: str, supported: SignalMap, gnss: str,
@@ -685,8 +675,6 @@ class ProbeRun:
                                   "request": case.requested, "tags": case.tags}
         if case.gnss is not None:
             intent["gnss"] = case.gnss
-        if case.band is not None:
-            intent["band"] = case.band
         inv = self.tool.gps(f"set-signals-{case.name}", case.args, intent)
         if transient(inv.error):
             return None

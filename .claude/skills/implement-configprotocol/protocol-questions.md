@@ -70,11 +70,14 @@ property value, which breaks faithful restore - see verification.md.
 
 Coupling can also poison write-and-clamp: on the Allystar TAU1302,
 writing an unsupported GAL E5 bit SWITCHES ON GAL E1, so
-syntax-equivalent requests achieve different sets. When the hardware
-identity string (MON-VER) implies a known signal plan, intersect
-requests with the identity-deduced plan BEFORE the wire; the achieved
-set is read back either way, because the ACK means "enabled the
-intersection" without naming it.
+syntax-equivalent requests achieve different sets. The tempting fix -
+intersect requests BEFORE the wire with a signal plan deduced from the
+hardware identity string - was tried and REVERSED by the owner: the
+chip number does not determine the signal plan (see rulings.md,
+"Identity strings do not enumerate capability"). Write the requested
+mask, let the silicon clamp, and report the achieved set from the
+post-set readback the ACK semantics already earn; coupling then
+surfaces honestly in the achieved set and is recorded in the HW note.
 
 ## Pipelining tolerance
 
@@ -173,6 +176,21 @@ shapes probing strategy, response windows, message-enable ordering
 baud; free the line first by disconnecting the antenna or quieting
 output if it is already saturated).
 
+## Emission schedules
+
+Some messages are output only when something changes, and the change
+can be on a scale of minutes: the Septentrio ReceiverSetup block emits
+every 60 seconds, and the UTC-parameter blocks that carry leap-second
+data emit at the navigation-data renewal rate. A short watch after
+enabling such a message observes nothing and invites a false "never
+emits". Read the documentation and infer the scale first - finding the
+scale may itself be an experiment - and size the observation window to
+cover at least one period, or record the negative as bounded ("not
+within N seconds"), never as absolute. (Incident: a 4-second stage-0
+watch concluded ReceiverSetup was never delivered; the wrong "fact"
+shaped the receiver-identity design until a re-test found the
+60-second schedule.)
+
 ## Acknowledge-but-never-emit
 
 Some firmware acknowledges enabling messages it never emits (CASIC F8N:
@@ -201,3 +219,13 @@ the doc lacks (GST/DTM/JAM sentences, the whole MSM4 family marked
 NAK-driven (every unknown target answers NAK, never silence), a
 poll-only id sweep is cheap, state-neutral, and definitive - sweep
 the id space on hardware rather than trusting the doc's message list.
+
+Distinguish absence from FIXED behavior: absence means the receiver
+cannot do or report the thing, not merely that there is no knob. A
+behavior that is fixed and known (the Allystar pulse is always
+GNSS-aligned; no CFG field exists) is reported as a constant property
+value, not as absent - the report describes the receiver, not the
+protocol's knob inventory. Leaving it absent had a real cost: a
+shared property-completeness gate blanked the whole time-pulse
+section of the --show-config text output (see verification.md and
+director-contract.md).
