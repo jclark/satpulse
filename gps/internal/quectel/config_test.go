@@ -421,22 +421,32 @@ func TestConfiguratorPPSDisable(t *testing.T) {
 	}
 }
 
-// TestConfiguratorPPS2Period checks that a non-default period selects
-// the PPS2 form with the full extended tuple.
-func TestConfiguratorPPS2Period(t *testing.T) {
-	responses := maps.Clone(fakeResponses)
-	responses["PQTMCFGPPS2,W,1,1,100,1,1,0,2000,0,1,0,0,0"] = []string{"PQTMCFGPPS2,OK"}
+// TestConfiguratorPeriodRefused checks that a period other than the
+// fixed 1 s is refused by the configurator itself: no pulse write goes
+// out (writes use the legacy CfgPPS form only, which has no period).
+func TestConfiguratorPeriodRefused(t *testing.T) {
 	target := &gpsprot.ConfigTarget{}
 	target.Props.SetTimePulsePeriod(2 * time.Second)
-	c, errCount, sent := runConfigTarget(t, target, responses)
+	_, errCount, sent := runConfigTarget(t, target, fakeResponses)
+	if errCount == 0 {
+		t.Error("no director error for a non-1s period")
+	}
+	if got := wSent(sent); len(got) != 0 {
+		t.Errorf("sets sent: %v", got)
+	}
+}
+
+// TestConfiguratorPeriodOneSecond checks that an explicit 1 s period
+// is accepted and, matching the fixed period, generates no write.
+func TestConfiguratorPeriodOneSecond(t *testing.T) {
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetTimePulsePeriod(time.Second)
+	_, errCount, sent := runConfigTarget(t, target, fakeResponses)
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
-	if got := wSent(sent); !reflect.DeepEqual(got, []string{"PQTMCFGPPS2,W,1,1,100,1,1,0,2000,0,1,0,0,0"}) {
+	if got := wSent(sent); len(got) != 0 {
 		t.Errorf("sets sent: %v", got)
-	}
-	if v, ok := c.ConfigProps().GetTimePulsePeriod(); !ok || v != 2*time.Second {
-		t.Errorf("TimePulsePeriod = %v, %v", v, ok)
 	}
 }
 

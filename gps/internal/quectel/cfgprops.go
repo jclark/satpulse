@@ -32,8 +32,9 @@ func (f *asFound) convertToProps(props *gpsprot.ConfigProps) {
 // generatePropSets appends property set requests for the target's
 // requested properties, as minimal read-modify-writes against the
 // as-found tuples: a property already at its requested value
-// generates no request.
-func (c *Configurator) generatePropSets() {
+// generates no request. It returns an error for a requested value
+// the configurator itself cannot express.
+func (c *Configurator) generatePropSets() error {
 	props := &c.target.Props
 	if deg, ok := props.GetMinElevation(); ok && c.fw.has(fwEleThd) {
 		ele := qtmmsg.Fixed1(deg.Degrees())
@@ -48,7 +49,7 @@ func (c *Configurator) generatePropSets() {
 			c.reqs = append(c.reqs, c.propSet(m, func() { c.found.rsid = m }))
 		}
 	}
-	c.generateTimePulseSet()
+	return c.generateTimePulseSet()
 }
 
 // propSet builds a property set request. A code 3 refusal
@@ -72,21 +73,26 @@ func (c *Configurator) propSet(m qtmmsg.CfgMsg, onOK func()) *request {
 // generateTimePulseSet builds the time-pulse write when the target
 // sets any pulse property: the target's values applied over the
 // as-found tuple (or the documented defaults when the as-found pulse
-// is disabled, whose readback hides the stored values). The legacy
-// CfgPPS form is preferred because it preserves the PPS2-only Period
-// and Userdelay fields; PPS2 is needed only for a non-default period
-// or a duration beyond CfgPPS's 900 ms limit.
-func (c *Configurator) generateTimePulseSet() {
+// is disabled, whose readback hides the stored values). Writes use
+// the legacy CfgPPS form only - it exists on every firmware version
+// and preserves the PPS2-only Period and Userdelay fields - so the
+// pulse period is fixed at 1 s and a target requesting any other
+// period is refused here. (The PPS2 write form is also no wider:
+// hardware rejects Duration > 900 ms despite the spec's (0, Period]
+// range.)
+func (c *Configurator) generateTimePulseSet() error {
 	props := &c.target.Props
 	if !props.SetsAny(gpsprot.PropIDTimePulse) {
-		return
+		return nil
 	}
-	base := qtmmsg.CfgPPS2{Index: 1, Enable: 1, Duration: 100, Mode: qtmmsg.PPSModeAlways,
-		Polarity: 1, Period: 1000, Reserved2: 1}
+	if p, ok := props.GetTimePulsePeriod(); ok && p != time.Second {
+		return fmt.Errorf("time pulse period is fixed at 1s, cannot set %v", p)
+	}
+	base := qtmmsg.CfgPPS{Index: 1, Enable: 1, Duration: 100, Mode: qtmmsg.PPSModeAlways, Polarity: 1}
 	enable := true
 	if f := c.found.pps2; f != nil {
 		if f.Enable != 0 {
-			base = *f
+			base.Duration, base.Mode, base.Polarity = f.Duration, f.Mode, f.Polarity
 		} else {
 			enable = false
 		}
@@ -103,9 +109,6 @@ func (c *Configurator) generateTimePulseSet() {
 			base.Duration = uint16(w / time.Millisecond)
 		}
 	}
-	if p, ok := props.GetTimePulsePeriod(); ok {
-		base.Period = uint16(p / time.Millisecond)
-	}
 	if b, ok := props.GetTimePulseOnlyWhenLocked(); ok {
 		if b {
 			base.Mode = qtmmsg.PPSModeFixOnly
@@ -120,28 +123,17 @@ func (c *Configurator) generateTimePulseSet() {
 			base.Polarity = 0
 		}
 	}
-	if enable {
-		base.Enable = 1
-	} else {
+	if !enable {
 		base.Enable = 0
 	}
-	if c.fw.has(fwPPS2) && !c.pps2Refused && (base.Period != 1000 || base.Duration > 900) {
-		if f := c.found.pps2; f != nil && *f == base {
-			return
-		}
-		m := base
-		c.reqs = append(c.reqs, c.propSet(&m, func() { c.found.pps2 = &m }))
-		return
-	}
-	m := &qtmmsg.CfgPPS{Index: 1, Enable: base.Enable, Duration: base.Duration,
-		Mode: base.Mode, Polarity: base.Polarity}
+	m := &base
 	if f := c.found.pps2; f != nil && f.Enable == m.Enable &&
 		(m.Enable == 0 || (f.Duration == m.Duration && f.Mode == m.Mode && f.Polarity == m.Polarity)) {
-		return
+		return nil
 	}
 	if f := c.found.pps; c.found.pps2 == nil && f != nil && f.Enable == m.Enable &&
 		(m.Enable == 0 || (f.Duration == m.Duration && f.Mode == m.Mode && f.Polarity == m.Polarity)) {
-		return
+		return nil
 	}
 	c.reqs = append(c.reqs, c.propSet(m, func() {
 		c.found.pps = m
@@ -150,6 +142,7 @@ func (c *Configurator) generateTimePulseSet() {
 			f.Enable, f.Duration, f.Mode, f.Polarity = m.Enable, m.Duration, m.Mode, m.Polarity
 		}
 	}))
+	return nil
 }
 
 // setTimePulse converts a PPS/PPS2 tuple. The pulse is always aligned
