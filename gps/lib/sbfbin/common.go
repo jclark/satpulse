@@ -42,6 +42,13 @@ func (ts TimeStamp) Epoch() (uint32, uint16) {
 	return ts.TOW, ts.WNc
 }
 
+// TOWDNU and WNcDNU are the do-not-use sentinels of the block-header
+// timestamp.
+const (
+	TOWDNU uint32 = 0xFFFFFFFF
+	WNcDNU uint16 = 0xFFFF
+)
+
 // Params is a block's parameter set.
 type Params interface {
 	BlockNumber() uint16
