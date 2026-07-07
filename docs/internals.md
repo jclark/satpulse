@@ -120,6 +120,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/rnxrtcm` converts RTCM MSM7 observation messages to `gps/lib/rinex` records. It uses `gps/lib/rtcmbin` to decode the source messages.
 
+`gps/lib/rnxsbf` converts Septentrio SBF raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/sbfbin` to decode the source messages.
+
 `gps/lib/rnxubx` converts u-blox raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/ubxbin` to decode the source messages.
 
 `gps/lib/rnxunc` converts Unicore raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/uncmsg` to decode the source messages.

@@ -79,15 +79,33 @@ type Converter struct {
 
 func New(sink rinex.Sink) *Converter { ... }
 
+// ConvertBlock converts one SBF block, pairing each MeasEpoch with the
+// MeasExtra block of the same epoch and ignoring blocks of other types.
+func (c *Converter) ConvertBlock(b *sbfbin.Block) (bool, error)
+
+// Flush converts a MeasEpoch held by ConvertBlock whose MeasExtra can no
+// longer arrive, such as at the end of the input stream.
+func (c *Converter) Flush() error
+
 // ConvertMeasEpoch converts one SBF MeasEpoch block, and the MeasExtra
 // block for the same epoch if available, to RINEX observations.
-func (c *Converter) ConvertMeasEpoch(m *sbfbin.MeasEpoch, extra *sbfbin.MeasExtra) error
+func (c *Converter) ConvertMeasEpoch(ts sbfbin.TimeStamp, m *sbfbin.MeasEpoch, extra *sbfbin.MeasExtra) error
 ```
 
+`ConvertBlock` is the stream entry point, fed one block at a time in
+wire order the same way `rnxrtcm.ConvertMsg` is fed individual RTCM
+messages; it holds each `MeasEpoch` until the next measurement block
+(or `Flush`) decides whether a `MeasExtra` pairs with it.
+`ConvertMeasEpoch` is the specific entry for a pre-correlated pair,
+parallel to `rnxrtcm.ConvertMSM7`. The block-header `TOW`/`WNc` lives
+on `sbfbin.Block`, not on the `MeasEpoch` params struct, so
+`ConvertMeasEpoch` takes the timestamp explicitly.
+
 `extra` is optional (pass `nil` when `MeasExtra` output is not
-enabled or has not arrived for this epoch); its only currently-defined
-contribution is refining the CN0 resolution from 0.25 dB-Hz to 0.03125
-dB-Hz (see "CN0" below). Unlike u-blox's RAWX, which is one flat
+enabled or has not arrived for this epoch); it contributes refining the
+CN0 resolution from 0.25 dB-Hz to 0.03125 dB-Hz (see "CN0" below) and
+the `CumLossCont` loss-of-continuity counter (see "Arc and
+loss-of-lock" below). Unlike u-blox's RAWX, which is one flat
 per-signal array, `MeasEpoch`'s per-satellite `MeasEpochChannelType1`
 sub-block plus its nested `MeasEpochChannelType2` sub-blocks together
 enumerate all signals for one satellite; `Converter` walks both levels
@@ -340,6 +358,18 @@ does with its `signalKey`/`signalState` map, driven by:
   observed value for this key (a decrease implies the counter reset
   and re-grew since the last epoch, which can happen if intervening
   epochs were missed or the counter briefly wrapped).
+- **CumLossCont**: when a `MeasExtra` entry correlates with this
+  sub-block (same `(RxChannel, signal number)` key as the CN0
+  refinement), any change in its `CumLossCont` counter also marks a
+  pending arc increment. The receiver increments this modulo-256
+  counter at each initial lock after signal (re)acquisition or detected
+  cycle slip, so it catches slips the `LockTime` comparison cannot see
+  (e.g. a slip followed by an outage long enough for the lock time to
+  re-clip at its ceiling). The lock-time rule remains the only signal
+  when `MeasExtra` is absent. Note `LockTime` moves between encodings
+  when the receiver re-selects a satellite's master signal (Type1 clips
+  at 65534, Type2 at 254), so the decrease comparison clamps both sides
+  to the smaller of the two ceilings involved.
 - **Half-cycle ambiguity**: `ObsInfo` bit 2 for this sub-block, mapped
   straight to `HC` when a carrier phase is present.
 - **Arc increments only when a carrier-phase value is actually
