@@ -227,13 +227,12 @@ protocol-questions.md:
    SAVEPAR+SRR), CFGFIXRATE (stored, output unchanged after 9 s;
    restart-apply presumed). Still untested: PPS (no pin
    instrumentation this bench), RCVRMODE, RTCM, RSID.
-5. Baud-change handshake: at which rate does the CFGUART OK arrive;
-   timing of the switch; confirm at the new rate with a solicited
-   distinct-name query; does a saved rate re-apply after SRR? No
-   root access is available, so USB unbind/rebind power cycling is
-   NOT possible; where only a power cycle would discriminate
-   persistence, record the finding as bounded ("not verified across
-   power cycle") rather than claiming it.
+5. MOSTLY ANSWERED. No usable ACK at the old rate: the port
+   switches ~2 ms after the request (any OK goes out at the new
+   rate). Speed change is noReply + solicited distinct-name confirm
+   at the new rate (verified both directions, 460800<->115200).
+   Saved-rate-after-SRR and power-cycle persistence remain bounded
+   (no root for USB unbind/rebind).
 6. PART-ANSWERED. SAVEPAR answers bare OK sent alone; pipelining
    SAVEPAR+SRR loses both responses (SRR reboots first) though the
    save completes - always wait for SAVEPAR's OK before SRR. SRR
@@ -247,12 +246,15 @@ protocol-questions.md:
    verified) - no saw-off risk on output. InputProt on the active
    port deliberately untested: lockout risk with no second UART
    wired; treat as unknown and never clear it on the active port.
-8. Survey/base interplay: does CFGSVIN work in rover mode
-   (ERROR,2?); what does RCVRMODE=2 actually change (LSTMSG dump
-   before/after; NMEA off? MSM4+1005 on? fix rate forced 1 Hz);
-   PQTMSVINSTATUS on R02A01S (message file says broken - retest);
-   how survey completion manifests (Valid flag transition; does the
-   result transfer into CFGSVIN readback?).
+8. PART-ANSWERED. CFGSVIN,W mode 1 is ACKed and stored in rover
+   mode (no ERROR) - stored-but-inert. RCVRMODE is RESTART-ONLY
+   (stored as 2; NMEA still at full volume, no RTCM, 3+ s later).
+   PQTMSVINSTATUS enable answers ERROR,1 whenever base mode is not
+   yet EFFECTIVE - the message-file "broken on R02" note is really
+   mode-gating. Still open (needs a SAVEPAR+SRR cycle into
+   effective base mode): what base mode actually changes (LSTMSG,
+   NMEA off, MSM4+1005 on, 1 Hz), SVINSTATUS in effective base
+   mode, survey completion semantics.
 9. MOSTLY ANSWERED. LSTMSG (bare, current port) dumps one
    `,OK,1,1,<MsgName>,<Rate>[,<MsgVer>]` line per ENABLED message
    only - disabled messages vanish (no rate-0 entries), so the
@@ -261,9 +263,11 @@ protocol-questions.md:
    mid-sentence with the dump restarting (rare, ~1 in 12); a reader
    keys on End and re-issues if an entry may have been lost.
    CLRMSG untested.
-10. PPS vs PPS2: do both address the same underlying state on
-    R02A01S; Userdelay readback semantics (register only - no pin
-    instrumentation planned; word findings accordingly).
+10. ANSWERED. Same underlying state: Duration set via PPS2 shows
+    in legacy PPS readback and vice versa. A legacy PPS,W does NOT
+    clobber PPS2-only fields (Userdelay 250 and Period survived a
+    subsequent PPS,W) - PPS2-with-PPS-fallback is safe. Register
+    semantics only (no pin instrumentation on this bench).
 11. PART-ANSWERED. Unknown sentence names answer `<name>,ERROR,3`
     echoing the unknown name - never silence - so ERROR,3 capability
     discovery is definitive and any PQTM-speaking firmware answers
