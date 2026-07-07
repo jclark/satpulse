@@ -224,6 +224,9 @@ func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarge
 	}
 	if err == nil && rslt != nil {
 		warnMissingConfigSupport(lg, support, rslt.ConfigSupport)
+		for _, w := range rslt.Warnings {
+			lg.Warn(w)
+		}
 		if !configTargetIsProbeOnly(target) {
 			logFailedProps(lg, target, rslt)
 		}
@@ -381,15 +384,13 @@ func logFailedProps(lg *slog.Logger, target *gpsprot.ConfigTarget, rslt *gpscfg.
 		return
 	}
 	if reqSigs, ok := target.Props.GetSignalsEnabled(); ok {
-		if rslt.ConfigSupport&gpsprot.ConfigSupportSignalOnlyWithReset != 0 && !target.Opts.SavesAndResets() {
-			lg.Warn("signal changes were not performed: on this receiver they take effect only after a save and reset (add --save with --reload or --reset)")
-		} else if rsltSigs, ok := rsltProps.GetSignalsEnabled(); ok && reqSigs.GNSSSet() != rsltSigs.GNSSSet() {
-			lg.Warn("only some of the requested constellations were enabled; the receiver does not support enabling all of them")
-		}
-	}
-	if _, ok := target.Props.GetMode(); ok {
-		if rslt.ConfigSupport&gpsprot.ConfigSupportModeOnlyWithReset != 0 && !target.Opts.SavesAndResets() {
-			lg.Warn("the positioning mode was not changed: on this receiver it takes effect only after a save and reset (add --save with --reload or --reset)")
+		// On a signalOnlyWithReset receiver the Configurator reports
+		// skipped signal changes itself (Result.Warnings), with exact
+		// knowledge of whether anything would have changed.
+		if rslt.ConfigSupport&gpsprot.ConfigSupportSignalOnlyWithReset == 0 {
+			if rsltSigs, ok := rsltProps.GetSignalsEnabled(); ok && reqSigs.GNSSSet() != rsltSigs.GNSSSet() {
+				lg.Warn("only some of the requested constellations were enabled; the receiver does not support enabling all of them")
+			}
 		}
 	}
 }

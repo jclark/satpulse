@@ -68,8 +68,16 @@ const (
 	// positioning mode (survey and fixed position).
 	ConfigSupportModeOnlyWithReset ConfigSupportFlags = 1 << 30
 
+	// ConfigSupportRTCMMSMOnlyWithReset is the same qualifier for the
+	// RTCM MSM type: message enables apply live, but switching between
+	// MSM4 and MSM7 takes effect only after a save and reset. An
+	// explicit MSM type request without save+reset emits the stored
+	// type; a preference (RTCMMsgLax) degrades to it silently.
+	ConfigSupportRTCMMSMOnlyWithReset ConfigSupportFlags = 1 << 29
+
 	// configSupportQualifiers is the set of all qualifier flags.
-	configSupportQualifiers = ConfigSupportSignalOnlyWithReset | ConfigSupportModeOnlyWithReset
+	configSupportQualifiers = ConfigSupportSignalOnlyWithReset |
+		ConfigSupportModeOnlyWithReset | ConfigSupportRTCMMSMOnlyWithReset
 )
 
 var configSupportFlagNames = [...]struct {
@@ -91,6 +99,7 @@ var configSupportFlagNames = [...]struct {
 	{ConfigSupportPort, "port"},
 	{ConfigSupportSignalOnlyWithReset, "signalOnlyWithReset"},
 	{ConfigSupportModeOnlyWithReset, "modeOnlyWithReset"},
+	{ConfigSupportRTCMMSMOnlyWithReset, "rtcmMSMOnlyWithReset"},
 }
 
 // Items returns the supported configuration item names in stable order.
@@ -150,6 +159,18 @@ type Configurator interface {
 	// Precondition: index < count from GetRequestCount()
 	// Panics if index is out of bounds.
 	Request(index int) ConfigRequest
+}
+
+// ConfigWarner is implemented by Configurators that report user-facing
+// warnings about requests they deliberately did not perform - for
+// example an only-with-reset setting (see the qualifier flags)
+// requested without save+reset. A warning is reported only when the
+// skip leaves the receiver differing from the request; a request the
+// receiver already satisfies warns nothing.
+type ConfigWarner interface {
+	// ConfigWarnings returns the warnings accumulated during
+	// configuration. Call after configuration completes.
+	ConfigWarnings() []string
 }
 
 // ReceiverInfo provides static information about the GPS receiver.

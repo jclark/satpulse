@@ -210,6 +210,11 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	}
 	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, cfg.GPS.CreateConfigProtocols(), gct, pCh, conn)
 	cc.logLeapSecond(lg)
+	if gcfg != nil {
+		for _, w := range gcfg.Warnings {
+			lg.Warn(w)
+		}
+	}
 	if err != nil {
 		if errors.Is(err, gpscfg.ErrNoProbeResponse) {
 			lg.Info(err.Error())

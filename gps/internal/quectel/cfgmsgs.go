@@ -58,7 +58,12 @@ func (c *Configurator) generateMsgSets() {
 
 // generateRTCMTypeSet writes CFGRTCM when the requested MSM type
 // differs from the as-found one. MSM7 wins when both types are
-// requested.
+// requested. The MSM type is stored-only - message enables apply
+// live, but the type takes effect only after a save and reset, even
+// for freshly enabled messages (hardware-verified) - so the write
+// rides the explicit save+reset gate. Without it the stored type is
+// emitted: silently for a preference (RTCMMsgLax), with a warning for
+// an explicit MSM type request.
 func (c *Configurator) generateRTCMTypeSet() {
 	flags := c.target.Opts.RTCMMsg
 	if !flags.IsSet() || flags.Get()&(gpsprot.RTCMMsgMSM4|gpsprot.RTCMMsgMSM7) == 0 {
@@ -69,6 +74,12 @@ func (c *Configurator) generateRTCMTypeSet() {
 		msmType = 7
 	}
 	if c.found.rtcm != nil && c.found.rtcm.MSMType == msmType {
+		return
+	}
+	if !c.target.Opts.SavesAndResets() {
+		if flags.Get()&gpsprot.RTCMMsgLax == 0 {
+			c.onlyWithReset(fmt.Sprintf("the MSM%d selection", msmType))
+		}
 		return
 	}
 	m := qtmmsg.CfgRtcm{MSMType: msmType, MSMElevThd: -90.0,

@@ -15,6 +15,7 @@ type jsonOutput struct {
 	Supports      *gpsprot.ConfigSupportFlags `json:"supports,omitempty"`
 	PacketFormats []gpsprot.Tag               `json:"packetFormats,omitempty"`
 	Config        *gpsprot.ConfigProps        `json:"config,omitempty"`
+	Warnings      []string                    `json:"warnings,omitempty"`
 	Error         string                      `json:"error,omitempty"`
 }
 
@@ -29,6 +30,7 @@ func printJSON(f *os.File, rslt *gpscfg.Result, err error) {
 		if rslt.ConfigProps != nil && !rslt.ConfigProps.IsEmpty() {
 			out.Config = rslt.ConfigProps
 		}
+		out.Warnings = rslt.Warnings
 	}
 	if err != nil {
 		out.Error = err.Error()

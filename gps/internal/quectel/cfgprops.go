@@ -115,13 +115,15 @@ func (c *Configurator) generatePropSets() error {
 // positioning mode. Both are stored-only, and position modes exist
 // only under base receiver mode (hardware-verified), so the writes
 // ride the same explicit save+reset gate as signals; without it the
-// configurator silently does nothing. Entering base mode swaps the
-// per-mode message table (NMEA off, RTCM on) and forces a 1 Hz fix
-// rate; message output stays configurable live in base mode, so a
-// daemon restores its feed on its next configuration pass.
+// configurator does nothing, warning only when the effective mode
+// would have changed (clearing stored-but-inert SVIN state in rover
+// mode changes nothing and warns nothing). Entering base mode swaps
+// the per-mode message table (NMEA off, RTCM on) and forces a 1 Hz
+// fix rate; message output stays configurable live in base mode, so
+// a daemon restores its feed on its next configuration pass.
 func (c *Configurator) generateModeSet() {
 	mode, ok := c.target.Props.GetMode()
-	if !ok || c.found.rcvrMode == nil || c.found.svin == nil || !c.target.Opts.SavesAndResets() {
+	if !ok || c.found.rcvrMode == nil || c.found.svin == nil {
 		return
 	}
 	var svin qtmmsg.CfgSvin
@@ -143,6 +145,15 @@ func (c *Configurator) generateModeSet() {
 				AccLimit3D: qtmmsg.Fixed1(s.AccLimit.Meters())}
 		}
 	}
+	if c.found.rcvrMode.Mode == rcvr && *c.found.svin == svin {
+		return
+	}
+	if !c.target.Opts.SavesAndResets() {
+		if rcvr != qtmmsg.RcvrModeRover || c.found.rcvrMode.Mode != qtmmsg.RcvrModeRover {
+			c.onlyWithReset("the positioning mode change")
+		}
+		return
+	}
 	if c.found.rcvrMode.Mode != rcvr {
 		m := &qtmmsg.CfgRcvrMode{Mode: rcvr}
 		c.reqs = append(c.reqs, c.propSet(m, func() { c.found.rcvrMode = m }))
@@ -163,15 +174,15 @@ func fixedSvin(p geopos.ECEF) qtmmsg.CfgSvin {
 // effect at the next NVM reload, never live. Owner ruling: the writes
 // are performed only when the target also saves and restarts, so
 // persistence and the ~15 s outage are explicitly user-requested;
-// otherwise the configurator silently does nothing (warning the user
-// is the tools' job via support flags) and never leaves
-// stored-but-ineffective state behind. Requested signals the receiver
-// has no mask bit for are dropped by intersection; a constellation
-// with no requested signals is disabled via its CFGCNST gate, its
-// mask kept as found.
+// otherwise the configurator does nothing - with a warning when that
+// leaves the receiver differing from the request, silently when the
+// receiver already matches - and never leaves stored-but-ineffective
+// state behind. Requested signals the receiver has no mask bit for
+// are dropped by intersection; a constellation with no requested
+// signals is disabled via its CFGCNST gate, its mask kept as found.
 func (c *Configurator) generateSignalSets() {
 	ss, ok := c.target.Props.GetSignalsEnabled()
-	if !ok || c.found.signal == nil || c.found.cnst == nil || !c.target.Opts.SavesAndResets() {
+	if !ok || c.found.signal == nil || c.found.cnst == nil {
 		return
 	}
 	sig, cnst := *c.found.signal, *c.found.cnst
@@ -192,6 +203,13 @@ func (c *Configurator) generateSignalSets() {
 		} else {
 			*gates[i] = 0
 		}
+	}
+	if sig == *c.found.signal && cnst == *c.found.cnst {
+		return
+	}
+	if !c.target.Opts.SavesAndResets() {
+		c.onlyWithReset("the signal change")
+		return
 	}
 	if sig != *c.found.signal {
 		m := sig

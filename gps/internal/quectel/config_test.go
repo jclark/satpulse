@@ -475,17 +475,33 @@ func TestConfiguratorSignalsReadback(t *testing.T) {
 }
 
 // TestConfiguratorSignalsNoSaveReset checks the restart-only ruling:
-// without an explicit save plus restart, signal sets are silently
-// omitted and no stored-but-ineffective state is left behind.
+// without an explicit save plus restart, a signal change is omitted
+// with a warning and no stored-but-ineffective state is left behind;
+// a request the receiver already satisfies warns nothing.
 func TestConfiguratorSignalsNoSaveReset(t *testing.T) {
 	target := &gpsprot.ConfigTarget{}
 	target.Props.SetSignalsEnabled(lg290pDefaultSignals &^ gpsprot.SigSetGLO)
-	_, errCount, sent := runConfigTarget(t, target, fakeResponses)
+	c, errCount, sent := runConfigTarget(t, target, fakeResponses)
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
 	if got := wSent(sent); len(got) != 0 {
 		t.Errorf("sets sent without save+restart: %v", got)
+	}
+	if w := c.ConfigWarnings(); len(w) != 1 || !strings.Contains(w[0], "signal") {
+		t.Errorf("warnings = %v, want one signal warning", w)
+	}
+	target = &gpsprot.ConfigTarget{}
+	target.Props.SetSignalsEnabled(lg290pDefaultSignals)
+	c, errCount, sent = runConfigTarget(t, target, fakeResponses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if got := wSent(sent); len(got) != 0 {
+		t.Errorf("sets sent for the current signal set: %v", got)
+	}
+	if w := c.ConfigWarnings(); len(w) != 0 {
+		t.Errorf("warnings for a request already satisfied: %v", w)
 	}
 }
 
@@ -525,18 +541,37 @@ func TestConfiguratorSignalsSaveReload(t *testing.T) {
 }
 
 // TestConfiguratorModeNoSaveReset checks the restart-only ruling for
-// the positioning mode: without an explicit save plus restart, mode
-// sets are silently omitted.
+// the positioning mode: without an explicit save plus restart, a mode
+// change is omitted with a warning - but a mobile request on a rover
+// receiver warns nothing even when stored-but-inert SVIN state
+// differs, since the effective mode already matches.
 func TestConfiguratorModeNoSaveReset(t *testing.T) {
 	target := &gpsprot.ConfigTarget{}
 	target.Props.SetMode(gpsprot.Mode{Static: true})
 	target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second, AccLimit: 2 * gpsprot.Meter}
-	_, errCount, sent := runConfigTarget(t, target, fakeResponses)
+	c, errCount, sent := runConfigTarget(t, target, fakeResponses)
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
 	if got := wSent(sent); len(got) != 0 {
 		t.Errorf("sets sent without save+restart: %v", got)
+	}
+	if w := c.ConfigWarnings(); len(w) != 1 || !strings.Contains(w[0], "mode") {
+		t.Errorf("warnings = %v, want one mode warning", w)
+	}
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGSVIN,R"] = []string{"PQTMCFGSVIN,OK,1,300,2.0,0.0000,0.0000,0.0000,0.0"}
+	target = &gpsprot.ConfigTarget{}
+	target.Props.SetMode(gpsprot.Mode{Static: false})
+	c, errCount, sent = runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if got := wSent(sent); len(got) != 0 {
+		t.Errorf("sets sent without save+restart: %v", got)
+	}
+	if w := c.ConfigWarnings(); len(w) != 0 {
+		t.Errorf("warnings for an effectively mobile receiver: %v", w)
 	}
 }
 
@@ -692,8 +727,11 @@ func TestConfiguratorRTCMAuto(t *testing.T) {
 	}
 }
 
-// TestConfiguratorRTCMMSM7 checks that requesting MSM7 rewrites
-// CFGRTCM with the new MSM type over the as-found tuple.
+// TestConfiguratorRTCMMSM7 checks the MSM type gate: the type is
+// stored-only, so with save+reset the CFGRTCM write goes out (rewriting
+// the as-found tuple, before the save), and without save+reset it is
+// suppressed - silently for a preference (Lax), with a warning for an
+// explicit MSM7 request. Message enables are live and unaffected.
 func TestConfiguratorRTCMMSM7(t *testing.T) {
 	responses := maps.Clone(fakeResponses)
 	responses["PQTMCFGMSGRATE,W,RTCM3-1005,1"] = []string{"PQTMCFGMSGRATE,OK"}
@@ -701,23 +739,62 @@ func TestConfiguratorRTCMMSM7(t *testing.T) {
 		responses["PQTMCFGMSGRATE,W,"+name+",1,0"] = []string{"PQTMCFGMSGRATE,OK"}
 	}
 	responses["PQTMCFGRTCM,W,7,0,-90.0,07,06,1,0"] = []string{"PQTMCFGRTCM,OK"}
+	responses["PQTMSAVEPAR"] = []string{"PQTMSAVEPAR,OK"}
+
 	target := &gpsprot.ConfigTarget{}
 	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgAutoMSM7)
+	target.Opts.Save = gpsprot.SaveMinimal
+	target.Opts.Reset = gpsprot.ResetReload
 	c, errCount, sent := runConfigTarget(t, target, responses)
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
-	found := false
-	for _, p := range wSent(sent) {
-		if p == "PQTMCFGRTCM,W,7,0,-90.0,07,06,1,0" {
-			found = true
+	wi, si := -1, -1
+	for i, p := range sent {
+		switch p {
+		case "PQTMCFGRTCM,W,7,0,-90.0,07,06,1,0":
+			wi = i
+		case "PQTMSAVEPAR":
+			si = i
 		}
 	}
-	if !found {
-		t.Errorf("CFGRTCM MSM7 write not sent: %v", wSent(sent))
+	if wi < 0 || si < 0 || wi >= si {
+		t.Errorf("want CFGRTCM write before save; W at %d, SAVEPAR at %d (%v)", wi, si, wSent(sent))
 	}
 	if c.found.rtcm.MSMType != 7 {
 		t.Errorf("assumed MSMType = %d, want 7", c.found.rtcm.MSMType)
+	}
+
+	// Preference without save+reset: suppressed silently.
+	target = &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgAutoMSM7)
+	c, errCount, sent = runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	for _, p := range wSent(sent) {
+		if strings.HasPrefix(p, "PQTMCFGRTCM,W") {
+			t.Errorf("CFGRTCM write sent without save+reset: %s", p)
+		}
+	}
+	if w := c.ConfigWarnings(); len(w) != 0 {
+		t.Errorf("warnings for a preference: %v", w)
+	}
+
+	// Explicit MSM7 without save+reset: suppressed with a warning.
+	target = &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP)
+	c, errCount, sent = runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	for _, p := range wSent(sent) {
+		if strings.HasPrefix(p, "PQTMCFGRTCM,W") {
+			t.Errorf("CFGRTCM write sent without save+reset: %s", p)
+		}
+	}
+	if w := c.ConfigWarnings(); len(w) != 1 || !strings.Contains(w[0], "MSM7") {
+		t.Errorf("warnings = %v, want one MSM7 warning", w)
 	}
 }
 

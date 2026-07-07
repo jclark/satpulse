@@ -16,12 +16,14 @@ const Vendor = "Quectel"
 // configSupport is everything except raw observation output (the
 // protocol has none; RTCM MSM is the only observation carrier) and a
 // fixed-position accuracy input (CFGSVIN's accuracy limit applies to
-// Survey-in only). Signal and positioning-mode changes are
-// stored-only on this receiver (they take effect at the next NVM
-// reload, never live), so both carry the only-with-reset qualifier.
+// Survey-in only). Signal, positioning-mode, and RTCM-MSM-type
+// changes are stored-only on this receiver (they take effect at the
+// next NVM reload, never live), so all three carry the
+// only-with-reset qualifier.
 const configSupport gpsprot.ConfigSupportFlags = gpsprot.ConfigSupportFull&^
 	(gpsprot.ConfigSupportRaw|gpsprot.ConfigSupportFixedPosAcc) |
-	gpsprot.ConfigSupportSignalOnlyWithReset | gpsprot.ConfigSupportModeOnlyWithReset
+	gpsprot.ConfigSupportSignalOnlyWithReset | gpsprot.ConfigSupportModeOnlyWithReset |
+	gpsprot.ConfigSupportRTCMMSMOnlyWithReset
 
 const (
 	// responseTimeout is the per-attempt response window. Responses
@@ -137,6 +139,10 @@ type Configurator struct {
 	// legacy PPS query after a refused PPS2 query.
 	protQueried bool
 	needPPS     bool
+	// warnings collects user-facing notes about requests deliberately
+	// not performed (only-with-reset settings without save+reset that
+	// would have changed something).
+	warnings []string
 	// msgWantState caches the desired message-output state computed
 	// by msgWant, keyed by message name.
 	msgWantState map[string]bool
@@ -512,6 +518,19 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	props := &gpsprot.ConfigProps{}
 	c.found.convertToProps(props)
 	return props
+}
+
+// ConfigWarnings returns warnings about requests deliberately not
+// performed. A skip that leaves the receiver as requested warns
+// nothing.
+func (c *Configurator) ConfigWarnings() []string {
+	return c.warnings
+}
+
+// onlyWithReset warns that a stored-only setting was not changed for
+// lack of an explicit save+reset.
+func (c *Configurator) onlyWithReset(what string) {
+	c.warnings = append(c.warnings, what+" was not performed: on this receiver it takes effect only after a save and reset (add --save with --reload or --reset)")
 }
 
 // ConfigRequest interface implementation on request.
