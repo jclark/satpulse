@@ -91,6 +91,16 @@ func TestParseCfgResponse(t *testing.T) {
 			expect:  &CfgProt{PortType: 1, PortID: 1, InputProt: 0x7, OutputProt: 0x6},
 		},
 		{
+			name:    "CfgRtcm",
+			payload: "PQTMCFGRTCM,OK,4,0,-90.0,07,06,1,0",
+			expect:  &CfgRtcm{MSMType: 4, MSMElevThd: -90.0, Reserved0: "07", Reserved1: "06", EPHMode: 1},
+		},
+		{
+			name:    "CfgMsgRate with version",
+			payload: "PQTMCFGMSGRATE,OK,PQTMPVT,0,1",
+			expect:  &CfgMsgRate{MsgName: "PQTMPVT", Rate: 0, MsgVer: opt.Make[uint8](1)},
+		},
+		{
 			name:    "CfgRSID",
 			payload: "PQTMCFGRSID,OK,1024",
 			expect:  &CfgRSID{ID: 1024},
@@ -224,6 +234,11 @@ func TestEncodeWrite(t *testing.T) {
 			name:   "CfgRSID",
 			msg:    &CfgRSID{ID: 1024},
 			expect: "PQTMCFGRSID,W,1024",
+		},
+		{
+			name:   "CfgRtcm",
+			msg:    &CfgRtcm{MSMType: 4, MSMElevThd: -90.0, Reserved0: "07", Reserved1: "06", EPHMode: 1},
+			expect: "PQTMCFGRTCM,W,4,0,-90.0,07,06,1,0",
 		},
 	}
 	for _, tc := range tests {

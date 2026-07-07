@@ -341,6 +341,22 @@ type CfgProt struct {
 func (*CfgProt) cfgMsg()          {}
 func (*CfgProt) Sentence() string { return "PQTMCFGPROT" }
 
+// CfgRtcm represents the PQTMCFGRTCM tuple (RTCM output
+// configuration). MSMElevThd is RTCM-only, distinct from CfgEleThd's
+// position-engine threshold.
+type CfgRtcm struct {
+	MSMType     uint8  // 3-7 = MSM3-MSM7
+	MSMMode     uint8  // always 0 (no output when no satellite searched)
+	MSMElevThd  Fixed1 // degrees, [-90.0, 90.0]; -90.0 = no limit
+	Reserved0   string // always "07"
+	Reserved1   string // always "06"
+	EPHMode     uint8  // 0=disable, 1=on update, 2=update+interval, 3=each epoch
+	EPHInterval uint32 // s, 0-7200, used when EPHMode=2
+}
+
+func (*CfgRtcm) cfgMsg()          {}
+func (*CfgRtcm) Sentence() string { return "PQTMCFGRTCM" }
+
 // CfgRSID represents the PQTMCFGRSID tuple (RTCM reference station ID).
 type CfgRSID struct {
 	ID uint16 // 0-4095
@@ -447,5 +463,6 @@ func init() {
 	regCfg[CfgRcvrMode]()
 	regCfg[CfgMsgRate]()
 	regCfg[CfgProt]()
+	regCfg[CfgRtcm]()
 	regCfg[CfgRSID]()
 }
