@@ -1,0 +1,34 @@
+{
+  "limitations": {
+    "antennaCableDelay": {"unsupported": true},
+    "pvtOut": {"missing": ["ecef", "leap", "tai", "tp"]},
+    "rawOut": {
+      "missing": [{"missing": ["obs"], "request": ["obs"]}, {"missing": ["nav"], "request": ["nav"]}]
+    },
+    "rtcmOut": {"missing": [{"missing": ["1077", "1087", "1097", "1117", "1127"], "request": ["MSM7"]}]},
+    "timeGNSS": {"unsupported": true},
+    "timePulse.width": {"quantum": 0.001}
+  },
+  "receiver": {
+    "firmware": "LG290P03AANR02A01S 2025/12/12",
+    "hardware": "LG290P03",
+    "supportedGNSS": [],
+    "vendor": "Quectel"
+  },
+  "supports": [
+    "fixedPos",
+    "modeOnlyWithReset",
+    "port",
+    "rtcmBaseID",
+    "rtcmMSM4",
+    "rtcmMSM7",
+    "rtcmMSMOnlyWithReset",
+    "rtcmQZSS",
+    "signal",
+    "signalOnlyWithReset",
+    "speed",
+    "survey",
+    "surveyAcc",
+    "surveyMsg"
+  ]
+}
