@@ -151,7 +151,7 @@ Properties (readback-capable):
 | TimePulseAlignToGNSS | no knob - fixed behavior, report as constant (value from stage-0 doc audit/observation) |
 | TimePulseOnlyWhenLocked | PQTMCFGPPS/PPS2 Mode (1 = always, 2 = fix only) |
 | TimePulsePolarityRising | PQTMCFGPPS/PPS2 Polarity |
-| Mode (static/survey/fixed) | PQTMCFGSVIN (0 disable / 1 survey / 2 fixed ECEF) + PQTMCFGRCVRMODE (rover/base) interplay - stage 0 |
+| Mode (static/survey/fixed) | PQTMCFGSVIN (0 disable / 1 survey / 2 fixed ECEF), effective ONLY under base mode (PQTMCFGRCVRMODE=2) after save+restart - fixed mode saved+restarted in rover mode verifiably changes nothing. NMEA re-enables live in the base-mode table, so a mode change can keep the daemon's feed. Design blocked with signals on the apply-at-restart owner ruling (see PROGRESS.md) |
 | AntennaCableDelay | candidate: PQTMCFGPPS2 Userdelay (ns) - semantic check in stage 0; otherwise absent |
 | NavMsgAuth | none - absent |
 | RTCMBaseID | PQTMCFGRSID |
