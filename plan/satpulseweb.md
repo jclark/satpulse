@@ -288,9 +288,11 @@ proper display names; libc-freedom is a Linux property.
 
 `cmd/satpulseweb`, in the main module, command-line layer. No new
 external dependencies: HTTP server, SSE, and token auth are stdlib.
-The frontend is embedded as checked-in built assets (the `web/`
-package pattern, and the `internal/web` pattern of #283): a
-`//go:generate npm run build` bridge, `go build` never needs npm.
+The frontend is embedded as checked-in built assets, the same
+`//go:generate npm ... run embed` technique satpulsed uses for
+its dashboard (`time/internal/web`, #283); `go build` never needs
+npm. satpulseweb bundles its own frontend, so it embeds its own
+assets rather than reusing satpulsed's package.
 
 Invocation sketch:
 
@@ -420,11 +422,14 @@ via `git show <ref>:<path>` or `git restore --source=<ref>`.
 ### Phase 0 (prerequisite): web toolchain (#283)
 
 As planned in [web-toolchain.md](web-toolchain.md). No desktop
-involvement; creates the `webui/` workspace.
+involvement; creates the `webui/` workspace. Its PR (on the
+`web-toolchain` branch) is opened for review but deliberately not
+merged into master before phase 1 starts, so phase 1 stacks on it.
 
 ### Phase 1: webui import (one PR; the history carrier)
 
-Branch off master after phase 0 merges. Sync desktop-gui with master
+Branch off `web-toolchain` (not master): phase 0's PR stays open, so
+phase 1 is a stacked PR on top of it. Sync desktop-gui with master
 one last time. `git merge desktop-gui`; tag the merged head
 `desktop-gui-import`. Then:
 

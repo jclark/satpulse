@@ -1,20 +1,4 @@
-export interface SVInfo {
-    id: string;        // e.g., "G01"
-    lookAngles?: LookAngles;  // look angle of the satellite
-    signals?: SignalInfo[];  // absent when the receiver reports no signal-strength (CN0) info
-    used?: boolean;      // true if known to be used in navigation solution
-}
-
-export interface LookAngles {
-    azimuth: number;     // 0 to 360 degrees
-    elevation: number;   // -90 to 90 degrees (negative unusual)
-}
-
-export interface SignalInfo {
-    cn0: number;         // Signal carrier-to-noise ratio
-    id?: string;         // Optional signal identifier
-    used?: boolean;      // true if the signal is used in the navigation solution
-}
+import type { SVInfo, SignalInfo } from '@satpulse/gps/gpsprot';
 
 // Generate the SVG element for the SkyView.
 // Assumes satellites has already been simplified with simplifySignals.
