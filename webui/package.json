@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "packages/dashboard"
+    "packages/dashboard",
+    "packages/workbench"
   ],
   "dependencies": {
     "@satpulse/gps": "file:../gps/ts"

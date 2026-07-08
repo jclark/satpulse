@@ -1,6 +1,6 @@
 import {h} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
-import {ApplyConfig, CheckOnEarth, ReadConfig} from '../wailsjs/go/main/App';
+import {transport} from './transport';
 import {SignalPicker} from './signal-picker';
 import {NMEAGroup, nmeaWireValue} from './nmea-group';
 import {RTCMGroup, rtcmWireValue} from './rtcm-group';
@@ -115,7 +115,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         const nums = fixedECEF.map(Number);
         if (fixedECEF.some(s => s === '' || isNaN(Number(s)))) { setEcefOnEarth(true); return; }
         let cancelled = false;
-        CheckOnEarth(nums[0], nums[1], nums[2]).then(ok => { if (!cancelled) setEcefOnEarth(ok); });
+        transport.checkOnEarth(nums[0], nums[1], nums[2]).then(ok => { if (!cancelled) setEcefOnEarth(ok); });
         return () => { cancelled = true; };
     }, [fixedECEF]);
 
@@ -229,7 +229,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         setOperation({status: 'running', label: 'Reading configuration'});
         try {
             clearRespSession();
-            const props = await ReadConfig();
+            const props = await transport.readConfig();
             populateFromConfig(props as any);
             onConfigReadback(props as any);
             setTimePulseTouched(false);
@@ -327,20 +327,13 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         setSurveyAgain(false);
         setSurveyReport(true);
         try {
-            const r = await ApplyConfig(cfg as any);
-            if (r.ok) {
-                setOperation({status: 'success', label: 'Applying configuration'});
-                setTimePulseTouched(false);
-                setTimeModeTouched(false);
-                setSignalsTouched(false);
-                setSpeedTouched(false);
-            } else {
-                addToast(r.error || 'Apply failed', 'error');
-                setOperation({status: 'failed', label: 'Applying configuration', error: r.error || 'Apply failed'});
-            }
+            await transport.applyConfig(cfg as any);
+            setOperation({status: 'success', label: 'Applying configuration'});
+            setTimePulseTouched(false);
+            setTimeModeTouched(false);
+            setSignalsTouched(false);
+            setSpeedTouched(false);
         } catch (e) {
-            // A rejected binding call (e.g. the backend failed to unmarshal the
-            // request) must not leave the Apply button stuck on "Applying...".
             const msg = e instanceof Error ? e.message : String(e);
             addToast(msg || 'Apply failed', 'error');
             setOperation({status: 'failed', label: 'Applying configuration', error: msg || 'Apply failed'});
