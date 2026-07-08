@@ -249,8 +249,9 @@ review:
   reconnecting state (new `ConnState` value): on read failure while a
   reset-bearing operation is in flight, poll the opener, re-open,
   re-probe, resume. This also fixes the desktop's existing
-  read-error-disconnect gap (desktop/plan/issues.md), where an
-  unplugged device leaves the app stuck in connected state.
+  read-error-disconnect gap
+  (webui/packages/workbench/plan/issues.md), where an unplugged
+  device leaves the app stuck in connected state.
 - Reset gating over proxy connections, driven by `Opener.Socket()`
   (see Relationship to satpulsed above for why).
 - `Wants` gating for the gps:packet stream, so a web client only
@@ -365,9 +366,10 @@ into the workspace verbatim in phase 1 (below); this plan adds:
 - A transport interface for the UI (read-config, apply-config,
   send-msg-file, snapshots, event subscription) with two
   implementations: the existing generated wailsjs bindings, and
-  fetch+SSE. This overturns desktop/plan/shared-webui.md's assumption
-  that the config panel stays desktop-specific; that file is
-  corrected in phase 5.
+  fetch+SSE. This overturns
+  webui/packages/workbench/plan/shared-webui.md's assumption that
+  the config panel stays desktop-specific; that file is corrected
+  in phase 5.
 - A satpulseweb entry package in the workspace (index.html, token
   handling, fetch/SSE transport wiring), whose Vite build output is
   what `cmd/satpulseweb` embeds.
@@ -387,11 +389,12 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   satpulsed's `proxy.socket`; reset ops gated off.
 - TCP (`TCPOpener`): same, via `proxy.tcp`, for reaching a headless
   box from a laptop. Requires adding TCP dialing to gpsio. Known
-  caveat from desktop/plan/issues.md (tcp-connect): inter-packet idle
-  detection is unreliable over TCP, so the NMEA satellite buffer
-  falls back to its key-detection flush and the satellite display
-  lags one cycle; configuration is unaffected. TCP can slip to a
-  follow-on if phase 3 ships serial+socket only.
+  caveat from webui/packages/workbench/plan/issues.md
+  (tcp-connect): inter-packet idle detection is unreliable over
+  TCP, so the NMEA satellite buffer falls back to its
+  key-detection flush and the satellite display lags one cycle;
+  configuration is unaffected. TCP can slip to a follow-on if
+  phase 3 ships serial+socket only.
 
 ### Build, packaging, docs
 
@@ -435,11 +438,23 @@ one last time. `git merge desktop-gui`; tag the merged head
 
 - pure `git mv` commits (no content edits, so rename detection binds
   `git log --follow`): frontend components into a new workspace
-  package (e.g. `webui/packages/app`), and `desktop/serialenum` ->
-  `gps/lib/serialenum` as-is;
-- adaptation edits (import paths, removing wailsjs references) in
-  separate commits;
-- prune everything else the merge brought (all of `desktop/`).
+  package (`webui/packages/workbench`, paired with the read-only
+  `dashboard`), `desktop/serialenum` -> `gps/lib/serialenum` as-is,
+  and `desktop/plan` -> `webui/packages/workbench/plan` so the design
+  docs travel with the code they describe;
+- adaptation edits in separate commits: `gps/lib/serialenum` adds
+  `go.bug.st` to the main `go.mod`; the moved plans' escaping links
+  are re-pointed; a provenance note is added to the workbench plan
+  README;
+- prune the rest of `desktop/` (the Wails shell, build tooling,
+  logdir, module go.mod).
+
+The workbench package lands parked: it still imports the Wails-generated
+wailsjs bindings, so it is deliberately not registered in the root
+`workspaces` array and is not compiled. Registering it and replacing the
+wailsjs imports with the transport interface is phase 3 work; here it is
+purely the arriving history, and the build stays green because the
+parked package is excluded from it.
 
 Import components verbatim even where they overlap with dashboard
 components (two sky views, etc.); unification is #284's job, not this
@@ -506,17 +521,16 @@ On the desktop-gui branch: merge master (which now contains phases
   logdir, darwin enumeration;
 - optionally adopt the msg-file library browser alongside the native
   dialog;
-- correct desktop/plan/shared-webui.md (the config panel is shared
-  after all).
+- correct webui/packages/workbench/plan/shared-webui.md (the
+  config panel is shared after all).
 
 After this phase the branch's delta over master is small: one module
 directory containing a thin shell.
 
 ## Open decisions
 
-- Names: the binary (`satpulseweb`), the workspace package for the
-  imported components, the embed package location (own package vs
-  go:embed directly in cmd/satpulseweb).
+- Names: the binary (`satpulseweb`), the embed package location (own
+  package vs go:embed directly in cmd/satpulseweb).
 - macOS enumeration in satpulseweb: keep go.bug.st, or glob
   `/dev/cu.*` and avoid cgo there too.
 - Whether TCP transport ships in phase 3 or as a follow-on.
