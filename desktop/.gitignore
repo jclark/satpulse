@@ -1,5 +1,0 @@
-build/bin
-build/*.deb
-build/darwin/Info.dev.plist
-desktop
-frontend/wailsjs/
