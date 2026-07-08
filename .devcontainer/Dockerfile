@@ -14,13 +14,4 @@ COPY go.mod go.sum ./
 USER vscode
 RUN go mod download
 
-# Cache the npm dependencies in the docker image, the same way as the go
-# modules above. Copy just the workspace manifests and lockfile (plus the
-# @satpulse/gps file: dependency target) and run npm ci.
-WORKDIR /npm-mod
-COPY --chown=vscode:vscode webui/package.json webui/package-lock.json webui/
-COPY --chown=vscode:vscode webui/packages/dashboard/package.json webui/packages/dashboard/
-COPY --chown=vscode:vscode gps/ts/package.json gps/ts/
-RUN cd webui && npm ci
-
 WORKDIR /workspace/satpulse
