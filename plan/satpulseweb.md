@@ -306,7 +306,7 @@ ContinueOnError); connection flags reuse the satpulsetool gps names
 and help strings exactly.
 
 ```
-satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH]
+satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
            [-d DEVICE [-s SPEED]] [--vendor NAME]
 ```
 
@@ -338,8 +338,29 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH]
   from `gps/lib/serialenum`, vendor dropdown mirroring `--vendor`).
 - `--packet-log PATH` mirrors satpulsetool and wires the session's
   `Options.PacketLog`.
-- No browser auto-open: the primary flow is ssh to a headless box
-  where it cannot work, and the printed URL covers the laptop case.
+- Browser auto-open by default, gated on a local interactive GUI
+  session. The gate is display presence, not receiver locality:
+  sshing into the box with the receiver must not open a browser,
+  while running at a local desktop should, even when the receiver is
+  remote over a later proxy transport. `SSH_CONNECTION` or `SSH_TTY`
+  in the environment is a universal veto; otherwise Linux
+  additionally requires `DISPLAY` or `WAYLAND_DISPLAY`, macOS needs
+  only not-remote (the console user always has the window server),
+  and Windows normally has a desktop. What opens is the loopback URL
+  (`http://127.0.0.1:PORT/`, with the per-run token appended when
+  there is one), orthogonal to the bind: the default all-interfaces
+  bind already includes loopback, so the per-address LAN URLs still
+  print and stay reachable, and auto-open only adds the local tab. A
+  small per-OS launcher does it (`open`/`xdg-open`/`rundll32`, no new
+  external dependency), fired after the listener is bound,
+  non-blocking, with launch failure logged at debug only since the
+  printed URL is the fallback. `--no-open` suppresses it, for a local
+  desktop where the tab is unwanted or when the tool is scripted (the
+  detection has no positive override; the printed URL covers the rare
+  case where it guesses headless but a browser is in fact reachable).
+  This supersedes the earlier "no browser auto-open" decision, which
+  assumed the primary flow was ssh to a headless box; macOS is now
+  the lead desktop platform.
 - `--socket` and `--tcp` are deferred to phase 4 (see Transports
   and the Delivery section); `--msg-dir` arrives with phase 4's
   message-file PR.
