@@ -258,7 +258,9 @@ func (s *Session) cancelWorkerLocked() {
 }
 
 func (s *Session) closeLocked() {
-	s.stopCorrLocked()
+	// Cancel and mark disconnected before stopCorrLocked releases s.mu
+	// to wait, so no call can pass a connected-state check and start
+	// work on the connection while it is being closed.
 	if s.sendCancel != nil {
 		s.sendCancel()
 		s.sendCancel = nil
@@ -268,12 +270,13 @@ func (s *Session) closeLocked() {
 		s.connCancel()
 		s.connCancel = nil
 	}
+	s.state = StateDisconnected
+	s.stopCorrLocked()
 	if s.pb != nil {
 		s.pb.Close()
 		s.pb = nil
 	}
 	s.configCh = nil
-	s.state = StateDisconnected
 	// Must unlock while waiting: goroutines may need the lock during shutdown.
 	s.mu.Unlock()
 	s.connWg.Wait()
@@ -293,7 +296,8 @@ func (s *Session) closeLocked() {
 // manager, which is itself one of them.
 func (s *Session) endRun() {
 	s.mu.Lock()
-	s.stopCorrLocked()
+	// As in closeLocked, cancel the run before stopCorrLocked releases
+	// s.mu to wait, so nothing new starts on the dying connection.
 	if s.sendCancel != nil {
 		s.sendCancel()
 		s.sendCancel = nil
@@ -303,6 +307,7 @@ func (s *Session) endRun() {
 		s.runCancel()
 		s.runCancel = nil
 	}
+	s.stopCorrLocked()
 	if s.pb != nil {
 		s.pb.Close()
 		s.pb = nil
@@ -797,8 +802,14 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 		s.mu.Unlock()
 		return fmt.Errorf("corrections stopping")
 	}
-	// Stop any existing correction session.
+	// Stop any existing correction session. stopCorrLocked releases
+	// s.mu while it waits, so the connection may have been closed or
+	// lost meanwhile; recheck before capturing it.
 	s.stopCorrLocked()
+	if s.state != StateConnected || s.runCtx == nil || s.runCtx.Err() != nil {
+		s.mu.Unlock()
+		return fmt.Errorf("not connected")
+	}
 	conn := s.conn
 	portLock := s.portLock
 	runCtx := s.runCtx
