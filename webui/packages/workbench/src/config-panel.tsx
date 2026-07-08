@@ -194,7 +194,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             if (tp.polarityRising !== undefined) setPpsRising(tp.polarityRising);
         }
         if (cfg.timeGNSS) setTimeGNSS(String(cfg.timeGNSS));
-        if (cfg.antennaCableDelay !== undefined) setCableDelay(String(cfg.antennaCableDelay * 1e9));
+        if (cfg.antennaCableDelay !== undefined) setCableDelay(String(cfg.antennaCableDelay));
         if (cfg.minElevation !== undefined) setMinElev(String(cfg.minElevation));
         if (cfg.baudRate !== undefined) {
             if (cfg.baudRate === 0) {
@@ -297,7 +297,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                 polarityRising: ppsRising,
             };
             if (timeGNSS) props.timeGNSS = timeGNSS;
-            if (cableDelay !== '') props.antennaCableDelay = (parseFloat(cableDelay) || 0) * 1e-9;
+            if (cableDelay !== '') props.antennaCableDelay = Math.round(parseFloat(cableDelay) || 0);
         }
         if (signalsTouched) {
             if (minElev !== '') props.minElevation = parseFloat(minElev) || 0;
