@@ -12,6 +12,16 @@ import type {
     Transport,
 } from '@satpulse/workbench/src/transport';
 
+// HttpError carries the HTTP status so callers can distinguish an
+// auth failure (401) from an operation error.
+export class HttpError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+        super(message);
+        this.status = status;
+    }
+}
+
 export function newHTTPTransport(token: string): Transport {
     const query = token ? '?t=' + encodeURIComponent(token) : '';
     async function call(method: string, path: string, body?: unknown): Promise<any> {
@@ -28,7 +38,7 @@ export function newHTTPTransport(token: string): Transport {
             } catch {
                 // fall through to the status text
             }
-            throw new Error(msg || resp.statusText);
+            throw new HttpError(resp.status, msg || resp.statusText);
         }
         return resp.json();
     }

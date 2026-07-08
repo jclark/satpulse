@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 
 	"github.com/jclark/satpulse/gps/app/session"
@@ -29,27 +30,31 @@ type server struct {
 
 func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string) *server {
 	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, mux: http.NewServeMux()}
+	// get: token-checked. post: token-checked and requires a JSON
+	// Content-Type, which blocks cross-site CSRF (see requireJSON).
+	get := s.auth
+	post := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(requireJSON(h)) }
 	s.mux.Handle("/", http.FileServer(http.FS(webContent())))
-	s.mux.HandleFunc("GET /sse", s.auth(s.handleSSE))
-	s.mux.HandleFunc("GET /api/state", s.auth(s.handleState))
-	s.mux.HandleFunc("GET /api/receiver", s.auth(s.handleReceiver))
-	s.mux.HandleFunc("GET /api/speed", s.auth(s.handleSpeed))
-	s.mux.HandleFunc("GET /api/corrections", s.auth(s.handleCorrState))
-	s.mux.HandleFunc("GET /api/ports", s.auth(s.handlePorts))
-	s.mux.HandleFunc("GET /api/vendors", s.auth(s.handleVendors))
-	s.mux.HandleFunc("POST /api/connect", s.auth(s.handleConnect))
-	s.mux.HandleFunc("POST /api/disconnect", s.auth(s.handleDisconnect))
-	s.mux.HandleFunc("POST /api/config/read", s.auth(s.handleReadConfig))
-	s.mux.HandleFunc("POST /api/config/apply", s.auth(s.handleApplyConfig))
-	s.mux.HandleFunc("POST /api/signals", s.auth(s.handleSignals))
-	s.mux.HandleFunc("POST /api/corrections/start", s.auth(s.handleCorrStart))
-	s.mux.HandleFunc("POST /api/corrections/stop", s.auth(s.handleCorrStop))
-	s.mux.HandleFunc("POST /api/decode-packet", s.auth(s.handleDecodePacket))
-	s.mux.HandleFunc("POST /api/geo/ecef-to-llh", s.auth(s.handleECEFtoLLH))
-	s.mux.HandleFunc("POST /api/geo/llh-to-ecef", s.auth(s.handleLLHtoECEF))
-	s.mux.HandleFunc("POST /api/geo/check-on-earth", s.auth(s.handleCheckOnEarth))
-	s.mux.HandleFunc("POST /api/geo/vel-ned-to-ecef", s.auth(s.handleVelNEDtoECEF))
-	s.mux.HandleFunc("POST /api/geo/vel-ecef-to-ned", s.auth(s.handleVelECEFtoNED))
+	s.mux.HandleFunc("GET /sse", get(s.handleSSE))
+	s.mux.HandleFunc("GET /api/state", get(s.handleState))
+	s.mux.HandleFunc("GET /api/receiver", get(s.handleReceiver))
+	s.mux.HandleFunc("GET /api/speed", get(s.handleSpeed))
+	s.mux.HandleFunc("GET /api/corrections", get(s.handleCorrState))
+	s.mux.HandleFunc("GET /api/ports", get(s.handlePorts))
+	s.mux.HandleFunc("GET /api/vendors", get(s.handleVendors))
+	s.mux.HandleFunc("POST /api/connect", post(s.handleConnect))
+	s.mux.HandleFunc("POST /api/disconnect", post(s.handleDisconnect))
+	s.mux.HandleFunc("POST /api/config/read", post(s.handleReadConfig))
+	s.mux.HandleFunc("POST /api/config/apply", post(s.handleApplyConfig))
+	s.mux.HandleFunc("POST /api/signals", post(s.handleSignals))
+	s.mux.HandleFunc("POST /api/corrections/start", post(s.handleCorrStart))
+	s.mux.HandleFunc("POST /api/corrections/stop", post(s.handleCorrStop))
+	s.mux.HandleFunc("POST /api/decode-packet", post(s.handleDecodePacket))
+	s.mux.HandleFunc("POST /api/geo/ecef-to-llh", post(s.handleECEFtoLLH))
+	s.mux.HandleFunc("POST /api/geo/llh-to-ecef", post(s.handleLLHtoECEF))
+	s.mux.HandleFunc("POST /api/geo/check-on-earth", post(s.handleCheckOnEarth))
+	s.mux.HandleFunc("POST /api/geo/vel-ned-to-ecef", post(s.handleVelNEDtoECEF))
+	s.mux.HandleFunc("POST /api/geo/vel-ecef-to-ned", post(s.handleVelECEFtoNED))
 	return s
 }
 
@@ -65,6 +70,22 @@ func (s *server) auth(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("t")), tok) != 1 {
 			writeError(w, http.StatusUnauthorized, errors.New("missing or invalid access token"))
+			return
+		}
+		h(w, r)
+	}
+}
+
+// requireJSON rejects a state-changing request whose body is not
+// declared application/json. This is the CSRF guard: a cross-site page
+// can issue "simple" POSTs (form/text bodies) without a CORS preflight,
+// but setting Content-Type to application/json forces a preflight the
+// browser blocks, since the server sends no CORS headers. It matters
+// even with the token disabled (-L), where auth is a no-op.
+func requireJSON(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
+			writeError(w, http.StatusUnsupportedMediaType, errors.New("Content-Type must be application/json"))
 			return
 		}
 		h(w, r)
@@ -122,6 +143,10 @@ func (s *server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		case <-s.ctx.Done():
 			return
 		case <-r.Context().Done():
+			return
+		case <-c.dead:
+			// Fell behind and overflowed; ending the response makes the
+			// browser reconnect and re-prime from the cache.
 			return
 		case e := <-c.ch:
 			if _, err := io.WriteString(w, e.Format()); err != nil {
@@ -194,8 +219,12 @@ func (s *server) handleDisconnect(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, struct{}{})
 }
 
-func (s *server) handleReadConfig(w http.ResponseWriter, r *http.Request) {
-	props, err := s.sess.ReadConfig(r.Context())
+func (s *server) handleReadConfig(w http.ResponseWriter, _ *http.Request) {
+	// s.ctx, not the request context: the configure run must finish (or
+	// stop only on server shutdown) even if the browser reloads or the
+	// HTTP connection drops mid-operation, so the receiver is never left
+	// half-configured.
+	props, err := s.sess.ReadConfig(s.ctx)
 	if err != nil {
 		sessionError(w, err)
 		return
@@ -208,7 +237,8 @@ func (s *server) handleApplyConfig(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, target) {
 		return
 	}
-	if err := s.sess.ApplyConfig(r.Context(), target); err != nil {
+	// s.ctx, not the request context: see handleReadConfig.
+	if err := s.sess.ApplyConfig(s.ctx, target); err != nil {
 		sessionError(w, err)
 		return
 	}

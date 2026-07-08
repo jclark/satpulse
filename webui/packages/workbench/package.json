@@ -3,11 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "comment": "Component library consumed by entry packages (e.g. @satpulse/satpulsewb) that install a transport; it has no standalone app.",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@fontsource/dseg7-classic": "^5.2.5",
@@ -15,10 +13,6 @@
     "preact": "^10.25.0"
   },
   "devDependencies": {
-    "@preact/preset-vite": "^2.9.0",
-    "@tailwindcss/vite": "^4.1.3",
-    "tailwindcss": "^4.1.3",
-    "typescript": "^5.7.0",
-    "vite": "^6.1.0"
+    "typescript": "^5.7.0"
   }
 }

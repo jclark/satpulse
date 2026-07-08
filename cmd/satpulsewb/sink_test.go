@@ -122,6 +122,41 @@ func TestHubPacketRouting(t *testing.T) {
 	}
 }
 
+// TestHubMsgPriming checks that a slow-changing gps:msg kind is primed
+// to a new client while a high-rate kind is not.
+func TestHubMsgPriming(t *testing.T) {
+	h := newSSEHub()
+	h.Emit(session.Event{Name: session.EventMsg, Data: session.MsgEvent{Kind: "leapSecond"}})
+	h.Emit(session.Event{Name: session.EventMsg, Data: session.MsgEvent{Kind: "satellites"}})
+	c, prime := h.subscribe(false)
+	defer h.unsubscribe(c)
+	expect := []sse.Event{mustMake(t, "gps:msg", session.MsgEvent{Kind: "leapSecond"})}
+	if !reflect.DeepEqual(prime, expect) {
+		t.Errorf("got  %+v\nwant %+v", prime, expect)
+	}
+}
+
+// TestHubOverflow checks that a client falling behind is disconnected
+// (its dead channel closed) rather than blocking Emit.
+func TestHubOverflow(t *testing.T) {
+	h := newSSEHub()
+	c, _ := h.subscribe(false)
+	for range clientChanSize {
+		h.Emit(session.Event{Name: session.EventLog, Data: session.LogEvent{Message: "x"}})
+	}
+	select {
+	case <-c.dead:
+		t.Fatal("dead closed before overflow")
+	default:
+	}
+	h.Emit(session.Event{Name: session.EventLog, Data: session.LogEvent{Message: "overflow"}})
+	select {
+	case <-c.dead:
+	default:
+		t.Fatal("dead not closed on overflow")
+	}
+}
+
 func drain(ch chan sse.Event) []sse.Event {
 	var evs []sse.Event
 	for {

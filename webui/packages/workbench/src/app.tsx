@@ -1,9 +1,9 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {transport} from './transport';
-import type {ConnState} from './transport';
+import type {ConnState, MsgFileTag, PortInfo} from './transport';
 import type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo} from '@satpulse/gps/gpsprot';
-import {ConnectionPanel, PortInfo} from './connection-panel';
+import {ConnectionPanel} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
 import {ConfigPanel} from './config-panel';
 import {PacketPanel} from './packet-panel';
@@ -21,7 +21,7 @@ import {SummaryPanel} from './summary-panel';
 import {ScatterPanel} from './scatter-panel';
 import {SignalsPanel} from './signals-panel';
 export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo};
-export type {ConnState};
+export type {ConnState, MsgFileTag};
 
 export type ReceiverState =
     | {status: 'disconnected'}
@@ -61,14 +61,6 @@ interface MsgEvent {
     kind: string;
     msg: any;
     time: string;
-}
-
-export interface MsgFileTag {
-    tag: string;
-    desc?: string;
-    msgCount: number;
-    needsPort?: boolean;
-    saveAware?: boolean;
 }
 
 export interface MsgSendEvent {
@@ -224,11 +216,7 @@ export function App() {
     }, []);
 
     const refreshPorts = useCallback(() => {
-        transport.connection?.listPorts().then(list => {
-            const ps: PortInfo[] = (list || []).map(p => ({device: p.device, display: p.display}));
-            setPorts(ps);
-            return ps;
-        }).catch(() => []);
+        transport.connection?.listPorts().then(list => setPorts(list || [])).catch(() => {});
     }, []);
 
     // Fetch ports and vendors on startup; auto-select if exactly one port
@@ -236,7 +224,7 @@ export function App() {
         const conn = transport.connection;
         if (!conn) return;
         conn.listPorts().then(list => {
-            const ps: PortInfo[] = (list || []).map(p => ({device: p.device, display: p.display}));
+            const ps = list || [];
             setPorts(ps);
             if (ps.length === 1) setDevice(ps[0].device);
         }).catch(() => {});
@@ -515,7 +503,11 @@ export function App() {
         if (!conn) return;
         if (connState !== 'disconnected') {
             respSessionRef.current = 0;
-            await conn.disconnect();
+            try {
+                await conn.disconnect();
+            } catch (e) {
+                addToast(e instanceof Error ? e.message : 'Disconnect failed', 'error');
+            }
             return;
         }
         try {

@@ -51,8 +51,40 @@ func TestAuth(t *testing.T) {
 func (s *server) post(t *testing.T, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	w := httptest.NewRecorder()
-	s.mux.ServeHTTP(w, httptest.NewRequest("POST", path, strings.NewReader(body)))
+	r := httptest.NewRequest("POST", path, strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	s.mux.ServeHTTP(w, r)
 	return w
+}
+
+// TestRequireJSON checks the CSRF guard: a POST without a JSON
+// Content-Type is rejected before reaching the handler.
+func TestRequireJSON(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		expectCode  int
+	}{
+		{name: "no content type", contentType: "", expectCode: http.StatusUnsupportedMediaType},
+		{name: "form content type", contentType: "application/x-www-form-urlencoded", expectCode: http.StatusUnsupportedMediaType},
+		{name: "text content type", contentType: "text/plain", expectCode: http.StatusUnsupportedMediaType},
+		{name: "json", contentType: "application/json", expectCode: http.StatusBadRequest}, // empty device
+		{name: "json with charset", contentType: "application/json; charset=utf-8", expectCode: http.StatusBadRequest},
+	}
+	s := newTestServer("")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("POST", "/api/connect", strings.NewReader(`{"device":""}`))
+			if tc.contentType != "" {
+				r.Header.Set("Content-Type", tc.contentType)
+			}
+			s.mux.ServeHTTP(w, r)
+			if w.Code != tc.expectCode {
+				t.Errorf("got %d want %d", w.Code, tc.expectCode)
+			}
+		})
+	}
 }
 
 func TestEndpoints(t *testing.T) {
