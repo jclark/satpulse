@@ -62,8 +62,16 @@ field.
 
 This unit silently drops requests beyond ~12 outstanding (same-id
 bursts, stage-0 finding); the configurator's per-id serialization
-keeps well under that. Its NVM held a stray NAV-TIME rate 18 that soft
-resets kept resurrecting; a factory clear removed it once, yet it
-reappeared after a later reload - some receiver-persistent store
-neither the save mask nor factory clear controls. Running state is
-kept at rate 0.
+keeps well under that. Its NVM held a stray NAV-TIME rate 18: binary
+CFG-MSG rates fall outside the save mask's granularity, so a running-0
+save does not overwrite it and a soft reset reloads 18. It also seemed
+to survive a factory clear and reappear after a later reload, read at
+the time as a receiver-persistent store beyond the save mask and
+factory clear. That reading is unreliable: reset and factory-clear are
+unacknowledged commands (SIMPLERST, CFG-CFG clear), and satpulsetool
+had a bug (fixed on master, #359) where a no-response command sent as
+the last write before the tool exits could be clipped by the baud
+restore on close and never reach the receiver - so a clear or reload
+that seemed not to take effect may not have executed. Re-verify the
+NVM-clear behavior on this unit with the fixed tool before treating it
+as a receiver limitation. Running state is kept at rate 0.
