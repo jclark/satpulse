@@ -9,9 +9,10 @@ the receiver's protocol; the full desktop feature set (monitor,
 packets, message files, corrections) comes along because it flows
 through the same core.
 
-The work is delivered in phases, each an individually reviewable PR
-on master, with the Wails desktop app reworked on top at the end (on
-the desktop-gui branch). The phase structure and the branching and
+The work is delivered as a stack of individually reviewable PRs, one
+per phase, each branching off the previous phase's branch rather than
+master, with the Wails desktop app reworked on top at the end (on the
+desktop-gui branch). The phase structure and the branching and
 history-preservation strategy are described under Delivery below.
 
 Prerequisite: the web toolchain reorganisation (#283,
@@ -412,22 +413,33 @@ into the workspace verbatim in phase 1 (below); this plan adds:
 ## Delivery: branching strategy and phases
 
 Constraints: desktop-gui stays a long-lived branch (the separate
-module is a Wails tax we do not extend); everything else lands on
-master as individually reviewable PRs; the history of the desktop
-frontend components must be preserved.
+module is a Wails tax we do not extend); the phases are developed as a
+stack of individually reviewable PRs, each branching off the previous
+phase's branch, and none is merged to master before the next phase
+starts; the history of the desktop frontend components must be
+preserved.
 
-Principle: exactly one master-bound PR carries a merge of desktop-gui
-(phase 1). Once merged, all desktop-gui commits are ancestors of
-master, so every later phase references that history for free:
-`git log` on deleted paths keeps working, and content is recoverable
-via `git show <ref>:<path>` or `git restore --source=<ref>`.
+Principle: exactly one PR (phase 1) carries a merge of desktop-gui.
+Because every later phase branches off the phase-1 branch (directly or
+transitively through the stack), that merge is in each one's ancestry,
+so they reference the desktop history for free: `git log` on deleted
+paths keeps working, and content is recoverable via the
+`desktop-gui-import` tag with `git show <ref>:<path>` or
+`git restore --source=<ref>`. This holds through the stack, with
+nothing needing to land on master first.
+
+Landing: the stack is reviewed as a series and merged bottom-up onto
+master (phase 0, then 1, then 2, ...) once it is ready; phases are not
+landed one at a time as they are written. Until then each phase's PR
+targets the previous phase's branch, so its diff shows only that
+phase's own changes.
 
 ### Phase 0 (prerequisite): web toolchain (#283)
 
 As planned in [web-toolchain.md](web-toolchain.md). No desktop
 involvement; creates the `webui/` workspace. Its PR (on the
-`web-toolchain` branch) is opened for review but deliberately not
-merged into master before phase 1 starts, so phase 1 stacks on it.
+`web-toolchain` branch) is opened for review and stays open as the
+base of the stack; phase 1 branches off it rather than off master.
 
 ### Phase 1: webui import (one PR; the history carrier)
 
@@ -458,18 +470,19 @@ parked package is excluded from it.
 
 Import components verbatim even where they overlap with dashboard
 components (two sky views, etc.); unification is #284's job, not this
-PR's. Net diff vs master: the added webui files and the serialenum
-package. The commit list is long -- that is the history arriving.
+PR's. Net diff vs its `web-toolchain` base: the added webui files and
+the serialenum package. The commit list is long -- that is the history
+arriving.
 
 ### Phase 2: gps/app/session (one PR)
 
-Fresh branch off master after phase 1 merges. Phase 1 is a real
-prerequisite: it fixes the `desktop-gui-import` tag that commit 1
-below is resurrected from and verified against, and it puts that
-history into master's ancestry before the derived code lands.
+Branch off the phase-1 branch, continuing the stack. Phase 1 is a real
+prerequisite: it creates the `desktop-gui-import` tag that commit 1
+below is resurrected from and verified against, and puts that history
+into the stack's ancestry before the derived code lands.
 
-The PR's aggregate diff against master necessarily shows
-`gps/app/session` as new files (master no longer contains
+The PR's aggregate diff against its base necessarily shows
+`gps/app/session` as new files (the phase-1 branch no longer contains
 `desktop/app.go`). Reviewability comes from the per-commit structure,
 so the PR must be reviewed commit by commit, not from the
 files-changed view:
@@ -509,8 +522,8 @@ no dynamic dependencies.
 
 ### Phase 5: rework desktop-gui on top (branch work, no master PR)
 
-On the desktop-gui branch: merge master (which now contains phases
-1-4), then:
+On the desktop-gui branch: merge the tip of the stack (the phase-4
+branch, or master once the stack has landed), then:
 
 - delete the branch's local copies of the frontend components in
   favor of the workspace packages (the `file:` dependency mechanism
@@ -524,8 +537,9 @@ On the desktop-gui branch: merge master (which now contains phases
 - correct webui/packages/workbench/plan/shared-webui.md (the
   config panel is shared after all).
 
-After this phase the branch's delta over master is small: one module
-directory containing a thin shell.
+After this phase, once the stack has landed on master, the branch's
+delta over master is small: one module directory containing a thin
+shell.
 
 ## Open decisions
 
