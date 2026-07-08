@@ -358,6 +358,13 @@ type CfgProt struct {
 	OutputProt Hex32 // bit 0=NMEA, 1=QGC, 2=RTCM3
 }
 
+// Protocol bits for CfgProt's InputProt and OutputProt.
+const (
+	ProtNMEA  Hex32 = 1 << 0
+	ProtQGC   Hex32 = 1 << 1
+	ProtRTCM3 Hex32 = 1 << 2
+)
+
 func (*CfgProt) cfgMsg()          {}
 func (*CfgProt) Sentence() string { return "PQTMCFGPROT" }
 

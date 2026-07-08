@@ -43,12 +43,63 @@ var rtcmMSMNames = []string{
 // generateMsgSets appends the message-output set requests: each
 // modeled member the target names is set to its desired state. The
 // receiver's current message table is not read back, so a set is sent
-// even when the message is already in the requested state.
+// even when the message is already in the requested state. A complete
+// NMEA or RTCM request that leaves its protocol with no output is
+// realized by switching the protocol off in PQTMCFGPROT instead
+// (protOutput), skipping that group's per-message disables.
 func (c *Configurator) generateMsgSets() {
-	for _, name := range sortedNames(c.msgWant()) {
+	want := c.msgWant()
+	prot, nmeaOff, rtcmOff := c.protOutput(want)
+	if prot != nil {
+		c.reqs = append(c.reqs, prot)
+	}
+	for _, name := range sortedNames(want) {
+		if nmeaOff && isStdNMEA(name) || rtcmOff && isRTCMMsg(name) {
+			continue
+		}
 		c.reqs = append(c.reqs, c.msgRateSet(name, c.msgWantState[name]))
 	}
 	c.generateRTCMTypeSet()
+}
+
+// protOutput drives the port's NMEA and RTCM3 output-protocol bits to
+// match the target's complete (non-Other) NMEA and RTCM requests: on
+// when any of the group's messages is wanted, off when none is. The
+// off case switches the whole protocol dark - including sentences the
+// model does not name - so per-message disables are redundant; the
+// returned nmeaOff/rtcmOff say so. Whole-protocol output toggles live
+// via PQTMCFGPROT and need the port's protocol readback; with none
+// available nothing is managed and the per-message sets stand.
+func (c *Configurator) protOutput(want map[string]bool) (req *request, nmeaOff, rtcmOff bool) {
+	if c.found.prot == nil {
+		return nil, false, false
+	}
+	out := c.found.prot.OutputProt
+	newOut := out
+	opts := &c.target.Opts
+	if opts.NMEAMsg.IsSet() && opts.NMEAMsg.Get()&gpsprot.NMEAMsgOther == 0 {
+		if anyWanted(want, isStdNMEA) {
+			newOut |= qtmmsg.ProtNMEA
+		} else {
+			newOut &^= qtmmsg.ProtNMEA
+			nmeaOff = true
+		}
+	}
+	if opts.RTCMMsg.IsSet() && opts.RTCMMsg.Get()&gpsprot.RTCMMsgOther == 0 {
+		if anyWanted(want, isRTCMMsg) {
+			newOut |= qtmmsg.ProtRTCM3
+		} else {
+			newOut &^= qtmmsg.ProtRTCM3
+			rtcmOff = true
+		}
+	}
+	if newOut != out {
+		m := *c.found.prot
+		m.OutputProt = newOut
+		req = c.propSet(&m, func() { c.found.prot = &m })
+		req.phase = phaseMsg
+	}
+	return req, nmeaOff, rtcmOff
 }
 
 // generateRTCMTypeSet writes CFGRTCM when the requested MSM type
@@ -167,6 +218,28 @@ func (c *Configurator) msgRateSet(name string, on bool) *request {
 // (e.g. "RTCM3-107X"), which carries a time-offset field.
 func isMSMName(name string) bool {
 	return strings.HasPrefix(name, "RTCM3-1") && strings.HasSuffix(name, "X")
+}
+
+// isStdNMEA reports whether a message name is a standard NMEA sentence
+// (the NMEA output protocol), as opposed to a PQTM or RTCM3 message.
+func isStdNMEA(name string) bool {
+	return !strings.HasPrefix(name, "PQTM") && !strings.HasPrefix(name, "RTCM3-")
+}
+
+// isRTCMMsg reports whether a message name is an RTCM3 message (the
+// RTCM3 output protocol).
+func isRTCMMsg(name string) bool {
+	return strings.HasPrefix(name, "RTCM3-")
+}
+
+// anyWanted reports whether any wanted (on) message name satisfies pred.
+func anyWanted(want map[string]bool, pred func(string) bool) bool {
+	for name, on := range want {
+		if on && pred(name) {
+			return true
+		}
+	}
+	return false
 }
 
 func sortedNames(m map[string]bool) []string {

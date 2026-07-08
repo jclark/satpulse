@@ -3,6 +3,7 @@ package quectel
 import (
 	"maps"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -312,6 +313,97 @@ func TestConfiguratorSatsMsgUnion(t *testing.T) {
 		if strings.Contains(p, "GSV") && !strings.HasSuffix(p, "GSV,1") {
 			t.Errorf("GSV not set on: %s", p)
 		}
+	}
+}
+
+// TestConfiguratorNMEAAllOff checks that a complete request leaving no
+// NMEA sentence on switches the whole NMEA output protocol off in one
+// CFGPROT write (from the as-found 07) rather than disabling each
+// sentence.
+func TestConfiguratorNMEAAllOff(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGPROT,W,1,1,00000007,00000006"] = []string{"PQTMCFGPROT,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	expect := []string{"PQTMCFGPROT,W,1,1,00000007,00000006"}
+	if got := wSent(sent); !reflect.DeepEqual(got, expect) {
+		t.Errorf("sets sent:\ngot  %v\nwant %v", got, expect)
+	}
+}
+
+// TestConfiguratorRTCMAllOff checks the same whole-protocol switch-off
+// for RTCM: the RTCM3 output bit clears (07 -> 03) and no per-message
+// disables go out.
+func TestConfiguratorRTCMAllOff(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGPROT,W,1,1,00000007,00000003"] = []string{"PQTMCFGPROT,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgNone)
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	expect := []string{"PQTMCFGPROT,W,1,1,00000007,00000003"}
+	if got := wSent(sent); !reflect.DeepEqual(got, expect) {
+		t.Errorf("sets sent:\ngot  %v\nwant %v", got, expect)
+	}
+}
+
+// TestConfiguratorNMEAReenable checks that when the NMEA output bit is
+// found already cleared (a prior all-off), a request that wants NMEA
+// back sets the bit on again so the per-message rates take effect.
+func TestConfiguratorNMEAReenable(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGPROT,R,1,1"] = []string{"PQTMCFGPROT,OK,1,1,00000007,00000006"}
+	responses["PQTMCFGPROT,W,1,1,00000007,00000007"] = []string{"PQTMCFGPROT,OK"}
+	for _, p := range []string{"GGA,0", "GLL,0", "GSA,0", "GSV,0", "RMC,1", "VTG,0", "ZDA,0"} {
+		responses["PQTMCFGMSGRATE,W,"+p] = []string{"PQTMCFGMSGRATE,OK"}
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC)
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	w := wSent(sent)
+	if len(w) == 0 || w[0] != "PQTMCFGPROT,W,1,1,00000007,00000007" {
+		t.Errorf("NMEA bit not re-enabled first: %v", w)
+	}
+	if !slices.Contains(w, "PQTMCFGMSGRATE,W,RMC,1") {
+		t.Errorf("RMC not enabled: %v", w)
+	}
+}
+
+// TestConfiguratorProtOffNoReadback checks the fallback: with the
+// CFGPROT readback refused, an all-off NMEA request cannot switch the
+// protocol and disables each sentence individually instead.
+func TestConfiguratorProtOffNoReadback(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGPROT,R,1,1"] = []string{"PQTMCFGPROT,ERROR,3"}
+	for _, p := range []string{"GGA,0", "GLL,0", "GSA,0", "GSV,0", "RMC,0", "VTG,0", "ZDA,0"} {
+		responses["PQTMCFGMSGRATE,W,"+p] = []string{"PQTMCFGMSGRATE,OK"}
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	expect := []string{
+		"PQTMCFGMSGRATE,W,GGA,0",
+		"PQTMCFGMSGRATE,W,GLL,0",
+		"PQTMCFGMSGRATE,W,GSA,0",
+		"PQTMCFGMSGRATE,W,GSV,0",
+		"PQTMCFGMSGRATE,W,RMC,0",
+		"PQTMCFGMSGRATE,W,VTG,0",
+		"PQTMCFGMSGRATE,W,ZDA,0",
+	}
+	if got := wSent(sent); !reflect.DeepEqual(got, expect) {
+		t.Errorf("sets sent:\ngot  %v\nwant %v", got, expect)
 	}
 }
 
