@@ -1,4 +1,9 @@
-package main
+// Package session implements an interactive session with a GPS
+// receiver: connect, probe, configure, send messages, monitor,
+// disconnect. It is the application core shared by GUI shells; each
+// shell provides a Sink that delivers session events to its UI
+// transport.
+package session
 
 import (
 	"context"
@@ -6,21 +11,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/jclark/satpulse/desktop/logdir"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
-
-	"github.com/jclark/satpulse/desktop/serialenum"
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
-	"github.com/jclark/satpulse/gps/app/logfile"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsdecode"
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -40,15 +40,27 @@ type ConnState string
 const (
 	StateDisconnected ConnState = "disconnected"
 	StateConnecting   ConnState = "connecting"
+	StateReconnecting ConnState = "reconnecting" // transport lost after a reset; re-opening and re-probing
 	StateConnected    ConnState = "connected"
 	StateConfiguring  ConnState = "configuring"
 	StateSending      ConnState = "sending"
 )
 
-const packetLogChannelSize = 64
+const (
+	packetLogChannelSize = 64
+	// connectOpenTimeout bounds the wait for the device on the initial
+	// Connect; a missing device should fail fast.
+	connectOpenTimeout = 2 * time.Second
+	// reopenTimeout bounds one reconnect attempt: USB re-enumeration
+	// after a reset takes a few seconds.
+	reopenTimeout = 10 * time.Second
+	// reopenDelay separates reconnect attempts.
+	reopenDelay = time.Second
+)
 
 // configRequest is sent to packetWorker to run gpscfg.Configure.
 type configRequest struct {
+	ctx      context.Context
 	target   *gpsprot.ConfigTarget
 	resultCh chan<- configResult
 }
@@ -68,209 +80,464 @@ type sendStepReq struct {
 	reply chan<- error
 }
 
-// App is the Wails application struct.
-// Its exported methods are bound to the frontend.
-type App struct {
-	ctx          context.Context
-	lg           *slog.Logger
-	mu           sync.Mutex
-	state        ConnState
-	corrState    CorrEvent
-	conn         *gpsio.SerialConn
+// EventName identifies a session event on the UI wire.
+type EventName string
+
+// The session events and their payload types.
+const (
+	EventState        EventName = "gps:state"        // ConnState
+	EventReceiver     EventName = "gps:receiver"     // ReceiverEvent
+	EventSpeed        EventName = "gps:speed"        // int (host serial port speed)
+	EventLog          EventName = "gps:log"          // LogEvent
+	EventMsg          EventName = "gps:msg"          // MsgEvent
+	EventTime         EventName = "gps:time"         // *gpsprot.TimeMsg
+	EventEpochPVT     EventName = "gps:epochPVT"     // gpsprot.PVMsgBundle
+	EventInitialPos   EventName = "gps:initialPos"   // [2]float64 (lat, lon in degrees)
+	EventNMEAPosition EventName = "gps:nmeaPosition" // NMEAPositionEvent
+	EventMsgSend      EventName = "gps:msgsend"      // MsgSendEvent
+	EventResponse     EventName = "gps:response"     // ResponseEvent
+	EventCorrections  EventName = "gps:corrections"  // CorrEvent
+	EventCorrPacket   EventName = "gps:corrpacket"   // *gpsprot.CorReportMsg
+	EventBaseARP      EventName = "gps:basearp"      // BaseARPEvent
+	EventPacket       EventName = "gps:packet"       // gpsio.PacketLogEntry
+)
+
+// Event is a named event with a JSON-serializable payload.
+type Event struct {
+	Name EventName
+	Data any // one of the payload types documented on the EventName constants
+}
+
+// Sink delivers events to the UI transport. Called from session
+// goroutines; Emit must not block (drop or buffer).
+type Sink interface {
+	Emit(Event)
+	// Wants reports whether anyone is listening for this event.
+	// The session uses it to suppress expensive high-rate streams
+	// (gps:packet). A sink whose transport always listens returns
+	// true unconditionally.
+	Wants(EventName) bool
+}
+
+func emit(sink Sink, name EventName, data any) {
+	sink.Emit(Event{Name: name, Data: data})
+}
+
+// Options configures a Session.
+type Options struct {
+	ProbeTimeout time.Duration // timeout for a probe or configuration run; default 15s
+	MaxRetries   int           // reconnect attempts after a reset kills the transport; default 3
+	PacketLog    io.Writer     // optional JSONL packet log (nil to disable)
+}
+
+// Session is an interactive session with a GPS receiver.
+// Its methods are safe for concurrent use.
+type Session struct {
+	lg   *slog.Logger
+	sink Sink
+	opts Options
+	mu   sync.Mutex
+	// op and vendor are set by Connect and immutable while the
+	// connection lives.
+	op     Opener
+	vendor gpsreg.Vendor
+	state  ConnState
+	// connCtx spans the logical connection, Connect to Disconnect;
+	// runCtx spans one packet pipeline run within it. They differ only
+	// when a reset-bearing operation kills the transport: the manager
+	// ends the run, re-opens the transport, and starts a new run under
+	// the same connCtx.
 	connCtx      context.Context
 	connCancel   context.CancelFunc
+	runCtx       context.Context
+	runCancel    context.CancelFunc
 	connWg       sync.WaitGroup
+	conn         gpsio.Conn
 	portLock     gpsio.OutPortLock
 	pb           *bcast.Bcast[scan.Packet]
 	configCh     chan configRequest
 	probe        ReceiverEvent
+	speed        int
+	resetPending bool
 	mh           *msgHandler
 	gga          *ggaMonitor
 	msgFile      *msgfile.Parsed
-	msgFilePath  string
 	sendCancel   context.CancelFunc
 	workerCancel context.CancelFunc
 	respSession  atomic.Int32
-	corrCtx      context.Context
+	corrState    CorrEvent
 	corrCancel   context.CancelFunc
 	corrWg       *sync.WaitGroup
 	corrStopping bool
-	logDir       string
-	systemLog    *logfile.LogFile
-	packetLog    *logfile.LogFile
+	packetLogW   io.Writer
 }
 
-// NewApp creates a new App.
-func NewApp() *App {
-	return &App{
-		state:     StateDisconnected,
-		corrState: CorrEvent{State: "stopped"},
+// New creates a Session that delivers events to sink.
+func New(lg *slog.Logger, sink Sink, opts Options) *Session {
+	if opts.ProbeTimeout == 0 {
+		opts.ProbeTimeout = 15 * time.Second
 	}
-}
-
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
-	base := slog.Handler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	if err := a.openLogFiles(); err != nil {
-		fmt.Fprintln(os.Stderr, "error opening log files:", err)
-	} else if a.systemLog != nil {
-		jsonHandler := slog.NewJSONHandler(a.systemLog.File, &slog.HandlerOptions{Level: slog.LevelDebug})
-		base = multiHandler{base, jsonHandler}
+	if opts.MaxRetries == 0 {
+		opts.MaxRetries = 3
 	}
-	a.lg = slog.New(&eventHandler{ctx: ctx, base: base})
-	if a.logDir != "" {
-		a.lg.Info("opened desktop log files", "dir", a.logDir)
+	return &Session{
+		lg:         lg,
+		sink:       sink,
+		opts:       opts,
+		packetLogW: opts.PacketLog,
+		state:      StateDisconnected,
+		corrState:  CorrEvent{State: "stopped"},
 	}
 }
 
-func (a *App) shutdown(_ context.Context) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.closeLocked()
-	a.closeLogFilesLocked()
-}
-
-func (a *App) openLogFiles() error {
-	dir, err := logdir.Path()
-	if err != nil {
-		return err
-	}
-	systemLog := &logfile.LogFile{}
-	if err := systemLog.Open(filepath.Join(dir, "system.jsonl"), false); err != nil {
-		return err
-	}
-	packetLog := &logfile.LogFile{}
-	if err := packetLog.Open(filepath.Join(dir, "packets.jsonl"), false); err != nil {
-		systemLog.Close(slog.Default())
-		return err
-	}
-	a.logDir = dir
-	a.systemLog = systemLog
-	a.packetLog = packetLog
-	return nil
-}
-
-func (a *App) closeLogFilesLocked() {
-	if a.packetLog != nil {
-		a.packetLog.Close(a.lg)
-		a.packetLog = nil
-	}
-	if a.systemLog != nil {
-		a.systemLog.Close(a.lg)
-		a.systemLog = nil
-	}
+func (s *Session) emit(name EventName, data any) {
+	emit(s.sink, name, data)
 }
 
 // setState transitions the connection state and emits a gps:state event.
-// Must NOT be called with a.mu held -- Wails event dispatch could re-enter App methods.
-func (a *App) setState(s ConnState) {
-	a.mu.Lock()
-	a.state = s
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:state", s)
+// Must NOT be called with s.mu held -- a Sink may re-enter Session methods.
+func (s *Session) setState(st ConnState) {
+	s.mu.Lock()
+	s.state = st
+	s.mu.Unlock()
+	s.emit(EventState, st)
 }
 
 // setEndState transitions to target if still connected, or to Disconnected
 // if the connection was lost. Returns the state actually set.
-// Used by send/config goroutines to avoid resurrecting state after disconnect.
-func (a *App) setEndState(target ConnState) ConnState {
-	a.mu.Lock()
-	if a.state == StateDisconnected {
-		a.mu.Unlock()
+// Used by send/config goroutines to avoid resurrecting state after
+// disconnect. While the state is Reconnecting or the run is ending, the
+// connection manager owns the state and the transition is skipped.
+func (s *Session) setEndState(target ConnState) ConnState {
+	s.mu.Lock()
+	st := s.state
+	if st == StateDisconnected || st == StateReconnecting {
+		s.mu.Unlock()
+		return st
+	}
+	if s.connCtx != nil && s.connCtx.Err() != nil {
+		s.state = StateDisconnected
+		s.mu.Unlock()
+		s.emit(EventState, StateDisconnected)
 		return StateDisconnected
 	}
-	if a.connCtx != nil && a.connCtx.Err() != nil {
-		a.state = StateDisconnected
-		a.mu.Unlock()
-		runtime.EventsEmit(a.ctx, "gps:state", StateDisconnected)
-		return StateDisconnected
+	if s.runCtx != nil && s.runCtx.Err() != nil {
+		s.mu.Unlock()
+		return st
 	}
-	a.state = target
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:state", target)
+	s.state = target
+	s.mu.Unlock()
+	s.emit(EventState, target)
 	return target
+}
+
+// probeDone transitions to Connected at the end of a (re)connect probe.
+// It reports false, leaving the state alone, if the connection was
+// closed meanwhile; the closer owns the state then.
+func (s *Session) probeDone() bool {
+	s.mu.Lock()
+	if s.state == StateDisconnected || (s.connCtx != nil && s.connCtx.Err() != nil) {
+		s.mu.Unlock()
+		return false
+	}
+	s.state = StateConnected
+	s.mu.Unlock()
+	s.emit(EventState, StateConnected)
+	return true
 }
 
 // cancelWorkerLocked cancels the response worker and invalidates its session
 // so any in-flight gps:response events are dropped by the frontend.
-// Must be called with a.mu held.
-func (a *App) cancelWorkerLocked() {
-	if a.workerCancel != nil {
-		a.workerCancel()
-		a.workerCancel = nil
-		a.respSession.Add(1)
+// Must be called with s.mu held.
+func (s *Session) cancelWorkerLocked() {
+	if s.workerCancel != nil {
+		s.workerCancel()
+		s.workerCancel = nil
+		s.respSession.Add(1)
 	}
 }
 
-func (a *App) closeLocked() {
-	a.stopCorrLocked()
-	if a.sendCancel != nil {
-		a.sendCancel()
-		a.sendCancel = nil
+func (s *Session) closeLocked() {
+	s.stopCorrLocked()
+	if s.sendCancel != nil {
+		s.sendCancel()
+		s.sendCancel = nil
 	}
-	a.cancelWorkerLocked()
-	if a.connCancel != nil {
-		a.connCancel()
-		a.connCancel = nil
+	s.cancelWorkerLocked()
+	if s.connCancel != nil {
+		s.connCancel()
+		s.connCancel = nil
 	}
-	if a.pb != nil {
-		a.pb.Close()
-		a.pb = nil
+	if s.pb != nil {
+		s.pb.Close()
+		s.pb = nil
 	}
-	a.configCh = nil
-	a.state = StateDisconnected
+	s.configCh = nil
+	s.state = StateDisconnected
 	// Must unlock while waiting: goroutines may need the lock during shutdown.
-	a.mu.Unlock()
-	a.connWg.Wait()
-	a.mu.Lock()
-	a.mh = nil
-	a.gga = nil
-	if a.conn != nil {
-		a.conn.Close()
-		a.conn = nil
+	s.mu.Unlock()
+	s.connWg.Wait()
+	s.mu.Lock()
+	s.mh = nil
+	s.gga = nil
+	if s.conn != nil {
+		s.conn.Close()
+		s.conn = nil
 	}
 }
 
-// Result is the standard return type for frontend-bound methods.
-type Result struct {
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+// endRun tears down the current pipeline run: it stops corrections and
+// any in-flight send, cancels the run context, and closes the packet
+// broadcast and the transport. Unlike closeLocked it does not wait for
+// the connection goroutines -- it is called from the connection
+// manager, which is itself one of them.
+func (s *Session) endRun() {
+	s.mu.Lock()
+	s.stopCorrLocked()
+	if s.sendCancel != nil {
+		s.sendCancel()
+		s.sendCancel = nil
+	}
+	s.cancelWorkerLocked()
+	if s.runCancel != nil {
+		s.runCancel()
+		s.runCancel = nil
+	}
+	if s.pb != nil {
+		s.pb.Close()
+		s.pb = nil
+	}
+	s.configCh = nil
+	if s.conn != nil {
+		s.conn.Close()
+		s.conn = nil
+	}
+	s.mu.Unlock()
 }
 
-// Connect opens a serial connection to a GPS receiver.
-func (a *App) Connect(device string, speed int) Result {
-	a.mu.Lock()
-	a.closeLocked()
-	a.state = StateConnecting
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:state", StateConnecting)
-	conn, _, err := gpsio.OpenSerial(device, speed)
+// endConn transitions to Disconnected after the connection ends on its
+// own (transport lost, probe failed, reconnect exhausted) rather than
+// by Disconnect.
+func (s *Session) endConn() {
+	s.mu.Lock()
+	if s.connCancel != nil {
+		s.connCancel()
+		s.connCancel = nil
+	}
+	wasDisconnected := s.state == StateDisconnected
+	s.state = StateDisconnected
+	s.mu.Unlock()
+	if !wasDisconnected {
+		s.emit(EventState, StateDisconnected)
+	}
+}
+
+// enterReconnect transitions to Reconnecting, or reports false if the
+// connection was closed meanwhile.
+func (s *Session) enterReconnect() bool {
+	s.mu.Lock()
+	if s.state == StateDisconnected || s.connCtx == nil || s.connCtx.Err() != nil {
+		s.mu.Unlock()
+		return false
+	}
+	s.state = StateReconnecting
+	s.mu.Unlock()
+	s.emit(EventState, StateReconnecting)
+	return true
+}
+
+// Opener opens (and re-opens) the connection to the receiver.
+type Opener interface {
+	// Open connects to the receiver. It returns the host serial port
+	// speed, or 0 if the transport has none.
+	Open(ctx context.Context) (conn gpsio.Conn, speed int, err error)
+	// Socket reports a proxy connection: sets ConfigOptions.Socket
+	// for gpscfg.Configure and gates reset operations in the UI.
+	Socket() bool
+}
+
+// SerialOpener opens a local serial device.
+type SerialOpener struct {
+	Device string
+	Speed  int // 0 means use the device's current speed
+}
+
+// deviceWaitInterval is how often Open retries a missing device node.
+const deviceWaitInterval = 200 * time.Millisecond
+
+// Open opens the serial device. If the device node does not exist, it
+// waits for it to appear until ctx is done: after a USB reset the
+// receiver re-enumerates and the node vanishes briefly (and Connect
+// works when run just after plugging the device in). On ctx expiry the
+// last open error is returned.
+func (o SerialOpener) Open(ctx context.Context) (gpsio.Conn, int, error) {
+	for {
+		conn, speed, err := gpsio.OpenSerial(o.Device, o.Speed)
+		if err == nil {
+			return conn, speed, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, 0, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, 0, err
+		case <-time.After(deviceWaitInterval):
+		}
+	}
+}
+
+// Socket reports that a serial device is not a proxy connection.
+func (o SerialOpener) Socket() bool { return false }
+
+// SocketOpener connects to a unix socket, typically the proxy.socket
+// of a running satpulsed.
+type SocketOpener struct {
+	Path string
+}
+
+// Open connects to the unix socket.
+func (o SocketOpener) Open(_ context.Context) (gpsio.Conn, int, error) {
+	conn, err := gpsio.OpenSocket(o.Path)
 	if err != nil {
-		a.setState(StateDisconnected)
-		return Result{Error: err.Error()}
+		return nil, 0, err
 	}
+	return conn, 0, nil
+}
+
+// Socket reports that this is a proxy connection.
+func (o SocketOpener) Socket() bool { return true }
+
+// Connect opens a connection to a GPS receiver via op. It is
+// asynchronous: it returns once the transport is open, and probe
+// progress arrives as events. vendor narrows probing and packet format
+// detection; VendorUnknown probes for all supported vendors.
+func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
+	s.mu.Lock()
+	s.closeLocked()
+	s.state = StateConnecting
+	s.mu.Unlock()
+	s.emit(EventState, StateConnecting)
+	ctx, cancel := context.WithTimeout(context.Background(), connectOpenTimeout)
+	conn, speed, err := op.Open(ctx)
+	cancel()
+	if err != nil {
+		s.setState(StateDisconnected)
+		return err
+	}
+	connCtx, connCancel := context.WithCancel(context.Background())
+	s.mu.Lock()
+	s.op = op
+	s.vendor = vendor
+	s.connCtx = connCtx
+	s.connCancel = connCancel
+	s.mu.Unlock()
+	s.connWg.Go(func() { s.connManager(connCtx, conn, speed) })
+	return nil
+}
+
+// connVerdict says how a pipeline run ended.
+type connVerdict int
+
+const (
+	verdictDisconnect  connVerdict = iota // Disconnect or a new Connect closed the connection
+	verdictLost                           // transport died with no reset in flight
+	verdictReconnect                      // transport died after a reset: re-open and re-probe
+	verdictProbeFailed                    // the probe failed hard
+)
+
+// connManager owns the connection for its lifetime. It runs one packet
+// pipeline at a time, reconnecting after a reset-bearing operation
+// kills the transport (a reset over USB re-enumerates the device), and
+// exits when the connection ends.
+func (s *Session) connManager(connCtx context.Context, conn gpsio.Conn, speed int) {
+	for {
+		switch s.runConn(connCtx, conn, speed) {
+		case verdictDisconnect:
+			return
+		case verdictReconnect:
+			if !s.enterReconnect() {
+				return
+			}
+			var err error
+			conn, speed, err = s.reopen(connCtx)
+			if err != nil {
+				if connCtx.Err() == nil {
+					s.lg.Warn("could not reconnect to the GPS", "err", err)
+				}
+				s.endConn()
+				return
+			}
+		default: // verdictLost, verdictProbeFailed
+			s.endConn()
+			return
+		}
+	}
+}
+
+// reopen re-opens the transport after a reset-bearing operation killed
+// it. Each attempt gets reopenTimeout for the device node to come back.
+func (s *Session) reopen(connCtx context.Context) (gpsio.Conn, int, error) {
+	var lastErr error
+	for i := 0; i < s.opts.MaxRetries; i++ {
+		if i > 0 {
+			select {
+			case <-connCtx.Done():
+				return nil, 0, connCtx.Err()
+			case <-time.After(reopenDelay):
+			}
+		}
+		ctx, cancel := context.WithTimeout(connCtx, reopenTimeout)
+		conn, speed, err := s.op.Open(ctx)
+		cancel()
+		if err == nil {
+			return conn, speed, nil
+		}
+		lastErr = err
+		if connCtx.Err() != nil {
+			return nil, 0, connCtx.Err()
+		}
+	}
+	return nil, 0, lastErr
+}
+
+// runConn wires the packet pipeline for an open transport, runs the
+// packetWorker until the run ends, and tears the pipeline down.
+func (s *Session) runConn(connCtx context.Context, conn gpsio.Conn, speed int) connVerdict {
+	runCtx, runCancel := context.WithCancel(connCtx)
 	portLock := gpsio.NewOutPortLock(conn)
-	connCtx, connCancel := context.WithCancel(a.ctx)
 	pCh := make(chan scan.Packet, 1)
-	pLog, plCh := gpsio.NewPacketLog(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packetLogChannelSize)
-	conn.SetPacketLog(pLog)
-	a.connWg.Go(func() { gpsio.Scan(connCtx, a.lg, conn, pCh, pLog, gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)) })
+	pktFormats := gpsreg.CreatePacketFormats(s.vendor)
+	pLog, plCh := gpsio.NewPacketLog(pktFormats, packetLogChannelSize)
+	if sc, ok := conn.(*gpsio.SerialConn); ok {
+		sc.SetPacketLog(pLog)
+	} else {
+		// No output-side packet logging on this transport.
+		pLog.SemiClose()
+	}
+	s.connWg.Go(func() { gpsio.Scan(runCtx, s.lg, conn, pCh, pLog, pktFormats) })
 	pb := bcast.New(pCh)
-	a.connWg.Go(func() { pb.Run(connCtx, a.lg) })
-	a.connWg.Go(func() { a.packetLogWorker(plCh) })
+	s.connWg.Go(func() { pb.Run(runCtx, s.lg) })
+	s.connWg.Go(func() { s.packetLogWorker(plCh) })
 	pktSub := pb.Subscribe()
-	procs := gpsreg.CreatePacketProcessors(gpsreg.VendorUnknown)
+	// Fresh packet processors each run: they are stateful and a
+	// reconnect must not resume from the dead connection's state.
+	procs := gpsreg.CreatePacketProcessors(s.vendor)
 	configCh := make(chan configRequest)
-	a.mu.Lock()
-	a.conn = conn
-	a.connCtx = connCtx
-	a.connCancel = connCancel
-	a.portLock = portLock
-	a.pb = pb
-	a.configCh = configCh
-	a.mu.Unlock()
-	a.connWg.Go(func() { a.packetWorker(procs, pktSub, configCh, portLock) })
-	return Result{OK: true}
+	s.mu.Lock()
+	s.conn = conn
+	s.runCtx = runCtx
+	s.runCancel = runCancel
+	s.portLock = portLock
+	s.pb = pb
+	s.configCh = configCh
+	s.speed = speed
+	s.resetPending = false
+	s.mu.Unlock()
+	v := s.packetWorker(runCtx, conn, procs, pktSub, configCh, portLock)
+	pb.Unsubscribe(pktSub)
+	s.endRun()
+	return v
 }
 
 // ReceiverEvent is emitted as the "gps:receiver" event payload.
@@ -285,51 +552,48 @@ type ReceiverEvent struct {
 // packetWorker is the single goroutine that owns packet processing.
 // It runs an initial probe, then loops processing packets for message decoding.
 // Configuration requests arrive via configCh and are executed inline.
-func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-chan scan.Packet, configCh <-chan configRequest, portLock gpsio.OutPortLock) {
-	te := &timeEmitter{ctx: a.ctx}
+func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-chan scan.Packet, configCh <-chan configRequest, portLock gpsio.OutPortLock) connVerdict {
+	te := &timeEmitter{sink: s.sink}
 	tt := gpsprot.NewTimeTicker(te, ptime.LeapSecond2016())
-	mh := &msgHandler{ctx: a.ctx, tt: tt}
+	mh := &msgHandler{sink: s.sink, tt: tt}
 	// Synthesize a GGA each epoch into a selector, and monitor the selected
 	// feed for the live Position display and the VRS NMEA-send gate. Always
 	// on for the connection; the cost is one GGA per epoch into a cap-1 chan.
 	sel := stream.NewGGASelector()
 	synth := nmeasyn.New(sel)
-	a.mu.Lock()
-	a.mh = mh
-	a.probe = ReceiverEvent{}
-	connCtx := a.connCtx
-	mon := newGGAMonitor(a.ctx, connCtx, sel.Packets())
-	a.gga = mon
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{})
+	socket := s.op.Socket()
+	s.mu.Lock()
+	s.mh = mh
+	s.probe = ReceiverEvent{}
+	mon := newGGAMonitor(s.sink, runCtx, sel.Packets())
+	s.gga = mon
+	s.mu.Unlock()
+	s.emit(EventReceiver, ReceiverEvent{})
 	gpsprot.SetAllMsgHandlers(procs, gpsprot.NewMultiHandler(mh, synth))
-	a.connWg.Go(mon.run)
-	a.mu.Lock()
-	conn := a.conn
-	a.mu.Unlock()
-	if conn == nil {
-		return
-	}
+	s.connWg.Go(mon.run)
 	// Acquire portLock for probe.
 	var port gpsio.OutPort
 	select {
-	case <-connCtx.Done():
-		return
+	case <-runCtx.Done():
+		return verdictDisconnect
 	case port = <-portLock:
 	}
 	// Run initial probe, matching the daemon's pattern of Configure before dispatch.
 	target := gpsprot.NewConfigTarget()
 	target.Opts.ForceProbe = true
-	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
-	rslt, err := gpscfg.Configure(ctx, a.lg, procs,
-		gpsreg.CreateConfigProtocols(gpsreg.VendorUnknown), target, sub, conn)
+	target.Opts.Socket = socket
+	ctx, cancel := context.WithTimeout(runCtx, s.opts.ProbeTimeout)
+	rslt, err := gpscfg.Configure(ctx, s.lg, procs,
+		gpsreg.CreateConfigProtocols(s.vendor), target, sub, conn)
 	cancel()
 	portLock <- port
-	a.emitSpeed(conn)
+	s.emitSpeed(conn)
 	if err != nil && !errors.Is(err, gpscfg.ErrNoProbeResponse) && !errors.Is(err, gpscfg.ErrNotDetected) {
-		runtime.EventsEmit(a.ctx, "gps:receiver", ReceiverEvent{Error: err.Error()})
-		a.setEndState(StateDisconnected)
-		return
+		if runCtx.Err() != nil {
+			return verdictDisconnect
+		}
+		s.emit(EventReceiver, ReceiverEvent{Error: err.Error()})
+		return verdictProbeFailed
 	}
 	r := ReceiverEvent{OK: true}
 	if rslt != nil {
@@ -343,60 +607,87 @@ func (a *App) packetWorker(procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-
 	if err != nil {
 		r.Warning = err.Error()
 	}
-	a.mu.Lock()
-	a.probe = r
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:receiver", r)
-	a.setEndState(StateConnected)
+	s.mu.Lock()
+	s.probe = r
+	s.mu.Unlock()
+	s.emit(EventReceiver, r)
+	if !s.probeDone() {
+		return verdictDisconnect
+	}
 	// Main packet processing loop with inline config handling.
 	for {
 		select {
 		case pkt, ok := <-sub:
 			if !ok {
-				return
+				return s.streamDied(runCtx)
 			}
 			sel.Packet(pkt)
-			a.handleMsgPacket(procs, pkt)
+			s.handleMsgPacket(procs, pkt)
 		case req, ok := <-configCh:
 			if !ok {
-				return
+				return verdictDisconnect
 			}
 			// Acquire portLock to pause corrections during config.
 			select {
-			case <-connCtx.Done():
-				req.resultCh <- configResult{err: connCtx.Err()}
-				return
+			case <-runCtx.Done():
+				req.resultCh <- configResult{err: runCtx.Err()}
+				return verdictDisconnect
 			case port = <-portLock:
 			}
-			a.mu.Lock()
-			conn = a.conn
-			a.mu.Unlock()
-			ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
-			rslt, err := gpscfg.Configure(ctx, a.lg, procs,
-				gpsreg.CreateConfigProtocols(gpsreg.VendorUnknown), req.target, sub, conn)
+			// Remember a reset-bearing request until the run ends or the
+			// next request: the transport dying is then expected, and the
+			// manager reconnects instead of disconnecting.
+			reset := req.target.Opts.Reset != gpsprot.ResetNone
+			s.mu.Lock()
+			s.resetPending = reset
+			s.mu.Unlock()
+			req.target.Opts.Socket = socket
+			ctx, cancel := context.WithTimeout(req.ctx, s.opts.ProbeTimeout)
+			rslt, err := gpscfg.Configure(ctx, s.lg, procs,
+				gpsreg.CreateConfigProtocols(s.vendor), req.target, sub, conn)
 			cancel()
 			portLock <- port
-			a.emitSpeed(conn)
+			s.emitSpeed(conn)
+			if reset && errors.Is(err, io.ErrUnexpectedEOF) {
+				// The reset killed the transport mid-run, as expected over
+				// USB: report success and let the manager reconnect.
+				err = nil
+			}
 			req.resultCh <- configResult{result: rslt, err: err}
 		}
 	}
 }
 
-// GetReceiverState returns the cached receiver identification result.
-func (a *App) GetReceiverState() ReceiverEvent {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.probe
+// streamDied classifies the packet stream closing: a deliberate close,
+// an expected transport loss from a reset (reconnect), or an unexpected
+// loss such as an unplugged device (disconnect).
+func (s *Session) streamDied(runCtx context.Context) connVerdict {
+	if runCtx.Err() != nil {
+		return verdictDisconnect
+	}
+	s.mu.Lock()
+	reset := s.resetPending
+	s.mu.Unlock()
+	if reset {
+		return verdictReconnect
+	}
+	return verdictLost
+}
+
+// Receiver returns the cached receiver identification result.
+func (s *Session) Receiver() ReceiverEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.probe
 }
 
 // Disconnect closes the GPS connection.
-func (a *App) Disconnect() Result {
-	a.mu.Lock()
-	a.closeLocked()
-	a.probe = ReceiverEvent{}
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:state", StateDisconnected)
-	return Result{OK: true}
+func (s *Session) Disconnect() {
+	s.mu.Lock()
+	s.closeLocked()
+	s.probe = ReceiverEvent{}
+	s.mu.Unlock()
+	s.emit(EventState, StateDisconnected)
 }
 
 // CorrEvent is the payload for "gps:corrections" events.
@@ -409,22 +700,22 @@ type CorrEvent struct {
 	Error      string `json:"error,omitempty"`      // last error (set during reconnecting)
 }
 
-func (a *App) setCorrStateLocked(ev CorrEvent) {
-	a.corrState = ev
+func (s *Session) setCorrStateLocked(ev CorrEvent) {
+	s.corrState = ev
 }
 
-func (a *App) emitCorrState(ev CorrEvent) {
-	a.mu.Lock()
-	a.setCorrStateLocked(ev)
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:corrections", ev)
+func (s *Session) emitCorrState(ev CorrEvent) {
+	s.mu.Lock()
+	s.setCorrStateLocked(ev)
+	s.mu.Unlock()
+	s.emit(EventCorrections, ev)
 }
 
-// GetCorrectionsState returns the last known corrections state.
-func (a *App) GetCorrectionsState() CorrEvent {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.corrState
+// CorrectionsState returns the last known corrections state.
+func (s *Session) CorrectionsState() CorrEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.corrState
 }
 
 // CorrectionSource is the configuration passed from the frontend to
@@ -450,37 +741,37 @@ type BaseARPEvent struct {
 // gpsprot.CorReportMsg and emits it as a "gps:corrpacket" event. The
 // parsed RTCM message is consumed here to emit a "gps:basearp" event
 // for 1005/1006; it is not put on the wire (NativeMsg is cleared).
-func (a *App) emitCorrPacket(pkt scan.Packet) {
+func (s *Session) emitCorrPacket(pkt scan.Packet) {
 	msg, err := stream.CorReportFromPacket(pkt)
 	if err != nil || msg == nil {
 		return
 	}
 	if mt, ok := msg.NativeMsg.(*rtcmbin.MT1005); ok {
-		runtime.EventsEmit(a.ctx, "gps:basearp", BaseARPEvent{
+		s.emit(EventBaseARP, BaseARPEvent{
 			StationID: mt.StationID,
 			ECEF:      mt.ECEF(),
 		})
 	} else if mt, ok := msg.NativeMsg.(*rtcmbin.MT1006); ok {
-		runtime.EventsEmit(a.ctx, "gps:basearp", BaseARPEvent{
+		s.emit(EventBaseARP, BaseARPEvent{
 			StationID: mt.StationID,
 			ECEF:      mt.MT1005.ECEF(),
 		})
 	}
 	msg.NativeMsg = nil
-	runtime.EventsEmit(a.ctx, "gps:corrpacket", msg)
+	s.emit(EventCorrPacket, msg)
 }
 
 // StartCorrections dials the remote address and starts forwarding
 // correction packets to the GPS receiver.
-func (a *App) StartCorrections(cfg CorrectionSource) Result {
+func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	if cfg.Host == "" {
-		return Result{Error: "host is required"}
+		return fmt.Errorf("host is required")
 	}
 	if cfg.Port <= 0 || cfg.Port > 65535 {
-		return Result{Error: "invalid port"}
+		return fmt.Errorf("invalid port")
 	}
 	if cfg.NMEASend && cfg.Mode != "ntrip" {
-		return Result{Error: "NMEA send requires ntrip"}
+		return fmt.Errorf("NMEA send requires ntrip")
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	var source stream.Source
@@ -495,22 +786,22 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 			Password:   cfg.Password,
 		}
 	default:
-		return Result{Error: "invalid source mode"}
+		return fmt.Errorf("invalid source mode")
 	}
-	a.mu.Lock()
-	if a.state != StateConnected {
-		a.mu.Unlock()
-		return Result{Error: "not connected"}
+	s.mu.Lock()
+	if s.state != StateConnected || s.runCtx == nil || s.runCtx.Err() != nil {
+		s.mu.Unlock()
+		return fmt.Errorf("not connected")
 	}
-	if a.corrStopping {
-		a.mu.Unlock()
-		return Result{Error: "corrections stopping"}
+	if s.corrStopping {
+		s.mu.Unlock()
+		return fmt.Errorf("corrections stopping")
 	}
 	// Stop any existing correction session.
-	a.stopCorrLocked()
-	conn := a.conn
-	portLock := a.portLock
-	connCtx := a.connCtx
+	s.stopCorrLocked()
+	conn := s.conn
+	portLock := s.portLock
+	runCtx := s.runCtx
 	// VRS: when sending position as NMEA, gate atomically on a usable
 	// position. startSession primes the sender's feed with the current
 	// selected GGA, so Pull uploads without delay (WaitReady returns at
@@ -518,33 +809,32 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 	var selectedGGA <-chan scan.Packet
 	nmeaInterval := time.Duration(0)
 	if cfg.NMEASend {
-		if a.gga == nil {
-			a.mu.Unlock()
-			return Result{Error: "not connected"}
+		if s.gga == nil {
+			s.mu.Unlock()
+			return fmt.Errorf("not connected")
 		}
-		selectedGGA = a.gga.startSession()
+		selectedGGA = s.gga.startSession()
 		if selectedGGA == nil {
-			a.mu.Unlock()
-			return Result{Error: "waiting for a position fix"}
+			s.mu.Unlock()
+			return fmt.Errorf("waiting for a position fix")
 		}
 		nmeaInterval = stream.DefaultNMEASendInterval
 	}
-	corrCtx, corrCancel := context.WithCancel(connCtx)
-	a.corrCtx = corrCtx
-	a.corrCancel = corrCancel
+	corrCtx, corrCancel := context.WithCancel(runCtx)
+	s.corrCancel = corrCancel
 	wg := &sync.WaitGroup{}
-	a.corrWg = wg
-	sink := stream.NewPull(source, a.lg, conn, portLock, gpsreg.CreateCorrectionFormats(), nmeaInterval)
-	a.setCorrStateLocked(CorrEvent{
+	s.corrWg = wg
+	sink := stream.NewPull(source, s.lg, packetWriter(conn), portLock, gpsreg.CreateCorrectionFormats(), nmeaInterval)
+	s.setCorrStateLocked(CorrEvent{
 		State:      "connecting",
 		Mode:       cfg.Mode,
 		Host:       cfg.Host,
 		Port:       cfg.Port,
 		Mountpoint: cfg.Mountpoint,
 	})
-	onState := func(s stream.State, err error) {
+	onState := func(st stream.State, err error) {
 		ev := CorrEvent{
-			State:      s.String(),
+			State:      st.String(),
 			Mode:       cfg.Mode,
 			Host:       cfg.Host,
 			Port:       cfg.Port,
@@ -553,7 +843,7 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 		if err != nil {
 			ev.Error = err.Error()
 		}
-		a.emitCorrState(ev)
+		s.emitCorrState(ev)
 	}
 	// Subscribe before starting goroutines to avoid missing packets.
 	pktSub := sink.Packets.Subscribe()
@@ -565,12 +855,12 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 			if pkt.Format == nil {
 				continue
 			}
-			a.emitCorrPacket(pkt)
+			s.emitCorrPacket(pkt)
 		}
 	})
 	wg.Go(func() {
 		sink.Run(corrCtx, selectedGGA, onState)
-		a.emitCorrState(CorrEvent{
+		s.emitCorrState(CorrEvent{
 			State:      "stopped",
 			Mode:       cfg.Mode,
 			Host:       cfg.Host,
@@ -579,63 +869,80 @@ func (a *App) StartCorrections(cfg CorrectionSource) Result {
 		})
 	})
 	// Bridge into connWg using a captured wg, so the connWg goroutine
-	// is independent of a.corrWg and won't conflict with a new session.
-	a.connWg.Go(func() { wg.Wait() })
-	a.mu.Unlock()
-	return Result{OK: true}
+	// is independent of s.corrWg and won't conflict with a new session.
+	s.connWg.Go(func() { wg.Wait() })
+	s.mu.Unlock()
+	return nil
 }
 
 // StopCorrections stops the correction forwarding.
-func (a *App) StopCorrections() Result {
-	a.mu.Lock()
-	if a.corrStopping {
-		a.mu.Unlock()
-		return Result{Error: "corrections stopping"}
+func (s *Session) StopCorrections() error {
+	s.mu.Lock()
+	if s.corrStopping {
+		s.mu.Unlock()
+		return fmt.Errorf("corrections stopping")
 	}
-	a.stopCorrLocked()
-	a.mu.Unlock()
-	return Result{OK: true}
+	s.stopCorrLocked()
+	s.mu.Unlock()
+	return nil
 }
 
 // stopCorrLocked cancels the correction context and waits for the
-// correction goroutines to exit. Must be called with a.mu held;
-// temporarily releases a.mu while waiting.
-func (a *App) stopCorrLocked() {
-	if a.gga != nil {
-		a.gga.endSession()
+// correction goroutines to exit. Must be called with s.mu held;
+// temporarily releases s.mu while waiting.
+func (s *Session) stopCorrLocked() {
+	if s.gga != nil {
+		s.gga.endSession()
 	}
-	if a.corrCancel == nil {
-		a.setCorrStateLocked(CorrEvent{State: "stopped"})
+	if s.corrCancel == nil {
+		s.setCorrStateLocked(CorrEvent{State: "stopped"})
 		return
 	}
-	a.corrCancel()
-	a.corrCancel = nil
-	wg := a.corrWg
-	a.corrWg = nil
-	a.corrStopping = true
-	a.mu.Unlock()
+	s.corrCancel()
+	s.corrCancel = nil
+	wg := s.corrWg
+	s.corrWg = nil
+	s.corrStopping = true
+	s.mu.Unlock()
 	wg.Wait()
-	a.mu.Lock()
-	a.corrStopping = false
+	s.mu.Lock()
+	s.corrStopping = false
 }
 
-// IsConnected returns true if a GPS connection is open.
-func (a *App) IsConnected() bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.state != StateDisconnected
+// packetWriter adapts conn for stream.NewPull. SerialConn implements
+// WritePacket itself, logging the write with its known format; other
+// transports have no output packet log, so a plain Write suffices.
+func packetWriter(conn gpsio.Conn) stream.PacketWriter {
+	if pw, ok := conn.(stream.PacketWriter); ok {
+		return pw
+	}
+	return plainWriter{conn}
 }
 
-// GetConnState returns the current connection state.
-func (a *App) GetConnState() ConnState {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.state
+type plainWriter struct{ gpsio.Conn }
+
+func (w plainWriter) WritePacket(p []byte, _ gpsprot.PacketFormat) (int, error) {
+	return w.Write(p)
 }
 
-// GetAllSignals returns the full signal catalog for the given GNSS constellations.
+// State returns the current connection state.
+func (s *Session) State() ConnState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state
+}
+
+// Speed returns the host serial port speed, or 0 if the transport has
+// none.
+func (s *Session) Speed() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.speed
+}
+
+// SignalCatalog returns the full signal catalog for the given GNSS constellations.
 // If gs is zero, all constellations are returned.
-func (a *App) GetAllSignals(gs gpsprot.GNSSSet) map[string][]string {
+func (s *Session) SignalCatalog(gs gpsprot.GNSSSet) map[string][]string {
 	if gs == 0 {
 		gs = gpsprot.SigSetAll.GNSSSet()
 	}
@@ -670,66 +977,58 @@ const readProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDPort
 
 // ReadConfig reads back the current configuration from the receiver.
-func (a *App) ReadConfig() (*gpsprot.ConfigProps, error) {
-	a.mu.Lock()
-	if a.state != StateConnected {
-		a.mu.Unlock()
+func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) {
+	s.mu.Lock()
+	if s.state != StateConnected {
+		s.mu.Unlock()
 		return nil, fmt.Errorf("not connected")
 	}
-	a.cancelWorkerLocked()
-	a.state = StateConfiguring
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:state", StateConfiguring)
+	s.cancelWorkerLocked()
+	s.state = StateConfiguring
+	s.mu.Unlock()
+	s.emit(EventState, StateConfiguring)
 	target := gpsprot.NewConfigTarget()
 	target.Get = readProps
-	cr := a.sendConfigRequest(target)
-	a.setEndState(StateConnected)
+	cr := s.sendConfigRequest(ctx, target)
+	s.setEndState(StateConnected)
 	if cr.err != nil {
 		return nil, cr.err
 	}
 	return cr.result.ConfigProps, nil
 }
 
-// ApplyConfig sends configuration changes to the receiver.
-// The frontend sends JSON matching gpsprot.ConfigTarget's shape.
-func (a *App) ApplyConfig(cfg gpsprot.ConfigTarget) Result {
-	a.mu.Lock()
-	if a.state != StateConnected {
-		a.mu.Unlock()
-		return Result{Error: "not connected"}
+// ApplyConfig sends configuration changes to the receiver. It sets
+// target.Opts.Socket to match the transport. Reset operations are
+// refused over a proxy connection: a reset would kill the daemon that
+// owns the port, and its restart would reapply the daemon's own
+// configuration on top of the session's.
+func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget) error {
+	s.mu.Lock()
+	if s.state != StateConnected {
+		s.mu.Unlock()
+		return fmt.Errorf("not connected")
 	}
-	a.cancelWorkerLocked()
-	a.state = StateConfiguring
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:state", StateConfiguring)
-	if cfg.NoOp() {
-		a.setEndState(StateConnected)
-		return Result{Error: "no configuration changes specified"}
+	if target.Opts.Reset != gpsprot.ResetNone && s.op.Socket() {
+		s.mu.Unlock()
+		return fmt.Errorf("reset operations are not available over a proxy connection")
 	}
-	r := a.runConfig(&cfg)
-	a.setEndState(StateConnected)
-	return r
-}
-
-// DecodeOptions controls how DecodePacket interprets its input.
-type DecodeOptions struct {
-	Hex bool `json:"hex"` // data is hex-encoded binary
-	Out bool `json:"out"` // packet is outbound (sent to receiver)
+	s.cancelWorkerLocked()
+	s.state = StateConfiguring
+	s.mu.Unlock()
+	s.emit(EventState, StateConfiguring)
+	if target.NoOp() {
+		s.setEndState(StateConnected)
+		return fmt.Errorf("no configuration changes specified")
+	}
+	cr := s.sendConfigRequest(ctx, target)
+	s.setEndState(StateConnected)
+	return cr.err
 }
 
 // DecodePacket decodes a packet and returns the decoded fields.
-func (a *App) DecodePacket(data string, opts DecodeOptions) (*gpsdecode.DecodeResult, error) {
-	var b []byte
-	if opts.Hex {
-		var err error
-		b, err = hex.DecodeString(data)
-		if err != nil {
-			return nil, fmt.Errorf("invalid hex: %w", err)
-		}
-	} else {
-		b = []byte(data)
-	}
-	_, r, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), b, opts.Out)
+// It returns nil if the packet is not in any of the given formats.
+func DecodePacket(formats []gpsprot.PacketFormat, data []byte, out bool) (*gpsdecode.DecodeResult, error) {
+	_, r, err := gpsdecode.Decode(formats, data, out)
 	if err != nil {
 		return nil, nil
 	}
@@ -745,36 +1044,10 @@ type MsgFileTag struct {
 	SaveAware bool   `json:"saveAware"` // ubxval/ubxvalport: honors --save
 }
 
-// MsgFileInfo is the result of loading a message file.
-type MsgFileInfo struct {
-	Path string       `json:"path"`
-	Tags []MsgFileTag `json:"tags"`
-}
-
-// LoadMsgFile opens a file dialog, loads the selected TOML message file,
-// and returns the available tags. Returns nil if the user cancels the dialog.
-func (a *App) LoadMsgFile() (*MsgFileInfo, error) {
-	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Open message file",
-		Filters: []runtime.FileFilter{
-			{DisplayName: "TOML files", Pattern: "*.toml"},
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	if path == "" {
-		return nil, nil
-	}
-	mf, err := msgfile.Load(path)
-	if err != nil {
-		runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-			Type:    runtime.ErrorDialog,
-			Title:   "Error loading message file",
-			Message: err.Error(),
-		})
-		return nil, err
-	}
+// SetMsgFile sets the message file that SendMsgFile sends from and
+// returns the available tags. The shell obtains the parsed file
+// however it likes: native dialog, library path, upload.
+func (s *Session) SetMsgFile(mf *msgfile.Parsed) []MsgFileTag {
 	descs, _ := mf.TagDescs()
 	tags := make([]MsgFileTag, len(descs))
 	for i, td := range descs {
@@ -782,11 +1055,10 @@ func (a *App) LoadMsgFile() (*MsgFileInfo, error) {
 		tags[i] = MsgFileTag{Tag: td.Tag, Desc: td.Desc, MsgCount: td.MsgCount,
 			NeedsPort: needsPort, SaveAware: saveAware}
 	}
-	a.mu.Lock()
-	a.msgFile = mf
-	a.msgFilePath = path
-	a.mu.Unlock()
-	return &MsgFileInfo{Path: filepath.Base(path), Tags: tags}, nil
+	s.mu.Lock()
+	s.msgFile = mf
+	s.mu.Unlock()
+	return tags
 }
 
 // msgTagCaps reports whether the messages for tag take a port argument
@@ -831,26 +1103,26 @@ type ResponseEvent struct {
 
 // SendMsgFile sends messages for the given tag from the loaded message file.
 // Returns immediately after starting the coordinator and worker goroutines.
-func (a *App) SendMsgFile(tag string, port string, save bool) error {
-	a.mu.Lock()
-	if a.state != StateConnected {
-		a.mu.Unlock()
+func (s *Session) SendMsgFile(tag string, port string, save bool) error {
+	s.mu.Lock()
+	if s.state != StateConnected || s.runCtx == nil || s.runCtx.Err() != nil {
+		s.mu.Unlock()
 		return fmt.Errorf("not connected")
 	}
-	mf := a.msgFile
+	mf := s.msgFile
 	if mf == nil {
-		a.mu.Unlock()
+		s.mu.Unlock()
 		return fmt.Errorf("no message file loaded")
 	}
-	conn := a.conn
-	pb := a.pb
-	connCtx := a.connCtx
-	portLock := a.portLock
-	if a.sendCancel != nil {
-		a.sendCancel()
+	conn := s.conn
+	pb := s.pb
+	runCtx := s.runCtx
+	portLock := s.portLock
+	if s.sendCancel != nil {
+		s.sendCancel()
 	}
-	a.cancelWorkerLocked()
-	a.mu.Unlock()
+	s.cancelWorkerLocked()
+	s.mu.Unlock()
 	msgs, err := mf.TaggedMsgs([]string{tag})
 	if err != nil {
 		return err
@@ -862,40 +1134,40 @@ func (a *App) SendMsgFile(tag string, port string, save bool) error {
 	if len(rawMsgs) == 0 {
 		return fmt.Errorf("no messages for tag %q", tag)
 	}
-	sendCtx, sendCancel := context.WithCancel(a.ctx)
-	workerCtx, workerCancel := context.WithCancel(connCtx)
-	a.mu.Lock()
-	if a.state != StateConnected {
-		a.mu.Unlock()
+	sendCtx, sendCancel := context.WithCancel(context.Background())
+	workerCtx, workerCancel := context.WithCancel(runCtx)
+	s.mu.Lock()
+	if s.state != StateConnected || runCtx.Err() != nil {
+		s.mu.Unlock()
 		sendCancel()
 		workerCancel()
 		return fmt.Errorf("not connected")
 	}
-	a.state = StateSending
-	a.sendCancel = sendCancel
-	a.workerCancel = workerCancel
-	session := int(a.respSession.Add(1))
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:state", StateSending)
+	s.state = StateSending
+	s.sendCancel = sendCancel
+	s.workerCancel = workerCancel
+	session := int(s.respSession.Add(1))
+	s.mu.Unlock()
+	s.emit(EventState, StateSending)
 	total := len(rawMsgs)
 	stepCh := make(chan sendStepReq)
 	// Start the worker goroutine.
-	a.connWg.Go(func() {
-		a.sendWorker(workerCtx, pb, conn, portLock, stepCh, session)
+	s.connWg.Go(func() {
+		s.sendWorker(workerCtx, pb, conn, portLock, stepCh, session)
 	})
 	// Coordinator goroutine.
-	a.connWg.Go(func() {
+	s.connWg.Go(func() {
 		defer func() {
 			close(stepCh)
-			a.finishSend()
+			s.finishSend()
 		}()
-		runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+		s.emit(EventMsgSend, MsgSendEvent{
 			Session: session, Status: "started", Total: total,
 		})
 		replyCh := make(chan error, 1)
 		for i, rm := range rawMsgs {
 			if sendCtx.Err() != nil {
-				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+				s.emit(EventMsgSend, MsgSendEvent{
 					Session: session, Status: "cancelled", Current: i + 1, Total: total,
 				})
 				return
@@ -907,7 +1179,7 @@ func (a *App) SendMsgFile(tag string, port string, save bool) error {
 			select {
 			case stepCh <- sendStepReq{rm: rm, next: next, reply: replyCh}:
 			case <-sendCtx.Done():
-				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+				s.emit(EventMsgSend, MsgSendEvent{
 					Session: session, Status: "cancelled", Current: i + 1, Total: total,
 				})
 				return
@@ -916,46 +1188,42 @@ func (a *App) SendMsgFile(tag string, port string, save bool) error {
 			select {
 			case wErr = <-replyCh:
 			case <-sendCtx.Done():
-				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+				s.emit(EventMsgSend, MsgSendEvent{
 					Session: session, Status: "cancelled", Current: i + 1, Total: total,
 				})
 				return
 			}
 			if wErr != nil {
-				runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+				s.emit(EventMsgSend, MsgSendEvent{
 					Session: session, Status: "error", Current: i + 1, Total: total, Error: wErr.Error(),
 				})
 				return
 			}
-			a.lg.Info("sent message", "index", i+1, "total", total, "tag", rm.Tag, "bytes", len(rm.Bytes))
-			runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+			s.lg.Info("sent message", "index", i+1, "total", total, "tag", rm.Tag, "bytes", len(rm.Bytes))
+			s.emit(EventMsgSend, MsgSendEvent{
 				Session: session, Status: "sent", Current: i + 1, Total: total,
 			})
 		}
-		runtime.EventsEmit(a.ctx, "gps:msgsend", MsgSendEvent{
+		s.emit(EventMsgSend, MsgSendEvent{
 			Session: session, Status: "done", Current: total, Total: total,
 		})
 	})
 	return nil
 }
 
-// finishSend clears sendCancel and transitions state to Connected (or Disconnected).
-func (a *App) finishSend() {
-	a.mu.Lock()
-	a.sendCancel = nil
-	s := StateConnected
-	if a.state == StateDisconnected || (a.connCtx != nil && a.connCtx.Err() != nil) {
-		s = StateDisconnected
-	}
-	a.state = s
-	a.mu.Unlock()
-	runtime.EventsEmit(a.ctx, "gps:state", s)
+// finishSend clears sendCancel and transitions state to Connected (or
+// Disconnected if the connection was lost).
+func (s *Session) finishSend() {
+	s.mu.Lock()
+	s.sendCancel = nil
+	s.mu.Unlock()
+	s.setEndState(StateConnected)
 }
 
 // sendWorker owns conn.Write, Correlator, line buffer, and the broadcast
 // subscriber. It runs until stepCh is closed and all expected responses
 // have arrived (or a deadline expires), or workerCtx is cancelled.
-func (a *App) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet], conn gpsio.Conn, portLock gpsio.OutPortLock, stepCh <-chan sendStepReq, session int) {
+func (s *Session) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet], conn gpsio.Conn, portLock gpsio.OutPortLock, stepCh <-chan sendStepReq, session int) {
 	sub := pb.Subscribe()
 	defer pb.Unsubscribe(sub)
 	var port gpsio.OutPort
@@ -997,12 +1265,12 @@ func (a *App) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet]
 				deadline = d
 			}
 			// Wait for delay + pacing, processing packets throughout.
-			lineBuf = a.workerWaitStep(workerCtx, sub, cor, req, lineBuf, session, deadline)
+			lineBuf = s.workerWaitStep(workerCtx, sub, cor, req, lineBuf, session, deadline)
 		case pkt, ok := <-sub:
 			if !ok {
 				return
 			}
-			lineBuf = a.processWorkerPacket(cor, lineBuf, pkt, session)
+			lineBuf = s.processWorkerPacket(cor, lineBuf, pkt, session)
 			if tailCh != nil && !cor.CanAcceptMore() {
 				return
 			}
@@ -1016,7 +1284,7 @@ func (a *App) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet]
 
 // workerWaitStep handles the delay and pacing wait after a successful write.
 // It processes packets throughout, then replies to the coordinator.
-func (a *App) workerWaitStep(workerCtx context.Context, sub <-chan scan.Packet, cor *msgfile.Correlator, req sendStepReq, lineBuf []byte, session int, deadline time.Time) []byte {
+func (s *Session) workerWaitStep(workerCtx context.Context, sub <-chan scan.Packet, cor *msgfile.Correlator, req sendStepReq, lineBuf []byte, session int, deadline time.Time) []byte {
 	// Wait for delay.
 	if req.rm.Delay > 0 {
 		timer := time.NewTimer(req.rm.Delay)
@@ -1034,7 +1302,7 @@ func (a *App) workerWaitStep(workerCtx context.Context, sub <-chan scan.Packet, 
 					req.reply <- nil
 					return lineBuf
 				}
-				lineBuf = a.processWorkerPacket(cor, lineBuf, pkt, session)
+				lineBuf = s.processWorkerPacket(cor, lineBuf, pkt, session)
 			}
 		}
 	}
@@ -1057,7 +1325,7 @@ func (a *App) workerWaitStep(workerCtx context.Context, sub <-chan scan.Packet, 
 						req.reply <- nil
 						return lineBuf
 					}
-					lineBuf = a.processWorkerPacket(cor, lineBuf, pkt, session)
+					lineBuf = s.processWorkerPacket(cor, lineBuf, pkt, session)
 					if cor.ReadyToSend(*req.next) {
 						break paceLoop
 					}
@@ -1070,23 +1338,23 @@ func (a *App) workerWaitStep(workerCtx context.Context, sub <-chan scan.Packet, 
 }
 
 // processWorkerPacket handles a single packet from the broadcast subscriber.
-func (a *App) processWorkerPacket(cor *msgfile.Correlator, lineBuf []byte, pkt scan.Packet, session int) []byte {
+func (s *Session) processWorkerPacket(cor *msgfile.Correlator, lineBuf []byte, pkt scan.Packet, session int) []byte {
 	if pkt.IsInterPacketTimeout() {
 		return lineBuf
 	}
 	if pkt.Format == nil {
-		return a.bufferWorkerLines(cor, lineBuf, []byte(pkt.Data), session)
+		return s.bufferWorkerLines(cor, lineBuf, []byte(pkt.Data), session)
 	}
-	lineBuf = a.flushWorkerLine(cor, lineBuf, session)
+	lineBuf = s.flushWorkerLine(cor, lineBuf, session)
 	result := cor.CorrelatePacket(pkt.Tag(), pkt.Data)
-	a.emitCorrelation(result, &pkt, session)
+	s.emitCorrelation(result, &pkt, session)
 	return lineBuf
 }
 
-func (a *App) bufferWorkerLines(cor *msgfile.Correlator, lineBuf, data []byte, session int) []byte {
+func (s *Session) bufferWorkerLines(cor *msgfile.Correlator, lineBuf, data []byte, session int) []byte {
 	for _, b := range data {
 		if b == '\n' {
-			lineBuf = a.flushWorkerLine(cor, lineBuf, session)
+			lineBuf = s.flushWorkerLine(cor, lineBuf, session)
 		} else if b == '\r' {
 			// skip
 		} else if b >= 0x20 && b <= 0x7E || b == '\t' {
@@ -1098,47 +1366,47 @@ func (a *App) bufferWorkerLines(cor *msgfile.Correlator, lineBuf, data []byte, s
 	return lineBuf
 }
 
-func (a *App) flushWorkerLine(cor *msgfile.Correlator, lineBuf []byte, session int) []byte {
+func (s *Session) flushWorkerLine(cor *msgfile.Correlator, lineBuf []byte, session int) []byte {
 	if len(lineBuf) == 0 {
 		return lineBuf
 	}
 	line := string(lineBuf)
 	lineBuf = lineBuf[:0]
 	result := cor.CorrelatePacket(gpsprot.EmptyTag, line)
-	if !a.sessionCurrent(session) {
+	if !s.sessionCurrent(session) {
 		return lineBuf
 	}
 	if (result.Ack == msgfile.AckAck || result.Ack == msgfile.AckNak) && result.InResponseTo != nil {
-		runtime.EventsEmit(a.ctx, "gps:response", a.makeAckEvent(result, session))
+		s.emit(EventResponse, s.makeAckEvent(result, session))
 	}
 	if result.Relevance >= msgfile.LevelMaybeResponse {
-		ev := a.makePacketEvent(result, nil, session)
+		ev := s.makePacketEvent(result, nil, session)
 		ev.Text = line
-		runtime.EventsEmit(a.ctx, "gps:response", ev)
+		s.emit(EventResponse, ev)
 	}
 	return lineBuf
 }
 
 // emitCorrelation emits up to two ResponseEvents for a correlated packet:
 // one for the ACK (if any) and one for the displayable payload (if any).
-func (a *App) emitCorrelation(r msgfile.Correlation, pkt *scan.Packet, session int) {
-	if !a.sessionCurrent(session) {
+func (s *Session) emitCorrelation(r msgfile.Correlation, pkt *scan.Packet, session int) {
+	if !s.sessionCurrent(session) {
 		return
 	}
 	if (r.Ack == msgfile.AckAck || r.Ack == msgfile.AckNak) && r.InResponseTo != nil {
-		runtime.EventsEmit(a.ctx, "gps:response", a.makeAckEvent(r, session))
+		s.emit(EventResponse, s.makeAckEvent(r, session))
 	}
 	if r.Relevance >= msgfile.LevelMaybeResponse {
-		runtime.EventsEmit(a.ctx, "gps:response", a.makePacketEvent(r, pkt, session))
+		s.emit(EventResponse, s.makePacketEvent(r, pkt, session))
 	}
 }
 
 // sessionCurrent returns true if the given session matches the current respSession.
-func (a *App) sessionCurrent(session int) bool {
-	return int(a.respSession.Load()) == session
+func (s *Session) sessionCurrent(session int) bool {
+	return int(s.respSession.Load()) == session
 }
 
-func (a *App) makeAckEvent(r msgfile.Correlation, session int) ResponseEvent {
+func (s *Session) makeAckEvent(r msgfile.Correlation, session int) ResponseEvent {
 	ev := ResponseEvent{Session: session, Kind: "ack", ResponseTo: -1}
 	if r.InResponseTo != nil {
 		ev.ResponseTo = r.InResponseTo.Index
@@ -1153,7 +1421,7 @@ func (a *App) makeAckEvent(r msgfile.Correlation, session int) ResponseEvent {
 	return ev
 }
 
-func (a *App) makePacketEvent(r msgfile.Correlation, pkt *scan.Packet, session int) ResponseEvent {
+func (s *Session) makePacketEvent(r msgfile.Correlation, pkt *scan.Packet, session int) ResponseEvent {
 	kind := "other"
 	if r.Relevance == msgfile.LevelMaybeResponse {
 		kind = "maybe"
@@ -1175,65 +1443,70 @@ func (a *App) makePacketEvent(r msgfile.Correlation, pkt *scan.Packet, session i
 // CancelMsgSend cancels an in-progress send operation.
 // Cancels both the coordinator (sendCancel) and the worker (workerCancel)
 // so that any in-progress delay or pacing wait is interrupted immediately.
-func (a *App) CancelMsgSend() error {
-	a.mu.Lock()
-	if a.state != StateSending {
-		a.mu.Unlock()
+func (s *Session) CancelMsgSend() error {
+	s.mu.Lock()
+	if s.state != StateSending {
+		s.mu.Unlock()
 		return fmt.Errorf("not sending")
 	}
-	if a.sendCancel != nil {
-		a.sendCancel()
+	if s.sendCancel != nil {
+		s.sendCancel()
 	}
-	a.cancelWorkerLocked()
-	a.mu.Unlock()
+	s.cancelWorkerLocked()
+	s.mu.Unlock()
 	return nil
 }
 
 // sendConfigRequest sends a config request to packetWorker and waits for the result.
-func (a *App) sendConfigRequest(target *gpsprot.ConfigTarget) configResult {
-	a.mu.Lock()
-	configCh, connCtx := a.configCh, a.connCtx
-	a.mu.Unlock()
+func (s *Session) sendConfigRequest(ctx context.Context, target *gpsprot.ConfigTarget) configResult {
+	s.mu.Lock()
+	configCh, runCtx := s.configCh, s.runCtx
+	s.mu.Unlock()
 	if configCh == nil {
 		return configResult{err: fmt.Errorf("not connected")}
 	}
 	resultCh := make(chan configResult, 1)
 	select {
-	case configCh <- configRequest{target: target, resultCh: resultCh}:
-	case <-connCtx.Done():
-		return configResult{err: connCtx.Err()}
+	case configCh <- configRequest{ctx: ctx, target: target, resultCh: resultCh}:
+	case <-ctx.Done():
+		return configResult{err: ctx.Err()}
+	case <-runCtx.Done():
+		return configResult{err: runCtx.Err()}
 	}
 	select {
 	case cr := <-resultCh:
 		return cr
-	case <-connCtx.Done():
-		return configResult{err: connCtx.Err()}
+	case <-runCtx.Done():
+		return configResult{err: runCtx.Err()}
 	}
-}
-
-// runConfig sends a configuration to the connected receiver.
-func (a *App) runConfig(target *gpsprot.ConfigTarget) Result {
-	cr := a.sendConfigRequest(target)
-	if cr.err != nil {
-		return Result{Error: cr.err.Error()}
-	}
-	return Result{OK: true}
 }
 
 // emitSpeed reads the current host serial port speed and emits gps:speed.
 // Called after any gpscfg.Configure since that is the only path that can
 // change the host speed (via SerialConn.WriteThenChangeSpeed).
-func (a *App) emitSpeed(conn *gpsio.SerialConn) {
-	runtime.EventsEmit(a.ctx, "gps:speed", conn.Speed())
+func (s *Session) emitSpeed(conn gpsio.Conn) {
+	s.mu.Lock()
+	if sc, ok := conn.(*gpsio.SerialConn); ok {
+		s.speed = sc.Speed()
+	}
+	speed := s.speed
+	s.mu.Unlock()
+	s.emit(EventSpeed, speed)
 }
 
-// eventHandler is an slog.Handler that emits "gps:log" events to the frontend
-// and forwards all messages to a base handler (stderr).
-type eventHandler struct {
-	ctx   context.Context
+// logHandler is an slog.Handler that emits "gps:log" events to the sink
+// and forwards all records to a base handler.
+type logHandler struct {
+	sink  Sink
 	base  slog.Handler
 	attrs []slog.Attr
 	group string
+}
+
+// NewLogHandler returns an slog.Handler that mirrors records to the
+// sink as gps:log events and forwards them to base.
+func NewLogHandler(sink Sink, base slog.Handler) slog.Handler {
+	return &logHandler{sink: sink, base: base}
 }
 
 // LogEvent is emitted to the frontend for progress messages.
@@ -1245,48 +1518,11 @@ type LogEvent struct {
 	Attrs     map[string]any `json:"attrs,omitempty"`
 }
 
-type multiHandler []slog.Handler
-
-func (h multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	for _, handler := range h {
-		if handler.Enabled(ctx, level) {
-			return true
-		}
-	}
-	return false
-}
-
-func (h multiHandler) Handle(ctx context.Context, r slog.Record) error {
-	var firstErr error
-	for _, handler := range h {
-		if err := handler.Handle(ctx, r); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
-}
-
-func (h multiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	handlers := make(multiHandler, len(h))
-	for i, handler := range h {
-		handlers[i] = handler.WithAttrs(attrs)
-	}
-	return handlers
-}
-
-func (h multiHandler) WithGroup(name string) slog.Handler {
-	handlers := make(multiHandler, len(h))
-	for i, handler := range h {
-		handlers[i] = handler.WithGroup(name)
-	}
-	return handlers
-}
-
-func (h *eventHandler) Enabled(_ context.Context, level slog.Level) bool {
+func (h *logHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return h.base.Enabled(context.Background(), level)
 }
 
-func (h *eventHandler) Handle(ctx context.Context, r slog.Record) error {
+func (h *logHandler) Handle(ctx context.Context, r slog.Record) error {
 	ev := LogEvent{
 		Level:     r.Level.String(),
 		Message:   r.Message,
@@ -1314,53 +1550,60 @@ func (h *eventHandler) Handle(ctx context.Context, r slog.Record) error {
 	if len(attrs) > 0 {
 		ev.Attrs = attrs
 	}
-	runtime.EventsEmit(h.ctx, "gps:log", ev)
+	emit(h.sink, EventLog, ev)
 	return h.base.Handle(ctx, r)
 }
 
-func (h *eventHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &eventHandler{
-		ctx:   h.ctx,
+func (h *logHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &logHandler{
+		sink:  h.sink,
 		base:  h.base.WithAttrs(attrs),
 		attrs: append(h.attrs, attrs...),
 		group: h.group,
 	}
 }
 
-func (h *eventHandler) WithGroup(name string) slog.Handler {
-	return &eventHandler{
-		ctx:   h.ctx,
+func (h *logHandler) WithGroup(name string) slog.Handler {
+	return &logHandler{
+		sink:  h.sink,
 		base:  h.base.WithGroup(name),
 		attrs: h.attrs,
 		group: name,
 	}
 }
 
-func (a *App) packetLogWorker(ch <-chan gpsio.PacketLogEntry) {
+// packetLogWorker writes packet log entries to the configured packet
+// log and emits them as gps:packet events. The event is gated on
+// Wants because the stream is high-rate: a web client only pays for
+// packet streaming while it is displaying packets.
+func (s *Session) packetLogWorker(ch <-chan gpsio.PacketLogEntry) {
 	for entry := range ch {
-		a.writePacketLogEntry(entry)
-		runtime.EventsEmit(a.ctx, "gps:packet", entry)
+		s.writePacketLogEntry(entry)
+		if s.sink.Wants(EventPacket) {
+			s.emit(EventPacket, entry)
+		}
 	}
 }
 
-func (a *App) writePacketLogEntry(entry gpsio.PacketLogEntry) {
-	if a.packetLog == nil || a.packetLog.File == nil {
+func (s *Session) writePacketLogEntry(entry gpsio.PacketLogEntry) {
+	s.mu.Lock()
+	w := s.packetLogW
+	s.mu.Unlock()
+	if w == nil {
 		return
 	}
 	bytes, err := json.Marshal(entry)
 	if err != nil {
-		a.lg.Warn("failed to convert packet to JSON", "err", err)
+		s.lg.Warn("failed to convert packet to JSON", "err", err)
 		return
 	}
 	bytes = append(bytes, '\n')
-	if _, err := a.packetLog.File.Write(bytes); err != nil {
-		a.packetLog.HandleWriteError(err, a.lg)
+	if _, err := w.Write(bytes); err != nil {
+		s.lg.Warn("error writing to packet log, disabling it", "err", err)
+		s.mu.Lock()
+		s.packetLogW = nil
+		s.mu.Unlock()
 	}
-}
-
-// ListPorts enumerates serial ports available on the system.
-func (a *App) ListPorts() ([]serialenum.Port, error) {
-	return serialenum.List()
 }
 
 // MsgEvent is the envelope emitted as "gps:msg" to the frontend.
@@ -1370,41 +1613,12 @@ type MsgEvent struct {
 	Time string `json:"time"`
 }
 
-// LLH holds latitude, longitude (degrees) and height (meters) above the WGS84 ellipsoid.
-type LLH struct {
-	Lat    float64 `json:"lat"`
-	Lon    float64 `json:"lon"`
-	Height float64 `json:"height"`
-}
-
-// CheckOnEarth returns true if the ECEF coordinates are roughly on Earth's surface.
-func (a *App) CheckOnEarth(x, y, z float64) bool {
-	return geopos.ECEF{x, y, z}.CheckOnEarth() == nil
-}
-
-// ECEFtoLLH converts Earth-Centered Earth-Fixed coordinates (meters) to latitude,
-// longitude (degrees), and height above the WGS84 ellipsoid (meters).
-func (a *App) ECEFtoLLH(x, y, z float64) (*LLH, error) {
-	llh, err := geopos.WGS84.ECEFtoLLH(geopos.ECEF{x, y, z})
-	if err != nil {
-		return nil, err
-	}
-	return &LLH{Lat: llh.Lat, Lon: llh.Lon, Height: llh.Height}, nil
-}
-
-// LLHtoECEF converts latitude, longitude (degrees) and height (meters) to
-// Earth-Centered Earth-Fixed coordinates (meters).
-func (a *App) LLHtoECEF(lat, lon, height float64) [3]float64 {
-	ecef := geopos.WGS84.LLHtoECEF(geopos.LLH{Lat: lat, Lon: lon, Height: height})
-	return [3]float64(ecef)
-}
-
 // VelNEDtoECEF converts a velocity from NED (m/s) to ECEF using the last known position.
 // Returns nil if no position is available.
-func (a *App) VelNEDtoECEF(n, e, d float64) *[3]float64 {
-	a.mu.Lock()
-	mh := a.mh
-	a.mu.Unlock()
+func (s *Session) VelNEDtoECEF(n, e, d float64) *[3]float64 {
+	s.mu.Lock()
+	mh := s.mh
+	s.mu.Unlock()
 	if mh == nil {
 		return nil
 	}
@@ -1418,10 +1632,10 @@ func (a *App) VelNEDtoECEF(n, e, d float64) *[3]float64 {
 
 // VelECEFtoNED converts a velocity from ECEF (m/s) to NED using the last known position.
 // Returns nil if no position is available.
-func (a *App) VelECEFtoNED(vx, vy, vz float64) *[3]float64 {
-	a.mu.Lock()
-	mh := a.mh
-	a.mu.Unlock()
+func (s *Session) VelECEFtoNED(vx, vy, vz float64) *[3]float64 {
+	s.mu.Lock()
+	mh := s.mh
+	s.mu.Unlock()
 	if mh == nil {
 		return nil
 	}
@@ -1437,23 +1651,23 @@ func (a *App) VelECEFtoNED(vx, vy, vz float64) *[3]float64 {
 // It emits a filled TimeMsg as the "gps:time" event at each epoch boundary.
 type timeEmitter struct {
 	gpsprot.DefaultHandler
-	ctx context.Context
+	sink Sink
 }
 
 func (e *timeEmitter) Time(msg *gpsprot.TimeMsg, _ time.Time) {
-	runtime.EventsEmit(e.ctx, "gps:time", msg)
+	emit(e.sink, EventTime, msg)
 }
 
 // msgHandler implements gpsprot.MsgHandler and emits "gps:msg" events.
 type msgHandler struct {
 	gpsprot.PVMsgAccum
 	tt        *gpsprot.TimeTicker
-	ctx       context.Context
+	sink      Sink
 	refLatLon atomic.Pointer[[2]float64]
 }
 
 func (h *msgHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
-	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+	emit(h.sink, EventMsg, MsgEvent{
 		Kind: "time",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1463,7 +1677,7 @@ func (h *msgHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 
 func (h *msgHandler) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	h.tt.LeapSecond(msg, tRead)
-	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+	emit(h.sink, EventMsg, MsgEvent{
 		Kind: "leapSecond",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1471,7 +1685,7 @@ func (h *msgHandler) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 }
 
 func (h *msgHandler) Survey(msg *gpsprot.SurveyMsg, tRead time.Time) {
-	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+	emit(h.sink, EventMsg, MsgEvent{
 		Kind: "survey",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1479,7 +1693,7 @@ func (h *msgHandler) Survey(msg *gpsprot.SurveyMsg, tRead time.Time) {
 }
 
 func (h *msgHandler) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
-	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+	emit(h.sink, EventMsg, MsgEvent{
 		Kind: "satellites",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1489,9 +1703,9 @@ func (h *msgHandler) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 func (h *msgHandler) PosGeo(msg *gpsprot.PosGeoMsg, tRead time.Time) {
 	ll := [2]float64{msg.LatLon[0].Degrees(), msg.LatLon[1].Degrees()}
 	if h.refLatLon.Swap(&ll) == nil {
-		runtime.EventsEmit(h.ctx, "gps:initialPos", ll)
+		emit(h.sink, EventInitialPos, ll)
 	}
-	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+	emit(h.sink, EventMsg, MsgEvent{
 		Kind: "posGeo",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1505,11 +1719,11 @@ func (h *msgHandler) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
 		if llh, err := geopos.WGS84.ECEFtoLLH(ecef); err == nil {
 			ll := [2]float64{llh.Lat, llh.Lon}
 			if h.refLatLon.Swap(&ll) == nil {
-				runtime.EventsEmit(h.ctx, "gps:initialPos", ll)
+				emit(h.sink, EventInitialPos, ll)
 			}
 		}
 	}
-	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+	emit(h.sink, EventMsg, MsgEvent{
 		Kind: "posECEF",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1518,7 +1732,7 @@ func (h *msgHandler) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
 }
 
 func (h *msgHandler) VelGeo(msg *gpsprot.VelGeoMsg, tRead time.Time) {
-	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+	emit(h.sink, EventMsg, MsgEvent{
 		Kind: "velGeo",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1527,7 +1741,7 @@ func (h *msgHandler) VelGeo(msg *gpsprot.VelGeoMsg, tRead time.Time) {
 }
 
 func (h *msgHandler) VelECEF(msg *gpsprot.VelECEFMsg, tRead time.Time) {
-	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+	emit(h.sink, EventMsg, MsgEvent{
 		Kind: "velECEF",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1536,7 +1750,7 @@ func (h *msgHandler) VelECEF(msg *gpsprot.VelECEFMsg, tRead time.Time) {
 }
 
 func (h *msgHandler) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
-	runtime.EventsEmit(h.ctx, "gps:msg", MsgEvent{
+	emit(h.sink, EventMsg, MsgEvent{
 		Kind: "navEpoch",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1546,11 +1760,11 @@ func (h *msgHandler) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 	b := h.PVMsgBundle
 	h.PVMsgAccum.NavEpoch(msg, tRead)
 	if b.PosGeo.IsSet() || b.VelGeo.IsSet() {
-		runtime.EventsEmit(h.ctx, "gps:epochPVT", b)
+		emit(h.sink, EventEpochPVT, b)
 	}
 }
 
-func (a *App) handleMsgPacket(procs map[gpsprot.Tag]gpsprot.PacketProcessor, pkt scan.Packet) {
+func (s *Session) handleMsgPacket(procs map[gpsprot.Tag]gpsprot.PacketProcessor, pkt scan.Packet) {
 	if pkt.IsInterPacketTimeout() {
 		for _, pp := range procs {
 			pp.Idle(pkt.TRead)
@@ -1566,12 +1780,12 @@ func (a *App) handleMsgPacket(procs map[gpsprot.Tag]gpsprot.PacketProcessor, pkt
 		return
 	}
 	if !pkt.ChecksumValid && !pkt.AltChecksumValid() {
-		a.lg.Warn(pkt.ChecksumError().Error(), "tag", tag, "len", len(pkt.Data))
+		s.lg.Warn(pkt.ChecksumError().Error(), "tag", tag, "len", len(pkt.Data))
 		return
 	}
 	msgID, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
 	if err != nil {
-		a.lg.Warn("error processing packet", gpsio.PacketWarnAttrs(err, pkt, msgID)...)
+		s.lg.Warn("error processing packet", gpsio.PacketWarnAttrs(err, pkt, msgID)...)
 	}
 }
 
@@ -1583,8 +1797,8 @@ func (a *App) handleMsgPacket(procs map[gpsprot.Tag]gpsprot.PacketProcessor, pkt
 // "ready": the Position display, the Connect gate, and the connect-without-
 // delay guarantee are all this one fact read three times.
 type ggaMonitor struct {
-	appCtx  context.Context // for EventsEmit (app lifetime)
-	ctx     context.Context // connection ctx; run exits when it is done
+	sink    Sink
+	ctx     context.Context // run ctx; run exits when it is done
 	in      <-chan scan.Packet
 	mu      sync.Mutex
 	have    bool
@@ -1592,8 +1806,8 @@ type ggaMonitor struct {
 	session chan scan.Packet // non-nil while a session is forwarding
 }
 
-func newGGAMonitor(appCtx, ctx context.Context, in <-chan scan.Packet) *ggaMonitor {
-	return &ggaMonitor{appCtx: appCtx, ctx: ctx, in: in}
+func newGGAMonitor(sink Sink, ctx context.Context, in <-chan scan.Packet) *ggaMonitor {
+	return &ggaMonitor{sink: sink, ctx: ctx, in: in}
 }
 
 // NMEAPositionEvent is the payload for "gps:nmeaPosition". Valid is false
@@ -1630,7 +1844,7 @@ func (m *ggaMonitor) handle(pkt scan.Packet) {
 			publishGGA(m.session, pkt)
 		}
 		m.mu.Unlock()
-		runtime.EventsEmit(m.appCtx, "gps:nmeaPosition", NMEAPositionEvent{Valid: true, Lat: pos[0], Lon: pos[1]})
+		emit(m.sink, EventNMEAPosition, NMEAPositionEvent{Valid: true, Lat: pos[0], Lon: pos[1]})
 		return
 	}
 	// Unusable GGA: the receiver is reporting no fix. Drop the held position
@@ -1642,7 +1856,7 @@ func (m *ggaMonitor) handle(pkt scan.Packet) {
 	m.latest = scan.Packet{}
 	m.mu.Unlock()
 	if wasHave {
-		runtime.EventsEmit(m.appCtx, "gps:nmeaPosition", NMEAPositionEvent{Valid: false})
+		emit(m.sink, EventNMEAPosition, NMEAPositionEvent{Valid: false})
 	}
 }
 
