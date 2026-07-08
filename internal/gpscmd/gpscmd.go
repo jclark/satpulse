@@ -155,6 +155,11 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
+		// Drain first so a final no-response command (e.g. a reset) reaches
+		// the receiver before Close restores and closes the port.
+		if e := conn.Drain(); e != nil {
+			lg.Debug("error draining the GPS connection before close", "addr", addr, "error", e)
+		}
 		e := conn.Close()
 		if e != nil {
 			lg.Error("error closing the GPS connection", "addr", addr, "error", e)
