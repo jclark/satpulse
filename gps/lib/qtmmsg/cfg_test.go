@@ -286,55 +286,6 @@ func TestParseUniqID(t *testing.T) {
 	}
 }
 
-// Payloads are verbatim R02A01S captures from rover and base mode.
-func TestParseLstMsg(t *testing.T) {
-	tests := []struct {
-		name      string
-		payload   string
-		expect    *LstMsgLine
-		expectEnd bool
-	}{
-		{
-			name:    "nmea entry",
-			payload: "PQTMLSTMSG,OK,1,1,GGA,1",
-			expect:  &LstMsgLine{PortType: 1, PortID: 1, MsgName: "GGA", Rate: 1},
-		},
-		{
-			name:    "pqtm entry with version",
-			payload: "PQTMLSTMSG,OK,1,1,PQTMTXT,1,1",
-			expect:  &LstMsgLine{PortType: 1, PortID: 1, MsgName: "PQTMTXT", Rate: 1, MsgVer: opt.Make[uint8](1)},
-		},
-		{
-			name:    "rtcm entry with offset",
-			payload: "PQTMLSTMSG,OK,1,1,RTCM3-107X,1,0",
-			expect:  &LstMsgLine{PortType: 1, PortID: 1, MsgName: "RTCM3-107X", Rate: 1, MsgVer: opt.Make[uint8](0)},
-		},
-		{
-			name:      "end line",
-			payload:   "PQTMLSTMSG,OK,End",
-			expectEnd: true,
-		},
-		{
-			name:    "not lstmsg",
-			payload: "PQTMCFGPPS,OK,1,1,100,1,1,0",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			line, end, err := ParseLstMsg(tc.payload)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if end != tc.expectEnd {
-				t.Errorf("end = %v, want %v", end, tc.expectEnd)
-			}
-			if !reflect.DeepEqual(line, tc.expect) {
-				t.Errorf("got  %+v\nwant %+v", line, tc.expect)
-			}
-		})
-	}
-}
-
 // TestCfgSentences audits the registration list: every registered
 // sentence constructs a value whose Sentence matches its key.
 func TestCfgSentences(t *testing.T) {

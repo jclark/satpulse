@@ -40,18 +40,13 @@ var rtcmMSMNames = []string{
 	"RTCM3-107X", "RTCM3-108X", "RTCM3-109X", "RTCM3-111X", "RTCM3-112X", "RTCM3-113X",
 }
 
-// generateMsgSets appends the message-output set requests: the
-// difference between the desired output state and the as-found
-// LSTMSG table. Without a complete dump the sets are sent
-// unconditionally (no unmodeled-member turn-off is possible then,
-// since what is on cannot be known).
+// generateMsgSets appends the message-output set requests: each
+// modeled member the target names is set to its desired state. The
+// receiver's current message table is not read back, so a set is sent
+// even when the message is already in the requested state.
 func (c *Configurator) generateMsgSets() {
 	for _, name := range sortedNames(c.msgWant()) {
-		on := c.msgWantState[name]
-		if c.found.lstOK && c.msgEnabled(name) == on {
-			continue
-		}
-		c.reqs = append(c.reqs, c.msgRateSet(name, on))
+		c.reqs = append(c.reqs, c.msgRateSet(name, c.msgWantState[name]))
 	}
 	c.generateRTCMTypeSet()
 }
@@ -101,15 +96,6 @@ func (c *Configurator) msgWant() map[string]bool {
 				want[m.name] = flags&m.flag != 0
 			}
 		}
-		// A complete request turns unmodeled group members off;
-		// NMEAMsgOther preserves them.
-		if flags&gpsprot.NMEAMsgOther == 0 && c.found.lstOK {
-			for name := range c.found.msgRates {
-				if _, modeled := want[name]; !modeled && isStdNMEA(name) {
-					want[name] = false
-				}
-			}
-		}
 	}
 	if opts.SatsMsg.IsSet() {
 		if opts.SatsMsg.Get()&gpsprot.SatsMsgAny != 0 {
@@ -125,13 +111,6 @@ func (c *Configurator) msgWant() map[string]bool {
 			want[name] = msm
 		}
 		want["RTCM3-1005"] = flags&gpsprot.RTCMMsgARP != 0
-		if flags&gpsprot.RTCMMsgOther == 0 && c.found.lstOK {
-			for name := range c.found.msgRates {
-				if _, modeled := want[name]; !modeled && strings.HasPrefix(name, "RTCM3-") {
-					want[name] = false
-				}
-			}
-		}
 	}
 	if pvt := opts.PVTMsg; pvt.IsSet() {
 		if pvt&(gpsprot.PVTMsgPos|gpsprot.PVTMsgVel|gpsprot.PVTMsgTime|gpsprot.PVTMsgLeapSecond) != 0 {
@@ -159,18 +138,11 @@ func (c *Configurator) msgWant() map[string]bool {
 	return want
 }
 
-// msgEnabled reports whether the as-found table has the message
-// output on.
-func (c *Configurator) msgEnabled(name string) bool {
-	line := c.found.msgRates[name]
-	return line != nil && line.Rate > 0
-}
-
 // msgRateSet builds one CFGMSGRATE set request. PQTM messages carry
 // their version field. Message sets are NAK-tolerant: the receiver
 // answers ERROR,1 for messages the current mode or firmware lacks
 // (e.g. PQTMSVINSTATUS outside effective base mode), which is
-// absence, not failure. The ACK records the assumed state.
+// absence, not failure.
 func (c *Configurator) msgRateSet(name string, on bool) *request {
 	rate := 0
 	if on {
@@ -187,21 +159,7 @@ func (c *Configurator) msgRateSet(name string, on bool) *request {
 		phase:    phaseMsg,
 		payload:  payload,
 		sentence: "PQTMCFGMSGRATE",
-		onOK: func() {
-			if c.found.msgRates == nil {
-				c.found.msgRates = make(map[string]*qtmmsg.LstMsgLine)
-			}
-			if on {
-				var port uint8 // unknown if the CFGUART query went unanswered
-				if c.found.uart != nil {
-					port = c.found.uart.Index
-				}
-				c.found.msgRates[name] = &qtmmsg.LstMsgLine{PortType: 1, PortID: port, MsgName: name, Rate: 1}
-			} else {
-				delete(c.found.msgRates, name)
-			}
-		},
-		onError: func(rc qtmmsg.ResponseClass) bool { return true },
+		onError:  func(rc qtmmsg.ResponseClass) bool { return true },
 	}
 }
 
@@ -209,12 +167,6 @@ func (c *Configurator) msgRateSet(name string, on bool) *request {
 // (e.g. "RTCM3-107X"), which carries a time-offset field.
 func isMSMName(name string) bool {
 	return strings.HasPrefix(name, "RTCM3-1") && strings.HasSuffix(name, "X")
-}
-
-// isStdNMEA reports whether an LSTMSG entry names a standard NMEA
-// sentence (the NMEA group), as opposed to a PQTM or RTCM3 message.
-func isStdNMEA(name string) bool {
-	return !strings.HasPrefix(name, "PQTM") && !strings.HasPrefix(name, "RTCM3-")
 }
 
 func sortedNames(m map[string]bool) []string {

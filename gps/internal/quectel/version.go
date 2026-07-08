@@ -37,7 +37,6 @@ var (
 	fwEleThd  = fwVersion{1, 5} // PQTMCFGELETHD
 	fwQZSSL6  = fwVersion{1, 5} // PQTMCFGSIGNAL QZSS L6 bit
 	fwNAV     = fwVersion{1, 5} // PQTMNAV and PQTMEOE messages
-	fwLstMsg  = fwVersion{1, 6} // PQTMLSTMSG and PQTMCLRMSG
 	fwPPS2    = fwVersion{2, 1} // PQTMCFGPPS2
 	fwRTCM230 = fwVersion{2, 1} // RTCM-1230 message
 )

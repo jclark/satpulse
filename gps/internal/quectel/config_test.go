@@ -30,16 +30,6 @@ var fakeResponses = map[string][]string{
 	"PQTMCFGRSID,R":     {"PQTMCFGRSID,OK,290"},
 	"PQTMUNIQID":        {"PQTMUNIQID,OK,8,0000183B31B3C252"},
 	"PQTMCFGPROT,R,1,1": {"PQTMCFGPROT,OK,1,1,00000007,00000007"},
-	"PQTMLSTMSG": {
-		"PQTMLSTMSG,OK,1,1,GGA,1",
-		"PQTMLSTMSG,OK,1,1,GLL,1",
-		"PQTMLSTMSG,OK,1,1,GSA,1",
-		"PQTMLSTMSG,OK,1,1,GSV,1",
-		"PQTMLSTMSG,OK,1,1,RMC,1",
-		"PQTMLSTMSG,OK,1,1,VTG,1",
-		"PQTMLSTMSG,OK,1,1,PQTMTXT,1,1",
-		"PQTMLSTMSG,OK,End",
-	},
 }
 
 const vernoPayload = "PQTMVERNO,LG290P03AANR02A01S,2025/12/12,11:21:01"
@@ -135,17 +125,9 @@ func TestConfiguratorQueryPhase(t *testing.T) {
 		prot:     &qtmmsg.CfgProt{PortType: 1, PortID: 1, InputProt: 0x7, OutputProt: 0x7},
 		rtcm:     &qtmmsg.CfgRtcm{MSMType: 4, MSMElevThd: -90.0, Reserved0: "07", Reserved1: "06", EPHMode: 1},
 		rsid:     &qtmmsg.CfgRSID{ID: 290},
-		lstOK:    true,
-		msgRates: c.found.msgRates, // compared separately below
 	}
 	if !reflect.DeepEqual(c.found, expect) {
 		t.Errorf("as-found state:\ngot  %+v\nwant %+v", c.found, expect)
-	}
-	if len(c.found.msgRates) != 7 {
-		t.Errorf("msgRates len = %d, want 7", len(c.found.msgRates))
-	}
-	if got := c.found.msgRates["GGA"]; got == nil || got.Rate != 1 {
-		t.Errorf("msgRates[GGA] = %+v", got)
 	}
 	if c.found.pps != nil {
 		t.Errorf("legacy PPS queried despite PPS2 success: %+v", c.found.pps)
@@ -246,52 +228,51 @@ func wSent(sent []string) []string {
 }
 
 // TestConfiguratorNMEAMsgSets checks the complete-request semantics:
-// modeled members go to the requested state and unmodeled standard
-// NMEA messages in the as-found table turn off (no NMEAMsgOther).
-// Members already in the requested state generate no set.
+// every modeled member is set to its requested state, the named ones
+// on and the rest off. The message table is not read back, so a set
+// goes out even for members already in the requested state.
 func TestConfiguratorNMEAMsgSets(t *testing.T) {
 	responses := maps.Clone(fakeResponses)
-	for _, name := range []string{"GLL", "GSA", "GSV", "VTG"} {
-		responses["PQTMCFGMSGRATE,W,"+name+",0"] = []string{"PQTMCFGMSGRATE,OK"}
+	for _, p := range []string{"GGA,1", "GLL,0", "GSA,0", "GSV,0", "RMC,1", "VTG,0", "ZDA,0"} {
+		responses["PQTMCFGMSGRATE,W,"+p] = []string{"PQTMCFGMSGRATE,OK"}
 	}
 	target := &gpsprot.ConfigTarget{}
 	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)
-	c, errCount, sent := runConfigTarget(t, target, responses)
+	_, errCount, sent := runConfigTarget(t, target, responses)
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
 	expect := []string{
+		"PQTMCFGMSGRATE,W,GGA,1",
 		"PQTMCFGMSGRATE,W,GLL,0",
 		"PQTMCFGMSGRATE,W,GSA,0",
 		"PQTMCFGMSGRATE,W,GSV,0",
+		"PQTMCFGMSGRATE,W,RMC,1",
 		"PQTMCFGMSGRATE,W,VTG,0",
+		"PQTMCFGMSGRATE,W,ZDA,0",
 	}
 	if got := wSent(sent); !reflect.DeepEqual(got, expect) {
 		t.Errorf("sets sent:\ngot  %v\nwant %v", got, expect)
-	}
-	for _, name := range []string{"GLL", "GSA", "GSV", "VTG"} {
-		if c.msgEnabled(name) {
-			t.Errorf("%s still enabled in assumed state", name)
-		}
-	}
-	if !c.msgEnabled("RMC") || !c.msgEnabled("GGA") {
-		t.Error("RMC/GGA lost from assumed state")
 	}
 }
 
 // TestConfiguratorPVTMsgSets checks the PVT mapping for the serial-UTC
 // timing set: PQTMPVT, EPE+DOP, EOE and SVINSTATUS are enabled with
-// their versions; the mode-gated SVINSTATUS refusal (verbatim ERROR,1
-// capture) resolves as absence, not failure.
+// their versions and PVTMsgOff turns the other modeled PVT messages
+// off; the mode-gated SVINSTATUS refusal (verbatim ERROR,1 capture)
+// resolves as absence, not failure.
 func TestConfiguratorPVTMsgSets(t *testing.T) {
 	responses := maps.Clone(fakeResponses)
-	for _, p := range []string{"PQTMPVT,1,1", "PQTMEPE,1,2", "PQTMDOP,1,1", "PQTMEOE,1,1"} {
+	for _, p := range []string{
+		"PQTMDOP,1,1", "PQTMEOE,1,1", "PQTMEPE,1,2", "PQTMNAV,0,1", "PQTMODO,0,1",
+		"PQTMPL,0,1", "PQTMPPPNAV,0,1", "PQTMPVT,1,1", "PQTMVEL,0,1",
+	} {
 		responses["PQTMCFGMSGRATE,W,"+p] = []string{"PQTMCFGMSGRATE,OK"}
 	}
 	responses["PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1"] = []string{"PQTMCFGMSGRATE,ERROR,1"}
 	target := &gpsprot.ConfigTarget{}
 	target.Opts.PVTMsg = gpsprot.PVTMsgTimingSerialUTC | gpsprot.PVTMsgOff
-	c, errCount, sent := runConfigTarget(t, target, responses)
+	_, errCount, sent := runConfigTarget(t, target, responses)
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
@@ -299,44 +280,38 @@ func TestConfiguratorPVTMsgSets(t *testing.T) {
 		"PQTMCFGMSGRATE,W,PQTMDOP,1,1",
 		"PQTMCFGMSGRATE,W,PQTMEOE,1,1",
 		"PQTMCFGMSGRATE,W,PQTMEPE,1,2",
+		"PQTMCFGMSGRATE,W,PQTMNAV,0,1",
+		"PQTMCFGMSGRATE,W,PQTMODO,0,1",
+		"PQTMCFGMSGRATE,W,PQTMPL,0,1",
+		"PQTMCFGMSGRATE,W,PQTMPPPNAV,0,1",
 		"PQTMCFGMSGRATE,W,PQTMPVT,1,1",
 		"PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1",
+		"PQTMCFGMSGRATE,W,PQTMVEL,0,1",
 	}
 	if got := wSent(sent); !reflect.DeepEqual(got, expect) {
 		t.Errorf("sets sent:\ngot  %v\nwant %v", got, expect)
 	}
-	for _, name := range []string{"PQTMPVT", "PQTMEPE", "PQTMDOP", "PQTMEOE"} {
-		if !c.msgEnabled(name) {
-			t.Errorf("%s not in assumed state", name)
-		}
-	}
-	if c.msgEnabled("PQTMSVINSTATUS") {
-		t.Error("refused SVINSTATUS recorded as enabled")
-	}
 }
 
 // TestConfiguratorSatsMsgUnion checks that SatsMsg keeps GSV on even
-// when the NMEA flags would turn it off, and that no redundant set is
-// sent when the union matches the as-found state.
+// when the NMEA flags would otherwise turn it off: the union sets GSV
+// to rate 1 while the other unnamed NMEA members go off.
 func TestConfiguratorSatsMsgUnion(t *testing.T) {
 	responses := maps.Clone(fakeResponses)
-	for _, name := range []string{"GLL", "GSA", "VTG"} {
-		responses["PQTMCFGMSGRATE,W,"+name+",0"] = []string{"PQTMCFGMSGRATE,OK"}
+	for _, p := range []string{"GGA,1", "GLL,0", "GSA,0", "GSV,1", "RMC,1", "VTG,0", "ZDA,0"} {
+		responses["PQTMCFGMSGRATE,W,"+p] = []string{"PQTMCFGMSGRATE,OK"}
 	}
 	target := &gpsprot.ConfigTarget{}
 	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)
 	target.Opts.SatsMsg.Set(gpsprot.SatsMsgAny)
-	c, errCount, sent := runConfigTarget(t, target, responses)
+	_, errCount, sent := runConfigTarget(t, target, responses)
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
 	for _, p := range wSent(sent) {
-		if strings.Contains(p, "GSV") {
-			t.Errorf("unexpected GSV set: %s", p)
+		if strings.Contains(p, "GSV") && !strings.HasSuffix(p, "GSV,1") {
+			t.Errorf("GSV not set on: %s", p)
 		}
-	}
-	if !c.msgEnabled("GSV") {
-		t.Error("GSV lost despite SatsMsg request")
 	}
 }
 
@@ -758,7 +733,7 @@ func TestConfiguratorRTCMAuto(t *testing.T) {
 	}
 	target := &gpsprot.ConfigTarget{}
 	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgAuto)
-	c, errCount, sent := runConfigTarget(t, target, responses)
+	_, errCount, sent := runConfigTarget(t, target, responses)
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
@@ -773,9 +748,6 @@ func TestConfiguratorRTCMAuto(t *testing.T) {
 	}
 	if got := wSent(sent); !reflect.DeepEqual(got, expect) {
 		t.Errorf("sets sent:\ngot  %v\nwant %v", got, expect)
-	}
-	if !c.msgEnabled("RTCM3-1005") || !c.msgEnabled("RTCM3-112X") {
-		t.Error("RTCM messages missing from assumed state")
 	}
 }
 

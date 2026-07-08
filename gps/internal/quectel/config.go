@@ -31,9 +31,6 @@ const (
 	// periodic output burst; patience beyond this comes from the
 	// director's retry budget.
 	responseTimeout = 2 * time.Second
-	// dumpIdleTimeout ends a PQTMLSTMSG dump that lost its End line
-	// (dump lines can rarely be aborted mid-sentence).
-	dumpIdleTimeout = time.Second
 	// speedChangeRepeatDelay is how long after sending a speed change to
 	// wait for its OK before repeating the write. The port switches ~2 ms
 	// after the request, so the repeat is received intact at the new rate.
@@ -109,7 +106,7 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRea
 		return nil
 	}
 	if cp.cfg != nil {
-		return cp.cfg.response(rc, sen.Payload, tRead)
+		return cp.cfg.response(rc, sen.Payload)
 	}
 	return nil
 }
@@ -186,8 +183,6 @@ type asFound struct {
 	prot     *qtmmsg.CfgProt
 	rtcm     *qtmmsg.CfgRtcm
 	rsid     *qtmmsg.CfgRSID
-	msgRates map[string]*qtmmsg.LstMsgLine // by MsgName, from the LSTMSG dump
-	lstOK    bool                          // the dump's End line was seen
 }
 
 // request is a single PQTM exchange. Behavior flags select how
@@ -198,7 +193,6 @@ type request struct {
 	phase    configPhase // not sendable before this phase (zero = query)
 	payload  string      // NMEA payload between $ and *
 	sentence string      // correlation key: the sentence name
-	multi    bool        // multi-line response (LSTMSG); MaybeComplete on first line
 	noReply  bool        // resets and the speed-change repeat: answer nothing, succeed when sent
 	speed    int         // new baud rate to switch to after sending (0 if none)
 	// repeatDue is set on a speed change whose OK did not arrive within
@@ -354,28 +348,6 @@ func (c *Configurator) generateQueries() {
 		onError: func(rc qtmmsg.ResponseClass) bool { return true },
 	}
 	c.reqs = append(c.reqs, uniqid)
-	if c.fw.has(fwLstMsg) {
-		c.found.msgRates = make(map[string]*qtmmsg.LstMsgLine)
-		lst := &request{
-			payload:  "PQTMLSTMSG",
-			sentence: "PQTMLSTMSG",
-			multi:    true,
-			onOKData: func(p string) error {
-				line, end, err := qtmmsg.ParseLstMsg(p)
-				if err != nil {
-					return err
-				}
-				if end {
-					c.found.lstOK = true
-				} else if line != nil {
-					c.found.msgRates[line.MsgName] = line
-				}
-				return nil
-			},
-			onError: func(rc qtmmsg.ResponseClass) bool { return true },
-		}
-		c.reqs = append(c.reqs, lst)
-	}
 	// The active port's CFGPROT query needs the port index from the
 	// CFGUART response; it is generated lazily by promote().
 }
@@ -453,7 +425,7 @@ func (c *Configurator) allFinal() bool {
 
 // response routes a classified PQTM response to the oldest live
 // request with the same sentence name.
-func (c *Configurator) response(rc qtmmsg.ResponseClass, payload string, tRead time.Time) error {
+func (c *Configurator) response(rc qtmmsg.ResponseClass, payload string) error {
 	for _, r := range c.reqs {
 		if r.sentence != rc.Sentence {
 			continue
@@ -463,12 +435,12 @@ func (c *Configurator) response(rc qtmmsg.ResponseClass, payload string, tRead t
 		default:
 			continue
 		}
-		return r.respond(rc, payload, tRead)
+		return r.respond(rc, payload)
 	}
 	return nil
 }
 
-func (r *request) respond(rc qtmmsg.ResponseClass, payload string, tRead time.Time) error {
+func (r *request) respond(rc qtmmsg.ResponseClass, payload string) error {
 	switch rc.Kind {
 	case qtmmsg.ResponseOK:
 		if r.onOK != nil {
@@ -483,12 +455,7 @@ func (r *request) respond(rc qtmmsg.ResponseClass, payload string, tRead time.Ti
 				return nil
 			}
 		}
-		if r.multi {
-			r.state = gpsprot.ConfigRequestMaybeComplete
-			r.tBase = tRead
-		} else {
-			r.state = gpsprot.ConfigRequestSucceeded
-		}
+		r.state = gpsprot.ConfigRequestSucceeded
 	case qtmmsg.ResponseError:
 		if r.onError != nil && r.onError(rc) {
 			r.state = gpsprot.ConfigRequestSucceeded
@@ -578,9 +545,6 @@ func (r *request) GetState() gpsprot.ConfigRequestState {
 // deadline is the repeat delay; after the repeat is due it gets the
 // full response timeout, still relative to the original send.
 func (r *request) GetDeadline() time.Time {
-	if r.multi && r.state == gpsprot.ConfigRequestMaybeComplete {
-		return r.tBase.Add(dumpIdleTimeout)
-	}
 	if r.speed != 0 && !r.repeatDue {
 		return r.tBase.Add(speedChangeRepeatDelay)
 	}
@@ -604,14 +568,10 @@ func (r *request) SetSentTime(tSent time.Time) {
 	r.state = gpsprot.ConfigRequestAwaitingResponse
 }
 
-// SetDeadlinePassed times the request out: a dump that went idle is
-// complete, a speed change whose repeat delay passed asks for the
-// repeat and keeps awaiting, anything else may be resent.
+// SetDeadlinePassed times the request out: a speed change whose
+// repeat delay passed asks for the repeat and keeps awaiting,
+// anything else may be resent.
 func (r *request) SetDeadlinePassed() {
-	if r.state == gpsprot.ConfigRequestMaybeComplete {
-		r.state = gpsprot.ConfigRequestSucceeded
-		return
-	}
 	if r.speed != 0 && !r.repeatDue {
 		r.repeatDue = true
 		return

@@ -427,40 +427,6 @@ func ParseUniqID(payload string) (*UniqID, error) {
 	return v, nil
 }
 
-// LstMsgLine is one entry of a PQTMLSTMSG dump: an enabled message on
-// the queried port. Disabled messages do not appear in the dump, and
-// each receiver mode keeps its own table. The dump ends with an
-// "End" line; a dump line can rarely be aborted mid-sentence by the
-// receiver (the scanner drops the fragment), so a reader that needs
-// certainty re-issues the command.
-type LstMsgLine struct {
-	PortType uint8          // 1=UART
-	PortID   uint8          // 1=UART1, 2=UART2, 3=UART3
-	MsgName  string         // e.g. "GGA", "PQTMTXT", "RTCM3-107X"
-	Rate     uint32         // output once every Rate fixes
-	MsgVer   opt.Val[uint8] // PQTM message version / MSM offset; absent otherwise
-}
-
-// ParseLstMsg parses one PQTMLSTMSG response line. It returns
-// (nil, true, nil) for the terminating End line, (line, false, nil)
-// for a dump entry, and (nil, false, nil) if the payload is not a
-// PQTMLSTMSG OK response.
-func ParseLstMsg(payload string) (line *LstMsgLine, end bool, err error) {
-	rc := ClassifyResponse(payload)
-	if rc.Sentence != "PQTMLSTMSG" || rc.Kind != ResponseOKData {
-		return nil, false, nil
-	}
-	fields := strings.Split(payload, ",")[2:]
-	if fields[0] == "End" {
-		return nil, true, nil
-	}
-	line = &LstMsgLine{}
-	if err := fieldenc.Decode(fields, line); err != nil {
-		return nil, false, fmt.Errorf("qtmmsg: PQTMLSTMSG: %w", err)
-	}
-	return line, false, nil
-}
-
 var cfgMap = make(map[string]func() CfgMsg)
 
 func regCfg[T any, PT interface {
