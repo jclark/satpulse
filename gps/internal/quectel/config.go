@@ -34,6 +34,15 @@ const (
 	// dumpIdleTimeout ends a PQTMLSTMSG dump that lost its End line
 	// (dump lines can rarely be aborted mid-sentence).
 	dumpIdleTimeout = time.Second
+	// speedChangeRepeatDelay is how long after sending a speed change to
+	// wait for its OK before repeating the write. The port switches ~2 ms
+	// after the request, so the repeat is received intact at the new rate.
+	speedChangeRepeatDelay = 100 * time.Millisecond
+	// speedChangeDelay is how long after sending a speed change until an
+	// incidental valid packet confirms it: the host switches rates right
+	// after the send, so a packet read this long afterwards can only have
+	// arrived at the new rate.
+	speedChangeDelay = 400 * time.Millisecond
 )
 
 // ConfigProtocol implements gpsprot.ConfigProtocol for Quectel PQTM
@@ -136,9 +145,12 @@ type Configurator struct {
 	// request slice, so response handlers set these instead of
 	// appending. protQueried marks the CFGPROT query, which needs the
 	// active port index from the CFGUART answer; needPPS asks for the
-	// legacy PPS query after a refused PPS2 query.
+	// legacy PPS query after a refused PPS2 query; speedReq is the
+	// pending speed change, watched for a due repeat (see
+	// generateSpeedChange).
 	protQueried bool
 	needPPS     bool
+	speedReq    *request
 	// msgWantState caches the desired message-output state computed
 	// by msgWant, keyed by message name.
 	msgWantState map[string]bool
@@ -187,8 +199,12 @@ type request struct {
 	payload  string      // NMEA payload between $ and *
 	sentence string      // correlation key: the sentence name
 	multi    bool        // multi-line response (LSTMSG); MaybeComplete on first line
-	noReply  bool        // resets: answer nothing, succeed when sent
+	noReply  bool        // resets and the speed-change repeat: answer nothing, succeed when sent
 	speed    int         // new baud rate to switch to after sending (0 if none)
+	// repeatDue is set on a speed change whose OK did not arrive within
+	// speedChangeRepeatDelay; GenerateRequests responds by sending the
+	// repeat while this request keeps awaiting with the full timeout.
+	repeatDue bool
 	onOK     func()                     // called on a bare OK acknowledgement
 	onOKData func(payload string) error // called with the full response payload
 	onError  func(rc qtmmsg.ResponseClass) bool // true = absorbed (absence); false = fail
@@ -247,6 +263,17 @@ func (c *Configurator) GenerateRequests() error {
 	if c.phase == phaseMsg && c.allFinal() {
 		c.phase = phaseSpeed
 		c.generateSpeedChange()
+	}
+	if c.speedReq != nil && c.speedReq.repeatDue {
+		if c.speedReq.state == gpsprot.ConfigRequestAwaitingResponse {
+			// Re-send the same write: the receiver is at the new rate by
+			// now, so re-applying it is a no-op whose OK routes to the
+			// original request (oldest live PQTMCFGUART). The repeat
+			// itself expects no response.
+			c.reqs = append(c.reqs, &request{phase: phaseSpeed,
+				payload: c.speedReq.payload, sentence: c.speedReq.sentence, noReply: true})
+		}
+		c.speedReq = nil
 	}
 	if c.phase == phaseSpeed && c.allFinal() {
 		c.phase = phaseNVM
@@ -362,13 +389,15 @@ func (c *Configurator) ppsQuery() *request {
 
 // generateSpeedChange appends the baud-rate change when the target
 // asks for a rate different from the as-found one. The current-port
-// CFGUART write (Index 0, baud only) produces no usable acknowledgement
-// at the old rate: the port switches ~2 ms after the request. So the
-// write carries the host speed change and succeeds when sent (noReply),
-// and a following CFGUART,R query at the new rate confirms the switch
-// and reads back the new rate (single-flight on the shared PQTMCFGUART
-// name sequences it after the write). Ordered before the NVM phase so a
-// save persists the new rate and any restart goes out at the new speed.
+// CFGUART write (Index 0, baud only) carries the host speed change,
+// and its OK goes out at the new rate (the port switches ~2 ms after
+// the request), so it is usually destroyed by the switch. The request
+// keeps awaiting and succeeds by whichever comes first: its own OK
+// when the host catches it, an incidental valid packet at the new rate
+// (MaybeSpeedChangeSucceeded), or the OK elicited by a repeat of the
+// write after speedChangeRepeatDelay (see GenerateRequests). Ordered
+// before the NVM phase so a save persists the new rate and any restart
+// goes out at the new speed.
 func (c *Configurator) generateSpeedChange() {
 	baud, ok := c.target.Props.GetBaudRate()
 	if !ok || baud == 0 || c.found.uart == nil || baud == c.found.uart.BaudRate {
@@ -378,28 +407,28 @@ func (c *Configurator) generateSpeedChange() {
 	if err != nil {
 		panic(err)
 	}
-	c.reqs = append(c.reqs, &request{
+	c.speedReq = &request{
 		phase:    phaseSpeed,
 		payload:  payload,
 		sentence: "PQTMCFGUART",
-		noReply:  true,
 		speed:    int(baud),
-	})
-	confirm := c.queryReq("PQTMCFGUART,R", "PQTMCFGUART",
-		func(m qtmmsg.CfgMsg) { c.found.uart = m.(*qtmmsg.CfgUART) })
-	confirm.phase = phaseSpeed
-	c.reqs = append(c.reqs, confirm)
+		onOK:     func() { c.found.uart.BaudRate = baud },
+	}
+	c.reqs = append(c.reqs, c.speedReq)
 }
 
 // promote readies NotReady requests whose sentence name has no
 // earlier live request (single-flight per name), and lazily generates
-// requests that depend on earlier answers.
+// requests that depend on earlier answers. noReply requests bypass
+// single-flight: they consume no responses, and the speed-change
+// repeat must go out while the original is still live (any response
+// it elicits belongs to whoever awaits it).
 func (c *Configurator) promote() {
 	live := make(map[string]bool)
 	for _, r := range c.reqs {
 		switch r.state {
 		case gpsprot.ConfigRequestNotReady:
-			if r.phase <= c.phase && !live[r.sentence] {
+			if r.phase <= c.phase && (r.noReply || !live[r.sentence]) {
 				r.state = gpsprot.ConfigRequestReadyToSend
 				live[r.sentence] = true
 			}
@@ -545,10 +574,15 @@ func (r *request) GetState() gpsprot.ConfigRequestState {
 	return r.state
 }
 
-// GetDeadline returns the response deadline.
+// GetDeadline returns the response deadline. A speed change's first
+// deadline is the repeat delay; after the repeat is due it gets the
+// full response timeout, still relative to the original send.
 func (r *request) GetDeadline() time.Time {
 	if r.multi && r.state == gpsprot.ConfigRequestMaybeComplete {
 		return r.tBase.Add(dumpIdleTimeout)
+	}
+	if r.speed != 0 && !r.repeatDue {
+		return r.tBase.Add(speedChangeRepeatDelay)
 	}
 	return r.tBase.Add(responseTimeout)
 }
@@ -558,8 +592,9 @@ func (r *request) GetError() error {
 	return r.err
 }
 
-// SetSentTime records the transmit time. A noReply request (reset)
-// succeeds when sent; everything else awaits its response.
+// SetSentTime records the transmit time. A noReply request (reset or
+// speed-change repeat) succeeds when sent; everything else awaits its
+// response.
 func (r *request) SetSentTime(tSent time.Time) {
 	r.tBase = tSent
 	if r.noReply {
@@ -570,10 +605,15 @@ func (r *request) SetSentTime(tSent time.Time) {
 }
 
 // SetDeadlinePassed times the request out: a dump that went idle is
-// complete, anything else may be resent.
+// complete, a speed change whose repeat delay passed asks for the
+// repeat and keeps awaiting, anything else may be resent.
 func (r *request) SetDeadlinePassed() {
 	if r.state == gpsprot.ConfigRequestMaybeComplete {
 		r.state = gpsprot.ConfigRequestSucceeded
+		return
+	}
+	if r.speed != 0 && !r.repeatDue {
+		r.repeatDue = true
 		return
 	}
 	r.state = gpsprot.ConfigRequestMayResend
@@ -585,6 +625,18 @@ func (r *request) SetWontResend() {
 	r.state = gpsprot.ConfigRequestFailed
 }
 
-// MaybeSpeedChangeSucceeded is a no-op: speed-change confirmation
-// comes from a solicited query at the new rate.
-func (r *request) MaybeSpeedChangeSucceeded(validPacketTime time.Time) {}
+// MaybeSpeedChangeSucceeded confirms a speed change from incidental
+// traffic: once the host has switched rates, a valid packet read
+// speedChangeDelay after the send can only have arrived at the new
+// rate.
+func (r *request) MaybeSpeedChangeSucceeded(validPacketTime time.Time) {
+	if r.speed == 0 || r.state != gpsprot.ConfigRequestAwaitingResponse {
+		return
+	}
+	if validPacketTime.Sub(r.tBase) > speedChangeDelay {
+		if r.onOK != nil {
+			r.onOK()
+		}
+		r.state = gpsprot.ConfigRequestSucceeded
+	}
+}

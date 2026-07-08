@@ -266,10 +266,13 @@ protocol-questions.md:
    instrumentation this bench), RCVRMODE, RTCM, RSID.
 5. MOSTLY ANSWERED. No usable ACK at the old rate: the port
    switches ~2 ms after the request (any OK goes out at the new
-   rate). Speed change is noReply + solicited distinct-name confirm
-   at the new rate (verified both directions, 460800<->115200).
-   Saved-rate-after-SRR and power-cycle persistence remain bounded
-   (no root for USB unbind/rebind).
+   rate). Speed change is a single awaiting write confirmed by its
+   own OK when the host catches it, by incidental traffic at the new
+   rate, or by the OK elicited by a repeat of the same write (the
+   family-standard MaybeSpeedChangeSucceeded + repeat pattern;
+   hardware-verified across 460800/115200/230400, both the caught-OK
+   and lost-OK/repeat paths). Saved-rate-after-SRR and power-cycle
+   persistence remain bounded (no root for USB unbind/rebind).
 6. PART-ANSWERED. SAVEPAR answers bare OK sent alone; pipelining
    SAVEPAR+SRR loses both responses (SRR reboots first) though the
    save completes - always wait for SAVEPAR's OK before SRR. SRR

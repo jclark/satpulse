@@ -64,8 +64,8 @@ func runConfigTarget(t *testing.T, target *gpsprot.ConfigTarget, responses map[s
 // response queue: seq[payload] holds successive response groups,
 // consumed one per request of that payload, taking precedence over the
 // static map while it lasts. It models a payload whose answer changes
-// between reads - the speed change reads PQTMCFGUART,R once at the old
-// rate (query phase) and again at the new rate (confirm).
+// between sends - the speed change's OK lost in the rate switch (empty
+// group) and the OK answering the repeat of the same write.
 func runConfigTargetSeq(t *testing.T, target *gpsprot.ConfigTarget, responses map[string][]string, seq map[string][][]string) (*Configurator, int, []string) {
 	t.Helper()
 	cp := NewConfigProtocol()
@@ -100,6 +100,7 @@ func runConfigTargetSeq(t *testing.T, target *gpsprot.ConfigTarget, responses ma
 				now = now.Add(time.Millisecond)
 				dir.AdvanceTimeTo(now)
 				feed(t, cp, resp, now)
+				dir.ValidPacketReceived(now)
 			}
 		case gpsprot.ConfigActionWaitUntil:
 			now = act.Deadline
@@ -833,43 +834,83 @@ func TestConfiguratorRTCMMSM7(t *testing.T) {
 	}
 }
 
-// TestConfiguratorSpeedChange checks the baud-rate change: a
-// current-port CFGUART write carries the host speed change and gets no
-// acknowledgement (verbatim hardware: no usable ACK at the old rate,
-// the port switches ~2 ms after the request), and a following
-// CFGUART,R query at the new rate confirms the switch and reads back
-// the new rate. The change is ordered before the (absent) NVM phase.
+// TestConfiguratorSpeedChange checks the baud-rate change when the
+// host catches the write's OK at the new rate: the single CFGUART
+// write succeeds on it, no repeat or extra query goes out, and the
+// readback reports the new rate.
 func TestConfiguratorSpeedChange(t *testing.T) {
 	responses := maps.Clone(fakeResponses)
-	delete(responses, "PQTMCFGUART,R") // served sequentially below
+	responses["PQTMCFGUART,W,115200"] = []string{"PQTMCFGUART,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetBaudRate(115200)
+	c, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	writes, reads := 0, 0
+	for _, p := range sent {
+		switch p {
+		case "PQTMCFGUART,W,115200":
+			writes++
+		case "PQTMCFGUART,R":
+			reads++
+		}
+	}
+	if writes != 1 || reads != 1 {
+		t.Errorf("CFGUART writes %d, reads %d, want 1 write and 1 read (query only): %v", writes, reads, sent)
+	}
+	if v, ok := c.ConfigProps().GetBaudRate(); !ok || v != 115200 {
+		t.Errorf("BaudRate readback = %v, %v, want 115200", v, ok)
+	}
+}
+
+// TestConfiguratorSpeedChangeRepeat checks the lost-OK path (verbatim
+// hardware: the port switches ~2 ms after the request, destroying the
+// OK): the write stays awaiting, the same write is repeated after
+// speedChangeRepeatDelay, and the OK elicited by the repeat confirms
+// the original request.
+func TestConfiguratorSpeedChangeRepeat(t *testing.T) {
 	seq := map[string][][]string{
-		"PQTMCFGUART,R": {
-			{"PQTMCFGUART,OK,1,460800,8,0,1,0"}, // query phase: as-found
-			{"PQTMCFGUART,OK,1,115200,8,0,1,0"}, // confirm at the new rate
+		"PQTMCFGUART,W,115200": {
+			{},                  // the write's own OK is lost in the switch
+			{"PQTMCFGUART,OK"}, // the repeat is received intact and answered
 		},
 	}
 	target := &gpsprot.ConfigTarget{}
 	target.Props.SetBaudRate(115200)
-	c, errCount, sent := runConfigTargetSeq(t, target, responses, seq)
+	c, errCount, sent := runConfigTargetSeq(t, target, fakeResponses, seq)
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
-	// The write goes out with no response (noReply) and is immediately
-	// followed by the confirm query re-reading the UART at the new rate.
-	wi := -1
-	for i, p := range sent {
+	writes := 0
+	for _, p := range sent {
 		if p == "PQTMCFGUART,W,115200" {
-			wi = i
+			writes++
 		}
 	}
-	if wi < 0 {
-		t.Fatalf("speed change not sent: %v", sent)
-	}
-	if wi+1 >= len(sent) || sent[wi+1] != "PQTMCFGUART,R" {
-		t.Errorf("confirm query not sent after speed change: %v", sent[wi:])
+	if writes != 2 {
+		t.Errorf("CFGUART writes %d, want 2 (original and repeat): %v", writes, sent)
 	}
 	if v, ok := c.ConfigProps().GetBaudRate(); !ok || v != 115200 {
 		t.Errorf("BaudRate readback = %v, %v, want 115200", v, ok)
+	}
+}
+
+// TestSpeedChangeIncidentalConfirm checks that an incidental valid
+// packet confirms a speed change only once speedChangeDelay has passed
+// since the send.
+func TestSpeedChangeIncidentalConfirm(t *testing.T) {
+	confirmed := false
+	r := &request{sentence: "PQTMCFGUART", speed: 115200, onOK: func() { confirmed = true }}
+	t0 := time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC)
+	r.SetSentTime(t0)
+	r.MaybeSpeedChangeSucceeded(t0.Add(speedChangeDelay / 2))
+	if confirmed || r.state != gpsprot.ConfigRequestAwaitingResponse {
+		t.Errorf("confirmed by packet within speedChangeDelay: state %v", r.state)
+	}
+	r.MaybeSpeedChangeSucceeded(t0.Add(speedChangeDelay + time.Millisecond))
+	if !confirmed || r.state != gpsprot.ConfigRequestSucceeded {
+		t.Errorf("not confirmed: state %v, onOK called %v", r.state, confirmed)
 	}
 }
 
@@ -897,22 +938,15 @@ func TestConfiguratorSpeedNoChange(t *testing.T) {
 }
 
 // TestConfiguratorSpeedChangeSave checks the phase ordering: the speed
-// change and its confirm precede PQTMSAVEPAR, so a save persists the
-// new rate.
+// change precedes PQTMSAVEPAR, so a save persists the new rate.
 func TestConfiguratorSpeedChangeSave(t *testing.T) {
 	responses := maps.Clone(fakeResponses)
-	delete(responses, "PQTMCFGUART,R")
+	responses["PQTMCFGUART,W,115200"] = []string{"PQTMCFGUART,OK"}
 	responses["PQTMSAVEPAR"] = []string{"PQTMSAVEPAR,OK"}
-	seq := map[string][][]string{
-		"PQTMCFGUART,R": {
-			{"PQTMCFGUART,OK,1,460800,8,0,1,0"},
-			{"PQTMCFGUART,OK,1,115200,8,0,1,0"},
-		},
-	}
 	target := &gpsprot.ConfigTarget{}
 	target.Props.SetBaudRate(115200)
 	target.Opts.Save = gpsprot.SaveAll
-	_, errCount, sent := runConfigTargetSeq(t, target, responses, seq)
+	_, errCount, sent := runConfigTarget(t, target, responses)
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
