@@ -2,6 +2,8 @@ package msgfile
 
 import (
 	"errors"
+
+	"github.com/jclark/satpulse/gps/lib/ascii"
 )
 
 // LineMsg represents a [[line]] entry or [default.line].
@@ -71,7 +73,7 @@ func lineDataMatch(eol string) func(string) bool {
 		}
 		body := data[:len(data)-len(eol)]
 		for i := range len(body) {
-			if body[i] < 0x20 || body[i] > 0x7E {
+			if !ascii.IsPrint(body[i]) {
 				return false
 			}
 		}

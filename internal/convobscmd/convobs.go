@@ -23,6 +23,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/rinex"
 	"github.com/jclark/satpulse/gps/lib/rnxrtcm"
 	"github.com/jclark/satpulse/gps/lib/rnxubx"
@@ -1251,12 +1252,12 @@ func dateFromFilename(path string) (time.Time, error) {
 func digitRuns(s string) []string {
 	var runs []string
 	for i := 0; i < len(s); {
-		if !isDigit(s[i]) {
+		if !ascii.IsDigit(s[i]) {
 			i++
 			continue
 		}
 		j := i + 1
-		for j < len(s) && isDigit(s[j]) {
+		for j < len(s) && ascii.IsDigit(s[j]) {
 			j++
 		}
 		runs = append(runs, s[i:j])
@@ -1271,8 +1272,4 @@ func parseFilenameDateRunPrefix(s string) (time.Time, bool) {
 	}
 	t, err := time.Parse("20060102", s[:8])
 	return t, err == nil
-}
-
-func isDigit(b byte) bool {
-	return b >= '0' && b <= '9'
 }

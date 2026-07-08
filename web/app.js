@@ -555,6 +555,7 @@
             const [x3, y3] = toXY(sv.lookAngles.azimuth, sv.lookAngles.elevation);
             const usedValid = satellites.some((s3) => s3.used === true);
             const unused = usedValid && !sv.used;
+            const fade = sv.signals && sv.signals.length > 0 ? opacityClassFor(sv.signals[0].cn0) : "";
             return /* @__PURE__ */ u3(
               "text",
               {
@@ -562,7 +563,7 @@
                 y: y3,
                 "text-anchor": "middle",
                 "dominant-baseline": "middle",
-                class: `text-[3px] font-bold ${colorClassFor(sv.id)} ${opacityClassFor(sv.signals[0].cn0)}`,
+                class: `text-[3px] font-bold ${colorClassFor(sv.id)} ${fade}`,
                 children: [
                   unused ? /* @__PURE__ */ u3("tspan", { class: "opacity-0", children: "-" }) : "",
                   sv.id,
@@ -577,12 +578,10 @@
     );
   }
   function simplifySignals(satellites) {
-    return satellites.map((sv) => {
-      return {
-        ...sv,
-        signals: [{ cn0: signalsCN0(sv.signals) }]
-      };
-    }).filter((sv) => sv.signals[0].cn0 > 0);
+    return satellites.map((sv) => ({
+      ...sv,
+      signals: sv.signals && sv.signals.length > 0 ? [{ cn0: signalsCN0(sv.signals) }] : []
+    }));
   }
   function signalsCN0(signals) {
     if (!signals) {
@@ -686,7 +685,7 @@
             `grid-${value}`
           )),
           satellites.map((sv, i4) => {
-            const cno = Math.min(sv.signals[0].cn0, MAX_CNO);
+            const cno = Math.min(sv.signals?.[0]?.cn0 ?? 0, MAX_CNO);
             const barWidth = cno / MAX_CNO * CHART_WIDTH;
             return /* @__PURE__ */ u3("g", { transform: `translate(0, ${i4 * spacedBarHeight})`, children: [
               /* @__PURE__ */ u3(
@@ -770,9 +769,10 @@
       };
     }, []);
     const svs = events.satellites ? simplifySignals(events.satellites.svs) : [];
+    const signalSVs = svs.filter((sv) => sv.signals && sv.signals.length > 0);
     return /* @__PURE__ */ u3(CardsElement, { children: [
       events.satellites && haveLookAngles && /* @__PURE__ */ u3(SkyViewCard, { svs }),
-      events.satellites && /* @__PURE__ */ u3(SignalGraphCard, { svs }),
+      events.satellites && signalSVs.length > 0 && /* @__PURE__ */ u3(SignalGraphCard, { svs: signalSVs }),
       events.time && /* @__PURE__ */ u3(PropertyCard, { title: "Current GPS Time", data: events.time, format: timeFormat }),
       phc && /* @__PURE__ */ u3(PropertyCard, { title: "PTP Hardware Clock", data: phc, format: phcFormat }),
       events.receiver && /* @__PURE__ */ u3(PropertyCard, { title: "Receiver", data: events.receiver, format: receiverFormat }),

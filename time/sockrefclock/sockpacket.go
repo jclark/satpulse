@@ -1,3 +1,5 @@
+//go:build !windows
+
 package sockrefclock
 
 import (
@@ -8,16 +10,6 @@ import (
 )
 
 const sockMagic = 0x534f434b
-
-// Leap is the leap-second status field of a SOCK sample, using the
-// values defined by chrony's refclock SOCK protocol.
-type Leap int32
-
-const (
-	LeapNone Leap = iota
-	LeapInsert
-	LeapDelete
-)
 
 type sockSample struct {
 	tv     unix.Timeval // System time of the measurement

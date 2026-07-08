@@ -3,11 +3,14 @@
 import common
 from scenarios import stream
 
-INPUT = "pty"
 CAPTURE_WRITES = True
 PACKET_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon.jsonl"
 PULL_SOURCE_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon-msm4-115200.jsonl"
-FACTOR = 10
+# A modest FACTOR keeps the pull stream slow enough that the pty drain never
+# backpressures the daemon into pruning a stale same-type correction, so the
+# exact-match check is not flaky on slower CI hosts. nmeaSendInterval = 1 still
+# yields many GGA keepalives over the longer replay, past the periodic check.
+FACTOR = 3
 
 
 def run(ctx: common.SmokeContext) -> None:

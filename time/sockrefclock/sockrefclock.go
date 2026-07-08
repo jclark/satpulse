@@ -8,6 +8,16 @@ import (
 	"github.com/jclark/satpulse/time/lib/ntime"
 )
 
+// Leap is the leap-second status field of a SOCK sample, using the
+// values defined by chrony's refclock SOCK protocol.
+type Leap int32
+
+const (
+	LeapNone Leap = iota
+	LeapInsert
+	LeapDelete
+)
+
 type SockRefClock struct {
 	conn       *net.UnixConn
 	remoteAddr *net.UnixAddr
