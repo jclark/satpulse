@@ -169,6 +169,14 @@ func TestConfigWarnings(t *testing.T) {
 	if ws := configWarnings(target, rslt); len(ws) != 1 || !strings.Contains(ws[0], "positioning mode") {
 		t.Errorf("mode skip warnings = %v", ws)
 	}
+	// A skipped explicit mode request warns when the mode kinds differ.
+	target = gpsprot.NewConfigTarget()
+	target.Props.SetMode(gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeNone})
+	rslt = newRslt(gpsprot.ConfigSupportModeOnlyWithReset, 0, nil)
+	rslt.ConfigProps.SetMode(gpsprot.Mode{Static: false})
+	if ws := configWarnings(target, rslt); len(ws) != 1 || !strings.Contains(ws[0], "positioning mode") {
+		t.Errorf("explicit mode skip warnings = %v", ws)
+	}
 	// An LLH fixed-position request realized as ECEF is satisfied.
 	target = gpsprot.NewConfigTarget()
 	target.Props.SetMode(gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeLLH})
