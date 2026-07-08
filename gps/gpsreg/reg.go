@@ -2,6 +2,7 @@ package gpsreg
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -168,6 +169,12 @@ func (v *Vendor) UnmarshalText(data []byte) error {
 	var err error
 	*v, err = ParseVendor(string(data))
 	return err
+}
+
+// VendorNames returns the canonical vendor names accepted by ParseVendor,
+// for presenting a vendor choice in a UI.
+func VendorNames() []string {
+	return slices.Clone(vendorNames)
 }
 
 // CreatePacketProcessors creates packet processors for all registered protocols.
