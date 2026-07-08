@@ -21,10 +21,15 @@ function toXY(az: number, el: number): [number, number] {
     return [RADIUS + r * Math.cos(rad), RADIUS + r * Math.sin(rad)];
 }
 
+// simplifySignals collapses each satellite's signals to a single
+// representative CN0 for display. A satellite with no signal-strength info
+// keeps an empty signals array, so callers can tell "no strength reported"
+// apart from a reported strength of zero.
 function simplifySignals(satellites: SVInfo[]): SVInfo[] {
-    return satellites
-        .map(sv => ({...sv, signals: [{cn0: signalsCN0(sv.signals)}]}))
-        .filter(sv => sv.signals[0].cn0 > 0);
+    return satellites.map(sv => ({
+        ...sv,
+        signals: sv.signals && sv.signals.length > 0 ? [{cn0: signalsCN0(sv.signals)}] : [],
+    }));
 }
 
 function signalsCN0(signals: SignalInfo[]): number {
@@ -92,7 +97,7 @@ function gnssKey(svid: string): GnssKey {
 function tooltipText(sv: SVInfo): string {
     const az = sv.lookAngles ? sv.lookAngles.azimuth.toFixed(1) + '\u00b0' : '?';
     const el = sv.lookAngles ? sv.lookAngles.elevation.toFixed(1) + '\u00b0' : '?';
-    const cn0 = sv.signals[0].cn0.toFixed(1);
+    const cn0 = sv.signals && sv.signals.length > 0 ? sv.signals[0].cn0.toFixed(1) : '?';
     const used = sv.used ? 'used' : 'unused';
     return `${sv.id}  az ${az}  el ${el}  CN0 ${cn0}  ${used}`;
 }
@@ -169,7 +174,9 @@ export function SkyViewPanel({msg}: Props) {
                     const [x, y] = toXY(sv.lookAngles.azimuth, sv.lookAngles.elevation);
                     const key = gnssKey(sv.id);
                     const unused = usedValid && !sv.used;
-                    const opacity = opacityClassFor(sv.signals[0].cn0);
+                    // Fade by signal strength when it is known; a satellite with no
+                    // signal-strength info gets no fade class, so it stays fully visible.
+                    const opacity = sv.signals && sv.signals.length > 0 ? opacityClassFor(sv.signals[0].cn0) : '';
                     return (
                         <g key={sv.id} class={opacity}>
                             <circle cx={x} cy={y} r={DOT_RADIUS} class={GNSS_FILL[key]}>

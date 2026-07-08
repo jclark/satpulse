@@ -1,6 +1,6 @@
 import {h} from 'preact';
 import {useMemo, useState} from 'preact/hooks';
-import type {SatellitesMsg, SVInfo, SignalInfo} from './app';
+import type {SatellitesMsg, SVInfo} from './app';
 
 interface Props {
     msg: SatellitesMsg | null;
@@ -76,7 +76,7 @@ function buildRows(msg: SatellitesMsg | null): Row[] {
         const az = sv.lookAngles ? sv.lookAngles.azimuth : null;
         const el = sv.lookAngles ? sv.lookAngles.elevation : null;
         const gnss = gnssKey(sv.id);
-        for (const sig of sv.signals as SignalInfo[]) {
+        for (const sig of sv.signals ?? []) {
             const used = usedFromSignal ? !!sig.used : usedFromSV ? !!sv.used : false;
             rows.push({
                 svid: sv.id,
