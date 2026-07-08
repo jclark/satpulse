@@ -4,7 +4,8 @@
   "type": "module",
   "workspaces": [
     "packages/dashboard",
-    "packages/workbench"
+    "packages/workbench",
+    "packages/satpulsewb"
   ],
   "dependencies": {
     "@satpulse/gps": "file:../gps/ts"
@@ -14,8 +15,9 @@
   },
   "scripts": {
     "dev": "npm run dev --workspace=packages/dashboard",
-    "build": "npm run build --workspace=packages/dashboard",
+    "build": "npm run build --workspace=packages/dashboard && npm run build --workspace=packages/satpulsewb",
     "embed": "npm run build --workspace=packages/dashboard -- --outDir ../../../time/internal/web/dist --emptyOutDir",
+    "embed-workbench": "npm run build --workspace=packages/satpulsewb -- --outDir ../../../cmd/satpulsewb/dist --emptyOutDir",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }
