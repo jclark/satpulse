@@ -14,8 +14,8 @@ Branch: `desktop-monitor-ui`.
 
 - Sky view rewritten to use dots (filled = used, filled-with-hole = unused), color per GNSS, opacity from CN0.
 - GNSS legend extracted to a separate component (`SkyViewLegend`) sized to match plot dot size via a shared `--sky-unit-px` CSS variable written from the sky view's ResizeObserver.
-- Default window height bumped to 900 in [main.go](../main.go).
-- Row 2 prototype in [app.tsx](../frontend/src/app.tsx) uses a placeholder X-marked square in place of the map (because `MapPanel` is fixed at 256x256 and cannot fluidly fill its container).
+- Default window height bumped to 900 in `main.go`.
+- Row 2 prototype in [app.tsx](../src/app.tsx) uses a placeholder X-marked square in place of the map (because `MapPanel` is fixed at 256x256 and cannot fluidly fill its container).
 - Clock panel temporarily moved to its own row alongside `MapPanel` so we can experiment with row 2 in isolation.
 
 These prototypes are throwaway scaffolding, not the final layout. The blocking issues that prevent the real layout are the next two stages.
@@ -24,7 +24,7 @@ These prototypes are throwaway scaffolding, not the final layout. The blocking i
 
 ### Stage 1: Make `MapPanel` fluidly resize
 
-`MapPanel` ([map-panel.tsx](../frontend/src/map-panel.tsx)) currently has `SIZE = 256` hardcoded. Tile math, viewport pixel positions, and the position-marker SVG all assume that size. The container is `width: 256px; height: 256px;` inline-styled, so it cannot grow to fill its parent.
+`MapPanel` ([map-panel.tsx](../src/map-panel.tsx)) currently has `SIZE = 256` hardcoded. Tile math, viewport pixel positions, and the position-marker SVG all assume that size. The container is `width: 256px; height: 256px;` inline-styled, so it cannot grow to fill its parent.
 
 Make it size to its container:
 
@@ -39,7 +39,7 @@ Once this is done, the row 2 placeholder can be replaced with the real `MapPanel
 
 ### Stage 2: Make `ClockPanel` fluidly resize
 
-`ClockPanel` ([clock-panel.tsx](../frontend/src/clock-panel.tsx)) renders the DSEG7 web font as plain HTML text with hardcoded `fontSize: 72px` (HH:MM), `26px` (date), `36px` (seconds + tz). Container is fixed at `W = 320, H = 256`.
+`ClockPanel` ([clock-panel.tsx](../src/clock-panel.tsx)) renders the DSEG7 web font as plain HTML text with hardcoded `fontSize: 72px` (HH:MM), `26px` (date), `36px` (seconds + tz). Container is fixed at `W = 320, H = 256`.
 
 Make it scale to its container:
 
@@ -60,7 +60,7 @@ New component `SummaryPanel` ([nav-summary.md](nav-summary.md) defines the conte
 
 ### Stage 4: Compose row 1 and row 2
 
-Restructure the Monitor tab in [app.tsx](../frontend/src/app.tsx):
+Restructure the Monitor tab in [app.tsx](../src/app.tsx):
 
 - Row 1: clock (left) + summary (right), fixed height, both fill that height.
 - Row 2: map (square, flex-1) + sky view (square, flex-1) + legend (auto width).
