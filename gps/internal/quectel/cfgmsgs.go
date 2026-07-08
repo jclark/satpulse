@@ -192,7 +192,11 @@ func (c *Configurator) msgRateSet(name string, on bool) *request {
 				c.found.msgRates = make(map[string]*qtmmsg.LstMsgLine)
 			}
 			if on {
-				c.found.msgRates[name] = &qtmmsg.LstMsgLine{PortType: 1, PortID: c.found.uart.Index, MsgName: name, Rate: 1}
+				var port uint8 // unknown if the CFGUART query went unanswered
+				if c.found.uart != nil {
+					port = c.found.uart.Index
+				}
+				c.found.msgRates[name] = &qtmmsg.LstMsgLine{PortType: 1, PortID: port, MsgName: name, Rate: 1}
 			} else {
 				delete(c.found.msgRates, name)
 			}

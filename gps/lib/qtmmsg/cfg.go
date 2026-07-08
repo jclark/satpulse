@@ -282,7 +282,7 @@ const (
 // never appears in this tuple; PQTMSVINSTATUS carries it.
 type CfgSvin struct {
 	Mode       uint8  // 0=disable, 1=Survey-in, 2=Fixed (ECEF)
-	CfgCnt     uint32 // s, minimum positioning times in Survey-in mode, 0-86400
+	CfgCnt     uint32 // minimum positioning times in Survey-in mode, 0-86400; seconds in practice (spec gives no unit)
 	AccLimit3D Fixed1 // m, 3D accuracy limit, 0.0 = no limit
 	ECEFX      Fixed4 // m, WGS84 ECEF X
 	ECEFY      Fixed4 // m, WGS84 ECEF Y
@@ -368,8 +368,8 @@ type CfgRtcm struct {
 	MSMType     uint8  // 3-7 = MSM3-MSM7
 	MSMMode     uint8  // always 0 (no output when no satellite searched)
 	MSMElevThd  Fixed1 // degrees, [-90.0, 90.0]; -90.0 = no limit
-	Reserved0   string // always "07"
-	Reserved1   string // always "06"
+	Reserved0   string // reserved, default "07"
+	Reserved1   string // reserved, default "06"
 	EPHMode     uint8  // 0=disable, 1=on update, 2=update+interval, 3=each epoch
 	EPHInterval uint32 // s, 0-7200, used when EPHMode=2
 }
@@ -397,7 +397,7 @@ type Verno struct {
 // the payload is not a PQTMVERNO data response.
 func ParseVerno(payload string) (*Verno, error) {
 	name, rest, hasRest := strings.Cut(payload, ",")
-	if name != "PQTMVERNO" || !hasRest {
+	if name != "PQTMVERNO" || !hasRest || strings.HasPrefix(rest, "ERROR,") {
 		return nil, nil
 	}
 	v := &Verno{}

@@ -178,8 +178,7 @@ Requires **\-\-gnss**.
 On some receivers, signal changes take effect only after the configuration is saved to non-volatile
 memory and the receiver is reset; such receivers show `signalOnlyWithReset` in the `Supports:` list.
 On these receivers the signal options above are performed only when **\-\-save** is combined with
-**\-\-reload** or **\-\-reset**, and are otherwise skipped, with a warning when the skip leaves the
-receiver differing from the request.
+**\-\-reload** or **\-\-reset**, and are otherwise skipped with a warning.
 
 **\-\-min\-elev** *degrees*
 : Set the minimum elevation angle in degrees for satellites to be used. Satellites below this angle above the horizon are ignored.

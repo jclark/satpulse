@@ -267,6 +267,9 @@ func TestParseVerno(t *testing.T) {
 	if got, err := ParseVerno("PQTMCFGPPS,OK,1,1,100,1,1,0"); got != nil || err != nil {
 		t.Errorf("non-VERNO: got (%+v, %v), want (nil, nil)", got, err)
 	}
+	if got, err := ParseVerno("PQTMVERNO,ERROR,2"); got != nil || err != nil {
+		t.Errorf("ERROR form: got (%+v, %v), want (nil, nil)", got, err)
+	}
 }
 
 func TestParseUniqID(t *testing.T) {
@@ -333,8 +336,7 @@ func TestParseLstMsg(t *testing.T) {
 }
 
 // TestCfgSentences audits the registration list: every registered
-// sentence constructs a value whose Sentence matches its key, and
-// round-trips through EncodeWrite and ParseCfgResponse without error.
+// sentence constructs a value whose Sentence matches its key.
 func TestCfgSentences(t *testing.T) {
 	if len(cfgMap) == 0 {
 		t.Fatal("no CFG messages registered")
