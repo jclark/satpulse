@@ -1,5 +1,13 @@
 # Desktop app implementation plan
 
+These plans were imported from the desktop app's `desktop/plan/` when its
+frontend moved here to `webui/packages/workbench`. References to
+`desktop/...` paths in these documents are historical (pre-import): the
+frontend they describe is now this package's `src/`, the desktop backend
+(`desktop/app.go`) is extracted to `gps/app/session` in a later phase, and
+the desktop shell remains on the `desktop-gui` branch. The original tree
+is reachable from the `desktop-gui-import` tag.
+
 ## Planning -- to do
 Needs implementation design before work can begin:
 - [live-messages.md](live-messages.md) - Relocate to Packets tab (current plan targets Monitor tab; see [ui-monitor-tab.md](ui-monitor-tab.md))
