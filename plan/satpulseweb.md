@@ -58,10 +58,12 @@ always-on, on-device admin surface. The intended model there is
 declarative: the web UI edits persistent config (TOML as the single
 source of truth) and applies by service restart, reusing the daemon's
 existing startup config phase as the apply mechanism. The hedges this
-plan takes for that future: the UI-to-backend contract is
-transport-neutral (a third, in-daemon backend can be added behind the
-same frontend interface), capability gating comes from the wire
-contract (`ConfigSupport`, vendor), and the shared components use
+plan takes for that future: the UI-to-backend contract splits a
+universal core from an optional connection-management capability,
+so a third, in-daemon backend -- which owns no port and may apply
+declaratively -- can be added behind the same frontend interface
+without touching the components; capability gating comes from the
+wire contract (`ConfigSupport`, vendor), and the shared components use
 semantic design tokens (#284) so a vendor can re-skin without
 forking.
 
@@ -364,12 +366,23 @@ native dialog for ad-hoc files.
 Builds on the #283 workspace. The desktop frontend's components move
 into the workspace verbatim in phase 1 (below); this plan adds:
 
-- A transport interface for the UI (read-config, apply-config,
-  send-msg-file, snapshots, event subscription) with two
-  implementations: the existing generated wailsjs bindings, and
-  fetch+SSE. This overturns
-  webui/packages/workbench/plan/shared-webui.md's assumption that
-  the config panel stays desktop-specific; that file is corrected
+- A transport interface for the UI, shaped so a third backend can be
+  retrofitted later without touching the components: it must not
+  assume exclusive ownership of a serial port. Split it into a
+  universal core -- snapshots, config read/apply, message-file send,
+  event subscription -- that the config panel and all tabs depend
+  only on, and an optional connection-management capability --
+  connect/disconnect, port listing, vendor selection, and the
+  connecting/reconnecting connection states -- implemented only by
+  the direct-serial and proxy backends. The two implementations here
+  are the existing generated wailsjs bindings (desktop) and fetch+SSE
+  (satpulseweb); a later in-daemon backend (the appliance admin
+  surface under Relationship to satpulsed) has a permanently
+  connected receiver and no connection management, and its apply may
+  be declarative (edit persistent config, apply by service restart)
+  rather than an imperative Configure run with live progress. This
+  overturns webui/packages/workbench/plan/shared-webui.md's assumption
+  that the config panel stays desktop-specific; that file is corrected
   in phase 5.
 - A satpulseweb entry package in the workspace (index.html, token
   handling, fetch/SSE transport wiring), whose Vite build output is
