@@ -361,8 +361,8 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
   This supersedes the earlier "no browser auto-open" decision, which
   assumed the primary flow was ssh to a headless box; macOS is now
   the lead desktop platform.
-- `--socket` and `--tcp` are deferred to phase 4 (see Transports
-  and the Delivery section); `--msg-dir` arrives with phase 4's
+- `--socket` and `--tcp` are deferred to phase 5 (see Transports
+  and the Delivery section); `--msg-dir` arrives with phase 5's
   message-file PR.
 
 ### HTTP API
@@ -429,7 +429,7 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   rather than an imperative Configure run with live progress. This
   overturns webui/packages/workbench/plan/shared-webui.md's assumption
   that the config panel stays desktop-specific; that file is corrected
-  in phase 6.
+  in phase 8.
 - A satpulsewb entry package in the workspace (index.html, token
   handling, fetch/SSE transport wiring), whose Vite build output is
   what `cmd/satpulsewb` embeds.
@@ -455,7 +455,7 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   key-detection flush and the satellite display lags one cycle;
   configuration is unaffected.
 
-Serial ships in phase 3; socket and TCP land together in phase 4.
+Serial ships in phase 3; socket and TCP land together in phase 5.
 The session side of socket is already done (SocketOpener,
 reset gating), but the UI has no capability gating for proxy
 connections yet -- reset-class controls must be hidden or disabled,
@@ -567,7 +567,7 @@ resurrected original. Record the provenance ("derived from
 desktop/app.go") in the commit message, since the delete/re-add
 breaks `git log --follow`. Includes
 the session unit tests and internals.md entries. The desktop app is
-not rewired in this phase; that is phase 6.
+not rewired in this phase; that is phase 8.
 
 ### Phase 3: cmd/satpulsewb (one PR)
 
@@ -576,11 +576,33 @@ bridge) plus the fetch/SSE transport implementation and entry
 package in the workspace, carrying the whole existing UI. Every tab
 transfers as-is -- the native msg-file dialog is the only frontend
 call with no web counterpart -- so config, monitor, packets, and
-corrections all land here; the Messages tab is hidden until phase 4.
+corrections all land here; the Messages tab is hidden until phase 5.
 Serial transport only (see Transports). This alone is a usable
 tool, so the NEWS.md entry and man page ride this PR.
 
-### Phase 4: message files and proxy transports (two PRs)
+### Phase 4: replay smoke tests (one PR)
+
+Black-box smoke tests of the satpulsewb binary, feasible as soon as
+phase 3 exists: replaying a packet log through a FIFO with
+`satpulsetool pack --realtime` drives the whole monitor path with no
+hardware, because gpscfg skips probing on a read-only port --
+connect succeeds and passive detection takes over. The tests are a
+sibling runner in `smoketest/` (like `system.py`: its own lifecycle,
+sharing `common.py` and the platform transport code), not a scenario
+family in `run.py`, whose per-scenario lifecycle is satpulsed-shaped
+(a rendered toml template, config-derived listeners and peers).
+Checks at smoketest depth: startup and the printed URL/token, auth
+enforcement and the `-L`/`-T` token modes, snapshot endpoints
+populating as the replay flows, SSE delivery and priming,
+packet-stream gating driven by a scripted SSE client, auto-open
+gating via environment manipulation, clean shutdown. Includes
+recording a purpose-built F9P fixture (the message set the workbench
+displays, long enough at the chosen replay factor to outlast the
+slowest check); the existing multi-vendor logs under
+`gps/testdata/packets/` serve as secondary fixtures, since detection
+is passive.
+
+### Phase 5: message files and proxy transports (two PRs)
 
 PR 1: message-file loading, the one piece of genuinely new UI: the
 library and upload endpoints (including the path-traversal
@@ -593,16 +615,29 @@ in gpsio), plus the UI capability gating for proxy connections --
 exposing socket-ness through the wire contract and hiding or
 disabling reset-class controls.
 
-### Phase 5: libc-free Linux enumeration (one PR)
+### Phase 6: Playwright browser tests (one PR)
+
+DOM-level journeys in a real browser, against the same launch and
+replay fixtures as phase 4: a small `@playwright/test` suite in the
+webui workspace whose setup starts satpulsewb on a FIFO replay.
+Journeys: the SPA boots and the token is consumed and stripped from
+the URL bar; satellites and position render and advance; the Packets
+tab starts and stops the packet stream; a second tab late-joins
+consistent from the event cache; the stale-token notice; re-priming
+after a server restart. After phase 5 so a Messages tab journey can
+ride along. Kept to a handful of shallow journeys: wire-level
+assertions stay in phase 4's runner, which needs no browser or npm.
+
+### Phase 7: libc-free Linux enumeration (one PR)
 
 Hand-rolled pure-Go Linux implementation in `gps/lib/serialenum` (see
 Design: serial enumeration); drop go.bug.st from the Linux build;
 verify the satpulsewb Linux binary builds with CGO_ENABLED=0 and has
 no dynamic dependencies.
 
-### Phase 6: rework desktop-gui on top (branch work, no master PR)
+### Phase 8: rework desktop-gui on top (branch work, no master PR)
 
-On the desktop-gui branch: merge the tip of the stack (the phase-5
+On the desktop-gui branch: merge the tip of the stack (the phase-7
 branch, or master once the stack has landed), then:
 
 - delete the branch's local copies of the frontend components in
@@ -620,6 +655,20 @@ branch, or master once the stack has landed), then:
 After this phase, once the stack has landed on master, the branch's
 delta over master is small: one module directory containing a thin
 shell.
+
+### Phase 9: simulator config tests (one PR)
+
+Extends both harnesses from the monitor path to the config path,
+using the u-blox receiver simulator (#362,
+[ublox-sim.md](ublox-sim.md)), which is developed in parallel on its
+own branch off master. The transport becomes a pty with the
+simulator behind it; the phase-4 runner and phase-6 journeys gain
+config checks: probe identifies the personality, the config panel
+populates from ReadConfig, an apply round-trips and a re-read shows
+the change, and enabling a message makes it appear in the packet
+stream. Not part of the stacked-PR series: it needs the simulator on
+master, so it runs after the stack and the simulator have both
+landed.
 
 ## Open decisions
 
