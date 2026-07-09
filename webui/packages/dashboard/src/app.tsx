@@ -1,3 +1,4 @@
+import './index.css';
 import { render } from 'preact';
 import { Dashboard, EventSourceContext } from './dashboard';
 

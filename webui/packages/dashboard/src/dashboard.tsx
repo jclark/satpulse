@@ -1,7 +1,8 @@
 import { createContext, FunctionComponent } from 'preact';
 import { useContext, useEffect, useState } from 'preact/hooks';
 import { formatUTCLocal, formatNanoseconds, formatTAI, formatDateTime } from './timefmt';
-import { SkyView, SVInfo, SignalGraph, simplifySignals } from './svg';
+import { SkyView, SignalGraph, simplifySignals } from './svg';
+import type { SVInfo } from '@satpulse/gps/gpsprot';
 
 export const EventSourceContext = createContext<EventSource | null>(null);
 

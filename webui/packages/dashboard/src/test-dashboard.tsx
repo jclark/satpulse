@@ -1,6 +1,7 @@
+import './index.css';
 import { render } from 'preact';
 import { Dashboard, EventSourceContext } from './dashboard';
-import { SVInfo } from './svg';
+import type { SVInfo } from '@satpulse/gps/gpsprot';
 
 // Local minimal EventSource interface just for test
 interface MinimalEventSource {
