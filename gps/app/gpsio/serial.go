@@ -23,13 +23,14 @@ import (
 // Close will wait for any in-progress reads or writes to complete,
 // before restoring serial settings and closing the underlying file descriptor.
 type SerialConn struct {
-	file      ioFile
-	kind      term.DevKind
-	mu        sync.Mutex
-	stopped   bool // protected by mu
-	readLock  chan struct{}
-	writeLock chan struct{}
-	pktLog    *PacketLog
+	file         ioFile
+	kind         term.DevKind
+	mu           sync.Mutex
+	stopped      bool // protected by mu
+	readLock     chan struct{}
+	writeLock    chan struct{}
+	pktLog       *PacketLog
+	lastWriteLen int // bytes of the most recent write; read by Drain
 }
 
 // ioFile is the minimal file-like interface SerialConn needs.
@@ -174,19 +175,19 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 	}
 	n, err := c.file.Write(p)
 	if err == nil {
+		c.lastWriteLen = n
 		if speed != 0 {
 			if t := c.term(); t != nil {
-				// If it's a UART, then the TCSETSW flag should in theory take care of delaying the speed change
+				// If it's a UART, then the drain in Change should in theory take care of delaying the speed change
 				// until the data as been transmitted.
 				// But I found that on the Raspberry Pi, which uses a PL011 UART, it doesn't work without a little delay,
 				// for reasons I don't understand.
-				// With something like a USB-serial converter, it seems unlikely that the TCSETW flag will work,
+				// With something like a USB-serial converter, it seems unlikely that the drain will work,
 				// since the kernel does not have access to the UART buffer to determine when it is empty.
 				// So in this case, we increase the delay to ensure the data is transmitted before we change the speed,
 				// since that is the most important thing.
 				// We ideally want get the ACK back, which means we need to change the speed promptly.
 				// But we can recover from a lost ACK.
-				const minDelay = time.Millisecond
 				delay := minDelay
 				if c.kind != term.DevUART {
 					delay += t.TransmitTime(n)
@@ -269,7 +270,30 @@ func (c *SerialConn) Close() error {
 	return closeErr
 }
 
+// Drain waits for pending output to be transmitted. satpulsetool gps calls it
+// before Close so a final no-response command (e.g. a reset) reaches the
+// receiver before the port settings are restored and the port is closed. It
+// mirrors WriteThenChangeSpeed: the drain ioctl for all TTYs, plus the
+// computed transmit time for non-UART devices, whose adapter buffer the kernel
+// cannot observe.
+func (c *SerialConn) Drain() error {
+	t := c.term()
+	if t == nil {
+		return nil
+	}
+	delay := minDelay
+	if c.kind != term.DevUART {
+		delay += t.TransmitTime(c.lastWriteLen)
+	}
+	time.Sleep(delay)
+	return t.Drain()
+}
+
 const readTimeout = time.Millisecond * 100
+
+// minDelay is the minimum settle time before restoring or changing serial
+// settings, on top of the computed transmit time for non-UART devices.
+const minDelay = time.Millisecond
 
 func openTerm(path string, speed int) (*term.Term, error) {
 	opts := []term.AttrSetter{
