@@ -235,7 +235,7 @@ func TestValsetLayersAndValdel(t *testing.T) {
 	}
 	// Group wildcard delete from BBR only.
 	del = &ubxbin.CfgValdel{
-		CfgValdelFixed: ubxbin.CfgValdelFixed{Layers: valdelBBR},
+		CfgValdelFixed: ubxbin.CfgValdelFixed{Layers: ubxbin.CfgValdelLayerBBR},
 		CfgData:        ucv.MarshalKeys([]ucv.Key{ucv.Key(0x2091ffff)}),
 	}
 	if !db.valdel(del) {
@@ -271,7 +271,7 @@ func TestTooManyItems(t *testing.T) {
 		t.Errorf("valset with 65 items not NAKed")
 	}
 	del := &ubxbin.CfgValdel{
-		CfgValdelFixed: ubxbin.CfgValdelFixed{Layers: valdelBBR},
+		CfgValdelFixed: ubxbin.CfgValdelFixed{Layers: ubxbin.CfgValdelLayerBBR},
 		CfgData:        ucv.MarshalKeys(keys),
 	}
 	if db.valdel(del) {

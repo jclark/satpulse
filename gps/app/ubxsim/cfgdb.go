@@ -14,13 +14,6 @@ import (
 // polls, from the interface description.
 const maxItems = 64
 
-// VALDEL layers bitfield from the interface description: bit 1 is BBR,
-// bit 2 is Flash. (These differ from ubxbin.CfgValdelLayer.)
-const (
-	valdelBBR   = 0x02
-	valdelFlash = 0x04
-)
-
 // cfgDB is the layered configuration database. The Default layer holds a
 // value for every key the personality knows, so it doubles as the key
 // inventory; RAM is seeded from it at construction, the way a receiver
@@ -138,7 +131,7 @@ func (db *cfgDB) valdel(m *ubxbin.CfgValdel) bool {
 	if err != nil || len(keys) > maxItems {
 		return false
 	}
-	if m.Layers&(valdelBBR|valdelFlash) == 0 {
+	if m.Layers&(ubxbin.CfgValdelLayerBBR|ubxbin.CfgValdelLayerFlash) == 0 {
 		return false
 	}
 	expanded, ok := db.expandKeys(keys)
@@ -146,10 +139,10 @@ func (db *cfgDB) valdel(m *ubxbin.CfgValdel) bool {
 		return false
 	}
 	for _, k := range expanded {
-		if m.Layers&valdelBBR != 0 {
+		if m.Layers&ubxbin.CfgValdelLayerBBR != 0 {
 			delete(db.bbr, k)
 		}
-		if m.Layers&valdelFlash != 0 {
+		if m.Layers&ubxbin.CfgValdelLayerFlash != 0 {
 			delete(db.flh, k)
 		}
 	}
