@@ -30,7 +30,7 @@ import (
 const defaultPort = 15754
 
 const summary = `[-h|--help] [-L|--listen host:port] [-T|--token]
-       [-d|--serial-device path [-s|--device-speed bps] [--vendor name]]
+       [-d|--serial-device path [-s|--device-speed bps]] [--vendor name]
        [--packet-log path]`
 
 type flagVars struct {
@@ -98,13 +98,8 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 	if flags.Lookup("device-speed").Changed && v.speed == 0 {
 		return nil, usage, fmt.Errorf("0 is not a valid value for --device-speed")
 	}
-	if v.device == "" {
-		if flags.Lookup("device-speed").Changed {
-			return nil, usage, fmt.Errorf("--device-speed requires --serial-device")
-		}
-		if vendorStr != "" {
-			return nil, usage, fmt.Errorf("--vendor requires --serial-device")
-		}
+	if v.device == "" && flags.Lookup("device-speed").Changed {
+		return nil, usage, fmt.Errorf("--device-speed requires --serial-device")
 	}
 	var err error
 	if v.vendor, err = gpsreg.ParseVendor(vendorStr); err != nil {
@@ -151,7 +146,7 @@ func run(v *flagVars) error {
 			}
 		}()
 	}
-	srv := newServer(ctx, sess, hub, token)
+	srv := newServer(ctx, sess, hub, token, v.vendor)
 	httpServer := &http.Server{Handler: srv.mux}
 	go func() {
 		<-ctx.Done()

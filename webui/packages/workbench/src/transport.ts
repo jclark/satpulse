@@ -1,7 +1,7 @@
 // The transport is the UI's interface to its backend. The universal
 // core (Transport) covers snapshots, configuration, corrections,
 // decoding, geodesy, and event subscription; every backend implements
-// it. Connection management (ports, vendors, connect/disconnect) and
+// it. Connection management (ports, connect/disconnect) and
 // message files are optional capabilities: a backend with a permanently
 // connected receiver owns no port and implements neither.
 //
@@ -100,10 +100,9 @@ export interface Transport {
 // implemented by backends that own the receiver port (direct serial,
 // proxy connections).
 export interface ConnectionTransport {
-    connect(device: string, speed: number, vendor: string): Promise<void>;
+    connect(device: string, speed: number): Promise<void>;
     disconnect(): Promise<void>;
     listPorts(): Promise<PortInfo[]>;
-    listVendors(): Promise<string[]>;
 }
 
 // MsgFileTransport is the message-file capability.

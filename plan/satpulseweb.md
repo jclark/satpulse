@@ -106,8 +106,8 @@ The package imports `gps/gpsreg` directly and takes the vendor as a
 command-line layer interacts with `gpsreg` and injects
 implementations downward ("generally"), and is a deliberate choice:
 every conceivable consumer of this package is a GUI shell that wants
-the full registry linked, the vendor is naturally a per-connection
-runtime choice (a connect-form dropdown mirroring `satpulsetool gps
+the full registry linked, the vendor is naturally a per-session
+runtime choice (a `--vendor` flag mirroring `satpulsetool gps
 --vendor`), and reconnection needs to rebuild the stateful packet
 processors itself. An injected protocol-source interface can be
 introduced later if a registry-free consumer ever materializes.
@@ -331,13 +331,17 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
   (`-T` without `-L` is accepted and redundant). Serving without a
   token on a non-loopback address prints a notice.
 - `-d`/`--serial-device` auto-connects at startup;
-  `-s`/`--device-speed` stays optional as in satpulsetool, and
-  `--vendor` (empty = autodetect) selects the vendor, since
-  auto-connecting leaves no one in the loop to pick it. Connect is
+  `-s`/`--device-speed` stays optional as in satpulsetool. Connect is
   asynchronous, so a browser that arrives later catches up from
   the snapshot endpoints. Without `-d` the session starts
   disconnected and the user connects from the UI (device dropdown
-  from `gps/lib/serialenum`, vendor dropdown mirroring `--vendor`).
+  from `gps/lib/serialenum`).
+- `--vendor` (empty = autodetect) selects the vendor for every
+  connect in the session, at startup or from the UI, and does not
+  require `-d`. It is an expert knob and stays command-line only:
+  the UI has no vendor control. (An earlier revision had a vendor
+  dropdown in the connect bar; it was removed as clutter serving a
+  rare case.)
 - `--packet-log PATH` mirrors satpulsetool and wires the session's
   `Options.PacketLog`.
 - Browser auto-open by default (deferred to phase 5, its own PR),
@@ -421,7 +425,7 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   universal core -- snapshots, config read/apply, message-file send,
   event subscription -- that the config panel and all tabs depend
   only on, and an optional connection-management capability --
-  connect/disconnect, port listing, vendor selection, and the
+  connect/disconnect, port listing, and the
   connecting/reconnecting connection states -- implemented only by
   the direct-serial and proxy backends. The two implementations here
   are the existing generated wailsjs bindings (desktop) and fetch+SSE

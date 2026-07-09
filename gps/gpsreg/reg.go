@@ -2,7 +2,6 @@ package gpsreg
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -169,14 +168,6 @@ func (v *Vendor) UnmarshalText(data []byte) error {
 	var err error
 	*v, err = ParseVendor(string(data))
 	return err
-}
-
-// VendorNames returns the canonical receiver brand names accepted by
-// ParseVendor, for presenting a vendor choice in a UI. The generic
-// "other" fallback is omitted (matching satpulsetool's --vendor
-// documentation): a UI offers autodetect as the default instead.
-func VendorNames() []string {
-	return slices.Clone(vendorNames[1:]) // vendorNames[0] is "other"
 }
 
 // CreatePacketProcessors creates packet processors for all registered protocols.

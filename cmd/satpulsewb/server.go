@@ -21,15 +21,16 @@ import (
 // server adapts a session to HTTP: session methods become POST
 // endpoints, snapshots GET endpoints, and events an SSE stream.
 type server struct {
-	ctx   context.Context // run context; SSE streams end when it is done
-	sess  *session.Session
-	hub   *sseHub
-	token string // empty means no auth
-	mux   *http.ServeMux
+	ctx    context.Context // run context; SSE streams end when it is done
+	sess   *session.Session
+	hub    *sseHub
+	token  string        // empty means no auth
+	vendor gpsreg.Vendor // --vendor: the vendor for every connect
+	mux    *http.ServeMux
 }
 
-func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string) *server {
-	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, mux: http.NewServeMux()}
+func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string, vendor gpsreg.Vendor) *server {
+	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, vendor: vendor, mux: http.NewServeMux()}
 	// get: token-checked. post: token-checked and requires a JSON
 	// Content-Type, which blocks cross-site CSRF (see requireJSON).
 	get := s.auth
@@ -41,7 +42,6 @@ func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token st
 	s.mux.HandleFunc("GET /api/speed", get(s.handleSpeed))
 	s.mux.HandleFunc("GET /api/corrections", get(s.handleCorrState))
 	s.mux.HandleFunc("GET /api/ports", get(s.handlePorts))
-	s.mux.HandleFunc("GET /api/vendors", get(s.handleVendors))
 	s.mux.HandleFunc("POST /api/connect", post(s.handleConnect))
 	s.mux.HandleFunc("POST /api/disconnect", post(s.handleDisconnect))
 	s.mux.HandleFunc("POST /api/config/read", post(s.handleReadConfig))
@@ -185,15 +185,10 @@ func (s *server) handlePorts(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, ports)
 }
 
-func (s *server) handleVendors(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, gpsreg.VendorNames())
-}
-
 func (s *server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Device string `json:"device"`
 		Speed  int    `json:"speed"`
-		Vendor string `json:"vendor"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -202,12 +197,7 @@ func (s *server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("device is required"))
 		return
 	}
-	vendor, err := gpsreg.ParseVendor(req.Vendor)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	if err := s.sess.Connect(session.SerialOpener{Device: req.Device, Speed: req.Speed}, vendor); err != nil {
+	if err := s.sess.Connect(session.SerialOpener{Device: req.Device, Speed: req.Speed}, s.vendor); err != nil {
 		sessionError(w, err)
 		return
 	}

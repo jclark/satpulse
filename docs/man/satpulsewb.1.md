@@ -5,7 +5,7 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 # SYNOPSIS
 
 **satpulsewb** [**\-h**\|**\-\-help**] [**\-L**\|**\-\-listen** *host:port*] [**\-T**\|**\-\-token**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path* [**\-s**\|**\-\-device\-speed** *bps*] [**\-\-vendor** *name*]]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path* [**\-s**\|**\-\-device\-speed** *bps*]] [**\-\-vendor** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
 # DESCRIPTION
@@ -51,7 +51,8 @@ Without **\-\-listen** this is the default.
 If this option is omitted, the device's current speed is used.
 
 **\-\-vendor** *name*
-: Restrict probing and packet format detection to a receiver vendor for the startup connection.
+: Restrict probing and packet format detection to a receiver vendor.
+This applies to every connection made in the session, whether at startup or from the GUI.
 The value is case-insensitive.
 Typical values are **u\-blox**, **Unicore**, **NovAtel**, **Bynav**, **SinoGNSS**, **Allystar**, **Techtotop**, and **Zhongke**.
 If this option is omitted, the vendor is autodetected.

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/gps/app/session"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 )
 
@@ -19,7 +20,7 @@ func newTestServer(token string) *server {
 	hub := newSSEHub()
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	sess := session.New(lg, hub, session.Options{})
-	return newServer(context.Background(), sess, hub, token)
+	return newServer(context.Background(), sess, hub, token, gpsreg.VendorUnknown)
 }
 
 func TestAuth(t *testing.T) {
@@ -106,9 +107,7 @@ func TestEndpoints(t *testing.T) {
 			expectCode: 409, expectBody: `{"error":"not connected"}`},
 		{name: "apply config not connected", method: "POST", url: "/api/config/apply", body: `{}`,
 			expectCode: 409, expectBody: `{"error":"not connected"}`},
-		{name: "connect empty device", method: "POST", url: "/api/connect", body: `{"device":"","speed":9600,"vendor":""}`,
-			expectCode: 400},
-		{name: "connect bad vendor", method: "POST", url: "/api/connect", body: `{"device":"/dev/x","speed":9600,"vendor":"nonesuch"}`,
+		{name: "connect empty device", method: "POST", url: "/api/connect", body: `{"device":"","speed":9600}`,
 			expectCode: 400},
 		{name: "corrections start no host", method: "POST", url: "/api/corrections/start", body: `{"mode":"tcp"}`,
 			expectCode: 409},

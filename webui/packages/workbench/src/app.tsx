@@ -113,8 +113,6 @@ export function App() {
     const [connState, setConnState] = useState<ConnState>('disconnected');
     const [device, setDevice] = useState('');
     const [speed, setSpeed] = useState(9600);
-    const [vendor, setVendor] = useState('');
-    const [vendors, setVendors] = useState<string[]>([]);
     const [ports, setPorts] = useState<PortInfo[]>([]);
     const [receiver, setReceiver] = useState<ReceiverState>({status: 'disconnected'});
     const [configProps, setConfigProps] = useState<Record<string, any> | null>(null);
@@ -219,7 +217,7 @@ export function App() {
         transport.connection?.listPorts().then(list => setPorts(list || [])).catch(() => {});
     }, []);
 
-    // Fetch ports and vendors on startup; auto-select if exactly one port
+    // Fetch ports on startup; auto-select if exactly one port
     useEffect(() => {
         const conn = transport.connection;
         if (!conn) return;
@@ -228,7 +226,6 @@ export function App() {
             setPorts(ps);
             if (ps.length === 1) setDevice(ps[0].device);
         }).catch(() => {});
-        conn.listVendors().then(vs => setVendors(vs || [])).catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -511,12 +508,12 @@ export function App() {
             return;
         }
         try {
-            await conn.connect(device, speed, vendor);
+            await conn.connect(device, speed);
             // connection status visible via indicator dot
         } catch (e) {
             addToast(e instanceof Error ? e.message : 'Connection failed', 'error');
         }
-    }, [connState, device, speed, vendor, addToast]);
+    }, [connState, device, speed, addToast]);
 
     // Receiver identity string for connection bar
     const receiverIdent = receiver.status === 'identified'
@@ -543,9 +540,6 @@ export function App() {
                 setDevice={setDevice}
                 speed={speed}
                 setSpeed={setSpeed}
-                vendor={vendor}
-                setVendor={setVendor}
-                vendors={vendors}
                 onConnect={handleConnect}
                 receiverIdent={receiverIdent}
                 ports={ports}

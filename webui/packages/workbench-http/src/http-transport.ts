@@ -64,12 +64,11 @@ export function newHTTPTransport(token: string): Transport {
         eventsOn: (name, cb) => events.on(name, cb),
         openURL: url => { window.open(url, '_blank'); },
         connection: {
-            connect: async (device: string, speed: number, vendor: string) => {
-                await post('connect', {device, speed, vendor});
+            connect: async (device: string, speed: number) => {
+                await post('connect', {device, speed});
             },
             disconnect: async () => { await post('disconnect'); },
             listPorts: () => get('ports') as Promise<PortInfo[]>,
-            listVendors: () => get('vendors') as Promise<string[]>,
         },
         // No msgFile capability yet: message files arrive with the
         // library/upload endpoints; the Messages tab stays hidden.

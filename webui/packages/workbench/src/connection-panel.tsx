@@ -1,4 +1,4 @@
-import {h, Fragment} from 'preact';
+import {h} from 'preact';
 import {useState, useRef, useEffect, useCallback} from 'preact/hooks';
 import {Button, Input, Select} from './ui';
 import {speeds} from './speeds';
@@ -12,9 +12,6 @@ interface Props {
     setDevice: (d: string) => void;
     speed: number;
     setSpeed: (s: number) => void;
-    vendor: string;
-    setVendor: (v: string) => void;
-    vendors: string[];
     onConnect: () => void;
     receiverIdent: string;
     ports: PortInfo[];
@@ -27,9 +24,6 @@ export function ConnectionPanel({
     setDevice,
     speed,
     setSpeed,
-    vendor,
-    setVendor,
-    vendors,
     onConnect,
     receiverIdent,
     ports,
@@ -122,24 +116,6 @@ export function ConnectionPanel({
                         </option>
                     ))}
                 </Select>
-                {vendors.length > 0 && (
-                    <>
-                        <label class="text-xs text-text-secondary">Vendor</label>
-                        <Select
-                            class="w-28"
-                            value={vendor}
-                            disabled={connected}
-                            onChange={e => setVendor((e.target as HTMLSelectElement).value)}
-                        >
-                            <option value="">(detect)</option>
-                            {vendors.map(v => (
-                                <option key={v} value={v}>
-                                    {v}
-                                </option>
-                            ))}
-                        </Select>
-                    </>
-                )}
                 <Button
                     variant={connected ? 'secondary' : 'primary'}
                     class="whitespace-nowrap"
