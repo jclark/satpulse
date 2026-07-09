@@ -11,8 +11,9 @@
 #      return empty pages on the X20; F9P-era firmware NAKs them.
 #      Both are expected.
 #
-#   2. Replay-log recording setup, two invocations (ubxval and
-#      ubxvalport tags cannot be selected together):
+#   2. Replay-log recording setup, three invocations (ubxval and
+#      ubxvalport tags cannot be selected together, and the survey-in
+#      starts last, just before the recording):
 #      -t rate-1hz
 #      -t enable-out,enable-msgs,enable-rtcm --port <port>
 #      Sets 1 Hz nav epochs and configures, in the RAM layer only, the
@@ -417,6 +418,7 @@ tag = "enable-msgs"
 # NMEA ZDA
 key.usb = 0x209100DB
 value = 1
+
 # RTCM output for the replay recording (RAM only): MSM7 on, MSM4 off
 # (the integration manual warns against outputting both). TYPE1005
 # emits only when the receiver is in base mode.

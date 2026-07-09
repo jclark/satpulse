@@ -67,8 +67,7 @@ type rwPair struct {
 }
 
 // simConn runs a Sim over in-process pipes and returns the test-side
-// write end, a channel of packets the simulator emits, and a shutdown
-// function.
+// write end and a channel of packets the simulator emits.
 func simConn(t *testing.T, p *Personality) (io.Writer, <-chan scan.Packet) {
 	simRead, testWrite := io.Pipe()
 	testRead, simWrite := io.Pipe()
