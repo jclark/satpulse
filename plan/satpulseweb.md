@@ -13,7 +13,7 @@ through the same core.
 The work is delivered as a stack of individually reviewable PRs, one
 per phase, each branching off the previous phase's branch rather than
 master, with the Wails desktop app reworked on top (on the
-desktop-gui branch, phase 6). The phase structure and the branching and
+desktop-gui branch, phase 4). The phase structure and the branching and
 history-preservation strategy are described under Delivery below.
 
 Prerequisite: the web toolchain reorganisation (#283,
@@ -344,7 +344,7 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
   rare case.)
 - `--packet-log PATH` mirrors satpulsetool and wires the session's
   `Options.PacketLog`.
-- Browser auto-open by default (deferred to phase 5, its own PR),
+- Browser auto-open by default (deferred to phase 7, its own PR),
   gated on a local interactive GUI session. The gate is display
   presence, not receiver locality:
   sshing into the box with the receiver must not open a browser,
@@ -368,8 +368,8 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
   This supersedes the earlier "no browser auto-open" decision, which
   assumed the primary flow was ssh to a headless box; macOS is now
   the lead desktop platform.
-- `--socket` and `--tcp` are deferred to phase 5 (see Transports
-  and the Delivery section); `--msg-dir` arrives with phase 5's
+- `--socket` and `--tcp` are deferred to phase 6 (see Transports
+  and the Delivery section); `--msg-dir` arrives with phase 6's
   message-file PR.
 
 ### HTTP API
@@ -436,7 +436,7 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   rather than an imperative Configure run with live progress. This
   overturns webui/packages/workbench/plan/shared-webui.md's assumption
   that the config panel stays desktop-specific; that file is corrected
-  in phase 6.
+  in phase 4.
 - A satpulsewb entry package in the workspace (`workbench-http`:
   index.html, token handling, fetch/SSE transport wiring), whose
   Vite build output is what `cmd/satpulsewb` embeds.
@@ -462,7 +462,7 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   key-detection flush and the satellite display lags one cycle;
   configuration is unaffected.
 
-Serial ships in phase 3; socket and TCP land together in phase 5.
+Serial ships in phase 3; socket and TCP land together in phase 6.
 The session side of socket is already done (SocketOpener,
 reset gating), but the UI has no capability gating for proxy
 connections yet -- reset-class controls must be hidden or disabled,
@@ -574,7 +574,7 @@ resurrected original. Record the provenance ("derived from
 desktop/app.go") in the commit message, since the delete/re-add
 breaks `git log --follow`. Includes
 the session unit tests and internals.md entries. The desktop app is
-not rewired in this phase; that is phase 6.
+not rewired in this phase; that is phase 4.
 
 ### Phase 3: cmd/satpulsewb (one PR)
 
@@ -583,11 +583,52 @@ bridge) plus the fetch/SSE transport implementation and entry
 package in the workspace, carrying the whole existing UI. Every tab
 transfers as-is -- the native msg-file dialog is the only frontend
 call with no web counterpart -- so config, monitor, packets, and
-corrections all land here; the Messages tab is hidden until phase 5.
+corrections all land here; the Messages tab is hidden until phase 6.
 Serial transport only (see Transports). This alone is a usable
 tool, so the NEWS.md entry and man page ride this PR.
 
-### Phase 4: replay smoke tests (one PR)
+### Phase 4: rework desktop-gui on top (branch work, no master PR)
+
+On the desktop-gui branch: merge the tip of the stack (the phase-3
+`satpulsewb` branch), then:
+
+- delete the branch's local copies of the frontend components in
+  favor of the workspace packages (the `file:` dependency mechanism
+  from #283);
+- rewrite `desktop/app.go` as a thin Wails shell over
+  `gps/app/session`: sink implementation mapping Emit to
+  runtime.EventsEmit, bindings adapting errors to Result, dialogs,
+  logdir, darwin enumeration;
+- keep the native dialog for message files (the library browser
+  arrives in phase 6 and can be adopted at a later merge);
+- correct webui/packages/workbench/plan/shared-webui.md (the
+  config panel is shared after all).
+
+Message handling background: this phase needs nothing from phase 6,
+because message files are already fully supported on both sides of
+the seam. The session exports the whole msg-file surface
+(`SetMsgFile(*msgfile.Parsed)`, `SendMsgFile`, `CancelMsgSend`,
+extracted in phase 2), and the workbench frontend carries the
+complete Messages tab (msgfile-panel.tsx), shown whenever the
+transport provides the optional `msgFile` capability. That
+capability's `loadMsgFile(): Promise<MsgFileInfo | null>` is exactly
+the native-dialog shape: the Wails shell implements it as
+OpenFileDialog, parse the file with `msgfile`, `SetMsgFile`, return
+path and tags (null on cancel). Phase 6's endpoints, catalog UI, and
+`--msg-dir` are the web-side replacement for the dialog, not a
+dependency. This phase is therefore also the first shell to exercise
+the session's msg-file send path (sendWorker, correlator, response
+events), which satpulsewb cannot reach until phase 6 adds its
+endpoints. Expected interaction with phase 6: the library catalog
+may extend `MsgFileTransport`; the desktop picks that up in a later
+routine merge, which is when the adopt-the-library-browser option
+above becomes available.
+
+After this phase, once the stack has landed on master, the branch's
+delta over master is small: one module directory containing a thin
+shell.
+
+### Phase 5: replay smoke tests (one PR)
 
 Black-box smoke tests of the satpulsewb binary, feasible as soon as
 phase 3 exists: replaying a packet log through a FIFO with
@@ -602,7 +643,7 @@ Checks at smoketest depth: startup and the printed URL/token, auth
 enforcement and the `-L`/`-T` token modes, snapshot endpoints
 populating as the replay flows, SSE delivery and priming,
 packet-stream gating driven by a scripted SSE client, clean
-shutdown (auto-open gating checks arrive with the phase-5 auto-open
+shutdown (auto-open gating checks arrive with the phase-7 auto-open
 PR). Includes
 recording a purpose-built F9P fixture (the message set the workbench
 displays, long enough at the chosen replay factor to outlast the
@@ -610,7 +651,7 @@ slowest check); the existing multi-vendor logs under
 `gps/testdata/packets/` serve as secondary fixtures, since detection
 is passive.
 
-### Phase 5: message files, proxy transports, auto-open (three PRs)
+### Phase 6: message files and proxy transports (two PRs)
 
 PR 1: message-file loading, the one piece of genuinely new UI: the
 library and upload endpoints (including the path-traversal
@@ -623,56 +664,37 @@ in gpsio), plus the UI capability gating for proxy connections --
 exposing socket-ness through the wire contract and hiding or
 disabling reset-class controls.
 
-PR 3: browser auto-open as specified under Command line above: the
+### Phase 7: browser auto-open (one PR)
+
+Browser auto-open as specified under Command line above: the
 local-GUI-session gate, the per-OS launcher, `--no-open`, and the
 smoke-test checks for the gating (environment manipulation in the
-phase-4 runner) ride along.
+phase-5 runner) ride along.
 
-### Phase 6: rework desktop-gui on top (branch work, no master PR)
+### Phase 8: Playwright browser tests (one PR)
 
-On the desktop-gui branch: merge the tip of the stack (the phase-5
-branch, or master once the stack has landed), then:
-
-- delete the branch's local copies of the frontend components in
-  favor of the workspace packages (the `file:` dependency mechanism
-  from #283);
-- rewrite `desktop/app.go` as a thin Wails shell over
-  `gps/app/session`: sink implementation mapping Emit to
-  runtime.EventsEmit, bindings adapting errors to Result, dialogs,
-  logdir, darwin enumeration;
-- optionally adopt the msg-file library browser alongside the native
-  dialog;
-- correct webui/packages/workbench/plan/shared-webui.md (the
-  config panel is shared after all).
-
-After this phase, once the stack has landed on master, the branch's
-delta over master is small: one module directory containing a thin
-shell.
-
-### Phase 7: Playwright browser tests (one PR)
-
-Branches off the phase-5 branch, continuing the stack (phase 6 is
+Branches off the phase-7 branch, continuing the stack (phase 4 is
 desktop-gui branch work, outside it).
 DOM-level journeys in a real browser, against the same launch and
-replay fixtures as phase 4: a small `@playwright/test` suite in the
+replay fixtures as phase 5: a small `@playwright/test` suite in the
 webui workspace whose setup starts satpulsewb on a FIFO replay.
 Journeys: the SPA boots and the token is consumed and stripped from
 the URL bar; satellites and position render and advance; the Packets
 tab starts and stops the packet stream; a second tab late-joins
 consistent from the event cache; the stale-token notice; re-priming
-after a server restart. After phase 5 so a Messages tab journey can
-ride along, and after the desktop rework so the components are
-serving both shells before journeys pin their DOM. Kept to a handful
-of shallow journeys: wire-level assertions stay in phase 4's runner,
-which needs no browser or npm.
+after a server restart. After phase 6 so a Messages tab journey can
+ride along, and after the desktop rework (phase 4) so the components
+are serving both shells before journeys pin their DOM. Kept to a
+handful of shallow journeys: wire-level assertions stay in phase 5's
+runner, which needs no browser or npm.
 
-### Phase 8: simulator config tests (one PR)
+### Phase 9: simulator config tests (one PR)
 
 Extends both harnesses from the monitor path to the config path,
 using the u-blox receiver simulator (#362,
 [ublox-sim.md](ublox-sim.md)), which is developed in parallel on its
 own branch off master. The transport becomes a pty with the
-simulator behind it; the phase-4 runner and phase-7 journeys gain
+simulator behind it; the phase-5 runner and phase-8 journeys gain
 config checks: probe identifies the personality, the config panel
 populates from ReadConfig, an apply round-trips and a re-read shows
 the change, and enabling a message makes it appear in the packet
