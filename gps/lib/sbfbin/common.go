@@ -328,7 +328,7 @@ func ParseMsg(packet string) (*Block, error) {
 	if length != n {
 		return nil, fmt.Errorf("SBF message length mismatch: header %d, packet %d", length, n)
 	}
-	if length <= HeaderLen || length%4 != 0 {
+	if length%4 != 0 {
 		return nil, fmt.Errorf("SBF message has bad length %d", length)
 	}
 	got := Endian.Uint16([]byte(packet[2:4]))
@@ -339,9 +339,6 @@ func ParseMsg(packet string) (*Block, error) {
 	id := MsgID(Endian.Uint16([]byte(packet[4:6])))
 	blockNumber, rev := id.Unpack()
 	body := packet[HeaderLen:]
-	if len(body) < 6 {
-		return nil, fmt.Errorf("SBF-%s body too short (%d bytes)", id, len(body))
-	}
 	ts := TimeStamp{
 		TOW: Endian.Uint32([]byte(body[:4])),
 		WNc: Endian.Uint16([]byte(body[4:6])),
