@@ -233,6 +233,7 @@ var msgOutKey = map[ubxbin.MsgID]ucv.KeyM{
 	ubxbin.NavTimeUTCID:   ucv.KUbxNavTimeutc,
 	ubxbin.NavTimeLSID:    ucv.KUbxNavTimels,
 	ubxbin.NavPVTID:       ucv.KUbxNavPvt,
+	ubxbin.NavHPPosLLHID:  ucv.KUbxNavHpposllh,
 	ubxbin.NavDOPID:       ucv.KUbxNavDop,
 	ubxbin.NavEOEID:       ucv.KUbxNavEoe,
 	ubxbin.NavSigID:       ucv.KUbxNavSig,
