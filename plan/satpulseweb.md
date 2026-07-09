@@ -12,8 +12,8 @@ through the same core.
 
 The work is delivered as a stack of individually reviewable PRs, one
 per phase, each branching off the previous phase's branch rather than
-master, with the Wails desktop app reworked on top at the end (on the
-desktop-gui branch). The phase structure and the branching and
+master, with the Wails desktop app reworked on top (on the
+desktop-gui branch, phase 6). The phase structure and the branching and
 history-preservation strategy are described under Delivery below.
 
 Prerequisite: the web toolchain reorganisation (#283,
@@ -280,14 +280,16 @@ and satpulsetool must not import the package, so their binaries link
 none of it and their Linux builds remain CGO-free. Only satpulsewb
 and the desktop shell import it.
 
-A later phase reimplements the Linux side by hand -- pure stdlib,
-walking `/dev/serial/by-id` symlinks (human-readable names) and
-`/sys/class/tty/*/device` (USB metadata, and platform UARTs such as
-ttyAMA0 on a Pi, which the dependency's USB-centric enumeration
-misses) -- and drops go.bug.st from the Linux build. That is what
-makes the satpulsewb Linux binary CGO_ENABLED=0/libc-free like its
-siblings. The macOS binary may keep cgo (IOKit or go.bug.st) for
-proper display names; libc-freedom is a Linux property.
+The dependency does not cost libc-freedom: go.bug.st's only cgo is
+in its darwin enumerator (IOKit); the Linux side is pure Go (a
+`/dev` name scan including platform UARTs like ttyAMA, with USB
+metadata from `/sys/class/tty/*/device`), so the satpulsewb Linux
+binary is statically linked as-is. An earlier plan to hand-roll the
+Linux enumeration (originally justified as restoring libc-freedom,
+which was never actually at risk) has been dropped; the one thing a
+hand-rolled version would add is `/dev/serial/by-id` human-readable
+port names, which can be done inside `gps/lib/serialenum` any time
+without a dedicated phase.
 
 ## Design: the satpulsewb binary
 
@@ -338,8 +340,9 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
   from `gps/lib/serialenum`, vendor dropdown mirroring `--vendor`).
 - `--packet-log PATH` mirrors satpulsetool and wires the session's
   `Options.PacketLog`.
-- Browser auto-open by default, gated on a local interactive GUI
-  session. The gate is display presence, not receiver locality:
+- Browser auto-open by default (deferred to phase 5, its own PR),
+  gated on a local interactive GUI session. The gate is display
+  presence, not receiver locality:
   sshing into the box with the receiver must not open a browser,
   while running at a local desktop should, even when the receiver is
   remote over a later proxy transport. `SSH_CONNECTION` or `SSH_TTY`
@@ -429,7 +432,7 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   rather than an imperative Configure run with live progress. This
   overturns webui/packages/workbench/plan/shared-webui.md's assumption
   that the config panel stays desktop-specific; that file is corrected
-  in phase 8.
+  in phase 6.
 - A satpulsewb entry package in the workspace (`workbench-http`:
   index.html, token handling, fetch/SSE transport wiring), whose
   Vite build output is what `cmd/satpulsewb` embeds.
@@ -567,7 +570,7 @@ resurrected original. Record the provenance ("derived from
 desktop/app.go") in the commit message, since the delete/re-add
 breaks `git log --follow`. Includes
 the session unit tests and internals.md entries. The desktop app is
-not rewired in this phase; that is phase 8.
+not rewired in this phase; that is phase 6.
 
 ### Phase 3: cmd/satpulsewb (one PR)
 
@@ -594,15 +597,16 @@ family in `run.py`, whose per-scenario lifecycle is satpulsed-shaped
 Checks at smoketest depth: startup and the printed URL/token, auth
 enforcement and the `-L`/`-T` token modes, snapshot endpoints
 populating as the replay flows, SSE delivery and priming,
-packet-stream gating driven by a scripted SSE client, auto-open
-gating via environment manipulation, clean shutdown. Includes
+packet-stream gating driven by a scripted SSE client, clean
+shutdown (auto-open gating checks arrive with the phase-5 auto-open
+PR). Includes
 recording a purpose-built F9P fixture (the message set the workbench
 displays, long enough at the chosen replay factor to outlast the
 slowest check); the existing multi-vendor logs under
 `gps/testdata/packets/` serve as secondary fixtures, since detection
 is passive.
 
-### Phase 5: message files and proxy transports (two PRs)
+### Phase 5: message files, proxy transports, auto-open (three PRs)
 
 PR 1: message-file loading, the one piece of genuinely new UI: the
 library and upload endpoints (including the path-traversal
@@ -615,29 +619,14 @@ in gpsio), plus the UI capability gating for proxy connections --
 exposing socket-ness through the wire contract and hiding or
 disabling reset-class controls.
 
-### Phase 6: Playwright browser tests (one PR)
+PR 3: browser auto-open as specified under Command line above: the
+local-GUI-session gate, the per-OS launcher, `--no-open`, and the
+smoke-test checks for the gating (environment manipulation in the
+phase-4 runner) ride along.
 
-DOM-level journeys in a real browser, against the same launch and
-replay fixtures as phase 4: a small `@playwright/test` suite in the
-webui workspace whose setup starts satpulsewb on a FIFO replay.
-Journeys: the SPA boots and the token is consumed and stripped from
-the URL bar; satellites and position render and advance; the Packets
-tab starts and stops the packet stream; a second tab late-joins
-consistent from the event cache; the stale-token notice; re-priming
-after a server restart. After phase 5 so a Messages tab journey can
-ride along. Kept to a handful of shallow journeys: wire-level
-assertions stay in phase 4's runner, which needs no browser or npm.
+### Phase 6: rework desktop-gui on top (branch work, no master PR)
 
-### Phase 7: libc-free Linux enumeration (one PR)
-
-Hand-rolled pure-Go Linux implementation in `gps/lib/serialenum` (see
-Design: serial enumeration); drop go.bug.st from the Linux build;
-verify the satpulsewb Linux binary builds with CGO_ENABLED=0 and has
-no dynamic dependencies.
-
-### Phase 8: rework desktop-gui on top (branch work, no master PR)
-
-On the desktop-gui branch: merge the tip of the stack (the phase-7
+On the desktop-gui branch: merge the tip of the stack (the phase-5
 branch, or master once the stack has landed), then:
 
 - delete the branch's local copies of the frontend components in
@@ -656,13 +645,30 @@ After this phase, once the stack has landed on master, the branch's
 delta over master is small: one module directory containing a thin
 shell.
 
-### Phase 9: simulator config tests (one PR)
+### Phase 7: Playwright browser tests (one PR)
+
+Branches off the phase-5 branch, continuing the stack (phase 6 is
+desktop-gui branch work, outside it).
+DOM-level journeys in a real browser, against the same launch and
+replay fixtures as phase 4: a small `@playwright/test` suite in the
+webui workspace whose setup starts satpulsewb on a FIFO replay.
+Journeys: the SPA boots and the token is consumed and stripped from
+the URL bar; satellites and position render and advance; the Packets
+tab starts and stops the packet stream; a second tab late-joins
+consistent from the event cache; the stale-token notice; re-priming
+after a server restart. After phase 5 so a Messages tab journey can
+ride along, and after the desktop rework so the components are
+serving both shells before journeys pin their DOM. Kept to a handful
+of shallow journeys: wire-level assertions stay in phase 4's runner,
+which needs no browser or npm.
+
+### Phase 8: simulator config tests (one PR)
 
 Extends both harnesses from the monitor path to the config path,
 using the u-blox receiver simulator (#362,
 [ublox-sim.md](ublox-sim.md)), which is developed in parallel on its
 own branch off master. The transport becomes a pty with the
-simulator behind it; the phase-4 runner and phase-6 journeys gain
+simulator behind it; the phase-4 runner and phase-7 journeys gain
 config checks: probe identifies the personality, the config panel
 populates from ReadConfig, an apply round-trips and a re-read shows
 the change, and enabling a message makes it appear in the packet
