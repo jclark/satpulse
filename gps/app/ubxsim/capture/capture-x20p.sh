@@ -73,12 +73,17 @@ if pgrep -x satpulsed >/dev/null; then
 fi
 
 mkdir -p "$outdir"
+enable_tmp=$outdir/.x20p-enable
 for f in x20p-personality.ubx x20p-personality.jsonl x20p-enable.jsonl x20p-replay.jsonl; do
     if [ -e "$outdir/$f" ]; then
         echo "$0: $outdir/$f already exists; rename or move it first (packet logs are append-only, never delete captures)" >&2
         exit 1
     fi
 done
+if [ -e "$enable_tmp" ]; then
+    echo "$0: $enable_tmp already exists; rename or move it first (staged enable packet logs from an interrupted run)" >&2
+    exit 1
+fi
 
 echo "== 1/3: personality (MON-VER, MON-GNSS, Default-layer dump) -> $outdir/x20p-personality.ubx"
 echo "   (CFG-VALGET polls past the end of the database return empty pages on the X20; F9P-era firmware NAKs them. Both are expected.)"
@@ -87,12 +92,16 @@ echo "   (CFG-VALGET polls past the end of the database return empty pages on th
 "$SATPULSETOOL" pack -t UBX "$outdir/x20p-personality.jsonl" > "$outdir/x20p-personality.ubx"
 
 echo "== 2/3: enable output protocols and messages (RAM only, port $port) -> $outdir/x20p-enable.jsonl"
+mkdir "$enable_tmp"
 "$SATPULSETOOL" gps -d "$dev" -s "$speed" -m "$toml" -t rate-1hz \
-    --packet-log "$outdir/x20p-enable.jsonl"
+    --packet-log "$enable_tmp/rate-1hz.jsonl"
 "$SATPULSETOOL" gps -d "$dev" -s "$speed" -m "$toml" -t enable-out,enable-msgs,enable-rtcm --port "$port" \
-    --packet-log "$outdir/x20p-enable.jsonl"
+    --packet-log "$enable_tmp/enable-msgs.jsonl"
 "$SATPULSETOOL" gps -d "$dev" -s "$speed" -m "$toml" -t tmode-svin \
-    --packet-log "$outdir/x20p-enable.jsonl"
+    --packet-log "$enable_tmp/tmode-svin.jsonl"
+cat "$enable_tmp/rate-1hz.jsonl" "$enable_tmp/enable-msgs.jsonl" "$enable_tmp/tmode-svin.jsonl" > "$enable_tmp/x20p-enable.jsonl"
+mv "$enable_tmp/x20p-enable.jsonl" "$outdir/x20p-enable.jsonl"
+rm -r "$enable_tmp"
 
 echo "== 3/3: replay recording, $dur seconds -> $outdir/x20p-replay.jsonl"
 "$SATPULSETOOL" gps -d "$dev" -s "$speed" --capture "$dur" \
