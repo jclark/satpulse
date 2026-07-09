@@ -24,6 +24,12 @@
 #      firmware has no MSGOUT key for it and would NAK the whole set.
 #      RTCM is recorded as MSM7 only, with MSM4 explicitly disabled;
 #      the simulator derives MSM4 from the recorded MSM7.
+#      -t tmode-svin
+#      Starts a survey-in (RAM only) just before the recording, so the
+#      replay bank has NAV-SVIN progressing, survey completion, and the
+#      receiver in base mode afterwards. The 60 s minimum duration and
+#      loose 10 m accuracy limit make the survey complete on time, well
+#      inside the recording.
 
 [[ubx]]
 tag = "mon-ver"
@@ -475,3 +481,13 @@ tag = "enable-rtcm"
 # RTCM-3X-TYPE1124 (BeiDou MSM4) off
 key.usb = 0x20910370
 value = 0
+
+# Survey-in start for the replay recording: CFG-TMODE-MODE=SURVEY_IN,
+# CFG-TMODE-SVIN_MIN_DUR, CFG-TMODE-SVIN_ACC_LIMIT (0.1 mm units).
+
+[[ubxval]]
+tag = "tmode-svin"
+description = "Start survey-in (RAM only): 60 s minimum duration, 10 m accuracy limit"
+keys = [0x20030001, 0x40030010, 0x40030011]
+types = "U1U4U4"
+values = [1, 60, 100000]

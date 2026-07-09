@@ -91,6 +91,8 @@ echo "== 2/3: enable output protocols and messages (RAM only, port $port) -> $ou
     --packet-log "$outdir/x20p-enable.jsonl"
 "$SATPULSETOOL" gps -d "$dev" -s "$speed" -m "$toml" -t enable-out,enable-msgs,enable-rtcm --port "$port" \
     --packet-log "$outdir/x20p-enable.jsonl"
+"$SATPULSETOOL" gps -d "$dev" -s "$speed" -m "$toml" -t tmode-svin \
+    --packet-log "$outdir/x20p-enable.jsonl"
 
 echo "== 3/3: replay recording, $dur seconds -> $outdir/x20p-replay.jsonl"
 "$SATPULSETOOL" gps -d "$dev" -s "$speed" --capture "$dur" \
