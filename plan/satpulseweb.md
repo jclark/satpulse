@@ -368,8 +368,8 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
   This supersedes the earlier "no browser auto-open" decision, which
   assumed the primary flow was ssh to a headless box; macOS is now
   the lead desktop platform.
-- `--socket` and `--tcp` are deferred to phase 6 (see Transports
-  and the Delivery section); `--msg-dir` arrives with phase 6's
+- `--socket` and `--tcp` are deferred to phase 10 (see Transports
+  and the Delivery section); `--msg-dir` arrives with the phase-6
   message-file PR.
 
 ### HTTP API
@@ -462,7 +462,7 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   key-detection flush and the satellite display lags one cycle;
   configuration is unaffected.
 
-Serial ships in phase 3; socket and TCP land together in phase 6.
+Serial ships in phase 3; socket and TCP land together in phase 10.
 The session side of socket is already done (SocketOpener,
 reset gating), but the UI has no capability gating for proxy
 connections yet -- reset-class controls must be hidden or disabled,
@@ -651,18 +651,12 @@ slowest check); the existing multi-vendor logs under
 `gps/testdata/packets/` serve as secondary fixtures, since detection
 is passive.
 
-### Phase 6: message files and proxy transports (two PRs)
+### Phase 6: message files (one PR)
 
-PR 1: message-file loading, the one piece of genuinely new UI: the
+Message-file loading, the one piece of genuinely new UI: the
 library and upload endpoints (including the path-traversal
 sanitization), the browsable catalog UI, `--msg-dir`, and the
 msg-file send/cancel endpoints; un-hides the Messages tab.
-
-PR 2: proxy transports: `--socket` (SocketOpener is already done in
-the session, including reset gating) and `--tcp` (needs TCP dialing
-in gpsio), plus the UI capability gating for proxy connections --
-exposing socket-ness through the wire contract and hiding or
-disabling reset-class controls.
 
 ### Phase 7: browser auto-open (one PR)
 
@@ -702,7 +696,15 @@ stream. Not part of the stacked-PR series: it needs the simulator on
 master, so it runs after the stack and the simulator have both
 landed.
 
-## Open decisions
+### Phase 10: proxy transports (one PR)
+
+Proxy transports: `--socket` (SocketOpener is already done in the
+session, including reset gating) and `--tcp` (needs TCP dialing in
+gpsio), plus the UI capability gating for proxy connections --
+exposing socket-ness through the wire contract and hiding or
+disabling reset-class controls. Not part of the stacked-PR series:
+deliberately last, an ordinary PR off master once the stack has
+landed.
 
 - Names: the embed package location (own package vs go:embed directly
   in cmd/satpulsewb).
