@@ -186,6 +186,8 @@ func (p *pvtTrailer) chunks(name string, fixed any) func(yield func(chunk any) b
 	return revisionChunks(p.payloadLen(), name, fixed, &p.pvtRev1, &p.pvtRev2)
 }
 
+func (p *pvtTrailer) latestRev() uint8 { return 2 }
+
 // PVTGeodetic is the SBF PVTGeodetic block.
 type PVTGeodetic struct {
 	pvtGeodeticFixed
