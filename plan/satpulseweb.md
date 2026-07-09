@@ -430,9 +430,9 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   overturns webui/packages/workbench/plan/shared-webui.md's assumption
   that the config panel stays desktop-specific; that file is corrected
   in phase 8.
-- A satpulsewb entry package in the workspace (index.html, token
-  handling, fetch/SSE transport wiring), whose Vite build output is
-  what `cmd/satpulsewb` embeds.
+- A satpulsewb entry package in the workspace (`workbench-http`:
+  index.html, token handling, fetch/SSE transport wiring), whose
+  Vite build output is what `cmd/satpulsewb` embeds.
 - Web replacements for native chrome: MessageDialog error popups
   become inline notices; BrowserOpenURL becomes window.open (already
   anticipated as a callback prop in the shared map component plan).

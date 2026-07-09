@@ -26,7 +26,7 @@ These packages provide entry points for the SatPulse executables. They are in th
 
 `cmd/satpulsetool` provides main for satpulsetool.
 
-`cmd/satpulsewb` provides main for satpulsewb, which serves SatPulse Workbench, the browser GUI for interactive GPS receiver configuration and monitoring. It adapts `gps/app/session` to HTTP: session methods become POST endpoints, snapshots GET endpoints, and session events an SSE stream, with a latest-event-per-name cache priming late-joining clients and the high-rate packet stream gated on a subscriber being connected. A per-run token guards the API and event stream. The frontend is the Vite build output of `webui/packages/satpulsewb`, embedded as checked-in assets under `dist/` (rebuilt by go generate, like `time/internal/web`).
+`cmd/satpulsewb` provides main for satpulsewb, which serves SatPulse Workbench, the browser GUI for interactive GPS receiver configuration and monitoring. It adapts `gps/app/session` to HTTP: session methods become POST endpoints, snapshots GET endpoints, and session events an SSE stream, with a latest-event-per-name cache priming late-joining clients and the high-rate packet stream gated on a subscriber being connected. A per-run token guards the API and event stream. The frontend is the Vite build output of `webui/packages/workbench-http`, embedded as checked-in assets under `dist/` (rebuilt by go generate, like `time/internal/web`).
 
 `cmd/ifwait` provides a program that waits for a network interface to become ready. It exercises the functionality of the `time/lib/ifwait` package.
 
@@ -260,7 +260,7 @@ These hold the web frontend source. They are not Go packages: they are built wit
 
 ### webui/
 
-`webui/` is the npm workspace holding the web frontend source (TypeScript, Preact, Tailwind). It has three packages, bundled by Vite with content hashing disabled so the embedded filenames stay `app.js` and `style.css`. `@satpulse/dashboard` (`packages/dashboard`) is the satpulsed web dashboard app. `@satpulse/workbench` (`packages/workbench`) holds the SatPulse Workbench components and app, originally the desktop GUI frontend; its `src/transport.ts` defines the transport interface the components talk to their backend through -- a universal core plus optional connection-management and message-file capabilities. `@satpulse/satpulsewb` (`packages/satpulsewb`) is the satpulsewb entry point: token handling plus the fetch+SSE transport implementation; its build output is embedded by `cmd/satpulsewb`. The workspace imports GPS wire types from `@satpulse/gps` (`gps/ts`).
+`webui/` is the npm workspace holding the web frontend source (TypeScript, Preact, Tailwind). It has three packages, bundled by Vite with content hashing disabled so the embedded filenames stay `app.js` and `style.css`. `@satpulse/dashboard` (`packages/dashboard`) is the satpulsed web dashboard app. `@satpulse/workbench` (`packages/workbench`) holds the SatPulse Workbench components and app, originally the desktop GUI frontend; its `src/transport.ts` defines the transport interface the components talk to their backend through -- a universal core plus optional connection-management and message-file capabilities. `@satpulse/workbench-http` (`packages/workbench-http`) is the satpulsewb entry point: token handling plus the fetch+SSE transport implementation; its build output is embedded by `cmd/satpulsewb`. The workspace imports GPS wire types from `@satpulse/gps` (`gps/ts`).
 
 ## Test harnesses
 

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "comment": "Component library consumed by entry packages (e.g. @satpulse/satpulsewb) that install a transport; it has no standalone app.",
+  "comment": "Component library consumed by entry packages (e.g. @satpulse/workbench-http) that install a transport; it has no standalone app.",
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
