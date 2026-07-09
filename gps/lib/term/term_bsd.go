@@ -42,8 +42,9 @@ func (t *Term) setAttrNow(attr *unix.Termios) error {
 	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TIOCSETA, attr), "ioctl(TIOCSETA)")
 }
 
-func (t *Term) setAttrDrain(attr *unix.Termios) error {
-	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TIOCSETAW, attr), "ioctl(TIOCSETAW)")
+// Drain blocks until all pending output has been transmitted.
+func (t *Term) Drain() error {
+	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TIOCDRAIN, 0), "ioctl(TIOCDRAIN)")
 }
 
 func (t *Term) getAttr() (tp *unix.Termios, err error) {

@@ -74,6 +74,10 @@ func (c *NetConn) Close() error {
 	return c.conn.Close()
 }
 
+// Drain is a no-op on a socket: there is no serial output buffer to flush,
+// and the daemon (which alone uses socket connections) never calls it.
+func (c *NetConn) Drain() error { return nil }
+
 func (c *NetConn) Stop() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
