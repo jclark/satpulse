@@ -93,8 +93,10 @@ func (t *Term) Change(opts ...AttrSetter) error {
 			return err
 		}
 	}
-	err := t.setAttrDrain(&attr.ts)
-	if err != nil {
+	if err := t.Drain(); err != nil {
+		return err
+	}
+	if err := t.setAttrNow(&attr.ts); err != nil {
 		return err
 	}
 	t.attr = attr
