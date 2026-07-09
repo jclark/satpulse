@@ -39,6 +39,7 @@ REPO = os.path.dirname(HERE)
 
 import common  # noqa: E402  (after sys.path is set up)
 import platform_api  # noqa: E402
+import program_api  # noqa: E402
 
 # Platform seam: the per-OS module supplies the transport, shutdown, and
 # privilege primitives (see platform_api). Select it by os.name so run.py
@@ -57,6 +58,9 @@ SCENARIOS = [
     "http/full",
     "http/disabled",
     "http/multiple",
+    "http/wb-default",
+    "http/wb-listen",
+    "http/wb-survey",
     "ntrip/basic",
     "ntrip/auth",
     "ntrip/anyuser",
@@ -73,7 +77,9 @@ SCENARIOS = [
     "stream/pull-tcp",
     "stream/pull-rtklib",
     "stream/nmea-send",
+    "stream/wb-corrections",
     "shutdown/serial-loss",
+    "shutdown/wb-serial-loss",
 ]
 
 
@@ -202,17 +208,9 @@ class Context:
         factor: int | float,
         packet_log: str,
         daemon_log: str,
-        has_http: bool,
-        has_http2: bool,
-        has_ntrip: bool,
-        has_ntp_sock: bool,
-        has_push: bool,
         requires_root: bool,
         use_sudo: bool,
         transport: platform_api.Transport,
-        has_pull: bool = False,
-        pull_source_log: str = "",
-        pull_peer: str = "fake",
     ) -> None:
         self.name = name
         self.run_dir = run_dir
@@ -224,21 +222,31 @@ class Context:
         self.factor = factor
         self.packet_log = packet_log
         self.daemon_log = daemon_log
-        self.has_http = has_http
-        self.has_http2 = has_http2
-        self.has_ntrip = has_ntrip
-        self.has_ntp_sock = has_ntp_sock
-        self.has_push = has_push
-        self.has_pull = has_pull
-        # Absolute path to the RTCM log the fake correction source streams to the
-        # daemon's stream.pull client (set only for pull scenarios).
-        self.pull_source_log = pull_source_log
+        # Which listeners/peers the program needs, set by program.prepare (from
+        # the daemon's rendered config, or left at the defaults for satpulsewb,
+        # which has one HTTP listener and no config-derived peers).
+        self.has_http = False
+        self.has_http2 = False
+        self.has_ntrip = False
+        self.has_ntp_sock = False
+        self.has_push = False
+        self.has_pull = False
+        # Absolute path to the RTCM log the fake correction source streams (a
+        # daemon stream.pull source, or a satpulsewb corrections source).
+        self.pull_source_log = ""
         # Correction-source implementation for stream.pull: "fake" or "str2str".
-        self.pull_peer = pull_peer
+        self.pull_peer = "fake"
+        # satpulsewb: the flag list (program.prepare), the bound HTTP port and
+        # access token (program.wait_ready, parsed from the printed URL), and
+        # the program binary and scenario template base (set by run_scenario).
+        self.wb_args: list[str] = []
+        self.wb_port = 0
+        self.token = ""
+        self.prog_bin = ""
+        self.template_base = os.path.join(SCENARIOS_DIR, name)
         self.requires_root = requires_root
         self.use_sudo = use_sudo
         self.replay_err = os.path.join(run_dir, "replay.err")
-        self.satpulsed = bin_path("satpulsed")
         self.satpulsetool = bin_path("satpulsetool")
         self.daemon_pid_file = os.path.join(run_dir, "satpulsed.pid")
         self.daemon: subprocess.Popen[bytes] | None = None
@@ -666,8 +674,65 @@ class Context:
             self._source_log_file.close()
             self._source_log_file = None
 
+    def start_correction_source(
+        self,
+        port: int,
+        log: str,
+        mode: str = "ntrip",
+        mountpoint: str = "",
+        username: str = "",
+        password: str = "",
+        require_gga: bool = False,
+        timeout: float = 5,
+    ) -> None:
+        """Start a fake correction source for a satpulsewb corrections scenario.
+
+        The daemon's start_source derives its fakesource.py from the rendered
+        [stream.pull] config; satpulsewb has no such config, so the scenario
+        declares the source (port, log, mode, credentials) and this starts the
+        same fakesource.py from those parameters. The workbench connects to it
+        only once the scenario POSTs corrections/start, but it listens from the
+        outset so the connect never races startup.
+        """
+        self._source_log_file = open(self.source_log, "wb")
+        src = os.path.join(SCENARIOS_DIR, "stream", "fakesource.py")
+        cmd = [sys.executable, src, f"127.0.0.1:{port}", log,
+               "--pack", self.satpulsetool, "--factor", str(self.factor)]
+        if mode == "tcp":
+            cmd.append("--tcp")
+        else:
+            if mountpoint:
+                cmd += ["--mountpoint", mountpoint]
+            if username:
+                cmd += ["--username", username]
+            if password:
+                cmd += ["--password", password]
+            if require_gga:
+                cmd.append("--require-gga")
+        self.source_proc = subprocess.Popen(cmd, stdout=self._source_log_file, stderr=subprocess.STDOUT)
+        deadline = time.time() + timeout
+        while port_free(port):
+            if self.source_proc.poll() is not None:
+                raise RuntimeError("correction source exited before listening")
+            if time.time() >= deadline:
+                raise RuntimeError(f"correction source did not listen on {port} within {timeout}s")
+            time.sleep(0.02)
+
     def http_url(self, path: str) -> str:
         return f"http://127.0.0.1:{self.http_port}{path}"
+
+    def wb_url(self, path: str) -> str:
+        """URL for a satpulsewb request, with the access token when there is one.
+
+        The bound port comes from the printed URL (program.wait_ready), so this
+        is correct for the no-`-L` default-port path too, where the port is
+        chosen at runtime. Requests always use loopback; the all-interfaces bind
+        includes it.
+        """
+        url = f"http://127.0.0.1:{self.wb_port}{path}"
+        if self.token:
+            url += ("&" if "?" in path else "?") + "t=" + self.token
+        return url
 
     def wait_listeners(self, timeout: float = 15) -> None:
         """Wait until the daemon's configured listeners accept connections.
@@ -802,34 +867,6 @@ def allocate_env(name: str, run_dir: str) -> dict[str, str]:
     return env
 
 
-def render_config(template_path: str, out_path: str, env: dict[str, str]) -> tuple[bool, bool, bool, bool, bool, bool]:
-    """Render the config template; report which listeners/peers it configures.
-
-    Returns (has_http, has_http2, has_ntrip, has_ntp_sock, has_push, has_pull),
-    detected from non-comment lines so a comment that merely mentions a section
-    is not mistaken for it. has_http2 is set when a second [[http]] table is
-    present, so the runner waits on and verifies the extra listener. has_pull
-    keys off the [stream.pull...] table prefix so the runner knows to start a
-    fake correction source for it.
-    """
-    with open(template_path) as f:
-        text = f.read()
-    for key, val in env.items():
-        text = text.replace("${" + key + "}", val)
-    with open(out_path, "w") as f:
-        f.write(text)
-    headers = [
-        line.strip()
-        for line in text.splitlines()
-        if not line.lstrip().startswith("#")
-    ]
-    return ("[[http]]" in headers, headers.count("[[http]]") >= 2,
-            "[ntrip]" in headers,
-            any(line.startswith("sock.path") for line in headers),
-            "[[stream.push]]" in headers,
-            any(line.startswith("[stream.pull") for line in headers))
-
-
 def port_free(port: int) -> bool:
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=0.3):
@@ -856,34 +893,35 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
     if missing:
         return (name, "SKIP", f"requires {', '.join(missing)} on PATH")
     emit(f"START {name}")
+    # The program under test is a scenario dimension (default satpulsed); the
+    # Program owns what differs between the two (input prep, start command,
+    # readiness, allowed log lines, ports to free). See program_api.
+    program = program_api.select(getattr(scen, "PROGRAM", "satpulsed"))
     factor = scen.FACTOR
     packet_log = scen.PACKET_LOG
     if not os.path.isabs(packet_log):
         packet_log = os.path.join(REPO, packet_log)
-    config_tmpl = os.path.join(SCENARIOS_DIR, f"{name}.toml.in")
 
     # Serial-input transport capabilities the scenario needs, computed from what
     # it does, not from a named mechanism. CAPTURE_WRITES (a write-path scenario
-    # recording what the daemon sent back) needs a read-write transport;
-    # SELF_SHUTDOWN (the daemon must exit on its own when its input goes away)
-    # needs a disconnectable one. They are orthogonal: serial-loss disconnects
+    # recording what the program sent back) needs a read-write transport;
+    # SELF_SHUTDOWN and DISCONNECTABLE both need a transport that can model the
+    # device vanishing. They are orthogonal to capture: serial-loss disconnects
     # without capturing, the stream/pull-* scenarios capture without
     # disconnecting. The platform maps them to a concrete transport (below).
     capture_writes = bool(getattr(scen, "CAPTURE_WRITES", False))
     self_shutdown = bool(getattr(scen, "SELF_SHUTDOWN", False))
+    # DISCONNECTABLE requests a transport that can be unplugged without the
+    # self-shutdown lifecycle: satpulsewb's device-loss scenario disconnects and
+    # then asserts the program keeps running (SELF_SHUTDOWN's inverse), so it
+    # needs the pty but not the no-signal exit check.
+    disconnectable = self_shutdown or bool(getattr(scen, "DISCONNECTABLE", False))
     # INPUT (the old transport selector) is obsolete: transport is now chosen
     # from the capabilities above. Reject it loudly so a scenario merged from a
     # branch predating this change fails here rather than silently running over
     # the FIFO instead of the pty it asked for.
     if hasattr(scen, "INPUT"):
         return (name, "FAIL", "INPUT is obsolete; declare CAPTURE_WRITES and/or SELF_SHUTDOWN instead")
-    # The RTCM log a [stream.pull] correction source streams to the daemon.
-    pull_source_log = getattr(scen, "PULL_SOURCE_LOG", "")
-    if pull_source_log and not os.path.isabs(pull_source_log):
-        pull_source_log = os.path.join(REPO, pull_source_log)
-    # The correction-source implementation: "fake" (scenarios/stream/fakesource.py,
-    # the default) or "str2str" (a real RTKLIB Ntrip caster, for interop).
-    pull_peer = getattr(scen, "PULL_PEER", "fake")
     # A scenario known to fail (e.g. a bug not yet fixed) declares XFAIL = reason.
     xfail = getattr(scen, "XFAIL", None)
 
@@ -892,30 +930,30 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
     env["SATPULSE_TEST_PACKET_LOG"] = packet_log
     os.makedirs(env["SATPULSE_TEST_LOG_DIR"], exist_ok=True)
     # Create the serial-input transport with the requested capabilities and
-    # point the daemon's device path at it (the FIFO path the runner allocated,
-    # or the pty slave name) before rendering the config that references
+    # point the program's device path at it (the FIFO path the runner allocated,
+    # or the pty slave name) before preparing the input that references
     # SATPULSE_TEST_SERIAL. A platform that cannot supply those capabilities
     # reports the scenario unsupported here, which is a SKIP.
     try:
         transport = plat.make_transport(
-            env["SATPULSE_TEST_SERIAL"], readwrite=capture_writes, disconnectable=self_shutdown)
+            env["SATPULSE_TEST_SERIAL"], readwrite=capture_writes, disconnectable=disconnectable)
     except platform_api.TransportUnsupported as e:
         shutil.rmtree(run_dir, ignore_errors=True)
         return (name, "SKIP", str(e))
     env["SATPULSE_TEST_SERIAL"] = transport.path()
-    has_http, has_http2, has_ntrip, has_ntp_sock, has_push, has_pull = render_config(
-        config_tmpl, env["SATPULSE_TEST_CONFIG"], env)
 
-    daemon_log = os.path.join(run_dir, "satpulsed.log")
+    daemon_log = os.path.join(run_dir, f"{program.name}.log")
     ctx = Context(
         name, run_dir, env, factor, packet_log, daemon_log,
-        has_http, has_http2, has_ntrip, has_ntp_sock, has_push, requires_root, use_sudo,
-        transport=transport, has_pull=has_pull, pull_source_log=pull_source_log,
-        pull_peer=pull_peer,
+        requires_root, use_sudo, transport=transport,
     )
+    ctx.prog_bin = bin_path(program.name)
+    # Prepare the program's input (render the config or the flag list) and
+    # record which listeners/peers it needs on ctx.
+    program.prepare(ctx, scen)
     # Enable capture before attaching so the transport captures from the first
     # byte; attach takes ownership (a pty starts its drain thread) before the
-    # daemon starts.
+    # program starts.
     if capture_writes:
         ctx.start_write_capture()
     transport.attach()
@@ -924,22 +962,13 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
     status: Status = "PASS"
     detail = ""
     try:
-        # Bind the chrony SOCK consumer before the daemon starts, so its first
-        # refclock sample lands in a listening socket rather than warning.
-        if has_ntp_sock:
-            ctx.start_ntp_sock()
-        # Start fake remote push peers before the daemon, so outbound push
-        # setup succeeds immediately instead of failing and backing off.
-        if has_push:
-            ctx.start_push_peers()
-        # Likewise start the fake correction source before the daemon, so the
-        # daemon's pull connect succeeds at once rather than warning and backing
-        # off. Pull has no listener of its own and does not gate replay.
-        if has_pull:
-            ctx.start_source()
+        # Start the fake peers the program needs, each before the program
+        # starts so its first sample/connect lands rather than warning and
+        # backing off (config-derived for satpulsed, scenario-declared for
+        # satpulsewb).
+        program.start_peers(ctx, scen)
         with open(daemon_log, "wb") as out:
-            cmd = [ctx.satpulsed, "-v", "-f", env["SATPULSE_TEST_CONFIG"]]
-            cmd = ctx.daemon_cmd(cmd)
+            cmd = ctx.daemon_cmd(program.command(ctx))
             daemon = subprocess.Popen(
                 cmd,
                 stdout=out,
@@ -950,21 +979,16 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         if ctx.uses_darwin_sudo_daemon():
             ctx.wait_daemon_pid()
 
-        # Wait for the daemon's listeners before replaying so the HTTP/SSE
-        # and Ntrip observers exist before any packet arrives; otherwise a
-        # fast replay could be consumed during the pre-listener detection
-        # phase and live checks would race startup.
+        # Wait until the program is observable before replaying, so live checks
+        # cannot race startup: the daemon's configured listeners must accept and
+        # its push subscription be in place; satpulsewb's URL and token must be
+        # printed and its HTTP port up.
         if daemon.poll() is not None:
-            raise RuntimeError(f"daemon exited at startup (code {daemon.returncode})")
-        ctx.wait_listeners()
-        # Push has no listener of its own; wait for outbound push setup so the
-        # bcast subscription is in place before replay, like wait_listeners
-        # does for the inbound observers.
-        if has_push:
-            ctx.wait_push()
+            raise RuntimeError(f"{program.name} exited at startup (code {daemon.returncode})")
+        program.wait_ready(ctx)
 
         # A single replay then runs in the background while checks observe
-        # the live daemon.
+        # the live program.
         ctx.start_replay()
 
         scen.run(ctx)
@@ -1003,15 +1027,16 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
                 raise RuntimeError(err)
             if daemon.returncode not in (0, -signal.SIGINT):
                 raise RuntimeError(f"daemon exited with code {daemon.returncode} on SIGINT")
-        if ctx.has_http and not port_free(ctx.http_port):
-            raise RuntimeError(f"HTTP port {ctx.http_port} still in use after shutdown")
-        if ctx.has_http2 and not port_free(ctx.http_port2):
-            raise RuntimeError(f"HTTP port {ctx.http_port2} still in use after shutdown")
-        # Scan the daemon log only now, so shutdown-time warnings/errors
-        # (and any SIGQUIT goroutine dump) are included. A scenario may declare
-        # ALLOWED_ERRORS for error lines it expects (e.g. a push it knows the
-        # caster rejects).
-        common.check_no_unexpected_errors(ctx, allowed=getattr(scen, "ALLOWED_ERRORS", ()))
+        for p in program.ports_to_free(ctx):
+            if not port_free(p):
+                raise RuntimeError(f"port {p} still in use after shutdown")
+        # Scan the program log only now, so shutdown-time warnings/errors (and
+        # any SIGQUIT goroutine dump) are included. The base allow-list is the
+        # program's (the daemon's clock/detection warnings, or satpulsewb's);
+        # a scenario adds its own ALLOWED_ERRORS on top (e.g. a push the caster
+        # rejects, or the read error a device-loss scenario provokes).
+        common.check_no_unexpected_errors(
+            ctx, allowed=getattr(scen, "ALLOWED_ERRORS", ()), base=program.allowed_errors())
         if requires_root:
             err = ctx.remove_ntp_shm()
             if err is not None:
