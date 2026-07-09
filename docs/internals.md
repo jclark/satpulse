@@ -66,6 +66,8 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/ntrip` implements an Ntrip caster for serving RTCM packet streams from a GPS receiver to Ntrip clients. It includes an STR record generation capability, which is also used by `gps/app/stream`.
 
+`gps/app/ubxsim` implements a hardware-free fake u-blox receiver for smoke-testing configuration wiring. It answers the configuration interface with the ACK/NAK semantics of the interface description and replays a recorded packet log as nav output gated by its own MSGOUT configuration.
+
 ### gps/internal/
 
 These packages implement the `gpsprot` interface for specific protocols. They are in the domain layer and are not importable outside `gps/`.
@@ -241,6 +243,8 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 `internal/packcmd` implements `pack` subcommand of satpulsetool. It reads a JSONL packet log and writes selected packets as a raw byte stream, optionally preserving inter-packet timing.
 
 `internal/scancmd` implements `scan` subcommand of satpulsetool. It reads a raw packet byte stream, splits it using the GPS packet scanner, and writes a JSONL packet log.
+
+`internal/ubxsimcmd` implements the `ubxsim` subcommand of satpulsetool (Linux and macOS). It hosts the u-blox receiver simulator (`gps/app/ubxsim`) behind a pty for black-box testing without GPS hardware.
 
 `internal/pmccmd` implements `pmc` subcommand of satpulsetool.
 

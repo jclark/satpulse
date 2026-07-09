@@ -171,6 +171,10 @@ func Type(pkt []byte) uint8 { return pkt[1] >> 1 }
 // Subtype returns the message subtype (TF007). Precondition: len(pkt) >= 5.
 func Subtype(pkt []byte) uint8 { return pkt[4] >> 4 }
 
+// EAF returns the encryption and authentication flag (TF004).
+// Precondition: len(pkt) >= 4.
+func EAF(pkt []byte) bool { return pkt[3]&0x40 != 0 }
+
 // MsgID returns the message identifier "type.subtype" for a frame.
 func MsgID(pkt []byte) string {
 	return FormatMsgID(Type(pkt), Subtype(pkt))
