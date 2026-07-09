@@ -90,12 +90,14 @@ func simConn(t *testing.T, p *Personality) (io.Writer, <-chan scan.Packet) {
 			}
 		}
 	}()
+	// Close both ends before waiting: testWrite unblocks the read loop,
+	// testRead a writer parked in simWrite.Write, which watches no context.
 	t.Cleanup(func() {
 		testWrite.Close()
+		testRead.Close()
 		if err := <-done; err != nil {
 			t.Errorf("sim.Run: %v", err)
 		}
-		testRead.Close()
 		for range ch {
 		}
 	})

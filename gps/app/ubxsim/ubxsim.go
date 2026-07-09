@@ -65,8 +65,9 @@ func New(p *Personality, opts Options) *Sim {
 // Run serves the simulator over rw with fresh configuration state (RAM
 // seeded from the personality defaults, BBR and Flash empty). It returns
 // when reading from rw fails; cancelling ctx stops the NAV engine but
-// cannot unblock a pending read, so to stop the simulator the caller
-// closes rw (or its peer).
+// unblocks neither a pending read nor a pending write, so to stop the
+// simulator the caller closes rw (or its peer) in both directions. A pty
+// master does that with one Close; separate pipes need both ends closed.
 func (s *Sim) Run(ctx context.Context, rw io.ReadWriter) error {
 	db := newCfgDB(s.p.Defaults)
 	ctx, cancel := context.WithCancel(ctx)
