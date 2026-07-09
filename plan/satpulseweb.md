@@ -9,9 +9,10 @@ the receiver's protocol; the full desktop feature set (monitor,
 packets, message files, corrections) comes along because it flows
 through the same core.
 
-The work is delivered in phases, each an individually reviewable PR
-on master, with the Wails desktop app reworked on top at the end (on
-the desktop-gui branch). The phase structure and the branching and
+The work is delivered as a stack of individually reviewable PRs, one
+per phase, each branching off the previous phase's branch rather than
+master, with the Wails desktop app reworked on top at the end (on the
+desktop-gui branch). The phase structure and the branching and
 history-preservation strategy are described under Delivery below.
 
 Prerequisite: the web toolchain reorganisation (#283,
@@ -57,10 +58,12 @@ always-on, on-device admin surface. The intended model there is
 declarative: the web UI edits persistent config (TOML as the single
 source of truth) and applies by service restart, reusing the daemon's
 existing startup config phase as the apply mechanism. The hedges this
-plan takes for that future: the UI-to-backend contract is
-transport-neutral (a third, in-daemon backend can be added behind the
-same frontend interface), capability gating comes from the wire
-contract (`ConfigSupport`, vendor), and the shared components use
+plan takes for that future: the UI-to-backend contract splits a
+universal core from an optional connection-management capability,
+so a third, in-daemon backend -- which owns no port and may apply
+declaratively -- can be added behind the same frontend interface
+without touching the components; capability gating comes from the
+wire contract (`ConfigSupport`, vendor), and the shared components use
 semantic design tokens (#284) so a vendor can re-skin without
 forking.
 
@@ -249,8 +252,9 @@ review:
   reconnecting state (new `ConnState` value): on read failure while a
   reset-bearing operation is in flight, poll the opener, re-open,
   re-probe, resume. This also fixes the desktop's existing
-  read-error-disconnect gap (desktop/plan/issues.md), where an
-  unplugged device leaves the app stuck in connected state.
+  read-error-disconnect gap
+  (webui/packages/workbench/plan/issues.md), where an unplugged
+  device leaves the app stuck in connected state.
 - Reset gating over proxy connections, driven by `Opener.Socket()`
   (see Relationship to satpulsed above for why).
 - `Wants` gating for the gps:packet stream, so a web client only
@@ -288,9 +292,11 @@ proper display names; libc-freedom is a Linux property.
 
 `cmd/satpulseweb`, in the main module, command-line layer. No new
 external dependencies: HTTP server, SSE, and token auth are stdlib.
-The frontend is embedded as checked-in built assets (the `web/`
-package pattern, and the `internal/web` pattern of #283): a
-`//go:generate npm run build` bridge, `go build` never needs npm.
+The frontend is embedded as checked-in built assets, the same
+`//go:generate npm ... run embed` technique satpulsed uses for
+its dashboard (`time/internal/web`, #283); `go build` never needs
+npm. satpulseweb bundles its own frontend, so it embeds its own
+assets rather than reusing satpulsed's package.
 
 Invocation sketch:
 
@@ -360,12 +366,24 @@ native dialog for ad-hoc files.
 Builds on the #283 workspace. The desktop frontend's components move
 into the workspace verbatim in phase 1 (below); this plan adds:
 
-- A transport interface for the UI (read-config, apply-config,
-  send-msg-file, snapshots, event subscription) with two
-  implementations: the existing generated wailsjs bindings, and
-  fetch+SSE. This overturns desktop/plan/shared-webui.md's assumption
-  that the config panel stays desktop-specific; that file is
-  corrected in phase 5.
+- A transport interface for the UI, shaped so a third backend can be
+  retrofitted later without touching the components: it must not
+  assume exclusive ownership of a serial port. Split it into a
+  universal core -- snapshots, config read/apply, message-file send,
+  event subscription -- that the config panel and all tabs depend
+  only on, and an optional connection-management capability --
+  connect/disconnect, port listing, vendor selection, and the
+  connecting/reconnecting connection states -- implemented only by
+  the direct-serial and proxy backends. The two implementations here
+  are the existing generated wailsjs bindings (desktop) and fetch+SSE
+  (satpulseweb); a later in-daemon backend (the appliance admin
+  surface under Relationship to satpulsed) has a permanently
+  connected receiver and no connection management, and its apply may
+  be declarative (edit persistent config, apply by service restart)
+  rather than an imperative Configure run with live progress. This
+  overturns webui/packages/workbench/plan/shared-webui.md's assumption
+  that the config panel stays desktop-specific; that file is corrected
+  in phase 5.
 - A satpulseweb entry package in the workspace (index.html, token
   handling, fetch/SSE transport wiring), whose Vite build output is
   what `cmd/satpulseweb` embeds.
@@ -385,11 +403,12 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   satpulsed's `proxy.socket`; reset ops gated off.
 - TCP (`TCPOpener`): same, via `proxy.tcp`, for reaching a headless
   box from a laptop. Requires adding TCP dialing to gpsio. Known
-  caveat from desktop/plan/issues.md (tcp-connect): inter-packet idle
-  detection is unreliable over TCP, so the NMEA satellite buffer
-  falls back to its key-detection flush and the satellite display
-  lags one cycle; configuration is unaffected. TCP can slip to a
-  follow-on if phase 3 ships serial+socket only.
+  caveat from webui/packages/workbench/plan/issues.md
+  (tcp-connect): inter-packet idle detection is unreliable over
+  TCP, so the NMEA satellite buffer falls back to its
+  key-detection flush and the satellite display lags one cycle;
+  configuration is unaffected. TCP can slip to a follow-on if
+  phase 3 ships serial+socket only.
 
 ### Build, packaging, docs
 
@@ -407,49 +426,76 @@ into the workspace verbatim in phase 1 (below); this plan adds:
 ## Delivery: branching strategy and phases
 
 Constraints: desktop-gui stays a long-lived branch (the separate
-module is a Wails tax we do not extend); everything else lands on
-master as individually reviewable PRs; the history of the desktop
-frontend components must be preserved.
+module is a Wails tax we do not extend); the phases are developed as a
+stack of individually reviewable PRs, each branching off the previous
+phase's branch, and none is merged to master before the next phase
+starts; the history of the desktop frontend components must be
+preserved.
 
-Principle: exactly one master-bound PR carries a merge of desktop-gui
-(phase 1). Once merged, all desktop-gui commits are ancestors of
-master, so every later phase references that history for free:
-`git log` on deleted paths keeps working, and content is recoverable
-via `git show <ref>:<path>` or `git restore --source=<ref>`.
+Principle: exactly one PR (phase 1) carries a merge of desktop-gui.
+Because every later phase branches off the phase-1 branch (directly or
+transitively through the stack), that merge is in each one's ancestry,
+so they reference the desktop history for free: `git log` on deleted
+paths keeps working, and content is recoverable via the
+`desktop-gui-import` tag with `git show <ref>:<path>` or
+`git restore --source=<ref>`. This holds through the stack, with
+nothing needing to land on master first.
+
+Landing: the stack is reviewed as a series and merged bottom-up onto
+master (phase 0, then 1, then 2, ...) once it is ready; phases are not
+landed one at a time as they are written. Until then each phase's PR
+targets the previous phase's branch, so its diff shows only that
+phase's own changes.
 
 ### Phase 0 (prerequisite): web toolchain (#283)
 
 As planned in [web-toolchain.md](web-toolchain.md). No desktop
-involvement; creates the `webui/` workspace.
+involvement; creates the `webui/` workspace. Its PR (on the
+`web-toolchain` branch) is opened for review and stays open as the
+base of the stack; phase 1 branches off it rather than off master.
 
 ### Phase 1: webui import (one PR; the history carrier)
 
-Branch off master after phase 0 merges. Sync desktop-gui with master
+Branch off `web-toolchain` (not master): phase 0's PR stays open, so
+phase 1 is a stacked PR on top of it. Sync desktop-gui with master
 one last time. `git merge desktop-gui`; tag the merged head
 `desktop-gui-import`. Then:
 
 - pure `git mv` commits (no content edits, so rename detection binds
   `git log --follow`): frontend components into a new workspace
-  package (e.g. `webui/packages/app`), and `desktop/serialenum` ->
-  `gps/lib/serialenum` as-is;
-- adaptation edits (import paths, removing wailsjs references) in
-  separate commits;
-- prune everything else the merge brought (all of `desktop/`).
+  package (`webui/packages/workbench`, paired with the read-only
+  `dashboard`), `desktop/serialenum` -> `gps/lib/serialenum` as-is,
+  and `desktop/plan` -> `webui/packages/workbench/plan` so the design
+  docs travel with the code they describe;
+- adaptation edits in separate commits: `gps/lib/serialenum` adds
+  `go.bug.st` to the main `go.mod`; the moved plans' escaping links
+  are re-pointed; a provenance note is added to the workbench plan
+  README;
+- prune the rest of `desktop/` (the Wails shell, build tooling,
+  logdir, module go.mod).
+
+The workbench package lands parked: it still imports the Wails-generated
+wailsjs bindings, so it is deliberately not registered in the root
+`workspaces` array and is not compiled. Registering it and replacing the
+wailsjs imports with the transport interface is phase 3 work; here it is
+purely the arriving history, and the build stays green because the
+parked package is excluded from it.
 
 Import components verbatim even where they overlap with dashboard
 components (two sky views, etc.); unification is #284's job, not this
-PR's. Net diff vs master: the added webui files and the serialenum
-package. The commit list is long -- that is the history arriving.
+PR's. Net diff vs its `web-toolchain` base: the added webui files and
+the serialenum package. The commit list is long -- that is the history
+arriving.
 
 ### Phase 2: gps/app/session (one PR)
 
-Fresh branch off master after phase 1 merges. Phase 1 is a real
-prerequisite: it fixes the `desktop-gui-import` tag that commit 1
-below is resurrected from and verified against, and it puts that
-history into master's ancestry before the derived code lands.
+Branch off the phase-1 branch, continuing the stack. Phase 1 is a real
+prerequisite: it creates the `desktop-gui-import` tag that commit 1
+below is resurrected from and verified against, and puts that history
+into the stack's ancestry before the derived code lands.
 
-The PR's aggregate diff against master necessarily shows
-`gps/app/session` as new files (master no longer contains
+The PR's aggregate diff against its base necessarily shows
+`gps/app/session` as new files (the phase-1 branch no longer contains
 `desktop/app.go`). Reviewability comes from the per-commit structure,
 so the PR must be reviewed commit by commit, not from the
 files-changed view:
@@ -489,8 +535,8 @@ no dynamic dependencies.
 
 ### Phase 5: rework desktop-gui on top (branch work, no master PR)
 
-On the desktop-gui branch: merge master (which now contains phases
-1-4), then:
+On the desktop-gui branch: merge the tip of the stack (the phase-4
+branch, or master once the stack has landed), then:
 
 - delete the branch's local copies of the frontend components in
   favor of the workspace packages (the `file:` dependency mechanism
@@ -501,17 +547,17 @@ On the desktop-gui branch: merge master (which now contains phases
   logdir, darwin enumeration;
 - optionally adopt the msg-file library browser alongside the native
   dialog;
-- correct desktop/plan/shared-webui.md (the config panel is shared
-  after all).
+- correct webui/packages/workbench/plan/shared-webui.md (the
+  config panel is shared after all).
 
-After this phase the branch's delta over master is small: one module
-directory containing a thin shell.
+After this phase, once the stack has landed on master, the branch's
+delta over master is small: one module directory containing a thin
+shell.
 
 ## Open decisions
 
-- Names: the binary (`satpulseweb`), the workspace package for the
-  imported components, the embed package location (own package vs
-  go:embed directly in cmd/satpulseweb).
+- Names: the binary (`satpulseweb`), the embed package location (own
+  package vs go:embed directly in cmd/satpulseweb).
 - macOS enumeration in satpulseweb: keep go.bug.st, or glob
   `/dev/cu.*` and avoid cgo there too.
 - Whether TCP transport ships in phase 3 or as a follow-on.
