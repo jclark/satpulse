@@ -2,12 +2,15 @@ package ubxsim
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nmea"
@@ -202,6 +205,80 @@ func TestSim(t *testing.T) {
 			ucv.Item{Key: ucv.KUbxTimSvin.KeyU(ucv.UART1).Key(), Value: 1}))
 		if ackResult(t, ch, ubxbin.CfgValsetID) {
 			t.Errorf("VALSET of unknown key ACKed")
+		}
+	})
+}
+
+// recWriter records the time and size of each Write so a test can
+// observe how the paced writer meters a packet onto the stream.
+type recWriter struct {
+	mu   sync.Mutex
+	recs []writeRec
+}
+
+type writeRec struct {
+	at time.Time
+	n  int
+}
+
+func (w *recWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	w.recs = append(w.recs, writeRec{time.Now(), len(p)})
+	w.mu.Unlock()
+	return len(p), nil
+}
+
+func (w *recWriter) snapshot() []writeRec {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]writeRec(nil), w.recs...)
+}
+
+// TestWriterPacing checks that a UART port meters a large packet onto
+// the stream over its transmission time rather than writing it in one
+// burst, so no within-burst gap the reader sees approaches the idle
+// threshold. It exercises the writer directly, without the engines.
+func TestWriterPacing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const baud = 38400
+		db := newCfgDB(ucv.Map{ucv.KUart1Baudrate.Key(): baud})
+		rec := &recWriter{}
+		w := newWriter(rec, db, ucv.UART1)
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() { w.run(ctx); close(done) }()
+
+		big, err := ubxbin.PackMsg(ubxbin.NavSatID, make([]byte, 700))
+		if err != nil {
+			t.Fatalf("pack: %v", err)
+		}
+		want := time.Duration(len(big)*bitsPerByte) * time.Second / baud
+		start := time.Now()
+		if err := w.send(ctx, big); err != nil {
+			t.Fatalf("send: %v", err)
+		}
+		time.Sleep(want + 20*tickInterval) // let the writer drip it all out
+		cancel()
+		<-done
+
+		recs := rec.snapshot()
+		total := 0
+		for _, r := range recs {
+			total += r.n
+		}
+		if total != len(big) {
+			t.Errorf("wrote %d bytes, want %d", total, len(big))
+		}
+		if len(recs) < 2 {
+			t.Fatalf("packet emitted in %d write(s), want a metered drip", len(recs))
+		}
+		for i := 1; i < len(recs); i++ {
+			if gap := recs[i].at.Sub(recs[i-1].at); gap > tickInterval {
+				t.Errorf("within-burst gap %v exceeds tick interval %v", gap, tickInterval)
+			}
+		}
+		if span := recs[len(recs)-1].at.Sub(start); span < want-2*tickInterval || span > want+2*tickInterval {
+			t.Errorf("drip spanned %v, want ~%v (a packet's transmission time)", span, want)
 		}
 	})
 }

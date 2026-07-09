@@ -13,13 +13,14 @@ import (
 // messages as a contiguous burst, the way a real receiver emits its
 // enabled set. Enablement is the RAM-layer MSGOUT key for the simulated
 // port (zero is off, nonzero is on); the epoch period is CFG-RATE-MEAS x
-// CFG-RATE-NAV; emission is paced by the configured UART baud rate, so
-// the output has the burst-then-idle shape of real hardware.
+// CFG-RATE-NAV. It enqueues each epoch's enabled burst to the writer,
+// which paces the bytes onto the line, and then sleeps to the next epoch
+// tick.
 type navEngine struct {
 	db     *cfgDB
 	port   ucv.Port
 	epochs [][]Pkt
-	w      *muxWriter
+	w      *writer
 	lg     *slog.Logger
 }
 
@@ -38,10 +39,7 @@ func (n *navEngine) run(ctx context.Context) {
 			if n.db.ramUint(pkt.KeyM.KeyU(n.port).Key()) == 0 {
 				continue
 			}
-			if err := n.w.writePacket(pkt.Data); err != nil {
-				return
-			}
-			if !sleepCtx(ctx, n.txTime(len(pkt.Data))) {
+			if err := n.w.send(ctx, pkt.Data); err != nil {
 				return
 			}
 		}
@@ -60,26 +58,6 @@ func (n *navEngine) epochPeriod() time.Duration {
 		return time.Second
 	}
 	return time.Duration(ms) * time.Millisecond
-}
-
-// txTime returns the time a packet of the given length occupies on the
-// line at the configured baud rate (10 bits per byte). A non-UART port
-// is not paced.
-func (n *navEngine) txTime(length int) time.Duration {
-	var k ucv.KeyU
-	switch n.port {
-	case ucv.UART1:
-		k = ucv.KUart1Baudrate
-	case ucv.UART2:
-		k = ucv.KUart2Baudrate
-	default:
-		return 0
-	}
-	baud := n.db.ramUint(k.Key())
-	if baud == 0 {
-		return 0
-	}
-	return time.Duration(length*10) * time.Second / time.Duration(baud)
 }
 
 // sleepCtx sleeps for d and reports true, or reports false if ctx is
