@@ -56,6 +56,22 @@ export interface MsgFileInfo {
     tags: MsgFileTag[];
 }
 
+// MsgFileEntry is one message file in the library catalog, identified
+// by its vendor directory and file name (without the .toml extension);
+// path is the file the name resolved to on the server's library search
+// path, for display. Entries arrive in search order and unsorted:
+// sorting and grouping are the UI's job.
+export interface MsgFileEntry {
+    vendor: string;
+    file: string;
+    path: string;
+}
+
+export interface MsgFileCatalog {
+    names: MsgFileEntry[];
+    preselect?: string; // vendor to preselect, or absent
+}
+
 // Transport methods reject with an Error whose message is suitable for
 // display when an operation fails.
 export interface Transport {
@@ -105,9 +121,15 @@ export interface ConnectionTransport {
     listPorts(): Promise<PortInfo[]>;
 }
 
-// MsgFileTransport is the message-file capability.
+// MsgFileTransport is the message-file capability. A backend obtains the
+// file to load in whichever of two ways it supports: a native file dialog
+// (desktop's loadMsgFile) or the server-side library catalog (the web's
+// listMsgFiles/selectMsgFile). The panel renders the picker when the
+// catalog pair is present, else the Open... button when loadMsgFile is.
 export interface MsgFileTransport {
-    loadMsgFile(): Promise<MsgFileInfo | null>;
+    loadMsgFile?(): Promise<MsgFileInfo | null>;
+    listMsgFiles?(): Promise<MsgFileCatalog>;
+    selectMsgFile?(vendor: string, file: string): Promise<MsgFileInfo>;
     sendMsgFile(tag: string, port: string, save: boolean): Promise<void>;
     cancelMsgSend(): Promise<void>;
 }

@@ -661,6 +661,7 @@ export function App() {
                 {transport.msgFile && <div class={`h-full ${activeTab === 'messages' ? '' : 'hidden'}`}>
                     <MsgFilePanel
                         connState={connState}
+                        visible={activeTab === 'messages'}
                         msgFilePath={msgFilePath}
                         setMsgFilePath={setMsgFilePath}
                         msgFileTags={msgFileTags}

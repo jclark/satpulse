@@ -26,7 +26,7 @@ These packages provide entry points for the SatPulse executables. They are in th
 
 `cmd/satpulsetool` provides main for satpulsetool.
 
-`cmd/satpulsewb` provides main for satpulsewb, which serves SatPulse Workbench, the browser GUI for interactive GPS receiver configuration and monitoring. It adapts `gps/app/session` to HTTP: session methods become POST endpoints, snapshots GET endpoints, and session events an SSE stream, with a latest-event-per-name cache priming late-joining clients and the high-rate packet stream gated on a subscriber being connected. A per-run token guards the API and event stream. The frontend is the Vite build output of `webui/packages/workbench-http`, embedded as checked-in assets under `dist/` (rebuilt by go generate, like `time/internal/web`).
+`cmd/satpulsewb` provides main for satpulsewb, which serves SatPulse Workbench, the browser GUI for interactive GPS receiver configuration and monitoring. It adapts `gps/app/session` to HTTP: session methods become POST endpoints, snapshots GET endpoints, and session events an SSE stream, with a latest-event-per-name cache priming late-joining clients and the high-rate packet stream gated on a subscriber being connected. A per-run token guards the API and event stream. Message files are chosen from the library (`msgfile.go`): the catalog endpoint lists the names `msgfile.ListNames` finds on the search path (`SATPULSE_GPSMSG_PATH`, or a compiled-in default including the user's own `~/.satpulse/gpsmsg`), preselecting the session vendor; the select endpoint resolves a name with `msgfile.FindName`, whose validation is the traversal guard, and loads it through `msgfile.Load`. The frontend is the Vite build output of `webui/packages/workbench-http`, embedded as checked-in assets under `dist/` (rebuilt by go generate, like `time/internal/web`).
 
 `cmd/ifwait` provides a program that waits for a network interface to become ready. It exercises the functionality of the `time/lib/ifwait` package.
 
@@ -46,7 +46,7 @@ These packages provide the public API for GPS processing. They are in the domain
 
 `gps/nmeasyn` synthesizes NMEA sentences from gpsprot messages.
 
-`gps/msgfile` parses TOML message files that describe GPS messages to send to a receiver. It handles multiple protocol types (UBX, CASBIN, ASBIN, NMEA, line, binary), applies per-type defaults, and converts typed messages into raw bytes ready to send. Messages are organized by tags for selective sending.
+`gps/msgfile` parses TOML message files that describe GPS messages to send to a receiver. It handles multiple protocol types (UBX, CASBIN, ASBIN, NMEA, line, binary), applies per-type defaults, and converts typed messages into raw bytes ready to send. Messages are organized by tags for selective sending. It also implements the message-file library search path: a `Name` (vendor directory plus file name) resolves to the first `vendor/file.toml` along a directory list (`FindName`, `ListNames`, and `EnvDirs` for `SATPULSE_GPSMSG_PATH`).
 
 `gps/ts` generates TypeScript type definitions for the JSON values serialized from types in the `gps/*` packages.
 

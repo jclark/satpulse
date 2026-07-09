@@ -1,12 +1,14 @@
 import {h, Fragment} from 'preact';
 import {useCallback, useEffect, useRef} from 'preact/hooks';
 import {transport} from './transport';
+import type {MsgFileEntry, MsgFileInfo} from './transport';
 import type {ConnState, MsgFileTag, SendLine, ResponseLine} from './app';
 import {Button, Card, Select, fieldLabelText, labeledControlText} from './ui';
 import {useState} from 'preact/hooks';
 
 interface Props {
     connState: ConnState;
+    visible: boolean;
     msgFilePath: string;
     setMsgFilePath: (p: string) => void;
     msgFileTags: MsgFileTag[];
@@ -60,6 +62,7 @@ function isClickable(r: ResponseLine): boolean {
 
 export function MsgFilePanel({
     connState,
+    visible,
     msgFilePath,
     setMsgFilePath,
     msgFileTags,
@@ -85,6 +88,17 @@ export function MsgFilePanel({
     const [save, setSave] = useState(false);
     const leftPaneRef = useRef<HTMLDivElement>(null);
 
+    // The web backend picks from the server-side library catalog (two
+    // dropdowns plus Load); the desktop backend opens a native dialog.
+    // The catalog is a flat name list in search order; sorting and
+    // grouping by vendor happen here.
+    const picker = !!(transport.msgFile?.listMsgFiles && transport.msgFile?.selectMsgFile);
+    const [catalog, setCatalog] = useState<MsgFileEntry[]>([]);
+    const [selectedVendor, setSelectedVendor] = useState('');
+    const [selectedFile, setSelectedFile] = useState('');
+    const vendors = [...new Set(catalog.map(e => e.vendor))].sort();
+    const vendorFiles = catalog.filter(e => e.vendor === selectedVendor).map(e => e.file).sort();
+
     // Seed the port from the config-tab readback once it arrives, without
     // overriding a port the user has already chosen.
     useEffect(() => {
@@ -97,33 +111,73 @@ export function MsgFilePanel({
         if (el) el.scrollTop = el.scrollHeight;
     }, [sendLines, responseLines]);
 
+    // applyLoaded resets the send/response state for a freshly loaded file
+    // and arms the sole/default tag, shared by the dialog and catalog paths.
+    const applyLoaded = useCallback((info: MsgFileInfo) => {
+        clearRespSession();
+        setMsgFilePath(info.path);
+        setMsgFileTags(info.tags || []);
+        setSendLines([]);
+        setResponseLines([]);
+        setSelectedResponseIndex(-1);
+        setActiveTagIndex(-1);
+        setTagArmed(false);
+        setDecodeResult(null);
+        const tags = info.tags || [];
+        if (tags.length === 1 || (tags.length > 0 && tags[0].tag === '')) {
+            setSelectedTagIndex(0);
+            setTagArmed(true);
+        } else {
+            setSelectedTagIndex(-1);
+        }
+    }, [clearRespSession, setMsgFilePath, setMsgFileTags, setSendLines, setSelectedTagIndex, setResponseLines, setSelectedResponseIndex, setActiveTagIndex, setTagArmed]);
+
     const handleOpen = useCallback(async () => {
         try {
-            const info = await transport.msgFile!.loadMsgFile();
-            if (!info) return;
-            clearRespSession();
-            setMsgFilePath(info.path);
-            setMsgFileTags(info.tags || []);
-            setSendLines([]);
-            setResponseLines([]);
-            setSelectedResponseIndex(-1);
-            setActiveTagIndex(-1);
-            setTagArmed(false);
-            setDecodeResult(null);
-            const tags = info.tags || [];
-            if (tags.length === 1) {
-                setSelectedTagIndex(0);
-                setTagArmed(true);
-            } else if (tags.length > 0 && tags[0].tag === '') {
-                setSelectedTagIndex(0);
-                setTagArmed(true);
-            } else {
-                setSelectedTagIndex(-1);
-            }
+            const info = await transport.msgFile!.loadMsgFile!();
+            if (info) applyLoaded(info);
         } catch (e: any) {
             addToast(e.message || 'Failed to load file', 'error');
         }
-    }, [clearRespSession, setMsgFilePath, setMsgFileTags, setSendLines, setSelectedTagIndex, setResponseLines, setSelectedResponseIndex, setActiveTagIndex, setTagArmed, addToast]);
+    }, [applyLoaded, addToast]);
+
+    // Refresh the catalog whenever the tab opens: it picks up files added
+    // since the last visit, and the server's preselect (the session
+    // vendor) applies only until the user has chosen a vendor.
+    const loadCatalog = useCallback(async () => {
+        try {
+            const cat = await transport.msgFile!.listMsgFiles!();
+            const names = cat.names || [];
+            setCatalog(names);
+            setSelectedVendor(prev => {
+                if (prev && names.some(e => e.vendor === prev)) return prev;
+                if (cat.preselect && names.some(e => e.vendor === cat.preselect)) return cat.preselect;
+                return '';
+            });
+        } catch (e: any) {
+            addToast(e.message || 'Failed to list message files', 'error');
+        }
+    }, [addToast]);
+
+    useEffect(() => {
+        if (picker && visible) loadCatalog();
+    }, [picker, visible, loadCatalog]);
+
+    // Keep the file selection valid as the vendor or catalog changes;
+    // auto-pick when a vendor holds a single file.
+    useEffect(() => {
+        const files = catalog.filter(e => e.vendor === selectedVendor).map(e => e.file);
+        setSelectedFile(prev => files.includes(prev) ? prev : (files.length === 1 ? files[0] : ''));
+    }, [selectedVendor, catalog]);
+
+    const handleLoad = useCallback(async () => {
+        if (!selectedVendor || !selectedFile) return;
+        try {
+            applyLoaded(await transport.msgFile!.selectMsgFile!(selectedVendor, selectedFile));
+        } catch (e: any) {
+            addToast(e.message || 'Failed to load file', 'error');
+        }
+    }, [selectedVendor, selectedFile, applyLoaded, addToast]);
 
     const handleTagClick = useCallback(async (i: number) => {
         clearRespSession();
@@ -202,7 +256,36 @@ export function MsgFilePanel({
     return (
         <div class="flex h-full flex-col">
             <div class="flex shrink-0 items-center gap-3 px-4 pt-4 pb-2">
-                <Button onClick={handleOpen}>Open...</Button>
+                {picker ? (
+                    <>
+                        <label class={`flex items-center gap-1.5 ${fieldLabelText(false)}`}>
+                            Vendor
+                            <Select
+                                class="w-40"
+                                value={selectedVendor}
+                                onChange={e => setSelectedVendor((e.target as HTMLSelectElement).value)}
+                            >
+                                <option value="">-</option>
+                                {vendors.map(v => <option key={v} value={v}>{v}</option>)}
+                            </Select>
+                        </label>
+                        <label class={`flex items-center gap-1.5 ${fieldLabelText(!selectedVendor)}`}>
+                            File
+                            <Select
+                                class="w-56"
+                                disabled={!selectedVendor}
+                                value={selectedFile}
+                                onChange={e => setSelectedFile((e.target as HTMLSelectElement).value)}
+                            >
+                                <option value="">-</option>
+                                {vendorFiles.map(f => <option key={f} value={f}>{f}</option>)}
+                            </Select>
+                        </label>
+                        <Button disabled={!selectedFile} onClick={handleLoad}>Load</Button>
+                    </>
+                ) : (
+                    <Button onClick={handleOpen}>Open...</Button>
+                )}
                 <span class="text-xs text-text-secondary">{msgFilePath || ''}</span>
             </div>
 

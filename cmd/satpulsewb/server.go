@@ -21,16 +21,17 @@ import (
 // server adapts a session to HTTP: session methods become POST
 // endpoints, snapshots GET endpoints, and events an SSE stream.
 type server struct {
-	ctx    context.Context // run context; SSE streams end when it is done
-	sess   *session.Session
-	hub    *sseHub
-	token  string        // empty means no auth
-	vendor gpsreg.Vendor // --vendor: the vendor for every connect
-	mux    *http.ServeMux
+	ctx     context.Context // run context; SSE streams end when it is done
+	sess    *session.Session
+	hub     *sseHub
+	token   string        // empty means no auth
+	vendor  gpsreg.Vendor // --vendor: the vendor for every connect
+	msgDirs []string      // message-file library search path
+	mux     *http.ServeMux
 }
 
-func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string, vendor gpsreg.Vendor) *server {
-	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, vendor: vendor, mux: http.NewServeMux()}
+func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string, vendor gpsreg.Vendor, msgDirs []string) *server {
+	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, vendor: vendor, msgDirs: msgDirs, mux: http.NewServeMux()}
 	// get: token-checked. post: token-checked and requires a JSON
 	// Content-Type, which blocks cross-site CSRF (see requireJSON).
 	get := s.auth
@@ -49,6 +50,10 @@ func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token st
 	s.mux.HandleFunc("POST /api/signals", post(s.handleSignals))
 	s.mux.HandleFunc("POST /api/corrections/start", post(s.handleCorrStart))
 	s.mux.HandleFunc("POST /api/corrections/stop", post(s.handleCorrStop))
+	s.mux.HandleFunc("GET /api/msgfile/catalog", get(s.handleMsgCatalog))
+	s.mux.HandleFunc("POST /api/msgfile/select", post(s.handleMsgSelect))
+	s.mux.HandleFunc("POST /api/msgfile/send", post(s.handleMsgSend))
+	s.mux.HandleFunc("POST /api/msgfile/cancel", post(s.handleMsgCancel))
 	s.mux.HandleFunc("POST /api/decode-packet", post(s.handleDecodePacket))
 	s.mux.HandleFunc("POST /api/geo/ecef-to-llh", post(s.handleECEFtoLLH))
 	s.mux.HandleFunc("POST /api/geo/llh-to-ecef", post(s.handleLLHtoECEF))
