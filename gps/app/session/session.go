@@ -3,6 +3,29 @@
 // disconnect. It is the application core shared by GUI shells; each
 // shell provides a Sink that delivers session events to its UI
 // transport.
+//
+// A Session is a state machine over ConnState, driven by the methods
+// below and reported as gps:state events: Connect moves Disconnected
+// -> Connecting -> Connected (probing on the way, with the result as
+// a gps:receiver event), and Disconnect returns to Disconnected from
+// any state. The receiver operations -- ReadConfig, ApplyConfig,
+// SendMsgFile -- require StateConnected and are mutually exclusive:
+// each holds the receiver port for its duration (StateConfiguring or
+// StateSending), and a call while another operation is in progress
+// returns an error rather than queueing. StartCorrections also
+// requires StateConnected; the correction session it starts persists
+// across receiver operations and ends with the connection.
+//
+// Methods are safe for concurrent use, and concurrent calls have
+// defined semantics regardless of how the shell behaves: the last
+// Connect or Disconnect wins (a superseded Connect closes any
+// late-opened transport, returns an error, and cannot start a
+// connection manager), and racing receiver operations lose to
+// whichever holds the port. Operation completion is scoped to the
+// pipeline run where it started. All state changes flow to the shell
+// as ordered events. Event callbacks may call the snapshot accessors
+// (State, Receiver, Speed, CorrectionsState), which also serve
+// late-joining consumers.
 package session
 
 import (
@@ -14,6 +37,8 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,7 +59,10 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
-// ConnState represents the unified connection/activity state.
+// ConnState represents the unified connection/activity state, emitted
+// as gps:state events. Connecting and Reconnecting are transitional;
+// Configuring and Sending mean an exclusive receiver operation holds
+// the port, and further operations are refused until it completes.
 type ConnState string
 
 const (
@@ -56,6 +84,9 @@ const (
 	reopenTimeout = 10 * time.Second
 	// reopenDelay separates reconnect attempts.
 	reopenDelay = time.Second
+	// maxReopenAttempts is how many times reopen retries the device node
+	// after a reset re-enumerates it; 0 would disable reconnect.
+	maxReopenAttempts = 3
 )
 
 // configRequest is sent to packetWorker to run gpscfg.Configure.
@@ -111,6 +142,9 @@ type Event struct {
 // Sink delivers events to the UI transport. Called from session
 // goroutines; Emit must not block (drop or buffer).
 type Sink interface {
+	// Emit may call Session snapshot accessors, but must not synchronously
+	// call other Session methods: events can originate on goroutines those
+	// methods wait for.
 	Emit(Event)
 	// Wants reports whether anyone is listening for this event.
 	// The session uses it to suppress expensive high-rate streams
@@ -126,8 +160,7 @@ func emit(sink Sink, name EventName, data any) {
 // Options configures a Session.
 type Options struct {
 	ProbeTimeout time.Duration // timeout for a probe or configuration run; default 15s
-	MaxRetries   int           // reconnect attempts after a reset kills the transport; default 3
-	PacketLog    io.Writer     // optional JSONL packet log (nil to disable)
+	PacketLog    io.Writer     // optional JSONL packet log; writes are serialized (nil to disable)
 }
 
 // Session is an interactive session with a GPS receiver.
@@ -137,18 +170,33 @@ type Session struct {
 	sink Sink
 	opts Options
 	mu   sync.Mutex
+	// lifecycleMu serializes connection shutdown and manager startup.
+	// It is not held while opening a transport, so a later lifecycle
+	// call can still supersede a pending Connect.
+	lifecycleMu sync.Mutex
 	// op and vendor are set by Connect and immutable while the
 	// connection lives.
 	op     Opener
 	vendor gpsreg.Vendor
 	state  ConnState
+	// stateSeq counts state transitions; stateEmitSeq is the last
+	// transition whose state has been published. emitStateChange uses
+	// them to keep gps:state events ordered when transitions race.
+	stateSeq      int
+	stateEmitSeq  int
+	stateEmitMu   sync.Mutex
+	stateEmitting bool
 	// connCtx spans the logical connection, Connect to Disconnect;
 	// runCtx spans one packet pipeline run within it. They differ only
 	// when a reset-bearing operation kills the transport: the manager
 	// ends the run, re-opens the transport, and starts a new run under
 	// the same connCtx.
-	connCtx      context.Context
-	connCancel   context.CancelFunc
+	connCtx    context.Context
+	connCancel context.CancelFunc
+	// connectGen is reserved at the start of each lifecycle call, so a
+	// Connect can tell that a later Connect or Disconnect superseded it
+	// during shutdown or while Open was pending.
+	connectGen   int
 	runCtx       context.Context
 	runCancel    context.CancelFunc
 	connWg       sync.WaitGroup
@@ -169,6 +217,7 @@ type Session struct {
 	corrCancel   context.CancelFunc
 	corrWg       *sync.WaitGroup
 	corrStopping bool
+	packetLogMu  sync.Mutex
 	packetLogW   io.Writer
 }
 
@@ -176,9 +225,6 @@ type Session struct {
 func New(lg *slog.Logger, sink Sink, opts Options) *Session {
 	if opts.ProbeTimeout == 0 {
 		opts.ProbeTimeout = 15 * time.Second
-	}
-	if opts.MaxRetries == 0 {
-		opts.MaxRetries = 3
 	}
 	return &Session{
 		lg:         lg,
@@ -194,41 +240,86 @@ func (s *Session) emit(name EventName, data any) {
 	emit(s.sink, name, data)
 }
 
-// setState transitions the connection state and emits a gps:state event.
-// Must NOT be called with s.mu held -- a Sink may re-enter Session methods.
-func (s *Session) setState(st ConnState) {
-	s.mu.Lock()
+// setStateLocked records a state transition. Call with s.mu held,
+// then emitStateChange after releasing it.
+func (s *Session) setStateLocked(st ConnState) {
 	s.state = st
-	s.mu.Unlock()
-	s.emit(EventState, st)
+	s.stateSeq++
 }
 
-// setEndState transitions to target if still connected, or to Disconnected
-// if the connection was lost. Returns the state actually set.
+// emitStateChange publishes the state as a gps:state event. Emissions
+// are serialized and each publishes the freshest state, so the last
+// event consumers see always matches the final state even when
+// transitions race; an intermediate state that was overtaken before
+// its emission may be coalesced away. Must not be called with s.mu
+// held (the Sink may call Session snapshot accessors).
+func (s *Session) emitStateChange() {
+	s.stateEmitMu.Lock()
+	if s.stateEmitting {
+		s.stateEmitMu.Unlock()
+		return
+	}
+	s.stateEmitting = true
+	for {
+		s.mu.Lock()
+		if s.stateSeq == s.stateEmitSeq {
+			s.mu.Unlock()
+			s.stateEmitting = false
+			s.stateEmitMu.Unlock()
+			return
+		}
+		s.stateEmitSeq = s.stateSeq
+		st := s.state
+		s.mu.Unlock()
+		s.stateEmitMu.Unlock()
+		s.emit(EventState, st)
+		s.stateEmitMu.Lock()
+	}
+}
+
+// setEndState transitions to target if the originating run is still
+// current and connected, or to Disconnected if the connection was lost.
+// Returns the state actually set.
 // Used by send/config goroutines to avoid resurrecting state after
-// disconnect. While the state is Reconnecting or the run is ending, the
-// connection manager owns the state and the transition is skipped.
-func (s *Session) setEndState(target ConnState) ConnState {
+// disconnect. While the state is Connecting or Reconnecting or the
+// run is ending, a (re)connect owns the state and the transition is
+// skipped: an operation can only be ending in those states because a
+// newer Connect cancelled it.
+func (s *Session) setEndState(runCtx context.Context, target ConnState) ConnState {
 	s.mu.Lock()
 	st := s.state
-	if st == StateDisconnected || st == StateReconnecting {
+	if s.runCtx != runCtx {
+		s.mu.Unlock()
+		return st
+	}
+	if st == StateDisconnected || st == StateConnecting || st == StateReconnecting {
 		s.mu.Unlock()
 		return st
 	}
 	if s.connCtx != nil && s.connCtx.Err() != nil {
-		s.state = StateDisconnected
+		s.setStateLocked(StateDisconnected)
 		s.mu.Unlock()
-		s.emit(EventState, StateDisconnected)
+		s.emitStateChange()
 		return StateDisconnected
 	}
 	if s.runCtx != nil && s.runCtx.Err() != nil {
 		s.mu.Unlock()
 		return st
 	}
-	s.state = target
+	s.setStateLocked(target)
 	s.mu.Unlock()
-	s.emit(EventState, target)
+	s.emitStateChange()
 	return target
+}
+
+// stateErrLocked returns the error for an operation that requires
+// StateConnected: a distinct message when an exclusive operation
+// holds the port, "not connected" otherwise. Call with s.mu held.
+func (s *Session) stateErrLocked() error {
+	if s.state == StateConfiguring || s.state == StateSending {
+		return errors.New("another operation is in progress")
+	}
+	return errors.New("not connected")
 }
 
 // probeDone transitions to Connected at the end of a (re)connect probe.
@@ -240,9 +331,9 @@ func (s *Session) probeDone() bool {
 		s.mu.Unlock()
 		return false
 	}
-	s.state = StateConnected
+	s.setStateLocked(StateConnected)
 	s.mu.Unlock()
-	s.emit(EventState, StateConnected)
+	s.emitStateChange()
 	return true
 }
 
@@ -270,7 +361,7 @@ func (s *Session) closeLocked() {
 		s.connCancel()
 		s.connCancel = nil
 	}
-	s.state = StateDisconnected
+	s.setStateLocked(StateDisconnected)
 	s.stopCorrLocked()
 	if s.pb != nil {
 		s.pb.Close()
@@ -329,12 +420,11 @@ func (s *Session) endConn() {
 		s.connCancel()
 		s.connCancel = nil
 	}
-	wasDisconnected := s.state == StateDisconnected
-	s.state = StateDisconnected
-	s.mu.Unlock()
-	if !wasDisconnected {
-		s.emit(EventState, StateDisconnected)
+	if s.state != StateDisconnected {
+		s.setStateLocked(StateDisconnected)
 	}
+	s.mu.Unlock()
+	s.emitStateChange()
 }
 
 // enterReconnect transitions to Reconnecting, or reports false if the
@@ -345,9 +435,9 @@ func (s *Session) enterReconnect() bool {
 		s.mu.Unlock()
 		return false
 	}
-	s.state = StateReconnecting
+	s.setStateLocked(StateReconnecting)
 	s.mu.Unlock()
-	s.emit(EventState, StateReconnecting)
+	s.emitStateChange()
 	return true
 }
 
@@ -374,7 +464,9 @@ const deviceWaitInterval = 200 * time.Millisecond
 // waits for it to appear until ctx is done: after a USB reset the
 // receiver re-enumerates and the node vanishes briefly (and Connect
 // works when run just after plugging the device in). On ctx expiry the
-// last open error is returned.
+// last open error is returned. The device is assumed to come back
+// under the same node: a receiver that re-enumerates under a
+// different name is not found (known limitation).
 func (o SerialOpener) Open(ctx context.Context) (gpsio.Conn, int, error) {
 	for {
 		conn, speed, err := gpsio.OpenSerial(o.Device, o.Speed)
@@ -416,28 +508,67 @@ func (o SocketOpener) Socket() bool { return true }
 // Connect opens a connection to a GPS receiver via op. It is
 // asynchronous: it returns once the transport is open, and probe
 // progress arrives as events. vendor narrows probing and packet format
-// detection; VendorUnknown probes for all supported vendors.
+// detection; VendorUnknown probes for all supported vendors. A Connect
+// or Disconnect issued while shutdown or the open is pending supersedes
+// it: a late-opened transport is closed and Connect returns an error.
 func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
+	return s.connect(s.reserveLifecycle(), op, vendor)
+}
+
+func (s *Session) reserveLifecycle() int {
 	s.mu.Lock()
-	s.closeLocked()
-	s.state = StateConnecting
+	s.connectGen++
+	gen := s.connectGen
 	s.mu.Unlock()
-	s.emit(EventState, StateConnecting)
+	return gen
+}
+
+func (s *Session) connect(gen int, op Opener, vendor gpsreg.Vendor) error {
+	s.lifecycleMu.Lock()
+	s.mu.Lock()
+	if s.connectGen != gen {
+		s.mu.Unlock()
+		s.lifecycleMu.Unlock()
+		return errors.New("connection attempt superseded")
+	}
+	s.closeLocked()
+	if s.connectGen != gen {
+		s.mu.Unlock()
+		s.lifecycleMu.Unlock()
+		return errors.New("connection attempt superseded")
+	}
+	s.setStateLocked(StateConnecting)
+	s.mu.Unlock()
+	s.lifecycleMu.Unlock()
+	s.emitStateChange()
 	ctx, cancel := context.WithTimeout(context.Background(), connectOpenTimeout)
 	conn, speed, err := op.Open(ctx)
 	cancel()
+	s.lifecycleMu.Lock()
+	s.mu.Lock()
+	if s.connectGen != gen {
+		s.mu.Unlock()
+		s.lifecycleMu.Unlock()
+		if err == nil {
+			conn.Close()
+		}
+		return errors.New("connection attempt superseded")
+	}
 	if err != nil {
-		s.setState(StateDisconnected)
+		s.setStateLocked(StateDisconnected)
+		s.mu.Unlock()
+		s.lifecycleMu.Unlock()
+		s.emitStateChange()
 		return err
 	}
 	connCtx, connCancel := context.WithCancel(context.Background())
-	s.mu.Lock()
 	s.op = op
 	s.vendor = vendor
 	s.connCtx = connCtx
 	s.connCancel = connCancel
-	s.mu.Unlock()
 	s.connWg.Go(func() { s.connManager(connCtx, conn, speed) })
+	s.mu.Unlock()
+	s.lifecycleMu.Unlock()
 	return nil
 }
 
@@ -484,7 +615,7 @@ func (s *Session) connManager(connCtx context.Context, conn gpsio.Conn, speed in
 // it. Each attempt gets reopenTimeout for the device node to come back.
 func (s *Session) reopen(connCtx context.Context) (gpsio.Conn, int, error) {
 	var lastErr error
-	for i := 0; i < s.opts.MaxRetries; i++ {
+	for i := range maxReopenAttempts {
 		if i > 0 {
 			select {
 			case <-connCtx.Done():
@@ -686,13 +817,33 @@ func (s *Session) Receiver() ReceiverEvent {
 	return s.probe
 }
 
-// Disconnect closes the GPS connection.
+// Disconnect closes the GPS connection: it cancels any in-flight
+// receiver operation and correction session, waits for the connection
+// goroutines to exit, and emits StateDisconnected. It supersedes a
+// Connect whose open is still pending and is safe to call in any
+// state.
 func (s *Session) Disconnect() {
+	s.disconnect(s.reserveLifecycle())
+}
+
+func (s *Session) disconnect(gen int) {
+	s.lifecycleMu.Lock()
 	s.mu.Lock()
+	if s.connectGen != gen {
+		s.mu.Unlock()
+		s.lifecycleMu.Unlock()
+		return
+	}
 	s.closeLocked()
-	s.probe = ReceiverEvent{}
+	current := s.connectGen == gen
+	if current {
+		s.probe = ReceiverEvent{}
+	}
 	s.mu.Unlock()
-	s.emit(EventState, StateDisconnected)
+	s.lifecycleMu.Unlock()
+	if current {
+		s.emitStateChange()
+	}
 }
 
 // CorrEvent is the payload for "gps:corrections" events.
@@ -766,8 +917,15 @@ func (s *Session) emitCorrPacket(pkt scan.Packet) {
 	s.emit(EventCorrPacket, msg)
 }
 
-// StartCorrections dials the remote address and starts forwarding
-// correction packets to the GPS receiver.
+// StartCorrections starts forwarding correction packets from the
+// given source to the GPS receiver. It requires StateConnected and
+// returns once forwarding is set up; connection progress, redials,
+// and failures arrive as gps:corrections events. At most one
+// correction session exists at a time: starting while one is running
+// replaces it (the old session is stopped first). It returns an
+// error for an invalid cfg, when not connected, when a stop is still
+// draining, or (with cfg.NMEASend) when the receiver has no usable
+// fix to upload.
 func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	if cfg.Host == "" {
 		return fmt.Errorf("host is required")
@@ -778,7 +936,7 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	if cfg.NMEASend && cfg.Mode != "ntrip" {
 		return fmt.Errorf("NMEA send requires ntrip")
 	}
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	var source stream.Source
 	switch cfg.Mode {
 	case "tcp":
@@ -795,8 +953,9 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	}
 	s.mu.Lock()
 	if s.state != StateConnected || s.runCtx == nil || s.runCtx.Err() != nil {
+		err := s.stateErrLocked()
 		s.mu.Unlock()
-		return fmt.Errorf("not connected")
+		return err
 	}
 	if s.corrStopping {
 		s.mu.Unlock()
@@ -807,8 +966,9 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	// lost meanwhile; recheck before capturing it.
 	s.stopCorrLocked()
 	if s.state != StateConnected || s.runCtx == nil || s.runCtx.Err() != nil {
+		err := s.stateErrLocked()
 		s.mu.Unlock()
-		return fmt.Errorf("not connected")
+		return err
 	}
 	conn := s.conn
 	portLock := s.portLock
@@ -886,7 +1046,9 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	return nil
 }
 
-// StopCorrections stops the correction forwarding.
+// StopCorrections stops the correction forwarding and waits for the
+// correction goroutines to exit; it is a no-op when none is running.
+// It returns an error only when a stop is already in progress.
 func (s *Session) StopCorrections() error {
 	s.mu.Lock()
 	if s.corrStopping {
@@ -988,20 +1150,26 @@ const readProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDPort
 
 // ReadConfig reads back the current configuration from the receiver.
+// It is an exclusive receiver operation: it requires StateConnected,
+// holds the port as StateConfiguring until the run completes, and
+// returns an error if the session is not connected or another
+// operation is in progress.
 func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) {
 	s.mu.Lock()
 	if s.state != StateConnected {
+		err := s.stateErrLocked()
 		s.mu.Unlock()
-		return nil, fmt.Errorf("not connected")
+		return nil, err
 	}
 	s.cancelWorkerLocked()
-	s.state = StateConfiguring
+	runCtx := s.runCtx
+	s.setStateLocked(StateConfiguring)
 	s.mu.Unlock()
-	s.emit(EventState, StateConfiguring)
+	s.emitStateChange()
 	target := gpsprot.NewConfigTarget()
 	target.Get = readProps
 	cr := s.sendConfigRequest(ctx, target)
-	s.setEndState(StateConnected)
+	s.setEndState(runCtx, StateConnected)
 	if cr.err != nil {
 		return nil, cr.err
 	}
@@ -1009,30 +1177,36 @@ func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) 
 }
 
 // ApplyConfig sends configuration changes to the receiver. It sets
-// target.Opts.Socket to match the transport. Reset operations are
-// refused over a proxy connection: a reset would kill the daemon that
-// owns the port, and its restart would reapply the daemon's own
-// configuration on top of the session's.
+// target.Opts.Socket to match the transport. Like ReadConfig it is an
+// exclusive receiver operation: it requires StateConnected, holds the
+// port as StateConfiguring until the run completes, and returns an
+// error if the session is not connected or another operation is in
+// progress. Reset operations are refused over a proxy connection: a
+// reset would kill the daemon that owns the port, and its restart
+// would reapply the daemon's own configuration on top of the
+// session's.
 func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget) error {
 	s.mu.Lock()
 	if s.state != StateConnected {
+		err := s.stateErrLocked()
 		s.mu.Unlock()
-		return fmt.Errorf("not connected")
+		return err
 	}
 	if target.Opts.Reset != gpsprot.ResetNone && s.op.Socket() {
 		s.mu.Unlock()
 		return fmt.Errorf("reset operations are not available over a proxy connection")
 	}
 	s.cancelWorkerLocked()
-	s.state = StateConfiguring
+	runCtx := s.runCtx
+	s.setStateLocked(StateConfiguring)
 	s.mu.Unlock()
-	s.emit(EventState, StateConfiguring)
+	s.emitStateChange()
 	if target.NoOp() {
-		s.setEndState(StateConnected)
+		s.setEndState(runCtx, StateConnected)
 		return fmt.Errorf("no configuration changes specified")
 	}
 	cr := s.sendConfigRequest(ctx, target)
-	s.setEndState(StateConnected)
+	s.setEndState(runCtx, StateConnected)
 	return cr.err
 }
 
@@ -1112,13 +1286,20 @@ type ResponseEvent struct {
 	Bin        string `json:"bin,omitempty"`      // hex string for binary protocols
 }
 
-// SendMsgFile sends messages for the given tag from the loaded message file.
-// Returns immediately after starting the coordinator and worker goroutines.
+// SendMsgFile sends messages for the given tag from the loaded
+// message file (see SetMsgFile). It is an exclusive receiver
+// operation: it requires StateConnected and a loaded file, holds the
+// port as StateSending while the messages go out, and returns an
+// error if the session is not connected or another operation is in
+// progress. It returns once sending has started; progress and
+// receiver responses arrive as gps:msgsend and gps:response events,
+// and response listening continues briefly after the last message.
 func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 	s.mu.Lock()
 	if s.state != StateConnected || s.runCtx == nil || s.runCtx.Err() != nil {
+		err := s.stateErrLocked()
 		s.mu.Unlock()
-		return fmt.Errorf("not connected")
+		return err
 	}
 	mf := s.msgFile
 	if mf == nil {
@@ -1149,17 +1330,18 @@ func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 	workerCtx, workerCancel := context.WithCancel(runCtx)
 	s.mu.Lock()
 	if s.state != StateConnected || runCtx.Err() != nil {
+		err := s.stateErrLocked()
 		s.mu.Unlock()
 		sendCancel()
 		workerCancel()
-		return fmt.Errorf("not connected")
+		return err
 	}
-	s.state = StateSending
+	s.setStateLocked(StateSending)
 	s.sendCancel = sendCancel
 	s.workerCancel = workerCancel
 	session := int(s.respSession.Add(1))
 	s.mu.Unlock()
-	s.emit(EventState, StateSending)
+	s.emitStateChange()
 	total := len(rawMsgs)
 	stepCh := make(chan sendStepReq)
 	// Start the worker goroutine.
@@ -1170,7 +1352,7 @@ func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 	s.connWg.Go(func() {
 		defer func() {
 			close(stepCh)
-			s.finishSend()
+			s.finishSend(runCtx)
 		}()
 		s.emit(EventMsgSend, MsgSendEvent{
 			Session: session, Status: "started", Total: total,
@@ -1224,11 +1406,13 @@ func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 
 // finishSend clears sendCancel and transitions state to Connected (or
 // Disconnected if the connection was lost).
-func (s *Session) finishSend() {
+func (s *Session) finishSend(runCtx context.Context) {
 	s.mu.Lock()
-	s.sendCancel = nil
+	if s.runCtx == runCtx {
+		s.sendCancel = nil
+	}
 	s.mu.Unlock()
-	s.setEndState(StateConnected)
+	s.setEndState(runCtx, StateConnected)
 }
 
 // sendWorker owns conn.Write, Correlator, line buffer, and the broadcast
@@ -1451,9 +1635,10 @@ func (s *Session) makePacketEvent(r msgfile.Correlation, pkt *scan.Packet, sessi
 	return ev
 }
 
-// CancelMsgSend cancels an in-progress send operation.
-// Cancels both the coordinator (sendCancel) and the worker (workerCancel)
-// so that any in-progress delay or pacing wait is interrupted immediately.
+// CancelMsgSend cancels the in-progress SendMsgFile, interrupting any
+// pacing delay or response wait immediately; the send reports
+// "cancelled" as a gps:msgsend event. It returns an error if no send
+// is in progress.
 func (s *Session) CancelMsgSend() error {
 	s.mu.Lock()
 	if s.state != StateSending {
@@ -1597,23 +1782,25 @@ func (s *Session) packetLogWorker(ch <-chan gpsio.PacketLogEntry) {
 }
 
 func (s *Session) writePacketLogEntry(entry gpsio.PacketLogEntry) {
-	s.mu.Lock()
-	w := s.packetLogW
-	s.mu.Unlock()
-	if w == nil {
-		return
-	}
 	bytes, err := json.Marshal(entry)
 	if err != nil {
 		s.lg.Warn("failed to convert packet to JSON", "err", err)
 		return
 	}
 	bytes = append(bytes, '\n')
-	if _, err := w.Write(bytes); err != nil {
-		s.lg.Warn("error writing to packet log, disabling it", "err", err)
-		s.mu.Lock()
+	s.packetLogMu.Lock()
+	w := s.packetLogW
+	if w == nil {
+		s.packetLogMu.Unlock()
+		return
+	}
+	_, err = w.Write(bytes)
+	if err != nil {
 		s.packetLogW = nil
-		s.mu.Unlock()
+	}
+	s.packetLogMu.Unlock()
+	if err != nil {
+		s.lg.Warn("error writing to packet log, disabling it", "err", err)
 	}
 }
 

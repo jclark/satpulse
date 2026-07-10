@@ -27,7 +27,7 @@ simulates a receiver reporting signal strength but no look angles.
 
 ## Embedding into satpulsed
 
-    go generate ./internal/web
+    go generate ./time/internal/web
 
-runs `npm run embed`, which builds the dashboard into `internal/web/content`.
+runs `npm run embed`, which builds the dashboard into `time/internal/web/dist`.
 The built assets are checked in, so `go build` never needs npm.

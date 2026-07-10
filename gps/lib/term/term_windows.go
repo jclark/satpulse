@@ -158,7 +158,7 @@ func normalizeCOM(path string) string {
 	return path
 }
 
-// Change changes the attributes of the terminal.
+// Change changes the attributes of the terminal after output has drained.
 func (t *Term) Change(opts ...AttrSetter) error {
 	attr := t.attr
 	for _, opt := range opts {
@@ -166,6 +166,9 @@ func (t *Term) Change(opts ...AttrSetter) error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := t.Drain(); err != nil {
+		return err
 	}
 	err := windows.SetCommState(t.handle, &attr.dcb)
 	if err != nil {
@@ -224,6 +227,11 @@ func (t *Term) Buffered() (int, error) {
 func (t *Term) Flush() error {
 	err := windows.PurgeComm(t.handle, windows.PURGE_RXCLEAR|windows.PURGE_TXCLEAR)
 	return t.wrapErr(err, "PurgeComm")
+}
+
+// Drain blocks until all pending output has been transmitted.
+func (t *Term) Drain() error {
+	return t.wrapErr(windows.FlushFileBuffers(t.handle), "FlushFileBuffers")
 }
 
 func (t *Term) Restore() error {

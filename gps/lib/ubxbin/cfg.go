@@ -632,8 +632,8 @@ const (
 type CfgValdelLayer byte
 
 const (
-	CfgValdelLayerBBR   CfgValdelLayer = 1
-	CfgValdelLayerFlash CfgValdelLayer = 2
+	CfgValdelLayerBBR   CfgValdelLayer = 0x02
+	CfgValdelLayerFlash CfgValdelLayer = 0x04
 )
 
 func (m *CfgValdel) InitVaryingPart(payloadLen int) (err error) {
