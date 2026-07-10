@@ -51,6 +51,7 @@ class SmokeContext(Protocol):
     # disabled), set at readiness from the printed URL.
     wb_port: int
     token: str
+    seat: str
 
     @property
     def serial(self) -> str: ...
@@ -190,13 +191,20 @@ def check_sse(ctx: SmokeContext, expect: Iterable[str] = (), read_seconds: float
     return collect_sse(ctx.http_url("/sse"), expect, read_seconds)
 
 
-def collect_sse(url: str, expect: Iterable[str] = (), read_seconds: float = 8.0) -> set[str]:
+def collect_sse(url: str, expect: Iterable[str] = (), read_seconds: float = 8.0,
+                on_open: Callable[[], None] | None = None) -> set[str]:
     """Read an SSE stream, returning the event names seen up to a deadline.
 
     Returns as soon as every name in expect has appeared, else after
     read_seconds; asserts none of expect is missing. Shared by the daemon's
     /sse check and the satpulsewb workbench SSE checks (which pass a URL with
     the access token and, for the packets stream, ?stream=packets).
+
+    on_open, if given, runs once the stream is open and its reader is draining.
+    The server subscribes the client before it sends the response headers, so
+    urlopen has returned by then; a caller that must act only after the stream
+    is provably subscribed (e.g. superseding this seat) hooks in here rather
+    than racing a fixed sleep.
     """
     want = set(expect)
     names: set[str] = set()
@@ -216,6 +224,8 @@ def collect_sse(url: str, expect: Iterable[str] = (), read_seconds: float = 8.0)
 
     t = threading.Thread(target=reader, daemon=True)
     t.start()
+    if on_open is not None:
+        on_open()
     deadline = time.time() + read_seconds
     while time.time() < deadline and not want.issubset(names):
         time.sleep(0.1)
@@ -585,6 +595,36 @@ def check_wb_priming(ctx: SmokeContext, expect: Iterable[str] = ("gps:state", "g
     not live ones.
     """
     wb_sse(ctx, packets=False, expect=expect, read_seconds=5.0)
+
+
+def check_wb_seat_takeover(ctx: SmokeContext) -> None:
+    """A second seat claim dethrones the first (the single-seat guarantee).
+
+    Claiming a new seat closes the previous seat's event stream with a takeover
+    event, and a POST still carrying the superseded seat is refused with 410
+    (distinct from the 409 used for session conflicts). Supersedes ctx.seat, so
+    run it last; it leaves the context on the surviving seat.
+    """
+    survivor: list[str] = []
+
+    def claim_second() -> None:
+        # collect_sse fires this once the first stream is open and subscribed
+        # (urlopen has returned), so the claim provably supersedes a live seat --
+        # no sleep, no race. The claim POST is seat-free, so the stale seat wb_url
+        # still puts on the URL is ignored.
+        status, body = wb_post(ctx, "/api/seat", {})
+        assert status == 200, f"second seat claim expected 200, got {status}"
+        survivor.append(cast(str, json.loads(body)["seat"]))
+
+    # collect_sse asserts the takeover event reaches the dethroned stream.
+    collect_sse(ctx.wb_url("/sse"), expect=["takeover"], read_seconds=6.0, on_open=claim_second)
+    assert survivor, "second seat claim did not complete"
+
+    # ctx.seat is still the superseded seat here (updated only below), so this
+    # POST carries it and must be refused.
+    status, _ = wb_post(ctx, "/api/disconnect", {})
+    assert status == 410, f"POST with the superseded seat expected 410, got {status}"
+    ctx.seat = survivor[0]
 
 
 def check_wb_msg_primed(ctx: SmokeContext, kind: str, read_seconds: float = 5.0) -> None:

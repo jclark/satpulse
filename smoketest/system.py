@@ -169,6 +169,7 @@ class Context:
         # protocol stubs, unused here.
         self.wb_port = 0
         self.token = ""
+        self.seat = ""
         self.satpulsetool = find_program("satpulsetool", ["/usr/bin/satpulsetool", "/usr/local/bin/satpulsetool"])
         self.replay_proc: subprocess.Popen[bytes] | None = None
         self._replay_fifo: IO[bytes] | None = None

@@ -26,3 +26,5 @@ def run(ctx: common.SmokeContext) -> None:
     # After replay the FIFO stays connected but idle, so a fresh SSE client can
     # only be seeing the primed sticky events.
     common.check_wb_priming(ctx)
+    # Last: this supersedes the context's seat (newest window wins).
+    common.check_wb_seat_takeover(ctx)
