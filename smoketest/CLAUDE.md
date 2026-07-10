@@ -141,6 +141,9 @@ A scenario ID `family/name` maps to two files and one registry entry:
     under test (see Program under test). A `"satpulsewb"` scenario pairs with a
     `name.args.in` flag list instead of `name.toml.in`, and uses the workbench
     checks in `common.py` (`check_wb_*`, `wb_get`/`wb_post`, `wb_sse`).
+  - optional `ENV` -- environment variables added to the program under test;
+    values may use the same `${SATPULSE_TEST_*}` substitutions as input
+    templates.
   - optional `ALLOWED_ERRORS` -- tuple of substrings for `level=error/warn`
     lines the scenario legitimately expects (e.g. a push it knows is rejected).
     These are added on top of the program's base allow-list
