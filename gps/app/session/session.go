@@ -3,6 +3,27 @@
 // disconnect. It is the application core shared by GUI shells; each
 // shell provides a Sink that delivers session events to its UI
 // transport.
+//
+// A Session is a state machine over ConnState, driven by the methods
+// below and reported as gps:state events: Connect moves Disconnected
+// -> Connecting -> Connected (probing on the way, with the result as
+// a gps:receiver event), and Disconnect returns to Disconnected from
+// any state. The receiver operations -- ReadConfig, ApplyConfig,
+// SendMsgFile -- require StateConnected and are mutually exclusive:
+// each holds the receiver port for its duration (StateConfiguring or
+// StateSending), and a call while another operation is in progress
+// returns an error rather than queueing. StartCorrections also
+// requires StateConnected; the correction session it starts persists
+// across receiver operations and ends with the connection.
+//
+// Methods are safe for concurrent use, and concurrent calls have
+// defined semantics regardless of how the shell behaves: the last
+// Connect or Disconnect wins (a Connect whose transport open is
+// still pending is superseded -- it closes the late-opened transport,
+// returns an error, and emits nothing), and racing receiver
+// operations lose to whichever holds the port. All state changes
+// flow to the shell as events; the snapshot accessors (State,
+// Receiver, Speed, CorrectionsState) serve late-joining consumers.
 package session
 
 import (
@@ -34,7 +55,10 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
-// ConnState represents the unified connection/activity state.
+// ConnState represents the unified connection/activity state, emitted
+// as gps:state events. Connecting and Reconnecting are transitional;
+// Configuring and Sending mean an exclusive receiver operation holds
+// the port, and further operations are refused until it completes.
 type ConnState string
 
 const (
@@ -705,7 +729,11 @@ func (s *Session) Receiver() ReceiverEvent {
 	return s.probe
 }
 
-// Disconnect closes the GPS connection.
+// Disconnect closes the GPS connection: it cancels any in-flight
+// receiver operation and correction session, waits for the connection
+// goroutines to exit, and emits StateDisconnected. It supersedes a
+// Connect whose open is still pending and is safe to call in any
+// state.
 func (s *Session) Disconnect() {
 	s.mu.Lock()
 	s.closeLocked()
@@ -785,8 +813,15 @@ func (s *Session) emitCorrPacket(pkt scan.Packet) {
 	s.emit(EventCorrPacket, msg)
 }
 
-// StartCorrections dials the remote address and starts forwarding
-// correction packets to the GPS receiver.
+// StartCorrections starts forwarding correction packets from the
+// given source to the GPS receiver. It requires StateConnected and
+// returns once forwarding is set up; connection progress, redials,
+// and failures arrive as gps:corrections events. At most one
+// correction session exists at a time: starting while one is running
+// replaces it (the old session is stopped first). It returns an
+// error for an invalid cfg, when not connected, when a stop is still
+// draining, or (with cfg.NMEASend) when the receiver has no usable
+// fix to upload.
 func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	if cfg.Host == "" {
 		return fmt.Errorf("host is required")
@@ -907,7 +942,9 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	return nil
 }
 
-// StopCorrections stops the correction forwarding.
+// StopCorrections stops the correction forwarding and waits for the
+// correction goroutines to exit; it is a no-op when none is running.
+// It returns an error only when a stop is already in progress.
 func (s *Session) StopCorrections() error {
 	s.mu.Lock()
 	if s.corrStopping {
@@ -1009,6 +1046,10 @@ const readProps = gpsprot.PropIDSignalsEnabled |
 	gpsprot.PropIDPort
 
 // ReadConfig reads back the current configuration from the receiver.
+// It is an exclusive receiver operation: it requires StateConnected,
+// holds the port as StateConfiguring until the run completes, and
+// returns an error if the session is not connected or another
+// operation is in progress.
 func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) {
 	s.mu.Lock()
 	if s.state != StateConnected {
@@ -1031,10 +1072,14 @@ func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) 
 }
 
 // ApplyConfig sends configuration changes to the receiver. It sets
-// target.Opts.Socket to match the transport. Reset operations are
-// refused over a proxy connection: a reset would kill the daemon that
-// owns the port, and its restart would reapply the daemon's own
-// configuration on top of the session's.
+// target.Opts.Socket to match the transport. Like ReadConfig it is an
+// exclusive receiver operation: it requires StateConnected, holds the
+// port as StateConfiguring until the run completes, and returns an
+// error if the session is not connected or another operation is in
+// progress. Reset operations are refused over a proxy connection: a
+// reset would kill the daemon that owns the port, and its restart
+// would reapply the daemon's own configuration on top of the
+// session's.
 func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget) error {
 	s.mu.Lock()
 	if s.state != StateConnected {
@@ -1135,8 +1180,14 @@ type ResponseEvent struct {
 	Bin        string `json:"bin,omitempty"`      // hex string for binary protocols
 }
 
-// SendMsgFile sends messages for the given tag from the loaded message file.
-// Returns immediately after starting the coordinator and worker goroutines.
+// SendMsgFile sends messages for the given tag from the loaded
+// message file (see SetMsgFile). It is an exclusive receiver
+// operation: it requires StateConnected and a loaded file, holds the
+// port as StateSending while the messages go out, and returns an
+// error if the session is not connected or another operation is in
+// progress. It returns once sending has started; progress and
+// receiver responses arrive as gps:msgsend and gps:response events,
+// and response listening continues briefly after the last message.
 func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 	s.mu.Lock()
 	if s.state != StateConnected || s.runCtx == nil || s.runCtx.Err() != nil {
@@ -1476,9 +1527,10 @@ func (s *Session) makePacketEvent(r msgfile.Correlation, pkt *scan.Packet, sessi
 	return ev
 }
 
-// CancelMsgSend cancels an in-progress send operation.
-// Cancels both the coordinator (sendCancel) and the worker (workerCancel)
-// so that any in-progress delay or pacing wait is interrupted immediately.
+// CancelMsgSend cancels the in-progress SendMsgFile, interrupting any
+// pacing delay or response wait immediately; the send reports
+// "cancelled" as a gps:msgsend event. It returns an error if no send
+// is in progress.
 func (s *Session) CancelMsgSend() error {
 	s.mu.Lock()
 	if s.state != StateSending {
