@@ -39,6 +39,7 @@ With it, **satpulsewb** connects at startup; a browser arriving later catches up
 : Listen on the given address instead of all interfaces on the default port.
 With an explicit port, a bind failure is an error; there is no fallback port, since the address may be the target of an SSH tunnel.
 **\-\-listen** also disables the access token, since the typical use is a tunnel; serving without a token on a non-loopback address prints a warning.
+Without **\-\-token**, **\-\-listen** trusts the local browser environment.
 
 **\-T**, **\-\-token**
 : Require the generated access token even with **\-\-listen**.

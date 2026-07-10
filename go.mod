@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
-	golang.org/x/sys v0.43.0
+	golang.org/x/sys v0.45.0
 )
 
 require (
@@ -34,6 +34,6 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/mdlayher/socket v0.6.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.3.1
-	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 )

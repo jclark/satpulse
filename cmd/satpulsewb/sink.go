@@ -120,6 +120,13 @@ func (h *sseHub) Emit(ev session.Event) {
 		}
 		clear(h.msgCache)
 	}
+	if ce, ok := ev.Data.(session.CorrEvent); ok && (ce.State == "connecting" || ce.State == "stopped") {
+		// The base ARP belongs to the active correction stream. Drop the
+		// cached one when the stream starts fresh or stops, so a late
+		// joiner isn't primed with a stale ARP for a stream that is no
+		// longer running (or sends no 1005/1006). Mirrors the frontend.
+		delete(h.cache, session.EventBaseARP)
+	}
 	for c := range h.clients {
 		if c.packets != pkt || c.takenOver {
 			continue

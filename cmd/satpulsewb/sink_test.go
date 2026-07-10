@@ -58,6 +58,22 @@ func TestHubPrimeCache(t *testing.T) {
 				mustMake(t, "gps:corrections", session.CorrEvent{State: "stopped"}),
 			},
 		},
+		{
+			name: "corrections stop drops stale base ARP",
+			events: []session.Event{
+				{Name: session.EventBaseARP, Data: session.BaseARPEvent{StationID: 1}},
+				{Name: session.EventCorrections, Data: session.CorrEvent{State: "stopped"}},
+			},
+			expect: []sse.Event{mustMake(t, "gps:corrections", session.CorrEvent{State: "stopped"})},
+		},
+		{
+			name: "corrections connecting drops stale base ARP",
+			events: []session.Event{
+				{Name: session.EventBaseARP, Data: session.BaseARPEvent{StationID: 1}},
+				{Name: session.EventCorrections, Data: session.CorrEvent{State: "connecting"}},
+			},
+			expect: []sse.Event{mustMake(t, "gps:corrections", session.CorrEvent{State: "connecting"})},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
