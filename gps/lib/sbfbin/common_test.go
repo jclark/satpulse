@@ -240,6 +240,13 @@ func TestPVTGeodeticRevisionTolerance(t *testing.T) {
 	if got.Rev != 0 {
 		t.Fatalf("Rev = %d, want 0", got.Rev)
 	}
+	pkt, err = Serialize(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, rev := MsgID(Endian.Uint16(pkt[4:6])).Unpack(); rev != 2 {
+		t.Fatalf("Serialize of rev-0 block stamped rev %d, want 2", rev)
+	}
 	buf.Write([]byte{1, 2, 3, 4})
 	pkt, err = PackMsg(PVTGeodeticID|2<<13, buf.Bytes())
 	if err != nil {
@@ -352,7 +359,7 @@ func TestRoundTripM2Blocks(t *testing.T) {
 		HPL:  5.5,
 		VPL:  6.5,
 	}})
-	testBlock(t, &Block{TimeStamp: ts, Params: &PVTCartesian{
+	testBlock(t, &Block{Rev: 2, TimeStamp: ts, Params: &PVTCartesian{
 		pvtCartesianFixed: pvtCartesianFixed{
 			Mode:        ModeDifferential,
 			X:           1,
@@ -510,6 +517,13 @@ func TestReceiverSetupRevisionTolerance(t *testing.T) {
 	gp := got.Params.(*ReceiverSetup)
 	if gp.Latitude != ReceiverSetupPositionDNU || gp.Longitude != ReceiverSetupPositionDNU || gp.Height != ReceiverSetupPositionDNU {
 		t.Fatalf("receiver setup defaults = (%v, %v, %v)", gp.Latitude, gp.Longitude, gp.Height)
+	}
+	pkt, err = Serialize(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, rev := MsgID(Endian.Uint16(pkt[4:6])).Unpack(); rev != 4 {
+		t.Fatalf("Serialize of rev-0 block stamped rev %d, want 4", rev)
 	}
 }
 

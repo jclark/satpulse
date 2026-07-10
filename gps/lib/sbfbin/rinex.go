@@ -1,10 +1,5 @@
 package sbfbin
 
-const (
-	// MeasCommonFlagE6BUsed marks Galileo E6 measurements as E6B instead of E6C.
-	MeasCommonFlagE6BUsed CommonFlags = 1 << 6
-)
-
 // RINEXSys returns the RINEX satellite system letter for an SBF SVID.
 // It returns "" for Do-Not-Use, reserved, non-GNSS, and unrecognised values.
 func RINEXSys(svid uint8) string {
@@ -79,7 +74,7 @@ func RINEXSatNum(svid uint8) uint8 {
 // representable.
 // The mapping follows mosaic-G5 4.1.10 and RINEX 4.02 Tables 10-16.
 func RINEXSig(sig uint8, flags CommonFlags) (string, string) {
-	if sig == 19 && flags&MeasCommonFlagE6BUsed != 0 {
+	if sig == 19 && flags.E6BUsed() {
 		return "E", "6B"
 	}
 	i := int(sig) * 3
@@ -91,6 +86,19 @@ func RINEXSig(sig uint8, flags CommonFlags) (string, string) {
 		return "", ""
 	}
 	return s[:1], s[1:]
+}
+
+// RINEXChannelStatusSignals returns the RINEX signal identifiers represented
+// by a ChannelStatus PVTStatus slot for a RINEX system letter.
+func RINEXChannelStatusSignals(sys string, slot int) []string {
+	if slot < 0 || slot >= 8 {
+		return nil
+	}
+	sigs, ok := rinexChannelStatusMap[sys]
+	if !ok {
+		return nil
+	}
+	return sigs[slot]
 }
 
 // rinexSigMap maps SBF signal numbers to fixed-width RINEX system+signal entries.
@@ -113,3 +121,56 @@ const rinexSigMap = "" +
 	"C6I   J1LJ1ZC7D" +
 	// 35
 	"      I1PJ1EJ5P"
+
+var rinexChannelStatusMap = map[string][8][]string{
+	"G": {
+		{"1C"},
+		{"1W"},
+		{"2W"},
+		{"2L"},
+		{"5Q"},
+		{"1L"},
+	},
+	"R": {
+		{"1C"},
+		{"1P"},
+		{"2P"},
+		{"2C"},
+		{"3Q"},
+	},
+	"E": {
+		nil,
+		{"1C"},
+		nil,
+		{"6B", "6C"},
+		{"5Q"},
+		{"7Q"},
+		{"8Q"},
+	},
+	"S": {
+		{"1C"},
+		{"5I"},
+	},
+	"C": {
+		{"2I"},
+		{"7I"},
+		{"6I"},
+		{"1P"},
+		{"5P"},
+		{"7D"},
+	},
+	"J": {
+		{"1C"},
+		{"2L"},
+		{"5Q"},
+		{"6S"},
+		{"1L"},
+		{"1Z"},
+		{"1E"},
+		{"5P"},
+	},
+	"I": {
+		{"5A"},
+		{"1P"},
+	},
+}

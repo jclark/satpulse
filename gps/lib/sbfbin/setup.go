@@ -68,6 +68,8 @@ func (r *ReceiverSetup) Chunks() func(yield func(chunk any) bool) {
 		&r.receiverSetupRev1, &r.receiverSetupRev2, &r.receiverSetupRev3, &r.receiverSetupRev4)
 }
 
+func (r *ReceiverSetup) latestRev() uint8 { return 4 }
+
 func init() {
 	regBlock[ReceiverSetup]("ReceiverSetup")
 }

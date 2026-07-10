@@ -23,6 +23,46 @@ const (
 	ModePPP
 )
 
+// Fix returns the PVT solution type (low nibble of Mode), one of the Mode*
+// constants (ModeNoPVT, ModeStandalone, ...).
+func (m Mode) Fix() Mode {
+	return m & 0x0F
+}
+
+// Is2D reports whether the 2D-mode bit (bit 7) is set in Mode.
+func (m Mode) Is2D() bool {
+	return m&0x80 != 0
+}
+
+// DeterminingFixed reports whether the "still determining the fixed position"
+// bit (bit 6) is set in Mode.
+func (m Mode) DeterminingFixed() bool {
+	return m&0x40 != 0
+}
+
+// IsSBAS reports whether the fix is SBAS-aided, in which case ReferenceID is
+// an SBAS PRN rather than an RTCM base ID.
+func (m Mode) IsSBAS() bool {
+	return m.Fix() == ModeSBAS
+}
+
+// WACorrInfo base-type codes, encoded in bits 5-6 of WACorrInfo.
+const (
+	WACorrBaseNone     uint8 = 0 // no differential/wide-area info used
+	WACorrBasePhysical uint8 = 1 // physical base station (RTK)
+	WACorrBaseVirtual  uint8 = 2 // virtual base station (VRS)
+	WACorrBaseSSR      uint8 = 3 // state-space (RTK-SSR / PPP-RTK)
+)
+
+// BaseType returns the base-type code (bits 5-6) of WACorrInfo.
+func (w WACorrInfo) BaseType() uint8 {
+	return uint8(w>>5) & 0x3
+}
+
+// CovDNU is the do-not-use sentinel of the PosCov*/VelCov* covariance fields
+// (f4, exactly representable, safe for == comparison).
+const CovDNU = -2e10
+
 const (
 	ErrNone ErrCode = iota
 	ErrNotEnoughMeasurements
@@ -145,6 +185,8 @@ func (p *pvtTrailer) setDNUDefaults() {
 func (p *pvtTrailer) chunks(name string, fixed any) func(yield func(chunk any) bool) {
 	return revisionChunks(p.payloadLen(), name, fixed, &p.pvtRev1, &p.pvtRev2)
 }
+
+func (p *pvtTrailer) latestRev() uint8 { return 2 }
 
 // PVTGeodetic is the SBF PVTGeodetic block.
 type PVTGeodetic struct {
