@@ -24,11 +24,17 @@ type Entry struct {
 
 // EnvDirs returns the library search path from the
 // SATPULSE_GPSMSG_PATH environment variable, split like PATH on the
-// OS-specific list separator, or nil when the variable is unset or
-// empty.
+// OS-specific list separator with empty elements omitted, or nil when
+// the variable is unset or empty.
 func EnvDirs() []string {
 	if p := os.Getenv("SATPULSE_GPSMSG_PATH"); p != "" {
-		return filepath.SplitList(p)
+		dirs := []string{}
+		for _, dir := range filepath.SplitList(p) {
+			if dir != "" {
+				dirs = append(dirs, dir)
+			}
+		}
+		return dirs
 	}
 	return nil
 }
@@ -61,6 +67,9 @@ func ListNames(dirs []string) []Entry {
 	for _, dir := range dirs {
 		vendors, _ := os.ReadDir(dir) // sorted by name; nil on error
 		for _, v := range vendors {
+			if !plainName(v.Name()) {
+				continue
+			}
 			vdir := filepath.Join(dir, v.Name())
 			if !isDir(vdir) {
 				continue
@@ -68,7 +77,7 @@ func ListNames(dirs []string) []Entry {
 			files, _ := os.ReadDir(vdir)
 			for _, f := range files {
 				file := strings.TrimSuffix(f.Name(), ".toml")
-				if file == f.Name() || file == "" || !isRegular(filepath.Join(vdir, f.Name())) {
+				if file == f.Name() || !plainName(file) || !isRegular(filepath.Join(vdir, f.Name())) {
 					continue
 				}
 				n := Name{Vendor: v.Name(), File: file}
@@ -86,7 +95,7 @@ func ListNames(dirs []string) []Entry {
 // relative path element, so that a Name can never resolve outside a
 // search-path directory (Name values arrive from the network).
 func plainName(s string) bool {
-	return s != "" && !strings.ContainsAny(s, `/\`) && filepath.IsLocal(s)
+	return s != "" && s != "." && !strings.ContainsAny(s, `/\`) && filepath.IsLocal(s)
 }
 
 // isRegular and isDir use os.Stat so symlinked files and vendor

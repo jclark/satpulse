@@ -197,10 +197,33 @@ func TestSSEPriming(t *testing.T) {
 	}
 }
 
+func TestMsgDirs(t *testing.T) {
+	t.Run("environment", func(t *testing.T) {
+		dirs := []string{"/one", "/two"}
+		t.Setenv("SATPULSE_GPSMSG_PATH", strings.Join(dirs, string(os.PathListSeparator)))
+		if got := msgDirs(); !reflect.DeepEqual(got, dirs) {
+			t.Errorf("got  %+v\nwant %+v", got, dirs)
+		}
+	})
+	t.Run("defaults", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("SATPULSE_GPSMSG_PATH", "")
+		t.Setenv("HOME", home)
+		expect := []string{
+			filepath.Join(home, ".satpulse", "gpsmsg"),
+			"/usr/local/share/satpulse/gpsmsg",
+			"/usr/share/satpulse/gpsmsg",
+		}
+		if got := msgDirs(); !reflect.DeepEqual(got, expect) {
+			t.Errorf("got  %+v\nwant %+v", got, expect)
+		}
+	})
+}
+
 // TestMsgFileCatalog covers the message-file library endpoints: the
 // catalog lists the names on the search path and preselects the
-// session vendor, a name selects and returns its tags, and a traversal
-// name is rejected.
+// session vendor, a name selects and returns its tags, a traversal
+// name is rejected, and a malformed library file is a server error.
 func TestMsgFileCatalog(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "u-blox"), 0o755); err != nil {
@@ -245,5 +268,13 @@ func TestMsgFileCatalog(t *testing.T) {
 	w = s.post(t, "/api/msgfile/select", `{"vendor":"u-blox","file":"../../u-blox/a"}`)
 	if w.Code != 400 {
 		t.Errorf("traversal select status = %d, want 400", w.Code)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "u-blox", "bad.toml"), []byte("[[nmea]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w = s.post(t, "/api/msgfile/select", `{"vendor":"u-blox","file":"bad"}`)
+	if w.Code != 500 {
+		t.Errorf("malformed select status = %d, want 500", w.Code)
 	}
 }

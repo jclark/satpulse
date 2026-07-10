@@ -96,6 +96,10 @@ export function MsgFilePanel({
     const [catalog, setCatalog] = useState<MsgFileEntry[]>([]);
     const [selectedVendor, setSelectedVendor] = useState('');
     const [selectedFile, setSelectedFile] = useState('');
+    const catalogRequest = useRef(0);
+    const catalogVisible = useRef(false);
+    const prevConnState = useRef<ConnState | undefined>(undefined);
+    const serverPreselect = useRef<string | undefined>(undefined);
     const vendors = [...new Set(catalog.map(e => e.vendor))].sort();
     const vendorFiles = catalog.filter(e => e.vendor === selectedVendor).map(e => e.file).sort();
 
@@ -141,27 +145,41 @@ export function MsgFilePanel({
         }
     }, [applyLoaded, addToast]);
 
-    // Refresh the catalog whenever the tab opens: it picks up files added
-    // since the last visit, and the server's preselect (the session
-    // vendor) applies only until the user has chosen a vendor.
+    // Refresh the catalog whenever the tab opens or receiver probing completes.
+    // A changed server preselect represents a new receiver and supersedes the
+    // current selection; repeated preselects preserve the user's later choice.
     const loadCatalog = useCallback(async () => {
+        const request = ++catalogRequest.current;
         try {
             const cat = await transport.msgFile!.listMsgFiles!();
+            if (request !== catalogRequest.current) return;
             const names = cat.names || [];
+            const preselect = cat.preselect && names.some(e => e.vendor === cat.preselect)
+                ? cat.preselect : '';
+            const preselectChanged = !!preselect && preselect !== serverPreselect.current;
+            if (preselect) serverPreselect.current = preselect;
             setCatalog(names);
             setSelectedVendor(prev => {
+                if (preselectChanged) return preselect;
                 if (prev && names.some(e => e.vendor === prev)) return prev;
-                if (cat.preselect && names.some(e => e.vendor === cat.preselect)) return cat.preselect;
+                if (preselect) return preselect;
                 return '';
             });
         } catch (e: any) {
+            if (request !== catalogRequest.current) return;
             addToast(e.message || 'Failed to list message files', 'error');
         }
     }, [addToast]);
 
     useEffect(() => {
-        if (picker && visible) loadCatalog();
-    }, [picker, visible, loadCatalog]);
+        const ready = picker && visible;
+        const opened = ready && !catalogVisible.current;
+        const probed = prevConnState.current === 'connecting' || prevConnState.current === 'reconnecting';
+        const connected = ready && connState === 'connected' && probed;
+        catalogVisible.current = ready;
+        prevConnState.current = connState;
+        if (opened || connected) loadCatalog();
+    }, [picker, visible, connState, loadCatalog]);
 
     // Keep the file selection valid as the vendor or catalog changes;
     // auto-pick when a vendor holds a single file.

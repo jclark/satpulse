@@ -928,6 +928,10 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
     run_dir = tempfile.mkdtemp(prefix=f"satpulse-smoke-{name.replace('/', '-')}-")
     env = allocate_env(name, run_dir)
     env["SATPULSE_TEST_PACKET_LOG"] = packet_log
+    daemon_env = os.environ.copy()
+    scenario_env = cast(dict[str, str], getattr(scen, "ENV", {}))
+    for key, value in scenario_env.items():
+        daemon_env[key] = program_api.substitute(value, env)
     os.makedirs(env["SATPULSE_TEST_LOG_DIR"], exist_ok=True)
     # Create the serial-input transport with the requested capabilities and
     # point the program's device path at it (the FIFO path the runner allocated,
@@ -973,6 +977,7 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
                 cmd,
                 stdout=out,
                 stderr=subprocess.STDOUT,
+                env=daemon_env,
                 start_new_session=requires_root,
             )
         ctx.daemon = daemon

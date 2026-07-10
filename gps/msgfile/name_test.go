@@ -26,13 +26,17 @@ func writeLibrary(t *testing.T, paths ...string) string {
 }
 
 func TestListNames(t *testing.T) {
-	dir1 := writeLibrary(t,
+	paths := []string{
 		"u-blox/gen9.toml",
 		"u-blox/README.md",
 		"u-blox/sub/nested.toml",
 		"unicore/um980.toml",
 		"loose.toml",
-	)
+	}
+	if os.PathSeparator != '\\' {
+		paths = append(paths, `bad\vendor/file.toml`, `u-blox/bad\file.toml`)
+	}
+	dir1 := writeLibrary(t, paths...)
 	dir2 := writeLibrary(t,
 		"u-blox/gen9.toml",
 		"u-blox/x20.toml",
@@ -51,7 +55,7 @@ func TestListNames(t *testing.T) {
 }
 
 func TestFindName(t *testing.T) {
-	dir1 := writeLibrary(t, "u-blox/gen9.toml")
+	dir1 := writeLibrary(t, "u-blox/gen9.toml", "loose.toml")
 	dir2 := writeLibrary(t, "u-blox/gen9.toml", "unicore/um980.toml")
 	dirs := []string{dir1, dir2}
 	tests := []struct {
@@ -83,6 +87,11 @@ func TestFindName(t *testing.T) {
 		{
 			name:      "file with dotdot",
 			fileName:  Name{"u-blox", ".."},
+			expectErr: true,
+		},
+		{
+			name:      "dot vendor",
+			fileName:  Name{".", "loose"},
 			expectErr: true,
 		},
 		{
@@ -118,6 +127,8 @@ func TestEnvDirs(t *testing.T) {
 	}{
 		{name: "unset", value: "", expect: nil},
 		{name: "two dirs", value: strings.Join([]string{"/a", "/b"}, string(os.PathListSeparator)), expect: []string{"/a", "/b"}},
+		{name: "empty elements", value: strings.Join([]string{"", "/a", ""}, string(os.PathListSeparator)), expect: []string{"/a"}},
+		{name: "only empty elements", value: string(os.PathListSeparator), expect: []string{}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -60,7 +60,7 @@ func (s *server) handleMsgSelect(w http.ResponseWriter, r *http.Request) {
 	}
 	mf, err := msgfile.Load(path)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, msgFileResult{Path: path, Tags: s.sess.SetMsgFile(mf)})
