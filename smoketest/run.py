@@ -1118,7 +1118,7 @@ def main() -> int:
             return 2
 
     if runnable:
-        for b in ("satpulsed", "satpulsetool"):
+        for b in ("satpulsed", "satpulsetool", "satpulsewb"):
             if not os.path.exists(bin_path(b)):
                 print(f"missing binary {bin_path(b)}; run make first", file=sys.stderr)
                 return 2

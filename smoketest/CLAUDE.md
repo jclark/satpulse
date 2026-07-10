@@ -35,7 +35,7 @@ existing, so run the appropriate build yourself first (e.g. after any Go
 change).
 
 ```sh
-make            # from repo root: build satpulsed + satpulsetool
+make            # from repo root: build satpulsed + satpulsetool + satpulsewb
 make smoketest  # run all scenarios in parallel
 ```
 
