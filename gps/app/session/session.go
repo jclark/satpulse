@@ -464,8 +464,6 @@ func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
 	}
 	s.op = op
 	s.vendor = vendor
-	// Register the manager while holding mu so closeLocked cannot finish
-	// waiting before the task has been added to connWg.
 	s.connWg.Go(func() { s.connManager(connCtx, conn, speed) })
 	s.mu.Unlock()
 	return nil
