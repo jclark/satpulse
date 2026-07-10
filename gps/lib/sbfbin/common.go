@@ -99,6 +99,12 @@ type payloadSizer interface {
 	clearPayloadLen()
 }
 
+// revisioned is implemented by params with revision-dependent trailers, whose
+// full serialized layout corresponds to a fixed block revision number.
+type revisioned interface {
+	latestRev() uint8
+}
+
 type payloadSize struct {
 	n int
 }
@@ -322,7 +328,7 @@ func ParseMsg(packet string) (*Block, error) {
 	if length != n {
 		return nil, fmt.Errorf("SBF message length mismatch: header %d, packet %d", length, n)
 	}
-	if length <= HeaderLen || length%4 != 0 {
+	if length%4 != 0 {
 		return nil, fmt.Errorf("SBF message has bad length %d", length)
 	}
 	got := Endian.Uint16([]byte(packet[2:4]))
@@ -333,9 +339,6 @@ func ParseMsg(packet string) (*Block, error) {
 	id := MsgID(Endian.Uint16([]byte(packet[4:6])))
 	blockNumber, rev := id.Unpack()
 	body := packet[HeaderLen:]
-	if len(body) < 6 {
-		return nil, fmt.Errorf("SBF-%s body too short (%d bytes)", id, len(body))
-	}
 	ts := TimeStamp{
 		TOW: Endian.Uint32([]byte(body[:4])),
 		WNc: Endian.Uint16([]byte(body[4:6])),
@@ -361,7 +364,11 @@ func ParseMsg(packet string) (*Block, error) {
 	return b, nil
 }
 
-// Serialize serializes an SBF block to a complete packet.
+// Serialize serializes an SBF block to a complete packet. For blocks with
+// revision-dependent trailers, it always writes the full layout of the latest
+// revision known to this package and sets the revision number in the packet's
+// ID to match, ignoring b.Rev; so a block parsed from an earlier-revision
+// packet serializes to a longer, higher-revision packet.
 func Serialize(b *Block) ([]byte, error) {
 	buf := new(strings.Builder)
 	if err := binary.Write(buf, Endian, b.TimeStamp); err != nil {
@@ -372,7 +379,11 @@ func Serialize(b *Block) ([]byte, error) {
 	} else if err := WriteBinChunked(buf, b.Params, b.ID().String()); err != nil {
 		return nil, err
 	}
-	return PackMsg(b.ID(), []byte(buf.String()))
+	id := b.ID()
+	if r, ok := b.Params.(revisioned); ok {
+		id = MsgID(b.Params.BlockNumber()) | MsgID(r.latestRev())<<13
+	}
+	return PackMsg(id, []byte(buf.String()))
 }
 
 // PackMsg creates a complete SBF packet from an ID and body payload.

@@ -16,6 +16,7 @@ const (
 	NavTimeGLOID     MsgID = clsNav | (0x23 << 8)
 	NavTimeGalID     MsgID = clsNav | (0x25 << 8)
 	NavTimeQZSSID    MsgID = clsNav | (0x27 << 8)
+	NavTimeNavICID   MsgID = clsNav | (0x63 << 8)
 	NavTimeLSID      MsgID = clsNav | (0x26 << 8)
 	NavEOEID         MsgID = clsNav | (0x61 << 8)
 	NavTimeTrustedID MsgID = clsNav | (0x64 << 8)
