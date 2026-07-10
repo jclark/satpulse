@@ -121,7 +121,7 @@ uninstall:
 test:
 	go test ./...
 
-smoketest: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool
+smoketest: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpulsewb
 	python3 smoketest/run.py
 
 clean:

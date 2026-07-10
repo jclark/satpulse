@@ -653,22 +653,54 @@ Black-box smoke tests of the satpulsewb binary, feasible as soon as
 phase 3 exists: replaying a packet log through a FIFO with
 `satpulsetool pack --realtime` drives the whole monitor path with no
 hardware, because gpscfg skips probing on a read-only port --
-connect succeeds and passive detection takes over. The tests are a
-sibling runner in `smoketest/` (like `system.py`: its own lifecycle,
-sharing `common.py` and the platform transport code), not a scenario
-family in `run.py`, whose per-scenario lifecycle is satpulsed-shaped
-(a rendered toml template, config-derived listeners and peers).
+connect succeeds and passive detection takes over. A pty replay
+works too: the probe runs, goes unanswered, and connect still ends
+in passive detection (the session tolerates ErrNoProbeResponse), so
+write-path scenarios need no responding receiver.
+
+The tests are scenarios in the existing `smoketest/` suite, not a
+sibling runner: the program under test becomes a scenario-declared
+dimension of `run.py` (default satpulsed), captured in one
+per-program module behind a small protocol, the same way
+`platform_api.py`/`platform_unix.py` already capture the OS
+dimension. The program seam owns exactly what differs between the
+two programs: input preparation (satpulsed renders a toml template
+and derives its helper peers from the rendered config; satpulsewb
+takes a flag list, with the same `${SATPULSE_TEST_*}` substitution,
+and declares its peers explicitly), the start command, readiness
+(config-derived listeners vs one HTTP port plus parsing the printed
+URL and token), the base allowed-error list for the daemon-log
+scan, and shutdown expectations. Everything else stays shared:
+port-block allocation, run dirs, the transport layer (FIFO/pty,
+write capture, disconnect), the replay lifecycle, the fake peers,
+and the parallel executor. Scenario families stay organized by
+feature and hold scenarios for both programs side by side; the
+workbench corrections scenarios land beside the daemon's
+`stream/pull-*` ones and reuse the family's captured-serial-writes
+RTCM check as-is.
+
 Checks at smoketest depth: startup and the printed URL/token, auth
 enforcement and the `-L`/`-T` token modes, snapshot endpoints
 populating as the replay flows, SSE delivery and priming,
 packet-stream gating driven by a scripted SSE client, clean
 shutdown (auto-open gating checks arrive with the phase-7 auto-open
-PR). Includes
-recording a purpose-built F9P fixture (the message set the workbench
-displays, long enough at the chosen replay factor to outlast the
-slowest check); the existing multi-vendor logs under
-`gps/testdata/packets/` serve as secondary fixtures, since detection
-is passive.
+PR). Corrections rides this phase, mirroring the daemon's
+stream/pull scenarios: a pty scenario with `fakesource.py` as the
+caster checks the corrections state transitions over SSE,
+gps:corrpacket and gps:basearp delivery, the RTCM written back to
+the port (detection-probe writes filtered by tag, as today), the
+VRS refusal while no fix exists, and the GGA upload once one does.
+Device loss inverts SELF_SHUTDOWN: on a transport disconnect
+satpulsewb must keep running and emit the disconnected state over
+SSE rather than exit.
+
+Includes recording two purpose-built F9P fixtures: a rover (the
+message set the workbench displays, plus GGA fixes for the VRS
+scenario) and a static base during survey-in (RTCM in the packet
+mix, survey events exercising the priming of slow gps:msg kinds),
+each long enough at its replay factor to outlast the slowest check.
+The existing multi-vendor logs under `gps/testdata/packets/` serve
+as secondary fixtures, since detection is passive.
 
 ### Phase 6: message files (one PR)
 
@@ -682,7 +714,7 @@ msg-file send/cancel endpoints; un-hides the Messages tab.
 Browser auto-open as specified under Command line above: the
 local-GUI-session gate, the per-OS launcher, `--no-open`, and the
 smoke-test checks for the gating (environment manipulation in the
-phase-5 runner) ride along.
+phase-5 scenarios) ride along.
 
 ### Phase 8: Playwright browser tests (one PR)
 
@@ -698,16 +730,25 @@ consistent from the event cache; the stale-token notice; re-priming
 after a server restart. After phase 6 so a Messages tab journey can
 ride along, and after the desktop rework (phase 4) so the components
 are serving both shells before journeys pin their DOM. Kept to a
-handful of shallow journeys: wire-level assertions stay in phase 5's
-runner, which needs no browser or npm.
+handful of shallow journeys: wire-level assertions stay in the
+phase-5 scenarios, which need no browser or npm.
 
 ### Phase 9: simulator config tests (one PR)
 
 Extends both harnesses from the monitor path to the config path,
 using the u-blox receiver simulator (#362,
 [ublox-sim.md](ublox-sim.md)), which is developed in parallel on its
-own branch off master. The transport becomes a pty with the
-simulator behind it; the phase-5 runner and phase-8 journeys gain
+own branch off master. In smoketest terms the simulator is a new
+packet provider, not a transport: what plays the receiver behind
+the serial transport becomes another scenario-declared dimension,
+orthogonal to the program under test -- either a paced `pack
+--realtime` replay of a recorded log (whose one-replay-per-lifetime
+invariant and wait-replay backstop belong to this provider, not to
+the suite) or the interactive simulator, which answers probes and
+config writes and so implies a read-write pty. The dimensions
+compose: satpulsed x simulator smoke-tests the daemon's startup
+config phase, which no replay can reach. The smoketest scenarios
+and phase-8 journeys gain
 config checks: probe identifies the personality, the config panel
 populates from ReadConfig, an apply round-trips and a re-read shows
 the change, and enabling a message makes it appear in the packet
