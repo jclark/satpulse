@@ -56,6 +56,9 @@ const (
 	reopenTimeout = 10 * time.Second
 	// reopenDelay separates reconnect attempts.
 	reopenDelay = time.Second
+	// maxReopenAttempts is how many times reopen retries the device node
+	// after a reset re-enumerates it; 0 would disable reconnect.
+	maxReopenAttempts = 3
 )
 
 // configRequest is sent to packetWorker to run gpscfg.Configure.
@@ -126,7 +129,6 @@ func emit(sink Sink, name EventName, data any) {
 // Options configures a Session.
 type Options struct {
 	ProbeTimeout time.Duration // timeout for a probe or configuration run; default 15s
-	MaxRetries   int           // reconnect attempts after a reset kills the transport; default 3
 	PacketLog    io.Writer     // optional JSONL packet log (nil to disable)
 }
 
@@ -176,9 +178,6 @@ type Session struct {
 func New(lg *slog.Logger, sink Sink, opts Options) *Session {
 	if opts.ProbeTimeout == 0 {
 		opts.ProbeTimeout = 15 * time.Second
-	}
-	if opts.MaxRetries == 0 {
-		opts.MaxRetries = 3
 	}
 	return &Session{
 		lg:         lg,
@@ -484,7 +483,7 @@ func (s *Session) connManager(connCtx context.Context, conn gpsio.Conn, speed in
 // it. Each attempt gets reopenTimeout for the device node to come back.
 func (s *Session) reopen(connCtx context.Context) (gpsio.Conn, int, error) {
 	var lastErr error
-	for i := 0; i < s.opts.MaxRetries; i++ {
+	for i := 0; i < maxReopenAttempts; i++ {
 		if i > 0 {
 			select {
 			case <-connCtx.Done():

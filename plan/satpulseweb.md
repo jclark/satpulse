@@ -117,7 +117,6 @@ introduced later if a registry-free consumer ever materializes.
 ```go
 type Options struct {
     ProbeTimeout time.Duration // default 15s
-    MaxRetries   int
     PacketLog    io.Writer // optional JSONL packet log (nil to disable)
 }
 
