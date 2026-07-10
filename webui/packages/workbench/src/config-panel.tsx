@@ -268,7 +268,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                 opts.Survey = {
                     Flags: surveyAgain ? 1 : 0,
                     MinDur: dur * 1e9,       // seconds -> nanoseconds
-                    AccLimit: acc * 1e6,     // meters -> micrometers
+                    AccLimit: acc,
                 };
                 if (surveyReport) opts.PVTMsg = (opts.PVTMsg || 0) | PVTMsgSurvey;
             } else if (timeMode === 'fixed') {
