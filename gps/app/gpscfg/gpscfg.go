@@ -172,7 +172,7 @@ func (mh *msgHandler) detect(ctx context.Context, port gpsio.OutPort, probeEnabl
 			silenceTimer: time.After(silentWaitTimeout),
 		}
 		if socket {
-			if err := pd.maybeSendProbe(ctx, 0); err != nil {
+			if err := pd.maybeSendProbe(0); err != nil {
 				return nil, err
 			}
 			pd.validPacketReceived = true
@@ -254,12 +254,19 @@ type listeningDetector struct {
 }
 
 // probingDetector detects by sending probe packets and listening for responses.
+// probePackets holds the writes remaining in the current probe attempt.
+// delayBeforeProbe[i] is the pause required before writing probePackets[i];
+// it stays empty in the usual case where no packet needs a delay, and entries
+// past its length mean no delay.
 type probingDetector struct {
 	detector
-	port         gpsio.OutPort
-	silenceTimer <-chan time.Time
-	probeTimer   <-chan time.Time
-	nProbesSent  int
+	port             gpsio.OutPort
+	silenceTimer     <-chan time.Time
+	probeTimer       <-chan time.Time
+	writeTimer       <-chan time.Time
+	probePackets     [][]byte
+	delayBeforeProbe []time.Duration
+	nProbesSent      int
 }
 
 // detector holds shared state for both detection modes.
@@ -305,7 +312,7 @@ func (d *probingDetector) run(ctx context.Context) (gpsprot.ConfigProtocol, erro
 			if !ok {
 				return nil, mh.packetChClosed(ctx)
 			}
-			if err := d.processPacket(ctx, packet); err != nil {
+			if err := d.processPacket(packet); err != nil {
 				return nil, err
 			}
 			if prot := mh.probeSucceeded(); prot != nil {
@@ -315,13 +322,13 @@ func (d *probingDetector) run(ctx context.Context) (gpsprot.ConfigProtocol, erro
 		case <-d.silenceTimer:
 			d.silenceTimer = nil
 			mh.lg.Debug("silence timer fired")
-			if err := d.maybeSendProbe(ctx, 0); err != nil {
+			if err := d.maybeSendProbe(0); err != nil {
 				return nil, err
 			}
 		case <-d.deadlineTimer:
 			d.deadlineTimer = nil
 			mh.lg.Debug("deadline timer fired")
-			if err := d.maybeSendProbe(ctx, 0); err != nil {
+			if err := d.maybeSendProbe(0); err != nil {
 				return nil, err
 			}
 		case <-d.probeTimer:
@@ -330,7 +337,12 @@ func (d *probingDetector) run(ctx context.Context) (gpsprot.ConfigProtocol, erro
 				mh.lg.Debug("no response to probes, giving up")
 				return nil, nil
 			}
-			if err := d.maybeSendProbe(ctx, d.nProbesSent); err != nil {
+			if err := d.maybeSendProbe(d.nProbesSent); err != nil {
+				return nil, err
+			}
+		case <-d.writeTimer:
+			d.writeTimer = nil
+			if err := d.sendProbePackets(); err != nil {
 				return nil, err
 			}
 		}
@@ -339,44 +351,72 @@ func (d *probingDetector) run(ctx context.Context) (gpsprot.ConfigProtocol, erro
 
 // processPacket extends the base to cancel the silence timer on input
 // and trigger the first probe when a valid packet arrives.
-func (d *probingDetector) processPacket(ctx context.Context, packet scan.Packet) error {
+func (d *probingDetector) processPacket(packet scan.Packet) error {
 	d.detector.processPacket(packet)
 	if d.silenceTimer != nil && (len(packet.Data) > 0 || isFramingError(packet.ReadError)) {
 		d.mh.lg.Debug("first input received, cancelling silence timer")
 		d.silenceTimer = nil
 	}
 	if d.validPacketReceived {
-		if err := d.maybeSendProbe(ctx, 0); err != nil {
+		if err := d.maybeSendProbe(0); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// maybeSendProbe sends probes if nProbesSent equals probeIndex.
-// It increments nProbesSent, nils deadline, and sets probeTimer for the next step.
-func (d *probingDetector) maybeSendProbe(ctx context.Context, probeIndex int) error {
+// maybeSendProbe starts a probe attempt if nProbesSent equals probeIndex.
+// It queues the probe packets of all protocols, increments nProbesSent,
+// nils deadline, and starts writing the queue.
+func (d *probingDetector) maybeSendProbe(probeIndex int) error {
 	if d.nProbesSent != probeIndex {
 		return nil
 	}
 	for _, prot := range d.mh.configProts {
 		packets, delay := prot.ProbePackets()
-		for i, packet := range packets {
-			if _, err := d.port.Write(packet); err != nil {
-				return err
-			}
-			if i+1 < len(packets) && delay > 0 {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-time.After(delay):
-				}
+		if delay > 0 {
+			for i := 1; i < len(packets); i++ {
+				d.setDelayBefore(len(d.probePackets)+i, delay)
 			}
 		}
+		d.probePackets = append(d.probePackets, packets...)
 	}
 	d.nProbesSent++
-	d.mh.lg.Debug("sent probe packets", "probeNum", d.nProbesSent)
+	d.mh.lg.Debug("sending probe packets", "probeNum", d.nProbesSent)
 	d.deadlineTimer = nil
+	return d.sendProbePackets()
+}
+
+// setDelayBefore records that probePackets[i] must be preceded by delay,
+// growing delayBeforeProbe as needed.
+func (d *probingDetector) setDelayBefore(i int, delay time.Duration) {
+	for len(d.delayBeforeProbe) <= i {
+		d.delayBeforeProbe = append(d.delayBeforeProbe, 0)
+	}
+	d.delayBeforeProbe[i] = delay
+}
+
+// sendProbePackets writes queued probe packets. On reaching a packet with a
+// nonzero delayBeforeProbe, it arms writeTimer and returns; the run loop calls
+// it again when the timer fires. Once the queue drains, it sets probeTimer for
+// the next step.
+func (d *probingDetector) sendProbePackets() error {
+	for len(d.probePackets) > 0 {
+		if len(d.delayBeforeProbe) > 0 {
+			if delay := d.delayBeforeProbe[0]; delay > 0 {
+				d.delayBeforeProbe[0] = 0
+				d.writeTimer = time.After(delay)
+				return nil
+			}
+		}
+		if _, err := d.port.Write(d.probePackets[0]); err != nil {
+			return err
+		}
+		d.probePackets = d.probePackets[1:]
+		if len(d.delayBeforeProbe) > 0 {
+			d.delayBeforeProbe = d.delayBeforeProbe[1:]
+		}
+	}
 	if d.nProbesSent == 1 {
 		d.probeTimer = time.After(probeRetryDelay)
 	} else {
