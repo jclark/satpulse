@@ -25,6 +25,21 @@ const GAP = u(6.2);
 const HM_LETTER = '0';
 const DATE_LETTER = u(1.24);
 
+function clockTime(s: string): ClockTime | null {
+    const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:)(\d{2})(?:\.\d+)?(?:[+-]00:00|Z)$/.exec(s);
+    if (!m) return null;
+    const d = new Date(m[1] + '00Z');
+    if (isNaN(d.getTime())) return null;
+    const yyyy = String(d.getFullYear());
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return {
+        date: `${yyyy}-${mm}-${dd}`,
+        hm: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'),
+        ss: m[2],
+    };
+}
+
 function formatUTCOffset(): string {
     const mins = new Date().getTimezoneOffset();
     const sign = mins <= 0 ? '+' : '-';
@@ -40,16 +55,8 @@ export function ClockPanel({msg}: Props) {
 
     useEffect(() => {
         if (!msg?.utcTime) return;
-        const d = new Date(msg.utcTime);
-        if (d.getMilliseconds() !== 0) return;
-        const yyyy = String(d.getFullYear());
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
-        setTime({
-            date: `${yyyy}-${mm}-${dd}`,
-            hm: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'),
-            ss: String(d.getSeconds()).padStart(2, '0'),
-        });
+        const t = clockTime(msg.utcTime);
+        if (t) setTime(t);
     }, [msg?.utcTime]);
 
     useEffect(() => {

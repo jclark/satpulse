@@ -159,8 +159,7 @@ func emit(sink Sink, name EventName, data any) {
 
 // Options configures a Session.
 type Options struct {
-	ProbeTimeout time.Duration // timeout for a probe or configuration run; default 15s
-	PacketLog    io.Writer     // optional JSONL packet log; writes are serialized (nil to disable)
+	PacketLog io.Writer // optional JSONL packet log; writes are serialized (nil to disable)
 }
 
 // Session is an interactive session with a GPS receiver.
@@ -223,9 +222,6 @@ type Session struct {
 
 // New creates a Session that delivers events to sink.
 func New(lg *slog.Logger, sink Sink, opts Options) *Session {
-	if opts.ProbeTimeout == 0 {
-		opts.ProbeTimeout = 15 * time.Second
-	}
 	return &Session{
 		lg:         lg,
 		sink:       sink,
@@ -718,10 +714,8 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 	target := gpsprot.NewConfigTarget()
 	target.Opts.ForceProbe = true
 	target.Opts.Socket = socket
-	ctx, cancel := context.WithTimeout(runCtx, s.opts.ProbeTimeout)
-	rslt, err := gpscfg.Configure(ctx, s.lg, procs,
+	rslt, err := gpscfg.Configure(runCtx, s.lg, procs,
 		gpsreg.CreateConfigProtocols(s.vendor), target, sub, conn)
-	cancel()
 	portLock <- port
 	s.emitSpeed(conn)
 	if err != nil && !errors.Is(err, gpscfg.ErrNoProbeResponse) && !errors.Is(err, gpscfg.ErrNotDetected) {
@@ -778,10 +772,8 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 			s.resetPending = reset
 			s.mu.Unlock()
 			req.target.Opts.Socket = socket
-			ctx, cancel := context.WithTimeout(req.ctx, s.opts.ProbeTimeout)
-			rslt, err := gpscfg.Configure(ctx, s.lg, procs,
+			rslt, err := gpscfg.Configure(req.ctx, s.lg, procs,
 				gpsreg.CreateConfigProtocols(s.vendor), req.target, sub, conn)
-			cancel()
 			portLock <- port
 			s.emitSpeed(conn)
 			if reset && errors.Is(err, io.ErrUnexpectedEOF) {
@@ -1714,8 +1706,8 @@ type LogEvent struct {
 	Attrs     map[string]any `json:"attrs,omitempty"`
 }
 
-func (h *logHandler) Enabled(_ context.Context, level slog.Level) bool {
-	return h.base.Enabled(context.Background(), level)
+func (h *logHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.base.Enabled(ctx, level)
 }
 
 func (h *logHandler) Handle(ctx context.Context, r slog.Record) error {
