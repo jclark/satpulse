@@ -116,8 +116,7 @@ introduced later if a registry-free consumer ever materializes.
 
 ```go
 type Options struct {
-    ProbeTimeout time.Duration // default 15s
-    PacketLog    io.Writer // optional JSONL packet log (nil to disable)
+    PacketLog io.Writer // optional JSONL packet log; writes are serialized (nil to disable)
 }
 
 func New(lg *slog.Logger, sink Sink, opts Options) *Session
