@@ -43,6 +43,11 @@ async function boot() {
         if (showAuthError(err)) return;
     }
     setTransport(t);
+    // A live token goes stale if satpulsewb restarts. The transport reports it
+    // via wb:authlost; show the same notice as a stale token at boot, directly
+    // rather than reloading (a reload would read the shared token store and
+    // could reclaim a seat another tab just took).
+    t.eventsOn('wb:authlost', () => render(<AuthNotice/>, root));
     render(<App/>, root);
 }
 

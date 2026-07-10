@@ -106,6 +106,7 @@ class EventStreams {
     private main?: EventSource;
     private packets?: EventSource;
     private lost = false;
+    private terminalEvent?: string;
 
     constructor(query: string) {
         this.query = query;
@@ -120,7 +121,14 @@ class EventStreams {
         }
         set.add(cb);
         if (this.lost) {
-            if (name === 'wb:seatlost') queueMicrotask(() => cb({}));
+            if (name === this.terminalEvent) queueMicrotask(() => cb({}));
+            return () => { set.delete(cb); };
+        }
+        // wb:seatlost and wb:authlost are synthetic terminal events fired by
+        // terminate(); they ride no stream, so registering the callback is all
+        // that is needed. Keeping them off the stream also means subscribing to
+        // one never opens the stream ahead of the panels' dispatch listeners.
+        if (name === 'wb:seatlost' || name === 'wb:authlost') {
             return () => { set.delete(cb); };
         }
         if (name === 'gps:packet') {
@@ -132,7 +140,7 @@ class EventStreams {
             if (!this.main) {
                 this.main = this.openStream(this.query);
             }
-            if (first && name !== 'wb:seatlost') {
+            if (first) {
                 this.addDispatch(this.main, name);
             }
         }
@@ -146,13 +154,21 @@ class EventStreams {
     }
 
     seatLost() {
+        this.terminate('wb:seatlost');
+    }
+
+    // terminate closes both streams and fires one terminal event, latching it
+    // so a later subscriber to that event still gets it. wb:seatlost drives the
+    // takeover overlay; wb:authlost the stale-auth notice.
+    private terminate(event: string) {
         if (this.lost) return;
         this.lost = true;
+        this.terminalEvent = event;
         this.main?.close();
         this.packets?.close();
         this.main = undefined;
         this.packets = undefined;
-        for (const cb of this.listeners.get('wb:seatlost') ?? []) {
+        for (const cb of this.listeners.get(event) ?? []) {
             cb({});
         }
     }
@@ -176,8 +192,8 @@ class EventStreams {
     // server answered a terminal status that EventSource does not expose, so
     // probe with a GET (token-checked but seat-free) to tell a stale seat from
     // a stale token: 200 means the token still works, so the seat was
-    // superseded; 401 means a restart minted a fresh token, so reload to reach
-    // the notice pointing at the newly printed URL.
+    // superseded; 401 means a restart minted a fresh token, so signal stale
+    // auth to reach the notice pointing at the newly printed URL.
     private async terminalClose() {
         if (this.lost) return;
         let resp;
@@ -187,7 +203,12 @@ class EventStreams {
             return; // server unreachable; not a terminal condition
         }
         if (resp.status === 401) {
-            window.location.reload();
+            // The token for this run is gone (a restart minted a fresh one).
+            // Signal stale auth directly rather than reloading: a reload would
+            // read the shared token store, and a fresh token another tab had
+            // installed there would let this stale tab reclaim that tab's seat.
+            // wb:authlost shows the notice without ever touching the seat.
+            this.terminate('wb:authlost');
             return;
         }
         this.seatLost();
