@@ -116,7 +116,7 @@ introduced later if a registry-free consumer ever materializes.
 
 ```go
 type Options struct {
-    PacketLog io.Writer // optional JSONL packet log (nil to disable)
+    PacketLog io.Writer // optional JSONL packet log; writes are serialized (nil to disable)
 }
 
 func New(lg *slog.Logger, sink Sink, opts Options) *Session
@@ -138,6 +138,9 @@ type Event struct {
 // Sink delivers events to the UI transport. Called from session
 // goroutines; Emit must not block (drop or buffer).
 type Sink interface {
+    // Emit may call Session snapshot accessors, but must not synchronously
+    // call other Session methods: events can originate on goroutines those
+    // methods wait for.
     Emit(Event)
     // Wants reports whether anyone is listening for this event.
     // The session uses it to suppress expensive high-rate streams
@@ -222,6 +225,20 @@ func (s *Session) StopCorrections() error
 func DecodePacket(formats []gpsprot.PacketFormat, data []byte, out bool) (*gpsdecode.DecodeResult, error)
 ```
 
+All methods are safe for concurrent use. Connect and Disconnect use
+last-call-wins semantics from the start of each call, including while
+an existing connection is draining or a transport open is pending;
+connection shutdown and manager startup are serialized. Receiver
+operations remain exclusive, and their completion can change state
+only for the pipeline run in which the operation started. State
+events are emitted in transition order (with overtaken intermediate
+states allowed to coalesce), and the sink is invoked without session
+emission locks held so snapshot accessors remain safe. Other Session
+methods must not be called synchronously from event callbacks because
+events can originate on tracked connection goroutines. PacketLog
+writes are serialized across reconnecting pipeline runs.
+CorrectionSource Host accepts DNS names and IPv4 or IPv6 literals.
+
 The geodesy helpers (`ECEFtoLLH`, `LLHtoECEF`, `CheckOnEarth`) do not
 move here; they are thin wrappers over `gps/lib/geopos` and each
 shell exposes them directly (or the web UI reimplements them
@@ -253,7 +270,11 @@ review:
   re-probe, resume. This also fixes the desktop's existing
   read-error-disconnect gap
   (webui/packages/workbench/plan/issues.md), where an unplugged
-  device leaves the app stuck in connected state.
+  device leaves the app stuck in connected state. Limitation: the
+  serial opener re-opens the same node name, so a device that
+  returns under a different node is not found and the reconnect
+  attempts exhaust; handling the renamed case needs a stable device
+  identity (gps/lib/serialenum) and is deferred.
 - Reset gating over proxy connections, driven by `Opener.Socket()`
   (see Relationship to satpulsed above for why).
 - `Wants` gating for the gps:packet stream, so a web client only
