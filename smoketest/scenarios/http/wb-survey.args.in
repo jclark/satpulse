@@ -1,0 +1,7 @@
+# satpulsewb with an explicit -L bind and the token enabled, auto-connecting to
+# the survey-in replay over the FIFO the runner allocated.
+-L
+127.0.0.1:${SATPULSE_TEST_HTTP_PORT}
+-T
+-d
+${SATPULSE_TEST_SERIAL}
