@@ -190,9 +190,6 @@ func (s *Session) emit(name EventName, data any) {
 }
 
 // emitState emits st, then catches up if a concurrent transition overtook it.
-// Every writer of s.state must call emitState after unlocking; closeLocked is
-// the exception, and its caller either replaces the state or emits it. Sinks
-// must tolerate duplicate and intermediate states while emitState catches up.
 // Must NOT be called with s.mu held -- a Sink may re-enter Session methods.
 func (s *Session) emitState(st ConnState) {
 	for {
