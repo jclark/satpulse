@@ -139,6 +139,15 @@ func (o *blockingOpener) Open(_ context.Context) (gpsio.Conn, int, error) {
 
 func (o *blockingOpener) Socket() bool { return false }
 
+type cancelOpener struct{}
+
+func (cancelOpener) Open(ctx context.Context) (gpsio.Conn, int, error) {
+	<-ctx.Done()
+	return nil, 0, ctx.Err()
+}
+
+func (cancelOpener) Socket() bool { return false }
+
 // fakeSink records emitted events. Wants reports wantPacket for
 // gps:packet and true for everything else.
 type fakeSink struct {
@@ -180,6 +189,23 @@ func (fs *fakeSink) count(name EventName) int {
 		}
 	}
 	return n
+}
+
+type blockingStateSink struct {
+	fakeSink
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (fs *blockingStateSink) Emit(ev Event) {
+	if ev.Name == EventState && ev.Data == StateConnecting {
+		fs.once.Do(func() {
+			close(fs.started)
+			<-fs.release
+		})
+	}
+	fs.fakeSink.Emit(ev)
 }
 
 // testSession creates a Session and arranges for it to be disconnected
@@ -257,6 +283,24 @@ func TestDisconnectDuringConnect(t *testing.T) {
 		t.Errorf("connection returned after Disconnect was not closed")
 	}
 	expect := []ConnState{StateConnecting, StateDisconnected}
+	if got := fs.states(); !reflect.DeepEqual(got, expect) {
+		t.Errorf("state events = %v, want %v", got, expect)
+	}
+}
+
+func TestDisconnectBeforeConnectingEvent(t *testing.T) {
+	fs := &blockingStateSink{started: make(chan struct{}), release: make(chan struct{})}
+	s := New(slog.New(slog.DiscardHandler), fs, Options{})
+	t.Cleanup(s.Disconnect)
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Connect(cancelOpener{}, gpsreg.VendorUnknown) }()
+	<-fs.started
+	s.Disconnect()
+	close(fs.release)
+	if err := <-errCh; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Connect = %v, want context.Canceled", err)
+	}
+	expect := []ConnState{StateDisconnected, StateConnecting, StateDisconnected}
 	if got := fs.states(); !reflect.DeepEqual(got, expect) {
 		t.Errorf("state events = %v, want %v", got, expect)
 	}
