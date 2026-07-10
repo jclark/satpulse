@@ -156,6 +156,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const [timePulseTouched, setTimePulseTouched] = useState(false);
     const [timeModeTouched, setTimeModeTouched] = useState(false);
     const [signalsTouched, setSignalsTouched] = useState(false);
+    const [minElevTouched, setMinElevTouched] = useState(false);
 
     // Applying state
     const [applying, setApplying] = useState(false);
@@ -257,6 +258,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             setTimePulseTouched(false);
             setTimeModeTouched(false);
             setSignalsTouched(false);
+            setMinElevTouched(false);
             setNmeaChange(false);
             setRtcmChange(false);
             setPvtChange(false);
@@ -321,7 +323,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             if (timeGNSS) props.timeGNSS = timeGNSS;
             if (cableDelay !== '') props.antennaCableDelay = Math.round(parseFloat(cableDelay) || 0);
         }
-        if (signalsTouched) {
+        if (minElevTouched) {
             if (minElev !== '') props.minElevation = parseFloat(minElev) || 0;
         }
         const nmeaWire = nmeaWireValue(nmeaChange, nmeaDisable, nmeaFlags);
@@ -354,6 +356,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             setTimePulseTouched(false);
             setTimeModeTouched(false);
             setSignalsTouched(false);
+            setMinElevTouched(false);
             setNmeaChange(false);
             setRtcmChange(false);
             setPvtChange(false);
@@ -374,6 +377,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         setTimePulseTouched(false);
         setTimeModeTouched(false);
         setSignalsTouched(false);
+        setMinElevTouched(false);
         setNmeaChange(false);
         setRtcmChange(false);
         setPvtChange(false);
@@ -404,7 +408,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const pendingSections: string[] = [];
     if (timePulseTouched) pendingSections.push('time pulse');
     if (timeModeTouched) pendingSections.push('time mode');
-    if (signalsTouched) pendingSections.push('satellites and signals');
+    if (signalsTouched || minElevTouched) pendingSections.push('satellites and signals');
     if (nmeaChange || rtcmChange || pvtChange || satsChange || rawChange) pendingSections.push('messages');
     if (speedTouched) pendingSections.push('serial speed');
     if (saveType) pendingSections.push('save');
@@ -585,7 +589,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                         <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center w-fit">
                             <label class={fieldLabelText()}>Min elevation (deg)</label>
                             <Input type="text" inputMode="decimal" invalid={errorSet.has('minElev')} class="w-20" value={minElev} placeholder="e.g. 10"
-                                disabled={!connected} onInput={e => { setSignalsTouched(true); setMinElev((e.target as HTMLInputElement).value); }} />
+                                disabled={!connected} onInput={e => { setMinElevTouched(true); setMinElev((e.target as HTMLInputElement).value); }} />
                         </div>
                     </ConfigGroup>
 
