@@ -419,24 +419,39 @@ func (o SocketOpener) Socket() bool { return true }
 func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
 	s.mu.Lock()
 	s.closeLocked()
-	s.state = StateConnecting
-	s.mu.Unlock()
-	s.emit(EventState, StateConnecting)
-	ctx, cancel := context.WithTimeout(context.Background(), connectOpenTimeout)
-	conn, speed, err := op.Open(ctx)
-	cancel()
-	if err != nil {
-		s.setState(StateDisconnected)
-		return err
-	}
 	connCtx, connCancel := context.WithCancel(context.Background())
-	s.mu.Lock()
-	s.op = op
-	s.vendor = vendor
+	s.state = StateConnecting
 	s.connCtx = connCtx
 	s.connCancel = connCancel
 	s.mu.Unlock()
+	s.emit(EventState, StateConnecting)
+	ctx, cancel := context.WithTimeout(connCtx, connectOpenTimeout)
+	conn, speed, err := op.Open(ctx)
+	cancel()
+	if err != nil {
+		s.mu.Lock()
+		active := s.connCtx == connCtx && connCtx.Err() == nil
+		if active {
+			connCancel()
+			s.connCancel = nil
+			s.state = StateDisconnected
+		}
+		s.mu.Unlock()
+		if active {
+			s.emit(EventState, StateDisconnected)
+		}
+		return err
+	}
+	s.mu.Lock()
+	if s.connCtx != connCtx || connCtx.Err() != nil {
+		s.mu.Unlock()
+		conn.Close()
+		return context.Canceled
+	}
+	s.op = op
+	s.vendor = vendor
 	s.connWg.Go(func() { s.connManager(connCtx, conn, speed) })
+	s.mu.Unlock()
 	return nil
 }
 

@@ -125,6 +125,20 @@ func (o *fakeOpener) openCount() int {
 	return o.opens
 }
 
+type blockingOpener struct {
+	started chan struct{}
+	release chan struct{}
+	conn    *fakeConn
+}
+
+func (o *blockingOpener) Open(_ context.Context) (gpsio.Conn, int, error) {
+	close(o.started)
+	<-o.release
+	return o.conn, 9600, nil
+}
+
+func (o *blockingOpener) Socket() bool { return false }
+
 // fakeSink records emitted events. Wants reports wantPacket for
 // gps:packet and true for everything else.
 type fakeSink struct {
@@ -222,6 +236,30 @@ func TestConnectDisconnect(t *testing.T) {
 			t.Errorf("state events = %v, want %v", got, expect)
 		}
 	})
+}
+
+func TestDisconnectDuringConnect(t *testing.T) {
+	fs := &fakeSink{}
+	s := testSession(t, fs)
+	op := &blockingOpener{started: make(chan struct{}), release: make(chan struct{}), conn: newFakeConn()}
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Connect(op, gpsreg.VendorUnknown) }()
+	<-op.started
+	s.Disconnect()
+	close(op.release)
+	if err := <-errCh; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Connect = %v, want context.Canceled", err)
+	}
+	if got := s.State(); got != StateDisconnected {
+		t.Errorf("state = %v, want %v", got, StateDisconnected)
+	}
+	if !op.conn.stopped {
+		t.Errorf("connection returned after Disconnect was not closed")
+	}
+	expect := []ConnState{StateConnecting, StateDisconnected}
+	if got := fs.states(); !reflect.DeepEqual(got, expect) {
+		t.Errorf("state events = %v, want %v", got, expect)
+	}
 }
 
 func TestUnplugDisconnects(t *testing.T) {
