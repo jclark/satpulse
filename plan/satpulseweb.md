@@ -139,6 +139,9 @@ type Event struct {
 // Sink delivers events to the UI transport. Called from session
 // goroutines; Emit must not block (drop or buffer).
 type Sink interface {
+    // Emit may call Session snapshot accessors, but must not synchronously
+    // call other Session methods: events can originate on goroutines those
+    // methods wait for.
     Emit(Event)
     // Wants reports whether anyone is listening for this event.
     // The session uses it to suppress expensive high-rate streams
@@ -222,6 +225,20 @@ func (s *Session) StopCorrections() error
 // Stateless helpers become package functions.
 func DecodePacket(formats []gpsprot.PacketFormat, data []byte, out bool) (*gpsdecode.DecodeResult, error)
 ```
+
+All methods are safe for concurrent use. Connect and Disconnect use
+last-call-wins semantics from the start of each call, including while
+an existing connection is draining or a transport open is pending;
+connection shutdown and manager startup are serialized. Receiver
+operations remain exclusive, and their completion can change state
+only for the pipeline run in which the operation started. State
+events are emitted in transition order (with overtaken intermediate
+states allowed to coalesce), and the sink is invoked without session
+emission locks held so snapshot accessors remain safe. Other Session
+methods must not be called synchronously from event callbacks because
+events can originate on tracked connection goroutines. PacketLog
+writes are serialized across reconnecting pipeline runs.
+CorrectionSource Host accepts DNS names and IPv4 or IPv6 literals.
 
 The geodesy helpers (`ECEFtoLLH`, `LLHtoECEF`, `CheckOnEarth`) do not
 move here; they are thin wrappers over `gps/lib/geopos` and each

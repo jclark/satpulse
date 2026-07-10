@@ -153,6 +153,35 @@ type gatedSink struct {
 	gate   chan struct{}
 }
 
+// reentrantSink disconnects synchronously on the first state event.
+type reentrantSink struct {
+	fakeSink
+	s    *Session
+	once sync.Once
+}
+
+func (rs *reentrantSink) Emit(ev Event) {
+	rs.fakeSink.Emit(ev)
+	if ev.Name == EventState {
+		rs.once.Do(rs.s.Disconnect)
+	}
+}
+
+// blockingWriter holds writes until gate is closed and counts how many
+// writes have entered.
+type blockingWriter struct {
+	gate    chan struct{}
+	entered chan struct{}
+	calls   atomic.Int32
+}
+
+func (w *blockingWriter) Write(b []byte) (int, error) {
+	w.calls.Add(1)
+	w.entered <- struct{}{}
+	<-w.gate
+	return len(b), nil
+}
+
 func (gs *gatedSink) Emit(ev Event) {
 	if ev.Name == EventState && gs.gating.Load() {
 		<-gs.gate
@@ -313,6 +342,100 @@ func TestConnectSuperseded(t *testing.T) {
 	}
 }
 
+func TestLifecycleCallsDuringShutdown(t *testing.T) {
+	fs := &fakeSink{}
+	s := testSession(t, fs)
+	drain := make(chan struct{})
+	s.connWg.Go(func() { <-drain })
+	op1 := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+	op2 := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+	err1 := make(chan error, 1)
+	err2 := make(chan error, 1)
+	go func() { err1 <- s.Connect(op1, gpsreg.VendorUnknown) }()
+	waitGen := func(want int) {
+		t.Helper()
+		deadline := time.Now().Add(time.Second)
+		for {
+			s.mu.Lock()
+			got := s.connectGen
+			s.mu.Unlock()
+			if got == want {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("connect generation = %d, want %d", got, want)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	waitGen(1)
+	go func() { err2 <- s.Connect(op2, gpsreg.VendorUnknown) }()
+	waitGen(2)
+	close(drain)
+	if err := <-err1; err == nil {
+		t.Fatal("first Connect returned nil, want superseded error")
+	}
+	if err := <-err2; err != nil {
+		t.Fatalf("second Connect: %v", err)
+	}
+	if got := op1.openCount(); got != 0 {
+		t.Errorf("first opener called %d times, want 0", got)
+	}
+	if got := op2.openCount(); got != 1 {
+		t.Errorf("second opener called %d times, want 1", got)
+	}
+}
+
+func TestStaleLifecycleCallDoesNotCloseWinner(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(s *Session, gen int, op Opener) error
+	}{
+		{
+			name: "connect",
+			call: func(s *Session, gen int, op Opener) error {
+				return s.connect(gen, op, gpsreg.VendorUnknown)
+			},
+		},
+		{
+			name: "disconnect",
+			call: func(s *Session, gen int, _ Opener) error {
+				s.disconnect(gen)
+				return nil
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				fs := &fakeSink{}
+				s := testSession(t, fs)
+				staleGen := s.reserveLifecycle()
+				winnerConn := newFakeConn()
+				winnerOp := &fakeOpener{conns: []*fakeConn{winnerConn}}
+				if err := s.Connect(winnerOp, gpsreg.VendorUnknown); err != nil {
+					t.Fatalf("winning Connect: %v", err)
+				}
+				waitForState(t, s, StateConnected)
+				staleOp := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+				err := tc.call(s, staleGen, staleOp)
+				if tc.name == "connect" && err == nil {
+					t.Fatal("stale Connect returned nil, want superseded error")
+				}
+				if winnerConn.isClosed() {
+					t.Error("stale lifecycle call closed the winning connection")
+				}
+				if got := s.State(); got != StateConnected {
+					t.Errorf("state = %v, want %v", got, StateConnected)
+				}
+				if got := staleOp.openCount(); got != 0 {
+					t.Errorf("stale opener called %d times, want 0", got)
+				}
+			})
+		})
+	}
+}
+
 // TestOperationInProgress checks that an operation refused because an
 // exclusive operation holds the port says so, rather than claiming the
 // session is not connected.
@@ -416,6 +539,42 @@ func TestLifecycleEventOrder(t *testing.T) {
 			t.Errorf("state events = %v, want %v", got, expect)
 		}
 	})
+}
+
+func TestStateEventReentrantDisconnect(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rs := &reentrantSink{}
+		s := New(slog.New(slog.DiscardHandler), rs, Options{})
+		rs.s = s
+		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+		if err := s.Connect(op, gpsreg.VendorUnknown); err == nil {
+			t.Fatal("Connect returned nil, want superseded error")
+		}
+		if got := s.State(); got != StateDisconnected {
+			t.Errorf("state = %v, want %v", got, StateDisconnected)
+		}
+		expect := []ConnState{StateConnecting, StateDisconnected}
+		if got := rs.states(); !reflect.DeepEqual(got, expect) {
+			t.Errorf("state events = %v, want %v", got, expect)
+		}
+	})
+}
+
+func TestEndStateScopedToRun(t *testing.T) {
+	s := New(slog.New(slog.DiscardHandler), &fakeSink{}, Options{})
+	oldRun, oldCancel := context.WithCancel(context.Background())
+	defer oldCancel()
+	newRun, newCancel := context.WithCancel(context.Background())
+	defer newCancel()
+	s.runCtx = oldRun
+	s.state = StateConfiguring
+	s.runCtx = newRun
+	if got := s.setEndState(oldRun, StateConnected); got != StateConfiguring {
+		t.Errorf("setEndState returned %v, want %v", got, StateConfiguring)
+	}
+	if got := s.State(); got != StateConfiguring {
+		t.Errorf("state = %v, want %v", got, StateConfiguring)
+	}
 }
 
 func TestUnplugDisconnects(t *testing.T) {
@@ -550,6 +709,35 @@ func TestPacketEventGating(t *testing.T) {
 				s.Disconnect()
 			})
 		})
+	}
+}
+
+func TestPacketLogWritesSerialized(t *testing.T) {
+	w := &blockingWriter{gate: make(chan struct{}), entered: make(chan struct{}, 2)}
+	s := New(slog.New(slog.DiscardHandler), &fakeSink{}, Options{PacketLog: w})
+	done := make(chan struct{}, 2)
+	go func() {
+		s.writePacketLogEntry(gpsio.PacketLogEntry{Ascii: "one"})
+		done <- struct{}{}
+	}()
+	<-w.entered
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		s.writePacketLogEntry(gpsio.PacketLogEntry{Ascii: "two"})
+		done <- struct{}{}
+	}()
+	<-started
+	select {
+	case <-w.entered:
+		t.Error("second packet-log write entered before the first completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(w.gate)
+	<-done
+	<-done
+	if got := w.calls.Load(); got != 2 {
+		t.Errorf("writes = %d, want 2", got)
 	}
 }
 

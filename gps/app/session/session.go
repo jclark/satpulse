@@ -18,12 +18,14 @@
 //
 // Methods are safe for concurrent use, and concurrent calls have
 // defined semantics regardless of how the shell behaves: the last
-// Connect or Disconnect wins (a Connect whose transport open is
-// still pending is superseded -- it closes the late-opened transport,
-// returns an error, and emits nothing), and racing receiver
-// operations lose to whichever holds the port. All state changes
-// flow to the shell as events; the snapshot accessors (State,
-// Receiver, Speed, CorrectionsState) serve late-joining consumers.
+// Connect or Disconnect wins (a superseded Connect closes any
+// late-opened transport, returns an error, and cannot start a
+// connection manager), and racing receiver operations lose to
+// whichever holds the port. Operation completion is scoped to the
+// pipeline run where it started. All state changes flow to the shell
+// as ordered events. Event callbacks may call the snapshot accessors
+// (State, Receiver, Speed, CorrectionsState), which also serve
+// late-joining consumers.
 package session
 
 import (
@@ -35,6 +37,8 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -138,6 +142,9 @@ type Event struct {
 // Sink delivers events to the UI transport. Called from session
 // goroutines; Emit must not block (drop or buffer).
 type Sink interface {
+	// Emit may call Session snapshot accessors, but must not synchronously
+	// call other Session methods: events can originate on goroutines those
+	// methods wait for.
 	Emit(Event)
 	// Wants reports whether anyone is listening for this event.
 	// The session uses it to suppress expensive high-rate streams
@@ -153,7 +160,7 @@ func emit(sink Sink, name EventName, data any) {
 // Options configures a Session.
 type Options struct {
 	ProbeTimeout time.Duration // timeout for a probe or configuration run; default 15s
-	PacketLog    io.Writer     // optional JSONL packet log (nil to disable)
+	PacketLog    io.Writer     // optional JSONL packet log; writes are serialized (nil to disable)
 }
 
 // Session is an interactive session with a GPS receiver.
@@ -163,6 +170,10 @@ type Session struct {
 	sink Sink
 	opts Options
 	mu   sync.Mutex
+	// lifecycleMu serializes connection shutdown and manager startup.
+	// It is not held while opening a transport, so a later lifecycle
+	// call can still supersede a pending Connect.
+	lifecycleMu sync.Mutex
 	// op and vendor are set by Connect and immutable while the
 	// connection lives.
 	op     Opener
@@ -171,9 +182,10 @@ type Session struct {
 	// stateSeq counts state transitions; stateEmitSeq is the last
 	// transition whose state has been published. emitStateChange uses
 	// them to keep gps:state events ordered when transitions race.
-	stateSeq     int
-	stateEmitSeq int
-	stateEmitMu  sync.Mutex
+	stateSeq      int
+	stateEmitSeq  int
+	stateEmitMu   sync.Mutex
+	stateEmitting bool
 	// connCtx spans the logical connection, Connect to Disconnect;
 	// runCtx spans one packet pipeline run within it. They differ only
 	// when a reset-bearing operation kills the transport: the manager
@@ -181,9 +193,9 @@ type Session struct {
 	// the same connCtx.
 	connCtx    context.Context
 	connCancel context.CancelFunc
-	// connectGen is bumped by closeLocked, so a Connect whose Open is
-	// still pending can tell that a later Connect or Disconnect
-	// superseded it and must not start a connection manager.
+	// connectGen is reserved at the start of each lifecycle call, so a
+	// Connect can tell that a later Connect or Disconnect superseded it
+	// during shutdown or while Open was pending.
 	connectGen   int
 	runCtx       context.Context
 	runCancel    context.CancelFunc
@@ -205,6 +217,7 @@ type Session struct {
 	corrCancel   context.CancelFunc
 	corrWg       *sync.WaitGroup
 	corrStopping bool
+	packetLogMu  sync.Mutex
 	packetLogW   io.Writer
 }
 
@@ -239,31 +252,46 @@ func (s *Session) setStateLocked(st ConnState) {
 // event consumers see always matches the final state even when
 // transitions race; an intermediate state that was overtaken before
 // its emission may be coalesced away. Must not be called with s.mu
-// held (the Sink may re-enter the Session).
+// held (the Sink may call Session snapshot accessors).
 func (s *Session) emitStateChange() {
 	s.stateEmitMu.Lock()
-	defer s.stateEmitMu.Unlock()
-	s.mu.Lock()
-	if s.stateSeq == s.stateEmitSeq {
-		s.mu.Unlock()
+	if s.stateEmitting {
+		s.stateEmitMu.Unlock()
 		return
 	}
-	s.stateEmitSeq = s.stateSeq
-	st := s.state
-	s.mu.Unlock()
-	s.emit(EventState, st)
+	s.stateEmitting = true
+	for {
+		s.mu.Lock()
+		if s.stateSeq == s.stateEmitSeq {
+			s.mu.Unlock()
+			s.stateEmitting = false
+			s.stateEmitMu.Unlock()
+			return
+		}
+		s.stateEmitSeq = s.stateSeq
+		st := s.state
+		s.mu.Unlock()
+		s.stateEmitMu.Unlock()
+		s.emit(EventState, st)
+		s.stateEmitMu.Lock()
+	}
 }
 
-// setEndState transitions to target if still connected, or to Disconnected
-// if the connection was lost. Returns the state actually set.
+// setEndState transitions to target if the originating run is still
+// current and connected, or to Disconnected if the connection was lost.
+// Returns the state actually set.
 // Used by send/config goroutines to avoid resurrecting state after
 // disconnect. While the state is Connecting or Reconnecting or the
 // run is ending, a (re)connect owns the state and the transition is
 // skipped: an operation can only be ending in those states because a
 // newer Connect cancelled it.
-func (s *Session) setEndState(target ConnState) ConnState {
+func (s *Session) setEndState(runCtx context.Context, target ConnState) ConnState {
 	s.mu.Lock()
 	st := s.state
+	if s.runCtx != runCtx {
+		s.mu.Unlock()
+		return st
+	}
 	if st == StateDisconnected || st == StateConnecting || st == StateReconnecting {
 		s.mu.Unlock()
 		return st
@@ -321,9 +349,6 @@ func (s *Session) cancelWorkerLocked() {
 }
 
 func (s *Session) closeLocked() {
-	// Invalidate any Connect whose Open is still pending: it re-checks
-	// connectGen when the open returns and backs out if it changed.
-	s.connectGen++
 	// Cancel and mark disconnected before stopCorrLocked releases s.mu
 	// to wait, so no call can pass a connected-state check and start
 	// work on the connection while it is being closed.
@@ -484,21 +509,46 @@ func (o SocketOpener) Socket() bool { return true }
 // asynchronous: it returns once the transport is open, and probe
 // progress arrives as events. vendor narrows probing and packet format
 // detection; VendorUnknown probes for all supported vendors. A Connect
-// or Disconnect issued while the open is pending supersedes it: the
-// late-opened transport is closed and Connect returns an error.
+// or Disconnect issued while shutdown or the open is pending supersedes
+// it: a late-opened transport is closed and Connect returns an error.
 func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
+	return s.connect(s.reserveLifecycle(), op, vendor)
+}
+
+func (s *Session) reserveLifecycle() int {
 	s.mu.Lock()
-	s.closeLocked()
-	s.setStateLocked(StateConnecting)
+	s.connectGen++
 	gen := s.connectGen
 	s.mu.Unlock()
+	return gen
+}
+
+func (s *Session) connect(gen int, op Opener, vendor gpsreg.Vendor) error {
+	s.lifecycleMu.Lock()
+	s.mu.Lock()
+	if s.connectGen != gen {
+		s.mu.Unlock()
+		s.lifecycleMu.Unlock()
+		return errors.New("connection attempt superseded")
+	}
+	s.closeLocked()
+	if s.connectGen != gen {
+		s.mu.Unlock()
+		s.lifecycleMu.Unlock()
+		return errors.New("connection attempt superseded")
+	}
+	s.setStateLocked(StateConnecting)
+	s.mu.Unlock()
+	s.lifecycleMu.Unlock()
 	s.emitStateChange()
 	ctx, cancel := context.WithTimeout(context.Background(), connectOpenTimeout)
 	conn, speed, err := op.Open(ctx)
 	cancel()
+	s.lifecycleMu.Lock()
 	s.mu.Lock()
 	if s.connectGen != gen {
 		s.mu.Unlock()
+		s.lifecycleMu.Unlock()
 		if err == nil {
 			conn.Close()
 		}
@@ -507,6 +557,7 @@ func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
 	if err != nil {
 		s.setStateLocked(StateDisconnected)
 		s.mu.Unlock()
+		s.lifecycleMu.Unlock()
 		s.emitStateChange()
 		return err
 	}
@@ -515,8 +566,9 @@ func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
 	s.vendor = vendor
 	s.connCtx = connCtx
 	s.connCancel = connCancel
-	s.mu.Unlock()
 	s.connWg.Go(func() { s.connManager(connCtx, conn, speed) })
+	s.mu.Unlock()
+	s.lifecycleMu.Unlock()
 	return nil
 }
 
@@ -771,11 +823,27 @@ func (s *Session) Receiver() ReceiverEvent {
 // Connect whose open is still pending and is safe to call in any
 // state.
 func (s *Session) Disconnect() {
+	s.disconnect(s.reserveLifecycle())
+}
+
+func (s *Session) disconnect(gen int) {
+	s.lifecycleMu.Lock()
 	s.mu.Lock()
+	if s.connectGen != gen {
+		s.mu.Unlock()
+		s.lifecycleMu.Unlock()
+		return
+	}
 	s.closeLocked()
-	s.probe = ReceiverEvent{}
+	current := s.connectGen == gen
+	if current {
+		s.probe = ReceiverEvent{}
+	}
 	s.mu.Unlock()
-	s.emitStateChange()
+	s.lifecycleMu.Unlock()
+	if current {
+		s.emitStateChange()
+	}
 }
 
 // CorrEvent is the payload for "gps:corrections" events.
@@ -868,7 +936,7 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	if cfg.NMEASend && cfg.Mode != "ntrip" {
 		return fmt.Errorf("NMEA send requires ntrip")
 	}
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	var source stream.Source
 	switch cfg.Mode {
 	case "tcp":
@@ -1094,13 +1162,14 @@ func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) 
 		return nil, err
 	}
 	s.cancelWorkerLocked()
+	runCtx := s.runCtx
 	s.setStateLocked(StateConfiguring)
 	s.mu.Unlock()
 	s.emitStateChange()
 	target := gpsprot.NewConfigTarget()
 	target.Get = readProps
 	cr := s.sendConfigRequest(ctx, target)
-	s.setEndState(StateConnected)
+	s.setEndState(runCtx, StateConnected)
 	if cr.err != nil {
 		return nil, cr.err
 	}
@@ -1128,15 +1197,16 @@ func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget)
 		return fmt.Errorf("reset operations are not available over a proxy connection")
 	}
 	s.cancelWorkerLocked()
+	runCtx := s.runCtx
 	s.setStateLocked(StateConfiguring)
 	s.mu.Unlock()
 	s.emitStateChange()
 	if target.NoOp() {
-		s.setEndState(StateConnected)
+		s.setEndState(runCtx, StateConnected)
 		return fmt.Errorf("no configuration changes specified")
 	}
 	cr := s.sendConfigRequest(ctx, target)
-	s.setEndState(StateConnected)
+	s.setEndState(runCtx, StateConnected)
 	return cr.err
 }
 
@@ -1282,7 +1352,7 @@ func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 	s.connWg.Go(func() {
 		defer func() {
 			close(stepCh)
-			s.finishSend()
+			s.finishSend(runCtx)
 		}()
 		s.emit(EventMsgSend, MsgSendEvent{
 			Session: session, Status: "started", Total: total,
@@ -1336,11 +1406,13 @@ func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 
 // finishSend clears sendCancel and transitions state to Connected (or
 // Disconnected if the connection was lost).
-func (s *Session) finishSend() {
+func (s *Session) finishSend(runCtx context.Context) {
 	s.mu.Lock()
-	s.sendCancel = nil
+	if s.runCtx == runCtx {
+		s.sendCancel = nil
+	}
 	s.mu.Unlock()
-	s.setEndState(StateConnected)
+	s.setEndState(runCtx, StateConnected)
 }
 
 // sendWorker owns conn.Write, Correlator, line buffer, and the broadcast
@@ -1710,23 +1782,25 @@ func (s *Session) packetLogWorker(ch <-chan gpsio.PacketLogEntry) {
 }
 
 func (s *Session) writePacketLogEntry(entry gpsio.PacketLogEntry) {
-	s.mu.Lock()
-	w := s.packetLogW
-	s.mu.Unlock()
-	if w == nil {
-		return
-	}
 	bytes, err := json.Marshal(entry)
 	if err != nil {
 		s.lg.Warn("failed to convert packet to JSON", "err", err)
 		return
 	}
 	bytes = append(bytes, '\n')
-	if _, err := w.Write(bytes); err != nil {
-		s.lg.Warn("error writing to packet log, disabling it", "err", err)
-		s.mu.Lock()
+	s.packetLogMu.Lock()
+	w := s.packetLogW
+	if w == nil {
+		s.packetLogMu.Unlock()
+		return
+	}
+	_, err = w.Write(bytes)
+	if err != nil {
 		s.packetLogW = nil
-		s.mu.Unlock()
+	}
+	s.packetLogMu.Unlock()
+	if err != nil {
+		s.lg.Warn("error writing to packet log, disabling it", "err", err)
 	}
 }
 
