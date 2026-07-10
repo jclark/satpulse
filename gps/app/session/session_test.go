@@ -296,6 +296,31 @@ func TestConnectSuperseded(t *testing.T) {
 	}
 }
 
+// TestOperationInProgress checks that an operation refused because an
+// exclusive operation holds the port says so, rather than claiming the
+// session is not connected.
+func TestOperationInProgress(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fs := &fakeSink{}
+		s := testSession(t, fs)
+		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+		if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		waitForState(t, s, StateConnected)
+		done := make(chan struct{})
+		go func() {
+			s.ReadConfig(context.Background())
+			close(done)
+		}()
+		waitForState(t, s, StateConfiguring)
+		if err := s.SendMsgFile("x", "", false); err == nil || err.Error() != "another operation is in progress" {
+			t.Errorf("SendMsgFile during ReadConfig: err = %v, want operation-in-progress", err)
+		}
+		<-done
+	})
+}
+
 func TestUnplugDisconnects(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fs := &fakeSink{}

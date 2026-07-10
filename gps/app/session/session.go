@@ -225,6 +225,16 @@ func (s *Session) setEndState(target ConnState) ConnState {
 	return target
 }
 
+// stateErrLocked returns the error for an operation that requires
+// StateConnected: a distinct message when an exclusive operation
+// holds the port, "not connected" otherwise. Call with s.mu held.
+func (s *Session) stateErrLocked() error {
+	if s.state == StateConfiguring || s.state == StateSending {
+		return errors.New("another operation is in progress")
+	}
+	return errors.New("not connected")
+}
+
 // probeDone transitions to Connected at the end of a (re)connect probe.
 // It reports false, leaving the state alone, if the connection was
 // closed meanwhile; the closer owns the state then.
@@ -804,8 +814,9 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	}
 	s.mu.Lock()
 	if s.state != StateConnected || s.runCtx == nil || s.runCtx.Err() != nil {
+		err := s.stateErrLocked()
 		s.mu.Unlock()
-		return fmt.Errorf("not connected")
+		return err
 	}
 	if s.corrStopping {
 		s.mu.Unlock()
@@ -816,8 +827,9 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	// lost meanwhile; recheck before capturing it.
 	s.stopCorrLocked()
 	if s.state != StateConnected || s.runCtx == nil || s.runCtx.Err() != nil {
+		err := s.stateErrLocked()
 		s.mu.Unlock()
-		return fmt.Errorf("not connected")
+		return err
 	}
 	conn := s.conn
 	portLock := s.portLock
@@ -1000,8 +1012,9 @@ const readProps = gpsprot.PropIDSignalsEnabled |
 func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) {
 	s.mu.Lock()
 	if s.state != StateConnected {
+		err := s.stateErrLocked()
 		s.mu.Unlock()
-		return nil, fmt.Errorf("not connected")
+		return nil, err
 	}
 	s.cancelWorkerLocked()
 	s.state = StateConfiguring
@@ -1025,8 +1038,9 @@ func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) 
 func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget) error {
 	s.mu.Lock()
 	if s.state != StateConnected {
+		err := s.stateErrLocked()
 		s.mu.Unlock()
-		return fmt.Errorf("not connected")
+		return err
 	}
 	if target.Opts.Reset != gpsprot.ResetNone && s.op.Socket() {
 		s.mu.Unlock()
@@ -1126,8 +1140,9 @@ type ResponseEvent struct {
 func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 	s.mu.Lock()
 	if s.state != StateConnected || s.runCtx == nil || s.runCtx.Err() != nil {
+		err := s.stateErrLocked()
 		s.mu.Unlock()
-		return fmt.Errorf("not connected")
+		return err
 	}
 	mf := s.msgFile
 	if mf == nil {
@@ -1158,10 +1173,11 @@ func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 	workerCtx, workerCancel := context.WithCancel(runCtx)
 	s.mu.Lock()
 	if s.state != StateConnected || runCtx.Err() != nil {
+		err := s.stateErrLocked()
 		s.mu.Unlock()
 		sendCancel()
 		workerCancel()
-		return fmt.Errorf("not connected")
+		return err
 	}
 	s.state = StateSending
 	s.sendCancel = sendCancel
