@@ -503,7 +503,7 @@ func (s *Session) connManager(connCtx context.Context, conn gpsio.Conn, speed in
 // it. Each attempt gets reopenTimeout for the device node to come back.
 func (s *Session) reopen(connCtx context.Context) (gpsio.Conn, int, error) {
 	var lastErr error
-	for i := 0; i < maxReopenAttempts; i++ {
+	for i := range maxReopenAttempts {
 		if i > 0 {
 			select {
 			case <-connCtx.Done():
