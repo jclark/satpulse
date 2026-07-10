@@ -141,7 +141,8 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const [baudRateApplicable, setBaudRateApplicable] = useState<boolean | null>(null);
     const [selectedSpeed, setSelectedSpeed] = useState(speed);
     const [speedTouched, setSpeedTouched] = useState(false);
-    useEffect(() => { setSelectedSpeed(speed); }, [speed]);
+    const speedRef = useRef(speed);
+    useEffect(() => { speedRef.current = speed; setSelectedSpeed(speed); }, [speed]);
 
     // Persistent operations state
     const [saveType, setSaveType] = useState(0); // 0=none, 1=minimal, 2=all
@@ -161,6 +162,27 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
 
     // Populate form fields from ConfigProps JSON
     const populateFromConfig = useCallback((cfg: Record<string, any>) => {
+        setTimeMode('');
+        setSurveyTime('');
+        setSurveyAcc('');
+        setSurveyAgain(false);
+        setSurveyReport(true);
+        setCoordSystem('ecef');
+        setFixedECEF(['', '', '']);
+        setFixedLLH(['', '', '']);
+        setFixedPosAcc('');
+        setReadbackStationary(false);
+        setPpsPeriod('');
+        setPpsWidth('');
+        setPpsAlign(true);
+        setPpsLocked(true);
+        setPpsRising(true);
+        setTimeGNSS('');
+        setCableDelay('');
+        setMinElev('');
+        setBaudRateApplicable(null);
+        setSelectedSpeed(speedRef.current);
+        setSelectedSignals(() => new Set());
         const m = cfg.mode as Record<string, any> | undefined;
         if (m) {
             if (!m.static) {
