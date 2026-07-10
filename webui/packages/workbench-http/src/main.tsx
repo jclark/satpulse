@@ -23,21 +23,42 @@ const root = document.getElementById('app')!;
 // generates a fresh token). Validate it with a snapshot request before
 // mounting the app: a 401 means the token is wrong, so show a notice
 // pointing at the newly printed URL rather than a silently dead UI.
-// Any other failure (server still starting) falls through to the app,
-// whose own retry handles recovery.
-const t = newHTTPTransport(token || '');
-t.getConnState().then(mount).catch(err => {
-    if (err instanceof HttpError && err.status === 401) {
-        localStorage.removeItem('satpulsewb-token');
-        render(<AuthNotice/>, root);
-    } else {
-        mount();
-    }
-});
+// A failed seat claim is retried while the server becomes reachable;
+// later snapshot failures fall through to the app's own recovery.
+render(<ConnectingNotice/>, root);
+boot();
 
-function mount() {
+async function boot() {
+    let t;
+    try {
+        t = await newHTTPTransport(token || '');
+    } catch (err) {
+        if (showAuthError(err)) return;
+        window.setTimeout(boot, 1000);
+        return;
+    }
+    try {
+        await t.getConnState();
+    } catch (err) {
+        if (showAuthError(err)) return;
+    }
     setTransport(t);
     render(<App/>, root);
+}
+
+function showAuthError(err: unknown): boolean {
+    if (!(err instanceof HttpError) || err.status !== 401) return false;
+    localStorage.removeItem('satpulsewb-token');
+    render(<AuthNotice/>, root);
+    return true;
+}
+
+function ConnectingNotice() {
+    return (
+        <div style="margin:4rem 1.5rem;font-family:system-ui,sans-serif">
+            Connecting to satpulsewb...
+        </div>
+    );
 }
 
 function AuthNotice() {

@@ -20,6 +20,7 @@ import {SkyViewPanel, SkyViewLegend} from './sky-view-panel';
 import {SummaryPanel} from './summary-panel';
 import {ScatterPanel} from './scatter-panel';
 import {SignalsPanel} from './signals-panel';
+import {Button} from './ui';
 export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo};
 export type {ConnState, MsgFileTag};
 
@@ -110,6 +111,7 @@ const connStateLabel: Record<ConnState, string> = {
 let toastId = 0;
 
 export function App() {
+    const [seatLost, setSeatLost] = useState(false);
     const [connState, setConnState] = useState<ConnState>('disconnected');
     const [device, setDevice] = useState('');
     const [speed, setSpeed] = useState(9600);
@@ -229,6 +231,7 @@ export function App() {
     }, []);
 
     useEffect(() => {
+        const offSeatLost = transport.eventsOn('wb:seatlost', () => setSeatLost(true));
         const offLog = transport.eventsOn('gps:log', (evt: LogEntry) => {
             setLogEntries(prev => [...prev.slice(-199), evt]);
         });
@@ -443,6 +446,7 @@ export function App() {
             });
         });
         return () => {
+            offSeatLost();
             offLog();
             offRcv();
             offSpeed();
@@ -530,6 +534,17 @@ export function App() {
 
     const configDisabled = receiver.status !== 'identified';
     const connected = connState !== 'disconnected';
+
+    if (seatLost) {
+        return (
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-surface-1 p-6 text-text-primary">
+                <div class="max-w-md text-center">
+                    <h1 class="mb-3 text-xl font-semibold">This workbench is now open in another window</h1>
+                    <Button variant="primary" onClick={() => window.location.reload()}>Use here</Button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <>

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"sync"
 
 	"github.com/jclark/satpulse/gps/app/session"
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -27,16 +29,21 @@ type server struct {
 	token  string        // empty means no auth
 	vendor gpsreg.Vendor // --vendor: the vendor for every connect
 	mux    *http.ServeMux
+	seatMu sync.Mutex
+	seat   string
 }
 
 func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string, vendor gpsreg.Vendor) *server {
 	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, vendor: vendor, mux: http.NewServeMux()}
 	// get: token-checked. post: token-checked and requires a JSON
-	// Content-Type, which blocks cross-site CSRF (see requireJSON).
+	// Content-Type, which blocks cross-site CSRF (see requireJSON), and
+	// a current seat. Claiming the seat is the one POST without a seat.
 	get := s.auth
-	post := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(requireJSON(h)) }
+	claim := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(requireJSON(h)) }
+	post := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(s.requireSeat(requireJSON(h))) }
 	s.mux.Handle("/", http.FileServer(http.FS(webContent())))
 	s.mux.HandleFunc("GET /sse", get(s.handleSSE))
+	s.mux.HandleFunc("POST /api/seat", claim(s.handleSeat))
 	s.mux.HandleFunc("GET /api/state", get(s.handleState))
 	s.mux.HandleFunc("GET /api/receiver", get(s.handleReceiver))
 	s.mux.HandleFunc("GET /api/speed", get(s.handleSpeed))
@@ -56,6 +63,19 @@ func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token st
 	s.mux.HandleFunc("POST /api/geo/vel-ned-to-ecef", post(s.handleVelNEDtoECEF))
 	s.mux.HandleFunc("POST /api/geo/vel-ecef-to-ned", post(s.handleVelECEFtoNED))
 	return s
+}
+
+func (s *server) requireSeat(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s.seatMu.Lock()
+		current := r.URL.Query().Get("seat") == s.seat && s.seat != ""
+		s.seatMu.Unlock()
+		if !current {
+			writeError(w, http.StatusGone, errors.New("workbench seat is no longer current"))
+			return
+		}
+		h(w, r)
+	}
 }
 
 // auth wraps a handler with the access-token check. The token rides a
@@ -121,7 +141,36 @@ func sessionError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusConflict, err)
 }
 
+func (s *server) handleSeat(w http.ResponseWriter, _ *http.Request) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	seat := hex.EncodeToString(b)
+	s.seatMu.Lock()
+	old := s.seat
+	s.seat = seat
+	s.hub.takeover(old)
+	s.seatMu.Unlock()
+	writeJSON(w, map[string]string{"seat": seat})
+}
+
 func (s *server) handleSSE(w http.ResponseWriter, r *http.Request) {
+	seat := r.URL.Query().Get("seat")
+	if seat == "" {
+		writeError(w, http.StatusBadRequest, errors.New("seat is required"))
+		return
+	}
+	s.seatMu.Lock()
+	if seat != s.seat {
+		s.seatMu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	c, prime := s.hub.subscribe(seat, r.URL.Query().Get("stream") == "packets")
+	s.seatMu.Unlock()
+	defer s.hub.unsubscribe(c)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, errors.New("streaming not supported"))
@@ -130,8 +179,6 @@ func (s *server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	c, prime := s.hub.subscribe(r.URL.Query().Get("stream") == "packets")
-	defer s.hub.unsubscribe(c)
 	for _, e := range prime {
 		if _, err := io.WriteString(w, e.Format()); err != nil {
 			return
@@ -147,6 +194,12 @@ func (s *server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		case <-c.dead:
 			// Fell behind and overflowed; ending the response makes the
 			// browser reconnect and re-prime from the cache.
+			return
+		case e := <-c.takeover:
+			if _, err := io.WriteString(w, e.Format()); err != nil {
+				return
+			}
+			flusher.Flush()
 			return
 		case e := <-c.ch:
 			if _, err := io.WriteString(w, e.Format()); err != nil {

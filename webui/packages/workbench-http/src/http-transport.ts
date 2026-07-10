@@ -1,7 +1,7 @@
 // The fetch+SSE implementation of the workbench Transport, talking to
 // the cmd/satpulsewb HTTP API. The per-run access token rides a query
-// parameter on every request, including the SSE streams (EventSource
-// cannot set headers).
+// parameter on every request. POSTs and SSE streams also carry the
+// current workbench seat (EventSource cannot set headers).
 
 import type {
     ConnState,
@@ -13,7 +13,7 @@ import type {
 } from '@satpulse/workbench/src/transport';
 
 // HttpError carries the HTTP status so callers can distinguish an
-// auth failure (401) from an operation error.
+// auth failure (401) and seat loss (410) from operation errors.
 export class HttpError extends Error {
     status: number;
     constructor(status: number, message: string) {
@@ -22,29 +22,39 @@ export class HttpError extends Error {
     }
 }
 
-export function newHTTPTransport(token: string): Transport {
-    const query = token ? '?t=' + encodeURIComponent(token) : '';
+export async function newHTTPTransport(token: string): Promise<Transport> {
+    const authParams = new URLSearchParams();
+    if (token) authParams.set('t', token);
+    const authQuery = authParams.size ? '?' + authParams : '';
+    const claimResp = await fetch('/api/seat' + authQuery, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: '{}',
+    });
+    if (!claimResp.ok) throw await httpError(claimResp);
+    const claim = await claimResp.json();
+    if (typeof claim.seat !== 'string' || !claim.seat) {
+        throw new Error('Invalid seat claim response');
+    }
+    const seatParams = new URLSearchParams(authParams);
+    seatParams.set('seat', claim.seat);
+    const seatQuery = '?' + seatParams;
+    const events = new EventStreams(seatQuery);
     async function call(method: string, path: string, body?: unknown): Promise<any> {
         const init: RequestInit = {method};
         if (body !== undefined) {
             init.headers = {'Content-Type': 'application/json'};
             init.body = JSON.stringify(body);
         }
-        const resp = await fetch('/api/' + path + query, init);
+        const resp = await fetch('/api/' + path + (method === 'POST' ? seatQuery : authQuery), init);
         if (!resp.ok) {
-            let msg = '';
-            try {
-                msg = (await resp.json()).error;
-            } catch {
-                // fall through to the status text
-            }
-            throw new HttpError(resp.status, msg || resp.statusText);
+            if (resp.status === 410) events.seatLost();
+            throw await httpError(resp);
         }
         return resp.json();
     }
     const get = (path: string) => call('GET', path);
     const post = (path: string, body?: unknown) => call('POST', path, body ?? {});
-    const events = new EventStreams(query);
     return {
         getConnState: () => get('state') as Promise<ConnState>,
         getReceiverState: () => get('receiver'),
@@ -75,6 +85,16 @@ export function newHTTPTransport(token: string): Transport {
     };
 }
 
+async function httpError(resp: Response): Promise<HttpError> {
+    let msg = '';
+    try {
+        msg = (await resp.json()).error;
+    } catch {
+        // fall through to the status text
+    }
+    return new HttpError(resp.status, msg || resp.statusText);
+}
+
 // EventStreams multiplexes transport event subscriptions onto the /sse
 // endpoints: one long-lived EventSource for the regular events, and a
 // second one carrying only the high-rate gps:packet stream, open only
@@ -85,6 +105,7 @@ class EventStreams {
     private listeners = new Map<string, Set<(data: any) => void>>();
     private main?: EventSource;
     private packets?: EventSource;
+    private lost = false;
 
     constructor(query: string) {
         this.query = query;
@@ -98,16 +119,22 @@ class EventStreams {
             this.listeners.set(name, set);
         }
         set.add(cb);
+        if (this.lost) {
+            if (name === 'wb:seatlost') queueMicrotask(() => cb({}));
+            return () => { set.delete(cb); };
+        }
         if (name === 'gps:packet') {
             if (!this.packets) {
                 this.packets = new EventSource('/sse' + (this.query ? this.query + '&' : '?') + 'stream=packets');
+                this.packets.addEventListener('takeover', () => this.seatLost());
                 this.addDispatch(this.packets, name);
             }
         } else {
             if (!this.main) {
                 this.main = new EventSource('/sse' + this.query);
+                this.main.addEventListener('takeover', () => this.seatLost());
             }
-            if (first) {
+            if (first && name !== 'wb:seatlost') {
                 this.addDispatch(this.main, name);
             }
         }
@@ -118,6 +145,18 @@ class EventStreams {
                 this.packets = undefined;
             }
         };
+    }
+
+    seatLost() {
+        if (this.lost) return;
+        this.lost = true;
+        this.main?.close();
+        this.packets?.close();
+        this.main = undefined;
+        this.packets = undefined;
+        for (const cb of this.listeners.get('wb:seatlost') ?? []) {
+            cb({});
+        }
     }
 
     private addDispatch(es: EventSource, name: string) {

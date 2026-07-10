@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jclark/satpulse/gps/app/session"
 	"github.com/jclark/satpulse/gps/gpsreg"
@@ -51,11 +53,54 @@ func TestAuth(t *testing.T) {
 
 func (s *server) post(t *testing.T, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
+	s.seatMu.Lock()
+	seat := s.seat
+	s.seatMu.Unlock()
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return s.rawPost(path+sep+"seat="+seat, body)
+}
+
+func (s *server) rawPost(path, body string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	s.mux.ServeHTTP(w, r)
 	return w
+}
+
+func (s *server) claimTestSeat(t *testing.T, query string) string {
+	t.Helper()
+	w := s.rawPost("/api/seat"+query, `{}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("claim seat: status %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Seat string `json:"seat"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode seat: %v", err)
+	}
+	if len(resp.Seat) != 32 {
+		t.Fatalf("seat length %d want 32", len(resp.Seat))
+	}
+	return resp.Seat
+}
+
+func TestSeatClaimGuards(t *testing.T) {
+	s := newTestServer("secret")
+	w := s.rawPost("/api/seat", `{}`)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("claim without token: got %d want %d", w.Code, http.StatusUnauthorized)
+	}
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/seat?t=secret", strings.NewReader(`{}`)))
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("claim without JSON: got %d want %d", w.Code, http.StatusUnsupportedMediaType)
+	}
+	s.claimTestSeat(t, "?t=secret")
 }
 
 // TestRequireJSON checks the CSRF guard: a POST without a JSON
@@ -73,10 +118,11 @@ func TestRequireJSON(t *testing.T) {
 		{name: "json with charset", contentType: "application/json; charset=utf-8", expectCode: http.StatusBadRequest},
 	}
 	s := newTestServer("")
+	seat := s.claimTestSeat(t, "")
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			r := httptest.NewRequest("POST", "/api/connect", strings.NewReader(`{"device":""}`))
+			r := httptest.NewRequest("POST", "/api/connect?seat="+seat, strings.NewReader(`{"device":""}`))
 			if tc.contentType != "" {
 				r.Header.Set("Content-Type", tc.contentType)
 			}
@@ -134,6 +180,7 @@ func TestEndpoints(t *testing.T) {
 			expectCode: 200, expectBody: `null`},
 	}
 	s := newTestServer("")
+	s.claimTestSeat(t, "")
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var w *httptest.ResponseRecorder
@@ -160,10 +207,11 @@ func TestEndpoints(t *testing.T) {
 // latest sticky events before receiving live ones.
 func TestSSEPriming(t *testing.T) {
 	s := newTestServer("")
+	seat := s.claimTestSeat(t, "")
 	s.hub.Emit(session.Event{Name: session.EventState, Data: session.StateConnected})
 	s.hub.Emit(session.Event{Name: session.EventSpeed, Data: 9600})
 	ctx, cancel := context.WithCancel(context.Background())
-	r := httptest.NewRequest("GET", "/sse", nil).WithContext(ctx)
+	r := httptest.NewRequest("GET", "/sse?seat="+seat, nil).WithContext(ctx)
 	w := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -181,4 +229,81 @@ func TestSSEPriming(t *testing.T) {
 	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
 		t.Errorf("got Content-Type %q want text/event-stream", ct)
 	}
+}
+
+func TestSeatLifecycle(t *testing.T) {
+	s := newTestServer("")
+	old := s.claimTestSeat(t, "")
+	if w := s.rawPost("/api/signals?seat="+old, `{"gnss":["GPS"]}`); w.Code != http.StatusOK {
+		t.Fatalf("current-seat POST: got %d want %d: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/sse?seat="+old, nil).WithContext(ctx))
+		close(done)
+	}()
+	waitForClients(t, s.hub, 1)
+	current := s.claimTestSeat(t, "")
+	if current == old {
+		t.Fatal("second claim returned the old seat")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("old stream did not close on takeover")
+	}
+	if got, want := w.Body.String(), "event: takeover\ndata: {}\n\n"; got != want {
+		t.Errorf("old stream got %q want %q", got, want)
+	}
+	if w := s.rawPost("/api/signals?seat="+old, `{"gnss":["GPS"]}`); w.Code != http.StatusGone {
+		t.Errorf("old-seat POST: got %d want %d", w.Code, http.StatusGone)
+	}
+	if w := s.rawPost("/api/signals", `{"gnss":["GPS"]}`); w.Code != http.StatusGone {
+		t.Errorf("missing-seat POST: got %d want %d", w.Code, http.StatusGone)
+	}
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/sse?seat="+old, nil))
+	if w.Code != http.StatusNoContent {
+		t.Errorf("old-seat SSE: got %d want %d", w.Code, http.StatusNoContent)
+	}
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/sse", nil))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("missing-seat SSE: got %d want %d", w.Code, http.StatusBadRequest)
+	}
+	ctx, cancel = context.WithCancel(context.Background())
+	w = httptest.NewRecorder()
+	done = make(chan struct{})
+	go func() {
+		s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/sse?seat="+current, nil).WithContext(ctx))
+		close(done)
+	}()
+	waitForClients(t, s.hub, 1)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("current stream did not close after cancellation")
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("current-seat SSE Content-Type %q", ct)
+	}
+}
+
+func waitForClients(t *testing.T, h *sseHub, n int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		h.mu.Lock()
+		got := len(h.clients)
+		h.mu.Unlock()
+		if got == n {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("SSE client count did not reach %d", n)
 }

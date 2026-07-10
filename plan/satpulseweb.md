@@ -586,6 +586,13 @@ corrections all land here; the Messages tab is hidden until phase 6.
 Serial transport only (see Transports). This alone is a usable
 tool, so the NEWS.md entry and man page ride this PR.
 
+### Inserted PR: workbench single seat
+
+The `wb-single-seat` branch is based directly on `satpulsewb` and is
+inserted into the stacked-PR series immediately after phase 3. It limits
+the HTTP workbench to one active browser window, with the newest window
+taking over the session. See [wb-single-seat.md](archive/wb-single-seat.md).
+
 ### Phase 4: rework desktop-gui on top (branch work, no master PR)
 
 On the desktop-gui branch: merge the tip of the stack (the phase-3

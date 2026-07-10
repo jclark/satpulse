@@ -23,13 +23,16 @@ type sseHub struct {
 // sseClient is one SSE connection. A packets client receives only
 // gps:packet events; a regular client receives everything else.
 type sseClient struct {
-	ch chan sse.Event
+	ch       chan sse.Event
+	seat     string
+	takeover chan sse.Event
 	// dead is closed when the client falls too far behind (its buffer
 	// overflows); handleSSE then ends the response so the browser
 	// EventSource reconnects and re-primes from the cache.
 	dead       chan struct{}
 	packets    bool
 	overflowed bool
+	takenOver  bool
 }
 
 const clientChanSize = 256
@@ -118,7 +121,7 @@ func (h *sseHub) Emit(ev session.Event) {
 		clear(h.msgCache)
 	}
 	for c := range h.clients {
-		if c.packets != pkt {
+		if c.packets != pkt || c.takenOver {
 			continue
 		}
 		select {
@@ -146,8 +149,14 @@ func (h *sseHub) Wants(name session.EventName) bool {
 // subscribe registers a client and returns it along with the priming
 // events, snapshotted atomically with registration so no event is lost
 // or misordered between snapshot and live delivery.
-func (h *sseHub) subscribe(packets bool) (*sseClient, []sse.Event) {
-	c := &sseClient{ch: make(chan sse.Event, clientChanSize), dead: make(chan struct{}), packets: packets}
+func (h *sseHub) subscribe(seat string, packets bool) (*sseClient, []sse.Event) {
+	c := &sseClient{
+		ch:       make(chan sse.Event, clientChanSize),
+		seat:     seat,
+		takeover: make(chan sse.Event, 1),
+		dead:     make(chan struct{}),
+		packets:  packets,
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.clients[c] = struct{}{}
@@ -165,6 +174,24 @@ func (h *sseHub) subscribe(packets bool) (*sseClient, []sse.Event) {
 		prime = append(prime, e)
 	}
 	return c, prime
+}
+
+func (h *sseHub) takeover(seat string) {
+	if seat == "" {
+		return
+	}
+	e, err := sse.Make("takeover", struct{}{})
+	if err != nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for c := range h.clients {
+		if c.seat == seat && !c.takenOver {
+			c.takenOver = true
+			c.takeover <- e
+		}
+	}
 }
 
 func (h *sseHub) unsubscribe(c *sseClient) {

@@ -65,7 +65,7 @@ func TestHubPrimeCache(t *testing.T) {
 			for _, ev := range tc.events {
 				h.Emit(ev)
 			}
-			c, prime := h.subscribe(false)
+			c, prime := h.subscribe("seat", false)
 			defer h.unsubscribe(c)
 			if !reflect.DeepEqual(prime, tc.expect) {
 				t.Errorf("got  %+v\nwant %+v", prime, tc.expect)
@@ -91,11 +91,11 @@ func TestHubWantsPackets(t *testing.T) {
 	if !h.Wants(session.EventState) {
 		t.Errorf("Wants(gps:state) false")
 	}
-	regular, _ := h.subscribe(false)
+	regular, _ := h.subscribe("seat", false)
 	if h.Wants(session.EventPacket) {
 		t.Errorf("Wants(gps:packet) true with only a regular client")
 	}
-	pc, _ := h.subscribe(true)
+	pc, _ := h.subscribe("seat", true)
 	if !h.Wants(session.EventPacket) {
 		t.Errorf("Wants(gps:packet) false with a packet client")
 	}
@@ -108,8 +108,8 @@ func TestHubWantsPackets(t *testing.T) {
 
 func TestHubPacketRouting(t *testing.T) {
 	h := newSSEHub()
-	regular, _ := h.subscribe(false)
-	packets, _ := h.subscribe(true)
+	regular, _ := h.subscribe("seat", false)
+	packets, _ := h.subscribe("seat", true)
 	h.Emit(session.Event{Name: session.EventPacket, Data: struct{}{}})
 	h.Emit(session.Event{Name: session.EventState, Data: session.StateConnected})
 	expectRegular := []sse.Event{mustMake(t, "gps:state", session.StateConnected)}
@@ -128,7 +128,7 @@ func TestHubMsgPriming(t *testing.T) {
 	h := newSSEHub()
 	h.Emit(session.Event{Name: session.EventMsg, Data: session.MsgEvent{Kind: "leapSecond"}})
 	h.Emit(session.Event{Name: session.EventMsg, Data: session.MsgEvent{Kind: "satellites"}})
-	c, prime := h.subscribe(false)
+	c, prime := h.subscribe("seat", false)
 	defer h.unsubscribe(c)
 	expect := []sse.Event{mustMake(t, "gps:msg", session.MsgEvent{Kind: "leapSecond"})}
 	if !reflect.DeepEqual(prime, expect) {
@@ -140,7 +140,7 @@ func TestHubMsgPriming(t *testing.T) {
 // (its dead channel closed) rather than blocking Emit.
 func TestHubOverflow(t *testing.T) {
 	h := newSSEHub()
-	c, _ := h.subscribe(false)
+	c, _ := h.subscribe("seat", false)
 	for range clientChanSize {
 		h.Emit(session.Event{Name: session.EventLog, Data: session.LogEvent{Message: "x"}})
 	}
@@ -154,6 +154,37 @@ func TestHubOverflow(t *testing.T) {
 	case <-c.dead:
 	default:
 		t.Fatal("dead not closed on overflow")
+	}
+}
+
+func TestHubTakeover(t *testing.T) {
+	h := newSSEHub()
+	oldMain, _ := h.subscribe("old", false)
+	oldPackets, _ := h.subscribe("old", true)
+	current, _ := h.subscribe("current", false)
+	h.takeover("old")
+	expect := mustMake(t, "takeover", struct{}{})
+	for _, c := range []*sseClient{oldMain, oldPackets} {
+		select {
+		case got := <-c.takeover:
+			if !reflect.DeepEqual(got, expect) {
+				t.Errorf("got %+v want %+v", got, expect)
+			}
+		default:
+			t.Error("takeover event not sent")
+		}
+	}
+	select {
+	case <-current.takeover:
+		t.Error("current seat received takeover")
+	default:
+	}
+	h.Emit(session.Event{Name: session.EventState, Data: session.StateConnected})
+	if got := drain(oldMain.ch); got != nil {
+		t.Errorf("old client received events after takeover: %+v", got)
+	}
+	if got := drain(current.ch); !reflect.DeepEqual(got, []sse.Event{mustMake(t, "gps:state", session.StateConnected)}) {
+		t.Errorf("current client got %+v", got)
 	}
 }
 
