@@ -321,6 +321,48 @@ func TestOperationInProgress(t *testing.T) {
 	})
 }
 
+// TestCancelledOpSkipsEndState checks that an operation cancelled by a
+// replacement Connect does not complete into the new attempt: its
+// setEndState must leave the Connecting state and the event stream
+// alone, so the new connection proceeds to Connected.
+func TestCancelledOpSkipsEndState(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fs := &fakeSink{}
+		s := testSession(t, fs)
+		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+		if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		waitForState(t, s, StateConnected)
+		cfgDone := make(chan error, 1)
+		go func() {
+			_, err := s.ReadConfig(context.Background())
+			cfgDone <- err
+		}()
+		waitForState(t, s, StateConfiguring)
+		op2 := &blockingOpener{fakeOpener: fakeOpener{conns: []*fakeConn{newFakeConn()}}, gate: make(chan struct{})}
+		errCh := make(chan error, 1)
+		go func() { errCh <- s.Connect(op2, gpsreg.VendorUnknown) }()
+		synctest.Wait()
+		if err := <-cfgDone; err == nil {
+			t.Fatal("cancelled ReadConfig returned nil error")
+		}
+		if got := s.State(); got != StateConnecting {
+			t.Fatalf("state during pending open = %v, want %v", got, StateConnecting)
+		}
+		close(op2.gate)
+		if err := <-errCh; err != nil {
+			t.Fatalf("second Connect: %v", err)
+		}
+		waitForState(t, s, StateConnected)
+		expect := []ConnState{StateConnecting, StateConnected, StateConfiguring,
+			StateConnecting, StateConnected}
+		if got := fs.states(); !reflect.DeepEqual(got, expect) {
+			t.Errorf("state events = %v, want %v", got, expect)
+		}
+	})
+}
+
 func TestUnplugDisconnects(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fs := &fakeSink{}

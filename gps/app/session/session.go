@@ -224,12 +224,14 @@ func (s *Session) emit(name EventName, data any) {
 // setEndState transitions to target if still connected, or to Disconnected
 // if the connection was lost. Returns the state actually set.
 // Used by send/config goroutines to avoid resurrecting state after
-// disconnect. While the state is Reconnecting or the run is ending, the
-// connection manager owns the state and the transition is skipped.
+// disconnect. While the state is Connecting or Reconnecting or the
+// run is ending, a (re)connect owns the state and the transition is
+// skipped: an operation can only be ending in those states because a
+// newer Connect cancelled it.
 func (s *Session) setEndState(target ConnState) ConnState {
 	s.mu.Lock()
 	st := s.state
-	if st == StateDisconnected || st == StateReconnecting {
+	if st == StateDisconnected || st == StateConnecting || st == StateReconnecting {
 		s.mu.Unlock()
 		return st
 	}
