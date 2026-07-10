@@ -189,28 +189,13 @@ func (s *Session) emit(name EventName, data any) {
 	emit(s.sink, name, data)
 }
 
-// emitState emits st, then catches up if a concurrent transition overtook it.
-// Must NOT be called with s.mu held -- a Sink may re-enter Session methods.
-func (s *Session) emitState(st ConnState) {
-	for {
-		s.emit(EventState, st)
-		s.mu.Lock()
-		current := s.state
-		s.mu.Unlock()
-		if current == st {
-			return
-		}
-		st = current
-	}
-}
-
 // setState transitions the connection state and emits a gps:state event.
 // Must NOT be called with s.mu held -- a Sink may re-enter Session methods.
 func (s *Session) setState(st ConnState) {
 	s.mu.Lock()
 	s.state = st
 	s.mu.Unlock()
-	s.emitState(st)
+	s.emit(EventState, st)
 }
 
 // setEndState transitions to target if still connected, or to Disconnected
@@ -228,7 +213,7 @@ func (s *Session) setEndState(target ConnState) ConnState {
 	if s.connCtx != nil && s.connCtx.Err() != nil {
 		s.state = StateDisconnected
 		s.mu.Unlock()
-		s.emitState(StateDisconnected)
+		s.emit(EventState, StateDisconnected)
 		return StateDisconnected
 	}
 	if s.runCtx != nil && s.runCtx.Err() != nil {
@@ -237,7 +222,7 @@ func (s *Session) setEndState(target ConnState) ConnState {
 	}
 	s.state = target
 	s.mu.Unlock()
-	s.emitState(target)
+	s.emit(EventState, target)
 	return target
 }
 
@@ -252,7 +237,7 @@ func (s *Session) probeDone() bool {
 	}
 	s.state = StateConnected
 	s.mu.Unlock()
-	s.emitState(StateConnected)
+	s.emit(EventState, StateConnected)
 	return true
 }
 
@@ -343,7 +328,7 @@ func (s *Session) endConn() {
 	s.state = StateDisconnected
 	s.mu.Unlock()
 	if !wasDisconnected {
-		s.emitState(StateDisconnected)
+		s.emit(EventState, StateDisconnected)
 	}
 }
 
@@ -357,7 +342,7 @@ func (s *Session) enterReconnect() bool {
 	}
 	s.state = StateReconnecting
 	s.mu.Unlock()
-	s.emitState(StateReconnecting)
+	s.emit(EventState, StateReconnecting)
 	return true
 }
 
@@ -435,7 +420,7 @@ func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
 	s.connCtx = connCtx
 	s.connCancel = connCancel
 	s.mu.Unlock()
-	s.emitState(StateConnecting)
+	s.emit(EventState, StateConnecting)
 	ctx, cancel := context.WithTimeout(connCtx, connectOpenTimeout)
 	conn, speed, err := op.Open(ctx)
 	cancel()
@@ -449,7 +434,7 @@ func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
 		}
 		s.mu.Unlock()
 		if active {
-			s.emitState(StateDisconnected)
+			s.emit(EventState, StateDisconnected)
 		}
 		return err
 	}
@@ -713,7 +698,7 @@ func (s *Session) Disconnect() {
 	s.closeLocked()
 	s.probe = ReceiverEvent{}
 	s.mu.Unlock()
-	s.emitState(StateDisconnected)
+	s.emit(EventState, StateDisconnected)
 }
 
 // CorrEvent is the payload for "gps:corrections" events.
@@ -1018,7 +1003,7 @@ func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) 
 	s.cancelWorkerLocked()
 	s.state = StateConfiguring
 	s.mu.Unlock()
-	s.emitState(StateConfiguring)
+	s.emit(EventState, StateConfiguring)
 	target := gpsprot.NewConfigTarget()
 	target.Get = readProps
 	cr := s.sendConfigRequest(ctx, target)
@@ -1047,7 +1032,7 @@ func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget)
 	s.cancelWorkerLocked()
 	s.state = StateConfiguring
 	s.mu.Unlock()
-	s.emitState(StateConfiguring)
+	s.emit(EventState, StateConfiguring)
 	if target.NoOp() {
 		s.setEndState(StateConnected)
 		return fmt.Errorf("no configuration changes specified")
@@ -1180,7 +1165,7 @@ func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 	s.workerCancel = workerCancel
 	session := int(s.respSession.Add(1))
 	s.mu.Unlock()
-	s.emitState(StateSending)
+	s.emit(EventState, StateSending)
 	total := len(rawMsgs)
 	stepCh := make(chan sendStepReq)
 	// Start the worker goroutine.
