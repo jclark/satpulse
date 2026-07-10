@@ -255,7 +255,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const handleApply = async () => {
         const props: Record<string, any> = {};
         const opts: Record<string, any> = {};
-        if (signalsTouched && selectedSignals.size > 0) {
+        if (signalsTouched) {
             props.signalsEnabled = signalSetToMap(selectedSignals);
         }
         if (timeModeTouched) {
