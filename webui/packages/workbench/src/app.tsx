@@ -118,6 +118,7 @@ export function App() {
     const [configProps, setConfigProps] = useState<Record<string, any> | null>(null);
     const [signalCatalog, setSignalCatalog] = useState<Record<string, string[]>>({});
     const [selectedSignals, setSelectedSignals] = useState<Set<string>>(new Set());
+    const signalCatalogRequest = useRef(0);
     const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [, setOperation] = useState<OperationState>({status: 'idle', label: ''});
@@ -233,10 +234,13 @@ export function App() {
             setLogEntries(prev => [...prev.slice(-199), evt]);
         });
         const offRcv = transport.eventsOn('gps:receiver', (evt: any) => {
+            const req = ++signalCatalogRequest.current;
             if (!evt.ok && !evt.error) {
                 setReceiver({status: 'probing'});
+                setSignalCatalog({});
             } else if (evt.error) {
                 setReceiver({status: 'error', error: evt.error});
+                setSignalCatalog({});
             } else {
                 const info = evt.Info;
                 const vendor: string = info?.vendor || '';
@@ -251,7 +255,7 @@ export function App() {
                         packetFormats: evt.packetFormats || [],
                     });
                     transport.getAllSignals(gnss).then(cat => {
-                        if (cat) setSignalCatalog(cat);
+                        if (cat && req === signalCatalogRequest.current) setSignalCatalog(cat);
                     }).catch(() => {});
                 } else {
                     setReceiver({
@@ -259,6 +263,7 @@ export function App() {
                         packetFormats: evt.packetFormats || [],
                         warning: evt.warning || '',
                     });
+                    setSignalCatalog({});
                 }
             }
         });
@@ -323,7 +328,11 @@ export function App() {
                 respSessionRef.current = 0;
             }
             if (state === 'disconnected') {
+                signalCatalogRequest.current++;
                 setReceiver({status: 'disconnected'});
+                setConfigProps(null);
+                setSignalCatalog({});
+                setSelectedSignals(new Set());
                 setTimeMsg(null);
                 setNavEpochMsg(null);
                 setSurveyMsg(null);
@@ -462,10 +471,13 @@ export function App() {
     // Sync connection state with the backend on mount (late-joining
     // client, or HMR reload)
     useEffect(() => {
+        const req = ++signalCatalogRequest.current;
         transport.getConnState().then(async (s: string) => {
+            if (req !== signalCatalogRequest.current) return;
             setConnState(s as ConnState);
             if (s === 'disconnected') return;
             const r = await transport.getReceiverState();
+            if (req !== signalCatalogRequest.current) return;
             if (r.ok) {
                 const info = (r as any).Info;
                 const vendor: string = info?.vendor || '';
@@ -480,7 +492,7 @@ export function App() {
                         packetFormats: r.packetFormats || [],
                     });
                     const catalog = await transport.getAllSignals(gnss);
-                    if (catalog) setSignalCatalog(catalog);
+                    if (catalog && req === signalCatalogRequest.current) setSignalCatalog(catalog);
                 } else {
                     setReceiver({
                         status: 'unidentified',

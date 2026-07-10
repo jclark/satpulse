@@ -151,6 +151,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     // Readback state
     const [reading, setReading] = useState(false);
     const hasReadback = useRef(false);
+    const readbackRequest = useRef(0);
 
     // Per-section touched flags for dirty tracking
     const [timePulseTouched, setTimePulseTouched] = useState(false);
@@ -161,8 +162,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     // Applying state
     const [applying, setApplying] = useState(false);
 
-    // Populate form fields from ConfigProps JSON
-    const populateFromConfig = useCallback((cfg: Record<string, any>) => {
+    const resetConfigFields = useCallback(() => {
         setTimeMode('');
         setSurveyTime('');
         setSurveyAcc('');
@@ -184,6 +184,11 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         setBaudRateApplicable(null);
         setSelectedSpeed(speedRef.current);
         setSelectedSignals(() => new Set());
+    }, [setSelectedSignals]);
+
+    // Populate form fields from ConfigProps JSON
+    const populateFromConfig = useCallback((cfg: Record<string, any>) => {
+        resetConfigFields();
         const m = cfg.mode as Record<string, any> | undefined;
         if (m) {
             if (!m.static) {
@@ -231,11 +236,41 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             const s = signalMapToSet(cfg.signalsEnabled);
             setSelectedSignals(() => s);
         }
-    }, [setSelectedSignals]);
+    }, [resetConfigFields, setSelectedSignals]);
 
     useEffect(() => {
         if (configProps) populateFromConfig(configProps);
     }, [configProps, populateFromConfig]);
+
+    useEffect(() => {
+        if (connState !== 'disconnected') return;
+        readbackRequest.current++;
+        resetConfigFields();
+        setReading(false);
+        setApplying(false);
+        setTimePulseTouched(false);
+        setTimeModeTouched(false);
+        setSignalsTouched(false);
+        setMinElevTouched(false);
+        setNmeaChange(false);
+        setNmeaDisable(false);
+        setNmeaFlags(0);
+        setRtcmChange(false);
+        setRtcmDisable(false);
+        setRtcmMSM('none');
+        setRtcmFallback(true);
+        setRtcmARP(false);
+        setPvtChange(false);
+        setPvtFlags(0);
+        setSatsChange(false);
+        setSatsFlags(0);
+        setRawChange(false);
+        setRawFlags(0);
+        setSpeedTouched(false);
+        setSaveType(0);
+        setResetType(0);
+        setShowPicker(false);
+    }, [connState, resetConfigFields]);
 
     // Trigger readback on first switch to the config tab while connected
     useEffect(() => {
@@ -248,11 +283,13 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
 
     const doReadback = async () => {
         if (!connected || reading) return;
+        const req = ++readbackRequest.current;
         setReading(true);
         setOperation({status: 'running', label: 'Reading configuration'});
         try {
             clearRespSession();
             const props = await transport.readConfig();
+            if (req !== readbackRequest.current) return;
             populateFromConfig(props as any);
             onConfigReadback(props as any);
             setTimePulseTouched(false);
@@ -269,10 +306,11 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             setResetType(0);
             setOperation({status: 'success', label: 'Reading configuration'});
         } catch (e: any) {
+            if (req !== readbackRequest.current) return;
             addToast('Configuration read failed: ' + e.message, 'error');
             setOperation({status: 'failed', label: 'Reading configuration', error: e.message});
         } finally {
-            setReading(false);
+            if (req === readbackRequest.current) setReading(false);
         }
     };
 
