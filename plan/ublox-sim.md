@@ -17,10 +17,10 @@ slightly more permissive than real firmware cannot mask the class of
 bug this exists to catch (broken wiring), so fidelity requirements
 are modest and bounded.
 
-Related: #206 (this plan delivers a parser for the official u-blox
-interface description JSON, which is the other half of what #206
-asks for), #357 (the satpulseweb work whose config GUI is the main
-thing this makes testable).
+Related: #206 (validating cfg.yaml against the official u-blox
+interface description JSON; handled separately, see The interface
+description JSON below), #357 (the satpulseweb work whose config GUI
+is the main thing this makes testable).
 
 ## Motivation
 
@@ -54,7 +54,16 @@ message enablement and for output pacing:
   database's MSGOUT key for each message (zero/nonzero as off/on at
   first; the values are rates, so per-N-epoch decimation is an easy
   later upgrade). The MSGOUT-key-to-message mapping is the one
-  `ubxcfgval`'s message keys (`KeyM`) encode. Emission is paced by
+  `ubxcfgval`'s message keys (`KeyM`) encode. RTCM MSM is a special
+  case: u-blox's integration manual warns against outputting MSM4
+  and MSM7 together, so the recording contains MSM7 only (the
+  capture kit explicitly disables MSM4), and the bank
+  loader derives each epoch's MSM4 entries from the recorded MSM7
+  messages with `rtcmbin`'s existing MSM7-to-MSM4 conversion (the
+  same one the Ntrip push path uses). The MSM4 MSGOUT keys then
+  gate derived content exactly as the other keys gate recorded
+  content.
+  Emission is paced by
   the baud rate configured in the database (CFG-UART1-BAUDRATE):
   each message occupies its transmission time at the line rate, and
   the rest of the epoch is idle -- the burst-then-idle shape
@@ -64,9 +73,13 @@ message enablement and for output pacing:
   CFG-VALGET/VALSET/VALDEL and MON-VER polls with the ACK/NAK rules
   from the interface description.
 
-Input side: a framing demux parses incoming frames with
-`ubxbin.ParseMsg`; config-class and poll messages go to the config
-engine, everything else is ignored. Output side: an atomic mux --
+Input side: the scan layer frames the input stream (UBX, RTCM and
+SPARTN formats); config-class and poll messages go to the config
+engine, and a correction input message (RTCM or SPARTN) is answered
+with a synthesized UBX-RXM-COR -- which a real receiver outputs upon
+successful parsing of a correction input message -- gated by its own
+MSGOUT key like any output message. Everything else is ignored.
+Output side: an atomic mux --
 whole-packet writes under a mutex, so a config response is never
 spliced into the middle of a replayed frame. The whole thing runs
 over an `io.ReadWriter`, which is a pty slave in black-box use and
@@ -95,8 +108,8 @@ description:
   layer. The simulator skips this check entirely and ACKs any
   well-formed set of known keys -- slightly more permissive than
   real firmware, acceptable at smoke depth. If the gap ever matters,
-  the JSON's type/range metadata supports generic value validation
-  without per-key code.
+  the vendor JSON's type/range metadata would support generic value
+  validation without per-key code.
 
 Layers are modelled as per-layer maps (RAM, BBR, Flash, Default),
 honouring the VALSET layer mask, the VALGET layer field (including
@@ -116,47 +129,48 @@ Configurator) for free.
 
 ## The interface description JSON (#206)
 
-A new package parses the official u-blox interface description JSON
-(formatVersion 2.1): configuration groups, items, configKey, type,
-constants, wildcards, and the meta block. u-blox publishes these
-files on GitHub (github.com/u-blox/u-blox-X20-interface-description-json)
-under terms granting use, copy, modification, and distribution for
-any purpose without fee, and the files are marked audience: public;
-the file is vendored into the repo with the u-blox disclaimer
-alongside.
-
-The parser gets a second consumer immediately, which is the interop
-#206 asks for: a test that validates `ubxcfgval`'s hand-maintained
-`cfg.yaml` key numbers and types against the vendor database. Note
-the scopes differ: the published JSON is X20 (PROTVER 50.11) while
-much of cfg.yaml is F9P-era (PROTVER 27.11), so validation is
-per-personality -- a cfg.yaml key absent from the X20 JSON is not
-automatically an error.
+The simulator does not use the official u-blox interface description
+JSON: the personality file supplies everything it needs (the key
+inventory including all MSGOUT message keys, the defaults, and the
+identity), and the published JSON is marked filtered -- a subset of
+the firmware database -- so seeding supported keys from it would
+make the simulator NAK keys a real receiver ACKs. The JSON parser
+and compiled-table work (a mkconsts-style `mkdb.go`, previously in
+this branch, recoverable from its history) moves to a separate
+change on master focused on #206 -- validating `ubxcfgval`'s
+hand-maintained `cfg.yaml` key numbers, types and constants against
+the vendor database -- probably in a subdirectory of
+`gps/lib/ubxcfgval`.
 
 ## Personality: one recording session
 
-One personality (the X20P) is enough; the simulator does not need to
-model every receiver to test the UI. A personality is defined by
-three artifacts, all reproducible in a single sitting with the real
-receiver and re-runnable when new firmware lands:
+A personality is captured in a single sitting with the real
+receiver, re-runnable when new firmware lands, and is defined by two
+artifacts:
 
-1. **The vendor JSON**: key inventory, types, identity cross-check.
-2. **A default-layer dump**: a message file of CFG-VALGET polls
-   against the Default layer -- all-groups wildcard, one poll per
-   64-item page, with spare pages for safety -- generated from the
-   JSON (which supplies the total item count in advance), run via
-   satpulsetool with `--packet-log`. The simulator's defaults loader
-   parses the logged responses with `ubxbin.ParseMsg`. The same
-   session captures the real MON-VER, which the simulator replays
-   verbatim as its identity. The JSON's own sparse `default` fields
-   are not used for seeding; a load-time consistency check between
-   the dump and the JSON inventory is a free cross-check of u-blox's
-   published database against their firmware.
-3. **A message log** for the NAV engine: recorded with everything
+1. **The personality file** (`<model>-personality.ubx`), the
+   required argument of `satpulsetool ubxsim`: a raw UBX stream
+   holding the receiver's MON-VER and MON-GNSS responses and its
+   Default-layer CFG-VALGET dump (all-groups wildcard polls, one per
+   64-item page, with spare pages for safety; polls past the end of
+   the database return empty pages on the X20 and NAKs on F9P-era
+   firmware). The capture runs via satpulsetool with `--packet-log`
+   and the file is produced from the log with `satpulsetool pack`.
+   MON-VER is the simulator's identity; MON-GNSS is what the
+   Configurator polls for GNSS selection and signal plans when
+   configuring signals or RTCM. The Default layer doubles as the key
+   inventory, so a dump-seeded personality answers configuration
+   traffic for the full firmware database of the receiver it was
+   recorded from.
+2. **A message log** for the NAV engine: recorded with everything
    satpulse can ask for enabled (the `AllMsgKeys` messages -- NAV-SAT,
    the NAV-TIME* family, NAV-TIMELS, NAV-SVIN, TIM-SVIN, TIM-TP --
-   plus the standard NMEA sentences), long enough to outlast any
-   test run so the replay never loops and time never wraps.
+   plus the standard NMEA sentences and RTCM output: the MSM7 set,
+   1230, and 1005. MSM7 only, with MSM4 explicitly disabled (see
+   Architecture); 1005 appears in the recording
+   only if the receiver is in base mode. The log must be long
+   enough to outlast any test run so the replay never loops and
+   time never wraps.
    The log supplies content, not the timeline: the NAV engine
    groups it into epochs and re-times emission per the selected
    message set (see Architecture), so the recording's own
@@ -171,6 +185,14 @@ receiver and re-runnable when new firmware lands:
 A factory-default personality then emits exactly what a factory-
 default receiver emits, because the MSGOUT gate reads the seeded
 defaults.
+
+A recorded ZED-F9P personality (HPG 1.51, PROTVER 27.50, 1499
+Default-layer items, captured 2026-07-09) is checked in at
+`gps/app/ubxsim/testdata/f9p/f9p-personality.ubx` and is what unit
+tests load. The X20P personality comes from its own recording
+sitting. Without a replay log the simulator behaves like a receiver
+with no antenna connected -- silent, but answering all configuration
+traffic.
 
 ## What the harnesses assert
 
@@ -195,18 +217,26 @@ TMODE); CFG-RST dropping the pty to simulate USB re-enumeration
 (which would exercise the session's reconnect state machine
 black-box); an F9P personality seeded from `f9p_cfg.txt`.
 
+## Decisions taken
+
+- Package placement: the simulator is `gps/app/ubxsim` (application
+  layer; it runs goroutines); the compiled vendor database is its
+  `internal/ubxdb` subpackage.
+- The binary: a dev subcommand of satpulsetool (`satpulsetool
+  ubxsim`, `internal/ubxsimcmd`), hosting the simulator behind a
+  pty (Linux and macOS; everything but the pty is portable).
+- The personality file is a required positional argument of
+  `satpulsetool ubxsim`; there is no built-in personality and the
+  simulator does not consume the vendor JSON (see The interface
+  description JSON above). The capture kit lives in
+  `gps/app/ubxsim/capture/`.
+
 ## Open decisions
 
-- Package placement: `gps/internal/` is viable (cmd/ can import it;
-  the desktop module never needs it) vs `gps/lib/`. Also the JSON
-  parser's own package name and whether it parses at runtime or
-  feeds generation.
-- The binary: a standalone test-only binary vs a dev subcommand of
-  satpulsetool, and where it is built from.
-- Where the vendored JSON and recorded artifacts live, and the
-  message log's size budget (a recording long enough to outlast
+- The replay log's size budget (a recording long enough to outlast
   tests may be tens of MB; trimming, compression, or a
-  keep-out-of-repo REQUIRES-style skip are the options).
+  keep-out-of-repo REQUIRES-style skip are the options). Personality
+  files are small and live in `gps/app/ubxsim/testdata/<model>/`.
 - Delivery relative to the satpulseweb phase stack: the simulator
   touches only new packages, so it can be its own branch off master,
   independent of the stack; the harness integrations that consume it
