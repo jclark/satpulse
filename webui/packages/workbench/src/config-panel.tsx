@@ -332,6 +332,11 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             setTimePulseTouched(false);
             setTimeModeTouched(false);
             setSignalsTouched(false);
+            setNmeaChange(false);
+            setRtcmChange(false);
+            setPvtChange(false);
+            setSatsChange(false);
+            setRawChange(false);
             setSpeedTouched(false);
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
