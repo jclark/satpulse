@@ -66,6 +66,7 @@ export function PacketPanel({visible, connState}: Props) {
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [decodeTarget, setDecodeTarget] = useState<DecodeTarget | null>(null);
     const [decodeContent, setDecodeContent] = useState<string>('');
+    const decodeRequestRef = useRef(0);
     const [snapshotOpen, setSnapshotOpen] = useState(false);
     const [snapshotEntries, setSnapshotEntries] = useState<(PacketLogEntry & {key: string})[]>([]);
 
@@ -136,6 +137,7 @@ export function PacketPanel({visible, connState}: Props) {
         setIsFrozen(false);
         setDisplayed(new Map());
         setExpanded(new Set());
+        decodeRequestRef.current++;
         setDecodeTarget(null);
         setDecodeContent('');
         setSnapshotOpen(false);
@@ -163,6 +165,7 @@ export function PacketPanel({visible, connState}: Props) {
 
     // Decode a single packet entry
     const decodeEntry = useCallback((key: string, entry: PacketLogEntry) => {
+        const req = ++decodeRequestRef.current;
         const target: DecodeTarget = {
             key, ascii: entry.ascii, bin: entry.bin, out: !!entry.out,
         };
@@ -174,6 +177,7 @@ export function PacketPanel({visible, connState}: Props) {
         const fallback = hex ? raw : stripTrailingEOL(raw);
         setDecodeContent('Decoding...');
         transport.decodePacket(raw, {hex, out}).then(result => {
+            if (decodeRequestRef.current !== req) return;
             if (result) {
                 const keys = Object.keys(result);
                 const display = keys.length === 1 && keys[0] === 'payload' ? result.payload : result;
@@ -182,6 +186,7 @@ export function PacketPanel({visible, connState}: Props) {
                 setDecodeContent(fallback);
             }
         }).catch(() => {
+            if (decodeRequestRef.current !== req) return;
             setDecodeContent(fallback);
         });
     }, []);
