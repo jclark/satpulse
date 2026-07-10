@@ -168,6 +168,12 @@ type Session struct {
 	op     Opener
 	vendor gpsreg.Vendor
 	state  ConnState
+	// stateSeq counts state transitions; stateEmitSeq is the last
+	// transition whose state has been published. emitStateChange uses
+	// them to keep gps:state events ordered when transitions race.
+	stateSeq     int
+	stateEmitSeq int
+	stateEmitMu  sync.Mutex
 	// connCtx spans the logical connection, Connect to Disconnect;
 	// runCtx spans one packet pipeline run within it. They differ only
 	// when a reset-bearing operation kills the transport: the manager
@@ -221,6 +227,33 @@ func (s *Session) emit(name EventName, data any) {
 	emit(s.sink, name, data)
 }
 
+// setStateLocked records a state transition. Call with s.mu held,
+// then emitStateChange after releasing it.
+func (s *Session) setStateLocked(st ConnState) {
+	s.state = st
+	s.stateSeq++
+}
+
+// emitStateChange publishes the state as a gps:state event. Emissions
+// are serialized and each publishes the freshest state, so the last
+// event consumers see always matches the final state even when
+// transitions race; an intermediate state that was overtaken before
+// its emission may be coalesced away. Must not be called with s.mu
+// held (the Sink may re-enter the Session).
+func (s *Session) emitStateChange() {
+	s.stateEmitMu.Lock()
+	defer s.stateEmitMu.Unlock()
+	s.mu.Lock()
+	if s.stateSeq == s.stateEmitSeq {
+		s.mu.Unlock()
+		return
+	}
+	s.stateEmitSeq = s.stateSeq
+	st := s.state
+	s.mu.Unlock()
+	s.emit(EventState, st)
+}
+
 // setEndState transitions to target if still connected, or to Disconnected
 // if the connection was lost. Returns the state actually set.
 // Used by send/config goroutines to avoid resurrecting state after
@@ -236,18 +269,18 @@ func (s *Session) setEndState(target ConnState) ConnState {
 		return st
 	}
 	if s.connCtx != nil && s.connCtx.Err() != nil {
-		s.state = StateDisconnected
+		s.setStateLocked(StateDisconnected)
 		s.mu.Unlock()
-		s.emit(EventState, StateDisconnected)
+		s.emitStateChange()
 		return StateDisconnected
 	}
 	if s.runCtx != nil && s.runCtx.Err() != nil {
 		s.mu.Unlock()
 		return st
 	}
-	s.state = target
+	s.setStateLocked(target)
 	s.mu.Unlock()
-	s.emit(EventState, target)
+	s.emitStateChange()
 	return target
 }
 
@@ -270,9 +303,9 @@ func (s *Session) probeDone() bool {
 		s.mu.Unlock()
 		return false
 	}
-	s.state = StateConnected
+	s.setStateLocked(StateConnected)
 	s.mu.Unlock()
-	s.emit(EventState, StateConnected)
+	s.emitStateChange()
 	return true
 }
 
@@ -303,7 +336,7 @@ func (s *Session) closeLocked() {
 		s.connCancel()
 		s.connCancel = nil
 	}
-	s.state = StateDisconnected
+	s.setStateLocked(StateDisconnected)
 	s.stopCorrLocked()
 	if s.pb != nil {
 		s.pb.Close()
@@ -362,12 +395,11 @@ func (s *Session) endConn() {
 		s.connCancel()
 		s.connCancel = nil
 	}
-	wasDisconnected := s.state == StateDisconnected
-	s.state = StateDisconnected
-	s.mu.Unlock()
-	if !wasDisconnected {
-		s.emit(EventState, StateDisconnected)
+	if s.state != StateDisconnected {
+		s.setStateLocked(StateDisconnected)
 	}
+	s.mu.Unlock()
+	s.emitStateChange()
 }
 
 // enterReconnect transitions to Reconnecting, or reports false if the
@@ -378,9 +410,9 @@ func (s *Session) enterReconnect() bool {
 		s.mu.Unlock()
 		return false
 	}
-	s.state = StateReconnecting
+	s.setStateLocked(StateReconnecting)
 	s.mu.Unlock()
-	s.emit(EventState, StateReconnecting)
+	s.emitStateChange()
 	return true
 }
 
@@ -455,10 +487,10 @@ func (o SocketOpener) Socket() bool { return true }
 func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
 	s.mu.Lock()
 	s.closeLocked()
-	s.state = StateConnecting
+	s.setStateLocked(StateConnecting)
 	gen := s.connectGen
 	s.mu.Unlock()
-	s.emit(EventState, StateConnecting)
+	s.emitStateChange()
 	ctx, cancel := context.WithTimeout(context.Background(), connectOpenTimeout)
 	conn, speed, err := op.Open(ctx)
 	cancel()
@@ -471,9 +503,9 @@ func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
 		return errors.New("connection attempt superseded")
 	}
 	if err != nil {
-		s.state = StateDisconnected
+		s.setStateLocked(StateDisconnected)
 		s.mu.Unlock()
-		s.emit(EventState, StateDisconnected)
+		s.emitStateChange()
 		return err
 	}
 	connCtx, connCancel := context.WithCancel(context.Background())
@@ -741,7 +773,7 @@ func (s *Session) Disconnect() {
 	s.closeLocked()
 	s.probe = ReceiverEvent{}
 	s.mu.Unlock()
-	s.emit(EventState, StateDisconnected)
+	s.emitStateChange()
 }
 
 // CorrEvent is the payload for "gps:corrections" events.
@@ -1060,9 +1092,9 @@ func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) 
 		return nil, err
 	}
 	s.cancelWorkerLocked()
-	s.state = StateConfiguring
+	s.setStateLocked(StateConfiguring)
 	s.mu.Unlock()
-	s.emit(EventState, StateConfiguring)
+	s.emitStateChange()
 	target := gpsprot.NewConfigTarget()
 	target.Get = readProps
 	cr := s.sendConfigRequest(ctx, target)
@@ -1094,9 +1126,9 @@ func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget)
 		return fmt.Errorf("reset operations are not available over a proxy connection")
 	}
 	s.cancelWorkerLocked()
-	s.state = StateConfiguring
+	s.setStateLocked(StateConfiguring)
 	s.mu.Unlock()
-	s.emit(EventState, StateConfiguring)
+	s.emitStateChange()
 	if target.NoOp() {
 		s.setEndState(StateConnected)
 		return fmt.Errorf("no configuration changes specified")
@@ -1232,12 +1264,12 @@ func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 		workerCancel()
 		return err
 	}
-	s.state = StateSending
+	s.setStateLocked(StateSending)
 	s.sendCancel = sendCancel
 	s.workerCancel = workerCancel
 	session := int(s.respSession.Add(1))
 	s.mu.Unlock()
-	s.emit(EventState, StateSending)
+	s.emitStateChange()
 	total := len(rawMsgs)
 	stepCh := make(chan sendStepReq)
 	// Start the worker goroutine.

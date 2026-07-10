@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -141,6 +142,22 @@ type blockingOpener struct {
 func (o *blockingOpener) Open(ctx context.Context) (gpsio.Conn, int, error) {
 	<-o.gate
 	return o.fakeOpener.Open(ctx)
+}
+
+// gatedSink wraps fakeSink, blocking gps:state emissions on gate
+// while gating is enabled, so a test can hold an emission in flight
+// across another transition.
+type gatedSink struct {
+	fakeSink
+	gating atomic.Bool
+	gate   chan struct{}
+}
+
+func (gs *gatedSink) Emit(ev Event) {
+	if ev.Name == EventState && gs.gating.Load() {
+		<-gs.gate
+	}
+	gs.fakeSink.Emit(ev)
 }
 
 // fakeSink records emitted events. Wants reports wantPacket for
@@ -358,6 +375,44 @@ func TestCancelledOpSkipsEndState(t *testing.T) {
 		expect := []ConnState{StateConnecting, StateConnected, StateConfiguring,
 			StateConnecting, StateConnected}
 		if got := fs.states(); !reflect.DeepEqual(got, expect) {
+			t.Errorf("state events = %v, want %v", got, expect)
+		}
+	})
+}
+
+// TestLifecycleEventOrder checks that racing lifecycle transitions
+// cannot leave a stale final state event: an emission delayed past a
+// newer transition is followed by the newer state.
+func TestLifecycleEventOrder(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		gs := &gatedSink{gate: make(chan struct{})}
+		s := New(slog.New(slog.DiscardHandler), gs, Options{})
+		t.Cleanup(s.Disconnect)
+		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+		if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		waitForState(t, s, StateConnected)
+		gs.gating.Store(true)
+		done := make(chan struct{})
+		go func() {
+			s.Disconnect()
+			close(done)
+		}()
+		synctest.Wait() // Disconnect is now blocked emitting Disconnected
+		op2 := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+		errCh := make(chan error, 1)
+		go func() { errCh <- s.Connect(op2, gpsreg.VendorUnknown) }()
+		gs.gating.Store(false)
+		close(gs.gate)
+		<-done
+		if err := <-errCh; err != nil {
+			t.Fatalf("Connect during delayed emit: %v", err)
+		}
+		waitForState(t, s, StateConnected)
+		expect := []ConnState{StateConnecting, StateConnected, StateDisconnected,
+			StateConnecting, StateConnected}
+		if got := gs.states(); !reflect.DeepEqual(got, expect) {
 			t.Errorf("state events = %v, want %v", got, expect)
 		}
 	})
