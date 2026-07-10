@@ -439,7 +439,9 @@ const deviceWaitInterval = 200 * time.Millisecond
 // waits for it to appear until ctx is done: after a USB reset the
 // receiver re-enumerates and the node vanishes briefly (and Connect
 // works when run just after plugging the device in). On ctx expiry the
-// last open error is returned.
+// last open error is returned. The device is assumed to come back
+// under the same node: a receiver that re-enumerates under a
+// different name is not found (known limitation).
 func (o SerialOpener) Open(ctx context.Context) (gpsio.Conn, int, error) {
 	for {
 		conn, speed, err := gpsio.OpenSerial(o.Device, o.Speed)

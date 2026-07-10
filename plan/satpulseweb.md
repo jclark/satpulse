@@ -254,7 +254,11 @@ review:
   re-probe, resume. This also fixes the desktop's existing
   read-error-disconnect gap
   (webui/packages/workbench/plan/issues.md), where an unplugged
-  device leaves the app stuck in connected state.
+  device leaves the app stuck in connected state. Limitation: the
+  serial opener re-opens the same node name, so a device that
+  returns under a different node is not found and the reconnect
+  attempts exhaust; handling the renamed case needs a stable device
+  identity (gps/lib/serialenum) and is deferred.
 - Reset gating over proxy connections, driven by `Opener.Socket()`
   (see Relationship to satpulsed above for why).
 - `Wants` gating for the gps:packet stream, so a web client only
