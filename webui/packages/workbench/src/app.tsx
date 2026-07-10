@@ -323,6 +323,7 @@ export function App() {
                 respSessionRef.current = 0;
             }
             if (state === 'disconnected') {
+                setReceiver({status: 'disconnected'});
                 setTimeMsg(null);
                 setNavEpochMsg(null);
                 setSurveyMsg(null);
