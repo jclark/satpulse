@@ -157,3 +157,4 @@ System testing uses Ansible playbooks in `systest/`.
 
 You can look at `/etc/satpulse.toml` if it exists to find device and speed of a connected GPS receiver.
 But before using it, check that `satpulsed` is not running `ps ax | grep satpulsed`.
+Use `satpulsetool gps` for operations that write to the receiver; do not send raw serial writes directly.

@@ -1,0 +1,495 @@
+#:schema ../../../../configs/gpsmsg/gpsmsg-schema.json
+# u-blox X20P capture kit for the receiver simulator personality (#362).
+#
+# Two capture sessions, driven by capture-x20p.sh:
+#
+#   1. Personality capture: -t mon-ver,mon-gnss,valget-default
+#      Polls MON-VER and MON-GNSS, then dumps the Default configuration layer with
+#      CFG-VALGET polls of the all-groups wildcard key, one poll per
+#      64-item page. The page count is generous, sized well past any
+#      known firmware database. Polls past the end of the database
+#      return empty pages on the X20; F9P-era firmware NAKs them.
+#      Both are expected.
+#
+#   2. Replay-log recording setup, three invocations (ubxval and
+#      ubxvalport tags cannot be selected together, and the survey-in
+#      starts last, just before the recording):
+#      -t rate-1hz
+#      -t enable-out,enable-msgs,enable-rtcm --port <port>
+#      Sets 1 Hz nav epochs and configures, in the RAM layer only, the
+#      port's UBX, NMEA and RTCM3X output protocols and every
+#      message satpulse can ask for plus the standard NMEA sentences
+#      and RTCM output, so the recording contains per-epoch content
+#      for all of them regardless of the receiver's current
+#      configuration. UBX-TIM-SVIN is not included: the X20 (HPG)
+#      firmware has no MSGOUT key for it and would NAK the whole set.
+#      RTCM is recorded as MSM7 only, with MSM4 explicitly disabled;
+#      the simulator derives MSM4 from the recorded MSM7.
+#      -t tmode-svin
+#      Starts a survey-in (RAM only) just before the recording, so the
+#      replay bank has NAV-SVIN progressing, survey completion, and the
+#      receiver in base mode afterwards. The 60 s minimum duration and
+#      loose 10 m accuracy limit make the survey complete on time, well
+#      inside the recording.
+
+[[ubx]]
+tag = "mon-ver"
+description = "Poll MON-VER for the personality identity"
+class = 0x0A
+id = 0x04
+
+[[ubx]]
+tag = "mon-gnss"
+description = "Poll MON-GNSS (GNSS selection and signal plans, replayed verbatim)"
+class = 0x0A
+id = 0x28
+
+# CFG-VALGET polls: version 0, layer 7 (Default), position N*64,
+# key 0x0fffffff (all items in all groups).
+
+[[ubx]]
+tag = "valget-default"
+description = "Dump the Default configuration layer, 64 items per poll"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 0, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 64, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 128, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 192, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 256, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 320, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 384, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 448, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 512, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 576, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 640, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 704, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 768, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 832, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 896, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 960, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1024, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1088, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1152, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1216, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1280, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1344, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1408, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1472, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1536, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1600, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1664, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1728, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1792, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1856, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1920, 0x0FFFFFFF]
+
+[[ubx]]
+tag = "valget-default"
+class = 0x06
+id = 0x8B
+payload.types = "U1U1U2U4"
+payload.values = [0, 7, 1984, 0x0FFFFFFF]
+
+[[ubxval]]
+tag = "rate-1hz"
+description = "Set 1 Hz measurement and navigation rate (RAM only)"
+keys = [0x30210001, 0x30210002]
+types = "U2U2"
+values = [1000, 1]
+
+# Output protocols for the replay recording, so the recording does
+# not depend on the receiver's current output-protocol configuration.
+
+[[ubxvalport]]
+tag = "enable-out"
+description = "Enable UBX, NMEA and RTCM3X output protocols (RAM only)"
+# OUTPROT UBX (not port-offset inferable; all five keys explicit)
+key.i2c = 0x10720001
+key.uart1 = 0x10740001
+key.uart2 = 0x10760001
+key.usb = 0x10780001
+key.spi = 0x107A0001
+value = 1
+
+[[ubxvalport]]
+tag = "enable-out"
+# OUTPROT NMEA
+key.i2c = 0x10720002
+key.uart1 = 0x10740002
+key.uart2 = 0x10760002
+key.usb = 0x10780002
+key.spi = 0x107A0002
+value = 1
+
+[[ubxvalport]]
+tag = "enable-out"
+# OUTPROT RTCM3X
+key.i2c = 0x10720004
+key.uart1 = 0x10740004
+key.uart2 = 0x10760004
+key.usb = 0x10780004
+key.spi = 0x107A0004
+value = 1
+
+# Message enables for the replay recording, one CFG-VALSET each,
+# rate 1 on the port given by --port (RAM only).
+
+[[ubxvalport]]
+tag = "enable-msgs"
+description = "Enable all messages for the replay recording (RAM only)"
+# UBX-NAV-SAT
+key.usb = 0x20910018
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# UBX-NAV-TIMEGPS
+key.usb = 0x2091004A
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# UBX-NAV-TIMEGAL
+key.usb = 0x20910059
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# UBX-NAV-TIMEGLO
+key.usb = 0x2091004F
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# UBX-NAV-TIMEBDS
+key.usb = 0x20910054
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# UBX-NAV-TIMEUTC
+key.usb = 0x2091005E
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# UBX-NAV-TIMELS
+key.usb = 0x20910063
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# UBX-NAV-TIMENAVIC
+key.usb = 0x209106A5
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# UBX-NAV-SVIN
+key.usb = 0x2091008B
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# UBX-TIM-TP
+key.usb = 0x20910180
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# NMEA GGA
+key.usb = 0x209100BD
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# NMEA GLL
+key.usb = 0x209100CC
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# NMEA GSA
+key.usb = 0x209100C2
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# NMEA GSV
+key.usb = 0x209100C7
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# NMEA RMC
+key.usb = 0x209100AE
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# NMEA VTG
+key.usb = 0x209100B3
+value = 1
+
+[[ubxvalport]]
+tag = "enable-msgs"
+# NMEA ZDA
+key.usb = 0x209100DB
+value = 1
+
+# RTCM output for the replay recording (RAM only): MSM7 on, MSM4 off
+# (the integration manual warns against outputting both). TYPE1005
+# emits only when the receiver is in base mode.
+
+[[ubxvalport]]
+tag = "enable-rtcm"
+description = "Enable RTCM output (MSM7 set, 1230, 1005), disable MSM4 (RAM only)"
+# RTCM-3X-TYPE1077 (GPS MSM7)
+key.usb = 0x209102CF
+value = 1
+
+[[ubxvalport]]
+tag = "enable-rtcm"
+# RTCM-3X-TYPE1087 (GLONASS MSM7)
+key.usb = 0x209102D4
+value = 1
+
+[[ubxvalport]]
+tag = "enable-rtcm"
+# RTCM-3X-TYPE1097 (Galileo MSM7)
+key.usb = 0x2091031B
+value = 1
+
+[[ubxvalport]]
+tag = "enable-rtcm"
+# RTCM-3X-TYPE1127 (BeiDou MSM7)
+key.usb = 0x209102D9
+value = 1
+
+[[ubxvalport]]
+tag = "enable-rtcm"
+# RTCM-3X-TYPE1230 (GLONASS code-phase biases)
+key.usb = 0x20910306
+value = 1
+
+[[ubxvalport]]
+tag = "enable-rtcm"
+# RTCM-3X-TYPE1005 (stationary ARP; emits only in base mode)
+key.usb = 0x209102C0
+value = 1
+
+[[ubxvalport]]
+tag = "enable-rtcm"
+# RTCM-3X-TYPE1074 (GPS MSM4) off
+key.usb = 0x20910361
+value = 0
+
+[[ubxvalport]]
+tag = "enable-rtcm"
+# RTCM-3X-TYPE1084 (GLONASS MSM4) off
+key.usb = 0x20910366
+value = 0
+
+[[ubxvalport]]
+tag = "enable-rtcm"
+# RTCM-3X-TYPE1094 (Galileo MSM4) off
+key.usb = 0x2091036B
+value = 0
+
+[[ubxvalport]]
+tag = "enable-rtcm"
+# RTCM-3X-TYPE1124 (BeiDou MSM4) off
+key.usb = 0x20910370
+value = 0
+
+# Survey-in start for the replay recording: CFG-TMODE-MODE=SURVEY_IN,
+# CFG-TMODE-SVIN_MIN_DUR, CFG-TMODE-SVIN_ACC_LIMIT (0.1 mm units).
+
+[[ubxval]]
+tag = "tmode-svin"
+description = "Start survey-in (RAM only): 60 s minimum duration, 10 m accuracy limit"
+keys = [0x20030001, 0x40030010, 0x40030011]
+types = "U1U4U4"
+values = [1, 60, 100000]
