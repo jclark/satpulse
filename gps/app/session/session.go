@@ -1543,8 +1543,8 @@ type LogEvent struct {
 	Attrs     map[string]any `json:"attrs,omitempty"`
 }
 
-func (h *logHandler) Enabled(_ context.Context, level slog.Level) bool {
-	return h.base.Enabled(context.Background(), level)
+func (h *logHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.base.Enabled(ctx, level)
 }
 
 func (h *logHandler) Handle(ctx context.Context, r slog.Record) error {
