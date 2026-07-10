@@ -327,12 +327,12 @@ func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
 			latest = pkt.Data
 		case <-tickCh:
 			if conn != nil && latest != "" {
-				conn, nTimeouts = sendGGA(lg, conn, latest, nTimeouts)
+				conn, nTimeouts = sendGGA(ctx, lg, conn, latest, nTimeouts)
 			}
 		case conn = <-s.connCh:
 			nTimeouts = 0
 			if latest != "" {
-				conn, nTimeouts = sendGGA(lg, conn, latest, nTimeouts)
+				conn, nTimeouts = sendGGA(ctx, lg, conn, latest, nTimeouts)
 			}
 		case <-ctx.Done():
 			return
@@ -344,8 +344,14 @@ func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
 // dropped) and the updated consecutive-timeout count.  A clean write timeout
 // keeps the connection through a transient stall; a hard error, or more than
 // maxGGASendTimeouts consecutive timeouts, drops it so the reader reconnects.
-func sendGGA(lg *slog.Logger, conn ReadWriteDeadlineCloser, data string, nTimeouts int) (ReadWriteDeadlineCloser, int) {
+// Errors after cancellation are suppressed because the reader closes the same
+// connection to unblock its scan during shutdown.
+func sendGGA(ctx context.Context, lg *slog.Logger, conn ReadWriteDeadlineCloser, data string, nTimeouts int) (ReadWriteDeadlineCloser, int) {
 	err := writeGGA(conn, data)
+	if err != nil && ctx.Err() != nil {
+		conn.Close()
+		return nil, 0
+	}
 	switch {
 	case err == nil:
 		return conn, 0
