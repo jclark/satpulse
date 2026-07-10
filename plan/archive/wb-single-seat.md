@@ -1,9 +1,6 @@
 # Workbench single seat
 
-A PR on a branch `wb-single-seat` off `satpulsewb`, inserted into
-the stacked-PR series directly after satpulsewb (#363): the PR is
-based on `satpulsewb`, and the branch is then merged up into
-`wb-smoketest` and `wb-msgfile`.
+Implemented after satpulsewb (#363) as part of the stacked-PR series.
 
 ## Background
 
@@ -17,11 +14,11 @@ Configuration panel's readback trigger and pending edits, and the
 Messages panel's select/send pairing (the review finding on PR
 #366), both break under a second observer.
 
-This PR restores the desktop model instead of fixing the panels:
-exactly one active workbench window, with takeover by newest. A
-newer window always wins; the dethroned window shows a terminal
-screen. Takeover (rather than rejecting the newcomer) has no
-stale-lock problem - a half-dead connection after laptop sleep
+The implementation restores the desktop model instead of fixing the
+panels: exactly one active workbench window, with each new seat claim
+taking over from the previous one. The dethroned window shows a
+terminal screen. Takeover (rather than rejecting the newcomer) has
+no stale-lock problem - a half-dead connection after laptop sleep
 cannot lock the user out - and doubles as the recovery path for a
 lost window. Every panel's single-observer assumptions become valid
 again with zero panel changes.
@@ -64,10 +61,11 @@ can never be mistaken for current.
   them open preserves easy curl debugging.
 
 The existing auth and CSRF layers are unchanged: the token still
-gates everything including the seat claim, and requireJSON still
-guards every POST. The seat is a session-consistency mechanism, not
-an auth mechanism, though it incidentally hardens CSRF further
-(a cross-site attacker does not know the seat value).
+gates every API and SSE endpoint including the seat claim, and
+requireJSON still guards every POST. The seat is a
+session-consistency mechanism, not an auth mechanism, though it
+incidentally hardens CSRF further (a cross-site attacker does not
+know the seat value).
 
 ### Frontend
 
@@ -75,64 +73,45 @@ The workbench-http transport claims the seat at boot (after token
 setup, before opening the event stream), remembers it, and appends
 it to the /sse URLs and every POST.
 
-Losing the seat surfaces in two ways, both handled: the `takeover`
-event on the stream (the fast path), and a 410 on any later POST
-(the belt-and-braces path if the event was missed, e.g. the machine
-was asleep). Either one puts the app into a terminal takeover
-state: a full-screen overlay - "This workbench is now open in
-another window" - with a single "Use here" button that reloads the
-page, which re-claims the seat and dethrones the other window in
-turn. No other UI is reachable from this state.
+Losing the seat surfaces through a `takeover` event on the stream, a
+410 on a later POST, or an EventSource that closes terminally because
+its seat became stale before the stream opened. In the last case the
+transport probes a seat-free GET to distinguish a stale seat from
+stale authentication after a server restart. Seat loss puts the app
+into a terminal takeover state: a full-screen overlay - "This
+workbench is now open in another window" - with a single "Use here"
+button that reloads the page, re-claims the seat, and dethrones the
+other window in turn. Stale authentication instead transitions the
+app straight to a notice directing the user to the newly printed
+URL; that transition never reloads and never reads the shared token
+store, so a stale tab cannot reclaim a seat another tab has just
+taken with a fresh token.
 
 The workbench package learns about the takeover through a synthetic
 transport event (the http transport emits it via the existing
 eventsOn mechanism, e.g. `wb:seatlost`); the desktop transport
 never emits it, so the desktop app is untouched.
 
-## Implementation notes
+## Implementation
 
-- Server: seat value and claim/check logic in cmd/satpulsewb
-  (server.go or a small seat.go); the sseHub gains "disconnect
-  clients of old seats, sending a final takeover event". No
-  gps/app/session changes.
-- The post wrapper grows the seat check (after auth, before
-  requireJSON); the sse handler validates the seat before
-  subscribing.
-- Frontend: seat claim + URL plumbing and 410 handling in
-  webui/packages/workbench-http; the takeover overlay in
-  webui/packages/workbench (reuse the styling approach of the
-  existing stale-token auth notice). Rebuild the embedded dist.
-
-## Stack integration
-
-The wb smoke tests live on `wb-smoketest`, which follows this PR in
-the stack, so this PR cannot run them. When merging `wb-single-seat`
-up into `wb-smoketest`, the wb helpers must adapt: the scenario
-Context claims a seat once (during wait_ready, from the printed
-URL/token) and wb_post/wb_sse append it; checks that open several
-streams share the Context's seat. Add a takeover check to
-http/wb-default: claiming a second seat closes the first event
-stream with a `takeover` event, and a POST with the old seat gets
-410. The merge into `wb-msgfile` should be quiet.
+- The seat value and claim/check logic are in `cmd/satpulsewb/server.go`;
+  the SSE hub sends the final takeover event to clients of the old
+  seat. No `gps/app/session` changes were needed.
+- The POST wrapper checks the seat after auth and before requireJSON;
+  the SSE handler validates the seat before subscribing.
+- Seat claiming, URL plumbing, 410 handling, and terminal-close
+  recovery are in `webui/packages/workbench-http`; the takeover
+  overlay is in `webui/packages/workbench`.
 
 ## Testing
 
-cmd/satpulsewb server tests: claim returns a seat and a second
-claim invalidates the first (old stream receives takeover and
-closes; old-seat POST gets 410; old-seat /sse gets 204); current
-seat passes POSTs and streams; missing seat on /sse is 400; the
-seat claim itself requires the token and JSON content-type. Both
-npm typechecks; `make test`. Manual: two browser windows - second
-takes over, first shows the overlay, "Use here" takes it back;
-`curl` smoke of claim/410/204.
+The `cmd/satpulsewb` server tests cover seat claims and replacement,
+the takeover event, stale and missing seats on POST and SSE, current
+seat access, and the token and JSON requirements on the claim.
 
 ## Documentation
 
-- Man page: a sentence under the URL/token description - opening
-  the URL in a second window takes over the session; the first
-  window is disconnected.
-- docs/internals.md cmd/satpulsewb entry: mention the single-seat
-  model.
-- plan/satpulseweb.md Delivery section: record the inserted PR.
-- No NEWS entry: the existing satpulsewb entry covers this
-  (unreleased feature).
+The man page and `docs/internals.md` describe the single-seat model,
+and `plan/satpulseweb.md` records the work in the delivery stack. No
+NEWS entry was added because the existing unreleased satpulsewb entry
+already covers it.
