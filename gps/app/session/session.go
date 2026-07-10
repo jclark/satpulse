@@ -149,8 +149,12 @@ type Session struct {
 	// when a reset-bearing operation kills the transport: the manager
 	// ends the run, re-opens the transport, and starts a new run under
 	// the same connCtx.
-	connCtx      context.Context
-	connCancel   context.CancelFunc
+	connCtx    context.Context
+	connCancel context.CancelFunc
+	// connectGen is bumped by closeLocked, so a Connect whose Open is
+	// still pending can tell that a later Connect or Disconnect
+	// superseded it and must not start a connection manager.
+	connectGen   int
 	runCtx       context.Context
 	runCancel    context.CancelFunc
 	connWg       sync.WaitGroup
@@ -191,15 +195,6 @@ func New(lg *slog.Logger, sink Sink, opts Options) *Session {
 
 func (s *Session) emit(name EventName, data any) {
 	emit(s.sink, name, data)
-}
-
-// setState transitions the connection state and emits a gps:state event.
-// Must NOT be called with s.mu held -- a Sink may re-enter Session methods.
-func (s *Session) setState(st ConnState) {
-	s.mu.Lock()
-	s.state = st
-	s.mu.Unlock()
-	s.emit(EventState, st)
 }
 
 // setEndState transitions to target if still connected, or to Disconnected
@@ -257,6 +252,9 @@ func (s *Session) cancelWorkerLocked() {
 }
 
 func (s *Session) closeLocked() {
+	// Invalidate any Connect whose Open is still pending: it re-checks
+	// connectGen when the open returns and backs out if it changed.
+	s.connectGen++
 	// Cancel and mark disconnected before stopCorrLocked releases s.mu
 	// to wait, so no call can pass a connected-state check and start
 	// work on the connection while it is being closed.
@@ -415,22 +413,34 @@ func (o SocketOpener) Socket() bool { return true }
 // Connect opens a connection to a GPS receiver via op. It is
 // asynchronous: it returns once the transport is open, and probe
 // progress arrives as events. vendor narrows probing and packet format
-// detection; VendorUnknown probes for all supported vendors.
+// detection; VendorUnknown probes for all supported vendors. A Connect
+// or Disconnect issued while the open is pending supersedes it: the
+// late-opened transport is closed and Connect returns an error.
 func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
 	s.mu.Lock()
 	s.closeLocked()
 	s.state = StateConnecting
+	gen := s.connectGen
 	s.mu.Unlock()
 	s.emit(EventState, StateConnecting)
 	ctx, cancel := context.WithTimeout(context.Background(), connectOpenTimeout)
 	conn, speed, err := op.Open(ctx)
 	cancel()
+	s.mu.Lock()
+	if s.connectGen != gen {
+		s.mu.Unlock()
+		if err == nil {
+			conn.Close()
+		}
+		return errors.New("connection attempt superseded")
+	}
 	if err != nil {
-		s.setState(StateDisconnected)
+		s.state = StateDisconnected
+		s.mu.Unlock()
+		s.emit(EventState, StateDisconnected)
 		return err
 	}
 	connCtx, connCancel := context.WithCancel(context.Background())
-	s.mu.Lock()
 	s.op = op
 	s.vendor = vendor
 	s.connCtx = connCtx

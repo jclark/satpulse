@@ -97,6 +97,12 @@ func (c *fakeConn) writeCount() int {
 	return len(c.writes)
 }
 
+func (c *fakeConn) isClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.stopped
+}
+
 // fakeOpener hands out queued fakeConns, one per Open call.
 type fakeOpener struct {
 	mu     sync.Mutex
@@ -123,6 +129,18 @@ func (o *fakeOpener) openCount() int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.opens
+}
+
+// blockingOpener is a fakeOpener whose Open blocks until gate is
+// closed, so a test can interleave calls while an open is pending.
+type blockingOpener struct {
+	fakeOpener
+	gate chan struct{}
+}
+
+func (o *blockingOpener) Open(ctx context.Context) (gpsio.Conn, int, error) {
+	<-o.gate
+	return o.fakeOpener.Open(ctx)
 }
 
 // fakeSink records emitted events. Wants reports wantPacket for
@@ -222,6 +240,60 @@ func TestConnectDisconnect(t *testing.T) {
 			t.Errorf("state events = %v, want %v", got, expect)
 		}
 	})
+}
+
+// TestConnectSuperseded checks the supersession contract: a Connect or
+// Disconnect issued while another Connect's open is pending wins; the
+// pending attempt returns an error, closes its late-opened transport,
+// and emits no state events of its own.
+func TestConnectSuperseded(t *testing.T) {
+	tests := []struct {
+		name         string
+		interleave   func(t *testing.T, s *Session)
+		expectStates []ConnState
+	}{
+		{
+			name:         "disconnect during open",
+			interleave:   func(t *testing.T, s *Session) { s.Disconnect() },
+			expectStates: []ConnState{StateConnecting, StateDisconnected},
+		},
+		{
+			name: "connect during open",
+			interleave: func(t *testing.T, s *Session) {
+				op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+				if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+					t.Fatalf("second Connect: %v", err)
+				}
+				waitForState(t, s, StateConnected)
+			},
+			expectStates: []ConnState{StateConnecting, StateConnecting, StateConnected},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				fs := &fakeSink{}
+				s := testSession(t, fs)
+				conn := newFakeConn()
+				op := &blockingOpener{fakeOpener: fakeOpener{conns: []*fakeConn{conn}}, gate: make(chan struct{})}
+				errCh := make(chan error, 1)
+				go func() { errCh <- s.Connect(op, gpsreg.VendorUnknown) }()
+				synctest.Wait()
+				tc.interleave(t, s)
+				close(op.gate)
+				if err := <-errCh; err == nil {
+					t.Fatal("superseded Connect returned nil, want error")
+				}
+				synctest.Wait()
+				if !conn.isClosed() {
+					t.Error("superseded attempt's conn was not closed")
+				}
+				if got := fs.states(); !reflect.DeepEqual(got, tc.expectStates) {
+					t.Errorf("state events = %v, want %v", got, tc.expectStates)
+				}
+			})
+		})
+	}
 }
 
 func TestUnplugDisconnects(t *testing.T) {
