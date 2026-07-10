@@ -224,9 +224,9 @@ make update-deps
   token, the SPA served at `/` (HTML plus its script bundle, the counterpart to
   the daemon's `check_html`), token auth enforced, the snapshot endpoints
   populating, SSE monitor delivery, packet-stream gating (a `?stream=packets`
-  client), late-joiner priming from the event cache, and the single-seat
-  takeover (a second seat claim closes the first stream with a `takeover` event
-  and 410s a POST from the superseded seat).
+  client), late-joiner priming from the event cache, and the writer-seat
+  takeover (a second seat claim delivers a fresh `writer` grant on the first,
+  still-open stream and 410s a POST from the superseded seat).
 - `http/wb-listen` (satpulsewb) -- the workbench with `-L` and the token
   disabled: the SPA is served, the API is open, but the CSRF content-type gate
   still rejects a cross-site simple POST.

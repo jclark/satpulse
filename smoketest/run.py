@@ -242,7 +242,6 @@ class Context:
         self.wb_args: list[str] = []
         self.wb_port = 0
         self.token = ""
-        self.seat = ""
         self.prog_bin = ""
         self.template_base = os.path.join(SCENARIOS_DIR, name)
         self.requires_root = requires_root
@@ -723,19 +722,18 @@ class Context:
         return f"http://127.0.0.1:{self.http_port}{path}"
 
     def wb_url(self, path: str) -> str:
-        """URL for a satpulsewb request, carrying the access token and seat when set.
+        """URL for a satpulsewb request, with the access token when there is one.
 
         The bound port comes from the printed URL (program.wait_ready), so this
         is correct for the no-`-L` default-port path too, where the port is
         chosen at runtime. Requests always use loopback; the all-interfaces bind
-        includes it. POSTs and SSE opens require the current seat (claimed in
-        wait_ready); GETs ignore it, so appending it unconditionally is safe.
+        includes it. Writer POSTs also need the current seat; a check that
+        writes claims one (common.wb_claim) and puts it in the path's own
+        query string.
         """
         url = f"http://127.0.0.1:{self.wb_port}{path}"
         if self.token:
             url += ("&" if "?" in path else "?") + "t=" + self.token
-        if self.seat:
-            url += ("&" if "?" in url else "?") + "seat=" + self.seat
         return url
 
     def wait_listeners(self, timeout: float = 15) -> None:

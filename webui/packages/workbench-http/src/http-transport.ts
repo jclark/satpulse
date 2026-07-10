@@ -1,7 +1,8 @@
 // The fetch+SSE implementation of the workbench Transport, talking to
 // the cmd/satpulsewb HTTP API. The per-run access token rides a query
-// parameter on every request. POSTs and SSE streams also carry the
-// current workbench seat (EventSource cannot set headers).
+// parameter on every request. Writer POSTs (the mutating session
+// operations) also carry the current write seat; reader POSTs and the SSE
+// streams carry only the token.
 
 import type {
     ConnState,
@@ -13,7 +14,7 @@ import type {
 } from '@satpulse/workbench/src/transport';
 
 // HttpError carries the HTTP status so callers can distinguish an
-// auth failure (401) and seat loss (410) from operation errors.
+// auth failure (401) and a lost seat (410) from operation errors.
 export class HttpError extends Error {
     status: number;
     constructor(status: number, message: string) {
@@ -26,58 +27,76 @@ export async function newHTTPTransport(token: string): Promise<Transport> {
     const authParams = new URLSearchParams();
     if (token) authParams.set('t', token);
     const authQuery = authParams.size ? '?' + authParams : '';
-    const claimResp = await fetch('/api/seat' + authQuery, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: '{}',
-    });
-    if (!claimResp.ok) throw await httpError(claimResp);
-    const claim = await claimResp.json();
-    if (typeof claim.seat !== 'string' || !claim.seat) {
-        throw new Error('Invalid seat claim response');
+    async function claim(): Promise<{seat: string; grant: string}> {
+        const resp = await fetch('/api/seat' + authQuery, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: '{}',
+        });
+        if (!resp.ok) throw await httpError(resp);
+        const c = await resp.json();
+        if (typeof c.seat !== 'string' || !c.seat || typeof c.grant !== 'string' || !c.grant) {
+            throw new Error('Invalid seat claim response');
+        }
+        return {seat: c.seat, grant: c.grant};
     }
-    const seatParams = new URLSearchParams(authParams);
-    seatParams.set('seat', claim.seat);
-    const seatQuery = '?' + seatParams;
-    const events = new EventStreams(seatQuery);
-    async function call(method: string, path: string, body?: unknown): Promise<any> {
+    const initial = await claim();
+    let seat = initial.seat;
+    const events = new EventStreams(authQuery, initial.grant);
+    const seatQuery = () => {
+        const p = new URLSearchParams(authParams);
+        p.set('seat', seat);
+        return '?' + p;
+    };
+    async function call(method: string, path: string, body: unknown, writer: boolean): Promise<any> {
         const init: RequestInit = {method};
         if (body !== undefined) {
             init.headers = {'Content-Type': 'application/json'};
             init.body = JSON.stringify(body);
         }
-        const resp = await fetch('/api/' + path + (method === 'POST' ? seatQuery : authQuery), init);
+        const sent = seat;
+        const query = method === 'POST' && writer ? seatQuery() : authQuery;
+        const resp = await fetch('/api/' + path + query, init);
         if (!resp.ok) {
-            if (resp.status === 410) events.seatLost();
+            // Flip read-only only if the seat this request carried is still
+            // current: a reclaim while the POST was in flight makes the 410
+            // stale, and no further writer broadcast would flip us back.
+            if (resp.status === 410 && sent === seat) events.readOnly();
             throw await httpError(resp);
         }
         return resp.json();
     }
-    const get = (path: string) => call('GET', path);
-    const post = (path: string, body?: unknown) => call('POST', path, body ?? {});
+    const get = (path: string) => call('GET', path, undefined, false);
+    const readerPost = (path: string, body?: unknown) => call('POST', path, body ?? {}, false);
+    const writerPost = (path: string, body?: unknown) => call('POST', path, body ?? {}, true);
     return {
         getConnState: () => get('state') as Promise<ConnState>,
         getReceiverState: () => get('receiver'),
         getCorrectionsState: () => get('corrections'),
-        getAllSignals: (gnss: string[]) => post('signals', {gnss}),
-        readConfig: () => post('config/read'),
-        applyConfig: async target => { await post('config/apply', target); },
-        startCorrections: async (src: CorrectionSource) => { await post('corrections/start', src); },
-        stopCorrections: async () => { await post('corrections/stop'); },
+        getAllSignals: (gnss: string[]) => readerPost('signals', {gnss}),
+        readConfig: () => writerPost('config/read'),
+        applyConfig: async target => { await writerPost('config/apply', target); },
+        startCorrections: async (src: CorrectionSource) => { await writerPost('corrections/start', src); },
+        stopCorrections: async () => { await writerPost('corrections/stop'); },
         decodePacket: (data: string, opts: DecodeOptions) =>
-            post('decode-packet', {data, hex: opts.hex, out: opts.out}),
-        ecefToLLH: (x, y, z) => post('geo/ecef-to-llh', {x, y, z}) as Promise<LLH>,
-        llhToECEF: (lat, lon, height) => post('geo/llh-to-ecef', {lat, lon, height}),
-        checkOnEarth: (x, y, z) => post('geo/check-on-earth', {x, y, z}),
-        velNEDtoECEF: (n, e, d) => post('geo/vel-ned-to-ecef', {n, e, d}),
-        velECEFtoNED: (x, y, z) => post('geo/vel-ecef-to-ned', {x, y, z}),
+            readerPost('decode-packet', {data, hex: opts.hex, out: opts.out}),
+        ecefToLLH: (x, y, z) => readerPost('geo/ecef-to-llh', {x, y, z}) as Promise<LLH>,
+        llhToECEF: (lat, lon, height) => readerPost('geo/llh-to-ecef', {lat, lon, height}),
+        checkOnEarth: (x, y, z) => readerPost('geo/check-on-earth', {x, y, z}),
+        velNEDtoECEF: (n, e, d) => readerPost('geo/vel-ned-to-ecef', {n, e, d}),
+        velECEFtoNED: (x, y, z) => readerPost('geo/vel-ecef-to-ned', {x, y, z}),
         eventsOn: (name, cb) => events.on(name, cb),
         openURL: url => { window.open(url, '_blank'); },
+        reclaim: async () => {
+            const c = await claim();
+            seat = c.seat;
+            events.setGrant(c.grant);
+        },
         connection: {
             connect: async (device: string, speed: number) => {
-                await post('connect', {device, speed});
+                await writerPost('connect', {device, speed});
             },
-            disconnect: async () => { await post('disconnect'); },
+            disconnect: async () => { await writerPost('disconnect'); },
             listPorts: () => get('ports') as Promise<PortInfo[]>,
         },
         // No msgFile capability yet: message files arrive with the
@@ -100,16 +119,25 @@ async function httpError(resp: Response): Promise<HttpError> {
 // second one carrying only the high-rate gps:packet stream, open only
 // while someone is subscribed to it -- the server streams packets only
 // while such a client is connected.
+//
+// It also owns the window's writer state. The server broadcasts a sticky
+// `writer` event carrying the current grant; this window is the writer iff
+// that grant equals the grant from its own claim. It exposes this to the app
+// as the synthetic wb:readonly event (boolean payload) and surfaces a stale
+// token, seen as a terminal EventSource close, as wb:authlost.
 class EventStreams {
     private query: string;
     private listeners = new Map<string, Set<(data: any) => void>>();
     private main?: EventSource;
     private packets?: EventSource;
-    private lost = false;
-    private terminalEvent?: string;
+    private grant: string;
+    private broadcast = ''; // latest broadcast grant; '' until the first writer event
+    private ro = false;
+    private authLost = false;
 
-    constructor(query: string) {
+    constructor(query: string, grant: string) {
         this.query = query;
+        this.grant = grant;
     }
 
     on(name: string, cb: (data: any) => void): () => void {
@@ -120,16 +148,16 @@ class EventStreams {
             this.listeners.set(name, set);
         }
         set.add(cb);
-        if (this.lost) {
-            if (name === this.terminalEvent) queueMicrotask(() => cb({}));
-            return () => { set.delete(cb); };
+        // Synthetic events ride no stream: register the callback and deliver
+        // the current state so a late subscriber is consistent.
+        if (name === 'wb:readonly') {
+            const ro = this.ro;
+            queueMicrotask(() => { if (set!.has(cb)) cb(ro); });
+            return () => { set!.delete(cb); };
         }
-        // wb:seatlost and wb:authlost are synthetic terminal events fired by
-        // terminate(); they ride no stream, so registering the callback is all
-        // that is needed. Keeping them off the stream also means subscribing to
-        // one never opens the stream ahead of the panels' dispatch listeners.
-        if (name === 'wb:seatlost' || name === 'wb:authlost') {
-            return () => { set.delete(cb); };
+        if (name === 'wb:authlost') {
+            if (this.authLost) queueMicrotask(() => { if (set!.has(cb)) cb({}); });
+            return () => { set!.delete(cb); };
         }
         if (name === 'gps:packet') {
             if (!this.packets) {
@@ -139,79 +167,81 @@ class EventStreams {
         } else {
             if (!this.main) {
                 this.main = this.openStream(this.query);
+                this.main.addEventListener('writer', e => this.onWriter(e as MessageEvent));
             }
             if (first) {
                 this.addDispatch(this.main, name);
             }
         }
         return () => {
-            set.delete(cb);
-            if (name === 'gps:packet' && set.size === 0 && this.packets) {
+            set!.delete(cb);
+            if (name === 'gps:packet' && set!.size === 0 && this.packets) {
                 this.packets.close();
                 this.packets = undefined;
             }
         };
     }
 
-    seatLost() {
-        this.terminate('wb:seatlost');
+    // readOnly forces the window into the read-only state, used as a belt-and-
+    // braces path when a writer POST returns 410 (a missed writer broadcast).
+    readOnly() {
+        this.setReadOnly(true);
     }
 
-    // terminate closes both streams and fires one terminal event, latching it
-    // so a later subscriber to that event still gets it. wb:seatlost drives the
-    // takeover overlay; wb:authlost the stale-auth notice.
-    private terminate(event: string) {
-        if (this.lost) return;
-        this.lost = true;
-        this.terminalEvent = event;
-        this.main?.close();
-        this.packets?.close();
-        this.main = undefined;
-        this.packets = undefined;
-        for (const cb of this.listeners.get(event) ?? []) {
-            cb({});
+    // setGrant adopts a fresh claim's grant (a re-claim). The broadcast is the
+    // sole authority for the writable flag: compare against the latest one
+    // rather than forcing writable, so a stale claim response (another window
+    // claimed while ours was in flight, and its broadcast already arrived)
+    // cannot mark this window writable. If our own broadcast has not arrived
+    // yet this shows read-only for an instant until it does -- the safe
+    // direction. Before any broadcast the window is the writer (boot).
+    setGrant(grant: string) {
+        this.grant = grant;
+        this.setReadOnly(this.broadcast !== '' && this.broadcast !== grant);
+    }
+
+    private onWriter(e: MessageEvent) {
+        let grant = '';
+        try {
+            grant = JSON.parse(e.data).grant;
+        } catch {
+            return;
+        }
+        this.broadcast = grant;
+        this.setReadOnly(grant !== this.grant);
+    }
+
+    private setReadOnly(ro: boolean) {
+        if (ro === this.ro) return;
+        this.ro = ro;
+        for (const cb of this.listeners.get('wb:readonly') ?? []) {
+            cb(ro);
         }
     }
 
-    // openStream opens an SSE EventSource for the seat. A takeover event means
-    // the seat was lost. A terminal close (readyState CLOSED) is ambiguous: it
-    // covers both a stale-seat 204 and a stale-token 401 after a restart, and
-    // EventSource hides the status, so terminalClose probes to tell them apart.
-    // Transient drops leave readyState CONNECTING and are ignored so the browser
-    // can reconnect and re-prime.
+    // openStream opens an SSE EventSource for the token. A terminal close
+    // (readyState CLOSED) is unambiguous now that SSE is seat-free: it can only
+    // mean the token went stale after a server restart, so surface wb:authlost.
+    // A transient drop leaves readyState CONNECTING and is ignored so the
+    // browser reconnects and re-primes.
     private openStream(query: string): EventSource {
         const es = new EventSource('/sse' + query);
-        es.addEventListener('takeover', () => this.seatLost());
         es.addEventListener('error', () => {
-            if (es.readyState === EventSource.CLOSED) this.terminalClose();
+            if (es.readyState === EventSource.CLOSED) this.fireAuthLost();
         });
         return es;
     }
 
-    // terminalClose reacts to an EventSource that closed without retrying. The
-    // server answered a terminal status that EventSource does not expose, so
-    // probe with a GET (token-checked but seat-free) to tell a stale seat from
-    // a stale token: 200 means the token still works, so the seat was
-    // superseded; 401 means a restart minted a fresh token, so signal stale
-    // auth to reach the notice pointing at the newly printed URL.
-    private async terminalClose() {
-        if (this.lost) return;
-        let resp;
-        try {
-            resp = await fetch('/api/state' + this.query);
-        } catch {
-            return; // server unreachable; not a terminal condition
+    private fireAuthLost() {
+        if (this.authLost) return;
+        this.authLost = true;
+        this.main?.close();
+        this.packets?.close();
+        this.main = undefined;
+        this.packets = undefined;
+        for (const cb of this.listeners.get('wb:authlost') ?? []) {
+            cb({});
         }
-        if (resp.status === 401) {
-            // The token for this run is gone (a restart minted a fresh one).
-            // Signal stale auth directly rather than reloading: a reload would
-            // read the shared token store, and a fresh token another tab had
-            // installed there would let this stale tab reclaim that tab's seat.
-            // wb:authlost shows the notice without ever touching the seat.
-            this.terminate('wb:authlost');
-            return;
-        }
-        this.seatLost();
     }
 
     private addDispatch(es: EventSource, name: string) {

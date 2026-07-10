@@ -10,12 +10,10 @@ in run.py.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import socket
 import time
-import urllib.request
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -123,25 +121,6 @@ class Satpulsewb:
             if time.time() >= deadline:
                 raise RuntimeError(f"satpulsewb did not listen on {ctx.wb_port} within 15s")
             time.sleep(0.05)
-        ctx.seat = self._claim_seat(ctx)
-
-    def _claim_seat(self, ctx: Context) -> str:
-        """Claim the single workbench seat the scenario's POSTs and SSE opens carry.
-
-        Every POST but the claim itself, and every SSE open, must present the
-        current seat; the checks share this one via ctx.wb_url. Claimed once here
-        so readiness ends with a usable seat. ctx.seat is still empty, so wb_url
-        sends the token but no seat -- the claim is the one seat-free POST.
-        """
-        req = urllib.request.Request(
-            ctx.wb_url("/api/seat"), data=b"{}", method="POST",
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            seat = json.loads(resp.read()).get("seat")
-        if not isinstance(seat, str) or not seat:
-            raise RuntimeError("satpulsewb seat claim returned no seat")
-        return seat
 
     def _match_url(self, log_path: str) -> re.Match[str] | None:
         try:

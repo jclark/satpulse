@@ -35,33 +35,41 @@ type server struct {
 
 func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string, vendor gpsreg.Vendor) *server {
 	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, vendor: vendor, mux: http.NewServeMux()}
-	// get: token-checked. post: token-checked and requires a JSON
-	// Content-Type, which blocks cross-site CSRF (see requireJSON), and
-	// a current seat. Claiming the seat is the one POST without a seat.
+	// Seed the writer grant with a no-holder value: after a restart with the
+	// token disabled, an old tab's EventSource reconnects and re-primes from
+	// this hub, and must learn that its previous grant is stale (flipping
+	// read-only) rather than keep rendering writable against the empty seat,
+	// which 410s every writer POST. A first claim overwrites the seed.
+	hub.broadcastWriter(randHex())
+	// get: token-checked. reader: token-checked and requires a JSON
+	// Content-Type, which blocks cross-site CSRF (see requireJSON); for POSTs
+	// that only read session state, plus the seat claim itself. writer: like
+	// reader but also requires the current seat, for the mutating session
+	// operations. Claiming the seat is the one mutating POST without a seat.
 	get := s.auth
-	claim := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(requireJSON(h)) }
-	post := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(s.requireSeat(requireJSON(h))) }
+	reader := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(requireJSON(h)) }
+	writer := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(s.requireSeat(requireJSON(h))) }
 	s.mux.Handle("/", http.FileServer(http.FS(webContent())))
 	s.mux.HandleFunc("GET /sse", get(s.handleSSE))
-	s.mux.HandleFunc("POST /api/seat", claim(s.handleSeat))
+	s.mux.HandleFunc("POST /api/seat", reader(s.handleSeat))
 	s.mux.HandleFunc("GET /api/state", get(s.handleState))
 	s.mux.HandleFunc("GET /api/receiver", get(s.handleReceiver))
 	s.mux.HandleFunc("GET /api/speed", get(s.handleSpeed))
 	s.mux.HandleFunc("GET /api/corrections", get(s.handleCorrState))
 	s.mux.HandleFunc("GET /api/ports", get(s.handlePorts))
-	s.mux.HandleFunc("POST /api/connect", post(s.handleConnect))
-	s.mux.HandleFunc("POST /api/disconnect", post(s.handleDisconnect))
-	s.mux.HandleFunc("POST /api/config/read", post(s.handleReadConfig))
-	s.mux.HandleFunc("POST /api/config/apply", post(s.handleApplyConfig))
-	s.mux.HandleFunc("POST /api/signals", post(s.handleSignals))
-	s.mux.HandleFunc("POST /api/corrections/start", post(s.handleCorrStart))
-	s.mux.HandleFunc("POST /api/corrections/stop", post(s.handleCorrStop))
-	s.mux.HandleFunc("POST /api/decode-packet", post(s.handleDecodePacket))
-	s.mux.HandleFunc("POST /api/geo/ecef-to-llh", post(s.handleECEFtoLLH))
-	s.mux.HandleFunc("POST /api/geo/llh-to-ecef", post(s.handleLLHtoECEF))
-	s.mux.HandleFunc("POST /api/geo/check-on-earth", post(s.handleCheckOnEarth))
-	s.mux.HandleFunc("POST /api/geo/vel-ned-to-ecef", post(s.handleVelNEDtoECEF))
-	s.mux.HandleFunc("POST /api/geo/vel-ecef-to-ned", post(s.handleVelECEFtoNED))
+	s.mux.HandleFunc("POST /api/connect", writer(s.handleConnect))
+	s.mux.HandleFunc("POST /api/disconnect", writer(s.handleDisconnect))
+	s.mux.HandleFunc("POST /api/config/read", writer(s.handleReadConfig))
+	s.mux.HandleFunc("POST /api/config/apply", writer(s.handleApplyConfig))
+	s.mux.HandleFunc("POST /api/signals", reader(s.handleSignals))
+	s.mux.HandleFunc("POST /api/corrections/start", writer(s.handleCorrStart))
+	s.mux.HandleFunc("POST /api/corrections/stop", writer(s.handleCorrStop))
+	s.mux.HandleFunc("POST /api/decode-packet", reader(s.handleDecodePacket))
+	s.mux.HandleFunc("POST /api/geo/ecef-to-llh", reader(s.handleECEFtoLLH))
+	s.mux.HandleFunc("POST /api/geo/llh-to-ecef", reader(s.handleLLHtoECEF))
+	s.mux.HandleFunc("POST /api/geo/check-on-earth", reader(s.handleCheckOnEarth))
+	s.mux.HandleFunc("POST /api/geo/vel-ned-to-ecef", reader(s.handleVelNEDtoECEF))
+	s.mux.HandleFunc("POST /api/geo/vel-ecef-to-ned", reader(s.handleVelECEFtoNED))
 	return s
 }
 
@@ -141,35 +149,31 @@ func sessionError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusConflict, err)
 }
 
+// handleSeat claims the write seat, unconditionally: it mints a fresh seat and
+// grant, makes them current, and broadcasts the grant so every window learns
+// who now holds the seat. The seat is secret (returned only here, carried on
+// writer POSTs); the grant is public (broadcast, letting each window decide for
+// itself whether it is the writer). Newest claim wins.
 func (s *server) handleSeat(w http.ResponseWriter, _ *http.Request) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	seat := hex.EncodeToString(b)
+	seat, grant := randHex(), randHex()
 	s.seatMu.Lock()
-	old := s.seat
 	s.seat = seat
-	s.hub.takeover(old)
+	s.hub.broadcastWriter(grant)
 	s.seatMu.Unlock()
-	writeJSON(w, map[string]string{"seat": seat})
+	writeJSON(w, map[string]string{"seat": seat, "grant": grant})
+}
+
+// randHex returns a 128-bit crypto-random value as hex, used for the secret
+// seat, the public grant, and the no-holder seed grant. rand.Read cannot fail
+// (it crashes the program if the platform source of randomness does).
+func randHex() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 func (s *server) handleSSE(w http.ResponseWriter, r *http.Request) {
-	seat := r.URL.Query().Get("seat")
-	if seat == "" {
-		writeError(w, http.StatusBadRequest, errors.New("seat is required"))
-		return
-	}
-	s.seatMu.Lock()
-	if seat != s.seat {
-		s.seatMu.Unlock()
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	c, prime := s.hub.subscribe(seat, r.URL.Query().Get("stream") == "packets")
-	s.seatMu.Unlock()
+	c, prime := s.hub.subscribe(r.URL.Query().Get("stream") == "packets")
 	defer s.hub.unsubscribe(c)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -194,12 +198,6 @@ func (s *server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		case <-c.dead:
 			// Fell behind and overflowed; ending the response makes the
 			// browser reconnect and re-prime from the cache.
-			return
-		case e := <-c.takeover:
-			if _, err := io.WriteString(w, e.Format()); err != nil {
-				return
-			}
-			flusher.Flush()
 			return
 		case e := <-c.ch:
 			if _, err := io.WriteString(w, e.Format()); err != nil {

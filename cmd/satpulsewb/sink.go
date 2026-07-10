@@ -17,22 +17,20 @@ type sseHub struct {
 	clients  map[*sseClient]struct{}
 	cache    map[session.EventName]sse.Event
 	msgCache map[string]sse.Event // latest gps:msg per stickyMsgKind
+	writer   sse.Event            // latest server-broadcast writer-grant event (sticky)
 	npackets int
 }
 
 // sseClient is one SSE connection. A packets client receives only
 // gps:packet events; a regular client receives everything else.
 type sseClient struct {
-	ch       chan sse.Event
-	seat     string
-	takeover chan sse.Event
+	ch chan sse.Event
 	// dead is closed when the client falls too far behind (its buffer
 	// overflows); handleSSE then ends the response so the browser
 	// EventSource reconnects and re-primes from the cache.
 	dead       chan struct{}
 	packets    bool
 	overflowed bool
-	takenOver  bool
 }
 
 const clientChanSize = 256
@@ -128,7 +126,7 @@ func (h *sseHub) Emit(ev session.Event) {
 		delete(h.cache, session.EventBaseARP)
 	}
 	for c := range h.clients {
-		if c.packets != pkt || c.takenOver {
+		if c.packets != pkt {
 			continue
 		}
 		select {
@@ -156,13 +154,11 @@ func (h *sseHub) Wants(name session.EventName) bool {
 // subscribe registers a client and returns it along with the priming
 // events, snapshotted atomically with registration so no event is lost
 // or misordered between snapshot and live delivery.
-func (h *sseHub) subscribe(seat string, packets bool) (*sseClient, []sse.Event) {
+func (h *sseHub) subscribe(packets bool) (*sseClient, []sse.Event) {
 	c := &sseClient{
-		ch:       make(chan sse.Event, clientChanSize),
-		seat:     seat,
-		takeover: make(chan sse.Event, 1),
-		dead:     make(chan struct{}),
-		packets:  packets,
+		ch:      make(chan sse.Event, clientChanSize),
+		dead:    make(chan struct{}),
+		packets: packets,
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -172,6 +168,9 @@ func (h *sseHub) subscribe(seat string, packets bool) (*sseClient, []sse.Event) 
 		return c, nil
 	}
 	var prime []sse.Event
+	if !h.writer.IsZero() {
+		prime = append(prime, h.writer)
+	}
 	for _, name := range stickyEvents {
 		if e, ok := h.cache[name]; ok {
 			prime = append(prime, e)
@@ -183,20 +182,29 @@ func (h *sseHub) subscribe(seat string, packets bool) (*sseClient, []sse.Event) 
 	return c, prime
 }
 
-func (h *sseHub) takeover(seat string) {
-	if seat == "" {
-		return
-	}
-	e, err := sse.Make("takeover", struct{}{})
+// broadcastWriter caches and fans out the sticky writer-grant event, which
+// tells each window whether it holds the write seat. It originates from the
+// server on every seat claim, not from the session, so it lives beside the
+// event cache rather than passing through Emit.
+func (h *sseHub) broadcastWriter(grant string) {
+	e, err := sse.Make("writer", map[string]string{"grant": grant})
 	if err != nil {
 		return
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.writer = e
 	for c := range h.clients {
-		if c.seat == seat && !c.takenOver {
-			c.takenOver = true
-			c.takeover <- e
+		if c.packets {
+			continue
+		}
+		select {
+		case c.ch <- e:
+		default:
+			if !c.overflowed {
+				c.overflowed = true
+				close(c.dead)
+			}
 		}
 	}
 }

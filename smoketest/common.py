@@ -51,7 +51,6 @@ class SmokeContext(Protocol):
     # disabled), set at readiness from the printed URL.
     wb_port: int
     token: str
-    seat: str
 
     @property
     def serial(self) -> str: ...
@@ -191,20 +190,13 @@ def check_sse(ctx: SmokeContext, expect: Iterable[str] = (), read_seconds: float
     return collect_sse(ctx.http_url("/sse"), expect, read_seconds)
 
 
-def collect_sse(url: str, expect: Iterable[str] = (), read_seconds: float = 8.0,
-                on_open: Callable[[], None] | None = None) -> set[str]:
+def collect_sse(url: str, expect: Iterable[str] = (), read_seconds: float = 8.0) -> set[str]:
     """Read an SSE stream, returning the event names seen up to a deadline.
 
     Returns as soon as every name in expect has appeared, else after
     read_seconds; asserts none of expect is missing. Shared by the daemon's
     /sse check and the satpulsewb workbench SSE checks (which pass a URL with
     the access token and, for the packets stream, ?stream=packets).
-
-    on_open, if given, runs once the stream is open and its reader is draining.
-    The server subscribes the client before it sends the response headers, so
-    urlopen has returned by then; a caller that must act only after the stream
-    is provably subscribed (e.g. superseding this seat) hooks in here rather
-    than racing a fixed sleep.
     """
     want = set(expect)
     names: set[str] = set()
@@ -224,8 +216,6 @@ def collect_sse(url: str, expect: Iterable[str] = (), read_seconds: float = 8.0,
 
     t = threading.Thread(target=reader, daemon=True)
     t.start()
-    if on_open is not None:
-        on_open()
     deadline = time.time() + read_seconds
     while time.time() < deadline and not want.issubset(names):
         time.sleep(0.1)
@@ -489,6 +479,20 @@ def wb_post(ctx: SmokeContext, path: str, body: JsonObject, timeout: float = 4.0
         return None, b""
 
 
+def wb_claim(ctx: SmokeContext) -> str:
+    """Claim the workbench write seat, returning the secret seat value.
+
+    Writer POSTs (the mutating session operations) carry the current seat as a
+    query parameter; reader POSTs, GETs, and SSE opens are seat-free. Newest
+    claim wins unconditionally, so a check that needs to write just claims.
+    """
+    status, body = wb_post(ctx, "/api/seat", {})
+    assert status == 200, f"seat claim expected 200, got {status}"
+    seat = cast(JsonObject, json.loads(body)).get("seat")
+    assert isinstance(seat, str) and seat, f"seat claim returned no seat: {body!r}"
+    return seat
+
+
 def check_wb_auth_required(ctx: SmokeContext) -> None:
     """The token-protected API rejects a request with no token and accepts one with it."""
     assert ctx.token, "check_wb_auth_required needs a token-enabled launch"
@@ -506,14 +510,16 @@ def check_wb_open_no_token(ctx: SmokeContext) -> None:
 
 
 def check_wb_csrf(ctx: SmokeContext) -> None:
-    """A state-changing POST without application/json is rejected (the CSRF gate).
+    """A POST without application/json is rejected (the CSRF gate).
 
-    This holds even when the token is disabled, where auth is a no-op: the gate
-    is what stops a cross-site page issuing a simple POST at the receiver.
-    urllib defaults an un-typed POST body to x-www-form-urlencoded, exactly the
+    This holds even when the token is disabled, where auth is a no-op. The
+    target is a reader POST, which has no seat requirement: the content-type
+    gate is all that stops a cross-site page issuing a simple POST at it
+    (writer POSTs are additionally guarded by the secret seat). urllib
+    defaults an un-typed POST body to x-www-form-urlencoded, exactly the
     simple-request content type the gate must reject.
     """
-    req = urllib.request.Request(ctx.wb_url("/api/disconnect"), data=b"x", method="POST")
+    req = urllib.request.Request(ctx.wb_url("/api/signals"), data=b"x", method="POST")
     try:
         with urllib.request.urlopen(req, timeout=2) as resp:
             status: int | None = resp.status
@@ -598,33 +604,40 @@ def check_wb_priming(ctx: SmokeContext, expect: Iterable[str] = ("gps:state", "g
 
 
 def check_wb_seat_takeover(ctx: SmokeContext) -> None:
-    """A second seat claim dethrones the first (the single-seat guarantee).
+    """A second seat claim supersedes the first without closing its stream.
 
-    Claiming a new seat closes the previous seat's event stream with a takeover
-    event, and a POST still carrying the superseded seat is refused with 410
-    (distinct from the 409 used for session conflicts). Supersedes ctx.seat, so
-    run it last; it leaves the context on the surviving seat.
+    The write seat is public as a sticky `writer` grant event: opening a stream
+    primes the current grant, and claiming a second seat broadcasts a fresh
+    grant that reaches the first, still-open stream (no stream is terminated).
+    A writer POST still carrying the superseded seat is then refused with 410
+    (distinct from the 409 used for session conflicts).
     """
-    survivor: list[str] = []
-
-    def claim_second() -> None:
-        # collect_sse fires this once the first stream is open and subscribed
-        # (urlopen has returned), so the claim provably supersedes a live seat --
-        # no sleep, no race. The claim POST is seat-free, so the stale seat wb_url
-        # still puts on the URL is ignored.
+    old = wb_claim(ctx)
+    with urllib.request.urlopen(ctx.wb_url("/sse"), timeout=8) as resp:
+        # urlopen returns once the headers are in, and the server subscribes
+        # before sending them, so the second claim's grant cannot be in this
+        # stream's prime: seeing it below proves live delivery. SSE data
+        # buffers in the socket, so claiming before reading loses nothing.
         status, body = wb_post(ctx, "/api/seat", {})
         assert status == 200, f"second seat claim expected 200, got {status}"
-        survivor.append(cast(str, json.loads(body)["seat"]))
-
-    # collect_sse asserts the takeover event reaches the dethroned stream.
-    collect_sse(ctx.wb_url("/sse"), expect=["takeover"], read_seconds=6.0, on_open=claim_second)
-    assert survivor, "second seat claim did not complete"
-
-    # ctx.seat is still the superseded seat here (updated only below), so this
-    # POST carries it and must be refused.
-    status, _ = wb_post(ctx, "/api/disconnect", {})
+        new_grant = cast(JsonObject, json.loads(body))["grant"]
+        pending = ""
+        got = False
+        try:
+            for raw in resp:
+                line = raw.decode("utf-8", "replace").strip()
+                if line.startswith("event: "):
+                    pending = line[len("event: ") :]
+                elif line.startswith("data: ") and pending == "writer":
+                    if json.loads(line[len("data: ") :]).get("grant") == new_grant:
+                        got = True
+                        break
+                    pending = ""
+        except TimeoutError:
+            pass
+        assert got, "new grant not delivered to the open stream"
+    status, _ = wb_post(ctx, f"/api/disconnect?seat={old}", {})
     assert status == 410, f"POST with the superseded seat expected 410, got {status}"
-    ctx.seat = survivor[0]
 
 
 def check_wb_msg_primed(ctx: SmokeContext, kind: str, read_seconds: float = 5.0) -> None:
