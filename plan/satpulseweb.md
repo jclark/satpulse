@@ -12,8 +12,8 @@ through the same core.
 
 The work is delivered as a stack of individually reviewable PRs, one
 per phase, each branching off the previous phase's branch rather than
-master, with the Wails desktop app reworked on top at the end (on the
-desktop-gui branch). The phase structure and the branching and
+master, with the Wails desktop app reworked on top (on the
+desktop-gui branch, phase 4). The phase structure and the branching and
 history-preservation strategy are described under Delivery below.
 
 Prerequisite: the web toolchain reorganisation (#283,
@@ -106,8 +106,8 @@ The package imports `gps/gpsreg` directly and takes the vendor as a
 command-line layer interacts with `gpsreg` and injects
 implementations downward ("generally"), and is a deliberate choice:
 every conceivable consumer of this package is a GUI shell that wants
-the full registry linked, the vendor is naturally a per-connection
-runtime choice (a connect-form dropdown mirroring `satpulsetool gps
+the full registry linked, the vendor is naturally a per-session
+runtime choice (a `--vendor` flag mirroring `satpulsetool gps
 --vendor`), and reconnection needs to rebuild the stateful packet
 processors itself. An injected protocol-source interface can be
 introduced later if a registry-free consumer ever materializes.
@@ -300,14 +300,16 @@ and satpulsetool must not import the package, so their binaries link
 none of it and their Linux builds remain CGO-free. Only satpulsewb
 and the desktop shell import it.
 
-A later phase reimplements the Linux side by hand -- pure stdlib,
-walking `/dev/serial/by-id` symlinks (human-readable names) and
-`/sys/class/tty/*/device` (USB metadata, and platform UARTs such as
-ttyAMA0 on a Pi, which the dependency's USB-centric enumeration
-misses) -- and drops go.bug.st from the Linux build. That is what
-makes the satpulsewb Linux binary CGO_ENABLED=0/libc-free like its
-siblings. The macOS binary may keep cgo (IOKit or go.bug.st) for
-proper display names; libc-freedom is a Linux property.
+The dependency does not cost libc-freedom: go.bug.st's only cgo is
+in its darwin enumerator (IOKit); the Linux side is pure Go (a
+`/dev` name scan including platform UARTs like ttyAMA, with USB
+metadata from `/sys/class/tty/*/device`), so the satpulsewb Linux
+binary is statically linked as-is. An earlier plan to hand-roll the
+Linux enumeration (originally justified as restoring libc-freedom,
+which was never actually at risk) has been dropped; the one thing a
+hand-rolled version would add is `/dev/serial/by-id` human-readable
+port names, which can be done inside `gps/lib/serialenum` any time
+without a dedicated phase.
 
 ## Design: the satpulsewb binary
 
@@ -319,26 +321,76 @@ its dashboard (`time/internal/web`, #283); `go build` never needs
 npm. satpulsewb bundles its own frontend, so it embeds its own
 assets rather than reusing satpulsed's package.
 
-Invocation sketch:
+### Command line
+
+Flag parsing follows the gpscmd pattern (pflag, a flagVars struct,
+ContinueOnError); connection flags reuse the satpulsetool gps names
+and help strings exactly.
 
 ```
-satpulsewb [--listen addr] [--token STRING]
-            [-d DEVICE [-s SPEED] | --socket PATH | --tcp HOST:PORT]
+satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
+           [-d DEVICE [-s SPEED]] [--vendor NAME]
 ```
 
-- Default bind is localhost. Binding non-locally is an explicit
-  `--listen` choice.
-- A bearer token is always required: `--token` to specify, otherwise
-  generated and printed at startup as part of the URL
-  (`http://host:8080/?t=XYZ`); the SPA stores it and sends it on
-  every request/SSE connection. When run on the user's own machine,
-  optionally open the browser.
-- `--cert`/`--key` for TLS can be added when serving across a LAN;
-  deliberately not required for the first version given the
-  ephemeral, token-gated lifecycle.
-- Connection flags mirror `satpulsetool gps`; the connect form in the
-  UI can also drive connection interactively (device dropdown from
-  `gps/lib/serialenum`, vendor dropdown mirroring `--vendor`).
+- No arguments just works: bind all interfaces, canonical default
+  port (falling back to an OS-picked port if taken), per-run
+  generated token, and one printed URL per non-loopback interface
+  address with the token as a query parameter
+  (`http://192.168.1.40:PORT/?t=XYZ`). The SPA stores the token,
+  strips `?t=` from the URL bar, and sends it on every request and
+  SSE connection. The per-run token is the only auth model: no
+  user-specified token value, no persistent token state, no TLS in
+  the first version. On a network the user does not trust, the
+  answer is `-L localhost:PORT` plus an ssh tunnel, which the man
+  page documents.
+- `-L`/`--listen HOST:PORT` takes control of the bind address, and
+  with an explicit port a bind failure is an error, no fallback
+  (the user may have an ssh tunnel pointing at that port). Since
+  the typical `-L` workflow is an ssh tunnel, `-L` also disables
+  the token; `-T`/`--token` turns generated-token auth back on
+  (`-T` without `-L` is accepted and redundant). Serving without a
+  token on a non-loopback address prints a notice.
+- `-d`/`--serial-device` auto-connects at startup;
+  `-s`/`--device-speed` stays optional as in satpulsetool. Connect is
+  asynchronous, so a browser that arrives later catches up from
+  the snapshot endpoints. Without `-d` the session starts
+  disconnected and the user connects from the UI (device dropdown
+  from `gps/lib/serialenum`).
+- `--vendor` (empty = autodetect) selects the vendor for every
+  connect in the session, at startup or from the UI, and does not
+  require `-d`. It is an expert knob and stays command-line only:
+  the UI has no vendor control. (An earlier revision had a vendor
+  dropdown in the connect bar; it was removed as clutter serving a
+  rare case.)
+- `--packet-log PATH` mirrors satpulsetool and wires the session's
+  `Options.PacketLog`.
+- Browser auto-open by default (deferred to phase 7, its own PR),
+  gated on a local interactive GUI session. The gate is display
+  presence, not receiver locality:
+  sshing into the box with the receiver must not open a browser,
+  while running at a local desktop should, even when the receiver is
+  remote over a later proxy transport. `SSH_CONNECTION` or `SSH_TTY`
+  in the environment is a universal veto; otherwise Linux
+  additionally requires `DISPLAY` or `WAYLAND_DISPLAY`, macOS needs
+  only not-remote (the console user always has the window server),
+  and Windows normally has a desktop. What opens is the loopback URL
+  (`http://127.0.0.1:PORT/`, with the per-run token appended when
+  there is one), orthogonal to the bind: the default all-interfaces
+  bind already includes loopback, so the per-address LAN URLs still
+  print and stay reachable, and auto-open only adds the local tab. A
+  small per-OS launcher does it (`open`/`xdg-open`/`rundll32`, no new
+  external dependency), fired after the listener is bound,
+  non-blocking, with launch failure logged at debug only since the
+  printed URL is the fallback. `--no-open` suppresses it, for a local
+  desktop where the tab is unwanted or when the tool is scripted (the
+  detection has no positive override; the printed URL covers the rare
+  case where it guesses headless but a browser is in fact reachable).
+  This supersedes the earlier "no browser auto-open" decision, which
+  assumed the primary flow was ssh to a headless box; macOS is now
+  the lead desktop platform.
+- `--socket` and `--tcp` are deferred to phase 10 (see Transports
+  and the Delivery section); `--msg-dir` arrives with the phase-6
+  message-file PR.
 
 ### HTTP API
 
@@ -393,7 +445,7 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   universal core -- snapshots, config read/apply, message-file send,
   event subscription -- that the config panel and all tabs depend
   only on, and an optional connection-management capability --
-  connect/disconnect, port listing, vendor selection, and the
+  connect/disconnect, port listing, and the
   connecting/reconnecting connection states -- implemented only by
   the direct-serial and proxy backends. The two implementations here
   are the existing generated wailsjs bindings (desktop) and fetch+SSE
@@ -404,10 +456,10 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   rather than an imperative Configure run with live progress. This
   overturns webui/packages/workbench/plan/shared-webui.md's assumption
   that the config panel stays desktop-specific; that file is corrected
-  in phase 5.
-- A satpulsewb entry package in the workspace (index.html, token
-  handling, fetch/SSE transport wiring), whose Vite build output is
-  what `cmd/satpulsewb` embeds.
+  in phase 4.
+- A satpulsewb entry package in the workspace (`workbench-http`:
+  index.html, token handling, fetch/SSE transport wiring), whose
+  Vite build output is what `cmd/satpulsewb` embeds.
 - Web replacements for native chrome: MessageDialog error popups
   become inline notices; BrowserOpenURL becomes window.open (already
   anticipated as a callback prop in the shared map component plan).
@@ -428,8 +480,14 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   (tcp-connect): inter-packet idle detection is unreliable over
   TCP, so the NMEA satellite buffer falls back to its
   key-detection flush and the satellite display lags one cycle;
-  configuration is unaffected. TCP can slip to a follow-on if
-  phase 3 ships serial+socket only.
+  configuration is unaffected.
+
+Serial ships in phase 3; socket and TCP land together in phase 10.
+The session side of socket is already done (SocketOpener,
+reset gating), but the UI has no capability gating for proxy
+connections yet -- reset-class controls must be hidden or disabled,
+driven by the wire contract -- and TCP additionally needs the gpsio
+dialing.
 
 ### Build, packaging, docs
 
@@ -536,28 +594,23 @@ resurrected original. Record the provenance ("derived from
 desktop/app.go") in the commit message, since the delete/re-add
 breaks `git log --follow`. Includes
 the session unit tests and internals.md entries. The desktop app is
-not rewired in this phase; that is phase 5.
+not rewired in this phase; that is phase 4.
 
-### Phase 3: cmd/satpulsewb (one or two PRs)
+### Phase 3: cmd/satpulsewb (one PR)
 
-The binary: server, token auth, SSE sink, embed bridge, msg-file
-library endpoints, the fetch/SSE transport implementation and entry
-package in the workspace. If one PR is too large, split
-monitor-first (server skeleton + connect + monitor/packets tabs),
-then config + message files + corrections. NEWS.md entry and man page
-ride whichever PR makes the feature usable.
+The key phase: the binary (server, token auth, SSE sink, embed
+bridge) plus the fetch/SSE transport implementation and entry
+package in the workspace, carrying the whole existing UI. Every tab
+transfers as-is -- the native msg-file dialog is the only frontend
+call with no web counterpart -- so config, monitor, packets, and
+corrections all land here; the Messages tab is hidden until phase 6.
+Serial transport only (see Transports). This alone is a usable
+tool, so the NEWS.md entry and man page ride this PR.
 
-### Phase 4: libc-free Linux enumeration (one PR)
+### Phase 4: rework desktop-gui on top (branch work, no master PR)
 
-Hand-rolled pure-Go Linux implementation in `gps/lib/serialenum` (see
-Design: serial enumeration); drop go.bug.st from the Linux build;
-verify the satpulsewb Linux binary builds with CGO_ENABLED=0 and has
-no dynamic dependencies.
-
-### Phase 5: rework desktop-gui on top (branch work, no master PR)
-
-On the desktop-gui branch: merge the tip of the stack (the phase-4
-branch, or master once the stack has landed), then:
+On the desktop-gui branch: merge the tip of the stack (the phase-3
+`satpulsewb` branch), then:
 
 - delete the branch's local copies of the frontend components in
   favor of the workspace packages (the `file:` dependency mechanism
@@ -566,21 +619,117 @@ branch, or master once the stack has landed), then:
   `gps/app/session`: sink implementation mapping Emit to
   runtime.EventsEmit, bindings adapting errors to Result, dialogs,
   logdir, darwin enumeration;
-- optionally adopt the msg-file library browser alongside the native
-  dialog;
+- keep the native dialog for message files (the library browser
+  arrives in phase 6 and can be adopted at a later merge);
 - correct webui/packages/workbench/plan/shared-webui.md (the
   config panel is shared after all).
+
+Message handling background: this phase needs nothing from phase 6,
+because message files are already fully supported on both sides of
+the seam. The session exports the whole msg-file surface
+(`SetMsgFile(*msgfile.Parsed)`, `SendMsgFile`, `CancelMsgSend`,
+extracted in phase 2), and the workbench frontend carries the
+complete Messages tab (msgfile-panel.tsx), shown whenever the
+transport provides the optional `msgFile` capability. That
+capability's `loadMsgFile(): Promise<MsgFileInfo | null>` is exactly
+the native-dialog shape: the Wails shell implements it as
+OpenFileDialog, parse the file with `msgfile`, `SetMsgFile`, return
+path and tags (null on cancel). Phase 6's endpoints, catalog UI, and
+`--msg-dir` are the web-side replacement for the dialog, not a
+dependency. This phase is therefore also the first shell to exercise
+the session's msg-file send path (sendWorker, correlator, response
+events), which satpulsewb cannot reach until phase 6 adds its
+endpoints. Expected interaction with phase 6: the library catalog
+may extend `MsgFileTransport`; the desktop picks that up in a later
+routine merge, which is when the adopt-the-library-browser option
+above becomes available.
 
 After this phase, once the stack has landed on master, the branch's
 delta over master is small: one module directory containing a thin
 shell.
 
-## Open decisions
+### Phase 5: replay smoke tests (one PR)
+
+Black-box smoke tests of the satpulsewb binary, feasible as soon as
+phase 3 exists: replaying a packet log through a FIFO with
+`satpulsetool pack --realtime` drives the whole monitor path with no
+hardware, because gpscfg skips probing on a read-only port --
+connect succeeds and passive detection takes over. The tests are a
+sibling runner in `smoketest/` (like `system.py`: its own lifecycle,
+sharing `common.py` and the platform transport code), not a scenario
+family in `run.py`, whose per-scenario lifecycle is satpulsed-shaped
+(a rendered toml template, config-derived listeners and peers).
+Checks at smoketest depth: startup and the printed URL/token, auth
+enforcement and the `-L`/`-T` token modes, snapshot endpoints
+populating as the replay flows, SSE delivery and priming,
+packet-stream gating driven by a scripted SSE client, clean
+shutdown (auto-open gating checks arrive with the phase-7 auto-open
+PR). Includes
+recording a purpose-built F9P fixture (the message set the workbench
+displays, long enough at the chosen replay factor to outlast the
+slowest check); the existing multi-vendor logs under
+`gps/testdata/packets/` serve as secondary fixtures, since detection
+is passive.
+
+### Phase 6: message files (one PR)
+
+Message-file loading, the one piece of genuinely new UI: the
+library and upload endpoints (including the path-traversal
+sanitization), the browsable catalog UI, `--msg-dir`, and the
+msg-file send/cancel endpoints; un-hides the Messages tab.
+
+### Phase 7: browser auto-open (one PR)
+
+Browser auto-open as specified under Command line above: the
+local-GUI-session gate, the per-OS launcher, `--no-open`, and the
+smoke-test checks for the gating (environment manipulation in the
+phase-5 runner) ride along.
+
+### Phase 8: Playwright browser tests (one PR)
+
+Branches off the phase-7 branch, continuing the stack (phase 4 is
+desktop-gui branch work, outside it).
+DOM-level journeys in a real browser, against the same launch and
+replay fixtures as phase 5: a small `@playwright/test` suite in the
+webui workspace whose setup starts satpulsewb on a FIFO replay.
+Journeys: the SPA boots and the token is consumed and stripped from
+the URL bar; satellites and position render and advance; the Packets
+tab starts and stops the packet stream; a second tab late-joins
+consistent from the event cache; the stale-token notice; re-priming
+after a server restart. After phase 6 so a Messages tab journey can
+ride along, and after the desktop rework (phase 4) so the components
+are serving both shells before journeys pin their DOM. Kept to a
+handful of shallow journeys: wire-level assertions stay in phase 5's
+runner, which needs no browser or npm.
+
+### Phase 9: simulator config tests (one PR)
+
+Extends both harnesses from the monitor path to the config path,
+using the u-blox receiver simulator (#362,
+[ublox-sim.md](ublox-sim.md)), which is developed in parallel on its
+own branch off master. The transport becomes a pty with the
+simulator behind it; the phase-5 runner and phase-8 journeys gain
+config checks: probe identifies the personality, the config panel
+populates from ReadConfig, an apply round-trips and a re-read shows
+the change, and enabling a message makes it appear in the packet
+stream. Not part of the stacked-PR series: it needs the simulator on
+master, so it runs after the stack and the simulator have both
+landed.
+
+### Phase 10: proxy transports (one PR)
+
+Proxy transports: `--socket` (SocketOpener is already done in the
+session, including reset gating) and `--tcp` (needs TCP dialing in
+gpsio), plus the UI capability gating for proxy connections --
+exposing socket-ness through the wire contract and hiding or
+disabling reset-class controls. Not part of the stacked-PR series:
+deliberately last, an ordinary PR off master once the stack has
+landed.
 
 - Names: the embed package location (own package vs go:embed directly
   in cmd/satpulsewb).
 - macOS enumeration in satpulsewb: keep go.bug.st, or glob
   `/dev/cu.*` and avoid cgo there too.
-- Whether TCP transport ships in phase 3 or as a follow-on.
+- The default port number.
 - Whether `satpulsetool gps` should print a hint about satpulsewb
   for discoverability.

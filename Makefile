@@ -31,7 +31,7 @@ GOARM=6
 ALL_GOARCH=arm64 amd64 arm
 TOMLS:=$(patsubst %,out/%/satpulse.toml,$(ALL_GOARCH))
 ARCH:=$(shell uname -m)
-MAN_PAGES=satpulsetool.1 satpulsetool-gps.1 satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 satpulsetool-syncsim.1 satpulsetool-convobs.1 satpulse.toml.5 satpulsed.8
+MAN_PAGES=satpulsetool.1 satpulsetool-gps.1 satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 satpulsetool-syncsim.1 satpulsetool-convobs.1 satpulsewb.1 satpulse.toml.5 satpulsed.8
 MAN_TARGETS = $(addprefix out/, $(MAN_PAGES))
 MAN_GZ_TARGETS = $(addsuffix .gz, $(MAN_TARGETS))
 
@@ -71,9 +71,10 @@ out/%: docs/man/%.md
 out/%.gz: out/%
 	gzip -c $< > $@
 
-install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpulse.toml $(MAN_TARGETS) gpsmsg
+install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpulsewb out/$(GOARCH)/satpulse.toml $(MAN_TARGETS) gpsmsg
 	install out/$(GOARCH)/satpulsed /usr/local/sbin/satpulsed
 	install out/$(GOARCH)/satpulsetool /usr/local/bin/satpulsetool
+	install out/$(GOARCH)/satpulsewb /usr/local/bin/satpulsewb
 	sed -e 's;/etc/satpulse.toml;$(CONFIG_FILE);g' \
 	  -e 's;/etc/satpulse.d/;/usr/local/etc/satpulse.d/;g' \
 	  -e 's;/usr/sbin/satpulsed;/usr/local/sbin/satpulsed;g' \
@@ -90,6 +91,7 @@ install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpul
 	install -D -m 644 out/satpulsetool-sdp.1 /usr/local/share/man/man1/satpulsetool-sdp.1
 	install -D -m 644 out/satpulsetool-syncsim.1 /usr/local/share/man/man1/satpulsetool-syncsim.1
 	install -D -m 644 out/satpulsetool-convobs.1 /usr/local/share/man/man1/satpulsetool-convobs.1
+	install -D -m 644 out/satpulsewb.1 /usr/local/share/man/man1/satpulsewb.1
 	install -D -m 644 out/satpulse.toml.5 /usr/local/share/man/man5/satpulse.toml.5
 	install -d /usr/local/share/man/man8
 	sed 's;/etc/satpulse.toml;$(CONFIG_FILE);g' out/satpulsed.8 > /usr/local/share/man/man8/satpulsed.8
@@ -100,6 +102,7 @@ uninstall:
 	rm -f /etc/systemd/system/satpulse@.service
 	rm -f /usr/local/sbin/satpulsed
 	rm -f /usr/local/bin/satpulsetool
+	rm -f /usr/local/bin/satpulsewb
 	# we don't uninstall /usr/local/etc/satpulse.toml
 	rm -f /usr/local/share/doc/satpulse/config-schema.json
 	rm -rf /usr/local/share/satpulse/gpsmsg
@@ -110,6 +113,7 @@ uninstall:
 	rm -f /usr/local/share/man/man1/satpulsetool-sdp.1
 	rm -f /usr/local/share/man/man1/satpulsetool-syncsim.1
 	rm -f /usr/local/share/man/man1/satpulsetool-convobs.1
+	rm -f /usr/local/share/man/man1/satpulsewb.1
 	rm -f /usr/local/share/man/man5/satpulse.toml.5
 	rm -f /usr/local/share/man/man8/satpulsed.8
 	systemctl daemon-reload

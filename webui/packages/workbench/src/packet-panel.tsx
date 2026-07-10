@@ -1,7 +1,6 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useRef, useMemo, useCallback} from 'preact/hooks';
-import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
-import {DecodePacket} from '../wailsjs/go/main/App';
+import {transport} from './transport';
 import type {PacketLogEntry} from '@satpulse/gps/gpsio';
 import {Button, Card} from './ui';
 
@@ -70,9 +69,12 @@ export function PacketPanel({visible, connState}: Props) {
     const [snapshotOpen, setSnapshotOpen] = useState(false);
     const [snapshotEntries, setSnapshotEntries] = useState<(PacketLogEntry & {key: string})[]>([]);
 
-    // Register gps:packet listener
+    // Register gps:packet listener only while the tab is visible: the
+    // subscription is what makes the backend stream the high-rate
+    // packet events.
     useEffect(() => {
-        const off = EventsOn('gps:packet', (pkt: PacketLogEntry) => {
+        if (!visible) return;
+        const off = transport.eventsOn('gps:packet', (pkt: PacketLogEntry) => {
             const tag = pkt.tag || '';
             const msg = pkt.msg || '';
             const out = !!pkt.out;
@@ -93,10 +95,8 @@ export function PacketPanel({visible, connState}: Props) {
                 setDisplayed(new Map(live));
             }
         });
-        return () => {
-            if (typeof off === 'function') off(); else EventsOff('gps:packet');
-        };
-    }, []);
+        return off;
+    }, [visible]);
 
     // Sorted rows
     const sortedRows = useMemo(() => {
@@ -173,7 +173,7 @@ export function PacketPanel({visible, connState}: Props) {
         const hex = !entry.ascii;
         const fallback = hex ? raw : stripTrailingEOL(raw);
         setDecodeContent('Decoding...');
-        DecodePacket(raw, {hex, out}).then(result => {
+        transport.decodePacket(raw, {hex, out}).then(result => {
             if (result) {
                 const keys = Object.keys(result);
                 const display = keys.length === 1 && keys[0] === 'payload' ? result.payload : result;

@@ -3,10 +3,8 @@ import {useState, useRef, useEffect, useCallback} from 'preact/hooks';
 import {Button, Input, Select} from './ui';
 import {speeds} from './speeds';
 
-export interface PortInfo {
-    device: string;
-    display: string;
-}
+import type {PortInfo} from './transport';
+export type {PortInfo};
 
 interface Props {
     connected: boolean;

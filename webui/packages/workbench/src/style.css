@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Scan the components next to this stylesheet even when it is imported
+   from another workspace package: the consumer resolves this package
+   through a node_modules symlink, which Tailwind's automatic source
+   detection excludes. */
+@source ".";
+
 @theme {
     --color-surface-1: var(--surface-1);
     --color-surface-2: var(--surface-2);

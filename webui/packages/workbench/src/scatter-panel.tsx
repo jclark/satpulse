@@ -1,6 +1,6 @@
 import {h} from 'preact';
 import {useState, useCallback, useRef, useEffect} from 'preact/hooks';
-import {ECEFtoLLH} from '../wailsjs/go/main/App';
+import {transport} from './transport';
 import {Button} from './ui';
 
 interface ScatterPanelProps {
@@ -130,7 +130,7 @@ export function ScatterPanel({ecef, baseARPs}: ScatterPanelProps) {
         if (!pendingLLHRef.current) {
             pendingLLHRef.current = true;
             const m = meanRef.current;
-            ECEFtoLLH(m.x, m.y, m.z).then(llh => {
+            transport.ecefToLLH(m.x, m.y, m.z).then(llh => {
                 const latRad = llh.lat * Math.PI / 180;
                 const lonRad = llh.lon * Math.PI / 180;
                 sinCosRef.current = {

@@ -1,6 +1,6 @@
 import {h, Fragment} from 'preact';
 import {useCallback, useEffect, useRef} from 'preact/hooks';
-import {LoadMsgFile, SendMsgFile, DecodePacket} from '../wailsjs/go/main/App';
+import {transport} from './transport';
 import type {ConnState, MsgFileTag, SendLine, ResponseLine} from './app';
 import {Button, Card, Select, fieldLabelText, labeledControlText} from './ui';
 import {useState} from 'preact/hooks';
@@ -99,7 +99,7 @@ export function MsgFilePanel({
 
     const handleOpen = useCallback(async () => {
         try {
-            const info = await LoadMsgFile();
+            const info = await transport.msgFile!.loadMsgFile();
             if (!info) return;
             clearRespSession();
             setMsgFilePath(info.path);
@@ -150,7 +150,7 @@ export function MsgFilePanel({
         setDecodeResult(null);
         const t = msgFileTags[selectedTagIndex];
         try {
-            await SendMsgFile(tag, t.needsPort ? selectedPort : '', !!t.saveAware && save);
+            await transport.msgFile!.sendMsgFile(tag, t.needsPort ? selectedPort : '', !!t.saveAware && save);
         } catch (e: any) {
             addToast(e.message || 'Send failed', 'error');
         }
@@ -167,7 +167,7 @@ export function MsgFilePanel({
         if (!raw) { setDecodeResult(null); return; }
         const hex = !!r.bin;
         let cancelled = false;
-        DecodePacket(raw, {hex, out: false}).then(result => {
+        transport.decodePacket(raw, {hex, out: false}).then(result => {
             if (cancelled) return;
             if (!result) { setDecodeResult(hex ? null : raw); return; }
             const keys = Object.keys(result);
