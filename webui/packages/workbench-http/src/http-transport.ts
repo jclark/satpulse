@@ -125,14 +125,12 @@ class EventStreams {
         }
         if (name === 'gps:packet') {
             if (!this.packets) {
-                this.packets = new EventSource('/sse' + (this.query ? this.query + '&' : '?') + 'stream=packets');
-                this.packets.addEventListener('takeover', () => this.seatLost());
+                this.packets = this.openStream((this.query ? this.query + '&' : '?') + 'stream=packets');
                 this.addDispatch(this.packets, name);
             }
         } else {
             if (!this.main) {
-                this.main = new EventSource('/sse' + this.query);
-                this.main.addEventListener('takeover', () => this.seatLost());
+                this.main = this.openStream(this.query);
             }
             if (first && name !== 'wb:seatlost') {
                 this.addDispatch(this.main, name);
@@ -157,6 +155,42 @@ class EventStreams {
         for (const cb of this.listeners.get('wb:seatlost') ?? []) {
             cb({});
         }
+    }
+
+    // openStream opens an SSE EventSource for the seat. A takeover event means
+    // the seat was lost. A terminal close (readyState CLOSED) is ambiguous: it
+    // covers both a stale-seat 204 and a stale-token 401 after a restart, and
+    // EventSource hides the status, so terminalClose probes to tell them apart.
+    // Transient drops leave readyState CONNECTING and are ignored so the browser
+    // can reconnect and re-prime.
+    private openStream(query: string): EventSource {
+        const es = new EventSource('/sse' + query);
+        es.addEventListener('takeover', () => this.seatLost());
+        es.addEventListener('error', () => {
+            if (es.readyState === EventSource.CLOSED) this.terminalClose();
+        });
+        return es;
+    }
+
+    // terminalClose reacts to an EventSource that closed without retrying. The
+    // server answered a terminal status that EventSource does not expose, so
+    // probe with a GET (token-checked but seat-free) to tell a stale seat from
+    // a stale token: 200 means the token still works, so the seat was
+    // superseded; 401 means a restart minted a fresh token, so reload to reach
+    // the notice pointing at the newly printed URL.
+    private async terminalClose() {
+        if (this.lost) return;
+        let resp;
+        try {
+            resp = await fetch('/api/state' + this.query);
+        } catch {
+            return; // server unreachable; not a terminal condition
+        }
+        if (resp.status === 401) {
+            window.location.reload();
+            return;
+        }
+        this.seatLost();
     }
 
     private addDispatch(es: EventSource, name: string) {
