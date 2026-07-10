@@ -1,6 +1,6 @@
 # Web redesign and shared components (#284)
 
-Introduce a design token system and build shared Preact components that both the web dashboard and desktop GUI can consume. Builds on the `webui/packages/shared/` package from [web-toolchain.md](web-toolchain.md). Uses the replay dev server from [gpsprot-sse.md](gpsprot-sse.md) for rapid visual iteration.
+Introduce a design token system and build shared Preact components that both the web dashboard and desktop GUI can consume. This plan creates the `webui/packages/shared/` package: [web-toolchain.md](web-toolchain.md) sets up the `webui/` workspace but deliberately leaves the dashboard's components in the dashboard package (they have a single consumer until now), so extracting the reusable ones into a new shared package -- and unifying them with the desktop GUI's -- is this plan's job. Uses the replay dev server from [gpsprot-sse.md](gpsprot-sse.md) for rapid visual iteration.
 
 ## Introduce semantic design tokens
 

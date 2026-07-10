@@ -19,6 +19,10 @@ const (
 	BasePositionDNU          = -2e10
 )
 
+// BaseSourceRTCM is the BaseStation.Source value for coordinates decoded from
+// an RTCM3 1005/1006 message.
+const BaseSourceRTCM BaseSource = 8
+
 type diffCorrInHead struct {
 	Mode   DiffCorrMode
 	Source DiffCorrSource
@@ -27,6 +31,9 @@ type diffCorrInHead struct {
 // DiffCorrIn is the SBF DiffCorrIn block.
 type DiffCorrIn struct {
 	diffCorrInHead
+	// Correction includes the block's 0-3 padding bytes: SBF gives no explicit
+	// correction length, so consumers must find the true end from the
+	// correction format's own framing.
 	Correction []byte
 	payloadSize
 }
