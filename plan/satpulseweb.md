@@ -1,9 +1,10 @@
-# satpulseweb: serve experimental desktop GUI as web app (#357)
+# Serve experimental desktop GUI as web app (#357)
 
-A new binary `cmd/satpulseweb` that serves the desktop GUI as a web
-app: an HTTP server with an embedded single-page frontend, driven by
-an application core extracted from the desktop backend into a new
-package `gps/app/session`. The top priority is device-independent
+A new binary `cmd/satpulsewb` that serves the desktop GUI as a web
+app called SatPulse Workbench (matching the workbench npm package the
+frontend lives in): an HTTP server with an embedded single-page
+frontend, driven by an application core extracted from the desktop
+backend into a new package `gps/app/session`. The top priority is device-independent
 receiver configuration through a GUI that requires no knowledge of
 the receiver's protocol; the full desktop feature set (monitor,
 packets, message files, corrections) comes along because it flows
@@ -33,7 +34,7 @@ workspace the frontend work lands in. Related: #284 (web redesign).
   an always-on admin service. Some users want only the configuration
   capability, without running a time server at all.
 
-satpulseweb is run by the user (typically over SSH on the box with
+satpulsewb is run by the user (typically over SSH on the box with
 the receiver, or on a laptop reaching a remote receiver via
 satpulsed's proxy), prints a URL, and serves a GUI session until
 stopped. It is a commissioning tool with a browser UI, not a daemon.
@@ -97,7 +98,7 @@ layer with interfaces.
 logs, and everything it needs lives under `gps/` (`gpsio`, `gpscfg`,
 `bcast`, `stream`, `msgfile`, `scan`, `gpsprot`, `gpsdecode`). It
 needs nothing from `time/`. It must be importable both by the desktop
-module (via its existing `replace`) and by `cmd/satpulseweb` in the
+module (via its existing `replace`) and by `cmd/satpulsewb` in the
 main module, which rules out `gps/internal/`.
 
 The package imports `gps/gpsreg` directly and takes the vendor as a
@@ -116,7 +117,6 @@ introduced later if a registry-free consumer ever materializes.
 ```go
 type Options struct {
     ProbeTimeout time.Duration // default 15s
-    MaxRetries   int
     PacketLog    io.Writer // optional JSONL packet log (nil to disable)
 }
 
@@ -139,6 +139,9 @@ type Event struct {
 // Sink delivers events to the UI transport. Called from session
 // goroutines; Emit must not block (drop or buffer).
 type Sink interface {
+    // Emit may call Session snapshot accessors, but must not synchronously
+    // call other Session methods: events can originate on goroutines those
+    // methods wait for.
     Emit(Event)
     // Wants reports whether anyone is listening for this event.
     // The session uses it to suppress expensive high-rate streams
@@ -223,6 +226,20 @@ func (s *Session) StopCorrections() error
 func DecodePacket(formats []gpsprot.PacketFormat, data []byte, out bool) (*gpsdecode.DecodeResult, error)
 ```
 
+All methods are safe for concurrent use. Connect and Disconnect use
+last-call-wins semantics from the start of each call, including while
+an existing connection is draining or a transport open is pending;
+connection shutdown and manager startup are serialized. Receiver
+operations remain exclusive, and their completion can change state
+only for the pipeline run in which the operation started. State
+events are emitted in transition order (with overtaken intermediate
+states allowed to coalesce), and the sink is invoked without session
+emission locks held so snapshot accessors remain safe. Other Session
+methods must not be called synchronously from event callbacks because
+events can originate on tracked connection goroutines. PacketLog
+writes are serialized across reconnecting pipeline runs.
+CorrectionSource Host accepts DNS names and IPv4 or IPv6 literals.
+
 The geodesy helpers (`ECEFtoLLH`, `LLHtoECEF`, `CheckOnEarth`) do not
 move here; they are thin wrappers over `gps/lib/geopos` and each
 shell exposes them directly (or the web UI reimplements them
@@ -254,7 +271,11 @@ review:
   re-probe, resume. This also fixes the desktop's existing
   read-error-disconnect gap
   (webui/packages/workbench/plan/issues.md), where an unplugged
-  device leaves the app stuck in connected state.
+  device leaves the app stuck in connected state. Limitation: the
+  serial opener re-opens the same node name, so a device that
+  returns under a different node is not found and the reconnect
+  attempts exhaust; handling the renamed case needs a stable device
+  identity (gps/lib/serialenum) and is deferred.
 - Reset gating over proxy connections, driven by `Opener.Socket()`
   (see Relationship to satpulsed above for why).
 - `Wants` gating for the gps:packet stream, so a web client only
@@ -276,7 +297,7 @@ tested; these tests target the orchestration.
 `go.bug.st/serial/enumerator`) to `gps/lib/serialenum`. This adds
 go.bug.st to the main go.mod, which is acceptable because satpulsed
 and satpulsetool must not import the package, so their binaries link
-none of it and their Linux builds remain CGO-free. Only satpulseweb
+none of it and their Linux builds remain CGO-free. Only satpulsewb
 and the desktop shell import it.
 
 A later phase reimplements the Linux side by hand -- pure stdlib,
@@ -284,24 +305,24 @@ walking `/dev/serial/by-id` symlinks (human-readable names) and
 `/sys/class/tty/*/device` (USB metadata, and platform UARTs such as
 ttyAMA0 on a Pi, which the dependency's USB-centric enumeration
 misses) -- and drops go.bug.st from the Linux build. That is what
-makes the satpulseweb Linux binary CGO_ENABLED=0/libc-free like its
+makes the satpulsewb Linux binary CGO_ENABLED=0/libc-free like its
 siblings. The macOS binary may keep cgo (IOKit or go.bug.st) for
 proper display names; libc-freedom is a Linux property.
 
-## Design: the satpulseweb binary
+## Design: the satpulsewb binary
 
-`cmd/satpulseweb`, in the main module, command-line layer. No new
+`cmd/satpulsewb`, in the main module, command-line layer. No new
 external dependencies: HTTP server, SSE, and token auth are stdlib.
 The frontend is embedded as checked-in built assets, the same
 `//go:generate npm ... run embed` technique satpulsed uses for
 its dashboard (`time/internal/web`, #283); `go build` never needs
-npm. satpulseweb bundles its own frontend, so it embeds its own
+npm. satpulsewb bundles its own frontend, so it embeds its own
 assets rather than reusing satpulsed's package.
 
 Invocation sketch:
 
 ```
-satpulseweb [--listen addr] [--token STRING]
+satpulsewb [--listen addr] [--token STRING]
             [-d DEVICE [-s SPEED] | --socket PATH | --tcp HOST:PORT]
 ```
 
@@ -376,7 +397,7 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   connecting/reconnecting connection states -- implemented only by
   the direct-serial and proxy backends. The two implementations here
   are the existing generated wailsjs bindings (desktop) and fetch+SSE
-  (satpulseweb); a later in-daemon backend (the appliance admin
+  (satpulsewb); a later in-daemon backend (the appliance admin
   surface under Relationship to satpulsed) has a permanently
   connected receiver and no connection management, and its apply may
   be declarative (edit persistent config, apply by service restart)
@@ -384,9 +405,9 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   overturns webui/packages/workbench/plan/shared-webui.md's assumption
   that the config panel stays desktop-specific; that file is corrected
   in phase 5.
-- A satpulseweb entry package in the workspace (index.html, token
+- A satpulsewb entry package in the workspace (index.html, token
   handling, fetch/SSE transport wiring), whose Vite build output is
-  what `cmd/satpulseweb` embeds.
+  what `cmd/satpulsewb` embeds.
 - Web replacements for native chrome: MessageDialog error popups
   become inline notices; BrowserOpenURL becomes window.open (already
   anticipated as a callback prop in the shared map component plan).
@@ -412,16 +433,16 @@ into the workspace verbatim in phase 1 (below); this plan adds:
 
 ### Build, packaging, docs
 
-- Makefile and bsd-build.sh targets for satpulseweb. Recent term work
-  suggests Windows support is coming to the main module; satpulseweb
+- Makefile and bsd-build.sh targets for satpulsewb. Recent term work
+  suggests Windows support is coming to the main module; satpulsewb
   inherits whatever platforms gpsio/term support, with Linux the
   primary target.
 - Packaging: ride the existing deb/rpm or a subpackage -- decide at
   packaging time; nothing architectural depends on it.
-- Man page `satpulseweb(1)`; NEWS.md entry in the same change as the
+- Man page `satpulsewb(1)`; NEWS.md entry in the same change as the
   implementation (release notes rule).
 - docs/internals.md entries for `gps/app/session`,
-  `gps/lib/serialenum`, `cmd/satpulseweb`, and the embed package.
+  `gps/lib/serialenum`, `cmd/satpulsewb`, and the embed package.
 
 ## Delivery: branching strategy and phases
 
@@ -517,7 +538,7 @@ breaks `git log --follow`. Includes
 the session unit tests and internals.md entries. The desktop app is
 not rewired in this phase; that is phase 5.
 
-### Phase 3: cmd/satpulseweb (one or two PRs)
+### Phase 3: cmd/satpulsewb (one or two PRs)
 
 The binary: server, token auth, SSE sink, embed bridge, msg-file
 library endpoints, the fetch/SSE transport implementation and entry
@@ -530,7 +551,7 @@ ride whichever PR makes the feature usable.
 
 Hand-rolled pure-Go Linux implementation in `gps/lib/serialenum` (see
 Design: serial enumeration); drop go.bug.st from the Linux build;
-verify the satpulseweb Linux binary builds with CGO_ENABLED=0 and has
+verify the satpulsewb Linux binary builds with CGO_ENABLED=0 and has
 no dynamic dependencies.
 
 ### Phase 5: rework desktop-gui on top (branch work, no master PR)
@@ -556,10 +577,10 @@ shell.
 
 ## Open decisions
 
-- Names: the binary (`satpulseweb`), the embed package location (own
-  package vs go:embed directly in cmd/satpulseweb).
-- macOS enumeration in satpulseweb: keep go.bug.st, or glob
+- Names: the embed package location (own package vs go:embed directly
+  in cmd/satpulsewb).
+- macOS enumeration in satpulsewb: keep go.bug.st, or glob
   `/dev/cu.*` and avoid cgo there too.
 - Whether TCP transport ships in phase 3 or as a follow-on.
-- Whether `satpulsetool gps` should print a hint about satpulseweb
+- Whether `satpulsetool gps` should print a hint about satpulsewb
   for discoverability.
