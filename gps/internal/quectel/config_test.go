@@ -378,6 +378,33 @@ func TestConfiguratorNMEAReenable(t *testing.T) {
 	}
 }
 
+// TestConfiguratorNMEAOtherReenable checks that a request carrying the
+// Other catch-all bit alongside a wanted sentence (as the web UI always
+// sends) still re-enables the NMEA output protocol. The Other bit means
+// "there may be sentences the model does not name", not "leave the
+// protocol alone", so it must count toward enabling.
+func TestConfiguratorNMEAOtherReenable(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGPROT,R,1,1"] = []string{"PQTMCFGPROT,OK,1,1,00000007,00000006"}
+	responses["PQTMCFGPROT,W,1,1,00000007,00000007"] = []string{"PQTMCFGPROT,OK"}
+	for _, p := range []string{"GGA,0", "GLL,0", "GSA,0", "GSV,0", "RMC,1", "VTG,0", "ZDA,0"} {
+		responses["PQTMCFGMSGRATE,W,"+p] = []string{"PQTMCFGMSGRATE,OK"}
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgOther)
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	w := wSent(sent)
+	if len(w) == 0 || w[0] != "PQTMCFGPROT,W,1,1,00000007,00000007" {
+		t.Errorf("NMEA bit not re-enabled first: %v", w)
+	}
+	if !slices.Contains(w, "PQTMCFGMSGRATE,W,RMC,1") {
+		t.Errorf("RMC not enabled: %v", w)
+	}
+}
+
 // TestConfiguratorProtOffNoReadback checks the fallback: with the
 // CFGPROT readback refused, an all-off NMEA request cannot switch the
 // protocol and disables each sentence individually instead.
