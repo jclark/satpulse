@@ -99,7 +99,15 @@ own rules are key-agnostic. From the X20 HPG 2.10 interface
 description:
 
 - VALGET, VALSET, and VALDEL each NAK the whole message if any key
-  is unknown to the receiver FW; nothing is applied.
+  is unknown to the receiver FW; nothing is applied. A group
+  wildcard whose group has no keys in the inventory is not an
+  unknown key: it expands to zero items and the message is ACKed,
+  with the VALGET response simply carrying nothing for that group.
+  A recorded ZED-F9P shows this (gps/testdata/config/u-blox/
+  ZED-F9P/gpshwtest001/019.jsonl): the Configurator's signals poll
+  wildcards both the SIGNAL group and the group of
+  CFG-GPS_L5_HEALTH_OVERRIDE, which the F9P database has no keys
+  in, and the receiver ACKs it, returning only the SIGNAL items.
 - All three are limited to 64 items per message; VALGET responses to
   wildcard polls are paginated via the `position` field.
 - Wildcards are key arithmetic: item part 0xffff means all items in

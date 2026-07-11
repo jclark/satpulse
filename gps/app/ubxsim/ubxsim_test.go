@@ -519,9 +519,13 @@ func (p *fakeOutPort) Direct() bool                { return true }
 // TestConfiguratorPortDiscovery drives the real Configurator through
 // gpscfg.Configure against the shipped F9P personality (protVer 27.50),
 // where port discovery goes via a CFG-PRT poll rather than MON-COMMS.
-// A target that gets only the port reduces the whole run to the MON-VER
-// probe plus that poll, so completing it without error and reporting
-// UART1 proves CFG-PRT port discovery now works against the simulator.
+// Getting the port and the enabled signals reduces the run to the
+// MON-VER probe, that poll, and valGetSignals' VALGET of the SIGNAL
+// group wildcard plus a wildcard for a group the F9P database has no
+// keys in -- the poll a real F9P ACKed with only the populated group's
+// items (gpshwtest001/019.jsonl). Completing without error and
+// reporting UART1 and a signal set proves both paths work against the
+// simulator.
 func TestConfiguratorPortDiscovery(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		p, err := LoadPersonality("testdata/f9p/f9p-personality.ubx")
@@ -530,7 +534,7 @@ func TestConfiguratorPortDiscovery(t *testing.T) {
 		}
 		w, ch := simConn(t, p)
 		target := gpsprot.NewConfigTarget()
-		target.Get = gpsprot.PropIDPort
+		target.Get = gpsprot.PropIDPort | gpsprot.PropIDSignalsEnabled
 		rslt, err := gpscfg.Configure(t.Context(), slog.New(slog.DiscardHandler),
 			gpsreg.CreatePacketProcessors(gpsreg.VendorUblox),
 			[]gpsprot.ConfigProtocol{ubx.NewConfigProtocol()},
@@ -540,6 +544,9 @@ func TestConfiguratorPortDiscovery(t *testing.T) {
 		}
 		if port, ok := rslt.ConfigProps.GetPort(); !ok || port != "UART1" {
 			t.Errorf("discovered port %q (ok=%v), want UART1", port, ok)
+		}
+		if sigs, ok := rslt.ConfigProps.GetSignalsEnabled(); !ok || sigs == 0 {
+			t.Errorf("signals enabled %v (ok=%v), want a non-empty set", sigs, ok)
 		}
 	})
 }
