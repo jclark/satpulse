@@ -388,8 +388,7 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
   assumed the primary flow was ssh to a headless box; macOS is now
   the lead desktop platform.
 - `--socket` and `--tcp` are deferred to phase 10 (see Transports
-  and the Delivery section); `--msg-dir` arrives with the phase-6
-  message-file PR.
+  and the Delivery section).
 
 ### HTTP API
 
@@ -417,21 +416,81 @@ tool, not a multi-user system.
 
 ### Message files
 
-The desktop's native file dialog is replaced by, in order of
-priority:
+The desktop's native file dialog is replaced by a catalog picker
+over the message-file library; an ad-hoc TOML editor is deferred to
+a later PR (below), but its design fixes the shapes here.
 
-1. A library browser: an endpoint that walks the installed message
-   file tree (`/usr/share/satpulse/gpsmsg`, falling back to a
-   `--msg-dir` override for source-tree use) and returns files with
-   their tags and descriptions (via `msgfile` tag parsing), so the UI
-   presents a browsable catalog rather than a path prompt. Selection
-   is by relative path within the library root, sanitized against
-   path traversal (the token holder is choosing server paths).
-2. An upload endpoint accepting TOML bytes for ad-hoc files, parsed
-   server-side with the same validation.
+A message file is identified by a name -- `msgfile.Name{Vendor,
+File}`, the vendor directory and the file name without its `.toml`
+extension -- and found on a library search path, PATH-style: the
+first `dir/Vendor/File.toml` along the directory list wins, so a
+file in an earlier directory shadows a same-named one later. The
+lookup lives in `gps/msgfile` (`FindName`, `ListNames`, `EnvDirs`),
+not in the server, so the desktop shell and satpulsetool can adopt
+it later. The application's search path is `SATPULSE_GPSMSG_PATH`
+(split like PATH) when set, else a default assembled in
+`cmd/satpulsewb`: the user's own `satpulse/gpsmsg` under
+`os.UserConfigDir`, so he has a personal library location without a
+flag, followed by the installed locations. Those are per platform,
+in build-tagged `msgdirs_*.go` files, because the mechanism differs
+and not just the string: Linux bakes in absolute FHS paths
+(`/usr/local/share` before `/usr/share`, so a `make install`
+shadows a package); macOS uses the Homebrew prefix, which is
+architecture-dependent (`/opt/homebrew` on Apple silicon,
+`/usr/local` on Intel) and so is split again into
+`msgdirs_darwin_{arm64,amd64}.go`; Windows has no shared data
+hierarchy, so the library sits beside the executable, wherever the
+package manager put it. Locations are system-dependent and live
+with the program, not in `gps/msgfile`, which keeps only the
+portable lookup. (An earlier revision had an additive `--msg-dir`
+flag contributing an extra catalog group; the search path replaces
+it.) Include resolution is unchanged: `[[include]]`
+resolves relative to the including file on disk, not along the
+search path, so a shadowing file must carry its includees. Message
+files have no file-level description (descriptions are per-tag), so
+the catalog lists names; tags and descriptions arrive on selection.
 
-The desktop app can later adopt the same library browser, keeping the
-native dialog for ad-hoc files.
+The UI is two dropdowns plus a button in the Messages tab's top bar
+-- vendor, file, Load -- replacing the desktop's Open... button.
+The catalog endpoint returns the names `ListNames` finds, each with
+the path it resolved to for display; the flat list arrives in
+search order and the UI sorts and groups it. Selection POSTs the
+name; the server resolves it with `FindName`, whose component
+validation is the path-traversal guard, loads via `msgfile.Load`
+(so `[[include]]` resolves on disk as usual), calls `SetMsgFile`,
+and returns the tags for the existing tag table.
+
+Vendor preselection: the vendor matching the session vendor, which
+is `--vendor` if given and otherwise the detected vendor from the
+receiver probe (best-effort: passive detection leaves it empty);
+otherwise none. The match is the lowercased vendor name against the
+vendor directory names: every ConfigProtocol's
+`ReceiverInfo.Vendor` constant equals its `gpsreg` vendor name, and
+all lowercase exactly to the library's directory names (verified
+for ubx and unc in-tree and the allystar/casic/quectel/septentrio
+config branches).
+
+On the frontend, `MsgFileTransport` gains optional
+`listMsgFiles`/`selectMsgFile` members; the panel renders the
+picker when they are present. The desktop transport keeps only the
+`loadMsgFile` dialog shape (its Open... button is not rendered on
+the web, which does not implement it) and can adopt the catalog at
+a later merge.
+
+Deferred to a later PR, shaped now so it slots in additively: an
+ad-hoc editor. One modal (textarea, content retained across opens
+for the tweak-send loop) with two seeds -- Edit..., prefilled with
+the selected library file's raw TOML via a raw-content GET, and
+New..., empty -- submitting to an upload endpoint (JSON body: name,
+content, vendor). Includes in submitted text resolve to existing
+files in the selected vendor (as `FindName` finds them); with no
+vendor selected they are an error. The session copy never shadows
+disk: included files are always the on-disk ones, so a tweaked
+includer cannot see a tweaked includee (point
+`SATPULSE_GPSMSG_PATH` at a scratch tree for that). Nothing writes
+back to disk: the editor is view-and-derive,
+not file management. In the UI these append as Edit.../New...
+buttons after Load without moving anything.
 
 ### Frontend
 
@@ -642,8 +701,8 @@ capability's `loadMsgFile(): Promise<MsgFileInfo | null>` is exactly
 the native-dialog shape: the Wails shell implements it as
 OpenFileDialog, parse the file with `msgfile`, `SetMsgFile`, return
 path and tags (null on cancel). Phase 6's endpoints, catalog UI, and
-`--msg-dir` are the web-side replacement for the dialog, not a
-dependency. This phase is therefore also the first shell to exercise
+library search path are the web-side replacement for the dialog, not
+a dependency. This phase is therefore also the first shell to exercise
 the session's msg-file send path (sendWorker, correlator, response
 events), which satpulsewb cannot reach until phase 6 adds its
 endpoints. Expected interaction with phase 6: the library catalog
@@ -712,10 +771,13 @@ as secondary fixtures, since detection is passive.
 
 ### Phase 6: message files (one PR)
 
-Message-file loading, the one piece of genuinely new UI: the
-library and upload endpoints (including the path-traversal
-sanitization), the browsable catalog UI, `--msg-dir`, and the
-msg-file send/cancel endpoints; un-hides the Messages tab.
+Message-file loading via the library catalog (see Message files
+under the satpulsewb design): the Name-based lookup and search-path
+functions in `gps/msgfile`, the catalog and select endpoints, the
+vendor/file picker with vendor preselection, and the msg-file
+send/cancel endpoints; un-hides the Messages tab. The ad-hoc editor
+and its upload endpoint are deferred to a later PR, outside the
+stack.
 
 ### Phase 7: browser auto-open (one PR)
 

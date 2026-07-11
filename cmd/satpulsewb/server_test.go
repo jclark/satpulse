@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -16,13 +18,18 @@ import (
 	"github.com/jclark/satpulse/gps/app/session"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/msgfile"
 )
 
 func newTestServer(token string) *server {
+	return newTestServerFull(token, gpsreg.VendorUnknown, nil)
+}
+
+func newTestServerFull(token string, vendor gpsreg.Vendor, msgDirs []string) *server {
 	hub := newSSEHub()
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	sess := session.New(lg, hub, session.Options{})
-	return newServer(context.Background(), sess, hub, token, gpsreg.VendorUnknown)
+	return newServer(context.Background(), sess, hub, token, vendor, msgDirs)
 }
 
 func TestAuth(t *testing.T) {
@@ -178,6 +185,12 @@ func TestEndpoints(t *testing.T) {
 			expectCode: 200, expectBody: `false`},
 		{name: "vel ned no position", method: "POST", url: "/api/geo/vel-ned-to-ecef", body: `{"n":1,"e":0,"d":0}`,
 			expectCode: 200, expectBody: `null`},
+		{name: "msg send not connected", method: "POST", url: "/api/msgfile/send",
+			body: `{"tag":"x","port":"","save":false}`, expectCode: 409, expectBody: `{"error":"not connected"}`},
+		{name: "msg cancel not sending", method: "POST", url: "/api/msgfile/cancel", body: `{}`,
+			expectCode: 409, expectBody: `{"error":"not sending"}`},
+		{name: "msg select unknown name", method: "POST", url: "/api/msgfile/select",
+			body: `{"vendor":"no-such-vendor","file":"a"}`, expectCode: 400},
 	}
 	s := newTestServer("")
 	s.claimTestSeat(t, "")
@@ -231,6 +244,90 @@ func TestSSEPriming(t *testing.T) {
 	}
 	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
 		t.Errorf("got Content-Type %q want text/event-stream", ct)
+	}
+}
+
+func TestMsgDirs(t *testing.T) {
+	t.Run("environment", func(t *testing.T) {
+		dirs := []string{"/one", "/two"}
+		t.Setenv("SATPULSE_GPSMSG_PATH", strings.Join(dirs, string(os.PathListSeparator)))
+		if got := msgDirs(); !reflect.DeepEqual(got, dirs) {
+			t.Errorf("got  %+v\nwant %+v", got, dirs)
+		}
+	})
+	t.Run("defaults", func(t *testing.T) {
+		sys := []string{"/sys/one", "/sys/two"}
+		expect := append([]string{filepath.Join("/cfg", "satpulse", "gpsmsg")}, sys...)
+		if got := defaultDirs("/cfg", sys); !reflect.DeepEqual(got, expect) {
+			t.Errorf("got  %+v\nwant %+v", got, expect)
+		}
+	})
+	t.Run("system dirs are absolute", func(t *testing.T) {
+		for _, dir := range systemDirs() {
+			if !filepath.IsAbs(dir) {
+				t.Errorf("systemDirs entry %q is not absolute", dir)
+			}
+		}
+	})
+}
+
+// TestMsgFileCatalog covers the message-file library endpoints: the
+// catalog lists the names on the search path and preselects the
+// session vendor, a name selects and returns its tags, a traversal
+// name is rejected, and a malformed library file is a server error.
+func TestMsgFileCatalog(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "u-blox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "u-blox", "a.toml")
+	if err := os.WriteFile(path,
+		[]byte("[[nmea]]\ntext = \"PUBX,04\"\ntag = \"poll\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestServerFull("", gpsreg.VendorUblox, []string{dir})
+	s.claimTestSeat(t, "") // select is writer-gated; s.post carries the seat
+
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/msgfile/catalog", nil))
+	if w.Code != 200 {
+		t.Fatalf("catalog status %d", w.Code)
+	}
+	var cat msgCatalog
+	if err := json.Unmarshal(w.Body.Bytes(), &cat); err != nil {
+		t.Fatal(err)
+	}
+	expect := msgCatalog{
+		Names:     []msgfile.Entry{{Name: msgfile.Name{Vendor: "u-blox", File: "a"}, Path: path}},
+		Preselect: "u-blox",
+	}
+	if !reflect.DeepEqual(cat, expect) {
+		t.Fatalf("got  %+v\nwant %+v", cat, expect)
+	}
+
+	w = s.post(t, "/api/msgfile/select", `{"vendor":"u-blox","file":"a"}`)
+	if w.Code != 200 {
+		t.Fatalf("select status %d: %s", w.Code, w.Body)
+	}
+	var res msgFileResult
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Tags) != 1 || res.Tags[0].Tag != "poll" {
+		t.Fatalf("unexpected select tags: %+v", res.Tags)
+	}
+
+	w = s.post(t, "/api/msgfile/select", `{"vendor":"u-blox","file":"../../u-blox/a"}`)
+	if w.Code != 400 {
+		t.Errorf("traversal select status = %d, want 400", w.Code)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "u-blox", "bad.toml"), []byte("[[nmea]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w = s.post(t, "/api/msgfile/select", `{"vendor":"u-blox","file":"bad"}`)
+	if w.Code != 500 {
+		t.Errorf("malformed select status = %d, want 500", w.Code)
 	}
 }
 

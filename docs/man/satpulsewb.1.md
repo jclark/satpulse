@@ -14,7 +14,7 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 It runs an HTTP server with an embedded single-page frontend, prints one URL per network interface, and serves a GUI session until stopped.
 It is a commissioning tool run by the user, typically over SSH on the box with the receiver, not a daemon.
 
-The Workbench offers device-independent receiver configuration that requires no knowledge of the receiver's protocol, along with live monitoring (position, time, satellites, signals), a packet inspector, and correction stream (Ntrip or TCP) forwarding.
+The Workbench offers device-independent receiver configuration that requires no knowledge of the receiver's protocol, along with live monitoring (position, time, satellites, signals), a packet inspector, sending configuration message files chosen from the message-file library (see ENVIRONMENT), and correction stream (Ntrip or TCP) forwarding.
 
 With no options, **satpulsewb** binds all interfaces on its default port (15754), falling back to an OS-picked port if it is taken, and protects the session with a token generated for this run.
 The printed URLs carry the token as a query parameter; the frontend stores it and strips it from the URL bar.
@@ -67,6 +67,17 @@ If this option is omitted, the vendor is autodetected.
 
 **\-V**, **\-\-version**
 : Show version information.
+
+# ENVIRONMENT
+
+**SATPULSE_GPSMSG_PATH**
+: Colon-separated list of directories to search for message files, replacing the default search path.
+A message file is identified as *vendor*/*file*.toml under a search directory; the first match along the path wins, so a file in an earlier directory shadows a same-named file in a later one.
+Include entries in a message file resolve relative to the file itself, not along the search path, so a shadowing file must have its included files alongside it.
+
+The default search path is the user's own library followed by the installed one.
+The user's library is *satpulse/gpsmsg* under the platform's user configuration directory: *~/.config/satpulse/gpsmsg* on Linux (or under **$XDG_CONFIG_HOME** when set), and *~/Library/Application Support/satpulse/gpsmsg* on macOS.
+The installed library is */usr/local/share/satpulse/gpsmsg* then */usr/share/satpulse/gpsmsg* on Linux, and *share/satpulse/gpsmsg* under the Homebrew prefix on macOS (*/opt/homebrew* on Apple silicon, */usr/local* on Intel).
 
 # EXAMPLES
 

@@ -9,6 +9,8 @@ import type {
     CorrectionSource,
     DecodeOptions,
     LLH,
+    MsgFileCatalog,
+    MsgFileInfo,
     PortInfo,
     Transport,
 } from '@satpulse/workbench/src/transport';
@@ -108,8 +110,15 @@ export async function newHTTPTransport(token: string): Promise<Transport> {
             disconnect: async () => { await writerPost('disconnect'); },
             listPorts: () => get('ports') as Promise<PortInfo[]>,
         },
-        // No msgFile capability yet: message files arrive with the
-        // library/upload endpoints; the Messages tab stays hidden.
+        msgFile: {
+            listMsgFiles: () => get('msgfile/catalog') as Promise<MsgFileCatalog>,
+            selectMsgFile: (vendor: string, file: string) =>
+                writerPost('msgfile/select', {vendor, file}) as Promise<MsgFileInfo>,
+            sendMsgFile: async (tag: string, port: string, save: boolean) => {
+                await writerPost('msgfile/send', {tag, port, save});
+            },
+            cancelMsgSend: async () => { await writerPost('msgfile/cancel'); },
+        },
     };
 }
 

@@ -184,6 +184,8 @@ The scenario module declares:
 - `FACTOR` -- replay speedup factor;
 - `run(ctx)` -- the checks to perform, using helpers from `common.py` and
   the owning scenario-family package;
+- `ENV` -- optional environment variables for the program under test, with
+  `${SATPULSE_TEST_*}` substitutions available in their values;
 - `PROGRAM = "satpulsewb"` -- optional; selects the workbench program (default
   `satpulsed`). A workbench scenario may also declare `CORRECTION_SOURCE` (a fake
   correction source the runner starts, for a corrections scenario).
@@ -229,7 +231,8 @@ make update-deps
   still-open stream and 410s a POST from the superseded seat).
 - `http/wb-listen` (satpulsewb) -- the workbench with `-L` and the token
   disabled: the SPA is served, the API is open, but the CSRF content-type gate
-  still rejects a cross-site simple POST.
+  still rejects a cross-site simple POST. A fixture `SATPULSE_GPSMSG_PATH`
+  verifies message-file catalog and selection wiring through the real binary.
 - `http/wb-survey` (satpulsewb) -- survey-message priming: an F9P survey-in
   capture (`NAV-SVIN`) drives `gps:msg` kind `survey`, and after the replay ends
   a late SSE client is still primed with it from the hub's sticky-kind cache

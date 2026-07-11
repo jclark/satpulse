@@ -23,18 +23,19 @@ import (
 // server adapts a session to HTTP: session methods become POST
 // endpoints, snapshots GET endpoints, and events an SSE stream.
 type server struct {
-	ctx    context.Context // run context; SSE streams end when it is done
-	sess   *session.Session
-	hub    *sseHub
-	token  string        // empty means no auth
-	vendor gpsreg.Vendor // --vendor: the vendor for every connect
-	mux    *http.ServeMux
-	seatMu sync.Mutex
-	seat   string
+	ctx     context.Context // run context; SSE streams end when it is done
+	sess    *session.Session
+	hub     *sseHub
+	token   string        // empty means no auth
+	vendor  gpsreg.Vendor // --vendor: the vendor for every connect
+	msgDirs []string      // message-file library search path
+	mux     *http.ServeMux
+	seatMu  sync.Mutex
+	seat    string
 }
 
-func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string, vendor gpsreg.Vendor) *server {
-	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, vendor: vendor, mux: http.NewServeMux()}
+func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string, vendor gpsreg.Vendor, msgDirs []string) *server {
+	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, vendor: vendor, msgDirs: msgDirs, mux: http.NewServeMux()}
 	// Seed the writer broadcast with a no-holder value: after a restart with
 	// the token disabled, an old tab's EventSource reconnects and re-primes
 	// from this hub, and must learn that its previous seat is stale (flipping
@@ -65,6 +66,10 @@ func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token st
 	s.mux.HandleFunc("POST /api/signals", reader(s.handleSignals))
 	s.mux.HandleFunc("POST /api/corrections/start", writer(s.handleCorrStart))
 	s.mux.HandleFunc("POST /api/corrections/stop", writer(s.handleCorrStop))
+	s.mux.HandleFunc("GET /api/msgfile/catalog", get(s.handleMsgCatalog))
+	s.mux.HandleFunc("POST /api/msgfile/select", writer(s.handleMsgSelect))
+	s.mux.HandleFunc("POST /api/msgfile/send", writer(s.handleMsgSend))
+	s.mux.HandleFunc("POST /api/msgfile/cancel", writer(s.handleMsgCancel))
 	s.mux.HandleFunc("POST /api/decode-packet", reader(s.handleDecodePacket))
 	s.mux.HandleFunc("POST /api/geo/ecef-to-llh", reader(s.handleECEFtoLLH))
 	s.mux.HandleFunc("POST /api/geo/llh-to-ecef", reader(s.handleLLHtoECEF))

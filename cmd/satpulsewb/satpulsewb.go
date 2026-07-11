@@ -146,7 +146,7 @@ func run(v *flagVars) error {
 			}
 		}()
 	}
-	srv := newServer(ctx, sess, hub, token, v.vendor)
+	srv := newServer(ctx, sess, hub, token, v.vendor, msgDirs())
 	httpServer := &http.Server{Handler: srv.mux}
 	go func() {
 		<-ctx.Done()
