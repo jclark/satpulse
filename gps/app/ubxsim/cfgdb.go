@@ -209,8 +209,11 @@ func (db *cfgDB) layerMap(l ubxbin.CfgValgetLayer) ucv.Map {
 // interface description's key arithmetic: item part 0xffff means all
 // items in the group, group part 0xfff means all items in all groups.
 // Expansions are in ascending key order; complete keys keep their
-// request order. It returns false if a complete key or a wild-card's
-// group is unknown.
+// request order. It returns false only if a complete key is unknown
+// (the interface description's NAK rule); a group wildcard with no
+// items in the inventory expands to nothing, as a recorded ZED-F9P
+// ACKed the Configurator's signals poll whose second group wildcard
+// matched no keys (gpshwtest001/019.jsonl).
 func (db *cfgDB) expandKeys(keys []ucv.Key) ([]ucv.Key, bool) {
 	out := make([]ucv.Key, 0, len(keys))
 	for _, k := range keys {
@@ -218,11 +221,7 @@ func (db *cfgDB) expandKeys(keys []ucv.Key) ([]ucv.Key, bool) {
 			out = append(out, db.sortedKeys(func(ucv.Key) bool { return true })...)
 		} else if k&0xffff == 0xffff {
 			group := (k >> 16) & 0xfff
-			ks := db.sortedKeys(func(k ucv.Key) bool { return (k>>16)&0xfff == group })
-			if len(ks) == 0 {
-				return nil, false
-			}
-			out = append(out, ks...)
+			out = append(out, db.sortedKeys(func(k ucv.Key) bool { return (k>>16)&0xfff == group })...)
 		} else if db.dflt.Contains(k) {
 			out = append(out, k)
 		} else {
