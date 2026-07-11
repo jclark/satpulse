@@ -170,13 +170,23 @@ func (s *NtripSource) handshake(conn net.Conn) (ReadWriteDeadlineCloser, error) 
 		return nil, err
 	}
 	if !bytes.Equal(line, []byte("ICY 200 OK\r\n")) {
-		return nil, fmt.Errorf("Ntrip: %s", strings.TrimSuffix(string(line), "\r\n"))
+		resp := strings.TrimSuffix(string(line), "\r\n")
+		err := fmt.Errorf("Ntrip: %s", resp)
+		if ntripClientFatalResponse(resp) {
+			return nil, &fatalConnectError{err}
+		}
+		return nil, err
 	}
 	if br.Buffered() == 0 {
 		return conn, nil
 	}
 	leftover, _ := br.Peek(br.Buffered())
 	return &readBufferedConn{Reader: io.MultiReader(bytes.NewReader(leftover), conn), conn: conn}, nil
+}
+
+func ntripClientFatalResponse(resp string) bool {
+	f := strings.Fields(resp)
+	return len(f) >= 2 && (f[0] == "HTTP/1.0" || f[0] == "HTTP/1.1") && f[1] == "401"
 }
 
 type readBufferedConn struct {
@@ -454,7 +464,7 @@ func (s *Pull) Run(ctx context.Context, selectedGGA <-chan scan.Packet, onState 
 	})
 	// start reader
 	pipelineWg.Go(func() {
-		s.reader(iCtx, s.lg, s.source, s.pktFormats, gs, onState)
+		s.reader(iCtx, iCancel, s.lg, s.source, s.pktFormats, gs, onState)
 	})
 	pipelineWg.Wait()
 	s.Packets.Close()
@@ -469,7 +479,7 @@ func (s *Pull) Run(ctx context.Context, selectedGGA <-chan scan.Packet, onState 
 // packets, and sends them into the bcast input channel.  On network
 // error it reconnects with adaptive backoff.  It closes pktCh on
 // exit.
-func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
+func (s *Pull) reader(ctx context.Context, cancel context.CancelFunc, lg *slog.Logger,
 	source Source, pktFormats []gpsprot.PacketFormat,
 	gs *GGASender, onState func(State, error)) {
 	defer close(s.pktCh)
@@ -497,6 +507,12 @@ func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 		conn, err := source.Connect(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
+				return
+			}
+			if isFatalConnect(err) {
+				lg.Error("correction source giving up", "error", err)
+				onState(Failed, err)
+				cancel()
 				return
 			}
 			lg.Error("correction source connect failed", "error", err)
