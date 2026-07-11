@@ -91,7 +91,10 @@ export async function newHTTPTransport(token: string): Promise<Transport> {
             // Two overlapping reclaims (Use here clicked twice) can complete
             // out of order; applying the older response would leave the window
             // carrying a superseded seat. Only the newest reclaim's result
-            // counts, mirroring the server's newest-claim-wins.
+            // counts, mirroring the server's newest-claim-wins. If the two
+            // requests also reached the server out of order, the kept seat may
+            // be the discarded claim's - spuriously read-only, safe direction,
+            // fixed by the next click.
             const n = ++claimSeq;
             const s = await claim();
             if (n !== claimSeq) return;
