@@ -428,12 +428,23 @@ file in an earlier directory shadows a same-named one later. The
 lookup lives in `gps/msgfile` (`FindName`, `ListNames`, `EnvDirs`),
 not in the server, so the desktop shell and satpulsetool can adopt
 it later. The application's search path is `SATPULSE_GPSMSG_PATH`
-(split like PATH) when set, else a compiled-in default --
-`~/.satpulse/gpsmsg`, `/usr/local/share/satpulse/gpsmsg`,
-`/usr/share/satpulse/gpsmsg` -- so the user has a personal library
-location without a flag. (An earlier revision had an additive
-`--msg-dir` flag contributing an extra catalog group; the search
-path replaces it.) Include resolution is unchanged: `[[include]]`
+(split like PATH) when set, else a default assembled in
+`cmd/satpulsewb`: the user's own `satpulse/gpsmsg` under
+`os.UserConfigDir`, so he has a personal library location without a
+flag, followed by the installed locations. Those are per platform,
+in build-tagged `msgdirs_*.go` files, because the mechanism differs
+and not just the string: Linux bakes in absolute FHS paths
+(`/usr/local/share` before `/usr/share`, so a `make install`
+shadows a package); macOS uses the Homebrew prefix, which is
+architecture-dependent (`/opt/homebrew` on Apple silicon,
+`/usr/local` on Intel) and so is split again into
+`msgdirs_darwin_{arm64,amd64}.go`; Windows has no shared data
+hierarchy, so the library sits beside the executable, wherever the
+package manager put it. Locations are system-dependent and live
+with the program, not in `gps/msgfile`, which keeps only the
+portable lookup. (An earlier revision had an additive `--msg-dir`
+flag contributing an extra catalog group; the search path replaces
+it.) Include resolution is unchanged: `[[include]]`
 resolves relative to the including file on disk, not along the
 search path, so a shadowing file must carry its includees. Message
 files have no file-level description (descriptions are per-tag), so

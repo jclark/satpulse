@@ -206,16 +206,17 @@ func TestMsgDirs(t *testing.T) {
 		}
 	})
 	t.Run("defaults", func(t *testing.T) {
-		home := t.TempDir()
-		t.Setenv("SATPULSE_GPSMSG_PATH", "")
-		t.Setenv("HOME", home)
-		expect := []string{
-			filepath.Join(home, ".satpulse", "gpsmsg"),
-			"/usr/local/share/satpulse/gpsmsg",
-			"/usr/share/satpulse/gpsmsg",
-		}
-		if got := msgDirs(); !reflect.DeepEqual(got, expect) {
+		sys := []string{"/sys/one", "/sys/two"}
+		expect := append([]string{filepath.Join("/cfg", "satpulse", "gpsmsg")}, sys...)
+		if got := defaultDirs("/cfg", sys); !reflect.DeepEqual(got, expect) {
 			t.Errorf("got  %+v\nwant %+v", got, expect)
+		}
+	})
+	t.Run("system dirs are absolute", func(t *testing.T) {
+		for _, dir := range systemDirs() {
+			if !filepath.IsAbs(dir) {
+				t.Errorf("systemDirs entry %q is not absolute", dir)
+			}
 		}
 	})
 }

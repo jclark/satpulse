@@ -13,16 +13,23 @@ import (
 
 // msgDirs returns the message-file library search path:
 // SATPULSE_GPSMSG_PATH when set, otherwise the user's own library
-// followed by the installed locations.
+// followed by the installed locations (systemDirs, per platform).
 func msgDirs() []string {
 	if dirs := msgfile.EnvDirs(); dirs != nil {
 		return dirs
 	}
-	dirs := []string{"/usr/local/share/satpulse/gpsmsg", "/usr/share/satpulse/gpsmsg"}
-	if home, err := os.UserHomeDir(); err == nil {
-		dirs = append([]string{filepath.Join(home, ".satpulse", "gpsmsg")}, dirs...)
+	cfg, err := os.UserConfigDir()
+	if err != nil {
+		return systemDirs()
 	}
-	return dirs
+	return defaultDirs(cfg, systemDirs())
+}
+
+// defaultDirs puts the user's library under cfg ahead of the installed
+// ones. Split out from msgDirs so a test needs no environment variable:
+// os.UserConfigDir reads a different one on each platform.
+func defaultDirs(cfg string, sys []string) []string {
+	return append([]string{filepath.Join(cfg, "satpulse", "gpsmsg")}, sys...)
 }
 
 // msgCatalog is the /api/msgfile/catalog response: the message files

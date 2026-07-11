@@ -70,9 +70,13 @@ If this option is omitted, the vendor is autodetected.
 # ENVIRONMENT
 
 **SATPULSE_GPSMSG_PATH**
-: Colon-separated list of directories to search for message files, replacing the default search path of *~/.satpulse/gpsmsg*, */usr/local/share/satpulse/gpsmsg*, and */usr/share/satpulse/gpsmsg*.
+: Colon-separated list of directories to search for message files, replacing the default search path.
 A message file is identified as *vendor*/*file*.toml under a search directory; the first match along the path wins, so a file in an earlier directory shadows a same-named file in a later one.
 Include entries in a message file resolve relative to the file itself, not along the search path, so a shadowing file must have its included files alongside it.
+
+The default search path is the user's own library followed by the installed one.
+The user's library is *satpulse/gpsmsg* under the platform's user configuration directory: *~/.config/satpulse/gpsmsg* on Linux (or under **$XDG_CONFIG_HOME** when set), and *~/Library/Application Support/satpulse/gpsmsg* on macOS.
+The installed library is */usr/local/share/satpulse/gpsmsg* then */usr/share/satpulse/gpsmsg* on Linux, and *share/satpulse/gpsmsg* under the Homebrew prefix on macOS (*/opt/homebrew* on Apple silicon, */usr/local* on Intel).
 
 # EXAMPLES
 
