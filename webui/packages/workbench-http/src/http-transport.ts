@@ -41,6 +41,7 @@ export async function newHTTPTransport(token: string): Promise<Transport> {
         return c.seat;
     }
     let seat = await claim();
+    let claimSeq = 0;
     const events = new EventStreams(authQuery, seat);
     const seatQuery = () => {
         const p = new URLSearchParams(authParams);
@@ -87,8 +88,15 @@ export async function newHTTPTransport(token: string): Promise<Transport> {
         eventsOn: (name, cb) => events.on(name, cb),
         openURL: url => { window.open(url, '_blank'); },
         reclaim: async () => {
-            seat = await claim();
-            events.setSeat(seat);
+            // Two overlapping reclaims (Use here clicked twice) can complete
+            // out of order; applying the older response would leave the window
+            // carrying a superseded seat. Only the newest reclaim's result
+            // counts, mirroring the server's newest-claim-wins.
+            const n = ++claimSeq;
+            const s = await claim();
+            if (n !== claimSeq) return;
+            seat = s;
+            events.setSeat(s);
         },
         connection: {
             connect: async (device: string, speed: number) => {
