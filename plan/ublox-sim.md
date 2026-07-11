@@ -127,6 +127,33 @@ spec-faithful NAK means the simulator exercises satpulse's real
 handling of that case (the missing-key re-poll path in the
 Configurator) for free.
 
+## Port discovery (CFG-PRT)
+
+Below protocol version 50 the Configurator learns the active
+receiver port not from MON-COMMS (whose current-port field only
+works fully on the X20 series) but by polling the legacy UBX-CFG-PRT
+message (`ubxcfg.go` `pollPrt`, gated on `needsPort`). The shipped
+F9P personality is protVer 27.50, so any config run that touches the
+port -- reading it, setting messages, or changing baud -- goes down
+this path; a bare NAK there fails the whole run ("NACK for request
+CFG-PRT"), so CFG-PRT handling is in scope for pre-protVer-50
+personalities.
+
+CFG-PRT is a poll, not a set: on the val-based path the Configurator
+only reads it (proto and baud changes go through CFG-VALSET), so the
+simulator answers the poll and does not model a CFG-PRT set. The
+response is synthesized from the same database the val messages see
+-- the legacy protocol view of one RAM: PortID from the polled port,
+baud from its `BAUDRATE` key (UART only), and the in/out protocol
+masks from its `INPROT`/`OUTPROT` boolean keys -- in the spirit of
+`monComms`. A CFG poll is acknowledged (interface description
+"Acknowledgement" rule) and the Configurator's correlator awaits
+both the response and the ACK, so the simulator emits the CFG-PRT
+response followed by an ACK-ACK. A no-payload poll returns the port
+the poll arrived on (the simulated port); a 1-byte poll for that same
+port behaves identically; a 1-byte poll for any other port is NAKed,
+since the simulator models only its own port.
+
 ## The interface description JSON (#206)
 
 The simulator does not use the official u-blox interface description
