@@ -61,9 +61,22 @@ func TestValget(t *testing.T) {
 			},
 		},
 		{
-			name:      "wildcard of unknown group",
-			poll:      valgetPoll(ubxbin.CfgValgetLayerRAM, 0, ucv.Key(0x2092ffff)),
-			expectNak: true,
+			name:        "wildcard of empty group",
+			poll:        valgetPoll(ubxbin.CfgValgetLayerRAM, 0, ucv.Key(0x2092ffff)),
+			expectItems: []ucv.Item{},
+		},
+		{
+			// Mirrors the recorded signals poll of a real ZED-F9P
+			// (gps/testdata/config/u-blox/ZED-F9P/gpshwtest001/019.jsonl):
+			// a populated group wildcard plus one matching no keys is
+			// ACKed with exactly the populated group's items.
+			name: "populated plus empty group wildcards",
+			poll: valgetPoll(ubxbin.CfgValgetLayerRAM, 0, ucv.Key(0x2091ffff), ucv.Key(0x2092ffff)),
+			expectItems: []ucv.Item{
+				{Key: ucv.KUbxNavSat.KeyU(ucv.UART1).Key(), Value: 0},
+				{Key: ucv.KNmeaIdGga.KeyU(ucv.UART1).Key(), Value: 1},
+				{Key: ucv.KUbxRxmCor.KeyU(ucv.UART1).Key(), Value: 0},
+			},
 		},
 		{
 			name: "all groups wildcard default layer",
@@ -250,6 +263,15 @@ func TestValsetLayersAndValdel(t *testing.T) {
 	items, _ = ucv.UnmarshalItems(resp.CfgData)
 	if !reflect.DeepEqual(items, []ucv.Item{{Key: navSat, Value: 1}}) {
 		t.Errorf("Flash lost the item: %+v", items)
+	}
+	// A wildcard delete of an empty group deletes nothing and is valid,
+	// like deleting items that are not stored.
+	del = &ubxbin.CfgValdel{
+		CfgValdelFixed: ubxbin.CfgValdelFixed{Layers: ubxbin.CfgValdelLayerFlash},
+		CfgData:        ucv.MarshalKeys([]ucv.Key{ucv.Key(0x2092ffff)}),
+	}
+	if !db.valdel(del) {
+		t.Errorf("valdel of empty-group wildcard NAKed")
 	}
 }
 

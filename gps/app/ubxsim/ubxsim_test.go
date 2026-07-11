@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
@@ -12,7 +13,9 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/internal/ubx"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
@@ -378,6 +381,172 @@ func TestRxmCor(t *testing.T) {
 			if !reflect.DeepEqual(m, tc.expect) {
 				t.Errorf("%s:\ngot  %+v\nwant %+v", tc.name, m, tc.expect)
 			}
+		}
+	})
+}
+
+// TestCfgPrt checks that the CFG-PRT poll response is synthesized from
+// the config database: PortID from the polled port, baud from its
+// baud-rate key (UART only), and the protocol masks from its
+// INPROT/OUTPROT boolean keys.
+func TestCfgPrt(t *testing.T) {
+	tests := []struct {
+		name   string
+		dflt   ucv.Map
+		port   ucv.Port
+		expect *ubxbin.CfgPrt
+	}{
+		{
+			name: "UART1 all protocols",
+			dflt: ucv.Map{
+				ucv.KUart1Baudrate.Key():      115200,
+				ucv.KUart1inprotUbx.Key():     1,
+				ucv.KUart1inprotNmea.Key():    1,
+				ucv.KUart1inprotRtcm3x.Key():  1,
+				ucv.KUart1outprotUbx.Key():    1,
+				ucv.KUart1outprotNmea.Key():   1,
+				ucv.KUart1outprotRtcm3x.Key(): 1,
+			},
+			port: ucv.UART1,
+			expect: &ubxbin.CfgPrt{
+				PortID:       ubxbin.PortUART1,
+				Mode:         ubxbin.CfgPrtModeCharLen8 | ubxbin.CfgPrtModeParityNone,
+				BaudRate:     115200,
+				InProtoMask:  ubxbin.CfgPrtProtoUBX | ubxbin.CfgPrtProtoNMEA | ubxbin.CfgPrtProtoRTCM3,
+				OutProtoMask: ubxbin.CfgPrtProtoUBX | ubxbin.CfgPrtProtoNMEA | ubxbin.CfgPrtProtoRTCM3,
+			},
+		},
+		{
+			name: "UART1 UBX only",
+			dflt: ucv.Map{
+				ucv.KUart1Baudrate.Key():   38400,
+				ucv.KUart1inprotUbx.Key():  1,
+				ucv.KUart1outprotUbx.Key(): 1,
+			},
+			port: ucv.UART1,
+			expect: &ubxbin.CfgPrt{
+				PortID:       ubxbin.PortUART1,
+				Mode:         ubxbin.CfgPrtModeCharLen8 | ubxbin.CfgPrtModeParityNone,
+				BaudRate:     38400,
+				InProtoMask:  ubxbin.CfgPrtProtoUBX,
+				OutProtoMask: ubxbin.CfgPrtProtoUBX,
+			},
+		},
+		{
+			name: "USB has no baud rate or UART mode",
+			dflt: ucv.Map{
+				ucv.KUsbinprotUbx.Key():   1,
+				ucv.KUsboutprotUbx.Key():  1,
+				ucv.KUsboutprotNmea.Key(): 1,
+			},
+			port: ucv.USB,
+			expect: &ubxbin.CfgPrt{
+				PortID:       ubxbin.PortUSB,
+				InProtoMask:  ubxbin.CfgPrtProtoUBX,
+				OutProtoMask: ubxbin.CfgPrtProtoUBX | ubxbin.CfgPrtProtoNMEA,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := cfgPrt(newCfgDB(tc.dflt), tc.port)
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
+			}
+		})
+	}
+}
+
+// TestCfgPrtPoll drives the CFG-PRT poll over the pipe: a no-payload
+// poll and a 1-byte poll for the simulated port both return the port
+// config and an ACK; a 1-byte poll for a port the simulator does not
+// model is NAKed with no response.
+func TestCfgPrtPoll(t *testing.T) {
+	prtPoll := func(payload ...byte) []byte {
+		pkt, err := ubxbin.PackMsg(ubxbin.CfgPrtID, payload)
+		if err != nil {
+			t.Fatalf("pack CFG-PRT poll: %v", err)
+		}
+		return pkt
+	}
+	tests := []struct {
+		name      string
+		poll      []byte
+		expectNak bool
+	}{
+		{name: "no-payload poll", poll: prtPoll()},
+		{name: "own-port poll", poll: prtPoll(byte(ucv.UART1))},
+		{name: "other-port poll NAKed", poll: prtPoll(byte(ucv.USB)), expectNak: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w, ch := simConn(t, testPersonality())
+				if _, err := w.Write(tc.poll); err != nil {
+					t.Fatalf("write: %v", err)
+				}
+				if tc.expectNak {
+					if ackResult(t, ch, ubxbin.CfgPrtID) {
+						t.Errorf("poll for unmodelled port ACKed")
+					}
+					return
+				}
+				resp := await(t, ch, "CFG-PRT", isUbx(ubxbin.CfgPrtID))
+				m, err := ubxbin.ParseMsg(resp.Data)
+				if err != nil {
+					t.Fatalf("parse CFG-PRT: %v", err)
+				}
+				if got := m.(*ubxbin.CfgPrt).PortID; got != ubxbin.PortUART1 {
+					t.Errorf("CFG-PRT PortID = %d, want UART1", got)
+				}
+				if !ackResult(t, ch, ubxbin.CfgPrtID) {
+					t.Errorf("CFG-PRT poll NAKed")
+				}
+			})
+		})
+	}
+}
+
+// fakeOutPort adapts an io.Writer (the simulator's input pipe) to the
+// gpsio.OutPort gpscfg.Configure writes probes and requests to.
+type fakeOutPort struct{ w io.Writer }
+
+func (p *fakeOutPort) Write(b []byte) (int, error) { return p.w.Write(b) }
+func (p *fakeOutPort) Buffered() (int, error)      { return 0, nil }
+func (p *fakeOutPort) ReadOnly() bool              { return false }
+func (p *fakeOutPort) Direct() bool                { return true }
+
+// TestConfiguratorPortDiscovery drives the real Configurator through
+// gpscfg.Configure against the shipped F9P personality (protVer 27.50),
+// where port discovery goes via a CFG-PRT poll rather than MON-COMMS.
+// Getting the port and the enabled signals reduces the run to the
+// MON-VER probe, that poll, and valGetSignals' VALGET of the SIGNAL
+// group wildcard plus a wildcard for a group the F9P database has no
+// keys in -- the poll a real F9P ACKed with only the populated group's
+// items (gpshwtest001/019.jsonl). Completing without error and
+// reporting UART1 and a signal set proves both paths work against the
+// simulator.
+func TestConfiguratorPortDiscovery(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p, err := LoadPersonality("testdata/f9p/f9p-personality.ubx")
+		if err != nil {
+			t.Fatalf("load personality: %v", err)
+		}
+		w, ch := simConn(t, p)
+		target := gpsprot.NewConfigTarget()
+		target.Get = gpsprot.PropIDPort | gpsprot.PropIDSignalsEnabled
+		rslt, err := gpscfg.Configure(t.Context(), slog.New(slog.DiscardHandler),
+			gpsreg.CreatePacketProcessors(gpsreg.VendorUblox),
+			[]gpsprot.ConfigProtocol{ubx.NewConfigProtocol()},
+			target, ch, &fakeOutPort{w: w})
+		if err != nil {
+			t.Fatalf("Configure: %v", err)
+		}
+		if port, ok := rslt.ConfigProps.GetPort(); !ok || port != "UART1" {
+			t.Errorf("discovered port %q (ok=%v), want UART1", port, ok)
+		}
+		if sigs, ok := rslt.ConfigProps.GetSignalsEnabled(); !ok || sigs == 0 {
+			t.Errorf("signals enabled %v (ok=%v), want a non-empty set", sigs, ok)
 		}
 	})
 }
