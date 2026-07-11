@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"sync"
 
 	"github.com/jclark/satpulse/gps/app/session"
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -27,35 +29,62 @@ type server struct {
 	token  string        // empty means no auth
 	vendor gpsreg.Vendor // --vendor: the vendor for every connect
 	mux    *http.ServeMux
+	seatMu sync.Mutex
+	seat   string
 }
 
 func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string, vendor gpsreg.Vendor) *server {
 	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, vendor: vendor, mux: http.NewServeMux()}
-	// get: token-checked. post: token-checked and requires a JSON
-	// Content-Type, which blocks cross-site CSRF (see requireJSON).
+	// Seed the writer broadcast with a no-holder value: after a restart with
+	// the token disabled, an old tab's EventSource reconnects and re-primes
+	// from this hub, and must learn that its previous seat is stale (flipping
+	// read-only) rather than keep rendering writable against the empty seat,
+	// which 410s every writer POST. A first claim overwrites the seed, which
+	// never becomes the current seat.
+	hub.broadcastWriter(randHex())
+	// get: token-checked. reader: token-checked and requires a JSON
+	// Content-Type, which blocks cross-site CSRF (see requireJSON); for POSTs
+	// that only read session state, plus the seat claim itself. writer: like
+	// reader but also requires the current seat, for the mutating session
+	// operations. Claiming the seat is the one mutating POST without a seat.
 	get := s.auth
-	post := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(requireJSON(h)) }
+	reader := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(requireJSON(h)) }
+	writer := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(s.requireSeat(requireJSON(h))) }
 	s.mux.Handle("/", http.FileServer(http.FS(webContent())))
 	s.mux.HandleFunc("GET /sse", get(s.handleSSE))
+	s.mux.HandleFunc("POST /api/seat", reader(s.handleSeat))
 	s.mux.HandleFunc("GET /api/state", get(s.handleState))
 	s.mux.HandleFunc("GET /api/receiver", get(s.handleReceiver))
 	s.mux.HandleFunc("GET /api/speed", get(s.handleSpeed))
 	s.mux.HandleFunc("GET /api/corrections", get(s.handleCorrState))
 	s.mux.HandleFunc("GET /api/ports", get(s.handlePorts))
-	s.mux.HandleFunc("POST /api/connect", post(s.handleConnect))
-	s.mux.HandleFunc("POST /api/disconnect", post(s.handleDisconnect))
-	s.mux.HandleFunc("POST /api/config/read", post(s.handleReadConfig))
-	s.mux.HandleFunc("POST /api/config/apply", post(s.handleApplyConfig))
-	s.mux.HandleFunc("POST /api/signals", post(s.handleSignals))
-	s.mux.HandleFunc("POST /api/corrections/start", post(s.handleCorrStart))
-	s.mux.HandleFunc("POST /api/corrections/stop", post(s.handleCorrStop))
-	s.mux.HandleFunc("POST /api/decode-packet", post(s.handleDecodePacket))
-	s.mux.HandleFunc("POST /api/geo/ecef-to-llh", post(s.handleECEFtoLLH))
-	s.mux.HandleFunc("POST /api/geo/llh-to-ecef", post(s.handleLLHtoECEF))
-	s.mux.HandleFunc("POST /api/geo/check-on-earth", post(s.handleCheckOnEarth))
-	s.mux.HandleFunc("POST /api/geo/vel-ned-to-ecef", post(s.handleVelNEDtoECEF))
-	s.mux.HandleFunc("POST /api/geo/vel-ecef-to-ned", post(s.handleVelECEFtoNED))
+	s.mux.HandleFunc("POST /api/connect", writer(s.handleConnect))
+	s.mux.HandleFunc("POST /api/disconnect", writer(s.handleDisconnect))
+	s.mux.HandleFunc("POST /api/config/read", writer(s.handleReadConfig))
+	s.mux.HandleFunc("POST /api/config/apply", writer(s.handleApplyConfig))
+	s.mux.HandleFunc("POST /api/signals", reader(s.handleSignals))
+	s.mux.HandleFunc("POST /api/corrections/start", writer(s.handleCorrStart))
+	s.mux.HandleFunc("POST /api/corrections/stop", writer(s.handleCorrStop))
+	s.mux.HandleFunc("POST /api/decode-packet", reader(s.handleDecodePacket))
+	s.mux.HandleFunc("POST /api/geo/ecef-to-llh", reader(s.handleECEFtoLLH))
+	s.mux.HandleFunc("POST /api/geo/llh-to-ecef", reader(s.handleLLHtoECEF))
+	s.mux.HandleFunc("POST /api/geo/check-on-earth", reader(s.handleCheckOnEarth))
+	s.mux.HandleFunc("POST /api/geo/vel-ned-to-ecef", reader(s.handleVelNEDtoECEF))
+	s.mux.HandleFunc("POST /api/geo/vel-ecef-to-ned", reader(s.handleVelECEFtoNED))
 	return s
+}
+
+func (s *server) requireSeat(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s.seatMu.Lock()
+		current := r.URL.Query().Get("seat") == s.seat && s.seat != ""
+		s.seatMu.Unlock()
+		if !current {
+			writeError(w, http.StatusGone, errors.New("workbench seat is no longer current"))
+			return
+		}
+		h(w, r)
+	}
 }
 
 // auth wraps a handler with the access-token check. The token rides a
@@ -121,7 +150,32 @@ func sessionError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusConflict, err)
 }
 
+// handleSeat claims the write seat, unconditionally: it mints a fresh value,
+// makes it current, returns it to the claimant, and broadcasts it so every
+// window learns who now holds the seat. Newest claim wins. The seat check on
+// writer POSTs is a freshness check, not authentication - every window that
+// can claim is equally trusted.
+func (s *server) handleSeat(w http.ResponseWriter, _ *http.Request) {
+	seat := randHex()
+	s.seatMu.Lock()
+	s.seat = seat
+	s.hub.broadcastWriter(seat)
+	s.seatMu.Unlock()
+	writeJSON(w, map[string]string{"seat": seat})
+}
+
+// randHex returns a 128-bit crypto-random value as hex, used for the seat
+// values. rand.Read cannot fail (it crashes the program if the platform
+// source of randomness does).
+func randHex() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
 func (s *server) handleSSE(w http.ResponseWriter, r *http.Request) {
+	c, prime := s.hub.subscribe(r.URL.Query().Get("stream") == "packets")
+	defer s.hub.unsubscribe(c)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, errors.New("streaming not supported"))
@@ -130,8 +184,6 @@ func (s *server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	c, prime := s.hub.subscribe(r.URL.Query().Get("stream") == "packets")
-	defer s.hub.unsubscribe(c)
 	for _, e := range prime {
 		if _, err := io.WriteString(w, e.Format()); err != nil {
 			return

@@ -29,6 +29,7 @@ interface NMEAPositionEvent {
 
 interface Props {
     connState: ConnState;
+    readOnly: boolean;
 }
 
 const LS_MODE_KEY = 'corr-mode';
@@ -56,7 +57,7 @@ function readPort(mode: CorrMode): string {
     return mode === 'ntrip' ? NTRIP_DEFAULT_PORT : '';
 }
 
-export function CorrectionsPanel({connState}: Props) {
+export function CorrectionsPanel({connState, readOnly}: Props) {
     const [mode, setMode] = useState<CorrMode>(readMode);
     const [host, setHost] = useState(() => localStorage.getItem(LS_HOST_KEY) || '');
     const [port, setPort] = useState(() => readPort(readMode()));
@@ -178,7 +179,9 @@ export function CorrectionsPanel({connState}: Props) {
     }, [running, canStart, mode, host, portNum, mountpoint, username, password, nmeaSendActive, setPendingSync]);
 
     const locked = running || pending !== null;
-    const fieldsDisabled = !connected || locked;
+    // readOnly disables the inputs and the start/stop button only; the state
+    // display (dot, status, running source) stays live from the SSE stream.
+    const fieldsDisabled = !connected || locked || readOnly;
 
     let dotClass = 'bg-text-muted';
     if (corrState === 'connected') dotClass = 'bg-success';
@@ -237,7 +240,7 @@ export function CorrectionsPanel({connState}: Props) {
                 <Button
                     class="ml-auto"
                     variant={running ? 'secondary' : 'primary'}
-                    disabled={!synced || pending !== null || !connected || (!running && !canStart)}
+                    disabled={!synced || pending !== null || !connected || (!running && !canStart) || readOnly}
                     onClick={handleToggle}
                 >
                     {running ? 'Disconnect' : 'Connect'}

@@ -606,6 +606,14 @@ corrections all land here; the Messages tab is hidden until phase 6.
 Serial transport only (see Transports). This alone is a usable
 tool, so the NEWS.md entry and man page ride this PR.
 
+### Inserted PR: workbench writer seat
+
+The `wb-single-seat` branch is inserted into the stacked-PR series
+immediately after phase 3. It limits mutating operations to one browser
+window at a time - the write seat, claimed by the newest window - while
+every other window stays a live, read-only viewer. See
+[wb-multi-window.md](wb-multi-window.md).
+
 ### Phase 4: rework desktop-gui on top (branch work, no master PR)
 
 On the desktop-gui branch: merge the tip of the stack (the phase-3

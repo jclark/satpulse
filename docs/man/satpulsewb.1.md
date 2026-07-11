@@ -19,6 +19,7 @@ The Workbench offers device-independent receiver configuration that requires no 
 With no options, **satpulsewb** binds all interfaces on its default port (15754), falling back to an OS-picked port if it is taken, and protects the session with a token generated for this run.
 The printed URLs carry the token as a query parameter; the frontend stores it and strips it from the URL bar.
 Anyone with a printed URL controls the receiver until **satpulsewb** exits.
+Any number of windows can watch the session, but only one at a time holds the write seat and can change the receiver; opening the URL in a second window takes the seat, and the first window becomes a live read-only viewer with a "Use here" button to take it back.
 
 There is no TLS support.
 On a network you do not trust, listen on loopback only and reach it through an SSH tunnel:

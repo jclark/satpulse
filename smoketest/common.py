@@ -479,6 +479,20 @@ def wb_post(ctx: SmokeContext, path: str, body: JsonObject, timeout: float = 4.0
         return None, b""
 
 
+def wb_claim(ctx: SmokeContext) -> str:
+    """Claim the workbench write seat, returning the secret seat value.
+
+    Writer POSTs (the mutating session operations) carry the current seat as a
+    query parameter; reader POSTs, GETs, and SSE opens are seat-free. Newest
+    claim wins unconditionally, so a check that needs to write just claims.
+    """
+    status, body = wb_post(ctx, "/api/seat", {})
+    assert status == 200, f"seat claim expected 200, got {status}"
+    seat = cast(JsonObject, json.loads(body)).get("seat")
+    assert isinstance(seat, str) and seat, f"seat claim returned no seat: {body!r}"
+    return seat
+
+
 def check_wb_auth_required(ctx: SmokeContext) -> None:
     """The token-protected API rejects a request with no token and accepts one with it."""
     assert ctx.token, "check_wb_auth_required needs a token-enabled launch"
@@ -496,14 +510,16 @@ def check_wb_open_no_token(ctx: SmokeContext) -> None:
 
 
 def check_wb_csrf(ctx: SmokeContext) -> None:
-    """A state-changing POST without application/json is rejected (the CSRF gate).
+    """A POST without application/json is rejected (the CSRF gate).
 
-    This holds even when the token is disabled, where auth is a no-op: the gate
-    is what stops a cross-site page issuing a simple POST at the receiver.
-    urllib defaults an un-typed POST body to x-www-form-urlencoded, exactly the
+    This holds even when the token is disabled, where auth is a no-op. The
+    target is a reader POST, which has no seat requirement: the content-type
+    gate is all that stops a cross-site page issuing a simple POST at it
+    (writer POSTs are additionally guarded by the secret seat). urllib
+    defaults an un-typed POST body to x-www-form-urlencoded, exactly the
     simple-request content type the gate must reject.
     """
-    req = urllib.request.Request(ctx.wb_url("/api/disconnect"), data=b"x", method="POST")
+    req = urllib.request.Request(ctx.wb_url("/api/signals"), data=b"x", method="POST")
     try:
         with urllib.request.urlopen(req, timeout=2) as resp:
             status: int | None = resp.status
@@ -585,6 +601,41 @@ def check_wb_priming(ctx: SmokeContext, expect: Iterable[str] = ("gps:state", "g
     not live ones.
     """
     wb_sse(ctx, packets=False, expect=expect, read_seconds=5.0)
+
+
+def check_wb_seat_takeover(ctx: SmokeContext) -> None:
+    """A second seat claim supersedes the first without closing its stream.
+
+    The current seat value is broadcast as the sticky `writer` event: opening a
+    stream primes it, and claiming a second seat broadcasts the fresh value to
+    the first, still-open stream (no stream is terminated). A writer POST still
+    carrying the superseded seat is then refused with 410 (distinct from the
+    409 used for session conflicts).
+    """
+    old = wb_claim(ctx)
+    with urllib.request.urlopen(ctx.wb_url("/sse"), timeout=8) as resp:
+        # urlopen returns once the headers are in, and the server subscribes
+        # before sending them, so the second claim's seat cannot be in this
+        # stream's prime: seeing it below proves live delivery. SSE data
+        # buffers in the socket, so claiming before reading loses nothing.
+        new_seat = wb_claim(ctx)
+        pending = ""
+        got = False
+        try:
+            for raw in resp:
+                line = raw.decode("utf-8", "replace").strip()
+                if line.startswith("event: "):
+                    pending = line[len("event: ") :]
+                elif line.startswith("data: ") and pending == "writer":
+                    if json.loads(line[len("data: ") :]).get("seat") == new_seat:
+                        got = True
+                        break
+                    pending = ""
+        except TimeoutError:
+            pass
+        assert got, "new seat not delivered to the open stream"
+    status, _ = wb_post(ctx, f"/api/disconnect?seat={old}", {})
+    assert status == 410, f"POST with the superseded seat expected 410, got {status}"
 
 
 def check_wb_msg_primed(ctx: SmokeContext, kind: str, read_seconds: float = 5.0) -> None:

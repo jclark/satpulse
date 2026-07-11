@@ -727,7 +727,9 @@ class Context:
         The bound port comes from the printed URL (program.wait_ready), so this
         is correct for the no-`-L` default-port path too, where the port is
         chosen at runtime. Requests always use loopback; the all-interfaces bind
-        includes it.
+        includes it. Writer POSTs also need the current seat; a check that
+        writes claims one (common.wb_claim) and puts it in the path's own
+        query string.
         """
         url = f"http://127.0.0.1:{self.wb_port}{path}"
         if self.token:

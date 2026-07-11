@@ -91,6 +91,12 @@ export interface Transport {
     // openURL opens an external link.
     openURL(url: string): void;
 
+    // reclaim takes the write seat for this window (the "Use here" action on a
+    // read-only window). Optional: a backend with a single guaranteed window
+    // (the desktop app) has no seat and omits it, so the window is always the
+    // writer.
+    reclaim?(): Promise<void>;
+
     // Optional capabilities.
     connection?: ConnectionTransport;
     msgFile?: MsgFileTransport;
