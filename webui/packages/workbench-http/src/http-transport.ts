@@ -27,7 +27,7 @@ export async function newHTTPTransport(token: string): Promise<Transport> {
     const authParams = new URLSearchParams();
     if (token) authParams.set('t', token);
     const authQuery = authParams.size ? '?' + authParams : '';
-    async function claim(): Promise<{seat: string; grant: string}> {
+    async function claim(): Promise<string> {
         const resp = await fetch('/api/seat' + authQuery, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -35,14 +35,13 @@ export async function newHTTPTransport(token: string): Promise<Transport> {
         });
         if (!resp.ok) throw await httpError(resp);
         const c = await resp.json();
-        if (typeof c.seat !== 'string' || !c.seat || typeof c.grant !== 'string' || !c.grant) {
+        if (typeof c.seat !== 'string' || !c.seat) {
             throw new Error('Invalid seat claim response');
         }
-        return {seat: c.seat, grant: c.grant};
+        return c.seat;
     }
-    const initial = await claim();
-    let seat = initial.seat;
-    const events = new EventStreams(authQuery, initial.grant);
+    let seat = await claim();
+    const events = new EventStreams(authQuery, seat);
     const seatQuery = () => {
         const p = new URLSearchParams(authParams);
         p.set('seat', seat);
@@ -88,9 +87,8 @@ export async function newHTTPTransport(token: string): Promise<Transport> {
         eventsOn: (name, cb) => events.on(name, cb),
         openURL: url => { window.open(url, '_blank'); },
         reclaim: async () => {
-            const c = await claim();
-            seat = c.seat;
-            events.setGrant(c.grant);
+            seat = await claim();
+            events.setSeat(seat);
         },
         connection: {
             connect: async (device: string, speed: number) => {
@@ -120,24 +118,24 @@ async function httpError(resp: Response): Promise<HttpError> {
 // while someone is subscribed to it -- the server streams packets only
 // while such a client is connected.
 //
-// It also owns the window's writer state. The server broadcasts a sticky
-// `writer` event carrying the current grant; this window is the writer iff
-// that grant equals the grant from its own claim. It exposes this to the app
-// as the synthetic wb:readonly event (boolean payload) and surfaces a stale
-// token, seen as a terminal EventSource close, as wb:authlost.
+// It also owns the window's writer state. The server broadcasts the current
+// seat value as a sticky `writer` event; this window is the writer iff that
+// value equals the seat from its own claim. It exposes this to the app as the
+// synthetic wb:readonly event (boolean payload) and surfaces a stale token,
+// seen as a terminal EventSource close, as wb:authlost.
 class EventStreams {
     private query: string;
     private listeners = new Map<string, Set<(data: any) => void>>();
     private main?: EventSource;
     private packets?: EventSource;
-    private grant: string;
-    private broadcast = ''; // latest broadcast grant; '' until the first writer event
+    private claimed: string;
+    private broadcast = ''; // latest broadcast seat; '' until the first writer event
     private ro = false;
     private authLost = false;
 
-    constructor(query: string, grant: string) {
+    constructor(query: string, seat: string) {
         this.query = query;
-        this.grant = grant;
+        this.claimed = seat;
     }
 
     on(name: string, cb: (data: any) => void): () => void {
@@ -188,27 +186,27 @@ class EventStreams {
         this.setReadOnly(true);
     }
 
-    // setGrant adopts a fresh claim's grant (a re-claim). The broadcast is the
+    // setSeat adopts a fresh claim's seat (a re-claim). The broadcast is the
     // sole authority for the writable flag: compare against the latest one
     // rather than forcing writable, so a stale claim response (another window
     // claimed while ours was in flight, and its broadcast already arrived)
     // cannot mark this window writable. If our own broadcast has not arrived
     // yet this shows read-only for an instant until it does -- the safe
     // direction. Before any broadcast the window is the writer (boot).
-    setGrant(grant: string) {
-        this.grant = grant;
-        this.setReadOnly(this.broadcast !== '' && this.broadcast !== grant);
+    setSeat(seat: string) {
+        this.claimed = seat;
+        this.setReadOnly(this.broadcast !== '' && this.broadcast !== seat);
     }
 
     private onWriter(e: MessageEvent) {
-        let grant = '';
+        let seat = '';
         try {
-            grant = JSON.parse(e.data).grant;
+            seat = JSON.parse(e.data).seat;
         } catch {
             return;
         }
-        this.broadcast = grant;
-        this.setReadOnly(grant !== this.grant);
+        this.broadcast = seat;
+        this.setReadOnly(seat !== this.claimed);
     }
 
     private setReadOnly(ro: boolean) {

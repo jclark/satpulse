@@ -71,15 +71,14 @@ func (s *server) rawPost(path, body string) *httptest.ResponseRecorder {
 	return w
 }
 
-func (s *server) claimTestSeat(t *testing.T, query string) (seat, grant string) {
+func (s *server) claimTestSeat(t *testing.T, query string) string {
 	t.Helper()
 	w := s.rawPost("/api/seat"+query, `{}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("claim seat: status %d: %s", w.Code, w.Body.String())
 	}
 	var resp struct {
-		Seat  string `json:"seat"`
-		Grant string `json:"grant"`
+		Seat string `json:"seat"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode seat: %v", err)
@@ -87,10 +86,7 @@ func (s *server) claimTestSeat(t *testing.T, query string) (seat, grant string) 
 	if len(resp.Seat) != 32 {
 		t.Fatalf("seat length %d want 32", len(resp.Seat))
 	}
-	if len(resp.Grant) != 32 {
-		t.Fatalf("grant length %d want 32", len(resp.Grant))
-	}
-	return resp.Seat, resp.Grant
+	return resp.Seat
 }
 
 func TestSeatClaimGuards(t *testing.T) {
@@ -122,7 +118,7 @@ func TestRequireJSON(t *testing.T) {
 		{name: "json with charset", contentType: "application/json; charset=utf-8", expectCode: http.StatusBadRequest},
 	}
 	s := newTestServer("")
-	seat, _ := s.claimTestSeat(t, "")
+	seat := s.claimTestSeat(t, "")
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -211,9 +207,9 @@ func TestEndpoints(t *testing.T) {
 // latest sticky events before receiving live ones.
 func TestSSEPriming(t *testing.T) {
 	s := newTestServer("")
-	// The claim broadcasts the writer grant, which primes ahead of the session
-	// sticky events. SSE is seat-free, so the stream carries no seat.
-	_, grant := s.claimTestSeat(t, "")
+	// The claim broadcasts the seat value, which primes ahead of the session
+	// sticky events. SSE is seat-free, so the stream URL carries no seat.
+	seat := s.claimTestSeat(t, "")
 	s.hub.Emit(session.Event{Name: session.EventState, Data: session.StateConnected})
 	s.hub.Emit(session.Event{Name: session.EventSpeed, Data: 9600})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -228,7 +224,7 @@ func TestSSEPriming(t *testing.T) {
 	// channel; cancelling the request then ends the stream.
 	cancel()
 	<-done
-	expect := mustMake(t, "writer", map[string]string{"grant": grant}).Format() +
+	expect := mustMake(t, "writer", map[string]string{"seat": seat}).Format() +
 		"event: gps:state\ndata: \"connected\"\n\nevent: gps:speed\ndata: 9600\n\n"
 	if got := w.Body.String(); got != expect {
 		t.Errorf("got  %q\nwant %q", got, expect)
@@ -240,7 +236,7 @@ func TestSSEPriming(t *testing.T) {
 
 func TestSeatLifecycle(t *testing.T) {
 	s := newTestServer("")
-	old, oldGrant := s.claimTestSeat(t, "")
+	old := s.claimTestSeat(t, "")
 	// A writer POST with the current seat is accepted; a reader POST needs no
 	// seat at all.
 	if w := s.rawPost("/api/disconnect?seat="+old, `{}`); w.Code != http.StatusOK {
@@ -249,7 +245,7 @@ func TestSeatLifecycle(t *testing.T) {
 	if w := s.rawPost("/api/signals", `{"gnss":["GPS"]}`); w.Code != http.StatusOK {
 		t.Fatalf("seat-free reader POST: got %d want %d: %s", w.Code, http.StatusOK, w.Body.String())
 	}
-	// SSE opens without a seat and is primed with the current writer grant.
+	// SSE opens without a seat and is primed with the current seat value.
 	ctx, cancel := context.WithCancel(context.Background())
 	w := httptest.NewRecorder()
 	done := make(chan struct{})
@@ -259,9 +255,9 @@ func TestSeatLifecycle(t *testing.T) {
 	}()
 	waitForClients(t, s.hub, 1)
 	// A second claim supersedes the first, without closing the open stream.
-	current, newGrant := s.claimTestSeat(t, "")
-	if current == old || newGrant == oldGrant {
-		t.Fatal("second claim did not regenerate the seat and grant")
+	current := s.claimTestSeat(t, "")
+	if current == old {
+		t.Fatal("second claim did not regenerate the seat")
 	}
 	cancel()
 	select {
@@ -269,8 +265,8 @@ func TestSeatLifecycle(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("stream did not end after cancellation")
 	}
-	if body := w.Body.String(); !strings.Contains(body, oldGrant) {
-		t.Errorf("stream not primed with the writer grant: %q", body)
+	if body := w.Body.String(); !strings.Contains(body, old) {
+		t.Errorf("stream not primed with the seat value: %q", body)
 	}
 	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
 		t.Errorf("SSE Content-Type %q want text/event-stream", ct)
@@ -289,26 +285,26 @@ func TestSeatLifecycle(t *testing.T) {
 }
 
 // TestWriterSeed checks that a fresh server with no claim primes a no-holder
-// writer grant (so a tab reconnecting after a restart learns its old grant is
+// writer value (so a tab reconnecting after a restart learns its old seat is
 // stale) and that a claim then replaces it.
 func TestWriterSeed(t *testing.T) {
 	s := newTestServer("")
-	seed := grabWriterGrant(t, s)
+	seed := grabWriterSeat(t, s)
 	if len(seed) != 32 {
-		t.Fatalf("seed grant length %d want 32", len(seed))
+		t.Fatalf("seed value length %d want 32", len(seed))
 	}
-	_, grant := s.claimTestSeat(t, "")
-	if grant == seed {
-		t.Fatal("claim did not replace the seed grant")
+	seat := s.claimTestSeat(t, "")
+	if seat == seed {
+		t.Fatal("claim did not replace the seed value")
 	}
-	if got := grabWriterGrant(t, s); got != grant {
-		t.Errorf("primed grant %q want %q", got, grant)
+	if got := grabWriterSeat(t, s); got != seat {
+		t.Errorf("primed value %q want %q", got, seat)
 	}
 }
 
-// grabWriterGrant opens a seat-free SSE stream, ends it after the prime, and
-// returns the grant carried by the primed writer event.
-func grabWriterGrant(t *testing.T, s *server) string {
+// grabWriterSeat opens a seat-free SSE stream, ends it after the prime, and
+// returns the seat value carried by the primed writer event.
+func grabWriterSeat(t *testing.T, s *server) string {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	w := httptest.NewRecorder()
@@ -324,12 +320,12 @@ func grabWriterGrant(t *testing.T, s *server) string {
 		t.Fatalf("no writer event primed: %q", w.Body.String())
 	}
 	var p struct {
-		Grant string `json:"grant"`
+		Seat string `json:"seat"`
 	}
 	if err := json.Unmarshal([]byte(rest[:strings.Index(rest, "\n")]), &p); err != nil {
 		t.Fatalf("decode writer event: %v", err)
 	}
-	return p.Grant
+	return p.Seat
 }
 
 func waitForClients(t *testing.T, h *sseHub, n int) {

@@ -36,19 +36,26 @@ is why the writer seat restricts writes, not windows.
 
 ## The model as implemented
 
-The server holds one write seat: a secret per-claim value carried
-on writer POSTs, minted together with a public grant that is
-broadcast to every window as a sticky `writer` SSE event.
-`POST /api/seat` always claims - newest window wins - so a fresh
-window or a reload is always writable. Writer-gated POSTs
-(connect, disconnect, config read/apply, corrections start/stop,
-and the msgfile operations once wb-msgfile lands) answer 410 Gone
-to a stale or missing seat; reader POSTs (signals, decode-packet,
-the geo conversions) and the SSE streams carry only the token. A
-window is the writer iff the latest broadcast grant equals the
-grant from its own claim; on mismatch its mutating controls grey
-behind a connection-bar notice with a "Use here" button that
-re-claims in place. No stream is ever terminated.
+The server holds one write seat, identified by a random per-claim
+value (128-bit hex; random rather than a counter so a value from
+a previous server run can never be mistaken for current).
+`POST /api/seat` always claims - newest window wins: it mints a
+fresh value, returns it to the claimant, and broadcasts it to
+every window as the sticky `writer` SSE event, so a fresh window
+or a reload is always writable. Writer-gated POSTs (connect,
+disconnect, config read/apply, corrections start/stop, and the
+msgfile operations once wb-msgfile lands) carry the value and
+answer 410 Gone when it is not the current one - a freshness
+check, not authentication: every window that can claim is equally
+trusted, so nothing about the value is secret. Reader POSTs
+(signals, decode-packet, the geo conversions) and the SSE streams
+carry only the token. A window is the writer iff the latest
+broadcast value equals the one from its own claim; on mismatch
+its mutating controls grey behind a connection-bar notice with a
+"Use here" button that re-claims in place. No stream is ever
+terminated. At startup the broadcast is seeded with a fresh
+no-holder value, so a tab surviving a server restart learns
+immediately that its old seat is stale.
 
 There is no read-only mode a window can be put into or choose:
 read-only is only ever the result of another window claiming

@@ -17,7 +17,7 @@ type sseHub struct {
 	clients  map[*sseClient]struct{}
 	cache    map[session.EventName]sse.Event
 	msgCache map[string]sse.Event // latest gps:msg per stickyMsgKind
-	writer   sse.Event            // latest server-broadcast writer-grant event (sticky)
+	writer   sse.Event            // latest server-broadcast writer event (sticky)
 	npackets int
 }
 
@@ -182,12 +182,12 @@ func (h *sseHub) subscribe(packets bool) (*sseClient, []sse.Event) {
 	return c, prime
 }
 
-// broadcastWriter caches and fans out the sticky writer-grant event, which
-// tells each window whether it holds the write seat. It originates from the
-// server on every seat claim, not from the session, so it lives beside the
-// event cache rather than passing through Emit.
-func (h *sseHub) broadcastWriter(grant string) {
-	e, err := sse.Make("writer", map[string]string{"grant": grant})
+// broadcastWriter caches and fans out the sticky writer event carrying the
+// current seat value, which tells each window whether it holds the write seat.
+// It originates from the server on every seat claim, not from the session, so
+// it lives beside the event cache rather than passing through Emit.
+func (h *sseHub) broadcastWriter(seat string) {
+	e, err := sse.Make("writer", map[string]string{"seat": seat})
 	if err != nil {
 		return
 	}

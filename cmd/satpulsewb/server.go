@@ -35,11 +35,12 @@ type server struct {
 
 func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string, vendor gpsreg.Vendor) *server {
 	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, vendor: vendor, mux: http.NewServeMux()}
-	// Seed the writer grant with a no-holder value: after a restart with the
-	// token disabled, an old tab's EventSource reconnects and re-primes from
-	// this hub, and must learn that its previous grant is stale (flipping
+	// Seed the writer broadcast with a no-holder value: after a restart with
+	// the token disabled, an old tab's EventSource reconnects and re-primes
+	// from this hub, and must learn that its previous seat is stale (flipping
 	// read-only) rather than keep rendering writable against the empty seat,
-	// which 410s every writer POST. A first claim overwrites the seed.
+	// which 410s every writer POST. A first claim overwrites the seed, which
+	// never becomes the current seat.
 	hub.broadcastWriter(randHex())
 	// get: token-checked. reader: token-checked and requires a JSON
 	// Content-Type, which blocks cross-site CSRF (see requireJSON); for POSTs
@@ -149,23 +150,23 @@ func sessionError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusConflict, err)
 }
 
-// handleSeat claims the write seat, unconditionally: it mints a fresh seat and
-// grant, makes them current, and broadcasts the grant so every window learns
-// who now holds the seat. The seat is secret (returned only here, carried on
-// writer POSTs); the grant is public (broadcast, letting each window decide for
-// itself whether it is the writer). Newest claim wins.
+// handleSeat claims the write seat, unconditionally: it mints a fresh value,
+// makes it current, returns it to the claimant, and broadcasts it so every
+// window learns who now holds the seat. Newest claim wins. The seat check on
+// writer POSTs is a freshness check, not authentication - every window that
+// can claim is equally trusted.
 func (s *server) handleSeat(w http.ResponseWriter, _ *http.Request) {
-	seat, grant := randHex(), randHex()
+	seat := randHex()
 	s.seatMu.Lock()
 	s.seat = seat
-	s.hub.broadcastWriter(grant)
+	s.hub.broadcastWriter(seat)
 	s.seatMu.Unlock()
-	writeJSON(w, map[string]string{"seat": seat, "grant": grant})
+	writeJSON(w, map[string]string{"seat": seat})
 }
 
-// randHex returns a 128-bit crypto-random value as hex, used for the secret
-// seat, the public grant, and the no-holder seed grant. rand.Read cannot fail
-// (it crashes the program if the platform source of randomness does).
+// randHex returns a 128-bit crypto-random value as hex, used for the seat
+// values. rand.Read cannot fail (it crashes the program if the platform
+// source of randomness does).
 func randHex() string {
 	b := make([]byte, 16)
 	rand.Read(b)

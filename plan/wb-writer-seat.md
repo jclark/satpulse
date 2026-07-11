@@ -4,7 +4,11 @@ Implemented in commit e8341e49 (PR #367). Superseded as a design
 document by [wb-multi-window.md](wb-multi-window.md), which
 records the multi-window model this change created and the
 remaining work to make read-only windows fully live; this file
-stays as the record of the change itself.
+stays as the record of the change itself. A follow-up commit
+collapsed the seat/grant split below into a single seat value,
+returned to the claimant and broadcast: the seat's secrecy bought
+nothing, since every window that can claim is equally trusted and
+the 410 check is a freshness check, not authentication.
 
 Replaces the single-seat design
 ([archive/wb-single-seat.md](archive/wb-single-seat.md), PR #367),
