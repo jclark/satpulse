@@ -8,6 +8,7 @@ import {useState} from 'preact/hooks';
 
 interface Props {
     connState: ConnState;
+    readOnly: boolean;
     visible: boolean;
     msgFilePath: string;
     setMsgFilePath: (p: string) => void;
@@ -62,6 +63,7 @@ function isClickable(r: ResponseLine): boolean {
 
 export function MsgFilePanel({
     connState,
+    readOnly,
     visible,
     msgFilePath,
     setMsgFilePath,
@@ -264,8 +266,10 @@ export function MsgFilePanel({
     // only controls greying, so the Send button never moves on selection.
     const showPort = !!defaultPort || msgFileTags.some(t => t.needsPort);
     const showSave = msgFileTags.some(t => t.saveAware);
-    const sendEnabled = connState === 'connected' && tagArmed && selectedTagIndex >= 0 && !!msgFilePath
-        && (!needsPort || selectedPort !== '');
+    // readOnly greys the mutating controls (file picker, tag rows, Send) in a
+    // non-writer window; the catalog refetch and state display stay live.
+    const sendEnabled = connState === 'connected' && !readOnly && tagArmed && selectedTagIndex >= 0
+        && !!msgFilePath && (!needsPort || selectedPort !== '');
     const hasResults = activeTagIndex >= 0;
     const selectedResponse = selectedResponseIndex >= 0 && selectedResponseIndex < responseLines.length
         ? responseLines[selectedResponseIndex] : null;
@@ -276,10 +280,11 @@ export function MsgFilePanel({
             <div class="flex shrink-0 items-center gap-3 px-4 pt-4 pb-2">
                 {picker ? (
                     <>
-                        <label class={`flex items-center gap-1.5 ${fieldLabelText(false)}`}>
+                        <label class={`flex items-center gap-1.5 ${fieldLabelText(readOnly)}`}>
                             Vendor
                             <Select
                                 class="w-40"
+                                disabled={readOnly}
                                 value={selectedVendor}
                                 onChange={e => setSelectedVendor((e.target as HTMLSelectElement).value)}
                             >
@@ -287,11 +292,11 @@ export function MsgFilePanel({
                                 {vendors.map(v => <option key={v} value={v}>{v}</option>)}
                             </Select>
                         </label>
-                        <label class={`flex items-center gap-1.5 ${fieldLabelText(!selectedVendor)}`}>
+                        <label class={`flex items-center gap-1.5 ${fieldLabelText(readOnly || !selectedVendor)}`}>
                             File
                             <Select
                                 class="w-56"
-                                disabled={!selectedVendor}
+                                disabled={readOnly || !selectedVendor}
                                 value={selectedFile}
                                 onChange={e => setSelectedFile((e.target as HTMLSelectElement).value)}
                             >
@@ -299,10 +304,10 @@ export function MsgFilePanel({
                                 {vendorFiles.map(f => <option key={f} value={f}>{f}</option>)}
                             </Select>
                         </label>
-                        <Button disabled={!selectedFile} onClick={handleLoad}>Load</Button>
+                        <Button disabled={readOnly || !selectedFile} onClick={handleLoad}>Load</Button>
                     </>
                 ) : (
-                    <Button onClick={handleOpen}>Open...</Button>
+                    <Button disabled={readOnly} onClick={handleOpen}>Open...</Button>
                 )}
                 <span class="text-xs text-text-secondary">{msgFilePath || ''}</span>
             </div>
@@ -323,10 +328,10 @@ export function MsgFilePanel({
                             return (
                                 <tr
                                     key={i}
-                                    class={`cursor-pointer border-b border-border-subtle ${
-                                        isSelected ? 'bg-surface-3' : 'hover:bg-surface-1'
-                                    }`}
-                                    onClick={() => handleTagClick(i)}
+                                    class={`border-b border-border-subtle ${
+                                        readOnly ? '' : 'cursor-pointer'
+                                    } ${isSelected ? 'bg-surface-3' : readOnly ? '' : 'hover:bg-surface-1'}`}
+                                    onClick={() => { if (!readOnly) handleTagClick(i); }}
                                 >
                                     <td class="px-2 py-1.5 tabular-nums">
                                         {t.tag === '' ? <em class="text-text-muted">(default)</em> : t.tag}

@@ -18,6 +18,7 @@ import {speeds} from './speeds';
 
 interface Props {
     connState: ConnState;
+    readOnly: boolean;
     visible: boolean;
     configProps: Record<string, any> | null;
     signalCatalog: Record<string, string[]>;
@@ -86,8 +87,11 @@ function validateFields(
     return bad;
 }
 
-export function ConfigPanel({connState, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, clearRespSession, speed}: Props) {
-    const connected = connState === 'connected';
+export function ConfigPanel({connState, readOnly, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, clearRespSession, speed}: Props) {
+    // A read-only window cannot drive the receiver: fold that into `connected`
+    // so every field, the Apply/Discard buttons, and the automatic readback
+    // trigger disable together, and the background readback never POSTs.
+    const connected = connState === 'connected' && !readOnly;
     const [timeMode, setTimeMode] = useState<'' | 'mobile' | 'survey' | 'fixed'>('');
     const [surveyTime, setSurveyTime] = useState('');
     const [surveyAcc, setSurveyAcc] = useState('');

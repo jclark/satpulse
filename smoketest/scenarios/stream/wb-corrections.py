@@ -39,6 +39,7 @@ CORRECTION_SOURCE = {
 
 def run(ctx: common.SmokeContext) -> None:
     common.check_wb_state(ctx, "connected")
+    seat = common.wb_claim(ctx)  # corrections/start is a writer POST
     src = {
         "mode": "ntrip",
         "host": "127.0.0.1",
@@ -48,12 +49,12 @@ def run(ctx: common.SmokeContext) -> None:
         "password": "smoketest",
         "nmeaSend": False,
     }
-    status, body = common.wb_post(ctx, "/api/corrections/start", src)
+    status, body = common.wb_post(ctx, f"/api/corrections/start?seat={seat}", src)
     assert status == 200, f"corrections/start failed: {status} {body!r}"
     common.check_wb_corr_state(ctx, "connected")
     common.wb_sse(ctx, expect=["gps:corrpacket", "gps:basearp"])
     ctx.wait_replay()
     stream.check_pulled_rtcm(ctx)
     # VRS: with a position fix now held, a nmeaSend restart passes the fix gate.
-    status, body = common.wb_post(ctx, "/api/corrections/start", {**src, "nmeaSend": True})
+    status, body = common.wb_post(ctx, f"/api/corrections/start?seat={seat}", {**src, "nmeaSend": True})
     assert status == 200, f"VRS corrections/start refused after a fix existed: {status} {body!r}"

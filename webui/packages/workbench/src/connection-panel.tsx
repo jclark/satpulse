@@ -8,6 +8,8 @@ export type {PortInfo};
 
 interface Props {
     connected: boolean;
+    readOnly: boolean;
+    onUseHere: () => void;
     device: string;
     setDevice: (d: string) => void;
     speed: number;
@@ -20,6 +22,8 @@ interface Props {
 
 export function ConnectionPanel({
     connected,
+    readOnly,
+    onUseHere,
     device,
     setDevice,
     speed,
@@ -62,6 +66,12 @@ export function ConnectionPanel({
         <header class="flex shrink-0 items-center gap-4 border-b border-border-subtle bg-surface-2 px-5 py-3">
             <h1 class="text-base font-semibold whitespace-nowrap text-text-primary">SatPulse</h1>
             {receiverIdent && <span class="text-xs whitespace-nowrap text-text-secondary">{receiverIdent}</span>}
+            {readOnly && (
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-warning">Read-only: this workbench has been taken over by another window</span>
+                    <Button size="sm" onClick={onUseHere}>Use here</Button>
+                </div>
+            )}
             <div class="ml-auto flex items-center gap-2">
                 <div class={`h-2.5 w-2.5 shrink-0 rounded-full ${connected ? 'bg-success' : 'bg-text-muted'}`} />
                 <label class="text-xs text-text-secondary">Device</label>
@@ -71,7 +81,7 @@ export function ConnectionPanel({
                             type="text"
                             class="w-44 rounded-r-none border-r-0"
                             value={device}
-                            disabled={connected}
+                            disabled={connected || readOnly}
                             onInput={e => setDevice((e.target as HTMLInputElement).value)}
                             placeholder="device path"
                         />
@@ -80,7 +90,7 @@ export function ConnectionPanel({
                             variant="secondary"
                             class="rounded-l-none px-1.5"
                             onClick={toggleDropdown}
-                            disabled={connected}
+                            disabled={connected || readOnly}
                             aria-label="Select port"
                         >
                             <svg class="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
@@ -107,7 +117,7 @@ export function ConnectionPanel({
                 <Select
                     class="w-24"
                     value={speed}
-                    disabled={connected}
+                    disabled={connected || readOnly}
                     onChange={e => setSpeed(parseInt((e.target as HTMLSelectElement).value, 10))}
                 >
                     {speeds.map(s => (
@@ -120,7 +130,7 @@ export function ConnectionPanel({
                     variant={connected ? 'secondary' : 'primary'}
                     class="whitespace-nowrap"
                     onClick={onConnect}
-                    disabled={!connected && !device}
+                    disabled={readOnly || (!connected && !device)}
                 >
                     {connected ? 'Disconnect' : 'Connect'}
                 </Button>

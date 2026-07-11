@@ -110,6 +110,7 @@ const connStateLabel: Record<ConnState, string> = {
 let toastId = 0;
 
 export function App() {
+    const [readOnly, setReadOnly] = useState(false);
     const [connState, setConnState] = useState<ConnState>('disconnected');
     const [device, setDevice] = useState('');
     const [speed, setSpeed] = useState(9600);
@@ -230,6 +231,7 @@ export function App() {
     }, []);
 
     useEffect(() => {
+        const offReadOnly = transport.eventsOn('wb:readonly', (ro: boolean) => setReadOnly(ro));
         const offLog = transport.eventsOn('gps:log', (evt: LogEntry) => {
             setLogEntries(prev => [...prev.slice(-199), evt]);
         });
@@ -453,6 +455,7 @@ export function App() {
             });
         });
         return () => {
+            offReadOnly();
             offLog();
             offRcv();
             offSpeed();
@@ -544,11 +547,20 @@ export function App() {
     const configDisabled = receiver.status !== 'identified';
     const connected = connState !== 'disconnected';
 
+    // "Use here" reclaims the write seat in place; the streams never closed, so
+    // the window keeps its state and becomes the writer without a reload.
+    const handleUseHere = useCallback(() => {
+        transport.reclaim?.().catch(e =>
+            addToast(e instanceof Error ? e.message : 'Could not take over', 'error'));
+    }, [addToast]);
+
     return (
         <>
             {/* Connection bar */}
             <ConnectionPanel
                 connected={connected}
+                readOnly={readOnly}
+                onUseHere={handleUseHere}
                 device={device}
                 setDevice={setDevice}
                 speed={speed}
@@ -650,13 +662,14 @@ export function App() {
 
                 {/* Corrections tab */}
                 <div class={`h-full ${activeTab === 'corrections' ? '' : 'hidden'}`}>
-                    <CorrectionsPanel connState={connState} />
+                    <CorrectionsPanel connState={connState} readOnly={readOnly} />
                 </div>
 
                 {/* Configuration tab */}
                 <div class={`h-full ${activeTab === 'config' ? '' : 'hidden'}`}>
                     <ConfigPanel
                         connState={connState}
+                        readOnly={readOnly}
                         visible={activeTab === 'config'}
                         configProps={configProps}
                         signalCatalog={signalCatalog}
@@ -674,6 +687,7 @@ export function App() {
                 {transport.msgFile && <div class={`h-full ${activeTab === 'messages' ? '' : 'hidden'}`}>
                     <MsgFilePanel
                         connState={connState}
+                        readOnly={readOnly}
                         visible={activeTab === 'messages'}
                         msgFilePath={msgFilePath}
                         setMsgFilePath={setMsgFilePath}

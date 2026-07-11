@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jclark/satpulse/gps/app/session"
 	"github.com/jclark/satpulse/gps/gpsreg"
@@ -59,11 +60,54 @@ func TestAuth(t *testing.T) {
 
 func (s *server) post(t *testing.T, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
+	s.seatMu.Lock()
+	seat := s.seat
+	s.seatMu.Unlock()
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return s.rawPost(path+sep+"seat="+seat, body)
+}
+
+func (s *server) rawPost(path, body string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	s.mux.ServeHTTP(w, r)
 	return w
+}
+
+func (s *server) claimTestSeat(t *testing.T, query string) string {
+	t.Helper()
+	w := s.rawPost("/api/seat"+query, `{}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("claim seat: status %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Seat string `json:"seat"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode seat: %v", err)
+	}
+	if len(resp.Seat) != 32 {
+		t.Fatalf("seat length %d want 32", len(resp.Seat))
+	}
+	return resp.Seat
+}
+
+func TestSeatClaimGuards(t *testing.T) {
+	s := newTestServer("secret")
+	w := s.rawPost("/api/seat", `{}`)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("claim without token: got %d want %d", w.Code, http.StatusUnauthorized)
+	}
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/seat?t=secret", strings.NewReader(`{}`)))
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("claim without JSON: got %d want %d", w.Code, http.StatusUnsupportedMediaType)
+	}
+	s.claimTestSeat(t, "?t=secret")
 }
 
 // TestRequireJSON checks the CSRF guard: a POST without a JSON
@@ -81,10 +125,11 @@ func TestRequireJSON(t *testing.T) {
 		{name: "json with charset", contentType: "application/json; charset=utf-8", expectCode: http.StatusBadRequest},
 	}
 	s := newTestServer("")
+	seat := s.claimTestSeat(t, "")
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			r := httptest.NewRequest("POST", "/api/connect", strings.NewReader(`{"device":""}`))
+			r := httptest.NewRequest("POST", "/api/connect?seat="+seat, strings.NewReader(`{"device":""}`))
 			if tc.contentType != "" {
 				r.Header.Set("Content-Type", tc.contentType)
 			}
@@ -148,6 +193,7 @@ func TestEndpoints(t *testing.T) {
 			body: `{"vendor":"no-such-vendor","file":"a"}`, expectCode: 400},
 	}
 	s := newTestServer("")
+	s.claimTestSeat(t, "")
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var w *httptest.ResponseRecorder
@@ -174,6 +220,9 @@ func TestEndpoints(t *testing.T) {
 // latest sticky events before receiving live ones.
 func TestSSEPriming(t *testing.T) {
 	s := newTestServer("")
+	// The claim broadcasts the seat value, which primes ahead of the session
+	// sticky events. SSE is seat-free, so the stream URL carries no seat.
+	seat := s.claimTestSeat(t, "")
 	s.hub.Emit(session.Event{Name: session.EventState, Data: session.StateConnected})
 	s.hub.Emit(session.Event{Name: session.EventSpeed, Data: 9600})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -188,7 +237,8 @@ func TestSSEPriming(t *testing.T) {
 	// channel; cancelling the request then ends the stream.
 	cancel()
 	<-done
-	expect := "event: gps:state\ndata: \"connected\"\n\nevent: gps:speed\ndata: 9600\n\n"
+	expect := mustMake(t, "writer", map[string]string{"seat": seat}).Format() +
+		"event: gps:state\ndata: \"connected\"\n\nevent: gps:speed\ndata: 9600\n\n"
 	if got := w.Body.String(); got != expect {
 		t.Errorf("got  %q\nwant %q", got, expect)
 	}
@@ -236,6 +286,7 @@ func TestMsgFileCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := newTestServerFull("", gpsreg.VendorUblox, []string{dir})
+	s.claimTestSeat(t, "") // select is writer-gated; s.post carries the seat
 
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/msgfile/catalog", nil))
@@ -278,4 +329,113 @@ func TestMsgFileCatalog(t *testing.T) {
 	if w.Code != 500 {
 		t.Errorf("malformed select status = %d, want 500", w.Code)
 	}
+}
+
+func TestSeatLifecycle(t *testing.T) {
+	s := newTestServer("")
+	old := s.claimTestSeat(t, "")
+	// A writer POST with the current seat is accepted; a reader POST needs no
+	// seat at all.
+	if w := s.rawPost("/api/disconnect?seat="+old, `{}`); w.Code != http.StatusOK {
+		t.Fatalf("current-seat writer POST: got %d want %d: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if w := s.rawPost("/api/signals", `{"gnss":["GPS"]}`); w.Code != http.StatusOK {
+		t.Fatalf("seat-free reader POST: got %d want %d: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	// SSE opens without a seat and is primed with the current seat value.
+	ctx, cancel := context.WithCancel(context.Background())
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/sse", nil).WithContext(ctx))
+		close(done)
+	}()
+	waitForClients(t, s.hub, 1)
+	// A second claim supersedes the first, without closing the open stream.
+	current := s.claimTestSeat(t, "")
+	if current == old {
+		t.Fatal("second claim did not regenerate the seat")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stream did not end after cancellation")
+	}
+	if body := w.Body.String(); !strings.Contains(body, old) {
+		t.Errorf("stream not primed with the seat value: %q", body)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("SSE Content-Type %q want text/event-stream", ct)
+	}
+	// A writer POST carrying the superseded seat, or none, is refused with 410.
+	if w := s.rawPost("/api/disconnect?seat="+old, `{}`); w.Code != http.StatusGone {
+		t.Errorf("superseded-seat writer POST: got %d want %d", w.Code, http.StatusGone)
+	}
+	if w := s.rawPost("/api/disconnect", `{}`); w.Code != http.StatusGone {
+		t.Errorf("missing-seat writer POST: got %d want %d", w.Code, http.StatusGone)
+	}
+	// The new seat works.
+	if w := s.rawPost("/api/disconnect?seat="+current, `{}`); w.Code != http.StatusOK {
+		t.Errorf("new-seat writer POST: got %d want %d", w.Code, http.StatusOK)
+	}
+}
+
+// TestWriterSeed checks that a fresh server with no claim primes a no-holder
+// writer value (so a tab reconnecting after a restart learns its old seat is
+// stale) and that a claim then replaces it.
+func TestWriterSeed(t *testing.T) {
+	s := newTestServer("")
+	seed := grabWriterSeat(t, s)
+	if len(seed) != 32 {
+		t.Fatalf("seed value length %d want 32", len(seed))
+	}
+	seat := s.claimTestSeat(t, "")
+	if seat == seed {
+		t.Fatal("claim did not replace the seed value")
+	}
+	if got := grabWriterSeat(t, s); got != seat {
+		t.Errorf("primed value %q want %q", got, seat)
+	}
+}
+
+// grabWriterSeat opens a seat-free SSE stream, ends it after the prime, and
+// returns the seat value carried by the primed writer event.
+func grabWriterSeat(t *testing.T, s *server) string {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/sse", nil).WithContext(ctx))
+		close(done)
+	}()
+	cancel()
+	<-done
+	_, rest, ok := strings.Cut(w.Body.String(), "event: writer\ndata: ")
+	if !ok {
+		t.Fatalf("no writer event primed: %q", w.Body.String())
+	}
+	var p struct {
+		Seat string `json:"seat"`
+	}
+	if err := json.Unmarshal([]byte(rest[:strings.Index(rest, "\n")]), &p); err != nil {
+		t.Fatalf("decode writer event: %v", err)
+	}
+	return p.Seat
+}
+
+func waitForClients(t *testing.T, h *sseHub, n int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		h.mu.Lock()
+		got := len(h.clients)
+		h.mu.Unlock()
+		if got == n {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("SSE client count did not reach %d", n)
 }

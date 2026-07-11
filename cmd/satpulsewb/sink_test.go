@@ -173,6 +173,29 @@ func TestHubOverflow(t *testing.T) {
 	}
 }
 
+// TestHubBroadcastWriter checks that a writer broadcast reaches every
+// regular client (not the packets stream) and primes a late joiner.
+func TestHubBroadcastWriter(t *testing.T) {
+	h := newSSEHub()
+	main, _ := h.subscribe(false)
+	packets, _ := h.subscribe(true)
+	h.broadcastWriter("abc123")
+	want := mustMake(t, "writer", map[string]string{"seat": "abc123"})
+	if got := drain(main.ch); !reflect.DeepEqual(got, []sse.Event{want}) {
+		t.Errorf("regular client got %+v want %+v", got, []sse.Event{want})
+	}
+	if got := drain(packets.ch); got != nil {
+		t.Errorf("packets client got writer event: %+v", got)
+	}
+	late, prime := h.subscribe(false)
+	if !reflect.DeepEqual(prime, []sse.Event{want}) {
+		t.Errorf("late joiner primed %+v want %+v", prime, []sse.Event{want})
+	}
+	h.unsubscribe(main)
+	h.unsubscribe(packets)
+	h.unsubscribe(late)
+}
+
 func drain(ch chan sse.Event) []sse.Event {
 	var evs []sse.Event
 	for {

@@ -34,8 +34,9 @@ def run(ctx: common.SmokeContext) -> None:
     assert any(e.get("vendor") == "u-blox" and e.get("file") == "smoke" for e in names), (
         f"message-file catalog missing u-blox/smoke: {cat}"
     )
+    seat = common.wb_claim(ctx)  # msgfile/select is a writer POST
     status, body = common.wb_post(
-        ctx, "/api/msgfile/select", {"vendor": "u-blox", "file": "smoke"}
+        ctx, f"/api/msgfile/select?seat={seat}", {"vendor": "u-blox", "file": "smoke"}
     )
     assert status == 200, f"message-file select expected 200, got {status}: {body!r}"
     result = cast(common.JsonObject, json.loads(body))
