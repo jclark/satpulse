@@ -184,12 +184,62 @@ sentences on a complete (non-Other) request. That was dropped: the
 only real payoff was pruning obscure sentences the model does not
 name, no other backend reads a message list, and the dump cost a
 guaranteed 1 s idle-timeout stall per run. Message sets now go out
-unconditionally for every modeled member the target names. A complete
-NMEA or RTCM request that leaves its protocol with no output instead
-switches the whole protocol off (and a later request that wants output
-switches it back on) with one live PQTMCFGPROT write of the OutputProt
-NMEA/RTCM3 bit - which also silences the sentences the model does not
-name.
+unconditionally for every modeled member the target names. RTCM is its
+own output protocol: a request that leaves RTCM3 with no output
+switches the RTCM3 OutputProt bit off (and a later request that wants
+output switches it back on) with one live PQTMCFGPROT write, silencing
+the RTCM3 messages the model does not name. NMEA is more delicate,
+because this receiver's native PVT/satellite messages (PQTM*, and the
+GSV sentence) are themselves NMEA and share the NMEA OutputProt bit -
+see "Native-NMEA message model" below.
+
+## Native-NMEA message model
+
+Because PQTM* and GSV ride the shared NMEA OutputProt bit, NMEAMsg and
+PVTMsg/SatsMsg are no longer independent (see plan/native-nmea.md for
+the full model and the ConfigSupportNativeNMEA flag). The configurator
+realizes the two-level model.
+
+Step 1 - determine the level from the target:
+
+- Message level: NMEAMsg names explicit sentences (NMEAMsgAny bits set).
+- Semantic level: PVTMsg or SatsMsg is set (NMEAMsg none or unset).
+- Mixed: explicit NMEA sentences together with PVTMsg/SatsMsg. This is
+  contradictory; the configurator does nothing for the NMEA/PVT/Sats
+  output (no error - the frontend raises that, gated on the flag) and
+  leaves the NMEA OutputProt bit untouched. RTCM, its own protocol,
+  still applies.
+
+Step 2 - drive the NMEA OutputProt bit:
+
+- Message level: on if any standard sentence is wanted; else clear
+  (nmea-out none alone clears the wire).
+- Semantic level: never clear - only turn on for a wanted native
+  carrier (PQTM or GSV) - EXCEPT when NMEAMsg, PVTMsg and SatsMsg are
+  all specified and all want nothing, which clears. So: any carrier
+  wanted -> on; else all-three-off -> clear; else leave as found. This
+  keeps a bare pvt-out off from silently killing standard NMEA it was
+  never told about, and lets the daemon's NMEAMsg=None + PVTMsg/SatsMsg
+  keep the wire up for its PVT messages (the bug this fixes).
+- Neither level engaged (e.g. only rtcm-out): leave the NMEA bit as
+  found.
+
+"On if wanted" is idempotent (a no-op write when already on); the bit
+is set before the per-message rate writes so they take effect, so the
+CFGPROT write carries phaseMsg. With no CFGPROT readback the bit cannot
+be toggled, so standard sentences are disabled individually instead
+(existing fallback). When the bit is cleared, the per-message disables
+for NMEA-wire messages are redundant and skipped.
+
+This removes the former GSV union (SatsMsg overriding NMEAMsg for the
+shared GSV sentence): that request is now the mixed case. The union
+tests are replaced by mix-does-nothing tests; new tests cover the
+daemon combo (carriers keep the wire up), the all-three-off clear, and
+nmea-out none alone (message-level clear, unchanged).
+
+Quectel declares ConfigSupportNativeNMEA once that flag lands
+(plan/native-nmea.md); the backend behavior above needs no flag and
+lands first.
 
 ## Restart-only settings (owner ruling, 2026-07-07)
 

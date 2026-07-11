@@ -294,14 +294,13 @@ func TestConfiguratorPVTMsgSets(t *testing.T) {
 	}
 }
 
-// TestConfiguratorSatsMsgUnion checks that SatsMsg keeps GSV on even
-// when the NMEA flags would otherwise turn it off: the union sets GSV
-// to rate 1 while the other unnamed NMEA members go off.
-func TestConfiguratorSatsMsgUnion(t *testing.T) {
+// TestConfiguratorMixedLevelsNoop checks that mixing message-level NMEA
+// sentence control with a semantic axis (SatsMsg/PVTMsg) is
+// contradictory on this native-NMEA receiver: the configurator does
+// nothing for the NMEA/PVT/Sats output and leaves the NMEA protocol
+// untouched (see plan/native-nmea.md).
+func TestConfiguratorMixedLevelsNoop(t *testing.T) {
 	responses := maps.Clone(fakeResponses)
-	for _, p := range []string{"GGA,1", "GLL,0", "GSA,0", "GSV,1", "RMC,1", "VTG,0", "ZDA,0"} {
-		responses["PQTMCFGMSGRATE,W,"+p] = []string{"PQTMCFGMSGRATE,OK"}
-	}
 	target := &gpsprot.ConfigTarget{}
 	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA)
 	target.Opts.SatsMsg.Set(gpsprot.SatsMsgAny)
@@ -309,10 +308,91 @@ func TestConfiguratorSatsMsgUnion(t *testing.T) {
 	if errCount != 0 {
 		t.Errorf("director errors: %d", errCount)
 	}
-	for _, p := range wSent(sent) {
-		if strings.Contains(p, "GSV") && !strings.HasSuffix(p, "GSV,1") {
-			t.Errorf("GSV not set on: %s", p)
+	if got := wSent(sent); len(got) != 0 {
+		t.Errorf("mixed request should send no message sets, got %v", got)
+	}
+}
+
+// TestConfiguratorSemanticKeepsWire is the daemon's own request:
+// NMEAMsg=None (semantic level, the native bridge) plus PVTMsg and
+// SatsMsg. The native carriers (PQTM*, GSV) ride the NMEA protocol, so
+// the protocol bit must stay on (no CFGPROT clear) while the standard
+// sentences are disabled and the carriers enabled.
+func TestConfiguratorSemanticKeepsWire(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	for _, p := range []string{"GGA,0", "GLL,0", "GSA,0", "GSV,1", "RMC,0", "VTG,0", "ZDA,0",
+		"PQTMDOP,1,1", "PQTMEOE,1,1", "PQTMEPE,1,2", "PQTMPVT,1,1"} {
+		responses["PQTMCFGMSGRATE,W,"+p] = []string{"PQTMCFGMSGRATE,OK"}
+	}
+	responses["PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1"] = []string{"PQTMCFGMSGRATE,ERROR,1"}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
+	target.Opts.PVTMsg = gpsprot.PVTMsgTimingSerialUTC
+	target.Opts.SatsMsg.Set(gpsprot.SatsMsgAny)
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	w := wSent(sent)
+	for _, p := range w {
+		if strings.HasPrefix(p, "PQTMCFGPROT,W") {
+			t.Errorf("NMEA protocol must not be toggled with carriers wanted: %s", p)
 		}
+	}
+	for _, want := range []string{"PQTMCFGMSGRATE,W,GSV,1", "PQTMCFGMSGRATE,W,PQTMPVT,1,1",
+		"PQTMCFGMSGRATE,W,GGA,0"} {
+		if !slices.Contains(w, want) {
+			t.Errorf("missing %q in %v", want, w)
+		}
+	}
+}
+
+// TestConfiguratorAllThreeOff checks that when NMEAMsg, PVTMsg and
+// SatsMsg are all specified and all want nothing, the whole NMEA
+// protocol is switched off in one CFGPROT write - the semantic level's
+// only clearing case.
+func TestConfiguratorAllThreeOff(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGPROT,W,1,1,00000007,00000006"] = []string{"PQTMCFGPROT,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone)
+	target.Opts.PVTMsg = gpsprot.PVTMsgOff
+	target.Opts.SatsMsg.Set(gpsprot.SatsMsgNone)
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	expect := []string{"PQTMCFGPROT,W,1,1,00000007,00000006"}
+	if got := wSent(sent); !reflect.DeepEqual(got, expect) {
+		t.Errorf("sets sent:\ngot  %v\nwant %v", got, expect)
+	}
+}
+
+// TestConfiguratorSemanticNoClear checks that a bare semantic-off
+// (PVTMsg=Off alone) never clears the NMEA protocol - it might silence
+// standard NMEA the request was not told about. The PVT messages are
+// disabled individually and the protocol bit is left as found.
+func TestConfiguratorSemanticNoClear(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	for _, p := range []string{"PQTMDOP,0,1", "PQTMEOE,0,1", "PQTMEPE,0,2", "PQTMNAV,0,1",
+		"PQTMODO,0,1", "PQTMPL,0,1", "PQTMPPPNAV,0,1", "PQTMPVT,0,1", "PQTMSVINSTATUS,0,1",
+		"PQTMVEL,0,1"} {
+		responses["PQTMCFGMSGRATE,W,"+p] = []string{"PQTMCFGMSGRATE,OK"}
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.PVTMsg = gpsprot.PVTMsgOff
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	w := wSent(sent)
+	for _, p := range w {
+		if strings.HasPrefix(p, "PQTMCFGPROT,W") {
+			t.Errorf("semantic-off must not toggle the NMEA protocol: %s", p)
+		}
+	}
+	if !slices.Contains(w, "PQTMCFGMSGRATE,W,PQTMPVT,0,1") {
+		t.Errorf("PQTMPVT not disabled individually: %v", w)
 	}
 }
 
