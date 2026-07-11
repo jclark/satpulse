@@ -1344,6 +1344,23 @@ func TestGGASenderTimeoutTolerance(t *testing.T) {
 	}
 }
 
+func TestGGASenderCancelSuppressesWriteError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var logBuf bytes.Buffer
+	conn := &failWriteConn{err: net.ErrClosed}
+	got, nTimeouts := sendGGA(ctx, slog.New(slog.NewTextHandler(&logBuf, nil)), conn, "GGA", 1)
+	if got != nil || nTimeouts != 0 {
+		t.Errorf("sendGGA() = (%v, %d), want (nil, 0)", got, nTimeouts)
+	}
+	if !conn.isClosed() {
+		t.Error("connection not closed")
+	}
+	if logBuf.Len() != 0 {
+		t.Errorf("unexpected log: %s", &logBuf)
+	}
+}
+
 // failWriteConn is a ReadWriteDeadlineCloser whose Write always fails with err.
 type failWriteConn struct {
 	err    error
