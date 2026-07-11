@@ -56,7 +56,8 @@ hardware before the design is committed.
   the active port is identifiable (PropIDPort).
 - PQTMLSTMSG (R01A06S+) dumps the current port's whole message-rate
   table, one OK line per enabled message, terminated by
-  `$PQTMLSTMSG,OK,End` - a one-shot read of as-found output state.
+  `$PQTMLSTMSG,OK,End` - a one-shot read of as-found output state
+  (ultimately unused; see "Message-output readback").
 - Feature availability is firmware-gated
   (lg290p-firmware-versions.md); the configurator discovers gaps via
   ERROR,3 and shows them as absence.
@@ -169,14 +170,26 @@ Message output (ConfigOptions, no readback):
 - NMEAMsg: PQTMCFGMSGRATE over RMC/GGA/GSV/GSA/VTG/GLL/GBS/GNS/GST/
   ZDA/HDT/THS.
 - SatsMsg: GSV.
-- RTCMMsg: PQTMCFGMSGRATE over RTCM3-1005/1006/MSM groups +
-  PQTMCFGRTCM (MSM type 4/7, ephemeris mode). Receiver output beyond
-  the modeled group (1033, ephemeris, 1230) gets the explicit Other
-  member semantics from the Allystar ruling.
+- RTCMMsg: PQTMCFGMSGRATE over RTCM3-1005/MSM groups + PQTMCFGRTCM
+  (MSM type 4/7, ephemeris mode).
 - RawMsg: no raw observation/navigation output exists in the protocol
   (RAW-PPPB2B/QZSSL6/HASE6 are PPP correction streams, RTCM MSM is
   the only observation carrier and belongs to RTCMMsg) - stage-0 doc
   audit to confirm, then ConfigSupportRaw absent.
+
+Message-output readback (revised): the query phase originally read the
+as-found message table with PQTMLSTMSG (R01A06S+) to skip redundant
+rate writes and to turn off enabled-but-unmodeled standard NMEA/RTCM
+sentences on a complete (non-Other) request. That was dropped: the
+only real payoff was pruning obscure sentences the model does not
+name, no other backend reads a message list, and the dump cost a
+guaranteed 1 s idle-timeout stall per run. Message sets now go out
+unconditionally for every modeled member the target names. A complete
+NMEA or RTCM request that leaves its protocol with no output instead
+switches the whole protocol off (and a later request that wants output
+switches it back on) with one live PQTMCFGPROT write of the OutputProt
+NMEA/RTCM3 bit - which also silences the sentences the model does not
+name.
 
 ## Restart-only settings (owner ruling, 2026-07-07)
 
@@ -337,9 +350,8 @@ configurator will send.
 One struct per CFG command tuple (CfgUART, CfgPPS, CfgPPS2, CfgProt,
 CfgMsgRate, CfgSVIN, CfgRcvrMode, CfgFixRate, CfgCnst, CfgSignal,
 CfgRSID, CfgRTCM, CfgEleThd, ...), each serializing to the W form and
-parsing from the OKData form, plus PQTMLSTMSG dump parsing and
-VERNO/UNIQID responses. Round-trip tests audited against the
-registration list. (Message names and fields use the spec's own
+parsing from the OKData form, plus VERNO/UNIQID responses. Round-trip
+tests audited against the registration list. (Message names and fields use the spec's own
 terminology.)
 
 ## Stage 2: ConfigProtocol, probe, and registration
@@ -355,10 +367,11 @@ terminology.)
 
 ## Stages 3+ (feature by feature, each verified on hardware)
 
-3. Message output: NMEAMsg/PVTMsg/SatsMsg via CFGMSGRATE with
-   as-found state from LSTMSG.
-4. RTCM output: CFGMSGRATE RTCM groups + CFGRTCM + RSID, with the
-   Other-member group semantics.
+3. Message output: NMEAMsg/PVTMsg/SatsMsg via CFGMSGRATE (one set per
+   modeled member, no readback), plus whole-protocol on/off via
+   CFGPROT for a complete NMEA request.
+4. RTCM output: CFGMSGRATE RTCM groups + CFGRTCM + RSID, plus
+   whole-protocol on/off via CFGPROT for a complete RTCM request.
 5. Time pulse: PPS2 with PPS fallback.
 6. Mode/survey/fixed position: CFGSVIN + RCVRMODE, gated on
    save+restart per "Restart-only settings".
