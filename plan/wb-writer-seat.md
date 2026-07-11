@@ -1,5 +1,11 @@
 # Workbench writer seat
 
+Implemented in commit e8341e49 (PR #367). Superseded as a design
+document by [wb-multi-window.md](wb-multi-window.md), which
+records the multi-window model this change created and the
+remaining work to make read-only windows fully live; this file
+stays as the record of the change itself.
+
 Replaces the single-seat design
 ([archive/wb-single-seat.md](archive/wb-single-seat.md), PR #367),
 which was implemented but not merged.
@@ -106,10 +112,10 @@ together on every claim, both 128-bit hex from crypto/rand:
   doesn't POST readbacks in the background and collect 410 toasts.
 - A read-only window's Configuration and Messages tabs are degraded
   (they show what the window last saw, or nothing). Making them
-  live requires the broadcast reworks specified in wb-multi-window
-  part 1 (config composite snapshot, message activity snapshot,
-  corrections source display), which land later and independently;
-  viewers exist for the monitor tabs meanwhile.
+  live requires the broadcast reworks specified in
+  wb-multi-window.md (config composite snapshot, message activity
+  snapshot, corrections source display), which land later and
+  independently; viewers exist for the monitor tabs meanwhile.
 - Stale authentication stays cleanly separable: since SSE no longer
   checks the seat, a terminal EventSource close can only mean the
   token went stale after a server restart, and the app shows the
@@ -119,15 +125,15 @@ together on every claim, both 128-bit hex from crypto/rand:
 - The desktop transport has no seat, is always the writer, and
   never emits the writer event; the desktop app is untouched.
 
-### Relation to wb-multi-window part 1
+### Relation to the multi-window plan
 
-This is part 1's protocol skeleton: the seat/grant split, the
-sticky writer broadcast, the writer/reader POST division, and
-410-flips-to-read-only all carry forward unchanged. Part 1's
-remaining delta shrinks to: the read-only checkbox and claim modes
-(if the takeover-on-open behaviour ever proves annoying in
-practice), and the broadcast prerequisites that make viewer tabs
-fully live.
+This is the protocol skeleton of the model wb-multi-window.md
+describes: the seat/grant split, the sticky writer broadcast, the
+writer/reader POST division, and 410-flips-to-read-only all carry
+forward unchanged. What remains there is the broadcast reworks
+that make viewer tabs fully live (and, only if the
+takeover-on-open behaviour ever proves annoying in practice, a
+read-only checkbox with claim modes).
 
 ## Implementation
 

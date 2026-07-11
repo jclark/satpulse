@@ -1,6 +1,10 @@
 # Workbench single seat
 
-Implemented after satpulsewb (#363) as part of the stacked-PR series.
+Implemented after satpulsewb (#363) as part of the stacked-PR series,
+then superseded before merge by
+[wb-writer-seat.md](../wb-writer-seat.md): terminating the dethroned
+window's streams proved needlessly complex, and PR #367 replaced this
+design with the writer seat.
 
 ## Background
 
