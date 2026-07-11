@@ -294,6 +294,28 @@ func TestConfiguratorPVTMsgSets(t *testing.T) {
 	}
 }
 
+// TestMsgRateSet checks that enabled periodic messages are configured
+// at 1 Hz relative to the receiver fix interval, while GSA and GSV use
+// their fixed 1 Hz native rate.
+func TestMsgRateSet(t *testing.T) {
+	c := Configurator{found: asFound{fixRate: &qtmmsg.CfgFixRate{FixInterval: 100}}}
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"PQTMPVT", "PQTMCFGMSGRATE,W,PQTMPVT,10,1"},
+		{"RMC", "PQTMCFGMSGRATE,W,RMC,10"},
+		{"GSA", "PQTMCFGMSGRATE,W,GSA,1"},
+		{"GSV", "PQTMCFGMSGRATE,W,GSV,1"},
+		{"RTCM3-107X", "PQTMCFGMSGRATE,W,RTCM3-107X,10,0"},
+	}
+	for _, test := range tests {
+		if got := c.msgRateSet(test.name, true).payload; got != test.want {
+			t.Errorf("%s payload = %q, want %q", test.name, got, test.want)
+		}
+	}
+}
+
 // TestConfiguratorMixedLevelsNoop checks that mixing message-level NMEA
 // sentence control with a semantic axis (SatsMsg/PVTMsg) is
 // contradictory on this native-NMEA receiver: the configurator does

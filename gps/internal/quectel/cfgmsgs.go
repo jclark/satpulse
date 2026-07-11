@@ -224,15 +224,22 @@ func (c *Configurator) msgWant() map[string]bool {
 	return want
 }
 
-// msgRateSet builds one CFGMSGRATE set request. PQTM messages carry
-// their version field. Message sets are NAK-tolerant: the receiver
-// answers ERROR,1 for messages the current mode or firmware lacks
-// (e.g. PQTMSVINSTATUS outside effective base mode), which is
-// absence, not failure.
+// msgRateSet builds one CFGMSGRATE set request at 1 Hz. Quectel rates
+// count position fixes, except GSA and GSV, which the receiver always
+// emits at 1 Hz. PQTM messages carry their version field. Message sets
+// are NAK-tolerant: the receiver answers ERROR,1 for messages the
+// current mode or firmware lacks (e.g. PQTMSVINSTATUS outside effective
+// base mode), which is absence, not failure.
 func (c *Configurator) msgRateSet(name string, on bool) *request {
 	rate := 0
 	if on {
 		rate = 1
+		if name != "GSA" && name != "GSV" && c.found.fixRate != nil {
+			ms := c.found.fixRate.FixInterval
+			if ms > 0 && ms < 1000 {
+				rate = int((1000 + ms/2) / ms)
+			}
+		}
 	}
 	payload := fmt.Sprintf("PQTMCFGMSGRATE,W,%s,%d", name, rate)
 	if ver, ok := qtmmsg.PeriodicMsgVer(strings.TrimPrefix(name, "PQTM")); ok && strings.HasPrefix(name, "PQTM") {
