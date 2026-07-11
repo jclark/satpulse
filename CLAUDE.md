@@ -95,8 +95,10 @@ Build system uses GNU Make:
 
 It builds on Linux only. On macOS, use `unix-build.sh` instead.
 
-Web interface is build using npm in `web/` directory.
-- `npm run build` - Rebuilds .js and .css files that are embedded.
+The web interfaces are built with npm from the `webui/` workspace. Their built
+assets are checked in and embedded into the binaries, and `make` does not
+rebuild them: after changing frontend sources you must regenerate and commit
+the assets. See @webui/CLAUDE.md.
 
 Testing:
 - Individual package: `go test -v ./internal/packagename`
@@ -157,3 +159,4 @@ System testing uses Ansible playbooks in `systest/`.
 
 You can look at `/etc/satpulse.toml` if it exists to find device and speed of a connected GPS receiver.
 But before using it, check that `satpulsed` is not running `ps ax | grep satpulsed`.
+Use `satpulsetool gps` for operations that write to the receiver; do not send raw serial writes directly.
