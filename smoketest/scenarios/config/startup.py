@@ -9,8 +9,8 @@ the daemon's SSE surface), and -- via the runner's shared shutdown/log-scan path
 -- that configuration completed without errors and shutdown is graceful.
 
 No FACTOR/PACKET_LOG: the simulator generates nav itself from SIM_REPLAY, one
-epoch per second, so the bank need only outlast the run's checks (this F9P log
-holds ~31 NAV-SAT epochs).
+epoch per second, so the bank need only outlast the run's checks (sim.jsonl, the
+recording made for the simulator, holds 300 epochs).
 """
 
 import common
@@ -19,7 +19,7 @@ from scenarios import config
 PROGRAM = "satpulsed"
 PROVIDER = "ubxsim"
 PERSONALITY = "gps/app/ubxsim/testdata/f9p/f9p-personality.ubx"
-SIM_REPLAY = "gps/testdata/packets/u-blox/ZED-F9P/daemon-sats-pos-38400.jsonl"
+SIM_REPLAY = "gps/testdata/config/u-blox/ZED-F9P/sim.jsonl"
 
 
 def run(ctx: common.SmokeContext) -> None:

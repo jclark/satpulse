@@ -19,7 +19,7 @@ from scenarios import config
 PROGRAM = "satpulsewb"
 PROVIDER = "ubxsim"
 PERSONALITY = "gps/app/ubxsim/testdata/f9p/f9p-personality.ubx"
-SIM_REPLAY = "gps/testdata/packets/u-blox/ZED-F9P/daemon-sats-pos-38400.jsonl"
+SIM_REPLAY = "gps/testdata/config/u-blox/ZED-F9P/sim.jsonl"
 
 # A round-trippable property the simulator's config database stores and returns
 # verbatim. Nanoseconds on the wire (ConfigProps marshals antennaCableDelay as
