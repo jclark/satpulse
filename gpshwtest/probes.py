@@ -18,11 +18,13 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable
 
-from model import (NMEA_VOCAB, SignalMap, Value, config_value, emissions, fmt_value,
-                   has_fix, l1_signals, l2_signals, l5_signals, mode_args, nmea_set,
-                   normalize_signal_map, port_has_serial_speed, raw_set,
-                   requested_signals, rtcm_set, signal_map_cli_arg, signal_map_union,
-                   signal_map_without, signal_request_valid, transient)
+from model import (DEFAULT_SURVEY_ACC, DEFAULT_SURVEY_TIME, NMEA_VOCAB, PVT_MSG_JSON,
+                   RAW_MSG_JSON, SATS_MSG_JSON, SIGNAL_UNIVERSE, SignalMap, Value,
+                   config_value, emissions, has_fix, l1_signals, l2_signals,
+                   l5_signals, mode_target, nmea_set, normalize_signal_map,
+                   port_has_serial_speed, pps_props, raw_set, requested_signals,
+                   rtcm_set, signal_map_union, signal_map_without, signal_request_valid,
+                   survey_opts, target_arg, transient)
 from tool import Invocation, Tool, ToolFailure, replay
 
 # Settle time after a successful signal-set change: u-blox documents an
@@ -48,41 +50,81 @@ RAISED_SPEED = 115200
 RESET_SETTLE = 5.0
 
 
+def signal_universe(gnss: list[str]) -> SignalMap:
+    """The union of the full model signal set of each named constellation:
+    what --gnss denotes before the backend intersects it with the receiver's
+    supported set. A signalsEnabled target of this is the JSON spelling of
+    --gnss, so a run discovers the supported signals by requesting it."""
+    return normalize_signal_map({g: SIGNAL_UNIVERSE.get(g, []) for g in gnss})
+
+
+def signals_target(sigs: SignalMap) -> list[str]:
+    """A --target-json invocation that requests an enabled-signal set."""
+    return target_arg({"Props": {"signalsEnabled": sigs}})
+
+
+def wire_flags(case: list[str]) -> list[str]:
+    """The JSON message flags for a wire-format (NMEA/RTCM) probe case. The
+    'other' element is always present: gpshwtest never turns off the group's
+    unmodeled messages, so a receiver's as-found vendor sentences or extra
+    RTCM types (e.g. the TAU1302's shipped ephemeris 1019/1042/1046) survive
+    the whole run and the leave-as-found check. 'none' clears the modeled
+    types (an empty modeled list) while 'other' keeps the unmodeled ones."""
+    return [t for t in case if t != "none"] + ["other"]
+
+
+def msg_flags(case: list[str], table: dict[str, str]) -> list[str]:
+    """The JSON message flags for a semantic (PVT/sats/raw) probe case,
+    translating the CLI content tokens the cases use to their configtarget.go
+    flag names; 'none' clears the group (an empty list)."""
+    return [table.get(t, t) for t in case if t != "none"]
+
+
+def flip_mode_target(mode: Value) -> dict[str, Any]:
+    """The mode target that flips static<->mobile from the current mode, used
+    in a save-granularity experiment to move the positioning mode off its NVM
+    value. Flipping into static uses the default survey settings."""
+    if isinstance(mode, dict) and not mode.get("static"):
+        return {"Props": {"mode": {"static": True}},
+                "Opts": survey_opts(DEFAULT_SURVEY_TIME, DEFAULT_SURVEY_ACC)}
+    return {"Props": {"mode": {"static": False}}}
+
+
 @dataclass
 class ScalarProp:
-    """A property settable by one flag and readable at one config JSON path.
-
-    Probe values are in model units (the units of the config JSON); to_cli
-    renders a model value as the flag's argument where the flag uses
-    different units.
-    """
+    """A property settable and readable at one config JSON path. props builds
+    the Props fragment of the JSON target that sets a model value; the value
+    is in model units (the units of the config JSON)."""
 
     name: str
-    flag: str
     values: list[Value]
     path: tuple[str, ...]
-    to_cli: Callable[[Value], str] = fmt_value
+    props: Callable[[Value], dict[str, Any]]
 
 
 PROPS = [
-    ScalarProp("antennaCableDelay", "--ant-cable-delay", [1, 123, 32767],
-               ("antennaCableDelay",)),
-    ScalarProp("minElevation", "--min-elev", [1, 7, 45], ("minElevation",)),
-    ScalarProp("timeGNSS", "--time-gnss", ["GAL", "BDS", "GLO", "GPS"], ("timeGNSS",)),
-    ScalarProp("timePulse.width", "--pps", [0.25, 0.000123456, 0.1], ("timePulse", "width")),
+    ScalarProp("antennaCableDelay", [1, 123, 32767], ("antennaCableDelay",),
+               lambda v: {"antennaCableDelay": v}),
+    ScalarProp("minElevation", [1, 7, 45], ("minElevation",),
+               lambda v: {"minElevation": v}),
+    ScalarProp("timeGNSS", ["GAL", "BDS", "GLO", "GPS"], ("timeGNSS",),
+               lambda v: {"timeGNSS": v}),
+    ScalarProp("timePulse.width", [0.25, 0.000123456, 0.1], ("timePulse", "width"),
+               lambda v: {"timePulse": pps_props(v)}),
 ]
 
 # The RTCM base station ID only means something with a fixed position (on
 # the UM980 it is the optional ID of MODE BASE), so it is probed during the
 # positioning-mode phase while a fixed position is set, not in the plain
 # scalar sweep.
-RTCM_BASE_ID = ScalarProp("rtcmBaseID", "--rtcm-base-id", [1, 1234, 4095],
-                          ("rtcmBaseID",))
+RTCM_BASE_ID = ScalarProp("rtcmBaseID", [1, 1234, 4095], ("rtcmBaseID",),
+                          lambda v: {"rtcmBaseID": v})
 
 
 @dataclass
 class ModeCase:
-    """One positioning-mode request: flags plus the mode fields it implies.
+    """One positioning-mode request: the JSON target plus the mode fields it
+    implies.
 
     Request keys use the mode JSON vocabulary, flattened. Only properties
     are listed: survey duration and accuracy are parameters of the
@@ -94,26 +136,30 @@ class ModeCase:
     """
 
     name: str
-    args: list[str]
+    target: dict[str, Any]
     request: dict[str, Value]
 
 
 MODE_CASES = [
-    ModeCase("survey", ["--survey", "--survey-time", "300", "--survey-acc", "2.345"],
+    ModeCase("survey",
+             {"Props": {"mode": {"static": True}}, "Opts": survey_opts(300, 2.345)},
              {"static": True}),
     ModeCase("fixed-llh",
-             ["--fixed-pos-llh", "13.7318284567,100.6447407891,12.34567",
-              "--fixed-pos-acc", "0.12345"],
+             {"Props": {"mode": {"static": True,
+                                 "fixedPosLLH": [13.7318284567, 100.6447407891],
+                                 "height": 12.34567, "fixedPosAcc": 0.12345}}},
              {"static": True, "fixedPosLLH[0]": 13.7318284567,
               "fixedPosLLH[1]": 100.6447407891, "height": 12.34567,
               "fixedPosAcc": 0.12345}),
     ModeCase("fixed-ecef",
-             ["--fixed-pos-ecef", "-1132881.12345,6092270.56789,1504542.90123",
-              "--fixed-pos-acc", "1.23456"],
+             {"Props": {"mode": {"static": True,
+                                 "fixedPosECEF": [-1132881.12345, 6092270.56789,
+                                                  1504542.90123],
+                                 "fixedPosAcc": 1.23456}}},
              {"static": True, "fixedPosECEF[0]": -1132881.12345,
               "fixedPosECEF[1]": 6092270.56789, "fixedPosECEF[2]": 1504542.90123,
               "fixedPosAcc": 1.23456}),
-    ModeCase("mobile", ["--mobile"], {"static": False}),
+    ModeCase("mobile", {"Props": {"mode": {"static": False}}}, {"static": False}),
 ]
 
 NMEA_CASES = [["RMC"], ["GGA", "ZDA"], ["none"]]
@@ -330,14 +376,18 @@ SIGNAL_HYPOTHESES: list[SignalHypothesis] = [
 
 def gnss_signal_case(name: str, gnss: list[str], supported: SignalMap,
                      tags: list[str]) -> SignalCase:
-    return SignalCase(name, ["--gnss", ",".join(gnss)], "gnss",
+    # The request sent is the constellations' whole model set; the backend
+    # intersects it with what the receiver supports. requested records the
+    # predicted result (the intersection with what is known so far), left None
+    # for discovery cases that run before the supported set is known.
+    return SignalCase(name, signals_target(signal_universe(gnss)), "gnss",
                       requested_signals(gnss, supported), tags, gnss)
 
 
 def direct_signal_case(name: str, req: SignalMap,
                        tags: list[str]) -> SignalCase:
     r = normalize_signal_map(req)
-    return SignalCase(name, ["--signal", signal_map_cli_arg(r)], "signal", r, tags)
+    return SignalCase(name, signals_target(r), "signal", r, tags)
 
 
 def except_signal_case(name: str, base: SignalMap, remove: SignalMap,
@@ -345,8 +395,9 @@ def except_signal_case(name: str, base: SignalMap, remove: SignalMap,
     b = normalize_signal_map(base)
     r = normalize_signal_map(remove)
     req = signal_map_without(b, r)
-    args = ["--gnss", ",".join(b), "--except-signal", signal_map_cli_arg(r)]
-    return SignalCase(name, args, "except-signal", req, tags, list(b))
+    # base is always a subset of the supported set, so the denoted set (base
+    # minus remove) equals what --gnss base --except-signal remove realizes.
+    return SignalCase(name, signals_target(req), "except-signal", req, tags, list(b))
 
 
 def anchored_direct_case(name: str, supported: SignalMap, gnss: str,
@@ -526,7 +577,8 @@ class ProbeRun:
         transient failure (the change may have applied with its confirmation
         lost, so the speed is rediscovered by scanning and the restore must
         still run). A refusal returns False."""
-        inv = self.tool.gps("session-speed-raise", ["--speed", str(RAISED_SPEED)],
+        inv = self.tool.gps("session-speed-raise",
+                            target_arg({"Props": {"baudRate": RAISED_SPEED}}),
                             {"op": "session-speed", "role": "raise",
                              "from": baud, "to": RAISED_SPEED})
         if inv.error is None:
@@ -555,7 +607,8 @@ class ProbeRun:
                           {"op": "session-speed", "role": "verify-msgs",
                            "want": as_found})
             return
-        inv = self.tool.gps("session-speed-restore", ["--speed", str(as_found)],
+        inv = self.tool.gps("session-speed-restore",
+                            target_arg({"Props": {"baudRate": as_found}}),
                             {"op": "session-speed", "role": "restore", "to": as_found})
         if inv.error is None:
             self.tool.set_speed(as_found)
@@ -612,7 +665,7 @@ class ProbeRun:
             if first:
                 intent["prev"] = config_value(initial, p.path)
                 first = False
-            inv = self.tool.gps(f"set-{p.name}", [p.flag, p.to_cli(v)], intent)
+            inv = self.tool.gps(f"set-{p.name}", target_arg({"Props": p.props(v)}), intent)
             if transient(inv.error):
                 continue
             self.show_config(f"readback-{p.name}", "readback", p.name)
@@ -623,7 +676,7 @@ class ProbeRun:
         v = config_value(initial, p.path)
         if v is None:
             return
-        inv = self.tool.gps(f"restore-{p.name}", [p.flag, p.to_cli(v)],
+        inv = self.tool.gps(f"restore-{p.name}", target_arg({"Props": p.props(v)}),
                             {"op": "restore", "prop": p.name, "path": list(p.path),
                              "value": v})
         if inv.error is None:
@@ -632,7 +685,7 @@ class ProbeRun:
     def probe_modes(self, initial: dict[str, Any]) -> None:
         """Probe each positioning-mode case, then restore the initial mode."""
         for case in MODE_CASES:
-            inv = self.tool.gps(f"set-mode-{case.name}", case.args,
+            inv = self.tool.gps(f"set-mode-{case.name}", target_arg(case.target),
                                 {"op": "set-mode", "case": case.name,
                                  "request": case.request})
             if transient(inv.error):
@@ -652,7 +705,7 @@ class ProbeRun:
         mode = config_value(initial, ("mode",))
         if not isinstance(mode, dict):
             return
-        inv = self.tool.gps("restore-mode", mode_args(mode),
+        inv = self.tool.gps("restore-mode", target_arg(mode_target(mode)),
                             {"op": "restore-mode", "mode": mode})
         if inv.error is None:
             self.show_config("verify-restore-mode", "verify-restore", "mode")
@@ -687,7 +740,7 @@ class ProbeRun:
         want = normalize_signal_map(config_value(initial, ("signalsEnabled",)))
         if not want:
             return
-        inv = self.tool.gps("restore-signals", ["--signal", signal_map_cli_arg(want)],
+        inv = self.tool.gps("restore-signals", signals_target(want),
                             {"op": "restore-signals", "want": want})
         if inv.error is None:
             time.sleep(SIGNAL_SETTLE)
@@ -701,25 +754,24 @@ class ProbeRun:
                             intent)
         return None if inv.error is not None else inv
 
-    def set_and_observe(self, group: str, flag: str, case: list[str],
-                        pre: list[str] | None = None,
+    def set_and_observe(self, group: str, case: list[str], opts: dict[str, Any],
                         expect: set[str] | None = None) -> Invocation | None:
         """Apply one message-output case and observe the result with
         --capture in the same invocation: event output (raw navigation
         data per SEMANTICS.md) is delivered as a snapshot when the request
         is applied plus changes thereafter, so output emitted between a
         configuring invocation and a separate observing one would be lost
-        with the port closed. Returns None when the request was refused
-        (visible to analysis in the records). A transient set failure
-        means the link itself is in trouble (a flooding receiver answers
-        nothing), so the message phase stops."""
+        with the port closed. opts is the ConfigOptions fragment the case
+        sets. Returns None when the request was refused (visible to analysis
+        in the records). A transient set failure means the link itself is in
+        trouble (a flooding receiver answers nothing), so the message phase
+        stops."""
         name = "-".join(case)
         intent: dict[str, Any] = {"op": "set-msg", "group": group, "case": case}
         if expect is not None:
             intent["expect"] = sorted(expect)
         inv = self.tool.gps(f"set-{group}-{name}",
-                            (pre or []) + [flag, ",".join(case),
-                                           "--capture", str(OBSERVE_SECONDS)],
+                            target_arg({"Opts": opts}, "--capture", str(OBSERVE_SECONDS)),
                             intent)
         if transient(inv.error):
             self.line_dead = True
@@ -752,9 +804,10 @@ class ProbeRun:
     def probe_nmea(self, initial: list[str]) -> None:
         """Probe NMEA output selection, then restore the initial sentence set."""
         for case in NMEA_CASES:
-            self.set_and_observe("nmeaOut", "--nmea-out", case)
+            self.set_and_observe("nmeaOut", case, {"NMEAMsg": wire_flags(case)})
         want = [t for t in initial if t in NMEA_VOCAB]
-        inv = self.tool.gps("restore-nmea", ["--nmea-out", ",".join(want) if want else "none"],
+        inv = self.tool.gps("restore-nmea",
+                            target_arg({"Opts": {"NMEAMsg": want + ["other"]}}),
                             {"op": "restore-msg", "group": "nmeaOut", "want": want})
         if inv.error is None:
             self.observe("verify-restore-nmea",
@@ -765,16 +818,18 @@ class ProbeRun:
         """Probe RTCM output selection, then restore the initial emission."""
         fixed = False
         if fixed_pos_ecef is not None:
+            xyz = [float(c) for c in fixed_pos_ecef.split(",")]
             inv = self.tool.gps("rtcm-fixed-mode",
-                                ["--fixed-pos-ecef", fixed_pos_ecef,
-                                 "--fixed-pos-acc", "1"],
+                                target_arg({"Props": {"mode": {
+                                    "static": True, "fixedPosECEF": xyz,
+                                    "fixedPosAcc": 1}}}),
                                 {"op": "rtcm-fixed-mode",
                                  "fixedPosECEF": fixed_pos_ecef})
             fixed = inv.error is None
         cases = RTCM_CASES if fixed else [c for c in RTCM_CASES if "ARP" not in c]
         try:
             for case in cases:
-                self.set_and_observe("rtcmOut", "--rtcm-out", case)
+                self.set_and_observe("rtcmOut", case, {"RTCMMsg": wire_flags(case)})
             want = []
             if any(t.endswith("4") and t.startswith("1") for t in initial):
                 want.append("MSM4")
@@ -783,7 +838,7 @@ class ProbeRun:
             if fixed and "1005" in initial:
                 want.append("ARP")
             inv = self.tool.gps("restore-rtcm",
-                                ["--rtcm-out", ",".join(want) if want else "none"],
+                                target_arg({"Opts": {"RTCMMsg": want + ["other"]}}),
                                 {"op": "restore-msg", "group": "rtcmOut",
                                  "want": want})
             if inv.error is None:
@@ -807,16 +862,18 @@ class ProbeRun:
         pre = raw_set(emissions(pre_inv.packet_log))
         found: dict[str, set[str]] = {}
         for kind in ("obs", "nav"):
-            inv = self.set_and_observe("rawOut", "--raw-out", [kind])
+            inv = self.set_and_observe("rawOut", [kind],
+                                       {"RawMsg": msg_flags([kind], RAW_MSG_JSON)})
             if inv is not None:
                 found[kind] = raw_set(emissions(inv.packet_log)) - pre
             if self.line_dead:
                 return
-        self.set_and_observe("rawOut", "--raw-out", ["none"])
+        self.set_and_observe("rawOut", ["none"], {"RawMsg": []})
         want = [k for k, msgs in found.items() if msgs and msgs <= initial]
         if not want:
             return
-        inv = self.tool.gps("restore-raw", ["--raw-out", ",".join(want)],
+        inv = self.tool.gps("restore-raw",
+                            target_arg({"Opts": {"RawMsg": msg_flags(want, RAW_MSG_JSON)}}),
                             {"op": "restore-msg", "group": "rawOut", "want": want})
         if inv.error is None:
             self.observe("verify-restore-raw",
@@ -827,14 +884,20 @@ class ProbeRun:
         case in binary mode and capture; analysis replays the capture and
         checks the information kinds delivered."""
         for case in PVT_CASES:
-            self.set_and_observe("pvtOut", "--pvt-out", case.flags, pre=["--binary"],
+            # --binary: NMEA off (unmodeled kept via other), the case's PVT set.
+            self.set_and_observe("pvtOut", case.flags,
+                                 {"NMEAMsg": ["other"],
+                                  "PVTMsg": msg_flags(case.flags, PVT_MSG_JSON)},
                                  expect=case.expect)
 
     def probe_sats(self) -> None:
         """Probe satellite information output at the information level."""
         for flags, expect in SATS_CASES:
-            self.set_and_observe("satsOut", "--sats-out", flags,
-                                 pre=["--binary", "--pvt-out", "off"], expect=expect)
+            # --binary --pvt-out off, plus the satellite case.
+            self.set_and_observe("satsOut", flags,
+                                 {"NMEAMsg": ["other"], "PVTMsg": ["off"],
+                                  "SatsMsg": msg_flags(flags, SATS_MSG_JSON)},
+                                 expect=expect)
 
     def restore_protocol(self, base: dict[tuple[str, str], int]) -> None:
         """Return the receiver to its pre-probe output mode. --nmea resets
@@ -845,13 +908,21 @@ class ProbeRun:
         analysis reports that honestly as a restore failure."""
         base_nmea = [t for t in nmea_set(base) if t in NMEA_VOCAB]
         if not base_nmea and raw_set(base):
-            steps = [("restore-binary-mode", ["--binary"])]
+            # --binary: turn NMEA off (unmodeled kept via other) with a little
+            # binary PVT, as the flag layer's --binary does.
+            steps = [("restore-binary-mode",
+                      {"NMEAMsg": ["other"], "PVTMsg": ["pos", "time"]})]
         else:
-            steps = [("restore-nmea-mode", ["--nmea"]),
-                     ("restore-nmea-types",
-                      ["--nmea-out", ",".join(base_nmea) if base_nmea else "none"])]
-        for name, args in steps:
-            inv = self.tool.gps(name, args, {"op": "restore-protocol"})
+            # --nmea then the exact sentence set. Both keep the group's
+            # unmodeled messages, and the mode switch keeps unmodeled RTCM too,
+            # so out-of-vocabulary as-found output survives the restore.
+            steps = [("restore-nmea-mode",
+                      {"NMEAMsg": ["RMC", "other"], "RTCMMsg": ["other"],
+                       "PVTMsg": ["off"], "RawMsg": [], "SatsMsg": []}),
+                     ("restore-nmea-types", {"NMEAMsg": base_nmea + ["other"]})]
+        for name, opts in steps:
+            inv = self.tool.gps(name, target_arg({"Opts": opts}),
+                                {"op": "restore-protocol"})
             if inv.error is not None:
                 return
         # The expectations ride in the intent: a restore-tail run's analyzer
@@ -876,7 +947,8 @@ class ProbeRun:
         configuration is restored: a reload replaces the running
         configuration with NVM contents, which need not match what was
         found running."""
-        self.tool.gps("reload-1", ["--reload"], {"op": "reload", "round": 1, "uart": uart})
+        self.tool.gps("reload-1", target_arg({"Opts": {"Reset": "reload"}}),
+                      {"op": "reload", "round": 1, "uart": uart})
         if uart:
             self.rediscover_speed()
         nvm = self.show_config("readback-reload-1", "reload", "reload-1")
@@ -884,10 +956,12 @@ class ProbeRun:
             canary = next(p for p in PROPS if p.name == "minElevation")
             if config_value(nvm, canary.path) is not None:
                 v = 7 if config_value(nvm, canary.path) != 7 else 12
-                self.tool.gps("canary-set-minElevation", [canary.flag, canary.to_cli(v)],
+                self.tool.gps("canary-set-minElevation",
+                              target_arg({"Props": canary.props(v)}),
                               {"op": "canary-set", "prop": canary.name,
                                "path": list(canary.path), "value": v})
-        self.tool.gps("reload-2", ["--reload"], {"op": "reload", "round": 2, "uart": uart})
+        self.tool.gps("reload-2", target_arg({"Opts": {"Reset": "reload"}}),
+                      {"op": "reload", "round": 2, "uart": uart})
         self.resync_speed(uart, raised)
         nvm2 = self.show_config("readback-reload-2", "reload", "reload-2")
         for p in PROPS:
@@ -958,9 +1032,10 @@ class ProbeRun:
         self.restore_signals(nvm)
         if as_found_speed is not None:
             self.set_link_speed(as_found_speed, "speed-for-save-all")
-        inv = self.tool.gps("save-all", ["--save-all"], {"op": "save-all"})
+        inv = self.tool.gps("save-all", target_arg({"Opts": {"Save": "all"}}),
+                            {"op": "save-all"})
         if inv.error is None:
-            self.tool.gps("recovery-reload", ["--reload"],
+            self.tool.gps("recovery-reload", target_arg({"Opts": {"Reset": "reload"}}),
                           {"op": "reload", "round": 0, "uart": uart})
             self.resync_speed(uart, as_found_speed is not None)
             self.show_config("verify-save-all", "save-all")
@@ -983,7 +1058,7 @@ class ProbeRun:
             if chk.error is not None:
                 self.rediscover_speed()
             return
-        inv = self.tool.gps(name, ["--speed", str(bps)],
+        inv = self.tool.gps(name, target_arg({"Props": {"baudRate": bps}}),
                             {"op": "session-speed", "role": "restore", "to": bps})
         if inv.error is None:
             self.tool.set_speed(bps)
@@ -1000,7 +1075,7 @@ class ProbeRun:
         speed on a UART; each accepted value moves the link, restored at
         the end."""
         for v in self.SPEED_VALUES:
-            inv = self.tool.gps(f"set-speed-{v}", ["--speed", str(v)],
+            inv = self.tool.gps(f"set-speed-{v}", target_arg({"Props": {"baudRate": v}}),
                                 {"op": "set-speed", "requested": v, "prev": cur or 0})
             if transient(inv.error):
                 self.rediscover_speed()
@@ -1017,7 +1092,8 @@ class ProbeRun:
         is that the readback responds. The factory state itself is receiver
         data, kept in the run artifacts rather than compared; the caller
         must recover NVM afterwards."""
-        self.tool.gps("factory-reset", ["--factory-reset"], {"op": "factory-reset"})
+        self.tool.gps("factory-reset", target_arg({"Opts": {"Reset": "factory"}}),
+                      {"op": "factory-reset"})
         time.sleep(RESET_SETTLE)
         self.resync_speed(True, raised)
         self.show_config("readback-factory", "factory")
@@ -1034,19 +1110,20 @@ class ProbeRun:
         persists the restored baseline."""
         canary = next(q for q in PROPS if q.name == "minElevation")
         v = next(x for x in canary.values if x != config_value(r, canary.path))
-        self.tool.gps(f"gran-set-{canary.name}", [canary.flag, canary.to_cli(v)],
+        self.tool.gps(f"gran-set-{canary.name}", target_arg({"Props": canary.props(v)}),
                       {"op": "gran-set", "exp": "messageOutput",
                        "prop": canary.name})
         target = ["RMC"] if nmea_set(base) != ["RMC"] else ["GGA"]
         self.tool.gps("gran-save-messages",
-                      ["--nmea-out", ",".join(target), "--save"],
+                      target_arg({"Opts": {"NMEAMsg": wire_flags(target),
+                                           "Save": "minimal"}}),
                       {"op": "gran-save-msg", "case": target,
                        "prop": canary.name, "path": list(canary.path)})
         time.sleep(MSG_SETTLE)
         self.observe("gran-S-messages",
                      {"op": "observe", "role": "gran-msg-s", "case": target})
         self.show_config("gran-S-messages-cfg", "gran-msg-scfg", canary.name)
-        self.tool.gps("gran-reload-messages", ["--reload"],
+        self.tool.gps("gran-reload-messages", target_arg({"Opts": {"Reset": "reload"}}),
                       {"op": "reload", "round": 0, "uart": uart})
         self.resync_speed(uart, raised)
         time.sleep(MSG_SETTLE)
@@ -1069,27 +1146,26 @@ class ProbeRun:
             if p is not None and q.name == p.name:
                 continue
             v = next(x for x in q.values if x != config_value(r, q.path))
-            self.tool.gps(f"gran-set-{q.name}", [q.flag, q.to_cli(v)],
+            self.tool.gps(f"gran-set-{q.name}", target_arg({"Props": q.props(v)}),
                           {"op": "gran-set", "exp": name, "prop": q.name})
             others[q.name] = list(q.path)
         mode = config_value(r, ("mode",))
-        flip = ["--survey"] if isinstance(mode, dict) and not mode.get("static") \
-            else ["--mobile"]
         if p is not None:
             if isinstance(mode, dict):
-                self.tool.gps("gran-set-mode", flip,
+                self.tool.gps("gran-set-mode", target_arg(flip_mode_target(mode)),
                               {"op": "gran-set", "exp": name, "prop": "mode"})
                 others["mode"] = ["mode"]
             v = next(x for x in p.values if x != config_value(r, p.path))
-            args = [p.flag, p.to_cli(v), "--save"]
+            target: dict[str, Any] = {"Props": p.props(v), "Opts": {"Save": "minimal"}}
             path = list(p.path)
         else:
-            args = flip + ["--save"]
+            target = flip_mode_target(mode)
+            target.setdefault("Opts", {})["Save"] = "minimal"
             path = ["mode"]
-        self.tool.gps(f"gran-save-{name}", args,
+        self.tool.gps(f"gran-save-{name}", target_arg(target),
                       {"op": "gran-save", "exp": name, "path": path, "others": others})
         self.show_config(f"gran-S-{name}", "gran-s", name)
-        self.tool.gps(f"gran-reload-{name}", ["--reload"],
+        self.tool.gps(f"gran-reload-{name}", target_arg({"Opts": {"Reset": "reload"}}),
                       {"op": "reload", "round": 0, "uart": uart})
         self.resync_speed(uart, raised)
         return self.show_config(f"gran-F-{name}", "gran-f", name)
@@ -1099,7 +1175,7 @@ class ProbeRun:
         kind, so the invocation's own error proves nothing), reloads its
         configuration from NVM, and discards acquired position/time/orbit
         data. The readback after rediscovery must show the NVM state."""
-        self.tool.gps("reset", ["--reset"], {"op": "reset"})
+        self.tool.gps("reset", target_arg({"Opts": {"Reset": "cold"}}), {"op": "reset"})
         time.sleep(RESET_SETTLE)
         self.resync_speed(True, raised)
         self.show_config("verify-reset", "reset")
@@ -1163,17 +1239,20 @@ class ProbeRun:
             return
         width = config_value(initial, ("timePulse", "width"))
         if not width:
-            inv2 = self.tool.gps("set-pulse-on", ["--pps", "0.1"],
+            inv2 = self.tool.gps("set-pulse-on",
+                                 target_arg({"Props": {"timePulse": pps_props(0.1)}}),
                                  {"op": "pulse-set", "role": "on", "width": 0.1})
             if inv2.error is not None:
                 return
         self.tool.sdp_extts("sdp-pulse-enabled", iface, pin, chan, 4.0, use_sudo,
                             {"op": "sdp", "role": "enabled", "iface": iface, "pin": pin})
-        inv2 = self.tool.gps("set-pulse-off", ["--pps", "0"],
+        inv2 = self.tool.gps("set-pulse-off",
+                             target_arg({"Props": {"timePulse": pps_props(0)}}),
                              {"op": "pulse-set", "role": "off", "width": 0})
         if inv2.error is None:
             time.sleep(MSG_SETTLE)
             self.tool.sdp_extts("sdp-pulse-disabled", iface, pin, chan, 4.0, use_sudo,
                                 {"op": "sdp", "role": "disabled", "iface": iface, "pin": pin})
-        self.tool.gps("restore-pulse", ["--pps", fmt_value(width if width else 0)],
+        self.tool.gps("restore-pulse",
+                      target_arg({"Props": {"timePulse": pps_props(width if width else 0)}}),
                       {"op": "pulse-set", "role": "restore", "width": width if width else 0})

@@ -25,7 +25,7 @@ from typing import Any
 
 from analyze import DISRUPTIVE_KEYS, analyze_run, load_steps
 from characterize import to_json
-from model import emissions, port_has_serial_speed
+from model import emissions, port_has_serial_speed, target_arg
 from probes import PROPS, RESET_SETTLE, ProbeRun
 from tool import Invocation, Tool, ToolFailure
 
@@ -294,11 +294,12 @@ def identify_receiver(tool: Tool, pr: ProbeRun, setup: bool) -> Invocation | Non
 def start_from_factory_defaults(tool: Tool, pr: ProbeRun) -> None:
     """Put a disruptive run into a known starting state before probing."""
     print("resetting receiver to factory defaults", file=sys.stderr)
-    tool.gps("setup-factory-reset", ["--factory-reset"],
+    tool.gps("setup-factory-reset", target_arg({"Opts": {"Reset": "factory"}}),
              {"op": "factory-reset", "role": "setup"})
     time.sleep(RESET_SETTLE)
     pr.rediscover_speed()
-    tool.gps("setup-reset", ["--reset"], {"op": "reset", "role": "setup"})
+    tool.gps("setup-reset", target_arg({"Opts": {"Reset": "cold"}}),
+             {"op": "reset", "role": "setup"})
     time.sleep(RESET_SETTLE)
     pr.rediscover_speed()
 
