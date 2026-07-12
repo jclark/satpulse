@@ -3,10 +3,24 @@
 Starts the workbench without -d and drives the config path the way the browser
 does: claim the write seat, connect to the simulator's pty (the first black-box
 exercise of an interactive connect whose probe answers), wait for /api/receiver
-to identify the simulated ZED-F9P, read the config, apply a small ConfigTarget
-that both sets a round-trippable property (the antenna cable delay) and enables
-the satellites messages (Opts.SatsMsg), then confirm a second read shows the new
-delay and the enabled messages arrive as live satellite data.
+to identify the simulated ZED-F9P, read the config, then apply ConfigTargets
+carrying a round-trippable property (the antenna cable delay) and every message
+flag group Opts has, and confirm they land -- a re-read shows the new delay, and
+the receiver sends exactly the messages that were enabled.
+
+Every group crosses the wire as an array of names, so a regression in any group's
+encoding fails the apply here. Four are checked as behaviour too, by naming the
+packet each one enables on the workbench packet stream: PVTMsg (NAV-TIMELS),
+SatsMsg (NAV-SAT/NAV-SIG) and RTCMMsg (MSM4, which the simulator derives from the
+recorded MSM7) are off in the personality defaults, so their packets arriving can
+only be the VALSET landing. NMEA defaults on, so it is cycled the other way --
+disabled with the empty array, shown gone, then re-enabled by name -- which pins
+both encodings. Only RawMsg is wire-format-only: the bank holds no RXM packet for
+its keys to gate.
+
+The second apply turns the satellite messages off as it turns RTCM on, keeping the
+enabled set inside what the 38400-baud port can drain: the simulator paces its
+output at the port's baud rate, so an over-subscribed link would just back up.
 
 No FACTOR/PACKET_LOG: the simulator generates nav itself from SIM_REPLAY.
 """
@@ -25,10 +39,13 @@ SIM_REPLAY = "gps/testdata/config/u-blox/ZED-F9P/sim.jsonl"
 # verbatim. Nanoseconds on the wire (ConfigProps marshals antennaCableDelay as
 # an integer nanosecond count).
 CABLE_DELAY_NS = 12000
-# Opts.SatsMsg wire value: satellite positions (NAV-SAT) plus signals (NAV-SIG),
-# the same flag names the config panel sends (SatsMsgFlags marshals as an array
-# of names).
-SATS_MSG = ["sat", "signal"]
+# The Opts flag groups as the config panel sends them, each an array of names,
+# with the packet each one enables on this receiver.
+PVT_MSG = ["leapSecond"]  # NAV-TIMELS
+SATS_MSG = ["sat", "signal"]  # NAV-SAT, NAV-SIG
+NMEA_MSG = ["GGA", "RMC"]  # GNGGA, GNRMC
+RTCM_MSG = ["MSM4"]  # 1074 and its per-constellation siblings
+RAW_MSG = ["obs", "navData"]  # RXM-RAWX/RXM-SFRBX: not in the bank, so not observable
 
 
 def run(ctx: common.SmokeContext) -> None:
@@ -46,12 +63,21 @@ def run(ctx: common.SmokeContext) -> None:
     props = json.loads(body)
     assert props, f"config/read returned empty props: {body!r}"
 
-    status, body = common.wb_post(
+    # Every flag group in one apply: the UBX messages on, NMEA off (it defaults on).
+    apply(
         ctx,
-        f"/api/config/apply?seat={seat}",
-        {"Props": {"antennaCableDelay": CABLE_DELAY_NS}, "Opts": {"SatsMsg": SATS_MSG}},
+        seat,
+        {
+            "Props": {"antennaCableDelay": CABLE_DELAY_NS},
+            "Opts": {
+                "PVTMsg": PVT_MSG,
+                "SatsMsg": SATS_MSG,
+                "NMEAMsg": [],
+                "RTCMMsg": [],
+                "RawMsg": RAW_MSG,
+            },
+        },
     )
-    assert status == 200, f"config/apply expected 200, got {status}: {body!r}"
 
     # The property round-trips: a second read reflects the applied delay.
     status, body = common.wb_post(ctx, f"/api/config/read?seat={seat}", {})
@@ -61,5 +87,14 @@ def run(ctx: common.SmokeContext) -> None:
         f"antennaCableDelay did not round-trip: sent {CABLE_DELAY_NS}, read {props2.get('antennaCableDelay')!r}"
     )
 
-    # The enabled messages show up as live data.
-    config.check_wb_sats_live(ctx)
+    config.check_wb_packets_absent(ctx, ["NMEA"])
+    config.check_wb_packets_live(ctx, ["NAV-SAT", "NAV-SIG", "NAV-TIMELS"])
+
+    # NMEA by name brings it back, and RTCM turns on what the defaults leave off.
+    apply(ctx, seat, {"Opts": {"SatsMsg": [], "NMEAMsg": NMEA_MSG, "RTCMMsg": RTCM_MSG}})
+    config.check_wb_packets_live(ctx, ["GNGGA", "GNRMC", "1074"])
+
+
+def apply(ctx: common.SmokeContext, seat: str, target: dict[str, object]) -> None:
+    status, body = common.wb_post(ctx, f"/api/config/apply?seat={seat}", target)
+    assert status == 200, f"config/apply {target} expected 200, got {status}: {body!r}"
