@@ -1,5 +1,5 @@
 import {h} from 'preact';
-import {SatsMsgSat, SatsMsgSignal} from './msg-flags';
+import {SatsMsgSat, SatsMsgSignal, SatsMsgNames, msgFlag, msgFlagNames} from './msg-flags';
 import {ConfigSubGroup, labeledControlText} from './ui';
 
 interface Props {
@@ -11,10 +11,12 @@ interface Props {
 }
 
 /** Compute the wire value for Apply. Returns undefined when not configured (change=false). */
-export function satsWireValue(change: boolean, flags: number): number | undefined {
+export function satsWireValue(change: boolean, flags: number): string[] | undefined {
     if (!change) return undefined;
-    return flags;
+    return msgFlagNames(flags, SatsMsgNames);
 }
+
+export const satsFlag = (name: string) => msgFlag(name, SatsMsgNames);
 
 function Checkbox({label, checked, disabled, onChange}: {
     label: string; checked: boolean; disabled: boolean;
@@ -45,10 +47,10 @@ export function SatsGroup({change, flags, onChangeChange, onFlagsChange, disable
                 <Checkbox label="Change" checked={change} disabled={!!disabled}
                     onChange={onChangeChange} />
                 <div class="flex flex-wrap gap-x-4 gap-y-1">
-                    <Checkbox label="Satellite positions" checked={has(SatsMsgSat)} disabled={childDisabled}
-                        onChange={v => toggle(SatsMsgSat, v)} />
-                    <Checkbox label="Signals" checked={has(SatsMsgSignal)} disabled={childDisabled}
-                        onChange={v => toggle(SatsMsgSignal, v)} />
+                    <Checkbox label="Satellite positions" checked={has(satsFlag(SatsMsgSat))} disabled={childDisabled}
+                        onChange={v => toggle(satsFlag(SatsMsgSat), v)} />
+                    <Checkbox label="Signals" checked={has(satsFlag(SatsMsgSignal))} disabled={childDisabled}
+                        onChange={v => toggle(satsFlag(SatsMsgSignal), v)} />
                 </div>
             </div>
         </ConfigSubGroup>

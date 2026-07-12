@@ -2,6 +2,8 @@ package gpscmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -86,6 +88,71 @@ func TestCreateConfigTargetProbeOnly(t *testing.T) {
 				t.Logf("target.Opts.ForceProbe = %v", target.Opts.ForceProbe)
 			}
 		})
+	}
+}
+
+func TestCreateConfigTargetJSON(t *testing.T) {
+	v := &flagVars{
+		targetJSON: `{"Props":{"mode":{"static":true}},"Get":["baudRate"],"Opts":{"Save":"minimal","NMEAMsg":[]}}`,
+	}
+	target, err := createConfigTarget(v)
+	if err != nil {
+		t.Fatalf("createConfigTarget: %v", err)
+	}
+	mode, ok := target.Props.GetMode()
+	if !ok || !mode.Static {
+		t.Errorf("mode = %+v, %t, want static mode", mode, ok)
+	}
+	if target.Get != gpsprot.PropIDBaudRate {
+		t.Errorf("Get = %v, want baudRate", target.Get)
+	}
+	if target.Opts.Save != gpsprot.SaveMinimal {
+		t.Errorf("Save = %v, want SaveMinimal", target.Opts.Save)
+	}
+	if !target.Opts.NMEAMsg.IsSet() || target.Opts.NMEAMsg.Get() != gpsprot.NMEAMsgNone {
+		t.Errorf("NMEAMsg = %+v, want set-empty", target.Opts.NMEAMsg)
+	}
+}
+
+func TestCreateConfigTargetJSONUnknownField(t *testing.T) {
+	for _, s := range []string{
+		`{"Unknown":true}`,
+		`{"Props":{"unknown":true}}`,
+		`{"Opts":{"Unknown":true}}`,
+	} {
+		if _, err := createConfigTarget(&flagVars{targetJSON: s}); err == nil {
+			t.Errorf("createConfigTarget(%s) succeeded, want error", s)
+		}
+	}
+}
+
+func TestCreateConfigTargetJSONReadbackProps(t *testing.T) {
+	var props gpsprot.ConfigProps
+	props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA))
+	props.SetPort("UART1")
+	b, err := json.Marshal(&props)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := createConfigTarget(&flagVars{targetJSON: fmt.Sprintf(`{"Props":%s}`, b)})
+	if err != nil {
+		t.Fatalf("createConfigTarget: %v", err)
+	}
+	if target.Props.ReadOnlyProps() != 0 {
+		t.Errorf("read-only properties not cleared: %v", target.Props.ReadOnlyProps())
+	}
+	if got, ok := target.Props.GetSignalsEnabled(); !ok || got != gpsprot.SignalSetOf(gpsprot.SigGPSL1CA) {
+		t.Errorf("signalsEnabled = %v, %t", got, ok)
+	}
+}
+
+func TestTargetJSONConfigFlagExclusive(t *testing.T) {
+	_, _, err := parseFlags("gps", []string{"-d", "/dev/ttyACM0", "--target-json", `{}`, "--gnss", "GPS"})
+	if err == nil {
+		t.Fatal("parseFlags succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "--target-json cannot be combined with --gnss") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 

@@ -1,40 +1,55 @@
-// Source: gps/gpsprot/configtarget.go -- keep in sync.
+// Source: gps/gpsprot/configtarget.go -- keep spellings in sync.
 
 // NMEA
-export const NMEAMsgRMC   = 1 << 0
-export const NMEAMsgGGA   = 1 << 1
-export const NMEAMsgGSA   = 1 << 2
-export const NMEAMsgGSV   = 1 << 3
-export const NMEAMsgZDA   = 1 << 4
-export const NMEAMsgVTG   = 1 << 5
-export const NMEAMsgGLL   = 1 << 6
-export const NMEAMsgOther = 1 << 15
+export const NMEAMsgRMC = 'RMC';
+export const NMEAMsgGGA = 'GGA';
+export const NMEAMsgGSA = 'GSA';
+export const NMEAMsgGSV = 'GSV';
+export const NMEAMsgZDA = 'ZDA';
+export const NMEAMsgVTG = 'VTG';
+export const NMEAMsgGLL = 'GLL';
+export const NMEAMsgOther = 'other';
+export const NMEAMsgNames = [NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV, NMEAMsgZDA, NMEAMsgVTG, NMEAMsgGLL] as const;
 
 // RTCM
-export const RTCMMsgMSM4  = 1 << 0
-export const RTCMMsgMSM7  = 1 << 3
-export const RTCMMsgARP   = 1 << 4
-export const RTCMMsgLax   = 1 << 5
-export const RTCMMsgOther = 1 << 15
+export const RTCMMsgMSM4 = 'MSM4';
+export const RTCMMsgMSM7 = 'MSM7';
+export const RTCMMsgARP = 'ARP';
+export const RTCMMsgLax = 'lax';
+export const RTCMMsgOther = 'other';
 
 // PVT
-export const PVTMsgPos            = 1 << 0
-export const PVTMsgVel            = 1 << 1
-export const PVTMsgTime           = 1 << 2
-export const PVTMsgTimePulse      = 1 << 3
-export const PVTMsgLeapSecond     = 1 << 4
-export const PVTMsgSurvey         = 1 << 5
-export const PVTMsgTAI            = 1 << 6
-export const PVTMsgECEF           = 1 << 7
-export const PVTMsgTimePulseAfter = 1 << 8
-export const PVTMsgQuality        = 1 << 9
-export const PVTMsgEpoch          = 1 << 10
-export const PVTMsgOff            = 1 << 11
+export const PVTMsgPos = 'pos';
+export const PVTMsgVel = 'vel';
+export const PVTMsgTime = 'time';
+export const PVTMsgTimePulse = 'timePulse';
+export const PVTMsgLeapSecond = 'leapSecond';
+export const PVTMsgSurvey = 'survey';
+export const PVTMsgTAI = 'tai';
+export const PVTMsgECEF = 'ecef';
+export const PVTMsgTimePulseAfter = 'timePulseAfter';
+export const PVTMsgQuality = 'quality';
+export const PVTMsgEpoch = 'epoch';
+export const PVTMsgOff = 'off';
+export const PVTMsgNames = [
+    PVTMsgPos, PVTMsgVel, PVTMsgTime, PVTMsgTimePulse, PVTMsgLeapSecond, PVTMsgSurvey,
+    PVTMsgTAI, PVTMsgECEF, PVTMsgTimePulseAfter, PVTMsgQuality, PVTMsgEpoch, PVTMsgOff,
+] as const;
 
 // Sats
-export const SatsMsgSat    = 1 << 0
-export const SatsMsgSignal = 1 << 1
+export const SatsMsgSat = 'sat';
+export const SatsMsgSignal = 'signal';
+export const SatsMsgNames = [SatsMsgSat, SatsMsgSignal] as const;
 
 // Raw
-export const RawMsgObs     = 1 << 0
-export const RawMsgNavData = 1 << 1
+export const RawMsgObs = 'obs';
+export const RawMsgNavData = 'navData';
+export const RawMsgNames = [RawMsgObs, RawMsgNavData] as const;
+
+export function msgFlag(name: string, names: readonly string[]): number {
+    return 1 << names.indexOf(name);
+}
+
+export function msgFlagNames(flags: number, names: readonly string[]): string[] {
+    return names.filter((name, i) => (flags & (1 << i)) !== 0);
+}

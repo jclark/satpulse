@@ -47,6 +47,7 @@ type flagVars struct {
 	configOpts     gpsprot.ConfigOptions
 	configSupport  configSupportReq
 	configGet      gpsprot.PropIDs
+	targetJSON     string
 	msgFilePath    string
 	msgTags        []string
 	msgSave        bool
@@ -229,6 +230,8 @@ func newFlagParser(cmdName string) *flagParser {
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
 	flags.StringVarP(&vars.configFile, "config-file", "f", "", "`path` to satpulse TOML configuration file")
+	flags.StringVar(&vars.targetJSON, "target-json", "", "JSON configuration target or - to read from stdin")
+	flags.MarkHidden("target-json")
 	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
 	flags.StringVarP(&vars.msgFilePath, "msg-file", "m", "", "`path` to TOML file containing message definitions")
 	flags.StringVarP(&p.msgTags, "tag", "t", "", "comma-separated `list` of tags to send (in order)")
@@ -285,6 +288,21 @@ func (p *flagParser) resolve(cmdName string, usage func(string) string) (*flagVa
 	configChanged, u, err := p.resolveConn(cmdName, usage)
 	if err != nil {
 		return nil, u, err
+	}
+	if vars.targetJSON != "" {
+		for _, name := range []string{
+			"save", "save-all", "reset", "reload", "factory-reset", "nmea", "binary", "speed",
+			"gnss", "band", "signal", "except-signal", "time-gnss", "raw-out", "pvt-out", "rtcm-out", "nmea-out", "sats-out",
+			"pps", "ant-cable-delay", "mobile", "survey", "survey-time", "survey-acc", "fixed-pos-ecef", "fixed-pos-llh", "fixed-pos-acc",
+			"min-elev", "rtcm-base-id", "static", "sys-time-trusted", "osnma", "msg-file", "tag", "port", "show-tags",
+		} {
+			if p.flags.Lookup(name).Changed {
+				return nil, nil, fmt.Errorf("--target-json cannot be combined with --%s", name)
+			}
+		}
+		p.resolveShow()
+		vars.configSupport = configSupportReq{}
+		return vars, nil, nil
 	}
 	changed, err := p.resolveSignals(cmdName)
 	if err != nil {

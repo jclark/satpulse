@@ -19,14 +19,14 @@ interface Props {
 }
 
 /** Compute the wire value for Apply. Returns undefined if change is false (skip). */
-export function rtcmWireValue(change: boolean, disableProtocol: boolean, msm: MSMType, fallback: boolean, arp: boolean): number | undefined {
+export function rtcmWireValue(change: boolean, disableProtocol: boolean, msm: MSMType, fallback: boolean, arp: boolean): string[] | undefined {
     if (!change) return undefined;
-    if (disableProtocol) return 0;
-    let v = RTCMMsgOther;
-    if (msm === 'msm4') v |= RTCMMsgMSM4;
-    if (msm === 'msm7') v |= RTCMMsgMSM7;
-    if (fallback && msm !== 'none') v |= RTCMMsgLax;
-    if (arp) v |= RTCMMsgARP;
+    if (disableProtocol) return [];
+    const v: string[] = [RTCMMsgOther];
+    if (msm === 'msm4') v.push(RTCMMsgMSM4);
+    if (msm === 'msm7') v.push(RTCMMsgMSM7);
+    if (fallback && msm !== 'none') v.push(RTCMMsgLax);
+    if (arp) v.push(RTCMMsgARP);
     return v;
 }
 

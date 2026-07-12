@@ -2,10 +2,10 @@ import {h} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {transport} from './transport';
 import {SignalPicker} from './signal-picker';
-import {NMEAGroup, nmeaWireValue} from './nmea-group';
+import {NMEAGroup, nmeaFlag, nmeaWireValue} from './nmea-group';
 import {RTCMGroup, rtcmWireValue} from './rtcm-group';
-import {PVTGroup, pvtWireValue} from './pvt-group';
-import {SatsGroup, satsWireValue} from './sats-group';
+import {PVTGroup, pvtFlag, pvtWireValue} from './pvt-group';
+import {SatsGroup, satsFlag, satsWireValue} from './sats-group';
 import {RawGroup, rawWireValue} from './raw-group';
 import {
     NMEAMsgRMC,
@@ -334,11 +334,11 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                 const dur = surveyTime !== '' ? parseFloat(surveyTime) : 2000;
                 const acc = surveyAcc !== '' ? parseFloat(surveyAcc) : 20;
                 opts.Survey = {
-                    Flags: surveyAgain ? 1 : 0,
+                    Flags: surveyAgain ? ['again'] : [],
                     MinDur: dur * 1e9,       // seconds -> nanoseconds
                     AccLimit: acc,
                 };
-                if (surveyReport) opts.PVTMsg = (opts.PVTMsg || 0) | PVTMsgSurvey;
+                if (surveyReport) opts.PVTMsg = [PVTMsgSurvey];
             } else if (timeMode === 'fixed') {
                 if (coordSystem === 'ecef') {
                     props.mode = {
@@ -375,13 +375,13 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
         const rtcmWire = rtcmWireValue(rtcmChange, rtcmDisable, rtcmMSM, rtcmFallback, rtcmARP);
         if (rtcmWire !== undefined) opts.RTCMMsg = rtcmWire;
         const pvtWire = pvtWireValue(pvtChange, pvtFlags);
-        if (pvtWire !== undefined) opts.PVTMsg = (opts.PVTMsg || 0) | pvtWire;
+        if (pvtWire !== undefined) opts.PVTMsg = [...(opts.PVTMsg || []), ...pvtWire];
         const satsWire = satsWireValue(satsChange, satsFlags);
         if (satsWire !== undefined) opts.SatsMsg = satsWire;
         const rawWire = rawWireValue(rawChange, rawFlags);
         if (rawWire !== undefined) opts.RawMsg = rawWire;
-        if (saveType) opts.Save = saveType;
-        if (resetType) opts.Reset = resetType;
+        if (saveType) opts.Save = ['none', 'minimal', 'all'][saveType];
+        if (resetType) opts.Reset = ['none', 'reload', 'cold', 'factory'][resetType];
         if (speedTouched) props.baudRate = selectedSpeed;
         const cfg: Record<string, any> = {Props: props, Opts: opts};
         setApplying(true);
@@ -649,16 +649,16 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                 <ConfigGroup title="Messages">
                         <div class="flex gap-2">
                             <Button disabled={!connected} onClick={() => {
-                                setNmeaChange(true); setNmeaDisable(false); setNmeaFlags(NMEAMsgRMC);
+                                setNmeaChange(true); setNmeaDisable(false); setNmeaFlags(nmeaFlag(NMEAMsgRMC));
                                 setRtcmChange(true); setRtcmDisable(true);
-                                setPvtChange(true); setPvtFlags(PVTMsgOff);
+                                setPvtChange(true); setPvtFlags(pvtFlag(PVTMsgOff));
                                 setSatsChange(true); setSatsFlags(0);
                                 setRawChange(true); setRawFlags(0);
                             }}>Minimum</Button>
                             <Button disabled={!connected} onClick={() => {
                                 setNmeaChange(true); setNmeaDisable(true);
-                                setPvtChange(true); setPvtFlags(PVTMsgTimePulse | PVTMsgTimePulseAfter | PVTMsgTAI | PVTMsgLeapSecond | PVTMsgOff | PVTMsgQuality | PVTMsgEpoch | PVTMsgPos);
-                                if (speed >= 19200) { setSatsChange(true); setSatsFlags(SatsMsgSat | SatsMsgSignal); }
+                                setPvtChange(true); setPvtFlags(pvtFlag(PVTMsgTimePulse) | pvtFlag(PVTMsgTimePulseAfter) | pvtFlag(PVTMsgTAI) | pvtFlag(PVTMsgLeapSecond) | pvtFlag(PVTMsgOff) | pvtFlag(PVTMsgQuality) | pvtFlag(PVTMsgEpoch) | pvtFlag(PVTMsgPos));
+                                if (speed >= 19200) { setSatsChange(true); setSatsFlags(satsFlag(SatsMsgSat) | satsFlag(SatsMsgSignal)); }
                             }}>Daemon</Button>
                         </div>
                         <NMEAGroup

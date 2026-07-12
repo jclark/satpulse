@@ -1,5 +1,5 @@
 import {h} from 'preact';
-import {RawMsgObs, RawMsgNavData} from './msg-flags';
+import {RawMsgObs, RawMsgNavData, RawMsgNames, msgFlag, msgFlagNames} from './msg-flags';
 import {ConfigSubGroup, labeledControlText} from './ui';
 
 interface Props {
@@ -11,10 +11,12 @@ interface Props {
 }
 
 /** Compute the wire value for Apply. Returns undefined when not configured (change=false). */
-export function rawWireValue(change: boolean, flags: number): number | undefined {
+export function rawWireValue(change: boolean, flags: number): string[] | undefined {
     if (!change) return undefined;
-    return flags;
+    return msgFlagNames(flags, RawMsgNames);
 }
+
+const rawFlag = (name: string) => msgFlag(name, RawMsgNames);
 
 function Checkbox({label, checked, disabled, onChange}: {
     label: string; checked: boolean; disabled: boolean;
@@ -45,10 +47,10 @@ export function RawGroup({change, flags, onChangeChange, onFlagsChange, disabled
                 <Checkbox label="Change" checked={change} disabled={!!disabled}
                     onChange={onChangeChange} />
                 <div class="flex flex-wrap gap-x-4 gap-y-1">
-                    <Checkbox label="Observations (RINEX .obs)" checked={has(RawMsgObs)} disabled={childDisabled}
-                        onChange={v => toggle(RawMsgObs, v)} />
-                    <Checkbox label="Navigation data (RINEX .nav)" checked={has(RawMsgNavData)} disabled={childDisabled}
-                        onChange={v => toggle(RawMsgNavData, v)} />
+                    <Checkbox label="Observations (RINEX .obs)" checked={has(rawFlag(RawMsgObs))} disabled={childDisabled}
+                        onChange={v => toggle(rawFlag(RawMsgObs), v)} />
+                    <Checkbox label="Navigation data (RINEX .nav)" checked={has(rawFlag(RawMsgNavData))} disabled={childDisabled}
+                        onChange={v => toggle(rawFlag(RawMsgNavData), v)} />
                 </div>
             </div>
         </ConfigSubGroup>

@@ -2,6 +2,7 @@ package gpscmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -88,8 +89,28 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		return nil, nil
 	}
 	target := gpsprot.NewConfigTarget()
-	target.Opts = v.configOpts
-	target.Get = v.configGet
+	if v.targetJSON != "" {
+		var r io.Reader = strings.NewReader(v.targetJSON)
+		if v.targetJSON == "-" {
+			r = os.Stdin
+		}
+		dec := json.NewDecoder(r)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(target); err != nil {
+			return nil, fmt.Errorf("invalid --target-json: %w", err)
+		}
+		if err := dec.Decode(new(any)); err != io.EOF {
+			if err == nil {
+				err = fmt.Errorf("multiple JSON values")
+			}
+			return nil, fmt.Errorf("invalid --target-json: %w", err)
+		}
+		target.Props.ClearReadOnlyProps()
+		target.Get |= v.configGet
+	} else {
+		target.Opts = v.configOpts
+		target.Get = v.configGet
+	}
 	cp := &target.Props
 	if v.pps.IsSet() {
 		cp.SetPPS(v.pps.Get())
