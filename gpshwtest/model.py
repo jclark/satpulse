@@ -406,6 +406,18 @@ def mode_target(mode: dict[str, Any]) -> dict[str, Any]:
 EMISSION_GRACE = datetime.timedelta(seconds=0.5)
 
 
+def observation_start(log: Path) -> datetime.datetime | None:
+    """The start of a packet log's observation window: the session's last
+    outbound packet plus the grace period, None when nothing was sent. Output
+    before it may still reflect a configuration mid-change (the rate
+    estimator's deliberate enable-at-rate-1-then-correct transient, replies
+    to the session's own queries), so measurements use only what follows."""
+    entries = [json.loads(line) for line in log.read_text().splitlines()]
+    last_out = max((parse_t(e["t"]) for e in entries if e.get("out")),
+                   default=None)
+    return None if last_out is None else last_out + EMISSION_GRACE
+
+
 def emissions(log: Path) -> dict[tuple[str, str], int]:
     """Counts of inbound (tag, msg) packets in the observation window of a
     packet log: strictly after the session's last outbound packet plus a
@@ -414,14 +426,13 @@ def emissions(log: Path) -> dict[tuple[str, str], int]:
     session's own queries (which need not echo the query's message name,
     e.g. Unicore CONFIG dumps) fall before it."""
     entries = [json.loads(line) for line in log.read_text().splitlines()]
-    last_out = max((parse_t(e["t"]) for e in entries if e.get("out")),
-                   default=None)
+    start = observation_start(log)
     counts: dict[tuple[str, str], int] = {}
     for e in entries:
         tag, msg = e.get("tag"), e.get("msg")
         if e.get("out") or not isinstance(tag, str) or not isinstance(msg, str):
             continue
-        if last_out is not None and parse_t(e["t"]) <= last_out + EMISSION_GRACE:
+        if start is not None and parse_t(e["t"]) <= start:
             continue
         k = (tag, msg)
         counts[k] = counts.get(k, 0) + 1
@@ -454,14 +465,14 @@ def emission_intervals(log: Path) -> dict[tuple[str, str], float]:
     times per epoch would show intra-epoch gaps, so callers select the safe
     types before drawing a rate verdict."""
     entries = [json.loads(line) for line in log.read_text().splitlines()]
-    last_out = max((parse_t(e["t"]) for e in entries if e.get("out")), default=None)
+    start = observation_start(log)
     times: dict[tuple[str, str], list[datetime.datetime]] = {}
     for e in entries:
         tag, msg = e.get("tag"), e.get("msg")
         if e.get("out") or not isinstance(tag, str) or not isinstance(msg, str):
             continue
         t = parse_t(e["t"])
-        if last_out is not None and t <= last_out + EMISSION_GRACE:
+        if start is not None and t <= start:
             continue
         times.setdefault((tag, msg), []).append(t)
     out: dict[tuple[str, str], float] = {}
@@ -491,13 +502,19 @@ def rtcm_rate_intervals(iv: dict[tuple[str, str], float]) -> dict[str, float]:
     return {msg: t for (tag, msg), t in iv.items() if tag == "RTCM"}
 
 
-def event_intervals(events: list[dict[str, Any]], etype: str) -> dict[str, float]:
+def event_intervals(events: list[dict[str, Any]], etype: str,
+                    start: datetime.datetime | None) -> dict[str, float]:
     """The median inter-arrival of one replayed event type, keyed by the type
     name; empty when fewer than two events carry it. Used to measure the
     delivery cadence of the semantic groups (navEpoch for PVT, satellites for
-    satellite information) at the information level."""
+    satellite information) at the information level. Restricted to events
+    after start (the packet log's observation window): earlier events can
+    reflect a configuration mid-change, e.g. the rate estimator's deliberate
+    enable-at-rate-1-then-correct transient, which would skew the median."""
     times = [parse_t(e["t"]) for e in events
              if e.get("type") == etype and isinstance(e.get("t"), str)]
+    if start is not None:
+        times = [t for t in times if t > start]
     iv = median_interval(times)
     return {etype: iv} if iv is not None else {}
 
