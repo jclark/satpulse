@@ -20,8 +20,8 @@ from model import (NMEA_VOCAB, EmissionObservation, Observation, SignalObservati
                    Value, config_model_equal, config_value, emission_intervals,
                    emissions, event_intervals, event_kinds, flat_value,
                    mode_disagreements, nmea_rate_intervals, nmea_set,
-                   normalize_signal_map, pvt_event_kinds, raw_set, rtcm_rate_intervals,
-                   rtcm_set, stored_form, transient)
+                   normalize_signal_map, observation_start, pvt_event_kinds,
+                   raw_set, rtcm_rate_intervals, rtcm_set, stored_form, transient)
 from tool import replay
 
 
@@ -598,9 +598,11 @@ class Analyzer:
         output with no rate, so it gets none."""
         assert o.log is not None
         if group == "pvtOut":
-            return event_intervals(self.replay_events(o.log), "navEpoch")
+            return event_intervals(self.replay_events(o.log), "navEpoch",
+                                   observation_start(o.log))
         if group == "satsOut":
-            return event_intervals(self.replay_events(o.log), "satellites")
+            return event_intervals(self.replay_events(o.log), "satellites",
+                                   observation_start(o.log))
         if group == "nmeaOut":
             return nmea_rate_intervals(emission_intervals(o.log))
         if group == "rtcmOut":
