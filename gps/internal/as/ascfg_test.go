@@ -21,6 +21,7 @@ type testReceiver struct {
 	t              *testing.T
 	monVer         *asbin.MonVer
 	rates          map[asbin.MsgID]uint8
+	msgSets        []asbin.MsgID        // CFG-MSG set targets received, in order
 	naks           map[asbin.MsgID]bool // set requests answered with NAK
 	nakTargets     map[asbin.MsgID]bool // CFG-MSG targets answered with NAK
 	silent         map[asbin.MsgID]bool // requests not answered at all
@@ -40,6 +41,7 @@ type testReceiver struct {
 	liveRate       uint32               // the live rate of the arriving port
 	elev           asbin.CfgElev        // CFG-ELEV store (always present: every unit has it)
 	ignoreZeroDuty bool                 // TAU1302 quirk: ACK a zero duty cycle without applying it
+	fourByteCfgMsg bool                 // answer CFG-MSG polls in the 4-byte form (rate + port mask), like the 5Hz units
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -86,6 +88,7 @@ func (r *testReceiver) respondOne(data []byte) [][]byte {
 			r.rates = make(map[asbin.MsgID]uint8)
 		}
 		r.rates[target] = mt.Rate
+		r.msgSets = append(r.msgSets, target)
 		return [][]byte{r.ack(asbin.CfgMsgID)}
 	case *asbin.RxmDumpRaw:
 		r.rawOn = mt.Enable
@@ -166,8 +169,11 @@ func (r *testReceiver) respondPoll(mid asbin.MsgID, data []byte) [][]byte {
 		if r.nakTargets[target] {
 			return [][]byte{r.nak(asbin.CfgMsgID)}
 		}
-		pkt, _ := asbin.PackMsg(asbin.CfgMsgID,
-			[]byte{data[asbin.HeaderLen], data[asbin.HeaderLen+1], r.rates[target]})
+		payload := []byte{data[asbin.HeaderLen], data[asbin.HeaderLen+1], r.rates[target]}
+		if r.fourByteCfgMsg {
+			payload = append(payload, 0xFF) // the real TAU951M/D10P form: trailing 0xFF port mask
+		}
+		pkt, _ := asbin.PackMsg(asbin.CfgMsgID, payload)
 		return [][]byte{pkt}
 	case asbin.CfgPpsID:
 		if r.pps == nil {
@@ -226,6 +232,15 @@ func tau1201Ver() *asbin.MonVer {
 	return &asbin.MonVer{
 		SwVersion: z16("3.018.aab95e7"),
 		HwVersion: z16("HD8040D.9529b663"),
+	}
+}
+
+// tau951mVer is the batch TAU951M-P200: a 5Hz-native, RTK-capable unit
+// (HD9510) that answers CFG-MSG polls in the 4-byte form.
+func tau951mVer() *asbin.MonVer {
+	return &asbin.MonVer{
+		SwVersion: z16("3.018.002947c3"),
+		HwVersion: z16("HD9510.7349b366f"),
 	}
 }
 
@@ -325,7 +340,7 @@ func TestConfigSupport(t *testing.T) {
 		{"HD.n0dig", base | rtcm}, // HD without digits
 	} {
 		ver := &asbin.MonVer{SwVersion: z16("3.018"), HwVersion: z16(tc.hw)}
-		cfg := newConfigurator(&gpsprot.ConfigTarget{}, ver)
+		cfg := newConfigurator(&gpsprot.ConfigTarget{}, ver, newRateEstimator())
 		if got := cfg.ConfigSupport(); got != tc.want {
 			t.Errorf("%s: ConfigSupport = %v, want %v", tc.hw, got, tc.want)
 		}
@@ -436,6 +451,71 @@ func TestNVMOps(t *testing.T) {
 	}
 }
 
+// resetReq returns the SIMPLERST request queued by cfg, or nil.
+func resetReq(cfg *Configurator) *asReq {
+	for _, req := range cfg.reqs {
+		if req.mid == asbin.CfgSimpleRstID {
+			return req
+		}
+	}
+	return nil
+}
+
+func TestNVMSaveGatesReset(t *testing.T) {
+	t.Run("ordering", func(t *testing.T) {
+		// The reset must wait for the save's ACK: it is not even generated
+		// (let alone ready) while the save is still outstanding, and it
+		// becomes ready only once the save has been acknowledged.
+		target := &gpsprot.ConfigTarget{}
+		target.Opts.Save = gpsprot.SaveAll
+		target.Opts.Reset = gpsprot.ResetReload
+		cfg := newConfigurator(target, tau1201Ver(), newRateEstimator())
+		if err := cfg.GenerateRequests(); err != nil {
+			t.Fatalf("GenerateRequests: %v", err)
+		}
+		save := cfg.saveReq
+		if save == nil {
+			t.Fatal("save request not generated")
+		}
+		if resetReq(cfg) != nil {
+			t.Fatal("reset generated before the save was acknowledged")
+		}
+		t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		save.SetSentTime(t0)
+		cfg.handleAck(asbin.CfgCfgID, true, t0)
+		if save.state != reqSucceeded {
+			t.Fatalf("save state = %v, want succeeded", save.state)
+		}
+		if err := cfg.GenerateRequests(); err != nil {
+			t.Fatalf("GenerateRequests: %v", err)
+		}
+		rst := resetReq(cfg)
+		if rst == nil {
+			t.Fatal("reset not generated after the save ACK")
+		}
+		if rst.GetState() != gpsprot.ConfigRequestReadyToSend {
+			t.Errorf("reset state = %v, want ReadyToSend", rst.GetState())
+		}
+	})
+	t.Run("save_nak_suppresses_reset", func(t *testing.T) {
+		// A refused save reports its error and the paired reset is not
+		// sent, so the reset cannot discard the unsaved changes.
+		rcvr := &testReceiver{monVer: tau1201Ver(),
+			naks: map[asbin.MsgID]bool{asbin.CfgCfgID: true}}
+		cp := probe(t, rcvr)
+		target := &gpsprot.ConfigTarget{}
+		target.Opts.Save = gpsprot.SaveAll
+		target.Opts.Reset = gpsprot.ResetReload
+		_, errCount := configure(t, cp, rcvr, target)
+		if errCount != 1 {
+			t.Errorf("ErrorCount = %d, want 1 (the refused save)", errCount)
+		}
+		if len(rcvr.resets) != 0 {
+			t.Errorf("resets = %v, want none: a failed save must suppress the reset", rcvr.resets)
+		}
+	})
+}
+
 func TestSilentRequestFails(t *testing.T) {
 	// A receiver that never answers a non-optional request exhausts the
 	// director's retries and fails, without hanging.
@@ -447,7 +527,7 @@ func TestSilentRequestFails(t *testing.T) {
 	target := &gpsprot.ConfigTarget{}
 	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC)
 	_, errCount := configure(t, cp, rcvr, target)
-	if errCount != 7 {
-		t.Errorf("ErrorCount = %d, want 7 (every NMEA rate request unanswered)", errCount)
+	if errCount != 11 {
+		t.Errorf("ErrorCount = %d, want 11 (every NMEA rate request unanswered: seven vocabulary sentences plus the four out-of-vocabulary disables)", errCount)
 	}
 }

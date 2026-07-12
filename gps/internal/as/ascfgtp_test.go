@@ -116,9 +116,29 @@ func TestTimePulseReadback(t *testing.T) {
 	}
 }
 
+func TestTimePulseAlignOnly(t *testing.T) {
+	// Setting only alignToGNSS touches no CFG-PPS field: the Allystar
+	// pulse is always GNSS-aligned, so the request reports the achieved
+	// true with no CFG-PPS poll and no wire write.
+	rcvr := &testReceiver{monVer: tau1201Ver(), pps: tau951mPps()}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetTimePulseAlignToGNSS(true)
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if len(rcvr.msgSets) != 0 || cfg.pps != nil {
+		t.Errorf("an align-only set must poll and write nothing; msgSets=%v pps=%v", rcvr.msgSets, cfg.pps)
+	}
+	if a, ok := cfg.ConfigProps().GetTimePulseAlignToGNSS(); !ok || !a {
+		t.Errorf("achieved alignToGNSS = %v/%v, want true", a, ok)
+	}
+}
+
 func TestTimePulseWidthSubMsPeriod(t *testing.T) {
 	// The width readback must not truncate away periods under 1 ms.
-	cfg := newConfigurator(&gpsprot.ConfigTarget{}, tau1201Ver())
+	cfg := newConfigurator(&gpsprot.ConfigTarget{}, tau1201Ver(), newRateEstimator())
 	cfg.pps = &asbin.CfgPps{Period: 100, DutyCycle: 500000}
 	if w, ok := cfg.ConfigProps().GetTimePulseWidth(); !ok || w != 50*time.Microsecond {
 		t.Errorf("width = %v/%v, want 50us", w, ok)

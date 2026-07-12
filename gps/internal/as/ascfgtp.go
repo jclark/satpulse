@@ -100,8 +100,13 @@ func dutyCycle(width time.Duration, periodUs uint32) uint32 {
 // CFG-PPS readback. AlignToGNSS is always true: the Allystar time pulse
 // is aligned to GNSS time (it would be useless otherwise), and reporting
 // it completes the property set so the pulse is shown in --show-config.
+// Alignment has no CFG-PPS carrier, so an align-only request (which does
+// not poll CFG-PPS) still reports the achieved true, with no wire write.
 func (c *Configurator) tpConfigProps(props *gpsprot.ConfigProps) {
 	if c.pps == nil {
+		if c.target.UsesAny(gpsprot.PropIDTimePulseAlignToGNSS) {
+			props.SetTimePulseAlignToGNSS(true)
+		}
 		return
 	}
 	period := time.Duration(c.pps.Period) * time.Microsecond

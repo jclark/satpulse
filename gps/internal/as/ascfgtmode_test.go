@@ -40,9 +40,53 @@ func TestTimeMode(t *testing.T) {
 			expectMode: surveyedMode,
 		},
 		{
-			name:       "survey_in",
+			// idle unit, explicit static-without-position with survey
+			// parameters: a fresh survey starts
+			name:       "survey_in_idle",
 			mode:       &gpsprot.Mode{Static: true},
 			surveyOpts: gpsprot.Survey{MinDur: 5 * time.Minute, AccLimit: gpsprot.Meters(10)},
+			expectSvy:  asbin.CfgSurvey{MinDur: 300, AccLimit: 10000},
+			expectMode: gpsprot.Mode{Static: true},
+		},
+		{
+			// re-applying static-without-position over a completed survey
+			// (fixed position present) must not discard it: no SurveyAgain,
+			// so the fixed position and survey registers are left untouched
+			name:       "static_none_preserves_fixed",
+			mode:       &gpsprot.Mode{Static: true},
+			surveyOpts: gpsprot.Survey{MinDur: 5 * time.Minute, AccLimit: gpsprot.Meters(10)},
+			asFoundPos: surveyed,
+			expectPos:  surveyed,
+			expectMode: surveyedMode,
+		},
+		{
+			// re-applying static-without-position while a survey is running
+			// must not restart it: the parameters are left untouched
+			name:       "static_none_preserves_running_survey",
+			mode:       &gpsprot.Mode{Static: true},
+			surveyOpts: gpsprot.Survey{MinDur: 5 * time.Minute, AccLimit: gpsprot.Meters(10)},
+			asFoundSvy: asbin.CfgSurvey{MinDur: 40, AccLimit: 100000},
+			expectSvy:  asbin.CfgSurvey{MinDur: 40, AccLimit: 100000},
+			expectMode: gpsprot.Mode{Static: true},
+		},
+		{
+			// SurveyAgain over a running survey restarts it with the new
+			// parameters
+			name:       "static_none_survey_again_restarts",
+			mode:       &gpsprot.Mode{Static: true},
+			surveyOpts: gpsprot.Survey{Flags: gpsprot.SurveyAgain, MinDur: 5 * time.Minute, AccLimit: gpsprot.Meters(10)},
+			asFoundSvy: asbin.CfgSurvey{MinDur: 40, AccLimit: 100000},
+			expectSvy:  asbin.CfgSurvey{MinDur: 300, AccLimit: 10000},
+			expectMode: gpsprot.Mode{Static: true},
+		},
+		{
+			// SurveyAgain over a COMPLETED survey (fixed position present)
+			// must restart it: the fixed position is zeroed and the new
+			// survey parameters written. Without SurveyAgain that position
+			// is preserved (static_none_preserves_fixed above).
+			name:       "static_none_survey_again_over_completed",
+			mode:       &gpsprot.Mode{Static: true},
+			surveyOpts: gpsprot.Survey{Flags: gpsprot.SurveyAgain, MinDur: 5 * time.Minute, AccLimit: gpsprot.Meters(10)},
 			asFoundPos: surveyed,
 			expectSvy:  asbin.CfgSurvey{MinDur: 300, AccLimit: 10000},
 			expectMode: gpsprot.Mode{Static: true},

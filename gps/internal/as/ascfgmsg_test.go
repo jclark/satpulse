@@ -15,12 +15,17 @@ func TestNMEAOut(t *testing.T) {
 		expect map[asbin.MsgID]uint8
 	}{
 		{
+			// without NMEAMsgOther the request is complete: the
+			// out-of-vocabulary sentences (GST, GRS, DTM, JAM) are turned
+			// off along with the unnamed vocabulary ones
 			name:  "rmc_gga",
 			flags: gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgGGA,
 			expect: map[asbin.MsgID]uint8{
 				asbin.NmeaGsvID: 0, asbin.NmeaRmcID: 1, asbin.NmeaGgaID: 1,
 				asbin.NmeaGsaID: 0, asbin.NmeaZdaID: 0, asbin.NmeaVtgID: 0,
 				asbin.NmeaGllID: 0,
+				asbin.NmeaGstID: 0, asbin.NmeaGrsID: 0, asbin.NmeaDtmID: 0,
+				asbin.NmeaJamID: 0,
 			},
 		},
 		{
@@ -28,6 +33,19 @@ func TestNMEAOut(t *testing.T) {
 			flags: gpsprot.NMEAMsgNone,
 			expect: map[asbin.MsgID]uint8{
 				asbin.NmeaGsvID: 0, asbin.NmeaRmcID: 0, asbin.NmeaGgaID: 0,
+				asbin.NmeaGsaID: 0, asbin.NmeaZdaID: 0, asbin.NmeaVtgID: 0,
+				asbin.NmeaGllID: 0,
+				asbin.NmeaGstID: 0, asbin.NmeaGrsID: 0, asbin.NmeaDtmID: 0,
+				asbin.NmeaJamID: 0,
+			},
+		},
+		{
+			// with NMEAMsgOther the named types are still controlled
+			// exactly, but the out-of-vocabulary sentences are left alone
+			name:  "rmc_other",
+			flags: gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgOther,
+			expect: map[asbin.MsgID]uint8{
+				asbin.NmeaGsvID: 0, asbin.NmeaRmcID: 1, asbin.NmeaGgaID: 0,
 				asbin.NmeaGsaID: 0, asbin.NmeaZdaID: 0, asbin.NmeaVtgID: 0,
 				asbin.NmeaGllID: 0,
 			},
@@ -182,9 +200,9 @@ func TestRTCMOut(t *testing.T) {
 	tests := []struct {
 		name  string
 		flags gpsprot.RTCMMsgFlags
-		eph   bool // expect eph targets turned off
+		other bool // expect eph and proprietary targets turned off
 	}{
-		{name: "msm4_arp", flags: gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP, eph: true},
+		{name: "msm4_arp", flags: gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP, other: true},
 		{name: "msm4_arp_other", flags: gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgOther},
 	}
 	for _, tc := range tests {
@@ -204,8 +222,11 @@ func TestRTCMOut(t *testing.T) {
 			for _, mid := range rtcmMSM7IDs {
 				expect[mid] = 0
 			}
-			if tc.eph {
+			if tc.other {
 				for _, mid := range rtcmEphIDs {
+					expect[mid] = 0
+				}
+				for _, mid := range rtcmPropIDs {
 					expect[mid] = 0
 				}
 			}
@@ -227,6 +248,9 @@ func TestRTCMOutAbsent(t *testing.T) {
 		nakAll[mid] = true
 	}
 	for _, mid := range rtcmEphIDs {
+		nakAll[mid] = true
+	}
+	for _, mid := range rtcmPropIDs {
 		nakAll[mid] = true
 	}
 	nakAll[asbin.RtcmArpID] = true

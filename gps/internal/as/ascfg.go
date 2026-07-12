@@ -42,9 +42,38 @@ type Configurator struct {
 	survey    *asbin.CfgSurvey    // latest CFG-SURVEY readback
 	navSat    *asbin.CfgNavSat    // latest CFG-NAVSAT readback
 	speedReq  *asReq              // the baud change request, when one was generated
+	saveReq   *asReq              // the NVM save request, when one was generated (gates the reset)
 	prt0      *asbin.CfgPrt       // CFG-PRT record 0 readback (show-port)
 	elev      *asbin.CfgElev      // latest CFG-ELEV readback
+	est       *rateEstimator      // native-rate estimator, shared with the ConfigProtocol
+	deferred  []deferredEnable    // message enables awaiting the resolve phase
+	watch     *asReq              // the resolve-phase watch request, when one was generated
+	watchSent bool                // the deferred enables have been sent (at rate=1) by the watch
+	planning  bool                // plannedEnabled dry-run: record intents instead of sending
+	plan      map[asbin.MsgID]bool
 }
+
+// deferredEnable is a message enable that the msg phase could not decide
+// because the native rate was not yet known; the resolve phase completes
+// it once the rate resolves. nakOK carries the id's NAK tolerance (binary
+// NAV and RTCM ids may not exist; NMEA ids do).
+type deferredEnable struct {
+	mid   asbin.MsgID
+	nakOK bool
+}
+
+// resolveFlowingDelay bounds the wait for a native rate to resolve when
+// traffic is already flowing: one second, the time for a 1Hz message's
+// second arrival. Reaching it without resolution rules out >=2Hz (a
+// faster unit would have produced several arrivals), so it concludes
+// 1Hz (anchored negative).
+const resolveFlowingDelay = 1200 * time.Millisecond
+
+// resolveSilentDelay bounds the wait after enabling messages at rate=1
+// on a silent receiver: a fast unit betrays itself within a few native
+// periods, so reaching it means the receiver is silent (likely no fix)
+// and the rate could not be verified - assume 1Hz and log it (cap).
+const resolveSilentDelay = 2 * time.Second
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
 
@@ -66,23 +95,29 @@ const (
 // outcome (the request succeeds); NAK-driven absence stays out of the
 // error path this way.
 type asReq struct {
-	state      asReqState
-	mid        asbin.MsgID // class+id, for response correlation
-	packet     []byte
-	tBase      time.Time // time request was sent
-	err        error
-	nakOK      bool            // NAK is acceptable, not a failure
-	onAck      func()          // records the accepted values on ACK
-	onData     func(asbin.Msg) // receives the data response, which completes a poll
-	noAck      bool            // no response expected (resets): sending is success
-	optional   bool            // a timed-out request succeeds rather than fails
-	speedAfter int             // new baud rate to switch to after sending
+	state        asReqState
+	mid          asbin.MsgID // class+id, for response correlation
+	packet       []byte
+	tBase        time.Time // time request was sent
+	err          error
+	nakOK        bool                 // NAK is acceptable, not a failure
+	onAck        func()               // records the accepted values on ACK
+	onData       func(asbin.Msg)      // receives the data response, which completes a poll
+	noAck        bool                 // no response expected (resets): sending is success
+	optional     bool                 // a timed-out request succeeds rather than fails
+	speedAfter   int                  // new baud rate to switch to after sending
+	watch        bool                 // the resolve-phase watch: never sent, resolves on estimator or deadline
+	watchDur     time.Duration        // the watch's timeout from watchAnchor
+	watchAnchor  time.Time            // the watch deadline anchor: start time, advanced only by waited-on arrivals
+	watchStarted bool                 // the anchor has been set to a real packet time
+	extended     map[asbin.MsgID]bool // ids whose first arrival already advanced the anchor
+	cfg          *Configurator        // back-pointer for the watch's deadline handling
 }
 
 var _ gpsprot.ConfigRequest = (*asReq)(nil)
 
-func newConfigurator(target *gpsprot.ConfigTarget, ver *asbin.MonVer) *Configurator {
-	return &Configurator{target: target, ver: ver}
+func newConfigurator(target *gpsprot.ConfigTarget, ver *asbin.MonVer, est *rateEstimator) *Configurator {
+	return &Configurator{target: target, ver: ver, est: est}
 }
 
 // ReceiverInfo returns static information about the GPS receiver, from
@@ -136,14 +171,19 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 // genPhases are the request generation phases, each gated on all
 // earlier requests being final. Message enabling runs before the baud
 // change and the NVM save so that a save persists the message rates
-// and the new rate on the confirmed line; the NVM phase is last so
-// that it persists everything, fallback outcomes included.
+// and the new rate on the confirmed line; the NVM phase runs late so
+// that it persists everything, fallback outcomes included. The reset is
+// a separate final phase so that a save paired with it is ordered: the
+// phase gate holds the reset until the save is final, and a failed save
+// suppresses the reset entirely (see generateResetReqs).
 var genPhases = []func(*Configurator){
 	(*Configurator).generateQueryReqs,
 	(*Configurator).generateSetReqs,
 	(*Configurator).generateMsgReqs,
+	(*Configurator).generateResolveReqs,
 	(*Configurator).generateSpeedReqs,
 	(*Configurator).generateNVMReqs,
+	(*Configurator).generateResetReqs,
 }
 
 // GenerateRequests generates configuration requests and promotes
@@ -174,6 +214,7 @@ func (c *Configurator) generateQueryReqs() {
 	c.generateSignalQuery()
 	c.generateMinElevQuery()
 	c.generatePrtQuery()
+	c.generateRatePoll()
 }
 
 // generateSetReqs generates the property set requests, computed from
@@ -185,33 +226,55 @@ func (c *Configurator) generateSetReqs() {
 	c.generateMinElevSet()
 }
 
-// generateNVMReqs generates the save and reset requests. Reload is
-// realized as a soft reset: CFG-CFG load is acknowledged by every
-// tested unit but actually loads on only one of three, while SIMPLERST
-// mode 0 reloads NVM everywhere, keeps satellite data, and restarts
-// within a second. Neither the resets nor the factory clear are
-// acknowledged (the clear was observed silent for 12 s), so all
-// succeed on send.
+// generateNVMReqs generates the CFG-CFG save request. The save runs in
+// its own phase before the reset so that a paired reset waits for the
+// save's ACK; the request pointer is kept so the reset phase can suppress
+// the reset if the save is refused.
 func (c *Configurator) generateNVMReqs() {
-	opts := &c.target.Opts
-	switch opts.Save {
+	switch c.target.Opts.Save {
 	case gpsprot.SaveAll:
-		c.addReq(&asbin.CfgCfg{Action: asbin.CfgCfgActionSave, Mask: cfgCfgMaskAll})
+		c.saveReq = c.addMsg(&asbin.CfgCfg{Action: asbin.CfgCfgActionSave, Mask: cfgCfgMaskAll}, asReq{})
 	case gpsprot.SaveMinimal:
 		if c.touched != 0 {
-			c.addReq(&asbin.CfgCfg{Action: asbin.CfgCfgActionSave, Mask: c.touched})
+			c.saveReq = c.addMsg(&asbin.CfgCfg{Action: asbin.CfgCfgActionSave, Mask: c.touched}, asReq{})
 		}
 	}
-	switch opts.Reset {
+}
+
+// generateResetReqs generates the reset request, in a phase after the
+// NVM save. The phase gate holds it until the save is final, so the save
+// completes before the reset takes effect; a save that was refused
+// leaves the reset unsent, so a reset never discards running changes its
+// paired save failed to persist. Reload is realized as a soft reset:
+// CFG-CFG load is acknowledged by every tested unit but actually loads
+// on only one of three, while SIMPLERST mode 0 reloads NVM everywhere,
+// keeps satellite data, and restarts within a second. Neither the resets
+// nor the factory clear are acknowledged (the clear was observed silent
+// for 12 s), so all succeed on send. The factory path (clear then cold
+// start) has its own hardware-verified serialization and is not gated on
+// a save.
+func (c *Configurator) generateResetReqs() {
+	switch c.target.Opts.Reset {
 	case gpsprot.ResetReload:
-		c.addRstReq(asbin.CfgSimpleRstModeReset)
+		if !c.saveFailed() {
+			c.addRstReq(asbin.CfgSimpleRstModeReset)
+		}
 	case gpsprot.ResetCold:
-		c.addRstReq(asbin.CfgSimpleRstModeColdStart)
+		if !c.saveFailed() {
+			c.addRstReq(asbin.CfgSimpleRstModeColdStart)
+		}
 	case gpsprot.ResetFactory:
 		m := &asbin.CfgCfg{Action: asbin.CfgCfgActionClear, Mask: asbin.CfgCfgMaskFactoryReset}
 		c.addMsg(m, asReq{noAck: true})
 		c.addRstReq(asbin.CfgSimpleRstModeColdStart)
 	}
+}
+
+// saveFailed reports whether a paired NVM save was requested and refused,
+// which gates the reset off: the save's failure must not be followed by a
+// reset that discards the unsaved changes.
+func (c *Configurator) saveFailed() bool {
+	return c.saveReq != nil && c.saveReq.state == reqFailed
 }
 
 // cfgCfgMaskAll covers every section the save mask selects: baud, NMEA
@@ -272,6 +335,11 @@ func (c *Configurator) add(req *asReq) *asReq {
 // addMsg is add for a request carrying a serialized message, tracking
 // the configuration section it touches for minimal saves.
 func (c *Configurator) addMsg(m asbin.Msg, req asReq) *asReq {
+	if c.planning {
+		// plannedEnabled dry-run: record no request (non-CFG-MSG requests
+		// such as RXM-DUMPRAW must not be emitted while planning).
+		return nil
+	}
 	c.touched |= setSection(m)
 	req.mid = m.ID()
 	req.packet = serialize(m)
@@ -445,6 +513,15 @@ func (req *asReq) GetDeadline() time.Time {
 	if req.state != reqAwaitingAck {
 		panic(req.invalidStateMsg("GetDeadline"))
 	}
+	if req.watch {
+		// The deadline is anchored at the watch's creation (or its
+		// silent-send reset) and advances only when a track the watch
+		// waits on makes progress (see onObserve), never on unrelated
+		// traffic - otherwise continuous non-resolving packets (ACKs,
+		// GSV, off-grid fixless NAV of an unwatched id) would postpone the
+		// anchored-negative/cap forever and the invocation would hang.
+		return req.watchAnchor.Add(req.watchDur)
+	}
 	return req.tBase.Add(maxResponseDelay)
 }
 
@@ -472,10 +549,16 @@ func (req *asReq) SetSentTime(tSent time.Time) {
 	}
 }
 
-// SetDeadlinePassed marks the response window as expired.
+// SetDeadlinePassed marks the response window as expired. For the watch
+// request this is the resolve-phase timeout: it never resends, it
+// concludes (see watchTimeout).
 func (req *asReq) SetDeadlinePassed() {
 	if req.state != reqAwaitingAck {
 		panic(req.invalidStateMsg("SetDeadlinePassed"))
+	}
+	if req.watch {
+		req.cfg.watchTimeout(req)
+		return
 	}
 	req.state = reqMayResend
 }
