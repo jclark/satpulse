@@ -20,9 +20,11 @@ import (
 // explicit fixed position zeroes SURVEY first, so a completing survey
 // cannot overwrite it, then writes FIXEDECEF; a survey zeroes
 // FIXEDECEF, so completion re-transfers and the readback shows the
-// survey, then writes the parameters. The satpulsed default path
-// (SetStatic without a Mode property) preserves an existing fixed
-// position and a running survey unless SurveyAgain is set.
+// survey, then writes the parameters. Requesting static without a
+// position - the satpulsed default path (SetStatic) or a Mode that is
+// static with no fixed position - preserves an existing fixed position
+// and a running survey unless SurveyAgain is set, so re-applying it
+// never cancels a running survey or discards a completed one.
 //
 // The registers store no position accuracy, so FixedPosAcc reads back
 // zero and ConfigSupportFixedPosAcc is not declared.
@@ -79,6 +81,12 @@ func (c *Configurator) generateTModeSet() {
 		return
 	}
 	if mode.PosType == gpsprot.PosTypeNone {
+		if c.haveFixedPos() {
+			return // preserve a completed survey's fixed position
+		}
+		if c.surveyRunning() && survey.Flags&gpsprot.SurveyAgain == 0 {
+			return // do not disturb a running survey
+		}
 		c.setFixedEcef(asbin.CfgFixedECEF{})
 		c.setSurvey(asbin.CfgSurvey{
 			MinDur:   uint32(survey.MinDur.Round(time.Second) / time.Second),
