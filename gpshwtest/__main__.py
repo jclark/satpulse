@@ -18,15 +18,14 @@ import json
 import shutil
 import subprocess
 import sys
-import time
 import tomllib
 from pathlib import Path
 from typing import Any
 
 from analyze import DISRUPTIVE_KEYS, analyze_run, load_steps
 from characterize import to_json
-from model import emissions, port_has_serial_speed, target_arg
-from probes import PROPS, RESET_SETTLE, ProbeRun
+from model import emissions, port_has_serial_speed
+from probes import PROPS, ProbeRun
 from tool import Invocation, Tool, ToolFailure
 
 
@@ -200,14 +199,9 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
     """Execute the probe sequence, recording every step. No verdicts here:
     the records are analyzed offline afterwards (also on a live run)."""
     pr = ProbeRun(tool)
-    ident = identify_receiver(tool, pr, setup=disruptive)
+    ident = identify_receiver(tool, pr)
     if ident is None:
         return
-    if disruptive:
-        start_from_factory_defaults(tool, pr)
-        ident = identify_receiver(tool, pr, setup=False)
-        if ident is None:
-            return
     receiver = ident.out.get("receiver", {})
     supports = ident.out.get("supports") or []
     print(f"receiver: {receiver.get('vendor')} {receiver.get('hardware')} "
@@ -274,34 +268,18 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
             pr.session_speed_restore(as_found_speed)
 
 
-def identify_receiver(tool: Tool, pr: ProbeRun, setup: bool) -> Invocation | None:
-    name = "setup-show-receiver" if setup else "show-receiver"
+def identify_receiver(tool: Tool, pr: ProbeRun) -> Invocation | None:
     intent = {"op": "identify"}
-    if setup:
-        intent["role"] = "setup"
-    ident = tool.gps(name, ["--show-receiver"], intent)
+    ident = tool.gps("show-receiver", ["--show-receiver"], intent)
     if ident.error is not None:
         # satpulsetool does not scan baud rates, so a UART resting at the
         # wrong speed (a crashed run, another program) looks like a dead
         # receiver. Rediscover the speed and identify again.
         if pr.rediscover_speed() is not None:
-            ident = tool.gps(name, ["--show-receiver"], intent)
+            ident = tool.gps("show-receiver", ["--show-receiver"], intent)
         if ident.error is not None:
             return None
     return ident
-
-
-def start_from_factory_defaults(tool: Tool, pr: ProbeRun) -> None:
-    """Put a disruptive run into a known starting state before probing."""
-    print("resetting receiver to factory defaults", file=sys.stderr)
-    tool.gps("setup-factory-reset", target_arg({"Opts": {"Reset": "factory"}}),
-             {"op": "factory-reset", "role": "setup"})
-    time.sleep(RESET_SETTLE)
-    pr.rediscover_speed()
-    tool.gps("setup-reset", target_arg({"Opts": {"Reset": "cold"}}),
-             {"op": "reset", "role": "setup"})
-    time.sleep(RESET_SETTLE)
-    pr.rediscover_speed()
 
 
 def check_show_port(tool: Tool, pr: ProbeRun) -> dict[str, Any]:
