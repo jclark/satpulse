@@ -805,26 +805,142 @@ phase-5 scenarios, which need no browser or npm.
 
 ### Phase 9: simulator config tests (one PR)
 
-Extends both harnesses from the monitor path to the config path,
+Extends the smoke tests from the monitor path to the config path,
 using the u-blox receiver simulator (#362,
-[ublox-sim.md](ublox-sim.md)), which is developed in parallel on its
-own branch off master. In smoketest terms the simulator is a new
-packet provider, not a transport: what plays the receiver behind
-the serial transport becomes another scenario-declared dimension,
-orthogonal to the program under test -- either a paced `pack
---realtime` replay of a recorded log (whose one-replay-per-lifetime
-invariant and wait-replay backstop belong to this provider, not to
-the suite) or the interactive simulator, which answers probes and
-config writes and so implies a read-write pty. The dimensions
-compose: satpulsed x simulator smoke-tests the daemon's startup
-config phase, which no replay can reach. The smoketest scenarios
-and phase-8 journeys gain
-config checks: probe identifies the personality, the config panel
-populates from ReadConfig, an apply round-trips and a re-read shows
-the change, and enabling a message makes it appear in the packet
-stream. Not part of the stacked-PR series: it needs the simulator on
-master, so it runs after the stack and the simulator have both
-landed.
+[ublox-sim.md](ublox-sim.md)), now landed on master (#364:
+`gps/app/ubxsim`, hosted behind a pty by `satpulsetool ubxsim`).
+Replay can drive only the monitor path: gpscfg skips probing on a
+read-only port, and a pty replay's probe goes unanswered, so probe
+identification, ReadConfig and ApplyConfig have no black-box
+coverage until something answers. Not part of the stacked-PR
+series: an ordinary PR off master. The Playwright half is deferred
+with phase 8 (see the end of this section); this PR is the
+smoketest half.
+
+The packet-provider seam. In smoketest terms the simulator is a
+new packet provider, not a transport: what plays the receiver
+behind `SATPULSE_TEST_SERIAL` becomes a scenario-declared
+dimension, orthogonal to the program under test, and the
+dimensions compose -- satpulsed x simulator smoke-tests the
+daemon's startup config phase, which no replay can reach. run.py
+currently owns the replay lifecycle directly (transport selection,
+start_replay/wait_replay, the one-replay-per-lifetime invariant),
+so the first commit factors that out into a provider seam, the
+analogue of `program_api.py`: `provider_api.py` defines a
+`Provider` Protocol plus `select(name)`, implemented by
+`provider_replay.py` (the default) and `provider_ubxsim.py`,
+chosen per scenario with `PROVIDER = "ubxsim"`. The provider owns
+how receiver bytes are produced and consumed:
+
+- The serial endpoint. The replay provider requests the transport
+  from the platform as today (`plat.make_transport`, driven by the
+  `CAPTURE_WRITES`/`SELF_SHUTDOWN`/`DISCONNECTABLE` capabilities).
+  The ubxsim provider spawns `satpulsetool ubxsim --link <run
+  dir>/gps.pty [-r <bank>] <personality>` and the symlink is the
+  endpoint -- the /dev/serial/by-id shape gpsio already opens;
+  readiness is the link appearing (created before the slave path
+  is printed).
+- The feed lifecycle. The replay provider keeps the single
+  `pack --realtime` replay, its start-after-readiness ordering,
+  the one-replay-per-lifetime invariant, and the wait-replay
+  backstop. The ubxsim provider starts the simulator before the
+  program (the pty must exist when the program opens the device)
+  and SIGTERMs it only after the program has shut down -- the
+  simulator holds its own slave fd open, so program restarts
+  never EOF it, while killing it early would inject read errors
+  into the program's shutdown.
+- The scenario attributes. `PACKET_LOG` and `FACTOR` become
+  replay-provider attributes (all existing scenarios keep them
+  unchanged; the runner reads them through the provider). The
+  ubxsim provider takes `PERSONALITY` (repo-relative) and an
+  optional `SIM_REPLAY` nav bank. `ctx.factor` defaults to 1 for
+  simulator scenarios (correction-source pacing is its only other
+  consumer).
+
+Provider hooks mirror the run_scenario lifecycle: create before
+`program.prepare` (make the transport or spawn the simulator, and
+point `SATPULSE_TEST_SERIAL` at the endpoint -- run_scenario
+constructs the Context first so the provider can be handed it),
+start after `program.wait_ready` (launch pack; a no-op for
+ubxsim), finish as the post-run backstop (wait_replay; a no-op for
+ubxsim), close in the cleanup path. `ctx.start_replay` and
+`ctx.wait_replay` become delegates, so existing scenarios and
+checks do not change. The observers-before-packets invariant is a
+replay-provider concern: simulator nav output regenerates every
+epoch (and pty backpressure pauses it while no one reads the
+slave), so a late observer misses nothing.
+
+Capabilities and platforms: the ubxsim provider rejects
+`CAPTURE_WRITES`, `SELF_SHUTDOWN` and `DISCONNECTABLE` as scenario
+errors -- write capture is meaningless when the simulator consumes
+and answers the program's writes, and device-loss modelling stays
+with the replay provider (a CFG-RST pty drop is a listed ublox-sim
+extension, not this phase). `satpulsetool ubxsim` builds on Linux
+and macOS only, so elsewhere (FreeBSD) the provider reports the
+scenario unsupported -- the same SKIP as TransportUnsupported.
+
+Fixtures and timing: the personality is the checked-in F9P
+recording (`gps/app/ubxsim/testdata/f9p/f9p-personality.ubx`, HPG
+1.51). The nav bank is an existing ZED-F9P log -- LoadReplay reads
+the standard JSONL packet-log format, so the fixtures under
+`gps/testdata/packets/u-blox/ZED-F9P/` work as-is; pick one that
+contains NAV-SAT (e.g. daemon-sats-pos-38400.jsonl) and outlasts
+the run, since the NAV engine consumes one epoch per CFG-RATE
+period (1s) in real time -- there is no FACTOR -- and goes silent
+when the bank is exhausted. Record a purpose-built bank only if no
+existing log fits. The message-appearance assertions depend on the
+personality's Default layer having UBX output messages off
+(factory default) while the bank contains them: configuration is
+then the only way they can appear. Scenarios set the serial speed
+to the personality's default CFG-UART1-BAUDRATE (38400) so the
+config phase stays out of the baud-change path (hardware-test
+territory, and speed is nominal on a pty anyway).
+
+Two scenarios, in a new `config/` family:
+
+- `config/startup` -- satpulsed x simulator: the startup-config
+  assertion. Config: `[serial]` at 38400; `[gps]` with `config =
+  true` and `satellitesOutput = true`; one `[[http]]` endpoint; no
+  correction peers. Asserts: (a) detection was active, not
+  passive -- the receiver identity the daemon reports carries the
+  personality's MON-VER model and firmware; (b) the startup
+  ConfigTarget landed on the receiver: NAV-SAT is off in the
+  personality defaults and present in the bank, so satellite data
+  appearing on the daemon's HTTP surface can only mean the
+  daemon's own VALSET enabled it; (c) the log scan stays clean
+  (configuration completed without errors) and shutdown is
+  graceful.
+- `config/wb-apply` -- satpulsewb x simulator: the interactive
+  config path, UI-shaped. Start without `-d`; claim the seat; POST
+  /api/connect with the pty device and speed (the first black-box
+  exercise of interactive connect whose probe answers); poll GET
+  /api/receiver until ok with Info identifying the personality
+  (vendor "u-blox", the F9P model/firmware); POST /api/config/read
+  returns 200 with non-empty props; POST /api/config/apply with a
+  small ConfigTarget that both sets a property that round-trips
+  (e.g. the antenna cable delay) and enables the satellites
+  messages (Opts.SatsMsg); a second read shows the property
+  change, and the enabled messages appear as live data (gps:msg
+  satellites over SSE, or /api/signals turning non-empty).
+
+Mechanical footprint beyond the seam: SCENARIOS registry entries;
+the smoketest Makefile's mypy target gains the provider modules;
+README's scenario list and smoketest/CLAUDE.md document the
+provider dimension; the simulator's stdout+stderr land in
+ubxsim.log in the run dir (kept on failure, not error-scanned --
+the simulator is a test double, not a program under test).
+
+The Playwright half: once phase 8 exists, its journeys gain a
+config journey (the config panel populates from ReadConfig, an
+apply round-trips, the enabled message shows up in the Packets
+tab) against a satpulsewb x ubxsim launch fixture; the Playwright
+setup starts `satpulsetool ubxsim` directly -- the provider seam
+is smoketest-internal. That lands with or after phase 8, not in
+this PR.
+
+Verification: `make`; the full `make smoketest` suite with the new
+scenarios stable over reruns; `make typecheck` (mypy strict) in
+smoketest/.
 
 ### Phase 10: proxy transports (one PR)
 

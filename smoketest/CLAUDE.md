@@ -8,8 +8,9 @@ changes safely.
 ## What this is
 
 Black-box smoke tests that run the real `satpulsed` and `satpulsewb` binaries,
-fed by realtime packet-log replay through a FIFO or pty, with no root and no GPS
-hardware. They check program-level behaviour -- config wiring, startup,
+fed by realtime packet-log replay through a FIFO or pty (or the u-blox simulator
+for config scenarios), with no root and no GPS hardware. They check program-level
+behaviour -- config wiring, startup,
 observability endpoints, logging, Ntrip, NTP, corrections, shutdown -- NOT packet
 decoding. Decode correctness is covered by Go package tests and
 `plan/packet-testing.md`; do not add packet/protocol assertions here.
@@ -17,7 +18,9 @@ decoding. Decode correctness is covered by Go package tests and
 The program under test is a scenario dimension (`PROGRAM`, default `satpulsed`;
 `satpulsewb` is the SatPulse Workbench GUI server over `gps/app/session`), chosen
 behind a per-program seam the same way the OS is chosen behind `platform_*`. See
-Program under test below.
+Program under test below. What plays the receiver is a second, orthogonal
+dimension (`PROVIDER`, default `replay`; `ubxsim` is the u-blox simulator, which
+answers config so the config path can be tested). See Packet provider below.
 
 Checks are deliberately shallow: catch gross breakage (panics, failed wiring,
 missing listeners, broken shutdown, missing/empty logs, unusable endpoints),
@@ -134,13 +137,18 @@ A scenario ID `family/name` maps to two files and one registry entry:
 
 - `scenarios/family/name.py` -- the module. Must define:
   - `PACKET_LOG` -- path relative to repo root; reuse logs under
-    `gps/testdata/packets/` (don't add new captures here).
-  - `FACTOR` -- replay speedup (int).
+    `gps/testdata/packets/` (don't add new captures here). A replay-provider
+    attribute: omit it for a `PROVIDER = "ubxsim"` scenario.
+  - `FACTOR` -- replay speedup (int). Replay-only, like `PACKET_LOG`.
   - `run(ctx)` -- the checks. Type the param as `common.SmokeContext`.
   - optional `PROGRAM` -- `"satpulsed"` (default) or `"satpulsewb"`, the program
     under test (see Program under test). A `"satpulsewb"` scenario pairs with a
     `name.args.in` flag list instead of `name.toml.in`, and uses the workbench
     checks in `common.py` (`check_wb_*`, `wb_get`/`wb_post`, `wb_sse`).
+  - optional `PROVIDER` -- `"replay"` (default) or `"ubxsim"`, the packet source
+    (see Packet provider). A `"ubxsim"` scenario declares `PERSONALITY`
+    (repo-relative MON-VER + Default-layer dump) and an optional `SIM_REPLAY` nav
+    bank instead of `PACKET_LOG`/`FACTOR`; `ctx.factor` defaults to 1.
   - optional `ENV` -- environment variables added to the program under test;
     values may use the same `${SATPULSE_TEST_*}` substitutions as input
     templates.
@@ -218,6 +226,35 @@ two programs belongs behind this seam, not as a `PROGRAM == "satpulsewb"` branch
 in `run.py` or a scenario. The program log is `ctx.daemon_log` (named
 `<program>.log`); for satpulsewb it also carries the printed URL that
 `wait_ready` parses.
+
+### Packet provider
+
+`provider_api.py` is the packet-provider seam (a `Provider` Protocol plus
+`select(name)`), implemented by `provider_replay.py` (default) and
+`provider_ubxsim.py`. It is orthogonal to the program: what plays the receiver
+behind `SATPULSE_TEST_SERIAL` is a scenario dimension of its own, chosen per
+scenario like a `Program`, so `satpulsed x ubxsim` composes the daemon with the
+simulator to test the startup config phase no replay can reach. The four hooks
+mirror the `run_scenario` lifecycle, and the runner calls them polymorphically:
+
+- `create(ctx, scen)` -- before `program.prepare`: set up the source and point
+  `SATPULSE_TEST_SERIAL` at its endpoint. The replay provider selects and
+  attaches the transport (from the scenario's capabilities, and reads
+  `PACKET_LOG`/`FACTOR`); ubxsim spawns `satpulsetool ubxsim` and waits for its
+  `--link` symlink. A source the platform cannot supply raises
+  `platform_api.TransportUnsupported` (a SKIP); a scenario error (e.g. ubxsim
+  with `CAPTURE_WRITES`) fails.
+- `start(ctx)` -- after `program.wait_ready`: begin feeding (the replay launch;
+  a no-op for ubxsim, whose simulator already emits).
+- `finish(ctx)` -- the post-run backstop (`wait_replay`; a no-op for ubxsim).
+- `close(ctx)` -- release the source, run last in the cleanup path so ubxsim
+  SIGTERMs the simulator only after the program has shut down.
+
+`ctx.start_replay`/`ctx.wait_replay` stay on the Context (the replay mechanics),
+so existing scenarios and checks calling `ctx.wait_replay()` are unchanged; under
+ubxsim they are no-ops (no replay was started). Keep `run.py` free of a
+`PROVIDER == "..."` branch: a difference between the two sources belongs behind
+this seam, exactly like the program seam.
 
 ### Transports
 
