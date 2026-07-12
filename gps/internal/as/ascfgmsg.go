@@ -41,11 +41,18 @@ var rtcmMSM7IDs = []asbin.MsgID{asbin.RtcmMsm7GpsID, asbin.RtcmMsm7GloID,
 var rtcmEphIDs = []asbin.MsgID{asbin.RtcmEphGpsID, asbin.RtcmEphGloID,
 	asbin.RtcmEphBdsID, asbin.RtcmEphQzssID, asbin.RtcmEphGalID}
 
+// rtcmPropIDs lists the proprietary 0xF8 targets outside the modeled
+// group (4065 moving-base reference PVT and its undocumented
+// neighbours). A request without RTCMMsgOther turns them off, so the
+// request is complete over the receiver's RTCM output.
+var rtcmPropIDs = []asbin.MsgID{asbin.RtcmProp4065ID, asbin.RtcmProp4066ID,
+	asbin.RtcmProp4068ID, asbin.RtcmProp4069ID}
+
 // generateRTCMReqs configures RTCM output via CFG-MSG 0xF8 targets. A
 // wire-format request is complete over the receiver's RTCM output:
 // besides the modeled group - MSM4, MSM7, ARP - the broadcast-ephemeris
-// targets are turned off, unless RTCMMsgOther restricts the request to
-// the modeled group and leaves them as found. All requests are
+// and proprietary targets are turned off, unless RTCMMsgOther restricts
+// the request to the modeled group and leaves them as found. All requests are
 // NAK-tolerant: a receiver without RTCM output (the TAU1201) NAKs
 // every 0xF8 target, and the absence of any achieved RTCM output is
 // the statement - not an error. ARP (1005) is only emitted while a
@@ -61,6 +68,9 @@ func (c *Configurator) generateRTCMReqs(flags gpsprot.RTCMMsgFlags) {
 	c.addMsgRate(asbin.RtcmArpID, flags&gpsprot.RTCMMsgARP != 0)
 	if flags&gpsprot.RTCMMsgOther == 0 {
 		for _, mid := range rtcmEphIDs {
+			c.addMsgRate(mid, false)
+		}
+		for _, mid := range rtcmPropIDs {
 			c.addMsgRate(mid, false)
 		}
 	}
@@ -157,7 +167,21 @@ func (c *Configurator) generateNMEAReqs(flags gpsprot.NMEAMsgFlags) {
 	for _, m := range msgs {
 		c.msgRate(m.mid, flags&m.flag != 0, false)
 	}
+	if flags&gpsprot.NMEAMsgOther == 0 {
+		for _, mid := range nmeaOtherIDs {
+			c.addMsgRate(mid, false)
+		}
+	}
 }
+
+// nmeaOtherIDs lists the rate-controllable NMEA sentences outside the
+// modeled vocabulary. A request without NMEAMsgOther turns them off, so
+// the request is complete over the receiver's NMEA output; nakOK because
+// not every unit carries them (the TAU1302 NAKs DTM, JAM exists only on
+// the TAU951M). TXT (0x20) is deliberately excluded: it is spontaneous
+// antenna-status output, out of scope in both directions.
+var nmeaOtherIDs = []asbin.MsgID{asbin.NmeaGstID, asbin.NmeaGrsID,
+	asbin.NmeaDtmID, asbin.NmeaJamID}
 
 // msgRate applies one CFG-MSG target's output request. In planning mode
 // (the query-phase dry run) it only records the enable/disable intent.

@@ -200,6 +200,13 @@ const (
 	RtcmMsm7QzssID MsgID = clsRtcm | (0x75 << 8) // 1117
 	RtcmMsm4BdsID  MsgID = clsRtcm | (0x7C << 8) // 1124
 	RtcmMsm7BdsID  MsgID = clsRtcm | (0x7F << 8) // 1127
+	// Proprietary 0xF8 targets discovered by CFG-MSG poll sweep on the
+	// TAU951M and TAU1302 (NAK on the TAU1201). Only 4065 is documented
+	// (moving-base reference PVT); 4066/4068/4069 are undocumented.
+	RtcmProp4065ID MsgID = clsRtcm | (0x41 << 8) // 4065 moving-base reference PVT
+	RtcmProp4066ID MsgID = clsRtcm | (0x42 << 8) // 4066 proprietary
+	RtcmProp4068ID MsgID = clsRtcm | (0x44 << 8) // 4068 proprietary
+	RtcmProp4069ID MsgID = clsRtcm | (0x45 << 8) // 4069 proprietary
 )
 
 // CfgPpsPolarity defines values for CfgPps.Polarity

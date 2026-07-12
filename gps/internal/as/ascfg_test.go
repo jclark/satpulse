@@ -449,7 +449,7 @@ func TestSilentRequestFails(t *testing.T) {
 	target := &gpsprot.ConfigTarget{}
 	target.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC)
 	_, errCount := configure(t, cp, rcvr, target)
-	if errCount != 7 {
-		t.Errorf("ErrorCount = %d, want 7 (every NMEA rate request unanswered)", errCount)
+	if errCount != 11 {
+		t.Errorf("ErrorCount = %d, want 11 (every NMEA rate request unanswered: seven vocabulary sentences plus the four out-of-vocabulary disables)", errCount)
 	}
 }
