@@ -881,17 +881,23 @@ scenario unsupported -- the same SKIP as TransportUnsupported.
 
 Fixtures and timing: the personality is the checked-in F9P
 recording (`gps/app/ubxsim/testdata/f9p/f9p-personality.ubx`, HPG
-1.51). The nav bank is an existing ZED-F9P log -- LoadReplay reads
-the standard JSONL packet-log format, so the fixtures under
-`gps/testdata/packets/u-blox/ZED-F9P/` work as-is; pick one that
-contains NAV-SAT (e.g. daemon-sats-pos-38400.jsonl) and outlasts
-the run, since the NAV engine consumes one epoch per CFG-RATE
-period (1s) in real time -- there is no FACTOR -- and goes silent
-when the bank is exhausted. Record a purpose-built bank only if no
-existing log fits. The message-appearance assertions depend on the
-personality's Default layer having UBX output messages off
-(factory default) while the bank contains them: configuration is
-then the only way they can appear. Scenarios set the serial speed
+1.51). The nav bank is `gps/testdata/config/u-blox/ZED-F9P/sim.jsonl`,
+the recording made for the simulator: LoadReplay reads the standard
+JSONL packet-log format, and this bank carries 300 epochs of the full
+message mix (the UBX NAV set, NMEA including ZDA, and RTCM), so it
+gates whatever a scenario enables and outlasts the run -- which
+matters because the NAV engine consumes one epoch per CFG-RATE period
+(1s) in real time (there is no FACTOR) and goes silent when the bank
+is exhausted. A capture of a daemon session is not a substitute: the
+daemon configured the receiver for its own needs, so such a log holds
+only the messages it wanted. The message-appearance assertions depend
+on the personality's Default layer having UBX and RTCM output messages
+off (factory default) while the bank contains them: configuration is
+then the only way they can appear. NMEA is the exception -- GGA, RMC,
+GSA, GSV, VTG and GLL default *on* -- so an assertion must name the
+packet a VALSET enables rather than a decoded kind NMEA can also
+produce (GSV decodes to a SatellitesMsg, exactly as NAV-SAT does), and
+NMEA is exercised by disabling it first. Scenarios set the serial speed
 to the personality's default CFG-UART1-BAUDRATE (38400) so the
 config phase stays out of the baud-change path (hardware-test
 territory, and speed is nominal on a pty anyway).
