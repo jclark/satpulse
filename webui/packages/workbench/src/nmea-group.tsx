@@ -1,8 +1,9 @@
 import {h} from 'preact';
-import {NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV, NMEAMsgZDA, NMEAMsgVTG, NMEAMsgGLL, NMEAMsgOther, NMEAMsgNames, msgFlag, msgFlagNames} from './msg-flags';
+import {NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV, NMEAMsgZDA, NMEAMsgVTG, NMEAMsgGLL, NMEAMsgOther, NMEASelectableMsgNames, msgFlag, msgFlagNames} from './msg-flags';
+import type {NMEAMsgFlags} from '@satpulse/gps/configtarget';
 import {ConfigSubGroup, labeledControlText} from './ui';
 
-const nmeaMsgs: {name: string; label: string}[] = [
+const nmeaMsgs: {name: typeof NMEASelectableMsgNames[number]; label: string}[] = [
     {name: NMEAMsgGGA, label: 'GGA'},
     {name: NMEAMsgGLL, label: 'GLL'},
     {name: NMEAMsgGSA, label: 'GSA'},
@@ -23,13 +24,13 @@ interface Props {
 }
 
 /** Compute the wire value for Apply. Returns undefined if change is false (skip). */
-export function nmeaWireValue(change: boolean, disableProtocol: boolean, flags: number): string[] | undefined {
+export function nmeaWireValue(change: boolean, disableProtocol: boolean, flags: number): NMEAMsgFlags | undefined {
     if (!change) return undefined;
     if (disableProtocol) return [];
-    return [...msgFlagNames(flags, NMEAMsgNames), NMEAMsgOther];
+    return [...msgFlagNames(flags, NMEASelectableMsgNames), NMEAMsgOther];
 }
 
-export const nmeaFlag = (name: string) => msgFlag(name, NMEAMsgNames);
+export const nmeaFlag = (name: typeof NMEASelectableMsgNames[number]) => msgFlag(name, NMEASelectableMsgNames);
 
 export function NMEAGroup({change, disableProtocol, flags, onChangeChange, onDisableChange, onFlagsChange, disabled}: Props) {
     const childDisabled = disabled || !change || disableProtocol;
@@ -51,7 +52,7 @@ export function NMEAGroup({change, disableProtocol, flags, onChangeChange, onDis
                 </div>
                 <div class="flex flex-wrap gap-x-4 gap-y-1">
                     {nmeaMsgs.map(m => {
-                        const flag = msgFlag(m.name, NMEAMsgNames);
+                        const flag = msgFlag(m.name, NMEASelectableMsgNames);
                         return <label key={m.name} class={`flex items-center gap-1.5 ${labeledControlText(childDisabled)}`}>
                             <input
                                 type="checkbox"

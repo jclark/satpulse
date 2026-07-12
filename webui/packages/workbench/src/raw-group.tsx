@@ -1,5 +1,6 @@
 import {h} from 'preact';
 import {RawMsgObs, RawMsgNavData, RawMsgNames, msgFlag, msgFlagNames} from './msg-flags';
+import type {RawMsgFlag, RawMsgFlags} from '@satpulse/gps/configtarget';
 import {ConfigSubGroup, labeledControlText} from './ui';
 
 interface Props {
@@ -11,12 +12,12 @@ interface Props {
 }
 
 /** Compute the wire value for Apply. Returns undefined when not configured (change=false). */
-export function rawWireValue(change: boolean, flags: number): string[] | undefined {
+export function rawWireValue(change: boolean, flags: number): RawMsgFlags | undefined {
     if (!change) return undefined;
     return msgFlagNames(flags, RawMsgNames);
 }
 
-const rawFlag = (name: string) => msgFlag(name, RawMsgNames);
+const rawFlag = (name: RawMsgFlag) => msgFlag(name, RawMsgNames);
 
 function Checkbox({label, checked, disabled, onChange}: {
     label: string; checked: boolean; disabled: boolean;

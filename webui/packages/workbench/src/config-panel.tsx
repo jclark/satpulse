@@ -11,9 +11,10 @@ import {
     NMEAMsgRMC,
     PVTMsgPos, PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgSurvey, PVTMsgQuality, PVTMsgEpoch,
     SatsMsgSat, SatsMsgSignal,
-    SurveyAgain, SaveTypeNames, ResetTypeNames,
+    SurveyAgain, SaveNone, SaveMinimal, SaveAll, ResetNone, ResetReload, ResetCold, ResetFactory,
 } from './msg-flags';
 import type {ConnState, OperationState} from './app';
+import type {ConfigOptions, ConfigProps, ConfigTarget, ConfigTargetProps, ResetType, SaveType} from '@satpulse/gps/configtarget';
 import {Button, Input, Select, ConfigGroup, ConfigSubGroup, fieldLabelText, labeledControlText} from './ui';
 import {speeds} from './speeds';
 
@@ -21,13 +22,13 @@ interface Props {
     connState: ConnState;
     readOnly: boolean;
     visible: boolean;
-    configProps: Record<string, any> | null;
+    configProps: ConfigProps | null;
     signalCatalog: Record<string, string[]>;
     selectedSignals: Set<string>;
     setSelectedSignals: (fn: (prev: Set<string>) => Set<string>) => void;
     setOperation: (op: OperationState) => void;
     addToast: (msg: string, type: 'success' | 'error') => void;
-    onConfigReadback: (props: Record<string, any>) => void;
+    onConfigReadback: (props: ConfigProps) => void;
     clearRespSession: () => void;
     speed: number;
 }
@@ -150,8 +151,8 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
     useEffect(() => { speedRef.current = speed; setSelectedSpeed(speed); }, [speed]);
 
     // Persistent operations state
-    const [saveType, setSaveType] = useState(0); // 0=none, 1=minimal, 2=all
-    const [resetType, setResetType] = useState(0); // 0=none, 1=reload, 2=cold, 3=factory
+    const [saveType, setSaveType] = useState<SaveType>(SaveNone);
+    const [resetType, setResetType] = useState<ResetType>(ResetNone);
 
     // Readback state
     const [reading, setReading] = useState(false);
@@ -193,9 +194,9 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
     }, [setSelectedSignals]);
 
     // Populate form fields from ConfigProps JSON
-    const populateFromConfig = useCallback((cfg: Record<string, any>) => {
+    const populateFromConfig = useCallback((cfg: ConfigProps) => {
         resetConfigFields();
-        const m = cfg.mode as Record<string, any> | undefined;
+        const m = cfg.mode;
         if (m) {
             if (!m.static) {
                 setTimeMode('mobile');
@@ -203,13 +204,13 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
             } else if (m.fixedPosECEF) {
                 setTimeMode('fixed');
                 setCoordSystem('ecef');
-                const ecef = m.fixedPosECEF as number[];
+                const ecef = m.fixedPosECEF;
                 setFixedECEF([String(ecef[0]), String(ecef[1]), String(ecef[2])]);
                 setReadbackStationary(false);
             } else if (m.fixedPosLLH) {
                 setTimeMode('fixed');
                 setCoordSystem('llh');
-                const llh = m.fixedPosLLH as number[];
+                const llh = m.fixedPosLLH;
                 setFixedLLH([String(llh[0]), String(llh[1]), String(m.height ?? 0)]);
                 setReadbackStationary(false);
             } else {
@@ -219,7 +220,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
             }
             if (m.fixedPosAcc !== undefined) setFixedPosAcc(String(m.fixedPosAcc));
         }
-        const tp = cfg.timePulse as Record<string, any> | undefined;
+        const tp = cfg.timePulse;
         if (tp) {
             if (tp.period !== undefined) setPpsPeriod(String(tp.period));
             if (tp.width !== undefined) setPpsWidth(String(tp.width));
@@ -274,8 +275,8 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
         setRawChange(false);
         setRawFlags(0);
         setSpeedTouched(false);
-        setSaveType(0);
-        setResetType(0);
+        setSaveType(SaveNone);
+        setResetType(ResetNone);
         setShowPicker(false);
     }, [connState, resetConfigFields]);
 
@@ -297,8 +298,8 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
             clearRespSession();
             const props = await transport.readConfig();
             if (req !== readbackRequest.current) return;
-            populateFromConfig(props as any);
-            onConfigReadback(props as any);
+            populateFromConfig(props);
+            onConfigReadback(props);
             setTimePulseTouched(false);
             setTimeModeTouched(false);
             setSignalsTouched(false);
@@ -309,8 +310,8 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
             setSatsChange(false);
             setRawChange(false);
             setSpeedTouched(false);
-            setSaveType(0);
-            setResetType(0);
+            setSaveType(SaveNone);
+            setResetType(ResetNone);
             setOperation({status: 'success', label: 'Reading configuration'});
         } catch (e: any) {
             if (req !== readbackRequest.current) return;
@@ -322,8 +323,8 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
     };
 
     const handleApply = async () => {
-        const props: Record<string, any> = {};
-        const opts: Record<string, any> = {};
+        const props: ConfigTargetProps = {};
+        const opts: ConfigOptions = {};
         if (signalsTouched) {
             props.signalsEnabled = signalSetToMap(selectedSignals);
         }
@@ -344,7 +345,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                 if (coordSystem === 'ecef') {
                     props.mode = {
                         static: true,
-                        fixedPosECEF: fixedECEF.map(v => parseFloat(v) || 0),
+                        fixedPosECEF: [parseFloat(fixedECEF[0]) || 0, parseFloat(fixedECEF[1]) || 0, parseFloat(fixedECEF[2]) || 0],
                         fixedPosAcc: fixedPosAcc !== '' ? parseFloat(fixedPosAcc) : 20,
                     };
                 } else {
@@ -381,23 +382,23 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
         if (satsWire !== undefined) opts.SatsMsg = satsWire;
         const rawWire = rawWireValue(rawChange, rawFlags);
         if (rawWire !== undefined) opts.RawMsg = rawWire;
-        if (saveType) opts.Save = SaveTypeNames[saveType];
-        if (resetType) opts.Reset = ResetTypeNames[resetType];
+        if (saveType !== SaveNone) opts.Save = saveType;
+        if (resetType !== ResetNone) opts.Reset = resetType;
         if (speedTouched) props.baudRate = selectedSpeed;
-        const cfg: Record<string, any> = {Props: props, Opts: opts};
+        const cfg: ConfigTarget = {Props: props, Opts: opts};
         setApplying(true);
         setApplied(false);
         setOperation({status: 'running', label: 'Applying configuration'});
         clearRespSession();
-        setSaveType(0);
-        setResetType(0);
+        setSaveType(SaveNone);
+        setResetType(ResetNone);
         // Reset survey one-shot fields
         setSurveyTime('');
         setSurveyAcc('');
         setSurveyAgain(false);
         setSurveyReport(true);
         try {
-            await transport.applyConfig(cfg as any);
+            await transport.applyConfig(cfg);
             setOperation({status: 'success', label: 'Applying configuration'});
             setTimePulseTouched(false);
             setTimeModeTouched(false);
@@ -433,8 +434,8 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
         setRawChange(false);
         setSelectedSpeed(speed);
         setSpeedTouched(false);
-        setSaveType(0);
-        setResetType(0);
+        setSaveType(SaveNone);
+        setResetType(ResetNone);
     };
 
     const toggleConstellation = (gnssName: string, sigs: string[], enable: boolean) => {
@@ -459,8 +460,8 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
     if (signalsTouched || minElevTouched) pendingSections.push('satellites and signals');
     if (nmeaChange || rtcmChange || pvtChange || satsChange || rawChange) pendingSections.push('messages');
     if (speedTouched) pendingSections.push('serial speed');
-    if (saveType) pendingSections.push('save');
-    if (resetType) pendingSections.push('reset');
+    if (saveType !== SaveNone) pendingSections.push('save');
+    if (resetType !== ResetNone) pendingSections.push('reset');
     const pendingLabel = pendingSections.length > 0
         ? 'Changes pending to ' + pendingSections.join(', ')
         : '';
@@ -726,10 +727,10 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                         <ConfigSubGroup title="Save">
                             <div class="flex flex-wrap gap-x-4 gap-y-1">
                                 {([
-                                    [0, 'Nothing'],
-                                    [1, 'Changes'],
-                                    [2, 'All'],
-                                ] as [number, string][]).map(([v, label]) => (
+                                    [SaveNone, 'Nothing'],
+                                    [SaveMinimal, 'Changes'],
+                                    [SaveAll, 'All'],
+                                ] as [SaveType, string][]).map(([v, label]) => (
                                     <label key={v} class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
                                         <input type="radio" name="saveType" class="accent-accent" value={v} checked={saveType === v}
                                             disabled={!connected} onChange={() => setSaveType(v)} />
@@ -741,11 +742,11 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                         <ConfigSubGroup title="Reset">
                             <div class="flex flex-wrap gap-x-4 gap-y-1">
                                 {([
-                                    [0, 'None'],
-                                    [1, 'Reload'],
-                                    [2, 'Cold start'],
-                                    [3, 'Factory reset'],
-                                ] as [number, string][]).map(([v, label]) => (
+                                    [ResetNone, 'None'],
+                                    [ResetReload, 'Reload'],
+                                    [ResetCold, 'Cold start'],
+                                    [ResetFactory, 'Factory reset'],
+                                ] as [ResetType, string][]).map(([v, label]) => (
                                     <label key={v} class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
                                         <input type="radio" name="resetType" class="accent-accent" value={v} checked={resetType === v}
                                             disabled={!connected} onChange={() => setResetType(v)} />

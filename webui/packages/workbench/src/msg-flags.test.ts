@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {NMEAMsgGGA, NMEAMsgNames, NMEAMsgOther, PVTMsgOff, PVTMsgPos, PVTMsgNames, msgFlag, msgFlagNames} from './msg-flags';
+import {NMEAMsgGGA, NMEAMsgOther, NMEASelectableMsgNames, PVTMsgOff, PVTMsgPos, PVTMsgNames, msgFlag, msgFlagNames} from './msg-flags';
 import {nmeaFlag, nmeaWireValue} from './nmea-group';
 import {pvtFlag, pvtWireValue} from './pvt-group';
 import {rtcmWireValue} from './rtcm-group';
@@ -11,8 +11,8 @@ describe('message flag conversion', () => {
     });
 
     it('rejects unknown names', () => {
-        expect(() => msgFlag('unknown', NMEAMsgNames)).toThrow('unknown message flag name: unknown');
-        expect(() => msgFlag(NMEAMsgOther, NMEAMsgNames)).toThrow('unknown message flag name: other');
+        expect(() => msgFlag('unknown' as any, NMEASelectableMsgNames)).toThrow('unknown message flag name: unknown');
+        expect(() => msgFlag(NMEAMsgOther as any, NMEASelectableMsgNames)).toThrow('unknown message flag name: other');
     });
 });
 

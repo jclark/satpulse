@@ -5,6 +5,7 @@ import {
     PVTMsgTimePulseAfter, PVTMsgQuality, PVTMsgEpoch, PVTMsgOff,
     PVTMsgNames, msgFlag, msgFlagNames,
 } from './msg-flags';
+import type {PVTMsgFlag, PVTMsgFlags} from '@satpulse/gps/configtarget';
 import {ConfigSubGroup, ConfigSubSubGroup, labeledControlText} from './ui';
 
 interface Props {
@@ -16,12 +17,12 @@ interface Props {
 }
 
 /** Compute the wire value for Apply. Returns undefined when not configured (change=false). */
-export function pvtWireValue(change: boolean, flags: number): string[] | undefined {
+export function pvtWireValue(change: boolean, flags: number): PVTMsgFlags | undefined {
     if (!change) return undefined;
     return msgFlagNames(flags, PVTMsgNames);
 }
 
-export const pvtFlag = (name: string) => msgFlag(name, PVTMsgNames);
+export const pvtFlag = (name: PVTMsgFlag) => msgFlag(name, PVTMsgNames);
 
 function Checkbox({label, checked, disabled, onChange, indent}: {
     label: string; checked: boolean; disabled: boolean;
