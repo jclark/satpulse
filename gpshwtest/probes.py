@@ -986,14 +986,21 @@ class ProbeRun:
                                   "SatsMsg": msg_flags(flags, SATS_MSG_JSON)},
                                  expect=expect)
 
-    def restore_protocol(self, base: dict[tuple[str, str], int]) -> None:
+    def restore_protocol(self, base: dict[tuple[str, str], int],
+                         save: bool = False) -> None:
         """Return the receiver to its pre-probe output mode. --nmea resets
         the sentence set (to RMC only on u-blox) as well as switching
         protocol, so the observed initial sentence set is restored after it.
         A receiver found in binary mode is switched back with --binary, but
         its PVT message selection cannot be reconstructed from observation;
-        analysis reports that honestly as a restore failure."""
+        analysis reports that honestly as a restore failure. With save, each
+        step also saves minimally: a disruptive run's NVM recovery persists
+        whatever message rates the receiver was running at that moment, so
+        the final restore must write the baseline rates back to NVM or a
+        later reload re-arms the recovery-time rates (the rate-table time
+        bomb HW/tau1302.md describes)."""
         base_nmea = [t for t in nmea_set(base) if t in NMEA_VOCAB]
+        steps: list[tuple[str, dict[str, Any]]]
         if not base_nmea and raw_set(base):
             # --binary: turn NMEA off with a little binary PVT, as the flag
             # layer's --binary does.
@@ -1011,8 +1018,11 @@ class ProbeRun:
                        "PVTMsg": ["off"], "RawMsg": [], "SatsMsg": []}),
                      ("restore-nmea-types", {"NMEAMsg": base_nmea})]
         for name, opts in steps:
-            inv = self.tool.gps(name, target_arg({"Opts": opts}),
-                                {"op": "restore-protocol"})
+            intent: dict[str, Any] = {"op": "restore-protocol"}
+            if save:
+                opts = {**opts, "Save": "minimal"}
+                intent["save"] = True
+            inv = self.tool.gps(name, target_arg({"Opts": opts}), intent)
             if inv.error is not None:
                 return
         # The expectations ride in the intent: a restore-tail run's analyzer
@@ -1093,8 +1103,9 @@ class ProbeRun:
         if base is not None:
             # recover_nvm's --save-all persisted whatever message state the
             # experiments left; put the running message state back to the
-            # session baseline (its persistence rides the save-all above on
-            # the next disruptive run; the running state is what matters).
+            # session baseline (running-state only here - the reset and
+            # factory probes that follow rewrite NVM anyway; the end-of-run
+            # restore persists it).
             self.restore_protocol(base)
         self.probe_reset(uart, raised)
         self.probe_save_reset(nvm, uart, raised)
@@ -1108,7 +1119,7 @@ class ProbeRun:
         self.restore_mode(initial)
         self.restore_signals(initial)
         if base is not None:
-            self.restore_protocol(base)
+            self.restore_protocol(base, save=True)
 
     def recover_nvm(self, nvm: dict[str, Any], subjects: list[ScalarProp],
                     uart: bool, as_found_speed: int | None) -> None:
