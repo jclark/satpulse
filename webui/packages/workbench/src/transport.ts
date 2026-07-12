@@ -7,6 +7,8 @@
 //
 // Implementations: fetch+SSE (satpulsewb) and Wails bindings (desktop).
 
+import type {ConfigProps, ConfigTarget} from '@satpulse/gps/configtarget';
+
 export type ConnState =
     | 'disconnected'
     | 'connecting'
@@ -82,8 +84,8 @@ export interface Transport {
     getAllSignals(gnss: string[]): Promise<Record<string, string[]> | null>;
 
     // Configuration.
-    readConfig(): Promise<Record<string, any>>;
-    applyConfig(target: {Props: Record<string, any>; Opts: Record<string, any>}): Promise<void>;
+    readConfig(): Promise<ConfigProps>;
+    applyConfig(target: ConfigTarget): Promise<void>;
 
     // Corrections.
     startCorrections(src: CorrectionSource): Promise<void>;

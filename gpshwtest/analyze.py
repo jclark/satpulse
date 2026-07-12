@@ -17,10 +17,11 @@ from typing import Any
 
 from characterize import characterize
 from model import (NMEA_VOCAB, EmissionObservation, Observation, SignalObservation,
-                   Value, config_model_equal, config_value, emissions,
-                   event_kinds, flat_value, mode_disagreements, nmea_set,
-                   normalize_signal_map, pvt_event_kinds, raw_set, rtcm_set,
-                   stored_form, transient)
+                   Value, config_model_equal, config_value, emission_intervals,
+                   emissions, event_intervals, event_kinds, flat_value,
+                   mode_disagreements, nmea_rate_intervals, nmea_set,
+                   normalize_signal_map, pvt_event_kinds, raw_set, rtcm_rate_intervals,
+                   rtcm_set, stored_form, transient)
 from tool import replay
 
 
@@ -147,6 +148,8 @@ class Analyzer:
     gran_msg_f: list[str] | None = None
     gran_msg_scfg: dict[str, Any] | None = None
     save_results: list[dict[str, Any]] = field(default_factory=list)
+    save_reset: dict[str, Any] | None = None
+    replay_cache: dict[Path, list[dict[str, Any]]] = field(default_factory=dict)
 
     def run(self) -> Analysis:
         while self.i < len(self.steps):
@@ -226,6 +229,20 @@ class Analyzer:
                 self.failures.append(f"save-all: {s.error}")
         elif op in ("reset", "factory-reset"):
             pass  # the receiver reboots; the readback carries the verdict
+        elif op == "save-reset":
+            # Like reset, the invocation's own error proves nothing (the
+            # receiver reboots mid-invocation); the readback carries the
+            # verdict. Remember the intent for the verify-save-reset readback,
+            # with the accepted value when the response survived the reboot:
+            # persistence is judged against what the receiver accepted, not
+            # what was requested (quantization is a limitation, not a broken
+            # save).
+            self.save_reset = dict(s.intent)
+            accepted = config_value(s.config(), tuple(s.intent["path"]))
+            if accepted is not None:
+                self.save_reset["accepted"] = accepted
+        elif op == "fixrate":
+            self.fixrate(s)
         elif op == "set-speed":
             self.set_speed_step(s)
         elif op == "speed-readback":
@@ -316,6 +333,19 @@ class Analyzer:
                 self.failures.append(
                     f"{what} does not match the NVM state: "
                     f"{self.reload_nvm!r} -> {s.config()!r}")
+        elif role == "save-reset":
+            # The save+reset persistence check: the value set with --save
+            # --reset in one invocation must survive the reset (the save
+            # completes before the reset, and gates it). A mismatch is a
+            # broken persistence guarantee, not a limitation.
+            if self.save_reset is not None:
+                path = tuple(self.save_reset["path"])
+                v = self.save_reset.get("accepted", self.save_reset["value"])
+                got = config_value(s.config(), path)
+                if got != v:
+                    self.failures.append(
+                        f"save+reset: {self.save_reset['prop']} saved as {v!r} "
+                        f"with --reset but reads {got!r} after")
 
     def set_scalar(self, s: Step) -> None:
         prop, path = s.intent["prop"], tuple(s.intent["path"])
@@ -527,9 +557,18 @@ class Analyzer:
             return
         if o.log is None:
             return
+        fi = s.intent.get("rate")
         self.emission_observations.append(
             EmissionObservation(group, case, None, self.emitted(group, case, o),
-                                o.intent.get("expect")))
+                                o.intent.get("expect"), self.rate_intervals(group, o),
+                                fi if isinstance(fi, (int, float)) else None))
+
+    def replay_events(self, log: Path) -> list[dict[str, Any]]:
+        """Replay a packet log once and cache it: the semantic groups need
+        the event stream for both the information kinds and the rate."""
+        if log not in self.replay_cache:
+            self.replay_cache[log] = replay(self.exe, log)
+        return self.replay_cache[log]
 
     def emitted(self, group: str, case: list[str], o: Step) -> list[str]:
         """What the receiver emitted for one message-output case, in the
@@ -537,9 +576,9 @@ class Analyzer:
         groups, replayed information kinds for the semantic ones."""
         assert o.log is not None
         if group == "pvtOut":
-            return sorted(pvt_event_kinds(o.log, replay(self.exe, o.log)))
+            return sorted(pvt_event_kinds(o.log, self.replay_events(o.log)))
         if group == "satsOut":
-            return sorted(event_kinds(replay(self.exe, o.log)))
+            return sorted(event_kinds(self.replay_events(o.log)))
         d = emissions(o.log)
         if group == "nmeaOut":
             return nmea_set(d)
@@ -550,6 +589,23 @@ class Analyzer:
         if case != ["none"]:
             self.raw_found[case[0]] = new
         return sorted(new)
+
+    def rate_intervals(self, group: str, o: Step) -> dict[str, float]:
+        """The observed inter-arrival per single-per-epoch type for one
+        observation, feeding the rate check (SEMANTICS.md, Rate): NMEA/RTCM
+        from the packet log's safe types, PVT/satellite information from the
+        epoch cadence of the replayed event stream. Raw output is event
+        output with no rate, so it gets none."""
+        assert o.log is not None
+        if group == "pvtOut":
+            return event_intervals(self.replay_events(o.log), "navEpoch")
+        if group == "satsOut":
+            return event_intervals(self.replay_events(o.log), "satellites")
+        if group == "nmeaOut":
+            return nmea_rate_intervals(emission_intervals(o.log))
+        if group == "rtcmOut":
+            return rtcm_rate_intervals(emission_intervals(o.log))
+        return {}
 
     def restore_msg(self, s: Step) -> None:
         group, want = s.intent["group"], s.intent["want"]
@@ -796,6 +852,17 @@ class Analyzer:
                 self.failures.append(
                     f"session speed: restored to {want} but the port reports "
                     f"{s.config().get('baudRate')!r}")
+
+    def fixrate(self, s: Step) -> None:
+        """The fix-rate precondition of the message-rate probe. A transient
+        error is link trouble (a failure). A refusal of the fast rate just
+        voids the rate check (the cases then run at the default rate and the
+        passive check records nothing); a refusal of the default restore is a
+        failure - the receiver may be left fast for the next run."""
+        if transient(s.error):
+            self.failures.append(f"{s.name}: {s.error}")
+        elif s.error is not None and s.intent.get("role") == "default":
+            self.failures.append(f"fixrate: restore to the default rate failed: {s.error}")
 
     def pulse_set(self, s: Step) -> None:
         role = s.intent["role"]

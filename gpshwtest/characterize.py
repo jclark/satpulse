@@ -10,7 +10,7 @@ import json
 from itertools import combinations
 from typing import Any
 
-from model import (MAJORS, EmissionObservation, Observation, SignalMap,
+from model import (MAJORS, NMEA_VOCAB, EmissionObservation, Observation, SignalMap,
                    SignalObservation, l1_signals, l2_signals, l5_signals,
                    normalize_signal_map, signal_request_valid)
 
@@ -18,6 +18,26 @@ from model import (MAJORS, EmissionObservation, Observation, SignalMap,
 # constellation. SBAS and NavIC are intentionally absent: no backend configures
 # those RTCM families, so gpshwtest does not expect them.
 RTCM_DECADE = {"GPS": 107, "GLO": 108, "GAL": 109, "QZSS": 111, "BDS": 112}
+
+# The RTCM message numbers gpshwtest models, for classifying emitted types as
+# extras: the MSM4/MSM7 numbers of every constellation (not just the enabled
+# ones, so an MSM for an unrequested constellation shows as an extra), the ARP
+# message 1005, and the GLONASS code-phase-bias message 1230. Numbers outside
+# this set (1019/1020 ephemerides, 1033, ...) are the group's *other* element,
+# which the command line cannot control, so they are never recorded.
+RTCM_VOCAB = {f"{d}{lvl}" for d in RTCM_DECADE.values() for lvl in ("4", "7")} \
+    | {"1005", "1230"}
+
+# Enabled message output is delivered at 1 Hz regardless of the fix rate
+# (SEMANTICS.md, Rate). An observed inter-arrival inside this band counts as
+# 1 Hz; the width absorbs capture jitter, while a fix-coupled 5 Hz (0.2 s) or
+# 10 Hz (0.1 s) output lands far outside it.
+RATE_MIN, RATE_MAX = 0.7, 1.5
+
+# Observed rates are quantized to this grid (seconds) so capture jitter cannot
+# flip an entry between runs: 0.2 s and 0.1 s are grid points, and the ~50 ms
+# half-step is wider than the jitter seen on a single-per-epoch type.
+RATE_GRID = 0.05
 
 def characterize(receiver: dict[str, Any], supports: list[str],
                  observations: list[Observation],
@@ -362,14 +382,19 @@ def dedup(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def characterize_nmea(obs: list[EmissionObservation]) -> dict[str, Any] | None:
-    """Characterize NMEA output selection: requested sentence types that
-    were not emitted. Extra sentence types are normal best-effort behavior."""
+    """Characterize NMEA output selection: requested sentence types that were
+    not emitted, and modeled sentence types emitted without being requested.
+    A wire-format request is exact (SEMANTICS.md), so an emitted model type
+    outside the request is a limitation to vet, not normal best effort;
+    vendor sentences (TXT etc.) stay out of it as the group's *other*
+    element, which the command line cannot control."""
     entry: dict[str, Any] = {}
     observed = [{"request": o.requested, "error": "refused"}
                 for o in obs if o.error is not None]
     if observed:
         entry["observed"] = observed
     missing = []
+    extra = []
     for o in obs:
         if o.error is not None:
             continue
@@ -377,18 +402,30 @@ def characterize_nmea(obs: list[EmissionObservation]) -> dict[str, Any] | None:
         lack = sorted(set(requested) - set(o.emitted))
         if lack:
             missing.append({"request": requested, "missing": lack})
+        extras = sorted(t for t in o.emitted if t in NMEA_VOCAB and t not in requested)
+        if extras:
+            extra.append({"request": requested, "extra": extras})
     if missing:
         entry["missing"] = missing
+    if extra:
+        entry["extra"] = dedup(extra)
+    rate = rate_limitation(obs, with_type=True)
+    if rate:
+        entry["rate"] = rate
     return entry if entry else None
 
 
 def characterize_rtcm(obs: list[EmissionObservation], enabled: list[str],
                       supports: list[str]) -> dict[str, Any] | None:
-    """Characterize RTCM output: message types implied by the request for
-    the enabled constellations that were not emitted. Extra types are
-    normal best-effort behavior. A refusal that an absent capability flag
-    already predicts (MSM4 without rtcmMSM4, MSM7 without rtcmMSM7) is
-    excluded: the declared interface in supports carries that information."""
+    """Characterize RTCM output: message types implied by the request for the
+    enabled constellations that were not emitted, and modeled types emitted
+    but not implied by the request. A wire-format request is exact
+    (SEMANTICS.md), so a modeled type outside the allowed set is a limitation;
+    types outside the model vocabulary (1019/1020 ephemerides, 1033, ...) are
+    the group's *other* element and are never recorded. A refusal that an
+    absent capability flag already predicts (MSM4 without rtcmMSM4, MSM7
+    without rtcmMSM7) is excluded: the declared interface in supports carries
+    that information."""
     entry: dict[str, Any] = {}
     predicted = {f for f, cap in (("MSM4", "rtcmMSM4"), ("MSM7", "rtcmMSM7"))
                  if cap not in supports}
@@ -398,22 +435,45 @@ def characterize_rtcm(obs: list[EmissionObservation], enabled: list[str],
     if observed:
         entry["observed"] = observed
     missing = []
+    extra = []
     for o in obs:
         if o.error is not None:
             continue
-        expected: set[str] = set()
-        for f in o.requested:
-            if f in ("MSM4", "MSM7"):
-                expected |= {f"{RTCM_DECADE[c]}{f[-1]}"
-                             for c in rtcm_enabled_gnss(enabled, supports)}
-            elif f == "ARP":
-                expected.add("1005")
-        lack = sorted(expected - set(o.emitted))
+        allowed = rtcm_expected(o.requested, enabled, supports)
+        lack = sorted(allowed - set(o.emitted))
         if lack:
             missing.append({"request": o.requested, "missing": lack})
+        extras = sorted((set(o.emitted) & RTCM_VOCAB) - allowed)
+        if extras:
+            extra.append({"request": o.requested, "extra": extras})
     if missing:
         entry["missing"] = missing
+    if extra:
+        entry["extra"] = dedup(extra)
+    rate = rate_limitation(obs, with_type=True)
+    if rate:
+        entry["rate"] = rate
     return entry if entry else None
+
+
+def rtcm_expected(requested: list[str], enabled: list[str],
+                  supports: list[str]) -> set[str]:
+    """The RTCM message numbers a request denotes for the enabled
+    constellations: the MSM numbers of each enabled constellation, 1005 for
+    ARP, and the GLONASS code-phase-bias message 1230 whenever GLONASS MSM is
+    expected (SEMANTICS.md: enabling MSM for GLONASS also enables 1230, which
+    rovers need to use GLONASS MSM). Shared by the missing and extra
+    derivations so the allowed set cannot drift between them."""
+    gnss = rtcm_enabled_gnss(enabled, supports)
+    expected: set[str] = set()
+    for f in requested:
+        if f in ("MSM4", "MSM7"):
+            expected |= {f"{RTCM_DECADE[c]}{f[-1]}" for c in gnss}
+            if "GLO" in gnss:
+                expected.add("1230")
+        elif f == "ARP":
+            expected.add("1005")
+    return expected
 
 
 def rtcm_enabled_gnss(enabled: list[str], supports: list[str]) -> list[str]:
@@ -462,7 +522,36 @@ def characterize_expected(obs: list[EmissionObservation]) -> dict[str, Any] | No
     missing = sorted(expected - emitted)
     if missing:
         entry["missing"] = missing
+    rate = rate_limitation(obs, with_type=False)
+    if rate:
+        entry["rate"] = rate
     return entry if entry else None
+
+
+def rate_limitation(obs: list[EmissionObservation],
+                    with_type: bool) -> list[dict[str, Any]]:
+    """Rate entries for one message group: an observed inter-arrival outside
+    the 1 Hz band is a delivered-rate limitation (SEMANTICS.md, Rate). The
+    observed interval is quantized to a stable grid so capture jitter does not
+    flip entries between runs. with_type keys wire-format entries by the model
+    type (a group emits several types); the semantic groups deliver one
+    information stream, so they carry no type. fixInterval records the fix
+    rate the preconditioned probe set, present only for those observations."""
+    out: list[dict[str, Any]] = []
+    for o in obs:
+        if o.error is not None:
+            continue
+        for token, interval in sorted(o.intervals.items()):
+            if RATE_MIN <= interval <= RATE_MAX:
+                continue
+            entry: dict[str, Any] = {}
+            if with_type:
+                entry["type"] = token
+            entry["observed"] = round(round(interval / RATE_GRID) * RATE_GRID, 2)
+            if o.fix_interval is not None:
+                entry["fixInterval"] = o.fix_interval
+            out.append(entry)
+    return dedup(out)
 
 
 def characterize_save(results: list[dict[str, Any]]) -> dict[str, Any] | None:

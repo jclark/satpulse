@@ -1,32 +1,34 @@
 import {h} from 'preact';
-import {NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV, NMEAMsgZDA, NMEAMsgVTG, NMEAMsgGLL, NMEAMsgOther} from './msg-flags';
+import {NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV, NMEAMsgZDA, NMEAMsgVTG, NMEAMsgGLL, NMEAMsgOther, NMEASelectableMsgNames, toggleMsgFlag} from './msg-flags';
+import type {NMEASelectableMsgFlag} from './msg-flags';
+import type {NMEAMsgFlags} from '@satpulse/gps/configtarget';
 import {ConfigSubGroup, labeledControlText} from './ui';
 
-const nmeaMsgs: {flag: number; label: string}[] = [
-    {flag: NMEAMsgGGA, label: 'GGA'},
-    {flag: NMEAMsgGLL, label: 'GLL'},
-    {flag: NMEAMsgGSA, label: 'GSA'},
-    {flag: NMEAMsgGSV, label: 'GSV'},
-    {flag: NMEAMsgRMC, label: 'RMC'},
-    {flag: NMEAMsgVTG, label: 'VTG'},
-    {flag: NMEAMsgZDA, label: 'ZDA'},
+const nmeaMsgs: {name: typeof NMEASelectableMsgNames[number]; label: string}[] = [
+    {name: NMEAMsgGGA, label: 'GGA'},
+    {name: NMEAMsgGLL, label: 'GLL'},
+    {name: NMEAMsgGSA, label: 'GSA'},
+    {name: NMEAMsgGSV, label: 'GSV'},
+    {name: NMEAMsgRMC, label: 'RMC'},
+    {name: NMEAMsgVTG, label: 'VTG'},
+    {name: NMEAMsgZDA, label: 'ZDA'},
 ];
 
 interface Props {
     change: boolean;
     disableProtocol: boolean;
-    flags: number;
+    flags: ReadonlySet<NMEASelectableMsgFlag>;
     onChangeChange: (v: boolean) => void;
     onDisableChange: (v: boolean) => void;
-    onFlagsChange: (f: number) => void;
+    onFlagsChange: (f: ReadonlySet<NMEASelectableMsgFlag>) => void;
     disabled?: boolean;
 }
 
 /** Compute the wire value for Apply. Returns undefined if change is false (skip). */
-export function nmeaWireValue(change: boolean, disableProtocol: boolean, flags: number): number | undefined {
+export function nmeaWireValue(change: boolean, disableProtocol: boolean, flags: ReadonlySet<NMEASelectableMsgFlag>): NMEAMsgFlags | undefined {
     if (!change) return undefined;
-    if (disableProtocol) return 0;
-    return flags | NMEAMsgOther;
+    if (disableProtocol) return [];
+    return [...NMEASelectableMsgNames.filter(name => flags.has(name)), NMEAMsgOther];
 }
 
 export function NMEAGroup({change, disableProtocol, flags, onChangeChange, onDisableChange, onFlagsChange, disabled}: Props) {
@@ -48,18 +50,18 @@ export function NMEAGroup({change, disableProtocol, flags, onChangeChange, onDis
                     </label>
                 </div>
                 <div class="flex flex-wrap gap-x-4 gap-y-1">
-                    {nmeaMsgs.map(m => (
-                        <label key={m.flag} class={`flex items-center gap-1.5 ${labeledControlText(childDisabled)}`}>
+                    {nmeaMsgs.map(m => {
+                        return <label key={m.name} class={`flex items-center gap-1.5 ${labeledControlText(childDisabled)}`}>
                             <input
                                 type="checkbox"
                                 class="accent-accent"
-                                checked={(flags & m.flag) !== 0}
+                                checked={flags.has(m.name)}
                                 disabled={childDisabled}
-                                onChange={() => onFlagsChange(flags ^ m.flag)}
+                                onChange={e => onFlagsChange(toggleMsgFlag(flags, m.name, (e.target as HTMLInputElement).checked))}
                             />
                             {m.label}
-                        </label>
-                    ))}
+                        </label>;
+                    })}
                 </div>
             </div>
         </ConfigSubGroup>

@@ -41,7 +41,7 @@ Consequences that the tester must treat as normal, not as errors:
 - Achieved values may differ from requested ones: quantization to the receiver's resolution, range limits, coupled settings moving together, signal sets intersected and fixed up as SEMANTICS.md describes.
 - Some properties do not exist on a given backend; the responses show this (setting reports nothing achieved, and readback omits the property).
 - A receiver may refuse a request outright. satpulsetool reports this as an error; the refusal must leave the receiver's configuration unchanged.
-- Message output may deliver more than was asked for; only requested-but-missing information is significant.
+- Semantic message output (PVT, satellites) may deliver more than was asked for; only requested-but-missing information is significant. For the wire-format groups (NMEA, RTCM) a request is exact, so a message type inside the model's vocabulary that is emitted but not requested is a limitation the characterization records.
 - Saving is best-effort in granularity: a receiver's save granularity is a partition of the properties into groups that persist together, from one group per property (perfectly selective) down to a single group (`--save` indistinguishable from `--save-all`). The discovered partition is what the characterization records.
 - `ConfigSupportFlags` (`supports` in the JSON output) declares which optional capabilities a backend offers; absent capabilities bound what can be expected of a request.
 

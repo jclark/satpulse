@@ -38,6 +38,37 @@ AUGMENT_SIGNALS = {"GAL": {"E6"}, "BDS": {"B2b"}}
 # remain visible in the packet-log artifacts.
 NMEA_VOCAB = ["RMC", "GGA", "GSA", "GSV", "ZDA", "VTG", "GLL"]
 
+# NMEA sentence types that appear exactly once per epoch, so their
+# inter-arrival time reflects the output cadence. GSV (and GSA on some
+# receivers) emits several sentences per epoch, so its gaps would misreport
+# the rate; those types are excluded from rate measurement.
+RATE_SAFE_NMEA = ["RMC", "GGA", "ZDA", "VTG", "GLL"]
+
+# The full model signal set of each constellation, as the unqualified signal
+# names of the readback JSON, mirroring the SigSet* constants in
+# gps/gpsprot/signal.go. A --gnss request denotes a constellation's whole set;
+# the backend intersects it with the receiver's supported set. Requesting this
+# universe as a signalsEnabled target is the JSON spelling of that request, and
+# is how a run discovers the receiver's supported signals.
+SIGNAL_UNIVERSE: dict[str, list[str]] = {
+    "GPS": ["L1", "L1C", "L2P", "L2C", "L5"],
+    "GAL": ["E1", "E5a", "E5b", "E6"],
+    "BDS": ["B1I", "B1C", "B2I", "B2b", "B2a", "B3I"],
+    "GLO": ["L1", "L1OC", "L2", "L2OC", "L3"],
+    "QZSS": ["L1", "L1C", "L1S", "L2C", "L5", "L5S", "L6"],
+    "NAVIC": ["L1", "L5"],
+    "SBAS": ["L1", "L5"],
+}
+
+# The message-output content tokens the probe cases and HW docs use (the CLI
+# --pvt-out/--sats-out/--raw-out spellings) mapped to their configtarget.go
+# flag names, where the two differ. Wire-format (NMEA, RTCM) tokens are their
+# own flag names and need no table.
+PVT_MSG_JSON = {"tp": "timePulse", "leap": "leapSecond", "qual": "quality",
+                "after": "timePulseAfter"}
+SATS_MSG_JSON = {"sig": "signal"}
+RAW_MSG_JSON = {"nav": "navData"}
+
 
 @dataclass
 class Observation:
@@ -72,13 +103,20 @@ class SignalObservation:
 class EmissionObservation:
     """Outcome of one message-output request, observed by packet capture.
     expect carries the information kinds the request should deliver, for
-    the semantic groups checked at the information level."""
+    the semantic groups checked at the information level. intervals is the
+    observed inter-arrival per single-per-epoch type (model type name for
+    the wire-format groups, event type for the semantic ones), for the rate
+    check. fix_interval is the fix interval (seconds) the observation ran
+    preconditioned to, set only by the preconditioned rate probe; None means
+    the observation ran at the receiver's as-found fix rate."""
 
     group: str
     requested: list[str]
     error: str | None
     emitted: list[str]
     expect: list[str] | None = None
+    intervals: dict[str, float] = field(default_factory=dict)
+    fix_interval: float | None = None
 
 
 def transient(err: str | None) -> bool:
@@ -88,14 +126,6 @@ def transient(err: str | None) -> bool:
     failures rather than receiver limitations when they persist."""
     return err is not None and ("detection failed" in err or "no response" in err
                                 or "abandoned after timeout" in err)
-
-
-def fmt_value(v: Value) -> str:
-    """Format a model value as a satpulsetool command-line argument."""
-    if isinstance(v, float):
-        s = f"{v:.9f}".rstrip("0").rstrip(".")
-        return s if s else "0"
-    return str(v)
 
 
 def normalize_signal_map(v: Any) -> SignalMap:
@@ -176,14 +206,6 @@ def signal_map_subset(m: SignalMap, gnss: str) -> SignalMap:
     """Return just one constellation's signals."""
     sigs = normalize_signal_map(m).get(gnss, [])
     return {gnss: sigs} if sigs else {}
-
-
-def signal_map_cli_arg(m: SignalMap) -> str:
-    """Render a signal map as a --signal/--except-signal argument."""
-    parts = []
-    for g, sigs in normalize_signal_map(m).items():
-        parts += [g + s for s in sigs]
-    return ",".join(parts)
 
 
 def signal_band(name: str) -> str:
@@ -327,23 +349,56 @@ def stored_form(reported: Value, back: Value) -> str | None:
     return None
 
 
-def mode_args(mode: dict[str, Any]) -> list[str]:
-    """Build the flags that reproduce a mode readback. Survey parameters are
-    not readable, so a surveyed mode is restored with default survey settings."""
+# The satpulsetool defaults for a bare --survey request (--survey-time,
+# --survey-acc): a surveyed mode's survey parameters are not readable, so it is
+# restored with these, matching what mode_args used to spell as bare --survey.
+DEFAULT_SURVEY_TIME = 2000
+DEFAULT_SURVEY_ACC = 20.0
+
+
+def target_arg(target: dict[str, Any], *extra: str) -> list[str]:
+    """Render a ConfigTarget as satpulsetool --target-json args, plus any
+    allowlisted output flags (--show-receiver/-config/-port, --capture). This
+    is how every configuration and readback request is expressed: at the
+    configtarget.go contract, below the CLI flag layer."""
+    return ["--target-json", json.dumps(target, sort_keys=True), *extra]
+
+
+def pps_props(width: float) -> dict[str, Any]:
+    """The timePulse property bundle a --pps request sets: a 1 Hz pulse aligned
+    to GNSS time, rising, only when locked, with the given width in seconds (0
+    disables). Mirrors ConfigProps.SetPPS in configtarget.go."""
+    return {"width": width, "period": 1, "alignToGNSS": True,
+            "onlyWhenLocked": True, "polarityRising": True}
+
+
+def survey_opts(min_dur_s: int, acc_m: float) -> dict[str, Any]:
+    """The Opts.Survey a --survey request builds: it always forces a fresh
+    survey (SurveyAgain), with the given minimum duration (seconds) and
+    accuracy (meters). MinDur is a time.Duration, so nanoseconds on the wire."""
+    return {"Survey": {"Flags": ["again"], "MinDur": min_dur_s * 1_000_000_000,
+                       "AccLimit": acc_m}}
+
+
+def mode_target(mode: dict[str, Any]) -> dict[str, Any]:
+    """Build the ConfigTarget that reproduces a mode readback, mirroring the
+    positioning-mode flags. Survey parameters are not readable, so a surveyed
+    mode (static with no stored position) is restored with default survey
+    settings; a fixed position is restored with its accuracy."""
     if not mode.get("static"):
-        return ["--mobile"]
-    args: list[str]
+        return {"Props": {"mode": {"static": False}}}
+    m: dict[str, Any] = {"static": True}
     if "fixedPosECEF" in mode:
-        x, y, z = mode["fixedPosECEF"]
-        args = ["--fixed-pos-ecef", f"{x},{y},{z}"]
+        m["fixedPosECEF"] = mode["fixedPosECEF"]
     elif "fixedPosLLH" in mode:
-        lat, lon = mode["fixedPosLLH"]
-        args = ["--fixed-pos-llh", f"{lat},{lon},{mode.get('height', 0)}"]
+        m["fixedPosLLH"] = mode["fixedPosLLH"]
+        m["height"] = mode.get("height", 0)
     else:
-        args = ["--survey"]
+        return {"Props": {"mode": m}, "Opts": survey_opts(DEFAULT_SURVEY_TIME,
+                                                          DEFAULT_SURVEY_ACC)}
     if "fixedPosAcc" in mode:
-        args += ["--fixed-pos-acc", fmt_value(mode["fixedPosAcc"])]
-    return args
+        m["fixedPosAcc"] = mode["fixedPosAcc"]
+    return {"Props": {"mode": m}}
 
 
 # Replies to the session's own queries arrive well under this many seconds
@@ -376,6 +431,75 @@ def emissions(log: Path) -> dict[tuple[str, str], int]:
 def parse_t(s: str) -> datetime.datetime:
     """Parse a packet log timestamp (RFC 3339)."""
     return datetime.datetime.fromisoformat(s)
+
+
+def median_interval(times: list[datetime.datetime]) -> float | None:
+    """The median inter-arrival time in seconds of a set of timestamps, or
+    None with fewer than two (a single arrival has no interval). Median, not
+    mean, so one delayed packet does not skew the estimate."""
+    if len(times) < 2:
+        return None
+    ts = sorted(times)
+    gaps = sorted((b - a).total_seconds() for a, b in zip(ts, ts[1:]))
+    n = len(gaps)
+    return gaps[n // 2] if n % 2 else (gaps[n // 2 - 1] + gaps[n // 2]) / 2
+
+
+def emission_intervals(log: Path) -> dict[tuple[str, str], float]:
+    """Per (tag, msg) key, the median inter-arrival time in seconds over the
+    same observation window emissions() uses (strictly after the last
+    outbound packet plus EMISSION_GRACE). Absent for keys with fewer than
+    two arrivals. Only single-per-epoch message types give a meaningful
+    cadence (see RATE_SAFE_NMEA and the MSM numbers); a type emitted several
+    times per epoch would show intra-epoch gaps, so callers select the safe
+    types before drawing a rate verdict."""
+    entries = [json.loads(line) for line in log.read_text().splitlines()]
+    last_out = max((parse_t(e["t"]) for e in entries if e.get("out")), default=None)
+    times: dict[tuple[str, str], list[datetime.datetime]] = {}
+    for e in entries:
+        tag, msg = e.get("tag"), e.get("msg")
+        if e.get("out") or not isinstance(tag, str) or not isinstance(msg, str):
+            continue
+        t = parse_t(e["t"])
+        if last_out is not None and t <= last_out + EMISSION_GRACE:
+            continue
+        times.setdefault((tag, msg), []).append(t)
+    out: dict[tuple[str, str], float] = {}
+    for k, ts in times.items():
+        iv = median_interval(ts)
+        if iv is not None:
+            out[k] = iv
+    return out
+
+
+def nmea_rate_intervals(iv: dict[tuple[str, str], float]) -> dict[str, float]:
+    """Observed inter-arrival per single-per-epoch NMEA sentence type, keyed
+    by the model type name. On the rare receiver that emits one type under
+    two talker IDs, the larger interval is kept: each talker's own cadence is
+    per-epoch, and the conservative choice avoids a spurious fast reading."""
+    out: dict[str, float] = {}
+    for (tag, msg), t in iv.items():
+        if tag == "NMEA" and len(msg) == 5 and msg[2:] in RATE_SAFE_NMEA:
+            typ = msg[2:]
+            out[typ] = max(out.get(typ, t), t)
+    return out
+
+
+def rtcm_rate_intervals(iv: dict[tuple[str, str], float]) -> dict[str, float]:
+    """Observed inter-arrival per RTCM message number (each number is emitted
+    once per epoch, so all are safe)."""
+    return {msg: t for (tag, msg), t in iv.items() if tag == "RTCM"}
+
+
+def event_intervals(events: list[dict[str, Any]], etype: str) -> dict[str, float]:
+    """The median inter-arrival of one replayed event type, keyed by the type
+    name; empty when fewer than two events carry it. Used to measure the
+    delivery cadence of the semantic groups (navEpoch for PVT, satellites for
+    satellite information) at the information level."""
+    times = [parse_t(e["t"]) for e in events
+             if e.get("type") == etype and isinstance(e.get("t"), str)]
+    iv = median_interval(times)
+    return {etype: iv} if iv is not None else {}
 
 
 def nmea_set(d: dict[tuple[str, str], int]) -> list[str]:

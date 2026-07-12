@@ -3,6 +3,7 @@ import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {transport} from './transport';
 import type {ConnState, MsgFileTag, PortInfo} from './transport';
 import type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo} from '@satpulse/gps/gpsprot';
+import type {ConfigProps} from '@satpulse/gps/configtarget';
 import {ConnectionPanel} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
 import {ConfigPanel} from './config-panel';
@@ -116,7 +117,7 @@ export function App() {
     const [speed, setSpeed] = useState(9600);
     const [ports, setPorts] = useState<PortInfo[]>([]);
     const [receiver, setReceiver] = useState<ReceiverState>({status: 'disconnected'});
-    const [configProps, setConfigProps] = useState<Record<string, any> | null>(null);
+    const [configProps, setConfigProps] = useState<ConfigProps | null>(null);
     const [signalCatalog, setSignalCatalog] = useState<Record<string, string[]>>({});
     const [selectedSignals, setSelectedSignals] = useState<Set<string>>(new Set());
     const signalCatalogRequest = useRef(0);
@@ -507,7 +508,7 @@ export function App() {
         }).catch(() => {});
     }, []);
 
-    const handleConfigReadback = useCallback((props: Record<string, any>) => {
+    const handleConfigReadback = useCallback((props: ConfigProps) => {
         setConfigProps(props);
     }, []);
 
