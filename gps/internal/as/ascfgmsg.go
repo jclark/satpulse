@@ -263,6 +263,7 @@ func (c *Configurator) generateRatePoll() {
 	}
 	c.add(&asReq{mid: asbin.CfgMsgID, packet: asbin.PollCfgMsg(mid),
 		onData: func(asbin.Msg) {}, optional: true})
+	c.ratePollSent = true
 }
 
 // generateResolveReqs completes every deferred enable, bounded. If the
@@ -330,6 +331,7 @@ func (c *Configurator) onObserve() {
 	if !c.est.lastWasArrival {
 		return
 	}
+	c.maybeLazyPoll()
 	mid := c.est.lastArrivalMid
 	tr := c.est.tracks[mid]
 	if tr == nil || !(tr.hasPoll || tr.selfSet) || w.extended[mid] {
@@ -340,6 +342,41 @@ func (c *Configurator) onObserve() {
 	}
 	w.extended[mid] = true
 	w.watchAnchor = c.est.lastRead
+}
+
+// maybeLazyPoll issues a CFG-MSG rate poll during an active watch when no
+// poll has gone out yet and a content-bearing track is flowing whose
+// stored rate is unknown. The query-phase eager poll only fires when
+// traffic is already qualified (two arrivals) at generation time; a unit
+// that bursts a single epoch and then emits at 1Hz does not qualify then,
+// and its as-found content is neither self-set nor polled, so no rule
+// could ever resolve the native rate - the deferred enables would stay at
+// rate=1 and a 5Hz-native unit would emit at 5x forever (the RTCM-out
+// hardware failure). Polling that id now pairs its stored rate with its
+// observed content-time interval to resolve the rate exactly (rule 1).
+// Self-set ids are excluded: rule 2 already covers them, and an off-grid
+// self-set stream (a fixless unit) must resolve via the anchored-negative
+// cap, not a spurious rule-1 divisor from a short off-grid interval.
+//
+// The poll is issued once. The polled id then joins the watch's waited-on
+// set (hasPoll), so once the readback lands its next arrival advances the
+// deadline anchor once via the existing once-per-id rule (see onObserve),
+// covering the readback plus the second same-id arrival that completes
+// rule 1. Worst-case liveness is thus unchanged in kind: the base watch
+// bound (resolveSilentDelay or resolveFlowingDelay) plus at most one
+// per-id anchor extension, i.e. at most one further native period (~1s)
+// beyond the base window - still bounded, so the invocation terminates.
+func (c *Configurator) maybeLazyPoll() {
+	if c.ratePollSent {
+		return
+	}
+	mid, ok := c.est.lazyPollID()
+	if !ok {
+		return
+	}
+	c.add(&asReq{mid: asbin.CfgMsgID, packet: asbin.PollCfgMsg(mid),
+		onData: func(asbin.Msg) {}, optional: true})
+	c.ratePollSent = true
 }
 
 // resolveWatch completes the watch once the native rate is known: it

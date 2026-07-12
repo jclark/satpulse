@@ -398,6 +398,24 @@ func (e *rateEstimator) flowingPollID(keep map[asbin.MsgID]bool) (asbin.MsgID, b
 	return best, best != 0
 }
 
+// lazyPollID returns a content-bearing flowing id whose stored rate is
+// not yet known and that we did not self-set, for the resolve-phase
+// fallback poll. Only a content-bearing id qualifies: rule 1 pairs the
+// polled rate with the id's content-time interval, and only content time
+// may set a divisor. A self-set id is excluded: rule 2 covers it, and
+// polling an off-grid self-set stream (a fixless unit) could yield a
+// spurious rule-1 divisor instead of letting the cap conclude 1Hz. Ids
+// are visited in a defined order so the choice is deterministic.
+func (e *rateEstimator) lazyPollID() (asbin.MsgID, bool) {
+	for _, mid := range e.sortedMids() {
+		tr := e.tracks[mid]
+		if tr.hasContent && tr.count >= 1 && !tr.hasPoll && !tr.selfSet {
+			return mid, true
+		}
+	}
+	return 0, false
+}
+
 // markSelfSet records that we have set mid to rate=1, so a clean interval
 // on it is the native period directly.
 func (e *rateEstimator) markSelfSet(mid asbin.MsgID) {

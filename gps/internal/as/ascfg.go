@@ -32,25 +32,26 @@ const speedChangeDelay = 150 * time.Millisecond
 // echoing the id - no ACK follows - so poll requests complete on
 // their data response.
 type Configurator struct {
-	target    *gpsprot.ConfigTarget
-	ver       *asbin.MonVer
-	reqs      []*asReq
-	phase     int                 // index into genPhases of the next phase to generate
-	touched   asbin.CfgCfgMask    // sections set requests touched, for minimal saves
-	pps       *asbin.CfgPps       // latest CFG-PPS readback; nil if never answered
-	fixedEcef *asbin.CfgFixedECEF // latest CFG-FIXEDECEF readback
-	survey    *asbin.CfgSurvey    // latest CFG-SURVEY readback
-	navSat    *asbin.CfgNavSat    // latest CFG-NAVSAT readback
-	speedReq  *asReq              // the baud change request, when one was generated
-	saveReq   *asReq              // the NVM save request, when one was generated (gates the reset)
-	prt0      *asbin.CfgPrt       // CFG-PRT record 0 readback (show-port)
-	elev      *asbin.CfgElev      // latest CFG-ELEV readback
-	est       *rateEstimator      // native-rate estimator, shared with the ConfigProtocol
-	deferred  []deferredEnable    // message enables awaiting the resolve phase
-	watch     *asReq              // the resolve-phase watch request, when one was generated
-	watchSent bool                // the deferred enables have been sent (at rate=1) by the watch
-	planning  bool                // plannedEnabled dry-run: record intents instead of sending
-	plan      map[asbin.MsgID]bool
+	target       *gpsprot.ConfigTarget
+	ver          *asbin.MonVer
+	reqs         []*asReq
+	phase        int                 // index into genPhases of the next phase to generate
+	touched      asbin.CfgCfgMask    // sections set requests touched, for minimal saves
+	pps          *asbin.CfgPps       // latest CFG-PPS readback; nil if never answered
+	fixedEcef    *asbin.CfgFixedECEF // latest CFG-FIXEDECEF readback
+	survey       *asbin.CfgSurvey    // latest CFG-SURVEY readback
+	navSat       *asbin.CfgNavSat    // latest CFG-NAVSAT readback
+	speedReq     *asReq              // the baud change request, when one was generated
+	saveReq      *asReq              // the NVM save request, when one was generated (gates the reset)
+	prt0         *asbin.CfgPrt       // CFG-PRT record 0 readback (show-port)
+	elev         *asbin.CfgElev      // latest CFG-ELEV readback
+	est          *rateEstimator      // native-rate estimator, shared with the ConfigProtocol
+	deferred     []deferredEnable    // message enables awaiting the resolve phase
+	watch        *asReq              // the resolve-phase watch request, when one was generated
+	watchSent    bool                // the deferred enables have been sent (at rate=1) by the watch
+	ratePollSent bool                // a CFG-MSG rate poll (eager or lazy) has been issued
+	planning     bool                // plannedEnabled dry-run: record intents instead of sending
+	plan         map[asbin.MsgID]bool
 }
 
 // deferredEnable is a message enable that the msg phase could not decide

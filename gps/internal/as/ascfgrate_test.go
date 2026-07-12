@@ -1,10 +1,12 @@
 package as
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/lib/asbin"
 )
 
@@ -301,4 +303,177 @@ func TestRateDeadSilentCap(t *testing.T) {
 	if rcvr.rates[asbin.NavTimeID] != 1 {
 		t.Errorf("NAV-TIME rate = %d, want 1 (optimistic)", rcvr.rates[asbin.NavTimeID])
 	}
+}
+
+// nmeaEmitter emits one time-bearing NMEA sentence (RMC) per 1Hz output
+// epoch, its time-of-day stepping one second. A receiver's NMEA output
+// cadence is 1Hz whatever its native cycle; the native rate shows only in
+// the stored CFG-MSG divisor a poll reveals (5 on a 5Hz unit, 1 on a 1Hz
+// unit), not in the output spacing. This is the as-found traffic of the
+// RTCM-out scenario: NMEA the request leaves alone, flowing beside the
+// enabled RTCM targets that the estimator cannot see.
+type nmeaEmitter struct {
+	start time.Time
+	tick  int
+}
+
+// due returns the RMC sentences emitted up to now. Each carries a
+// time-of-day one second past the last, so the estimator sees a clean
+// 1000ms content-time interval.
+func (ne *nmeaEmitter) due(t *testing.T, now time.Time) []*nmea.Sentence {
+	var out []*nmea.Sentence
+	for {
+		tickTime := ne.start.Add(time.Duration(ne.tick) * time.Second)
+		if tickTime.After(now) {
+			break
+		}
+		out = append(out, rmcSentence(t, fmt.Sprintf("%06d.00", 10000+ne.tick)))
+		ne.tick++
+	}
+	return out
+}
+
+// rtcmOutTarget requests RTCM MSM4 + ARP output and nothing else - the
+// invocation shape that exposed the lazy-poll defect. The enabled RTCM
+// targets are invisible to the rate estimator (a separate processor), so
+// only the as-found NMEA traffic can resolve the native rate.
+func rtcmOutTarget() *gpsprot.ConfigTarget {
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgARP)
+	return target
+}
+
+// tau1302Ver is a 1Hz-native, RTCM-capable unit (HD9310), for the 1Hz
+// leg of the lazy-poll test - the TAU1201 identity does not claim RTCM.
+func tau1302Ver() *asbin.MonVer {
+	return &asbin.MonVer{
+		SwVersion: z16("3.018.f3667a12"),
+		HwVersion: z16("HD9310.92257eed4"),
+	}
+}
+
+// configureLazyNMEA runs the director loop against a receiver whose only
+// visible traffic is as-found NMEA fed straight to the ConfigProtocol's
+// HandledNativeMsg (exactly as the nmea processor does for a consumed
+// time-bearing sentence). It seeds ONE arrival before configuring so the
+// query-phase eager poll cannot qualify, and steps each wait in small
+// increments so a request queued mid-wait - the lazy poll - is
+// transmitted and answered before the watch deadline, the way the real
+// driver reacts to every packet.
+func configureLazyNMEA(t *testing.T, cp *ConfigProtocol, rcvr *testReceiver, target *gpsprot.ConfigTarget, em *nmeaEmitter) (*Configurator, int) {
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
+	pp.SetNativeMsgHandler(cp)
+	cfgI, err := cp.Configure(target)
+	if err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+	cfg := cfgI.(*Configurator)
+	director := gpsprot.NewConfigDirector(cfg, 2)
+	t0 := time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC)
+	em.start = t0
+	feed := func(now time.Time) {
+		for _, sen := range em.due(t, now) {
+			if err := cp.HandledNativeMsg(nmea.Tag, sen.AddressField(), sen, now); err != nil {
+				t.Fatalf("HandledNativeMsg(emit): %v", err)
+			}
+			director.ValidPacketReceived(now)
+		}
+	}
+	feed(t0) // one pre-seed arrival: too little for sawPeriodic
+	const step = 250 * time.Millisecond
+	for action := range director.Actions() {
+		switch action.Type {
+		case gpsprot.ConfigActionSendRequest:
+			t0 = t0.Add(10 * time.Millisecond)
+			feed(t0)
+			cfg.Request(action.Index).SetSentTime(t0)
+			for _, resp := range append(rcvr.respond(action.Packet), rcvr.takePending()...) {
+				t0 = t0.Add(5 * time.Millisecond)
+				if _, err := pp.ProcessPacket(string(resp), t0); err != nil {
+					t.Fatalf("ProcessPacket: %v", err)
+				}
+				director.ValidPacketReceived(t0)
+			}
+			feed(t0)
+		case gpsprot.ConfigActionWaitUntil:
+			if next := t0.Add(step); next.Before(action.Deadline) {
+				t0 = next
+			} else {
+				t0 = action.Deadline.Add(time.Millisecond)
+			}
+			feed(t0)
+			director.AdvanceTimeTo(t0)
+		}
+	}
+	return cfg, director.ErrorCount
+}
+
+func TestRateLazyPollRTCMOut5Hz(t *testing.T) {
+	// The hardware failure: a 5Hz-native unit (RMC stored at divisor 5, so
+	// NMEA flows at 1Hz) configured for RTCM MSM4+ARP output only. NMEA is
+	// left alone and keeps flowing, but the enabled RTCM targets are
+	// invisible to the estimator. Only one NMEA epoch precedes the resolve
+	// phase, so the eager poll never qualifies and the enables are deferred
+	// then sent at rate=1 (the silent path). The lazy poll fires on the
+	// second NMEA arrival, its 4-byte readback (R=5) pairs with the observed
+	// 1000ms interval to resolve native=5, and the deferred RTCM enables are
+	// corrected to rate=5 - so RTCM emits at 1Hz, not 5Hz.
+	rcvr := &testReceiver{monVer: tau951mVer(), fourByteCfgMsg: true,
+		rates: map[asbin.MsgID]uint8{asbin.NmeaRmcID: 5}}
+	cp := probe(t, rcvr)
+	em := &nmeaEmitter{}
+	cfg, errCount := configureLazyNMEA(t, cp, rcvr, rtcmOutTarget(), em)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if !cfg.ratePollSent || !cp.est.tracks[asbin.NmeaRmcID].hasPoll {
+		t.Errorf("lazy poll did not go out and get answered: ratePollSent=%v hasPoll=%v",
+			cfg.ratePollSent, cp.est.tracks[asbin.NmeaRmcID].hasPoll)
+	}
+	if cp.est.nativeHz != 5 {
+		t.Errorf("nativeHz = %d, want 5", cp.est.nativeHz)
+	}
+	if rcvr.rates[asbin.RtcmMsm4GpsID] != 5 || rcvr.rates[asbin.RtcmArpID] != 5 {
+		t.Errorf("RTCM rates MSM4=%d ARP=%d, want 5 (corrected)",
+			rcvr.rates[asbin.RtcmMsm4GpsID], rcvr.rates[asbin.RtcmArpID])
+	}
+}
+
+func TestRateLazyPollRTCMOut1Hz(t *testing.T) {
+	// The same shape on a 1Hz unit (RMC stored at divisor 1): the lazy poll
+	// resolves native=1, and because the deferred enables were already sent
+	// at rate=1 the correction is a no-op - no re-issue. RTCM stays at
+	// rate=1, correct for a 1Hz unit.
+	rcvr := &testReceiver{monVer: tau1302Ver(),
+		rates: map[asbin.MsgID]uint8{asbin.NmeaRmcID: 1}}
+	cp := probe(t, rcvr)
+	em := &nmeaEmitter{}
+	cfg, errCount := configureLazyNMEA(t, cp, rcvr, rtcmOutTarget(), em)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if !cfg.ratePollSent || !cp.est.tracks[asbin.NmeaRmcID].hasPoll {
+		t.Errorf("lazy poll did not go out and get answered: ratePollSent=%v hasPoll=%v",
+			cfg.ratePollSent, cp.est.tracks[asbin.NmeaRmcID].hasPoll)
+	}
+	if cp.est.nativeHz != 1 {
+		t.Errorf("nativeHz = %d, want 1", cp.est.nativeHz)
+	}
+	if rcvr.rates[asbin.RtcmMsm4GpsID] != 1 {
+		t.Errorf("RTCM MSM4 rate = %d, want 1", rcvr.rates[asbin.RtcmMsm4GpsID])
+	}
+	if n := countCfgMsgSets(rcvr, asbin.RtcmMsm4GpsID); n != 1 {
+		t.Errorf("RTCM MSM4 was set %d times, want 1 (no rate correction on a 1Hz unit)", n)
+	}
+}
+
+// countCfgMsgSets counts how many CFG-MSG sets of mid the receiver saw.
+func countCfgMsgSets(rcvr *testReceiver, mid asbin.MsgID) int {
+	n := 0
+	for _, m := range rcvr.msgSets {
+		if m == mid {
+			n++
+		}
+	}
+	return n
 }
