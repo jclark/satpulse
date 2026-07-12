@@ -438,6 +438,71 @@ func TestNVMOps(t *testing.T) {
 	}
 }
 
+// resetReq returns the SIMPLERST request queued by cfg, or nil.
+func resetReq(cfg *Configurator) *asReq {
+	for _, req := range cfg.reqs {
+		if req.mid == asbin.CfgSimpleRstID {
+			return req
+		}
+	}
+	return nil
+}
+
+func TestNVMSaveGatesReset(t *testing.T) {
+	t.Run("ordering", func(t *testing.T) {
+		// The reset must wait for the save's ACK: it is not even generated
+		// (let alone ready) while the save is still outstanding, and it
+		// becomes ready only once the save has been acknowledged.
+		target := &gpsprot.ConfigTarget{}
+		target.Opts.Save = gpsprot.SaveAll
+		target.Opts.Reset = gpsprot.ResetReload
+		cfg := newConfigurator(target, tau1201Ver(), newRateEstimator())
+		if err := cfg.GenerateRequests(); err != nil {
+			t.Fatalf("GenerateRequests: %v", err)
+		}
+		save := cfg.saveReq
+		if save == nil {
+			t.Fatal("save request not generated")
+		}
+		if resetReq(cfg) != nil {
+			t.Fatal("reset generated before the save was acknowledged")
+		}
+		t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		save.SetSentTime(t0)
+		cfg.handleAck(asbin.CfgCfgID, true, t0)
+		if save.state != reqSucceeded {
+			t.Fatalf("save state = %v, want succeeded", save.state)
+		}
+		if err := cfg.GenerateRequests(); err != nil {
+			t.Fatalf("GenerateRequests: %v", err)
+		}
+		rst := resetReq(cfg)
+		if rst == nil {
+			t.Fatal("reset not generated after the save ACK")
+		}
+		if rst.GetState() != gpsprot.ConfigRequestReadyToSend {
+			t.Errorf("reset state = %v, want ReadyToSend", rst.GetState())
+		}
+	})
+	t.Run("save_nak_suppresses_reset", func(t *testing.T) {
+		// A refused save reports its error and the paired reset is not
+		// sent, so the reset cannot discard the unsaved changes.
+		rcvr := &testReceiver{monVer: tau1201Ver(),
+			naks: map[asbin.MsgID]bool{asbin.CfgCfgID: true}}
+		cp := probe(t, rcvr)
+		target := &gpsprot.ConfigTarget{}
+		target.Opts.Save = gpsprot.SaveAll
+		target.Opts.Reset = gpsprot.ResetReload
+		_, errCount := configure(t, cp, rcvr, target)
+		if errCount != 1 {
+			t.Errorf("ErrorCount = %d, want 1 (the refused save)", errCount)
+		}
+		if len(rcvr.resets) != 0 {
+			t.Errorf("resets = %v, want none: a failed save must suppress the reset", rcvr.resets)
+		}
+	})
+}
+
 func TestSilentRequestFails(t *testing.T) {
 	// A receiver that never answers a non-optional request exhausts the
 	// director's retries and fails, without hanging.

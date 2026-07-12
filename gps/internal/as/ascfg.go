@@ -42,6 +42,7 @@ type Configurator struct {
 	survey    *asbin.CfgSurvey    // latest CFG-SURVEY readback
 	navSat    *asbin.CfgNavSat    // latest CFG-NAVSAT readback
 	speedReq  *asReq              // the baud change request, when one was generated
+	saveReq   *asReq              // the NVM save request, when one was generated (gates the reset)
 	prt0      *asbin.CfgPrt       // CFG-PRT record 0 readback (show-port)
 	elev      *asbin.CfgElev      // latest CFG-ELEV readback
 	est       *rateEstimator      // native-rate estimator, shared with the ConfigProtocol
@@ -167,8 +168,11 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 // genPhases are the request generation phases, each gated on all
 // earlier requests being final. Message enabling runs before the baud
 // change and the NVM save so that a save persists the message rates
-// and the new rate on the confirmed line; the NVM phase is last so
-// that it persists everything, fallback outcomes included.
+// and the new rate on the confirmed line; the NVM phase runs late so
+// that it persists everything, fallback outcomes included. The reset is
+// a separate final phase so that a save paired with it is ordered: the
+// phase gate holds the reset until the save is final, and a failed save
+// suppresses the reset entirely (see generateResetReqs).
 var genPhases = []func(*Configurator){
 	(*Configurator).generateQueryReqs,
 	(*Configurator).generateSetReqs,
@@ -176,6 +180,7 @@ var genPhases = []func(*Configurator){
 	(*Configurator).generateResolveReqs,
 	(*Configurator).generateSpeedReqs,
 	(*Configurator).generateNVMReqs,
+	(*Configurator).generateResetReqs,
 }
 
 // GenerateRequests generates configuration requests and promotes
@@ -218,33 +223,55 @@ func (c *Configurator) generateSetReqs() {
 	c.generateMinElevSet()
 }
 
-// generateNVMReqs generates the save and reset requests. Reload is
-// realized as a soft reset: CFG-CFG load is acknowledged by every
-// tested unit but actually loads on only one of three, while SIMPLERST
-// mode 0 reloads NVM everywhere, keeps satellite data, and restarts
-// within a second. Neither the resets nor the factory clear are
-// acknowledged (the clear was observed silent for 12 s), so all
-// succeed on send.
+// generateNVMReqs generates the CFG-CFG save request. The save runs in
+// its own phase before the reset so that a paired reset waits for the
+// save's ACK; the request pointer is kept so the reset phase can suppress
+// the reset if the save is refused.
 func (c *Configurator) generateNVMReqs() {
-	opts := &c.target.Opts
-	switch opts.Save {
+	switch c.target.Opts.Save {
 	case gpsprot.SaveAll:
-		c.addReq(&asbin.CfgCfg{Action: asbin.CfgCfgActionSave, Mask: cfgCfgMaskAll})
+		c.saveReq = c.addMsg(&asbin.CfgCfg{Action: asbin.CfgCfgActionSave, Mask: cfgCfgMaskAll}, asReq{})
 	case gpsprot.SaveMinimal:
 		if c.touched != 0 {
-			c.addReq(&asbin.CfgCfg{Action: asbin.CfgCfgActionSave, Mask: c.touched})
+			c.saveReq = c.addMsg(&asbin.CfgCfg{Action: asbin.CfgCfgActionSave, Mask: c.touched}, asReq{})
 		}
 	}
-	switch opts.Reset {
+}
+
+// generateResetReqs generates the reset request, in a phase after the
+// NVM save. The phase gate holds it until the save is final, so the save
+// completes before the reset takes effect; a save that was refused
+// leaves the reset unsent, so a reset never discards running changes its
+// paired save failed to persist. Reload is realized as a soft reset:
+// CFG-CFG load is acknowledged by every tested unit but actually loads
+// on only one of three, while SIMPLERST mode 0 reloads NVM everywhere,
+// keeps satellite data, and restarts within a second. Neither the resets
+// nor the factory clear are acknowledged (the clear was observed silent
+// for 12 s), so all succeed on send. The factory path (clear then cold
+// start) has its own hardware-verified serialization and is not gated on
+// a save.
+func (c *Configurator) generateResetReqs() {
+	switch c.target.Opts.Reset {
 	case gpsprot.ResetReload:
-		c.addRstReq(asbin.CfgSimpleRstModeReset)
+		if !c.saveFailed() {
+			c.addRstReq(asbin.CfgSimpleRstModeReset)
+		}
 	case gpsprot.ResetCold:
-		c.addRstReq(asbin.CfgSimpleRstModeColdStart)
+		if !c.saveFailed() {
+			c.addRstReq(asbin.CfgSimpleRstModeColdStart)
+		}
 	case gpsprot.ResetFactory:
 		m := &asbin.CfgCfg{Action: asbin.CfgCfgActionClear, Mask: asbin.CfgCfgMaskFactoryReset}
 		c.addMsg(m, asReq{noAck: true})
 		c.addRstReq(asbin.CfgSimpleRstModeColdStart)
 	}
+}
+
+// saveFailed reports whether a paired NVM save was requested and refused,
+// which gates the reset off: the save's failure must not be followed by a
+// reset that discards the unsaved changes.
+func (c *Configurator) saveFailed() bool {
+	return c.saveReq != nil && c.saveReq.state == reqFailed
 }
 
 // cfgCfgMaskAll covers every section the save mask selects: baud, NMEA
