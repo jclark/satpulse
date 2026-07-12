@@ -20,8 +20,8 @@
     "rtcmBaseID": {"unsupported": true},
     "rtcmOut": {
       "missing": [
-        {"missing": ["1005", "1074", "1084", "1094", "1124"], "request": ["MSM4", "ARP"]},
-        {"missing": ["1077", "1087", "1097", "1127"], "request": ["MSM7"]}
+        {"missing": ["1005", "1074", "1084", "1094", "1124", "1230"], "request": ["MSM4", "ARP"]},
+        {"missing": ["1077", "1087", "1097", "1127", "1230"], "request": ["MSM7"]}
       ]
     },
     "saveGranularity": {"groups": [["mode", "timePulse.width"]], "unsaved": ["minElevation"]},

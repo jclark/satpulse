@@ -13,10 +13,11 @@ The standard NMEA set (GGA, GSA, GSV, RMC, ZDA) at 1 Hz, saved to
 NVM, everything else as shipped; `setup/tau951m.sh` establishes it.
 The unit is 5 Hz-native and its CFG-MSG rates are divisors of the
 native cycle, so 1 Hz output means stored rate 5 on every sentence.
-A bare rate 1 - which the vendor's own configuration tool plants -
-produces 5 Hz output; one such stray GGA=1 was found persisted in
-this unit's NVM on 2026-07-13 and repaired by the setup invocation
-(the rate estimator computes divisor 5 and the save persists it).
+The unit's FACTORY rate table is inconsistent: GGA is 1 (5 Hz output)
+while GSA/GSV/RMC/ZDA are 5 (1 Hz) - verified 2026-07-13 by factory
+resets reproducibly restoring exactly that split. Any factory reset
+therefore leaves GGA at 5 Hz until the setup script is re-run (the
+rate estimator computes divisor 5 and the save persists it).
 
 ## Signals
 

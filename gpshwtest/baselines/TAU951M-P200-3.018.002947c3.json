@@ -18,6 +18,12 @@
     "mode.height": {"unsupported": true},
     "pvtOut": {"missing": ["leap", "tp"]},
     "rtcmBaseID": {"unsupported": true},
+    "rtcmOut": {
+      "missing": [
+        {"missing": ["1230"], "request": ["MSM4", "ARP"]},
+        {"missing": ["1230"], "request": ["MSM7"]}
+      ]
+    },
     "saveGranularity": {"groups": [["mode", "timePulse.width"]], "unsaved": ["minElevation"]},
     "showPort": {"unsupported": true},
     "signals": {
