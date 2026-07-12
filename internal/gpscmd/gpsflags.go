@@ -275,6 +275,22 @@ func newFlagParser(cmdName string) *flagParser {
 
 func (p *flagParser) resolve(cmdName string, usage func(string) string) (*flagVars, func(string) string, error) {
 	vars := &p.vars
+	if vars.targetJSON != "" {
+		allowed := map[string]bool{
+			"target-json": true, "serial-device": true, "device-speed": true, "socket": true, "config-file": true,
+			"packet-log": true, "test-log": true, "capture": true, "vendor": true, "json": true,
+			"show-receiver": true, "show-config": true, "show-port": true,
+		}
+		var bad string
+		p.flags.Visit(func(f *pflag.Flag) {
+			if bad == "" && !allowed[f.Name] {
+				bad = f.Name
+			}
+		})
+		if bad != "" {
+			return nil, nil, fmt.Errorf("--target-json cannot be combined with --%s", bad)
+		}
+	}
 	if vars.jsonOut && vars.msgFilePath != "" {
 		return nil, nil, fmt.Errorf("--json cannot be combined with --msg-file")
 	}
@@ -290,17 +306,9 @@ func (p *flagParser) resolve(cmdName string, usage func(string) string) (*flagVa
 		return nil, u, err
 	}
 	if vars.targetJSON != "" {
-		for _, name := range []string{
-			"save", "save-all", "reset", "reload", "factory-reset", "nmea", "binary", "speed",
-			"gnss", "band", "signal", "except-signal", "time-gnss", "raw-out", "pvt-out", "rtcm-out", "nmea-out", "sats-out",
-			"pps", "ant-cable-delay", "mobile", "survey", "survey-time", "survey-acc", "fixed-pos-ecef", "fixed-pos-llh", "fixed-pos-acc",
-			"min-elev", "rtcm-base-id", "static", "sys-time-trusted", "osnma", "msg-file", "tag", "port", "show-tags",
-		} {
-			if p.flags.Lookup(name).Changed {
-				return nil, nil, fmt.Errorf("--target-json cannot be combined with --%s", name)
-			}
-		}
 		p.resolveShow()
+		// JSON targets bypass flag-layer capability policy, including the
+		// ConfigSupportPort requirement normally added by --show-port.
 		vars.configSupport = configSupportReq{}
 		return vars, nil, nil
 	}

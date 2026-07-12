@@ -11,6 +11,7 @@ import {
     NMEAMsgRMC,
     PVTMsgPos, PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgSurvey, PVTMsgQuality, PVTMsgEpoch,
     SatsMsgSat, SatsMsgSignal,
+    SurveyAgain, SaveTypeNames, ResetTypeNames,
 } from './msg-flags';
 import type {ConnState, OperationState} from './app';
 import {Button, Input, Select, ConfigGroup, ConfigSubGroup, fieldLabelText, labeledControlText} from './ui';
@@ -334,7 +335,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                 const dur = surveyTime !== '' ? parseFloat(surveyTime) : 2000;
                 const acc = surveyAcc !== '' ? parseFloat(surveyAcc) : 20;
                 opts.Survey = {
-                    Flags: surveyAgain ? ['again'] : [],
+                    Flags: surveyAgain ? [SurveyAgain] : [],
                     MinDur: dur * 1e9,       // seconds -> nanoseconds
                     AccLimit: acc,
                 };
@@ -380,8 +381,8 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
         if (satsWire !== undefined) opts.SatsMsg = satsWire;
         const rawWire = rawWireValue(rawChange, rawFlags);
         if (rawWire !== undefined) opts.RawMsg = rawWire;
-        if (saveType) opts.Save = ['none', 'minimal', 'all'][saveType];
-        if (resetType) opts.Reset = ['none', 'reload', 'cold', 'factory'][resetType];
+        if (saveType) opts.Save = SaveTypeNames[saveType];
+        if (resetType) opts.Reset = ResetTypeNames[resetType];
         if (speedTouched) props.baudRate = selectedSpeed;
         const cfg: Record<string, any> = {Props: props, Opts: opts};
         setApplying(true);

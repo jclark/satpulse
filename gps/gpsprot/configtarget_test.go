@@ -513,16 +513,17 @@ func TestConfigFlagJSON(t *testing.T) {
 		empty   any
 		one     any
 		all     any
+		unknown any
 		new     func() any
 		oneJSON string
 		allJSON string
 	}{
-		{"NMEAMsgFlags", NMEAMsgFlags(0), NMEAMsgGGA, NMEAMsgAny, func() any { return new(NMEAMsgFlags) }, `["GGA"]`, `["RMC","GGA","GSA","GSV","ZDA","VTG","GLL","other"]`},
-		{"RTCMMsgFlags", RTCMMsgFlags(0), RTCMMsgMSM7, RTCMMsgMSM4 | RTCMMsgMSM7 | RTCMMsgARP | RTCMMsgLax | RTCMMsgOther, func() any { return new(RTCMMsgFlags) }, `["MSM7"]`, `["MSM4","MSM7","ARP","lax","other"]`},
-		{"PVTMsgFlags", PVTMsgFlags(0), PVTMsgTimePulseAfter, PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond | PVTMsgSurvey | PVTMsgTAI | PVTMsgECEF | PVTMsgTimePulseAfter | PVTMsgQuality | PVTMsgEpoch | PVTMsgOff, func() any { return new(PVTMsgFlags) }, `["timePulseAfter"]`, `["pos","vel","time","timePulse","leapSecond","survey","tai","ecef","timePulseAfter","quality","epoch","off"]`},
-		{"SatsMsgFlags", SatsMsgFlags(0), SatsMsgSignal, SatsMsgAny, func() any { return new(SatsMsgFlags) }, `["signal"]`, `["sat","signal"]`},
-		{"RawMsgFlags", RawMsgFlags(0), RawMsgNavData, RawMsgAny, func() any { return new(RawMsgFlags) }, `["navData"]`, `["obs","navData"]`},
-		{"SurveyFlags", SurveyFlags(0), SurveyAgain, SurveyAgain, func() any { return new(SurveyFlags) }, `["again"]`, `["again"]`},
+		{"NMEAMsgFlags", NMEAMsgFlags(0), NMEAMsgGGA, NMEAMsgAny, NMEAMsgFlags(1 << 14), func() any { return new(NMEAMsgFlags) }, `["GGA"]`, `["RMC","GGA","GSA","GSV","ZDA","VTG","GLL","other"]`},
+		{"RTCMMsgFlags", RTCMMsgFlags(0), RTCMMsgMSM7, RTCMMsgMSM4 | RTCMMsgMSM7 | RTCMMsgARP | RTCMMsgLax | RTCMMsgOther, RTCMMsgFlags(1 << 1), func() any { return new(RTCMMsgFlags) }, `["MSM7"]`, `["MSM4","MSM7","ARP","lax","other"]`},
+		{"PVTMsgFlags", PVTMsgFlags(0), PVTMsgTimePulseAfter, PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond | PVTMsgSurvey | PVTMsgTAI | PVTMsgECEF | PVTMsgTimePulseAfter | PVTMsgQuality | PVTMsgEpoch | PVTMsgOff, PVTMsgFlags(1 << 15), func() any { return new(PVTMsgFlags) }, `["timePulseAfter"]`, `["pos","vel","time","timePulse","leapSecond","survey","tai","ecef","timePulseAfter","quality","epoch","off"]`},
+		{"SatsMsgFlags", SatsMsgFlags(0), SatsMsgSignal, SatsMsgAny, SatsMsgFlags(1 << 7), func() any { return new(SatsMsgFlags) }, `["signal"]`, `["sat","signal"]`},
+		{"RawMsgFlags", RawMsgFlags(0), RawMsgNavData, RawMsgAny, RawMsgFlags(1 << 7), func() any { return new(RawMsgFlags) }, `["navData"]`, `["obs","navData"]`},
+		{"SurveyFlags", SurveyFlags(0), SurveyAgain, SurveyAgain, SurveyFlags(1 << 1), func() any { return new(SurveyFlags) }, `["again"]`, `["again"]`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -554,6 +555,9 @@ func TestConfigFlagJSON(t *testing.T) {
 			}
 			if err := json.Unmarshal([]byte(`["unknown"]`), tc.new()); err == nil {
 				t.Error("unknown name did not return an error")
+			}
+			if _, err := json.Marshal(tc.unknown); err == nil {
+				t.Error("unknown bit did not return an error")
 			}
 		})
 	}

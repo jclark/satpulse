@@ -114,6 +114,65 @@ func TestCreateConfigTargetJSON(t *testing.T) {
 	}
 }
 
+func TestCreateConfigTargetJSONNoOp(t *testing.T) {
+	target, err := createConfigTarget(&flagVars{targetJSON: `{}`})
+	if err != nil {
+		t.Fatalf("createConfigTarget: %v", err)
+	}
+	if target == nil || !target.Opts.ForceProbe {
+		t.Errorf("target = %+v, want force-probe target", target)
+	}
+}
+
+func TestCreateConfigTargetJSONStdin(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdin := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		r.Close()
+	})
+	if _, err := w.WriteString(`{"Get":["baudRate"]}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	target, err := createConfigTarget(&flagVars{targetJSON: "-"})
+	if err != nil {
+		t.Fatalf("createConfigTarget: %v", err)
+	}
+	if target.Get != gpsprot.PropIDBaudRate {
+		t.Errorf("Get = %v, want baudRate", target.Get)
+	}
+}
+
+func TestCreateConfigTargetJSONTrailingData(t *testing.T) {
+	for _, s := range []string{`{} {}`, `{} trailing`} {
+		if _, err := createConfigTarget(&flagVars{targetJSON: s}); err == nil {
+			t.Errorf("createConfigTarget(%q) succeeded, want error", s)
+		}
+	}
+}
+
+func TestCreateConfigTargetJSONMergesGet(t *testing.T) {
+	v, _, err := parseFlags("gps", []string{"-d", "/dev/ttyACM0", "--target-json", `{"Get":["baudRate"]}`, "--show-config"})
+	if err != nil {
+		t.Fatalf("parseFlags: %v", err)
+	}
+	target, err := createConfigTarget(v)
+	if err != nil {
+		t.Fatalf("createConfigTarget: %v", err)
+	}
+	want := showProps | gpsprot.PropIDBaudRate
+	if target.Get != want {
+		t.Errorf("Get = %v, want %v", target.Get, want)
+	}
+}
+
 func TestCreateConfigTargetJSONUnknownField(t *testing.T) {
 	for _, s := range []string{
 		`{"Unknown":true}`,
@@ -152,6 +211,16 @@ func TestTargetJSONConfigFlagExclusive(t *testing.T) {
 		t.Fatal("parseFlags succeeded, want error")
 	}
 	if !strings.Contains(err.Error(), "--target-json cannot be combined with --gnss") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestTargetJSONShowTagsExclusive(t *testing.T) {
+	_, _, err := parseFlags("gps", []string{"--target-json", `{}`, "--msg-file", "messages.toml", "--show-tags"})
+	if err == nil {
+		t.Fatal("parseFlags succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "--target-json cannot be combined with --msg-file") {
 		t.Errorf("unexpected error: %v", err)
 	}
 }

@@ -46,8 +46,15 @@ export const RawMsgObs = 'obs';
 export const RawMsgNavData = 'navData';
 export const RawMsgNames = [RawMsgObs, RawMsgNavData] as const;
 
+// Survey, save and reset
+export const SurveyAgain = 'again';
+export const SaveTypeNames = ['none', 'minimal', 'all'] as const;
+export const ResetTypeNames = ['none', 'reload', 'cold', 'factory'] as const;
+
 export function msgFlag(name: string, names: readonly string[]): number {
-    return 1 << names.indexOf(name);
+    const i = names.indexOf(name);
+    if (i < 0) throw new Error(`unknown message flag name: ${name}`);
+    return 1 << i;
 }
 
 export function msgFlagNames(flags: number, names: readonly string[]): string[] {

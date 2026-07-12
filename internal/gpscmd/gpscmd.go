@@ -140,7 +140,7 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		cp.SetBaudRate(v.baudRate.Get())
 	}
 	// If nothing requires the configurator, return nil (passive capture mode)
-	if !v.showReceiver && target.NoOp() {
+	if v.targetJSON == "" && !v.showReceiver && target.NoOp() {
 		return nil, nil
 	}
 	if v.socketPath != "" {
