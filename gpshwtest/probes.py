@@ -83,6 +83,19 @@ def wire_flags(case: list[str]) -> list[str]:
     return [t for t in case if t != "none"]
 
 
+def rtcm_restore_flags(initial: list[str]) -> list[str]:
+    """The RTCM request flags that reproduce an observed initial type set:
+    MSM4/MSM7 from the observed MSM numbers, ARP from an observed 1005."""
+    want = []
+    if any(t.startswith("1") and t.endswith("4") for t in initial):
+        want.append("MSM4")
+    if any(t.startswith("1") and t.endswith("7") for t in initial):
+        want.append("MSM7")
+    if "1005" in initial:
+        want.append("ARP")
+    return want
+
+
 def msg_flags(case: list[str], table: dict[str, str]) -> list[str]:
     """The JSON message flags for a semantic (PVT/sats/raw) probe case,
     translating the CLI content tokens the cases use to their configtarget.go
@@ -987,10 +1000,14 @@ class ProbeRun:
             steps = [("restore-binary-mode",
                       {"NMEAMsg": [], "PVTMsg": ["pos", "time"]})]
         else:
-            # --nmea then the exact sentence set, as the flag layer's --nmea
-            # does.
+            # --nmea then the exact sentence set - except that the initial
+            # RTCM selection rides in the protocol switch where the flag
+            # layer's --nmea unconditionally turns RTCM off: zeroing it here
+            # would undo the restore probe_rtcm already verified, which is
+            # exactly what happened on receivers found emitting RTCM. The
+            # CLI cannot spell "NMEA mode with the RTCM kept"; the model can.
             steps = [("restore-nmea-mode",
-                      {"NMEAMsg": ["RMC"], "RTCMMsg": [],
+                      {"NMEAMsg": ["RMC"], "RTCMMsg": rtcm_restore_flags(rtcm_set(base)),
                        "PVTMsg": ["off"], "RawMsg": [], "SatsMsg": []}),
                      ("restore-nmea-types", {"NMEAMsg": base_nmea})]
         for name, opts in steps:
