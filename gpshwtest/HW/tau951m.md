@@ -7,6 +7,17 @@ model (`SEMANTICS.md`). Measured on firmware 3.018.2acec91c
 listed. This is the RTK member of the trio; its signal plan equals the
 TAU1201's.
 
+## Starting state
+
+The standard NMEA set (GGA, GSA, GSV, RMC, ZDA) at 1 Hz, saved to
+NVM, everything else as shipped; `setup/tau951m.sh` establishes it.
+The unit is 5 Hz-native and its CFG-MSG rates are divisors of the
+native cycle, so 1 Hz output means stored rate 5 on every sentence.
+A bare rate 1 - which the vendor's own configuration tool plants -
+produces 5 Hz output; one such stray GGA=1 was found persisted in
+this unit's NVM on 2026-07-13 and repaired by the setup invocation
+(the rate estimator computes divisor 5 and the save persists it).
+
 ## Signals
 
 Supported signal set (L1/L5 dual band, identical to the TAU1201):
