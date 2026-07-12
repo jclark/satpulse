@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/internal/spartn"
 	"github.com/jclark/satpulse/gps/internal/ubx"
@@ -325,6 +326,24 @@ var prtOutProt = map[ucv.Port]prtProto{
 	ucv.UART2: {ucv.KUart2outprotUbx, ucv.KUart2outprotNmea, ucv.KUart2outprotRtcm3x},
 	ucv.USB:   {ucv.KUsboutprotUbx, ucv.KUsboutprotNmea, ucv.KUsboutprotRtcm3x},
 	ucv.SPI:   {ucv.KSpioutprotUbx, ucv.KSpioutprotNmea, ucv.KSpioutprotRtcm3x},
+}
+
+// outProtKey returns the port's OUTPROT key for the protocol tag names,
+// and whether the port gates that protocol.
+func outProtKey(port ucv.Port, tag gpsprot.Tag) (ucv.KeyL, bool) {
+	p, ok := prtOutProt[port]
+	if !ok {
+		return 0, false
+	}
+	switch tag {
+	case ubx.Tag:
+		return p.ubx, true
+	case nmea.Tag:
+		return p.nmea, true
+	case rtcm.Tag:
+		return p.rtcm3, true
+	}
+	return 0, false
 }
 
 func (s *Sim) writeAckNak(ctx context.Context, w *writer, mid ubxbin.MsgID, ack bool) error {
