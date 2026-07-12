@@ -26,8 +26,9 @@ SIM_REPLAY = "gps/testdata/packets/u-blox/ZED-F9P/daemon-sats-pos-38400.jsonl"
 # an integer nanosecond count).
 CABLE_DELAY_NS = 12000
 # Opts.SatsMsg wire value: satellite positions (NAV-SAT) plus signals (NAV-SIG),
-# the same numeric flag the config panel sends (SatsMsgSat | SatsMsgSignal).
-SATS_MSG = 3
+# the same flag names the config panel sends (SatsMsgFlags marshals as an array
+# of names).
+SATS_MSG = ["sat", "signal"]
 
 
 def run(ctx: common.SmokeContext) -> None:
