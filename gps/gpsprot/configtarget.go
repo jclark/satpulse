@@ -153,6 +153,53 @@ func (t *ResetType) UnmarshalText(text []byte) error {
 	return fmt.Errorf("unknown reset type %q", text)
 }
 
+type jsonFlagType interface {
+	~int | ~uint8 | ~uint16
+}
+
+type jsonFlag[T jsonFlagType] struct {
+	name string
+	flag T
+}
+
+func marshalJSONFlags[T jsonFlagType](f T, table []jsonFlag[T], kind string) ([]byte, error) {
+	names := make([]string, 0)
+	var covered T
+	for _, e := range table {
+		covered |= e.flag
+		if f&e.flag != 0 {
+			names = append(names, e.name)
+		}
+	}
+	if unknown := f &^ covered; unknown != 0 {
+		return nil, fmt.Errorf("unknown %s flags 0x%x", kind, unknown)
+	}
+	return json.Marshal(names)
+}
+
+func unmarshalJSONFlags[T jsonFlagType](data []byte, f *T, table []jsonFlag[T], kind string) error {
+	var names []string
+	if err := json.Unmarshal(data, &names); err != nil {
+		return err
+	}
+	var flags T
+	for _, name := range names {
+		found := false
+		for _, e := range table {
+			if name == e.name {
+				flags |= e.flag
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("unknown %s flag %q", kind, name)
+		}
+	}
+	*f = flags
+	return nil
+}
+
 // PVTMsgFlags says what messages relating to Position, Velocity, and Time are wanted.
 // The PVTMsgOff option says to turn off PVT messages that are not enabled.
 // This makes PVTMsgFlags different from the other message flags,
@@ -177,56 +224,29 @@ const (
 
 const PVTMsgAny PVTMsgFlags = PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond | PVTMsgSurvey | PVTMsgQuality | PVTMsgEpoch // any message (not option)
 
-var pvtMsgJSON = map[string]PVTMsgFlags{
-	"pos":            PVTMsgPos,
-	"vel":            PVTMsgVel,
-	"time":           PVTMsgTime,
-	"timePulse":      PVTMsgTimePulse,
-	"leapSecond":     PVTMsgLeapSecond,
-	"survey":         PVTMsgSurvey,
-	"tai":            PVTMsgTAI,
-	"ecef":           PVTMsgECEF,
-	"timePulseAfter": PVTMsgTimePulseAfter,
-	"quality":        PVTMsgQuality,
-	"epoch":          PVTMsgEpoch,
-	"off":            PVTMsgOff,
+var pvtMsgJSON = []jsonFlag[PVTMsgFlags]{
+	{"pos", PVTMsgPos},
+	{"vel", PVTMsgVel},
+	{"time", PVTMsgTime},
+	{"timePulse", PVTMsgTimePulse},
+	{"leapSecond", PVTMsgLeapSecond},
+	{"survey", PVTMsgSurvey},
+	{"tai", PVTMsgTAI},
+	{"ecef", PVTMsgECEF},
+	{"timePulseAfter", PVTMsgTimePulseAfter},
+	{"quality", PVTMsgQuality},
+	{"epoch", PVTMsgEpoch},
+	{"off", PVTMsgOff},
 }
-
-var pvtMsgJSONNames = []string{"pos", "vel", "time", "timePulse", "leapSecond", "survey", "tai", "ecef", "timePulseAfter", "quality", "epoch", "off"}
 
 // MarshalJSON marshals PVTMsgFlags as an array of names.
 func (f PVTMsgFlags) MarshalJSON() ([]byte, error) {
-	names := make([]string, 0)
-	var covered PVTMsgFlags
-	for _, name := range pvtMsgJSONNames {
-		flag := pvtMsgJSON[name]
-		covered |= flag
-		if f&flag != 0 {
-			names = append(names, name)
-		}
-	}
-	if unknown := f &^ covered; unknown != 0 {
-		return nil, fmt.Errorf("unknown PVT message flags 0x%x", unknown)
-	}
-	return json.Marshal(names)
+	return marshalJSONFlags(f, pvtMsgJSON, "PVT message")
 }
 
 // UnmarshalJSON unmarshals PVTMsgFlags from an array of names.
 func (f *PVTMsgFlags) UnmarshalJSON(data []byte) error {
-	var names []string
-	if err := json.Unmarshal(data, &names); err != nil {
-		return err
-	}
-	var flags PVTMsgFlags
-	for _, name := range names {
-		flag, ok := pvtMsgJSON[name]
-		if !ok {
-			return fmt.Errorf("unknown PVT message flag %q", name)
-		}
-		flags |= flag
-	}
-	*f = flags
-	return nil
+	return unmarshalJSONFlags(data, f, pvtMsgJSON, "PVT message")
 }
 
 // PVTMsgTimingPTP is the PVT message set required to drive a PTP
@@ -269,46 +289,19 @@ const (
 	SatsMsgAny    SatsMsgFlags = SatsMsgSat | SatsMsgSignal // any message (not flag)
 )
 
-var satsMsgJSON = map[string]SatsMsgFlags{
-	"sat":    SatsMsgSat,
-	"signal": SatsMsgSignal,
+var satsMsgJSON = []jsonFlag[SatsMsgFlags]{
+	{"sat", SatsMsgSat},
+	{"signal", SatsMsgSignal},
 }
-
-var satsMsgJSONNames = []string{"sat", "signal"}
 
 // MarshalJSON marshals SatsMsgFlags as an array of names.
 func (f SatsMsgFlags) MarshalJSON() ([]byte, error) {
-	names := make([]string, 0)
-	var covered SatsMsgFlags
-	for _, name := range satsMsgJSONNames {
-		flag := satsMsgJSON[name]
-		covered |= flag
-		if f&flag != 0 {
-			names = append(names, name)
-		}
-	}
-	if unknown := f &^ covered; unknown != 0 {
-		return nil, fmt.Errorf("unknown satellite message flags 0x%x", unknown)
-	}
-	return json.Marshal(names)
+	return marshalJSONFlags(f, satsMsgJSON, "satellite message")
 }
 
 // UnmarshalJSON unmarshals SatsMsgFlags from an array of names.
 func (f *SatsMsgFlags) UnmarshalJSON(data []byte) error {
-	var names []string
-	if err := json.Unmarshal(data, &names); err != nil {
-		return err
-	}
-	var flags SatsMsgFlags
-	for _, name := range names {
-		flag, ok := satsMsgJSON[name]
-		if !ok {
-			return fmt.Errorf("unknown satellite message flag %q", name)
-		}
-		flags |= flag
-	}
-	*f = flags
-	return nil
+	return unmarshalJSONFlags(data, f, satsMsgJSON, "satellite message")
 }
 
 type NMEAMsgFlags uint16
@@ -327,52 +320,25 @@ const (
 	NMEAMsgAny  NMEAMsgFlags = NMEAMsgRMC | NMEAMsgGGA | NMEAMsgGSA | NMEAMsgGSV | NMEAMsgZDA | NMEAMsgVTG | NMEAMsgGLL | NMEAMsgOther // any message (not flag)
 )
 
-var nmeaMsgJSON = map[string]NMEAMsgFlags{
-	"RMC":   NMEAMsgRMC,
-	"GGA":   NMEAMsgGGA,
-	"GSA":   NMEAMsgGSA,
-	"GSV":   NMEAMsgGSV,
-	"ZDA":   NMEAMsgZDA,
-	"VTG":   NMEAMsgVTG,
-	"GLL":   NMEAMsgGLL,
-	"other": NMEAMsgOther,
+var nmeaMsgJSON = []jsonFlag[NMEAMsgFlags]{
+	{"RMC", NMEAMsgRMC},
+	{"GGA", NMEAMsgGGA},
+	{"GSA", NMEAMsgGSA},
+	{"GSV", NMEAMsgGSV},
+	{"ZDA", NMEAMsgZDA},
+	{"VTG", NMEAMsgVTG},
+	{"GLL", NMEAMsgGLL},
+	{"other", NMEAMsgOther},
 }
-
-var nmeaMsgJSONNames = []string{"RMC", "GGA", "GSA", "GSV", "ZDA", "VTG", "GLL", "other"}
 
 // MarshalJSON marshals NMEAMsgFlags as an array of names.
 func (f NMEAMsgFlags) MarshalJSON() ([]byte, error) {
-	names := make([]string, 0)
-	var covered NMEAMsgFlags
-	for _, name := range nmeaMsgJSONNames {
-		flag := nmeaMsgJSON[name]
-		covered |= flag
-		if f&flag != 0 {
-			names = append(names, name)
-		}
-	}
-	if unknown := f &^ covered; unknown != 0 {
-		return nil, fmt.Errorf("unknown NMEA message flags 0x%x", unknown)
-	}
-	return json.Marshal(names)
+	return marshalJSONFlags(f, nmeaMsgJSON, "NMEA message")
 }
 
 // UnmarshalJSON unmarshals NMEAMsgFlags from an array of names.
 func (f *NMEAMsgFlags) UnmarshalJSON(data []byte) error {
-	var names []string
-	if err := json.Unmarshal(data, &names); err != nil {
-		return err
-	}
-	var flags NMEAMsgFlags
-	for _, name := range names {
-		flag, ok := nmeaMsgJSON[name]
-		if !ok {
-			return fmt.Errorf("unknown NMEA message flag %q", name)
-		}
-		flags |= flag
-	}
-	*f = flags
-	return nil
+	return unmarshalJSONFlags(data, f, nmeaMsgJSON, "NMEA message")
 }
 
 type RTCMMsgFlags uint16
@@ -392,49 +358,22 @@ const (
 	RTCMMsgAny      RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgMSM7 | RTCMMsgARP | RTCMMsgOther // any message (not flag)
 )
 
-var rtcmMsgJSON = map[string]RTCMMsgFlags{
-	"MSM4":  RTCMMsgMSM4,
-	"MSM7":  RTCMMsgMSM7,
-	"ARP":   RTCMMsgARP,
-	"lax":   RTCMMsgLax,
-	"other": RTCMMsgOther,
+var rtcmMsgJSON = []jsonFlag[RTCMMsgFlags]{
+	{"MSM4", RTCMMsgMSM4},
+	{"MSM7", RTCMMsgMSM7},
+	{"ARP", RTCMMsgARP},
+	{"lax", RTCMMsgLax},
+	{"other", RTCMMsgOther},
 }
-
-var rtcmMsgJSONNames = []string{"MSM4", "MSM7", "ARP", "lax", "other"}
 
 // MarshalJSON marshals RTCMMsgFlags as an array of names.
 func (f RTCMMsgFlags) MarshalJSON() ([]byte, error) {
-	names := make([]string, 0)
-	var covered RTCMMsgFlags
-	for _, name := range rtcmMsgJSONNames {
-		flag := rtcmMsgJSON[name]
-		covered |= flag
-		if f&flag != 0 {
-			names = append(names, name)
-		}
-	}
-	if unknown := f &^ covered; unknown != 0 {
-		return nil, fmt.Errorf("unknown RTCM message flags 0x%x", unknown)
-	}
-	return json.Marshal(names)
+	return marshalJSONFlags(f, rtcmMsgJSON, "RTCM message")
 }
 
 // UnmarshalJSON unmarshals RTCMMsgFlags from an array of names.
 func (f *RTCMMsgFlags) UnmarshalJSON(data []byte) error {
-	var names []string
-	if err := json.Unmarshal(data, &names); err != nil {
-		return err
-	}
-	var flags RTCMMsgFlags
-	for _, name := range names {
-		flag, ok := rtcmMsgJSON[name]
-		if !ok {
-			return fmt.Errorf("unknown RTCM message flag %q", name)
-		}
-		flags |= flag
-	}
-	*f = flags
-	return nil
+	return unmarshalJSONFlags(data, f, rtcmMsgJSON, "RTCM message")
 }
 
 type RawMsgFlags uint8
@@ -446,46 +385,19 @@ const (
 	RawMsgAny     RawMsgFlags = RawMsgObs | RawMsgNavData // any message (not flag)
 )
 
-var rawMsgJSON = map[string]RawMsgFlags{
-	"obs":     RawMsgObs,
-	"navData": RawMsgNavData,
+var rawMsgJSON = []jsonFlag[RawMsgFlags]{
+	{"obs", RawMsgObs},
+	{"navData", RawMsgNavData},
 }
-
-var rawMsgJSONNames = []string{"obs", "navData"}
 
 // MarshalJSON marshals RawMsgFlags as an array of names.
 func (f RawMsgFlags) MarshalJSON() ([]byte, error) {
-	names := make([]string, 0)
-	var covered RawMsgFlags
-	for _, name := range rawMsgJSONNames {
-		flag := rawMsgJSON[name]
-		covered |= flag
-		if f&flag != 0 {
-			names = append(names, name)
-		}
-	}
-	if unknown := f &^ covered; unknown != 0 {
-		return nil, fmt.Errorf("unknown raw message flags 0x%x", unknown)
-	}
-	return json.Marshal(names)
+	return marshalJSONFlags(f, rawMsgJSON, "raw message")
 }
 
 // UnmarshalJSON unmarshals RawMsgFlags from an array of names.
 func (f *RawMsgFlags) UnmarshalJSON(data []byte) error {
-	var names []string
-	if err := json.Unmarshal(data, &names); err != nil {
-		return err
-	}
-	var flags RawMsgFlags
-	for _, name := range names {
-		flag, ok := rawMsgJSON[name]
-		if !ok {
-			return fmt.Errorf("unknown raw message flag %q", name)
-		}
-		flags |= flag
-	}
-	*f = flags
-	return nil
+	return unmarshalJSONFlags(data, f, rawMsgJSON, "raw message")
 }
 
 type ConfigOptions struct {
@@ -1278,45 +1190,18 @@ const (
 	SurveyAgain SurveyFlags = 1 << iota // do a survey even if we have done one already
 )
 
-var surveyJSON = map[string]SurveyFlags{
-	"again": SurveyAgain,
+var surveyJSON = []jsonFlag[SurveyFlags]{
+	{"again", SurveyAgain},
 }
-
-var surveyJSONNames = []string{"again"}
 
 // MarshalJSON marshals SurveyFlags as an array of names.
 func (f SurveyFlags) MarshalJSON() ([]byte, error) {
-	names := make([]string, 0)
-	var covered SurveyFlags
-	for _, name := range surveyJSONNames {
-		flag := surveyJSON[name]
-		covered |= flag
-		if f&flag != 0 {
-			names = append(names, name)
-		}
-	}
-	if unknown := f &^ covered; unknown != 0 {
-		return nil, fmt.Errorf("unknown survey flags 0x%x", unknown)
-	}
-	return json.Marshal(names)
+	return marshalJSONFlags(f, surveyJSON, "survey")
 }
 
 // UnmarshalJSON unmarshals SurveyFlags from an array of names.
 func (f *SurveyFlags) UnmarshalJSON(data []byte) error {
-	var names []string
-	if err := json.Unmarshal(data, &names); err != nil {
-		return err
-	}
-	var flags SurveyFlags
-	for _, name := range names {
-		flag, ok := surveyJSON[name]
-		if !ok {
-			return fmt.Errorf("unknown survey flag %q", name)
-		}
-		flags |= flag
-	}
-	*f = flags
-	return nil
+	return unmarshalJSONFlags(data, f, surveyJSON, "survey")
 }
 
 // Survey specifies the parameters for performing a survey-in.

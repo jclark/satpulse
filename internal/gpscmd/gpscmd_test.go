@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 )
@@ -202,6 +203,29 @@ func TestCreateConfigTargetJSONReadbackProps(t *testing.T) {
 	}
 	if got, ok := target.Props.GetSignalsEnabled(); !ok || got != gpsprot.SignalSetOf(gpsprot.SigGPSL1CA) {
 		t.Errorf("signalsEnabled = %v, %t", got, ok)
+	}
+}
+
+func TestCreateConfigTargetJSONDoesNotApplyFlagProps(t *testing.T) {
+	v := flagVars{targetJSON: `{}`}
+	v.pps.Set(time.Second)
+	target, err := createConfigTarget(&v)
+	if err != nil {
+		t.Fatalf("createConfigTarget: %v", err)
+	}
+	if _, ok := target.Props.GetTimePulseWidth(); ok {
+		t.Error("JSON target includes flag-derived PPS property")
+	}
+}
+
+func TestTargetJSONShowPortConfigSupport(t *testing.T) {
+	v, _, err := parseFlags("gps", []string{"-d", "/dev/ttyACM0", "--target-json", `{}`, "--show-port"})
+	if err != nil {
+		t.Fatalf("parseFlags: %v", err)
+	}
+	all, _ := v.configSupport.flags()
+	if all != gpsprot.ConfigSupportPort {
+		t.Errorf("configSupport = %v, want port", all.Items())
 	}
 }
 

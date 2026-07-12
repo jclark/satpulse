@@ -107,6 +107,13 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		}
 		target.Props.ClearReadOnlyProps()
 		target.Get |= v.configGet
+		if v.socketPath != "" {
+			target.Opts.Socket = true
+		}
+		if target.NoOp() {
+			target.Opts.ForceProbe = true
+		}
+		return target, nil
 	} else {
 		target.Opts = v.configOpts
 		target.Get = v.configGet
@@ -140,7 +147,7 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		cp.SetBaudRate(v.baudRate.Get())
 	}
 	// If nothing requires the configurator, return nil (passive capture mode)
-	if v.targetJSON == "" && !v.showReceiver && target.NoOp() {
+	if !v.showReceiver && target.NoOp() {
 		return nil, nil
 	}
 	if v.socketPath != "" {
