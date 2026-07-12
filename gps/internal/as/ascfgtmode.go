@@ -64,15 +64,7 @@ func (c *Configurator) generateTModeSet() {
 		return // no readback: the property does not exist here
 	}
 	survey := c.target.Opts.Survey
-	if !haveMode {
-		if c.haveFixedPos() {
-			return // setStatic preserves an existing fixed position
-		}
-		if c.surveyRunning() && survey.Flags&gpsprot.SurveyAgain == 0 {
-			return // do not disturb a running survey
-		}
-		mode = gpsprot.Mode{Static: true}
-	} else if !mode.Static && setStatic {
+	if !haveMode || (!mode.Static && setStatic) {
 		mode = gpsprot.Mode{Static: true}
 	}
 	if !mode.Static {
@@ -81,12 +73,12 @@ func (c *Configurator) generateTModeSet() {
 		return
 	}
 	if mode.PosType == gpsprot.PosTypeNone {
-		if c.haveFixedPos() {
-			return // preserve a completed survey's fixed position
+		if survey.Flags&gpsprot.SurveyAgain == 0 && (c.haveFixedPos() || c.surveyRunning()) {
+			return // preserve a completed or running survey unless SurveyAgain
 		}
-		if c.surveyRunning() && survey.Flags&gpsprot.SurveyAgain == 0 {
-			return // do not disturb a running survey
-		}
+		// SurveyAgain (or a fresh idle unit): zero FIXEDECEF first, so a
+		// completing survey cannot re-transfer the old position, then
+		// write the survey parameters.
 		c.setFixedEcef(asbin.CfgFixedECEF{})
 		c.setSurvey(asbin.CfgSurvey{
 			MinDur:   uint32(survey.MinDur.Round(time.Second) / time.Second),
