@@ -3,6 +3,7 @@ package as
 import (
 	"log"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/jclark/satpulse/gps/lib/asbin"
@@ -19,12 +20,23 @@ import (
 // produces a too-fast divisor - the only way a wrong rate could be
 // applied - because every divisor comes from exact interval arithmetic;
 // absence of traffic can only ever conclude 1Hz.
+//
+// The invariant that makes a wrong divisor impossible by construction:
+// divisors are computed only from CONTENT-time deltas (asbin NavMsg iTOW,
+// NMEA time-of-day), never from wall-clock read-time deltas. A content-time
+// delta cannot be shorter than the true native period, whereas a wall-clock
+// delta can (delivery coalescing/jitter shortens it), which through rule 1
+// (poll+interval) or rule 2 (self-set) could yield a too-small - too-fast -
+// divisor. The one NAV message without iTOW is NAV-AUTO; its arrivals still
+// count toward the anchored-negative/cap, they just never produce a divisor.
 
-// oneHzTolMs is how far an observed interval may sit from 1000ms and
-// still count as 1Hz. Content-time intervals land exactly on 1000ms;
-// wall-clock intervals (NAV-AUTO, which lacks iTOW) carry delivery
-// jitter of at most tens of ms, far below the 200/1000ms separation.
-const oneHzTolMs = 200
+// oneHzTolMs is how far an observed content-time interval may sit from
+// 1000ms and still count as 1Hz output. Only content time feeds this
+// decision (wall-clock intervals are barred), so intervals land on exact
+// multiples of the native period; the band is tight enough that no
+// realizable non-1Hz grid interval falls inside (a 5Hz unit's nearest
+// values are 800ms and 1200ms).
+const oneHzTolMs = 100
 
 // plausibleHz is the set of native rates seen in the field. It is a
 // sanity check only: a computed rate outside it is logged as a surprise
@@ -40,11 +52,13 @@ var plausibleHz = map[int]bool{1: true, 2: true, 5: true, 10: true}
 // creates it and the Configurator, so observation runs continuously from
 // the first packet of the session.
 type rateEstimator struct {
-	tracks   map[asbin.MsgID]*rateTrack
-	nativeHz int       // 0 until resolved
-	capped   bool      // resolved by the silent cap: rate could not be verified
-	anyRead  bool      // any periodic arrival has been seen
-	lastRead time.Time // wall clock of the latest message of any kind, for the watch deadline
+	tracks         map[asbin.MsgID]*rateTrack
+	nativeHz       int         // 0 until resolved
+	capped         bool        // resolved by the silent cap: rate could not be verified
+	anyRead        bool        // any periodic arrival has been seen
+	lastRead       time.Time   // wall clock of the latest message of any kind, for the watch deadline
+	lastWasArrival bool        // the most recent observe was a periodic arrival
+	lastArrivalMid asbin.MsgID // the id of that arrival, for the watch deadline extension
 }
 
 // rateTrack holds what is known about one CFG-MSG target: the spacing of
@@ -53,14 +67,14 @@ type rateTrack struct {
 	count       int     // periodic arrivals counted
 	lastContent float64 // content time (ms) of the last arrival
 	lastRead    time.Time
-	hasContent  bool          // this id carries content time (iTOW / NMEA time-of-day)
-	minInterval float64       // smallest observed same-id interval (ms); 0 = none yet
-	lastDelta   float64       // most recent same-id interval (ms)
-	haveDelta   bool          // at least one interval observed
-	consistent  bool          // the last two deltas agree (step immunity)
-	polledRate  uint8         // R from a CFG-MSG poll of this id
-	hasPoll     bool          // polledRate is known
-	selfSet     bool          // we set this id to rate=1
+	hasContent  bool    // this id carries content time (iTOW / NMEA time-of-day)
+	minInterval float64 // smallest observed same-id interval (ms); 0 = none yet
+	lastDelta   float64 // most recent same-id interval (ms)
+	haveDelta   bool    // at least one interval observed
+	consistent  bool    // the last two deltas agree (step immunity)
+	polledRate  uint8   // R from a CFG-MSG poll of this id
+	hasPoll     bool    // polledRate is known
+	selfSet     bool    // we set this id to rate=1
 }
 
 func newRateEstimator() *rateEstimator {
@@ -83,6 +97,7 @@ func (e *rateEstimator) track(mid asbin.MsgID) *rateTrack {
 // (ACKs, MON-VER, non-time NMEA sentences) is ignored: non-time-bearing
 // NMEA repeats within one epoch and would fabricate fast intervals.
 func (e *rateEstimator) observe(msg any, tRead time.Time) {
+	e.lastWasArrival = false
 	if tRead.After(e.lastRead) {
 		e.lastRead = tRead
 	}
@@ -93,9 +108,11 @@ func (e *rateEstimator) observe(msg any, tRead time.Time) {
 		e.arrival(m.ID(), float64(m.NavEpoch()), true, tRead)
 	case asbin.Msg:
 		if cls, _ := m.ID().Unpack(); cls == navClass {
-			// A NAV message without iTOW (NAV-AUTO): time it by wall
-			// clock. It emits once per epoch, so there is no within-epoch
-			// repeat to fabricate a fast interval.
+			// A NAV message without iTOW (NAV-AUTO): count it by wall
+			// clock for the anchored-negative/cap, but hasContent is false
+			// so it never produces an interval - a wall-clock delta can be
+			// shortened below the true native period, and only content time
+			// may set a divisor.
 			e.arrival(m.ID(), 0, false, tRead)
 		}
 	case timedSentence:
@@ -209,20 +226,20 @@ func (e *rateEstimator) cfgMsgReadback(m *asbin.CfgMsg) {
 	e.tryResolve()
 }
 
-// arrival records one periodic arrival of mid. content is the message's
-// content time in ms when hasContent is true, else wall clock is used.
-// A zero or negative delta (a repeat within one epoch, or an iTOW step
-// backwards at fix acquisition) is discarded.
+// arrival records one periodic arrival of mid. When hasContent is true,
+// content is the message's content time (ms) and feeds the divisor rules;
+// a wall-clock-only arrival (hasContent false) still counts toward the
+// anchored-negative/cap but never sets an interval, because a wall-clock
+// delta can be shorter than the true native period and only content time
+// may yield a divisor. A zero or negative content delta (a repeat within
+// one epoch, or an iTOW step backwards at fix acquisition) is discarded.
 func (e *rateEstimator) arrival(mid asbin.MsgID, content float64, hasContent bool, tRead time.Time) {
 	e.anyRead = true
+	e.lastWasArrival = true
+	e.lastArrivalMid = mid
 	tr := e.track(mid)
-	if tr.count > 0 {
-		var delta float64
-		if hasContent {
-			delta = content - tr.lastContent
-		} else {
-			delta = float64(tRead.Sub(tr.lastRead)) / float64(time.Millisecond)
-		}
+	if hasContent && tr.count > 0 {
+		delta := content - tr.lastContent
 		if delta > 0 {
 			if tr.minInterval == 0 || delta < tr.minInterval {
 				tr.minInterval = delta
@@ -252,24 +269,42 @@ func closeEnough(a, b float64) bool {
 	return diff <= tol
 }
 
+// sortedMids returns the track ids in ascending order. Iteration over the
+// tracks map is otherwise random, which would make the query-phase poll id
+// and the resolution choice differ run to run (replay traces must not).
+func (e *rateEstimator) sortedMids() []asbin.MsgID {
+	mids := make([]asbin.MsgID, 0, len(e.tracks))
+	for mid := range e.tracks {
+		mids = append(mids, mid)
+	}
+	sort.Slice(mids, func(i, j int) bool { return mids[i] < mids[j] })
+	return mids
+}
+
 // tryResolve computes nativeHz from present evidence, by the first rule
 // that fires: poll+interval (exact, any value), then a self-set interval
-// confirmed by two consistent deltas (step immunity). The 1Hz-from-
-// absence rules live in the resolve phase's timeout, not here.
+// confirmed by two consistent deltas (step immunity). Both rules use only
+// content-time evidence (hasContent): a wall-clock interval could be short
+// enough to set a too-fast divisor. Ids are visited in a defined order so
+// the choice is deterministic. The 1Hz-from-absence rules live in the
+// resolve phase's timeout, not here.
 func (e *rateEstimator) tryResolve() {
 	if e.nativeHz != 0 {
 		return
 	}
-	for mid, tr := range e.tracks {
-		if tr.hasPoll && tr.polledRate >= 1 && tr.minInterval > 0 {
+	mids := e.sortedMids()
+	for _, mid := range mids {
+		tr := e.tracks[mid]
+		if tr.hasContent && tr.hasPoll && tr.polledRate >= 1 && tr.minInterval > 0 {
 			if hz := hzFromInterval(tr.minInterval, int(tr.polledRate)); hz >= 1 {
 				e.set(hz, mid, "poll+interval")
 				return
 			}
 		}
 	}
-	for mid, tr := range e.tracks {
-		if tr.selfSet && tr.consistent {
+	for _, mid := range mids {
+		tr := e.tracks[mid]
+		if tr.hasContent && tr.selfSet && tr.consistent {
 			if hz := hzFromInterval(tr.lastDelta, 1); hz >= 1 {
 				e.set(hz, mid, "self-set interval")
 				return
@@ -342,14 +377,22 @@ func (e *rateEstimator) flowingPollID(keep map[asbin.MsgID]bool) (asbin.MsgID, b
 	var best asbin.MsgID
 	bestCount := 0
 	bestKept := false
-	for mid, tr := range e.tracks {
+	bestContent := false
+	for _, mid := range e.sortedMids() {
+		tr := e.tracks[mid]
 		if tr.count < 1 {
 			continue
 		}
 		kept := keep[mid]
-		// Prefer a kept id; among equals prefer the most-arrived.
-		if best == 0 || (kept && !bestKept) || (kept == bestKept && tr.count > bestCount) {
-			best, bestCount, bestKept = mid, tr.count, kept
+		// Prefer a content-bearing id (only its interval turns the polled
+		// rate into a native rate), then a kept id, then the most-arrived.
+		// Sorted iteration makes the tie-break deterministic.
+		better := best == 0 ||
+			(tr.hasContent && !bestContent) ||
+			(tr.hasContent == bestContent && kept && !bestKept) ||
+			(tr.hasContent == bestContent && kept == bestKept && tr.count > bestCount)
+		if better {
+			best, bestCount, bestKept, bestContent = mid, tr.count, kept, tr.hasContent
 		}
 	}
 	return best, best != 0

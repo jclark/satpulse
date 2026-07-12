@@ -292,20 +292,54 @@ func (c *Configurator) generateResolveReqs() {
 // addWatchReq appends the resolve-phase watch: a request born awaiting a
 // response that it never sent, so the director never transmits it. It
 // resolves when the estimator computes the rate (onObserve) or when its
-// deadline passes (watchTimeout). The deadline floats on the estimator's
-// last observed activity (see GetDeadline).
+// deadline passes (watchTimeout). The deadline is anchored at creation
+// time (the estimator's current notion of now) and advances only on
+// waited-on arrivals (see onObserve and GetDeadline).
 func (c *Configurator) addWatchReq(dur time.Duration) *asReq {
-	req := &asReq{state: reqAwaitingAck, watch: true, watchDur: dur, cfg: c}
+	req := &asReq{state: reqAwaitingAck, watch: true, watchDur: dur,
+		watchAnchor: c.est.lastRead, cfg: c}
 	c.reqs = append(c.reqs, req)
 	return req
 }
 
 // onObserve is called after every observed packet is fed to the shared
-// estimator. It completes the watch as soon as the rate resolves.
+// estimator. It completes the watch as soon as the rate resolves, and
+// otherwise advances the deadline only when a track the watch waits on
+// makes progress - the first arrival of an id whose further arrivals can
+// still resolve the rate (a polled id, or one we self-set at rate=1).
+// Unrelated traffic must not advance it, so the cap stays bounded; and
+// only a first arrival advances, so a flood of non-resolving arrivals of a
+// waited-on id cannot postpone the cap indefinitely.
 func (c *Configurator) onObserve() {
-	if c.watch != nil && c.watch.state == reqAwaitingAck && c.est.nativeHz != 0 {
-		c.resolveWatch()
+	w := c.watch
+	if w == nil || w.state != reqAwaitingAck {
+		return
 	}
+	if !w.watchStarted {
+		// Anchor the deadline on the first real packet the watch sees (the
+		// enable ACK, or the first flowing arrival). est.lastRead may be
+		// the zero time at creation when no traffic preceded the watch, so
+		// the anchor cannot be snapshotted then.
+		w.watchAnchor = c.est.lastRead
+		w.watchStarted = true
+	}
+	if c.est.nativeHz != 0 {
+		c.resolveWatch()
+		return
+	}
+	if !c.est.lastWasArrival {
+		return
+	}
+	mid := c.est.lastArrivalMid
+	tr := c.est.tracks[mid]
+	if tr == nil || !(tr.hasPoll || tr.selfSet) || w.extended[mid] {
+		return
+	}
+	if w.extended == nil {
+		w.extended = make(map[asbin.MsgID]bool)
+	}
+	w.extended[mid] = true
+	w.watchAnchor = c.est.lastRead
 }
 
 // resolveWatch completes the watch once the native rate is known: it
@@ -336,6 +370,8 @@ func (c *Configurator) watchTimeout(req *asReq) {
 		c.sendDeferredAtRate1()
 		c.watchSent = true
 		req.watchDur = resolveSilentDelay
+		req.watchAnchor = c.est.lastRead
+		req.extended = nil
 		return
 	}
 	c.est.concludeSilent()

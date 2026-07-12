@@ -95,20 +95,23 @@ const (
 // outcome (the request succeeds); NAK-driven absence stays out of the
 // error path this way.
 type asReq struct {
-	state      asReqState
-	mid        asbin.MsgID // class+id, for response correlation
-	packet     []byte
-	tBase      time.Time // time request was sent
-	err        error
-	nakOK      bool            // NAK is acceptable, not a failure
-	onAck      func()          // records the accepted values on ACK
-	onData     func(asbin.Msg) // receives the data response, which completes a poll
-	noAck      bool            // no response expected (resets): sending is success
-	optional   bool            // a timed-out request succeeds rather than fails
-	speedAfter int             // new baud rate to switch to after sending
-	watch      bool            // the resolve-phase watch: never sent, resolves on estimator or deadline
-	watchDur   time.Duration   // the watch's timeout from tBase
-	cfg        *Configurator   // back-pointer for the watch's deadline handling
+	state        asReqState
+	mid          asbin.MsgID // class+id, for response correlation
+	packet       []byte
+	tBase        time.Time // time request was sent
+	err          error
+	nakOK        bool                 // NAK is acceptable, not a failure
+	onAck        func()               // records the accepted values on ACK
+	onData       func(asbin.Msg)      // receives the data response, which completes a poll
+	noAck        bool                 // no response expected (resets): sending is success
+	optional     bool                 // a timed-out request succeeds rather than fails
+	speedAfter   int                  // new baud rate to switch to after sending
+	watch        bool                 // the resolve-phase watch: never sent, resolves on estimator or deadline
+	watchDur     time.Duration        // the watch's timeout from watchAnchor
+	watchAnchor  time.Time            // the watch deadline anchor: start time, advanced only by waited-on arrivals
+	watchStarted bool                 // the anchor has been set to a real packet time
+	extended     map[asbin.MsgID]bool // ids whose first arrival already advanced the anchor
+	cfg          *Configurator        // back-pointer for the watch's deadline handling
 }
 
 var _ gpsprot.ConfigRequest = (*asReq)(nil)
@@ -511,10 +514,13 @@ func (req *asReq) GetDeadline() time.Time {
 		panic(req.invalidStateMsg("GetDeadline"))
 	}
 	if req.watch {
-		// The deadline floats on the last observed activity: it fires
-		// only after the receiver has been quiet for watchDur, which is
-		// exactly the anchored-negative / cap condition.
-		return req.cfg.est.lastRead.Add(req.watchDur)
+		// The deadline is anchored at the watch's creation (or its
+		// silent-send reset) and advances only when a track the watch
+		// waits on makes progress (see onObserve), never on unrelated
+		// traffic - otherwise continuous non-resolving packets (ACKs,
+		// GSV, off-grid fixless NAV of an unwatched id) would postpone the
+		// anchored-negative/cap forever and the invocation would hang.
+		return req.watchAnchor.Add(req.watchDur)
 	}
 	return req.tBase.Add(maxResponseDelay)
 }

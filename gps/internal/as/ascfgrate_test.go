@@ -21,6 +21,9 @@ type navEmitter struct {
 	start    time.Time
 	tick     int
 	silent   bool
+	itowStep []int  // per-emit iTOW deltas (ms); when set, iTOW is off-grid
+	itow     uint32 // running iTOW offset for the off-grid path
+	emitted  int    // count of off-grid emits, indexes itowStep
 }
 
 // due returns the NAV-TIME packets emitted up to now, advancing the
@@ -39,7 +42,13 @@ func (ne *navEmitter) due(now time.Time) [][]byte {
 		}
 		rate := int(ne.rcvr.rates[asbin.NavTimeID])
 		if rate > 0 && ne.tick%rate == 0 {
-			pkt, _ := asbin.Serialize(&asbin.NavTime{RefTow: ne.baseTOW + uint32(ne.tick*ne.periodMs)})
+			tow := ne.baseTOW + uint32(ne.tick*ne.periodMs)
+			if len(ne.itowStep) > 0 {
+				ne.itow += uint32(ne.itowStep[ne.emitted%len(ne.itowStep)])
+				tow = ne.baseTOW + ne.itow
+				ne.emitted++
+			}
+			pkt, _ := asbin.Serialize(&asbin.NavTime{RefTow: tow})
 			out = append(out, pkt)
 		}
 		ne.tick++
@@ -226,6 +235,53 @@ func TestRateFlowingWatchFallback(t *testing.T) {
 	}
 	if cfg.watch != nil {
 		t.Error("the watch should be resolved")
+	}
+}
+
+func TestRateRestartLegacyBuggy5Hz(t *testing.T) {
+	// The real 5Hz units (TAU951M-P200, D10P) answer a CFG-MSG poll with
+	// the 4-byte form (rate + 0xFF port mask), so pair a 5Hz scenario with
+	// that hardware form and identity. Left by an old buggy run with
+	// NAV-TIME at divisor 1, it emits at 5Hz; the poll returns R=1 and the
+	// observed 200ms interval gives native=5, so the enable goes out at
+	// rate=5 - correct first try.
+	rcvr := &testReceiver{monVer: tau951mVer(), fourByteCfgMsg: true,
+		rates: map[asbin.MsgID]uint8{asbin.NavTimeID: 1}}
+	cp := probe(t, rcvr)
+	em := &navEmitter{rcvr: rcvr, periodMs: 200, baseTOW: 100000}
+	_, errCount := configureTraffic(t, cp, rcvr, leapSecTarget(), em)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if cp.est.nativeHz != 5 {
+		t.Errorf("nativeHz = %d, want 5", cp.est.nativeHz)
+	}
+	if rcvr.rates[asbin.NavTimeID] != 5 {
+		t.Errorf("NAV-TIME rate = %d, want 5", rcvr.rates[asbin.NavTimeID])
+	}
+}
+
+func TestRateChattyUnresolvable(t *testing.T) {
+	// Continuous non-resolving traffic must not postpone the cap forever.
+	// NAV-TIME is initially off, so the enable is deferred and sent at
+	// rate=1; the unit then emits it OFF-GRID (inconsistent iTOW deltas, as
+	// a fixless receiver does), so rule 2 never resolves. The watch's
+	// deadline is anchored, not floated on this stream, so it caps in
+	// bounded time, concludes 1Hz, and the invocation completes rather than
+	// hanging.
+	rcvr := &testReceiver{monVer: tau1201Ver()}
+	cp := probe(t, rcvr)
+	em := &navEmitter{rcvr: rcvr, periodMs: 100, baseTOW: 100000,
+		itowStep: []int{60, 200}} // no two consecutive deltas ever agree
+	_, errCount := configureTraffic(t, cp, rcvr, leapSecTarget(), em)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if cp.est.nativeHz != 1 {
+		t.Errorf("nativeHz = %d, want 1 (anchored negative over non-resolving traffic)", cp.est.nativeHz)
+	}
+	if rcvr.rates[asbin.NavTimeID] != 1 {
+		t.Errorf("NAV-TIME rate = %d, want 1", rcvr.rates[asbin.NavTimeID])
 	}
 }
 

@@ -41,6 +41,7 @@ type testReceiver struct {
 	liveRate       uint32               // the live rate of the arriving port
 	elev           asbin.CfgElev        // CFG-ELEV store (always present: every unit has it)
 	ignoreZeroDuty bool                 // TAU1302 quirk: ACK a zero duty cycle without applying it
+	fourByteCfgMsg bool                 // answer CFG-MSG polls in the 4-byte form (rate + port mask), like the 5Hz units
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -168,8 +169,11 @@ func (r *testReceiver) respondPoll(mid asbin.MsgID, data []byte) [][]byte {
 		if r.nakTargets[target] {
 			return [][]byte{r.nak(asbin.CfgMsgID)}
 		}
-		pkt, _ := asbin.PackMsg(asbin.CfgMsgID,
-			[]byte{data[asbin.HeaderLen], data[asbin.HeaderLen+1], r.rates[target]})
+		payload := []byte{data[asbin.HeaderLen], data[asbin.HeaderLen+1], r.rates[target]}
+		if r.fourByteCfgMsg {
+			payload = append(payload, 0xFF) // the real TAU951M/D10P form: trailing 0xFF port mask
+		}
+		pkt, _ := asbin.PackMsg(asbin.CfgMsgID, payload)
 		return [][]byte{pkt}
 	case asbin.CfgPpsID:
 		if r.pps == nil {
@@ -228,6 +232,15 @@ func tau1201Ver() *asbin.MonVer {
 	return &asbin.MonVer{
 		SwVersion: z16("3.018.aab95e7"),
 		HwVersion: z16("HD8040D.9529b663"),
+	}
+}
+
+// tau951mVer is the batch TAU951M-P200: a 5Hz-native, RTK-capable unit
+// (HD9510) that answers CFG-MSG polls in the 4-byte form.
+func tau951mVer() *asbin.MonVer {
+	return &asbin.MonVer{
+		SwVersion: z16("3.018.002947c3"),
+		HwVersion: z16("HD9510.7349b366f"),
 	}
 }
 

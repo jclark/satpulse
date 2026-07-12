@@ -69,10 +69,10 @@ func TestEstimatorPollInterval(t *testing.T) {
 	// native = R / interval, exact from a single clean interval of an
 	// as-found (not self-set) message whose stored divisor R is polled.
 	tests := []struct {
-		name     string
-		polled   uint8
-		itows    []uint32
-		wantHz   int
+		name   string
+		polled uint8
+		itows  []uint32
+		wantHz int
 	}{
 		{"R1_200ms", 1, []uint32{1000, 1200}, 5},
 		{"R5_1000ms", 5, []uint32{1000, 2000}, 5},
@@ -228,6 +228,49 @@ func TestEstimator4ByteReadback(t *testing.T) {
 	feedNav(e, 1000, 1200)
 	if e.nativeHz != 5 {
 		t.Errorf("nativeHz = %d, want 5", e.nativeHz)
+	}
+}
+
+func TestIsOneHz(t *testing.T) {
+	// Only exact content-time intervals reach isOneHz now (wall-clock
+	// intervals are barred), so the band is tight: it accepts 1000ms but
+	// rejects the nearest realizable non-1Hz grid intervals. The old
+	// 800-1200 band wrongly accepted a 5Hz unit's stored divisor 4 (800ms)
+	// and 6 (1200ms), mis-skipping the correction.
+	for _, ms := range []float64{950, 1000, 1050} {
+		if !isOneHz(ms) {
+			t.Errorf("isOneHz(%v) = false, want true", ms)
+		}
+	}
+	for _, ms := range []float64{800, 1200, 600, 1400} {
+		if isOneHz(ms) {
+			t.Errorf("isOneHz(%v) = true, want false", ms)
+		}
+	}
+}
+
+func TestEstimatorNavAutoNoDivisor(t *testing.T) {
+	// NAV-AUTO carries no iTOW, so it is timed by wall clock, whose deltas
+	// can be shortened below the true native period by delivery coalescing.
+	// Even self-set and polled, its wall-clock arrivals must never resolve
+	// a (too-fast) rate; they only count toward the anchored-negative/cap.
+	e := newRateEstimator()
+	e.markSelfSet(asbin.NavAutoID)
+	e.cfgMsgReadback(&asbin.CfgMsg{CfgMsgFixed: asbin.CfgMsgFixed{
+		MsgClass: 0x01, MsgID: 0xC0, Rate: 1}}) // NAV-AUTO target
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 5; i++ {
+		e.observe(&asbin.NavAuto{}, t0)
+		t0 = t0.Add(150 * time.Millisecond) // coalesced-short wall-clock deltas
+	}
+	if e.nativeHz != 0 {
+		t.Errorf("nativeHz = %d, want 0 (wall-clock deltas must not resolve)", e.nativeHz)
+	}
+	if !e.sawPeriodic() {
+		t.Error("NAV-AUTO arrivals must still count as periodic traffic")
+	}
+	if _, ok := e.observedInterval(asbin.NavAutoID); ok {
+		t.Error("NAV-AUTO must not produce an observed interval")
 	}
 }
 
