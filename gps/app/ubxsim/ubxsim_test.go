@@ -54,11 +54,13 @@ func testGga() []byte {
 func testPersonality() *Personality {
 	dflt := testDefaults()
 	dflt[ucv.KUart1Baudrate.Key()] = 38400
+	dflt[ucv.KUart1outprotUbx.Key()] = 1
+	dflt[ucv.KUart1outprotNmea.Key()] = 1
 	epochs := make([][]Pkt, 60)
 	for i := range epochs {
 		epochs[i] = []Pkt{
-			{KeyM: ucv.KUbxNavSat, Data: testNavSat()},
-			{KeyM: ucv.KNmeaIdGga, Data: testGga()},
+			{KeyM: ucv.KUbxNavSat, Tag: ubx.Tag, Data: testNavSat()},
+			{KeyM: ucv.KNmeaIdGga, Tag: nmea.Tag, Data: testGga()},
 		}
 	}
 	return &Personality{MonVer: testMonVer(), Defaults: dflt, Epochs: epochs}
@@ -210,6 +212,53 @@ func TestSim(t *testing.T) {
 		if ackResult(t, ch, ubxbin.CfgValsetID) {
 			t.Errorf("VALSET of unknown key ACKed")
 		}
+	})
+}
+
+// TestNavOutProt checks that the bank is gated by the port's OUTPROT key
+// as well as by each message's MSGOUT key. Clearing OUTPROT-NMEA is how
+// the Configurator turns NMEA off -- it leaves the per-message rates
+// alone -- so a simulator that gated on MSGOUT only would keep sending
+// GGA and the daemon's NMEA-off config would look like it never landed.
+func TestNavOutProt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := testPersonality()
+		navSat := ucv.KUbxNavSat.KeyU(ucv.UART1).Key()
+		nmeaOut := ucv.KUart1outprotNmea.Key()
+		w, ch := simConn(t, p)
+
+		// The defaults leave the port's NMEA output on, and GGA's rate set.
+		await(t, ch, "GGA", isNmea("GGA"))
+
+		// NAV-SAT on, giving the epochs that follow a clock.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM, ucv.Item{Key: navSat, Value: 1}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET NAV-SAT NAKed")
+		}
+
+		// With the port's NMEA output off, no NMEA is sent even though
+		// GGA's own rate is still 1. The first NAV-SAT drains the epoch
+		// already queued when the VALSET landed.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM, ucv.Item{Key: nmeaOut, Value: 0}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET OUTPROT-NMEA off NAKed")
+		}
+		await(t, ch, "NAV-SAT", isUbx(ubxbin.NavSatID))
+		for range 3 {
+			await(t, ch, "NAV-SAT", func(p scan.Packet) bool {
+				if isNmea("GGA")(p) {
+					t.Fatalf("GGA sent with the port's NMEA output disabled")
+				}
+				return isUbx(ubxbin.NavSatID)(p)
+			})
+		}
+
+		// Turning the port's NMEA output back on brings GGA back.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM, ucv.Item{Key: nmeaOut, Value: 1}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET OUTPROT-NMEA on NAKed")
+		}
+		await(t, ch, "GGA", isNmea("GGA"))
 	})
 }
 
