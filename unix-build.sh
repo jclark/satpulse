@@ -34,7 +34,7 @@ esac
 export GOARCH
 
 # Commands and output directory
-cmddirs="cmd/satpulsed cmd/satpulsetool cmd/pollpps"
+cmddirs="cmd/satpulsed cmd/satpulsetool cmd/satpulsewb cmd/pollpps"
 targets=""
 cmds=""
 for d in $cmddirs; do

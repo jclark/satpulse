@@ -26,6 +26,8 @@ These packages provide entry points for the SatPulse executables. They are in th
 
 `cmd/satpulsetool` provides main for satpulsetool.
 
+`cmd/satpulsewb` provides main for satpulsewb, which serves SatPulse Workbench, the browser GUI for interactive GPS receiver configuration and monitoring. It adapts `gps/app/session` to HTTP: session methods become POST endpoints, snapshots GET endpoints, and session events an SSE stream, with a latest-event-per-name cache priming late-joining clients and the high-rate packet stream gated on a subscriber being connected. A per-run token guards the API and event stream, while a newest-window-wins write seat limits mutating operations to one browser window at a time: the per-claim seat value is carried on writer POSTs and broadcast as a sticky `writer` SSE event, so every other window is a live read-only viewer and no stream is ever terminated. Message files are chosen from the library (`msgfile.go`): the catalog endpoint lists the names `msgfile.ListNames` finds on the search path (`SATPULSE_GPSMSG_PATH`, or a default of the user's own library under `os.UserConfigDir` followed by the installed locations, which are platform-specific: `msgdirs_*.go`), preselecting the session vendor; the select endpoint resolves a name with `msgfile.FindName`, whose validation is the traversal guard, and loads it through `msgfile.Load`. The frontend is the Vite build output of `webui/packages/workbench-http`, embedded as checked-in assets under `dist/` (rebuilt by go generate, like `time/internal/web`).
+
 `cmd/ifwait` provides a program that waits for a network interface to become ready. It exercises the functionality of the `time/lib/ifwait` package.
 
 ### gps/
@@ -44,7 +46,7 @@ These packages provide the public API for GPS processing. They are in the domain
 
 `gps/nmeasyn` synthesizes NMEA sentences from gpsprot messages.
 
-`gps/msgfile` parses TOML message files that describe GPS messages to send to a receiver. It handles multiple protocol types (UBX, CASBIN, ASBIN, NMEA, line, binary), applies per-type defaults, and converts typed messages into raw bytes ready to send. Messages are organized by tags for selective sending.
+`gps/msgfile` parses TOML message files that describe GPS messages to send to a receiver. It handles multiple protocol types (UBX, CASBIN, ASBIN, NMEA, line, binary), applies per-type defaults, and converts typed messages into raw bytes ready to send. Messages are organized by tags for selective sending. It also implements the message-file library search path: a `Name` (vendor directory plus file name) resolves to the first `vendor/file.toml` along a directory list (`FindName`, `ListNames`, and `EnvDirs` for `SATPULSE_GPSMSG_PATH`).
 
 `gps/ts` generates TypeScript type definitions for the JSON values serialized from types in the `gps/*` packages.
 
@@ -65,6 +67,10 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 `gps/app/stream` manages correction and packet streams. It pulls RTCM streams from an Ntrip or TCP network endpoint and feeds them to the GPS receiver over the serial port, pushes streams from the GPS receiver to a remote Ntrip network endpoint, and provides selected-GGA helpers for consumers that need current receiver position.
 
 `gps/app/ntrip` implements an Ntrip caster for serving RTCM packet streams from a GPS receiver to Ntrip clients. It includes an STR record generation capability, which is also used by `gps/app/stream`.
+
+`gps/app/session` implements an interactive session with a GPS receiver -- connect, probe, configure, send message files, monitor, disconnect -- as the application core shared by GUI shells (the Wails desktop app, `cmd/satpulsewb`). It owns the packet pipeline goroutines, delivers events to the shell through a `Sink` interface, opens its transport through an `Opener` (serial device or a running satpulsed's proxy socket, with reset operations gated off over the proxy), and reconnects and re-probes when a reset re-enumerates a USB device. It was extracted from the desktop app's `app.go`.
+
+`gps/app/ubxsim` implements a hardware-free fake u-blox receiver for smoke-testing configuration wiring. It answers the configuration interface with the ACK/NAK semantics of the interface description and replays a recorded packet log as nav output gated by its own MSGOUT configuration.
 
 ### gps/internal/
 
@@ -140,6 +146,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/term` provides access to the Linux terminal interface, which provides access to serial devices. This is similar to [github.com/pkg/term](https://github.com/pkg/term), but provides additional Linux-specific functionality.
 
+`gps/lib/serialenum` enumerates serial ports with human-readable display names, for the device dropdown in GUI shells (satpulsewb, the desktop app). It uses go.bug.st/serial/enumerator; satpulsed and satpulsetool must not import it, so their Linux builds stay CGO-free.
+
 `gps/lib/decconv` converts between base-10 decimal strings and int64 scaled integers without floating point. It is used for exact parsing and formatting of physical quantities like angles and lengths.
 
 `gps/lib/latin1z` provides fixed-size byte-array types (`StringZ5`, `StringZ10`, ...) for nul-terminated ISO 8859-1 (Latin-1) strings, with JSON serialization. The typed arrays are generated by `mksizes.go`.
@@ -198,6 +206,8 @@ These packages are the main building blocks for satpulsed; they are in the appli
 
 `time/internal/proxy` implements proxying of GPS packets to TCP and Unix domain sockets.
 
+`time/internal/web` embeds the built web interface assets (index.html, app.js, style.css) that satpulsed serves. The assets are generated by `go generate ./time/internal/web`, which runs the Vite build in the `webui/` npm workspace via `npm run embed`; they are checked in so `go build` never needs npm.
+
 ### time/lib/
 
 These packages are reusable libraries for time synchronization. They are in the library layer.
@@ -240,17 +250,21 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 
 `internal/scancmd` implements `scan` subcommand of satpulsetool. It reads a raw packet byte stream, splits it using the GPS packet scanner, and writes a JSONL packet log.
 
+`internal/ubxsimcmd` implements the `ubxsim` subcommand of satpulsetool (Linux and macOS). It hosts the u-blox receiver simulator (`gps/app/ubxsim`) behind a pty for black-box testing without GPS hardware.
+
 `internal/pmccmd` implements `pmc` subcommand of satpulsetool.
 
 `internal/replaycmd` implements `replay` subcommand of satpulsetool. It replays a JSONL packet log, generating JSONL events similar to an event log.
 
 `internal/sdpcmd` implements the `sdp` subcommand of satpulsetool. It provides interfaces to manage software-defined pins (SDPs) on PTP hardware clocks, including listing available interfaces and pins, capturing external timestamps, configuring periodic output, and disabling pins.
 
-### web/
+## npm packages
 
-This package provides the web interface. It is in the application layer.
+These hold the web frontend source. They are not Go packages: they are built with npm, and the build output is embedded into the Go binaries (see `time/internal/web`). GPS JSON wire types are published from `gps/ts` as `@satpulse/gps` and consumed here rather than redefined.
 
-`web` embeds the HTML/JavaScript code for the web interface. This code is transpiled from TypeScript and uses Preact JavaScript library.
+### webui/
+
+`webui/` is the npm workspace holding the web frontend source (TypeScript, Preact, Tailwind). It has three packages, bundled by Vite with content hashing disabled so the embedded filenames stay `app.js` and `style.css`. `@satpulse/dashboard` (`packages/dashboard`) is the satpulsed web dashboard app. `@satpulse/workbench` (`packages/workbench`) holds the SatPulse Workbench components and app, originally the desktop GUI frontend; its `src/transport.ts` defines the transport interface the components talk to their backend through -- a universal core plus optional connection-management and message-file capabilities. `@satpulse/workbench-http` (`packages/workbench-http`) is the satpulsewb entry point: token handling plus the fetch+SSE transport implementation; its build output is embedded by `cmd/satpulsewb`. The workspace imports GPS wire types from `@satpulse/gps` (`gps/ts`).
 
 ## Test harnesses
 
