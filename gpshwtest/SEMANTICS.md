@@ -95,7 +95,7 @@ Satellite information is an independent stream, not part of the navigation epoch
 
 **Resets** restore state from non-volatile memory, with strictly increasing scope: *reload* restores configuration only; *reset* additionally discards the receiver's knowledge of position, time, and satellite orbits; *factory reset* first restores the non-volatile memory itself to factory defaults and then resets.
 
-A save and a reset requested together are ordered: the save completes before the reset takes effect, so what the reset restores includes what was just saved.
+A save and a reset requested together are ordered: the save completes before the reset takes effect, so what the reset restores includes what was just saved. The ordering is also a gate: if the save fails, the reset does not take place, so a reset never discards running changes that its paired save failed to persist.
 
 Changes made after the last save do not survive a reload or reset. That is not a hazard but the point: reload is how unsaved changes are deliberately discarded.
 
