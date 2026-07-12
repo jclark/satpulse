@@ -53,8 +53,12 @@ message enablement and for output pacing:
   filtered messages were. Enablement comes from the config
   database's MSGOUT key for each message (zero/nonzero as off/on at
   first; the values are rates, so per-N-epoch decimation is an easy
-  later upgrade). The MSGOUT-key-to-message mapping is the one
-  `ubxcfgval`'s message keys (`KeyM`) encode. RTCM MSM is a special
+  later upgrade) and from the port's OUTPROT key for that message's
+  protocol, which gates the protocol as a whole: clearing OUTPROT is
+  how the Configurator turns NMEA off (it leaves the per-message
+  rates alone), so a bank gated on MSGOUT only would keep sending
+  NMEA after being told to stop. The MSGOUT-key-to-message mapping is
+  the one `ubxcfgval`'s message keys (`KeyM`) encode. RTCM MSM is a special
   case: u-blox's integration manual warns against outputting MSM4
   and MSM7 together, so the recording contains MSM7 only (the
   capture kit explicitly disables MSM4), and the bank
