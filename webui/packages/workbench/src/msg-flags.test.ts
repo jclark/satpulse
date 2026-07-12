@@ -1,30 +1,47 @@
 import {describe, expect, it} from 'vitest';
-import {NMEAMsgGGA, NMEAMsgOther, NMEASelectableMsgNames, PVTMsgOff, PVTMsgPos, PVTMsgNames, msgFlag, msgFlagNames} from './msg-flags';
-import {nmeaFlag, nmeaWireValue} from './nmea-group';
-import {pvtFlag, pvtWireValue} from './pvt-group';
+import {NMEAMsgGGA, PVTMsgOff, PVTMsgPos, RawMsgNavData, SatsMsgSat, toggleMsgFlag} from './msg-flags';
+import {nmeaWireValue} from './nmea-group';
+import {pvtWireValue} from './pvt-group';
+import {rawWireValue} from './raw-group';
 import {rtcmWireValue} from './rtcm-group';
+import {satsWireValue} from './sats-group';
 
-describe('message flag conversion', () => {
-    it('converts names to UI flags and back', () => {
-        const flags = msgFlag(PVTMsgPos, PVTMsgNames) | msgFlag(PVTMsgOff, PVTMsgNames);
-        expect(msgFlagNames(flags, PVTMsgNames)).toEqual([PVTMsgPos, PVTMsgOff]);
-    });
-
-    it('rejects unknown names', () => {
-        expect(() => msgFlag('unknown' as any, NMEASelectableMsgNames)).toThrow('unknown message flag name: unknown');
-        expect(() => msgFlag(NMEAMsgOther as any, NMEASelectableMsgNames)).toThrow('unknown message flag name: other');
+describe('message flag sets', () => {
+    it('toggles flags immutably', () => {
+        const flags = new Set([PVTMsgPos]);
+        const added = toggleMsgFlag(flags, PVTMsgOff, true);
+        const removed = toggleMsgFlag(added, PVTMsgPos, false);
+        expect(flags).toEqual(new Set([PVTMsgPos]));
+        expect(added).toEqual(new Set([PVTMsgPos, PVTMsgOff]));
+        expect(removed).toEqual(new Set([PVTMsgOff]));
+        expect(added).not.toBe(flags);
+        expect(removed).not.toBe(added);
     });
 });
 
 describe('message wire values', () => {
     it('builds NMEA arrays including other', () => {
-        expect(nmeaWireValue(false, false, 0)).toBeUndefined();
-        expect(nmeaWireValue(true, true, 0)).toEqual([]);
-        expect(nmeaWireValue(true, false, nmeaFlag(NMEAMsgGGA))).toEqual(['GGA', 'other']);
+        expect(nmeaWireValue(false, false, new Set())).toBeUndefined();
+        expect(nmeaWireValue(true, true, new Set())).toEqual([]);
+        expect(nmeaWireValue(true, false, new Set([NMEAMsgGGA]))).toEqual(['GGA', 'other']);
     });
 
     it('builds PVT arrays', () => {
-        expect(pvtWireValue(true, pvtFlag(PVTMsgPos) | pvtFlag(PVTMsgOff))).toEqual(['pos', 'off']);
+        expect(pvtWireValue(false, new Set())).toBeUndefined();
+        expect(pvtWireValue(true, new Set())).toEqual([]);
+        expect(pvtWireValue(true, new Set([PVTMsgOff, PVTMsgPos]))).toEqual(['pos', 'off']);
+    });
+
+    it('builds satellite arrays', () => {
+        expect(satsWireValue(false, new Set())).toBeUndefined();
+        expect(satsWireValue(true, new Set())).toEqual([]);
+        expect(satsWireValue(true, new Set([SatsMsgSat]))).toEqual(['sat']);
+    });
+
+    it('builds raw message arrays', () => {
+        expect(rawWireValue(false, new Set())).toBeUndefined();
+        expect(rawWireValue(true, new Set())).toEqual([]);
+        expect(rawWireValue(true, new Set([RawMsgNavData]))).toEqual(['navData']);
     });
 
     it('builds RTCM arrays', () => {

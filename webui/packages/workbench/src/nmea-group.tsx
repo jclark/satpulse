@@ -1,5 +1,6 @@
 import {h} from 'preact';
-import {NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV, NMEAMsgZDA, NMEAMsgVTG, NMEAMsgGLL, NMEAMsgOther, NMEASelectableMsgNames, msgFlag, msgFlagNames} from './msg-flags';
+import {NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV, NMEAMsgZDA, NMEAMsgVTG, NMEAMsgGLL, NMEAMsgOther, NMEASelectableMsgNames, toggleMsgFlag} from './msg-flags';
+import type {NMEASelectableMsgFlag} from './msg-flags';
 import type {NMEAMsgFlags} from '@satpulse/gps/configtarget';
 import {ConfigSubGroup, labeledControlText} from './ui';
 
@@ -16,21 +17,19 @@ const nmeaMsgs: {name: typeof NMEASelectableMsgNames[number]; label: string}[] =
 interface Props {
     change: boolean;
     disableProtocol: boolean;
-    flags: number;
+    flags: ReadonlySet<NMEASelectableMsgFlag>;
     onChangeChange: (v: boolean) => void;
     onDisableChange: (v: boolean) => void;
-    onFlagsChange: (f: number) => void;
+    onFlagsChange: (f: ReadonlySet<NMEASelectableMsgFlag>) => void;
     disabled?: boolean;
 }
 
 /** Compute the wire value for Apply. Returns undefined if change is false (skip). */
-export function nmeaWireValue(change: boolean, disableProtocol: boolean, flags: number): NMEAMsgFlags | undefined {
+export function nmeaWireValue(change: boolean, disableProtocol: boolean, flags: ReadonlySet<NMEASelectableMsgFlag>): NMEAMsgFlags | undefined {
     if (!change) return undefined;
     if (disableProtocol) return [];
-    return [...msgFlagNames(flags, NMEASelectableMsgNames), NMEAMsgOther];
+    return [...NMEASelectableMsgNames.filter(name => flags.has(name)), NMEAMsgOther];
 }
-
-export const nmeaFlag = (name: typeof NMEASelectableMsgNames[number]) => msgFlag(name, NMEASelectableMsgNames);
 
 export function NMEAGroup({change, disableProtocol, flags, onChangeChange, onDisableChange, onFlagsChange, disabled}: Props) {
     const childDisabled = disabled || !change || disableProtocol;
@@ -52,14 +51,13 @@ export function NMEAGroup({change, disableProtocol, flags, onChangeChange, onDis
                 </div>
                 <div class="flex flex-wrap gap-x-4 gap-y-1">
                     {nmeaMsgs.map(m => {
-                        const flag = msgFlag(m.name, NMEASelectableMsgNames);
                         return <label key={m.name} class={`flex items-center gap-1.5 ${labeledControlText(childDisabled)}`}>
                             <input
                                 type="checkbox"
                                 class="accent-accent"
-                                checked={(flags & flag) !== 0}
+                                checked={flags.has(m.name)}
                                 disabled={childDisabled}
-                                onChange={() => onFlagsChange(flags ^ flag)}
+                                onChange={e => onFlagsChange(toggleMsgFlag(flags, m.name, (e.target as HTMLInputElement).checked))}
                             />
                             {m.label}
                         </label>;

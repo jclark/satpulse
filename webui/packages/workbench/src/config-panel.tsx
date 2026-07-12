@@ -2,10 +2,11 @@ import {h} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {transport} from './transport';
 import {SignalPicker} from './signal-picker';
-import {NMEAGroup, nmeaFlag, nmeaWireValue} from './nmea-group';
+import {NMEAGroup, nmeaWireValue} from './nmea-group';
+import type {NMEASelectableMsgFlag} from './msg-flags';
 import {RTCMGroup, rtcmWireValue} from './rtcm-group';
-import {PVTGroup, pvtFlag, pvtWireValue} from './pvt-group';
-import {SatsGroup, satsFlag, satsWireValue} from './sats-group';
+import {PVTGroup, pvtWireValue} from './pvt-group';
+import {SatsGroup, satsWireValue} from './sats-group';
 import {RawGroup, rawWireValue} from './raw-group';
 import {
     NMEAMsgRMC,
@@ -14,7 +15,10 @@ import {
     SurveyAgain, SaveNone, SaveMinimal, SaveAll, ResetNone, ResetReload, ResetCold, ResetFactory,
 } from './msg-flags';
 import type {ConnState, OperationState} from './app';
-import type {ConfigOptions, ConfigProps, ConfigTarget, ConfigTargetProps, ResetType, SaveType} from '@satpulse/gps/configtarget';
+import type {
+    ConfigOptions, ConfigProps, ConfigTarget, ConfigTargetProps, PVTMsgFlag,
+    RawMsgFlag, ResetType, SatsMsgFlag, SaveType,
+} from '@satpulse/gps/configtarget';
 import {Button, Input, Select, ConfigGroup, ConfigSubGroup, fieldLabelText, labeledControlText} from './ui';
 import {speeds} from './speeds';
 
@@ -128,18 +132,18 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
     // Message state
     const [nmeaChange, setNmeaChange] = useState(false);
     const [nmeaDisable, setNmeaDisable] = useState(false);
-    const [nmeaFlags, setNmeaFlags] = useState(0);
+    const [nmeaFlags, setNmeaFlags] = useState<ReadonlySet<NMEASelectableMsgFlag>>(new Set());
     const [rtcmChange, setRtcmChange] = useState(false);
     const [rtcmDisable, setRtcmDisable] = useState(false);
     const [rtcmMSM, setRtcmMSM] = useState<'none' | 'msm4' | 'msm7'>('none');
     const [rtcmFallback, setRtcmFallback] = useState(true);
     const [rtcmARP, setRtcmARP] = useState(false);
     const [pvtChange, setPvtChange] = useState(false);
-    const [pvtFlags, setPvtFlags] = useState(0);
+    const [pvtFlags, setPvtFlags] = useState<ReadonlySet<PVTMsgFlag>>(new Set());
     const [satsChange, setSatsChange] = useState(false);
-    const [satsFlags, setSatsFlags] = useState(0);
+    const [satsFlags, setSatsFlags] = useState<ReadonlySet<SatsMsgFlag>>(new Set());
     const [rawChange, setRawChange] = useState(false);
-    const [rawFlags, setRawFlags] = useState(0);
+    const [rawFlags, setRawFlags] = useState<ReadonlySet<RawMsgFlag>>(new Set());
 
     // Serial speed state.
     // baudRateApplicable: null = unknown (pre-readback or readback didn't include baudRate),
@@ -262,18 +266,18 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
         setMinElevTouched(false);
         setNmeaChange(false);
         setNmeaDisable(false);
-        setNmeaFlags(0);
+        setNmeaFlags(new Set());
         setRtcmChange(false);
         setRtcmDisable(false);
         setRtcmMSM('none');
         setRtcmFallback(true);
         setRtcmARP(false);
         setPvtChange(false);
-        setPvtFlags(0);
+        setPvtFlags(new Set());
         setSatsChange(false);
-        setSatsFlags(0);
+        setSatsFlags(new Set());
         setRawChange(false);
-        setRawFlags(0);
+        setRawFlags(new Set());
         setSpeedTouched(false);
         setSaveType(SaveNone);
         setResetType(ResetNone);
@@ -651,16 +655,16 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                 <ConfigGroup title="Messages">
                         <div class="flex gap-2">
                             <Button disabled={!connected} onClick={() => {
-                                setNmeaChange(true); setNmeaDisable(false); setNmeaFlags(nmeaFlag(NMEAMsgRMC));
+                                setNmeaChange(true); setNmeaDisable(false); setNmeaFlags(new Set([NMEAMsgRMC]));
                                 setRtcmChange(true); setRtcmDisable(true);
-                                setPvtChange(true); setPvtFlags(pvtFlag(PVTMsgOff));
-                                setSatsChange(true); setSatsFlags(0);
-                                setRawChange(true); setRawFlags(0);
+                                setPvtChange(true); setPvtFlags(new Set([PVTMsgOff]));
+                                setSatsChange(true); setSatsFlags(new Set());
+                                setRawChange(true); setRawFlags(new Set());
                             }}>Minimum</Button>
                             <Button disabled={!connected} onClick={() => {
                                 setNmeaChange(true); setNmeaDisable(true);
-                                setPvtChange(true); setPvtFlags(pvtFlag(PVTMsgTimePulse) | pvtFlag(PVTMsgTimePulseAfter) | pvtFlag(PVTMsgTAI) | pvtFlag(PVTMsgLeapSecond) | pvtFlag(PVTMsgOff) | pvtFlag(PVTMsgQuality) | pvtFlag(PVTMsgEpoch) | pvtFlag(PVTMsgPos));
-                                if (speed >= 19200) { setSatsChange(true); setSatsFlags(satsFlag(SatsMsgSat) | satsFlag(SatsMsgSignal)); }
+                                setPvtChange(true); setPvtFlags(new Set([PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgQuality, PVTMsgEpoch, PVTMsgPos]));
+                                if (speed >= 19200) { setSatsChange(true); setSatsFlags(new Set([SatsMsgSat, SatsMsgSignal])); }
                             }}>Daemon</Button>
                         </div>
                         <NMEAGroup
