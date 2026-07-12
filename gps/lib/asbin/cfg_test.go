@@ -2,6 +2,8 @@ package asbin
 
 import (
 	"math"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -113,9 +115,7 @@ func TestCfgMsg(t *testing.T) {
 			packet: "F1D9060103 00F00402 0019",
 			wantID: CfgMsgID,
 			wantMsg: &CfgMsg{
-				MsgClass: 0xF0,
-				MsgID:    0x04, // NmeaGsvID
-				Rate:     2,
+				CfgMsgFixed: CfgMsgFixed{MsgClass: 0xF0, MsgID: 0x04, Rate: 2}, // NmeaGsvID
 			},
 		},
 		{
@@ -123,9 +123,7 @@ func TestCfgMsg(t *testing.T) {
 			packet: "F1D9060103 00F00105 0016",
 			wantID: CfgMsgID,
 			wantMsg: &CfgMsg{
-				MsgClass: 0xF0,
-				MsgID:    0x01, // NmeaGllID
-				Rate:     5,
+				CfgMsgFixed: CfgMsgFixed{MsgClass: 0xF0, MsgID: 0x01, Rate: 5}, // NmeaGllID
 			},
 		},
 		{
@@ -133,12 +131,71 @@ func TestCfgMsg(t *testing.T) {
 			packet: "F1D9060103 00F00600 001B",
 			wantID: CfgMsgID,
 			wantMsg: &CfgMsg{
-				MsgClass: 0xF0,
-				MsgID:    0x06, // NmeaVtgID
-				Rate:     0,
+				CfgMsgFixed: CfgMsgFixed{MsgClass: 0xF0, MsgID: 0x06, Rate: 0}, // NmeaVtgID
+			},
+		},
+		{
+			// 4-byte readback form: RMC at rate 5 with PortMask 0xFF, as a
+			// 5Hz-native unit (TAU951M-P200, D10P) answers a CFG-MSG poll.
+			name:   "rmc_rate_5_portmask",
+			packet: "F1D9060104 00F00505FF 0427",
+			wantID: CfgMsgID,
+			wantMsg: &CfgMsg{
+				CfgMsgFixed: CfgMsgFixed{MsgClass: 0xF0, MsgID: 0x05, Rate: 5},
+				PortMask:    []byte{0xFF},
 			},
 		},
 	})
+}
+
+// TestCfgMsgRoundTrip checks that a set serializes as the 3-byte form and
+// that both the 3- and 4-byte readback forms survive a parse/serialize
+// round trip.
+func TestCfgMsgRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  *CfgMsg
+		want string // expected serialized hex
+	}{
+		{
+			name: "set_3byte",
+			msg:  &CfgMsg{CfgMsgFixed: CfgMsgFixed{MsgClass: 0xF0, MsgID: 0x05, Rate: 1}},
+			want: "f1d9060103 00f00501 001a",
+		},
+		{
+			name: "readback_4byte",
+			msg:  &CfgMsg{CfgMsgFixed: CfgMsgFixed{MsgClass: 0xF0, MsgID: 0x05, Rate: 5}, PortMask: []byte{0xFF}},
+			want: "f1d9060104 00f00505ff 0427",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pkt, err := Serialize(tc.msg)
+			if err != nil {
+				t.Fatalf("Serialize: %v", err)
+			}
+			if got := string(pkt); got != string(hexToBytes(t, tc.want)) {
+				t.Errorf("Serialize:\ngot  %X\nwant %s", pkt, strings.ReplaceAll(tc.want, " ", ""))
+			}
+			back, err := ParseMsg(string(pkt))
+			if err != nil {
+				t.Fatalf("ParseMsg: %v", err)
+			}
+			if !reflect.DeepEqual(back, tc.msg) {
+				t.Errorf("round trip:\ngot  %+v\nwant %+v", back, tc.msg)
+			}
+		})
+	}
+}
+
+// TestCfgMsgBadLen checks that a CFG-MSG payload that is neither 3 nor 4
+// bytes is rejected.
+func TestCfgMsgBadLen(t *testing.T) {
+	// 5-byte payload (class,id,rate + two trailing bytes)
+	_, err := ParseMsg(string(hexToBytes(t, "F1D9060105 00F00505FFFF 0431")))
+	if err == nil {
+		t.Error("ParseMsg accepted a 5-byte CFG-MSG payload")
+	}
 }
 
 func TestCfgNavSat(t *testing.T) {

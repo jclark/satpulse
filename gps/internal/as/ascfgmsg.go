@@ -135,7 +135,7 @@ func (c *Configurator) addMsgRate(mid asbin.MsgID, on bool) {
 		rate = 1
 	}
 	cls, id := mid.Unpack()
-	c.addReqNakOK(&asbin.CfgMsg{MsgClass: cls, MsgID: id, Rate: rate})
+	c.addReqNakOK(&asbin.CfgMsg{CfgMsgFixed: asbin.CfgMsgFixed{MsgClass: cls, MsgID: id, Rate: rate}})
 }
 
 // generateNMEAReqs sets the rate of each standard NMEA sentence via
@@ -162,6 +162,6 @@ func (c *Configurator) generateNMEAReqs(flags gpsprot.NMEAMsgFlags) {
 			rate = 1
 		}
 		cls, id := m.mid.Unpack()
-		c.addReq(&asbin.CfgMsg{MsgClass: cls, MsgID: id, Rate: rate})
+		c.addReq(&asbin.CfgMsg{CfgMsgFixed: asbin.CfgMsgFixed{MsgClass: cls, MsgID: id, Rate: rate}})
 	}
 }

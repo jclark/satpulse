@@ -1,5 +1,7 @@
 package asbin
 
+import "fmt"
+
 const (
 	CfgPrtID       MsgID = clsCfg | (0x00 << 8)
 	CfgMsgID       MsgID = clsCfg | (0x01 << 8)
@@ -117,14 +119,43 @@ type CfgPrt struct {
 
 func (m *CfgPrt) ID() MsgID { return CfgPrtID }
 
-// CFG-MSG (0x06 0x01)
-type CfgMsg struct {
+// CfgMsgFixed is the three-byte fixed part of CFG-MSG.
+type CfgMsgFixed struct {
 	MsgClass uint8 // Message class
 	MsgID    uint8 // Message ID
-	Rate     uint8 // Rate or interval
+	Rate     uint8 // Rate or interval (a divisor of the native cycle)
+}
+
+// CFG-MSG (0x06 0x01). A poll answers with either a 3-byte payload or,
+// on some firmware generations, a 4-byte payload carrying an extra
+// PortMask byte (a bit vector of the ports the rate applies to, usually
+// 0xFF - vendor-UI finding). Sets are always serialized as the 3-byte
+// form, which every tested unit accepts; PortMask is populated only when
+// a 4-byte readback is parsed, so the round trip of a set is unchanged.
+type CfgMsg struct {
+	CfgMsgFixed
+	PortMask []byte // the readback-only 4th byte; empty on a 3-byte form
 }
 
 func (m *CfgMsg) ID() MsgID { return CfgMsgID }
+
+func (m *CfgMsg) InitForLen(payloadLen int) error {
+	n, err := sliceLen(m, payloadLen, 3, 1)
+	if err != nil {
+		return err
+	}
+	if n > 1 {
+		return fmt.Errorf("bad %v payload length (%d bytes)", m.ID(), payloadLen)
+	}
+	if n == 1 {
+		m.PortMask = make([]byte, 1)
+	}
+	return nil
+}
+
+func (m *CfgMsg) Parts() (fixed any, slice any) {
+	return &m.CfgMsgFixed, m.PortMask
+}
 
 // NMEA sentence IDs for use with CfgMsg. GST, DTM, and JAM are not in
 // the protocol documentation; the ids were discovered by CFG-MSG poll
