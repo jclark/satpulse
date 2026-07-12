@@ -13,6 +13,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -227,6 +228,15 @@ func TestCorReportFromPacketNonCorrection(t *testing.T) {
 type pipeSource struct {
 	mu   sync.Mutex
 	conn net.Conn
+}
+
+type fatalSource struct {
+	calls atomic.Int32
+}
+
+func (s *fatalSource) Connect(context.Context) (ReadWriteDeadlineCloser, error) {
+	s.calls.Add(1)
+	return nil, &fatalConnectError{errors.New("Ntrip: HTTP/1.1 401 Unauthorized")}
 }
 
 func newPipeSource() (*pipeSource, net.Conn) {
@@ -873,6 +883,34 @@ func TestReconnectOnNetworkError(t *testing.T) {
 	}
 }
 
+func TestPullStopsOnFatalConnect(t *testing.T) {
+	src := &fatalSource{}
+	sink := newTestPull(src, &mockWriter{}, gpsio.NewOutPortLock(mockOutPort{}))
+	var gotFailed atomic.Bool
+	done := make(chan error, 1)
+	go func() {
+		done <- sink.Run(context.Background(), nil, func(st State, _ error) {
+			if st == Failed {
+				gotFailed.Store(true)
+			}
+		})
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Run = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Pull.Run did not return after fatal connect error")
+	}
+	if !gotFailed.Load() {
+		t.Error("onState was not called with Failed")
+	}
+	if n := src.calls.Load(); n != 1 {
+		t.Errorf("Connect called %d times, want 1", n)
+	}
+}
+
 // reconnectSource creates a new net.Pipe on each Connect call.
 type reconnectSource struct {
 	mu    sync.Mutex
@@ -1423,17 +1461,25 @@ func TestNtripErrorResponse(t *testing.T) {
 }
 
 func TestNtripHTTPErrorResponse(t *testing.T) {
-	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
-		conn.Write([]byte("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n"))
-	})
-	defer ln.close()
-	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
-	_, err := src.Connect(context.Background())
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "HTTP/1.1 401 Unauthorized") {
-		t.Errorf("error did not contain status: %v", err)
+	for _, version := range []string{"HTTP/1.0", "HTTP/1.1"} {
+		t.Run(version, func(t *testing.T) {
+			resp := version + " 401 Unauthorized"
+			ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
+				conn.Write([]byte(resp + "\r\nContent-Length: 0\r\n\r\n"))
+			})
+			defer ln.close()
+			src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
+			_, err := src.Connect(context.Background())
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), resp) {
+				t.Errorf("error did not contain status: %v", err)
+			}
+			if !isFatalConnect(err) {
+				t.Errorf("error is not fatal: %v", err)
+			}
+		})
 	}
 }
 

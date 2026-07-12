@@ -165,6 +165,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
 
     // Applying state
     const [applying, setApplying] = useState(false);
+    const [applied, setApplied] = useState(false);
 
     const resetConfigFields = useCallback(() => {
         setTimeMode('');
@@ -252,6 +253,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
         resetConfigFields();
         setReading(false);
         setApplying(false);
+        setApplied(false);
         setTimePulseTouched(false);
         setTimeModeTouched(false);
         setSignalsTouched(false);
@@ -383,6 +385,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
         if (speedTouched) props.baudRate = selectedSpeed;
         const cfg: Record<string, any> = {Props: props, Opts: opts};
         setApplying(true);
+        setApplied(false);
         setOperation({status: 'running', label: 'Applying configuration'});
         clearRespSession();
         setSaveType(0);
@@ -405,6 +408,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
             setSatsChange(false);
             setRawChange(false);
             setSpeedTouched(false);
+            setApplied(true);
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             addToast(msg || 'Apply failed', 'error');
@@ -416,6 +420,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
 
     const handleDiscard = () => {
         if (configProps) populateFromConfig(configProps);
+        setApplied(false);
         setTimePulseTouched(false);
         setTimeModeTouched(false);
         setSignalsTouched(false);
@@ -458,6 +463,11 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
     const pendingLabel = pendingSections.length > 0
         ? 'Changes pending to ' + pendingSections.join(', ')
         : '';
+    useEffect(() => {
+        if (pendingLabel) setApplied(false);
+    }, [pendingLabel]);
+    const statusLabel = applying ? 'Applying configuration...' : pendingLabel || (applied ? 'Configuration applied' : '');
+    const statusColor = applied && !applying && !pendingLabel ? 'text-success' : applying ? 'text-info' : 'text-warning';
     const surveyDisabled = !connected || timeMode !== 'survey';
     const fixedDisabled = !connected || timeMode !== 'fixed';
     const ecefDisabled = fixedDisabled || coordSystem !== 'ecef';
@@ -749,8 +759,8 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
 
             {/* Bottom action bar */}
             <div class="shrink-0 flex items-center gap-2 border-t border-border-subtle bg-surface-2 px-4 py-2">
-                {pendingLabel && (
-                    <span class="text-[10px] font-medium text-warning">{pendingLabel}</span>
+                {statusLabel && (
+                    <span class={`text-[10px] font-medium ${statusColor}`}>{statusLabel}</span>
                 )}
                 <span class="ml-auto" />
                 <Button disabled={!connected || !pendingLabel} onClick={handleDiscard}>
