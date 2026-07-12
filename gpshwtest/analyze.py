@@ -232,8 +232,15 @@ class Analyzer:
         elif op == "save-reset":
             # Like reset, the invocation's own error proves nothing (the
             # receiver reboots mid-invocation); the readback carries the
-            # verdict. Remember the intent for the verify-save-reset readback.
-            self.save_reset = s.intent
+            # verdict. Remember the intent for the verify-save-reset readback,
+            # with the accepted value when the response survived the reboot:
+            # persistence is judged against what the receiver accepted, not
+            # what was requested (quantization is a limitation, not a broken
+            # save).
+            self.save_reset = dict(s.intent)
+            accepted = config_value(s.config(), tuple(s.intent["path"]))
+            if accepted is not None:
+                self.save_reset["accepted"] = accepted
         elif op == "fixrate":
             self.fixrate(s)
         elif op == "set-speed":
@@ -332,7 +339,8 @@ class Analyzer:
             # completes before the reset, and gates it). A mismatch is a
             # broken persistence guarantee, not a limitation.
             if self.save_reset is not None:
-                path, v = tuple(self.save_reset["path"]), self.save_reset["value"]
+                path = tuple(self.save_reset["path"])
+                v = self.save_reset.get("accepted", self.save_reset["value"])
                 got = config_value(s.config(), path)
                 if got != v:
                     self.failures.append(
