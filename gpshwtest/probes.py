@@ -1081,6 +1081,7 @@ class ProbeRun:
             # the next disruptive run; the running state is what matters).
             self.restore_protocol(base)
         self.probe_reset(uart, raised)
+        self.probe_save_reset(nvm, uart, raised)
         if speed_supported and uart:
             self.probe_speed(self.tool.speed())
         print("probing factory reset", file=sys.stderr)
@@ -1253,6 +1254,34 @@ class ProbeRun:
         time.sleep(RESET_SETTLE)
         self.resync_speed(True, raised)
         self.show_config("verify-reset", "reset")
+
+    def probe_save_reset(self, nvm: dict[str, Any], uart: bool, raised: bool) -> None:
+        """Probe a combined save+reset in one invocation: <change> --save
+        --reset is the CLI's own mandated shape (a reset that accompanies
+        changes requires --save), and SEMANTICS.md gives the ordering - the
+        save completes before the reset takes effect and gates it, so what the
+        reset restores includes what was just saved. The established canary
+        (minElevation, as in probe_reload and gran_messages) is set, saved,
+        and reset together; after the reboot the readback must show the saved
+        value. Timing-dependent: a passing probe does not prove the ordering,
+        but a failing one is decisive. Skipped when the discovered NVM state
+        lacks the canary property. The change is left in NVM; the
+        recover_nvm(nvm, ...) call that already follows the factory-reset
+        probe restores the discovered NVM state, so no local cleanup is
+        needed."""
+        canary = next(p for p in PROPS if p.name == "minElevation")
+        cur = config_value(nvm, canary.path)
+        if cur is None:
+            return
+        v = next(x for x in canary.values if x != cur)
+        self.tool.gps("save-reset",
+                      target_arg({"Props": canary.props(v),
+                                  "Opts": {"Save": "minimal", "Reset": "cold"}}),
+                      {"op": "save-reset", "prop": canary.name,
+                       "path": list(canary.path), "value": v})
+        time.sleep(RESET_SETTLE)
+        self.resync_speed(True, raised)
+        self.show_config("verify-save-reset", "save-reset")
 
     def resync_speed(self, uart: bool, raised: bool) -> None:
         """Re-pin the link speed after an operation that may have changed

@@ -148,6 +148,7 @@ class Analyzer:
     gran_msg_f: list[str] | None = None
     gran_msg_scfg: dict[str, Any] | None = None
     save_results: list[dict[str, Any]] = field(default_factory=list)
+    save_reset: dict[str, Any] | None = None
     replay_cache: dict[Path, list[dict[str, Any]]] = field(default_factory=dict)
 
     def run(self) -> Analysis:
@@ -228,6 +229,11 @@ class Analyzer:
                 self.failures.append(f"save-all: {s.error}")
         elif op in ("reset", "factory-reset"):
             pass  # the receiver reboots; the readback carries the verdict
+        elif op == "save-reset":
+            # Like reset, the invocation's own error proves nothing (the
+            # receiver reboots mid-invocation); the readback carries the
+            # verdict. Remember the intent for the verify-save-reset readback.
+            self.save_reset = s.intent
         elif op == "fixrate":
             self.fixrate(s)
         elif op == "set-speed":
@@ -320,6 +326,18 @@ class Analyzer:
                 self.failures.append(
                     f"{what} does not match the NVM state: "
                     f"{self.reload_nvm!r} -> {s.config()!r}")
+        elif role == "save-reset":
+            # The save+reset persistence check: the value set with --save
+            # --reset in one invocation must survive the reset (the save
+            # completes before the reset, and gates it). A mismatch is a
+            # broken persistence guarantee, not a limitation.
+            if self.save_reset is not None:
+                path, v = tuple(self.save_reset["path"]), self.save_reset["value"]
+                got = config_value(s.config(), path)
+                if got != v:
+                    self.failures.append(
+                        f"save+reset: {self.save_reset['prop']} saved as {v!r} "
+                        f"with --reset but reads {got!r} after")
 
     def set_scalar(self, s: Step) -> None:
         prop, path = s.intent["prop"], tuple(s.intent["path"])
