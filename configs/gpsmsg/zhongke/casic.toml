@@ -186,3 +186,22 @@ tag = "get-rate"
 description = "Query navigation rate"
 class = 0x06
 id = 0x04
+
+# CFG-RATE set: navigation rate as the fix interval in ms.
+# Payload: U2 interval (ms), U2 reserved.
+# Fix-rate precondition for the message-rate check: fast raises the fix rate
+# so a fix-coupled message-output bug becomes visible, default restores 1 Hz.
+[[casbin]]
+tag = "fixrate-fast"
+description = "Set fix rate to 5 Hz (message-rate probe precondition)"
+class = 0x06
+id = 0x04
+payload.types = "U2U2"
+payload.values = [200, 0]
+[[casbin]]
+tag = "fixrate-default"
+description = "Set fix rate to 1 Hz (message-rate probe restore)"
+class = 0x06
+id = 0x04
+payload.types = "U2U2"
+payload.values = [1000, 0]

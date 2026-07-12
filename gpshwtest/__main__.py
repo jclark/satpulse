@@ -247,7 +247,7 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
         # that can wedge the session come after everything else.
         print("probing message output", file=sys.stderr)
         fixed = rtcm_fixed_pos_ecef if "fixedPos" in supports else None
-        base = pr.probe_messages(initial, fixed)
+        base = pr.probe_messages(initial, fixed, receiver)
         print("probing reload", file=sys.stderr)
         # Serial links get speed rediscovery after each reload, since NVM
         # may hold a different baud rate. Native USB has no baud rate.

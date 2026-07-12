@@ -19,6 +19,17 @@ from model import (MAJORS, EmissionObservation, Observation, SignalMap,
 # those RTCM families, so gpshwtest does not expect them.
 RTCM_DECADE = {"GPS": 107, "GLO": 108, "GAL": 109, "QZSS": 111, "BDS": 112}
 
+# Enabled message output is delivered at 1 Hz regardless of the fix rate
+# (SEMANTICS.md, Rate). An observed inter-arrival inside this band counts as
+# 1 Hz; the width absorbs capture jitter, while a fix-coupled 5 Hz (0.2 s) or
+# 10 Hz (0.1 s) output lands far outside it.
+RATE_MIN, RATE_MAX = 0.7, 1.5
+
+# Observed rates are quantized to this grid (seconds) so capture jitter cannot
+# flip an entry between runs: 0.2 s and 0.1 s are grid points, and the ~50 ms
+# half-step is wider than the jitter seen on a single-per-epoch type.
+RATE_GRID = 0.05
+
 def characterize(receiver: dict[str, Any], supports: list[str],
                  observations: list[Observation],
                  signal_observations: list[SignalObservation],
@@ -379,6 +390,9 @@ def characterize_nmea(obs: list[EmissionObservation]) -> dict[str, Any] | None:
             missing.append({"request": requested, "missing": lack})
     if missing:
         entry["missing"] = missing
+    rate = rate_limitation(obs, with_type=True)
+    if rate:
+        entry["rate"] = rate
     return entry if entry else None
 
 
@@ -413,6 +427,9 @@ def characterize_rtcm(obs: list[EmissionObservation], enabled: list[str],
             missing.append({"request": o.requested, "missing": lack})
     if missing:
         entry["missing"] = missing
+    rate = rate_limitation(obs, with_type=True)
+    if rate:
+        entry["rate"] = rate
     return entry if entry else None
 
 
@@ -462,7 +479,36 @@ def characterize_expected(obs: list[EmissionObservation]) -> dict[str, Any] | No
     missing = sorted(expected - emitted)
     if missing:
         entry["missing"] = missing
+    rate = rate_limitation(obs, with_type=False)
+    if rate:
+        entry["rate"] = rate
     return entry if entry else None
+
+
+def rate_limitation(obs: list[EmissionObservation],
+                    with_type: bool) -> list[dict[str, Any]]:
+    """Rate entries for one message group: an observed inter-arrival outside
+    the 1 Hz band is a delivered-rate limitation (SEMANTICS.md, Rate). The
+    observed interval is quantized to a stable grid so capture jitter does not
+    flip entries between runs. with_type keys wire-format entries by the model
+    type (a group emits several types); the semantic groups deliver one
+    information stream, so they carry no type. fixInterval records the fix
+    rate the preconditioned probe set, present only for those observations."""
+    out: list[dict[str, Any]] = []
+    for o in obs:
+        if o.error is not None:
+            continue
+        for token, interval in sorted(o.intervals.items()):
+            if RATE_MIN <= interval <= RATE_MAX:
+                continue
+            entry: dict[str, Any] = {}
+            if with_type:
+                entry["type"] = token
+            entry["observed"] = round(round(interval / RATE_GRID) * RATE_GRID, 2)
+            if o.fix_interval is not None:
+                entry["fixInterval"] = o.fix_interval
+            out.append(entry)
+    return dedup(out)
 
 
 def characterize_save(results: list[dict[str, Any]]) -> dict[str, Any] | None:

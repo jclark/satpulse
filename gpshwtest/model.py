@@ -38,6 +38,12 @@ AUGMENT_SIGNALS = {"GAL": {"E6"}, "BDS": {"B2b"}}
 # remain visible in the packet-log artifacts.
 NMEA_VOCAB = ["RMC", "GGA", "GSA", "GSV", "ZDA", "VTG", "GLL"]
 
+# NMEA sentence types that appear exactly once per epoch, so their
+# inter-arrival time reflects the output cadence. GSV (and GSA on some
+# receivers) emits several sentences per epoch, so its gaps would misreport
+# the rate; those types are excluded from rate measurement.
+RATE_SAFE_NMEA = ["RMC", "GGA", "ZDA", "VTG", "GLL"]
+
 # The full model signal set of each constellation, as the unqualified signal
 # names of the readback JSON, mirroring the SigSet* constants in
 # gps/gpsprot/signal.go. A --gnss request denotes a constellation's whole set;
@@ -97,13 +103,20 @@ class SignalObservation:
 class EmissionObservation:
     """Outcome of one message-output request, observed by packet capture.
     expect carries the information kinds the request should deliver, for
-    the semantic groups checked at the information level."""
+    the semantic groups checked at the information level. intervals is the
+    observed inter-arrival per single-per-epoch type (model type name for
+    the wire-format groups, event type for the semantic ones), for the rate
+    check. fix_interval is the fix interval (seconds) the observation ran
+    preconditioned to, set only by the preconditioned rate probe; None means
+    the observation ran at the receiver's as-found fix rate."""
 
     group: str
     requested: list[str]
     error: str | None
     emitted: list[str]
     expect: list[str] | None = None
+    intervals: dict[str, float] = field(default_factory=dict)
+    fix_interval: float | None = None
 
 
 def transient(err: str | None) -> bool:
@@ -418,6 +431,75 @@ def emissions(log: Path) -> dict[tuple[str, str], int]:
 def parse_t(s: str) -> datetime.datetime:
     """Parse a packet log timestamp (RFC 3339)."""
     return datetime.datetime.fromisoformat(s)
+
+
+def median_interval(times: list[datetime.datetime]) -> float | None:
+    """The median inter-arrival time in seconds of a set of timestamps, or
+    None with fewer than two (a single arrival has no interval). Median, not
+    mean, so one delayed packet does not skew the estimate."""
+    if len(times) < 2:
+        return None
+    ts = sorted(times)
+    gaps = sorted((b - a).total_seconds() for a, b in zip(ts, ts[1:]))
+    n = len(gaps)
+    return gaps[n // 2] if n % 2 else (gaps[n // 2 - 1] + gaps[n // 2]) / 2
+
+
+def emission_intervals(log: Path) -> dict[tuple[str, str], float]:
+    """Per (tag, msg) key, the median inter-arrival time in seconds over the
+    same observation window emissions() uses (strictly after the last
+    outbound packet plus EMISSION_GRACE). Absent for keys with fewer than
+    two arrivals. Only single-per-epoch message types give a meaningful
+    cadence (see RATE_SAFE_NMEA and the MSM numbers); a type emitted several
+    times per epoch would show intra-epoch gaps, so callers select the safe
+    types before drawing a rate verdict."""
+    entries = [json.loads(line) for line in log.read_text().splitlines()]
+    last_out = max((parse_t(e["t"]) for e in entries if e.get("out")), default=None)
+    times: dict[tuple[str, str], list[datetime.datetime]] = {}
+    for e in entries:
+        tag, msg = e.get("tag"), e.get("msg")
+        if e.get("out") or not isinstance(tag, str) or not isinstance(msg, str):
+            continue
+        t = parse_t(e["t"])
+        if last_out is not None and t <= last_out + EMISSION_GRACE:
+            continue
+        times.setdefault((tag, msg), []).append(t)
+    out: dict[tuple[str, str], float] = {}
+    for k, ts in times.items():
+        iv = median_interval(ts)
+        if iv is not None:
+            out[k] = iv
+    return out
+
+
+def nmea_rate_intervals(iv: dict[tuple[str, str], float]) -> dict[str, float]:
+    """Observed inter-arrival per single-per-epoch NMEA sentence type, keyed
+    by the model type name. On the rare receiver that emits one type under
+    two talker IDs, the larger interval is kept: each talker's own cadence is
+    per-epoch, and the conservative choice avoids a spurious fast reading."""
+    out: dict[str, float] = {}
+    for (tag, msg), t in iv.items():
+        if tag == "NMEA" and len(msg) == 5 and msg[2:] in RATE_SAFE_NMEA:
+            typ = msg[2:]
+            out[typ] = max(out.get(typ, t), t)
+    return out
+
+
+def rtcm_rate_intervals(iv: dict[tuple[str, str], float]) -> dict[str, float]:
+    """Observed inter-arrival per RTCM message number (each number is emitted
+    once per epoch, so all are safe)."""
+    return {msg: t for (tag, msg), t in iv.items() if tag == "RTCM"}
+
+
+def event_intervals(events: list[dict[str, Any]], etype: str) -> dict[str, float]:
+    """The median inter-arrival of one replayed event type, keyed by the type
+    name; empty when fewer than two events carry it. Used to measure the
+    delivery cadence of the semantic groups (navEpoch for PVT, satellites for
+    satellite information) at the information level."""
+    times = [parse_t(e["t"]) for e in events
+             if e.get("type") == etype and isinstance(e.get("t"), str)]
+    iv = median_interval(times)
+    return {etype: iv} if iv is not None else {}
 
 
 def nmea_set(d: dict[tuple[str, str], int]) -> list[str]:

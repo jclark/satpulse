@@ -49,6 +49,16 @@ RAISED_SPEED = 115200
 # (covers USB re-enumeration as well as the restart itself).
 RESET_SETTLE = 5.0
 
+# The fix intervals (seconds) the preconditioned rate probe sets through the
+# receiver's message file: fast exposes fix-coupled message output (5 Hz),
+# default restores 1 Hz. The message-file tags carry the actual values.
+FIXRATE_FAST = 0.2
+FIXRATE_DEFAULT = 1.0
+
+# A longer capture for the two rate observations: OBSERVE_SECONDS at 1 Hz is
+# only ~3 intervals, so a wider window keeps the median inter-arrival stable.
+RATE_OBSERVE_SECONDS = 6
+
 
 def signal_universe(gnss: list[str]) -> SignalMap:
     """The union of the full model signal set of each named constellation:
@@ -571,6 +581,24 @@ class ProbeRun:
         tags = {ln.get("tag") for ln in lines if isinstance(ln, dict)}
         return all(t in tags for t in wanted)
 
+    def msg_file_tags(self, mf: Path) -> set[str]:
+        """Every tag defined in a message file, across all message-type
+        arrays: a file spells its messages as [[line]], [[nmea]], [[casbin]]
+        and so on, and the fix-rate command is not a [[line]] on the Quectel
+        (PQTM* NMEA) or CASIC (binary) receivers, so the speed-tag lookup's
+        line-only scan would miss it."""
+        try:
+            with open(mf, "rb") as f:
+                data = tomllib.load(f)
+        except (OSError, tomllib.TOMLDecodeError):
+            return set()
+        tags: set[str] = set()
+        for v in data.values():
+            if isinstance(v, list):
+                tags |= {ln["tag"] for ln in v
+                         if isinstance(ln, dict) and isinstance(ln.get("tag"), str)}
+        return tags
+
     def raise_speed(self, baud: int) -> bool:
         """Try to raise the link from baud to RAISED_SPEED. Returns whether
         the as-found speed now needs restoring: True on success, and after a
@@ -755,30 +783,36 @@ class ProbeRun:
         return None if inv.error is not None else inv
 
     def set_and_observe(self, group: str, case: list[str], opts: dict[str, Any],
-                        expect: set[str] | None = None) -> Invocation | None:
+                        expect: set[str] | None = None,
+                        seconds: int = OBSERVE_SECONDS,
+                        rate: float | None = None) -> Invocation | None:
         """Apply one message-output case and observe the result with
         --capture in the same invocation: event output (raw navigation
         data per SEMANTICS.md) is delivered as a snapshot when the request
         is applied plus changes thereafter, so output emitted between a
         configuring invocation and a separate observing one would be lost
         with the port closed. opts is the ConfigOptions fragment the case
-        sets. Returns None when the request was refused (visible to analysis
-        in the records). A transient set failure means the link itself is in
-        trouble (a flooding receiver answers nothing), so the message phase
-        stops."""
+        sets. seconds lengthens the capture for the rate probe. rate marks an
+        observation as running preconditioned to that fix interval (seconds),
+        so the analyzer knows the rate check ran against a known fix rate.
+        Returns None when the request was refused (visible to analysis in the
+        records). A transient set failure means the link itself is in trouble
+        (a flooding receiver answers nothing), so the message phase stops."""
         name = "-".join(case)
         intent: dict[str, Any] = {"op": "set-msg", "group": group, "case": case}
         if expect is not None:
             intent["expect"] = sorted(expect)
+        if rate is not None:
+            intent["rate"] = rate
         inv = self.tool.gps(f"set-{group}-{name}",
-                            target_arg({"Opts": opts}, "--capture", str(OBSERVE_SECONDS)),
+                            target_arg({"Opts": opts}, "--capture", str(seconds)),
                             intent)
         if transient(inv.error):
             self.line_dead = True
         return None if inv.error is not None else inv
 
-    def probe_messages(self, initial_cfg: dict[str, Any],
-                       rtcm_fixed_pos_ecef: str | None) -> dict[tuple[str, str], int] | None:
+    def probe_messages(self, initial_cfg: dict[str, Any], rtcm_fixed_pos_ecef: str | None,
+                       receiver: dict[str, Any]) -> dict[tuple[str, str], int] | None:
         """Probe NMEA, RTCM, PVT, satellite, and raw output from one shared
         baseline observation, restoring each group afterwards. Raw runs
         last: it is the one group that can saturate the link beyond
@@ -791,6 +825,7 @@ class ProbeRun:
             return None
         base = emissions(base_inv.packet_log)
         for probe in (partial(self.probe_nmea, nmea_set(base)),
+                      partial(self.probe_rate, receiver),
                       partial(self.probe_rtcm, rtcm_set(base), initial_cfg,
                               rtcm_fixed_pos_ecef),
                       self.probe_pvt, self.probe_sats,
@@ -812,6 +847,45 @@ class ProbeRun:
         if inv.error is None:
             self.observe("verify-restore-nmea",
                          {"op": "observe", "role": "verify", "group": "nmeaOut"})
+
+    def probe_rate(self, receiver: dict[str, Any]) -> None:
+        """Preconditioned message-rate probe: set a fast fix rate, then check
+        NMEA and PVT output still arrive at 1 Hz (SEMANTICS.md, Rate). Enabled
+        output is 1 Hz independent of the fix rate, so a fix-coupled bug is
+        invisible while the receiver sits at its 1 Hz default fix rate; the
+        precondition is the point. The fix rate has no device-independent
+        knob, so it is set with the receiver's own message-file tags
+        (fixrate-fast / fixrate-default), present only where the fix rate is
+        settable (Quectel, CASIC; Allystar has no rate register). Skipped when
+        the file lacks both tags. Running-state only - nothing saves it, so
+        NVM is untouched and the probe is not disruptive; the default rate is
+        restored unconditionally so an aborted probe leaves nothing fast.
+        Assumes the as-found mode is not base mode: on the LG290P base mode
+        forces 1 Hz and would mask the bug. A passing observation does not
+        prove correct realization on a receiver already at 1 Hz; a fast
+        observed rate, which only a fast fix rate can surface, is the finding."""
+        mf = self.speed_msg_file(receiver)
+        if mf is None or not {"fixrate-fast", "fixrate-default"} <= self.msg_file_tags(mf):
+            return
+        self.send_fixrate(mf, "fixrate-fast", "fast")
+        try:
+            self.set_and_observe("nmeaOut", ["RMC"], {"NMEAMsg": wire_flags(["RMC"])},
+                                 seconds=RATE_OBSERVE_SECONDS, rate=FIXRATE_FAST)
+            self.set_and_observe("pvtOut", ["pos", "time", "off"],
+                                 {"NMEAMsg": ["other"],
+                                  "PVTMsg": msg_flags(["pos", "time", "off"], PVT_MSG_JSON)},
+                                 expect={"pos", "time"},
+                                 seconds=RATE_OBSERVE_SECONDS, rate=FIXRATE_FAST)
+        finally:
+            self.send_fixrate(mf, "fixrate-default", "default")
+
+    def send_fixrate(self, mf: Path, tag: str, role: str) -> None:
+        """Send one fix-rate message-file tag. A message-file invocation
+        cannot combine with --target-json, so it goes through -m/-t like the
+        speed tags, with no JSON output; the rate change is confirmed by
+        observing the emitted cadence, not read back."""
+        self.tool.gps(f"fixrate-{role}", ["-m", str(mf), "-t", tag],
+                      {"op": "fixrate", "role": role}, retry=False, json_out=False)
 
     def probe_rtcm(self, initial: list[str], initial_cfg: dict[str, Any],
                    fixed_pos_ecef: str | None) -> None:
