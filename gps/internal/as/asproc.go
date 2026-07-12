@@ -76,7 +76,8 @@ func (p *PacketProcessor) handleNavEpoch(nm asbin.NavMsg, tRead time.Time) {
 // sameEpoch reports whether two epoch identifiers (iTOW+1) refer to the same
 // navigation epoch. It allows a 1ms tolerance because Allystar NAV-TIMEUTC
 // reports iTOW consistently 1ms less than other NAV messages in the same
-// solution. The minimum epoch interval is 1000ms (1Hz), so a 1ms tolerance
+// solution. A 5Hz-native unit runs epochs 200ms apart and a 10Hz unit
+// 100ms apart, so even at the fastest documented rate the 1ms tolerance
 // cannot merge distinct epochs.
 func sameEpoch(a, b uint32) bool {
 	if a > b {

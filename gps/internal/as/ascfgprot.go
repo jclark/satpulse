@@ -7,6 +7,12 @@ import (
 	"github.com/jclark/satpulse/gps/lib/asbin"
 )
 
+// tagNMEA is the packet tag of the nmea processor. On a port where the
+// Allystar probe succeeded, the NMEA is the same receiver talking, so it
+// feeds the rate estimator too. Declared here rather than imported from
+// the nmea package, which would cycle through the nmea tests.
+const tagNMEA gpsprot.Tag = "NMEA"
+
 // Vendor is the receiver vendor name reported in ReceiverInfo.
 const Vendor = "Allystar"
 
@@ -19,21 +25,30 @@ const Vendor = "Allystar"
 // message: the Configurator never requests MON-VER (ReceiverInfo comes
 // from the probe's answer), so there is nothing to misattribute.
 type ConfigProtocol struct {
-	probed bool          // a MON-VER response identified an Allystar receiver
-	ver    *asbin.MonVer // the probe's MON-VER answer
+	probed bool           // a MON-VER response identified an Allystar receiver
+	ver    *asbin.MonVer  // the probe's MON-VER answer
 	cfg    *Configurator
+	est    *rateEstimator // shared with the Configurator it creates
 }
 
 var _ gpsprot.ConfigProtocol = (*ConfigProtocol)(nil)
+var _ gpsprot.HandledNativeMsgHandler = (*ConfigProtocol)(nil)
 
 // NewConfigProtocol creates a ConfigProtocol for Allystar receivers.
 func NewConfigProtocol() *ConfigProtocol {
-	return &ConfigProtocol{}
+	return &ConfigProtocol{est: newRateEstimator()}
 }
 
-// NativeMsg processes Allystar messages routed from the packet
-// processor.
+// NativeMsg processes Allystar messages the data path did not consume:
+// MON-VER (probe answer), ACK/NAK and poll responses (routed to the
+// Configurator), and any unconsumed periodic message (fed to the rate
+// estimator). NMEA on a port where the Allystar probe succeeded is the
+// same receiver talking, so NMEA feeds the estimator too.
 func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
+	if tag == tagNMEA {
+		cp.observe(msg, tRead)
+		return nil
+	}
 	if tag != Tag {
 		return nil
 	}
@@ -46,10 +61,30 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 		cp.probed = true
 		return nil
 	}
+	cp.observe(m, tRead)
 	if cp.cfg != nil {
 		return cp.cfg.nativeMsg(m, tRead)
 	}
 	return nil
+}
+
+// HandledNativeMsg feeds the rate estimator the messages the data path
+// consumed - the enabled NAV messages and parsed NMEA sentences - which
+// the Configurator would otherwise never see.
+func (cp *ConfigProtocol) HandledNativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
+	if tag == Tag || tag == tagNMEA {
+		cp.observe(msg, tRead)
+	}
+	return nil
+}
+
+// observe feeds one message to the estimator and lets the Configurator
+// react to any resolution (completing a pending resolve-phase watch).
+func (cp *ConfigProtocol) observe(msg interface{}, tRead time.Time) {
+	cp.est.observe(msg, tRead)
+	if cp.cfg != nil {
+		cp.cfg.onObserve()
+	}
 }
 
 // ProbePacket returns an empty-payload MON-VER poll. State-neutral and
@@ -71,6 +106,6 @@ func (cp *ConfigProtocol) Configure(target *gpsprot.ConfigTarget) (gpsprot.Confi
 	if !cp.probed {
 		panic("Configure called before probe OK")
 	}
-	cp.cfg = newConfigurator(target, cp.ver)
+	cp.cfg = newConfigurator(target, cp.ver, cp.est)
 	return cp.cfg, nil
 }

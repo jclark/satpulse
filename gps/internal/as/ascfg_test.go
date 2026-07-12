@@ -21,6 +21,7 @@ type testReceiver struct {
 	t              *testing.T
 	monVer         *asbin.MonVer
 	rates          map[asbin.MsgID]uint8
+	msgSets        []asbin.MsgID        // CFG-MSG set targets received, in order
 	naks           map[asbin.MsgID]bool // set requests answered with NAK
 	nakTargets     map[asbin.MsgID]bool // CFG-MSG targets answered with NAK
 	silent         map[asbin.MsgID]bool // requests not answered at all
@@ -86,6 +87,7 @@ func (r *testReceiver) respondOne(data []byte) [][]byte {
 			r.rates = make(map[asbin.MsgID]uint8)
 		}
 		r.rates[target] = mt.Rate
+		r.msgSets = append(r.msgSets, target)
 		return [][]byte{r.ack(asbin.CfgMsgID)}
 	case *asbin.RxmDumpRaw:
 		r.rawOn = mt.Enable
@@ -325,7 +327,7 @@ func TestConfigSupport(t *testing.T) {
 		{"HD.n0dig", base | rtcm}, // HD without digits
 	} {
 		ver := &asbin.MonVer{SwVersion: z16("3.018"), HwVersion: z16(tc.hw)}
-		cfg := newConfigurator(&gpsprot.ConfigTarget{}, ver)
+		cfg := newConfigurator(&gpsprot.ConfigTarget{}, ver, newRateEstimator())
 		if got := cfg.ConfigSupport(); got != tc.want {
 			t.Errorf("%s: ConfigSupport = %v, want %v", tc.hw, got, tc.want)
 		}

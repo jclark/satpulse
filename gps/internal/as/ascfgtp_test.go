@@ -118,7 +118,7 @@ func TestTimePulseReadback(t *testing.T) {
 
 func TestTimePulseWidthSubMsPeriod(t *testing.T) {
 	// The width readback must not truncate away periods under 1 ms.
-	cfg := newConfigurator(&gpsprot.ConfigTarget{}, tau1201Ver())
+	cfg := newConfigurator(&gpsprot.ConfigTarget{}, tau1201Ver(), newRateEstimator())
 	cfg.pps = &asbin.CfgPps{Period: 100, DutyCycle: 500000}
 	if w, ok := cfg.ConfigProps().GetTimePulseWidth(); !ok || w != 50*time.Microsecond {
 		t.Errorf("width = %v/%v, want 50us", w, ok)

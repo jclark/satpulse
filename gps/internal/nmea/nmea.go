@@ -80,6 +80,30 @@ func unescape(s string) string {
 	return unescaped
 }
 
+// TimeOfDay returns the sentence's time-of-day field (hhmmss.ss) and
+// true, for the time-bearing approved sentences (RMC, GGA, GLL, ZDA);
+// false otherwise. It lets an observer time these sentences without
+// depending on this package's types.
+func (s *Sentence) TimeOfDay() (string, bool) {
+	as := s.ApprovedSentence()
+	if as == nil {
+		return "", false
+	}
+	var idx int
+	switch as.Format {
+	case "RMC", "GGA", "ZDA":
+		idx = 0
+	case "GLL":
+		idx = 4
+	default:
+		return "", false
+	}
+	if idx >= len(as.Fields) {
+		return "", false
+	}
+	return as.Fields[idx], true
+}
+
 func (s *Sentence) AddressField() string {
 	if s.SyntaxFlags&nmeamsg.SentenceAddressLength5 != 0 {
 		return s.Payload[:5] // e.g. GPRMC
