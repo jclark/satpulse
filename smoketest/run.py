@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
-"""Daemon smoke test runner (direct environment).
+"""Smoke test runner (direct environment).
 
-Runs real satpulsed binaries fed by realtime packet-log replay through a
-FIFO, with no root and no GPS hardware. See plan/smoke-test.md.
+Runs real satpulsed and satpulsewb binaries fed by a hardware-free packet
+source -- a realtime packet-log replay or the u-blox receiver simulator --
+with no root and no GPS hardware. See plan/smoke-test.md.
 
 Each scenario has an explicit ID in SCENARIOS. For scenario ID family/name:
-  - scenarios/family/name.toml.in : config template using ${SATPULSE_TEST_*}
-  - scenarios/family/name.py      : defines PACKET_LOG, FACTOR, and run(ctx)
+  - scenarios/family/name.toml.in (satpulsed) or name.args.in (satpulsewb):
+    input template using ${SATPULSE_TEST_*}
+  - scenarios/family/name.py      : defines run(ctx) plus the program and
+    packet provider the scenario declares (PROGRAM, PROVIDER and the
+    provider's attributes; see CLAUDE.md)
 
 The runner allocates a resource block (ports, paths) per scenario, renders
-the config, starts the daemon, replays the packet log into the FIFO, then
-calls the scenario's run(ctx) to perform its checks. Scenarios are
-parallel-safe and run concurrently by default.
+the program's input, starts the program and its packet source, then calls
+the scenario's run(ctx) to perform its checks. Scenarios are parallel-safe
+and run concurrently by default.
 """
 
 from __future__ import annotations
@@ -40,6 +44,7 @@ REPO = os.path.dirname(HERE)
 import common  # noqa: E402  (after sys.path is set up)
 import platform_api  # noqa: E402
 import program_api  # noqa: E402
+import provider_api  # noqa: E402
 
 # Platform seam: the per-OS module supplies the transport, shutdown, and
 # privilege primitives (see platform_api). Select it by os.name so run.py
@@ -61,6 +66,8 @@ SCENARIOS = [
     "http/wb-default",
     "http/wb-listen",
     "http/wb-survey",
+    "config/startup",
+    "config/wb-apply",
     "ntrip/basic",
     "ntrip/auth",
     "ntrip/anyuser",
@@ -205,22 +212,22 @@ class Context:
         name: str,
         run_dir: str,
         env: dict[str, str],
-        factor: int | float,
-        packet_log: str,
         daemon_log: str,
         requires_root: bool,
         use_sudo: bool,
-        transport: platform_api.Transport,
     ) -> None:
         self.name = name
         self.run_dir = run_dir
         self.env = env
-        # Serial input transport, chosen by the capabilities the scenario needs
-        # (see run_scenario): a plain replay sink, or one that is read-write
-        # (start_write_capture) and/or disconnectable (disconnect).
-        self._transport = transport
-        self.factor = factor
-        self.packet_log = packet_log
+        # Serial input transport, set by the replay provider's create hook
+        # (None under ubxsim, which serves its own pty): a plain replay sink,
+        # or one that is read-write (start_write_capture) and/or
+        # disconnectable (disconnect). factor and packet_log are provider
+        # attributes recorded here by the same hook (factor also paces
+        # correction sources; both keep their defaults under ubxsim).
+        self._transport: platform_api.Transport | None = None
+        self.factor: int | float = 1
+        self.packet_log = ""
         self.daemon_log = daemon_log
         # Which listeners/peers the program needs, set by program.prepare (from
         # the daemon's rendered config, or left at the defaults for satpulsewb,
@@ -772,6 +779,7 @@ class Context:
         The transport decides where pack's output goes (a FIFO write fd, a dup
         of the pty master).
         """
+        assert self._transport is not None, "start_replay needs the replay provider's transport"
         cmd = [self.satpulsetool, "pack", "--realtime", str(self.factor), self.packet_log]
         errf = open(self.replay_err, "wb")
         self._replay_err_file = errf
@@ -798,7 +806,8 @@ class Context:
             raise RuntimeError(f"replay (pack) exited with code {rc}: {self._replay_stderr()}")
 
     def _close_replay_files(self) -> None:
-        self._transport.close_replay()
+        if self._transport is not None:
+            self._transport.close_replay()
         if self._replay_err_file is not None:
             self._replay_err_file.close()
             self._replay_err_file = None
@@ -818,6 +827,7 @@ class Context:
         RTCM corrections the daemon wrote back to the receiver; the non-RTCM
         probe bytes the daemon emits during detection are filtered out by tag.
         """
+        assert self._transport is not None, "start_write_capture needs the replay provider's transport"
         self._transport.enable_write_capture(self.serial_writes)
 
     def disconnect(self) -> None:
@@ -828,6 +838,7 @@ class Context:
         vanished USB serial device. After this the daemon should shut down on
         its own; assert that with wait_exit().
         """
+        assert self._transport is not None, "disconnect needs the replay provider's transport"
         self._transport.disconnect()
 
     def wait_exit(self, timeout: float = 10) -> int:
@@ -899,29 +910,19 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
     # Program owns what differs between the two (input prep, start command,
     # readiness, allowed log lines, ports to free). See program_api.
     program = program_api.select(getattr(scen, "PROGRAM", "satpulsed"))
-    factor = scen.FACTOR
-    packet_log = scen.PACKET_LOG
-    if not os.path.isabs(packet_log):
-        packet_log = os.path.join(REPO, packet_log)
-
-    # Serial-input transport capabilities the scenario needs, computed from what
-    # it does, not from a named mechanism. CAPTURE_WRITES (a write-path scenario
-    # recording what the program sent back) needs a read-write transport;
-    # SELF_SHUTDOWN and DISCONNECTABLE both need a transport that can model the
-    # device vanishing. They are orthogonal to capture: serial-loss disconnects
-    # without capturing, the stream/pull-* scenarios capture without
-    # disconnecting. The platform maps them to a concrete transport (below).
-    capture_writes = bool(getattr(scen, "CAPTURE_WRITES", False))
+    # The packet provider is an orthogonal scenario dimension (default replay):
+    # it owns what plays the receiver behind SATPULSE_TEST_SERIAL and how the
+    # feed is driven (transport selection and the pack replay for replay; the
+    # u-blox simulator for ubxsim). See provider_api.
+    provider = provider_api.select(getattr(scen, "PROVIDER", "replay"))
+    # SELF_SHUTDOWN is a lifecycle property (does the program exit when its input
+    # goes away?) the runner asserts after run(); the provider reads it (and the
+    # other capabilities) independently to pick a disconnectable transport.
     self_shutdown = bool(getattr(scen, "SELF_SHUTDOWN", False))
-    # DISCONNECTABLE requests a transport that can be unplugged without the
-    # self-shutdown lifecycle: satpulsewb's device-loss scenario disconnects and
-    # then asserts the program keeps running (SELF_SHUTDOWN's inverse), so it
-    # needs the pty but not the no-signal exit check.
-    disconnectable = self_shutdown or bool(getattr(scen, "DISCONNECTABLE", False))
     # INPUT (the old transport selector) is obsolete: transport is now chosen
-    # from the capabilities above. Reject it loudly so a scenario merged from a
-    # branch predating this change fails here rather than silently running over
-    # the FIFO instead of the pty it asked for.
+    # from the scenario's capabilities by the replay provider. Reject it loudly
+    # so a scenario merged from a branch predating this change fails here rather
+    # than silently running over the FIFO instead of the pty it asked for.
     if hasattr(scen, "INPUT"):
         return (name, "FAIL", "INPUT is obsolete; declare CAPTURE_WRITES and/or SELF_SHUTDOWN instead")
     # A scenario known to fail (e.g. a bug not yet fixed) declares XFAIL = reason.
@@ -929,45 +930,35 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
 
     run_dir = tempfile.mkdtemp(prefix=f"satpulse-smoke-{name.replace('/', '-')}-")
     env = allocate_env(name, run_dir)
-    env["SATPULSE_TEST_PACKET_LOG"] = packet_log
-    daemon_env = os.environ.copy()
-    scenario_env = cast(dict[str, str], getattr(scen, "ENV", {}))
-    for key, value in scenario_env.items():
-        daemon_env[key] = program_api.substitute(value, env)
     os.makedirs(env["SATPULSE_TEST_LOG_DIR"], exist_ok=True)
-    # Create the serial-input transport with the requested capabilities and
-    # point the program's device path at it (the FIFO path the runner allocated,
-    # or the pty slave name) before preparing the input that references
-    # SATPULSE_TEST_SERIAL. A platform that cannot supply those capabilities
-    # reports the scenario unsupported here, which is a SKIP.
-    try:
-        transport = plat.make_transport(
-            env["SATPULSE_TEST_SERIAL"], readwrite=capture_writes, disconnectable=disconnectable)
-    except platform_api.TransportUnsupported as e:
-        shutil.rmtree(run_dir, ignore_errors=True)
-        return (name, "SKIP", str(e))
-    env["SATPULSE_TEST_SERIAL"] = transport.path()
 
     daemon_log = os.path.join(run_dir, f"{program.name}.log")
-    ctx = Context(
-        name, run_dir, env, factor, packet_log, daemon_log,
-        requires_root, use_sudo, transport=transport,
-    )
+    ctx = Context(name, run_dir, env, daemon_log, requires_root, use_sudo)
     ctx.prog_bin = bin_path(program.name)
-    # Prepare the program's input (render the config or the flag list) and
-    # record which listeners/peers it needs on ctx.
-    program.prepare(ctx, scen)
-    # Enable capture before attaching so the transport captures from the first
-    # byte; attach takes ownership (a pty starts its drain thread) before the
-    # program starts.
-    if capture_writes:
-        ctx.start_write_capture()
-    transport.attach()
 
     daemon: subprocess.Popen[bytes] | None = None
     status: Status = "PASS"
     detail = ""
     try:
+        # Set up the packet source and point SATPULSE_TEST_SERIAL at its
+        # endpoint (the FIFO/pty for replay, the simulator's symlink for
+        # ubxsim) before the program's input is rendered. Inside the try so
+        # that any later failure still reaches the finally's provider.close:
+        # a half-set-up source (e.g. the spawned simulator) must be released,
+        # not orphaned. A provider that cannot honour the scenario on this
+        # platform reports it unsupported (the SKIP mapping below); a scenario
+        # error (e.g. ubxsim with CAPTURE_WRITES) is an ordinary FAIL, with
+        # the run dir kept like any other failure.
+        provider.create(ctx, scen)
+
+        daemon_env = os.environ.copy()
+        scenario_env = cast(dict[str, str], getattr(scen, "ENV", {}))
+        for key, value in scenario_env.items():
+            daemon_env[key] = program_api.substitute(value, env)
+        # Prepare the program's input (render the config or the flag list) and
+        # record which listeners/peers it needs on ctx.
+        program.prepare(ctx, scen)
+
         # Start the fake peers the program needs, each before the program
         # starts so its first sample/connect lands rather than warning and
         # backing off (config-derived for satpulsed, scenario-declared for
@@ -994,17 +985,19 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
             raise RuntimeError(f"{program.name} exited at startup (code {daemon.returncode})")
         program.wait_ready(ctx)
 
-        # A single replay then runs in the background while checks observe
-        # the live program.
-        ctx.start_replay()
+        # The provider then begins feeding packets while checks observe the
+        # live program: the replay provider launches its single background
+        # replay; ubxsim is already emitting nav.
+        provider.start(ctx)
 
         scen.run(ctx)
 
-        # Backstop the suite invariant that the replay finished cleanly,
-        # even if the scenario did not call wait_replay itself. Idempotent
-        # when the scenario already waited. Done before shutdown so pack
-        # finishes against a live daemon rather than dying of SIGPIPE.
-        ctx.wait_replay()
+        # Backstop the provider's feed: the replay provider waits for the
+        # replay to finish cleanly, even if the scenario did not call
+        # wait_replay itself (idempotent when it did), before shutdown so pack
+        # finishes against a live daemon rather than dying of SIGPIPE; ubxsim
+        # has nothing to wait for.
+        provider.finish(ctx)
 
         if self_shutdown:
             # No signal: losing the serial input must be enough to make the
@@ -1048,13 +1041,14 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
             err = ctx.remove_ntp_shm()
             if err is not None:
                 raise RuntimeError(f"failed to remove NTP SHM segment {ctx.ntp_shm_segment}: {err}")
+    except platform_api.TransportUnsupported as e:
+        # The platform cannot supply the requested packet source: the same
+        # clean SKIP as a missing external dependency (the run dir is removed
+        # below, since only FAIL/XPASS keep it).
+        status, detail = "SKIP", str(e)
     except Exception:
         status, detail = "FAIL", traceback.format_exc()
     finally:
-        if ctx.replay_proc is not None and ctx.replay_proc.poll() is None:
-            ctx.replay_proc.kill()
-        ctx._close_replay_files()
-        ctx._transport.close()
         if daemon is not None and daemon.poll() is None:
             plat.stop_daemon(
                 daemon,
@@ -1065,6 +1059,11 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
         ctx.stop_ntp_sock()
         ctx.stop_push_peers()
         ctx.stop_source()
+        # Release the packet source last, after the program has stopped: the
+        # replay provider closes the transport, and the ubxsim provider SIGTERMs
+        # the simulator only now, so an early kill cannot inject read errors
+        # into the program's shutdown.
+        provider.close(ctx)
         if requires_root:
             err = ctx.remove_ntp_shm()
             if err is not None:
