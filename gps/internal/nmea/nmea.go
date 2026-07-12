@@ -169,8 +169,18 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 	approvSen := sen.ApprovedSentence()
 	if approvSen != nil {
 		handled, err := p.Dispatch(approvSen, tRead, p.mh)
-		if err != nil || handled {
+		if err != nil {
 			return msgID, err
+		}
+		if handled {
+			// Offer the consumed sentence to an observer (the rate
+			// estimator) via the optional handled channel: NMEA is the
+			// main traffic on a fresh unit, and its time-bearing
+			// sentences carry content time.
+			if hh, ok := p.GetNativeMsgHandler().(gpsprot.HandledNativeMsgHandler); ok {
+				return msgID, hh.HandledNativeMsg(Tag, msgID, sen, tRead)
+			}
+			return msgID, nil
 		}
 	}
 	for _, eh := range p.extHandlers {
