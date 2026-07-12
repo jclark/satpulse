@@ -74,13 +74,13 @@ def signals_target(sigs: SignalMap) -> list[str]:
 
 
 def wire_flags(case: list[str]) -> list[str]:
-    """The JSON message flags for a wire-format (NMEA/RTCM) probe case. The
-    'other' element is always present: gpshwtest never turns off the group's
-    unmodeled messages, so a receiver's as-found vendor sentences or extra
-    RTCM types (e.g. the TAU1302's shipped ephemeris 1019/1042/1046) survive
-    the whole run and the leave-as-found check. 'none' clears the modeled
-    types (an empty modeled list) while 'other' keeps the unmodeled ones."""
-    return [t for t in case if t != "none"] + ["other"]
+    """The JSON message flags for a wire-format (NMEA/RTCM) probe case:
+    plain complete requests, exactly the shape production callers send, so
+    the group's unmodeled messages are turned off like everything else.
+    Out-of-vocabulary as-found output is therefore not restorable; the
+    documented per-receiver starting state (setup/<receiver>.sh) must not
+    include any. 'none' clears the group (an empty list)."""
+    return [t for t in case if t != "none"]
 
 
 def msg_flags(case: list[str], table: dict[str, str]) -> list[str]:
@@ -842,7 +842,7 @@ class ProbeRun:
             self.set_and_observe("nmeaOut", case, {"NMEAMsg": wire_flags(case)})
         want = [t for t in initial if t in NMEA_VOCAB]
         inv = self.tool.gps("restore-nmea",
-                            target_arg({"Opts": {"NMEAMsg": want + ["other"]}}),
+                            target_arg({"Opts": {"NMEAMsg": want}}),
                             {"op": "restore-msg", "group": "nmeaOut", "want": want})
         if inv.error is None:
             self.observe("verify-restore-nmea",
@@ -872,7 +872,7 @@ class ProbeRun:
             self.set_and_observe("nmeaOut", ["RMC"], {"NMEAMsg": wire_flags(["RMC"])},
                                  seconds=RATE_OBSERVE_SECONDS, rate=FIXRATE_FAST)
             self.set_and_observe("pvtOut", ["pos", "time", "off"],
-                                 {"NMEAMsg": ["other"],
+                                 {"NMEAMsg": [],
                                   "PVTMsg": msg_flags(["pos", "time", "off"], PVT_MSG_JSON)},
                                  expect={"pos", "time"},
                                  seconds=RATE_OBSERVE_SECONDS, rate=FIXRATE_FAST)
@@ -912,7 +912,7 @@ class ProbeRun:
             if fixed and "1005" in initial:
                 want.append("ARP")
             inv = self.tool.gps("restore-rtcm",
-                                target_arg({"Opts": {"RTCMMsg": want + ["other"]}}),
+                                target_arg({"Opts": {"RTCMMsg": want}}),
                                 {"op": "restore-msg", "group": "rtcmOut",
                                  "want": want})
             if inv.error is None:
@@ -958,9 +958,9 @@ class ProbeRun:
         case in binary mode and capture; analysis replays the capture and
         checks the information kinds delivered."""
         for case in PVT_CASES:
-            # --binary: NMEA off (unmodeled kept via other), the case's PVT set.
+            # --binary: NMEA off, the case's PVT set.
             self.set_and_observe("pvtOut", case.flags,
-                                 {"NMEAMsg": ["other"],
+                                 {"NMEAMsg": [],
                                   "PVTMsg": msg_flags(case.flags, PVT_MSG_JSON)},
                                  expect=case.expect)
 
@@ -969,7 +969,7 @@ class ProbeRun:
         for flags, expect in SATS_CASES:
             # --binary --pvt-out off, plus the satellite case.
             self.set_and_observe("satsOut", flags,
-                                 {"NMEAMsg": ["other"], "PVTMsg": ["off"],
+                                 {"NMEAMsg": [], "PVTMsg": ["off"],
                                   "SatsMsg": msg_flags(flags, SATS_MSG_JSON)},
                                  expect=expect)
 
@@ -982,18 +982,17 @@ class ProbeRun:
         analysis reports that honestly as a restore failure."""
         base_nmea = [t for t in nmea_set(base) if t in NMEA_VOCAB]
         if not base_nmea and raw_set(base):
-            # --binary: turn NMEA off (unmodeled kept via other) with a little
-            # binary PVT, as the flag layer's --binary does.
+            # --binary: turn NMEA off with a little binary PVT, as the flag
+            # layer's --binary does.
             steps = [("restore-binary-mode",
-                      {"NMEAMsg": ["other"], "PVTMsg": ["pos", "time"]})]
+                      {"NMEAMsg": [], "PVTMsg": ["pos", "time"]})]
         else:
-            # --nmea then the exact sentence set. Both keep the group's
-            # unmodeled messages, and the mode switch keeps unmodeled RTCM too,
-            # so out-of-vocabulary as-found output survives the restore.
+            # --nmea then the exact sentence set, as the flag layer's --nmea
+            # does.
             steps = [("restore-nmea-mode",
-                      {"NMEAMsg": ["RMC", "other"], "RTCMMsg": ["other"],
+                      {"NMEAMsg": ["RMC"], "RTCMMsg": [],
                        "PVTMsg": ["off"], "RawMsg": [], "SatsMsg": []}),
-                     ("restore-nmea-types", {"NMEAMsg": base_nmea + ["other"]})]
+                     ("restore-nmea-types", {"NMEAMsg": base_nmea})]
         for name, opts in steps:
             inv = self.tool.gps(name, target_arg({"Opts": opts}),
                                 {"op": "restore-protocol"})
