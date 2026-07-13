@@ -319,20 +319,46 @@ def report(log_dir: Path, exe: Path, baseline: Path | None) -> int:
 def compare_baseline(baseline: Path, text: str, disruptive: bool) -> int:
     """Compare against the checked-in characterization; differences are
     regressions to investigate. The baseline holds the full characterization
-    from a disruptive run; a default run is compared with the
-    disruptive-only entries stripped."""
-    want = baseline.read_text()
+    from a disruptive run; a default run is compared with the disruptive-only
+    entries stripped.
+
+    Defect entries are unstable by nature - a receiver's ACK-without-apply
+    incidence drifts between sessions - so they are compared by content
+    subset rather than exactly: a defect property absent from the run does not
+    diff (drift down is allowed), and neither does a run whose observations
+    are all recorded in the baseline. What diffs is novel receiver behavior -
+    a defect property the baseline never recorded, or a stuck value or request
+    shape the baseline's entry for that property does not contain. The rest of
+    the characterization, the stable core, must match exactly."""
+    want_doc = json.loads(baseline.read_text())
+    run_doc = json.loads(text)
     if not disruptive:
-        doc = json.loads(want)
         for k in DISRUPTIVE_KEYS:
-            doc.get("limitations", {}).pop(k, None)
-        want = to_json(doc)
-    if want == text:
+            want_doc.get("limitations", {}).pop(k, None)
+    want_defects = want_doc.pop("defects", {})
+    run_defects = run_doc.pop("defects", {})
+    new_defects = sorted(set(run_defects) - set(want_defects))
+    novel = []
+    for p in sorted(set(run_defects) & set(want_defects)):
+        want_obs = want_defects[p].get("acceptedButNotApplied", [])
+        extra = [o for o in run_defects[p].get("acceptedButNotApplied", [])
+                 if o not in want_obs]
+        if extra:
+            novel.append((p, extra))
+    want, core = to_json(want_doc), to_json(run_doc)
+    if want == core and not new_defects and not novel:
         print(f"matches baseline {baseline}", file=sys.stderr)
         return 0
-    sys.stderr.writelines(difflib.unified_diff(
-        want.splitlines(keepends=True), text.splitlines(keepends=True),
-        fromfile=str(baseline), tofile="this run"))
+    if want != core:
+        sys.stderr.writelines(difflib.unified_diff(
+            want.splitlines(keepends=True), core.splitlines(keepends=True),
+            fromfile=str(baseline), tofile="this run"))
+    for p in new_defects:
+        print(f"new receiver defect not in baseline: {p}: "
+              f"{json.dumps(run_defects[p], sort_keys=True)}", file=sys.stderr)
+    for p, extra in novel:
+        print(f"receiver defect {p} has observations not in baseline: "
+              f"{json.dumps(extra, sort_keys=True)}", file=sys.stderr)
     print("characterization differs from baseline", file=sys.stderr)
     return 1
 
