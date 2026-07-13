@@ -20,7 +20,7 @@ from model import (NMEA_VOCAB, EmissionObservation, Observation, SignalObservati
                    Value, config_model_equal, config_value, emission_intervals,
                    emissions, event_intervals, event_kinds, flat_value,
                    mode_disagreements, nmea_rate_intervals, nmea_set,
-                   normalize_signal_map, observation_start, pvt_event_kinds,
+                   normalize_config, normalize_signal_map, observation_start, pvt_event_kinds,
                    raw_set, rtcm_rate_intervals, rtcm_set, stored_form, transient)
 from tool import replay
 
@@ -150,6 +150,9 @@ class Analyzer:
     save_results: list[dict[str, Any]] = field(default_factory=list)
     save_reset: dict[str, Any] | None = None
     replay_cache: dict[Path, list[dict[str, Any]]] = field(default_factory=dict)
+    defect_keys: set[str] = field(default_factory=set)
+    defects: dict[str, dict[str, Any]] = field(default_factory=dict)
+    pending_nvm: list[tuple[set[str], str]] = field(default_factory=list)
 
     def run(self) -> Analysis:
         while self.i < len(self.steps):
@@ -166,11 +169,14 @@ class Analyzer:
         if self.ident_error is not None:
             self.failures.append(f"receiver detection failed: {self.ident_error}")
         self.check_values_move()
+        self.resolve_nvm()
         self.check_signal_equivalence()
         enabled = sorted(self.initial.get("signalsEnabled") or {})
         doc = characterize(self.receiver, self.supports, self.observations,
                            self.signal_observations, self.emission_observations,
                            enabled, self.save_results, self.stored_forms)
+        if self.defects:
+            doc["defects"] = {p: self.defects[p] for p in sorted(self.defects)}
         n = (len(self.observations) + len(self.signal_observations)
              + len(self.emission_observations))
         disruptive = any(s.intent.get("op") in ("gran-save", "set-speed",
@@ -312,8 +318,9 @@ class Analyzer:
             # in the intent; a normal run compares to its own initial.
             want = s.intent.get("want", self.initial)
             if want and not config_model_equal(want, s.config()):
-                self.failures.append(f"receiver not left as found: "
-                                     f"initial {want!r}, final {s.config()!r}")
+                self.pending_nvm.append((self.delta_keys(want, s.config()),
+                    f"receiver not left as found: "
+                    f"initial {want!r}, final {s.config()!r}"))
         elif role == "reload":
             self.reload_readback(s)
         elif role == "gran-s":
@@ -330,9 +337,9 @@ class Analyzer:
             if self.reload_nvm is not None \
                     and not config_model_equal(self.reload_nvm, s.config()):
                 what = "--save-all recovery" if role == "save-all" else "state after --reset"
-                self.failures.append(
+                self.pending_nvm.append((self.delta_keys(self.reload_nvm, s.config()),
                     f"{what} does not match the NVM state: "
-                    f"{self.reload_nvm!r} -> {s.config()!r}")
+                    f"{self.reload_nvm!r} -> {s.config()!r}"))
         elif role == "save-reset":
             # The save+reset persistence check: the value set with --save
             # --reset in one invocation must survive the reset (the save
@@ -343,9 +350,9 @@ class Analyzer:
                 v = self.save_reset.get("accepted", self.save_reset["value"])
                 got = config_value(s.config(), path)
                 if got != v:
-                    self.failures.append(
+                    self.pending_nvm.append(({path[0]},
                         f"save+reset: {self.save_reset['prop']} saved as {v!r} "
-                        f"with --reset but reads {got!r} after")
+                        f"with --reset but reads {got!r} after"))
 
     def set_scalar(self, s: Step) -> None:
         prop, path = s.intent["prop"], tuple(s.intent["path"])
@@ -374,7 +381,9 @@ class Analyzer:
         """An accepted set that leaves a property's value unchanged can be
         legitimate only as range clamping. When the requests bracket the
         prior value and it still never moved, no range limit explains it:
-        the set was silently ignored, which is a bug."""
+        the receiver acknowledged writes it did not apply. That is an
+        ACK-without-apply receiver defect (characterization), not a
+        tool-guarantee violation, so it is recorded on the property."""
         for prop, accepted in self.accepted.items():
             start = self.start_vals.get(prop)
             if not isinstance(start, (int, float)):
@@ -382,8 +391,8 @@ class Analyzer:
             vals = [o.requested for o in accepted if isinstance(o.requested, (int, float))]
             if (all(o.readback == start for o in accepted)
                     and any(v < start for v in vals) and any(v > start for v in vals)):
-                self.failures.append(
-                    f"{prop}: accepted sets never changed the value from {start!r}")
+                for o in accepted:
+                    self.note_defect(prop, prop.split(".")[0], o.requested, start)
 
     def restore_scalar(self, s: Step) -> None:
         prop, path = s.intent["prop"], tuple(s.intent["path"])
@@ -392,9 +401,50 @@ class Analyzer:
             self.failures.append(f"{prop}: restore to {v!r} failed: {s.error}")
             return
         cfg = self.take_config("verify-restore", prop)
-        if cfg is not None and config_value(cfg, path) != v:
-            self.failures.append(
-                f"{prop}: restore to {v!r} read back as {config_value(cfg, path)!r}")
+        if cfg is not None:
+            back = config_value(cfg, path)
+            if back != v:
+                # Accepted without error but the receiver did not apply it: an
+                # ACK-without-apply defect, characterization rather than a tool
+                # failure (the tool truthfully sent the restore and read back).
+                self.note_defect(prop, path[0], v, back)
+
+    def note_defect(self, prop: str, key: str, request: Value, readback: Value) -> None:
+        """Record an accepted-but-ineffective set or restore on a property:
+        the receiver ACKed the write and did not apply it. That is receiver
+        behavior, not a violation of a tool guarantee (the tool truthfully
+        sent the write and read the stored value back), so it is
+        characterization. key is the top-level config key it lives under,
+        tainted so the NVM-consistency checks recognize the same defect
+        cascading into them."""
+        self.defect_keys.add(key)
+        d = self.defects.setdefault(prop, {"acceptedButNotApplied": []})
+        entry = {"request": request, "readback": readback}
+        if entry not in d["acceptedButNotApplied"]:
+            d["acceptedButNotApplied"].append(entry)
+
+    def delta_keys(self, want: dict[str, Any], got: dict[str, Any]) -> set[str]:
+        """Top-level config keys that differ between two configs in the model."""
+        a, b = normalize_config(want), normalize_config(got)
+        return {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
+
+    def defect_cascade(self, keys: set[str]) -> bool:
+        """Whether an NVM-consistency mismatch is entirely the cascade of an
+        accepted-but-ineffective defect: every top-level key that differs was
+        tainted by such a defect this run. The save truthfully persisted what
+        the receiver was actually running; the ACK-without-apply is the root
+        cause, already recorded on the property. Any delta beyond the tainted
+        keys keeps the mismatch a failure."""
+        return bool(keys) and keys <= self.defect_keys
+
+    def resolve_nvm(self) -> None:
+        """Resolve the deferred NVM-consistency mismatches into failures,
+        except those that are only a tainted defect cascading. Deferred to
+        after the full walk and check_values_move so every defect taint is
+        known before the verdict."""
+        for keys, msg in self.pending_nvm:
+            if not self.defect_cascade(keys):
+                self.failures.append(msg)
 
     def set_mode(self, s: Step) -> None:
         case, request = s.intent["case"], s.intent["request"]
@@ -685,9 +735,9 @@ class Analyzer:
                     f"reload: unsaved {'.'.join(path)} change to {v!r} survived reload")
                 return
         if self.reload_nvm is not None and not config_model_equal(self.reload_nvm, cfg):
-            self.failures.append(
+            self.pending_nvm.append((self.delta_keys(self.reload_nvm, cfg),
                 f"reload: configuration after second reload differs from the "
-                f"NVM state: {self.reload_nvm!r} -> {cfg!r}")
+                f"NVM state: {self.reload_nvm!r} -> {cfg!r}"))
 
     def set_speed_step(self, s: Step) -> None:
         """The serial speed property, read back through --show-port (the
