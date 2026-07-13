@@ -1,6 +1,6 @@
 import {h} from 'preact';
 import {useState, useEffect} from 'preact/hooks';
-import {ECEFtoLLH} from '../wailsjs/go/main/App';
+import {transport} from './transport';
 import type {SurveyMsg} from './app';
 import {MonitorDataView} from './ui';
 
@@ -41,7 +41,7 @@ export function SurveyPanel({msg}: Props) {
             setLLH(null);
             return;
         }
-        ECEFtoLLH(px, py, pz).then(r => {
+        transport.ecefToLLH(px, py, pz).then(r => {
             if (r) setLLH(r);
         }).catch(() => setLLH(null));
     }, [msg?.position?.[0], msg?.position?.[1], msg?.position?.[2]]);

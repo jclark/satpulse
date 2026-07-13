@@ -50,6 +50,10 @@ _Not yet released_
 
 - `satpulsetool` has a new `convobs` command, which converts raw GNSS observation data from u-blox UBX-RXM-RAWX, Unicore OBSVM, or RTCM MSM7 into RINEX observation files for PPP post-processing. It can decimate observations and set RINEX header metadata from command-line options or a TOML header file. `convobs` also supports a new JSON Lines observation format that follows RINEX semantics to enable convenient processing with modern tooling such as `jq`; it reads and writes this format, and can also read existing RINEX files, so it can convert freely between raw packets, RINEX, and the JSON Lines format. (#296)
 
+### SatPulse Workbench
+
+- There is a new `satpulsewb` command, which serves SatPulse Workbench: a web app for interactive GPS receiver configuration and monitoring. It offers device-independent receiver configuration through a GUI that requires no knowledge of the receiver's protocol, live monitoring of position, time, satellites, and signal strength, a packet inspector, sending configuration message files chosen from a library search path (a personal library under the user's configuration directory, then the installed library, or `SATPULSE_GPSMSG_PATH`), and correction forwarding from an Ntrip caster or TCP source. `satpulsewb` is a commissioning tool run when needed, typically over SSH on the box with the receiver: it prints a URL protected by a per-run token and serves a GUI session until stopped. (#357)
+
 ### Other satpulsetool improvements
 
 - `satpulsetool` has a new `pack` command, which reads a JSONL packet log and writes selected packets as a packet byte stream corresponding to the original packet contents. It can filter by packet `tag` and `msg`, and can preserve inter-packet timing for FIFO-based replay. (#247)

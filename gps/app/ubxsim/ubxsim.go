@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/internal/spartn"
 	"github.com/jclark/satpulse/gps/internal/ubx"
@@ -170,6 +171,17 @@ func (s *Sim) handleMsg(ctx context.Context, db *cfgDB, w *writer, data string) 
 		}
 		lg.Debug("CFG-CFG", "ack", ok)
 		return s.writeAckNak(ctx, w, mid, ok)
+	case ubxbin.CfgPrtID:
+		port, ok := s.prtPollPort(data)
+		if !ok {
+			lg.Debug("CFG-PRT poll for an unmodelled port")
+			return s.writeAckNak(ctx, w, mid, false)
+		}
+		lg.Debug("CFG-PRT poll", "port", port)
+		if err := s.writeMsg(ctx, w, cfgPrt(db, port)); err != nil {
+			return err
+		}
+		return s.writeAckNak(ctx, w, mid, true)
 	}
 	if mid.Ackable() {
 		lg.Warn("NAK for unhandled CFG message", "msg", mid.String())
@@ -235,6 +247,103 @@ func (s *Sim) monComms() *ubxbin.MonComms {
 		},
 		Ports: []ubxbin.MonCommsPort{{PortID: ubxbin.MonCommsPortID(uint16(port) << 8)}},
 	}
+}
+
+// prtPollPort returns the port a UBX-CFG-PRT poll asks about and true,
+// or false when the packet is not a poll the simulator answers. The
+// Configurator polls CFG-PRT to discover the active port on receivers
+// below protocol version 50 (ubxcfg.go pollPrt), where MON-COMMS does
+// not yet report the current port. A no-payload poll returns the port
+// the poll arrived on, which is the simulated port; a 1-byte poll names
+// a port explicitly, answered only for the simulated port since the
+// simulator models no others (monComms likewise reports one port).
+// Anything longer is a CFG-PRT set, which the simulator does not model
+// (the val-based config path never sends one) and so NAKs.
+func (s *Sim) prtPollPort(data string) (ucv.Port, bool) {
+	switch len(data) {
+	case ubxbin.PacketMinLen:
+		return s.opts.Port, true
+	case ubxbin.PacketMinLen + 1:
+		if ucv.Port(data[ubxbin.HeaderLen]) == s.opts.Port {
+			return s.opts.Port, true
+		}
+	}
+	return 0, false
+}
+
+// cfgPrt synthesizes the CFG-PRT poll response for port from the config
+// database, the legacy view of the same RAM the val messages configure:
+// the baud rate from the port's baud-rate key and the in/out protocol
+// masks from its INPROT/OUTPROT boolean keys. The Configurator reads
+// PortID to learn the active port (ubxcfg.go); the other fields mirror a
+// real receiver's response. Mode reports 8N1, the frame the paced writer
+// assumes (bitsPerByte).
+func cfgPrt(db *cfgDB, port ucv.Port) *ubxbin.CfgPrt {
+	m := &ubxbin.CfgPrt{
+		PortID:       ubxbin.PortID(port),
+		InProtoMask:  protoMask(db, prtInProt[port]),
+		OutProtoMask: protoMask(db, prtOutProt[port]),
+	}
+	if k, ok := uartBaudKey(port); ok {
+		m.BaudRate = uint32(db.ramUint(k))
+		m.Mode = ubxbin.CfgPrtModeCharLen8 | ubxbin.CfgPrtModeParityNone
+	}
+	return m
+}
+
+// protoMask assembles a CFG-PRT protocol mask from a port's three
+// per-protocol boolean config keys, the val-based equivalents of the
+// mask bits.
+func protoMask(db *cfgDB, k prtProto) ubxbin.CfgPrtProtoMask {
+	var mask ubxbin.CfgPrtProtoMask
+	if db.ramUint(k.ubx.Key()) != 0 {
+		mask |= ubxbin.CfgPrtProtoUBX
+	}
+	if db.ramUint(k.nmea.Key()) != 0 {
+		mask |= ubxbin.CfgPrtProtoNMEA
+	}
+	if db.ramUint(k.rtcm3.Key()) != 0 {
+		mask |= ubxbin.CfgPrtProtoRTCM3
+	}
+	return mask
+}
+
+// prtProto names the INPROT or OUTPROT boolean keys of one port for the
+// three protocols CFG-PRT reports. I2C is absent: New maps it to UART1.
+type prtProto struct {
+	ubx, nmea, rtcm3 ucv.KeyL
+}
+
+var prtInProt = map[ucv.Port]prtProto{
+	ucv.UART1: {ucv.KUart1inprotUbx, ucv.KUart1inprotNmea, ucv.KUart1inprotRtcm3x},
+	ucv.UART2: {ucv.KUart2inprotUbx, ucv.KUart2inprotNmea, ucv.KUart2inprotRtcm3x},
+	ucv.USB:   {ucv.KUsbinprotUbx, ucv.KUsbinprotNmea, ucv.KUsbinprotRtcm3x},
+	ucv.SPI:   {ucv.KSpiinprotUbx, ucv.KSpiinprotNmea, ucv.KSpiinprotRtcm3x},
+}
+
+var prtOutProt = map[ucv.Port]prtProto{
+	ucv.UART1: {ucv.KUart1outprotUbx, ucv.KUart1outprotNmea, ucv.KUart1outprotRtcm3x},
+	ucv.UART2: {ucv.KUart2outprotUbx, ucv.KUart2outprotNmea, ucv.KUart2outprotRtcm3x},
+	ucv.USB:   {ucv.KUsboutprotUbx, ucv.KUsboutprotNmea, ucv.KUsboutprotRtcm3x},
+	ucv.SPI:   {ucv.KSpioutprotUbx, ucv.KSpioutprotNmea, ucv.KSpioutprotRtcm3x},
+}
+
+// outProtKey returns the port's OUTPROT key for the protocol tag names,
+// and whether the port gates that protocol.
+func outProtKey(port ucv.Port, tag gpsprot.Tag) (ucv.KeyL, bool) {
+	p, ok := prtOutProt[port]
+	if !ok {
+		return 0, false
+	}
+	switch tag {
+	case ubx.Tag:
+		return p.ubx, true
+	case nmea.Tag:
+		return p.nmea, true
+	case rtcm.Tag:
+		return p.rtcm3, true
+	}
+	return 0, false
 }
 
 func (s *Sim) writeAckNak(ctx context.Context, w *writer, mid ubxbin.MsgID, ack bool) error {

@@ -1,6 +1,6 @@
 import {h} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
-import {ApplyConfig, CheckOnEarth, ReadConfig} from '../wailsjs/go/main/App';
+import {transport} from './transport';
 import {SignalPicker} from './signal-picker';
 import {NMEAGroup, nmeaWireValue} from './nmea-group';
 import {RTCMGroup, rtcmWireValue} from './rtcm-group';
@@ -18,6 +18,7 @@ import {speeds} from './speeds';
 
 interface Props {
     connState: ConnState;
+    readOnly: boolean;
     visible: boolean;
     configProps: Record<string, any> | null;
     signalCatalog: Record<string, string[]>;
@@ -86,8 +87,11 @@ function validateFields(
     return bad;
 }
 
-export function ConfigPanel({connState, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, clearRespSession, speed}: Props) {
-    const connected = connState === 'connected';
+export function ConfigPanel({connState, readOnly, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, clearRespSession, speed}: Props) {
+    // A read-only window cannot drive the receiver: fold that into `connected`
+    // so every field, the Apply/Discard buttons, and the automatic readback
+    // trigger disable together, and the background readback never POSTs.
+    const connected = connState === 'connected' && !readOnly;
     const [timeMode, setTimeMode] = useState<'' | 'mobile' | 'survey' | 'fixed'>('');
     const [surveyTime, setSurveyTime] = useState('');
     const [surveyAcc, setSurveyAcc] = useState('');
@@ -115,7 +119,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         const nums = fixedECEF.map(Number);
         if (fixedECEF.some(s => s === '' || isNaN(Number(s)))) { setEcefOnEarth(true); return; }
         let cancelled = false;
-        CheckOnEarth(nums[0], nums[1], nums[2]).then(ok => { if (!cancelled) setEcefOnEarth(ok); });
+        transport.checkOnEarth(nums[0], nums[1], nums[2]).then(ok => { if (!cancelled) setEcefOnEarth(ok); });
         return () => { cancelled = true; };
     }, [fixedECEF]);
 
@@ -141,7 +145,8 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const [baudRateApplicable, setBaudRateApplicable] = useState<boolean | null>(null);
     const [selectedSpeed, setSelectedSpeed] = useState(speed);
     const [speedTouched, setSpeedTouched] = useState(false);
-    useEffect(() => { setSelectedSpeed(speed); }, [speed]);
+    const speedRef = useRef(speed);
+    useEffect(() => { speedRef.current = speed; setSelectedSpeed(speed); }, [speed]);
 
     // Persistent operations state
     const [saveType, setSaveType] = useState(0); // 0=none, 1=minimal, 2=all
@@ -150,17 +155,45 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     // Readback state
     const [reading, setReading] = useState(false);
     const hasReadback = useRef(false);
+    const readbackRequest = useRef(0);
 
     // Per-section touched flags for dirty tracking
     const [timePulseTouched, setTimePulseTouched] = useState(false);
     const [timeModeTouched, setTimeModeTouched] = useState(false);
     const [signalsTouched, setSignalsTouched] = useState(false);
+    const [minElevTouched, setMinElevTouched] = useState(false);
 
     // Applying state
     const [applying, setApplying] = useState(false);
+    const [applied, setApplied] = useState(false);
+
+    const resetConfigFields = useCallback(() => {
+        setTimeMode('');
+        setSurveyTime('');
+        setSurveyAcc('');
+        setSurveyAgain(false);
+        setSurveyReport(true);
+        setCoordSystem('ecef');
+        setFixedECEF(['', '', '']);
+        setFixedLLH(['', '', '']);
+        setFixedPosAcc('');
+        setReadbackStationary(false);
+        setPpsPeriod('');
+        setPpsWidth('');
+        setPpsAlign(true);
+        setPpsLocked(true);
+        setPpsRising(true);
+        setTimeGNSS('');
+        setCableDelay('');
+        setMinElev('');
+        setBaudRateApplicable(null);
+        setSelectedSpeed(speedRef.current);
+        setSelectedSignals(() => new Set());
+    }, [setSelectedSignals]);
 
     // Populate form fields from ConfigProps JSON
     const populateFromConfig = useCallback((cfg: Record<string, any>) => {
+        resetConfigFields();
         const m = cfg.mode as Record<string, any> | undefined;
         if (m) {
             if (!m.static) {
@@ -208,11 +241,42 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             const s = signalMapToSet(cfg.signalsEnabled);
             setSelectedSignals(() => s);
         }
-    }, [setSelectedSignals]);
+    }, [resetConfigFields, setSelectedSignals]);
 
     useEffect(() => {
         if (configProps) populateFromConfig(configProps);
     }, [configProps, populateFromConfig]);
+
+    useEffect(() => {
+        if (connState !== 'disconnected') return;
+        readbackRequest.current++;
+        resetConfigFields();
+        setReading(false);
+        setApplying(false);
+        setApplied(false);
+        setTimePulseTouched(false);
+        setTimeModeTouched(false);
+        setSignalsTouched(false);
+        setMinElevTouched(false);
+        setNmeaChange(false);
+        setNmeaDisable(false);
+        setNmeaFlags(0);
+        setRtcmChange(false);
+        setRtcmDisable(false);
+        setRtcmMSM('none');
+        setRtcmFallback(true);
+        setRtcmARP(false);
+        setPvtChange(false);
+        setPvtFlags(0);
+        setSatsChange(false);
+        setSatsFlags(0);
+        setRawChange(false);
+        setRawFlags(0);
+        setSpeedTouched(false);
+        setSaveType(0);
+        setResetType(0);
+        setShowPicker(false);
+    }, [connState, resetConfigFields]);
 
     // Trigger readback on first switch to the config tab while connected
     useEffect(() => {
@@ -225,16 +289,19 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
 
     const doReadback = async () => {
         if (!connected || reading) return;
+        const req = ++readbackRequest.current;
         setReading(true);
         setOperation({status: 'running', label: 'Reading configuration'});
         try {
             clearRespSession();
-            const props = await ReadConfig();
+            const props = await transport.readConfig();
+            if (req !== readbackRequest.current) return;
             populateFromConfig(props as any);
             onConfigReadback(props as any);
             setTimePulseTouched(false);
             setTimeModeTouched(false);
             setSignalsTouched(false);
+            setMinElevTouched(false);
             setNmeaChange(false);
             setRtcmChange(false);
             setPvtChange(false);
@@ -245,17 +312,18 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             setResetType(0);
             setOperation({status: 'success', label: 'Reading configuration'});
         } catch (e: any) {
+            if (req !== readbackRequest.current) return;
             addToast('Configuration read failed: ' + e.message, 'error');
             setOperation({status: 'failed', label: 'Reading configuration', error: e.message});
         } finally {
-            setReading(false);
+            if (req === readbackRequest.current) setReading(false);
         }
     };
 
     const handleApply = async () => {
         const props: Record<string, any> = {};
         const opts: Record<string, any> = {};
-        if (signalsTouched && selectedSignals.size > 0) {
+        if (signalsTouched) {
             props.signalsEnabled = signalSetToMap(selectedSignals);
         }
         if (timeModeTouched) {
@@ -268,7 +336,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                 opts.Survey = {
                     Flags: surveyAgain ? 1 : 0,
                     MinDur: dur * 1e9,       // seconds -> nanoseconds
-                    AccLimit: acc * 1e6,     // meters -> micrometers
+                    AccLimit: acc,
                 };
                 if (surveyReport) opts.PVTMsg = (opts.PVTMsg || 0) | PVTMsgSurvey;
             } else if (timeMode === 'fixed') {
@@ -299,7 +367,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             if (timeGNSS) props.timeGNSS = timeGNSS;
             if (cableDelay !== '') props.antennaCableDelay = Math.round(parseFloat(cableDelay) || 0);
         }
-        if (signalsTouched) {
+        if (minElevTouched) {
             if (minElev !== '') props.minElevation = parseFloat(minElev) || 0;
         }
         const nmeaWire = nmeaWireValue(nmeaChange, nmeaDisable, nmeaFlags);
@@ -317,6 +385,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         if (speedTouched) props.baudRate = selectedSpeed;
         const cfg: Record<string, any> = {Props: props, Opts: opts};
         setApplying(true);
+        setApplied(false);
         setOperation({status: 'running', label: 'Applying configuration'});
         clearRespSession();
         setSaveType(0);
@@ -327,20 +396,20 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         setSurveyAgain(false);
         setSurveyReport(true);
         try {
-            const r = await ApplyConfig(cfg as any);
-            if (r.ok) {
-                setOperation({status: 'success', label: 'Applying configuration'});
-                setTimePulseTouched(false);
-                setTimeModeTouched(false);
-                setSignalsTouched(false);
-                setSpeedTouched(false);
-            } else {
-                addToast(r.error || 'Apply failed', 'error');
-                setOperation({status: 'failed', label: 'Applying configuration', error: r.error || 'Apply failed'});
-            }
+            await transport.applyConfig(cfg as any);
+            setOperation({status: 'success', label: 'Applying configuration'});
+            setTimePulseTouched(false);
+            setTimeModeTouched(false);
+            setSignalsTouched(false);
+            setMinElevTouched(false);
+            setNmeaChange(false);
+            setRtcmChange(false);
+            setPvtChange(false);
+            setSatsChange(false);
+            setRawChange(false);
+            setSpeedTouched(false);
+            setApplied(true);
         } catch (e) {
-            // A rejected binding call (e.g. the backend failed to unmarshal the
-            // request) must not leave the Apply button stuck on "Applying...".
             const msg = e instanceof Error ? e.message : String(e);
             addToast(msg || 'Apply failed', 'error');
             setOperation({status: 'failed', label: 'Applying configuration', error: msg || 'Apply failed'});
@@ -351,9 +420,11 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
 
     const handleDiscard = () => {
         if (configProps) populateFromConfig(configProps);
+        setApplied(false);
         setTimePulseTouched(false);
         setTimeModeTouched(false);
         setSignalsTouched(false);
+        setMinElevTouched(false);
         setNmeaChange(false);
         setRtcmChange(false);
         setPvtChange(false);
@@ -384,7 +455,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const pendingSections: string[] = [];
     if (timePulseTouched) pendingSections.push('time pulse');
     if (timeModeTouched) pendingSections.push('time mode');
-    if (signalsTouched) pendingSections.push('satellites and signals');
+    if (signalsTouched || minElevTouched) pendingSections.push('satellites and signals');
     if (nmeaChange || rtcmChange || pvtChange || satsChange || rawChange) pendingSections.push('messages');
     if (speedTouched) pendingSections.push('serial speed');
     if (saveType) pendingSections.push('save');
@@ -392,6 +463,11 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const pendingLabel = pendingSections.length > 0
         ? 'Changes pending to ' + pendingSections.join(', ')
         : '';
+    useEffect(() => {
+        if (pendingLabel) setApplied(false);
+    }, [pendingLabel]);
+    const statusLabel = applying ? 'Applying configuration...' : pendingLabel || (applied ? 'Configuration applied' : '');
+    const statusColor = applied && !applying && !pendingLabel ? 'text-success' : applying ? 'text-info' : 'text-warning';
     const surveyDisabled = !connected || timeMode !== 'survey';
     const fixedDisabled = !connected || timeMode !== 'fixed';
     const ecefDisabled = fixedDisabled || coordSystem !== 'ecef';
@@ -565,7 +641,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                         <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center w-fit">
                             <label class={fieldLabelText()}>Min elevation (deg)</label>
                             <Input type="text" inputMode="decimal" invalid={errorSet.has('minElev')} class="w-20" value={minElev} placeholder="e.g. 10"
-                                disabled={!connected} onInput={e => { setSignalsTouched(true); setMinElev((e.target as HTMLInputElement).value); }} />
+                                disabled={!connected} onInput={e => { setMinElevTouched(true); setMinElev((e.target as HTMLInputElement).value); }} />
                         </div>
                     </ConfigGroup>
 
@@ -683,8 +759,8 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
 
             {/* Bottom action bar */}
             <div class="shrink-0 flex items-center gap-2 border-t border-border-subtle bg-surface-2 px-4 py-2">
-                {pendingLabel && (
-                    <span class="text-[10px] font-medium text-warning">{pendingLabel}</span>
+                {statusLabel && (
+                    <span class={`text-[10px] font-medium ${statusColor}`}>{statusLabel}</span>
                 )}
                 <span class="ml-auto" />
                 <Button disabled={!connected || !pendingLabel} onClick={handleDiscard}>

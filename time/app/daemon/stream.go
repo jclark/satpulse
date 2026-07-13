@@ -35,6 +35,8 @@ func startPull(ctx context.Context, lg *slog.Logger,
 			lg.Info("stream pull connected")
 		case stream.Reconnecting:
 			lg.Warn("stream pull reconnecting", "err", err)
+		case stream.Failed:
+			lg.Error("stream pull gave up", "err", err)
 		}
 	}
 	wg.Go(func() {

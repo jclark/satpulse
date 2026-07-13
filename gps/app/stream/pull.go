@@ -170,13 +170,23 @@ func (s *NtripSource) handshake(conn net.Conn) (ReadWriteDeadlineCloser, error) 
 		return nil, err
 	}
 	if !bytes.Equal(line, []byte("ICY 200 OK\r\n")) {
-		return nil, fmt.Errorf("Ntrip: %s", strings.TrimSuffix(string(line), "\r\n"))
+		resp := strings.TrimSuffix(string(line), "\r\n")
+		err := fmt.Errorf("Ntrip: %s", resp)
+		if ntripClientFatalResponse(resp) {
+			return nil, &fatalConnectError{err}
+		}
+		return nil, err
 	}
 	if br.Buffered() == 0 {
 		return conn, nil
 	}
 	leftover, _ := br.Peek(br.Buffered())
 	return &readBufferedConn{Reader: io.MultiReader(bytes.NewReader(leftover), conn), conn: conn}, nil
+}
+
+func ntripClientFatalResponse(resp string) bool {
+	f := strings.Fields(resp)
+	return len(f) >= 2 && (f[0] == "HTTP/1.0" || f[0] == "HTTP/1.1") && f[1] == "401"
 }
 
 type readBufferedConn struct {
@@ -327,12 +337,12 @@ func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
 			latest = pkt.Data
 		case <-tickCh:
 			if conn != nil && latest != "" {
-				conn, nTimeouts = sendGGA(lg, conn, latest, nTimeouts)
+				conn, nTimeouts = sendGGA(ctx, lg, conn, latest, nTimeouts)
 			}
 		case conn = <-s.connCh:
 			nTimeouts = 0
 			if latest != "" {
-				conn, nTimeouts = sendGGA(lg, conn, latest, nTimeouts)
+				conn, nTimeouts = sendGGA(ctx, lg, conn, latest, nTimeouts)
 			}
 		case <-ctx.Done():
 			return
@@ -344,8 +354,14 @@ func (s *GGASender) Run(ctx context.Context, lg *slog.Logger) {
 // dropped) and the updated consecutive-timeout count.  A clean write timeout
 // keeps the connection through a transient stall; a hard error, or more than
 // maxGGASendTimeouts consecutive timeouts, drops it so the reader reconnects.
-func sendGGA(lg *slog.Logger, conn ReadWriteDeadlineCloser, data string, nTimeouts int) (ReadWriteDeadlineCloser, int) {
+// Errors after cancellation are suppressed because the reader closes the same
+// connection to unblock its scan during shutdown.
+func sendGGA(ctx context.Context, lg *slog.Logger, conn ReadWriteDeadlineCloser, data string, nTimeouts int) (ReadWriteDeadlineCloser, int) {
 	err := writeGGA(conn, data)
+	if err != nil && ctx.Err() != nil {
+		conn.Close()
+		return nil, 0
+	}
 	switch {
 	case err == nil:
 		return conn, 0
@@ -448,7 +464,7 @@ func (s *Pull) Run(ctx context.Context, selectedGGA <-chan scan.Packet, onState 
 	})
 	// start reader
 	pipelineWg.Go(func() {
-		s.reader(iCtx, s.lg, s.source, s.pktFormats, gs, onState)
+		s.reader(iCtx, iCancel, s.lg, s.source, s.pktFormats, gs, onState)
 	})
 	pipelineWg.Wait()
 	s.Packets.Close()
@@ -463,7 +479,7 @@ func (s *Pull) Run(ctx context.Context, selectedGGA <-chan scan.Packet, onState 
 // packets, and sends them into the bcast input channel.  On network
 // error it reconnects with adaptive backoff.  It closes pktCh on
 // exit.
-func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
+func (s *Pull) reader(ctx context.Context, cancel context.CancelFunc, lg *slog.Logger,
 	source Source, pktFormats []gpsprot.PacketFormat,
 	gs *GGASender, onState func(State, error)) {
 	defer close(s.pktCh)
@@ -491,6 +507,12 @@ func (s *Pull) reader(ctx context.Context, lg *slog.Logger,
 		conn, err := source.Connect(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
+				return
+			}
+			if isFatalConnect(err) {
+				lg.Error("correction source giving up", "error", err)
+				onState(Failed, err)
+				cancel()
 				return
 			}
 			lg.Error("correction source connect failed", "error", err)
