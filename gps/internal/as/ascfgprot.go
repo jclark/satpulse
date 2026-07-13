@@ -7,11 +7,16 @@ import (
 	"github.com/jclark/satpulse/gps/lib/asbin"
 )
 
-// tagNMEA is the packet tag of the nmea processor. On a port where the
-// Allystar probe succeeded, the NMEA is the same receiver talking, so it
-// feeds the rate estimator too. Declared here rather than imported from
-// the nmea package, which would cycle through the nmea tests.
-const tagNMEA gpsprot.Tag = "NMEA"
+// tagNMEA and tagRTCM are the packet tags of the nmea and rtcm
+// processors. On a port where the Allystar probe succeeded, both are the
+// same receiver talking, so they feed the rate estimator too - RTCM
+// closes the gap for an RTCM-only target on an otherwise-silent receiver,
+// whose MSM epochs betray the native grid. Declared here rather than
+// imported from those packages, which would cycle through their tests.
+const (
+	tagNMEA gpsprot.Tag = "NMEA"
+	tagRTCM gpsprot.Tag = "RTCM"
+)
 
 // Vendor is the receiver vendor name reported in ReceiverInfo.
 const Vendor = "Allystar"
@@ -69,10 +74,13 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 }
 
 // HandledNativeMsg feeds the rate estimator the messages the data path
-// consumed - the enabled NAV messages and parsed NMEA sentences - which
-// the Configurator would otherwise never see.
+// consumed - the enabled NAV messages, parsed NMEA sentences, and RTCM
+// frames - which the Configurator would otherwise never see. RTCM matters
+// for an RTCM-only target: the enabled MSM output is the only periodic
+// traffic, and its header epoch is the receiver's own clock (content
+// time), so a self-set MSM resolves the native rate exactly.
 func (cp *ConfigProtocol) HandledNativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
-	if tag == Tag || tag == tagNMEA {
+	if tag == Tag || tag == tagNMEA || tag == tagRTCM {
 		cp.observe(msg, tRead)
 	}
 	return nil
