@@ -8,7 +8,7 @@ The receiver is USB-connected, so runs need no speed discovery. A reproducible c
 
 ## Findings
 
-- Identity (`--show-receiver` hardware "mosaic-G5 P3", firmware "1.1.0") is fetched from the Identification internal file (`lstInternalFile, Identification`), the only ASCII carrier of the firmware version: a read-only lst command, so identity never changes the receiver configuration. A ReceiverSetup SBF block is used instead whenever one arrives. (The receiver's one-shot block fetch, `exeSBFOnce`, delivers to its own connection only when the block is enabled on a stream bound to that connection - verified repeatedly, including with a raw capture - so it is not used.)
+- Identity (`--show-receiver` hardware "mosaic-G5 P3", firmware "1.1.0") is fetched from the Identification internal file (`lstInternalFile, Identification`), the only ASCII carrier of the firmware version: a read-only lst command, so identity never changes the receiver configuration. (The receiver's one-shot block fetch, `exeSBFOnce`, delivers to its own connection only when the block is enabled on a stream bound to that connection - verified repeatedly, including with a raw capture - so it is not used.)
 - Antenna cable delay: the receiver refuses out-of-range values rather than clamping, so satpulsetool clamps requests to the receiver's documented +-10000 ns before the wire; in-range requests realize exactly (0.001 ns resolution).
 - Fixed position: latitude/longitude quantized to 1e-9 deg, ECEF coordinates and height to 0.1 mm - the receiver's own readback resolutions.
 - Fixed-position accuracy has no command carrier; the backend does not declare `fixedPosAcc` support, and every requested accuracy is achieved as 0 (the bounded expectation).
@@ -16,7 +16,7 @@ The receiver is USB-connected, so runs need no speed discovery. A reproducible c
 - Save granularity is a single group: `exeCopyConfigFile, Current, Boot` persists the whole configuration, so `--save` is indistinguishable from `--save-all` (`saveGranularity: singleGroup`).
 - Baud rate is not applicable on the USB connection (reads back 0; sets are no-ops), following the ubx USB model. `setCOMSettings` affects only the physical COM ports, which this installation cannot reach.
 - Signals: the discovered supported set matches the receiver's `getReceiverCapabilities` list through the coarse signal table; the receiver-only signals (GALE5 AltBOC, GLOL2P, QZSL1CB) have no device-independent name and are preserved as found by every signal set. The SBAS (GEO) signals cannot appear in the PVT signal-usage list (the receiver refuses them there); they ride the tracking and NavData lists only.
-- Survey: no parameterized/terminating/observable survey operation exists; `--survey` semantics are shown as absence (`setPVTMode, Static, , auto` is an auto-computed reference surfaced as static mode without a fixed position).
+- Survey: the survey operation is `setPVTMode, Static, , auto` (the receiver determines its fixed position autonomously). Its duration and accuracy are not controllable - the backend does not declare `surveyAcc`/`surveyDur`, and those parameters are ignored - and completion is observable only through the PVT mode on the SBF stream (the "determining fixed position" bit), which is what realizes `SurveyMsg`.
 
 ## After a disruptive sweep
 
