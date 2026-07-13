@@ -19,6 +19,15 @@ resets reproducibly restoring exactly that split. Any factory reset
 therefore leaves GGA at 5 Hz until the setup script is re-run (the
 rate estimator computes divisor 5 and the save persists it).
 
+## Sky dependence
+
+The RTCM characterization expects MSM per enabled constellation, and
+this unit's enabled set includes GLONASS and QZSS, whose MSM emits
+only while their satellites are tracked. Under poor sky a run gains
+spurious `missing` entries for 1084/1087/1114/1117 and diffs against
+the baseline (accepted 2026-07-13: recognize and rerun; the baseline
+was vetted under sky that tracked both).
+
 ## Signals
 
 Supported signal set (L1/L5 dual band, identical to the TAU1201):
