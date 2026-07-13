@@ -1,4 +1,7 @@
 {
+  "defects": {
+    "timePulse.width": {"acceptedButNotApplied": [{"readback": 0.1, "request": 0}, {"readback": 0.25, "request": 0}]}
+  },
   "limitations": {
     "antennaCableDelay": {"unsupported": true},
     "minElevation": {
