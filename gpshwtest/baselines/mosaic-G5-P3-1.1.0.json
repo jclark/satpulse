@@ -27,5 +27,16 @@
     "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "NAVIC", "SBAS"],
     "vendor": "Septentrio"
   },
-  "supports": ["fixedPos", "port", "raw", "rtcmBaseID", "rtcmMSM4", "rtcmMSM7", "rtcmQZSS", "signal", "speed"]
+  "supports": [
+    "fixedPos",
+    "port",
+    "raw",
+    "rtcmBaseID",
+    "rtcmMSM4",
+    "rtcmMSM7",
+    "rtcmQZSS",
+    "signal",
+    "survey",
+    "surveyMsg"
+  ]
 }

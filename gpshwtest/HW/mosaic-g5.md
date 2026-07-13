@@ -1,6 +1,6 @@
 # mosaic-G5 limitations
 
-How device-independent configuration is realized on the Septentrio mosaic-G5, relative to perfect realization of the full model (`SEMANTICS.md`). Measured on firmware 1.1.0 (GNSS firmware 2026.01.2, USB CDC connection `USB1`, serial 0100019577). The characterization ran against an integration build carrying the Septentrio configurator (#341) and the SBF message conversion (#340); the disruptive sweep (saves, resets, factory reset, speed) is included. Baseline: `baselines/mosaic-G5-P3-1.1.0.json`.
+How device-independent configuration is realized on the Septentrio mosaic-G5, relative to perfect realization of the full model (`SEMANTICS.md`). Measured on firmware 1.1.0 (GNSS firmware 2026.01.2, USB CDC connection `USB1`, serial 0100019577). The characterization ran against an integration build carrying the Septentrio configurator (#341) and the SBF message conversion (#340); the disruptive sweep (saves, save+reset, resets, factory reset) is included, and the speed probes are skipped (baud rate is not applicable on USB). Baseline: `baselines/mosaic-G5-P3-1.1.0.json` (the JSON characterization of a fully observed disruptive run).
 
 ## Session preconditions
 
@@ -22,11 +22,16 @@ The receiver is USB-connected, so runs need no speed discovery. A reproducible c
 
 The save probes write the Boot configuration file, and the sweep's recovery does not return Boot to its pre-run content. On an installation whose Boot is factory-default, finish a disruptive session with `exeCopyConfigFile, RxDefault, Boot` (verify with `lstConfigFile, Boot` reading "Equal to RxDefault!") before re-applying the as-found running configuration.
 
-## Known observation nondeterminism: leap (a gpshwtest limitation)
+## Known observation nondeterminism: leap and raw nav (a gpshwtest limitation)
 
-Leap-second information rides the GPSUtc/GALUtc/BDSUtc blocks, whose OnChange schedule is the UTC-parameter renewal (minutes-scale; there is no dump-on-enable - verified: 10 s after enabling all three, only one GALUtc had arrived). A 4-second observation window therefore catches leap most but not all of the time: four of five characterization sweeps observed it, one reported `pvtOut: {missing: [leap]}`. The committed baseline records no message observations (only property limitations, identity, and support flags), so the flake never shows as a baseline diff; it surfaces only as that run-report entry, an artifact of the observation window, not a behavior change.
+Two slow-schedule message kinds flake against the harness's 4-second observation window, roughly one run in three missing one of them:
 
-This is a limitation in the gpshwtest observation harness, not a defect in the configurator or the SBF conversion. `LeapSecondMsg` is a leap-second *announcement* (`OffChangeTime` plus the before/after TAI-UTC offsets); its content exists only in the GPSUtc/GALUtc/BDSUtc UTC-parameter blocks, which are inherently slow OnChange. No faster SBF block carries it: the 1 Hz `ReceiverTime` block holds only `DeltaLS`, the current integer offset, from which a `LeapSecondMsg` cannot be built. The receiver reports leap correctly; the harness's fixed short window simply cannot reliably observe a message on a minutes-scale schedule. The remedy is test-side (a longer window for slow-schedule messages, or excluding leap from the characterized set), not decode or configurator work.
+- Leap-second information rides the GPSUtc/GALUtc/BDSUtc blocks, whose OnChange schedule is the UTC-parameter renewal (minutes-scale; there is no dump-on-enable - verified: 10 s after enabling all three, only one GALUtc had arrived). A window that misses it records `pvtOut: {missing: [leap]}`.
+- Raw navigation data is event output delivered as decoded; there is no dump of held data on enable, so a window can close before the first nav block arrives, recording `rawOut` missing `nav`.
+
+With the JSON-format characterization these missing entries land in the characterization itself, so an unlucky run differs from the committed baseline (exit 1) on exactly these entries; that diff is the observation-window artifact, not a behavior change. The committed baseline is from a fully observed run (no missing entries).
+
+This is a limitation in the gpshwtest observation harness, not a defect in the configurator or the SBF conversion. `LeapSecondMsg` is a leap-second *announcement* (`OffChangeTime` plus the before/after TAI-UTC offsets); its content exists only in the GPSUtc/GALUtc/BDSUtc UTC-parameter blocks, which are inherently slow OnChange. No faster SBF block carries it: the 1 Hz `ReceiverTime` block holds only `DeltaLS`, the current integer offset, from which a `LeapSecondMsg` cannot be built. The receiver reports leap and raw nav correctly when the window is long enough; the remedy is test-side (a longer window for slow-schedule kinds, or excluding them from the characterized set), not decode or configurator work.
 
 ## Defect history on this receiver
 
