@@ -221,7 +221,16 @@ realized by the `Mode.Static`+`PosTypeNone` row above. It takes no
 duration or accuracy arguments, so `ConfigSupportSurveyDur` and
 `ConfigSupportSurveyAcc` are unset and those parameters are ignored;
 progress is observable on the SBF stream (PVT mode "determining fixed
-position" bit), which is what realizes `SurveyMsg`.
+position" bit), which is what realizes `SurveyMsg`. `SurveyAgain` is
+NOT realizable (verified 2026-07-13): the auto position is determined
+once - when the receiver is in the auto static mode with no previously
+determined position - and cached like the position slots; a re-issued
+`setPVTMode, Static, , auto` and a Rover round trip both leave the
+determined position bit-identical, and only discarding position
+knowledge (`erst, Soft, PVTData`, too destructive to ride a survey
+request) forces a new determination. The configurator still sends the
+re-issue on `SurveyAgain` (harmless, ensures the mode); the fresh
+determination itself is a receiver limitation.
 
 **SignalsEnabled realization.** Three commands realize one property:
 `sst` gates by constellation, `snt` by signal (tracking), `snu` by
