@@ -7,7 +7,9 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nmea"
+	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/lib/asbin"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 )
 
 // navEmitter emits NAV-TIME from a testReceiver at its native cycle. The
@@ -464,6 +466,184 @@ func TestRateLazyPollRTCMOut1Hz(t *testing.T) {
 	}
 	if n := countCfgMsgSets(rcvr, asbin.RtcmMsm4GpsID); n != 1 {
 		t.Errorf("RTCM MSM4 was set %d times, want 1 (no rate correction on a 1Hz unit)", n)
+	}
+}
+
+// msmFrame serializes an MSM message of the given type and epoch into a
+// complete RTCM packet, the wire form the rtcm processor parses.
+func msmFrame(t *testing.T, mt rtcmbin.MsgType, epoch uint32) []byte {
+	pkt, err := rtcmbin.SerializeMsg(msmMsg(mt, epoch))
+	if err != nil {
+		t.Fatalf("SerializeMsg %d: %v", mt, err)
+	}
+	return []byte(pkt)
+}
+
+// rtcmEmitter emits one MSM message from a testReceiver at its native
+// cycle, the way an RTCM-only target's enabled output does. The frame is
+// emitted only while its 0xF8 target has a nonzero stored rate, once per
+// that many native cycles: a 5Hz-native unit (periodMs=200) with the
+// target at rate=1 emits every 200ms (the divisor bug), at rate=5 every
+// 1000ms (the fix). The header epoch steps one native period per tick -
+// the receiver's own clock, which the estimator reads as content time.
+type rtcmEmitter struct {
+	rcvr     *testReceiver
+	mt       rtcmbin.MsgType
+	target   asbin.MsgID
+	periodMs int
+	baseTOW  uint32
+	start    time.Time
+	tick     int
+}
+
+func (re *rtcmEmitter) due(t *testing.T, now time.Time) [][]byte {
+	var out [][]byte
+	for {
+		tickTime := re.start.Add(time.Duration(re.tick*re.periodMs) * time.Millisecond)
+		if tickTime.After(now) {
+			break
+		}
+		rate := int(re.rcvr.rates[re.target])
+		if rate > 0 && re.tick%rate == 0 {
+			out = append(out, msmFrame(t, re.mt, re.baseTOW+uint32(re.tick*re.periodMs)))
+		}
+		re.tick++
+	}
+	return out
+}
+
+// configureRTCM runs the director loop against a receiver whose only
+// periodic traffic is RTCM MSM output, fed through the real rtcm
+// PacketProcessor (so the handled-channel emit path is exercised) with the
+// ConfigProtocol as its handler. As-found traffic is pre-seeded for the
+// second before configuring.
+func configureRTCM(t *testing.T, cp *ConfigProtocol, rcvr *testReceiver, target *gpsprot.ConfigTarget, em *rtcmEmitter) (*Configurator, int) {
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
+	pp.SetNativeMsgHandler(cp)
+	rpp := rtcm.NewPacketProcessor()
+	rpp.SetNativeMsgHandler(cp)
+	cfgI, err := cp.Configure(target)
+	if err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+	cfg := cfgI.(*Configurator)
+	director := gpsprot.NewConfigDirector(cfg, 2)
+	t0 := time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC)
+	em.start = t0.Add(-time.Second)
+	feed := func(now time.Time) {
+		for _, pkt := range em.due(t, now) {
+			if _, err := rpp.ProcessPacket(string(pkt), now); err != nil {
+				t.Fatalf("ProcessPacket(rtcm emit): %v", err)
+			}
+			director.ValidPacketReceived(now)
+		}
+	}
+	feed(t0) // pre-seed as-found traffic
+	for action := range director.Actions() {
+		switch action.Type {
+		case gpsprot.ConfigActionSendRequest:
+			t0 = t0.Add(10 * time.Millisecond)
+			feed(t0)
+			cfg.Request(action.Index).SetSentTime(t0)
+			for _, resp := range append(rcvr.respond(action.Packet), rcvr.takePending()...) {
+				t0 = t0.Add(5 * time.Millisecond)
+				if _, err := pp.ProcessPacket(string(resp), t0); err != nil {
+					t.Fatalf("ProcessPacket: %v", err)
+				}
+				director.ValidPacketReceived(t0)
+			}
+			feed(t0)
+		case gpsprot.ConfigActionWaitUntil:
+			if next := t0.Add(100 * time.Millisecond); next.Before(action.Deadline) {
+				t0 = next
+			} else {
+				t0 = action.Deadline.Add(time.Millisecond)
+			}
+			feed(t0)
+			director.AdvanceTimeTo(t0)
+		}
+	}
+	return cfg, director.ErrorCount
+}
+
+func TestRateRTCMOnlySilent5Hz(t *testing.T) {
+	// The gap this change closes: an RTCM-only target on a silent 5Hz unit.
+	// Nothing flows until we enable, so the MSM7 enable is deferred then
+	// sent at rate=1 (the silent path, marking it self-set). The unit then
+	// emits 1077 on a 200ms epoch grid; the self-set interval resolves
+	// native=5, and the enable is corrected to rate=5 - RTCM at 1Hz.
+	rcvr := &testReceiver{monVer: tau951mVer(), fourByteCfgMsg: true}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM7)
+	em := &rtcmEmitter{rcvr: rcvr, mt: 1077, target: asbin.RtcmMsm7GpsID,
+		periodMs: 200, baseTOW: 100000}
+	_, errCount := configureRTCM(t, cp, rcvr, target, em)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if cp.est.nativeHz != 5 {
+		t.Errorf("nativeHz = %d, want 5", cp.est.nativeHz)
+	}
+	if rcvr.rates[asbin.RtcmMsm7GpsID] != 5 {
+		t.Errorf("MSM7 rate = %d, want 5 (corrected)", rcvr.rates[asbin.RtcmMsm7GpsID])
+	}
+}
+
+func TestRateRTCMOnlySilent1Hz(t *testing.T) {
+	// The same shape on a 1Hz-native RTCM unit: the enable goes out at
+	// rate=1, the emitted 1077 sits on a 1000ms grid, and the rate resolves
+	// (or caps) to 1 - so the rate=1 enable is already correct and there is
+	// no re-issue.
+	rcvr := &testReceiver{monVer: tau1302Ver()}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM7)
+	em := &rtcmEmitter{rcvr: rcvr, mt: 1077, target: asbin.RtcmMsm7GpsID,
+		periodMs: 1000, baseTOW: 100000}
+	_, errCount := configureRTCM(t, cp, rcvr, target, em)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if cp.est.nativeHz != 1 {
+		t.Errorf("nativeHz = %d, want 1", cp.est.nativeHz)
+	}
+	if rcvr.rates[asbin.RtcmMsm7GpsID] != 1 {
+		t.Errorf("MSM7 rate = %d, want 1", rcvr.rates[asbin.RtcmMsm7GpsID])
+	}
+	if n := countCfgMsgSets(rcvr, asbin.RtcmMsm7GpsID); n != 1 {
+		t.Errorf("MSM7 was set %d times, want 1 (no correction on a 1Hz unit)", n)
+	}
+}
+
+func TestRateRTCMAsFoundFlowing5Hz(t *testing.T) {
+	// A 5Hz unit already emitting MSM7 as-found at stored rate=1 (so 200ms
+	// output). The query-phase poll of the 0xF8 target returns R=1, and its
+	// observed 200ms epoch interval resolves native=5 by poll+interval - no
+	// self-set needed - so the enable goes out at rate=5 first try.
+	rcvr := &testReceiver{monVer: tau951mVer(), fourByteCfgMsg: true,
+		rates: map[asbin.MsgID]uint8{asbin.RtcmMsm7GpsID: 1}}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM7)
+	em := &rtcmEmitter{rcvr: rcvr, mt: 1077, target: asbin.RtcmMsm7GpsID,
+		periodMs: 200, baseTOW: 100000}
+	cfg, errCount := configureRTCM(t, cp, rcvr, target, em)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if !cfg.ratePollSent || !cp.est.tracks[asbin.RtcmMsm7GpsID].hasPoll {
+		t.Errorf("F8 rate poll did not go out and get answered: ratePollSent=%v",
+			cfg.ratePollSent)
+	}
+	if cp.est.nativeHz != 5 {
+		t.Errorf("nativeHz = %d, want 5", cp.est.nativeHz)
+	}
+	if cp.est.tracks[asbin.RtcmMsm7GpsID].selfSet {
+		t.Error("as-found flowing MSM7 must resolve without self-set")
+	}
+	if rcvr.rates[asbin.RtcmMsm7GpsID] != 5 {
+		t.Errorf("MSM7 rate = %d, want 5", rcvr.rates[asbin.RtcmMsm7GpsID])
 	}
 }
 

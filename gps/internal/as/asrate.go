@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/lib/asbin"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 )
 
 // The Allystar CFG-MSG Rate field is a divisor of the receiver's native
@@ -119,10 +120,80 @@ func (e *rateEstimator) observe(msg any, tRead time.Time) {
 		if mid, content, ok := nmeaArrival(m); ok {
 			e.arrival(mid, content, true, tRead)
 		}
+	case rtcmbin.Msg:
+		e.rtcmArrival(m, tRead)
 	}
 }
 
-const navClass = 0x01
+const (
+	navClass  = 0x01
+	rtcmClass = 0xF8
+)
+
+// rtcmArrival records one RTCM message arrival, keyed by the CFG-MSG 0xF8
+// target that controls its output, so a self-set MSM enable is credited
+// when its wire frame arrives. An MSM header carries the receiver's own
+// epoch (content time, exactly like a NAV iTOW); every other RTCM type
+// (1005 ARP, ephemeris) counts as an arrival for the anchored-negative/cap
+// but carries no epoch, so it never sets an interval and cannot resolve a
+// rate.
+func (e *rateEstimator) rtcmArrival(m rtcmbin.Msg, tRead time.Time) {
+	mid, ok := rtcmTargetID(m.MsgType())
+	if !ok {
+		return
+	}
+	if content, ok := msmEpochMs(m); ok {
+		e.arrival(mid, content, true, tRead)
+	} else {
+		e.arrival(mid, 0, false, tRead)
+	}
+}
+
+// rtcmTargetID maps an RTCM message type to the Allystar CFG-MSG 0xF8
+// target id that controls its output. The sub-id byte is the type minus
+// 1000 (standard messages) or minus 4000 (proprietary 40xx), per the
+// CFG-MSG 0xF8 table (CONTEXT.md); this connects a wire MSM type to the
+// target a deferred/self-set enable used, so the two share one track.
+// Types outside those ranges (or too large for the sub-id byte) have no
+// target.
+func rtcmTargetID(mt rtcmbin.MsgType) (asbin.MsgID, bool) {
+	var sub rtcmbin.MsgType
+	switch {
+	case mt >= 1000 && mt < 1256:
+		sub = mt - 1000
+	case mt >= 4000 && mt < 4256:
+		sub = mt - 4000
+	default:
+		return 0, false
+	}
+	return asbin.MakeMsgID(rtcmClass, byte(sub)), true
+}
+
+// msmEpochMs returns an MSM message's epoch time in milliseconds - the
+// receiver's own measurement clock, hence content time. The header field
+// is 30 bits: a time-of-week in ms for GPS/GAL/QZSS/BDS/SBAS (BeiDou's
+// constant offset from GPS time cancels in same-id deltas). For GLONASS
+// the top 3 bits are the day of week and only the low 27 bits are the
+// time-of-day in ms; masking off the day of week makes a day rollover read
+// as a discarded negative delta rather than a spurious jump, and the
+// day-of-week offset cancels in same-id deltas anyway. ok is false for
+// non-MSM messages, which carry no epoch and must not resolve a rate.
+func msmEpochMs(m rtcmbin.Msg) (float64, bool) {
+	var h *rtcmbin.MSMHeader
+	switch msm := m.(type) {
+	case *rtcmbin.MSM:
+		h = &msm.MSMHeader
+	case *rtcmbin.MSMHiRes:
+		h = &msm.MSMHeader
+	default:
+		return 0, false
+	}
+	epoch := h.EpochTime
+	if h.GNSS() == rtcmbin.GLONASS {
+		epoch &= (1 << 27) - 1
+	}
+	return float64(epoch), true
+}
 
 // timedSentence is the part of an NMEA sentence the estimator needs,
 // declared structurally so this package need not import the nmea

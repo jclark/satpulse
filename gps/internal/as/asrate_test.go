@@ -8,7 +8,140 @@ import (
 	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 )
+
+// msmMsg builds a parsed MSM message of the given type carrying the given
+// 30-bit epoch time, the form the estimator sees on the handled channel.
+// MSM6/7 parse as MSMHiRes, MSM1-5 as MSM; msmEpochMs reads either.
+func msmMsg(mt rtcmbin.MsgType, epoch uint32) rtcmbin.Msg {
+	hdr := rtcmbin.MSMHeader{
+		MsgHdrStationID: rtcmbin.MsgHdrStationID{MsgHdr: rtcmbin.MsgHdr{MsgNum: mt}},
+		EpochTime:       epoch,
+	}
+	if mt%10 >= 6 {
+		return &rtcmbin.MSMHiRes{MSMHeader: hdr}
+	}
+	return &rtcmbin.MSM{MSMHeader: hdr}
+}
+
+func TestRTCMTargetID(t *testing.T) {
+	// The 0xF8 sub-id is the RTCM type minus 1000 (standard) or 4000
+	// (proprietary), so an observed MSM type keys the same track a
+	// CFG-MSG enable used.
+	tests := []struct {
+		mt   rtcmbin.MsgType
+		want asbin.MsgID
+		ok   bool
+	}{
+		{1074, asbin.RtcmMsm4GpsID, true},
+		{1077, asbin.RtcmMsm7GpsID, true},
+		{1087, asbin.RtcmMsm7GloID, true},
+		{1127, asbin.RtcmMsm7BdsID, true},
+		{1005, asbin.RtcmArpID, true},
+		{1019, asbin.RtcmEphGpsID, true},
+		{4065, asbin.RtcmProp4065ID, true},
+		{999, 0, false},
+		{1300, 0, false}, // sub-id 300 overflows the byte
+		{5000, 0, false},
+	}
+	for _, tc := range tests {
+		got, ok := rtcmTargetID(tc.mt)
+		if ok != tc.ok || (ok && got != tc.want) {
+			t.Errorf("rtcmTargetID(%d) = %v,%v want %v,%v", tc.mt, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+func TestMSMEpochExtraction(t *testing.T) {
+	// A non-GLONASS MSM epoch is the raw 30-bit TOW ms; a GLONASS epoch
+	// keeps only the low 27 bits (time-of-day), dropping the 3-bit day of
+	// week. A non-MSM message has no epoch.
+	if ms, ok := msmEpochMs(msmMsg(1077, 123456)); !ok || ms != 123456 {
+		t.Errorf("GPS MSM epoch = %v,%v want 123456,true", ms, ok)
+	}
+	// GLONASS 1087 with day-of-week 3 in the top 3 bits and 200 ms tod.
+	glo := uint32(3)<<27 | 200
+	if ms, ok := msmEpochMs(msmMsg(1087, glo)); !ok || ms != 200 {
+		t.Errorf("GLONASS MSM epoch = %v,%v want 200,true (low 27 bits)", ms, ok)
+	}
+	if _, ok := msmEpochMs(&rtcmbin.MT1005{}); ok {
+		t.Error("MT1005 must report no epoch")
+	}
+}
+
+func TestEstimatorRTCMSelfSet(t *testing.T) {
+	// An MSM target we enabled at rate=1: its header epochs are content
+	// time, so two consistent 200ms deltas conclude a 5Hz native rate,
+	// exactly as a self-set NAV message does.
+	e := newRateEstimator()
+	e.markSelfSet(asbin.RtcmMsm7GpsID)
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, epoch := range []uint32{100000, 100200, 100400} {
+		e.observe(msmMsg(1077, epoch), t0)
+		t0 = t0.Add(time.Second)
+	}
+	if e.nativeHz != 5 {
+		t.Errorf("nativeHz = %d, want 5", e.nativeHz)
+	}
+}
+
+func TestEstimatorRTCMPollInterval(t *testing.T) {
+	// An as-found MSM stream, not self-set: its polled 0xF8 rate paired
+	// with the observed epoch interval gives the native rate exactly
+	// (native = R / interval), without self-set.
+	e := newRateEstimator()
+	e.cfgMsgReadback(&asbin.CfgMsg{CfgMsgFixed: asbin.CfgMsgFixed{
+		MsgClass: 0xF8, MsgID: 0x4D, Rate: 1}}) // RtcmMsm7GpsID target
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	e.observe(msmMsg(1077, 100000), t0)
+	e.observe(msmMsg(1077, 100200), t0.Add(time.Second)) // 200ms epoch delta
+	if e.nativeHz != 5 {
+		t.Errorf("nativeHz = %d, want 5", e.nativeHz)
+	}
+}
+
+func TestEstimatorGLONASSNoPoison(t *testing.T) {
+	// GLONASS epochs carry a day-of-week in the top 3 bits; masked to the
+	// time-of-day they still read the native grid, so a self-set GLONASS
+	// MSM resolves 5 rather than poisoning the estimate with a spurious
+	// day-of-week jump.
+	e := newRateEstimator()
+	e.markSelfSet(asbin.RtcmMsm7GloID)
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	dow := uint32(4) << 27
+	for _, tod := range []uint32{500000, 500200, 500400} {
+		e.observe(msmMsg(1087, dow|tod), t0)
+		t0 = t0.Add(time.Second)
+	}
+	if e.nativeHz != 5 {
+		t.Errorf("nativeHz = %d, want 5", e.nativeHz)
+	}
+}
+
+func TestEstimatorRTCM1005OnlyNoResolve(t *testing.T) {
+	// A stream of ARP (1005) frames only: it counts as periodic traffic
+	// but carries no epoch, so nothing resolves and the deadline concludes
+	// 1Hz (not the silent cap, because traffic was seen).
+	e := newRateEstimator()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	arp := &rtcmbin.MT1005{MsgHdrStationID: rtcmbin.MsgHdrStationID{
+		MsgHdr: rtcmbin.MsgHdr{MsgNum: 1005}}}
+	for i := 0; i < 4; i++ {
+		e.observe(arp, t0)
+		t0 = t0.Add(200 * time.Millisecond)
+	}
+	if e.nativeHz != 0 {
+		t.Errorf("nativeHz = %d, want 0 (1005 carries no epoch)", e.nativeHz)
+	}
+	if !e.sawPeriodic() {
+		t.Error("1005 arrivals should count as periodic traffic")
+	}
+	e.concludeSilent()
+	if e.nativeHz != 1 || e.capped {
+		t.Errorf("nativeHz = %d capped = %v, want 1 and false", e.nativeHz, e.capped)
+	}
+}
 
 // navMsg builds a NAV-POSLLH carrying the given iTOW (ms), a NavMsg the
 // estimator times by its content.
