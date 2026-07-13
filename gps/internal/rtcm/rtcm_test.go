@@ -2,7 +2,9 @@ package rtcm
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/scantest"
@@ -108,6 +110,69 @@ func TestMSMMsgType(t *testing.T) {
 			got := MSMMsgType(tt.gnss, tt.msm)
 			if got != tt.want {
 				t.Errorf("MSMMsgType(%v, %d) = %d, want %d", tt.gnss, tt.msm, got, tt.want)
+			}
+		})
+	}
+}
+
+// channelRecord captures which handler channel ProcessPacket used and what
+// it delivered.
+type channelRecord struct {
+	Tag     gpsprot.Tag
+	MsgID   string
+	MsgNil  bool
+	Handled bool
+}
+
+type plainHandler struct{ rec *channelRecord }
+
+func (h *plainHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
+	*h.rec = channelRecord{tag, msgID, msg == nil, false}
+	return nil
+}
+
+type handledHandler struct{ plainHandler }
+
+func (h *handledHandler) HandledNativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
+	*h.rec = channelRecord{tag, msgID, msg == nil, true}
+	return nil
+}
+
+func TestProcessPacketHandlerChannels(t *testing.T) {
+	tests := []struct {
+		name    string
+		handled bool
+		expect  channelRecord
+	}{
+		{
+			name:    "plain handler gets nil msg on NativeMsg",
+			handled: false,
+			expect:  channelRecord{Tag, "1005", true, false},
+		},
+		{
+			name:    "handled handler gets the parsed msg",
+			handled: true,
+			expect:  channelRecord{Tag, "1005", false, true},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var rec channelRecord
+			p := NewPacketProcessor()
+			if tc.handled {
+				p.SetNativeMsgHandler(&handledHandler{plainHandler{&rec}})
+			} else {
+				p.SetNativeMsgHandler(&plainHandler{&rec})
+			}
+			msgID, err := p.ProcessPacket(rtcmEx, time.Time{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if msgID != "1005" {
+				t.Fatalf("msgID %q, want 1005", msgID)
+			}
+			if !reflect.DeepEqual(rec, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", rec, tc.expect)
 			}
 		})
 	}
