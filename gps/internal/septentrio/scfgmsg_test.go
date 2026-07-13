@@ -205,8 +205,8 @@ func TestRTCMMessages(t *testing.T) {
 		flags  gpsprot.RTCMMsgFlags
 		expect []string
 	}{
-		{name: "auto", flags: gpsprot.RTCMMsgAuto, expect: []string{"MSM4", "RTCM1005"}},
-		{name: "msm7 with arp", flags: gpsprot.RTCMMsgAutoMSM7, expect: []string{"MSM7", "RTCM1005"}},
+		{name: "auto", flags: gpsprot.RTCMMsgAuto, expect: []string{"MSM4", "RTCM1230", "RTCM1005"}},
+		{name: "msm7 with arp", flags: gpsprot.RTCMMsgAutoMSM7, expect: []string{"MSM7", "RTCM1230", "RTCM1005"}},
 		{name: "none", flags: gpsprot.RTCMMsgNone, expect: nil},
 	}
 	for _, tc := range tests {
@@ -221,10 +221,10 @@ func TestRTCMMessages(t *testing.T) {
 // TestConfigureRTCMOut checks the RTCM message-list command and the separate
 // RTCMv3 output protocol mask on this connection.
 func TestConfigureRTCMOut(t *testing.T) {
-	rtcmCmd := "setRTCMv3Output, USB1, MSM4+RTCM1005"
+	rtcmCmd := "setRTCMv3Output, USB1, MSM4+RTCM1230+RTCM1005"
 	protoOn := "setDataInOut, USB1, , +RTCMv3"
 	replies := map[string]string{
-		rtcmCmd: "RTCMv3Output, USB1, RTCM1005+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134",
+		rtcmCmd: "RTCMv3Output, USB1, RTCM1005+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134+RTCM1230",
 		protoOn: "DataInOut, USB1, auto, RTCMv3+SBF+NMEA, (on)",
 	}
 	target := &gpsprot.ConfigTarget{}
@@ -276,10 +276,10 @@ func TestConfigureRTCMOut(t *testing.T) {
 		}
 	}
 
-	rtcmCmd = "setRTCMv3Output, USB1, RTCM1006+MSM4+RTCM1005"
+	rtcmCmd = "setRTCMv3Output, USB1, RTCM1006+MSM4+RTCM1230+RTCM1005"
 	replies = map[string]string{
 		"getRTCMv3Output, USB1": "RTCMv3Output, USB1, RTCM1006+RTCM1077+RTCM1087",
-		rtcmCmd:                 "RTCMv3Output, USB1, RTCM1006+RTCM1005+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134",
+		rtcmCmd:                 "RTCMv3Output, USB1, RTCM1006+RTCM1005+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134+RTCM1230",
 		protoOn:                 "DataInOut, USB1, auto, RTCMv3+SBF+NMEA, (on)",
 	}
 	target = &gpsprot.ConfigTarget{}
@@ -296,48 +296,23 @@ func TestConfigureRTCMOut(t *testing.T) {
 }
 
 // TestConfigureRTCMOutUnsupported checks the capability gate on RTCM output:
-// without the correction-generation capabilities an enable request fails
-// before the wire, and an empty selection still disables the port protocol.
+// without the correction-generation capabilities the request is quietly not
+// done - no command reaches the wire and no error is reported; the cleared
+// ConfigSupport flags are the reporting mechanism (SEMANTICS.md).
 func TestConfigureRTCMOutUnsupported(t *testing.T) {
-	target := &gpsprot.ConfigTarget{}
-	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgAuto)
-	_, sent, errs := runConfigCaps(t, target, nil, trimmedCapsLine)
-	for _, cmd := range sent {
-		if strings.HasPrefix(cmd, "setRTCMv3Output") {
-			t.Errorf("RTCM command sent without the capability: %q", cmd)
+	for _, flags := range []gpsprot.RTCMMsgFlags{
+		gpsprot.RTCMMsgAuto, gpsprot.RTCMMsgOther, gpsprot.RTCMMsgNone,
+	} {
+		target := &gpsprot.ConfigTarget{}
+		target.Opts.RTCMMsg = opt.Make(flags)
+		_, sent, errs := runConfigCaps(t, target, nil, trimmedCapsLine)
+		if len(errs) > 0 {
+			t.Errorf("flags %v: unexpected errors: %v", flags, errs)
 		}
-	}
-	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "RTCM message output not supported") {
-		t.Errorf("errors: got %v; want one unsupported-output error", errs)
-	}
-
-	target = &gpsprot.ConfigTarget{}
-	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgOther)
-	_, sent, errs = runConfigCaps(t, target, nil, trimmedCapsLine)
-	for _, cmd := range sent {
-		if strings.HasPrefix(cmd, "setRTCMv3Output") || strings.HasPrefix(cmd, "setDataInOut") {
-			t.Errorf("RTCM command sent without the capability: %q", cmd)
-		}
-	}
-	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "RTCM message output not supported") {
-		t.Errorf("errors: got %v; want one unsupported-output error", errs)
-	}
-
-	protoOff := "setDataInOut, USB1, , -RTCMv3"
-	target = &gpsprot.ConfigTarget{}
-	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgNone)
-	_, sent, errs = runConfigCaps(t, target, map[string]string{
-		protoOff: "DataInOut, USB1, auto, SBF+NMEA, (on)",
-	}, trimmedCapsLine)
-	if len(errs) > 0 {
-		t.Fatalf("unexpected errors: %v", errs)
-	}
-	if !slices.Contains(sent, protoOff) {
-		t.Errorf("RTCM protocol disable not sent; sent: %v", sent)
-	}
-	for _, cmd := range sent {
-		if strings.HasPrefix(cmd, "setRTCMv3Output") {
-			t.Errorf("RTCM command sent for an empty selection without the capability: %q", cmd)
+		for _, cmd := range sent {
+			if strings.HasPrefix(cmd, "setRTCMv3Output") || strings.HasPrefix(cmd, "setDataInOut") {
+				t.Errorf("flags %v: RTCM command sent without the capability: %q", flags, cmd)
+			}
 		}
 	}
 }

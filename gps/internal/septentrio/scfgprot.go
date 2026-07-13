@@ -100,36 +100,26 @@ const (
 // rxCaps is the parsed getReceiverCapabilities reply: the single source for
 // all capability gating (never gate on a hardware model string).
 type rxCaps struct {
-	signals []string        // supported signal names, verbatim
-	ports   []string        // connection descriptors (DSK1, COM1, USB1, ...)
-	caps    map[string]bool // enabled capabilities (GalOSNMA, PPPGalileoHAS-SIS, ...)
-	sigSet  gpsprot.SignalSet
+	caps   map[string]bool // enabled capabilities (GalOSNMA, PPPGalileoHAS-SIS, ...)
+	sigSet gpsprot.SignalSet
 }
 
 // parseCaps parses the ReceiverCapabilities state line of a grc reply:
 //
 //	ReceiverCapabilities, Main, <signals>, <ports>, <capabilities>, <measRate>, <pvtRate>
 func parseCaps(r *Reply) (*rxCaps, error) {
-	for _, s := range r.States {
-		fields := strings.Split(s, ",")
-		for i, f := range fields {
-			fields[i] = strings.TrimSpace(f)
-		}
-		if fields[0] != "ReceiverCapabilities" || len(fields) < 5 {
-			continue
-		}
-		c := &rxCaps{
-			signals: strings.Split(fields[2], "+"),
-			ports:   strings.Split(fields[3], "+"),
-			caps:    make(map[string]bool),
-		}
-		for _, name := range strings.Split(fields[4], "+") {
-			c.caps[name] = true
-		}
-		c.sigSet = signalSetFromNames(c.signals)
-		return c, nil
+	f := findState(r, "ReceiverCapabilities")
+	if len(f) < 5 {
+		return nil, fmt.Errorf("septentrio: no ReceiverCapabilities state line in grc reply")
 	}
-	return nil, fmt.Errorf("septentrio: no ReceiverCapabilities state line in grc reply")
+	c := &rxCaps{
+		caps:   make(map[string]bool),
+		sigSet: signalSetFromNames(strings.Split(f[2], "+")),
+	}
+	for _, name := range strings.Split(f[4], "+") {
+		c.caps[name] = true
+	}
+	return c, nil
 }
 
 // rtcmV3Base reports whether the receiver can generate RTCMv3 corrections.

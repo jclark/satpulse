@@ -1,7 +1,6 @@
 package septentrio
 
 import (
-	"reflect"
 	"testing"
 	"time"
 
@@ -29,7 +28,6 @@ func TestParseCaps(t *testing.T) {
 	tests := []struct {
 		name         string
 		states       []string
-		expectPorts  []string
 		expectCaps   []string
 		expectNoCaps []string
 		expectSigSet gpsprot.SignalSet
@@ -38,7 +36,6 @@ func TestParseCaps(t *testing.T) {
 		{
 			name:         "mosaic-G5 verbatim",
 			states:       []string{grcStateLine},
-			expectPorts:  []string{"DSK1", "COM1", "COM2", "USB1", "USB2"},
 			expectCaps:   []string{"GalOSNMA", "PPPGalileoHAS-SIS", "xPPSOutput", "RTKRover"},
 			expectNoCaps: []string{"PPPBeiDouB2b", ""},
 			expectSigSet: g5SignalSet,
@@ -65,9 +62,6 @@ func TestParseCaps(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
-			}
-			if !reflect.DeepEqual(got.ports, tc.expectPorts) {
-				t.Errorf("ports: got %v want %v", got.ports, tc.expectPorts)
 			}
 			for _, name := range tc.expectCaps {
 				if !got.caps[name] {

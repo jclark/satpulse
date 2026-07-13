@@ -50,7 +50,16 @@ func TestPPSSetCmd(t *testing.T) {
 		{
 			name:   "zero width disables",
 			props:  func(p *gpsprot.ConfigProps) { setPulse(p, gpsprot.TimePulse{Width: 0, Period: time.Second}) },
-			expect: "setPPSParameters, off",
+			expect: "setPPSParameters, off, High2Low, , RxClock, 0",
+		},
+		{
+			name: "zero width keeps a simultaneous TimeGNSS",
+			props: func(p *gpsprot.ConfigProps) {
+				setPulse(p, gpsprot.TimePulse{Width: 0, Period: time.Second})
+				p.SetTimeGNSS(gpsprot.GAL)
+			},
+			current: &ppsParams{interval: "sec1", timeScale: "GPS"},
+			expect:  "setPPSParameters, off, High2Low, , Galileo, 0",
 		},
 		{
 			name: "full pulse with TimeGNSS",
@@ -105,6 +114,29 @@ func TestPPSSetCmd(t *testing.T) {
 				t.Errorf("got  %q\nwant %q", got, tc.expect)
 			}
 		})
+	}
+}
+
+// TestMinElevationCmd checks the elevation-mask range: the receiver accepts
+// -90..90, so negative masks pass through (rounded to nearest, not truncated
+// toward zero) and only out-of-range values clamp.
+func TestMinElevationCmd(t *testing.T) {
+	tests := []struct {
+		v      gpsprot.Angle
+		expect string
+	}{
+		{-5 * gpsprot.Degrees, "setElevationMask, PVT, -5"},
+		{-gpsprot.Degrees * 3 / 2, "setElevationMask, PVT, -2"},
+		{-100 * gpsprot.Degrees, "setElevationMask, PVT, -90"},
+		{100 * gpsprot.Degrees, "setElevationMask, PVT, 90"},
+	}
+	for _, tc := range tests {
+		c := &Configurator{target: &gpsprot.ConfigTarget{}}
+		c.target.Props.SetMinElevation(tc.v)
+		c.generateScalarReqs()
+		if len(c.reqs) != 1 || c.reqs[0].cmd != tc.expect {
+			t.Errorf("MinElevation %v: got %v want %q", tc.v, c.reqs, tc.expect)
+		}
 	}
 }
 

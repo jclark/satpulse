@@ -327,12 +327,16 @@ func (c *Configurator) generateQueryReqs() {
 	t, np := c.target, &c.np
 	if t.UsesAny(gpsprot.PropIDSignalsEnabled) {
 		c.addReq("getSignalTracking", np.parseSignalTracking)
+	}
+	if t.Props.SetsAny(gpsprot.PropIDSignalsEnabled) {
+		// The usage lists feed only the set path's read-modify-write; the
+		// property reads back from the tracking list alone.
 		c.addReq("getSignalUsage", np.parseSignalUsage)
 	}
 	if t.UsesAny(gpsprot.PropIDTimePulse | gpsprot.PropIDTimeGNSS) {
 		c.addReq("getPPSParameters", np.parsePPSParameters)
 	}
-	if t.UsesAny(gpsprot.PropIDMode) {
+	if t.UsesAny(gpsprot.PropIDMode) || t.Opts.SetStatic {
 		c.addReq("getPVTMode", np.parsePVTMode)
 	}
 	if t.UsesAny(gpsprot.PropIDMinElevation) {

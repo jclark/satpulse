@@ -270,6 +270,32 @@ func TestConfiguratorReply(t *testing.T) {
 			reply:       &Reply{Kind: ReplyNak, Error: "setSignalTracking: Argument 'Signal' is invalid!", Prompt: "USB1"},
 			expectState: sStateSucceeded,
 		},
+		{
+			name:        "nak naming the configuration item fails the request",
+			req:         &sReq{state: sStateAwaiting, cmd: "setSBFOutput, Stream1, USB1, MeasEpoch, sec1"},
+			reply:       &Reply{Kind: ReplyNak, Error: "SBFOutput: Not authorized!", Prompt: "USB1"},
+			expectState: sStateFailed,
+			expectErr:   "Not authorized!",
+		},
+		{
+			name:        "nak naming a foreign command is ignored",
+			req:         &sReq{state: sStateAwaiting, cmd: "getSignalTracking"},
+			reply:       &Reply{Kind: ReplyNak, Error: "VERSIONB: Invalid command!", Prompt: "USB1"},
+			expectState: sStateAwaiting,
+		},
+		{
+			name:        "nak naming another of our commands is ignored",
+			req:         &sReq{state: sStateAwaiting, cmd: "setPPSParameters, sec1"},
+			reply:       &Reply{Kind: ReplyNak, Error: "setElevationMask: Argument 'Elevation' is invalid!", Prompt: "USB1"},
+			expectState: sStateAwaiting,
+		},
+		{
+			name:        "nak without a recognizable name keeps the single-flight attribution",
+			req:         &sReq{state: sStateAwaiting, cmd: "setPPSParameters, sec1"},
+			reply:       &Reply{Kind: ReplyNak, Error: "something went wrong", Prompt: "USB1"},
+			expectState: sStateFailed,
+			expectErr:   "something went wrong",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -294,6 +320,39 @@ func TestConfiguratorReply(t *testing.T) {
 				t.Errorf("onReply not called with the matching reply")
 			}
 		})
+	}
+}
+
+// TestLstBlockContinuity checks that stale tail blocks of an abandoned lst
+// attempt cannot complete a retried request with truncated content: block
+// numbering must be continuous, and a fresh block 1 restarts collection.
+func TestLstBlockContinuity(t *testing.T) {
+	var got string
+	req := &sReq{state: sStateAwaiting, cmd: "lstInternalFile, Identification",
+		onLst: func(s string) { got = s }}
+	c := &Configurator{reqs: []*sReq{req}}
+	feed := func(num, total int, block, prompt string) {
+		if err := c.reply(&Reply{Kind: ReplyBlock, BlockNum: num, BlockTotal: total,
+			Block: block, Prompt: prompt}, time.Time{}); err != nil {
+			t.Fatalf("reply: %v", err)
+		}
+	}
+	// Stale continuation of the abandoned first attempt: ignored, even the
+	// prompt-carrying final block.
+	feed(2, 3, "stale-2", "")
+	feed(3, 3, "stale-3", "USB1")
+	if req.state != sStateAwaiting {
+		t.Fatalf("state after stale blocks: got %v want %v", req.state, sStateAwaiting)
+	}
+	// The retried reply arrives in full and completes the request.
+	feed(1, 3, "fresh-1", "")
+	feed(2, 3, "fresh-2", "")
+	feed(3, 3, "fresh-3", "USB1")
+	if req.state != sStateSucceeded {
+		t.Fatalf("state: got %v want %v", req.state, sStateSucceeded)
+	}
+	if want := "fresh-1\nfresh-2\nfresh-3"; got != want {
+		t.Errorf("content: got %q want %q", got, want)
 	}
 }
 
@@ -466,6 +525,119 @@ func TestConfigureSaveReset(t *testing.T) {
 	}
 	if port, ok := cfg.ConfigProps().GetPort(); !ok || port != "USB1" {
 		t.Errorf("Port: got %q, %v; the STOP prompt must not overwrite it", port, ok)
+	}
+}
+
+// TestConfigureSaveResetGate checks the SEMANTICS.md gate: a failed save
+// suppresses the paired reset, so a reset never discards running changes the
+// save failed to persist.
+func TestConfigureSaveResetGate(t *testing.T) {
+	replies := map[string]string{
+		"exeCopyConfigFile, Current, Boot": "!CopyConfigFile: Not authorized!",
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.Save = gpsprot.SaveAll
+	target.Opts.Reset = gpsprot.ResetCold
+	_, sent, errs := runConfig(t, target, replies)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "Not authorized!") {
+		t.Fatalf("errors: got %v; want the save refusal alone", errs)
+	}
+	for _, cmd := range sent {
+		if strings.HasPrefix(cmd, "exeResetReceiver") {
+			t.Errorf("reset sent after a failed save; sent: %v", sent)
+		}
+	}
+}
+
+// TestConfigureQueryFailureSkipsSets checks that a failed query skips the
+// whole set phase: realizing the target without the current state would be
+// guesswork (an add-only PVT request would wipe the stream's other blocks).
+func TestConfigureQueryFailureSkipsSets(t *testing.T) {
+	replies := map[string]string{
+		"getSBFOutput, Stream1": "!SBFOutput: Not authorized!",
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.PVTMsg = gpsprot.PVTMsgPos | gpsprot.PVTMsgTime
+	_, sent, errs := runConfig(t, target, replies)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "Not authorized!") {
+		t.Fatalf("errors: got %v; want the query refusal alone", errs)
+	}
+	for _, cmd := range sent {
+		if strings.HasPrefix(cmd, "set") || strings.HasPrefix(cmd, "exe") {
+			t.Errorf("set command sent after a failed query: %q", cmd)
+		}
+	}
+}
+
+// TestConfigureStaticAsIs checks the SEMANTICS.md static-mode rules: SetStatic
+// leaves a receiver already static as it is, a static request without a
+// position leaves an existing self-determined position untouched, and only an
+// explicit fresh survey (SurveyAgain) re-issues the auto determination.
+func TestConfigureStaticAsIs(t *testing.T) {
+	autoReplies := map[string]string{"getPVTMode": "PVTMode, Static, , auto"}
+	modeCmds := func(sent []string) []string {
+		var cmds []string
+		for _, cmd := range sent {
+			if strings.HasPrefix(cmd, "setPVTMode") {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return cmds
+	}
+
+	// SetStatic on a rover switches to the self-determined static mode.
+	replies := make(map[string]string, len(asFoundReplies))
+	maps.Copy(replies, asFoundReplies)
+	replies["setPVTMode, Static, , auto"] = "PVTMode, Static, , auto"
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.SetStatic = true
+	_, sent, errs := runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if want := []string{"setPVTMode, Static, , auto"}; !reflect.DeepEqual(modeCmds(sent), want) {
+		t.Errorf("SetStatic on rover: got %v want %v", modeCmds(sent), want)
+	}
+
+	// SetStatic leaves an existing fixed position untouched.
+	replies = make(map[string]string, len(asFoundReplies))
+	maps.Copy(replies, asFoundReplies)
+	replies["getPVTMode"] = "PVTMode, Static, , Geodetic1"
+	target = &gpsprot.ConfigTarget{}
+	target.Opts.SetStatic = true
+	_, sent, errs = runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if cmds := modeCmds(sent); cmds != nil {
+		t.Errorf("SetStatic on fixed static: got %v want none", cmds)
+	}
+
+	// A static request without a position leaves an existing self-determined
+	// position alone unless a fresh survey is requested.
+	target = &gpsprot.ConfigTarget{}
+	target.Props.SetMode(gpsprot.Mode{Static: true})
+	_, sent, errs = runConfig(t, target, autoReplies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if cmds := modeCmds(sent); cmds != nil {
+		t.Errorf("static-auto re-request: got %v want none", cmds)
+	}
+
+	target = &gpsprot.ConfigTarget{}
+	target.Props.SetMode(gpsprot.Mode{Static: true})
+	target.Opts.Survey.Flags |= gpsprot.SurveyAgain
+	replies = map[string]string{
+		"getPVTMode":                 "PVTMode, Static, , auto",
+		"setPVTMode, Static, , auto": "PVTMode, Static, , auto",
+	}
+	_, sent, errs = runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if want := []string{"setPVTMode, Static, , auto"}; !reflect.DeepEqual(modeCmds(sent), want) {
+		t.Errorf("SurveyAgain: got %v want %v", modeCmds(sent), want)
 	}
 }
 

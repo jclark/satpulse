@@ -1,7 +1,6 @@
 package septentrio
 
 import (
-	"errors"
 	"slices"
 	"strings"
 
@@ -92,9 +91,25 @@ func pvtBlocks(f gpsprot.PVTMsgFlags) []string {
 	return b
 }
 
-// pvtClass is every block pvtBlocks can enable.
-var pvtClass = []string{"PVTGeodetic", "PVTCartesian", "xPPSOffset",
-	"GPSUtc", "GALUtc", "BDSUtc", "DOP", "DiffCorrIn", "BaseStation", "EndOfPVT"}
+// classOf returns the deduplicated union of the given block lists: each
+// option's class - every block its realization can enable - is derived from
+// the realization itself, so the class used to remove blocks on a disable
+// cannot drift from the blocks a request can add.
+func classOf(lists ...[]string) []string {
+	var class []string
+	for _, l := range lists {
+		for _, b := range l {
+			if !slices.Contains(class, b) {
+				class = append(class, b)
+			}
+		}
+	}
+	return class
+}
+
+// pvtClass is every block pvtBlocks can enable (the ECEF preference switches
+// the position carrier, so both carriers are in the class).
+var pvtClass = classOf(pvtBlocks(gpsprot.PVTMsgAny), pvtBlocks(gpsprot.PVTMsgAny|gpsprot.PVTMsgECEF))
 
 func satsBlocks(f gpsprot.SatsMsgFlags) []string {
 	var b []string
@@ -107,7 +122,7 @@ func satsBlocks(f gpsprot.SatsMsgFlags) []string {
 	return b
 }
 
-var satsClass = []string{"ChannelStatus", "MeasEpoch"}
+var satsClass = classOf(satsBlocks(gpsprot.SatsMsgAny))
 
 func rawBlocks(f gpsprot.RawMsgFlags) []string {
 	var b []string
@@ -122,9 +137,7 @@ func rawBlocks(f gpsprot.RawMsgFlags) []string {
 	return b
 }
 
-var rawClass = []string{"MeasEpoch", "MeasExtra", "GPSNav", "GPSCNav", "GPSIon",
-	"GLONav", "GLOTime", "GALNav", "GALIon", "GEONav",
-	"BDSNav", "BDSIon", "QZSNav", "NavICLNav"}
+var rawClass = classOf(rawBlocks(gpsprot.RawMsgAny))
 
 // touchesSBFOutput reports whether the target changes the owned SBF stream.
 func (c *Configurator) touchesSBFOutput() bool {
@@ -205,7 +218,13 @@ var nmeaFlagSentences = []struct {
 	{gpsprot.NMEAMsgGLL, "GLL"},
 }
 
-var nmeaSentenceClass = []string{"RMC", "GGA", "GSA", "GSV", "ZDA", "VTG", "GLL"}
+var nmeaSentenceClass = func() []string {
+	names := make([]string, len(nmeaFlagSentences))
+	for i, e := range nmeaFlagSentences {
+		names[i] = e.name
+	}
+	return names
+}()
 
 func nmeaSentences(f gpsprot.NMEAMsgFlags) []string {
 	var names []string
@@ -220,8 +239,11 @@ func nmeaSentences(f gpsprot.NMEAMsgFlags) []string {
 // rtcmMessages returns the RTCMv3 message list realizing the flags. The
 // MSM4/MSM7 aliases expand receiver-side to the per-constellation message
 // set (verified: 1074-1134 for MSM4, including QZSS), so enabled-GNSS
-// filtering happens in the receiver; ARP is RTCM1005; RTCMMsgLax changes
-// nothing because the receiver accepts every choice the flags can express.
+// filtering happens in the receiver; the expansion does not include the
+// GLONASS code-phase-bias message 1230, an MSM request's required companion
+// (SEMANTICS.md), so it is named explicitly. ARP is RTCM1005; RTCMMsgLax
+// changes nothing because the receiver accepts every choice the flags can
+// express.
 func rtcmMessages(f gpsprot.RTCMMsgFlags) []string {
 	var m []string
 	if f&gpsprot.RTCMMsgMSM4 != 0 {
@@ -230,6 +252,9 @@ func rtcmMessages(f gpsprot.RTCMMsgFlags) []string {
 	if f&gpsprot.RTCMMsgMSM7 != 0 {
 		m = append(m, "MSM7")
 	}
+	if f&(gpsprot.RTCMMsgMSM4|gpsprot.RTCMMsgMSM7) != 0 {
+		m = append(m, "RTCM1230")
+	}
 	if f&gpsprot.RTCMMsgARP != 0 {
 		m = append(m, "RTCM1005")
 	}
@@ -237,7 +262,7 @@ func rtcmMessages(f gpsprot.RTCMMsgFlags) []string {
 }
 
 var rtcmMessageClass = []string{
-	"MSM4", "MSM7", "RTCM1005",
+	"MSM4", "MSM7", "RTCM1005", "RTCM1230",
 	"RTCM1074", "RTCM1084", "RTCM1094", "RTCM1104", "RTCM1114", "RTCM1124", "RTCM1134",
 	"RTCM1077", "RTCM1087", "RTCM1097", "RTCM1107", "RTCM1117", "RTCM1127", "RTCM1137",
 }
@@ -269,22 +294,16 @@ func (c *Configurator) generateOutputReqs() {
 		c.addOutputProtoReq("NMEA", f&gpsprot.NMEAMsgAny != 0)
 	}
 	if c.target.Opts.RTCMMsg.IsSet() {
+		if !c.caps.rtcmV3Base() {
+			// The capability is undeclared, so the request is quietly not
+			// done: the cleared ConfigSupport flags are the reporting
+			// mechanism for options (SEMANTICS.md, Capabilities), and the
+			// legacy ubx error for this case must not be reproduced.
+			return
+		}
 		f := c.target.Opts.RTCMMsg.Get()
 		enable := f&gpsprot.RTCMMsgAny != 0
 		list := rtcmMessages(f)
-		if !c.caps.rtcmV3Base() {
-			if enable {
-				// The capability is absent, so the request fails before the wire:
-				// a message request has no property through which the absence
-				// could show (SEMANTICS.md). An empty selection still disables
-				// the port protocol mask.
-				c.append(&sReq{state: sStateFailed, cmd: "setRTCMv3Output",
-					err: errors.New("RTCM message output not supported by this receiver")})
-			} else {
-				c.addOutputProtoReq("RTCMv3", false)
-			}
-			return
-		}
 		if len(list) > 0 {
 			if f&gpsprot.RTCMMsgOther != 0 {
 				list = outputList(np.rtcmOutput, list, rtcmMessageClass)

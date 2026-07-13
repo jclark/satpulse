@@ -2,6 +2,7 @@ package septentrio
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,12 +20,13 @@ import (
 
 // gnssTimeScale is the reverse of timeScaleGNSS; other GNSS have no
 // TimeScale analogue and leave the argument unset.
-var gnssTimeScale = map[gpsprot.GNSS]string{
-	gpsprot.GPS: "GPS",
-	gpsprot.GAL: "Galileo",
-	gpsprot.BDS: "BeiDou",
-	gpsprot.GLO: "GLONASS",
-}
+var gnssTimeScale = func() map[gpsprot.GNSS]string {
+	m := make(map[gpsprot.GNSS]string, len(timeScaleGNSS))
+	for name, g := range timeScaleGNSS {
+		m[g] = name
+	}
+	return m
+}()
 
 // generateSetReqs generates the set requests realizing the target's
 // properties: signals, the scalars, the PVT mode, the message outputs
@@ -43,7 +45,8 @@ func (c *Configurator) generateSetReqs() {
 func (c *Configurator) generateScalarReqs() {
 	props, np := &c.target.Props, &c.np
 	if v, ok := props.GetMinElevation(); ok {
-		deg := min(max(int((v+gpsprot.Degrees/2)/gpsprot.Degrees), 0), 90)
+		// The receiver accepts -90..90 (the mask can be negative).
+		deg := min(max(int(math.Round(float64(v)/float64(gpsprot.Degrees))), -90), 90)
 		c.addReq(fmt.Sprintf("setElevationMask, PVT, %d", deg), np.parseElevationMask)
 	}
 	if cmd := c.ppsSetCmd(); cmd != "" {
@@ -164,22 +167,35 @@ func listOrNone(list string) string {
 	return list
 }
 
-// generateModeReqs realizes the Mode property. A rover mode set omits the
-// RoverMode argument, preserving the receiver's current rover-mode list; a
-// static position is written to slot 1 before the mode switch references it
-// (verified order).
+// generateModeReqs realizes the Mode property and the SetStatic option. A
+// rover mode set omits the RoverMode argument, preserving the receiver's
+// current rover-mode list; a static position is written to slot 1 before the
+// mode switch references it (verified order). Per SEMANTICS.md, SetStatic
+// leaves a receiver already in a static mode as it is, and a static mode
+// without a position re-determines an existing self-determined position only
+// when a fresh survey is explicitly requested (SurveyAgain).
 func (c *Configurator) generateModeReqs() {
+	np := &c.np
 	m, ok := c.target.Props.GetMode()
 	if !ok {
-		return
+		if !c.target.Opts.SetStatic {
+			return
+		}
+		if pm := np.pvtMode; pm != nil && pm.mode == "Static" && pm.staticRef != "auto" {
+			return // SetStatic leaves an existing fixed position untouched
+		}
+		m = gpsprot.Mode{Static: true}
 	}
-	np := &c.np
 	if !m.Static {
 		c.addReq("setPVTMode, Rover", np.parsePVTMode)
 		return
 	}
 	switch m.PosType {
 	case gpsprot.PosTypeNone:
+		if pm := np.pvtMode; pm != nil && pm.mode == "Static" && pm.staticRef == "auto" &&
+			c.target.Opts.Survey.Flags&gpsprot.SurveyAgain == 0 {
+			return // an existing self-determined position is left untouched
+		}
 		c.addReq("setPVTMode, Static, , auto", np.parsePVTMode)
 	case gpsprot.PosTypeLLH:
 		c.addReq(fmt.Sprintf("setStaticPosGeodetic, Geodetic1, %.9f, %.9f, %.4f",
@@ -220,17 +236,26 @@ func (c *Configurator) generateIdentReqs() {
 // the erase argument resets the configuration to factory defaults).
 func (c *Configurator) generateSaveResetReqs() {
 	o := &c.target.Opts
+	var save *sReq
 	if o.Save != gpsprot.SaveNone {
-		c.addReq("exeCopyConfigFile, Current, Boot", nil)
+		save = &sReq{cmd: "exeCopyConfigFile, Current, Boot"}
+		c.append(save)
 	}
+	var reset string
 	switch o.Reset {
 	case gpsprot.ResetReload:
-		c.addReq("exeCopyConfigFile, Boot, Current", nil)
+		reset = "exeCopyConfigFile, Boot, Current"
 	case gpsprot.ResetCold:
-		c.addReq("exeResetReceiver, Hard, PVTData+SatData", nil)
+		reset = "exeResetReceiver, Hard, PVTData+SatData"
 	case gpsprot.ResetFactory:
-		c.addReq("exeResetReceiver, Hard, all", nil)
+		reset = "exeResetReceiver, Hard, all"
+	default:
+		return
 	}
+	// The ordering is a gate (SEMANTICS.md): a failed save suppresses the
+	// reset, so a reset never discards running changes the save it was
+	// paired with failed to persist.
+	c.append(&sReq{cmd: reset, needs: save})
 }
 
 // ppsSetCmd builds the setPPSParameters command for the target's TimePulse
@@ -238,14 +263,17 @@ func (c *Configurator) generateSaveResetReqs() {
 // Returns "" when the target sets none of them.
 func (c *Configurator) ppsSetCmd() string {
 	props, np := &c.target.Props, &c.np
-	if w, ok := props.GetTimePulseWidth(); ok && w == 0 {
-		return "setPPSParameters, off"
-	}
 	// Args: Interval, Polarity, Delay, TimeScale, MaxHoldover, PulseWidth.
 	// Delay moves only the pulse, not the pseudoranges: never touched
 	// (AntennaCableDelay is setCalibCommonDelay).
 	args := make([]string, 6)
-	if p, ok := props.GetTimePulsePeriod(); ok {
+	w, haveWidth := props.GetTimePulseWidth()
+	off := haveWidth && w == 0
+	if off {
+		// A zero width disables the pulse; the other arguments (a TimeGNSS
+		// set in the same request in particular) still compose.
+		args[0] = "off"
+	} else if p, ok := props.GetTimePulsePeriod(); ok {
 		args[0] = nearestPPSInterval(p)
 	}
 	if r, ok := props.GetTimePulsePolarityRising(); ok {
@@ -271,7 +299,7 @@ func (c *Configurator) ppsSetCmd() string {
 			args[4] = "0"
 		}
 	}
-	if w, ok := props.GetTimePulseWidth(); ok {
+	if haveWidth && !off {
 		ms := min(max(float64(w)/float64(time.Millisecond), 0.000001), 1000)
 		args[5] = formatFloat(ms)
 		if args[0] == "" && (c.np.pps == nil || c.np.pps.interval == "off") {

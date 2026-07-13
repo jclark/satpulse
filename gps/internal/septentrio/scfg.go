@@ -54,10 +54,11 @@ const (
 	sStateMayResend                  // reply window passed; eligible for retry
 	sStateSucceeded
 	sStateFailed
+	sStateSkipped // never sent: the request it needs did not succeed
 )
 
 func (s sReqState) isFinal() bool {
-	return s == sStateSucceeded || s == sStateFailed
+	return s == sStateSucceeded || s == sStateFailed || s == sStateSkipped
 }
 
 // sReq is a single command request.
@@ -66,6 +67,7 @@ type sReq struct {
 	cmd      string       // command text, without CR LF
 	nakOK    bool         // a "$R?" refusal is an acceptable outcome, not a failure
 	optional bool         // giving up after retries is success, not failure
+	needs    *sReq        // earlier request that must succeed, or this one is skipped
 	onReply  func(*Reply) // records achieved values from the matching reply
 	onLst    func(string) // lst commands: called with the joined block contents
 	blocks   []string     // block units collected so far (lst commands)
@@ -139,6 +141,15 @@ func (c *Configurator) GenerateRequests() error {
 		if !c.allFinal() || c.generateFollowupQueries() {
 			break
 		}
+		if c.anyFailed() {
+			// A failed query leaves the current state unknown, so realizing
+			// the target (read-modify-write, preserving untouched output
+			// classes) would be guesswork; the query's own error reports the
+			// failure and nothing on the receiver has been changed.
+			c.complete = true
+			c.phase = phaseFinal
+			break
+		}
 		c.generateSetReqs()
 		c.phase = phaseSet
 	case phaseSet:
@@ -169,17 +180,33 @@ func (c *Configurator) allFinal() bool {
 	return true
 }
 
+// anyFailed reports whether any generated request has failed.
+func (c *Configurator) anyFailed() bool {
+	for _, req := range c.reqs {
+		if req.state == sStateFailed {
+			return true
+		}
+	}
+	return false
+}
+
 // promote moves the first non-final request from NotReady to Ready when
-// everything before it is final: the single-flight rule.
+// everything before it is final: the single-flight rule. A request whose
+// needed predecessor did not succeed is skipped instead of promoted.
 func (c *Configurator) promote() {
 	for i := c.nFinished; i < len(c.reqs); i++ {
 		req := c.reqs[i]
-		if !req.state.isFinal() {
-			if req.state == sStateNotReady {
-				req.state = sStateReady
-			}
-			return
+		if req.state.isFinal() {
+			continue
 		}
+		if req.needs != nil && req.needs.state.isFinal() && req.needs.state != sStateSucceeded {
+			req.state = sStateSkipped
+			continue
+		}
+		if req.state == sStateNotReady {
+			req.state = sStateReady
+		}
+		return
 	}
 }
 
@@ -222,12 +249,20 @@ func (c *Configurator) reply(r *Reply, tRead time.Time) error {
 		if req.onLst == nil {
 			break
 		}
+		if r.BlockNum == 1 {
+			req.blocks = req.blocks[:0]
+		} else if r.BlockNum != len(req.blocks)+1 {
+			break // a stale continuation of an abandoned attempt, not this reply
+		}
 		req.blocks = append(req.blocks, r.Block)
 		if r.Prompt != "" {
 			req.state = sStateSucceeded
 			req.onLst(strings.Join(req.blocks, "\n"))
 		}
 	case ReplyNak:
+		if !nakMatches(req.cmd, r.Error) {
+			return nil // not ours: e.g. a foreign probe's refusal or a stale straggler
+		}
 		if req.nakOK {
 			req.state = sStateSucceeded
 			if req.onReply != nil {
@@ -239,6 +274,27 @@ func (c *Configurator) reply(r *Reply, tRead time.Time) error {
 		req.err = fmt.Errorf("%s: receiver refused: %s", req.cmd, r.Error)
 	}
 	return nil
+}
+
+// nakMatches reports whether a "$R?" refusal is attributable to cmd. The
+// refusal text opens with the refused command's name or its configuration
+// item's name - the command name without the verb prefix, e.g. "SBFOutput"
+// for an sso command (reference guide sec 3.1.3 examples) - so a leading
+// name that is not a suffix of the command name belongs to some other
+// command (a foreign probe, a straggler from an abandoned request). Text
+// without a recognizable name keeps the single-flight attribution.
+func nakMatches(cmd, errText string) bool {
+	name, _, ok := strings.Cut(errText, ":")
+	name = strings.TrimSpace(name)
+	if !ok || strings.ContainsAny(name, " \t") {
+		return true
+	}
+	cmdName, _, _ := strings.Cut(cmd, ",")
+	cmdName = strings.TrimSpace(cmdName)
+	if len(name) > len(cmdName) {
+		return false
+	}
+	return strings.EqualFold(cmdName[len(cmdName)-len(name):], name)
 }
 
 func (req *sReq) invalidStatePanic(method string) string {
@@ -275,6 +331,8 @@ func (req *sReq) GetState() gpsprot.ConfigRequestState {
 		return gpsprot.ConfigRequestSucceeded
 	case sStateFailed:
 		return gpsprot.ConfigRequestFailed
+	case sStateSkipped:
+		return gpsprot.ConfigRequestSkipped
 	}
 	panic(fmt.Sprintf("unexpected internal state: %v", req.state))
 }
