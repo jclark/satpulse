@@ -67,19 +67,19 @@ mask) backs the verify readback.
 
 As-found running configuration: NMEA GGA, GSA, GSV, RMC, ZDA at 1 Hz
 (TXT off, unlike the TAU1201); mobile mode; full supported signal set;
-PPS 1 s period, 1% duty, FALLING polarity, GPIO 13, offset 530 ns;
+PPS 1 s period, 1% duty, RISING polarity, GPIO 13, offset 530 ns;
 NMEA version 4.11.
 
-The factory CFG-PPS polarity field is falling, which the satpulsetool
-vocabulary cannot express (`--pps` realizes the full pulse bundle with
-rising polarity; see `BUGS.md`, unresolved observations). Every probing run
-therefore reports one honest not-left-as-found failure on
-`timePulse.polarityRising`; the polarity is restored out-of-band after
-runs (after a --disruptive run the NVM copy needs the same restore,
-since the run's saves persist the rising polarity). The
-characterization itself is run-to-run identical, and the disruptive
-NVM-comparison failures on this unit all reduce to the same polarity
-field.
+This batch unit's factory CFG-PPS polarity is rising (confirmed
+2026-07-13: factory-reset-inclusive disruptive runs show no polarity
+restore failure, and readback agrees), so the `--pps` vocabulary gap
+that dogged its predecessor does not bite here. The RETIRED dev unit
+(HD9510.4740d9ec2) had factory FALLING polarity, which `--pps` cannot
+express (it realizes the full pulse bundle with rising polarity; see
+`BUGS.md`, unresolved observations); on such a unit every probing run
+reports one honest not-left-as-found failure on
+`timePulse.polarityRising` and the polarity needs an out-of-band
+restore, including the NVM copy after a --disruptive run.
 
 This unit silently drops requests beyond ~12 outstanding (same-id
 bursts, stage-0 finding); the configurator's per-id serialization
