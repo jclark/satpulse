@@ -120,11 +120,11 @@ a `NativeMsgHandler` (stage 1).
   (signals, ports, capabilities) and caches it.
 - `ReceiverInfo()`: supported GNSS/signals from grc's signal list via
   the coarse signal table below; `Vendor = "Septentrio"`; `Hardware`
-  ("mosaic-G5 P3") and `Firmware` ("1.1.0") from a ReceiverSetup SBF
-  block when one arrives (a user configuration that emits it gets
-  identity for free), else fetched with `lstInternalFile,
-  Identification` - the one ASCII carrier of the firmware version -
-  parsed as XML from the lst block units. Owner ruling (revised
+  ("mosaic-G5 P3") and `Firmware` ("1.1.0") fetched with
+  `lstInternalFile, Identification` - the one ASCII carrier of the
+  firmware version - parsed as XML from the lst block units. (A
+  passive ReceiverSetup fallback was dropped: nothing requests the
+  block, so it never fired - dead weight.) Owner ruling (revised
   2026-07-06 after the one-shot's limits surfaced): identity must
   not change the receiver configuration, even in RAM, and must not
   delay `--show-receiver`; the lst fetch satisfies both (millisecond
@@ -207,7 +207,7 @@ semantics make unnecessary.
 | `SignalsEnabled` | `setSatelliteTracking` (`sst`) + `setSignalTracking` (`snt`) + `setSignalUsage` (`snu`) | See below. |
 | `TimeGNSS` | `setPPSParameters` `TimeScale` arg | GPS/Galileo/BeiDou/GLONASS all verified; `UTC`/`RxClock` have no device-independent analogue. |
 | `TimePulseWidth`/`Period`/`AlignToGNSS`/`OnlyWhenLocked`/`PolarityRising` | `setPPSParameters` (`Interval`, `PulseWidth`, `Polarity`, `MaxHoldover`) | PPS1 only. OnlyWhenLocked ~ MaxHoldover 1; !OnlyWhenLocked = 0 (never time out). Interval is an enum (off/msec10..sec10/...); non-representable periods are clamped to the nearest supported value and reported truthfully. |
-| `Mode` (static/rover, fixed pos) | `setPVTMode` (`spm`) + `setStaticPosGeodetic`/`setStaticPosCartesian` | `Static==false` -> `setPVTMode, Rover` (RoverMode arg OMITTED - keeps the receiver's current rover-mode list; verified default includes DGNSS). `Static==true, PosTypeNone` -> `setPVTMode, Static, , auto`. `Static==true` + LLH/ECEF -> write Geodetic1/Cartesian1, then `setPVTMode, Static, , Geodetic1`/`Cartesian1`. |
+| `Mode` (static/rover, fixed pos) | `setPVTMode` (`spm`) + `setStaticPosGeodetic`/`setStaticPosCartesian` | `Static==false` -> `setPVTMode, Rover` (RoverMode arg OMITTED - keeps the receiver's current rover-mode list; verified default includes DGNSS). `Static==true, PosTypeNone` -> `setPVTMode, Static, , auto`, skipped when the queried mode is already `Static, , auto` and no fresh survey is requested (`SurveyAgain`) - an existing self-determined position is left untouched (SEMANTICS.md). `Static==true` + LLH/ECEF -> write Geodetic1/Cartesian1, then `setPVTMode, Static, , Geodetic1`/`Cartesian1`. `Opts.SetStatic` without a Mode property leaves any static mode (fixed or auto) as it is and moves a rover to `Static, , auto`. |
 | `AntennaCableDelay` | `setCalibCommonDelay` (`scco`) | ns; receiver REFUSES out-of-range (verified), so clamp to -10000..10000 client-side before the wire. |
 | `NavMsgAuth` | `setGalOSNMAUsage` (`sou`) | See "OSNMA". |
 | `RTCMBaseID` | `setRTCMv3Formatting` `ReferenceID` | 0-4095, clamp client-side (first reply field, verified readback). |
@@ -291,11 +291,10 @@ omits them.
   receivers with one of the roles. Without the capabilities,
   `ConfigSupport()` clears the four RTCM flags (MSM4, MSM7, BaseID,
   QZSS), the RTCMBaseID property shows absence (no query, no set),
-  and an RTCM output request fails before the wire with an
-  "output not supported" error (a message request has no property
-  through which absence could show; SEMANTICS.md records the error
-  as the current cross-backend behavior, ubx does the same). An
-  empty RTCM selection sends nothing.
+  and an RTCM output request is quietly not done: the cleared flags
+  are the reporting mechanism for options (SEMANTICS.md,
+  Capabilities), and the legacy ubx error for this case must not be
+  reproduced.
 
 - **Mode** - deliberately NOT gated. No capability gates
   `setPVTMode, Static` or `setStaticPosGeodetic`/`Cartesian`: the
@@ -332,10 +331,12 @@ prompt) and interval in one `setSBFOutput`/`setNMEAOutput` command;
   layer's registration list). FlexRate-exempt blocks (xPPSOffset,
   ReceiverSetup, ...) ride the same list and emit OnChange (verified).
 - `--rtcm-out`/`--rtcm-base-id`: `setRTCMv3Output` message selection
-  (MSM4/MSM7/Nav expansion verified in the msgfile work) +
-  `setRTCMv3Formatting`. Actual emission additionally needs base mode
-  + reference position - observation, not enablement, is the
-  evidence.
+  (MSM4/MSM7/Nav expansion verified in the msgfile work; the
+  expansion does not include the GLONASS code-phase-bias message
+  1230, an MSM request's required companion per SEMANTICS.md, so
+  `RTCM1230` is named explicitly) + `setRTCMv3Formatting`. Actual
+  emission additionally needs base mode + reference position -
+  observation, not enablement, is the evidence.
 
 ### Save / reset
 
@@ -345,7 +346,10 @@ prompt) and interval in one `setSBFOutput`/`setNMEAOutput` command;
   (`eccf`); both `SaveMinimal` and `SaveAll` map to it. Verified:
   lcf Boot shows the saved config; a later reload restores the
   SAVED config, not defaults. `eccf, RxDefault, Boot` restores a
-  factory Boot (RxDefault is a valid source).
+  factory Boot (RxDefault is a valid source). A reset requested
+  together with a save is gated on it (SEMANTICS.md): a failed save
+  skips the reset, so a reset never discards running changes the
+  save failed to persist.
 - `ResetReload` -> `exeCopyConfigFile, Boot, Current` (verified
   in-place, no restart).
 - `ResetCold` -> `exeResetReceiver, Hard, PVTData+SatData`;
@@ -387,8 +391,8 @@ verbatim replies (grc, gets, `$R?` refusals, lif/lcf block units).
 
 `scfgprot.go`: `septentrio.NewConfigProtocol()` - grc probe,
 ProbeOK parsing (signals/ports/capabilities), the coarse signal
-table, Hardware/Firmware capture from ReceiverSetup native
-messages. Registration in `gpsreg.CreateConfigProtocols`
+table; Hardware/Firmware come from the stage-3 identity fetch
+(`lstInternalFile, Identification`). Registration in `gpsreg.CreateConfigProtocols`
 (VendorSeptentrio + the VendorUnknown probe list) lands with stage
 3, when Configure() is real. Probe verified against the real G5.
 
@@ -519,10 +523,11 @@ stands and shows the rest as absence.
   issues that fetch on every run - an unconditional round-trip whose
   only real consumers are `--show-receiver` and the NTRIP generator
   field (which falls back to the version string or "satpulse" when
-  identity is absent). The passive "consume a ReceiverSetup SBF block
-  if one arrives" fallback does not mitigate this: the configurator
+  identity is absent). A passive "consume a ReceiverSetup SBF block
+  if one arrives" fallback would not mitigate this - the configurator
   only enables the messages the target requests, nothing requests
-  ReceiverSetup, so the block never fires - it is dead weight. The
+  ReceiverSetup, so the block never fires - which is why that
+  fallback was dropped as dead weight. The
   model fix is to let the caller declare whether it wants identifier
   info, so a backend that pays for identity separately can skip the
   fetch when it is not wanted; backends that get identity from the
