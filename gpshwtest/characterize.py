@@ -10,14 +10,9 @@ import json
 from itertools import combinations
 from typing import Any
 
-from model import (MAJORS, NMEA_VOCAB, EmissionObservation, Observation, SignalMap,
-                   SignalObservation, l1_signals, l2_signals, l5_signals,
+from model import (MAJORS, NMEA_VOCAB, RTCM_DECADE, EmissionObservation, Observation,
+                   SignalMap, SignalObservation, l1_signals, l2_signals, l5_signals,
                    normalize_signal_map, signal_request_valid)
-
-# RTCM MSM message numbers are <decade><level> with a fixed decade per
-# constellation. SBAS and NavIC are intentionally absent: no backend configures
-# those RTCM families, so gpshwtest does not expect them.
-RTCM_DECADE = {"GPS": 107, "GLO": 108, "GAL": 109, "QZSS": 111, "BDS": 112}
 
 # The RTCM message numbers gpshwtest models, for classifying emitted types as
 # extras: the MSM4/MSM7 numbers of every constellation (not just the enabled

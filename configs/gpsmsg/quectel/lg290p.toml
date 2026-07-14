@@ -49,17 +49,6 @@ text = "PQTMCFGFIXRATE,W,50"
 tag = "fix-rate-20"
 description = "Set fix rate to 20 Hz"
 
-# Fix-rate precondition for the message-rate check: fast raises the fix rate
-# so a fix-coupled message-output bug becomes visible, default restores 1 Hz.
-[[nmea]]
-text = "PQTMCFGFIXRATE,W,200"
-tag = "fixrate-fast"
-description = "Set fix rate to 5 Hz (message-rate probe precondition)"
-[[nmea]]
-text = "PQTMCFGFIXRATE,W,1000"
-tag = "fixrate-default"
-description = "Set fix rate to 1 Hz (message-rate probe restore)"
-
 # Get receiver mode (rover/base)
 [[nmea]]
 text = "PQTMCFGRCVRMODE,R"

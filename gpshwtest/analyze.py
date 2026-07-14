@@ -22,7 +22,7 @@ from model import (NMEA_VOCAB, EmissionObservation, Observation, SignalObservati
                    mode_disagreements, nmea_rate_intervals, nmea_set,
                    normalize_config, normalize_signal_map, observation_start, pvt_event_kinds,
                    raw_set, rtcm_rate_intervals, rtcm_set, stored_form, transient)
-from tool import replay
+from tool import message_response_error, replay
 
 
 @dataclass
@@ -35,6 +35,7 @@ class Step:
     argv: list[str]
     exit_code: int
     out: dict[str, Any]
+    stdout: str
     stderr: str
     log: Path | None
     events: list[dict[str, Any]] | None
@@ -48,6 +49,9 @@ class Step:
             return f"no response within {self.timeout}s"
         err = self.out.get("error")
         if isinstance(err, str):
+            return err
+        err = message_response_error(self.stdout)
+        if err is not None:
             return err
         if self.exit_code != 0:
             return self.stderr.strip() or f"exit code {self.exit_code}"
@@ -73,10 +77,11 @@ def load_steps(log_dir: Path) -> list[Step]:
                   "(run predates offline analysis); cannot analyze", file=sys.stderr)
             raise SystemExit(2)
         out = e.get("json")
+        stdout = e.get("stdout", out if isinstance(out, str) else "")
         log = e.get("log")
         s = Step(seq=e.get("seq", 0), name=e["name"], intent=e["intent"],
                  argv=e.get("argv", []), exit_code=e.get("exit", -1),
-                 out=out if isinstance(out, dict) else {},
+                 out=out if isinstance(out, dict) else {}, stdout=stdout,
                  stderr=e.get("stderr", ""),
                  log=log_dir / log if isinstance(log, str) else None,
                  events=e.get("events"), timeout=e.get("timeout"),
@@ -154,6 +159,7 @@ class Analyzer:
     defects: dict[str, dict[str, Any]] = field(default_factory=dict)
     pending_nvm: list[tuple[set[tuple[str, ...]], str]] = field(default_factory=list)
     scalar_paths: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    fixrate_ready: bool = False
 
     def run(self) -> Analysis:
         while self.i < len(self.steps):
@@ -521,10 +527,11 @@ class Analyzer:
             self.failures.append(f"mode: restore to {mode!r} failed: {s.error}")
             return
         cfg = self.take_config("verify-restore", "mode")
-        if cfg is not None and config_value(cfg, ("mode",)) != mode:
-            self.failures.append(
-                f"mode: restore to {mode!r} read back as "
-                f"{config_value(cfg, ('mode',))!r}")
+        if cfg is not None:
+            back = config_value(cfg, ("mode",))
+            if back != mode:
+                self.note_defect("mode", self.delta_keys({"mode": mode},
+                                                         {"mode": back}), mode, back)
 
     def set_signals(self, s: Step) -> None:
         req = self.signal_request(s)
@@ -605,8 +612,7 @@ class Analyzer:
         cfg = self.take_config("verify-restore", "signals")
         back = normalize_signal_map(config_value(cfg or {}, ("signalsEnabled",)))
         if cfg is not None and back != want:
-            self.failures.append(
-                f"signals: restore to {want!r} read back as {back!r}")
+            self.note_defect("signals", {("signalsEnabled",)}, want, back)
 
     def observe_step(self, s: Step) -> None:
         """An observe step reached directly (not consumed by a set-like
@@ -645,10 +651,13 @@ class Analyzer:
         if o.log is None:
             return
         fi = s.intent.get("rate")
+        preconditioned = isinstance(fi, (int, float))
+        intervals = {} if preconditioned and not self.fixrate_ready \
+            else self.rate_intervals(group, o)
         self.emission_observations.append(
             EmissionObservation(group, case, None, self.emitted(group, case, o),
-                                o.intent.get("expect"), self.rate_intervals(group, o),
-                                fi if isinstance(fi, (int, float)) else None))
+                                o.intent.get("expect"), intervals,
+                                fi if preconditioned and self.fixrate_ready else None))
 
     def replay_events(self, log: Path) -> list[dict[str, Any]]:
         """Replay a packet log once and cache it: the semantic groups need
@@ -844,12 +853,9 @@ class Analyzer:
             return  # the set never took effect; delivery is characterized elsewhere
         path = tuple(exp["path"])
         if not set(target) <= set(f_nmea):
-            # An ACK-without-apply on the subject property makes its saved
-            # state ineffective, which the ruling classifies as a defect; the
-            # failure is deferred and suppressed if that leaf was tainted.
-            self.pending_nvm.append(({path},
+            self.failures.append(
                 f"save: message output saved as {target!r} but emits "
-                f"{f_nmea!r} after reload"))
+                f"{f_nmea!r} after reload")
         rv, sv, fv = (config_value(c, path) for c in (r, scfg, fcfg))
         result: dict[str, Any] = {"prop": "messageOutput", "saved": [],
                                   "independent": [], "indeterminate": []}
@@ -879,12 +885,9 @@ class Analyzer:
             return
         prop, path = exp["exp"], tuple(exp["path"])
         if config_value(f, path) != config_value(scfg, path):
-            # An ACK-without-apply on the subject property leaves its saved
-            # value ineffective, which the ruling classifies as a defect; the
-            # failure is deferred and suppressed if that leaf was tainted.
-            self.pending_nvm.append(({path},
+            self.failures.append(
                 f"save: {prop} saved as {config_value(scfg, path)!r} but reads "
-                f"{config_value(f, path)!r} after reload"))
+                f"{config_value(f, path)!r} after reload")
         result: dict[str, Any] = {"prop": prop, "saved": [], "independent": [],
                                   "indeterminate": [], "anomalies": []}
         for q, qpath_list in sorted(exp["others"].items()):
@@ -951,13 +954,20 @@ class Analyzer:
     def fixrate(self, s: Step) -> None:
         """The fix-rate precondition of the message-rate probe. A transient
         error is link trouble (a failure). A refusal of the fast rate just
-        voids the rate check (the cases then run at the default rate and the
-        passive check records nothing); a refusal of the default restore is a
-        failure - the receiver may be left fast for the next run."""
-        if transient(s.error):
-            self.failures.append(f"{s.name}: {s.error}")
-        elif s.error is not None and s.intent.get("role") == "default":
-            self.failures.append(f"fixrate: restore to the default rate failed: {s.error}")
+        voids the marked rate observations; a failed restore is a failure
+        because the receiver may be left at the probe rate."""
+        role = s.intent.get("role")
+        if role == "query":
+            return
+        if role == "fast":
+            self.fixrate_ready = s.error is None
+            if transient(s.error):
+                self.failures.append(f"{s.name}: {s.error}")
+            return
+        self.fixrate_ready = False
+        if s.error is not None:
+            self.failures.append(
+                f"fixrate: restore to the observed rate failed: {s.error}")
 
     def pulse_set(self, s: Step) -> None:
         role = s.intent["role"]

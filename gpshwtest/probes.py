@@ -10,6 +10,7 @@ for live runs and archived runs alike.
 
 import json
 import re
+import shutil
 import sys
 import time
 import tomllib
@@ -49,11 +50,10 @@ RAISED_SPEED = 115200
 # (covers USB re-enumeration as well as the restart itself).
 RESET_SETTLE = 5.0
 
-# The fix intervals (seconds) the preconditioned rate probe sets through the
-# receiver's message file: fast exposes fix-coupled message output (5 Hz),
-# default restores 1 Hz. The message-file tags carry the actual values.
+# The fix interval (seconds) the preconditioned rate probe runs at: fast enough
+# that fix-coupled message output shows. The fix-rate-5 message-file tag carries
+# the value; the as-found rate is restored with the tag matching it.
 FIXRATE_FAST = 0.2
-FIXRATE_DEFAULT = 1.0
 
 # A longer capture for the two rate observations: OBSERVE_SECONDS at 1 Hz is
 # only ~3 intervals, so a wider window keeps the median inter-arrival stable.
@@ -83,17 +83,45 @@ def wire_flags(case: list[str]) -> list[str]:
     return [t for t in case if t != "none"]
 
 
-def rtcm_restore_flags(initial: list[str]) -> list[str]:
+def rtcm_restore_flags(initial: list[str], arp: bool = True) -> list[str]:
     """The RTCM request flags that reproduce an observed initial type set:
-    MSM4/MSM7 from the observed MSM numbers, ARP from an observed 1005."""
+    MSM4/MSM7 from the observed MSM numbers, ARP from an observed 1005. ARP is
+    dropped when arp is False: 1005 is the fixed position, so asking for it
+    while the receiver has none is not a request the receiver can honor."""
     want = []
     if any(t.startswith("1") and t.endswith("4") for t in initial):
         want.append("MSM4")
     if any(t.startswith("1") and t.endswith("7") for t in initial):
         want.append("MSM7")
-    if "1005" in initial:
+    if arp and "1005" in initial:
         want.append("ARP")
     return want
+
+
+def fixrate_interval(log: Path) -> float | None:
+    """The fix interval reported by a tagged low-level rate query."""
+    try:
+        entries = [json.loads(line) for line in log.read_text().splitlines()]
+    except (OSError, ValueError):
+        return None
+    for e in entries:
+        if e.get("out"):
+            continue
+        a = e.get("ascii")
+        if isinstance(a, str):
+            m = re.search(r"\bPQTMCFGFIXRATE,(?:(?:OK|R),)?(\d+)(?:[,*]|$)", a)
+            if m:
+                return int(m.group(1)) / 1000
+        h = e.get("bin")
+        if not isinstance(h, str):
+            continue
+        try:
+            b = bytes.fromhex(h)
+        except ValueError:
+            continue
+        if len(b) >= 10 and b[:2] == b"\xBA\xCE" and b[4:6] == b"\x06\x04":
+            return int.from_bytes(b[6:8], "little") / 1000
+    return None
 
 
 def msg_flags(case: list[str], table: dict[str, str]) -> list[str]:
@@ -524,8 +552,8 @@ class ProbeRun:
         if mf is None or not 0 < baud < target:
             return None
         port = self.active_port(mf)
-        if port is None or not self.speed_tags_exist(
-                mf, [f"speed-{baud}-{port}", f"speed-{target}-{port}"]):
+        if port is None or not {f"speed-{baud}-{port}", f"speed-{target}-{port}"} \
+                <= self.msg_file_tags(mf):
             return None
         self.speed_msg_path = mf
         self.speed_msg_port = port
@@ -574,43 +602,53 @@ class ProbeRun:
 
     def speed_msg_file(self, receiver: dict[str, Any]) -> Path | None:
         """The shipped low-level message file for this receiver, when one
-        with speed tags exists (the receiver-specific knowledge lives in
-        the shipped file, not here)."""
+        exists (the receiver-specific knowledge lives there, not here)."""
         vendor = str(receiver.get("vendor", "")).lower()
         hw = str(receiver.get("hardware", "")).lower()
         if not vendor or not hw:
             return None
-        mf = self.tool.exe.resolve().parent.parent.parent / "configs" / "gpsmsg" \
-            / vendor / f"{hw}.toml"
-        return mf if mf.exists() else None
-
-    def speed_tags_exist(self, mf: Path, wanted: list[str]) -> bool:
-        """Whether the message file carries every wanted tag."""
-        try:
-            with open(mf, "rb") as f:
-                lines = tomllib.load(f).get("line", [])
-        except (OSError, tomllib.TOMLDecodeError):
-            return False
-        tags = {ln.get("tag") for ln in lines if isinstance(ln, dict)}
-        return all(t in tags for t in wanted)
+        found = shutil.which(str(self.tool.exe))
+        exe = Path(found).resolve() if found is not None else self.tool.exe.resolve()
+        roots = [exe.parent.parent / "share" / "satpulse" / "gpsmsg",
+                 exe.parent.parent.parent / "configs" / "gpsmsg"]
+        for root in roots:
+            mf = root / vendor / f"{hw}.toml"
+            if mf.exists():
+                return mf
+        return None
 
     def msg_file_tags(self, mf: Path) -> set[str]:
-        """Every tag defined in a message file, across all message-type
-        arrays: a file spells its messages as [[line]], [[nmea]], [[casbin]]
-        and so on, and the fix-rate command is not a [[line]] on the Quectel
-        (PQTM* NMEA) or CASIC (binary) receivers, so the speed-tag lookup's
-        line-only scan would miss it."""
-        try:
-            with open(mf, "rb") as f:
+        """Every tag a message file makes available: across all message-type
+        arrays (a file spells its messages as [[line]], [[nmea]], [[casbin]]
+        and so on), and through [[include]], since a shared file carries the
+        messages common to a family - the Zhongke fix-rate commands live in the
+        included casic.toml, not in the per-model file."""
+        seen: set[Path] = set()
+
+        def collect(path: Path) -> set[str]:
+            path = path.resolve()
+            if path in seen:
+                return set()
+            seen.add(path)
+            with open(path, "rb") as f:
                 data = tomllib.load(f)
-        except (OSError, tomllib.TOMLDecodeError):
-            return set()
-        tags: set[str] = set()
-        for v in data.values():
-            if isinstance(v, list):
+            tags: set[str] = set()
+            for k, v in data.items():
+                if k == "include" or not isinstance(v, list):
+                    continue
                 tags |= {ln["tag"] for ln in v
                          if isinstance(ln, dict) and isinstance(ln.get("tag"), str)}
-        return tags
+            incs = data.get("include", [])
+            if isinstance(incs, list):
+                for inc in incs:
+                    if isinstance(inc, dict) and isinstance(inc.get("src"), str):
+                        tags |= collect(path.parent / inc["src"])
+            return tags
+
+        try:
+            return collect(mf)
+        except (OSError, tomllib.TOMLDecodeError):
+            return set()
 
     def raise_speed(self, baud: int) -> bool:
         """Try to raise the link from baud to RAISED_SPEED. Returns whether
@@ -867,21 +905,39 @@ class ProbeRun:
         output is 1 Hz independent of the fix rate, so a fix-coupled bug is
         invisible while the receiver sits at its 1 Hz default fix rate; the
         precondition is the point. The fix rate has no device-independent
-        knob, so it is set with the receiver's own message-file tags
-        (fixrate-fast / fixrate-default), present only where the fix rate is
-        settable (Quectel, CASIC; Allystar has no rate register). Skipped when
-        the file lacks both tags. Running-state only - nothing saves it, so
-        NVM is untouched and the probe is not disruptive; the default rate is
-        restored unconditionally so an aborted probe leaves nothing fast.
+        knob, so it is set with the receiver's own message-file tags. The
+        current interval is queried first and the matching fix-rate-N tag is
+        used for restoration; the probe is skipped unless that exact restore
+        is available. Running-state only - nothing saves it, so NVM is
+        untouched and the observed rate is restored unconditionally.
         Assumes the as-found mode is not base mode: on the LG290P base mode
         forces 1 Hz and would mask the bug. A passing observation does not
         prove correct realization on a receiver already at 1 Hz; a fast
         observed rate, which only a fast fix rate can surface, is the finding."""
         mf = self.speed_msg_file(receiver)
-        if mf is None or not {"fixrate-fast", "fixrate-default"} <= self.msg_file_tags(mf):
+        tags = self.msg_file_tags(mf) if mf is not None else set()
+        if mf is None or not {"get-fix-rate", "fix-rate-5"} <= tags:
+            print("skipping the message-rate probe: the receiver's message file "
+                  "has no fix-rate tags", file=sys.stderr)
             return
-        self.send_fixrate(mf, "fixrate-fast", "fast")
+        inv = self.tool.gps("fixrate-query", ["-m", str(mf), "-t", "get-fix-rate"],
+                            {"op": "fixrate", "role": "query"}, retry=False,
+                            json_out=False)
+        interval = fixrate_interval(inv.packet_log) if inv.error is None else None
+        if interval is None or interval <= 0:
+            print("skipping the message-rate probe: the fix rate did not read back",
+                  file=sys.stderr)
+            return
+        hz = round(1 / interval)
+        restore_tag = f"fix-rate-{hz}"
+        if hz <= 0 or abs(interval - 1 / hz) > 0.001 or restore_tag not in tags:
+            print(f"skipping the message-rate probe: no tag restores the as-found "
+                  f"fix interval of {interval}s", file=sys.stderr)
+            return
         try:
+            fast = self.send_fixrate(mf, "fix-rate-5", "fast", FIXRATE_FAST)
+            if fast.error is not None:
+                return
             self.set_and_observe("nmeaOut", ["RMC"], {"NMEAMsg": wire_flags(["RMC"])},
                                  seconds=RATE_OBSERVE_SECONDS, rate=FIXRATE_FAST)
             self.set_and_observe("pvtOut", ["pos", "time", "off"],
@@ -890,15 +946,17 @@ class ProbeRun:
                                  expect={"pos", "time"},
                                  seconds=RATE_OBSERVE_SECONDS, rate=FIXRATE_FAST)
         finally:
-            self.send_fixrate(mf, "fixrate-default", "default")
+            self.send_fixrate(mf, restore_tag, "restore", interval)
 
-    def send_fixrate(self, mf: Path, tag: str, role: str) -> None:
+    def send_fixrate(self, mf: Path, tag: str, role: str,
+                     interval: float) -> Invocation:
         """Send one fix-rate message-file tag. A message-file invocation
         cannot combine with --target-json, so it goes through -m/-t like the
         speed tags, with no JSON output; the rate change is confirmed by
         observing the emitted cadence, not read back."""
-        self.tool.gps(f"fixrate-{role}", ["-m", str(mf), "-t", tag],
-                      {"op": "fixrate", "role": role}, retry=False, json_out=False)
+        return self.tool.gps(f"fixrate-{role}", ["-m", str(mf), "-t", tag],
+                             {"op": "fixrate", "role": role,
+                              "interval": interval}, retry=False, json_out=False)
 
     def probe_rtcm(self, initial: list[str], initial_cfg: dict[str, Any],
                    fixed_pos_ecef: str | None) -> None:
@@ -917,13 +975,7 @@ class ProbeRun:
         try:
             for case in cases:
                 self.set_and_observe("rtcmOut", case, {"RTCMMsg": wire_flags(case)})
-            want = []
-            if any(t.endswith("4") and t.startswith("1") for t in initial):
-                want.append("MSM4")
-            if any(t.endswith("7") and t.startswith("1") for t in initial):
-                want.append("MSM7")
-            if fixed and "1005" in initial:
-                want.append("ARP")
+            want = rtcm_restore_flags(initial, fixed)
             inv = self.tool.gps("restore-rtcm",
                                 target_arg({"Opts": {"RTCMMsg": want}}),
                                 {"op": "restore-msg", "group": "rtcmOut",
@@ -1119,6 +1171,8 @@ class ProbeRun:
         self.restore_mode(initial)
         self.restore_signals(initial)
         if base is not None:
+            if as_found_speed is not None:
+                self.set_link_speed(as_found_speed, "speed-for-message-save")
             self.restore_protocol(base, save=True)
 
     def recover_nvm(self, nvm: dict[str, Any], subjects: list[ScalarProp],

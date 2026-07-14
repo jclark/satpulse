@@ -44,6 +44,15 @@ NMEA_VOCAB = ["RMC", "GGA", "GSA", "GSV", "ZDA", "VTG", "GLL"]
 # the rate; those types are excluded from rate measurement.
 RATE_SAFE_NMEA = ["RMC", "GGA", "ZDA", "VTG", "GLL"]
 
+# RTCM MSM message numbers are <decade><level> with a fixed decade per
+# constellation. SBAS and NavIC are intentionally absent: no backend configures
+# those RTCM families, so gpshwtest does not expect them.
+RTCM_DECADE = {"GPS": 107, "GLO": 108, "GAL": 109, "QZSS": 111, "BDS": 112}
+
+# The MSM4/MSM7 message numbers, the only RTCM messages with a rate guarantee:
+# companions such as 1005 and 1230 have none in SEMANTICS.md.
+RATE_SAFE_RTCM = {f"{d}{lvl}" for d in RTCM_DECADE.values() for lvl in ("4", "7")}
+
 # The full model signal set of each constellation, as the unqualified signal
 # names of the readback JSON, mirroring the SigSet* constants in
 # gps/gpsprot/signal.go. A --gnss request denotes a constellation's whole set;
@@ -351,7 +360,7 @@ def stored_form(reported: Value, back: Value) -> str | None:
 
 # The satpulsetool defaults for a bare --survey request (--survey-time,
 # --survey-acc): a surveyed mode's survey parameters are not readable, so it is
-# restored with these, matching what mode_args used to spell as bare --survey.
+# restored with these, matching the defaults of a bare --survey request.
 DEFAULT_SURVEY_TIME = 2000
 DEFAULT_SURVEY_ACC = 20.0
 
@@ -497,9 +506,9 @@ def nmea_rate_intervals(iv: dict[tuple[str, str], float]) -> dict[str, float]:
 
 
 def rtcm_rate_intervals(iv: dict[tuple[str, str], float]) -> dict[str, float]:
-    """Observed inter-arrival per RTCM message number (each number is emitted
-    once per epoch, so all are safe)."""
-    return {msg: t for (tag, msg), t in iv.items() if tag == "RTCM"}
+    """Observed inter-arrival per RTCM MSM4/MSM7 message number."""
+    return {msg: t for (tag, msg), t in iv.items()
+            if tag == "RTCM" and msg in RATE_SAFE_RTCM}
 
 
 def event_intervals(events: list[dict[str, Any]], etype: str,

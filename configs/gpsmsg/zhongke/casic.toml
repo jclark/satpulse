@@ -180,28 +180,27 @@ class = 0x06
 id = 0x03
 
 # Query navigation rate.
-# Verified on ATGM332D-5N71 and ATGM332D-F8N.
+# Verified on ATGM332D-5N71, ATGM332D-F8N, and AT632-6T-30.
 [[casbin]]
-tag = "get-rate"
+tag = "get-fix-rate"
 description = "Query navigation rate"
 class = 0x06
 id = 0x04
 
 # CFG-RATE set: navigation rate as the fix interval in ms.
-# Payload: U2 interval (ms), U2 reserved.
-# Fix-rate precondition for the message-rate check: fast raises the fix rate
-# so a fix-coupled message-output bug becomes visible, default restores 1 Hz.
+# The shared four bytes are U2 interval + U2 reserved on V5, and U2 interval
+# + U1 fixRateHz + U1 reserved on V6. A zero fixRateHz selects the interval.
 [[casbin]]
-tag = "fixrate-fast"
-description = "Set fix rate to 5 Hz (message-rate probe precondition)"
-class = 0x06
-id = 0x04
-payload.types = "U2U2"
-payload.values = [200, 0]
-[[casbin]]
-tag = "fixrate-default"
-description = "Set fix rate to 1 Hz (message-rate probe restore)"
+tag = "fix-rate-1"
+description = "Set fix rate to 1 Hz"
 class = 0x06
 id = 0x04
 payload.types = "U2U2"
 payload.values = [1000, 0]
+[[casbin]]
+tag = "fix-rate-5"
+description = "Set fix rate to 5 Hz"
+class = 0x06
+id = 0x04
+payload.types = "U2U2"
+payload.values = [200, 0]

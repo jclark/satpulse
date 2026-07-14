@@ -194,18 +194,6 @@ id = 0x02
 payload.types = "U2U1U1"
 payload.values = [0, 0, 3]
 
-# CFG-RATE: Navigation update rate
-# Payload: U2 fixIntervalMs, U1 fixRateHz, U1 reserved
-
-# 1 Hz navigation rate
-[[casbin]]
-tag = "rate-1hz"
-description = "Set 1 Hz navigation rate"
-class = 0x06
-id = 0x04
-payload.types = "U2U1U1"
-payload.values = [1000, 0, 0]
-
 # CFG-MSG: Enable/disable message output
 # Payload: U1 class, U1 id, U2 rate
 # rate: 0=off, 1=every fix, N=every N fixes
