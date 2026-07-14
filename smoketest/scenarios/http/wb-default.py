@@ -7,14 +7,26 @@ connected and the monitor events flow. This is the workbench's meaty smoke
 scenario -- wb-listen covers the token-disabled -L path.
 """
 
+import sys
+
 import common
 
 PROGRAM = "satpulsewb"
 PACKET_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon-sats-pos-38400.jsonl"
 FACTOR = 5
+ENV = {
+    "DISPLAY": ":satpulse-smoke",
+    "WAYLAND_DISPLAY": "satpulse-smoke",
+    "PATH": "/nonexistent",
+}
+ALLOWED_ERRORS = ("could not open browser",)
 
 
 def run(ctx: common.SmokeContext) -> None:
+    with open(ctx.daemon_log, errors="replace") as f:
+        opened = 'msg="opening browser"' in f.read()
+    supported = sys.platform.startswith(("darwin", "linux", "win"))
+    assert opened == supported, f"browser open logged={opened}, supported platform={supported}"
     # Live checks first, while the background replay is still flowing: the
     # packet stream is gated (gps:packet is not primed, so it only flows live).
     common.check_wb_html(ctx)

@@ -6,7 +6,7 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 
 **satpulsewb** [**\-h**\|**\-\-help**] [**\-L**\|**\-\-listen** *host:port*] [**\-T**\|**\-\-token**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path* [**\-s**\|**\-\-device\-speed** *bps*]] [**\-\-vendor** *name*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*] [**\-\-no\-open**]
 
 # DESCRIPTION
 
@@ -20,6 +20,8 @@ With no options, **satpulsewb** binds all interfaces on its default port (15754)
 The printed URLs carry the token as a query parameter; the frontend stores it and strips it from the URL bar.
 Anyone with a printed URL controls the receiver until **satpulsewb** exits.
 Any number of windows can watch the session, but only one at a time holds the write seat and can change the receiver; opening the URL in a second window takes the seat, and the first window becomes a live read-only viewer with a "Use here" button to take it back.
+When run from a local desktop session, **satpulsewb** opens its loopback URL in the default browser.
+It does not open a browser over SSH, or on Linux without an X11 or Wayland display.
 
 There is no TLS support.
 On a network you do not trust, listen on loopback only and reach it through an SSH tunnel:
@@ -68,6 +70,9 @@ If this option is omitted, the vendor is autodetected.
 
 **\-\-packet\-log** *path*
 : Log packets exchanged with the receiver to *path* in JSONL format.
+
+**\-\-no\-open**
+: Do not open the browser automatically.
 
 **\-v**, **\-\-verbose**
 : Increase logging verbosity.

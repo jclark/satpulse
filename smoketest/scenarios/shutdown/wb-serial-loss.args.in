@@ -4,5 +4,6 @@
 -L
 127.0.0.1:${SATPULSE_TEST_HTTP_PORT}
 -T
+--no-open
 -d
 ${SATPULSE_TEST_SERIAL}

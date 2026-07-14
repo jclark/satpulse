@@ -4,5 +4,6 @@
 # -d auto-connects over the FIFO the runner allocated.
 -L
 127.0.0.1:${SATPULSE_TEST_HTTP_PORT}
+--no-open
 -d
 ${SATPULSE_TEST_SERIAL}
