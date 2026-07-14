@@ -44,9 +44,15 @@ func (c *Configurator) generateMinElevSet() {
 }
 
 // minElevConfigProps reports minimum elevation from the readback.
+// naviMask is a float32 in radians, which cannot hold a whole degree
+// exactly: 5 deg reads back as 4.999999855. Round to millidegrees,
+// which is far coarser than the worst roundtrip error (3.3e-6 deg over
+// 0-90 deg) and far finer than any usable mask, so what was asked for
+// is what is reported.
 func (c *Configurator) minElevConfigProps(props *gpsprot.ConfigProps) {
 	if c.elev == nil {
 		return
 	}
-	props.SetMinElevation(gpsprot.DegreesFromFloat(float64(c.elev.NaviMask) * 180 / math.Pi))
+	deg := float64(c.elev.NaviMask) * 180 / math.Pi
+	props.SetMinElevation(gpsprot.Angle(math.Round(deg*1000)) * gpsprot.Millidegrees)
 }

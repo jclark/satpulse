@@ -88,7 +88,7 @@ func TestMinElev(t *testing.T) {
 	if deg := float64(rcvr.elev.NaviMask) * 180 / math.Pi; deg < 9.99 || deg > 10.01 {
 		t.Errorf("NaviMask = %v deg, want 10", deg)
 	}
-	if e, ok := cfg.ConfigProps().GetMinElevation(); !ok || e.Degrees() < 9.99 || e.Degrees() > 10.01 {
-		t.Errorf("achieved minElev = %v/%v, want ~10 deg", e, ok)
+	if e, ok := cfg.ConfigProps().GetMinElevation(); !ok || e != 10*gpsprot.Degrees {
+		t.Errorf("achieved minElev = %v/%v, want 10 deg", e, ok)
 	}
 }
