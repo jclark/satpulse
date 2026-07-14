@@ -327,7 +327,7 @@ ContinueOnError); connection flags reuse the satpulsetool gps names
 and help strings exactly.
 
 ```
-satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
+satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH]
            [-d DEVICE [-s SPEED]] [--vendor NAME]
 ```
 
@@ -341,7 +341,8 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
   user-specified token value, no persistent token state, no TLS in
   the first version. On a network the user does not trust, the
   answer is `-L localhost:PORT` plus an ssh tunnel, which the man
-  page documents.
+  page documents. The Security model section below states what this
+  does and does not protect against.
 - `-L`/`--listen HOST:PORT` takes control of the bind address, and
   with an explicit port a bind failure is an error, no fallback
   (the user may have an ssh tunnel pointing at that port). Since
@@ -363,32 +364,97 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
   rare case.)
 - `--packet-log PATH` mirrors satpulsetool and wires the session's
   `Options.PacketLog`.
-- Browser auto-open by default (deferred to phase 7, its own PR),
-  gated on a local interactive GUI session. The gate is display
-  presence, not receiver locality:
-  sshing into the box with the receiver must not open a browser,
-  while running at a local desktop should, even when the receiver is
-  remote over a later proxy transport. `SSH_CONNECTION` or `SSH_TTY`
-  in the environment is a universal veto; otherwise Linux
-  additionally requires `DISPLAY` or `WAYLAND_DISPLAY`, macOS needs
-  only not-remote (the console user always has the window server),
-  and Windows normally has a desktop. What opens is the loopback URL
-  (`http://127.0.0.1:PORT/`, with the per-run token appended when
-  there is one), orthogonal to the bind: the default all-interfaces
-  bind already includes loopback, so the per-address LAN URLs still
+- Browser auto-open by default (deferred to phase 7, its own PR) on
+  macOS and Windows only, gated on a local interactive GUI session.
+  The gate is session locality, not receiver locality: sshing into
+  the box with the receiver must not open a browser, while running
+  at a local desktop should, even when the receiver is remote over a
+  later proxy transport. `SSH_CONNECTION` or `SSH_TTY` in the
+  environment vetoes; otherwise macOS needs only not-remote (the
+  console user always has the window server) and Windows normally
+  has a desktop. Linux is deliberately excluded: the launched
+  browser's command line would carry the token-bearing URL, and
+  /proc makes another user's argv world-readable, so auto-open there
+  would hand the token to any local user (see Security model). A
+  one-shot nonce redeemed for the token was designed and rejected as
+  disproportionate; the printed URL is ctrl-clickable in any modern
+  terminal. What opens is the loopback URL
+  (`http://127.0.0.1:PORT/?t=XYZ`): guided mode's all-interfaces
+  bind always includes loopback, so the per-address LAN URLs still
   print and stay reachable, and auto-open only adds the local tab. A
-  small per-OS launcher does it (`open`/`xdg-open`/`rundll32`, no new
-  external dependency), fired after the listener is bound,
-  non-blocking, with launch failure logged at debug only since the
-  printed URL is the fallback. `--no-open` suppresses it, for a local
-  desktop where the tab is unwanted or when the tool is scripted (the
-  detection has no positive override; the printed URL covers the rare
-  case where it guesses headless but a browser is in fact reachable).
-  This supersedes the earlier "no browser auto-open" decision, which
-  assumed the primary flow was ssh to a headless box; macOS is now
-  the lead desktop platform.
+  small per-OS launcher does it (`open`/`rundll32`, no new external
+  dependency), fired after the listener is bound, non-blocking, with
+  launch failure logged since the printed URL is the fallback.
+  `--listen` never opens a browser: it is the expert mode -- the
+  user said exactly where to bind (typically an SSH tunnel target)
+  and the tool does nothing it was not asked to -- which also
+  removes the need for an opt-out flag (an earlier revision had
+  `--no-open`; with Linux and `--listen` out, it had no remaining
+  users and was dropped). This supersedes the earlier "no browser
+  auto-open" decision, which assumed the primary flow was ssh to a
+  headless box; macOS is now the lead desktop platform.
 - `--socket` and `--tcp` are deferred to phase 10 (see Transports
   and the Delivery section).
+
+### Security model
+
+The asset is control of the receiver for the duration of a run.
+satpulsewb has two modes, each making a statable trust decision:
+guided mode (no `-L`) binds all interfaces and mints a per-run
+token; expert mode (`-L`) binds exactly what the user said and
+disables the token unless `-T` restores it.
+
+What the token protects against: anyone who can reach the port but
+cannot observe its traffic. That includes the LAN, and any interface
+the user did not intend to expose -- an internet-facing address is
+swept up by the all-interfaces bind, and the token is reasonable
+protection there too: 128 bits from crypto/rand, compared in
+constant time, so an off-path attacker (a port scanner, a neighbour
+on the network) is reduced to guessing, which is not a real attack
+at that entropy and needs no rate limiting. The only unauthenticated
+surface is the static SPA (assets are public; the token rides a
+query parameter on the API and event stream because EventSource
+cannot set headers), so an exposed port reveals that satpulsewb is
+running but yields no control and no receiver data.
+
+What is deliberately not protected against:
+
+- An on-path observer. There is no TLS, so anyone who can sniff the
+  HTTP traffic reads the token from any request. Self-signed TLS
+  would trade this for a certificate warning on every run, training
+  users to click through warnings, and real certificates do not
+  exist for LAN addresses. The documented answer for an untrusted
+  network is `-L localhost` plus an SSH tunnel: the traffic never
+  leaves loopback and SSH provides the transport security.
+- Anyone shown a printed URL. It carries the token, and the man page
+  says so: anyone with a printed URL controls the receiver until
+  satpulsewb exits.
+- A compromised browser or user account on the machine running the
+  browser. The token sits in browser history and process memory;
+  same-user compromise is out of scope.
+- In expert mode without `-T`, anyone who can reach the bind
+  address. That is the mode's contract (the typical bind is an SSH
+  tunnel target); a tokenless bind on a non-loopback address prints
+  a warning.
+
+Two guards hold even with the token disabled. State-changing
+requests must declare `Content-Type: application/json`, which forces
+a CORS preflight the browser blocks, so a cross-site page cannot
+issue "simple" form POSTs (the CSRF guard, already implemented).
+And when the token is off, requests whose Host header is not a
+loopback name are rejected -- host part only, ignoring the port so
+tunnels work -- which closes DNS rebinding: a rebound page is
+same-origin, so the content-type check alone does not stop it, and
+without a token nothing else would.
+
+The Linux auto-open exclusion (see Command line) is this model
+applied: launching a browser puts the URL in the launcher's and then
+the browser's command line, and Linux makes another user's argv
+world-readable via /proc, so auto-open there would leak the token to
+an actor the model otherwise excludes -- any local user, silently,
+for the rest of the run. macOS and Windows do not expose another
+user's argv to non-administrators, which is why they keep the
+feature.
 
 ### HTTP API
 
@@ -781,10 +847,15 @@ stack.
 
 ### Phase 7: browser auto-open (one PR)
 
-Browser auto-open as specified under Command line above: the
-local-GUI-session gate, the per-OS launcher, `--no-open`, and the
-smoke-test checks for the gating (environment manipulation in the
-phase-5 scenarios) ride along.
+Browser auto-open as specified under Command line and Security model
+above: the local-GUI-session gate (macOS and Windows only, never
+Linux or with `--listen`), the per-OS launcher, and the smoke-test
+check that the open is attempted exactly on the supported platforms
+(the wb-default scenario clears `SSH_CONNECTION`/`SSH_TTY` so the
+check is hermetic when the suite runs over SSH, and empties PATH so
+nothing actually launches). The loopback Host check from the
+Security model rides this PR too, since this is the phase that
+sharpened the model.
 
 ### Phase 8: Playwright browser tests (one PR)
 
