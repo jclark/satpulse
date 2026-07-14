@@ -381,7 +381,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
         const rtcmWire = rtcmWireValue(rtcmChange, rtcmDisable, rtcmMSM, rtcmFallback, rtcmARP);
         if (rtcmWire !== undefined) opts.RTCMMsg = rtcmWire;
         const pvtWire = pvtWireValue(pvtChange, pvtFlags);
-        if (pvtWire !== undefined) opts.PVTMsg = [...(opts.PVTMsg || []), ...pvtWire];
+        if (pvtWire !== undefined) opts.PVTMsg = [...new Set([...(opts.PVTMsg || []), ...pvtWire])];
         const satsWire = satsWireValue(satsChange, satsFlags);
         if (satsWire !== undefined) opts.SatsMsg = satsWire;
         const rawWire = rawWireValue(rawChange, rawFlags);

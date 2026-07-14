@@ -90,34 +90,19 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	}
 	target := gpsprot.NewConfigTarget()
 	if v.targetJSON != "" {
-		var r io.Reader = strings.NewReader(v.targetJSON)
-		if v.targetJSON == "-" {
-			r = os.Stdin
-		}
-		dec := json.NewDecoder(r)
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(target); err != nil {
-			return nil, fmt.Errorf("invalid --target-json: %w", err)
-		}
-		if err := dec.Decode(new(any)); err != io.EOF {
-			if err == nil {
-				err = fmt.Errorf("multiple JSON values")
-			}
-			return nil, fmt.Errorf("invalid --target-json: %w", err)
+		if err := decodeTargetJSON(v.targetJSON, target); err != nil {
+			return nil, err
 		}
 		target.Props.ClearReadOnlyProps()
 		target.Get |= v.configGet
-		if v.socketPath != "" {
-			target.Opts.Socket = true
-		}
+		target.Opts.Socket = v.socketPath != ""
 		if target.NoOp() {
 			target.Opts.ForceProbe = true
 		}
 		return target, nil
-	} else {
-		target.Opts = v.configOpts
-		target.Get = v.configGet
 	}
+	target.Opts = v.configOpts
+	target.Get = v.configGet
 	cp := &target.Props
 	if v.pps.IsSet() {
 		cp.SetPPS(v.pps.Get())
@@ -150,13 +135,35 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if !v.showReceiver && target.NoOp() {
 		return nil, nil
 	}
-	if v.socketPath != "" {
-		target.Opts.Socket = true
-	}
+	target.Opts.Socket = v.socketPath != ""
 	if target.NoOp() {
 		target.Opts.ForceProbe = true
 	}
 	return target, nil
+}
+
+// decodeTargetJSON decodes a complete ConfigTarget from s, or from stdin if s
+// is "-". Opts.Socket describes the transport, not a configuration request, so
+// the caller overwrites whatever the input said. The input must be exactly one
+// JSON value with no unknown fields: a target is the raw model, so a misspelled
+// name must not read as a silently omitted one.
+func decodeTargetJSON(s string, target *gpsprot.ConfigTarget) error {
+	var r io.Reader = strings.NewReader(s)
+	if s == "-" {
+		r = os.Stdin
+	}
+	dec := json.NewDecoder(r)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(target); err != nil {
+		return fmt.Errorf("invalid --target-json: %w", err)
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("multiple JSON values")
+		}
+		return fmt.Errorf("invalid --target-json: %w", err)
+	}
+	return nil
 }
 
 func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
