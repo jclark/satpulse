@@ -35,6 +35,10 @@ Both builds need the workspace dependencies installed once:
 Content hashing is disabled in both vite configs, so the output filenames are
 stable and regenerating without a source change produces no diff.
 
-Regeneration is not needed for edits to markdown under `plan/`, or for changes
-to `gps/ts`: both frontends import `@satpulse/gps` only via `import type`,
-which vite erases, so those types never reach a bundle.
+Regeneration is not needed for edits to markdown under `plan/`.
+
+Changes to `gps/ts` need it for the workbench only. `packages/workbench` imports
+the ConfigTarget name vocabularies from `@satpulse/gps/configtarget` as values,
+so they are compiled into its bundle. `packages/dashboard` imports
+`@satpulse/gps` only via `import type`, which vite erases, so those types never
+reach its bundle.

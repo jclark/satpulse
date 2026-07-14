@@ -556,6 +556,9 @@ func TestConfigFlagJSON(t *testing.T) {
 			if err := json.Unmarshal([]byte(`["unknown"]`), tc.new()); err == nil {
 				t.Error("unknown name did not return an error")
 			}
+			if err := json.Unmarshal([]byte(`null`), tc.new()); err == nil {
+				t.Error("null did not return an error")
+			}
 			if _, err := json.Marshal(tc.unknown); err == nil {
 				t.Error("unknown bit did not return an error")
 			}

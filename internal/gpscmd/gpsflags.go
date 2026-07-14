@@ -306,7 +306,6 @@ func (p *flagParser) resolve(cmdName string, usage func(string) string) (*flagVa
 		return nil, u, err
 	}
 	if vars.targetJSON != "" {
-		vars.configSupport = configSupportReq{}
 		// JSON targets bypass flag-layer configuration policy. Display
 		// requests retain their capability requirements.
 		p.resolveShow()
