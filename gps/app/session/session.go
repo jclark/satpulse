@@ -1168,9 +1168,10 @@ func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) 
 	return cr.result.ConfigProps, nil
 }
 
-// ApplyConfig sends configuration changes to the receiver. It sets
-// target.Opts.Socket to match the transport. Like ReadConfig it is an
-// exclusive receiver operation: it requires StateConnected, holds the
+// ApplyConfig sends configuration changes to the receiver. It removes
+// read-only properties from target.Props and sets target.Opts.Socket to
+// match the transport. Like ReadConfig it is an exclusive receiver
+// operation: it requires StateConnected, holds the
 // port as StateConfiguring until the run completes, and returns an
 // error if the session is not connected or another operation is in
 // progress. Reset operations are refused over a proxy connection: a
@@ -1178,6 +1179,7 @@ func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) 
 // would reapply the daemon's own configuration on top of the
 // session's.
 func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget) error {
+	target.Props.ClearReadOnlyProps()
 	s.mu.Lock()
 	if s.state != StateConnected {
 		err := s.stateErrLocked()

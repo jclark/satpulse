@@ -141,7 +141,16 @@ func writeError(w http.ResponseWriter, code int, err error) {
 // returning false on failure.
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return false
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("multiple JSON values")
+		}
 		writeError(w, http.StatusBadRequest, err)
 		return false
 	}
