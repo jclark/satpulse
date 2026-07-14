@@ -25,7 +25,14 @@ There is no TLS support.
 On a network you do not trust, listen on loopback only and reach it through an SSH tunnel:
 
     remote$ satpulsewb -L localhost:15754
-    local$ ssh -L 15754:localhost:15754 remotehost
+    local$ ssh -L 2050:localhost:15754 192.168.1.50
+
+The tunnel's first port is the one to browse to locally, here *http://localhost:2050/*; any free port will do, and ending it with the remote host's last octet keeps concurrent tunnels apart.
+The host and port after it are the address the remote host resolves, which is where **satpulsewb** is listening.
+Since **\-\-listen** disables the token, the printed URL needs no token to open.
+Both steps can be one command, with **\-t** so that Ctrl-C reaches **satpulsewb** and releases the receiver:
+
+    local$ ssh -t -L 2050:localhost:15754 192.168.1.50 satpulsewb -L localhost:15754
 
 Without **\-\-serial\-device**, the session starts disconnected and the receiver is chosen and connected from the GUI.
 With it, **satpulsewb** connects at startup; a browser arriving later catches up on the current state.
@@ -92,6 +99,10 @@ Connect to a receiver at startup:
 Loopback only, for use through an SSH tunnel:
 
     satpulsewb -L localhost:15754
+
+Start it over SSH and tunnel to it in a single command, then browse to *http://localhost:2050/*:
+
+    ssh -t -L 2050:localhost:15754 192.168.1.50 satpulsewb -L localhost:15754
 
 # SEE ALSO
 
