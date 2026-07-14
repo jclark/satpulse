@@ -291,9 +291,12 @@ make update-deps
   NAV-SAT (off in the personality defaults) becoming live satellite data.
 - `config/wb-apply` (satpulsewb x ubxsim) -- the interactive config path,
   UI-shaped: connect to the simulator's pty, identify the receiver, read the
-  config, apply a ConfigTarget that both round-trips a property (the antenna
-  cable delay) and enables satellite messages, then confirm a re-read and live
-  satellite data.
+  config, then apply ConfigTargets carrying a round-trippable property (the
+  antenna cable delay) and every message flag group Opts has, and confirm they
+  land -- a re-read shows the delay, and the packet stream shows the receiver
+  sending what was enabled (NAV-TIMELS, NAV-SAT/NAV-SIG and RTCM MSM4, all off in
+  the personality defaults) and dropping what was not (NMEA, which defaults on,
+  is disabled with the empty array, shown gone, then re-enabled by name).
 - `ntrip/basic` -- Ntrip caster source table and RTCM streaming; the source
   table's shared STR fields show their defaults.
 - `ntrip/auth` -- Ntrip caster with an authenticated mountpoint.

@@ -1,12 +1,19 @@
 """Checks for the config family: the startup and interactive config paths.
 
-Both scenarios run against the u-blox simulator (PROVIDER ubxsim), the one
-packet source that answers probes and config, so these checks assert on the
-config wiring a read-only replay cannot reach: the receiver identity the program
-reports (active detection carried the personality's MON-VER model and firmware)
-and message enablement landing as live satellite data. The personality's Default
-layer leaves NAV-SAT off, so satellite data appearing can only mean a VALSET
+Both scenarios run against the u-blox simulator (PROVIDER ubxsim), the one packet
+source that answers probes and config, so these checks assert on the config wiring
+a read-only replay cannot reach: the receiver identity the program reports (active
+detection carried the personality's MON-VER model and firmware) and message
+enablement landing as data. The simulator sends a recorded packet only when that
+packet's MSGOUT key is on, and the personality's Default layer leaves every UBX and
+RTCM message off, so data that only such a message carries can only mean a VALSET
 enabled it.
+
+NMEA is the exception: GGA/RMC/GSA/GSV/VTG/GLL default *on*. That is invisible to
+the daemon, whose startup ConfigTarget sets NMEAMsgNone, so its satellites SSE
+event can only be NAV-SAT. The workbench configures nothing on connect, so a
+decoded satellites there would arrive from NMEA GSV whether or not Opts.SatsMsg
+landed; its checks watch the packet stream and name the packet instead.
 """
 
 from __future__ import annotations
@@ -15,7 +22,7 @@ import json
 import threading
 import time
 import urllib.request
-from typing import Callable, cast
+from typing import Callable, Sequence, cast
 
 import common
 
@@ -128,20 +135,61 @@ def check_wb_receiver_identity(ctx: common.SmokeContext, timeout: float = 15.0) 
     _assert_identity(info, "wb /api/receiver Info")
 
 
-def check_wb_sats_live(ctx: common.SmokeContext, read_seconds: float = 15.0) -> None:
-    """A live gps:msg of kind satellites appears once ApplyConfig enables it.
+def _packets(got: dict[str, list[str]]) -> list[dict[str, object]]:
+    """The inbound packets in a gps:packet read_sse result.
 
-    The personality leaves NAV-SAT off, so the session can only surface
-    satellites after the apply's Opts.SatsMsg VALSET enables them on the
-    simulator; a live gps:msg kind=satellites on the workbench SSE stream is
-    that enablement showing up as data.
+    Outgoing entries are dropped: the config traffic the session itself writes is
+    not what the receiver chose to send, and only the latter is under MSGOUT
+    control.
     """
-    marker = '"kind":"satellites"'
+    pkts = []
+    for d in got.get("gps:packet", []):
+        e = cast("dict[str, object]", json.loads(d))
+        if not e.get("out"):
+            pkts.append(e)
+    return pkts
+
+
+def check_wb_packets_live(
+    ctx: common.SmokeContext, msgs: Sequence[str], read_seconds: float = 30.0
+) -> None:
+    """The receiver sends each named packet once ApplyConfig enables it.
+
+    Watches the workbench packet stream (/sse?stream=packets), which carries the
+    packets themselves rather than what the session decoded from them. The
+    distinction is load-bearing: a decoded kind cannot say which message a VALSET
+    enabled, because NMEA GSV and UBX NAV-SAT both decode to satellites and NMEA
+    defaults on, so a satellites kind would arrive whether or not Opts.SatsMsg
+    landed. A named packet cannot. The simulator sends a recorded packet only when
+    that packet's MSGOUT key is on, and the personality's Default layer leaves
+    every UBX and RTCM message off, so each of these arriving is the apply's
+    VALSET landing on the receiver.
+    """
+    want = set(msgs)
 
     def done(g: dict[str, list[str]]) -> bool:
-        return any(marker in d for d in g.get("gps:msg", []))
+        return want <= {str(e.get("msg")) for e in _packets(g)}
 
-    got = read_sse(ctx.wb_url("/sse"), done, read_seconds=read_seconds)
-    assert any(marker in d for d in got.get("gps:msg", [])), (
-        f"no live gps:msg kind=satellites after enabling Opts.SatsMsg; saw {got.get('gps:msg', [])[:3]}"
-    )
+    got = read_sse(ctx.wb_url("/sse?stream=packets"), done, read_seconds=read_seconds)
+    sent = {str(e.get("msg")) for e in _packets(got)}
+    missing = sorted(want - sent)
+    assert not missing, f"receiver never sent {missing}; it sent {sorted(sent)}"
+
+
+def check_wb_packets_absent(
+    ctx: common.SmokeContext, tags: Sequence[str], settle: float = 4.0, quiet: float = 6.0
+) -> None:
+    """The receiver stops sending packets of the named tags once ApplyConfig disables them.
+
+    The simulator drips its queued bytes out at the port's baud rate, so packets
+    generated before the VALSET landed are still in flight when the apply returns:
+    the first read drains them and its result is discarded, and only the second --
+    a fresh stream, which is sound because gps:packet is not one of the hub's
+    sticky events -- has to be quiet. Showing the tag gone is what makes turning
+    it back on afterwards mean something.
+    """
+    never: Callable[[dict[str, list[str]]], bool] = lambda g: False
+    read_sse(ctx.wb_url("/sse?stream=packets"), never, read_seconds=settle)
+    got = read_sse(ctx.wb_url("/sse?stream=packets"), never, read_seconds=quiet)
+    seen = sorted({str(e.get("tag")) for e in _packets(got)} & set(tags))
+    assert not seen, f"receiver still sending {seen} packets after disabling them"

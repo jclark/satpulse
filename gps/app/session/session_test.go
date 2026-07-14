@@ -763,3 +763,15 @@ func TestNotConnected(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyConfigClearsReadOnlyProps(t *testing.T) {
+	s := New(slog.New(slog.DiscardHandler), &fakeSink{}, Options{})
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetPort("UART1")
+	if err := s.ApplyConfig(context.Background(), target); err == nil {
+		t.Fatal("ApplyConfig succeeded while disconnected")
+	}
+	if got := target.Props.ReadOnlyProps(); got != 0 {
+		t.Errorf("read-only properties = %v, want none", got)
+	}
+}
