@@ -840,12 +840,12 @@ func (s *Session) disconnect(gen int) {
 
 // CorrEvent is the payload for "gps:corrections" events.
 type CorrEvent struct {
-	State      string `json:"state"`          // "connecting", "connected", "reconnecting", "stopped"
+	State      string `json:"state"`          // "connecting", "connected", "reconnecting", "failed", "stopped"
 	Mode       string `json:"mode,omitempty"` // "tcp" or "ntrip"
 	Host       string `json:"host,omitempty"`
 	Port       int    `json:"port,omitempty"`
 	Mountpoint string `json:"mountpoint,omitempty"` // ntrip only
-	Error      string `json:"error,omitempty"`      // last error (set during reconnecting)
+	Error      string `json:"error,omitempty"`      // last error (set during reconnecting or failed)
 }
 
 func (s *Session) setCorrStateLocked(ev CorrEvent) {
@@ -995,6 +995,7 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 		Port:       cfg.Port,
 		Mountpoint: cfg.Mountpoint,
 	})
+	var failed atomic.Bool
 	onState := func(st stream.State, err error) {
 		ev := CorrEvent{
 			State:      st.String(),
@@ -1005,6 +1006,9 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 		}
 		if err != nil {
 			ev.Error = err.Error()
+		}
+		if st == stream.Failed {
+			failed.Store(true)
 		}
 		s.emitCorrState(ev)
 	}
@@ -1023,6 +1027,9 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	})
 	wg.Go(func() {
 		sink.Run(corrCtx, selectedGGA, onState)
+		if failed.Load() {
+			return
+		}
 		s.emitCorrState(CorrEvent{
 			State:      "stopped",
 			Mode:       cfg.Mode,
