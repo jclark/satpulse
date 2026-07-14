@@ -129,7 +129,12 @@ lifecycle. Per scenario `family/name`:
   `common.poll(...)` (or the `wait_*` ctx helpers) until a condition holds.
 - **Choose `FACTOR` so the replay outlasts the live checks** but stays fast in
   CI. `ntp/sock` must use `FACTOR = 1` (realtime): its time-consistency
-  assertion depends on message UTC and the read clock advancing together.
+  assertion depends on message UTC and the read clock advancing together. A
+  check that demands exact delivery (`check_pulled_rtcm`, `check_pushed_rtcm`,
+  `check_udp_pushed_all`) needs a small `FACTOR` too: the sources emit each RTCM
+  type once a second, so `1/FACTOR` is the window in which a stalled sink loses
+  a packet to the daemon's stale-same-type prune, and a macOS CI runner stalls
+  up to ~200 ms.
 
 ## Adding or changing a scenario
 

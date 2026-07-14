@@ -115,6 +115,26 @@ func TestCreateConfigTargetJSON(t *testing.T) {
 	}
 }
 
+// Opts.Socket describes the transport, so the JSON must not be able to claim a
+// proxy connection on a serial device: that would skip the silence wait, the
+// detection deadline, and the framing checks in gpscfg.Configure.
+func TestCreateConfigTargetJSONSocketFollowsTransport(t *testing.T) {
+	target, err := createConfigTarget(&flagVars{targetJSON: `{"Opts":{"Socket":true}}`, serialDevice: "/dev/ttyACM0"})
+	if err != nil {
+		t.Fatalf("createConfigTarget: %v", err)
+	}
+	if target.Opts.Socket {
+		t.Error("Socket = true for a serial transport")
+	}
+	target, err = createConfigTarget(&flagVars{targetJSON: `{}`, socketPath: "/tmp/socket"})
+	if err != nil {
+		t.Fatalf("createConfigTarget: %v", err)
+	}
+	if !target.Opts.Socket {
+		t.Error("Socket = false for a socket transport")
+	}
+}
+
 func TestCreateConfigTargetJSONNoOp(t *testing.T) {
 	target, err := createConfigTarget(&flagVars{targetJSON: `{}`})
 	if err != nil {

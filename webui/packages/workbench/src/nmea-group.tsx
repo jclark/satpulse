@@ -4,7 +4,7 @@ import type {NMEASelectableMsgFlag} from './msg-flags';
 import type {NMEAMsgFlags} from '@satpulse/gps/configtarget';
 import {ConfigSubGroup, labeledControlText} from './ui';
 
-const nmeaMsgs: {name: typeof NMEASelectableMsgNames[number]; label: string}[] = [
+const nmeaMsgs: {name: NMEASelectableMsgFlag; label: string}[] = [
     {name: NMEAMsgGGA, label: 'GGA'},
     {name: NMEAMsgGLL, label: 'GLL'},
     {name: NMEAMsgGSA, label: 'GSA'},

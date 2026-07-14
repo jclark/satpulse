@@ -178,6 +178,9 @@ func marshalJSONFlags[T jsonFlagType](f T, table []jsonFlag[T], kind string) ([]
 }
 
 func unmarshalJSONFlags[T jsonFlagType](data []byte, f *T, table []jsonFlag[T], kind string) error {
+	if string(data) == "null" {
+		return fmt.Errorf("null not allowed for %s flags", kind)
+	}
 	var names []string
 	if err := json.Unmarshal(data, &names); err != nil {
 		return err
