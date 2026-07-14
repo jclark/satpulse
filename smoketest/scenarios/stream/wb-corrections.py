@@ -22,7 +22,13 @@ from scenarios import stream
 PROGRAM = "satpulsewb"
 CAPTURE_WRITES = True
 PACKET_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon.jsonl"
-FACTOR = 10
+# FACTOR paces the correction source too, and the source emits each RTCM type
+# once a second: a pty drain that stalls longer than 1/FACTOR seconds lets the
+# next packet of that type prune the stale one from the daemon's queue, which
+# check_pulled_rtcm reads as loss. At 10 the window was 100 ms, below the ~200 ms
+# scheduling stalls a macOS CI runner shows (see scenarios/ntp/sock.py), and the
+# check lost 20 of 360 packets there; 5 leaves 200 ms.
+FACTOR = 5
 
 # The runner starts fakesource.py on this port before satpulsewb and points
 # ctx.pull_source_log at this log, so stream.check_pulled_rtcm compares the
