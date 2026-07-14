@@ -14,10 +14,14 @@ import common
 PROGRAM = "satpulsewb"
 PACKET_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon-sats-pos-38400.jsonl"
 FACTOR = 5
+# No -L, so this is the one scenario where satpulsewb may auto-open a browser
+# (macOS/Windows local desktop only, never Linux). Empty PATH keeps the launch
+# from actually starting one; clearing the SSH vars makes the check hermetic
+# when the suite itself runs over SSH.
 ENV = {
-    "DISPLAY": ":satpulse-smoke",
-    "WAYLAND_DISPLAY": "satpulse-smoke",
     "PATH": "/nonexistent",
+    "SSH_CONNECTION": "",
+    "SSH_TTY": "",
 }
 ALLOWED_ERRORS = ("could not open browser",)
 
@@ -25,7 +29,7 @@ ALLOWED_ERRORS = ("could not open browser",)
 def run(ctx: common.SmokeContext) -> None:
     with open(ctx.daemon_log, errors="replace") as f:
         opened = 'msg="opening browser"' in f.read()
-    supported = sys.platform.startswith(("darwin", "linux", "win"))
+    supported = sys.platform.startswith(("darwin", "win"))
     assert opened == supported, f"browser open logged={opened}, supported platform={supported}"
     # Live checks first, while the background replay is still flowing: the
     # packet stream is gated (gps:packet is not primed, so it only flows live).

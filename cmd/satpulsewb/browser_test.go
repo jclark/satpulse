@@ -9,9 +9,7 @@ func TestCanOpenBrowser(t *testing.T) {
 		env  map[string]string
 		want bool
 	}{
-		{name: "linux X11", goos: "linux", env: map[string]string{"DISPLAY": ":0"}, want: true},
-		{name: "linux Wayland", goos: "linux", env: map[string]string{"WAYLAND_DISPLAY": "wayland-0"}, want: true},
-		{name: "linux headless", goos: "linux", want: false},
+		{name: "linux desktop", goos: "linux", env: map[string]string{"DISPLAY": ":0"}, want: false},
 		{name: "macOS", goos: "darwin", want: true},
 		{name: "Windows", goos: "windows", want: true},
 		{name: "SSH connection", goos: "darwin", env: map[string]string{"SSH_CONNECTION": "client server"}, want: false},

@@ -31,7 +31,7 @@ const defaultPort = 15754
 
 const summary = `[-h|--help] [-L|--listen host:port] [-T|--token]
        [-d|--serial-device path [-s|--device-speed bps]] [--vendor name]
-       [--packet-log path] [--no-open]`
+       [--packet-log path]`
 
 type flagVars struct {
 	listen      string
@@ -40,7 +40,6 @@ type flagVars struct {
 	speed       int
 	vendor      gpsreg.Vendor
 	packetLog   string
-	noOpen      bool
 	logLevel    slog.Level
 	showVersion bool
 }
@@ -81,7 +80,6 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 	flags.IntVarP(&v.speed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
 	flags.StringVar(&vendorStr, "vendor", "", "GPS receiver `vendor` name")
 	flags.StringVar(&v.packetLog, "packet-log", "", "log packets to `path`")
-	flags.BoolVar(&v.noOpen, "no-open", false, "do not open the browser automatically")
 	flags.CountVarP(&verbose, "verbose", "v", "increase verbosity")
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.BoolVarP(&v.showVersion, "version", "V", false, "show version information")
@@ -141,7 +139,8 @@ func run(v *flagVars) error {
 		token = newToken()
 	}
 	printURLs(os.Stdout, ln, v.listen, token)
-	if !v.noOpen {
+	// --listen is expert mode and never opens a browser.
+	if v.listen == "" {
 		openBrowser(lg, ln, token)
 	}
 	if v.device != "" {

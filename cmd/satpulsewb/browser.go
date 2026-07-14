@@ -21,12 +21,13 @@ func openBrowser(lg *slog.Logger, ln net.Listener, token string) {
 	}()
 }
 
+// canOpenBrowser reports whether this looks like a local desktop
+// session on a platform where launching a browser is safe: not over
+// SSH, and not Linux, where the launched browser's command line
+// (token included) would be readable by other users via /proc.
 func canOpenBrowser(goos string, getenv func(string) string) bool {
 	if getenv("SSH_CONNECTION") != "" || getenv("SSH_TTY") != "" {
 		return false
-	}
-	if goos == "linux" {
-		return getenv("DISPLAY") != "" || getenv("WAYLAND_DISPLAY") != ""
 	}
 	return goos == "darwin" || goos == "windows"
 }
