@@ -11,7 +11,7 @@
 // the sticky events, not satellites or packets). A failing test keeps its
 // run dir for inspection; a clean teardown removes it.
 
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect, TestInfo } from '@playwright/test';
 import { ChildProcess, spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
@@ -449,6 +449,14 @@ function startCaster(session: RunSession, port: number): Proc {
 // fixture can mark them for keeping when a test fails.
 const openSessions = new Set<RunSession>();
 
+// keepIfFailed marks a TEST-scoped session for keeping when its test failed.
+// Called right after use() returns, during the session fixture's own teardown:
+// the auto keepOnFailure fixture tears down only after test-scoped fixtures,
+// too late to save their run dirs. testInfo.status is set by then.
+function keepIfFailed(session: RunSession, testInfo: TestInfo): void {
+  if (testInfo.status !== testInfo.expectedStatus) session.keep = true;
+}
+
 interface WorkerFixtures {
   dashboardReplay: DashboardReplay;
   workbenchFixed: WorkbenchFixed;
@@ -464,8 +472,11 @@ interface TestFixtures {
 }
 
 export const test = base.extend<TestFixtures, WorkerFixtures>({
-  // A failing test keeps every open session's run dir; a passing one leaves the
-  // teardown to remove it.
+  // A failing test keeps every open WORKER-scoped session's run dir; a passing
+  // one leaves the teardown to remove it. This only covers the worker-scoped
+  // sessions: an auto fixture is set up first and so torn down last, after the
+  // test-scoped session fixtures have already torn down, so those mark their
+  // own session from testInfo before their teardown instead.
   keepOnFailure: [
     async ({}, use, testInfo) => {
       await use();
@@ -505,13 +516,14 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     { scope: 'worker' },
   ],
 
-  workbenchReplay: async ({}, use) => {
+  workbenchReplay: async ({}, use, testInfo) => {
     const session = new RunSession('satpulse-e2e-wb');
     openSessions.add(session);
     try {
       const info = await launchWbFifo(session, []);
       startReplay(session, info.fifoPath);
       await use({ baseURL: info.baseURL, token: info.token, port: info.port });
+      keepIfFailed(session, testInfo);
     } catch (e) {
       session.keep = true;
       throw e;
@@ -521,7 +533,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     }
   },
 
-  workbenchFixedToken: async ({}, use) => {
+  workbenchFixedToken: async ({}, use, testInfo) => {
     const session = new RunSession('satpulse-e2e-wb-fixed-token');
     openSessions.add(session);
     try {
@@ -549,6 +561,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         },
       };
       await use(value);
+      keepIfFailed(session, testInfo);
     } catch (e) {
       session.keep = true;
       throw e;
@@ -558,12 +571,12 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     }
   },
 
-  workbenchUbxsim: async ({}, use) => {
-    await useUbxsim(use, true);
+  workbenchUbxsim: async ({}, use, testInfo) => {
+    await useUbxsim(use, true, testInfo);
   },
 
-  workbenchUbxsimNoDevice: async ({}, use) => {
-    await useUbxsim(use, false);
+  workbenchUbxsimNoDevice: async ({}, use, testInfo) => {
+    await useUbxsim(use, false, testInfo);
   },
 
   workbenchFixed: [
@@ -653,7 +666,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
 // then the simulator, so an early simulator kill cannot inject read errors into
 // satpulsewb's shutdown. RunSession.teardown stops newest first, and the
 // simulator is spawned first, so this ordering holds.
-async function useUbxsim(use: (v: WorkbenchUbxsim) => Promise<void>, withDevice: boolean): Promise<void> {
+async function useUbxsim(use: (v: WorkbenchUbxsim) => Promise<void>, withDevice: boolean, testInfo: TestInfo): Promise<void> {
   const session = new RunSession('satpulse-e2e-wb-ubxsim');
   openSessions.add(session);
   try {
@@ -664,6 +677,7 @@ async function useUbxsim(use: (v: WorkbenchUbxsim) => Promise<void>, withDevice:
     });
     const info = await waitWbUrl(session, proc);
     await use({ baseURL: info.baseURL, token: info.token, port: info.port, devicePath: link });
+    keepIfFailed(session, testInfo);
   } catch (e) {
     session.keep = true;
     throw e;
