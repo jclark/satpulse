@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/jclark/satpulse/gps/app/session"
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -26,16 +28,25 @@ type server struct {
 	ctx     context.Context // run context; SSE streams end when it is done
 	sess    *session.Session
 	hub     *sseHub
+	lg      *slog.Logger
 	token   string        // empty means no auth
 	vendor  gpsreg.Vendor // --vendor: the vendor for every connect
 	msgDirs []string      // message-file library search path
 	mux     *http.ServeMux
+	files   http.Handler // static SPA assets, served under /
 	seatMu  sync.Mutex
 	seat    string
+	// Single-use launch token, minted only when a browser is auto-opened on a
+	// platform whose argv leaks the URL. It has its own lock, separate from the
+	// seat: the two protect unrelated state.
+	singleMu   sync.Mutex
+	single     string // empty means none minted
+	singleExp  time.Time
+	singleUsed bool
 }
 
-func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string, vendor gpsreg.Vendor, msgDirs []string) *server {
-	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, vendor: vendor, msgDirs: msgDirs, mux: http.NewServeMux()}
+func newServer(ctx context.Context, sess *session.Session, hub *sseHub, lg *slog.Logger, token string, vendor gpsreg.Vendor, msgDirs []string) *server {
+	s := &server{ctx: ctx, sess: sess, hub: hub, lg: lg, token: token, vendor: vendor, msgDirs: msgDirs, mux: http.NewServeMux(), files: http.FileServer(http.FS(webContent()))}
 	// Seed the writer broadcast with a no-holder value: after a restart with
 	// the token disabled, an old tab's EventSource reconnects and re-primes
 	// from this hub, and must learn that its previous seat is stale (flipping
@@ -51,7 +62,7 @@ func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token st
 	get := s.auth
 	reader := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(requireJSON(h)) }
 	writer := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(s.requireSeat(requireJSON(h))) }
-	s.mux.Handle("/", http.FileServer(http.FS(webContent())))
+	s.mux.HandleFunc("/", s.handleRoot)
 	s.mux.HandleFunc("GET /sse", get(s.handleSSE))
 	s.mux.HandleFunc("POST /api/seat", reader(s.handleSeat))
 	s.mux.HandleFunc("GET /api/state", get(s.handleState))
@@ -77,6 +88,83 @@ func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token st
 	s.mux.HandleFunc("POST /api/geo/vel-ned-to-ecef", reader(s.handleVelNEDtoECEF))
 	s.mux.HandleFunc("POST /api/geo/vel-ecef-to-ned", reader(s.handleVelECEFtoNED))
 	return s
+}
+
+// newSingleUseToken creates and registers a single-use launch token. On
+// argv-leaky platforms the browser-launch URL carries this instead of the
+// real token; its first presentation on GET / redirects to the real-token
+// URL, and any later use is an error, so a stolen argv value is caught.
+func (s *server) newSingleUseToken() string {
+	token := newToken()
+	s.singleMu.Lock()
+	s.single = token
+	s.singleExp = time.Now().Add(60 * time.Second)
+	s.singleUsed = false
+	s.singleMu.Unlock()
+	return token
+}
+
+type launchResult int
+
+const (
+	launchMiss launchResult = iota // not the single-use token; serve the SPA
+	launchOK                       // valid first use; redirect to the real token
+	launchUsed                     // presented after redemption (theft alarm)
+	launchExpired
+)
+
+// handleRoot serves the SPA, intercepting only GET / with a t query that
+// matches a minted single-use launch token; every other request (a real
+// token, no token, an asset path) falls through to the file server, which
+// ignores the query exactly as before.
+func (s *server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" {
+		if t := r.URL.Query().Get("t"); t != "" {
+			switch s.redeemSingleUse(t) {
+			case launchOK:
+				http.Redirect(w, r, "/?t="+s.token, http.StatusFound)
+				return
+			case launchUsed:
+				s.lg.Warn("single-use launch token presented again after use", "remote", r.RemoteAddr)
+				launchErrorPage(w)
+				return
+			case launchExpired:
+				s.lg.Warn("single-use launch token used after expiry", "remote", r.RemoteAddr)
+				launchErrorPage(w)
+				return
+			}
+		}
+	}
+	s.files.ServeHTTP(w, r)
+}
+
+// redeemSingleUse checks t against the single-use launch token with a
+// constant-time compare and, on a valid first use, marks it used. A miss
+// (none minted, or t is some other value such as the real token) falls
+// through to the SPA.
+func (s *server) redeemSingleUse(t string) launchResult {
+	s.singleMu.Lock()
+	defer s.singleMu.Unlock()
+	if s.single == "" || subtle.ConstantTimeCompare([]byte(t), []byte(s.single)) != 1 {
+		return launchMiss
+	}
+	if s.singleUsed {
+		return launchUsed
+	}
+	if !time.Now().Before(s.singleExp) {
+		return launchExpired
+	}
+	s.singleUsed = true
+	return launchOK
+}
+
+// launchErrorPage tells the person who followed a stale browser-launch
+// link what happened. Plain text, not the JSON error shape: the reader is
+// a human in a browser, not the SPA.
+func launchErrorPage(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusGone)
+	io.WriteString(w, "This launch link has already been used or has expired. Restart satpulsewb for a fresh one.\n")
 }
 
 func (s *server) requireSeat(h http.HandlerFunc) http.HandlerFunc {

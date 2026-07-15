@@ -21,6 +21,10 @@ import (
 	"unsafe"
 )
 
+func hasGraphicalSession() bool {
+	return true
+}
+
 // launchBrowser hands the URL to LaunchServices in-process rather than
 // spawning open(1): setuid ps exposes other users' argv even on macOS,
 // so the token-bearing URL must never appear on a command line.
@@ -32,3 +36,8 @@ func launchBrowser(url string) error {
 	}
 	return nil
 }
+
+// launchBrowserLeaksURL reports whether launchBrowser exposes the URL to
+// other local users. False on macOS: LSOpenCFURLRef runs in-process and
+// the URL reaches no command line.
+const launchBrowserLeaksURL = false

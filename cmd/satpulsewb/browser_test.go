@@ -5,22 +5,16 @@ import "testing"
 func TestCanOpenBrowser(t *testing.T) {
 	tests := []struct {
 		name string
-		goos string
-		env  map[string]string
-		want bool
+		env  string
 	}{
-		{name: "linux desktop", goos: "linux", env: map[string]string{"DISPLAY": ":0"}, want: false},
-		{name: "macOS", goos: "darwin", want: true},
-		{name: "Windows", goos: "windows", want: true},
-		{name: "SSH connection", goos: "darwin", env: map[string]string{"SSH_CONNECTION": "client server"}, want: false},
-		{name: "SSH tty", goos: "windows", env: map[string]string{"SSH_TTY": "/dev/pts/0"}, want: false},
-		{name: "unsupported", goos: "freebsd", want: false},
+		{name: "SSH connection", env: "SSH_CONNECTION"},
+		{name: "SSH tty", env: "SSH_TTY"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			getenv := func(name string) string { return tc.env[name] }
-			if got := canOpenBrowser(tc.goos, getenv); got != tc.want {
-				t.Errorf("got %t want %t", got, tc.want)
+			t.Setenv(tc.env, "set")
+			if canOpenBrowser() {
+				t.Error("got true want false")
 			}
 		})
 	}

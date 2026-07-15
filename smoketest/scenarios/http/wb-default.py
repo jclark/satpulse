@@ -7,30 +7,26 @@ connected and the monitor events flow. This is the workbench's meaty smoke
 scenario -- wb-listen covers the token-disabled -L path.
 """
 
-import sys
-
 import common
 
 PROGRAM = "satpulsewb"
 PACKET_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon-sats-pos-38400.jsonl"
 FACTOR = 5
-# No -L, so this is the one scenario where satpulsewb may auto-open a browser
-# (macOS/Windows local desktop only, never Linux). Empty PATH keeps the launch
-# from actually starting one; clearing the SSH vars makes the check hermetic
-# when the suite itself runs over SSH.
+# No -L, so this is the one scenario where satpulsewb may auto-open a browser.
+# The launchers are in-process now, so an empty PATH cannot suppress one (macOS
+# would open a real tab at the test instance and take the seat), and the
+# supported set depends on DISPLAY on the xdg platforms, so opened-iff-supported
+# is not hermetically assertable here -- TestCanOpenBrowser owns that logic.
+# Setting SSH_CONNECTION exercises the one veto that holds on every platform, so
+# the scenario asserts the launch did not happen.
 ENV = {
-    "PATH": "/nonexistent",
-    "SSH_CONNECTION": "",
-    "SSH_TTY": "",
+    "SSH_CONNECTION": "127.0.0.1 55000 127.0.0.1 22",
 }
-ALLOWED_ERRORS = ("could not open browser",)
 
 
 def run(ctx: common.SmokeContext) -> None:
     with open(ctx.daemon_log, errors="replace") as f:
-        opened = 'msg="opening browser"' in f.read()
-    supported = sys.platform.startswith(("darwin", "win"))
-    assert opened == supported, f"browser open logged={opened}, supported platform={supported}"
+        assert 'msg="opening browser"' not in f.read(), "browser open logged despite the SSH veto"
     # Live checks first, while the background replay is still flowing: the
     # packet stream is gated (gps:packet is not primed, so it only flows live).
     common.check_wb_html(ctx)

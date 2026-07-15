@@ -29,7 +29,7 @@ func newTestServerFull(token string, vendor gpsreg.Vendor, msgDirs []string) *se
 	hub := newSSEHub()
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	sess := session.New(lg, hub, session.Options{})
-	return newServer(context.Background(), sess, hub, token, vendor, msgDirs)
+	return newServer(context.Background(), sess, hub, lg, token, vendor, msgDirs)
 }
 
 func TestAuth(t *testing.T) {
@@ -217,6 +217,57 @@ func TestEndpoints(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestSingleUseLaunch covers the single-use browser-launch token: a fresh
+// one redirects to the real-token URL and burns; a second use and an
+// expired one get the human error page, not a redirect; it never
+// authenticates the API; and GET / with the real token or none still
+// serves the SPA.
+func TestSingleUseLaunch(t *testing.T) {
+	const tok = "multiuse"
+
+	s := newTestServer(tok)
+	launch := s.newSingleUseToken()
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/?t="+launch, nil))
+	if w.Code != http.StatusFound {
+		t.Fatalf("first use: got %d want %d", w.Code, http.StatusFound)
+	}
+	if loc := w.Header().Get("Location"); loc != "/?t="+tok {
+		t.Errorf("redirect Location %q want %q", loc, "/?t="+tok)
+	}
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/?t="+launch, nil))
+	if w.Code != http.StatusGone {
+		t.Errorf("second use: got %d want %d (want error page, not redirect)", w.Code, http.StatusGone)
+	}
+
+	s = newTestServer(tok)
+	launch = s.newSingleUseToken()
+	s.singleMu.Lock()
+	s.singleExp = time.Now().Add(-time.Second)
+	s.singleMu.Unlock()
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/?t="+launch, nil))
+	if w.Code != http.StatusGone {
+		t.Errorf("expired: got %d want %d", w.Code, http.StatusGone)
+	}
+
+	s = newTestServer(tok)
+	launch = s.newSingleUseToken()
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/state?t="+launch, nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("single-use token on API: got %d want %d", w.Code, http.StatusUnauthorized)
+	}
+	for _, url := range []string{"/", "/?t=" + tok} {
+		w = httptest.NewRecorder()
+		s.mux.ServeHTTP(w, httptest.NewRequest("GET", url, nil))
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %q: got %d want %d", url, w.Code, http.StatusOK)
+		}
 	}
 }
 

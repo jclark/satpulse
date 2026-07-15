@@ -271,7 +271,8 @@ make update-deps
   reflects its own table.
 - `http/wb-default` (satpulsewb) -- the workbench with no `-L`: the real
   default-port bind (with OS-picked fallback), the printed URL and generated
-  token, browser auto-open where the platform supports it, the SPA served at
+  token, the browser auto-open vetoed by SSH_CONNECTION (asserting no launch
+  line), the SPA served at
   `/` (HTML plus its script bundle, the counterpart to
   the daemon's `check_html`), token auth enforced, the snapshot endpoints
   populating, SSE monitor delivery, packet-stream gating (a `?stream=packets`

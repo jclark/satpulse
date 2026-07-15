@@ -4,14 +4,10 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"runtime"
 	"strconv"
 )
 
 func openBrowser(lg *slog.Logger, ln net.Listener, token string) {
-	if !canOpenBrowser(runtime.GOOS, os.Getenv) {
-		return
-	}
 	u := loopbackURL(ln.Addr().(*net.TCPAddr).Port, token)
 	lg.Debug("opening browser", "url", u)
 	go func() {
@@ -21,15 +17,13 @@ func openBrowser(lg *slog.Logger, ln net.Listener, token string) {
 	}()
 }
 
-// canOpenBrowser reports whether this looks like a local desktop
-// session on a platform where launching a browser is safe: not over
-// SSH, and not Linux, where the launched browser's command line
-// (token included) would be readable by other users via /proc.
-func canOpenBrowser(goos string, getenv func(string) string) bool {
-	if getenv("SSH_CONNECTION") != "" || getenv("SSH_TTY") != "" {
+// canOpenBrowser reports whether this looks like a local desktop session
+// where launching a browser is appropriate.
+func canOpenBrowser() bool {
+	if os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_TTY") != "" {
 		return false
 	}
-	return goos == "darwin" || goos == "windows"
+	return hasGraphicalSession()
 }
 
 func loopbackURL(port int, token string) string {

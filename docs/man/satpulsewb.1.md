@@ -20,8 +20,9 @@ With no options, **satpulsewb** binds all interfaces on its default port (15754)
 The printed URLs carry the token as a query parameter; the frontend stores it and strips it from the URL bar.
 Anyone with a printed URL controls the receiver until **satpulsewb** exits.
 Any number of windows can watch the session, but only one at a time holds the write seat and can change the receiver; opening the URL in a second window takes the seat, and the first window becomes a live read-only viewer with a "Use here" button to take it back.
-On macOS and Windows, when run from a local desktop session, **satpulsewb** opens its loopback URL in the default browser.
-It does not open a browser over SSH, with **\-\-listen**, or on Linux, where the launched browser's command line would expose the token to other users of the machine.
+When run from a local desktop session, **satpulsewb** opens its loopback URL in the default browser: on macOS, Windows, Linux and FreeBSD, and on Linux and FreeBSD only when a graphical session is present.
+It never opens a browser over SSH or with **\-\-listen**.
+On Linux and FreeBSD, where a process's command line is readable by other users of the machine, the opened URL carries a single-use launch token that stops working after its first use, so the value visible in the browser's command line grants nothing.
 
 There is no TLS support.
 On a network you do not trust, listen on loopback only and reach it through an SSH tunnel:

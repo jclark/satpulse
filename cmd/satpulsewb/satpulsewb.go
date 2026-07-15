@@ -139,10 +139,6 @@ func run(v *flagVars) error {
 		token = newToken()
 	}
 	printURLs(os.Stdout, ln, v.listen, token)
-	// --listen is expert mode and never opens a browser.
-	if v.listen == "" {
-		openBrowser(lg, ln, token)
-	}
 	if v.device != "" {
 		go func() {
 			if err := sess.Connect(session.SerialOpener{Device: v.device, Speed: v.speed}, v.vendor); err != nil {
@@ -150,7 +146,18 @@ func run(v *flagVars) error {
 			}
 		}()
 	}
-	srv := newServer(ctx, sess, hub, token, v.vendor, msgDirs())
+	srv := newServer(ctx, sess, hub, lg, token, v.vendor, msgDirs())
+	// --listen is expert mode and never opens a browser. In guided mode the
+	// opened URL normally carries the multi-use token; on platforms whose argv
+	// leaks it, mint a single-use token for the launch instead so the value
+	// visible to other users is worthless once redeemed.
+	if v.listen == "" && canOpenBrowser() {
+		launchToken := token
+		if launchBrowserLeaksURL {
+			launchToken = srv.newSingleUseToken()
+		}
+		openBrowser(lg, ln, launchToken)
+	}
 	httpServer := &http.Server{Handler: srv.mux}
 	go func() {
 		<-ctx.Done()
