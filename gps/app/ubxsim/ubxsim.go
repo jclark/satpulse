@@ -74,12 +74,12 @@ func (s *Sim) Run(ctx context.Context, rw io.ReadWriter) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	w := newWriter(rw, db, s.opts.Port)
-	nav := &navEngine{db: db, port: s.opts.Port, epochs: s.p.Epochs, w: w, lg: s.opts.Logger}
+	nav := &navEngine{db: db, port: s.opts.Port, epochs: s.p.Epochs, w: w, lg: s.opts.Logger, reboot: make(chan struct{}, 1)}
 	var wg sync.WaitGroup
 	wg.Go(func() { nav.run(ctx) })
 	// The writer cancels on a fatal write error so blocked senders unwind.
 	wg.Go(func() { defer cancel(); w.run(ctx) })
-	err := s.readLoop(ctx, db, w, rw)
+	err := s.readLoop(ctx, db, w, nav, rw)
 	cancel()
 	wg.Wait()
 	return err
@@ -88,7 +88,7 @@ func (s *Sim) Run(ctx context.Context, rw io.ReadWriter) error {
 // readLoop demultiplexes the input stream: configuration messages and
 // the MON-VER poll are handled, correction input (RTCM or SPARTN) is
 // answered with UBX-RXM-COR, everything else is ignored.
-func (s *Sim) readLoop(ctx context.Context, db *cfgDB, w *writer, r io.Reader) error {
+func (s *Sim) readLoop(ctx context.Context, db *cfgDB, w *writer, nav *navEngine, r io.Reader) error {
 	sc := scan.New(r, 4096, []gpsprot.PacketFormat{ubx.PacketFormat, rtcm.PacketFormat, spartn.PacketFormat})
 	for {
 		pkt, err := sc.Scan()
@@ -102,7 +102,7 @@ func (s *Sim) readLoop(ctx context.Context, db *cfgDB, w *writer, r io.Reader) e
 			continue
 		}
 		if pkt.Format == ubx.PacketFormat {
-			err = s.handleMsg(ctx, db, w, pkt.Data)
+			err = s.handleMsg(ctx, db, w, nav, pkt.Data)
 		} else {
 			err = s.corInput(ctx, db, w, pkt)
 		}
@@ -115,7 +115,7 @@ func (s *Sim) readLoop(ctx context.Context, db *cfgDB, w *writer, r io.Reader) e
 // handleMsg processes one received UBX packet. Write errors are
 // returned; anything wrong with the packet itself is answered on the
 // wire (NAK) per the interface description's acknowledgement rule.
-func (s *Sim) handleMsg(ctx context.Context, db *cfgDB, w *writer, data string) error {
+func (s *Sim) handleMsg(ctx context.Context, db *cfgDB, w *writer, nav *navEngine, data string) error {
 	lg := s.opts.Logger
 	mid := ubxbin.PacketMsgId(data)
 	switch mid {
@@ -171,6 +171,21 @@ func (s *Sim) handleMsg(ctx context.Context, db *cfgDB, w *writer, data string) 
 		}
 		lg.Debug("CFG-CFG", "ack", ok)
 		return s.writeAckNak(ctx, w, mid, ok)
+	case ubxbin.CfgRstID:
+		// CFG-RST is never ACKed or NAKed (interface description 3.10.18:
+		// "Do not expect this message to be acknowledged by the receiver").
+		// A reset that puts the processor through a reset cycle reboots the
+		// simulator: rebuild RAM from the layers below and restart the nav
+		// engine, while this process and its stream stay alive. The
+		// GNSS-only reset modes leave the config as it is, as today.
+		if m, err := ubxbin.ParseMsg(data); err == nil {
+			if rst := m.(*ubxbin.CfgRst); rstReboots(rst.ResetMode) {
+				lg.Debug("CFG-RST reboot", "resetMode", rst.ResetMode)
+				db.reboot()
+				nav.restart()
+			}
+		}
+		return nil
 	case ubxbin.CfgPrtID:
 		port, ok := s.prtPollPort(data)
 		if !ok {
@@ -188,6 +203,24 @@ func (s *Sim) handleMsg(ctx context.Context, db *cfgDB, w *writer, data string) 
 		return s.writeAckNak(ctx, w, mid, false)
 	}
 	return nil
+}
+
+// rstReboots reports whether a CFG-RST resetMode puts the receiver
+// through a reset cycle that rebuilds the RAM configuration from the
+// layers below. The F9 interface description (6.7 "Configuration reset
+// behavior") lists exactly these modes as going through a reset cycle:
+// the immediate and after-shutdown hardware resets and the controlled
+// software reset. The GNSS-only modes (controlled software reset GNSS
+// only, controlled GNSS stop/start) do not reset the processor and so
+// leave the RAM configuration untouched.
+func rstReboots(mode ubxbin.CfgRstResetMode) bool {
+	switch mode {
+	case ubxbin.CfgRstResetModeHardwareResetImmediately,
+		ubxbin.CfgRstResetModeControlledSoftwareReset,
+		ubxbin.CfgRstResetModeHardwareResetAfterShutdown:
+		return true
+	}
+	return false
 }
 
 // corInput answers a differential correction input message (RTCM or
