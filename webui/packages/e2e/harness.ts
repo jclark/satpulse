@@ -330,7 +330,9 @@ export interface WorkbenchReplay {
 // probes and config so the config path works. withDevice selects the -d <link>
 // launch (active detection from startup); without it satpulsewb starts with no
 // device for the connection-panel tests, and devicePath is the simulator's pty
-// symlink to type into that panel.
+// symlink to type into that panel. Test-scoped: config tests mutate the
+// simulator's config database (VALSETs, saves to Flash and BBR, resets), so a
+// shared simulator would couple tests through persistent state.
 export interface WorkbenchUbxsim {
   baseURL: string;
   token: string;
@@ -445,8 +447,6 @@ const openSessions = new Set<RunSession>();
 
 interface WorkerFixtures {
   dashboardReplay: DashboardReplay;
-  workbenchUbxsim: WorkbenchUbxsim;
-  workbenchUbxsimNoDevice: WorkbenchUbxsim;
   workbenchFixed: WorkbenchFixed;
   workbenchCaster: WorkbenchCaster;
 }
@@ -454,6 +454,8 @@ interface WorkerFixtures {
 interface TestFixtures {
   keepOnFailure: void;
   workbenchReplay: WorkbenchReplay;
+  workbenchUbxsim: WorkbenchUbxsim;
+  workbenchUbxsimNoDevice: WorkbenchUbxsim;
   workbenchFixedToken: WorkbenchFixedToken;
 }
 
@@ -552,19 +554,13 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     }
   },
 
-  workbenchUbxsim: [
-    async ({}, use) => {
-      await useUbxsim(use, true);
-    },
-    { scope: 'worker' },
-  ],
+  workbenchUbxsim: async ({}, use) => {
+    await useUbxsim(use, true);
+  },
 
-  workbenchUbxsimNoDevice: [
-    async ({}, use) => {
-      await useUbxsim(use, false);
-    },
-    { scope: 'worker' },
-  ],
+  workbenchUbxsimNoDevice: async ({}, use) => {
+    await useUbxsim(use, false);
+  },
 
   workbenchFixed: [
     async ({}, use) => {
