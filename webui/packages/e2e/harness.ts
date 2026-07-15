@@ -3,10 +3,13 @@
 // GPS hardware -- and hand each test a base URL to a live frontend.
 //
 // The binaries come from out/<arch> at the repo root (make has already run, the
-// smoketest's contract). Every fixture is worker-scoped: with workers: 1 one
-// server is launched per project and shared by that project's tests, mirroring
-// the smoketest's one-daemon-per-scenario model. A failing test keeps its
-// worker's run dir for inspection; a clean worker removes it.
+// smoketest's contract). Fixtures whose data source never runs dry (the ubxsim
+// simulator, the fixed-port server) are worker-scoped and shared by the
+// project's tests; the FIFO-replay fixtures are test-scoped, because exactly
+// one finite replay runs per daemon lifetime, so a shared daemon would leave
+// every spec file after the first with a dead stream (satpulsewb caches only
+// the sticky events, not satellites or packets). A failing test keeps its
+// run dir for inspection; a clean teardown removes it.
 
 import { test as base, expect } from '@playwright/test';
 import { ChildProcess, spawn, spawnSync } from 'node:child_process';
@@ -17,6 +20,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 const REPO = path.resolve(__dirname, '..', '..', '..');
+
+// Parent directory for the per-worker run dirs. Defaults to the system temp
+// dir; CI sets SATPULSE_E2E_RUNDIR_PARENT to a workspace path so a failing
+// run's kept dirs (daemon logs, rendered config) land somewhere the workflow
+// can collect as an artifact.
+const RUNDIR_PARENT = process.env.SATPULSE_E2E_RUNDIR_PARENT || os.tmpdir();
 
 // The realtime speedup for the FIFO replay. The log spans 30s of receiver time,
 // so factor 5 replays it in ~6s: fast enough that population and a clock tick
@@ -97,7 +106,8 @@ class RunSession {
   private procs: Proc[] = [];
 
   constructor(prefix: string) {
-    this.runDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix + '-'));
+    fs.mkdirSync(RUNDIR_PARENT, { recursive: true });
+    this.runDir = fs.mkdtempSync(path.join(RUNDIR_PARENT, prefix + '-'));
   }
 
   // spawnLogged starts a process with stdout+stderr redirected to <name>.log in
@@ -308,6 +318,8 @@ export interface DashboardReplay {
 
 // WorkbenchReplay is satpulsewb -d <fifo>: the read-only FIFO replay behind the
 // workbench, so connect lands in passive detection. The replay runs from setup.
+// Test-scoped: each test gets a fresh daemon and its own live replay, so data
+// assertions never depend on which spec file ran first.
 export interface WorkbenchReplay {
   baseURL: string;
   token: string;
@@ -333,6 +345,17 @@ export interface WorkbenchFixed {
   baseURL: string;
   port: number;
   restart(): Promise<void>;
+}
+
+// WorkbenchFixedToken is satpulsewb -L 127.0.0.1:<port> -T: a stable port WITH
+// a generated token, so restart() invalidates the page's token while the page
+// can still reach the port -- the stale-token-after-restart path. Test-scoped:
+// a restart burns the fixture's token, so it cannot be shared.
+export interface WorkbenchFixedToken {
+  baseURL: string;
+  token: string;
+  port: number;
+  restart(): Promise<{ baseURL: string; token: string }>;
 }
 
 // WorkbenchCaster is the workbench replay plus a running fake NTRIP caster the
@@ -422,7 +445,6 @@ const openSessions = new Set<RunSession>();
 
 interface WorkerFixtures {
   dashboardReplay: DashboardReplay;
-  workbenchReplay: WorkbenchReplay;
   workbenchUbxsim: WorkbenchUbxsim;
   workbenchUbxsimNoDevice: WorkbenchUbxsim;
   workbenchFixed: WorkbenchFixed;
@@ -431,6 +453,8 @@ interface WorkerFixtures {
 
 interface TestFixtures {
   keepOnFailure: void;
+  workbenchReplay: WorkbenchReplay;
+  workbenchFixedToken: WorkbenchFixedToken;
 }
 
 export const test = base.extend<TestFixtures, WorkerFixtures>({
@@ -475,24 +499,58 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     { scope: 'worker' },
   ],
 
-  workbenchReplay: [
-    async ({}, use) => {
-      const session = new RunSession('satpulse-e2e-wb');
-      openSessions.add(session);
-      try {
-        const info = await launchWbFifo(session, []);
-        startReplay(session, info.fifoPath);
-        await use({ baseURL: info.baseURL, token: info.token, port: info.port });
-      } catch (e) {
-        session.keep = true;
-        throw e;
-      } finally {
-        openSessions.delete(session);
-        await session.teardown();
-      }
-    },
-    { scope: 'worker' },
-  ],
+  workbenchReplay: async ({}, use) => {
+    const session = new RunSession('satpulse-e2e-wb');
+    openSessions.add(session);
+    try {
+      const info = await launchWbFifo(session, []);
+      startReplay(session, info.fifoPath);
+      await use({ baseURL: info.baseURL, token: info.token, port: info.port });
+    } catch (e) {
+      session.keep = true;
+      throw e;
+    } finally {
+      openSessions.delete(session);
+      await session.teardown();
+    }
+  },
+
+  workbenchFixedToken: async ({}, use) => {
+    const session = new RunSession('satpulse-e2e-wb-fixed-token');
+    openSessions.add(session);
+    try {
+      const port = await freePort();
+      let proc: Proc | null = null;
+      let launches = 0;
+      // Each launch logs to its own file: waitWbUrl takes the first URL in the
+      // log, and a restart must yield the fresh token, not the burnt one.
+      const launch = async (): Promise<{ baseURL: string; token: string }> => {
+        launches++;
+        proc = session.spawnLogged(`satpulsewb-${launches}`, satpulsewb, ['-L', `127.0.0.1:${port}`, '-T'], {
+          SATPULSE_GPSMSG_PATH: GPSMSG_PATH,
+        });
+        const info = await waitWbUrl(session, proc);
+        return { baseURL: info.baseURL, token: info.token };
+      };
+      const first = await launch();
+      const value: WorkbenchFixedToken = {
+        baseURL: first.baseURL,
+        token: first.token,
+        port,
+        async restart() {
+          if (proc) await session.stop(proc);
+          return launch();
+        },
+      };
+      await use(value);
+    } catch (e) {
+      session.keep = true;
+      throw e;
+    } finally {
+      openSessions.delete(session);
+      await session.teardown();
+    }
+  },
 
   workbenchUbxsim: [
     async ({}, use) => {
