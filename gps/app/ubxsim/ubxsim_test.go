@@ -480,6 +480,74 @@ func TestWriterPacing(t *testing.T) {
 	})
 }
 
+// TestWriterReboot checks that a simulated reboot drops the packets a
+// slow UART port has queued (and the one it is dripping) under the
+// pre-reset config instead of emitting them ahead of the post-reset
+// stream: a real receiver reset abandons its in-flight output. It
+// exercises the writer directly, without the engines.
+func TestWriterReboot(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// A high baud so that, without the fix, the whole stale burst would
+		// drip out inside the sleep below and be observed.
+		const baud = 921600
+		db := newCfgDB(ucv.Map{ucv.KUart1Baudrate.Key(): baud})
+		var buf bytes.Buffer
+		w := newWriter(&buf, db, ucv.UART1)
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() { w.run(ctx); close(done) }()
+
+		// Fill the queue with pre-reset nav output. The first packet is
+		// large so the slow line is still dripping it when the reset lands.
+		stale, err := ubxbin.PackMsg(ubxbin.NavSatID, make([]byte, 400))
+		if err != nil {
+			t.Fatalf("pack stale: %v", err)
+		}
+		for range txQueueDepth {
+			if err := w.send(ctx, stale); err != nil {
+				t.Fatalf("send stale: %v", err)
+			}
+		}
+		synctest.Wait() // let the writer take the first packet and park on its tick
+
+		// Reboot, then enqueue the post-reset marker under the new
+		// generation. The stale packets, all under the old generation, must
+		// not reach the wire.
+		w.reboot()
+		fresh, err := ubxbin.PackMsg(ubxbin.MonVerID, []byte("post-reset"))
+		if err != nil {
+			t.Fatalf("pack fresh: %v", err)
+		}
+		if err := w.send(ctx, fresh); err != nil {
+			t.Fatalf("send fresh: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond) // let the fresh packet drip out
+		cancel()
+		<-done
+
+		sc := scan.New(bytes.NewReader(buf.Bytes()), 4096, []gpsprot.PacketFormat{ubx.PacketFormat})
+		gotFresh := false
+		for {
+			pkt, err := sc.Scan()
+			if err != nil {
+				break
+			}
+			if pkt.Format == nil || !pkt.ChecksumValid {
+				continue
+			}
+			switch ubxbin.PacketMsgId(pkt.Data) {
+			case ubxbin.NavSatID:
+				t.Errorf("stale NAV-SAT emitted after reboot")
+			case ubxbin.MonVerID:
+				gotFresh = true
+			}
+		}
+		if !gotFresh {
+			t.Errorf("post-reset MON-VER not emitted")
+		}
+	})
+}
+
 // testSpartn returns a serialized SPARTN frame with the given
 // encryption flag.
 func testSpartn(t *testing.T, eaf bool) []byte {
