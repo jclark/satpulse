@@ -548,6 +548,79 @@ func TestWriterReboot(t *testing.T) {
 	})
 }
 
+// TestNavRebootMidBurst checks that a reboot landing while the nav engine
+// is mid-way through an epoch burst does not let the tail of that burst
+// precede the restarted epoch 0: the run is bound to the generation live
+// at its start, so packets the engine sends after the reboot bumped the
+// generation are still dropped. The bank's message stays enabled across
+// the reboot (it is in the defaults), which is exactly the case the queue
+// flush alone cannot catch.
+func TestNavRebootMidBurst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		db := newCfgDB(ucv.Map{
+			ucv.KUart1Baudrate.Key():             921600,
+			ucv.KUart1outprotUbx.Key():           1,
+			ucv.KUbxNavSat.KeyU(ucv.UART1).Key(): 1,
+		})
+		var buf bytes.Buffer
+		w := newWriter(&buf, db, ucv.UART1)
+		// One epoch, deep enough that the engine is still blocked sending
+		// its burst when the reboot lands. Each packet carries its index.
+		burst := txQueueDepth + 8
+		epoch := make([]Pkt, burst)
+		for i := range epoch {
+			data, err := ubxbin.PackMsg(ubxbin.NavSatID, append([]byte{byte(i)}, make([]byte, 199)...))
+			if err != nil {
+				t.Fatalf("pack: %v", err)
+			}
+			epoch[i] = Pkt{KeyM: ucv.KUbxNavSat, Tag: ubx.Tag, Data: data}
+		}
+		nav := &navEngine{db: db, port: ucv.UART1, epochs: [][]Pkt{epoch}, w: w, lg: slog.New(slog.DiscardHandler), reboot: make(chan struct{}, 1)}
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() { w.run(ctx); close(done) }()
+		navDone := make(chan struct{})
+		go func() { nav.run(ctx); close(navDone) }()
+		synctest.Wait() // the queue is full, the engine blocked mid-burst
+
+		mark := buf.Len()
+		db.reboot()
+		w.reboot()
+		nav.restart()
+		time.Sleep(2 * time.Second) // the restarted epoch 0 drips out fully
+		cancel()
+		<-done
+		<-navDone
+
+		// Everything on the wire after the reboot must be the restarted
+		// epoch from its first packet on; a pre-reset tail would show as
+		// indices out of order at the front.
+		sc := scan.New(bytes.NewReader(buf.Bytes()[mark:]), 4096, []gpsprot.PacketFormat{ubx.PacketFormat})
+		var got []int
+		for {
+			pkt, err := sc.Scan()
+			if err != nil {
+				break
+			}
+			if pkt.Format == nil || !pkt.ChecksumValid || ubxbin.PacketMsgId(pkt.Data) != ubxbin.NavSatID {
+				continue
+			}
+			got = append(got, int(pkt.Data[6])) // first payload byte: the index
+		}
+		if len(got) == 0 || got[0] != 0 {
+			t.Fatalf("first post-reset NAV-SAT index = %v, want 0 (pre-reset tail leaked)", got)
+		}
+		for i, idx := range got {
+			if idx != i {
+				t.Fatalf("post-reset NAV-SAT indices %v, want 0..%d in order", got, burst-1)
+			}
+		}
+		if len(got) != burst {
+			t.Errorf("post-reset NAV-SAT count = %d, want %d", len(got), burst)
+		}
+	})
+}
+
 // testSpartn returns a serialized SPARTN frame with the given
 // encryption flag.
 func testSpartn(t *testing.T, eaf bool) []byte {

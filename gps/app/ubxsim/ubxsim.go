@@ -448,7 +448,16 @@ func newWriter(out io.Writer, db *cfgDB, port ucv.Port) *writer {
 // packet carries the generation live at the call, so a packet gated under
 // a config a later reboot discards is dropped rather than emitted.
 func (w *writer) send(ctx context.Context, p []byte) error {
-	pkt := outPkt{gen: w.gen.Load(), data: p}
+	return w.sendGen(ctx, w.gen.Load(), p)
+}
+
+// sendGen is send with the caller's own generation stamp. The nav engine
+// binds a whole bank run to the generation live when the run started, so
+// the tail of an epoch interrupted mid-burst by a reboot is dropped with
+// the queue instead of being stamped current and preceding the restarted
+// epoch 0.
+func (w *writer) sendGen(ctx context.Context, gen uint64, p []byte) error {
+	pkt := outPkt{gen: gen, data: p}
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -457,17 +466,21 @@ func (w *writer) send(ctx context.Context, p []byte) error {
 	}
 }
 
+// generation returns the current writer generation, for a sender that
+// stamps a multi-packet burst with sendGen.
+func (w *writer) generation() uint64 {
+	return w.gen.Load()
+}
+
 // reboot abandons the transmit queue's in-flight output the way a real
 // receiver reset does: it bumps the generation so the writer drops every
 // packet accepted under the pre-reset config, whether already queued or
 // mid-drip, instead of emitting it ahead of the restarted epoch-0 stream.
 // The reader calls this on a rebooting CFG-RST before signalling the nav
-// engine, so the epoch-0 burst is sent under the new generation. Two
-// bounded imprecisions: a mid-drip drop leaves a truncated frame whose
+// engine, so the epoch-0 burst is sent under the new generation. One
+// bounded imprecision: a mid-drip drop leaves a truncated frame whose
 // declared length absorbs the bytes that follow until the checksum fails
-// and the scanner resyncs (one bad frame per reset), and a nav packet
-// between its gate check and its send at the instant of the reboot is
-// stamped with the new generation and can leak once.
+// and the scanner resyncs (one bad frame per reset).
 func (w *writer) reboot() {
 	w.gen.Add(1)
 }

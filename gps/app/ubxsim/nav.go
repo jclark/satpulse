@@ -56,13 +56,18 @@ func (n *navEngine) restart() {
 // the bank) and false when the context is cancelled, the writer fails,
 // or the bank runs out with no reboot pending.
 func (n *navEngine) replay(ctx context.Context) bool {
+	// The whole run is stamped with the generation live at its start, so
+	// when a reboot interrupts an epoch mid-burst the rest of that burst is
+	// dropped by the writer with the queue, instead of being stamped
+	// current and preceding the restarted epoch 0.
+	gen := n.w.generation()
 	next := time.Now()
 	for i := 0; i < len(n.epochs); i++ {
 		for _, pkt := range n.epochs[i] {
 			if !n.enabled(pkt) {
 				continue
 			}
-			if err := n.w.send(ctx, pkt.Data); err != nil {
+			if err := n.w.sendGen(ctx, gen, pkt.Data); err != nil {
 				return false
 			}
 		}
