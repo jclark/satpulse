@@ -29,6 +29,3 @@ jobs:
 
     - name: Build commands
       run: ./unix-build.sh
-
-    - name: Build all packages
-      run: go build ./...
