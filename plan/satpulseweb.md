@@ -333,8 +333,14 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH]
 
 - No arguments just works: bind all interfaces, canonical default
   port (falling back to an OS-picked port if taken), per-run
-  generated token, and one printed URL per non-loopback interface
-  address with the token as a query parameter
+  generated token, and printed URLs: the loopback URL -- localhost
+  when everything it resolves to locally is loopback and served by
+  the bind (a loopback URL is only usable in a browser on this
+  machine, so the local check is decisive), else 127.0.0.1 or ::1
+  when served, else each served loopback interface address -- then
+  one URL per non-loopback interface address the bind serves,
+  skipping only IPv6 link-local (no zone-free URL form), each with
+  the token as a query parameter
   (`http://192.168.1.40:PORT/?t=XYZ`). The SPA stores the token,
   strips `?t=` from the URL bar, and sends it on every request and
   SSE connection. The per-run token is the only auth model: no
@@ -885,23 +891,6 @@ the single-use token's redirect/burn/error-page behaviour are
 unit-tested. The loopback Host check from the Security model rides
 this PR too, since this is the phase that sharpened the model.
 
-### Phase 8: Playwright browser tests (one PR)
-
-Branches off the phase-7 branch, continuing the stack (phase 4 is
-desktop-gui branch work, outside it).
-DOM-level journeys in a real browser, against the same launch and
-replay fixtures as phase 5: a small `@playwright/test` suite in the
-webui workspace whose setup starts satpulsewb on a FIFO replay.
-Journeys: the SPA boots and the token is consumed and stripped from
-the URL bar; satellites and position render and advance; the Packets
-tab starts and stops the packet stream; a second tab late-joins
-consistent from the event cache; the stale-token notice; re-priming
-after a server restart. After phase 6 so a Messages tab journey can
-ride along, and after the desktop rework (phase 4) so the components
-are serving both shells before journeys pin their DOM. Kept to a
-handful of shallow journeys: wire-level assertions stay in the
-phase-5 scenarios, which need no browser or npm.
-
 ### Phase 9: simulator config tests (one PR)
 
 Extends the smoke tests from the monitor path to the config path,
@@ -912,9 +901,7 @@ Replay can drive only the monitor path: gpscfg skips probing on a
 read-only port, and a pty replay's probe goes unanswered, so probe
 identification, ReadConfig and ApplyConfig have no black-box
 coverage until something answers. Not part of the stacked-PR
-series: an ordinary PR off master. The Playwright half is deferred
-with phase 8 (see the end of this section); this PR is the
-smoketest half.
+series: an ordinary PR off master.
 
 The packet-provider seam. In smoketest terms the simulator is a
 new packet provider, not a transport: what plays the receiver
@@ -1034,14 +1021,6 @@ README's scenario list and smoketest/CLAUDE.md document the
 provider dimension; the simulator's stdout+stderr land in
 ubxsim.log in the run dir (kept on failure, not error-scanned --
 the simulator is a test double, not a program under test).
-
-The Playwright half: once phase 8 exists, its journeys gain a
-config journey (the config panel populates from ReadConfig, an
-apply round-trips, the enabled message shows up in the Packets
-tab) against a satpulsewb x ubxsim launch fixture; the Playwright
-setup starts `satpulsetool ubxsim` directly -- the provider seam
-is smoketest-internal. That lands with or after phase 8, not in
-this PR.
 
 Verification: `make`; the full `make smoketest` suite with the new
 scenarios stable over reruns; `make typecheck` (mypy strict) in
