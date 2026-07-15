@@ -443,7 +443,7 @@ type Opener interface {
 	// speed, or 0 if the transport has none.
 	Open(ctx context.Context) (conn gpsio.Conn, speed int, err error)
 	// Socket reports a proxy connection: sets ConfigOptions.Socket
-	// for gpscfg.Configure and gates reset operations in the UI.
+	// for gpscfg.Configure.
 	Socket() bool
 }
 
@@ -1181,10 +1181,7 @@ func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) 
 // operation: it requires StateConnected, holds the
 // port as StateConfiguring until the run completes, and returns an
 // error if the session is not connected or another operation is in
-// progress. Reset operations are refused over a proxy connection: a
-// reset would kill the daemon that owns the port, and its restart
-// would reapply the daemon's own configuration on top of the
-// session's.
+// progress.
 func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget) error {
 	target.Props.ClearReadOnlyProps()
 	s.mu.Lock()
@@ -1192,10 +1189,6 @@ func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget)
 		err := s.stateErrLocked()
 		s.mu.Unlock()
 		return err
-	}
-	if target.Opts.Reset != gpsprot.ResetNone && s.op.Socket() {
-		s.mu.Unlock()
-		return fmt.Errorf("reset operations are not available over a proxy connection")
 	}
 	s.cancelWorkerLocked()
 	runCtx := s.runCtx

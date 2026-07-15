@@ -634,27 +634,6 @@ func TestResetReconnects(t *testing.T) {
 	})
 }
 
-func TestResetGatedOverProxy(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		fs := &fakeSink{}
-		s := testSession(t, fs)
-		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}, socket: true}
-		if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
-			t.Fatalf("Connect: %v", err)
-		}
-		waitForState(t, s, StateConnected)
-		target := gpsprot.NewConfigTarget()
-		target.Opts.Reset = gpsprot.ResetCold
-		if err := s.ApplyConfig(context.Background(), target); err == nil {
-			t.Errorf("ApplyConfig with reset over proxy: expected error")
-		}
-		if got := s.State(); got != StateConnected {
-			t.Errorf("state = %v, want %v", got, StateConnected)
-		}
-		s.Disconnect()
-	})
-}
-
 func TestRepeatedConfigRequests(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fs := &fakeSink{}
