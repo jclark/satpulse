@@ -184,8 +184,7 @@ type Opener interface {
 Provided implementations: `SerialOpener{Device, Speed}` (its Open can
 wait for the device node to reappear, which is where the
 re-enumeration handling lives), `SocketOpener{Path}`, and later
-`TCPOpener{Addr}` (needs TCP dialing in gpsio; NetConn already
-handles unix sockets).
+`TCPOpener{Addr}` (see tcp-receiver.md).
 
 ### Methods
 
@@ -403,8 +402,8 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH]
   remaining users and was dropped). This supersedes the earlier "no
   browser auto-open" decision, which assumed the primary flow was
   ssh to a headless box; macOS is now the lead desktop platform.
-- `--socket` and `--tcp` are deferred to phase 10 (see Transports
-  and the Delivery section).
+- `--socket` and `--tcp` are not part of this plan; see
+  tcp-receiver.md.
 
 ### Security model
 
@@ -629,20 +628,11 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   session.
 - Unix socket (`SocketOpener`): touch-ups through a running
   satpulsed's `proxy.socket`; reset ops gated off.
-- TCP (`TCPOpener`): same, via `proxy.tcp`, for reaching a headless
-  box from a laptop. Requires adding TCP dialing to gpsio. Known
-  caveat from webui/packages/workbench/plan/issues.md
-  (tcp-connect): inter-packet idle detection is unreliable over
-  TCP, so the NMEA satellite buffer falls back to its
-  key-detection flush and the satellite display lags one cycle;
-  configuration is unaffected.
+- TCP: moved to its own plan, tcp-receiver.md, which also covers
+  satpulsetool and satpulsed.
 
-Serial ships in phase 3; socket and TCP land together in phase 10.
-The session side of socket is already done (SocketOpener,
-reset gating), but the UI has no capability gating for proxy
-connections yet -- reset-class controls must be hidden or disabled,
-driven by the wire contract -- and TCP additionally needs the gpsio
-dialing.
+Serial ships in phase 3; the satpulsewb `--socket` and `--tcp`
+flags land via tcp-receiver.md.
 
 ### Build, packaging, docs
 
@@ -1026,15 +1016,11 @@ Verification: `make`; the full `make smoketest` suite with the new
 scenarios stable over reruns; `make typecheck` (mypy strict) in
 smoketest/.
 
-### Phase 10: proxy transports (one PR)
+### Phase 10: proxy transports
 
-Proxy transports: `--socket` (SocketOpener is already done in the
-session, including reset gating) and `--tcp` (needs TCP dialing in
-gpsio), plus the UI capability gating for proxy connections --
-exposing socket-ness through the wire contract and hiding or
-disabling reset-class controls. Not part of the stacked-PR series:
-deliberately last, an ordinary PR off master once the stack has
-landed.
+Moved to its own plan, tcp-receiver.md, which generalizes network
+receiver connections to satpulsetool and satpulsed as well; the
+satpulsewb `--socket` and `--tcp` flags land there.
 
 - Names: the embed package location (own package vs go:embed directly
   in cmd/satpulsewb).
