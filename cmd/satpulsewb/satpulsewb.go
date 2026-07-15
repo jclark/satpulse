@@ -138,7 +138,7 @@ func run(v *flagVars) error {
 	if v.listen == "" || v.token {
 		token = newToken()
 	}
-	printURLs(os.Stdout, ln, v.listen, token)
+	printURLs(os.Stdout, lg, ln, v.listen, token)
 	if v.device != "" {
 		go func() {
 			if err := sess.Connect(session.SerialOpener{Device: v.device, Speed: v.speed}, v.vendor); err != nil {
@@ -168,9 +168,9 @@ func run(v *flagVars) error {
 // interfaces on the default port, falling back to an OS-picked port;
 // with an explicit --listen a bind failure is an error, since the
 // address may be the target of an ssh tunnel.
-func listen(listenFlag string) (net.Listener, error) {
-	if listenFlag != "" {
-		return net.Listen("tcp", listenFlag)
+func listen(listenAddr string) (net.Listener, error) {
+	if listenAddr != "" {
+		return net.Listen("tcp", listenAddr)
 	}
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", defaultPort))
 	if err == nil {
@@ -187,23 +187,13 @@ func newToken() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// printURLs prints one URL per address the server is reachable on:
-// the explicit --listen host if one was given, otherwise every
-// non-loopback interface address (or localhost when there is none).
-func printURLs(w io.Writer, ln net.Listener, listenFlag, token string) {
-	port := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
-	var hosts []string
-	if host, _, err := net.SplitHostPort(listenFlag); err == nil && host != "" {
-		if ip := net.ParseIP(host); ip == nil || !ip.IsUnspecified() {
-			hosts = []string{host}
-		}
-	}
-	if hosts == nil {
-		hosts = nonLoopbackAddrs()
-		if len(hosts) == 0 {
-			hosts = []string{"localhost"}
-		}
-	}
+// printURLs prints one URL per host from urlHosts, with the access
+// token as a query parameter when there is one, warning on lg when a
+// tokenless non-loopback URL was printed.
+func printURLs(w io.Writer, lg *slog.Logger, ln net.Listener, listenAddr, token string) {
+	addr := ln.Addr().(*net.TCPAddr)
+	port := strconv.Itoa(addr.Port)
+	hosts := urlHosts(addr.IP, listenAddr)
 	fmt.Fprintln(w, "Serving SatPulse Workbench at:")
 	insecure := false
 	for _, h := range hosts {
@@ -217,19 +207,90 @@ func printURLs(w io.Writer, ln net.Listener, listenFlag, token string) {
 		}
 	}
 	if insecure {
-		fmt.Fprintln(w, "Warning: no access token on a non-loopback address; anyone who can reach the port controls the receiver (use -T to require a token).")
+		lg.Warn("no access token on a non-loopback address; anyone who can reach the port controls the receiver (use -T to require a token)")
 	}
 }
 
-func nonLoopbackAddrs() []string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return nil
+// urlHosts returns the hosts, names or address literals, to print
+// URLs for: the explicit --listen host if one was given, otherwise
+// the loopback hosts (see loopbackHosts) followed by every
+// non-loopback interface address the bind serves, skipping IPv6
+// link-local addresses, which have no zone-free URL form.
+func urlHosts(bind net.IP, listenAddr string) []string {
+	if host, _, err := net.SplitHostPort(listenAddr); err == nil && host != "" {
+		if ip := net.ParseIP(host); ip == nil || !ip.IsUnspecified() {
+			return []string{host}
+		}
+	}
+	var nets []*net.IPNet
+	if addrs, err := net.InterfaceAddrs(); err == nil {
+		for _, a := range addrs {
+			if ipn, ok := a.(*net.IPNet); ok {
+				nets = append(nets, ipn)
+			}
+		}
+	}
+	v4only := bind.To4() != nil
+	hosts := loopbackHosts(nets, v4only)
+	for _, n := range nets {
+		ip := n.IP
+		if ip.IsLoopback() || (ip.To4() == nil && (v4only || ip.IsLinkLocalUnicast())) {
+			continue
+		}
+		hosts = append(hosts, ip.String())
+	}
+	return hosts
+}
+
+// loopbackHosts returns the loopback part of the host list: localhost
+// when every address it resolves to on this machine is loopback and
+// served, else the canonical served literal, else every served
+// loopback interface address. A loopback URL is only usable in a
+// browser on this machine, so resolving localhost here tests exactly
+// the environment the URL will be used in; a browser may try any
+// resolved address, so all of them must reach the server, and all
+// must be loopback so that the printed name means what it says.
+func loopbackHosts(nets []*net.IPNet, v4only bool) []string {
+	// served reports whether the bind covers ip: the address must be
+	// local and match the wildcard's family (0.0.0.0 serves only v4;
+	// the :: wildcard is dual-stack, since listen() uses network
+	// "tcp", for which Go turns IPV6_V6ONLY off). Locality is prefix
+	// containment, not equality: the kernel serves all of 127.0.0.1/8
+	// on lo, so e.g. 127.0.1.1 is served without being an interface
+	// address.
+	served := func(ip net.IP) bool {
+		if v4only && ip.To4() == nil {
+			return false
+		}
+		for _, n := range nets {
+			if n.Contains(ip) {
+				return true
+			}
+		}
+		return false
+	}
+	if ips, err := net.LookupIP("localhost"); err == nil && len(ips) > 0 {
+		ok := true
+		for _, ip := range ips {
+			if !ip.IsLoopback() || !served(ip) {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return []string{"localhost"}
+		}
+	}
+	if served(net.IPv4(127, 0, 0, 1)) {
+		return []string{"127.0.0.1"}
+	}
+	if served(net.IPv6loopback) {
+		return []string{"::1"}
 	}
 	var hosts []string
-	for _, a := range addrs {
-		if ipn, ok := a.(*net.IPNet); ok && ipn.IP.IsGlobalUnicast() {
-			hosts = append(hosts, ipn.IP.String())
+	for _, n := range nets {
+		if n.IP.IsLoopback() && served(n.IP) {
+			hosts = append(hosts, n.IP.String())
 		}
 	}
 	return hosts

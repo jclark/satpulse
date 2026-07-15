@@ -333,8 +333,14 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
 
 - No arguments just works: bind all interfaces, canonical default
   port (falling back to an OS-picked port if taken), per-run
-  generated token, and one printed URL per non-loopback interface
-  address with the token as a query parameter
+  generated token, and printed URLs: the loopback URL -- localhost
+  when everything it resolves to locally is loopback and served by
+  the bind (a loopback URL is only usable in a browser on this
+  machine, so the local check is decisive), else 127.0.0.1 or ::1
+  when served, else each served loopback interface address -- then
+  one URL per non-loopback interface address the bind serves,
+  skipping only IPv6 link-local (no zone-free URL form), each with
+  the token as a query parameter
   (`http://192.168.1.40:PORT/?t=XYZ`). The SPA stores the token,
   strips `?t=` from the URL bar, and sends it on every request and
   SSE connection. The per-run token is the only auth model: no
