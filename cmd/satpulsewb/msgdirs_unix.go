@@ -1,3 +1,5 @@
+//go:build !darwin && !windows
+
 package main
 
 // systemDirs returns the installed message-file libraries. A local
