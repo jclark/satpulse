@@ -792,6 +792,60 @@ func TestWriteErrorTriggersShutdown(t *testing.T) {
 	}
 }
 
+func TestWriteErrorEmitsFailed(t *testing.T) {
+	src, client := newPipeSource()
+	defer src.close()
+	defer client.Close()
+	writeErr := errors.New("device is not writable")
+	mw := &mockWriter{}
+	portLock := gpsio.NewOutPortLock(mockOutPort{})
+	sink := newTestPull(src, mw, portLock)
+	connected := make(chan struct{})
+	var once sync.Once
+	var mu sync.Mutex
+	var gotFailed bool
+	var gotErr string
+	onState := func(st State, err error) {
+		if st == Connected {
+			once.Do(func() { close(connected) })
+		}
+		if st == Failed {
+			mu.Lock()
+			gotFailed = true
+			if err != nil {
+				gotErr = err.Error()
+			}
+			mu.Unlock()
+		}
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- sink.Run(t.Context(), nil, onState)
+	}()
+	<-connected
+	primeSink(t, client, mw)
+	mw.setError(writeErr)
+	if _, err := client.Write(makeRTCM(1005, 10)); err != nil {
+		t.Fatalf("failed to write packet: %v", err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, writeErr) {
+			t.Errorf("Run = %v, want %v", err, writeErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not shut down after write error")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !gotFailed {
+		t.Error("onState was not called with Failed after write error")
+	}
+	if gotErr != writeErr.Error() {
+		t.Errorf("Failed error = %q, want %q", gotErr, writeErr.Error())
+	}
+}
+
 func TestPortLockAcquiredPerWrite(t *testing.T) {
 	src, client := newPipeSource()
 	defer src.close()
