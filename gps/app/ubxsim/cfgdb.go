@@ -182,11 +182,31 @@ func (db *cfgDB) cfgcfg(m *ubxbin.CfgCfg) bool {
 		}
 	}
 	if m.LoadMask != 0 {
-		db.ram = maps.Clone(db.dflt)
-		maps.Copy(db.ram, db.flh)
-		maps.Copy(db.ram, db.bbr)
+		db.rebuildRAM()
 	}
 	return true
+}
+
+// reboot rebuilds the RAM layer from the layers below, the way a real
+// receiver reconstructs its active configuration coming out of a reset:
+// "The RAM layer is always rebuilt from the layers below when the chip's
+// processor comes out from reset" (F9 interface description 6.7). The
+// BBR and Flash configuration layers are left as they are; the
+// navBbrMask of CFG-RST clears navigation backup data (ephemeris,
+// almanac, position, ...), not the BBR configuration layer.
+func (db *cfgDB) reboot() {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	db.rebuildRAM()
+}
+
+// rebuildRAM discards the current RAM configuration and rebuilds it from
+// Default, then Flash, then BBR on top, per layer priority. The caller
+// holds db.mu.
+func (db *cfgDB) rebuildRAM() {
+	db.ram = maps.Clone(db.dflt)
+	maps.Copy(db.ram, db.flh)
+	maps.Copy(db.ram, db.bbr)
 }
 
 // layerMap returns the map for a CFG-VALGET layer field, or nil if the

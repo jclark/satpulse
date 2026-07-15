@@ -262,6 +262,150 @@ func TestNavOutProt(t *testing.T) {
 	})
 }
 
+func sendRst(t *testing.T, w io.Writer, mode ubxbin.CfgRstResetMode) {
+	t.Helper()
+	sendMsg(t, w, &ubxbin.CfgRst{NavBbrMask: ubxbin.CfgRstNavBbrColdStart, ResetMode: mode})
+}
+
+func isAckFor(p scan.Packet, mid ubxbin.MsgID) bool {
+	if p.Format != ubx.PacketFormat {
+		return false
+	}
+	pmid := ubxbin.PacketMsgId(p.Data)
+	if pmid != ubxbin.AckAckID && pmid != ubxbin.AckNakID {
+		return false
+	}
+	return ubxbin.AckMsgID(p.Data) == mid
+}
+
+// valgetRAM polls the RAM layer for keys over the pipe and returns the
+// response values by key, proving the simulator still serves. It fails
+// the test if a CFG-RST is ever acknowledged while the response is
+// awaited.
+func valgetRAM(t *testing.T, w io.Writer, ch <-chan scan.Packet, keys ...ucv.Key) map[ucv.Key]uint64 {
+	t.Helper()
+	sendMsg(t, w, valgetPoll(ubxbin.CfgValgetLayerRAM, 0, keys...))
+	resp := await(t, ch, "CFG-VALGET response", func(p scan.Packet) bool {
+		if isAckFor(p, ubxbin.CfgRstID) {
+			t.Fatalf("CFG-RST was acknowledged")
+		}
+		return isUbx(ubxbin.CfgValgetID)(p)
+	})
+	m, err := ubxbin.ParseMsg(resp.Data)
+	if err != nil {
+		t.Fatalf("parse CFG-VALGET: %v", err)
+	}
+	items, err := ucv.UnmarshalItems(m.(*ubxbin.CfgValget).CfgData)
+	if err != nil {
+		t.Fatalf("unmarshal items: %v", err)
+	}
+	out := make(map[ucv.Key]uint64, len(items))
+	for _, it := range items {
+		out[it.Key] = it.Value
+	}
+	return out
+}
+
+// TestCfgRst checks the reboot semantics of a hardware-reset CFG-RST: it
+// is never acknowledged, it rebuilds RAM from the layers below so an
+// unsaved change is lost while a saved one survives, and it restarts the
+// nav engine with the simulator still serving. A GNSS-only reset mode is
+// not a reboot and leaves the RAM configuration alone.
+func TestCfgRst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := testPersonality()
+		navSat := ucv.KUbxNavSat.KeyU(ucv.UART1).Key()
+		nmeaOut := ucv.KUart1outprotNmea.Key()
+		w, ch := simConn(t, p)
+		await(t, ch, "GGA", isNmea("GGA"))
+
+		// Save navSat=1 to RAM and Flash, giving the epochs a clock and a
+		// value that must survive a reboot.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM|ubxbin.CfgValsetLayerFlash,
+			ucv.Item{Key: navSat, Value: 1}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET navSat NAKed")
+		}
+
+		// Turn the port's NMEA output off in RAM only (unsaved): GGA stops.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM, ucv.Item{Key: nmeaOut, Value: 0}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET nmeaOut off NAKed")
+		}
+		await(t, ch, "NAV-SAT", isUbx(ubxbin.NavSatID)) // drain the queued epoch
+		for range 3 {
+			await(t, ch, "NAV-SAT", func(p scan.Packet) bool {
+				if isNmea("GGA")(p) {
+					t.Fatalf("GGA sent with the port's NMEA output disabled")
+				}
+				return isUbx(ubxbin.NavSatID)(p)
+			})
+		}
+
+		// A hardware-reset CFG-RST reboots: RAM is rebuilt (NMEA output
+		// back to its default-on) and the nav engine restarts, so GGA
+		// resumes. No ACK/NAK for CFG-RST appears while we wait for it.
+		sendRst(t, w, ubxbin.CfgRstResetModeHardwareResetImmediately)
+		await(t, ch, "GGA", func(p scan.Packet) bool {
+			if isAckFor(p, ubxbin.CfgRstID) {
+				t.Fatalf("CFG-RST was acknowledged")
+			}
+			return isNmea("GGA")(p)
+		})
+
+		// The saved navSat survived; the unsaved nmeaOut change was lost.
+		vals := valgetRAM(t, w, ch, navSat, nmeaOut)
+		if vals[navSat] != 1 {
+			t.Errorf("after reboot navSat=%d, want saved 1", vals[navSat])
+		}
+		if vals[nmeaOut] != 1 {
+			t.Errorf("after reboot nmeaOut=%d, want default 1", vals[nmeaOut])
+		}
+
+		// A GNSS-only reset mode is not a reboot: an unsaved RAM change to
+		// nmeaOut survives it.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM, ucv.Item{Key: nmeaOut, Value: 0}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET nmeaOut off NAKed")
+		}
+		sendRst(t, w, ubxbin.CfgRstResetModeControlledGnssStop)
+		if v := valgetRAM(t, w, ch, nmeaOut)[nmeaOut]; v != 0 {
+			t.Errorf("after GNSS-stop reset nmeaOut=%d, want unchanged 0", v)
+		}
+	})
+}
+
+// TestCfgRstFactory checks the factory-reset sequence the workbench
+// sends: a CFG-CFG that clears the saved layers followed by a
+// hardware-reset CFG-RST. Without the CFG-RST reboot the RAM would keep
+// its current value; with it, RAM rebuilds from Default alone.
+func TestCfgRstFactory(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := testPersonality()
+		navSat := ucv.KUbxNavSat.KeyU(ucv.UART1).Key()
+		w, ch := simConn(t, p)
+		await(t, ch, "GGA", isNmea("GGA"))
+
+		// Put navSat=1 into RAM and both non-volatile layers.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM|ubxbin.CfgValsetLayerBBR|ubxbin.CfgValsetLayerFlash,
+			ucv.Item{Key: navSat, Value: 1}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET NAKed")
+		}
+
+		// Factory reset: clear the saved layers, then reboot.
+		sendMsg(t, w, &ubxbin.CfgCfg{CfgCfgFixed: ubxbin.CfgCfgFixed{ClearMask: ubxbin.CfgCfgSectionMaskAll}})
+		if !ackResult(t, ch, ubxbin.CfgCfgID) {
+			t.Fatalf("CFG-CFG clear NAKed")
+		}
+		sendRst(t, w, ubxbin.CfgRstResetModeHardwareResetImmediately)
+
+		if v := valgetRAM(t, w, ch, navSat)[navSat]; v != 0 {
+			t.Errorf("after factory reset navSat=%d, want default 0", v)
+		}
+	})
+}
+
 // recWriter records the time and size of each Write so a test can
 // observe how the paced writer meters a packet onto the stream.
 type recWriter struct {

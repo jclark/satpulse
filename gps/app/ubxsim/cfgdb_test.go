@@ -301,6 +301,30 @@ func TestTooManyItems(t *testing.T) {
 	}
 }
 
+func TestReboot(t *testing.T) {
+	navSat := ucv.KUbxNavSat.KeyU(ucv.UART1).Key()
+	db := newCfgDB(testDefaults())
+	// An unsaved RAM change is discarded by a reboot.
+	db.valset(valsetMsg(ubxbin.CfgValsetLayerRAM, ucv.Item{Key: navSat, Value: 1}))
+	db.reboot()
+	if v := db.ramUint(navSat); v != 0 {
+		t.Fatalf("after reboot got %d, want default 0", v)
+	}
+	// The rebuild takes BBR over Flash over Default, and does not touch
+	// the saved layers.
+	db.valset(valsetMsg(ubxbin.CfgValsetLayerFlash, ucv.Item{Key: navSat, Value: 3}))
+	db.valset(valsetMsg(ubxbin.CfgValsetLayerBBR, ucv.Item{Key: navSat, Value: 2}))
+	db.reboot()
+	if v := db.ramUint(navSat); v != 2 {
+		t.Fatalf("after reboot got %d, want BBR value 2", v)
+	}
+	resp, _ := db.valget(valgetPoll(ubxbin.CfgValgetLayerFlash, 0, navSat))
+	items, _ := ucv.UnmarshalItems(resp.CfgData)
+	if !reflect.DeepEqual(items, []ucv.Item{{Key: navSat, Value: 3}}) {
+		t.Errorf("reboot changed the Flash layer: %+v", items)
+	}
+}
+
 func TestCfgCfg(t *testing.T) {
 	navSat := ucv.KUbxNavSat.KeyU(ucv.UART1).Key()
 	db := newCfgDB(testDefaults())
