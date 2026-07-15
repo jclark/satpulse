@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
@@ -228,7 +229,7 @@ func printURLs(w io.Writer, ln net.Listener, listenFlag, token string) {
 		}
 	}
 	if insecure {
-		fmt.Fprintln(w, "Warning: no access token on a non-loopback address; anyone who can reach the port controls the receiver (use -T to require a token).")
+		fmt.Fprintln(w, "Warning: no access token on a non-loopback address; browsers will be refused, but clients can still control the receiver by sending a loopback Host (use -T to require a token and allow browser access).")
 	}
 }
 
@@ -247,7 +248,7 @@ func nonLoopbackAddrs() []string {
 }
 
 func isLoopbackHost(host string) bool {
-	if host == "localhost" {
+	if strings.EqualFold(host, "localhost") || strings.EqualFold(host, "localhost.") {
 		return true
 	}
 	ip := net.ParseIP(host)

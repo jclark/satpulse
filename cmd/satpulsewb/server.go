@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -62,7 +63,11 @@ func newServer(ctx context.Context, sess *session.Session, hub *sseHub, lg *slog
 	get := s.auth
 	reader := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(requireJSON(h)) }
 	writer := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(s.requireSeat(requireJSON(h))) }
-	s.mux.HandleFunc("/", s.handleRoot)
+	root := s.handleRoot
+	if token == "" {
+		root = requireLoopbackHost(root)
+	}
+	s.mux.HandleFunc("/", root)
 	s.mux.HandleFunc("GET /sse", get(s.handleSSE))
 	s.mux.HandleFunc("POST /api/seat", reader(s.handleSeat))
 	s.mux.HandleFunc("GET /api/state", get(s.handleState))
@@ -164,7 +169,7 @@ func (s *server) redeemSingleUse(t string) launchResult {
 func launchErrorPage(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusGone)
-	io.WriteString(w, "This launch link has already been used or has expired. Restart satpulsewb for a fresh one.\n")
+	io.WriteString(w, "This launch link has already been used or has expired. Open one of the URLs printed in the satpulsewb terminal.\n")
 }
 
 func (s *server) requireSeat(h http.HandlerFunc) http.HandlerFunc {
@@ -186,12 +191,34 @@ func (s *server) requireSeat(h http.HandlerFunc) http.HandlerFunc {
 // event stream are protected.
 func (s *server) auth(h http.HandlerFunc) http.HandlerFunc {
 	if s.token == "" {
-		return h
+		return requireLoopbackHost(h)
 	}
 	tok := []byte(s.token)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("t")), tok) != 1 {
 			writeError(w, http.StatusUnauthorized, errors.New("missing or invalid access token"))
+			return
+		}
+		h(w, r)
+	}
+}
+
+// requireLoopbackHost closes DNS rebinding when access-token auth is disabled.
+// A rebound page is same-origin and can send JSON without the CORS preflight
+// that makes requireJSON effective. This is a browser confused-deputy guard,
+// not access control: a direct client can forge Host: localhost. The port is
+// ignored so SSH-tunnel requests work; token-authenticated requests do not need
+// the restriction.
+func requireLoopbackHost(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if v, _, err := net.SplitHostPort(host); err == nil {
+			host = v
+		} else if len(host) >= 2 && host[0] == '[' && host[len(host)-1] == ']' {
+			host = host[1 : len(host)-1]
+		}
+		if !isLoopbackHost(host) {
+			writeError(w, http.StatusForbidden, errors.New("non-loopback Host is not allowed without an access token"))
 			return
 		}
 		h(w, r)

@@ -12,6 +12,9 @@ func TestCanOpenBrowser(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DISPLAY", ":0")
+			t.Setenv("SSH_CONNECTION", "")
+			t.Setenv("SSH_TTY", "")
 			t.Setenv(tc.env, "set")
 			if canOpenBrowser() {
 				t.Error("got true want false")
