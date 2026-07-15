@@ -15,6 +15,11 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   timeout: 60_000,
   expect: { timeout: 15_000 },
+  // List locally; on CI add an HTML report so a failing run uploads a browsable
+  // artifact alongside the traces.
+  reporter: process.env.CI
+    ? [['list'], ['html', { open: 'never' }]]
+    : [['list']],
   use: {
     browserName: 'chromium',
     trace: 'retain-on-failure',
