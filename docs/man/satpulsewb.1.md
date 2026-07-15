@@ -20,6 +20,9 @@ With no options, **satpulsewb** binds all interfaces on its default port (15754)
 The printed URLs carry the token as a query parameter; the frontend stores it and strips it from the URL bar.
 Anyone with a printed URL controls the receiver until **satpulsewb** exits.
 Any number of windows can watch the session, but only one at a time holds the write seat and can change the receiver; opening the URL in a second window takes the seat, and the first window becomes a live read-only viewer with a "Use here" button to take it back.
+When run from a local desktop session, **satpulsewb** opens its loopback URL in the default browser; on Linux and FreeBSD this additionally requires a graphical session.
+It never opens a browser over SSH or with **\-\-listen**.
+On Linux and FreeBSD, where a process's command line is readable by other users of the machine, the opened URL carries a single-use launch token that stops working after its first use, so the value visible in the browser's command line grants nothing.
 
 There is no TLS support.
 On a network you do not trust, listen on loopback only and reach it through an SSH tunnel:
@@ -45,8 +48,8 @@ With it, **satpulsewb** connects at startup; a browser arriving later catches up
 **\-L**, **\-\-listen** *host:port*
 : Listen on the given address instead of all interfaces on the default port.
 With an explicit port, a bind failure is an error; there is no fallback port, since the address may be the target of an SSH tunnel.
-**\-\-listen** also disables the access token, since the typical use is a tunnel; serving without a token on a non-loopback address prints a warning.
-Without **\-\-token**, **\-\-listen** trusts the local browser environment.
+**\-\-listen** also disables the access token, since the typical use is a tunnel.
+Without **\-\-token**, **\-\-listen** trusts the local browser environment: requests with a non-loopback Host are refused and a non-loopback bind prints a warning; use **\-\-token** to allow remote browser access.
 
 **\-T**, **\-\-token**
 : Require the generated access token even with **\-\-listen**.

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -742,6 +743,22 @@ func TestPacketLogWritesSerialized(t *testing.T) {
 	}
 }
 
+// drainNtripCasterRequest reads and discards the client's Ntrip request.
+// A real caster consumes the request before replying, and the mock must
+// too: on Windows, closing the connection with the request still unread
+// in the receive buffer sends an RST that discards the still-buffered
+// response, so the client misses the 401 and retries into a dead
+// listener instead of failing.
+func drainNtripCasterRequest(c net.Conn) {
+	br := bufio.NewReader(c)
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil || line == "\r\n" {
+			return
+		}
+	}
+}
+
 func TestCorrectionsFailurePersistsAndRestartClearsError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	conn := newFakeConn()
@@ -765,6 +782,7 @@ func TestCorrectionsFailurePersistsAndRestartClearsError(t *testing.T) {
 	go func() {
 		c, err := ln.Accept()
 		if err == nil {
+			drainNtripCasterRequest(c)
 			_, err = io.WriteString(c, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n")
 			c.Close()
 		}
@@ -797,6 +815,7 @@ func TestCorrectionsFailurePersistsAndRestartClearsError(t *testing.T) {
 	go func() {
 		c, err := ln.Accept()
 		if err == nil {
+			drainNtripCasterRequest(c)
 			close(accepted)
 			<-release
 			_, err = io.WriteString(c, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n")
