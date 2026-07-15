@@ -22,6 +22,7 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -182,6 +183,7 @@ func (s *Sim) handleMsg(ctx context.Context, db *cfgDB, w *writer, nav *navEngin
 			if rst := m.(*ubxbin.CfgRst); rstReboots(rst.ResetMode) {
 				lg.Debug("CFG-RST reboot", "resetMode", rst.ResetMode)
 				db.reboot()
+				w.reboot()
 				nav.restart()
 			}
 		}
@@ -424,22 +426,56 @@ type writer struct {
 	out  io.Writer
 	db   *cfgDB
 	port ucv.Port
-	ch   chan []byte
+	ch   chan outPkt
+	gen  atomic.Uint64
+}
+
+// outPkt is a queued packet tagged with the writer generation live when
+// send accepted it. A simulated reboot bumps the generation, so the
+// writer can drop the packets gated by the pre-reset config instead of
+// emitting them ahead of the restarted epoch-0 stream.
+type outPkt struct {
+	gen  uint64
+	data []byte
 }
 
 func newWriter(out io.Writer, db *cfgDB, port ucv.Port) *writer {
-	return &writer{out: out, db: db, port: port, ch: make(chan []byte, txQueueDepth)}
+	return &writer{out: out, db: db, port: port, ch: make(chan outPkt, txQueueDepth)}
 }
 
 // send enqueues a whole packet for the writer, blocking while the queue
-// is full, and returns ctx.Err() if the simulator is shutting down.
+// is full, and returns ctx.Err() if the simulator is shutting down. The
+// packet carries the generation live at the call, so a packet gated under
+// a config a later reboot discards is dropped rather than emitted.
 func (w *writer) send(ctx context.Context, p []byte) error {
+	pkt := outPkt{gen: w.gen.Load(), data: p}
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case w.ch <- p:
+	case w.ch <- pkt:
 		return nil
 	}
+}
+
+// reboot abandons the transmit queue's in-flight output the way a real
+// receiver reset does: it bumps the generation so the writer drops every
+// packet accepted under the pre-reset config, whether already queued or
+// mid-drip, instead of emitting it ahead of the restarted epoch-0 stream.
+// The reader calls this on a rebooting CFG-RST before signalling the nav
+// engine, so the epoch-0 burst is sent under the new generation. Two
+// bounded imprecisions: a mid-drip drop leaves a truncated frame whose
+// declared length absorbs the bytes that follow until the checksum fails
+// and the scanner resyncs (one bad frame per reset), and a nav packet
+// between its gate check and its send at the instant of the reboot is
+// stamped with the new generation and can leak once.
+func (w *writer) reboot() {
+	w.gen.Add(1)
+}
+
+// stale reports whether a packet tagged with gen predates the current
+// generation and so belongs to a config a reboot has discarded.
+func (w *writer) stale(gen uint64) bool {
+	return gen != w.gen.Load()
 }
 
 // run drains the queue until ctx is cancelled or a write fails, pacing a
@@ -460,7 +496,10 @@ func (w *writer) passthrough(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case p := <-w.ch:
-			if _, err := w.out.Write(p); err != nil {
+			if w.stale(p.gen) {
+				continue
+			}
+			if _, err := w.out.Write(p.data); err != nil {
 				return
 			}
 		}
@@ -476,6 +515,7 @@ func (w *writer) passthrough(ctx context.Context) {
 // bytes are queued, so an idle port neither wakes nor accrues credit.
 func (w *writer) pace(ctx context.Context, baudKey ucv.Key) {
 	var buf []byte
+	var bufGen uint64
 	var num int64
 	var last time.Time
 	var ticker *time.Ticker
@@ -488,7 +528,7 @@ func (w *writer) pace(ctx context.Context, baudKey ucv.Key) {
 	}
 	defer stop()
 	for {
-		var in <-chan []byte
+		var in <-chan outPkt
 		if tick == nil {
 			in = w.ch // accept the next burst only while idle
 		}
@@ -496,10 +536,13 @@ func (w *writer) pace(ctx context.Context, baudKey ucv.Key) {
 		case <-ctx.Done():
 			return
 		case p := <-in:
-			buf, num, last = p, 0, time.Now()
+			buf, bufGen, num, last = p.data, p.gen, 0, time.Now()
 			ticker = time.NewTicker(tickInterval)
 			tick = ticker.C
 		case now := <-tick:
+			if w.stale(bufGen) {
+				buf = nil // a reboot discarded the packet mid-drip
+			}
 			budget, unlimited := 0, false
 			if baud := w.db.ramUint(baudKey); baud != 0 {
 				num += now.Sub(last).Nanoseconds() * int64(baud)
@@ -513,12 +556,16 @@ func (w *writer) pace(ctx context.Context, baudKey ucv.Key) {
 				if len(buf) == 0 {
 					select {
 					case p := <-w.ch:
-						buf = p
+						buf, bufGen = p.data, p.gen
 					default:
 						idle = true
 					}
 					if idle {
 						break
+					}
+					if w.stale(bufGen) {
+						buf = nil // drop a packet queued under a pre-reset config
+						continue
 					}
 				}
 				n := len(buf)
