@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
@@ -146,7 +147,18 @@ func run(v *flagVars) error {
 			}
 		}()
 	}
-	srv := newServer(ctx, sess, hub, token, v.vendor, msgDirs())
+	srv := newServer(ctx, sess, hub, lg, token, v.vendor, msgDirs())
+	// --listen is expert mode and never opens a browser. In guided mode the
+	// opened URL normally carries the multi-use token; on platforms whose argv
+	// leaks it, mint a single-use token for the launch instead so the value
+	// visible to other users is worthless once redeemed.
+	if v.listen == "" && canOpenBrowser() {
+		launchToken := token
+		if launchBrowserLeaksURL {
+			launchToken = srv.newSingleUseToken()
+		}
+		openBrowser(lg, ln, launchToken)
+	}
 	httpServer := &http.Server{Handler: srv.mux}
 	go func() {
 		<-ctx.Done()
@@ -207,7 +219,7 @@ func printURLs(w io.Writer, lg *slog.Logger, ln net.Listener, listenAddr, token 
 		}
 	}
 	if insecure {
-		lg.Warn("no access token on a non-loopback address; anyone who can reach the port controls the receiver (use -T to require a token)")
+		lg.Warn("no access token on a non-loopback address; browsers will be refused, but clients can still control the receiver by sending a loopback Host (use -T to require a token and allow browser access)")
 	}
 }
 
@@ -297,7 +309,7 @@ func loopbackHosts(nets []*net.IPNet, v4only bool) []string {
 }
 
 func isLoopbackHost(host string) bool {
-	if host == "localhost" {
+	if strings.EqualFold(host, "localhost") || strings.EqualFold(host, "localhost.") {
 		return true
 	}
 	ip := net.ParseIP(host)

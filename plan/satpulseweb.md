@@ -327,7 +327,7 @@ ContinueOnError); connection flags reuse the satpulsetool gps names
 and help strings exactly.
 
 ```
-satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
+satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH]
            [-d DEVICE [-s SPEED]] [--vendor NAME]
 ```
 
@@ -347,7 +347,8 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
   user-specified token value, no persistent token state, no TLS in
   the first version. On a network the user does not trust, the
   answer is `-L localhost:PORT` plus an ssh tunnel, which the man
-  page documents.
+  page documents. The Security model section below states what this
+  does and does not protect against.
 - `-L`/`--listen HOST:PORT` takes control of the bind address, and
   with an explicit port a bind failure is an error, no fallback
   (the user may have an ssh tunnel pointing at that port). Since
@@ -369,32 +370,122 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
   rare case.)
 - `--packet-log PATH` mirrors satpulsetool and wires the session's
   `Options.PacketLog`.
-- Browser auto-open by default (deferred to phase 7, its own PR),
-  gated on a local interactive GUI session. The gate is display
-  presence, not receiver locality:
-  sshing into the box with the receiver must not open a browser,
-  while running at a local desktop should, even when the receiver is
-  remote over a later proxy transport. `SSH_CONNECTION` or `SSH_TTY`
-  in the environment is a universal veto; otherwise Linux
-  additionally requires `DISPLAY` or `WAYLAND_DISPLAY`, macOS needs
-  only not-remote (the console user always has the window server),
-  and Windows normally has a desktop. What opens is the loopback URL
-  (`http://127.0.0.1:PORT/`, with the per-run token appended when
-  there is one), orthogonal to the bind: the default all-interfaces
-  bind already includes loopback, so the per-address LAN URLs still
-  print and stay reachable, and auto-open only adds the local tab. A
-  small per-OS launcher does it (`open`/`xdg-open`/`rundll32`, no new
-  external dependency), fired after the listener is bound,
-  non-blocking, with launch failure logged at debug only since the
-  printed URL is the fallback. `--no-open` suppresses it, for a local
-  desktop where the tab is unwanted or when the tool is scripted (the
-  detection has no positive override; the printed URL covers the rare
-  case where it guesses headless but a browser is in fact reachable).
-  This supersedes the earlier "no browser auto-open" decision, which
-  assumed the primary flow was ssh to a headless box; macOS is now
-  the lead desktop platform.
+- Browser auto-open by default (deferred to phase 7, its own PR) on
+  macOS, Windows, Linux and FreeBSD, gated on a local interactive
+  desktop session. The gate is session locality, not receiver
+  locality: sshing into the box with the receiver must not open a
+  browser, while running at a local desktop should, even when the
+  receiver is remote over a later proxy transport. `SSH_CONNECTION`
+  or `SSH_TTY` in the environment vetoes on every platform; Linux
+  and FreeBSD additionally require `DISPLAY` or `WAYLAND_DISPLAY`
+  non-empty (a graphical session), since a text console there has
+  nowhere to open a browser. What opens is the loopback URL
+  (`http://127.0.0.1:PORT/?t=XYZ`): guided mode's all-interfaces
+  bind always includes loopback, so the per-address LAN URLs still
+  print and stay reachable, and auto-open only adds the local tab.
+  On macOS and Windows the launch is an in-process platform API
+  call, not a spawned command -- `LSOpenCFURLRef` (cgo,
+  CoreServices) on macOS, `ShellExecuteW` (x/sys/windows) on Windows
+  -- so the token-bearing URL never appears on a command line
+  satpulsewb creates, and the opened URL carries the same multi-use
+  token as the printed URLs. On Linux and FreeBSD the launcher is
+  `xdg-open`, which execs the browser with the URL on its argv, so
+  the opened URL instead carries a single-use token that stops
+  working after its first use (see Security model); the printed
+  URLs are unaffected and always carry the multi-use token. The
+  launch fires after the listener is bound, non-blocking, with
+  launch failure logged since the printed URL is the fallback.
+  `--listen` never opens a browser: it is the expert mode -- the
+  user said exactly where to bind (typically an SSH tunnel target)
+  and the tool does nothing it was not asked to -- which also
+  removes the need for an opt-out flag (an earlier revision had
+  `--no-open`; with `--listen` already never opening, it had no
+  remaining users and was dropped). This supersedes the earlier "no
+  browser auto-open" decision, which assumed the primary flow was
+  ssh to a headless box; macOS is now the lead desktop platform.
 - `--socket` and `--tcp` are deferred to phase 10 (see Transports
   and the Delivery section).
+
+### Security model
+
+The asset is control of the receiver for the duration of a run.
+satpulsewb has two modes, each making a statable trust decision:
+guided mode (no `-L`) binds all interfaces and mints a per-run
+token; expert mode (`-L`) binds exactly what the user said and
+disables the token unless `-T` restores it.
+
+What the token protects against: anyone who can reach the port but
+cannot observe its traffic. That includes the LAN, and any interface
+the user did not intend to expose -- an internet-facing address is
+swept up by the all-interfaces bind, and the token is reasonable
+protection there too: 128 bits from crypto/rand, compared in
+constant time, so an off-path attacker (a port scanner, a neighbour
+on the network) is reduced to guessing, which is not a real attack
+at that entropy and needs no rate limiting. The only unauthenticated
+surface is the static SPA (assets are public; the token rides a
+query parameter on the API and event stream because EventSource
+cannot set headers), so an exposed port reveals that satpulsewb is
+running but yields no control and no receiver data.
+
+What is deliberately not protected against:
+
+- An on-path observer. There is no TLS, so anyone who can sniff the
+  HTTP traffic reads the token from any request. Self-signed TLS
+  would trade this for a certificate warning on every run, training
+  users to click through warnings, and real certificates do not
+  exist for LAN addresses. The documented answer for an untrusted
+  network is `-L localhost` plus an SSH tunnel: the traffic never
+  leaves loopback and SSH provides the transport security.
+- Anyone shown a printed URL. It carries the token, and the man page
+  says so: anyone with a printed URL controls the receiver until
+  satpulsewb exits.
+- A compromised browser or user account on the machine running the
+  browser. The token sits in browser history and process memory;
+  same-user compromise is out of scope.
+- In expert mode without `-T`, anyone who can reach the bind
+  address. That is the mode's contract (the typical bind is an SSH
+  tunnel target); a tokenless bind on a non-loopback address prints
+  a warning.
+
+Two guards hold even with the token disabled. State-changing
+requests must declare `Content-Type: application/json`, which forces
+a CORS preflight the browser blocks, so a cross-site page cannot
+issue "simple" form POSTs (the CSRF guard, already implemented).
+And when the token is off, requests whose Host header is not a
+loopback name are rejected -- host part only, ignoring the port so
+tunnels work -- which closes DNS rebinding: a rebound page is
+same-origin, so the content-type check alone does not stop it, and
+without a token nothing else would.
+
+The auto-open launch path (see Command line) is this model applied.
+What a command line exposes is platform-specific: Linux makes
+another user's argv world-readable via /proc/PID/cmdline; FreeBSD's
+kern.proc.args sysctl does the same by default
+(security.bsd.see_other_uids=1); macOS ships a setuid-root ps that
+shows any user's argv regardless of the kernel's own cross-user
+restriction (verified 2026-07-15); Windows denies a standard user
+the rights needed to read another user's command line at all, with
+no setuid-equivalent bypass. The launcher follows the platform: on
+macOS it calls LaunchServices in-process (`LSOpenCFURLRef`), which
+hands the URL to the browser out-of-band (verified end-to-end: no
+process ever shows it); on Windows it calls `ShellExecuteW`
+in-process, where the URL does land on the browser's own command
+line but process DACLs deny other non-administrator users the
+access needed to read it (documented behaviour; a spot-check that
+WMI and Task Manager do not reflect it cross-user is still
+outstanding). On Linux and FreeBSD the leak is structural rather
+than a launcher choice -- every URL-dispatch route (xdg-open, gio,
+the desktop portal) bottoms out in the handler's .desktop `Exec=%u`
+contract, executing the browser with the URL as an argument -- so
+the launcher is `xdg-open` and the argv-visible value is made
+worthless instead of secret: the opened URL carries a token
+registered as single-use. Its first use redirects (302) to the
+multi-use token URL and burns the value; any later use gets an
+error page and a Warn log, so theft of the argv-exposed value is
+detectable, not merely raced. The single-use token is never accepted
+by the API or SSE auth middleware, which compares only the
+multi-use token. Printed URLs always carry the multi-use token; only
+the Linux/FreeBSD auto-open URL ever carries the single-use one.
 
 ### HTTP API
 
@@ -787,10 +878,18 @@ stack.
 
 ### Phase 7: browser auto-open (one PR)
 
-Browser auto-open as specified under Command line above: the
-local-GUI-session gate, the per-OS launcher, `--no-open`, and the
-smoke-test checks for the gating (environment manipulation in the
-phase-5 scenarios) ride along.
+Browser auto-open as specified under Command line and Security model
+above: the local-desktop-session gate (SSH veto everywhere; DISPLAY
+or WAYLAND_DISPLAY additionally required on Linux and FreeBSD), the
+in-process launchers on macOS and Windows (`LSOpenCFURLRef` via cgo,
+`ShellExecuteW` via x/sys/windows), and `xdg-open` plus the
+single-use launch token on Linux and FreeBSD. Because an in-process
+launch cannot be suppressed externally -- there is no spawned
+command for PATH tricks to neuter -- wb-default instead sets
+`SSH_CONNECTION` and asserts the veto path; the platform gate and
+the single-use token's redirect/burn/error-page behaviour are
+unit-tested. The loopback Host check from the Security model rides
+this PR too, since this is the phase that sharpened the model.
 
 ### Phase 9: simulator config tests (one PR)
 
