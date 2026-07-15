@@ -360,8 +360,12 @@ export interface WorkbenchFixedToken {
   restart(): Promise<{ baseURL: string; token: string }>;
 }
 
-// WorkbenchCaster is the workbench replay plus a running fake NTRIP caster the
-// corrections tests point their source form at.
+// WorkbenchCaster is satpulsewb over the ubxsim pty plus a running fake NTRIP
+// caster the corrections tests point their source form at. The pty (not the
+// read-only FIFO) matters: a correction session writes the RTCM back to the
+// port, a write the FIFO fails fatally, ending the session at the first
+// packet; the simulator consumes the writes, so a session stays connected --
+// the same reason the smoketest's wb-corrections scenario runs on a pty.
 export interface WorkbenchCaster {
   baseURL: string;
   token: string;
@@ -615,8 +619,11 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           session.deadIfExited(caster);
           return portAccepts(casterPort);
         });
-        const info = await launchWbFifo(session, []);
-        startReplay(session, info.fifoPath);
+        const link = await launchUbxsim(session);
+        const proc = session.spawnLogged('satpulsewb', satpulsewb, ['-d', link, '-s', UBXSIM_SPEED], {
+          SATPULSE_GPSMSG_PATH: GPSMSG_PATH,
+        });
+        const info = await waitWbUrl(session, proc);
         await use({
           baseURL: info.baseURL,
           token: info.token,
