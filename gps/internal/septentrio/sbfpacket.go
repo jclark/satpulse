@@ -77,6 +77,9 @@ func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
 	return binary.LittleEndian.AppendUint16(nil, crc)
 }
 
+// RescanOnBadChecksum does not rescan, which is what guide 4.1.12 step 5
+// prescribes: its "go back to point 1" resumes the "$@" search from the current
+// stream position, and by then the candidate's Length bytes have been consumed.
 func (f packetFormat) RescanOnBadChecksum(_ bool, _ []byte) bool {
 	return false
 }

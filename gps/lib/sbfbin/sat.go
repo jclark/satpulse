@@ -136,6 +136,19 @@ func (s *SatVisibility) Chunks() func(yield func(chunk any) bool) {
 	}
 }
 
+// encodedRev returns the revision implied by the sub-block length Chunks
+// writes: revision 1 appended SVIDFull to the SatInfo sub-block. A block with
+// no sub-blocks carries nothing revision-specific.
+func (s *SatVisibility) encodedRev() (uint8, bool) {
+	if len(s.SatInfo) == 0 {
+		return 0, false
+	}
+	if int(s.SBLength) >= binary.Size(satInfoBase{})+binary.Size(satInfoRev1{}) {
+		return 1, true
+	}
+	return 0, true
+}
+
 type channelStatusHead struct {
 	SB1Length uint8
 	SB2Length uint8

@@ -14,7 +14,7 @@ type GPSUtc struct {
 	Reserved  uint8
 	A_1       float32
 	A_0       float64
-	T_ot      uint32
+	T_ot      uint32 `json:"t_ot"`
 	WN_t      uint8
 	DEL_t_LS  int8
 	WN_LSF    uint8
@@ -31,7 +31,7 @@ type GALUtc struct {
 	Source    UtcSource
 	A_1       float32
 	A_0       float64
-	T_ot      uint32
+	T_ot      uint32 `json:"t_ot"`
 	WN_ot     uint8
 	DEL_t_LS  int8
 	WN_LSF    uint8
