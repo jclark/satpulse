@@ -124,7 +124,7 @@ func (f packetFormat) ComputeAltChecksum(pkt []byte) []byte {
 	// This won't get called often, so no need to be efficient.
 	flags := nmeamsg.CheckSyntax(string(pkt))
 	// If it looks like an NMEA packet with 5-char address and GNSS talker ID, then do not allow alternate checksum.
-	if flags&nmeamsg.SentenceAddressLength5 != 0 && flags&nmeamsg.SentenceTalkerIsGNSS != 0 {
+	if flags&nmeamsg.SentenceApprovedAddressFormat != 0 && flags&nmeamsg.SentenceTalkerIsGNSS != 0 {
 		return nil
 	}
 	// Since manufacturers using NMEA-like packets are purposefully ignoring the NMEA proprietary extension mechanism,

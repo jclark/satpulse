@@ -33,7 +33,7 @@ func (*ReceiverTime) BlockNumber() uint16 { return ReceiverTimeID }
 // XPPSOffset is the SBF xPPSOffset block.
 type XPPSOffset struct {
 	SyncAge   uint8
-	Timescale PPSTimescale
+	TimeScale PPSTimescale
 	Offset    float32
 }
 

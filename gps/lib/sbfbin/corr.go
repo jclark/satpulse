@@ -47,12 +47,7 @@ func (d *DiffCorrIn) Chunks() func(yield func(chunk any) bool) {
 			return
 		}
 		n := len(d.Correction)
-		payloadLen := d.payloadLen()
-		if payloadLen > 0 {
-			if payloadLen < 2 {
-				yield(chunkError("payload shorter than DiffCorrIn fixed fields"))
-				return
-			}
+		if payloadLen := d.payloadLen(); payloadLen > 0 {
 			n = payloadLen - 2
 		}
 		if len(d.Correction) != n {
