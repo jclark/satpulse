@@ -24,6 +24,7 @@ func (f packetFormat) IsBinary() bool {
 const (
 	stateSync gpsprot.ScanState = iota + gpsprot.ScanStateSync
 	stateHadDollar
+	stateHadFirstAlnum
 	stateNormal
 	stateHadStar
 	stateHadChecksum1
@@ -37,12 +38,13 @@ const maxSentenceLength = nmeamsg.SentenceMaxLength
 // Next implements the gpsprot.PacketFormat interface for NMEA-like packets.
 // Constraints for acceptable NMEA-like packet (not necessarily completely NMEA compliant)
 //  1. First character is `$` and the packet does not contain any other `$` characters.
-//  2. Terminated with a line terminator (CR/LF or LF)
-//  3. All character before the line terminator must be printable ASCII (0x20-0x7E).
-//  4. Total length of packet does not exceed maxSentenceLength characters (including the line terminator).
-//  5. Immediately before the line terminator there is a `*` and two uppercase hex digits;
+//  2. The first two characters after `$` are ASCII alphanumeric characters.
+//  3. Terminated with CRLF; LF alone is also accepted.
+//  4. All characters before the line terminator must be printable ASCII (0x20-0x7E).
+//  5. Total length including CRLF does not exceed maxSentenceLength characters;
+//     a packet ending in LF alone can be at most maxSentenceLength-1 characters.
+//  6. Immediately before the line terminator there is a `*` and two uppercase hex digits;
 //     this `*` is the only one in the packet.
-//  6. The address field is non-empty, where the address is the substring between `$` and the first comma or `*`.
 func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, packetLen int) gpsprot.ScanState {
 	b := buf[nextScanIndex]
 
@@ -51,11 +53,10 @@ func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, p
 		if b == '$' {
 			return stateHadDollar
 		}
-	case stateHadDollar:
-		if b == '*' || b == ',' {
-			break
+	case stateHadDollar, stateHadFirstAlnum:
+		if ascii.IsAlnum(b) {
+			return state + 1
 		}
-		fallthrough
 	case stateNormal:
 		switch b {
 		case '*':
