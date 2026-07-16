@@ -43,6 +43,14 @@ func TestOtherBlockNumbers(t *testing.T) {
 		{GEOServiceLevelID, "GEOServiceLevel"},
 		{GEOClockEphCovMatrixID, "GEOClockEphCovMatrix"},
 		{GEOIGPMaskID, "GEOIGPMask"},
+		{GPSRawCAID, "GPSRawCA"},
+		{GALRawINAVID, "GALRawINAV"},
+		{QZSRawL6DID, "QZSRawL6D"},
+		{GPSAlmID, "GPSAlm"},
+		{AttEulerID, "AttEuler"},
+		{BaseVectorGeodID, "BaseVectorGeod"},
+		{LBandTrackerStatusID, "LBandTrackerStatus"},
+		{RxMessageID, "RxMessage"},
 	}
 	want := map[string]int{
 		"GPSNav":               5891,
@@ -58,6 +66,14 @@ func TestOtherBlockNumbers(t *testing.T) {
 		"GEOServiceLevel":      5917,
 		"GEOClockEphCovMatrix": 5934,
 		"GEOIGPMask":           5931,
+		"GPSRawCA":             4017,
+		"GALRawINAV":           4023,
+		"QZSRawL6D":            4270,
+		"GPSAlm":               5892,
+		"AttEuler":             5938,
+		"BaseVectorGeod":       4028,
+		"LBandTrackerStatus":   4201,
+		"RxMessage":            4103,
 	}
 	seen := make(map[int]string)
 	for _, tt := range tests {
@@ -116,6 +132,102 @@ func TestMeasExtraManyChannels(t *testing.T) {
 	}
 	if !reflect.DeepEqual(gotChans, chans) {
 		t.Fatal("channel data changed across round trip")
+	}
+}
+
+// TestMeasExtraTrailerNotCountedAsChannel checks that fields a later revision
+// appends after the channel array are not mistaken for a further channel: the
+// count comes from the wire N, not from dividing the payload by SBLength.
+func TestMeasExtraTrailerNotCountedAsChannel(t *testing.T) {
+	chans := make([]MeasExtraChannelSub, 5)
+	for i := range chans {
+		chans[i].measExtraBase = measExtraBase{RxChannel: uint8(i + 1), Type: 3}
+	}
+	pkt, err := Serialize(&Block{Rev: 3, TimeStamp: TimeStamp{TOW: 1, WNc: 2}, Params: &MeasExtra{
+		measExtraHead: measExtraHead{DopplerVarFactor: 1.5},
+		Channels:      chans,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := append([]byte(nil), pkt[HeaderLen:]...)
+	body = append(body, make([]byte, binary.Size(MeasExtraChannelSub{}))...)
+	pkt, err = PackMsg(MeasExtraID|4<<13, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseMsg(string(pkt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(got.Params.(*MeasExtra).Channels); n != len(chans) {
+		t.Fatalf("channels = %d, want %d: trailer counted as a channel", n, len(chans))
+	}
+}
+
+// TestEncodedRevMatchesLayout checks that a block built from scratch, with Rev
+// left at zero, is stamped with the revision its sub-block layout carries
+// rather than claiming rev 0, and that Rev still stands when the block has no
+// sub-blocks to imply one.
+func TestEncodedRevMatchesLayout(t *testing.T) {
+	tests := []struct {
+		name string
+		rev  uint8
+		p    Params
+		want uint8
+	}{
+		{"MeasExtra", 0, &MeasExtra{Channels: []MeasExtraChannelSub{{}}}, 3},
+		{"SatVisibility", 0, &SatVisibility{SatInfo: []SatInfo{{}}}, 1},
+		{"MeasExtra no channels keeps Rev", 1, &MeasExtra{}, 1},
+		{"SatVisibility no sub-blocks keeps Rev", 1, &SatVisibility{}, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pkt, err := Serialize(&Block{Rev: tt.rev, TimeStamp: TimeStamp{TOW: 1, WNc: 2}, Params: tt.p})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, rev := MsgID(Endian.Uint16(pkt[4:6])).Unpack(); rev != tt.want {
+				t.Fatalf("stamped rev %d, want %d", rev, tt.want)
+			}
+		})
+	}
+}
+
+// TestMeasExtraOlderRevRoundTrip checks that a block whose SBLength carries only
+// the revision-1 field serializes back at revision 1, not at the latest
+// revision this package knows: the ID follows the layout actually written.
+func TestMeasExtraOlderRevRoundTrip(t *testing.T) {
+	sbLen := binary.Size(measExtraBase{}) + binary.Size(measExtraRev1{})
+	buf := new(bytes.Buffer)
+	if err := binary.Write(buf, Endian, TimeStamp{TOW: 1, WNc: 2}); err != nil {
+		t.Fatal(err)
+	}
+	buf.WriteByte(1)
+	buf.WriteByte(uint8(sbLen))
+	if err := binary.Write(buf, Endian, float32(1.5)); err != nil {
+		t.Fatal(err)
+	}
+	if err := binary.Write(buf, Endian, measExtraBase{RxChannel: 9, Type: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := binary.Write(buf, Endian, measExtraRev1{CarMPCorr: -2}); err != nil {
+		t.Fatal(err)
+	}
+	pkt, err := PackMsg(MeasExtraID|1<<13, buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseMsg(string(pkt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := Serialize(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(out, pkt) {
+		t.Fatalf("round trip changed the packet:\n in=%x\nout=%x", pkt, out)
 	}
 }
 
@@ -470,7 +582,7 @@ func TestRoundTripM2Blocks(t *testing.T) {
 		},
 		AGCState: []AGCState{{FrontEndID: 1, Gain: -2, SampleVar: 100, BlankingStat: 3}},
 	}})
-	testBlock(t, &Block{TimeStamp: ts, Params: &SatVisibility{
+	testBlock(t, &Block{Rev: 1, TimeStamp: ts, Params: &SatVisibility{
 		SatInfo: []SatInfo{{
 			satInfoBase: satInfoBase{
 				SVID: 10, FreqNr: 8, Azimuth: 12345, Elevation: 6789,
@@ -492,7 +604,7 @@ func TestRoundTripM2Blocks(t *testing.T) {
 		UTCYear: 26, UTCMonth: 7, UTCDay: 3, UTCHour: 12,
 		UTCMin: 34, UTCSec: 56, DeltaLS: 18, SyncLevel: 7,
 	}})
-	testBlock(t, &Block{TimeStamp: ts, Params: &XPPSOffset{SyncAge: 1, Timescale: PPSTimescaleGPS, Offset: -3.5}})
+	testBlock(t, &Block{TimeStamp: ts, Params: &XPPSOffset{SyncAge: 1, TimeScale: PPSTimescaleGPS, Offset: -3.5}})
 	setup := &ReceiverSetup{}
 	setup.setDNUDefaults()
 	copy(setup.MarkerName[:], "marker")

@@ -337,7 +337,7 @@ func (*MeasExtra) BlockNumber() uint16 { return MeasExtraID }
 func (m *MeasExtra) Chunks() func(yield func(chunk any) bool) {
 	return func(yield func(chunk any) bool) {
 		// The wire N is len(Channels) modulo 256, so this conversion must wrap
-		// instead of using setCount; payload length recovers the true count on read.
+		// instead of using setCount.
 		n := uint8(len(m.Channels))
 		if len(m.Channels) > 0 {
 			if m.SBLength == 0 {
@@ -348,10 +348,13 @@ func (m *MeasExtra) Chunks() func(yield func(chunk any) bool) {
 			return
 		}
 		count := len(m.Channels)
-		payloadLen := m.payloadLen()
-		headLen := binary.Size(measExtraHead{}) + 1
-		if m.SBLength > 0 && payloadLen > headLen {
-			count = (payloadLen - headLen) / int(m.SBLength)
+		if payloadLen := m.payloadLen(); payloadLen > 0 && m.SBLength > 0 {
+			// Recover the true count from the modulo-256 wire N with the guide's
+			// own formula, NrSB = ((Length/SBLength-N)/256)*256+N. Dividing the
+			// payload instead would count a future revision's trailing fields as
+			// a further channel.
+			length := payloadLen + HeaderLen + binary.Size(TimeStamp{})
+			count = ((length/int(m.SBLength)-int(n))/256)*256 + int(n)
 		}
 		if len(m.Channels) != count {
 			m.Channels = make([]MeasExtraChannelSub, count)
@@ -385,6 +388,29 @@ func (m *MeasExtra) Chunks() func(yield func(chunk any) bool) {
 			}
 		}
 	}
+}
+
+// encodedRev returns the revision implied by the sub-block length Chunks
+// writes: revisions 1 to 3 each appended one field to the channel sub-block. A
+// block with no channels carries nothing revision-specific.
+func (m *MeasExtra) encodedRev() (uint8, bool) {
+	if len(m.Channels) == 0 {
+		return 0, false
+	}
+	sbLen := int(m.SBLength)
+	used := binary.Size(measExtraBase{})
+	if sbLen < used+binary.Size(measExtraRev1{}) {
+		return 0, true
+	}
+	used += binary.Size(measExtraRev1{})
+	if sbLen < used+binary.Size(measExtraRev2{}) {
+		return 1, true
+	}
+	used += binary.Size(measExtraRev2{})
+	if sbLen < used+binary.Size(measExtraRev3{}) {
+		return 2, true
+	}
+	return 3, true
 }
 
 // SignalNumber returns the observed signal number for a MeasExtra channel
