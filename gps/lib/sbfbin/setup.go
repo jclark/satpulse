@@ -33,10 +33,10 @@ type receiverSetupRev3 struct {
 	Latitude    float64
 	Longitude   float64
 	Height      float32
+	StationCode latin1z.StringZ10
 }
 
 type receiverSetupRev4 struct {
-	StationCode latin1z.StringZ10
 	MonumentIdx uint8
 	ReceiverIdx uint8
 	CountryCode latin1z.StringZ3

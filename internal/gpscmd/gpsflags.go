@@ -47,6 +47,7 @@ type flagVars struct {
 	configOpts     gpsprot.ConfigOptions
 	configSupport  configSupportReq
 	configGet      gpsprot.PropIDs
+	targetJSON     string
 	msgFilePath    string
 	msgTags        []string
 	msgSave        bool
@@ -229,6 +230,8 @@ func newFlagParser(cmdName string) *flagParser {
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
 	flags.StringVarP(&vars.configFile, "config-file", "f", "", "`path` to satpulse TOML configuration file")
+	flags.StringVar(&vars.targetJSON, "target-json", "", "JSON configuration target or - to read from stdin")
+	flags.MarkHidden("target-json")
 	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
 	flags.StringVarP(&vars.msgFilePath, "msg-file", "m", "", "`path` to TOML file containing message definitions")
 	flags.StringVarP(&p.msgTags, "tag", "t", "", "comma-separated `list` of tags to send (in order)")
@@ -272,6 +275,22 @@ func newFlagParser(cmdName string) *flagParser {
 
 func (p *flagParser) resolve(cmdName string, usage func(string) string) (*flagVars, func(string) string, error) {
 	vars := &p.vars
+	if vars.targetJSON != "" {
+		allowed := map[string]bool{
+			"target-json": true, "serial-device": true, "device-speed": true, "socket": true, "config-file": true,
+			"packet-log": true, "test-log": true, "capture": true, "vendor": true, "json": true,
+			"show-receiver": true, "show-config": true, "show-port": true,
+		}
+		var bad string
+		p.flags.Visit(func(f *pflag.Flag) {
+			if bad == "" && !allowed[f.Name] {
+				bad = f.Name
+			}
+		})
+		if bad != "" {
+			return nil, nil, fmt.Errorf("--target-json cannot be combined with --%s", bad)
+		}
+	}
 	if vars.jsonOut && vars.msgFilePath != "" {
 		return nil, nil, fmt.Errorf("--json cannot be combined with --msg-file")
 	}
@@ -285,6 +304,12 @@ func (p *flagParser) resolve(cmdName string, usage func(string) string) (*flagVa
 	configChanged, u, err := p.resolveConn(cmdName, usage)
 	if err != nil {
 		return nil, u, err
+	}
+	if vars.targetJSON != "" {
+		// JSON targets bypass flag-layer configuration policy. Display
+		// requests retain their capability requirements.
+		p.resolveShow()
+		return vars, nil, nil
 	}
 	changed, err := p.resolveSignals(cmdName)
 	if err != nil {

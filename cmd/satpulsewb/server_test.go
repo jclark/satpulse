@@ -29,7 +29,13 @@ func newTestServerFull(token string, vendor gpsreg.Vendor, msgDirs []string) *se
 	hub := newSSEHub()
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	sess := session.New(lg, hub, session.Options{})
-	return newServer(context.Background(), sess, hub, token, vendor, msgDirs)
+	return newServer(context.Background(), sess, hub, lg, token, vendor, msgDirs)
+}
+
+func newTestRequest(method, target string, body io.Reader) *http.Request {
+	r := httptest.NewRequest(method, target, body)
+	r.Host = "localhost"
+	return r
 }
 
 func TestAuth(t *testing.T) {
@@ -37,12 +43,18 @@ func TestAuth(t *testing.T) {
 		name       string
 		token      string
 		url        string
+		host       string
 		expectCode int
 	}{
 		{name: "no token", token: "secret", url: "/api/state", expectCode: http.StatusUnauthorized},
 		{name: "wrong token", token: "secret", url: "/api/state?t=wrong", expectCode: http.StatusUnauthorized},
 		{name: "good token", token: "secret", url: "/api/state?t=secret", expectCode: http.StatusOK},
-		{name: "auth disabled", token: "", url: "/api/state", expectCode: http.StatusOK},
+		{name: "auth disabled localhost", url: "/api/state", host: "localhost:2050", expectCode: http.StatusOK},
+		{name: "auth disabled IPv4 loopback", url: "/api/state", host: "127.0.0.1:2050", expectCode: http.StatusOK},
+		{name: "auth disabled IPv6 loopback", url: "/api/state", host: "[::1]:2050", expectCode: http.StatusOK},
+		{name: "auth disabled DNS rebind", url: "/api/state", host: "attacker.example:2050", expectCode: http.StatusForbidden},
+		{name: "auth disabled static DNS rebind", url: "/", host: "attacker.example:2050", expectCode: http.StatusForbidden},
+		{name: "token permits non-loopback Host", token: "secret", url: "/api/state?t=secret", host: "satpulse.local:2050", expectCode: http.StatusOK},
 		{name: "static needs no token", token: "secret", url: "/", expectCode: http.StatusOK},
 		{name: "sse needs token", token: "secret", url: "/sse", expectCode: http.StatusUnauthorized},
 	}
@@ -50,7 +62,11 @@ func TestAuth(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newTestServer(tc.token)
 			w := httptest.NewRecorder()
-			s.mux.ServeHTTP(w, httptest.NewRequest("GET", tc.url, nil))
+			r := newTestRequest("GET", tc.url, nil)
+			if tc.host != "" {
+				r.Host = tc.host
+			}
+			s.mux.ServeHTTP(w, r)
 			if w.Code != tc.expectCode {
 				t.Errorf("got %d want %d", w.Code, tc.expectCode)
 			}
@@ -72,7 +88,7 @@ func (s *server) post(t *testing.T, path, body string) *httptest.ResponseRecorde
 
 func (s *server) rawPost(path, body string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", path, strings.NewReader(body))
+	r := newTestRequest("POST", path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	s.mux.ServeHTTP(w, r)
 	return w
@@ -103,7 +119,7 @@ func TestSeatClaimGuards(t *testing.T) {
 		t.Errorf("claim without token: got %d want %d", w.Code, http.StatusUnauthorized)
 	}
 	w = httptest.NewRecorder()
-	s.mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/seat?t=secret", strings.NewReader(`{}`)))
+	s.mux.ServeHTTP(w, newTestRequest("POST", "/api/seat?t=secret", strings.NewReader(`{}`)))
 	if w.Code != http.StatusUnsupportedMediaType {
 		t.Errorf("claim without JSON: got %d want %d", w.Code, http.StatusUnsupportedMediaType)
 	}
@@ -129,7 +145,7 @@ func TestRequireJSON(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			r := httptest.NewRequest("POST", "/api/connect?seat="+seat, strings.NewReader(`{"device":""}`))
+			r := newTestRequest("POST", "/api/connect?seat="+seat, strings.NewReader(`{"device":""}`))
 			if tc.contentType != "" {
 				r.Header.Set("Content-Type", tc.contentType)
 			}
@@ -166,6 +182,10 @@ func TestEndpoints(t *testing.T) {
 			expectCode: 409},
 		{name: "bad json", method: "POST", url: "/api/signals", body: `{`,
 			expectCode: 400},
+		{name: "unknown json field", method: "POST", url: "/api/signals", body: `{"gnss":["GPS"],"unknown":true}`,
+			expectCode: 400},
+		{name: "multiple json values", method: "POST", url: "/api/signals", body: `{"gnss":["GPS"]} {}`,
+			expectCode: 400},
 		{name: "signals", method: "POST", url: "/api/signals", body: `{"gnss":["GPS"]}`,
 			expectCode: 200},
 		{name: "decode nmea", method: "POST", url: "/api/decode-packet",
@@ -199,7 +219,7 @@ func TestEndpoints(t *testing.T) {
 			var w *httptest.ResponseRecorder
 			if tc.method == "GET" {
 				w = httptest.NewRecorder()
-				s.mux.ServeHTTP(w, httptest.NewRequest("GET", tc.url, nil))
+				s.mux.ServeHTTP(w, newTestRequest("GET", tc.url, nil))
 			} else {
 				w = s.post(t, tc.url, tc.body)
 			}
@@ -216,6 +236,57 @@ func TestEndpoints(t *testing.T) {
 	}
 }
 
+// TestSingleUseLaunch covers the single-use browser-launch token: a fresh
+// one redirects to the real-token URL and burns; a second use and an
+// expired one get the human error page, not a redirect; it never
+// authenticates the API; and GET / with the real token or none still
+// serves the SPA.
+func TestSingleUseLaunch(t *testing.T) {
+	const tok = "multiuse"
+
+	s := newTestServer(tok)
+	launch := s.newSingleUseToken()
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/?t="+launch, nil))
+	if w.Code != http.StatusFound {
+		t.Fatalf("first use: got %d want %d", w.Code, http.StatusFound)
+	}
+	if loc := w.Header().Get("Location"); loc != "/?t="+tok {
+		t.Errorf("redirect Location %q want %q", loc, "/?t="+tok)
+	}
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/?t="+launch, nil))
+	if w.Code != http.StatusGone {
+		t.Errorf("second use: got %d want %d (want error page, not redirect)", w.Code, http.StatusGone)
+	}
+
+	s = newTestServer(tok)
+	launch = s.newSingleUseToken()
+	s.singleMu.Lock()
+	s.singleExp = time.Now().Add(-time.Second)
+	s.singleMu.Unlock()
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/?t="+launch, nil))
+	if w.Code != http.StatusGone {
+		t.Errorf("expired: got %d want %d", w.Code, http.StatusGone)
+	}
+
+	s = newTestServer(tok)
+	launch = s.newSingleUseToken()
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/api/state?t="+launch, nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("single-use token on API: got %d want %d", w.Code, http.StatusUnauthorized)
+	}
+	for _, url := range []string{"/", "/?t=" + tok} {
+		w = httptest.NewRecorder()
+		s.mux.ServeHTTP(w, newTestRequest("GET", url, nil))
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %q: got %d want %d", url, w.Code, http.StatusOK)
+		}
+	}
+}
+
 // TestSSEPriming checks that a new SSE subscriber is primed with the
 // latest sticky events before receiving live ones.
 func TestSSEPriming(t *testing.T) {
@@ -226,7 +297,7 @@ func TestSSEPriming(t *testing.T) {
 	s.hub.Emit(session.Event{Name: session.EventState, Data: session.StateConnected})
 	s.hub.Emit(session.Event{Name: session.EventSpeed, Data: 9600})
 	ctx, cancel := context.WithCancel(context.Background())
-	r := httptest.NewRequest("GET", "/sse", nil).WithContext(ctx)
+	r := newTestRequest("GET", "/sse", nil).WithContext(ctx)
 	w := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -289,7 +360,7 @@ func TestMsgFileCatalog(t *testing.T) {
 	s.claimTestSeat(t, "") // select is writer-gated; s.post carries the seat
 
 	w := httptest.NewRecorder()
-	s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/msgfile/catalog", nil))
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/api/msgfile/catalog", nil))
 	if w.Code != 200 {
 		t.Fatalf("catalog status %d", w.Code)
 	}
@@ -347,7 +418,7 @@ func TestSeatLifecycle(t *testing.T) {
 	w := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
-		s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/sse", nil).WithContext(ctx))
+		s.mux.ServeHTTP(w, newTestRequest("GET", "/sse", nil).WithContext(ctx))
 		close(done)
 	}()
 	waitForClients(t, s.hub, 1)
@@ -407,7 +478,7 @@ func grabWriterSeat(t *testing.T, s *server) string {
 	w := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
-		s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/sse", nil).WithContext(ctx))
+		s.mux.ServeHTTP(w, newTestRequest("GET", "/sse", nil).WithContext(ctx))
 		close(done)
 	}()
 	cancel()

@@ -191,58 +191,58 @@ func revisionChunks(payloadLen int, name string, fixed any, trailers ...any) fun
 }
 
 func twoLevelChunks[Outer any, Inner any](
-	n *uint8,
 	sb1Len *uint8,
 	sb2Len *uint8,
 	head any,
 	outer *[]Outer,
 	inner *[][]Inner,
-	getN2 func(*Outer) uint8,
-	setN2 func(*Outer, uint8),
+	outerChunks func(*Outer, *uint8, func(any) bool) bool,
 ) func(yield func(chunk any) bool) {
 	return func(yield func(chunk any) bool) {
 		var outerZero Outer
 		var innerZero Inner
-		outerSize := binary.Size(outerZero)
+		outerSize := binary.Size(outerZero) + 1
 		innerSize := binary.Size(innerZero)
-		if err := setCount(n, len(*outer), "outer sub-block"); err != nil {
+		if len(*outer) != len(*inner) {
+			panic("two-level outer and inner slice lengths differ")
+		}
+		var n uint8
+		if err := setCount(&n, len(*outer), "outer sub-block"); err != nil {
 			yield(err)
 			return
 		}
-		if *n > 0 && *sb1Len == 0 {
+		if n > 0 && *sb1Len == 0 {
 			*sb1Len = uint8(outerSize)
 		}
-		if *n > 0 && *sb2Len == 0 {
+		if n > 0 && *sb2Len == 0 {
 			*sb2Len = uint8(innerSize)
 		}
-		if !yield(head) {
+		if !yield(&n) || !yield(head) {
 			return
 		}
-		if len(*outer) != int(*n) {
-			*outer = make([]Outer, int(*n))
+		if len(*outer) != int(n) {
+			*outer = make([]Outer, int(n))
 		}
-		if len(*inner) != int(*n) {
-			*inner = make([][]Inner, int(*n))
+		if len(*inner) != int(n) {
+			*inner = make([][]Inner, int(n))
 		}
 		sb1Pad := int(*sb1Len) - outerSize
 		sb2Pad := int(*sb2Len) - innerSize
 		for i := range *outer {
 			o := &(*outer)[i]
-			if len((*inner)[i]) > 255 {
-				yield(chunkError("inner sub-block count exceeds 255"))
+			var n2 uint8
+			if err := setCount(&n2, len((*inner)[i]), "inner sub-block"); err != nil {
+				yield(err)
 				return
 			}
-			if len((*inner)[i]) > 0 {
-				setN2(o, uint8(len((*inner)[i])))
-			}
-			if !yield(o) {
+			if !outerChunks(o, &n2, yield) {
 				return
 			}
 			if !yield(paddingChunk(sb1Pad)) {
 				return
 			}
-			if len((*inner)[i]) != int(getN2(o)) {
-				(*inner)[i] = make([]Inner, int(getN2(o)))
+			if len((*inner)[i]) != int(n2) {
+				(*inner)[i] = make([]Inner, int(n2))
 			}
 			for j := range (*inner)[i] {
 				if !yield(&(*inner)[i][j]) {

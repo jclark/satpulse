@@ -108,24 +108,29 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 
 	// Constraint 2: Terminated with line terminator (CR/LF or LF)
 	var lineTerminatorIndex int
+	var endsWithCRLF bool
 	if strings.HasSuffix(data, "\r\n") {
 		lineTerminatorIndex = len(data) - 2
+		endsWithCRLF = true
 	} else if strings.HasSuffix(data, "\n") {
 		lineTerminatorIndex = len(data) - 1
 	} else {
 		return 0
 	}
 
-	// Constraint 4: Total length ≤ SentenceMaxLength characters (including line terminator)
-	if len(data) > SentenceMaxLength {
+	// Constraint 4: Total length including a canonical CRLF is at most SentenceMaxLength characters
+	if len(data) > SentenceMaxLength || (!endsWithCRLF && len(data) == SentenceMaxLength) {
 		return 0
 	}
 
 	// Constraint 1: First character is `$` and no other `$` characters
-	if len(data) < 1 || data[0] != '$' {
+	if len(data) < 3 || data[0] != '$' {
 		return 0
 	}
 	if strings.Count(data, "$") != 1 {
+		return 0
+	}
+	if !ascii.IsAlnum(data[1]) || !ascii.IsAlnum(data[2]) {
 		return 0
 	}
 
@@ -183,8 +188,9 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 	}
 
 	// ===== PROPRIETARY FORMAT VALIDATION =====
-	// SentenceProprietaryAddressFormat: Address starts with P + 3+ uppercase alphanumeric chars
-	if len(address) >= 4 && address[0] == 'P' && isUpperAlphanumeric(address[1:]) {
+	// SentenceProprietaryAddressFormat: Address starts with P + 3 ASCII letters
+	if len(address) >= 4 && address[0] == 'P' &&
+		ascii.IsLetter(address[1]) && ascii.IsLetter(address[2]) && ascii.IsLetter(address[3]) {
 		flags |= SentenceProprietaryAddressFormat
 	}
 

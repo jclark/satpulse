@@ -1,19 +1,20 @@
 import {h} from 'preact';
-import {SatsMsgSat, SatsMsgSignal} from './msg-flags';
+import {SatsMsgSat, SatsMsgSignal, SatsMsgNames, toggleMsgFlag} from './msg-flags';
+import type {SatsMsgFlag, SatsMsgFlags} from '@satpulse/gps/configtarget';
 import {ConfigSubGroup, labeledControlText} from './ui';
 
 interface Props {
     change: boolean;
-    flags: number;
+    flags: ReadonlySet<SatsMsgFlag>;
     onChangeChange: (v: boolean) => void;
-    onFlagsChange: (f: number) => void;
+    onFlagsChange: (f: ReadonlySet<SatsMsgFlag>) => void;
     disabled?: boolean;
 }
 
 /** Compute the wire value for Apply. Returns undefined when not configured (change=false). */
-export function satsWireValue(change: boolean, flags: number): number | undefined {
+export function satsWireValue(change: boolean, flags: ReadonlySet<SatsMsgFlag>): SatsMsgFlags | undefined {
     if (!change) return undefined;
-    return flags;
+    return SatsMsgNames.filter(name => flags.has(name));
 }
 
 function Checkbox({label, checked, disabled, onChange}: {
@@ -36,8 +37,7 @@ function Checkbox({label, checked, disabled, onChange}: {
 
 export function SatsGroup({change, flags, onChangeChange, onFlagsChange, disabled}: Props) {
     const childDisabled = disabled || !change;
-    const toggle = (flag: number, on: boolean) => onFlagsChange(on ? flags | flag : flags & ~flag);
-    const has = (flag: number) => (flags & flag) !== 0;
+    const toggle = (flag: SatsMsgFlag, on: boolean) => onFlagsChange(toggleMsgFlag(flags, flag, on));
 
     return (
         <ConfigSubGroup title="Satellites">
@@ -45,9 +45,9 @@ export function SatsGroup({change, flags, onChangeChange, onFlagsChange, disable
                 <Checkbox label="Change" checked={change} disabled={!!disabled}
                     onChange={onChangeChange} />
                 <div class="flex flex-wrap gap-x-4 gap-y-1">
-                    <Checkbox label="Satellite positions" checked={has(SatsMsgSat)} disabled={childDisabled}
+                    <Checkbox label="Satellite positions" checked={flags.has(SatsMsgSat)} disabled={childDisabled}
                         onChange={v => toggle(SatsMsgSat, v)} />
-                    <Checkbox label="Signals" checked={has(SatsMsgSignal)} disabled={childDisabled}
+                    <Checkbox label="Signals" checked={flags.has(SatsMsgSignal)} disabled={childDisabled}
                         onChange={v => toggle(SatsMsgSignal, v)} />
                 </div>
             </div>
