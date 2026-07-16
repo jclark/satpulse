@@ -118,7 +118,7 @@ func timeXPPSOffset(b *sbfbin.Block, m *sbfbin.XPPSOffset) *gpsprot.TimeMsg {
 		Ref:         gpsprot.PostPulse,
 		NativeMsgID: "xPPSOffset",
 	}
-	if gnss, ok := ppsTimescaleGNSS(m.Timescale); ok {
+	if gnss, ok := ppsTimescaleGNSS(m.TimeScale); ok {
 		tm.GNSS = gnss
 	}
 	return tm
