@@ -11,7 +11,7 @@ type SentenceSyntaxFlags uint32
 const (
 	SentenceIsPacket SentenceSyntaxFlags = 1 << iota // meets all constraints for packetFormat.Next()
 	// Following flags can be set only when SentenceIsPacket is set
-	SentenceAddressLength5           // Address field is exactly 5 uppercase alphanumeric chars (digits + uppercase letters)
+	SentenceApprovedAddressFormat    // Address field is exactly 5 uppercase alphanumeric chars (digits + uppercase letters) and does not start with 'P'
 	SentenceProprietaryAddressFormat // Address field starts with 'P' and three ASCII letters
 
 	// GNSS Talker ID bits (mutually exclusive)
@@ -60,7 +60,7 @@ const (
 		SentenceTalkerIsGQ | SentenceTalkerIsGN
 
 	// Composite flag for approved NMEA validation (excludes GNSS talker check)
-	SentenceApprovedNMEA SentenceSyntaxFlags = SentenceAddressLength5 | SentenceValidCaretEscaping |
+	SentenceApprovedNMEA SentenceSyntaxFlags = SentenceApprovedAddressFormat | SentenceValidCaretEscaping |
 		SentenceValidDataChars | SentenceEndsWithCRLF
 
 	// Composite flag for proprietary NMEA validation
@@ -84,7 +84,7 @@ func (f SentenceSyntaxFlags) IsValidProprietaryNMEA() bool {
 // This does not check whether the talker ID and format are registered with NMEA.
 // It does check that the address does not start with 'P'.
 func (f SentenceSyntaxFlags) IsValidApprovedNMEA() bool {
-	return f&(SentenceApprovedNMEA|SentenceProprietaryAddressFormat) == SentenceApprovedNMEA
+	return f&SentenceApprovedNMEA == SentenceApprovedNMEA
 }
 
 // CheckSyntax analyzes an NMEA-like packet and returns its syntactic properties
@@ -131,8 +131,8 @@ func CheckSyntax(data string) SentenceSyntaxFlags {
 				break
 			}
 			if i == 5 {
-				if !ascii.IsLower(data[1]) && !ascii.IsLower(data[2]) {
-					flags |= SentenceAddressLength5
+				if data[1] != 'P' && !ascii.IsLower(data[1]) && !ascii.IsLower(data[2]) {
+					flags |= SentenceApprovedAddressFormat
 				}
 				i++
 				break
