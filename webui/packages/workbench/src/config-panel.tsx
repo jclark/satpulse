@@ -1,8 +1,9 @@
 import {h} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
-import {ApplyConfig, CheckOnEarth, ReadConfig} from '../wailsjs/go/main/App';
+import {transport} from './transport';
 import {SignalPicker} from './signal-picker';
 import {NMEAGroup, nmeaWireValue} from './nmea-group';
+import type {NMEASelectableMsgFlag} from './msg-flags';
 import {RTCMGroup, rtcmWireValue} from './rtcm-group';
 import {PVTGroup, pvtWireValue} from './pvt-group';
 import {SatsGroup, satsWireValue} from './sats-group';
@@ -11,21 +12,27 @@ import {
     NMEAMsgRMC,
     PVTMsgPos, PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgSurvey, PVTMsgQuality, PVTMsgEpoch,
     SatsMsgSat, SatsMsgSignal,
+    SurveyAgain, SaveNone, SaveMinimal, SaveAll, ResetNone, ResetReload, ResetCold, ResetFactory,
 } from './msg-flags';
 import type {ConnState, OperationState} from './app';
+import type {
+    ConfigOptions, ConfigProps, ConfigTarget, ConfigTargetProps, PVTMsgFlag,
+    RawMsgFlag, ResetType, SatsMsgFlag, SaveType,
+} from '@satpulse/gps/configtarget';
 import {Button, Input, Select, ConfigGroup, ConfigSubGroup, fieldLabelText, labeledControlText} from './ui';
 import {speeds} from './speeds';
 
 interface Props {
     connState: ConnState;
+    readOnly: boolean;
     visible: boolean;
-    configProps: Record<string, any> | null;
+    configProps: ConfigProps | null;
     signalCatalog: Record<string, string[]>;
     selectedSignals: Set<string>;
     setSelectedSignals: (fn: (prev: Set<string>) => Set<string>) => void;
     setOperation: (op: OperationState) => void;
     addToast: (msg: string, type: 'success' | 'error') => void;
-    onConfigReadback: (props: Record<string, any>) => void;
+    onConfigReadback: (props: ConfigProps) => void;
     clearRespSession: () => void;
     speed: number;
 }
@@ -86,8 +93,11 @@ function validateFields(
     return bad;
 }
 
-export function ConfigPanel({connState, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, clearRespSession, speed}: Props) {
-    const connected = connState === 'connected';
+export function ConfigPanel({connState, readOnly, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, clearRespSession, speed}: Props) {
+    // A read-only window cannot drive the receiver: fold that into `connected`
+    // so every field, the Apply/Discard buttons, and the automatic readback
+    // trigger disable together, and the background readback never POSTs.
+    const connected = connState === 'connected' && !readOnly;
     const [timeMode, setTimeMode] = useState<'' | 'mobile' | 'survey' | 'fixed'>('');
     const [surveyTime, setSurveyTime] = useState('');
     const [surveyAcc, setSurveyAcc] = useState('');
@@ -115,25 +125,25 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         const nums = fixedECEF.map(Number);
         if (fixedECEF.some(s => s === '' || isNaN(Number(s)))) { setEcefOnEarth(true); return; }
         let cancelled = false;
-        CheckOnEarth(nums[0], nums[1], nums[2]).then(ok => { if (!cancelled) setEcefOnEarth(ok); });
+        transport.checkOnEarth(nums[0], nums[1], nums[2]).then(ok => { if (!cancelled) setEcefOnEarth(ok); });
         return () => { cancelled = true; };
     }, [fixedECEF]);
 
     // Message state
     const [nmeaChange, setNmeaChange] = useState(false);
     const [nmeaDisable, setNmeaDisable] = useState(false);
-    const [nmeaFlags, setNmeaFlags] = useState(0);
+    const [nmeaFlags, setNmeaFlags] = useState<ReadonlySet<NMEASelectableMsgFlag>>(new Set());
     const [rtcmChange, setRtcmChange] = useState(false);
     const [rtcmDisable, setRtcmDisable] = useState(false);
     const [rtcmMSM, setRtcmMSM] = useState<'none' | 'msm4' | 'msm7'>('none');
     const [rtcmFallback, setRtcmFallback] = useState(true);
     const [rtcmARP, setRtcmARP] = useState(false);
     const [pvtChange, setPvtChange] = useState(false);
-    const [pvtFlags, setPvtFlags] = useState(0);
+    const [pvtFlags, setPvtFlags] = useState<ReadonlySet<PVTMsgFlag>>(new Set());
     const [satsChange, setSatsChange] = useState(false);
-    const [satsFlags, setSatsFlags] = useState(0);
+    const [satsFlags, setSatsFlags] = useState<ReadonlySet<SatsMsgFlag>>(new Set());
     const [rawChange, setRawChange] = useState(false);
-    const [rawFlags, setRawFlags] = useState(0);
+    const [rawFlags, setRawFlags] = useState<ReadonlySet<RawMsgFlag>>(new Set());
 
     // Serial speed state.
     // baudRateApplicable: null = unknown (pre-readback or readback didn't include baudRate),
@@ -141,27 +151,56 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const [baudRateApplicable, setBaudRateApplicable] = useState<boolean | null>(null);
     const [selectedSpeed, setSelectedSpeed] = useState(speed);
     const [speedTouched, setSpeedTouched] = useState(false);
-    useEffect(() => { setSelectedSpeed(speed); }, [speed]);
+    const speedRef = useRef(speed);
+    useEffect(() => { speedRef.current = speed; setSelectedSpeed(speed); }, [speed]);
 
     // Persistent operations state
-    const [saveType, setSaveType] = useState(0); // 0=none, 1=minimal, 2=all
-    const [resetType, setResetType] = useState(0); // 0=none, 1=reload, 2=cold, 3=factory
+    const [saveType, setSaveType] = useState<SaveType>(SaveNone);
+    const [resetType, setResetType] = useState<ResetType>(ResetNone);
 
     // Readback state
     const [reading, setReading] = useState(false);
     const hasReadback = useRef(false);
+    const readbackRequest = useRef(0);
 
     // Per-section touched flags for dirty tracking
     const [timePulseTouched, setTimePulseTouched] = useState(false);
     const [timeModeTouched, setTimeModeTouched] = useState(false);
     const [signalsTouched, setSignalsTouched] = useState(false);
+    const [minElevTouched, setMinElevTouched] = useState(false);
 
     // Applying state
     const [applying, setApplying] = useState(false);
+    const [applied, setApplied] = useState(false);
+
+    const resetConfigFields = useCallback(() => {
+        setTimeMode('');
+        setSurveyTime('');
+        setSurveyAcc('');
+        setSurveyAgain(false);
+        setSurveyReport(true);
+        setCoordSystem('ecef');
+        setFixedECEF(['', '', '']);
+        setFixedLLH(['', '', '']);
+        setFixedPosAcc('');
+        setReadbackStationary(false);
+        setPpsPeriod('');
+        setPpsWidth('');
+        setPpsAlign(true);
+        setPpsLocked(true);
+        setPpsRising(true);
+        setTimeGNSS('');
+        setCableDelay('');
+        setMinElev('');
+        setBaudRateApplicable(null);
+        setSelectedSpeed(speedRef.current);
+        setSelectedSignals(() => new Set());
+    }, [setSelectedSignals]);
 
     // Populate form fields from ConfigProps JSON
-    const populateFromConfig = useCallback((cfg: Record<string, any>) => {
-        const m = cfg.mode as Record<string, any> | undefined;
+    const populateFromConfig = useCallback((cfg: ConfigProps) => {
+        resetConfigFields();
+        const m = cfg.mode;
         if (m) {
             if (!m.static) {
                 setTimeMode('mobile');
@@ -169,13 +208,13 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             } else if (m.fixedPosECEF) {
                 setTimeMode('fixed');
                 setCoordSystem('ecef');
-                const ecef = m.fixedPosECEF as number[];
+                const ecef = m.fixedPosECEF;
                 setFixedECEF([String(ecef[0]), String(ecef[1]), String(ecef[2])]);
                 setReadbackStationary(false);
             } else if (m.fixedPosLLH) {
                 setTimeMode('fixed');
                 setCoordSystem('llh');
-                const llh = m.fixedPosLLH as number[];
+                const llh = m.fixedPosLLH;
                 setFixedLLH([String(llh[0]), String(llh[1]), String(m.height ?? 0)]);
                 setReadbackStationary(false);
             } else {
@@ -185,7 +224,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             }
             if (m.fixedPosAcc !== undefined) setFixedPosAcc(String(m.fixedPosAcc));
         }
-        const tp = cfg.timePulse as Record<string, any> | undefined;
+        const tp = cfg.timePulse;
         if (tp) {
             if (tp.period !== undefined) setPpsPeriod(String(tp.period));
             if (tp.width !== undefined) setPpsWidth(String(tp.width));
@@ -208,11 +247,42 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             const s = signalMapToSet(cfg.signalsEnabled);
             setSelectedSignals(() => s);
         }
-    }, [setSelectedSignals]);
+    }, [resetConfigFields, setSelectedSignals]);
 
     useEffect(() => {
         if (configProps) populateFromConfig(configProps);
     }, [configProps, populateFromConfig]);
+
+    useEffect(() => {
+        if (connState !== 'disconnected') return;
+        readbackRequest.current++;
+        resetConfigFields();
+        setReading(false);
+        setApplying(false);
+        setApplied(false);
+        setTimePulseTouched(false);
+        setTimeModeTouched(false);
+        setSignalsTouched(false);
+        setMinElevTouched(false);
+        setNmeaChange(false);
+        setNmeaDisable(false);
+        setNmeaFlags(new Set());
+        setRtcmChange(false);
+        setRtcmDisable(false);
+        setRtcmMSM('none');
+        setRtcmFallback(true);
+        setRtcmARP(false);
+        setPvtChange(false);
+        setPvtFlags(new Set());
+        setSatsChange(false);
+        setSatsFlags(new Set());
+        setRawChange(false);
+        setRawFlags(new Set());
+        setSpeedTouched(false);
+        setSaveType(SaveNone);
+        setResetType(ResetNone);
+        setShowPicker(false);
+    }, [connState, resetConfigFields]);
 
     // Trigger readback on first switch to the config tab while connected
     useEffect(() => {
@@ -225,37 +295,41 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
 
     const doReadback = async () => {
         if (!connected || reading) return;
+        const req = ++readbackRequest.current;
         setReading(true);
         setOperation({status: 'running', label: 'Reading configuration'});
         try {
             clearRespSession();
-            const props = await ReadConfig();
-            populateFromConfig(props as any);
-            onConfigReadback(props as any);
+            const props = await transport.readConfig();
+            if (req !== readbackRequest.current) return;
+            populateFromConfig(props);
+            onConfigReadback(props);
             setTimePulseTouched(false);
             setTimeModeTouched(false);
             setSignalsTouched(false);
+            setMinElevTouched(false);
             setNmeaChange(false);
             setRtcmChange(false);
             setPvtChange(false);
             setSatsChange(false);
             setRawChange(false);
             setSpeedTouched(false);
-            setSaveType(0);
-            setResetType(0);
+            setSaveType(SaveNone);
+            setResetType(ResetNone);
             setOperation({status: 'success', label: 'Reading configuration'});
         } catch (e: any) {
+            if (req !== readbackRequest.current) return;
             addToast('Configuration read failed: ' + e.message, 'error');
             setOperation({status: 'failed', label: 'Reading configuration', error: e.message});
         } finally {
-            setReading(false);
+            if (req === readbackRequest.current) setReading(false);
         }
     };
 
     const handleApply = async () => {
-        const props: Record<string, any> = {};
-        const opts: Record<string, any> = {};
-        if (signalsTouched && selectedSignals.size > 0) {
+        const props: ConfigTargetProps = {};
+        const opts: ConfigOptions = {};
+        if (signalsTouched) {
             props.signalsEnabled = signalSetToMap(selectedSignals);
         }
         if (timeModeTouched) {
@@ -266,16 +340,16 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                 const dur = surveyTime !== '' ? parseFloat(surveyTime) : 2000;
                 const acc = surveyAcc !== '' ? parseFloat(surveyAcc) : 20;
                 opts.Survey = {
-                    Flags: surveyAgain ? 1 : 0,
+                    Flags: surveyAgain ? [SurveyAgain] : [],
                     MinDur: dur * 1e9,       // seconds -> nanoseconds
-                    AccLimit: acc * 1e6,     // meters -> micrometers
+                    AccLimit: acc,
                 };
-                if (surveyReport) opts.PVTMsg = (opts.PVTMsg || 0) | PVTMsgSurvey;
+                if (surveyReport) opts.PVTMsg = [PVTMsgSurvey];
             } else if (timeMode === 'fixed') {
                 if (coordSystem === 'ecef') {
                     props.mode = {
                         static: true,
-                        fixedPosECEF: fixedECEF.map(v => parseFloat(v) || 0),
+                        fixedPosECEF: [parseFloat(fixedECEF[0]) || 0, parseFloat(fixedECEF[1]) || 0, parseFloat(fixedECEF[2]) || 0],
                         fixedPosAcc: fixedPosAcc !== '' ? parseFloat(fixedPosAcc) : 20,
                     };
                 } else {
@@ -299,7 +373,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
             if (timeGNSS) props.timeGNSS = timeGNSS;
             if (cableDelay !== '') props.antennaCableDelay = Math.round(parseFloat(cableDelay) || 0);
         }
-        if (signalsTouched) {
+        if (minElevTouched) {
             if (minElev !== '') props.minElevation = parseFloat(minElev) || 0;
         }
         const nmeaWire = nmeaWireValue(nmeaChange, nmeaDisable, nmeaFlags);
@@ -307,40 +381,41 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         const rtcmWire = rtcmWireValue(rtcmChange, rtcmDisable, rtcmMSM, rtcmFallback, rtcmARP);
         if (rtcmWire !== undefined) opts.RTCMMsg = rtcmWire;
         const pvtWire = pvtWireValue(pvtChange, pvtFlags);
-        if (pvtWire !== undefined) opts.PVTMsg = (opts.PVTMsg || 0) | pvtWire;
+        if (pvtWire !== undefined) opts.PVTMsg = [...new Set([...(opts.PVTMsg || []), ...pvtWire])];
         const satsWire = satsWireValue(satsChange, satsFlags);
         if (satsWire !== undefined) opts.SatsMsg = satsWire;
         const rawWire = rawWireValue(rawChange, rawFlags);
         if (rawWire !== undefined) opts.RawMsg = rawWire;
-        if (saveType) opts.Save = saveType;
-        if (resetType) opts.Reset = resetType;
+        if (saveType !== SaveNone) opts.Save = saveType;
+        if (resetType !== ResetNone) opts.Reset = resetType;
         if (speedTouched) props.baudRate = selectedSpeed;
-        const cfg: Record<string, any> = {Props: props, Opts: opts};
+        const cfg: ConfigTarget = {Props: props, Opts: opts};
         setApplying(true);
+        setApplied(false);
         setOperation({status: 'running', label: 'Applying configuration'});
         clearRespSession();
-        setSaveType(0);
-        setResetType(0);
+        setSaveType(SaveNone);
+        setResetType(ResetNone);
         // Reset survey one-shot fields
         setSurveyTime('');
         setSurveyAcc('');
         setSurveyAgain(false);
         setSurveyReport(true);
         try {
-            const r = await ApplyConfig(cfg as any);
-            if (r.ok) {
-                setOperation({status: 'success', label: 'Applying configuration'});
-                setTimePulseTouched(false);
-                setTimeModeTouched(false);
-                setSignalsTouched(false);
-                setSpeedTouched(false);
-            } else {
-                addToast(r.error || 'Apply failed', 'error');
-                setOperation({status: 'failed', label: 'Applying configuration', error: r.error || 'Apply failed'});
-            }
+            await transport.applyConfig(cfg);
+            setOperation({status: 'success', label: 'Applying configuration'});
+            setTimePulseTouched(false);
+            setTimeModeTouched(false);
+            setSignalsTouched(false);
+            setMinElevTouched(false);
+            setNmeaChange(false);
+            setRtcmChange(false);
+            setPvtChange(false);
+            setSatsChange(false);
+            setRawChange(false);
+            setSpeedTouched(false);
+            setApplied(true);
         } catch (e) {
-            // A rejected binding call (e.g. the backend failed to unmarshal the
-            // request) must not leave the Apply button stuck on "Applying...".
             const msg = e instanceof Error ? e.message : String(e);
             addToast(msg || 'Apply failed', 'error');
             setOperation({status: 'failed', label: 'Applying configuration', error: msg || 'Apply failed'});
@@ -351,9 +426,11 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
 
     const handleDiscard = () => {
         if (configProps) populateFromConfig(configProps);
+        setApplied(false);
         setTimePulseTouched(false);
         setTimeModeTouched(false);
         setSignalsTouched(false);
+        setMinElevTouched(false);
         setNmeaChange(false);
         setRtcmChange(false);
         setPvtChange(false);
@@ -361,8 +438,8 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
         setRawChange(false);
         setSelectedSpeed(speed);
         setSpeedTouched(false);
-        setSaveType(0);
-        setResetType(0);
+        setSaveType(SaveNone);
+        setResetType(ResetNone);
     };
 
     const toggleConstellation = (gnssName: string, sigs: string[], enable: boolean) => {
@@ -384,14 +461,19 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
     const pendingSections: string[] = [];
     if (timePulseTouched) pendingSections.push('time pulse');
     if (timeModeTouched) pendingSections.push('time mode');
-    if (signalsTouched) pendingSections.push('satellites and signals');
+    if (signalsTouched || minElevTouched) pendingSections.push('satellites and signals');
     if (nmeaChange || rtcmChange || pvtChange || satsChange || rawChange) pendingSections.push('messages');
     if (speedTouched) pendingSections.push('serial speed');
-    if (saveType) pendingSections.push('save');
-    if (resetType) pendingSections.push('reset');
+    if (saveType !== SaveNone) pendingSections.push('save');
+    if (resetType !== ResetNone) pendingSections.push('reset');
     const pendingLabel = pendingSections.length > 0
         ? 'Changes pending to ' + pendingSections.join(', ')
         : '';
+    useEffect(() => {
+        if (pendingLabel) setApplied(false);
+    }, [pendingLabel]);
+    const statusLabel = applying ? 'Applying configuration...' : pendingLabel || (applied ? 'Configuration applied' : '');
+    const statusColor = applied && !applying && !pendingLabel ? 'text-success' : applying ? 'text-info' : 'text-warning';
     const surveyDisabled = !connected || timeMode !== 'survey';
     const fixedDisabled = !connected || timeMode !== 'fixed';
     const ecefDisabled = fixedDisabled || coordSystem !== 'ecef';
@@ -565,7 +647,7 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                         <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center w-fit">
                             <label class={fieldLabelText()}>Min elevation (deg)</label>
                             <Input type="text" inputMode="decimal" invalid={errorSet.has('minElev')} class="w-20" value={minElev} placeholder="e.g. 10"
-                                disabled={!connected} onInput={e => { setSignalsTouched(true); setMinElev((e.target as HTMLInputElement).value); }} />
+                                disabled={!connected} onInput={e => { setMinElevTouched(true); setMinElev((e.target as HTMLInputElement).value); }} />
                         </div>
                     </ConfigGroup>
 
@@ -573,16 +655,16 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                 <ConfigGroup title="Messages">
                         <div class="flex gap-2">
                             <Button disabled={!connected} onClick={() => {
-                                setNmeaChange(true); setNmeaDisable(false); setNmeaFlags(NMEAMsgRMC);
+                                setNmeaChange(true); setNmeaDisable(false); setNmeaFlags(new Set([NMEAMsgRMC]));
                                 setRtcmChange(true); setRtcmDisable(true);
-                                setPvtChange(true); setPvtFlags(PVTMsgOff);
-                                setSatsChange(true); setSatsFlags(0);
-                                setRawChange(true); setRawFlags(0);
+                                setPvtChange(true); setPvtFlags(new Set([PVTMsgOff]));
+                                setSatsChange(true); setSatsFlags(new Set());
+                                setRawChange(true); setRawFlags(new Set());
                             }}>Minimum</Button>
                             <Button disabled={!connected} onClick={() => {
                                 setNmeaChange(true); setNmeaDisable(true);
-                                setPvtChange(true); setPvtFlags(PVTMsgTimePulse | PVTMsgTimePulseAfter | PVTMsgTAI | PVTMsgLeapSecond | PVTMsgOff | PVTMsgQuality | PVTMsgEpoch | PVTMsgPos);
-                                if (speed >= 19200) { setSatsChange(true); setSatsFlags(SatsMsgSat | SatsMsgSignal); }
+                                setPvtChange(true); setPvtFlags(new Set([PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgQuality, PVTMsgEpoch, PVTMsgPos]));
+                                if (speed >= 19200) { setSatsChange(true); setSatsFlags(new Set([SatsMsgSat, SatsMsgSignal])); }
                             }}>Daemon</Button>
                         </div>
                         <NMEAGroup
@@ -649,10 +731,10 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                         <ConfigSubGroup title="Save">
                             <div class="flex flex-wrap gap-x-4 gap-y-1">
                                 {([
-                                    [0, 'Nothing'],
-                                    [1, 'Changes'],
-                                    [2, 'All'],
-                                ] as [number, string][]).map(([v, label]) => (
+                                    [SaveNone, 'Nothing'],
+                                    [SaveMinimal, 'Changes'],
+                                    [SaveAll, 'All'],
+                                ] as [SaveType, string][]).map(([v, label]) => (
                                     <label key={v} class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
                                         <input type="radio" name="saveType" class="accent-accent" value={v} checked={saveType === v}
                                             disabled={!connected} onChange={() => setSaveType(v)} />
@@ -664,11 +746,11 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
                         <ConfigSubGroup title="Reset">
                             <div class="flex flex-wrap gap-x-4 gap-y-1">
                                 {([
-                                    [0, 'None'],
-                                    [1, 'Reload'],
-                                    [2, 'Cold start'],
-                                    [3, 'Factory reset'],
-                                ] as [number, string][]).map(([v, label]) => (
+                                    [ResetNone, 'None'],
+                                    [ResetReload, 'Reload'],
+                                    [ResetCold, 'Cold start'],
+                                    [ResetFactory, 'Factory reset'],
+                                ] as [ResetType, string][]).map(([v, label]) => (
                                     <label key={v} class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
                                         <input type="radio" name="resetType" class="accent-accent" value={v} checked={resetType === v}
                                             disabled={!connected} onChange={() => setResetType(v)} />
@@ -683,8 +765,8 @@ export function ConfigPanel({connState, visible, configProps, signalCatalog, sel
 
             {/* Bottom action bar */}
             <div class="shrink-0 flex items-center gap-2 border-t border-border-subtle bg-surface-2 px-4 py-2">
-                {pendingLabel && (
-                    <span class="text-[10px] font-medium text-warning">{pendingLabel}</span>
+                {statusLabel && (
+                    <span class={`text-[10px] font-medium ${statusColor}`}>{statusLabel}</span>
                 )}
                 <span class="ml-auto" />
                 <Button disabled={!connected || !pendingLabel} onClick={handleDiscard}>

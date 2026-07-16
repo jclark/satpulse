@@ -1,6 +1,6 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect} from 'preact/hooks';
-import {ECEFtoLLH, LLHtoECEF, VelNEDtoECEF, VelECEFtoNED} from '../wailsjs/go/main/App';
+import {transport} from './transport';
 import {formatDateTime, formatTAI, formatUTCLocal} from './timefmt';
 import type {LeapSecondState} from './app';
 import type {PosGeoMsg, PosECEFMsg, VelGeoMsg, VelECEFMsg, TimeMsg} from '@satpulse/gps/gpsprot';
@@ -118,7 +118,7 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
             const lat = r.latLon[0];
             const lon = r.latLon[1];
             const h = r.height!;
-            const ecef = await LLHtoECEF(lat, lon, h);
+            const ecef = await transport.llhToECEF(lat, lon, h);
             return [r.nativeMsgID, {ecefX: ecef[0], ecefY: ecef[1], ecefZ: ecef[2]}] as const;
         })).then(pairs => {
             if (!cancelled) setGeoConv(new Map(pairs));
@@ -138,7 +138,7 @@ function PositionTable({rows}: {rows: Map<string, PosRow>}) {
             const x = r.pos[0];
             const y = r.pos[1];
             const z = r.pos[2];
-            const llh = await ECEFtoLLH(x, y, z);
+            const llh = await transport.ecefToLLH(x, y, z);
             if (!llh) return null;
             return [r.nativeMsgID, {lat: llh.lat, lon: llh.lon, height: llh.height}] as const;
         })).then(pairs => {
@@ -206,7 +206,7 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
         if (geoRows.length === 0) { setNedToEcef(new Map()); return; }
         let cancelled = false;
         Promise.all(geoRows.map(async r => {
-            const ecef = await VelNEDtoECEF(r.velNED![0], r.velNED![1], r.velNED![2]);
+            const ecef = await transport.velNEDtoECEF(r.velNED![0], r.velNED![1], r.velNED![2]);
             if (!ecef) return null;
             return [r.nativeMsgID, ecef as [number, number, number]] as const;
         })).then(pairs => {
@@ -224,7 +224,7 @@ function VelocityTable({rows}: {rows: Map<string, VelRow>}) {
         if (ecefRows.length === 0) { setEcefToNed(new Map()); return; }
         let cancelled = false;
         Promise.all(ecefRows.map(async r => {
-            const ned = await VelECEFtoNED(r.vel[0], r.vel[1], r.vel[2]);
+            const ned = await transport.velECEFtoNED(r.vel[0], r.vel[1], r.vel[2]);
             if (!ned) return null;
             return [r.nativeMsgID, ned as [number, number, number]] as const;
         })).then(pairs => {

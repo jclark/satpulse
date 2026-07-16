@@ -1,0 +1,8 @@
+# satpulsewb with no -L: the real default-port path (the canonical port, or an
+# OS-picked fallback when it is taken), an all-interfaces bind, and a generated
+# access token -- the URL and token the runner parses from stdout. -d
+# auto-connects at startup over the read-only FIFO the runner allocated, so the
+# session skips probing, falls to passive detection, and still reaches connected.
+-v
+-d
+${SATPULSE_TEST_SERIAL}

@@ -1,12 +1,15 @@
 import {h, Fragment} from 'preact';
 import {useCallback, useEffect, useRef} from 'preact/hooks';
-import {LoadMsgFile, SendMsgFile, DecodePacket} from '../wailsjs/go/main/App';
+import {transport} from './transport';
+import type {MsgFileEntry, MsgFileInfo} from './transport';
 import type {ConnState, MsgFileTag, SendLine, ResponseLine} from './app';
 import {Button, Card, Select, fieldLabelText, labeledControlText} from './ui';
 import {useState} from 'preact/hooks';
 
 interface Props {
     connState: ConnState;
+    readOnly: boolean;
+    visible: boolean;
     msgFilePath: string;
     setMsgFilePath: (p: string) => void;
     msgFileTags: MsgFileTag[];
@@ -60,6 +63,8 @@ function isClickable(r: ResponseLine): boolean {
 
 export function MsgFilePanel({
     connState,
+    readOnly,
+    visible,
     msgFilePath,
     setMsgFilePath,
     msgFileTags,
@@ -85,6 +90,21 @@ export function MsgFilePanel({
     const [save, setSave] = useState(false);
     const leftPaneRef = useRef<HTMLDivElement>(null);
 
+    // The web backend picks from the server-side library catalog (two
+    // dropdowns plus Load); the desktop backend opens a native dialog.
+    // The catalog is a flat name list in search order; sorting and
+    // grouping by vendor happen here.
+    const picker = !!(transport.msgFile?.listMsgFiles && transport.msgFile?.selectMsgFile);
+    const [catalog, setCatalog] = useState<MsgFileEntry[]>([]);
+    const [selectedVendor, setSelectedVendor] = useState('');
+    const [selectedFile, setSelectedFile] = useState('');
+    const catalogRequest = useRef(0);
+    const catalogVisible = useRef(false);
+    const prevConnState = useRef<ConnState | undefined>(undefined);
+    const serverPreselect = useRef<string | undefined>(undefined);
+    const vendors = [...new Set(catalog.map(e => e.vendor))].sort();
+    const vendorFiles = catalog.filter(e => e.vendor === selectedVendor).map(e => e.file).sort();
+
     // Seed the port from the config-tab readback once it arrives, without
     // overriding a port the user has already chosen.
     useEffect(() => {
@@ -97,33 +117,87 @@ export function MsgFilePanel({
         if (el) el.scrollTop = el.scrollHeight;
     }, [sendLines, responseLines]);
 
+    // applyLoaded resets the send/response state for a freshly loaded file
+    // and arms the sole/default tag, shared by the dialog and catalog paths.
+    const applyLoaded = useCallback((info: MsgFileInfo) => {
+        clearRespSession();
+        setMsgFilePath(info.path);
+        setMsgFileTags(info.tags || []);
+        setSendLines([]);
+        setResponseLines([]);
+        setSelectedResponseIndex(-1);
+        setActiveTagIndex(-1);
+        setTagArmed(false);
+        setDecodeResult(null);
+        const tags = info.tags || [];
+        if (tags.length === 1 || (tags.length > 0 && tags[0].tag === '')) {
+            setSelectedTagIndex(0);
+            setTagArmed(true);
+        } else {
+            setSelectedTagIndex(-1);
+        }
+    }, [clearRespSession, setMsgFilePath, setMsgFileTags, setSendLines, setSelectedTagIndex, setResponseLines, setSelectedResponseIndex, setActiveTagIndex, setTagArmed]);
+
     const handleOpen = useCallback(async () => {
         try {
-            const info = await LoadMsgFile();
-            if (!info) return;
-            clearRespSession();
-            setMsgFilePath(info.path);
-            setMsgFileTags(info.tags || []);
-            setSendLines([]);
-            setResponseLines([]);
-            setSelectedResponseIndex(-1);
-            setActiveTagIndex(-1);
-            setTagArmed(false);
-            setDecodeResult(null);
-            const tags = info.tags || [];
-            if (tags.length === 1) {
-                setSelectedTagIndex(0);
-                setTagArmed(true);
-            } else if (tags.length > 0 && tags[0].tag === '') {
-                setSelectedTagIndex(0);
-                setTagArmed(true);
-            } else {
-                setSelectedTagIndex(-1);
-            }
+            const info = await transport.msgFile!.loadMsgFile!();
+            if (info) applyLoaded(info);
         } catch (e: any) {
             addToast(e.message || 'Failed to load file', 'error');
         }
-    }, [clearRespSession, setMsgFilePath, setMsgFileTags, setSendLines, setSelectedTagIndex, setResponseLines, setSelectedResponseIndex, setActiveTagIndex, setTagArmed, addToast]);
+    }, [applyLoaded, addToast]);
+
+    // Refresh the catalog whenever the tab opens or receiver probing completes.
+    // A changed server preselect represents a new receiver and supersedes the
+    // current selection; repeated preselects preserve the user's later choice.
+    const loadCatalog = useCallback(async () => {
+        const request = ++catalogRequest.current;
+        try {
+            const cat = await transport.msgFile!.listMsgFiles!();
+            if (request !== catalogRequest.current) return;
+            const names = cat.names || [];
+            const preselect = cat.preselect && names.some(e => e.vendor === cat.preselect)
+                ? cat.preselect : '';
+            const preselectChanged = !!preselect && preselect !== serverPreselect.current;
+            if (preselect) serverPreselect.current = preselect;
+            setCatalog(names);
+            setSelectedVendor(prev => {
+                if (preselectChanged) return preselect;
+                if (prev && names.some(e => e.vendor === prev)) return prev;
+                if (preselect) return preselect;
+                return '';
+            });
+        } catch (e: any) {
+            if (request !== catalogRequest.current) return;
+            addToast(e.message || 'Failed to list message files', 'error');
+        }
+    }, [addToast]);
+
+    useEffect(() => {
+        const ready = picker && visible;
+        const opened = ready && !catalogVisible.current;
+        const probed = prevConnState.current === 'connecting' || prevConnState.current === 'reconnecting';
+        const connected = ready && connState === 'connected' && probed;
+        catalogVisible.current = ready;
+        prevConnState.current = connState;
+        if (opened || connected) loadCatalog();
+    }, [picker, visible, connState, loadCatalog]);
+
+    // Keep the file selection valid as the vendor or catalog changes;
+    // auto-pick when a vendor holds a single file.
+    useEffect(() => {
+        const files = catalog.filter(e => e.vendor === selectedVendor).map(e => e.file);
+        setSelectedFile(prev => files.includes(prev) ? prev : (files.length === 1 ? files[0] : ''));
+    }, [selectedVendor, catalog]);
+
+    const handleLoad = useCallback(async () => {
+        if (!selectedVendor || !selectedFile) return;
+        try {
+            applyLoaded(await transport.msgFile!.selectMsgFile!(selectedVendor, selectedFile));
+        } catch (e: any) {
+            addToast(e.message || 'Failed to load file', 'error');
+        }
+    }, [selectedVendor, selectedFile, applyLoaded, addToast]);
 
     const handleTagClick = useCallback(async (i: number) => {
         clearRespSession();
@@ -150,7 +224,7 @@ export function MsgFilePanel({
         setDecodeResult(null);
         const t = msgFileTags[selectedTagIndex];
         try {
-            await SendMsgFile(tag, t.needsPort ? selectedPort : '', !!t.saveAware && save);
+            await transport.msgFile!.sendMsgFile(tag, t.needsPort ? selectedPort : '', !!t.saveAware && save);
         } catch (e: any) {
             addToast(e.message || 'Send failed', 'error');
         }
@@ -167,7 +241,7 @@ export function MsgFilePanel({
         if (!raw) { setDecodeResult(null); return; }
         const hex = !!r.bin;
         let cancelled = false;
-        DecodePacket(raw, {hex, out: false}).then(result => {
+        transport.decodePacket(raw, {hex, out: false}).then(result => {
             if (cancelled) return;
             if (!result) { setDecodeResult(hex ? null : raw); return; }
             const keys = Object.keys(result);
@@ -192,8 +266,10 @@ export function MsgFilePanel({
     // only controls greying, so the Send button never moves on selection.
     const showPort = !!defaultPort || msgFileTags.some(t => t.needsPort);
     const showSave = msgFileTags.some(t => t.saveAware);
-    const sendEnabled = connState === 'connected' && tagArmed && selectedTagIndex >= 0 && !!msgFilePath
-        && (!needsPort || selectedPort !== '');
+    // readOnly greys the mutating controls (file picker, tag rows, Send) in a
+    // non-writer window; the catalog refetch and state display stay live.
+    const sendEnabled = connState === 'connected' && !readOnly && tagArmed && selectedTagIndex >= 0
+        && !!msgFilePath && (!needsPort || selectedPort !== '');
     const hasResults = activeTagIndex >= 0;
     const selectedResponse = selectedResponseIndex >= 0 && selectedResponseIndex < responseLines.length
         ? responseLines[selectedResponseIndex] : null;
@@ -202,7 +278,37 @@ export function MsgFilePanel({
     return (
         <div class="flex h-full flex-col">
             <div class="flex shrink-0 items-center gap-3 px-4 pt-4 pb-2">
-                <Button onClick={handleOpen}>Open...</Button>
+                {picker ? (
+                    <>
+                        <label class={`flex items-center gap-1.5 ${fieldLabelText(readOnly)}`}>
+                            Vendor
+                            <Select
+                                class="w-40"
+                                disabled={readOnly}
+                                value={selectedVendor}
+                                onChange={e => setSelectedVendor((e.target as HTMLSelectElement).value)}
+                            >
+                                <option value="">-</option>
+                                {vendors.map(v => <option key={v} value={v}>{v}</option>)}
+                            </Select>
+                        </label>
+                        <label class={`flex items-center gap-1.5 ${fieldLabelText(readOnly || !selectedVendor)}`}>
+                            File
+                            <Select
+                                class="w-56"
+                                disabled={readOnly || !selectedVendor}
+                                value={selectedFile}
+                                onChange={e => setSelectedFile((e.target as HTMLSelectElement).value)}
+                            >
+                                <option value="">-</option>
+                                {vendorFiles.map(f => <option key={f} value={f}>{f}</option>)}
+                            </Select>
+                        </label>
+                        <Button disabled={readOnly || !selectedFile} onClick={handleLoad}>Load</Button>
+                    </>
+                ) : (
+                    <Button disabled={readOnly} onClick={handleOpen}>Open...</Button>
+                )}
                 <span class="text-xs text-text-secondary">{msgFilePath || ''}</span>
             </div>
 
@@ -222,10 +328,10 @@ export function MsgFilePanel({
                             return (
                                 <tr
                                     key={i}
-                                    class={`cursor-pointer border-b border-border-subtle ${
-                                        isSelected ? 'bg-surface-3' : 'hover:bg-surface-1'
-                                    }`}
-                                    onClick={() => handleTagClick(i)}
+                                    class={`border-b border-border-subtle ${
+                                        readOnly ? '' : 'cursor-pointer'
+                                    } ${isSelected ? 'bg-surface-3' : readOnly ? '' : 'hover:bg-surface-1'}`}
+                                    onClick={() => { if (!readOnly) handleTagClick(i); }}
                                 >
                                     <td class="px-2 py-1.5 tabular-nums">
                                         {t.tag === '' ? <em class="text-text-muted">(default)</em> : t.tag}
