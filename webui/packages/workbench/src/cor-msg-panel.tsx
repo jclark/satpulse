@@ -1,7 +1,7 @@
 import {h} from 'preact';
 import {useState, useEffect, useRef, useMemo} from 'preact/hooks';
 import type {CorReportMsg} from '@satpulse/gps/gpsprot';
-import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
+import {transport} from './transport';
 import {Button, Badge} from './ui';
 import {rtcmInfo} from './rtcm';
 import {spartnInfo} from './spartn';
@@ -58,7 +58,7 @@ export function CorMsgPanel({connected, sessionSeq, running}: Props) {
 
     // Listen for corrpacket events
     useEffect(() => {
-        const off = EventsOn('gps:corrpacket', (evt: CorReportMsg) => {
+        const off = transport.eventsOn('gps:corrpacket', (evt: CorReportMsg) => {
             const rows = rowsRef.current;
             const row = rows.get(evt.msgID);
             const now = Date.now();
@@ -102,9 +102,7 @@ export function CorMsgPanel({connected, sessionSeq, running}: Props) {
             }
             setDisplayed(new Map(rows));
         });
-        return () => {
-            if (typeof off === 'function') off(); else EventsOff('gps:corrpacket');
-        };
+        return off;
     }, []);
 
     // Clear on disconnect

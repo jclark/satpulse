@@ -1,8 +1,10 @@
-import {defineConfig} from 'vite'
-import preact from '@preact/preset-vite'
-import tailwindcss from '@tailwindcss/vite'
+import {defineConfig} from 'vitest/config';
+import preact from '@preact/preset-vite';
 
-// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [preact(), tailwindcss()]
-})
+    plugins: [preact()],
+    test: {
+        environment: 'node',
+        include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    },
+});

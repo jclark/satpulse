@@ -141,13 +141,13 @@ func TestLoadPersonality(t *testing.T) {
 		Defaults: ucv.Map{navSat: 0, gga: 1},
 		Epochs: [][]Pkt{
 			{
-				{KeyM: ucv.KUbxNavSat, Data: navSatPkt},
-				{KeyM: ucv.KNmeaIdGga, Data: ggaPkt},
+				{KeyM: ucv.KUbxNavSat, Tag: ubx.Tag, Data: navSatPkt},
+				{KeyM: ucv.KNmeaIdGga, Tag: nmea.Tag, Data: ggaPkt},
 				// The recorded MSM7 also yields a derived MSM4 entry.
-				{KeyM: ucv.KRtcm3xType1077, Data: []byte(msm7)},
-				{KeyM: ucv.KRtcm3xType1074, Data: []byte(msm4)},
+				{KeyM: ucv.KRtcm3xType1077, Tag: rtcm.Tag, Data: []byte(msm7)},
+				{KeyM: ucv.KRtcm3xType1074, Tag: rtcm.Tag, Data: []byte(msm4)},
 			},
-			{{KeyM: ucv.KUbxNavSat, Data: navSatPkt}},
+			{{KeyM: ucv.KUbxNavSat, Tag: ubx.Tag, Data: navSatPkt}},
 		},
 		Skipped: 1,
 	}

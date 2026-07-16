@@ -1,6 +1,6 @@
 import {h} from 'preact';
 import {useEffect, useMemo, useRef, useState} from 'preact/hooks';
-import {BrowserOpenURL} from '../wailsjs/runtime/runtime';
+import {transport} from './transport';
 
 interface MapPanelProps {
     pos: {lat: number; lon: number} | null;
@@ -82,7 +82,7 @@ export function MapPanel({pos, course, noFixSecs}: MapPanelProps) {
     const openGoogleMaps = () => {
         if (pos) {
             const q = encodeURIComponent(`${pos.lat.toFixed(7)},${pos.lon.toFixed(7)}`);
-            BrowserOpenURL(`https://www.google.com/maps/search/?api=1&query=${q}`);
+            transport.openURL(`https://www.google.com/maps/search/?api=1&query=${q}`);
         }
     };
 

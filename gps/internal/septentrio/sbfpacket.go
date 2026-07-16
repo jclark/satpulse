@@ -78,7 +78,7 @@ func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
 }
 
 func (f packetFormat) RescanOnBadChecksum(_ bool, _ []byte) bool {
-	return true
+	return false
 }
 
 // PacketProcessor implements gpsprot.PacketProcessor for SBF packets.

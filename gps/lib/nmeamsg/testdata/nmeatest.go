@@ -95,6 +95,21 @@ var SyntaxTestCases = []struct {
 		Packet:   "$GPGGA,1$23*5A\r\n",
 		Expected: 0,
 	},
+	{
+		Name:     "not a packet - SBF sync prefix",
+		Packet:   "$@AB*5A\r\n",
+		Expected: 0,
+	},
+	{
+		Name:     "not a packet - Septentrio reply prefix",
+		Packet:   "$R*5A\r\n",
+		Expected: 0,
+	},
+	{
+		Name:     "not a packet - Septentrio command prefix",
+		Packet:   "$----*5A\r\n",
+		Expected: 0,
+	},
 
 	// Constraint 5: Immediately before terminator there is `*` and two uppercase hex digits
 	{
@@ -177,6 +192,11 @@ var SyntaxTestCases = []struct {
 		Name:     "valid basic packet",
 		Packet:   "$GPGGA,123*5A\r\n",
 		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+	},
+	{
+		Name:     "valid Unicore OK packet",
+		Packet:   "$OK*5A\r\n",
+		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 
 	// Address format tests - approved (exactly 5 chars)
@@ -273,14 +293,24 @@ var SyntaxTestCases = []struct {
 		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
-		Name:     "not proprietary - starts with P but lowercase",
+		Name:     "proprietary address - lowercase manufacturer code",
 		Packet:   "$Pabc,123*5A\r\n",
+		Expected: sentenceIsPacket | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+	},
+	{
+		Name:     "not a packet - non-letter after P",
+		Packet:   "$P-BC,123*5A\r\n",
+		Expected: 0,
+	},
+	{
+		Name:     "not proprietary - digit in manufacturer code",
+		Packet:   "$PA1C,123*5A\r\n",
 		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
-		Name:     "not proprietary - starts with P but non-alphanumeric",
-		Packet:   "$P-BC,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Name:     "proprietary address - unrestricted suffix",
+		Packet:   "$PABC-1,123*5A\r\n",
+		Expected: sentenceIsPacket | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "proprietary address - no data fields",
@@ -434,24 +464,34 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "minimal packet - single char address",
 		Packet:   "$A*5A\r\n",
-		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: 0,
 	},
 	{
 		Name:     "minimal packet with empty field",
-		Packet:   "$A,*5A\r\n",
+		Packet:   "$AA,*5A\r\n",
 		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 
-	// Packet length boundary tests (400 char limit)
+	// Packet length boundary tests (400 char limit including CRLF)
 	{
-		Name:     "exactly 400 chars (packet format max)",
-		Packet:   "$GPGGA," + strings.Repeat("X", 387) + "*5A\r\n", // Total = 400
+		Name:     "exactly 400 chars with CRLF",
+		Packet:   "$GPGGA," + strings.Repeat("X", 388) + "*5A\r\n",
 		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceEndsWithCRLF,
 	},
 	{
-		Name:     "401 chars (over packet format limit)",
-		Packet:   "$GPGGA," + strings.Repeat("X", 389) + "*5A\r\n", // Total = 401
-		Expected: 0,                                                // Should fail packet detection due to length
+		Name:     "exactly 399 chars with LF",
+		Packet:   "$GPGGA," + strings.Repeat("X", 388) + "*5A\n",
+		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars,
+	},
+	{
+		Name:     "401 chars with CRLF",
+		Packet:   "$GPGGA," + strings.Repeat("X", 389) + "*5A\r\n",
+		Expected: 0,
+	},
+	{
+		Name:     "400 chars with LF",
+		Packet:   "$GPGGA," + strings.Repeat("X", 389) + "*5A\n",
+		Expected: 0,
 	},
 
 	// Checksum case variations
@@ -485,6 +525,11 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "address starting with digit - 1ABCD",
 		Packet:   "$1ABCD,data*5A\r\n",
+		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+	},
+	{
+		Name:     "address with digits after two letters - AB1C2",
+		Packet:   "$AB1C2,data*5A\r\n",
 		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 
@@ -546,9 +591,9 @@ var SyntaxTestCases = []struct {
 		Expected: sentenceIsPacket | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
-		Name:     "proprietary with digits - P123",
+		Name:     "not proprietary - digit after P",
 		Packet:   "$P123,data*5A\r\n",
-		Expected: sentenceIsPacket | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "very long proprietary address",
@@ -594,7 +639,7 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "partial GNSS match - just G",
 		Packet:   "$G,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: 0,
 	},
 	{
 		Name:     "partial GNSS match - just GP",
@@ -609,9 +654,9 @@ var SyntaxTestCases = []struct {
 
 	// Mixed validation scenarios
 	{
-		Name:     "proprietary P12345 (5 chars, digits, starts with P)",
+		Name:     "not proprietary - P1234",
 		Packet:   "$P1234,data*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "address with spaces (valid packet, invalid address format)",
