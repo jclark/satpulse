@@ -80,7 +80,6 @@ const (
 )
 
 type measEpochHead struct {
-	N1          uint8
 	SB1Length   uint8
 	SB2Length   uint8
 	CommonFlags CommonFlags
@@ -101,7 +100,6 @@ type MeasEpochChannelType1 struct {
 	CN0        uint8
 	LockTime   uint16
 	ObsInfo    ObsInfo
-	N2         uint8
 }
 
 // MeasEpochChannelType2 is a MeasEpoch slave sub-block.
@@ -129,9 +127,10 @@ func (*MeasEpoch) BlockNumber() uint16 { return MeasEpochID }
 
 // Chunks returns the binary chunks for the block parameters.
 func (m *MeasEpoch) Chunks() func(yield func(chunk any) bool) {
-	return twoLevelChunks(&m.N1, &m.SB1Length, &m.SB2Length, &m.measEpochHead, &m.Type1, &m.Type2,
-		func(t *MeasEpochChannelType1) uint8 { return t.N2 },
-		func(t *MeasEpochChannelType1, n uint8) { t.N2 = n })
+	return twoLevelChunks(&m.SB1Length, &m.SB2Length, &m.measEpochHead, &m.Type1, &m.Type2,
+		func(t *MeasEpochChannelType1, n *uint8, yield func(any) bool) bool {
+			return yield(t) && yield(n)
+		})
 }
 
 // SignalNumber returns the observed signal number for a MeasEpoch master
@@ -215,18 +214,18 @@ func (t *MeasEpochChannelType1) DopplerHz() (float64, bool) {
 // false when the carrier phase is at its Do-Not-Use encoding (CarrierMSB -128
 // and CarrierLSB 0).
 func (t *MeasEpochChannelType1) CarrierOffsetCycles() (float64, bool) {
-	return carrierOffsetCycles(t.CarrierMSB, t.CarrierLSB)
+	return carrierOffsetCycles(t.CarrierMSB, t.CarrierLSB, MeasType1CarrierMSBDNU)
 }
 
 // CarrierOffsetCycles returns the slave carrier phase relative to the slave
 // pseudorange, in cycles: L = PR_type2/lambda + CarrierOffsetCycles. It
 // reports false when the carrier phase is at its Do-Not-Use encoding.
 func (t *MeasEpochChannelType2) CarrierOffsetCycles() (float64, bool) {
-	return carrierOffsetCycles(t.CarrierMSB, t.CarrierLSB)
+	return carrierOffsetCycles(t.CarrierMSB, t.CarrierLSB, MeasType2CarrierMSBDNU)
 }
 
-func carrierOffsetCycles(msb int8, lsb uint16) (float64, bool) {
-	if msb == MeasType1CarrierMSBDNU && lsb == 0 {
+func carrierOffsetCycles(msb int8, lsb uint16, dnu int8) (float64, bool) {
+	if msb == dnu && lsb == 0 {
 		return 0, false
 	}
 	return (float64(msb)*65536 + float64(lsb)) * 0.001, true
@@ -289,7 +288,6 @@ func glonassFreqNr(typ MeasType, obs ObsInfo) (int8, bool) {
 }
 
 type measExtraHead struct {
-	N                uint8
 	SBLength         uint8
 	DopplerVarFactor float32
 }
@@ -338,28 +336,25 @@ func (*MeasExtra) BlockNumber() uint16 { return MeasExtraID }
 // Chunks returns the binary chunks for the block parameters.
 func (m *MeasExtra) Chunks() func(yield func(chunk any) bool) {
 	return func(yield func(chunk any) bool) {
+		// The wire N is len(Channels) modulo 256, so this conversion must wrap
+		// instead of using setCount; payload length recovers the true count on read.
+		n := uint8(len(m.Channels))
 		if len(m.Channels) > 0 {
-			// On write Channels is authoritative. N is only the count modulo
-			// 256 (it wraps at 256), so neither N nor anything derived from it
-			// may size the write; the true count is recovered on read from the
-			// payload length and SBLength.
-			m.N = uint8(len(m.Channels))
 			if m.SBLength == 0 {
 				m.SBLength = uint8(binary.Size(MeasExtraChannelSub{}))
 			}
 		}
-		if !yield(&m.measExtraHead) {
+		if !yield(&n) || !yield(&m.measExtraHead) {
 			return
 		}
-		// Write path uses len(Channels); read path starts empty and recovers
-		// the true count from the payload length below.
-		n := len(m.Channels)
+		count := len(m.Channels)
 		payloadLen := m.payloadLen()
-		if m.SBLength > 0 && payloadLen > binary.Size(measExtraHead{}) {
-			n = (payloadLen - binary.Size(measExtraHead{})) / int(m.SBLength)
+		headLen := binary.Size(measExtraHead{}) + 1
+		if m.SBLength > 0 && payloadLen > headLen {
+			count = (payloadLen - headLen) / int(m.SBLength)
 		}
-		if len(m.Channels) != n {
-			m.Channels = make([]MeasExtraChannelSub, n)
+		if len(m.Channels) != count {
+			m.Channels = make([]MeasExtraChannelSub, count)
 		}
 		for i := range m.Channels {
 			if !yield(&m.Channels[i].measExtraBase) {

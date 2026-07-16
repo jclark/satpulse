@@ -5,7 +5,6 @@ type UtcSource uint8
 const (
 	GALUtcSourceINAV UtcSource = 2
 	GALUtcSourceFNAV UtcSource = 16
-	UTCDeltaLSDNU              = -128
 	GALUtcDNU                  = -2e10
 )
 

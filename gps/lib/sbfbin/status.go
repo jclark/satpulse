@@ -21,7 +21,6 @@ const (
 
 // QualityInd is the SBF QualityInd block.
 type QualityInd struct {
-	N          uint8
 	Reserved   uint8
 	Indicators []uint16
 }
@@ -32,15 +31,16 @@ func (*QualityInd) BlockNumber() uint16 { return QualityIndID }
 // Chunks returns the binary chunks for the block parameters.
 func (q *QualityInd) Chunks() func(yield func(chunk any) bool) {
 	return func(yield func(chunk any) bool) {
-		if err := setCount(&q.N, len(q.Indicators), "QualityInd indicator"); err != nil {
+		var n uint8
+		if err := setCount(&n, len(q.Indicators), "QualityInd indicator"); err != nil {
 			yield(err)
 			return
 		}
-		if !yield(&q.N) || !yield(&q.Reserved) {
+		if !yield(&n) || !yield(&q.Reserved) {
 			return
 		}
-		if len(q.Indicators) != int(q.N) {
-			q.Indicators = make([]uint16, int(q.N))
+		if len(q.Indicators) != int(n) {
+			q.Indicators = make([]uint16, int(n))
 		}
 		yield(q.Indicators)
 	}
@@ -60,7 +60,6 @@ type GALAuthStatus struct {
 func (*GALAuthStatus) BlockNumber() uint16 { return GALAuthStatusID }
 
 type rfStatusHead struct {
-	N        uint8
 	SBLength uint8
 	Flags    RFStatusFlags
 	Reserved [3]uint8
@@ -86,18 +85,19 @@ func (*RFStatus) BlockNumber() uint16 { return RFStatusID }
 // Chunks returns the binary chunks for the block parameters.
 func (r *RFStatus) Chunks() func(yield func(chunk any) bool) {
 	return func(yield func(chunk any) bool) {
-		if err := setCount(&r.N, len(r.RFBand), "RFStatus RFBand"); err != nil {
+		var n uint8
+		if err := setCount(&n, len(r.RFBand), "RFStatus RFBand"); err != nil {
 			yield(err)
 			return
 		}
-		if r.N > 0 && r.SBLength == 0 {
+		if n > 0 && r.SBLength == 0 {
 			r.SBLength = uint8(binary.Size(RFBand{}))
 		}
-		if !yield(&r.rfStatusHead) {
+		if !yield(&n) || !yield(&r.rfStatusHead) {
 			return
 		}
-		if len(r.RFBand) != int(r.N) {
-			r.RFBand = make([]RFBand, int(r.N))
+		if len(r.RFBand) != int(n) {
+			r.RFBand = make([]RFBand, int(n))
 		}
 		pad := int(r.SBLength) - binary.Size(RFBand{})
 		for i := range r.RFBand {
@@ -117,7 +117,6 @@ type receiverStatusHead struct {
 	UpTime      uint32
 	RxState     RxState
 	RxError     RxError
-	N           uint8
 	SBLength    uint8
 	CmdCount    uint8
 	Temperature uint8
@@ -143,18 +142,21 @@ func (*ReceiverStatus) BlockNumber() uint16 { return ReceiverStatusID }
 // Chunks returns the binary chunks for the block parameters.
 func (r *ReceiverStatus) Chunks() func(yield func(chunk any) bool) {
 	return func(yield func(chunk any) bool) {
-		if err := setCount(&r.N, len(r.AGCState), "ReceiverStatus AGCState"); err != nil {
+		var n uint8
+		if err := setCount(&n, len(r.AGCState), "ReceiverStatus AGCState"); err != nil {
 			yield(err)
 			return
 		}
-		if r.N > 0 && r.SBLength == 0 {
+		if n > 0 && r.SBLength == 0 {
 			r.SBLength = uint8(binary.Size(AGCState{}))
 		}
-		if !yield(&r.receiverStatusHead) {
+		if !yield(&r.CPULoad) || !yield(&r.ExtError) || !yield(&r.UpTime) ||
+			!yield(&r.RxState) || !yield(&r.RxError) || !yield(&n) ||
+			!yield(&r.SBLength) || !yield(&r.CmdCount) || !yield(&r.Temperature) {
 			return
 		}
-		if len(r.AGCState) != int(r.N) {
-			r.AGCState = make([]AGCState, int(r.N))
+		if len(r.AGCState) != int(n) {
+			r.AGCState = make([]AGCState, int(n))
 		}
 		pad := int(r.SBLength) - binary.Size(AGCState{})
 		for i := range r.AGCState {

@@ -16,7 +16,6 @@ const (
 	BaseTypeFixed   BaseType = 0
 	BaseTypeMoving  BaseType = 1
 	BaseTypeUnknown BaseType = 0xFF
-	BasePositionDNU          = -2e10
 )
 
 // BaseSourceRTCM is the BaseStation.Source value for coordinates decoded from
