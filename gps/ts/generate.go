@@ -22,6 +22,13 @@ type sample struct {
 	value  any
 }
 
+type configTargetVocabulary struct {
+	Props []gpsprot.ConfigProps
+	Save  []gpsprot.SaveType
+	Reset []gpsprot.ResetType
+	Get   []gpsprot.PropIDs
+}
+
 func samples() []sample {
 	speed := 9600
 	return []sample{
@@ -138,7 +145,111 @@ func samples() []sample {
 			Speed: &speed,
 			Out:   true,
 		}},
+		{"ConfigTarget", configTargetSample()},
+		{"ConfigTargetVocabulary", configTargetVocabularySample()},
 	}
+}
+
+func configTargetSample() *gpsprot.ConfigTarget {
+	cp := configPropsSamples()[0]
+	cp.ClearReadOnlyProps()
+	var root [32]byte
+	for i := range root {
+		root[i] = byte(i)
+	}
+	return &gpsprot.ConfigTarget{
+		Props: cp,
+		Get:   gpsprot.PropIDSignalsEnabled | gpsprot.PropIDTimePulse | gpsprot.PropIDPort,
+		Opts: gpsprot.ConfigOptions{
+			Socket:     true,
+			ForceProbe: true,
+			Save:       gpsprot.SaveMinimal,
+			Reset:      gpsprot.ResetCold,
+			PVTMsg:     gpsprot.PVTMsgPos | gpsprot.PVTMsgVel | gpsprot.PVTMsgTime | gpsprot.PVTMsgTimePulse | gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgTAI | gpsprot.PVTMsgECEF | gpsprot.PVTMsgTimePulseAfter | gpsprot.PVTMsgQuality | gpsprot.PVTMsgEpoch | gpsprot.PVTMsgOff,
+			NMEAMsg:    opt.Make(gpsprot.NMEAMsgAny),
+			RTCMMsg:    opt.Make(gpsprot.RTCMMsgMSM4 | gpsprot.RTCMMsgMSM7 | gpsprot.RTCMMsgARP | gpsprot.RTCMMsgLax | gpsprot.RTCMMsgOther),
+			SatsMsg:    opt.Make(gpsprot.SatsMsgAny),
+			RawMsg:     opt.Make(gpsprot.RawMsgAny),
+			Survey: gpsprot.Survey{
+				Flags:    gpsprot.SurveyAgain,
+				MinDur:   30 * time.Minute,
+				AccLimit: gpsprot.Meters(1.5),
+			},
+			SetStatic: true,
+			TimeAssist: gpsprot.TimeEstimate{
+				EstimatedTime:  time.Date(2025, 3, 7, 4, 0, 0, 0, time.UTC),
+				TimeOfEstimate: time.Date(2025, 3, 7, 4, 0, 1, 0, time.UTC),
+				Accuracy:       500 * time.Millisecond,
+				LeapSecond: ptime.LeapSecondState{
+					UTCOffset:   37,
+					LeapTonight: ptime.LeapSecondPositive,
+				},
+				Trusted: true,
+			},
+			OSNMA: gpsprot.OSNMAOptions{MerkleTreeRoot: root},
+		},
+	}
+}
+
+func configTargetVocabularySample() configTargetVocabulary {
+	return configTargetVocabulary{
+		Props: configPropsSamples(),
+		Save:  []gpsprot.SaveType{gpsprot.SaveNone, gpsprot.SaveMinimal, gpsprot.SaveAll},
+		Reset: []gpsprot.ResetType{gpsprot.ResetNone, gpsprot.ResetReload, gpsprot.ResetCold, gpsprot.ResetFactory},
+		Get: []gpsprot.PropIDs{
+			gpsprot.PropIDSignalsEnabled,
+			gpsprot.PropIDTimeGNSS,
+			gpsprot.PropIDTimePulse,
+			gpsprot.PropIDTimePulseWidth,
+			gpsprot.PropIDTimePulsePeriod,
+			gpsprot.PropIDTimePulseAlignToGNSS,
+			gpsprot.PropIDTimePulseOnlyWhenLocked,
+			gpsprot.PropIDTimePulsePolarityRising,
+			gpsprot.PropIDMode,
+			gpsprot.PropIDAntennaCableDelay,
+			gpsprot.PropIDNavMsgAuth,
+			gpsprot.PropIDRTCMBaseID,
+			gpsprot.PropIDMinElevation,
+			gpsprot.PropIDBaudRate,
+			gpsprot.PropIDPort,
+		},
+	}
+}
+
+func configPropsSamples() []gpsprot.ConfigProps {
+	var ecef gpsprot.ConfigProps
+	ecef.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1))
+	ecef.SetTimeGNSS(gpsprot.GPS)
+	ecef.SetTimePulse(gpsprot.TimePulse{
+		Width:          100 * time.Millisecond,
+		Period:         time.Second,
+		AlignToGNSS:    true,
+		OnlyWhenLocked: true,
+		PolarityRising: true,
+	})
+	ecef.SetMode(gpsprot.Mode{
+		Static:       true,
+		PosType:      gpsprot.PosTypeECEF,
+		FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(4075539.814), gpsprot.Meters(555132.076), gpsprot.Meters(4828427.312)},
+		FixedPosAcc:  gpsprot.Meters(0.025),
+	})
+	ecef.SetAntennaCableDelay(50 * time.Nanosecond)
+	ecef.SetNavMsgAuth(gpsprot.NavMsgAuthOSNMA)
+	ecef.SetRTCMBaseID(42)
+	ecef.SetMinElevation(gpsprot.DegreesFromFloat(10))
+	ecef.SetBaudRate(115200)
+	ecef.SetPort("UART1")
+	var llh gpsprot.ConfigProps
+	llh.SetTimePulseWidth(200 * time.Millisecond)
+	llh.SetMode(gpsprot.Mode{
+		Static:      true,
+		PosType:     gpsprot.PosTypeLLH,
+		FixedPosLLH: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(13.75), gpsprot.DegreesFromFloat(100.5)},
+		Height:      gpsprot.Meters(12.5),
+		FixedPosAcc: gpsprot.Meters(0.05),
+	})
+	llh.SetNavMsgAuth(gpsprot.NavMsgAuthNone)
+	return []gpsprot.ConfigProps{ecef, llh}
 }
 
 // Generate produces the contents of validate.gen.ts.
@@ -159,6 +270,7 @@ func Generate() ([]byte, error) {
 	}
 	buf.WriteString("} from './gpsprot';\n")
 	buf.WriteString("import type {PacketLogEntry} from './gpsio';\n")
+	buf.WriteString("import type {ConfigTarget, ConfigTargetVocabulary} from './configtarget';\n")
 	buf.WriteString("\n")
 	for _, s := range samples() {
 		j, err := json.Marshal(s.value)

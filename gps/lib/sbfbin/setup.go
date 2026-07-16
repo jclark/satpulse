@@ -33,10 +33,10 @@ type receiverSetupRev3 struct {
 	Latitude    float64
 	Longitude   float64
 	Height      float32
+	StationCode latin1z.StringZ10
 }
 
 type receiverSetupRev4 struct {
-	StationCode latin1z.StringZ10
 	MonumentIdx uint8
 	ReceiverIdx uint8
 	CountryCode latin1z.StringZ3
@@ -67,6 +67,8 @@ func (r *ReceiverSetup) Chunks() func(yield func(chunk any) bool) {
 	return revisionChunks(r.payloadLen(), "ReceiverSetup", &r.receiverSetupFixed,
 		&r.receiverSetupRev1, &r.receiverSetupRev2, &r.receiverSetupRev3, &r.receiverSetupRev4)
 }
+
+func (r *ReceiverSetup) latestRev() uint8 { return 4 }
 
 func init() {
 	regBlock[ReceiverSetup]("ReceiverSetup")

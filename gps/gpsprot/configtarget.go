@@ -102,6 +102,27 @@ const (
 	SaveAll              // save the current configuration
 )
 
+var saveTypeNames = [...]string{"none", "minimal", "all"}
+
+// MarshalText marshals SaveType as a name.
+func (t SaveType) MarshalText() ([]byte, error) {
+	if int(t) >= len(saveTypeNames) {
+		return nil, fmt.Errorf("unknown save type %d", t)
+	}
+	return []byte(saveTypeNames[t]), nil
+}
+
+// UnmarshalText unmarshals SaveType from a name.
+func (t *SaveType) UnmarshalText(text []byte) error {
+	for i, name := range saveTypeNames {
+		if string(text) == name {
+			*t = SaveType(i)
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown save type %q", text)
+}
+
 type ResetType uint8
 
 const (
@@ -110,6 +131,77 @@ const (
 	ResetCold              // restore configuration from non-volatile memory and perform a cold start
 	ResetFactory           // restore non-volatile memory to factory defaults and then ResetCold
 )
+
+var resetTypeNames = [...]string{"none", "reload", "cold", "factory"}
+
+// MarshalText marshals ResetType as a name.
+func (t ResetType) MarshalText() ([]byte, error) {
+	if int(t) >= len(resetTypeNames) {
+		return nil, fmt.Errorf("unknown reset type %d", t)
+	}
+	return []byte(resetTypeNames[t]), nil
+}
+
+// UnmarshalText unmarshals ResetType from a name.
+func (t *ResetType) UnmarshalText(text []byte) error {
+	for i, name := range resetTypeNames {
+		if string(text) == name {
+			*t = ResetType(i)
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown reset type %q", text)
+}
+
+type jsonFlagType interface {
+	~int | ~uint8 | ~uint16
+}
+
+type jsonFlag[T jsonFlagType] struct {
+	name string
+	flag T
+}
+
+func marshalJSONFlags[T jsonFlagType](f T, table []jsonFlag[T], kind string) ([]byte, error) {
+	names := make([]string, 0)
+	var covered T
+	for _, e := range table {
+		covered |= e.flag
+		if f&e.flag != 0 {
+			names = append(names, e.name)
+		}
+	}
+	if unknown := f &^ covered; unknown != 0 {
+		return nil, fmt.Errorf("unknown %s flags 0x%x", kind, unknown)
+	}
+	return json.Marshal(names)
+}
+
+func unmarshalJSONFlags[T jsonFlagType](data []byte, f *T, table []jsonFlag[T], kind string) error {
+	if string(data) == "null" {
+		return fmt.Errorf("null not allowed for %s flags", kind)
+	}
+	var names []string
+	if err := json.Unmarshal(data, &names); err != nil {
+		return err
+	}
+	var flags T
+	for _, name := range names {
+		found := false
+		for _, e := range table {
+			if name == e.name {
+				flags |= e.flag
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("unknown %s flag %q", kind, name)
+		}
+	}
+	*f = flags
+	return nil
+}
 
 // PVTMsgFlags says what messages relating to Position, Velocity, and Time are wanted.
 // The PVTMsgOff option says to turn off PVT messages that are not enabled.
@@ -134,6 +226,31 @@ const (
 )
 
 const PVTMsgAny PVTMsgFlags = PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond | PVTMsgSurvey | PVTMsgQuality | PVTMsgEpoch // any message (not option)
+
+var pvtMsgJSON = []jsonFlag[PVTMsgFlags]{
+	{"pos", PVTMsgPos},
+	{"vel", PVTMsgVel},
+	{"time", PVTMsgTime},
+	{"timePulse", PVTMsgTimePulse},
+	{"leapSecond", PVTMsgLeapSecond},
+	{"survey", PVTMsgSurvey},
+	{"tai", PVTMsgTAI},
+	{"ecef", PVTMsgECEF},
+	{"timePulseAfter", PVTMsgTimePulseAfter},
+	{"quality", PVTMsgQuality},
+	{"epoch", PVTMsgEpoch},
+	{"off", PVTMsgOff},
+}
+
+// MarshalJSON marshals PVTMsgFlags as an array of names.
+func (f PVTMsgFlags) MarshalJSON() ([]byte, error) {
+	return marshalJSONFlags(f, pvtMsgJSON, "PVT message")
+}
+
+// UnmarshalJSON unmarshals PVTMsgFlags from an array of names.
+func (f *PVTMsgFlags) UnmarshalJSON(data []byte) error {
+	return unmarshalJSONFlags(data, f, pvtMsgJSON, "PVT message")
+}
 
 // PVTMsgTimingPTP is the PVT message set required to drive a PTP
 // grandmaster from a receiver's hardware time pulse.
@@ -175,6 +292,21 @@ const (
 	SatsMsgAny    SatsMsgFlags = SatsMsgSat | SatsMsgSignal // any message (not flag)
 )
 
+var satsMsgJSON = []jsonFlag[SatsMsgFlags]{
+	{"sat", SatsMsgSat},
+	{"signal", SatsMsgSignal},
+}
+
+// MarshalJSON marshals SatsMsgFlags as an array of names.
+func (f SatsMsgFlags) MarshalJSON() ([]byte, error) {
+	return marshalJSONFlags(f, satsMsgJSON, "satellite message")
+}
+
+// UnmarshalJSON unmarshals SatsMsgFlags from an array of names.
+func (f *SatsMsgFlags) UnmarshalJSON(data []byte) error {
+	return unmarshalJSONFlags(data, f, satsMsgJSON, "satellite message")
+}
+
 type NMEAMsgFlags uint16
 
 const (
@@ -190,6 +322,27 @@ const (
 	NMEAMsgNone NMEAMsgFlags = 0
 	NMEAMsgAny  NMEAMsgFlags = NMEAMsgRMC | NMEAMsgGGA | NMEAMsgGSA | NMEAMsgGSV | NMEAMsgZDA | NMEAMsgVTG | NMEAMsgGLL | NMEAMsgOther // any message (not flag)
 )
+
+var nmeaMsgJSON = []jsonFlag[NMEAMsgFlags]{
+	{"RMC", NMEAMsgRMC},
+	{"GGA", NMEAMsgGGA},
+	{"GSA", NMEAMsgGSA},
+	{"GSV", NMEAMsgGSV},
+	{"ZDA", NMEAMsgZDA},
+	{"VTG", NMEAMsgVTG},
+	{"GLL", NMEAMsgGLL},
+	{"other", NMEAMsgOther},
+}
+
+// MarshalJSON marshals NMEAMsgFlags as an array of names.
+func (f NMEAMsgFlags) MarshalJSON() ([]byte, error) {
+	return marshalJSONFlags(f, nmeaMsgJSON, "NMEA message")
+}
+
+// UnmarshalJSON unmarshals NMEAMsgFlags from an array of names.
+func (f *NMEAMsgFlags) UnmarshalJSON(data []byte) error {
+	return unmarshalJSONFlags(data, f, nmeaMsgJSON, "NMEA message")
+}
 
 type RTCMMsgFlags uint16
 
@@ -208,6 +361,24 @@ const (
 	RTCMMsgAny      RTCMMsgFlags = RTCMMsgMSM4 | RTCMMsgMSM7 | RTCMMsgARP | RTCMMsgOther // any message (not flag)
 )
 
+var rtcmMsgJSON = []jsonFlag[RTCMMsgFlags]{
+	{"MSM4", RTCMMsgMSM4},
+	{"MSM7", RTCMMsgMSM7},
+	{"ARP", RTCMMsgARP},
+	{"lax", RTCMMsgLax},
+	{"other", RTCMMsgOther},
+}
+
+// MarshalJSON marshals RTCMMsgFlags as an array of names.
+func (f RTCMMsgFlags) MarshalJSON() ([]byte, error) {
+	return marshalJSONFlags(f, rtcmMsgJSON, "RTCM message")
+}
+
+// UnmarshalJSON unmarshals RTCMMsgFlags from an array of names.
+func (f *RTCMMsgFlags) UnmarshalJSON(data []byte) error {
+	return unmarshalJSONFlags(data, f, rtcmMsgJSON, "RTCM message")
+}
+
 type RawMsgFlags uint8
 
 const (
@@ -216,6 +387,21 @@ const (
 	RawMsgNone    RawMsgFlags = 0
 	RawMsgAny     RawMsgFlags = RawMsgObs | RawMsgNavData // any message (not flag)
 )
+
+var rawMsgJSON = []jsonFlag[RawMsgFlags]{
+	{"obs", RawMsgObs},
+	{"navData", RawMsgNavData},
+}
+
+// MarshalJSON marshals RawMsgFlags as an array of names.
+func (f RawMsgFlags) MarshalJSON() ([]byte, error) {
+	return marshalJSONFlags(f, rawMsgJSON, "raw message")
+}
+
+// UnmarshalJSON unmarshals RawMsgFlags from an array of names.
+func (f *RawMsgFlags) UnmarshalJSON(data []byte) error {
+	return unmarshalJSONFlags(data, f, rawMsgJSON, "raw message")
+}
 
 type ConfigOptions struct {
 	Socket     bool                  // connected via socket, skip serial detection
@@ -1006,6 +1192,20 @@ type SurveyFlags int
 const (
 	SurveyAgain SurveyFlags = 1 << iota // do a survey even if we have done one already
 )
+
+var surveyJSON = []jsonFlag[SurveyFlags]{
+	{"again", SurveyAgain},
+}
+
+// MarshalJSON marshals SurveyFlags as an array of names.
+func (f SurveyFlags) MarshalJSON() ([]byte, error) {
+	return marshalJSONFlags(f, surveyJSON, "survey")
+}
+
+// UnmarshalJSON unmarshals SurveyFlags from an array of names.
+func (f *SurveyFlags) UnmarshalJSON(data []byte) error {
+	return unmarshalJSONFlags(data, f, surveyJSON, "survey")
+}
 
 // Survey specifies the parameters for performing a survey-in.
 type Survey struct {

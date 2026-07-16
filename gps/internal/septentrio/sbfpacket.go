@@ -43,8 +43,6 @@ func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, p
 			if b == sbfbin.Sync2 {
 				return stateStarted
 			}
-		case 2, 3, 4, 5, 6:
-			return stateStarted
 		case 7:
 			length := int(buf[nextScanIndex-1]) | int(b)<<8
 			bodyLen := length - sbfbin.HeaderLen
@@ -80,7 +78,7 @@ func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
 }
 
 func (f packetFormat) RescanOnBadChecksum(_ bool, _ []byte) bool {
-	return true
+	return false
 }
 
 // PacketProcessor implements gpsprot.PacketProcessor for SBF packets.

@@ -165,6 +165,10 @@ class Context:
         # common.SmokeContext protocol but are unused here.
         self.source_log = ""
         self.pull_source_log = ""
+        # satpulsewb only; the system test runs the daemon, so these too are
+        # protocol stubs, unused here.
+        self.wb_port = 0
+        self.token = ""
         self.satpulsetool = find_program("satpulsetool", ["/usr/bin/satpulsetool", "/usr/local/bin/satpulsetool"])
         self.replay_proc: subprocess.Popen[bytes] | None = None
         self._replay_fifo: IO[bytes] | None = None
@@ -213,6 +217,9 @@ class Context:
 
     def http_url(self, path: str) -> str:
         return f"http://127.0.0.1:{self.port('SATPULSE_TEST_HTTP_PORT')}{path}"
+
+    def wb_url(self, path: str) -> str:
+        raise RuntimeError("system smoke runs satpulsed, not satpulsewb")
 
     def disconnect(self) -> None:
         raise RuntimeError("system smoke uses a FIFO and cannot disconnect it")

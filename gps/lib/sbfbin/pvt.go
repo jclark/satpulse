@@ -48,7 +48,7 @@ func (m Mode) IsSBAS() bool {
 
 // WACorrInfo base-type codes, encoded in bits 5-6 of WACorrInfo.
 const (
-	WACorrBaseNone     uint8 = 0 // no differential/wide-area info used
+	WACorrBaseNone     uint8 = 0 // unknown or not in differential positioning mode
 	WACorrBasePhysical uint8 = 1 // physical base station (RTK)
 	WACorrBaseVirtual  uint8 = 2 // virtual base station (VRS)
 	WACorrBaseSSR      uint8 = 3 // state-space (RTK-SSR / PPP-RTK)
@@ -185,6 +185,8 @@ func (p *pvtTrailer) setDNUDefaults() {
 func (p *pvtTrailer) chunks(name string, fixed any) func(yield func(chunk any) bool) {
 	return revisionChunks(p.payloadLen(), name, fixed, &p.pvtRev1, &p.pvtRev2)
 }
+
+func (p *pvtTrailer) latestRev() uint8 { return 3 }
 
 // PVTGeodetic is the SBF PVTGeodetic block.
 type PVTGeodetic struct {

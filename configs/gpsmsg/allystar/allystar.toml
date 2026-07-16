@@ -485,6 +485,38 @@ id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x12, 0]
 
+# Enable NAV-CLOCK at 1Hz (clock bias/drift)
+# Verified ACK received on TAU1201
+# Verified NAV-CLOCK messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "asbin-nav-clock"
+description = "Enable NAV-CLOCK binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x22, 1]
+
+# Disable NAV-CLOCK
+# Rate 5 is the divisor for 1Hz output on 5Hz-native units (TAU951M-P200,
+# D10P); the CFG-MSG rate is a divisor of the native measurement cycle.
+# Verified NAV-CLOCK messages appear at 1Hz after enable on TAU951M-P200
+[[asbin]]
+tag = "asbin-nav-clock-5"
+description = "Enable NAV-CLOCK binary message at divisor 5 (1Hz on a 5Hz-native unit)"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x22, 5]
+
+# Verified ACK received on TAU1201
+[[asbin]]
+tag = "asbin-nav-clock-off"
+description = "Disable NAV-CLOCK binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x22, 0]
+
 # NMEA messages use class 0xF0
 
 # Verified ACK received on TAU1201

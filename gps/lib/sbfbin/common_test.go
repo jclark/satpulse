@@ -3,6 +3,7 @@ package sbfbin
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -90,9 +91,8 @@ func testBlock(t *testing.T, b *Block) *Block {
 }
 
 // TestMeasExtraManyChannels checks that a MeasExtra with 256 channel
-// sub-blocks round-trips. MeasExtra.N is a u1 that wraps to 0 at 256, so the
-// channel count must come from Channels on write and from the payload length
-// on read, never from N.
+// sub-blocks round-trips. The wire count wraps to 0 at 256, so the channel
+// count must come from Channels on write and from the payload length on read.
 func TestMeasExtraManyChannels(t *testing.T) {
 	ts := TimeStamp{TOW: 0x11223344, WNc: 0x5566}
 	chans := make([]MeasExtraChannelSub, 256)
@@ -119,10 +119,36 @@ func TestMeasExtraManyChannels(t *testing.T) {
 	}
 }
 
+func TestSliceCountsNotInJSON(t *testing.T) {
+	tests := []Params{
+		&QualityInd{},
+		&RFStatus{},
+		&ReceiverStatus{},
+		&SatVisibility{},
+		&MeasExtra{},
+		&MeasEpoch{Type1: []MeasEpochChannelType1{{}}, Type2: [][]MeasEpochChannelType2{nil}},
+		&ChannelStatus{SatInfo: []ChannelSatInfo{{}}, StateInfo: [][]ChannelStateInfo{nil}},
+	}
+	for _, p := range tests {
+		name := reflect.TypeOf(p).Elem().Name()
+		t.Run(name, func(t *testing.T) {
+			b, err := json.Marshal(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range []string{"N", "N1", "N2"} {
+				if bytes.Contains(b, []byte(`"`+field+`":`)) {
+					t.Errorf("JSON contains %s: %s", field, b)
+				}
+			}
+		})
+	}
+}
+
 func TestRoundTripM1Blocks(t *testing.T) {
 	ts := TimeStamp{TOW: 0x11223344, WNc: 0x5566}
 	testBlock(t, &Block{Rev: 0, TimeStamp: ts, Params: &EndOfMeas{}})
-	testBlock(t, &Block{Rev: 2, TimeStamp: ts, Params: &PVTGeodetic{
+	testBlock(t, &Block{Rev: 3, TimeStamp: ts, Params: &PVTGeodetic{
 		pvtGeodeticFixed: pvtGeodeticFixed{
 			Mode:        ModeRTKFixed,
 			Error:       ErrNone,
@@ -240,6 +266,13 @@ func TestPVTGeodeticRevisionTolerance(t *testing.T) {
 	if got.Rev != 0 {
 		t.Fatalf("Rev = %d, want 0", got.Rev)
 	}
+	pkt, err = Serialize(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, rev := MsgID(Endian.Uint16(pkt[4:6])).Unpack(); rev != 3 {
+		t.Fatalf("Serialize of rev-0 block stamped rev %d, want 3", rev)
+	}
 	buf.Write([]byte{1, 2, 3, 4})
 	pkt, err = PackMsg(PVTGeodeticID|2<<13, buf.Bytes())
 	if err != nil {
@@ -316,6 +349,17 @@ func TestSerializeRejectsOversizeOneByteCounts(t *testing.T) {
 	}
 }
 
+func TestSerializePanicsOnMismatchedTwoLevelSlices(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("Serialize did not panic")
+		}
+	}()
+	_, _ = Serialize(&Block{Params: &MeasEpoch{
+		Type1: []MeasEpochChannelType1{{}},
+	}})
+}
+
 func TestMeasEpochSBLengthTolerance(t *testing.T) {
 	b := &Block{
 		TimeStamp: TimeStamp{TOW: 1, WNc: 2},
@@ -352,7 +396,7 @@ func TestRoundTripM2Blocks(t *testing.T) {
 		HPL:  5.5,
 		VPL:  6.5,
 	}})
-	testBlock(t, &Block{TimeStamp: ts, Params: &PVTCartesian{
+	testBlock(t, &Block{Rev: 3, TimeStamp: ts, Params: &PVTCartesian{
 		pvtCartesianFixed: pvtCartesianFixed{
 			Mode:        ModeDifferential,
 			X:           1,
@@ -510,6 +554,36 @@ func TestReceiverSetupRevisionTolerance(t *testing.T) {
 	gp := got.Params.(*ReceiverSetup)
 	if gp.Latitude != ReceiverSetupPositionDNU || gp.Longitude != ReceiverSetupPositionDNU || gp.Height != ReceiverSetupPositionDNU {
 		t.Fatalf("receiver setup defaults = (%v, %v, %v)", gp.Latitude, gp.Longitude, gp.Height)
+	}
+	pkt, err = Serialize(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, rev := MsgID(Endian.Uint16(pkt[4:6])).Unpack(); rev != 4 {
+		t.Fatalf("Serialize of rev-0 block stamped rev %d, want 4", rev)
+	}
+}
+
+func TestReceiverSetupRev3(t *testing.T) {
+	ts := TimeStamp{TOW: 1, WNc: 2}
+	rs := &ReceiverSetup{}
+	copy(rs.StationCode[:], "STAT")
+	buf := new(bytes.Buffer)
+	for _, v := range []any{ts, &rs.receiverSetupFixed, &rs.receiverSetupRev1, &rs.receiverSetupRev2, &rs.receiverSetupRev3} {
+		if err := binary.Write(buf, Endian, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pkt, err := PackMsg(ReceiverSetupID|3<<13, buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseMsg(string(pkt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := got.Params.(*ReceiverSetup).StationCode; code != rs.StationCode {
+		t.Fatalf("StationCode = %q, want %q", code, rs.StationCode)
 	}
 }
 

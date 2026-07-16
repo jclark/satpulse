@@ -18,7 +18,6 @@ import json
 import shutil
 import subprocess
 import sys
-import time
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -26,7 +25,7 @@ from typing import Any
 from analyze import DISRUPTIVE_KEYS, analyze_run, load_steps
 from characterize import to_json
 from model import emissions, port_has_serial_speed
-from probes import PROPS, RESET_SETTLE, ProbeRun
+from probes import PROPS, ProbeRun
 from tool import Invocation, Tool, ToolFailure
 
 
@@ -200,14 +199,9 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
     """Execute the probe sequence, recording every step. No verdicts here:
     the records are analyzed offline afterwards (also on a live run)."""
     pr = ProbeRun(tool)
-    ident = identify_receiver(tool, pr, setup=disruptive)
+    ident = identify_receiver(tool, pr)
     if ident is None:
         return
-    if disruptive:
-        start_from_factory_defaults(tool, pr)
-        ident = identify_receiver(tool, pr, setup=False)
-        if ident is None:
-            return
     receiver = ident.out.get("receiver", {})
     supports = ident.out.get("supports") or []
     print(f"receiver: {receiver.get('vendor')} {receiver.get('hardware')} "
@@ -247,7 +241,7 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
         # that can wedge the session come after everything else.
         print("probing message output", file=sys.stderr)
         fixed = rtcm_fixed_pos_ecef if "fixedPos" in supports else None
-        base = pr.probe_messages(initial, fixed)
+        base = pr.probe_messages(initial, fixed, receiver)
         print("probing reload", file=sys.stderr)
         # Serial links get speed rediscovery after each reload, since NVM
         # may hold a different baud rate. Native USB has no baud rate.
@@ -274,33 +268,18 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
             pr.session_speed_restore(as_found_speed)
 
 
-def identify_receiver(tool: Tool, pr: ProbeRun, setup: bool) -> Invocation | None:
-    name = "setup-show-receiver" if setup else "show-receiver"
+def identify_receiver(tool: Tool, pr: ProbeRun) -> Invocation | None:
     intent = {"op": "identify"}
-    if setup:
-        intent["role"] = "setup"
-    ident = tool.gps(name, ["--show-receiver"], intent)
+    ident = tool.gps("show-receiver", ["--show-receiver"], intent)
     if ident.error is not None:
         # satpulsetool does not scan baud rates, so a UART resting at the
         # wrong speed (a crashed run, another program) looks like a dead
         # receiver. Rediscover the speed and identify again.
         if pr.rediscover_speed() is not None:
-            ident = tool.gps(name, ["--show-receiver"], intent)
+            ident = tool.gps("show-receiver", ["--show-receiver"], intent)
         if ident.error is not None:
             return None
     return ident
-
-
-def start_from_factory_defaults(tool: Tool, pr: ProbeRun) -> None:
-    """Put a disruptive run into a known starting state before probing."""
-    print("resetting receiver to factory defaults", file=sys.stderr)
-    tool.gps("setup-factory-reset", ["--factory-reset"],
-             {"op": "factory-reset", "role": "setup"})
-    time.sleep(RESET_SETTLE)
-    pr.rediscover_speed()
-    tool.gps("setup-reset", ["--reset"], {"op": "reset", "role": "setup"})
-    time.sleep(RESET_SETTLE)
-    pr.rediscover_speed()
 
 
 def check_show_port(tool: Tool, pr: ProbeRun) -> dict[str, Any]:
@@ -340,20 +319,46 @@ def report(log_dir: Path, exe: Path, baseline: Path | None) -> int:
 def compare_baseline(baseline: Path, text: str, disruptive: bool) -> int:
     """Compare against the checked-in characterization; differences are
     regressions to investigate. The baseline holds the full characterization
-    from a disruptive run; a default run is compared with the
-    disruptive-only entries stripped."""
-    want = baseline.read_text()
+    from a disruptive run; a default run is compared with the disruptive-only
+    entries stripped.
+
+    Defect entries are unstable by nature - a receiver's ACK-without-apply
+    incidence drifts between sessions - so they are compared by content
+    subset rather than exactly: a defect property absent from the run does not
+    diff (drift down is allowed), and neither does a run whose observations
+    are all recorded in the baseline. What diffs is novel receiver behavior -
+    a defect property the baseline never recorded, or a stuck value or request
+    shape the baseline's entry for that property does not contain. The rest of
+    the characterization, the stable core, must match exactly."""
+    want_doc = json.loads(baseline.read_text())
+    run_doc = json.loads(text)
     if not disruptive:
-        doc = json.loads(want)
         for k in DISRUPTIVE_KEYS:
-            doc.get("limitations", {}).pop(k, None)
-        want = to_json(doc)
-    if want == text:
+            want_doc.get("limitations", {}).pop(k, None)
+    want_defects = want_doc.pop("defects", {})
+    run_defects = run_doc.pop("defects", {})
+    new_defects = sorted(set(run_defects) - set(want_defects))
+    novel = []
+    for p in sorted(set(run_defects) & set(want_defects)):
+        want_obs = want_defects[p].get("acceptedButNotApplied", [])
+        extra = [o for o in run_defects[p].get("acceptedButNotApplied", [])
+                 if o not in want_obs]
+        if extra:
+            novel.append((p, extra))
+    want, core = to_json(want_doc), to_json(run_doc)
+    if want == core and not new_defects and not novel:
         print(f"matches baseline {baseline}", file=sys.stderr)
         return 0
-    sys.stderr.writelines(difflib.unified_diff(
-        want.splitlines(keepends=True), text.splitlines(keepends=True),
-        fromfile=str(baseline), tofile="this run"))
+    if want != core:
+        sys.stderr.writelines(difflib.unified_diff(
+            want.splitlines(keepends=True), core.splitlines(keepends=True),
+            fromfile=str(baseline), tofile="this run"))
+    for p in new_defects:
+        print(f"new receiver defect not in baseline: {p}: "
+              f"{json.dumps(run_defects[p], sort_keys=True)}", file=sys.stderr)
+    for p, extra in novel:
+        print(f"receiver defect {p} has observations not in baseline: "
+              f"{json.dumps(extra, sort_keys=True)}", file=sys.stderr)
     print("characterization differs from baseline", file=sys.stderr)
     return 1
 

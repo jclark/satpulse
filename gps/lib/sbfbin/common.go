@@ -99,6 +99,12 @@ type payloadSizer interface {
 	clearPayloadLen()
 }
 
+// revisioned is implemented by params with revision-dependent trailers, whose
+// full serialized layout corresponds to a fixed block revision number.
+type revisioned interface {
+	latestRev() uint8
+}
+
 type payloadSize struct {
 	n int
 }
@@ -185,58 +191,58 @@ func revisionChunks(payloadLen int, name string, fixed any, trailers ...any) fun
 }
 
 func twoLevelChunks[Outer any, Inner any](
-	n *uint8,
 	sb1Len *uint8,
 	sb2Len *uint8,
 	head any,
 	outer *[]Outer,
 	inner *[][]Inner,
-	getN2 func(*Outer) uint8,
-	setN2 func(*Outer, uint8),
+	outerChunks func(*Outer, *uint8, func(any) bool) bool,
 ) func(yield func(chunk any) bool) {
 	return func(yield func(chunk any) bool) {
 		var outerZero Outer
 		var innerZero Inner
-		outerSize := binary.Size(outerZero)
+		outerSize := binary.Size(outerZero) + 1
 		innerSize := binary.Size(innerZero)
-		if err := setCount(n, len(*outer), "outer sub-block"); err != nil {
+		if len(*outer) != len(*inner) {
+			panic("two-level outer and inner slice lengths differ")
+		}
+		var n uint8
+		if err := setCount(&n, len(*outer), "outer sub-block"); err != nil {
 			yield(err)
 			return
 		}
-		if *n > 0 && *sb1Len == 0 {
+		if n > 0 && *sb1Len == 0 {
 			*sb1Len = uint8(outerSize)
 		}
-		if *n > 0 && *sb2Len == 0 {
+		if n > 0 && *sb2Len == 0 {
 			*sb2Len = uint8(innerSize)
 		}
-		if !yield(head) {
+		if !yield(&n) || !yield(head) {
 			return
 		}
-		if len(*outer) != int(*n) {
-			*outer = make([]Outer, int(*n))
+		if len(*outer) != int(n) {
+			*outer = make([]Outer, int(n))
 		}
-		if len(*inner) != int(*n) {
-			*inner = make([][]Inner, int(*n))
+		if len(*inner) != int(n) {
+			*inner = make([][]Inner, int(n))
 		}
 		sb1Pad := int(*sb1Len) - outerSize
 		sb2Pad := int(*sb2Len) - innerSize
 		for i := range *outer {
 			o := &(*outer)[i]
-			if len((*inner)[i]) > 255 {
-				yield(chunkError("inner sub-block count exceeds 255"))
+			var n2 uint8
+			if err := setCount(&n2, len((*inner)[i]), "inner sub-block"); err != nil {
+				yield(err)
 				return
 			}
-			if len((*inner)[i]) > 0 {
-				setN2(o, uint8(len((*inner)[i])))
-			}
-			if !yield(o) {
+			if !outerChunks(o, &n2, yield) {
 				return
 			}
 			if !yield(paddingChunk(sb1Pad)) {
 				return
 			}
-			if len((*inner)[i]) != int(getN2(o)) {
-				(*inner)[i] = make([]Inner, int(getN2(o)))
+			if len((*inner)[i]) != int(n2) {
+				(*inner)[i] = make([]Inner, int(n2))
 			}
 			for j := range (*inner)[i] {
 				if !yield(&(*inner)[i][j]) {
@@ -322,7 +328,7 @@ func ParseMsg(packet string) (*Block, error) {
 	if length != n {
 		return nil, fmt.Errorf("SBF message length mismatch: header %d, packet %d", length, n)
 	}
-	if length <= HeaderLen || length%4 != 0 {
+	if length%4 != 0 {
 		return nil, fmt.Errorf("SBF message has bad length %d", length)
 	}
 	got := Endian.Uint16([]byte(packet[2:4]))
@@ -333,9 +339,6 @@ func ParseMsg(packet string) (*Block, error) {
 	id := MsgID(Endian.Uint16([]byte(packet[4:6])))
 	blockNumber, rev := id.Unpack()
 	body := packet[HeaderLen:]
-	if len(body) < 6 {
-		return nil, fmt.Errorf("SBF-%s body too short (%d bytes)", id, len(body))
-	}
 	ts := TimeStamp{
 		TOW: Endian.Uint32([]byte(body[:4])),
 		WNc: Endian.Uint16([]byte(body[4:6])),
@@ -361,7 +364,11 @@ func ParseMsg(packet string) (*Block, error) {
 	return b, nil
 }
 
-// Serialize serializes an SBF block to a complete packet.
+// Serialize serializes an SBF block to a complete packet. For blocks with
+// revision-dependent trailers, it always writes the full layout of the latest
+// revision known to this package and sets the revision number in the packet's
+// ID to match, ignoring b.Rev; so a block parsed from an earlier-revision
+// packet serializes to a longer, higher-revision packet.
 func Serialize(b *Block) ([]byte, error) {
 	buf := new(strings.Builder)
 	if err := binary.Write(buf, Endian, b.TimeStamp); err != nil {
@@ -372,7 +379,11 @@ func Serialize(b *Block) ([]byte, error) {
 	} else if err := WriteBinChunked(buf, b.Params, b.ID().String()); err != nil {
 		return nil, err
 	}
-	return PackMsg(b.ID(), []byte(buf.String()))
+	id := b.ID()
+	if r, ok := b.Params.(revisioned); ok {
+		id = MsgID(b.Params.BlockNumber()) | MsgID(r.latestRev())<<13
+	}
+	return PackMsg(id, []byte(buf.String()))
 }
 
 // PackMsg creates a complete SBF packet from an ID and body payload.
