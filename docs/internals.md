@@ -84,6 +84,8 @@ These packages implement the `gpsprot` interface for specific protocols. They ar
 
 `gps/internal/spartn` implements `gps/gpsprot` abstractions for the SPARTN protocol. It uses `gps/lib/spartnbin` for field extraction.
 
+`gps/internal/septentrio` implements `gps/gpsprot` abstractions for the Septentrio SBF protocol. It uses `gps/lib/sbfbin` to frame and parse SBF blocks.
+
 `gps/internal/casic` implements `gps/gpsprot` abstractions for the CASIC binary protocol. It uses `gps/lib/casbin` to do this.
 
 `gps/internal/unc` implements `gps/gpsprot` abstractions for the Unicore protocol. It uses `gps/lib/uncmsg` to parse Unicore binary and ASCII message formats.
@@ -117,6 +119,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 `gps/lib/rtcmbin` parses and serializes RTCM binary packets using `gps/lib/bitsenc`, including message types 1005/1006, 1230, and MSM. It also provides MSM7-to-MSM4 conversion.
 
 `gps/lib/spartnbin` parses the SPARTN transport frame envelope and computes its CRCs using `gps/lib/bitsenc`, returning the (possibly encrypted) message payload as opaque bytes.
+
+`gps/lib/sbfbin` translates binary blocks in the Septentrio SBF protocol to and from Go structs.
 
 `gps/lib/rinex` defines an intermediate, RINEX-adjacent representation of observation data as JSON-serializable Go types, and reads and writes it as RINEX observation files.
 

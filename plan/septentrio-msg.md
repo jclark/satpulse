@@ -380,13 +380,13 @@ PulseOffset`, so an early pulse needs a positive `PulseOffset`. This
 sign flip has not been verified against real hardware (no
 oscilloscope/NTP-SHM ground truth yet); it is the single
 highest-priority item to re-check once hardware and a PPS reference
-are available. `Timescale` (a distinct enum from `TimeSystem`: `1`
+are available. `TimeScale` (a distinct enum from `TimeSystem`: `1`
 GPS, `2` UTC, `3` Receiver, `4` GLO, `5` GAL, `6` BDS, `100` Fugro) ->
 `GNSS`: `1`->GPS, `4`->GLO, `5`->GAL, `6`->BDS; leave zero for `2`/`3`/
 `100`. Note `xPPSOffset` can attribute a `TimeMsg` to GLONASS (via
-`Timescale==4`) even though the PVT family cannot (`TimeSystem==3` has
+`TimeScale==4`) even though the PVT family cannot (`TimeSystem==3` has
 no documented week-epoch mapping) -- `xPPSOffset`'s `TAITime` never
-depends on `Timescale`, only the header convention (always GPS,
+depends on `TimeScale`, only the header convention (always GPS,
 section 5.1). `Ref = PostPulse`. `NativeMsgID = "xPPSOffset"`.
 
 `Accuracy time.Duration` has **no SBF source anywhere** (no field
