@@ -15,9 +15,9 @@ type receiverSetupFixed struct {
 	RxVersion      latin1z.StringZ20
 	AntSerialNbr   latin1z.StringZ20
 	AntType        latin1z.StringZ20
-	DeltaH         float32
-	DeltaE         float32
-	DeltaN         float32
+	DeltaH         float32 `json:"deltaH"`
+	DeltaE         float32 `json:"deltaE"`
+	DeltaN         float32 `json:"deltaN"`
 }
 
 type receiverSetupRev1 struct {
