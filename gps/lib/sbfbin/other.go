@@ -75,6 +75,64 @@ const (
 	GEOLongTermCorrID      = 5932
 	GEOServiceLevelID      = 5917
 	GEOClockEphCovMatrixID = 5934
+	// Navigation page blocks
+	GPSRawCAID   = 4017
+	GPSRawL2CID  = 4018
+	GPSRawL5ID   = 4019
+	GPSRawL1CID  = 4221
+	GLORawCAID   = 4026
+	GALRawFNAVID = 4022
+	GALRawINAVID = 4023
+	GALRawCNAVID = 4024
+	GEORawL1ID   = 4020
+	GEORawL5ID   = 4021
+	BDSRawID     = 4047
+	BDSRawB1CID  = 4218
+	BDSRawB2aID  = 4219
+	BDSRawB2bID  = 4242
+	QZSRawL1CAID = 4066
+	QZSRawL2CID  = 4067
+	QZSRawL5ID   = 4068
+	QZSRawL6DID  = 4270
+	QZSRawL6EID  = 4271
+	QZSRawL1CID  = 4227
+	QZSRawL1SID  = 4228
+	QZSRawL5SID  = 4246
+	NAVICRawID   = 4093
+	// Almanacs
+	GPSAlmID = 5892
+	GLOAlmID = 4005
+	GALAlmID = 4003
+	BDSAlmID = 4119
+	QZSAlmID = 4116
+	// Other decoded message blocks
+	GALGstGpsID = 4032
+	GALSARRLMID = 4034
+	// Attitude
+	AttEulerID    = 5938
+	AttCovEulerID = 5939
+	EndOfAttID    = 5943
+	// Base vector
+	BaseVectorCartID = 4043
+	BaseVectorGeodID = 4028
+	// PVT support
+	PVTSupportID  = 4076
+	PVTSupportAID = 4079
+	// External event
+	ExtEventBaseVectGeodID = 4217
+	ExtEventAttEulerID     = 4237
+	// L-band demodulator
+	LBandTrackerStatusID = 4201
+	// Status
+	InputLinkID  = 4090
+	OutputLinkID = 4091
+	DiskStatusID = 4059
+	// Miscellaneous
+	RxMessageID = 4103
+	CommandsID  = 4015
+	CommentID   = 5936
+	BBSamplesID = 4040
+	ASCIIInID   = 4075
 )
 
 func init() {
@@ -127,4 +185,52 @@ func init() {
 	idNameMap[GEOLongTermCorrID] = "GEOLongTermCorr"
 	idNameMap[GEOServiceLevelID] = "GEOServiceLevel"
 	idNameMap[GEOClockEphCovMatrixID] = "GEOClockEphCovMatrix"
+	idNameMap[GPSRawCAID] = "GPSRawCA"
+	idNameMap[GPSRawL2CID] = "GPSRawL2C"
+	idNameMap[GPSRawL5ID] = "GPSRawL5"
+	idNameMap[GPSRawL1CID] = "GPSRawL1C"
+	idNameMap[GLORawCAID] = "GLORawCA"
+	idNameMap[GALRawFNAVID] = "GALRawFNAV"
+	idNameMap[GALRawINAVID] = "GALRawINAV"
+	idNameMap[GALRawCNAVID] = "GALRawCNAV"
+	idNameMap[GEORawL1ID] = "GEORawL1"
+	idNameMap[GEORawL5ID] = "GEORawL5"
+	idNameMap[BDSRawID] = "BDSRaw"
+	idNameMap[BDSRawB1CID] = "BDSRawB1C"
+	idNameMap[BDSRawB2aID] = "BDSRawB2a"
+	idNameMap[BDSRawB2bID] = "BDSRawB2b"
+	idNameMap[QZSRawL1CAID] = "QZSRawL1CA"
+	idNameMap[QZSRawL2CID] = "QZSRawL2C"
+	idNameMap[QZSRawL5ID] = "QZSRawL5"
+	idNameMap[QZSRawL6DID] = "QZSRawL6D"
+	idNameMap[QZSRawL6EID] = "QZSRawL6E"
+	idNameMap[QZSRawL1CID] = "QZSRawL1C"
+	idNameMap[QZSRawL1SID] = "QZSRawL1S"
+	idNameMap[QZSRawL5SID] = "QZSRawL5S"
+	idNameMap[NAVICRawID] = "NAVICRaw"
+	idNameMap[GPSAlmID] = "GPSAlm"
+	idNameMap[GLOAlmID] = "GLOAlm"
+	idNameMap[GALAlmID] = "GALAlm"
+	idNameMap[BDSAlmID] = "BDSAlm"
+	idNameMap[QZSAlmID] = "QZSAlm"
+	idNameMap[GALGstGpsID] = "GALGstGps"
+	idNameMap[GALSARRLMID] = "GALSARRLM"
+	idNameMap[AttEulerID] = "AttEuler"
+	idNameMap[AttCovEulerID] = "AttCovEuler"
+	idNameMap[EndOfAttID] = "EndOfAtt"
+	idNameMap[BaseVectorCartID] = "BaseVectorCart"
+	idNameMap[BaseVectorGeodID] = "BaseVectorGeod"
+	idNameMap[PVTSupportID] = "PVTSupport"
+	idNameMap[PVTSupportAID] = "PVTSupportA"
+	idNameMap[ExtEventBaseVectGeodID] = "ExtEventBaseVectGeod"
+	idNameMap[ExtEventAttEulerID] = "ExtEventAttEuler"
+	idNameMap[LBandTrackerStatusID] = "LBandTrackerStatus"
+	idNameMap[InputLinkID] = "InputLink"
+	idNameMap[OutputLinkID] = "OutputLink"
+	idNameMap[DiskStatusID] = "DiskStatus"
+	idNameMap[RxMessageID] = "RxMessage"
+	idNameMap[CommandsID] = "Commands"
+	idNameMap[CommentID] = "Comment"
+	idNameMap[BBSamplesID] = "BBSamples"
+	idNameMap[ASCIIInID] = "ASCIIIn"
 }

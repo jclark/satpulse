@@ -99,10 +99,11 @@ type payloadSizer interface {
 	clearPayloadLen()
 }
 
-// revisioned is implemented by params with revision-dependent trailers, whose
-// full serialized layout corresponds to a fixed block revision number.
+// revisioned is implemented by params whose serialized layout determines the
+// block revision, overriding Block.Rev. ok is false when the layout carries
+// nothing revision-specific, in which case Block.Rev stands.
 type revisioned interface {
-	latestRev() uint8
+	encodedRev() (rev uint8, ok bool)
 }
 
 type payloadSize struct {
@@ -368,7 +369,10 @@ func ParseMsg(packet string) (*Block, error) {
 // revision-dependent trailers, it always writes the full layout of the latest
 // revision known to this package and sets the revision number in the packet's
 // ID to match, ignoring b.Rev; so a block parsed from an earlier-revision
-// packet serializes to a longer, higher-revision packet.
+// packet serializes to a longer, higher-revision packet. For blocks whose
+// sub-block layout follows SBLength, the ID revision instead follows the
+// SBLength written, so that the ID never claims a revision older than the
+// fields the sub-blocks carry; b.Rev stands only when there are no sub-blocks.
 func Serialize(b *Block) ([]byte, error) {
 	buf := new(strings.Builder)
 	if err := binary.Write(buf, Endian, b.TimeStamp); err != nil {
@@ -381,7 +385,9 @@ func Serialize(b *Block) ([]byte, error) {
 	}
 	id := b.ID()
 	if r, ok := b.Params.(revisioned); ok {
-		id = MsgID(b.Params.BlockNumber()) | MsgID(r.latestRev())<<13
+		if rev, ok := r.encodedRev(); ok {
+			id = MsgID(b.Params.BlockNumber()) | MsgID(rev)<<13
+		}
 	}
 	return PackMsg(id, []byte(buf.String()))
 }
