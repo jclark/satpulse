@@ -68,7 +68,8 @@ func (r *ReceiverSetup) Chunks() func(yield func(chunk any) bool) {
 		&r.receiverSetupRev1, &r.receiverSetupRev2, &r.receiverSetupRev3, &r.receiverSetupRev4)
 }
 
-func (r *ReceiverSetup) latestRev() uint8 { return 4 }
+// encodedRev returns 4: Chunks always writes every trailer group.
+func (r *ReceiverSetup) encodedRev() (uint8, bool) { return 4, true }
 
 func init() {
 	regBlock[ReceiverSetup]("ReceiverSetup")

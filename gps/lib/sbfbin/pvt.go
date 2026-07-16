@@ -186,7 +186,9 @@ func (p *pvtTrailer) chunks(name string, fixed any) func(yield func(chunk any) b
 	return revisionChunks(p.payloadLen(), name, fixed, &p.pvtRev1, &p.pvtRev2)
 }
 
-func (p *pvtTrailer) latestRev() uint8 { return 3 }
+// encodedRev returns 3: Chunks always writes every trailer group, and revision
+// 3 adds no fields beyond revision 2's.
+func (p *pvtTrailer) encodedRev() (uint8, bool) { return 3, true }
 
 // PVTGeodetic is the SBF PVTGeodetic block.
 type PVTGeodetic struct {
