@@ -68,7 +68,6 @@ const (
 )
 
 type satVisibilityHead struct {
-	N        uint8
 	SBLength uint8
 }
 
@@ -103,18 +102,19 @@ func (*SatVisibility) BlockNumber() uint16 { return SatVisibilityID }
 // Chunks returns the binary chunks for the block parameters.
 func (s *SatVisibility) Chunks() func(yield func(chunk any) bool) {
 	return func(yield func(chunk any) bool) {
-		if err := setCount(&s.N, len(s.SatInfo), "SatVisibility SatInfo"); err != nil {
+		var n uint8
+		if err := setCount(&n, len(s.SatInfo), "SatVisibility SatInfo"); err != nil {
 			yield(err)
 			return
 		}
-		if s.N > 0 && s.SBLength == 0 {
+		if n > 0 && s.SBLength == 0 {
 			s.SBLength = uint8(binary.Size(SatInfo{}))
 		}
-		if !yield(&s.satVisibilityHead) {
+		if !yield(&n) || !yield(&s.satVisibilityHead) {
 			return
 		}
-		if len(s.SatInfo) != int(s.N) {
-			s.SatInfo = make([]SatInfo, int(s.N))
+		if len(s.SatInfo) != int(n) {
+			s.SatInfo = make([]SatInfo, int(n))
 		}
 		baseLen := binary.Size(satInfoBase{})
 		rev1Len := binary.Size(satInfoRev1{})
@@ -137,7 +137,6 @@ func (s *SatVisibility) Chunks() func(yield func(chunk any) bool) {
 }
 
 type channelStatusHead struct {
-	N         uint8
 	SB1Length uint8
 	SB2Length uint8
 	Reserved  [3]uint8
@@ -151,7 +150,6 @@ type ChannelSatInfo struct {
 	AzimuthRiseSet uint16
 	HealthStatus   SlotStatus
 	Elevation      int8
-	N2             uint8
 	RxChannel      uint8
 	Reserved2      uint8
 }
@@ -191,9 +189,12 @@ func (*ChannelStatus) BlockNumber() uint16 { return ChannelStatusID }
 
 // Chunks returns the binary chunks for the block parameters.
 func (c *ChannelStatus) Chunks() func(yield func(chunk any) bool) {
-	return twoLevelChunks(&c.N, &c.SB1Length, &c.SB2Length, &c.channelStatusHead, &c.SatInfo, &c.StateInfo,
-		func(s *ChannelSatInfo) uint8 { return s.N2 },
-		func(s *ChannelSatInfo, n uint8) { s.N2 = n })
+	return twoLevelChunks(&c.SB1Length, &c.SB2Length, &c.channelStatusHead, &c.SatInfo, &c.StateInfo,
+		func(s *ChannelSatInfo, n *uint8, yield func(any) bool) bool {
+			return yield(&s.SVID) && yield(&s.FreqNr) && yield(&s.SVIDFull) &&
+				yield(&s.AzimuthRiseSet) && yield(&s.HealthStatus) && yield(&s.Elevation) &&
+				yield(n) && yield(&s.RxChannel) && yield(&s.Reserved2)
+		})
 }
 
 func init() {

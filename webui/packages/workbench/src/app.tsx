@@ -1,9 +1,10 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
-import {EventsOn, EventsOff} from '../wailsjs/runtime/runtime';
-import {Connect, Disconnect, GetAllSignals, GetConnState, GetReceiverState, ListPorts} from '../wailsjs/go/main/App';
+import {transport} from './transport';
+import type {ConnState, MsgFileTag, PortInfo} from './transport';
 import type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo} from '@satpulse/gps/gpsprot';
-import {ConnectionPanel, PortInfo} from './connection-panel';
+import type {ConfigProps} from '@satpulse/gps/configtarget';
+import {ConnectionPanel} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
 import {ConfigPanel} from './config-panel';
 import {PacketPanel} from './packet-panel';
@@ -21,8 +22,7 @@ import {SummaryPanel} from './summary-panel';
 import {ScatterPanel} from './scatter-panel';
 import {SignalsPanel} from './signals-panel';
 export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo};
-
-export type ConnState = 'disconnected' | 'connecting' | 'connected' | 'configuring' | 'sending';
+export type {ConnState, MsgFileTag};
 
 export type ReceiverState =
     | {status: 'disconnected'}
@@ -64,14 +64,6 @@ interface MsgEvent {
     time: string;
 }
 
-export interface MsgFileTag {
-    tag: string;
-    desc?: string;
-    msgCount: number;
-    needsPort?: boolean;
-    saveAware?: boolean;
-}
-
 export interface MsgSendEvent {
     session: number;
     status: 'started' | 'sent' | 'done' | 'cancelled' | 'error';
@@ -110,6 +102,7 @@ const tabBtnDisabled = tabBtnBase + ' border-transparent text-text-muted cursor-
 const connStateLabel: Record<ConnState, string> = {
     disconnected: 'Disconnected',
     connecting: 'Connecting...',
+    reconnecting: 'Reconnecting...',
     connected: 'Connected',
     configuring: 'Configuring...',
     sending: 'Sending...',
@@ -118,14 +111,16 @@ const connStateLabel: Record<ConnState, string> = {
 let toastId = 0;
 
 export function App() {
+    const [readOnly, setReadOnly] = useState(false);
     const [connState, setConnState] = useState<ConnState>('disconnected');
     const [device, setDevice] = useState('');
     const [speed, setSpeed] = useState(9600);
     const [ports, setPorts] = useState<PortInfo[]>([]);
     const [receiver, setReceiver] = useState<ReceiverState>({status: 'disconnected'});
-    const [configProps, setConfigProps] = useState<Record<string, any> | null>(null);
+    const [configProps, setConfigProps] = useState<ConfigProps | null>(null);
     const [signalCatalog, setSignalCatalog] = useState<Record<string, string[]>>({});
     const [selectedSignals, setSelectedSignals] = useState<Set<string>>(new Set());
+    const signalCatalogRequest = useRef(0);
     const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [, setOperation] = useState<OperationState>({status: 'idle', label: ''});
@@ -222,31 +217,33 @@ export function App() {
     }, []);
 
     const refreshPorts = useCallback(() => {
-        ListPorts().then(list => {
-            const ps: PortInfo[] = (list || []).map(p => ({device: p.device, display: p.display}));
-            setPorts(ps);
-            return ps;
-        }).catch(() => []);
+        transport.connection?.listPorts().then(list => setPorts(list || [])).catch(() => {});
     }, []);
 
-    // Fetch ports on startup; auto-select if exactly one
+    // Fetch ports on startup; auto-select if exactly one port
     useEffect(() => {
-        ListPorts().then(list => {
-            const ps: PortInfo[] = (list || []).map(p => ({device: p.device, display: p.display}));
+        const conn = transport.connection;
+        if (!conn) return;
+        conn.listPorts().then(list => {
+            const ps = list || [];
             setPorts(ps);
             if (ps.length === 1) setDevice(ps[0].device);
         }).catch(() => {});
     }, []);
 
     useEffect(() => {
-        const offLog = EventsOn('gps:log', (evt: LogEntry) => {
+        const offReadOnly = transport.eventsOn('wb:readonly', (ro: boolean) => setReadOnly(ro));
+        const offLog = transport.eventsOn('gps:log', (evt: LogEntry) => {
             setLogEntries(prev => [...prev.slice(-199), evt]);
         });
-        const offRcv = EventsOn('gps:receiver', (evt: any) => {
+        const offRcv = transport.eventsOn('gps:receiver', (evt: any) => {
+            const req = ++signalCatalogRequest.current;
             if (!evt.ok && !evt.error) {
                 setReceiver({status: 'probing'});
+                setSignalCatalog({});
             } else if (evt.error) {
                 setReceiver({status: 'error', error: evt.error});
+                setSignalCatalog({});
             } else {
                 const info = evt.Info;
                 const vendor: string = info?.vendor || '';
@@ -260,8 +257,8 @@ export function App() {
                         supportedGNSS: gnss,
                         packetFormats: evt.packetFormats || [],
                     });
-                    GetAllSignals(gnss).then(cat => {
-                        if (cat) setSignalCatalog(cat);
+                    transport.getAllSignals(gnss).then(cat => {
+                        if (cat && req === signalCatalogRequest.current) setSignalCatalog(cat);
                     }).catch(() => {});
                 } else {
                     setReceiver({
@@ -269,13 +266,14 @@ export function App() {
                         packetFormats: evt.packetFormats || [],
                         warning: evt.warning || '',
                     });
+                    setSignalCatalog({});
                 }
             }
         });
-        const offSpeed = EventsOn('gps:speed', (newSpeed: number) => {
+        const offSpeed = transport.eventsOn('gps:speed', (newSpeed: number) => {
             if (newSpeed) setSpeed(newSpeed);
         });
-        const offMsg = EventsOn('gps:msg', (evt: MsgEvent) => {
+        const offMsg = transport.eventsOn('gps:msg', (evt: MsgEvent) => {
             switch (evt.kind) {
                 case 'time': {
                     const msg = evt.msg;
@@ -327,12 +325,17 @@ export function App() {
                     break;
             }
         });
-        const offState = EventsOn('gps:state', (state: ConnState) => {
+        const offState = transport.eventsOn('gps:state', (state: ConnState) => {
             setConnState(state);
             if (state === 'configuring' || state === 'disconnected') {
                 respSessionRef.current = 0;
             }
             if (state === 'disconnected') {
+                signalCatalogRequest.current++;
+                setReceiver({status: 'disconnected'});
+                setConfigProps(null);
+                setSignalCatalog({});
+                setSelectedSignals(new Set());
                 setTimeMsg(null);
                 setNavEpochMsg(null);
                 setSurveyMsg(null);
@@ -350,10 +353,10 @@ export function App() {
                 setTrackGen(g => g + 1);
             }
         });
-        const offInitialPos = EventsOn('gps:initialPos', (ll: [number, number]) => {
+        const offInitialPos = transport.eventsOn('gps:initialPos', (ll: [number, number]) => {
             setMapPos({lat: ll[0], lon: ll[1]});
         });
-        const offEpochPVT = EventsOn('gps:epochPVT', (nav: any) => {
+        const offEpochPVT = transport.eventsOn('gps:epochPVT', (nav: any) => {
             pvtEpoch.current++;
             if (nav.posGeo) {
                 setMapPos({lat: nav.posGeo.latLon[0], lon: nav.posGeo.latLon[1]});
@@ -389,7 +392,7 @@ export function App() {
             setVelRows(evict);
             setTimeRows(evict);
         });
-        const offBaseARP = EventsOn('gps:basearp', (evt: {stationID: number; ecef: [number, number, number]}) => {
+        const offBaseARP = transport.eventsOn('gps:basearp', (evt: {stationID: number; ecef: [number, number, number]}) => {
             setBaseARPs(prev => {
                 const next = new Map(prev);
                 next.set(evt.stationID, evt.ecef);
@@ -399,15 +402,15 @@ export function App() {
         // The base ARP belongs to the active correction stream. Drop it when
         // a session starts fresh or stops, so a stale RTCM ARP doesn't linger
         // after switching to a source that sends no 1005/1006 (e.g. SPARTN).
-        const offCorrARP = EventsOn('gps:corrections', (evt: {state: string}) => {
+        const offCorrARP = transport.eventsOn('gps:corrections', (evt: {state: string}) => {
             if (evt.state === 'connecting' || evt.state === 'stopped') {
                 setBaseARPs(new Map());
             }
         });
-        const offTime = EventsOn('gps:time', (msg: any) => {
+        const offTime = transport.eventsOn('gps:time', (msg: any) => {
             setTimeMsg(msg as TimeMsg);
         });
-        const offMsgSend = EventsOn('gps:msgsend', (evt: MsgSendEvent) => {
+        const offMsgSend = transport.eventsOn('gps:msgsend', (evt: MsgSendEvent) => {
             const {session, status, current, total, error} = evt;
             switch (status) {
                 case 'started':
@@ -441,7 +444,7 @@ export function App() {
                     break;
             }
         });
-        const offResponse = EventsOn('gps:response', (evt: ResponseLine) => {
+        const offResponse = transport.eventsOn('gps:response', (evt: ResponseLine) => {
             if (evt.session !== respSessionRef.current) return;
             setResponseLines(prev => {
                 const next = [...prev, evt];
@@ -453,27 +456,32 @@ export function App() {
             });
         });
         return () => {
-            if (typeof offLog === 'function') offLog(); else EventsOff('gps:log');
-            if (typeof offRcv === 'function') offRcv(); else EventsOff('gps:receiver');
-            if (typeof offSpeed === 'function') offSpeed(); else EventsOff('gps:speed');
-            if (typeof offMsg === 'function') offMsg(); else EventsOff('gps:msg');
-            if (typeof offState === 'function') offState(); else EventsOff('gps:state');
-            if (typeof offInitialPos === 'function') offInitialPos(); else EventsOff('gps:initialPos');
-            if (typeof offEpochPVT === 'function') offEpochPVT(); else EventsOff('gps:epochPVT');
-            if (typeof offBaseARP === 'function') offBaseARP(); else EventsOff('gps:basearp');
-            if (typeof offCorrARP === 'function') offCorrARP(); else EventsOff('gps:corrections');
-            if (typeof offTime === 'function') offTime(); else EventsOff('gps:time');
-            if (typeof offMsgSend === 'function') offMsgSend(); else EventsOff('gps:msgsend');
-            if (typeof offResponse === 'function') offResponse(); else EventsOff('gps:response');
+            offReadOnly();
+            offLog();
+            offRcv();
+            offSpeed();
+            offMsg();
+            offState();
+            offInitialPos();
+            offEpochPVT();
+            offBaseARP();
+            offCorrARP();
+            offTime();
+            offMsgSend();
+            offResponse();
         };
     }, []);
 
-    // Sync connection state with Go backend on mount (after HMR reload)
+    // Sync connection state with the backend on mount (late-joining
+    // client, or HMR reload)
     useEffect(() => {
-        GetConnState().then(async (s: string) => {
+        const req = ++signalCatalogRequest.current;
+        transport.getConnState().then(async (s: string) => {
+            if (req !== signalCatalogRequest.current) return;
             setConnState(s as ConnState);
             if (s === 'disconnected') return;
-            const r = await GetReceiverState();
+            const r = await transport.getReceiverState();
+            if (req !== signalCatalogRequest.current) return;
             if (r.ok) {
                 const info = (r as any).Info;
                 const vendor: string = info?.vendor || '';
@@ -487,8 +495,8 @@ export function App() {
                         supportedGNSS: gnss,
                         packetFormats: r.packetFormats || [],
                     });
-                    const catalog = await GetAllSignals(gnss);
-                    if (catalog) setSignalCatalog(catalog);
+                    const catalog = await transport.getAllSignals(gnss);
+                    if (catalog && req === signalCatalogRequest.current) setSignalCatalog(catalog);
                 } else {
                     setReceiver({
                         status: 'unidentified',
@@ -500,21 +508,27 @@ export function App() {
         }).catch(() => {});
     }, []);
 
-    const handleConfigReadback = useCallback((props: Record<string, any>) => {
+    const handleConfigReadback = useCallback((props: ConfigProps) => {
         setConfigProps(props);
     }, []);
 
     const handleConnect = useCallback(async () => {
+        const conn = transport.connection;
+        if (!conn) return;
         if (connState !== 'disconnected') {
             respSessionRef.current = 0;
-            await Disconnect();
+            try {
+                await conn.disconnect();
+            } catch (e) {
+                addToast(e instanceof Error ? e.message : 'Disconnect failed', 'error');
+            }
             return;
         }
-        const r = await Connect(device, speed);
-        if (r.ok) {
+        try {
+            await conn.connect(device, speed);
             // connection status visible via indicator dot
-        } else {
-            addToast(r.error || 'Connection failed', 'error');
+        } catch (e) {
+            addToast(e instanceof Error ? e.message : 'Connection failed', 'error');
         }
     }, [connState, device, speed, addToast]);
 
@@ -534,11 +548,20 @@ export function App() {
     const configDisabled = receiver.status !== 'identified';
     const connected = connState !== 'disconnected';
 
+    // "Use here" reclaims the write seat in place; the streams never closed, so
+    // the window keeps its state and becomes the writer without a reload.
+    const handleUseHere = useCallback(() => {
+        transport.reclaim?.().catch(e =>
+            addToast(e instanceof Error ? e.message : 'Could not take over', 'error'));
+    }, [addToast]);
+
     return (
         <>
             {/* Connection bar */}
             <ConnectionPanel
                 connected={connected}
+                readOnly={readOnly}
+                onUseHere={handleUseHere}
                 device={device}
                 setDevice={setDevice}
                 speed={speed}
@@ -575,12 +598,14 @@ export function App() {
                 >
                     Configuration
                 </button>
-                <button
-                    class={activeTab === 'messages' ? tabBtnActive : tabBtnInactive}
-                    onClick={() => handleTabChange('messages')}
-                >
-                    Message file
-                </button>
+                {transport.msgFile && (
+                    <button
+                        class={activeTab === 'messages' ? tabBtnActive : tabBtnInactive}
+                        onClick={() => handleTabChange('messages')}
+                    >
+                        Message file
+                    </button>
+                )}
             </div>
 
             {/* Tab content area */}
@@ -638,13 +663,14 @@ export function App() {
 
                 {/* Corrections tab */}
                 <div class={`h-full ${activeTab === 'corrections' ? '' : 'hidden'}`}>
-                    <CorrectionsPanel connState={connState} />
+                    <CorrectionsPanel connState={connState} readOnly={readOnly} />
                 </div>
 
                 {/* Configuration tab */}
                 <div class={`h-full ${activeTab === 'config' ? '' : 'hidden'}`}>
                     <ConfigPanel
                         connState={connState}
+                        readOnly={readOnly}
                         visible={activeTab === 'config'}
                         configProps={configProps}
                         signalCatalog={signalCatalog}
@@ -659,9 +685,11 @@ export function App() {
                 </div>
 
                 {/* Messages tab */}
-                <div class={`h-full ${activeTab === 'messages' ? '' : 'hidden'}`}>
+                {transport.msgFile && <div class={`h-full ${activeTab === 'messages' ? '' : 'hidden'}`}>
                     <MsgFilePanel
                         connState={connState}
+                        readOnly={readOnly}
+                        visible={activeTab === 'messages'}
                         msgFilePath={msgFilePath}
                         setMsgFilePath={setMsgFilePath}
                         msgFileTags={msgFileTags}
@@ -682,7 +710,7 @@ export function App() {
                         addToast={addToast}
                         defaultPort={typeof configProps?.port === 'string' ? configProps.port : ''}
                     />
-                </div>
+                </div>}
             </div>
 
             {/* Drag splitter */}

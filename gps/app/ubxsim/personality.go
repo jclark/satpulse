@@ -32,9 +32,10 @@ type Personality struct {
 }
 
 // Pkt is one recorded packet, gated at replay time by the MSGOUT key it
-// maps to.
+// maps to and by the port's OUTPROT key for its protocol.
 type Pkt struct {
-	KeyM ucv.KeyM // port-neutral MSGOUT key
+	KeyM ucv.KeyM    // port-neutral MSGOUT key
+	Tag  gpsprot.Tag // protocol, selecting the port's OUTPROT key
 	Data []byte
 }
 
@@ -182,12 +183,12 @@ func replayPkts(e *gpsio.PacketLogEntry) ([]Pkt, error) {
 	switch e.Tag {
 	case ubx.Tag:
 		if km, ok := msgOutKey[ubxbin.PacketMsgId(data)]; ok {
-			return []Pkt{{KeyM: km, Data: []byte(data)}}, nil
+			return []Pkt{{KeyM: km, Tag: ubx.Tag, Data: []byte(data)}}, nil
 		}
 	case nmea.Tag:
 		if i := strings.IndexByte(data, ','); i == 6 && data[0] == '$' && data[1] != 'P' {
 			if km, ok := nmeaOutKey[data[3:6]]; ok {
-				return []Pkt{{KeyM: km, Data: []byte(data)}}, nil
+				return []Pkt{{KeyM: km, Tag: nmea.Tag, Data: []byte(data)}}, nil
 			}
 		}
 	case rtcm.Tag:
@@ -205,19 +206,19 @@ func rtcmReplayPkts(data string) ([]Pkt, error) {
 		} else if sub != 0 {
 			return nil, nil
 		}
-		return []Pkt{{KeyM: km, Data: []byte(data)}}, nil
+		return []Pkt{{KeyM: km, Tag: rtcm.Tag, Data: []byte(data)}}, nil
 	}
 	km, ok := rtcmOutKey[mt]
 	if !ok {
 		return nil, nil
 	}
-	pkts := []Pkt{{KeyM: km, Data: []byte(data)}}
+	pkts := []Pkt{{KeyM: km, Tag: rtcm.Tag, Data: []byte(data)}}
 	if km4, ok := rtcmOutKey[mt-3]; ok && mt.IsMSM() && mt%10 == 7 {
 		out, err := rtcmbin.MSM7ConvertPacket(data, 4)
 		if err != nil {
 			return nil, fmt.Errorf("MSM7 to MSM4: %v", err)
 		}
-		pkts = append(pkts, Pkt{KeyM: km4, Data: []byte(out)})
+		pkts = append(pkts, Pkt{KeyM: km4, Tag: rtcm.Tag, Data: []byte(out)})
 	}
 	return pkts, nil
 }

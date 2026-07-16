@@ -7,12 +7,20 @@ changes safely.
 
 ## What this is
 
-Black-box smoke tests that run the real `satpulsed` binary, fed by realtime
-packet-log replay through a FIFO, with no root and no GPS hardware. They check
-daemon-level behaviour -- config wiring, startup, observability endpoints,
-logging, Ntrip, NTP, shutdown -- NOT packet decoding. Decode correctness is
-covered by Go package tests and `plan/packet-testing.md`; do not add
-packet/protocol assertions here.
+Black-box smoke tests that run the real `satpulsed` and `satpulsewb` binaries,
+fed by realtime packet-log replay through a FIFO or pty (or the u-blox simulator
+for config scenarios), with no root and no GPS hardware. They check program-level
+behaviour -- config wiring, startup,
+observability endpoints, logging, Ntrip, NTP, corrections, shutdown -- NOT packet
+decoding. Decode correctness is covered by Go package tests and
+`plan/packet-testing.md`; do not add packet/protocol assertions here.
+
+The program under test is a scenario dimension (`PROGRAM`, default `satpulsed`;
+`satpulsewb` is the SatPulse Workbench GUI server over `gps/app/session`), chosen
+behind a per-program seam the same way the OS is chosen behind `platform_*`. See
+Program under test below. What plays the receiver is a second, orthogonal
+dimension (`PROVIDER`, default `replay`; `ubxsim` is the u-blox simulator, which
+answers config so the config path can be tested). See Packet provider below.
 
 Checks are deliberately shallow: catch gross breakage (panics, failed wiring,
 missing listeners, broken shutdown, missing/empty logs, unusable endpoints),
@@ -30,7 +38,7 @@ existing, so run the appropriate build yourself first (e.g. after any Go
 change).
 
 ```sh
-make            # from repo root: build satpulsed + satpulsetool
+make            # from repo root: build satpulsed + satpulsetool + satpulsewb
 make smoketest  # run all scenarios in parallel
 ```
 
@@ -57,9 +65,10 @@ python3 smoketest/run.py --sudo     # use sudo -n for root-required scenarios
 ```
 
 `PASS`/`FAIL` per scenario. On `FAIL` the traceback prints and the run
-directory is **kept** (path printed to stderr) -- inspect `satpulsed.log`,
-`replay.err`, `caster.log`, `ntp.jsonl`, the rendered `satpulse.toml`, and the
-`log/` dir there. On `PASS` the run dir is deleted. Root-required scenarios
+directory is **kept** (path printed to stderr) -- inspect the program log
+(`satpulsed.log` or `satpulsewb.log`), `replay.err`, `caster.log`/`source.log`,
+`ntp.jsonl`, the rendered `satpulse.toml`, and the `log/` dir there. On `PASS`
+the run dir is deleted. Root-required scenarios
 print `SKIP` when the runner is not root and `--sudo` was not specified.
 `--sudo` uses `sudo -n`, so it is intended for passwordless sudo in CI and
 fails before starting scenarios if sudo is unavailable.
@@ -84,22 +93,27 @@ lifecycle. Per scenario `family/name`:
 
 1. Allocate a disjoint block of ports (below the ephemeral range) and per-run
    paths under a temp dir -- this is what makes scenarios parallel-safe.
-2. Render `scenarios/family/name.toml.in`, substituting `${SATPULSE_TEST_*}`
-   vars (see below). From the rendered config the runner detects which
-   listeners are configured (`[[http]]`, `[ntrip]`, `[ntp]`, `[[stream.push]]`)
-   and sets up only the helpers each needs.
-3. Start auxiliary consumers/peers that must exist *before* the daemon: the
-   chrony SOCK consumer (`ntpsock.py`) for `[ntp]`, fake Ntrip casters for
-   Ntrip `[[stream.push]]` entries, and fake UDP receivers for UDP push entries.
-4. Start `satpulsed -v -f <config>` (stdout+stderr -> `satpulsed.log`).
-5. Wait for the daemon's listeners (`wait_listeners`) / outbound push
-   (`wait_push`) before replay, so observers exist before any packet flows.
+2. Ask the program (`program.prepare`) to render its input, substituting
+   `${SATPULSE_TEST_*}` vars (see below). satpulsed renders `name.toml.in` and
+   detects which listeners/peers the config configures (`[[http]]`, `[ntrip]`,
+   `[ntp]`, `[[stream.push]]`, `[stream.pull]`); satpulsewb renders
+   `name.args.in` into its flag list.
+3. Start auxiliary peers that must exist *before* the program
+   (`program.start_peers`): the chrony SOCK consumer (`ntpsock.py`), fake Ntrip
+   casters, fake UDP receivers, and the fake correction source -- config-derived
+   for satpulsed, the declared `CORRECTION_SOURCE` for satpulsewb.
+4. Start the program (`program.command`, e.g. `satpulsed -v -f <config>` or
+   `satpulsewb <flags>`); stdout+stderr -> `<program>.log`.
+5. `program.wait_ready`: satpulsed waits for its listeners (`wait_listeners`)
+   and outbound push (`wait_push`); satpulsewb parses the printed URL/token and
+   waits for its HTTP port. This happens before replay, so observers exist
+   before any packet flows.
 6. Start **exactly one** `satpulsetool pack --realtime <FACTOR> <log>` replay
-   into the FIFO, in the background.
+   into the FIFO/pty, in the background.
 7. Call the scenario's `run(ctx)`.
 8. Backstop `ctx.wait_replay()`, then SIGINT shutdown (`stop_daemon`), verify
-   clean exit and released ports, then scan `satpulsed.log` for unexpected
-   errors.
+   clean exit and `program.ports_to_free`, then scan `<program>.log` for
+   unexpected errors (base allow-list from `program.allowed_errors`).
 
 ### Invariants you must not break
 
@@ -115,7 +129,12 @@ lifecycle. Per scenario `family/name`:
   `common.poll(...)` (or the `wait_*` ctx helpers) until a condition holds.
 - **Choose `FACTOR` so the replay outlasts the live checks** but stays fast in
   CI. `ntp/sock` must use `FACTOR = 1` (realtime): its time-consistency
-  assertion depends on message UTC and the read clock advancing together.
+  assertion depends on message UTC and the read clock advancing together. A
+  check that demands exact delivery (`check_pulled_rtcm`, `check_pushed_rtcm`,
+  `check_udp_pushed_all`) needs a small `FACTOR` too: the sources emit each RTCM
+  type once a second, so `1/FACTOR` is the window in which a stalled sink loses
+  a packet to the daemon's stale-same-type prune, and a macOS CI runner stalls
+  up to ~200 ms.
 
 ## Adding or changing a scenario
 
@@ -123,13 +142,26 @@ A scenario ID `family/name` maps to two files and one registry entry:
 
 - `scenarios/family/name.py` -- the module. Must define:
   - `PACKET_LOG` -- path relative to repo root; reuse logs under
-    `gps/testdata/packets/` (don't add new captures here).
-  - `FACTOR` -- replay speedup (int).
+    `gps/testdata/packets/` (don't add new captures here). A replay-provider
+    attribute: omit it for a `PROVIDER = "ubxsim"` scenario.
+  - `FACTOR` -- replay speedup (int). Replay-only, like `PACKET_LOG`.
   - `run(ctx)` -- the checks. Type the param as `common.SmokeContext`.
+  - optional `PROGRAM` -- `"satpulsed"` (default) or `"satpulsewb"`, the program
+    under test (see Program under test). A `"satpulsewb"` scenario pairs with a
+    `name.args.in` flag list instead of `name.toml.in`, and uses the workbench
+    checks in `common.py` (`check_wb_*`, `wb_get`/`wb_post`, `wb_sse`).
+  - optional `PROVIDER` -- `"replay"` (default) or `"ubxsim"`, the packet source
+    (see Packet provider). A `"ubxsim"` scenario declares `PERSONALITY`
+    (repo-relative MON-VER + Default-layer dump) and an optional `SIM_REPLAY` nav
+    bank instead of `PACKET_LOG`/`FACTOR`; `ctx.factor` defaults to 1.
+  - optional `ENV` -- environment variables added to the program under test;
+    values may use the same `${SATPULSE_TEST_*}` substitutions as input
+    templates.
   - optional `ALLOWED_ERRORS` -- tuple of substrings for `level=error/warn`
     lines the scenario legitimately expects (e.g. a push it knows is rejected).
-    These are added on top of `common.ALLOWED_WARNINGS`. Keep them as narrow as
-    possible so real regressions still fail.
+    These are added on top of the program's base allow-list
+    (`common.ALLOWED_WARNINGS` for the daemon). Keep them as narrow as possible
+    so real regressions still fail.
   - optional `REQUIRES_ROOT = True` -- the scenario is skipped unless the runner
     is already root or `--sudo` was passed; use `ctx.root_cmd(...)` for helper
     subprocesses that also need root.
@@ -153,15 +185,81 @@ A scenario ID `family/name` maps to two files and one registry entry:
     when the input goes away, so the runner disconnects the transport, asserts a
     self-exit with a restartable non-zero code (not `0/64/77/78`), and reports a
     hang as a failure -- it does **not** send SIGINT. Implies a disconnectable
-    transport (see Transports below); orthogonal to `CAPTURE_WRITES`.
+    transport (see Transports below); orthogonal to `CAPTURE_WRITES`. satpulsewb
+    scenarios never set it (the workbench must survive device loss, not exit).
+  - optional `DISCONNECTABLE = True` -- request the pty's disconnect capability
+    *without* `SELF_SHUTDOWN`'s exit check, for a scenario that disconnects the
+    input and then asserts the program keeps running (satpulsewb device loss).
+  - optional `CORRECTION_SOURCE` (satpulsewb) -- a dict declaring a fake Ntrip
+    correction source the runner starts before the program: `port_key` (the env
+    key for its port), `log` (RTCM log to stream, repo-relative), and optional
+    `mode`/`mountpoint`/`username`/`password`/`require_gga`. The runner points
+    `ctx.pull_source_log` at `log` so `stream.check_pulled_rtcm` reuses cleanly.
   - optional `XFAIL = "<reason>"` -- the scenario is known to fail (e.g. a bug
     not yet fixed). It then reports `XFAIL` instead of `FAIL` and does not fail
     the suite; if it unexpectedly passes it reports `XPASS`, which *does* fail
     the suite, prompting removal of the marker once the fix lands.
-- `scenarios/family/name.toml.in` -- config template using `${SATPULSE_TEST_*}`.
+- `scenarios/family/name.toml.in` (satpulsed) -- config template, or
+  `scenarios/family/name.args.in` (satpulsewb) -- flag list, one token per line;
+  both use `${SATPULSE_TEST_*}` substitution and allow `#` comments.
 - An entry in the `SCENARIOS` list in `run.py` (IDs are explicit, not globbed).
 
 Then update the scenario list in `README.md`.
+
+### Program under test
+
+`program_api.py` is the program seam (a `Program` Protocol plus `select(name)`),
+implemented by `program_satpulsed.py` and `program_satpulsewb.py`. It is the
+program counterpart to the `platform_*` seam, but a `Program` is chosen per
+scenario (both coexist in one process), so it is shaped like the `Transport`
+Protocol, not the one-per-process platform module. The `Program` owns exactly
+what differs between the two programs and nothing else:
+
+- `prepare(ctx, scen)` -- render the input (satpulsed: `name.toml.in` + detect
+  `ctx.has_http/ntrip/...`; satpulsewb: `name.args.in` -> `ctx.wb_args`);
+- `command(ctx)` -- the argv (before root wrapping);
+- `start_peers(ctx, scen)` -- start the fake peers (satpulsed: config-derived;
+  satpulsewb: the declared `CORRECTION_SOURCE`);
+- `wait_ready(ctx)` -- satpulsed waits for its configured listeners; satpulsewb
+  parses the URL and token it prints (into `ctx.wb_port`/`ctx.token`) and waits
+  for its HTTP port;
+- `allowed_errors()` -- the base log allow-list;
+- `ports_to_free(ctx)` -- ports that must be released after shutdown.
+
+Everything else in `run.py` is shared. Keep it that way: a difference between the
+two programs belongs behind this seam, not as a `PROGRAM == "satpulsewb"` branch
+in `run.py` or a scenario. The program log is `ctx.daemon_log` (named
+`<program>.log`); for satpulsewb it also carries the printed URL that
+`wait_ready` parses.
+
+### Packet provider
+
+`provider_api.py` is the packet-provider seam (a `Provider` Protocol plus
+`select(name)`), implemented by `provider_replay.py` (default) and
+`provider_ubxsim.py`. It is orthogonal to the program: what plays the receiver
+behind `SATPULSE_TEST_SERIAL` is a scenario dimension of its own, chosen per
+scenario like a `Program`, so `satpulsed x ubxsim` composes the daemon with the
+simulator to test the startup config phase no replay can reach. The four hooks
+mirror the `run_scenario` lifecycle, and the runner calls them polymorphically:
+
+- `create(ctx, scen)` -- before `program.prepare`: set up the source and point
+  `SATPULSE_TEST_SERIAL` at its endpoint. The replay provider selects and
+  attaches the transport (from the scenario's capabilities, and reads
+  `PACKET_LOG`/`FACTOR`); ubxsim spawns `satpulsetool ubxsim` and waits for its
+  `--link` symlink. A source the platform cannot supply raises
+  `platform_api.TransportUnsupported` (a SKIP); a scenario error (e.g. ubxsim
+  with `CAPTURE_WRITES`) fails.
+- `start(ctx)` -- after `program.wait_ready`: begin feeding (the replay launch;
+  a no-op for ubxsim, whose simulator already emits).
+- `finish(ctx)` -- the post-run backstop (`wait_replay`; a no-op for ubxsim).
+- `close(ctx)` -- release the source, run last in the cleanup path so ubxsim
+  SIGTERMs the simulator only after the program has shut down.
+
+`ctx.start_replay`/`ctx.wait_replay` stay on the Context (the replay mechanics),
+so existing scenarios and checks calling `ctx.wait_replay()` are unchanged; under
+ubxsim they are no-ops (no replay was started). Keep `run.py` free of a
+`PROVIDER == "..."` branch: a difference between the two sources belongs behind
+this seam, exactly like the program seam.
 
 ### Transports
 

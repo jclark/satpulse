@@ -68,8 +68,8 @@ func TestPacketFormatRescanOnBadChecksum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pkt.Format != nil {
-		t.Fatalf("first scan should return invalid bytes after checksum rescan")
+	if pkt.Format != PacketFormat || pkt.ChecksumValid || pkt.Data != string(bad) {
+		t.Fatalf("first scan did not return the checksum-bad packet")
 	}
 	pkt, err = s.Scan()
 	if err != nil {

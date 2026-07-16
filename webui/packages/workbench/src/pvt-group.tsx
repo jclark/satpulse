@@ -3,21 +3,23 @@ import {
     PVTMsgPos, PVTMsgVel, PVTMsgTime, PVTMsgTimePulse,
     PVTMsgLeapSecond, PVTMsgTAI, PVTMsgECEF,
     PVTMsgTimePulseAfter, PVTMsgQuality, PVTMsgEpoch, PVTMsgOff,
+    PVTMsgNames, toggleMsgFlag,
 } from './msg-flags';
+import type {PVTMsgFlag, PVTMsgFlags} from '@satpulse/gps/configtarget';
 import {ConfigSubGroup, ConfigSubSubGroup, labeledControlText} from './ui';
 
 interface Props {
     change: boolean;
-    flags: number;
+    flags: ReadonlySet<PVTMsgFlag>;
     onChangeChange: (v: boolean) => void;
-    onFlagsChange: (f: number) => void;
+    onFlagsChange: (f: ReadonlySet<PVTMsgFlag>) => void;
     disabled?: boolean;
 }
 
 /** Compute the wire value for Apply. Returns undefined when not configured (change=false). */
-export function pvtWireValue(change: boolean, flags: number): number | undefined {
+export function pvtWireValue(change: boolean, flags: ReadonlySet<PVTMsgFlag>): PVTMsgFlags | undefined {
     if (!change) return undefined;
-    return flags;
+    return PVTMsgNames.filter(name => flags.has(name));
 }
 
 function Checkbox({label, checked, disabled, onChange, indent}: {
@@ -40,8 +42,8 @@ function Checkbox({label, checked, disabled, onChange, indent}: {
 
 export function PVTGroup({change, flags, onChangeChange, onFlagsChange, disabled}: Props) {
     const childDisabled = disabled || !change;
-    const toggle = (flag: number, on: boolean) => onFlagsChange(on ? flags | flag : flags & ~flag);
-    const has = (flag: number) => (flags & flag) !== 0;
+    const toggle = (flag: PVTMsgFlag, on: boolean) => onFlagsChange(toggleMsgFlag(flags, flag, on));
+    const has = (flag: PVTMsgFlag) => flags.has(flag);
 
     const hasTime = has(PVTMsgTime) || has(PVTMsgTimePulse);
     const hasPosVel = has(PVTMsgPos) || has(PVTMsgVel);
