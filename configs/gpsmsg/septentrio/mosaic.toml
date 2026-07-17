@@ -64,6 +64,100 @@ description = "Query receiver name, command-line interface version, and capabili
 tag = "get-version"
 text = "getReceiverCapabilities"
 
+# Verified on mosaic-G5: returns firmware 1.1.0 plus the receiver serial number
+# and component versions.
+[[line]]
+tag = "get-identification"
+text = "lstInternalFile, Identification"
+description = "Show receiver hardware and firmware identification"
+
+# Receiver diagnostics and command information
+
+# Verified on mosaic-G5: returns one ASCII display split across three blocks.
+[[line]]
+tag = "get-status"
+text = "lstAsciiDisplay"
+description = "Show current tracking, PVT, clock, receiver, and error status"
+
+# Verified on mosaic-G5: returns the complete list of supported set/get/exe
+# commands.
+[[line]]
+tag = "get-command-help"
+text = "lstCommandHelp, Overview"
+description = "List commands supported by the receiver firmware"
+
+# Verified on mosaic-G5: Current and Boot both report their complete
+# configuration, or identify the factory-default configuration when unchanged.
+[[line]]
+tag = "get-config-current"
+text = "lstConfigFile, Current"
+description = "Show the current receiver configuration"
+[[line]]
+tag = "get-config-boot"
+text = "lstConfigFile, Boot"
+description = "Show the saved boot configuration"
+
+# Verified on mosaic-G5: reports the current user on this connection even when
+# no users are configured. This lst command uses the special "$R!" reply form.
+[[line]]
+tag = "get-current-user"
+text = "lstCurrentUser"
+description = "Show the user logged in on the current connection"
+
+# Verified on mosaic-G5: returns DSK1 capacity, free space, and root directory.
+[[line]]
+tag = "get-info-dsk1"
+text = "lstDiskInfo, DSK1"
+description = "Show DSK1 capacity, free space, and recorded files"
+
+# Verified on mosaic-G5: Permissions returns the permitted receiver features;
+# RxMessages returns the recent event log.
+[[line]]
+tag = "get-permissions"
+text = "lstInternalFile, Permissions"
+description = "Show receiver feature permissions"
+[[line]]
+tag = "get-rx-messages"
+text = "lstInternalFile, RxMessages"
+description = "Show the recent receiver event log"
+
+# Verified on mosaic-G5: returns every supported SBF block and whether its
+# output rate is user-selectable.
+[[line]]
+tag = "get-sbf-table"
+text = "lstMIBDescription, SBFTable"
+description = "List supported SBF blocks and their output-rate capabilities"
+
+# Antenna configuration
+
+# Verified on mosaic-G5: returns the complete antenna calibration list.
+[[line]]
+tag = "get-antenna-overview"
+text = "lstAntennaInfo, Overview"
+description = "List antenna types with receiver phase-center calibration data"
+
+# Verified on mosaic-G5: returns zero offsets, type/serial "Unknown", and
+# setup ID 0 in the default configuration.
+[[line]]
+tag = "get-antenna-main"
+text = "getAntennaOffset, Main"
+description = "Query main antenna offsets, type, serial number, and setup ID"
+
+# Replace the offsets, antenna type, and serial number with the installation's
+# values. The example is the one from both receiver reference guides. Verified
+# on mosaic-G5: the values ACK and read back exactly as shown.
+[[line]]
+tag = "antenna-main-example"
+text = "setAntennaOffset, Main, 0.1, 0.0, 1.3, \"AERAT2775_159 SPKE\", 5684, 0"
+description = "Set main antenna parameters (example values - replace with yours)"
+
+# Verified on mosaic-G5: restores zero offsets, type/serial "Unknown", and
+# setup ID 0.
+[[line]]
+tag = "antenna-main-off"
+text = "setAntennaOffset, Main, 0, 0, 0, Unknown, Unknown, 0"
+description = "Clear main antenna offsets and phase-center calibration"
+
 # NMEA message output control
 # Septentrio routes NMEA through a "stream": one NMEA stream (Stream1..Stream10,
 # a pool separate from the SBF streams) carries a list of sentences to one
