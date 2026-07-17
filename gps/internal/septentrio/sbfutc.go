@@ -20,16 +20,25 @@ func leapSecond(now ptime.Time, g ptime.GNSSLeapSecond, gnss gpsprot.GNSS,
 }
 
 func leapGPSUtc(b *sbfbin.Block, m *sbfbin.GPSUtc) *gpsprot.LeapSecondMsg {
+	if !headerTimeValid(b.TimeStamp) {
+		return nil
+	}
 	g := ptime.GNSSLeapSecond{WNLSF: m.WN_LSF, DN: m.DN, DeltaLS: m.DEL_t_LS, DeltaLSF: m.DEL_t_LSF}
 	return leapSecond(gpsHeaderTime(b.TimeStamp), g, gpsprot.GPS, ptime.GPSLeapSecond)
 }
 
 func leapGALUtc(b *sbfbin.Block, m *sbfbin.GALUtc) *gpsprot.LeapSecondMsg {
+	if !headerTimeValid(b.TimeStamp) {
+		return nil
+	}
 	g := ptime.GNSSLeapSecond{WNLSF: m.WN_LSF, DN: m.DN, DeltaLS: m.DEL_t_LS, DeltaLSF: m.DEL_t_LSF}
 	return leapSecond(gpsHeaderTime(b.TimeStamp), g, gpsprot.GAL, ptime.GalileoLeapSecond)
 }
 
 func leapBDSUtc(b *sbfbin.Block, m *sbfbin.BDSUtc) *gpsprot.LeapSecondMsg {
+	if !headerTimeValid(b.TimeStamp) {
+		return nil
+	}
 	g := ptime.GNSSLeapSecond{WNLSF: m.WN_LSF, DN: m.DN, DeltaLS: m.DEL_t_LS, DeltaLSF: m.DEL_t_LSF}
 	return leapSecond(gpsHeaderTime(b.TimeStamp), g, gpsprot.BDS, ptime.BeiDouLeapSecond)
 }

@@ -93,9 +93,6 @@ func (c *satCombiner) addMeasEpoch(meas *sbfbin.MeasEpoch) {
 			continue
 		}
 		c.addMeasSignal(id, t.SignalNumber(), meas.CommonFlags, measCN0(t.CN0dBHz()))
-		if i >= len(meas.Type2) {
-			continue
-		}
 		for j := range meas.Type2[i] {
 			t := &meas.Type2[i][j]
 			if t.AntennaID() != 0 {
@@ -180,21 +177,13 @@ func mainAntenna(states []sbfbin.ChannelStateInfo) *sbfbin.ChannelStateInfo {
 }
 
 // channelLookAngles returns the whole-degree look angles from a
-// ChannelSatInfo, if either azimuth or elevation is available.
+// ChannelSatInfo, if both azimuth and elevation are available.
 func channelLookAngles(si *sbfbin.ChannelSatInfo) (opt.Val[gpsprot.LookAngles], bool) {
 	az, azOK := si.Azimuth()
-	elOK := si.Elevation != sbfbin.ChannelElevationDNU
-	if !azOK && !elOK {
+	if !azOK || si.Elevation == sbfbin.ChannelElevationDNU {
 		return opt.Val[gpsprot.LookAngles]{}, false
 	}
-	var la gpsprot.LookAngles
-	if azOK {
-		la.Azimuth = int16(az)
-	}
-	if elOK {
-		la.Elevation = si.Elevation
-	}
-	return opt.Make(la), true
+	return opt.Make(gpsprot.LookAngles{Azimuth: int16(az), Elevation: si.Elevation}), true
 }
 
 func measCN0(cn0 float64, ok bool) uint8 {

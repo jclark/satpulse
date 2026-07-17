@@ -180,6 +180,9 @@ dropping precisely the correction blocks that the conversion layer cannot
 represent. The dispatch case should report unhandled when the converter
 returns nil.
 
+**Fixed.** Unmapped correction modes now return unhandled from `Dispatch`, so
+`ProcessPacket` forwards the block to `NativeMsg`.
+
 ### 6. SPARTN NBytes is left unset while RTCM3 sets it
 
 `gps/internal/septentrio/sbfcor.go:33`
@@ -189,6 +192,9 @@ both modes. The RTCM3 branch populates it, but the SPARTN branch never does.
 `spartnbin.FrameLen(hdr []byte) (int, bool)` (`spartnbin.go:123`) already
 derives the exact self-delimiting SPARTN frame length without counting SBF
 padding and should be used here.
+
+**Fixed.** The SPARTN branch now uses `spartnbin.FrameLen` to populate
+`NBytes`, excluding SBF padding.
 
 ### 7. channelLookAngles substitutes 0 for whichever component is DNU
 
@@ -203,6 +209,8 @@ due north. Both zero values are valid geometry, not missing-value markers.
 
 `gpsprot.LookAngles` has no per-field optionality, so the whole value must be
 left unset unless both components are available.
+
+**Fixed.** `channelLookAngles` now requires both azimuth and elevation.
 
 ### 8. Leap-second converters consume DNU header timestamps
 
@@ -221,6 +229,9 @@ enforce its candidate-date window. The UTC converters cannot safely perform
 that resolution without a valid header timestamp, so they should return nil
 when `headerTimeValid` is false.
 
+**Fixed.** All three UTC converters now reject a header with either timestamp
+field at its DNU value.
+
 ## P3
 
 ### 9. NrSV do-not-use is a bare wire literal
@@ -232,6 +243,8 @@ here is an `sbfbin.` constant, and if one is not exported yet, export it.
 `sbfbin/pvt.go:104` has `PVTAccuracyDNU`, `PVTReferenceIDDNU` and friends, but
 no `PVTNrSVDNU`.
 
+**Fixed.** `sbfbin.PVTNrSVDNU` is exported and used by the converter.
+
 ### 10. Stale doc comment on sbfSVID
 
 `gps/internal/septentrio/sbfsignal.go:61`
@@ -240,6 +253,8 @@ The comment describes a `freqNr` parameter the function does not take, left over
 from an earlier signature. The range arithmetic itself checks out against
 `sbfbin/sat.go:41-67`, including the 69/70 fall-through and the G38/G39
 extension.
+
+**Fixed.** The stale parameter description was removed.
 
 ### 11. Inconsistent sub-block bounds guarding
 
@@ -256,3 +271,6 @@ pair with mismatched lengths is a contract violation and should panic rather
 than be silently skipped. The guard exists only because `testMeasBlock`
 (`sbf_test.go:122`) sets `Type1` and leaves `Type2` nil, so that helper must
 build the parallel `Type2` slice instead.
+
+**Fixed.** The guard was removed and hand-built test blocks now satisfy the
+parallel-slice contract.

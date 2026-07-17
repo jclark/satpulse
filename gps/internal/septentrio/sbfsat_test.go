@@ -62,6 +62,7 @@ func TestCombineChannelStatusAndMeasEpoch(t *testing.T) {
 	}
 	me := &sbfbin.MeasEpoch{
 		Type1: []sbfbin.MeasEpochChannelType1{{SVID: 1, Type: sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 200}},
+		Type2: [][]sbfbin.MeasEpochChannelType2{{}},
 	}
 	msg := satellitesCombine(cs, me)
 	if msg == nil || len(msg.SVs) != 1 {
@@ -93,6 +94,7 @@ func TestCombineChannelStatusAndMeasEpoch(t *testing.T) {
 func TestCombineMeasEpochOnly(t *testing.T) {
 	me := &sbfbin.MeasEpoch{
 		Type1: []sbfbin.MeasEpochChannelType1{{SVID: 10, Type: sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 180}},
+		Type2: [][]sbfbin.MeasEpochChannelType2{{}},
 	}
 	msg := satellitesCombine(nil, me)
 	if msg == nil || msg.NativeMsgID != "MeasEpoch" || msg.UsedValidity != gpsprot.SatelliteUsedInvalid {
@@ -127,6 +129,7 @@ func TestCombineMeasEpochType2(t *testing.T) {
 func TestCombineMeasEpochSkipsUnmappedRINEXSignal(t *testing.T) {
 	me := &sbfbin.MeasEpoch{
 		Type1: []sbfbin.MeasEpochChannelType1{{SVID: 71, Type: sbfbin.MeasType(sbfbin.SigNumGalileoE5AltBOC), CN0: 180}},
+		Type2: [][]sbfbin.MeasEpochChannelType2{{}},
 	}
 	if msg := satellitesCombine(nil, me); msg != nil {
 		t.Fatalf("combine = %+v, want nil", msg)
@@ -227,6 +230,25 @@ func TestCombineChannelStatusRealEmptySignals(t *testing.T) {
 		if sv.Signals == nil || len(sv.Signals) != 0 {
 			t.Errorf("%s signals = %+v, want empty non-nil slice", sv.ID, sv.Signals)
 		}
+	}
+}
+
+// TestChannelLookAnglesRequiresAzimuthAndElevation checks independent DNU
+// values do not become valid zero-valued geometry.
+func TestChannelLookAnglesRequiresAzimuthAndElevation(t *testing.T) {
+	tests := []sbfbin.ChannelSatInfo{
+		{AzimuthRiseSet: sbfbin.ChannelAzimuthDNU, Elevation: 30},
+		{AzimuthRiseSet: 100, Elevation: sbfbin.ChannelElevationDNU},
+	}
+	for i := range tests {
+		if _, ok := channelLookAngles(&tests[i]); ok {
+			t.Errorf("test %d: channelLookAngles returned a value", i)
+		}
+	}
+	si := sbfbin.ChannelSatInfo{AzimuthRiseSet: 100, Elevation: 30}
+	la, ok := channelLookAngles(&si)
+	if !ok || la.Get().Azimuth != 100 || la.Get().Elevation != 30 {
+		t.Errorf("channelLookAngles = %+v, %v", la, ok)
 	}
 }
 

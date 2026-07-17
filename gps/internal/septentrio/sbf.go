@@ -127,7 +127,11 @@ func (p *PacketProcessor) Dispatch(b *sbfbin.Block, tRead time.Time) bool {
 		p.satMeas = m
 		return true
 	case *sbfbin.DiffCorrIn:
-		p.emitCorReport(corReportDiffCorrIn(m, p.baseStationID, p.baseStationRTCM), tRead)
+		msg := corReportDiffCorrIn(m, p.baseStationID, p.baseStationRTCM)
+		if msg == nil {
+			return false
+		}
+		p.emitCorReport(msg, tRead)
 		return true
 	case *sbfbin.BaseStation:
 		p.observeBaseStation(m)

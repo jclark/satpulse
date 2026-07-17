@@ -2,11 +2,13 @@ package septentrio
 
 import (
 	"testing"
+	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/sbfbin"
+	"github.com/jclark/satpulse/gps/lib/spartnbin"
 )
 
 // TestCorReportDiffCorrInRTCM converts a real RTCMv3 DiffCorrIn block and
@@ -54,5 +56,39 @@ func TestCorReportDiffCorrInUnmapped(t *testing.T) {
 	m.Mode = sbfbin.DiffCorrModeCMR
 	if corReportDiffCorrIn(&m, opt.Val[uint16]{}, false) != nil {
 		t.Error("CMR should map to nil")
+	}
+	p, c := newTestProcessor()
+	pkt, err := sbfbin.Serialize(&sbfbin.Block{Params: &m})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.ProcessPacket(string(pkt), time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if c.natives != 1 || len(c.cors) != 0 {
+		t.Errorf("NativeMsg count = %d, CorReport count = %d, want 1, 0", c.natives, len(c.cors))
+	}
+}
+
+// TestCorReportDiffCorrInSPARTN checks that the inner frame length excludes
+// SBF padding.
+func TestCorReportDiffCorrInSPARTN(t *testing.T) {
+	pkt, err := spartnbin.Pack(&spartnbin.Frame{
+		FrameStart:    spartnbin.FrameStart{Type: 1, CRCType: 2},
+		FrameMetadata: spartnbin.FrameMetadata{Subtype: 3},
+		Payload:       []byte{1, 2, 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m sbfbin.DiffCorrIn
+	m.Mode = sbfbin.DiffCorrModeSPARTN
+	m.Correction = append(pkt, 0, 0, 0)
+	msg := corReportDiffCorrIn(&m, opt.Val[uint16]{}, false)
+	if msg == nil {
+		t.Fatal("corReportDiffCorrIn returned nil")
+	}
+	if !msg.NBytes.IsSet() || msg.NBytes.Get() != len(pkt) {
+		t.Errorf("NBytes = %v, want %d", msg.NBytes, len(pkt))
 	}
 }

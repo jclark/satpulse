@@ -53,3 +53,23 @@ func TestLeapBDSUtc(t *testing.T) {
 		t.Errorf("UTCOffAfter = %d, want 37", ls.UTCOffAfter)
 	}
 }
+
+// TestLeapUtcRequiresHeaderTime rejects leap-second resolution without a
+// complete block-header timestamp.
+func TestLeapUtcRequiresHeaderTime(t *testing.T) {
+	gps := findBlock(t, "nav-utc.jsonl", "GPSUtc")
+	gal := findBlock(t, "nav-utc.jsonl", "GALUtc")
+	bds := findBlock(t, "nav-utc.jsonl", "BDSUtc")
+	gps.TOW = sbfbin.TOWDNU
+	gal.WNc = sbfbin.WNcDNU
+	bds.TOW = sbfbin.TOWDNU
+	if leapGPSUtc(gps, gps.Params.(*sbfbin.GPSUtc)) != nil {
+		t.Error("leapGPSUtc returned a message with DNU TOW")
+	}
+	if leapGALUtc(gal, gal.Params.(*sbfbin.GALUtc)) != nil {
+		t.Error("leapGALUtc returned a message with DNU WNc")
+	}
+	if leapBDSUtc(bds, bds.Params.(*sbfbin.BDSUtc)) != nil {
+		t.Error("leapBDSUtc returned a message with DNU TOW")
+	}
+}

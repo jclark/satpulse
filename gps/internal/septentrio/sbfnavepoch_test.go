@@ -104,7 +104,7 @@ func TestQualityAccCovFallback(t *testing.T) {
 	g.Mode = sbfbin.ModeStandalone
 	g.HAccuracy, g.VAccuracy = sbfbin.PVTAccuracyDNU, sbfbin.PVTAccuracyDNU
 	g.MeanCorrAge = sbfbin.PVTMeanCorrAgeDNU
-	g.NrSV = 255
+	g.NrSV = sbfbin.PVTNrSVDNU
 	var ne gpsprot.NavEpochMsg
 	qualityPVT(&ne, pvtGeodeticCommon(&g), opt.Val[uint16]{}, false)
 	if ne.Acc.Hor.IsSet() {

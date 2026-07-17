@@ -33,6 +33,9 @@ func corReportDiffCorrIn(m *sbfbin.DiffCorrIn, baseID opt.Val[uint16], baseRTCM 
 	case sbfbin.DiffCorrModeSPARTN:
 		msg.Tag = spartn.Tag
 		msg.MsgID = spartnbin.MsgID(corr)
+		if n, ok := spartnbin.FrameLen(corr); ok {
+			msg.NBytes = opt.Make(n)
+		}
 		if native, err := spartnbin.Parse(corr); err == nil {
 			msg.NativeMsg = native
 		}

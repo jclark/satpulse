@@ -122,6 +122,7 @@ func findBlock(t *testing.T, capture, msg string) *sbfbin.Block {
 func testMeasBlock(ts sbfbin.TimeStamp, svid uint8, sig uint8, cn0 uint8) *sbfbin.Block {
 	return &sbfbin.Block{TimeStamp: ts, Params: &sbfbin.MeasEpoch{
 		Type1: []sbfbin.MeasEpochChannelType1{{SVID: svid, Type: sbfbin.MeasType(sig), CN0: cn0}},
+		Type2: [][]sbfbin.MeasEpochChannelType2{{}},
 	}}
 }
 

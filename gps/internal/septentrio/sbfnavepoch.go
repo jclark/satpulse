@@ -54,7 +54,7 @@ func qualityPVT(ne *gpsprot.NavEpochMsg, c pvtCommon, baseID opt.Val[uint16], ba
 	if c.MeanCorrAge != sbfbin.PVTMeanCorrAgeDNU {
 		ne.DiffAge = opt.Make(gpsprot.Duration(int64(c.MeanCorrAge) * int64(10*time.Millisecond)))
 	}
-	if c.NrSV != 255 {
+	if c.NrSV != sbfbin.PVTNrSVDNU {
 		ne.NumSVUsed.Set(uint16(c.NrSV))
 	}
 	if rtcmRefBaseCurrent(c) && baseRTCM && baseID.IsSet() {

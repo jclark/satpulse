@@ -58,9 +58,8 @@ func sbfSignalNumber(n uint8) (sigEntry, bool) {
 	return e, ok
 }
 
-// sbfSVID maps an SBF SVID (guide sec 4.1.9) to a gpsprot.SVID. freqNr (the
-// GLONASS FDMA channel number, offset +8) only disambiguates the unknown-slot
-// case. It reports false for non-satellite SVIDs (L-band beams, unmapped).
+// sbfSVID maps an SBF SVID (guide sec 4.1.9) to a gpsprot.SVID. It reports
+// false for non-satellite SVIDs (L-band beams, unmapped).
 func sbfSVID(svid uint16) (gpsprot.SVID, bool) {
 	switch {
 	case svid >= sbfbin.SVIDGPSMin && svid <= sbfbin.SVIDGPSMax:
