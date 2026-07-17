@@ -73,10 +73,24 @@ const (
 	rStateComplete
 )
 
-// rMaxLength caps the packet length as a backstop against a false match
-// running away in garbage data. Real replies are well under 200 bytes; only
-// the lst pseudo-prompt could run longer, and it frames at its first "---->".
-const rMaxLength = 4096
+const (
+	// rBlockContentMax is the largest content payload the receiver puts in one
+	// "$--BLOCK" section: it chunks long lst output at exactly this size. This
+	// is not in the reference guide; it is measured on a mosaic-G5, where two
+	// lstAsciiDisplay blocks with unrelated content and differing line widths
+	// both stopped at exactly 4000 bytes. It bounds a single reply packet
+	// however long the whole lst reply runs.
+	rBlockContentMax = 4000
+	// rBlockWrapperMax bounds what a block adds around that content: the
+	// "$-- BLOCK n / m C" header line and the "---->" or real-prompt
+	// terminator, about 30 bytes at the largest block numbers seen. It is
+	// rounded well up because rBlockContentMax is observed, not documented.
+	rBlockWrapperMax = 96
+	// rMaxLength caps the packet length as a backstop against a false match
+	// running away in garbage data. It must clear the largest real packet,
+	// which is a full "$--BLOCK" section.
+	rMaxLength = rBlockContentMax + rBlockWrapperMax
+)
 
 func (f replyPacketFormat) Tag() gpsprot.Tag {
 	return TagReply
