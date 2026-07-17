@@ -12,35 +12,44 @@ import (
 
 // corReportDiffCorrIn converts a DiffCorrIn block (an inbound correction
 // message the receiver already accepted) into a CorReportMsg. It returns nil
-// for correction modes with no gpsprot.Tag (RTCMv2, CMR, RTCMV). baseID is the
-// last-seen RTCM base station ID, filled only when it came from an RTCM base.
+// for correction modes with no gpsprot.Tag (RTCMv2, CMR, RTCMV) or an invalid
+// embedded frame. baseID is the last-seen RTCM base station ID, filled only
+// when it came from an RTCM base.
 func corReportDiffCorrIn(m *sbfbin.DiffCorrIn, baseID opt.Val[uint16], baseRTCM bool) *gpsprot.CorReportMsg {
 	corr := m.Correction
-	msg := &gpsprot.CorReportMsg{
-		Source:     gpsprot.CorReportSourceReceiver,
-		ChecksumOK: opt.Make(true), // receiver only reports frame-verified messages
-	}
+	var pf gpsprot.PacketFormat
+	var n int
+	var ok bool
 	switch m.Mode {
 	case sbfbin.DiffCorrModeRTCMv3:
-		msg.Tag = rtcm.Tag
-		msg.MsgID = rtcmbin.ExtractMsgID(string(corr))
-		if n, ok := rtcm3FrameLen(corr); ok {
-			msg.NBytes = opt.Make(n)
-		}
+		pf = rtcm.PacketFormat
+		n, ok = rtcm3FrameLen(corr)
+	case sbfbin.DiffCorrModeSPARTN:
+		pf = spartn.PacketFormat
+		n, ok = spartnbin.FrameLen(corr)
+	default:
+		return nil
+	}
+	if !ok || n > len(corr) {
+		return nil
+	}
+	corr = corr[:n]
+	if !gpsprot.IsValidPacket(pf, corr) {
+		return nil
+	}
+	msg := &gpsprot.CorReportMsg{
+		Source:     gpsprot.CorReportSourceReceiver,
+		Tag:        pf.Tag(),
+		MsgID:      pf.MsgID(corr),
+		NBytes:     opt.Make(n),
+		ChecksumOK: opt.Make(true), // receiver only reports frame-verified messages
+	}
+	if m.Mode == sbfbin.DiffCorrModeRTCMv3 {
 		if native, err := rtcmbin.ParseMsg(string(corr)); err == nil {
 			msg.NativeMsg = native
 		}
-	case sbfbin.DiffCorrModeSPARTN:
-		msg.Tag = spartn.Tag
-		msg.MsgID = spartnbin.MsgID(corr)
-		if n, ok := spartnbin.FrameLen(corr); ok {
-			msg.NBytes = opt.Make(n)
-		}
-		if native, err := spartnbin.Parse(corr); err == nil {
-			msg.NativeMsg = native
-		}
-	default:
-		return nil
+	} else if native, err := spartnbin.Parse(corr); err == nil {
+		msg.NativeMsg = native
 	}
 	if baseRTCM && baseID.IsSet() {
 		msg.RTCMRefBaseID = baseID

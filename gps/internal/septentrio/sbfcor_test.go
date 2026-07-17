@@ -7,6 +7,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/sbfbin"
 	"github.com/jclark/satpulse/gps/lib/spartnbin"
 )
@@ -42,6 +43,53 @@ func TestCorReportDiffCorrInRTCM(t *testing.T) {
 	}
 	if got := msg.RTCMRefBaseID.Get(); got != 33 {
 		t.Errorf("RTCMRefBaseID = %d, want 33", got)
+	}
+}
+
+// TestCorReportDiffCorrInRTCMPadding checks that SBF padding is excluded from
+// the packet passed to the native RTCM parser.
+func TestCorReportDiffCorrInRTCMPadding(t *testing.T) {
+	payload := []byte{0, 0x10, 0xAA}
+	pkt, err := rtcmbin.PackMsg(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &sbfbin.DiffCorrIn{Correction: append(pkt, 0, 0, 0)}
+	m.Mode = sbfbin.DiffCorrModeRTCMv3
+	msg := corReportDiffCorrIn(m, opt.Val[uint16]{}, false)
+	if msg == nil {
+		t.Fatal("corReportDiffCorrIn returned nil")
+	}
+	native, ok := msg.NativeMsg.(*rtcmbin.UnknownMsg)
+	if !ok {
+		t.Fatalf("NativeMsg type = %T, want *rtcmbin.UnknownMsg", msg.NativeMsg)
+	}
+	if native.Payload != string(payload) {
+		t.Errorf("NativeMsg payload = %x, want %x", native.Payload, payload)
+	}
+	if !msg.NBytes.IsSet() || msg.NBytes.Get() != len(pkt) {
+		t.Errorf("NBytes = %v, want %d", msg.NBytes, len(pkt))
+	}
+}
+
+// TestCorReportDiffCorrInInvalid returns nil for malformed embedded frames.
+func TestCorReportDiffCorrInInvalid(t *testing.T) {
+	tests := []struct {
+		name string
+		mode sbfbin.DiffCorrMode
+		corr []byte
+	}{
+		{"RTCM", sbfbin.DiffCorrModeRTCMv3, []byte{rtcmbin.PreambleByte, 4, 0, 0, 0, 0}},
+		{"SPARTN", sbfbin.DiffCorrModeSPARTN, []byte{spartnbin.Preamble}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			m := &sbfbin.DiffCorrIn{Correction: test.corr}
+			m.Mode = test.mode
+			if corReportDiffCorrIn(m, opt.Val[uint16]{}, false) != nil {
+				t.Error("malformed embedded frame should map to nil")
+			}
+		})
 	}
 }
 
@@ -90,5 +138,11 @@ func TestCorReportDiffCorrInSPARTN(t *testing.T) {
 	}
 	if !msg.NBytes.IsSet() || msg.NBytes.Get() != len(pkt) {
 		t.Errorf("NBytes = %v, want %d", msg.NBytes, len(pkt))
+	}
+	if msg.MsgID != "1.3" {
+		t.Errorf("MsgID = %q, want %q", msg.MsgID, "1.3")
+	}
+	if msg.NativeMsg == nil {
+		t.Error("NativeMsg not parsed")
 	}
 }
