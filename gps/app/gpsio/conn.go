@@ -58,6 +58,9 @@ type Conn interface {
 	OutPort
 	Stop()
 	LocalAddr() string
+	// Drain blocks until pending output has been transmitted. It is a
+	// no-op on connections with no serial output buffer.
+	Drain() error
 }
 
 const scanBufSize = 16

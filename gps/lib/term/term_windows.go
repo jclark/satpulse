@@ -1,6 +1,7 @@
 package term
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -108,6 +109,14 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	dcb.DCBlength = uint32(unsafe.Sizeof(dcb))
 	err = windows.GetCommState(h, &dcb)
 	if err != nil {
+		// GetCommState fails with ERROR_INVALID_FUNCTION on a handle that is
+		// not a serial device (e.g. a named pipe used as a replay sink), the
+		// Windows analog of tcgetattr returning ENOTTY. Map it to ErrNotATTY
+		// so OpenSerial falls through to the OpenFallback path.
+		if errors.Is(err, windows.ERROR_INVALID_FUNCTION) {
+			err = fmt.Errorf("%s: %w", t.path, ErrNotATTY)
+			return
+		}
 		return t.wrapErr(err, "GetCommState")
 	}
 	t.dcbSaved = dcb
@@ -149,7 +158,7 @@ func normalizeCOM(path string) string {
 	return path
 }
 
-// Change changes the attributes of the terminal.
+// Change changes the attributes of the terminal after output has drained.
 func (t *Term) Change(opts ...AttrSetter) error {
 	attr := t.attr
 	for _, opt := range opts {
@@ -157,6 +166,9 @@ func (t *Term) Change(opts ...AttrSetter) error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := t.Drain(); err != nil {
+		return err
 	}
 	err := windows.SetCommState(t.handle, &attr.dcb)
 	if err != nil {
@@ -215,6 +227,11 @@ func (t *Term) Buffered() (int, error) {
 func (t *Term) Flush() error {
 	err := windows.PurgeComm(t.handle, windows.PURGE_RXCLEAR|windows.PURGE_TXCLEAR)
 	return t.wrapErr(err, "PurgeComm")
+}
+
+// Drain blocks until all pending output has been transmitted.
+func (t *Term) Drain() error {
+	return t.wrapErr(windows.FlushFileBuffers(t.handle), "FlushFileBuffers")
 }
 
 func (t *Term) Restore() error {
@@ -333,9 +350,35 @@ func (f *File) Buffered() (int, error) {
 	return 0, nil
 }
 
-// OpenFallback is not supported on this platform.
+// OpenFallback opens a non-serial GPS input, such as a named pipe used as a
+// replay sink, as an asynchronous *os.File. It skips the GetCommState/
+// SetCommState setup a COM port needs (and that fails on a pipe; see Init).
+// The handle is opened FILE_FLAG_OVERLAPPED so os.NewFile associates it with
+// the Go runtime poller, giving Read the SetReadDeadline support the scan loop
+// relies on (Go 1.25+). It is classified DevFIFO, so writes are rejected at
+// the gpsio layer, matching the Unix FIFO. The read timeout is applied later
+// by the caller via SetReadDeadline, so it is ignored here.
 func OpenFallback(path string, _ time.Duration) (*os.File, *File, DevKind, error) {
-	return nil, nil, DevUnknown, fmt.Errorf("%s: fallback open not supported on this platform", path)
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, nil, DevUnknown, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	// A freshly opened handle is not yet associated with a completion port; if
+	// it were, os.NewFile would silently downgrade it to synchronous I/O and
+	// the deadline methods would have no effect.
+	h, err := windows.CreateFile(
+		name,
+		windows.GENERIC_READ|windows.GENERIC_WRITE,
+		0, // exclusive: no sharing
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_OVERLAPPED,
+		0,
+	)
+	if err != nil {
+		return nil, nil, DevUnknown, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	return os.NewFile(uintptr(h), path), nil, DevFIFO, nil
 }
 
 func RawMode(a *Attr) error {

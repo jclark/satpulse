@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+/* Scan the components next to this stylesheet even when it is imported
+   from another workspace package: the consumer resolves this package
+   through a node_modules symlink, which Tailwind's automatic source
+   detection excludes. */
+@source ".";
+
+@theme {
+    --color-surface-1: var(--surface-1);
+    --color-surface-2: var(--surface-2);
+    --color-surface-3: var(--surface-3);
+    --color-border-subtle: var(--border-subtle);
+    --color-border-strong: var(--border-strong);
+    --color-text-primary: var(--text-primary);
+    --color-text-secondary: var(--text-secondary);
+    --color-text-muted: var(--text-muted);
+    --color-accent: var(--accent);
+    --color-accent-hover: var(--accent-hover);
+    --color-control: var(--control);
+    --color-control-hover: var(--control-hover);
+    --color-success: var(--success);
+    --color-warning: var(--warning);
+    --color-danger: var(--danger);
+    --color-info: var(--info);
+    --color-gnss-gps: var(--gnss-gps);
+    --color-gnss-galileo: var(--gnss-galileo);
+    --color-gnss-beidou: var(--gnss-beidou);
+    --color-gnss-glonass: var(--gnss-glonass);
+    --color-gnss-qzss: var(--gnss-qzss);
+    --color-gnss-navic: var(--gnss-navic);
+    --color-gnss-unknown: var(--gnss-unknown);
+    --color-rtcm: var(--rtcm);
+    --color-spartn: var(--spartn);
+    --color-clock-digit: var(--clock-digit);
+    --color-clock-ghost: var(--clock-ghost);
+    --color-track-dot: var(--track-dot);
+}
+
+:root {
+    color-scheme: light dark;
+    --surface-1: #fafafa;
+    --surface-2: #ffffff;
+    --surface-3: #f4f4f5;
+    --border-subtle: #e4e4e7;
+    --border-strong: #a1a1aa;
+    --text-primary: #18181b;
+    --text-secondary: #52525b;
+    --text-muted: #a1a1aa;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --control: #e4e4e7;
+    --control-hover: #d4d4d8;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #f43f5e;
+    --info: #3b82f6;
+    --gnss-gps: #2563eb;
+    --gnss-galileo: #16a34a;
+    --gnss-beidou: #dc2626;
+    --gnss-glonass: #c026d3;
+    --gnss-qzss: #d97706;
+    --gnss-navic: #ca8a04;
+    --gnss-unknown: #6b7280;
+    --rtcm: #2563eb;
+    --spartn: #dc2626;
+    --clock-digit: #1f2937;
+    --clock-ghost: #e5e7eb;
+    --track-dot: #18181b;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --surface-1: #09090b;
+        --surface-2: #18181b;
+        --surface-3: #27272a;
+        --border-subtle: #3f3f46;
+        --border-strong: #71717a;
+        --text-primary: #f4f4f5;
+        --text-secondary: #a1a1aa;
+        --text-muted: #52525b;
+        --accent: #2563eb;
+        --accent-hover: #3b82f6;
+        --control: #3f3f46;
+        --control-hover: #52525b;
+        --gnss-gps: #60a5fa;
+        --gnss-galileo: #4ade80;
+        --gnss-beidou: #f87171;
+        --gnss-glonass: #e879f9;
+        --gnss-qzss: #fbbf24;
+        --gnss-navic: #fde047;
+        --gnss-unknown: #9ca3af;
+        --rtcm: #60a5fa;
+        --spartn: #f87171;
+        --info: #60a5fa;
+        --clock-digit: #34d399;
+        --clock-ghost: rgba(55, 65, 81, 0.4);
+        --track-dot: #f4f4f5;
+    }
+}
+
+body {
+    @apply bg-surface-1 text-text-primary font-sans m-0 p-0;
+}
+
+#app {
+    @apply flex flex-col h-screen overflow-hidden;
+}

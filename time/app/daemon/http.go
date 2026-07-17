@@ -14,8 +14,8 @@ import (
 	"github.com/jclark/satpulse/time/internal/promobs"
 	"github.com/jclark/satpulse/time/internal/proxy"
 	"github.com/jclark/satpulse/time/internal/sseobs"
+	"github.com/jclark/satpulse/time/internal/web"
 	"github.com/jclark/satpulse/time/lib/sse"
-	"github.com/jclark/satpulse/web"
 )
 
 type HTTPConfig struct {

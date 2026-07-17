@@ -13,4 +13,5 @@ WORKDIR /go-mod
 COPY go.mod go.sum ./
 USER vscode
 RUN go mod download
+
 WORKDIR /workspace/satpulse

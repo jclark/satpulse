@@ -16,7 +16,6 @@ import common
 from scenarios import stream
 
 REQUIRES = ("str2str",)
-INPUT = "pty"
 CAPTURE_WRITES = True
 PULL_PEER = "str2str"
 PACKET_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon.jsonl"

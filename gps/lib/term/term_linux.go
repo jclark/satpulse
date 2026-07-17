@@ -70,8 +70,11 @@ func (t *Term) setAttrNow(attr *unix.Termios) error {
 	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TCSETS, attr), "ioctl(TCSETS)")
 }
 
-func (t *Term) setAttrDrain(attr *unix.Termios) error {
-	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TCSETSW, attr), "ioctl(TCSET)")
+// Drain blocks until all pending output has been transmitted. The nonzero
+// TCSBRK argument selects drain-without-break, which is how glibc's tcdrain
+// is implemented.
+func (t *Term) Drain() error {
+	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TCSBRK, 1), "ioctl(TCSBRK)")
 }
 
 func (t *Term) getAttr() (tp *unix.Termios, err error) {

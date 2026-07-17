@@ -17,6 +17,16 @@ from typing import Any
 from model import transient
 
 
+def message_response_error(s: str) -> str | None:
+    """The first failure reported by message-file response handling."""
+    for line in s.splitlines():
+        if "receiver rejected message:" in line \
+                or line.endswith(": no response received") \
+                or line.endswith(": no data response received"):
+            return line
+    return None
+
+
 class ToolFailure(Exception):
     """A violation of the tool guarantees: no response or no parseable output."""
 
@@ -29,6 +39,7 @@ class Invocation:
     argv: list[str]
     exit_code: int
     out: dict[str, Any]
+    stdout: str
     stderr: str
     packet_log: Path
 
@@ -37,6 +48,9 @@ class Invocation:
         """The reported configuration error, or None on success."""
         err = self.out.get("error")
         if isinstance(err, str):
+            return err
+        err = message_response_error(self.stdout)
+        if err is not None:
             return err
         if self.exit_code != 0:
             return self.stderr.strip() or f"exit code {self.exit_code}"
@@ -103,9 +117,11 @@ class Tool:
                     out = v
             except ValueError:
                 pass
-        inv = Invocation(name, argv, p.returncode, out, p.stderr, log)
-        self.record({**entry, "exit": p.returncode, "json": out if out else p.stdout,
-                     "stderr": p.stderr})
+        inv = Invocation(name, argv, p.returncode, out, p.stdout, p.stderr, log)
+        rec = {**entry, "exit": p.returncode, "stdout": p.stdout, "stderr": p.stderr}
+        if out:
+            rec["json"] = out
+        self.record(rec)
         if json_out and p.returncode == 0 and not out:
             raise ToolFailure(f"{name}: exit 0 but no JSON output")
         return inv

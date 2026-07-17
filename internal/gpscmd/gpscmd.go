@@ -2,6 +2,7 @@ package gpscmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -88,6 +89,18 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		return nil, nil
 	}
 	target := gpsprot.NewConfigTarget()
+	if v.targetJSON != "" {
+		if err := decodeTargetJSON(v.targetJSON, target); err != nil {
+			return nil, err
+		}
+		target.Props.ClearReadOnlyProps()
+		target.Get |= v.configGet
+		target.Opts.Socket = v.socketPath != ""
+		if target.NoOp() {
+			target.Opts.ForceProbe = true
+		}
+		return target, nil
+	}
 	target.Opts = v.configOpts
 	target.Get = v.configGet
 	cp := &target.Props
@@ -122,13 +135,35 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if !v.showReceiver && target.NoOp() {
 		return nil, nil
 	}
-	if v.socketPath != "" {
-		target.Opts.Socket = true
-	}
+	target.Opts.Socket = v.socketPath != ""
 	if target.NoOp() {
 		target.Opts.ForceProbe = true
 	}
 	return target, nil
+}
+
+// decodeTargetJSON decodes a complete ConfigTarget from s, or from stdin if s
+// is "-". Opts.Socket describes the transport, not a configuration request, so
+// the caller overwrites whatever the input said. The input must be exactly one
+// JSON value with no unknown fields: a target is the raw model, so a misspelled
+// name must not read as a silently omitted one.
+func decodeTargetJSON(s string, target *gpsprot.ConfigTarget) error {
+	var r io.Reader = strings.NewReader(s)
+	if s == "-" {
+		r = os.Stdin
+	}
+	dec := json.NewDecoder(r)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(target); err != nil {
+		return fmt.Errorf("invalid --target-json: %w", err)
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("multiple JSON values")
+		}
+		return fmt.Errorf("invalid --target-json: %w", err)
+	}
+	return nil
 }
 
 func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
@@ -155,6 +190,11 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
+		// Drain first so a final no-response command (e.g. a reset) reaches
+		// the receiver before Close restores and closes the port.
+		if e := conn.Drain(); e != nil {
+			lg.Debug("error draining the GPS connection before close", "addr", addr, "error", e)
+		}
 		e := conn.Close()
 		if e != nil {
 			lg.Error("error closing the GPS connection", "addr", addr, "error", e)

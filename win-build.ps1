@@ -1,4 +1,4 @@
-# Build satpulsetool for Windows. Analogous to bsd-build.sh.
+# Build satpulsetool and satpulsed for Windows. Analogous to bsd-build.sh.
 
 $ErrorActionPreference = 'Stop'
 
@@ -32,7 +32,14 @@ git diff-index --quiet HEAD 2>$null
 if ($LASTEXITCODE -ne 0) {
     $cmd_version = "$cmd_version.dirty"
 } else {
-    $exact_tag = (git describe --tags --exact-match 2>$null)
+    # git describe writes to stderr when HEAD has no exact tag. Under
+    # ErrorActionPreference=Stop, Windows PowerShell 5.1 turns that stderr into
+    # a terminating error, so catch it and fall through to the -pre version.
+    try {
+        $exact_tag = (git describe --tags --exact-match 2>$null)
+    } catch {
+        $exact_tag = ''
+    }
     if ($LASTEXITCODE -eq 0 -and $exact_tag.Trim() -eq "v$version") {
         $cmd_version = $version
     }
@@ -49,10 +56,10 @@ $ldflags = "-X `"github.com/jclark/satpulse/gps/app/cmd.version=$cmd_version`" -
 $go_ldflags = "'-ldflags=$ldflags'"
 try {
     $env:GOFLAGS = (@($old_go_flags, $go_ldflags) | Where-Object { $_ }) -join ' '
-    & go build -tags 'netgo,osusergo' -o $outdir ./cmd/satpulsetool ./cmd/satpulsed
+    & go build -tags 'netgo,osusergo' -o $outdir ./cmd/satpulsetool ./cmd/satpulsed ./cmd/satpulsewb
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
     $env:GOFLAGS = $old_go_flags
 }
 
-Write-Output "Built satpulsetool and satpulsed in $outdir"
+Write-Output "Built satpulsetool, satpulsed and satpulsewb in $outdir"

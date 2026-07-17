@@ -194,9 +194,15 @@ id = 0x09
 payload.types = "U4U4"
 payload.values = [0, 0x07]
 
-# Load settings from NVM
-# Verified ACK received on TAU1201
-# Verified reload restores saved configuration on TAU1201
+# Load settings from NVM, then soft-reset so the load takes effect
+# everywhere. CFG-CFG load is ACKed on all units but actually loads in
+# place only on the TAU1302; on the TAU1201 and TAU951M it is a no-op
+# (verified with a discriminating test: save X, set Y, load left Y).
+# The earlier "reload restores saved configuration" note came from a
+# weak test whose running and saved values were equal. SIMPLERST mode 0
+# reloads NVM on every unit, keeps satellite data, and restarts with a
+# banner within a second.
+# Verified load-then-reset restores saved configuration on TAU951M
 [[asbin]]
 tag = "reload"
 description = "Reload settings from non-volatile memory"
@@ -204,6 +210,13 @@ class = 0x06
 id = 0x09
 payload.types = "U4U4"
 payload.values = [1, 0x07]
+
+[[asbin]]
+tag = "reload"
+class = 0x06
+id = 0x40
+payload.types = "U1"
+payload.values = [0]
 delay = 3
 
 # Factory reset
@@ -471,6 +484,38 @@ class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x12, 0]
+
+# Enable NAV-CLOCK at 1Hz (clock bias/drift)
+# Verified ACK received on TAU1201
+# Verified NAV-CLOCK messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "asbin-nav-clock"
+description = "Enable NAV-CLOCK binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x22, 1]
+
+# Disable NAV-CLOCK
+# Rate 5 is the divisor for 1Hz output on 5Hz-native units (TAU951M-P200,
+# D10P); the CFG-MSG rate is a divisor of the native measurement cycle.
+# Verified NAV-CLOCK messages appear at 1Hz after enable on TAU951M-P200
+[[asbin]]
+tag = "asbin-nav-clock-5"
+description = "Enable NAV-CLOCK binary message at divisor 5 (1Hz on a 5Hz-native unit)"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x22, 5]
+
+# Verified ACK received on TAU1201
+[[asbin]]
+tag = "asbin-nav-clock-off"
+description = "Disable NAV-CLOCK binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x22, 0]
 
 # NMEA messages use class 0xF0
 
