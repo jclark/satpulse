@@ -49,6 +49,33 @@ func TestSignalTableSpotChecks(t *testing.T) {
 	}
 }
 
+func TestCombineChannelStatusEmpty(t *testing.T) {
+	tests := []struct {
+		name string
+		cs   *sbfbin.ChannelStatus
+	}{
+		{"no active channels", &sbfbin.ChannelStatus{}},
+		{"all channels skipped", &sbfbin.ChannelStatus{
+			SatInfo:   []sbfbin.ChannelSatInfo{{SVID: 107}},
+			StateInfo: [][]sbfbin.ChannelStateInfo{{}},
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := satellitesCombine(tc.cs, nil)
+			if msg == nil {
+				t.Fatal("combine returned nil")
+			}
+			if msg.NativeMsgID != "ChannelStatus" || msg.UsedValidity != gpsprot.SatelliteUsedSV {
+				t.Errorf("NativeMsgID=%q UsedValidity=%v", msg.NativeMsgID, msg.UsedValidity)
+			}
+			if msg.SVs == nil || len(msg.SVs) != 0 {
+				t.Errorf("SVs = %#v, want empty non-nil slice", msg.SVs)
+			}
+		})
+	}
+}
+
 // TestCombineChannelStatusAndMeasEpoch joins used and look-angle data from
 // ChannelStatus to the MeasEpoch signal.
 func TestCombineChannelStatusAndMeasEpoch(t *testing.T) {

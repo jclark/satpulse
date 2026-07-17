@@ -29,7 +29,12 @@ func (c *satCombiner) sv(id gpsprot.SVID) *gpsprot.SVInfo {
 // satellitesCombine merges ChannelStatus (used + look angles) and MeasEpoch
 // (signals + CN0) into one SatellitesMsg.
 func satellitesCombine(chn *sbfbin.ChannelStatus, meas *sbfbin.MeasEpoch) *gpsprot.SatellitesMsg {
-	c := satCombiner{index: map[gpsprot.SVID]int{}, used: map[gpsprot.SVID]map[string]bool{}, usedSV: map[gpsprot.SVID]bool{}}
+	c := satCombiner{
+		svs:    make([]gpsprot.SVInfo, 0, len(chn.SatInfo)),
+		index:  map[gpsprot.SVID]int{},
+		used:   map[gpsprot.SVID]map[string]bool{},
+		usedSV: map[gpsprot.SVID]bool{},
+	}
 	c.addChannelStatus(chn)
 	validity := gpsprot.SatelliteUsedSV
 	if meas != nil {
@@ -37,9 +42,6 @@ func satellitesCombine(chn *sbfbin.ChannelStatus, meas *sbfbin.MeasEpoch) *gpspr
 		c.addMeasEpoch(meas)
 	}
 	c.setSVUsed()
-	if len(c.svs) == 0 {
-		return nil
-	}
 	return &gpsprot.SatellitesMsg{
 		SVs:          c.svs,
 		NativeMsgID:  "ChannelStatus",
