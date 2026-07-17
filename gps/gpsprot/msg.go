@@ -582,7 +582,7 @@ const (
 type SatellitesMsg struct {
 	Tag         Tag      `json:"tag,omitempty"`
 	NativeMsgID string   `json:"nativeMsgID,omitempty"`
-	SVs         []SVInfo `json:"info"` // satellites being tracked
+	SVs         []SVInfo `json:"info,omitempty"` // satellites being tracked
 	// UsedValidity says whether Used fields in SVInfo and SignalInfo are valid.
 	// Whenever it is not SatelliteUsedInvalid, SVInfo.Used is authoritative: a used SV
 	// need not carry any SignalInfo entry saying so, because signal detail can be
