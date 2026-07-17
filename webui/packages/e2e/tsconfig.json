@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"],
+    "lib": ["es2022", "dom"]
+  },
+  "include": ["harness.ts", "playwright.config.ts", "dashboard", "workbench"]
+}
