@@ -718,7 +718,9 @@ Signal identity also pivots through RINEX: `sbfbin.RINEXSig` maps the
 SBF signal number to a RINEX system/code, and
 `gpsprot.RINEXSignalID` maps that code to a `gpsprot.SignalID`.
 Signals whose RINEX code has no `gpsprot.SignalID` are skipped rather
-than emitted with a blank ID.
+than emitted with a blank ID. Galileo E5AltBOC (signal 22) maps through
+RINEX `E8Q` to the existing `SigIDGALE5`, which represents the combined
+E5a+E5b signal.
 
 Flush timing is intentionally simple:
 
@@ -750,10 +752,6 @@ limitation rather than a Septentrio-specific policy choice.
 These are recorded, not resolved, per the plan/CLAUDE.md convention of
 keeping speculation and unresolved forks explicit:
 
-- **Galileo E5AltBOC** (signal 22): needs a new `gpsprot.SignalID`
-  (e.g. `SigIDGALE5AltBOC`) before it can be emitted as a
-  `SignalInfo`. Until then, measurements that map only to RINEX `8Q`
-  are skipped rather than emitted with a blank or misleading ID.
 - **QZSS L6 (signal 27) and SBAS L5 (signal 25)**: the guide itself
   leaves the RINEX-obscode cell blank for signal 27 on both models;
   `gpsprot.SignalID` has no SBAS-specific constants, so signal 25

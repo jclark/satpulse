@@ -495,7 +495,7 @@ func TestRINEXSignalID(t *testing.T) {
 		{"C", "2I", SigIDBDSB1I},
 		{"C", "1P", SigIDBDSB1CP},
 		{"J", "1E", SigIDQZSSL1CB},
-		{"E", "8Q", SigIDInvalid},
+		{"E", "8Q", SigIDGALE5},
 		{"X", "1C", SigIDInvalid},
 	}
 	for _, tt := range tests {

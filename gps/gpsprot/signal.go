@@ -537,6 +537,7 @@ var rinexSignalIDTable = map[string]SignalID{
 	"E5Q": SigIDGALE5aQ,
 	"E7I": SigIDGALE5bI,
 	"E7Q": SigIDGALE5bQ,
+	"E8Q": SigIDGALE5,
 	"E6B": SigIDGALE6B,
 	"E6C": SigIDGALE6C,
 	"C2I": SigIDBDSB1I,

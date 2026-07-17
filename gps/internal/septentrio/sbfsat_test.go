@@ -121,7 +121,7 @@ func TestCombineMeasEpochDoesNotChangeChannelStatusSVSet(t *testing.T) {
 			{SVID: 1, SVIDFull: 1},
 			{SVID: 71, SVIDFull: 71},
 		},
-		StateInfo: [][]sbfbin.ChannelStateInfo{{}, {{Antenna: 0, PVTStatus: sbfbin.SlotStatus(sbfbin.PVTStatusUsed)}}},
+		StateInfo: [][]sbfbin.ChannelStateInfo{{}, {{Antenna: 0, PVTStatus: sbfbin.SlotStatus(sbfbin.PVTStatusUsed) << (2 * 6)}}},
 	}
 	me := &sbfbin.MeasEpoch{
 		Type1: []sbfbin.MeasEpochChannelType1{
@@ -138,8 +138,16 @@ func TestCombineMeasEpochDoesNotChangeChannelStatusSVSet(t *testing.T) {
 	if msg.SVs[0].ID.String() != "G01" || len(msg.SVs[0].Signals) != 1 {
 		t.Errorf("first SV = %+v, want G01 with one signal", msg.SVs[0])
 	}
-	if msg.SVs[1].ID.String() != "E01" || !msg.SVs[1].Used || msg.SVs[1].Signals == nil || len(msg.SVs[1].Signals) != 0 {
-		t.Errorf("second SV = %+v, want used E01 with empty signals", msg.SVs[1])
+	sv := msg.SVs[1]
+	if sv.ID.String() != "E01" || !sv.Used {
+		t.Errorf("second SV = %+v, want used E01", sv)
+	}
+	if len(sv.Signals) != 1 {
+		t.Fatalf("second SV signals = %+v, want E5", sv.Signals)
+	}
+	sig := sv.Signals[0]
+	if sig.ID != gpsprot.SigIDGALE5 || sig.CN0 != 55 || !sig.Used {
+		t.Errorf("second SV signal = %+v, want used E5 with CN0 55", sig)
 	}
 }
 
