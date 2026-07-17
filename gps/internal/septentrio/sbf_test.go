@@ -193,6 +193,32 @@ func TestNavEpochRestartsAfterFlushedDNUKey(t *testing.T) {
 	}
 }
 
+// TestReceiverTimeStartsNavEpoch verifies that ReceiverTime replaces a stale
+// epoch start and that an epoch containing no PVT block still emits a boundary.
+func TestReceiverTimeStartsNavEpoch(t *testing.T) {
+	p, c := newTestProcessor()
+	tRead := time.Unix(0, 0)
+	p.Dispatch(pvtGeoBlock(sbfbin.TimeStamp{TOW: 1000, WNc: 1}, sbfbin.TimeSystemGPS, sbfbin.PVTClockDNU), tRead)
+	for i, tow := range []uint32{2000, 3000} {
+		m := &sbfbin.ReceiverTime{UTCYear: sbfbin.UTCComponentDNU, DeltaLS: sbfbin.UTCComponentDNU}
+		p.Dispatch(&sbfbin.Block{TimeStamp: sbfbin.TimeStamp{TOW: tow, WNc: 1}, Params: m}, tRead.Add(time.Duration(i+1)*time.Second))
+	}
+	if len(c.times) != 2 {
+		t.Fatalf("TimeMsg count = %d, want 2", len(c.times))
+	}
+	for i, tm := range c.times {
+		if tm.ReadDelay != 0 {
+			t.Errorf("TimeMsg %d ReadDelay = %v, want 0", i, tm.ReadDelay)
+		}
+	}
+	if len(c.epochs) != 2 {
+		t.Fatalf("NavEpoch count = %d, want 2", len(c.epochs))
+	}
+	if c.epochs[1].Tag != Tag {
+		t.Errorf("ReceiverTime-only NavEpoch.Tag = %q, want %q", c.epochs[1].Tag, Tag)
+	}
+}
+
 // TestProcessStatusCapture drives a status capture and checks
 // ChannelStatus-only SVs are emitted.
 func TestProcessStatusCapture(t *testing.T) {

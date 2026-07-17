@@ -142,18 +142,21 @@ raw bytes --scan(PacketFormat)--> gpsprot.Packet
 ### 4.1 Epoch key and what an epoch carries
 
 Every SBF block header carries `(TOW, WNc)` on the GPS convention
-(section 5.1), represented by `sbfbin.TimeStamp`, so a navigation epoch
-is identified by that key. The `PacketProcessor` holds the current key,
-accumulating `*gpsprot.NavEpochMsg`, and start time in `p.curEpoch`; the
-first block after the accumulator was flushed, or whose timestamp differs
-from the current key, begins a new epoch.
+(section 5.1), represented by `sbfbin.TimeStamp`. The PVT-family blocks and
+`ReceiverTime` use that timestamp as the navigation epoch key. The
+`PacketProcessor` holds the current key, accumulating `*gpsprot.NavEpochMsg`,
+and start time in `p.curEpoch`; the first participating block after the
+accumulator was flushed, or whose timestamp differs from the current key,
+begins a new epoch.
 
-`NavEpochMsg` is built **only from the PVT-family blocks**
+`NavEpochMsg` quality fields are built **only from the PVT-family blocks**
 (`PVTGeodetic`/`PVTCartesian`, `DOP`, and the covariance blocks
-`PosCov*`/`VelCov*` -- section 8). Nothing from the satellite tracking
-and measurement blocks feeds it; `ChannelStatus` and `MeasEpoch` feed
-the independent `SatellitesMsg` stream (section 9), which is not part
-of the epoch (section 4.3).
+`PosCov*`/`VelCov*` -- section 8). `ReceiverTime` starts or joins the
+accumulator without adding quality fields, so an epoch containing no PVT block
+still emits the `NavEpochMsg` boundary. Nothing from the satellite tracking and
+measurement blocks feeds it; `ChannelStatus` and `MeasEpoch` feed the
+independent `SatellitesMsg` stream (section 9), which is not part of the epoch
+(section 4.3).
 
 ### 4.2 Flush triggers and coexistence with NMEA
 
@@ -379,8 +382,9 @@ section 5.1). `Ref = PostPulse`. `NativeMsgID = "xPPSOffset"`.
 
 `Accuracy time.Duration` has **no SBF source anywhere** (no field
 analogous to u-blox's `NAV-TIMEGPS.tAcc`); leave it zero for every
-Septentrio-derived `TimeMsg`. `ReadDelay` is set by the
-`PacketProcessor` framework, not per block:
+Septentrio-derived `TimeMsg`. `ReceiverTime` and the PVT family enter epoch
+keying before emission. `ReadDelay` is then set by the `PacketProcessor`
+framework, not per block:
 `tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curEpoch.start))`,
 matching every other protocol's `ReadDelay` assignment.
 

@@ -22,14 +22,15 @@ type navEpochState struct {
 // PacketProcessor implements gpsprot.PacketProcessor and gpsprot.EpochFlusher
 // for Septentrio SBF packets. It parses each packet via sbfbin.ParseMsg,
 // converts recognized blocks into gpsprot.Msg values, accumulates one
-// NavEpochMsg per PVT-family epoch, runs an independent SatellitesMsg stream,
+// NavEpochMsg per navigation epoch, runs an independent SatellitesMsg stream,
 // and falls back to NativeMsg for every unmapped block.
 type PacketProcessor struct {
 	gpsprot.DefaultPacketProcessor
 	mh  gpsprot.MsgHandler
 	mgr *gpsprot.NavEpochManager
 
-	// PVT-family navigation epoch, keyed by the (TOW, WNc) block header.
+	// Navigation epoch keyed by the (TOW, WNc) block header. ReceiverTime can
+	// start it, while PVT-family blocks populate its quality fields.
 	curEpoch *navEpochState
 
 	// Independent SatellitesMsg stream: ChannelStatus emits satellites, and
@@ -108,6 +109,7 @@ func (p *PacketProcessor) Dispatch(b *sbfbin.Block, tRead time.Time) bool {
 		p.mgr.EndOfProtocolEpoch(p, tRead)
 		return true
 	case *sbfbin.ReceiverTime:
+		p.navEpoch(b.TimeStamp, tRead)
 		p.emitTime(timeReceiverTime(b, m), tRead)
 		return true
 	case *sbfbin.XPPSOffset:
@@ -157,8 +159,9 @@ func (p *PacketProcessor) navEpoch(ts sbfbin.TimeStamp, tRead time.Time) *gpspro
 
 // FlushNavEpoch implements gpsprot.EpochFlusher. It returns the accumulated
 // NavEpochMsg for the current epoch (the SatellitesMsg stream is independent
-// and is not flushed here). Clearing the accumulator makes the next PVT block
-// start a new epoch; the rest of the epoch state is retained for ReadDelay.
+// and is not flushed here). Clearing the accumulator makes the next
+// epoch-keying block start a new epoch; the rest of the epoch state is retained
+// for ReadDelay.
 func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
 	var msg *gpsprot.NavEpochMsg
 	if p.curEpoch != nil {

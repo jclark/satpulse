@@ -64,6 +64,10 @@ one-`TimeMsg`-per-epoch latch, so suppressing it would forward one `TimeMsg`
 and silently drop every later one. The epoch is real whenever `ReceiverTime`
 arrives; reporting it with no quality fields set is correct.
 
+**Fixed.** `ReceiverTime` now participates in epoch keying before its
+`TimeMsg` is emitted, with regression coverage for both `ReadDelay` and an
+epoch containing `ReceiverTime` without a PVT block.
+
 ## P2
 
 ### 3. NavEpochMsg merges NMEA's previous-epoch contribution
