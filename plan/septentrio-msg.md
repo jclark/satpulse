@@ -191,68 +191,55 @@ things:
 `EndOfProtocolEpoch(f, tRead)`, meaning "processor `f`'s own epoch has
 ended, but `f` cannot assert the epoch is over for the whole
 receiver." The flush-now-or-defer decision keys on **whether another
-protocol took part in the last epoch**, not on whether one happens to
-be active at this instant. NMEA output does not flicker on and off, so
-last epoch's participation is a reliable predictor of this epoch's --
-whereas "is NMEA active right now" is not: its sentences for the
-current epoch may not have arrived when `EndOfPVT` fires (no NMEA/SBF
-ordering guarantee), so a naive is-anyone-else-active check would flush
-an NMEA-bearing epoch prematurely.
+protocol took part in the last logical epoch**, not only on whether one
+happens to be active at this instant. The manager records
+processors that call `EndOfProtocolEpoch`; only those processors are
+eligible for `lastEpochSingleProtocol`. The field identifies the sole
+eligible processor in the last logical epoch, or is nil when
+participation was unknown or multiple. A whole-receiver `EndOfEpoch`
+therefore cannot arm protocol-local recovery for UBX or Quectel.
 
-- If `f` is alone now **and** no other processor took part in the last
-  epoch, flush now -- the SBF-only case. This is **required, not
-  optional**: a no-NMEA receiver must emit its `NavEpochMsg` at
-  `EndOfPVT`, not one epoch late.
-- Otherwise (another processor is active now, or one was present last
-  epoch and is expected again), do nothing: `f`'s completed accumulator
-  stays in the active set, swept up and merged when the next
-  whole-receiver boundary arrives (the next `EpochStarted`/`EndOfEpoch`
-  -- a TOW increase, or the concurrently-active NMEA processor's own
-  boundary). SBF's next-TOW `EpochStarted` flushes and resets its
-  accumulator before accumulating the new epoch, so the staged value is
-  never clobbered.
-
-The manager records the set of processors that participated in each
-flushed epoch (`m.lastEpoch`, the keys of `m.active` captured by
-`flush` before it clears them) so `EndOfProtocolEpoch` can consult it:
+- If the current active set is exactly `{f}` and
+  `lastEpochSingleProtocol == f`, flush now. This is the established
+  SBF-only case.
+- Otherwise do nothing. The accumulator stays active until a
+  whole-receiver boundary, allowing trailing NMEA to join it.
 
 ```go
-// EndOfProtocolEpoch is called by a processor whose own epoch has ended
-// but which cannot assert the epoch is over for the whole receiver
-// (e.g. Septentrio's EndOfPVT). It flushes now only when f is the sole
-// active processor AND no other processor took part in the last epoch;
-// otherwise it defers to the next whole-receiver boundary, so a
-// concurrently-active protocol (e.g. NMEA whose sentences trail
-// EndOfPVT) is not flushed mid-epoch. NMEA presence is stable across
-// epochs, so last epoch's participation predicts this epoch's.
 func (m *NavEpochManager) EndOfProtocolEpoch(f EpochFlusher, tRead time.Time) {
-	for g := range m.active {
-		if g != f {
-			return // another protocol mid-epoch
-		}
-	}
-	for g := range m.lastEpoch {
-		if g != f {
-			return // NMEA present last epoch; expect it again, wait for the merge
-		}
+	if _, ok := m.active[f]; !ok || len(m.active) != 1 || m.lastEpochSingleProtocol != f {
+		return
 	}
 	m.flush(tRead)
 }
 ```
 
-Cold start: for the very first epoch `m.lastEpoch` is empty, so an
-SBF-only receiver flushes promptly; if NMEA is in fact present but its
-first-epoch sentences trail `EndOfPVT`, only that one startup epoch
-fails to merge -- steady state is correct once NMEA has appeared in a
-single epoch.
+At cold start, nil means that single-protocol operation is not yet
+established, so the first `EndOfPVT` defers. If no NMEA appears, the
+next SBF TOW transition flushes the first epoch and establishes SBF as
+the sole protocol; that epoch's `EndOfPVT` and subsequent ones then
+flush promptly. If NMEA trails the first `EndOfPVT`, it joins the still
+active SBF epoch and the next TOW transition flushes the correctly
+aligned pair. Consistently leading NMEA is already active at
+`EndOfPVT`, so it also causes deferral without relying on history.
+
+If trailing NMEA first appears after SBF-only operation was
+established, one transition epoch has already been flushed as SBF-only.
+When the next SBF epoch starts, `EpochStarted` sees that SBF was the
+last sole protocol but only NMEA is active. It flushes that late NMEA
+contribution separately, clears `lastEpochSingleProtocol` because both
+processors participated in the split logical epoch, and then registers
+SBF. NMEA joins the following epoch normally, so the offset does not
+persist. The late contribution is emitted rather than discarded because
+`NavEpochMsg` resets downstream per-epoch state.
 
 This is a required `gpsprot.msg.go` change accompanying SBF
 integration (it may land as its own small commit ahead of this
-package). It adds the `EndOfProtocolEpoch` method and the `lastEpoch`
-participant-set tracking in `flush`, and leaves `EpochStarted`/
-`EndOfEpoch` semantics untouched, so UBX/Quectel/NMEA-only and SBF-only
-receivers behave exactly as today; only the SBF+NMEA coexistence path
-changes.
+package). It adds the `EndOfProtocolEpoch` method, tracks the sole
+eligible processor in the last logical epoch, and extends
+`EpochStarted` with the one-time split-epoch recovery. Processors that
+do not call `EndOfProtocolEpoch`, including UBX, Quectel, NovAtel, and
+Unicore, retain their existing manager behavior.
 
 ### 4.3 Resolved: SatellitesMsg is not part of the epoch
 
