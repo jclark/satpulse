@@ -511,11 +511,11 @@ func TestSatellitesMsgGNSSUsedSignal(t *testing.T) {
 	msg := SatellitesMsg{
 		UsedValidity: SatelliteUsedSignal,
 		SVs: []SVInfo{
-			{ID: SVID{GNSS: GPS, Num: 1}, Signals: []SignalInfo{
+			{ID: SVID{GNSS: GPS, Num: 1}, Used: true, Signals: []SignalInfo{
 				{ID: SigIDGPSL1CA, Used: true},
 				{ID: SigIDGPSL5I, Used: false},
 			}},
-			{ID: SVID{GNSS: GAL, Num: 1}, Signals: []SignalInfo{
+			{ID: SVID{GNSS: GAL, Num: 1}, Used: true, Signals: []SignalInfo{
 				{ID: SigIDGALE1, Used: true},
 			}},
 			{ID: SVID{GNSS: BDS, Num: 1}, Signals: []SignalInfo{
