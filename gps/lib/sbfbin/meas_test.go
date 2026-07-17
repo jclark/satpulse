@@ -152,8 +152,11 @@ func TestGLONASSFreqNr(t *testing.T) {
 
 func TestMeasExtraAccessors(t *testing.T) {
 	var s MeasExtraChannelSub
-	s.Type = 31
+	s.Type = 2<<5 | 31
 	s.Misc = 5 | 1<<3 // CN0HighRes 5, signal extension 32+1
+	if got := s.AntennaID(); got != 2 {
+		t.Errorf("AntennaID = %d, want 2", got)
+	}
 	if got := s.SignalNumber(); got != 33 {
 		t.Errorf("SignalNumber = %d, want 33", got)
 	}

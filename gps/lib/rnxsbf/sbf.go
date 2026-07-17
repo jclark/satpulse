@@ -110,6 +110,9 @@ func (c *Converter) ConvertMeasEpoch(ts sbfbin.TimeStamp, m *sbfbin.MeasEpoch, e
 	hr := extraInfos(extra)
 	for i := range m.Type1 {
 		t1 := &m.Type1[i]
+		if t1.AntennaID() != 0 {
+			continue
+		}
 		sys := sbfbin.RINEXSys(t1.SVID)
 		num := sbfbin.RINEXSatNum(t1.SVID)
 		if sys == "" || num == 0 {
@@ -123,7 +126,11 @@ func (c *Converter) ConvertMeasEpoch(ts sbfbin.TimeStamp, m *sbfbin.MeasEpoch, e
 			}
 		}
 		for j := range m.Type2[i] {
-			obs, ok := c.slaveObservation(t, sat, sys, m.CommonFlags, t1.RxChannel, &m.Type2[i][j], mst, hr)
+			t2 := &m.Type2[i][j]
+			if t2.AntennaID() != 0 {
+				continue
+			}
+			obs, ok := c.slaveObservation(t, sat, sys, m.CommonFlags, t1.RxChannel, t2, mst, hr)
 			if !ok {
 				continue
 			}
@@ -143,6 +150,9 @@ func extraInfos(extra *sbfbin.MeasExtra) map[extraKey]extraInfo {
 	m := make(map[extraKey]extraInfo, len(extra.Channels))
 	for i := range extra.Channels {
 		s := &extra.Channels[i]
+		if s.AntennaID() != 0 {
+			continue
+		}
 		info := extraInfo{cumLossCont: s.CumLossCont}
 		if hasCN0 {
 			info.cn0HighRes = s.CN0HighRes()

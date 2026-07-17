@@ -425,6 +425,11 @@ func (s *MeasExtraChannelSub) SignalNumber() uint8 {
 	return n
 }
 
+// AntennaID returns the AntennaID field of a MeasExtra channel sub-block.
+func (s *MeasExtraChannelSub) AntennaID() uint8 {
+	return measAntennaID(s.Type)
+}
+
 // CN0HighRes returns the high-resolution C/N0 refinement in dB-Hz to be added
 // to the MeasEpoch C/N0 (Misc bits 0-2, 0.03125 dB-Hz units). It is only
 // meaningful when the enclosing block's HasCN0HighRes reports true.

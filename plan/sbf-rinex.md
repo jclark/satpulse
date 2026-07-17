@@ -115,6 +115,11 @@ sub-blocks (`MeasExtraChannelSub`) key back to `MeasEpoch` entries by
 `(RxChannel, Type)` -- see "Correlating MeasExtra" below -- so the
 converter builds a lookup from `extra` before walking `m`.
 
+RINEX observations have no antenna dimension, so the converter emits
+only sub-blocks whose `AntennaID` is 0 (main antenna). It filters Type1,
+Type2, and MeasExtra sub-blocks before observation state or MeasExtra
+correlation can combine measurements from different antennas.
+
 Epoch time is `rinex.TimeFromGPSWeekMillis(int64(m.WNc), m.TOW)`.
 Per the SBF specification, block-header `TOW`/`WNc` always uses the
 GPS week convention regardless of which constellation a given

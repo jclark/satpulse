@@ -276,6 +276,33 @@ func TestSlaveEmittedWithoutMaster(t *testing.T) {
 	}
 }
 
+func TestMainAntennaOnly(t *testing.T) {
+	main := masterCh(7, 0)
+	aux := main
+	aux.Type |= 1 << 5
+	slave := sbfbin.MeasEpochChannelType2{Type: 2, CN0: 100}
+	auxSlave := slave
+	auxSlave.Type |= 1 << 5
+	var mainExtra, auxExtra sbfbin.MeasExtraChannelSub
+	mainExtra.RxChannel = 1
+	mainExtra.Misc = 3
+	auxExtra = mainExtra
+	auxExtra.Type = 1 << 5
+	auxExtra.Misc = 6
+	extra := &sbfbin.MeasExtra{Channels: []sbfbin.MeasExtraChannelSub{mainExtra, auxExtra}}
+	extra.SBLength = 16
+	m := measEpoch(0, []sbfbin.MeasEpochChannelType1{main, aux},
+		[][]sbfbin.MeasEpochChannelType2{{slave, auxSlave}, nil})
+	got := convert(t, testTS, m, extra)
+	if len(got) != 2 || got[0].Sig != "1C" || got[1].Sig != "2W" {
+		t.Fatalf("got %+v, want main-antenna 1C and 2W", got)
+	}
+	wantCN0 := float32(40 + 3*0.03125)
+	if !got[0].CN0.IsSet() || got[0].CN0.Get() != wantCN0 {
+		t.Errorf("main CN0 = %v, want %v", got[0].CN0, wantCN0)
+	}
+}
+
 func TestCN0Refinement(t *testing.T) {
 	extra := func(sbLength, rxChannel, sig, misc uint8) *sbfbin.MeasExtra {
 		var e sbfbin.MeasExtra
