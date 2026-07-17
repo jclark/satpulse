@@ -91,7 +91,7 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 	return nil
 }
 
-// ProbePacket returns a CFG-MSG poll of MON-VER. A receiver on a
+// ProbePackets returns a CFG-MSG poll of MON-VER. A receiver on a
 // healthy line answers within tens of milliseconds; probing relies on
 // repeated probes rather than on changing receiver state. A V5
 // receiver at its default 9600 baud with the default NMEA load
@@ -99,10 +99,10 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 // losing them entirely; detection there is best-effort, and reliable
 // configuration needs the baud rate persistently raised first (see
 // the receiver notes).
-func (cp *ConfigProtocol) ProbePacket() []byte {
+func (cp *ConfigProtocol) ProbePackets() ([][]byte, time.Duration) {
 	cp.pollsPending++
 	pkt, _ := casbin.Serialize(&casbin.CfgMsg{Target: casbin.MonVerID, Rate: casbin.PollRate})
-	return pkt
+	return [][]byte{pkt}, 0
 }
 
 // ProbeOK reports whether a CASIC receiver has been identified.

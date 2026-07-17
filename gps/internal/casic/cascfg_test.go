@@ -254,11 +254,14 @@ func probe(t *testing.T, rcvr *testReceiver) *ConfigProtocol {
 	cp := NewConfigProtocol()
 	pp.SetNativeMsgHandler(cp)
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for _, resp := range rcvr.respond(cp.ProbePacket()) {
-		if _, err := pp.ProcessPacket(string(resp), t0); err != nil {
-			t.Fatalf("ProcessPacket: %v", err)
+	packets, _ := cp.ProbePackets()
+	for _, p := range packets {
+		for _, resp := range rcvr.respond(p) {
+			if _, err := pp.ProcessPacket(string(resp), t0); err != nil {
+				t.Fatalf("ProcessPacket: %v", err)
+			}
+			t0 = t0.Add(5 * time.Millisecond)
 		}
-		t0 = t0.Add(5 * time.Millisecond)
 	}
 	return cp
 }
@@ -771,9 +774,9 @@ func TestLateProbeNak(t *testing.T) {
 	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	cp := NewConfigProtocol()
 	pp.SetNativeMsgHandler(cp)
-	p1 := cp.ProbePacket()
-	cp.ProbePacket() // second probe, as gpscfg sends after probeRetryDelay
-	for _, resp := range rcvr.respond(p1) {
+	packets, _ := cp.ProbePackets()
+	cp.ProbePackets() // second probe, as gpscfg sends after probeRetryDelay
+	for _, resp := range rcvr.respond(packets[0]) {
 		if _, err := pp.ProcessPacket(string(resp), time.Unix(1, 0)); err != nil {
 			t.Fatalf("ProcessPacket: %v", err)
 		}
