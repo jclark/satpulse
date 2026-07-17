@@ -20,12 +20,22 @@ With no options, **satpulsewb** binds all interfaces on its default port (15754)
 The printed URLs carry the token as a query parameter; the frontend stores it and strips it from the URL bar.
 Anyone with a printed URL controls the receiver until **satpulsewb** exits.
 Any number of windows can watch the session, but only one at a time holds the write seat and can change the receiver; opening the URL in a second window takes the seat, and the first window becomes a live read-only viewer with a "Use here" button to take it back.
+When run from a local desktop session, **satpulsewb** opens its loopback URL in the default browser; on Linux and FreeBSD this additionally requires a graphical session.
+It never opens a browser over SSH or with **\-\-listen**.
+On Linux and FreeBSD, where a process's command line is readable by other users of the machine, the opened URL carries a single-use launch token that stops working after its first use, so the value visible in the browser's command line grants nothing.
 
 There is no TLS support.
 On a network you do not trust, listen on loopback only and reach it through an SSH tunnel:
 
     remote$ satpulsewb -L localhost:15754
-    local$ ssh -L 15754:localhost:15754 remotehost
+    local$ ssh -L 2050:localhost:15754 192.168.1.50
+
+The tunnel's first port is the one to browse to locally, here *http://localhost:2050/*; any free port will do, and ending it with the remote host's last octet keeps concurrent tunnels apart.
+The host and port after it are the address the remote host resolves, which is where **satpulsewb** is listening.
+Since **\-\-listen** disables the token, the printed URL needs no token to open.
+Both steps can be one command, with **\-t** so that Ctrl-C reaches **satpulsewb** and releases the receiver:
+
+    local$ ssh -t -L 2050:localhost:15754 192.168.1.50 satpulsewb -L localhost:15754
 
 Without **\-\-serial\-device**, the session starts disconnected and the receiver is chosen and connected from the GUI.
 With it, **satpulsewb** connects at startup; a browser arriving later catches up on the current state.
@@ -38,8 +48,8 @@ With it, **satpulsewb** connects at startup; a browser arriving later catches up
 **\-L**, **\-\-listen** *host:port*
 : Listen on the given address instead of all interfaces on the default port.
 With an explicit port, a bind failure is an error; there is no fallback port, since the address may be the target of an SSH tunnel.
-**\-\-listen** also disables the access token, since the typical use is a tunnel; serving without a token on a non-loopback address prints a warning.
-Without **\-\-token**, **\-\-listen** trusts the local browser environment.
+**\-\-listen** also disables the access token, since the typical use is a tunnel.
+Without **\-\-token**, **\-\-listen** trusts the local browser environment: requests with a non-loopback Host are refused and a non-loopback bind prints a warning; use **\-\-token** to allow remote browser access.
 
 **\-T**, **\-\-token**
 : Require the generated access token even with **\-\-listen**.
@@ -92,6 +102,10 @@ Connect to a receiver at startup:
 Loopback only, for use through an SSH tunnel:
 
     satpulsewb -L localhost:15754
+
+Start it over SSH and tunnel to it in a single command, then browse to *http://localhost:2050/*:
+
+    ssh -t -L 2050:localhost:15754 192.168.1.50 satpulsewb -L localhost:15754
 
 # SEE ALSO
 

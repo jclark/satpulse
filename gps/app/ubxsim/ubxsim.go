@@ -22,9 +22,11 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/internal/spartn"
 	"github.com/jclark/satpulse/gps/internal/ubx"
@@ -73,12 +75,12 @@ func (s *Sim) Run(ctx context.Context, rw io.ReadWriter) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	w := newWriter(rw, db, s.opts.Port)
-	nav := &navEngine{db: db, port: s.opts.Port, epochs: s.p.Epochs, w: w, lg: s.opts.Logger}
+	nav := &navEngine{db: db, port: s.opts.Port, epochs: s.p.Epochs, w: w, lg: s.opts.Logger, reboot: make(chan struct{}, 1)}
 	var wg sync.WaitGroup
 	wg.Go(func() { nav.run(ctx) })
 	// The writer cancels on a fatal write error so blocked senders unwind.
 	wg.Go(func() { defer cancel(); w.run(ctx) })
-	err := s.readLoop(ctx, db, w, rw)
+	err := s.readLoop(ctx, db, w, nav, rw)
 	cancel()
 	wg.Wait()
 	return err
@@ -87,7 +89,7 @@ func (s *Sim) Run(ctx context.Context, rw io.ReadWriter) error {
 // readLoop demultiplexes the input stream: configuration messages and
 // the MON-VER poll are handled, correction input (RTCM or SPARTN) is
 // answered with UBX-RXM-COR, everything else is ignored.
-func (s *Sim) readLoop(ctx context.Context, db *cfgDB, w *writer, r io.Reader) error {
+func (s *Sim) readLoop(ctx context.Context, db *cfgDB, w *writer, nav *navEngine, r io.Reader) error {
 	sc := scan.New(r, 4096, []gpsprot.PacketFormat{ubx.PacketFormat, rtcm.PacketFormat, spartn.PacketFormat})
 	for {
 		pkt, err := sc.Scan()
@@ -101,7 +103,7 @@ func (s *Sim) readLoop(ctx context.Context, db *cfgDB, w *writer, r io.Reader) e
 			continue
 		}
 		if pkt.Format == ubx.PacketFormat {
-			err = s.handleMsg(ctx, db, w, pkt.Data)
+			err = s.handleMsg(ctx, db, w, nav, pkt.Data)
 		} else {
 			err = s.corInput(ctx, db, w, pkt)
 		}
@@ -114,7 +116,7 @@ func (s *Sim) readLoop(ctx context.Context, db *cfgDB, w *writer, r io.Reader) e
 // handleMsg processes one received UBX packet. Write errors are
 // returned; anything wrong with the packet itself is answered on the
 // wire (NAK) per the interface description's acknowledgement rule.
-func (s *Sim) handleMsg(ctx context.Context, db *cfgDB, w *writer, data string) error {
+func (s *Sim) handleMsg(ctx context.Context, db *cfgDB, w *writer, nav *navEngine, data string) error {
 	lg := s.opts.Logger
 	mid := ubxbin.PacketMsgId(data)
 	switch mid {
@@ -170,6 +172,22 @@ func (s *Sim) handleMsg(ctx context.Context, db *cfgDB, w *writer, data string) 
 		}
 		lg.Debug("CFG-CFG", "ack", ok)
 		return s.writeAckNak(ctx, w, mid, ok)
+	case ubxbin.CfgRstID:
+		// CFG-RST is never ACKed or NAKed (interface description 3.10.18:
+		// "Do not expect this message to be acknowledged by the receiver").
+		// A reset that puts the processor through a reset cycle reboots the
+		// simulator: rebuild RAM from the layers below and restart the nav
+		// engine, while this process and its stream stay alive. The
+		// GNSS-only reset modes leave the config as it is, as today.
+		if m, err := ubxbin.ParseMsg(data); err == nil {
+			if rst := m.(*ubxbin.CfgRst); rstReboots(rst.ResetMode) {
+				lg.Debug("CFG-RST reboot", "resetMode", rst.ResetMode)
+				db.reboot()
+				w.reboot()
+				nav.restart()
+			}
+		}
+		return nil
 	case ubxbin.CfgPrtID:
 		port, ok := s.prtPollPort(data)
 		if !ok {
@@ -187,6 +205,24 @@ func (s *Sim) handleMsg(ctx context.Context, db *cfgDB, w *writer, data string) 
 		return s.writeAckNak(ctx, w, mid, false)
 	}
 	return nil
+}
+
+// rstReboots reports whether a CFG-RST resetMode puts the receiver
+// through a reset cycle that rebuilds the RAM configuration from the
+// layers below. The F9 interface description (6.7 "Configuration reset
+// behavior") lists exactly these modes as going through a reset cycle:
+// the immediate and after-shutdown hardware resets and the controlled
+// software reset. The GNSS-only modes (controlled software reset GNSS
+// only, controlled GNSS stop/start) do not reset the processor and so
+// leave the RAM configuration untouched.
+func rstReboots(mode ubxbin.CfgRstResetMode) bool {
+	switch mode {
+	case ubxbin.CfgRstResetModeHardwareResetImmediately,
+		ubxbin.CfgRstResetModeControlledSoftwareReset,
+		ubxbin.CfgRstResetModeHardwareResetAfterShutdown:
+		return true
+	}
+	return false
 }
 
 // corInput answers a differential correction input message (RTCM or
@@ -327,6 +363,24 @@ var prtOutProt = map[ucv.Port]prtProto{
 	ucv.SPI:   {ucv.KSpioutprotUbx, ucv.KSpioutprotNmea, ucv.KSpioutprotRtcm3x},
 }
 
+// outProtKey returns the port's OUTPROT key for the protocol tag names,
+// and whether the port gates that protocol.
+func outProtKey(port ucv.Port, tag gpsprot.Tag) (ucv.KeyL, bool) {
+	p, ok := prtOutProt[port]
+	if !ok {
+		return 0, false
+	}
+	switch tag {
+	case ubx.Tag:
+		return p.ubx, true
+	case nmea.Tag:
+		return p.nmea, true
+	case rtcm.Tag:
+		return p.rtcm3, true
+	}
+	return 0, false
+}
+
 func (s *Sim) writeAckNak(ctx context.Context, w *writer, mid ubxbin.MsgID, ack bool) error {
 	if ack {
 		return s.writeMsg(ctx, w, &ubxbin.AckAck{MsgID: mid})
@@ -372,22 +426,69 @@ type writer struct {
 	out  io.Writer
 	db   *cfgDB
 	port ucv.Port
-	ch   chan []byte
+	ch   chan outPkt
+	gen  atomic.Uint64
+}
+
+// outPkt is a queued packet tagged with the writer generation live when
+// send accepted it. A simulated reboot bumps the generation, so the
+// writer can drop the packets gated by the pre-reset config instead of
+// emitting them ahead of the restarted epoch-0 stream.
+type outPkt struct {
+	gen  uint64
+	data []byte
 }
 
 func newWriter(out io.Writer, db *cfgDB, port ucv.Port) *writer {
-	return &writer{out: out, db: db, port: port, ch: make(chan []byte, txQueueDepth)}
+	return &writer{out: out, db: db, port: port, ch: make(chan outPkt, txQueueDepth)}
 }
 
 // send enqueues a whole packet for the writer, blocking while the queue
-// is full, and returns ctx.Err() if the simulator is shutting down.
+// is full, and returns ctx.Err() if the simulator is shutting down. The
+// packet carries the generation live at the call, so a packet gated under
+// a config a later reboot discards is dropped rather than emitted.
 func (w *writer) send(ctx context.Context, p []byte) error {
+	return w.sendGen(ctx, w.gen.Load(), p)
+}
+
+// sendGen is send with the caller's own generation stamp. The nav engine
+// binds a whole bank run to the generation live when the run started, so
+// the tail of an epoch interrupted mid-burst by a reboot is dropped with
+// the queue instead of being stamped current and preceding the restarted
+// epoch 0.
+func (w *writer) sendGen(ctx context.Context, gen uint64, p []byte) error {
+	pkt := outPkt{gen: gen, data: p}
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case w.ch <- p:
+	case w.ch <- pkt:
 		return nil
 	}
+}
+
+// generation returns the current writer generation, for a sender that
+// stamps a multi-packet burst with sendGen.
+func (w *writer) generation() uint64 {
+	return w.gen.Load()
+}
+
+// reboot abandons the transmit queue's in-flight output the way a real
+// receiver reset does: it bumps the generation so the writer drops every
+// packet accepted under the pre-reset config, whether already queued or
+// mid-drip, instead of emitting it ahead of the restarted epoch-0 stream.
+// The reader calls this on a rebooting CFG-RST before signalling the nav
+// engine, so the epoch-0 burst is sent under the new generation. One
+// bounded imprecision: a mid-drip drop leaves a truncated frame whose
+// declared length absorbs the bytes that follow until the checksum fails
+// and the scanner resyncs (one bad frame per reset).
+func (w *writer) reboot() {
+	w.gen.Add(1)
+}
+
+// stale reports whether a packet tagged with gen predates the current
+// generation and so belongs to a config a reboot has discarded.
+func (w *writer) stale(gen uint64) bool {
+	return gen != w.gen.Load()
 }
 
 // run drains the queue until ctx is cancelled or a write fails, pacing a
@@ -408,7 +509,10 @@ func (w *writer) passthrough(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case p := <-w.ch:
-			if _, err := w.out.Write(p); err != nil {
+			if w.stale(p.gen) {
+				continue
+			}
+			if _, err := w.out.Write(p.data); err != nil {
 				return
 			}
 		}
@@ -424,6 +528,7 @@ func (w *writer) passthrough(ctx context.Context) {
 // bytes are queued, so an idle port neither wakes nor accrues credit.
 func (w *writer) pace(ctx context.Context, baudKey ucv.Key) {
 	var buf []byte
+	var bufGen uint64
 	var num int64
 	var last time.Time
 	var ticker *time.Ticker
@@ -436,7 +541,7 @@ func (w *writer) pace(ctx context.Context, baudKey ucv.Key) {
 	}
 	defer stop()
 	for {
-		var in <-chan []byte
+		var in <-chan outPkt
 		if tick == nil {
 			in = w.ch // accept the next burst only while idle
 		}
@@ -444,10 +549,13 @@ func (w *writer) pace(ctx context.Context, baudKey ucv.Key) {
 		case <-ctx.Done():
 			return
 		case p := <-in:
-			buf, num, last = p, 0, time.Now()
+			buf, bufGen, num, last = p.data, p.gen, 0, time.Now()
 			ticker = time.NewTicker(tickInterval)
 			tick = ticker.C
 		case now := <-tick:
+			if w.stale(bufGen) {
+				buf = nil // a reboot discarded the packet mid-drip
+			}
 			budget, unlimited := 0, false
 			if baud := w.db.ramUint(baudKey); baud != 0 {
 				num += now.Sub(last).Nanoseconds() * int64(baud)
@@ -461,12 +569,16 @@ func (w *writer) pace(ctx context.Context, baudKey ucv.Key) {
 				if len(buf) == 0 {
 					select {
 					case p := <-w.ch:
-						buf = p
+						buf, bufGen = p.data, p.gen
 					default:
 						idle = true
 					}
 					if idle {
 						break
+					}
+					if w.stale(bufGen) {
+						buf = nil // drop a packet queued under a pre-reset config
+						continue
 					}
 				}
 				n := len(buf)

@@ -184,8 +184,7 @@ type Opener interface {
 Provided implementations: `SerialOpener{Device, Speed}` (its Open can
 wait for the device node to reappear, which is where the
 re-enumeration handling lives), `SocketOpener{Path}`, and later
-`TCPOpener{Addr}` (needs TCP dialing in gpsio; NetConn already
-handles unix sockets).
+`TCPOpener{Addr}` (see tcp-receiver.md).
 
 ### Methods
 
@@ -327,21 +326,28 @@ ContinueOnError); connection flags reuse the satpulsetool gps names
 and help strings exactly.
 
 ```
-satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
+satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH]
            [-d DEVICE [-s SPEED]] [--vendor NAME]
 ```
 
 - No arguments just works: bind all interfaces, canonical default
   port (falling back to an OS-picked port if taken), per-run
-  generated token, and one printed URL per non-loopback interface
-  address with the token as a query parameter
+  generated token, and printed URLs: the loopback URL -- localhost
+  when everything it resolves to locally is loopback and served by
+  the bind (a loopback URL is only usable in a browser on this
+  machine, so the local check is decisive), else 127.0.0.1 or ::1
+  when served, else each served loopback interface address -- then
+  one URL per non-loopback interface address the bind serves,
+  skipping only IPv6 link-local (no zone-free URL form), each with
+  the token as a query parameter
   (`http://192.168.1.40:PORT/?t=XYZ`). The SPA stores the token,
   strips `?t=` from the URL bar, and sends it on every request and
   SSE connection. The per-run token is the only auth model: no
   user-specified token value, no persistent token state, no TLS in
   the first version. On a network the user does not trust, the
   answer is `-L localhost:PORT` plus an ssh tunnel, which the man
-  page documents.
+  page documents. The Security model section below states what this
+  does and does not protect against.
 - `-L`/`--listen HOST:PORT` takes control of the bind address, and
   with an explicit port a bind failure is an error, no fallback
   (the user may have an ssh tunnel pointing at that port). Since
@@ -363,32 +369,122 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH] [--no-open]
   rare case.)
 - `--packet-log PATH` mirrors satpulsetool and wires the session's
   `Options.PacketLog`.
-- Browser auto-open by default (deferred to phase 7, its own PR),
-  gated on a local interactive GUI session. The gate is display
-  presence, not receiver locality:
-  sshing into the box with the receiver must not open a browser,
-  while running at a local desktop should, even when the receiver is
-  remote over a later proxy transport. `SSH_CONNECTION` or `SSH_TTY`
-  in the environment is a universal veto; otherwise Linux
-  additionally requires `DISPLAY` or `WAYLAND_DISPLAY`, macOS needs
-  only not-remote (the console user always has the window server),
-  and Windows normally has a desktop. What opens is the loopback URL
-  (`http://127.0.0.1:PORT/`, with the per-run token appended when
-  there is one), orthogonal to the bind: the default all-interfaces
-  bind already includes loopback, so the per-address LAN URLs still
-  print and stay reachable, and auto-open only adds the local tab. A
-  small per-OS launcher does it (`open`/`xdg-open`/`rundll32`, no new
-  external dependency), fired after the listener is bound,
-  non-blocking, with launch failure logged at debug only since the
-  printed URL is the fallback. `--no-open` suppresses it, for a local
-  desktop where the tab is unwanted or when the tool is scripted (the
-  detection has no positive override; the printed URL covers the rare
-  case where it guesses headless but a browser is in fact reachable).
-  This supersedes the earlier "no browser auto-open" decision, which
-  assumed the primary flow was ssh to a headless box; macOS is now
-  the lead desktop platform.
-- `--socket` and `--tcp` are deferred to phase 10 (see Transports
-  and the Delivery section).
+- Browser auto-open by default (deferred to phase 7, its own PR) on
+  macOS, Windows, Linux and FreeBSD, gated on a local interactive
+  desktop session. The gate is session locality, not receiver
+  locality: sshing into the box with the receiver must not open a
+  browser, while running at a local desktop should, even when the
+  receiver is remote over a later proxy transport. `SSH_CONNECTION`
+  or `SSH_TTY` in the environment vetoes on every platform; Linux
+  and FreeBSD additionally require `DISPLAY` or `WAYLAND_DISPLAY`
+  non-empty (a graphical session), since a text console there has
+  nowhere to open a browser. What opens is the loopback URL
+  (`http://127.0.0.1:PORT/?t=XYZ`): guided mode's all-interfaces
+  bind always includes loopback, so the per-address LAN URLs still
+  print and stay reachable, and auto-open only adds the local tab.
+  On macOS and Windows the launch is an in-process platform API
+  call, not a spawned command -- `LSOpenCFURLRef` (cgo,
+  CoreServices) on macOS, `ShellExecuteW` (x/sys/windows) on Windows
+  -- so the token-bearing URL never appears on a command line
+  satpulsewb creates, and the opened URL carries the same multi-use
+  token as the printed URLs. On Linux and FreeBSD the launcher is
+  `xdg-open`, which execs the browser with the URL on its argv, so
+  the opened URL instead carries a single-use token that stops
+  working after its first use (see Security model); the printed
+  URLs are unaffected and always carry the multi-use token. The
+  launch fires after the listener is bound, non-blocking, with
+  launch failure logged since the printed URL is the fallback.
+  `--listen` never opens a browser: it is the expert mode -- the
+  user said exactly where to bind (typically an SSH tunnel target)
+  and the tool does nothing it was not asked to -- which also
+  removes the need for an opt-out flag (an earlier revision had
+  `--no-open`; with `--listen` already never opening, it had no
+  remaining users and was dropped). This supersedes the earlier "no
+  browser auto-open" decision, which assumed the primary flow was
+  ssh to a headless box; macOS is now the lead desktop platform.
+- `--socket` and `--tcp` are not part of this plan; see
+  tcp-receiver.md.
+
+### Security model
+
+The asset is control of the receiver for the duration of a run.
+satpulsewb has two modes, each making a statable trust decision:
+guided mode (no `-L`) binds all interfaces and mints a per-run
+token; expert mode (`-L`) binds exactly what the user said and
+disables the token unless `-T` restores it.
+
+What the token protects against: anyone who can reach the port but
+cannot observe its traffic. That includes the LAN, and any interface
+the user did not intend to expose -- an internet-facing address is
+swept up by the all-interfaces bind, and the token is reasonable
+protection there too: 128 bits from crypto/rand, compared in
+constant time, so an off-path attacker (a port scanner, a neighbour
+on the network) is reduced to guessing, which is not a real attack
+at that entropy and needs no rate limiting. The only unauthenticated
+surface is the static SPA (assets are public; the token rides a
+query parameter on the API and event stream because EventSource
+cannot set headers), so an exposed port reveals that satpulsewb is
+running but yields no control and no receiver data.
+
+What is deliberately not protected against:
+
+- An on-path observer. There is no TLS, so anyone who can sniff the
+  HTTP traffic reads the token from any request. Self-signed TLS
+  would trade this for a certificate warning on every run, training
+  users to click through warnings, and real certificates do not
+  exist for LAN addresses. The documented answer for an untrusted
+  network is `-L localhost` plus an SSH tunnel: the traffic never
+  leaves loopback and SSH provides the transport security.
+- Anyone shown a printed URL. It carries the token, and the man page
+  says so: anyone with a printed URL controls the receiver until
+  satpulsewb exits.
+- A compromised browser or user account on the machine running the
+  browser. The token sits in browser history and process memory;
+  same-user compromise is out of scope.
+- In expert mode without `-T`, anyone who can reach the bind
+  address. That is the mode's contract (the typical bind is an SSH
+  tunnel target); a tokenless bind on a non-loopback address prints
+  a warning.
+
+Two guards hold even with the token disabled. State-changing
+requests must declare `Content-Type: application/json`, which forces
+a CORS preflight the browser blocks, so a cross-site page cannot
+issue "simple" form POSTs (the CSRF guard, already implemented).
+And when the token is off, requests whose Host header is not a
+loopback name are rejected -- host part only, ignoring the port so
+tunnels work -- which closes DNS rebinding: a rebound page is
+same-origin, so the content-type check alone does not stop it, and
+without a token nothing else would.
+
+The auto-open launch path (see Command line) is this model applied.
+What a command line exposes is platform-specific: Linux makes
+another user's argv world-readable via /proc/PID/cmdline; FreeBSD's
+kern.proc.args sysctl does the same by default
+(security.bsd.see_other_uids=1); macOS ships a setuid-root ps that
+shows any user's argv regardless of the kernel's own cross-user
+restriction (verified 2026-07-15); Windows denies a standard user
+the rights needed to read another user's command line at all, with
+no setuid-equivalent bypass. The launcher follows the platform: on
+macOS it calls LaunchServices in-process (`LSOpenCFURLRef`), which
+hands the URL to the browser out-of-band (verified end-to-end: no
+process ever shows it); on Windows it calls `ShellExecuteW`
+in-process, where the URL does land on the browser's own command
+line but process DACLs deny other non-administrator users the
+access needed to read it (documented behaviour; a spot-check that
+WMI and Task Manager do not reflect it cross-user is still
+outstanding). On Linux and FreeBSD the leak is structural rather
+than a launcher choice -- every URL-dispatch route (xdg-open, gio,
+the desktop portal) bottoms out in the handler's .desktop `Exec=%u`
+contract, executing the browser with the URL as an argument -- so
+the launcher is `xdg-open` and the argv-visible value is made
+worthless instead of secret: the opened URL carries a token
+registered as single-use. Its first use redirects (302) to the
+multi-use token URL and burns the value; any later use gets an
+error page and a Warn log, so theft of the argv-exposed value is
+detectable, not merely raced. The single-use token is never accepted
+by the API or SSE auth middleware, which compares only the
+multi-use token. Printed URLs always carry the multi-use token; only
+the Linux/FreeBSD auto-open URL ever carries the single-use one.
 
 ### HTTP API
 
@@ -532,20 +628,11 @@ into the workspace verbatim in phase 1 (below); this plan adds:
   session.
 - Unix socket (`SocketOpener`): touch-ups through a running
   satpulsed's `proxy.socket`; reset ops gated off.
-- TCP (`TCPOpener`): same, via `proxy.tcp`, for reaching a headless
-  box from a laptop. Requires adding TCP dialing to gpsio. Known
-  caveat from webui/packages/workbench/plan/issues.md
-  (tcp-connect): inter-packet idle detection is unreliable over
-  TCP, so the NMEA satellite buffer falls back to its
-  key-detection flush and the satellite display lags one cycle;
-  configuration is unaffected.
+- TCP: moved to its own plan, tcp-receiver.md, which also covers
+  satpulsetool and satpulsed.
 
-Serial ships in phase 3; socket and TCP land together in phase 10.
-The session side of socket is already done (SocketOpener,
-reset gating), but the UI has no capability gating for proxy
-connections yet -- reset-class controls must be hidden or disabled,
-driven by the wire contract -- and TCP additionally needs the gpsio
-dialing.
+Serial ships in phase 3; the satpulsewb `--socket` and `--tcp`
+flags land via tcp-receiver.md.
 
 ### Build, packaging, docs
 
@@ -781,60 +868,159 @@ stack.
 
 ### Phase 7: browser auto-open (one PR)
 
-Browser auto-open as specified under Command line above: the
-local-GUI-session gate, the per-OS launcher, `--no-open`, and the
-smoke-test checks for the gating (environment manipulation in the
-phase-5 scenarios) ride along.
-
-### Phase 8: Playwright browser tests (one PR)
-
-Branches off the phase-7 branch, continuing the stack (phase 4 is
-desktop-gui branch work, outside it).
-DOM-level journeys in a real browser, against the same launch and
-replay fixtures as phase 5: a small `@playwright/test` suite in the
-webui workspace whose setup starts satpulsewb on a FIFO replay.
-Journeys: the SPA boots and the token is consumed and stripped from
-the URL bar; satellites and position render and advance; the Packets
-tab starts and stops the packet stream; a second tab late-joins
-consistent from the event cache; the stale-token notice; re-priming
-after a server restart. After phase 6 so a Messages tab journey can
-ride along, and after the desktop rework (phase 4) so the components
-are serving both shells before journeys pin their DOM. Kept to a
-handful of shallow journeys: wire-level assertions stay in the
-phase-5 scenarios, which need no browser or npm.
+Browser auto-open as specified under Command line and Security model
+above: the local-desktop-session gate (SSH veto everywhere; DISPLAY
+or WAYLAND_DISPLAY additionally required on Linux and FreeBSD), the
+in-process launchers on macOS and Windows (`LSOpenCFURLRef` via cgo,
+`ShellExecuteW` via x/sys/windows), and `xdg-open` plus the
+single-use launch token on Linux and FreeBSD. Because an in-process
+launch cannot be suppressed externally -- there is no spawned
+command for PATH tricks to neuter -- wb-default instead sets
+`SSH_CONNECTION` and asserts the veto path; the platform gate and
+the single-use token's redirect/burn/error-page behaviour are
+unit-tested. The loopback Host check from the Security model rides
+this PR too, since this is the phase that sharpened the model.
 
 ### Phase 9: simulator config tests (one PR)
 
-Extends both harnesses from the monitor path to the config path,
+Extends the smoke tests from the monitor path to the config path,
 using the u-blox receiver simulator (#362,
-[ublox-sim.md](ublox-sim.md)), which is developed in parallel on its
-own branch off master. In smoketest terms the simulator is a new
-packet provider, not a transport: what plays the receiver behind
-the serial transport becomes another scenario-declared dimension,
-orthogonal to the program under test -- either a paced `pack
---realtime` replay of a recorded log (whose one-replay-per-lifetime
-invariant and wait-replay backstop belong to this provider, not to
-the suite) or the interactive simulator, which answers probes and
-config writes and so implies a read-write pty. The dimensions
-compose: satpulsed x simulator smoke-tests the daemon's startup
-config phase, which no replay can reach. The smoketest scenarios
-and phase-8 journeys gain
-config checks: probe identifies the personality, the config panel
-populates from ReadConfig, an apply round-trips and a re-read shows
-the change, and enabling a message makes it appear in the packet
-stream. Not part of the stacked-PR series: it needs the simulator on
-master, so it runs after the stack and the simulator have both
-landed.
+[ublox-sim.md](ublox-sim.md)), now landed on master (#364:
+`gps/app/ubxsim`, hosted behind a pty by `satpulsetool ubxsim`).
+Replay can drive only the monitor path: gpscfg skips probing on a
+read-only port, and a pty replay's probe goes unanswered, so probe
+identification, ReadConfig and ApplyConfig have no black-box
+coverage until something answers. Not part of the stacked-PR
+series: an ordinary PR off master.
 
-### Phase 10: proxy transports (one PR)
+The packet-provider seam. In smoketest terms the simulator is a
+new packet provider, not a transport: what plays the receiver
+behind `SATPULSE_TEST_SERIAL` becomes a scenario-declared
+dimension, orthogonal to the program under test, and the
+dimensions compose -- satpulsed x simulator smoke-tests the
+daemon's startup config phase, which no replay can reach. run.py
+currently owns the replay lifecycle directly (transport selection,
+start_replay/wait_replay, the one-replay-per-lifetime invariant),
+so the first commit factors that out into a provider seam, the
+analogue of `program_api.py`: `provider_api.py` defines a
+`Provider` Protocol plus `select(name)`, implemented by
+`provider_replay.py` (the default) and `provider_ubxsim.py`,
+chosen per scenario with `PROVIDER = "ubxsim"`. The provider owns
+how receiver bytes are produced and consumed:
 
-Proxy transports: `--socket` (SocketOpener is already done in the
-session, including reset gating) and `--tcp` (needs TCP dialing in
-gpsio), plus the UI capability gating for proxy connections --
-exposing socket-ness through the wire contract and hiding or
-disabling reset-class controls. Not part of the stacked-PR series:
-deliberately last, an ordinary PR off master once the stack has
-landed.
+- The serial endpoint. The replay provider requests the transport
+  from the platform as today (`plat.make_transport`, driven by the
+  `CAPTURE_WRITES`/`SELF_SHUTDOWN`/`DISCONNECTABLE` capabilities).
+  The ubxsim provider spawns `satpulsetool ubxsim --link <run
+  dir>/gps.pty [-r <bank>] <personality>` and the symlink is the
+  endpoint -- the /dev/serial/by-id shape gpsio already opens;
+  readiness is the link appearing (created before the slave path
+  is printed).
+- The feed lifecycle. The replay provider keeps the single
+  `pack --realtime` replay, its start-after-readiness ordering,
+  the one-replay-per-lifetime invariant, and the wait-replay
+  backstop. The ubxsim provider starts the simulator before the
+  program (the pty must exist when the program opens the device)
+  and SIGTERMs it only after the program has shut down -- the
+  simulator holds its own slave fd open, so program restarts
+  never EOF it, while killing it early would inject read errors
+  into the program's shutdown.
+- The scenario attributes. `PACKET_LOG` and `FACTOR` become
+  replay-provider attributes (all existing scenarios keep them
+  unchanged; the runner reads them through the provider). The
+  ubxsim provider takes `PERSONALITY` (repo-relative) and an
+  optional `SIM_REPLAY` nav bank. `ctx.factor` defaults to 1 for
+  simulator scenarios (correction-source pacing is its only other
+  consumer).
+
+Provider hooks mirror the run_scenario lifecycle: create before
+`program.prepare` (make the transport or spawn the simulator, and
+point `SATPULSE_TEST_SERIAL` at the endpoint -- run_scenario
+constructs the Context first so the provider can be handed it),
+start after `program.wait_ready` (launch pack; a no-op for
+ubxsim), finish as the post-run backstop (wait_replay; a no-op for
+ubxsim), close in the cleanup path. `ctx.start_replay` and
+`ctx.wait_replay` become delegates, so existing scenarios and
+checks do not change. The observers-before-packets invariant is a
+replay-provider concern: simulator nav output regenerates every
+epoch (and pty backpressure pauses it while no one reads the
+slave), so a late observer misses nothing.
+
+Capabilities and platforms: the ubxsim provider rejects
+`CAPTURE_WRITES`, `SELF_SHUTDOWN` and `DISCONNECTABLE` as scenario
+errors -- write capture is meaningless when the simulator consumes
+and answers the program's writes, and device-loss modelling stays
+with the replay provider (a CFG-RST pty drop is a listed ublox-sim
+extension, not this phase). `satpulsetool ubxsim` builds on Linux
+and macOS only, so elsewhere (FreeBSD) the provider reports the
+scenario unsupported -- the same SKIP as TransportUnsupported.
+
+Fixtures and timing: the personality is the checked-in F9P
+recording (`gps/app/ubxsim/testdata/f9p/f9p-personality.ubx`, HPG
+1.51). The nav bank is `gps/testdata/config/u-blox/ZED-F9P/sim.jsonl`,
+the recording made for the simulator: LoadReplay reads the standard
+JSONL packet-log format, and this bank carries 300 epochs of the full
+message mix (the UBX NAV set, NMEA including ZDA, and RTCM), so it
+gates whatever a scenario enables and outlasts the run -- which
+matters because the NAV engine consumes one epoch per CFG-RATE period
+(1s) in real time (there is no FACTOR) and goes silent when the bank
+is exhausted. A capture of a daemon session is not a substitute: the
+daemon configured the receiver for its own needs, so such a log holds
+only the messages it wanted. The message-appearance assertions depend
+on the personality's Default layer having UBX and RTCM output messages
+off (factory default) while the bank contains them: configuration is
+then the only way they can appear. NMEA is the exception -- GGA, RMC,
+GSA, GSV, VTG and GLL default *on* -- so an assertion must name the
+packet a VALSET enables rather than a decoded kind NMEA can also
+produce (GSV decodes to a SatellitesMsg, exactly as NAV-SAT does), and
+NMEA is exercised by disabling it first. Scenarios set the serial speed
+to the personality's default CFG-UART1-BAUDRATE (38400) so the
+config phase stays out of the baud-change path (hardware-test
+territory, and speed is nominal on a pty anyway).
+
+Two scenarios, in a new `config/` family:
+
+- `config/startup` -- satpulsed x simulator: the startup-config
+  assertion. Config: `[serial]` at 38400; `[gps]` with `config =
+  true` and `satellitesOutput = true`; one `[[http]]` endpoint; no
+  correction peers. Asserts: (a) detection was active, not
+  passive -- the receiver identity the daemon reports carries the
+  personality's MON-VER model and firmware; (b) the startup
+  ConfigTarget landed on the receiver: NAV-SAT is off in the
+  personality defaults and present in the bank, so satellite data
+  appearing on the daemon's HTTP surface can only mean the
+  daemon's own VALSET enabled it; (c) the log scan stays clean
+  (configuration completed without errors) and shutdown is
+  graceful.
+- `config/wb-apply` -- satpulsewb x simulator: the interactive
+  config path, UI-shaped. Start without `-d`; claim the seat; POST
+  /api/connect with the pty device and speed (the first black-box
+  exercise of interactive connect whose probe answers); poll GET
+  /api/receiver until ok with Info identifying the personality
+  (vendor "u-blox", the F9P model/firmware); POST /api/config/read
+  returns 200 with non-empty props; POST /api/config/apply with a
+  small ConfigTarget that both sets a property that round-trips
+  (e.g. the antenna cable delay) and enables the satellites
+  messages (Opts.SatsMsg); a second read shows the property
+  change, and the enabled messages appear as live data (gps:msg
+  satellites over SSE, or /api/signals turning non-empty).
+
+Mechanical footprint beyond the seam: SCENARIOS registry entries;
+the smoketest Makefile's mypy target gains the provider modules;
+README's scenario list and smoketest/CLAUDE.md document the
+provider dimension; the simulator's stdout+stderr land in
+ubxsim.log in the run dir (kept on failure, not error-scanned --
+the simulator is a test double, not a program under test).
+
+Verification: `make`; the full `make smoketest` suite with the new
+scenarios stable over reruns; `make typecheck` (mypy strict) in
+smoketest/.
+
+### Phase 10: proxy transports
+
+Moved to its own plan, tcp-receiver.md, which generalizes network
+receiver connections to satpulsetool and satpulsed as well; the
+satpulsewb `--socket` and `--tcp` flags land there.
 
 - Names: the embed package location (own package vs go:embed directly
   in cmd/satpulsewb).

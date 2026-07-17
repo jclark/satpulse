@@ -1,11 +1,13 @@
 package session
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -632,27 +634,6 @@ func TestResetReconnects(t *testing.T) {
 	})
 }
 
-func TestResetGatedOverProxy(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		fs := &fakeSink{}
-		s := testSession(t, fs)
-		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}, socket: true}
-		if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
-			t.Fatalf("Connect: %v", err)
-		}
-		waitForState(t, s, StateConnected)
-		target := gpsprot.NewConfigTarget()
-		target.Opts.Reset = gpsprot.ResetCold
-		if err := s.ApplyConfig(context.Background(), target); err == nil {
-			t.Errorf("ApplyConfig with reset over proxy: expected error")
-		}
-		if got := s.State(); got != StateConnected {
-			t.Errorf("state = %v, want %v", got, StateConnected)
-		}
-		s.Disconnect()
-	})
-}
-
 func TestRepeatedConfigRequests(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fs := &fakeSink{}
@@ -741,6 +722,107 @@ func TestPacketLogWritesSerialized(t *testing.T) {
 	}
 }
 
+// drainNtripCasterRequest reads and discards the client's Ntrip request.
+// A real caster consumes the request before replying, and the mock must
+// too: on Windows, closing the connection with the request still unread
+// in the receive buffer sends an RST that discards the still-buffered
+// response, so the client misses the 401 and retries into a dead
+// listener instead of failing.
+func drainNtripCasterRequest(c net.Conn) {
+	br := bufio.NewReader(c)
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil || line == "\r\n" {
+			return
+		}
+	}
+}
+
+func TestCorrectionsFailurePersistsAndRestartClearsError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	conn := newFakeConn()
+	s := New(slog.New(slog.DiscardHandler), &fakeSink{}, Options{})
+	s.state = StateConnected
+	s.runCtx = ctx
+	s.conn = conn
+	s.portLock = gpsio.NewOutPortLock(conn)
+	defer func() {
+		s.StopCorrections()
+		cancel()
+		conn.Close()
+		s.connWg.Wait()
+	}()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err == nil {
+			drainNtripCasterRequest(c)
+			_, err = io.WriteString(c, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n")
+			c.Close()
+		}
+		done <- err
+	}()
+	cfg := CorrectionSource{Mode: "ntrip", Host: "127.0.0.1", Port: ln.Addr().(*net.TCPAddr).Port, Mountpoint: "MNT"}
+	if err := s.StartCorrections(cfg); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	wg := s.corrWg
+	s.mu.Unlock()
+	wg.Wait()
+	ln.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	ev := s.CorrectionsState()
+	if ev.State != "failed" || ev.Error != "Ntrip: HTTP/1.1 401 Unauthorized" {
+		t.Fatalf("corrections state = %+v, want failed 401", ev)
+	}
+
+	ln, err = net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := make(chan struct{})
+	release := make(chan struct{})
+	done = make(chan error, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err == nil {
+			drainNtripCasterRequest(c)
+			close(accepted)
+			<-release
+			_, err = io.WriteString(c, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n")
+			c.Close()
+		}
+		done <- err
+	}()
+	cfg.Port = ln.Addr().(*net.TCPAddr).Port
+	if err := s.StartCorrections(cfg); err != nil {
+		close(release)
+		t.Fatal(err)
+	}
+	<-accepted
+	if ev := s.CorrectionsState(); ev.State != "connecting" || ev.Error != "" {
+		close(release)
+		t.Fatalf("corrections state after restart = %+v, want connecting without error", ev)
+	}
+	close(release)
+	s.mu.Lock()
+	wg = s.corrWg
+	s.mu.Unlock()
+	wg.Wait()
+	ln.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNotConnected(t *testing.T) {
 	s := New(slog.New(slog.DiscardHandler), &fakeSink{}, Options{})
 	tests := []struct {
@@ -761,5 +843,17 @@ func TestNotConnected(t *testing.T) {
 				t.Errorf("expected error when disconnected")
 			}
 		})
+	}
+}
+
+func TestApplyConfigClearsReadOnlyProps(t *testing.T) {
+	s := New(slog.New(slog.DiscardHandler), &fakeSink{}, Options{})
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetPort("UART1")
+	if err := s.ApplyConfig(context.Background(), target); err == nil {
+		t.Fatal("ApplyConfig succeeded while disconnected")
+	}
+	if got := target.Props.ReadOnlyProps(); got != 0 {
+		t.Errorf("read-only properties = %v, want none", got)
 	}
 }

@@ -63,15 +63,12 @@ differs from casbin/ubxbin" below):
   `blockMap`/`idNameMap` registry: each family file's `init()` populates
   both (mirroring `casbin`/`ubxbin`'s `regMsg`), while `other.go`
   populates `idNameMap` alone for the undecoded blocks (see below).
-- `crc.go`: table-driven CRC-16/CCITT (poly `0x1021`, seed `0`, no
-  input/output reflection, MSB-first), table-driven in the style of
-  `gps/lib/novmsg/crc.go` (structure only -- novmsg's is a CRC-32, a
-  different algorithm), exposing `CRC16(data []byte) uint16` for both
-  `sbfbin` itself and the packet-format scanner in
-  `gps/internal/septentrio` to share. (The exact CRC-16/CCITT parameters
-  already exist as `spartnbin`'s unexported, bit-wise `crcMSB`; a fresh
-  table-driven implementation here is warranted rather than
-  exporting/relocating that.)
+- `crc.go`: bit-wise CRC-16/CCITT (poly `0x1021`, seed `0`, no
+  input/output reflection, MSB-first), exposing
+  `CRC16(data []byte) uint16` for both `sbfbin` itself and the
+  packet-format scanner in `gps/internal/septentrio` to share. Its local
+  generic `crcMSB` intentionally duplicates `spartnbin`'s unexported
+  helper rather than exporting or relocating it.
 - Entry points: `ParseMsg(packet string) (*Block, error)`,
   `Serialize(b *Block) ([]byte, error)`, `PackMsg(mid MsgID, payload
   []byte) ([]byte, error)`, `PacketMsgID[B ~string | ~[]byte](packet B)
@@ -90,8 +87,8 @@ differs from casbin/ubxbin" below):
   `corr.go` (DiffCorrIn/BaseStation), `setup.go` (ReceiverSetup),
   and `utc.go` for the three leap-second blocks (GPSUtc/GALUtc/BDSUtc,
   the only nav-message blocks in scope -- see "Blocks excluded" for why
-  the rest of the nav-message family is not decoded). Each struct field
-  gets a JSON tag naming it **exactly as the Septentrio guide names it**
+  the rest of the nav-message family is not decoded). Each semantic struct
+  field gets a JSON tag naming it **exactly as the Septentrio guide names it**
   (`TOW`, `WNc`, `RxClkBias`, `Mode`, `SVID`, `SBLength`, ...), so the
   JSON that `gps/gpsdecode` and `internal/decodecmd` emit (they marshal
   the decoded struct straight to JSON as the `DecodeResult.Payload`) is
@@ -100,7 +97,10 @@ differs from casbin/ubxbin" below):
   following `ubxbin`/`casbin` -- **no `String()`/`MarshalText`
   methods**: they serialize as their raw numeric code, which is exactly
   what the guide's tables list (the only `String()` in those packages
-  is on `MsgID`).
+  is on `MsgID`). Wire count fields duplicated by slice lengths (`N` in
+  `QualityInd`, `RFStatus`, `ReceiverStatus`, `SatVisibility`, and
+  `MeasExtra`; `N1`/`N` and per-parent `N2` in the two-level blocks) are
+  transient iterator values, not struct fields or JSON properties.
 - `other.go`: no decode structs -- the name-only registry for blocks
   `sbfbin` recognizes but does not decode (the "Blocks excluded for the
   G5 target" set below). Its `init()` defines each such block's number
@@ -136,7 +136,7 @@ differs from casbin/ubxbin" below):
 - **`sbfbin` is the sole owner of SBF wire-format knowledge.** Every
   wire constant the later conversion package (`gps/internal/septentrio`,
   phase 3) needs -- block numbers, enum codes (`Mode`, `Error`,
-  `TimeSystem`, `Datum`, `WACorrInfo`, `Timescale`, signal numbers,
+  `TimeSystem`, `Datum`, `WACorrInfo`, `TimeScale`, signal numbers,
   SVID ranges, ...), DNU sentinels, and bitfield masks/shifts -- is
   defined as an **exported named constant (or method) here**. The
   conversion package must contain **no magic wire numbers**: it refers
@@ -256,11 +256,12 @@ revision bits in the emitted `ID`; decode itself is `Length`-driven (the
 guide's authoritative rule, see "How SBF differs"), reading the
 parameters the payload has room for and tolerating both older-revision
 senders (trailing parameters stay at their pre-set DNU) and
-newer-revision senders (extra bytes ignored). Round-trip preserves the
-parsed `Rev`; whether `Serialize` re-emits an older-than-current
-revision at exactly that revision's length or the current full length is
-an encode-fidelity detail (see "Open decisions") -- value-level
-round-trip holds either way, since decode is `Length`-authoritative.
+newer-revision senders (extra bytes ignored). Round-trip does not
+preserve the parsed `Rev` for the trailer blocks: `Serialize` stamps the
+`ID` from what it actually wrote, not from `b.Rev`, so an older-revision
+capture re-frames at the current full length and revision (see "Open
+decisions"). Value-level round-trip holds regardless, since decode is
+`Length`-authoritative.
 
 The per-block field tables in "The block catalog" below describe the
 full wire layout (`TOW`/`WNc` at offsets 0/4, then the parameters); the
@@ -294,24 +295,30 @@ The `TimeStamp` is read/written by `Block` itself, before/after the
 the fields after the time stamp.
 
 Two SBF-specific tweaks vs. the `novmsg` original:
-- **Tolerant end-of-stream (revision trailers).** `ReadBinChunked`
-  stops cleanly when the stream is exhausted at a piece boundary,
-  leaving the not-yet-read pieces at whatever the struct was
-  pre-initialised to. So an older-revision packet lacking its trailer
-  is not an error -- those fields keep the Do-Not-Use sentinels they
-  were pre-set to before decode (DNU is not always the Go zero: e.g.
-  `HAccuracy`/`Latency` DNU is `65535`). Since `blockMap` constructs a
-  zero-valued `Params`, a `Params` with a non-zero-DNU trailer field
-  implements an optional `defaulter` interface (`setDNUDefaults()`) that
-  the `regBlock` constructor calls on the freshly-`new`'d value, so the
+- **Length-gated revision trailers.** Tolerance comes from the block's
+  own payload length, not from end-of-stream: `revisionChunks` yields a
+  trailer piece only when the payload still has room for it, and stops
+  at the first one that does not fit, leaving the not-yet-yielded pieces
+  at whatever the struct was pre-initialised to. So an older-revision
+  packet lacking its trailer is not an error -- those fields keep the
+  Do-Not-Use sentinels they were pre-set to before decode (DNU is not
+  always the Go zero: e.g. `HAccuracy`/`Latency` DNU is `65535`).
+  `ReadBinChunked` itself is deliberately *not* tolerant: a piece that is
+  yielded but cannot be read in full is `io.ErrUnexpectedEOF`, so a
+  genuinely truncated required field still fails. Keeping the gate on
+  `Length` rather than on EOF is what makes `Length` authoritative (see
+  "How SBF differs" above). Since `blockMap` constructs a zero-valued
+  `Params`, a `Params` with a non-zero-DNU trailer field implements an
+  optional `defaulter` interface (`setDNUDefaults()`) that the
+  `regBlock` constructor calls on the freshly-`new`'d value, so the
   seeds are in place before `ReadBinChunked` runs and the read overwrites
   only the fields actually present. Exactly three blocks need it: the two
   Shape-2 PVT blocks (`Latency`/`HAccuracy`/`VAccuracy` -> `65535`) and
   `ReceiverSetup` (`Latitude`/`Longitude`/`Height` -> `-2e10`); every
   other absent-field case (Shape-1 has none; older Shape-3/4 sub-block
   fields are all zero-DNU or unused-when-zero) is correct at Go zero.
-  Newer-
-  revision extra bytes are ignored (the universal trailing-bytes rule).
+  Newer-revision extra bytes are ignored (the universal trailing-bytes
+  rule).
 - **Runtime `SBLength` padding.** A sub-block may be wider on
   the wire than its known fields (a later revision appended fields
   inside it). `Chunks()` yields a `[]byte` padding piece of `SBLength -
@@ -335,28 +342,31 @@ its shape):
   No revision-gated fields.
 - **Shape 2 -- fixed + revision trailer.** `PVTCartesian`,
   `PVTGeodetic` (Rev1 `PPPInfo`/`Latency`, Rev2 `HAccuracy`/
-  `VAccuracy`/`Misc`), `ReceiverSetup` (Rev1-4). `Chunks()` yields the
-  fixed part, then one piece per revision group of trailer fields;
-  tolerant EOF handles older-revision senders (trailer fields stay at
-  their pre-set DNU).
+  `VAccuracy`/`Misc`, Rev3 adds no fields), `ReceiverSetup` (Rev1-4).
+  `Chunks()` yields the fixed part, then one piece per revision group
+  of trailer fields; the payload-length gate handles older-revision
+  senders (trailer fields stay at their pre-set DNU).
 - **Shape 3 -- count-prefixed array / opaque tail.** `QualityInd`
-  (`Indicators u2[N]`): yield the head (carrying `N`), then
-  `make([]uint16, N)` and each element. `DiffCorrIn`: yield the head,
+  (`Indicators u2[N]`): yield a transient `N`, then the remaining head,
+  `make([]uint16, N)`, and each element. `DiffCorrIn`: yield the head,
   then a single `[]byte` of `Length-16` for the opaque correction
   bytes.
 - **Shape 4 -- variable-length (`SBLength`) sub-blocks, one or two
   levels.**
   `SatVisibility`/`RFStatus`/`ReceiverStatus`/`MeasExtra` (one level);
-  `MeasEpoch`/`ChannelStatus` (two levels). `Chunks()` yields the head
-  (carrying `N`/`SBLength`), then for each sub-block its struct piece
-  followed by its `SBLength` padding piece. Two-level blocks nest: for
-  each outer element yield it (reading its `N2`), then its `N2` inner
-  sub-blocks (each with its own `SB2Length` padding). Because later
-  pieces see earlier-read fields, the data-dependent `N2` and
+  `MeasEpoch`/`ChannelStatus` (two levels). `Chunks()` yields a transient
+  count and the head (carrying `SBLength`), then for each sub-block its
+  struct piece followed by its `SBLength` padding piece. Two-level blocks
+  nest: for each outer element yield it plus a transient `N2`, then its inner
+  sub-blocks (each with its own `SB2Length` padding). On decode, the wire
+  counts size the slices; on encode, the slice lengths supply the counts.
+  The parallel outer/inner slice lengths must match. Because later
+  pieces see earlier-read values, the data-dependent counts and
   per-element sub-block lengths fall out naturally, with no cursor
   bookkeeping.
-  `MeasExtra`'s `N` is modulo-256: recover the true count `NrSB =
-  ((Length/SBLength - N)/256)*256 + N` before yielding the sub-blocks.
+  `MeasExtra`'s wire `N` is modulo-256: recover the true count `NrSB =
+  ((Length/SBLength - N)/256)*256 + N` before yielding the sub-blocks;
+  retain only `len(Channels)` in the Go representation.
 
 ### SBF wire format essentials
 
@@ -560,8 +570,9 @@ only their differences.
 
 **`PVTCartesian` (4006)** and **`PVTGeodetic` (4007)** -- Shape 2.
 Rev0 through `AlertFlag`/`NrBases`; Rev1 appends `PPPInfo`+`Latency`;
-Rev2 appends `HAccuracy`+`VAccuracy`+`Misc` (96 bytes total at Rev2, the
-revision every real capture and the current guide edition shows).
+Rev2 appends `HAccuracy`+`VAccuracy`+`Misc` (96 bytes total); Rev3 adds
+no fields and defines `AlertFlag` bit 6 as `NAV_MSG_AUTH_ALERT`. The
+mosaic-G5 emits Rev3.
 `OnChange` at the default PVT rate; Receiver timestamp.
 
 | Offset | Field | Wire | Units/scale | DNU | PVTCartesian | PVTGeodetic |
@@ -722,18 +733,27 @@ widened to also cover motion-fencing, distinguished via `lif,RxMessage`.
 **`MeasEpoch` (4027)** -- Shape 4 (2 levels). Fixed head (12 bytes):
 `TOW`+`WNc`+`N1`(u1)+`SB1Length`(u1)+`SB2Length`(u1)+`CommonFlags`(u1
 bitfield)+`CumClkJumps`(u1, Rev1, ms mod 256)+`Reserved`(u1). `Chunks()`
-yields the head, then for each of `N1` outer elements: the
-`MeasEpochChannelType1` piece, its `SB1Length - sizeof(Type1)` padding
-piece, then (reading that element's `N2`) each of its `N2`
+yields `N1` as a transient count followed by the remaining head, then for
+each of `N1` outer elements: the
+`MeasEpochChannelType1` piece, its transient `N2`, its `SB1Length -
+sizeof(Type1) - 1` padding piece, then each of its `N2`
 `MeasEpochChannelType2` inner pieces, each followed by its `SB2Length -
 sizeof(Type2)` padding piece:
 
 ```
-yield &head                                  // reads N1, SB1Length, SB2Length
-for i := range N1 {
-    yield &t1[i]                             // reads t1[i].N2
-    yield make([]byte, sb1Length-sizeof(Type1))
-    for j := range t1[i].N2 {
+var n1 uint8
+setCount(&n1, len(t1), "outer sub-block")
+yield &n1
+yield &head                                  // reads SB1Length, SB2Length
+resize t1 and t2 to n1
+for i := range t1 {
+    var n2 uint8
+    setCount(&n2, len(t2[i]), "inner sub-block")
+    yield &t1[i]
+    yield &n2
+    yield make([]byte, sb1Length-sizeof(Type1)-1)
+    resize t2[i] to n2
+    for j := range t2[i] {
         yield &t2[i][j]
         yield make([]byte, sb2Length-sizeof(Type2))
     }
@@ -741,9 +761,8 @@ for i := range N1 {
 ```
 
 The padding pieces absorb any forward-compat `SBLength` growth; the same
-iterator re-emits them on encode. `binary.Read` into a later piece can
-read a count set by an earlier piece, so no cursor bookkeeping is
-needed.
+iterator re-emits them on encode. `N1` and `N2` are not retained in the Go
+structs because they duplicate `len(Type1)` and `len(Type2[i])`.
 
 `CommonFlags` bits: 0 multipath mitigation on, 1 code smoothing active,
 2 reserved, 3 clock steering active, 4 n/a, 5 high-dynamics mode, 6
@@ -817,7 +836,8 @@ bytes): `TOW`+`WNc`+`N`(u1, `0` legal)+`SB1Length`(u1)+`SB2Length`(u1)+
 `Reserved`(u1[3]). Decode identically to `MeasEpoch`'s two-level loop
 (outer `ChannelSatInfo[N]` of `SB1Length` bytes each, each with its own
 `N2`/`ChannelStateInfo[N2]` of `SB2Length` bytes each, interleaved
-immediately after its parent).
+immediately after its parent). `N` and `N2` are transient wire counts;
+the Go representation uses `len(SatInfo)` and `len(StateInfo[i])`.
 
 `ChannelSatInfo` (12 named bytes): `SVID`(u1, DNU `0`; if 0, real ID is
 in `SVIDFull`), `FreqNr`(u1, GLONASS offset+8, else reserved),
@@ -886,7 +906,7 @@ mirrored by `ReceiverStatus.RxState` bits 4-6. `OnChange`, fixed 1 s
 interval (its own rate, not tied to PVT/measurement).
 
 **`xPPSOffset` (5911)** -- Shape 1. `TOW`+`WNc`+`SyncAge`(u1, s, clipped
-at 255, not a DNU; always 0 when `Timescale==3`)+`Timescale`(u1 enum:
+at 255, not a DNU; always 0 when `TimeScale==3`)+`TimeScale`(u1 enum:
 1 GPS, 2 UTC, 3 Receiver [unsynced, internal], 4 GLONASS, 5 Galileo, 6
 BeiDou, 100 FugroAtomiChron -- **a different numbering from
 `PVTCartesian.TimeSystem`; do not share one Go type between the two
@@ -924,10 +944,9 @@ RTCM2 Msg3, 2 RTCM2 Msg24, 4 CMR Msg1, 8 RTCM3 Msg1005/1006, 9 RTCMV
 Msg3, 10 CMR+ Type2; X/Y/Z interpretation is phase-center for
 `{0,4,10}`, ARP for `{2,8}`, proprietary for `{9}`)+`Datum`(u1 enum,
 same table as the PVT-family `Datum` above)+`Reserved`(u1)+`X`/`Y`/`Z`
-(each f8, 1 m; no DNU documented for this block specifically, but
-defensively treat exact `-2e10` as DNU by analogy with every other
-position field). 44 bytes, no padding. `OnChange` per base-coordinate
-correction message received; Receiver timestamp; no Flex-Rate/esoc.
+(each f8, 1 m; no DNU documented for this block). 44 bytes, no padding.
+`OnChange` per base-coordinate correction message received; Receiver
+timestamp; no Flex-Rate/esoc.
 
 ### Other
 
@@ -940,8 +959,8 @@ fixed-width Latin-1 strings or scalars, gate each on available
 (each f4, 1 m). Rev1 adds `MarkerType`(c1[20]). Rev2 adds
 `GNSSFWVersion`(c1[40]). Rev3 adds `ProductName`(c1[40])+
 `Latitude`/`Longitude`(f8, 1 rad, DNU `-2e10`)+`Height`(f4, 1 m, DNU
-`-2e10`) -- reference/marker position, not the live PVT solution. Rev4
-adds `StationCode`(c1[10])+`MonumentIdx`(u1)+`ReceiverIdx`(u1)+
+`-2e10`)+`StationCode`(c1[10]) -- reference/marker position, not the
+live PVT solution. Rev4 adds `MonumentIdx`(u1)+`ReceiverIdx`(u1)+
 `CountryCode`(c1[3])+`Reserved1`(c1[21]). 424 bytes total at Rev4 (the
 shape every real capture and the current guide show), no padding.
 String fields are nul-padded fixed-width Latin-1 -- use
@@ -1116,15 +1135,9 @@ little-endian, directly comparable to `ComputeChecksum`'s output);
 `ComputeChecksum` returns `sbfbin.CRC16(pkt[4:])` as two little-endian
 bytes (covers ID through end of block, i.e. everything after Sync and
 CRC). `MsgID(pkt)` returns `sbfbin.PacketMsgID(pkt).String()`.
-`IsBinary()` returns `true`. `RescanOnBadChecksum` always returns
-`true`: SBF's 2-byte sync is the shortest of any binary format in this
-codebase, and blocks routinely run past 1000 bytes (`ChannelStatus`,
-`MeasEpoch`), giving ample room for a coincidental `0x24 0x40` pair
-inside a payload -- a checksum failure here is more likely a false sync
-than a corrupted real frame, so always resync one byte past the failed
-candidate's start rather than skipping the whole (possibly
-wrongly-sized) candidate span. This mirrors `spartn.PacketFormat`'s
-same call for the same reason (a short, high-entropy-looking preamble).
+`IsBinary()` returns `true`. `RescanOnBadChecksum` returns `false`,
+matching the other length-prefixed binary formats with an exact 2-byte
+sync; a checksum failure is treated as a corrupted SBF frame.
 
 ### Do-nothing `PacketProcessor`
 
@@ -1194,7 +1207,7 @@ The four block shapes, referenced by the milestones below:
   `DiffCorrIn` (opaque `[]byte` tail).
 - **`Chunked` revision-trailer**: `PVTCartesian`, `PVTGeodetic`,
   `ReceiverSetup` (plus the `latin1z` size additions `ReceiverSetup`
-  needs) -- exercises the tolerant end-of-stream behaviour.
+  needs) -- exercises the length-gated trailer behaviour.
 - **`Chunked` two-level**: `MeasEpoch`, `ChannelStatus`.
 
 **M0 -- scanner (block-agnostic; `scan` works on every capture).**
@@ -1277,13 +1290,14 @@ nothing is committed as a fixture.
 - **Revision tolerance** (`Chunked` trailer blocks): a test that
   `ParseMsg`s a hand-built packet truncated to the Rev0 length and
   checks the trailer parameters read as their DNU defaults (validating
-  the tolerant end-of-stream), not an error; and a test that a packet
+  the length gate), not an error; and a test that a packet
   with extra unknown trailing bytes (a future revision) parses
-  successfully, ignoring them. Confirm that a `Block` carrying a given
-  `Rev` serializes with matching `ID` revision bits, and that
-  parse->serialize->parse preserves `Rev` value-level (the exact emitted
-  `Length` for an older-than-current revision follows the encode-fidelity
-  choice in "Open decisions").
+  successfully, ignoring them. Confirm that a `Block` serializes with
+  `ID` revision bits matching the layout actually written -- the latest
+  revision for the trailer blocks, the `SBLength`-derived revision for
+  the `SBLength`-driven ones -- and that parse->serialize->parse
+  preserves the parameters value-level (see "Open decisions" for why the
+  emitted `Rev` and `Length` need not match an older-revision source).
 - **`SBLength` tolerance** (`Chunked` sub-block blocks): a test where a
   sub-block's declared `SBLength` exceeds the known struct size (a
   newer-revision sender with an extra field this decoder doesn't
@@ -1298,11 +1312,11 @@ nothing is committed as a fixture.
   a minimal valid frame round-trips through `Next` to `IsFinal`; a
   truncated header does not panic or falsely report `IsFinal`; a
   `Length` that is not a multiple of 4, or `<= 8`, rejects at the
-  length-field offset; a corrupted body byte with
-  `RescanOnBadChecksum` recovers a following genuine frame one byte
-  past the failed candidate's start; a literal `$@` byte pair embedded
-  inside a large payload (e.g. a synthetic 1000+-byte `ChannelStatus`
-  body) does not cause the outer frame to mis-split; `$R`/`$T`/`$-`/
+  length-field offset; a corrupted frame is returned with a bad
+  checksum without preventing the following genuine frame from being
+  scanned; a literal `$@` byte pair embedded inside a large payload
+  (e.g. a synthetic 1000+-byte `ChannelStatus` body) does not cause the
+  outer frame to mis-split; `$R`/`$T`/`$-`/
   `$&`/a plain NMEA sentence are all rejected at the second byte; a
   nonzero-revision `ID` still yields the correct masked block number
   from `MsgID`, as does an unknown block number (e.g. 5942, present in
@@ -1313,24 +1327,33 @@ nothing is committed as a fixture.
 
 ## Open decisions
 
-- **`Chunked` driver details copied from `novmsg`.** The plan fixes
-  the two SBF-specific behaviours (tolerant end-of-stream; `[]byte`
-  padding pieces sized from `SBLength`) but leaves the exact copied
-  signatures -- whether `ReadBinChunked`/`WriteBinChunked` keep
-  `novmsg`'s `messageName` error-context argument, how EOF tolerance is
-  signalled (a sentinel piece vs. the driver checking remaining bytes)
-  -- to settle when writing `common.go`. These are implementation
-  details that do not change the block catalog above.
-- **Encode revision fidelity.** `Block.Rev` is preserved through
-  parse->serialize (the emitted `ID` carries `Rev<<13`), and decode is
-  `Length`-authoritative. What remains open is whether `Serialize`, for a
-  block whose `Rev` is below the current (most-recent) revision, emits
-  exactly that revision's shorter `Length` (writing only the trailer
-  groups up to `Rev`) or the current full `Length` (writing all trailer
-  parameters, with the not-received ones at their DNU defaults).
-  Value-level round-trip holds either way, and a real G5 emits the
-  current revision, so this only affects re-framing of hypothetical
-  older-revision captures; settle it when writing `Serialize`.
+- ~~**`Chunked` driver details copied from `novmsg`.**~~ Settled when
+  writing `common.go`: `ReadBinChunked`/`WriteBinChunked` keep `novmsg`'s
+  `messageName` error-context argument, and trailer tolerance is
+  signalled by neither of the two options originally floated (a sentinel
+  piece, or the driver checking remaining bytes) but by the `Chunks()`
+  iterator itself gating on the block's payload length -- see
+  "Length-gated revision trailers" above.
+- ~~**Encode revision fidelity.**~~ Settled when writing `Serialize`, and
+  the emitted `ID` revision now follows what was written rather than
+  `Block.Rev`, via the `revisioned` interface
+  (`encodedRev() (rev uint8, ok bool)`):
+  - Shape-2 trailer blocks (`PVTCartesian`/`PVTGeodetic`/`ReceiverSetup`)
+    always write the current full `Length` -- every trailer group, with
+    the not-received ones at their DNU defaults -- and stamp the latest
+    revision, ignoring `Block.Rev`. So a rev0 capture re-frames as a
+    longer rev3 (resp. rev4) packet. A real G5 emits the current
+    revision, so this only affects hypothetical older-revision captures.
+  - Shape-4 `SBLength`-driven blocks (`MeasExtra`/`SatVisibility`) keep
+    the `SBLength` they parsed and write the sub-block fields it has room
+    for, so their `ID` revision is derived from that `SBLength`. An
+    older-revision capture therefore preserves that revision and
+    sub-block length when re-framing, unlike the trailer blocks.
+    `encodedRev` returns `ok == false` when the block has no sub-blocks
+    and so carries nothing revision-specific; only then does `Block.Rev`
+    stand.
+  - Value-level round-trip holds throughout, since decode is
+    `Length`-authoritative.
 - **`NavCart`/`NavGeod`/`AuxAntPositions`** are G5-only convenience/
   attitude blocks with no decode spec yet, deliberately deferred (see
   "Blocks excluded for the G5 target"). Worth a follow-up plan once

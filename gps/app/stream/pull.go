@@ -432,6 +432,9 @@ func (s *GGASender) SetWriter(ctx context.Context, w ReadWriteDeadlineCloser) bo
 // On cancellation, Run waits for all internal goroutines to exit
 // before returning.
 func (s *Pull) Run(ctx context.Context, selectedGGA <-chan scan.Packet, onState func(State, error)) error {
+	if onState == nil {
+		onState = func(State, error) {}
+	}
 	iCtx, iCancel := context.WithCancel(ctx)
 	defer iCancel()
 	// writeErr captures a fatal write error so Run can return it
@@ -470,6 +473,7 @@ func (s *Pull) Run(ctx context.Context, selectedGGA <-chan scan.Packet, onState 
 	s.Packets.Close()
 	bcastWg.Wait()
 	if writeErr != nil {
+		onState(Failed, writeErr)
 		return writeErr
 	}
 	return iCtx.Err()
@@ -659,6 +663,11 @@ func (s *Pull) writer(ctx context.Context, lg *slog.Logger,
 		_, err := pw.WritePacket([]byte(pkt.Data), pkt.Format)
 		portLock <- port
 		if err != nil {
+			// A write error during shutdown means the port went away as
+			// corrections were stopped, not a failure to surface.
+			if ctx.Err() != nil {
+				return nil
+			}
 			lg.Error("correction serial write failed", "error", err)
 			cancel()
 			return err

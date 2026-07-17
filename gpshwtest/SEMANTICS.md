@@ -4,6 +4,8 @@ This document defines the semantics of high-level (device-independent) GPS recei
 
 The underlying logic is uniform even where it is not obvious: **satpulse adjusts a request only using knowledge it actually has** - knowledge deduced from the receiver's identity or reported by the receiver's protocol - **and everything that happened is visible in the responses**. It never guesses at restrictions the receiver has not declared; those surface as refusals from the receiver itself. A requester can therefore always discover exactly what was achieved without knowing anything about the receiver.
 
+A second piece of uniform logic divides responsibility: **satpulse realizes and reports; callers own policy.** A backend does the best it can and tells the truth about what it did; it does not decide for the caller whether a shortfall matters. Warnings and errors about unrealized requests belong to the front end, which can apply its policy up front from the declared capabilities or after the event from the responses. The backend itself fails a request only where doing the best thing is not well-defined (see below).
+
 ## The model
 
 A configuration request is built from three kinds of things, and one invocation may combine all three:
@@ -30,9 +32,13 @@ What was *achieved* is reported in the response, not what was requested. The ach
 
 **Readback tells the truth.** Reading a property returns its current value as the receiver stores it. The stored value is normally identical to the accepted one, but they are two different observations and a receiver may re-express what it accepted when storing it (a fixed position accepted in geodetic coordinates may be stored, and therefore read back, in ECEF coordinates). Both reports are truthful at their own stage; neither is derived from the other.
 
+**Best effort must be well-defined.** Adjustment is principled, never arbitrary. Outcomes ordered by closeness have an obvious best: quantization and range limits pick the nearest achievable value - and even clamping is a judgment, applied only where nearness preserves the request's meaning. A choice among incomparable realizations (a request for signals A, B, and C on a receiver that can do A+B or B+C, but not all three) is made only under a deliberate, stated preference, and only when the constraint is knowledge satpulse has; the signals pipeline below is the worked example. Where realization would require an arbitrary unstated choice, or the receiver refuses for reasons its protocol never reported, the request fails instead: satpulse does not guess. The few backend errors that remain are exactly these.
+
 **Nonexistence is shown, not announced.** A backend that does not have a property does not fail requests that mention it. Setting it reports nothing achieved for it, and readback does not include it. The absence in the responses *is* the statement that the property does not exist there.
 
 **Refusal changes nothing.** When the receiver refuses a request, the request fails with an error and the receiver's configuration is left unchanged - a failed request is never a partial one. (The error text comes from the receiver and may not be illuminating; the semantics are in the refusal itself.)
+
+**Ensuring static mode.** A request can ask that the receiver be static without saying where (`SetStatic` in the model): the receiver must end up in a static positioning mode, but an existing fixed position - stored or previously surveyed - is left untouched, and a receiver with no position determines its own (a survey, on receivers that survey). This is how static operation is requested without knowing or supplying a position; a receiver already in a static mode is left as it is.
 
 ### Enabled signals
 
@@ -58,7 +64,9 @@ The achieved set is reported and reads back, so every silent intersection, every
 
 There are two completely different kinds of message output request, and they must not be conflated.
 
-**Wire-format output: NMEA and RTCM.** These requests name standardized wire messages themselves - NMEA sentence types (RMC, GGA, GSA, GSV, ZDA, VTG, GLL) and RTCM message families (MSM4 and MSM7 per enabled constellation, ARP). For these groups the messages *are* the interface: downstream consumers parse exactly these standardized formats, so the request must control exactly which appear. The meaning is that the receiver emits the named message types. Every request is complete: message types in the group that are not named are turned off.
+**Wire-format output: NMEA and RTCM.** These requests name standardized wire messages themselves - NMEA sentence types (RMC, GGA, GSA, GSV, ZDA, VTG, GLL) and RTCM message families (MSM4 and MSM7 per enabled constellation, ARP). For these groups the messages *are* the interface: downstream consumers parse exactly these standardized formats, so the request must control exactly which appear. The meaning is that the receiver emits the named message types. A named family denotes its required companions too: enabling MSM for GLONASS also enables the GLONASS code-phase-bias message 1230, which rovers need to use GLONASS MSM. Every request is complete: message types in the group that it does not denote are turned off.
+
+Each wire-format group also has an *other* element in the model (`NMEAMsgOther`, `RTCMMsgOther`; not expressible in the command-line syntax), denoting the group's messages beyond this vocabulary - vendor-specific sentences, other RTCM types. A request without it turns them off like everything else; a request with it leaves their current selection untouched, while still controlling the named types exactly. This is how an observed output state is re-expressed as a request.
 
 **Semantic output: PVT, satellite information, raw data.** These requests name information in the device-independent model:
 
@@ -74,11 +82,13 @@ Content preferences select *within* the delivered information rather than adding
 
 Satellite information is an independent stream, not part of the navigation epoch: the end-of-epoch marker asserts that the epoch's solution information has been delivered, and says nothing about satellite information, which may be delivered after it.
 
+**Rate.** Enabled output is periodic at one per second: NMEA sentences, RTCM MSM messages, PVT information, and satellite information are delivered at 1 Hz when enabled, independent of the positioning rate the receiver is running or is capable of. How the receiver's native rate machinery is arranged to achieve this is the realization's business. Raw navigation data is event output, as above, and has no rate.
+
 **Turning off.** A request also says what happens to the rest of its group: messages other than those carrying requested information are turned off. For the wire-format groups and the satellite and raw groups this is implicit in every request. For the PVT group it is explicit (`off`), and a PVT request without `off` is incremental: it enables what it names and leaves the rest of the group alone. The asymmetry is deliberate, for efficiency - PVT messages are the high-rate operational core, and incremental requests let one message be added without reconfiguring and disrupting the rest. The convenience values `ptp` and `ntp` are exact abbreviations of flag sets (see **satpulsetool-gps(1)**) and mean nothing beyond their expansion.
 
 ## Operations
 
-**Survey-in** starts a position survey, parameterized by a minimum duration and an accuracy limit; the survey runs until both are satisfied, and the receiver then assumes the surveyed antenna position and runs in static mode. The parameters belong to the operation, not to the configuration state: they cannot be read back, any more than any other argument of a past action. The *result* - the positioning mode with its fixed position - is a property.
+**Survey-in** starts a position survey, parameterized by a minimum duration and an accuracy limit; the survey runs until both are satisfied, and the receiver then assumes the surveyed antenna position and runs in static mode. The parameters belong to the operation, not to the configuration state: they cannot be read back, any more than any other argument of a past action. The *result* - the positioning mode with its fixed position - is a property. Re-applying a configuration that implies a survey does not restart one: a survey in progress or already completed is left untouched, and a fresh survey happens only when explicitly requested (`SurveyAgain` in the model).
 
 **Save** persists running configuration to non-volatile memory.
 
@@ -87,13 +97,17 @@ Satellite information is an independent stream, not part of the navigation epoch
 
 **Resets** restore state from non-volatile memory, with strictly increasing scope: *reload* restores configuration only; *reset* additionally discards the receiver's knowledge of position, time, and satellite orbits; *factory reset* first restores the non-volatile memory itself to factory defaults and then resets.
 
+A save and a reset requested together are ordered: the save completes before the reset takes effect, so what the reset restores includes what was just saved. The ordering is also a gate: if the save fails, the reset does not take place, so a reset never discards running changes that its paired save failed to persist.
+
 Changes made after the last save do not survive a reload or reset. That is not a hazard but the point: reload is how unsaved changes are deliberately discarded.
 
 ## Capabilities
 
 A backend declares which optional capabilities it offers as a set of flags (`supports` in the JSON output): signal selection, speed configuration, survey and survey accuracy, survey progress messages, fixed position and its accuracy, raw output, RTCM MSM4/MSM7 output, RTCM base ID. The flags bound what can be expected of requests in advance; they do not gate them. Properties show their own nonexistence in the responses, as above.
 
-An RTCM output request on a backend without the RTCM capabilities currently fails with an error. That behavior predates the capability flags and exists because a message request has no property through which the failure could show; the intended direction is for the flags to carry this information instead of an error.
+For options - message output requests and operations, which have no property to report through - the flags *are* the reporting mechanism, playing the role the set response plays for properties, in advance rather than per request: what a backend will quietly not do is exactly what its flags do not claim. A request that includes an undeclared option is not an error; the backend does what it can, and a caller that wants a warning or an error consults the flags and applies its own policy - up front where the capabilities are known before the request, after the event where they arrive with the response. When an option turns out to be unimplementable on some backend, the remedy is a new capability flag, so that the absence becomes declared. This makes flag truthfulness load-bearing in both directions: a backend must not drop what it declares, and must not declare what it drops.
+
+One deviation remains: on the u-blox backend, an RTCM output request without the RTCM capabilities fails with an error. That behavior predates the capability flags and is legacy: the flags carry the information now, the error is to be removed, and new backends must not reproduce it.
 
 ## Summary of guarantees
 

@@ -54,11 +54,13 @@ func testGga() []byte {
 func testPersonality() *Personality {
 	dflt := testDefaults()
 	dflt[ucv.KUart1Baudrate.Key()] = 38400
+	dflt[ucv.KUart1outprotUbx.Key()] = 1
+	dflt[ucv.KUart1outprotNmea.Key()] = 1
 	epochs := make([][]Pkt, 60)
 	for i := range epochs {
 		epochs[i] = []Pkt{
-			{KeyM: ucv.KUbxNavSat, Data: testNavSat()},
-			{KeyM: ucv.KNmeaIdGga, Data: testGga()},
+			{KeyM: ucv.KUbxNavSat, Tag: ubx.Tag, Data: testNavSat()},
+			{KeyM: ucv.KNmeaIdGga, Tag: nmea.Tag, Data: testGga()},
 		}
 	}
 	return &Personality{MonVer: testMonVer(), Defaults: dflt, Epochs: epochs}
@@ -213,6 +215,197 @@ func TestSim(t *testing.T) {
 	})
 }
 
+// TestNavOutProt checks that the bank is gated by the port's OUTPROT key
+// as well as by each message's MSGOUT key. Clearing OUTPROT-NMEA is how
+// the Configurator turns NMEA off -- it leaves the per-message rates
+// alone -- so a simulator that gated on MSGOUT only would keep sending
+// GGA and the daemon's NMEA-off config would look like it never landed.
+func TestNavOutProt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := testPersonality()
+		navSat := ucv.KUbxNavSat.KeyU(ucv.UART1).Key()
+		nmeaOut := ucv.KUart1outprotNmea.Key()
+		w, ch := simConn(t, p)
+
+		// The defaults leave the port's NMEA output on, and GGA's rate set.
+		await(t, ch, "GGA", isNmea("GGA"))
+
+		// NAV-SAT on, giving the epochs that follow a clock.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM, ucv.Item{Key: navSat, Value: 1}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET NAV-SAT NAKed")
+		}
+
+		// With the port's NMEA output off, no NMEA is sent even though
+		// GGA's own rate is still 1. The first NAV-SAT drains the epoch
+		// already queued when the VALSET landed.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM, ucv.Item{Key: nmeaOut, Value: 0}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET OUTPROT-NMEA off NAKed")
+		}
+		await(t, ch, "NAV-SAT", isUbx(ubxbin.NavSatID))
+		for range 3 {
+			await(t, ch, "NAV-SAT", func(p scan.Packet) bool {
+				if isNmea("GGA")(p) {
+					t.Fatalf("GGA sent with the port's NMEA output disabled")
+				}
+				return isUbx(ubxbin.NavSatID)(p)
+			})
+		}
+
+		// Turning the port's NMEA output back on brings GGA back.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM, ucv.Item{Key: nmeaOut, Value: 1}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET OUTPROT-NMEA on NAKed")
+		}
+		await(t, ch, "GGA", isNmea("GGA"))
+	})
+}
+
+func sendRst(t *testing.T, w io.Writer, mode ubxbin.CfgRstResetMode) {
+	t.Helper()
+	sendMsg(t, w, &ubxbin.CfgRst{NavBbrMask: ubxbin.CfgRstNavBbrColdStart, ResetMode: mode})
+}
+
+func isAckFor(p scan.Packet, mid ubxbin.MsgID) bool {
+	if p.Format != ubx.PacketFormat {
+		return false
+	}
+	pmid := ubxbin.PacketMsgId(p.Data)
+	if pmid != ubxbin.AckAckID && pmid != ubxbin.AckNakID {
+		return false
+	}
+	return ubxbin.AckMsgID(p.Data) == mid
+}
+
+// valgetRAM polls the RAM layer for keys over the pipe and returns the
+// response values by key, proving the simulator still serves. It fails
+// the test if a CFG-RST is ever acknowledged while the response is
+// awaited.
+func valgetRAM(t *testing.T, w io.Writer, ch <-chan scan.Packet, keys ...ucv.Key) map[ucv.Key]uint64 {
+	t.Helper()
+	sendMsg(t, w, valgetPoll(ubxbin.CfgValgetLayerRAM, 0, keys...))
+	resp := await(t, ch, "CFG-VALGET response", func(p scan.Packet) bool {
+		if isAckFor(p, ubxbin.CfgRstID) {
+			t.Fatalf("CFG-RST was acknowledged")
+		}
+		return isUbx(ubxbin.CfgValgetID)(p)
+	})
+	m, err := ubxbin.ParseMsg(resp.Data)
+	if err != nil {
+		t.Fatalf("parse CFG-VALGET: %v", err)
+	}
+	items, err := ucv.UnmarshalItems(m.(*ubxbin.CfgValget).CfgData)
+	if err != nil {
+		t.Fatalf("unmarshal items: %v", err)
+	}
+	out := make(map[ucv.Key]uint64, len(items))
+	for _, it := range items {
+		out[it.Key] = it.Value
+	}
+	return out
+}
+
+// TestCfgRst checks the reboot semantics of a hardware-reset CFG-RST: it
+// is never acknowledged, it rebuilds RAM from the layers below so an
+// unsaved change is lost while a saved one survives, and it restarts the
+// nav engine with the simulator still serving. A GNSS-only reset mode is
+// not a reboot and leaves the RAM configuration alone.
+func TestCfgRst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := testPersonality()
+		navSat := ucv.KUbxNavSat.KeyU(ucv.UART1).Key()
+		nmeaOut := ucv.KUart1outprotNmea.Key()
+		w, ch := simConn(t, p)
+		await(t, ch, "GGA", isNmea("GGA"))
+
+		// Save navSat=1 to RAM and Flash, giving the epochs a clock and a
+		// value that must survive a reboot.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM|ubxbin.CfgValsetLayerFlash,
+			ucv.Item{Key: navSat, Value: 1}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET navSat NAKed")
+		}
+
+		// Turn the port's NMEA output off in RAM only (unsaved): GGA stops.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM, ucv.Item{Key: nmeaOut, Value: 0}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET nmeaOut off NAKed")
+		}
+		await(t, ch, "NAV-SAT", isUbx(ubxbin.NavSatID)) // drain the queued epoch
+		for range 3 {
+			await(t, ch, "NAV-SAT", func(p scan.Packet) bool {
+				if isNmea("GGA")(p) {
+					t.Fatalf("GGA sent with the port's NMEA output disabled")
+				}
+				return isUbx(ubxbin.NavSatID)(p)
+			})
+		}
+
+		// A hardware-reset CFG-RST reboots: RAM is rebuilt (NMEA output
+		// back to its default-on) and the nav engine restarts, so GGA
+		// resumes. No ACK/NAK for CFG-RST appears while we wait for it.
+		sendRst(t, w, ubxbin.CfgRstResetModeHardwareResetImmediately)
+		await(t, ch, "GGA", func(p scan.Packet) bool {
+			if isAckFor(p, ubxbin.CfgRstID) {
+				t.Fatalf("CFG-RST was acknowledged")
+			}
+			return isNmea("GGA")(p)
+		})
+
+		// The saved navSat survived; the unsaved nmeaOut change was lost.
+		vals := valgetRAM(t, w, ch, navSat, nmeaOut)
+		if vals[navSat] != 1 {
+			t.Errorf("after reboot navSat=%d, want saved 1", vals[navSat])
+		}
+		if vals[nmeaOut] != 1 {
+			t.Errorf("after reboot nmeaOut=%d, want default 1", vals[nmeaOut])
+		}
+
+		// A GNSS-only reset mode is not a reboot: an unsaved RAM change to
+		// nmeaOut survives it.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM, ucv.Item{Key: nmeaOut, Value: 0}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET nmeaOut off NAKed")
+		}
+		sendRst(t, w, ubxbin.CfgRstResetModeControlledGnssStop)
+		if v := valgetRAM(t, w, ch, nmeaOut)[nmeaOut]; v != 0 {
+			t.Errorf("after GNSS-stop reset nmeaOut=%d, want unchanged 0", v)
+		}
+	})
+}
+
+// TestCfgRstFactory checks the factory-reset sequence the workbench
+// sends: a CFG-CFG that clears the saved layers followed by a
+// hardware-reset CFG-RST. Without the CFG-RST reboot the RAM would keep
+// its current value; with it, RAM rebuilds from Default alone.
+func TestCfgRstFactory(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := testPersonality()
+		navSat := ucv.KUbxNavSat.KeyU(ucv.UART1).Key()
+		w, ch := simConn(t, p)
+		await(t, ch, "GGA", isNmea("GGA"))
+
+		// Put navSat=1 into RAM and both non-volatile layers.
+		sendMsg(t, w, valsetMsg(ubxbin.CfgValsetLayerRAM|ubxbin.CfgValsetLayerBBR|ubxbin.CfgValsetLayerFlash,
+			ucv.Item{Key: navSat, Value: 1}))
+		if !ackResult(t, ch, ubxbin.CfgValsetID) {
+			t.Fatalf("VALSET NAKed")
+		}
+
+		// Factory reset: clear the saved layers, then reboot.
+		sendMsg(t, w, &ubxbin.CfgCfg{CfgCfgFixed: ubxbin.CfgCfgFixed{ClearMask: ubxbin.CfgCfgSectionMaskAll}})
+		if !ackResult(t, ch, ubxbin.CfgCfgID) {
+			t.Fatalf("CFG-CFG clear NAKed")
+		}
+		sendRst(t, w, ubxbin.CfgRstResetModeHardwareResetImmediately)
+
+		if v := valgetRAM(t, w, ch, navSat)[navSat]; v != 0 {
+			t.Errorf("after factory reset navSat=%d, want default 0", v)
+		}
+	})
+}
+
 // recWriter records the time and size of each Write so a test can
 // observe how the paced writer meters a packet onto the stream.
 type recWriter struct {
@@ -283,6 +476,147 @@ func TestWriterPacing(t *testing.T) {
 		}
 		if span := recs[len(recs)-1].at.Sub(start); span < want-2*tickInterval || span > want+2*tickInterval {
 			t.Errorf("drip spanned %v, want ~%v (a packet's transmission time)", span, want)
+		}
+	})
+}
+
+// TestWriterReboot checks that a simulated reboot drops the packets a
+// slow UART port has queued (and the one it is dripping) under the
+// pre-reset config instead of emitting them ahead of the post-reset
+// stream: a real receiver reset abandons its in-flight output. It
+// exercises the writer directly, without the engines.
+func TestWriterReboot(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// A high baud so that, without the fix, the whole stale burst would
+		// drip out inside the sleep below and be observed.
+		const baud = 921600
+		db := newCfgDB(ucv.Map{ucv.KUart1Baudrate.Key(): baud})
+		var buf bytes.Buffer
+		w := newWriter(&buf, db, ucv.UART1)
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() { w.run(ctx); close(done) }()
+
+		// Fill the queue with pre-reset nav output. The first packet is
+		// large so the slow line is still dripping it when the reset lands.
+		stale, err := ubxbin.PackMsg(ubxbin.NavSatID, make([]byte, 400))
+		if err != nil {
+			t.Fatalf("pack stale: %v", err)
+		}
+		for range txQueueDepth {
+			if err := w.send(ctx, stale); err != nil {
+				t.Fatalf("send stale: %v", err)
+			}
+		}
+		synctest.Wait() // let the writer take the first packet and park on its tick
+
+		// Reboot, then enqueue the post-reset marker under the new
+		// generation. The stale packets, all under the old generation, must
+		// not reach the wire.
+		w.reboot()
+		fresh, err := ubxbin.PackMsg(ubxbin.MonVerID, []byte("post-reset"))
+		if err != nil {
+			t.Fatalf("pack fresh: %v", err)
+		}
+		if err := w.send(ctx, fresh); err != nil {
+			t.Fatalf("send fresh: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond) // let the fresh packet drip out
+		cancel()
+		<-done
+
+		sc := scan.New(bytes.NewReader(buf.Bytes()), 4096, []gpsprot.PacketFormat{ubx.PacketFormat})
+		gotFresh := false
+		for {
+			pkt, err := sc.Scan()
+			if err != nil {
+				break
+			}
+			if pkt.Format == nil || !pkt.ChecksumValid {
+				continue
+			}
+			switch ubxbin.PacketMsgId(pkt.Data) {
+			case ubxbin.NavSatID:
+				t.Errorf("stale NAV-SAT emitted after reboot")
+			case ubxbin.MonVerID:
+				gotFresh = true
+			}
+		}
+		if !gotFresh {
+			t.Errorf("post-reset MON-VER not emitted")
+		}
+	})
+}
+
+// TestNavRebootMidBurst checks that a reboot landing while the nav engine
+// is mid-way through an epoch burst does not let the tail of that burst
+// precede the restarted epoch 0: the run is bound to the generation live
+// at its start, so packets the engine sends after the reboot bumped the
+// generation are still dropped. The bank's message stays enabled across
+// the reboot (it is in the defaults), which is exactly the case the queue
+// flush alone cannot catch.
+func TestNavRebootMidBurst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		db := newCfgDB(ucv.Map{
+			ucv.KUart1Baudrate.Key():             921600,
+			ucv.KUart1outprotUbx.Key():           1,
+			ucv.KUbxNavSat.KeyU(ucv.UART1).Key(): 1,
+		})
+		var buf bytes.Buffer
+		w := newWriter(&buf, db, ucv.UART1)
+		// One epoch, deep enough that the engine is still blocked sending
+		// its burst when the reboot lands. Each packet carries its index.
+		burst := txQueueDepth + 8
+		epoch := make([]Pkt, burst)
+		for i := range epoch {
+			data, err := ubxbin.PackMsg(ubxbin.NavSatID, append([]byte{byte(i)}, make([]byte, 199)...))
+			if err != nil {
+				t.Fatalf("pack: %v", err)
+			}
+			epoch[i] = Pkt{KeyM: ucv.KUbxNavSat, Tag: ubx.Tag, Data: data}
+		}
+		nav := &navEngine{db: db, port: ucv.UART1, epochs: [][]Pkt{epoch}, w: w, lg: slog.New(slog.DiscardHandler), reboot: make(chan struct{}, 1)}
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() { w.run(ctx); close(done) }()
+		navDone := make(chan struct{})
+		go func() { nav.run(ctx); close(navDone) }()
+		synctest.Wait() // the queue is full, the engine blocked mid-burst
+
+		mark := buf.Len()
+		db.reboot()
+		w.reboot()
+		nav.restart()
+		time.Sleep(2 * time.Second) // the restarted epoch 0 drips out fully
+		cancel()
+		<-done
+		<-navDone
+
+		// Everything on the wire after the reboot must be the restarted
+		// epoch from its first packet on; a pre-reset tail would show as
+		// indices out of order at the front.
+		sc := scan.New(bytes.NewReader(buf.Bytes()[mark:]), 4096, []gpsprot.PacketFormat{ubx.PacketFormat})
+		var got []int
+		for {
+			pkt, err := sc.Scan()
+			if err != nil {
+				break
+			}
+			if pkt.Format == nil || !pkt.ChecksumValid || ubxbin.PacketMsgId(pkt.Data) != ubxbin.NavSatID {
+				continue
+			}
+			got = append(got, int(pkt.Data[6])) // first payload byte: the index
+		}
+		if len(got) == 0 || got[0] != 0 {
+			t.Fatalf("first post-reset NAV-SAT index = %v, want 0 (pre-reset tail leaked)", got)
+		}
+		for i, idx := range got {
+			if idx != i {
+				t.Fatalf("post-reset NAV-SAT indices %v, want 0..%d in order", got, burst-1)
+			}
+		}
+		if len(got) != burst {
+			t.Errorf("post-reset NAV-SAT count = %d, want %d", len(got), burst)
 		}
 	})
 }

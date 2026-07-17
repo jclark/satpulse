@@ -185,13 +185,29 @@ func readUDP(t *testing.T, conn *net.UDPConn, timeout time.Duration) []byte {
 	return buf
 }
 
+// waitUDPPushReady polls with pkt until the sink has subscribed, then drains
+// the probes still in flight so the caller's first read sees its own packet.
 func waitUDPPushReady(t *testing.T, pktCh chan<- scan.Packet, conn *net.UDPConn, pkt scan.Packet) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		pktCh <- pkt
 		if got, ok := readUDPAvailable(t, conn, 20*time.Millisecond); ok && string(got) == pkt.Data {
-			return
+			// Probes sent before the subscription took effect may still be
+			// queued ahead of this sentinel; the sink pushes in order, so
+			// reading up to it discards exactly those leftovers.
+			sentinel := scan.Packet{Format: pkt.Format, Data: pkt.Data + "-drained", ChecksumValid: pkt.ChecksumValid}
+			pktCh <- sentinel
+			for time.Now().Before(deadline) {
+				got, ok := readUDPAvailable(t, conn, time.Second)
+				if !ok {
+					break
+				}
+				if string(got) == sentinel.Data {
+					return
+				}
+			}
+			t.Fatal("timed out draining UDP push probes")
 		}
 	}
 	t.Fatal("timed out waiting for UDP push to subscribe")

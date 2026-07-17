@@ -1,17 +1,19 @@
 # satpulse daemon and workbench smoke tests
 
 Black-box smoke tests that run the real `satpulsed` and `satpulsewb`
-binaries, fed by realtime packet-log replay through a FIFO or pty, with
-no root and no GPS hardware. They exercise program behaviour --
-configuration wiring, startup, observability endpoints, logging, Ntrip,
-corrections, and shutdown -- not packet decoding (that is covered by
-package tests and `plan/packet-testing.md`).
+binaries, fed by realtime packet-log replay through a FIFO or pty (or the
+u-blox simulator for config scenarios), with no root and no GPS hardware.
+They exercise program behaviour -- configuration wiring, startup,
+observability endpoints, logging, Ntrip, corrections, and shutdown -- not
+packet decoding (that is covered by package tests and
+`plan/packet-testing.md`).
 
 The program under test is a scenario dimension: `satpulsed` by default,
 `satpulsewb` (SatPulse Workbench, the browser GUI over `gps/app/session`)
-when a scenario sets `PROGRAM = "satpulsewb"`. Both replay the same
-packet logs; only the per-program specifics differ (see Program under
-test below).
+when a scenario sets `PROGRAM = "satpulsewb"`. What plays the receiver is
+a second, orthogonal dimension: a packet-log replay by default, the u-blox
+simulator when a scenario sets `PROVIDER = "ubxsim"` (see Program under
+test and Packet provider below).
 
 See `plan/smoke-test.md` for the design, and the Delivery section of
 `plan/satpulseweb.md` for the workbench phase.
@@ -63,11 +65,16 @@ For each scenario the runner (`run.py`):
 2. asks the program (see Program under test) to prepare its input,
    substituting the `SATPULSE_TEST_*` resource variables: satpulsed
    renders `<name>.toml.in`, satpulsewb renders `<name>.args.in`;
-3. creates the serial input transport (a FIFO by default, or a pty for a
-   scenario that needs to disconnect) and starts any required fake peers;
+3. sets up the packet source (see Packet provider) and points
+   `SATPULSE_TEST_SERIAL` at it -- the serial input transport (a FIFO by
+   default, or a pty for a scenario that needs to disconnect) for a replay
+   scenario, or the u-blox simulator for a `PROVIDER = "ubxsim"` scenario -- and
+   starts any required fake peers;
 4. starts the program (`satpulsed` or `satpulsewb`);
-5. starts a single `satpulsetool pack --realtime <factor>` replay of the
-   scenario's packet log into that input, in the background;
+5. starts the provider's feed: a replay scenario runs a single
+   `satpulsetool pack --realtime <factor>` replay of its packet log into the
+   input, in the background; a `ubxsim` scenario needs no separate replay (the
+   simulator generates nav itself);
 6. calls the scenario's `run(ctx)`, which performs its checks while the
    replay flows (live checks such as SSE and Ntrip) and after it
    finishes (`ctx.wait_replay()`, then log and error checks);
@@ -133,12 +140,45 @@ the two programs:
 - the **base allow-list** for the log error scan, and the **ports to free**
   after shutdown.
 
-Everything else -- port allocation, run dirs, the serial transport, the replay
-lifecycle, the fake peers, and the parallel executor -- stays shared in
-`run.py`. Scenario families are organised by feature, not by program, and hold
-scenarios for both side by side: the workbench corrections scenario lives beside
-the daemon's `stream/pull-*` ones and reuses the family's captured-serial-writes
-RTCM check as-is.
+Everything else -- port allocation, run dirs, the fake peers, and the parallel
+executor -- stays shared in `run.py`. Scenario families are organised by feature,
+not by program, and hold scenarios for both side by side: the workbench
+corrections scenario lives beside the daemon's `stream/pull-*` ones and reuses
+the family's captured-serial-writes RTCM check as-is.
+
+## Packet provider
+
+What plays the receiver behind `SATPULSE_TEST_SERIAL` is a second scenario
+dimension, orthogonal to the program under test, chosen with `PROVIDER` (default
+`replay`). It composes with the program: `satpulsed x ubxsim` smoke-tests the
+daemon's startup config phase, which no replay can reach. `provider_api.py`
+defines the seam (a `Provider` Protocol plus `select(name)`); `provider_replay.py`
+and `provider_ubxsim.py` implement it, chosen per scenario like a Program. The
+provider owns how receiver bytes are produced and consumed -- the serial
+endpoint, the feed lifecycle, and its own source attributes -- and nothing else,
+so `run.py` carries no `PROVIDER ==` branch:
+
+- **replay** (the default) -- a recorded packet log streamed in real time. It
+  owns transport selection (from the scenario's capabilities, see Transports),
+  the single `pack --realtime` replay, the one-replay-per-lifetime invariant, and
+  the `PACKET_LOG`/`FACTOR` attributes. Every existing scenario is a replay
+  scenario and keeps `PACKET_LOG`/`FACTOR` unchanged.
+- **ubxsim** (`PROVIDER = "ubxsim"`) -- the u-blox receiver simulator behind a
+  pty (`satpulsetool ubxsim`), the one source that answers probes and config, so
+  the config path (probe identification, `ReadConfig`, `ApplyConfig`, and the
+  daemon's startup config phase) gets black-box coverage a read-only replay
+  cannot. The scenario declares `PERSONALITY` (a recorded MON-VER + Default-layer
+  dump) and an optional `SIM_REPLAY` nav bank; `ctx.factor` defaults to `1`. The
+  provider spawns the simulator before the program (the pty must exist when the
+  program opens the device) and SIGTERMs it only after the program has shut down
+  (the simulator holds its own slave fd open, so program restarts never EOF it,
+  while an early kill would inject read errors into the program's shutdown). It
+  rejects `CAPTURE_WRITES`/`SELF_SHUTDOWN`/`DISCONNECTABLE` (write capture is
+  meaningless when the simulator answers the writes; device-loss stays with the
+  replay provider) and reports the scenario unsupported (a SKIP) off Linux/macOS,
+  where `satpulsetool ubxsim` does not build. Its stdout+stderr land in
+  `ubxsim.log` in the run dir, kept on failure and not error-scanned -- the
+  simulator is a test double, not a program under test.
 
 satpulsewb scenarios cannot use the no-argument default (it binds a fixed port
 on all interfaces, which is neither parallel-safe nor in the allocated block),
@@ -151,11 +191,14 @@ program prints.
 
 ```
 smoketest/
-  run.py                    execution environment: resources, replay, shutdown
+  run.py                    execution environment: resources, lifecycle, shutdown
   common.py                 checks and helpers shared across scenario families
   program_api.py            the program-under-test seam (Protocol + select)
   program_satpulsed.py      satpulsed: config input, config-derived peers
   program_satpulsewb.py     satpulsewb: flag-list input, URL/token readiness
+  provider_api.py           the packet-provider seam (Protocol + select)
+  provider_replay.py        replay: transport selection + the pack replay
+  provider_ubxsim.py        ubxsim: the u-blox simulator behind a pty
   platform_api.py           the serial-transport seam (Protocol)
   platform_unix.py          Unix transports (FIFO/pty), shutdown, privilege
   ntpshm.py                 NTP SHM read/remove helper for root-required scenarios
@@ -180,15 +223,20 @@ in `run.py` as `family/name`, and maps to a module and an input template:
 The scenario module declares:
 
 - `PACKET_LOG` -- packet log to replay (path relative to the repo root;
-  the scenarios reuse logs under `gps/testdata/packets/`);
-- `FACTOR` -- replay speedup factor;
+  the scenarios reuse logs under `gps/testdata/packets/`); a replay-provider
+  attribute (omit it for a `ubxsim` scenario);
+- `FACTOR` -- replay speedup factor; likewise replay-only;
 - `run(ctx)` -- the checks to perform, using helpers from `common.py` and
   the owning scenario-family package;
 - `ENV` -- optional environment variables for the program under test, with
   `${SATPULSE_TEST_*}` substitutions available in their values;
 - `PROGRAM = "satpulsewb"` -- optional; selects the workbench program (default
   `satpulsed`). A workbench scenario may also declare `CORRECTION_SOURCE` (a fake
-  correction source the runner starts, for a corrections scenario).
+  correction source the runner starts, for a corrections scenario);
+- `PROVIDER = "ubxsim"` -- optional; selects the u-blox simulator as the packet
+  source (default `replay`, see Packet provider). A `ubxsim` scenario declares
+  `PERSONALITY` (repo-relative) and an optional `SIM_REPLAY` nav bank instead of
+  `PACKET_LOG`/`FACTOR`.
 
 Checks used only by one scenario family live in that family's package, e.g.
 `scenarios/ntrip/__init__.py` or `scenarios/proxy/__init__.py`. Keep
@@ -223,7 +271,9 @@ make update-deps
   reflects its own table.
 - `http/wb-default` (satpulsewb) -- the workbench with no `-L`: the real
   default-port bind (with OS-picked fallback), the printed URL and generated
-  token, the SPA served at `/` (HTML plus its script bundle, the counterpart to
+  token, the browser auto-open vetoed by SSH_CONNECTION (asserting no launch
+  line), the SPA served at
+  `/` (HTML plus its script bundle, the counterpart to
   the daemon's `check_html`), token auth enforced, the snapshot endpoints
   populating, SSE monitor delivery, packet-stream gating (a `?stream=packets`
   client), late-joiner priming from the event cache, and the writer-seat
@@ -237,6 +287,18 @@ make update-deps
   capture (`NAV-SVIN`) drives `gps:msg` kind `survey`, and after the replay ends
   a late SSE client is still primed with it from the hub's sticky-kind cache
   (the slow-changing state a reloaded browser must not have to wait for).
+- `config/startup` (satpulsed x ubxsim) -- the daemon's startup config phase
+  against the u-blox simulator: active detection carries the personality's
+  MON-VER model and firmware, and the startup ConfigTarget landing shows up as
+  NAV-SAT (off in the personality defaults) becoming live satellite data.
+- `config/wb-apply` (satpulsewb x ubxsim) -- the interactive config path,
+  UI-shaped: connect to the simulator's pty, identify the receiver, read the
+  config, then apply ConfigTargets carrying a round-trippable property (the
+  antenna cable delay) and every message flag group Opts has, and confirm they
+  land -- a re-read shows the delay, and the packet stream shows the receiver
+  sending what was enabled (NAV-TIMELS, NAV-SAT/NAV-SIG and RTCM MSM4, all off in
+  the personality defaults) and dropping what was not (NMEA, which defaults on,
+  is disabled with the empty array, shown gone, then re-enabled by name).
 - `ntrip/basic` -- Ntrip caster source table and RTCM streaming; the source
   table's shared STR fields show their defaults.
 - `ntrip/auth` -- Ntrip caster with an authenticated mountpoint.

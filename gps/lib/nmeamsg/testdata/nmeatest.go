@@ -5,7 +5,7 @@ import "strings"
 // These have to match nmeamsg.go
 const (
 	sentenceIsPacket sentenceSyntaxFlags = 1 << iota
-	sentenceAddressLength5
+	sentenceApprovedAddressFormat
 	sentenceProprietaryAddressFormat
 	sentenceTalkerIsGP         // GPS
 	sentenceTalkerIsGL         // GLONASS
@@ -95,6 +95,21 @@ var SyntaxTestCases = []struct {
 		Packet:   "$GPGGA,1$23*5A\r\n",
 		Expected: 0,
 	},
+	{
+		Name:     "not a packet - SBF sync prefix",
+		Packet:   "$@AB*5A\r\n",
+		Expected: 0,
+	},
+	{
+		Name:     "not a packet - Septentrio reply prefix",
+		Packet:   "$R*5A\r\n",
+		Expected: 0,
+	},
+	{
+		Name:     "not a packet - Septentrio command prefix",
+		Packet:   "$----*5A\r\n",
+		Expected: 0,
+	},
 
 	// Constraint 5: Immediately before terminator there is `*` and two uppercase hex digits
 	{
@@ -176,54 +191,59 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "valid basic packet",
 		Packet:   "$GPGGA,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+	},
+	{
+		Name:     "valid Unicore OK packet",
+		Packet:   "$OK*5A\r\n",
+		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 
 	// Address format tests - approved (exactly 5 chars)
 	{
 		Name:     "approved address - GPGGA",
 		Packet:   "$GPGGA,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "approved address - GLRMC",
 		Packet:   "$GLRMC,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGL | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGL | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "approved address - GARMC",
 		Packet:   "$GARMC,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGA | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGA | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "approved address - GBRMC",
 		Packet:   "$GBRMC,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGB | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGB | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "approved address - BDRMC (legacy BeiDou)",
 		Packet:   "$BDRMC,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsBD | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsBD | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "approved address - GIRMC",
 		Packet:   "$GIRMC,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGI | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGI | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "approved address - GQRMC",
 		Packet:   "$GQRMC,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGQ | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGQ | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "approved address - GNRMC (Multi-GNSS)",
 		Packet:   "$GNRMC,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGN | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGN | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "approved address - unknown talker",
 		Packet:   "$XXTXT,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "not approved address - too short",
@@ -253,9 +273,9 @@ var SyntaxTestCases = []struct {
 		Expected: sentenceIsPacket | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
-		Name:     "proprietary address - PUBX1 (5 chars, overlapping flags)",
+		Name:     "proprietary address - PUBX1 (5 chars, P-prefixed so not approved format)",
 		Packet:   "$PUBX1,data*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "proprietary address - PMTK (3 chars after P)",
@@ -273,14 +293,24 @@ var SyntaxTestCases = []struct {
 		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
-		Name:     "not proprietary - starts with P but lowercase",
+		Name:     "proprietary address - lowercase manufacturer code",
 		Packet:   "$Pabc,123*5A\r\n",
+		Expected: sentenceIsPacket | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+	},
+	{
+		Name:     "not a packet - non-letter after P",
+		Packet:   "$P-BC,123*5A\r\n",
+		Expected: 0,
+	},
+	{
+		Name:     "not proprietary - digit in manufacturer code",
+		Packet:   "$PA1C,123*5A\r\n",
 		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
-		Name:     "not proprietary - starts with P but non-alphanumeric",
-		Packet:   "$P-BC,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Name:     "proprietary address - unrestricted suffix",
+		Packet:   "$PABC-1,123*5A\r\n",
+		Expected: sentenceIsPacket | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "proprietary address - no data fields",
@@ -297,85 +327,85 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "no carets - flags should be set",
 		Packet:   "$GPGGA,123,data*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "valid caret escaping",
 		Packet:   "$GPGGA,12^0D3*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "valid caret escaping - multiple",
 		Packet:   "$GPGGA,^0A^0D^2A*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "invalid caret escaping - missing hex",
 		Packet:   "$GPGGA,12^3*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "invalid caret escaping - non-hex",
 		Packet:   "$GPGGA,12^XY*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "invalid caret escaping - lowercase hex",
 		Packet:   "$GPGGA,12^0a*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 
 	// Invalid data character tests
 	{
 		Name:     "invalid data char - backslash",
 		Packet:   "$GPGGA,12\\3*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "invalid data char - exclamation",
 		Packet:   "$GPGGA,12!3*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "invalid data char - tilde",
 		Packet:   "$GPGGA,12~3*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 
 	// Length tests
 	{
 		Name:     "exactly 82 chars",
 		Packet:   "$GPGGA,1234567890123456789012345678901234567890123456789012345678901234567890*5A\r\n", // 82 chars total
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "over 82 chars",
 		Packet:   "$GPGGA,12345678901234567890123456789012345678901234567890123456789012345678901*5A\r\n", // 83 chars total
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceEndsWithCRLF,
 	},
 
 	// Line ending tests
 	{
 		Name:     "CRLF ending",
 		Packet:   "$GPGGA,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "LF only ending",
 		Packet:   "$GPGGA,123*5A\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess,
 	},
 
 	// Real NMEA sentences from existing tests
 	{
 		Name:     "real GPGGA",
 		Packet:   "$GPGGA,092725.00,4717.11399,N,00833.91590,E,1,08,1.01,499.6,M,48.0,M,,*5B\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "real GPGLL",
 		Packet:   "$GPGLL,4717.11364,N,00833.91565,E,092321.00,A,A*60\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "real PUBX proprietary",
@@ -385,22 +415,22 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "real GPTXT",
 		Packet:   "$GPTXT,01,01,02,u-blox ag - www.u-blox.com*50\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "real GPVTG",
 		Packet:   "$GPVTG,77.52,T,,M,0.004,N,0.008,K,A*06\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "real GPZDA",
 		Packet:   "$GPZDA,082710.00,16,09,2002,00,00*64\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "real GNRMC (over 82 chars)",
 		Packet:   "$GNRMC,114650.00,A,1343.90931561,N,10038.68511804,E,0.005,221.7,040525,0.5,W,A,C*59\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGN | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGN | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceEndsWithCRLF,
 	},
 
 	// Unicore command acknowledgment (non-NMEA but packet-like)
@@ -419,39 +449,49 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "no data fields - address only",
 		Packet:   "$GPGGA*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "single empty data field",
 		Packet:   "$GPGGA,*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "multiple empty data fields",
 		Packet:   "$GPGGA,,,*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "minimal packet - single char address",
 		Packet:   "$A*5A\r\n",
-		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: 0,
 	},
 	{
 		Name:     "minimal packet with empty field",
-		Packet:   "$A,*5A\r\n",
+		Packet:   "$AA,*5A\r\n",
 		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 
-	// Packet length boundary tests (400 char limit)
+	// Packet length boundary tests (400 char limit including CRLF)
 	{
-		Name:     "exactly 400 chars (packet format max)",
-		Packet:   "$GPGGA," + strings.Repeat("X", 387) + "*5A\r\n", // Total = 400
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceEndsWithCRLF,
+		Name:     "exactly 400 chars with CRLF",
+		Packet:   "$GPGGA," + strings.Repeat("X", 388) + "*5A\r\n",
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceEndsWithCRLF,
 	},
 	{
-		Name:     "401 chars (over packet format limit)",
-		Packet:   "$GPGGA," + strings.Repeat("X", 389) + "*5A\r\n", // Total = 401
-		Expected: 0,                                                // Should fail packet detection due to length
+		Name:     "exactly 399 chars with LF",
+		Packet:   "$GPGGA," + strings.Repeat("X", 388) + "*5A\n",
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars,
+	},
+	{
+		Name:     "401 chars with CRLF",
+		Packet:   "$GPGGA," + strings.Repeat("X", 389) + "*5A\r\n",
+		Expected: 0,
+	},
+	{
+		Name:     "400 chars with LF",
+		Packet:   "$GPGGA," + strings.Repeat("X", 389) + "*5A\n",
+		Expected: 0,
 	},
 
 	// Checksum case variations
@@ -463,7 +503,7 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "mixed case checksum",
 		Packet:   "$GPGGA,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "mixed case checksum - aB",
@@ -475,34 +515,39 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "address with digits - 12345",
 		Packet:   "$12345,data*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "address with mixed alphanumeric - A1B2C",
 		Packet:   "$A1B2C,data*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "address starting with digit - 1ABCD",
 		Packet:   "$1ABCD,data*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+	},
+	{
+		Name:     "address with digits after two letters - AB1C2",
+		Packet:   "$AB1C2,data*5A\r\n",
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 
 	// Caret escaping edge cases
 	{
 		Name:     "caret at end of field",
 		Packet:   "$GPGGA,data^*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "caret with one char at end",
 		Packet:   "$GPGGA,data^5*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "sequential escaped carets",
 		Packet:   "$GPGGA,^^5E5E*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 
 	// Reserved character tests (dollar and asterisk in data)
@@ -521,7 +566,7 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "space character (0x20) in data",
 		Packet:   "$GPGGA,hello world*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "tab character (0x09) in data",
@@ -546,9 +591,9 @@ var SyntaxTestCases = []struct {
 		Expected: sentenceIsPacket | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
-		Name:     "proprietary with digits - P123",
+		Name:     "not proprietary - digit after P",
 		Packet:   "$P123,data*5A\r\n",
-		Expected: sentenceIsPacket | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "very long proprietary address",
@@ -589,12 +634,12 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "unknown G-prefix talker - GX",
 		Packet:   "$GXRMC,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "partial GNSS match - just G",
 		Packet:   "$G,123*5A\r\n",
-		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: 0,
 	},
 	{
 		Name:     "partial GNSS match - just GP",
@@ -609,9 +654,9 @@ var SyntaxTestCases = []struct {
 
 	// Mixed validation scenarios
 	{
-		Name:     "proprietary P12345 (5 chars, digits, starts with P)",
+		Name:     "not proprietary and not approved - P1234 (P-prefixed)",
 		Packet:   "$P1234,data*5A\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceProprietaryAddressFormat | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "address with spaces (valid packet, invalid address format)",
@@ -625,12 +670,12 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "nmeaOK - GPGGA real sentence",
 		Packet:   "$GPGGA,092725.00,4717.11399,N,00833.91590,E,1,08,1.01,499.6,M,48.0,M,,*5B\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "nmeaOK - GPGLL real sentence",
 		Packet:   "$GPGLL,4717.11364,N,00833.91565,E,092321.00,A,A*60\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "nmeaOK - PUBX proprietary",
@@ -640,22 +685,22 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "nmeaOK - GPTXT with spaces and hyphens",
 		Packet:   "$GPTXT,01,01,02,u-blox ag - www.u-blox.com*50\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "nmeaOK - GPVTG real sentence",
 		Packet:   "$GPVTG,77.52,T,,M,0.004,N,0.008,K,A*06\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "nmeaOK - GPZDA real sentence",
 		Packet:   "$GPZDA,082710.00,16,09,2002,00,00*64\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceLength82OrLess | sentenceEndsWithCRLF,
 	},
 	{
 		Name:     "nmeaOK - GNRMC over 82 chars from Unicore",
 		Packet:   "$GNRMC,114650.00,A,1343.90931561,N,10038.68511804,E,0.005,221.7,040525,0.5,W,A,C*59\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGN | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceEndsWithCRLF, // Note: missing sentenceLength82OrLess
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGN | sentenceNoCarets | sentenceValidCaretEscaping | sentenceValidDataChars | sentenceEndsWithCRLF, // Note: missing sentenceLength82OrLess
 	},
 
 	// nmeaBad test cases - should NOT be valid NMEA
@@ -667,7 +712,7 @@ var SyntaxTestCases = []struct {
 	{
 		Name:     "nmeaBad - exclamation mark in data",
 		Packet:   "$GPTXT,1,2,3,Hello!*FF\r\n",
-		Expected: sentenceIsPacket | sentenceAddressLength5 | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceLength82OrLess | sentenceEndsWithCRLF, // Missing sentenceValidDataChars due to !
+		Expected: sentenceIsPacket | sentenceApprovedAddressFormat | sentenceTalkerIsGP | sentenceNoCarets | sentenceValidCaretEscaping | sentenceLength82OrLess | sentenceEndsWithCRLF, // Missing sentenceValidDataChars due to !
 	},
 	{
 		Name:     "nmeaBad - address too long (6 chars)",
