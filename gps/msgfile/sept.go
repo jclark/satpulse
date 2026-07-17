@@ -22,10 +22,9 @@ const septCorrelate = "cmd"
 //   - "$R?" is a nak; the error text is the "<name>: <error text>" remainder,
 //     kept verbatim (there is no reliable way to derive <name> from the
 //     command).
-//   - "$R;" opens an lst reply. It is the positive ack -- the command was
-//     accepted (a rejection is "$R?") -- but the "$--BLOCK" output still
+//   - "$R;" is an lst reply. If it ends in "---->", "$--BLOCK" output still
 //     follows, so it is reported as an ack that keeps the request open
-//     (responseAckMore).
+//     (responseAckMore). If it ends at the real prompt, the reply is complete.
 //   - A "$--BLOCK" section ending in "---->" is an intermediate lst unit,
 //     shown but not correlated (responseInfo). The final "$--BLOCK", ending at
 //     the real prompt, completes the command without a second ack line
@@ -39,6 +38,9 @@ func analyzeSeptResponse(pkt string) responseAnalysis {
 		case ':', '!':
 			return responseAnalysis{kind: responseAck, ackCorrelate: septCorrelate}
 		case ';':
+			if !strings.HasSuffix(pkt, "---->") {
+				return responseAnalysis{kind: responseAck, ackCorrelate: septCorrelate}
+			}
 			return responseAnalysis{kind: responseAckMore, ackCorrelate: septCorrelate}
 		case '?':
 			return responseAnalysis{

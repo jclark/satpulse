@@ -64,6 +64,16 @@ func TestCorrelatorSeptentrio(t *testing.T) {
 			},
 		},
 		{
+			name: "lst blockless reply completes at real prompt",
+			tags: []string{"lst-help"},
+			events: []event{
+				sendEvent{},
+				recvSeptReply("$R; help, grc\r\n... Here comes a description of getReceiverCapabilities ...\r\nCOM1>"),
+				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
+		},
+		{
 			name: "lst reply: opener acks, real prompt completes",
 			tags: []string{"lst"},
 			events: []event{
