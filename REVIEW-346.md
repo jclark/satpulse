@@ -175,6 +175,10 @@ Relatedly, `emitChannelStatusSats` is the sole caller of `satellitesCombine` and
 always passes a non-nil `chn`, so the `chn != nil` guard, the
 `nativeID = "MeasEpoch"` branch, and `SatelliteUsedInvalid` are all unreachable.
 
+**Fixed.** `ChannelStatus` now exclusively defines the emitted SV set, while
+`MeasEpoch` only enriches matching SVs with signal data. Regression coverage
+includes stale, missing, and unmapped measurement SVs and the combined capture.
+
 ### 5. Unmapped DiffCorrIn modes suppress native handling
 
 `gps/internal/septentrio/sbf.go:129`

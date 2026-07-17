@@ -90,29 +90,18 @@ func TestCombineChannelStatusAndMeasEpoch(t *testing.T) {
 	}
 }
 
-// TestCombineMeasEpochOnly uses MeasEpoch as the base with no Used validity.
-func TestCombineMeasEpochOnly(t *testing.T) {
-	me := &sbfbin.MeasEpoch{
-		Type1: []sbfbin.MeasEpochChannelType1{{SVID: 10, Type: sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 180}},
-		Type2: [][]sbfbin.MeasEpochChannelType2{{}},
-	}
-	msg := satellitesCombine(nil, me)
-	if msg == nil || msg.NativeMsgID != "MeasEpoch" || msg.UsedValidity != gpsprot.SatelliteUsedInvalid {
-		t.Fatalf("combine = %+v", msg)
-	}
-	if len(msg.SVs) != 1 || len(msg.SVs[0].Signals) != 1 || msg.SVs[0].Signals[0].CN0 != 55 {
-		t.Errorf("SVs = %+v", msg.SVs)
-	}
-}
-
 func TestCombineMeasEpochType2(t *testing.T) {
+	cs := &sbfbin.ChannelStatus{
+		SatInfo:   []sbfbin.ChannelSatInfo{{SVID: 3, SVIDFull: 3}},
+		StateInfo: [][]sbfbin.ChannelStateInfo{{}},
+	}
 	me := &sbfbin.MeasEpoch{
 		Type1: []sbfbin.MeasEpochChannelType1{{SVID: 3, Type: sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 180}},
 		Type2: [][]sbfbin.MeasEpochChannelType2{{
 			{Type: sbfbin.MeasType(sbfbin.SigNumGPSL5), CN0: 160},
 		}},
 	}
-	msg := satellitesCombine(nil, me)
+	msg := satellitesCombine(cs, me)
 	if msg == nil || len(msg.SVs) != 1 {
 		t.Fatalf("combine = %+v", msg)
 	}
@@ -126,17 +115,39 @@ func TestCombineMeasEpochType2(t *testing.T) {
 	}
 }
 
-func TestCombineMeasEpochSkipsUnmappedRINEXSignal(t *testing.T) {
-	me := &sbfbin.MeasEpoch{
-		Type1: []sbfbin.MeasEpochChannelType1{{SVID: 71, Type: sbfbin.MeasType(sbfbin.SigNumGalileoE5AltBOC), CN0: 180}},
-		Type2: [][]sbfbin.MeasEpochChannelType2{{}},
+func TestCombineMeasEpochDoesNotChangeChannelStatusSVSet(t *testing.T) {
+	cs := &sbfbin.ChannelStatus{
+		SatInfo: []sbfbin.ChannelSatInfo{
+			{SVID: 1, SVIDFull: 1},
+			{SVID: 71, SVIDFull: 71},
+		},
+		StateInfo: [][]sbfbin.ChannelStateInfo{{}, {{Antenna: 0, PVTStatus: sbfbin.SlotStatus(sbfbin.PVTStatusUsed)}}},
 	}
-	if msg := satellitesCombine(nil, me); msg != nil {
-		t.Fatalf("combine = %+v, want nil", msg)
+	me := &sbfbin.MeasEpoch{
+		Type1: []sbfbin.MeasEpochChannelType1{
+			{SVID: 1, Type: sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 180},
+			{SVID: 2, Type: sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 180},
+			{SVID: 71, Type: sbfbin.MeasType(sbfbin.SigNumGalileoE5AltBOC), CN0: 180},
+		},
+		Type2: [][]sbfbin.MeasEpochChannelType2{{}, {}, {}},
+	}
+	msg := satellitesCombine(cs, me)
+	if msg == nil || len(msg.SVs) != 2 {
+		t.Fatalf("combine SVs = %+v, want G01 and E01", msg)
+	}
+	if msg.SVs[0].ID.String() != "G01" || len(msg.SVs[0].Signals) != 1 {
+		t.Errorf("first SV = %+v, want G01 with one signal", msg.SVs[0])
+	}
+	if msg.SVs[1].ID.String() != "E01" || !msg.SVs[1].Used || msg.SVs[1].Signals == nil || len(msg.SVs[1].Signals) != 0 {
+		t.Errorf("second SV = %+v, want used E01 with empty signals", msg.SVs[1])
 	}
 }
 
 func TestCombineMeasEpochMainAntennaOnly(t *testing.T) {
+	cs := &sbfbin.ChannelStatus{
+		SatInfo:   []sbfbin.ChannelSatInfo{{SVID: 1, SVIDFull: 1}},
+		StateInfo: [][]sbfbin.ChannelStateInfo{{}},
+	}
 	me := &sbfbin.MeasEpoch{
 		Type1: []sbfbin.MeasEpochChannelType1{
 			{SVID: 1, Type: sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 180},
@@ -147,7 +158,7 @@ func TestCombineMeasEpochMainAntennaOnly(t *testing.T) {
 			{{Type: sbfbin.MeasType(sbfbin.SigNumGPSL5), CN0: 160}},
 		},
 	}
-	msg := satellitesCombine(nil, me)
+	msg := satellitesCombine(cs, me)
 	if msg == nil || len(msg.SVs) != 1 {
 		t.Fatalf("combine = %+v", msg)
 	}
@@ -230,6 +241,18 @@ func TestCombineChannelStatusRealEmptySignals(t *testing.T) {
 		if sv.Signals == nil || len(sv.Signals) != 0 {
 			t.Errorf("%s signals = %+v, want empty non-nil slice", sv.ID, sv.Signals)
 		}
+	}
+}
+
+func TestCombineChannelStatusAndMeasEpochRealSVSet(t *testing.T) {
+	cs := findBlock(t, "sats-sig.jsonl", "ChannelStatus").Params.(*sbfbin.ChannelStatus)
+	me := findBlock(t, "sats-sig.jsonl", "MeasEpoch").Params.(*sbfbin.MeasEpoch)
+	msg := satellitesCombine(cs, me)
+	if msg == nil {
+		t.Fatal("combine returned nil")
+	}
+	if len(msg.SVs) != len(cs.SatInfo) {
+		t.Fatalf("combine SV count = %d, want ChannelStatus count %d", len(msg.SVs), len(cs.SatInfo))
 	}
 }
 

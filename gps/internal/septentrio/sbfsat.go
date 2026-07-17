@@ -30,32 +30,19 @@ func (c *satCombiner) sv(id gpsprot.SVID) *gpsprot.SVInfo {
 // (signals + CN0) into one SatellitesMsg.
 func satellitesCombine(chn *sbfbin.ChannelStatus, meas *sbfbin.MeasEpoch) *gpsprot.SatellitesMsg {
 	c := satCombiner{index: map[gpsprot.SVID]int{}, used: map[gpsprot.SVID]map[string]bool{}, usedSV: map[gpsprot.SVID]bool{}}
-	nativeID := ""
-	validity := gpsprot.SatelliteUsedInvalid
-	if chn != nil {
-		nativeID = "ChannelStatus"
-		validity = gpsprot.SatelliteUsedSV
-		c.addChannelStatus(chn)
-	}
+	c.addChannelStatus(chn)
+	validity := gpsprot.SatelliteUsedSV
 	if meas != nil {
-		if nativeID == "" {
-			nativeID = "MeasEpoch"
-		} else {
-			validity = gpsprot.SatelliteUsedSignal
-		}
+		validity = gpsprot.SatelliteUsedSignal
 		c.addMeasEpoch(meas)
 	}
-	if meas != nil {
-		c.pruneEmpty()
-	} else if chn != nil {
-		c.setSVUsed()
-	}
+	c.setSVUsed()
 	if len(c.svs) == 0 {
 		return nil
 	}
 	return &gpsprot.SatellitesMsg{
 		SVs:          c.svs,
-		NativeMsgID:  nativeID,
+		NativeMsgID:  "ChannelStatus",
 		UsedValidity: validity,
 	}
 }
@@ -122,6 +109,10 @@ func (c *satCombiner) addUsedCodes(id gpsprot.SVID, st *sbfbin.ChannelStateInfo)
 }
 
 func (c *satCombiner) addMeasSignal(id gpsprot.SVID, num uint8, flags sbfbin.CommonFlags, cn0 uint8) {
+	i, ok := c.index[id]
+	if !ok {
+		return
+	}
 	sys, code := sbfbin.RINEXSig(num, flags)
 	if sys == "" || code == "" || sys != id.GNSS.SVIDPrefix() {
 		return
@@ -130,22 +121,9 @@ func (c *satCombiner) addMeasSignal(id gpsprot.SVID, num uint8, flags sbfbin.Com
 	if sigID == gpsprot.SigIDInvalid {
 		return
 	}
-	sv := c.sv(id)
+	sv := &c.svs[i]
 	used := c.used[id][code]
 	sv.Signals = append(sv.Signals, gpsprot.SignalInfo{ID: sigID, CN0: cn0, Used: used})
-	if used {
-		sv.Used = true
-	}
-}
-
-func (c *satCombiner) pruneEmpty() {
-	svs := c.svs[:0]
-	for _, sv := range c.svs {
-		if len(sv.Signals) > 0 {
-			svs = append(svs, sv)
-		}
-	}
-	c.svs = svs
 }
 
 func (c *satCombiner) setSVUsed() {
