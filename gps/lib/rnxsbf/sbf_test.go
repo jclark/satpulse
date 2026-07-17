@@ -177,6 +177,7 @@ func TestConvertSlave(t *testing.T) {
 		Type: 11, OffsetsMSB: 3, CodeOffsetLSB: 500, DopplerOffsetLSB: 400,
 		CarrierMSB: 1, CarrierLSB: 200, CN0: 100, LockTime: 50,
 	}
+	gloSlave.ObsInfo = 1 << 3 // reserved for Type2 when SigIdxLo is not 31
 	f1 := mustFreq("G", "1C", 0, false)
 	f2 := mustFreq("G", "2W", 0, false)
 	prOff := float64(-1*65536+500) * 0.001

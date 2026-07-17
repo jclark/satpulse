@@ -212,38 +212,20 @@ keyed by `(GNSSID, sigId)` -- one 40-entry array indexed by signal
 number is sufficient and self-contained.
 
 GLONASS carrier frequency (needed by `rinex.SignalValues.Frq`, the
-FDMA channel number) is not a separate field on `MeasEpochChannelType1`/
-`Type2`: for signal numbers 8-11 (the four GLONASS signals),
-`ObsInfo` bits 3-7 carry the GLONASS `FreqNr` (1-14) instead of the
-signal-number extension, and `Frq = FreqNr - 8` (channel range -7..+6,
-matching the FDMA channel convention `rnxubx` uses for u-blox's
-`freqId - 7`). For every other signal number, `ObsInfo` bits 3-7 either
-extend the signal number (`SigIdxLo == 31`) or are reserved and
-ignored.
+FDMA channel number) is encoded only on `MeasEpochChannelType1`: for
+signal numbers 8-11 (the four GLONASS signals), `ObsInfo` bits 3-7
+carry the GLONASS `FreqNr` (1-14), and `Frq = FreqNr - 8` (channel
+range -7..+6, matching the FDMA channel convention `rnxubx` uses for
+u-blox's `freqId - 7`). A GLONASS FDMA Type2 sub-block inherits the
+channel from its parent Type1 sub-block.
 
 ### Extended signal number and GLONASS FreqNr decode
 
-Both uses of `ObsInfo` bits 3-7 dispatch on the *same* sub-block's own
-`Type` bits 0-4, independently for each Type1 master and each of its
-Type2 children (a Type2 slave signal can carry a different `SigIdxLo`,
-and therefore a different `ObsInfo` interpretation, than its Type1
-parent):
-
-```go
-func resolveSignal(sigIdxLo byte, obsInfo byte) (num byte, freqNr byte) {
-    switch {
-    case sigIdxLo == 31:
-        return 32 + (obsInfo >> 3), 0
-    case sigIdxLo >= 8 && sigIdxLo <= 11:
-        return sigIdxLo, obsInfo >> 3
-    default:
-        return sigIdxLo, 0
-    }
-}
-```
-
-`freqNr` is only meaningful (and only consulted) when the resolved
-signal number is one of the GLONASS signals 8-11.
+Signal-number extension dispatches on each sub-block's own `Type` bits
+0-4: when `SigIdxLo` is 31, `ObsInfo` bits 3-7 contain the signal number
+with an offset of 32. On Type1, those bits instead contain `FreqNr` when
+`SigIdxLo` is 8-11. On Type2, they are reserved and ignored whenever
+`SigIdxLo` is not 31.
 
 ### Pseudorange, carrier phase, Doppler: scaling and Do-Not-Use
 
@@ -484,14 +466,6 @@ package -- the guide's formulas above are the authoritative spec.
   246-249 as an undefined gap (skip, per the general "ignore ranges
   this document doesn't define" decoding rule) rather than guessing an
   extension. Revisit if a future guide revision fills it in.
-- **Type2 GLONASS `FreqNr` overlay**: the reference guide states the
-  `ObsInfo`-bits-3-7 GLONASS `FreqNr` rule explicitly only for Type1;
-  Type2's own field description documents only the `SigIdxLo == 31`
-  extension case and is silent on the GLONASS case. This plan applies
-  the same rule to Type2 for consistency (GLONASS FDMA slave signals
-  are rare but not impossible), but this is an inference, not a
-  directly documented guarantee -- confirm against a real capture with
-  a GLONASS Type2 slave signal once hardware is available.
 - **Whether to expose `MeasEpoch.CommonFlags` bit 7 ("Scrambling")** as
   a diagnostic: when set, every measurement in the block is silently
   degraded with no per-field Do-Not-Use marker to signal it. This

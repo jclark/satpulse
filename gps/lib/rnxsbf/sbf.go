@@ -214,13 +214,9 @@ func (c *Converter) slaveObservation(t rinex.Time, sat rinex.SatelliteID, sys st
 	sig := rinex.SignalID(sigCode)
 	frq := opt.Val[int8]{}
 	if n := t2.SignalNumber(); n >= sbfbin.SigNumGLONASSL1CA && n <= sbfbin.SigNumGLONASSL2CA {
-		// The FDMA channel is a per-satellite property, so when the slave's
-		// own ObsInfo does not carry it, the master's channel applies.
-		if k, ok := t2.GLONASSFreqNr(); ok {
-			frq = opt.Make(k)
-		} else {
-			frq = mst.frq
-		}
+		// Type2 ObsInfo does not encode FreqNr; the FDMA channel comes from
+		// the parent Type1 sub-block.
+		frq = mst.frq
 	}
 	freqHz, freqOK := rinex.SignalFrequencyHz(sys, sig, frq.Ptr())
 	obs := rinex.SignalObservation{T: t, Sat: sat, Sig: sig}

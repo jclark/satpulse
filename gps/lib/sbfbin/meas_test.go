@@ -140,11 +140,9 @@ func TestGLONASSFreqNr(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t1 := MeasEpochChannelType1{Type: tc.typ, ObsInfo: tc.obsInfo}
-			t2 := MeasEpochChannelType2{Type: tc.typ, ObsInfo: tc.obsInfo}
-			got1, ok1 := t1.GLONASSFreqNr()
-			got2, ok2 := t2.GLONASSFreqNr()
-			if got1 != tc.expect || ok1 != tc.expectOK || got2 != tc.expect || ok2 != tc.expectOK {
-				t.Errorf("got %d,%v (type1) %d,%v (type2), want %d,%v", got1, ok1, got2, ok2, tc.expect, tc.expectOK)
+			got, ok := t1.GLONASSFreqNr()
+			if got != tc.expect || ok != tc.expectOK {
+				t.Errorf("got %d,%v, want %d,%v", got, ok, tc.expect, tc.expectOK)
 			}
 		})
 	}
