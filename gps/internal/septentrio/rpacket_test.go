@@ -71,6 +71,12 @@ func TestReplyBlockSectionASCIIDisplay(t *testing.T) {
 	framesWhole(t, "$-- BLOCK 1 / 1\r\n$TD\r\n# -- TRACKING 12 sats --\r\nCOM1>")
 }
 
+func TestReplyBlockSectionTabIndent(t *testing.T) {
+	// lstMIBDescription indents its BITS enumerations with TABs (mosaic-G5
+	// "lmd, grc" reply).
+	framesWhole(t, "$-- BLOCK 2 / 0\r\nrcAntennas  OBJECT-TYPE\r\n    SYNTAX       BITS {\r\n\tMain(0),\r\n\tAux1(1) }\r\n---->")
+}
+
 func TestReplyLstFramesIntoUnits(t *testing.T) {
 	// A whole lst reply frames as a sequence of units: the "$R;" opener, then
 	// each "$--BLOCK" section, ending at the last section's real prompt. The

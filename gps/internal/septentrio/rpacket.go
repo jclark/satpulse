@@ -201,13 +201,14 @@ func rIsBlock(buf []byte, nextScanIndex, packetLen int) bool {
 
 // rReadBody handles a byte that is not part of a terminator: a CR opens a
 // line break, any other printable non-'$' byte continues the body line, and
-// anything else (a '$', a control or high-bit byte, a lone LF) ends the
-// candidate.
+// anything else (a '$', another control or high-bit byte, a lone LF) ends the
+// candidate. TAB is body: lstMIBDescription indents its BITS enumerations with
+// it.
 func rReadBody(b byte) gpsprot.ScanState {
 	if b == '\r' {
 		return rStateCR
 	}
-	if b != '$' && ascii.IsPrint(b) {
+	if b != '$' && (ascii.IsPrint(b) || b == '\t') {
 		return rStateBody
 	}
 	return rStateSync
