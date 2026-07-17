@@ -14,7 +14,7 @@ import (
 // message the receiver already accepted) into a CorReportMsg. It returns nil
 // for correction modes with no gpsprot.Tag (RTCMv2, CMR, RTCMV) or an invalid
 // embedded frame. baseID is the last-seen RTCM base station ID, filled only
-// when it came from an RTCM base.
+// on RTCMv3 reports when it came from an RTCM base.
 func corReportDiffCorrIn(m *sbfbin.DiffCorrIn, baseID opt.Val[uint16], baseRTCM bool) *gpsprot.CorReportMsg {
 	corr := m.Correction
 	var pf gpsprot.PacketFormat
@@ -51,7 +51,7 @@ func corReportDiffCorrIn(m *sbfbin.DiffCorrIn, baseID opt.Val[uint16], baseRTCM 
 	} else if native, err := spartnbin.Parse(corr); err == nil {
 		msg.NativeMsg = native
 	}
-	if baseRTCM && baseID.IsSet() {
+	if m.Mode == sbfbin.DiffCorrModeRTCMv3 && baseRTCM && baseID.IsSet() {
 		msg.RTCMRefBaseID = baseID
 	}
 	return msg

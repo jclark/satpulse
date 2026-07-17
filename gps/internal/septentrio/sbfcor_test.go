@@ -119,7 +119,7 @@ func TestCorReportDiffCorrInUnmapped(t *testing.T) {
 }
 
 // TestCorReportDiffCorrInSPARTN checks that the inner frame length excludes
-// SBF padding.
+// SBF padding and a cached RTCM base ID is not attached.
 func TestCorReportDiffCorrInSPARTN(t *testing.T) {
 	pkt, err := spartnbin.Pack(&spartnbin.Frame{
 		FrameStart:    spartnbin.FrameStart{Type: 1, CRCType: 2},
@@ -132,7 +132,7 @@ func TestCorReportDiffCorrInSPARTN(t *testing.T) {
 	var m sbfbin.DiffCorrIn
 	m.Mode = sbfbin.DiffCorrModeSPARTN
 	m.Correction = append(pkt, 0, 0, 0)
-	msg := corReportDiffCorrIn(&m, opt.Val[uint16]{}, false)
+	msg := corReportDiffCorrIn(&m, opt.Make(uint16(33)), true)
 	if msg == nil {
 		t.Fatal("corReportDiffCorrIn returned nil")
 	}
@@ -144,5 +144,8 @@ func TestCorReportDiffCorrInSPARTN(t *testing.T) {
 	}
 	if msg.NativeMsg == nil {
 		t.Error("NativeMsg not parsed")
+	}
+	if msg.RTCMRefBaseID.IsSet() {
+		t.Errorf("RTCMRefBaseID = %d, want unset", msg.RTCMRefBaseID.Get())
 	}
 }
