@@ -313,14 +313,15 @@ func (r *replayer) run() {
 	// Send probe packets for all protocols
 	probesSent := 0
 	for _, prot := range r.configProts {
-		probePacket := prot.ProbePacket()
-
-		// Verify probe packet matches expected output
-		if r.outIdx < len(r.test.outPackets) {
-			expected := r.test.outPackets[r.outIdx]
-			if string(probePacket) == expected.Data() {
-				r.outIdx++
-				probesSent++
+		probePackets, _ := prot.ProbePackets()
+		for _, probePacket := range probePackets {
+			// Verify probe packet matches expected output
+			if r.outIdx < len(r.test.outPackets) {
+				expected := r.test.outPackets[r.outIdx]
+				if string(probePacket) == expected.Data() {
+					r.outIdx++
+					probesSent++
+				}
 			}
 		}
 	}

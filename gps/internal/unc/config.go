@@ -136,8 +136,8 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	return props
 }
 
-func (cp *ConfigProtocol) ProbePacket() []byte {
-	return []byte("VERSIONB\r\n")
+func (cp *ConfigProtocol) ProbePackets() ([][]byte, time.Duration) {
+	return [][]byte{[]byte("VERSIONB\r\n")}, 0
 }
 
 func (cp *ConfigProtocol) ProbeOK() bool {

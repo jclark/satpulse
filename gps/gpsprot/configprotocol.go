@@ -15,8 +15,11 @@ import (
 type ConfigProtocol interface {
 	NativeMsgHandler
 
-	// ProbePacket returns a packet to be sent to the GPS receiver for probing.
-	ProbePacket() []byte
+	// ProbePackets returns the ordered write sequence for one logical probe attempt.
+	// The duration is the delay between consecutive writes in that sequence;
+	// no delay is applied after the final write. Implementations must be
+	// stateless; retries send the same sequence again.
+	ProbePackets() ([][]byte, time.Duration)
 
 	// ProbeOK returns true when a message has been received indicating the GPS receiver is responding.
 	ProbeOK() bool
