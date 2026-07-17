@@ -145,7 +145,8 @@ func (p *PacketProcessor) Dispatch(b *sbfbin.Block, tRead time.Time) bool {
 
 // navEpoch returns the accumulating NavEpochMsg for the epoch identified by
 // ts, starting a new epoch when the previous accumulator was flushed or the
-// timestamp changes.
+// timestamp changes. Starting an epoch flushes the previous one via
+// EpochStarted.
 func (p *PacketProcessor) navEpoch(ts sbfbin.TimeStamp, tRead time.Time) *gpsprot.NavEpochMsg {
 	if p.curEpoch == nil || p.curEpoch.msg == nil || p.curEpoch.ts != ts {
 		p.mgr.EpochStarted(p, tRead)
@@ -156,8 +157,8 @@ func (p *PacketProcessor) navEpoch(ts sbfbin.TimeStamp, tRead time.Time) *gpspro
 
 // FlushNavEpoch implements gpsprot.EpochFlusher. It returns the accumulated
 // NavEpochMsg for the current epoch (the SatellitesMsg stream is independent
-// and is not flushed here). The epoch key is retained so the next PVT block's
-// key change is detected.
+// and is not flushed here). Clearing the accumulator makes the next PVT block
+// start a new epoch; the rest of the epoch state is retained for ReadDelay.
 func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
 	var msg *gpsprot.NavEpochMsg
 	if p.curEpoch != nil {
