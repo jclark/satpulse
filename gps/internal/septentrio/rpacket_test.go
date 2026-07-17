@@ -67,6 +67,10 @@ func TestReplyBlockSectionIntermediate(t *testing.T) {
 	framesWhole(t, "$-- BLOCK 1 / 2\r\nGalOSNMAPublicKeys, Key0, \"\"\r\n---->")
 }
 
+func TestReplyBlockSectionASCIIDisplay(t *testing.T) {
+	framesWhole(t, "$-- BLOCK 1 / 1\r\n$TD\r\n# -- TRACKING 12 sats --\r\nCOM1>")
+}
+
 func TestReplyLstFramesIntoUnits(t *testing.T) {
 	// A whole lst reply frames as a sequence of units: the "$R;" opener, then
 	// each "$--BLOCK" section, ending at the last section's real prompt. The
@@ -109,17 +113,21 @@ func TestReplyEndsAtFirstPromptBeforeUnsolicited(t *testing.T) {
 
 func TestReplyNotAPacket(t *testing.T) {
 	cases := map[string]string{
-		"mid-reply dollar": "$R: foo$bar\r\nCOM1>",
-		"control byte":     "$R: foo\x01bar\r\nCOM1>",
-		"high-bit byte":    "$R: foo\x80bar\r\nCOM1>",
-		"unpaired CR":      "$R: foo\rbar\r\nCOM1>",
-		"unpaired LF":      "$R: foo\nbar\r\nCOM1>",
-		"lowercase token":  "$R: foo\r\nab12>",
-		"digit-lead token": "$R: foo\r\n1234>",
-		"three-char token": "$R: foo\r\nCOM>",
-		"bad type char":    "$R# foo\r\nCOM1>",
-		"sbf sync":         "$@ not a reply",
-		"no terminator":    "$R: foo\r\nCOM1\r\n",
+		"mid-reply dollar":      "$R: foo$bar\r\nCOM1>",
+		"TD in ordinary reply":  "$R; foo\r\n$TD\r\nCOM1>",
+		"TE in block":           "$-- BLOCK 1 / 1\r\n$TE ResetReceiver Soft\r\nCOM1>",
+		"other dollar in block": "$-- BLOCK 1 / 1\r\n$XX\r\nCOM1>",
+		"TD line with suffix":   "$-- BLOCK 1 / 1\r\n$TD extra\r\nCOM1>",
+		"control byte":          "$R: foo\x01bar\r\nCOM1>",
+		"high-bit byte":         "$R: foo\x80bar\r\nCOM1>",
+		"unpaired CR":           "$R: foo\rbar\r\nCOM1>",
+		"unpaired LF":           "$R: foo\nbar\r\nCOM1>",
+		"lowercase token":       "$R: foo\r\nab12>",
+		"digit-lead token":      "$R: foo\r\n1234>",
+		"three-char token":      "$R: foo\r\nCOM>",
+		"bad type char":         "$R# foo\r\nCOM1>",
+		"sbf sync":              "$@ not a reply",
+		"no terminator":         "$R: foo\r\nCOM1\r\n",
 	}
 	for name, s := range cases {
 		t.Run(name, func(t *testing.T) { notPacket(t, s) })

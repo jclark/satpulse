@@ -24,6 +24,8 @@ const TagReply gpsprot.Tag = "SEPTR"
 // format also syncs on "$--" so the "$--BLOCK" sections frame, and a "---->"
 // closes a packet just as a real prompt does. The septAnalyzer stitches the
 // units back together, completing the command only at the real prompt.
+// A block may contain the exact line "$TD", which introduces the ASCII display
+// returned by lstAsciiDisplay; other dollar signs still end the candidate.
 //
 // The format is checksum-free, modeled on nov.AbbrevAsciiPacketFormat:
 // ExtractChecksum and ComputeChecksum return nil. It syncs on '$' then 'R' (or
@@ -62,6 +64,11 @@ const (
 	// rStateTok4 means a full 4-char token has matched at a line start and
 	// the packet completes if the next byte is '>'.
 	rStateTok4
+	// rStateBlockDollar..rStateBlockTD match the exact "$TD" line allowed
+	// inside a "$--BLOCK" section.
+	rStateBlockDollar
+	rStateBlockT
+	rStateBlockTD
 	// rStateComplete means we have seen the terminating '>'.
 	rStateComplete
 )
@@ -111,6 +118,9 @@ func (f replyPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextScanInd
 			return rStateLineStart
 		}
 	case rStateLineStart:
+		if b == '$' && rIsBlock(buf, nextScanIndex, packetLen) {
+			return rStateBlockDollar
+		}
 		if b == '-' {
 			return rStateHy1
 		}
@@ -153,8 +163,25 @@ func (f replyPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextScanInd
 			return rStateComplete
 		}
 		return rReadBody(b)
+	case rStateBlockDollar:
+		if b == 'T' {
+			return rStateBlockT
+		}
+	case rStateBlockT:
+		if b == 'D' {
+			return rStateBlockTD
+		}
+	case rStateBlockTD:
+		if b == '\r' {
+			return rStateCR
+		}
 	}
 	return rStateSync
+}
+
+func rIsBlock(buf []byte, nextScanIndex, packetLen int) bool {
+	i := nextScanIndex - packetLen
+	return packetLen >= 3 && buf[i] == '$' && buf[i+1] == '-' && buf[i+2] == '-'
 }
 
 // rReadBody handles a byte that is not part of a terminator: a CR opens a
