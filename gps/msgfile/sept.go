@@ -29,6 +29,13 @@ const septCorrelate = "cmd"
 //     shown but not correlated (responseInfo). The final "$--BLOCK", ending at
 //     the real prompt, completes the command without a second ack line
 //     (responseDone).
+//
+// The guide is contradictory about the "---->" pseudo-prompt: sec 3.1.3 states
+// that the second line of every lst reply is one, while the "help, Overview" and
+// "lcf, Current" examples show the "$R;" echo followed directly by "$-- BLOCK".
+// A mosaic-G5 emits the pseudo-prompt for both of those examples; "help, grc"
+// emits none and ends at the real prompt with no block. Classifying on the
+// terminator holds either way, and needs no list of which commands produce blocks.
 func analyzeSeptResponse(pkt string) responseAnalysis {
 	if len(pkt) < 3 || pkt[0] != '$' {
 		return responseAnalysis{kind: responseNotData}

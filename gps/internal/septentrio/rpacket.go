@@ -17,13 +17,14 @@ const TagReply gpsprot.Tag = "SEPTR"
 // that ">" is the "command done" signal, so the reply's arrival marks the
 // completion of the command.
 //
-// An lst command's reply is a succession of units: the "$R;" echo line
-// followed by the "---->" pseudo-prompt, then one or more "$--BLOCK" sections,
-// each intermediate one ending with another "---->" and only the last ending
-// with the real prompt (sec 3.1.3). Each unit frames as its own packet: the
-// format also syncs on "$--" so the "$--BLOCK" sections frame, and a "---->"
-// closes a packet just as a real prompt does. The septAnalyzer stitches the
-// units back together, completing the command only at the real prompt.
+// An lst command's reply that produces block output is a succession of units:
+// the "$R;" echo line followed by the "---->" pseudo-prompt, then one or more
+// "$--BLOCK" sections, each intermediate one ending with another "---->" and
+// only the last ending with the real prompt (sec 3.1.3). Each unit frames as
+// its own packet: the format also syncs on "$--" so the "$--BLOCK" sections
+// frame, and a "---->" closes a packet just as a real prompt does. The
+// septAnalyzer stitches the units back together, completing the command only
+// at the real prompt.
 // A block may contain the exact line "$TD", which introduces the ASCII display
 // returned by lstAsciiDisplay; other dollar signs still end the candidate.
 //
