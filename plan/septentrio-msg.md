@@ -182,14 +182,14 @@ things:
   current TOW and will keep emitting that epoch's `EndOfMeas`,
   `EndOfAtt`, `ChannelStatus`, `SatVisibility`, and NMEA sentences. So
   `EndOfPVT` must **not** trigger the all-active flush -- doing so
-  would finalize and reset a concurrently-active NMEA processor's
-  still-in-progress epoch before its trailing sentences for the same
-  instant arrive. The mosaic-G5 guide configures NMEA and SBF as
-  independent output streams (`setNMEAOutput`/`setSBFOutput`) and
-  documents no ordering guarantee between them, so this coexistence is
-  a real runtime case, not a theoretical one: all processors share one
-  `NavEpochManager` (created in `gpsreg.CreatePacketProcessors`) and
-  are live at once, routed by packet format.
+  would finalize the epoch before trailing NMEA sentences for the same
+  instant arrive. Although the mosaic-G5 configures NMEA and SBF as
+  independent output streams (`setNMEAOutput`/`setSBFOutput`), SBF
+  starts each epoch before NMEA; NMEA cannot be the leading protocol.
+  This ordering is why `EndOfPVT` needs protocol-local handling rather
+  than the regular whole-receiver `EndOfEpoch`. All processors share
+  one `NavEpochManager` (created in `gpsreg.CreatePacketProcessors`)
+  and are live at once, routed by packet format.
 
 `EndOfPVT` therefore calls a **new** manager method,
 `EndOfProtocolEpoch(f, tRead)`, meaning "processor `f`'s own epoch has
@@ -224,8 +224,8 @@ next SBF TOW transition flushes the first epoch and establishes SBF as
 the sole protocol; that epoch's `EndOfPVT` and subsequent ones then
 flush promptly. If NMEA trails the first `EndOfPVT`, it joins the still
 active SBF epoch and the next TOW transition flushes the correctly
-aligned pair. Consistently leading NMEA is already active at
-`EndOfPVT`, so it also causes deferral without relying on history.
+aligned pair. A sequence in which NMEA starts an epoch before SBF is
+not possible and requires no recovery path.
 
 If trailing NMEA first appears after SBF-only operation was
 established, one transition epoch has already been flushed as SBF-only.
