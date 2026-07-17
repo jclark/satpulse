@@ -239,6 +239,9 @@ func (c *Correlator) correlateAck(tag gpsprot.Tag, ra responseAnalysis) Correlat
 		if rs.ack != ackWait && rs.ack != ackWaitMore {
 			continue
 		}
+		if ra.kind == responseDone && rs.ack != ackWaitMore {
+			continue
+		}
 		if rs.analysis.ackTag != tag {
 			continue
 		}

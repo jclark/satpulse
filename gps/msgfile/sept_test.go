@@ -125,6 +125,23 @@ func TestCorrelatorSeptentrio(t *testing.T) {
 			},
 		},
 		{
+			name: "lst final block ignores following request",
+			tags: []string{"lst", "set-elev"},
+			events: []event{
+				sendEvent{},
+				recvSeptReply("$R; lstAsciiDisplay\r\n---->"),
+				expect{ack: AckAck, relevance: LevelMaybeResponse, msgIndex: intptr(0)},
+				// The sender can proceed after its wait limit while the lst reply
+				// remains open.
+				sendEvent{},
+				recvSeptReply("$-- BLOCK 1 / 1\r\ncontents\r\nCOM1>"),
+				expect{relevance: LevelSoleResponse},
+				recvSeptReply("$R: setElevationMask, all, 5\r\nElevationMask, all, 5\r\nCOM1>"),
+				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(1)},
+				checkDone{canAcceptMore: false},
+			},
+		},
+		{
 			name: "factoryReset plain ack with trailing message",
 			tags: []string{"factory-reset"},
 			events: []event{
