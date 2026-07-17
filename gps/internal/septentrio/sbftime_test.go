@@ -90,19 +90,27 @@ func TestTimeReceiverTime(t *testing.T) {
 // TestTimeReceiverTimeDNU leaves UTC and UTCOffset unset when the components
 // are at their -128 do-not-use sentinel.
 func TestTimeReceiverTimeDNU(t *testing.T) {
-	var m sbfbin.ReceiverTime
-	m.UTCYear = sbfbin.UTCComponentDNU
-	m.DeltaLS = sbfbin.UTCComponentDNU
-	b := &sbfbin.Block{TimeStamp: sbfbin.TimeStamp{TOW: 1000, WNc: 2425}, Params: &m}
-	tm := timeReceiverTime(b, &m)
-	if tm == nil {
-		t.Fatal("nil")
-	}
-	if tm.UTCTime.IsSet() {
-		t.Error("UTCTime should be unset on DNU")
-	}
-	if tm.UTCOffset != 0 {
-		t.Errorf("UTCOffset = %d, want 0 on DNU", tm.UTCOffset)
+	utc := []int8{26, 7, 3, 9, 15, 40}
+	for i := range utc {
+		v := utc[i]
+		utc[i] = sbfbin.UTCComponentDNU
+		m := sbfbin.ReceiverTime{
+			UTCYear: utc[0], UTCMonth: utc[1], UTCDay: utc[2],
+			UTCHour: utc[3], UTCMin: utc[4], UTCSec: utc[5],
+			DeltaLS: sbfbin.UTCComponentDNU,
+		}
+		b := &sbfbin.Block{TimeStamp: sbfbin.TimeStamp{TOW: 1000, WNc: 2425}, Params: &m}
+		tm := timeReceiverTime(b, &m)
+		if tm == nil {
+			t.Fatal("nil")
+		}
+		if tm.UTCTime.IsSet() {
+			t.Errorf("UTCTime set with UTC component %d at DNU", i)
+		}
+		if tm.UTCOffset != 0 {
+			t.Errorf("UTCOffset = %d, want 0 on DNU", tm.UTCOffset)
+		}
+		utc[i] = v
 	}
 }
 

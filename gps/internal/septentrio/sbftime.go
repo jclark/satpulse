@@ -77,7 +77,12 @@ func timeReceiverTime(b *sbfbin.Block, m *sbfbin.ReceiverTime) *gpsprot.TimeMsg 
 		Ref:         gpsprot.NavSolution,
 		NativeMsgID: "ReceiverTime",
 	}
-	if m.UTCYear != sbfbin.UTCComponentDNU {
+	if m.UTCYear != sbfbin.UTCComponentDNU &&
+		m.UTCMonth != sbfbin.UTCComponentDNU &&
+		m.UTCDay != sbfbin.UTCComponentDNU &&
+		m.UTCHour != sbfbin.UTCComponentDNU &&
+		m.UTCMin != sbfbin.UTCComponentDNU &&
+		m.UTCSec != sbfbin.UTCComponentDNU {
 		tm.UTCTime.Set(ptime.UTC(uint16(2000+int(m.UTCYear)),
 			uint8(m.UTCMonth), uint8(m.UTCDay),
 			uint8(m.UTCHour), uint8(m.UTCMin), uint8(m.UTCSec), 0))
