@@ -144,10 +144,10 @@ func (p *PacketProcessor) Dispatch(b *sbfbin.Block, tRead time.Time) bool {
 }
 
 // navEpoch returns the accumulating NavEpochMsg for the epoch identified by
-// ts, starting a new epoch (and flushing the previous one) when the timestamp
-// changes.
+// ts, starting a new epoch when the previous accumulator was flushed or the
+// timestamp changes.
 func (p *PacketProcessor) navEpoch(ts sbfbin.TimeStamp, tRead time.Time) *gpsprot.NavEpochMsg {
-	if p.curEpoch == nil || p.curEpoch.ts != ts {
+	if p.curEpoch == nil || p.curEpoch.msg == nil || p.curEpoch.ts != ts {
 		p.mgr.EpochStarted(p, tRead)
 		p.curEpoch = &navEpochState{ts: ts, msg: &gpsprot.NavEpochMsg{}, start: tRead}
 	}

@@ -174,6 +174,25 @@ func TestProcessPVTCapture(t *testing.T) {
 	}
 }
 
+// TestNavEpochRestartsAfterFlushedDNUKey verifies that consecutive epochs with
+// the same DNU timestamp each get an accumulator after protocol-local flushes.
+func TestNavEpochRestartsAfterFlushedDNUKey(t *testing.T) {
+	p, c := newTestProcessor()
+	tRead := time.Unix(0, 0)
+	dnu := sbfbin.TimeStamp{TOW: sbfbin.TOWDNU, WNc: sbfbin.WNcDNU}
+	for _, ts := range []sbfbin.TimeStamp{{TOW: 1000, WNc: 1}, {TOW: 2000, WNc: 1}, dnu, dnu} {
+		p.Dispatch(pvtGeoBlock(ts, sbfbin.TimeSystemGPS, sbfbin.PVTClockDNU), tRead)
+		p.Dispatch(&sbfbin.Block{TimeStamp: ts, Params: &sbfbin.EndOfPVT{}}, tRead.Add(time.Millisecond))
+		tRead = tRead.Add(time.Second)
+	}
+	if len(c.epochs) != 4 {
+		t.Fatalf("NavEpoch count = %d, want 4", len(c.epochs))
+	}
+	if c.epochs[2] == c.epochs[3] {
+		t.Error("consecutive DNU epochs reused the same NavEpochMsg")
+	}
+}
+
 // TestProcessStatusCapture drives a status capture and checks
 // ChannelStatus-only SVs are emitted.
 func TestProcessStatusCapture(t *testing.T) {

@@ -145,8 +145,8 @@ Every SBF block header carries `(TOW, WNc)` on the GPS convention
 (section 5.1), represented by `sbfbin.TimeStamp`, so a navigation epoch
 is identified by that key. The `PacketProcessor` holds the current key,
 accumulating `*gpsprot.NavEpochMsg`, and start time in `p.curEpoch`; the
-first block whose timestamp differs from the current key begins a new
-epoch.
+first block after the accumulator was flushed, or whose timestamp differs
+from the current key, begins a new epoch.
 
 `NavEpochMsg` is built **only from the PVT-family blocks**
 (`PVTGeodetic`/`PVTCartesian`, `DOP`, and the covariance blocks

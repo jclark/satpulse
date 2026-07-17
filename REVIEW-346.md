@@ -17,6 +17,9 @@ timestamps can consequently panic the processor.
 Reinitialize when `curEpoch.msg == nil`, independently of whether the retained
 timestamp compares equal.
 
+**Fixed.** A flushed accumulator now starts a new epoch even when its retained
+timestamp matches, with regression coverage for consecutive DNU-keyed epochs.
+
 ### 2. ReceiverTime's ReadDelay is a full epoch stale
 
 `gps/internal/septentrio/sbf.go:199`
