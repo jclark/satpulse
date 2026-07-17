@@ -6,16 +6,16 @@
 
 `gps/internal/septentrio/sbf.go:144`
 
-`FlushNavEpoch` clears `curEpochMsg` but deliberately retains
-`curEpochValid`, `curTOW`, and `curWNc`. If `EndOfPVT` flushes a cold-start PVT
-epoch whose `(TOW, WNc)` key is DNU, the next PVT-family block with the same
-documented DNU key does not enter the initialization branch in `navEpoch`.
-`navEpoch` therefore returns the nil `curEpochMsg`, which `qualityPVT` and the
-covariance converters immediately dereference. Two consecutive cold-start
-epochs with DNU header timestamps can consequently panic the processor.
+`FlushNavEpoch` clears `curEpoch.msg` but deliberately retains `curEpoch` and
+its timestamp. If `EndOfPVT` flushes a cold-start PVT epoch whose `(TOW, WNc)`
+key is DNU, the next PVT-family block with the same documented DNU key does not
+enter the initialization branch in `navEpoch`. `navEpoch` therefore returns
+the nil `curEpoch.msg`, which `qualityPVT` and the covariance converters
+immediately dereference. Two consecutive cold-start epochs with DNU header
+timestamps can consequently panic the processor.
 
-Reinitialize when `curEpochMsg == nil`, independently of whether the retained
-key compares equal.
+Reinitialize when `curEpoch.msg == nil`, independently of whether the retained
+timestamp compares equal.
 
 ### 2. ReceiverTime's ReadDelay is a full epoch stale
 

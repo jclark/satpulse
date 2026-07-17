@@ -9,22 +9,22 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
-func pvtGeoBlock(tow uint32, wnc uint16, ts sbfbin.TimeSystem, rxClkBias float64) *sbfbin.Block {
+func pvtGeoBlock(ts sbfbin.TimeStamp, sys sbfbin.TimeSystem, rxClkBias float64) *sbfbin.Block {
 	var m sbfbin.PVTGeodetic
 	m.Mode = sbfbin.ModeStandalone
-	m.TimeSystem = ts
+	m.TimeSystem = sys
 	m.RxClkBias = rxClkBias
-	return &sbfbin.Block{TimeStamp: sbfbin.TimeStamp{TOW: tow, WNc: wnc}, Params: &m}
+	return &sbfbin.Block{TimeStamp: ts, Params: &m}
 }
 
 // TestTimePVTAlwaysGPSHeader confirms the header timestamp is on the GPS
 // convention regardless of TimeSystem: BeiDou and GPS must yield identical
 // TAITime (only the GNSS label differs), never a whole-second BeiDou offset.
 func TestTimePVTAlwaysGPSHeader(t *testing.T) {
-	const tow, wnc = 465357000, uint16(2425)
 	bias := -0.3957389614621168
-	bg := pvtGeoBlock(tow, wnc, sbfbin.TimeSystemGPS, bias)
-	bb := pvtGeoBlock(tow, wnc, sbfbin.TimeSystemBeiDou, bias)
+	ts := sbfbin.TimeStamp{TOW: 465357000, WNc: 2425}
+	bg := pvtGeoBlock(ts, sbfbin.TimeSystemGPS, bias)
+	bb := pvtGeoBlock(ts, sbfbin.TimeSystemBeiDou, bias)
 	gps := timePVTGeodetic(bg, bg.Params.(*sbfbin.PVTGeodetic))
 	bds := timePVTGeodetic(bb, bb.Params.(*sbfbin.PVTGeodetic))
 	if gps == nil || bds == nil {
@@ -33,7 +33,7 @@ func TestTimePVTAlwaysGPSHeader(t *testing.T) {
 	if gps.TAITime != bds.TAITime {
 		t.Errorf("TAITime differs by TimeSystem: GPS=%v BDS=%v", gps.TAITime, bds.TAITime)
 	}
-	want := ptime.GPS(int16(wnc), tow*time.Millisecond).Add(-time.Duration(bias * float64(time.Millisecond)))
+	want := ptime.GPS(int16(ts.WNc), time.Duration(ts.TOW)*time.Millisecond).Add(-time.Duration(bias * float64(time.Millisecond)))
 	if gps.TAITime != want {
 		t.Errorf("TAITime = %v, want %v", gps.TAITime, want)
 	}
@@ -48,14 +48,15 @@ func TestTimePVTAlwaysGPSHeader(t *testing.T) {
 // TestTimePVTGating suppresses TimeMsg on DNU RxClkBias and on unmapped time
 // systems (GLONASS/unassigned).
 func TestTimePVTGating(t *testing.T) {
-	if tm := timePVTGeodetic(pvtGeoBlock(1000, 2425, sbfbin.TimeSystemGPS, sbfbin.PVTClockDNU),
-		pvtGeoBlock(1000, 2425, sbfbin.TimeSystemGPS, sbfbin.PVTClockDNU).Params.(*sbfbin.PVTGeodetic)); tm != nil {
+	ts := sbfbin.TimeStamp{TOW: 1000, WNc: 2425}
+	if tm := timePVTGeodetic(pvtGeoBlock(ts, sbfbin.TimeSystemGPS, sbfbin.PVTClockDNU),
+		pvtGeoBlock(ts, sbfbin.TimeSystemGPS, sbfbin.PVTClockDNU).Params.(*sbfbin.PVTGeodetic)); tm != nil {
 		t.Error("DNU RxClkBias should suppress TimeMsg")
 	}
-	for _, ts := range []sbfbin.TimeSystem{sbfbin.TimeSystemGLONASS, sbfbin.TimeSystemReserved2, sbfbin.TimeSystemDNU} {
-		b := pvtGeoBlock(1000, 2425, ts, 0)
+	for _, sys := range []sbfbin.TimeSystem{sbfbin.TimeSystemGLONASS, sbfbin.TimeSystemReserved2, sbfbin.TimeSystemDNU} {
+		b := pvtGeoBlock(ts, sys, 0)
 		if tm := timePVTGeodetic(b, b.Params.(*sbfbin.PVTGeodetic)); tm != nil {
-			t.Errorf("TimeSystem %d should suppress TimeMsg", ts)
+			t.Errorf("TimeSystem %d should suppress TimeMsg", sys)
 		}
 	}
 }

@@ -142,10 +142,11 @@ raw bytes --scan(PacketFormat)--> gpsprot.Packet
 ### 4.1 Epoch key and what an epoch carries
 
 Every SBF block header carries `(TOW, WNc)` on the GPS convention
-(section 5.1), so a navigation epoch is identified by that key. The
-`PacketProcessor` holds one accumulating `*gpsprot.NavEpochMsg`
-(`p.curEpochMsg`) plus the current epoch key; the first block whose
-`(TOW, WNc)` differs from the current key begins a new epoch.
+(section 5.1), represented by `sbfbin.TimeStamp`, so a navigation epoch
+is identified by that key. The `PacketProcessor` holds the current key,
+accumulating `*gpsprot.NavEpochMsg`, and start time in `p.curEpoch`; the
+first block whose timestamp differs from the current key begins a new
+epoch.
 
 `NavEpochMsg` is built **only from the PVT-family blocks**
 (`PVTGeodetic`/`PVTCartesian`, `DOP`, and the covariance blocks
@@ -380,7 +381,7 @@ section 5.1). `Ref = PostPulse`. `NativeMsgID = "xPPSOffset"`.
 analogous to u-blox's `NAV-TIMEGPS.tAcc`); leave it zero for every
 Septentrio-derived `TimeMsg`. `ReadDelay` is set by the
 `PacketProcessor` framework, not per block:
-`tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curEpochStart))`,
+`tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curEpoch.start))`,
 matching every other protocol's `ReadDelay` assignment.
 
 ### 5.4 Sync-state gating (`SyncLevel`, `FINETIME`)
@@ -510,7 +511,7 @@ any Msg in this codebase; log via `NativeMsgHandler` only if wanted.
 ## 8. NavEpochMsg
 
 `NavEpochMsg` is an accumulator held per-epoch by the
-`PacketProcessor` (`p.curEpochMsg`, section 4), updated as a side
+`PacketProcessor` (`p.curEpoch.msg`, section 4), updated as a side
 effect by whichever block-specific conversion function fires each
 epoch, and dispatched once at flush via `FlushNavEpoch`. No single SBF
 block supplies it end to end -- expected, and matching every other

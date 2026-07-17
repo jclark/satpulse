@@ -13,6 +13,12 @@ var (
 	_ gpsprot.EpochFlusher    = (*PacketProcessor)(nil)
 )
 
+type navEpochState struct {
+	ts    sbfbin.TimeStamp
+	msg   *gpsprot.NavEpochMsg
+	start time.Time
+}
+
 // PacketProcessor implements gpsprot.PacketProcessor and gpsprot.EpochFlusher
 // for Septentrio SBF packets. It parses each packet via sbfbin.ParseMsg,
 // converts recognized blocks into gpsprot.Msg values, accumulates one
@@ -24,11 +30,7 @@ type PacketProcessor struct {
 	mgr *gpsprot.NavEpochManager
 
 	// PVT-family navigation epoch, keyed by the (TOW, WNc) block header.
-	curEpochValid bool
-	curTOW        uint32
-	curWNc        uint16
-	curEpochMsg   *gpsprot.NavEpochMsg
-	curEpochStart time.Time
+	curEpoch *navEpochState
 
 	// Independent SatellitesMsg stream: ChannelStatus emits satellites, and
 	// the latest MeasEpoch supplies optional signal-strength enrichment once.
@@ -142,18 +144,14 @@ func (p *PacketProcessor) Dispatch(b *sbfbin.Block, tRead time.Time) bool {
 }
 
 // navEpoch returns the accumulating NavEpochMsg for the epoch identified by
-// ts, starting a new epoch (and flushing the previous one) when the (TOW, WNc)
-// key changes.
+// ts, starting a new epoch (and flushing the previous one) when the timestamp
+// changes.
 func (p *PacketProcessor) navEpoch(ts sbfbin.TimeStamp, tRead time.Time) *gpsprot.NavEpochMsg {
-	if !p.curEpochValid || ts.TOW != p.curTOW || ts.WNc != p.curWNc {
+	if p.curEpoch == nil || p.curEpoch.ts != ts {
 		p.mgr.EpochStarted(p, tRead)
-		p.curEpochValid = true
-		p.curTOW = ts.TOW
-		p.curWNc = ts.WNc
-		p.curEpochMsg = &gpsprot.NavEpochMsg{}
-		p.curEpochStart = tRead
+		p.curEpoch = &navEpochState{ts: ts, msg: &gpsprot.NavEpochMsg{}, start: tRead}
 	}
-	return p.curEpochMsg
+	return p.curEpoch.msg
 }
 
 // FlushNavEpoch implements gpsprot.EpochFlusher. It returns the accumulated
@@ -161,8 +159,11 @@ func (p *PacketProcessor) navEpoch(ts sbfbin.TimeStamp, tRead time.Time) *gpspro
 // and is not flushed here). The epoch key is retained so the next PVT block's
 // key change is detected.
 func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
-	msg := p.curEpochMsg
-	p.curEpochMsg = nil
+	var msg *gpsprot.NavEpochMsg
+	if p.curEpoch != nil {
+		msg = p.curEpoch.msg
+		p.curEpoch.msg = nil
+	}
 	if msg != nil {
 		msg.Tag = Tag
 	}
@@ -200,8 +201,8 @@ func (p *PacketProcessor) emitTime(tm *gpsprot.TimeMsg, tRead time.Time) {
 		return
 	}
 	tm.Tag = Tag
-	if tm.Ref == gpsprot.NavSolution && p.curEpochValid {
-		tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curEpochStart))
+	if tm.Ref == gpsprot.NavSolution && p.curEpoch != nil {
+		tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curEpoch.start))
 	}
 	p.mh.Time(tm, tRead)
 }
