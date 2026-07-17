@@ -580,31 +580,28 @@ const (
 )
 
 type SatellitesMsg struct {
-	Tag          Tag                   `json:"tag,omitempty"`
-	NativeMsgID  string                `json:"nativeMsgID,omitempty"`
-	SVs          []SVInfo              `json:"info"`                   // satellites being tracked
-	UsedValidity SatelliteUsedValidity `json:"usedValidity,omitempty"` // says whether Used fields in SVInfo and SignalInfo are valid
+	Tag         Tag      `json:"tag,omitempty"`
+	NativeMsgID string   `json:"nativeMsgID,omitempty"`
+	SVs         []SVInfo `json:"info,omitempty"` // satellites being tracked
+	// UsedValidity says whether Used fields in SVInfo and SignalInfo are valid.
+	// Whenever it is not SatelliteUsedInvalid, SVInfo.Used is authoritative: a used SV
+	// need not carry any SignalInfo entry saying so, because signal detail can be
+	// incomplete or absent (e.g. UBX-NAV-SAT reports a used SV whose L1 signal is below
+	// the quality threshold). SatelliteUsedSignal adds per-signal Used on top of
+	// SVInfo.Used; it does not narrow it.
+	UsedValidity SatelliteUsedValidity `json:"usedValidity,omitempty"`
 }
 
 // GNSSUsed returns the set of GNSS constellations used in the solution.
 // Returns zero when UsedValidity is SatelliteUsedInvalid.
 func (msg *SatellitesMsg) GNSSUsed() GNSSSet {
 	var gs GNSSSet
-	switch msg.UsedValidity {
-	case SatelliteUsedSignal:
-		for _, sv := range msg.SVs {
-			for _, sig := range sv.Signals {
-				if sig.Used {
-					gs |= GNSSSetOf(sv.ID.GNSS)
-					break
-				}
-			}
-		}
-	case SatelliteUsedSV:
-		for _, sv := range msg.SVs {
-			if sv.Used {
-				gs |= GNSSSetOf(sv.ID.GNSS)
-			}
+	if msg.UsedValidity == SatelliteUsedInvalid {
+		return gs
+	}
+	for _, sv := range msg.SVs {
+		if sv.Used {
+			gs |= GNSSSetOf(sv.ID.GNSS)
 		}
 	}
 	return gs
@@ -612,6 +609,8 @@ func (msg *SatellitesMsg) GNSSUsed() GNSSSet {
 
 // BandsUsed returns the set of frequency bands used in the solution.
 // Returns zero when UsedValidity is SatelliteUsedInvalid.
+// Unlike GNSSUsed, this stays signal-level under SatelliteUsedSignal: a used SV
+// with no signal detail contributes no band rather than all the bands it tracks.
 func (msg *SatellitesMsg) BandsUsed() Band {
 	var b Band
 	switch msg.UsedValidity {

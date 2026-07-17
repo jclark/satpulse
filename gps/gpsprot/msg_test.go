@@ -1341,6 +1341,36 @@ func TestUnmarshalMsg(t *testing.T) {
 	}
 }
 
+// TestSatellitesUsedSignalNoSignals covers a SatelliteUsedSignal message where a used
+// SV carries no signal detail (e.g. UBX-NAV-SAT with L1 below the quality threshold).
+// GNSSUsed must still report its constellation, while BandsUsed stays signal-level and
+// must not invent a band for it.
+func TestSatellitesUsedSignalNoSignals(t *testing.T) {
+	msg := &SatellitesMsg{
+		UsedValidity: SatelliteUsedSignal,
+		SVs: []SVInfo{
+			{
+				ID:   SVID{GNSS: GPS, Num: 1},
+				Used: true,
+			},
+			{
+				ID:   SVID{GNSS: GAL, Num: 7},
+				Used: true,
+				Signals: []SignalInfo{
+					{ID: SigIDGALE1, CN0: 40, Used: true},
+					{ID: SigIDGALE5a, CN0: 35, Used: false},
+				},
+			},
+		},
+	}
+	if got, expect := msg.GNSSUsed(), GNSSSetOf(GPS)|GNSSSetOf(GAL); got != expect {
+		t.Errorf("GNSSUsed() = %v, expected %v", got, expect)
+	}
+	if got, expect := msg.BandsUsed(), BandL1; got != expect {
+		t.Errorf("BandsUsed() = %v, expected %v", got, expect)
+	}
+}
+
 func TestEventMarshal(t *testing.T) {
 	msg := &PosGeoMsg{
 		LatLon: [2]Angle{47 * Degrees, 8 * Degrees},

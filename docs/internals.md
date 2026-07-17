@@ -84,6 +84,8 @@ These packages implement the `gpsprot` interface for specific protocols. They ar
 
 `gps/internal/spartn` implements `gps/gpsprot` abstractions for the SPARTN protocol. It uses `gps/lib/spartnbin` for field extraction.
 
+`gps/internal/septentrio` implements `gps/gpsprot` abstractions for the Septentrio SBF protocol. It uses `gps/lib/sbfbin` to frame and parse SBF blocks.
+
 `gps/internal/casic` implements `gps/gpsprot` abstractions for the CASIC binary protocol, including the configuration protocol for CASIC receivers. It uses `gps/lib/casbin` and `gps/lib/casmsg` to do this.
 
 `gps/internal/unc` implements `gps/gpsprot` abstractions for the Unicore protocol. It uses `gps/lib/uncmsg` to parse Unicore binary and ASCII message formats.
@@ -119,6 +121,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 `gps/lib/rtcmbin` parses and serializes RTCM binary packets using `gps/lib/bitsenc`, including message types 1005/1006, 1230, and MSM. It also provides MSM7-to-MSM4 conversion.
 
 `gps/lib/spartnbin` parses the SPARTN transport frame envelope and computes its CRCs using `gps/lib/bitsenc`, returning the (possibly encrypted) message payload as opaque bytes.
+
+`gps/lib/sbfbin` translates binary blocks in the Septentrio SBF protocol to and from Go structs.
 
 `gps/lib/rinex` defines an intermediate, RINEX-adjacent representation of observation data as JSON-serializable Go types, and reads and writes it as RINEX observation files.
 
@@ -266,7 +270,7 @@ These hold the web frontend source. They are not Go packages: they are built wit
 
 ### webui/
 
-`webui/` is the npm workspace holding the web frontend source (TypeScript, Preact, Tailwind). It has three packages, bundled by Vite with content hashing disabled so the embedded filenames stay `app.js` and `style.css`. `@satpulse/dashboard` (`packages/dashboard`) is the satpulsed web dashboard app. `@satpulse/workbench` (`packages/workbench`) holds the SatPulse Workbench components and app, originally the desktop GUI frontend; its `src/transport.ts` defines the transport interface the components talk to their backend through -- a universal core plus optional connection-management and message-file capabilities. `@satpulse/workbench-http` (`packages/workbench-http`) is the satpulsewb entry point: token handling plus the fetch+SSE transport implementation; its build output is embedded by `cmd/satpulsewb`. The workspace imports GPS wire types from `@satpulse/gps` (`gps/ts`).
+`webui/` is the npm workspace holding the web frontend source (TypeScript, Preact, Tailwind). Three of its packages are bundled by Vite with content hashing disabled so the embedded filenames stay `app.js` and `style.css`. `@satpulse/dashboard` (`packages/dashboard`) is the satpulsed web dashboard app. `@satpulse/workbench` (`packages/workbench`) holds the SatPulse Workbench components and app, originally the desktop GUI frontend; its `src/transport.ts` defines the transport interface the components talk to their backend through -- a universal core plus optional connection-management and message-file capabilities. `@satpulse/workbench-http` (`packages/workbench-http`) is the satpulsewb entry point: token handling plus the fetch+SSE transport implementation; its build output is embedded by `cmd/satpulsewb`. `@satpulse/e2e` (`packages/e2e`) is the Playwright browser-test suite for the two embedded frontends; it builds nothing, launching the real `satpulsed`/`satpulsewb` binaries from `out/<arch>` and driving them with the smoketest's hardware-free packet sources (a FIFO packet-log replay, the `satpulsetool ubxsim` simulator). Its `harness.ts` provides the launch fixtures, and its two Playwright projects (`dashboard`, `workbench`) mirror the two frontends; it has no `test` script, so `npm test` does not run it (the runner is `npm run e2e`). The workspace imports GPS wire types from `@satpulse/gps` (`gps/ts`).
 
 ## Test harnesses
 

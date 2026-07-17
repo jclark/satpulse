@@ -56,7 +56,7 @@ func compareSyntaxFlags(t *testing.T, description, packet string, got, expected 
 		name string
 	}{
 		{SentenceIsPacket, "SentenceIsPacket"},
-		{SentenceAddressLength5, "SentenceAddressLength5"},
+		{SentenceApprovedAddressFormat, "SentenceApprovedAddressFormat"},
 		{SentenceProprietaryAddressFormat, "SentenceProprietaryAddressFormat"},
 		{SentenceTalkerIsGP, "SentenceTalkerIsGP"},
 		{SentenceTalkerIsGL, "SentenceTalkerIsGL"},
@@ -99,6 +99,31 @@ func TestSyntaxFlagMethods(t *testing.T) {
 	t.Log("SentenceSyntaxFlags methods verified")
 }
 
+func TestClassificationMethods(t *testing.T) {
+	cases := []struct {
+		packet                    string
+		approved, gnss, propriety bool
+	}{
+		{"$GPGGA,123*5A\r\n", true, true, false},
+		{"$XXTXT,123*5A\r\n", true, false, false},   // approved, unregistered talker
+		{"$PUBX,41,1*25\r\n", false, false, true},   // proprietary
+		{"$PUBX1,data*5A\r\n", false, false, true},  // 5-char P address: proprietary, not approved
+		{"$P1234,data*5A\r\n", false, false, false}, // P + digits: neither approved nor proprietary
+	}
+	for _, tt := range cases {
+		f := CheckSyntax(tt.packet)
+		if got := f.IsValidApprovedNMEA(); got != tt.approved {
+			t.Errorf("IsValidApprovedNMEA(%q) = %v, want %v", tt.packet, got, tt.approved)
+		}
+		if got := f.IsValidGNSSTalkerNMEA(); got != tt.gnss {
+			t.Errorf("IsValidGNSSTalkerNMEA(%q) = %v, want %v", tt.packet, got, tt.gnss)
+		}
+		if got := f.IsValidProprietaryNMEA(); got != tt.propriety {
+			t.Errorf("IsValidProprietaryNMEA(%q) = %v, want %v", tt.packet, got, tt.propriety)
+		}
+	}
+}
+
 // checkSyntaxReference is a reference implementation that prioritizes correctness over performance
 func checkSyntaxReference(data string) SentenceSyntaxFlags {
 	var flags SentenceSyntaxFlags
@@ -108,24 +133,29 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 
 	// Constraint 2: Terminated with line terminator (CR/LF or LF)
 	var lineTerminatorIndex int
+	var endsWithCRLF bool
 	if strings.HasSuffix(data, "\r\n") {
 		lineTerminatorIndex = len(data) - 2
+		endsWithCRLF = true
 	} else if strings.HasSuffix(data, "\n") {
 		lineTerminatorIndex = len(data) - 1
 	} else {
 		return 0
 	}
 
-	// Constraint 4: Total length ≤ SentenceMaxLength characters (including line terminator)
-	if len(data) > SentenceMaxLength {
+	// Constraint 4: Total length including a canonical CRLF is at most SentenceMaxLength characters
+	if len(data) > SentenceMaxLength || (!endsWithCRLF && len(data) == SentenceMaxLength) {
 		return 0
 	}
 
 	// Constraint 1: First character is `$` and no other `$` characters
-	if len(data) < 1 || data[0] != '$' {
+	if len(data) < 3 || data[0] != '$' {
 		return 0
 	}
 	if strings.Count(data, "$") != 1 {
+		return 0
+	}
+	if !ascii.IsAlnum(data[1]) || !ascii.IsAlnum(data[2]) {
 		return 0
 	}
 
@@ -177,14 +207,15 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 	// ===== ADDRESS AND DATA VALIDATION =====
 	// Address already extracted in constraint 6
 
-	// SentenceAddressLength5: Address is exactly 5 uppercase alphanumeric chars
-	if len(address) == 5 && isUpperAlphanumeric(address) {
-		flags |= SentenceAddressLength5
+	// SentenceApprovedAddressFormat: Address is exactly 5 uppercase alphanumeric chars, not starting with P
+	if len(address) == 5 && isUpperAlphanumeric(address) && address[0] != 'P' {
+		flags |= SentenceApprovedAddressFormat
 	}
 
 	// ===== PROPRIETARY FORMAT VALIDATION =====
-	// SentenceProprietaryAddressFormat: Address starts with P + 3+ uppercase alphanumeric chars
-	if len(address) >= 4 && address[0] == 'P' && isUpperAlphanumeric(address[1:]) {
+	// SentenceProprietaryAddressFormat: Address starts with P + 3 ASCII letters
+	if len(address) >= 4 && address[0] == 'P' &&
+		ascii.IsLetter(address[1]) && ascii.IsLetter(address[2]) && ascii.IsLetter(address[3]) {
 		flags |= SentenceProprietaryAddressFormat
 	}
 

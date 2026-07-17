@@ -24,31 +24,77 @@ type navEngine struct {
 	epochs [][]Pkt
 	w      *writer
 	lg     *slog.Logger
+	reboot chan struct{}
 }
 
 func (n *navEngine) run(ctx context.Context) {
 	if len(n.epochs) == 0 {
-		// No message bank: the receiver is silent, as with no antenna.
+		// No message bank: the receiver is silent, as with no antenna. It
+		// still drains reboot signals so restart never blocks.
+		for n.idle(ctx) {
+		}
 		return
 	}
+	for n.replay(ctx) {
+		// replay returned on a reboot: restart the bank from the top.
+	}
+}
+
+// restart signals the replay loop to reboot, restarting the bank from
+// the first epoch. The send is non-blocking, so a reboot arriving while
+// one is already pending collapses into it: a real receiver reboots
+// once, not once per queued request.
+func (n *navEngine) restart() {
+	select {
+	case n.reboot <- struct{}{}:
+	default:
+	}
+}
+
+// replay emits the enabled bank once, epoch by epoch, pacing to the nav
+// rate. It returns true when a reboot interrupts it (the caller restarts
+// the bank) and false when the context is cancelled, the writer fails,
+// or the bank runs out with no reboot pending.
+func (n *navEngine) replay(ctx context.Context) bool {
+	// The whole run is stamped with the generation live at its start, so
+	// when a reboot interrupts an epoch mid-burst the rest of that burst is
+	// dropped by the writer with the queue, instead of being stamped
+	// current and preceding the restarted epoch 0.
+	gen := n.w.generation()
 	next := time.Now()
-	for i := 0; ; i++ {
-		if i >= len(n.epochs) {
-			n.lg.Warn("nav replay bank exhausted", "epochs", len(n.epochs))
-			return
-		}
+	for i := 0; i < len(n.epochs); i++ {
 		for _, pkt := range n.epochs[i] {
 			if !n.enabled(pkt) {
 				continue
 			}
-			if err := n.w.send(ctx, pkt.Data); err != nil {
-				return
+			if err := n.w.sendGen(ctx, gen, pkt.Data); err != nil {
+				return false
 			}
 		}
 		next = next.Add(n.epochPeriod())
-		if !sleepCtx(ctx, time.Until(next)) {
-			return
+		reboot, ok := n.sleep(ctx, time.Until(next))
+		if reboot {
+			return true
 		}
+		if !ok {
+			return false
+		}
+	}
+	n.lg.Warn("nav replay bank exhausted", "epochs", len(n.epochs))
+	// Stay alive rather than exit, so a reboot after exhaustion restarts
+	// the replay and the simulator keeps serving.
+	return n.idle(ctx)
+}
+
+// idle blocks with no output until a reboot signal (returns true) or
+// context cancellation (returns false), modelling a receiver that is
+// alive but emitting nothing.
+func (n *navEngine) idle(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-n.reboot:
+		return true
 	}
 }
 
@@ -75,18 +121,28 @@ func (n *navEngine) epochPeriod() time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
-// sleepCtx sleeps for d and reports true, or reports false if ctx is
-// done first.
-func sleepCtx(ctx context.Context, d time.Duration) bool {
+// sleep waits until the next epoch tick, a reboot, or context
+// cancellation. It reports whether a reboot arrived and, absent one,
+// whether the sleep completed (ok false means the context was
+// cancelled). A pending reboot is taken first so a ready timer never
+// starves it.
+func (n *navEngine) sleep(ctx context.Context, d time.Duration) (reboot, ok bool) {
+	select {
+	case <-n.reboot:
+		return true, false
+	default:
+	}
 	if d <= 0 {
-		return ctx.Err() == nil
+		return false, ctx.Err() == nil
 	}
 	t := time.NewTimer(d)
 	defer t.Stop()
 	select {
 	case <-ctx.Done():
-		return false
+		return false, false
+	case <-n.reboot:
+		return true, false
 	case <-t.C:
-		return true
+		return false, true
 	}
 }

@@ -9,7 +9,7 @@ function fmtDeg(deg: number, digits: number): string {
     return deg.toFixed(digits);
 }
 
-type CorrState = 'stopped' | 'connecting' | 'connected' | 'reconnecting';
+type CorrState = 'stopped' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
 type CorrMode = 'tcp' | 'ntrip';
 
 interface CorrEvent {
@@ -89,7 +89,7 @@ export function CorrectionsPanel({connState, readOnly}: Props) {
 
     const applyCorrEvent = useCallback((evt: CorrEvent) => {
         setCorrState(evt.state);
-        setCorrError(evt.state === 'reconnecting' && evt.error ? evt.error : '');
+        setCorrError((evt.state === 'reconnecting' || evt.state === 'failed') && evt.error ? evt.error : '');
         if (evt.state === 'stopped') {
             if (pendingRef.current !== null) setPendingSync(null);
         } else if (pendingRef.current === 'start') {
@@ -133,7 +133,7 @@ export function CorrectionsPanel({connState, readOnly}: Props) {
     }, [connected, setPendingSync]);
 
     const synced = !connected || corrState !== null;
-    const running = corrState !== null && corrState !== 'stopped';
+    const running = corrState === 'connecting' || corrState === 'connected' || corrState === 'reconnecting';
     const portNum = parseInt(port, 10);
     const portOk = !isNaN(portNum) && portNum > 0 && portNum <= 65535;
     const hostOk = !!host.trim();
@@ -159,6 +159,7 @@ export function CorrectionsPanel({connState, readOnly}: Props) {
         } else {
             if (!canStart) return;
             setPendingSync('start');
+            setCorrState('connecting');
             setCorrError('');
             setSessionSeq(s => s + 1);
             try {
@@ -173,6 +174,7 @@ export function CorrectionsPanel({connState, readOnly}: Props) {
                 });
             } catch (e) {
                 setPendingSync(null);
+                setCorrState('failed');
                 if (e instanceof Error && e.message) setCorrError(e.message);
             }
         }
@@ -185,7 +187,7 @@ export function CorrectionsPanel({connState, readOnly}: Props) {
 
     let dotClass = 'bg-text-muted';
     if (corrState === 'connected') dotClass = 'bg-success';
-    else if (corrState === 'reconnecting') dotClass = 'bg-danger';
+    else if (corrState === 'reconnecting' || corrState === 'failed') dotClass = 'bg-danger';
     else if (corrState === 'connecting') dotClass = 'bg-warning';
 
     let statusText = '';
@@ -193,6 +195,9 @@ export function CorrectionsPanel({connState, readOnly}: Props) {
     if (corrState === 'reconnecting') {
         statusText = `Reconnecting: ${corrError || 'connection lost'}`;
         statusClass = 'text-warning';
+    } else if (corrState === 'failed') {
+        statusText = `Failed: ${corrError || 'connection failed'}`;
+        statusClass = 'text-danger';
     } else if (corrError) {
         statusText = corrError;
         statusClass = 'text-danger';

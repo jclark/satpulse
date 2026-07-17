@@ -443,7 +443,7 @@ type Opener interface {
 	// speed, or 0 if the transport has none.
 	Open(ctx context.Context) (conn gpsio.Conn, speed int, err error)
 	// Socket reports a proxy connection: sets ConfigOptions.Socket
-	// for gpscfg.Configure and gates reset operations in the UI.
+	// for gpscfg.Configure.
 	Socket() bool
 }
 
@@ -840,12 +840,12 @@ func (s *Session) disconnect(gen int) {
 
 // CorrEvent is the payload for "gps:corrections" events.
 type CorrEvent struct {
-	State      string `json:"state"`          // "connecting", "connected", "reconnecting", "stopped"
+	State      string `json:"state"`          // "connecting", "connected", "reconnecting", "failed", "stopped"
 	Mode       string `json:"mode,omitempty"` // "tcp" or "ntrip"
 	Host       string `json:"host,omitempty"`
 	Port       int    `json:"port,omitempty"`
 	Mountpoint string `json:"mountpoint,omitempty"` // ntrip only
-	Error      string `json:"error,omitempty"`      // last error (set during reconnecting)
+	Error      string `json:"error,omitempty"`      // last error (set during reconnecting or failed)
 }
 
 func (s *Session) setCorrStateLocked(ev CorrEvent) {
@@ -995,6 +995,7 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 		Port:       cfg.Port,
 		Mountpoint: cfg.Mountpoint,
 	})
+	var failed atomic.Bool
 	onState := func(st stream.State, err error) {
 		ev := CorrEvent{
 			State:      st.String(),
@@ -1005,6 +1006,9 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 		}
 		if err != nil {
 			ev.Error = err.Error()
+		}
+		if st == stream.Failed {
+			failed.Store(true)
 		}
 		s.emitCorrState(ev)
 	}
@@ -1023,6 +1027,9 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	})
 	wg.Go(func() {
 		sink.Run(corrCtx, selectedGGA, onState)
+		if failed.Load() {
+			return
+		}
 		s.emitCorrState(CorrEvent{
 			State:      "stopped",
 			Mode:       cfg.Mode,
@@ -1174,10 +1181,7 @@ func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) 
 // operation: it requires StateConnected, holds the
 // port as StateConfiguring until the run completes, and returns an
 // error if the session is not connected or another operation is in
-// progress. Reset operations are refused over a proxy connection: a
-// reset would kill the daemon that owns the port, and its restart
-// would reapply the daemon's own configuration on top of the
-// session's.
+// progress.
 func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget) error {
 	target.Props.ClearReadOnlyProps()
 	s.mu.Lock()
@@ -1185,10 +1189,6 @@ func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget)
 		err := s.stateErrLocked()
 		s.mu.Unlock()
 		return err
-	}
-	if target.Opts.Reset != gpsprot.ResetNone && s.op.Socket() {
-		s.mu.Unlock()
-		return fmt.Errorf("reset operations are not available over a proxy connection")
 	}
 	s.cancelWorkerLocked()
 	runCtx := s.runCtx
