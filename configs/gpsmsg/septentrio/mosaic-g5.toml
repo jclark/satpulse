@@ -15,6 +15,48 @@ src = "mosaic.toml"
 [default.line]
 responsePattern = "septentrio"
 
+# Galileo OSNMA
+#
+# mosaic-G5 can apply Galileo Open Service Navigation Message Authentication
+# at the PVT and measurement levels. Loose mode rejects a satellite only after
+# an authentication failure; unlike strict mode, it does not require an
+# independent time source. The live Galileo Merkle-tree root and public keys
+# are built into the receiver, so the configuration leaves MTRoot empty.
+
+# Verified on mosaic-G5: reports the factory setting loose, "", off.
+[[line]]
+tag = "get-osnma"
+text = "getGalOSNMAUsage"
+description = "Query Galileo OSNMA authentication settings"
+
+# Verified on mosaic-G5: returns the applicable built-in and over-the-air
+# Galileo OSNMA public keys.
+[[line]]
+tag = "get-osnma-keys"
+text = "lstGalOSNMAPublicKeys"
+description = "List applicable Galileo OSNMA public keys"
+
+# Verified on mosaic-G5: sets and reads back loose, "", loose.
+[[line]]
+tag = "osnma"
+text = "setGalOSNMAUsage, loose, , loose"
+description = "Enable Galileo OSNMA in loose mode for PVT and measurements"
+
+# Verified on mosaic-G5: sets and reads back off, "", off.
+[[line]]
+tag = "osnma-off"
+text = "setGalOSNMAUsage, off, , off"
+description = "Disable Galileo OSNMA filtering"
+
+# User-provided keys are only for simulated signals. Clearing them restores
+# use of the receiver's built-in and over-the-air keys for live Galileo.
+# NOT hardware-tested: the connected receiver has no user-provided simulation
+# keys to clear.
+[[line]]
+tag = "osnma-keys-off"
+text = "setGalOSNMAPublicKeys, all, \"\""
+description = "Clear user-provided Galileo OSNMA public keys"
+
 # PPP (Precise Point Positioning) / Galileo HAS
 #
 # Unlike mosaic-X5 (whose RoverMode enum has no PPP value in the reference

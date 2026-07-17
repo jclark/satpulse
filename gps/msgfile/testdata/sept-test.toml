@@ -23,6 +23,11 @@ text = "login, admin, admin"
 tag = "lst"
 text = "lstAsciiDisplay"
 
+# lst command whose reply ends directly at the real prompt.
+[[line]]
+tag = "lst-help"
+text = "help, grc"
+
 # factoryReset: plain $R: ack with a trailing message after a colon.
 [[line]]
 tag = "factory-reset"

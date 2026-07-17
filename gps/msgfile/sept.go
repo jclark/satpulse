@@ -22,14 +22,20 @@ const septCorrelate = "cmd"
 //   - "$R?" is a nak; the error text is the "<name>: <error text>" remainder,
 //     kept verbatim (there is no reliable way to derive <name> from the
 //     command).
-//   - "$R;" opens an lst reply. It is the positive ack -- the command was
-//     accepted (a rejection is "$R?") -- but the "$--BLOCK" output still
+//   - "$R;" is an lst reply. If it ends in "---->", "$--BLOCK" output still
 //     follows, so it is reported as an ack that keeps the request open
-//     (responseAckMore).
+//     (responseAckMore). If it ends at the real prompt, the reply is complete.
 //   - A "$--BLOCK" section ending in "---->" is an intermediate lst unit,
 //     shown but not correlated (responseInfo). The final "$--BLOCK", ending at
 //     the real prompt, completes the command without a second ack line
 //     (responseDone).
+//
+// The guide is contradictory about the "---->" pseudo-prompt: sec 3.1.3 states
+// that the second line of every lst reply is one, while the "help, Overview" and
+// "lcf, Current" examples show the "$R;" echo followed directly by "$-- BLOCK".
+// A mosaic-G5 emits the pseudo-prompt for both of those examples; "help, grc"
+// emits none and ends at the real prompt with no block. Classifying on the
+// terminator holds either way, and needs no list of which commands produce blocks.
 func analyzeSeptResponse(pkt string) responseAnalysis {
 	if len(pkt) < 3 || pkt[0] != '$' {
 		return responseAnalysis{kind: responseNotData}
@@ -39,6 +45,9 @@ func analyzeSeptResponse(pkt string) responseAnalysis {
 		case ':', '!':
 			return responseAnalysis{kind: responseAck, ackCorrelate: septCorrelate}
 		case ';':
+			if !strings.HasSuffix(pkt, "---->") {
+				return responseAnalysis{kind: responseAck, ackCorrelate: septCorrelate}
+			}
 			return responseAnalysis{kind: responseAckMore, ackCorrelate: septCorrelate}
 		case '?':
 			return responseAnalysis{

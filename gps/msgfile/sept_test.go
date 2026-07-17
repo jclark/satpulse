@@ -64,6 +64,16 @@ func TestCorrelatorSeptentrio(t *testing.T) {
 			},
 		},
 		{
+			name: "lst blockless reply completes at real prompt",
+			tags: []string{"lst-help"},
+			events: []event{
+				sendEvent{},
+				recvSeptReply("$R; help, grc\r\n... Here comes a description of getReceiverCapabilities ...\r\nCOM1>"),
+				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
+		},
+		{
 			name: "lst reply: opener acks, real prompt completes",
 			tags: []string{"lst"},
 			events: []event{
@@ -72,6 +82,7 @@ func TestCorrelatorSeptentrio(t *testing.T) {
 				// command stays open for the "$--BLOCK" output still to come.
 				recvSeptReply("$R; lstAsciiDisplay\r\n---->"),
 				expect{ack: AckAck, relevance: LevelMaybeResponse, msgIndex: intptr(0)},
+				checkMissing{data: []int{0}},
 				checkDone{canAcceptMore: true},
 				// The final "$--BLOCK" section ends at the real prompt: it
 				// completes the command and is shown without a second ack line.
@@ -109,6 +120,23 @@ func TestCorrelatorSeptentrio(t *testing.T) {
 				// The real prompt completed the lst: the next command may send.
 				readyToSend{want: true},
 				sendEvent{},
+				recvSeptReply("$R: setElevationMask, all, 5\r\nElevationMask, all, 5\r\nCOM1>"),
+				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(1)},
+				checkDone{canAcceptMore: false},
+			},
+		},
+		{
+			name: "lst final block ignores following request",
+			tags: []string{"lst", "set-elev"},
+			events: []event{
+				sendEvent{},
+				recvSeptReply("$R; lstAsciiDisplay\r\n---->"),
+				expect{ack: AckAck, relevance: LevelMaybeResponse, msgIndex: intptr(0)},
+				// The sender can proceed after its wait limit while the lst reply
+				// remains open.
+				sendEvent{},
+				recvSeptReply("$-- BLOCK 1 / 1\r\ncontents\r\nCOM1>"),
+				expect{relevance: LevelSoleResponse},
 				recvSeptReply("$R: setElevationMask, all, 5\r\nElevationMask, all, 5\r\nCOM1>"),
 				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(1)},
 				checkDone{canAcceptMore: false},

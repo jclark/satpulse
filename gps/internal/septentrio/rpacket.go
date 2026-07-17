@@ -17,13 +17,16 @@ const TagReply gpsprot.Tag = "SEPTR"
 // that ">" is the "command done" signal, so the reply's arrival marks the
 // completion of the command.
 //
-// An lst command's reply is a succession of units: the "$R;" echo line
-// followed by the "---->" pseudo-prompt, then one or more "$--BLOCK" sections,
-// each intermediate one ending with another "---->" and only the last ending
-// with the real prompt (sec 3.1.3). Each unit frames as its own packet: the
-// format also syncs on "$--" so the "$--BLOCK" sections frame, and a "---->"
-// closes a packet just as a real prompt does. The septAnalyzer stitches the
-// units back together, completing the command only at the real prompt.
+// An lst command's reply that produces block output is a succession of units:
+// the "$R;" echo line followed by the "---->" pseudo-prompt, then one or more
+// "$--BLOCK" sections, each intermediate one ending with another "---->" and
+// only the last ending with the real prompt (sec 3.1.3). Each unit frames as
+// its own packet: the format also syncs on "$--" so the "$--BLOCK" sections
+// frame, and a "---->" closes a packet just as a real prompt does. The
+// septAnalyzer stitches the units back together, completing the command only
+// at the real prompt.
+// A block may contain the exact line "$TD", which introduces the ASCII display
+// returned by lstAsciiDisplay; other dollar signs still end the candidate.
 //
 // The format is checksum-free, modeled on nov.AbbrevAsciiPacketFormat:
 // ExtractChecksum and ComputeChecksum return nil. It syncs on '$' then 'R' (or
@@ -62,14 +65,33 @@ const (
 	// rStateTok4 means a full 4-char token has matched at a line start and
 	// the packet completes if the next byte is '>'.
 	rStateTok4
+	// rStateBlockDollar..rStateBlockTD match the exact "$TD" line allowed
+	// inside a "$--BLOCK" section.
+	rStateBlockDollar
+	rStateBlockT
+	rStateBlockTD
 	// rStateComplete means we have seen the terminating '>'.
 	rStateComplete
 )
 
-// rMaxLength caps the packet length as a backstop against a false match
-// running away in garbage data. Real replies are well under 200 bytes; only
-// the lst pseudo-prompt could run longer, and it frames at its first "---->".
-const rMaxLength = 4096
+const (
+	// rBlockContentMax is the largest content payload the receiver puts in one
+	// "$--BLOCK" section: it chunks long lst output at exactly this size. This
+	// is not in the reference guide; it is measured on a mosaic-G5, where two
+	// lstAsciiDisplay blocks with unrelated content and differing line widths
+	// both stopped at exactly 4000 bytes. It bounds a single reply packet
+	// however long the whole lst reply runs.
+	rBlockContentMax = 4000
+	// rBlockWrapperMax bounds what a block adds around that content: the
+	// "$-- BLOCK n / m C" header line and the "---->" or real-prompt
+	// terminator, about 30 bytes at the largest block numbers seen. It is
+	// rounded well up because rBlockContentMax is observed, not documented.
+	rBlockWrapperMax = 96
+	// rMaxLength caps the packet length as a backstop against a false match
+	// running away in garbage data. It must clear the largest real packet,
+	// which is a full "$--BLOCK" section.
+	rMaxLength = rBlockContentMax + rBlockWrapperMax
+)
 
 func (f replyPacketFormat) Tag() gpsprot.Tag {
 	return TagReply
@@ -111,6 +133,9 @@ func (f replyPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextScanInd
 			return rStateLineStart
 		}
 	case rStateLineStart:
+		if b == '$' && rIsBlock(buf, nextScanIndex, packetLen) {
+			return rStateBlockDollar
+		}
 		if b == '-' {
 			return rStateHy1
 		}
@@ -153,19 +178,37 @@ func (f replyPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextScanInd
 			return rStateComplete
 		}
 		return rReadBody(b)
+	case rStateBlockDollar:
+		if b == 'T' {
+			return rStateBlockT
+		}
+	case rStateBlockT:
+		if b == 'D' {
+			return rStateBlockTD
+		}
+	case rStateBlockTD:
+		if b == '\r' {
+			return rStateCR
+		}
 	}
 	return rStateSync
 }
 
+func rIsBlock(buf []byte, nextScanIndex, packetLen int) bool {
+	i := nextScanIndex - packetLen
+	return packetLen >= 3 && buf[i] == '$' && buf[i+1] == '-' && buf[i+2] == '-'
+}
+
 // rReadBody handles a byte that is not part of a terminator: a CR opens a
 // line break, any other printable non-'$' byte continues the body line, and
-// anything else (a '$', a control or high-bit byte, a lone LF) ends the
-// candidate.
+// anything else (a '$', another control or high-bit byte, a lone LF) ends the
+// candidate. TAB is body: lstMIBDescription indents its BITS enumerations with
+// it.
 func rReadBody(b byte) gpsprot.ScanState {
 	if b == '\r' {
 		return rStateCR
 	}
-	if b != '$' && ascii.IsPrint(b) {
+	if b != '$' && (ascii.IsPrint(b) || b == '\t') {
 		return rStateBody
 	}
 	return rStateSync
