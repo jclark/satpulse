@@ -95,13 +95,13 @@ func (cp *ConfigProtocol) observe(msg interface{}, tRead time.Time) {
 	}
 }
 
-// ProbePacket returns an empty-payload MON-VER poll. State-neutral and
+// ProbePackets returns an empty-payload MON-VER poll. State-neutral and
 // repeatable; a receiver on a healthy line answers within tens of
 // milliseconds, and the default NMEA load is comfortable at the
 // factory 115200 baud, so probing relies on repetition rather than
 // long waits.
-func (cp *ConfigProtocol) ProbePacket() []byte {
-	return asbin.Poll(asbin.MonVerID)
+func (cp *ConfigProtocol) ProbePackets() ([][]byte, time.Duration) {
+	return [][]byte{asbin.Poll(asbin.MonVerID)}, 0
 }
 
 // ProbeOK reports whether an Allystar receiver has been identified.

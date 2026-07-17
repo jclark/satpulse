@@ -252,11 +252,14 @@ func probe(t *testing.T, rcvr *testReceiver) *ConfigProtocol {
 	cp := NewConfigProtocol()
 	pp.SetNativeMsgHandler(cp)
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for _, resp := range rcvr.respond(cp.ProbePacket()) {
-		if _, err := pp.ProcessPacket(string(resp), t0); err != nil {
-			t.Fatalf("ProcessPacket: %v", err)
+	packets, _ := cp.ProbePackets()
+	for _, p := range packets {
+		for _, resp := range rcvr.respond(p) {
+			if _, err := pp.ProcessPacket(string(resp), t0); err != nil {
+				t.Fatalf("ProcessPacket: %v", err)
+			}
+			t0 = t0.Add(5 * time.Millisecond)
 		}
-		t0 = t0.Add(5 * time.Millisecond)
 	}
 	return cp
 }
