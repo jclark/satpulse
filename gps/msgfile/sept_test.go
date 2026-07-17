@@ -82,6 +82,7 @@ func TestCorrelatorSeptentrio(t *testing.T) {
 				// command stays open for the "$--BLOCK" output still to come.
 				recvSeptReply("$R; lstAsciiDisplay\r\n---->"),
 				expect{ack: AckAck, relevance: LevelMaybeResponse, msgIndex: intptr(0)},
+				checkMissing{data: []int{0}},
 				checkDone{canAcceptMore: true},
 				// The final "$--BLOCK" section ends at the real prompt: it
 				// completes the command and is shown without a second ack line.

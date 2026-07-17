@@ -69,6 +69,7 @@ const (
 	ackNotExpected ackStatus = iota // zero value: no ack expected
 	ackWait                         // expecting ack
 	ackWaitMore                     // got responseWait, real ack coming
+	ackSuccessMore                  // got responseAckMore, data coming
 	ackSuccess                      // got responseAck
 	ackFailed                       // got responseNak
 )
@@ -194,7 +195,7 @@ func (c *Correlator) ReadyToSend(rm RawMsg) bool {
 		if c.requestComplete(rs) {
 			continue
 		}
-		if rs.ack != ackWait && rs.ack != ackWaitMore {
+		if rs.ack != ackWait && rs.ack != ackWaitMore && rs.ack != ackSuccessMore {
 			continue
 		}
 		if rs.analysis.ackTag == a.ackTag && rs.analysis.ackCorrelate == a.ackCorrelate {
@@ -236,10 +237,11 @@ func (c *Correlator) correlateAck(tag gpsprot.Tag, ra responseAnalysis) Correlat
 		if c.requestComplete(rs) {
 			continue
 		}
-		if rs.ack != ackWait && rs.ack != ackWaitMore {
-			continue
-		}
-		if ra.kind == responseDone && rs.ack != ackWaitMore {
+		if ra.kind == responseDone {
+			if rs.ack != ackSuccessMore {
+				continue
+			}
+		} else if rs.ack != ackWait && rs.ack != ackWaitMore {
 			continue
 		}
 		if rs.analysis.ackTag != tag {
@@ -289,10 +291,10 @@ func (c *Correlator) correlateAck(tag gpsprot.Tag, ra responseAnalysis) Correlat
 		}
 	case responseAckMore:
 		// Positive ack, reported now, but more output still follows (e.g. an
-		// lst reply's "$--BLOCK" sections). Keep the request open -- via
-		// ackWaitMore -- so the read loop keeps reading and single-flight pacing
-		// holds until the completing packet arrives.
-		rs.ack = ackWaitMore
+		// lst reply's "$--BLOCK" sections). Keep the request open so the read
+		// loop keeps reading and single-flight pacing holds until the completing
+		// packet arrives.
+		rs.ack = ackSuccessMore
 		return Correlation{
 			Ack:          AckAck,
 			InResponseTo: rs.msg,
