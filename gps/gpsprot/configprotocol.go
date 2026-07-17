@@ -17,8 +17,8 @@ type ConfigProtocol interface {
 
 	// ProbePackets returns the ordered write sequence for one logical probe attempt.
 	// The duration is the delay between consecutive writes in that sequence;
-	// no delay is applied after the final write. Implementations must be
-	// stateless; retries send the same sequence again.
+	// no delay is applied after the final write. Every call returns the same
+	// sequence; a retry sends it again.
 	ProbePackets() ([][]byte, time.Duration)
 
 	// ProbeOK returns true when a message has been received indicating the GPS receiver is responding.
