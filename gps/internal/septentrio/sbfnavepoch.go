@@ -59,7 +59,9 @@ func qualityPVT(ne *gpsprot.NavEpochMsg, c pvtCommon, baseID opt.Val[uint16], ba
 	}
 	if rtcmRefBaseCurrent(c) && baseRTCM && baseID.IsSet() {
 		ne.RTCMRefBaseID.Set(baseID.Get())
-	} else if rtcmRefBaseCurrent(c) && c.ReferenceID != sbfbin.PVTReferenceIDDNU && c.ReferenceID != sbfbin.PVTReferenceIDMulti {
+	} else if rtcmRefBaseCurrent(c) && c.ReferenceID <= 4095 {
+		// ReferenceID can identify an RTCMv2, CMR, or RTCMV base, but using an
+		// in-range DGNSS/RTK ID as an RTCMv3 fallback is pragmatically more useful.
 		ne.RTCMRefBaseID.Set(c.ReferenceID)
 	}
 	for i := uint(0); i < 32; i++ {
@@ -75,7 +77,15 @@ func qualityPVT(ne *gpsprot.NavEpochMsg, c pvtCommon, baseID opt.Val[uint16], ba
 
 func rtcmRefBaseCurrent(c pvtCommon) bool {
 	bt := c.WACorrInfo.BaseType()
-	return (bt == sbfbin.WACorrBasePhysical || bt == sbfbin.WACorrBaseVirtual) && !c.Mode.IsSBAS()
+	if bt != sbfbin.WACorrBasePhysical && bt != sbfbin.WACorrBaseVirtual {
+		return false
+	}
+	switch c.Mode.Fix() {
+	case sbfbin.ModeDifferential, sbfbin.ModeRTKFixed, sbfbin.ModeRTKFloat,
+		sbfbin.ModeMovingBaseRTKFixed, sbfbin.ModeMovingBaseRTKFloat:
+		return true
+	}
+	return false
 }
 
 // modeFixLevel derives FixLevel and SolutionDim from the PVT Mode field.

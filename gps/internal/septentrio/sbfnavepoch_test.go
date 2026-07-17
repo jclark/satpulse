@@ -150,8 +150,8 @@ func TestRTCMRefBaseIDPrimaryRequiresCurrentRTCM(t *testing.T) {
 	}
 }
 
-// TestRTCMRefBaseIDFallback uses ReferenceID only when a physical/virtual base
-// applies and it is not a sentinel or SBAS PRN.
+// TestRTCMRefBaseIDFallback uses an in-range DGNSS/RTK ReferenceID only when a
+// physical/virtual base applies.
 func TestRTCMRefBaseIDFallback(t *testing.T) {
 	var g sbfbin.PVTGeodetic
 	g.Mode = sbfbin.ModeRTKFixed
@@ -162,14 +162,25 @@ func TestRTCMRefBaseIDFallback(t *testing.T) {
 	if got := ne.RTCMRefBaseID.Get(); got != 77 {
 		t.Errorf("RTCMRefBaseID = %d, want 77 (ReferenceID fallback)", got)
 	}
-	// SBAS mode must not read ReferenceID as a base ID.
-	var s sbfbin.PVTGeodetic
-	s.Mode = sbfbin.ModeSBAS
-	s.WACorrInfo = sbfbin.WACorrInfo(sbfbin.WACorrBasePhysical << 5)
-	s.ReferenceID = 123
+	g.Mode = sbfbin.ModeDifferential
+	g.ReferenceID = 78
 	var ne2 gpsprot.NavEpochMsg
-	qualityPVT(&ne2, pvtGeodeticCommon(&s), opt.Val[uint16]{}, false)
-	if ne2.RTCMRefBaseID.IsSet() {
-		t.Error("SBAS mode ReferenceID must not become RTCMRefBaseID")
+	qualityPVT(&ne2, pvtGeodeticCommon(&g), opt.Val[uint16]{}, false)
+	if got := ne2.RTCMRefBaseID.Get(); got != 78 {
+		t.Errorf("RTCMRefBaseID = %d, want 78 (DGNSS ReferenceID fallback)", got)
+	}
+	g.Mode = sbfbin.ModeStandalone
+	g.ReferenceID = 123
+	var ne3 gpsprot.NavEpochMsg
+	qualityPVT(&ne3, pvtGeodeticCommon(&g), opt.Val[uint16]{}, false)
+	if ne3.RTCMRefBaseID.IsSet() {
+		t.Error("standalone mode ReferenceID must not become RTCMRefBaseID")
+	}
+	g.Mode = sbfbin.ModeDifferential
+	g.ReferenceID = 4096
+	var ne4 gpsprot.NavEpochMsg
+	qualityPVT(&ne4, pvtGeodeticCommon(&g), opt.Val[uint16]{}, false)
+	if ne4.RTCMRefBaseID.IsSet() {
+		t.Error("out-of-range ReferenceID must not become RTCMRefBaseID")
 	}
 }
