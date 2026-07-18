@@ -12,12 +12,6 @@ When first connecting to a receiver at an unknown baud rate, or after a speed ch
 
 Changing the host speed also requires re-running the receiver probe at the new speed. Without re-probing, the receiver-info display and the Config tab gating stay stuck on whatever the last successful probe found.
 
-## tcp-connect: Allow connecting to a GPS receiver via TCP
-
-The desktop app only supports serial connections (`gpsio.OpenSerial`). Adding TCP support would allow managing a receiver attached to a headless machine via satpulsed's TCP proxy.
-
-The `gpsio.Conn` interface is transport-agnostic, and `NetConn` already handles unix sockets, so adding TCP is straightforward at the connection level. The main complication is inter-packet idle detection: the scanner relies on serial read timeouts to generate `Idle()` calls, which the NMEA satellite buffer uses as its primary flush trigger. Over TCP, timing is unreliable due to network latency and TCP buffering, so `Idle()` cannot be generated reliably. The satellite buffer's fallback (repeated GNSS/signal key detection) would still work but lags one cycle behind.
-
 ## pvt-staleness: Detect and indicate stale PVT message rows
 
 The PVT Messages panel shows position, velocity, and time rows keyed by `nativeMsgID`, but there is no indication when a particular message type stops arriving. Time staleness is somewhat visible because the displayed time stops updating, but stale position or velocity rows look identical to fresh ones. If a receiver stops sending a particular message (e.g. after a configuration change or signal loss), the old values linger indefinitely with no visual cue.
