@@ -97,7 +97,7 @@ func modeFixLevel(mode sbfbin.Mode) (gpsprot.FixLevel, gpsprot.SolutionDim) {
 	case sbfbin.ModeStandalone, sbfbin.ModeDifferential, sbfbin.ModeSBAS:
 		fix = gpsprot.FixLevelCode
 	case sbfbin.ModeFixedLocation:
-		fix = gpsprot.FixLevelNotMeasured
+		return gpsprot.FixLevelCode, gpsprot.SolutionDimTimeOnly
 	case sbfbin.ModeRTKFixed, sbfbin.ModeMovingBaseRTKFixed:
 		fix = gpsprot.FixLevelCarrierFixed
 	case sbfbin.ModeRTKFloat, sbfbin.ModeMovingBaseRTKFloat:

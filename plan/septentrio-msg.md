@@ -532,7 +532,8 @@ case 0:
 case 1, 2, 6: // standalone, SBAS-DGNSS, SBAS-aided
 	ne.FixLevel = gpsprot.FixLevelCode
 case 3:
-	ne.FixLevel = gpsprot.FixLevelNotMeasured // fixed/manual location
+	ne.FixLevel = gpsprot.FixLevelCode
+	ne.SolutionDim = gpsprot.SolutionDimTimeOnly
 case 4, 7: // RTK fixed, moving-base RTK fixed
 	ne.FixLevel = gpsprot.FixLevelCarrierFixed
 case 5, 8: // RTK float, moving-base RTK float
@@ -542,7 +543,7 @@ case 10: // PPP
 default: // 9, 11, 12: reserved
 	ne.FixLevel = gpsprot.FixLevelNone
 }
-if ne.FixLevel >= gpsprot.FixLevelCode {
+if ne.FixLevel >= gpsprot.FixLevelCode && ne.SolutionDim == 0 {
 	ne.SolutionDim = gpsprot.SolutionDim3D
 	if mode&0x80 != 0 { // bit 7: 2D mode
 		ne.SolutionDim = gpsprot.SolutionDim2D
@@ -557,9 +558,9 @@ convergence), so default to the conservative `FixLevelCarrierFloat`
 rather than guessing `FixLevelCarrierFixed`. Moving-base RTK (7/8)
 collapses onto the same `FixLevel` as ordinary RTK (4/5) --
 `gpsprot` has no "moving baseline" concept, a deliberate, not
-accidental, loss. `SolutionDimTimeOnly` has **no SBF source** at all
-(no `Mode` value means "time-only fix"); a receiver solving for clock
-bias alone without position is indistinguishable from `Mode==0`.
+accidental, loss. Fixed-location mode maps to `SolutionDimTimeOnly`:
+the position is held fixed while the receiver solves for clock bias
+from pseudoranges.
 
 ### 8.2 Correction (from WACorrInfo / Mode)
 

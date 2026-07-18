@@ -17,7 +17,7 @@ func TestModeFixLevel(t *testing.T) {
 		{sbfbin.ModeNoPVT, gpsprot.FixLevelNone, 0},
 		{sbfbin.ModeStandalone, gpsprot.FixLevelCode, gpsprot.SolutionDim3D},
 		{sbfbin.ModeDifferential, gpsprot.FixLevelCode, gpsprot.SolutionDim3D},
-		{sbfbin.ModeFixedLocation, gpsprot.FixLevelNotMeasured, 0},
+		{sbfbin.ModeFixedLocation, gpsprot.FixLevelCode, gpsprot.SolutionDimTimeOnly},
 		{sbfbin.ModeRTKFixed, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D},
 		{sbfbin.ModeRTKFloat, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D},
 		{sbfbin.ModeSBAS, gpsprot.FixLevelCode, gpsprot.SolutionDim3D},
