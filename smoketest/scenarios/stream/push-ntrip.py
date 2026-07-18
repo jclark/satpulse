@@ -12,7 +12,7 @@ import common
 from scenarios import stream
 
 PACKET_LOG = "gps/testdata/packets/unicore/UM982/rtcm-eph.jsonl"
-FACTOR = 10
+FACTOR = 5
 
 # The rejected second push entry logs these when it gives up: the writer's
 # "giving up" and the daemon's "gave up" state change. A transient failure
