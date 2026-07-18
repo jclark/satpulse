@@ -28,6 +28,12 @@ interface Props {
     visible: boolean;
     configProps: ConfigProps | null;
     signalCatalog: Record<string, string[]>;
+    // configSupport holds the JSON names of the configuration items the probed
+    // Configurator supports (gpsprot.ConfigSupportFlags); unknown names are
+    // ignored, so gating for not-yet-merged flags can be written now. supportedGNSS
+    // holds the constellations the receiver supports; empty means "unknown".
+    configSupport: ReadonlySet<string>;
+    supportedGNSS: ReadonlySet<string>;
     selectedSignals: Set<string>;
     setSelectedSignals: (fn: (prev: Set<string>) => Set<string>) => void;
     setOperation: (op: OperationState) => void;
@@ -36,6 +42,25 @@ interface Props {
     clearRespSession: () => void;
     speed: number;
 }
+
+// Config-support item names (gpsprot.ConfigSupportFlags JSON values). Kept as a
+// string set: the frontend keys on names, not bit positions, and ignores
+// unknown names, so gating for pending-branch flags (reload, surveyDur) lights
+// up as each backend merges.
+const SUP = {
+    signal: 'signal',
+    speed: 'speed',
+    survey: 'survey',
+    surveyAcc: 'surveyAcc',
+    surveyDur: 'surveyDur',
+    surveyMsg: 'surveyMsg',
+    fixedPos: 'fixedPos',
+    fixedPosAcc: 'fixedPosAcc',
+    raw: 'raw',
+    rtcmMSM4: 'rtcmMSM4',
+    rtcmMSM7: 'rtcmMSM7',
+    reload: 'reload',
+} as const;
 
 // Convert a signalsEnabled map {GPS: ["L1","L5"]} to Set<string> {"GPS:L1","GPS:L5"}
 function signalMapToSet(m: Record<string, string[]> | undefined): Set<string> {
@@ -93,7 +118,7 @@ function validateFields(
     return bad;
 }
 
-export function ConfigPanel({connState, readOnly, visible, configProps, signalCatalog, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, clearRespSession, speed}: Props) {
+export function ConfigPanel({connState, readOnly, visible, configProps, signalCatalog, configSupport, supportedGNSS, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, clearRespSession, speed}: Props) {
     // A read-only window cannot drive the receiver: fold that into `connected`
     // so every field, the Apply/Discard buttons, and the automatic readback
     // trigger disable together, and the background readback never POSTs.
@@ -474,8 +499,40 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
     }, [pendingLabel]);
     const statusLabel = applying ? 'Applying configuration...' : pendingLabel || (applied ? 'Configuration applied' : '');
     const statusColor = applied && !applying && !pendingLabel ? 'text-success' : applying ? 'text-info' : 'text-warning';
-    const surveyDisabled = !connected || timeMode !== 'survey';
-    const fixedDisabled = !connected || timeMode !== 'fixed';
+    // Capability gating: an item is supported when its flag is present.
+    // Unsupported items are greyed in place (never hidden), so the layout is
+    // identical for every receiver. An empty configSupport means "unknown":
+    // the tab can only be entered after a successful probe, but it stays
+    // visible when the receiver disconnects or re-probes, and in that state
+    // everything is already disabled via !connected -- muting titles and
+    // showing "not supported" placeholders would falsely claim the receiver
+    // lacks the capability, so treat every item as supported instead.
+    const has = (item: string) => configSupport.size === 0 || configSupport.has(item);
+    // A constellation is supported when supportedGNSS lists it. An empty
+    // supportedGNSS means "unknown" (e.g. unc never populates it): leave every
+    // constellation enabled rather than greying them all.
+    const gnssSupported = (name: string) => supportedGNSS.size === 0 || supportedGNSS.has(name);
+    const speedSupported = has(SUP.speed);
+    const surveySupported = has(SUP.survey);
+    const fixedPosSupported = has(SUP.fixedPos);
+    const rawSupported = has(SUP.raw);
+    const msm4Supported = has(SUP.rtcmMSM4);
+    const msm7Supported = has(SUP.rtcmMSM7);
+    const rtcmSupported = msm4Supported || msm7Supported;
+
+    const surveyDisabled = !connected || !surveySupported || timeMode !== 'survey';
+    // The survey accuracy, duration, and progress fields disable with the
+    // subgroup, and additionally when their own capability flag is absent
+    // (the accuracy/duration fields also swap in a "not supported" placeholder).
+    // surveyDur is contributed by a pending backend branch (config-support-
+    // survey-dur): no backend on master emits it, so gating on its absence here
+    // would grey the field on every duration-capable receiver. It is left
+    // ungated until that branch lands, when this becomes `|| !has(SUP.surveyDur)`.
+    const surveyTimeDisabled = surveyDisabled;
+    const surveyAccDisabled = surveyDisabled || !has(SUP.surveyAcc);
+    const surveyMsgDisabled = surveyDisabled || !has(SUP.surveyMsg);
+    const fixedDisabled = !connected || !fixedPosSupported || timeMode !== 'fixed';
+    const fixedPosAccDisabled = fixedDisabled || !has(SUP.fixedPosAcc);
     const ecefDisabled = fixedDisabled || coordSystem !== 'ecef';
     const llhDisabled = fixedDisabled || coordSystem !== 'llh';
     const disabledText = 'text-xs text-text-muted';
@@ -532,28 +589,35 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                     <ConfigGroup title="Time mode">
                         {/* Mode radio group */}
                         <div class="flex flex-wrap gap-x-4 gap-y-1">
-                            {([['mobile', 'Mobile'], ['survey', 'Survey-in'], ['fixed', 'Fixed position']] as const).map(([val, label]) => (
-                                <label key={val} class={`flex items-center gap-1.5 text-xs ${!connected ? disabledText : enabledText}`}>
-                                    <input type="radio" name="timeMode" class="accent-accent" checked={timeMode === val}
-                                        disabled={!connected} onChange={() => { setTimeModeTouched(true); setTimeMode(val); }} />
-                                    {label}
-                                </label>
-                            ))}
+                            {([['mobile', 'Mobile', true], ['survey', 'Survey-in', surveySupported], ['fixed', 'Fixed position', fixedPosSupported]] as const).map(([val, label, supported]) => {
+                                const modeDisabled = !connected || !supported;
+                                return (
+                                    <label key={val} class={`flex items-center gap-1.5 text-xs ${modeDisabled ? disabledText : enabledText}`}>
+                                        <input type="radio" name="timeMode" class="accent-accent" checked={timeMode === val}
+                                            disabled={modeDisabled} onChange={() => { setTimeModeTouched(true); setTimeMode(val); }} />
+                                        {label}
+                                    </label>
+                                );
+                            })}
                         </div>
                         {readbackStationary && timeMode === '' && (
                             <div class="mb-2 text-[10px] text-info">Receiver is in stationary mode.</div>
                         )}
 
-                        {/* Survey-in group */}
+                        {/* Survey-in group. The survey time and accuracy fields
+                            gate on their own flags: an unsupported field disables
+                            in place with a "not supported" placeholder replacing
+                            the example value. Readback never populates an
+                            unsupported property, so the placeholder stays visible. */}
                         <ConfigSubGroup title="Survey-in" disabled={surveyDisabled}>
                             <div class="flex gap-x-6 items-start">
                                 <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center">
-                                    <label class={surveyDisabled ? disabledText : fieldLabelText()}>Survey time (s)</label>
+                                    <label class={surveyTimeDisabled ? disabledText : fieldLabelText()}>Survey time (s)</label>
                                     <Input type="text" inputMode="decimal" invalid={errorSet.has('surveyTime')} class="w-24" value={surveyTime} placeholder="2000"
-                                        disabled={surveyDisabled} onInput={e => { setTimeModeTouched(true); setSurveyTime((e.target as HTMLInputElement).value); }} />
-                                    <label class={surveyDisabled ? disabledText : fieldLabelText()}>Survey accuracy (m)</label>
-                                    <Input type="text" inputMode="decimal" invalid={errorSet.has('surveyAcc')} class="w-24" value={surveyAcc} placeholder="20"
-                                        disabled={surveyDisabled} onInput={e => { setTimeModeTouched(true); setSurveyAcc((e.target as HTMLInputElement).value); }} />
+                                        disabled={surveyTimeDisabled} onInput={e => { setTimeModeTouched(true); setSurveyTime((e.target as HTMLInputElement).value); }} />
+                                    <label class={surveyAccDisabled ? disabledText : fieldLabelText()}>Survey accuracy (m)</label>
+                                    <Input type="text" inputMode="decimal" invalid={errorSet.has('surveyAcc')} class="w-24" value={surveyAcc} placeholder={has(SUP.surveyAcc) ? '20' : 'not supported'}
+                                        disabled={surveyAccDisabled} onInput={e => { setTimeModeTouched(true); setSurveyAcc((e.target as HTMLInputElement).value); }} />
                                 </div>
                                 <div class="flex flex-col gap-1.5 pt-0.5">
                                     <label class={`flex items-center gap-1.5 text-xs ${surveyDisabled ? disabledText : enabledText}`}>
@@ -563,9 +627,9 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                                     </label>
                                 </div>
                             </div>
-                            <label class={`flex items-center gap-1.5 text-xs mt-1.5 ${surveyDisabled ? disabledText : enabledText}`}>
+                            <label class={`flex items-center gap-1.5 text-xs mt-1.5 ${surveyMsgDisabled ? disabledText : enabledText}`}>
                                 <input type="checkbox" class="accent-accent" checked={surveyReport}
-                                    disabled={surveyDisabled} onChange={e => { setTimeModeTouched(true); setSurveyReport((e.target as HTMLInputElement).checked); }} />
+                                    disabled={surveyMsgDisabled} onChange={e => { setTimeModeTouched(true); setSurveyReport((e.target as HTMLInputElement).checked); }} />
                                 Report survey progress
                             </label>
                         </ConfigSubGroup>
@@ -612,9 +676,9 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                                 </div>
                             </div>
                             <div class="grid grid-cols-[auto_auto] gap-x-3 gap-y-1.5 items-center mt-2 w-fit">
-                                <label class={fixedDisabled ? disabledText : fieldLabelText()}>Position accuracy (m)</label>
-                                <Input type="text" inputMode="decimal" invalid={errorSet.has('fixedPosAcc')} class="w-24" value={fixedPosAcc} placeholder="20"
-                                    disabled={fixedDisabled} onInput={e => { setTimeModeTouched(true); setFixedPosAcc((e.target as HTMLInputElement).value); }} />
+                                <label class={fixedPosAccDisabled ? disabledText : fieldLabelText()}>Position accuracy (m)</label>
+                                <Input type="text" inputMode="decimal" invalid={errorSet.has('fixedPosAcc')} class="w-24" value={fixedPosAcc} placeholder={has(SUP.fixedPosAcc) ? '20' : 'not supported'}
+                                    disabled={fixedPosAccDisabled} onInput={e => { setTimeModeTouched(true); setFixedPosAcc((e.target as HTMLInputElement).value); }} />
                             </div>
                         </ConfigSubGroup>
                     </ConfigGroup>
@@ -625,13 +689,14 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                             {gnssNames.map(gnssName => {
                                 const sigs = signalCatalog[gnssName];
                                 const anySelected = sigs.some(sig => selectedSignals.has(`${gnssName}:${sig}`));
+                                const gnssDisabled = !connected || !gnssSupported(gnssName);
                                 return (
-                                    <label key={gnssName} class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
+                                    <label key={gnssName} class={`flex items-center gap-1.5 ${labeledControlText(gnssDisabled)}`}>
                                         <input
                                             type="checkbox"
                                             class="accent-accent"
                                             checked={anySelected}
-                                            disabled={!connected}
+                                            disabled={gnssDisabled}
                                             onChange={e => { setSignalsTouched(true); toggleConstellation(gnssName, sigs, (e.target as HTMLInputElement).checked); }}
                                         />
                                         {gnssName}
@@ -655,11 +720,13 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                 <ConfigGroup title="Messages">
                         <div class="flex gap-2">
                             <Button disabled={!connected} onClick={() => {
+                                // Skip sections the receiver does not support: queuing a
+                                // change to a disabled control would provoke apply warnings.
                                 setNmeaChange(true); setNmeaDisable(false); setNmeaFlags(new Set([NMEAMsgRMC]));
-                                setRtcmChange(true); setRtcmDisable(true);
+                                if (rtcmSupported) { setRtcmChange(true); setRtcmDisable(true); }
                                 setPvtChange(true); setPvtFlags(new Set([PVTMsgOff]));
                                 setSatsChange(true); setSatsFlags(new Set());
-                                setRawChange(true); setRawFlags(new Set());
+                                if (rawSupported) { setRawChange(true); setRawFlags(new Set()); }
                             }}>Minimum</Button>
                             <Button disabled={!connected} onClick={() => {
                                 setNmeaChange(true); setNmeaDisable(true);
@@ -688,6 +755,9 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                             onFallbackChange={setRtcmFallback}
                             onARPChange={setRtcmARP}
                             disabled={!connected}
+                            notSupported={!rtcmSupported}
+                            msm4Supported={msm4Supported}
+                            msm7Supported={msm7Supported}
                         />
                         <PVTGroup
                             change={pvtChange}
@@ -709,16 +779,21 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                             onChangeChange={setRawChange}
                             onFlagsChange={setRawFlags}
                             disabled={!connected}
+                            notSupported={!rawSupported}
                         />
                 </ConfigGroup>
 
-                <ConfigGroup title="Serial speed">
+                {/* Serial speed. The capability gate (speedSupported) greys the
+                    whole group when the protocol can never configure baud; the
+                    data-driven baudRateApplicable state (is this port a UART)
+                    layers behind it. */}
+                <ConfigGroup title="Serial speed" disabled={!speedSupported}>
                     {baudRateApplicable === false ? (
-                        <p class="text-xs text-text-primary">Current port is not a UART: baud rate not applicable</p>
+                        <p class={`text-xs ${speedSupported ? 'text-text-primary' : 'text-text-muted'}`}>Current port is not a UART: baud rate not applicable</p>
                     ) : (
                         <div class="flex items-center gap-2">
-                            <label class={fieldLabelText()}>Baud rate</label>
-                            <Select class="w-28" value={selectedSpeed} disabled={!connected}
+                            <label class={fieldLabelText(!speedSupported)}>Baud rate</label>
+                            <Select class="w-28" value={selectedSpeed} disabled={!connected || !speedSupported}
                                 onChange={e => { setSpeedTouched(true); setSelectedSpeed(parseInt((e.target as HTMLSelectElement).value, 10)); }}>
                                 {speeds.map(s => (<option key={s} value={s}>{s}</option>))}
                             </Select>
@@ -743,6 +818,11 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                                 ))}
                             </div>
                         </ConfigSubGroup>
+                        {/* The Reload reset gates on the `reload` flag, contributed
+                            by a pending backend branch (casic-config). No backend on
+                            master emits it, so gating on its absence would grey the
+                            radio on every receiver that supports reload; it is left
+                            ungated until that branch lands (then `reloadSupported`). */}
                         <ConfigSubGroup title="Reset">
                             <div class="flex flex-wrap gap-x-4 gap-y-1">
                                 {([
@@ -782,6 +862,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                 <SignalPicker
                     signalCatalog={signalCatalog}
                     selectedSignals={selectedSignals}
+                    isSupported={gnssSupported}
                     onConfirm={(signals) => { setSignalsTouched(true); setSelectedSignals(() => signals); setShowPicker(false); }}
                     onCancel={() => setShowPicker(false)}
                 />

@@ -65,9 +65,13 @@ grows qualifier flags down from the top bit). The names are the stable
 wire contract, so gating for not-yet-merged flags can be written now
 and lights up as each branch merges.
 
-The Config tab is only reachable after a successful probe, so
-`ConfigSupport` is always populated when the panel renders -- no
-zero/unknown fallback state is needed.
+The Config tab can only be entered after a successful probe, but it
+stays visible if the receiver then disconnects or re-probes, and in
+those states the frontend has no `ConfigSupport`. An empty set
+therefore means "unknown", and every item is treated as supported:
+`!connected` already disables all controls, and greying titles or
+showing "not supported" placeholders would falsely claim the receiver
+lacks the capability.
 
 The apply side needs no guarding: disabled controls cannot be touched,
 so unsupported props and opts are never sent.
@@ -170,6 +174,53 @@ effect after save and reload" is undecided; candidates:
 Auto-selecting Save=Changes + Reset=Reload is rejected: it changes NVM
 and restarts the receiver as a side effect of an innocuous-looking
 edit.
+
+## Deferred until dependencies merge
+
+Two flags (`surveyDur`, `reload`) are contributed only by pending backend
+branches and are absent from every backend on master. Once each branch
+lands, its supporting receivers -- including u-blox -- declare the flag,
+so the flag is present exactly when the control should be enabled. Gating
+on the flag's absence *now* would grey a control that master's u-blox
+(and the F9P simulator the e2e tests drive) actually supports, breaking
+those tests. So the frontend gating for these two is written but left
+inert until the branch merges. Each is a one-line flip in
+`config-panel.tsx`:
+
+- **`surveyDur`** (config-support-survey-dur): the Survey time field is
+  currently gated only by survey support and the mode radio
+  (`surveyTimeDisabled = surveyDisabled`). When the branch merges, change
+  it to `surveyDisabled || !has(SUP.surveyDur)` and restore the "not
+  supported" placeholder (`placeholder={has(SUP.surveyDur) ? '2000' :
+  'not supported'}`). After merge, u-blox `tmode > 0` receivers declare
+  `surveyDur`; Septentrio (survey takes no arguments) does not, so its
+  field greys.
+- **`reload`** (casic-config): the Reload reset radio is currently
+  ungated. When the branch merges, gate it on
+  `reloadSupported = has(SUP.reload)` (the `SUP.reload` name is already
+  in place). After merge, u-blox `tmode` receivers and CASIC V5 declare
+  `reload`; CASIC V6 does not, so V6's radio greys.
+
+The `SUP` table in `config-panel.tsx` already carries both names, so no
+other wiring is needed -- only the gating expression changes.
+
+The other pending flags need no deferral: they gate controls that are
+already correct on master because master's receivers declare them when
+supported (the frontend keys on the stable JSON names and ignores names
+no receiver emits yet). Concretely, when these branches merge nothing in
+the frontend needs to change -- the gating already written lights up:
+
+- **allystar-config**: TAU1201 declares neither MSM flag, so the RTCM
+  subgroup mutes via the existing `notSupported={!rtcmSupported}` path.
+- **septentrio-config**: declares no `speed`/`surveyAcc`/`fixedPosAcc`,
+  which the existing `speedSupported`/`has(SUP.surveyAcc)`/
+  `has(SUP.fixedPosAcc)` gates already handle (`surveyDur` excepted, see
+  above).
+- **quectel-config**: the reset qualifier flags
+  (`signalOnlyWithReset`/`modeOnlyWithReset`/`rtcmMSMOnlyWithReset`)
+  gate nothing (see "Open decision: reset qualifiers"); surfacing
+  "takes effect after save and reload" is still to be designed and
+  should be added when that branch lands.
 
 ## Receiver test matrix
 

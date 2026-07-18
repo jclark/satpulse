@@ -679,6 +679,11 @@ type ReceiverEvent struct {
 	Warning       string                        `json:"warning,omitempty"`
 	Info          opt.Val[gpsprot.ReceiverInfo] `json:",omitzero"`
 	PacketFormats []string                      `json:"packetFormats,omitempty"`
+	// ConfigSupport marshals as a JSON string array of the configuration
+	// items the probed Configurator supports; the Config tab keys on those
+	// names to gate its controls. omitempty drops it from the pre-probe
+	// (zero-flags) snapshot, where the underlying uint32 is 0.
+	ConfigSupport gpsprot.ConfigSupportFlags `json:"configSupport,omitempty"`
 }
 
 // packetWorker is the single goroutine that owns packet processing.
@@ -730,6 +735,7 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 		if rslt.ReceiverInfo != nil {
 			r.Info.Set(*rslt.ReceiverInfo)
 		}
+		r.ConfigSupport = rslt.ConfigSupport
 		for _, tag := range rslt.PacketFormatsDetected {
 			r.PacketFormats = append(r.PacketFormats, string(tag))
 		}

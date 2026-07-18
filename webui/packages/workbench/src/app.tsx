@@ -27,7 +27,7 @@ export type {ConnState, MsgFileTag};
 export type ReceiverState =
     | {status: 'disconnected'}
     | {status: 'probing'}
-    | {status: 'identified'; vendor: string; hardware: string; firmware: string; supportedGNSS: string[]; packetFormats: string[]}
+    | {status: 'identified'; vendor: string; hardware: string; firmware: string; supportedGNSS: string[]; packetFormats: string[]; configSupport: Set<string>}
     | {status: 'unidentified'; packetFormats: string[]; warning: string}
     | {status: 'error'; error: string};
 
@@ -256,8 +256,12 @@ export function App() {
                         firmware: info?.firmware || '',
                         supportedGNSS: gnss,
                         packetFormats: evt.packetFormats || [],
+                        configSupport: new Set(evt.configSupport || []),
                     });
-                    transport.getAllSignals(gnss).then(cat => {
+                    // Fetch the full catalog (empty set = all constellations):
+                    // the constellation row is identical for every receiver, with
+                    // unsupported constellations greyed rather than dropped.
+                    transport.getAllSignals([]).then(cat => {
                         if (cat && req === signalCatalogRequest.current) setSignalCatalog(cat);
                     }).catch(() => {});
                 } else {
@@ -494,8 +498,9 @@ export function App() {
                         firmware: info?.firmware || '',
                         supportedGNSS: gnss,
                         packetFormats: r.packetFormats || [],
+                        configSupport: new Set((r as any).configSupport || []),
                     });
-                    const catalog = await transport.getAllSignals(gnss);
+                    const catalog = await transport.getAllSignals([]);
                     if (catalog && req === signalCatalogRequest.current) setSignalCatalog(catalog);
                 } else {
                     setReceiver({
@@ -674,6 +679,8 @@ export function App() {
                         visible={activeTab === 'config'}
                         configProps={configProps}
                         signalCatalog={signalCatalog}
+                        configSupport={receiver.status === 'identified' ? receiver.configSupport : new Set()}
+                        supportedGNSS={receiver.status === 'identified' ? new Set(receiver.supportedGNSS) : new Set()}
                         selectedSignals={selectedSignals}
                         setSelectedSignals={setSelectedSignals}
                         setOperation={setOperation}
