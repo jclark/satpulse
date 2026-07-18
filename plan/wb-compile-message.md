@@ -28,36 +28,32 @@ documented manual use; satpulsewb just no longer reads it.
 
 ## The embedded library
 
-New subpackage `gps/msgfile/gpsmsg` containing:
+`gps/msgfile` itself gains:
 
 - `gpsmsg.zip` -- the default library (`configs/gpsmsg/*/*.toml`,
   about 173K of TOML, about 37K deflated), checked in.
-- An embed file with `//go:embed gpsmsg.zip` and one exported
-  function (e.g. `Builtin()`) returning the built-in library as a
-  `msgfile.Dir` (see below). `archive/zip`'s `Reader` implements
-  `fs.FS`, so the accessor is `zip.NewReader` over the embedded
-  bytes (lazily, `sync.OnceValue`); files inflate per `Open`, with
-  no extraction step.
+- `//go:embed gpsmsg.zip` and one exported function (e.g.
+  `Builtin()`) returning the built-in library as a `Dir` (see
+  below), beside the other search-path functions in `name.go`.
+  `archive/zip`'s `Reader` implements `fs.FS`, so the accessor is
+  `zip.NewReader` over the embedded bytes (lazily,
+  `sync.OnceValue`); files inflate per `Open`, with no extraction
+  step.
 - The generator (below) as a `//go:build ignore` file.
-- A staleness test (below).
 
-Why a subpackage rather than `gps/msgfile` itself: only importers
-of the subpackage need the zip to compile, and only binaries that
-call `Builtin` carry the bytes. satpulsetool depends on
-`gps/msgfile` (via `internal/gpscmd`) but not on the subpackage, so
-it is unaffected. (Verified separately: the linker's dead-code
-elimination does drop an embed variable reachable only from an
-uncalled function, but the subpackage makes that moot.) satpulsed
-has no `gps/msgfile` dependency at all. The desktop module
-(desktop-gui branch) is a second future consumer: it is a separate
-Go module driving the shared workbench layer through
-`gps/app/session`, today loading message files only via a native
-file dialog; when it adopts the catalog it imports this subpackage
-like satpulsewb does. A possible later satpulsetool feature --
-`-m u-blox/gen9` resolving a library name instead of a path --
-would import the subpackage from gpscmd at that point.
-
-Add the subpackage to `docs/internals.md`.
+The zip being checked in, the package compiles everywhere with no
+generation step, and binaries that never call `Builtin` do not
+carry the bytes: the linker's dead-code elimination drops an embed
+variable reachable only from an uncalled function (verified with a
+test build). So satpulsetool, which depends on `gps/msgfile` via
+`internal/gpscmd`, is unaffected, and satpulsed has no
+`gps/msgfile` dependency at all. The desktop module (desktop-gui
+branch) is a second future consumer: a separate Go module driving
+the shared workbench layer through `gps/app/session`, today
+loading message files only via a native file dialog; it already
+imports `gps/msgfile`, so adopting the catalog needs no new
+imports. The same goes for a possible later satpulsetool feature
+resolving `-m u-blox/gen9` as a library name instead of a path.
 
 ## The zip and its generator
 
@@ -85,30 +81,30 @@ The generator is a plain Go program with no options:
 The file list always comes from `git ls-files`, never a directory
 walk: untracked local TOMLs (test data) must not leak into the
 binary. Regeneration is wired as a `//go:generate` line in the
-subpackage -- via `sh -c`, since go:generate has no shell:
+package -- via `sh -c`, since go:generate has no shell:
 
-    //go:generate sh -c "git -C ../../../configs/gpsmsg ls-files -- '*/*.toml' | go run gen.go ../../../configs/gpsmsg gpsmsg.zip"
+    //go:generate sh -c "git -C ../../configs/gpsmsg ls-files -- '*/*.toml' | go run gen.go ../../configs/gpsmsg gpsmsg.zip"
 
-so `go generate ./gps/msgfile/gpsmsg` is the documented
-regeneration step.
+so `go generate ./gps/msgfile` is the documented regeneration
+step.
 
 ## Staleness guards
 
 Checking in a generated artifact risks shipping a stale zip after a
-library edit. Two guards, both byte comparisons thanks to the
-deterministic generator:
+library edit. The check is a small checked-in script that
+regenerates to a temp file and byte-compares against the checked-in
+zip -- a complete check (edits, additions, deletions, renames) made
+possible by the deterministic generator. It runs as a dedicated
+GitHub workflow (in the style of `node-tests.yml`): all-branch push
+and pull-request triggers, path-filtered to `configs/gpsmsg/**`,
+`gps/msgfile/gpsmsg.zip`, and `gps/msgfile/gen.go` -- the only
+paths whose changes can create or fix staleness -- so a stale
+commit gets a red check naming the problem on any branch. The
+script also runs by hand for a local check before pushing.
 
-- A unit test in the subpackage that re-derives the expected
-  contents (enumerating tracked TOMLs with `git ls-files`, reading
-  them from the working tree) and compares against the embedded zip
-  entry-by-entry. A forgotten regeneration fails `make test` /
-  `go test ./...`. The test skips when git is unavailable (module
-  download, source tarball), where staleness is impossible anyway.
-- A pre-commit hook for faster feedback: a small checked-in script
-  that regenerates to a temp file and diffs against the checked-in
-  zip. Hooks themselves cannot be checked in, so the script ships
-  in the repo with a one-line setup note (`git config
-  core.hooksPath` or a symlink into `.git/hooks`).
+A new `configs/gpsmsg/CLAUDE.md` states that any change to the
+message files requires regenerating the embedded zip, giving the
+`go generate ./gps/msgfile` command.
 
 Day-to-day development of message files does not depend on
 regeneration at all: pointing `SATPULSE_GPSMSG_PATH` at the
@@ -152,7 +148,6 @@ with a constructor wrapping an os directory via `os.DirFS(path)`
 
 - `fs.FS` variants in `msgfile` tested with `fstest.MapFS`,
   including an include chain and name shadowing across dirs.
-- The staleness test above.
 - `cmd/satpulsewb`: adapt the `msgDirs` test (the `systemDirs` test
   goes away with the files), and a catalog test asserting built-in
   entries appear, plus env-dir shadowing of a built-in name.
@@ -168,7 +163,6 @@ with a constructor wrapping an os directory via `os.DirFS(path)`
 - `NEWS.md` entry: satpulsewb needs no installed message-file
   library, and no longer reads the user or system libraries unless
   `SATPULSE_GPSMSG_PATH` names them.
-- `docs/internals.md` entry for the new subpackage.
 
 ## Alternatives considered
 
@@ -184,7 +178,3 @@ with a constructor wrapping an os directory via `os.DirFS(path)`
   of teaching `msgfile` about `fs.FS`: no msgfile changes, but
   writes the library to disk on every run, has cleanup questions,
   and shows temp paths in the UI.
-- Embedding directly in `gps/msgfile` (no subpackage): one function
-  in the right package, but makes the zip a compile prerequisite of
-  most of the repo's build/test graph instead of just the GUI
-  binaries.
