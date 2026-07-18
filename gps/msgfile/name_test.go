@@ -36,6 +36,15 @@ func writeLibrary(t *testing.T, paths ...string) string {
 	return dir
 }
 
+func TestOSDirDisplayPath(t *testing.T) {
+	root := filepath.Join(string(os.PathSeparator), "foo")
+	got := OSDir(root).DisplayPath("bar/baz.toml")
+	want := filepath.Join(root, "bar", "baz.toml")
+	if got != want {
+		t.Errorf("got %q want %q", got, want)
+	}
+}
+
 func TestListNames(t *testing.T) {
 	paths := []string{
 		"u-blox/gen9.toml",
@@ -178,14 +187,17 @@ func TestBuiltin(t *testing.T) {
 }
 
 func TestEnvDirs(t *testing.T) {
+	root := string(os.PathSeparator)
+	dirA := filepath.Join(root, "a")
+	dirB := filepath.Join(root, "b")
 	tests := []struct {
 		name   string
 		value  string
 		expect []string
 	}{
 		{name: "unset", value: "", expect: nil},
-		{name: "two dirs", value: strings.Join([]string{"/a", "/b"}, string(os.PathListSeparator)), expect: []string{"/a", "/b"}},
-		{name: "empty elements", value: strings.Join([]string{"", "/a", ""}, string(os.PathListSeparator)), expect: []string{"/a"}},
+		{name: "two dirs", value: strings.Join([]string{dirA, dirB}, string(os.PathListSeparator)), expect: []string{dirA, dirB}},
+		{name: "empty elements", value: strings.Join([]string{"", dirA, ""}, string(os.PathListSeparator)), expect: []string{dirA}},
 		{name: "only empty elements", value: string(os.PathListSeparator), expect: []string{}},
 	}
 	for _, tc := range tests {

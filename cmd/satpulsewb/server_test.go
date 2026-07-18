@@ -320,7 +320,8 @@ func TestSSEPriming(t *testing.T) {
 
 func TestMsgDirs(t *testing.T) {
 	t.Run("environment", func(t *testing.T) {
-		names := []string{"/one", "/two"}
+		root := string(os.PathSeparator)
+		names := []string{filepath.Join(root, "one"), filepath.Join(root, "two")}
 		t.Setenv("SATPULSE_GPSMSG_PATH", strings.Join(names, string(os.PathListSeparator)))
 		got := msgDirs()
 		if len(got) != 3 || got[0].DisplayPath(".") != names[0] || got[1].DisplayPath(".") != names[1] || got[2].DisplayPath("x") != "built-in:x" {
