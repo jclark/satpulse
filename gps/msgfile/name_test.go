@@ -19,6 +19,10 @@ func (dir testDir) DisplayPath(name string) string {
 	return dir.prefix + name
 }
 
+func (dir testDir) Load(name string) (*Parsed, error) {
+	return LoadFS(dir.FS, name)
+}
+
 // writeLibrary creates a library directory whose vendor/file structure
 // is given by slash-separated relative paths.
 func writeLibrary(t *testing.T, paths ...string) string {
@@ -181,8 +185,36 @@ func TestBuiltin(t *testing.T) {
 	if dir.DisplayPath(name) != "built-in:u-blox/gen9.toml" {
 		t.Errorf("unexpected display path %q", dir.DisplayPath(name))
 	}
-	if _, err := LoadFS(dir, name); err != nil {
+	// gen9 includes ubx.toml, so this exercises include resolution
+	// within the archive.
+	if _, err := dir.Load(name); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestOSDirLoadIncludeEscapes checks that an on-disk library file
+// loads includes natively, so a "../" include reaching outside the
+// search directory works, matching satpulsetool.
+func TestOSDirLoadIncludeEscapes(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "outside.toml"),
+		[]byte("[[line]]\ntext = \"OUTSIDE\"\ntag = \"out\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lib := filepath.Join(root, "lib")
+	if err := os.MkdirAll(filepath.Join(lib, "u-blox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lib, "u-blox", "gen9.toml"),
+		[]byte("[[line]]\ntext = \"MAIN\"\ntag = \"main\"\n\n[[include]]\nsrc = \"../../outside.toml\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := OSDir(lib).Load("u-blox/gen9.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Line) != 2 || p.Line[0].Text != "MAIN" || p.Line[1].Text != "OUTSIDE" {
+		t.Fatalf("unexpected lines: %+v", p.Line)
 	}
 }
 

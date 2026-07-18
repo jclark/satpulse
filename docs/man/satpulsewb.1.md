@@ -85,7 +85,7 @@ If this option is omitted, the vendor is autodetected.
 **SATPULSE_GPSMSG_PATH**
 : Colon-separated list of directories to search for message files ahead of the built-in library.
 A message file is identified as *vendor*/*file*.toml under a search directory; the first match along the path wins, so a file in an environment directory shadows a same-named built-in file while the rest of the built-in catalog remains available.
-Include entries in a message file resolve relative to the file itself, not along the search path, so a shadowing file must have its included files alongside it.
+Include entries in a message file resolve relative to the file itself, not along the search path.
 When **SATPULSE_GPSMSG_PATH** is unset, only the built-in library is used.
 
 # EXAMPLES

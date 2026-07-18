@@ -114,40 +114,62 @@ the built-ins.
 ## msgfile generalization to fs.FS
 
 `gps/msgfile`'s library search currently works on `[]string` of os
-directories. Generalize the search-path element to something like
+directories. Generalize the search-path element to a `Dir`
+interface:
 
-    type Dir struct {
-        FS      fs.FS
-        Display string
+    type Dir interface {
+        fs.FS
+        DisplayPath(name string) string
+        Load(name string) (*Parsed, error)
     }
 
-with a constructor wrapping an os directory via `os.DirFS(path)`
-(Display = the path). Then:
+with an os-directory implementation and a built-in implementation
+over the embedded zip. `fs.FS` covers cataloging (reading vendor
+directories and their files); `DisplayPath` gives the user-visible
+path for an entry; `Load` reads a file and walks its `[[include]]`
+tree. Then:
 
-- `EnvDirs`, `ListNames`, `FindName` work over `[]Dir`; `FindName`
-  resolves to a dir plus slash-separated name rather than an os
-  path.
-- A `LoadFS` variant runs the `[[include]]` walk inside an `fs.FS`
-  using the `path` package. This is required: the shipped defaults
-  use includes (`u-blox/gen9.toml` includes `ubx.toml`,
-  `unicore/um982.toml` includes `um980.toml`, `zhongke/*` include
-  `casic.toml`, ...) and they must resolve within the embedded zip.
-  Internally, unify the walk behind a small seam (open a file,
-  resolve an include src relative to its base) so the
-  tree/merge/duplicate-include logic in `msgfile.go` exists once
-  for the os and fs.FS cases.
-- The path-based `Load` keeps its signature for satpulsetool,
-  which takes explicit file paths and stdin and never touches
-  library search.
+- `EnvDirs`, `ListNames`, `FindName` work over `[]Dir`. Cataloging
+  is naturally within a directory, so it runs over the `fs.FS`:
+  `FindName` resolves to a `Dir` plus a slash-separated name rather
+  than an os path.
+- Loading differs by storage, because `[[include]]` resolution
+  differs:
+  - An os directory loads through the existing path-based `Load`:
+    it resolves the entry to its native path and hands it to
+    `Load`, so includes resolve natively and are **not** confined
+    to the search directory -- `..` reaches wherever it points,
+    exactly as `satpulsetool -m` does. An on-disk file behaves the
+    same whether it is reached through the library search path or
+    named directly. There is no library-root sandbox.
+  - The embedded zip loads through a `LoadFS` variant that walks
+    the `[[include]]` tree inside an `fs.FS` using the `path`
+    package. Includes there resolve within the archive -- not as a
+    policy but because nothing exists outside it. The shipped
+    defaults use includes (`u-blox/gen9.toml` includes `ubx.toml`,
+    `unicore/um982.toml` includes `um980.toml`, `zhongke/*` include
+    `casic.toml`, ...), and these are all siblings, so they resolve
+    the same either way.
+  Unify the tree/merge/duplicate-include logic behind a small seam
+  (open a file, resolve an include src relative to its base) so it
+  exists once for the os and fs.FS cases.
+- The path-based `Load` keeps its signature for satpulsetool, which
+  takes explicit file paths and stdin and never touches library
+  search. The os `Dir` reuses it, so a library file and a `-m` file
+  resolve includes identically.
 - `Entry.Path` and satpulsewb's `msgFileResult.Path` are
-  user-visible, so built-in entries carry a display string derived
-  from `Dir.Display` (e.g. `built-in:u-blox/gen9.toml`) instead of
-  a filesystem path.
+  user-visible, so built-in entries carry a display string from
+  `DisplayPath` (e.g. `built-in:u-blox/gen9.toml`) instead of a
+  filesystem path.
 
 ## Testing
 
 - `fs.FS` variants in `msgfile` tested with `fstest.MapFS`,
   including an include chain and name shadowing across dirs.
+- On-disk library loading resolves includes natively: an include
+  using `..` to reach outside the search directory works, matching
+  `satpulsetool`. The built-in zip resolves its includes within the
+  archive.
 - `cmd/satpulsewb`: adapt the `msgDirs` test (the `systemDirs` test
   goes away with the files), and a catalog test asserting built-in
   entries appear, plus env-dir shadowing of a built-in name.
@@ -157,9 +179,11 @@ with a constructor wrapping an os directory via `os.DirFS(path)`
 - Rewrite the search-path material in `docs/man/satpulsewb.1.md`
   (ENVIRONMENT, currently lines 85-92): the library is built in;
   `SATPULSE_GPSMSG_PATH` directories are searched ahead of it; the
-  user-library and installed-library paragraphs go. Keep the note
-  that includes resolve relative to the file itself, so a shadowing
-  file needs its included files alongside it.
+  user-library and installed-library paragraphs go. State that
+  includes resolve relative to the file itself, not along the search
+  path -- dropping the old "must have its included files alongside
+  it" wording, which wrongly implied confinement (on-disk includes
+  are unconfined, matching `satpulsetool`).
 - `NEWS.md` entry: satpulsewb needs no installed message-file
   library, and no longer reads the user or system libraries unless
   `SATPULSE_GPSMSG_PATH` names them.

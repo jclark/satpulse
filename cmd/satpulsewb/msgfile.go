@@ -49,7 +49,7 @@ func (s *server) handleMsgSelect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	mf, err := msgfile.LoadFS(dir, name)
+	mf, err := dir.Load(name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

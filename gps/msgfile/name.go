@@ -16,6 +16,12 @@ type Dir interface {
 	// directory this is the actual filename; virtual directories return
 	// a descriptive path.
 	DisplayPath(name string) string
+	// Load reads and parses the message file named name (a
+	// slash-separated path within the directory), resolving its
+	// includes. An OS directory resolves includes natively, relative
+	// to the file and not confined to the directory; a virtual
+	// directory resolves them within itself.
+	Load(name string) (*Parsed, error)
 }
 
 type osDir string
@@ -26,14 +32,22 @@ func OSDir(name string) Dir {
 }
 
 func (dir osDir) Open(name string) (fs.File, error) {
-	if !fs.ValidPath(name) {
+	p, err := filepath.Localize(name)
+	if err != nil {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
 	}
-	return os.Open(dir.filePath(name))
+	return os.Open(filepath.Join(string(dir), p))
 }
 
 func (dir osDir) DisplayPath(name string) string {
 	return dir.filePath(name)
+}
+
+// Load reads the message file name from the OS directory, resolving
+// its includes natively -- relative to the file and not confined to
+// the directory -- exactly as Load of a plain path does.
+func (dir osDir) Load(name string) (*Parsed, error) {
+	return Load(dir.filePath(name))
 }
 
 func (dir osDir) filePath(name string) string {

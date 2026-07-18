@@ -35,3 +35,9 @@ func Builtin() Dir {
 func (dir builtinDir) DisplayPath(name string) string {
 	return "built-in:" + name
 }
+
+// Load reads the message file name from the embedded library. Its
+// includes resolve within the archive.
+func (dir builtinDir) Load(name string) (*Parsed, error) {
+	return LoadFS(dir.FS, name)
+}
