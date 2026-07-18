@@ -67,7 +67,7 @@ State stored in a `Map<string, MsgTypeState>` keyed by `${tag}:${msg}`.
 
 #### Packet ingestion
 
-`PacketPanel` registers its own `gps:packet` event listener in a `useEffect`. Each packet updates `liveRef` directly (increment count, push to recentEntries). No React state update per packet.
+`PacketPanel` registers its own `gps:packet` event listener in a `useEffect` for its full mounted lifetime, including while another tab is visible. Each packet updates `liveRef` directly (increment count, push to recentEntries). While Packets is hidden, no React state update occurs per packet; returning to Packets synchronizes the displayed state from `liveRef`.
 
 #### Active/inactive
 

@@ -4,8 +4,8 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 
 # SYNOPSIS
 
-**satpulsewb** [**\-h**\|**\-\-help**] [**\-L**\|**\-\-listen** *host:port*] [**\-T**\|**\-\-token**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path* [**\-s**\|**\-\-device\-speed** *bps*]] [**\-\-vendor** *name*]\
+**satpulsewb** [**\-h**\|**\-\-help**] [**\-V**\|**\-\-version**] [**\-v**\|**\-\-verbose**] [**\-L**\|**\-\-listen** *host:port*] [**\-t**\|**\-\-token**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-n**\|**\-\-no\-open\-browser**] [**\-d**\|**\-\-serial\-device** *path* [**\-s**\|**\-\-device\-speed** *bps*]] [**\-\-vendor** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
 # DESCRIPTION
@@ -24,7 +24,6 @@ When run from a local desktop session, **satpulsewb** opens its loopback URL in 
 It never opens a browser over SSH or with **\-\-listen**.
 On Linux and FreeBSD, where a process's command line is readable by other users of the machine, the opened URL carries a single-use launch token that stops working after its first use, so the value visible in the browser's command line grants nothing.
 
-There is no TLS support.
 On a network you do not trust, listen on loopback only and reach it through an SSH tunnel:
 
     remote$ satpulsewb -L localhost:15754
@@ -51,9 +50,12 @@ With an explicit port, a bind failure is an error; there is no fallback port, si
 **\-\-listen** also disables the access token, since the typical use is a tunnel.
 Without **\-\-token**, **\-\-listen** trusts the local browser environment: requests with a non-loopback Host are refused and a non-loopback bind prints a warning; use **\-\-token** to allow remote browser access.
 
-**\-T**, **\-\-token**
+**\-t**, **\-\-token**
 : Require the generated access token even with **\-\-listen**.
 Without **\-\-listen** this is the default.
+
+**\-n**, **\-\-no\-open\-browser**
+: Do not open a browser at startup, even when run from a local desktop session.
 
 **\-d**, **\-\-serial\-device** *path*
 : Serial device connected to a GPS receiver, to connect to at startup.
