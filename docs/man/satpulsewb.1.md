@@ -24,7 +24,6 @@ When run from a local desktop session, **satpulsewb** opens its loopback URL in 
 It never opens a browser over SSH or with **\-\-listen**.
 On Linux and FreeBSD, where a process's command line is readable by other users of the machine, the opened URL carries a single-use launch token that stops working after its first use, so the value visible in the browser's command line grants nothing.
 
-There is no TLS support.
 On a network you do not trust, listen on loopback only and reach it through an SSH tunnel:
 
     remote$ satpulsewb -L localhost:15754
