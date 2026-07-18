@@ -1,12 +1,23 @@
 package msgfile
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
+
+type testDir struct {
+	fs.FS
+	prefix string
+}
+
+func (dir testDir) DisplayPath(name string) string {
+	return dir.prefix + name
+}
 
 // writeLibrary creates a library directory whose vendor/file structure
 // is given by slash-separated relative paths.
@@ -42,7 +53,7 @@ func TestListNames(t *testing.T) {
 		"u-blox/x20.toml",
 		"zhongke/casic.toml",
 	)
-	got := ListNames([]string{dir1, dir2, filepath.Join(dir1, "no-such-dir")})
+	got := ListNames([]Dir{OSDir(dir1), OSDir(dir2), OSDir(filepath.Join(dir1, "no-such-dir"))})
 	expect := []Entry{
 		{Name{"u-blox", "gen9"}, filepath.Join(dir1, "u-blox", "gen9.toml")},
 		{Name{"unicore", "um980"}, filepath.Join(dir1, "unicore", "um980.toml")},
@@ -57,22 +68,25 @@ func TestListNames(t *testing.T) {
 func TestFindName(t *testing.T) {
 	dir1 := writeLibrary(t, "u-blox/gen9.toml", "loose.toml")
 	dir2 := writeLibrary(t, "u-blox/gen9.toml", "unicore/um980.toml")
-	dirs := []string{dir1, dir2}
+	dirs := []Dir{OSDir(dir1), OSDir(dir2)}
 	tests := []struct {
 		name      string
 		fileName  Name
+		expectDir string
 		expect    string
 		expectErr bool
 	}{
 		{
-			name:     "first dir wins",
-			fileName: Name{"u-blox", "gen9"},
-			expect:   filepath.Join(dir1, "u-blox", "gen9.toml"),
+			name:      "first dir wins",
+			fileName:  Name{"u-blox", "gen9"},
+			expectDir: dir1,
+			expect:    "u-blox/gen9.toml",
 		},
 		{
-			name:     "found in second dir",
-			fileName: Name{"unicore", "um980"},
-			expect:   filepath.Join(dir2, "unicore", "um980.toml"),
+			name:      "found in second dir",
+			fileName:  Name{"unicore", "um980"},
+			expectDir: dir2,
+			expect:    "unicore/um980.toml",
 		},
 		{
 			name:      "not found",
@@ -102,7 +116,7 @@ func TestFindName(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := FindName(tc.fileName, dirs)
+			dir, got, err := FindName(tc.fileName, dirs)
 			if tc.expectErr {
 				if err == nil {
 					t.Fatalf("expected error, got %q", got)
@@ -115,7 +129,51 @@ func TestFindName(t *testing.T) {
 			if got != tc.expect {
 				t.Errorf("got  %q\nwant %q", got, tc.expect)
 			}
+			if dir.DisplayPath(".") != tc.expectDir {
+				t.Errorf("got dir %q want %q", dir.DisplayPath("."), tc.expectDir)
+			}
 		})
+	}
+}
+
+func TestFSDirs(t *testing.T) {
+	dir1 := testDir{FS: fstest.MapFS{
+		"u-blox/gen9.toml": &fstest.MapFile{},
+	}, prefix: "first:"}
+	dir2 := testDir{FS: fstest.MapFS{
+		"u-blox/gen9.toml":   &fstest.MapFile{},
+		"unicore/um980.toml": &fstest.MapFile{},
+	}, prefix: "second:"}
+	dirs := []Dir{dir1, dir2}
+	expect := []Entry{
+		{Name: Name{"u-blox", "gen9"}, Path: "first:u-blox/gen9.toml"},
+		{Name: Name{"unicore", "um980"}, Path: "second:unicore/um980.toml"},
+	}
+	if got := ListNames(dirs); !reflect.DeepEqual(got, expect) {
+		t.Errorf("got  %+v\nwant %+v", got, expect)
+	}
+	dir, name, err := FindName(Name{"u-blox", "gen9"}, dirs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir.DisplayPath(name) != "first:u-blox/gen9.toml" || name != "u-blox/gen9.toml" {
+		t.Errorf("got %q %q", dir.DisplayPath(name), name)
+	}
+	if _, err := fs.Stat(dir, name); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuiltin(t *testing.T) {
+	dir, name, err := FindName(Name{"u-blox", "gen9"}, []Dir{Builtin()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir.DisplayPath(name) != "built-in:u-blox/gen9.toml" {
+		t.Errorf("unexpected display path %q", dir.DisplayPath(name))
+	}
+	if _, err := LoadFS(dir, name); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -133,7 +191,15 @@ func TestEnvDirs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("SATPULSE_GPSMSG_PATH", tc.value)
-			if got := EnvDirs(); !reflect.DeepEqual(got, tc.expect) {
+			gotDirs := EnvDirs()
+			var got []string
+			if gotDirs != nil {
+				got = make([]string, len(gotDirs))
+			}
+			for i, dir := range gotDirs {
+				got[i] = dir.DisplayPath(".")
+			}
+			if !reflect.DeepEqual(got, tc.expect) {
 				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
 			}
 		})

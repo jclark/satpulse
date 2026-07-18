@@ -2,8 +2,6 @@ package main
 
 import (
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/jclark/satpulse/gps/app/session"
@@ -11,25 +9,11 @@ import (
 	"github.com/jclark/satpulse/gps/msgfile"
 )
 
-// msgDirs returns the message-file library search path:
-// SATPULSE_GPSMSG_PATH when set, otherwise the user's own library
-// followed by the installed locations (systemDirs, per platform).
-func msgDirs() []string {
-	if dirs := msgfile.EnvDirs(); dirs != nil {
-		return dirs
-	}
-	cfg, err := os.UserConfigDir()
-	if err != nil {
-		return systemDirs()
-	}
-	return defaultDirs(cfg, systemDirs())
-}
-
-// defaultDirs puts the user's library under cfg ahead of the installed
-// ones. Split out from msgDirs so a test needs no environment variable:
-// os.UserConfigDir reads a different one on each platform.
-func defaultDirs(cfg string, sys []string) []string {
-	return append([]string{filepath.Join(cfg, "satpulse", "gpsmsg")}, sys...)
+// msgDirs returns the message-file library search path: the
+// SATPULSE_GPSMSG_PATH directories, when set, followed by the built-in
+// library.
+func msgDirs() []msgfile.Dir {
+	return append(msgfile.EnvDirs(), msgfile.Builtin())
 }
 
 // msgCatalog is the /api/msgfile/catalog response: the message files
@@ -60,17 +44,17 @@ func (s *server) handleMsgSelect(w http.ResponseWriter, r *http.Request) {
 	}
 	// FindName's component validation is the path-traversal guard: a
 	// Name never resolves outside a search-path directory.
-	path, err := msgfile.FindName(req, s.msgDirs)
+	dir, name, err := msgfile.FindName(req, s.msgDirs)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	mf, err := msgfile.Load(path)
+	mf, err := msgfile.LoadFS(dir, name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, msgFileResult{Path: path, Tags: s.sess.SetMsgFile(mf)})
+	writeJSON(w, msgFileResult{Path: dir.DisplayPath(name), Tags: s.sess.SetMsgFile(mf)})
 }
 
 func (s *server) handleMsgSend(w http.ResponseWriter, r *http.Request) {
