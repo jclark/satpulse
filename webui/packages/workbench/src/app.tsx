@@ -534,7 +534,7 @@ export function App() {
 
     // Receiver identity string for connection bar
     const receiverIdent = receiver.status === 'identified'
-        ? `${receiver.hardware} (FW ${receiver.firmware})`
+        ? `${receiver.vendor} ${receiver.hardware} (FW ${receiver.firmware})`
         : receiver.status === 'unidentified'
             ? receiver.packetFormats.length > 0
                 ? `Unknown (${receiver.packetFormats.join(', ')})`

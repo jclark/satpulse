@@ -13,11 +13,11 @@ import type { Page } from '@playwright/test';
 // so no state leaks between tests.
 
 // The receiver identity app.tsx composes for an identified receiver:
-// hardware + " (FW " + firmware + ")". The simulator replays the F9P
-// personality's MON-VER, whose extension strings carry MOD=ZED-F9P,
-// FWVER=HPG 1.51 and PROTVER=27.50 (ubx/ubxcfg.go ReceiverInfo joins the
-// firmware parts with " PROTVER ").
-const IDENT = 'ZED-F9P (FW HPG 1.51 PROTVER 27.50)';
+// vendor + " " + hardware + " (FW " + firmware + ")". The simulator
+// replays the u-blox F9P personality's MON-VER, whose extension strings
+// carry MOD=ZED-F9P, FWVER=HPG 1.51 and PROTVER=27.50 (ubx/ubxcfg.go
+// ReceiverInfo joins the firmware parts with " PROTVER ").
+const IDENT = 'u-blox ZED-F9P (FW HPG 1.51 PROTVER 27.50)';
 
 // The connection bar is the app's <header>, which maps to the banner role;
 // scoping to it keeps the panel's controls distinct from the tab panels
