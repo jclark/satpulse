@@ -85,20 +85,3 @@ Fix: after the goroutines spawned by `Connect()` finish (detected via `connWg`),
 ## stationary-hide-speed-acc: Hide speed accuracies when stationary
 
 When the receiver is stationary (ground speed < 0.1 m/s), the speed accuracy and ground speed accuracy values in the status panel are meaningless noise. Track whether the receiver is stationary somewhere accessible to the status panel rendering, and when it is, hide or omit the speed accuracy and ground speed accuracy rows rather than displaying misleading values.
-
-## config-support-gating: Gate Config tab controls by ConfigSupportFlags
-
-`gpscfg.Result` now includes `ConfigSupport` (a `gpsprot.ConfigSupportFlags` bitset from #203) describing which configuration items the probed receiver's `Configurator` actually supports: baud rate, survey-in (with separate flags for accuracy and progress messages), fixed position (with separate accuracy flag), RTCM MSM4/MSM7/baseID/QZSS, raw measurements, signal-band selection, etc. The desktop Config tab currently shows every control unconditionally and leaves the user to discover via apply failures or warnings that a setting is ignored.
-
-The backend already produces the value at probe time but does not forward it. `packetWorker` in `app.go` builds `ReceiverEvent` from `rslt.ReceiverInfo` and `rslt.PacketFormatsDetected` and emits it as `gps:receiver`; `ReceiverEvent` needs a `ConfigSupport` field (JSON-friendly form -- the Go type already marshals as a string array via its `MarshalJSON`) populated from `rslt.ConfigSupport`. The frontend `App` already tracks the `gps:receiver` payload and would thread the supported-items set into `ConfigPanel` as a prop alongside `signalCatalog`.
-
-The Config tab is only reachable after a successful probe, so `ConfigSupport` is always populated when the panel renders -- no need to handle a "zero/unknown" fallback state.
-
-Hide vs. disable rule: hiding changes layout, so only hide elements that occupy a full row on their own -- typically a `ConfigGroup` or `ConfigSubGroup`. Disable in place (greyed out) for individual fields, checkboxes, or dropdown options that share a row with other controls. Mapping by section:
-
-- Baud rate `ConfigGroup` -> `speed`. Hide the whole group when absent. Distinct from the existing `baudRateApplicable` tri-state (driven by `ConfigProps.baudRate === 0`, i.e. is this port a UART) -- keep both: capability says "this protocol can ever configure baud", port info says "this specific port is UART".
-- Survey-in `ConfigSubGroup` -> `survey`: hide the sub-group when absent. Inside it: survey-accuracy field -> `surveyAcc` (disable in place); "report survey progress" checkbox -> `surveyMsg` (disable in place).
-- Fixed-position `ConfigSubGroup` -> `fixedPos`: hide when absent. Position-accuracy field -> `fixedPosAcc` (disable in place).
-- Satellites and signals: signal/band picker controls -> `band`. The "Edit signals..." button and per-constellation checkboxes share rows with other content, so disable them in place rather than hiding.
-- RTCM message group -> `rtcmMSM4`/`rtcmMSM7` for the corresponding MSM dropdown options (disable individual options in place). `ConfigSupportRTCMMSM` covers "either MSM supported". `rtcmBaseID` and `rtcmQZSS` have no current UI counterpart and can be ignored.
-- Raw message `ConfigGroup` -> `raw`: hide when absent.
