@@ -324,6 +324,7 @@ export interface WorkbenchReplay {
   baseURL: string;
   token: string;
   port: number;
+  waitForReplay(): Promise<void>;
 }
 
 // WorkbenchUbxsim is satpulsewb backed by the u-blox simulator, which answers
@@ -521,8 +522,16 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     openSessions.add(session);
     try {
       const info = await launchWbFifo(session, []);
-      startReplay(session, info.fifoPath);
-      await use({ baseURL: info.baseURL, token: info.token, port: info.port });
+      const replay = startReplay(session, info.fifoPath);
+      const waitForReplay = (): Promise<void> => new Promise((resolve, reject) => {
+        const done = (code: number | null) => {
+          if (code === 0) resolve();
+          else reject(new Error(`replay exited with code ${code}`));
+        };
+        if (replay.exited) done(replay.exitCode);
+        else replay.child.once('exit', done);
+      });
+      await use({ baseURL: info.baseURL, token: info.token, port: info.port, waitForReplay });
       keepIfFailed(session, testInfo);
     } catch (e) {
       session.keep = true;

@@ -276,8 +276,10 @@ review:
   identity (gps/lib/serialenum) and is deferred.
 - Reset gating over proxy connections, driven by `Opener.Socket()`
   (see Relationship to satpulsed above for why).
-- `Wants` gating for the gps:packet stream, so a web client only
-  pays for packet streaming while the Packets tab is open.
+- `Wants` gating for the gps:packet stream, so packet processing is
+  enabled only while a Workbench client is mounted. The client keeps
+  its packet subscription across tab changes so configuration and
+  message-file traffic is retained for later inspection.
 
 ### Testing
 
@@ -504,7 +506,8 @@ Thin adapters over `gps/app/session`:
   latest-event-per-name cache to prime new subscribers, so a second
   browser tab starts consistent. The high-rate gps:packet stream is
   subscription-gated via the sink's `Wants` mechanism: streamed only
-  while a client has the Packets tab open.
+  while a mounted Workbench client supplies a packet subscriber,
+  regardless of which tab that client is displaying.
 
 Multiple simultaneous clients are tolerated (same token, events
 broadcast, writes serialized by the session); this is a single-user

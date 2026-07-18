@@ -656,7 +656,7 @@ export function App() {
                     </CollapsibleSection>
                 </div>
 
-                {/* Packets tab */}
+                {/* Keep PacketPanel mounted so its packet subscriber spans tab changes. */}
                 <div class={`h-full ${activeTab === 'packets' ? '' : 'hidden'}`}>
                     <PacketPanel visible={activeTab === 'packets'} connState={connState} />
                 </div>
