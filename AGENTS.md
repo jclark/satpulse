@@ -15,3 +15,7 @@ Always request elevation for:
 Run the normal command unchanged with elevation. Do not redirect caches to `/tmp`, replace credentials, disable functionality, or otherwise create a sandbox-specific workaround.
 
 Read-only commands confined to the workspace, such as `rg`, file inspection, `git diff`, `git status`, and `git log`, do not normally need elevation. When uncertain whether a required command needs outside access, prefer requesting elevation immediately.
+
+## Pull requests
+
+When asked to create a pull request, create it ready for review. Do not create a draft unless the user explicitly requests one.
