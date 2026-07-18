@@ -43,7 +43,7 @@ function formatTime(iso: string): string {
 }
 
 function entryData(pkt: PacketLogEntry): string {
-    if (pkt.ascii) return stripTrailingEOL(pkt.ascii);
+    if (pkt.ascii) return stripTrailingEOL(pkt.ascii).replace(/\r\n|\r|\n/g, '\u21b5');
     return pkt.bin || '';
 }
 
