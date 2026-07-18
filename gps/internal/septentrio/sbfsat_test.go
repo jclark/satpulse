@@ -76,6 +76,23 @@ func TestCombineChannelStatusEmpty(t *testing.T) {
 	}
 }
 
+func TestCombineChannelStatusTrackedOnly(t *testing.T) {
+	cs := &sbfbin.ChannelStatus{
+		SatInfo: []sbfbin.ChannelSatInfo{
+			{SVID: 1, SVIDFull: 1, AzimuthRiseSet: 100, Elevation: 30},
+			{SVID: 2, SVIDFull: 2},
+		},
+		StateInfo: [][]sbfbin.ChannelStateInfo{
+			{{Antenna: 0, TrackingStatus: sbfbin.SlotStatus(sbfbin.TrackStatusSearch) | sbfbin.SlotStatus(sbfbin.TrackStatusSync)<<(2*1)}},
+			{{Antenna: 0, TrackingStatus: sbfbin.SlotStatus(sbfbin.TrackStatusTracking) << (2 * 7)}},
+		},
+	}
+	msg := satellitesCombine(cs, nil)
+	if msg == nil || len(msg.SVs) != 1 || msg.SVs[0].ID.String() != "G02" {
+		t.Fatalf("combine SVs = %+v, want G02", msg)
+	}
+}
+
 // TestCombineChannelStatusAndMeasEpoch joins used and look-angle data from
 // ChannelStatus to the MeasEpoch signal.
 func TestCombineChannelStatusAndMeasEpoch(t *testing.T) {
@@ -120,7 +137,7 @@ func TestCombineChannelStatusAndMeasEpoch(t *testing.T) {
 func TestCombineMeasEpochType2(t *testing.T) {
 	cs := &sbfbin.ChannelStatus{
 		SatInfo:   []sbfbin.ChannelSatInfo{{SVID: 3, SVIDFull: 3}},
-		StateInfo: [][]sbfbin.ChannelStateInfo{{}},
+		StateInfo: [][]sbfbin.ChannelStateInfo{{{TrackingStatus: sbfbin.SlotStatus(sbfbin.TrackStatusTracking)}}},
 	}
 	me := &sbfbin.MeasEpoch{
 		Type1: []sbfbin.MeasEpochChannelType1{{SVID: 3, Type: sbfbin.MeasType(sbfbin.SigNumGPSL1CA), CN0: 180}},
@@ -148,7 +165,10 @@ func TestCombineMeasEpochDoesNotChangeChannelStatusSVSet(t *testing.T) {
 			{SVID: 1, SVIDFull: 1},
 			{SVID: 71, SVIDFull: 71},
 		},
-		StateInfo: [][]sbfbin.ChannelStateInfo{{}, {{Antenna: 0, PVTStatus: sbfbin.SlotStatus(sbfbin.PVTStatusUsed) << (2 * 6)}}},
+		StateInfo: [][]sbfbin.ChannelStateInfo{
+			{{TrackingStatus: sbfbin.SlotStatus(sbfbin.TrackStatusTracking)}},
+			{{Antenna: 0, TrackingStatus: sbfbin.SlotStatus(sbfbin.TrackStatusTracking) << (2 * 6), PVTStatus: sbfbin.SlotStatus(sbfbin.PVTStatusUsed) << (2 * 6)}},
+		},
 	}
 	me := &sbfbin.MeasEpoch{
 		Type1: []sbfbin.MeasEpochChannelType1{
@@ -181,7 +201,7 @@ func TestCombineMeasEpochDoesNotChangeChannelStatusSVSet(t *testing.T) {
 func TestCombineMeasEpochMainAntennaOnly(t *testing.T) {
 	cs := &sbfbin.ChannelStatus{
 		SatInfo:   []sbfbin.ChannelSatInfo{{SVID: 1, SVIDFull: 1}},
-		StateInfo: [][]sbfbin.ChannelStateInfo{{}},
+		StateInfo: [][]sbfbin.ChannelStateInfo{{{TrackingStatus: sbfbin.SlotStatus(sbfbin.TrackStatusTracking)}}},
 	}
 	me := &sbfbin.MeasEpoch{
 		Type1: []sbfbin.MeasEpochChannelType1{
@@ -211,8 +231,9 @@ func TestCombineUsedRINEXCodesDistinguishBDSB1IAndB1C(t *testing.T) {
 	cs := &sbfbin.ChannelStatus{
 		SatInfo: []sbfbin.ChannelSatInfo{{SVID: 147, SVIDFull: 147}},
 		StateInfo: [][]sbfbin.ChannelStateInfo{{{
-			Antenna:   0,
-			PVTStatus: sbfbin.SlotStatus(sbfbin.PVTStatusUsed),
+			Antenna:        0,
+			TrackingStatus: sbfbin.SlotStatus(sbfbin.TrackStatusTracking),
+			PVTStatus:      sbfbin.SlotStatus(sbfbin.PVTStatusUsed),
 		}}},
 	}
 	me := &sbfbin.MeasEpoch{
@@ -243,8 +264,9 @@ func TestCombineChannelStatusOnlyEmptySignals(t *testing.T) {
 	cs := &sbfbin.ChannelStatus{
 		SatInfo: []sbfbin.ChannelSatInfo{{SVID: 1, SVIDFull: 1}},
 		StateInfo: [][]sbfbin.ChannelStateInfo{{{
-			Antenna:   0,
-			PVTStatus: sbfbin.SlotStatus(sbfbin.PVTStatusUsed),
+			Antenna:        0,
+			TrackingStatus: sbfbin.SlotStatus(sbfbin.TrackStatusTracking),
+			PVTStatus:      sbfbin.SlotStatus(sbfbin.PVTStatusUsed),
 		}}},
 	}
 	msg := satellitesCombine(cs, nil)
@@ -286,8 +308,8 @@ func TestCombineChannelStatusAndMeasEpochRealSVSet(t *testing.T) {
 	if msg == nil {
 		t.Fatal("combine returned nil")
 	}
-	if len(msg.SVs) != len(cs.SatInfo) {
-		t.Fatalf("combine SV count = %d, want ChannelStatus count %d", len(msg.SVs), len(cs.SatInfo))
+	if len(msg.SVs) != 59 {
+		t.Fatalf("combine SV count = %d, want 59 tracked ChannelStatus SVs", len(msg.SVs))
 	}
 }
 

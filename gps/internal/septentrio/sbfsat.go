@@ -59,13 +59,24 @@ func (c *satCombiner) addChannelStatus(chn *sbfbin.ChannelStatus) {
 			continue
 		}
 		st := mainAntenna(chn.StateInfo[i])
+		if st == nil {
+			continue
+		}
+		tracked := false
+		for slot := 0; slot < 8; slot++ {
+			if st.TrackingStatus.Slot(slot) == sbfbin.TrackStatusTracking {
+				tracked = true
+				break
+			}
+		}
+		if !tracked {
+			continue
+		}
 		sv := c.sv(id)
 		if la, ok := channelLookAngles(si); ok {
 			sv.LookAngles = la
 		}
-		if st != nil {
-			c.addUsedCodes(id, st)
-		}
+		c.addUsedCodes(id, st)
 	}
 }
 

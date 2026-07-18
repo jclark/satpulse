@@ -128,11 +128,13 @@ func testMeasBlock(ts sbfbin.TimeStamp, svid uint8, sig uint8, cn0 uint8) *sbfbi
 
 func testChannelStatusBlock(ts sbfbin.TimeStamp, svid uint8, usedSlot int) *sbfbin.Block {
 	pvt := sbfbin.SlotStatus(sbfbin.PVTStatusUsed) << (2 * usedSlot)
+	tracking := sbfbin.SlotStatus(sbfbin.TrackStatusTracking) << (2 * usedSlot)
 	return &sbfbin.Block{TimeStamp: ts, Params: &sbfbin.ChannelStatus{
 		SatInfo: []sbfbin.ChannelSatInfo{{SVID: svid, SVIDFull: uint16(svid), AzimuthRiseSet: 100, Elevation: 30}},
 		StateInfo: [][]sbfbin.ChannelStateInfo{{{
-			Antenna:   0,
-			PVTStatus: pvt,
+			Antenna:        0,
+			TrackingStatus: tracking,
+			PVTStatus:      pvt,
 		}}},
 	}}
 }
