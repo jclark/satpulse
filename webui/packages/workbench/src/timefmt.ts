@@ -48,10 +48,16 @@ function formatDateLocal(d: Date, second: string, locales?: string | string[]): 
 }
 
 // parseTAITime parses a ptime.Time string ("seconds.nanoseconds") to seconds.
+// A navigation solution time is the receiver's exact solution time, which can
+// fall just below the nominal whole-millisecond epoch by the receiver clock
+// bias (e.g. 893.999754 for nominal 894.000), so round to the nearest
+// millisecond before truncating, as the timing pipeline does.
 export function parseTAITime(t: string): number {
     const dot = t.indexOf('.');
     if (dot < 0) return parseInt(t, 10);
-    return parseInt(t.substring(0, dot), 10);
+    const secs = parseInt(t.substring(0, dot), 10);
+    const nanos = parseInt(t.substring(dot + 1).padEnd(9, '0'), 10);
+    return nanos >= 999500000 ? secs + 1 : secs;
 }
 
 // taiToUTC computes a UTC ISO string from TAI seconds and a leap second offset.
