@@ -57,10 +57,10 @@
     --info: #3b82f6;
     --gnss-gps: #2563eb;
     --gnss-galileo: #16a34a;
-    --gnss-beidou: #dc2626;
+    --gnss-beidou: #ef4444;
     --gnss-glonass: #c026d3;
-    --gnss-qzss: #ea580c;
-    --gnss-navic: #eab308;
+    --gnss-qzss: #f97316;
+    --gnss-navic: #facc15;
     --gnss-unknown: #6b7280;
     --rtcm: #2563eb;
     --spartn: #dc2626;
@@ -85,7 +85,7 @@
         --control-hover: #52525b;
         --gnss-gps: #60a5fa;
         --gnss-galileo: #4ade80;
-        --gnss-beidou: #f87171;
+        --gnss-beidou: #ef4444;
         --gnss-glonass: #e879f9;
         --gnss-qzss: #fb923c;
         --gnss-navic: #fde047;
