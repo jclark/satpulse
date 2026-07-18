@@ -157,24 +157,6 @@ RTCM or Raw section is disabled this would queue changes to controls
 the user cannot interact with and provoke apply warnings. The presets
 skip sections whose support flag is absent.
 
-## Open decision: reset qualifiers
-
-quectel-config adds qualifier flags (`signalOnlyWithReset`,
-`modeOnlyWithReset`, `rtcmMSMOnlyWithReset`) that qualify a capability
-rather than granting one: the change is stored-only and takes effect
-only after save + reload reset. Quectel declares all three. Nothing
-should be greyed -- the capability exists. How to surface "takes
-effect after save and reload" is undecided; candidates:
-
-- A small `text-info` note in the affected section when the qualifier
-  is present.
-- Extending the pending-status line in the bottom bar when a qualified
-  section is touched and Save is Nothing or Reset is None.
-
-Auto-selecting Save=Changes + Reset=Reload is rejected: it changes NVM
-and restarts the receiver as a side effect of an innocuous-looking
-edit.
-
 ## Deferred until dependencies merge
 
 Two flags (`surveyDur`, `reload`) are contributed only by pending backend
@@ -204,6 +186,29 @@ inert until the branch merges. Each is a one-line flip in
 The `SUP` table in `config-panel.tsx` already carries both names, so no
 other wiring is needed -- only the gating expression changes.
 
+One deferred item is new frontend work rather than a gating flip:
+
+- **Reset qualifiers** (quectel-config): `signalOnlyWithReset` and
+  `modeOnlyWithReset` qualify a capability rather than granting one.
+  On a receiver declaring them, the Configurator skips signal and
+  positioning-mode changes entirely unless the target both saves and
+  performs a reset that reloads (Save is not Nothing, Reset is Reload
+  or Cold start -- the `savesAndResets` gate), so an Apply without
+  them would be a silent no-op. The form must never represent such an
+  impossible request. Touching a qualified section auto-selects
+  Save=Changes and Reset=Reload, never downgrading a stronger existing
+  choice, with a message saying what was selected and why. Conversely,
+  undoing the save or reset selection while a qualified change is
+  pending reverts the qualified sections to their readback values and
+  clears their touched flags (other pending changes survive); the
+  message makes the discarded input -- possibly typed fixed-position
+  coordinates -- unsurprising. `rtcmMSMOnlyWithReset` does not fit
+  this mechanism: an MSM selection without save+reset is not an
+  impossible request -- the messages are enabled either way, at the
+  stored MSM type if that differs from the selection, and fully as
+  asked if it matches. How the UI should handle the MSM case is not
+  yet worked out.
+
 The other pending flags need no deferral: they gate controls that are
 already correct on master because master's receivers declare them when
 supported (the frontend keys on the stable JSON names and ignores names
@@ -216,11 +221,9 @@ the frontend needs to change -- the gating already written lights up:
   which the existing `speedSupported`/`has(SUP.surveyAcc)`/
   `has(SUP.fixedPosAcc)` gates already handle (`surveyDur` excepted, see
   above).
-- **quectel-config**: the reset qualifier flags
-  (`signalOnlyWithReset`/`modeOnlyWithReset`/`rtcmMSMOnlyWithReset`)
-  gate nothing (see "Open decision: reset qualifiers"); surfacing
-  "takes effect after save and reload" is still to be designed and
-  should be added when that branch lands.
+- **quectel-config**: the capability flags need nothing; the reset
+  qualifiers get the auto-select/revert mechanism above when the
+  branch lands.
 
 ## Receiver test matrix
 
