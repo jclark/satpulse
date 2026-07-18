@@ -31,12 +31,14 @@ import (
 const defaultPort = 15754
 
 const summary = `[-h|--help] [-v|--verbose] [-L|--listen host:port] [-t|--token]
+       [-n|--no-open-browser]
        [-d|--serial-device path [-s|--device-speed bps]] [--vendor name]
        [--packet-log path]`
 
 type flagVars struct {
 	listen      string
 	token       bool
+	noOpen      bool
 	device      string
 	speed       int
 	vendor      gpsreg.Vendor
@@ -77,6 +79,7 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 	flags := pflag.NewFlagSet("satpulsewb", pflag.ContinueOnError)
 	flags.StringVarP(&v.listen, "listen", "L", "", "listen on `host:port` and disable the access token")
 	flags.BoolVarP(&v.token, "token", "t", false, "require a generated access token even with --listen")
+	flags.BoolVarP(&v.noOpen, "no-open-browser", "n", false, "do not open a web browser at startup")
 	flags.StringVarP(&v.device, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.IntVarP(&v.speed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
 	flags.StringVar(&vendorStr, "vendor", "", "GPS receiver `vendor` name")
@@ -151,11 +154,12 @@ func run(v *flagVars) error {
 		}()
 	}
 	srv := newServer(ctx, sess, hub, lg, token, v.vendor, msgDirs())
-	// --listen is expert mode and never opens a browser. In guided mode the
-	// opened URL normally carries the multi-use token; on platforms whose argv
-	// leaks it, mint a single-use token for the launch instead so the value
-	// visible to other users is worthless once redeemed.
-	if v.listen == "" && canOpenBrowser() {
+	// --listen is expert mode and never opens a browser; --no-open-browser
+	// suppresses it in guided mode too (headless hosts, scripting, tests). In
+	// guided mode the opened URL normally carries the multi-use token; on
+	// platforms whose argv leaks it, mint a single-use token for the launch
+	// instead so the value visible to other users is worthless once redeemed.
+	if v.listen == "" && !v.noOpen && canOpenBrowser() {
 		launchToken := token
 		if launchBrowserLeaksURL {
 			launchToken = srv.newSingleUseToken()

@@ -399,7 +399,7 @@ async function launchSatpulsed(session: RunSession): Promise<{ fifoPath: string;
 async function launchWbFifo(session: RunSession, extraArgs: string[]): Promise<{ fifoPath: string } & Awaited<ReturnType<typeof waitWbUrl>>> {
   const fifoPath = path.join(session.runDir, 'gps.fifo');
   mkfifo(fifoPath);
-  const proc = session.spawnLogged('satpulsewb', satpulsewb, ['-d', fifoPath, ...extraArgs], {
+  const proc = session.spawnLogged('satpulsewb', satpulsewb, ['-n', '-d', fifoPath, ...extraArgs], {
     SATPULSE_GPSMSG_PATH: GPSMSG_PATH,
   });
   const info = await waitWbUrl(session, proc);
@@ -642,7 +642,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           return portAccepts(casterPort);
         });
         const link = await launchUbxsim(session);
-        const proc = session.spawnLogged('satpulsewb', satpulsewb, ['-d', link, '-s', UBXSIM_SPEED], {
+        const proc = session.spawnLogged('satpulsewb', satpulsewb, ['-n', '-d', link, '-s', UBXSIM_SPEED], {
           SATPULSE_GPSMSG_PATH: GPSMSG_PATH,
         });
         const info = await waitWbUrl(session, proc);
@@ -680,7 +680,7 @@ async function useUbxsim(use: (v: WorkbenchUbxsim) => Promise<void>, withDevice:
   openSessions.add(session);
   try {
     const link = await launchUbxsim(session);
-    const args = withDevice ? ['-d', link, '-s', UBXSIM_SPEED] : [];
+    const args = withDevice ? ['-n', '-d', link, '-s', UBXSIM_SPEED] : ['-n'];
     const proc = session.spawnLogged('satpulsewb', satpulsewb, args, {
       SATPULSE_GPSMSG_PATH: GPSMSG_PATH,
     });

@@ -50,3 +50,19 @@ func TestTokenShorthand(t *testing.T) {
 		}
 	}
 }
+
+func TestNoOpenBrowserShorthand(t *testing.T) {
+	v, usage, err := parseFlags([]string{"-n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !v.noOpen {
+		t.Error("-n did not set no-open-browser")
+	}
+	s := usage("satpulsewb")
+	for _, want := range []string{"[-n|--no-open-browser]", "-n, --no-open-browser"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("help does not contain %q:\n%s", want, s)
+		}
+	}
+}
