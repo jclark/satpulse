@@ -4,8 +4,8 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 
 # SYNOPSIS
 
-**satpulsewb** [**\-h**\|**\-\-help**] [**\-v**\|**\-\-verbose**] [**\-L**\|**\-\-listen** *host:port*] [**\-t**\|**\-\-token**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path* [**\-s**\|**\-\-device\-speed** *bps*]] [**\-\-vendor** *name*]\
+**satpulsewb** [**\-h**\|**\-\-help**] [**\-V**\|**\-\-version**] [**\-v**\|**\-\-verbose**] [**\-L**\|**\-\-listen** *host:port*] [**\-t**\|**\-\-token**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-n**\|**\-\-no\-open\-browser**] [**\-d**\|**\-\-serial\-device** *path* [**\-s**\|**\-\-device\-speed** *bps*]] [**\-\-vendor** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
 # DESCRIPTION
@@ -53,6 +53,9 @@ Without **\-\-token**, **\-\-listen** trusts the local browser environment: requ
 **\-t**, **\-\-token**
 : Require the generated access token even with **\-\-listen**.
 Without **\-\-listen** this is the default.
+
+**\-n**, **\-\-no\-open\-browser**
+: Do not open a browser at startup, even when run from a local desktop session.
 
 **\-d**, **\-\-serial\-device** *path*
 : Serial device connected to a GPS receiver, to connect to at startup.
