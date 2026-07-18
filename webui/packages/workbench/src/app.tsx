@@ -6,7 +6,7 @@ import type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo} from '@satpu
 import type {ConfigProps} from '@satpulse/gps/configtarget';
 import {ConnectionPanel} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
-import {ConfigPanel} from './config-panel';
+import {ConfigPanel, signalMapToSet} from './config-panel';
 import {PacketPanel} from './packet-panel';
 import {LoggingPanel} from './logging-panel';
 import {SurveyPanel} from './survey-panel';
@@ -27,7 +27,7 @@ export type {ConnState, MsgFileTag};
 export type ReceiverState =
     | {status: 'disconnected'}
     | {status: 'probing'}
-    | {status: 'identified'; vendor: string; hardware: string; firmware: string; supportedGNSS: string[]; packetFormats: string[]; configSupport: Set<string>}
+    | {status: 'identified'; vendor: string; hardware: string; firmware: string; supportedGNSS: string[]; packetFormats: string[]; configSupport: Set<string>; signalsSupported: Set<string>}
     | {status: 'unidentified'; packetFormats: string[]; warning: string}
     | {status: 'error'; error: string};
 
@@ -257,6 +257,7 @@ export function App() {
                         supportedGNSS: gnss,
                         packetFormats: evt.packetFormats || [],
                         configSupport: new Set(evt.configSupport || []),
+                        signalsSupported: signalMapToSet(evt.signalsSupported),
                     });
                     // Fetch the full catalog (empty set = all constellations):
                     // the constellation row is identical for every receiver, with
@@ -499,6 +500,7 @@ export function App() {
                         supportedGNSS: gnss,
                         packetFormats: r.packetFormats || [],
                         configSupport: new Set((r as any).configSupport || []),
+                        signalsSupported: signalMapToSet((r as any).signalsSupported),
                     });
                     const catalog = await transport.getAllSignals([]);
                     if (catalog && req === signalCatalogRequest.current) setSignalCatalog(catalog);
@@ -681,6 +683,7 @@ export function App() {
                         signalCatalog={signalCatalog}
                         configSupport={receiver.status === 'identified' ? receiver.configSupport : new Set()}
                         supportedGNSS={receiver.status === 'identified' ? new Set(receiver.supportedGNSS) : new Set()}
+                        signalsSupported={receiver.status === 'identified' ? receiver.signalsSupported : new Set()}
                         selectedSignals={selectedSignals}
                         setSelectedSignals={setSelectedSignals}
                         setOperation={setOperation}

@@ -34,6 +34,11 @@ interface Props {
     // holds the constellations the receiver supports; empty means "unknown".
     configSupport: ReadonlySet<string>;
     supportedGNSS: ReadonlySet<string>;
+    // signalsSupported holds the "GNSS:SIG" keys of the signals that exist on
+    // the receiver (from ReceiverEvent, where the backend fakes it as the L1
+    // band when the Configurator lacks signal support); empty means "no known
+    // restriction".
+    signalsSupported: ReadonlySet<string>;
     selectedSignals: Set<string>;
     setSelectedSignals: (fn: (prev: Set<string>) => Set<string>) => void;
     setOperation: (op: OperationState) => void;
@@ -63,7 +68,7 @@ const SUP = {
 } as const;
 
 // Convert a signalsEnabled map {GPS: ["L1","L5"]} to Set<string> {"GPS:L1","GPS:L5"}
-function signalMapToSet(m: Record<string, string[]> | undefined): Set<string> {
+export function signalMapToSet(m: Record<string, string[]> | undefined): Set<string> {
     const s = new Set<string>();
     if (!m) return s;
     for (const [gnss, sigs] of Object.entries(m)) {
@@ -118,7 +123,7 @@ function validateFields(
     return bad;
 }
 
-export function ConfigPanel({connState, readOnly, visible, configProps, signalCatalog, configSupport, supportedGNSS, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, clearRespSession, speed}: Props) {
+export function ConfigPanel({connState, readOnly, visible, configProps, signalCatalog, configSupport, supportedGNSS, signalsSupported, selectedSignals, setSelectedSignals, setOperation, addToast, onConfigReadback, clearRespSession, speed}: Props) {
     // A read-only window cannot drive the receiver: fold that into `connected`
     // so every field, the Apply/Discard buttons, and the automatic readback
     // trigger disable together, and the background readback never POSTs.
@@ -471,6 +476,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
         setSelectedSignals(prev => {
             const next = new Set(prev);
             for (const sig of sigs) {
+                if (!signalSupported(gnssName, sig)) continue;
                 const key = `${gnssName}:${sig}`;
                 if (enable) next.add(key);
                 else next.delete(key);
@@ -512,6 +518,11 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
     // supportedGNSS means "unknown" (e.g. unc never populates it): leave every
     // constellation enabled rather than greying them all.
     const gnssSupported = (name: string) => supportedGNSS.size === 0 || supportedGNSS.has(name);
+    // A signal is supported when signalsSupported lists it; signals outside
+    // the set do not exist on the receiver and are greyed in the picker. An
+    // empty set means "no known restriction": leave everything enabled.
+    const signalSupported = (gnssName: string, sig: string) =>
+        signalsSupported.size === 0 || signalsSupported.has(`${gnssName}:${sig}`);
     const speedSupported = has(SUP.speed);
     const surveySupported = has(SUP.survey);
     const fixedPosSupported = has(SUP.fixedPos);
@@ -863,6 +874,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                     signalCatalog={signalCatalog}
                     selectedSignals={selectedSignals}
                     isSupported={gnssSupported}
+                    isSignalSupported={signalSupported}
                     onConfirm={(signals) => { setSignalsTouched(true); setSelectedSignals(() => signals); setShowPicker(false); }}
                     onCancel={() => setShowPicker(false)}
                 />

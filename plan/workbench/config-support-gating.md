@@ -149,6 +149,20 @@ checkbox rows, contrary to the grey-out principle. Change to:
   (unc intentionally does not populate `SupportedGNSS`), not a
   transitional gap.
 
+Inside the picker, individual signals are additionally greyed by a
+`signalsSupported` field on `ReceiverEvent`: the signals that exist
+on the receiver, in catalog form, with absence meaning "no known
+restriction". Backends do not yet report supported signals (the
+eventual fix is a read-only supported-signals property on
+`ConfigProps`, populated by Configurators -- ubx already computes the
+set internally from key presence), so the session fakes the field: a
+Configurator without `signal` support cannot select signals finer
+than a whole constellation, and every backend that lacks it drives an
+L1-only receiver, so when the probed flags lack `signal` the field is
+the registry's L1-band catalog (e.g. a u-blox M9N greys GPS L5). The
+constellation toggles skip greyed signals so they can never enter the
+selected set.
+
 ## Preset buttons
 
 The Minimum and Daemon presets set change-flags wholesale (Minimum
