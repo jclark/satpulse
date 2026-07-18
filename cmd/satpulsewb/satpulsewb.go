@@ -30,7 +30,7 @@ import (
 // 1575.42 MHz), falling back to an OS-picked port when taken.
 const defaultPort = 15754
 
-const summary = `[-h|--help] [-L|--listen host:port] [-T|--token]
+const summary = `[-h|--help] [-v|--verbose] [-L|--listen host:port] [-t|--token]
        [-d|--serial-device path [-s|--device-speed bps]] [--vendor name]
        [--packet-log path]`
 
@@ -76,12 +76,15 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 	var help bool
 	flags := pflag.NewFlagSet("satpulsewb", pflag.ContinueOnError)
 	flags.StringVarP(&v.listen, "listen", "L", "", "listen on `host:port` and disable the access token")
-	flags.BoolVarP(&v.token, "token", "T", false, "require a generated access token even with --listen")
+	flags.BoolVarP(&v.token, "token", "t", false, "require a generated access token even with --listen")
 	flags.StringVarP(&v.device, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.IntVarP(&v.speed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
 	flags.StringVar(&vendorStr, "vendor", "", "GPS receiver `vendor` name")
 	flags.StringVar(&v.packetLog, "packet-log", "", "log packets to `path`")
-	flags.CountVarP(&verbose, "verbose", "v", "increase verbosity")
+	flags.BoolFuncP("verbose", "v", "increase logging verbosity", func(string) error {
+		verbose++
+		return nil
+	})
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.BoolVarP(&v.showVersion, "version", "V", false, "show version information")
 	usage := func(progName string) string {
@@ -219,7 +222,7 @@ func printURLs(w io.Writer, lg *slog.Logger, ln net.Listener, listenAddr, token 
 		}
 	}
 	if insecure {
-		lg.Warn("no access token on a non-loopback address; browsers will be refused, but clients can still control the receiver by sending a loopback Host (use -T to require a token and allow browser access)")
+		lg.Warn("no access token on a non-loopback address; browsers will be refused, but clients can still control the receiver by sending a loopback Host (use -t to require a token and allow browser access)")
 	}
 }
 

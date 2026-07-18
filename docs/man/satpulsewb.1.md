@@ -4,7 +4,7 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 
 # SYNOPSIS
 
-**satpulsewb** [**\-h**\|**\-\-help**] [**\-L**\|**\-\-listen** *host:port*] [**\-T**\|**\-\-token**]\
+**satpulsewb** [**\-h**\|**\-\-help**] [**\-v**\|**\-\-verbose**] [**\-L**\|**\-\-listen** *host:port*] [**\-t**\|**\-\-token**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path* [**\-s**\|**\-\-device\-speed** *bps*]] [**\-\-vendor** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
@@ -51,7 +51,7 @@ With an explicit port, a bind failure is an error; there is no fallback port, si
 **\-\-listen** also disables the access token, since the typical use is a tunnel.
 Without **\-\-token**, **\-\-listen** trusts the local browser environment: requests with a non-loopback Host are refused and a non-loopback bind prints a warning; use **\-\-token** to allow remote browser access.
 
-**\-T**, **\-\-token**
+**\-t**, **\-\-token**
 : Require the generated access token even with **\-\-listen**.
 Without **\-\-listen** this is the default.
 

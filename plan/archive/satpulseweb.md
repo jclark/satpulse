@@ -328,7 +328,7 @@ ContinueOnError); connection flags reuse the satpulsetool gps names
 and help strings exactly.
 
 ```
-satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH]
+satpulsewb [-L HOST:PORT] [-t] [--packet-log PATH]
            [-d DEVICE [-s SPEED]] [--vendor NAME]
 ```
 
@@ -354,8 +354,8 @@ satpulsewb [-L HOST:PORT] [-T] [--packet-log PATH]
   with an explicit port a bind failure is an error, no fallback
   (the user may have an ssh tunnel pointing at that port). Since
   the typical `-L` workflow is an ssh tunnel, `-L` also disables
-  the token; `-T`/`--token` turns generated-token auth back on
-  (`-T` without `-L` is accepted and redundant). Serving without a
+  the token; `-t`/`--token` turns generated-token auth back on
+  (`-t` without `-L` is accepted and redundant). Serving without a
   token on a non-loopback address prints a notice.
 - `-d`/`--serial-device` auto-connects at startup;
   `-s`/`--device-speed` stays optional as in satpulsetool. Connect is
@@ -413,7 +413,7 @@ The asset is control of the receiver for the duration of a run.
 satpulsewb has two modes, each making a statable trust decision:
 guided mode (no `-L`) binds all interfaces and mints a per-run
 token; expert mode (`-L`) binds exactly what the user said and
-disables the token unless `-T` restores it.
+disables the token unless `-t` restores it.
 
 What the token protects against: anyone who can reach the port but
 cannot observe its traffic. That includes the LAN, and any interface
@@ -443,7 +443,7 @@ What is deliberately not protected against:
 - A compromised browser or user account on the machine running the
   browser. The token sits in browser history and process memory;
   same-user compromise is out of scope.
-- In expert mode without `-T`, anyone who can reach the bind
+- In expert mode without `-t`, anyone who can reach the bind
   address. That is the mode's contract (the typical bind is an SSH
   tunnel target); a tokenless bind on a non-loopback address prints
   a warning.
@@ -837,7 +837,7 @@ workbench corrections scenarios land beside the daemon's
 RTCM check as-is.
 
 Checks at smoketest depth: startup and the printed URL/token, auth
-enforcement and the `-L`/`-T` token modes, snapshot endpoints
+enforcement and the `-L`/`-t` token modes, snapshot endpoints
 populating as the replay flows, SSE delivery and priming,
 packet-stream gating driven by a scripted SSE client, clean
 shutdown (auto-open gating checks arrive with the phase-7 auto-open
