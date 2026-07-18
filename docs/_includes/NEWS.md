@@ -50,7 +50,7 @@ _Not yet released_
 
 ### SatPulse Workbench
 
-- There is a new `satpulsewb` command, which serves SatPulse Workbench: a web app for interactive GPS receiver configuration and monitoring. It offers device-independent receiver configuration through a GUI that requires no knowledge of the receiver's protocol, live monitoring of position, time, satellites, and signal strength, a packet inspector, sending configuration message files chosen from a library search path (a personal library under the user's configuration directory, then the installed library, or `SATPULSE_GPSMSG_PATH`), and correction forwarding from an Ntrip caster or TCP source. `satpulsewb` is a commissioning tool run when needed: from a local desktop session it opens the browser automatically; over SSH it prints a URL protected by a per-run token. It serves a GUI session until stopped. (#357)
+- There is a new `satpulsewb` command, which serves SatPulse Workbench: a web app for interactive GPS receiver configuration and monitoring. It offers device-independent receiver configuration through a GUI that requires no knowledge of the receiver's protocol, live monitoring of position, time, satellites, and signal strength, a packet inspector, sending configuration message files chosen from a built-in library (with `SATPULSE_GPSMSG_PATH` directories searched ahead of it), and correction forwarding from an Ntrip caster or TCP source. `satpulsewb` is a commissioning tool run when needed: from a local desktop session it opens the browser automatically; over SSH it prints a URL protected by a per-run token. It serves a GUI session until stopped. (#357)
 
 ### Other satpulsetool improvements
 
