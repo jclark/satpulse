@@ -103,7 +103,8 @@ export interface Transport {
 
     // eventsOn subscribes to a session event and returns an unsubscribe
     // function. Subscribing is what makes the backend stream a gated
-    // high-rate event (gps:packet), so subscribe only while displaying.
+    // high-rate event (gps:packet). The Workbench packet panel keeps that
+    // subscription for its mounted lifetime so packets persist across tabs.
     eventsOn(name: string, cb: (data: any) => void): () => void;
 
     // openURL opens an external link.

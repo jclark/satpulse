@@ -21,6 +21,7 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
+	"github.com/jclark/satpulse/gps/msgfile"
 )
 
 // server adapts a session to HTTP: session methods become POST
@@ -32,7 +33,7 @@ type server struct {
 	lg      *slog.Logger
 	token   string        // empty means no auth
 	vendor  gpsreg.Vendor // --vendor: the vendor for every connect
-	msgDirs []string      // message-file library search path
+	msgDirs []msgfile.Dir // message-file library search path
 	mux     *http.ServeMux
 	files   http.Handler // static SPA assets, served under /
 	seatMu  sync.Mutex
@@ -46,7 +47,7 @@ type server struct {
 	singleUsed bool
 }
 
-func newServer(ctx context.Context, sess *session.Session, hub *sseHub, lg *slog.Logger, token string, vendor gpsreg.Vendor, msgDirs []string) *server {
+func newServer(ctx context.Context, sess *session.Session, hub *sseHub, lg *slog.Logger, token string, vendor gpsreg.Vendor, msgDirs []msgfile.Dir) *server {
 	s := &server{ctx: ctx, sess: sess, hub: hub, lg: lg, token: token, vendor: vendor, msgDirs: msgDirs, mux: http.NewServeMux(), files: http.FileServer(http.FS(webContent()))}
 	// Seed the writer broadcast with a no-holder value: after a restart with
 	// the token disabled, an old tab's EventSource reconnects and re-primes

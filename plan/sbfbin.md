@@ -928,10 +928,10 @@ port: 0-3 COM1-4, 4/5 USB1/2, 6 IP, 7 SBF file, 8 L-Band, 9 NTRIP, 10/11
 OTG1/2, 12 Bluetooth, 15 UHF modem, 16 IPR, 17 direct call, 18 IPS, 19
 SSR2OBS; DNU `255`)+ a single trailing `[]byte` spanning `raw[16:Length]`
 (the correction message, still framed, verbatim; a decoder must not
-trim padding here -- push that to whichever inner-protocol package,
-e.g. `gps/lib/rtcmbin`/`gps/lib/spartnbin`, understands the specific
-framing and finds its own true end, exactly as those packages already
-do when parsing a native stream). No RTCM2/CMR/RTCMV unpacking belongs
+trim padding here -- the Septentrio converter finds the true end from
+the RTCM or SPARTN framing and validates the exact inner packet with
+that protocol's `gpsprot.PacketFormat` before extracting its message ID
+or parsing it). No RTCM2/CMR/RTCMV unpacking belongs
 in `sbfbin` -- store the raw trailing bytes and stop. `OnChange` per correction
 message received; **Receiver** timestamp (time the receiver decoded
 the message, not a signal-in-space time); no Flex-Rate/esoc.
