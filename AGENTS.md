@@ -18,7 +18,7 @@ Read-only commands confined to the workspace, such as `rg`, file inspection, `gi
 
 ## Commit messages
 
-One-line commit messages are not good enough. Use a concise subject followed by a body that explains the problem, the behavior change, and any important implementation details.
+Use judgment. For substantive non-merge changes, a one-line commit message is not enough: use a concise subject followed by a body that explains the problem, the behavior change, and any important implementation details. Routine merge commits may keep Git's generated one-line message, and trivial mechanical changes do not need a padded body.
 
 ## Pull requests
 
