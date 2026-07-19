@@ -133,12 +133,25 @@ func formatText(pkt scan.Packet) string {
 	if s == "" {
 		return ""
 	}
-	for i := range len(s) {
-		if !isPrintable(s[i]) {
+	// A multi-line reply packet (e.g. a Septentrio $R reply) is CRLF-separated;
+	// pass internal line breaks through as newlines so it displays as its lines
+	// rather than falling back to the hex path.
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\r' || c == '\n' {
+			if c == '\r' && i+1 < len(s) && s[i+1] == '\n' {
+				i++
+			}
+			b.WriteByte('\n')
+			continue
+		}
+		if !isPrintable(c) {
 			return ""
 		}
+		b.WriteByte(c)
 	}
-	return s + "\n"
+	return b.String() + "\n"
 }
 
 func (rh *responseHandler) flushLine() {
