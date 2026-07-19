@@ -218,10 +218,8 @@ func (f replyPacketFormat) IsFinal(state gpsprot.ScanState) bool {
 	return state == rStateComplete
 }
 
-// MsgID returns a fixed name: reply packets carry no per-message identifier
-// that the command-line tool needs, and they are displayed as text.
 func (f replyPacketFormat) MsgID(pkt []byte) string {
-	return "reply"
+	return string(pkt[1:3])
 }
 
 // ExtractChecksum returns nil: the reply format has no checksum.

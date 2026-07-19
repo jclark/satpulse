@@ -77,6 +77,24 @@ func TestReplyBlockSectionTabIndent(t *testing.T) {
 	framesWhole(t, "$-- BLOCK 2 / 0\r\nrcAntennas  OBJECT-TYPE\r\n    SYNTAX       BITS {\r\n\tMain(0),\r\n\tAux1(1) }\r\n---->")
 }
 
+func TestReplyMsgID(t *testing.T) {
+	tests := []struct {
+		pkt  string
+		want string
+	}{
+		{"$R: setElevationMask, all, 5\r\nCOM1>", "R:"},
+		{"$R; lstAsciiDisplay\r\n---->", "R;"},
+		{"$R! LogIn\r\nCOM1>", "R!"},
+		{"$R? SBFOutput: Not authorized!\r\nCOM1>", "R?"},
+		{"$-- BLOCK 1 / 1\r\ncontents\r\nCOM1>", "--"},
+	}
+	for _, tt := range tests {
+		if got := ReplyPacketFormat.MsgID([]byte(tt.pkt)); got != tt.want {
+			t.Errorf("MsgID(%q) = %q, want %q", tt.pkt, got, tt.want)
+		}
+	}
+}
+
 func TestReplyLstFramesIntoUnits(t *testing.T) {
 	// A whole lst reply frames as a sequence of units: the "$R;" opener, then
 	// each "$--BLOCK" section, ending at the last section's real prompt. The
