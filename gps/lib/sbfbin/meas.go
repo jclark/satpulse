@@ -269,22 +269,11 @@ func (o ObsInfo) HalfCycleAmbiguity() bool {
 // value 0 does not encode a frequency number and reports false, as does any
 // non-FDMA signal.
 func (t *MeasEpochChannelType1) GLONASSFreqNr() (int8, bool) {
-	return glonassFreqNr(t.Type, t.ObsInfo)
-}
-
-// GLONASSFreqNr returns the GLONASS frequency number for a slave channel.
-// The reference guide spells out the ObsInfo frequency-number encoding only
-// for the Type1 sub-block; applying it to Type2 follows plan/sbf-rinex.md.
-func (t *MeasEpochChannelType2) GLONASSFreqNr() (int8, bool) {
-	return glonassFreqNr(t.Type, t.ObsInfo)
-}
-
-func glonassFreqNr(typ MeasType, obs ObsInfo) (int8, bool) {
-	n := uint8(typ) & 0x1F
-	if n < SigNumGLONASSL1CA || n > SigNumGLONASSL2CA || obs>>3 == 0 {
+	n := uint8(t.Type) & 0x1F
+	if n < SigNumGLONASSL1CA || n > SigNumGLONASSL2CA || t.ObsInfo>>3 == 0 {
 		return 0, false
 	}
-	return int8(uint8(obs)>>3) - 8, true
+	return int8(uint8(t.ObsInfo)>>3) - 8, true
 }
 
 type measExtraHead struct {
@@ -423,6 +412,11 @@ func (s *MeasExtraChannelSub) SignalNumber() uint8 {
 		return 32 + (s.Misc>>3)&0x1F
 	}
 	return n
+}
+
+// AntennaID returns the AntennaID field of a MeasExtra channel sub-block.
+func (s *MeasExtraChannelSub) AntennaID() uint8 {
+	return measAntennaID(s.Type)
 }
 
 // CN0HighRes returns the high-resolution C/N0 refinement in dB-Hz to be added
