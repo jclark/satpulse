@@ -66,3 +66,38 @@ func TestNoOpenBrowserShorthand(t *testing.T) {
 		}
 	}
 }
+
+func TestConnectionFlags(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		device      string
+		speed       int
+		autoConnect bool
+	}{
+		{name: "defaults", speed: 9600},
+		{name: "device only", args: []string{"-d", "DEV"}, device: "DEV", speed: 9600},
+		{name: "speed only", args: []string{"-s", "38400"}, speed: 38400},
+		{name: "device and speed", args: []string{"-d", "DEV", "-s", "38400"}, device: "DEV", speed: 38400, autoConnect: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			v, _, err := parseFlags(tc.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if v.device != tc.device || v.speed != tc.speed || v.autoConnect != tc.autoConnect {
+				t.Errorf("connection flags = (%q, %d, %v), want (%q, %d, %v)",
+					v.device, v.speed, v.autoConnect, tc.device, tc.speed, tc.autoConnect)
+			}
+		})
+	}
+}
+
+func TestZeroDeviceSpeedRejected(t *testing.T) {
+	for _, speed := range []string{"0", "-1"} {
+		if _, _, err := parseFlags([]string{"-s", speed}); err == nil {
+			t.Errorf("-s %s succeeded", speed)
+		}
+	}
+}

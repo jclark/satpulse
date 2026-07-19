@@ -1,10 +1,12 @@
 # satpulsewb with no -L: the real default-port path (the canonical port, or an
 # OS-picked fallback when it is taken), an all-interfaces bind, and a generated
 # access token -- the URL and token the runner parses from stdout. -n keeps the
-# guided path from opening a browser on the test host. -d auto-connects at
+# guided path from opening a browser on the test host. -d with -s auto-connects at
 # startup over the read-only FIFO the runner allocated, so the session skips
 # probing, falls to passive detection, and still reaches connected.
 -v
 -n
 -d
 ${SATPULSE_TEST_SERIAL}
+-s
+38400

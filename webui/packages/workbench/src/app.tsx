@@ -121,6 +121,8 @@ export function App() {
     const [signalCatalog, setSignalCatalog] = useState<Record<string, string[]>>({});
     const [selectedSignals, setSelectedSignals] = useState<Set<string>>(new Set());
     const signalCatalogRequest = useRef(0);
+    const connStateSeen = useRef(false);
+    const connSpeedSeen = useRef(false);
     const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [, setOperation] = useState<OperationState>({status: 'idle', label: ''});
@@ -220,17 +222,6 @@ export function App() {
         transport.connection?.listPorts().then(list => setPorts(list || [])).catch(() => {});
     }, []);
 
-    // Fetch ports on startup; auto-select if exactly one port
-    useEffect(() => {
-        const conn = transport.connection;
-        if (!conn) return;
-        conn.listPorts().then(list => {
-            const ps = list || [];
-            setPorts(ps);
-            if (ps.length === 1) setDevice(ps[0].device);
-        }).catch(() => {});
-    }, []);
-
     useEffect(() => {
         const offReadOnly = transport.eventsOn('wb:readonly', (ro: boolean) => setReadOnly(ro));
         const offLog = transport.eventsOn('gps:log', (evt: LogEntry) => {
@@ -276,7 +267,10 @@ export function App() {
             }
         });
         const offSpeed = transport.eventsOn('gps:speed', (newSpeed: number) => {
-            if (newSpeed) setSpeed(newSpeed);
+            if (newSpeed) {
+                connSpeedSeen.current = true;
+                setSpeed(newSpeed);
+            }
         });
         const offMsg = transport.eventsOn('gps:msg', (evt: MsgEvent) => {
             switch (evt.kind) {
@@ -331,6 +325,7 @@ export function App() {
             }
         });
         const offState = transport.eventsOn('gps:state', (state: ConnState) => {
+            connStateSeen.current = true;
             setConnState(state);
             if (state === 'configuring' || state === 'disconnected') {
                 respSessionRef.current = 0;
@@ -477,14 +472,20 @@ export function App() {
         };
     }, []);
 
-    // Sync connection state with the backend on mount (late-joining
-    // client, or HMR reload)
+    // Sync the complete connection bar with the backend on mount (late-joining
+    // client, or HMR reload). Enumerated ports are choices, not connection
+    // state: only auto-select a sole port when no explicit device is retained.
     useEffect(() => {
         const req = ++signalCatalogRequest.current;
-        transport.getConnState().then(async (s: string) => {
-            if (req !== signalCatalogRequest.current) return;
-            setConnState(s as ConnState);
-            if (s === 'disconnected') return;
+        const portsPromise = transport.connection
+            ? transport.connection.listPorts().catch(() => [] as PortInfo[])
+            : Promise.resolve([] as PortInfo[]);
+        Promise.all([transport.getConnection(), portsPromise]).then(async ([conn, ps]) => {
+            setPorts(ps);
+            setDevice(conn.device || (ps.length === 1 ? ps[0].device : ''));
+            if (!connSpeedSeen.current) setSpeed(conn.speed);
+            if (!connStateSeen.current) setConnState(conn.state);
+            if (conn.state === 'disconnected' || req !== signalCatalogRequest.current) return;
             const r = await transport.getReceiverState();
             if (req !== signalCatalogRequest.current) return;
             if (r.ok) {

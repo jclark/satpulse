@@ -5,7 +5,7 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 # SYNOPSIS
 
 **satpulsewb** [**\-h**\|**\-\-help**] [**\-V**\|**\-\-version**] [**\-v**\|**\-\-verbose**] [**\-L**\|**\-\-listen** *host:port*] [**\-t**\|**\-\-token**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-n**\|**\-\-no\-open\-browser**] [**\-d**\|**\-\-serial\-device** *path* [**\-s**\|**\-\-device\-speed** *bps*]] [**\-\-vendor** *name*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-n**\|**\-\-no\-open\-browser**] [**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*] [**\-\-vendor** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
 # DESCRIPTION
@@ -36,8 +36,9 @@ Both steps can be one command, with **\-t** so that Ctrl-C reaches **satpulsewb*
 
     local$ ssh -t -L 2050:localhost:15754 192.168.1.50 satpulsewb -L localhost:15754
 
-Without **\-\-serial\-device**, the session starts disconnected and the receiver is chosen and connected from the GUI.
-With it, **satpulsewb** connects at startup; a browser arriving later catches up on the current state.
+The serial-device and device-speed options independently initialize the corresponding controls in the connection bar.
+When both are specified, **satpulsewb** connects at startup; otherwise the session starts disconnected and the remaining connection settings are chosen in the GUI.
+A browser arriving later catches up on the current connection and control values.
 
 # OPTIONS
 
@@ -58,11 +59,13 @@ Without **\-\-listen** this is the default.
 : Do not open a browser at startup, even when run from a local desktop session.
 
 **\-d**, **\-\-serial\-device** *path*
-: Serial device connected to a GPS receiver, to connect to at startup.
+: Initial serial device shown in the connection bar.
+Together with **\-\-device\-speed**, connect to it at startup.
 
 **\-s**, **\-\-device\-speed** *bps*
-: Serial device baud rate.
-If this option is omitted, the device's current speed is used.
+: Initial serial device baud rate shown in the connection bar.
+Together with **\-\-serial\-device**, connect at startup.
+The default shown in the GUI is 9600.
 
 **\-\-vendor** *name*
 : Restrict probing and packet format detection to a receiver vendor.
@@ -96,7 +99,7 @@ Serve on all interfaces with a generated token, connecting from the GUI:
 
 Connect to a receiver at startup:
 
-    satpulsewb -d /dev/ttyACM0
+    satpulsewb -d /dev/ttyACM0 -s 38400
 
 Loopback only, for use through an SSH tunnel:
 

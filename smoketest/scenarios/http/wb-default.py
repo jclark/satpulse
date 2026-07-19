@@ -1,7 +1,7 @@
 """satpulsewb default launch: URL/token, auth, snapshots, SSE, priming, gating.
 
 No -L, so the runner exercises the real default-port path and parses the printed
-URL and generated token. -d auto-connects over the FIFO; the read-only FIFO
+URL and generated token. -d with -s auto-connects over the FIFO; the read-only FIFO
 makes the session skip probing and fall to passive detection, so it reaches
 connected and the monitor events flow. This is the workbench's meaty smoke
 scenario -- wb-listen covers the token-disabled -L path.
