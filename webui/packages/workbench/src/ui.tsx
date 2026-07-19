@@ -163,16 +163,17 @@ export function ConfigSubSubGroup({title, disabled, children}: ConfigSubSubGroup
 export interface ConfigGroupProps {
     title: string;
     defaultOpen?: boolean;
+    disabled?: boolean;
     children: ComponentChildren;
 }
 
-export function ConfigGroup({title, defaultOpen = true, children}: ConfigGroupProps) {
+export function ConfigGroup({title, defaultOpen = true, disabled, children}: ConfigGroupProps) {
     const [open, setOpen] = useState(defaultOpen);
     return (
         <section class="mt-3 first:mt-0">
             <button
                 type="button"
-                class="flex cursor-pointer items-center gap-2 border-none bg-transparent py-1.5 text-left text-sm font-semibold text-text-secondary hover:text-text-primary"
+                class={`flex cursor-pointer items-center gap-2 border-none bg-transparent py-1.5 text-left text-sm font-semibold ${disabled ? 'text-text-muted' : 'text-text-secondary hover:text-text-primary'}`}
                 onClick={() => setOpen(!open)}
             >
                 <svg

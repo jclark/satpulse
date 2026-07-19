@@ -1,0 +1,269 @@
+package septentrio
+
+import (
+	"time"
+
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/gps/lib/sbfbin"
+)
+
+var (
+	_ gpsprot.PacketProcessor = (*PacketProcessor)(nil)
+	_ gpsprot.EpochFlusher    = (*PacketProcessor)(nil)
+)
+
+type navEpochState struct {
+	ts    sbfbin.TimeStamp
+	msg   *gpsprot.NavEpochMsg
+	start time.Time
+}
+
+// PacketProcessor implements gpsprot.PacketProcessor and gpsprot.EpochFlusher
+// for Septentrio SBF packets. It parses each packet via sbfbin.ParseMsg,
+// converts recognized blocks into gpsprot.Msg values, accumulates one
+// NavEpochMsg per navigation epoch, runs an independent SatellitesMsg stream,
+// and falls back to NativeMsg for every unmapped block.
+type PacketProcessor struct {
+	gpsprot.DefaultPacketProcessor
+	mh  gpsprot.MsgHandler
+	mgr *gpsprot.NavEpochManager
+
+	// Navigation epoch keyed by the (TOW, WNc) block header. ReceiverTime can
+	// start it, while PVT-family blocks populate its quality fields.
+	curEpoch *navEpochState
+
+	// Independent SatellitesMsg stream: ChannelStatus emits satellites, and
+	// the latest MeasEpoch supplies optional signal-strength enrichment once.
+	satMeas *sbfbin.MeasEpoch
+
+	// Last-seen RTCM base station, retained across epochs (BaseStation is
+	// event-driven, not epoch-keyed).
+	baseStationID   opt.Val[uint16]
+	baseStationRTCM bool
+}
+
+// NewPacketProcessor creates a new SBF packet processor sharing the given
+// NavEpochManager with the receiver's other protocol processors.
+func NewPacketProcessor(mgr *gpsprot.NavEpochManager) *PacketProcessor {
+	return &PacketProcessor{mgr: mgr}
+}
+
+// SetMsgHandler sets the handler for protocol-agnostic messages.
+func (p *PacketProcessor) SetMsgHandler(handler gpsprot.MsgHandler) {
+	p.mh = handler
+}
+
+// ProcessPacket parses an SBF packet, converts it, and returns its message ID.
+func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
+	b, err := sbfbin.ParseMsg(data)
+	if err != nil {
+		return PacketFormat.MsgID([]byte(data)), err
+	}
+	msgID := b.ID().String()
+	if p.Dispatch(b, tRead) {
+		return msgID, nil
+	}
+	if nmh := p.GetNativeMsgHandler(); nmh != nil {
+		return msgID, nmh.NativeMsg(Tag, msgID, b, tRead)
+	}
+	return msgID, nil
+}
+
+// Dispatch converts a decoded SBF block into protocol-agnostic messages and
+// sends them to the message handler. It reports whether the block was handled;
+// unhandled blocks fall back to the native message handler.
+func (p *PacketProcessor) Dispatch(b *sbfbin.Block, tRead time.Time) bool {
+	switch m := b.Params.(type) {
+	case *sbfbin.PVTGeodetic:
+		ne := p.navEpoch(b.TimeStamp, tRead)
+		qualityPVT(ne, pvtGeodeticCommon(m), p.baseStationID, p.baseStationRTCM)
+		p.emitTime(timePVTGeodetic(b, m), tRead)
+		p.emitPosGeo(posGeoPVTGeodetic(m), tRead)
+		p.emitVelGeo(velGeoPVTGeodetic(m), tRead)
+		return true
+	case *sbfbin.PVTCartesian:
+		ne := p.navEpoch(b.TimeStamp, tRead)
+		qualityPVT(ne, pvtCartesianCommon(m), p.baseStationID, p.baseStationRTCM)
+		p.emitTime(timePVTCartesian(b, m), tRead)
+		p.emitPosECEF(posECEFPVTCartesian(m), tRead)
+		p.emitVelECEF(velECEFPVTCartesian(m), tRead)
+		p.emitSurvey(surveyPVTCartesian(m), tRead)
+		return true
+	case *sbfbin.DOP:
+		dopDOP(p.navEpoch(b.TimeStamp, tRead), m)
+		return true
+	case *sbfbin.PosCovCartesian:
+		accPosCovCartesian(p.navEpoch(b.TimeStamp, tRead), m)
+		return true
+	case *sbfbin.PosCovGeodetic:
+		accPosCovGeodetic(p.navEpoch(b.TimeStamp, tRead), m)
+		return true
+	case *sbfbin.VelCovCartesian:
+		accVelCovCartesian(p.navEpoch(b.TimeStamp, tRead), m)
+		return true
+	case *sbfbin.VelCovGeodetic:
+		accVelCovGeodetic(p.navEpoch(b.TimeStamp, tRead), m)
+		return true
+	case *sbfbin.EndOfPVT:
+		p.mgr.EndOfProtocolEpoch(p, tRead)
+		return true
+	case *sbfbin.ReceiverTime:
+		p.navEpoch(b.TimeStamp, tRead)
+		p.emitTime(timeReceiverTime(b, m), tRead)
+		return true
+	case *sbfbin.XPPSOffset:
+		p.emitTime(timeXPPSOffset(b, m), tRead)
+		return true
+	case *sbfbin.GPSUtc:
+		p.emitLeap(leapGPSUtc(b, m), tRead)
+		return true
+	case *sbfbin.GALUtc:
+		p.emitLeap(leapGALUtc(b, m), tRead)
+		return true
+	case *sbfbin.BDSUtc:
+		p.emitLeap(leapBDSUtc(b, m), tRead)
+		return true
+	case *sbfbin.ChannelStatus:
+		p.emitChannelStatusSats(m, tRead)
+		return true
+	case *sbfbin.MeasEpoch:
+		p.satMeas = m
+		return true
+	case *sbfbin.DiffCorrIn:
+		msg := corReportDiffCorrIn(m, p.baseStationID, p.baseStationRTCM)
+		if msg == nil {
+			return false
+		}
+		p.emitCorReport(msg, tRead)
+		return true
+	case *sbfbin.BaseStation:
+		p.observeBaseStation(m)
+		return false // no gpsprot.Msg; still report as native
+	default:
+		return false
+	}
+}
+
+// navEpoch returns the accumulating NavEpochMsg for the epoch identified by
+// ts, starting a new epoch when the previous accumulator was flushed or the
+// timestamp changes. Starting an epoch flushes the previous one via
+// EpochStarted.
+func (p *PacketProcessor) navEpoch(ts sbfbin.TimeStamp, tRead time.Time) *gpsprot.NavEpochMsg {
+	if p.curEpoch == nil || p.curEpoch.msg == nil || p.curEpoch.ts != ts {
+		p.mgr.EpochStarted(p, tRead)
+		p.curEpoch = &navEpochState{ts: ts, msg: &gpsprot.NavEpochMsg{}, start: tRead}
+	}
+	return p.curEpoch.msg
+}
+
+// FlushNavEpoch implements gpsprot.EpochFlusher. It returns the accumulated
+// NavEpochMsg for the current epoch (the SatellitesMsg stream is independent
+// and is not flushed here). Clearing the accumulator makes the next
+// epoch-keying block start a new epoch; the rest of the epoch state is retained
+// for ReadDelay.
+func (p *PacketProcessor) FlushNavEpoch(tRead time.Time) (*gpsprot.NavEpochMsg, gpsprot.MsgPriority, gpsprot.MsgHandler) {
+	var msg *gpsprot.NavEpochMsg
+	if p.curEpoch != nil {
+		msg = p.curEpoch.msg
+		p.curEpoch.msg = nil
+	}
+	if msg != nil {
+		msg.Tag = Tag
+	}
+	return msg, gpsprot.PriVendorLow, p.mh
+}
+
+// emitChannelStatusSats emits immediately on ChannelStatus, consuming the
+// latest MeasEpoch for CN0 and signal identity when available.
+func (p *PacketProcessor) emitChannelStatusSats(chn *sbfbin.ChannelStatus, tRead time.Time) {
+	p.emitSats(satellitesCombine(chn, p.satMeas), tRead)
+	p.satMeas = nil
+}
+
+func (p *PacketProcessor) emitSats(msg *gpsprot.SatellitesMsg, tRead time.Time) bool {
+	if msg == nil || p.mh == nil {
+		return false
+	}
+	msg.Tag = Tag
+	p.mh.Satellites(msg, tRead)
+	return true
+}
+
+// observeBaseStation records the last-seen RTCM base station ID for cross-block
+// RTCMRefBaseID fill.
+func (p *PacketProcessor) observeBaseStation(m *sbfbin.BaseStation) {
+	p.baseStationID = opt.Make(m.BaseStationID)
+	p.baseStationRTCM = m.Source == sbfbin.BaseSourceRTCM
+}
+
+// Emission helpers stamp Tag/Priority centrally, keeping the per-block
+// converters protocol-detail-only.
+
+func (p *PacketProcessor) emitTime(tm *gpsprot.TimeMsg, tRead time.Time) {
+	if tm == nil || p.mh == nil {
+		return
+	}
+	tm.Tag = Tag
+	if tm.Ref == gpsprot.NavSolution && p.curEpoch != nil {
+		tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curEpoch.start))
+	}
+	p.mh.Time(tm, tRead)
+}
+
+func (p *PacketProcessor) emitLeap(ls *gpsprot.LeapSecondMsg, tRead time.Time) {
+	if ls == nil || p.mh == nil {
+		return
+	}
+	p.mh.LeapSecond(ls, tRead)
+}
+
+func (p *PacketProcessor) emitPosGeo(m *gpsprot.PosGeoMsg, tRead time.Time) {
+	if m == nil || p.mh == nil {
+		return
+	}
+	m.Tag = Tag
+	m.Priority = gpsprot.PriVendorLow
+	p.mh.PosGeo(m, tRead)
+}
+
+func (p *PacketProcessor) emitPosECEF(m *gpsprot.PosECEFMsg, tRead time.Time) {
+	if m == nil || p.mh == nil {
+		return
+	}
+	m.Tag = Tag
+	m.Priority = gpsprot.PriVendorLow
+	p.mh.PosECEF(m, tRead)
+}
+
+func (p *PacketProcessor) emitVelGeo(m *gpsprot.VelGeoMsg, tRead time.Time) {
+	if m == nil || p.mh == nil {
+		return
+	}
+	m.Tag = Tag
+	m.Priority = gpsprot.PriVendorLow
+	p.mh.VelGeo(m, tRead)
+}
+
+func (p *PacketProcessor) emitVelECEF(m *gpsprot.VelECEFMsg, tRead time.Time) {
+	if m == nil || p.mh == nil {
+		return
+	}
+	m.Tag = Tag
+	m.Priority = gpsprot.PriVendorLow
+	p.mh.VelECEF(m, tRead)
+}
+
+func (p *PacketProcessor) emitSurvey(m *gpsprot.SurveyMsg, tRead time.Time) {
+	if m == nil || p.mh == nil {
+		return
+	}
+	p.mh.Survey(m, tRead)
+}
+
+func (p *PacketProcessor) emitCorReport(m *gpsprot.CorReportMsg, tRead time.Time) {
+	if m == nil || p.mh == nil {
+		return
+	}
+	p.mh.CorReport(m, tRead)
+}

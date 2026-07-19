@@ -6,7 +6,7 @@ import type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo} from '@satpu
 import type {ConfigProps} from '@satpulse/gps/configtarget';
 import {ConnectionPanel} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
-import {ConfigPanel} from './config-panel';
+import {ConfigPanel, signalMapToSet} from './config-panel';
 import {PacketPanel} from './packet-panel';
 import {LoggingPanel} from './logging-panel';
 import {SurveyPanel} from './survey-panel';
@@ -27,7 +27,7 @@ export type {ConnState, MsgFileTag};
 export type ReceiverState =
     | {status: 'disconnected'}
     | {status: 'probing'}
-    | {status: 'identified'; vendor: string; hardware: string; firmware: string; supportedGNSS: string[]; packetFormats: string[]}
+    | {status: 'identified'; vendor: string; hardware: string; firmware: string; supportedGNSS: string[]; packetFormats: string[]; configSupport: Set<string>; signalsSupported: Set<string>}
     | {status: 'unidentified'; packetFormats: string[]; warning: string}
     | {status: 'error'; error: string};
 
@@ -256,8 +256,13 @@ export function App() {
                         firmware: info?.firmware || '',
                         supportedGNSS: gnss,
                         packetFormats: evt.packetFormats || [],
+                        configSupport: new Set(evt.configSupport || []),
+                        signalsSupported: signalMapToSet(evt.signalsSupported),
                     });
-                    transport.getAllSignals(gnss).then(cat => {
+                    // Fetch the full catalog (empty set = all constellations):
+                    // the constellation row is identical for every receiver, with
+                    // unsupported constellations greyed rather than dropped.
+                    transport.getAllSignals([]).then(cat => {
                         if (cat && req === signalCatalogRequest.current) setSignalCatalog(cat);
                     }).catch(() => {});
                 } else {
@@ -494,8 +499,10 @@ export function App() {
                         firmware: info?.firmware || '',
                         supportedGNSS: gnss,
                         packetFormats: r.packetFormats || [],
+                        configSupport: new Set((r as any).configSupport || []),
+                        signalsSupported: signalMapToSet((r as any).signalsSupported),
                     });
-                    const catalog = await transport.getAllSignals(gnss);
+                    const catalog = await transport.getAllSignals([]);
                     if (catalog && req === signalCatalogRequest.current) setSignalCatalog(catalog);
                 } else {
                     setReceiver({
@@ -534,7 +541,7 @@ export function App() {
 
     // Receiver identity string for connection bar
     const receiverIdent = receiver.status === 'identified'
-        ? `${receiver.hardware} (FW ${receiver.firmware})`
+        ? `${receiver.vendor} ${receiver.hardware} (FW ${receiver.firmware})`
         : receiver.status === 'unidentified'
             ? receiver.packetFormats.length > 0
                 ? `Unknown (${receiver.packetFormats.join(', ')})`
@@ -656,7 +663,7 @@ export function App() {
                     </CollapsibleSection>
                 </div>
 
-                {/* Packets tab */}
+                {/* Keep PacketPanel mounted so its packet subscriber spans tab changes. */}
                 <div class={`h-full ${activeTab === 'packets' ? '' : 'hidden'}`}>
                     <PacketPanel visible={activeTab === 'packets'} connState={connState} />
                 </div>
@@ -674,6 +681,9 @@ export function App() {
                         visible={activeTab === 'config'}
                         configProps={configProps}
                         signalCatalog={signalCatalog}
+                        configSupport={receiver.status === 'identified' ? receiver.configSupport : new Set()}
+                        supportedGNSS={receiver.status === 'identified' ? new Set(receiver.supportedGNSS) : new Set()}
+                        signalsSupported={receiver.status === 'identified' ? receiver.signalsSupported : new Set()}
                         selectedSignals={selectedSignals}
                         setSelectedSignals={setSelectedSignals}
                         setOperation={setOperation}

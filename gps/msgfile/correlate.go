@@ -3,6 +3,7 @@ package msgfile
 import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/internal/septentrio"
 )
 
 // requestAnalyzer produces a requestAnalysis from outgoing message bytes.
@@ -48,6 +49,8 @@ const (
 	responseAck                           // positive acknowledgement
 	responseNak                           // negative acknowledgement
 	responseWait                          // interim "still processing"
+	responseAckMore                       // positive ack, but more output follows; keep request open
+	responseDone                          // completes a request whose ack was already reported
 )
 
 type responseAnalysis struct {
@@ -66,6 +69,7 @@ const (
 	ackNotExpected ackStatus = iota // zero value: no ack expected
 	ackWait                         // expecting ack
 	ackWaitMore                     // got responseWait, real ack coming
+	ackSuccessMore                  // got responseAckMore, data coming
 	ackSuccess                      // got responseAck
 	ackFailed                       // got responseNak
 )
@@ -133,6 +137,7 @@ func NewCorrelator() *Correlator {
 			gpsreg.TagSDBP:         sdbpAnalyzer{},
 			gpsreg.TagNMEA:         nmeaAnalyzer{},
 			gpsreg.TagUnicoreAscii: uncaAnalyzer{},
+			septentrio.TagReply:    septAnalyzer{},
 		},
 	}
 }
@@ -190,7 +195,7 @@ func (c *Correlator) ReadyToSend(rm RawMsg) bool {
 		if c.requestComplete(rs) {
 			continue
 		}
-		if rs.ack != ackWait && rs.ack != ackWaitMore {
+		if rs.ack != ackWait && rs.ack != ackWaitMore && rs.ack != ackSuccessMore {
 			continue
 		}
 		if rs.analysis.ackTag == a.ackTag && rs.analysis.ackCorrelate == a.ackCorrelate {
@@ -204,7 +209,7 @@ func (c *Correlator) ReadyToSend(rm RawMsg) bool {
 func (c *Correlator) CorrelatePacket(tag gpsprot.Tag, data string) Correlation {
 	ra := c.classifyResponse(tag, data)
 	switch ra.kind {
-	case responseAck, responseNak, responseWait:
+	case responseAck, responseNak, responseWait, responseAckMore, responseDone:
 		return c.correlateAck(tag, ra)
 	case responseData:
 		return c.correlateData(tag, data, true)
@@ -232,7 +237,11 @@ func (c *Correlator) correlateAck(tag gpsprot.Tag, ra responseAnalysis) Correlat
 		if c.requestComplete(rs) {
 			continue
 		}
-		if rs.ack != ackWait && rs.ack != ackWaitMore {
+		if ra.kind == responseDone {
+			if rs.ack != ackSuccessMore {
+				continue
+			}
+		} else if rs.ack != ackWait && rs.ack != ackWaitMore {
 			continue
 		}
 		if rs.analysis.ackTag != tag {
@@ -280,6 +289,23 @@ func (c *Correlator) correlateAck(tag gpsprot.Tag, ra responseAnalysis) Correlat
 			InResponseTo: rs.msg,
 			Relevance:    LevelAckOnly,
 		}
+	case responseAckMore:
+		// Positive ack, reported now, but more output still follows (e.g. an
+		// lst reply's "$--BLOCK" sections). Keep the request open so the read
+		// loop keeps reading and single-flight pacing holds until the completing
+		// packet arrives.
+		rs.ack = ackSuccessMore
+		return Correlation{
+			Ack:          AckAck,
+			InResponseTo: rs.msg,
+			Relevance:    LevelMaybeResponse,
+		}
+	case responseDone:
+		// Completes a request whose ack was already reported (responseAckMore).
+		// Surface the packet, but no second ack line.
+		rs.ack = ackSuccess
+		rs.data = dataReceived
+		return Correlation{Relevance: LevelSoleResponse}
 	}
 	return Correlation{Relevance: LevelNotResponse}
 }
