@@ -503,7 +503,7 @@ def check_wb_auth_required(ctx: SmokeContext) -> None:
 
 
 def check_wb_open_no_token(ctx: SmokeContext) -> None:
-    """With the token disabled (-L, no -T), the API is reachable without a token."""
+    """With the token disabled (-L, no -t), the API is reachable without a token."""
     assert not ctx.token, "check_wb_open_no_token needs a token-disabled launch"
     status, _ = http_get(f"http://127.0.0.1:{ctx.wb_port}/api/state")
     assert status == 200, f"/api/state with the token disabled expected 200, got {status}"

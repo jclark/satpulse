@@ -25,7 +25,7 @@ func newTestServer(token string) *server {
 	return newTestServerFull(token, gpsreg.VendorUnknown, nil)
 }
 
-func newTestServerFull(token string, vendor gpsreg.Vendor, msgDirs []string) *server {
+func newTestServerFull(token string, vendor gpsreg.Vendor, msgDirs []msgfile.Dir) *server {
 	hub := newSSEHub()
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	sess := session.New(lg, hub, session.Options{})
@@ -320,24 +320,19 @@ func TestSSEPriming(t *testing.T) {
 
 func TestMsgDirs(t *testing.T) {
 	t.Run("environment", func(t *testing.T) {
-		dirs := []string{"/one", "/two"}
-		t.Setenv("SATPULSE_GPSMSG_PATH", strings.Join(dirs, string(os.PathListSeparator)))
-		if got := msgDirs(); !reflect.DeepEqual(got, dirs) {
-			t.Errorf("got  %+v\nwant %+v", got, dirs)
+		root := string(os.PathSeparator)
+		names := []string{filepath.Join(root, "one"), filepath.Join(root, "two")}
+		t.Setenv("SATPULSE_GPSMSG_PATH", strings.Join(names, string(os.PathListSeparator)))
+		got := msgDirs()
+		if len(got) != 3 || got[0].DisplayPath(".") != names[0] || got[1].DisplayPath(".") != names[1] || got[2].DisplayPath("x") != "built-in:x" {
+			t.Errorf("unexpected dirs: %+v", got)
 		}
 	})
-	t.Run("defaults", func(t *testing.T) {
-		sys := []string{"/sys/one", "/sys/two"}
-		expect := append([]string{filepath.Join("/cfg", "satpulse", "gpsmsg")}, sys...)
-		if got := defaultDirs("/cfg", sys); !reflect.DeepEqual(got, expect) {
-			t.Errorf("got  %+v\nwant %+v", got, expect)
-		}
-	})
-	t.Run("system dirs are absolute", func(t *testing.T) {
-		for _, dir := range systemDirs() {
-			if !filepath.IsAbs(dir) {
-				t.Errorf("systemDirs entry %q is not absolute", dir)
-			}
+	t.Run("built-in only", func(t *testing.T) {
+		t.Setenv("SATPULSE_GPSMSG_PATH", "")
+		got := msgDirs()
+		if len(got) != 1 || got[0].DisplayPath("x") != "built-in:x" {
+			t.Errorf("unexpected dirs: %+v", got)
 		}
 	})
 }
@@ -356,7 +351,7 @@ func TestMsgFileCatalog(t *testing.T) {
 		[]byte("[[nmea]]\ntext = \"PUBX,04\"\ntag = \"poll\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServerFull("", gpsreg.VendorUblox, []string{dir})
+	s := newTestServerFull("", gpsreg.VendorUblox, []msgfile.Dir{msgfile.OSDir(dir)})
 	s.claimTestSeat(t, "") // select is writer-gated; s.post carries the seat
 
 	w := httptest.NewRecorder()
@@ -387,6 +382,9 @@ func TestMsgFileCatalog(t *testing.T) {
 	if len(res.Tags) != 1 || res.Tags[0].Tag != "poll" {
 		t.Fatalf("unexpected select tags: %+v", res.Tags)
 	}
+	if res.Path != path {
+		t.Errorf("select path %q want %q", res.Path, path)
+	}
 
 	w = s.post(t, "/api/msgfile/select", `{"vendor":"u-blox","file":"../../u-blox/a"}`)
 	if w.Code != 400 {
@@ -399,6 +397,47 @@ func TestMsgFileCatalog(t *testing.T) {
 	w = s.post(t, "/api/msgfile/select", `{"vendor":"u-blox","file":"bad"}`)
 	if w.Code != 500 {
 		t.Errorf("malformed select status = %d, want 500", w.Code)
+	}
+}
+
+func TestBuiltinMsgFileCatalog(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "u-blox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	shadow := filepath.Join(dir, "u-blox", "gen9.toml")
+	if err := os.WriteFile(shadow, []byte("[[line]]\ntext = \"shadow\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SATPULSE_GPSMSG_PATH", dir)
+	s := newTestServerFull("", gpsreg.VendorUnknown, msgDirs())
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/api/msgfile/catalog", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("catalog status %d", w.Code)
+	}
+	var cat msgCatalog
+	if err := json.Unmarshal(w.Body.Bytes(), &cat); err != nil {
+		t.Fatal(err)
+	}
+	var gen9, x20 *msgfile.Entry
+	for i := range cat.Names {
+		e := &cat.Names[i]
+		if e.Vendor == "u-blox" && e.File == "gen9" {
+			if gen9 != nil {
+				t.Fatal("u-blox/gen9 listed more than once")
+			}
+			gen9 = e
+		}
+		if e.Vendor == "u-blox" && e.File == "x20" {
+			x20 = e
+		}
+	}
+	if gen9 == nil || gen9.Path != shadow {
+		t.Errorf("shadowed gen9 entry: %+v", gen9)
+	}
+	if x20 == nil || x20.Path != "built-in:u-blox/x20.toml" {
+		t.Errorf("built-in x20 entry: %+v", x20)
 	}
 }
 
