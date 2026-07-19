@@ -65,6 +65,22 @@ async function connect(page: Page, device: string) {
     await expect(statusBar(page, 'Connected')).toBeVisible();
 }
 
+test('startup device and speed populate the same connection controls used by the UI', async ({ page, workbenchUbxsim }) => {
+    await page.goto(workbenchUbxsim.baseURL);
+
+    await expect(statusBar(page, 'Connected')).toBeVisible();
+    await expect(deviceInput(page)).toHaveValue(workbenchUbxsim.devicePath);
+    await expect(speedSelect(page)).toHaveValue('38400');
+});
+
+test('a startup device without a speed populates the control without auto-connecting', async ({ page, workbenchUbxsimDeviceOnly }) => {
+    await page.goto(workbenchUbxsimDeviceOnly.baseURL);
+
+    await expect(statusBar(page, 'Disconnected')).toBeVisible();
+    await expect(deviceInput(page)).toHaveValue(workbenchUbxsimDeviceOnly.devicePath);
+    await expect(speedSelect(page)).toHaveValue('9600');
+});
+
 test('connect: a typed device path and speed walk the state to Connected and identify the receiver', async ({ page, workbenchUbxsimNoDevice }) => {
     await page.goto(workbenchUbxsimNoDevice.baseURL);
     await connect(page, workbenchUbxsimNoDevice.devicePath);
