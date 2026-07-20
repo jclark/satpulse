@@ -25,6 +25,7 @@ async function openConfig(page: Page) {
   const tab = page.getByRole('button', { name: 'Configuration' });
   await expect(tab).toBeEnabled({ timeout: 30_000 });
   await tab.click();
+  await page.getByRole('button', { name: 'Time pulse', exact: true }).click();
   const period = page.getByPlaceholder(PERIOD);
   await expect(period).toBeEnabled({ timeout: 30_000 });
   await expect(period).not.toHaveValue('', { timeout: 30_000 });
