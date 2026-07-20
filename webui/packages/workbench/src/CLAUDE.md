@@ -10,6 +10,15 @@ corresponding semantic token utility class.
 Dark mode is handled entirely by `:root` overrides in `style.css`. There
 must be no `dark:` prefixed colour classes anywhere in component code.
 
+`style.css` defines colour in two layers. A palette of plain colour names
+(`--red`, `--blue`, `--green`, `--purple`, `--orange`, `--yellow`, `--grey`)
+holds the actual values, each giving its light value and, where it needs a
+different one to stay legible on a dark ground, a dark override. The semantic
+tokens below are defined in terms of the palette, so two tokens that share a
+colour say so explicitly and no value or dark override is repeated. The
+palette names are not tokens: never use them in component code, and do not
+map them in `@theme`.
+
 ### Available tokens
 
 Use ONLY these tokens for colour. Do not invent new tokens without adding
