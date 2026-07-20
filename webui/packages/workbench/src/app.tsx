@@ -134,7 +134,6 @@ export function App() {
     const [velRows, setVelRows] = useState<Map<string, VelRow>>(new Map());
     const [timeRows, setTimeRows] = useState<Map<string, TimeRow>>(new Map());
     const [pvtOpen, setPvtOpen] = useState(false);
-    const pvtAutoExpanded = useRef(false);
     const [satsMsg, setSatsMsg] = useState<SatellitesMsg | null>(null);
     const [mapPos, setMapPos] = useState<{lat: number; lon: number} | null>(null);
     const [mapCourse, setMapCourse] = useState<{course: number; groundSpeed: number} | null>(null);
@@ -203,14 +202,6 @@ export function App() {
             setSurveyOpen(true);
         }
     }, [surveyMsg]);
-
-    // Auto-expand PVT section on first PVT data
-    useEffect(() => {
-        if ((posRows.size > 0 || velRows.size > 0 || timeRows.size > 0) && !pvtAutoExpanded.current) {
-            pvtAutoExpanded.current = true;
-            setPvtOpen(true);
-        }
-    }, [posRows.size, velRows.size, timeRows.size]);
 
     const addToast = useCallback((message: string, type: 'success' | 'error') => {
         const id = ++toastId;
@@ -344,7 +335,6 @@ export function App() {
                 setPosRows(new Map());
                 setVelRows(new Map());
                 setTimeRows(new Map());
-                pvtAutoExpanded.current = false;
                 setMapPos(null);
                 setMapCourse(null);
                 setNoFixSecs(0);
