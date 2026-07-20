@@ -4,6 +4,12 @@ package latin1z
 
 import "encoding/json"
 
+// StringZ3 is a [3]byte holding a nul-terminated Latin-1 string.
+type StringZ3 [3]byte
+
+func (z StringZ3) String() string               { return ToString(z[:]) }
+func (z StringZ3) MarshalJSON() ([]byte, error) { return json.Marshal(z.String()) }
+
 // StringZ5 is a [5]byte holding a nul-terminated Latin-1 string.
 type StringZ5 [5]byte
 
@@ -21,6 +27,18 @@ type StringZ16 [16]byte
 
 func (z StringZ16) String() string               { return ToString(z[:]) }
 func (z StringZ16) MarshalJSON() ([]byte, error) { return json.Marshal(z.String()) }
+
+// StringZ20 is a [20]byte holding a nul-terminated Latin-1 string.
+type StringZ20 [20]byte
+
+func (z StringZ20) String() string               { return ToString(z[:]) }
+func (z StringZ20) MarshalJSON() ([]byte, error) { return json.Marshal(z.String()) }
+
+// StringZ21 is a [21]byte holding a nul-terminated Latin-1 string.
+type StringZ21 [21]byte
+
+func (z StringZ21) String() string               { return ToString(z[:]) }
+func (z StringZ21) MarshalJSON() ([]byte, error) { return json.Marshal(z.String()) }
 
 // StringZ30 is a [30]byte holding a nul-terminated Latin-1 string.
 type StringZ30 [30]byte
@@ -40,11 +58,23 @@ type StringZ33 [33]byte
 func (z StringZ33) String() string               { return ToString(z[:]) }
 func (z StringZ33) MarshalJSON() ([]byte, error) { return json.Marshal(z.String()) }
 
+// StringZ40 is a [40]byte holding a nul-terminated Latin-1 string.
+type StringZ40 [40]byte
+
+func (z StringZ40) String() string               { return ToString(z[:]) }
+func (z StringZ40) MarshalJSON() ([]byte, error) { return json.Marshal(z.String()) }
+
 // StringZ43 is a [43]byte holding a nul-terminated Latin-1 string.
 type StringZ43 [43]byte
 
 func (z StringZ43) String() string               { return ToString(z[:]) }
 func (z StringZ43) MarshalJSON() ([]byte, error) { return json.Marshal(z.String()) }
+
+// StringZ60 is a [60]byte holding a nul-terminated Latin-1 string.
+type StringZ60 [60]byte
+
+func (z StringZ60) String() string               { return ToString(z[:]) }
+func (z StringZ60) MarshalJSON() ([]byte, error) { return json.Marshal(z.String()) }
 
 // StringZ66 is a [66]byte holding a nul-terminated Latin-1 string.
 type StringZ66 [66]byte

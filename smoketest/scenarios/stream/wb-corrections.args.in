@@ -1,0 +1,11 @@
+# satpulsewb over a pty (writable, so the corrections write-back path exists and
+# the runner can capture it), the access token enabled, auto-connecting to the
+# receiver replay. The scenario starts corrections from the API against the fake
+# source the runner declares in CORRECTION_SOURCE.
+-L
+127.0.0.1:${SATPULSE_TEST_HTTP_PORT}
+-t
+-d
+${SATPULSE_TEST_SERIAL}
+-s
+38400

@@ -2,6 +2,8 @@ package msgfile
 
 import (
 	"errors"
+
+	"github.com/jclark/satpulse/gps/lib/ascii"
 )
 
 // LineMsg represents a [[line]] entry or [default.line].
@@ -36,8 +38,13 @@ func (lm *LineMsg) getTag() string { return *lm.Tag }
 
 // analyzeRequest implements requestAnalyzer for LineMsg.
 func (lm *LineMsg) analyzeRequest(data string) requestAnalysis {
-	if lm.RespPattern != nil && *lm.RespPattern == ResponsePatternUnicore {
-		return lm.analyzeRequestUnicore()
+	if lm.RespPattern != nil {
+		switch *lm.RespPattern {
+		case ResponsePatternUnicore:
+			return lm.analyzeRequestUnicore()
+		case ResponsePatternSeptentrio:
+			return lm.analyzeRequestSeptentrio()
+		}
 	}
 	eol := "\r\n"
 	if lm.EOL != nil {
@@ -71,7 +78,7 @@ func lineDataMatch(eol string) func(string) bool {
 		}
 		body := data[:len(data)-len(eol)]
 		for i := range len(body) {
-			if body[i] < 0x20 || body[i] > 0x7E {
+			if !ascii.IsPrint(body[i]) {
 				return false
 			}
 		}

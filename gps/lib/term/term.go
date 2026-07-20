@@ -57,6 +57,9 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	// We could make this optional, but non-exclusive use of the serial port seems like a bad idea.
 	err = lock(fd, path)
 	if err != nil {
+		if errors.Is(err, errFlockNotSupported) {
+			err = fmt.Errorf("%s: %w", t.path, ErrNotATTY)
+		}
 		return
 	}
 	tsp, err := t.getAttr()
@@ -90,8 +93,10 @@ func (t *Term) Change(opts ...AttrSetter) error {
 			return err
 		}
 	}
-	err := t.setAttrDrain(&attr.ts)
-	if err != nil {
+	if err := t.Drain(); err != nil {
+		return err
+	}
+	if err := t.setAttrNow(&attr.ts); err != nil {
 		return err
 	}
 	t.attr = attr
@@ -334,6 +339,126 @@ func (t *Term) Path() string {
 	return t.path
 }
 
+type fallbackOpener func(string, time.Duration) (*os.File, *File, DevKind, error)
+
+func openFallback(path string, timeout time.Duration, openChar, openFIFO fallbackOpener) (*os.File, *File, DevKind, error) {
+	var st unix.Stat_t
+	if err := unix.Stat(path, &st); err != nil {
+		return nil, nil, DevUnknown, &os.PathError{Op: "stat", Path: path, Err: err}
+	}
+	switch st.Mode & unix.S_IFMT {
+	case unix.S_IFCHR:
+		if openChar == nil {
+			return nil, nil, DevUnknown, fmt.Errorf("%s: character devices are not supported", path)
+		}
+		return openChar(path, timeout)
+	case unix.S_IFIFO:
+		if openFIFO == nil {
+			return nil, nil, DevUnknown, fmt.Errorf("%s: FIFOs are not supported", path)
+		}
+		return openFIFO(path, timeout)
+	case unix.S_IFREG:
+		return nil, nil, DevUnknown, fmt.Errorf("%s: regular files are not supported", path)
+	case unix.S_IFBLK:
+		return nil, nil, DevUnknown, fmt.Errorf("%s: block devices are not supported", path)
+	case unix.S_IFDIR:
+		return nil, nil, DevUnknown, fmt.Errorf("%s: is a directory", path)
+	case unix.S_IFSOCK:
+		return nil, nil, DevUnknown, fmt.Errorf("%s: sockets are not supported", path)
+	default:
+		return nil, nil, DevUnknown, fmt.Errorf("%s: unsupported file type", path)
+	}
+}
+
+// File is a non-TTY device read using OS readiness waiting.
+type File struct {
+	fd      int
+	path    string
+	timeout unix.Timeval
+}
+
+func openFile(path string, mode int, timeout time.Duration) (*File, error) {
+	fd, err := unix.Open(path, mode, 0)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	var fds unix.FdSet
+	limit := len(fds.Bits) * unix.NFDBITS
+	if fd < 0 || fd >= limit {
+		if fd >= 0 {
+			unix.Close(fd)
+		}
+		err = fmt.Errorf("file descriptor %d is outside select range 0-%d", fd, limit-1)
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	err = lock(fd, path)
+	if err != nil {
+		if !errors.Is(err, errFlockNotSupported) {
+			unix.Close(fd)
+			return nil, err
+		}
+	}
+	return &File{fd: fd, path: path, timeout: unix.NsecToTimeval(timeout.Nanoseconds())}, nil
+}
+
+func (f *File) Read(buf []byte) (int, error) {
+	if len(buf) == 0 {
+		return 0, nil
+	}
+	for {
+		var rfds unix.FdSet
+		rfds.Set(f.fd)
+		tv := f.timeout
+		n, err := unix.Select(f.fd+1, &rfds, nil, nil, &tv)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			return 0, f.wrapErr(err, "select")
+		}
+		if n == 0 {
+			return 0, f.wrapErr(os.ErrDeadlineExceeded, "read")
+		}
+		n, err = unix.Read(f.fd, buf)
+		if err == unix.EINTR || err == unix.EAGAIN || err == unix.EWOULDBLOCK {
+			continue
+		}
+		if err != nil {
+			return n, f.wrapErr(err, "read")
+		}
+		return n, nil
+	}
+}
+
+func (f *File) Write(buf []byte) (int, error) {
+	return 0, f.wrapErr(os.ErrInvalid, "write")
+}
+
+func (f *File) Close() error {
+	fd := f.fd
+	f.fd = -1
+	return f.wrapErr(unix.Close(fd), "close")
+}
+
+func (f *File) Path() string {
+	return f.path
+}
+
+func (f *File) Buffered() (int, error) {
+	return 0, nil
+}
+
+func (f *File) wrapErr(err error, op string) error {
+	if err == nil {
+		return nil
+	}
+	return &os.PathError{
+		Op:   op,
+		Path: f.path,
+		Err:  err,
+	}
+}
+
 func (t *Term) wrapErr(err error, op string) error {
 	if err == nil {
 		return err
@@ -344,4 +469,3 @@ func (t *Term) wrapErr(err error, op string) error {
 		Err:  err,
 	}
 }
-

@@ -185,13 +185,29 @@ func readUDP(t *testing.T, conn *net.UDPConn, timeout time.Duration) []byte {
 	return buf
 }
 
+// waitUDPPushReady polls with pkt until the sink has subscribed, then drains
+// the probes still in flight so the caller's first read sees its own packet.
 func waitUDPPushReady(t *testing.T, pktCh chan<- scan.Packet, conn *net.UDPConn, pkt scan.Packet) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		pktCh <- pkt
 		if got, ok := readUDPAvailable(t, conn, 20*time.Millisecond); ok && string(got) == pkt.Data {
-			return
+			// Probes sent before the subscription took effect may still be
+			// queued ahead of this sentinel; the sink pushes in order, so
+			// reading up to it discards exactly those leftovers.
+			sentinel := scan.Packet{Format: pkt.Format, Data: pkt.Data + "-drained", ChecksumValid: pkt.ChecksumValid}
+			pktCh <- sentinel
+			for time.Now().Before(deadline) {
+				got, ok := readUDPAvailable(t, conn, time.Second)
+				if !ok {
+					break
+				}
+				if string(got) == sentinel.Data {
+					return
+				}
+			}
+			t.Fatal("timed out draining UDP push probes")
 		}
 	}
 	t.Fatal("timed out waiting for UDP push to subscribe")
@@ -400,81 +416,63 @@ func TestUDPQueueDropsOldestAtMaxLenAndLogs(t *testing.T) {
 }
 
 func TestUDPQueuePrunesRTCMUnderBackpressure(t *testing.T) {
-	sink := NewUDPSink("", testLogger(), gpsprot.EmptyTag)
-	pktCh := make(chan scan.Packet)
-	packets := bcast.New((<-chan scan.Packet)(pktCh))
-	bCtx, bCancel := context.WithCancel(context.Background())
-	bcastDone := make(chan struct{})
-	go func() {
-		packets.Run(bCtx, testLogger())
-		close(bcastDone)
-	}()
-	writerCh := make(chan scan.Packet, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	readyCh := make(chan struct{})
-	go func() {
-		sink.queue(ctx, cancel, packets, writerCh, readyCh)
-		close(done)
-	}()
-	defer func() {
-		close(pktCh)
-		packets.Close()
-		bCancel()
-		<-done
-		<-bcastDone
-	}()
+	var logBuf lockedBuffer
+	lg := slog.New(slog.NewTextHandler(&logBuf, nil))
+	sink := NewUDPSink("test:0", lg, gpsprot.EmptyTag)
+	writerCh := make(chan scan.Packet)
+	pktCh := startUDPQueueForTest(t, sink, writerCh)
 
-	<-readyCh
-	ready := scan.Packet{Data: "ready"}
-	deadline := time.Now().Add(time.Second)
-	for {
-		pktCh <- ready
-		select {
-		case got, ok := <-writerCh:
-			if !ok {
-				t.Fatal("writer channel closed while waiting for ready packet")
-			}
-			if got.Data == ready.Data {
-				goto ready
-			}
-			t.Fatalf("ready packet = %q, want %q", got.Data, ready.Data)
-		case <-time.After(10 * time.Millisecond):
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("timed out waiting for UDP queue subscription")
-		}
+	// Park the writer so every following packet must sit in the pruning
+	// queue.  With the writer blocked, packets can only leave the queue
+	// by being pruned, which makes the test independent of how the
+	// producer and queue goroutines happen to interleave.
+	pktCh <- scan.Packet{Data: "block"}
+
+	// Layout: guard fillers, a burst of same-message-type RTCM packets
+	// (which must collapse to the newest), then enough trailing fillers
+	// to push the queue past its size bound.  The overflow trips the
+	// "queue full" log only after the whole RTCM burst has been
+	// enqueued, so the log is a reliable barrier: once it appears, dedup
+	// has run and we can drain without racing the queue.  The guard
+	// fillers sit at the front so dropOldest discards them rather than
+	// the surviving RTCM packet.
+	const (
+		guard = 8
+		burst = 20
+		// Below pruningQueueMaxLen so the surviving RTCM packet stays
+		// inside the retained window after the guards are dropped.
+		overflow = pruningQueueMaxLen - 4
+	)
+	filler := scan.Packet{Data: "filler"}
+	for range guard {
+		pktCh <- filler
 	}
-ready:
-	const n = 12
 	var newest string
-	for i := range n {
+	for i := range burst {
 		pkt := makeRTCM(1005, 10+i)
 		newest = string(pkt)
 		pktCh <- scan.Packet{Format: rtcm.PacketFormat, Data: string(pkt), ChecksumValid: true}
 	}
+	for range overflow {
+		pktCh <- filler
+	}
 	sentinel := scan.Packet{Data: "sentinel"}
 	pktCh <- sentinel
 
-	var got []scan.Packet
-	timeout := time.After(time.Second)
-	for {
-		var pkt scan.Packet
-		select {
-		case pkt = <-writerCh:
-		case <-timeout:
-			t.Fatalf("timed out waiting for sentinel after %d packets", len(got))
+	waitLogContains(t, &logBuf, "udp push queue full")
+	got := drainUDPQueueUntil(t, writerCh, sentinel.Data)
+
+	var rtcmGot []scan.Packet
+	for _, pkt := range got {
+		if pkt.Format != nil {
+			rtcmGot = append(rtcmGot, pkt)
 		}
-		if pkt.Data == sentinel.Data {
-			break
-		}
-		got = append(got, pkt)
 	}
-	if len(got) >= n {
-		t.Fatalf("UDP queue did not prune RTCM under backpressure: %d of %d packets reached the writer", len(got), n)
+	if len(rtcmGot) != 1 {
+		t.Fatalf("RTCM burst did not collapse under backpressure: %d of %d packets survived", len(rtcmGot), burst)
 	}
-	if len(got) == 0 || got[len(got)-1].Data != newest {
-		t.Fatalf("newest RTCM packet did not survive pruning: %d packets through, last != newest", len(got))
+	if rtcmGot[0].Data != newest {
+		t.Fatal("newest RTCM packet did not survive pruning; survivor is a stale packet")
 	}
 }
 

@@ -2,6 +2,8 @@ package nov
 
 import (
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ascii"
+	"github.com/jclark/satpulse/gps/lib/novmsg"
 )
 
 // TagAbbrevAscii is the identifier for NovAtel abbreviated ASCII packets
@@ -53,14 +55,14 @@ func (f abbrevAsciiPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextS
 	b := buf[nextScanIndex]
 	switch state {
 	case abbrevStateSync:
-		if b == '<' {
+		if b == novmsg.AbbrevSync {
 			return abbrevStateBody
 		}
 	case abbrevStateBody:
 		if b == '\r' {
 			return abbrevStateHadCR
 		}
-		if (isPrintableAscii(b) || b == '\t') && packetLen < abbrevMaxLength-2 {
+		if (ascii.IsPrint(b) || b == '\t') && packetLen < abbrevMaxLength-2 {
 			return abbrevStateBody
 		}
 	case abbrevStateHadCR:
@@ -80,7 +82,7 @@ func (f abbrevAsciiPacketFormat) IsFinal(state gpsprot.ScanState) bool {
 // (e.g. "OK"). Continuation lines start with whitespace and return "".
 func (f abbrevAsciiPacketFormat) MsgID(pkt []byte) string {
 	i := 1
-	for i < len(pkt) && isAlnum(pkt[i]) {
+	for i < len(pkt) && ascii.IsAlnum(pkt[i]) {
 		i++
 	}
 	return string(pkt[1:i])
@@ -99,8 +101,4 @@ func (f abbrevAsciiPacketFormat) ComputeChecksum(pkt []byte) []byte {
 
 func (f abbrevAsciiPacketFormat) RescanOnBadChecksum(_ bool, _ []byte) bool {
 	return false
-}
-
-func isAlnum(b byte) bool {
-	return b >= '0' && b <= '9' || b >= 'A' && b <= 'Z' || b >= 'a' && b <= 'z'
 }

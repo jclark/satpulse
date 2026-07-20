@@ -5,12 +5,14 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/logfile"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/nmeasyn"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/obs"
@@ -22,7 +24,6 @@ import (
 	"github.com/jclark/satpulse/time/lib/ntime"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/phctime"
-	"golang.org/x/sys/unix"
 )
 
 const LogExtension = ".jsonl"
@@ -90,6 +91,12 @@ func (h *tickHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 	h.obs.Tick(msg, tRead)
 }
 
+// GGASelector receives receiver packets and synthesized GGA candidates.
+type GGASelector interface {
+	nmeasyn.Sink
+	Packet(scan.Packet) bool
+}
+
 type Dispatcher struct {
 	gpsprot.DefaultHandler
 	pktProcs              map[gpsprot.Tag]gpsprot.PacketProcessor
@@ -104,6 +111,8 @@ type Dispatcher struct {
 	ls                    ptime.LeapSecond
 	lg                    *slog.Logger
 	lf                    logfile.LogFile
+	ggaSelector           GGASelector
+	ggaSynth              *nmeasyn.Synth
 	loggedUnknownProtocol bool
 	loggedSurveyComplete  bool
 	tStart                time.Time
@@ -120,6 +129,7 @@ func NewDispatcher(
 	obs obs.Observer,
 	eventLogPath string,
 	tStart time.Time,
+	ggaSelector GGASelector,
 ) (*Dispatcher, error) {
 	// Always create timeMsgBuffer (useful even without PHC)
 	var minWindow time.Duration
@@ -142,12 +152,20 @@ func NewDispatcher(
 		lg:            lg,
 		obs:           obs,
 		tStart:        tStart,
+		ggaSelector:   ggaSelector,
+	}
+	if ggaSelector != nil {
+		d.ggaSynth = nmeasyn.New(ggaSelector)
 	}
 	d.shm = shm
 	if p, ok := shm.(samplePrecisionSetter); ok {
 		d.sps = p
 	}
-	multiHandler := gpsprot.NewMultiHandler(&d, obs)
+	handlers := []gpsprot.MsgHandler{&d, obs}
+	if d.ggaSynth != nil {
+		handlers = append(handlers, d.ggaSynth)
+	}
+	multiHandler := gpsprot.NewMultiHandler(handlers...)
 	for _, pp := range pktProcs {
 		pp.SetMsgHandler(multiHandler)
 		pp.SetNativeMsgHandler(&d)
@@ -197,7 +215,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, unix.SIGHUP)
+	signal.Notify(sig, syscall.SIGHUP)
 	lg := d.lg
 	defer d.lf.Close(d.lg)
 	lg.Debug("event dispatcher goroutine started")
@@ -295,6 +313,10 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 	msgID, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
 	if err != nil {
 		lg.Warn("error processing packet", gpsio.PacketWarnAttrs(err, pkt, msgID)...)
+		return
+	}
+	if d.ggaSelector != nil {
+		d.ggaSelector.Packet(pkt)
 	}
 }
 

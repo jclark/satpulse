@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
@@ -660,19 +661,9 @@ func parseHexField(fields []string, i int, format string) (int, bool, error) {
 	if len(s) != 1 {
 		return 0, false, fmt.Errorf("%s: invalid field %d: %s: length must be 1", format, i, fields[i])
 	}
-	n := hexDigit(s[0])
-	if n < 0 {
+	v, ok := ascii.UpperHexVal(s[0])
+	if !ok {
 		return 0, false, fmt.Errorf("%s: invalid field %d: %s: invalid character", format, i, fields[i])
 	}
-	return n, true, nil
-}
-
-func hexDigit(b byte) int {
-	if b >= '0' && b <= '9' {
-		return int(b - '0')
-	}
-	if b >= 'A' && b <= 'F' {
-		return int(b - 'A' + 10)
-	}
-	return -1
+	return int(v), true, nil
 }

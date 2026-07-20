@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/opt"
 )
@@ -300,7 +301,7 @@ func stnIDPPPService(s novmsg.StationID) gpsprot.CorrKind {
 		return 0
 	}
 	for i := 0; i < n; i++ {
-		if s[i] < '0' || s[i] > '9' {
+		if !ascii.IsDigit(s[i]) {
 			return gpsprot.CorrPPP.Expand()
 		}
 	}

@@ -1,0 +1,10 @@
+# satpulsewb over a pty, token enabled, auto-connecting to the receiver replay.
+# The scenario then unplugs the device (closes the pty master) and asserts the
+# workbench keeps serving and reports the receiver disconnected.
+-L
+127.0.0.1:${SATPULSE_TEST_HTTP_PORT}
+-t
+-d
+${SATPULSE_TEST_SERIAL}
+-s
+38400

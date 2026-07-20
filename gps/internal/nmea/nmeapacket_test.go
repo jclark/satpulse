@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/gps/lib/nmeamsg/testdata"
 	"github.com/jclark/satpulse/gps/internal/scantest"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg/testdata"
 )
 
 // TestPacketFormat tests PacketFormat.Next using gpsprot.IsValidPacket and scantest.IsValidPacketBetween.
-// with all syntax test cases. Test cases with expected flags as 0 should be invalid packets,
-// and others should be valid packets. This test will fail until we fix PacketFormat.Next for nmea-lax.
+// Test cases with expected flags as 0 should be invalid packets, and others should be valid packets.
 func TestPacketFormat(t *testing.T) {
 	for _, tt := range testdata.SyntaxTestCases {
 		t.Run(tt.Name, func(t *testing.T) {
@@ -27,13 +27,26 @@ func TestPacketFormat(t *testing.T) {
 			for range 10 {
 				buf, nRandom := scantest.InsertRandomPrefix(tt.Packet, '$')
 				isValid = scantest.IsValidPacketBetween(PacketFormat, buf, nRandom, nRandom+len(tt.Packet))
-				
+
 				if isValid != expectValidPacket {
 					t.Errorf("scantest.IsValidPacketBetween mismatch for %q: got %v, want %v", tt.Packet, isValid, expectValidPacket)
 				}
 			}
 		})
 	}
+}
+
+func FuzzPacketFormat(f *testing.F) {
+	for _, tt := range testdata.SyntaxTestCases {
+		f.Add(tt.Packet)
+	}
+	f.Fuzz(func(t *testing.T, packet string) {
+		got := gpsprot.IsValidPacket(PacketFormat, []byte(packet))
+		want := nmeamsg.CheckSyntax(packet)&nmeamsg.SentenceIsPacket != 0
+		if got != want {
+			t.Errorf("packet definition mismatch for %q: PacketFormat got %v, CheckSyntax got %v", packet, got, want)
+		}
+	})
 }
 
 func TestMsgID(t *testing.T) {
@@ -62,7 +75,6 @@ func TestMsgID(t *testing.T) {
 	}
 }
 
-
 type altChecksumUsage int
 
 const (
@@ -82,7 +94,7 @@ func TestAltChecksum(t *testing.T) {
 		{"$GNGLL,1343.91012,N,10038.68403,E,071109.00,A,A*74\r\n", altNotAvailable},
 		{"$GPGSV,1,1,00,0*65\r\n", altNotAvailable},
 		{"$GNGSA,M,1,,,,,,,,,,,,,99.99,99.99,99.99,1*3F\r\n", altNotAvailable},
-		
+
 		// Unicore packets use alt checksum
 		{"$command,VERSIONB,response: OK*46\r\n", altUsed},
 		{"$command,CONFIG,response: OK*54\r\n", altUsed},
@@ -90,7 +102,7 @@ func TestAltChecksum(t *testing.T) {
 		{"$command,MODE,response: OK*5D\r\n", altUsed},
 		{"$command,CONFIG PPS ENABLE GPS POSITIVE 100000 1000 0 0,response: OK*49\r\n", altUsed},
 		{"$command,MODE BASE TIME 2000,response: OK*7F\r\n", altUsed},
-		
+
 		// Unicore Firebird packet PDTINFO uses normal checksum even though is alt available
 		{"$PDTINFO,UM621-02,G1B1L1E1,V1.2,R6.0.0.0Build2810,2310414000033,000101114303845*10\r\n", altAvailableNotUsed},
 	}
@@ -100,7 +112,7 @@ func TestAltChecksum(t *testing.T) {
 		extracted := PacketFormat.ExtractChecksum(pkt)
 		normal := PacketFormat.ComputeChecksum(pkt)
 		alt := PacketFormat.(gpsprot.AltChecksumPacketFormat).ComputeAltChecksum(pkt)
-		
+
 		normalOK := slices.Equal(extracted, normal)
 		var altOK bool
 		if alt != nil {

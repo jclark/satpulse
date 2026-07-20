@@ -62,6 +62,16 @@ Resets and some reloads restart the receiver without acknowledging
 (`SetSentTime` -> succeeded). Expect boot banners and a quiet period
 afterwards.
 
+## Property completeness gates in shared getters
+
+Shared gpsprot getters used by the text renderer can require a
+COMPLETE property set: GetTimePulse returns nothing unless all five
+time-pulse properties are present, so a backend that leaves one
+absent blanks the whole section in --show-config text output while
+--json still marshals the rest per-field. When the receiver's
+behavior for a property is fixed rather than configurable, report the
+constant so the set completes (see protocol-questions.md).
+
 ## Probing interplay
 
 Probe packets are sent before Configure; their responses (including
@@ -70,3 +80,10 @@ begins, especially on saturated lines. The ConfigProtocol must count
 outstanding probes and consume their acknowledgements so the
 configurator never attributes them to its own requests (the
 correlation key is shared).
+
+Check whether that bookkeeping is needed at all before building it:
+it exists only where the probe's correlation key collides with
+configurator requests. The Allystar probe is a poll that gets no ACK
+and answers with a message the configurator never requests, so late
+probe responses can collide with nothing and the pending-probe
+accounting disappears entirely.
