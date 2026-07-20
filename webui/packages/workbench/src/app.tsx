@@ -133,7 +133,6 @@ export function App() {
     const [posRows, setPosRows] = useState<Map<string, PosRow>>(new Map());
     const [velRows, setVelRows] = useState<Map<string, VelRow>>(new Map());
     const [timeRows, setTimeRows] = useState<Map<string, TimeRow>>(new Map());
-    const [pvtOpen, setPvtOpen] = useState(false);
     const [satsMsg, setSatsMsg] = useState<SatellitesMsg | null>(null);
     const [mapPos, setMapPos] = useState<{lat: number; lon: number} | null>(null);
     const [mapCourse, setMapCourse] = useState<{course: number; groundSpeed: number} | null>(null);
@@ -143,8 +142,6 @@ export function App() {
     const pvtEpoch = useRef(0);
     const [activeTab, setActiveTab] = useState<TabID>('monitor');
     const [trackGen, setTrackGen] = useState(0);
-    const [surveyOpen, setSurveyOpen] = useState(false);
-    const surveyAutoExpanded = useRef(false);
     const [logHeight, setLogHeight] = useState(140);
     const dragging = useRef(false);
     const monitorRowRef = useRef<HTMLDivElement>(null);
@@ -194,14 +191,6 @@ export function App() {
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
     }, [logHeight]);
-
-    // Auto-expand survey section on first survey data
-    useEffect(() => {
-        if (surveyMsg && !surveyAutoExpanded.current) {
-            surveyAutoExpanded.current = true;
-            setSurveyOpen(true);
-        }
-    }, [surveyMsg]);
 
     const addToast = useCallback((message: string, type: 'success' | 'error') => {
         const id = ++toastId;
@@ -643,13 +632,13 @@ export function App() {
                     <CollapsibleSection title="Position Scatter" variant="panel" defaultOpen={false}>
                         <ScatterPanel key={trackGen} ecef={scatterECEF} baseARPs={baseARPs} />
                     </CollapsibleSection>
-                    <CollapsibleSection title="PVT Messages" variant="panel" open={pvtOpen} onToggle={setPvtOpen}>
+                    <CollapsibleSection title="PVT Messages" variant="panel" defaultOpen={false}>
                         <PVTPanel posRows={posRows} velRows={velRows} timeRows={timeRows} leapSecond={leapSecond} />
                     </CollapsibleSection>
                     <CollapsibleSection title="Satellite Signals" variant="panel" defaultOpen={false}>
                         <SignalsPanel msg={satsMsg} />
                     </CollapsibleSection>
-                    <CollapsibleSection title="Survey" variant="panel" open={surveyOpen} onToggle={setSurveyOpen}>
+                    <CollapsibleSection title="Survey" variant="panel" defaultOpen={false}>
                         <SurveyPanel msg={surveyMsg} />
                     </CollapsibleSection>
                 </div>
