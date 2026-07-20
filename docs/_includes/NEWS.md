@@ -16,6 +16,12 @@ _Not yet released_
 - Prometheus metrics now expose correction-report data. (#237)
 - SatPulse now supports the SPARTN correction protocol: `satpulsed` scans and decodes SPARTN packets, can pull SPARTN corrections from an Ntrip caster such as u-blox PointPerfect and feed them to the receiver, emits SPARTN correction reports in the JSONL event log, and shows them on the web dashboard alongside RTCM. (#324)
 
+### Septentrio protocol-specific support
+
+- SatPulse now supports Septentrio receivers (such as the mosaic-G5): `satpulsed` recognizes them and scans and decodes their Septentrio Binary Format (SBF) binary output stream. (#340)
+- Decoded SBF blocks are translated into the device-independent GPS model: time, leap-second, position, velocity, per-epoch solution quality, satellite, survey, and correction-report information is extracted and exposed in the JSONL event log, the web dashboard, and the NTP/PPS timing path. (#340)
+- `satpulsetool gps` can configure Septentrio receivers from a message file: it frames the receiver's ASCII command-line replies and reports whether each command succeeded or was rejected. Message files for the mosaic-G5 (and the shared mosaic entries) are included. (#340)
+
 ### u-blox protocol-specific support
 
 - The existing `--save` option for `satpulsetool gps`, previously used with high-level configuration, now also works with message files. New u-blox-specific message types use this so the same tag can make either a RAM-only change or a persistent change. (#272)
@@ -47,7 +53,7 @@ _Not yet released_
 
 ### SatPulse Workbench
 
-- There is a new `satpulsewb` command, which serves SatPulse Workbench: a web app for interactive GPS receiver configuration and monitoring. It offers device-independent receiver configuration through a GUI that requires no knowledge of the receiver's protocol, live monitoring of position, time, satellites, and signal strength, a packet inspector, sending configuration message files chosen from a library search path (a personal library under the user's configuration directory, then the installed library, or `SATPULSE_GPSMSG_PATH`), and correction forwarding from an Ntrip caster or TCP source. `satpulsewb` is a commissioning tool run when needed, typically over SSH on the box with the receiver: it prints a URL protected by a per-run token and serves a GUI session until stopped. (#357)
+- There is a new `satpulsewb` command, which serves SatPulse Workbench: a web app for interactive GPS receiver configuration and monitoring. It offers device-independent receiver configuration through a GUI that requires no knowledge of the receiver's protocol, live monitoring of position, time, satellites, and signal strength, a packet inspector, sending configuration message files chosen from a built-in library (with `SATPULSE_GPSMSG_PATH` directories searched ahead of it), and correction forwarding from an Ntrip caster or TCP source. `satpulsewb` is a commissioning tool run when needed: from a local desktop session it opens the browser automatically; over SSH it prints a URL protected by a per-run token. It serves a GUI session until stopped. (#357)
 
 ### Other satpulsetool improvements
 

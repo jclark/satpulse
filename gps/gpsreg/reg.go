@@ -12,6 +12,7 @@ import (
 	"github.com/jclark/satpulse/gps/internal/quectel"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/internal/sdbp"
+	"github.com/jclark/satpulse/gps/internal/septentrio"
 	"github.com/jclark/satpulse/gps/internal/sino"
 	"github.com/jclark/satpulse/gps/internal/spartn"
 	"github.com/jclark/satpulse/gps/internal/ubx"
@@ -45,6 +46,8 @@ const (
 	TagNMEA               = nmea.Tag
 	TagRTCM               = rtcm.Tag
 	TagSPARTN             = spartn.Tag
+	TagSBF                = septentrio.Tag
+	TagSeptentrioReply    = septentrio.TagReply
 	TagCASICBin           = casic.Tag
 	TagAllystarBin        = as.Tag
 	TagSDBP               = sdbp.Tag
@@ -93,6 +96,8 @@ var allVendorPacketFormats = []gpsprot.PacketFormat{
 	nov.BinPacketFormat,
 	nov.AsciiPacketFormat,
 	nov.AbbrevAsciiPacketFormat,
+	septentrio.PacketFormat,
+	septentrio.ReplyPacketFormat,
 }
 
 // allVendorPacketFormats maps each vendor to the packet formats they are known to use.
@@ -100,14 +105,15 @@ var allVendorPacketFormats = []gpsprot.PacketFormat{
 var allVendorPacketFormatsMap = map[Vendor][]gpsprot.PacketFormat{
 	VendorUnknown: allVendorPacketFormats,
 	// no entry needed for VendorOther, since it is treated like vendors we do not currently support
-	VendorAllystar:  {as.PacketFormat},
-	VendorBynav:     {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
-	VendorNovAtel:   {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
-	VendorSinoGNSS:  {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
-	VendorTechtotop: {sdbp.PacketFormat},
-	VendorUblox:     {ubx.PacketFormat},
-	VendorUnicore:   {unc.BinPacketFormat, unc.AsciiPacketFormat, nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
-	VendorZhongke:   {casic.PacketFormat},
+	VendorAllystar:   {as.PacketFormat},
+	VendorBynav:      {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
+	VendorNovAtel:    {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
+	VendorSeptentrio: {septentrio.PacketFormat, septentrio.ReplyPacketFormat},
+	VendorSinoGNSS:   {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
+	VendorTechtotop:  {sdbp.PacketFormat},
+	VendorUblox:      {ubx.PacketFormat},
+	VendorUnicore:    {unc.BinPacketFormat, unc.AsciiPacketFormat, nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
+	VendorZhongke:    {casic.PacketFormat},
 }
 
 func CreatePacketFormats(vendor Vendor) []gpsprot.PacketFormat {
@@ -188,6 +194,7 @@ func CreatePacketProcessors(vendor Vendor) map[gpsprot.Tag]gpsprot.PacketProcess
 		nov.TagBinary:      nov.NewBinPacketProcessor(mgr),
 		nov.TagAscii:       nov.NewAsciiPacketProcessor(mgr),
 		nov.TagAbbrevAscii: nov.NewAbbrevAsciiPacketProcessor(),
+		septentrio.Tag:     septentrio.NewPacketProcessor(mgr),
 	}
 	if vendor != VendorUnknown {
 		SetVendor(procs, vendor)

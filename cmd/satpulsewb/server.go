@@ -9,15 +9,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
+	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/jclark/satpulse/gps/app/session"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
+	"github.com/jclark/satpulse/gps/msgfile"
 )
 
 // server adapts a session to HTTP: session methods become POST
@@ -26,16 +30,28 @@ type server struct {
 	ctx     context.Context // run context; SSE streams end when it is done
 	sess    *session.Session
 	hub     *sseHub
+	lg      *slog.Logger
 	token   string        // empty means no auth
 	vendor  gpsreg.Vendor // --vendor: the vendor for every connect
-	msgDirs []string      // message-file library search path
+	msgDirs []msgfile.Dir // message-file library search path
 	mux     *http.ServeMux
+	files   http.Handler // static SPA assets, served under /
+	connMu  sync.Mutex
+	device  string // current connection-bar device selection
+	speed   int    // current connection-bar speed selection
 	seatMu  sync.Mutex
 	seat    string
+	// Single-use launch token, minted only when a browser is auto-opened on a
+	// platform whose argv leaks the URL. It has its own lock, separate from the
+	// seat: the two protect unrelated state.
+	singleMu   sync.Mutex
+	single     string // empty means none minted
+	singleExp  time.Time
+	singleUsed bool
 }
 
-func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token string, vendor gpsreg.Vendor, msgDirs []string) *server {
-	s := &server{ctx: ctx, sess: sess, hub: hub, token: token, vendor: vendor, msgDirs: msgDirs, mux: http.NewServeMux()}
+func newServer(ctx context.Context, sess *session.Session, hub *sseHub, lg *slog.Logger, token string, vendor gpsreg.Vendor, msgDirs []msgfile.Dir, device string, speed int) *server {
+	s := &server{ctx: ctx, sess: sess, hub: hub, lg: lg, token: token, vendor: vendor, msgDirs: msgDirs, device: device, speed: speed, mux: http.NewServeMux(), files: http.FileServer(http.FS(webContent()))}
 	// Seed the writer broadcast with a no-holder value: after a restart with
 	// the token disabled, an old tab's EventSource reconnects and re-primes
 	// from this hub, and must learn that its previous seat is stale (flipping
@@ -51,9 +67,14 @@ func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token st
 	get := s.auth
 	reader := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(requireJSON(h)) }
 	writer := func(h http.HandlerFunc) http.HandlerFunc { return s.auth(s.requireSeat(requireJSON(h))) }
-	s.mux.Handle("/", http.FileServer(http.FS(webContent())))
+	root := s.handleRoot
+	if token == "" {
+		root = requireLoopbackHost(root)
+	}
+	s.mux.HandleFunc("/", root)
 	s.mux.HandleFunc("GET /sse", get(s.handleSSE))
 	s.mux.HandleFunc("POST /api/seat", reader(s.handleSeat))
+	s.mux.HandleFunc("GET /api/connection", get(s.handleConnection))
 	s.mux.HandleFunc("GET /api/state", get(s.handleState))
 	s.mux.HandleFunc("GET /api/receiver", get(s.handleReceiver))
 	s.mux.HandleFunc("GET /api/speed", get(s.handleSpeed))
@@ -79,6 +100,83 @@ func newServer(ctx context.Context, sess *session.Session, hub *sseHub, token st
 	return s
 }
 
+// newSingleUseToken creates and registers a single-use launch token. On
+// argv-leaky platforms the browser-launch URL carries this instead of the
+// real token; its first presentation on GET / redirects to the real-token
+// URL, and any later use is an error, so a stolen argv value is caught.
+func (s *server) newSingleUseToken() string {
+	token := newToken()
+	s.singleMu.Lock()
+	s.single = token
+	s.singleExp = time.Now().Add(60 * time.Second)
+	s.singleUsed = false
+	s.singleMu.Unlock()
+	return token
+}
+
+type launchResult int
+
+const (
+	launchMiss launchResult = iota // not the single-use token; serve the SPA
+	launchOK                       // valid first use; redirect to the real token
+	launchUsed                     // presented after redemption (theft alarm)
+	launchExpired
+)
+
+// handleRoot serves the SPA, intercepting only GET / with a t query that
+// matches a minted single-use launch token; every other request (a real
+// token, no token, an asset path) falls through to the file server, which
+// ignores the query exactly as before.
+func (s *server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" {
+		if t := r.URL.Query().Get("t"); t != "" {
+			switch s.redeemSingleUse(t) {
+			case launchOK:
+				http.Redirect(w, r, "/?t="+s.token, http.StatusFound)
+				return
+			case launchUsed:
+				s.lg.Warn("single-use launch token presented again after use", "remote", r.RemoteAddr)
+				launchErrorPage(w)
+				return
+			case launchExpired:
+				s.lg.Warn("single-use launch token used after expiry", "remote", r.RemoteAddr)
+				launchErrorPage(w)
+				return
+			}
+		}
+	}
+	s.files.ServeHTTP(w, r)
+}
+
+// redeemSingleUse checks t against the single-use launch token with a
+// constant-time compare and, on a valid first use, marks it used. A miss
+// (none minted, or t is some other value such as the real token) falls
+// through to the SPA.
+func (s *server) redeemSingleUse(t string) launchResult {
+	s.singleMu.Lock()
+	defer s.singleMu.Unlock()
+	if s.single == "" || subtle.ConstantTimeCompare([]byte(t), []byte(s.single)) != 1 {
+		return launchMiss
+	}
+	if s.singleUsed {
+		return launchUsed
+	}
+	if !time.Now().Before(s.singleExp) {
+		return launchExpired
+	}
+	s.singleUsed = true
+	return launchOK
+}
+
+// launchErrorPage tells the person who followed a stale browser-launch
+// link what happened. Plain text, not the JSON error shape: the reader is
+// a human in a browser, not the SPA.
+func launchErrorPage(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusGone)
+	io.WriteString(w, "This launch link has already been used or has expired. Open one of the URLs printed in the satpulsewb terminal.\n")
+}
+
 func (s *server) requireSeat(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		s.seatMu.Lock()
@@ -98,12 +196,34 @@ func (s *server) requireSeat(h http.HandlerFunc) http.HandlerFunc {
 // event stream are protected.
 func (s *server) auth(h http.HandlerFunc) http.HandlerFunc {
 	if s.token == "" {
-		return h
+		return requireLoopbackHost(h)
 	}
 	tok := []byte(s.token)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("t")), tok) != 1 {
 			writeError(w, http.StatusUnauthorized, errors.New("missing or invalid access token"))
+			return
+		}
+		h(w, r)
+	}
+}
+
+// requireLoopbackHost closes DNS rebinding when access-token auth is disabled.
+// A rebound page is same-origin and can send JSON without the CORS preflight
+// that makes requireJSON effective. This is a browser confused-deputy guard,
+// not access control: a direct client can forge Host: localhost. The port is
+// ignored so SSH-tunnel requests work; token-authenticated requests do not need
+// the restriction.
+func requireLoopbackHost(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if v, _, err := net.SplitHostPort(host); err == nil {
+			host = v
+		} else if len(host) >= 2 && host[0] == '[' && host[len(host)-1] == ']' {
+			host = host[1 : len(host)-1]
+		}
+		if !isLoopbackHost(host) {
+			writeError(w, http.StatusForbidden, errors.New("non-loopback Host is not allowed without an access token"))
 			return
 		}
 		h(w, r)
@@ -227,6 +347,37 @@ func (s *server) handleState(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.sess.State())
 }
 
+type connectionInfo struct {
+	State  session.ConnState `json:"state"`
+	Device string            `json:"device"`
+	Speed  int               `json:"speed"`
+}
+
+var (
+	errDeviceRequired = errors.New("device is required")
+	errInvalidSpeed   = errors.New("speed must be greater than zero")
+)
+
+// connection returns the complete connection-bar snapshot. While connected,
+// the session's speed is authoritative: configuration can change it after the
+// port was opened. Reading the snapshot also retains that speed for the next
+// disconnected view.
+func (s *server) connection() connectionInfo {
+	state := s.sess.State()
+	activeSpeed := s.sess.Speed()
+	s.connMu.Lock()
+	if activeSpeed != 0 {
+		s.speed = activeSpeed
+	}
+	info := connectionInfo{State: state, Device: s.device, Speed: s.speed}
+	s.connMu.Unlock()
+	return info
+}
+
+func (s *server) handleConnection(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, s.connection())
+}
+
 func (s *server) handleReceiver(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.sess.Receiver())
 }
@@ -259,15 +410,32 @@ func (s *server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Device == "" {
-		writeError(w, http.StatusBadRequest, errors.New("device is required"))
-		return
-	}
-	if err := s.sess.Connect(session.SerialOpener{Device: req.Device, Speed: req.Speed}, s.vendor); err != nil {
+	if err := s.connect(req.Device, req.Speed); err != nil {
+		if errors.Is(err, errDeviceRequired) || errors.Is(err, errInvalidSpeed) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
 		sessionError(w, err)
 		return
 	}
 	writeJSON(w, struct{}{})
+}
+
+// connect is the single connection path for both command-line startup and
+// the connection bar. It records the chosen values before opening so a failed
+// attempt remains visible and editable in a newly loaded browser window.
+func (s *server) connect(device string, speed int) error {
+	if device == "" {
+		return errDeviceRequired
+	}
+	if speed <= 0 {
+		return errInvalidSpeed
+	}
+	s.connMu.Lock()
+	s.device = device
+	s.speed = speed
+	s.connMu.Unlock()
+	return s.sess.Connect(session.SerialOpener{Device: device, Speed: speed}, s.vendor)
 }
 
 func (s *server) handleDisconnect(w http.ResponseWriter, _ *http.Request) {

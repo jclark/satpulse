@@ -503,7 +503,7 @@ def check_wb_auth_required(ctx: SmokeContext) -> None:
 
 
 def check_wb_open_no_token(ctx: SmokeContext) -> None:
-    """With the token disabled (-L, no -T), the API is reachable without a token."""
+    """With the token disabled (-L, no -t), the API is reachable without a token."""
     assert not ctx.token, "check_wb_open_no_token needs a token-disabled launch"
     status, _ = http_get(f"http://127.0.0.1:{ctx.wb_port}/api/state")
     assert status == 200, f"/api/state with the token disabled expected 200, got {status}"
@@ -561,14 +561,18 @@ def check_wb_state(ctx: SmokeContext, want: str = "connected", timeout: float = 
 
 
 def check_wb_snapshots(ctx: SmokeContext) -> None:
-    """The snapshot endpoints populate as the replay flows: connected + receiver + speed."""
+    """The snapshot endpoints populate as the replay flows: connection + receiver."""
     check_wb_state(ctx, "connected")
+    status, body = wb_get(ctx, "/api/connection")
+    assert status == 200, f"/api/connection expected 200, got {status}"
+    conn = cast(JsonObject, json.loads(body))
+    assert conn == {"state": "connected", "device": ctx.serial, "speed": 38400}, (
+        f"/api/connection did not retain startup controls: {conn}"
+    )
     status, body = wb_get(ctx, "/api/receiver")
     assert status == 200, f"/api/receiver expected 200, got {status}"
     rcv = cast(JsonObject, json.loads(body))
     assert rcv.get("ok"), f"/api/receiver reports no detected receiver: {rcv}"
-    status, _ = wb_get(ctx, "/api/speed")
-    assert status == 200, f"/api/speed expected 200, got {status}"
 
 
 def wb_sse(ctx: SmokeContext, packets: bool = False, expect: Iterable[str] = (), read_seconds: float = 8.0) -> set[str]:

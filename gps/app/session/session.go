@@ -443,7 +443,7 @@ type Opener interface {
 	// speed, or 0 if the transport has none.
 	Open(ctx context.Context) (conn gpsio.Conn, speed int, err error)
 	// Socket reports a proxy connection: sets ConfigOptions.Socket
-	// for gpscfg.Configure and gates reset operations in the UI.
+	// for gpscfg.Configure.
 	Socket() bool
 }
 
@@ -679,6 +679,17 @@ type ReceiverEvent struct {
 	Warning       string                        `json:"warning,omitempty"`
 	Info          opt.Val[gpsprot.ReceiverInfo] `json:",omitzero"`
 	PacketFormats []string                      `json:"packetFormats,omitempty"`
+	// ConfigSupport marshals as a JSON string array of the configuration
+	// items the probed Configurator supports; the Config tab keys on those
+	// names to gate its controls. omitempty drops it from the pre-probe
+	// (zero-flags) snapshot, where the underlying uint32 is 0.
+	ConfigSupport gpsprot.ConfigSupportFlags `json:"configSupport,omitempty"`
+	// SignalsSupported lists the signals that exist on the receiver, in
+	// signal-catalog form; absent means no known restriction. Backends do
+	// not yet report this, so it is faked from ConfigSupport (see below);
+	// when a real read-only supported-signals property arrives, this field
+	// switches to it.
+	SignalsSupported map[string][]string `json:"signalsSupported,omitempty"`
 }
 
 // packetWorker is the single goroutine that owns packet processing.
@@ -729,6 +740,14 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 	if rslt != nil {
 		if rslt.ReceiverInfo != nil {
 			r.Info.Set(*rslt.ReceiverInfo)
+		}
+		r.ConfigSupport = rslt.ConfigSupport
+		// A Configurator without signal support cannot select signals finer
+		// than a whole constellation, and every backend that lacks it drives
+		// an L1-only receiver, so signals outside the L1 band do not exist on
+		// the receiver. Zero flags mean the support is unknown: fake nothing.
+		if rslt.ConfigSupport != 0 && rslt.ConfigSupport&gpsprot.ConfigSupportSignal == 0 {
+			r.SignalsSupported = signalCatalog(0, gpsprot.BandL1)
 		}
 		for _, tag := range rslt.PacketFormatsDetected {
 			r.PacketFormats = append(r.PacketFormats, string(tag))
@@ -840,12 +859,12 @@ func (s *Session) disconnect(gen int) {
 
 // CorrEvent is the payload for "gps:corrections" events.
 type CorrEvent struct {
-	State      string `json:"state"`          // "connecting", "connected", "reconnecting", "stopped"
+	State      string `json:"state"`          // "connecting", "connected", "reconnecting", "failed", "stopped"
 	Mode       string `json:"mode,omitempty"` // "tcp" or "ntrip"
 	Host       string `json:"host,omitempty"`
 	Port       int    `json:"port,omitempty"`
 	Mountpoint string `json:"mountpoint,omitempty"` // ntrip only
-	Error      string `json:"error,omitempty"`      // last error (set during reconnecting)
+	Error      string `json:"error,omitempty"`      // last error (set during reconnecting or failed)
 }
 
 func (s *Session) setCorrStateLocked(ev CorrEvent) {
@@ -995,6 +1014,7 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 		Port:       cfg.Port,
 		Mountpoint: cfg.Mountpoint,
 	})
+	var failed atomic.Bool
 	onState := func(st stream.State, err error) {
 		ev := CorrEvent{
 			State:      st.String(),
@@ -1005,6 +1025,9 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 		}
 		if err != nil {
 			ev.Error = err.Error()
+		}
+		if st == stream.Failed {
+			failed.Store(true)
 		}
 		s.emitCorrState(ev)
 	}
@@ -1023,6 +1046,9 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	})
 	wg.Go(func() {
 		sink.Run(corrCtx, selectedGGA, onState)
+		if failed.Load() {
+			return
+		}
 		s.emitCorrState(CorrEvent{
 			State:      "stopped",
 			Mode:       cfg.Mode,
@@ -1108,12 +1134,16 @@ func (s *Session) Speed() int {
 // SignalCatalog returns the full signal catalog for the given GNSS constellations.
 // If gs is zero, all constellations are returned.
 func (s *Session) SignalCatalog(gs gpsprot.GNSSSet) map[string][]string {
+	return signalCatalog(gs, gpsprot.BandAll)
+}
+
+func signalCatalog(gs gpsprot.GNSSSet, band gpsprot.Band) map[string][]string {
 	if gs == 0 {
 		gs = gpsprot.SigSetAll.GNSSSet()
 	}
 	m := make(map[string][]string)
 	for _, g := range gs.Items() {
-		sigs := gpsprot.BandAll.SignalSet(g)
+		sigs := band.SignalSet(g)
 		if sigs == 0 {
 			continue
 		}
@@ -1174,10 +1204,7 @@ func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) 
 // operation: it requires StateConnected, holds the
 // port as StateConfiguring until the run completes, and returns an
 // error if the session is not connected or another operation is in
-// progress. Reset operations are refused over a proxy connection: a
-// reset would kill the daemon that owns the port, and its restart
-// would reapply the daemon's own configuration on top of the
-// session's.
+// progress.
 func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget) error {
 	target.Props.ClearReadOnlyProps()
 	s.mu.Lock()
@@ -1185,10 +1212,6 @@ func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget)
 		err := s.stateErrLocked()
 		s.mu.Unlock()
 		return err
-	}
-	if target.Opts.Reset != gpsprot.ResetNone && s.op.Socket() {
-		s.mu.Unlock()
-		return fmt.Errorf("reset operations are not available over a proxy connection")
 	}
 	s.cancelWorkerLocked()
 	runCtx := s.runCtx

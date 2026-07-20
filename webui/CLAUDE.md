@@ -37,6 +37,30 @@ stable and regenerating without a source change produces no diff.
 
 Regeneration is not needed for edits to markdown under `plan/`.
 
+## Live development with HMR (workbench)
+
+To develop `packages/workbench` / `packages/workbench-http` with hot module
+reloading instead of regenerating and restarting, serve the assets from vite's
+dev server and proxy the API and event stream to a running `satpulsewb`. The
+frontend talks to it over relative paths (`/api`, `/sse`), and the vite config
+proxies those to a fixed loopback port.
+
+Start satpulsewb on that port with the token disabled:
+
+    satpulsewb --listen 127.0.0.1:15754 --no-open-browser -d <device> -s <speed>
+
+Then run the dev server and open the URL it prints (http://localhost:5173):
+
+    npm --prefix webui/packages/workbench-http run dev
+
+Assets hot-reload from vite; events come from the live session. This is
+dev-only: the proxy lives in `server.proxy` in the vite config, which `vite
+build` ignores, so the embedded `dist/` is unaffected.
+
+Because the token is disabled and the port is fixed, an agent can drive this
+with Playwright by navigating to http://localhost:5173 -- no token to thread
+through and no browser auto-opened (`--no-open-browser`).
+
 Changes to `gps/ts` need it for the workbench only. `packages/workbench` imports
 the ConfigTarget name vocabularies from `@satpulse/gps/configtarget` as values,
 so they are compiled into its bundle. `packages/dashboard` imports

@@ -1,19 +1,12 @@
 import {h, Fragment} from 'preact';
 import {useState, useEffect} from 'preact/hooks';
 import {transport} from './transport';
-import {formatDateTime, formatTAI, formatUTCLocal} from './timefmt';
+import {formatDateTime, formatTAI, formatUTCLocal, parseTAITime} from './timefmt';
 import type {LeapSecondState} from './app';
 import type {PosGeoMsg, PosECEFMsg, VelGeoMsg, VelECEFMsg, TimeMsg} from '@satpulse/gps/gpsprot';
 import type {ComponentChildren} from 'preact';
 
 const blank = '\u2014';
-
-// parseTAITime parses a ptime.Time string ("seconds.nanoseconds") to seconds.
-function parseTAITime(t: string): number {
-    const dot = t.indexOf('.');
-    if (dot < 0) return parseInt(t, 10);
-    return parseInt(t.substring(0, dot), 10);
-}
 
 function fmtDeg(deg: number, digits: number): string {
     return deg.toFixed(digits);

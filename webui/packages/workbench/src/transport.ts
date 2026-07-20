@@ -17,6 +17,15 @@ export type ConnState =
     | 'configuring'
     | 'sending';
 
+// ConnectionInfo is the complete connection-bar snapshot. Device and speed
+// are retained while disconnected, so every frontend starts from the same
+// values whether they came from command-line flags or an earlier UI connect.
+export interface ConnectionInfo {
+    state: ConnState;
+    device: string;
+    speed: number;
+}
+
 export interface PortInfo {
     device: string;
     display: string;
@@ -78,7 +87,7 @@ export interface MsgFileCatalog {
 // display when an operation fails.
 export interface Transport {
     // Snapshots, for initial sync and late-joining clients.
-    getConnState(): Promise<ConnState>;
+    getConnection(): Promise<ConnectionInfo>;
     getReceiverState(): Promise<any>;
     getCorrectionsState(): Promise<any>;
     getAllSignals(gnss: string[]): Promise<Record<string, string[]> | null>;
@@ -103,7 +112,8 @@ export interface Transport {
 
     // eventsOn subscribes to a session event and returns an unsubscribe
     // function. Subscribing is what makes the backend stream a gated
-    // high-rate event (gps:packet), so subscribe only while displaying.
+    // high-rate event (gps:packet). The Workbench packet panel keeps that
+    // subscription for its mounted lifetime so packets persist across tabs.
     eventsOn(name: string, cb: (data: any) => void): () => void;
 
     // openURL opens an external link.

@@ -1,0 +1,32 @@
+# This workflow builds and tests satpulse on FreeBSD. GitHub offers no
+# FreeBSD runner, so the job boots a FreeBSD VM on an Ubuntu runner with
+# vmactions/freebsd-vm and runs the native build and test suite there.
+# For more information see:
+# https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Build (FreeBSD)
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Build and test on FreeBSD
+      uses: vmactions/freebsd-vm@v1
+      with:
+        usesh: true
+        prepare: |
+          pkg install -y go git
+        run: |
+          git config --global --add safe.directory '*'
+          ./unix-build.sh
+          go test ./...

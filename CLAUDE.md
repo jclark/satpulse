@@ -153,6 +153,7 @@ System testing uses Ansible playbooks in `systest/`.
 - Implementing a user-facing feature MUST include an entry in `docs/_includes/NEWS.md`, in the same change as the implementation.
 - This applies to new features, behaviour changes, and upgrade notes. Bug fixes are excluded.
 - Never add an entry for a bug fix, and do not add one when an existing entry already covers the change. Keep entries short.
+- Treat an existing entry as covering the feature as a whole, including later refinements and enhancements before release. Do not add bullets or expand the entry to enumerate incremental work; revise it only when necessary to keep its concise summary accurate.
 - Add the entry under the current unreleased version heading, in the appropriate section, and reference the issue number(s) in parentheses to match the existing entries.
 
 ## Connected GPS

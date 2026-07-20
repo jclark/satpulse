@@ -2,6 +2,8 @@
 # the survey-in replay over the FIFO the runner allocated.
 -L
 127.0.0.1:${SATPULSE_TEST_HTTP_PORT}
--T
+-t
 -d
 ${SATPULSE_TEST_SERIAL}
+-s
+38400

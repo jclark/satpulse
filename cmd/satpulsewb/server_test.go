@@ -25,11 +25,21 @@ func newTestServer(token string) *server {
 	return newTestServerFull(token, gpsreg.VendorUnknown, nil)
 }
 
-func newTestServerFull(token string, vendor gpsreg.Vendor, msgDirs []string) *server {
+func newTestServerFull(token string, vendor gpsreg.Vendor, msgDirs []msgfile.Dir) *server {
+	return newTestServerSettings(token, vendor, msgDirs, "", 9600)
+}
+
+func newTestServerSettings(token string, vendor gpsreg.Vendor, msgDirs []msgfile.Dir, device string, speed int) *server {
 	hub := newSSEHub()
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	sess := session.New(lg, hub, session.Options{})
-	return newServer(context.Background(), sess, hub, token, vendor, msgDirs)
+	return newServer(context.Background(), sess, hub, lg, token, vendor, msgDirs, device, speed)
+}
+
+func newTestRequest(method, target string, body io.Reader) *http.Request {
+	r := httptest.NewRequest(method, target, body)
+	r.Host = "localhost"
+	return r
 }
 
 func TestAuth(t *testing.T) {
@@ -37,12 +47,18 @@ func TestAuth(t *testing.T) {
 		name       string
 		token      string
 		url        string
+		host       string
 		expectCode int
 	}{
 		{name: "no token", token: "secret", url: "/api/state", expectCode: http.StatusUnauthorized},
 		{name: "wrong token", token: "secret", url: "/api/state?t=wrong", expectCode: http.StatusUnauthorized},
 		{name: "good token", token: "secret", url: "/api/state?t=secret", expectCode: http.StatusOK},
-		{name: "auth disabled", token: "", url: "/api/state", expectCode: http.StatusOK},
+		{name: "auth disabled localhost", url: "/api/state", host: "localhost:2050", expectCode: http.StatusOK},
+		{name: "auth disabled IPv4 loopback", url: "/api/state", host: "127.0.0.1:2050", expectCode: http.StatusOK},
+		{name: "auth disabled IPv6 loopback", url: "/api/state", host: "[::1]:2050", expectCode: http.StatusOK},
+		{name: "auth disabled DNS rebind", url: "/api/state", host: "attacker.example:2050", expectCode: http.StatusForbidden},
+		{name: "auth disabled static DNS rebind", url: "/", host: "attacker.example:2050", expectCode: http.StatusForbidden},
+		{name: "token permits non-loopback Host", token: "secret", url: "/api/state?t=secret", host: "satpulse.local:2050", expectCode: http.StatusOK},
 		{name: "static needs no token", token: "secret", url: "/", expectCode: http.StatusOK},
 		{name: "sse needs token", token: "secret", url: "/sse", expectCode: http.StatusUnauthorized},
 	}
@@ -50,7 +66,11 @@ func TestAuth(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newTestServer(tc.token)
 			w := httptest.NewRecorder()
-			s.mux.ServeHTTP(w, httptest.NewRequest("GET", tc.url, nil))
+			r := newTestRequest("GET", tc.url, nil)
+			if tc.host != "" {
+				r.Host = tc.host
+			}
+			s.mux.ServeHTTP(w, r)
 			if w.Code != tc.expectCode {
 				t.Errorf("got %d want %d", w.Code, tc.expectCode)
 			}
@@ -72,7 +92,7 @@ func (s *server) post(t *testing.T, path, body string) *httptest.ResponseRecorde
 
 func (s *server) rawPost(path, body string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", path, strings.NewReader(body))
+	r := newTestRequest("POST", path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	s.mux.ServeHTTP(w, r)
 	return w
@@ -103,7 +123,7 @@ func TestSeatClaimGuards(t *testing.T) {
 		t.Errorf("claim without token: got %d want %d", w.Code, http.StatusUnauthorized)
 	}
 	w = httptest.NewRecorder()
-	s.mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/seat?t=secret", strings.NewReader(`{}`)))
+	s.mux.ServeHTTP(w, newTestRequest("POST", "/api/seat?t=secret", strings.NewReader(`{}`)))
 	if w.Code != http.StatusUnsupportedMediaType {
 		t.Errorf("claim without JSON: got %d want %d", w.Code, http.StatusUnsupportedMediaType)
 	}
@@ -129,7 +149,7 @@ func TestRequireJSON(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			r := httptest.NewRequest("POST", "/api/connect?seat="+seat, strings.NewReader(`{"device":""}`))
+			r := newTestRequest("POST", "/api/connect?seat="+seat, strings.NewReader(`{"device":""}`))
 			if tc.contentType != "" {
 				r.Header.Set("Content-Type", tc.contentType)
 			}
@@ -153,6 +173,8 @@ func TestEndpoints(t *testing.T) {
 		expectBody string // trimmed; empty means don't check
 	}{
 		{name: "state", method: "GET", url: "/api/state", expectCode: 200, expectBody: `"disconnected"`},
+		{name: "connection", method: "GET", url: "/api/connection", expectCode: 200,
+			expectBody: `{"state":"disconnected","device":"","speed":9600}`},
 		{name: "receiver", method: "GET", url: "/api/receiver", expectCode: 200, expectBody: `{"ok":false}`},
 		{name: "speed", method: "GET", url: "/api/speed", expectCode: 200, expectBody: `0`},
 		{name: "corrections", method: "GET", url: "/api/corrections", expectCode: 200, expectBody: `{"state":"stopped"}`},
@@ -161,6 +183,8 @@ func TestEndpoints(t *testing.T) {
 		{name: "apply config not connected", method: "POST", url: "/api/config/apply", body: `{}`,
 			expectCode: 409, expectBody: `{"error":"not connected"}`},
 		{name: "connect empty device", method: "POST", url: "/api/connect", body: `{"device":"","speed":9600}`,
+			expectCode: 400},
+		{name: "connect invalid speed", method: "POST", url: "/api/connect", body: `{"device":"DEV","speed":0}`,
 			expectCode: 400},
 		{name: "corrections start no host", method: "POST", url: "/api/corrections/start", body: `{"mode":"tcp"}`,
 			expectCode: 409},
@@ -203,7 +227,7 @@ func TestEndpoints(t *testing.T) {
 			var w *httptest.ResponseRecorder
 			if tc.method == "GET" {
 				w = httptest.NewRecorder()
-				s.mux.ServeHTTP(w, httptest.NewRequest("GET", tc.url, nil))
+				s.mux.ServeHTTP(w, newTestRequest("GET", tc.url, nil))
 			} else {
 				w = s.post(t, tc.url, tc.body)
 			}
@@ -220,6 +244,69 @@ func TestEndpoints(t *testing.T) {
 	}
 }
 
+func TestConnectionInitialSettings(t *testing.T) {
+	s := newTestServerSettings("", gpsreg.VendorUnknown, nil, "DEV", 38400)
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/api/connection", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d want %d", w.Code, http.StatusOK)
+	}
+	if got, want := strings.TrimSpace(w.Body.String()), `{"state":"disconnected","device":"DEV","speed":38400}`; got != want {
+		t.Errorf("connection = %s, want %s", got, want)
+	}
+}
+
+// TestSingleUseLaunch covers the single-use browser-launch token: a fresh
+// one redirects to the real-token URL and burns; a second use and an
+// expired one get the human error page, not a redirect; it never
+// authenticates the API; and GET / with the real token or none still
+// serves the SPA.
+func TestSingleUseLaunch(t *testing.T) {
+	const tok = "multiuse"
+
+	s := newTestServer(tok)
+	launch := s.newSingleUseToken()
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/?t="+launch, nil))
+	if w.Code != http.StatusFound {
+		t.Fatalf("first use: got %d want %d", w.Code, http.StatusFound)
+	}
+	if loc := w.Header().Get("Location"); loc != "/?t="+tok {
+		t.Errorf("redirect Location %q want %q", loc, "/?t="+tok)
+	}
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/?t="+launch, nil))
+	if w.Code != http.StatusGone {
+		t.Errorf("second use: got %d want %d (want error page, not redirect)", w.Code, http.StatusGone)
+	}
+
+	s = newTestServer(tok)
+	launch = s.newSingleUseToken()
+	s.singleMu.Lock()
+	s.singleExp = time.Now().Add(-time.Second)
+	s.singleMu.Unlock()
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/?t="+launch, nil))
+	if w.Code != http.StatusGone {
+		t.Errorf("expired: got %d want %d", w.Code, http.StatusGone)
+	}
+
+	s = newTestServer(tok)
+	launch = s.newSingleUseToken()
+	w = httptest.NewRecorder()
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/api/state?t="+launch, nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("single-use token on API: got %d want %d", w.Code, http.StatusUnauthorized)
+	}
+	for _, url := range []string{"/", "/?t=" + tok} {
+		w = httptest.NewRecorder()
+		s.mux.ServeHTTP(w, newTestRequest("GET", url, nil))
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %q: got %d want %d", url, w.Code, http.StatusOK)
+		}
+	}
+}
+
 // TestSSEPriming checks that a new SSE subscriber is primed with the
 // latest sticky events before receiving live ones.
 func TestSSEPriming(t *testing.T) {
@@ -230,7 +317,7 @@ func TestSSEPriming(t *testing.T) {
 	s.hub.Emit(session.Event{Name: session.EventState, Data: session.StateConnected})
 	s.hub.Emit(session.Event{Name: session.EventSpeed, Data: 9600})
 	ctx, cancel := context.WithCancel(context.Background())
-	r := httptest.NewRequest("GET", "/sse", nil).WithContext(ctx)
+	r := newTestRequest("GET", "/sse", nil).WithContext(ctx)
 	w := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -253,24 +340,19 @@ func TestSSEPriming(t *testing.T) {
 
 func TestMsgDirs(t *testing.T) {
 	t.Run("environment", func(t *testing.T) {
-		dirs := []string{"/one", "/two"}
-		t.Setenv("SATPULSE_GPSMSG_PATH", strings.Join(dirs, string(os.PathListSeparator)))
-		if got := msgDirs(); !reflect.DeepEqual(got, dirs) {
-			t.Errorf("got  %+v\nwant %+v", got, dirs)
+		root := string(os.PathSeparator)
+		names := []string{filepath.Join(root, "one"), filepath.Join(root, "two")}
+		t.Setenv("SATPULSE_GPSMSG_PATH", strings.Join(names, string(os.PathListSeparator)))
+		got := msgDirs()
+		if len(got) != 3 || got[0].DisplayPath(".") != names[0] || got[1].DisplayPath(".") != names[1] || got[2].DisplayPath("x") != "built-in:x" {
+			t.Errorf("unexpected dirs: %+v", got)
 		}
 	})
-	t.Run("defaults", func(t *testing.T) {
-		sys := []string{"/sys/one", "/sys/two"}
-		expect := append([]string{filepath.Join("/cfg", "satpulse", "gpsmsg")}, sys...)
-		if got := defaultDirs("/cfg", sys); !reflect.DeepEqual(got, expect) {
-			t.Errorf("got  %+v\nwant %+v", got, expect)
-		}
-	})
-	t.Run("system dirs are absolute", func(t *testing.T) {
-		for _, dir := range systemDirs() {
-			if !filepath.IsAbs(dir) {
-				t.Errorf("systemDirs entry %q is not absolute", dir)
-			}
+	t.Run("built-in only", func(t *testing.T) {
+		t.Setenv("SATPULSE_GPSMSG_PATH", "")
+		got := msgDirs()
+		if len(got) != 1 || got[0].DisplayPath("x") != "built-in:x" {
+			t.Errorf("unexpected dirs: %+v", got)
 		}
 	})
 }
@@ -289,11 +371,11 @@ func TestMsgFileCatalog(t *testing.T) {
 		[]byte("[[nmea]]\ntext = \"PUBX,04\"\ntag = \"poll\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServerFull("", gpsreg.VendorUblox, []string{dir})
+	s := newTestServerFull("", gpsreg.VendorUblox, []msgfile.Dir{msgfile.OSDir(dir)})
 	s.claimTestSeat(t, "") // select is writer-gated; s.post carries the seat
 
 	w := httptest.NewRecorder()
-	s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/msgfile/catalog", nil))
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/api/msgfile/catalog", nil))
 	if w.Code != 200 {
 		t.Fatalf("catalog status %d", w.Code)
 	}
@@ -320,6 +402,9 @@ func TestMsgFileCatalog(t *testing.T) {
 	if len(res.Tags) != 1 || res.Tags[0].Tag != "poll" {
 		t.Fatalf("unexpected select tags: %+v", res.Tags)
 	}
+	if res.Path != path {
+		t.Errorf("select path %q want %q", res.Path, path)
+	}
 
 	w = s.post(t, "/api/msgfile/select", `{"vendor":"u-blox","file":"../../u-blox/a"}`)
 	if w.Code != 400 {
@@ -332,6 +417,47 @@ func TestMsgFileCatalog(t *testing.T) {
 	w = s.post(t, "/api/msgfile/select", `{"vendor":"u-blox","file":"bad"}`)
 	if w.Code != 500 {
 		t.Errorf("malformed select status = %d, want 500", w.Code)
+	}
+}
+
+func TestBuiltinMsgFileCatalog(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "u-blox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	shadow := filepath.Join(dir, "u-blox", "gen9.toml")
+	if err := os.WriteFile(shadow, []byte("[[line]]\ntext = \"shadow\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SATPULSE_GPSMSG_PATH", dir)
+	s := newTestServerFull("", gpsreg.VendorUnknown, msgDirs())
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/api/msgfile/catalog", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("catalog status %d", w.Code)
+	}
+	var cat msgCatalog
+	if err := json.Unmarshal(w.Body.Bytes(), &cat); err != nil {
+		t.Fatal(err)
+	}
+	var gen9, x20 *msgfile.Entry
+	for i := range cat.Names {
+		e := &cat.Names[i]
+		if e.Vendor == "u-blox" && e.File == "gen9" {
+			if gen9 != nil {
+				t.Fatal("u-blox/gen9 listed more than once")
+			}
+			gen9 = e
+		}
+		if e.Vendor == "u-blox" && e.File == "x20" {
+			x20 = e
+		}
+	}
+	if gen9 == nil || gen9.Path != shadow {
+		t.Errorf("shadowed gen9 entry: %+v", gen9)
+	}
+	if x20 == nil || x20.Path != "built-in:u-blox/x20.toml" {
+		t.Errorf("built-in x20 entry: %+v", x20)
 	}
 }
 
@@ -351,7 +477,7 @@ func TestSeatLifecycle(t *testing.T) {
 	w := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
-		s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/sse", nil).WithContext(ctx))
+		s.mux.ServeHTTP(w, newTestRequest("GET", "/sse", nil).WithContext(ctx))
 		close(done)
 	}()
 	waitForClients(t, s.hub, 1)
@@ -411,7 +537,7 @@ func grabWriterSeat(t *testing.T, s *server) string {
 	w := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
-		s.mux.ServeHTTP(w, httptest.NewRequest("GET", "/sse", nil).WithContext(ctx))
+		s.mux.ServeHTTP(w, newTestRequest("GET", "/sse", nil).WithContext(ctx))
 		close(done)
 	}()
 	cancel()

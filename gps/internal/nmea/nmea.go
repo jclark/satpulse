@@ -105,7 +105,7 @@ func (s *Sentence) TimeOfDay() (string, bool) {
 }
 
 func (s *Sentence) AddressField() string {
-	if s.SyntaxFlags&nmeamsg.SentenceAddressLength5 != 0 {
+	if s.SyntaxFlags&nmeamsg.SentenceApprovedAddressFormat != 0 {
 		return s.Payload[:5] // e.g. GPRMC
 	}
 	addr, _, _ := strings.Cut(s.Payload, ",")

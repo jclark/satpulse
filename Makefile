@@ -150,6 +150,7 @@ $(DEB_PATTERN): $(ALL_GOARCH) $(TOMLS) $(MAN_GZ_TARGETS) gpsmsg
 	install -D debian/postinst out/$*/deb/DEBIAN/postinst
 	install -D out/$(DEB_GOARCH)/satpulsed out/$*/deb/usr/sbin/satpulsed
 	install -D out/$(DEB_GOARCH)/satpulsetool out/$*/deb/usr/bin/satpulsetool
+	install -D out/$(DEB_GOARCH)/satpulsewb out/$*/deb/usr/bin/satpulsewb
 	install -D -m 644 out/$(DEB_GOARCH)/satpulse.toml out/$*/deb/etc/satpulse.toml
 	install -D -m 644 configs/ptp4l.service out/$*/deb/usr/share/doc/satpulse/ptp4l.service
 	install -D -m 644 configs/chrony.conf out/$*/deb/usr/share/doc/satpulse/chrony.conf
@@ -166,6 +167,7 @@ $(DEB_PATTERN): $(ALL_GOARCH) $(TOMLS) $(MAN_GZ_TARGETS) gpsmsg
 	install -D -m 644 out/satpulsetool-sdp.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-sdp.1.gz
 	install -D -m 644 out/satpulsetool-syncsim.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-syncsim.1.gz
 	install -D -m 644 out/satpulsetool-convobs.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-convobs.1.gz
+	install -D -m 644 out/satpulsewb.1.gz out/$*/deb/usr/share/man/man1/satpulsewb.1.gz
 	install -D -m 644 out/satpulse.toml.5.gz out/$*/deb/usr/share/man/man5/satpulse.toml.5.gz
 	install -D -m 644 out/satpulsed.8.gz out/$*/deb/usr/share/man/man8/satpulsed.8.gz
 	installed_size=`du -s -k out/$*/deb | cut -f1`;\

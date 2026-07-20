@@ -43,7 +43,7 @@ function formatTime(iso: string): string {
 }
 
 function entryData(pkt: PacketLogEntry): string {
-    if (pkt.ascii) return stripTrailingEOL(pkt.ascii);
+    if (pkt.ascii) return stripTrailingEOL(pkt.ascii).replace(/\r\n|\r|\n/g, '\u21b5');
     return pkt.bin || '';
 }
 
@@ -60,6 +60,7 @@ const chevronSvg = (
 export function PacketPanel({visible, connState}: Props) {
     const liveRef = useRef<Map<string, MsgTypeState>>(new Map());
     const [displayed, setDisplayed] = useState<Map<string, MsgTypeState>>(new Map());
+    const visibleRef = useRef(visible);
     const frozenRef = useRef(false);
     const frozenAtRef = useRef(0);
     const [isFrozen, setIsFrozen] = useState(false);
@@ -70,11 +71,10 @@ export function PacketPanel({visible, connState}: Props) {
     const [snapshotOpen, setSnapshotOpen] = useState(false);
     const [snapshotEntries, setSnapshotEntries] = useState<(PacketLogEntry & {key: string})[]>([]);
 
-    // Register gps:packet listener only while the tab is visible: the
-    // subscription is what makes the backend stream the high-rate
-    // packet events.
+    // Keep gps:packet subscribed for the Workbench lifetime. The subscription
+    // makes the backend stream the gated high-rate events, including transient
+    // packets received while another tab is visible.
     useEffect(() => {
-        if (!visible) return;
         const off = transport.eventsOn('gps:packet', (pkt: PacketLogEntry) => {
             const tag = pkt.tag || '';
             const msg = pkt.msg || '';
@@ -92,11 +92,20 @@ export function PacketPanel({visible, connState}: Props) {
             } else {
                 live.set(key, {tag, msg, out, count: 1, recentEntries: [pkt]});
             }
-            if (!frozenRef.current) {
+            if (visibleRef.current && !frozenRef.current) {
                 setDisplayed(new Map(live));
             }
         });
         return off;
+    }, []);
+
+    // Packet ingestion mutates only the live accumulator while hidden. Sync
+    // the displayed snapshot on return without rendering once per hidden packet.
+    useEffect(() => {
+        visibleRef.current = visible;
+        if (visible && !frozenRef.current) {
+            setDisplayed(new Map(liveRef.current));
+        }
     }, [visible]);
 
     // Sorted rows
