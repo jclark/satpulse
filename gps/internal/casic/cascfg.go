@@ -46,6 +46,7 @@ type Configurator struct {
 	navBand    *casbin.CfgNavBand  // latest V6 CFG-NAVBAND readback
 	ports      []casbin.CfgPrt     // CFG-PRT readback, one entry per port
 	speedReq   *casReq             // the baud change request, when one was generated
+	saveReq    *casReq             // the save request, when one was generated (gates the reset)
 	navLimit   *casbin.CfgNavLimit // latest V6 CFG-NAVLIMIT readback
 	pcasSW     string              // V5 firmware version from PCAS06 query
 	pcasHW     string              // V5 hardware info from PCAS06 query
@@ -173,21 +174,26 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 // and delay every later acknowledgement, the rate phase comes after
 // message enabling so that it fires only when some enable was accepted
 // (whether an enable was ACKed is known only once the message phase is
-// final) and precedes the baud change and NVM phases so a requested
+// final) and precedes the baud change and save phases so a requested
 // save persists the forced positioning rate, the baud change comes
-// after all the work whose acknowledgements it would endanger, and the
-// NVM phase is last so that it persists everything - NAK-driven
-// fallback outcomes and the new baud rate alike (a save runs on the
-// confirmed line at the new speed, as in the UBX configurator).
-// Acknowledged sets record their accepted values as the assumed
-// configuration, so no re-polling is needed.
+// after all the work whose acknowledgements it would endanger, the save
+// phase persists everything - NAK-driven fallback outcomes and the new
+// baud rate alike (a save runs on the confirmed line at the new speed,
+// as in the UBX configurator) - and the reset phase comes last, after
+// the save is final, both because the spec forbids a second CFG message
+// in flight before the first is answered (the reset must not be sent
+// while the save awaits its ACK) and because a failed save must gate
+// the reset: a reset never discards running changes its paired save
+// failed to persist. Acknowledged sets record their accepted values as
+// the assumed configuration, so no re-polling is needed.
 var genPhases = []func(*Configurator){
 	(*Configurator).generateQueryReqs,
 	(*Configurator).generateSetReqs,
 	(*Configurator).generateMsgReqs,
 	(*Configurator).generateRateReqs,
 	(*Configurator).generateSpeedReqs,
-	(*Configurator).generateNVMReqs,
+	(*Configurator).generateSaveReqs,
+	(*Configurator).generateResetReqs,
 }
 
 // GenerateRequests generates configuration requests and promotes
@@ -236,24 +242,37 @@ func (c *Configurator) generateSetReqs() {
 	c.generateMinElevSet()
 }
 
-// generateNVMReqs generates the save and reset requests.
-func (c *Configurator) generateNVMReqs() {
-	opts := &c.target.Opts
-	switch opts.Save {
+// generateSaveReqs generates the save-to-NVM request, retaining its
+// pointer so the reset phase can gate on the save's outcome.
+func (c *Configurator) generateSaveReqs() {
+	switch c.target.Opts.Save {
 	case gpsprot.SaveAll:
-		c.addReq(&casbin.CfgCfg{Mask: c.saveMask(casbin.CfgSectionAll), OpMode: casbin.CfgOpSave})
+		c.saveReq = c.addMsg(&casbin.CfgCfg{Mask: c.saveMask(casbin.CfgSectionAll), OpMode: casbin.CfgOpSave}, casReq{})
 	case gpsprot.SaveMinimal:
 		if c.touched != 0 {
-			c.addReq(&casbin.CfgCfg{Mask: c.saveMask(c.touched), OpMode: casbin.CfgOpSave})
+			c.saveReq = c.addMsg(&casbin.CfgCfg{Mask: c.saveMask(c.touched), OpMode: casbin.CfgOpSave}, casReq{})
 		}
 	}
-	switch opts.Reset {
+}
+
+// generateResetReqs generates the reset request. It runs as the final
+// phase, gated on the save being final (see genPhases), so the reset
+// goes out only after the save's ACK/NAK has arrived. If a save was
+// generated but did not succeed, no reset is generated at all: the
+// save's failure is the invocation's reported error, and a reset must
+// never discard running changes its paired save failed to persist. A
+// reset with no save (none requested, or a minimal save with nothing
+// touched) proceeds ungated.
+func (c *Configurator) generateResetReqs() {
+	if c.saveReq != nil && c.saveReq.state != reqSucceeded {
+		return
+	}
+	switch c.target.Opts.Reset {
 	case gpsprot.ResetReload:
 		if c.family == familyV6 {
 			return
 		}
-		m := &casbin.CfgCfg{Mask: c.saveMask(casbin.CfgSectionAll), OpMode: casbin.CfgOpLoad}
-		c.addReq(m)
+		c.addReq(&casbin.CfgCfg{Mask: c.saveMask(casbin.CfgSectionAll), OpMode: casbin.CfgOpLoad})
 	case gpsprot.ResetCold:
 		c.addRstReq(casbin.StartCold)
 	case gpsprot.ResetFactory:
@@ -433,7 +452,7 @@ func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
 
 // setSection returns the CFG-CFG save-section bit a set request
 // touches, for minimal saves. The nonzero result also gates the
-// minimal save: a value here is what tells generateNVMReqs a change
+// minimal save: a value here is what tells generateSaveReqs a change
 // happened and a save is due. The V6-only CFG messages therefore map
 // to the V5 section their setting belongs to (time mode, band, and
 // nav limit are Nav; RTCM output is a message setting) even though

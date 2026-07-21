@@ -697,8 +697,10 @@ func TestNVMOps(t *testing.T) {
 		setStatic    bool
 		save         gpsprot.SaveType
 		reset        gpsprot.ResetType
+		nakSave      bool // the receiver refuses the CFG-CFG save
 		expectSaves  []casbin.CfgCfg
 		expectResets []casbin.CfgRst
+		wantErr      int
 	}{
 		{
 			// Enabling a message forces CFG-RATE (a Nav-section set) so
@@ -762,10 +764,59 @@ func TestNVMOps(t *testing.T) {
 			expectResets: []casbin.CfgRst{{NavBbrMask: 0,
 				ResetMode: casbin.ResetHWImmediate, StartMode: casbin.StartFactory}},
 		},
+		{
+			// Save and reset together: the reset is generated in a later
+			// phase, only after the save is final, so both go out.
+			name:        "V5 save all then cold reset",
+			save:        gpsprot.SaveAll,
+			reset:       gpsprot.ResetCold,
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpSave}},
+			expectResets: []casbin.CfgRst{{NavBbrMask: bbrReset,
+				ResetMode: casbin.ResetHWImmediate, StartMode: casbin.StartCold}},
+		},
+		{
+			// Save and reload share a class+id, so this pair crosses the
+			// save/reset phase split as two CFG-CFG messages: the save
+			// must complete first so the reload restores what was saved.
+			name:  "V5 save all then reload",
+			save:  gpsprot.SaveAll,
+			reset: gpsprot.ResetReload,
+			expectSaves: []casbin.CfgCfg{
+				{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpSave},
+				{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpLoad},
+			},
+		},
+		{
+			// A refused save gates its paired reload just like a reset:
+			// the reload must not discard the changes the save failed to
+			// persist.
+			name:         "V5 refused save blocks reload",
+			save:         gpsprot.SaveAll,
+			reset:        gpsprot.ResetReload,
+			nakSave:      true,
+			expectSaves:  nil,
+			expectResets: nil,
+			wantErr:      1,
+		},
+		{
+			// A refused save gates its paired reset: the save is the
+			// reported error and no reset is generated, so the reset
+			// cannot discard the unsaved running changes.
+			name:         "V5 refused save blocks cold reset",
+			save:         gpsprot.SaveAll,
+			reset:        gpsprot.ResetCold,
+			nakSave:      true,
+			expectSaves:  nil,
+			expectResets: nil,
+			wantErr:      1,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			rcvr := &testReceiver{monVer: tc.monVer, tm6: tc.tm6}
+			if tc.nakSave {
+				rcvr.naks = map[casbin.MsgID]bool{casbin.CfgCfgID: true}
+			}
 			cp := probe(t, rcvr)
 			target := gpsprot.NewConfigTarget()
 			if tc.setNMEA {
@@ -775,8 +826,8 @@ func TestNVMOps(t *testing.T) {
 			target.Opts.Save = tc.save
 			target.Opts.Reset = tc.reset
 			_, errCount := configure(t, cp, rcvr, target)
-			if errCount != 0 {
-				t.Errorf("ErrorCount = %d, want 0", errCount)
+			if errCount != tc.wantErr {
+				t.Errorf("ErrorCount = %d, want %d", errCount, tc.wantErr)
 			}
 			if !reflect.DeepEqual(rcvr.saves, tc.expectSaves) {
 				t.Errorf("saves\ngot  %+v\nwant %+v", rcvr.saves, tc.expectSaves)
