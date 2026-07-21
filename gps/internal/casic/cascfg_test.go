@@ -395,8 +395,7 @@ func TestConfigSupport(t *testing.T) {
 	}{
 		{"V5", v5, base | gpsprot.ConfigSupportReload},
 		{"V6", v6, base | gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportRaw |
-			gpsprot.ConfigSupportSurveyMsg |
-			gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7},
+			gpsprot.ConfigSupportSurveyMsg},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

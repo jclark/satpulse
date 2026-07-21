@@ -135,9 +135,13 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc
 	if c.family == familyV6 {
+		// RTCM MSM output is not declared: no known CASIC firmware
+		// emits RTCM (the F8N acknowledges CFG-RTCM but never emits,
+		// the -6T NAKs it outright), and flag truthfulness requires
+		// not declaring what no receiver delivers. An --rtcm-out
+		// request still attempts the enables.
 		flags |= gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportRaw |
-			gpsprot.ConfigSupportSurveyMsg |
-			gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7
+			gpsprot.ConfigSupportSurveyMsg
 	} else {
 		flags |= gpsprot.ConfigSupportReload
 	}

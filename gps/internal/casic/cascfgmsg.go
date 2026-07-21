@@ -55,7 +55,10 @@ func (c *Configurator) generateRateReqs() {
 // RTCM output as a whole. There is no GLONASS MSM enable in CFG-RTCM,
 // so GLONASS corrections are not available. Whether a given unit
 // actually emits RTCM is its own affair: the enables are acknowledged
-// and emission is checked by observation, like raw output.
+// and emission is checked by observation, like raw output. RTCM output
+// is not a declared capability (see ConfigSupport) because no known
+// CASIC firmware emits it, but the enables are still attempted so
+// emission stays discoverable if some future firmware does.
 func (c *Configurator) generateRTCMReqs(flags gpsprot.RTCMMsgFlags) {
 	if c.family != familyV6 {
 		return
