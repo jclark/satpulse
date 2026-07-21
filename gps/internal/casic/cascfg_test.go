@@ -616,6 +616,8 @@ func TestNVMOps(t *testing.T) {
 		monVer       *casbin.MonVer
 		nmea         gpsprot.NMEAMsgFlags
 		setNMEA      bool
+		tm6          *casbin.CfgTMode2
+		setStatic    bool
 		save         gpsprot.SaveType
 		reset        gpsprot.ResetType
 		expectSaves  []casbin.CfgCfg
@@ -647,6 +649,17 @@ func TestNVMOps(t *testing.T) {
 			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpSave}},
 		},
 		{
+			// A V6 set that is not a message change (here a time-mode
+			// set) must still make the minimal save fire; the section
+			// mask V6 ignores becomes the all-sections mask.
+			name:        "V6 minimal save of a time-mode change",
+			monVer:      v6,
+			tm6:         &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
+			setStatic:   true,
+			save:        gpsprot.SaveMinimal,
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpSave}},
+		},
+		{
 			name:   "V6 reload is unsupported and sends nothing",
 			monVer: v6,
 			reset:  gpsprot.ResetReload,
@@ -672,12 +685,13 @@ func TestNVMOps(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rcvr := &testReceiver{monVer: tc.monVer}
+			rcvr := &testReceiver{monVer: tc.monVer, tm6: tc.tm6}
 			cp := probe(t, rcvr)
 			target := gpsprot.NewConfigTarget()
 			if tc.setNMEA {
 				target.Opts.NMEAMsg.Set(tc.nmea)
 			}
+			target.Opts.SetStatic = tc.setStatic
 			target.Opts.Save = tc.save
 			target.Opts.Reset = tc.reset
 			_, errCount := configure(t, cp, rcvr, target)

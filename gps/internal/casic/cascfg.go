@@ -417,17 +417,25 @@ func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
 }
 
 // setSection returns the CFG-CFG save-section bit a set request
-// touches, for minimal saves. V6-only CFG messages return 0: the V6
-// save command has no section mask.
+// touches, for minimal saves. The nonzero result also gates the
+// minimal save: a value here is what tells generateNVMReqs a change
+// happened and a save is due. The V6-only CFG messages therefore map
+// to the V5 section their setting belongs to (time mode, band, and
+// nav limit are Nav; RTCM output is a message setting) even though
+// the particular bit is meaningless on V6, where saveMask substitutes
+// the all-sections mask - only being nonzero matters, so that the
+// save fires. CFG-RST returns 0: a reset does
+// not touch saved configuration and must not trigger a save.
 func setSection(m casbin.Msg) uint16 {
 	switch m.ID() {
-	case casbin.CfgMsgID:
+	case casbin.CfgMsgID, casbin.CfgRtcmID:
 		return casbin.CfgSectionMsg
 	case casbin.CfgPrtID:
 		return casbin.CfgSectionPort
 	case casbin.CfgTPID:
 		return casbin.CfgSectionTP
-	case casbin.CfgRateID, casbin.CfgTModeID, casbin.CfgNavxID:
+	case casbin.CfgRateID, casbin.CfgTModeID, casbin.CfgNavxID,
+		casbin.CfgTMode2ID, casbin.CfgNavBandID, casbin.CfgNavLimID:
 		return casbin.CfgSectionNav
 	}
 	return 0
