@@ -35,7 +35,8 @@ type testReceiver struct {
 	navBand    *casbin.CfgNavBand
 	sigCap     uint32 // hardware-receivable signals; clamps written SigIDMask
 	ports      []casbin.CfgPrt
-	rate       *casbin.CfgRate
+	rate       *casbin.CfgRate  // poll response for CFG-RATE
+	rateSets   []casbin.CfgRate // CFG-RATE set payloads received
 	navLimit   *casbin.CfgNavLimit
 	sw, hw     string   // PCAS06 replies, when non-empty
 	textOut    []string // queued GPTXT payloads to deliver
@@ -135,6 +136,11 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		}
 		*r.tp = *mt
 		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgTPID)})}
+	case *casbin.CfgRate:
+		r.rateSets = append(r.rateSets, *mt)
+		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgRateID)})}
+	case *casbin.CfgRtcm:
+		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgRtcmID)})}
 	case *casbin.CfgCfg:
 		if len(r.saves) == 0 {
 			r.saveBaud = r.newBaud
@@ -609,6 +615,77 @@ func TestSatsOut(t *testing.T) {
 	}
 }
 
+// TestMsgRate verifies that an accepted enable forces the positioning
+// interval to 1000 ms via CFG-RATE (a CFG-MSG rate is a per-fix divisor,
+// not a frequency, so enabled output runs at 1 Hz only when the interval
+// is 1000 ms), while an invocation that enables nothing - only disables,
+// or has every enable refused - leaves the interval alone. On V6 the
+// accompanying FixRateHz is set to 1; on V5 the trailing bytes are
+// reserved and stay zero.
+func TestMsgRate(t *testing.T) {
+	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
+	tests := []struct {
+		name       string
+		monVer     *casbin.MonVer
+		nakTargets []casbin.MsgID
+		setup      func(*gpsprot.ConfigTarget)
+		expect     []casbin.CfgRate
+	}{
+		{
+			name:   "V5 enable forces 1 Hz, FixRateHz reserved",
+			setup:  func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC) },
+			expect: []casbin.CfgRate{{FixIntervalMs: 1000}},
+		},
+		{
+			name:   "V6 enable forces 1 Hz with FixRateHz 1",
+			monVer: v6,
+			setup:  func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC) },
+			expect: []casbin.CfgRate{{FixIntervalMs: 1000, FixRateHz: 1}},
+		},
+		{
+			// CFG-RTCM is the other enable path (a nonzero enable mask).
+			name:   "V6 RTCM enable forces 1 Hz",
+			monVer: v6,
+			setup:  func(tg *gpsprot.ConfigTarget) { tg.Opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4) },
+			expect: []casbin.CfgRate{{FixIntervalMs: 1000, FixRateHz: 1}},
+		},
+		{
+			name:  "disable only sends no CFG-RATE",
+			setup: func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone) },
+		},
+		{
+			// The F8N scenario: the only enable is TIM-TP, and both it and
+			// the TIM2-TPX fallback are refused, so nothing was enabled and
+			// the interval must be left alone.
+			name:       "all enables refused sends no CFG-RATE",
+			monVer:     v6,
+			nakTargets: []casbin.MsgID{casbin.TimTPID, casbin.Tim2TpxID},
+			setup:      func(tg *gpsprot.ConfigTarget) { tg.Opts.PVTMsg = gpsprot.PVTMsgTimePulse },
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tc.monVer}
+			if len(tc.nakTargets) > 0 {
+				rcvr.nakTargets = make(map[casbin.MsgID]bool)
+				for _, mid := range tc.nakTargets {
+					rcvr.nakTargets[mid] = true
+				}
+			}
+			cp := probe(t, rcvr)
+			target := gpsprot.NewConfigTarget()
+			tc.setup(target)
+			_, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if !reflect.DeepEqual(rcvr.rateSets, tc.expect) {
+				t.Errorf("CFG-RATE sets\ngot  %+v\nwant %+v", rcvr.rateSets, tc.expect)
+			}
+		})
+	}
+}
+
 func TestNVMOps(t *testing.T) {
 	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
 	tests := []struct {
@@ -624,11 +701,14 @@ func TestNVMOps(t *testing.T) {
 		expectResets []casbin.CfgRst
 	}{
 		{
+			// Enabling a message forces CFG-RATE (a Nav-section set) so
+			// the 1 Hz interval persists with the message, so the minimal
+			// save covers both the Msg and Nav sections.
 			name:        "V5 minimal save of message changes",
 			nmea:        gpsprot.NMEAMsgRMC,
 			setNMEA:     true,
 			save:        gpsprot.SaveMinimal,
-			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionMsg, OpMode: casbin.CfgOpSave}},
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionMsg | casbin.CfgSectionNav, OpMode: casbin.CfgOpSave}},
 		},
 		{
 			name:        "V5 minimal save with no changes saves nothing",

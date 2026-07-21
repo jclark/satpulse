@@ -25,6 +25,31 @@ func (c *Configurator) generateMsgReqs() {
 	}
 }
 
+// generateRateReqs forces the positioning interval to 1000 ms whenever
+// the message phase accepted an enable. A CFG-MSG rate is a per-fix
+// divisor (rate 1 = one output per fix), not a frequency, so enabled
+// output only runs at 1 Hz if the positioning interval is 1000 ms. The
+// interval (CFG-RATE) persists and may be left at a non-default value,
+// so this matches the semantics guarantee of 1 Hz output independent of
+// the positioning rate, as the u-blox backend does. msgEnabled is set
+// only by an accepted enable (see addMsg), so an invocation that only
+// disables output, or whose every enable was refused, sends nothing and
+// leaves the interval alone. This is its own phase, after the message
+// phase is final, because whether an enable was ACKed is known only
+// then. On V6 FixRateHz accompanies the interval; on V5 the trailing
+// bytes are reserved and must stay zero. CFG-RATE is documented on both
+// families, so a NAK is a genuine refusal (addReq).
+func (c *Configurator) generateRateReqs() {
+	if !c.msgEnabled {
+		return
+	}
+	rate := &casbin.CfgRate{FixIntervalMs: 1000}
+	if c.family == familyV6 {
+		rate.FixRateHz = 1
+	}
+	c.addReq(rate)
+}
+
 // generateRTCMReqs configures RTCM output on V6: CFG-RTCM selects the
 // message types and MSM version, and the port's protocol mask gates
 // RTCM output as a whole. There is no GLONASS MSM enable in CFG-RTCM,

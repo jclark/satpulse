@@ -32,22 +32,23 @@ const speedChangeDelay = 150 * time.Millisecond
 // promoted to ready only when no earlier live request shares their
 // class+id (see promote).
 type Configurator struct {
-	target   *gpsprot.ConfigTarget
-	ver      *casbin.MonVer // nil when MON-VER is unsupported (V5)
-	family   fwFamily
-	reqs     []*casReq
-	phase    int                 // index into genPhases of the next phase to generate
-	touched  uint16              // CfgSection* bits of the sections set requests touched
-	tp       *casbin.CfgTP       // latest CFG-TP readback; nil if never answered
-	tm5      *casbin.CfgTMode    // latest V5 CFG-TMODE readback
-	tm6      *casbin.CfgTMode2   // latest V6 CFG-TMODE2 readback
-	navx     *casbin.CfgNavx     // latest V5 CFG-NAVX readback
-	navBand  *casbin.CfgNavBand  // latest V6 CFG-NAVBAND readback
-	ports    []casbin.CfgPrt     // CFG-PRT readback, one entry per port
-	speedReq *casReq             // the baud change request, when one was generated
-	navLimit *casbin.CfgNavLimit // latest V6 CFG-NAVLIMIT readback
-	pcasSW   string              // V5 firmware version from PCAS06 query
-	pcasHW   string              // V5 hardware info from PCAS06 query
+	target     *gpsprot.ConfigTarget
+	ver        *casbin.MonVer // nil when MON-VER is unsupported (V5)
+	family     fwFamily
+	reqs       []*casReq
+	phase      int                 // index into genPhases of the next phase to generate
+	touched    uint16              // CfgSection* bits of the sections set requests touched
+	msgEnabled bool                // a message-output request enabled some output
+	tp         *casbin.CfgTP       // latest CFG-TP readback; nil if never answered
+	tm5        *casbin.CfgTMode    // latest V5 CFG-TMODE readback
+	tm6        *casbin.CfgTMode2   // latest V6 CFG-TMODE2 readback
+	navx       *casbin.CfgNavx     // latest V5 CFG-NAVX readback
+	navBand    *casbin.CfgNavBand  // latest V6 CFG-NAVBAND readback
+	ports      []casbin.CfgPrt     // CFG-PRT readback, one entry per port
+	speedReq   *casReq             // the baud change request, when one was generated
+	navLimit   *casbin.CfgNavLimit // latest V6 CFG-NAVLIMIT readback
+	pcasSW     string              // V5 firmware version from PCAS06 query
+	pcasHW     string              // V5 hardware info from PCAS06 query
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -169,17 +170,22 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 // earlier requests being final: property sets need the query phase's
 // readback (read-modify-write), message enabling comes after the
 // property work because enabling NMEA output can saturate a 9600 line
-// and delay every later acknowledgement, the baud change comes after
-// all the work whose acknowledgements it would endanger, and the NVM
-// phase is last so that it persists everything - NAK-driven fallback
-// outcomes and the new baud rate alike (a save runs on the confirmed
-// line at the new speed, as in the UBX configurator). Acknowledged
-// sets record their accepted values as the assumed configuration, so
-// no re-polling is needed.
+// and delay every later acknowledgement, the rate phase comes after
+// message enabling so that it fires only when some enable was accepted
+// (whether an enable was ACKed is known only once the message phase is
+// final) and precedes the baud change and NVM phases so a requested
+// save persists the forced positioning rate, the baud change comes
+// after all the work whose acknowledgements it would endanger, and the
+// NVM phase is last so that it persists everything - NAK-driven
+// fallback outcomes and the new baud rate alike (a save runs on the
+// confirmed line at the new speed, as in the UBX configurator).
+// Acknowledged sets record their accepted values as the assumed
+// configuration, so no re-polling is needed.
 var genPhases = []func(*Configurator){
 	(*Configurator).generateQueryReqs,
 	(*Configurator).generateSetReqs,
 	(*Configurator).generateMsgReqs,
+	(*Configurator).generateRateReqs,
 	(*Configurator).generateSpeedReqs,
 	(*Configurator).generateNVMReqs,
 }
@@ -376,6 +382,15 @@ func (c *Configurator) add(req *casReq) *casReq {
 // the configuration section it touches for minimal saves.
 func (c *Configurator) addMsg(m casbin.Msg, req casReq) *casReq {
 	c.touched |= setSection(m)
+	if msgEnablesOutput(m) {
+		prev := req.onAck
+		req.onAck = func() {
+			c.msgEnabled = true
+			if prev != nil {
+				prev()
+			}
+		}
+	}
 	req.mid = m.ID()
 	req.packet = serialize(m)
 	return c.add(&req)
@@ -439,6 +454,24 @@ func setSection(m casbin.Msg) uint16 {
 		return casbin.CfgSectionNav
 	}
 	return 0
+}
+
+// msgEnablesOutput reports whether m is a message-output request that
+// turns some output on: a CFG-MSG with a nonzero output rate, or a
+// CFG-RTCM with a nonzero enable mask. A poll (PollRate) enables
+// nothing. Such a request's ACK is wrapped in addMsg to set msgEnabled,
+// so the flag reflects only accepted enables (many enables are nakOK):
+// it gates the CFG-RATE set in the rate phase (see generateRateReqs),
+// so that whenever an invocation actually enables output that output
+// runs at 1 Hz.
+func msgEnablesOutput(m casbin.Msg) bool {
+	switch mt := m.(type) {
+	case *casbin.CfgMsg:
+		return mt.Rate != 0 && mt.Rate != casbin.PollRate
+	case *casbin.CfgRtcm:
+		return mt.MsgEnable != 0
+	}
+	return false
 }
 
 func serialize(m casbin.Msg) []byte {
