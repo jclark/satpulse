@@ -62,7 +62,7 @@ func (a *App) startup(ctx context.Context) {
 		fmt.Fprintln(os.Stderr, "error opening log files:", err)
 	} else if a.systemLog != nil {
 		jsonHandler := slog.NewJSONHandler(a.systemLog.File, &slog.HandlerOptions{Level: slog.LevelDebug})
-		base = multiHandler{base, jsonHandler}
+		base = slog.NewMultiHandler(base, jsonHandler)
 	}
 	sink := wailsSink{ctx: ctx}
 	a.lg = slog.New(session.NewLogHandler(sink, base))
@@ -291,40 +291,3 @@ func (a *App) VelECEFtoNED(vx, vy, vz float64) *[3]float64 {
 	return a.sess.VelECEFtoNED(vx, vy, vz)
 }
 
-// multiHandler fans out log records to multiple slog handlers.
-type multiHandler []slog.Handler
-
-func (h multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	for _, handler := range h {
-		if handler.Enabled(ctx, level) {
-			return true
-		}
-	}
-	return false
-}
-
-func (h multiHandler) Handle(ctx context.Context, r slog.Record) error {
-	var firstErr error
-	for _, handler := range h {
-		if err := handler.Handle(ctx, r); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
-}
-
-func (h multiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	handlers := make(multiHandler, len(h))
-	for i, handler := range h {
-		handlers[i] = handler.WithAttrs(attrs)
-	}
-	return handlers
-}
-
-func (h multiHandler) WithGroup(name string) slog.Handler {
-	handlers := make(multiHandler, len(h))
-	for i, handler := range h {
-		handlers[i] = handler.WithGroup(name)
-	}
-	return handlers
-}
