@@ -71,10 +71,20 @@ func (t *Term) setAttrNow(attr *unix.Termios) error {
 }
 
 // Drain blocks until all pending output has been transmitted. The nonzero
-// TCSBRK argument selects drain-without-break, which is how glibc's tcdrain
-// is implemented.
+// TCSBRK argument selects drain-without-break, which is how tcdrain is
+// implemented on Linux. The ioctl blocks for the transmit time of the
+// buffered output - hundreds of ms on a slow line - and the Go runtime's
+// preemption and timer signals interrupt blocking syscalls routinely, so
+// EINTR here is runtime noise, not an event: retry. (POSIX tcdrain may
+// legitimately return EINTR; under Go we must be more diligent than libc
+// callers about retrying it.)
 func (t *Term) Drain() error {
-	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TCSBRK, 1), "ioctl(TCSBRK)")
+	for {
+		err := unix.IoctlSetInt(t.fd, unix.TCSBRK, 1)
+		if err != unix.EINTR {
+			return t.wrapErr(err, "ioctl(TCSBRK)")
+		}
+	}
 }
 
 func (t *Term) getAttr() (tp *unix.Termios, err error) {
