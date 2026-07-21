@@ -58,9 +58,10 @@ test('startup: the tokened URL mounts the app, strips the token, connects, and d
     await expect(statusBar(page, 'Connected')).toBeVisible();
 
     // The replay feeds satellites, a nav fix and position: the summary panel
-    // reports the satellite count, and the PVT panel auto-expands its Position
-    // table on the first position message.
+    // reports the satellite count. PVT Messages stays collapsed until the user
+    // opens it, then exposes the populated Position table.
     await expect(page.getByText(/Sats:/)).toBeVisible();
+    await page.getByRole('button', {name: 'PVT Messages'}).click();
     await expect(page.getByRole('heading', {name: 'Position', exact: true})).toBeVisible();
 
     // The stream advances: the live page keeps re-rendering as successive time,
