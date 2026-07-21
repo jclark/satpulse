@@ -1,7 +1,8 @@
 # ATGM332D-AT9880-F8N-76 (URANUS6 V6.3.2.0)
 
 Dual-band CASIC navigation receiver, UART at 115200. Characterized
-2026-06-13; baseline `ATGM332D-AT9880-F8N-76-URANUS6,V6.3.2.0.json`.
+2026-06-13, re-characterized 2026-07-21 (disruptive); baseline
+`ATGM332D-AT9880-F8N-76-URANUS6,V6.3.2.0.json`.
 
 ## Limitations relative to the model
 
@@ -27,6 +28,9 @@ Dual-band CASIC navigation receiver, UART at 115200. Characterized
   steps; an LLH request is realized by conversion to ECEF, so the LLH
   form never reads back (the position does, as ECEF).
 - Time pulse width quantized to 1 us.
+- Reload: unsupported (V6 firmware); unsaved changes survive a
+  `--reload`.
+- Save granularity: a single group - saving anything saves everything.
 - Active port: the protocol cannot identify which UART the
   conversation uses (a port query answers with one entry per UART),
   so the port property does not exist.

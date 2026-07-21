@@ -7,13 +7,13 @@
     "mode.fixedPosLLH[0]": {"unsupported": true},
     "mode.fixedPosLLH[1]": {"unsupported": true},
     "mode.height": {"unsupported": true},
-    "pvtOut": {"missing": ["leap"]},
+    "pvtOut": {"missing": ["leap", "tp"]},
     "reload": {"unsupported": true},
     "rtcmBaseID": {"unsupported": true},
     "rtcmOut": {
       "missing": [
-        {"missing": ["1005", "1074", "1124"], "request": ["MSM4", "ARP"]},
-        {"missing": ["1077", "1127"], "request": ["MSM7"]}
+        {"missing": ["1005", "1074", "1094", "1124"], "request": ["MSM4", "ARP"]},
+        {"missing": ["1077", "1097", "1127"], "request": ["MSM7"]}
       ]
     },
     "saveGranularity": {"singleGroup": true},
@@ -45,8 +45,8 @@
     "timePulse.width": {"quantum": 1e-06}
   },
   "receiver": {
-    "firmware": "URANUS6,V6.3.0.0",
-    "hardware": "AT362-AT6668-6T-30",
+    "firmware": "URANUS6,V6.2.3.0",
+    "hardware": "AT372-AT6668-6P-34",
     "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "NAVIC", "SBAS"],
     "vendor": "Zhongke"
   },

@@ -1,298 +1,44 @@
 {
   "limitations": {
-    "mode.fixedPosAcc": {
-      "quantum": 0.001
-    },
-    "mode.fixedPosECEF[0]": {
-      "quantum": 0.01
-    },
-    "mode.fixedPosECEF[1]": {
-      "quantum": 0.01
-    },
-    "mode.fixedPosECEF[2]": {
-      "quantum": 0.01
-    },
-    "mode.fixedPosLLH[0]": {
-      "unsupported": true
-    },
-    "mode.fixedPosLLH[1]": {
-      "unsupported": true
-    },
-    "mode.height": {
-      "unsupported": true
-    },
-    "port": {
-      "unsupported": true
-    },
-    "pvtOut": {
-      "missing": [
-        {
-          "missing": [
-            "leap",
-            "tp"
-          ],
-          "requested": [
-            "tp",
-            "after",
-            "tai",
-            "leap",
-            "qual",
-            "epoch",
-            "off"
-          ]
-        }
-      ]
-    },
+    "mode.fixedPosAcc": {"quantum": 0.001},
+    "mode.fixedPosECEF[0]": {"quantum": 0.01},
+    "mode.fixedPosECEF[1]": {"quantum": 0.01},
+    "mode.fixedPosECEF[2]": {"quantum": 0.01},
+    "mode.fixedPosLLH[0]": {"unsupported": true},
+    "mode.fixedPosLLH[1]": {"unsupported": true},
+    "mode.height": {"unsupported": true},
+    "pvtOut": {"missing": ["leap", "tp"]},
     "rawOut": {
-      "missing": [
-        {
-          "missing": [
-            "obs"
-          ],
-          "requested": [
-            "obs"
-          ]
-        },
-        {
-          "missing": [
-            "nav"
-          ],
-          "requested": [
-            "nav"
-          ]
-        }
-      ]
+      "missing": [{"missing": ["obs"], "request": ["obs"]}, {"missing": ["nav"], "request": ["nav"]}]
     },
-    "rtcmBaseID": {
-      "unsupported": true
-    },
+    "reload": {"unsupported": true},
+    "rtcmBaseID": {"unsupported": true},
     "rtcmOut": {
       "missing": [
-        {
-          "missing": [
-            "1005",
-            "1074",
-            "1084",
-            "1094",
-            "1104",
-            "1114",
-            "1124",
-            "1134"
-          ],
-          "requested": [
-            "MSM4",
-            "ARP"
-          ]
-        },
-        {
-          "missing": [
-            "1077",
-            "1087",
-            "1097",
-            "1107",
-            "1117",
-            "1127",
-            "1137"
-          ],
-          "requested": [
-            "MSM7"
-          ]
-        }
+        {"missing": ["1005", "1074", "1084", "1094", "1124", "1230"], "request": ["MSM4", "ARP"]},
+        {"missing": ["1077", "1087", "1097", "1127", "1230"], "request": ["MSM7"]}
       ]
     },
+    "saveGranularity": {"singleGroup": true},
+    "showPort": {"unsupported": true},
     "signals": {
-      "refused": [
-        {
-          "signals": {
-            "QZSS": [
-              "L1",
-              "L5"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "NAVIC": [
-              "L5"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "SBAS": [
-              "L1"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "GPS": []
-          }
-        },
-        {
-          "signals": {
-            "GPS": []
-          }
-        },
-        {
-          "signals": {
-            "GAL": []
-          }
-        },
-        {
-          "signals": {
-            "GAL": []
-          }
-        },
-        {
-          "signals": {
-            "BDS": []
-          }
-        },
-        {
-          "signals": {
-            "BDS": []
-          }
-        },
-        {
-          "signals": {
-            "GLO": []
-          }
-        },
-        {
-          "signals": {
-            "GLO": []
-          }
-        },
-        {
-          "signals": {
-            "QZSS": [
-              "L1"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "QZSS": []
-          }
-        },
-        {
-          "signals": {
-            "QZSS": []
-          }
-        },
-        {
-          "signals": {
-            "NAVIC": []
-          }
-        },
-        {
-          "signals": {
-            "NAVIC": []
-          }
-        },
-        {
-          "signals": {
-            "NAVIC": []
-          }
-        },
-        {
-          "signals": {
-            "SBAS": [
-              "L1"
-            ]
-          }
-        },
-        {
-          "signals": {
-            "SBAS": []
-          }
-        },
-        {
-          "signals": {
-            "SBAS": []
-          }
-        },
-        {
-          "signals": {
-            "BDS": [],
-            "GAL": [],
-            "GLO": [],
-            "GPS": [],
-            "NAVIC": [],
-            "QZSS": [],
-            "SBAS": []
-          }
-        },
-        {
-          "signals": {
-            "BDS": [],
-            "GAL": [],
-            "GLO": [],
-            "GPS": [],
-            "NAVIC": [],
-            "QZSS": [],
-            "SBAS": []
-          }
-        }
-      ],
       "signalSet": {
-        "BDS": [
-          "B1C",
-          "B1I",
-          "B2a"
-        ],
-        "GAL": [
-          "E1",
-          "E5a"
-        ],
-        "GLO": [
-          "L1"
-        ],
-        "GPS": [
-          "L1",
-          "L5"
-        ],
-        "NAVIC": [
-          "L5"
-        ],
-        "QZSS": [
-          "L1",
-          "L5"
-        ],
-        "SBAS": [
-          "L1"
-        ]
+        "BDS": ["B1C", "B1I", "B2a"],
+        "GAL": ["E1", "E5a"],
+        "GLO": ["L1"],
+        "GPS": ["L1", "L5"],
+        "NAVIC": ["L5"],
+        "QZSS": ["L1", "L5"],
+        "SBAS": ["L1"]
       }
     },
-    "timePulse.width": {
-      "quantum": 1e-06
-    }
+    "timePulse.width": {"quantum": 1e-06}
   },
   "receiver": {
     "firmware": "URANUS6,V6.3.2.0",
     "hardware": "ATGM332D-AT9880-F8N-76",
-    "supportedGNSS": [
-      "GPS",
-      "GAL",
-      "BDS",
-      "GLO",
-      "QZSS",
-      "NAVIC",
-      "SBAS"
-    ],
+    "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "NAVIC", "SBAS"],
     "vendor": "Zhongke"
   },
-  "supports": [
-    "band",
-    "fixedPos",
-    "fixedPosAcc",
-    "raw",
-    "rtcmMSM4",
-    "rtcmMSM7",
-    "speed",
-    "survey",
-    "surveyAcc",
-    "surveyMsg"
-  ]
+  "supports": ["fixedPos", "fixedPosAcc", "raw", "signal", "speed", "survey", "surveyAcc", "surveyMsg"]
 }
