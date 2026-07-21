@@ -24,12 +24,14 @@ import type { Page, Locator } from '@playwright/test';
 //   satellites messages are enabled and applied.
 
 // The automatic readback drives connState to "configuring" and back, which
-// disables and then re-enables the panel. Waiting for the Period input to be
-// enabled with a value is the reliable signal that the first readback landed.
+// disables and then re-enables the panel. Waiting for the default-open minimum
+// elevation input to be enabled with a value reliably signals that the first
+// readback landed without opening an unrelated configuration group.
 const PERIOD = 'e.g. 1.0';
 const WIDTH = 'e.g. 0.1';
 const CABLE = 'e.g. 50';
 const MINELEV = 'e.g. 10';
+type ConfigSection = 'Time pulse' | 'Time mode' | 'Messages' | 'Serial speed';
 
 // ph resolves a config field by its exact placeholder. Exact matters: the
 // corrections panel's host input placeholder "e.g. 10.0.0.1" contains the
@@ -45,24 +47,28 @@ async function gotoWorkbench(page: Page, baseURL: string) {
 }
 
 // openConfig opens the Configuration tab (enabled once the receiver is
-// identified) and waits for the automatic readback to populate and re-enable
-// the panel.
-async function openConfig(page: Page) {
+// identified), waits for the automatic readback to populate and re-enable the
+// default-open Satellites and signals group, then opens the groups the test
+// exercises.
+async function openConfig(page: Page, ...sections: ConfigSection[]) {
   const tab = page.getByRole('button', { name: 'Configuration' });
   await expect(tab).toBeEnabled({ timeout: 30_000 });
   await tab.click();
-  const period = ph(page, PERIOD);
-  await expect(period).toBeEnabled({ timeout: 30_000 });
-  await expect(period).not.toHaveValue('', { timeout: 30_000 });
+  const minElevation = ph(page, MINELEV);
+  await expect(minElevation).toBeEnabled({ timeout: 30_000 });
+  await expect(minElevation).not.toHaveValue('', { timeout: 30_000 });
+  for (const section of sections) {
+    await page.getByRole('button', { name: section, exact: true }).click();
+  }
 }
 
 // reloadAndOpenConfig reloads the page (re-checking the stored token) and
 // reopens the Config tab, forcing a fresh automatic readback -- the only way
 // to re-read within a connection.
-async function reloadAndOpenConfig(page: Page) {
+async function reloadAndOpenConfig(page: Page, ...sections: ConfigSection[]) {
   await page.reload();
   await expect(page.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30_000 });
-  await openConfig(page);
+  await openConfig(page, ...sections);
 }
 
 async function applyAndWait(page: Page) {
@@ -88,7 +94,7 @@ function selectAfter(page: Page, labelText: string): Locator {
 
 test('panel-wide: the automatic readback populates the panel; disconnect disables it', async ({ page, workbenchUbxsim }) => {
   await gotoWorkbench(page, workbenchUbxsim.baseURL);
-  await openConfig(page);
+  await openConfig(page, 'Time pulse');
 
   // The readback populated the panel and re-enabled its controls.
   await expect(ph(page, PERIOD)).toHaveValue('1');
@@ -103,7 +109,7 @@ test('panel-wide: the automatic readback populates the panel; disconnect disable
 
 test('panel-wide: pending label names exactly the touched sections; Apply gates on pending; Discard restores', async ({ page, workbenchUbxsim }) => {
   await gotoWorkbench(page, workbenchUbxsim.baseURL);
-  await openConfig(page);
+  await openConfig(page, 'Time pulse', 'Messages');
 
   // Nothing pending after readback: Apply disabled, no status label.
   await expect(applyButton(page)).toBeDisabled();
@@ -128,7 +134,7 @@ test('panel-wide: pending label names exactly the touched sections; Apply gates 
 
 test('time pulse: readback populates the group and editing tracks it dirty', async ({ page, workbenchUbxsim }) => {
   await gotoWorkbench(page, workbenchUbxsim.baseURL);
-  await openConfig(page);
+  await openConfig(page, 'Time pulse');
 
   await expect(ph(page, PERIOD)).toHaveValue('1');
   await expect(ph(page, WIDTH)).toHaveValue('0.1');
@@ -147,7 +153,7 @@ test('time pulse: readback populates the group and editing tracks it dirty', asy
 
 test('time pulse: client-side validation disables Apply until corrected', async ({ page, workbenchUbxsim }) => {
   await gotoWorkbench(page, workbenchUbxsim.baseURL);
-  await openConfig(page);
+  await openConfig(page, 'Time pulse');
 
   // A non-numeric cable delay is invalid and disables Apply.
   await ph(page, CABLE).fill('abc');
@@ -174,14 +180,14 @@ test('time pulse: client-side validation disables Apply until corrected', async 
 test('time pulse: apply round-trips through a reload readback', async ({ page, workbenchUbxsim }) => {
   test.slow();
   await gotoWorkbench(page, workbenchUbxsim.baseURL);
-  await openConfig(page);
+  await openConfig(page, 'Time pulse');
 
   await ph(page, PERIOD).fill('2');
   await ph(page, WIDTH).fill('0.2');
   await ph(page, CABLE).fill('100');
   await applyAndWait(page);
 
-  await reloadAndOpenConfig(page);
+  await reloadAndOpenConfig(page, 'Time pulse');
   await expect(ph(page, PERIOD)).toHaveValue('2');
   await expect(ph(page, WIDTH)).toHaveValue('0.2');
   await expect(ph(page, CABLE)).toHaveValue('100');
@@ -191,7 +197,7 @@ test('time pulse: apply round-trips through a reload readback', async ({ page, w
 
 test('time mode: readback selects the mode and the subgroups enable with the radio', async ({ page, workbenchUbxsim }) => {
   await gotoWorkbench(page, workbenchUbxsim.baseURL);
-  await openConfig(page);
+  await openConfig(page, 'Time mode');
 
   // The personality is mobile.
   await expect(page.getByRole('radio', { name: 'Mobile' })).toBeChecked();
@@ -209,7 +215,7 @@ test('time mode: readback selects the mode and the subgroups enable with the rad
 
 test('time mode: validation flags bad coordinates and survey parameters', async ({ page, workbenchUbxsim }) => {
   await gotoWorkbench(page, workbenchUbxsim.baseURL);
-  await openConfig(page);
+  await openConfig(page, 'Time mode');
 
   // Fixed ECEF with empty coordinates is invalid.
   await page.getByRole('radio', { name: 'Fixed position' }).check();
@@ -242,7 +248,7 @@ test('time mode: validation flags bad coordinates and survey parameters', async 
 
 test('time mode: the ECEF on-Earth indicator marks coordinates off the surface', async ({ page, workbenchUbxsim }) => {
   await gotoWorkbench(page, workbenchUbxsim.baseURL);
-  await openConfig(page);
+  await openConfig(page, 'Time mode');
 
   await page.getByRole('radio', { name: 'Fixed position' }).check();
   const offEarth = page.locator('[title="ECEF coordinates not on Earth"]');
@@ -264,7 +270,7 @@ test('time mode: the ECEF on-Earth indicator marks coordinates off the surface',
 test('time mode: apply a fixed ECEF position, round-trip it, and return to mobile', async ({ page, workbenchUbxsim }) => {
   test.slow();
   await gotoWorkbench(page, workbenchUbxsim.baseURL);
-  await openConfig(page);
+  await openConfig(page, 'Time mode');
 
   await page.getByRole('radio', { name: 'Fixed position' }).check();
   await inputAfter(page, 'X (m)').fill('6378137');
@@ -272,7 +278,7 @@ test('time mode: apply a fixed ECEF position, round-trip it, and return to mobil
   await inputAfter(page, 'Z (m)').fill('0');
   await applyAndWait(page);
 
-  await reloadAndOpenConfig(page);
+  await reloadAndOpenConfig(page, 'Time mode');
   await expect(page.getByRole('radio', { name: 'Fixed position' })).toBeChecked();
   await expect(inputAfter(page, 'X (m)')).toHaveValue('6378137');
   await expect(inputAfter(page, 'Y (m)')).toHaveValue('0');
@@ -281,7 +287,7 @@ test('time mode: apply a fixed ECEF position, round-trip it, and return to mobil
   // A second apply restores the receiver to mobile.
   await page.getByRole('radio', { name: 'Mobile' }).check();
   await applyAndWait(page);
-  await reloadAndOpenConfig(page);
+  await reloadAndOpenConfig(page, 'Time mode');
   await expect(page.getByRole('radio', { name: 'Mobile' })).toBeChecked();
 });
 
@@ -356,7 +362,7 @@ test('satellites: apply round-trips the enabled signals and minimum elevation', 
 
 test('messages: the preset buttons set the group controls', async ({ page, workbenchUbxsim }) => {
   await gotoWorkbench(page, workbenchUbxsim.baseURL);
-  await openConfig(page);
+  await openConfig(page, 'Messages');
 
   // Minimum: NMEA on with just RMC, RTCM disabled.
   await page.getByRole('button', { name: 'Minimum' }).click();
@@ -378,7 +384,7 @@ test('messages: enabling the satellites messages makes satellite data appear', a
   // NAV-SAT is off in the personality defaults, so no satellite count shows.
   await expect(page.getByText(/Sats:/)).toHaveCount(0);
 
-  await openConfig(page);
+  await openConfig(page, 'Messages');
   // Enable the Satellites messages subgroup: its Change box, then satellite
   // positions.
   const satsSub = page.getByText('Satellites', { exact: true }).locator('xpath=following-sibling::div[1]');
@@ -395,7 +401,7 @@ test('messages: enabling the satellites messages makes satellite data appear', a
 
 test('serial speed: the dropdown shows the readback baud rate', async ({ page, workbenchUbxsim }) => {
   await gotoWorkbench(page, workbenchUbxsim.baseURL);
-  await openConfig(page);
+  await openConfig(page, 'Serial speed');
 
   const baud = selectAfter(page, 'Baud rate');
   await expect(baud).toHaveValue('38400');

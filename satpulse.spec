@@ -19,6 +19,7 @@ or the Raspberry Pi CM4.
 rm -rf %{buildroot}
 install -D out/%{goarch}/satpulsed %{buildroot}/usr/sbin/satpulsed
 install -D out/%{goarch}/satpulsetool %{buildroot}/usr/bin/satpulsetool
+install -D out/%{goarch}/satpulsewb %{buildroot}/usr/bin/satpulsewb
 install -D -m 644 out/%{goarch}/satpulse.toml %{buildroot}/etc/satpulse.toml
 install -D -m 644 configs/satpulse@.service %{buildroot}/usr/lib/systemd/system/satpulse@.service
 install -D -m 644 configs/chrony.conf %{buildroot}/usr/share/doc/satpulse/chrony.conf
@@ -35,6 +36,7 @@ install -D -m 644 out/satpulsetool-scan.1.gz %{buildroot}/usr/share/man/man1/sat
 install -D -m 644 out/satpulsetool-sdp.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-sdp.1.gz
 install -D -m 644 out/satpulsetool-syncsim.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-syncsim.1.gz
 install -D -m 644 out/satpulsetool-convobs.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-convobs.1.gz
+install -D -m 644 out/satpulsewb.1.gz %{buildroot}/usr/share/man/man1/satpulsewb.1.gz
 install -D -m 644 out/satpulse.toml.5.gz %{buildroot}/usr/share/man/man5/satpulse.toml.5.gz
 install -D -m 644 out/satpulsed.8.gz %{buildroot}/usr/share/man/man8/satpulsed.8.gz
 
@@ -50,6 +52,7 @@ fi
 %files
 /usr/sbin/satpulsed
 /usr/bin/satpulsetool
+/usr/bin/satpulsewb
 %config(noreplace) /etc/satpulse.toml
 /usr/lib/systemd/system/satpulse@.service
 /usr/share/doc/satpulse/chrony.conf
@@ -65,5 +68,6 @@ fi
 /usr/share/man/man1/satpulsetool-sdp.1.gz
 /usr/share/man/man1/satpulsetool-syncsim.1.gz
 /usr/share/man/man1/satpulsetool-convobs.1.gz
+/usr/share/man/man1/satpulsewb.1.gz
 /usr/share/man/man5/satpulse.toml.5.gz
 /usr/share/man/man8/satpulsed.8.gz

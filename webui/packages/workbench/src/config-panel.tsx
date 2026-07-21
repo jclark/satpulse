@@ -554,7 +554,40 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
             {/* Scrollable content */}
             <div class="flex-1 overflow-y-auto p-4">
 
-                    <ConfigGroup title="Time pulse">
+                {/* Satellites and signals */}
+                <ConfigGroup title="Satellites and signals">
+                    <div class="flex flex-wrap gap-x-4 gap-y-1">
+                        {gnssNames.map(gnssName => {
+                            const sigs = signalCatalog[gnssName];
+                            const anySelected = sigs.some(sig => selectedSignals.has(`${gnssName}:${sig}`));
+                            const gnssDisabled = !connected || !gnssSupported(gnssName);
+                            return (
+                                <label key={gnssName} class={`flex items-center gap-1.5 ${labeledControlText(gnssDisabled)}`}>
+                                    <input
+                                        type="checkbox"
+                                        class="accent-accent"
+                                        checked={anySelected}
+                                        disabled={gnssDisabled}
+                                        onChange={e => { setSignalsTouched(true); toggleConstellation(gnssName, sigs, (e.target as HTMLInputElement).checked); }}
+                                    />
+                                    {gnssName}
+                                </label>
+                            );
+                        })}
+                    </div>
+                    {gnssNames.length > 0 && (
+                        <Button class="mt-2" disabled={!connected} onClick={() => setShowPicker(true)}>
+                            Edit signals...
+                        </Button>
+                    )}
+                    <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center w-fit">
+                        <label class={fieldLabelText()}>Min elevation (deg)</label>
+                        <Input type="text" inputMode="decimal" invalid={errorSet.has('minElev')} class="w-20" value={minElev} placeholder="e.g. 10"
+                            disabled={!connected} onInput={e => { setMinElevTouched(true); setMinElev((e.target as HTMLInputElement).value); }} />
+                    </div>
+                </ConfigGroup>
+
+                    <ConfigGroup title="Time pulse" defaultOpen={false}>
                         <div class="flex gap-x-6 items-start">
                             <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center">
                                 <label class={fieldLabelText()}>Period (s)</label>
@@ -597,7 +630,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                     </ConfigGroup>
 
                     {/* Time mode subgroup */}
-                    <ConfigGroup title="Time mode">
+                    <ConfigGroup title="Time mode" defaultOpen={false}>
                         {/* Mode radio group */}
                         <div class="flex flex-wrap gap-x-4 gap-y-1">
                             {([['mobile', 'Mobile', true], ['survey', 'Survey-in', surveySupported], ['fixed', 'Fixed position', fixedPosSupported]] as const).map(([val, label, supported]) => {
@@ -694,41 +727,8 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                         </ConfigSubGroup>
                     </ConfigGroup>
 
-                    {/* Satellites and signals */}
-                    <ConfigGroup title="Satellites and signals">
-                        <div class="flex flex-wrap gap-x-4 gap-y-1">
-                            {gnssNames.map(gnssName => {
-                                const sigs = signalCatalog[gnssName];
-                                const anySelected = sigs.some(sig => selectedSignals.has(`${gnssName}:${sig}`));
-                                const gnssDisabled = !connected || !gnssSupported(gnssName);
-                                return (
-                                    <label key={gnssName} class={`flex items-center gap-1.5 ${labeledControlText(gnssDisabled)}`}>
-                                        <input
-                                            type="checkbox"
-                                            class="accent-accent"
-                                            checked={anySelected}
-                                            disabled={gnssDisabled}
-                                            onChange={e => { setSignalsTouched(true); toggleConstellation(gnssName, sigs, (e.target as HTMLInputElement).checked); }}
-                                        />
-                                        {gnssName}
-                                    </label>
-                                );
-                            })}
-                        </div>
-                        {gnssNames.length > 0 && (
-                            <Button class="mt-2" disabled={!connected} onClick={() => setShowPicker(true)}>
-                                Edit signals...
-                            </Button>
-                        )}
-                        <div class="grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-center w-fit">
-                            <label class={fieldLabelText()}>Min elevation (deg)</label>
-                            <Input type="text" inputMode="decimal" invalid={errorSet.has('minElev')} class="w-20" value={minElev} placeholder="e.g. 10"
-                                disabled={!connected} onInput={e => { setMinElevTouched(true); setMinElev((e.target as HTMLInputElement).value); }} />
-                        </div>
-                    </ConfigGroup>
-
                 {/* Messages */}
-                <ConfigGroup title="Messages">
+                <ConfigGroup title="Messages" defaultOpen={false}>
                         <div class="flex gap-2">
                             <Button disabled={!connected} onClick={() => {
                                 // Skip sections the receiver does not support: queuing a
@@ -798,7 +798,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                     whole group when the protocol can never configure baud; the
                     data-driven baudRateApplicable state (is this port a UART)
                     layers behind it. */}
-                <ConfigGroup title="Serial speed" disabled={!speedSupported}>
+                <ConfigGroup title="Serial speed" defaultOpen={false} disabled={!speedSupported}>
                     {baudRateApplicable === false ? (
                         <p class={`text-xs ${speedSupported ? 'text-text-primary' : 'text-text-muted'}`}>Current port is not a UART: baud rate not applicable</p>
                     ) : (
