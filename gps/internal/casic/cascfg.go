@@ -26,11 +26,14 @@ const speedChangeDelay = 150 * time.Millisecond
 
 // Configurator implements gpsprot.Configurator for CASIC receivers.
 //
-// Requests are generated in one batch. A CASIC ACK/NAK identifies the
-// request only by class+id, so two outstanding requests with the same
-// class+id would be ambiguous; requests are created notReady and
-// promoted to ready only when no earlier live request shares their
-// class+id (see promote).
+// Requests are generated in one batch, created notReady and promoted
+// to ready as they become sendable (see promote). The protocol serializes
+// them: casic2.md 2.5 and zkw3.md 3.5 forbid sending a second CFG message
+// before the receiver replies to the first, so CFG requests go out one at
+// a time, in order. Non-CFG requests are serialized only against others
+// sharing their class+id: a poll's data response is correlated only by
+// the echoed class+id, so two outstanding polls with the same id would
+// be ambiguous, and text requests all share mid 0.
 type Configurator struct {
 	target     *gpsprot.ConfigTarget
 	ver        *casbin.MonVer // nil when MON-VER is unsupported (V5)
@@ -361,20 +364,46 @@ func (c *Configurator) basePort() (casbin.CfgPrt, bool) {
 	return base, true
 }
 
-// promote readies notReady requests whose class+id no earlier live
-// request shares. Requests sharing a class+id thus go out one at a
-// time, in order; requests with distinct ids may be pipelined.
+// promote readies notReady requests that can be sent now. The primary
+// rule is the spec's one-CFG-at-a-time requirement: casic2.md 2.5 and
+// zkw3.md 3.5 both state the sender must not send a second CFG message
+// before the receiver replies to the received CFG message, so at most
+// one CFG-class request is ever live (ready or outstanding) at a time
+// and CFG requests go out serially in order. The class+id map still
+// serializes non-CFG requests among themselves: a poll's data response
+// is correlated only by the echoed class+id, and text queries all
+// share mid 0, so two such requests must not be outstanding together.
+//
+// The speed change is carved out: a sent baud change switches the
+// receiver's rate immediately, so its ACK arrives at the new speed
+// where the switch can garble it, and the CFG-RATE confirmation poll
+// (itself a CFG message) must be transmitted at the new rate to resolve
+// the change conclusively. An awaiting-ack speed request therefore does
+// not count as live; without this carve-out the confirmation poll can
+// never be promoted and the speed change deadlocks into timeout.
 func (c *Configurator) promote() {
 	live := make(map[casbin.MsgID]bool)
+	cfgLive := false
 	for _, req := range c.reqs {
+		isCfg := req.mid.CfgClass()
 		switch req.state {
 		case reqNotReady:
-			if !live[req.mid] {
+			if !live[req.mid] && !(isCfg && cfgLive) {
 				req.state = reqReady
 			}
 			live[req.mid] = true
 		case reqReady, reqAwaitingAck, reqMayResend:
 			live[req.mid] = true
+		}
+		if isCfg {
+			switch req.state {
+			case reqNotReady, reqReady, reqMayResend:
+				cfgLive = true
+			case reqAwaitingAck:
+				if req.speedAfter == 0 {
+					cfgLive = true
+				}
+			}
 		}
 	}
 }

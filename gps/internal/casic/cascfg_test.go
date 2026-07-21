@@ -1299,6 +1299,41 @@ func TestSignalGetWithAutoBand(t *testing.T) {
 	}
 }
 
+// TestPromoteSerializesCFG verifies the spec's one-CFG-at-a-time rule
+// (casic2.md 2.5 / zkw3.md 3.5): with several distinct-id CFG requests
+// pending, promote readies only one at a time, and they proceed in
+// slice order as each is resolved.
+func TestPromoteSerializesCFG(t *testing.T) {
+	mids := []casbin.MsgID{casbin.CfgTPID, casbin.CfgRateID, casbin.CfgTMode2ID}
+	c := &Configurator{}
+	for _, mid := range mids {
+		c.add(&casReq{mid: mid})
+	}
+	for i := range mids {
+		c.promote()
+		for j, req := range c.reqs {
+			want := reqNotReady
+			switch {
+			case j < i:
+				want = reqSucceeded
+			case j == i:
+				want = reqReady
+			}
+			if req.state != want {
+				t.Fatalf("with %d resolved, req %d state = %v, want %v", i, j, req.state, want)
+			}
+		}
+		c.reqs[i].state = reqSucceeded
+	}
+}
+
+// TestBaudChange also covers the speed-change carve-out in promote: the
+// silentPrt cases leave the sent CFG-PRT baud change awaiting an ACK
+// that never arrives (it would come garbled at the new speed), so the
+// following CFG-RATE confirmation poll - itself a CFG message - must
+// still be promoted and transmitted at the new rate; without the
+// carve-out it would be blocked and the change would deadlock into
+// timeout, failing the test.
 func TestBaudChange(t *testing.T) {
 	ports := []casbin.CfgPrt{
 		{PortID: 0, ProtoMask: 0x33, Mode: 0x0003, BaudRate: 115200},
