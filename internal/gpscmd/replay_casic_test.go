@@ -9,13 +9,16 @@ import (
 var casicReplayFiles = []string{
 	// ATGM332D-5N71 (V5)
 	"atgm332d-5n71-noop",
-	"atgm332d-5n71-binary",
 	"atgm332d-5n71-signal",
 	"atgm332d-5n71-pps",
-	"atgm332d-5n71-pvt-out",
-	"atgm332d-5n71-tmode",
 	"atgm332d-5n71-min-elev",
 	"atgm332d-5n71-show-port",
+	// AT6558D (V5). The message-enabling recordings were invalidated
+	// when message enables started forcing CFG-RATE; the 5N71 is no
+	// longer attached, so they were re-recorded on this module.
+	"at6558d-binary",
+	"at6558d-pvt-out",
+	"at6558d-tmode",
 	// AT362-AT6668-6T-30 / AT632 (V6 timing)
 	"at632-noop",
 	"at632-binary",
