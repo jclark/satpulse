@@ -38,8 +38,7 @@ const (
 	RxmSensorID MsgID = clsRxm | (0x07 << 8)
 	RxmMeasxID  MsgID = clsRxm | (0x10 << 8)
 	RxmSvposID  MsgID = clsRxm | (0x11 << 8)
-	// RXM2 message IDs (ZKW F8)
-	Rxm2MeasxID MsgID = clsRxm2 | (0x00 << 8)
+	// RXM2 message IDs not implemented elsewhere (ZKW F8)
 	Rxm2SvposID MsgID = clsRxm2 | (0x01 << 8)
 	Rxm2SfrbxID MsgID = clsRxm2 | (0x06 << 8)
 	Rxm2SvpID   MsgID = clsRxm2 | (0x0A << 8)
@@ -135,8 +134,7 @@ func init() {
 	idNameMap[RxmSensorID] = "SENSOR"
 	idNameMap[RxmMeasxID] = "MEASX"
 	idNameMap[RxmSvposID] = "SVPOS"
-	// RXM2 messages
-	idNameMap[Rxm2MeasxID] = "MEASX"
+	// RXM2 messages (Rxm2MeasxID registered in rxm2.go)
 	idNameMap[Rxm2SvposID] = "SVPOS"
 	idNameMap[Rxm2SfrbxID] = "SFRBX"
 	idNameMap[Rxm2SvpID] = "SVP"

@@ -16,8 +16,8 @@ func timeNavTimeUTC(m *casbin.NavTimeUTC) *gpsprot.TimeMsg {
 	if m.DateValid < casbin.NavDateFromSatellite || (m.Valid&casbin.NavTimeUTCTOWValid) == 0 {
 		return &t
 	}
-	// MsErr is residual error in ms after rounding to whole milliseconds
-	nanos := int32(math.Round(float64(m.MsErr) * 1e6))
+	// Ms is the rounded whole-millisecond part; MsErr is the residual in ms.
+	nanos := int32(math.Round((float64(m.Ms) + float64(m.MsErr)) * 1e6))
 	t.UTCTime.Set(ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, nanos))
 	// TAcc is variance scaled by 1/c², so actual variance = TAcc * c²
 	// Convert to standard deviation: sqrt(TAcc) * c

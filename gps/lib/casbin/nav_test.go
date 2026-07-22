@@ -98,6 +98,9 @@ func TestNavTimeUTCParse(t *testing.T) {
 	if utc.RunTime != 0x04c89028 {
 		t.Errorf("RunTime = 0x%x, want 0x%x", utc.RunTime, 0x04c89028)
 	}
+	if utc.Ms != 0 {
+		t.Errorf("Ms = %d, want 0", utc.Ms)
+	}
 	if utc.Year != 2026 {
 		t.Errorf("Year = %d, want 2026", utc.Year)
 	}
@@ -127,11 +130,28 @@ func TestNavTimeUTCParse(t *testing.T) {
 	}
 }
 
+func TestNavTimeUTCMillisecondsParse(t *testing.T) {
+	// First complete NAV-TIMEUTC packet from the AT6558D 5 Hz capture.
+	pkt := parseHex(t, "bace18000110f28f6f05ec82c240e6e5a139c800ea0707160f191a070003c516ceb3")
+	msg, err := ParseMsg(pkt)
+	if err != nil {
+		t.Fatalf("ParseMsg error: %v", err)
+	}
+	utc, ok := msg.(*NavTimeUTC)
+	if !ok {
+		t.Fatalf("expected *NavTimeUTC, got %T", msg)
+	}
+	if utc.Ms != 200 {
+		t.Errorf("Ms = %d, want 200", utc.Ms)
+	}
+}
+
 func TestNavTimeUTCRoundtrip(t *testing.T) {
 	m := NavTimeUTC{
 		NavRunTime: NavRunTime{RunTime: 12345},
 		TAcc:       0.000001,
 		MsErr:      0.0001,
+		Ms:         800,
 		Year:       2026,
 		Month:      1,
 		Day:        18,
