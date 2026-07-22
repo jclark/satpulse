@@ -21,6 +21,9 @@ var casicReplayFiles = []string{
 	"at6558d-pvt-out",
 	"at6558d-tmode",
 	"at6558d-show-port",
+	"at6558d-speed",
+	"at6558d-reload",
+	"at6558d-save",
 	// AT362-AT6668-6T-30 / AT632 (V6 timing)
 	"at632-noop",
 	"at632-binary",
@@ -31,6 +34,8 @@ var casicReplayFiles = []string{
 	"at632-min-elev",
 	"at632-show-port",
 	"at632-raw-out",
+	"at632-speed",
+	"at632-save",
 	// ATGM332D-AT9880-F8N-76 (V6 dual-band nav)
 	"atgm332d-f8n-noop",
 	"atgm332d-f8n-binary",
