@@ -263,6 +263,15 @@ func (c *Configurator) allFinal() bool {
 	return true
 }
 
+func (c *Configurator) anyFailed() bool {
+	for _, req := range c.reqs {
+		if req.state == reqFailed {
+			return true
+		}
+	}
+	return false
+}
+
 // generateQueryReqs polls the messages whose current values the set
 // phase needs (read-modify-write) or the target asks to read.
 func (c *Configurator) generateQueryReqs() {
@@ -290,8 +299,14 @@ func (c *Configurator) generateSetReqs() {
 }
 
 // generateSaveReqs generates the save-to-NVM request, retaining its
-// pointer so the reset phase can gate on the save's outcome.
+// pointer so the reset phase can gate on the save's outcome. NVM is
+// written only by an invocation in which everything succeeded: after
+// any failed request no save is attempted - the failure is the
+// invocation's reported error, and NVM keeps its last saved state.
 func (c *Configurator) generateSaveReqs() {
+	if c.anyFailed() {
+		return
+	}
 	switch c.target.Opts.Save {
 	case gpsprot.SaveAll:
 		c.saveReq = c.addMsg(&casbin.CfgCfg{Mask: c.saveMask(casbin.CfgSectionAll), OpMode: casbin.CfgOpSave}, casReq{})
@@ -316,8 +331,14 @@ func (c *Configurator) generateSaveReqs() {
 // save's failure is the invocation's reported error, and a reset must
 // never discard running changes its paired save failed to persist. A
 // reset with no save (none requested, or a minimal save with nothing
-// touched) proceeds ungated.
+// touched) proceeds ungated. A save skipped because a request failed
+// (see generateSaveReqs) gates its paired reset the same way as a
+// failed save; a reset with no save requested proceeds even after
+// failures, since it discards running changes by design.
 func (c *Configurator) generateResetReqs() {
+	if c.target.Opts.Save != gpsprot.SaveNone && c.anyFailed() {
+		return
+	}
 	if c.saveReq != nil && c.saveReq.state != reqSucceeded {
 		return
 	}

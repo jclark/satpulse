@@ -783,6 +783,7 @@ func TestNVMOps(t *testing.T) {
 		save         gpsprot.SaveType
 		reset        gpsprot.ResetType
 		nakSave      bool // the receiver refuses the CFG-CFG save
+		nakRMC       bool // the receiver refuses the NMEA RMC enable
 		expectSaves  []casbin.CfgCfg
 		expectResets []casbin.CfgRst
 		wantErr      int
@@ -895,12 +896,55 @@ func TestNVMOps(t *testing.T) {
 			expectResets: nil,
 			wantErr:      1,
 		},
+		{
+			// NVM is written only by an invocation in which everything
+			// succeeded: the ACKed disables would have made the minimal
+			// save fire, but the refused enable prevents it. The failure
+			// is the invocation's only reported error.
+			name:        "V5 refused enable blocks minimal save",
+			nmea:        gpsprot.NMEAMsgRMC,
+			setNMEA:     true,
+			nakRMC:      true,
+			save:        gpsprot.SaveMinimal,
+			expectSaves: nil,
+			wantErr:     1,
+		},
+		{
+			// The skipped save gates its paired reset exactly as a
+			// refused save does.
+			name:         "V6 refused enable blocks save all and cold reset",
+			monVer:       v6,
+			nmea:         gpsprot.NMEAMsgRMC,
+			setNMEA:      true,
+			nakRMC:       true,
+			save:         gpsprot.SaveAll,
+			reset:        gpsprot.ResetCold,
+			expectSaves:  nil,
+			expectResets: nil,
+			wantErr:      1,
+		},
+		{
+			// The failure gate is the save's: a reset with no save
+			// requested proceeds after a failure (a reset discards
+			// running changes by design and writes nothing to NVM).
+			name:    "V5 refused enable does not block a lone cold reset",
+			nmea:    gpsprot.NMEAMsgRMC,
+			setNMEA: true,
+			nakRMC:  true,
+			reset:   gpsprot.ResetCold,
+			expectResets: []casbin.CfgRst{{NavBbrMask: bbrReset,
+				ResetMode: casbin.ResetHWImmediate, StartMode: casbin.StartCold}},
+			wantErr: 1,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			rcvr := &testReceiver{monVer: tc.monVer, tm6: tc.tm6}
 			if tc.nakSave {
 				rcvr.naks = map[casbin.MsgID]bool{casbin.CfgCfgID: true}
+			}
+			if tc.nakRMC {
+				rcvr.nakTargets = map[casbin.MsgID]bool{casbin.NmeaRmcID: true}
 			}
 			cp := probe(t, rcvr)
 			target := gpsprot.NewConfigTarget()
