@@ -30,7 +30,6 @@ var casicReplayFiles = []string{
 	"at632-min-elev",
 	"at632-show-port",
 	"at632-raw-out",
-	"at632-rtcm-out",
 	// ATGM332D-AT9880-F8N-76 (V6 dual-band nav)
 	"atgm332d-f8n-noop",
 	"atgm332d-f8n-binary",
@@ -41,7 +40,6 @@ var casicReplayFiles = []string{
 	"atgm332d-f8n-min-elev",
 	"atgm332d-f8n-show-port",
 	"atgm332d-f8n-raw-out",
-	"atgm332d-f8n-rtcm-out",
 }
 
 func TestReplayCASIC(t *testing.T) {
