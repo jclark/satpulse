@@ -1027,6 +1027,17 @@ func TestTimePulseSet(t *testing.T) {
 			expectTP: casbin.CfgTP{Interval: 999999, Width: 100001,
 				PPSOutMode: 3, TBase: 1, TSrcMode: 5},
 		},
+		{
+			name:   "falling polarity",
+			monVer: v6,
+			tp:     defaultTP(),
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetTimePulseWidth(100 * time.Millisecond)
+				target.Props.SetTimePulsePolarityRising(false)
+			},
+			expectTP: casbin.CfgTP{Interval: 1000000, Width: 100000,
+				PPSOutMode: 3, Polarity: 1, TBase: 1, TSrcMode: 5},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1150,6 +1161,40 @@ func TestTimeMode(t *testing.T) {
 			},
 			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Fixed,
 				XFixed: -114470025, YFixed: 609034550, ZFixed: 150417100, FixedPacc: 3000},
+			static:  true,
+			hasMode: true,
+		},
+		{
+			// LLH is converted to ECEF: lat 0, lon 0, height 0 is
+			// (a, 0, 0) with the WGS84 semi-major axis.
+			name:   "V6 fixed position from LLH",
+			monVer: v6,
+			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{
+					Static:      true,
+					PosType:     gpsprot.PosTypeLLH,
+					FixedPosAcc: 5 * gpsprot.Meter,
+				})
+			},
+			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Fixed,
+				XFixed: 637813700, YFixed: 0, ZFixed: 0, FixedPacc: 5000},
+			static:  true,
+			hasMode: true,
+		},
+		{
+			// A mobile Mode alongside SetStatic is overridden to
+			// static: with no position, a survey.
+			name:   "V6 mobile overridden by setStatic",
+			monVer: v6,
+			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: false})
+				target.Opts.SetStatic = true
+				target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second, AccLimit: 20 * gpsprot.Meter}
+			},
+			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Survey,
+				SvinMinDur: 300, SvinPaccLim: 20000},
 			static:  true,
 			hasMode: true,
 		},
