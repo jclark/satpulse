@@ -66,14 +66,14 @@ func (c *Configurator) generateTPSet() {
 		if w == 0 {
 			tp.PPSOutMode = 0
 		} else {
-			tp.Width = uint32(w / time.Microsecond)
+			tp.Width = uint32(w.Round(time.Microsecond) / time.Microsecond)
 			if tp.PPSOutMode == 0 {
 				tp.PPSOutMode = c.ppsOutMode(false)
 			}
 		}
 	}
 	if p, ok := props.GetTimePulsePeriod(); ok {
-		tp.Interval = uint32(p / time.Microsecond)
+		tp.Interval = uint32(p.Round(time.Microsecond) / time.Microsecond)
 	}
 	if r, ok := props.GetTimePulsePolarityRising(); ok {
 		tp.Polarity = 0

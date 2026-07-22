@@ -986,6 +986,17 @@ func TestTimePulseSet(t *testing.T) {
 			expectTP: casbin.CfgTP{Interval: 1000000, Width: 100000,
 				PPSOutMode: 0, TBase: 1, TSrcMode: 5},
 		},
+		{
+			name:   "width and period round to nearest microsecond",
+			monVer: v6,
+			tp:     defaultTP(),
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetTimePulseWidth(100*time.Millisecond + 750*time.Nanosecond)
+				target.Props.SetTimePulsePeriod(time.Second - 750*time.Nanosecond)
+			},
+			expectTP: casbin.CfgTP{Interval: 999999, Width: 100001,
+				PPSOutMode: 3, TBase: 1, TSrcMode: 5},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
