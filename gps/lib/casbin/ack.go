@@ -8,8 +8,8 @@ const (
 // AckPayload is the common payload for ACK-NAK and ACK-ACK messages.
 // Payload: clsID (U1), msgID (U1), res (U2).
 type AckPayload struct {
-	ClsID uint8
-	MsgID uint8
+	ClsID uint8  `json:"clsID"`
+	MsgID uint8  `json:"msgID"`
 	_     uint16 // reserved
 }
 

@@ -19,7 +19,7 @@ type NavMsg interface {
 
 // NavRunTime is embedded in NAV messages to provide epoch tracking
 type NavRunTime struct {
-	RunTime uint32 // ms since boot/reset
+	RunTime uint32 `json:"runTime"` // ms since boot/reset
 }
 
 func (m *NavRunTime) NavEpoch() uint32 {
@@ -29,26 +29,26 @@ func (m *NavRunTime) NavEpoch() uint32 {
 // NavSol is NAV-SOL (0x01 0x02) - reduced PVT navigation information (72 bytes)
 type NavSol struct {
 	NavRunTime
-	PosValid  NavPosValid
-	VelValid  NavVelValid
-	TimeSrc   GNSSID
-	System    NavSystem
-	NumSV     uint8
-	NumSVGPS  uint8
-	NumSVBDS  uint8
-	NumSVGLN  uint8
-	_         uint16 // reserved
-	Week      uint16
-	TOW       float64 // seconds
-	ECEFX     float64 // meters
-	ECEFY     float64 // meters
-	ECEFZ     float64 // meters
-	PAcc      float32 // m², variance of 3D position
-	ECEFVX    float32 // m/s
-	ECEFVY    float32 // m/s
-	ECEFVZ    float32 // m/s
-	SAcc      float32 // (m/s)², variance of 3D velocity
-	PDOP      float32
+	PosValid NavPosValid `json:"posValid"`
+	VelValid NavVelValid `json:"velValid"`
+	TimeSrc  GNSSID      `json:"timeSrc"`
+	System   NavSystem   `json:"system"`
+	NumSV    uint8       `json:"numSV"`
+	NumSVGPS uint8       `json:"numSVGPS"`
+	NumSVBDS uint8       `json:"numSVBDS"`
+	NumSVGLN uint8       `json:"numSVGLN"`
+	_        uint16      // reserved
+	Week     uint16      `json:"week"`
+	TOW      float64     `json:"tow"`    // seconds
+	ECEFX    float64     `json:"ecefX"`  // meters
+	ECEFY    float64     `json:"ecefY"`  // meters
+	ECEFZ    float64     `json:"ecefZ"`  // meters
+	PAcc     float32     `json:"pAcc"`   // m², variance of 3D position
+	ECEFVX   float32     `json:"ecefVX"` // m/s
+	ECEFVY   float32     `json:"ecefVY"` // m/s
+	ECEFVZ   float32     `json:"ecefVZ"` // m/s
+	SAcc     float32     `json:"sAcc"`   // (m/s)², variance of 3D velocity
+	PDOP     float32     `json:"pDop"`
 }
 
 func (m *NavSol) ID() MsgID { return NavSolID }
@@ -56,29 +56,29 @@ func (m *NavSol) ID() MsgID { return NavSolID }
 // NavPv is NAV-PV (0x01 0x03) - geodetic position and velocity (80 bytes)
 type NavPv struct {
 	NavRunTime
-	PosValid  NavPosValid
-	VelValid  NavVelValid
-	System    NavSystem
-	NumSV     uint8
-	NumSVGPS  uint8
-	NumSVBDS  uint8
-	NumSVGLN  uint8
-	_         uint8   // reserved
-	PDOP      float32
-	Lon       float64 // deg
-	Lat       float64 // deg
-	Height    float32 // m, ellipsoidal
-	SepGeoid  float32 // m, geoid separation (ellipsoidal minus MSL)
-	HAcc      float32 // m^2, variance of horizontal position accuracy
-	VAcc      float32 // m^2, variance of vertical position accuracy
-	VelN      float32 // m/s
-	VelE      float32 // m/s
-	VelU      float32 // m/s (UP, not down -- negate for NED)
-	Speed3D   float32 // m/s
-	Speed2D   float32 // m/s, ground speed
-	Heading   float32 // deg
-	SAcc      float32 // (m/s)^2, variance of ground speed accuracy
-	CAcc      float32 // deg^2, variance of heading accuracy
+	PosValid NavPosValid `json:"posValid"`
+	VelValid NavVelValid `json:"velValid"`
+	System   NavSystem   `json:"system"`
+	NumSV    uint8       `json:"numSV"`
+	NumSVGPS uint8       `json:"numSVGPS"`
+	NumSVBDS uint8       `json:"numSVBDS"`
+	NumSVGLN uint8       `json:"numSVGLN"`
+	_        uint8       // reserved
+	PDOP     float32     `json:"pDop"`
+	Lon      float64     `json:"lon"`      // deg
+	Lat      float64     `json:"lat"`      // deg
+	Height   float32     `json:"height"`   // m, ellipsoidal
+	SepGeoid float32     `json:"sepGeoid"` // m, geoid separation (ellipsoidal minus MSL)
+	HAcc     float32     `json:"hAcc"`     // m^2, variance of horizontal position accuracy
+	VAcc     float32     `json:"vAcc"`     // m^2, variance of vertical position accuracy
+	VelN     float32     `json:"velN"`     // m/s
+	VelE     float32     `json:"velE"`     // m/s
+	VelU     float32     `json:"velU"`     // m/s (UP, not down -- negate for NED)
+	Speed3D  float32     `json:"speed3D"`  // m/s
+	Speed2D  float32     `json:"speed2D"`  // m/s, ground speed
+	Heading  float32     `json:"heading"`  // deg
+	SAcc     float32     `json:"sAcc"`     // (m/s)^2, variance of ground speed accuracy
+	CAcc     float32     `json:"cAcc"`     // deg^2, variance of heading accuracy
 }
 
 func (m *NavPv) ID() MsgID { return NavPvID }
@@ -86,12 +86,12 @@ func (m *NavPv) ID() MsgID { return NavPvID }
 // NavDop is NAV-DOP (0x01 0x01) - dilution of precision (28 bytes)
 type NavDop struct {
 	NavRunTime
-	PDOP float32
-	HDOP float32
-	VDOP float32
-	NDOP float32
-	EDOP float32
-	TDOP float32
+	PDOP float32 `json:"pDop"`
+	HDOP float32 `json:"hDop"`
+	VDOP float32 `json:"vDop"`
+	NDOP float32 `json:"nDop"`
+	EDOP float32 `json:"eDop"`
+	TDOP float32 `json:"tDop"`
 }
 
 func (m *NavDop) ID() MsgID { return NavDopID }
@@ -136,18 +136,18 @@ const (
 // NavTimeUTC is NAV-TIMEUTC (0x01 0x10) - UTC time information (24 bytes)
 type NavTimeUTC struct {
 	NavRunTime
-	TAcc      float32 // s², time estimation accuracy
-	MsErr     float32 // ms, residual error after rounding
-	_         uint16  // padding (observed in real packets)
-	Year      uint16  // 1999-2099
-	Month     uint8   // 1-12
-	Day       uint8   // 1-31
-	Hour      uint8   // 0-23
-	Min       uint8   // 0-59
-	Sec       uint8   // 0-59
-	Valid     NavTimeUTCValid
-	TimeSrc   GNSSID
-	DateValid NavDateValid
+	TAcc      float32         `json:"tAcc"`  // s², time estimation accuracy
+	MsErr     float32         `json:"msErr"` // ms, residual error after rounding
+	_         uint16          // padding (observed in real packets)
+	Year      uint16          `json:"year"`  // 1999-2099
+	Month     uint8           `json:"month"` // 1-12
+	Day       uint8           `json:"day"`   // 1-31
+	Hour      uint8           `json:"hour"`  // 0-23
+	Min       uint8           `json:"min"`   // 0-59
+	Sec       uint8           `json:"sec"`   // 0-59
+	Valid     NavTimeUTCValid `json:"valid"`
+	TimeSrc   GNSSID          `json:"timeSrc"`
+	DateValid NavDateValid    `json:"dateValid"`
 }
 
 func (m *NavTimeUTC) ID() MsgID { return NavTimeUTCID }
@@ -172,42 +172,42 @@ const (
 // NavClock is NAV-CLOCK (0x01 0x11) - clock solution information (64 bytes)
 type NavClock struct {
 	NavRunTime
-	FreqBias float32         // s², clock drift
-	TAcc     float32         // 1/c², time accuracy variance
-	FAcc     float32         // 1/c², frequency accuracy variance
-	Systems  [3]NavClockSys  // GPS=0, BDS=1, GLN=2
+	FreqBias float32        `json:"freqBias"` // s², clock drift
+	TAcc     float32        `json:"tAcc"`     // 1/c², time accuracy variance
+	FAcc     float32        `json:"fAcc"`     // 1/c², frequency accuracy variance
+	Systems  [3]NavClockSys `json:"systems"`  // GPS=0, BDS=1, GLN=2
 }
 
 func (m *NavClock) ID() MsgID { return NavClockID }
 
 // NavClockSys contains per-system clock information
 type NavClockSys struct {
-	TOW   float64 // ms, time of week
-	DtUTC float32 // s, fractional seconds diff between sat time and UTC
-	Wn    uint16  // week number
-	Leaps int8    // UTC leap seconds
-	Valid uint8   // time validity flag
+	TOW   float64 `json:"tow"`   // ms, time of week
+	DtUTC float32 `json:"dtUtc"` // s, fractional seconds diff between sat time and UTC
+	Wn    uint16  `json:"wn"`    // week number
+	Leaps int8    `json:"leaps"` // UTC leap seconds
+	Valid uint8   `json:"valid"` // time validity flag
 }
 
 // NavSatInfoFixed is the common fixed part for NAV-GPSINFO, NAV-BDSINFO, NAV-GLNINFO
 type NavSatInfoFixed struct {
 	NavRunTime
-	NumViewSV uint8  // number of visible satellites
-	NumFixSV  uint8  // number of satellites used for fix
-	System    GNSSID // system type
+	NumViewSV uint8  `json:"numViewSv"` // number of visible satellites
+	NumFixSV  uint8  `json:"numFixSv"`  // number of satellites used for fix
+	System    GNSSID `json:"system"`    // system type
 	_         uint8  // reserved
 }
 
 // NavSVInfo is common satellite info structure used by NAV-GPSINFO, NAV-BDSINFO, NAV-GLNINFO
 type NavSVInfo struct {
-	Chn     uint8   // channel number
-	SVID    uint8   // satellite ID
-	Flags   NavSVFlags
-	Quality NavSVQuality
-	CNO     uint8   // dB-Hz
-	Elev    int8    // degrees, -90 to 90
-	Azim    int16   // degrees, 0 to 360
-	PRRes   float32 // meters, pseudorange residual
+	Chn     uint8        `json:"chn"`  // channel number
+	SVID    uint8        `json:"svid"` // satellite ID
+	Flags   NavSVFlags   `json:"flags"`
+	Quality NavSVQuality `json:"quality"`
+	CNO     uint8        `json:"cno"`   // dB-Hz
+	Elev    int8         `json:"elev"`  // degrees, -90 to 90
+	Azim    int16        `json:"azim"`  // degrees, 0 to 360
+	PRRes   float32      `json:"prRes"` // meters, pseudorange residual
 }
 
 type NavSVFlags uint8
@@ -247,7 +247,7 @@ const (
 // NavGPSInfo is NAV-GPSINFO (0x01 0x20) - GPS satellite information
 type NavGPSInfo struct {
 	NavSatInfoFixed
-	SVs []NavSVInfo
+	SVs []NavSVInfo `json:"SVs"`
 }
 
 func (m *NavGPSInfo) ID() MsgID { return NavGPSInfoID }
@@ -268,7 +268,7 @@ var _ VaryingMsg = (*NavGPSInfo)(nil)
 // NavBDSInfo is NAV-BDSINFO (0x01 0x21) - BDS satellite information
 type NavBDSInfo struct {
 	NavSatInfoFixed
-	SVs []NavSVInfo
+	SVs []NavSVInfo `json:"SVs"`
 }
 
 func (m *NavBDSInfo) ID() MsgID { return NavBDSInfoID }
@@ -289,7 +289,7 @@ var _ VaryingMsg = (*NavBDSInfo)(nil)
 // NavGLNInfo is NAV-GLNINFO (0x01 0x22) - GLONASS satellite information
 type NavGLNInfo struct {
 	NavSatInfoFixed
-	SVs []NavSVInfo
+	SVs []NavSVInfo `json:"SVs"`
 }
 
 func (m *NavGLNInfo) ID() MsgID { return NavGLNInfoID }
@@ -309,7 +309,7 @@ var _ VaryingMsg = (*NavGLNInfo)(nil)
 
 // Nav2TOW is embedded in NAV2 messages to provide epoch tracking via GPS TOW.
 type Nav2TOW struct {
-	TOW int32 // GPS time of week in ms
+	TOW int32 `json:"tow"` // GPS time of week in ms
 }
 
 func (m *Nav2TOW) NavEpoch() uint32 { return uint32(m.TOW) }
@@ -372,30 +372,30 @@ const (
 // Nav2Sol is NAV2-SOL (0x11 0x02) - ECEF position and velocity (72 bytes)
 type Nav2Sol struct {
 	Nav2TOW
-	Wn         uint16
+	Wn         uint16       `json:"wn"`
 	_          uint16       // reserved
-	FixFlags   PVTValid
-	VelFlags   Nav2VelFlags
+	FixFlags   PVTValid     `json:"fixFlags"`
+	VelFlags   Nav2VelFlags `json:"velFlags"`
 	_          uint8        // reserved
-	GnssMask   Nav2GnssMask
-	NumFixTot  uint8
-	NumFixGPS  uint8
-	NumFixBDS  uint8
-	NumFixGLN  uint8
-	NumFixGAL  uint8
-	NumFixQZSS uint8
-	NumFixSBAS uint8
-	NumFixIRN  uint8
+	GnssMask   Nav2GnssMask `json:"fixGnssMask"`
+	NumFixTot  uint8        `json:"numFixTot"`
+	NumFixGPS  uint8        `json:"numFixGps"`
+	NumFixBDS  uint8        `json:"numFixBds"`
+	NumFixGLN  uint8        `json:"numFixGln"`
+	NumFixGAL  uint8        `json:"numFixGal"`
+	NumFixQZSS uint8        `json:"numFixQzs"`
+	NumFixSBAS uint8        `json:"numFixSbs"`
+	NumFixIRN  uint8        `json:"numFixIrn"`
 	_          uint32       // reserved
-	X          float64      // m, ECEF X
-	Y          float64      // m, ECEF Y
-	Z          float64      // m, ECEF Z
-	PAcc       float32      // m, 3D position accuracy (std dev)
-	VX         float32      // m/s, ECEF X velocity
-	VY         float32      // m/s, ECEF Y velocity
-	VZ         float32      // m/s, ECEF Z velocity
-	SAcc       float32      // m/s, 3D speed accuracy (std dev)
-	PDOP       float32
+	X          float64      `json:"x"`    // m, ECEF X
+	Y          float64      `json:"y"`    // m, ECEF Y
+	Z          float64      `json:"z"`    // m, ECEF Z
+	PAcc       float32      `json:"pAcc"` // m, 3D position accuracy (std dev)
+	VX         float32      `json:"vx"`   // m/s, ECEF X velocity
+	VY         float32      `json:"vy"`   // m/s, ECEF Y velocity
+	VZ         float32      `json:"vz"`   // m/s, ECEF Z velocity
+	SAcc       float32      `json:"sAcc"` // m/s, 3D speed accuracy (std dev)
+	PDOP       float32      `json:"pDop"`
 }
 
 func (m *Nav2Sol) ID() MsgID { return Nav2SolID }
@@ -403,66 +403,66 @@ func (m *Nav2Sol) ID() MsgID { return Nav2SolID }
 // Nav2Pvh is NAV2-PVH (0x11 0x03) - geodetic position and velocity (88 bytes)
 type Nav2Pvh struct {
 	Nav2TOW
-	Wn         uint16
+	Wn         uint16       `json:"wn"`
 	_          uint16       // reserved
-	FixFlags   PVTValid
-	VelFlags   Nav2VelFlags
+	FixFlags   PVTValid     `json:"fixFlags"`
+	VelFlags   Nav2VelFlags `json:"velFlags"`
 	_          uint8        // reserved
-	GnssMask   Nav2GnssMask
-	NumFixTot  uint8
-	NumFixGPS  uint8
-	NumFixBDS  uint8
-	NumFixGLN  uint8
-	NumFixGAL  uint8
-	NumFixQZSS uint8
-	NumFixSBAS uint8
-	NumFixIRN  uint8
+	GnssMask   Nav2GnssMask `json:"fixGnssMask"`
+	NumFixTot  uint8        `json:"numFixTot"`
+	NumFixGPS  uint8        `json:"numFixGps"`
+	NumFixBDS  uint8        `json:"numFixBds"`
+	NumFixGLN  uint8        `json:"numFixGln"`
+	NumFixGAL  uint8        `json:"numFixGal"`
+	NumFixQZSS uint8        `json:"numFixQzs"`
+	NumFixSBAS uint8        `json:"numFixSbs"`
+	NumFixIRN  uint8        `json:"numFixIrn"`
 	_          uint32       // reserved
-	Lon        float64      // deg
-	Lat        float64      // deg
-	Height     float32      // m, ellipsoidal
-	SepGeoid   float32      // m, geoid separation
-	VelE       float32      // m/s, East velocity
-	VelN       float32      // m/s, North velocity
-	VelU       float32      // m/s, Up velocity (negate for NED down)
-	Speed3D    float32      // m/s
-	Speed2D    float32      // m/s, ground speed
-	Heading    float32      // deg
-	HAcc       float32      // m, horizontal position accuracy (std dev)
-	VAcc       float32      // m, vertical position accuracy (std dev)
-	SAcc       float32      // m/s, 3D speed accuracy (std dev)
-	CAcc       float32      // deg, heading accuracy (std dev)
+	Lon        float64      `json:"lon"`      // deg
+	Lat        float64      `json:"lat"`      // deg
+	Height     float32      `json:"height"`   // m, ellipsoidal
+	SepGeoid   float32      `json:"sepGeoid"` // m, geoid separation
+	VelE       float32      `json:"velE"`     // m/s, East velocity
+	VelN       float32      `json:"velN"`     // m/s, North velocity
+	VelU       float32      `json:"velU"`     // m/s, Up velocity (negate for NED down)
+	Speed3D    float32      `json:"speed3D"`  // m/s
+	Speed2D    float32      `json:"speed2D"`  // m/s, ground speed
+	Heading    float32      `json:"heading"`  // deg
+	HAcc       float32      `json:"hAcc"`     // m, horizontal position accuracy (std dev)
+	VAcc       float32      `json:"vAcc"`     // m, vertical position accuracy (std dev)
+	SAcc       float32      `json:"sAcc"`     // m/s, 3D speed accuracy (std dev)
+	CAcc       float32      `json:"cAcc"`     // deg, heading accuracy (std dev)
 }
 
 func (m *Nav2Pvh) ID() MsgID { return Nav2PvhID }
 
 // Nav2Dop is NAV2-DOP (0x11 0x01) - dilution of precision (24 bytes)
 type Nav2Dop struct {
-	PDOP float32
-	HDOP float32
-	VDOP float32
-	NDOP float32
-	EDOP float32
-	TDOP float32
+	PDOP float32 `json:"pDop"`
+	HDOP float32 `json:"hDop"`
+	VDOP float32 `json:"vDop"`
+	NDOP float32 `json:"nDop"`
+	EDOP float32 `json:"eDop"`
+	TDOP float32 `json:"tDop"`
 }
 
 func (m *Nav2Dop) ID() MsgID { return Nav2DopID }
 
 // Nav2TimeUTC is NAV2-TIMEUTC (0x11 0x05) - UTC time information (20 bytes)
 type Nav2TimeUTC struct {
-	TAcc    float32       // ns, time accuracy estimate
-	Subms   int32         // ms, fractional ms (scale 2^-30)
-	Subcs   int8          // ms, centisecond error (-5 to 5 ms)
-	Cs      uint8         // centiseconds (0-99)
-	Year    uint16
-	Month   uint8
-	Day     uint8
-	Hour    uint8
-	Min     uint8
-	Sec     uint8
-	TFlags  Nav2TimeFlags
-	TimeSrc Nav2TimeSrc
-	LeapSec int8
+	TAcc    float32       `json:"tAcc"`  // ns, time accuracy estimate
+	Subms   int32         `json:"subms"` // ms, fractional ms (scale 2^-30)
+	Subcs   int8          `json:"subcs"` // ms, centisecond error (-5 to 5 ms)
+	Cs      uint8         `json:"cs"`    // centiseconds (0-99)
+	Year    uint16        `json:"year"`
+	Month   uint8         `json:"month"`
+	Day     uint8         `json:"day"`
+	Hour    uint8         `json:"hour"`
+	Min     uint8         `json:"minute"`
+	Sec     uint8         `json:"second"`
+	TFlags  Nav2TimeFlags `json:"tFlagx"`
+	TimeSrc Nav2TimeSrc   `json:"tSrc"`
+	LeapSec int8          `json:"leapSec"`
 }
 
 func (m *Nav2TimeUTC) ID() MsgID { return Nav2TimeUTCID }
@@ -488,30 +488,30 @@ const (
 
 // Nav2SigFixed is the fixed part of NAV2-SIG (8 bytes)
 type Nav2SigFixed struct {
-	TOW       uint32 // GPS TOW in ms
+	TOW       uint32 `json:"tow"` // GPS TOW in ms
 	_         uint8  // reserved
-	NumTrkTot uint8
-	NumFixTot uint8
-	_         uint8 // reserved
+	NumTrkTot uint8  `json:"numTrkTot"`
+	NumFixTot uint8  `json:"numFixTot"`
+	_         uint8  // reserved
 }
 
 func (m *Nav2SigFixed) NavEpoch() uint32 { return m.TOW }
 
 // Nav2SigInfo is a per-signal entry in NAV2-SIG (16 bytes each)
 type Nav2SigInfo struct {
-	GNSSID   GNSSID
-	SVID     uint8  // satellite ID (raw PRN, except QZSS=PRN-192)
-	SigID    SigID  // signal band ID
-	FreqID   uint8  // GLONASS frequency ID; undefined for other constellations
-	PRRes    int16  // dm, pseudorange residual
-	CNO      uint8  // dBHz
-	TrkInd   uint8  // signal quality
-	CorFlags uint8  // correction flag
-	SolFlags uint8  // solution flag
-	Chn      uint8  // tracking channel number
-	Elev     uint8  // deg
-	Azim     uint16 // deg
-	IonoDelay int16 // dm, ionosphere delay correction
+	GNSSID    GNSSID `json:"gnssid"`
+	SVID      uint8  `json:"svid"`      // satellite ID (raw PRN, except QZSS=PRN-192)
+	SigID     SigID  `json:"sigid"`     // signal band ID
+	FreqID    uint8  `json:"freqid"`    // GLONASS frequency ID; undefined for other constellations
+	PRRes     int16  `json:"prResi"`    // dm, pseudorange residual
+	CNO       uint8  `json:"cn0"`       // dBHz
+	TrkInd    uint8  `json:"trkind"`    // signal quality
+	CorFlags  uint8  `json:"corFlagx"`  // correction flag
+	SolFlags  uint8  `json:"solFlagx"`  // solution flag
+	Chn       uint8  `json:"chn"`       // tracking channel number
+	Elev      uint8  `json:"eleDeg"`    // deg
+	Azim      uint16 `json:"aziDeg"`    // deg
+	IonoDelay int16  `json:"ionoDelay"` // dm, ionosphere delay correction
 }
 
 // Nav2Sig is NAV2-SIG (0x11 0x06) - per-signal tracking information.
@@ -519,7 +519,7 @@ type Nav2SigInfo struct {
 // AllowTrailingBytes permits ParseMsg to accept them.
 type Nav2Sig struct {
 	Nav2SigFixed
-	Sigs []Nav2SigInfo
+	Sigs []Nav2SigInfo `json:"sigs"`
 }
 
 func (m *Nav2Sig) ID() MsgID { return Nav2SigID }

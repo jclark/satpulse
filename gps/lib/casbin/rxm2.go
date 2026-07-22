@@ -31,39 +31,39 @@ const (
 
 // Rxm2MeasxFixed is the fixed epoch header of RXM2-MEASX (16 bytes).
 type Rxm2MeasxFixed struct {
-	RawTOW      uint32        // ms, raw receiver time (integer part)
-	RawTOWSubms int32         // ms, fractional raw receiver time, scaled 2^-30
-	Wn          uint16        // GPS week number
-	LeapSec     int8          // s, GPS-UTC leap seconds
-	NumMeas     uint8         // number of measurements
-	TimeFlags   Rxm2TimeFlags // receiver time status
-	TSrc        Tim2TSrc      // receiver time source
+	RawTOW      uint32        `json:"rawTow"`      // ms, raw receiver time (integer part)
+	RawTOWSubms int32         `json:"rawTowSubms"` // ms, fractional raw receiver time, scaled 2^-30
+	Wn          uint16        `json:"wn"`          // GPS week number
+	LeapSec     int8          `json:"leapS"`       // s, GPS-UTC leap seconds
+	NumMeas     uint8         `json:"numMeas"`     // number of measurements
+	TimeFlags   Rxm2TimeFlags `json:"rvtFlagx"`    // receiver time status
+	TSrc        Tim2TSrc      `json:"tSrc"`        // receiver time source
 	_           uint8
 	_           uint8
 }
 
 // Rxm2MeasxMeas is one raw signal measurement in RXM2-MEASX (32 bytes).
 type Rxm2MeasxMeas struct {
-	PRMes      float64           // m, pseudorange
-	CPMes      float64           // m, carrier phase
-	CPRateMes  float32           // m/s, carrier phase rate
-	GNSSID     GNSSID            // satellite system ID
-	SVID       uint8             // satellite ID
-	SigID      SigID             // signal ID
-	FreqID     uint8             // GLONASS frequency ID, [1,14] maps to [-7,+6]
-	CPLockTime uint16            // ms, carrier phase lock time
-	CNO        uint8             // dB-Hz, carrier-to-noise ratio
-	PRRMS      uint8             // m, pseudorange tracking error
-	DORMS      uint8             // dm/s, Doppler tracking error
+	PRMes      float64           `json:"prMes"`      // m, pseudorange
+	CPMes      float64           `json:"cpMes"`      // m, carrier phase
+	CPRateMes  float32           `json:"cpRateMes"`  // m/s, carrier phase rate
+	GNSSID     GNSSID            `json:"gnssid"`     // satellite system ID
+	SVID       uint8             `json:"svid"`       // satellite ID
+	SigID      SigID             `json:"sigid"`      // signal ID
+	FreqID     uint8             `json:"freqid"`     // GLONASS frequency ID, [1,14] maps to [-7,+6]
+	CPLockTime uint16            `json:"cpLockTime"` // ms, carrier phase lock time
+	CNO        uint8             `json:"cn0"`        // dB-Hz, carrier-to-noise ratio
+	PRRMS      uint8             `json:"prRms"`      // m, pseudorange tracking error
+	DORMS      uint8             `json:"doRms"`      // dm/s, Doppler tracking error
 	_          uint8             // reserved
-	TrkFlags   Rxm2TrackingFlags // satellite tracking status
-	Chn        uint8             // tracking channel number
+	TrkFlags   Rxm2TrackingFlags `json:"trkind"` // satellite tracking status
+	Chn        uint8             `json:"chn"`    // tracking channel number
 }
 
 // Rxm2Measx is RXM2-MEASX (0x13 0x00) - multi-GNSS raw measurements.
 type Rxm2Measx struct {
 	Rxm2MeasxFixed
-	Meas []Rxm2MeasxMeas
+	Meas []Rxm2MeasxMeas `json:"meas"`
 }
 
 func (m *Rxm2Measx) ID() MsgID { return Rxm2MeasxID }
