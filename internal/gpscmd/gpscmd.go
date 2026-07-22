@@ -2,7 +2,6 @@ package gpscmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -88,19 +87,19 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 	if v.msgFilePath != "" {
 		return nil, nil
 	}
-	target := gpsprot.NewConfigTarget()
-	if v.targetJSON != "" {
-		if err := decodeTargetJSON(v.targetJSON, target); err != nil {
-			return nil, err
-		}
-		target.Props.ClearReadOnlyProps()
+	if v.targetJSON != nil {
+		target := v.targetJSON
 		target.Get |= v.configGet
+		// Opts.Socket describes the transport, not a configuration
+		// request, so it is set from the transport regardless of what
+		// the input said.
 		target.Opts.Socket = v.socketPath != ""
 		if target.NoOp() {
 			target.Opts.ForceProbe = true
 		}
 		return target, nil
 	}
+	target := gpsprot.NewConfigTarget()
 	target.Opts = v.configOpts
 	target.Get = v.configGet
 	cp := &target.Props
@@ -140,30 +139,6 @@ func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
 		target.Opts.ForceProbe = true
 	}
 	return target, nil
-}
-
-// decodeTargetJSON decodes a complete ConfigTarget from s, or from stdin if s
-// is "-". Opts.Socket describes the transport, not a configuration request, so
-// the caller overwrites whatever the input said. The input must be exactly one
-// JSON value with no unknown fields: a target is the raw model, so a misspelled
-// name must not read as a silently omitted one.
-func decodeTargetJSON(s string, target *gpsprot.ConfigTarget) error {
-	var r io.Reader = strings.NewReader(s)
-	if s == "-" {
-		r = os.Stdin
-	}
-	dec := json.NewDecoder(r)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(target); err != nil {
-		return fmt.Errorf("invalid --target-json: %w", err)
-	}
-	if err := dec.Decode(new(any)); err != io.EOF {
-		if err == nil {
-			err = fmt.Errorf("multiple JSON values")
-		}
-		return fmt.Errorf("invalid --target-json: %w", err)
-	}
-	return nil
 }
 
 func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
