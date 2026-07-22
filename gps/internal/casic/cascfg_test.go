@@ -926,6 +926,39 @@ func TestLateProbeNak(t *testing.T) {
 	}
 }
 
+// TestLateAckRejected pins the handleAck response window: an ACK read
+// outside maxResponseDelay of the send (a response to an earlier send
+// of a since-resent request) or before the send must not complete the
+// request; a timely ACK still does.
+func TestLateAckRejected(t *testing.T) {
+	rcvr := &testReceiver{monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}}
+	cp := probe(t, rcvr)
+	cfgI, err := cp.Configure(nmeaTarget(gpsprot.NMEAMsgRMC))
+	if err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+	cfg := cfgI.(*Configurator)
+	if err := cfg.GenerateRequests(); err != nil {
+		t.Fatalf("GenerateRequests: %v", err)
+	}
+	req := cfg.reqs[0]
+	t0 := time.Unix(100, 0)
+	req.SetSentTime(t0)
+	ack := &casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)}
+	cfg.nativeMsg(ack, t0.Add(maxResponseDelay+time.Second))
+	if req.state != reqAwaitingAck {
+		t.Fatalf("state = %v after out-of-window ACK, want awaiting", req.state)
+	}
+	cfg.nativeMsg(ack, t0.Add(-time.Second))
+	if req.state != reqAwaitingAck {
+		t.Fatalf("state = %v after before-send ACK, want awaiting", req.state)
+	}
+	cfg.nativeMsg(ack, t0.Add(50*time.Millisecond))
+	if req.state != reqSucceeded {
+		t.Fatalf("state = %v after timely ACK, want succeeded", req.state)
+	}
+}
+
 func TestProbeIgnoresUnrelatedNak(t *testing.T) {
 	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	cp := NewConfigProtocol()
