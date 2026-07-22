@@ -38,7 +38,9 @@ What was *achieved* is reported in the response, not what was requested. The ach
 
 **Nonexistence is shown, not announced.** A backend that does not have a property does not fail requests that mention it. Setting it reports nothing achieved for it, and readback does not include it. The absence in the responses *is* the statement that the property does not exist there.
 
-**Refusal changes nothing.** When the receiver refuses a request, the request fails with an error and the receiver's configuration is left unchanged - a failed request is never a partial one. (The error text comes from the receiver and may not be illuminating; the semantics are in the refusal itself.)
+**Refusal changes nothing.** When the receiver refuses a request, the request fails with an error and the configuration that request named is left unchanged - a failed request is never a partial one. (The error text comes from the receiver and may not be illuminating; the semantics are in the refusal itself.)
+
+**Failure does not abort.** When one request fails, the rest of the invocation still runs, and the failures are visible in the response. Knowledge of receiver behavior is always incomplete - firmware revisions change what a receiver accepts - so an unexpected refusal says something about this receiver; it is not a reason to skip the remaining requests. There is one exception: a failure prevents a save requested in the same invocation (see Operations below).
 
 **Ensuring static mode.** A request can ask that the receiver be static without saying where (`SetStatic` in the model): the receiver must end up in a static positioning mode, but an existing fixed position - stored or previously surveyed - is left untouched, and a receiver with no position determines its own (a survey, on receivers that survey). This is how static operation is requested without knowing or supplying a position; a receiver already in a static mode is left as it is.
 
@@ -101,6 +103,8 @@ Satellite information is an independent stream, not part of the navigation epoch
 
 A save and a reset requested together are ordered: the save completes before the reset takes effect, so what the reset restores includes what was just saved. The ordering is also a gate: if the save fails, the reset does not take place, so a reset never discards running changes that its paired save failed to persist.
 
+A failed request gates the save the same way: when any request in the invocation failed, a requested save is not attempted. NVM is written only by an invocation in which everything succeeded. After a failure, NVM therefore still holds the last saved state: the partially applied running configuration can be corrected by a further request or discarded by a reload, and nothing unexpected has been persisted. A reset paired with the unattempted save does not take place, exactly as when a save fails.
+
 Changes made after the last save do not survive a reload or reset. That is not a hazard but the point: reload is how unsaved changes are deliberately discarded.
 
 ## Capabilities
@@ -119,8 +123,9 @@ Whatever the receiver:
 - `--show-receiver` and `--show-config` change nothing on the receiver and wait for nothing.
 - PPP is never enabled implicitly by a signal request.
 - Reported values are the truth: a set response reports what the receiver accepted, and readback reports what it stores.
-- A reported error is the truth: a failed request leaves the configuration unchanged.
+- A failed request changes nothing: what it named is untouched, and the rest of the invocation still runs and is reported.
 - Requested information is delivered when the receiver can deliver it; more may come with it.
 - Persistence works as stated: what a save was asked to persist survives reload and reset.
+- NVM is written only when everything succeeded: a failure prevents a requested save and its paired reset.
 
 See **satpulsetool-gps(1)** for the command-line syntax that expresses these requests.
