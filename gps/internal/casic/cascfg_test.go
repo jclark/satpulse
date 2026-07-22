@@ -1513,7 +1513,7 @@ func TestMinElevation(t *testing.T) {
 		}
 		cp := probe(t, rcvr)
 		target := gpsprot.NewConfigTarget()
-		target.Props.SetMinElevation(gpsprot.DegreesFromFloat(15))
+		target.Props.SetMinElevation(gpsprot.DegreesFromFloat(14.2)) // Ceil to 15
 		cfg, errCount := configure(t, cp, rcvr, target)
 		if errCount != 0 {
 			t.Errorf("ErrorCount = %d, want 0", errCount)

@@ -44,7 +44,13 @@ func (c *Configurator) generateMinElevSet() {
 	if !ok {
 		return
 	}
-	deg := int8(math.Round(elev.Degrees()))
+	// Ceil, as in the ubx conversion: rounding down would admit
+	// satellites the user excluded.
+	v := int64(math.Ceil(elev.Degrees()))
+	if v < -90 || v > 90 {
+		return
+	}
+	deg := int8(v)
 	if c.family == familyV6 {
 		if c.navLimit == nil {
 			return // property absent on this receiver
