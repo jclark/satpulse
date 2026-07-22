@@ -30,16 +30,17 @@ CASIC firmware acknowledges enabling messages it never emits, so the
 |---|---|---|---|---|
 | Time of pulse (TIM2-TPX / TIM-TP) | acked, never emits | acked, never emits | EMITS | EMITS (TIM-TP) |
 | Leap second (TIM2-LS / MSG-GPSUTC) | acked, never emits | not delivered | EMITS (current leap, no pending event) | acked, never emits |
-| Survey (TIM2-TIMEPOS) | acked, never emits | unverified | EMITS | n/a |
-| Raw (RXM2-MEASX/SFRBX) | acked, never emits | unverified | EMITS | n/a |
+| Survey (TIM2-TIMEPOS) | acked, never emits | not observed | EMITS | n/a |
+| Raw (RXM2-MEASX/SFRBX) | acked, never emits | EMITS | EMITS | n/a |
 | RTCM | acked, never emits | never emits | CFG NAKed | n/a |
 
 So: pulse-time, leap, survey, and raw captures come from the AT632;
 the F8N contributes PVT/satellite/NMEA/dual-band captures; the V5
 contributes the whole NAV-class side. No attached CASIC unit emits
-RTCM. (The AT372-6P's baseline records no survey/raw deficiency, but
-emission there has not been directly verified - a 10 s watch with raw
-enabled showed none.)
+RTCM. (AT372-6P, measured 2026-07-22: raw emits - 60 RXM2-MEASX and
+418 RXM2-SFRBX in 60 s - but no TIM2-TIMEPOS appeared in 60 s with an
+active survey; its baseline records no survey deficiency, a
+discrepancy unresolved until a re-characterization.)
 
 TIM2-LS on the AT632 is emitted (roughly once per second per monitored
 constellation) when `leap` is enabled and at least one non-GPS
