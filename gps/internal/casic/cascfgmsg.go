@@ -47,16 +47,15 @@ func (c *Configurator) generateRateReqs() {
 	c.addReq(rate)
 }
 
-// generateRawReqs configures raw data output on V6: RXM2-MEASX carries
-// raw observations, RXM2-SFRBX raw navigation subframes. A raw request
-// is complete: the group message not named is turned off. The dual-band
-// F8N acknowledges these enables without ever emitting the messages - a
-// firmware limitation that is deliberately not worked around. V5
-// firmware likewise acknowledges its RXM messages but never emits them
-// (per the casictool notes), so raw output does not exist there and no
-// requests are generated.
+// generateRawReqs configures raw data output where the capability is
+// declared: RXM2-MEASX carries raw observations, RXM2-SFRBX raw
+// navigation subframes, and a raw request is complete (the group
+// message not named is turned off). Receivers without the declared
+// capability - navigation-class V6 units and all V5 units, which
+// acknowledge the enables but never emit the messages - get nothing
+// attempted; the flag layer's unsupported-option warning stands.
 func (c *Configurator) generateRawReqs(flags gpsprot.RawMsgFlags) {
-	if c.family != familyV6 {
+	if c.ConfigSupport()&gpsprot.ConfigSupportRaw == 0 {
 		return
 	}
 	c.addMsgRate(casbin.Rxm2MeasxID, flags&gpsprot.RawMsgObs != 0)
@@ -146,11 +145,15 @@ func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 	set(dop, wantDop)
 	if c.family == familyV6 {
 		set(casbin.Tim2LsID, flags&gpsprot.PVTMsgLeapSecond != 0)
-		// Gated on the tmode phase having put the receiver into
-		// survey-in mode, matching ubx: the survey flag declares
-		// interest in progress (satpulsed sets it unconditionally),
-		// and there is no progress to deliver outside a survey.
-		set(casbin.Tim2TimePosID, flags&gpsprot.PVTMsgSurvey != 0 && c.survey)
+		// Gated on the declared capability (navigation and positioning
+		// classes never emit TIM2-TIMEPOS) and on the tmode phase
+		// having put the receiver into survey-in mode, matching ubx:
+		// the survey flag declares interest in progress (satpulsed
+		// sets it unconditionally), and there is no progress to
+		// deliver outside a survey.
+		if c.ConfigSupport()&gpsprot.ConfigSupportSurveyMsg != 0 {
+			set(casbin.Tim2TimePosID, flags&gpsprot.PVTMsgSurvey != 0 && c.survey)
+		}
 	} else {
 		set(casbin.MsgGPSUTCID, flags&gpsprot.PVTMsgLeapSecond != 0)
 	}

@@ -388,18 +388,26 @@ func TestProbeV5(t *testing.T) {
 }
 
 func TestConfigSupport(t *testing.T) {
+	v6cfg := func(hw string) *Configurator {
+		return newConfigurator(gpsprot.NewConfigTarget(),
+			&casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0"), HwVersion: z32(hw)})
+	}
 	v5 := newConfigurator(gpsprot.NewConfigTarget(), nil)
-	v6 := newConfigurator(gpsprot.NewConfigTarget(), &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")})
 	base := gpsprot.ConfigSupportSpeed |
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc
+	v6base := base | gpsprot.ConfigSupportSignal
 	tests := []struct {
 		name string
 		cfg  *Configurator
 		want gpsprot.ConfigSupportFlags
 	}{
 		{"V5", v5, base | gpsprot.ConfigSupportReload},
-		{"V6", v6, base | gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportRaw |
+		{"V6 unclassified", v6cfg(""), v6base | gpsprot.ConfigSupportRaw |
+			gpsprot.ConfigSupportSurveyMsg},
+		{"V6 navigation", v6cfg("ATGM332D-AT9880-F8N-76"), v6base},
+		{"V6 positioning", v6cfg("AT372-AT6668-6P-34"), v6base | gpsprot.ConfigSupportRaw},
+		{"V6 timing", v6cfg("AT362-AT6668-6T-30"), v6base | gpsprot.ConfigSupportRaw |
 			gpsprot.ConfigSupportSurveyMsg},
 	}
 	for _, tc := range tests {
@@ -408,6 +416,51 @@ func TestConfigSupport(t *testing.T) {
 				t.Errorf("ConfigSupport() = %v, want %v", got.Items(), tc.want.Items())
 			}
 		})
+	}
+}
+
+func TestReceiverClass(t *testing.T) {
+	tests := []struct {
+		hw   string
+		want string
+	}{
+		{"ATGM332D-AT9880-F8N-76", "N"},
+		{"AT372-AT6668-6P-34", "P"},
+		{"AT362-AT6668-6T-30", "T"},
+		{"ATGM332D-5N71", "N"},
+		{"AT999-AT9999-6TS-10", "TS"},
+		{"AT999-AT9999-F7F-10", "F"},
+		{"AT6558D,0000000000000", ""},
+		{"ATGM336H-5", ""},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		if got := receiverClass(tc.hw); got != tc.want {
+			t.Errorf("receiverClass(%q) = %q, want %q", tc.hw, got, tc.want)
+		}
+	}
+}
+
+// TestUndeclaredNotAttempted: a capability the receiver's class does
+// not declare generates no requests (the flag layer's warning is the
+// user-visible outcome).
+func TestUndeclaredNotAttempted(t *testing.T) {
+	rcvr := &testReceiver{monVer: &casbin.MonVer{
+		SwVersion: z32("SW=URANUS6,V6.3.2.0"),
+		HwVersion: z32("ATGM332D-AT9880-F8N-76"),
+	}}
+	cp := probe(t, rcvr)
+	target := gpsprot.NewConfigTarget()
+	target.Opts.RawMsg.Set(gpsprot.RawMsgObs | gpsprot.RawMsgNavData)
+	target.Opts.PVTMsg = gpsprot.PVTMsgSurvey | gpsprot.PVTMsgOff
+	_, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	for _, mid := range []casbin.MsgID{casbin.Rxm2MeasxID, casbin.Rxm2SfrbxID, casbin.Tim2TimePosID} {
+		if _, ok := rcvr.rates[mid]; ok {
+			t.Errorf("undeclared message %v was touched", mid)
+		}
 	}
 }
 

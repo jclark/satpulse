@@ -2,6 +2,7 @@ package casic
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -146,10 +147,45 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 		// request is accordingly ignored, as raw output is on V5.
 		flags |= gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportRaw |
 			gpsprot.ConfigSupportSurveyMsg
+		// The emission-dependent flags follow the product class
+		// encoded in the module name, as u-blox encodes it in model
+		// letters: navigation units acknowledge the raw and
+		// survey-progress enables but never emit the messages
+		// (measured on the F8N), the positioning class emits raw but
+		// not survey progress (measured on the AT372-6P), and the
+		// timing class delivers everything (measured on the AT362-6T).
+		// An unrecognized name keeps the family flags.
+		switch receiverClass(c.ver.HwVersion.String()) {
+		case "N":
+			flags &^= gpsprot.ConfigSupportRaw | gpsprot.ConfigSupportSurveyMsg
+		case "P":
+			flags &^= gpsprot.ConfigSupportSurveyMsg
+		}
 	} else {
 		flags |= gpsprot.ConfigSupportReload
 	}
 	return flags
+}
+
+// classRe matches a module-name segment carrying the product class:
+// an optional F for dual band, the generation digit, the class
+// letters (N navigation, P positioning/RTK, T timing, TS secure
+// timing, F frequency), then optional constellation digits.
+var classRe = regexp.MustCompile(`^F?[0-9](N|P|TS|T|F)[0-9]*$`)
+
+// receiverClass extracts the product class letters from a CASIC
+// module name such as AT372-AT6668-6P-34 or ATGM332D-5N71: the first
+// segment after the module name (segments separated by hyphens or
+// commas) that matches the class pattern. Returns "" when no segment
+// matches (including the V5 units' bare chip names).
+func receiverClass(hw string) string {
+	fields := strings.FieldsFunc(hw, func(r rune) bool { return r == '-' || r == ',' })
+	for i := 1; i < len(fields); i++ {
+		if m := classRe.FindStringSubmatch(fields[i]); m != nil {
+			return m[1]
+		}
+	}
+	return ""
 }
 
 // ConfigProps returns the current configuration of the GPS receiver,
