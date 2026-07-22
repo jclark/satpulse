@@ -1528,6 +1528,9 @@ func TestMinElevation(t *testing.T) {
 		if got, ok := cfg.ConfigProps().GetMinElevation(); !ok || got.Degrees() != 10 {
 			t.Errorf("MinElevation = %v,%v, want 10", got.Degrees(), ok)
 		}
+		if ss, ok := cfg.ConfigProps().GetSignalsEnabled(); ok {
+			t.Errorf("SignalsEnabled = %v reported for a min-elev-only request", ss)
+		}
 	})
 }
 
