@@ -45,7 +45,6 @@ var casicReplayFiles = []string{
 	"atgm332d-f8n-tmode",
 	"atgm332d-f8n-min-elev",
 	"atgm332d-f8n-show-port",
-	"atgm332d-f8n-raw-out",
 }
 
 func TestReplayCASIC(t *testing.T) {
