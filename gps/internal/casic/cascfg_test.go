@@ -24,6 +24,7 @@ type testReceiver struct {
 	nakTargets map[casbin.MsgID]bool // CFG-MSG set targets answered with NAK
 	silent     map[casbin.MsgID]bool // requests not answered at all
 	pending    [][]byte              // delivered before the next request's responses
+	staleNak   bool                  // deliver a stale CFG-MSG NAK before the next set's ACK
 	saves      []casbin.CfgCfg
 	saveBaud   uint32        // newBaud at the time of the first save
 	switchLag  time.Duration // simulated host-side gap after a speed change (default 200ms)
@@ -166,7 +167,13 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 				r.rates = make(map[casbin.MsgID]uint16)
 			}
 			r.rates[mt.Target] = mt.Rate
-			return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)})}
+			ack := r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)})
+			if r.staleNak {
+				// A late probe NAK arriving while this set awaits its ACK.
+				r.staleNak = false
+				return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgMsgID)}), ack}
+			}
+			return [][]byte{ack}
 		}
 	}
 	if mid := m.ID(); mid.Ackable() {
@@ -906,7 +913,10 @@ func TestLateProbeNak(t *testing.T) {
 	if !cp.ProbeOK() {
 		t.Fatal("ProbeOK = false")
 	}
-	rcvr.pending = [][]byte{rcvr.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgMsgID)})}
+	// The second probe's NAK arrives only while the configurator's
+	// first CFG-MSG set is awaiting its ACK; the protocol must consume
+	// it (pollsPending) rather than let it fail that set.
+	rcvr.staleNak = true
 	_, errCount := configure(t, cp, rcvr, nmeaTarget(gpsprot.NMEAMsgRMC))
 	if errCount != 0 {
 		t.Errorf("ErrorCount = %d, want 0 (late probe NAK misattributed)", errCount)
