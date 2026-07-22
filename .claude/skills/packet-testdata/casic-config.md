@@ -43,9 +43,9 @@ TIM2-LS on the AT632 is emitted (roughly once per second per monitored
 constellation) when `leap` is enabled and at least one non-GPS
 constellation is active; a GPS-only fix emits none. Both facts
 re-measured 2026-07-22: 60 packets in 30 s with GPS+BDS active, zero
-in 15 s with `--gnss GPS`. (The gpshwtest at632.md note and baseline
-recorded leap as undelivered; corrected - the probe most plausibly ran
-in a GPS-only state.) Its RaimType field
+in 15 s with `--gnss GPS`. (The gpshwtest at632.md note recorded leap
+as undelivered and has been corrected; its baseline keeps the
+leap-missing entry until a re-characterization.) Its RaimType field
 is 0 before the UTC almanac is decoded (zero leap fields) and 1 once
 decoded (carrying the current leap, Dtls==Dtlsf, no pending change). It
 does not reach RaimType 2 (a pending leap event) without an actual
