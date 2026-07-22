@@ -69,7 +69,7 @@ const (
 	CfgSectionPort  = 0x0001 // CFG-PRT
 	CfgSectionMsg   = 0x0002 // CFG-MSG rates
 	CfgSectionInf   = 0x0004 // CFG-INF
-	CfgSectionNav   = 0x0008 // CFG-RATE, CFG-TMODE; CFG-NAVX per casictool, not the vendor doc
+	CfgSectionNav   = 0x0008 // CFG-RATE, CFG-TMODE; covers CFG-NAVX too (verified on the AT6558D: a save with only this bit persists a NAVX min-elev change across reload)
 	CfgSectionTP    = 0x0010 // CFG-TP
 	CfgSectionGroup = 0x0020 // CFG-GROUP
 	CfgSectionAll   = 0xFFFF
