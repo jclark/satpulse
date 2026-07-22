@@ -141,8 +141,8 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 		// RTCM MSM output is not declared: no known CASIC firmware
 		// emits RTCM (the F8N acknowledges CFG-RTCM but never emits,
 		// the -6T NAKs it outright), and flag truthfulness requires
-		// not declaring what no receiver delivers. An --rtcm-out
-		// request still attempts the enables.
+		// not declaring what no receiver delivers. An RTCM output
+		// request is accordingly ignored, as raw output is on V5.
 		flags |= gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportRaw |
 			gpsprot.ConfigSupportSurveyMsg
 	} else {
@@ -231,7 +231,7 @@ func (c *Configurator) generateQueryReqs() {
 	c.generateTModeQuery()
 	c.generateSignalQuery()
 	c.generateMinElevQuery()
-	if c.target.UsesAny(gpsprot.PropIDBaudRate) || c.target.Opts.RTCMMsg.IsSet() {
+	if c.target.UsesAny(gpsprot.PropIDBaudRate) {
 		c.addPollReq(casbin.CfgPrtID, func(m casbin.Msg) {
 			if prt, ok := m.(*casbin.CfgPrt); ok {
 				c.ports = append(c.ports, *prt)
@@ -508,14 +508,13 @@ func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
 // (see addMsg), is what tells generateSaveReqs an accepted change
 // happened and a save is due. The V6-only CFG messages therefore map
 // to the V5 section their setting belongs to (time mode, band, and
-// nav limit are Nav; RTCM output is a message setting) even though
-// the particular bit is meaningless on V6, where saveMask substitutes
-// the all-sections mask - only being nonzero matters, so that the
-// save fires. CFG-RST returns 0: a reset does
-// not touch saved configuration and must not trigger a save.
+// nav limit are Nav) even though the particular bit is meaningless on
+// V6, where saveMask substitutes the all-sections mask - only being
+// nonzero matters, so that the save fires. CFG-RST returns 0: a reset
+// does not touch saved configuration and must not trigger a save.
 func setSection(m casbin.Msg) uint16 {
 	switch m.ID() {
-	case casbin.CfgMsgID, casbin.CfgRtcmID:
+	case casbin.CfgMsgID:
 		return casbin.CfgSectionMsg
 	case casbin.CfgPrtID:
 		return casbin.CfgSectionPort
@@ -529,19 +528,15 @@ func setSection(m casbin.Msg) uint16 {
 }
 
 // msgEnablesOutput reports whether m is a message-output request that
-// turns some output on: a CFG-MSG with a nonzero output rate, or a
-// CFG-RTCM with a nonzero enable mask. A poll (PollRate) enables
-// nothing. Such a request's ACK is wrapped in addMsg to set msgEnabled,
-// so the flag reflects only accepted enables (many enables are nakOK):
-// it gates the CFG-RATE set in the rate phase (see generateRateReqs),
-// so that whenever an invocation actually enables output that output
-// runs at 1 Hz.
+// turns some output on: a CFG-MSG with a nonzero output rate. A poll
+// (PollRate) enables nothing. Such a request's ACK is wrapped in addMsg
+// to set msgEnabled, so the flag reflects only accepted enables (many
+// enables are nakOK): it gates the CFG-RATE set in the rate phase (see
+// generateRateReqs), so that whenever an invocation actually enables
+// output that output runs at 1 Hz.
 func msgEnablesOutput(m casbin.Msg) bool {
-	switch mt := m.(type) {
-	case *casbin.CfgMsg:
+	if mt, ok := m.(*casbin.CfgMsg); ok {
 		return mt.Rate != 0 && mt.Rate != casbin.PollRate
-	case *casbin.CfgRtcm:
-		return mt.MsgEnable != 0
 	}
 	return false
 }

@@ -20,9 +20,6 @@ func (c *Configurator) generateMsgReqs() {
 	if opts.RawMsg.IsSet() {
 		c.generateRawReqs(opts.RawMsg.Get())
 	}
-	if opts.RTCMMsg.IsSet() {
-		c.generateRTCMReqs(opts.RTCMMsg.Get())
-	}
 }
 
 // generateRateReqs forces the positioning interval to 1000 ms whenever
@@ -48,43 +45,6 @@ func (c *Configurator) generateRateReqs() {
 		rate.FixRateHz = 1
 	}
 	c.addReq(rate)
-}
-
-// generateRTCMReqs configures RTCM output on V6: CFG-RTCM selects the
-// message types and MSM version, and the port's protocol mask gates
-// RTCM output as a whole. There is no GLONASS MSM enable in CFG-RTCM,
-// so GLONASS corrections are not available. Whether a given unit
-// actually emits RTCM is its own affair: the enables are acknowledged
-// and emission is checked by observation, like raw output. RTCM output
-// is not a declared capability (see ConfigSupport) because no known
-// CASIC firmware emits it, but the enables are still attempted so
-// emission stays discoverable if some future firmware does.
-func (c *Configurator) generateRTCMReqs(flags gpsprot.RTCMMsgFlags) {
-	if c.family != familyV6 {
-		return
-	}
-	var en uint32
-	ver := uint8(4)
-	if flags&(gpsprot.RTCMMsgMSM4|gpsprot.RTCMMsgMSM7) != 0 {
-		en |= casbin.RtcmEnGPSMSM | casbin.RtcmEnGALMSM | casbin.RtcmEnQZSSMSM | casbin.RtcmEnBDSMSM
-		if flags&gpsprot.RTCMMsgMSM7 != 0 {
-			ver = 7
-		}
-	}
-	if flags&gpsprot.RTCMMsgARP != 0 {
-		en |= casbin.RtcmEn1005
-	}
-	c.addReqNakOK(&casbin.CfgRtcm{MsgEnable: en, MsmVer: ver}, nil)
-	base, haveBase := c.basePort()
-	if !haveBase {
-		return
-	}
-	mask := base.ProtoMask &^ uint8(casbin.PrtProtoRTCMOut)
-	if en != 0 {
-		mask = base.ProtoMask | casbin.PrtProtoRTCMOut
-	}
-	c.addReqNakOK(&casbin.CfgPrt{PortID: casbin.PortCurrent, ProtoMask: mask,
-		Mode: base.Mode, BaudRate: base.BaudRate}, nil)
 }
 
 // generateRawReqs configures raw data output on V6: RXM2-MEASX carries

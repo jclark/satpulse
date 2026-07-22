@@ -139,8 +139,6 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 	case *casbin.CfgRate:
 		r.rateSets = append(r.rateSets, *mt)
 		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgRateID)})}
-	case *casbin.CfgRtcm:
-		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgRtcmID)})}
 	case *casbin.CfgCfg:
 		if len(r.saves) == 0 {
 			r.saveBaud = r.newBaud
@@ -639,13 +637,6 @@ func TestMsgRate(t *testing.T) {
 			name:   "V6 enable forces 1 Hz with FixRateHz 1",
 			monVer: v6,
 			setup:  func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC) },
-			expect: []casbin.CfgRate{{FixIntervalMs: 1000, FixRateHz: 1}},
-		},
-		{
-			// CFG-RTCM is the other enable path (a nonzero enable mask).
-			name:   "V6 RTCM enable forces 1 Hz",
-			monVer: v6,
-			setup:  func(tg *gpsprot.ConfigTarget) { tg.Opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4) },
 			expect: []casbin.CfgRate{{FixIntervalMs: 1000, FixRateHz: 1}},
 		},
 		{
