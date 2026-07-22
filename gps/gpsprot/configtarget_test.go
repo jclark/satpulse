@@ -649,3 +649,17 @@ func TestConfigTargetJSONRoundTrip(t *testing.T) {
 		t.Errorf("unset option changed: %+v", got.Opts.TimeAssist)
 	}
 }
+
+func TestFixedPosToECEF(t *testing.T) {
+	llh := Mode{Static: true, PosType: PosTypeLLH}
+	if p, ok := llh.FixedPosToECEF(); !ok || p != (Point3D{Meters(6378137), 0, 0}) {
+		t.Errorf("LLH origin = %v,%v, want the WGS84 semi-major axis on X", p, ok)
+	}
+	ecef := Mode{Static: true, PosType: PosTypeECEF, FixedPosECEF: Point3D{1, 2, 3}}
+	if p, ok := ecef.FixedPosToECEF(); !ok || p != ecef.FixedPosECEF {
+		t.Errorf("ECEF = %v,%v, want pass-through", p, ok)
+	}
+	if _, ok := (Mode{Static: true}).FixedPosToECEF(); ok {
+		t.Error("PosTypeNone reported a position")
+	}
+}

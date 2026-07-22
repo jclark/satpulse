@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
@@ -1260,6 +1261,25 @@ type Mode struct {
 
 func (m Mode) IsZero() bool {
 	return m == Mode{}
+}
+
+// FixedPosToECEF returns the fixed position in ECEF coordinates,
+// converting from LLH when that is the stored form, for backends whose
+// wire format takes only ECEF. It returns false when the mode carries
+// no fixed position.
+func (m Mode) FixedPosToECEF() (Point3D, bool) {
+	switch m.PosType {
+	case PosTypeECEF:
+		return m.FixedPosECEF, true
+	case PosTypeLLH:
+		ecef := geopos.WGS84.LLHtoECEF(geopos.LLH{
+			Lat:    m.FixedPosLLH[0].Degrees(),
+			Lon:    m.FixedPosLLH[1].Degrees(),
+			Height: m.Height.Meters(),
+		})
+		return Point3D{Meters(ecef[0]), Meters(ecef[1]), Meters(ecef[2])}, true
+	}
+	return Point3D{}, false
 }
 
 type NavMsgAuth byte
