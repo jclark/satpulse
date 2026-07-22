@@ -586,14 +586,10 @@ func (c *Configurator) nativeText(payload string, tRead time.Time) error {
 // handleAck resolves an ACK/NAK against the oldest outstanding request
 // with the acknowledged class+id. Responses arrive in request order on
 // all tested receivers, and promote ensures at most one request per
-// class+id is outstanding. Correlation by class+id alone has a known
-// narrow hazard: when a request times out and is resent, the first
-// send's late ACK can land inside the resend's response window and
-// complete it, leaving the resend's own ACK to complete the next
-// same-mid request (say, the CFG-NAVBAND readback poll after the V6
-// signal set). That takes a resend plus multi-second response delays
-// - the saturated-9600 case - and is inherent to a protocol whose
-// acknowledgements carry only the class+id; accepted as is.
+// class+id is outstanding. After a resend, the earlier send's late ACK
+// can complete the resend, leaving its real ACK for the next same-mid
+// request; acknowledgements carry only the class+id, so the two cannot
+// be told apart.
 func (c *Configurator) handleAck(mid casbin.MsgID, ack bool, tRead time.Time) {
 	for _, req := range c.reqs {
 		if req.mid != mid || req.state != reqAwaitingAck {
