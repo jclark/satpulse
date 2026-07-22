@@ -8,13 +8,14 @@ import (
 
 var casicReplayFiles = []string{
 	// ATGM332D-5N71 (V5)
-	"atgm332d-5n71-signal",
 	"atgm332d-5n71-pps",
 	"atgm332d-5n71-min-elev",
 	// AT6558D (V5). Recordings invalidated by configurator changes
-	// (message enables forcing CFG-RATE, then CFG serialization) were
-	// re-recorded on this module; the 5N71 is no longer attached.
+	// (message enables forcing CFG-RATE, then CFG serialization, then
+	// dropping the V5 signal verify readback) were re-recorded on this
+	// module; the 5N71 is no longer attached.
 	"at6558d-noop",
+	"at6558d-signal",
 	"at6558d-binary",
 	"at6558d-pvt-out",
 	"at6558d-tmode",
