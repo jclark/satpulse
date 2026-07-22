@@ -69,17 +69,22 @@ const (
 	CfgSectionPort  = 0x0001 // CFG-PRT
 	CfgSectionMsg   = 0x0002 // CFG-MSG rates
 	CfgSectionInf   = 0x0004 // CFG-INF
-	CfgSectionNav   = 0x0008 // CFG-RATE, CFG-TMODE, CFG-NAVX
+	CfgSectionNav   = 0x0008 // CFG-RATE, CFG-TMODE; CFG-NAVX per casictool, not the vendor doc
 	CfgSectionTP    = 0x0010 // CFG-TP
 	CfgSectionGroup = 0x0020 // CFG-GROUP
 	CfgSectionAll   = 0xFFFF
 )
 
-// CfgRst is CFG-RST (0x06 0x02) - receiver restart (4 bytes).
+// CfgRst is CFG-RST (0x06 0x02) - receiver restart (4 bytes). The
+// fields are the V5 layout (casic2.md); zkw3.md 3.13.3 documents the
+// V6 payload differently - bytes 0-2 reserved, byte 3 the start mode -
+// but the encodings coincide: StartMode occupies byte 3 with the same
+// hot/warm/cold/factory values, and a V6 request zeroes the rest, so
+// serializing this struct is wire-correct for both families.
 // The receiver does not acknowledge CFG-RST before restarting.
 type CfgRst struct {
-	NavBbrMask uint16 // BBR sections to clear, see Bbr* bits
-	ResetMode  uint8  // see Reset* values
+	NavBbrMask uint16 // BBR sections to clear, see Bbr* bits (V5)
+	ResetMode  uint8  // see Reset* values (V5)
 	StartMode  uint8  // see Start* values
 }
 
