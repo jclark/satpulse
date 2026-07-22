@@ -1145,7 +1145,7 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 			}
 			mm["height"] = cp.mode.Height.Meters()
 		}
-		if cp.mode.PosType != PosTypeNone {
+		if cp.mode.PosType != PosTypeNone && cp.mode.FixedPosAcc != 0 {
 			mm["fixedPosAcc"] = cp.mode.FixedPosAcc.Meters()
 		}
 		m["mode"] = mm
@@ -1255,7 +1255,7 @@ type Mode struct {
 	FixedPosECEF Point3D  // ECEF coordinates (when PosType == PosTypeECEF)
 	FixedPosLLH  [2]Angle // Latitude and Longitude (when PosType == PosTypeLLH)
 	Height       Length   // Height (when PosType == PosTypeLLH)
-	FixedPosAcc  Length   // accuracy of fixed position
+	FixedPosAcc  Length   // accuracy of fixed position; 0 = no accuracy stated (a receiver that stores none reads back 0; the JSON form omits the key instead)
 }
 
 func (m Mode) IsZero() bool {

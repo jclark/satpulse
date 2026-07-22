@@ -261,6 +261,18 @@ func TestConfigPropsJSONRoundTrip(t *testing.T) {
 			},
 		},
 		{
+			"mode ECEF no accuracy stated",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetMode(Mode{
+					Static:       true,
+					PosType:      PosTypeECEF,
+					FixedPosECEF: Point3D{Meters(4000000), Meters(500000), Meters(4800000)},
+				})
+				return cp
+			},
+		},
+		{
 			"mode LLH",
 			func() ConfigProps {
 				var cp ConfigProps
