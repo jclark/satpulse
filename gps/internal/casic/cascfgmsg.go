@@ -107,6 +107,12 @@ func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 		pv, sol, timeUTC, dop = casbin.Nav2PvhID, casbin.Nav2SolID, casbin.Nav2TimeUTCID, casbin.Nav2DopID
 	}
 	tp := flags&gpsprot.PVTMsgTimePulse != 0
+	// tp+after also wants a time message, for two reasons: on V5 the
+	// pulse message TIM-TP is pre-pulse (time of the next pulse), so a
+	// time message following the pulse is the only realization of
+	// after; on V6 TIM2-TPX is post-pulse and would suffice by itself,
+	// but its ACK does not guarantee emission (the F8N and AT372-6P
+	// acknowledge it and never emit), so time must not depend on it.
 	wantTime := flags&gpsprot.PVTMsgTime != 0 || (tp && flags&gpsprot.PVTMsgTimePulseAfter != 0)
 	var wantSol, wantPv, wantTimeUTC, wantDop bool
 	if wantTime {
