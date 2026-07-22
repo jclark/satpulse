@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/lib/casbin"
 )
 
 var casicReplayFiles = []string{
@@ -50,12 +51,37 @@ func TestReplayCASIC(t *testing.T) {
 	}
 }
 
-func casicPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) (bool, bool) {
+// casicPacketsEqual returns (equal, updatable). A mismatch between
+// two CASIC packets with the same class+id is a content change, safe
+// to auto-update in golden files; a different id, or a packet that is
+// not CASIC binary (a PCAS text query), is structural.
+func casicPacketsEqual(t *testing.T, actual []byte, expected gpsio.PacketLogEntry) (bool, bool) {
 	actualStr := string(actual)
 	expectedStr := expected.Data()
 	if actualStr == expectedStr {
 		return true, false
 	}
-	t.Errorf("%s: packets differ: actual %q, expected %q", msgID, actualStr, expectedStr)
-	return false, false
+	actualID, actualOK := casicMsgID(actualStr)
+	expectedID, expectedOK := casicMsgID(expectedStr)
+	if !actualOK || !expectedOK || actualID != expectedID {
+		t.Errorf("packets differ: actual %q, expected %q", actualStr, expectedStr)
+		return false, false
+	}
+	if am, err := casbin.ParseMsg(actualStr); err == nil {
+		if em, err := casbin.ParseMsg(expectedStr); err == nil {
+			t.Errorf("%v: packet content differs: actual %+v, expected %+v", actualID, am, em)
+			return false, true
+		}
+	}
+	t.Errorf("%v: packet content differs: actual %q, expected %q", actualID, actualStr, expectedStr)
+	return false, true
+}
+
+// casicMsgID extracts the class+id of a CASIC binary packet; false if
+// the packet is not CASIC binary.
+func casicMsgID(s string) (casbin.MsgID, bool) {
+	if len(s) < casbin.PacketMinLen || s[0] != 0xBA || s[1] != 0xCE {
+		return 0, false
+	}
+	return casbin.MakeMsgID(s[4], s[5]), true
 }
