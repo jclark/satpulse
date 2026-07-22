@@ -40,5 +40,5 @@
     "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "NAVIC", "SBAS"],
     "vendor": "Zhongke"
   },
-  "supports": ["fixedPos", "fixedPosAcc", "raw", "signal", "speed", "survey", "surveyAcc", "surveyMsg"]
+  "supports": ["fixedPos", "fixedPosAcc", "signal", "speed", "survey", "surveyAcc"]
 }
