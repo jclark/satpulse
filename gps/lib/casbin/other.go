@@ -72,6 +72,22 @@ const (
 	NmeaVtgID   MsgID = clsNmea | (0x05 << 8)
 	NmeaZdaID   MsgID = clsNmea | (0x08 << 8)
 	NmeaZdaV6ID MsgID = clsNmea | (0x06 << 8)
+	// Extra output sentences beyond the standard seven, from the NMEA
+	// message overviews (casic1.md 1.4 for V5, zkw2.md 2.4 for V6); a
+	// complete NMEA request disables them. Ids collide across families:
+	// V5 GST shares 0x07 with V6 TXT-ANT, V5 ZDA shares 0x08 with V6 DHV.
+	NmeaGstID    MsgID = clsNmea | (0x07 << 8) // V5
+	NmeaAntID    MsgID = clsNmea | (0x11 << 8) // V5
+	NmeaLpsID    MsgID = clsNmea | (0x12 << 8) // V5
+	NmeaDhvID    MsgID = clsNmea | (0x13 << 8) // V5
+	NmeaUtcID    MsgID = clsNmea | (0x16 << 8) // V5
+	NmeaTxtAntID MsgID = clsNmea | (0x07 << 8) // V6
+	NmeaDhvV6ID  MsgID = clsNmea | (0x08 << 8) // V6
+	NmeaTxtLpsID MsgID = clsNmea | (0x09 << 8) // V6
+	NmeaTxtInsID MsgID = clsNmea | (0x0B << 8) // V6
+	NmeaUtcV6ID  MsgID = clsNmea | (0x0C << 8) // V6
+	NmeaGstV6ID  MsgID = clsNmea | (0x0D << 8) // V6
+	NmeaTxtRfeID MsgID = clsNmea | (0x0E << 8) // V6
 )
 
 func init() {
@@ -152,4 +168,16 @@ func init() {
 	idNameMap[NmeaVtgID] = "VTG"
 	idNameMap[NmeaZdaID] = "ZDA"
 	idNameMap[NmeaZdaV6ID] = "ZDA6"
+	// Colliding ids keep one name: 0x07 shows GST (V6 TXT-ANT shares
+	// it) and 0x08 shows ZDA (V6 DHV shares it).
+	idNameMap[NmeaGstID] = "GST"
+	idNameMap[NmeaAntID] = "ANT"
+	idNameMap[NmeaLpsID] = "LPS"
+	idNameMap[NmeaDhvID] = "DHV"
+	idNameMap[NmeaUtcID] = "UTC"
+	idNameMap[NmeaTxtLpsID] = "TXTLPS"
+	idNameMap[NmeaTxtInsID] = "TXTINS"
+	idNameMap[NmeaUtcV6ID] = "UTC6"
+	idNameMap[NmeaGstV6ID] = "GST6"
+	idNameMap[NmeaTxtRfeID] = "TXTRFE"
 }

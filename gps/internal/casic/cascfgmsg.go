@@ -174,7 +174,11 @@ func (c *Configurator) generateTimTPReqs(tp, off bool) {
 // complete). Unlike binary message enables these are not nakOK: every
 // CASIC firmware emits the standard sentences, so a NAK is a genuine
 // refusal. GSV goes first because it carries the most traffic, so
-// turning it off frees a saturated line soonest.
+// turning it off frees a saturated line soonest. Completeness extends
+// past the modeled seven: without NMEAMsgOther the extra output
+// sentences the firmware manuals document are disabled too, via
+// addMsgRate (nakOK) because a sentence id may be absent in a given
+// firmware version and that refusal must not fail the request.
 func (c *Configurator) generateNMEAReqs(flags gpsprot.NMEAMsgFlags) {
 	zda := casbin.NmeaZdaID
 	if c.family == familyV6 {
@@ -198,5 +202,18 @@ func (c *Configurator) generateNMEAReqs(flags gpsprot.NMEAMsgFlags) {
 			rate = 1
 		}
 		c.addReq(&casbin.CfgMsg{Target: m.mid, Rate: rate})
+	}
+	if flags&gpsprot.NMEAMsgOther != 0 {
+		return
+	}
+	extra := []casbin.MsgID{casbin.NmeaTxtAntID, casbin.NmeaDhvV6ID,
+		casbin.NmeaTxtLpsID, casbin.NmeaTxtInsID, casbin.NmeaUtcV6ID,
+		casbin.NmeaGstV6ID, casbin.NmeaTxtRfeID}
+	if c.family == familyV5 {
+		extra = []casbin.MsgID{casbin.NmeaGstID, casbin.NmeaAntID,
+			casbin.NmeaLpsID, casbin.NmeaDhvID, casbin.NmeaUtcID}
+	}
+	for _, mid := range extra {
+		c.addMsgRate(mid, false)
 	}
 }

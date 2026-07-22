@@ -425,15 +425,22 @@ func TestNMEAOut(t *testing.T) {
 				casbin.NmeaGsvID: 0, casbin.NmeaRmcID: 1, casbin.NmeaGgaID: 0,
 				casbin.NmeaGsaID: 0, casbin.NmeaZdaV6ID: 1, casbin.NmeaVtgID: 0,
 				casbin.NmeaGllID: 0,
+				casbin.NmeaTxtAntID: 0, casbin.NmeaDhvV6ID: 0, casbin.NmeaTxtLpsID: 0,
+				casbin.NmeaTxtInsID: 0, casbin.NmeaUtcV6ID: 0, casbin.NmeaGstV6ID: 0,
+				casbin.NmeaTxtRfeID: 0,
 			},
 		},
 		{
+			// V5 ZDA is 0x08 (V6 uses 0x06); the extra sentences are the
+			// V5 id set.
 			name:  "V5 ZDA uses 0x08",
 			flags: gpsprot.NMEAMsgZDA,
 			expect: map[casbin.MsgID]uint16{
 				casbin.NmeaGsvID: 0, casbin.NmeaRmcID: 0, casbin.NmeaGgaID: 0,
 				casbin.NmeaGsaID: 0, casbin.NmeaZdaID: 1, casbin.NmeaVtgID: 0,
 				casbin.NmeaGllID: 0,
+				casbin.NmeaGstID: 0, casbin.NmeaAntID: 0, casbin.NmeaLpsID: 0,
+				casbin.NmeaDhvID: 0, casbin.NmeaUtcID: 0,
 			},
 		},
 		{
@@ -441,6 +448,19 @@ func TestNMEAOut(t *testing.T) {
 			flags: gpsprot.NMEAMsgNone,
 			expect: map[casbin.MsgID]uint16{
 				casbin.NmeaGsvID: 0, casbin.NmeaRmcID: 0, casbin.NmeaGgaID: 0,
+				casbin.NmeaGsaID: 0, casbin.NmeaZdaID: 0, casbin.NmeaVtgID: 0,
+				casbin.NmeaGllID: 0,
+				casbin.NmeaGstID: 0, casbin.NmeaAntID: 0, casbin.NmeaLpsID: 0,
+				casbin.NmeaDhvID: 0, casbin.NmeaUtcID: 0,
+			},
+		},
+		{
+			// Other means the unmodeled sentences keep their current
+			// selection: only the standard seven are touched.
+			name:  "Other leaves extra sentences alone",
+			flags: gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgOther,
+			expect: map[casbin.MsgID]uint16{
+				casbin.NmeaGsvID: 0, casbin.NmeaRmcID: 1, casbin.NmeaGgaID: 0,
 				casbin.NmeaGsaID: 0, casbin.NmeaZdaID: 0, casbin.NmeaVtgID: 0,
 				casbin.NmeaGllID: 0,
 			},
@@ -478,8 +498,8 @@ func TestNMEAOutNoResponse(t *testing.T) {
 	cp := probe(t, rcvr)
 	rcvr.silent = map[casbin.MsgID]bool{casbin.CfgMsgID: true}
 	_, errCount := configure(t, cp, rcvr, nmeaTarget(gpsprot.NMEAMsgRMC))
-	if errCount != 7 {
-		t.Errorf("ErrorCount = %d, want 7 (every CFG-MSG set timed out)", errCount)
+	if errCount != 14 {
+		t.Errorf("ErrorCount = %d, want 14 (every CFG-MSG set timed out, extras included)", errCount)
 	}
 }
 
