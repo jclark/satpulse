@@ -197,10 +197,7 @@ func (c *Configurator) signalConfigProps(props *gpsprot.ConfigProps) {
 		props.SetSignalsEnabled(navBandToSignals(mask))
 		return
 	}
-	if c.navx != nil && c.needsSignals() {
-		// The guard mirrors minElevConfigProps: the NAVX readback is
-		// shared with min elevation, so a min-elev-only request must
-		// not report an unrequested signal set.
+	if c.navx != nil {
 		var ss gpsprot.SignalSet
 		for _, e := range v5NavSystems {
 			if c.navx.NavSystem&e.bit != 0 {
