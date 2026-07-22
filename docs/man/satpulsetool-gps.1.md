@@ -36,9 +36,10 @@ they cannot be performed simultaneously.
 
 With high-level configuration, configuration changes are requested with device-independent semantics;
 **satpulsetool** determines the best way to implement the request for the particular GPS receiver.
-High-level configuration is currently supported on two families of GPS receiver:
+High-level configuration is currently supported on three families of GPS receiver:
 u-blox receivers (from the u-blox 6 platform through to the X20 platform);
-Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960).
+Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960);
+Zhongke Microelectronics receivers using CASIC (such as the ATGM332D and ATGM336H).
 
 With low-level configuration, a *message file* is used.
 A message file is a file in TOML format that defines a collection of named messages.
