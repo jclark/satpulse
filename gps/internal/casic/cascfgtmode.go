@@ -6,7 +6,6 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/casbin"
-	"github.com/jclark/satpulse/gps/lib/geopos"
 )
 
 // Time mode (positioning mode) configuration branches by family:
@@ -117,17 +116,9 @@ func newTModeTarget(mode gpsprot.Mode, survey gpsprot.Survey) *tmodeTarget {
 	}
 	tt.mode = casbin.TModeFixed
 	tt.posAcc = mode.FixedPosAcc.Meters()
-	if mode.PosType == gpsprot.PosTypeLLH {
-		ecef := geopos.WGS84.LLHtoECEF(geopos.LLH{
-			Lat:    mode.FixedPosLLH[0].Degrees(),
-			Lon:    mode.FixedPosLLH[1].Degrees(),
-			Height: mode.Height.Meters(),
-		})
-		tt.ecef = [3]float64{ecef[0], ecef[1], ecef[2]}
-	} else {
-		for i := range 3 {
-			tt.ecef[i] = mode.FixedPosECEF[i].Meters()
-		}
+	ecef, _ := mode.FixedPosToECEF()
+	for i := range 3 {
+		tt.ecef[i] = ecef[i].Meters()
 	}
 	return tt
 }
