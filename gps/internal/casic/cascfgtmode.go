@@ -92,6 +92,9 @@ func (c *Configurator) generateTModeSet() {
 		mode = gpsprot.Mode{Static: true}
 	}
 	tt := newTModeTarget(mode, survey)
+	if tt.mode == casbin.TModeSurvey {
+		c.survey = true
+	}
 	if tt.mode == casbin.TModeSurvey && cur == casbin.TModeSurvey && survey.Flags&gpsprot.SurveyAgain != 0 {
 		c.addTModeSet(&tmodeTarget{mode: casbin.TModeAuto})
 	}

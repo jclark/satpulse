@@ -42,6 +42,7 @@ type Configurator struct {
 	phase      int                 // index into genPhases of the next phase to generate
 	touched    uint16              // CfgSection* bits of the sections set requests touched
 	msgEnabled bool                // a message-output request enabled some output
+	survey     bool                // this invocation put the receiver into survey-in mode
 	tp         *casbin.CfgTP       // latest CFG-TP readback; nil if never answered
 	tm5        *casbin.CfgTMode    // latest V5 CFG-TMODE readback
 	tm6        *casbin.CfgTMode2   // latest V6 CFG-TMODE2 readback

@@ -509,6 +509,8 @@ func TestPVTOut(t *testing.T) {
 		name   string
 		monVer *casbin.MonVer
 		flags  gpsprot.PVTMsgFlags
+		tm6    *casbin.CfgTMode2
+		survey bool // request a survey, so the TIM2-TIMEPOS gate opens
 		expect map[casbin.MsgID]uint16
 	}{
 		{
@@ -531,11 +533,12 @@ func TestPVTOut(t *testing.T) {
 			monVer: v6,
 			flags:  gpsprot.PVTMsgTimingPTP | gpsprot.PVTMsgOff,
 			// tp+after+TAI: SOL for TAI time, TIM-TP for the pulse;
-			// quality adds DOP; leap adds TIM2-LS; survey adds
-			// TIM2-TIMEPOS; PVH and TIMEUTC turned off.
+			// quality adds DOP; leap adds TIM2-LS; no survey was
+			// requested, so TIM2-TIMEPOS is turned off with PVH and
+			// TIMEUTC.
 			expect: map[casbin.MsgID]uint16{
 				casbin.Nav2SolID: 1, casbin.TimTPID: 1, casbin.Nav2DopID: 1,
-				casbin.Tim2LsID: 1, casbin.Tim2TimePosID: 1,
+				casbin.Tim2LsID: 1, casbin.Tim2TimePosID: 0,
 				casbin.Nav2PvhID: 0, casbin.Nav2TimeUTCID: 0,
 			},
 		},
@@ -557,18 +560,31 @@ func TestPVTOut(t *testing.T) {
 			expect: map[casbin.MsgID]uint16{casbin.MsgGPSUTCID: 1},
 		},
 		{
-			name:   "V6 survey enables TIM2-TIMEPOS",
+			// The survey flag alone declares interest (satpulsed sets it
+			// unconditionally); without a survey request nothing is sent.
+			name:   "V6 survey flag without a survey enables nothing",
 			monVer: v6,
 			flags:  gpsprot.PVTMsgSurvey,
+		},
+		{
+			name:   "V6 survey request enables TIM2-TIMEPOS",
+			monVer: v6,
+			flags:  gpsprot.PVTMsgSurvey,
+			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
+			survey: true,
 			expect: map[casbin.MsgID]uint16{casbin.Tim2TimePosID: 1},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rcvr := &testReceiver{monVer: tc.monVer}
+			rcvr := &testReceiver{monVer: tc.monVer, tm6: tc.tm6}
 			cp := probe(t, rcvr)
 			target := gpsprot.NewConfigTarget()
 			target.Opts.PVTMsg = tc.flags
+			if tc.survey {
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second, AccLimit: 20 * gpsprot.Meter}
+			}
 			_, errCount := configure(t, cp, rcvr, target)
 			if errCount != 0 {
 				t.Errorf("ErrorCount = %d, want 0", errCount)

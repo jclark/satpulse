@@ -139,7 +139,11 @@ func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 	set(dop, wantDop)
 	if c.family == familyV6 {
 		set(casbin.Tim2LsID, flags&gpsprot.PVTMsgLeapSecond != 0)
-		set(casbin.Tim2TimePosID, flags&gpsprot.PVTMsgSurvey != 0)
+		// Gated on the tmode phase having put the receiver into
+		// survey-in mode, matching ubx: the survey flag declares
+		// interest in progress (satpulsed sets it unconditionally),
+		// and there is no progress to deliver outside a survey.
+		set(casbin.Tim2TimePosID, flags&gpsprot.PVTMsgSurvey != 0 && c.survey)
 	} else {
 		set(casbin.MsgGPSUTCID, flags&gpsprot.PVTMsgLeapSecond != 0)
 	}
