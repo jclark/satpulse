@@ -73,9 +73,13 @@ const (
 
 // casReq is a single configuration request: one CASIC packet expecting
 // an ACK or NAK correlated by class+id. When nakOK is set a NAK is an
-// acceptable outcome (the request succeeds), optionally generating a
-// fallback request via onNak first; this is how NAK-driven fallback
-// stays out of the error path.
+// acceptable outcome: the request succeeds and whatever it would have
+// delivered shows as absence. If a refusal should ever instead trigger
+// a fallback request (try message B when A is refused), give casReq an
+// onNak callback invoked from handleAck's nakOK branch before it marks
+// the request succeeded, and generate the replacement request there;
+// promote sends it in order. The TIM-TP to TIM2-TPX fallback worked
+// that way until V6 stopped attempting TIM-TP at all.
 type casReq struct {
 	state      casReqState
 	mid        casbin.MsgID // class+id, for ACK correlation
@@ -84,7 +88,6 @@ type casReq struct {
 	err        error
 	nakOK      bool              // NAK is acceptable, not a failure
 	onAck      func()            // records the accepted values on ACK
-	onNak      func()            // generates the fallback request when NAKed
 	noAck      bool              // no response expected (CFG-RST): sending is success
 	onData     func(casbin.Msg)  // receives data responses (polls); ACK still completes
 	onText     func(string) bool // matches NMEA replies; true completes the request
@@ -503,9 +506,9 @@ func (c *Configurator) addReq(m casbin.Msg) {
 }
 
 // addReqNakOK is addReq for requests where a NAK is an acceptable
-// outcome; onNak (optional) generates a fallback request first.
-func (c *Configurator) addReqNakOK(m casbin.Msg, onNak func()) {
-	c.addMsg(m, casReq{nakOK: true, onNak: onNak})
+// outcome.
+func (c *Configurator) addReqNakOK(m casbin.Msg) {
+	c.addMsg(m, casReq{nakOK: true})
 }
 
 // addSetReq appends a property set request. When the receiver
@@ -644,9 +647,6 @@ func (c *Configurator) handleAck(mid casbin.MsgID, ack bool, tRead time.Time) {
 			}
 			req.state = reqSucceeded
 		} else if req.nakOK {
-			if req.onNak != nil {
-				req.onNak()
-			}
 			req.state = reqSucceeded
 		} else {
 			req.state = reqFailed

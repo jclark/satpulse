@@ -70,7 +70,7 @@ func (c *Configurator) addMsgRate(mid casbin.MsgID, on bool) {
 	if on {
 		rate = 1
 	}
-	c.addReqNakOK(&casbin.CfgMsg{Target: mid, Rate: rate}, nil)
+	c.addReqNakOK(&casbin.CfgMsg{Target: mid, Rate: rate})
 }
 
 // generateSatsReqs configures the messages carrying satellite
