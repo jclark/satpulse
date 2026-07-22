@@ -75,7 +75,7 @@ func (c *Configurator) minElevConfigProps(props *gpsprot.ConfigProps) {
 		}
 		return
 	}
-	if c.navx != nil && c.needsMinElev() {
+	if c.navx != nil {
 		props.SetMinElevation(gpsprot.DegreesFromFloat(float64(c.navx.MinElev)))
 	}
 }
