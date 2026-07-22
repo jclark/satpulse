@@ -5,17 +5,20 @@
 CASIC has two firmware families sharing packet framing but with
 different message classes and several inverted enum encodings:
 
-- **V5** (URANUS5, e.g. ATGM332D-5N71): NAV class (0x01) navigation
-  messages, GPS/BDS/GLO only, constellation-level signal selection.
-- **V6** (URANUS6, e.g. ATGM332D-...-F8N dual band, AT362/AT632
-  timing): NAV2 class (0x11), adds GAL, per-signal selection via
-  CFG-NAVBAND.
+- **V5** (URANUS5, e.g. ATGM332D-5N71, AT6558D): NAV class (0x01)
+  navigation messages, GPS/BDS/GLO only, constellation-level signal
+  selection.
+- **V6** (URANUS6, e.g. ATGM332D-...-F8N dual band, AT372-6P nav,
+  AT362/AT632 timing): NAV2 class (0x11), adds GAL, per-signal
+  selection via CFG-NAVBAND.
 
 `--show-receiver` reports the family in the firmware string
-("SW=URANUS5,V5.3.0.0" / "SW=URANUS6,V6.3.2.0"). The V5 reports NO
-hardware identity (no MON-VER; only the PCAS06 firmware query
-answers), so its HW.toml `model` must be supplied from
-CLAUDE.local.md, not from `--show-receiver`.
+("SW=URANUS5,V5.3.0.0" / "SW=URANUS6,V6.3.2.0"). The V5 has no
+MON-VER; its identity comes from the PCAS06 text queries, and how
+much they say is per-unit: the AT6558D answers the hardware query
+with `AT6558D,0000000000000`, while the 5N71's hardware string was
+empty and its HW.toml `model` had to be supplied from CLAUDE.local.md
+instead of `--show-receiver`.
 
 ## Acknowledge-but-never-emit: plan captures per unit
 
@@ -23,22 +26,26 @@ CASIC firmware acknowledges enabling messages it never emits, so the
 `Supports:` line OVERSTATES what is capturable. The per-unit truth
 (from the gpshwtest characterizations in `gpshwtest/HW/`):
 
-| Output | F8N (V6 nav) | AT632 (V6 timing) | 5N71 (V5) |
-|---|---|---|---|
-| Time of pulse (TIM2-TPX / TIM-TP) | acked, never emits | EMITS | EMITS (TIM-TP) |
-| Leap second (TIM2-LS / MSG-GPSUTC) | acked, never emits | EMITS (current leap, no pending event) | acked, never emits |
-| Survey (TIM2-TIMEPOS) | acked, never emits | EMITS | n/a |
-| Raw (RXM2-MEASX/SFRBX) | acked, never emits | EMITS | n/a |
-| RTCM | acked, never emits | CFG NAKed | n/a |
+| Output | F8N (V6 nav) | AT372-6P (V6 nav) | AT632 (V6 timing) | 5N71/AT6558D (V5) |
+|---|---|---|---|---|
+| Time of pulse (TIM2-TPX / TIM-TP) | acked, never emits | acked, never emits | EMITS | EMITS (TIM-TP) |
+| Leap second (TIM2-LS / MSG-GPSUTC) | acked, never emits | not delivered | EMITS (current leap, no pending event) | acked, never emits |
+| Survey (TIM2-TIMEPOS) | acked, never emits | EMITS | EMITS | n/a |
+| Raw (RXM2-MEASX/SFRBX) | acked, never emits | EMITS | EMITS | n/a |
+| RTCM | acked, never emits | never emits | CFG NAKed | n/a |
 
-So: pulse-time, leap, survey, and raw captures come from the AT632;
-the F8N contributes PVT/satellite/NMEA/dual-band captures; the V5
-contributes the whole NAV-class side. No attached CASIC unit emits
-RTCM.
+So: pulse-time and leap captures come from the AT632; survey and raw
+from the AT632 or the AT372-6P; the F8N contributes
+PVT/satellite/NMEA/dual-band captures; the V5 contributes the whole
+NAV-class side. No attached CASIC unit emits RTCM.
 
 TIM2-LS on the AT632 is emitted (roughly once per second per monitored
 constellation) when `leap` is enabled and at least one non-GPS
-constellation is active; a GPS-only fix emits none. Its RaimType field
+constellation is active; a GPS-only fix emits none. Both facts
+re-measured 2026-07-22: 60 packets in 30 s with GPS+BDS active, zero
+in 15 s with `--gnss GPS`. (The gpshwtest at632.md note and baseline
+recorded leap as undelivered; corrected - the probe most plausibly ran
+in a GPS-only state.) Its RaimType field
 is 0 before the UTC almanac is decoded (zero leap fields) and 1 once
 decoded (carrying the current leap, Dtls==Dtlsf, no pending change). It
 does not reach RaimType 2 (a pending leap event) without an actual
@@ -54,8 +61,8 @@ picks the class: V5 NAV-x, V6 NAV2-x.
 - `time,tai` => NAV-SOL / NAV2-SOL (also carries ECEF pos/vel)
 - `pos`/`vel` => NAV-PV / NAV2-PVH; with `ecef` => NAV-SOL / NAV2-SOL
 - `qual` => NAV-SOL + NAV-DOP (NAV2-SOL + NAV2-DOP)
-- `tp` => TIM-TP; on V6 TIM-TP is NAKed by both known units and the
-  configurator falls back to TIM2-TPX automatically
+- `tp` => TIM-TP (V5) / TIM2-TPX (V6; the V6 protocol does not
+  document TIM-TP and the configurator does not attempt it)
 - `leap` => TIM2-LS (V6) / MSG-GPSUTC (V5, acked-never-emitted)
 - `survey` => TIM2-TIMEPOS (V6 only)
 - `--sats-out sat` => NAV-GPSINFO + NAV-BDSINFO + NAV-GLNINFO (V5) /
@@ -73,7 +80,8 @@ Enable via the message files in `configs/gpsmsg/zhongke/`
 invocation with `-m` after the high-level one:
 
 - TIM2-TIMEGPS/BDS/GLN/GAL (per-constellation time): tags
-  `casbin-tim2-time{gps,bds,gln,gal}` (V6 files)
+  `casbin-tim2-time{gps,bds,gln,gal}` (at632.toml only;
+  atgm332d-v6.toml has no TIM2-TIME* tags)
 - TIM2-TPX directly: `casbin-tim2-tpx`
 - Anything to a non-default rate; polls via `get-*` tags
 
@@ -155,14 +163,15 @@ re-acquisition.
 
 ## V5 line budget
 
-The 5N71's factory default is 9600, where the default NMEA load
-saturates the line (~6 s response lag, spliced packets); the attached
-unit is persistently saved at 115200 (CLAUDE.local.md). Capture at
-115200. Record `default-baud = 115200` in HW.toml for this unit (the
-NVM-saved rate) and note the 9600 factory default. If a 9600 capture
-variant is ever needed, budget the message set against ~960 bytes/s
-and expect configuration to need a quiet line (`nmea-quiet` tag)
-first.
+The V5 factory default is 9600, where the default NMEA load saturates
+the line (~6 s response lag, spliced packets). The detached 5N71 was
+persistently saved at 115200; the attached AT6558D rests at 9600
+(running and NVM) and sessions raise the running speed to 115200
+without saving (see gpshwtest/HW/at6558d.md). Capture at 115200 after
+raising the speed, and record the unit's NVM-saved rate as
+`default-baud` in HW.toml. If a 9600 capture variant is ever needed,
+budget the message set against ~960 bytes/s and expect configuration
+to need a quiet line (`nmea-quiet` tag) first.
 
 ## Decode-path checklist
 
