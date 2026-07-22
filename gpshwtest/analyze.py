@@ -777,16 +777,8 @@ class Analyzer:
         if self.canary is not None:
             path, v = self.canary
             if config_value(cfg, path) == v:
-                if "reload" in self.supports:
-                    self.failures.append(
-                        f"reload: unsaved {'.'.join(path)} change to {v!r} survived reload")
-                else:
-                    # The backend does not declare reload; the surviving
-                    # canary confirms the operation does nothing here.
-                    # That is the declared absence at work - data, not a
-                    # broken persistence guarantee.
-                    self.observations.append(
-                        Observation("reload", None, None, None, None))
+                self.failures.append(
+                    f"reload: unsaved {'.'.join(path)} change to {v!r} survived reload")
                 return
         if self.reload_nvm is not None and not config_model_equal(self.reload_nvm, cfg):
             self.pending_nvm.append((self.delta_keys(self.reload_nvm, cfg),

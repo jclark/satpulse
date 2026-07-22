@@ -718,12 +718,10 @@ class ProbeRun:
                                     {"op": "session-speed", "role": "rediscover-try",
                                      "speed": sp}, retry=False)
                 if inv.error is None:
-                    # An answer at sp proves the line runs at sp. The
-                    # readback's baudRate is stored configuration, which
-                    # can lawfully differ from the live line (a V5 reload
-                    # restores the stored baud without retuning the
-                    # running UART), so it must not override the observed
-                    # speed.
+                    baud = inv.config().get("baudRate")
+                    if isinstance(baud, int) and baud > 0 and baud != sp:
+                        self.tool.set_speed(baud)
+                        return baud
                     return sp
             if attempt == 0:
                 time.sleep(RESET_SETTLE)
@@ -1106,15 +1104,14 @@ class ProbeRun:
         if uart:
             self.rediscover_speed()
         nvm = self.show_config("readback-reload-1", "reload", "reload-1")
-        canary_v: int | None = None
         if nvm is not None:
             canary = next(p for p in PROPS if p.name == "minElevation")
             if config_value(nvm, canary.path) is not None:
-                canary_v = 7 if config_value(nvm, canary.path) != 7 else 12
+                v = 7 if config_value(nvm, canary.path) != 7 else 12
                 self.tool.gps("canary-set-minElevation",
-                              target_arg({"Props": canary.props(canary_v)}),
+                              target_arg({"Props": canary.props(v)}),
                               {"op": "canary-set", "prop": canary.name,
-                               "path": list(canary.path), "value": canary_v})
+                               "path": list(canary.path), "value": v})
         self.tool.gps("reload-2", target_arg({"Opts": {"Reset": "reload"}}),
                       {"op": "reload", "round": 2, "uart": uart})
         self.resync_speed(uart, raised)
@@ -1125,15 +1122,6 @@ class ProbeRun:
         self.restore_signals(initial)
         if base is not None:
             self.restore_protocol(base)
-        # A surviving canary means the reload was ineffective (a receiver
-        # without reload support): the second readback is then the running
-        # configuration with the canary in it, not an NVM image, and using
-        # it as the NVM reference would bake the canary into NVM when the
-        # disruptive recovery saves that reference back. Fall back to the
-        # pre-canary readback.
-        if (nvm2 is not None and canary_v is not None
-                and config_value(nvm2, canary.path) == canary_v):
-            return nvm
         return nvm2 if nvm2 is not None else nvm
 
     def probe_disruptive(self, initial: dict[str, Any], nvm: dict[str, Any],
