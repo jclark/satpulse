@@ -1,6 +1,8 @@
 package gpscmd
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"slices"
@@ -815,6 +817,210 @@ func TestParseFlagsInvalid(t *testing.T) {
 				t.Errorf("parseFlags returned nil error")
 			} else if vars != nil {
 				t.Errorf("parseFlags returned non-nil vars")
+			}
+		})
+	}
+}
+
+// mustTargetJSON resolves a JSON target the way --target-json does,
+// failing the test on error.
+func mustTargetJSON(t *testing.T, s string) *gpsprot.ConfigTarget {
+	t.Helper()
+	p := &flagParser{targetJSON: s}
+	if err := p.resolveTargetJSON(); err != nil {
+		t.Fatalf("resolveTargetJSON: %v", err)
+	}
+	return p.vars.targetJSON
+}
+
+// A JSON target bypasses the flag-level checks, so resolveTargetJSON
+// applies their semantic equivalents (validateTarget), adapted to the
+// model's full range.
+func TestResolveTargetJSONValidates(t *testing.T) {
+	tests := []struct {
+		name      string
+		json      string
+		expectErr bool
+	}{
+		{
+			name: "valid signals and time GNSS",
+			json: `{"Props":{"signalsEnabled":{"GPS":["L1"],"GAL":["E1"]},"timeGNSS":"GAL"}}`,
+		},
+		{
+			name:      "augmentation-only signals",
+			json:      `{"Props":{"signalsEnabled":{"GAL":["E6"]}}}`,
+			expectErr: true,
+		},
+		{
+			name:      "time GNSS with none of its signals enabled",
+			json:      `{"Props":{"signalsEnabled":{"GPS":["L1"]},"timeGNSS":"GAL"}}`,
+			expectErr: true,
+		},
+		{
+			name: "zero pulse width disables",
+			json: `{"Props":{"timePulse":{"width":0}}}`,
+		},
+		{
+			name:      "negative pulse width",
+			json:      `{"Props":{"timePulse":{"width":-0.001}}}`,
+			expectErr: true,
+		},
+		{
+			name:      "zero pulse period",
+			json:      `{"Props":{"timePulse":{"period":0}}}`,
+			expectErr: true,
+		},
+		{
+			name: "pulse period of an hour",
+			json: `{"Props":{"timePulse":{"period":3600}}}`,
+		},
+		{
+			name:      "pulse period beyond an hour",
+			json:      `{"Props":{"timePulse":{"period":3601}}}`,
+			expectErr: true,
+		},
+		{
+			name:      "pulse width not less than period",
+			json:      `{"Props":{"timePulse":{"width":1,"period":1}}}`,
+			expectErr: true,
+		},
+		{
+			name:      "minimum elevation out of range",
+			json:      `{"Props":{"minElevation":91}}`,
+			expectErr: true,
+		},
+		{
+			name:      "survey accuracy under a millimeter",
+			json:      `{"Opts":{"Survey":{"MinDur":60000000000,"AccLimit":0.0005}}}`,
+			expectErr: true,
+		},
+		{
+			name: "fixed position with no accuracy stated",
+			json: `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000]}}}`,
+		},
+		{
+			name:      "fixed position accuracy under a millimeter",
+			json:      `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000],"fixedPosAcc":0.0005}}}`,
+			expectErr: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &flagParser{targetJSON: tc.json}
+			err := p.resolveTargetJSON()
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestResolveTargetJSONStdin(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdin := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		r.Close()
+	})
+	if _, err := w.WriteString(`{"Get":["baudRate"]}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	target := mustTargetJSON(t, "-")
+	if target.Get != gpsprot.PropIDBaudRate {
+		t.Errorf("Get = %v, want baudRate", target.Get)
+	}
+}
+
+func TestResolveTargetJSONTrailingData(t *testing.T) {
+	for _, s := range []string{`{} {}`, `{} trailing`} {
+		p := &flagParser{targetJSON: s}
+		if err := p.resolveTargetJSON(); err == nil {
+			t.Errorf("resolveTargetJSON(%q) succeeded, want error", s)
+		}
+	}
+}
+
+func TestResolveTargetJSONUnknownField(t *testing.T) {
+	for _, s := range []string{
+		`{"Unknown":true}`,
+		`{"Props":{"unknown":true}}`,
+		`{"Opts":{"Unknown":true}}`,
+	} {
+		p := &flagParser{targetJSON: s}
+		if err := p.resolveTargetJSON(); err == nil {
+			t.Errorf("resolveTargetJSON(%s) succeeded, want error", s)
+		}
+	}
+}
+
+func TestResolveTargetJSONReadbackProps(t *testing.T) {
+	var props gpsprot.ConfigProps
+	props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA))
+	props.SetPort("UART1")
+	b, err := json.Marshal(&props)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := mustTargetJSON(t, fmt.Sprintf(`{"Props":%s}`, b))
+	if target.Props.ReadOnlyProps() != 0 {
+		t.Errorf("read-only properties not cleared: %v", target.Props.ReadOnlyProps())
+	}
+	if got, ok := target.Props.GetSignalsEnabled(); !ok || got != gpsprot.SignalSetOf(gpsprot.SigGPSL1CA) {
+		t.Errorf("signalsEnabled = %v, %t", got, ok)
+	}
+}
+
+func TestTargetJSONShowPortConfigSupport(t *testing.T) {
+	v, _, err := parseFlags("gps", []string{"-d", "/dev/ttyACM0", "--target-json", `{}`, "--show-port"})
+	if err != nil {
+		t.Fatalf("parseFlags: %v", err)
+	}
+	all, _ := v.configSupport.flags()
+	if all != gpsprot.ConfigSupportPort {
+		t.Errorf("configSupport = %v, want port", all.Items())
+	}
+}
+
+func TestTargetJSONShowTagsExclusive(t *testing.T) {
+	_, _, err := parseFlags("gps", []string{"--target-json", `{}`, "--msg-file", "messages.toml", "--show-tags"})
+	if err == nil {
+		t.Fatal("parseFlags succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "--target-json cannot be combined with --msg-file") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// Flags that contribute to the configuration request are rejected in
+// combination with --target-json: the JSON target is the whole request.
+func TestTargetJSONExclusive(t *testing.T) {
+	tests := [][]string{
+		{"--gnss", "GPS"},
+		{"--pps", "0.1"},
+		{"--survey"},
+		{"--save"},
+		{"--speed", "115200"},
+		{"--pvt-out", "pos"},
+	}
+	for _, extra := range tests {
+		t.Run(extra[0], func(t *testing.T) {
+			args := append([]string{"-d", "/dev/ttyACM0", "--target-json", "{}"}, extra...)
+			_, _, err := parseFlags("gps", args)
+			if err == nil || !strings.Contains(err.Error(), "--target-json cannot be combined with "+extra[0]) {
+				t.Errorf("err = %v, want combination error", err)
 			}
 		})
 	}
