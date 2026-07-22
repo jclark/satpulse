@@ -1,6 +1,8 @@
 package casic
 
 import (
+	"errors"
+
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/casbin"
 )
@@ -14,9 +16,14 @@ import (
 // supported set is GPS L1 C/A, BDS B1I, GLONASS L1.
 //
 // Realization per the semantics: the requested set is intersected with
-// the supported set (signals the receiver does not have drop out
-// silently), the result is requested, and the achieved set is reported
-// from the verify readback.
+// what is knowable in advance (the fixed V5 family set; the signals
+// CFG-NAVBAND can express on V6), and a request left with no
+// non-augmentation signal of a major GNSS fails rather than writing a
+// selection that would disable every constellation (the ubx guard).
+// On V5 the ACKed values are reported as achieved. On V6 the ACK means
+// "enabled the intersection with my capability" - the silicon clamps
+// the reception mask - so the achieved set is read back, the one case
+// where a post-set readback is legitimate.
 
 // navBandSignals maps CFG-NAVBAND bit positions to signals. BDS B1I
 // has two bits (GEO and MEO satellites); both follow SigBDSB1I.
@@ -131,9 +138,12 @@ func (c *Configurator) generateSignalSet() {
 		if c.navBand == nil {
 			return // property absent on this receiver
 		}
+		mask := signalsToNavBand(requested)
+		if !c.checkSignals(navBandToSignals(mask)) {
+			return
+		}
 		nb := *c.navBand
 		nb.SigBandAuto = 0
-		mask := signalsToNavBand(requested)
 		nb.SigIDMaskFix = mask
 		nb.SigIDMask = mask
 		c.addSetReq(&nb, func() { c.navBand = &nb })
@@ -147,19 +157,32 @@ func (c *Configurator) generateSignalSet() {
 	if c.navx == nil {
 		return
 	}
-	want := (requested & v5Signals).GNSSSet()
+	want := requested & v5Signals
+	if !c.checkSignals(want) {
+		return
+	}
+	gs := want.GNSSSet()
 	var sys uint8
 	for _, e := range v5NavSystems {
-		if want.Contains(e.gnss) {
+		if gs.Contains(e.gnss) {
 			sys |= e.bit
 		}
 	}
 	c.addSetReq(&casbin.CfgNavx{Mask: casbin.NavxNavSystem, NavSystem: sys},
 		func() { c.navx.NavSystem = sys })
-	// The acknowledged values are not the whole truth here either: the
-	// 5N71 acknowledges an empty constellation set without applying it,
-	// so the achieved set needs one readback.
-	c.pollNavx()
+}
+
+// checkSignals reports whether the signal set a set request would
+// realize keeps at least one non-augmentation signal of a major GNSS,
+// matching the ubx guard. If not, the request is failed instead of
+// sent: writing it would disable every constellation, which is never
+// what a request that named signals meant.
+func (c *Configurator) checkSignals(ss gpsprot.SignalSet) bool {
+	if ss&gpsprot.SigSetMajor&^gpsprot.SigSetAugment != 0 {
+		return true
+	}
+	c.addFailedReq(errors.New("no supported non-augmentation major-GNSS signal in the requested set"))
+	return false
 }
 
 // signalConfigProps reports the enabled signal set from the readback.

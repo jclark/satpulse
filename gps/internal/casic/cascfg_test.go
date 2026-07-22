@@ -1239,16 +1239,6 @@ func TestSignalSelection(t *testing.T) {
 			expectSys:     casbin.NavSysGPS,
 			expectSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA),
 		},
-		{
-			// An all-GAL request empties to NavSystem 0, which the
-			// receiver acknowledges without applying; the readback must
-			// report the set actually in force.
-			name:          "V5 empty intersection ACKed but not applied",
-			navx:          &casbin.CfgNavx{NavSystem: casbin.NavSysGPS | casbin.NavSysGLN},
-			request:       gpsprot.SigSetGAL,
-			expectSys:     casbin.NavSysGPS | casbin.NavSysGLN,
-			expectSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGLOL1),
-		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1275,6 +1265,60 @@ func TestSignalSelection(t *testing.T) {
 			got, ok := cfg.ConfigProps().GetSignalsEnabled()
 			if !ok || got != tc.expectSignals {
 				t.Errorf("SignalsEnabled = %v,%v\nwant %v", got, ok, tc.expectSignals)
+			}
+		})
+	}
+}
+
+// TestSignalRequestUnsupported checks the guard on requests whose
+// intersection with what the backend can express keeps no major-GNSS
+// signal: the request fails instead of disabling every constellation,
+// nothing is written, and the reported set is the current one from the
+// query readback.
+func TestSignalRequestUnsupported(t *testing.T) {
+	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
+	const curMask = 1<<casbin.SigGPSL1CA | 1<<casbin.SigGLOL1
+	tests := []struct {
+		name    string
+		monVer  *casbin.MonVer
+		navx    *casbin.CfgNavx
+		navBand *casbin.CfgNavBand
+		request gpsprot.SignalSet
+	}{
+		{
+			name:    "V5 all-GAL request empties the intersection",
+			navx:    &casbin.CfgNavx{NavSystem: casbin.NavSysGPS | casbin.NavSysGLN},
+			request: gpsprot.SigSetGAL,
+		},
+		{
+			name:    "V6 signal outside the CASIC universe",
+			monVer:  v6,
+			navBand: &casbin.CfgNavBand{SigBandAuto: 1, SigIDMaskFix: curMask, SigIDMask: curMask},
+			request: gpsprot.SignalSetOf(gpsprot.SigGPSL2C),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tc.monVer, navx: tc.navx, navBand: tc.navBand}
+			if tc.navBand != nil {
+				rcvr.sigCap = tc.navBand.SigIDMask
+			}
+			cp := probe(t, rcvr)
+			target := gpsprot.NewConfigTarget()
+			target.Props.SetSignalsEnabled(tc.request)
+			cfg, errCount := configure(t, cp, rcvr, target)
+			if errCount != 1 {
+				t.Errorf("ErrorCount = %d, want 1", errCount)
+			}
+			if tc.navx != nil && rcvr.navx.NavSystem != tc.navx.NavSystem {
+				t.Errorf("NavSystem = %#x, want unchanged %#x", rcvr.navx.NavSystem, tc.navx.NavSystem)
+			}
+			if tc.navBand != nil && (rcvr.navBand.SigBandAuto != 1 || rcvr.navBand.SigIDMaskFix != curMask) {
+				t.Errorf("NAVBAND changed: %+v", rcvr.navBand)
+			}
+			want := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGLOL1)
+			if got, ok := cfg.ConfigProps().GetSignalsEnabled(); !ok || got != want {
+				t.Errorf("SignalsEnabled = %v,%v, want %v", got, ok, want)
 			}
 		})
 	}

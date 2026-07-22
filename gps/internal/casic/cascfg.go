@@ -488,6 +488,13 @@ func (c *Configurator) addPollReq(mid casbin.MsgID, onData func(casbin.Msg)) {
 	c.add(&casReq{mid: mid, packet: pkt, nakOK: true, onData: onData})
 }
 
+// addFailedReq appends a request that is born failed: generation
+// already knows it cannot be realized. Nothing is sent; the director
+// reports the error and the invocation continues with the rest.
+func (c *Configurator) addFailedReq(err error) {
+	c.reqs = append(c.reqs, &casReq{state: reqFailed, err: err})
+}
+
 // addTextReq appends an NMEA text request whose reply is matched by
 // onText. There is no acknowledgement and no reply is guaranteed, so
 // the request is optional: silence is acceptable.
