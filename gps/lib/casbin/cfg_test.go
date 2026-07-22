@@ -148,3 +148,14 @@ func TestCfgRoundtrip(t *testing.T) {
 	testMsgType(t, CfgNavLimit{MinSVs: 4, MaxSVs: 40, MinCNO: 8, MinElev: -5})
 	testMsgType(t, CfgRtcm{MsgEnable: RtcmEn1005 | RtcmEnGPSMSM | RtcmEnBDSMSM, MsmVer: 7})
 }
+
+func TestPollPayloadLen(t *testing.T) {
+	if n := PollPayloadLen(CfgMsgID); n != 4 {
+		t.Errorf("PollPayloadLen(CFG-MSG) = %d, want 4 (class + id + poll rate)", n)
+	}
+	for _, mid := range []MsgID{CfgPrtID, CfgTPID, CfgNavBandID} {
+		if n := PollPayloadLen(mid); n != 0 {
+			t.Errorf("PollPayloadLen(%v) = %d, want 0", mid, n)
+		}
+	}
+}
