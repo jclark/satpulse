@@ -138,7 +138,7 @@ type NavTimeUTC struct {
 	NavRunTime
 	TAcc      float32         `json:"tAcc"`  // s², time estimation accuracy
 	MsErr     float32         `json:"msErr"` // ms, residual error after rounding
-	_         uint16          // padding (observed in real packets)
+	Ms        uint16          `json:"ms"`    // UTC milliseconds (0-999)
 	Year      uint16          `json:"year"`  // 1999-2099
 	Month     uint8           `json:"month"` // 1-12
 	Day       uint8           `json:"day"`   // 1-31
