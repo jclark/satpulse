@@ -10,6 +10,7 @@ import (
 var casicReplayFiles = []string{
 	// ATGM332D-5N71 (V5)
 	"atgm332d-5n71-pps",
+	"atgm332d-5n71-min-elev",
 	// AT6558D (V5). Recordings invalidated by configurator changes
 	// (message enables forcing CFG-RATE, then CFG serialization, then
 	// dropping the V5 signal verify readback) were re-recorded on this
@@ -23,7 +24,6 @@ var casicReplayFiles = []string{
 	"at6558d-speed",
 	"at6558d-reload",
 	"at6558d-save",
-	"at6558d-min-elev",
 	// AT362-AT6668-6T-30 / AT632 (V6 timing)
 	"at632-noop",
 	"at632-binary",
