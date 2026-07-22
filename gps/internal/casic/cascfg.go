@@ -256,8 +256,15 @@ func (c *Configurator) generateSaveReqs() {
 	case gpsprot.SaveAll:
 		c.saveReq = c.addMsg(&casbin.CfgCfg{Mask: c.saveMask(casbin.CfgSectionAll), OpMode: casbin.CfgOpSave}, casReq{})
 	case gpsprot.SaveMinimal:
-		if c.touched != 0 {
-			c.saveReq = c.addMsg(&casbin.CfgCfg{Mask: c.saveMask(c.touched), OpMode: casbin.CfgOpSave}, casReq{})
+		touched := c.touched
+		if c.speedReq != nil && c.speedReq.state == reqSucceeded {
+			// A speed change confirmed by the CFG-RATE poll or by
+			// traffic at the new rate never runs onAck, so its port
+			// section is accounted for here.
+			touched |= casbin.CfgSectionPort
+		}
+		if touched != 0 {
+			c.saveReq = c.addMsg(&casbin.CfgCfg{Mask: c.saveMask(touched), OpMode: casbin.CfgOpSave}, casReq{})
 		}
 	}
 }
@@ -430,14 +437,19 @@ func (c *Configurator) add(req *casReq) *casReq {
 	return req
 }
 
-// addMsg is add for a request carrying a serialized message, tracking
-// the configuration section it touches for minimal saves.
+// addMsg is add for a request carrying a serialized message. On ACK it
+// records the configuration section the message touches (for minimal
+// saves) and whether it enabled output; recording on ACK rather than at
+// generation means only accepted changes count, so a minimal save is
+// not generated when every change was refused.
 func (c *Configurator) addMsg(m casbin.Msg, req casReq) *casReq {
-	c.touched |= setSection(m)
-	if msgEnablesOutput(m) {
+	if section, enables := setSection(m), msgEnablesOutput(m); section != 0 || enables {
 		prev := req.onAck
 		req.onAck = func() {
-			c.msgEnabled = true
+			c.touched |= section
+			if enables {
+				c.msgEnabled = true
+			}
 			if prev != nil {
 				prev()
 			}
@@ -485,7 +497,8 @@ func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
 
 // setSection returns the CFG-CFG save-section bit a set request
 // touches, for minimal saves. The nonzero result also gates the
-// minimal save: a value here is what tells generateSaveReqs a change
+// minimal save: a value here, recorded when the request is ACKed
+// (see addMsg), is what tells generateSaveReqs an accepted change
 // happened and a save is due. The V6-only CFG messages therefore map
 // to the V5 section their setting belongs to (time mode, band, and
 // nav limit are Nav; RTCM output is a message setting) even though
