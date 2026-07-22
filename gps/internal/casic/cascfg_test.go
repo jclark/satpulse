@@ -518,7 +518,7 @@ func TestPVTOut(t *testing.T) {
 			monVer: v6,
 			flags:  gpsprot.PVTMsgPos | gpsprot.PVTMsgTime | gpsprot.PVTMsgTimePulse,
 			expect: map[casbin.MsgID]uint16{
-				casbin.Nav2PvhID: 1, casbin.Nav2TimeUTCID: 1, casbin.TimTPID: 1,
+				casbin.Nav2PvhID: 1, casbin.Nav2TimeUTCID: 1, casbin.Tim2TpxID: 1,
 			},
 		},
 		{
@@ -532,12 +532,12 @@ func TestPVTOut(t *testing.T) {
 			name:   "V6 timing PTP",
 			monVer: v6,
 			flags:  gpsprot.PVTMsgTimingPTP | gpsprot.PVTMsgOff,
-			// tp+after+TAI: SOL for TAI time, TIM-TP for the pulse;
+			// tp+after+TAI: SOL for TAI time, TIM2-TPX for the pulse;
 			// quality adds DOP; leap adds TIM2-LS; no survey was
 			// requested, so TIM2-TIMEPOS is turned off with PVH and
 			// TIMEUTC.
 			expect: map[casbin.MsgID]uint16{
-				casbin.Nav2SolID: 1, casbin.TimTPID: 1, casbin.Nav2DopID: 1,
+				casbin.Nav2SolID: 1, casbin.Tim2TpxID: 1, casbin.Nav2DopID: 1,
 				casbin.Tim2LsID: 1, casbin.Tim2TimePosID: 0,
 				casbin.Nav2PvhID: 0, casbin.Nav2TimeUTCID: 0,
 			},
@@ -552,7 +552,7 @@ func TestPVTOut(t *testing.T) {
 			name:   "V6 leap enables TIM2-LS",
 			monVer: v6,
 			flags:  gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgTimePulse,
-			expect: map[casbin.MsgID]uint16{casbin.Tim2LsID: 1, casbin.TimTPID: 1},
+			expect: map[casbin.MsgID]uint16{casbin.Tim2LsID: 1, casbin.Tim2TpxID: 1},
 		},
 		{
 			name:   "V5 leap enables MSG-GPSUTC",
@@ -680,12 +680,11 @@ func TestMsgRate(t *testing.T) {
 			setup: func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone) },
 		},
 		{
-			// The F8N scenario: the only enable is TIM-TP, and both it and
-			// the TIM2-TPX fallback are refused, so nothing was enabled and
-			// the interval must be left alone.
+			// The only enable is TIM2-TPX and it is refused, so nothing
+			// was enabled and the interval must be left alone.
 			name:       "all enables refused sends no CFG-RATE",
 			monVer:     v6,
-			nakTargets: []casbin.MsgID{casbin.TimTPID, casbin.Tim2TpxID},
+			nakTargets: []casbin.MsgID{casbin.Tim2TpxID},
 			setup:      func(tg *gpsprot.ConfigTarget) { tg.Opts.PVTMsg = gpsprot.PVTMsgTimePulse },
 		},
 	}
@@ -865,73 +864,25 @@ func TestNVMOps(t *testing.T) {
 	}
 }
 
-// TestSaveAfterFallback ensures the save request is generated only
-// after a NAK-driven fallback request has completed, so the fallback's
-// effect is included in what is saved.
-func TestSaveAfterFallback(t *testing.T) {
+// TestTimTPRefused covers a receiver that refuses the time-of-pulse
+// enable: pulse-time information is not deliverable there, which
+// shows as absence, not an error; the requested time message is
+// unaffected.
+func TestTimTPRefused(t *testing.T) {
 	rcvr := &testReceiver{
 		monVer:     &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
-		nakTargets: map[casbin.MsgID]bool{casbin.TimTPID: true},
+		nakTargets: map[casbin.MsgID]bool{casbin.Tim2TpxID: true},
 	}
 	cp := probe(t, rcvr)
 	target := gpsprot.NewConfigTarget()
-	target.Opts.PVTMsg = gpsprot.PVTMsgTimePulse
-	target.Opts.Save = gpsprot.SaveMinimal
+	target.Opts.PVTMsg = gpsprot.PVTMsgTime | gpsprot.PVTMsgTimePulse
 	_, errCount := configure(t, cp, rcvr, target)
 	if errCount != 0 {
 		t.Errorf("ErrorCount = %d, want 0", errCount)
 	}
-	if rcvr.rates[casbin.Tim2TpxID] != 1 {
-		t.Errorf("TIM2-TPX rate = %d, want 1 (fallback before save)", rcvr.rates[casbin.Tim2TpxID])
-	}
-	if len(rcvr.saves) != 1 {
-		t.Fatalf("saves = %+v, want one", rcvr.saves)
-	}
-}
-
-// TestTimTPFallback covers the hardware divergence found on the F8N:
-// enabling TIM-TP is NAKed, and the configurator falls back to
-// TIM2-TPX; if that is NAKed too, pulse-time output is simply absent.
-// Neither case is an error.
-func TestTimTPFallback(t *testing.T) {
-	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
-	tests := []struct {
-		name   string
-		naks   []casbin.MsgID
-		expect map[casbin.MsgID]uint16
-	}{
-		{
-			name: "TIM-TP refused, TIM2-TPX accepted",
-			naks: []casbin.MsgID{casbin.TimTPID},
-			expect: map[casbin.MsgID]uint16{
-				casbin.Nav2TimeUTCID: 1, casbin.Tim2TpxID: 1,
-			},
-		},
-		{
-			name: "both refused",
-			naks: []casbin.MsgID{casbin.TimTPID, casbin.Tim2TpxID},
-			expect: map[casbin.MsgID]uint16{
-				casbin.Nav2TimeUTCID: 1,
-			},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			rcvr := &testReceiver{monVer: v6, nakTargets: make(map[casbin.MsgID]bool)}
-			for _, mid := range tc.naks {
-				rcvr.nakTargets[mid] = true
-			}
-			cp := probe(t, rcvr)
-			target := gpsprot.NewConfigTarget()
-			target.Opts.PVTMsg = gpsprot.PVTMsgTime | gpsprot.PVTMsgTimePulse
-			_, errCount := configure(t, cp, rcvr, target)
-			if errCount != 0 {
-				t.Errorf("ErrorCount = %d, want 0", errCount)
-			}
-			if !reflect.DeepEqual(rcvr.rates, tc.expect) {
-				t.Errorf("rates\ngot  %v\nwant %v", rcvr.rates, tc.expect)
-			}
-		})
+	expect := map[casbin.MsgID]uint16{casbin.Nav2TimeUTCID: 1}
+	if !reflect.DeepEqual(rcvr.rates, expect) {
+		t.Errorf("rates\ngot  %v\nwant %v", rcvr.rates, expect)
 	}
 }
 

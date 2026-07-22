@@ -96,9 +96,10 @@ func (c *Configurator) generateSatsReqs(flags gpsprot.SatsMsgFlags) {
 // requested PVT information via CFG-MSG. The mapping (see plan):
 // NAV-SOL/NAV2-SOL carries ECEF pos+vel, TAI time, and fix quality;
 // NAV-PV/NAV2-PVH carries geodetic pos+vel; NAV-TIMEUTC/NAV2-TIMEUTC
-// carries UTC time; NAV-DOP/NAV2-DOP the full DOP set; TIM-TP the time
-// of the next pulse; TIM2-LS (V6) and MSG-GPSUTC (V5) carry leap
-// second events; TIM2-TIMEPOS (V6 only) carries survey progress.
+// carries UTC time; NAV-DOP/NAV2-DOP the full DOP set; TIM-TP (V5)
+// carries the time of the next pulse and TIM2-TPX (V6) the time of
+// the pulse that occurred; TIM2-LS (V6) and MSG-GPSUTC (V5) carry
+// leap second events; TIM2-TIMEPOS (V6 only) carries survey progress.
 // Epoch markers have no CASIC message. Without the off flag the
 // request is incremental: unneeded messages are left alone.
 func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
@@ -156,26 +157,22 @@ func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 	c.generateTimTPReqs(tp, off)
 }
 
-// generateTimTPReqs enables or disables the time-of-pulse message.
-// Hardware divergence within the V6 family: the dual-band ATGM332D-F8N
-// NAKs enabling TIM-TP (0x02 0x00) while the AT632 timing receiver
-// accepts it; the F8N may also lack TIM2-TPX. So on V6 try TIM-TP
-// first and fall back to TIM2-TPX (0x12 0x00) when NAKed; a NAK of the
-// fallback means the receiver cannot deliver pulse-time information,
-// which per the semantics is shown by its absence, not an error.
+// generateTimTPReqs enables or disables the family's time-of-pulse
+// message: TIM-TP (0x02 0x00) on V5, TIM2-TPX (0x12 0x00) on V6. The
+// V6 protocol does not document TIM-TP and every tested V6 unit NAKs
+// it, so it is not attempted there. The enable is nakOK: a refusal
+// means pulse-time information is not deliverable, which per the
+// semantics is shown by its absence, not an error. Acceptance does
+// not guarantee delivery either - the F8N and AT372-6P acknowledge
+// the TIM2-TPX enable but never emit the message - which is why
+// nothing else depends on this enable (see generatePVTReqs).
 func (c *Configurator) generateTimTPReqs(tp, off bool) {
-	switch {
-	case tp && c.family == familyV6:
-		c.addReqNakOK(&casbin.CfgMsg{Target: casbin.TimTPID, Rate: 1}, func() {
-			c.addReqNakOK(&casbin.CfgMsg{Target: casbin.Tim2TpxID, Rate: 1}, nil)
-		})
-	case tp:
-		c.addReqNakOK(&casbin.CfgMsg{Target: casbin.TimTPID, Rate: 1}, nil)
-	case off:
-		c.addMsgRate(casbin.TimTPID, false)
-		if c.family == familyV6 {
-			c.addMsgRate(casbin.Tim2TpxID, false)
-		}
+	mid := casbin.TimTPID
+	if c.family == familyV6 {
+		mid = casbin.Tim2TpxID
+	}
+	if tp || off {
+		c.addMsgRate(mid, tp)
 	}
 }
 
