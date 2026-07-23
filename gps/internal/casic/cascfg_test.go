@@ -806,6 +806,59 @@ func TestMsgRate(t *testing.T) {
 	}
 }
 
+// TestNoOpSetStillSaves: a set suppressed as a no-op against the
+// running configuration must still mark its section for a requested
+// save - NVM cannot be read and may hold a different value.
+func TestNoOpSetStillSaves(t *testing.T) {
+	tests := []struct {
+		name     string
+		monVer   *casbin.MonVer
+		prep     func(*testReceiver)
+		setup    func(*gpsprot.ConfigTarget)
+		wantMask casbin.CfgCfgSectionMask
+	}{
+		{
+			name:     "V5 min-elev no-op saves Nav",
+			prep:     func(r *testReceiver) { r.navx = &casbin.CfgNavx{MinElev: 10} },
+			setup:    func(tg *gpsprot.ConfigTarget) { tg.Props.SetMinElevation(gpsprot.DegreesFromFloat(10)) },
+			wantMask: casbin.CfgCfgSectionNav,
+		},
+		{
+			name: "V5 baud no-op saves Port",
+			prep: func(r *testReceiver) {
+				r.ports = []casbin.CfgPrt{{PortID: casbin.CfgPrtPortUART0, ProtoMask: 0x33, Mode: 0x08C0, BaudRate: 9600}}
+			},
+			setup:    func(tg *gpsprot.ConfigTarget) { tg.Props.SetBaudRate(9600) },
+			wantMask: casbin.CfgCfgSectionPort,
+		},
+		{
+			name:     "V6 min-elev no-op saves",
+			monVer:   &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
+			prep:     func(r *testReceiver) { r.navLimit = &casbin.CfgNavLimit{MinElev: 10} },
+			setup:    func(tg *gpsprot.ConfigTarget) { tg.Props.SetMinElevation(gpsprot.DegreesFromFloat(10)) },
+			wantMask: casbin.CfgCfgSectionAll,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{monVer: tc.monVer}
+			tc.prep(rcvr)
+			cp := probe(t, rcvr)
+			target := gpsprot.NewConfigTarget()
+			tc.setup(target)
+			target.Opts.Save = gpsprot.SaveMinimal
+			_, errCount := configure(t, cp, rcvr, target)
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			want := []casbin.CfgCfg{{Mask: tc.wantMask, OpMode: casbin.CfgCfgOpSave}}
+			if !reflect.DeepEqual(rcvr.saves, want) {
+				t.Errorf("saves\ngot  %+v\nwant %+v", rcvr.saves, want)
+			}
+		})
+	}
+}
+
 func TestNVMOps(t *testing.T) {
 	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
 	tests := []struct {
@@ -1269,7 +1322,10 @@ func TestPropertySetComparison(t *testing.T) {
 			mid: casbin.CfgNavxID, wantSets: 1, wantPolls: 1,
 		},
 		{
-			name: "baud no-op skips write confirmation and minimal save",
+			// The write and its confirmation poll are skipped, but the
+			// requested save still covers the asserted speed: NVM may
+			// hold a different one.
+			name: "baud no-op skips write but not minimal save",
 			rcvr: &testReceiver{monVer: v6, ports: []casbin.CfgPrt{{
 				PortID: casbin.CfgPrtPortUART0, ProtoMask: casbin.CfgPrtProtoBinaryIn,
 				Mode: casbin.CfgPrtModeCharLen8, BaudRate: 115200,
@@ -1281,8 +1337,9 @@ func TestPropertySetComparison(t *testing.T) {
 			mid: casbin.CfgPrtID, wantPolls: 1,
 			extraPollMid: casbin.CfgRateID,
 			check: func(t *testing.T, cfg *Configurator, rcvr *testReceiver) {
-				if len(rcvr.saves) != 0 {
-					t.Errorf("saves = %+v, want none", rcvr.saves)
+				wantSaves := []casbin.CfgCfg{{Mask: casbin.CfgCfgSectionAll, OpMode: casbin.CfgCfgOpSave}}
+				if !reflect.DeepEqual(rcvr.saves, wantSaves) {
+					t.Errorf("saves = %+v, want %+v", rcvr.saves, wantSaves)
 				}
 				if got, ok := cfg.ConfigProps().GetBaudRate(); !ok || got != 115200 {
 					t.Errorf("BaudRate = %d,%v, want 115200,true", got, ok)
@@ -1355,7 +1412,8 @@ func TestMixedPropertyTargetsSuppressOnlyNoOps(t *testing.T) {
 	if rcvr.navx.NavSystem != casbin.CfgNavxNavSystemGPS || rcvr.navx.MinElev != 10 {
 		t.Errorf("CFG-NAVX = %+v, want GPS unchanged and MinElev 10", rcvr.navx)
 	}
-	wantSaves := []casbin.CfgCfg{{Mask: casbin.CfgCfgSectionNav, OpMode: casbin.CfgCfgOpSave}}
+	// The suppressed TP write still marks its section for the save.
+	wantSaves := []casbin.CfgCfg{{Mask: casbin.CfgCfgSectionNav | casbin.CfgCfgSectionTP, OpMode: casbin.CfgCfgOpSave}}
 	if !reflect.DeepEqual(rcvr.saves, wantSaves) {
 		t.Errorf("saves = %+v, want %+v", rcvr.saves, wantSaves)
 	}

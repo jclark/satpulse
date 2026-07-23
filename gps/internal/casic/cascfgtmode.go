@@ -177,6 +177,7 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 		m.SvinMinDur = tt.svinDur
 		m.SvinPaccLim = uint32(math.Round(tt.svinAcc * casbin.CfgTMode2PositionAccuracyScale))
 		if !force && m == *c.tm6 {
+			c.touchNoOp(casbin.CfgCfgSectionNav)
 			return
 		}
 		c.addSetReq(&m, func() { c.tm6 = &m })
@@ -201,6 +202,7 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 	cur := *c.tm5
 	cur.Res = 0 // upper half of the queried mode field is readback garbage
 	if !force && *m == cur {
+		c.touchNoOp(casbin.CfgCfgSectionNav)
 		return
 	}
 	c.addSetReq(m, func() { c.tm5 = m })

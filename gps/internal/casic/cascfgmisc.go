@@ -58,6 +58,7 @@ func (c *Configurator) generateMinElevSet() {
 		nl := *c.navLimit
 		nl.MinElev = deg
 		if nl == *c.navLimit {
+			c.touchNoOp(casbin.CfgCfgSectionNav)
 			return
 		}
 		c.addSetReq(&nl, func() { c.navLimit = &nl })
@@ -67,6 +68,7 @@ func (c *Configurator) generateMinElevSet() {
 		return
 	}
 	if c.navx.MinElev == deg {
+		c.touchNoOp(casbin.CfgCfgSectionNav)
 		return
 	}
 	c.addSetReq(&casbin.CfgNavx{Mask: casbin.CfgNavxApplyMinElev, MinElev: deg},

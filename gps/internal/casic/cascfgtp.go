@@ -84,6 +84,7 @@ func (c *Configurator) generateTPSet() {
 		tp.UserDelay = casbin.CfgTPUserDelaySeconds(d)
 	}
 	if tp == *c.tp {
+		c.touchNoOp(casbin.CfgCfgSectionTP)
 		return
 	}
 	c.addSetReq(&tp, func() { c.tp = &tp })

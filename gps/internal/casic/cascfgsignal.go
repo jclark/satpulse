@@ -147,6 +147,7 @@ func (c *Configurator) generateSignalSet() {
 		nb.SigIDMaskFix = mask
 		nb.SigIDMask = mask
 		if nb == *c.navBand {
+			c.touchNoOp(casbin.CfgCfgSectionNav)
 			return
 		}
 		c.addSetReq(&nb, func() { c.navBand = &nb })
@@ -172,6 +173,7 @@ func (c *Configurator) generateSignalSet() {
 		}
 	}
 	if c.navx.NavSystem == sys {
+		c.touchNoOp(casbin.CfgCfgSectionNav)
 		return
 	}
 	c.addSetReq(&casbin.CfgNavx{Mask: casbin.CfgNavxApplyNavSystem, NavSystem: sys},

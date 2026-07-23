@@ -415,6 +415,7 @@ func (c *Configurator) generateSpeedReqs() {
 		return
 	}
 	if base.BaudRate == baud {
+		c.touchNoOp(casbin.CfgCfgSectionPort)
 		return
 	}
 	m := &casbin.CfgPrt{PortID: casbin.CfgPrtPortCurrent, ProtoMask: base.ProtoMask, Mode: base.Mode, BaudRate: baud}
@@ -564,6 +565,16 @@ func (c *Configurator) addPollReq(mid casbin.MsgID, onData func(casbin.Msg)) {
 // reports the error and the invocation continues with the rest.
 func (c *Configurator) addFailedReq(err error) {
 	c.reqs = append(c.reqs, &casReq{state: reqFailed, err: err})
+}
+
+// touchNoOp records the save section of a set suppressed as a no-op.
+// The suppression is judged against the running configuration, but a
+// requested save persists into NVM, which cannot be read and may
+// differ; marking the section makes the save cover the asserted value
+// (the save copies the already-correct running state to NVM) without
+// putting a redundant write on the wire.
+func (c *Configurator) touchNoOp(section casbin.CfgCfgSectionMask) {
+	c.touched |= section
 }
 
 // addTextReq appends an NMEA text request whose reply is matched by
