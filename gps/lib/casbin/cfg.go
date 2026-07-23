@@ -20,18 +20,49 @@ const (
 	CfgTMode2BandMulti
 )
 
+// CfgTMode2AntDetMode selects how antenna detection is performed.
+type CfgTMode2AntDetMode uint8
+
+const (
+	CfgTMode2AntDetInternal CfgTMode2AntDetMode = iota
+	CfgTMode2AntDetExternalPin
+)
+
+// CfgTMode2TSrcMode selects the GNSS used for timing. The priority
+// modes fall back to another timing system when their preferred system
+// is unavailable.
+type CfgTMode2TSrcMode uint8
+
+const (
+	CfgTMode2TSrcForceGPS CfgTMode2TSrcMode = iota
+	CfgTMode2TSrcForceBDS
+	CfgTMode2TSrcForceGLN
+	CfgTMode2TSrcForceGAL
+	CfgTMode2TSrcPriorityBDS
+	CfgTMode2TSrcPriorityGPS
+	CfgTMode2TSrcPriorityGLN
+	CfgTMode2TSrcPriorityGAL
+)
+
+const (
+	// CfgTMode2FixedPositionScale is the number of wire units per metre.
+	CfgTMode2FixedPositionScale float64 = 100
+	// CfgTMode2PositionAccuracyScale is the number of wire units per metre.
+	CfgTMode2PositionAccuracyScale float64 = 1000
+)
+
 // CfgTMode2 is CFG-TMODE2 (0x06 0x16) - timing mode configuration (28 bytes)
 type CfgTMode2 struct {
-	TimFixMode  CfgTMode2Mode `json:"timFixMode"`  // 0=realtime, 1=survey, 2=fixed
-	BandMode    CfgTMode2Band `json:"bandMode"`    // signal band selection
-	AntDetMode  uint8         `json:"antDetMode"`  // 0=internal, 1=external pin
-	TSrcMode    uint8         `json:"tsrc_mode"`   // 0-3=force single sys, 4-7=priority sys
-	XFixed      int32         `json:"xFixed"`      // 0.01 m, ECEF X
-	YFixed      int32         `json:"yFixed"`      // 0.01 m, ECEF Y
-	ZFixed      int32         `json:"zFixed"`      // 0.01 m, ECEF Z
-	FixedPacc   uint32        `json:"fixedPacc"`   // mm, position accuracy
-	SvinMinDur  uint32        `json:"svinMinDur"`  // s, min survey-in duration
-	SvinPaccLim uint32        `json:"svinPaccLim"` // mm, survey-in accuracy limit
+	TimFixMode  CfgTMode2Mode       `json:"timFixMode"`  // 0=realtime, 1=survey, 2=fixed
+	BandMode    CfgTMode2Band       `json:"bandMode"`    // signal band selection
+	AntDetMode  CfgTMode2AntDetMode `json:"antDetMode"`  // antenna-detection source
+	TSrcMode    CfgTMode2TSrcMode   `json:"tsrc_mode"`   // timing GNSS selection
+	XFixed      int32               `json:"xFixed"`      // 0.01 m, ECEF X
+	YFixed      int32               `json:"yFixed"`      // 0.01 m, ECEF Y
+	ZFixed      int32               `json:"zFixed"`      // 0.01 m, ECEF Z
+	FixedPacc   uint32              `json:"fixedPacc"`   // mm, position accuracy
+	SvinMinDur  uint32              `json:"svinMinDur"`  // s, min survey-in duration
+	SvinPaccLim uint32              `json:"svinPaccLim"` // mm, survey-in accuracy limit
 }
 
 func (m *CfgTMode2) ID() MsgID { return CfgTMode2ID }
