@@ -1,12 +1,20 @@
 package casbin
 
+// JSON tags in this file preserve the field-name spellings in the CASIC
+// protocol documentation, including its unusual capitalization and
+// underscores. Messages shared by V5 and V6 generally use the V6 names.
+// The exceptions are called out on the affected types below.
+
 // CfgMsg is CFG-MSG (0x06 0x01) - message rate configuration (4 bytes).
 // Rate 0xFFFF polls the target message instead of setting its rate.
 // An empty-payload CFG-MSG query returns one CfgMsg response per known
-// message (the whole rate table).
+// message (the whole rate table). The protocol documents separate clsID
+// and msgID fields; Target combines both and uses msgID as its JSON name,
+// consistently with the combined message identifier in the other *bin
+// packages.
 type CfgMsg struct {
-	Target MsgID  // message whose rate is configured (cls byte, then id byte)
-	Rate   uint16 // output rate in fixes per message (0=off)
+	Target MsgID  `json:"msgID"` // message whose rate is configured (cls byte, then id byte)
+	Rate   uint16 `json:"rate"`  // output rate in fixes per message (0=off)
 }
 
 func (m *CfgMsg) ID() MsgID { return CfgMsgID }
@@ -17,10 +25,10 @@ const PollRate = 0xFFFF
 // CfgPrt is CFG-PRT (0x06 0x00) - serial port configuration (8 bytes).
 // An empty-payload query returns one CfgPrt response per UART.
 type CfgPrt struct {
-	PortID    uint8  // 0=UART0, 1=UART1, 0xFF=port in use
-	ProtoMask uint8  // see PrtProto* bits
-	Mode      uint16 // data bits/parity/stop encoding (8N1 = 0x08C0 region)
-	BaudRate  uint32 // bits per second
+	PortID    uint8  `json:"portID"`    // 0=UART0, 1=UART1, 0xFF=port in use
+	ProtoMask uint8  `json:"protoMask"` // see PrtProto* bits
+	Mode      uint16 `json:"mode"`      // data bits/parity/stop encoding (8N1 = 0x08C0 region)
+	BaudRate  uint32 `json:"baudRate"`  // bits per second
 }
 
 func (m *CfgPrt) ID() MsgID { return CfgPrtID }
@@ -40,19 +48,22 @@ const (
 // CfgRate is CFG-RATE (0x06 0x04) - navigation rate (4 bytes).
 // V5 firmware fills only FixIntervalMs and leaves the rest zero.
 type CfgRate struct {
-	FixIntervalMs uint16 // fix interval, ms (1000=1Hz)
-	FixRateHz     uint8  // fix rate, Hz (V6 only)
-	Res           uint8
+	FixIntervalMs uint16 `json:"fixIntervalMs"` // fix interval, ms (1000=1Hz)
+	FixRateHz     uint8  `json:"fixRateHz"`     // fix rate, Hz (V6 only)
+	Res           uint8  `json:"res"`
 }
 
 func (m *CfgRate) ID() MsgID { return CfgRateID }
 
 // CfgCfg is CFG-CFG (0x06 0x05) - clear/save/load configuration (4 bytes).
-// V5 firmware honours the section mask; V6 documents the field as reserved.
+// V5 firmware honours the section mask; V6 documents the field as res1.
+// Hardware shows that V6 also requires a nonzero mask to save, and the
+// configurator treats the field as a mask on both families, so its JSON
+// name is the V5 mask rather than the V6 res1. The other JSON names use V6.
 type CfgCfg struct {
-	Mask   uint16 // sections affected, see CfgSection* bits
-	OpMode uint8  // see CfgOp* values
-	Res    uint8
+	Mask   uint16 `json:"mask"`   // sections affected, see CfgSection* bits
+	OpMode uint8  `json:"opMode"` // see CfgOp* values
+	Res    uint8  `json:"res2"`
 }
 
 func (m *CfgCfg) ID() MsgID { return CfgCfgID }
@@ -81,11 +92,13 @@ const (
 // but the encodings coincide: StartMode occupies byte 3 with the same
 // hot/warm/cold/factory values, and a V6 request zeroes the rest, so
 // serializing this struct is wire-correct for both families.
+// Its JSON names follow the V5 semantic layout used by the configurator;
+// the V6 document instead calls the fields res1, res2, and resetMode.
 // The receiver does not acknowledge CFG-RST before restarting.
 type CfgRst struct {
-	NavBbrMask uint16 // BBR sections to clear, see Bbr* bits (V5)
-	ResetMode  uint8  // see Reset* values (V5)
-	StartMode  uint8  // see Start* values
+	NavBbrMask uint16 `json:"navBbrMask"` // BBR sections to clear, see Bbr* bits (V5)
+	ResetMode  uint8  `json:"resetMode"`  // see Reset* values (V5)
+	StartMode  uint8  `json:"startMode"`  // see Start* values
 }
 
 func (m *CfgRst) ID() MsgID { return CfgRstID }
@@ -127,14 +140,15 @@ const (
 // 3=fix only. TBase: V6 0=GNSS, 1=UTC; V5 inverted: 0=UTC, 1=satellite.
 // TSrcMode: V6 0-3=force GPS/BDS/GLN/GAL, 4-8=primary, 9=auto;
 // V5 0=GPS, 1=BDS, 2=GLN, 4=BDS-main, 5=GPS-main, 6=GLN-main.
+// The JSON names use the V6 spellings for this shared message.
 type CfgTP struct {
-	Interval   uint32  // pulse period, us
-	Width      uint32  // pulse width, us
-	PPSOutMode uint8   // when the pulse is output (see above)
-	Polarity   uint8   // 0=rising edge aligned, 1=falling edge
-	TBase      uint8   // time base (see above)
-	TSrcMode   uint8   // time source GNSS (see above)
-	UserDelay  float32 // user time delay, s
+	Interval   uint32  `json:"ppsInterval"` // pulse period, us
+	Width      uint32  `json:"ppsWidth"`    // pulse width, us
+	PPSOutMode uint8   `json:"ppsOutMode"`  // when the pulse is output (see above)
+	Polarity   uint8   `json:"polar"`       // 0=rising edge aligned, 1=falling edge
+	TBase      uint8   `json:"tBase"`       // time base (see above)
+	TSrcMode   uint8   `json:"tSrcMode"`    // time source GNSS (see above)
+	UserDelay  float32 `json:"userDelay"`   // user time delay, s
 }
 
 func (m *CfgTP) ID() MsgID { return CfgTPID }
@@ -144,25 +158,25 @@ func (m *CfgTP) ID() MsgID { return CfgTPID }
 // receiver ignores the rest, so no read-modify-write is needed. On query
 // responses Mask is 0 and all fields hold current values.
 type CfgNavx struct {
-	Mask         uint32 // fields to apply, see Navx* bits
-	DynModel     uint8  // see DynModel* values
-	FixMode      uint8  // 1=2D, 2=3D, 3=auto
-	MinSVs       uint8
-	MaxSVs       uint8
-	MinCNO       uint8
-	Res1         uint8
-	IniFix3D     uint8
-	MinElev      int8 // degrees
-	DrLimit      uint8
-	NavSystem    uint8  // constellations, see NavSys* bits
-	WnRollOver   uint16 // GPS week rollover reference
-	FixedAlt     float32
-	FixedAltVar  float32
-	PDop         float32
-	TDop         float32
-	PAcc         float32
-	TAcc         float32
-	StaticHoldTh float32
+	Mask         uint32  `json:"mask"`    // fields to apply, see Navx* bits
+	DynModel     uint8   `json:"dyModel"` // see DynModel* values
+	FixMode      uint8   `json:"fixMode"` // 1=2D, 2=3D, 3=auto
+	MinSVs       uint8   `json:"minSVs"`
+	MaxSVs       uint8   `json:"maxSVs"`
+	MinCNO       uint8   `json:"minCNO"`
+	Res1         uint8   `json:"res1"`
+	IniFix3D     uint8   `json:"iniFix3D"`
+	MinElev      int8    `json:"minElev"` // degrees
+	DrLimit      uint8   `json:"drLimit"`
+	NavSystem    uint8   `json:"navSystem"`  // constellations, see NavSys* bits
+	WnRollOver   uint16  `json:"wnRollOver"` // GPS week rollover reference
+	FixedAlt     float32 `json:"fixedAlt"`
+	FixedAltVar  float32 `json:"fixedAltVar"`
+	PDop         float32 `json:"pDop"`
+	TDop         float32 `json:"tDop"`
+	PAcc         float32 `json:"pAcc"`
+	TAcc         float32 `json:"tAcc"`
+	StaticHoldTh float32 `json:"staticHoldTh"`
 }
 
 func (m *CfgNavx) ID() MsgID { return CfgNavxID }
@@ -206,16 +220,17 @@ const (
 // CfgTMode is CFG-TMODE (0x06 0x06) - V5 timing mode configuration
 // (40 bytes). The mode field is documented as U4 but the receiver
 // returns garbage in the upper two bytes, so it is parsed as U2 + U2
-// reserved (set Res to 0 when building).
+// reserved (set Res to 0 when building). The protocol gives that upper
+// half no separate field name; its JSON name is therefore res.
 type CfgTMode struct {
-	Mode         uint16 // 0=auto, 1=survey-in, 2=fixed position
-	Res          uint16
-	EcefX        float64 // m
-	EcefY        float64 // m
-	EcefZ        float64 // m
-	PosVar       float32 // m^2, fixed position variance
-	SvinMinDur   uint32  // s, min survey-in duration
-	SvinVarLimit float32 // m^2, survey-in variance limit
+	Mode         uint16  `json:"mode"` // 0=auto, 1=survey-in, 2=fixed position
+	Res          uint16  `json:"res"`
+	EcefX        float64 `json:"fixedPosX"`    // m
+	EcefY        float64 `json:"fixedPosY"`    // m
+	EcefZ        float64 `json:"fixedPosZ"`    // m
+	PosVar       float32 `json:"fixedPosVar"`  // m^2, fixed position variance
+	SvinMinDur   uint32  `json:"svinMinDur"`   // s, min survey-in duration
+	SvinVarLimit float32 `json:"svinVarLimit"` // m^2, survey-in variance limit
 }
 
 func (m *CfgTMode) ID() MsgID { return CfgTModeID }
@@ -233,24 +248,24 @@ const (
 // GAL E5A=8, BDS B1I GEO=10, BDS B1I MEO=11, BDS B1C=14, BDS B2A=15,
 // QZSS L1CA=19, QZSS L5=21, IRNSS L5=23).
 type CfgNavBand struct {
-	SigBandAuto  uint8 // 1=auto signal band selection, 0=use masks
-	Res1         uint8
-	Res2         uint16
-	SigIDMaskFix uint32 // signals used for positioning (when auto=0)
-	SigIDMask    uint32 // signals received
+	SigBandAuto  uint8  `json:"sigBandAuto"` // 1=auto signal band selection, 0=use masks
+	Res1         uint8  `json:"res1"`
+	Res2         uint16 `json:"res2"`
+	SigIDMaskFix uint32 `json:"sigidMaskFix"` // signals used for positioning (when auto=0)
+	SigIDMask    uint32 `json:"sigidMask"`    // signals received
 }
 
 func (m *CfgNavBand) ID() MsgID { return CfgNavBandID }
 
 // CfgNmea is CFG-NMEA (0x06 0x12) - V6 NMEA output configuration (8 bytes).
 type CfgNmea struct {
-	NmeaVer       uint8 // 0=V2.2, 1=V4.0, 2=V4.10, 3=V4.11
-	LatLonReso    uint8 // lat/lon decimal places
-	HeightReso    uint8 // height decimal places
-	GsaPlus       uint8
-	NmeaValidOpen uint8
-	Res           uint8
-	Res2          uint16
+	NmeaVer       uint8  `json:"nmeaVer"`    // 0=V2.2, 1=V4.0, 2=V4.10, 3=V4.11
+	LatLonReso    uint8  `json:"latLonReso"` // lat/lon decimal places
+	HeightReso    uint8  `json:"heightReso"` // height decimal places
+	GsaPlus       uint8  `json:"gsaPlus"`
+	NmeaValidOpen uint8  `json:"nmeaValidOpen"`
+	Res           uint8  `json:"res"`
+	Res2          uint16 `json:"res2"`
 }
 
 func (m *CfgNmea) ID() MsgID { return CfgNmeaID }
@@ -258,11 +273,11 @@ func (m *CfgNmea) ID() MsgID { return CfgNmeaID }
 // CfgNavLimit is CFG-NAVLIMIT (0x06 0x0A) - V6 satellite filtering
 // (8 bytes).
 type CfgNavLimit struct {
-	MinSVs  uint8
-	MaxSVs  uint8
-	MinCNO  uint8
-	MinElev int8 // degrees
-	Res     uint32
+	MinSVs  uint8  `json:"minSVs"`
+	MaxSVs  uint8  `json:"maxSVs"`
+	MinCNO  uint8  `json:"minCNO"`
+	MinElev int8   `json:"minEle"` // degrees
+	Res     uint32 `json:"res"`
 }
 
 func (m *CfgNavLimit) ID() MsgID { return CfgNavLimID }
@@ -271,12 +286,12 @@ func (m *CfgNavLimit) ID() MsgID { return CfgNavLimID }
 // (16 bytes). RTCM output additionally requires the RTCM bit in the
 // port's protocol mask.
 type CfgRtcm struct {
-	MsgEnable uint32 // see RtcmEn* bits
-	MsmVer    uint8  // MSM version: 4, 5, 6 or 7
-	Res       uint8
-	Res2      uint16
-	Res3      uint32
-	Res4      uint32
+	MsgEnable uint32 `json:"rtcm_msg_en"`  // see RtcmEn* bits
+	MsmVer    uint8  `json:"rtcm_msm_ver"` // MSM version: 4, 5, 6 or 7
+	Res       uint8  `json:"res"`
+	Res2      uint16 `json:"res2"`
+	Res3      uint32 `json:"res3"`
+	Res4      uint32 `json:"res4"`
 }
 
 func (m *CfgRtcm) ID() MsgID { return CfgRtcmID }

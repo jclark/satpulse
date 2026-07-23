@@ -1,7 +1,9 @@
 package casbin
 
 import (
+	"encoding/json"
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -147,6 +149,49 @@ func TestCfgRoundtrip(t *testing.T) {
 	testMsgType(t, CfgNmea{NmeaVer: 2, LatLonReso: 7, HeightReso: 3, GsaPlus: 4})
 	testMsgType(t, CfgNavLimit{MinSVs: 4, MaxSVs: 40, MinCNO: 8, MinElev: -5})
 	testMsgType(t, CfgRtcm{MsgEnable: RtcmEn1005 | RtcmEnGPSMSM | RtcmEnBDSMSM, MsmVer: 7})
+}
+
+func TestCfgJSONFieldNames(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  Msg
+		want []string
+	}{
+		{"MSG", &CfgMsg{}, []string{"msgID", "rate"}},
+		{"PRT", &CfgPrt{}, []string{"portID", "protoMask", "mode", "baudRate"}},
+		{"RATE", &CfgRate{}, []string{"fixIntervalMs", "fixRateHz", "res"}},
+		{"CFG", &CfgCfg{}, []string{"mask", "opMode", "res2"}},
+		{"RST", &CfgRst{}, []string{"navBbrMask", "resetMode", "startMode"}},
+		{"TP", &CfgTP{}, []string{"ppsInterval", "ppsWidth", "ppsOutMode", "polar", "tBase", "tSrcMode", "userDelay"}},
+		{"NAVX", &CfgNavx{}, []string{"mask", "dyModel", "fixMode", "minSVs", "maxSVs", "minCNO", "res1", "iniFix3D", "minElev", "drLimit", "navSystem", "wnRollOver", "fixedAlt", "fixedAltVar", "pDop", "tDop", "pAcc", "tAcc", "staticHoldTh"}},
+		{"TMODE", &CfgTMode{}, []string{"mode", "res", "fixedPosX", "fixedPosY", "fixedPosZ", "fixedPosVar", "svinMinDur", "svinVarLimit"}},
+		{"NAVBAND", &CfgNavBand{}, []string{"sigBandAuto", "res1", "res2", "sigidMaskFix", "sigidMask"}},
+		{"NMEA", &CfgNmea{}, []string{"nmeaVer", "latLonReso", "heightReso", "gsaPlus", "nmeaValidOpen", "res", "res2"}},
+		{"NAVLIMIT", &CfgNavLimit{}, []string{"minSVs", "maxSVs", "minCNO", "minEle", "res"}},
+		{"RTCM", &CfgRtcm{}, []string{"rtcm_msg_en", "rtcm_msm_ver", "res", "res2", "res3", "res4"}},
+		{"TMODE2", &CfgTMode2{}, []string{"timFixMode", "bandMode", "antDetMode", "tsrc_mode", "xFixed", "yFixed", "zFixed", "fixedPacc", "svinMinDur", "svinPaccLim"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := json.Marshal(tc.msg)
+			if err != nil {
+				t.Fatalf("json.Marshal: %v", err)
+			}
+			var obj map[string]json.RawMessage
+			if err := json.Unmarshal(b, &obj); err != nil {
+				t.Fatalf("json.Unmarshal: %v", err)
+			}
+			got := make([]string, 0, len(obj))
+			for name := range obj {
+				got = append(got, name)
+			}
+			sort.Strings(got)
+			sort.Strings(tc.want)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("JSON fields = %v, want %v; JSON: %s", got, tc.want, b)
+			}
+		})
+	}
 }
 
 func TestPollPayloadLen(t *testing.T) {
