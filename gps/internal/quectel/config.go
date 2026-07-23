@@ -66,11 +66,11 @@ func nmeaPacket(payload string) []byte {
 	return fmt.Appendf(nil, "$%s*%02X\r\n", payload, nmeamsg.Checksum([]byte(payload)))
 }
 
-// ProbePacket returns the PQTMVERNO query. Every PQTM-speaking
+// ProbePackets returns the PQTMVERNO query. Every PQTM-speaking
 // firmware answers it: with version data, or with ERROR for a
 // hypothetical firmware lacking it - either reply proves the protocol.
-func (cp *ConfigProtocol) ProbePacket() []byte {
-	return nmeaPacket("PQTMVERNO")
+func (cp *ConfigProtocol) ProbePackets() ([][]byte, time.Duration) {
+	return [][]byte{nmeaPacket("PQTMVERNO")}, 0
 }
 
 // ProbeOK reports whether a PQTM response to the probe has been seen.
