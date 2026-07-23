@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// Endian returns the byte order used by Allystar binary protocol.
-func Endian() binary.ByteOrder { return binary.LittleEndian }
+// Endian is the byte order used for Allystar binary messages.
+var Endian = binary.LittleEndian
 
 const (
 	Sync1 = 0xF1
