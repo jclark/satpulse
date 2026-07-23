@@ -226,22 +226,26 @@ func PollPayloadLen(mid MsgID) int {
 	}
 }
 
+// PollNavTime creates a NAV-TIME poll packet for the given GNSS system.
 func PollNavTime(navSys NavTimeSys) []byte {
 	packet, _ := packMsg(NavTimeID, []byte{byte(navSys)})
 	return packet
 }
 
+// PollPrt creates a CFG-PRT poll packet for the given port.
 func PollPrt(port CfgPrtPortID) []byte {
 	packet, _ := packMsg(CfgPrtID, []byte{byte(port)})
 	return packet
 }
 
+// SetCfgMsg creates a CFG-MSG packet setting the output rate of mid.
 func SetCfgMsg(mid MsgID, rate byte) []byte {
 	cls, id := mid.Unpack()
 	packet, _ := packMsg(CfgMsgID, []byte{cls, id, rate})
 	return packet
 }
 
+// PollCfgMsg creates a CFG-MSG packet polling the output rate of mid.
 func PollCfgMsg(mid MsgID) []byte {
 	cls, id := mid.Unpack()
 	packet, _ := packMsg(CfgMsgID, []byte{cls, id})
