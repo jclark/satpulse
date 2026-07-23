@@ -83,6 +83,9 @@ func (c *Configurator) generateTPSet() {
 	if d, ok := props.GetAntennaCableDelay(); ok {
 		tp.UserDelay = casbin.CfgTPUserDelaySeconds(d)
 	}
+	if tp == *c.tp {
+		return
+	}
 	c.addSetReq(&tp, func() { c.tp = &tp })
 }
 

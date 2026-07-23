@@ -200,13 +200,17 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	c.tmodeConfigProps(props)
 	c.signalConfigProps(props)
 	c.minElevConfigProps(props)
-	if c.speedReq != nil && c.speedReq.state == reqSucceeded {
-		props.SetBaudRate(uint32(c.speedReq.speedAfter))
-	} else if c.target.Get&gpsprot.PropIDBaudRate != 0 {
+	if c.speedReq != nil {
+		if c.speedReq.state == reqSucceeded {
+			props.SetBaudRate(uint32(c.speedReq.speedAfter))
+		}
+	} else if c.target.UsesAny(gpsprot.PropIDBaudRate) {
 		// --show-port: report the wired UART's baud (the speed the host
-		// is communicating at) from the CFG-PRT readback. CASIC cannot
-		// identify which port is the active one, so the port name itself
-		// is left unset (ConfigSupportPort is not advertised).
+		// is communicating at) from the CFG-PRT readback. This also
+		// reports the authoritative queried value when a requested speed
+		// change was suppressed as a no-op. CASIC cannot identify which
+		// port is the active one, so the port name itself is left unset
+		// (ConfigSupportPort is not advertised).
 		if base, ok := c.basePort(); ok {
 			props.SetBaudRate(base.BaudRate)
 		}
@@ -408,6 +412,9 @@ func (c *Configurator) generateSpeedReqs() {
 	}
 	base, haveBase := c.basePort()
 	if !haveBase {
+		return
+	}
+	if base.BaudRate == baud {
 		return
 	}
 	m := &casbin.CfgPrt{PortID: casbin.CfgPrtPortCurrent, ProtoMask: base.ProtoMask, Mode: base.Mode, BaudRate: baud}

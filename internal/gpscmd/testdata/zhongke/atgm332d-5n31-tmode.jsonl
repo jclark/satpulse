@@ -1,4 +1,4 @@
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-tmode.jsonl","--pvt-out","tp,survey"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-tmode.jsonl","--pvt-out","tp,survey"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
 {"t":"2026-07-21T12:59:34.239374Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T12:59:34.271629Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-21T12:59:34.271233Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace500001032fe53c000707031b0b100000ec1f843f9ed0de66432959408c0c2335b7762b40d67edac1000000002161713f45021740000000000000000000000000000000000000000000000000ce83d93800247449ab23fc3d"}
@@ -14,7 +14,7 @@
 {"t":"2026-07-21T12:59:34.622788Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060400000a040501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config"}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-tmode.jsonl","--mobile"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-tmode.jsonl","--mobile"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
 {"t":"2026-07-21T12:59:36.784581Z","bin":"0044"}
 {"t":"2026-07-21T12:59:37.215862Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T12:59:37.232559Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
@@ -33,7 +33,7 @@
 {"t":"2026-07-21T12:59:37.695407Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060600000a060501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config","static":false}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-tmode.jsonl","--fixed-pos-ecef","3978578.1754,-8652.1523,4968410.94136","--fixed-pos-acc","5"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-tmode.jsonl","--fixed-pos-ecef","3978578.1754,-8652.1523,4968410.94136","--fixed-pos-acc","5"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
 {"t":"2026-07-21T13:00:17.912809Z","bin":"0044"}
 {"t":"2026-07-21T13:00:18.200457Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T13:00:18.232739Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
@@ -52,7 +52,7 @@
 {"t":"2026-07-21T13:00:18.695928Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060600000a060501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config","static":true,"fixedPosECEF":[3978578.1754,-8652.1523,4968410.94136],"fixedPosAcc":5}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-tmode.jsonl","--static","--pvt-out","tp,survey"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-tmode.jsonl","--static","--pvt-out","tp,survey"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
 {"t":"2026-07-21T13:00:19.206727Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T13:00:19.23953Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-21T13:00:19.239117Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace50000103ca943d000707031b0b100000a290843f824b576d4329594005fdc11ab7762b400583dac100000000164b1740ed0cbf4000000000000000000000000000000000000000000000000055459f3800247449ac69282b"}
@@ -72,7 +72,7 @@
 {"t":"2026-07-21T13:00:19.686186Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060400000a040501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config","static":true,"fixedPosECEF":[3978578.1754,-8652.1523,4968410.94136],"fixedPosAcc":5}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-tmode.jsonl","--mobile"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-tmode.jsonl","--mobile"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
 {"t":"2026-07-21T13:00:20.229578Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T13:00:20.261926Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-21T13:00:20.261555Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace50000103b1983d000707031b0b1000002893843f0477606d4329594017cdc318b7762b40a683dac100000000626721400bdccb400000000000000000000000000000000000000000000000006d61153900247449d073c029"}
@@ -90,7 +90,7 @@
 {"t":"2026-07-21T13:00:20.708952Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060600000a060501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config","static":false}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-tmode.jsonl","--survey","--pvt-out","tp,survey"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-tmode.jsonl","--survey","--pvt-out","tp,survey"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
 {"t":"2026-07-21T13:00:21.220216Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T13:00:21.252563Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-21T13:00:21.252249Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace50000103989c3d000707031b0b100000ad95843f2c7d516d43295940d0898d16b7762b407f85dac10000000082e21e4007b8c840000000000000000000000000000000000000000000000000c1e41c390024744966197d27"}
@@ -112,7 +112,7 @@
 {"t":"2026-07-21T13:00:21.795257Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060400000a040501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config","static":true}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-tmode.jsonl","--static","--survey-acc","10","--survey-time","5000"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-tmode.jsonl","--static","--survey-acc","10","--survey-time","5000"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
 {"t":"2026-07-21T13:00:24.976131Z","bin":"0044"}
 {"t":"2026-07-21T13:00:25.215926Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T13:00:25.232474Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
@@ -129,7 +129,7 @@
 {"t":"2026-07-21T13:00:25.615431Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060600000a060501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config","static":true}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-tmode.jsonl","--survey","--survey-acc","10","--survey-time","5000"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-tmode.jsonl","--survey","--survey-acc","10","--survey-time","5000"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
 {"t":"2026-07-21T13:00:28.790234Z","bin":"0044"}
 {"t":"2026-07-21T13:00:29.221533Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T13:00:29.254052Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
@@ -150,7 +150,7 @@
 {"t":"2026-07-21T13:00:29.781008Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060600000a060501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config","static":true}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-tmode.jsonl","--survey"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-tmode.jsonl","--survey"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
 {"t":"2026-07-21T13:00:33.000204Z","bin":"0044"}
 {"t":"2026-07-21T13:00:33.192357Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T13:00:33.224414Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
@@ -171,7 +171,7 @@
 {"t":"2026-07-21T13:00:33.751486Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060600000a060501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config","static":true}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-tmode.jsonl","--mobile","--pvt-out","tp,survey,off"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-tmode.jsonl","--mobile","--pvt-out","tp,survey,off"],"version":"satpulse version 0.3-pre.20260721.d46269f0.dirty, build date 2026-07-21 12:56:26+00:00","hostname":"edam"}
 {"t":"2026-07-21T13:00:36.968449Z","bin":"0044"}
 {"t":"2026-07-21T13:00:37.224267Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T13:00:37.256728Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}

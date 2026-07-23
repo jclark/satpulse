@@ -1,4 +1,4 @@
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-show-port.jsonl","--show-port"],"version":"satpulse version 0.3-pre.20260721.cb2f6c6e.dirty, build date 2026-07-21 15:21:57+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-show-port.jsonl","--show-port"],"version":"satpulse version 0.3-pre.20260721.cb2f6c6e.dirty, build date 2026-07-21 15:21:57+00:00","hostname":"edam"}
 {"t":"2026-07-21T15:22:14.205148Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T15:22:14.237315Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-21T15:22:14.237044Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace50000103ac97470007070317090e0000d2b5893f6624091243295940edf47aa9b8762b4081dfcdc100000000d05c0d3f33daa83f000000000000000000000000000000000000000000000000d629cb38002474498680a158"}
@@ -14,7 +14,7 @@
 {"t":"2026-07-21T15:22:14.556289Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060000000a000501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config","baudRate":9600}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-show-port.jsonl","-c","--show-port"],"version":"satpulse version 0.3-pre.20260721.cb2f6c6e.dirty, build date 2026-07-21 15:21:57+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-show-port.jsonl","-c","--show-port"],"version":"satpulse version 0.3-pre.20260721.cb2f6c6e.dirty, build date 2026-07-21 15:21:57+00:00","hostname":"edam"}
 {"t":"2026-07-21T15:22:15.195861Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T15:22:15.227964Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-21T15:22:15.243497Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace50000103939b470007070317090e00008db5893fadd4ff11432959409ae354aab8762b40bedacdc10000000025685a3ffc6f024000000000000000000000000000000000000000000000000067293d380024744908bf8a59"}

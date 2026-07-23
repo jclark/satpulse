@@ -1,4 +1,4 @@
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-binary.jsonl","--nmea"],"version":"satpulse version 0.3-pre.20260722.604a304a.dirty, build date 2026-07-22 05:12:14+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-binary.jsonl","--nmea"],"version":"satpulse version 0.3-pre.20260722.604a304a.dirty, build date 2026-07-22 05:12:14+00:00","hostname":"edam"}
 {"t":"2026-07-22T05:12:37.174914Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace5000010325123f03070703180b0d0000ce4a8b3f8ed39c51432959401318c046ba762b40a68fe1c100000000bcdb1f417cfbd141000000000000000000000000000000000000000000000000db8d7a3900247449ac15723e"}
 {"t":"2026-07-22T05:12:37.254984Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-22T05:12:37.270703Z","tag":"CASBIN","msg":"NAV-TIMEUTC","bin":"bace1800011025123f035b2e714180eeb3370000ea070716050c25070003444c54a3"}
@@ -54,7 +54,7 @@
 {"t":"2026-07-22T05:12:38.405418Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060400000a040501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config"}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-binary.jsonl","--binary"],"version":"satpulse version 0.3-pre.20260722.604a304a.dirty, build date 2026-07-22 05:12:14+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-binary.jsonl","--binary"],"version":"satpulse version 0.3-pre.20260722.604a304a.dirty, build date 2026-07-22 05:12:14+00:00","hostname":"edam"}
 {"t":"2026-07-22T05:12:39.172111Z","tag":"NMEA","msg":"GNRMC","ascii":"$GNRMC,051239.000,A,1343.91339,N,10038.68404,E,0.00,0.00,220726,,,A,V*05\r\n"}
 {"t":"2026-07-22T05:12:39.252556Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-22T05:12:39.284242Z","tag":"CASBIN","msg":"ACK-NAK","bin":"bace04000500060100000a010500"}
@@ -94,7 +94,7 @@
 {"t":"2026-07-22T05:12:39.923419Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060400000a040501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config"}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-binary.jsonl","--binary","--pvt-out","pos"],"version":"satpulse version 0.3-pre.20260722.604a304a.dirty, build date 2026-07-22 05:12:14+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-binary.jsonl","--binary","--pvt-out","pos"],"version":"satpulse version 0.3-pre.20260722.604a304a.dirty, build date 2026-07-22 05:12:14+00:00","hostname":"edam"}
 {"t":"2026-07-22T05:12:40.1789Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace50000103da1d3f03070703180b0d0000bb4c8b3f78ce3052432959404eaea942ba762b40c082e1c10000000057440e41c7e5ba410000000000000000000000000000000000000000000000001d21f13900247449b58d3d3b"}
 {"t":"2026-07-22T05:12:40.275315Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-22T05:12:40.274886Z","tag":"CASBIN","msg":"NAV-TIMEUTC","bin":"bace18000110da1d3f030d286141802681b70000ea070716050c28070003ae891123"}
@@ -133,7 +133,7 @@
 {"t":"2026-07-22T05:12:40.946143Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060400000a040501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config"}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-binary.jsonl","--binary","--pvt-out","time"],"version":"satpulse version 0.3-pre.20260722.604a304a.dirty, build date 2026-07-22 05:12:14+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-binary.jsonl","--binary","--pvt-out","time"],"version":"satpulse version 0.3-pre.20260722.604a304a.dirty, build date 2026-07-22 05:12:14+00:00","hostname":"edam"}
 {"t":"2026-07-22T05:12:41.185681Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace50000103c1213f03070703180b0d00005f4d8b3f031c6c52432959408dbf2f41ba762b40487ee1c100000000e2e209415726b5410000000000000000000000000000000000000000000000002e06513900247449beb05439"}
 {"t":"2026-07-22T05:12:41.281806Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-22T05:12:41.281432Z","tag":"CASBIN","msg":"NAV-TIMEUTC","bin":"bace18000110c1213f039b335c41000764b70000ea070716050c29070003a479ef22"}
@@ -172,7 +172,7 @@
 {"t":"2026-07-22T05:12:41.936874Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060400000a040501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config"}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-binary.jsonl","--binary","--pvt-out","pos,vel,time"],"version":"satpulse version 0.3-pre.20260722.604a304a.dirty, build date 2026-07-22 05:12:14+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-binary.jsonl","--binary","--pvt-out","pos,vel,time"],"version":"satpulse version 0.3-pre.20260722.604a304a.dirty, build date 2026-07-22 05:12:14+00:00","hostname":"edam"}
 {"t":"2026-07-22T05:12:42.176466Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace50000103a8253f03070703180b0d0000034e8b3fadcfa45243295940458c3640ba762b40147ae1c10000000098a8f8407e58a341000000000000000000000000000000000000000000000000f0d1ea380024744916f50a38"}
 {"t":"2026-07-22T05:12:42.272898Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-22T05:12:42.272455Z","tag":"CASBIN","msg":"NAV-TIMEUTC","bin":"bace18000110a8253f033d474c4100af48b70000ea070716050c2a0700032e39c422"}

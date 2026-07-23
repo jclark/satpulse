@@ -331,6 +331,29 @@ func configure(t *testing.T, cp *ConfigProtocol, rcvr *testReceiver, target *gps
 	return cfg, director.ErrorCount
 }
 
+// countSetRequests counts payload-bearing requests for mid. The
+// configurator's state queries use empty payloads, so this distinguishes
+// property writes from their query and verification polls.
+func countSetRequests(cfg *Configurator, mid casbin.MsgID) int {
+	n := 0
+	for _, req := range cfg.reqs {
+		if req.mid == mid && len(req.packet) > casbin.PacketMinLen {
+			n++
+		}
+	}
+	return n
+}
+
+func countPollRequests(cfg *Configurator, mid casbin.MsgID) int {
+	n := 0
+	for _, req := range cfg.reqs {
+		if req.mid == mid && len(req.packet) == casbin.PacketMinLen {
+			n++
+		}
+	}
+	return n
+}
+
 func TestProbeV6(t *testing.T) {
 	rcvr := &testReceiver{
 		monVer: &casbin.MonVer{
@@ -1089,6 +1112,255 @@ func defaultTPV6() *casbin.CfgTP {
 		TSrcMode:   casbin.CfgTPTSrcV6PrimaryGPS}
 }
 
+func TestPropertySetComparison(t *testing.T) {
+	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
+	const signalMask = casbin.CfgNavBandSigGPSL1CA | casbin.CfgNavBandSigGLOL1
+	signals := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGLOL1)
+	type testCase struct {
+		name           string
+		rcvr           *testReceiver
+		setup          func(*gpsprot.ConfigTarget)
+		mid            casbin.MsgID
+		wantSets       int
+		wantPolls      int
+		extraPollMid   casbin.MsgID
+		wantExtraPolls int
+		check          func(*testing.T, *Configurator, *testReceiver)
+	}
+	tests := []testCase{
+		{
+			name: "time pulse encoded no-op",
+			rcvr: func() *testReceiver {
+				tp := defaultTPV6()
+				tp.Width = 100001
+				tp.UserDelay = casbin.CfgTPUserDelaySeconds(50 * time.Nanosecond)
+				return &testReceiver{monVer: v6, tp: tp}
+			}(),
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetTimePulseWidth(100*time.Millisecond + 750*time.Nanosecond)
+				target.Props.SetAntennaCableDelay(50 * time.Nanosecond)
+			},
+			mid: casbin.CfgTPID, wantPolls: 1,
+		},
+		{
+			name: "time pulse change",
+			rcvr: &testReceiver{monVer: v6, tp: defaultTPV6()},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetTimePulseWidth(100*time.Millisecond + 750*time.Nanosecond)
+			},
+			mid: casbin.CfgTPID, wantSets: 1, wantPolls: 1,
+		},
+		{
+			name: "V6 time mode no-op",
+			rcvr: &testReceiver{monVer: v6, tm6: &casbin.CfgTMode2{
+				TimFixMode: casbin.CfgTMode2Survey, BandMode: casbin.CfgTMode2BandL1,
+				TSrcMode: casbin.CfgTMode2TSrcForceGLN, SvinMinDur: 300, SvinPaccLim: 20000,
+			}},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second, AccLimit: 20 * gpsprot.Meter}
+			},
+			mid: casbin.CfgTMode2ID, wantPolls: 1,
+		},
+		{
+			name: "V6 time mode change",
+			rcvr: &testReceiver{monVer: v6, tm6: &casbin.CfgTMode2{
+				TimFixMode: casbin.CfgTMode2Survey, SvinMinDur: 299, SvinPaccLim: 20000,
+			}},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second, AccLimit: 20 * gpsprot.Meter}
+			},
+			mid: casbin.CfgTMode2ID, wantSets: 1, wantPolls: 1,
+		},
+		{
+			name: "V5 time mode ignores upper mode garbage",
+			rcvr: &testReceiver{tm5: &casbin.CfgTMode{
+				Mode: casbin.CfgTModeSurvey, Res: 0xA5A5, SvinMinDur: 300, SvinVarLimit: 400,
+			}},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second, AccLimit: 20 * gpsprot.Meter}
+			},
+			mid: casbin.CfgTModeID, wantPolls: 1,
+		},
+		{
+			name: "V5 time mode change",
+			rcvr: &testReceiver{tm5: &casbin.CfgTMode{
+				Mode: casbin.CfgTModeSurvey, Res: 0xA5A5, SvinMinDur: 299, SvinVarLimit: 400,
+			}},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second, AccLimit: 20 * gpsprot.Meter}
+			},
+			mid: casbin.CfgTModeID, wantSets: 1, wantPolls: 1,
+		},
+		{
+			name: "V6 signal no-op skips verification poll",
+			rcvr: &testReceiver{monVer: v6, sigCap: signalMask, navBand: &casbin.CfgNavBand{
+				SigBandAuto: casbin.CfgNavBandManual, Res1: 0xA5, Res2: 0x5A5A,
+				SigIDMaskFix: signalMask, SigIDMask: signalMask,
+			}},
+			setup: func(target *gpsprot.ConfigTarget) { target.Props.SetSignalsEnabled(signals) },
+			mid:   casbin.CfgNavBandID, wantPolls: 1,
+		},
+		{
+			name: "V6 signal change keeps verification poll",
+			rcvr: &testReceiver{monVer: v6, sigCap: signalMask, navBand: &casbin.CfgNavBand{
+				SigBandAuto:  casbin.CfgNavBandManual,
+				SigIDMaskFix: casbin.CfgNavBandSigGPSL1CA, SigIDMask: casbin.CfgNavBandSigGPSL1CA,
+			}},
+			setup: func(target *gpsprot.ConfigTarget) { target.Props.SetSignalsEnabled(signals) },
+			mid:   casbin.CfgNavBandID, wantSets: 1, wantPolls: 2,
+		},
+		{
+			name: "V5 signal no-op ignores mask and reserved fields",
+			rcvr: &testReceiver{navx: &casbin.CfgNavx{
+				Mask: casbin.CfgNavxApplyMinElev, Res1: 0xA5,
+				NavSystem: casbin.CfgNavxNavSystemGPS | casbin.CfgNavxNavSystemGLN,
+			}},
+			setup: func(target *gpsprot.ConfigTarget) { target.Props.SetSignalsEnabled(signals) },
+			mid:   casbin.CfgNavxID, wantPolls: 1,
+		},
+		{
+			name: "V5 signal change",
+			rcvr: &testReceiver{navx: &casbin.CfgNavx{
+				NavSystem: casbin.CfgNavxNavSystemGPS | casbin.CfgNavxNavSystemGLN,
+			}},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA))
+			},
+			mid: casbin.CfgNavxID, wantSets: 1, wantPolls: 1,
+		},
+		{
+			name: "V6 minimum elevation encoded no-op",
+			rcvr: &testReceiver{monVer: v6, navLimit: &casbin.CfgNavLimit{
+				MinSVs: 4, MaxSVs: 40, MinCNO: 8, MinElev: 15, Res: 0xA5A55A5A,
+			}},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMinElevation(gpsprot.DegreesFromFloat(14.2))
+			},
+			mid: casbin.CfgNavLimID, wantPolls: 1,
+		},
+		{
+			name: "V6 minimum elevation change",
+			rcvr: &testReceiver{monVer: v6, navLimit: &casbin.CfgNavLimit{MinElev: 14}},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMinElevation(gpsprot.DegreesFromFloat(14.2))
+			},
+			mid: casbin.CfgNavLimID, wantSets: 1, wantPolls: 1,
+		},
+		{
+			name: "V5 minimum elevation no-op ignores mask and reserved fields",
+			rcvr: &testReceiver{navx: &casbin.CfgNavx{
+				Mask: casbin.CfgNavxApplyNavSystem, Res1: 0xA5, MinElev: 15,
+			}},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMinElevation(gpsprot.DegreesFromFloat(14.2))
+			},
+			mid: casbin.CfgNavxID, wantPolls: 1,
+		},
+		{
+			name: "V5 minimum elevation change",
+			rcvr: &testReceiver{navx: &casbin.CfgNavx{MinElev: 14}},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMinElevation(gpsprot.DegreesFromFloat(14.2))
+			},
+			mid: casbin.CfgNavxID, wantSets: 1, wantPolls: 1,
+		},
+		{
+			name: "baud no-op skips write confirmation and minimal save",
+			rcvr: &testReceiver{monVer: v6, ports: []casbin.CfgPrt{{
+				PortID: casbin.CfgPrtPortUART0, ProtoMask: casbin.CfgPrtProtoBinaryIn,
+				Mode: casbin.CfgPrtModeCharLen8, BaudRate: 115200,
+			}}},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetBaudRate(115200)
+				target.Opts.Save = gpsprot.SaveMinimal
+			},
+			mid: casbin.CfgPrtID, wantPolls: 1,
+			extraPollMid: casbin.CfgRateID,
+			check: func(t *testing.T, cfg *Configurator, rcvr *testReceiver) {
+				if len(rcvr.saves) != 0 {
+					t.Errorf("saves = %+v, want none", rcvr.saves)
+				}
+				if got, ok := cfg.ConfigProps().GetBaudRate(); !ok || got != 115200 {
+					t.Errorf("BaudRate = %d,%v, want 115200,true", got, ok)
+				}
+			},
+		},
+		{
+			name: "baud change keeps confirmation poll",
+			rcvr: &testReceiver{monVer: v6, ports: []casbin.CfgPrt{{
+				PortID: casbin.CfgPrtPortUART0, ProtoMask: casbin.CfgPrtProtoBinaryIn,
+				Mode: casbin.CfgPrtModeCharLen8, BaudRate: 115200,
+			}}, rate: &casbin.CfgRate{FixIntervalMs: casbin.CfgRateFixInterval1Hz,
+				FixRateHz: casbin.CfgRateFixRate1Hz}},
+			setup: func(target *gpsprot.ConfigTarget) { target.Props.SetBaudRate(38400) },
+			mid:   casbin.CfgPrtID, wantSets: 1, wantPolls: 1,
+			extraPollMid: casbin.CfgRateID, wantExtraPolls: 1,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := probe(t, tc.rcvr)
+			target := gpsprot.NewConfigTarget()
+			tc.setup(target)
+			cfg, errCount := configure(t, cp, tc.rcvr, target)
+			if errCount != 0 {
+				t.Fatalf("ErrorCount = %d, want 0", errCount)
+			}
+			if got := countSetRequests(cfg, tc.mid); got != tc.wantSets {
+				t.Errorf("%v sets = %d, want %d", tc.mid, got, tc.wantSets)
+			}
+			if got := countPollRequests(cfg, tc.mid); got != tc.wantPolls {
+				t.Errorf("%v polls = %d, want %d", tc.mid, got, tc.wantPolls)
+			}
+			if tc.extraPollMid != 0 {
+				if got := countPollRequests(cfg, tc.extraPollMid); got != tc.wantExtraPolls {
+					t.Errorf("%v polls = %d, want %d", tc.extraPollMid, got, tc.wantExtraPolls)
+				}
+			}
+			if tc.check != nil {
+				tc.check(t, cfg, tc.rcvr)
+			}
+		})
+	}
+}
+
+func TestMixedPropertyTargetsSuppressOnlyNoOps(t *testing.T) {
+	rcvr := &testReceiver{
+		tp: &casbin.CfgTP{Interval: 1000000, Width: 100000,
+			PPSOutMode: casbin.CfgTPPPSOutV5On, TBase: casbin.CfgTPTBaseV5UTC,
+			TSrcMode: casbin.CfgTPTSrcV5ForceGPS},
+		navx: &casbin.CfgNavx{Mask: casbin.CfgNavxApplyDynModel, Res1: 0xA5,
+			NavSystem: casbin.CfgNavxNavSystemGPS, MinElev: 5},
+	}
+	cp := probe(t, rcvr)
+	target := gpsprot.NewConfigTarget()
+	target.Props.SetTimePulseWidth(100 * time.Millisecond)
+	target.Props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA))
+	target.Props.SetMinElevation(gpsprot.DegreesFromFloat(10))
+	target.Opts.Save = gpsprot.SaveMinimal
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Fatalf("ErrorCount = %d, want 0", errCount)
+	}
+	if got := countSetRequests(cfg, casbin.CfgTPID); got != 0 {
+		t.Errorf("CFG-TP sets = %d, want 0", got)
+	}
+	if got := countSetRequests(cfg, casbin.CfgNavxID); got != 1 {
+		t.Fatalf("CFG-NAVX sets = %d, want 1", got)
+	}
+	if rcvr.navx.NavSystem != casbin.CfgNavxNavSystemGPS || rcvr.navx.MinElev != 10 {
+		t.Errorf("CFG-NAVX = %+v, want GPS unchanged and MinElev 10", rcvr.navx)
+	}
+	wantSaves := []casbin.CfgCfg{{Mask: casbin.CfgCfgSectionNav, OpMode: casbin.CfgCfgOpSave}}
+	if !reflect.DeepEqual(rcvr.saves, wantSaves) {
+		t.Errorf("saves = %+v, want %+v", rcvr.saves, wantSaves)
+	}
+}
+
 func TestTimePulseSet(t *testing.T) {
 	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
 	tests := []struct {
@@ -1408,6 +1680,30 @@ func TestSurveyAgainRestarts(t *testing.T) {
 	}
 	if sets != 2 {
 		t.Errorf("CFG-TMODE2 sets = %d, want 2 (auto then survey)", sets)
+	}
+}
+
+func TestSurveyAgainRestartsV5(t *testing.T) {
+	rcvr := &testReceiver{tm5: &casbin.CfgTMode{
+		Mode: casbin.CfgTModeSurvey, Res: 0xA5A5, SvinMinDur: 300, SvinVarLimit: 400,
+	}}
+	cp := probe(t, rcvr)
+	target := gpsprot.NewConfigTarget()
+	target.Opts.SetStatic = true
+	target.Opts.Survey = gpsprot.Survey{
+		Flags:    gpsprot.SurveyAgain,
+		MinDur:   600 * time.Second,
+		AccLimit: 10 * gpsprot.Meter,
+	}
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if rcvr.tm5.Mode != casbin.CfgTModeSurvey || rcvr.tm5.SvinMinDur != 600 {
+		t.Errorf("final CFG-TMODE = %+v, want survey with 600 s", rcvr.tm5)
+	}
+	if sets := countSetRequests(cfg, casbin.CfgTModeID); sets != 2 {
+		t.Errorf("CFG-TMODE sets = %d, want 2 (auto then survey)", sets)
 	}
 }
 

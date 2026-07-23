@@ -146,6 +146,9 @@ func (c *Configurator) generateSignalSet() {
 		nb.SigBandAuto = casbin.CfgNavBandManual
 		nb.SigIDMaskFix = mask
 		nb.SigIDMask = mask
+		if nb == *c.navBand {
+			return
+		}
 		c.addSetReq(&nb, func() { c.navBand = &nb })
 		// The acknowledged values are not the whole truth here: the
 		// silicon clamps the written reception list to the hardware's
@@ -167,6 +170,9 @@ func (c *Configurator) generateSignalSet() {
 		if gs.Contains(e.gnss) {
 			sys |= e.bit
 		}
+	}
+	if c.navx.NavSystem == sys {
+		return
 	}
 	c.addSetReq(&casbin.CfgNavx{Mask: casbin.CfgNavxApplyNavSystem, NavSystem: sys},
 		func() { c.navx.NavSystem = sys })

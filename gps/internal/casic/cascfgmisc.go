@@ -57,10 +57,16 @@ func (c *Configurator) generateMinElevSet() {
 		}
 		nl := *c.navLimit
 		nl.MinElev = deg
+		if nl == *c.navLimit {
+			return
+		}
 		c.addSetReq(&nl, func() { c.navLimit = &nl })
 		return
 	}
 	if c.navx == nil {
+		return
+	}
+	if c.navx.MinElev == deg {
 		return
 	}
 	c.addSetReq(&casbin.CfgNavx{Mask: casbin.CfgNavxApplyMinElev, MinElev: deg},

@@ -1,4 +1,4 @@
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-noop.jsonl"],"version":"satpulse version 0.3-pre.20260721.cb2f6c6e.dirty, build date 2026-07-21 15:21:57+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-noop.jsonl"],"version":"satpulse version 0.3-pre.20260721.cb2f6c6e.dirty, build date 2026-07-21 15:21:57+00:00","hostname":"edam"}
 {"t":"2026-07-21T15:22:08.200561Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T15:22:08.232832Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-21T15:22:08.232572Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace500001034280470007070317090e000071b7893f7a3a8c124329594079f9b2a4b8762b4026e8cdc100000000589ff13e5951903f000000000000000000000000000000000000000000000000b206b138002474498a240e54"}
@@ -10,7 +10,7 @@
 {"t":"2026-07-21T15:22:08.472359Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,02,HW=AT6558D,0000000000000*2C\r\n"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config"}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/at6558d-noop.jsonl","--show-config"],"version":"satpulse version 0.3-pre.20260721.cb2f6c6e.dirty, build date 2026-07-21 15:21:57+00:00","hostname":"edam"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-noop.jsonl","--show-config"],"version":"satpulse version 0.3-pre.20260721.cb2f6c6e.dirty, build date 2026-07-21 15:21:57+00:00","hostname":"edam"}
 {"t":"2026-07-21T15:22:09.191578Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
 {"t":"2026-07-21T15:22:09.223871Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
 {"t":"2026-07-21T15:22:09.22349Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace500001032984470007070317090e00002bb7893fa0fa6912432959406e0a3ea4b8762b40d4e8cdc1000000002ceb063feb2aa13f000000000000000000000000000000000000000000000000dbf80739002474498311f453"}

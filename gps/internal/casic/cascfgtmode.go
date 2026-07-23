@@ -121,9 +121,15 @@ func (c *Configurator) generateTModeSet() {
 		c.survey = true
 	}
 	if tt.mode == tmodeTargetSurvey && cur == tmodeTargetSurvey && survey.Flags&gpsprot.SurveyAgain != 0 {
-		c.addTModeSet(&tmodeTarget{mode: tmodeTargetMobile})
+		c.addTModeSet(&tmodeTarget{mode: tmodeTargetMobile}, false)
+		// Both requests are generated before the first ACK updates the
+		// assumed state. The second write is the command-like half of the
+		// explicit restart and must not compare equal to the original
+		// survey readback.
+		c.addTModeSet(tt, true)
+		return
 	}
-	c.addTModeSet(tt)
+	c.addTModeSet(tt, false)
 }
 
 // newTModeTarget converts the device-independent mode and survey
@@ -151,8 +157,9 @@ func newTModeTarget(mode gpsprot.Mode, survey gpsprot.Survey) *tmodeTarget {
 
 // addTModeSet encodes and sends the time mode for this family. V6
 // fields not covered by the model (band, antenna detection, time
-// source) are preserved from the readback.
-func (c *Configurator) addTModeSet(tt *tmodeTarget) {
+// source) are preserved from the readback. force is used only for the
+// second half of an explicitly requested survey restart.
+func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 	if c.family == familyV6 {
 		m := *c.tm6
 		switch tt.mode {
@@ -169,6 +176,9 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget) {
 		m.FixedPacc = uint32(math.Round(tt.posAcc * casbin.CfgTMode2PositionAccuracyScale))
 		m.SvinMinDur = tt.svinDur
 		m.SvinPaccLim = uint32(math.Round(tt.svinAcc * casbin.CfgTMode2PositionAccuracyScale))
+		if !force && m == *c.tm6 {
+			return
+		}
 		c.addSetReq(&m, func() { c.tm6 = &m })
 		return
 	}
@@ -187,6 +197,11 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget) {
 		m.Mode = casbin.CfgTModeSurvey
 	case tmodeTargetFixed:
 		m.Mode = casbin.CfgTModeFixed
+	}
+	cur := *c.tm5
+	cur.Res = 0 // upper half of the queried mode field is readback garbage
+	if !force && *m == cur {
+		return
 	}
 	c.addSetReq(m, func() { c.tm5 = m })
 }
