@@ -53,18 +53,21 @@ Both use the same packet framing (0xBA 0xCE sync, same checksum) and share most 
 The probe is an empty-payload CFG-RATE poll. Both families answer it
 with a data message and an ACK on the fast CFG lane, so detection
 takes ~100 ms and never rests on a NAK (non-CASIC receivers have been
-seen NAKing packets that are not theirs). The data message is the
-identification; probing succeeds only once the ACK also arrives, so
-the probe's CFG transaction is closed before configuration starts and
-the configurator's first CFG request honors the one-CFG-in-flight
-rule. A retried probe's leftover replies are consumed at the protocol
-layer and never reach the configurator's ACK correlation. The
-readback selects the family: its byte 2 is fixRateHz on V6, a rate
-with no zero value, and reserved-as-zero on V5. The readback also
-seeds the configurator, whose rate phase then skips a no-op CFG-RATE
-write.
+seen NAKing packets that are not theirs). Probing is recognition
+only: it succeeds on the first intact solicited response, readback or
+ACK. The readback selects the family - its byte 2 is fixRateHz on V6,
+a rate with no zero value, and reserved-as-zero on V5 - and seeds the
+configurator, whose rate phase then skips a no-op CFG-RATE write.
+When the readback was corrupted and probing completed on the ACK
+alone, the configurator re-polls it ahead of everything else,
+aborting rather than guessing if it cannot be obtained. A retried
+probe's leftover replies are consumed at the protocol layer, within a
+window bounded by the measured straggler horizon, and never reach the
+configurator's ACK correlation; the first configuration request may
+overlap the probe poll's un-ACKed transaction for milliseconds, a
+trade accepted against the detection window.
 
-Version and hardware identity come from configurator requests, exempt
+Version and hardware information comes from configurator requests, exempt
 from phase gating so the rest of configuration overlaps them: a
 MON-VER poll on V6 (the data message is a one-shot arriving at the
 receiver's next 1 Hz output tick, tracked through
@@ -577,13 +580,13 @@ sessions the MON-VER data delay concentrates hard at ~1.01 s
 (p90 = median over ~120 samples). Probes triggered by the silence
 timer instead land at random phase. The CFG-RATE probe's own reply is
 on the fast CFG lane, so detection is phase-independent; the phase
-lock now affects only the V6 identity readback.
+lock now affects only the V6 version readback.
 
 ## Known errata
 
 1. **Checksum byte order**: already handled in `casbin.Checksum()`
 2. **MON-VER**: V5 NAKs the poll and returns no version data; V5
-   identity comes from PCAS06 queries instead
+   version information comes from PCAS06 queries instead
 3. **CFG-MSG query**: empty payload returns all rates, not just one
 4. **CFG-TMODE mode field**: upper 2 bytes contain unknown values; parse as U2 + U2 reserved
 

@@ -459,7 +459,7 @@ func TestProbeV5(t *testing.T) {
 
 // TestVerPollOrders: the MON-VER poll's data message arrives before
 // the CFG-MSG ACK on some firmware (V6.2.3) and ~130 ms after it on
-// others (V6.3.0); either order must yield the hardware identity, and
+// others (V6.3.0); either order must yield the hardware information, and
 // lost data must leave it absent without an error.
 func TestVerPollOrders(t *testing.T) {
 	const hw = "AT362-AT6668-6T-30"
@@ -2381,10 +2381,10 @@ func TestAntennaCableDelay(t *testing.T) {
 	}
 }
 
-// TestResetWaitsForIdentity: a reset restarts the receiver, which
-// would discard identity replies still in flight, so the reset phase
-// must not generate until the identity queries resolve.
-func TestResetWaitsForIdentity(t *testing.T) {
+// TestResetWaitsForVersion: a reset restarts the receiver, which
+// would discard version replies still in flight, so the reset phase
+// must not generate until the version queries resolve.
+func TestResetWaitsForVersion(t *testing.T) {
 	rcvr := &testReceiver{t: t, sw: "URANUS5,V5.3.0.0", hw: "AT6558D,0000000000000"}
 	cp := probe(t, rcvr)
 	target := gpsprot.NewConfigTarget()
@@ -2416,14 +2416,14 @@ func TestResetWaitsForIdentity(t *testing.T) {
 		t.Fatalf("GenerateRequests: %v", err)
 	}
 	if n := len(cfg.reqs); n != 3 {
-		t.Fatalf("requests = %d after identity resolved, want the reset generated", n)
+		t.Fatalf("requests = %d after version queries resolved, want the reset generated", n)
 	}
 }
 
-// TestIdentityQueriesConcurrent: the V5 SW and HW queries go out
+// TestVersionQueriesConcurrent: the V5 SW and HW queries go out
 // together, without waiting for each other's replies - correlation is
 // by key, and V5 answers each query immediately.
-func TestIdentityQueriesConcurrent(t *testing.T) {
+func TestVersionQueriesConcurrent(t *testing.T) {
 	cp := probe(t, &testReceiver{t: t})
 	cfgI, err := cp.Configure(gpsprot.NewConfigTarget())
 	if err != nil {

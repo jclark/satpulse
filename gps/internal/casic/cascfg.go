@@ -116,11 +116,11 @@ func (req *casReq) final() bool {
 	return req.state == reqSucceeded || req.state == reqFailed
 }
 
-// isIdentity reports whether this is an identity query - the MON-VER
+// isVersion reports whether this is a version query - the MON-VER
 // poll or a PCAS06 text request - exempt from phase gating (see
 // genPhases). Derived rather than stored so it cannot fall out of
 // sync with the request kinds.
-func (req *casReq) isIdentity() bool {
+func (req *casReq) isVersion() bool {
 	return req.verPoll || req.onText != nil
 }
 
@@ -148,7 +148,7 @@ func newConfigurator(target *gpsprot.ConfigTarget, rate *casbin.CfgRate) *Config
 }
 
 // ReceiverInfo returns static information about the GPS receiver,
-// from the identity queries: MON-VER on V6, PCAS06 text queries on
+// from the version queries: MON-VER on V6, PCAS06 text queries on
 // V5. Fields stay empty if the receiver never answered. MON-VER's
 // SwVersion carries a literal "SW=" prefix on the wire, stripped here
 // so the field holds just the value.
@@ -264,7 +264,7 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 }
 
 // genPhases are the request generation phases, each gated on all
-// earlier non-identity requests being final. The family phase runs
+// earlier non-version requests being final. The family phase runs
 // first and usually generates nothing (the probe's readback selected
 // the family already); when the readback was lost it re-polls it, and
 // its failure ends the invocation (see GenerateRequests). After it:
@@ -288,22 +288,22 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 // Acknowledged sets record their accepted values as the assumed
 // configuration, so no re-polling is needed.
 //
-// Identity requests (the version/hardware queries) are exempt from
+// Version requests (the version and hardware queries) are exempt from
 // the gating: on V6 the MON-VER data message arrives only at the
 // receiver's next 1 Hz output tick, and nothing but the message phase
 // consumes it - its HwVersion drives the class-based support flags -
 // so only that phase (needsVer) waits for the poll to resolve, and
 // the rest of configuration overlaps the wait. The reset phase is the
-// other exception (needsIdentity): a reset restarts the receiver,
+// other exception (needsVersion): a reset restarts the receiver,
 // which would discard replies still in flight, so it waits for every
-// identity request to resolve - bounded, since identity requests are
+// version request to resolve - bounded, since version requests are
 // optional and always reach a final state. Run completion also
-// requires identity requests to be final (see GetRequestCount), so a
+// requires version requests to be final (see GetRequestCount), so a
 // bare --show-receiver run waits for the readback.
 var genPhases = []struct {
-	gen           func(*Configurator)
-	needsVer      bool
-	needsIdentity bool
+	gen          func(*Configurator)
+	needsVer     bool
+	needsVersion bool
 }{
 	{gen: (*Configurator).generateFamilyReqs},
 	{gen: (*Configurator).generateQueryReqs},
@@ -312,7 +312,7 @@ var genPhases = []struct {
 	{gen: (*Configurator).generateRateReqs},
 	{gen: (*Configurator).generateSpeedReqs},
 	{gen: (*Configurator).generateSaveReqs},
-	{gen: (*Configurator).generateResetReqs, needsIdentity: true},
+	{gen: (*Configurator).generateResetReqs, needsVersion: true},
 }
 
 // GenerateRequests generates configuration requests and promotes
@@ -341,7 +341,7 @@ func (c *Configurator) GenerateRequests() error {
 		if ph.needsVer && !c.verFinal() {
 			break
 		}
-		if ph.needsIdentity && !c.identityFinal() {
+		if ph.needsVersion && !c.versionFinal() {
 			break
 		}
 		ph.gen(c)
@@ -388,11 +388,11 @@ func (c *Configurator) allFinal() bool {
 	return true
 }
 
-// configFinal reports whether every non-identity request is final;
-// identity requests never gate phase advancement (see genPhases).
+// configFinal reports whether every non-version request is final;
+// version requests never gate phase advancement (see genPhases).
 func (c *Configurator) configFinal() bool {
 	for _, req := range c.reqs {
-		if !req.isIdentity() && !req.final() {
+		if !req.isVersion() && !req.final() {
 			return false
 		}
 	}
@@ -405,10 +405,10 @@ func (c *Configurator) verFinal() bool {
 	return c.verReq == nil || c.verReq.final()
 }
 
-// identityFinal reports whether every identity request is final.
-func (c *Configurator) identityFinal() bool {
+// versionFinal reports whether every version request is final.
+func (c *Configurator) versionFinal() bool {
 	for _, req := range c.reqs {
-		if req.isIdentity() && !req.final() {
+		if req.isVersion() && !req.final() {
 			return false
 		}
 	}
@@ -742,7 +742,7 @@ func (c *Configurator) touchNoOp(section casbin.CfgCfgSectionMask) {
 // addTextReq appends an NMEA text request whose reply is matched by
 // onText. There is no acknowledgement and no reply is guaranteed, so
 // the request is optional: silence is acceptable. All text requests
-// are identity queries, exempt from phase gating (see isIdentity).
+// are version queries, exempt from phase gating (see isVersion).
 func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
 	c.add(&casReq{packet: []byte(sentence), onText: onText, optional: true})
 }

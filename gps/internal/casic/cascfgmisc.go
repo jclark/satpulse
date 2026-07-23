@@ -88,12 +88,13 @@ func (c *Configurator) minElevConfigProps(props *gpsprot.ConfigProps) {
 	}
 }
 
-// generateVerQuery asks for the receiver's identity: the binary
+// generateVerQuery asks for the receiver's version and hardware
+// information: the binary
 // MON-VER poll on V6, whose HwVersion also drives the class-based
 // support flags (see ConfigSupport), and PCAS06 firmware and hardware
 // text queries on V5, which does not answer MON-VER. All are
 // best-effort - a receiver that never answers just leaves
-// ReceiverInfo empty - and all are identity requests, generated first
+// ReceiverInfo empty - and all are version requests, generated first
 // so their replies can arrive while the rest of configuration runs.
 func (c *Configurator) generateVerQuery() {
 	if c.family == familyV6 {
