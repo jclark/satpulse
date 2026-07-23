@@ -44,8 +44,8 @@ func (px *ConfigProtocol) Version() *Version {
 	return px.ver
 }
 
-func (px *ConfigProtocol) ProbePacket() []byte {
-	return ubxbin.Poll(ubxbin.MonVerID)
+func (px *ConfigProtocol) ProbePackets() ([][]byte, time.Duration) {
+	return [][]byte{ubxbin.Poll(ubxbin.MonVerID)}, 0
 }
 
 func (px *ConfigProtocol) ProbeOK() bool {
