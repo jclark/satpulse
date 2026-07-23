@@ -28,20 +28,20 @@ const (
 	CfgTMode2AntDetExternalPin
 )
 
-// CfgTMode2TimeSource selects the GNSS used for timing. The priority
+// CfgTMode2TSrcMode selects the GNSS used for timing. The priority
 // modes fall back to another timing system when their preferred system
 // is unavailable.
-type CfgTMode2TimeSource uint8
+type CfgTMode2TSrcMode uint8
 
 const (
-	CfgTMode2TimeSourceForceGPS CfgTMode2TimeSource = iota
-	CfgTMode2TimeSourceForceBDS
-	CfgTMode2TimeSourceForceGLN
-	CfgTMode2TimeSourceForceGAL
-	CfgTMode2TimeSourcePriorityBDS
-	CfgTMode2TimeSourcePriorityGPS
-	CfgTMode2TimeSourcePriorityGLN
-	CfgTMode2TimeSourcePriorityGAL
+	CfgTMode2TSrcForceGPS CfgTMode2TSrcMode = iota
+	CfgTMode2TSrcForceBDS
+	CfgTMode2TSrcForceGLN
+	CfgTMode2TSrcForceGAL
+	CfgTMode2TSrcPriorityBDS
+	CfgTMode2TSrcPriorityGPS
+	CfgTMode2TSrcPriorityGLN
+	CfgTMode2TSrcPriorityGAL
 )
 
 const (
@@ -56,7 +56,7 @@ type CfgTMode2 struct {
 	TimFixMode  CfgTMode2Mode       `json:"timFixMode"`  // 0=realtime, 1=survey, 2=fixed
 	BandMode    CfgTMode2Band       `json:"bandMode"`    // signal band selection
 	AntDetMode  CfgTMode2AntDetMode `json:"antDetMode"`  // antenna-detection source
-	TSrcMode    CfgTMode2TimeSource `json:"tsrc_mode"`   // timing GNSS selection
+	TSrcMode    CfgTMode2TSrcMode   `json:"tsrc_mode"`   // timing GNSS selection
 	XFixed      int32               `json:"xFixed"`      // 0.01 m, ECEF X
 	YFixed      int32               `json:"yFixed"`      // 0.01 m, ECEF Y
 	ZFixed      int32               `json:"zFixed"`      // 0.01 m, ECEF Z
