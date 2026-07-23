@@ -60,9 +60,7 @@ var v5NavSystems = []struct {
 }
 
 // v5Signals is the V5 supported signal set.
-const v5Signals = gpsprot.SignalSet(1<<gpsprot.SigGPSL1CA) |
-	gpsprot.SignalSet(1<<gpsprot.SigBDSB1I) |
-	gpsprot.SignalSet(1<<gpsprot.SigGLOL1)
+var v5Signals = gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigBDSB1I, gpsprot.SigGLOL1)
 
 // signalsToNavBand converts a signal set to a CFG-NAVBAND mask.
 func signalsToNavBand(ss gpsprot.SignalSet) casbin.CfgNavBandSigIDMask {
