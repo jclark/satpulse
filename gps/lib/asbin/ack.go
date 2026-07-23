@@ -7,8 +7,8 @@ const (
 
 // ACK-NAK (0x05 0x00) and ACK-ACK (0x05 0x01)
 type Ack struct {
-	MsgClass uint8 // Message class
-	MsgID    uint8 // Message ID
+	MsgClass uint8 `json:"groupID"` // Message class
+	MsgID    uint8 `json:"subID"`   // Message ID
 }
 
 func (m *Ack) ID() MsgID { return AckNakID } // This would be overridden for AckAck

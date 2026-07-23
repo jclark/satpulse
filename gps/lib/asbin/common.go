@@ -242,4 +242,3 @@ func Checksum[B Bytes](bytes B) (ckA, ckB byte) {
 	}
 	return
 }
-
