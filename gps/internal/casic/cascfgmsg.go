@@ -47,7 +47,14 @@ func (c *Configurator) generateRateReqs() {
 	if c.family == familyV6 {
 		rate.FixRateHz = casbin.CfgRateFixRate1Hz
 	}
-	c.addReq(rate)
+	// The probe's CFG-RATE readback makes the usual case a no-op.
+	// Res is excluded from the comparison: it is reserved, V6 units
+	// report 1 there, and the value written does not matter.
+	if c.rate.FixIntervalMs == rate.FixIntervalMs && c.rate.FixRateHz == rate.FixRateHz {
+		c.touchNoOp(casbin.CfgCfgSectionNav)
+		return
+	}
+	c.addSetReq(rate, func() { c.rate = rate })
 }
 
 // generateRawReqs configures raw data output where the capability is

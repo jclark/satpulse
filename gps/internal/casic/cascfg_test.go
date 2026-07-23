@@ -21,39 +21,63 @@ const (
 // are interpreted from raw packet bytes and answered with raw packet
 // bytes, which the test feeds through the real PacketProcessor.
 type testReceiver struct {
-	t          *testing.T
-	monVer     *casbin.MonVer // nil simulates V5: MON-VER poll gets NAK
-	nmea       []string       // NMEA sentences received (e.g. the probe quiet command)
-	rates      map[casbin.MsgID]casbin.CfgMsgRate
-	naks       map[casbin.MsgID]bool // requests answered with NAK
-	nakTargets map[casbin.MsgID]bool // CFG-MSG set targets answered with NAK
-	silent     map[casbin.MsgID]bool // requests not answered at all
-	pending    [][]byte              // delivered before the next request's responses
-	staleNak   bool                  // deliver a stale CFG-MSG NAK before the next set's ACK
-	saves      []casbin.CfgCfg
-	saveBaud   uint32        // newBaud at the time of the first save
-	switchLag  time.Duration // simulated host-side gap after a speed change (default 200ms)
-	resets     []casbin.CfgRst
-	tp         *casbin.CfgTP // nil: CFG-TP unsupported (poll gets NAK)
-	tm5        *casbin.CfgTMode
-	tm6        *casbin.CfgTMode2
-	navx       *casbin.CfgNavx
-	navBand    *casbin.CfgNavBand
-	sigCap     casbin.CfgNavBandSigIDMask // hardware-receivable signals; clamps written SigIDMask
-	ports      []casbin.CfgPrt
-	rate       *casbin.CfgRate  // poll response for CFG-RATE
-	rateSets   []casbin.CfgRate // CFG-RATE set payloads received
-	navLimit   *casbin.CfgNavLimit
-	sw, hw     string   // PCAS06 replies, when non-empty
-	textOut    []string // queued GPTXT payloads to deliver
-	newBaud    uint32   // recorded from a CFG-PRT set
-	silentPrt  bool     // CFG-PRT set gets no ACK (it arrives at the new speed)
+	t            *testing.T
+	monVer       *casbin.MonVer // nil simulates V5: MON-VER poll gets NAK
+	nmea         []string       // NMEA sentences received (e.g. the probe quiet command)
+	rates        map[casbin.MsgID]casbin.CfgMsgRate
+	naks         map[casbin.MsgID]bool // requests answered with NAK
+	nakTargets   map[casbin.MsgID]bool // CFG-MSG set targets answered with NAK
+	silent       map[casbin.MsgID]bool // requests not answered at all
+	pending      [][]byte              // delivered before the next request's responses
+	saves        []casbin.CfgCfg
+	saveBaud     uint32        // newBaud at the time of the first save
+	switchLag    time.Duration // simulated host-side gap after a speed change (default 200ms)
+	resets       []casbin.CfgRst
+	tp           *casbin.CfgTP // nil: CFG-TP unsupported (poll gets NAK)
+	tm5          *casbin.CfgTMode
+	tm6          *casbin.CfgTMode2
+	navx         *casbin.CfgNavx
+	navBand      *casbin.CfgNavBand
+	sigCap       casbin.CfgNavBandSigIDMask // hardware-receivable signals; clamps written SigIDMask
+	ports        []casbin.CfgPrt
+	rate         *casbin.CfgRate  // poll response for CFG-RATE
+	rateSets     []casbin.CfgRate // CFG-RATE set payloads received
+	navLimit     *casbin.CfgNavLimit
+	sw, hw       string   // PCAS06 replies, when non-empty
+	verAckFirst  bool     // MON-VER poll: send the ACK before the data
+	verLost      bool     // MON-VER poll: send only the ACK, no data
+	rateDataLost bool     // CFG-RATE poll: send only the ACK, no data
+	textOut      []string // queued GPTXT payloads to deliver
+	newBaud      uint32   // recorded from a CFG-PRT set
+	silentPrt    bool     // CFG-PRT set gets no ACK (it arrives at the new speed)
 }
 
 func (r *testReceiver) takePending() [][]byte {
 	p := r.pending
 	r.pending = nil
 	return p
+}
+
+// defaultRate is the CFG-RATE readback for the family the receiver
+// simulates (monVer set means V6).
+func (r *testReceiver) defaultRate() *casbin.CfgRate {
+	if r.monVer != nil {
+		return &casbin.CfgRate{FixIntervalMs: 1000, FixRateHz: 1, Res: 1}
+	}
+	return &casbin.CfgRate{FixIntervalMs: 1000}
+}
+
+// swValue is the value the receiver replies to a PCAS06 SW query:
+// explicit sw when set, otherwise derived from the family the receiver
+// simulates (monVer for V6, the V5 default without it).
+func (r *testReceiver) swValue() string {
+	if r.sw != "" {
+		return r.sw
+	}
+	if r.monVer != nil {
+		return strings.TrimPrefix(r.monVer.SwVersion.String(), "SW=")
+	}
+	return "URANUS5,V5.3.0.0"
 }
 
 // respond interprets one request write (which may have NMEA sentences
@@ -67,8 +91,8 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		}
 		sentence := strings.TrimRight(string(data[:i]), "\r")
 		r.nmea = append(r.nmea, sentence)
-		if strings.HasPrefix(sentence, "$PCAS06,0") && r.sw != "" {
-			r.textOut = append(r.textOut, "GPTXT,01,01,02,SW="+r.sw)
+		if strings.HasPrefix(sentence, "$PCAS06,0") {
+			r.textOut = append(r.textOut, "GPTXT,01,01,02,SW="+r.swValue())
 		}
 		if strings.HasPrefix(sentence, "$PCAS06,1") && r.hw != "" {
 			r.textOut = append(r.textOut, "GPTXT,01,01,02,HW="+r.hw)
@@ -159,10 +183,14 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 			if r.monVer == nil {
 				return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgMsgID)})}
 			}
-			return [][]byte{
-				r.pack(r.monVer),
-				r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)}),
+			ack := r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)})
+			if r.verLost {
+				return [][]byte{ack}
 			}
+			if r.verAckFirst {
+				return [][]byte{ack, r.pack(r.monVer)}
+			}
+			return [][]byte{r.pack(r.monVer), ack}
 		}
 		if mt.Rate != casbin.CfgMsgRatePoll {
 			if r.nakTargets[mt.Target] {
@@ -172,13 +200,7 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 				r.rates = make(map[casbin.MsgID]casbin.CfgMsgRate)
 			}
 			r.rates[mt.Target] = mt.Rate
-			ack := r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)})
-			if r.staleNak {
-				// A late probe NAK arriving while this set awaits its ACK.
-				r.staleNak = false
-				return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgMsgID)}), ack}
-			}
-			return [][]byte{ack}
+			return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)})}
 		}
 	}
 	if mid := m.ID(); mid.Ackable() {
@@ -218,8 +240,17 @@ func (r *testReceiver) respondPoll(mid casbin.MsgID) [][]byte {
 			m = r.navBand
 		}
 	case casbin.CfgRateID:
+		if r.rateDataLost {
+			// The data message was corrupted on the line: only the
+			// ACK arrives.
+			return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(mid)})}
+		}
 		if r.rate != nil {
 			m = r.rate
+		} else {
+			// Default readback, as measured: V5 leaves the trailing
+			// bytes zero, V6 reports fixRateHz=1 and res=1.
+			m = r.defaultRate()
 		}
 	case casbin.CfgNavLimID:
 		if r.navLimit != nil {
@@ -262,8 +293,9 @@ func z32(s string) latin1z.StringZ32 {
 	return z
 }
 
-// probe sends the probe packet to the receiver and feeds its responses
-// through the real PacketProcessor, returning the ConfigProtocol.
+// probe sends the probe packet to the receiver and feeds its binary
+// responses through the real PacketProcessor and its GPTXT replies to
+// NativeMsg, returning the ConfigProtocol.
 func probe(t *testing.T, rcvr *testReceiver) *ConfigProtocol {
 	rcvr.t = t
 	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
@@ -278,6 +310,13 @@ func probe(t *testing.T, rcvr *testReceiver) *ConfigProtocol {
 			}
 			t0 = t0.Add(5 * time.Millisecond)
 		}
+		for _, payload := range rcvr.textOut {
+			if err := cp.NativeMsg(nmea.Tag, "GPTXT", &nmea.Sentence{Payload: payload}, t0); err != nil {
+				t.Fatalf("NativeMsg text: %v", err)
+			}
+			t0 = t0.Add(5 * time.Millisecond)
+		}
+		rcvr.textOut = nil
 	}
 	return cp
 }
@@ -293,7 +332,9 @@ func configure(t *testing.T, cp *ConfigProtocol, rcvr *testReceiver, target *gps
 	}
 	cfg := cfgI.(*Configurator)
 	director := gpsprot.NewConfigDirector(cfg, 2)
-	t0 := time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC)
+	// One second after the probe: within the straggler window, so the
+	// protocol's probe-reply consumption is active as it is live.
+	t0 := time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC)
 	for action := range director.Actions() {
 		switch action.Type {
 		case gpsprot.ConfigActionSendRequest:
@@ -363,7 +404,7 @@ func TestProbeV6(t *testing.T) {
 	}
 	cp := probe(t, rcvr)
 	if !cp.ProbeOK() {
-		t.Fatal("ProbeOK = false after MON-VER response")
+		t.Fatal("ProbeOK = false after CFG-RATE reply")
 	}
 	if len(rcvr.nmea) != 0 {
 		t.Errorf("probe sent NMEA %q, want none: probing must not change receiver state", rcvr.nmea)
@@ -393,10 +434,10 @@ func TestProbeV6(t *testing.T) {
 }
 
 func TestProbeV5(t *testing.T) {
-	rcvr := &testReceiver{} // no MON-VER: poll is NAKed
+	rcvr := &testReceiver{} // no monVer: replies as a V5
 	cp := probe(t, rcvr)
 	if !cp.ProbeOK() {
-		t.Fatal("ProbeOK = false after MON-VER NAK")
+		t.Fatal("ProbeOK = false after CFG-RATE reply")
 	}
 	cfg, errCount := configure(t, cp, rcvr, &gpsprot.ConfigTarget{})
 	if errCount != 0 {
@@ -405,6 +446,7 @@ func TestProbeV5(t *testing.T) {
 	got := cfg.ReceiverInfo()
 	want := &gpsprot.ReceiverInfo{
 		Vendor:        Vendor,
+		Firmware:      "URANUS5,V5.3.0.0",
 		SupportedGNSS: gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.BDS, gpsprot.GLO),
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -415,12 +457,49 @@ func TestProbeV5(t *testing.T) {
 	}
 }
 
-func TestConfigSupport(t *testing.T) {
-	v6cfg := func(hw string) *Configurator {
-		return newConfigurator(gpsprot.NewConfigTarget(),
-			&casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0"), HwVersion: z32(hw)})
+// TestVerPollOrders: the MON-VER poll's data message arrives before
+// the CFG-MSG ACK on some firmware (V6.2.3) and ~130 ms after it on
+// others (V6.3.0); either order must yield the hardware identity, and
+// lost data must leave it absent without an error.
+func TestVerPollOrders(t *testing.T) {
+	const hw = "AT362-AT6668-6T-30"
+	tests := []struct {
+		name              string
+		ackFirst, verLost bool
+		wantHW            string
+	}{
+		{"data then ACK", false, false, hw},
+		{"ACK then data", true, false, hw},
+		{"data lost", false, true, ""},
 	}
-	v5 := newConfigurator(gpsprot.NewConfigTarget(), nil)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rcvr := &testReceiver{
+				monVer:      &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.0.0"), HwVersion: z32(hw)},
+				verAckFirst: tc.ackFirst,
+				verLost:     tc.verLost,
+			}
+			cp := probe(t, rcvr)
+			cfg, errCount := configure(t, cp, rcvr, gpsprot.NewConfigTarget())
+			if errCount != 0 {
+				t.Errorf("ErrorCount = %d, want 0", errCount)
+			}
+			if got := cfg.ReceiverInfo().Hardware; got != tc.wantHW {
+				t.Errorf("Hardware = %q, want %q", got, tc.wantHW)
+			}
+		})
+	}
+}
+
+func TestConfigSupport(t *testing.T) {
+	v6rate := &casbin.CfgRate{FixIntervalMs: 1000, FixRateHz: 1, Res: 1}
+	v6cfg := func(hw string) *Configurator {
+		c := newConfigurator(gpsprot.NewConfigTarget(), v6rate)
+		c.ver = &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0"), HwVersion: z32(hw)}
+		return c
+	}
+	v5 := newConfigurator(gpsprot.NewConfigTarget(), &casbin.CfgRate{FixIntervalMs: 1000})
+	v6NoVer := newConfigurator(gpsprot.NewConfigTarget(), v6rate)
 	base := gpsprot.ConfigSupportSpeed |
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc
@@ -432,6 +511,8 @@ func TestConfigSupport(t *testing.T) {
 	}{
 		{"V5", v5, base | gpsprot.ConfigSupportReload},
 		{"V6 unclassified", v6cfg(""), v6base | gpsprot.ConfigSupportRaw |
+			gpsprot.ConfigSupportSurveyMsg},
+		{"V6 MON-VER unanswered", v6NoVer, v6base | gpsprot.ConfigSupportRaw |
 			gpsprot.ConfigSupportSurveyMsg},
 		{"V6 navigation", v6cfg("ATGM332D-AT9880-F8N-76"), v6base},
 		{"V6 positioning", v6cfg("AT372-AT6668-6P-34"), v6base | gpsprot.ConfigSupportRaw},
@@ -747,18 +828,21 @@ func TestSatsOut(t *testing.T) {
 // is 1000 ms), while an invocation that enables nothing - only disables,
 // or has every enable refused - leaves the interval alone. On V6 the
 // accompanying FixRateHz is set to 1; on V5 the trailing bytes are
-// reserved and stay zero.
+// reserved and stay zero. The probe's CFG-RATE readback suppresses the
+// set when the rate is already right.
 func TestMsgRate(t *testing.T) {
 	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
 	tests := []struct {
 		name       string
 		monVer     *casbin.MonVer
+		rate       *casbin.CfgRate
 		nakTargets []casbin.MsgID
 		setup      func(*gpsprot.ConfigTarget)
 		expect     []casbin.CfgRate
 	}{
 		{
 			name:  "V5 enable forces 1 Hz, FixRateHz reserved",
+			rate:  &casbin.CfgRate{FixIntervalMs: 200},
 			setup: func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC) },
 			expect: []casbin.CfgRate{{FixIntervalMs: casbin.CfgRateFixInterval1Hz,
 				FixRateHz: casbin.CfgRateFixRateV5Reserved}},
@@ -766,12 +850,26 @@ func TestMsgRate(t *testing.T) {
 		{
 			name:   "V6 enable forces 1 Hz with FixRateHz 1",
 			monVer: v6,
+			rate:   &casbin.CfgRate{FixIntervalMs: 200, FixRateHz: 5, Res: 1},
 			setup:  func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC) },
 			expect: []casbin.CfgRate{{FixIntervalMs: casbin.CfgRateFixInterval1Hz,
 				FixRateHz: casbin.CfgRateFixRate1Hz}},
 		},
 		{
+			name:  "V5 enable with rate already 1 Hz sends no CFG-RATE",
+			setup: func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC) },
+		},
+		{
+			// The default readback carries Res=1 while a set would
+			// write Res=0: the reserved byte must not defeat the
+			// suppression.
+			name:   "V6 enable with rate already 1 Hz sends no CFG-RATE",
+			monVer: v6,
+			setup:  func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC) },
+		},
+		{
 			name:  "disable only sends no CFG-RATE",
+			rate:  &casbin.CfgRate{FixIntervalMs: 200},
 			setup: func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgNone) },
 		},
 		{
@@ -779,13 +877,14 @@ func TestMsgRate(t *testing.T) {
 			// was enabled and the interval must be left alone.
 			name:       "all enables refused sends no CFG-RATE",
 			monVer:     v6,
+			rate:       &casbin.CfgRate{FixIntervalMs: 200, FixRateHz: 5, Res: 1},
 			nakTargets: []casbin.MsgID{casbin.Tim2TpxID},
 			setup:      func(tg *gpsprot.ConfigTarget) { tg.Opts.PVTMsg = gpsprot.PVTMsgTimePulse },
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rcvr := &testReceiver{monVer: tc.monVer}
+			rcvr := &testReceiver{monVer: tc.monVer, rate: tc.rate}
 			if len(tc.nakTargets) > 0 {
 				rcvr.nakTargets = make(map[casbin.MsgID]bool)
 				for _, mid := range tc.nakTargets {
@@ -864,6 +963,7 @@ func TestNVMOps(t *testing.T) {
 	tests := []struct {
 		name         string
 		monVer       *casbin.MonVer
+		rate         *casbin.CfgRate
 		nmea         gpsprot.NMEAMsgFlags
 		setNMEA      bool
 		tm6          *casbin.CfgTMode2
@@ -881,6 +981,17 @@ func TestNVMOps(t *testing.T) {
 			// the 1 Hz interval persists with the message, so the minimal
 			// save covers both the Msg and Nav sections.
 			name:        "V5 minimal save of message changes",
+			rate:        &casbin.CfgRate{FixIntervalMs: 200},
+			nmea:        gpsprot.NMEAMsgRMC,
+			setNMEA:     true,
+			save:        gpsprot.SaveMinimal,
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgCfgSectionMsg | casbin.CfgCfgSectionNav, OpMode: casbin.CfgCfgOpSave}},
+		},
+		{
+			// With the rate already 1 Hz (per the probe readback) the
+			// enable needs no CFG-RATE set, but the save must still
+			// cover the Nav section so the 1 Hz interval persists.
+			name:        "V5 minimal save with rate already 1 Hz still covers Nav",
 			nmea:        gpsprot.NMEAMsgRMC,
 			setNMEA:     true,
 			save:        gpsprot.SaveMinimal,
@@ -888,6 +999,14 @@ func TestNVMOps(t *testing.T) {
 		},
 		{
 			name:        "V5 minimal save with no changes saves nothing",
+			save:        gpsprot.SaveMinimal,
+			expectSaves: nil,
+		},
+		{
+			// The MON-VER poll is a CFG-MSG request, but reads state
+			// only: its ACK must not make the minimal save fire.
+			name:        "V6 minimal save with no changes saves nothing",
+			monVer:      v6,
 			save:        gpsprot.SaveMinimal,
 			expectSaves: nil,
 		},
@@ -1027,7 +1146,7 @@ func TestNVMOps(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rcvr := &testReceiver{monVer: tc.monVer, tm6: tc.tm6}
+			rcvr := &testReceiver{monVer: tc.monVer, tm6: tc.tm6, rate: tc.rate}
 			if tc.nakSave {
 				rcvr.naks = map[casbin.MsgID]bool{casbin.CfgCfgID: true}
 			}
@@ -1078,36 +1197,31 @@ func TestTimTPRefused(t *testing.T) {
 	}
 }
 
-// TestLateProbeNak reproduces the V5 hazard: gpscfg sends a second
-// probe when the first answers slowly, and the second probe's NAK
-// arrives only after Configure, when the configurator's first CFG-MSG
-// set is already outstanding. The protocol must consume that NAK
-// rather than attribute it to the configurator's request.
-func TestLateProbeNak(t *testing.T) {
-	rcvr := &testReceiver{t: t}
-	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
-	cp := NewConfigProtocol()
-	pp.SetNativeMsgHandler(cp)
-	packets, _ := cp.ProbePackets()
+// TestLateProbeReply reproduces the V5 hazard: gpscfg sends a second
+// probe when the first answers slowly, and the second probe's
+// CFG-RATE data and ACK arrive only during configuration. The
+// protocol must consume them - they must never reach the
+// Configurator's ACK correlation.
+func TestLateProbeReply(t *testing.T) {
+	rcvr := &testReceiver{hw: "AT6558D,0000000000000"}
+	cp := probe(t, rcvr)
 	cp.ProbePackets() // second probe, as gpscfg sends after probeRetryDelay
-	for _, resp := range rcvr.respond(packets[0]) {
-		if _, err := pp.ProcessPacket(string(resp), time.Unix(1, 0)); err != nil {
-			t.Fatalf("ProcessPacket: %v", err)
-		}
-	}
 	if !cp.ProbeOK() {
 		t.Fatal("ProbeOK = false")
 	}
-	// The second probe's NAK arrives only while the configurator's
-	// first CFG-MSG set is awaiting its ACK; the protocol must consume
-	// it (pollsPending) rather than let it fail that set.
-	rcvr.staleNak = true
-	_, errCount := configure(t, cp, rcvr, nmeaTarget(gpsprot.NMEAMsgRMC))
-	if errCount != 0 {
-		t.Errorf("ErrorCount = %d, want 0 (late probe NAK misattributed)", errCount)
+	rcvr.pending = [][]byte{
+		rcvr.pack(rcvr.defaultRate()),
+		rcvr.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgRateID)}),
 	}
-	if rcvr.rates[casbin.NmeaRmcID] != 1 {
-		t.Errorf("RMC rate = %d, want 1", rcvr.rates[casbin.NmeaRmcID])
+	cfg, errCount := configure(t, cp, rcvr, gpsprot.NewConfigTarget())
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if cfg.pcasHW != "AT6558D,0000000000000" {
+		t.Errorf("pcasHW = %q, want the HW reply", cfg.pcasHW)
+	}
+	if cp.pollsPending != 0 {
+		t.Errorf("pollsPending = %d, want 0 (straggler pair consumed)", cp.pollsPending)
 	}
 }
 
@@ -1126,10 +1240,21 @@ func TestLateAckRejected(t *testing.T) {
 	if err := cfg.GenerateRequests(); err != nil {
 		t.Fatalf("GenerateRequests: %v", err)
 	}
-	req := cfg.reqs[0]
-	t0 := time.Unix(100, 0)
-	req.SetSentTime(t0)
 	ack := &casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)}
+	// Complete the MON-VER poll so the next request is a plain set.
+	t0 := time.Unix(100, 0)
+	cfg.reqs[0].SetSentTime(t0)
+	cfg.nativeMsg(rcvr.monVer, t0.Add(10*time.Millisecond))
+	cfg.nativeMsg(ack, t0.Add(20*time.Millisecond))
+	if cfg.reqs[0].state != reqSucceeded {
+		t.Fatalf("MON-VER poll state = %v, want succeeded", cfg.reqs[0].state)
+	}
+	if err := cfg.GenerateRequests(); err != nil {
+		t.Fatalf("GenerateRequests: %v", err)
+	}
+	req := cfg.reqs[1]
+	t0 = time.Unix(200, 0)
+	req.SetSentTime(t0)
 	cfg.nativeMsg(ack, t0.Add(maxResponseDelay+time.Second))
 	if req.state != reqAwaitingAck {
 		t.Fatalf("state = %v after out-of-window ACK, want awaiting", req.state)
@@ -1144,17 +1269,116 @@ func TestLateAckRejected(t *testing.T) {
 	}
 }
 
-func TestProbeIgnoresUnrelatedNak(t *testing.T) {
+// TestProbeOnEitherResponse: probing is recognition and succeeds on
+// the first intact solicited response - the readback or its ACK,
+// whichever survives the line - while a NAK never identifies.
+func TestProbeOnEitherResponse(t *testing.T) {
+	feed := func(t *testing.T, reply casbin.Msg) *ConfigProtocol {
+		rcvr := &testReceiver{t: t}
+		pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
+		cp := NewConfigProtocol()
+		pp.SetNativeMsgHandler(cp)
+		cp.ProbePackets()
+		if _, err := pp.ProcessPacket(string(rcvr.pack(reply)), time.Unix(1, 0)); err != nil {
+			t.Fatalf("ProcessPacket: %v", err)
+		}
+		return cp
+	}
+	if cp := feed(t, &casbin.CfgRate{FixIntervalMs: 1000}); !cp.ProbeOK() {
+		t.Error("ProbeOK = false after readback alone")
+	}
+	if cp := feed(t, &casbin.AckAck{AckPayload: ackOf(casbin.CfgRateID)}); !cp.ProbeOK() {
+		t.Error("ProbeOK = false after ACK alone")
+	} else if cp.rate != nil {
+		t.Error("rate set without a readback")
+	}
+	if cp := feed(t, &casbin.AckNak{AckPayload: ackOf(casbin.CfgRateID)}); cp.ProbeOK() {
+		t.Error("ProbeOK = true after NAK")
+	}
+}
+
+// TestFamilyResolutionPoll: when probing completed on the ACK alone
+// (readback corrupted), the configurator's first request re-polls
+// CFG-RATE and resolves the family before anything else generates; if
+// the readback cannot be obtained, the invocation fails rather than
+// guessing the family.
+func TestFamilyResolutionPoll(t *testing.T) {
+	probeAckOnly := func(t *testing.T, rcvr *testReceiver) *ConfigProtocol {
+		rcvr.t = t
+		pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
+		cp := NewConfigProtocol()
+		pp.SetNativeMsgHandler(cp)
+		cp.ProbePackets()
+		ack := rcvr.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgRateID)})
+		if _, err := pp.ProcessPacket(string(ack), time.Unix(1, 0)); err != nil {
+			t.Fatalf("ProcessPacket: %v", err)
+		}
+		if !cp.ProbeOK() {
+			t.Fatal("ProbeOK = false after ACK")
+		}
+		return cp
+	}
+	t.Run("resolved", func(t *testing.T) {
+		rcvr := &testReceiver{monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}}
+		cp := probeAckOnly(t, rcvr)
+		cfg, errCount := configure(t, cp, rcvr, gpsprot.NewConfigTarget())
+		if errCount != 0 {
+			t.Errorf("ErrorCount = %d, want 0", errCount)
+		}
+		if cfg.family != familyV6 {
+			t.Errorf("family = %v, want familyV6", cfg.family)
+		}
+		if got := countPollRequests(cfg, casbin.CfgRateID); got != 1 {
+			t.Errorf("CFG-RATE polls = %d, want 1", got)
+		}
+	})
+	t.Run("unanswered aborts", func(t *testing.T) {
+		rcvr := &testReceiver{silent: map[casbin.MsgID]bool{casbin.CfgRateID: true}}
+		cp := probeAckOnly(t, rcvr)
+		cfg, errCount := configure(t, cp, rcvr, gpsprot.NewConfigTarget())
+		if errCount == 0 {
+			t.Error("ErrorCount = 0, want an error")
+		}
+		if got := countPollRequests(cfg, casbin.CfgMsgID); got != 0 {
+			t.Errorf("MON-VER polls = %d, want 0: generated without a family", got)
+		}
+	})
+	t.Run("ACK without data re-polls", func(t *testing.T) {
+		rcvr := &testReceiver{rateDataLost: true}
+		cp := probeAckOnly(t, rcvr)
+		cfg, errCount := configure(t, cp, rcvr, gpsprot.NewConfigTarget())
+		if errCount == 0 {
+			t.Error("ErrorCount = 0, want an error")
+		}
+		if got := countPollRequests(cfg, casbin.CfgRateID); got != maxFamilyPolls {
+			t.Errorf("CFG-RATE polls = %d, want %d", got, maxFamilyPolls)
+		}
+	})
+}
+
+// TestProbeIgnoresUnrelated: only a CFG-RATE data message identifies
+// a CASIC receiver. An ACK or NAK alone must not (other vendors'
+// receivers have been seen NAKing packets that are not theirs), and
+// neither must other data messages or NMEA text.
+func TestProbeIgnoresUnrelated(t *testing.T) {
 	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	cp := NewConfigProtocol()
 	pp.SetNativeMsgHandler(cp)
 	rcvr := &testReceiver{t: t}
-	nak := rcvr.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgRateID)})
-	if _, err := pp.ProcessPacket(string(nak), time.Unix(1, 0)); err != nil {
-		t.Fatalf("ProcessPacket: %v", err)
+	for _, pkt := range [][]byte{
+		rcvr.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgRateID)}),
+		rcvr.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgRateID)}),
+		rcvr.pack(&casbin.CfgPrt{PortID: casbin.CfgPrtPortUART0, BaudRate: 9600}),
+	} {
+		if _, err := pp.ProcessPacket(string(pkt), time.Unix(1, 0)); err != nil {
+			t.Fatalf("ProcessPacket: %v", err)
+		}
+	}
+	if err := cp.NativeMsg(nmea.Tag, "GPTXT", &nmea.Sentence{Payload: "GPTXT,01,01,01,ANTENNA OK"}, time.Unix(1, 0)); err != nil {
+		t.Fatalf("NativeMsg: %v", err)
 	}
 	if cp.ProbeOK() {
-		t.Error("ProbeOK = true after NAK of unrelated CFG-RATE")
+		t.Error("ProbeOK = true without a CFG-RATE data message")
 	}
 }
 
@@ -2154,6 +2378,108 @@ func TestAntennaCableDelay(t *testing.T) {
 	}
 	if got, ok := cfg.ConfigProps().GetAntennaCableDelay(); !ok || got != 50*time.Nanosecond {
 		t.Errorf("AntennaCableDelay = %v,%v, want 50ns", got, ok)
+	}
+}
+
+// TestResetWaitsForIdentity: a reset restarts the receiver, which
+// would discard identity replies still in flight, so the reset phase
+// must not generate until the identity queries resolve.
+func TestResetWaitsForIdentity(t *testing.T) {
+	rcvr := &testReceiver{t: t, sw: "URANUS5,V5.3.0.0", hw: "AT6558D,0000000000000"}
+	cp := probe(t, rcvr)
+	target := gpsprot.NewConfigTarget()
+	target.Opts.Reset = gpsprot.ResetFactory
+	cfgI, err := cp.Configure(target)
+	if err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+	cfg := cfgI.(*Configurator)
+	if err := cfg.GenerateRequests(); err != nil {
+		t.Fatalf("GenerateRequests: %v", err)
+	}
+	if n := len(cfg.reqs); n != 2 {
+		t.Fatalf("requests = %d, want 2 (SW and HW queries, no reset yet)", n)
+	}
+	t0 := time.Unix(100, 0)
+	for _, req := range cfg.reqs {
+		req.SetSentTime(t0)
+	}
+	cfg.nativeText("GPTXT,01,01,02,SW="+rcvr.sw, t0.Add(50*time.Millisecond))
+	if err := cfg.GenerateRequests(); err != nil {
+		t.Fatalf("GenerateRequests: %v", err)
+	}
+	if n := len(cfg.reqs); n != 2 {
+		t.Fatalf("requests = %d with HW outstanding, want 2: reset generated too early", n)
+	}
+	cfg.nativeText("GPTXT,01,01,02,HW="+rcvr.hw, t0.Add(100*time.Millisecond))
+	if err := cfg.GenerateRequests(); err != nil {
+		t.Fatalf("GenerateRequests: %v", err)
+	}
+	if n := len(cfg.reqs); n != 3 {
+		t.Fatalf("requests = %d after identity resolved, want the reset generated", n)
+	}
+}
+
+// TestIdentityQueriesConcurrent: the V5 SW and HW queries go out
+// together, without waiting for each other's replies - correlation is
+// by key, and V5 answers each query immediately.
+func TestIdentityQueriesConcurrent(t *testing.T) {
+	cp := probe(t, &testReceiver{t: t})
+	cfgI, err := cp.Configure(gpsprot.NewConfigTarget())
+	if err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+	cfg := cfgI.(*Configurator)
+	if err := cfg.GenerateRequests(); err != nil {
+		t.Fatalf("GenerateRequests: %v", err)
+	}
+	ready := 0
+	for _, req := range cfg.reqs {
+		if req.onText != nil && req.state == reqReady {
+			ready++
+		}
+	}
+	if ready != 2 {
+		t.Errorf("ready text requests = %d, want 2 (SW and HW sent concurrently)", ready)
+	}
+}
+
+// TestMsgPhaseWaitsForVer: the message phase needs the MON-VER
+// readback (its HwVersion drives the class gating), so it must not
+// generate requests while the poll is unresolved, and must proceed
+// once the data arrives.
+func TestMsgPhaseWaitsForVer(t *testing.T) {
+	rcvr := &testReceiver{t: t, monVer: &casbin.MonVer{
+		SwVersion: z32("SW=URANUS6,V6.3.2.0"),
+		HwVersion: z32("ATGM332D-AT9880-F8N-76"),
+	}}
+	cp := probe(t, rcvr)
+	cfgI, err := cp.Configure(nmeaTarget(gpsprot.NMEAMsgRMC))
+	if err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+	cfg := cfgI.(*Configurator)
+	if err := cfg.GenerateRequests(); err != nil {
+		t.Fatalf("GenerateRequests: %v", err)
+	}
+	if n := len(cfg.reqs); n != 1 {
+		t.Fatalf("requests = %d, want 1 (the MON-VER poll)", n)
+	}
+	t0 := time.Unix(100, 0)
+	cfg.reqs[0].SetSentTime(t0)
+	cfg.nativeMsg(&casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)}, t0.Add(100*time.Millisecond))
+	if err := cfg.GenerateRequests(); err != nil {
+		t.Fatalf("GenerateRequests: %v", err)
+	}
+	if n := len(cfg.reqs); n != 1 {
+		t.Fatalf("requests = %d after ACK, want 1: message phase ran before the readback", n)
+	}
+	cfg.nativeMsg(rcvr.monVer, t0.Add(200*time.Millisecond))
+	if err := cfg.GenerateRequests(); err != nil {
+		t.Fatalf("GenerateRequests: %v", err)
+	}
+	if n := len(cfg.reqs); n <= 1 {
+		t.Fatalf("requests = %d after MON-VER data, want message-phase requests", n)
 	}
 }
 

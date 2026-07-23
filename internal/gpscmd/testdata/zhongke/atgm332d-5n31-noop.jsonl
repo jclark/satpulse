@@ -1,33 +1,33 @@
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-noop.jsonl"],"version":"satpulse version 0.3-pre.20260721.cb2f6c6e.dirty, build date 2026-07-21 15:21:57+00:00","hostname":"edam"}
-{"t":"2026-07-21T15:22:08.200561Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
-{"t":"2026-07-21T15:22:08.232832Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
-{"t":"2026-07-21T15:22:08.232572Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace500001034280470007070317090e000071b7893f7a3a8c124329594079f9b2a4b8762b4026e8cdc100000000589ff13e5951903f000000000000000000000000000000000000000000000000b206b138002474498a240e54"}
-{"t":"2026-07-21T15:22:08.328329Z","tag":"CASBIN","msg":"NAV-TIMEUTC","bin":"bace1800011042804700a6ed3040c01a1db70000ea0707150f1608070003cfa48f28"}
-{"t":"2026-07-21T15:22:08.360582Z","tag":"CASBIN","msg":"ACK-NAK","bin":"bace04000500060100000a010500"}
-{"t":"2026-07-21T15:22:08.3768Z","ascii":"$PCAS06,0*1B\r\n","out":true}
-{"t":"2026-07-21T15:22:08.408245Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,02,SW=URANUS5,V5.3.0.0*1D\r\n"}
-{"t":"2026-07-21T15:22:08.440414Z","ascii":"$PCAS06,1*1A\r\n","out":true}
-{"t":"2026-07-21T15:22:08.472359Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,02,HW=AT6558D,0000000000000*2C\r\n"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-noop.jsonl"],"version":"satpulse version 0.3-pre.20260723.9838947b.dirty, build date 2026-07-23 09:25:56+00:00","hostname":"edam"}
+{"t":"2026-07-23T09:28:48.998712Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace5000010327500000000003000000000000000000eeffffffffff5d40eeffffffffff3d400000000000000000002474490024744900000000000000000000000000000000000000000000000000401c460024744951fc18a6"}
+{"t":"2026-07-23T09:28:49.094939Z","tag":"CASBIN","msg":"CFG-RATE","bin":"bace0000060400000604","out":true}
+{"t":"2026-07-23T09:28:49.094469Z","tag":"CASBIN","msg":"NAV-TIMEUTC","bin":"bace180001102750000000000000c8de0abb0000ea070717091c310300013f49ffef"}
+{"t":"2026-07-23T09:28:49.142206Z","tag":"CASBIN","msg":"CFG-RATE","bin":"bace04000604e8030000ec030604"}
+{"t":"2026-07-23T09:28:49.142363Z","ascii":"$PCAS06,0*1B\r\n","out":true}
+{"t":"2026-07-23T09:28:49.142386Z","ascii":"$PCAS06,1*1A\r\n","out":true}
+{"t":"2026-07-23T09:28:49.142206Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060400000a040501"}
+{"t":"2026-07-23T09:28:49.174393Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,02,SW=URANUS5,V5.3.0.0*1D\r\n"}
+{"t":"2026-07-23T09:28:49.206003Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,02,HW=AT6558D,0000000000000*2C\r\n"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config"}
-{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-noop.jsonl","--show-config"],"version":"satpulse version 0.3-pre.20260721.cb2f6c6e.dirty, build date 2026-07-21 15:21:57+00:00","hostname":"edam"}
-{"t":"2026-07-21T15:22:09.191578Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,01,ANTENNA OK*35\r\n"}
-{"t":"2026-07-21T15:22:09.223871Z","tag":"CASBIN","msg":"CFG-MSG","bin":"bace040006010a04ffff0e040501","out":true}
-{"t":"2026-07-21T15:22:09.22349Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace500001032984470007070317090e00002bb7893fa0fa6912432959406e0a3ea4b8762b40d4e8cdc1000000002ceb063feb2aa13f000000000000000000000000000000000000000000000000dbf80739002474498311f453"}
-{"t":"2026-07-21T15:22:09.319418Z","tag":"CASBIN","msg":"NAV-TIMEUTC","bin":"bace180001102984470040da354040c934370000ea0707150f1609070003d143aca8"}
-{"t":"2026-07-21T15:22:09.351385Z","tag":"CASBIN","msg":"ACK-NAK","bin":"bace04000500060100000a010500"}
-{"t":"2026-07-21T15:22:09.367666Z","ascii":"$PCAS06,0*1B\r\n","out":true}
-{"t":"2026-07-21T15:22:09.399333Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,02,SW=URANUS5,V5.3.0.0*1D\r\n"}
-{"t":"2026-07-21T15:22:09.43142Z","ascii":"$PCAS06,1*1A\r\n","out":true}
-{"t":"2026-07-21T15:22:09.431438Z","tag":"CASBIN","msg":"CFG-TP","bin":"bace0000060300000603","out":true}
-{"t":"2026-07-21T15:22:09.462868Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,02,HW=AT6558D,0000000000000*2C\r\n"}
-{"t":"2026-07-21T15:22:09.51104Z","tag":"CASBIN","msg":"CFG-TP","bin":"bace1000060340420f00a08601000300010000000000f3c81703"}
-{"t":"2026-07-21T15:22:09.526827Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060300000a030501"}
-{"t":"2026-07-21T15:22:09.543333Z","tag":"CASBIN","msg":"CFG-TMODE","bin":"bace0000060600000606","out":true}
-{"t":"2026-07-21T15:22:09.559004Z","tag":"CASBIN","msg":"CFG-TMODE","bin":"bace280006060000000000000000000000000000000000000000000000000000000000000000000000000000000028000606"}
-{"t":"2026-07-21T15:22:09.622712Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060600000a060501"}
-{"t":"2026-07-21T15:22:09.622978Z","tag":"CASBIN","msg":"CFG-NAVX","bin":"bace0000060700000607","out":true}
-{"t":"2026-07-21T15:22:09.638599Z","tag":"CASBIN","msg":"CFG-NAVX","bin":"bace2c0006070001000000300000080001000003f409000000000000000000000000000000000000000000000000000000003434fb10"}
-{"t":"2026-07-21T15:22:09.70276Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060700000a070501"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","9600","--vendor","zhongke","--test-log","zhongke/atgm332d-5n31-noop.jsonl","--show-config"],"version":"satpulse version 0.3-pre.20260723.9838947b.dirty, build date 2026-07-23 09:25:56+00:00","hostname":"edam"}
+{"t":"2026-07-23T09:28:50.005367Z","tag":"CASBIN","msg":"NAV-PV","bin":"bace500001030e540000000003000000000000000000eeffffffffff5d40eeffffffffff3d400000000000000000002474490024744900000000000000000000000000000000000000000000000000401c4600247449380019a6"}
+{"t":"2026-07-23T09:28:50.101034Z","tag":"CASBIN","msg":"CFG-RATE","bin":"bace0000060400000604","out":true}
+{"t":"2026-07-23T09:28:50.100802Z","tag":"CASBIN","msg":"NAV-TIMEUTC","bin":"bace180001100e54000000000000c8de0abb0000ea070717091c32030001274dffef"}
+{"t":"2026-07-23T09:28:50.132775Z","tag":"CASBIN","msg":"CFG-RATE","bin":"bace04000604e8030000ec030604"}
+{"t":"2026-07-23T09:28:50.149109Z","ascii":"$PCAS06,0*1B\r\n","out":true}
+{"t":"2026-07-23T09:28:50.149118Z","ascii":"$PCAS06,1*1A\r\n","out":true}
+{"t":"2026-07-23T09:28:50.149121Z","tag":"CASBIN","msg":"CFG-TP","bin":"bace0000060300000603","out":true}
+{"t":"2026-07-23T09:28:50.148939Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060400000a040501"}
+{"t":"2026-07-23T09:28:50.180974Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,02,SW=URANUS5,V5.3.0.0*1D\r\n"}
+{"t":"2026-07-23T09:28:50.212975Z","tag":"NMEA","msg":"GPTXT","ascii":"$GPTXT,01,01,02,HW=AT6558D,0000000000000*2C\r\n"}
+{"t":"2026-07-23T09:28:50.260575Z","tag":"CASBIN","msg":"CFG-TP","bin":"bace1000060340420f00a08601000300010500000000f3c81708"}
+{"t":"2026-07-23T09:28:50.29259Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060300000a030501"}
+{"t":"2026-07-23T09:28:50.30893Z","tag":"CASBIN","msg":"CFG-TMODE","bin":"bace0000060600000606","out":true}
+{"t":"2026-07-23T09:28:50.324455Z","tag":"CASBIN","msg":"CFG-TMODE","bin":"bace2800060600000000000000000000000000000000000000000000000000000000000000002c0100000000000054010606"}
+{"t":"2026-07-23T09:28:50.388416Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060600000a060501"}
+{"t":"2026-07-23T09:28:50.388613Z","tag":"CASBIN","msg":"CFG-NAVX","bin":"bace0000060700000607","out":true}
+{"t":"2026-07-23T09:28:50.404411Z","tag":"CASBIN","msg":"CFG-NAVX","bin":"bace2c0006070000000000300000080001000003f409000000000000000000000000000000000000000000000000000000003433fb10"}
+{"t":"2026-07-23T09:28:50.468563Z","tag":"CASBIN","msg":"ACK-ACK","bin":"bace04000501060700000a070501"}
 {"type":"receiver","vendor":"Zhongke","hardware":"AT6558D,0000000000000","firmware":"URANUS5,V5.3.0.0","gnss":["GPS","BDS","GLO"]}
 {"type":"config","signalsEnabled":{"BDS":["B1I"],"GPS":["L1"]},"timeGNSS":"GPS","antennaCableDelay":0,"timePulse":{"enabled":true,"width":0.1,"period":1,"polarityRising":true,"onlyWhenLocked":true},"static":false}

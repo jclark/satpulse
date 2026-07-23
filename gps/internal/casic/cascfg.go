@@ -25,6 +25,16 @@ const maxResponseDelay = 2 * time.Second
 // switch.
 const speedChangeDelay = 150 * time.Millisecond
 
+// verDataWait is how long the MON-VER poll waits for its data message
+// after the CFG-MSG ACK. The ACK comes from the fast CFG lane, but
+// the data is a one-shot output emitted at the receiver's next 1 Hz
+// output tick (see the reply-timing record in
+// plan/archive/casic-config.md), so it can trail the ACK by up to a
+// second; data before the ACK just means the poll landed right
+// before a tick. The window covers a full tick plus margin before
+// treating the readback as absent.
+const verDataWait = 1500 * time.Millisecond
+
 // Configurator implements gpsprot.Configurator for CASIC receivers.
 //
 // Requests are generated in one batch, created notReady and promoted
@@ -34,27 +44,31 @@ const speedChangeDelay = 150 * time.Millisecond
 // a time, in order. Non-CFG requests are serialized only against others
 // sharing their class+id: a poll's data response is correlated only by
 // the echoed class+id, so two outstanding polls with the same id would
-// be ambiguous, and text requests all share mid 0.
+// be ambiguous. Text requests run concurrently; their replies are
+// matched by key (see promote).
 type Configurator struct {
-	target     *gpsprot.ConfigTarget
-	ver        *casbin.MonVer // nil when MON-VER is unsupported (V5)
-	family     fwFamily
-	reqs       []*casReq
-	phase      int                      // index into genPhases of the next phase to generate
-	touched    casbin.CfgCfgSectionMask // configuration sections touched by set requests
-	msgEnabled bool                     // a message-output request enabled some output
-	survey     bool                     // this invocation put the receiver into survey-in mode
-	tp         *casbin.CfgTP            // latest CFG-TP readback; nil if never answered
-	tm5        *casbin.CfgTMode         // latest V5 CFG-TMODE readback
-	tm6        *casbin.CfgTMode2        // latest V6 CFG-TMODE2 readback
-	navx       *casbin.CfgNavx          // latest V5 CFG-NAVX readback
-	navBand    *casbin.CfgNavBand       // latest V6 CFG-NAVBAND readback
-	ports      []casbin.CfgPrt          // CFG-PRT readback, one entry per port
-	speedReq   *casReq                  // the baud change request, when one was generated
-	saveReq    *casReq                  // the save request, when one was generated (gates the reset)
-	navLimit   *casbin.CfgNavLimit      // latest V6 CFG-NAVLIMIT readback
-	pcasSW     string                   // V5 firmware version from PCAS06 query
-	pcasHW     string                   // V5 hardware info from PCAS06 query
+	target      *gpsprot.ConfigTarget
+	rate        *casbin.CfgRate // CFG-RATE readback from the probe
+	ver         *casbin.MonVer  // V6 MON-VER readback; nil until answered (never on V5)
+	family      fwFamily
+	reqs        []*casReq
+	phase       int                      // index into genPhases of the next phase to generate
+	touched     casbin.CfgCfgSectionMask // configuration sections touched by set requests
+	msgEnabled  bool                     // a message-output request enabled some output
+	survey      bool                     // this invocation put the receiver into survey-in mode
+	tp          *casbin.CfgTP            // latest CFG-TP readback; nil if never answered
+	tm5         *casbin.CfgTMode         // latest V5 CFG-TMODE readback
+	tm6         *casbin.CfgTMode2        // latest V6 CFG-TMODE2 readback
+	navx        *casbin.CfgNavx          // latest V5 CFG-NAVX readback
+	navBand     *casbin.CfgNavBand       // latest V6 CFG-NAVBAND readback
+	ports       []casbin.CfgPrt          // CFG-PRT readback, one entry per port
+	speedReq    *casReq                  // the baud change request, when one was generated
+	saveReq     *casReq                  // the save request, when one was generated (gates the reset)
+	verReq      *casReq                  // the V6 MON-VER poll, when one was generated
+	familyPolls int                      // CFG-RATE re-polls issued by the family phase
+	navLimit    *casbin.CfgNavLimit      // latest V6 CFG-NAVLIMIT readback
+	pcasSW      string                   // V5 firmware version from PCAS06 query
+	pcasHW      string                   // V5 hardware info from PCAS06 query
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -66,6 +80,7 @@ const (
 	reqNotReady casReqState = iota
 	reqReady
 	reqAwaitingAck
+	reqMaybeComplete // ACKed MON-VER poll waiting for its trailing data
 	reqMayResend
 	reqSucceeded
 	reqFailed
@@ -92,31 +107,56 @@ type casReq struct {
 	onData     func(casbin.Msg)  // receives data responses (polls); ACK still completes
 	onText     func(string) bool // matches NMEA replies; true completes the request
 	optional   bool              // a timed-out request succeeds rather than fails
+	verPoll    bool              // MON-VER poll: completes on the data message, not the ACK
 	speedAfter int               // new baud rate to switch to after sending
+}
+
+// final reports whether the request is in a terminal state.
+func (req *casReq) final() bool {
+	return req.state == reqSucceeded || req.state == reqFailed
+}
+
+// isIdentity reports whether this is an identity query - the MON-VER
+// poll or a PCAS06 text request - exempt from phase gating (see
+// genPhases). Derived rather than stored so it cannot fall out of
+// sync with the request kinds.
+func (req *casReq) isIdentity() bool {
+	return req.verPoll || req.onText != nil
 }
 
 var _ gpsprot.ConfigRequest = (*casReq)(nil)
 
-func newConfigurator(target *gpsprot.ConfigTarget, ver *casbin.MonVer) *Configurator {
-	family := familyV5
-	if ver != nil && !strings.Contains(ver.SwVersion.String(), "URANUS5") {
-		family = familyV6
+// familyOf selects the firmware family from a CFG-RATE readback:
+// byte 2 is fixRateHz on V6, a rate with no zero value, and
+// reserved-as-zero on V5.
+func familyOf(rate *casbin.CfgRate) fwFamily {
+	if rate.FixRateHz != 0 {
+		return familyV6
 	}
-	return &Configurator{target: target, ver: ver, family: family}
+	return familyV5
 }
 
-// ReceiverInfo returns static information about the GPS receiver.
-// A V5 receiver does not answer MON-VER; its version comes from PCAS06
-// text queries instead, and stays empty if the receiver never answered.
-// Firmware and hardware are reported as bare values. The vendor's own
-// formats carry key prefixes - V6 MON-VER puts "SW=" on its software
-// field, and the V5 GPTXT replies are "SW=.."/"HW=.." - which are
-// stripped here so the fields hold just the value.
+// newConfigurator creates a Configurator. rate is the probe's
+// CFG-RATE readback; nil means it was corrupted on the line and the
+// family phase must re-poll it before anything else can be generated.
+func newConfigurator(target *gpsprot.ConfigTarget, rate *casbin.CfgRate) *Configurator {
+	c := &Configurator{target: target, rate: rate}
+	if rate != nil {
+		c.family = familyOf(rate)
+	}
+	return c
+}
+
+// ReceiverInfo returns static information about the GPS receiver,
+// from the identity queries: MON-VER on V6, PCAS06 text queries on
+// V5. Fields stay empty if the receiver never answered. MON-VER's
+// SwVersion carries a literal "SW=" prefix on the wire, stripped here
+// so the field holds just the value.
 func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 	info := &gpsprot.ReceiverInfo{Vendor: Vendor, SupportedGNSS: c.supportedGNSS()}
 	if c.ver != nil {
 		info.Firmware = strings.TrimPrefix(c.ver.SwVersion.String(), "SW=")
-		info.Hardware = strings.TrimPrefix(c.ver.HwVersion.String(), "HW=")
+		info.Hardware = c.ver.HwVersion.String()
 		info.VendorSpecific = c.ver
 		return info
 	}
@@ -157,8 +197,13 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 		// (measured on the F8N), the positioning class emits raw but
 		// not survey progress (measured on the AT372-6P), and the
 		// timing class delivers everything (measured on the AT362-6T).
-		// An unrecognized name keeps the family flags.
-		switch receiverClass(c.ver.HwVersion.String()) {
+		// An unrecognized name - or an unanswered MON-VER query -
+		// keeps the family flags.
+		hw := ""
+		if c.ver != nil {
+			hw = c.ver.HwVersion.String()
+		}
+		switch receiverClass(hw) {
 		case "N":
 			flags &^= gpsprot.ConfigSupportRaw | gpsprot.ConfigSupportSurveyMsg
 		case "P":
@@ -219,48 +264,151 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 }
 
 // genPhases are the request generation phases, each gated on all
-// earlier requests being final: property sets need the query phase's
-// readback (read-modify-write), message enabling comes after the
-// property work because enabling NMEA output can saturate a 9600 line
-// and delay every later acknowledgement, the rate phase comes after
-// message enabling so that it fires only when some enable was accepted
-// (whether an enable was ACKed is known only once the message phase is
-// final) and precedes the baud change and save phases so a requested
-// save persists the forced positioning rate, the baud change comes
-// after all the work whose acknowledgements it would endanger, the save
-// phase persists everything - NAK-driven fallback outcomes and the new
-// baud rate alike (a save runs on the confirmed line at the new speed,
-// as in the UBX configurator) - and the reset phase comes last, after
-// the save is final, both because the spec forbids a second CFG message
-// in flight before the first is answered (the reset must not be sent
-// while the save awaits its ACK) and because a failed save must gate
-// the reset: a reset never discards running changes its paired save
-// failed to persist. Acknowledged sets record their accepted values as
-// the assumed configuration, so no re-polling is needed.
-var genPhases = []func(*Configurator){
-	(*Configurator).generateQueryReqs,
-	(*Configurator).generateSetReqs,
-	(*Configurator).generateMsgReqs,
-	(*Configurator).generateRateReqs,
-	(*Configurator).generateSpeedReqs,
-	(*Configurator).generateSaveReqs,
-	(*Configurator).generateResetReqs,
+// earlier non-identity requests being final. The family phase runs
+// first and usually generates nothing (the probe's readback selected
+// the family already); when the readback was lost it re-polls it, and
+// its failure ends the invocation (see GenerateRequests). After it:
+// property sets need the
+// query phase's readback (read-modify-write), message enabling comes
+// after the property work because enabling NMEA output can saturate a
+// 9600 line and delay every later acknowledgement, the rate phase
+// comes after message enabling so that it fires only when some enable
+// was accepted (whether an enable was ACKed is known only once the
+// message phase is final) and precedes the baud change and save
+// phases so a requested save persists the forced positioning rate,
+// the baud change comes after all the work whose acknowledgements it
+// would endanger, the save phase persists everything - NAK-driven
+// fallback outcomes and the new baud rate alike (a save runs on the
+// confirmed line at the new speed, as in the UBX configurator) - and
+// the reset phase comes last, after the save is final, both because
+// the spec forbids a second CFG message in flight before the first is
+// answered (the reset must not be sent while the save awaits its ACK)
+// and because a failed save must gate the reset: a reset never
+// discards running changes its paired save failed to persist.
+// Acknowledged sets record their accepted values as the assumed
+// configuration, so no re-polling is needed.
+//
+// Identity requests (the version/hardware queries) are exempt from
+// the gating: on V6 the MON-VER data message arrives only at the
+// receiver's next 1 Hz output tick, and nothing but the message phase
+// consumes it - its HwVersion drives the class-based support flags -
+// so only that phase (needsVer) waits for the poll to resolve, and
+// the rest of configuration overlaps the wait. The reset phase is the
+// other exception (needsIdentity): a reset restarts the receiver,
+// which would discard replies still in flight, so it waits for every
+// identity request to resolve - bounded, since identity requests are
+// optional and always reach a final state. Run completion also
+// requires identity requests to be final (see GetRequestCount), so a
+// bare --show-receiver run waits for the readback.
+var genPhases = []struct {
+	gen           func(*Configurator)
+	needsVer      bool
+	needsIdentity bool
+}{
+	{gen: (*Configurator).generateFamilyReqs},
+	{gen: (*Configurator).generateQueryReqs},
+	{gen: (*Configurator).generateSetReqs},
+	{gen: (*Configurator).generateMsgReqs, needsVer: true},
+	{gen: (*Configurator).generateRateReqs},
+	{gen: (*Configurator).generateSpeedReqs},
+	{gen: (*Configurator).generateSaveReqs},
+	{gen: (*Configurator).generateResetReqs, needsIdentity: true},
 }
 
 // GenerateRequests generates configuration requests and promotes
 // requests that have become unambiguous to send.
 func (c *Configurator) GenerateRequests() error {
-	for c.phase < len(genPhases) && c.allFinal() {
-		genPhases[c.phase](c)
+	for c.phase < len(genPhases) && c.configFinal() {
+		if c.phase > 0 && c.rate == nil {
+			// The family poll resolved without delivering a readback:
+			// ACKed with its data message corrupted again. Re-poll a
+			// bounded number of times (appended here, since only
+			// GenerateRequests may grow the request slice); after
+			// that, or on a refusal or timeout, end the invocation -
+			// every later phase branches on the family, so generating
+			// more would be guessing.
+			if !c.anyFailed() && c.familyPolls < maxFamilyPolls {
+				c.addFamilyPoll()
+				break
+			}
+			if !c.anyFailed() {
+				c.addFailedReq(fmt.Errorf("no CFG-RATE readback to determine the firmware family"))
+			}
+			c.phase = len(genPhases)
+			break
+		}
+		ph := genPhases[c.phase]
+		if ph.needsVer && !c.verFinal() {
+			break
+		}
+		if ph.needsIdentity && !c.identityFinal() {
+			break
+		}
+		ph.gen(c)
 		c.phase++
 	}
 	c.promote()
 	return nil
 }
 
+// generateFamilyReqs re-polls CFG-RATE when the probe's readback was
+// corrupted (probing completed on the poll's ACK alone). Every later
+// phase branches on the family, so nothing else generates until the
+// readback is in hand; this is the one request whose failure aborts
+// the invocation, and an ACK whose data message was corrupted again
+// re-polls a bounded number of times (both in GenerateRequests).
+func (c *Configurator) generateFamilyReqs() {
+	if c.rate == nil {
+		c.addFamilyPoll()
+	}
+}
+
+// maxFamilyPolls bounds the re-polls when ACKs keep arriving without
+// their data messages.
+const maxFamilyPolls = 3
+
+func (c *Configurator) addFamilyPoll() {
+	c.familyPolls++
+	pkt, _ := casbin.PackMsg(casbin.CfgRateID, nil)
+	c.add(&casReq{mid: casbin.CfgRateID, packet: pkt,
+		onData: func(m casbin.Msg) {
+			if r, ok := m.(*casbin.CfgRate); ok {
+				c.rate = r
+				c.family = familyOf(r)
+			}
+		}})
+}
+
 func (c *Configurator) allFinal() bool {
 	for _, req := range c.reqs {
-		if req.state != reqSucceeded && req.state != reqFailed {
+		if !req.final() {
+			return false
+		}
+	}
+	return true
+}
+
+// configFinal reports whether every non-identity request is final;
+// identity requests never gate phase advancement (see genPhases).
+func (c *Configurator) configFinal() bool {
+	for _, req := range c.reqs {
+		if !req.isIdentity() && !req.final() {
+			return false
+		}
+	}
+	return true
+}
+
+// verFinal reports whether the MON-VER poll is final. Trivially true
+// on V5, which never generates one.
+func (c *Configurator) verFinal() bool {
+	return c.verReq == nil || c.verReq.final()
+}
+
+// identityFinal reports whether every identity request is final.
+func (c *Configurator) identityFinal() bool {
+	for _, req := range c.reqs {
+		if req.isIdentity() && !req.final() {
 			return false
 		}
 	}
@@ -448,10 +596,18 @@ func (c *Configurator) basePort() (casbin.CfgPrt, bool) {
 // zkw3.md 3.5 both state the sender must not send a second CFG message
 // before the receiver replies to the received CFG message, so at most
 // one CFG-class request is ever live (ready or outstanding) at a time
-// and CFG requests go out serially in order. The class+id map still
-// serializes non-CFG requests among themselves: a poll's data response
-// is correlated only by the echoed class+id, and text queries all
-// share mid 0, so two such requests must not be outstanding together.
+// and CFG requests go out serially in order. The ACK is the reply: an
+// ACKed MON-VER poll still waiting for its tick-scheduled data message
+// (reqMaybeComplete) does not hold the CFG slot - the receiver
+// services further CFG requests while a one-shot output is pending
+// (measured; see the reply-timing record in
+// plan/archive/casic-config.md). The class+id map
+// still serializes non-CFG requests among themselves: a poll's data
+// response is correlated only by the echoed class+id. Text requests
+// are exempt from all of it and promote immediately: their replies
+// are matched by key, so concurrent text requests with distinct keys
+// (the only kind generated) are unambiguous, and V5 answers each
+// query at once.
 //
 // The speed change is carved out: a sent baud change switches the
 // receiver's rate immediately, so its ACK arrives at the new speed
@@ -464,6 +620,12 @@ func (c *Configurator) promote() {
 	live := make(map[casbin.MsgID]bool)
 	cfgLive := false
 	for _, req := range c.reqs {
+		if req.onText != nil {
+			if req.state == reqNotReady {
+				req.state = reqReady
+			}
+			continue
+		}
 		isCfg := req.mid.CfgClass()
 		switch req.state {
 		case reqNotReady:
@@ -471,7 +633,7 @@ func (c *Configurator) promote() {
 				req.state = reqReady
 			}
 			live[req.mid] = true
-		case reqReady, reqAwaitingAck, reqMayResend:
+		case reqReady, reqAwaitingAck, reqMaybeComplete, reqMayResend:
 			live[req.mid] = true
 		}
 		if isCfg {
@@ -579,7 +741,8 @@ func (c *Configurator) touchNoOp(section casbin.CfgCfgSectionMask) {
 
 // addTextReq appends an NMEA text request whose reply is matched by
 // onText. There is no acknowledgement and no reply is guaranteed, so
-// the request is optional: silence is acceptable.
+// the request is optional: silence is acceptable. All text requests
+// are identity queries, exempt from phase gating (see isIdentity).
 func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
 	c.add(&casReq{packet: []byte(sentence), onText: onText, optional: true})
 }
@@ -592,9 +755,13 @@ func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
 // to the V5 section their setting belongs to (time mode, band, and
 // nav limit are Nav) even though the particular bit is meaningless on
 // V6, where saveMask substitutes the all-sections mask - only being
-// nonzero matters, so that the save fires. CFG-RST returns 0: a reset
-// does not touch saved configuration and must not trigger a save.
+// nonzero matters, so that the save fires. A CFG-MSG poll (the V6
+// MON-VER query) and CFG-RST return 0: neither touches saved
+// configuration, so neither may trigger a save.
 func setSection(m casbin.Msg) casbin.CfgCfgSectionMask {
+	if mt, ok := m.(*casbin.CfgMsg); ok && mt.Rate == casbin.CfgMsgRatePoll {
+		return 0
+	}
 	switch m.ID() {
 	case casbin.CfgMsgID:
 		return casbin.CfgCfgSectionMsg
@@ -641,6 +808,14 @@ func (c *Configurator) nativeMsg(m casbin.Msg, tRead time.Time) error {
 		c.handleAck(casbin.MakeMsgID(mt.ClsID, mt.MsgID), true, tRead)
 	case *casbin.AckNak:
 		c.handleAck(casbin.MakeMsgID(mt.ClsID, mt.MsgID), false, tRead)
+	case *casbin.MonVer:
+		c.ver = mt
+		// The data message completes an already-ACKed poll (the
+		// ACK-first response order); with data-first, the ACK that
+		// follows completes it (see handleAck).
+		if c.verReq != nil && c.verReq.state == reqMaybeComplete {
+			c.verReq.state = reqSucceeded
+		}
 	default:
 		for _, req := range c.reqs {
 			if req.mid == m.ID() && req.state == reqAwaitingAck && req.onData != nil {
@@ -681,6 +856,19 @@ func (c *Configurator) handleAck(mid casbin.MsgID, ack bool, tRead time.Time) {
 			// A response outside the window belongs to an earlier
 			// send of this (since resent) request; it must not
 			// confirm the resend.
+			return
+		}
+		if req.verPoll && ack {
+			// The poll's outcome is its data message. When the data
+			// preceded the ACK it is already in hand; otherwise hold
+			// the request open for the trailing data (ACK-first
+			// firmware) - the idle deadline treats silence as absence.
+			if c.ver != nil {
+				req.state = reqSucceeded
+			} else {
+				req.state = reqMaybeComplete
+				req.tBase = tRead
+			}
 			return
 		}
 		if ack {
@@ -730,6 +918,8 @@ func (req *casReq) GetState() gpsprot.ConfigRequestState {
 		return gpsprot.ConfigRequestReadyToSend
 	case reqAwaitingAck:
 		return gpsprot.ConfigRequestAwaitingResponse
+	case reqMaybeComplete:
+		return gpsprot.ConfigRequestMaybeComplete
 	case reqMayResend:
 		return gpsprot.ConfigRequestMayResend
 	case reqSucceeded:
@@ -743,10 +933,13 @@ func (req *casReq) GetState() gpsprot.ConfigRequestState {
 
 // GetDeadline returns the absolute time by which a response is expected.
 func (req *casReq) GetDeadline() time.Time {
-	if req.state != reqAwaitingAck {
-		panic(req.invalidStateMsg("GetDeadline"))
+	switch req.state {
+	case reqAwaitingAck:
+		return req.tBase.Add(maxResponseDelay)
+	case reqMaybeComplete:
+		return req.tBase.Add(verDataWait)
 	}
-	return req.tBase.Add(maxResponseDelay)
+	panic(req.invalidStateMsg("GetDeadline"))
 }
 
 // GetError returns why the request failed.
@@ -773,12 +966,18 @@ func (req *casReq) SetSentTime(tSent time.Time) {
 	}
 }
 
-// SetDeadlinePassed marks the response window as expired.
+// SetDeadlinePassed marks the response window as expired. An ACKed
+// MON-VER poll whose data never arrived succeeds with the readback
+// absent.
 func (req *casReq) SetDeadlinePassed() {
-	if req.state != reqAwaitingAck {
+	switch req.state {
+	case reqAwaitingAck:
+		req.state = reqMayResend
+	case reqMaybeComplete:
+		req.state = reqSucceeded
+	default:
 		panic(req.invalidStateMsg("SetDeadlinePassed"))
 	}
-	req.state = reqMayResend
 }
 
 // SetWontResend gives up on the request: failure, unless the request

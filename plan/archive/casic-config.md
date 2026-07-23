@@ -48,11 +48,35 @@ Both use the same packet framing (0xBA 0xCE sync, same checksum) and share most 
 | CFG-NMEA | 0x06 0x12 | 8 | NMEA output configuration |
 | CFG-NAVLIMIT | 0x06 0x0A | 8 | Satellite filtering (min elev, min CNO) |
 
-### Version detection
+### Receiver detection and family selection
 
-1. Poll MON-VER via CFG-MSG (class=0x0A, id=0x04, rate=0xFFFF) — this is the standard CASIC poll mechanism
-2. V6: ACK + MON-VER response; parse SwVersion string
-3. V5: NAK (MON-VER not supported); assume V5
+The probe is an empty-payload CFG-RATE poll. Both families answer it
+with a data message and an ACK on the fast CFG lane, so detection
+takes ~100 ms and never rests on a NAK (non-CASIC receivers have been
+seen NAKing packets that are not theirs). The data message is the
+identification; probing succeeds only once the ACK also arrives, so
+the probe's CFG transaction is closed before configuration starts and
+the configurator's first CFG request honors the one-CFG-in-flight
+rule. A retried probe's leftover replies are consumed at the protocol
+layer and never reach the configurator's ACK correlation. The
+readback selects the family: its byte 2 is fixRateHz on V6, a rate
+with no zero value, and reserved-as-zero on V5. The readback also
+seeds the configurator, whose rate phase then skips a no-op CFG-RATE
+write.
+
+Version and hardware identity come from configurator requests, exempt
+from phase gating so the rest of configuration overlaps them: a
+MON-VER poll on V6 (the data message is a one-shot arriving at the
+receiver's next 1 Hz output tick, tracked through
+ConfigRequestMaybeComplete after its ACK; its HwVersion drives the
+class-based capability flags, so the message phase waits for it), and
+concurrent PCAS06 SW/HW text queries on V5.
+
+This replaced the original design - a CFG-MSG poll of MON-VER, with
+V5 assumed on NAK - after the reply-timing measurements (see
+"Receiver identification data and reply timing" below): the original
+probe rested detection on a NAK and spent ~1 s per V6 detection
+waiting for the tick-scheduled MON-VER data.
 
 ## Already implemented
 
@@ -143,7 +167,9 @@ As each CFG struct is implemented, add the corresponding get-* poll tags to the 
 - `gps/gpsreg/reg.go` - add to `CreateConfigProtocols()`
 
 **Implement:**
-- `ProbePacket()` / `ProbeOK()` - MON-VER based detection with fallback
+- `ProbePackets()` / `ProbeOK()` - receiver detection (originally a
+  MON-VER poll; since redesigned, see "Receiver detection and family
+  selection")
 - `NativeMsg()` - route ACK/NAK and CFG responses to Configurator
 - `Configure()` - create Configurator with version info
 - Step: `setMsg` for `--nmea-out` and `--binary`/`--nmea` flags via CFG-MSG:
@@ -321,10 +347,243 @@ receiver lacks.
   identification and is reported regardless: CASIC polls CFG-PRT and
   reports the wired UART's baud. u-blox sets the flag.
 
+## Receiver identification data and reply timing (measured)
+
+How the identification mechanisms behave on the two firmware
+families, with the values observed on the four attached units. This
+is a record of protocol facts and measured responses only; it drove
+the probe redesign described under "Receiver detection and family
+selection".
+
+Units measured:
+
+| Device | Module / chip | Firmware | Family | Speed |
+|--------|---------------|----------|--------|-------|
+| ttyUSB0 | ATGM332D-5N31 / AT6558D | URANUS5 V5.3.0.0 | V5 | 9600 |
+| ttyUSB1 | AT372-AT6668-6P-34 | URANUS6 V6.2.3.0 | V6 | 115200 |
+| ttyUSB2 | ATGM332D-AT9880-F8N-76 | URANUS6 V6.3.2.0 | V6 | 115200 |
+| ttyUSB3 | AT362-AT6668-6T-30 | URANUS6 V6.3.0.0 | V6 | 115200 |
+
+### The MON-VER poll and PCAS06 query mechanisms
+
+The binary MON-VER poll is sent as a CFG-MSG (class 0x06, id 0x01)
+whose payload targets MON-VER (class 0x0A, id 0x04) at rate 0xFFFF
+(output once). Exact bytes:
+
+```
+ba ce 04 00 06 01 0a 04 ff ff 0e 04 05 01
+   sync  len   cls/id  tgt   rate  checksum
+```
+
+A PCAS06 query is an NMEA sentence `$PCAS06,<info>*cs`. Each query
+produces one `$GPTXT,01,01,02,<KEY>=<value>*cs` reply; there is no
+burst and no query-all value. On V6, identical queries repeated
+within one output cycle coalesce into a single reply (see Reply
+timing).
+
+Info values and their reply keys:
+
+| info | key | meaning | documented |
+|------|-----|---------|------------|
+| 0 | SW | firmware family + version | V5, V6 |
+| 1 | HW | hardware model + serial | V5, V6 |
+| 2 | MO | enabled systems (working mode) | V5, V6 |
+| 3 | CI / UI | id value | CI on V5; UI on V6 (undocumented) |
+| 4 | SM | receivable signal bands + systems | V6 |
+| 5 | BS | bootloader / upgrade code | V5 |
+| 6 | IC | chip designation + serials | V6 (answers on V5, undocumented there) |
+
+### MON-VER behaviour
+
+V6 answers the CFG-MSG poll with an ACK-ACK and a MON-VER data
+message. The two come from different scheduling lanes and their
+order is phase-dependent (see Reply timing below); the data message
+precedes the ACK only when the poll lands just before a 1 Hz output
+tick. The payload is 64 bytes: two null-padded 32-byte latin1
+strings, SwVersion (bytes 0-31) then HwVersion (bytes 32-63).
+SwVersion carries a literal `SW=` prefix; HwVersion has no prefix.
+
+Raw reply (ttyUSB1):
+
+```
+ba ce 40 00 0a 04
+53 57 3d 55 52 41 4e 55 53 36 2c 56 36 2e 32 2e 33 2e 30 00...  "SW=URANUS6,V6.2.3.0"
+41 54 33 37 32 2d 41 54 36 36 36 38 2d 36 50 2d 33 34 00...     "AT372-AT6668-6P-34"
+aa 4d 1f 24
+```
+
+Observed values (keys as they appear on the wire):
+
+| device | SwVersion | HwVersion |
+|--------|-----------|-----------|
+| ttyUSB1 | SW=URANUS6,V6.2.3.0 | AT372-AT6668-6P-34 |
+| ttyUSB2 | SW=URANUS6,V6.3.2.0 | ATGM332D-AT9880-F8N-76 |
+| ttyUSB3 | SW=URANUS6,V6.3.0.0 | AT362-AT6668-6T-30 |
+
+V5 does not support MON-VER: it answers ACK-NAK to the CFG-MSG poll,
+and no version data is returned.
+
+### PCAS06 responses
+
+V5 (ttyUSB0):
+
+```
+$GPTXT,01,01,02,SW=URANUS5,V5.3.0.0
+$GPTXT,01,01,02,HW=AT6558D,0000000000000
+$GPTXT,01,01,02,MO=GB
+$GPTXT,01,01,02,CI=01B94154
+$GPTXT,01,01,02,BS=SOC_BootLoader,V6.2.0.2
+$GPTXT,01,01,02,IC=AT6558D-5N-32-1C520900,AJ03DHL-C1-002138
+```
+
+info 4 (SM) produced no reply.
+
+ttyUSB1 (AT372-AT6668-6P-34):
+
+```
+$GPTXT,01,01,02,SW=URANUS6,V6.2.3.0
+$GPTXT,01,01,02,HW=AT372,0004040600626
+$GPTXT,01,01,02,MO=GBEQ
+$GPTXT,01,01,02,SM=00080C81,GPS,BD2,GAL,QZS
+$GPTXT,01,01,02,BS=BOOT8A,V8.0.1.0
+$GPTXT,01,01,02,IC=AT6668-6P-34-00000A30,EA05A3J-22-438091959
+```
+
+info 3 produced no reply on this unit.
+
+ttyUSB2 (ATGM332D-AT9880-F8N-76):
+
+```
+$GPTXT,01,01,02,SW=URANUS6,V6.3.2.0
+$GPTXT,01,01,02,HW=ATGM332D,0032519800024
+$GPTXT,01,01,02,MO=GBE
+$GPTXT,01,01,02,SM=0000CD85,GPS,BD2,BD3,GAL
+$GPTXT,01,01,02,BS=BOOT8V,V8.0.5.1
+$GPTXT,01,01,02,IC=AT9880-F8N-76-E1000C41,EG49B3J-33-496202618
+$GPTXT,01,01,02,UI=00146085
+```
+
+ttyUSB3 (AT362-AT6668-6T-30):
+
+```
+$GPTXT,01,01,02,SW=URANUS6,V6.3.0.0
+$GPTXT,01,01,02,HW=AT362,0005117200485
+$GPTXT,01,01,02,MO=GBQ
+$GPTXT,01,01,02,SM=00080C01,GPS,BD2,QZS
+$GPTXT,01,01,02,BS=BOOT8A,V8.0.3.0
+$GPTXT,01,01,02,IC=AT6668-6T-30-00000A30,EA05A3J-21-438072726
+$GPTXT,01,01,02,UI=00C84014
+```
+
+Field formats observed:
+
+- SW: firmware family and version; contains URANUS5 or URANUS6.
+- HW: `<model>,<serial>`. On V6 the model is the module/board name; on
+  V5 it is the chip (AT6558D). The V5 serial was all-zeros.
+- IC: `<chip-designation>-<8hex-serial>,<production-serial>`. The
+  designation carries the variant/grade suffix (`-6P-34`, `-F8N-76`,
+  `-6T-30`, `-5N-32`).
+- MO: enabled systems (G=GPS, B=BDS, R=GLONASS, E=GALILEO, Q=QZSS,
+  N=IRNSS, S=SBAS). Reflects current configuration.
+- SM: `<hex band mask>,<system list>`. Receivable signal bands.
+  Reflects current configuration. Not answered by V5.
+- BS: bootloader / upgrade code and version.
+- CI (V5) / UI (V6, info 3): an id value. CI is documented (customer
+  id); UI is undocumented and appeared on two of three V6 units.
+
+### Relationships between MON-VER and PCAS on V6
+
+- SW equals MON-VER.SwVersion byte-for-byte, including the `SW=` prefix.
+  PCAS TXT-SW is the same string delivered over NMEA.
+- MON-VER.HwVersion is `<HW model>` + `-` + `<IC designation>`, with the
+  serials removed and no prefix:
+
+  | HW model | IC designation | MON-VER.HwVersion |
+  |----------|----------------|-------------------|
+  | AT372 | AT6668-6P-34 | AT372-AT6668-6P-34 |
+  | ATGM332D | AT9880-F8N-76 | ATGM332D-AT9880-F8N-76 |
+  | AT362 | AT6668-6T-30 | AT362-AT6668-6T-30 |
+
+- MON-VER carries no serial numbers; HW and IC do.
+
+On V5 the HW model (`AT6558D`) is a prefix of the IC designation
+(`AT6558D-5N-32`): PCAS HW reports the chip, and IC reports the same
+chip with its variant suffix. On V6 the HW model and IC designation
+are distinct names, which is why MON-VER.HwVersion concatenates them.
+
+### Reply timing
+
+Measured 2026-07-23 on all four units: floods of 30 back-to-back CFG
+polls (CFG-PRT/CFG-TP/CFG-RATE), send-on-ACK paced streams of the
+same, five MON-VER polls in a row, and repeated and mixed PCAS06
+queries.
+
+V5 (ATGM332D-5N31) has one path with immediate replies. Every input -
+CFG request or PCAS06 query - is processed on arrival and its reply
+(data + ACK, NAK, or GPTXT) emitted immediately. Nothing coalesces:
+five identical PCAS06 queries produce five replies, five MON-VER
+polls five NAKs. A 30-poll flood loses nothing; its apparent
+ACK-latency ramp is the 9600 line draining the response burst. All
+delay ever observed on this unit is TX-queue drain: at the default
+9600 baud under the default NMEA load (~1050 bytes/s offered against
+~960 capacity) replies queue behind the backlog for seconds (measured
+up to ~4.2 s, none lost in 28 queries), while on a quiet line they
+arrive in tens of milliseconds.
+
+V6 (AT372-6P, ATGM332D-F8N, AT362-6T) has two lanes.
+
+CFG transaction lane. CFG requests are queued (at least 30 deep; a
+30-poll flood loses nothing on any unit) and serviced on a roughly
+100 ms quantum: a send-on-ACK stream settles at one ACK per ~100 ms,
+flat, on all three units. An empty-payload CFG query's readback and
+ACK arrive together in one service slot, data first; only the CFG-MSG
+one-shot request (rate 0xFFFF) - a set whose requested output is
+delivered by the tick scheduler - has its data trail the ACK. Under a
+flood, ACK latency grows with queue depth - emitted in batches ~40 ms
+apart on the AT372-6P and ATGM332D-F8N, streamed continuously on the
+AT362-6T - so ACK delay is the backpressure signal. The ACK closes
+the transaction: further CFG requests are accepted and serviced while
+a one-shot output is still pending (four transactions completed
+inside one ACK-to-data window).
+
+Output lane. One-shot outputs (CFG-MSG rate 0xFFFF, e.g. MON-VER) and
+GPTXT query replies are not queued per request: each request sets a
+pending flag, and the 1 Hz output cycle's generation instant emits
+every pending item in one batch and clears the flags. Consequently:
+
+- Latency is uniform 0-1 s, set purely by the request's phase
+  relative to the tick.
+- Identical repeated requests coalesce: five MON-VER polls yield one
+  data message (all three units); five identical PCAS06 queries
+  yielded one reply on the AT362-6T and two, on consecutive ticks, on
+  the AT372-6P and ATGM332D-F8N (a query landing after the generation
+  instant re-arms the flag for the next tick).
+- Distinct queries sent together are answered together in one tick
+  when all arrive before the generation instant, and split across
+  ticks otherwise (observed once each on the ATGM332D-F8N and
+  AT362-6T).
+
+ACK/data order is phase, not firmware: the ACK comes at the next
+~100 ms service slot and the data at the next 1 Hz tick, so the data
+precedes the ACK only when the request lands just before a tick.
+
+### Probe phase
+
+gpscfg sends its probe immediately after the first received packet,
+and the receiver's periodic output burst marks the tick - so the
+probe lands just after a tick and output-lane replies (MON-VER data,
+GPTXT replies) take nearly the full second. In the recorded capture
+sessions the MON-VER data delay concentrates hard at ~1.01 s
+(p90 = median over ~120 samples). Probes triggered by the silence
+timer instead land at random phase. The CFG-RATE probe's own reply is
+on the fast CFG lane, so detection is phase-independent; the phase
+lock now affects only the V6 identity readback.
+
 ## Known errata
 
 1. **Checksum byte order**: already handled in `casbin.Checksum()`
-2. **MON-VER**: V5 NAKs the poll; assume V5 on NAK
+2. **MON-VER**: V5 NAKs the poll and returns no version data; V5
+   identity comes from PCAS06 queries instead
 3. **CFG-MSG query**: empty payload returns all rates, not just one
 4. **CFG-TMODE mode field**: upper 2 bytes contain unknown values; parse as U2 + U2 reserved
 

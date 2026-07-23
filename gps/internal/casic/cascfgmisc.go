@@ -88,12 +88,17 @@ func (c *Configurator) minElevConfigProps(props *gpsprot.ConfigProps) {
 	}
 }
 
-// generateVerQuery asks a V5 receiver for its version over NMEA: V5
-// firmware does not answer MON-VER, but PCAS06 queries reply with
-// GPTXT key=value sentences. The replies are optional - a receiver
-// that never answers just leaves ReceiverInfo empty.
+// generateVerQuery asks for the receiver's identity: the binary
+// MON-VER poll on V6, whose HwVersion also drives the class-based
+// support flags (see ConfigSupport), and PCAS06 firmware and hardware
+// text queries on V5, which does not answer MON-VER. All are
+// best-effort - a receiver that never answers just leaves
+// ReceiverInfo empty - and all are identity requests, generated first
+// so their replies can arrive while the rest of configuration runs.
 func (c *Configurator) generateVerQuery() {
-	if c.ver != nil {
+	if c.family == familyV6 {
+		c.verReq = c.addMsg(&casbin.CfgMsg{Target: casbin.MonVerID, Rate: casbin.CfgMsgRatePoll},
+			casReq{nakOK: true, optional: true, verPoll: true})
 		return
 	}
 	c.addInfoQuery(casmsg.QueryFirmwareVersion, "SW", &c.pcasSW)

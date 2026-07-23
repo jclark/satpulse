@@ -8,13 +8,13 @@ import (
 )
 
 var casicReplayFiles = []string{
-	// ATGM332D-5N71 (V5)
-	"atgm332d-5n71-min-elev",
 	// ATGM332D-5N31 (V5), effectively identical to the earlier 5N71.
 	// Recordings invalidated by configurator changes (message enables
 	// forcing CFG-RATE, then CFG serialization, then dropping the V5
-	// signal verify readback) were re-recorded on this module; the 5N71
-	// is no longer attached.
+	// signal verify readback, then the CFG-RATE probe) were re-recorded
+	// on this module; the 5N71 is no longer attached, so its min-elev
+	// recording moved here too.
+	"atgm332d-5n31-min-elev",
 	"atgm332d-5n31-pps",
 	"atgm332d-5n31-noop",
 	"atgm332d-5n31-signal",
