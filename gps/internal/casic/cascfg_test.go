@@ -12,6 +12,11 @@ import (
 	"github.com/jclark/satpulse/gps/lib/latin1z"
 )
 
+const (
+	msgOff      = casbin.CfgMsgRateOff
+	msgEveryFix = casbin.CfgMsgRateEveryFix
+)
+
 // testReceiver simulates a CASIC receiver at the packet level. Requests
 // are interpreted from raw packet bytes and answered with raw packet
 // bytes, which the test feeds through the real PacketProcessor.
@@ -19,7 +24,7 @@ type testReceiver struct {
 	t          *testing.T
 	monVer     *casbin.MonVer // nil simulates V5: MON-VER poll gets NAK
 	nmea       []string       // NMEA sentences received (e.g. the probe quiet command)
-	rates      map[casbin.MsgID]uint16
+	rates      map[casbin.MsgID]casbin.CfgMsgRate
 	naks       map[casbin.MsgID]bool // requests answered with NAK
 	nakTargets map[casbin.MsgID]bool // CFG-MSG set targets answered with NAK
 	silent     map[casbin.MsgID]bool // requests not answered at all
@@ -34,7 +39,7 @@ type testReceiver struct {
 	tm6        *casbin.CfgTMode2
 	navx       *casbin.CfgNavx
 	navBand    *casbin.CfgNavBand
-	sigCap     uint32 // hardware-receivable signals; clamps written SigIDMask
+	sigCap     casbin.CfgNavBandSigIDMask // hardware-receivable signals; clamps written SigIDMask
 	ports      []casbin.CfgPrt
 	rate       *casbin.CfgRate  // poll response for CFG-RATE
 	rateSets   []casbin.CfgRate // CFG-RATE set payloads received
@@ -104,12 +109,12 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		if r.navx == nil {
 			return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgNavxID)})}
 		}
-		if mt.Mask&casbin.NavxNavSystem != 0 && mt.NavSystem != 0 {
+		if mt.Mask&casbin.CfgNavxApplyNavSystem != 0 && mt.NavSystem != 0 {
 			// Like the 5N71: an empty constellation set is acknowledged
 			// but not applied.
 			r.navx.NavSystem = mt.NavSystem
 		}
-		if mt.Mask&casbin.NavxMinElev != 0 {
+		if mt.Mask&casbin.CfgNavxApplyMinElev != 0 {
 			r.navx.MinElev = mt.MinElev
 		}
 		return [][]byte{r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgNavxID)})}
@@ -150,7 +155,7 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 		r.resets = append(r.resets, *mt)
 		return nil
 	case *casbin.CfgMsg:
-		if mt.Rate == casbin.PollRate && mt.Target == casbin.MonVerID {
+		if mt.Rate == casbin.CfgMsgRatePoll && mt.Target == casbin.MonVerID {
 			if r.monVer == nil {
 				return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgMsgID)})}
 			}
@@ -159,12 +164,12 @@ func (r *testReceiver) respond(data []byte) [][]byte {
 				r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)}),
 			}
 		}
-		if mt.Rate != casbin.PollRate {
+		if mt.Rate != casbin.CfgMsgRatePoll {
 			if r.nakTargets[mt.Target] {
 				return [][]byte{r.pack(&casbin.AckNak{AckPayload: ackOf(casbin.CfgMsgID)})}
 			}
 			if r.rates == nil {
-				r.rates = make(map[casbin.MsgID]uint16)
+				r.rates = make(map[casbin.MsgID]casbin.CfgMsgRate)
 			}
 			r.rates[mt.Target] = mt.Rate
 			ack := r.pack(&casbin.AckAck{AckPayload: ackOf(casbin.CfgMsgID)})
@@ -475,19 +480,19 @@ func TestNMEAOut(t *testing.T) {
 		name   string
 		monVer *casbin.MonVer
 		flags  gpsprot.NMEAMsgFlags
-		expect map[casbin.MsgID]uint16
+		expect map[casbin.MsgID]casbin.CfgMsgRate
 	}{
 		{
 			name:   "V6 RMC and ZDA",
 			monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
 			flags:  gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgZDA,
-			expect: map[casbin.MsgID]uint16{
-				casbin.NmeaGsvID: 0, casbin.NmeaRmcID: 1, casbin.NmeaGgaID: 0,
-				casbin.NmeaGsaID: 0, casbin.NmeaZdaV6ID: 1, casbin.NmeaVtgID: 0,
-				casbin.NmeaGllID: 0,
-				casbin.NmeaTxtAntID: 0, casbin.NmeaDhvV6ID: 0, casbin.NmeaTxtLpsID: 0,
-				casbin.NmeaTxtInsID: 0, casbin.NmeaUtcV6ID: 0, casbin.NmeaGstV6ID: 0,
-				casbin.NmeaTxtRfeID: 0,
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{
+				casbin.NmeaGsvID: msgOff, casbin.NmeaRmcID: msgEveryFix, casbin.NmeaGgaID: msgOff,
+				casbin.NmeaGsaID: msgOff, casbin.NmeaZdaV6ID: msgEveryFix, casbin.NmeaVtgID: msgOff,
+				casbin.NmeaGllID:    msgOff,
+				casbin.NmeaTxtAntID: msgOff, casbin.NmeaDhvV6ID: msgOff, casbin.NmeaTxtLpsID: msgOff,
+				casbin.NmeaTxtInsID: msgOff, casbin.NmeaUtcV6ID: msgOff, casbin.NmeaGstV6ID: msgOff,
+				casbin.NmeaTxtRfeID: msgOff,
 			},
 		},
 		{
@@ -495,23 +500,23 @@ func TestNMEAOut(t *testing.T) {
 			// V5 id set.
 			name:  "V5 ZDA uses 0x08",
 			flags: gpsprot.NMEAMsgZDA,
-			expect: map[casbin.MsgID]uint16{
-				casbin.NmeaGsvID: 0, casbin.NmeaRmcID: 0, casbin.NmeaGgaID: 0,
-				casbin.NmeaGsaID: 0, casbin.NmeaZdaID: 1, casbin.NmeaVtgID: 0,
-				casbin.NmeaGllID: 0,
-				casbin.NmeaGstID: 0, casbin.NmeaAntID: 0, casbin.NmeaLpsID: 0,
-				casbin.NmeaDhvID: 0, casbin.NmeaUtcID: 0,
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{
+				casbin.NmeaGsvID: msgOff, casbin.NmeaRmcID: msgOff, casbin.NmeaGgaID: msgOff,
+				casbin.NmeaGsaID: msgOff, casbin.NmeaZdaID: msgEveryFix, casbin.NmeaVtgID: msgOff,
+				casbin.NmeaGllID: msgOff,
+				casbin.NmeaGstID: msgOff, casbin.NmeaAntID: msgOff, casbin.NmeaLpsID: msgOff,
+				casbin.NmeaDhvID: msgOff, casbin.NmeaUtcID: msgOff,
 			},
 		},
 		{
 			name:  "all off",
 			flags: gpsprot.NMEAMsgNone,
-			expect: map[casbin.MsgID]uint16{
-				casbin.NmeaGsvID: 0, casbin.NmeaRmcID: 0, casbin.NmeaGgaID: 0,
-				casbin.NmeaGsaID: 0, casbin.NmeaZdaID: 0, casbin.NmeaVtgID: 0,
-				casbin.NmeaGllID: 0,
-				casbin.NmeaGstID: 0, casbin.NmeaAntID: 0, casbin.NmeaLpsID: 0,
-				casbin.NmeaDhvID: 0, casbin.NmeaUtcID: 0,
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{
+				casbin.NmeaGsvID: msgOff, casbin.NmeaRmcID: msgOff, casbin.NmeaGgaID: msgOff,
+				casbin.NmeaGsaID: msgOff, casbin.NmeaZdaID: msgOff, casbin.NmeaVtgID: msgOff,
+				casbin.NmeaGllID: msgOff,
+				casbin.NmeaGstID: msgOff, casbin.NmeaAntID: msgOff, casbin.NmeaLpsID: msgOff,
+				casbin.NmeaDhvID: msgOff, casbin.NmeaUtcID: msgOff,
 			},
 		},
 		{
@@ -519,10 +524,10 @@ func TestNMEAOut(t *testing.T) {
 			// selection: only the standard seven are touched.
 			name:  "Other leaves extra sentences alone",
 			flags: gpsprot.NMEAMsgRMC | gpsprot.NMEAMsgOther,
-			expect: map[casbin.MsgID]uint16{
-				casbin.NmeaGsvID: 0, casbin.NmeaRmcID: 1, casbin.NmeaGgaID: 0,
-				casbin.NmeaGsaID: 0, casbin.NmeaZdaID: 0, casbin.NmeaVtgID: 0,
-				casbin.NmeaGllID: 0,
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{
+				casbin.NmeaGsvID: msgOff, casbin.NmeaRmcID: msgEveryFix, casbin.NmeaGgaID: msgOff,
+				casbin.NmeaGsaID: msgOff, casbin.NmeaZdaID: msgOff, casbin.NmeaVtgID: msgOff,
+				casbin.NmeaGllID: msgOff,
 			},
 		},
 	}
@@ -571,21 +576,22 @@ func TestPVTOut(t *testing.T) {
 		flags  gpsprot.PVTMsgFlags
 		tm6    *casbin.CfgTMode2
 		survey bool // request a survey, so the TIM2-TIMEPOS gate opens
-		expect map[casbin.MsgID]uint16
+		expect map[casbin.MsgID]casbin.CfgMsgRate
 	}{
 		{
 			name:   "V6 pos time tp",
 			monVer: v6,
 			flags:  gpsprot.PVTMsgPos | gpsprot.PVTMsgTime | gpsprot.PVTMsgTimePulse,
-			expect: map[casbin.MsgID]uint16{
-				casbin.Nav2PvhID: 1, casbin.Nav2TimeUTCID: 1, casbin.Tim2TpxID: 1,
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{
+				casbin.Nav2PvhID: msgEveryFix, casbin.Nav2TimeUTCID: msgEveryFix,
+				casbin.Tim2TpxID: msgEveryFix,
 			},
 		},
 		{
 			name:  "V5 pos time",
 			flags: gpsprot.PVTMsgPos | gpsprot.PVTMsgTime,
-			expect: map[casbin.MsgID]uint16{
-				casbin.NavPvID: 1, casbin.NavTimeUTCID: 1,
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{
+				casbin.NavPvID: msgEveryFix, casbin.NavTimeUTCID: msgEveryFix,
 			},
 		},
 		{
@@ -596,28 +602,30 @@ func TestPVTOut(t *testing.T) {
 			// quality adds DOP; leap adds TIM2-LS; no survey was
 			// requested, so TIM2-TIMEPOS is turned off with PVH and
 			// TIMEUTC.
-			expect: map[casbin.MsgID]uint16{
-				casbin.Nav2SolID: 1, casbin.Tim2TpxID: 1, casbin.Nav2DopID: 1,
-				casbin.Tim2LsID: 1, casbin.Tim2TimePosID: 0,
-				casbin.Nav2PvhID: 0, casbin.Nav2TimeUTCID: 0,
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{
+				casbin.Nav2SolID: msgEveryFix, casbin.Tim2TpxID: msgEveryFix,
+				casbin.Nav2DopID: msgEveryFix, casbin.Tim2LsID: msgEveryFix,
+				casbin.Tim2TimePosID: msgOff, casbin.Nav2PvhID: msgOff,
+				casbin.Nav2TimeUTCID: msgOff,
 			},
 		},
 		{
 			name:   "V6 ECEF pos without off is incremental",
 			monVer: v6,
 			flags:  gpsprot.PVTMsgPos | gpsprot.PVTMsgECEF,
-			expect: map[casbin.MsgID]uint16{casbin.Nav2SolID: 1},
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{casbin.Nav2SolID: casbin.CfgMsgRateEveryFix},
 		},
 		{
 			name:   "V6 leap enables TIM2-LS",
 			monVer: v6,
 			flags:  gpsprot.PVTMsgLeapSecond | gpsprot.PVTMsgTimePulse,
-			expect: map[casbin.MsgID]uint16{casbin.Tim2LsID: 1, casbin.Tim2TpxID: 1},
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{
+				casbin.Tim2LsID: casbin.CfgMsgRateEveryFix, casbin.Tim2TpxID: casbin.CfgMsgRateEveryFix},
 		},
 		{
 			name:   "V5 leap enables MSG-GPSUTC",
 			flags:  gpsprot.PVTMsgLeapSecond,
-			expect: map[casbin.MsgID]uint16{casbin.MsgGPSUTCID: 1},
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{casbin.MsgGPSUTCID: casbin.CfgMsgRateEveryFix},
 		},
 		{
 			// The survey flag alone declares interest (satpulsed sets it
@@ -632,7 +640,7 @@ func TestPVTOut(t *testing.T) {
 			flags:  gpsprot.PVTMsgSurvey,
 			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
 			survey: true,
-			expect: map[casbin.MsgID]uint16{casbin.Tim2TimePosID: 1},
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{casbin.Tim2TimePosID: casbin.CfgMsgRateEveryFix},
 		},
 	}
 	for _, tc := range tests {
@@ -662,32 +670,34 @@ func TestSatsOut(t *testing.T) {
 		name   string
 		monVer *casbin.MonVer
 		flags  gpsprot.SatsMsgFlags
-		expect map[casbin.MsgID]uint16
+		expect map[casbin.MsgID]casbin.CfgMsgRate
 	}{
 		{
 			name:   "V6 sat",
 			monVer: v6,
 			flags:  gpsprot.SatsMsgSat,
-			expect: map[casbin.MsgID]uint16{casbin.Nav2SigID: 1},
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{casbin.Nav2SigID: casbin.CfgMsgRateEveryFix},
 		},
 		{
 			name:   "V6 none turns off",
 			monVer: v6,
 			flags:  gpsprot.SatsMsgNone,
-			expect: map[casbin.MsgID]uint16{casbin.Nav2SigID: 0},
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{casbin.Nav2SigID: casbin.CfgMsgRateOff},
 		},
 		{
 			name:  "V5 sat",
 			flags: gpsprot.SatsMsgSat,
-			expect: map[casbin.MsgID]uint16{
-				casbin.NavGPSInfoID: 1, casbin.NavBDSInfoID: 1, casbin.NavGLNInfoID: 1,
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{
+				casbin.NavGPSInfoID: msgEveryFix, casbin.NavBDSInfoID: msgEveryFix,
+				casbin.NavGLNInfoID: msgEveryFix,
 			},
 		},
 		{
 			name:  "V5 signal only enables nothing",
 			flags: gpsprot.SatsMsgSignal,
-			expect: map[casbin.MsgID]uint16{
-				casbin.NavGPSInfoID: 0, casbin.NavBDSInfoID: 0, casbin.NavGLNInfoID: 0,
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{
+				casbin.NavGPSInfoID: msgOff, casbin.NavBDSInfoID: msgOff,
+				casbin.NavGLNInfoID: msgOff,
 			},
 		},
 	}
@@ -725,15 +735,17 @@ func TestMsgRate(t *testing.T) {
 		expect     []casbin.CfgRate
 	}{
 		{
-			name:   "V5 enable forces 1 Hz, FixRateHz reserved",
-			setup:  func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC) },
-			expect: []casbin.CfgRate{{FixIntervalMs: 1000}},
+			name:  "V5 enable forces 1 Hz, FixRateHz reserved",
+			setup: func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC) },
+			expect: []casbin.CfgRate{{FixIntervalMs: casbin.CfgRateFixInterval1Hz,
+				FixRateHz: casbin.CfgRateFixRateV5Reserved}},
 		},
 		{
 			name:   "V6 enable forces 1 Hz with FixRateHz 1",
 			monVer: v6,
 			setup:  func(tg *gpsprot.ConfigTarget) { tg.Opts.NMEAMsg.Set(gpsprot.NMEAMsgRMC) },
-			expect: []casbin.CfgRate{{FixIntervalMs: 1000, FixRateHz: 1}},
+			expect: []casbin.CfgRate{{FixIntervalMs: casbin.CfgRateFixInterval1Hz,
+				FixRateHz: casbin.CfgRateFixRate1Hz}},
 		},
 		{
 			name:  "disable only sends no CFG-RATE",
@@ -796,7 +808,7 @@ func TestNVMOps(t *testing.T) {
 			nmea:        gpsprot.NMEAMsgRMC,
 			setNMEA:     true,
 			save:        gpsprot.SaveMinimal,
-			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionMsg | casbin.CfgSectionNav, OpMode: casbin.CfgOpSave}},
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgCfgSectionMsg | casbin.CfgCfgSectionNav, OpMode: casbin.CfgCfgOpSave}},
 		},
 		{
 			name:        "V5 minimal save with no changes saves nothing",
@@ -806,7 +818,7 @@ func TestNVMOps(t *testing.T) {
 		{
 			name:        "V5 save all",
 			save:        gpsprot.SaveAll,
-			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpSave}},
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgCfgSectionAll, OpMode: casbin.CfgCfgOpSave}},
 		},
 		{
 			name:        "V6 save always uses the all-sections mask",
@@ -814,7 +826,7 @@ func TestNVMOps(t *testing.T) {
 			nmea:        gpsprot.NMEAMsgRMC,
 			setNMEA:     true,
 			save:        gpsprot.SaveMinimal,
-			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpSave}},
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgCfgSectionAll, OpMode: casbin.CfgCfgOpSave}},
 		},
 		{
 			// A V6 set that is not a message change (here a time-mode
@@ -825,7 +837,7 @@ func TestNVMOps(t *testing.T) {
 			tm6:         &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
 			setStatic:   true,
 			save:        gpsprot.SaveMinimal,
-			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpSave}},
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgCfgSectionAll, OpMode: casbin.CfgCfgOpSave}},
 		},
 		{
 			name:   "V6 reload is unsupported and sends nothing",
@@ -835,20 +847,20 @@ func TestNVMOps(t *testing.T) {
 		{
 			name:        "V5 reload",
 			reset:       gpsprot.ResetReload,
-			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpLoad}},
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgCfgSectionAll, OpMode: casbin.CfgCfgOpLoad}},
 		},
 		{
 			name:  "V5 cold reset",
 			reset: gpsprot.ResetCold,
 			expectResets: []casbin.CfgRst{{NavBbrMask: bbrReset,
-				ResetMode: casbin.ResetHWImmediate, StartMode: casbin.StartCold}},
+				ResetMode: casbin.CfgRstResetHardwareImmediate, StartMode: casbin.CfgRstStartCold}},
 		},
 		{
 			name:   "V6 factory reset",
 			monVer: v6,
 			reset:  gpsprot.ResetFactory,
-			expectResets: []casbin.CfgRst{{NavBbrMask: 0,
-				ResetMode: casbin.ResetHWImmediate, StartMode: casbin.StartFactory}},
+			expectResets: []casbin.CfgRst{{NavBbrMask: casbin.CfgRstNavBbrV6Reserved,
+				ResetMode: casbin.CfgRstResetModeV6Reserved, StartMode: casbin.CfgRstStartFactory}},
 		},
 		{
 			// Save and reset together: the reset is generated in a later
@@ -856,9 +868,9 @@ func TestNVMOps(t *testing.T) {
 			name:        "V5 save all then cold reset",
 			save:        gpsprot.SaveAll,
 			reset:       gpsprot.ResetCold,
-			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpSave}},
+			expectSaves: []casbin.CfgCfg{{Mask: casbin.CfgCfgSectionAll, OpMode: casbin.CfgCfgOpSave}},
 			expectResets: []casbin.CfgRst{{NavBbrMask: bbrReset,
-				ResetMode: casbin.ResetHWImmediate, StartMode: casbin.StartCold}},
+				ResetMode: casbin.CfgRstResetHardwareImmediate, StartMode: casbin.CfgRstStartCold}},
 		},
 		{
 			// Save and reload share a class+id, so this pair crosses the
@@ -868,8 +880,8 @@ func TestNVMOps(t *testing.T) {
 			save:  gpsprot.SaveAll,
 			reset: gpsprot.ResetReload,
 			expectSaves: []casbin.CfgCfg{
-				{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpSave},
-				{Mask: casbin.CfgSectionAll, OpMode: casbin.CfgOpLoad},
+				{Mask: casbin.CfgCfgSectionAll, OpMode: casbin.CfgCfgOpSave},
+				{Mask: casbin.CfgCfgSectionAll, OpMode: casbin.CfgCfgOpLoad},
 			},
 		},
 		{
@@ -933,7 +945,7 @@ func TestNVMOps(t *testing.T) {
 			nakRMC:  true,
 			reset:   gpsprot.ResetCold,
 			expectResets: []casbin.CfgRst{{NavBbrMask: bbrReset,
-				ResetMode: casbin.ResetHWImmediate, StartMode: casbin.StartCold}},
+				ResetMode: casbin.CfgRstResetHardwareImmediate, StartMode: casbin.CfgRstStartCold}},
 			wantErr: 1,
 		},
 	}
@@ -984,7 +996,7 @@ func TestTimTPRefused(t *testing.T) {
 	if errCount != 0 {
 		t.Errorf("ErrorCount = %d, want 0", errCount)
 	}
-	expect := map[casbin.MsgID]uint16{casbin.Nav2TimeUTCID: 1}
+	expect := map[casbin.MsgID]casbin.CfgMsgRate{casbin.Nav2TimeUTCID: casbin.CfgMsgRateEveryFix}
 	if !reflect.DeepEqual(rcvr.rates, expect) {
 		t.Errorf("rates\ngot  %v\nwant %v", rcvr.rates, expect)
 	}
@@ -1070,70 +1082,91 @@ func TestProbeIgnoresUnrelatedNak(t *testing.T) {
 	}
 }
 
-func defaultTP() *casbin.CfgTP {
-	return &casbin.CfgTP{Interval: 1000000, Width: 100000, PPSOutMode: 3, TBase: 1, TSrcMode: 5}
+func defaultTPV6() *casbin.CfgTP {
+	return &casbin.CfgTP{Interval: 1000000, Width: 100000,
+		PPSOutMode: casbin.CfgTPPPSOutV6PositionTimeValid,
+		TBase:      casbin.CfgTPTBaseV6UTC,
+		TSrcMode:   casbin.CfgTPTSrcV6PrimaryGPS}
 }
 
 func TestTimePulseSet(t *testing.T) {
 	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
 	tests := []struct {
-		name     string
-		monVer   *casbin.MonVer
-		tp       *casbin.CfgTP
-		setup    func(*gpsprot.ConfigTarget)
-		expectTP casbin.CfgTP
+		name      string
+		monVer    *casbin.MonVer
+		tp        *casbin.CfgTP
+		setup     func(*gpsprot.ConfigTarget)
+		expectTP  casbin.CfgTP
+		expectOff bool
 	}{
 		{
 			name:   "V6 PPS with GPS time",
 			monVer: v6,
-			tp:     defaultTP(),
+			tp:     defaultTPV6(),
 			setup: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetPPS(100 * time.Millisecond)
 				target.Props.SetTimeGNSS(gpsprot.GPS)
 			},
 			expectTP: casbin.CfgTP{Interval: 1000000, Width: 100000,
-				PPSOutMode: 5, Polarity: 0, TBase: 0, TSrcMode: 0},
+				PPSOutMode: casbin.CfgTPPPSOutV6PositionTimeReliable,
+				Polarity:   casbin.CfgTPPolarityRising,
+				TBase:      casbin.CfgTPTBaseV6GNSS,
+				TSrcMode:   casbin.CfgTPTSrcV6ForceGPS},
 		},
 		{
 			name: "V5 PPS inverts TBase and uses fix-only mode",
-			tp:   &casbin.CfgTP{Interval: 1000000, Width: 100000, PPSOutMode: 1, TBase: 0, TSrcMode: 0},
+			tp: &casbin.CfgTP{Interval: 1000000, Width: 100000,
+				PPSOutMode: casbin.CfgTPPPSOutV5On,
+				TBase:      casbin.CfgTPTBaseV5UTC,
+				TSrcMode:   casbin.CfgTPTSrcV5ForceGPS},
 			setup: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetPPS(200 * time.Millisecond)
 			},
 			expectTP: casbin.CfgTP{Interval: 1000000, Width: 200000,
-				PPSOutMode: 3, Polarity: 0, TBase: 1, TSrcMode: 0},
+				PPSOutMode: casbin.CfgTPPPSOutV5FixOnly,
+				Polarity:   casbin.CfgTPPolarityRising,
+				TBase:      casbin.CfgTPTBaseV5Satellite,
+				TSrcMode:   casbin.CfgTPTSrcV5ForceGPS},
 		},
 		{
 			name:   "disable pulse",
 			monVer: v6,
-			tp:     defaultTP(),
+			tp:     defaultTPV6(),
 			setup: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetTimePulseWidth(0)
 			},
 			expectTP: casbin.CfgTP{Interval: 1000000, Width: 100000,
-				PPSOutMode: 0, TBase: 1, TSrcMode: 5},
+				PPSOutMode: casbin.CfgTPPPSOutV6Off,
+				TBase:      casbin.CfgTPTBaseV6UTC,
+				TSrcMode:   casbin.CfgTPTSrcV6PrimaryGPS},
+			expectOff: true,
 		},
 		{
 			name:   "width and period round to nearest microsecond",
 			monVer: v6,
-			tp:     defaultTP(),
+			tp:     defaultTPV6(),
 			setup: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetTimePulseWidth(100*time.Millisecond + 750*time.Nanosecond)
 				target.Props.SetTimePulsePeriod(time.Second - 750*time.Nanosecond)
 			},
 			expectTP: casbin.CfgTP{Interval: 999999, Width: 100001,
-				PPSOutMode: 3, TBase: 1, TSrcMode: 5},
+				PPSOutMode: casbin.CfgTPPPSOutV6PositionTimeValid,
+				TBase:      casbin.CfgTPTBaseV6UTC,
+				TSrcMode:   casbin.CfgTPTSrcV6PrimaryGPS},
 		},
 		{
 			name:   "falling polarity",
 			monVer: v6,
-			tp:     defaultTP(),
+			tp:     defaultTPV6(),
 			setup: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetTimePulseWidth(100 * time.Millisecond)
 				target.Props.SetTimePulsePolarityRising(false)
 			},
 			expectTP: casbin.CfgTP{Interval: 1000000, Width: 100000,
-				PPSOutMode: 3, Polarity: 1, TBase: 1, TSrcMode: 5},
+				PPSOutMode: casbin.CfgTPPPSOutV6PositionTimeValid,
+				Polarity:   casbin.CfgTPPolarityFalling,
+				TBase:      casbin.CfgTPTBaseV6UTC,
+				TSrcMode:   casbin.CfgTPTSrcV6PrimaryGPS},
 		},
 	}
 	for _, tc := range tests {
@@ -1154,8 +1187,8 @@ func TestTimePulseSet(t *testing.T) {
 			if !ok {
 				t.Fatal("ConfigProps has no TimePulse")
 			}
-			wantWidth := time.Duration(tc.expectTP.Width) * time.Microsecond
-			if tc.expectTP.PPSOutMode == 0 {
+			wantWidth := casbin.CfgTPDuration(tc.expectTP.Width)
+			if tc.expectOff {
 				wantWidth = 0
 			}
 			if gotTP.Width != wantWidth {
@@ -1168,7 +1201,10 @@ func TestTimePulseSet(t *testing.T) {
 func TestTimePulseGet(t *testing.T) {
 	rcvr := &testReceiver{
 		monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
-		tp:     &casbin.CfgTP{Interval: 1000000, Width: 100000, PPSOutMode: 5, TBase: 0, TSrcMode: 1},
+		tp: &casbin.CfgTP{Interval: 1000000, Width: 100000,
+			PPSOutMode: casbin.CfgTPPPSOutV6PositionTimeReliable,
+			TBase:      casbin.CfgTPTBaseV6GNSS,
+			TSrcMode:   casbin.CfgTPTSrcV6ForceBDS},
 	}
 	cp := probe(t, rcvr)
 	target := gpsprot.NewConfigTarget()
@@ -1222,12 +1258,14 @@ func TestTimeMode(t *testing.T) {
 		{
 			name:   "V6 setStatic starts survey",
 			monVer: v6,
-			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime, BandMode: 1, TSrcMode: 2},
+			tm6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime,
+				BandMode: casbin.CfgTMode2BandL1, TSrcMode: casbin.CfgTMode2TSrcForceGLN},
 			setup: func(target *gpsprot.ConfigTarget) {
 				target.Opts.SetStatic = true
 				target.Opts.Survey = gpsprot.Survey{MinDur: 2000 * time.Second, AccLimit: 20 * gpsprot.Meter}
 			},
-			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Survey, BandMode: 1, TSrcMode: 2,
+			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Survey,
+				BandMode: casbin.CfgTMode2BandL1, TSrcMode: casbin.CfgTMode2TSrcForceGLN,
 				SvinMinDur: 2000, SvinPaccLim: 20000},
 			static:  true,
 			hasMode: true,
@@ -1297,12 +1335,12 @@ func TestTimeMode(t *testing.T) {
 		},
 		{
 			name: "V5 survey uses variances",
-			tm5:  &casbin.CfgTMode{Mode: casbin.TModeAuto},
+			tm5:  &casbin.CfgTMode{Mode: casbin.CfgTModeAuto},
 			setup: func(target *gpsprot.ConfigTarget) {
 				target.Props.SetMode(gpsprot.Mode{Static: true})
 				target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second, AccLimit: 20 * gpsprot.Meter}
 			},
-			expect5: &casbin.CfgTMode{Mode: casbin.TModeSurvey, SvinMinDur: 300, SvinVarLimit: 400},
+			expect5: &casbin.CfgTMode{Mode: casbin.CfgTModeSurvey, SvinMinDur: 300, SvinVarLimit: 400},
 			static:  true,
 			hasMode: true,
 		},
@@ -1375,42 +1413,54 @@ func TestSurveyAgainRestarts(t *testing.T) {
 
 func TestSignalSelection(t *testing.T) {
 	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
-	const f8nMask = 0x0028CDAD   // dual-band: GPS L1CA+L5, SBAS, GLO L1, GAL E1+E5a, BDS B1I+B1C+B2a, QZSS L1CA+L5
-	const at632Mask = 0x00084CA9 // L1-band only (the AT632's clamped reception set)
+	const f8nMask = casbin.CfgNavBandSigGPSL1CA | casbin.CfgNavBandSigGPSL5 |
+		casbin.CfgNavBandSigSBASL1 | casbin.CfgNavBandSigSBASL5 |
+		casbin.CfgNavBandSigGLOL1 | casbin.CfgNavBandSigGALE1 |
+		casbin.CfgNavBandSigGALE5a | casbin.CfgNavBandSigBDSB1IGEO |
+		casbin.CfgNavBandSigBDSB1IMEO | casbin.CfgNavBandSigBDSB1C |
+		casbin.CfgNavBandSigBDSB2a | casbin.CfgNavBandSigQZSSL1CA |
+		casbin.CfgNavBandSigQZSSL5
+	const at632Mask = casbin.CfgNavBandSigGPSL1CA | casbin.CfgNavBandSigSBASL1 |
+		casbin.CfgNavBandSigGLOL1 | casbin.CfgNavBandSigGALE1 |
+		casbin.CfgNavBandSigBDSB1IGEO | casbin.CfgNavBandSigBDSB1IMEO |
+		casbin.CfgNavBandSigBDSB1C | casbin.CfgNavBandSigQZSSL1CA
 	tests := []struct {
 		name          string
 		monVer        *casbin.MonVer
 		navx          *casbin.CfgNavx
 		navBand       *casbin.CfgNavBand
 		request       gpsprot.SignalSet
-		expectMaskFix uint32
-		expectSys     uint8
+		expectMaskFix casbin.CfgNavBandSigIDMask
+		expectSys     casbin.CfgNavxNavSystem
 		expectSignals gpsprot.SignalSet
 	}{
 		{
-			name:          "V6 dual-band GPS and GAL",
-			monVer:        v6,
-			navBand:       &casbin.CfgNavBand{SigBandAuto: 1, SigIDMaskFix: f8nMask, SigIDMask: f8nMask},
-			request:       gpsprot.SigSetGPS | gpsprot.SigSetGAL,
-			expectMaskFix: 1<<casbin.SigGPSL1CA | 1<<casbin.SigGPSL5 | 1<<casbin.SigGALE1 | 1<<casbin.SigGALE5a,
+			name:    "V6 dual-band GPS and GAL",
+			monVer:  v6,
+			navBand: &casbin.CfgNavBand{SigBandAuto: casbin.CfgNavBandAutomatic, SigIDMaskFix: f8nMask, SigIDMask: f8nMask},
+			request: gpsprot.SigSetGPS | gpsprot.SigSetGAL,
+			expectMaskFix: casbin.CfgNavBandSigGPSL1CA | casbin.CfgNavBandSigGPSL5 |
+				casbin.CfgNavBandSigGALE1 | casbin.CfgNavBandSigGALE5a,
 			expectSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGPSL5,
 				gpsprot.SigGALE1, gpsprot.SigGALE5a),
 		},
 		{
 			// The receiver clamps the written reception list to its
 			// hardware: L5-band signals drop out in the readback.
-			name:          "V6 L1-only hardware clamps GPS L5 and GAL E5a away",
-			monVer:        v6,
-			navBand:       &casbin.CfgNavBand{SigBandAuto: 1, SigIDMaskFix: at632Mask, SigIDMask: at632Mask},
-			request:       gpsprot.SigSetGPS | gpsprot.SigSetGAL,
-			expectMaskFix: 1<<casbin.SigGPSL1CA | 1<<casbin.SigGPSL5 | 1<<casbin.SigGALE1 | 1<<casbin.SigGALE5a,
+			name:    "V6 L1-only hardware clamps GPS L5 and GAL E5a away",
+			monVer:  v6,
+			navBand: &casbin.CfgNavBand{SigBandAuto: casbin.CfgNavBandAutomatic, SigIDMaskFix: at632Mask, SigIDMask: at632Mask},
+			request: gpsprot.SigSetGPS | gpsprot.SigSetGAL,
+			expectMaskFix: casbin.CfgNavBandSigGPSL1CA | casbin.CfgNavBandSigGPSL5 |
+				casbin.CfgNavBandSigGALE1 | casbin.CfgNavBandSigGALE5a,
 			expectSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1),
 		},
 		{
-			name:          "V5 constellation level",
-			navx:          &casbin.CfgNavx{NavSystem: casbin.NavSysGPS | casbin.NavSysBDS | casbin.NavSysGLN},
+			name: "V5 constellation level",
+			navx: &casbin.CfgNavx{NavSystem: casbin.CfgNavxNavSystemGPS |
+				casbin.CfgNavxNavSystemBDS | casbin.CfgNavxNavSystemGLN},
 			request:       gpsprot.SigSetGPS | gpsprot.SigSetGAL,
-			expectSys:     casbin.NavSysGPS,
+			expectSys:     casbin.CfgNavxNavSystemGPS,
 			expectSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA),
 		},
 	}
@@ -1428,7 +1478,7 @@ func TestSignalSelection(t *testing.T) {
 				t.Errorf("ErrorCount = %d, want 0", errCount)
 			}
 			if tc.navBand != nil {
-				if rcvr.navBand.SigBandAuto != 0 || rcvr.navBand.SigIDMaskFix != tc.expectMaskFix {
+				if rcvr.navBand.SigBandAuto != casbin.CfgNavBandManual || rcvr.navBand.SigIDMaskFix != tc.expectMaskFix {
 					t.Errorf("NAVBAND auto=%d maskFix=%#x, want auto=0 maskFix=%#x",
 						rcvr.navBand.SigBandAuto, rcvr.navBand.SigIDMaskFix, tc.expectMaskFix)
 				}
@@ -1451,7 +1501,7 @@ func TestSignalSelection(t *testing.T) {
 // query readback.
 func TestSignalRequestUnsupported(t *testing.T) {
 	v6 := &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")}
-	const curMask = 1<<casbin.SigGPSL1CA | 1<<casbin.SigGLOL1
+	const curMask = casbin.CfgNavBandSigGPSL1CA | casbin.CfgNavBandSigGLOL1
 	tests := []struct {
 		name    string
 		monVer  *casbin.MonVer
@@ -1460,14 +1510,15 @@ func TestSignalRequestUnsupported(t *testing.T) {
 		request gpsprot.SignalSet
 	}{
 		{
-			name:    "V5 all-GAL request empties the intersection",
-			navx:    &casbin.CfgNavx{NavSystem: casbin.NavSysGPS | casbin.NavSysGLN},
+			name: "V5 all-GAL request empties the intersection",
+			navx: &casbin.CfgNavx{NavSystem: casbin.CfgNavxNavSystemGPS |
+				casbin.CfgNavxNavSystemGLN},
 			request: gpsprot.SigSetGAL,
 		},
 		{
 			name:    "V6 signal outside the CASIC universe",
 			monVer:  v6,
-			navBand: &casbin.CfgNavBand{SigBandAuto: 1, SigIDMaskFix: curMask, SigIDMask: curMask},
+			navBand: &casbin.CfgNavBand{SigBandAuto: casbin.CfgNavBandAutomatic, SigIDMaskFix: curMask, SigIDMask: curMask},
 			request: gpsprot.SignalSetOf(gpsprot.SigGPSL2C),
 		},
 	}
@@ -1487,7 +1538,7 @@ func TestSignalRequestUnsupported(t *testing.T) {
 			if tc.navx != nil && rcvr.navx.NavSystem != tc.navx.NavSystem {
 				t.Errorf("NavSystem = %#x, want unchanged %#x", rcvr.navx.NavSystem, tc.navx.NavSystem)
 			}
-			if tc.navBand != nil && (rcvr.navBand.SigBandAuto != 1 || rcvr.navBand.SigIDMaskFix != curMask) {
+			if tc.navBand != nil && (rcvr.navBand.SigBandAuto != casbin.CfgNavBandAutomatic || rcvr.navBand.SigIDMaskFix != curMask) {
 				t.Errorf("NAVBAND changed: %+v", rcvr.navBand)
 			}
 			want := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGLOL1)
@@ -1500,8 +1551,9 @@ func TestSignalRequestUnsupported(t *testing.T) {
 
 func TestSignalGetWithAutoBand(t *testing.T) {
 	rcvr := &testReceiver{
-		monVer:  &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
-		navBand: &casbin.CfgNavBand{SigBandAuto: 1, SigIDMask: 1<<casbin.SigGPSL1CA | 1<<casbin.SigGLOL1},
+		monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
+		navBand: &casbin.CfgNavBand{SigBandAuto: casbin.CfgNavBandAutomatic,
+			SigIDMask: casbin.CfgNavBandSigGPSL1CA | casbin.CfgNavBandSigGLOL1},
 	}
 	cp := probe(t, rcvr)
 	target := gpsprot.NewConfigTarget()
@@ -1554,8 +1606,14 @@ func TestPromoteSerializesCFG(t *testing.T) {
 // timeout, failing the test.
 func TestBaudChange(t *testing.T) {
 	ports := []casbin.CfgPrt{
-		{PortID: 0, ProtoMask: 0x33, Mode: 0x0003, BaudRate: 115200},
-		{PortID: 1, ProtoMask: 0x33, Mode: 0x0003, BaudRate: 115200},
+		{PortID: casbin.CfgPrtPortUART0,
+			ProtoMask: casbin.CfgPrtProtoBinaryIn | casbin.CfgPrtProtoTextIn |
+				casbin.CfgPrtProtoBinaryOut | casbin.CfgPrtProtoTextOut,
+			Mode: casbin.CfgPrtMode(0x0003), BaudRate: 115200},
+		{PortID: casbin.CfgPrtPortUART1,
+			ProtoMask: casbin.CfgPrtProtoBinaryIn | casbin.CfgPrtProtoTextIn |
+				casbin.CfgPrtProtoBinaryOut | casbin.CfgPrtProtoTextOut,
+			Mode: casbin.CfgPrtMode(0x0003), BaudRate: 115200},
 	}
 	tests := []struct {
 		name      string
@@ -1576,9 +1634,10 @@ func TestBaudChange(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			rcvr := &testReceiver{
-				monVer:    &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
-				ports:     append([]casbin.CfgPrt{}, ports...),
-				rate:      &casbin.CfgRate{FixIntervalMs: 1000, FixRateHz: 1},
+				monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
+				ports:  append([]casbin.CfgPrt{}, ports...),
+				rate: &casbin.CfgRate{FixIntervalMs: casbin.CfgRateFixInterval1Hz,
+					FixRateHz: casbin.CfgRateFixRate1Hz},
 				silentPrt: tc.silentPrt,
 				switchLag: tc.switchLag,
 			}
@@ -1608,8 +1667,14 @@ func TestShowPort(t *testing.T) {
 	rcvr := &testReceiver{
 		monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
 		ports: []casbin.CfgPrt{
-			{PortID: 0, ProtoMask: 0x33, Mode: 0x0003, BaudRate: 115200},
-			{PortID: 1, ProtoMask: 0x33, Mode: 0x0003, BaudRate: 9600},
+			{PortID: casbin.CfgPrtPortUART0,
+				ProtoMask: casbin.CfgPrtProtoBinaryIn | casbin.CfgPrtProtoTextIn |
+					casbin.CfgPrtProtoBinaryOut | casbin.CfgPrtProtoTextOut,
+				Mode: casbin.CfgPrtMode(0x0003), BaudRate: 115200},
+			{PortID: casbin.CfgPrtPortUART1,
+				ProtoMask: casbin.CfgPrtProtoBinaryIn | casbin.CfgPrtProtoTextIn |
+					casbin.CfgPrtProtoBinaryOut | casbin.CfgPrtProtoTextOut,
+				Mode: casbin.CfgPrtMode(0x0003), BaudRate: 9600},
 		},
 	}
 	cp := probe(t, rcvr)
@@ -1639,19 +1704,21 @@ func TestRawOut(t *testing.T) {
 		name   string
 		monVer *casbin.MonVer
 		flags  gpsprot.RawMsgFlags
-		expect map[casbin.MsgID]uint16
+		expect map[casbin.MsgID]casbin.CfgMsgRate
 	}{
 		{
 			name:   "V6 obs and nav",
 			monVer: v6,
 			flags:  gpsprot.RawMsgObs | gpsprot.RawMsgNavData,
-			expect: map[casbin.MsgID]uint16{casbin.Rxm2MeasxID: 1, casbin.Rxm2SfrbxID: 1},
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{
+				casbin.Rxm2MeasxID: casbin.CfgMsgRateEveryFix, casbin.Rxm2SfrbxID: casbin.CfgMsgRateEveryFix},
 		},
 		{
 			name:   "V6 obs only turns nav off",
 			monVer: v6,
 			flags:  gpsprot.RawMsgObs,
-			expect: map[casbin.MsgID]uint16{casbin.Rxm2MeasxID: 1, casbin.Rxm2SfrbxID: 0},
+			expect: map[casbin.MsgID]casbin.CfgMsgRate{
+				casbin.Rxm2MeasxID: casbin.CfgMsgRateEveryFix, casbin.Rxm2SfrbxID: casbin.CfgMsgRateOff},
 		},
 		{
 			name:   "V5 generates nothing",
@@ -1699,7 +1766,7 @@ func TestMinElevation(t *testing.T) {
 		}
 	})
 	t.Run("V5 mask-applied CFG-NAVX", func(t *testing.T) {
-		rcvr := &testReceiver{navx: &casbin.CfgNavx{NavSystem: casbin.NavSysGPS, MinElev: 5}}
+		rcvr := &testReceiver{navx: &casbin.CfgNavx{NavSystem: casbin.CfgNavxNavSystemGPS, MinElev: 5}}
 		cp := probe(t, rcvr)
 		target := gpsprot.NewConfigTarget()
 		target.Props.SetMinElevation(gpsprot.DegreesFromFloat(10))
@@ -1719,7 +1786,7 @@ func TestMinElevation(t *testing.T) {
 func TestAntennaCableDelay(t *testing.T) {
 	rcvr := &testReceiver{
 		monVer: &casbin.MonVer{SwVersion: z32("SW=URANUS6,V6.3.2.0")},
-		tp:     defaultTP(),
+		tp:     defaultTPV6(),
 	}
 	cp := probe(t, rcvr)
 	target := gpsprot.NewConfigTarget()

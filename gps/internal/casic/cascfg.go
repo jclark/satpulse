@@ -40,21 +40,21 @@ type Configurator struct {
 	ver        *casbin.MonVer // nil when MON-VER is unsupported (V5)
 	family     fwFamily
 	reqs       []*casReq
-	phase      int                 // index into genPhases of the next phase to generate
-	touched    uint16              // CfgSection* bits of the sections set requests touched
-	msgEnabled bool                // a message-output request enabled some output
-	survey     bool                // this invocation put the receiver into survey-in mode
-	tp         *casbin.CfgTP       // latest CFG-TP readback; nil if never answered
-	tm5        *casbin.CfgTMode    // latest V5 CFG-TMODE readback
-	tm6        *casbin.CfgTMode2   // latest V6 CFG-TMODE2 readback
-	navx       *casbin.CfgNavx     // latest V5 CFG-NAVX readback
-	navBand    *casbin.CfgNavBand  // latest V6 CFG-NAVBAND readback
-	ports      []casbin.CfgPrt     // CFG-PRT readback, one entry per port
-	speedReq   *casReq             // the baud change request, when one was generated
-	saveReq    *casReq             // the save request, when one was generated (gates the reset)
-	navLimit   *casbin.CfgNavLimit // latest V6 CFG-NAVLIMIT readback
-	pcasSW     string              // V5 firmware version from PCAS06 query
-	pcasHW     string              // V5 hardware info from PCAS06 query
+	phase      int                      // index into genPhases of the next phase to generate
+	touched    casbin.CfgCfgSectionMask // configuration sections touched by set requests
+	msgEnabled bool                     // a message-output request enabled some output
+	survey     bool                     // this invocation put the receiver into survey-in mode
+	tp         *casbin.CfgTP            // latest CFG-TP readback; nil if never answered
+	tm5        *casbin.CfgTMode         // latest V5 CFG-TMODE readback
+	tm6        *casbin.CfgTMode2        // latest V6 CFG-TMODE2 readback
+	navx       *casbin.CfgNavx          // latest V5 CFG-NAVX readback
+	navBand    *casbin.CfgNavBand       // latest V6 CFG-NAVBAND readback
+	ports      []casbin.CfgPrt          // CFG-PRT readback, one entry per port
+	speedReq   *casReq                  // the baud change request, when one was generated
+	saveReq    *casReq                  // the save request, when one was generated (gates the reset)
+	navLimit   *casbin.CfgNavLimit      // latest V6 CFG-NAVLIMIT readback
+	pcasSW     string                   // V5 firmware version from PCAS06 query
+	pcasHW     string                   // V5 hardware info from PCAS06 query
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -309,17 +309,17 @@ func (c *Configurator) generateSaveReqs() {
 	}
 	switch c.target.Opts.Save {
 	case gpsprot.SaveAll:
-		c.saveReq = c.addMsg(&casbin.CfgCfg{Mask: c.saveMask(casbin.CfgSectionAll), OpMode: casbin.CfgOpSave}, casReq{})
+		c.saveReq = c.addMsg(&casbin.CfgCfg{Mask: c.saveMask(casbin.CfgCfgSectionAll), OpMode: casbin.CfgCfgOpSave}, casReq{})
 	case gpsprot.SaveMinimal:
 		touched := c.touched
 		if c.speedReq != nil && c.speedReq.state == reqSucceeded {
 			// A speed change confirmed by the CFG-RATE poll or by
 			// traffic at the new rate never runs onAck, so its port
 			// section is accounted for here.
-			touched |= casbin.CfgSectionPort
+			touched |= casbin.CfgCfgSectionPort
 		}
 		if touched != 0 {
-			c.saveReq = c.addMsg(&casbin.CfgCfg{Mask: c.saveMask(touched), OpMode: casbin.CfgOpSave}, casReq{})
+			c.saveReq = c.addMsg(&casbin.CfgCfg{Mask: c.saveMask(touched), OpMode: casbin.CfgCfgOpSave}, casReq{})
 		}
 	}
 }
@@ -347,11 +347,11 @@ func (c *Configurator) generateResetReqs() {
 		if c.family == familyV6 {
 			return
 		}
-		c.addReq(&casbin.CfgCfg{Mask: c.saveMask(casbin.CfgSectionAll), OpMode: casbin.CfgOpLoad})
+		c.addReq(&casbin.CfgCfg{Mask: c.saveMask(casbin.CfgCfgSectionAll), OpMode: casbin.CfgCfgOpLoad})
 	case gpsprot.ResetCold:
-		c.addRstReq(casbin.StartCold)
+		c.addRstReq(casbin.CfgRstStartCold)
 	case gpsprot.ResetFactory:
-		c.addRstReq(casbin.StartFactory)
+		c.addRstReq(casbin.CfgRstStartFactory)
 	}
 }
 
@@ -360,9 +360,9 @@ func (c *Configurator) generateResetReqs() {
 // does NOT ignore it: mask 0 is ACKed and saves nothing (observed on
 // the F8N), so V6 always gets the all-sections mask - its save
 // granularity is a single group.
-func (c *Configurator) saveMask(mask uint16) uint16 {
+func (c *Configurator) saveMask(mask casbin.CfgCfgSectionMask) casbin.CfgCfgSectionMask {
 	if c.family == familyV6 {
-		return casbin.CfgSectionAll
+		return casbin.CfgCfgSectionAll
 	}
 	return mask
 }
@@ -372,23 +372,26 @@ func (c *Configurator) saveMask(mask uint16) uint16 {
 // (learned locally, not from satellites). Matches the casictool
 // reference. V6 firmware's verified reset command clears no BBR
 // sections; its start mode implies the scope.
-const bbrReset = casbin.BbrEphemeris | casbin.BbrAlmanac | casbin.BbrHealth |
-	casbin.BbrIonosphere | casbin.BbrPosition | casbin.BbrUTCParams |
-	casbin.BbrRTC | casbin.BbrConfig
+const bbrReset = casbin.CfgRstNavBbrEphemeris | casbin.CfgRstNavBbrAlmanac |
+	casbin.CfgRstNavBbrHealth | casbin.CfgRstNavBbrIonosphere |
+	casbin.CfgRstNavBbrPosition | casbin.CfgRstNavBbrUTCParams |
+	casbin.CfgRstNavBbrRTC | casbin.CfgRstNavBbrConfig
 
 // addRstReq appends a CFG-RST request. The receiver restarts without
 // acknowledging, so the request succeeds when sent.
-func (c *Configurator) addRstReq(startMode uint8) {
-	bbr := uint16(0)
+func (c *Configurator) addRstReq(startMode casbin.CfgRstStartMode) {
+	bbr := casbin.CfgRstNavBbrV6Reserved
+	resetMode := casbin.CfgRstResetModeV6Reserved
 	if c.family == familyV5 {
 		bbr = bbrReset
+		resetMode = casbin.CfgRstResetHardwareImmediate
 	}
-	m := &casbin.CfgRst{NavBbrMask: bbr, ResetMode: casbin.ResetHWImmediate, StartMode: startMode}
+	m := &casbin.CfgRst{NavBbrMask: bbr, ResetMode: resetMode, StartMode: startMode}
 	c.addMsg(m, casReq{noAck: true})
 }
 
 // generateSpeedReqs generates the baud rate change. The set uses port
-// id 0xFF (the port in use) with the other port settings preserved
+// id CfgPrtPortCurrent with the other port settings preserved
 // from the readback. The receiver switches speed immediately and sends
 // its ACK at the new rate, where the switch can garble it, so the
 // request is followed by a CFG-RATE poll sent after the host switched:
@@ -407,7 +410,7 @@ func (c *Configurator) generateSpeedReqs() {
 	if !haveBase {
 		return
 	}
-	m := &casbin.CfgPrt{PortID: casbin.PortCurrent, ProtoMask: base.ProtoMask, Mode: base.Mode, BaudRate: baud}
+	m := &casbin.CfgPrt{PortID: casbin.CfgPrtPortCurrent, ProtoMask: base.ProtoMask, Mode: base.Mode, BaudRate: baud}
 	c.speedReq = c.addMsg(m, casReq{speedAfter: int(baud)})
 	c.addPollReq(casbin.CfgRateID, func(casbin.Msg) {
 		if c.speedReq.state == reqAwaitingAck {
@@ -417,7 +420,7 @@ func (c *Configurator) generateSpeedReqs() {
 }
 
 // basePort returns the polled port entry whose settings a port write
-// preserves: port 0 (the wired UART on all known boards), or the
+// preserves: CfgPrtPortUART0 (the wired UART on all known boards), or the
 // first entry reported.
 func (c *Configurator) basePort() (casbin.CfgPrt, bool) {
 	if len(c.ports) == 0 {
@@ -425,7 +428,7 @@ func (c *Configurator) basePort() (casbin.CfgPrt, bool) {
 	}
 	base := c.ports[0]
 	for _, p := range c.ports {
-		if p.PortID == 0 {
+		if p.PortID == casbin.CfgPrtPortUART0 {
 			base = p
 		}
 	}
@@ -573,31 +576,31 @@ func (c *Configurator) addTextReq(sentence string, onText func(string) bool) {
 // V6, where saveMask substitutes the all-sections mask - only being
 // nonzero matters, so that the save fires. CFG-RST returns 0: a reset
 // does not touch saved configuration and must not trigger a save.
-func setSection(m casbin.Msg) uint16 {
+func setSection(m casbin.Msg) casbin.CfgCfgSectionMask {
 	switch m.ID() {
 	case casbin.CfgMsgID:
-		return casbin.CfgSectionMsg
+		return casbin.CfgCfgSectionMsg
 	case casbin.CfgPrtID:
-		return casbin.CfgSectionPort
+		return casbin.CfgCfgSectionPort
 	case casbin.CfgTPID:
-		return casbin.CfgSectionTP
+		return casbin.CfgCfgSectionTP
 	case casbin.CfgRateID, casbin.CfgTModeID, casbin.CfgNavxID,
 		casbin.CfgTMode2ID, casbin.CfgNavBandID, casbin.CfgNavLimID:
-		return casbin.CfgSectionNav
+		return casbin.CfgCfgSectionNav
 	}
 	return 0
 }
 
 // msgEnablesOutput reports whether m is a message-output request that
 // turns some output on: a CFG-MSG with a nonzero output rate. A poll
-// (PollRate) enables nothing. Such a request's ACK is wrapped in addMsg
+// (CfgMsgRatePoll) enables nothing. Such a request's ACK is wrapped in addMsg
 // to set msgEnabled, so the flag reflects only accepted enables (many
 // enables are nakOK): it gates the CFG-RATE set in the rate phase (see
 // generateRateReqs), so that whenever an invocation actually enables
 // output that output runs at 1 Hz.
 func msgEnablesOutput(m casbin.Msg) bool {
 	if mt, ok := m.(*casbin.CfgMsg); ok {
-		return mt.Rate != 0 && mt.Rate != casbin.PollRate
+		return mt.Rate != casbin.CfgMsgRateOff && mt.Rate != casbin.CfgMsgRatePoll
 	}
 	return false
 }

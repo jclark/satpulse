@@ -22,10 +22,10 @@ func (c *Configurator) generateMsgReqs() {
 	}
 }
 
-// generateRateReqs forces the positioning interval to 1000 ms whenever
+// generateRateReqs forces the named 1 Hz positioning interval whenever
 // the message phase accepted an enable. A CFG-MSG rate is a per-fix
-// divisor (rate 1 = one output per fix), not a frequency, so enabled
-// output only runs at 1 Hz if the positioning interval is 1000 ms. The
+// divisor, not a frequency, so enabled every-fix output only runs at
+// 1 Hz when the positioning rate is also 1 Hz. The
 // interval (CFG-RATE) persists and may be left at a non-default value,
 // so this matches the semantics guarantee of 1 Hz output independent of
 // the positioning rate, as the u-blox backend does. msgEnabled is set
@@ -40,9 +40,12 @@ func (c *Configurator) generateRateReqs() {
 	if !c.msgEnabled {
 		return
 	}
-	rate := &casbin.CfgRate{FixIntervalMs: 1000}
+	rate := &casbin.CfgRate{
+		FixIntervalMs: casbin.CfgRateFixInterval1Hz,
+		FixRateHz:     casbin.CfgRateFixRateV5Reserved,
+	}
 	if c.family == familyV6 {
-		rate.FixRateHz = 1
+		rate.FixRateHz = casbin.CfgRateFixRate1Hz
 	}
 	c.addReq(rate)
 }
@@ -62,13 +65,13 @@ func (c *Configurator) generateRawReqs(flags gpsprot.RawMsgFlags) {
 	c.addMsgRate(casbin.Rxm2SfrbxID, flags&gpsprot.RawMsgNavData != 0)
 }
 
-// addMsgRate sets a message's output rate to 1 or 0 via CFG-MSG. A NAK
+// addMsgRate sets a message's output rate to every fix or off via CFG-MSG. A NAK
 // is acceptable: the message may not exist on this firmware, and
 // undeliverable information shows as absence.
 func (c *Configurator) addMsgRate(mid casbin.MsgID, on bool) {
-	var rate uint16
+	rate := casbin.CfgMsgRateOff
 	if on {
-		rate = 1
+		rate = casbin.CfgMsgRateEveryFix
 	}
 	c.addReqNakOK(&casbin.CfgMsg{Target: mid, Rate: rate})
 }
@@ -207,9 +210,9 @@ func (c *Configurator) generateNMEAReqs(flags gpsprot.NMEAMsgFlags) {
 		{gpsprot.NMEAMsgGLL, casbin.NmeaGllID},
 	}
 	for _, m := range msgs {
-		var rate uint16
+		rate := casbin.CfgMsgRateOff
 		if flags&m.flag != 0 {
-			rate = 1
+			rate = casbin.CfgMsgRateEveryFix
 		}
 		c.addReq(&casbin.CfgMsg{Target: m.mid, Rate: rate})
 	}

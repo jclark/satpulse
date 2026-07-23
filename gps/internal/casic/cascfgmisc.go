@@ -63,7 +63,7 @@ func (c *Configurator) generateMinElevSet() {
 	if c.navx == nil {
 		return
 	}
-	c.addSetReq(&casbin.CfgNavx{Mask: casbin.NavxMinElev, MinElev: deg},
+	c.addSetReq(&casbin.CfgNavx{Mask: casbin.CfgNavxApplyMinElev, MinElev: deg},
 		func() { c.navx.MinElev = deg })
 }
 

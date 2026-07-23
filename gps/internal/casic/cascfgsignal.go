@@ -28,35 +28,35 @@ import (
 // navBandSignals maps CFG-NAVBAND bit positions to signals. BDS B1I
 // has two bits (GEO and MEO satellites); both follow SigBDSB1I.
 var navBandSignals = []struct {
-	bit casbin.SigID
+	bit casbin.CfgNavBandSigIDMask
 	sig gpsprot.Signal
 }{
-	{casbin.SigGPSL1CA, gpsprot.SigGPSL1CA},
-	{casbin.SigGPSL5, gpsprot.SigGPSL5},
-	{casbin.SigSBASL1, gpsprot.SigSBASL1CA},
-	{casbin.SigSBASL5, gpsprot.SigSBASL5},
-	{casbin.SigGLOL1, gpsprot.SigGLOL1},
-	{casbin.SigGALE1, gpsprot.SigGALE1},
-	{casbin.SigGALE5a, gpsprot.SigGALE5a},
-	{casbin.SigBDSB1IGEO, gpsprot.SigBDSB1I},
-	{casbin.SigBDSB1IMEO, gpsprot.SigBDSB1I},
-	{casbin.SigBDSB1C, gpsprot.SigBDSB1C},
-	{casbin.SigBDSB2a, gpsprot.SigBDSB2a},
-	{casbin.SigQZSSL1CA, gpsprot.SigQZSSL1CA},
-	{casbin.SigQZSSL5, gpsprot.SigQZSSL5},
-	{casbin.SigNAVICL5, gpsprot.SigNAVICL5},
+	{casbin.CfgNavBandSigGPSL1CA, gpsprot.SigGPSL1CA},
+	{casbin.CfgNavBandSigGPSL5, gpsprot.SigGPSL5},
+	{casbin.CfgNavBandSigSBASL1, gpsprot.SigSBASL1CA},
+	{casbin.CfgNavBandSigSBASL5, gpsprot.SigSBASL5},
+	{casbin.CfgNavBandSigGLOL1, gpsprot.SigGLOL1},
+	{casbin.CfgNavBandSigGALE1, gpsprot.SigGALE1},
+	{casbin.CfgNavBandSigGALE5a, gpsprot.SigGALE5a},
+	{casbin.CfgNavBandSigBDSB1IGEO, gpsprot.SigBDSB1I},
+	{casbin.CfgNavBandSigBDSB1IMEO, gpsprot.SigBDSB1I},
+	{casbin.CfgNavBandSigBDSB1C, gpsprot.SigBDSB1C},
+	{casbin.CfgNavBandSigBDSB2a, gpsprot.SigBDSB2a},
+	{casbin.CfgNavBandSigQZSSL1CA, gpsprot.SigQZSSL1CA},
+	{casbin.CfgNavBandSigQZSSL5, gpsprot.SigQZSSL5},
+	{casbin.CfgNavBandSigNAVICL5, gpsprot.SigNAVICL5},
 }
 
 // v5NavSystems maps CFG-NAVX NavSystem bits to the single signal each
 // V5 constellation carries.
 var v5NavSystems = []struct {
-	bit  uint8
+	bit  casbin.CfgNavxNavSystem
 	gnss gpsprot.GNSS
 	sig  gpsprot.Signal
 }{
-	{casbin.NavSysGPS, gpsprot.GPS, gpsprot.SigGPSL1CA},
-	{casbin.NavSysBDS, gpsprot.BDS, gpsprot.SigBDSB1I},
-	{casbin.NavSysGLN, gpsprot.GLO, gpsprot.SigGLOL1},
+	{casbin.CfgNavxNavSystemGPS, gpsprot.GPS, gpsprot.SigGPSL1CA},
+	{casbin.CfgNavxNavSystemBDS, gpsprot.BDS, gpsprot.SigBDSB1I},
+	{casbin.CfgNavxNavSystemGLN, gpsprot.GLO, gpsprot.SigGLOL1},
 }
 
 // v5Signals is the V5 supported signal set.
@@ -65,21 +65,21 @@ const v5Signals = gpsprot.SignalSet(1<<gpsprot.SigGPSL1CA) |
 	gpsprot.SignalSet(1<<gpsprot.SigGLOL1)
 
 // signalsToNavBand converts a signal set to a CFG-NAVBAND mask.
-func signalsToNavBand(ss gpsprot.SignalSet) uint32 {
-	var mask uint32
+func signalsToNavBand(ss gpsprot.SignalSet) casbin.CfgNavBandSigIDMask {
+	var mask casbin.CfgNavBandSigIDMask
 	for _, e := range navBandSignals {
 		if ss.Contains(e.sig) {
-			mask |= 1 << e.bit
+			mask |= e.bit
 		}
 	}
 	return mask
 }
 
 // navBandToSignals converts a CFG-NAVBAND mask to a signal set.
-func navBandToSignals(mask uint32) gpsprot.SignalSet {
+func navBandToSignals(mask casbin.CfgNavBandSigIDMask) gpsprot.SignalSet {
 	var ss gpsprot.SignalSet
 	for _, e := range navBandSignals {
-		if mask&(1<<e.bit) != 0 {
+		if mask.Has(e.bit) {
 			ss |= gpsprot.SignalSetOf(e.sig)
 		}
 	}
@@ -143,7 +143,7 @@ func (c *Configurator) generateSignalSet() {
 			return
 		}
 		nb := *c.navBand
-		nb.SigBandAuto = 0
+		nb.SigBandAuto = casbin.CfgNavBandManual
 		nb.SigIDMaskFix = mask
 		nb.SigIDMask = mask
 		c.addSetReq(&nb, func() { c.navBand = &nb })
@@ -162,13 +162,13 @@ func (c *Configurator) generateSignalSet() {
 		return
 	}
 	gs := want.GNSSSet()
-	var sys uint8
+	var sys casbin.CfgNavxNavSystem
 	for _, e := range v5NavSystems {
 		if gs.Contains(e.gnss) {
 			sys |= e.bit
 		}
 	}
-	c.addSetReq(&casbin.CfgNavx{Mask: casbin.NavxNavSystem, NavSystem: sys},
+	c.addSetReq(&casbin.CfgNavx{Mask: casbin.CfgNavxApplyNavSystem, NavSystem: sys},
 		func() { c.navx.NavSystem = sys })
 }
 
@@ -191,7 +191,7 @@ func (c *Configurator) checkSignals(ss gpsprot.SignalSet) bool {
 func (c *Configurator) signalConfigProps(props *gpsprot.ConfigProps) {
 	if c.navBand != nil {
 		mask := c.navBand.SigIDMaskFix & c.navBand.SigIDMask
-		if c.navBand.SigBandAuto != 0 {
+		if c.navBand.SigBandAuto == casbin.CfgNavBandAutomatic {
 			mask = c.navBand.SigIDMask
 		}
 		props.SetSignalsEnabled(navBandToSignals(mask))

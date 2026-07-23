@@ -23,7 +23,7 @@ const (
 
 // ConfigProtocol implements gpsprot.ConfigProtocol for CASIC receivers.
 //
-// Probing polls MON-VER via CFG-MSG (rate 0xFFFF). V6 firmware answers
+// Probing polls MON-VER via CFG-MSG's poll rate. V6 firmware answers
 // with MON-VER then ACK; V5 firmware does not support MON-VER and
 // answers ACK-NAK - either response proves a CASIC receiver.
 //
@@ -101,7 +101,7 @@ func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface
 // the receiver notes).
 func (cp *ConfigProtocol) ProbePackets() ([][]byte, time.Duration) {
 	cp.pollsPending++
-	pkt, _ := casbin.Serialize(&casbin.CfgMsg{Target: casbin.MonVerID, Rate: casbin.PollRate})
+	pkt, _ := casbin.Serialize(&casbin.CfgMsg{Target: casbin.MonVerID, Rate: casbin.CfgMsgRatePoll})
 	return [][]byte{pkt}, 0
 }
 
