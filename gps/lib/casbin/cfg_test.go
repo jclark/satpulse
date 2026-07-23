@@ -19,8 +19,8 @@ func TestCfgTMode2Parse(t *testing.T) {
 			want: &CfgTMode2{
 				TimFixMode:  CfgTMode2Survey,
 				BandMode:    CfgTMode2BandL1B1I,
-				AntDetMode:  0,
-				TSrcMode:    0,
+				AntDetMode:  CfgTMode2AntDetInternal,
+				TSrcMode:    CfgTMode2TimeSourceForceGPS,
 				XFixed:      0,
 				YFixed:      0,
 				ZFixed:      0,
@@ -35,8 +35,8 @@ func TestCfgTMode2Parse(t *testing.T) {
 			want: &CfgTMode2{
 				TimFixMode:  CfgTMode2Survey,
 				BandMode:    CfgTMode2BandL1B1I,
-				AntDetMode:  0,
-				TSrcMode:    0,
+				AntDetMode:  CfgTMode2AntDetInternal,
+				TSrcMode:    CfgTMode2TimeSourceForceGPS,
 				XFixed:      0,
 				YFixed:      0,
 				ZFixed:      0,
@@ -63,6 +63,9 @@ func TestCfgTMode2Parse(t *testing.T) {
 func TestCfgTMode2Roundtrip(t *testing.T) {
 	testMsgType(t, CfgTMode2{
 		TimFixMode:  CfgTMode2Survey,
+		BandMode:    CfgTMode2BandMulti,
+		AntDetMode:  CfgTMode2AntDetExternalPin,
+		TSrcMode:    CfgTMode2TimeSourcePriorityGAL,
 		SvinMinDur:  2000,
 		SvinPaccLim: 20000,
 	})
