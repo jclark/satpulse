@@ -12,9 +12,8 @@ import type { Page } from '@playwright/test';
 // late joiners; the high-rate gps:msg kinds (satellites, navEpoch, pos/vel/
 // time rows) and the gps:packet stream are never cached (see
 // cmd/satpulsewb/sink.go), so every assertion that depends on them must sit
-// on a page that is connected while the replay flows. That forces the Monitor
-// and Packets checks into one test on one page, with the packet-stream
-// subscription made first (it only streams while the Packets tab is open).
+// on a page that is connected while the replay flows. PacketPanel stays
+// subscribed for the page lifetime and accumulates packets on hidden tabs.
 
 // The clock renders receiver time in the browser's local zone; pin it so the
 // date asserted below is the replay log's UTC date on any machine.
@@ -28,26 +27,11 @@ function visibleCell(page: Page, name: string) {
   return page.getByRole('cell', { name, exact: true }).filter({ visible: true }).first();
 }
 
-test('packets and monitor panels populate from the replay', async ({ page, workbenchReplay }) => {
+test('monitor panels populate from the replay', async ({ page, workbenchReplay }) => {
   await page.goto(workbenchReplay.baseURL);
 
   // Monitor is the default tab: its collapsible sections are already there.
   await expect(page.getByRole('button', { name: 'PVT Messages' })).toBeVisible();
-
-  // Packets tab first: the gps:packet stream flows only while this tab is
-  // subscribed and is never cached, so it must be opened while the replay is
-  // still running. Message names come from the replayed u-blox log.
-  await page.getByRole('button', { name: 'Packets' }).click();
-  await expect(page.getByRole('columnheader', { name: 'Last message' })).toBeVisible();
-  await expect(visibleCell(page, 'NAV-PVT')).toBeVisible();
-  await expect(visibleCell(page, 'NAV-SAT')).toBeVisible();
-  await expect(visibleCell(page, 'UBX')).toBeVisible();
-  await expect(visibleCell(page, 'Rx')).toBeVisible();
-
-  // Back to Monitor. The app-level listeners accumulated the monitor state
-  // while the Packets tab was open, so these panels are already populated
-  // (or populate as the tail of the replay arrives).
-  await page.getByRole('button', { name: 'Monitor' }).click();
 
   // Clock: the replay log's UTC date, rendered once gps:time arrives.
   await expect(page.getByText('2026-03-26', { exact: true })).toBeVisible();
@@ -63,9 +47,10 @@ test('packets and monitor panels populate from the replay', async ({ page, workb
   await expect(legendItem('GPS')).toBeVisible();
   await expect(legendItem('GAL')).toBeVisible();
 
-  // PVT Messages auto-expands on first PVT data (app.tsx), so its tables are
-  // visible without a click: position rows with coordinates and a time row,
-  // keyed by the log's native message IDs.
+  // PVT Messages stays collapsed as data arrives. Opening it shows position
+  // rows with coordinates and a time row, keyed by the log's native message
+  // IDs.
+  await page.getByRole('button', { name: 'PVT Messages' }).click();
   await expect(page.getByRole('heading', { name: 'Position', exact: true })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Latitude,Longitude' }).filter({ visible: true })).toBeVisible();
   await expect(visibleCell(page, 'NAV-HPPOSLLH')).toBeVisible();
@@ -89,6 +74,22 @@ test('packets and monitor panels populate from the replay', async ({ page, workb
   await page.getByRole('button', { name: 'Survey', exact: true }).click();
   await expect(page.getByText('Observation time')).toBeVisible();
   await expect(page.getByText('Status', { exact: true })).toBeVisible();
+});
+
+test('packets received while Monitor is visible appear when Packets is opened', async ({ page, workbenchReplay }) => {
+  await page.goto(workbenchReplay.baseURL);
+  await expect(page.getByRole('button', { name: 'PVT Messages' })).toBeVisible();
+
+  // Keep Monitor visible until the finite replay has sent every packet. The
+  // packet stream is not cached by the server, so anything shown after this
+  // point must have been accumulated by the mounted hidden PacketPanel.
+  await workbenchReplay.waitForReplay();
+  await page.getByRole('button', { name: 'Packets' }).click();
+  await expect(page.getByRole('columnheader', { name: 'Last message' })).toBeVisible();
+  await expect(visibleCell(page, 'NAV-PVT')).toBeVisible();
+  await expect(visibleCell(page, 'NAV-SAT')).toBeVisible();
+  await expect(visibleCell(page, 'UBX')).toBeVisible();
+  await expect(visibleCell(page, 'Rx')).toBeVisible();
 });
 
 // The catalog needs no replay data: the harness points SATPULSE_GPSMSG_PATH

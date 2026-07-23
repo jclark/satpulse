@@ -30,15 +30,18 @@ import (
 // 1575.42 MHz), falling back to an OS-picked port when taken.
 const defaultPort = 15754
 
-const summary = `[-h|--help] [-L|--listen host:port] [-T|--token]
-       [-d|--serial-device path [-s|--device-speed bps]] [--vendor name]
+const summary = `[-h|--help] [-v|--verbose] [-L|--listen host:port] [-t|--token]
+       [-n|--no-open-browser]
+       [-d|--serial-device path] [-s|--device-speed bps] [--vendor name]
        [--packet-log path]`
 
 type flagVars struct {
 	listen      string
 	token       bool
+	noOpen      bool
 	device      string
 	speed       int
+	autoConnect bool
 	vendor      gpsreg.Vendor
 	packetLog   string
 	logLevel    slog.Level
@@ -76,12 +79,16 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 	var help bool
 	flags := pflag.NewFlagSet("satpulsewb", pflag.ContinueOnError)
 	flags.StringVarP(&v.listen, "listen", "L", "", "listen on `host:port` and disable the access token")
-	flags.BoolVarP(&v.token, "token", "T", false, "require a generated access token even with --listen")
+	flags.BoolVarP(&v.token, "token", "t", false, "require a generated access token even with --listen")
+	flags.BoolVarP(&v.noOpen, "no-open-browser", "n", false, "do not open a web browser at startup")
 	flags.StringVarP(&v.device, "serial-device", "d", "", "serial device connected to GPS receiver")
-	flags.IntVarP(&v.speed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
+	flags.IntVarP(&v.speed, "device-speed", "s", 9600, "serial device baud-rate in `bps`")
 	flags.StringVar(&vendorStr, "vendor", "", "GPS receiver `vendor` name")
 	flags.StringVar(&v.packetLog, "packet-log", "", "log packets to `path`")
-	flags.CountVarP(&verbose, "verbose", "v", "increase verbosity")
+	flags.BoolFuncP("verbose", "v", "increase logging verbosity", func(string) error {
+		verbose++
+		return nil
+	})
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.BoolVarP(&v.showVersion, "version", "V", false, "show version information")
 	usage := func(progName string) string {
@@ -96,12 +103,10 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 	if flags.NArg() != 0 {
 		return nil, usage, fmt.Errorf("satpulsewb must not have non-option arguments")
 	}
-	if flags.Lookup("device-speed").Changed && v.speed == 0 {
-		return nil, usage, fmt.Errorf("0 is not a valid value for --device-speed")
+	if flags.Lookup("device-speed").Changed && v.speed <= 0 {
+		return nil, usage, fmt.Errorf("--device-speed must be greater than zero")
 	}
-	if v.device == "" && flags.Lookup("device-speed").Changed {
-		return nil, usage, fmt.Errorf("--device-speed requires --serial-device")
-	}
+	v.autoConnect = flags.Lookup("serial-device").Changed && flags.Lookup("device-speed").Changed
 	var err error
 	if v.vendor, err = gpsreg.ParseVendor(vendorStr); err != nil {
 		return nil, usage, err
@@ -140,19 +145,20 @@ func run(v *flagVars) error {
 		token = newToken()
 	}
 	printURLs(os.Stdout, lg, ln, v.listen, token)
-	if v.device != "" {
+	srv := newServer(ctx, sess, hub, lg, token, v.vendor, msgDirs(), v.device, v.speed)
+	if v.autoConnect {
 		go func() {
-			if err := sess.Connect(session.SerialOpener{Device: v.device, Speed: v.speed}, v.vendor); err != nil {
+			if err := srv.connect(v.device, v.speed); err != nil {
 				lg.Error("could not connect to the GPS", "device", v.device, "err", err)
 			}
 		}()
 	}
-	srv := newServer(ctx, sess, hub, lg, token, v.vendor, msgDirs())
-	// --listen is expert mode and never opens a browser. In guided mode the
-	// opened URL normally carries the multi-use token; on platforms whose argv
-	// leaks it, mint a single-use token for the launch instead so the value
-	// visible to other users is worthless once redeemed.
-	if v.listen == "" && canOpenBrowser() {
+	// --listen is expert mode and never opens a browser; --no-open-browser
+	// suppresses it in guided mode too (headless hosts, scripting, tests). In
+	// guided mode the opened URL normally carries the multi-use token; on
+	// platforms whose argv leaks it, mint a single-use token for the launch
+	// instead so the value visible to other users is worthless once redeemed.
+	if v.listen == "" && !v.noOpen && canOpenBrowser() {
 		launchToken := token
 		if launchBrowserLeaksURL {
 			launchToken = srv.newSingleUseToken()
@@ -219,7 +225,7 @@ func printURLs(w io.Writer, lg *slog.Logger, ln net.Listener, listenAddr, token 
 		}
 	}
 	if insecure {
-		lg.Warn("no access token on a non-loopback address; browsers will be refused, but clients can still control the receiver by sending a loopback Host (use -T to require a token and allow browser access)")
+		lg.Warn("no access token on a non-loopback address; browsers will be refused, but clients can still control the receiver by sending a loopback Host (use -t to require a token and allow browser access)")
 	}
 }
 

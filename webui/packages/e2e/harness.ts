@@ -59,7 +59,7 @@ const CASTER_PASSWORD = 'smoketest';
 // The workbench URL satpulsewb prints at startup, e.g.
 //   http://127.0.0.1:15754/?t=RM3YmI3_Hl-G5EbdrlkmiA
 // The bracketed alternative matches an IPv6 host; the token group is absent when
-// the token is disabled (-L without -T). Matches program_satpulsewb.py's regex.
+// the token is disabled (-L without -t). Matches program_satpulsewb.py's regex.
 const WB_URL_RE = /http:\/\/(?:\[[^\]]+\]|[^\s/]+?):(\d+)\/(?:\?t=(\S+))?/;
 
 // --- process and readiness helpers ------------------------------------------
@@ -316,7 +316,7 @@ export interface DashboardReplay {
   ensureReplay(): void;
 }
 
-// WorkbenchReplay is satpulsewb -d <fifo>: the read-only FIFO replay behind the
+// WorkbenchReplay is satpulsewb -d <fifo> -s 38400: the read-only FIFO replay behind the
 // workbench, so connect lands in passive detection. The replay runs from setup.
 // Test-scoped: each test gets a fresh daemon and its own live replay, so data
 // assertions never depend on which spec file ran first.
@@ -324,6 +324,7 @@ export interface WorkbenchReplay {
   baseURL: string;
   token: string;
   port: number;
+  waitForReplay(): Promise<void>;
 }
 
 // WorkbenchUbxsim is satpulsewb backed by the u-blox simulator, which answers
@@ -349,7 +350,7 @@ export interface WorkbenchFixed {
   restart(): Promise<void>;
 }
 
-// WorkbenchFixedToken is satpulsewb -L 127.0.0.1:<port> -T: a stable port WITH
+// WorkbenchFixedToken is satpulsewb -L 127.0.0.1:<port> -t: a stable port WITH
 // a generated token, so restart() invalidates the page's token while the page
 // can still reach the port -- the stale-token-after-restart path. Test-scoped:
 // a restart burns the fixture's token, so it cannot be shared.
@@ -398,7 +399,7 @@ async function launchSatpulsed(session: RunSession): Promise<{ fifoPath: string;
 async function launchWbFifo(session: RunSession, extraArgs: string[]): Promise<{ fifoPath: string } & Awaited<ReturnType<typeof waitWbUrl>>> {
   const fifoPath = path.join(session.runDir, 'gps.fifo');
   mkfifo(fifoPath);
-  const proc = session.spawnLogged('satpulsewb', satpulsewb, ['-d', fifoPath, ...extraArgs], {
+  const proc = session.spawnLogged('satpulsewb', satpulsewb, ['-n', '-d', fifoPath, '-s', '38400', ...extraArgs], {
     SATPULSE_GPSMSG_PATH: GPSMSG_PATH,
   });
   const info = await waitWbUrl(session, proc);
@@ -467,6 +468,7 @@ interface TestFixtures {
   keepOnFailure: void;
   workbenchReplay: WorkbenchReplay;
   workbenchUbxsim: WorkbenchUbxsim;
+  workbenchUbxsimDeviceOnly: WorkbenchUbxsim;
   workbenchUbxsimNoDevice: WorkbenchUbxsim;
   workbenchFixedToken: WorkbenchFixedToken;
 }
@@ -521,8 +523,16 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     openSessions.add(session);
     try {
       const info = await launchWbFifo(session, []);
-      startReplay(session, info.fifoPath);
-      await use({ baseURL: info.baseURL, token: info.token, port: info.port });
+      const replay = startReplay(session, info.fifoPath);
+      const waitForReplay = (): Promise<void> => new Promise((resolve, reject) => {
+        const done = (code: number | null) => {
+          if (code === 0) resolve();
+          else reject(new Error(`replay exited with code ${code}`));
+        };
+        if (replay.exited) done(replay.exitCode);
+        else replay.child.once('exit', done);
+      });
+      await use({ baseURL: info.baseURL, token: info.token, port: info.port, waitForReplay });
       keepIfFailed(session, testInfo);
     } catch (e) {
       session.keep = true;
@@ -544,7 +554,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       // log, and a restart must yield the fresh token, not the burnt one.
       const launch = async (): Promise<{ baseURL: string; token: string }> => {
         launches++;
-        proc = session.spawnLogged(`satpulsewb-${launches}`, satpulsewb, ['-L', `127.0.0.1:${port}`, '-T'], {
+        proc = session.spawnLogged(`satpulsewb-${launches}`, satpulsewb, ['-L', `127.0.0.1:${port}`, '-t'], {
           SATPULSE_GPSMSG_PATH: GPSMSG_PATH,
         });
         const info = await waitWbUrl(session, proc);
@@ -572,11 +582,15 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   },
 
   workbenchUbxsim: async ({}, use, testInfo) => {
-    await useUbxsim(use, true, testInfo);
+    await useUbxsim(use, 'device-speed', testInfo);
+  },
+
+  workbenchUbxsimDeviceOnly: async ({}, use, testInfo) => {
+    await useUbxsim(use, 'device', testInfo);
   },
 
   workbenchUbxsimNoDevice: async ({}, use, testInfo) => {
-    await useUbxsim(use, false, testInfo);
+    await useUbxsim(use, 'none', testInfo);
   },
 
   workbenchFixed: [
@@ -633,7 +647,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           return portAccepts(casterPort);
         });
         const link = await launchUbxsim(session);
-        const proc = session.spawnLogged('satpulsewb', satpulsewb, ['-d', link, '-s', UBXSIM_SPEED], {
+        const proc = session.spawnLogged('satpulsewb', satpulsewb, ['-n', '-d', link, '-s', UBXSIM_SPEED], {
           SATPULSE_GPSMSG_PATH: GPSMSG_PATH,
         });
         const info = await waitWbUrl(session, proc);
@@ -661,17 +675,22 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   ],
 });
 
-// useUbxsim launches the simulator, then satpulsewb over it (with or without the
-// device flag), and tears them down in the required order: satpulsewb first,
+// useUbxsim launches the simulator, then satpulsewb over it with no connection
+// flags, a device only, or a device and speed, and tears them down in the
+// required order: satpulsewb first,
 // then the simulator, so an early simulator kill cannot inject read errors into
 // satpulsewb's shutdown. RunSession.teardown stops newest first, and the
 // simulator is spawned first, so this ordering holds.
-async function useUbxsim(use: (v: WorkbenchUbxsim) => Promise<void>, withDevice: boolean, testInfo: TestInfo): Promise<void> {
+async function useUbxsim(use: (v: WorkbenchUbxsim) => Promise<void>, flags: 'none' | 'device' | 'device-speed', testInfo: TestInfo): Promise<void> {
   const session = new RunSession('satpulse-e2e-wb-ubxsim');
   openSessions.add(session);
   try {
     const link = await launchUbxsim(session);
-    const args = withDevice ? ['-d', link, '-s', UBXSIM_SPEED] : [];
+    const args = flags === 'device-speed'
+      ? ['-n', '-d', link, '-s', UBXSIM_SPEED]
+      : flags === 'device'
+        ? ['-n', '-d', link]
+        : ['-n'];
     const proc = session.spawnLogged('satpulsewb', satpulsewb, args, {
       SATPULSE_GPSMSG_PATH: GPSMSG_PATH,
     });

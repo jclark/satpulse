@@ -1089,7 +1089,12 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description="satpulsed daemon smoke tests")
     ap.add_argument("scenarios", nargs="*", help="scenario names (default: all)")
-    ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 4)
+    jobs = os.cpu_count() or 4
+    # GitHub's three-core macOS runner stalls helper processes when every CPU has
+    # a scenario worker; reserve one for daemons, replays, and pty drain threads.
+    if sys.platform == "darwin":
+        jobs = max(1, jobs - 1)
+    ap.add_argument("-j", "--jobs", type=int, default=jobs)
     ap.add_argument("-l", "--list", action="store_true", help="list scenarios and exit")
     ap.add_argument("--sudo", action="store_true",
                     help="run root-required scenarios through sudo -n instead of skipping them")

@@ -1,7 +1,7 @@
 import { test, expect } from '../harness';
 
 // The Message file tab's send path against the u-blox simulator
-// (workbenchUbxsim: satpulsewb -d over the sim's pty, already connected).
+// (workbenchUbxsim: satpulsewb -d/-s over the sim's pty, already connected).
 // This is the first browser-level check of the send machinery -- sendWorker,
 // the response correlator, and the gps:msgsend/gps:response events -- which
 // the wire-level smoketests do not reach.

@@ -13,11 +13,11 @@ import type { Page } from '@playwright/test';
 // so no state leaks between tests.
 
 // The receiver identity app.tsx composes for an identified receiver:
-// hardware + " (FW " + firmware + ")". The simulator replays the F9P
-// personality's MON-VER, whose extension strings carry MOD=ZED-F9P,
-// FWVER=HPG 1.51 and PROTVER=27.50 (ubx/ubxcfg.go ReceiverInfo joins the
-// firmware parts with " PROTVER ").
-const IDENT = 'ZED-F9P (FW HPG 1.51 PROTVER 27.50)';
+// vendor + " " + hardware + " (FW " + firmware + ")". The simulator
+// replays the u-blox F9P personality's MON-VER, whose extension strings
+// carry MOD=ZED-F9P, FWVER=HPG 1.51 and PROTVER=27.50 (ubx/ubxcfg.go
+// ReceiverInfo joins the firmware parts with " PROTVER ").
+const IDENT = 'u-blox ZED-F9P (FW HPG 1.51 PROTVER 27.50)';
 
 // The connection bar is the app's <header>, which maps to the banner role;
 // scoping to it keeps the panel's controls distinct from the tab panels
@@ -64,6 +64,22 @@ async function connect(page: Page, device: string) {
     await banner(page).getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(statusBar(page, 'Connected')).toBeVisible();
 }
+
+test('startup device and speed populate the same connection controls used by the UI', async ({ page, workbenchUbxsim }) => {
+    await page.goto(workbenchUbxsim.baseURL);
+
+    await expect(statusBar(page, 'Connected')).toBeVisible();
+    await expect(deviceInput(page)).toHaveValue(workbenchUbxsim.devicePath);
+    await expect(speedSelect(page)).toHaveValue('38400');
+});
+
+test('a startup device without a speed populates the control without auto-connecting', async ({ page, workbenchUbxsimDeviceOnly }) => {
+    await page.goto(workbenchUbxsimDeviceOnly.baseURL);
+
+    await expect(statusBar(page, 'Disconnected')).toBeVisible();
+    await expect(deviceInput(page)).toHaveValue(workbenchUbxsimDeviceOnly.devicePath);
+    await expect(speedSelect(page)).toHaveValue('9600');
+});
 
 test('connect: a typed device path and speed walk the state to Connected and identify the receiver', async ({ page, workbenchUbxsimNoDevice }) => {
     await page.goto(workbenchUbxsimNoDevice.baseURL);

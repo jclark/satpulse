@@ -1,0 +1,34 @@
+# Septentrio test messages for correlator tests.
+
+[default.line]
+responsePattern = "septentrio"
+
+# Ordinary set command: ACK carries the readback.
+[[line]]
+tag = "set-nmea"
+text = "setNMEAOutput, Stream1, USB1, GGA, sec1"
+
+# A second, distinct set command for single-flight pacing tests.
+[[line]]
+tag = "set-elev"
+text = "setElevationMask, all, 5"
+
+# User-management command: reply uses the $R! shape.
+[[line]]
+tag = "login"
+text = "login, admin, admin"
+
+# lst command: reply uses the $R; shape and frames at its "---->".
+[[line]]
+tag = "lst"
+text = "lstAsciiDisplay"
+
+# lst command whose reply ends directly at the real prompt.
+[[line]]
+tag = "lst-help"
+text = "help, grc"
+
+# factoryReset: plain $R: ack with a trailing message after a colon.
+[[line]]
+tag = "factory-reset"
+text = "factoryReset, RxSetup"

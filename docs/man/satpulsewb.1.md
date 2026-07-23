@@ -4,8 +4,8 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 
 # SYNOPSIS
 
-**satpulsewb** [**\-h**\|**\-\-help**] [**\-L**\|**\-\-listen** *host:port*] [**\-T**\|**\-\-token**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path* [**\-s**\|**\-\-device\-speed** *bps*]] [**\-\-vendor** *name*]\
+**satpulsewb** [**\-h**\|**\-\-help**] [**\-V**\|**\-\-version**] [**\-v**\|**\-\-verbose**] [**\-L**\|**\-\-listen** *host:port*] [**\-t**\|**\-\-token**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-n**\|**\-\-no\-open\-browser**] [**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*] [**\-\-vendor** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
 # DESCRIPTION
@@ -24,7 +24,6 @@ When run from a local desktop session, **satpulsewb** opens its loopback URL in 
 It never opens a browser over SSH or with **\-\-listen**.
 On Linux and FreeBSD, where a process's command line is readable by other users of the machine, the opened URL carries a single-use launch token that stops working after its first use, so the value visible in the browser's command line grants nothing.
 
-There is no TLS support.
 On a network you do not trust, listen on loopback only and reach it through an SSH tunnel:
 
     remote$ satpulsewb -L localhost:15754
@@ -37,8 +36,9 @@ Both steps can be one command, with **\-t** so that Ctrl-C reaches **satpulsewb*
 
     local$ ssh -t -L 2050:localhost:15754 192.168.1.50 satpulsewb -L localhost:15754
 
-Without **\-\-serial\-device**, the session starts disconnected and the receiver is chosen and connected from the GUI.
-With it, **satpulsewb** connects at startup; a browser arriving later catches up on the current state.
+The serial-device and device-speed options independently initialize the corresponding controls in the connection bar.
+When both are specified, **satpulsewb** connects at startup; otherwise the session starts disconnected and the remaining connection settings are chosen in the GUI.
+A browser arriving later catches up on the current connection and control values.
 
 # OPTIONS
 
@@ -51,16 +51,21 @@ With an explicit port, a bind failure is an error; there is no fallback port, si
 **\-\-listen** also disables the access token, since the typical use is a tunnel.
 Without **\-\-token**, **\-\-listen** trusts the local browser environment: requests with a non-loopback Host are refused and a non-loopback bind prints a warning; use **\-\-token** to allow remote browser access.
 
-**\-T**, **\-\-token**
+**\-t**, **\-\-token**
 : Require the generated access token even with **\-\-listen**.
 Without **\-\-listen** this is the default.
 
+**\-n**, **\-\-no\-open\-browser**
+: Do not open a browser at startup, even when run from a local desktop session.
+
 **\-d**, **\-\-serial\-device** *path*
-: Serial device connected to a GPS receiver, to connect to at startup.
+: Initial serial device shown in the connection bar.
+Together with **\-\-device\-speed**, connect to it at startup.
 
 **\-s**, **\-\-device\-speed** *bps*
-: Serial device baud rate.
-If this option is omitted, the device's current speed is used.
+: Initial serial device baud rate shown in the connection bar.
+Together with **\-\-serial\-device**, connect at startup.
+The default shown in the GUI is 9600.
 
 **\-\-vendor** *name*
 : Restrict probing and packet format detection to a receiver vendor.
@@ -81,13 +86,10 @@ If this option is omitted, the vendor is autodetected.
 # ENVIRONMENT
 
 **SATPULSE_GPSMSG_PATH**
-: Colon-separated list of directories to search for message files, replacing the default search path.
-A message file is identified as *vendor*/*file*.toml under a search directory; the first match along the path wins, so a file in an earlier directory shadows a same-named file in a later one.
-Include entries in a message file resolve relative to the file itself, not along the search path, so a shadowing file must have its included files alongside it.
-
-The default search path is the user's own library followed by the installed one.
-The user's library is *satpulse/gpsmsg* under the platform's user configuration directory: *~/.config/satpulse/gpsmsg* on Linux (or under **$XDG_CONFIG_HOME** when set), and *~/Library/Application Support/satpulse/gpsmsg* on macOS.
-The installed library is */usr/local/share/satpulse/gpsmsg* then */usr/share/satpulse/gpsmsg* on Linux, and *share/satpulse/gpsmsg* under the Homebrew prefix on macOS (*/opt/homebrew* on Apple silicon, */usr/local* on Intel).
+: Colon-separated list of directories to search for message files ahead of the built-in library.
+A message file is identified as *vendor*/*file*.toml under a search directory; the first match along the path wins, so a file in an environment directory shadows a same-named built-in file while the rest of the built-in catalog remains available.
+Include entries in a message file resolve relative to the file itself, not along the search path.
+When **SATPULSE_GPSMSG_PATH** is unset, only the built-in library is used.
 
 # EXAMPLES
 
@@ -97,7 +99,7 @@ Serve on all interfaces with a generated token, connecting from the GUI:
 
 Connect to a receiver at startup:
 
-    satpulsewb -d /dev/ttyACM0
+    satpulsewb -d /dev/ttyACM0 -s 38400
 
 Loopback only, for use through an SSH tunnel:
 

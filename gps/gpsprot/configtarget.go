@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/geopos"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
@@ -1145,7 +1146,7 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 			}
 			mm["height"] = cp.mode.Height.Meters()
 		}
-		if cp.mode.PosType != PosTypeNone {
+		if cp.mode.PosType != PosTypeNone && cp.mode.FixedPosAcc != 0 {
 			mm["fixedPosAcc"] = cp.mode.FixedPosAcc.Meters()
 		}
 		m["mode"] = mm
@@ -1255,11 +1256,30 @@ type Mode struct {
 	FixedPosECEF Point3D  // ECEF coordinates (when PosType == PosTypeECEF)
 	FixedPosLLH  [2]Angle // Latitude and Longitude (when PosType == PosTypeLLH)
 	Height       Length   // Height (when PosType == PosTypeLLH)
-	FixedPosAcc  Length   // accuracy of fixed position
+	FixedPosAcc  Length   // accuracy of fixed position; 0 = no accuracy stated (a receiver that stores none reads back 0; the JSON form omits the key instead)
 }
 
 func (m Mode) IsZero() bool {
 	return m == Mode{}
+}
+
+// FixedPosToECEF returns the fixed position in ECEF coordinates,
+// converting from LLH when that is the stored form, for backends whose
+// wire format takes only ECEF. It returns false when the mode carries
+// no fixed position.
+func (m Mode) FixedPosToECEF() (Point3D, bool) {
+	switch m.PosType {
+	case PosTypeECEF:
+		return m.FixedPosECEF, true
+	case PosTypeLLH:
+		ecef := geopos.WGS84.LLHtoECEF(geopos.LLH{
+			Lat:    m.FixedPosLLH[0].Degrees(),
+			Lon:    m.FixedPosLLH[1].Degrees(),
+			Height: m.Height.Meters(),
+		})
+		return Point3D{Meters(ecef[0]), Meters(ecef[1]), Meters(ecef[2])}, true
+	}
+	return Point3D{}, false
 }
 
 type NavMsgAuth byte

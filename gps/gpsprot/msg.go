@@ -580,31 +580,28 @@ const (
 )
 
 type SatellitesMsg struct {
-	Tag          Tag                   `json:"tag,omitempty"`
-	NativeMsgID  string                `json:"nativeMsgID,omitempty"`
-	SVs          []SVInfo              `json:"info"`                   // satellites being tracked
-	UsedValidity SatelliteUsedValidity `json:"usedValidity,omitempty"` // says whether Used fields in SVInfo and SignalInfo are valid
+	Tag         Tag      `json:"tag,omitempty"`
+	NativeMsgID string   `json:"nativeMsgID,omitempty"`
+	SVs         []SVInfo `json:"info,omitempty"` // satellites being tracked
+	// UsedValidity says whether Used fields in SVInfo and SignalInfo are valid.
+	// Whenever it is not SatelliteUsedInvalid, SVInfo.Used is authoritative: a used SV
+	// need not carry any SignalInfo entry saying so, because signal detail can be
+	// incomplete or absent (e.g. UBX-NAV-SAT reports a used SV whose L1 signal is below
+	// the quality threshold). SatelliteUsedSignal adds per-signal Used on top of
+	// SVInfo.Used; it does not narrow it.
+	UsedValidity SatelliteUsedValidity `json:"usedValidity,omitempty"`
 }
 
 // GNSSUsed returns the set of GNSS constellations used in the solution.
 // Returns zero when UsedValidity is SatelliteUsedInvalid.
 func (msg *SatellitesMsg) GNSSUsed() GNSSSet {
 	var gs GNSSSet
-	switch msg.UsedValidity {
-	case SatelliteUsedSignal:
-		for _, sv := range msg.SVs {
-			for _, sig := range sv.Signals {
-				if sig.Used {
-					gs |= GNSSSetOf(sv.ID.GNSS)
-					break
-				}
-			}
-		}
-	case SatelliteUsedSV:
-		for _, sv := range msg.SVs {
-			if sv.Used {
-				gs |= GNSSSetOf(sv.ID.GNSS)
-			}
+	if msg.UsedValidity == SatelliteUsedInvalid {
+		return gs
+	}
+	for _, sv := range msg.SVs {
+		if sv.Used {
+			gs |= GNSSSetOf(sv.ID.GNSS)
 		}
 	}
 	return gs
@@ -612,6 +609,8 @@ func (msg *SatellitesMsg) GNSSUsed() GNSSSet {
 
 // BandsUsed returns the set of frequency bands used in the solution.
 // Returns zero when UsedValidity is SatelliteUsedInvalid.
+// Unlike GNSSUsed, this stays signal-level under SatelliteUsedSignal: a used SV
+// with no signal detail contributes no band rather than all the bands it tracks.
 func (msg *SatellitesMsg) BandsUsed() Band {
 	var b Band
 	switch msg.UsedValidity {
@@ -1304,7 +1303,11 @@ type EpochFlusher interface {
 // shared manager in its constructor instead of directly calling
 // MsgHandler.NavEpoch.
 type NavEpochManager struct {
-	active map[EpochFlusher]struct{}
+	active                map[EpochFlusher]struct{}
+	protocolEpochFlushers map[EpochFlusher]struct{}
+	// lastEpochSingleProtocol is the sole EndOfProtocolEpoch processor in the
+	// last logical epoch, or nil if its participation was unknown or multiple.
+	lastEpochSingleProtocol EpochFlusher
 }
 
 // NewNavEpochManager creates a new NavEpochManager.
@@ -1313,12 +1316,17 @@ func NewNavEpochManager() *NavEpochManager {
 }
 
 // EpochStarted is called by a processor when it detects the start of a new
-// epoch. If the caller is already in the active set, the manager flushes
-// all active processors and emits the merged NavEpochMsg. The caller is
-// then added to the (possibly cleared) active set.
+// epoch. If the caller is already in the active set, the manager flushes all
+// active processors and emits the merged NavEpochMsg. It also flushes a late
+// contribution that followed a single-protocol EndOfProtocolEpoch flush. The
+// caller is then added to the (possibly cleared) active set.
 func (m *NavEpochManager) EpochStarted(f EpochFlusher, tRead time.Time) {
 	if _, ok := m.active[f]; ok {
 		m.flush(tRead)
+	} else if len(m.active) > 0 && m.lastEpochSingleProtocol == f {
+		m.flush(tRead)
+		// Both processors participated in the logical epoch split by the flushes.
+		m.lastEpochSingleProtocol = nil
 	}
 	if m.active == nil {
 		m.active = make(map[EpochFlusher]struct{})
@@ -1334,7 +1342,31 @@ func (m *NavEpochManager) EndOfEpoch(tRead time.Time) {
 	m.flush(tRead)
 }
 
+// EndOfProtocolEpoch is called by a processor whose own epoch has ended but
+// which cannot assert the epoch is over for the whole receiver (e.g.
+// Septentrio's EndOfPVT). It flushes only when f is the sole active processor
+// and was the sole participant in the last logical epoch. Otherwise it defers
+// to the next whole-receiver boundary, allowing a trailing protocol to join.
+func (m *NavEpochManager) EndOfProtocolEpoch(f EpochFlusher, tRead time.Time) {
+	if m.protocolEpochFlushers == nil {
+		m.protocolEpochFlushers = make(map[EpochFlusher]struct{})
+	}
+	m.protocolEpochFlushers[f] = struct{}{}
+	if _, ok := m.active[f]; !ok || len(m.active) != 1 || m.lastEpochSingleProtocol != f {
+		return
+	}
+	m.flush(tRead)
+}
+
 func (m *NavEpochManager) flush(tRead time.Time) {
+	m.lastEpochSingleProtocol = nil
+	if len(m.active) == 1 {
+		for f := range m.active {
+			if _, ok := m.protocolEpochFlushers[f]; ok {
+				m.lastEpochSingleProtocol = f
+			}
+		}
+	}
 	type flushed struct {
 		msg *NavEpochMsg
 		pri MsgPriority

@@ -1,0 +1,31 @@
+# This workflow checks that the built-in message-file library is current.
+
+name: GPS message library
+
+on:
+  push:
+    paths:
+      - 'configs/gpsmsg/**'
+      - 'gps/msgfile/gpsmsg.zip'
+      - 'gps/msgfile/gen.go'
+  pull_request:
+    paths:
+      - 'configs/gpsmsg/**'
+      - 'gps/msgfile/gpsmsg.zip'
+      - 'gps/msgfile/gen.go'
+
+jobs:
+
+  gpsmsg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.25.x'
+
+    - name: Check built-in library
+      run: ./gps/msgfile/check-gpsmsg.sh

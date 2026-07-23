@@ -14,10 +14,10 @@ from scenarios import ntp
 PACKET_LOG = "gps/testdata/packets/unicore/UM980/nmea-rmc.jsonl"
 FACTOR = 1
 
-# macOS CI runners suffer isolated scheduling stalls of up to ~200 ms that
+# macOS CI runners suffer isolated scheduling stalls of up to ~250 ms that
 # land in a single sample's read timestamp, so the consistency bound is wider
 # there. The correctness assertion (max_time_error) is unchanged.
-MAX_SPREAD = 0.2 if sys.platform == "darwin" else 0.05
+MAX_SPREAD = 0.25 if sys.platform == "darwin" else 0.05
 
 
 def run(ctx: common.SmokeContext) -> None:

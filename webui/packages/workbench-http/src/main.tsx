@@ -38,7 +38,7 @@ async function boot() {
         return;
     }
     try {
-        await t.getConnState();
+        await t.getConnection();
     } catch (err) {
         if (showAuthError(err)) return;
     }

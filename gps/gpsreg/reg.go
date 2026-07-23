@@ -47,6 +47,7 @@ const (
 	TagRTCM               = rtcm.Tag
 	TagSPARTN             = spartn.Tag
 	TagSBF                = septentrio.Tag
+	TagSeptentrioReply    = septentrio.TagReply
 	TagCASICBin           = casic.Tag
 	TagAllystarBin        = as.Tag
 	TagSDBP               = sdbp.Tag
@@ -96,6 +97,7 @@ var allVendorPacketFormats = []gpsprot.PacketFormat{
 	nov.AsciiPacketFormat,
 	nov.AbbrevAsciiPacketFormat,
 	septentrio.PacketFormat,
+	septentrio.ReplyPacketFormat,
 }
 
 // allVendorPacketFormats maps each vendor to the packet formats they are known to use.
@@ -106,7 +108,7 @@ var allVendorPacketFormatsMap = map[Vendor][]gpsprot.PacketFormat{
 	VendorAllystar:   {as.PacketFormat},
 	VendorBynav:      {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
 	VendorNovAtel:    {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
-	VendorSeptentrio: {septentrio.PacketFormat},
+	VendorSeptentrio: {septentrio.PacketFormat, septentrio.ReplyPacketFormat},
 	VendorSinoGNSS:   {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
 	VendorTechtotop:  {sdbp.PacketFormat},
 	VendorUblox:      {ubx.PacketFormat},
