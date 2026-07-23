@@ -139,14 +139,30 @@ type NavClock struct {
 
 func (m *NavClock) ID() MsgID { return NavClockID }
 
+// NavSvinValid defines the validity values for NavSvin.Valid
+type NavSvinValid uint8
+
+const (
+	NavSvinNotValid NavSvinValid = 0
+	NavSvinPosValid NavSvinValid = 1
+)
+
+// NavSvinStatus defines the survey completion values for NavSvin.Status
+type NavSvinStatus uint8
+
+const (
+	NavSvinStatusNotFinish NavSvinStatus = 0
+	NavSvinStatusFinish    NavSvinStatus = 1
+)
+
 // NAV-SVIN (0x01 0x31) - Survey-in status
 // This is not in 2.3.6 protocol spec, but is in satrack 1.31 app
 type NavSvin struct {
 	NavITOW
-	PosUsed    uint32 `json:"posUsed"`    // Number of position samples used
-	MeanStdDev uint32 `json:"meanStdDev"` // 0.1mm, Mean standard deviation
-	Valid      uint8  `json:"valid"`      // 0=not valid, 1=valid
-	Status     uint8  `json:"status"`     // 0=not finish, 1=finish (survey complete)
+	PosUsed    uint32        `json:"posUsed"`    // Number of position samples used
+	MeanStdDev uint32        `json:"meanStdDev"` // 0.1mm, Mean standard deviation
+	Valid      NavSvinValid  `json:"valid"`      // 0=not valid, 1=valid
+	Status     NavSvinStatus `json:"status"`     // 0=not finish, 1=finish (survey complete)
 }
 
 func (m *NavSvin) ID() MsgID { return NavSvinID }
@@ -252,7 +268,7 @@ func (m *NavSVInfo) Parts() (fixed any, slice any) {
 }
 
 // NavAutoFixState defines the fix state values for NavAuto.FixState
-type NavAutoFixState = uint8
+type NavAutoFixState uint8
 
 const (
 	NavAutoFixNone     NavAutoFixState = 0

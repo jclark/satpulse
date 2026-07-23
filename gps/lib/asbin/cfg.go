@@ -98,11 +98,19 @@ type CfgFixedECEF struct {
 
 func (m *CfgFixedECEF) ID() MsgID { return CfgFixedECEFID }
 
+// CfgPrtPortID defines the port values for CfgPrt.PortID
+type CfgPrtPortID uint8
+
+const (
+	CfgPrtPortUART0 CfgPrtPortID = 0
+	CfgPrtPortUART1 CfgPrtPortID = 1
+)
+
 // CFG-PRT (0x06 0x00)
 type CfgPrt struct {
-	PortID   uint8    `json:"portID"`   // Port number: 0=UART0, 1=UART1
-	Res      [3]uint8 `json:"res"`      // Reserved
-	Baudrate uint32   `json:"baudrate"` // Bits/s, Baud rate
+	PortID   CfgPrtPortID `json:"portID"`   // Port number: 0=UART0, 1=UART1
+	Res      [3]uint8     `json:"res"`      // Reserved
+	Baudrate uint32       `json:"baudrate"` // Bits/s, Baud rate
 }
 
 func (m *CfgPrt) ID() MsgID { return CfgPrtID }
@@ -223,8 +231,8 @@ func PollNavTime(navSys NavTimeSys) []byte {
 	return packet
 }
 
-func PollPrt(uartIdx int) []byte {
-	packet, _ := packMsg(CfgPrtID, []byte{byte(uartIdx)})
+func PollPrt(port CfgPrtPortID) []byte {
+	packet, _ := packMsg(CfgPrtID, []byte{byte(port)})
 	return packet
 }
 
