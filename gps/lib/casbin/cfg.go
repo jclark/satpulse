@@ -5,6 +5,22 @@ package casbin
 // underscores. Messages shared by V5 and V6 generally use the V6 names.
 // The exceptions are called out on the affected types below.
 
+const (
+	CfgPrtID     MsgID = clsCfg | (0x00 << 8)
+	CfgMsgID     MsgID = clsCfg | (0x01 << 8)
+	CfgRstID     MsgID = clsCfg | (0x02 << 8)
+	CfgTPID      MsgID = clsCfg | (0x03 << 8)
+	CfgRateID    MsgID = clsCfg | (0x04 << 8)
+	CfgCfgID     MsgID = clsCfg | (0x05 << 8)
+	CfgTModeID   MsgID = clsCfg | (0x06 << 8)
+	CfgNavxID    MsgID = clsCfg | (0x07 << 8)
+	CfgNavLimID  MsgID = clsCfg | (0x0A << 8)
+	CfgNavBandID MsgID = clsCfg | (0x0F << 8)
+	CfgNmeaID    MsgID = clsCfg | (0x12 << 8)
+	CfgRtcmID    MsgID = clsCfg | (0x14 << 8)
+	CfgTMode2ID  MsgID = clsCfg | (0x16 << 8)
+)
+
 // CfgMsg is CFG-MSG (0x06 0x01) - message rate configuration (4 bytes).
 // Rate 0xFFFF polls the target message instead of setting its rate.
 // An empty-payload CFG-MSG query returns one CfgMsg response per known

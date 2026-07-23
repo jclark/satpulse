@@ -1,27 +1,14 @@
 package casbin
 
 const (
-	// CFG message IDs
-	CfgPrtID     MsgID = clsCfg | (0x00 << 8)
-	CfgMsgID     MsgID = clsCfg | (0x01 << 8)
-	CfgRstID     MsgID = clsCfg | (0x02 << 8)
-	CfgTPID      MsgID = clsCfg | (0x03 << 8)
-	CfgRateID    MsgID = clsCfg | (0x04 << 8)
-	CfgCfgID     MsgID = clsCfg | (0x05 << 8)
-	CfgTModeID   MsgID = clsCfg | (0x06 << 8)
-	CfgNavxID    MsgID = clsCfg | (0x07 << 8)
+	// Unimplemented CFG message IDs
 	CfgGroupID   MsgID = clsCfg | (0x08 << 8)
-	CfgNavLimID  MsgID = clsCfg | (0x0A << 8)
 	CfgNavModeID MsgID = clsCfg | (0x0B << 8)
 	CfgNavFltID  MsgID = clsCfg | (0x0C << 8)
 	CfgWnRefID   MsgID = clsCfg | (0x0D << 8)
 	CfgIns2ID    MsgID = clsCfg | (0x0E << 8)
-	CfgNavBandID MsgID = clsCfg | (0x0F << 8)
 	CfgInsID     MsgID = clsCfg | (0x10 << 8)
 	CfgCwiID     MsgID = clsCfg | (0x11 << 8)
-	CfgNmeaID    MsgID = clsCfg | (0x12 << 8)
-	CfgRtcmID    MsgID = clsCfg | (0x14 << 8)
-	CfgTMode2ID  MsgID = clsCfg | (0x16 << 8)
 	CfgSatMaskID MsgID = clsCfg | (0x21 << 8)
 	CfgTgduID    MsgID = clsCfg | (0x22 << 8)
 	CfgSbasID    MsgID = clsCfg | (0x23 << 8)
@@ -96,27 +83,14 @@ func init() {
 	clsMap[clsRxm2] = "RXM2"
 	clsMap[clsIns2] = "INS2"
 	clsMap[clsRtcm2] = "RTCM"
-	// CFG messages
-	idNameMap[CfgPrtID] = "PRT"
-	idNameMap[CfgMsgID] = "MSG"
-	idNameMap[CfgRstID] = "RST"
-	idNameMap[CfgTPID] = "TP"
-	idNameMap[CfgRateID] = "RATE"
-	idNameMap[CfgCfgID] = "CFG"
-	idNameMap[CfgTModeID] = "TMODE"
-	idNameMap[CfgNavxID] = "NAVX"
+	// Unimplemented CFG messages
 	idNameMap[CfgGroupID] = "GROUP"
-	idNameMap[CfgNavLimID] = "NAVLIMIT"
 	idNameMap[CfgNavModeID] = "NAVMODE"
 	idNameMap[CfgNavFltID] = "NAVFLT"
 	idNameMap[CfgWnRefID] = "WNREF"
 	idNameMap[CfgIns2ID] = "INS2"
-	idNameMap[CfgNavBandID] = "NAVBAND"
 	idNameMap[CfgInsID] = "INS"
 	idNameMap[CfgCwiID] = "CWI"
-	idNameMap[CfgNmeaID] = "NMEA"
-	idNameMap[CfgRtcmID] = "RTCM"
-	// CfgTMode2ID registered in cfg.go
 	idNameMap[CfgSatMaskID] = "SATMASK"
 	idNameMap[CfgTgduID] = "TGDU"
 	idNameMap[CfgSbasID] = "SBAS"
