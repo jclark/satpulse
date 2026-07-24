@@ -41,8 +41,8 @@ const packetLogBufSize = 1024 * 1024
 const gpsWeek = 7 * 24 * time.Hour
 const packetLogWeekSlack = time.Minute
 
-var packetStreamFormats = gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)
-var packetLogFormats = gpsreg.CreatePacketFormats(gpsreg.VendorUnknown)
+var packetStreamFormats = gpsreg.CreatePacketFormats(nil)
+var packetLogFormats = gpsreg.CreatePacketFormats(nil)
 var packetLogFormatsByTag = packetFormatsByTag(packetLogFormats)
 
 // These markers mirror the packet-log formats convobs can convert.

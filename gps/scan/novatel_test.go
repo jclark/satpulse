@@ -143,7 +143,7 @@ func TestNovAtelWithJunkData(t *testing.T) {
 	t.Run("WithAllFormats", func(t *testing.T) {
 		// Test with full scanner including all formats
 		r := strings.NewReader(fullData)
-		s := scan.New(r, 1024, gpsreg.CreatePacketFormats(gpsreg.VendorUnknown))
+		s := scan.New(r, 1024, gpsreg.CreatePacketFormats(nil))
 
 		// First scan should get the junk
 		pkt, err := s.Scan()

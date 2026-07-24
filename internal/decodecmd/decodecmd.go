@@ -91,7 +91,7 @@ func isAllHex(s string) bool {
 }
 
 func runDecode(data []byte, out, compact bool) error {
-	pf, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), data, out)
+	pf, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(nil), data, out)
 	if err != nil {
 		return err
 	}
