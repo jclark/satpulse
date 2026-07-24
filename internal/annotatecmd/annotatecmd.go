@@ -81,7 +81,7 @@ func processLine(line []byte) []byte {
 	} else {
 		return line
 	}
-	_, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), data, entry.Out)
+	_, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(nil), data, entry.Out)
 	if err != nil {
 		var csErr *gpsdecode.ChecksumError
 		if errors.As(err, &csErr) {

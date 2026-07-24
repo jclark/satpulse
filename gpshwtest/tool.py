@@ -8,6 +8,7 @@ everything offline analysis needs (see analyze.py).
 """
 
 import json
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -15,6 +16,11 @@ from pathlib import Path
 from typing import Any
 
 from model import transient
+
+# The harness discovers rather than asserts a vendor, and probing every
+# config protocol the build has - experimental included - is its job, so
+# every spawned satpulsetool sees SATPULSE_VENDORS=all.
+_ENV = {**os.environ, "SATPULSE_VENDORS": "all"}
 
 
 def message_response_error(s: str) -> str | None:
@@ -105,7 +111,7 @@ class Tool:
         if not json_out:
             entry["nojson"] = True
         try:
-            p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+            p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=_ENV)
         except subprocess.TimeoutExpired:
             self.record({**entry, "timeout": timeout})
             raise ToolFailure(f"{name}: no response within {timeout}s: {' '.join(argv)}")
@@ -136,7 +142,7 @@ class Tool:
             [str(self.exe), "sdp", "--extts", "--jsonl", "-p", str(pin),
              "--chan", str(chan), "-t", str(seconds), iface]
         try:
-            p = subprocess.run(argv, capture_output=True, text=True, timeout=seconds + 30)
+            p = subprocess.run(argv, capture_output=True, text=True, timeout=seconds + 30, env=_ENV)
         except subprocess.TimeoutExpired:
             raise ToolFailure(f"{name}: sdp did not finish within {seconds + 30}s")
         events = []
@@ -177,7 +183,7 @@ def replay(exe: Path, log: Path, timeout: float = 60.0) -> list[dict[str, Any]]:
     """Convert a packet log offline into the typed gpsprot event stream."""
     argv = [str(exe), "replay", str(log)]
     try:
-        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=_ENV)
     except subprocess.TimeoutExpired:
         raise ToolFailure(f"replay {log.name}: no response within {timeout}s")
     if p.returncode != 0:
