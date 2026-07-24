@@ -140,17 +140,22 @@ func (c *Configurator) ReceiverInfo() *gpsprot.ReceiverInfo {
 // the achieved signal set (the silicon clamps the mask).
 var supportedGNSS = gpsprot.GNSSSetOf(gpsprot.GPS, gpsprot.GAL, gpsprot.BDS, gpsprot.GLO, gpsprot.QZSS)
 
+// asUnsupported are the ConfigSupportFull flags the Allystar family lacks.
+// ConfigSupport starts from full minus these (see ConfigSupport for the
+// RTCM flags, cleared separately), so a future universally supported flag
+// applies to Allystar without editing this code.
+const asUnsupported = gpsprot.ConfigSupportFixedPosAcc |
+	gpsprot.ConfigSupportRTCMBaseID | gpsprot.ConfigSupportPort
+
 // ConfigSupport returns the configuration options this implementation
-// supports. The RTCM flags key off the MON-VER chip number (owner
-// ruling): the TAU1201 family has no RTCM output at all - every 0xF8
-// CFG-MSG target NAKs - so it must not claim the flags.
+// supports, built subtractively from ConfigSupportFull minus asUnsupported.
+// The RTCM flags key off the MON-VER chip number (owner ruling): the
+// TAU1201 family has no RTCM output at all - every 0xF8 CFG-MSG target
+// NAKs - so those flags are cleared when the chip lacks RTCM.
 func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
-	flags := gpsprot.ConfigSupportRaw |
-		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
-		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
-		gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportSpeed
-	if c.supportsRTCM() {
-		flags |= gpsprot.ConfigSupportRTCMMSM4 |
+	flags := gpsprot.ConfigSupportFull &^ asUnsupported
+	if !c.supportsRTCM() {
+		flags &^= gpsprot.ConfigSupportRTCMMSM4 |
 			gpsprot.ConfigSupportRTCMMSM7 | gpsprot.ConfigSupportRTCMQZSS
 	}
 	return flags
