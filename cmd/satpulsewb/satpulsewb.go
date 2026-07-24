@@ -126,6 +126,10 @@ func run(v *flagVars) error {
 	lg := slog.New(session.NewLogHandler(hub, base.Handler()))
 	ctx, cancel := cmd.CancelOnSignal(context.Background(), lg)
 	defer cancel()
+	vendors, err := cmd.ResolveVendors(v.vendor)
+	if err != nil {
+		return err
+	}
 	opts := session.Options{}
 	if v.packetLog != "" {
 		f, err := os.Create(v.packetLog)
@@ -145,7 +149,7 @@ func run(v *flagVars) error {
 		token = newToken()
 	}
 	printURLs(os.Stdout, lg, ln, v.listen, token)
-	srv := newServer(ctx, sess, hub, lg, token, v.vendor, msgDirs(), v.device, v.speed)
+	srv := newServer(ctx, sess, hub, lg, token, vendors, msgDirs(), v.device, v.speed)
 	if v.autoConnect {
 		go func() {
 			if err := srv.connect(v.device, v.speed); err != nil {

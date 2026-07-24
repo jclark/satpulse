@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// Endian returns the byte order used by Allystar binary protocol.
-func Endian() binary.ByteOrder { return binary.LittleEndian }
+// Endian is the byte order used for Allystar binary messages.
+var Endian = binary.LittleEndian
 
 const (
 	Sync1 = 0xF1
@@ -47,6 +47,7 @@ func makeMsgID(cls byte, id byte) MsgID {
 // MakeMsgID creates a MsgID from class and id bytes.
 func MakeMsgID(cls byte, id byte) MsgID { return makeMsgID(cls, id) }
 
+// Unpack splits mid into its class and id bytes.
 func (mid MsgID) Unpack() (byte, byte) {
 	return byte(mid & 0xFF), byte((mid >> 8) & 0xFF)
 }
@@ -130,6 +131,8 @@ func AckMsgID[B Bytes](pkt B) MsgID {
 	return makeMsgID(pkt[HeaderLen], pkt[HeaderLen+1])
 }
 
+// ParseMsg parses an Allystar binary message from a string.
+// Unlike its ubxbin and casbin counterparts, it verifies the checksum itself.
 func ParseMsg(packet string) (Msg, error) {
 	n := len(packet)
 	if n < PacketMinLen {
@@ -161,7 +164,7 @@ func ParseMsg(packet string) (Msg, error) {
 	}
 	r := strings.NewReader(payload)
 	var err error
-	// For UBX-INF-* messages, the payload does not have a fixed part.
+	// Parts may report no fixed part, for a payload that is all repeated block.
 	if fixed != nil {
 		err = binary.Read(r, binary.LittleEndian, fixed)
 	}
@@ -178,6 +181,7 @@ func ParseMsg(packet string) (Msg, error) {
 	return msg, nil
 }
 
+// Serialize serializes an Allystar binary message to a packet.
 func Serialize(msg Msg) ([]byte, error) {
 	if uMsg, ok := msg.(*UnknownMsg); ok {
 		return packMsg(uMsg.MsgID, []byte(uMsg.Payload))
@@ -203,6 +207,7 @@ func Serialize(msg Msg) ([]byte, error) {
 	return packMsg(msg.ID(), buf.Bytes())
 }
 
+// Poll creates a poll packet for the given message ID.
 func Poll(mid MsgID) []byte {
 	packet, _ := packMsg(mid, []byte{})
 	return packet

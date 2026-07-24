@@ -42,8 +42,8 @@ const CfgCfgMaskFactoryReset CfgCfgMask = 0xFFFFFFFF // Factory reset
 
 // CFG-CFG (0x06 0x09)
 type CfgCfg struct {
-	Action CfgCfgAction
-	Mask   CfgCfgMask // Bitmask of settings to affect
+	Action CfgCfgAction `json:"action"`
+	Mask   CfgCfgMask   `json:"mask"` // Bitmask of settings to affect
 }
 
 func (m *CfgCfg) ID() MsgID { return CfgCfgID }
@@ -79,15 +79,15 @@ const (
 
 // CFG-NAVSAT (0x06 0x0C)
 type CfgNavSat struct {
-	EnableMask CfgNavSatMask // Satellite system enable bitmask
+	EnableMask CfgNavSatMask `json:"enableMask"` // Satellite system enable bitmask
 }
 
 func (m *CfgNavSat) ID() MsgID { return CfgNavSatID }
 
 // CFG-SURVEY (0x06 0x12)
 type CfgSurvey struct {
-	MinDur   uint32 // s, Minimum duration of survey
-	AccLimit uint32 // mm, Required accuracy
+	MinDur   uint32 `json:"mindur"`   // s, Minimum duration of survey
+	AccLimit uint32 `json:"acclimit"` // mm, Required accuracy
 }
 
 func (m *CfgSurvey) ID() MsgID { return CfgSurveyID }
@@ -103,27 +103,35 @@ func (m *CfgFixedLLA) ID() MsgID { return CfgFixedLLAID }
 
 // CFG-FIXEDECEF (0x06 0x14)
 type CfgFixedECEF struct {
-	X int32 // cm, ECEF X coordinate
-	Y int32 // cm, ECEF Y coordinate
-	Z int32 // cm, ECEF Z coordinate
+	X int32 `json:"x"` // cm, ECEF X coordinate
+	Y int32 `json:"y"` // cm, ECEF Y coordinate
+	Z int32 `json:"z"` // cm, ECEF Z coordinate
 }
 
 func (m *CfgFixedECEF) ID() MsgID { return CfgFixedECEFID }
 
+// CfgPrtPortID defines the port values for CfgPrt.PortID
+type CfgPrtPortID uint8
+
+const (
+	CfgPrtPortUART0 CfgPrtPortID = 0
+	CfgPrtPortUART1 CfgPrtPortID = 1
+)
+
 // CFG-PRT (0x06 0x00)
 type CfgPrt struct {
-	PortID   uint8    // Port number: 0=UART0, 1=UART1
-	Res      [3]uint8 // Reserved
-	Baudrate uint32   // Bits/s, Baud rate
+	PortID   CfgPrtPortID `json:"portID"`   // Port number: 0=UART0, 1=UART1
+	Res      [3]uint8     `json:"res"`      // Reserved
+	Baudrate uint32       `json:"baudrate"` // Bits/s, Baud rate
 }
 
 func (m *CfgPrt) ID() MsgID { return CfgPrtID }
 
 // CfgMsgFixed is the three-byte fixed part of CFG-MSG.
 type CfgMsgFixed struct {
-	MsgClass uint8 // Message class
-	MsgID    uint8 // Message ID
-	Rate     uint8 // Rate or interval (a divisor of the native cycle)
+	MsgClass uint8 `json:"classID"`   // Message class
+	MsgID    uint8 `json:"messageID"` // Message ID
+	Rate     uint8 `json:"period"`    // Rate or interval (a divisor of the native cycle)
 }
 
 // CFG-MSG (0x06 0x01). A poll answers with either a 3-byte payload or,
@@ -227,12 +235,12 @@ const (
 
 // CFG-PPS (0x06 0x07) - Cynosure II/III
 type CfgPps struct {
-	Period    uint32         // us, PPS period
-	Offset    int32          // ns, PPS offset
-	DutyCycle uint32         // 10^-6, Duty cycle
-	Polarity  CfgPpsPolarity // 0=falling edge, 1=rising edge
-	GPIO      uint8          // GPIO pin
-	Sync      CfgPpsSync     // 0=only when fix, 1=always output
+	Period    uint32         `json:"period"`    // us, PPS period
+	Offset    int32          `json:"Offset"`    // ns, PPS offset
+	DutyCycle uint32         `json:"dutyCycle"` // 10^-6, Duty cycle
+	Polarity  CfgPpsPolarity `json:"Polarity"`  // 0=falling edge, 1=rising edge
+	GPIO      uint8          `json:"GPIO"`      // GPIO pin
+	Sync      CfgPpsSync     `json:"Sync"`      // 0=only when fix, 1=always output
 }
 
 func (m *CfgPps) ID() MsgID { return CfgPpsID }
@@ -252,15 +260,15 @@ const (
 
 // CFG-SIMPLERST (0x06 0x40)
 type CfgSimpleRst struct {
-	Mode CfgSimpleRstMode // Reset mode
+	Mode CfgSimpleRstMode `json:"Mode"` // Reset mode
 }
 
 func (m *CfgSimpleRst) ID() MsgID { return CfgSimpleRstID }
 
 // CFG-ELEV (0x06 0x0B)
 type CfgElev struct {
-	TrkMask  float32 // radian, Track elevation angle mask
-	NaviMask float32 // radian, Navigation elevation angle mask
+	TrkMask  float32 `json:"trkMask"`  // radian, Track elevation angle mask
+	NaviMask float32 `json:"naviMask"` // radian, Navigation elevation angle mask
 }
 
 func (m *CfgElev) ID() MsgID { return CfgElevID }
@@ -278,7 +286,7 @@ const (
 
 // CFG-NMEAVER (0x06 0x43)
 type CfgNmeaVer struct {
-	Version CfgNmeaVerVersion // NMEA version
+	Version CfgNmeaVerVersion `json:"version"` // NMEA version
 }
 
 func (m *CfgNmeaVer) ID() MsgID { return CfgNmeaVerID }
@@ -298,22 +306,26 @@ func PollPayloadLen(mid MsgID) int {
 	}
 }
 
+// PollNavTime creates a NAV-TIME poll packet for the given GNSS system.
 func PollNavTime(navSys NavTimeSys) []byte {
 	packet, _ := packMsg(NavTimeID, []byte{byte(navSys)})
 	return packet
 }
 
-func PollPrt(uartIdx int) []byte {
-	packet, _ := packMsg(CfgPrtID, []byte{byte(uartIdx)})
+// PollPrt creates a CFG-PRT poll packet for the given port.
+func PollPrt(port CfgPrtPortID) []byte {
+	packet, _ := packMsg(CfgPrtID, []byte{byte(port)})
 	return packet
 }
 
+// SetCfgMsg creates a CFG-MSG packet setting the output rate of mid.
 func SetCfgMsg(mid MsgID, rate byte) []byte {
 	cls, id := mid.Unpack()
 	packet, _ := packMsg(CfgMsgID, []byte{cls, id, rate})
 	return packet
 }
 
+// PollCfgMsg creates a CFG-MSG packet polling the output rate of mid.
 func PollCfgMsg(mid MsgID) []byte {
 	cls, id := mid.Unpack()
 	packet, _ := packMsg(CfgMsgID, []byte{cls, id})

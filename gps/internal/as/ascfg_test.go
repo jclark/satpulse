@@ -197,7 +197,7 @@ func (r *testReceiver) respondPoll(mid asbin.MsgID, data []byte) [][]byte {
 		return [][]byte{r.pack(r.navSat)}
 	case asbin.CfgPrtID:
 		port := data[asbin.HeaderLen] & 1
-		return [][]byte{r.pack(&asbin.CfgPrt{PortID: port, Baudrate: r.prt[port]})}
+		return [][]byte{r.pack(&asbin.CfgPrt{PortID: asbin.CfgPrtPortID(port), Baudrate: r.prt[port]})}
 	case asbin.CfgElevID:
 		return [][]byte{r.pack(&r.elev)}
 	}
