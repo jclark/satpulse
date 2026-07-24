@@ -60,11 +60,6 @@ These options must be specified before the *command*.
 **\-v**
 : Be verbose. Multiple **\-v** options will increase verbosity.
 
-# ENVIRONMENT
-
-**SATPULSE_VENDORS**
-: Declares the receiver vendors that may be attached to this machine, as a comma-separated list of vendor names (as accepted by **\-\-vendor**), or `all` for any vendor. It provides the default for the **\-\-vendor** option of the commands that take one (**gps**, **scan**): a single declared vendor behaves as if it were passed to **\-\-vendor**, while several form the candidate set for packet-format recognition and configuration-protocol probing. **\-\-vendor** overrides it. Unset means no declaration.
-
 # EXAMPLES
 
 Show help for satpulsetool:
