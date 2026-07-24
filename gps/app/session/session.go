@@ -38,6 +38,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -173,11 +174,11 @@ type Session struct {
 	// It is not held while opening a transport, so a later lifecycle
 	// call can still supersede a pending Connect.
 	lifecycleMu sync.Mutex
-	// op and vendor are set by Connect and immutable while the
+	// op and vendors are set by Connect and immutable while the
 	// connection lives.
-	op     Opener
-	vendor gpsreg.Vendor
-	state  ConnState
+	op      Opener
+	vendors []gpsreg.Vendor
+	state   ConnState
 	// stateSeq counts state transitions; stateEmitSeq is the last
 	// transition whose state has been published. emitStateChange uses
 	// them to keep gps:state events ordered when transitions race.
@@ -503,12 +504,13 @@ func (o SocketOpener) Socket() bool { return true }
 
 // Connect opens a connection to a GPS receiver via op. It is
 // asynchronous: it returns once the transport is open, and probe
-// progress arrives as events. vendor narrows probing and packet format
-// detection; VendorUnknown probes for all supported vendors. A Connect
+// progress arrives as events. vendors narrows probing and packet
+// format detection (see gpsreg.CreateConfigProtocols and
+// gpsreg.CreatePacketFormats); nil applies their defaults. A Connect
 // or Disconnect issued while shutdown or the open is pending supersedes
 // it: a late-opened transport is closed and Connect returns an error.
-func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
-	return s.connect(s.reserveLifecycle(), op, vendor)
+func (s *Session) Connect(op Opener, vendors []gpsreg.Vendor) error {
+	return s.connect(s.reserveLifecycle(), op, vendors)
 }
 
 func (s *Session) reserveLifecycle() int {
@@ -519,7 +521,7 @@ func (s *Session) reserveLifecycle() int {
 	return gen
 }
 
-func (s *Session) connect(gen int, op Opener, vendor gpsreg.Vendor) error {
+func (s *Session) connect(gen int, op Opener, vendors []gpsreg.Vendor) error {
 	s.lifecycleMu.Lock()
 	s.mu.Lock()
 	if s.connectGen != gen {
@@ -559,7 +561,9 @@ func (s *Session) connect(gen int, op Opener, vendor gpsreg.Vendor) error {
 	}
 	connCtx, connCancel := context.WithCancel(context.Background())
 	s.op = op
-	s.vendor = vendor
+	// Clone: Connect is asynchronous, so the caller may reuse its slice
+	// while the connection manager is still reading s.vendors.
+	s.vendors = slices.Clone(vendors)
 	s.connCtx = connCtx
 	s.connCancel = connCancel
 	s.connWg.Go(func() { s.connManager(connCtx, conn, speed) })
@@ -639,7 +643,7 @@ func (s *Session) runConn(connCtx context.Context, conn gpsio.Conn, speed int) c
 	runCtx, runCancel := context.WithCancel(connCtx)
 	portLock := gpsio.NewOutPortLock(conn)
 	pCh := make(chan scan.Packet, 1)
-	pktFormats := gpsreg.CreatePacketFormats(s.vendor)
+	pktFormats := gpsreg.CreatePacketFormats(s.vendors)
 	pLog, plCh := gpsio.NewPacketLog(pktFormats, packetLogChannelSize)
 	if sc, ok := conn.(*gpsio.SerialConn); ok {
 		sc.SetPacketLog(pLog)
@@ -654,7 +658,7 @@ func (s *Session) runConn(connCtx context.Context, conn gpsio.Conn, speed int) c
 	pktSub := pb.Subscribe()
 	// Fresh packet processors each run: they are stateful and a
 	// reconnect must not resume from the dead connection's state.
-	procs := gpsreg.CreatePacketProcessors(s.vendor)
+	procs := gpsreg.CreatePacketProcessors(s.vendors)
 	configCh := make(chan configRequest)
 	s.mu.Lock()
 	s.conn = conn
@@ -726,7 +730,7 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 	target.Opts.ForceProbe = true
 	target.Opts.Socket = socket
 	rslt, err := gpscfg.Configure(runCtx, s.lg, procs,
-		gpsreg.CreateConfigProtocols(s.vendor), target, sub, conn)
+		gpsreg.CreateConfigProtocols(s.vendors), target, sub, conn)
 	portLock <- port
 	s.emitSpeed(conn)
 	if err != nil && !errors.Is(err, gpscfg.ErrNoProbeResponse) && !errors.Is(err, gpscfg.ErrNotDetected) {
@@ -792,7 +796,7 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 			s.mu.Unlock()
 			req.target.Opts.Socket = socket
 			rslt, err := gpscfg.Configure(req.ctx, s.lg, procs,
-				gpsreg.CreateConfigProtocols(s.vendor), req.target, sub, conn)
+				gpsreg.CreateConfigProtocols(s.vendors), req.target, sub, conn)
 			portLock <- port
 			s.emitSpeed(conn)
 			if reset && errors.Is(err, io.ErrUnexpectedEOF) {

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/jclark/satpulse/gps/app/session"
-	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/msgfile"
 )
 
@@ -82,9 +81,8 @@ func (s *server) handleMsgCancel(w http.ResponseWriter, _ *http.Request) {
 }
 
 // msgPreselect returns the vendor the UI should preselect: the session
-// vendor (--vendor if set, else the vendor the probe detected) matched
-// by lowercased name against the catalog's vendors; "" when nothing
-// matches.
+// vendor (see sessionVendorName) matched by lowercased name against
+// the catalog's vendors; "" when nothing matches.
 func (s *server) msgPreselect(names []msgfile.Entry) string {
 	vendor := strings.ToLower(s.sessionVendorName())
 	if vendor == "" {
@@ -99,11 +97,12 @@ func (s *server) msgPreselect(names []msgfile.Entry) string {
 }
 
 // sessionVendorName returns the vendor name driving preselection: the
-// --vendor value when one was given, otherwise the vendor the probe
-// detected (empty under passive detection).
+// asserted vendor when the resolved list (--vendor or a singleton
+// SATPULSE_VENDORS declaration) names exactly one, otherwise the
+// vendor the probe detected (empty under passive detection).
 func (s *server) sessionVendorName() string {
-	if s.vendor != gpsreg.VendorUnknown {
-		return s.vendor.String()
+	if len(s.vendors) == 1 {
+		return s.vendors[0].String()
 	}
 	if r := s.sess.Receiver(); r.Info.IsSet() {
 		return r.Info.Get().Vendor

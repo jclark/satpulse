@@ -365,7 +365,7 @@ The following option restricts which configuration protocols are probed. It also
   The following values are supported: `u-blox`, `Unicore`, `Allystar`, `Bynav`, `NovAtel`, `Quectel`, `SinoGNSS`, `Techtotop`, `Zhongke`, `other`.
   In addition, the following values are allowed and currently treated as equivalent to `other`: `Furuno`, `MediaTek`, `Septentrio`, `SkyTraq`, `Trimble`.
   Values are case-insensitive.
-  If not specified, no restrictions are applied.
+  If not specified, the **SATPULSE_VENDORS** environment variable supplies the default (see ENVIRONMENT), and if that too is unset, no restrictions are applied.
 
 ## Low-level configuration
 
@@ -472,6 +472,11 @@ Send an ad-hoc command from stdin using a here document:
     [[line]]
     text = "CONFIG PPP ENABLE E6-HAS"
     TOML
+
+# ENVIRONMENT
+
+**SATPULSE_VENDORS**
+: Declares the receiver vendors that may be attached to this machine, as a comma-separated list of vendor names (as accepted by **\-\-vendor**), or `all` for any vendor. It provides the default for **\-\-vendor**: a single declared vendor behaves as if it were passed to **\-\-vendor**, while several form the candidate set for packet-format recognition and configuration-protocol probing. **\-\-vendor** overrides it. Unset means no declaration.
 
 # FILES
 

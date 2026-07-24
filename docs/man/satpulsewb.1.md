@@ -91,6 +91,9 @@ A message file is identified as *vendor*/*file*.toml under a search directory; t
 Include entries in a message file resolve relative to the file itself, not along the search path.
 When **SATPULSE_GPSMSG_PATH** is unset, only the built-in library is used.
 
+**SATPULSE_VENDORS**
+: Declares the receiver vendors that may be attached to this machine, as a comma-separated list of vendor names (as accepted by **\-\-vendor**), or `all` for any vendor. It provides the default for **\-\-vendor**: a single declared vendor behaves as if it were passed to **\-\-vendor**, while several form the candidate set for packet-format recognition and configuration-protocol probing. **\-\-vendor** overrides it. Unset means no declaration.
+
 # EXAMPLES
 
 Serve on all interfaces with a generated token, connecting from the GUI:

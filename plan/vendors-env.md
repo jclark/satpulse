@@ -125,9 +125,9 @@ Parses `SATPULSE_VENDORS`:
 - `all`: all valid vendors (`all` combined with other names is an
   error)
 - otherwise: comma-separated vendor names, each parsed by
-  `ParseVendor` (so aliases work); an empty element or unrecognized
-  name is an error naming the variable; duplicates are dropped,
-  order preserved
+  `ParseVendor` (so aliases work); whitespace around names is
+  trimmed; an empty element or unrecognized name is an error naming
+  the variable; duplicates are dropped, order preserved
 
 For callers a non-nil error is fatal at startup.
 
@@ -147,100 +147,106 @@ There is no per-vendor counterpart on the formats side:
 `CreatePacketFormats` below consults `allVendorPacketFormatsMap`
 directly.
 
-### Effective vendor list and aggregates
+### Two-stage resolution
+
+Resolution is split into two stages so that a single `[]Vendor` is
+threaded everywhere instead of a (vendor, envVendors) pair.
+
+Stage 1 combines the explicitly specified vendor with the
+declaration. It lives in the application layer (`gps/app/cmd`), the
+one impure step, called once per entry point:
+
+```go
+// ResolveVendors returns the vendor list in effect: the explicitly
+// specified vendor if any, else the SATPULSE_VENDORS declaration,
+// else nil.
+func ResolveVendors(vendor gpsreg.Vendor) ([]gpsreg.Vendor, error)
+```
+
+Stage 2 is the gpsreg create functions, pure functions of the one
+list, each defaulting an empty list per its axis:
 
 ```go
 var defaultConfigProtocolVendors = []Vendor{VendorUblox, VendorUnicore}
 ```
 
 This is what controls the non-experimental config protocols, and is
-now the entire representation of "experimental": a vendor whose
-config protocol exists but is not listed here is experimental.
-Graduation is adding the vendor to this list.
-
-The shared policy, used by both aggregates:
+the entire representation of "experimental": a vendor whose config
+protocol exists but is not listed here is experimental. Graduation
+is adding the vendor to this list.
 
 ```go
-// effectiveVendors resolves the vendors in effect: the explicitly
-// specified vendor if any, else the declared envVendors if any, else
-// the default for the axis.
-func effectiveVendors(vendor Vendor, envVendors, defaults []Vendor) []Vendor {
-	if vendor != 0 {
-		return []Vendor{vendor}
-	}
-	if len(envVendors) > 0 {
-		return envVendors
-	}
-	return defaults
-}
+func CreateConfigProtocols(vendors []Vendor) []gpsprot.ConfigProtocol
 ```
+
+An empty list defaults to `defaultConfigProtocolVendors`; each
+vendor maps through `CreateConfigProtocol`, dropping nils, order
+preserved, so with nothing set the probe order stays ubx then unc,
+unchanged for existing users. A vendor with no config protocol
+contributes nothing, so an explicitly specified one yields an empty
+result: listen-only detection, as today.
 
 ```go
-func CreateConfigProtocols(vendor Vendor, envVendors []Vendor) []gpsprot.ConfigProtocol
+func CreatePacketFormats(vendors []Vendor) []gpsprot.PacketFormat
 ```
 
-Loops over the effective list (defaults:
-`defaultConfigProtocolVendors`), mapping each vendor through
-`CreateConfigProtocol` and dropping nils; the effective list's order
-is preserved, so with nothing set the probe order stays ubx then
-unc, unchanged for existing users. An explicitly
-specified vendor with no config protocol yields an empty list,
-i.e. listen-only detection, as today.
-
-```go
-func CreatePacketFormats(vendor Vendor, envVendors []Vendor) []gpsprot.PacketFormat
-```
-
-Parallel, defaulting to `allVendors`. Scan order matters and comes
+An empty list defaults to `allVendors`. Scan order matters and comes
 solely from the flat `allVendorPacketFormats` list, which stays
 authoritative: the result is NMEA and RTCM followed by a walk of
-that list, keeping each format that belongs to at least one
-effective vendor per `allVendorPacketFormatsMap` (which loses its
+that list, keeping each format that belongs to at least one given
+vendor per `allVendorPacketFormatsMap` (which loses its
 VendorUnknown entry; the order of its entries is irrelevant).
 Membership is compared by `Tag()`, not interface equality (some
 PacketFormat implementations hold func fields, and comparing those
-panics). `CreatePacketFormats(0, nil)` yields the whole flat list -
+panics). `CreatePacketFormats(nil)` yields the whole flat list -
 today's VendorUnknown format set in its current order. Vendors
 sharing formats (Unicore's entry includes the nov formats) need no
 dedup; the flat list has none.
 
 ```go
-func CreatePacketProcessors(vendor Vendor, envVendors []Vendor) map[gpsprot.Tag]gpsprot.PacketProcessor
+func CreatePacketProcessors(vendors []Vendor) map[gpsprot.Tag]gpsprot.PacketProcessor
 ```
 
 The processor map itself stays complete (all tags) as today; the
 vendor-specific tuning (`SetVendor`: NMEA SV numbering, nov dialect)
-is applied iff the effective vendor list is a singleton. This is
-what makes a singleton declaration equivalent to `--vendor X`
-everywhere, including replay's dialect selection.
+is applied iff exactly one vendor is given. This is what makes a
+singleton declaration equivalent to `--vendor X` everywhere,
+including replay's dialect selection.
 
-`protocolMap` initializes from `CreatePacketFormats(0, nil)`.
+`protocolMap` initializes from `CreatePacketFormats(nil)`.
 
 ### Callers
 
-Every entry point with a vendor parameter calls `EnvVendors()` once
-at startup (error fatal) and passes the result down:
+Every entry point with a vendor parameter calls
+`cmd.ResolveVendors` once at startup (error fatal) and threads the
+resulting `[]Vendor` down. The call sits in the tool's entry
+function, never inside flag parsing or config loading: those
+functions stay environment-free, so their tests are hermetic
+without any env isolation.
 
-- gpscmd: `resolveConn` gains the EnvVendors call next to the
-  existing `--vendor` parse; the three Create* calls gain the
-  argument.
-- scancmd, replaycmd: same two-line addition.
-- satpulsewb: EnvVendors at startup; the value is handed to the
-  session (below).
-- satpulsed: EnvVendors during config loading (same fatal path as a
-  bad config file); the `GPSConfig.Create*` wrappers in
-  `time/app/daemon/gps.go` pass it alongside `c.Vendor`, which
-  remains the scalar per-instance override.
-- decodecmd, annotatecmd, convobscmd: `CreatePacketFormats(0, nil)`,
+- gpscmd, scancmd, replaycmd: `Cmd` resolves after `parseFlags`
+  succeeds and passes the list to `run`. `parseFlags`/`resolveConn`
+  do not touch the environment.
+- satpulsewb: resolves at startup; the list is stored on the server
+  (it replaces the scalar `--vendor` field) and passed to
+  `session.Connect` on every connect. A singleton list also drives
+  message-file preselection (`sessionVendorName`), so a singleton
+  declaration preselects like `--vendor` does.
+- satpulsed: resolves `cfg.GPS.Vendor` in the daemon entry right
+  after `LoadConfig` (same fatal exit as a bad config file) and
+  passes the list to `run`; the three call sites use `gpsreg.Create*`
+  directly. `GPSConfig` stays purely the TOML representation, and
+  `LoadConfig` stays environment-free.
+- decodecmd, annotatecmd, convobscmd: `CreatePacketFormats(nil)`,
   deliberately env-blind - they identify single, already-split
   packets against the full universe.
 
-`gps/app/session` stores the declared vendors as session state set
-at construction (it is machine-level, not per-connection);
-`Connect(op, vendor)` keeps its per-connection vendor parameter, and
-the internal `gpsreg.Create*` calls gain the stored argument. The
-desktop GUI picks this up when it next merges master, passing
-EnvVendors at app startup like satpulsewb.
+`gps/app/session` holds no vendor state of its own beyond the
+connection: `Connect(op, vendors []gpsreg.Vendor)` takes the
+resolved list, immutable while the connection lives, and the
+internal `gpsreg.Create*` calls use it. The desktop GUI picks this
+up when it next merges master, resolving at app startup like
+satpulsewb.
 
 gpshwtest: `tool.py` sets `SATPULSE_VENDORS=all` in the environment
 of the satpulsetool processes it spawns.
@@ -256,9 +262,11 @@ of the satpulsetool processes it spawns.
 
 ### Tests
 
-In reg_test.go: effectiveVendors resolution table; EnvVendors
-parsing via `t.Setenv` (unset, list, aliases, `all`, `all` mixed
-with names, unknown name, duplicates); CreatePacketFormats dedup
-(e.g. unicore+novatel declared together); CreateConfigProtocols
-default vs asserted-vendor behavior. Keep proportional - the
+In reg_test.go: EnvVendors parsing via `t.Setenv` (unset, list,
+aliases, whitespace, `all`, `all` mixed with names, unknown name,
+duplicates); CreatePacketFormats filtering and order (empty list,
+single vendor, unicore+novatel dedup); CreateConfigProtocols
+default vs given-vendor behavior. In gps/app/cmd: ResolveVendors
+precedence (explicit vendor wins, declaration otherwise, nil when
+neither, error on malformed declaration). Keep proportional - the
 creators are table lookups.
