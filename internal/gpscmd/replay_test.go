@@ -233,9 +233,15 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 		return nil, err
 	}
 
-	// Create packet processors like gpscfg does
-	packetProcs := gpsreg.CreatePacketProcessors(v.vendor)
-	configProts := gpsreg.CreateConfigProtocols(v.vendor)
+	// Create packet processors like gpscfg does. The vendor list comes
+	// from the flags alone: replay must stay hermetic, so the
+	// environment declaration is deliberately not consulted.
+	var vendors []gpsreg.Vendor
+	if v.vendor != 0 {
+		vendors = []gpsreg.Vendor{v.vendor}
+	}
+	packetProcs := gpsreg.CreatePacketProcessors(vendors)
+	configProts := gpsreg.CreateConfigProtocols(vendors)
 
 	// Build timeline of all packet timestamps
 	timeline := make([]time.Time, 0, len(test.inPackets)+len(test.outPackets))

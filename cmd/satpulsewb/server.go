@@ -31,9 +31,9 @@ type server struct {
 	sess    *session.Session
 	hub     *sseHub
 	lg      *slog.Logger
-	token   string        // empty means no auth
-	vendor  gpsreg.Vendor // --vendor: the vendor for every connect
-	msgDirs []msgfile.Dir // message-file library search path
+	token   string          // empty means no auth
+	vendors []gpsreg.Vendor // resolved vendor list (--vendor or SATPULSE_VENDORS) for every connect
+	msgDirs []msgfile.Dir   // message-file library search path
 	mux     *http.ServeMux
 	files   http.Handler // static SPA assets, served under /
 	connMu  sync.Mutex
@@ -50,8 +50,8 @@ type server struct {
 	singleUsed bool
 }
 
-func newServer(ctx context.Context, sess *session.Session, hub *sseHub, lg *slog.Logger, token string, vendor gpsreg.Vendor, msgDirs []msgfile.Dir, device string, speed int) *server {
-	s := &server{ctx: ctx, sess: sess, hub: hub, lg: lg, token: token, vendor: vendor, msgDirs: msgDirs, device: device, speed: speed, mux: http.NewServeMux(), files: http.FileServer(http.FS(webContent()))}
+func newServer(ctx context.Context, sess *session.Session, hub *sseHub, lg *slog.Logger, token string, vendors []gpsreg.Vendor, msgDirs []msgfile.Dir, device string, speed int) *server {
+	s := &server{ctx: ctx, sess: sess, hub: hub, lg: lg, token: token, vendors: vendors, msgDirs: msgDirs, device: device, speed: speed, mux: http.NewServeMux(), files: http.FileServer(http.FS(webContent()))}
 	// Seed the writer broadcast with a no-holder value: after a restart with
 	// the token disabled, an old tab's EventSource reconnects and re-primes
 	// from this hub, and must learn that its previous seat is stale (flipping
@@ -435,7 +435,7 @@ func (s *server) connect(device string, speed int) error {
 	s.device = device
 	s.speed = speed
 	s.connMu.Unlock()
-	return s.sess.Connect(session.SerialOpener{Device: device, Speed: speed}, s.vendor)
+	return s.sess.Connect(session.SerialOpener{Device: device, Speed: speed}, s.vendors)
 }
 
 func (s *server) handleDisconnect(w http.ResponseWriter, _ *http.Request) {
@@ -516,7 +516,7 @@ func (s *server) handleDecodePacket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	rslt, err := session.DecodePacket(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), b, req.Out)
+	rslt, err := session.DecodePacket(gpsreg.CreatePacketFormats(nil), b, req.Out)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
