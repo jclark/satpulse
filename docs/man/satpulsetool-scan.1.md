@@ -27,12 +27,12 @@ Use **\-** as *file* to read from standard input.
 : Restrict packet formats to those used by a receiver vendor.
 The value is case-insensitive.
 Typical values are **u\-blox**, **Unicore**, **NovAtel**, **Bynav**, **SinoGNSS**, **Allystar**, **Techtotop**, and **Zhongke**.
-If this option is omitted, the **SATPULSE_VENDORS** environment variable supplies the default (see ENVIRONMENT), and if that too is unset, all supported packet formats are recognized.
+If this option is omitted, the **SATPULSE_VENDORS** environment variable applies (see ENVIRONMENT), and if that too is unset, all supported packet formats are recognized.
 
 # ENVIRONMENT
 
 **SATPULSE_VENDORS**
-: Declares the receiver vendors that may be attached to this machine, as a comma-separated list of vendor names (as accepted by **\-\-vendor**), or `all` for any vendor. It provides the default for **\-\-vendor**, which overrides it. Unset means no restriction.
+: The possible vendors of the connected GPS receiver, as a comma-separated list of vendor names (as accepted by **\-\-vendor**), or `all` for any vendor. It can be overridden by **\-\-vendor**.
 
 # EXAMPLES
 

@@ -92,7 +92,7 @@ Include entries in a message file resolve relative to the file itself, not along
 When **SATPULSE_GPSMSG_PATH** is unset, only the built-in library is used.
 
 **SATPULSE_VENDORS**
-: Declares the receiver vendors that may be attached to this machine, as a comma-separated list of vendor names (as accepted by **\-\-vendor**), or `all` for any vendor. It provides the default for **\-\-vendor**: a single declared vendor behaves as if it were passed to **\-\-vendor**, while several form the candidate set for packet-format recognition and configuration-protocol probing. **\-\-vendor** overrides it. Unset means no declaration.
+: The possible vendors of the connected GPS receiver, as a comma-separated list of vendor names (as accepted by **\-\-vendor**), or `all` for any vendor. It can be overridden by **\-\-vendor**.
 
 # EXAMPLES
 
