@@ -16,6 +16,10 @@ Run the normal command unchanged with elevation. Do not redirect caches to `/tmp
 
 Read-only commands confined to the workspace, such as `rg`, file inspection, `git diff`, `git status`, and `git log`, do not normally need elevation. When uncertain whether a required command needs outside access, prefer requesting elevation immediately.
 
+## Commit messages
+
+Use judgment. For substantive non-merge changes, a one-line commit message is not enough: use a concise subject followed by a body that explains the problem, the behavior change, and any important implementation details. Routine merge commits may keep Git's generated one-line message, and trivial mechanical changes do not need a padded body.
+
 ## Pull requests
 
 When asked to create a pull request, create it ready for review. Do not create a draft unless the user explicitly requests one.

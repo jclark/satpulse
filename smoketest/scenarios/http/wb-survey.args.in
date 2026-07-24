@@ -5,3 +5,5 @@
 -t
 -d
 ${SATPULSE_TEST_SERIAL}
+-s
+38400

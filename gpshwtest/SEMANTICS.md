@@ -32,11 +32,15 @@ What was *achieved* is reported in the response, not what was requested. The ach
 
 **Readback tells the truth.** Reading a property returns its current value as the receiver stores it. The stored value is normally identical to the accepted one, but they are two different observations and a receiver may re-express what it accepted when storing it (a fixed position accepted in geodetic coordinates may be stored, and therefore read back, in ECEF coordinates). Both reports are truthful at their own stage; neither is derived from the other.
 
-**Best effort must be well-defined.** Adjustment is principled, never arbitrary. Outcomes ordered by closeness have an obvious best: quantization and range limits pick the nearest achievable value - and even clamping is a judgment, applied only where nearness preserves the request's meaning. A choice among incomparable realizations (a request for signals A, B, and C on a receiver that can do A+B or B+C, but not all three) is made only under a deliberate, stated preference, and only when the constraint is knowledge satpulse has; the signals pipeline below is the worked example. Where realization would require an arbitrary unstated choice, or the receiver refuses for reasons its protocol never reported, the request fails instead: satpulse does not guess. The few backend errors that remain are exactly these.
+**Reporting is inclusive.** A response may report more properties than the request named: realization often learns neighboring properties from shared readbacks, and everything learned is reported. The guarantee is inclusion - what was asked for is present - never exclusivity.
+
+**Best effort must be well-defined.** Adjustment is principled, never arbitrary. Quantization and range limits pick the achievable value that best realizes the request's intent: the nearest value where the property's meaning gives no direction (a pulse width), and the meaningful direction where it does (a minimum elevation is an exclusion threshold, so it rounds up - never admitting a satellite the request excluded) - and even clamping is a judgment, applied only where the adjustment preserves the request's meaning. A choice among incomparable realizations (a request for signals A, B, and C on a receiver that can do A+B or B+C, but not all three) is made only under a deliberate, stated preference, and only when the constraint is knowledge satpulse has; the signals pipeline below is the worked example. Where realization would require an arbitrary unstated choice, or the receiver refuses for reasons its protocol never reported, the request fails instead: satpulse does not guess. The few backend errors that remain are exactly these.
 
 **Nonexistence is shown, not announced.** A backend that does not have a property does not fail requests that mention it. Setting it reports nothing achieved for it, and readback does not include it. The absence in the responses *is* the statement that the property does not exist there.
 
-**Refusal changes nothing.** When the receiver refuses a request, the request fails with an error and the receiver's configuration is left unchanged - a failed request is never a partial one. (The error text comes from the receiver and may not be illuminating; the semantics are in the refusal itself.)
+**Refusal changes nothing.** When the receiver refuses a request, the request fails with an error and the configuration that request named is left unchanged - a failed request is never a partial one. (The error text comes from the receiver and may not be illuminating; the semantics are in the refusal itself.)
+
+**Failure does not abort.** When one request fails, the rest of the invocation still runs, and the failures are visible in the response. Knowledge of receiver behavior is always incomplete - firmware revisions change what a receiver accepts - so an unexpected refusal says something about this receiver; it is not a reason to skip the remaining requests. There is one exception: a failure prevents a save requested in the same invocation (see Operations below).
 
 **Ensuring static mode.** A request can ask that the receiver be static without saying where (`SetStatic` in the model): the receiver must end up in a static positioning mode, but an existing fixed position - stored or previously surveyed - is left untouched, and a receiver with no position determines its own (a survey, on receivers that survey). This is how static operation is requested without knowing or supplying a position; a receiver already in a static mode is left as it is.
 
@@ -74,6 +78,8 @@ Each wire-format group also has an *other* element in the model (`NMEAMsgOther`,
 
 The meaning is: *the receiver is configured so that the named information is delivered*. Which receiver messages deliver it is the realization's business. Message granularity belongs to the receiver - one native message often carries several kinds of information - so a message enabled because it delivers requested information may deliver other information along with it. **Delivering more than was asked for is normal and meaningless; the guarantee is that what was asked for is delivered.** Asking what messages realized a request is asking the wrong question; the right question is whether the requested information arrived.
 
+Survey-in progress is scoped to the survey: it is delivered when the request itself puts the receiver into survey mode, and otherwise the flag enables nothing. The flag declares interest in progress, not a message to emit - there is no progress to deliver outside a survey - which is what lets a standing configuration (satpulsed does this) request it unconditionally without paying for an idle progress message when no survey runs.
+
 Raw navigation data is event output, not solution-rate output: the request means each item of navigation data is delivered as the receiver obtains it (a subframe as decoded, an ephemeris when new or changed), not re-delivered at a fixed rate. A receiver may additionally deliver the navigation data it already holds when output is enabled; data it has not yet decoded appears only as broadcast. Re-delivery of unchanged navigation data is not requested and is not significant.
 
 Content preferences select *within* the delivered information rather than adding kinds of it: TAI time rather than UTC, ECEF coordinates rather than geodetic. The `after` preference concerns the time pulse: a pulse-time message that precedes its pulse is not sufficient on its own; there must be time information following the pulse, which a post-pulse message satisfies by itself and a pre-pulse message satisfies only in combination with time messages after the pulse.
@@ -97,6 +103,8 @@ Satellite information is an independent stream, not part of the navigation epoch
 
 A save and a reset requested together are ordered: the save completes before the reset takes effect, so what the reset restores includes what was just saved. The ordering is also a gate: if the save fails, the reset does not take place, so a reset never discards running changes that its paired save failed to persist.
 
+A failed request gates the save the same way: when any request in the invocation failed, a requested save is not attempted. NVM is written only by an invocation in which everything succeeded. After a failure, NVM therefore still holds the last saved state: the partially applied running configuration can be corrected by a further request or discarded by a reload, and nothing unexpected has been persisted. A reset paired with the unattempted save does not take place, exactly as when a save fails.
+
 Changes made after the last save do not survive a reload or reset. That is not a hazard but the point: reload is how unsaved changes are deliberately discarded.
 
 ## Capabilities
@@ -115,8 +123,9 @@ Whatever the receiver:
 - `--show-receiver` and `--show-config` change nothing on the receiver and wait for nothing.
 - PPP is never enabled implicitly by a signal request.
 - Reported values are the truth: a set response reports what the receiver accepted, and readback reports what it stores.
-- A reported error is the truth: a failed request leaves the configuration unchanged.
+- A failed request changes nothing: what it named is untouched, and the rest of the invocation still runs and is reported.
 - Requested information is delivered when the receiver can deliver it; more may come with it.
 - Persistence works as stated: what a save was asked to persist survives reload and reset.
+- NVM is written only when everything succeeded: a failure prevents a requested save and its paired reset.
 
 See **satpulsetool-gps(1)** for the command-line syntax that expresses these requests.

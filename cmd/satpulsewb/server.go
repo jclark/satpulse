@@ -31,11 +31,14 @@ type server struct {
 	sess    *session.Session
 	hub     *sseHub
 	lg      *slog.Logger
-	token   string        // empty means no auth
-	vendor  gpsreg.Vendor // --vendor: the vendor for every connect
-	msgDirs []msgfile.Dir // message-file library search path
+	token   string          // empty means no auth
+	vendors []gpsreg.Vendor // resolved vendor list (--vendor or SATPULSE_VENDORS) for every connect
+	msgDirs []msgfile.Dir   // message-file library search path
 	mux     *http.ServeMux
 	files   http.Handler // static SPA assets, served under /
+	connMu  sync.Mutex
+	device  string // current connection-bar device selection
+	speed   int    // current connection-bar speed selection
 	seatMu  sync.Mutex
 	seat    string
 	// Single-use launch token, minted only when a browser is auto-opened on a
@@ -47,8 +50,8 @@ type server struct {
 	singleUsed bool
 }
 
-func newServer(ctx context.Context, sess *session.Session, hub *sseHub, lg *slog.Logger, token string, vendor gpsreg.Vendor, msgDirs []msgfile.Dir) *server {
-	s := &server{ctx: ctx, sess: sess, hub: hub, lg: lg, token: token, vendor: vendor, msgDirs: msgDirs, mux: http.NewServeMux(), files: http.FileServer(http.FS(webContent()))}
+func newServer(ctx context.Context, sess *session.Session, hub *sseHub, lg *slog.Logger, token string, vendors []gpsreg.Vendor, msgDirs []msgfile.Dir, device string, speed int) *server {
+	s := &server{ctx: ctx, sess: sess, hub: hub, lg: lg, token: token, vendors: vendors, msgDirs: msgDirs, device: device, speed: speed, mux: http.NewServeMux(), files: http.FileServer(http.FS(webContent()))}
 	// Seed the writer broadcast with a no-holder value: after a restart with
 	// the token disabled, an old tab's EventSource reconnects and re-primes
 	// from this hub, and must learn that its previous seat is stale (flipping
@@ -71,6 +74,7 @@ func newServer(ctx context.Context, sess *session.Session, hub *sseHub, lg *slog
 	s.mux.HandleFunc("/", root)
 	s.mux.HandleFunc("GET /sse", get(s.handleSSE))
 	s.mux.HandleFunc("POST /api/seat", reader(s.handleSeat))
+	s.mux.HandleFunc("GET /api/connection", get(s.handleConnection))
 	s.mux.HandleFunc("GET /api/state", get(s.handleState))
 	s.mux.HandleFunc("GET /api/receiver", get(s.handleReceiver))
 	s.mux.HandleFunc("GET /api/speed", get(s.handleSpeed))
@@ -343,6 +347,37 @@ func (s *server) handleState(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.sess.State())
 }
 
+type connectionInfo struct {
+	State  session.ConnState `json:"state"`
+	Device string            `json:"device"`
+	Speed  int               `json:"speed"`
+}
+
+var (
+	errDeviceRequired = errors.New("device is required")
+	errInvalidSpeed   = errors.New("speed must be greater than zero")
+)
+
+// connection returns the complete connection-bar snapshot. While connected,
+// the session's speed is authoritative: configuration can change it after the
+// port was opened. Reading the snapshot also retains that speed for the next
+// disconnected view.
+func (s *server) connection() connectionInfo {
+	state := s.sess.State()
+	activeSpeed := s.sess.Speed()
+	s.connMu.Lock()
+	if activeSpeed != 0 {
+		s.speed = activeSpeed
+	}
+	info := connectionInfo{State: state, Device: s.device, Speed: s.speed}
+	s.connMu.Unlock()
+	return info
+}
+
+func (s *server) handleConnection(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, s.connection())
+}
+
 func (s *server) handleReceiver(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.sess.Receiver())
 }
@@ -375,15 +410,32 @@ func (s *server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Device == "" {
-		writeError(w, http.StatusBadRequest, errors.New("device is required"))
-		return
-	}
-	if err := s.sess.Connect(session.SerialOpener{Device: req.Device, Speed: req.Speed}, s.vendor); err != nil {
+	if err := s.connect(req.Device, req.Speed); err != nil {
+		if errors.Is(err, errDeviceRequired) || errors.Is(err, errInvalidSpeed) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
 		sessionError(w, err)
 		return
 	}
 	writeJSON(w, struct{}{})
+}
+
+// connect is the single connection path for both command-line startup and
+// the connection bar. It records the chosen values before opening so a failed
+// attempt remains visible and editable in a newly loaded browser window.
+func (s *server) connect(device string, speed int) error {
+	if device == "" {
+		return errDeviceRequired
+	}
+	if speed <= 0 {
+		return errInvalidSpeed
+	}
+	s.connMu.Lock()
+	s.device = device
+	s.speed = speed
+	s.connMu.Unlock()
+	return s.sess.Connect(session.SerialOpener{Device: device, Speed: speed}, s.vendors)
 }
 
 func (s *server) handleDisconnect(w http.ResponseWriter, _ *http.Request) {
@@ -464,7 +516,7 @@ func (s *server) handleDecodePacket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	rslt, err := session.DecodePacket(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), b, req.Out)
+	rslt, err := session.DecodePacket(gpsreg.CreatePacketFormats(nil), b, req.Out)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

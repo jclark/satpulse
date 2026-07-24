@@ -316,7 +316,7 @@ export interface DashboardReplay {
   ensureReplay(): void;
 }
 
-// WorkbenchReplay is satpulsewb -d <fifo>: the read-only FIFO replay behind the
+// WorkbenchReplay is satpulsewb -d <fifo> -s 38400: the read-only FIFO replay behind the
 // workbench, so connect lands in passive detection. The replay runs from setup.
 // Test-scoped: each test gets a fresh daemon and its own live replay, so data
 // assertions never depend on which spec file ran first.
@@ -399,7 +399,7 @@ async function launchSatpulsed(session: RunSession): Promise<{ fifoPath: string;
 async function launchWbFifo(session: RunSession, extraArgs: string[]): Promise<{ fifoPath: string } & Awaited<ReturnType<typeof waitWbUrl>>> {
   const fifoPath = path.join(session.runDir, 'gps.fifo');
   mkfifo(fifoPath);
-  const proc = session.spawnLogged('satpulsewb', satpulsewb, ['-n', '-d', fifoPath, ...extraArgs], {
+  const proc = session.spawnLogged('satpulsewb', satpulsewb, ['-n', '-d', fifoPath, '-s', '38400', ...extraArgs], {
     SATPULSE_GPSMSG_PATH: GPSMSG_PATH,
   });
   const info = await waitWbUrl(session, proc);
@@ -468,6 +468,7 @@ interface TestFixtures {
   keepOnFailure: void;
   workbenchReplay: WorkbenchReplay;
   workbenchUbxsim: WorkbenchUbxsim;
+  workbenchUbxsimDeviceOnly: WorkbenchUbxsim;
   workbenchUbxsimNoDevice: WorkbenchUbxsim;
   workbenchFixedToken: WorkbenchFixedToken;
 }
@@ -581,11 +582,15 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   },
 
   workbenchUbxsim: async ({}, use, testInfo) => {
-    await useUbxsim(use, true, testInfo);
+    await useUbxsim(use, 'device-speed', testInfo);
+  },
+
+  workbenchUbxsimDeviceOnly: async ({}, use, testInfo) => {
+    await useUbxsim(use, 'device', testInfo);
   },
 
   workbenchUbxsimNoDevice: async ({}, use, testInfo) => {
-    await useUbxsim(use, false, testInfo);
+    await useUbxsim(use, 'none', testInfo);
   },
 
   workbenchFixed: [
@@ -670,17 +675,22 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   ],
 });
 
-// useUbxsim launches the simulator, then satpulsewb over it (with or without the
-// device flag), and tears them down in the required order: satpulsewb first,
+// useUbxsim launches the simulator, then satpulsewb over it with no connection
+// flags, a device only, or a device and speed, and tears them down in the
+// required order: satpulsewb first,
 // then the simulator, so an early simulator kill cannot inject read errors into
 // satpulsewb's shutdown. RunSession.teardown stops newest first, and the
 // simulator is spawned first, so this ordering holds.
-async function useUbxsim(use: (v: WorkbenchUbxsim) => Promise<void>, withDevice: boolean, testInfo: TestInfo): Promise<void> {
+async function useUbxsim(use: (v: WorkbenchUbxsim) => Promise<void>, flags: 'none' | 'device' | 'device-speed', testInfo: TestInfo): Promise<void> {
   const session = new RunSession('satpulse-e2e-wb-ubxsim');
   openSessions.add(session);
   try {
     const link = await launchUbxsim(session);
-    const args = withDevice ? ['-n', '-d', link, '-s', UBXSIM_SPEED] : ['-n'];
+    const args = flags === 'device-speed'
+      ? ['-n', '-d', link, '-s', UBXSIM_SPEED]
+      : flags === 'device'
+        ? ['-n', '-d', link]
+        : ['-n'];
     const proc = session.spawnLogged('satpulsewb', satpulsewb, args, {
       SATPULSE_GPSMSG_PATH: GPSMSG_PATH,
     });

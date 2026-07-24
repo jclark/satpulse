@@ -42,9 +42,17 @@ func (t *Term) setAttrNow(attr *unix.Termios) error {
 	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TIOCSETA, attr), "ioctl(TIOCSETA)")
 }
 
-// Drain blocks until all pending output has been transmitted.
+// Drain blocks until all pending output has been transmitted. The ioctl
+// blocks for the transmit time of the buffered output, and the Go
+// runtime's preemption and timer signals interrupt blocking syscalls
+// routinely, so EINTR here is runtime noise, not an event: retry.
 func (t *Term) Drain() error {
-	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TIOCDRAIN, 0), "ioctl(TIOCDRAIN)")
+	for {
+		err := unix.IoctlSetInt(t.fd, unix.TIOCDRAIN, 0)
+		if err != unix.EINTR {
+			return t.wrapErr(err, "ioctl(TIOCDRAIN)")
+		}
+	}
 }
 
 func (t *Term) getAttr() (tp *unix.Termios, err error) {

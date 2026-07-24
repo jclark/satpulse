@@ -5,24 +5,23 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 # SYNOPSIS
 
 **satpulsewb** [**\-h**\|**\-\-help**] [**\-V**\|**\-\-version**] [**\-v**\|**\-\-verbose**] [**\-L**\|**\-\-listen** *host:port*] [**\-t**\|**\-\-token**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-n**\|**\-\-no\-open\-browser**] [**\-d**\|**\-\-serial\-device** *path* [**\-s**\|**\-\-device\-speed** *bps*]] [**\-\-vendor** *name*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-n**\|**\-\-no\-open\-browser**] [**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*] [**\-\-vendor** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
 # DESCRIPTION
 
 **satpulsewb** serves SatPulse Workbench, a web application for interactive GPS receiver configuration and monitoring.
-It runs an HTTP server with an embedded single-page frontend, prints one URL per network interface, and serves a GUI session until stopped.
-It is a commissioning tool run by the user, typically over SSH on the box with the receiver, not a daemon.
+It prints one URL per network interface and serves the Workbench while it is running; Ctrl-C stops it.
 
-The Workbench offers device-independent receiver configuration that requires no knowledge of the receiver's protocol, along with live monitoring (position, time, satellites, signals), a packet inspector, sending configuration message files chosen from the message-file library (see ENVIRONMENT), and correction stream (Ntrip or TCP) forwarding.
+The Workbench offers device-independent receiver configuration, along with live monitoring (position, time, satellites, signals), a packet inspector, sending configuration message files chosen from the message-file library (see ENVIRONMENT), and correction stream (Ntrip or TCP) forwarding.
 
 With no options, **satpulsewb** binds all interfaces on its default port (15754), falling back to an OS-picked port if it is taken, and protects the session with a token generated for this run.
-The printed URLs carry the token as a query parameter; the frontend stores it and strips it from the URL bar.
-Anyone with a printed URL controls the receiver until **satpulsewb** exits.
+The printed URLs carry the token as a query parameter; the frontend strips it from the URL bar, so the URL to copy is the printed one.
+A printed URL grants control of the receiver until **satpulsewb** exits.
 Any number of windows can watch the session, but only one at a time holds the write seat and can change the receiver; opening the URL in a second window takes the seat, and the first window becomes a live read-only viewer with a "Use here" button to take it back.
-When run from a local desktop session, **satpulsewb** opens its loopback URL in the default browser; on Linux and FreeBSD this additionally requires a graphical session.
+
+When run from a local desktop session, **satpulsewb** opens its loopback URL in the default browser.
 It never opens a browser over SSH or with **\-\-listen**.
-On Linux and FreeBSD, where a process's command line is readable by other users of the machine, the opened URL carries a single-use launch token that stops working after its first use, so the value visible in the browser's command line grants nothing.
 
 On a network you do not trust, listen on loopback only and reach it through an SSH tunnel:
 
@@ -36,57 +35,61 @@ Both steps can be one command, with **\-t** so that Ctrl-C reaches **satpulsewb*
 
     local$ ssh -t -L 2050:localhost:15754 192.168.1.50 satpulsewb -L localhost:15754
 
-Without **\-\-serial\-device**, the session starts disconnected and the receiver is chosen and connected from the GUI.
-With it, **satpulsewb** connects at startup; a browser arriving later catches up on the current state.
+The serial-device and device-speed options independently initialize the corresponding controls in the connection bar.
+When both are specified, **satpulsewb** connects at startup; otherwise the session starts disconnected and the remaining connection settings are chosen in the GUI.
+A browser arriving later shows the current session state.
 
 # OPTIONS
 
 **\-h**, **\-\-help**
 : Show usage help.
 
+**\-V**, **\-\-version**
+: Show version information.
+
+**\-v**, **\-\-verbose**
+: Log more information.
+
 **\-L**, **\-\-listen** *host:port*
 : Listen on the given address instead of all interfaces on the default port.
-With an explicit port, a bind failure is an error; there is no fallback port, since the address may be the target of an SSH tunnel.
+With an explicit port there is no fallback: a bind failure is an error, since the address may be the target of an SSH tunnel.
 **\-\-listen** also disables the access token, since the typical use is a tunnel.
-Without **\-\-token**, **\-\-listen** trusts the local browser environment: requests with a non-loopback Host are refused and a non-loopback bind prints a warning; use **\-\-token** to allow remote browser access.
+Without **\-\-token**, requests with a non-loopback Host are refused and a non-loopback bind prints a warning; **\-\-token** allows remote browser access.
 
 **\-t**, **\-\-token**
 : Require the generated access token even with **\-\-listen**.
 Without **\-\-listen** this is the default.
 
 **\-n**, **\-\-no\-open\-browser**
-: Do not open a browser at startup, even when run from a local desktop session.
+: Do not open a browser at startup.
 
 **\-d**, **\-\-serial\-device** *path*
-: Serial device connected to a GPS receiver, to connect to at startup.
+: Initial serial device shown in the connection bar.
 
 **\-s**, **\-\-device\-speed** *bps*
-: Serial device baud rate.
-If this option is omitted, the device's current speed is used.
+: Initial serial speed shown in the connection bar.
+The default is 9600.
 
 **\-\-vendor** *name*
 : Restrict probing and packet format detection to a receiver vendor.
 This applies to every connection made in the session, whether at startup or from the GUI.
 The value is case-insensitive.
 Typical values are **u\-blox**, **Unicore**, **NovAtel**, **Bynav**, **SinoGNSS**, **Allystar**, **Techtotop**, and **Zhongke**.
-If this option is omitted, the vendor is autodetected.
+If this option is omitted, the **SATPULSE_VENDORS** environment variable applies (see ENVIRONMENT), and if that too is unset, the vendor is autodetected.
 
 **\-\-packet\-log** *path*
 : Log packets exchanged with the receiver to *path* in JSONL format.
-
-**\-v**, **\-\-verbose**
-: Increase logging verbosity.
-
-**\-V**, **\-\-version**
-: Show version information.
 
 # ENVIRONMENT
 
 **SATPULSE_GPSMSG_PATH**
 : Colon-separated list of directories to search for message files ahead of the built-in library.
-A message file is identified as *vendor*/*file*.toml under a search directory; the first match along the path wins, so a file in an environment directory shadows a same-named built-in file while the rest of the built-in catalog remains available.
+A message file is identified as *vendor*/*file*.toml under a search directory; the first match along the path wins.
 Include entries in a message file resolve relative to the file itself, not along the search path.
 When **SATPULSE_GPSMSG_PATH** is unset, only the built-in library is used.
+
+**SATPULSE_VENDORS**
+: The possible vendors of the connected GPS receiver, as a comma-separated list of vendor names (as accepted by **\-\-vendor**), or `all` for any vendor. It can be overridden by **\-\-vendor**.
 
 # EXAMPLES
 
@@ -96,7 +99,7 @@ Serve on all interfaces with a generated token, connecting from the GUI:
 
 Connect to a receiver at startup:
 
-    satpulsewb -d /dev/ttyACM0
+    satpulsewb -d /dev/ttyACM0 -s 38400
 
 Loopback only, for use through an SSH tunnel:
 

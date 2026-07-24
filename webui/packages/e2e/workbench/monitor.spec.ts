@@ -47,9 +47,10 @@ test('monitor panels populate from the replay', async ({ page, workbenchReplay }
   await expect(legendItem('GPS')).toBeVisible();
   await expect(legendItem('GAL')).toBeVisible();
 
-  // PVT Messages auto-expands on first PVT data (app.tsx), so its tables are
-  // visible without a click: position rows with coordinates and a time row,
-  // keyed by the log's native message IDs.
+  // PVT Messages stays collapsed as data arrives. Opening it shows position
+  // rows with coordinates and a time row, keyed by the log's native message
+  // IDs.
+  await page.getByRole('button', { name: 'PVT Messages' }).click();
   await expect(page.getByRole('heading', { name: 'Position', exact: true })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Latitude,Longitude' }).filter({ visible: true })).toBeVisible();
   await expect(visibleCell(page, 'NAV-HPPOSLLH')).toBeVisible();

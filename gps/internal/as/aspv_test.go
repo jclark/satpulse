@@ -145,7 +145,7 @@ func TestPosGeoNavAuto(t *testing.T) {
 }
 
 func TestPosGeoNavAutoNoFix(t *testing.T) {
-	for _, fs := range []uint8{0, 1, 2} {
+	for _, fs := range []asbin.NavAutoFixState{0, 1, 2} {
 		if got := posGeoNavAuto(&asbin.NavAuto{FixState: fs}); got != nil {
 			t.Errorf("posGeoNavAuto(fixState=%d) = %+v, want nil", fs, got)
 		}
@@ -170,7 +170,7 @@ func TestVelGeoNavAuto(t *testing.T) {
 }
 
 func TestVelGeoNavAutoNoFix(t *testing.T) {
-	for _, fs := range []uint8{0, 1, 2} {
+	for _, fs := range []asbin.NavAutoFixState{0, 1, 2} {
 		if got := velGeoNavAuto(&asbin.NavAuto{FixState: fs}); got != nil {
 			t.Errorf("velGeoNavAuto(fixState=%d) = %+v, want nil", fs, got)
 		}
@@ -179,7 +179,7 @@ func TestVelGeoNavAutoNoFix(t *testing.T) {
 
 func TestQualityNavAuto(t *testing.T) {
 	tests := []struct {
-		fixState   uint8
+		fixState   asbin.NavAutoFixState
 		fixLevel   gpsprot.FixLevel
 		fixDim     gpsprot.SolutionDim
 		correction gpsprot.CorrKind

@@ -121,6 +121,8 @@ export function App() {
     const [signalCatalog, setSignalCatalog] = useState<Record<string, string[]>>({});
     const [selectedSignals, setSelectedSignals] = useState<Set<string>>(new Set());
     const signalCatalogRequest = useRef(0);
+    const connStateSeen = useRef(false);
+    const connSpeedSeen = useRef(false);
     const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [, setOperation] = useState<OperationState>({status: 'idle', label: ''});
@@ -131,8 +133,6 @@ export function App() {
     const [posRows, setPosRows] = useState<Map<string, PosRow>>(new Map());
     const [velRows, setVelRows] = useState<Map<string, VelRow>>(new Map());
     const [timeRows, setTimeRows] = useState<Map<string, TimeRow>>(new Map());
-    const [pvtOpen, setPvtOpen] = useState(false);
-    const pvtAutoExpanded = useRef(false);
     const [satsMsg, setSatsMsg] = useState<SatellitesMsg | null>(null);
     const [mapPos, setMapPos] = useState<{lat: number; lon: number} | null>(null);
     const [mapCourse, setMapCourse] = useState<{course: number; groundSpeed: number} | null>(null);
@@ -142,8 +142,6 @@ export function App() {
     const pvtEpoch = useRef(0);
     const [activeTab, setActiveTab] = useState<TabID>('monitor');
     const [trackGen, setTrackGen] = useState(0);
-    const [surveyOpen, setSurveyOpen] = useState(false);
-    const surveyAutoExpanded = useRef(false);
     const [logHeight, setLogHeight] = useState(140);
     const dragging = useRef(false);
     const monitorRowRef = useRef<HTMLDivElement>(null);
@@ -194,22 +192,6 @@ export function App() {
         document.addEventListener('mouseup', onUp);
     }, [logHeight]);
 
-    // Auto-expand survey section on first survey data
-    useEffect(() => {
-        if (surveyMsg && !surveyAutoExpanded.current) {
-            surveyAutoExpanded.current = true;
-            setSurveyOpen(true);
-        }
-    }, [surveyMsg]);
-
-    // Auto-expand PVT section on first PVT data
-    useEffect(() => {
-        if ((posRows.size > 0 || velRows.size > 0 || timeRows.size > 0) && !pvtAutoExpanded.current) {
-            pvtAutoExpanded.current = true;
-            setPvtOpen(true);
-        }
-    }, [posRows.size, velRows.size, timeRows.size]);
-
     const addToast = useCallback((message: string, type: 'success' | 'error') => {
         const id = ++toastId;
         setToasts(prev => [...prev, {id, message, type}]);
@@ -218,17 +200,6 @@ export function App() {
 
     const refreshPorts = useCallback(() => {
         transport.connection?.listPorts().then(list => setPorts(list || [])).catch(() => {});
-    }, []);
-
-    // Fetch ports on startup; auto-select if exactly one port
-    useEffect(() => {
-        const conn = transport.connection;
-        if (!conn) return;
-        conn.listPorts().then(list => {
-            const ps = list || [];
-            setPorts(ps);
-            if (ps.length === 1) setDevice(ps[0].device);
-        }).catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -276,7 +247,10 @@ export function App() {
             }
         });
         const offSpeed = transport.eventsOn('gps:speed', (newSpeed: number) => {
-            if (newSpeed) setSpeed(newSpeed);
+            if (newSpeed) {
+                connSpeedSeen.current = true;
+                setSpeed(newSpeed);
+            }
         });
         const offMsg = transport.eventsOn('gps:msg', (evt: MsgEvent) => {
             switch (evt.kind) {
@@ -331,6 +305,7 @@ export function App() {
             }
         });
         const offState = transport.eventsOn('gps:state', (state: ConnState) => {
+            connStateSeen.current = true;
             setConnState(state);
             if (state === 'configuring' || state === 'disconnected') {
                 respSessionRef.current = 0;
@@ -349,7 +324,6 @@ export function App() {
                 setPosRows(new Map());
                 setVelRows(new Map());
                 setTimeRows(new Map());
-                pvtAutoExpanded.current = false;
                 setMapPos(null);
                 setMapCourse(null);
                 setNoFixSecs(0);
@@ -477,14 +451,20 @@ export function App() {
         };
     }, []);
 
-    // Sync connection state with the backend on mount (late-joining
-    // client, or HMR reload)
+    // Sync the complete connection bar with the backend on mount (late-joining
+    // client, or HMR reload). Enumerated ports are choices, not connection
+    // state: only auto-select a sole port when no explicit device is retained.
     useEffect(() => {
         const req = ++signalCatalogRequest.current;
-        transport.getConnState().then(async (s: string) => {
-            if (req !== signalCatalogRequest.current) return;
-            setConnState(s as ConnState);
-            if (s === 'disconnected') return;
+        const portsPromise = transport.connection
+            ? transport.connection.listPorts().catch(() => [] as PortInfo[])
+            : Promise.resolve([] as PortInfo[]);
+        Promise.all([transport.getConnection(), portsPromise]).then(async ([conn, ps]) => {
+            setPorts(ps);
+            setDevice(conn.device || (ps.length === 1 ? ps[0].device : ''));
+            if (!connSpeedSeen.current) setSpeed(conn.speed);
+            if (!connStateSeen.current) setConnState(conn.state);
+            if (conn.state === 'disconnected' || req !== signalCatalogRequest.current) return;
             const r = await transport.getReceiverState();
             if (req !== signalCatalogRequest.current) return;
             if (r.ok) {
@@ -652,13 +632,13 @@ export function App() {
                     <CollapsibleSection title="Position Scatter" variant="panel" defaultOpen={false}>
                         <ScatterPanel key={trackGen} ecef={scatterECEF} baseARPs={baseARPs} />
                     </CollapsibleSection>
-                    <CollapsibleSection title="PVT Messages" variant="panel" open={pvtOpen} onToggle={setPvtOpen}>
+                    <CollapsibleSection title="PVT Messages" variant="panel" defaultOpen={false}>
                         <PVTPanel posRows={posRows} velRows={velRows} timeRows={timeRows} leapSecond={leapSecond} />
                     </CollapsibleSection>
                     <CollapsibleSection title="Satellite Signals" variant="panel" defaultOpen={false}>
                         <SignalsPanel msg={satsMsg} />
                     </CollapsibleSection>
-                    <CollapsibleSection title="Survey" variant="panel" open={surveyOpen} onToggle={setSurveyOpen}>
+                    <CollapsibleSection title="Survey" variant="panel" defaultOpen={false}>
                         <SurveyPanel msg={surveyMsg} />
                     </CollapsibleSection>
                 </div>

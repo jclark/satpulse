@@ -22,14 +22,18 @@ import (
 )
 
 func newTestServer(token string) *server {
-	return newTestServerFull(token, gpsreg.VendorUnknown, nil)
+	return newTestServerFull(token, nil, nil)
 }
 
-func newTestServerFull(token string, vendor gpsreg.Vendor, msgDirs []msgfile.Dir) *server {
+func newTestServerFull(token string, vendors []gpsreg.Vendor, msgDirs []msgfile.Dir) *server {
+	return newTestServerSettings(token, vendors, msgDirs, "", 9600)
+}
+
+func newTestServerSettings(token string, vendors []gpsreg.Vendor, msgDirs []msgfile.Dir, device string, speed int) *server {
 	hub := newSSEHub()
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	sess := session.New(lg, hub, session.Options{})
-	return newServer(context.Background(), sess, hub, lg, token, vendor, msgDirs)
+	return newServer(context.Background(), sess, hub, lg, token, vendors, msgDirs, device, speed)
 }
 
 func newTestRequest(method, target string, body io.Reader) *http.Request {
@@ -169,6 +173,8 @@ func TestEndpoints(t *testing.T) {
 		expectBody string // trimmed; empty means don't check
 	}{
 		{name: "state", method: "GET", url: "/api/state", expectCode: 200, expectBody: `"disconnected"`},
+		{name: "connection", method: "GET", url: "/api/connection", expectCode: 200,
+			expectBody: `{"state":"disconnected","device":"","speed":9600}`},
 		{name: "receiver", method: "GET", url: "/api/receiver", expectCode: 200, expectBody: `{"ok":false}`},
 		{name: "speed", method: "GET", url: "/api/speed", expectCode: 200, expectBody: `0`},
 		{name: "corrections", method: "GET", url: "/api/corrections", expectCode: 200, expectBody: `{"state":"stopped"}`},
@@ -177,6 +183,8 @@ func TestEndpoints(t *testing.T) {
 		{name: "apply config not connected", method: "POST", url: "/api/config/apply", body: `{}`,
 			expectCode: 409, expectBody: `{"error":"not connected"}`},
 		{name: "connect empty device", method: "POST", url: "/api/connect", body: `{"device":"","speed":9600}`,
+			expectCode: 400},
+		{name: "connect invalid speed", method: "POST", url: "/api/connect", body: `{"device":"DEV","speed":0}`,
 			expectCode: 400},
 		{name: "corrections start no host", method: "POST", url: "/api/corrections/start", body: `{"mode":"tcp"}`,
 			expectCode: 409},
@@ -233,6 +241,18 @@ func TestEndpoints(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestConnectionInitialSettings(t *testing.T) {
+	s := newTestServerSettings("", nil, nil, "DEV", 38400)
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, newTestRequest("GET", "/api/connection", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d want %d", w.Code, http.StatusOK)
+	}
+	if got, want := strings.TrimSpace(w.Body.String()), `{"state":"disconnected","device":"DEV","speed":38400}`; got != want {
+		t.Errorf("connection = %s, want %s", got, want)
 	}
 }
 
@@ -351,7 +371,7 @@ func TestMsgFileCatalog(t *testing.T) {
 		[]byte("[[nmea]]\ntext = \"PUBX,04\"\ntag = \"poll\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServerFull("", gpsreg.VendorUblox, []msgfile.Dir{msgfile.OSDir(dir)})
+	s := newTestServerFull("", []gpsreg.Vendor{gpsreg.VendorUblox}, []msgfile.Dir{msgfile.OSDir(dir)})
 	s.claimTestSeat(t, "") // select is writer-gated; s.post carries the seat
 
 	w := httptest.NewRecorder()
@@ -410,7 +430,7 @@ func TestBuiltinMsgFileCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("SATPULSE_GPSMSG_PATH", dir)
-	s := newTestServerFull("", gpsreg.VendorUnknown, msgDirs())
+	s := newTestServerFull("", nil, msgDirs())
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, newTestRequest("GET", "/api/msgfile/catalog", nil))
 	if w.Code != http.StatusOK {

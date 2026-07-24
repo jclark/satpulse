@@ -1,12 +1,10 @@
 package gpsreg
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/gps/internal/nmea"
-	"github.com/jclark/satpulse/gps/internal/rtcm"
-	"github.com/jclark/satpulse/gps/internal/ubx"
 )
 
 func TestVendorString(t *testing.T) {
@@ -14,7 +12,7 @@ func TestVendorString(t *testing.T) {
 		vendor   Vendor
 		expected string
 	}{
-		{VendorUnknown, "Unknown"},
+		{Vendor(0), "Vendor(0)"},
 		{VendorOther, "other"},
 		{VendorUblox, "u-blox"},
 		{VendorAllystar, "Allystar"},
@@ -42,8 +40,8 @@ func TestParseVendor(t *testing.T) {
 		{"trimble", VendorTrimble, false},
 		{"comnav", VendorSinoGNSS, false},
 		{"other", VendorOther, false},
-		{"invalid", VendorUnknown, true},
-		{"", VendorUnknown, false},
+		{"invalid", 0, true},
+		{"", 0, false},
 	}
 	for _, tt := range tests {
 		got, err := ParseVendor(tt.input)
@@ -103,47 +101,108 @@ func TestProtocolUnmarshalText(t *testing.T) {
 	}
 }
 
-func hasFormat(formats []gpsprot.PacketFormat, want gpsprot.PacketFormat) bool {
-	for _, f := range formats {
-		if f == want {
-			return true
-		}
+func TestEnvVendors(t *testing.T) {
+	tests := []struct {
+		name      string
+		env       string
+		expect    []Vendor
+		expectErr bool
+	}{
+		{"empty", "", nil, false},
+		{"single", "u-blox", []Vendor{VendorUblox}, false},
+		{"alias", "ublox", []Vendor{VendorUblox}, false},
+		{"list", "u-blox,Unicore", []Vendor{VendorUblox, VendorUnicore}, false},
+		{"list with alias", "ublox,comnav", []Vendor{VendorUblox, VendorSinoGNSS}, false},
+		{"all", "all", allVendors, false},
+		{"all mixed with names", "all,u-blox", nil, true},
+		{"unknown name", "bogus", nil, true},
+		{"duplicates dropped in order", "u-blox,ublox,Unicore", []Vendor{VendorUblox, VendorUnicore}, false},
+		{"empty element", "u-blox,,Unicore", nil, true},
+		{"whitespace around names", " u-blox, Unicore ", []Vendor{VendorUblox, VendorUnicore}, false},
+		{"whitespace around all", " all ", allVendors, false},
+		{"whitespace only", "  ", nil, false},
 	}
-	return false
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envVendorsVar, tc.env)
+			got, err := EnvVendors()
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
+			}
+		})
+	}
+}
+
+// formatTags reduces packet formats to their tags: PacketFormat values
+// cannot be compared directly (some hold func fields), but their tags
+// identify them and are safe to compare.
+func formatTags(formats []gpsprot.PacketFormat) []gpsprot.Tag {
+	tags := make([]gpsprot.Tag, len(formats))
+	for i, f := range formats {
+		tags[i] = f.Tag()
+	}
+	return tags
 }
 
 func TestCreatePacketFormats(t *testing.T) {
-	// VendorUnknown returns all formats
-	all := CreatePacketFormats(VendorUnknown)
-	if !hasFormat(all, nmea.PacketFormat) || !hasFormat(all, rtcm.PacketFormat) || !hasFormat(all, ubx.PacketFormat) {
-		t.Error("VendorUnknown should include NMEA, RTCM, and UBX")
+	full := []gpsprot.Tag{
+		TagNMEA, TagRTCM, TagUBX, TagCASICBin, TagAllystarBin, TagSDBP,
+		TagUnicoreBin, TagUnicoreAscii, TagNovAtelBin, TagNovAtelAscii,
+		TagNovAtelAbbrevAscii, TagSBF, TagSeptentrioReply,
 	}
-	// VendorUblox returns NMEA + RTCM + UBX only
-	ub := CreatePacketFormats(VendorUblox)
-	if !hasFormat(ub, nmea.PacketFormat) || !hasFormat(ub, rtcm.PacketFormat) || !hasFormat(ub, ubx.PacketFormat) {
-		t.Error("VendorUblox should include NMEA, RTCM, and UBX")
+	tests := []struct {
+		name    string
+		vendors []Vendor
+		expect  []gpsprot.Tag
+	}{
+		{"empty list is the whole flat list", nil, full},
+		{"u-blox", []Vendor{VendorUblox}, []gpsprot.Tag{TagNMEA, TagRTCM, TagUBX}},
+		{"vendor without formats", []Vendor{VendorOther}, []gpsprot.Tag{TagNMEA, TagRTCM}},
+		{
+			// Unicore's entry includes the nov formats, so a list with
+			// both keeps them once, in flat-list order.
+			"unicore and novatel deduped",
+			[]Vendor{VendorUnicore, VendorNovAtel},
+			[]gpsprot.Tag{TagNMEA, TagRTCM, TagUnicoreBin, TagUnicoreAscii, TagNovAtelBin, TagNovAtelAscii, TagNovAtelAbbrevAscii},
+		},
 	}
-	if len(ub) != 3 {
-		t.Errorf("VendorUblox: got %d formats, want 3", len(ub))
-	}
-	// VendorOther returns NMEA + RTCM only
-	other := CreatePacketFormats(VendorOther)
-	if len(other) != 2 {
-		t.Errorf("VendorOther: got %d formats, want 2", len(other))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := formatTags(CreatePacketFormats(tc.vendors))
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
+			}
+		})
 	}
 }
 
 func TestCreateConfigProtocols(t *testing.T) {
-	if n := len(CreateConfigProtocols(VendorUnknown)); n != 3 {
-		t.Errorf("VendorUnknown: got %d config protocols, want 3", n)
+	tests := []struct {
+		name    string
+		vendors []Vendor
+		expect  int
+	}{
+		{"empty list is the default probe set", nil, 2},
+		{"u-blox", []Vendor{VendorUblox}, 1},
+		{"unicore", []Vendor{VendorUnicore}, 1},
+		{"both defaults", []Vendor{VendorUblox, VendorUnicore}, 2},
+		{"septentrio", []Vendor{VendorSeptentrio}, 1},
+		{"vendor without protocol", []Vendor{VendorAllystar}, 0},
 	}
-	if n := len(CreateConfigProtocols(VendorUblox)); n != 1 {
-		t.Errorf("VendorUblox: got %d config protocols, want 1", n)
-	}
-	if n := len(CreateConfigProtocols(VendorSeptentrio)); n != 1 {
-		t.Errorf("VendorSeptentrio: got %d config protocols, want 1", n)
-	}
-	if n := len(CreateConfigProtocols(VendorAllystar)); n != 0 {
-		t.Errorf("VendorAllystar: got %d config protocols, want 0", n)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if n := len(CreateConfigProtocols(tc.vendors)); n != tc.expect {
+				t.Errorf("got %d config protocols, want %d", n, tc.expect)
+			}
+		})
 	}
 }
