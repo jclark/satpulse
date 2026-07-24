@@ -14,7 +14,7 @@ import (
 
 func TestPrintJSON(t *testing.T) {
 	props := &gpsprot.ConfigProps{}
-	props.SetSignalsEnabled((1 << gpsprot.SigGPSL1CA) | (1 << gpsprot.SigGPSL2C))
+	props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGPSL2C))
 	props.SetTimeGNSS(gpsprot.GPS)
 	props.SetTimePulse(gpsprot.TimePulse{
 		Width:          100 * time.Millisecond,

@@ -31,6 +31,10 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 		}
 		return
 	}
+	vendors, err := cmd.ResolveVendors(v.vendor)
+	if err != nil {
+		return "", err
+	}
 	lg := cmd.NewLogger(logWriter, logLevel)
 	var input io.Reader
 	if v.filePath == "-" {
@@ -43,7 +47,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 		defer f.Close()
 		input = f
 	}
-	return "", run(lg, input, v.vendor, v.idleGap)
+	return "", run(lg, input, vendors, v.idleGap)
 }
 
 const summary = `[-h|--help] [--vendor name] [--idle-gap seconds] file`
@@ -80,8 +84,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}, nil, nil
 }
 
-func run(lg *slog.Logger, input io.Reader, vendor gpsreg.Vendor, idleGap time.Duration) error {
-	pktProcs := gpsreg.CreatePacketProcessors(vendor)
+func run(lg *slog.Logger, input io.Reader, vendors []gpsreg.Vendor, idleGap time.Duration) error {
+	pktProcs := gpsreg.CreatePacketProcessors(vendors)
 	rh := &replayHandler{
 		out: bufio.NewWriter(os.Stdout),
 		lg:  lg,

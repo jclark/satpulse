@@ -2,6 +2,7 @@ package gpsreg
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -21,9 +22,12 @@ import (
 
 type Vendor int
 
+// Vendors start at 1: Vendor(0) is an invalid value meaning "no vendor
+// specified". It exists only at parse boundaries (ParseVendor("") and
+// an absent TOML vendor key return it) and never reaches the create
+// functions as a vendor.
 const (
-	VendorUnknown Vendor = iota
-	VendorOther
+	VendorOther Vendor = iota + 1
 	VendorAllystar
 	VendorBynav
 	VendorFuruno
@@ -85,6 +89,15 @@ var vendorNames = []string{
 	"Zhongke",
 }
 
+// allVendors lists every valid vendor value, one per vendorNames entry.
+var allVendors = func() []Vendor {
+	vs := make([]Vendor, len(vendorNames))
+	for i := range vendorNames {
+		vs[i] = Vendor(i + 1)
+	}
+	return vs
+}()
+
 // allVendorPacketFormats contains all vendor-specific (non-NMEA, non-RTCM) packet formats.
 var allVendorPacketFormats = []gpsprot.PacketFormat{
 	ubx.PacketFormat,
@@ -103,7 +116,6 @@ var allVendorPacketFormats = []gpsprot.PacketFormat{
 // allVendorPacketFormats maps each vendor to the packet formats they are known to use.
 // NMEA and RTCM are added to these automatically, so they are not included here.
 var allVendorPacketFormatsMap = map[Vendor][]gpsprot.PacketFormat{
-	VendorUnknown: allVendorPacketFormats,
 	// no entry needed for VendorOther, since it is treated like vendors we do not currently support
 	VendorAllystar:   {as.PacketFormat},
 	VendorBynav:      {nov.BinPacketFormat, nov.AsciiPacketFormat, nov.AbbrevAsciiPacketFormat},
@@ -116,10 +128,30 @@ var allVendorPacketFormatsMap = map[Vendor][]gpsprot.PacketFormat{
 	VendorZhongke:    {casic.PacketFormat},
 }
 
-func CreatePacketFormats(vendor Vendor) []gpsprot.PacketFormat {
+// CreatePacketFormats returns the packet formats to scan for. NMEA and
+// RTCM are always included; the vendor-specific formats are a walk of
+// allVendorPacketFormats (which stays authoritative for scan order),
+// keeping each format used by at least one of the given vendors per
+// allVendorPacketFormatsMap. An empty list defaults to every vendor,
+// so CreatePacketFormats(nil) reproduces the whole flat list in order.
+// Membership is compared by Tag(), not interface equality: some
+// PacketFormat implementations hold func fields, and comparing those
+// panics.
+func CreatePacketFormats(vendors []Vendor) []gpsprot.PacketFormat {
+	if len(vendors) == 0 {
+		vendors = allVendors
+	}
+	tags := make(map[gpsprot.Tag]struct{})
+	for _, v := range vendors {
+		for _, f := range allVendorPacketFormatsMap[v] {
+			tags[f.Tag()] = struct{}{}
+		}
+	}
 	formats := []gpsprot.PacketFormat{nmea.PacketFormat, rtcm.PacketFormat} // NMEA and RTCM are common to all vendors
-	if vendorFormats, ok := allVendorPacketFormatsMap[vendor]; ok {
-		formats = append(formats, vendorFormats...)
+	for _, f := range allVendorPacketFormats {
+		if _, ok := tags[f.Tag()]; ok {
+			formats = append(formats, f)
+		}
 	}
 	return formats
 }
@@ -146,9 +178,6 @@ var vendorMap = func() map[string]Vendor {
 
 // String returns the string representation of the vendor
 func (v Vendor) String() string {
-	if v == VendorUnknown {
-		return "Unknown"
-	}
 	i := int(v) - 1
 	if i < 0 || i >= len(vendorNames) {
 		return fmt.Sprintf("Vendor(%d)", v)
@@ -157,16 +186,56 @@ func (v Vendor) String() string {
 }
 
 // ParseVendor parses a vendor string and returns the corresponding Vendor.
-// An empty string returns VendorUnknown.
+// An empty string returns the zero Vendor, meaning no vendor specified.
 // It returns an error if the string is not a recognized vendor name.
 func ParseVendor(vendor string) (Vendor, error) {
 	if vendor == "" {
-		return VendorUnknown, nil
+		return 0, nil
 	}
 	if v, ok := vendorMap[strings.ToLower(vendor)]; ok {
 		return v, nil
 	}
-	return VendorUnknown, fmt.Errorf("unknown vendor: %q", vendor)
+	return 0, fmt.Errorf("unknown vendor: %q", vendor)
+}
+
+const envVendorsVar = "SATPULSE_VENDORS"
+
+// EnvVendors parses the SATPULSE_VENDORS declaration of the vendors
+// whose receivers may be attached to this machine. Unset or empty
+// yields nil. "all" yields every valid vendor and must not be combined
+// with other names. Otherwise the value is a comma-separated list of
+// vendor names (aliases accepted, whitespace around names ignored); an
+// empty element or unrecognized name is an error, and duplicates are
+// dropped with order preserved. A non-nil error is fatal at startup.
+func EnvVendors() ([]Vendor, error) {
+	s := strings.TrimSpace(os.Getenv(envVendorsVar))
+	if s == "" {
+		return nil, nil
+	}
+	parts := strings.Split(s, ",")
+	var vendors []Vendor
+	seen := make(map[Vendor]struct{})
+	for _, name := range parts {
+		name = strings.TrimSpace(name)
+		if strings.EqualFold(name, "all") {
+			if len(parts) != 1 {
+				return nil, fmt.Errorf("%s: \"all\" cannot be combined with other vendor names", envVendorsVar)
+			}
+			return append([]Vendor(nil), allVendors...), nil
+		}
+		if name == "" {
+			return nil, fmt.Errorf("%s: empty vendor name", envVendorsVar)
+		}
+		v, err := ParseVendor(name)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", envVendorsVar, err)
+		}
+		if _, ok := seen[v]; !ok {
+			seen[v] = struct{}{}
+			vendors = append(vendors, v)
+		}
+	}
+	return vendors, nil
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler for Vendor.
@@ -178,7 +247,11 @@ func (v *Vendor) UnmarshalText(data []byte) error {
 
 // CreatePacketProcessors creates packet processors for all registered protocols.
 // A shared NavEpochManager coordinates epoch handling across protocols.
-func CreatePacketProcessors(vendor Vendor) map[gpsprot.Tag]gpsprot.PacketProcessor {
+// The processor map is always complete; vendor-specific tuning
+// (SetVendor: NMEA SV numbering, nov dialect) is applied only when
+// exactly one vendor is given, so a singleton declaration acts like an
+// explicit vendor everywhere.
+func CreatePacketProcessors(vendors []Vendor) map[gpsprot.Tag]gpsprot.PacketProcessor {
 	mgr := gpsprot.NewNavEpochManager()
 	nmeaPP := nmea.NewPacketProcessor(mgr)
 	nmeaPP.AddExtHandler(quectel.NewHandler())
@@ -196,8 +269,8 @@ func CreatePacketProcessors(vendor Vendor) map[gpsprot.Tag]gpsprot.PacketProcess
 		nov.TagAbbrevAscii: nov.NewAbbrevAsciiPacketProcessor(),
 		septentrio.Tag:     septentrio.NewPacketProcessor(mgr),
 	}
-	if vendor != VendorUnknown {
-		SetVendor(procs, vendor)
+	if len(vendors) == 1 {
+		SetVendor(procs, vendors[0])
 	}
 	return procs
 }
@@ -236,25 +309,45 @@ func novVariantFor(v Vendor) nov.Variant {
 	}
 }
 
-// CreateConfigProtocols creates configuration protocols appropriate for the vendor.
-// VendorUnknown returns all protocols. A specific vendor returns only matching ones.
-func CreateConfigProtocols(vendor Vendor) []gpsprot.ConfigProtocol {
+// CreateConfigProtocol returns the config protocol for vendor, or nil
+// if it has none. This is the one place a new config protocol is wired
+// in: each config branch adds one case.
+func CreateConfigProtocol(vendor Vendor) gpsprot.ConfigProtocol {
 	switch vendor {
-	case VendorUnknown:
-		return []gpsprot.ConfigProtocol{
-			ubx.NewConfigProtocol(),
-			unc.NewConfigProtocol(),
-			quectel.NewConfigProtocol(),
-		}
 	case VendorUblox:
-		return []gpsprot.ConfigProtocol{ubx.NewConfigProtocol()}
+		return ubx.NewConfigProtocol()
 	case VendorUnicore:
-		return []gpsprot.ConfigProtocol{unc.NewConfigProtocol()}
+		return unc.NewConfigProtocol()
 	case VendorQuectel:
-		return []gpsprot.ConfigProtocol{quectel.NewConfigProtocol()}
+		return quectel.NewConfigProtocol()
 	default:
 		return nil
 	}
+}
+
+// defaultConfigProtocolVendors is the probe set used when no vendor is
+// asserted: the non-experimental config protocols. A config protocol
+// whose vendor is not listed here is experimental - present in the
+// build but not probed by default. Graduation is adding the vendor.
+var defaultConfigProtocolVendors = []Vendor{VendorUblox, VendorUnicore}
+
+// CreateConfigProtocols returns the config protocols to probe with, one
+// per given vendor that has a config protocol; the list's order is
+// preserved. An empty list defaults to defaultConfigProtocolVendors, so
+// with nothing asserted the probe order stays ubx then unc. A vendor
+// with no config protocol contributes nothing, so an explicitly
+// specified one yields an empty result: listen-only detection.
+func CreateConfigProtocols(vendors []Vendor) []gpsprot.ConfigProtocol {
+	if len(vendors) == 0 {
+		vendors = defaultConfigProtocolVendors
+	}
+	var protos []gpsprot.ConfigProtocol
+	for _, v := range vendors {
+		if p := CreateConfigProtocol(v); p != nil {
+			protos = append(protos, p)
+		}
+	}
+	return protos
 }
 
 func FindNMEASVNumbering(vendor Vendor) []gpsprot.NMEASVNumberingRange {
@@ -276,7 +369,7 @@ type Protocol gpsprot.Tag
 
 var protocolMap = func() map[string]gpsprot.Tag {
 	m := make(map[string]gpsprot.Tag)
-	for _, f := range CreatePacketFormats(VendorUnknown) {
+	for _, f := range CreatePacketFormats(nil) {
 		tag := f.Tag()
 		m[strings.ToUpper(string(tag))] = tag
 	}

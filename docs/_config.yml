@@ -175,7 +175,9 @@ exclude:
   - Gruntfile.js
   - gulpfile.js
   - LICENSE
+  - CLAUDE.md
   - log
+  - man/CLAUDE.md
   - node_modules
   - package.json
   - package-lock.json

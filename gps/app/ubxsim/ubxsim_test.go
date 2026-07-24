@@ -870,7 +870,7 @@ func TestConfiguratorPortDiscovery(t *testing.T) {
 		target := gpsprot.NewConfigTarget()
 		target.Get = gpsprot.PropIDPort | gpsprot.PropIDSignalsEnabled
 		rslt, err := gpscfg.Configure(t.Context(), slog.New(slog.DiscardHandler),
-			gpsreg.CreatePacketProcessors(gpsreg.VendorUblox),
+			gpsreg.CreatePacketProcessors([]gpsreg.Vendor{gpsreg.VendorUblox}),
 			[]gpsprot.ConfigProtocol{ubx.NewConfigProtocol()},
 			target, ch, &fakeOutPort{w: w})
 		if err != nil {

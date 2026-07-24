@@ -50,6 +50,11 @@ func Cmd(progName string, args []string) {
 		cmd.ErrPrintlnWithDetail(progName, err)
 		os.Exit(exitConfig)
 	}
+	vendors, err := cmd.ResolveVendors(cfg.GPS.Vendor)
+	if err != nil {
+		cmd.ErrPrintlnWithDetail(progName, err)
+		os.Exit(exitConfig)
+	}
 	if vars.wait {
 		cfg.PHC.Wait = true
 	}
@@ -73,7 +78,7 @@ func Cmd(progName string, args []string) {
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
 	ctx, cancelCause := context.WithCancelCause(ctx)
-	err = run(ctx, lg, cancelCause, cfg)
+	err = run(ctx, lg, cancelCause, cfg, vendors)
 	// run returns only after shutdown completes, so the cancellation cause is
 	// settled. A non-signal cause -- the scan worker sets one when the serial
 	// input disappears -- becomes the process error, so exitCode picks a
@@ -89,7 +94,7 @@ func Cmd(progName string, args []string) {
 	}
 }
 
-func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, cfg *Config) error {
+func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, cfg *Config, vendors []gpsreg.Vendor) error {
 	tStart := time.Now()
 	if err := cfg.Validate(lg); err != nil {
 		return err
@@ -144,7 +149,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	}()
 
 	var wg sync.WaitGroup
-	pktFormats := cfg.GPS.CreatePacketFormats()
+	pktFormats := gpsreg.CreatePacketFormats(vendors)
 	// pLog must be closed by both the startScan goroutine and the conn
 	// gpsio.Scan starts a goroutine that calls conn.Stop() when the context is cancelled
 	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), true, pktFormats)
@@ -196,7 +201,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		lg.Debug("wait group counter dropped to zero")
 	}()
 
-	pktProcs := cfg.GPS.CreatePacketProcessors()
+	pktProcs := gpsreg.CreatePacketProcessors(vendors)
 	// Install a MsgHandler to capture leap second and position during
 	// configuration; consumed after gpscfg.Configure returns.
 	var cc configCapture
@@ -208,7 +213,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	if err != nil {
 		return err
 	}
-	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, cfg.GPS.CreateConfigProtocols(), gct, pCh, conn)
+	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(vendors), gct, pCh, conn)
 	cc.logLeapSecond(lg)
 	// Static positioning (mobile = false) on a receiver whose mode
 	// changes apply only after a save and reset cannot be configured
