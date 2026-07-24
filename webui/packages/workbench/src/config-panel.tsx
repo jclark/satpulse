@@ -50,8 +50,8 @@ interface Props {
 
 // Config-support item names (gpsprot.ConfigSupportFlags JSON values). Kept as a
 // string set: the frontend keys on names, not bit positions, and ignores
-// unknown names, so gating for pending-branch flags (reload, surveyDur) lights
-// up as each backend merges.
+// unknown names, so gating for pending-branch flags (surveyDur) lights up as
+// each backend merges.
 const SUP = {
     signal: 'signal',
     speed: 'speed',
@@ -530,6 +530,7 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
     const msm4Supported = has(SUP.rtcmMSM4);
     const msm7Supported = has(SUP.rtcmMSM7);
     const rtcmSupported = msm4Supported || msm7Supported;
+    const reloadSupported = has(SUP.reload);
 
     const surveyDisabled = !connected || !surveySupported || timeMode !== 'survey';
     // The survey accuracy, duration, and progress fields disable with the
@@ -829,22 +830,17 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                                 ))}
                             </div>
                         </ConfigSubGroup>
-                        {/* The Reload reset gates on the `reload` flag, contributed
-                            by a pending backend branch (casic-config). No backend on
-                            master emits it, so gating on its absence would grey the
-                            radio on every receiver that supports reload; it is left
-                            ungated until that branch lands (then `reloadSupported`). */}
                         <ConfigSubGroup title="Reset">
                             <div class="flex flex-wrap gap-x-4 gap-y-1">
                                 {([
-                                    [ResetNone, 'None'],
-                                    [ResetReload, 'Reload'],
-                                    [ResetCold, 'Cold start'],
-                                    [ResetFactory, 'Factory reset'],
-                                ] as [ResetType, string][]).map(([v, label]) => (
-                                    <label key={v} class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
+                                    [ResetNone, 'None', true],
+                                    [ResetReload, 'Reload', reloadSupported],
+                                    [ResetCold, 'Cold start', true],
+                                    [ResetFactory, 'Factory reset', true],
+                                ] as [ResetType, string, boolean][]).map(([v, label, supported]) => (
+                                    <label key={v} class={`flex items-center gap-1.5 ${labeledControlText(!connected || !supported)}`}>
                                         <input type="radio" name="resetType" class="accent-accent" value={v} checked={resetType === v}
-                                            disabled={!connected} onChange={() => setResetType(v)} />
+                                            disabled={!connected || !supported} onChange={() => setResetType(v)} />
                                         {label}
                                     </label>
                                 ))}
