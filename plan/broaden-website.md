@@ -580,15 +580,17 @@ receiver selection (`hardware/gnss-modules.md`); the timing mental
 model versus the concrete builds and boards. Both sections are
 version-independent, so nothing here is tied to a release.
 
-- Finish the precision timing page. The marked TODO section remains:
-  bring the NTP/chrony role into the "synchronizing the system clock"
-  discussion (how time reaches chrony/ntpd-rs both with a PHC and
-  without one), and fold in or place the draft material at the end of
-  the page (TAI/UTC/leap seconds and NMEA versus vendor protocols for
-  PTP; GLONASS as the worse fit). Keep the "synchronizing the system
+- The precision timing page is done; what follows is constraints on
+  editing it, not outstanding work. Keep the "synchronizing the system
   clock"/PTM concept section solid, because `hardware/ptm.md` links
   back to it for the concept while keeping concrete
-  NIC/chipset/command selection on the hardware side.
+  NIC/chipset/command selection on the hardware side. The page names
+  no software as the thing that does a job, saying "the PTP daemon"
+  and "an NTP daemon" throughout, so do not introduce chrony, ntpd-rs
+  or ptp4l into it. Its TODO asked for exactly that and was dropped:
+  both configurations are already described in role terms, the no-PHC
+  one in the opening and the PHC one in "Synchronizing the system
+  clock".
 - Finish the GNSS modules beef-up. Sections exist for u-blox (with
   per-platform detail), Unicore, Allystar, and Quectel; the remaining
   vendors and the selection content (form factor, bands, timing

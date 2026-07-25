@@ -87,9 +87,21 @@ TAI is currently ahead of UTC by 37 seconds.
 On Linux, the PHC is conventionally in TAI time, also with the start of 1970 as the epoch.
 
 GNSS constellations with the exception of GLONASS use continuous time scales, which are a fixed offset from TAI.
-The NMEA protocol always reports time in UTC, but vendor specific protocols can report the time in GNSS system time.
+They periodically broadcast the current offset between the GNSS system time and UTC.
+This allows GNSS receivers to report time in UTC.
+However, after a receiver cold starts, while it is waiting for the broadcast, which can take up to 12.5 minutes with GPS,
+it relies on the offset compiled into its firmware.
+The last leap second was at the end of 2016.
+This means that receivers with firmware older than that can report the wrong UTC time for up to 12.5 minutes after a cold start.
 
-There has not been a leap second since the end of 2016.
+The NMEA protocol reports time only in UTC.
+However, vendor-specific protocols can also report time in the GNSS time scale.
+This allows the GNSS system time to be converted directly to the PTP time scale,
+without conversion into and out of UTC.
+
+The GLONASS system time scale is based on UTC, which makes GLONASS a slightly less good fit for PTP.
+
+This issue is becoming less important.
 The responsible international organizations are moving strongly in the direction of abolishing leap seconds,
 and the relevant technical committee has recommended that this happen in 2027.
 If this is approved, as is likely, TAI will remain a constant 37 seconds ahead of UTC for all dates from 2017 onwards.
@@ -163,25 +175,4 @@ a typical figure is 8ns peak-to-peak.
 
 Note that ionospheric error corrected by dual-band receivers is greater than quantization error,
 particularly in locations close to the magnetic equator.
-
-## TODO
-
-Still to do on this page:
-- Bring the NTP/chrony role into the "Synchronizing the system clock" discussion: how time reaches chrony/ntpd-rs both with a PHC and without one.
-
-
-The following draft material still needs to be folded in or placed.
-
-Use of a vendor-specific protocol allows one particular aspect of PTP to work more smoothly.
-PTP uses a timescale based on TAI.
-All GNSS systems other than GLONASS use a system time that is a fixed offset from TAI.
-Using a vendor-specific protocol allows the system time to be converted directly to PTP's timescale.
-NMEA provides time only in UTC.
-The offset between TAI and UTC varies depending on the occurrence of leap seconds.
-Using NMEA requires that the module convert the system time to UTC and
-the host software convert from UTC to PTP's timescale,
-which requires configuration of leap second occurrences to be maintained on the host.
-Using a vendor-specific protocol avoids the need for this.
-
-GLONASS worse fit for PTP.
 
