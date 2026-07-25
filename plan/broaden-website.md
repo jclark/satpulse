@@ -223,12 +223,18 @@ once the hardware content is filled in.
 Stages 1 and 2 describe the published pre-release v0.3-pre-20260619,
 not master. That tag has native Ntrip (the `[[ntrip.mountpoint]]`
 caster, the `[stream.push]` server, and the `[stream.pull]` client),
-SPARTN corrections, `satpulsetool convobs` for RINEX conversion, NTP
-samples without a PHC, and high-level configuration for u-blox and
-Unicore. It does not have `satpulsewb`, which did not exist when the
-tag was cut, and it does not have Septentrio support. Neither is
-documented before stage 3. Stages 3 and 4 describe the fresh
-pre-release that stage 3 cuts; stage 5 is version-independent.
+`satpulsetool convobs` for RINEX conversion, NTP samples without a
+PHC, and high-level configuration for u-blox and Unicore. It does not
+have `satpulsewb`, which did not exist when the tag was cut, and it
+does not have Septentrio or SPARTN support, although NEWS lists both
+under 0.3. None of the three is documented before stage 3. Stages 3
+and 4 describe the fresh pre-release that stage 3 cuts; stage 5 is
+version-independent.
+
+This applies to the tutorial pages. The man pages are different: they
+are generated from master and track it, so they legitimately describe
+things no download has yet, and the banner in `_layouts/man.html` says
+so. Do not pull them back to the tag.
 
 The current stable release is 0.2, so the tutorial docs need a
 reusable inline label marking content that is newer -- in effect, "new
@@ -623,6 +629,11 @@ version-independent, so nothing here is tied to a release.
 - Add the GNSS HATs page (boards for the Raspberry Pi 40-pin header).
 - Build the Internals section: the current single `internals.md` page
   renamed to Packages, with the vendor bring-up guide
-  `vendor-support.md` as a peer, plus the AI usage page.
+  `vendor-support.md` as a peer, plus the AI usage page. Do this on
+  master, not on the website branch: the rename touches root
+  `CLAUDE.md`, `vendor-support.md` and about nine files in `plan/`,
+  and `internals.md` is edited by nearly every feature branch, so a
+  rename parked on a long-lived branch collides with all of them. The
+  AI usage page does not exist yet, so the section starts with two.
 - Home page: add the broader "technical resource for GNSS hardware"
   claim once the hardware and module content backs it up.
