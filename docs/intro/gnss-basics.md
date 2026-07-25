@@ -9,6 +9,7 @@ GPS (Global Positioning System) technically refers to the satellite constellatio
 are three other similar constellations with global coverage: Galileo, BeiDou, and GLONASS, operated by the
 European Union, China, and Russia, respectively. The technically correct term for such a constellation is
 GNSS (Global Navigation Satellite System).
+However, the term GPS is often used informally to refer to any GNSS system, and we will use it in that sense.
 There are also constellations with regional coverage: QZSS and NavIC, operated by Japan and India, respectively.
 
 A constellation means a system of satellites whose orbits are coordinated.

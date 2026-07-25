@@ -598,19 +598,12 @@ version-independent, so nothing here is tied to a release.
   to the vendor configuration pages or internals, not the buyer-facing
   page.
 - Resolve the constellation-comparison TODO in `intro/gnss-basics.md`.
-- Delete the superseded `intro/gnss.md` and `intro.md`. The coverage
-  check has been done. Everything in `intro.md` is superseded, and
-  most of it is now wrong (it says SatPulse does not support PPS on a
-  serial or GPIO pin, and leads its feature list with u-blox UBX); its
-  only unique content is the sentence establishing that the docs use
-  "GPS" informally for any GNSS, which `intro/gnss.md` also has and
-  `gnss-basics.md` dropped. Rehome that sentence in the opening
-  terminology paragraph of `gnss-basics.md` and `intro.md` can go.
-  `intro/gnss.md` needs four more things placed first, and three of
-  them are the TODOs above: the constellation comparison and the
-  NMA/OSNMA/QZNMA material are what `gnss-basics.md`'s TODO asks for,
-  and the vendor-protocol-versus-NMEA TAI argument is already sitting
-  as unplaced draft in `intro/timing.md`. The fourth has no home yet:
+- Delete the superseded `intro/gnss.md`. The coverage check has been
+  done, and four things need placing first. Three of them are the
+  TODOs above: the constellation comparison and the NMA/OSNMA/QZNMA
+  material are what `gnss-basics.md`'s TODO asks for, and the
+  vendor-protocol-versus-NMEA TAI argument is already sitting as
+  unplaced draft in `intro/timing.md`. The fourth has no home yet:
   the band-combination list (L1, L1/L2, L1/L5, L1/L2/L5, L1/L2/L5/L6,
   and cheap Chinese dual-band modules tending to L1/L5), which
   `gnss-basics.md` explains as a concept without giving the set and
@@ -618,6 +611,10 @@ version-independent, so nothing here is tied to a release.
   sections are covered: timing mode and quantization error in
   `intro/timing.md`, RTK and raw data and satellite-broadcast PPP in
   `intro/positioning.md`, protocol basics in `gnss-basics.md`.
+  `intro.md` is already deleted: everything in it was superseded and
+  much of it had become wrong, and its one unique sentence, the
+  convention that the docs use "GPS" informally for any GNSS, is now
+  in the terminology paragraph of `gnss-basics.md`.
 - `setup/monitor.md` presents `clock` and `packet` as "the available
   log types"; `satpulse.toml(5)` also documents `event` and `track`.
   `log.track` (0.2) has no tutorial mention anywhere on the site.
