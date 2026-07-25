@@ -198,23 +198,13 @@ pages are acceptable, and a current site with recorded gaps is much
 better than an out-of-date one. Stages order the work; they do not
 gate publication.
 
-A page that has been superseded is dropped from the navigation and
-given `sitemap: false` in its front matter, but kept in the repository
-until its content is confirmed covered by the pages that replace it,
-and only then deleted. Dropping it from the navigation is not enough
-on its own: `jekyll-sitemap` lists every page regardless, so without
-the front-matter flag a superseded page stays in `sitemap.xml` and
-keeps drawing search traffic to claims the site has already replaced.
-Such a page is deliberately unreferenced, not a broken link to fix: do
-not relink it, and do not delete it before the check has been made.
-`intro/gnss.md` is in this state now.
-
-When the page is finally deleted, or moved to a new URL, its old URL
-gets a `redirect_from` entry in the front matter of whichever page
-replaces it. `jekyll-redirect-from` is enabled in `_config.yml`; it is
-on GitHub Pages' plugin whitelist, so the native Pages build supports
-it. `/intro.html` redirects to the Introduction section index and
-`/internals.html` to the Packages page this way.
+Moved and superseded pages follow the conventions in
+`docs/CLAUDE.md`: a moved page gets a `redirect_from` entry on the
+page at its new URL in the same change, while a superseded page
+sits out of the navigation with `sitemap: false` until its content
+is confirmed covered by the pages that replace it, and gets its
+redirect when it is finally deleted. `intro/gnss.md` is in the
+superseded holding state now.
 
 The home page is not reworked once. It evolves alongside the rest of
 the site, and its claims must never outrun what the other pages can
@@ -369,8 +359,9 @@ the new page is the first tutorial documentation of the native Ntrip
 capabilities.
 
 Move and update the RTK material: `howtos/rtk.md` becomes
-`setup/rtk.html` in the navigation, and the howto is retired under the
-superseded-page convention. It should cover receiver RTCM output,
+`setup/rtk.html`, with a `redirect_from` entry for the old howto URL
+on the new page, following the moved-page convention in
+`docs/CLAUDE.md`. It should cover receiver RTCM output,
 SatPulse as a local Ntrip caster, upstream Ntrip use, rover correction
 input, mountpoints, source tables, authentication, and verification.
 Write the page device-independently using the high-level

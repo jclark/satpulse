@@ -67,3 +67,23 @@ power cycled."
   long sentences. Do not reflow lines you are not otherwise changing.
 - Internal links use Jekyll link tags: `[text]({% link setup/chrony.md %})`.
 - ASCII only.
+- Pages default to `toc: true`; a short page with no headings sets
+  `toc: false` in its front matter to avoid an empty TOC box.
+
+## Moving and superseding pages
+
+- `jekyll-redirect-from` is enabled (it is on GitHub Pages' plugin
+  whitelist): when a page moves to a new URL, the new page gets a
+  `redirect_from` entry for the old URL in its front matter, and the
+  old file is deleted in the same change.
+- A superseded page (its content replaced by different pages, not
+  moved) is dropped from the navigation and given `sitemap: false`
+  in its front matter, but kept in the repository until its content
+  is confirmed covered by the pages that replace it. Without
+  `sitemap: false`, `jekyll-sitemap` keeps it in `sitemap.xml` and
+  it keeps drawing search traffic to claims the site has already
+  replaced. Such a page is deliberately unreferenced, not a broken
+  link to fix: do not relink it, and do not delete it before the
+  coverage check.
+- When a superseded page is finally deleted, its old URL gets a
+  `redirect_from` entry on whichever page replaces it.
