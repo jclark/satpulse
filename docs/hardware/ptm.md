@@ -1,5 +1,6 @@
 ---
 title: PTM hardware
+toc: false
 ---
 
 See [Synchronizing the system clock]({% link intro/timing.md %}#synchronizing-the-system-clock) for what PTM and cross timestamping are and why they are useful.

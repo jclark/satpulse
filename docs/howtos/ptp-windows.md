@@ -1,5 +1,6 @@
 ---
 title: Windows PTP client
+toc: false
 ---
 
 Windows 10 v1809 includes a PTP client. This has been enhanced in Windows 11. The support for PTP in Windows is not as functional and mature as the support in Linux. 

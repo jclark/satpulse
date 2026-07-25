@@ -1,5 +1,6 @@
 ---
 title: Introduction
+toc: false
 redirect_from:
   - /intro.html
 ---

@@ -1,5 +1,6 @@
 ---
 title: GPS and GNSS basics
+toc: false
 ---
 
 On this page, we will explain the basics of GNSS in the context of computer systems.
