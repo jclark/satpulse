@@ -74,7 +74,7 @@ The default is 9600.
 : Restrict probing and packet format detection to a receiver vendor.
 This applies to every connection made in the session, whether at startup or from the GUI.
 The value is case-insensitive.
-Typical values are **u\-blox**, **Unicore**, **NovAtel**, **Bynav**, **SinoGNSS**, **Allystar**, **Techtotop**, and **Zhongke**.
+Typical values are **u\-blox**, **Unicore**, **NovAtel**, **Bynav**, **SinoGNSS**, **Allystar**, **Techtotop**, and **Zhongke** (or **CASIC**).
 If this option is omitted, the **SATPULSE_VENDORS** environment variable applies (see ENVIRONMENT), and if that too is unset, the vendor is autodetected.
 
 **\-\-packet\-log** *path*
