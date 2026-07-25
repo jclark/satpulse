@@ -1,5 +1,6 @@
 ---
 title: GPS and GNSS
+sitemap: false
 ---
 
 GPS (Global Positioning System) technically refers to the satellite constellation operated by the USA. There
