@@ -187,7 +187,7 @@ There are binary, UBX-like protocols:
 There are vendors using the NovAtel OEM6/OEM7 protocol. These protocols treat periodic data, which they call *logs*, differently from configuration. The logs have a dual ASCII/binary syntax and are very similar between vendors: in particular, the packet formats are indistinguishable. Configuration follows a similar style of line-oriented ASCII commands, but is not interoperable between vendors. Unicore UM980 protocol is similar to this, but the packet format is slightly different. There is tier 2 support for:
 
 - ByNav, validated on the M10 and M20
-- SinoGNSS, validated on the K901
+- SinoGNSS, validated on the K901 and K902
 
 The Unicore UM980 series also has undocumented support for emitting OEM6/OEM7 compatible logs, and SatPulse supports this as well.
 

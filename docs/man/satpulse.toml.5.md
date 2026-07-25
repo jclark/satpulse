@@ -272,8 +272,8 @@ listen = "192.168.2.1:2006"
 
 Note that the HTTP monitoring interface can provide a graphical view of the available satellites, but the GPS receiver needs to output the necessary information.
 If the HTTP monitoring interface is enabled and GPS configuration is enabled, then the GPS receiver will be automatically configured to output this information.
-However, this will be done only if the serial speed is less than 38400.
-This can be overridden  using the `satellitesOutput` key in the `gps` table.
+However, this will be done only if the serial speed is at least 38400.
+This can be overridden using the `satellitesOutput` key in the `gps` table.
 But if you want the graphical view, it is recommended to increase the serial speed to at least 38400.
 
 ## `ntrip` table

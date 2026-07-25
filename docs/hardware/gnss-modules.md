@@ -114,7 +114,7 @@ Their current high precision products are the NebulasIV range, based on their UC
 These are all-band receivers and primarily oriented at the RTK market.
 One notable feature of UM980 is that the latest firmware supports all three satellite-broadcast PPP services.
 They are resold by companies in Europe and the USA.
-SatPulse has support for these in development. These use a similar protocol to NovAtel receivers.
+SatPulse supports these, including high-level configuration. These use a similar protocol to NovAtel receivers.
 
 The NebulasIV range also includes a timing receiver, the UT986, but it uses a different protocol and is not widely available.
 

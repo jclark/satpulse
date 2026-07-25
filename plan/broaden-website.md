@@ -302,6 +302,41 @@ Misleading -- a few sentences each, same pass:
 Audited clean (no wrong claims): the home page, chrony, ptp4l, phc,
 network, RPi pages, measure, ptp-windows, and the intro pages.
 
+A second audit (2026-07) covering the hardware pages and the man
+pages, which the first pass did not reach, found two more wrong
+claims, now also fixed:
+
+- `man/satpulse.toml.5.md` stated the automatic satellites-output
+  rule backwards -- "only if the serial speed is less than 38400",
+  where `time/app/daemon/gps.go` enables it only at 38400 or above,
+  as the following sentence and both tutorial pages say.
+- `hardware/gnss-modules.md` still described Unicore support as "in
+  development"; high-level configuration for the UM980 series shipped
+  in 0.2 (#139).
+
+The rest of the hardware section makes only one SatPulse claim, the
+holdover caveat in `hardware/gnssdos.md`, which is accurate while #152
+is open.
+
+The man-page banner in `_layouts/man.html` was reworded in the same
+pass. It read "This man page is for the pre-release version of
+SatPulse 0.3", which a reader takes as the dated pre-release linked
+from the home page rather than current master; every build off master
+reports `0.3-pre` (`Makefile`), so the man pages legitimately run
+ahead of any download, and the banner now says so and points at the
+installed man pages.
+
+Two tier 2 model names looked like conflicts and were checked; both
+are settled, and neither was a wrong claim. `intro/satpulse.md` said
+SinoGNSS support was "validated on the K901" while every verification
+comment in `configs/gpsmsg/sinognss/sinognss.toml` names a K902; both
+modules were used, so the page now says "the K901 and K902", matching
+NEWS. The ByNav M2 versus M20 naming also came up, and is genuinely
+confusing, but the confusion is in the vendor's naming and in the
+message file, not on the website: the site says M10 and M20
+throughout, and the only occurrence of M2 is a shipped 0.2 NEWS
+entry. Out of scope here.
+
 ## Stage 2: align the tutorial path with the published pre-release
 
 The tutorial path still describes a narrower product than the
@@ -378,6 +413,17 @@ The follow-through in the child pages:
   Homebrew tap (`jclark/homebrew-satpulse`), and update the trailing
   BSD sentence now that brew covers macOS. This is true of the
   published pre-release and does not wait on the workbench.
+- `setup/satpulse-install.md`, same pass: the package table offers
+  only `_amd64.deb` and `_arm64.deb`, but the release also ships an
+  `armhf` .deb built for ARMv6 (#305), so a Pi Zero user has no way
+  to find the right file. The installed-files list also omits the
+  message files under `share/satpulse/gpsmsg` (#233).
+- Apply the "new in 0.3" label where stage 1 did not reach:
+  `intro/other-software.md` states the NTPsec SHM path (#300), which
+  is in the pre-release but not in stable 0.2, without a label. The
+  same is true of `--speed` on Unicore (#167) as used in
+  `setup/gps-config.md`, but that page goes away in stage 4, so
+  labelling it there is worth little.
 - Home page: strengthen the timing door to offer the accessible
   no-PHC path up front, now that setup has a coherent one, and point
   the positioning material at the RTK setup workflow instead of the
@@ -552,6 +598,9 @@ version-independent, so nothing here is tied to a release.
   `intro/gnss.md`, then delete `intro/gnss.md`. Likewise check the
   intro section as a whole against the superseded `intro.md`, then
   delete `intro.md`.
+- `setup/monitor.md` presents `clock` and `packet` as "the available
+  log types"; `satpulse.toml(5)` also documents `event` and `track`.
+  `log.track` (0.2) has no tutorial mention anywhere on the site.
 - Add the GNSS HATs page (boards for the Raspberry Pi 40-pin header).
 - Build the Internals section: the current single `internals.md` page
   renamed to Packages, with the vendor bring-up guide
