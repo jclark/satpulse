@@ -180,10 +180,10 @@ publishable on its own and leaves the site better than the stage
 before it. Later stages are not prerequisites for publishing earlier
 ones.
 
-1. Correct the site against the published pre-release. This is what
-   makes the site publishable now.
+1. Correct the site against the published pre-release (done). This
+   is what makes the site publishable now.
 2. Align the tutorial path with the published pre-release, chiefly by
-   making setup work without a PHC and moving RTK into setup.
+   moving RTK into setup and making setup work without a PHC.
 3. Add SatPulse Workbench. Gated on a new pre-release that includes
    `satpulsewb`.
 4. Rework that supports product use, chiefly the GPS configuration
@@ -237,7 +237,12 @@ include gated on a `_config.yml` flag in the same way, so that when
 0.3 final ships the labels go away with a single switch; removing the
 markup from the pages can follow as a separate cleanup.
 
-## Stage 1: correct the site against the published pre-release
+## Stage 1: correct the site against the published pre-release (done)
+
+Done: the label mechanism is in place and the corrections below are
+applied. The home page's sentence about the tutorials falling behind
+was also softened to say the coverage is not yet complete, since the
+wrong claims are now fixed.
 
 Fix the claims that are wrong today, and add nothing else. The site is
 publishable the moment this is done. The findings below were verified
@@ -263,9 +268,10 @@ Wrong -- word- or line-level fixes:
   would need a writeable TCP connection" -- false; `[stream.pull]` is
   a native Ntrip client.
 - `setup/without-phc.md`: `ntp` is listed among sections with no
-  effect without a PHC; on 0.3, `[ntp]` without `[phc]` sends samples
-  timed from the serial messages, so it moves to the works list with
-  the accuracy caveat. Also `proxy.sock` should be `proxy.socket`.
+  effect without a PHC; since 0.2 (#77), `[ntp]` without `[phc]`
+  sends samples timed from the serial messages, so it moves to the
+  works list with the accuracy caveat and no version label. Also
+  `proxy.sock` should be `proxy.socket`.
 - `setup/satpulse-install.md`: satpulsetool installs to
   `/usr/local/bin`, not `/usr/local/sbin`.
 - `setup/monitor.md`: the packet-log filename example
@@ -286,10 +292,12 @@ Misleading -- a few sentences each, same pass:
   native RINEX conversion path, keeping the rtklib `convbin` recipe as
   an alternative. Interim: stage 4 makes convobs part of the
   fixed-position workflow under GPS configuration.
-- `howtos/rtk.md`: rewrite the "Using NTRIP" section around the
-  native capabilities (`[[ntrip.mountpoint]]` caster, `[[stream.push]]`
-  server, `[stream.pull]` client), keeping the rtklib recipe as an
-  alternative. Interim: stage 2 moves the page into setup.
+- `howtos/rtk.md`: keep the str2str recipes; reword the false rover
+  sentence so it states str2str's needs; add a plain page-level
+  notice that correction delivery is now native (caster, server,
+  client, plain TCP) with a pointer to satpulse.toml(5), the version
+  mentioned in prose without the inline label. The native
+  capabilities get their real treatment in the stage 2 setup page.
 
 Audited clean (no wrong claims): the home page, chrony, ptp4l, phc,
 network, RPi pages, measure, ptp-windows, and the intro pages.
@@ -297,10 +305,36 @@ network, RPi pages, measure, ptp-windows, and the intro pages.
 ## Stage 2: align the tutorial path with the published pre-release
 
 The tutorial path still describes a narrower product than the
-published pre-release is. Two gaps matter: setup implies that niche
-PHC/PPS hardware is required, and RTK sits in Howtos as a side topic
-rather than in the setup path. Nothing here depends on a new
+published pre-release is. Two gaps matter: RTK sits in Howtos as a
+side topic rather than in the setup path, and setup implies that
+niche PHC/PPS hardware is required. Nothing here depends on a new
 pre-release.
+
+### Move RTK from Howtos into Setup
+
+This comes first in the stage: it gates on nothing else in the
+stage, and since stage 1 leaves the howto pointing at the man pages,
+the new page is the first tutorial documentation of the native Ntrip
+capabilities.
+
+Move and update the RTK material: `howtos/rtk.md` becomes
+`setup/rtk.html` in the navigation, and the howto is retired under the
+superseded-page convention. It should cover receiver RTCM output,
+SatPulse as a local Ntrip caster, upstream Ntrip use, rover correction
+input, mountpoints, source tables, authentication, and verification.
+Write the page device-independently using the high-level
+configuration model (`rtcmOutput`, `--rtcm-out`, `--speed`, `--gnss`
+cover u-blox and Unicore alike), dropping the howto's u-blox framing.
+Source notes: `howtos/rtk.md`, `plan/archive/ntrip-caster.md`,
+`plan/archive/ntrip-client.md`, and `plan/archive/stream-pull-daemon.md`.
+
+The rewritten setup workflow should distinguish base and rover
+requirements. A base needs a known antenna position and the ability to
+emit appropriate RTCM correction messages; a rover needs to accept
+corrections and compute an RTK position solution. Do not imply that
+RTCM output alone makes a receiver fully RTK-capable: typically a
+rover-capable receiver can also act as a base, but the reverse is not
+guaranteed.
 
 ### Make setup no-PHC first
 
@@ -312,12 +346,8 @@ synchronization an optional precision-timing step.
 Nothing blocks this: the default `satpulse.toml` ships with
 `phc.interface` commented out, and its header says the only entry that
 must be edited to get satpulsed started is the serial speed. The
-no-PHC baseline works out of the box.
-
-One version caveat: `[ntp]` without `[phc]` is pre-release behaviour,
-so the baseline track's chrony step carries the new-in-0.3 label
-until 0.3 final ships. The rewritten index should say so rather than
-claim the whole baseline path works on stable 0.2.
+no-PHC baseline works out of the box, and `[ntp]` without `[phc]` is
+stable 0.2 behaviour, so the baseline track needs no version labels.
 
 Rewrite `setup/index.md` as two tracks. Baseline (works for everyone):
 OS setup as applicable, install SatPulse, serial connection and
@@ -341,24 +371,6 @@ The follow-through in the child pages:
   case. ptp4l should be clearly PHC-dependent. This keeps external
   software setup consistent with the new baseline instead of implying
   that all useful SatPulse setups require PTP hardware.
-
-### Move RTK from Howtos into Setup
-
-Move and update the RTK material: `howtos/rtk.md` becomes
-`setup/rtk.html` in the navigation, and the howto is retired under the
-superseded-page convention. It should cover receiver RTCM output,
-SatPulse as a local Ntrip caster, upstream Ntrip use, rover correction
-input, mountpoints, source tables, authentication, and verification.
-Source notes: `howtos/rtk.md`, `plan/archive/ntrip-caster.md`,
-`plan/archive/ntrip-client.md`, and `plan/archive/stream-pull-daemon.md`.
-
-The rewritten setup workflow should distinguish base and rover
-requirements. A base needs a known antenna position and the ability to
-emit appropriate RTCM correction messages; a rover needs to accept
-corrections and compute an RTK position solution. Do not imply that
-RTCM output alone makes a receiver fully RTK-capable: typically a
-rover-capable receiver can also act as a base, but the reverse is not
-guaranteed.
 
 ### Other stage 2 items
 

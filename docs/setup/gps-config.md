@@ -8,7 +8,8 @@ there are a couple of cases where you may still want to do GPS configuration sep
 ## Supported GPS modules
 
 SatPulse has a GPS configuration engine that currently supports
-only the UBX protocol, which is used by u-blox modules.
+u-blox receivers (from the u-blox 6 platform through to the X20 platform)
+and Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960).
 This configuration engine is shared by `satpulsed` and `satpulsetool gps`.
 But satpulsed takes a conservative approach to GPS configuration and will not perform some kinds of configuration:
 - it will not make any persistent changes to the GPS configuration;
@@ -33,7 +34,7 @@ satpulsetool gps -d /dev/ttyAMA0 -s 9600 --speed 38400 --gnss GPS,GAL,BDS  --sav
 Here
 * `-d /dev/ttyAMA0` specifies the serial device
 * `-s 9600` specifies the current speed
-* `-s 38400` specifies the new speed that the module should use
+* `--speed 38400` specifies the new speed that the module should use
 * `--gnss GPS,GAL,BDS` specifies the constellations that you want enabled (other constellations will be disabled); GPS, GAL and BDS refer to the US, European and Chinese constellations respectively; you can change according to your geopolitical preferences
 * `--save` says to save the changes persistently.
 

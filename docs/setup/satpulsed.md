@@ -24,9 +24,6 @@ A minimal configuration file looks like this:
 
 ```
 # Configuration file for satpulse
-[phc]
-interface = "enp1s0"
-
 [serial]
 speed = 9600
 ```
@@ -34,7 +31,14 @@ speed = 9600
 In the above, `#` starts a comment. The lines with square brackets mark the start of a *table*; the square brackets
 enclose the name of the table. Following the start of each table are the key/value pairs in that table.
 Values can be strings in double quotes
-(e.g. `"enp1s0"`), numbers (e.g. `9600`) or booleans (e.g. `true`, `false`).
+(e.g. `"/dev/ttyAMA0"`), numbers (e.g. `9600`) or booleans (e.g. `true`, `false`).
+
+To synchronize a PTP hardware clock, the configuration file must also have a `[phc]` table:
+
+```
+[phc]
+interface = "enp1s0"
+```
 
 The `[phc]` table specifies information about the PTP hardware clock.
 As a minimum it needs to specify the ethernet interface with the pin that the GPS output pin is attached to.
@@ -72,7 +76,8 @@ is sufficient for satpulsed to perform time synchronization.
 However, improved accuracy and richer monitoring features can be achieved with additional configuration.
 
 How to configure a GPS module depends on whether SatPulse has support for configuring that module.
-Currently SatPulse has support for configuring a wide range of u-blox modules and chips from 6th generation through 10th generation.
+Currently SatPulse has support for configuring u-blox receivers (from the u-blox 6 platform through to the X20 platform)
+and Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960).
 With an unsupported GPS module, you will need to configure it yourself,
 as described in [GPS configuration]({%link setup/gps-config.md %}#unsupported-gps-modules).
 

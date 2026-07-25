@@ -23,14 +23,17 @@ The functionality configured by following sections will work as normal without a
 * `log`
 * `http`
 * `proxy.tcp`
-* `proxy.sock`
+* `proxy.socket`
+
+The `ntp` section also works without a PHC.
+The samples sent to the NTP daemon are based on the timing of the serial messages.
+This is imprecise but is useful when the NTP daemon is reading PPS timestamps.
 
 The functionality configured by the following sections will not have any effect when running without a PHC.
 
 * `phc`
 * `leapSecond`
 * `ptp`
-* `ntp`
 
 Here is an example of what a suitable `satpulse.toml` file might look like on macOS:
 

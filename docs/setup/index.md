@@ -28,5 +28,5 @@ For a complete PTP/NTP time server on Linux, follow these steps.
 7. [Setup a PTP server]({% link setup/ptp4l.md %}). This uses the ptp4l daemon, which is part of LinuxPTP.
 8. Once you have the time server running, you can [monitor]({% link setup/monitor.md %}) it in a variety of ways. 
 
-Although use of SatPulse for a PTP/NTP time server requires a PHC,
-SatPulse has GPS-related functionality that can be used [without a PHC]({%link setup/without-phc.md %}).
+Although use of SatPulse for a PTP time server requires a PHC,
+SatPulse can feed an NTP server and has GPS-related functionality that can be used [without a PHC]({%link setup/without-phc.md %}).

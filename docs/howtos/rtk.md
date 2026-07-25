@@ -2,6 +2,12 @@
 title: Using RTK
 ---
 
+Since this guide was written, the 0.3 pre-release has added native support for correction delivery:
+satpulsed can act as an NTRIP caster, server, and client, and can pull corrections over a plain TCP connection.
+The recipes below use external tools (socat, rtklib) and still work, but the native support is simpler;
+see the `ntrip` and `stream` tables in [satpulse.toml(5)]({%link man/satpulse.toml.5.md %}).
+{: .notice--info}
+
 Real-Time Kinematic (RTK) positioning is a precision positioning technology, which uses two GNSS receivers: a base station with a precisely known position which provides correction data in the form of RTCM messages, and a rover, which can use this correction data to determine its position with centimeter-level accuracy.
 The distance between the base and the rover is limited to about 10-20 kilometers.
 
@@ -233,7 +239,7 @@ Here
 * 2101 is the default port for NTRIP
 * `bkk` is the mount point
 
-To use NTRIP on the rover with satpulsed, you would need a writeable TCP connection
+For str2str to deliver the corrections to the rover's receiver, satpulsed needs a writeable TCP connection
 (which is not secure). Add this to `/etc/satpulse.toml`
 
 ```

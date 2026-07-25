@@ -76,7 +76,7 @@ There is also a Python analysis script [`clocklog.py`](https://github.com/jclark
 python3 clocklog.py /var/log/satpulse/clock.eth0.log
 ```
 
-The packet log file is named e.g. `packet.ttyAMA.jsonl` where `ttyAMA0` is the serial device name. It is in [JSON Lines](https://jsonlines.org/) format (one JSON object per line), making it easy to process with tools like `jq`.
+The packet log file is named e.g. `packet.ttyAMA0.jsonl` where `ttyAMA0` is the serial device name. It is in [JSON Lines](https://jsonlines.org/) format (one JSON object per line), making it easy to process with tools like `jq`.
 
 SatPulse includes an example [logrotate configuration](https://github.com/jclark/satpulse/blob/master/configs/satpulse.logrotate) that can be installed at `/etc/logrotate.d/satpulse` to rotate these logs.
 

@@ -63,11 +63,12 @@ satpulsetool gps -s 9600 -d /dev/ttyAMA0
 
 where 9600 is the speed and `/dev/ttyAMA0` is the device name.
 
-With just those arguments, `satpulsetool gps` will read packets from the GPS and
-also send a probe packet to determine whether it supports the UBX protocol.
+With just those arguments, `satpulsetool gps` will read packets from the GPS,
+detect what kind of receiver it is,
+and probe whether it supports one of the high-level configuration protocols.
 
 If it detects a GPS, it will tell you some information about what packets it received,
-with more details if the probe succeeded.
+with more details if a probe succeeded.
 
 ## Verifying without satpulsetool
 
