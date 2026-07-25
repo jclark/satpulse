@@ -4,13 +4,13 @@ title: Supporting a new vendor
 
 ## Purpose
 
-This document describes, in a vendor-independent way, what it takes to fully support a new GPS/GNSS receiver vendor (or a new protocol) in SatPulse. It is grounded in the existing code structure (see [internals.md](internals.md)) and in the patterns already established by the supported vendors (u-blox, NovAtel, Unicore, CASIC/Zhongke, Allystar, Quectel, SinoGNSS, ByNav, Septentrio, plus the vendor-agnostic NMEA). It has two halves: first the work as a dependency graph of chunks -- what to do in what order, what can run in parallel, what needs hardware, and what is optional -- then a map by code area, which the chunks reference for the details of what to build where.
+This document describes what it takes to fully support a new GPS/GNSS receiver vendor (or a new protocol) in SatPulse. It is intended for use by agents as well as by humans. It relies on the existing code structure (see [Packages]({% link internals/packages.md %})) and is based on the patterns already established by the supported vendors (u-blox, NovAtel, Unicore, CASIC/Zhongke, Allystar, Quectel, SinoGNSS, ByNav, Septentrio, plus the vendor-agnostic NMEA). It has two halves: first the work as a dependency graph of chunks -- what to do in what order, what can run in parallel, what needs hardware, and what is optional -- then a map by code area, which the chunks reference for the details of what to build where.
 
-Throughout, `<vendor>` stands for the new vendor's short name and `<proto>` for the wire protocol's short name (often the same). Real vendor names appear only as *models to copy*, never as the subject.
+Throughout, `<vendor>` stands for the new vendor's short name and `<proto>` for the wire protocol's short name (often the same).
 
 ## Background: configuration layers and the message pipeline
 
-SatPulse abstracts a receiver into device-independent messages (post-configuration) and, where implemented, device-independent configuration. Low-level configuration through message files (`configs/gpsmsg/<vendor>/`, using the common tag conventions in `configs/gpsmsg/tags.md`) is the common base: it lets users send documented vendor commands directly and is also useful when developing or debugging high-level support. High-level configuration adds a `gpsprot.ConfigProtocol`/Configurator so `satpulsetool gps --gnss`, `--pps`, `--signal`, survey, and similar options work through protocol-independent properties.
+SatPulse abstracts a receiver into device-independent messages (post-configuration) and, where implemented, device-independent configuration. Low-level configuration through message files (`configs/gpsmsg/<vendor>/`, using the common tag conventions in `configs/gpsmsg/tags.md`) lets users send documented vendor commands directly and is also useful when developing or debugging high-level support. High-level configuration adds a `gpsprot.ConfigProtocol`/Configurator so `satpulsetool gps --gnss`, `--pps`, `--signal`, survey, and similar options work through protocol-independent properties.
 
 Both configuration layers depend on the same decode/message pipeline. The runtime path is:
 
@@ -242,12 +242,12 @@ Round-trip unit tests per protocol codec package (`go-unit-test` skill); scanner
 - `gps/gpsdecode/gpsdecode.go` -- decode branch per standalone format; proprietary NMEA payload decode in `nmeaDecode`.
 - `gps/msgfile/<proto>.go` (one per command family -- a vendor can have more than one) + either a `ResponsePattern` value/correlator-map entry for standalone command replies, or a proprietary NMEA classifier for `P...` commands.
 - `configs/gpsmsg/<vendor>/` -- message file(s) mapping standard tags, split per model or protocol family as needed.
-- `docs/internals.md` -- a package entry for each new package (required by the repo conventions).
+- `docs/internals/packages.md` -- a package entry for each new package (required by the repo conventions).
 - `docs/_includes/NEWS.md` -- a release-note entry for the user-facing feature.
 
 ## References
 
-- Architecture: [internals.md](internals.md); the "tour of the GPS modules" post for the user-facing configuration model.
+- Architecture: [Packages]({% link internals/packages.md %}); the "tour of the GPS modules" post for the user-facing configuration model.
 - Plan/analysis conventions: `plan/CLAUDE.md`.
 - Skills: `implement-configprotocol` (high-level configuration), `gps-msg-file` / `gps-msg-add` / `gps-msg-test` (message files), `packet-testdata` (corpus), `drive-satpulsed-from-log` and `satpulsed-test-instance` (no-hardware pipeline runs), `hardware-test-gps-msgs` (with hardware), `satpulsetool` (decode/annotate/config), `go-unit-test` (test style).
 - Harnesses: `gpshwtest/` (high-level config characterisation), `smoketest/` (daemon black-box).

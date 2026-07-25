@@ -1,5 +1,7 @@
 ---
-title: SatPulse internals
+title: Packages
+redirect_from:
+  - /internals.html
 ---
 
 ## Go packages
@@ -270,6 +272,14 @@ These hold the web frontend source. They are not Go packages: they are built wit
 
 `webui/` is the npm workspace holding the web frontend source (TypeScript, Preact, Tailwind). Three of its packages are bundled by Vite with content hashing disabled so the embedded filenames stay `app.js` and `style.css`. `@satpulse/dashboard` (`packages/dashboard`) is the satpulsed web dashboard app. `@satpulse/workbench` (`packages/workbench`) holds the SatPulse Workbench components and app, originally the desktop GUI frontend; its `src/transport.ts` defines the transport interface the components talk to their backend through -- a universal core plus optional connection-management and message-file capabilities. `@satpulse/workbench-http` (`packages/workbench-http`) is the satpulsewb entry point: token handling plus the fetch+SSE transport implementation; its build output is embedded by `cmd/satpulsewb`. `@satpulse/e2e` (`packages/e2e`) is the Playwright browser-test suite for the two embedded frontends; it builds nothing, launching the real `satpulsed`/`satpulsewb` binaries from `out/<arch>` and driving them with the smoketest's hardware-free packet sources (a FIFO packet-log replay, the `satpulsetool ubxsim` simulator). Its `harness.ts` provides the launch fixtures, and its two Playwright projects (`dashboard`, `workbench`) mirror the two frontends; it has no `test` script, so `npm test` does not run it (the runner is `npm run e2e`). The workspace imports GPS wire types from `@satpulse/gps` (`gps/ts`).
 
-## Test harnesses
+## Python packages
 
-`gpshwtest` is a stdlib-only Python program that tests GPS high-level configuration against real receivers. Because receivers are diverse and high-level configuration has best-effort semantics, it characterizes how device-independent configuration is realized on each receiver rather than rendering pass/fail verdicts; vetted characterizations are checked in and compared on later runs. All receiver I/O goes through `satpulsetool gps --json`. The goal and success criteria are defined in `gpshwtest/GOAL.md` (#310).
+These hold the test harnesses that drive the built binaries from outside. They are Python 3.11 or later and use only the standard library at runtime; each has a `pyproject.toml` that declares no dependencies and exists to pin mypy strict under uv (`make typecheck`). Neither directory is installed: they are run in place from the repository root.
+
+### gpshwtest/
+
+`gpshwtest` tests GPS high-level configuration against real receivers, and is run as a directory (`python3 gpshwtest`) through its `__main__.py`. Because receivers are diverse and high-level configuration has best-effort semantics, it characterizes how device-independent configuration is realized on each receiver rather than rendering pass/fail verdicts; vetted characterizations are checked in under `baselines/` and compared on later runs. `probes.py` drives the receiver, `model.py` holds the configuration model under test, and `characterize.py` and `analyze.py` derive the two offline outputs, failures and characterization. All receiver I/O goes through `satpulsetool gps --json`. The goal and success criteria are defined in `gpshwtest/GOAL.md` (#310), the semantics under test in `SEMANTICS.md`.
+
+### smoketest/
+
+`smoketest` runs black-box scenarios against the real `satpulsed` and `satpulsewb` binaries, with no root and no GPS hardware, and is entered through `run.py`. It exercises program behaviour -- configuration wiring, startup, observability endpoints, logging, Ntrip, corrections, and shutdown -- not packet decoding. `run.py` is the engine, and three seams keep it independent of what it tests and where: the packet provider (`provider_api.py`, with `provider_replay.py` streaming a recorded packet log and `provider_ubxsim.py` running the simulator), the program under test (`program_api.py`, with `program_satpulsed.py` and `program_satpulsewb.py`), and the per-OS transport primitives (`platform_api.py`, with `platform_unix.py` today). `common.py` holds the shared checks, `ntpshm.py` and `ntpsock.py` stand in for the NTP consumers of the SHM and SOCK refclock protocols, and `system.py` is a separate runner for the package-installed systemd service. The scenarios themselves are the one real package here: `scenarios/` and a subpackage per group (basic, config, http, logging, ntp, ntrip, proxy, shutdown, stream).

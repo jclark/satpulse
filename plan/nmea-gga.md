@@ -52,12 +52,12 @@ Add a reusable `gpsprot.MsgHandler` that synthesizes GGA from decoded GPS
 messages and sends typed GGA sentences to a sink. This produces candidate GGA
 sentences; it does not decide whether a real receiver GGA should win.
 
-Placement is fixed by the layering in `docs/internals.md`: `nmeasyn` is a
+Placement is fixed by the layering in `docs/internals/packages.md`: `nmeasyn` is a
 domain-layer package (`gps/nmeasyn`), alongside `gpsprot`. It uses the `gpsprot`
 domain abstraction but has no goroutines and does no logging. It imports
 `gpsprot`, so it is too high for `gps/lib/`, and it is wired from `time/`, so it
 cannot be `gps/internal/`. Implementation must add an entry under the `### gps/`
-section of `docs/internals.md`.
+section of `docs/internals/packages.md`.
 
 ```go
 type Phase int

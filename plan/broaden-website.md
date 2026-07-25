@@ -150,11 +150,10 @@ docs:
       - title: "AI usage"
         url: "/internals/ai-usage.html"
 
-The Introduction and Hardware lists reflect what is now deployed; the
-new pages still to come are GNSS HATs, the workbench setup page, the
-setup RTK workflow, the GPS configuration section, and the Internals
-section (the current single `internals.md` page renamed to Packages,
-with the vendor bring-up guide `vendor-support.md` as a peer). The
+The Introduction, Hardware and Internals lists reflect what is now
+deployed; the new pages still to come are GNSS HATs, the workbench
+setup page, the setup RTK workflow, the GPS configuration section, and
+the Internals section's AI usage page. The
 other differences from the deployed navigation -- the Setup retitles
 and reordering, the removal of the setup GPS configuration entry, the
 retirement of the RTK and precise-position howtos, and the
@@ -208,7 +207,14 @@ the front-matter flag a superseded page stays in `sitemap.xml` and
 keeps drawing search traffic to claims the site has already replaced.
 Such a page is deliberately unreferenced, not a broken link to fix: do
 not relink it, and do not delete it before the check has been made.
-`intro.md` and `intro/gnss.md` are in this state now.
+`intro/gnss.md` is in this state now.
+
+When the page is finally deleted, or moved to a new URL, its old URL
+gets a `redirect_from` entry in the front matter of whichever page
+replaces it. `jekyll-redirect-from` is enabled in `_config.yml`; it is
+on GitHub Pages' plugin whitelist, so the native Pages build supports
+it. `/intro.html` redirects to the Introduction section index and
+`/internals.html` to the Packages page this way.
 
 The home page is not reworked once. It evolves alongside the rest of
 the site, and its claims must never outrun what the other pages can
@@ -627,13 +633,16 @@ version-independent, so nothing here is tied to a release.
   log types"; `satpulse.toml(5)` also documents `event` and `track`.
   `log.track` (0.2) has no tutorial mention anywhere on the site.
 - Add the GNSS HATs page (boards for the Raspberry Pi 40-pin header).
-- Build the Internals section: the current single `internals.md` page
-  renamed to Packages, with the vendor bring-up guide
-  `vendor-support.md` as a peer, plus the AI usage page. Do this on
-  master, not on the website branch: the rename touches root
-  `CLAUDE.md`, `vendor-support.md` and about nine files in `plan/`,
-  and `internals.md` is edited by nearly every feature branch, so a
-  rename parked on a long-lived branch collides with all of them. The
-  AI usage page does not exist yet, so the section starts with two.
+- Build the Internals section (done, apart from the AI usage page,
+  which does not exist yet, so the section starts with two). The
+  single `internals.md` page became `internals/packages.md` and the
+  vendor bring-up guide `internals/vendor-support.md` is its peer.
+  The rename was done on master, not on the website branch: it
+  touches root `CLAUDE.md` and about nine files in `plan/`, and
+  `internals.md` is edited by nearly every feature branch, so a
+  rename parked on a long-lived branch collides with all of them.
+  The page's trailing "Test harnesses" section was recast as a
+  Python packages section, parallel to the Go and npm ones, and
+  `smoketest/` documented there for the first time.
 - Home page: add the broader "technical resource for GNSS hardware"
   claim once the hardware and module content backs it up.

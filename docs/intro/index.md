@@ -1,5 +1,7 @@
 ---
 title: Introduction
+redirect_from:
+  - /intro.html
 ---
 
 This section introduces the main concepts behind SatPulse.

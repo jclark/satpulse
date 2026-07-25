@@ -109,4 +109,8 @@ docs:
       - title: "Windows PTP client"
         url: "/howtos/ptp-windows.html"
   - title: "Internals"
-    url: "/internals.html"
+    children:
+      - title: "Packages"
+        url: "/internals/packages.html"
+      - title: "Supporting a new vendor"
+        url: "/internals/vendor-support.html"
