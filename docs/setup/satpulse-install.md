@@ -48,6 +48,6 @@ After this, you will have:
 * the SatPulse daemon installed as `/usr/local/sbin/satpulsed`
 * the configuration file for the daemon installed as `/usr/local/etc/satpulse.toml`
 * the systemd service template unit file for the daemon installed as `/etc/systemd/system/satpulse@.service`
-* the SatPulse command line tool installed as `/usr/local/sbin/satpulsetool`
+* the SatPulse command line tool installed as `/usr/local/bin/satpulsetool`
 
 On BSD (macOS or FreeBSD), build using the `bsd-build.sh` script, and copy the binaries into place manually.

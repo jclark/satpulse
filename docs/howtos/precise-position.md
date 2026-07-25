@@ -12,7 +12,8 @@ Online PPP services typically expect the data to be in [RINEX](https://igs.org/w
 This document explains how to use SatPulse to collect the data, convert it to RINEX format.
 It also explains how to use one particular PPP service, the CSRS-PPP service operated by Canadian Geodetic Survey of Natural Resources Canada. Although this service is operated by the Canadian Government, it works for data collected anywhere in the world.
 
-This needs a u-blox timing or high-precision module (names have a a T or P suffix, like LEA-M8T or ZED-F9P): u-blox is needed because SatPulse currently only knows how to configure GNSS receivers that use u-blox's UBX protocol; a timing or high-precision module is needed because only they have a timing mode and support raw output.
+This guide is written for u-blox receivers.
+A timing or high-precision module (names have a T or P suffix, like LEA-M8T or ZED-F9P) is needed because only they have a timing mode and support raw output.
 
 ## Creating RINEX observation file for submission
 
@@ -92,7 +93,15 @@ Turn off raw output
 satpulsetool gps --socket /var/run/satpulse.sock --raw-out none
 ```
 
-Now convert to RINEX using convbin from RTKLIB
+Now convert to RINEX using `satpulsetool convobs` {% include new-in-03.html %}
+
+```
+satpulsetool convobs -r ubx -o YYYYMMDD.obs YYYYMMDD.ubx
+```
+
+See the [satpulsetool-convobs(1)]({%link man/satpulsetool-convobs.1.md %}) man page for full details.
+
+Alternatively, you can convert using convbin from RTKLIB
 
 ```
 convbin -od -os YYYYMMDD.ubx -o YYYYMMDD.obs

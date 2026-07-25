@@ -1,24 +1,9 @@
 ---
-title: Precision Time Measurement (PTM)
+title: PTM hardware
 ---
 
-PTP hardware support allows precise synchronization of a GPS with a NIC clock, and allows precise
-synchronization over the network between the clock of one NIC and the clock of another NIC.
-But almost all computer software is written to make use of the computer's system clock rather than a NIC clock.
-This means that the system clock needs to synchronized with the NIC clock,
-but PTP deals only with NIC clocks and does not help with this.
+See [Synchronizing the system clock]({% link intro/timing.md %}#synchronizing-the-system-clock) for what PTM and cross timestamping are and why they are useful.
 
-PTM is a PCI Express (PCIe) feature that enables devices on the PCIe bus to synchronize their clocks.
-In particular, it provides hardware support for precise synchronization of the
-NIC clock and the system clock.
-At a high-level, it's like PTP, but for the PCIe bus rather than the network.
-PTM requires support from both the network card and the computer (specifically the motherboards chipset's PCIe subsystem).
-
-The Linux kernel enables applications to take advantage
-of PTM using a system call that performs *cross timestamping*, which
-means that a single system call fetches both the system time and the
-time of a NIC clock simultaneously.
-(The system call is the PTP_SYS_OFFSET_PRECISE ioctl.)
 You can tell whether a particular NIC supports cross timestamping
 by using the `phc_ctl` command from the `linuxptp` package with just the interface name as the argument. The last line of the output will say
 `has cross timestamping support` if cross timestamping support is working for that NIC.

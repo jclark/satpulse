@@ -32,6 +32,7 @@ enable_copy_code_button  : # true, false (default)
 copyright                : "James Clark"
 copyright_url            : # "copyright" URL, defaults to site.url
 man_prerelease_notice    : true # show pre-release banner on man pages; set true during development
+prerelease_labels        : true # show "new in 0.3" labels on tutorial pages; set false when 0.3 final ships
 comments:
   provider               : # false (default), "disqus", "discourse", "facebook", "staticman", "staticman_v2", "utterances", "giscus", "custom"
   disqus:
