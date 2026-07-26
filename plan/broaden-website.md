@@ -87,18 +87,14 @@ docs:
         url: "/setup/workbench.html"
       - title: "Run satpulsed"
         url: "/setup/satpulsed.html"
-      - title: "Without a PHC"
-        url: "/setup/without-phc.html"
-      - title: "Setup chrony"
-        url: "/setup/chrony.html"
       - title: "Monitoring"
         url: "/setup/monitor.html"
-      - title: "Setup PHC synchronization"
-        url: "/setup/phc.html"
-      - title: "Setup ptp4l"
-        url: "/setup/ptp4l.html"
       - title: "Setup RTK"
         url: "/setup/rtk.html"
+      - title: "Use with NTP"
+        url: "/setup/ntp.html"
+      - title: "Use with a PHC"
+        url: "/setup/phc.html"
   - title: "GPS configuration"
     children:
       - title: "Overview"
@@ -158,8 +154,8 @@ other differences from the deployed navigation -- the Setup retitles
 and reordering, the removal of the setup GPS configuration entry, and
 the `satpulsewb(1)` man-page entry -- follow from stages 2-4; the
 retirement of the RTK and precise-position howtos follows 0.3 final. The Setup
-list reads baseline first, through Monitoring, then the
-precision-timing pages, matching the stage 2 two-track index.
+list reads baseline first, through Monitoring, then the add-on
+pages: RTK, then the two timing pages, matching the stage 2 index.
 The workbench deliberately gets a Setup entry, not a top-level
 section: it is one page, placed after Serial connection so that
 device name, permissions, and baud rate are established before it.
@@ -210,7 +206,7 @@ The home page is not reworked once. It evolves alongside the rest of
 the site, and its claims must never outrun what the other pages can
 back up. The first step, now done, put an honest, vision-led
 transitional page in place. Each later stage earns one more home-page
-claim: the accessible no-PHC timing path in stage 2, the workbench
+claim: the accessible NTP timing path in stage 2, the workbench
 paragraph in stage 3, the broader technical-resource claim in stage 5
 once the hardware content is filled in.
 
@@ -287,7 +283,7 @@ Misleading -- a few sentences each, same pass:
 
 - `setup/index.md`: "use of SatPulse for a PTP/NTP time server
   requires a PHC" -- true only for PTP. One-line interim fix; the
-  two-track rewrite is stage 2.
+  full index restructure is stage 2.
 - `setup/satpulsed.md`: auto-configuration described as u-blox-only
   (omits Unicore, and u-blox support extends beyond generation 10);
   the minimal example config presents `[phc]` as part of the minimum.
@@ -362,41 +358,91 @@ follow-up work are recorded elsewhere: VRS support in stage 3, and
 the howto's retirement, which follows 0.3 final, in the navigation
 section above and in stage 3's note.
 
-### Make setup no-PHC first
+### Make timing an optional add-on
 
 The current site makes SatPulse look as if it is only for users who
-already have niche PHC/PPS hardware. That is a major adoption barrier.
-Make no-PHC operation the baseline setup path, and make PHC
-synchronization an optional precision-timing step.
+already have niche PHC/PPS hardware. That is a major adoption
+barrier. Restructure setup so the baseline path has no timing
+content at all, with timing and RTK as independent optional add-on
+branches on top of it.
 
 Nothing blocks this: the default `satpulse.toml` ships with
-`phc.interface` commented out, and its header says the only entry that
-must be edited to get satpulsed started is the serial speed. The
-no-PHC baseline works out of the box, and `[ntp]` without `[phc]` is
-stable 0.2 behaviour, so the baseline track needs no version labels.
+`phc.interface` commented out, and its header says the only entry
+that must be edited to get satpulsed started is the serial speed.
+The baseline works out of the box, and `[ntp]` without `[phc]` is
+stable 0.2 behaviour, so the NTP timing page needs no version
+labels.
 
-Rewrite `setup/index.md` as two tracks. Baseline (works for everyone):
-OS setup as applicable, install SatPulse, serial connection and
-satpulsetool contact check, configure and run `satpulsed`, feed chrony
-without a PHC, monitor. Precision timing (PHC hardware): PHC/PPS
-identification, PHC synchronization, chrony on the PHC, ptp4l. Stage 3
-inserts the workbench into the baseline track.
+The baseline gets the receiver connected, satpulsed running, and
+monitoring working: OS setup as applicable, install SatPulse,
+serial connection and satpulsetool contact check, configure and run
+`satpulsed`, monitor. Stage 3 inserts the workbench into it. Timing
+splits into two pages by accuracy class and hardware:
 
-The follow-through in the child pages:
+- `setup/ntp.md` (nav "Use with NTP"): NTP service on ordinary
+  hardware, microsecond class.
+- `setup/phc.md` (nav "Use with a PHC"): precision timing with PHC
+  hardware, which is unusual, specialist hardware.
 
-- Make the without-PHC page read like a normal setup path rather than
-  a fallback for users missing the "real" hardware. Source notes: the
-  timing-without-a-PHC post and any existing no-PHC setup material.
-  The page should state the accuracy class honestly and link to PHC
-  synchronization as the upgrade path.
-- Keep `setup/phc.md` focused on configuring SatPulse to discipline a
-  PHC. Hardware requirements and buying guidance should live in the
-  hardware section. chrony and ptp4l integration should remain in
-  their own task pages.
-- chrony should cover both the no-PHC baseline and the PHC-backed
-  case. ptp4l should be clearly PHC-dependent. This keeps external
-  software setup consistent with the new baseline instead of implying
-  that all useful SatPulse setups require PTP hardware.
+How you configure satpulsed is tied up with how you configure the
+external daemon -- the two configurations have to match -- so each
+timing page covers the satpulse end and the daemon end together
+rather than splitting them across per-daemon task pages. The
+separate chrony and ptp4l pages are superseded by this. Page length
+is not a concern; the per-page table of contents carries the
+outline.
+
+Rewrite `setup/index.md` to present this shape: the baseline steps,
+then the add-on branches. It also states what works where: the
+baseline and RTK are platform-neutral for Unix-like systems
+including macOS; both timing pages are Linux-only and are marked as
+such at the top, since macOS has no good PPS mechanism yet. On
+macOS the useful path is the baseline.
+
+The timing pages are mostly rearrangement of existing pages and the
+two timing blog posts, not new writing:
+
+- `setup/ntp.md` (new). Concept framing from the
+  timing-without-a-PHC post (2026-04-01): the serial-timed `[ntp]`
+  samples identify the seconds while the NTP daemon reads a PPS for
+  the edges. Working material from the NTP-server-on-a-Pi post
+  (2026-04-06): the `pps-gpio` overlay and ppstest verification,
+  the `[ntp]`-without-`[phc]` satpulse.toml, and the chrony and
+  ntpd-rs configurations. The SOCK basics (package install,
+  refclock line, restart) come from `setup/chrony.md`. Serial-only
+  operation with no PPS gets a sentence stating its accuracy class
+  as the degraded case, not a peer configuration. The page opens by
+  saying that using NTP with a PHC is covered on the PHC page, and
+  links there as the upgrade path. The chrony PHC-extpps variant
+  from the first post is deliberately not documented: it is the
+  stopgap that the free-running PHC work (#256, #257) replaces.
+- `setup/phc.md` (expanded in place; the filename and URL stay).
+  The existing verify-PPS-input content remains the opening task.
+  Then one section per arrangement, each giving the satpulse end
+  and the daemon end together. Initially there is one arrangement,
+  satpulsed disciplines the PHC: the `[phc]` table material moved
+  from `setup/satpulsed.md`, chrony via SOCK (system clock plus
+  NTP service, from `setup/chrony.md`), and ptp4l (all of
+  `setup/ptp4l.md`, including the `[ptp]` connection), reading as
+  the optional last step. The per-arrangement structure exists for
+  the free-running modes (#256, #257): when they ship, each
+  arrives as a further section covering hardware-timestamped NTP
+  with a free-running PHC. They are not documented before then.
+- `setup/satpulsed.md` becomes platform-neutral. The minimal
+  example no longer presents `[phc]` as part of the minimum (that
+  material moves to the PHC page); the systemd material moves into
+  a Linux-specific subsection; a macOS note points at the Homebrew
+  tap (`jclark/homebrew-satpulse`). It absorbs the residue of
+  `setup/without-phc.md`: satpulsed runs without root when there
+  is no `[phc]`, which functionality applies without one, and the
+  satpulsetool note. The macOS example config collapses into the
+  now-PHC-free minimal example.
+- Retirements, per the conventions in `docs/CLAUDE.md`:
+  `setup/without-phc.md` is deleted with its `redirect_from` on
+  `setup/satpulsed.md`; `setup/chrony.md` and `setup/ptp4l.md` are
+  superseded (out of the navigation, `sitemap: false`) until their
+  content is confirmed covered, then deleted with redirects to
+  `setup/phc.md`.
 
 ### Other stage 2 items
 
@@ -416,7 +462,7 @@ The follow-through in the child pages:
   `setup/gps-config.md`, but that page goes away in stage 4, so
   labelling it there is worth little.
 - Home page: strengthen the timing door to offer the accessible
-  no-PHC path up front, now that setup has a coherent one, and point
+  NTP path up front, now that setup has a coherent one, and point
   the positioning material at the RTK setup workflow instead of the
   howto.
 
