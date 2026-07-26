@@ -44,10 +44,10 @@ Most of SatPulse's timing functionality is designed to support use of a PHC. `sa
 SatPulse is designed to support the use of hardware RTK. These features are new in 0.3.
 `satpulsed` can
 
-- act as a Ntrip caster, serving RTCM corrections from the GPS receiver to Ntrip clients
+- act as an Ntrip caster, serving RTCM corrections from the GPS receiver to Ntrip clients
 - act as an Ntrip server, pushing RTCM corrections from the GPS receiver to an Ntrip caster
 - pull RTCM corrections from an Ntrip caster or a TCP server, feeding them to the GPS receiver
-- convert RTCM MSM7 packets to MSM4 when acting as a Ntrip caster or server
+- convert RTCM MSM7 packets to MSM4 when acting as an Ntrip caster or server
 
 `satpulsetool` provides the `ntrip` tool for fetching correction data from an Ntrip caster.
 

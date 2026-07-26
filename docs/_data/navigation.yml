@@ -77,6 +77,8 @@ docs:
         url: "/setup/monitor.html"
       - title: "Use without a PHC"
         url: "/setup/without-phc.html"
+      - title: "Setup RTK"
+        url: "/setup/rtk.html"
 
   - title: "Man pages"
     children:

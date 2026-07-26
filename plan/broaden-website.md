@@ -155,9 +155,9 @@ deployed; the new pages still to come are GNSS HATs, the workbench
 setup page, the setup RTK workflow, the GPS configuration section, and
 the Internals section's AI usage page. The
 other differences from the deployed navigation -- the Setup retitles
-and reordering, the removal of the setup GPS configuration entry, the
-retirement of the RTK and precise-position howtos, and the
-`satpulsewb(1)` man-page entry -- follow from stages 2-4. The Setup
+and reordering, the removal of the setup GPS configuration entry, and
+the `satpulsewb(1)` man-page entry -- follow from stages 2-4; the
+retirement of the RTK and precise-position howtos follows 0.3 final. The Setup
 list reads baseline first, through Monitoring, then the
 precision-timing pages, matching the stage 2 two-track index.
 The workbench deliberately gets a Setup entry, not a top-level
@@ -351,17 +351,20 @@ side topic rather than in the setup path, and setup implies that
 niche PHC/PPS hardware is required. Nothing here depends on a new
 pre-release.
 
-### Move RTK from Howtos into Setup
+### Add RTK to Setup
 
 This comes first in the stage: it gates on nothing else in the
 stage, and since stage 1 leaves the howto pointing at the man pages,
 the new page is the first tutorial documentation of the native Ntrip
 capabilities.
 
-Move and update the RTK material: `howtos/rtk.md` becomes
-`setup/rtk.html`, with a `redirect_from` entry for the old howto URL
-on the new page, following the moved-page convention in
-`docs/CLAUDE.md`. It should cover receiver RTCM output,
+Write a new page, `setup/rtk.html`, based on the RTK material in
+`howtos/rtk.md`. The old howto stays in the Howtos nav alongside it
+until 0.3 final ships: its recipes are how to do RTK on stable 0.2,
+so its opening notice says it describes 0.2 and points pre-release
+users at the new page. When 0.3 final ships, the howto is retired
+under the superseded-page convention, with its URL redirecting to
+the new page. The new page should cover receiver RTCM output,
 SatPulse as a local Ntrip caster, upstream Ntrip use, rover correction
 input, mountpoints, source tables, authentication, and verification.
 Write the page device-independently using the high-level
@@ -448,6 +451,13 @@ The workbench is currently invisible on the site: only NEWS and the
 `satpulsewb(1)` man page mention it. This stage is almost entirely
 additive. A launch blog post is promotion, not alignment, and follows
 the stage rather than being part of it.
+
+The fresh pre-release also unblocks one RTK item: Virtual Reference
+Station support (`ntrip.nmeaSend` and `ntrip.nmeaSendInterval` on
+`[stream.pull]`, and `--nmea-send-pos` on `satpulsetool ntrip`, #325)
+landed after v0.3-pre-20260619, so the stage 2 RTK setup page
+deliberately omits it. Add it to that page as soon as the pre-release
+is cut.
 
 The steps, in order:
 

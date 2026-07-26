@@ -65,7 +65,7 @@ RTK works reliably when the base and rover are within 10-20km of each other;
 in optimum conditions it can work up to 100km or so.
 
 The most common protocol used to transfer corrections from the base to the rover is Ntrip.
-The Ntrip protocol defines three roles. A Ntrip caster acts as an intermediary.
+The Ntrip protocol defines three roles. An Ntrip caster acts as an intermediary.
 An RTK base station acts as an Ntrip server pushing RTCM corrections to an Ntrip caster.
 An RTK rover acts as an Ntrip client pulling RTCM corrections from an Ntrip caster.
 
@@ -105,6 +105,7 @@ MSM7 messages both provide corrections to the rover and enable the absolute posi
 Vendors often like to sell receivers for rovers and bases in matched pairs, but it should be clear from the above that these two roles
 require different capabilities. A base receiver does not need to have the capability to perform RTK calculations
 and a rover receiver using hardware RTK does not need to have the capability to emit MSM RTCM messages.
+The requirements for an RTK base are in fact closer to those for a receiver used for [precision timing]({% link intro/timing.md %}): both need a stationary antenna with a precisely known position.
 
 ## Carrier phase
 

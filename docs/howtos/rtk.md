@@ -2,10 +2,9 @@
 title: Using RTK
 ---
 
-Since this guide was written, the 0.3 pre-release has added native support for correction delivery:
-satpulsed can act as an NTRIP caster, server, and client, and can pull corrections over a plain TCP connection.
-The recipes below use external tools (socat, rtklib) and still work, but the native support is simpler;
-see the `ntrip` and `stream` tables in [satpulse.toml(5)]({%link man/satpulse.toml.5.md %}).
+This page describes how to set up RTK with SatPulse 0.2, using external tools (socat, rtklib).
+If you are running the 0.3 pre-release, see the [RTK setup]({% link setup/rtk.md %}) page for a much easier way
+using the native support for RTCM and Ntrip.
 {: .notice--info}
 
 Real-Time Kinematic (RTK) positioning is a precision positioning technology, which uses two GNSS receivers: a base station with a precisely known position which provides correction data in the form of RTCM messages, and a rover, which can use this correction data to determine its position with centimeter-level accuracy.
