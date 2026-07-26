@@ -152,7 +152,7 @@ docs:
 
 The Introduction, Hardware and Internals lists reflect what is now
 deployed; the new pages still to come are GNSS HATs, the workbench
-setup page, the setup RTK workflow, the GPS configuration section, and
+setup page, the GPS configuration section, and
 the Internals section's AI usage page. The
 other differences from the deployed navigation -- the Setup retitles
 and reordering, the removal of the setup GPS configuration entry, and
@@ -351,35 +351,16 @@ side topic rather than in the setup path, and setup implies that
 niche PHC/PPS hardware is required. Nothing here depends on a new
 pre-release.
 
-### Add RTK to Setup
+### Add RTK to Setup (done)
 
-This comes first in the stage: it gates on nothing else in the
-stage, and since stage 1 leaves the howto pointing at the man pages,
-the new page is the first tutorial documentation of the native Ntrip
-capabilities.
-
-Write a new page, `setup/rtk.html`, based on the RTK material in
-`howtos/rtk.md`. The old howto stays in the Howtos nav alongside it
-until 0.3 final ships: its recipes are how to do RTK on stable 0.2,
-so its opening notice says it describes 0.2 and points pre-release
-users at the new page. When 0.3 final ships, the howto is retired
-under the superseded-page convention, with its URL redirecting to
-the new page. The new page should cover receiver RTCM output,
-SatPulse as a local Ntrip caster, upstream Ntrip use, rover correction
-input, mountpoints, source tables, authentication, and verification.
-Write the page device-independently using the high-level
-configuration model (`rtcmOutput`, `--rtcm-out`, `--speed`, `--gnss`
-cover u-blox and Unicore alike), dropping the howto's u-blox framing.
-Source notes: `howtos/rtk.md`, `plan/archive/ntrip-caster.md`,
-`plan/archive/ntrip-client.md`, and `plan/archive/stream-pull-daemon.md`.
-
-The rewritten setup workflow should distinguish base and rover
-requirements. A base needs a known antenna position and the ability to
-emit appropriate RTCM correction messages; a rover needs to accept
-corrections and compute an RTK position solution. Do not imply that
-RTCM output alone makes a receiver fully RTK-capable: typically a
-rover-capable receiver can also act as a base, but the reverse is not
-guaranteed.
+Done: `setup/rtk.html` is written, device-independent and verified
+against the pre-release, and sits at the end of the Setup nav until
+the reordering below places it properly. The old howto stays in the
+Howtos nav, its opening notice framing it as the 0.2 path and
+pointing pre-release users at the new page. The two pieces of
+follow-up work are recorded elsewhere: VRS support in stage 3, and
+the howto's retirement, which follows 0.3 final, in the navigation
+section above and in stage 3's note.
 
 ### Make setup no-PHC first
 
@@ -457,7 +438,9 @@ Station support (`ntrip.nmeaSend` and `ntrip.nmeaSendInterval` on
 `[stream.pull]`, and `--nmea-send-pos` on `satpulsetool ntrip`, #325)
 landed after v0.3-pre-20260619, so the stage 2 RTK setup page
 deliberately omits it. Add it to that page as soon as the pre-release
-is cut.
+is cut. The other outstanding RTK item, retiring the howto with a
+redirect to the setup page, is gated on 0.3 final, not on this
+pre-release.
 
 The steps, in order:
 
