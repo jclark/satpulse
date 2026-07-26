@@ -143,13 +143,15 @@ docs:
         url: "/internals/packages.html"
       - title: "Supporting a new vendor"
         url: "/internals/vendor-support.html"
+      - title: "Configuration semantics"
+        url: "/internals/config-semantics.html"
       - title: "AI usage"
         url: "/internals/ai-usage.html"
 
 The Introduction, Hardware and Internals lists reflect what is now
 deployed; the new pages still to come are GNSS HATs, the workbench
 setup page, the GPS configuration section, and
-the Internals section's AI usage page. The
+the Internals section's AI usage and configuration semantics pages. The
 other differences from the deployed navigation -- the Setup retitles
 and reordering, the removal of the setup GPS configuration entry, and
 the `satpulsewb(1)` man-page entry -- follow from stages 2-4; the
@@ -450,6 +452,15 @@ two timing blog posts, not new writing:
   Homebrew tap (`jclark/homebrew-satpulse`), and update the trailing
   BSD sentence now that brew covers macOS. This is true of the
   published pre-release and does not wait on the workbench.
+- Complete the macOS baseline story. The setup guide says that the
+  baseline works on macOS, but the instructions do not yet form a
+  coherent path through installation, finding the serial connection,
+  configuring and running satpulsed as a Homebrew service, and
+  monitoring it. Some of the task pages still assume Linux device
+  names, systemd, and Linux filesystem paths. Review the path
+  end-to-end and fill these gaps without deciding in advance whether
+  the macOS material belongs in the existing task pages, in a macOS
+  section of the setup guide, or on a separate page.
 - `setup/satpulse-install.md`, same pass: the package table offers
   only `_amd64.deb` and `_arm64.deb`, but the release also ships an
   `armhf` .deb built for ARMv6 (#305), so a Pi Zero user has no way
@@ -506,7 +517,9 @@ The steps, in order:
    the UI greys out what a receiver does not support. Include one
    crisp sentence distinguishing the workbench from the satpulsed
    dashboard: the workbench is the interactive commissioning tool you
-   run; the dashboard is observability for the deployed daemon.
+   run; the dashboard is observability for the deployed daemon. The
+   configuration material points at `gps-config/high-level.md` for
+   the concepts behind the Configuration tab.
 
 3. Screenshots. A handful: sky view with signals, the config tab, the
    packet inspector, map/scatter. Manual captures from a live session
@@ -547,20 +560,42 @@ u-blox first, more vendors later).
 
 By this stage there are three frontends to one configuration model
 (the `satpulsed` config file, `satpulsetool gps`, and the workbench
-config and messages tabs), and that is itself a selling point. Open
-decision: write the section concepts-first, with each concept page
-showing the workbench UI and the CLI as parallel means (workbench
-screenshots as the default illustration, CLI kept for scripting and
-headless use), versus keeping the section CLI-oriented with the
-workbench page self-contained. Whichever way, state high-level vendor
-coverage as a growing matrix rather than prose that hard-codes today's
-vendor list.
+config and messages tabs), and that is itself a selling point. The
+once-open decision between a concepts-first and a CLI-oriented
+section is resolved: the section is written concepts-first, with the
+three frontends presented as users of one model. The concept pages
+carry no screenshots; screenshots belong to the stage 3 workbench
+page, which refers to the high-level configuration page to explain
+the concepts behind its Configuration tab. State high-level vendor
+coverage as a growing matrix rather than prose that hard-codes
+today's vendor list.
 
-The first coherent version should explain high-level configuration,
-message files, volatile versus persistent changes, `satpulsed` versus
-`satpulsetool gps`, and the current u-blox support. Source notes: the
-old setup GPS configuration page, the GPS message files post, and the
-u-blox material.
+The first version of `gps-config/high-level.md` is written, ahead of
+the stage ordering (stages order work; they do not gate it). It is a
+concept-level distillation: the three kinds of things (properties,
+message output, actions), one big request, configuration groups,
+best-effort requests, the two kinds of message output, volatile
+versus saved changes, and the frontend division (satpulsed applies a
+deliberately non-disruptive subset in production; satpulsetool and
+the workbench have the full model, for commissioning). The page
+sits orphaned on the website branch, out of the navigation and with
+`sitemap: false`, until the whole GPS configuration section lands.
+
+The underlying semantics specification, `gpshwtest/SEMANTICS.md`,
+moves to the published Internals section, and the high-level page
+links down to it instead of restating it (a TODO on the page marks
+the link). The move itself is a master-branch change, since it
+touches `gpshwtest/` files that feature branches edit.
+
+The section's overview page introduces the high-level and low-level
+(message file) layers and how they relate; the per-vendor pages
+explain, among other things, how high-level configuration is
+realized in each vendor protocol.
+
+The first coherent version of the section builds the overview,
+message files, and the current u-blox support around the high-level
+page. Source notes: the old setup GPS configuration page, the GPS
+message files post, and the u-blox material.
 
 Make the message-file page depend on the high-level configuration
 page, so users understand why low-level messages are sometimes needed
