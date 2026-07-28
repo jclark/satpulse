@@ -207,7 +207,7 @@ The address here matches the `proxy.tcp` configuration on the base shown above.
 ### Verifying the solution
 
 To see whether the rover has an RTK solution, use the web GUI of satpulsed's [HTTP monitoring interface]({% link setup/monitor.md %}#http-monitoring-interface).
-Enable it on the rover by adding an `[[http]]` section:
+Enable it on the rover by adding an `[[http]]` table:
 
 ```
 [[http]]

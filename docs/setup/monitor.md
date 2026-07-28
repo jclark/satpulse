@@ -41,13 +41,13 @@ Show only summary lines (periodic statistics):
 sudo journalctl -u satpulse@ttyAMA0 -g summary
 ```
 
-The `interval` key in the `[log]` section controls how often summary statistics are logged (default is 30 seconds).
+The `interval` key in the `[log]` table controls how often summary statistics are logged (default is 30 seconds).
 
 ## Application-specific log files
 
 SatPulse can write detailed logs to files in `/var/log/satpulse/`.
 
-To enable logging, add a `[log]` section to your configuration file:
+To enable logging, add a `[log]` table to your configuration file:
 
 ```toml
 [log]
@@ -84,7 +84,7 @@ SatPulse includes an example [logrotate configuration](https://github.com/jclark
 
 SatPulse provides an HTTP monitoring interface with both a web GUI and Prometheus metrics endpoint.
 
-To enable HTTP monitoring, add an `[[http]]` section to your configuration file:
+To enable HTTP monitoring, add an `[[http]]` table to your configuration file:
 
 ```toml
 [[http]]
@@ -181,7 +181,7 @@ In particular
   - AllyStar has Satrack
 - [Lady Heather](http://www.ke5fx.com/heather/readme.htm) is an open source GPS monitoring tool (use with `/ip` option)
 
-To use these with SatPulse, add a `[[proxy.tcp]]` section to your configuration:
+To use these with SatPulse, add a `[[proxy.tcp]]` table to your configuration:
 
 ```toml
 [[proxy.tcp]]
