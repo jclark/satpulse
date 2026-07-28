@@ -378,16 +378,15 @@ configurations have to match. `setup/satpulsed.md` is
 platform-neutral, with the systemd material in a Linux subsection
 and a macOS section, and absorbed the residue of
 `setup/without-phc.md`, which is deleted with its `redirect_from`.
+`setup/chrony.md` and `setup/ptp4l.md` are also deleted, their
+content confirmed covered, with redirects to `setup/phc.md`.
 
-Two pieces of forward-looking state remain. `setup/phc.md` has one
+One piece of forward-looking state remains. `setup/phc.md` has one
 section per arrangement so that the free-running PHC modes (#256,
 #257) can arrive as further sections when they ship; they are not
 documented before then, and the chrony PHC-extpps variant from the
 timing-without-a-PHC post stays undocumented as the stopgap that
-work replaces. `setup/chrony.md` and `setup/ptp4l.md` are
-superseded (out of the navigation, `sitemap: false`) until their
-content is confirmed covered, then deleted with redirects to
-`setup/phc.md`.
+work replaces.
 
 ### Other stage 2 items
 

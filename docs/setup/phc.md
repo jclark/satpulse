@@ -1,5 +1,8 @@
 ---
 title: Precision timing with a PHC
+redirect_from:
+  - /setup/chrony.html
+  - /setup/ptp4l.html
 ---
 
 This page describes how to use SatPulse for precision timing,
