@@ -13,10 +13,14 @@ Alternatively, you can install from source.
 
 Go to the [Releases](https://github.com/jclark/satpulse/releases) page, then under Assets, select the package with the appropriate extension:
 
-| Distro | Intel/AMD | ARM |
-| --- | --- | --- |
-| Debian-based (includes Raspberry Pi OS, Ubuntu) | `_amd64.deb` | `_arm64.deb` |
-| Fedora-based | `.x86_64.rpm` | `.aarch64.rpm` |
+| Distro | Intel/AMD | 64-bit ARM | 32-bit ARM |
+| --- | --- | --- | --- |
+| Debian-based (includes Raspberry Pi OS, Ubuntu) | `_amd64.deb` | `_arm64.deb` | `_armhf.deb` |
+| Fedora-based | `.x86_64.rpm` | `.aarch64.rpm` | none |
+
+The `_armhf.deb` package is for 32-bit ARM systems, such as the 32-bit version of Raspberry Pi OS. {% include new-in-03.html %}
+Its binaries are built for ARMv6,
+so they work on every Raspberry Pi model, including the Pi Zero.
 
 The `.deb` file can be installed using e.g.
 
