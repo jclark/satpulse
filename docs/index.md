@@ -31,7 +31,7 @@ Its job is to act as a source of time for NTP or PTP.
 It is intended to work with the PTP server provided by the [LinuxPTP](https://linuxptp.nwtime.org/) project, which is called ptp4l,
 and with the NTP server provided by the [chrony](https://chrony-project.org/) project.
 
-The [Setup guide]({% link setup/index.md %}) describes how to get started with a precision time server.
+The [Setup guide]({% link setup/index.md %}) describes how to get started with SatPulse.
 
 
 

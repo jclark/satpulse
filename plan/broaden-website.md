@@ -403,10 +403,6 @@ work replaces.
   belongs in the existing task pages, in a macOS section of the
   setup guide, or on a separate page. The Homebrew tap is in the
   published pre-release, so none of this waits on the workbench.
-- Home page: strengthen the timing door to offer the accessible
-  NTP path up front, now that setup has a coherent one, and point
-  the positioning material at the RTK setup workflow instead of the
-  howto.
 
 ## Stage 3: SatPulse Workbench
 
