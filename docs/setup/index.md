@@ -7,7 +7,7 @@ This section describes how to set up SatPulse and the software that works with i
 
 Before installing SatPulse, you obviously need a working OS.
 SatPulse runs on Unix-like systems, including Linux and macOS.
-When running headless, you should get to the point where you can login with SSH.
+When running headless, you should get to the point where you can log in with SSH.
 
 On a Raspberry Pi,
 I recommend [installing Raspberry Pi OS]({% link setup/rpi-os.md %})

@@ -8,20 +8,22 @@ The main program in SatPulse is `satpulsed`, which is a daemon that
 manages a GPS receiver: it configures the receiver, logs and distributes its packets,
 provides monitoring over HTTP, and can act as a source of time.
 
-On Linux, satpulsed usually runs as a service using systemd.
+Usually, satpulsed is run by the system's service manager (systemd on Linux or launchd on macOS).
 It can also be run from the command line.
 See the [satpulsed]({%link man/satpulsed.8.md%}) for details.
 In either case a configuration is necessary to run satpulsed.
-satpulsed needs access to the GPS serial device,
-which typically any member of the `dialout` group has;
+satpulsed needs access to the GPS serial device;
 it does not need root privileges unless it is synchronizing a PHC.
+satpulsed writes a log to stdout;
+see [Running as a service](#running-as-a-service) for how to access this when running under a service manager.
 
 ## Configuration file
 
 The service expects the configuration file to be at: 
 
-- `/etc/satpulse.toml` if you installed from a package
-- `/usr/local/etc/satpulse.toml` if you installed from source
+- on Linux, `/etc/satpulse.toml` if you installed from a package,
+  or `/usr/local/etc/satpulse.toml` if you installed from source
+- on macOS, `/opt/homebrew/etc/satpulse.toml`
 
 satpulsed reads the configuration file when it starts,
 so restart it after changing the file.
@@ -58,7 +60,7 @@ comment it out unless you are [synchronizing a PHC]({% link setup/phc.md %}).
 
 The `[serial]` table must specify the speed that the GPS is using,
 and can also specify the serial device.
-On Linux, the serial device is usually specified as part of the systemd service name in systemd commands,
+Usually the serial device is supplied by the service manager,
 but it can also be added to the `[serial]` table,
 which is useful for when satpulsed is run directly from the command-line, for example:
 
@@ -119,9 +121,12 @@ unless the serial speed is at least 38400.
 
 See [GPS configuration]({%link setup/gps-config.md %}) for more information about using `satpulsetool gps`. 
 
-## Running as a service on Linux
+## Running as a service
 
-The systemd service template name is `satpulse@.service` and the expected argument is the serial device name without `/dev/`.
+### Linux
+
+On Linux, satpulsed usually runs as a service using systemd.
+The service template name is `satpulse@.service` and the expected argument is the serial device name without `/dev/`.
 For example, if the serial device is `/dev/ttyAMA0`, then the instantiated service would be named `satpulse@ttyAMA0.service`.
 Systemd commands need to be given the instantiated service name (although typically the `.service` part can be left out).
 
@@ -155,16 +160,33 @@ Restart the service:
 sudo systemctl restart satpulse@ttyAMA0.service
 ```
 
-Enable the service:
+The service logs to the systemd journal.
+Use `journalctl` to view the logs:
 
 ```
-sudo systemctl enable satpulse@ttyAMA0.service
+sudo journalctl -u satpulse@ttyAMA0
 ```
 
-## Running on macOS
+Show logs for the last 5 minutes:
 
-satpulsed also works on macOS.
-Install from the [Homebrew tap](https://github.com/jclark/homebrew-satpulse),
-which can also run satpulsed as a service;
-the service locates the USB serial device of the GPS receiver automatically when it starts.
-All of `satpulsetool` also works on macOS, except `satpulsetool sdp`, which requires PHC support.
+```
+sudo journalctl -u satpulse@ttyAMA0 -S -5m
+```
+
+Follow the logs in real-time:
+
+```
+sudo journalctl -u satpulse@ttyAMA0 -f
+```
+
+Show only warnings and errors:
+
+```
+sudo journalctl -u satpulse@ttyAMA0 -p 0..4
+```
+
+### macOS
+
+On macOS, the service is managed with `brew services`,
+as described in the [Homebrew tap](https://github.com/jclark/homebrew-satpulse). {% include new-in-03.html %}
+The service writes the daemon's log output to files under `/opt/homebrew/var/log/satpulse/`.

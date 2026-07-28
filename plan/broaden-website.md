@@ -388,21 +388,54 @@ documented before then, and the chrony PHC-extpps variant from the
 timing-without-a-PHC post stays undocumented as the stopgap that
 work replaces.
 
-### Other stage 2 items
+### Make the docs work for macOS (mostly done)
 
-- Complete the macOS baseline story. The setup guide says that the
-  baseline works on macOS, but the instructions do not yet form a
-  coherent path through installation, finding the serial connection,
-  configuring and running satpulsed as a Homebrew service, and
-  monitoring it. `setup/satpulse-install.md` needs a macOS section
-  covering the Homebrew tap (`jclark/homebrew-satpulse`), with the
-  trailing BSD sentence updated now that brew covers macOS, and
-  some of the task pages still assume Linux device names, systemd,
-  and Linux filesystem paths. Review the path end-to-end and fill
-  these gaps without deciding in advance whether the macOS material
-  belongs in the existing task pages, in a macOS section of the
-  setup guide, or on a separate page. The Homebrew tap is in the
-  published pre-release, so none of this waits on the workbench.
+The placement question is settled: documentation of the formula's
+own contract -- channels, install commands, `brew services`,
+find-serial.env, file layout, paths under the Homebrew prefix --
+lives in the tap README and is not duplicated on the site beyond a
+sentence or two; the site does the routing and the OS-level
+deltas, in the existing task pages rather than a separate macOS
+page. Within the task pages, sentences are not made gratuitously
+system-specific; genuinely system-specific content is scoped per
+OS, with the macOS parallel next to the Linux material. Pages
+assume the reading order of `setup/index.md`, so a point made on
+an earlier page is not repeated. macOS material carries the "new
+in 0.3" label.
+
+Done: `setup/satpulse-install.md` has the macOS Homebrew section,
+and install-from-source is factored into common steps plus
+per-platform build steps (make on Linux, `unix-build.sh` on macOS
+and FreeBSD, `win-build.ps1` on Windows). `setup/gps-serial.md`
+has Linux and macOS device-name subsections, the macOS one
+covering the cu/tty device pair and find-serial (including
+`--exec` and `--wait`); its legacy no-satpulsetool verification
+section moved to `setup/serial-without-satpulsetool.md`, kept
+untracked in case it moves to a non-satpulse repo.
+`setup/satpulsed.md` is framed around the system's service
+manager, with per-OS config file locations and Linux/macOS
+service subsections; its satpulsetool-except-sdp sentence is
+deleted, since satpulsetool platform coverage belongs to the
+stage 3 `intro/satpulse.md` platform-support fill.
+
+The `setup/monitor.md` work came out differently than first
+planned: the service-manager log material moved out of the
+monitoring page into the per-OS service subsections of
+`setup/satpulsed.md` (after starting the service is when you
+want to see the logs), leaving the monitoring page fully
+platform-neutral; and the periodic timing summary with its
+`interval` key turned out to be PHC-specific, so it is
+documented in `setup/phc.md`, with the journalctl summary-filter
+example alongside it.
+
+Remaining, on the tap side: a next-steps link from its README
+into the setup guide, plus slimming its "Serial devices"
+section now that the site's serial page explains find-serial.
+`setup/index.md` needs nothing: it already states the
+platform-neutral baseline, and the install page carries the
+macOS entry point. Noted for master, outside this slice:
+`satpulse.toml(5)` should say that `log.interval` produces
+summaries only when synchronizing a PHC.
 
 ## Stage 3: SatPulse Workbench
 
@@ -428,7 +461,13 @@ pre-release.
 
 The steps, in order:
 
-1. Cut the pre-release.
+1. Cut the pre-release. Re-point the Homebrew pre channel to the
+   same commit, and extend the formula to install `satpulsewb` and
+   its man page (both channels currently build it but do not
+   install it). Optionally add keep_alive to the service using
+   find-serial `--wait`, which has landed and composes with
+   `--vid`/`--pid`, satisfying the formula's no-keep_alive
+   comment.
 
 2. Write the workbench page (`setup/workbench.md`, nav "Using
    SatPulse Workbench", after "Serial connection"). One page: what it
@@ -483,7 +522,10 @@ Receiver configuration is a core SatPulse capability, but it is
 currently buried in the setup path. Remove the existing setup GPS
 configuration page and build a top-level GPS configuration section as
 in the outline (overview, high-level configuration, message files,
-u-blox first, more vendors later).
+u-blox first, more vendors later). Removing the setup page also
+means updating the two links to it in `setup/satpulsed.md` (the
+unsupported-receivers pointer and the closing satpulsetool-gps
+pointer).
 
 By this stage there are three frontends to one configuration model
 (the `satpulsed` config file, `satpulsetool gps`, and the workbench

@@ -10,6 +10,8 @@ But for configuration it needs a 2-way connection where it can also send data to
 
 ## Determining the device name
 
+### Linux
+
 The device name depends on how the GPS module is connected:
 
 * a connection to the pins on a Raspberry Pi CM4/CM5 will usually be `/dev/ttyAMA0`
@@ -23,6 +25,46 @@ You may need to change 0 in the device name to a larger number.
 `/dev/ttyUSB0` and `/dev/ttyACM0` are USB devices and they exist in `/dev` only when they are connected,
 so you can use `ls` to find what you have available.
 When you plug such a device in, there will be a kernel log message, which you can see using `dmesg | tail`.
+
+### macOS
+
+On macOS, a USB serial device shows up as a pair of device nodes,
+for example `/dev/cu.usbmodem11301` and `/dev/tty.usbmodem11301`;
+the one intended for outbound use is `/dev/cu.*`.
+You can use `ls /dev/cu.*` to see what you have.
+The device name changes depending on which USB port or hub the device is plugged into,
+and macOS has no equivalent of the stable device names that udev provides on Linux.
+SatPulse provides `find-serial` for dealing with this:
+a macOS-specific utility written in C, which is included in the Homebrew tap. {% include new-in-03.html %}
+
+Run `find-serial` with no arguments to show the USB serial devices currently plugged in.
+It will print something like
+
+```
+device=/dev/cu.usbmodem11301 vid=1546 pid=01A9 model="u-blox GNSS receiver" vendor="u-blox AG - www.u-blox.com"
+```
+
+`model` and `vendor` are the device's own USB strings, so the GPS is usually identifiable at a glance.
+If you have more than one USB serial device plugged in,
+the `--vid` and `--pid` options (hexadecimal) narrow the matches by USB vendor and product ID.
+
+With `--exec`, find-serial instead runs a command,
+replacing one `{}` argument with the matched device path
+(this requires exactly one device to match).
+This means you do not have to look up the device name at all:
+
+```
+find-serial --exec -- satpulsetool gps -s 9600 -d {}
+```
+
+Adding `--wait` makes find-serial wait for a matching device to appear
+(using hot-plug notifications, not polling)
+instead of failing when none is present,
+so you can run the command first and plug the receiver in afterwards.
+
+The service installed by the Homebrew tap uses find-serial in the same way
+to locate the GPS receiver when it starts,
+so on macOS the device does not normally need to be configured in `satpulse.toml`.
 
 ## Determining the speed
 
@@ -53,6 +95,8 @@ sudo usermod -G dialout -a jjc
 
 Here `jjc` is your username. You'll need to logout and then login again for this to take effect.
 
+On macOS, no group membership or other setup is needed to access serial devices.
+
 ## Verifying with satpulsetool
 
 Do, for example:
@@ -69,19 +113,3 @@ and probe whether it supports one of the high-level configuration protocols.
 
 If it detects a GPS, it will tell you some information about what packets it received,
 with more details if a probe succeeded.
-
-## Verifying without satpulsetool
-
-Do, for example:
-
-```
-(stty 9600 -echo -icrnl; cat) </dev/ttyAMA0
-```
-
-where 9600 is the speed and `/dev/ttyAMA0` is the device name.
-
-You should see  lines starting with `$`.
-In particular look for a line starting with `$GPRMC` or `$GNRMC`. The number following that should be the current UTC time;
-for example, `025713.00` means `02:57:13.00` UTC.
-After another 8 commas, there will be a field that should have the current UTC date;
-for example, `140923` means 14th September 2023.

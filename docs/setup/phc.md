@@ -163,6 +163,15 @@ interface = "enp1s0"
 pin = 1
 ```
 
+satpulsed logs a periodic summary with PHC timing statistics.
+The `interval` key in the `[log]` table controls how often
+the summary is logged; the default is 30 seconds.
+You can show only the summary lines with:
+
+```
+sudo journalctl -u satpulse@ttyAMA0 -g summary
+```
+
 ## Set up chrony
 
 Chrony serves three purposes here:
@@ -258,7 +267,7 @@ On Debian, the system supplied ptp4l service is not ideal, in particular it won'
 so you should install a replacement `ptp4l.service` file as `/etc/systemd/system/ptp4l.service`.
 The replacement is in
 
-*  `configs/ptp4l.service` in the source, 
+*  `configs/ptp4l.service` in the source,
 *  `/usr/share/doc/satpulse/ptp4l.service` when the .deb package has been installed
 
 Next you will need to create a ptp4l config file.

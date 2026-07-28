@@ -2,46 +2,9 @@
 title: Monitoring satpulsed
 ---
 
-SatPulse provides multiple ways to monitor the operation of `satpulsed`.
+There are multiple ways to monitor the operation of `satpulsed`.
 
 In the examples below, `ptp.lan` is used as the hostname of the server running `satpulsed`. Replace this with your actual server hostname or IP address.
-
-## systemd log
-
-When `satpulsed` is running as a systemd service as usual, it logs to the systemd journal.
-Use `journalctl` to view the logs:
-
-```
-sudo journalctl -u satpulse@ttyAMA0
-```
-
-Replace `ttyAMA0` with your serial device name.
-
-Show logs for the last 5 minutes:
-
-```
-sudo journalctl -u satpulse@ttyAMA0 -S -5m
-```
-
-Follow the logs in real-time:
-
-```
-sudo journalctl -u satpulse@ttyAMA0 -f
-```
-
-Show only warnings and errors:
-
-```
-sudo journalctl -u satpulse@ttyAMA0 -p 0..4
-```
-
-Show only summary lines (periodic statistics):
-
-```
-sudo journalctl -u satpulse@ttyAMA0 -g summary
-```
-
-The `interval` key in the `[log]` table controls how often summary statistics are logged (default is 30 seconds).
 
 ## Application-specific log files
 
