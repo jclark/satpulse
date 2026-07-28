@@ -101,10 +101,12 @@ docs:
         url: "/gps-config/index.html"
       - title: "High-level configuration"
         url: "/gps-config/high-level.html"
-      - title: "Precisely determine position"
-        url: "/gps-config/fixed-position.html"
       - title: "Message files"
         url: "/gps-config/msg-files.html"
+      - title: "Using satpulsetool"
+        url: "/gps-config/satpulsetool.html"
+      - title: "Precisely determine position"
+        url: "/gps-config/fixed-position.html"
       - title: "u-blox"
         url: "/gps-config/u-blox.html"
       - title: "Unicore"
@@ -448,19 +450,19 @@ two timing blog posts, not new writing:
 
 ### Other stage 2 items
 
-- `setup/satpulse-install.md`: add a macOS section covering the
-  Homebrew tap (`jclark/homebrew-satpulse`), and update the trailing
-  BSD sentence now that brew covers macOS. This is true of the
-  published pre-release and does not wait on the workbench.
 - Complete the macOS baseline story. The setup guide says that the
   baseline works on macOS, but the instructions do not yet form a
   coherent path through installation, finding the serial connection,
   configuring and running satpulsed as a Homebrew service, and
-  monitoring it. Some of the task pages still assume Linux device
-  names, systemd, and Linux filesystem paths. Review the path
-  end-to-end and fill these gaps without deciding in advance whether
-  the macOS material belongs in the existing task pages, in a macOS
-  section of the setup guide, or on a separate page.
+  monitoring it. `setup/satpulse-install.md` needs a macOS section
+  covering the Homebrew tap (`jclark/homebrew-satpulse`), with the
+  trailing BSD sentence updated now that brew covers macOS, and
+  some of the task pages still assume Linux device names, systemd,
+  and Linux filesystem paths. Review the path end-to-end and fill
+  these gaps without deciding in advance whether the macOS material
+  belongs in the existing task pages, in a macOS section of the
+  setup guide, or on a separate page. The Homebrew tap is in the
+  published pre-release, so none of this waits on the workbench.
 - `setup/satpulse-install.md`, same pass: the package table offers
   only `_amd64.deb` and `_arm64.deb`, but the release also ships an
   `armhf` .deb built for ARMv6 (#305), so a Pi Zero user has no way
@@ -562,8 +564,9 @@ By this stage there are three frontends to one configuration model
 (the `satpulsed` config file, `satpulsetool gps`, and the workbench
 config and messages tabs), and that is itself a selling point. The
 once-open decision between a concepts-first and a CLI-oriented
-section is resolved: the section is written concepts-first, with the
-three frontends presented as users of one model. The concept pages
+section is resolved: the high-level layer is written concepts-first,
+with the three frontends presented as users of one model; the
+message-file layer is sliced by audience instead (see below). The concept pages
 carry no screenshots; screenshots belong to the stage 3 workbench
 page, which refers to the high-level configuration page to explain
 the concepts behind its Configuration tab. State high-level vendor
@@ -592,27 +595,63 @@ The section's overview page introduces the high-level and low-level
 explain, among other things, how high-level configuration is
 realized in each vendor protocol.
 
-The first coherent version of the section builds the overview,
-message files, and the current u-blox support around the high-level
-page. Source notes: the old setup GPS configuration page, the GPS
-message files post, and the u-blox material.
+The section's structure began as a two-by-two: two layers, each
+with a UI-neutral concept page (high-level configuration and
+message files), and two UIs, each with a usage page covering both
+layers. Writing the pages showed that the two layers are not
+symmetric. The high-level concept page is prerequisite reading for
+high-level usage, because the options express the model. The
+message-file concept page is not: using message files with
+satpulsetool needs to know only that a file contains tagged
+messages. So `msg-files.md` is authoring documentation, for
+someone writing or modifying a message file. It explains the
+format, covering both tagged messages and the untagged case,
+without going into satpulsetool usage and without arguing benefits
+over `cat` and a terminal emulator: those benefits belong to the
+sender, so each usage page makes its own case (satpulsetool's and
+the workbench's are different). It is no longer prerequisite
+reading for the satpulsetool page, and could follow it in the
+navigation; the nav outline above keeps the current order until
+that is decided.
 
-Make the message-file page depend on the high-level configuration
-page, so users understand why low-level messages are sometimes needed
-before seeing the syntax. Source notes: the GPS message files post and
-implementation plans for message bundles, includes, response matching,
-packet logs, and message-library workflows. Man pages should be linked
-as reference, not copied into the guide.
+The CLI usage page is `gps-config/satpulsetool.md` ("Using
+satpulsetool for GPS configuration"): tutorial-style and
+example-rich, with four sections matching the option groups of
+satpulsetool-gps(1): connecting to the receiver (-d, -s, -f,
+--socket), high-level configuration, message files
+(consumer-level, with the benefits case), and packet capture
+(--packet-log, --capture, annotate), the last sitting at the end
+because capture is the verification step for both layers. --save
+exists in both layers and is explained briefly in each section.
+The high-level section refers back to its concept page, and the
+page as a whole refers to satpulsetool-gps(1) for the full option
+set. The workbench page is the parallel usage page for the other
+UI, covering the Configuration and Message file tabs the same way.
+satpulsed needs no usage page here; the setup satpulsed page
+covers it.
+
+The first coherent version of the section builds the overview,
+message files, and the current u-blox and Unicore support around
+the high-level page; the satpulsetool usage page can come later. Source notes: the
+old setup GPS configuration page (its recipes seed the satpulsetool
+page), the GPS message files post, and the u-blox material.
+
+Source notes for the message-file page: the GPS message files post
+and implementation plans for message bundles, includes, response
+matching, packet logs, and message-library workflows. Man pages
+should be linked as reference, not copied into the guide.
 
 Add vendor configuration pages only when they carry current tasks. Use
 u-blox as the first vendor page because there is enough user-facing
 material: supported generations, timing products, high-precision
 products, L5, OSNMA notes if applicable to current support, persistent
-versus volatile config, and links back to high-level tasks. Unicore
-high-level configuration is in the pre-release, so a Unicore page
-follows when there is enough tested, user-facing material; CASIC,
+versus volatile config, and links back to high-level tasks. The
+Unicore page is part of the first coherent version too; CASIC,
 Septentrio, Allystar, and Quectel get pages as they land and
-accumulate material. Protocol internals belong in implementation notes
+accumulate material. The per-vendor pages can lean on the hardware
+characterizations in `gpshwtest/HW/`, which record each receiver's
+tested behavior and limitations relative to the full model.
+Protocol internals belong in implementation notes
 unless they affect user choices.
 
 ### Make fixed position the organizing task for PPP
