@@ -408,12 +408,6 @@ work replaces.
   `armhf` .deb built for ARMv6 (#305), so a Pi Zero user has no way
   to find the right file. The installed-files list also omits the
   message files under `share/satpulse/gpsmsg` (#233).
-- Apply the "new in 0.3" label where stage 1 did not reach:
-  `intro/other-software.md` states the NTPsec SHM path (#300), which
-  is in the pre-release but not in stable 0.2, without a label. The
-  same is true of `--speed` on Unicore (#167) as used in
-  `setup/gps-config.md`, but that page goes away in stage 4, so
-  labelling it there is worth little.
 - Home page: strengthen the timing door to offer the accessible
   NTP path up front, now that setup has a coherent one, and point
   the positioning material at the RTK setup workflow instead of the
