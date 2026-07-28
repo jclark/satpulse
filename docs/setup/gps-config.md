@@ -86,7 +86,7 @@ If your module has Dupont pins, then you can get an inexpensive USB-to-TTL conve
 Many of these Windows applications can work over a TCP connection.
 You can use satpulsed to proxy the serial connection to TCP.
 This allows you to use the Windows application to perform configuration without touching the hardware.
-For this purpose, satpulsed can be run [without synchronizing the PHC]({%link setup/without-phc.md %}).
+For this purpose, satpulsed can be run with a [minimal configuration]({%link setup/satpulsed.md %}) that does no timing.
 
 To make it proxy the serial connection to TCP port 2006, add:
 

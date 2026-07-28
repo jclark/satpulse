@@ -1,6 +1,7 @@
 ---
 title: Chrony setup
 toc: false
+sitemap: false
 ---
 
 Make sure chrony is installed. The package is called `chrony` on both Fedora and Debian.

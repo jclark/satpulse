@@ -1,14 +1,20 @@
 ---
 title: Configure and run satpulsed
+redirect_from:
+  - /setup/without-phc.html
 ---
 
 The main program in SatPulse is `satpulsed`, which is a daemon that
-synchronizes the PTP Hardware Clock from GPS.
+manages a GPS receiver: it configures the receiver, logs and distributes its packets,
+provides monitoring over HTTP, and can act as a source of time.
 
-satpulsed usually runs as a service using systemd.
+On Linux, satpulsed usually runs as a service using systemd.
 It can also be run from the command line.
 See the [satpulsed]({%link man/satpulsed.8.md%}) for details.
 In either case a configuration is necessary to run satpulsed.
+satpulsed needs access to the GPS serial device,
+which typically any member of the `dialout` group has;
+it does not need root privileges unless it is synchronizing a PHC.
 
 ## Configuration file
 
@@ -16,6 +22,9 @@ The service expects the configuration file to be at:
 
 - `/etc/satpulse.toml` if you installed from a package
 - `/usr/local/etc/satpulse.toml` if you installed from source
+
+satpulsed reads the configuration file when it starts,
+so restart it after changing the file.
 
 The configuration file is in [TOML](https://toml.io/en/) format, which is inspired by the INI file format
 and can be edited with a normal text editor (e.g. `nano`).
@@ -33,27 +42,23 @@ enclose the name of the table. Following the start of each table are the key/val
 Values can be strings in double quotes
 (e.g. `"/dev/ttyAMA0"`), numbers (e.g. `9600`) or booleans (e.g. `true`, `false`).
 
-To synchronize a PTP hardware clock, the configuration file must also have a `[phc]` table:
+This minimal configuration makes satpulsed read packets from the receiver,
+but not do much with them.
+Further tables enable further functionality:
+`[gps]` for receiver configuration (see below),
+`[log]` for packet logging,
+`[[http]]` for [monitoring]({% link setup/monitor.md %}),
+`[[proxy.tcp]]` and `[[proxy.socket]]` for proxying the serial connection, and
+`[ntp]` and `[phc]` for use as a time source
+(see [Basic use with NTP]({% link setup/ntp.md %}) and [Precision timing with a PHC]({% link setup/phc.md %})).
 
-```
-[phc]
-interface = "enp1s0"
-```
-
-The `[phc]` table specifies information about the PTP hardware clock.
-As a minimum it needs to specify the ethernet interface with the pin that the GPS output pin is attached to.
-In this example it is `enp1s0`.
-If the pin is not 0, then it also needs to specify the pin index.
-
-```
-[phc]
-interface = "enp1s0"
-pin = 1
-```
+In SatPulse 0.2 and older, the default configuration file installed by the package
+has an `interface` key in the `[phc]` table;
+comment it out unless you are [synchronizing a PHC]({% link setup/phc.md %}).
 
 The `[serial]` table must specify the speed that the GPS is using,
 and can also specify the serial device.
-Usually the serial device is specified as part of the systemd service name in systemd commands,
+On Linux, the serial device is usually specified as part of the systemd service name in systemd commands,
 but it can also be added to the `[serial]` table,
 which is useful for when satpulsed is run directly from the command-line, for example:
 
@@ -67,35 +72,39 @@ The configuration file is described in full in its man page [satpulse.toml(5)]({
 
 ## GPS configuration
 
-Often satpulsed will be able to work with a GPS module without any changes to its factory default configuration.
-Specifically, a configuration that
-* emits NMEA RMC or ZDA messages, and
-* generates a time pulse once a second (with the rising edge aligned to the start of the second) 
-is sufficient for satpulsed to perform time synchronization.
+Many GPS receivers have a factory default configuration that emits NMEA messages,
+and satpulsed is workable with that:
+by default, satpulsed does not change the receiver's configuration.
 
-However, improved accuracy and richer monitoring features can be achieved with additional configuration.
-
-How to configure a GPS module depends on whether SatPulse has support for configuring that module.
-Currently SatPulse has support for configuring u-blox receivers (from the u-blox 6 platform through to the X20 platform)
-and Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960).
-With an unsupported GPS module, you will need to configure it yourself,
-as described in [GPS configuration]({%link setup/gps-config.md %}#unsupported-gps-modules).
-
-With a supported GPS module, the easiest approach is to add the following to `satpulse.toml`:
+If you have a receiver for which SatPulse supports high-level configuration --
+currently u-blox receivers (from the u-blox 6 platform through to the X20 platform)
+and Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960) --
+then satpulsed can do additional configuration of the receiver.
+The easiest approach is to add the following to `satpulse.toml`:
 
 ```
 [gps]
 config = true
+vendor = "u-blox"
+#vendor = "unicore"
 ```
 
-This gives satpulsed permission to change the configuration of the GPS module
+`config = true` gives satpulsed permission to change the configuration of the receiver
 (the default for `config` is false).
-It will set things up to take full advantage of the capabilities of the module.
+At startup, satpulsed then configures the receiver taking into account the other sections
+of the configuration file, so that the receiver supports what the rest of the configuration asks for;
+for example, with an `[ntp]` table it enables a time pulse and messages reporting UTC time.
+It is a good idea to also specify `vendor`:
+this restricts packet-format recognition and configuration probing to that vendor;
+without it, all supported packet formats and configuration protocols are tried.
 There are many other options that can be specified in the `[gps]` table to control
 how satpulsed does configuration,
 which are described in [satpulse.toml(5)]({%link man/satpulse.toml.5.md %}).
 Note that the configuration changes made by satpulsed are never persistent;
 you can always get rid of any changes done by satpulsed by power cycling the GPS.
+
+With an unsupported receiver, you will need to configure it yourself,
+as described in [GPS configuration]({%link setup/gps-config.md %}#unsupported-gps-modules).
 
 There are some kinds of changes that satpulsed will not do:
 - it will not change the serial speed of the module;
@@ -110,13 +119,13 @@ unless the serial speed is at least 38400.
 
 See [GPS configuration]({%link setup/gps-config.md %}) for more information about using `satpulsetool gps`. 
 
-## Running satpulsed as a service
+## Running as a service on Linux
 
 The systemd service template name is `satpulse@.service` and the expected argument is the serial device name without `/dev/`.
 For example, if the serial device is `/dev/ttyAMA0`, then the instantiated service would be named `satpulse@ttyAMA0.service`.
 Systemd commands need to be given the instantiated service name (although typically the `.service` part can be left out).
 
-After editing the configuration file, you can start the service with
+Start the service with
 
 ```
 sudo systemctl start satpulse@ttyAMA0.service
@@ -140,7 +149,7 @@ Here are some other systemd command you may need. Stop the service:
 sudo systemctl stop satpulse@ttyAMA0.service
 ```
 
-Restart the service (e.g. after editing the configuration file)
+Restart the service:
 
 ```
 sudo systemctl restart satpulse@ttyAMA0.service
@@ -151,3 +160,11 @@ Enable the service:
 ```
 sudo systemctl enable satpulse@ttyAMA0.service
 ```
+
+## Running on macOS
+
+satpulsed also works on macOS.
+Install from the [Homebrew tap](https://github.com/jclark/homebrew-satpulse),
+which can also run satpulsed as a service;
+the service locates the USB serial device of the GPS receiver automatically when it starts.
+All of `satpulsetool` also works on macOS, except `satpulsetool sdp`, which requires PHC support.

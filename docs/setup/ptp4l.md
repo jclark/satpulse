@@ -1,5 +1,6 @@
 ---
 title: Setup ptp4l
+sitemap: false
 ---
 
 The main program in linuxptp is ptp4l, which is a daemon that implements the PTP protocol.

@@ -362,91 +362,32 @@ follow-up work are recorded elsewhere: VRS support in stage 3, and
 the howto's retirement, which follows 0.3 final, in the navigation
 section above and in stage 3's note.
 
-### Make timing an optional add-on
+### Make timing an optional add-on (done)
 
-The current site makes SatPulse look as if it is only for users who
-already have niche PHC/PPS hardware. That is a major adoption
-barrier. Restructure setup so the baseline path has no timing
-content at all, with timing and RTK as independent optional add-on
-branches on top of it.
+Done: the baseline setup path has no timing content, with timing
+and RTK as independent optional add-on branches on top of it.
+`setup/index.md` presents that shape and states what works where:
+the baseline and RTK are platform-neutral for Unix-like systems
+including macOS; the two timing pages are Linux-only and say so at
+the top. Timing is split by accuracy class and hardware:
+`setup/ntp.md` (nav "Use with NTP") for NTP service on ordinary
+hardware, microsecond class, and `setup/phc.md` (nav "Use with a
+PHC") for precision timing with PHC hardware. Each timing page
+covers the satpulse end and the daemon end together, since the two
+configurations have to match. `setup/satpulsed.md` is
+platform-neutral, with the systemd material in a Linux subsection
+and a macOS section, and absorbed the residue of
+`setup/without-phc.md`, which is deleted with its `redirect_from`.
 
-Nothing blocks this: the default `satpulse.toml` ships with
-`phc.interface` commented out, and its header says the only entry
-that must be edited to get satpulsed started is the serial speed.
-The baseline works out of the box, and `[ntp]` without `[phc]` is
-stable 0.2 behaviour, so the NTP timing page needs no version
-labels.
-
-The baseline gets the receiver connected, satpulsed running, and
-monitoring working: OS setup as applicable, install SatPulse,
-serial connection and satpulsetool contact check, configure and run
-`satpulsed`, monitor. Stage 3 inserts the workbench into it. Timing
-splits into two pages by accuracy class and hardware:
-
-- `setup/ntp.md` (nav "Use with NTP"): NTP service on ordinary
-  hardware, microsecond class.
-- `setup/phc.md` (nav "Use with a PHC"): precision timing with PHC
-  hardware, which is unusual, specialist hardware.
-
-How you configure satpulsed is tied up with how you configure the
-external daemon -- the two configurations have to match -- so each
-timing page covers the satpulse end and the daemon end together
-rather than splitting them across per-daemon task pages. The
-separate chrony and ptp4l pages are superseded by this. Page length
-is not a concern; the per-page table of contents carries the
-outline.
-
-Rewrite `setup/index.md` to present this shape: the baseline steps,
-then the add-on branches. It also states what works where: the
-baseline and RTK are platform-neutral for Unix-like systems
-including macOS; both timing pages are Linux-only and are marked as
-such at the top, since macOS has no good PPS mechanism yet. On
-macOS the useful path is the baseline.
-
-The timing pages are mostly rearrangement of existing pages and the
-two timing blog posts, not new writing:
-
-- `setup/ntp.md` (new). Concept framing from the
-  timing-without-a-PHC post (2026-04-01): the serial-timed `[ntp]`
-  samples identify the seconds while the NTP daemon reads a PPS for
-  the edges. Working material from the NTP-server-on-a-Pi post
-  (2026-04-06): the `pps-gpio` overlay and ppstest verification,
-  the `[ntp]`-without-`[phc]` satpulse.toml, and the chrony and
-  ntpd-rs configurations. The SOCK basics (package install,
-  refclock line, restart) come from `setup/chrony.md`. Serial-only
-  operation with no PPS gets a sentence stating its accuracy class
-  as the degraded case, not a peer configuration. The page opens by
-  saying that using NTP with a PHC is covered on the PHC page, and
-  links there as the upgrade path. The chrony PHC-extpps variant
-  from the first post is deliberately not documented: it is the
-  stopgap that the free-running PHC work (#256, #257) replaces.
-- `setup/phc.md` (expanded in place; the filename and URL stay).
-  The existing verify-PPS-input content remains the opening task.
-  Then one section per arrangement, each giving the satpulse end
-  and the daemon end together. Initially there is one arrangement,
-  satpulsed disciplines the PHC: the `[phc]` table material moved
-  from `setup/satpulsed.md`, chrony via SOCK (system clock plus
-  NTP service, from `setup/chrony.md`), and ptp4l (all of
-  `setup/ptp4l.md`, including the `[ptp]` connection), reading as
-  the optional last step. The per-arrangement structure exists for
-  the free-running modes (#256, #257): when they ship, each
-  arrives as a further section covering hardware-timestamped NTP
-  with a free-running PHC. They are not documented before then.
-- `setup/satpulsed.md` becomes platform-neutral. The minimal
-  example no longer presents `[phc]` as part of the minimum (that
-  material moves to the PHC page); the systemd material moves into
-  a Linux-specific subsection; a macOS note points at the Homebrew
-  tap (`jclark/homebrew-satpulse`). It absorbs the residue of
-  `setup/without-phc.md`: satpulsed runs without root when there
-  is no `[phc]`, which functionality applies without one, and the
-  satpulsetool note. The macOS example config collapses into the
-  now-PHC-free minimal example.
-- Retirements, per the conventions in `docs/CLAUDE.md`:
-  `setup/without-phc.md` is deleted with its `redirect_from` on
-  `setup/satpulsed.md`; `setup/chrony.md` and `setup/ptp4l.md` are
-  superseded (out of the navigation, `sitemap: false`) until their
-  content is confirmed covered, then deleted with redirects to
-  `setup/phc.md`.
+Two pieces of forward-looking state remain. `setup/phc.md` has one
+section per arrangement so that the free-running PHC modes (#256,
+#257) can arrive as further sections when they ship; they are not
+documented before then, and the chrony PHC-extpps variant from the
+timing-without-a-PHC post stays undocumented as the stopgap that
+work replaces. `setup/chrony.md` and `setup/ptp4l.md` are
+superseded (out of the navigation, `sitemap: false`) until their
+content is confirmed covered, then deleted with redirects to
+`setup/phc.md`.
 
 ### Other stage 2 items
 
