@@ -53,5 +53,6 @@ After this, you will have:
 * the configuration file for the daemon installed as `/usr/local/etc/satpulse.toml`
 * the systemd service template unit file for the daemon installed as `/etc/systemd/system/satpulse@.service`
 * the SatPulse command line tool installed as `/usr/local/bin/satpulsetool`
+* the GPS message files installed under `/usr/local/share/satpulse/gpsmsg`, organized by vendor directory {% include new-in-03.html %}
 
 On BSD (macOS or FreeBSD), build using the `bsd-build.sh` script, and copy the binaries into place manually.
