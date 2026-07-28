@@ -226,7 +226,7 @@ and it can also write its own application-specific log files.
 The following keys relate to logging through systemd:
 
 * `verbose` - a boolean saying whether to log verbosely; default is false
-* `interval` - an integer giving the time in seconds over which a log message should summarize the synchronization status;
+* `interval` - an integer giving the time in seconds over which a log message should summarize the PHC synchronization status;
   the default is 30; the status is computed once per second, and a value of 1 will log that status directly; a value
   of 0 will not log the synchronization status
 
