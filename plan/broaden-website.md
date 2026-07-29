@@ -83,8 +83,6 @@ docs:
         url: "/setup/satpulse-install.html"
       - title: "Serial connection"
         url: "/setup/gps-serial.html"
-      - title: "Using SatPulse Workbench"
-        url: "/setup/workbench.html"
       - title: "Run satpulsed"
         url: "/setup/satpulsed.html"
       - title: "Monitoring"
@@ -95,6 +93,20 @@ docs:
         url: "/setup/ntp.html"
       - title: "Use with a PHC"
         url: "/setup/phc.html"
+  - title: "SatPulse Workbench"
+    children:
+      - title: "Getting started"
+        url: "/workbench/index.html"
+      - title: "Monitor"
+        url: "/workbench/monitor.html"
+      - title: "Packets"
+        url: "/workbench/packets.html"
+      - title: "Corrections"
+        url: "/workbench/corrections.html"
+      - title: "Configuration"
+        url: "/workbench/configuration.html"
+      - title: "Messages"
+        url: "/workbench/messages.html"
   - title: "GPS configuration"
     children:
       - title: "Overview"
@@ -151,8 +163,8 @@ docs:
         url: "/internals/ai-usage.html"
 
 The Introduction, Hardware and Internals lists reflect what is now
-deployed; the new pages still to come are GNSS HATs, the workbench
-setup page, the GPS configuration section, and
+deployed; the new pages still to come are GNSS HATs, the SatPulse
+Workbench section, the GPS configuration section, and
 the Internals section's AI usage and configuration semantics pages. The
 other differences from the deployed navigation -- the Setup retitles
 and reordering, the removal of the setup GPS configuration entry, and
@@ -160,11 +172,18 @@ the `satpulsewb(1)` man-page entry -- follow from stages 2-4; the
 retirement of the RTK and precise-position howtos follows 0.3 final. The Setup
 list reads baseline first, through Monitoring, then the add-on
 pages: RTK, then the two timing pages, matching the stage 2 index.
-The workbench deliberately gets a Setup entry, not a top-level
-section: it is one page, placed after Serial connection so that
-device name, permissions, and baud rate are established before it.
-Because it has no top-level presence, its discoverability rides on
-the home page and `intro/satpulse.md`.
+The workbench gets its own top-level section, not a Setup entry:
+some users will be interested in the workbench and nothing else,
+and their track must not route through `setup/index.md` and the
+daemon-oriented setup path. The section is a Getting started page
+plus one page per tab, in the app's tab order, so going from the
+tab on the screen to its page is mechanical. An earlier revision
+placed a single page in Setup after Serial connection so that
+device name, permissions, and baud rate were established first;
+that rationale is now honored inside Getting started, which links
+the serial page as the way to find the baud rate rather than
+assuming it as a prerequisite, and the setup track links to the
+section at the fork after Serial connection.
 
 Hardware is a single "Hardware" section, not separate GNSS and timing
 sections. An earlier rework split it that way, and the split was
@@ -442,13 +461,25 @@ summaries only when synchronizing a PHC.
 Gated on cutting a fresh pre-release that includes `satpulsewb` in the
 Linux packages (this landed after v0.3-pre-20260619 was cut; the
 Homebrew tap covers macOS). The pre-release comes first so the
-workbench page can lead with real install commands rather than "build
-from source".
+Getting started page can lead with real install commands rather than
+"build from source".
 
 The workbench is currently invisible on the site: only NEWS and the
 `satpulsewb(1)` man page mention it. This stage is almost entirely
 additive. A launch blog post is promotion, not alignment, and follows
 the stage rather than being part of it.
+
+The stage 4 GPS configuration section is written in the same slice
+as this stage (stages order work; they do not gate it): the
+workbench's Configuration and Messages pages point into it, and the
+high-level, message-file, and satpulsetool usage pages are already
+written, sitting out of the navigation. The section publishes on
+the site-wide bar -- better than what is live, no wrong claims --
+not on completeness: it enters the navigation with whatever pages
+are ready, visible TODOs included. The one coverage gate is that
+the section replaces `setup/gps-config.md`: everything on that page
+must be covered, per the disposition mapped out in stage 4, before
+the old page follows the superseded-page convention.
 
 The fresh pre-release also unblocks one RTK item: Virtual Reference
 Station support (`ntrip.nmeaSend` and `ntrip.nmeaSendInterval` on
@@ -469,37 +500,56 @@ The steps, in order:
    `--vid`/`--pid`, satisfying the formula's no-keep_alive
    comment.
 
-2. Write the workbench page (`setup/workbench.md`, nav "Using
-   SatPulse Workbench", after "Serial connection"). One page: what it
-   is, a screenshot tour, a quickstart (device and speed are known
-   from the serial page -- the workbench discovers serial devices but
-   does not autobaud, which is why establishing contact with
-   satpulsetool comes first), and remote/headless use in brief (SSH
-   tunnel, `--listen`, the access token), deferring detail to
-   `satpulsewb(1)`. State vendor coverage honestly as a growing
+2. Write the workbench section (`docs/workbench/`, nav "SatPulse
+   Workbench", between Setup and GPS configuration). Six pages:
+   Getting started (`workbench/index.md`) plus one page per tab in
+   the app's tab order (Monitor, Packets, Corrections,
+   Configuration, Messages). Getting started is a task page, not an
+   overview: what the workbench is, real install commands, a
+   run-and-connect quickstart (the workbench discovers serial
+   devices but does not autobaud; the serial page is linked as the
+   way to find the baud rate, not a prerequisite), remote/headless
+   use in brief (SSH tunnel, `--listen`, the access token), and the
+   write-seat/read-only-windows model, deferring detail to
+   `satpulsewb(1)`. It must work for a reader who arrives from the
+   home page and will never run the daemon. Each per-tab page has a
+   floor of a screenshot plus what the tab is for; Monitor is the
+   richest, also covering the collapsible scatter, PVT, signals,
+   and survey sections. Configuration and Messages stay thin and
+   are the workbench-side usage parallels of
+   `gps-config/satpulsetool.md`: they explain the form (greying
+   out, apply, what the response shows, save), while
+   `gps-config/high-level.md` and `gps-config/msg-files.md` explain
+   the semantics. State vendor coverage honestly as a growing
    matrix: monitoring and packet decoding across all supported
-   protocols; high-level configuration for u-blox and Unicore today,
-   with CASIC, Septentrio, Allystar, and Quectel on pending branches;
-   the UI greys out what a receiver does not support. Include one
-   crisp sentence distinguishing the workbench from the satpulsed
-   dashboard: the workbench is the interactive commissioning tool you
-   run; the dashboard is observability for the deployed daemon. The
-   configuration material points at `gps-config/high-level.md` for
-   the concepts behind the Configuration tab.
+   protocols; high-level configuration for u-blox and Unicore
+   today, with CASIC, Septentrio, Allystar, and Quectel on pending
+   branches; the UI greys out what a receiver does not support.
+   Include one crisp sentence distinguishing the workbench from the
+   satpulsed dashboard: the workbench is the interactive
+   commissioning tool you run; the dashboard is observability for
+   the deployed daemon.
 
-3. Screenshots. A handful: sky view with signals, the config tab, the
-   packet inspector, map/scatter. Manual captures from a live session
-   are fine; repeatable capture tooling is out of scope. This is the
-   site's first non-prose asset type; the home page thumbnail comes
-   from the same set.
+3. Screenshots, one per tab (Monitor may need a second for the
+   collapsed sections). The flow: set up a live satpulsewb session
+   by hand with a real receiver until every tab looks right, then a
+   script drives Playwright against it (`--listen` with the token
+   disabled, fixed viewport) to capture each tab and move the
+   images into place on the site. Rerunning the script after a UI
+   change refreshes the whole set; a little staleness in the
+   meantime is acceptable. This is the site's first non-prose asset
+   type; the home page thumbnail comes from the same set.
 
-4. Add the workbench to the stage 2 baseline setup track, between the
-   serial connection and running `satpulsed`.
+4. Add a cross-link from the stage 2 baseline setup track:
+   `setup/index.md` points at the workbench section at the fork
+   after the serial connection, for exploring and configuring the
+   receiver interactively before setting up `satpulsed`. A link,
+   not a page in the track.
 
 5. Home page: one paragraph high up -- new in 0.3, SatPulse Workbench,
    browser-based cross-vendor receiver monitoring and configuration --
-   with a thumbnail linking to the workbench page. The screenshot does
-   more positioning work than any wording change.
+   with a thumbnail linking to the section's Getting started page.
+   The screenshot does more positioning work than any wording change.
 
 6. `intro/satpulse.md`: add `satpulsewb` to the two-item component
    list, add a short paragraph in the receiver-configuration section
@@ -512,7 +562,7 @@ The steps, in order:
 
 8. `_data/navigation.yml`: add `satpulsewb(1)` to the man pages
    section (the page already renders; it is just unlisted), and the
-   "Using SatPulse Workbench" entry from step 2.
+   SatPulse Workbench section from step 2.
 
 ## Stage 4: rework that supports product use
 
@@ -527,6 +577,28 @@ means updating the two links to it in `setup/satpulsed.md` (the
 unsupported-receivers pointer and the closing satpulsetool-gps
 pointer).
 
+The old page's content, item by item, so the coverage check for
+superseding it is mechanical. The satpulsed-conservative-subset
+material is already covered by `gps-config/high-level.md`. The
+command recipes -- speed, constellations and bands, the u-blox L5
+remark -- seed the satpulsetool page's high-level section, along
+with the `--pvt-out ntp|ptp` presets, which have absorbed the old
+what-to-configure checklist for supported receivers. The
+rlwrap/socat recipe survives in the section overview, scoped to
+exploring a line-command receiver whose response convention
+SatPulse does not know. The satellite-view requirements and the
+vendor-Windows-tool proxy route are already covered on
+`setup/monitor.md`; confirm and drop. The what-to-configure
+checklist itself dissolves into the timing pages: `setup/ntp.md`
+and `setup/phc.md` each get a GPS configuration section presenting
+the three routes -- `config = true` for automatic configuration,
+the equivalent `satpulsetool gps` flags (`--pvt-out ntp` and
+`--pvt-out ptp` encode the UTC-versus-TAI difference between the
+two uses), or low-level configuration with message files -- with
+links into the gps-config pages, each timing page stating its own
+receiver requirements the way `setup/monitor.md` already states
+the satellite view's.
+
 By this stage there are three frontends to one configuration model
 (the `satpulsed` config file, `satpulsetool gps`, and the workbench
 config and messages tabs), and that is itself a selling point. The
@@ -535,8 +607,8 @@ section is resolved: the high-level layer is written concepts-first,
 with the three frontends presented as users of one model; the
 message-file layer is sliced by audience instead (see below). The concept pages
 carry no screenshots; screenshots belong to the stage 3 workbench
-page, which refers to the high-level configuration page to explain
-the concepts behind its Configuration tab. State high-level vendor
+section, whose Configuration page refers to the high-level
+configuration page to explain the concepts behind the tab. State high-level vendor
 coverage as a growing matrix rather than prose that hard-codes
 today's vendor list.
 
@@ -558,7 +630,19 @@ the link). The move itself is a master-branch change, since it
 touches `gpshwtest/` files that feature branches edit.
 
 The section's overview page introduces the high-level and low-level
-(message file) layers and how they relate; the per-vendor pages
+(message file) layers and how they relate, with the layers as its
+spine. A routing section presents the three levels of receiver
+support -- high-level configuration supported; message files with
+a shipped library file; no protocol support at all, where the
+vendor-independent message types still work and rlwrap/socat is
+the exploration tool when the response convention is unknown -- as
+"which layer applies to your receiver", linking to the
+protocol-support list on `intro/satpulse.md` rather than restating
+the vendor matrix, with the coding-agent workflow as the path from
+the bottom level to a library file. The levels are a section, not
+the page's skeleton: they cross-cut the section's pages (the
+bottom two levels route to the same pages) and shift as vendors
+are promoted. The per-vendor pages
 explain, among other things, how high-level configuration is
 realized in each vendor protocol.
 
@@ -592,8 +676,9 @@ because capture is the verification step for both layers. --save
 exists in both layers and is explained briefly in each section.
 The high-level section refers back to its concept page, and the
 page as a whole refers to satpulsetool-gps(1) for the full option
-set. The workbench page is the parallel usage page for the other
-UI, covering the Configuration and Message file tabs the same way.
+set. The workbench section's Configuration and Messages pages are
+the parallel usage pages for the other UI, each covering its tab
+the same way.
 satpulsed needs no usage page here; the setup satpulsed page
 covers it.
 
