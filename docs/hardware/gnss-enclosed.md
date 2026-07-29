@@ -1,5 +1,7 @@
 ---
 title: Enclosed GNSS receivers
+redirect_from:
+  - /hardware/gnss-receivers.html
 evk_gallery:
   - url: /assets/images/evk-f10t-top.jpg
     image_path: /assets/images/evk-f10t-top.jpg
