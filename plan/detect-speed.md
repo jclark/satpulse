@@ -136,8 +136,12 @@ The caller controls the speeds and the order they are tried in.
 `DefaultSpeedList()` returns the default order, common speeds
 first: 38400, 9600, 115200, 0, 460800, 230400, 57600, 19200,
 4800, 921600. Callers prune, reorder, or extend it as they see
-fit. A 0 entry is resolved to a concrete number with
-`conn.Speed()`, which lets the result always be a real speed.
+fit. On entry, `DetectSpeed` captures `conn.Speed()`, copies the
+candidate list, and replaces every 0 with that captured speed
+before trying or comparing any candidates. This lets the result
+always be a real speed and makes direction hints compare against
+the port's original speed rather than the literal zero or a speed
+selected by an earlier attempt.
 
 The list is tried in order, modified by the direction hints. A
 tried-set (`map[int]struct{}`) records the speeds already tried,
@@ -291,9 +295,9 @@ so the output order is completion order.
 
 One rule covers all modes. The possible outcomes for a port are
 ordered from best to worst: detected, silent, error. The exit
-code is the best outcome over the ports considered, starting from
-silent - 0 for detected, 2 for silent, 1 for error - so no ports
-at all (an empty enumeration or scan) exits 2. Single-device
+code is the best actual outcome over a non-empty set of ports:
+0 for detected, 2 for silent, and 1 for error. If no ports are
+found, enumeration or scan exits 2 explicitly. Single-device
 detection is the one-port case: 0 detected, 2 silent, 1 anything
 else. For enumeration, which does not probe, a listed port counts
 as detected. Usage errors and command-level failures are exit 1.
@@ -409,8 +413,11 @@ values as the one that connected. The
 dropdown flips to the detected speed through the existing
 `gps:speed` sticky event; no new event type is needed.
 
-The Auto entry is added to the speed list in
-`webui/packages/workbench/src/speeds.ts`; the built webui assets are
+The shared speed list in `webui/packages/workbench/src/speeds.ts`
+remains a list of concrete numeric baud rates because it is also used
+by the receiver's UART-speed control. The connection panel prepends an
+explicit Auto option to that list and maps its value to the `'auto'`
+literal rather than parsing it as a number. The built webui assets are
 regenerated and committed as usual.
 
 ### Session flow
