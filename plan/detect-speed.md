@@ -226,10 +226,13 @@ single-device detection (a device argument), and scan (`--scan`).
 `satpulsetool serial` with no arguments lists the enumerated
 serial ports. As in `satpulsetool sdp`, printing goes through a
 JSON-tagged struct (the sdpcmd Printer pattern), so `-j`/`--jsonl`
-comes for free; the fields are those of `serialenum.Port` from the
-#394 plan. Enumeration reads only sysfs and /dev directory entries
-and never opens a device, so this mode needs no dialout
-membership.
+comes for free. The fields are `Device`, `Display`, and a composite
+`USB` value containing numeric `VID`/`PID`, matching `serialenum.Port`
+from the #394 plan. `Device` is the canonical `/dev/<kernel name>`
+path; top-level aliases are shown only within `Display` and are not
+separate output fields. Enumeration reads only sysfs and `/dev`
+directory entries and never opens a device, so this mode needs no
+dialout membership.
 
 ### Single-device detection
 
@@ -278,8 +281,7 @@ detectable, and scan will open and probe its port. Combining
 
 Each port where detection succeeds contributes one stdout line:
 the device name, a space, the detected speed. The name is the
-port's primary `Device` from enumeration (the user alias when one
-exists) - the name that belongs in a config file. Each failure
+port's canonical `Device` from enumeration. Each failure
 contributes one stderr line, `<device>: <description>`, with the
 same case distinctions as above. Each port gets exactly one
 output or error line, printed as soon as its detection finishes,
