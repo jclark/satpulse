@@ -462,7 +462,7 @@ export function App() {
         Promise.all([transport.getConnection(), portsPromise]).then(async ([conn, ps]) => {
             setPorts(ps);
             setDevice(conn.device || (ps.length === 1 ? ps[0].device : ''));
-            if (!connSpeedSeen.current) setSpeed(conn.speed);
+            if (!connSpeedSeen.current && conn.speed !== undefined) setSpeed(conn.speed);
             if (!connStateSeen.current) setConnState(conn.state);
             if (conn.state === 'disconnected' || req !== signalCatalogRequest.current) return;
             const r = await transport.getReceiverState();

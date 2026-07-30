@@ -64,11 +64,12 @@ Without **\-\-listen** this is the default.
 : Do not open a browser at startup.
 
 **\-d**, **\-\-serial\-device** *path*
-: Initial serial device shown in the connection bar.
+: Prefill for the device control in the connection bar.
+When both **\-d** and **\-s** are given, **satpulsewb** connects at startup with these values.
 
 **\-s**, **\-\-device\-speed** *bps*
-: Initial serial speed shown in the connection bar.
-The default is 9600.
+: Prefill for the speed control in the connection bar.
+When both **\-d** and **\-s** are given, **satpulsewb** connects at startup with these values.
 
 **\-\-vendor** *name*
 : Restrict probing and packet format detection to a receiver vendor.

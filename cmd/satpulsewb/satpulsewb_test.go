@@ -75,8 +75,8 @@ func TestConnectionFlags(t *testing.T) {
 		speed       int
 		autoConnect bool
 	}{
-		{name: "defaults", speed: 9600},
-		{name: "device only", args: []string{"-d", "DEV"}, device: "DEV", speed: 9600},
+		{name: "defaults"},
+		{name: "device only", args: []string{"-d", "DEV"}, device: "DEV"},
 		{name: "speed only", args: []string{"-s", "38400"}, speed: 38400},
 		{name: "device and speed", args: []string{"-d", "DEV", "-s", "38400"}, device: "DEV", speed: 38400, autoConnect: true},
 	}

@@ -82,7 +82,7 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 	flags.BoolVarP(&v.token, "token", "t", false, "require a generated access token even with --listen")
 	flags.BoolVarP(&v.noOpen, "no-open-browser", "n", false, "do not open a web browser at startup")
 	flags.StringVarP(&v.device, "serial-device", "d", "", "serial device connected to GPS receiver")
-	flags.IntVarP(&v.speed, "device-speed", "s", 9600, "serial device baud-rate in `bps`")
+	flags.IntVarP(&v.speed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
 	flags.StringVar(&vendorStr, "vendor", "", "GPS receiver `vendor` name")
 	flags.StringVar(&v.packetLog, "packet-log", "", "log packets to `path`")
 	flags.BoolFuncP("verbose", "v", "increase logging verbosity", func(string) error {
