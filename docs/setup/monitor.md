@@ -2,52 +2,15 @@
 title: Monitoring satpulsed
 ---
 
-SatPulse provides multiple ways to monitor the operation of `satpulsed`.
+There are multiple ways to monitor the operation of `satpulsed`.
 
 In the examples below, `ptp.lan` is used as the hostname of the server running `satpulsed`. Replace this with your actual server hostname or IP address.
-
-## systemd log
-
-When `satpulsed` is running as a systemd service as usual, it logs to the systemd journal.
-Use `journalctl` to view the logs:
-
-```
-sudo journalctl -u satpulse@ttyAMA0
-```
-
-Replace `ttyAMA0` with your serial device name.
-
-Show logs for the last 5 minutes:
-
-```
-sudo journalctl -u satpulse@ttyAMA0 -S -5m
-```
-
-Follow the logs in real-time:
-
-```
-sudo journalctl -u satpulse@ttyAMA0 -f
-```
-
-Show only warnings and errors:
-
-```
-sudo journalctl -u satpulse@ttyAMA0 -p 0..4
-```
-
-Show only summary lines (periodic statistics):
-
-```
-sudo journalctl -u satpulse@ttyAMA0 -g summary
-```
-
-The `interval` key in the `[log]` section controls how often summary statistics are logged (default is 30 seconds).
 
 ## Application-specific log files
 
 SatPulse can write detailed logs to files in `/var/log/satpulse/`.
 
-To enable logging, add a `[log]` section to your configuration file:
+To enable logging, add a `[log]` table to your configuration file:
 
 ```toml
 [log]
@@ -76,7 +39,7 @@ There is also a Python analysis script [`clocklog.py`](https://github.com/jclark
 python3 clocklog.py /var/log/satpulse/clock.eth0.log
 ```
 
-The packet log file is named e.g. `packet.ttyAMA.jsonl` where `ttyAMA0` is the serial device name. It is in [JSON Lines](https://jsonlines.org/) format (one JSON object per line), making it easy to process with tools like `jq`.
+The packet log file is named e.g. `packet.ttyAMA0.jsonl` where `ttyAMA0` is the serial device name. It is in [JSON Lines](https://jsonlines.org/) format (one JSON object per line), making it easy to process with tools like `jq`.
 
 SatPulse includes an example [logrotate configuration](https://github.com/jclark/satpulse/blob/master/configs/satpulse.logrotate) that can be installed at `/etc/logrotate.d/satpulse` to rotate these logs.
 
@@ -84,7 +47,7 @@ SatPulse includes an example [logrotate configuration](https://github.com/jclark
 
 SatPulse provides an HTTP monitoring interface with both a web GUI and Prometheus metrics endpoint.
 
-To enable HTTP monitoring, add an `[[http]]` section to your configuration file:
+To enable HTTP monitoring, add an `[[http]]` table to your configuration file:
 
 ```toml
 [[http]]
@@ -181,7 +144,7 @@ In particular
   - AllyStar has Satrack
 - [Lady Heather](http://www.ke5fx.com/heather/readme.htm) is an open source GPS monitoring tool (use with `/ip` option)
 
-To use these with SatPulse, add a `[[proxy.tcp]]` section to your configuration:
+To use these with SatPulse, add a `[[proxy.tcp]]` table to your configuration:
 
 ```toml
 [[proxy.tcp]]

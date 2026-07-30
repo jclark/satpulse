@@ -136,6 +136,84 @@ description = "Enable UBX-MON-COMMS"
 key.usb = 0x20910352
 value = 1
 
+# Information message output (CFG-INFMSG). The value is a bit mask of
+# severity levels: ERROR 0x01, WARNING 0x02, NOTICE 0x04, TEST 0x08,
+# DEBUG 0x10. Each tag names the least important level enabled and
+# includes every more important level. UBX-INF defaults to none, NMEA
+# TXT to notice.
+
+[[ubxvalport]]
+tag = "ubx-inf-error"
+description = "Enable UBX-INF error messages"
+key.usb = 0x20920004
+value = 0x01
+
+[[ubxvalport]]
+tag = "ubx-inf-warning"
+description = "Enable UBX-INF error and warning messages"
+key.usb = 0x20920004
+value = 0x03
+
+[[ubxvalport]]
+tag = "ubx-inf-notice"
+description = "Enable UBX-INF error, warning and notice messages"
+key.usb = 0x20920004
+value = 0x07
+
+[[ubxvalport]]
+tag = "ubx-inf-test"
+description = "Enable UBX-INF error, warning, notice and test messages"
+key.usb = 0x20920004
+value = 0x0F
+
+[[ubxvalport]]
+tag = "ubx-inf-debug"
+description = "Enable UBX-INF messages at all severity levels"
+key.usb = 0x20920004
+value = 0x1F
+
+[[ubxvalport]]
+tag = "ubx-inf-off"
+description = "Disable UBX-INF messages"
+key.usb = 0x20920004
+value = 0
+
+[[ubxvalport]]
+tag = "nmea-inf-error"
+description = "Enable NMEA TXT error messages"
+key.usb = 0x20920009
+value = 0x01
+
+[[ubxvalport]]
+tag = "nmea-inf-warning"
+description = "Enable NMEA TXT error and warning messages"
+key.usb = 0x20920009
+value = 0x03
+
+[[ubxvalport]]
+tag = "nmea-inf-notice"
+description = "Enable NMEA TXT error, warning and notice messages"
+key.usb = 0x20920009
+value = 0x07
+
+[[ubxvalport]]
+tag = "nmea-inf-test"
+description = "Enable NMEA TXT error, warning, notice and test messages"
+key.usb = 0x20920009
+value = 0x0F
+
+[[ubxvalport]]
+tag = "nmea-inf-debug"
+description = "Enable NMEA TXT messages at all severity levels"
+key.usb = 0x20920009
+value = 0x1F
+
+[[ubxvalport]]
+tag = "nmea-inf-off"
+description = "Disable NMEA TXT messages"
+key.usb = 0x20920009
+value = 0
+
 [[ubxvalport]]
 tag = "ubx-rxm-cor"
 description = "Enable RXM-COR (differential correction input status)"

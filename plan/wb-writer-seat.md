@@ -167,6 +167,6 @@ updating throughout.
 
 ## Documentation
 
-The man page and `docs/internals.md` describe the writer-seat
+The man page and `docs/internals/packages.md` describe the writer-seat
 model; the existing unreleased satpulsewb NEWS entry already covers
 it.

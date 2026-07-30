@@ -26,7 +26,7 @@ Use **\-** as *file* to read from standard input.
 **\-\-vendor** *name*
 : Restrict packet formats to those used by a receiver vendor.
 The value is case-insensitive.
-Typical values are **u\-blox**, **Unicore**, **NovAtel**, **Bynav**, **SinoGNSS**, **Allystar**, **Techtotop**, and **Zhongke**.
+Typical values are **u\-blox**, **Unicore**, **NovAtel**, **Bynav**, **SinoGNSS**, **Allystar**, **Techtotop**, and **Zhongke** (or **CASIC**).
 If this option is omitted, the **SATPULSE_VENDORS** environment variable applies (see ENVIRONMENT), and if that too is unset, all supported packet formats are recognized.
 
 # ENVIRONMENT
