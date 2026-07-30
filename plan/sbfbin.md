@@ -118,7 +118,7 @@ differs from casbin/ubxbin" below):
   (`Unpack`/`String`), and a *few* small accessors where a consumer needs
   a derived value (pulling a sub-field out of a packed bitfield). Do not
   add getters/setters that merely wrap ordinary field access.
-- Layering (`docs/internals.md`): `gps/lib/sbfbin` imports only stdlib
+- Layering (`docs/internals/packages.md`): `gps/lib/sbfbin` imports only stdlib
   and sibling `gps/lib/*` packages -- it must not import `gpsprot`,
   `gps/scan`, or `gps/internal/*`. Consequence for this phase: struct
   fields are raw wire values (`uint8` SVID, `uint8` signal number, etc.),
@@ -143,7 +143,7 @@ differs from casbin/ubxbin" below):
   to `sbfbin` constants only. If phase 3 finds it needs a raw value that
   `sbfbin` doesn't export, the fix is to export it from `sbfbin`, not to
   inline a literal downstream.
-- Add an entry to `docs/internals.md` (`### gps/lib/` and
+- Add an entry to `docs/internals/packages.md` (`### gps/lib/` and
   `### gps/internal/` sections) for `gps/lib/sbfbin` and
   `gps/internal/septentrio` when this phase lands, per `CLAUDE.md`.
 
@@ -1218,7 +1218,7 @@ block-number masking, `RescanOnBadChecksum`) and do-nothing
 (`Sync`/`HeaderLen`/`MsgID`/`PacketMsgID`); `other.go`'s name-only
 `idNameMap` covering all known block IDs (so `scan`/`annotate` name
 every frame, decoded or not); registration in `gps/gpsreg`;
-`docs/internals.md` entry. No block structs and no `Chunked` driver
+`docs/internals/packages.md` entry. No block structs and no `Chunked` driver
 yet. At this point `satpulsetool scan` frames the `$@` packets in all
 five example captures, and the scanner unit tests run (including the
 `$R`/`$T`/`$-`/`$&`/NMEA byte-2 rejection and the unknown block 5942).

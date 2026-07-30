@@ -2,9 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-For detailed documentation of the package structure, dependencies, and layering, see @docs/internals.md.
+For detailed documentation of the package structure, dependencies, and layering, see @docs/internals/packages.md.
 
-Whenever you create a new package, add an entry describing it to the appropriate section of @docs/internals.md.
+Whenever you create a new package, add an entry describing it to the appropriate section of @docs/internals/packages.md.
 
 ## Interaction
 

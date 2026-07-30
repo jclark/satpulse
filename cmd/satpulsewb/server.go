@@ -350,7 +350,7 @@ func (s *server) handleState(w http.ResponseWriter, _ *http.Request) {
 type connectionInfo struct {
 	State  session.ConnState `json:"state"`
 	Device string            `json:"device"`
-	Speed  int               `json:"speed"`
+	Speed  int               `json:"speed,omitempty"` // 0 (absent): no speed specified or chosen yet
 }
 
 var (

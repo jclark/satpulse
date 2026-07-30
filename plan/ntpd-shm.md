@@ -256,7 +256,7 @@ Update:
 - `configs/config-schema.json`;
 - `configs/satpulse.toml`;
 - `docs/man/satpulse.toml.5.md`;
-- `docs/internals.md`.
+- `docs/internals/packages.md`.
 
 The manual should explain:
 
