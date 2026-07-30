@@ -25,7 +25,7 @@ speed = 9600
 #config = true
 # Uncomment to restrict recognized packet formats and config protocols to one vendor.
 # If not set, all packet formats and configuration protocols are tried.
-# One of: u-blox, Unicore, Allystar, Bynav, NovAtel, Quectel, SinoGNSS, Techtotop, Zhongke, other
+# One of: u-blox, Unicore, Allystar, Bynav, NovAtel, Quectel, SinoGNSS, Techtotop, Zhongke (or CASIC), other
 # (Furuno, MediaTek, Septentrio, SkyTraq, Trimble are treated as "other")
 #vendor = "u-blox"
 # Uncomment for a mobile receiver; default is to assume stationary

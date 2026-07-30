@@ -64,17 +64,18 @@ Without **\-\-listen** this is the default.
 : Do not open a browser at startup.
 
 **\-d**, **\-\-serial\-device** *path*
-: Initial serial device shown in the connection bar.
+: Prefill for the device control in the connection bar.
+When both **\-d** and **\-s** are given, **satpulsewb** connects at startup with these values.
 
 **\-s**, **\-\-device\-speed** *bps*
-: Initial serial speed shown in the connection bar.
-The default is 9600.
+: Prefill for the speed control in the connection bar.
+When both **\-d** and **\-s** are given, **satpulsewb** connects at startup with these values.
 
 **\-\-vendor** *name*
 : Restrict probing and packet format detection to a receiver vendor.
 This applies to every connection made in the session, whether at startup or from the GUI.
 The value is case-insensitive.
-Typical values are **u\-blox**, **Unicore**, **NovAtel**, **Bynav**, **SinoGNSS**, **Allystar**, **Techtotop**, and **Zhongke**.
+Typical values are **u\-blox**, **Unicore**, **NovAtel**, **Bynav**, **SinoGNSS**, **Allystar**, **Techtotop**, and **Zhongke** (or **CASIC**).
 If this option is omitted, the **SATPULSE_VENDORS** environment variable applies (see ENVIRONMENT), and if that too is unset, the vendor is autodetected.
 
 **\-\-packet\-log** *path*

@@ -1,5 +1,6 @@
 import {h} from 'preact';
 import type {NavEpochMsg} from '@satpulse/gps/gpsprot';
+import {corrDisplay, fixLevelDisplay, solutionDimDisplay} from '@satpulse/gps/fixdisplay';
 
 const MOVING_SPEED_MIN = 0.1; // m/s; below this, course is unreliable
 
@@ -17,8 +18,12 @@ export function SummaryPanel({msg, groundSpeed}: Props) {
         );
     }
 
-    const fixParts = [msg.fixLevel, msg.solutionDim, ...(msg.auxSrc || []), ...(msg.correction || [])]
-        .filter(Boolean);
+    const fixParts = [
+        msg.fixLevel && fixLevelDisplay(msg.fixLevel),
+        msg.solutionDim && solutionDimDisplay(msg.solutionDim),
+        ...(msg.auxSrc || []),
+        ...(msg.correction || []).map(corrDisplay),
+    ].filter(Boolean);
     if (msg.rtcmRefBaseID != null && msg.rtcmRefBaseID !== 0) fixParts.push(`R${msg.rtcmRefBaseID}`);
     if (msg.diffAge != null) fixParts.push(`${msg.diffAge.toFixed(0)}s`);
     const fixLine = fixParts.length > 0 ? `Fix: ${fixParts.join(' ')}` : '';

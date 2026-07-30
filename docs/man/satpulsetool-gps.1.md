@@ -362,7 +362,7 @@ The following option restricts which configuration protocols are probed. It also
 
 **\-\-vendor** *name*
 : GPS receiver vendor name.
-  The following values are supported: `u-blox`, `Unicore`, `Allystar`, `Bynav`, `NovAtel`, `Quectel`, `SinoGNSS`, `Techtotop`, `Zhongke`, `other`.
+  The following values are supported: `u-blox`, `Unicore`, `Allystar`, `Bynav`, `NovAtel`, `Quectel`, `SinoGNSS`, `Techtotop`, `Zhongke` (or `CASIC`), `other`.
   In addition, the following values are allowed and currently treated as equivalent to `other`: `Furuno`, `MediaTek`, `Septentrio`, `SkyTraq`, `Trimble`.
   Values are case-insensitive.
   If not specified, the **SATPULSE_VENDORS** environment variable applies (see ENVIRONMENT), and if that too is unset, no restrictions are applied.

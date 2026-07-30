@@ -87,7 +87,7 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
   this won't make any persistent changes to the GPS receiver, which means you can turn the receiver off and on again to undo any changes made by SatPulse;
   if you use `false` here, then all the other keys in the table other than `vendor` will be ignored
   and it is your responsibility to configure the GPS receiver appropriately
-* `vendor` - a string giving the manufacturer of the GPS module; this restricts which packet formats the scanner recognizes and which configuration protocols are probed; it is also used to interpret non-standard numbering of space vehicles in NMEA GSV and GSA sentences; the following values are supported: `"u-blox"`, `"Unicore"`, `"Allystar"`, `"Bynav"`, `"NovAtel"`, `"Quectel"`, `"SinoGNSS"`, `"Techtotop"`, `"Zhongke"`, `"other"`; in addition, the following values are allowed and currently treated as equivalent to `"other"`: `"Furuno"`, `"MediaTek"`, `"Septentrio"`, `"SkyTraq"`, `"Trimble"`; values are case-insensitive; if `vendor` is not specified, the `SATPULSE_VENDORS` environment variable (see **satpulsed**(8)) applies, and if that too is unset, no restrictions are applied
+* `vendor` - a string giving the manufacturer of the GPS module; this restricts which packet formats the scanner recognizes and which configuration protocols are probed; it is also used to interpret non-standard numbering of space vehicles in NMEA GSV and GSA sentences; the following values are supported: `"u-blox"`, `"Unicore"`, `"Allystar"`, `"Bynav"`, `"NovAtel"`, `"Quectel"`, `"SinoGNSS"`, `"Techtotop"`, `"Zhongke"` (or `"CASIC"`), `"other"`; in addition, the following values are allowed and currently treated as equivalent to `"other"`: `"Furuno"`, `"MediaTek"`, `"Septentrio"`, `"SkyTraq"`, `"Trimble"`; values are case-insensitive; if `vendor` is not specified, the `SATPULSE_VENDORS` environment variable (see **satpulsed**(8)) applies, and if that too is unset, no restrictions are applied
 * `timeGNSS` - a string giving the GNSS system to which the time pulse should be aligned; the GNSS specified here must be already be enabled on the receiver
   (SatPulse will not change the enabled GNSS systems since that is a rather disruptive operation); possible values are
    * `"GPS"` for the GNSS system operated by the USA
@@ -226,7 +226,7 @@ and it can also write its own application-specific log files.
 The following keys relate to logging through systemd:
 
 * `verbose` - a boolean saying whether to log verbosely; default is false
-* `interval` - an integer giving the time in seconds over which a log message should summarize the synchronization status;
+* `interval` - an integer giving the time in seconds over which a log message should summarize the PHC synchronization status;
   the default is 30; the status is computed once per second, and a value of 1 will log that status directly; a value
   of 0 will not log the synchronization status
 
@@ -272,8 +272,8 @@ listen = "192.168.2.1:2006"
 
 Note that the HTTP monitoring interface can provide a graphical view of the available satellites, but the GPS receiver needs to output the necessary information.
 If the HTTP monitoring interface is enabled and GPS configuration is enabled, then the GPS receiver will be automatically configured to output this information.
-However, this will be done only if the serial speed is less than 38400.
-This can be overridden  using the `satellitesOutput` key in the `gps` table.
+However, this will be done only if the serial speed is at least 38400.
+This can be overridden using the `satellitesOutput` key in the `gps` table.
 But if you want the graphical view, it is recommended to increase the serial speed to at least 38400.
 
 ## `ntrip` table

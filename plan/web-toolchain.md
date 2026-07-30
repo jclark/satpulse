@@ -71,7 +71,7 @@ config. The workspace root exposes an aggregate `test` script.
 
 ## Go embed bridge
 
-The embed package lives at `time/internal/web`: its only consumer is satpulsed's daemon (`time/app/daemon`), so it belongs in the `time/` hierarchy at the application layer, alongside the other daemon web-support packages (`time/internal/sseobs`, `promobs`). Placing it under the repo-root `internal/` (which `internals.md` reserves for satpulsetool subcommands, a hierarchy that sits *above* `time/`) would invert the dependency direction. A future `cmd/satpulseweb` serves a different frontend and embeds its own assets, so it does not need to import this package.
+The embed package lives at `time/internal/web`: its only consumer is satpulsed's daemon (`time/app/daemon`), so it belongs in the `time/` hierarchy at the application layer, alongside the other daemon web-support packages (`time/internal/sseobs`, `promobs`). Placing it under the repo-root `internal/` (which `docs/internals/packages.md` reserves for satpulsetool subcommands, a hierarchy that sits *above* `time/`) would invert the dependency direction. A future `cmd/satpulseweb` serves a different frontend and embeds its own assets, so it does not need to import this package.
 
 ```go
 //go:generate npm --prefix ../../../webui run embed
