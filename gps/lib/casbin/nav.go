@@ -499,20 +499,61 @@ func (m *Nav2SigFixed) NavEpoch() uint32 { return m.TOW }
 
 // Nav2SigInfo is a per-signal entry in NAV2-SIG (16 bytes each)
 type Nav2SigInfo struct {
-	GNSSID    GNSSID `json:"gnssid"`
-	SVID      uint8  `json:"svid"`      // satellite ID (raw PRN, except QZSS=PRN-192)
-	SigID     SigID  `json:"sigid"`     // signal band ID
-	FreqID    uint8  `json:"freqid"`    // GLONASS frequency ID; undefined for other constellations
-	PRRes     int16  `json:"prResi"`    // dm, pseudorange residual
-	CNO       uint8  `json:"cn0"`       // dBHz
-	TrkInd    uint8  `json:"trkind"`    // signal quality
-	CorFlags  uint8  `json:"corFlagx"`  // correction flag
-	SolFlags  uint8  `json:"solFlagx"`  // solution flag
-	Chn       uint8  `json:"chn"`       // tracking channel number
-	Elev      uint8  `json:"eleDeg"`    // deg
-	Azim      uint16 `json:"aziDeg"`    // deg
-	IonoDelay int16  `json:"ionoDelay"` // dm, ionosphere delay correction
+	GNSSID    GNSSID          `json:"gnssid"`
+	SVID      uint8           `json:"svid"`      // satellite ID (raw PRN, except QZSS=PRN-192)
+	SigID     SigID           `json:"sigid"`     // signal band ID
+	FreqID    uint8           `json:"freqid"`    // GLONASS frequency ID; undefined for other constellations
+	PRRes     int16           `json:"prResi"`    // dm, pseudorange residual
+	CNO       uint8           `json:"cn0"`       // dBHz
+	TrkInd    uint8           `json:"trkind"`    // signal quality
+	CorFlags  Nav2SigCorFlags `json:"corFlagx"`  // correction flag
+	SolFlags  Nav2SigSolFlags `json:"solFlagx"`  // solution flag
+	Chn       uint8           `json:"chn"`       // tracking channel number
+	Elev      uint8           `json:"eleDeg"`    // deg
+	Azim      uint16          `json:"aziDeg"`    // deg
+	IonoDelay int16           `json:"ionoDelay"` // dm, ionosphere delay correction
 }
+
+// Nav2SigCorFlags is the corFlagx field of a NAV2-SIG signal entry (zkw3.md
+// 3.9.7): the correction source applied to the signal (bits 2:0) and the
+// ionosphere model used to correct it (bits 6:4).
+type Nav2SigCorFlags uint8
+
+const Nav2SigCorSrcMask Nav2SigCorFlags = 0x07
+
+const (
+	Nav2SigCorSrcNone  Nav2SigCorFlags = iota // no correction
+	Nav2SigCorSrcSBAS                         // SBAS
+	Nav2SigCorSrcBDS                          // BDS
+	Nav2SigCorSrcRTCM2                        // RTCM2
+	Nav2SigCorSrcOSR                          // OSR
+	Nav2SigCorSrcSSR                          // SSR
+)
+
+const Nav2SigIonoMask Nav2SigCorFlags = 0x70
+
+const (
+	Nav2SigIonoNone     Nav2SigCorFlags = iota << 4 // no ionosphere model
+	Nav2SigIonoGPS                                  // GPS broadcast (Klobuchar)
+	Nav2SigIonoSBAS                                 // SBAS
+	Nav2SigIonoBD2                                  // BeiDou-2
+	Nav2SigIonoGAL                                  // Galileo (NeQuick)
+	Nav2SigIonoBD3                                  // BeiDou-3
+	_                                               // value 6 unused
+	Nav2SigIonoDualFreq                             // ionosphere-free dual-frequency
+)
+
+// Nav2SigSolFlags is the solFlagx field of a NAV2-SIG signal entry: how the
+// signal was used in the navigation solution (bits 3:0). Bits 7:4 carry the
+// satellite solution status, which SatPulse does not use.
+type Nav2SigSolFlags uint8
+
+const (
+	Nav2SigSolPRUsed      Nav2SigSolFlags = 1 << iota // pseudorange used
+	Nav2SigSolCarrierUsed                             // carrier phase used
+	Nav2SigSolDopplerUsed                             // doppler used
+	Nav2SigSolPRSmoothed                              // pseudorange smoothing applied
+)
 
 // Nav2Sig is NAV2-SIG (0x11 0x06) - per-signal tracking information.
 // The receiver appends undocumented trailing bytes after the signal entries;
