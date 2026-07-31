@@ -189,13 +189,12 @@ frontend is left to the implementation.
   azimuth, which is sufficient in a terminal.
 - Position scatter is replaced by its statistics readout (CEP etc.);
   no plotting.
-- The TUI is `satpulsewb --tui`, not a separate binary. The original
-  decision here was `satpulsewb -t`, but `-t` is satpulsewb's
-  `--token` shorthand, which this branch must not change; the work
-  briefly detoured through a separate `satpulsetui` binary before
-  settling on the long `--tui` flag (the gdb precedent). --token is
-  important enough not to need a shorthand, so `-t` is to be freed
-  on master and can then become the `--tui` shorthand.
+- The TUI is `satpulsewb --tui`, shorthand `-t`, not a separate
+  binary. `-t` originally belonged to `--token`; master dropped that
+  shorthand (--token, being scripted-use only, does not need one),
+  and after merging master this branch gave `-t` to `--tui` (the gdb
+  --tui precedent). The work briefly detoured through a separate
+  `satpulsetui` binary before settling on this.
 - All five views are in scope for the first pass.
 - Keybindings: not vim-style; arrows, tab, enter, and similar
   conventional keys.

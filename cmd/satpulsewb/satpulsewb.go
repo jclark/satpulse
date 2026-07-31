@@ -32,7 +32,7 @@ import (
 const defaultPort = 15754
 
 const summary = `[-h|--help] [-v|--verbose] [-L|--listen host:port] [--token]
-       [-n|--no-open-browser] [--tui]
+       [-n|--no-open-browser] [-t|--tui]
        [-d|--serial-device path] [-s|--device-speed bps] [--vendor name]
        [--packet-log path]`
 
@@ -83,7 +83,7 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 	flags.StringVarP(&v.listen, "listen", "L", "", "listen on `host:port` and disable the access token")
 	flags.BoolVar(&v.token, "token", false, "require a generated access token even with --listen")
 	flags.BoolVarP(&v.noOpen, "no-open-browser", "n", false, "do not open a web browser at startup")
-	flags.BoolVar(&v.tui, "tui", false, "run the terminal UI instead of the web server")
+	flags.BoolVarP(&v.tui, "tui", "t", false, "run the terminal UI instead of the web server")
 	flags.StringVarP(&v.device, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.IntVarP(&v.speed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
 	flags.StringVar(&vendorStr, "vendor", "", "GPS receiver `vendor` name")

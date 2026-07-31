@@ -5,7 +5,7 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 # SYNOPSIS
 
 **satpulsewb** [**\-h**\|**\-\-help**] [**\-V**\|**\-\-version**] [**\-v**\|**\-\-verbose**] [**\-L**\|**\-\-listen** *host:port*] [**\-\-token**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-n**\|**\-\-no\-open\-browser**] [**\-\-tui**] [**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-n**\|**\-\-no\-open\-browser**] [**\-t**\|**\-\-tui**] [**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-vendor** *name*] [**\-\-packet\-log** *path*]
 
 # DESCRIPTION
@@ -64,7 +64,7 @@ Without **\-\-listen** this is the default.
 **\-n**, **\-\-no\-open\-browser**
 : Do not open a browser at startup.
 
-**\-\-tui**
+**\-t**, **\-\-tui**
 : Run a terminal UI in the invoking terminal instead of serving the web application.
 No HTTP server is started and no browser is opened.
 Cannot be combined with **\-\-listen** or **\-\-token**.
