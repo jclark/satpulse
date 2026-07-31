@@ -1,7 +1,4 @@
-// Package tui implements the terminal UI mode of satpulsewb: a
-// Bubble Tea shell over gps/app/session, covering the same ground as
-// the web workbench where a terminal does it well.
-package tui
+package main
 
 import (
 	"sync"

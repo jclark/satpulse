@@ -35,29 +35,18 @@ func TestVerboseRepeated(t *testing.T) {
 	}
 }
 
-func TestTerminalShorthand(t *testing.T) {
+func TestTokenShorthand(t *testing.T) {
 	v, usage, err := parseFlags([]string{"-t"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !v.terminal {
-		t.Error("-t did not enable the terminal UI")
-	}
-	if v.token {
-		t.Error("-t enabled the access token")
+	if !v.token {
+		t.Error("-t did not enable the access token")
 	}
 	s := usage("satpulsewb")
-	for _, want := range []string{"[-t|--terminal]", "-t, --terminal", "--token"} {
+	for _, want := range []string{"[-t|--token]", "-t, --token"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("help does not contain %q:\n%s", want, s)
-		}
-	}
-}
-
-func TestTerminalConflicts(t *testing.T) {
-	for _, args := range [][]string{{"-t", "-L", "localhost:0"}, {"-t", "--token"}} {
-		if _, _, err := parseFlags(args); err == nil {
-			t.Errorf("parseFlags(%q) succeeded", args)
 		}
 	}
 }

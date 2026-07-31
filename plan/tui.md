@@ -43,14 +43,12 @@ sink, no HTTP or serialization layer. Route slog through
 `session.NewLogHandler` with a file (or discard) base handler so
 nothing writes to the terminal behind Bubble Tea's back.
 
-The TUI is a mode of the existing workbench command: `satpulsewb -t`
-runs the terminal UI instead of starting the HTTP server and opening
-a browser. The existing flags (device, speed, socket path, vendor
-filter, packet log path, message file path) apply to both modes. The
-TUI code itself can live in its own package under `cmd/satpulsewb` or
-elsewhere as the implementation finds natural; a new package means an
-entry in `docs/internals/packages.md`. The feature needs a NEWS.md
-entry.
+The TUI is its own command, `satpulsetui` (`cmd/satpulsetui`),
+taking satpulsewb's receiver flags (device, speed, vendor filter,
+packet log path). It was first built as `satpulsewb -t`, but that
+shorthand already belongs to satpulsewb's `--token`, which cannot
+change; see Decided. A new package means an entry in
+`docs/internals/packages.md`. The feature needs a NEWS.md entry.
 
 ## Structure
 
@@ -149,10 +147,10 @@ need to copy on receipt. The load-bearing facts:
 No GPS hardware is needed: the Playwright e2e harness
 (`webui/packages/e2e/harness.ts`) already exercises the workbench
 against three data sources, and all three sit below the shell, so
-they drive `satpulsewb -t` unchanged:
+they drive `satpulsetui` unchanged:
 
 - FIFO replay: `satpulsetool pack --realtime <factor> <log>` into a
-  named pipe, with `satpulsewb -d <fifo> -s 38400`. Read-only;
+  named pipe, with `satpulsetui -d <fifo> -s 38400`. Read-only;
   drives the Monitor and Packets views (the harness uses
   `gps/testdata/packets/u-blox/ZED-F9P/daemon-sats-pos-38400.jsonl`).
 - The u-blox F9P simulator: `satpulsetool ubxsim` behind a pty
@@ -190,7 +188,10 @@ frontend is left to the implementation.
   azimuth, which is sufficient in a terminal.
 - Position scatter is replaced by its statistics readout (CEP etc.);
   no plotting.
-- The TUI is `satpulsewb -t`, not a separate binary.
+- The TUI is the separate `satpulsetui` binary, for now. The original
+  decision was `satpulsewb -t`, but `-t` is satpulsewb's `--token`
+  shorthand and cannot be repurposed. Not added to install/deb/rpm
+  packaging yet.
 - All five views are in scope for the first pass.
 - Keybindings: not vim-style; arrows, tab, enter, and similar
   conventional keys.

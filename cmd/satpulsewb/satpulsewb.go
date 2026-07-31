@@ -20,7 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/cmd/satpulsewb/tui"
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/session"
 	"github.com/jclark/satpulse/gps/gpsreg"
@@ -31,8 +30,8 @@ import (
 // 1575.42 MHz), falling back to an OS-picked port when taken.
 const defaultPort = 15754
 
-const summary = `[-h|--help] [-v|--verbose] [-L|--listen host:port] [--token]
-       [-n|--no-open-browser] [-t|--terminal]
+const summary = `[-h|--help] [-v|--verbose] [-L|--listen host:port] [-t|--token]
+       [-n|--no-open-browser]
        [-d|--serial-device path] [-s|--device-speed bps] [--vendor name]
        [--packet-log path]`
 
@@ -40,7 +39,6 @@ type flagVars struct {
 	listen      string
 	token       bool
 	noOpen      bool
-	terminal    bool
 	device      string
 	speed       int
 	autoConnect bool
@@ -81,9 +79,8 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 	var help bool
 	flags := pflag.NewFlagSet("satpulsewb", pflag.ContinueOnError)
 	flags.StringVarP(&v.listen, "listen", "L", "", "listen on `host:port` and disable the access token")
-	flags.BoolVar(&v.token, "token", false, "require a generated access token even with --listen")
+	flags.BoolVarP(&v.token, "token", "t", false, "require a generated access token even with --listen")
 	flags.BoolVarP(&v.noOpen, "no-open-browser", "n", false, "do not open a web browser at startup")
-	flags.BoolVarP(&v.terminal, "terminal", "t", false, "run the terminal UI instead of the web server")
 	flags.StringVarP(&v.device, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.IntVarP(&v.speed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
 	flags.StringVar(&vendorStr, "vendor", "", "GPS receiver `vendor` name")
@@ -109,9 +106,6 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 	if flags.Lookup("device-speed").Changed && v.speed <= 0 {
 		return nil, usage, fmt.Errorf("--device-speed must be greater than zero")
 	}
-	if v.terminal && (v.listen != "" || v.token) {
-		return nil, usage, fmt.Errorf("--terminal cannot be combined with --listen or --token")
-	}
 	v.autoConnect = flags.Lookup("serial-device").Changed && flags.Lookup("device-speed").Changed
 	var err error
 	if v.vendor, err = gpsreg.ParseVendor(vendorStr); err != nil {
@@ -127,29 +121,6 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 }
 
 func run(v *flagVars) error {
-	if v.terminal {
-		vendors, err := cmd.ResolveVendors(v.vendor)
-		if err != nil {
-			return err
-		}
-		var packetLog io.Writer
-		if v.packetLog != "" {
-			f, err := os.Create(v.packetLog)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-			packetLog = f
-		}
-		return tui.Run(tui.Options{
-			LogLevel:  v.logLevel,
-			Vendors:   vendors,
-			PacketLog: packetLog,
-			MsgDirs:   msgDirs(),
-			Device:    v.device,
-			Speed:     v.speed,
-		})
-	}
 	hub := newSSEHub()
 	base := cmd.NewDefaultLogger(os.Stderr, v.logLevel)
 	lg := slog.New(session.NewLogHandler(hub, base.Handler()))
