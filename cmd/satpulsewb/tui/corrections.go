@@ -32,6 +32,7 @@ type correctionsView struct {
 	sess *session.Session
 
 	mode      int // 0 ntrip, 1 tcp
+	lastMode  int
 	host      textinput.Model
 	port      textinput.Model
 	portNtrip string // per-mode port values, as in the workbench
@@ -40,7 +41,10 @@ type correctionsView struct {
 	user      textinput.Model
 	pass      textinput.Model
 	nmeaSend  bool
-	focus     int
+
+	items  []cfgItem
+	focus  int
+	offset int
 
 	connState session.ConnState
 	corr      *session.CorrEvent
@@ -54,18 +58,6 @@ type correctionsView struct {
 	epoch     int
 	stoppedAt time.Time // freeze instant for ages when not running
 }
-
-const (
-	corFieldMode = iota
-	corFieldHost
-	corFieldPort
-	corFieldMount
-	corFieldUser
-	corFieldPass
-	corFieldNMEA
-	corFieldButton
-	corFieldCount
-)
 
 func newCorrectionsView(sess *session.Session) *correctionsView {
 	v := &correctionsView{sess: sess, connState: sess.State(), rows: make(map[string]*corRow)}
@@ -84,23 +76,82 @@ func newCorrectionsView(sess *session.Session) *correctionsView {
 	v.user = mk("", 20)
 	v.pass = mk("", 20)
 	v.pass.EchoMode = textinput.EchoPassword
-	v.focus = corFieldHost
-	v.host.Focus()
+	v.buildItems()
+	v.focus = -1
+	moveItemFocus(v.items, &v.focus, 1)
 	return v
+}
+
+// buildItems assembles the source form on the shared row machinery.
+func (v *correctionsView) buildItems() {
+	edit := func() bool { return !v.locked() }
+	ntripEdit := func() bool { return !v.locked() && v.ntrip() }
+	v.items = []cfgItem{
+		itemHeading("Correction source"),
+		itemRadio("Mode", []string{"NTRIP", "TCP"}, &v.mode, edit, nil, v.modeChanged),
+		itemText("Host", &v.host, edit, nil, nil),
+		itemText("Port", &v.port, edit, nil, nil),
+		itemText("Mountpoint", &v.mount, ntripEdit, nil, nil),
+		itemText("User", &v.user, ntripEdit, nil, nil),
+		itemText("Password", &v.pass, ntripEdit, nil, nil),
+		itemCheck("Send position as NMEA", &v.nmeaSend, ntripEdit, nil),
+		itemInfo(func() string {
+			if v.nmeaValid {
+				return fmt.Sprintf("  Position: %.7f, %.7f", v.nmeaLat, v.nmeaLon)
+			}
+			return ""
+		}),
+		itemButton(func() string {
+			if v.running() {
+				return "Stop"
+			}
+			return "Start"
+		}, func() bool {
+			if v.pending {
+				return false
+			}
+			if v.running() {
+				return true
+			}
+			return v.connState == session.StateConnected && v.canStart()
+		}, func() tea.Cmd {
+			if v.running() {
+				return v.stopCmd()
+			}
+			return v.startCmd()
+		}),
+	}
+}
+
+// modeChanged swaps the per-mode port value after the mode radio
+// moves, as the workbench keeps a port per mode.
+func (v *correctionsView) modeChanged() {
+	if v.mode == v.lastMode {
+		return
+	}
+	if v.lastMode == 0 {
+		v.portNtrip = v.port.Value()
+		v.port.SetValue(v.portTCP)
+	} else {
+		v.portTCP = v.port.Value()
+		v.port.SetValue(v.portNtrip)
+	}
+	v.port.CursorEnd()
+	v.lastMode = v.mode
 }
 
 func (v *correctionsView) title() string { return "Corrections" }
 
 func (v *correctionsView) capturesInput() bool {
-	switch v.focus {
-	case corFieldHost, corFieldPort, corFieldMount, corFieldUser, corFieldPass:
-		return !v.locked()
+	if v.focus >= 0 && v.focus < len(v.items) {
+		it := &v.items[v.focus]
+		return it.captures && (it.enabled == nil || it.enabled())
 	}
 	return false
 }
 
 func (v *correctionsView) hints() []string {
-	return []string{"up/down field", "left/right mode", "space toggle", "enter start/stop", "x clear table"}
+	return []string{"up/down field", "left/right mode", "space toggle", "enter on Start/Stop", "x clear table"}
 }
 
 // running reports whether a correction session is active.
@@ -219,50 +270,17 @@ func (v *correctionsView) update(msg tea.Msg) tea.Cmd {
 	case tea.KeyPressMsg:
 		return v.handleKey(msg)
 	}
-	return v.updateFocused(msg)
-}
-
-func (v *correctionsView) updateFocused(msg tea.Msg) tea.Cmd {
-	if v.locked() {
-		return nil
-	}
-	var cmd tea.Cmd
-	switch v.focus {
-	case corFieldHost:
-		v.host, cmd = v.host.Update(msg)
-	case corFieldPort:
-		v.port, cmd = v.port.Update(msg)
-	case corFieldMount:
-		v.mount, cmd = v.mount.Update(msg)
-	case corFieldUser:
-		v.user, cmd = v.user.Update(msg)
-	case corFieldPass:
-		v.pass, cmd = v.pass.Update(msg)
-	}
-	return cmd
+	return nil
 }
 
 func (v *correctionsView) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "up":
-		return v.moveFocus(-1)
+		moveItemFocus(v.items, &v.focus, -1)
+		return nil
 	case "down":
-		return v.moveFocus(1)
-	case "left", "right":
-		if v.focus == corFieldMode && !v.locked() {
-			v.setMode(1 - v.mode)
-			return nil
-		}
-	case "space":
-		if v.focus == corFieldNMEA && !v.locked() && v.ntrip() {
-			v.nmeaSend = !v.nmeaSend
-			return nil
-		}
-	case "enter":
-		if v.running() {
-			return v.stopCmd()
-		}
-		return v.startCmd()
+		moveItemFocus(v.items, &v.focus, 1)
+		return nil
 	case "x":
 		// Clear the correction message table, unless a text field
 		// has focus and the x belongs to it.
@@ -271,51 +289,11 @@ func (v *correctionsView) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 	}
-	return v.updateFocused(msg)
-}
-
-// setMode switches between ntrip and tcp, keeping a per-mode port
-// value as the workbench does.
-func (v *correctionsView) setMode(mode int) {
-	if v.ntrip() {
-		v.portNtrip = v.port.Value()
-	} else {
-		v.portTCP = v.port.Value()
-	}
-	v.mode = mode
-	if v.ntrip() {
-		v.port.SetValue(v.portNtrip)
-	} else {
-		v.port.SetValue(v.portTCP)
-	}
-}
-
-// moveFocus moves to the next focusable field, skipping the
-// ntrip-only fields in tcp mode.
-func (v *correctionsView) moveFocus(dir int) tea.Cmd {
-	for {
-		v.focus = (v.focus + dir + corFieldCount) % corFieldCount
-		if v.ntrip() {
-			break
+	if v.focus >= 0 && v.focus < len(v.items) {
+		it := &v.items[v.focus]
+		if it.key != nil && (it.enabled == nil || it.enabled()) {
+			return it.key(msg)
 		}
-		if v.focus != corFieldMount && v.focus != corFieldUser && v.focus != corFieldPass && v.focus != corFieldNMEA {
-			break
-		}
-	}
-	for _, ti := range []*textinput.Model{&v.host, &v.port, &v.mount, &v.user, &v.pass} {
-		ti.Blur()
-	}
-	switch v.focus {
-	case corFieldHost:
-		return v.host.Focus()
-	case corFieldPort:
-		return v.port.Focus()
-	case corFieldMount:
-		return v.mount.Focus()
-	case corFieldUser:
-		return v.user.Focus()
-	case corFieldPass:
-		return v.pass.Focus()
 	}
 	return nil
 }
@@ -379,54 +357,9 @@ func (v *correctionsView) stopCmd() tea.Cmd {
 }
 
 func (v *correctionsView) render(width, height int) string {
-	var b strings.Builder
-	b.WriteString(sectionStyle.Render("Correction source") + "\n")
-	modeName := "NTRIP"
-	if !v.ntrip() {
-		modeName = "TCP"
-	}
-	b.WriteString(v.field(corFieldMode, "Mode", "< "+modeName+" >") + "\n")
-	b.WriteString(v.field(corFieldHost, "Host", v.host.View()) + "\n")
-	b.WriteString(v.field(corFieldPort, "Port", v.port.View()) + "\n")
-	if v.ntrip() {
-		b.WriteString(v.field(corFieldMount, "Mountpoint", v.mount.View()) + "\n")
-		b.WriteString(v.field(corFieldUser, "User", v.user.View()) + "\n")
-		b.WriteString(v.field(corFieldPass, "Password", v.pass.View()) + "\n")
-		check := "[ ]"
-		if v.nmeaSend {
-			check = "[x]"
-		}
-		pos := ""
-		if v.nmeaValid {
-			pos = fmt.Sprintf("   Position: %.7f, %.7f", v.nmeaLat, v.nmeaLon)
-		}
-		b.WriteString(v.field(corFieldNMEA, "", check+" Send position as NMEA"+pos) + "\n")
-	}
-	label := "[ Start ]"
-	if v.running() {
-		label = "[ Stop ]"
-	}
-	if v.focus == corFieldButton {
-		label = activeTab.Render(label)
-	}
-	b.WriteString("  " + label + "\n\n")
-	b.WriteString(v.renderStatus(width) + "\n\n")
-	b.WriteString(sectionStyle.Render("Correction messages") + "\n")
-	for _, l := range v.renderRows() {
-		b.WriteString(truncate(l, width) + "\n")
-	}
-	return b.String()
-}
-
-func (v *correctionsView) field(n int, label, value string) string {
-	marker := "  "
-	if v.focus == n {
-		marker = "> "
-	}
-	if label != "" {
-		return marker + labelStyle.Render(fmt.Sprintf("%-12s", label)) + value
-	}
-	return marker + value
+	extra := []string{"", v.renderStatus(width), "", sectionStyle.Render("Correction messages")}
+	extra = append(extra, v.renderRows()...)
+	return renderItems(v.items, v.focus, &v.offset, width, height, extra...)
 }
 
 func (v *correctionsView) renderStatus(width int) string {
