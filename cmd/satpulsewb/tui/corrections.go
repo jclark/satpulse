@@ -483,9 +483,17 @@ func (v *correctionsView) renderRows() []string {
 			{text: desc}, {text: strconv.Itoa(r.count)}, {text: splits}, {text: age},
 		})
 	}
-	return renderTable(
+	lines := renderTable(
 		[]string{"Tag", "Station ID", "Type", "MSM", "Description", "Count", "Splits", "Age"},
 		[]bool{false, false, false, false, false, true, true, true}, cells)
+	// Dim stale rows with the workbench's adaptive threshold: a row
+	// with only one message seen is never stale.
+	for i, r := range rows {
+		if r.interval > 0 && now.Sub(r.lastTime) >= max(10*time.Second, r.interval*5/2) {
+			lines[i+1] = faintStyle.Render(lines[i+1])
+		}
+	}
+	return lines
 }
 
 func sortCorRows(rows []*corRow) {
