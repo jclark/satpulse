@@ -51,6 +51,21 @@ func TestTokenShorthand(t *testing.T) {
 	}
 }
 
+func TestTUIFlag(t *testing.T) {
+	v, _, err := parseFlags([]string{"--tui"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !v.tui {
+		t.Error("--tui did not enable the terminal UI")
+	}
+	for _, args := range [][]string{{"--tui", "-L", "localhost:0"}, {"--tui", "-t"}} {
+		if _, _, err := parseFlags(args); err == nil {
+			t.Errorf("parseFlags(%q) succeeded", args)
+		}
+	}
+}
+
 func TestNoOpenBrowserShorthand(t *testing.T) {
 	v, usage, err := parseFlags([]string{"-n"})
 	if err != nil {
