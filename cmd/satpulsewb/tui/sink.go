@@ -118,17 +118,23 @@ func (s *sink) run(p *tea.Program) {
 			return
 		case <-s.notify:
 		}
-		s.mu.Lock()
-		m := eventsMsg{events: s.events, packets: s.packets, dropped: s.dropped}
-		s.events = nil
-		s.packets = nil
-		s.dropped = 0
-		clear(s.coalesce)
-		s.mu.Unlock()
+		m := s.takeBatch()
 		if len(m.events) > 0 || len(m.packets) > 0 || m.dropped > 0 {
 			p.Send(m)
 		}
 	}
+}
+
+// takeBatch removes and returns everything queued so far.
+func (s *sink) takeBatch() eventsMsg {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := eventsMsg{events: s.events, packets: s.packets, dropped: s.dropped}
+	s.events = nil
+	s.packets = nil
+	s.dropped = 0
+	clear(s.coalesce)
+	return m
 }
 
 func (s *sink) stop() {
