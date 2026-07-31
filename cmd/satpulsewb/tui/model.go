@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -58,6 +59,8 @@ type model struct {
 
 	conn *connectForm // non-nil while the connect overlay is open
 
+	tickPending bool
+
 	status  string // latest log line, shown above the footer
 	statusErr bool
 }
@@ -94,6 +97,31 @@ type opResultMsg struct {
 // viewShownMsg is sent to a view when it becomes the active tab.
 type viewShownMsg struct{}
 
+// tickMsg drives the 1 Hz re-render that keeps ages and stale-dimming
+// advancing while a view that displays them is visible, as the
+// workbench ticks its packet and correction tables.
+type tickMsg time.Time
+
+// tickRelevant reports whether the active view shows ages or
+// stale-dimming that must advance without stream traffic.
+func (m *model) tickRelevant() bool {
+	switch m.activeView().(type) {
+	case *packetsView, *correctionsView:
+		return true
+	}
+	return false
+}
+
+// scheduleTick arms the next 1 Hz tick when one is relevant and none
+// is pending.
+func (m *model) scheduleTick() tea.Cmd {
+	if m.tickPending || !m.tickRelevant() {
+		return nil
+	}
+	m.tickPending = true
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
 func (m *model) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	if cmd := m.conn.autoConnect(); cmd != nil {
@@ -116,6 +144,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.handleEvent(ev)
 		}
 		return m, m.closeConnIfWanted()
+	case tickMsg:
+		m.tickPending = false
+		return m, m.scheduleTick()
 	case tea.KeyPressMsg:
 		cmd := m.handleKey(msg)
 		return m, tea.Batch(cmd, m.closeConnIfWanted())
@@ -256,7 +287,7 @@ func (m *model) switchTab(i int) tea.Cmd {
 	m.active = i
 	_, packets := m.activeView().(*packetsView)
 	m.sink.setWantsPackets(packets)
-	return m.activeView().update(viewShownMsg{})
+	return tea.Batch(m.activeView().update(viewShownMsg{}), m.scheduleTick())
 }
 
 // nextTab returns the next enabled tab in direction dir.
