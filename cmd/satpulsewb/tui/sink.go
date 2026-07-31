@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -8,10 +9,18 @@ import (
 	"github.com/jclark/satpulse/gps/app/session"
 )
 
-// maxPendingPackets bounds the pending gps:packet queue; beyond it the
-// oldest pending packets are dropped and counted, so a stalled render
-// loop cannot grow memory without bound.
-const maxPendingPackets = 1024
+// The pending queues are bounded so a stalled render loop (a blocked
+// terminal: Ctrl-S, a dead ssh connection, a suspended process)
+// cannot grow memory without bound while the session keeps emitting.
+// The bounds are far above anything reached while the loop is
+// draining normally. This mirrors how the workbench SSE hub treats a
+// stalled client: latest-value snapshots survive, the stream tail is
+// bounded, and dropped stream events either repopulate within an
+// epoch or just undercount.
+const (
+	maxPendingEvents  = 1024
+	maxPendingPackets = 1024
+)
 
 // eventsMsg is the tea.Msg delivered for a batch of session events.
 // Packets are queued separately from the ordered general events: their
@@ -20,24 +29,21 @@ const maxPendingPackets = 1024
 type eventsMsg struct {
 	events  []session.Event
 	packets []session.Event
-	dropped int // packets dropped from the pending queue
 }
 
-// coalesced returns the coalescing key for keep-latest events: the
-// render loop only ever wants the newest snapshot of these, so a
-// pending one is replaced in place instead of queued again. Stream
-// events (packets, correction packets, log lines, send progress,
-// responses) return "" and are all delivered.
-func coalesced(ev session.Event) string {
+// singletonKey returns the coalescing key for keep-latest events:
+// events that carry the complete latest value of one piece of state,
+// where the render loop only ever wants the newest. A pending one is
+// superseded rather than queued again. Keyed or stream events
+// (gps:msg rows keyed by native message ID, gps:basearp per station,
+// correction packets, log lines, send progress, responses) return ""
+// and are all delivered.
+func singletonKey(ev session.Event) string {
 	switch ev.Name {
 	case session.EventState, session.EventReceiver, session.EventSpeed,
 		session.EventTime, session.EventEpochPVT, session.EventInitialPos,
-		session.EventNMEAPosition, session.EventCorrections, session.EventBaseARP:
+		session.EventNMEAPosition, session.EventCorrections:
 		return string(ev.Name)
-	case session.EventMsg:
-		if me, ok := ev.Data.(session.MsgEvent); ok {
-			return string(ev.Name) + "/" + me.Kind
-		}
 	}
 	return ""
 }
@@ -49,9 +55,8 @@ type sink struct {
 	packetsOn atomic.Bool
 	mu        sync.Mutex
 	events    []session.Event
-	coalesce  map[string]int // coalescing key -> index in events
+	coalesce  map[string]int // singleton key -> index in events
 	packets   []session.Event
-	dropped   int
 	notify    chan struct{} // cap 1; signals the drain goroutine
 	done      chan struct{}
 }
@@ -70,23 +75,56 @@ func (s *sink) Emit(ev session.Event) {
 	if ev.Name == session.EventPacket {
 		if len(s.packets) >= maxPendingPackets {
 			s.packets = s.packets[1:]
-			s.dropped++
 		}
 		s.packets = append(s.packets, ev)
-	} else if key := coalesced(ev); key != "" {
+	} else if key := singletonKey(ev); key != "" {
+		// Supersede a pending value and append at the end, so the
+		// event is delivered at its latest emission position: a
+		// consumer must not see it before stream events that were
+		// emitted earlier (e.g. a disconnect must not be followed by
+		// messages from the dead connection).
 		if i, ok := s.coalesce[key]; ok {
-			s.events[i] = ev
-		} else {
-			s.coalesce[key] = len(s.events)
-			s.events = append(s.events, ev)
+			s.removeAt(i)
 		}
+		s.coalesce[key] = len(s.events)
+		s.events = append(s.events, ev)
 	} else {
+		if len(s.events) >= maxPendingEvents {
+			s.dropOldestStream()
+		}
 		s.events = append(s.events, ev)
 	}
 	s.mu.Unlock()
 	select {
 	case s.notify <- struct{}{}:
 	default:
+	}
+}
+
+// removeAt removes the pending event at index i, keeping the
+// singleton index map consistent.
+func (s *sink) removeAt(i int) {
+	s.events = slices.Delete(s.events, i, i+1)
+	for key, j := range s.coalesce {
+		if j > i {
+			s.coalesce[key] = j - 1
+		}
+	}
+}
+
+// dropOldestStream drops the oldest pending non-singleton event.
+// Singletons are kept: there are at most a handful and each is the
+// latest value of its state.
+func (s *sink) dropOldestStream() {
+	keep := make(map[int]bool, len(s.coalesce))
+	for _, i := range s.coalesce {
+		keep[i] = true
+	}
+	for i := range s.events {
+		if !keep[i] {
+			s.removeAt(i)
+			return
+		}
 	}
 }
 
@@ -106,8 +144,8 @@ func (s *sink) setWantsPackets(on bool) {
 }
 
 // run delivers queued events to p until stop is called. Send may block
-// briefly (e.g. before the program's loop starts); that only delays
-// this goroutine, never an Emit caller.
+// (before the program's loop starts, or while the terminal is
+// stalled); that only delays this goroutine, never an Emit caller.
 func (s *sink) run(p *tea.Program) {
 	for {
 		select {
@@ -116,7 +154,7 @@ func (s *sink) run(p *tea.Program) {
 		case <-s.notify:
 		}
 		m := s.takeBatch()
-		if len(m.events) > 0 || len(m.packets) > 0 || m.dropped > 0 {
+		if len(m.events) > 0 || len(m.packets) > 0 {
 			p.Send(m)
 		}
 	}
@@ -126,10 +164,9 @@ func (s *sink) run(p *tea.Program) {
 func (s *sink) takeBatch() eventsMsg {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	m := eventsMsg{events: s.events, packets: s.packets, dropped: s.dropped}
+	m := eventsMsg{events: s.events, packets: s.packets}
 	s.events = nil
 	s.packets = nil
-	s.dropped = 0
 	clear(s.coalesce)
 	return m
 }
