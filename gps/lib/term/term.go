@@ -38,12 +38,11 @@ func Open(path string, opts ...AttrSetter) (*Term, error) {
 
 func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	t.path = path
-	// XXX should open non-blocking and then change to blocking with fcntl
-	// (in case CLOCAL is not set)
 	// O_CLOEXEC is here, because we are using flock to lock.
 	// Without O_CLOEXEC, the lock would be inherited by child processes, which is probably not what is wanted.
 	// See e.g. https://github.com/Pulse-Eight/libcec/issues/477
-	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
+	// O_NONBLOCK prevents open from waiting for carrier when CLOCAL is not set.
+	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
 	if err != nil {
 		err = t.wrapErr(err, "open")
 		return
@@ -54,6 +53,11 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 			unix.Close(fd)
 		}
 	}()
+	// Carrier is only waited for in open, so blocking mode can be restored immediately.
+	if err = unix.SetNonblock(fd, false); err != nil {
+		err = t.wrapErr(err, "fcntl(F_SETFL)")
+		return
+	}
 	// We could make this optional, but non-exclusive use of the serial port seems like a bad idea.
 	err = lock(fd, path)
 	if err != nil {
