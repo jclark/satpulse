@@ -60,12 +60,26 @@ type monitorView struct {
 	stats    posStats
 	baseARPs map[uint16][3]float64
 
+	// Signal-table filters, the workbench's constellation chips and
+	// "Used only" checkbox. View preferences: they survive
+	// disconnects, as the workbench panel's state does.
+	excluded map[gpsprot.GNSS]bool
+	usedOnly bool
+
 	offset     int // scroll offset in lines
 	lastHeight int
 }
 
+// filterKeys maps the constellation toggle keys to their GNSS,
+// following the SVID prefix letters where the key is free (c belongs
+// to the connection overlay, so BeiDou is b).
+var filterKeys = map[string]gpsprot.GNSS{
+	"g": gpsprot.GPS, "e": gpsprot.GAL, "b": gpsprot.BDS, "r": gpsprot.GLO,
+	"j": gpsprot.QZSS, "i": gpsprot.NAVIC, "s": gpsprot.SBAS,
+}
+
 func newMonitorView(sess *session.Session) *monitorView {
-	m := &monitorView{sess: sess}
+	m := &monitorView{sess: sess, excluded: make(map[gpsprot.GNSS]bool)}
 	m.clear()
 	return m
 }
@@ -75,7 +89,7 @@ func (m *monitorView) title() string { return "Monitor" }
 func (m *monitorView) capturesInput() bool { return false }
 
 func (m *monitorView) hints() []string {
-	return []string{"up/down scroll", "x clear stats"}
+	return []string{"up/down scroll", "g/e/b/r/j/i/s filter sats", "u used only", "x clear stats"}
 }
 
 func (m *monitorView) clear() {
@@ -201,6 +215,16 @@ func (m *monitorView) update(msg tea.Msg) tea.Cmd {
 			// The workbench scatter panel's Clear: drop the
 			// accumulated fixes and start the statistics over.
 			m.stats.reset()
+		case "u":
+			// Used-only is meaningful only when the receiver reports
+			// used flags, as the workbench disables the checkbox.
+			if m.sats != nil && m.sats.UsedValidity != gpsprot.SatelliteUsedInvalid {
+				m.usedOnly = !m.usedOnly
+			}
+		default:
+			if g, ok := filterKeys[key.String()]; ok {
+				m.excluded[g] = !m.excluded[g]
+			}
 		}
 	}
 	return nil
@@ -611,9 +635,17 @@ func (m *monitorView) renderSignals(width int) []string {
 		used bool
 	}
 	var srows []sigRow
+	present := make(map[gpsprot.GNSS]bool)
 	for i := range m.sats.SVs {
 		sv := &m.sats.SVs[i]
+		present[sv.ID.GNSS] = true
+		if m.excluded[sv.ID.GNSS] {
+			continue
+		}
 		if len(sv.Signals) == 0 {
+			if m.usedOnly && showUsed && !sv.Used {
+				continue
+			}
 			srows = append(srows, sigRow{sv: sv, used: sv.Used})
 			continue
 		}
@@ -623,8 +655,15 @@ func (m *monitorView) renderSignals(width int) []string {
 			if m.sats.UsedValidity == gpsprot.SatelliteUsedSignal {
 				used = sig.Used
 			}
+			if m.usedOnly && showUsed && !used {
+				continue
+			}
 			srows = append(srows, sigRow{sv: sv, sig: sig, used: used})
 		}
+	}
+	filterBar := m.renderFilterBar(present, showUsed)
+	if len(srows) == 0 {
+		return []string{filterBar, faintStyle.Render("No satellites match the filter")}
 	}
 	slices.SortFunc(srows, func(a, b sigRow) int {
 		if c := int(a.sv.ID.GNSS) - int(b.sv.ID.GNSS); c != 0 {
@@ -694,7 +733,40 @@ func (m *monitorView) renderSignals(width int) []string {
 			lines[i+1] += "  " + bar(cn0s[i], cn0Max, barWidth)
 		}
 	}
-	return lines
+	return append([]string{filterBar}, lines...)
+}
+
+// renderFilterBar shows one toggle per constellation present in the
+// data (excluded ones dimmed) and the used-only state, mirroring the
+// workbench's chips and checkbox.
+func (m *monitorView) renderFilterBar(present map[gpsprot.GNSS]bool, showUsed bool) string {
+	var parts []string
+	for g := gpsprot.GNSS(1); g <= gpsprot.GNSSLast; g++ {
+		if !present[g] {
+			continue
+		}
+		key := ""
+		for k, kg := range filterKeys {
+			if kg == g {
+				key = k
+				break
+			}
+		}
+		s := key + ":" + g.String()
+		if m.excluded[g] {
+			s = faintStyle.Render(s)
+		}
+		parts = append(parts, s)
+	}
+	used := "[ ] u:used only"
+	if m.usedOnly {
+		used = "[x] u:used only"
+	}
+	if !showUsed {
+		used = faintStyle.Render(used)
+	}
+	parts = append(parts, used)
+	return strings.Join(parts, "  ")
 }
 
 // renderSurvey mirrors the workbench survey panel.

@@ -3,6 +3,7 @@ package tui
 import (
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/app/session"
@@ -15,6 +16,34 @@ func posGeoEvent(id string) session.Event {
 
 func epochEvent() session.Event {
 	return session.EpochPVTEvent{}
+}
+
+// TestSignalFilters checks the constellation and used-only filters
+// over the signal table.
+func TestSignalFilters(t *testing.T) {
+	m := newMonitorView(nil)
+	m.sats = &gpsprot.SatellitesMsg{
+		UsedValidity: gpsprot.SatelliteUsedSV,
+		SVs: []gpsprot.SVInfo{
+			{ID: gpsprot.SVID{GNSS: gpsprot.GPS, Num: 1}, Used: true,
+				Signals: []gpsprot.SignalInfo{{ID: "L1", CN0: 40}}},
+			{ID: gpsprot.SVID{GNSS: gpsprot.GAL, Num: 2}, Used: false,
+				Signals: []gpsprot.SignalInfo{{ID: "E1", CN0: 30}}},
+		},
+	}
+	joined := func() string { return strings.Join(m.renderSignals(100), "\n") }
+	if s := joined(); !strings.Contains(s, "GPS") || !strings.Contains(s, "GAL   02") {
+		t.Fatalf("unfiltered table missing rows:\n%s", s)
+	}
+	m.excluded[gpsprot.GAL] = true
+	if s := joined(); strings.Contains(s, "GAL   02") {
+		t.Errorf("excluded constellation still listed:\n%s", s)
+	}
+	m.excluded[gpsprot.GAL] = false
+	m.usedOnly = true
+	if s := joined(); strings.Contains(s, "GAL   02") || !strings.Contains(s, "GPS   01") {
+		t.Errorf("used-only filter wrong:\n%s", s)
+	}
 }
 
 // TestMonitorRowEviction checks the per-epoch eviction the workbench
