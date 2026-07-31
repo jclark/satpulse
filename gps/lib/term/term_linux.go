@@ -207,9 +207,9 @@ func (t *Term) DevKind() DevKind {
 		return DevUnknown
 	}
 	// See https://www.kernel.org/doc/html/latest/admin-guide/devices.html
-	switch unix.Major(s.Dev) {
+	switch unix.Major(s.Rdev) {
 	case 4, 5:
-		if unix.Minor(s.Dev) >= 64 { // ttyS0, /dev/ttycua0
+		if unix.Minor(s.Rdev) >= 64 { // ttyS0, /dev/ttycua0
 			return DevUART
 		}
 	case 166, 167: // USB ACM "modem" /dev/ttyACM0
