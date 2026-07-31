@@ -31,6 +31,7 @@ type messagesView struct {
 	vendors   []string
 	vendorIdx int
 	fileIdx   int
+	lastPre   string // preselect at the last catalog refresh
 
 	path string
 	tags []session.MsgFileTag
@@ -193,13 +194,18 @@ func (v *messagesView) setCatalog(entries []msgfile.Entry) {
 	}
 	slices.Sort(v.vendors)
 	v.vendorIdx = 0
-	if i := slices.Index(v.vendors, curVendor); i >= 0 {
+	// A changed preselect means a new receiver was identified and
+	// overrides the current selection, as in the workbench; an
+	// unchanged one only fills in when the selection is gone.
+	pre := v.preselect()
+	if pre != "" && pre != v.lastPre {
+		v.vendorIdx = slices.Index(v.vendors, pre)
+	} else if i := slices.Index(v.vendors, curVendor); i >= 0 {
 		v.vendorIdx = i
-	} else if pre := v.preselect(); pre != "" {
-		if i := slices.Index(v.vendors, pre); i >= 0 {
-			v.vendorIdx = i
-		}
+	} else if pre != "" {
+		v.vendorIdx = slices.Index(v.vendors, pre)
 	}
+	v.lastPre = pre
 	files := v.vendorFiles()
 	v.fileIdx = 0
 	if i := slices.Index(files, curFile); i >= 0 {
@@ -483,6 +489,15 @@ func formatResponse(r *session.ResponseEvent) string {
 		s = r.Bin
 	default:
 		s = "Response"
+	}
+	// A binary response with a label carries a truncated hex preview
+	// beside it, as in the workbench.
+	if r.Bin != "" && (r.Tag != "" || r.MsgID != "") {
+		hex := r.Bin
+		if len(hex) > 32 {
+			hex = hex[:32] + "..."
+		}
+		s += "  " + faintStyle.Render(hex)
 	}
 	if r.Kind == "maybe" {
 		return faintStyle.Render(s)
