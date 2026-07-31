@@ -326,10 +326,11 @@ func (m *monitorView) renderSummary() []string {
 }
 
 // moving reports whether the receiver is moving, per the workbench's
-// 0.1 m/s ground speed threshold.
+// gate: ground speed and course both present, and speed at least
+// 0.1 m/s.
 func (m *monitorView) moving() bool {
 	vg := m.bundle.VelGeo.Ptr()
-	if vg == nil {
+	if vg == nil || !vg.Course.IsSet() {
 		return false
 	}
 	gs := vg.GroundSpeed.Ptr()
