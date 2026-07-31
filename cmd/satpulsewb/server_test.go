@@ -314,8 +314,8 @@ func TestSSEPriming(t *testing.T) {
 	// The claim broadcasts the seat value, which primes ahead of the session
 	// sticky events. SSE is seat-free, so the stream URL carries no seat.
 	seat := s.claimTestSeat(t, "")
-	s.hub.Emit(session.Event{Name: session.EventState, Data: session.StateConnected})
-	s.hub.Emit(session.Event{Name: session.EventSpeed, Data: 9600})
+	s.hub.Emit(session.StateConnected)
+	s.hub.Emit(session.SpeedEvent(9600))
 	ctx, cancel := context.WithCancel(context.Background())
 	r := newTestRequest("GET", "/sse", nil).WithContext(ctx)
 	w := httptest.NewRecorder()
