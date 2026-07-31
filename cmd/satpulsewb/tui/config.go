@@ -395,11 +395,12 @@ func (v *configView) render(width, height int) string {
 	if v.picker != nil {
 		items, focus = v.picker, v.pickerFocus
 	}
-	var extra []string
+	// The status line stays fixed above the form so a pending or
+	// error state is visible wherever the form is scrolled.
 	if s := v.statusLine(); s != "" {
-		extra = []string{"", s}
+		return truncate(s, width) + "\n" + renderItems(items, focus, &v.offset, width, height-1)
 	}
-	return renderItems(items, focus, &v.offset, width, height, extra...)
+	return renderItems(items, focus, &v.offset, width, height)
 }
 
 // statusLine mirrors the workbench pending/status line.

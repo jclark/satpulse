@@ -381,11 +381,27 @@ func (v *messagesView) buildItems() []cfgItem {
 				func() bool { t := v.selTag(); return t != nil && t.SaveAware }, nil))
 		}
 		items = append(items, itemButton(func() string { return "Send" }, v.canSend, v.sendCmd))
+		if v.sendStatus != "" {
+			status := v.sendStatus
+			if v.sendErr {
+				status = errorStyle.Render(status)
+			} else {
+				status = faintStyle.Render(status)
+			}
+			items = append(items, itemInfo(func() string { return "  " + status }))
+		}
 	}
 	if len(v.responses) > 0 {
 		items = append(items, itemSpacer(), itemHeading("Responses"))
 		for i := range v.responses {
 			items = append(items, v.responseRow(i))
+			if i == v.respSel {
+				// The decode of the selected response goes right below
+				// it, so it is visible next to the focus.
+				for _, l := range strings.Split(v.renderDecode(), "\n") {
+					items = append(items, itemInfo(func() string { return "    " + l }))
+				}
+			}
 		}
 	}
 	return items
@@ -490,21 +506,7 @@ func (v *messagesView) render(width, height int) string {
 		v.focus = 0
 		moveItemFocus(items, &v.focus, 1)
 	}
-	var extra []string
-	if v.sendStatus != "" {
-		s := v.sendStatus
-		if v.sendErr {
-			s = errorStyle.Render(s)
-		} else {
-			s = faintStyle.Render(s)
-		}
-		extra = append(extra, "", s)
-	}
-	if d := v.renderDecode(); d != "" {
-		extra = append(extra, "", labelStyle.Render("Decode"))
-		extra = append(extra, strings.Split(d, "\n")...)
-	}
-	return renderItems(items, v.focus, &v.offset, width, height, extra...)
+	return renderItems(items, v.focus, &v.offset, width, height)
 }
 
 // renderDecode decodes the selected response, as the workbench decode

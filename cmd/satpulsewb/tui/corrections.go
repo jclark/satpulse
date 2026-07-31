@@ -77,8 +77,9 @@ func newCorrectionsView(sess *session.Session) *correctionsView {
 		return ti
 	}
 	v.host = mk("e.g. 10.0.0.1", 30)
-	v.port = mk("2101", 8)
-	v.portNtrip = ""
+	v.port = mk("", 8)
+	v.port.SetValue("2101")
+	v.portNtrip = "2101"
 	v.mount = mk("mountpoint", 20)
 	v.user = mk("", 20)
 	v.pass = mk("", 20)
@@ -282,10 +283,8 @@ func (v *correctionsView) setMode(mode int) {
 	v.mode = mode
 	if v.ntrip() {
 		v.port.SetValue(v.portNtrip)
-		v.port.Placeholder = "2101"
 	} else {
 		v.port.SetValue(v.portTCP)
-		v.port.Placeholder = ""
 	}
 }
 
@@ -462,6 +461,10 @@ func (v *correctionsView) renderRows() []string {
 			msm, desc = rtcmInfo(r.msgID)
 		} else if r.tag == "SPARTN" {
 			desc = spartnInfo(r.msgID)
+		}
+		// Cap the description so the count columns stay on screen.
+		if len(desc) > 44 {
+			desc = desc[:41] + "..."
 		}
 		station := ""
 		if r.station >= 0 {

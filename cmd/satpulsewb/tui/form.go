@@ -226,7 +226,10 @@ func renderItems(items []cfgItem, focus int, offset *int, width, height int, ext
 		*offset = focusLine
 	}
 	if focusLine >= *offset+height {
-		*offset = focusLine - height + 1
+		// Scrolling down, keep a third of the window below the focus
+		// so content attached to it (a decode, a status) stays
+		// visible.
+		*offset = focusLine - max(height-1-height/3, 0)
 	}
 	if *offset > len(lines)-height {
 		*offset = len(lines) - height
