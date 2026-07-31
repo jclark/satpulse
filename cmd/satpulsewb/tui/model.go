@@ -338,21 +338,26 @@ var (
 	sectionStyle  = lipgloss.NewStyle().Bold(true).Underline(true)
 )
 
+// stateLabels are the workbench's connection-state labels.
+var stateLabels = map[session.ConnState]string{
+	session.StateDisconnected: "Disconnected",
+	session.StateConnecting:   "Connecting...",
+	session.StateReconnecting: "Reconnecting...",
+	session.StateConnected:    "Connected",
+	session.StateConfiguring:  "Configuring...",
+	session.StateSending:      "Sending...",
+}
+
 // renderHeader renders the persistent connection line: state, receiver
 // identification, port speed, corrections state.
 func (m *model) renderHeader() string {
-	parts := []string{string(m.connState)}
-	if m.receiver.Info.IsSet() {
-		info := m.receiver.Info.Get()
-		id := strings.TrimSpace(info.Vendor + " " + info.Hardware)
-		if id != "" {
-			parts = append(parts, id)
-		}
-		if info.Firmware != "" {
-			parts = append(parts, info.Firmware)
-		}
-	} else if len(m.receiver.PacketFormats) > 0 {
-		parts = append(parts, strings.Join(m.receiver.PacketFormats, ","))
+	label := stateLabels[m.connState]
+	if label == "" {
+		label = string(m.connState)
+	}
+	parts := []string{label}
+	if id := m.receiverIdent(); id != "" {
+		parts = append(parts, id)
 	}
 	if m.speed != 0 {
 		parts = append(parts, fmt.Sprintf("%d bps", m.speed))
@@ -361,6 +366,34 @@ func (m *model) renderHeader() string {
 		parts = append(parts, "corrections "+m.corr.State)
 	}
 	return headerStyle.Render(truncate("SatPulse  "+strings.Join(parts, "  |  "), m.width))
+}
+
+// receiverIdent renders the receiver identity with the workbench's
+// wording: "Vendor HW (FW fw)" when identified, "Unknown (fmts)" for
+// an unidentified receiver, "Identifying..." while the probe runs.
+func (m *model) receiverIdent() string {
+	if m.connState == session.StateDisconnected {
+		return ""
+	}
+	r := m.receiver
+	if r.Info.IsSet() {
+		info := r.Info.Get()
+		id := strings.TrimSpace(info.Vendor + " " + info.Hardware)
+		if info.Firmware != "" {
+			id = strings.TrimSpace(id + " (FW " + info.Firmware + ")")
+		}
+		return id
+	}
+	if r.Error != "" {
+		return ""
+	}
+	if r.OK {
+		if len(r.PacketFormats) > 0 {
+			return "Unknown (" + strings.Join(r.PacketFormats, ", ") + ")"
+		}
+		return "Unknown"
+	}
+	return "Identifying..."
 }
 
 func (m *model) renderTabs() string {

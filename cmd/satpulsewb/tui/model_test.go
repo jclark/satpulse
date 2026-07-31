@@ -39,7 +39,7 @@ func TestModelHeader(t *testing.T) {
 		session.CorrEvent{State: "connected"},
 	))
 	got := m.renderHeader()
-	for _, want := range []string{"connected", "u-blox ZED-F9P", "HPG 1.51", "38400 bps", "corrections connected"} {
+	for _, want := range []string{"Connected", "u-blox ZED-F9P (FW HPG 1.51)", "38400 bps", "corrections connected"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("header %q does not contain %q", got, want)
 		}
