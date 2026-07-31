@@ -245,6 +245,13 @@ func (v *configView) has(f gpsprot.ConfigSupportFlags) bool {
 	return cs == 0 || cs&f != 0
 }
 
+func supportedPlaceholder(supported bool, placeholder string) string {
+	if supported {
+		return placeholder
+	}
+	return "not supported"
+}
+
 func (v *configView) gnssSupported(name string) bool {
 	if !v.receiver.Info.IsSet() {
 		return true
@@ -283,6 +290,10 @@ func (v *configView) handleEvent(ev session.Event) {
 		}
 	case session.ReceiverEvent:
 		v.receiver = ev
+		// The workbench swaps in a "not supported" placeholder for
+		// the accuracy fields when the probed support lacks them.
+		v.surveyAcc.Placeholder = supportedPlaceholder(v.has(gpsprot.ConfigSupportSurveyAcc), "20")
+		v.fixedAcc.Placeholder = supportedPlaceholder(v.has(gpsprot.ConfigSupportFixedPosAcc), "20")
 	case session.SpeedEvent:
 		if ev != 0 {
 			v.speed = int(ev)
