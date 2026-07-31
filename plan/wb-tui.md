@@ -60,8 +60,9 @@ Mirror the workbench layout, translated to terminal idiom:
   workbench's fixed connection panel; connect/disconnect and
   connection parameters get a small view or overlay of their own.
 - A tab bar of full-screen views, switched by key, following the
-  workbench tabs: Monitor, Packets, Corrections, Config, Messages
-  (Messages only when a message file is loaded, as in the workbench).
+  workbench tabs: Monitor, Packets, Corrections, Config, Messages.
+  Messages is always present, as in the workbench: the built-in
+  message-file library is compiled in, so the catalog is never empty.
 - A footer line with the key hints for the active view.
 
 Per view, the corresponding workbench panel sources

@@ -187,15 +187,11 @@ func (m *model) closeConnIfWanted() tea.Cmd {
 	return m.activeView().update(viewShownMsg{})
 }
 
-// tabs returns the views currently in the tab bar: the Messages view
-// appears only when the message-file library offers something, as the
-// workbench shows its Message file tab only with a message-file
-// capable transport.
+// tabs returns the views in the tab bar. The Messages tab is always
+// present, as in the workbench: the built-in message-file library is
+// compiled in, so there is always something to offer.
 func (m *model) tabs() []view {
-	if m.messages.available() {
-		return append(m.views[:len(m.views):len(m.views)], m.messages)
-	}
-	return m.views
+	return append(m.views[:len(m.views):len(m.views)], m.messages)
 }
 
 func (m *model) handleKey(msg tea.KeyPressMsg) tea.Cmd {

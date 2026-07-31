@@ -9,7 +9,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/jclark/satpulse/gps/app/session"
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/gps/msgfile"
 )
 
 func newTestModel() *model {
@@ -56,13 +55,9 @@ func TestModelHeader(t *testing.T) {
 
 func TestModelTabs(t *testing.T) {
 	m := newTestModel()
-	if len(m.tabs()) != 4 {
-		t.Fatalf("tabs before catalog = %d, want 4 (no Messages)", len(m.tabs()))
-	}
-	m.Update(msgCatalogMsg([]msgfile.Entry{{Name: msgfile.Name{Vendor: "u-blox", File: "gen9"}}}))
 	tabs := m.tabs()
 	if len(tabs) != 5 || tabs[4].title() != "Messages" {
-		t.Fatalf("tabs after catalog = %d, want 5 ending in Messages", len(tabs))
+		t.Fatalf("tabs = %d, want 5 ending in Messages", len(tabs))
 	}
 }
 

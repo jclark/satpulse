@@ -78,10 +78,6 @@ func newMessagesView(sess *session.Session, msgDirs []msgfile.Dir) *messagesView
 
 func (v *messagesView) title() string { return "Messages" }
 
-// available reports whether the tab appears: the message-file library
-// must offer at least one file.
-func (v *messagesView) available() bool { return len(v.catalog) > 0 }
-
 func (v *messagesView) capturesInput() bool { return false }
 
 func (v *messagesView) hints() []string {
