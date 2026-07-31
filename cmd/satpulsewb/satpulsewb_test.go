@@ -35,19 +35,25 @@ func TestVerboseRepeated(t *testing.T) {
 	}
 }
 
-func TestTokenShorthand(t *testing.T) {
-	v, usage, err := parseFlags([]string{"-t"})
+func TestTokenLongFormOnly(t *testing.T) {
+	v, usage, err := parseFlags([]string{"--token"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !v.token {
-		t.Error("-t did not enable the access token")
+		t.Error("--token did not enable the access token")
 	}
 	s := usage("satpulsewb")
-	for _, want := range []string{"[-t|--token]", "-t, --token"} {
+	for _, want := range []string{"[--token]", "--token"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("help does not contain %q:\n%s", want, s)
 		}
+	}
+	if strings.Contains(s, "-t, --token") {
+		t.Errorf("help contains a -t shorthand for --token:\n%s", s)
+	}
+	if _, _, err := parseFlags([]string{"-t"}); err == nil {
+		t.Error("-t unexpectedly enabled the access token")
 	}
 }
 

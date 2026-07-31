@@ -31,7 +31,7 @@ import (
 // 1575.42 MHz), falling back to an OS-picked port when taken.
 const defaultPort = 15754
 
-const summary = `[-h|--help] [-v|--verbose] [-L|--listen host:port] [-t|--token]
+const summary = `[-h|--help] [-v|--verbose] [-L|--listen host:port] [--token]
        [-n|--no-open-browser] [--tui]
        [-d|--serial-device path] [-s|--device-speed bps] [--vendor name]
        [--packet-log path]`
@@ -81,7 +81,7 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 	var help bool
 	flags := pflag.NewFlagSet("satpulsewb", pflag.ContinueOnError)
 	flags.StringVarP(&v.listen, "listen", "L", "", "listen on `host:port` and disable the access token")
-	flags.BoolVarP(&v.token, "token", "t", false, "require a generated access token even with --listen")
+	flags.BoolVar(&v.token, "token", false, "require a generated access token even with --listen")
 	flags.BoolVarP(&v.noOpen, "no-open-browser", "n", false, "do not open a web browser at startup")
 	flags.BoolVar(&v.tui, "tui", false, "run the terminal UI instead of the web server")
 	flags.StringVarP(&v.device, "serial-device", "d", "", "serial device connected to GPS receiver")
@@ -258,7 +258,7 @@ func printURLs(w io.Writer, lg *slog.Logger, ln net.Listener, listenAddr, token 
 		}
 	}
 	if insecure {
-		lg.Warn("no access token on a non-loopback address; browsers will be refused, but clients can still control the receiver by sending a loopback Host (use -t to require a token and allow browser access)")
+		lg.Warn("no access token on a non-loopback address; browsers will be refused, but clients can still control the receiver by sending a loopback Host (use --token to require a token and allow browser access)")
 	}
 }
 

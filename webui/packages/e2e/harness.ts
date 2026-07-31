@@ -59,7 +59,7 @@ const CASTER_PASSWORD = 'smoketest';
 // The workbench URL satpulsewb prints at startup, e.g.
 //   http://127.0.0.1:15754/?t=RM3YmI3_Hl-G5EbdrlkmiA
 // The bracketed alternative matches an IPv6 host; the token group is absent when
-// the token is disabled (-L without -t). Matches program_satpulsewb.py's regex.
+// the token is disabled (-L without --token). Matches program_satpulsewb.py's regex.
 const WB_URL_RE = /http:\/\/(?:\[[^\]]+\]|[^\s/]+?):(\d+)\/(?:\?t=(\S+))?/;
 
 // --- process and readiness helpers ------------------------------------------
@@ -350,7 +350,7 @@ export interface WorkbenchFixed {
   restart(): Promise<void>;
 }
 
-// WorkbenchFixedToken is satpulsewb -L 127.0.0.1:<port> -t: a stable port WITH
+// WorkbenchFixedToken is satpulsewb -L 127.0.0.1:<port> --token: a stable port WITH
 // a generated token, so restart() invalidates the page's token while the page
 // can still reach the port -- the stale-token-after-restart path. Test-scoped:
 // a restart burns the fixture's token, so it cannot be shared.
@@ -554,7 +554,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       // log, and a restart must yield the fresh token, not the burnt one.
       const launch = async (): Promise<{ baseURL: string; token: string }> => {
         launches++;
-        proc = session.spawnLogged(`satpulsewb-${launches}`, satpulsewb, ['-L', `127.0.0.1:${port}`, '-t'], {
+        proc = session.spawnLogged(`satpulsewb-${launches}`, satpulsewb, ['-L', `127.0.0.1:${port}`, '--token'], {
           SATPULSE_GPSMSG_PATH: GPSMSG_PATH,
         });
         const info = await waitWbUrl(session, proc);
