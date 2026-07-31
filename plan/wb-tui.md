@@ -80,9 +80,12 @@ so the workbench code answers most "what should this do" questions.
   panel computes -- running mean position and CEP50 / CEP95 /
   horizontal, vertical, and 3D RMS over accumulated fixes (see
   scatter-panel.tsx) -- without the plot.
-- Packets: scrolling packet list from `gps:packet` events with a
-  detail view for the selected packet (`session.DecodePacket`).
-  Pause/resume scrolling.
+- Packets: the workbench packet table, not a raw stream: one
+  aggregated row per (protocol, message, direction) from `gps:packet`
+  events, with running count, last timestamp and data, the recent
+  (~900 ms) burst expandable per row, stale-row dimming,
+  freeze/unfreeze, snapshot, clear, and decode of the selected entry
+  (`session.DecodePacket`).
 - Corrections: source form (mode, host, port, mountpoint,
   credentials, NMEA send), start/stop, status and packet summary from
   `gps:corrections` / `gps:corrpacket` / `gps:basearp`.

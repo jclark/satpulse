@@ -115,9 +115,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, ev := range msg.packets {
 			m.handleEvent(ev)
 		}
-		if msg.dropped > 0 {
-			m.handleEvent(session.Event{Name: session.EventPacket, Data: droppedPackets(msg.dropped)})
-		}
 		m.closeConnIfWanted()
 		return m, nil
 	case tea.KeyPressMsg:
@@ -138,10 +135,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, m.messages.update(msg))
 	return m, tea.Batch(cmds...)
 }
-
-// droppedPackets marks a gps:packet event whose payload is a count of
-// packets dropped from the pending queue rather than an entry.
-type droppedPackets int
 
 func (m *model) handleEvent(ev session.Event) {
 	switch ev.Name {
@@ -275,6 +268,7 @@ var (
 	headerStyle   = lipgloss.NewStyle().Bold(true)
 	tabStyle      = lipgloss.NewStyle().Padding(0, 1)
 	activeTab     = lipgloss.NewStyle().Padding(0, 1).Reverse(true).Bold(true)
+	selStyle      = lipgloss.NewStyle().Reverse(true)
 	footerStyle   = lipgloss.NewStyle().Faint(true)
 	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Red)
 	faintStyle    = lipgloss.NewStyle().Faint(true)
