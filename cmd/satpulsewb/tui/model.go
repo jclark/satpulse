@@ -61,8 +61,8 @@ type model struct {
 
 	tickPending bool
 
-	status  string // latest log line, shown above the footer
-	statusErr bool
+	// log backs the one-line status and the transient browsing pane.
+	log logRing
 }
 
 // newModel creates the root model. device and speed seed the connect
@@ -75,6 +75,7 @@ func newModel(sess *session.Session, lg *slog.Logger, sink *sink, vendors []gpsr
 		vendors:   vendors,
 		msgDirs:   msgDirs,
 		connState: session.StateDisconnected,
+		log:       newLogRing(),
 	}
 	m.messages = newMessagesView(sess, msgDirs)
 	m.views = []view{
@@ -185,8 +186,7 @@ func (m *model) handleEvent(ev session.Event) {
 	case session.CorrEvent:
 		m.corr = ev
 	case session.LogEvent:
-		m.status = ev.Message
-		m.statusErr = ev.Level == slog.LevelError.String()
+		m.log.add(ev)
 	}
 	for _, v := range m.views {
 		v.handleEvent(ev)
@@ -203,6 +203,12 @@ func (m *model) activeView() view {
 		m.active = 0
 	}
 	return tabs[m.active]
+}
+
+// logPaneHeight is the height of the transient log pane, carved from
+// the view body while open.
+func (m *model) logPaneHeight() int {
+	return max(min(m.height/3, 14), 6)
 }
 
 // closeConnIfWanted closes the connection overlay when it asked to be
@@ -242,7 +248,33 @@ func (m *model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 			return m.activeView().update(msg)
 		}
 	}
+	if m.log.open {
+		switch msg.String() {
+		case "up":
+			m.log.scroll(-1, m.logPaneHeight())
+			return nil
+		case "down":
+			m.log.scroll(1, m.logPaneHeight())
+			return nil
+		case "pgup":
+			m.log.scroll(-m.logPaneHeight(), m.logPaneHeight())
+			return nil
+		case "pgdown":
+			m.log.scroll(m.logPaneHeight(), m.logPaneHeight())
+			return nil
+		case "esc", "l":
+			m.log.open = false
+			return nil
+		}
+	}
 	switch key := msg.String(); key {
+	case "v":
+		m.log.cycleFilter()
+		return nil
+	case "l":
+		m.log.open = true
+		m.log.off = -1
+		return nil
 	case "q":
 		m.sess.Disconnect()
 		return tea.Quit
@@ -314,6 +346,12 @@ func (m *model) View() tea.View {
 	if bodyHeight < 0 {
 		bodyHeight = 0
 	}
+	pane := ""
+	if m.log.open {
+		h := m.logPaneHeight()
+		bodyHeight = max(bodyHeight-h, 0)
+		pane = strings.Join(m.log.renderPane(m.width, h), "\n")
+	}
 	var body string
 	if m.conn != nil {
 		body = m.conn.render(m.width, bodyHeight)
@@ -321,7 +359,12 @@ func (m *model) View() tea.View {
 		body = m.activeView().render(m.width, bodyHeight)
 	}
 	body = lipgloss.PlaceVertical(bodyHeight, lipgloss.Top, body)
-	v := tea.NewView(strings.Join([]string{header, tabbar, body, statusLine, footer}, "\n"))
+	parts := []string{header, tabbar, body}
+	if pane != "" {
+		parts = append(parts, pane)
+	}
+	parts = append(parts, statusLine, footer)
+	v := tea.NewView(strings.Join(parts, "\n"))
 	v.AltScreen = true
 	return v
 }
@@ -411,14 +454,10 @@ func (m *model) renderTabs() string {
 }
 
 func (m *model) renderStatus() string {
-	if m.status == "" {
+	if len(m.log.entries) == 0 {
 		return ""
 	}
-	s := truncate(m.status, m.width)
-	if m.statusErr {
-		return errorStyle.Render(s)
-	}
-	return faintStyle.Render(s)
+	return m.log.statusLine(m.width)
 }
 
 func (m *model) renderFooter() string {
@@ -427,7 +466,7 @@ func (m *model) renderFooter() string {
 		hints = m.conn.hints()
 	} else {
 		hints = append(hints, m.activeView().hints()...)
-		hints = append(hints, "tab switch view", "c connection")
+		hints = append(hints, "tab switch view", "c connection", "l log")
 	}
 	hints = append(hints, "ctrl+c quit")
 	return footerStyle.Render(truncate(strings.Join(hints, "   "), m.width))
