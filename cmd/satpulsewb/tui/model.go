@@ -140,6 +140,15 @@ func (m *model) handleEvent(ev session.Event) {
 	switch ev := ev.(type) {
 	case session.ConnState:
 		m.connState = ev
+		if ev == session.StateDisconnected {
+			// The session clears its probe and speed on disconnect but
+			// emits only the state change; drop the mirrored values so
+			// the header does not keep showing the dead connection's
+			// receiver and baud rate. Corrections state keeps its own
+			// lifecycle, as in the workbench.
+			m.receiver = session.ReceiverEvent{}
+			m.speed = 0
+		}
 	case session.ReceiverEvent:
 		m.receiver = ev
 	case session.SpeedEvent:

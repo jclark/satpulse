@@ -45,6 +45,13 @@ func TestModelHeader(t *testing.T) {
 			t.Errorf("header %q does not contain %q", got, want)
 		}
 	}
+	m.Update(events(session.StateDisconnected))
+	got = m.renderHeader()
+	for _, stale := range []string{"u-blox", "38400"} {
+		if strings.Contains(got, stale) {
+			t.Errorf("header %q still shows %q after disconnect", got, stale)
+		}
+	}
 }
 
 func TestModelTabs(t *testing.T) {
