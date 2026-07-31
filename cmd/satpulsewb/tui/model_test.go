@@ -34,10 +34,10 @@ func TestModelHeader(t *testing.T) {
 	re.OK = true
 	re.Info.Set(info)
 	m.Update(events(
-		session.Event{Name: session.EventState, Data: session.StateConnected},
-		session.Event{Name: session.EventReceiver, Data: re},
-		session.Event{Name: session.EventSpeed, Data: 38400},
-		session.Event{Name: session.EventCorrections, Data: session.CorrEvent{State: "connected"}},
+		session.StateConnected,
+		re,
+		session.SpeedEvent(38400),
+		session.CorrEvent{State: "connected"},
 	))
 	got := m.renderHeader()
 	for _, want := range []string{"connected", "u-blox ZED-F9P", "HPG 1.51", "38400 bps", "corrections connected"} {
@@ -65,10 +65,10 @@ func TestModelViewSmoke(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m.Update(events(
-		session.Event{Name: session.EventState, Data: session.StateConnected},
-		session.Event{Name: session.EventTime, Data: &gpsprot.TimeMsg{}},
-		session.Event{Name: session.EventEpochPVT, Data: gpsprot.PVMsgBundle{}},
-		session.Event{Name: session.EventLog, Data: session.LogEvent{Level: "INFO", Message: "hello"}},
+		session.StateConnected,
+		session.TimeEvent{TimeMsg: &gpsprot.TimeMsg{}},
+		session.EpochPVTEvent{},
+		session.LogEvent{Level: "INFO", Message: "hello"},
 	))
 	for range m.tabs() {
 		v := m.View()

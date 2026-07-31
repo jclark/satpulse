@@ -97,25 +97,19 @@ func (v *messagesView) loadCatalog() tea.Cmd {
 }
 
 func (v *messagesView) handleEvent(ev session.Event) {
-	switch ev.Name {
-	case session.EventState:
-		if st, ok := ev.Data.(session.ConnState); ok {
-			v.connState = st
-			if st == session.StateConfiguring || st == session.StateDisconnected {
-				v.respSession = 0
-			}
+	switch ev := ev.(type) {
+	case session.ConnState:
+		v.connState = ev
+		if ev == session.StateConfiguring || ev == session.StateDisconnected {
+			v.respSession = 0
 		}
-	case session.EventMsgSend:
-		if e, ok := ev.Data.(session.MsgSendEvent); ok {
-			v.handleSend(e)
-		}
-	case session.EventResponse:
-		if e, ok := ev.Data.(session.ResponseEvent); ok {
-			if e.Session == v.respSession {
-				v.responses = append(v.responses, e)
-				if v.respSel < 0 && (e.Text != "" || e.Bin != "") && e.Kind != "ack" {
-					v.respSel = len(v.responses) - 1
-				}
+	case session.MsgSendEvent:
+		v.handleSend(ev)
+	case session.ResponseEvent:
+		if ev.Session == v.respSession {
+			v.responses = append(v.responses, ev)
+			if v.respSel < 0 && (ev.Text != "" || ev.Bin != "") && ev.Kind != "ack" {
+				v.respSel = len(v.responses) - 1
 			}
 		}
 	}

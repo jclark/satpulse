@@ -110,19 +110,17 @@ func (f *connectForm) disconnectCmd() tea.Cmd {
 }
 
 func (f *connectForm) handleEvent(ev session.Event) {
-	switch ev.Name {
-	case session.EventState:
-		if st, ok := ev.Data.(session.ConnState); ok {
-			if st == session.StateConnected && f.state != st {
-				// A completed connect (including auto-connect) closes
-				// the overlay; the header shows the result.
-				f.wantClose = true
-			}
-			f.state = st
+	switch ev := ev.(type) {
+	case session.ConnState:
+		if ev == session.StateConnected && f.state != ev {
+			// A completed connect (including auto-connect) closes
+			// the overlay; the header shows the result.
+			f.wantClose = true
 		}
-	case session.EventReceiver:
-		if r, ok := ev.Data.(session.ReceiverEvent); ok && r.Error != "" {
-			f.err = r.Error
+		f.state = ev
+	case session.ReceiverEvent:
+		if ev.Error != "" {
+			f.err = ev.Error
 		}
 	}
 }

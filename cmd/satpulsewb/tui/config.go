@@ -266,27 +266,23 @@ func (v *configView) signalSupported(gnss, sig string) bool {
 }
 
 func (v *configView) handleEvent(ev session.Event) {
-	switch ev.Name {
-	case session.EventState:
-		if st, ok := ev.Data.(session.ConnState); ok {
-			v.connState = st
-			if st == session.StateDisconnected {
-				v.resetForm()
-				v.lastRead = nil
-				v.readOnce = false
-				v.reading = false
-				v.applying = false
-			}
+	switch ev := ev.(type) {
+	case session.ConnState:
+		v.connState = ev
+		if ev == session.StateDisconnected {
+			v.resetForm()
+			v.lastRead = nil
+			v.readOnce = false
+			v.reading = false
+			v.applying = false
 		}
-	case session.EventReceiver:
-		if r, ok := ev.Data.(session.ReceiverEvent); ok {
-			v.receiver = r
-		}
-	case session.EventSpeed:
-		if s, ok := ev.Data.(int); ok && s != 0 {
-			v.speed = s
+	case session.ReceiverEvent:
+		v.receiver = ev
+	case session.SpeedEvent:
+		if ev != 0 {
+			v.speed = int(ev)
 			if !v.speedTouched {
-				v.speedIdx = speedIndex(s)
+				v.speedIdx = speedIndex(int(ev))
 			}
 		}
 	}

@@ -39,11 +39,11 @@ type eventsMsg struct {
 // correction packets, log lines, send progress, responses) return ""
 // and are all delivered.
 func singletonKey(ev session.Event) string {
-	switch ev.Name {
+	switch name := ev.EventName(); name {
 	case session.EventState, session.EventReceiver, session.EventSpeed,
 		session.EventTime, session.EventEpochPVT, session.EventInitialPos,
 		session.EventNMEAPosition, session.EventCorrections:
-		return string(ev.Name)
+		return string(name)
 	}
 	return ""
 }
@@ -72,7 +72,7 @@ func newSink() *sink {
 // Emit implements session.Sink.
 func (s *sink) Emit(ev session.Event) {
 	s.mu.Lock()
-	if ev.Name == session.EventPacket {
+	if ev.EventName() == session.EventPacket {
 		if len(s.packets) >= maxPendingPackets {
 			s.packets = s.packets[1:]
 		}

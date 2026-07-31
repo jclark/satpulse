@@ -94,29 +94,21 @@ func (m *monitorView) clear() {
 }
 
 func (m *monitorView) handleEvent(ev session.Event) {
-	switch ev.Name {
-	case session.EventState:
-		if st, ok := ev.Data.(session.ConnState); ok && st == session.StateDisconnected {
+	switch ev := ev.(type) {
+	case session.ConnState:
+		if ev == session.StateDisconnected {
 			m.clear()
 		}
-	case session.EventTime:
-		if msg, ok := ev.Data.(*gpsprot.TimeMsg); ok {
-			m.timeMsg = msg
-		}
-	case session.EventMsg:
-		if me, ok := ev.Data.(session.MsgEvent); ok {
-			m.handleMsg(me)
-		}
-	case session.EventEpochPVT:
-		if b, ok := ev.Data.(gpsprot.PVMsgBundle); ok {
-			m.handleEpoch(b)
-		}
-	case session.EventBaseARP:
-		if arp, ok := ev.Data.(session.BaseARPEvent); ok {
-			m.baseARPs[arp.StationID] = arp.ECEF
-		}
-	case session.EventCorrections:
-		if ce, ok := ev.Data.(session.CorrEvent); ok && (ce.State == "connecting" || ce.State == "stopped") {
+	case session.TimeEvent:
+		m.timeMsg = ev.TimeMsg
+	case session.MsgEvent:
+		m.handleMsg(ev)
+	case session.EpochPVTEvent:
+		m.handleEpoch(ev.PVMsgBundle)
+	case session.BaseARPEvent:
+		m.baseARPs[ev.StationID] = ev.ECEF
+	case session.CorrEvent:
+		if ev.State == "connecting" || ev.State == "stopped" {
 			m.baseARPs = make(map[uint16][3]float64)
 		}
 	}

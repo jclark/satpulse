@@ -10,13 +10,11 @@ import (
 )
 
 func posGeoEvent(id string) session.Event {
-	return session.Event{Name: session.EventMsg, Data: session.MsgEvent{
-		Kind: "posGeo", Msg: &gpsprot.PosGeoMsg{NativeMsgID: id},
-	}}
+	return session.MsgEvent{Kind: "posGeo", Msg: &gpsprot.PosGeoMsg{NativeMsgID: id}}
 }
 
 func epochEvent() session.Event {
-	return session.Event{Name: session.EventEpochPVT, Data: gpsprot.PVMsgBundle{}}
+	return session.EpochPVTEvent{}
 }
 
 // TestMonitorRowEviction checks the per-epoch eviction the workbench
@@ -52,7 +50,7 @@ func TestMonitorRowEviction(t *testing.T) {
 			name: "disconnect clears everything",
 			events: []session.Event{
 				posGeoEvent("A"), epochEvent(),
-				{Name: session.EventState, Data: session.StateDisconnected},
+				session.StateDisconnected,
 			},
 			expect: nil,
 		},

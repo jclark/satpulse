@@ -18,50 +18,50 @@ func TestSinkQueueing(t *testing.T) {
 		{
 			name: "singletons keep only the latest value",
 			emit: []session.Event{
-				{Name: session.EventState, Data: session.StateConnecting},
-				{Name: session.EventSpeed, Data: 9600},
-				{Name: session.EventState, Data: session.StateConnected},
-				{Name: session.EventSpeed, Data: 38400},
+				session.StateConnecting,
+				session.SpeedEvent(9600),
+				session.StateConnected,
+				session.SpeedEvent(38400),
 			},
 			expect: []session.Event{
-				{Name: session.EventState, Data: session.StateConnected},
-				{Name: session.EventSpeed, Data: 38400},
+				session.StateConnected,
+				session.SpeedEvent(38400),
 			},
 		},
 		{
 			name: "a superseded singleton moves to its latest emission position",
 			emit: []session.Event{
-				{Name: session.EventState, Data: session.StateConnected},
-				{Name: session.EventMsg, Data: session.MsgEvent{Kind: "posGeo", Time: "1"}},
-				{Name: session.EventState, Data: session.StateDisconnected},
+				session.StateConnected,
+				session.MsgEvent{Kind: "posGeo", Time: "1"},
+				session.StateDisconnected,
 			},
 			expect: []session.Event{
-				{Name: session.EventMsg, Data: session.MsgEvent{Kind: "posGeo", Time: "1"}},
-				{Name: session.EventState, Data: session.StateDisconnected},
+				session.MsgEvent{Kind: "posGeo", Time: "1"},
+				session.StateDisconnected,
 			},
 		},
 		{
 			name: "gps:msg is not coalesced, even within one kind",
 			emit: []session.Event{
-				{Name: session.EventMsg, Data: session.MsgEvent{Kind: "posGeo", Time: "1"}},
-				{Name: session.EventMsg, Data: session.MsgEvent{Kind: "posGeo", Time: "2"}},
-				{Name: session.EventMsg, Data: session.MsgEvent{Kind: "survey", Time: "3"}},
+				session.MsgEvent{Kind: "posGeo", Time: "1"},
+				session.MsgEvent{Kind: "posGeo", Time: "2"},
+				session.MsgEvent{Kind: "survey", Time: "3"},
 			},
 			expect: []session.Event{
-				{Name: session.EventMsg, Data: session.MsgEvent{Kind: "posGeo", Time: "1"}},
-				{Name: session.EventMsg, Data: session.MsgEvent{Kind: "posGeo", Time: "2"}},
-				{Name: session.EventMsg, Data: session.MsgEvent{Kind: "survey", Time: "3"}},
+				session.MsgEvent{Kind: "posGeo", Time: "1"},
+				session.MsgEvent{Kind: "posGeo", Time: "2"},
+				session.MsgEvent{Kind: "survey", Time: "3"},
 			},
 		},
 		{
 			name: "gps:basearp is not coalesced across stations",
 			emit: []session.Event{
-				{Name: session.EventBaseARP, Data: session.BaseARPEvent{StationID: 1}},
-				{Name: session.EventBaseARP, Data: session.BaseARPEvent{StationID: 2}},
+				session.BaseARPEvent{StationID: 1},
+				session.BaseARPEvent{StationID: 2},
 			},
 			expect: []session.Event{
-				{Name: session.EventBaseARP, Data: session.BaseARPEvent{StationID: 1}},
-				{Name: session.EventBaseARP, Data: session.BaseARPEvent{StationID: 2}},
+				session.BaseARPEvent{StationID: 1},
+				session.BaseARPEvent{StationID: 2},
 			},
 		},
 	}
@@ -86,24 +86,23 @@ func TestSinkQueueing(t *testing.T) {
 // non-singleton entries on overflow while singletons survive.
 func TestSinkStreamBound(t *testing.T) {
 	s := newSink()
-	s.Emit(session.Event{Name: session.EventState, Data: session.StateConnected})
+	s.Emit(session.StateConnected)
 	n := maxPendingEvents + 10
 	for i := range n {
-		s.Emit(session.Event{Name: session.EventLog,
-			Data: session.LogEvent{Message: fmt.Sprintf("m%d", i)}})
+		s.Emit(session.LogEvent{Message: fmt.Sprintf("m%d", i)})
 	}
 	got := s.takeBatch()
 	if len(got.events) != maxPendingEvents {
 		t.Fatalf("got %d events, want %d", len(got.events), maxPendingEvents)
 	}
-	if got.events[0].Name != session.EventState {
+	if got.events[0].EventName() != session.EventState {
 		t.Errorf("singleton dropped from the front: %+v", got.events[0])
 	}
-	first := got.events[1].Data.(session.LogEvent)
+	first := got.events[1].(session.LogEvent)
 	if want := fmt.Sprintf("m%d", n-(maxPendingEvents-1)); first.Message != want {
 		t.Errorf("oldest surviving log message = %q, want %q", first.Message, want)
 	}
-	last := got.events[len(got.events)-1].Data.(session.LogEvent)
+	last := got.events[len(got.events)-1].(session.LogEvent)
 	if want := fmt.Sprintf("m%d", n-1); last.Message != want {
 		t.Errorf("newest log message = %q, want %q", last.Message, want)
 	}
@@ -113,14 +112,13 @@ func TestSinkPacketBound(t *testing.T) {
 	s := newSink()
 	n := maxPendingPackets + 10
 	for i := range n {
-		s.Emit(session.Event{Name: session.EventPacket,
-			Data: gpsio.PacketLogEntry{Msg: fmt.Sprintf("m%d", i)}})
+		s.Emit(session.PacketEvent{PacketLogEntry: gpsio.PacketLogEntry{Msg: fmt.Sprintf("m%d", i)}})
 	}
 	got := s.takeBatch()
 	if len(got.packets) != maxPendingPackets {
 		t.Fatalf("got %d packets, want %d", len(got.packets), maxPendingPackets)
 	}
-	first := got.packets[0].Data.(gpsio.PacketLogEntry)
+	first := got.packets[0].(session.PacketEvent)
 	if first.Msg != "m10" {
 		t.Errorf("oldest surviving packet = %q, want m10", first.Msg)
 	}

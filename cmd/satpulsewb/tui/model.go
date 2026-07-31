@@ -137,28 +137,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleEvent(ev session.Event) {
-	switch ev.Name {
-	case session.EventState:
-		if st, ok := ev.Data.(session.ConnState); ok {
-			m.connState = st
-		}
-	case session.EventReceiver:
-		if r, ok := ev.Data.(session.ReceiverEvent); ok {
-			m.receiver = r
-		}
-	case session.EventSpeed:
-		if v, ok := ev.Data.(int); ok {
-			m.speed = v
-		}
-	case session.EventCorrections:
-		if c, ok := ev.Data.(session.CorrEvent); ok {
-			m.corr = c
-		}
-	case session.EventLog:
-		if le, ok := ev.Data.(session.LogEvent); ok {
-			m.status = le.Message
-			m.statusErr = le.Level == slog.LevelError.String()
-		}
+	switch ev := ev.(type) {
+	case session.ConnState:
+		m.connState = ev
+	case session.ReceiverEvent:
+		m.receiver = ev
+	case session.SpeedEvent:
+		m.speed = int(ev)
+	case session.CorrEvent:
+		m.corr = ev
+	case session.LogEvent:
+		m.status = ev.Message
+		m.statusErr = ev.Level == slog.LevelError.String()
 	}
 	for _, v := range m.views {
 		v.handleEvent(ev)

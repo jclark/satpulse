@@ -11,7 +11,7 @@ import (
 )
 
 func pktE(t time.Time, tag, msg string, out bool) session.Event {
-	return session.Event{Name: session.EventPacket, Data: gpsio.PacketLogEntry{
+	return session.PacketEvent{PacketLogEntry: gpsio.PacketLogEntry{
 		T: gpsio.TimeMicro(t), Tag: gpsprot.Tag(tag), Msg: msg, Out: out,
 	}}
 }
@@ -56,8 +56,8 @@ func TestPacketAggregation(t *testing.T) {
 			name: "a new connection clears the rows",
 			events: []session.Event{
 				pktE(t0, "UBX", "NAV-PVT", false),
-				{Name: session.EventState, Data: session.StateDisconnected},
-				{Name: session.EventState, Data: session.StateConnecting},
+				session.StateDisconnected,
+				session.StateConnecting,
 				pktE(t0.Add(5*time.Second), "NMEA", "GGA", false),
 			},
 			expect: map[string]rowState{

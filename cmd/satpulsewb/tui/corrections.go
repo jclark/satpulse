@@ -125,47 +125,39 @@ func (v *correctionsView) locked() bool {
 func (v *correctionsView) ntrip() bool { return v.mode == 0 }
 
 func (v *correctionsView) handleEvent(ev session.Event) {
-	switch ev.Name {
-	case session.EventState:
-		if st, ok := ev.Data.(session.ConnState); ok {
-			v.connState = st
-			if st == session.StateDisconnected {
-				v.corr = nil
-				v.corrErr = ""
-				v.pending = false
-				v.nmeaValid = false
-				v.clearRows()
-			}
-		}
-	case session.EventCorrections:
-		if ce, ok := ev.Data.(session.CorrEvent); ok {
-			v.corr = &ce
+	switch ev := ev.(type) {
+	case session.ConnState:
+		v.connState = ev
+		if ev == session.StateDisconnected {
+			v.corr = nil
+			v.corrErr = ""
 			v.pending = false
-			switch ce.State {
-			case "reconnecting", "failed":
-				v.corrErr = ce.Error
-				if v.corrErr == "" {
-					if ce.State == "failed" {
-						v.corrErr = "connection failed"
-					} else {
-						v.corrErr = "connection lost"
-					}
+			v.nmeaValid = false
+			v.clearRows()
+		}
+	case session.CorrEvent:
+		v.corr = &ev
+		v.pending = false
+		switch ev.State {
+		case "reconnecting", "failed":
+			v.corrErr = ev.Error
+			if v.corrErr == "" {
+				if ev.State == "failed" {
+					v.corrErr = "connection failed"
+				} else {
+					v.corrErr = "connection lost"
 				}
-			case "connecting":
-				v.corrErr = ""
-			case "stopped":
-				v.stoppedAt = time.Now()
 			}
+		case "connecting":
+			v.corrErr = ""
+		case "stopped":
+			v.stoppedAt = time.Now()
 		}
-	case session.EventNMEAPosition:
-		if p, ok := ev.Data.(session.NMEAPositionEvent); ok {
-			v.nmeaValid = p.Valid
-			v.nmeaLat, v.nmeaLon = p.Lat, p.Lon
-		}
-	case session.EventCorrPacket:
-		if msg, ok := ev.Data.(*gpsprot.CorReportMsg); ok {
-			v.handleCorPacket(msg)
-		}
+	case session.NMEAPositionEvent:
+		v.nmeaValid = ev.Valid
+		v.nmeaLat, v.nmeaLon = ev.Lat, ev.Lon
+	case session.CorrPacketEvent:
+		v.handleCorPacket(ev.CorReportMsg)
 	}
 }
 

@@ -108,20 +108,16 @@ func (v *packetsView) hints() []string {
 }
 
 func (v *packetsView) handleEvent(ev session.Event) {
-	switch ev.Name {
-	case session.EventPacket:
-		if e, ok := ev.Data.(gpsio.PacketLogEntry); ok {
-			v.addPacket(e)
+	switch ev := ev.(type) {
+	case session.PacketEvent:
+		v.addPacket(ev.PacketLogEntry)
+	case session.ConnState:
+		// A new connection starting clears the previous stream, as in
+		// the workbench.
+		if v.prevState == session.StateDisconnected && ev != session.StateDisconnected {
+			v.clear()
 		}
-	case session.EventState:
-		if st, ok := ev.Data.(session.ConnState); ok {
-			// A new connection starting clears the previous stream,
-			// as in the workbench.
-			if v.prevState == session.StateDisconnected && st != session.StateDisconnected {
-				v.clear()
-			}
-			v.prevState = st
-		}
+		v.prevState = ev
 	}
 }
 
