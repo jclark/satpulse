@@ -467,7 +467,7 @@ func (m *monitorView) renderPVT() []string {
 		lines = append(lines, faintStyle.Render("No time data"))
 	} else {
 		lines = append(lines, renderTable(
-			[]string{"Tag", "Message", "UTC", "TAI", "Leap sec", "TAcc", "GNSS"},
+			[]string{"Tag", "Message", "Local", "UTC", "TAI", "Leap sec", "TAcc", "GNSS"},
 			nil, m.timeTableRows())...)
 	}
 	return lines
@@ -559,9 +559,11 @@ func (m *monitorView) timeTableRows() [][]cell {
 	for _, id := range slices.Sorted(maps.Keys(m.timeRows)) {
 		msg := m.timeRows[id].msg
 		utcCell, taiCell := cell{text: "-"}, cell{text: "-"}
+		localCell := cell{text: "-"}
 		ls := m.utcOffset(msg)
 		if ut := msg.UTCTime.Ptr(); ut != nil {
 			utcCell = cell{text: formatUTC(*ut), bold: true}
+			localCell = cell{text: ut.SysTime().Local().Format("15:04:05")}
 			if msg.TAITime.IsZero() && ls > 0 {
 				taiCell = cell{text: formatTAI(ptime.Unix(ut.SysTime().Unix()+int64(ls), 0))}
 			}
@@ -569,7 +571,9 @@ func (m *monitorView) timeTableRows() [][]cell {
 		if !msg.TAITime.IsZero() {
 			taiCell = cell{text: formatTAI(msg.TAITime), bold: true}
 			if !utcCell.bold && ls > 0 {
+				utc := time.Unix(0, int64(msg.TAITime)).Add(-time.Duration(ls) * time.Second)
 				utcCell = cell{text: formatTAI(msg.TAITime.Add(-time.Duration(ls) * time.Second))}
+				localCell = cell{text: utc.Local().Format("15:04:05")}
 			}
 		}
 		leapCell := cell{text: "-"}
@@ -586,7 +590,7 @@ func (m *monitorView) timeTableRows() [][]cell {
 		if msg.GNSS != 0 {
 			gnssCell = cell{text: msg.GNSS.String(), bold: true}
 		}
-		rows = append(rows, []cell{{text: string(msg.Tag)}, {text: id}, utcCell, taiCell, leapCell, taccCell, gnssCell})
+		rows = append(rows, []cell{{text: string(msg.Tag)}, {text: id}, localCell, utcCell, taiCell, leapCell, taccCell, gnssCell})
 	}
 	return rows
 }
