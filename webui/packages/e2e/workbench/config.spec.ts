@@ -369,9 +369,15 @@ test('messages: the preset buttons set the group controls', async ({ page, workb
   await expect(page.getByRole('checkbox', { name: 'RMC' })).toBeChecked();
   await expect(page.getByRole('checkbox', { name: 'GGA' })).not.toBeChecked();
 
-  // Daemon: satellites messages on (speed 38400 >= 19200) and the PVT preset
-  // set (time-pulse time and position among them).
-  await page.getByRole('button', { name: 'Daemon' }).click();
+  // NTP: navigation time over serial, no time-pulse messages, satellites
+  // messages on (speed 38400 meets the threshold).
+  await page.getByRole('button', { name: 'NTP' }).click();
+  await expect(page.getByRole('checkbox', { name: 'Navigation time' })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Time-pulse time' })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Satellite positions' })).toBeChecked();
+
+  // PTP: the time-pulse PVT preset (time-pulse time and position among them).
+  await page.getByRole('button', { name: 'PTP' }).click();
   await expect(page.getByRole('checkbox', { name: 'Satellite positions' })).toBeChecked();
   await expect(page.getByRole('checkbox', { name: 'Time-pulse time' })).toBeChecked();
   await expect(page.getByRole('checkbox', { name: 'Position', exact: true })).toBeChecked();

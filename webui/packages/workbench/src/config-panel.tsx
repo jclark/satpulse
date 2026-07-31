@@ -10,7 +10,7 @@ import {SatsGroup, satsWireValue} from './sats-group';
 import {RawGroup, rawWireValue} from './raw-group';
 import {
     NMEAMsgRMC,
-    PVTMsgPos, PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgSurvey, PVTMsgQuality, PVTMsgEpoch,
+    PVTMsgPos, PVTMsgTime, PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgSurvey, PVTMsgQuality, PVTMsgEpoch,
     SatsMsgSat, SatsMsgSignal,
     SurveyAgain, SaveNone, SaveMinimal, SaveAll, ResetNone, ResetReload, ResetCold, ResetFactory,
 } from './msg-flags';
@@ -739,11 +739,21 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                                 setSatsChange(true); setSatsFlags(new Set());
                                 if (rawSupported) { setRawChange(true); setRawFlags(new Set()); }
                             }}>Minimum</Button>
+                            {/* NTP and PTP mirror the message sets satpulsed
+                                configures for NTP sync (time over serial) and
+                                PHC sync (hardware time pulse), plus position
+                                for monitoring. The satellites speed threshold
+                                matches the daemon's minSpeedSatellitesOutput. */}
+                            <Button disabled={!connected} onClick={() => {
+                                setNmeaChange(true); setNmeaDisable(true);
+                                setPvtChange(true); setPvtFlags(new Set([PVTMsgTime, PVTMsgLeapSecond, PVTMsgOff, PVTMsgQuality, PVTMsgEpoch, PVTMsgPos]));
+                                if (speed >= 38400) { setSatsChange(true); setSatsFlags(new Set([SatsMsgSat, SatsMsgSignal])); }
+                            }}>NTP</Button>
                             <Button disabled={!connected} onClick={() => {
                                 setNmeaChange(true); setNmeaDisable(true);
                                 setPvtChange(true); setPvtFlags(new Set([PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgQuality, PVTMsgEpoch, PVTMsgPos]));
-                                if (speed >= 19200) { setSatsChange(true); setSatsFlags(new Set([SatsMsgSat, SatsMsgSignal])); }
-                            }}>Daemon</Button>
+                                if (speed >= 38400) { setSatsChange(true); setSatsFlags(new Set([SatsMsgSat, SatsMsgSignal])); }
+                            }}>PTP</Button>
                         </div>
                         <NMEAGroup
                             change={nmeaChange}
