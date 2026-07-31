@@ -62,7 +62,9 @@ func itemCheck(label string, val *bool, enabled func() bool, onChange func()) cf
 	}
 }
 
-func itemText(label string, ti *textinput.Model, enabled func() bool, onChange func()) cfgItem {
+// itemText renders a labelled text input; invalid (optional) returns
+// a validation error to mark the field with.
+func itemText(label string, ti *textinput.Model, enabled func() bool, onChange func(), invalid func() error) cfgItem {
 	return cfgItem{
 		enabled:  enabled,
 		captures: true,
@@ -72,7 +74,15 @@ func itemText(label string, ti *textinput.Model, enabled func() bool, onChange f
 			} else {
 				ti.Blur()
 			}
-			return marker(focused) + itemStyle(enabled, labelStyle.Render(fmt.Sprintf("%-24s", label))+ti.View())
+			lbl := labelStyle.Render(fmt.Sprintf("%-24s", label))
+			suffix := ""
+			if invalid != nil {
+				if err := invalid(); err != nil {
+					lbl = errorStyle.Render(fmt.Sprintf("%-24s", label))
+					suffix = "  " + errorStyle.Render(err.Error())
+				}
+			}
+			return marker(focused) + itemStyle(enabled, lbl+ti.View()+suffix)
 		},
 		key: func(k tea.KeyPressMsg) tea.Cmd {
 			before := ti.Value()

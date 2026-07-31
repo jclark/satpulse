@@ -2,15 +2,12 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/gps/lib/geopos"
 )
 
 // This file builds the configuration form items and implements the
@@ -29,14 +26,14 @@ func (v *configView) buildItems() {
 			return nil
 		}))
 	}
-	add(itemText("Min elevation (deg)", &v.minElev, conn, func() { v.minElevTouched = true }))
+	add(itemText("Min elevation (deg)", &v.minElev, conn, func() { v.minElevTouched = true }, v.invalidFn(&v.minElev)))
 	add(itemSpacer())
 	add(itemHeading("Time pulse"))
 	tpTouch := func() { v.timePulseTouched = true }
-	add(itemText("Period (s)", &v.ppsPeriod, conn, tpTouch))
-	add(itemText("Pulse width (s)", &v.ppsWidth, conn, tpTouch))
+	add(itemText("Period (s)", &v.ppsPeriod, conn, tpTouch, v.invalidFn(&v.ppsPeriod)))
+	add(itemText("Pulse width (s)", &v.ppsWidth, conn, tpTouch, v.invalidFn(&v.ppsWidth)))
 	add(itemRadio("Time GNSS", []string{"--", "GPS", "Galileo", "BeiDou", "GLONASS"}, &v.timeGNSS, conn, nil, tpTouch))
-	add(itemText("Cable delay (ns)", &v.cableDelay, conn, tpTouch))
+	add(itemText("Cable delay (ns)", &v.cableDelay, conn, tpTouch, v.invalidFn(&v.cableDelay)))
 	add(itemCheck("Align to GNSS", &v.alignToGNSS, conn, tpTouch))
 	add(itemCheck("Only when locked", &v.onlyWhenLocked, conn, tpTouch))
 	add(itemCheck("Rising edge", &v.risingEdge, conn, tpTouch))
@@ -65,9 +62,9 @@ func (v *configView) buildItems() {
 		return ""
 	}))
 	surveyOn := func() bool { return conn() && v.has(gpsprot.ConfigSupportSurvey) && v.timeMode == 2 }
-	add(itemText("Survey time (s)", &v.surveyTime, surveyOn, nil))
+	add(itemText("Survey time (s)", &v.surveyTime, surveyOn, nil, v.invalidFn(&v.surveyTime)))
 	add(itemText("Survey accuracy (m)", &v.surveyAcc,
-		func() bool { return surveyOn() && v.has(gpsprot.ConfigSupportSurveyAcc) }, nil))
+		func() bool { return surveyOn() && v.has(gpsprot.ConfigSupportSurveyAcc) }, nil, v.invalidFn(&v.surveyAcc)))
 	add(itemCheck("Do a new survey", &v.surveyAgain, surveyOn, nil))
 	add(itemCheck("Report survey progress", &v.surveyReport,
 		func() bool { return surveyOn() && v.has(gpsprot.ConfigSupportSurveyMsg) }, nil))
@@ -75,14 +72,14 @@ func (v *configView) buildItems() {
 	add(itemRadio("Coordinates", []string{"ECEF", "Lat/Lon/Height"}, &v.coordSystem, fixedOn, nil, nil))
 	ecefOn := func() bool { return fixedOn() && v.coordSystem == 0 }
 	llhOn := func() bool { return fixedOn() && v.coordSystem == 1 }
-	add(itemText("X (m)", &v.ecefX, ecefOn, nil))
-	add(itemText("Y (m)", &v.ecefY, ecefOn, nil))
-	add(itemText("Z (m)", &v.ecefZ, ecefOn, nil))
-	add(itemText("Latitude (deg)", &v.llhLat, llhOn, nil))
-	add(itemText("Longitude (deg)", &v.llhLon, llhOn, nil))
-	add(itemText("Height (m)", &v.llhHeight, llhOn, nil))
+	add(itemText("X (m)", &v.ecefX, ecefOn, nil, v.invalidFn(&v.ecefX)))
+	add(itemText("Y (m)", &v.ecefY, ecefOn, nil, v.invalidFn(&v.ecefY)))
+	add(itemText("Z (m)", &v.ecefZ, ecefOn, nil, v.invalidFn(&v.ecefZ)))
+	add(itemText("Latitude (deg)", &v.llhLat, llhOn, nil, v.invalidFn(&v.llhLat)))
+	add(itemText("Longitude (deg)", &v.llhLon, llhOn, nil, v.invalidFn(&v.llhLon)))
+	add(itemText("Height (m)", &v.llhHeight, llhOn, nil, v.invalidFn(&v.llhHeight)))
 	add(itemText("Position accuracy (m)", &v.fixedAcc,
-		func() bool { return fixedOn() && v.has(gpsprot.ConfigSupportFixedPosAcc) }, nil))
+		func() bool { return fixedOn() && v.has(gpsprot.ConfigSupportFixedPosAcc) }, nil, v.invalidFn(&v.fixedAcc)))
 	add(itemSpacer())
 	add(itemHeading("Messages"))
 	add(itemButton(func() string { return "Preset: Minimum" }, conn, func() tea.Cmd { v.presetMinimum(); return nil }))
@@ -176,7 +173,13 @@ func (v *configView) buildItems() {
 			return "Applying..."
 		}
 		return "Apply"
-	}, func() bool { return conn() && !v.applying && v.pendingLabel() != "" }, v.applyCmd))
+	}, func() bool {
+		if !conn() || v.applying || v.pendingLabel() == "" {
+			return false
+		}
+		errs, _ := v.fieldErrors()
+		return len(errs) == 0
+	}, v.applyCmd))
 	add(itemButton(func() string { return "Discard" },
 		func() bool { return conn() && v.pendingLabel() != "" }, func() tea.Cmd {
 			v.discard()
@@ -484,18 +487,12 @@ func (v *configView) applyCmd() tea.Cmd {
 }
 
 func (v *configView) buildTarget() (*gpsprot.ConfigTarget, error) {
-	target := gpsprot.NewConfigTarget()
-	parse := func(ti *textinput.Model, what string, minOK func(f float64) bool) (float64, bool, error) {
-		s := strings.TrimSpace(ti.Value())
-		if s == "" {
-			return 0, false, nil
-		}
-		f, err := strconv.ParseFloat(s, 64)
-		if err != nil || (minOK != nil && !minOK(f)) {
-			return 0, false, fmt.Errorf("invalid %s", what)
-		}
-		return f, true, nil
+	// The shared field rules are the single validation source: refuse
+	// on the first error, so the value extractions below cannot fail.
+	if errs, _ := v.fieldErrors(); len(errs) > 0 {
+		return nil, errs[0]
 	}
+	target := gpsprot.NewConfigTarget()
 	if v.signalsTouched {
 		m := make(map[string][]string)
 		for key, on := range v.selSignals {
@@ -512,24 +509,13 @@ func (v *configView) buildTarget() (*gpsprot.ConfigTarget, error) {
 		target.Props.SetSignalsEnabled(ss)
 	}
 	if v.minElevTouched {
-		if f, ok, err := parse(&v.minElev, "min elevation", func(f float64) bool { return f >= 0 && f <= 90 }); err != nil {
-			return nil, err
-		} else if ok {
+		if f, ok, _ := v.fld.minElev.value(); ok {
 			target.Props.SetMinElevation(gpsprot.DegreesFromFloat(f))
 		}
 	}
 	if v.timePulseTouched {
-		period, hasPeriod, err := parse(&v.ppsPeriod, "period", func(f float64) bool { return f >= 0 })
-		if err != nil {
-			return nil, err
-		}
-		width, hasWidth, err := parse(&v.ppsWidth, "pulse width", func(f float64) bool { return f >= 0 && f <= 1 })
-		if err != nil {
-			return nil, err
-		}
-		if hasPeriod && hasWidth && width >= period && period > 0 {
-			return nil, fmt.Errorf("pulse width must be less than the period")
-		}
+		period, _, _ := v.fld.period.value()
+		width, _, _ := v.fld.width.value()
 		target.Props.SetTimePulse(gpsprot.TimePulse{
 			Period:         time.Duration(period * float64(time.Second)),
 			Width:          time.Duration(width * float64(time.Second)),
@@ -541,9 +527,7 @@ func (v *configView) buildTarget() (*gpsprot.ConfigTarget, error) {
 			g := []gpsprot.GNSS{0, gpsprot.GPS, gpsprot.GAL, gpsprot.BDS, gpsprot.GLO}[v.timeGNSS]
 			target.Props.SetTimeGNSS(g)
 		}
-		if d, ok, err := parse(&v.cableDelay, "cable delay", nil); err != nil {
-			return nil, err
-		} else if ok {
+		if d, ok, _ := v.fld.cable.value(); ok {
 			target.Props.SetAntennaCableDelay(time.Duration(d) * time.Nanosecond)
 		}
 	}
@@ -553,17 +537,11 @@ func (v *configView) buildTarget() (*gpsprot.ConfigTarget, error) {
 			target.Props.SetMode(gpsprot.Mode{Static: false})
 		case 2:
 			target.Props.SetMode(gpsprot.Mode{Static: true})
-			dur, hasDur, err := parse(&v.surveyTime, "survey time", func(f float64) bool { return f > 0 })
-			if err != nil {
-				return nil, err
-			}
+			dur, hasDur, _ := v.fld.surveyTime.value()
 			if !hasDur {
 				dur = 2000
 			}
-			acc, hasAcc, err := parse(&v.surveyAcc, "survey accuracy", func(f float64) bool { return f >= 0.001 })
-			if err != nil {
-				return nil, err
-			}
+			acc, hasAcc, _ := v.fld.surveyAcc.value()
 			if !hasAcc {
 				acc = 20
 			}
@@ -580,35 +558,21 @@ func (v *configView) buildTarget() (*gpsprot.ConfigTarget, error) {
 				target.Opts.PVTMsg |= gpsprot.PVTMsgSurvey
 			}
 		case 3:
-			acc, hasAcc, err := parse(&v.fixedAcc, "position accuracy", func(f float64) bool { return f >= 0.001 })
-			if err != nil {
-				return nil, err
-			}
+			acc, hasAcc, _ := v.fld.fixedAcc.value()
 			if !hasAcc {
 				acc = 20
 			}
 			mode := gpsprot.Mode{Static: true, FixedPosAcc: gpsprot.Meters(acc)}
 			if v.coordSystem == 0 {
-				var xyz [3]float64
-				for i, ti := range []*textinput.Model{&v.ecefX, &v.ecefY, &v.ecefZ} {
-					f, ok, err := parse(ti, "ECEF coordinate", nil)
-					if err != nil || !ok {
-						return nil, fmt.Errorf("invalid ECEF coordinates")
-					}
-					xyz[i] = f
-				}
-				if geopos.ECEF(xyz).CheckOnEarth() != nil {
-					return nil, fmt.Errorf("ECEF coordinates not on Earth")
-				}
+				x, _, _ := v.fld.ecefX.value()
+				y, _, _ := v.fld.ecefY.value()
+				z, _, _ := v.fld.ecefZ.value()
 				mode.PosType = gpsprot.PosTypeECEF
-				mode.FixedPosECEF = gpsprot.Point3D{gpsprot.Meters(xyz[0]), gpsprot.Meters(xyz[1]), gpsprot.Meters(xyz[2])}
+				mode.FixedPosECEF = gpsprot.Point3D{gpsprot.Meters(x), gpsprot.Meters(y), gpsprot.Meters(z)}
 			} else {
-				lat, okLat, err1 := parse(&v.llhLat, "latitude", func(f float64) bool { return f >= -90 && f <= 90 })
-				lon, okLon, err2 := parse(&v.llhLon, "longitude", func(f float64) bool { return f >= -180 && f <= 180 })
-				h, okH, err3 := parse(&v.llhHeight, "height", nil)
-				if err1 != nil || err2 != nil || err3 != nil || !okLat || !okLon || !okH {
-					return nil, fmt.Errorf("invalid lat/lon/height")
-				}
+				lat, _, _ := v.fld.llhLat.value()
+				lon, _, _ := v.fld.llhLon.value()
+				h, _, _ := v.fld.llhHeight.value()
 				mode.PosType = gpsprot.PosTypeLLH
 				mode.FixedPosLLH = [2]gpsprot.Angle{gpsprot.DegreesFromFloat(lat), gpsprot.DegreesFromFloat(lon)}
 				mode.Height = gpsprot.Meters(h)

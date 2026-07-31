@@ -2,12 +2,15 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/jclark/satpulse/gps/app/session"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/geopos"
 )
 
 // cfgItem is one row of the configuration form.
@@ -84,6 +87,13 @@ type configView struct {
 	applied  bool
 	errMsg   string
 
+	// fld holds the validated numeric fields; fields lists them in
+	// display order. errs caches the per-render validation result for
+	// field marking.
+	fld    cfgFields
+	fields []*cfgField
+	errs   map[*textinput.Model]error
+
 	items  []cfgItem
 	focus  int
 	offset int
@@ -125,10 +135,17 @@ func newConfigView(sess *session.Session, onPort func(string)) *configView {
 	v.llhHeight = mk("height (m)", 16)
 	v.fixedAcc = mk("20", 10)
 	v.resetForm()
+	v.initFields()
 	v.buildItems()
 	v.focus = -1
 	moveItemFocus(v.items, &v.focus, 1)
 	return v
+}
+
+// invalidFn returns the field-marking closure for a validated input,
+// reading the per-render validation cache.
+func (v *configView) invalidFn(ti *textinput.Model) func() error {
+	return func() error { return v.errs[ti] }
 }
 
 // resetForm restores every control to its default, as the workbench
@@ -225,6 +242,141 @@ func (v *configView) hints() []string {
 		return []string{"up/down move", "space toggle", "enter OK", "esc cancel"}
 	}
 	return []string{"up/down move", "space/left/right change", "enter activate"}
+}
+
+// cfgField is one validated numeric text field: the single source of
+// its rules, used both by the live per-field validation and by
+// buildTarget's value extraction.
+type cfgField struct {
+	ti       *textinput.Model
+	label    string
+	relevant func() bool        // participates in validation
+	required bool               // empty is an error while relevant
+	check    func(float64) error // range rule for a parsed value
+}
+
+// cfgFields names the validated fields.
+type cfgFields struct {
+	minElev, period, width, cable          cfgField
+	surveyTime, surveyAcc                  cfgField
+	ecefX, ecefY, ecefZ                    cfgField
+	llhLat, llhLon, llhHeight              cfgField
+	fixedAcc                               cfgField
+}
+
+// value parses a field: ok is false when the field is empty, err is
+// non-nil when the entry is invalid under the field's rules.
+func (f *cfgField) value() (float64, bool, error) {
+	s := strings.TrimSpace(f.ti.Value())
+	if s == "" {
+		if f.required && f.relevant() {
+			return 0, false, fmt.Errorf("%s is required", f.label)
+		}
+		return 0, false, nil
+	}
+	x, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, false, fmt.Errorf("invalid %s", f.label)
+	}
+	if f.check != nil {
+		if err := f.check(x); err != nil {
+			return 0, false, err
+		}
+	}
+	return x, true, nil
+}
+
+// initFields wires the validation rules; the enabled-style relevance
+// closures scope mode-dependent fields exactly as their controls are
+// gated.
+func (v *configView) initFields() {
+	survey := func() bool { return v.timeMode == 2 }
+	fixed := func() bool { return v.timeMode == 3 }
+	ecef := func() bool { return fixed() && v.coordSystem == 0 }
+	llh := func() bool { return fixed() && v.coordSystem == 1 }
+	always := func() bool { return true }
+	rng := func(what string, lo, hi float64) func(float64) error {
+		return func(x float64) error {
+			if x < lo || x > hi {
+				return fmt.Errorf("%s must be between %g and %g", what, lo, hi)
+			}
+			return nil
+		}
+	}
+	min := func(what string, lo float64) func(float64) error {
+		return func(x float64) error {
+			if x < lo {
+				return fmt.Errorf("%s must be at least %g", what, lo)
+			}
+			return nil
+		}
+	}
+	v.fld = cfgFields{
+		minElev:    cfgField{ti: &v.minElev, label: "min elevation", relevant: always, check: rng("min elevation", 0, 90)},
+		period:     cfgField{ti: &v.ppsPeriod, label: "period", relevant: always, check: min("period", 0)},
+		width:      cfgField{ti: &v.ppsWidth, label: "pulse width", relevant: always, check: rng("pulse width", 0, 1)},
+		cable:      cfgField{ti: &v.cableDelay, label: "cable delay", relevant: always},
+		surveyTime: cfgField{ti: &v.surveyTime, label: "survey time", relevant: survey, check: func(x float64) error {
+			if x <= 0 {
+				return fmt.Errorf("survey time must be greater than zero")
+			}
+			return nil
+		}},
+		surveyAcc: cfgField{ti: &v.surveyAcc, label: "survey accuracy", relevant: survey, check: min("survey accuracy", 0.001)},
+		ecefX:     cfgField{ti: &v.ecefX, label: "ECEF X", relevant: ecef, required: true},
+		ecefY:     cfgField{ti: &v.ecefY, label: "ECEF Y", relevant: ecef, required: true},
+		ecefZ:     cfgField{ti: &v.ecefZ, label: "ECEF Z", relevant: ecef, required: true},
+		llhLat:    cfgField{ti: &v.llhLat, label: "latitude", relevant: llh, required: true, check: rng("latitude", -90, 90)},
+		llhLon:    cfgField{ti: &v.llhLon, label: "longitude", relevant: llh, required: true, check: rng("longitude", -180, 180)},
+		llhHeight: cfgField{ti: &v.llhHeight, label: "height", relevant: llh, required: true},
+		fixedAcc:  cfgField{ti: &v.fixedAcc, label: "position accuracy", relevant: fixed, check: min("position accuracy", 0.001)},
+	}
+	f := &v.fld
+	v.fields = []*cfgField{
+		&f.minElev, &f.period, &f.width, &f.cable,
+		&f.surveyTime, &f.surveyAcc,
+		&f.ecefX, &f.ecefY, &f.ecefZ,
+		&f.llhLat, &f.llhLon, &f.llhHeight, &f.fixedAcc,
+	}
+}
+
+// fieldErrors validates every relevant field plus the cross-field
+// rules, returning the errors in display order and a map for field
+// marking. Empty means an apply may proceed.
+func (v *configView) fieldErrors() ([]error, map[*textinput.Model]error) {
+	var ordered []error
+	m := make(map[*textinput.Model]error)
+	add := func(ti *textinput.Model, err error) {
+		if _, dup := m[ti]; !dup {
+			ordered = append(ordered, err)
+			m[ti] = err
+		}
+	}
+	for _, f := range v.fields {
+		if !f.relevant() {
+			continue
+		}
+		if _, _, err := f.value(); err != nil {
+			add(f.ti, err)
+		}
+	}
+	// Cross-field rules, matching the workbench: pulse width must be
+	// shorter than a non-zero period, and a fixed ECEF position must
+	// be on Earth.
+	if p, okP, _ := v.fld.period.value(); okP && p > 0 {
+		if w, okW, _ := v.fld.width.value(); okW && w >= p {
+			add(v.fld.width.ti, fmt.Errorf("pulse width must be less than the period"))
+		}
+	}
+	if v.fld.ecefX.relevant() {
+		x, okX, _ := v.fld.ecefX.value()
+		y, okY, _ := v.fld.ecefY.value()
+		z, okZ, _ := v.fld.ecefZ.value()
+		if okX && okY && okZ && (geopos.ECEF{x, y, z}).CheckOnEarth() != nil {
+			add(v.fld.ecefX.ti, fmt.Errorf("ECEF coordinates not on Earth"))
+		}
+	}
+	return ordered, m
 }
 
 // connected mirrors the workbench gating: every control requires a
@@ -402,6 +554,7 @@ func (v *configView) updateFocusedInput(msg tea.Msg) tea.Cmd {
 }
 
 func (v *configView) render(width, height int) string {
+	_, v.errs = v.fieldErrors()
 	items := v.items
 	focus := v.focus
 	if v.picker != nil {
@@ -425,6 +578,9 @@ func (v *configView) statusLine() string {
 	}
 	if v.applying {
 		return faintStyle.Render("Applying configuration...")
+	}
+	if errs, _ := v.fieldErrors(); len(errs) > 0 {
+		return errorStyle.Render(errs[0].Error())
 	}
 	if label := v.pendingLabel(); label != "" {
 		return faintStyle.Render("Changes pending to " + label)
