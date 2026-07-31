@@ -77,6 +77,11 @@ type packetsView struct {
 	offset    int
 	prevState session.ConnState
 
+	// pinned is the packet the decode pane shows, captured when the
+	// selection was made: the decode does not track the stream, as in
+	// the workbench.
+	pinned *gpsio.PacketLogEntry
+
 	snap    []snapItem // non-nil while the snapshot dialog is open
 	snapOff int
 }
@@ -236,6 +241,7 @@ func (v *packetsView) clear() {
 	v.frozen = nil
 	clear(v.expanded)
 	v.sel = pktItem{child: -1}
+	v.pinned = nil
 	v.snap = nil
 }
 
@@ -272,8 +278,20 @@ func (v *packetsView) update(msg tea.Msg) tea.Cmd {
 		v.clear()
 	case "esc":
 		v.sel = pktItem{child: -1}
+		v.pinned = nil
 	}
 	return nil
+}
+
+// pin captures the packet the current selection denotes for the
+// decode pane.
+func (v *packetsView) pin() {
+	if e := v.selEntry(); e != nil {
+		c := *e
+		v.pinned = &c
+	} else {
+		v.pinned = nil
+	}
 }
 
 func (v *packetsView) moveSel(dir int) {
@@ -289,11 +307,13 @@ func (v *packetsView) moveSel(dir int) {
 		} else {
 			v.sel = items[len(items)-1]
 		}
+		v.pin()
 		return
 	}
 	i += dir
 	if i >= 0 && i < len(items) {
 		v.sel = items[i]
+		v.pin()
 	}
 }
 
@@ -308,6 +328,7 @@ func (v *packetsView) toggleExpand(key string) {
 		if v.expanded[rowKey] {
 			delete(v.expanded, rowKey)
 			v.sel = pktItem{key: rowKey, child: -1}
+			v.pin()
 		}
 	case "right":
 		if r := v.rows()[rowKey]; r != nil && len(r.recent) > 1 {
@@ -317,6 +338,7 @@ func (v *packetsView) toggleExpand(key string) {
 		if v.expanded[rowKey] {
 			delete(v.expanded, rowKey)
 			v.sel = pktItem{key: rowKey, child: -1}
+			v.pin()
 		} else if r := v.rows()[rowKey]; r != nil && len(r.recent) > 1 {
 			v.expanded[rowKey] = true
 		}
@@ -434,7 +456,7 @@ func (v *packetsView) renderTableLines(width, height int) []string {
 }
 
 func (v *packetsView) renderDecode(width, height int) []string {
-	e := v.selEntry()
+	e := v.pinned
 	if e == nil {
 		return []string{faintStyle.Render("Select a row to decode")}
 	}
