@@ -216,9 +216,9 @@ func (m *model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.sess.Disconnect()
 		return tea.Quit
 	case "tab":
-		return m.switchTab((m.active + 1) % len(tabs))
+		return m.switchTab(m.nextTab(1))
 	case "shift+tab":
-		return m.switchTab((m.active + len(tabs) - 1) % len(tabs))
+		return m.switchTab(m.nextTab(-1))
 	case "c":
 		m.conn = newConnectForm(m.sess, m.vendors, "", 0)
 		return m.conn.open()
@@ -231,13 +231,46 @@ func (m *model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	return m.activeView().update(msg)
 }
 
-// switchTab activates a tab, gates the high-rate gps:packet stream on
-// the Packets view being visible, and notifies the shown view.
+// identified reports whether the probe identified the receiver, the
+// workbench's condition for enabling the Configuration tab.
+func (m *model) identified() bool {
+	return m.receiver.Info.IsSet() && m.receiver.Info.Get().Vendor != ""
+}
+
+// tabEnabled reports whether a tab can be activated: Configuration
+// requires an identified receiver, as in the workbench.
+func (m *model) tabEnabled(v view) bool {
+	if _, ok := v.(*configView); ok {
+		return m.identified()
+	}
+	return true
+}
+
+// switchTab activates a tab (refusing a disabled one), gates the
+// high-rate gps:packet stream on the Packets view being visible, and
+// notifies the shown view.
 func (m *model) switchTab(i int) tea.Cmd {
+	if !m.tabEnabled(m.tabs()[i]) {
+		return nil
+	}
 	m.active = i
 	_, packets := m.activeView().(*packetsView)
 	m.sink.setWantsPackets(packets)
 	return m.activeView().update(viewShownMsg{})
+}
+
+// nextTab returns the next enabled tab in direction dir.
+func (m *model) nextTab(dir int) int {
+	tabs := m.tabs()
+	n := len(tabs)
+	i := m.active
+	for range n {
+		i = (i + dir + n) % n
+		if m.tabEnabled(tabs[i]) {
+			return i
+		}
+	}
+	return m.active
 }
 
 func (m *model) View() tea.View {
@@ -305,6 +338,8 @@ func (m *model) renderTabs() string {
 		st := tabStyle
 		if i == m.active && m.conn == nil {
 			st = activeTab
+		} else if !m.tabEnabled(v) {
+			st = tabStyle.Faint(true)
 		}
 		b.WriteString(st.Render(fmt.Sprintf("%d %s", i+1, v.title())))
 	}

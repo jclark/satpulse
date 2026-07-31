@@ -228,9 +228,14 @@ func (v *configView) hints() []string {
 }
 
 // connected mirrors the workbench gating: every control requires a
-// connected, idle receiver.
+// connected, idle, identified receiver (the workbench makes the
+// whole tab unreachable until the probe identifies a vendor).
 func (v *configView) connected() bool {
-	return v.connState == session.StateConnected
+	return v.connState == session.StateConnected && v.identified()
+}
+
+func (v *configView) identified() bool {
+	return v.receiver.Info.IsSet() && v.receiver.Info.Get().Vendor != ""
 }
 
 // has reports configuration item support; zero flags mean support is

@@ -61,6 +61,33 @@ func TestModelTabs(t *testing.T) {
 	}
 }
 
+// TestConfigTabGating checks that the Configuration tab cannot be
+// activated until the probe identifies the receiver, as in the
+// workbench.
+func TestConfigTabGating(t *testing.T) {
+	m := newTestModel()
+	m.conn = nil
+	m.Update(events(session.StateConnected))
+	configIdx := 3
+	if _, ok := m.tabs()[configIdx].(*configView); !ok {
+		t.Fatalf("tab %d is not the Configuration view", configIdx)
+	}
+	m.switchTab(configIdx)
+	if m.active == configIdx {
+		t.Fatal("Configuration tab activated without an identified receiver")
+	}
+	var info gpsprot.ReceiverInfo
+	info.Vendor = "u-blox"
+	var re session.ReceiverEvent
+	re.OK = true
+	re.Info.Set(info)
+	m.Update(events(re))
+	m.switchTab(configIdx)
+	if m.active != configIdx {
+		t.Fatal("Configuration tab refused with an identified receiver")
+	}
+}
+
 // TestModelViewSmoke renders the full view for each tab with events
 // applied, checking nothing panics and the frame carries the tab bar.
 func TestModelViewSmoke(t *testing.T) {
