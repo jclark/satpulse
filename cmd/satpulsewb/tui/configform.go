@@ -44,6 +44,11 @@ func (v *configView) buildItems() {
 	add(itemRadio("Mode", []string{"--", "Mobile", "Survey-in", "Fixed position"}, &v.timeMode, conn,
 		func(i int) bool {
 			switch i {
+			case 0:
+				// The blank state only reports "nothing selected yet";
+				// it is not a requestable mode (buildTarget has no
+				// case for it), so it cannot be selected.
+				return false
 			case 2:
 				return v.has(gpsprot.ConfigSupportSurvey)
 			case 3:
