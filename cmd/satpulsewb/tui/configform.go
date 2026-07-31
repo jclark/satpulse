@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/geopos"
 )
 
 // This file builds the configuration form items and implements the
@@ -469,6 +470,13 @@ func (v *configView) applyCmd() tea.Cmd {
 	v.errMsg = ""
 	v.saveType = int(gpsprot.SaveNone)
 	v.resetType = int(gpsprot.ResetNone)
+	// The survey fields are one-shot, as in the workbench: clear them
+	// when the apply is issued so a later apply does not re-request a
+	// survey.
+	v.surveyTime.SetValue("")
+	v.surveyAcc.SetValue("")
+	v.surveyAgain = false
+	v.surveyReport = true
 	sess := v.sess
 	return func() tea.Msg {
 		return configAppliedMsg{err: sess.ApplyConfig(context.Background(), target)}
@@ -588,6 +596,9 @@ func (v *configView) buildTarget() (*gpsprot.ConfigTarget, error) {
 						return nil, fmt.Errorf("invalid ECEF coordinates")
 					}
 					xyz[i] = f
+				}
+				if geopos.ECEF(xyz).CheckOnEarth() != nil {
+					return nil, fmt.Errorf("ECEF coordinates not on Earth")
 				}
 				mode.PosType = gpsprot.PosTypeECEF
 				mode.FixedPosECEF = gpsprot.Point3D{gpsprot.Meters(xyz[0]), gpsprot.Meters(xyz[1]), gpsprot.Meters(xyz[2])}
