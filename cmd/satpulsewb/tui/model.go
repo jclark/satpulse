@@ -115,12 +115,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, ev := range msg.packets {
 			m.handleEvent(ev)
 		}
-		m.closeConnIfWanted()
-		return m, nil
+		return m, m.closeConnIfWanted()
 	case tea.KeyPressMsg:
 		cmd := m.handleKey(msg)
-		m.closeConnIfWanted()
-		return m, cmd
+		return m, tea.Batch(cmd, m.closeConnIfWanted())
 	}
 	// Everything else (command results, input ticks) is broadcast:
 	// each view filters by message type, and a result must reach its
@@ -177,11 +175,16 @@ func (m *model) activeView() view {
 }
 
 // closeConnIfWanted closes the connection overlay when it asked to be
-// closed (esc, or a completed connect).
-func (m *model) closeConnIfWanted() {
-	if m.conn != nil && m.conn.wantClose {
-		m.conn = nil
+// closed (esc, or a completed connect), and notifies the view that
+// becomes visible again: a connect through the overlay must trigger
+// the same on-shown work as switching to the tab (the Configuration
+// tab's automatic readback, the Messages catalog refresh).
+func (m *model) closeConnIfWanted() tea.Cmd {
+	if m.conn == nil || !m.conn.wantClose {
+		return nil
 	}
+	m.conn = nil
+	return m.activeView().update(viewShownMsg{})
 }
 
 // tabs returns the views currently in the tab bar: the Messages view
