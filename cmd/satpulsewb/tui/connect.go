@@ -26,7 +26,6 @@ type connectForm struct {
 	device textinput.Model
 	speed  textinput.Model
 	focus  int // 0 device, 1 speed, 2 buttons
-	button int // 0 connect, 1 disconnect
 
 	ports    []serialenum.Port
 	portIdx  int // last port filled into the device field
@@ -51,9 +50,11 @@ func newConnectForm(sess *session.Session, vendors []gpsreg.Vendor, device strin
 	f.speed.Prompt = ""
 	f.speed.Placeholder = "speed"
 	f.speed.SetWidth(8)
-	if speed != 0 {
-		f.speed.SetValue(strconv.Itoa(speed))
+	if speed == 0 {
+		// The workbench's default speed selection.
+		speed = 9600
 	}
+	f.speed.SetValue(strconv.Itoa(speed))
 	f.device.Focus()
 	f.auto = device != "" && speed != 0
 	return f
@@ -129,6 +130,13 @@ func (f *connectForm) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case portsMsg:
 		f.ports = msg
+		// A sole enumerated port fills an empty device field, as the
+		// workbench preselects it.
+		if f.device.Value() == "" && len(f.ports) == 1 {
+			f.device.SetValue(f.ports[0].Device)
+			f.device.CursorEnd()
+			f.portIdx = 0
+		}
 		return nil
 	case opResultMsg:
 		if msg.op != "connect" && msg.op != "disconnect" {
@@ -145,7 +153,17 @@ func (f *connectForm) update(msg tea.Msg) tea.Cmd {
 	return f.updateFocused(msg)
 }
 
+// connectedNow reports whether a connection exists or is being made:
+// the workbench disables the device and speed controls then, and the
+// action button toggles to Disconnect.
+func (f *connectForm) connectedNow() bool {
+	return f.state != session.StateDisconnected
+}
+
 func (f *connectForm) updateFocused(msg tea.Msg) tea.Cmd {
+	if f.connectedNow() {
+		return nil
+	}
 	var cmd tea.Cmd
 	switch f.focus {
 	case 0:
@@ -172,32 +190,26 @@ func (f *connectForm) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		if msg.String() == "up" {
 			dir = -1
 		}
-		if f.focus == 0 && len(f.ports) > 0 {
+		if f.focus == 0 && len(f.ports) > 0 && !f.connectedNow() {
 			f.cyclePort(dir)
 			return nil
 		}
 		return f.setFocus((f.focus + dir + 3) % 3)
 	case "enter":
-		if f.focus == 2 && f.button == 1 {
+		// One toggle, as the workbench's single button: connect when
+		// disconnected, disconnect otherwise.
+		if f.connectedNow() {
 			return f.disconnectCmd()
 		}
 		return f.connectCmd()
 	case "left":
-		if f.focus == 1 {
+		if f.focus == 1 && !f.connectedNow() {
 			f.cycleSpeed(-1)
 			return nil
 		}
-		if f.focus == 2 {
-			f.button = 0
-			return nil
-		}
 	case "right":
-		if f.focus == 1 {
+		if f.focus == 1 && !f.connectedNow() {
 			f.cycleSpeed(1)
-			return nil
-		}
-		if f.focus == 2 {
-			f.button = 1
 			return nil
 		}
 	}
@@ -262,16 +274,14 @@ func (f *connectForm) render(width, height int) string {
 	b.WriteString(kv(8, "State", string(f.state)) + "\n\n")
 	b.WriteString(f.renderField(0, "Device", f.device.View()) + "\n")
 	b.WriteString(f.renderField(1, "Speed", f.speed.View()) + "\n\n")
-	connect := "[ Connect ]"
-	disconnect := "[ Disconnect ]"
-	if f.focus == 2 {
-		if f.button == 0 {
-			connect = activeTab.Render(connect)
-		} else {
-			disconnect = activeTab.Render(disconnect)
-		}
+	button := "[ Connect ]"
+	if f.connectedNow() {
+		button = "[ Disconnect ]"
 	}
-	b.WriteString("  " + connect + "  " + disconnect + "\n")
+	if f.focus == 2 {
+		button = activeTab.Render(button)
+	}
+	b.WriteString("  " + button + "\n")
 	if f.busy {
 		b.WriteString("\n" + faintStyle.Render("working...") + "\n")
 	}
