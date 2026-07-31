@@ -1,4 +1,4 @@
-# Terminal UI shell for the GPS session (no issue yet)
+# Add TUI option to workbench (#395)
 
 ## Goal
 
