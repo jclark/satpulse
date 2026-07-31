@@ -115,12 +115,14 @@ func (v *correctionsView) running() bool {
 	return false
 }
 
-// locked reports whether the form fields are editable, mirroring the
-// workbench gating: StartCorrections requires exactly StateConnected,
-// so any other state (including connecting, configuring, sending)
-// locks the form, as do a running session and a pending start/stop.
+// locked reports whether the form fields are editable. Editing and
+// starting are different: preparing the source details is fine in any
+// receiver state, including disconnected, so only a running
+// correction session or a pending start/stop locks the fields.
+// Starting is gated separately on exactly StateConnected (startCmd),
+// which is what StartCorrections requires.
 func (v *correctionsView) locked() bool {
-	return v.connState != session.StateConnected || v.running() || v.pending
+	return v.running() || v.pending
 }
 
 func (v *correctionsView) ntrip() bool { return v.mode == 0 }
