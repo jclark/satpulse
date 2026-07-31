@@ -104,7 +104,7 @@ func (v *packetsView) hints() []string {
 	if v.frozen != nil {
 		freeze = "f unfreeze"
 	}
-	return []string{"up/down select", "space expand", freeze, "s snapshot", "c clear"}
+	return []string{"up/down select", "space expand", freeze, "s snapshot", "x clear"}
 }
 
 func (v *packetsView) handleEvent(ev session.Event) {
@@ -268,7 +268,7 @@ func (v *packetsView) update(msg tea.Msg) tea.Cmd {
 		v.toggleFreeze()
 	case "s":
 		v.takeSnapshot()
-	case "c":
+	case "x":
 		v.clear()
 	case "esc":
 		v.sel = pktItem{child: -1}

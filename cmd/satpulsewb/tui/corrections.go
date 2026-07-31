@@ -100,7 +100,7 @@ func (v *correctionsView) capturesInput() bool {
 }
 
 func (v *correctionsView) hints() []string {
-	return []string{"up/down field", "left/right mode", "space toggle", "enter start/stop"}
+	return []string{"up/down field", "left/right mode", "space toggle", "enter start/stop", "x clear table"}
 }
 
 // running reports whether a correction session is active.
@@ -261,6 +261,13 @@ func (v *correctionsView) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 			return v.stopCmd()
 		}
 		return v.startCmd()
+	case "x":
+		// Clear the correction message table, unless a text field
+		// has focus and the x belongs to it.
+		if !v.capturesInput() {
+			v.clearRows()
+			return nil
+		}
 	}
 	return v.updateFocused(msg)
 }

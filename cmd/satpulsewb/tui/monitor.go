@@ -75,7 +75,7 @@ func (m *monitorView) title() string { return "Monitor" }
 func (m *monitorView) capturesInput() bool { return false }
 
 func (m *monitorView) hints() []string {
-	return []string{"up/down scroll"}
+	return []string{"up/down scroll", "x clear stats"}
 }
 
 func (m *monitorView) clear() {
@@ -197,6 +197,10 @@ func (m *monitorView) update(msg tea.Msg) tea.Cmd {
 			m.offset += m.lastHeight
 		case "home":
 			m.offset = 0
+		case "x":
+			// The workbench scatter panel's Clear: drop the
+			// accumulated fixes and start the statistics over.
+			m.stats.reset()
 		}
 	}
 	return nil
