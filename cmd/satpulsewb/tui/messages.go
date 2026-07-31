@@ -48,7 +48,8 @@ type messagesView struct {
 	sendStatus  string
 	sendErr     bool
 	responses   []session.ResponseEvent
-	respSel     int // selected response, -1 none
+	respSel     int    // selected response, -1 none
+	decoded     string // decode of the selected response, computed at selection
 
 	items  []cfgItem
 	focus  int
@@ -107,6 +108,7 @@ func (v *messagesView) handleEvent(ev session.Event) {
 			v.responses = append(v.responses, ev)
 			if v.respSel < 0 && (ev.Text != "" || ev.Bin != "") && ev.Kind != "ack" {
 				v.respSel = len(v.responses) - 1
+				v.decoded = v.decodeResponse()
 			}
 		}
 	}
@@ -161,11 +163,9 @@ func (v *messagesView) update(msg tea.Msg) tea.Cmd {
 		items := v.buildItems()
 		switch msg.String() {
 		case "up":
-			moveItemFocus(items, &v.focus, -1)
-			return nil
+			return moveItemFocus(items, &v.focus, -1)
 		case "down":
-			moveItemFocus(items, &v.focus, 1)
-			return nil
+			return moveItemFocus(items, &v.focus, 1)
 		}
 		if v.focus < len(items) {
 			it := &items[v.focus]
@@ -284,6 +284,7 @@ func (v *messagesView) applyLoaded(path string, tags []session.MsgFileTag) {
 	v.sendErr = false
 	v.responses = nil
 	v.respSel = -1
+	v.decoded = ""
 	v.activeTag = -1
 	v.sel = 0
 	v.armed = len(tags) == 1 || (len(tags) > 0 && tags[0].Tag == "")
@@ -330,6 +331,7 @@ func (v *messagesView) sendCmd() tea.Cmd {
 	v.armed = false
 	v.responses = nil
 	v.respSel = -1
+	v.decoded = ""
 	v.sendStatus = ""
 	port := ""
 	if t.NeedsPort {
@@ -391,10 +393,10 @@ func (v *messagesView) buildItems() []cfgItem {
 		items = append(items, itemSpacer(), itemHeading("Responses"))
 		for i := range v.responses {
 			items = append(items, v.responseRow(i))
-			if i == v.respSel {
+			if i == v.respSel && v.decoded != "" {
 				// The decode of the selected response goes right below
 				// it, so it is visible next to the focus.
-				for _, l := range strings.Split(v.renderDecode(), "\n") {
+				for _, l := range strings.Split(v.decoded, "\n") {
 					items = append(items, itemInfo(func() string { return "    " + l }))
 				}
 			}
@@ -433,6 +435,7 @@ func (v *messagesView) tagRow(i int) cfgItem {
 				v.respSession = 0
 				v.responses = nil
 				v.respSel = -1
+				v.decoded = ""
 				v.sendStatus = ""
 				v.activeTag = -1
 				v.sel = i
@@ -459,6 +462,7 @@ func (v *messagesView) responseRow(i int) cfgItem {
 		key: func(k tea.KeyPressMsg) tea.Cmd {
 			if (k.String() == "enter" || k.String() == "space") && v.responses[i].Kind != "ack" {
 				v.respSel = i
+				v.decoded = v.decodeResponse()
 			}
 			return nil
 		},
@@ -514,9 +518,9 @@ func (v *messagesView) render(width, height int) string {
 	return renderItems(items, v.focus, &v.offset, width, height)
 }
 
-// renderDecode decodes the selected response, as the workbench decode
-// pane does.
-func (v *messagesView) renderDecode() string {
+// decodeResponse decodes the selected response, as the workbench
+// decode pane does. Run when the selection is made, not per render.
+func (v *messagesView) decodeResponse() string {
 	if v.respSel < 0 || v.respSel >= len(v.responses) {
 		return ""
 	}

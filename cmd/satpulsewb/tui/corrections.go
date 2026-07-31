@@ -276,11 +276,9 @@ func (v *correctionsView) update(msg tea.Msg) tea.Cmd {
 func (v *correctionsView) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "up":
-		moveItemFocus(v.items, &v.focus, -1)
-		return nil
+		return moveItemFocus(v.items, &v.focus, -1)
 	case "down":
-		moveItemFocus(v.items, &v.focus, 1)
-		return nil
+		return moveItemFocus(v.items, &v.focus, 1)
 	case "x":
 		// Clear the correction message table, unless a text field
 		// has focus and the x belongs to it.

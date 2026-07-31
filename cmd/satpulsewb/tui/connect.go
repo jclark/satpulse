@@ -237,11 +237,9 @@ func (f *connectForm) update(msg tea.Msg) tea.Cmd {
 			f.wantClose = true
 			return nil
 		case "up", "shift+tab":
-			moveItemFocus(f.items, &f.focus, -1)
-			return nil
+			return moveItemFocus(f.items, &f.focus, -1)
 		case "down", "tab":
-			moveItemFocus(f.items, &f.focus, 1)
-			return nil
+			return moveItemFocus(f.items, &f.focus, 1)
 		}
 		if f.focus >= 0 && f.focus < len(f.items) {
 			it := &f.items[f.focus]

@@ -63,17 +63,21 @@ func itemCheck(label string, val *bool, enabled func() bool, onChange func()) cf
 }
 
 // itemText renders a labelled text input; invalid (optional) returns
-// a validation error to mark the field with.
+// a validation error to mark the field with. The input's own focus
+// state is maintained by moveItemFocus through the setFocus hook,
+// not during rendering.
 func itemText(label string, ti *textinput.Model, enabled func() bool, onChange func(), invalid func() error) cfgItem {
 	return cfgItem{
 		enabled:  enabled,
 		captures: true,
-		render: func(focused bool) string {
-			if focused {
-				ti.Focus()
-			} else {
-				ti.Blur()
+		setFocus: func(on bool) tea.Cmd {
+			if on {
+				return ti.Focus()
 			}
+			ti.Blur()
+			return nil
+		},
+		render: func(focused bool) string {
 			lbl := labelStyle.Render(fmt.Sprintf("%-24s", label))
 			suffix := ""
 			if invalid != nil {
@@ -204,20 +208,30 @@ func itemButton(label func() string, enabled func() bool, action func() tea.Cmd)
 	}
 }
 
-// moveItemFocus advances to the next focusable, enabled item.
-func moveItemFocus(items []cfgItem, focus *int, dir int) {
+// moveItemFocus advances to the next focusable, enabled item,
+// blurring the old item's input and focusing the new one; the
+// returned command carries the new input's cursor behaviour.
+func moveItemFocus(items []cfgItem, focus *int, dir int) tea.Cmd {
 	n := len(items)
 	if n == 0 {
-		return
+		return nil
 	}
 	for i := 1; i <= n; i++ {
 		j := (*focus + dir*i + n*n) % n
 		it := &items[j]
 		if it.key != nil && (it.enabled == nil || it.enabled()) {
+			var cmds []tea.Cmd
+			if old := *focus; old >= 0 && old < n && items[old].setFocus != nil {
+				cmds = append(cmds, items[old].setFocus(false))
+			}
 			*focus = j
-			return
+			if it.setFocus != nil {
+				cmds = append(cmds, it.setFocus(true))
+			}
+			return tea.Batch(cmds...)
 		}
 	}
+	return nil
 }
 
 // renderItems renders a form, keeping the focused item visible within

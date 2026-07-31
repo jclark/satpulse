@@ -23,6 +23,10 @@ type cfgItem struct {
 	enabled func() bool
 	// captures reports that a focused text input wants printable keys.
 	captures bool
+	// setFocus (optional) syncs an underlying input's focus state
+	// when the row gains or loses focus; called from moveItemFocus,
+	// never from rendering.
+	setFocus func(bool) tea.Cmd
 }
 
 // configView is the Configuration tab: read and apply receiver
@@ -521,11 +525,9 @@ func (v *configView) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	switch msg.String() {
 	case "up":
-		moveItemFocus(items, focus, -1)
-		return nil
+		return moveItemFocus(items, focus, -1)
 	case "down":
-		moveItemFocus(items, focus, 1)
-		return nil
+		return moveItemFocus(items, focus, 1)
 	case "esc":
 		if v.picker != nil {
 			v.picker = nil
@@ -554,6 +556,9 @@ func (v *configView) updateFocusedInput(msg tea.Msg) tea.Cmd {
 }
 
 func (v *configView) render(width, height int) string {
+	// Derived display data (the validation cache) is computed here
+	// deliberately: it is side-effect-free memoization, and View runs
+	// once per Update on the loop goroutine.
 	_, v.errs = v.fieldErrors()
 	items := v.items
 	focus := v.focus
