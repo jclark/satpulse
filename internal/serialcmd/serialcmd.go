@@ -2,61 +2,113 @@
 package serialcmd
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
+	"github.com/jclark/satpulse/gps/lib/term"
+	"github.com/jclark/satpulse/gps/scan"
 	"github.com/spf13/pflag"
 )
 
-const summary = `[-h|--help] [-j|--jsonl]`
+const (
+	summary        = `[-h|--help] [-j|--jsonl] [-s|--scan] [--packet-log path] [device]`
+	tryDuration    = 1250 * time.Millisecond
+	silentTryLimit = 5
+)
 
-// noPortsError makes an empty enumeration distinguishable from a command
-// failure to callers and scripts.
-type noPortsError struct{}
+type commandError struct {
+	msg   string
+	code  int
+	quiet bool
+}
 
-func (noPortsError) Error() string { return "no serial ports found" }
-func (noPortsError) ExitCode() int { return 2 }
+func (e commandError) Error() string { return e.msg }
+func (e commandError) ExitCode() int { return e.code }
+func (e commandError) Quiet() bool   { return e.quiet }
 
 type flags struct {
-	jsonl bool
+	jsonl     bool
+	scan      bool
+	packetLog string
+	device    string
 }
 
 // Cmd executes the serial subcommand.
-func Cmd(_ io.Writer, _ slog.Level, progName, cmdName string, args []string) (usage string, err error) {
+func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, args []string) (usage string, err error) {
 	cfg, help, usageFunc, err := parseFlags(cmdName, args)
 	if err != nil {
-		return usageFunc(progName), err
+		return usageFunc(progName), commandError{msg: err.Error(), code: 1}
 	}
 	if help {
 		return usageFunc(progName), nil
 	}
-	ports, err := serialenum.List()
-	if err != nil {
+	lg := cmd.NewDefaultLogger(logWriter, logLevel)
+	if cfg.device == "" && !cfg.scan {
+		return "", enumerate(os.Stdout, cfg.jsonl)
+	}
+	ctx, cancel := cmd.CancelOnSignal(context.Background(), lg)
+	defer cancel()
+	if cfg.device != "" {
+		result := probeDevice(ctx, lg, cfg.device, cfg.packetLog)
+		if ctx.Err() != nil && !result.cleanupFailed && !errors.Is(result.err, gpsio.ErrSpeedRestore) {
+			return "", commandError{msg: "interrupted", code: 1}
+		}
+		if result.err != nil {
+			return "", commandError{msg: result.description(), code: result.exitCode()}
+		}
+		_, err = fmt.Fprintln(os.Stdout, result.speed)
 		return "", err
 	}
-	if len(ports) == 0 {
-		return "", noPortsError{}
-	}
-	return "", printPorts(os.Stdout, ports, cfg.jsonl)
+	return "", scanPorts(ctx, lg)
 }
 
 func parseFlags(cmdName string, args []string) (cfg flags, help bool, usageFunc func(string) string, err error) {
 	fs := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
-	fs.BoolVarP(&cfg.jsonl, "jsonl", "j", false, "output one JSON object per serial port")
+	fs.BoolVarP(&cfg.jsonl, "jsonl", "j", false, "output one JSON object per serial port when enumerating")
+	fs.BoolVarP(&cfg.scan, "scan", "s", false, "detect the speed of every enumerated serial port")
+	fs.StringVar(&cfg.packetLog, "packet-log", "", "write received packets and speed changes to a JSONL file")
 	fs.BoolVarP(&help, "help", "h", false, "show usage help for the serial command")
 	usageFunc = cmd.UsageFunc(cmdName, summary, fs)
-	if err = fs.Parse(args); err != nil {
+	if err = fs.Parse(args); err != nil || help {
 		return
 	}
-	if fs.NArg() != 0 {
-		err = fmt.Errorf("serial enumeration takes no arguments")
+	if fs.NArg() > 1 {
+		err = fmt.Errorf("expected at most one serial device argument")
+		return
+	}
+	if fs.NArg() == 1 {
+		cfg.device = fs.Arg(0)
+	}
+	if cfg.scan && cfg.device != "" {
+		err = fmt.Errorf("--scan cannot be combined with a device argument")
+	} else if cfg.jsonl && (cfg.scan || cfg.device != "") {
+		err = fmt.Errorf("--jsonl applies only to serial port enumeration")
+	} else if cfg.packetLog != "" && cfg.device == "" {
+		err = fmt.Errorf("--packet-log requires a device argument")
 	}
 	return
+}
+
+func enumerate(w io.Writer, jsonl bool) error {
+	ports, err := serialenum.List()
+	if err != nil {
+		return err
+	}
+	if len(ports) == 0 {
+		return commandError{msg: "no serial ports found", code: 2}
+	}
+	return printPorts(w, ports, jsonl)
 }
 
 func printPorts(w io.Writer, ports []serialenum.Port, jsonl bool) error {
@@ -76,4 +128,176 @@ func printPorts(w io.Writer, ports []serialenum.Port, jsonl bool) error {
 		}
 	}
 	return nil
+}
+
+type probeResult struct {
+	device        string
+	speed         int
+	err           error
+	cleanupFailed bool
+}
+
+func (r probeResult) exitCode() int {
+	if r.err == nil {
+		return 0
+	}
+	if r.cleanupFailed || errors.Is(r.err, gpsio.ErrSpeedRestore) {
+		return 1
+	}
+	if errors.Is(r.err, gpsio.ErrSilent) {
+		return 2
+	}
+	return 1
+}
+
+func (r probeResult) description() string {
+	if r.cleanupFailed || errors.Is(r.err, gpsio.ErrSpeedRestore) {
+		return r.err.Error()
+	}
+	return describeProbeError(r.err)
+}
+
+func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath string) (result probeResult) {
+	result.device = device
+	conn, _, err := gpsio.OpenSerial(device, 0)
+	if err != nil {
+		result.err = err
+		return
+	}
+
+	formats := gpsreg.CreatePacketFormats(nil)
+	var wg sync.WaitGroup
+	pktLog, logFile, err := gpsio.LogPackets(lg, &wg, packetLogPath, false, formats)
+	if err != nil {
+		result.err = fmt.Errorf("opening packet log: %w", err)
+		if closeErr := conn.Close(); closeErr != nil {
+			result.err = errors.Join(result.err, closeErr)
+			result.cleanupFailed = true
+		}
+		return
+	}
+	if pktLog != nil {
+		conn.SetPacketLog(pktLog)
+	}
+
+	// Detection owns signal cancellation. The scan worker is stopped only
+	// after DetectSpeed returns, so cancellation cannot prevent its deferred
+	// restoration of the original speed.
+	scanCtx, cancelScan := context.WithCancel(context.Background())
+	packetCh := make(chan scan.Packet, 1)
+	wg.Go(func() { gpsio.Scan(scanCtx, lg, conn, packetCh, pktLog, formats) })
+
+	result.speed, result.err = gpsio.DetectSpeed(
+		ctx,
+		lg,
+		packetCh,
+		conn,
+		gpsreg.CreatePacketProcessors(nil),
+		gpsio.DefaultSpeedList(),
+		tryDuration,
+		func(tried []int) bool { return len(tried) >= silentTryLimit },
+	)
+
+	conn.Stop()
+	cancelScan()
+	for range packetCh {
+	}
+	wg.Wait()
+	if logFile != nil {
+		logFile.Close(lg)
+	}
+	if closeErr := conn.Close(); closeErr != nil {
+		result.err = errors.Join(result.err, closeErr)
+		result.cleanupFailed = true
+	}
+	return
+}
+
+func scanPorts(ctx context.Context, lg *slog.Logger) error {
+	ports, err := serialenum.List()
+	if err != nil {
+		return err
+	}
+	if len(ports) == 0 {
+		return commandError{msg: "no serial ports found", code: 2}
+	}
+	return scanPortList(ctx, lg, ports, probeDevice, os.Stdout, os.Stderr)
+}
+
+type probeFunc func(context.Context, *slog.Logger, string, string) probeResult
+
+func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port, probe probeFunc, stdout, stderr io.Writer) error {
+	resultCh := make(chan probeResult, len(ports))
+	var wg sync.WaitGroup
+	for _, port := range ports {
+		wg.Go(func() {
+			resultCh <- probe(ctx, lg, port.Device, "")
+		})
+	}
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	bestCode := 1
+	var outputErr error
+	for result := range resultCh {
+		code := result.exitCode()
+		switch code {
+		case 0:
+			if _, err := fmt.Fprintf(stdout, "%s %d\n", result.device, result.speed); err != nil && outputErr == nil {
+				outputErr = err
+			}
+			bestCode = 0
+		case 2:
+			if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, result.description()); err != nil && outputErr == nil {
+				outputErr = err
+			}
+			if bestCode != 0 {
+				bestCode = 2
+			}
+		default:
+			if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, result.description()); err != nil && outputErr == nil {
+				outputErr = err
+			}
+		}
+	}
+	if outputErr != nil {
+		return commandError{msg: fmt.Sprintf("writing serial scan output: %v", outputErr), code: 1}
+	}
+	if ctx.Err() != nil {
+		return commandError{msg: "serial scan interrupted", code: 1, quiet: true}
+	}
+	if bestCode == 0 {
+		return nil
+	}
+	return commandError{msg: "serial scan did not detect a device", code: bestCode, quiet: true}
+}
+
+func describeProbeError(err error) string {
+	switch {
+	case errors.Is(err, gpsio.ErrSpeedRestore):
+		return err.Error()
+	case errors.Is(err, context.Canceled):
+		return "interrupted"
+	case errors.Is(err, os.ErrPermission):
+		return "permission denied; add this user to the serial-port access group (usually dialout)"
+	case isLocked(err):
+		return "device is locked by another process"
+	case errors.Is(err, gpsio.ErrSilent):
+		return "no output received from the device"
+	case errors.Is(err, gpsio.ErrSpeedNotDetected):
+		return "output was received, but no known GNSS protocol was validated at a candidate speed"
+	case errors.Is(err, gpsio.ErrNotSerial):
+		return "speed detection requires a serial device"
+	case errors.Is(err, gpsio.ErrCurrentSpeedUnknown):
+		return "the device's current serial speed is not supported"
+	default:
+		return err.Error()
+	}
+}
+
+func isLocked(err error) bool {
+	var locked term.LockedError
+	return errors.As(err, &locked) && locked.Locked()
 }
