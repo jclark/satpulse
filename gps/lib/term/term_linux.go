@@ -1,6 +1,7 @@
 package term
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -92,6 +93,36 @@ func (t *Term) getAttr() (tp *unix.Termios, err error) {
 	tp, err = unix.IoctlGetTermios(t.fd, unix.TCGETS2)
 	err = t.wrapErr(err, "ioctl(TCGETS2)")
 	return
+}
+
+var errExclusive = errors.New("terminal is in exclusive mode (TIOCEXCL)")
+
+// checkNotExclusive returns a LockedError if the terminal is already in
+// exclusive mode. It is worth looking only when we hold CAP_SYS_ADMIN: without
+// it, open would already have failed with EBUSY had the flag been set, so a
+// flag seen here was set by another process after our open succeeded, and
+// failing on it would just hand the port to a latecomer.
+func (t *Term) checkNotExclusive() error {
+	if !capSysAdmin() {
+		return nil
+	}
+	v, err := unix.IoctlGetInt(t.fd, unix.TIOCGEXCL)
+	if err != nil {
+		return t.wrapErr(err, "ioctl(TIOCGEXCL)")
+	}
+	if v != 0 {
+		return t.wrapErr(wrapLocked(errExclusive), "open")
+	}
+	return nil
+}
+
+// capSysAdmin reports whether the process has CAP_SYS_ADMIN, which exempts it
+// from the kernel's exclusive-mode check on open.
+func capSysAdmin() bool {
+	hdr := unix.CapUserHeader{Version: unix.LINUX_CAPABILITY_VERSION_3}
+	var data [2]unix.CapUserData
+	err := unix.Capget(&hdr, &data[0])
+	return err == nil && data[0].Effective&(1<<unix.CAP_SYS_ADMIN) != 0
 }
 
 var errFlockNotSupported error

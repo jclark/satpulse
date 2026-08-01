@@ -1,6 +1,7 @@
 package term
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -54,6 +55,51 @@ func TestArbitrarySpeed(t *testing.T) {
 func TestArbitrarySpeedCannotBeSet(t *testing.T) {
 	if err := Speed(testArbitrarySpeed)(new(Attr)); err == nil {
 		t.Errorf("Speed(%d) succeeded", testArbitrarySpeed)
+	}
+}
+
+// TestExclusiveModeDetected checks that a terminal another process has put into
+// exclusive mode is reported as locked, whether we are stopped by the kernel at
+// open (no CAP_SYS_ADMIN) or by our own TIOCGEXCL check.
+func TestExclusiveModeDetected(t *testing.T) {
+	path := newTestPTY(t)
+	fd := openTestTTY(t, path)
+	defer unix.Close(fd)
+	if err := unix.IoctlSetInt(fd, unix.TIOCEXCL, 0); err != nil {
+		t.Fatalf("ioctl(TIOCEXCL): %v", err)
+	}
+	term, err := Open(path, RawMode)
+	if err == nil {
+		term.Close()
+		t.Fatal("Open succeeded on a terminal in exclusive mode")
+	}
+	var le LockedError
+	if !errors.As(err, &le) {
+		t.Fatalf("Open error = %v, want LockedError", err)
+	}
+}
+
+// TestExclusiveModeReleased checks that Close clears exclusive mode. The pty
+// master keeps the slave tty alive across Close, so a missing TIOCNXCL would
+// leave the flag set; the extra slave descriptor is needed only because
+// TIOCGEXCL must be issued on the slave tty rather than the master.
+func TestExclusiveModeReleased(t *testing.T) {
+	path := newTestPTY(t)
+	fd := openTestTTY(t, path)
+	defer unix.Close(fd)
+	term, err := Open(path, RawMode)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	set, serr := unix.IoctlGetInt(fd, unix.TIOCGEXCL)
+	if err := term.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if serr != nil || set == 0 {
+		t.Fatalf("ioctl(TIOCGEXCL) after Open = %d, %v; want nonzero", set, serr)
+	}
+	if v, err := unix.IoctlGetInt(fd, unix.TIOCGEXCL); err != nil || v != 0 {
+		t.Fatalf("ioctl(TIOCGEXCL) after Close = %d, %v; want 0", v, err)
 	}
 }
 
