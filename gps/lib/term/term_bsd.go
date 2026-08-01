@@ -61,6 +61,10 @@ func (t *Term) getAttr() (tp *unix.Termios, err error) {
 	return
 }
 
+// checkNotExclusive is a no-op on BSD: there is no TIOCGEXCL, so exclusive mode
+// can be set but not queried.
+func (t *Term) checkNotExclusive() error { return nil }
+
 var errFlockNotSupported error = unix.ENOTSUP
 
 // OpenFallback opens supported non-TTY devices using OS readiness waiting.

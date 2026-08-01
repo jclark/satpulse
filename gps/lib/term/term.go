@@ -80,6 +80,16 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 		}
 		return
 	}
+	// getAttr has established that this is a tty, so the exclusive-mode ioctls
+	// cannot fail with ENOTTY.
+	if err = t.setExclusive(); err != nil {
+		return
+	}
+	defer func() {
+		if err != nil {
+			t.clearExclusive()
+		}
+	}()
 	attr := Attr{*tsp}
 	t.tsSaved = *tsp
 	for _, opt := range opts {
@@ -140,6 +150,26 @@ func lock(fd int, path string) error {
 		return fmt.Errorf("%s: could not lock device: %w", path, err)
 	}
 	return nil
+}
+
+// setExclusive puts the terminal into exclusive mode, making opens by processes
+// without CAP_SYS_ADMIN fail with EBUSY. flock remains the primary lock; this is
+// for interoperating with programs such as gpsd that use TIOCEXCL instead, and it
+// also stops an unprivileged opener reprogramming the line as a side effect of
+// probing it.
+func (t *Term) setExclusive() error {
+	if err := t.checkNotExclusive(); err != nil {
+		return err
+	}
+	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TIOCEXCL, 0), "ioctl(TIOCEXCL)")
+}
+
+// clearExclusive takes the terminal out of exclusive mode. The flag belongs to
+// the tty rather than to our file descriptor, so closing without clearing it
+// leaves the port unopenable for as long as some other process holds the tty
+// open.
+func (t *Term) clearExclusive() error {
+	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TIOCNXCL, 0), "ioctl(TIOCNXCL)")
 }
 
 func RawMode(a *Attr) error {
@@ -371,9 +401,13 @@ func (t *Term) Restore() error {
 }
 
 func (t *Term) Close() error {
+	err := t.clearExclusive()
 	fd := t.fd
 	t.fd = -1
-	return t.wrapErr(unix.Close(fd), "close")
+	if cerr := t.wrapErr(unix.Close(fd), "close"); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 func (t *Term) Path() string {
