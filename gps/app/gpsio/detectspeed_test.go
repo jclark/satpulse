@@ -68,6 +68,8 @@ func TestTransitionRatio(t *testing.T) {
 
 func TestTrySpeedStatsResult(t *testing.T) {
 	procs := map[gpsprot.Tag]gpsprot.PacketProcessor{testTag: &testProcessor{}}
+	// 63 transitions over 191 pairs, between the two thresholds.
+	ambiguous := string(append(bytes.Repeat([]byte{0x55}, 8), bytes.Repeat([]byte{0}, minRatioBytes-8)...))
 	for _, tc := range []struct {
 		name    string
 		packets []scan.Packet
@@ -75,10 +77,12 @@ func TestTrySpeedStatsResult(t *testing.T) {
 	}{
 		{name: "silent", packets: []scan.Packet{{ReadError: testTimeoutError{}}}, want: trySilent},
 		{name: "valid", packets: []scan.Packet{{Format: testFormat{}, ChecksumValid: true}}, want: tryDetected},
-		{name: "high transitions", packets: []scan.Packet{{Data: string([]byte{0x55, 0x55})}}, want: tryHigher},
-		{name: "low transitions", packets: []scan.Packet{{Data: string([]byte{0, 0})}}, want: tryLower},
-		{name: "ambiguous with framing", packets: []scan.Packet{{Data: string([]byte{0x80, 0x90}), ReadError: testFramingError{}}}, want: tryHigher},
-		{name: "ambiguous without framing", packets: []scan.Packet{{Data: string([]byte{0x80, 0x90})}}, want: tryOther},
+		{name: "high transitions", packets: []scan.Packet{{Data: string(bytes.Repeat([]byte{0x55}, minRatioBytes))}}, want: tryHigher},
+		{name: "low transitions", packets: []scan.Packet{{Data: string(bytes.Repeat([]byte{0}, minRatioBytes))}}, want: tryLower},
+		{name: "ambiguous with framing", packets: []scan.Packet{{Data: ambiguous, ReadError: testFramingError{}}}, want: tryHigher},
+		{name: "ambiguous without framing", packets: []scan.Packet{{Data: ambiguous}}, want: tryOther},
+		{name: "too few bytes to judge the ratio", packets: []scan.Packet{{Data: string(bytes.Repeat([]byte{0x55}, minRatioBytes-1))}}, want: tryOther},
+		{name: "too few bytes with framing", packets: []scan.Packet{{Data: string(bytes.Repeat([]byte{0}, minRatioBytes-1)), ReadError: testFramingError{}}}, want: tryHigher},
 		{name: "framing without data", packets: []scan.Packet{{ReadError: testFramingError{}}}, want: tryHigher},
 		{name: "strong ratio overrides framing", packets: []scan.Packet{{Data: string(bytes.Repeat([]byte{0}, 100)), ReadError: testFramingError{}}}, want: tryLower},
 		{name: "nonframing read error", packets: []scan.Packet{{ReadError: errors.New("parity")}}, want: tryOther},

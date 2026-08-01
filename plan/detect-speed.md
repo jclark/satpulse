@@ -109,6 +109,17 @@ A strong ratio takes precedence over framing because hardware testing
 showed framing errors at trial speeds both above and below the actual
 speed.
 
+A handful of bytes gives too few bit pairs for the ratio to be worth
+anything, so a window under 24 bytes is not judged on it and falls
+through to the framing test. 24 bytes is about one navigation message:
+the smallest carrying navigation content are UBX NAV-TIMEGPS and
+Allystar NAV-TIME at 24 bytes on the wire, and CASIC's are larger. A
+receiver cut down to one such message at 1 Hz still clears the floor
+in the window. The floor bites only in one direction: a trial speed
+above the real one oversamples and delivers more bytes than were sent,
+while a trial speed below it delivers fewer, and that is where framing
+errors are the better evidence anyway.
+
 ### Upper layer: DetectSpeed
 
 ```go

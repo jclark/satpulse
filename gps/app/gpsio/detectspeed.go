@@ -74,7 +74,12 @@ const (
 	// ratios from 0.14 to 0.20, while 115200 produced 0.40 to 0.49.
 	lowerTransitionRatio = 0.30
 	upperTransitionRatio = 0.35
-	stalePacketMargin    = readTimeout
+	// A handful of bytes gives too few bit pairs for the ratio to mean
+	// anything, so require roughly one navigation message first: the smallest
+	// carrying navigation content are UBX NAV-TIMEGPS and Allystar NAV-TIME at
+	// 24 bytes on the wire, and CASIC's are larger still.
+	minRatioBytes     = 24
+	stalePacketMargin = readTimeout
 )
 
 // DefaultSpeedList returns the usual GNSS serial speeds in detection order.
@@ -152,7 +157,7 @@ func (s *trySpeedStats) result() trySpeedResult {
 	if s.bytes == 0 && s.readErrors == 0 {
 		return trySilent
 	}
-	if s.bytes > 0 {
+	if s.bytes >= minRatioBytes {
 		ratio := s.transitionRatio()
 		if ratio < lowerTransitionRatio {
 			return tryLower
