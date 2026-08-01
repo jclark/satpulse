@@ -1,0 +1,344 @@
+package gpsio
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"math/bits"
+	"time"
+
+	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/term"
+	"github.com/jclark/satpulse/gps/scan"
+)
+
+// TrySpeedResult classifies what was received while listening at one speed.
+type TrySpeedResult int
+
+const (
+	TrySilent TrySpeedResult = iota
+	TryDetected
+	TryOther
+	TryLower
+	TryHigher
+)
+
+func (r TrySpeedResult) String() string {
+	switch r {
+	case TrySilent:
+		return "silent"
+	case TryDetected:
+		return "detected"
+	case TryOther:
+		return "other"
+	case TryLower:
+		return "lower"
+	case TryHigher:
+		return "higher"
+	default:
+		return fmt.Sprintf("TrySpeedResult(%d)", r)
+	}
+}
+
+var (
+	// ErrSilent means no bytes or serial errors arrived at any tried speed.
+	ErrSilent = errors.New("no output from serial device")
+	// ErrSpeedNotDetected means input arrived but no suitable packet validated.
+	ErrSpeedNotDetected = errors.New("serial speed not detected")
+	// ErrNotSerial means the connection is not backed by a terminal.
+	ErrNotSerial = errors.New("not a serial device")
+	// ErrCurrentSpeedUnknown means the terminal's current speed cannot be
+	// represented as a supported numeric speed, so it cannot be restored safely.
+	ErrCurrentSpeedUnknown = errors.New("current serial speed is unknown")
+	// ErrSpeedRestore means a failed detection also failed to restore the
+	// terminal's original speed.
+	ErrSpeedRestore = errors.New("cannot restore original serial speed")
+)
+
+const (
+	// These thresholds bracket the separation measured while listening at
+	// 38400 to receivers running at the other two common speeds: 9600 produced
+	// ratios from 0.14 to 0.20, while 115200 produced 0.40 to 0.49.
+	lowerTransitionRatio = 0.30
+	upperTransitionRatio = 0.35
+	stalePacketMargin    = readTimeout
+)
+
+// DefaultSpeedList returns the usual GNSS serial speeds in detection order.
+// Zero denotes the speed at which the port was opened.
+func DefaultSpeedList() []int {
+	return []int{38400, 9600, 115200, 0, 460800, 230400, 57600, 19200, 4800, 921600}
+}
+
+type trySpeedStats struct {
+	bytes         int
+	transitions   int
+	pairs         int
+	framingErrors int
+	readErrors    int
+	stalePackets  int
+	prevBit       byte
+	havePrevBit   bool
+}
+
+func (s *trySpeedStats) addData(data string) {
+	for _, b := range []byte(data) {
+		s.transitions += bits.OnesCount8((b ^ (b >> 1)) & 0x7f)
+		s.pairs += 7
+		if s.havePrevBit {
+			if s.prevBit != b&1 {
+				s.transitions++
+			}
+			s.pairs++
+		}
+		s.prevBit = (b >> 7) & 1
+		s.havePrevBit = true
+	}
+	s.bytes += len(data)
+}
+
+func (s *trySpeedStats) transitionRatio() float64 {
+	if s.pairs == 0 {
+		return 0
+	}
+	return float64(s.transitions) / float64(s.pairs)
+}
+
+func transitionRatio(data []byte) float64 {
+	var stats trySpeedStats
+	stats.addData(string(data))
+	return stats.transitionRatio()
+}
+
+func (s *trySpeedStats) addPacket(pkt scan.Packet, procs map[gpsprot.Tag]gpsprot.PacketProcessor) TrySpeedResult {
+	s.addData(pkt.Data)
+	if pkt.ReadError != nil && !pkt.IsInterPacketTimeout() {
+		s.readErrors++
+		s.framingErrors += framingErrorCount(pkt.ReadError)
+	}
+	if pkt.ChecksumValid && pkt.Format != nil {
+		if pp, ok := procs[pkt.Format.Tag()]; ok && !pp.NativeOnly() {
+			return TryDetected
+		}
+	}
+	return TryOther
+}
+
+func framingErrorCount(err error) int {
+	var serialErr interface {
+		SerialFraming() bool
+	}
+	if !errors.As(err, &serialErr) || !serialErr.SerialFraming() {
+		return 0
+	}
+	var termErr *term.Error
+	if errors.As(err, &termErr) && termErr.Counts != nil && termErr.Counts.Framing > 0 {
+		return int(termErr.Counts.Framing)
+	}
+	return 1
+}
+
+func (s *trySpeedStats) result() TrySpeedResult {
+	if s.bytes == 0 && s.readErrors == 0 {
+		return TrySilent
+	}
+	if s.bytes > 0 {
+		ratio := s.transitionRatio()
+		if ratio < lowerTransitionRatio {
+			return TryLower
+		}
+		if ratio > upperTransitionRatio {
+			return TryHigher
+		}
+	}
+	// A framing error is a weaker signal than a transition ratio outside the
+	// ambiguity band. It also shows that a byte-empty window was not silent.
+	if s.framingErrors > 0 {
+		return TryHigher
+	}
+	return TryOther
+}
+
+// TrySpeed consumes packets for at most d and classifies input at the port's
+// current speed. It returns immediately after a suitable valid packet.
+func TrySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpsprot.Tag]gpsprot.PacketProcessor, d time.Duration) (TrySpeedResult, error) {
+	result, _, err := trySpeed(ctx, packetCh, procs, d)
+	return result, err
+}
+
+func trySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpsprot.Tag]gpsprot.PacketProcessor, d time.Duration) (TrySpeedResult, trySpeedStats, error) {
+	start := time.Now()
+	cutoff := start.Add(stalePacketMargin)
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	var stats trySpeedStats
+	for {
+		select {
+		case <-ctx.Done():
+			return TryOther, stats, ctx.Err()
+		case pkt, ok := <-packetCh:
+			if !ok {
+				if err := ctx.Err(); err != nil {
+					return TryOther, stats, err
+				}
+				return TryOther, stats, io.ErrUnexpectedEOF
+			}
+			if pkt.TRead.Before(cutoff) {
+				stats.stalePackets++
+				continue
+			}
+			if stats.addPacket(pkt, procs) == TryDetected {
+				return TryDetected, stats, nil
+			}
+		case <-timer.C:
+			return stats.result(), stats, nil
+		}
+	}
+}
+
+// DetectSpeed finds a speed at which the device produces suitable valid
+// packets. A zero candidate means the speed in effect on entry. On failure it
+// restores that original speed; on success it leaves the detected speed set.
+func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, conn *SerialConn, procs map[gpsprot.Tag]gpsprot.PacketProcessor, speeds []int, d time.Duration, stopSilent func(tried []int) bool) (detected int, err error) {
+	if conn == nil || conn.term() == nil {
+		return 0, ErrNotSerial
+	}
+	if lg == nil {
+		lg = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	originalSpeed := conn.Speed()
+	candidates, err := resolveSpeedCandidates(speeds, originalSpeed, conn.kind == term.DevUSB)
+	if err != nil {
+		return 0, err
+	}
+	currentSpeed := originalSpeed
+	succeeded := false
+	defer func() {
+		if succeeded || currentSpeed == originalSpeed {
+			return
+		}
+		_, restoreErr := conn.WriteThenChangeSpeed(nil, originalSpeed)
+		if restoreErr == nil {
+			restoreErr = conn.term().Flush()
+		}
+		if restoreErr != nil {
+			err = errors.Join(err, fmt.Errorf("%w %d: %w", ErrSpeedRestore, originalSpeed, restoreErr))
+		}
+	}()
+
+	attempt := func(speed int) (TrySpeedResult, error) {
+		if speed != currentSpeed {
+			if _, err := conn.WriteThenChangeSpeed(nil, speed); err != nil {
+				return TryOther, fmt.Errorf("changing serial speed to %d: %w", speed, err)
+			}
+			currentSpeed = speed
+			if err := conn.term().Flush(); err != nil {
+				return TryOther, fmt.Errorf("flushing serial port at %d: %w", speed, err)
+			}
+		}
+		result, stats, err := trySpeed(ctx, packetCh, procs, d)
+		lg.Info("tried serial speed",
+			"speed", speed,
+			"result", result.String(),
+			"bytes", stats.bytes,
+			"transitionRatio", stats.transitionRatio(),
+			"framingErrors", stats.framingErrors,
+			"readErrors", stats.readErrors,
+			"stalePackets", stats.stalePackets)
+		return result, err
+	}
+
+	detected, err = walkSpeedCandidates(candidates, attempt, stopSilent)
+	if err == nil {
+		succeeded = true
+	}
+	return detected, err
+}
+
+func resolveSpeedCandidates(speeds []int, originalSpeed int, devUSB bool) ([]int, error) {
+	if originalSpeed <= 0 {
+		return nil, ErrCurrentSpeedUnknown
+	}
+	n := len(speeds)
+	if devUSB {
+		n++
+	}
+	resolved := make([]int, 0, n)
+	if devUSB {
+		resolved = append(resolved, 115200)
+	}
+	for _, speed := range speeds {
+		if speed == 0 {
+			speed = originalSpeed
+		}
+		resolved = append(resolved, speed)
+	}
+	return resolved, nil
+}
+
+type speedAttempt func(speed int) (TrySpeedResult, error)
+
+func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func([]int) bool) (int, error) {
+	remaining := uniqueSpeedCandidates(candidates)
+	tried := make([]int, 0, len(remaining))
+	deferred := make(map[int]bool, len(remaining))
+	allSilent := true
+	for len(remaining) > 0 {
+		speed := remaining[0]
+		remaining = remaining[1:]
+		tried = append(tried, speed)
+		result, err := attempt(speed)
+		if err != nil {
+			return 0, err
+		}
+		if result == TryDetected {
+			return speed, nil
+		}
+		if result != TrySilent {
+			allSilent = false
+		} else if allSilent && stopSilent != nil && stopSilent(append([]int(nil), tried...)) {
+			return 0, ErrSilent
+		}
+		if shouldSwapNextSpeeds(remaining, deferred, speed, result) {
+			deferred[remaining[0]] = true
+			remaining[0], remaining[1] = remaining[1], remaining[0]
+		}
+	}
+	if allSilent && len(tried) > 0 {
+		return 0, ErrSilent
+	}
+	return 0, ErrSpeedNotDetected
+}
+
+func uniqueSpeedCandidates(speeds []int) []int {
+	seen := make(map[int]struct{}, len(speeds))
+	unique := make([]int, 0, len(speeds))
+	for _, speed := range speeds {
+		if _, ok := seen[speed]; ok {
+			continue
+		}
+		seen[speed] = struct{}{}
+		unique = append(unique, speed)
+	}
+	return unique
+}
+
+func shouldSwapNextSpeeds(remaining []int, deferred map[int]bool, currentSpeed int, result TrySpeedResult) bool {
+	if len(remaining) < 2 || deferred[remaining[0]] {
+		return false
+	}
+	return !matchesDirection(remaining[0], currentSpeed, result) &&
+		matchesDirection(remaining[1], currentSpeed, result)
+}
+
+func matchesDirection(candidate, current int, result TrySpeedResult) bool {
+	switch result {
+	case TryHigher:
+		return candidate > current
+	case TryLower:
+		return candidate < current
+	}
+	return false
+}
