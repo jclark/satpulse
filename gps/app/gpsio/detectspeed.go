@@ -245,7 +245,7 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 }
 
 func resolveSpeedCandidates(speeds []int, originalSpeed int, devUSB bool) ([]int, error) {
-	if originalSpeed <= 0 {
+	if originalSpeed <= 0 && slices.Contains(speeds, 0) {
 		return nil, ErrCurrentSpeedUnknown
 	}
 	resolved := make([]int, 0, len(speeds)+2)
