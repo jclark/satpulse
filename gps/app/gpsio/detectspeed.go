@@ -111,6 +111,9 @@ func (s *trySpeedStats) addData(data string) {
 	s.bytes += len(data)
 }
 
+// transitionRatio is the fraction of adjacent received bits that differ.
+// Listening too fast samples each transmitted bit repeatedly, producing long
+// runs of identical bits and therefore a low ratio.
 func (s *trySpeedStats) transitionRatio() float64 {
 	if s.pairs == 0 {
 		return 0
