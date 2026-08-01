@@ -133,11 +133,11 @@ func printPorts(w io.Writer, ports []serialenum.Port, jsonl bool) error {
 type probeResult struct {
 	device    string
 	detection gpsio.DetectResult
-	err       error
+	failure   string
 }
 
 func (r probeResult) exitCode() int {
-	if r.err != nil {
+	if r.failure != "" {
 		return 1
 	}
 	switch r.detection.Outcome {
@@ -152,8 +152,8 @@ func (r probeResult) exitCode() int {
 // description explains an unsuccessful probe: either why detection could not
 // run, or what the device did instead of producing a speed.
 func (r probeResult) description() string {
-	if r.err != nil {
-		return describeProbeError(r.err)
+	if r.failure != "" {
+		return r.failure
 	}
 	if r.detection.Outcome == gpsio.DetectSilent {
 		return "no output received from the device"
@@ -165,7 +165,7 @@ func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath str
 	result.device = device
 	conn, _, err := gpsio.OpenSerial(device, 0)
 	if err != nil {
-		result.err = err
+		result.failure = describeSerialError(err)
 		return
 	}
 
@@ -173,7 +173,7 @@ func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath str
 	var wg sync.WaitGroup
 	pktLog, logFile, err := gpsio.LogPackets(lg, &wg, packetLogPath, false, formats)
 	if err != nil {
-		result.err = fmt.Errorf("opening packet log: %w", err)
+		result.failure = "opening packet log: " + err.Error()
 		closeDevice(lg, conn, &result)
 		return
 	}
@@ -188,7 +188,7 @@ func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath str
 	packetCh := make(chan scan.Packet, 1)
 	wg.Go(func() { gpsio.Scan(scanCtx, lg, conn, packetCh, pktLog, formats) })
 
-	result.detection, result.err = gpsio.DetectSpeed(
+	result.detection, err = gpsio.DetectSpeed(
 		ctx,
 		lg,
 		packetCh,
@@ -198,6 +198,9 @@ func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath str
 		tryDuration,
 		func(tried []int) bool { return len(tried) >= silentTryLimit },
 	)
+	if err != nil {
+		result.failure = describeSerialError(err)
+	}
 
 	conn.Stop()
 	cancelScan()
@@ -212,16 +215,16 @@ func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath str
 }
 
 // closeDevice closes conn, keeping the close error only when the probe
-// itself produced none. A probe that already failed has a better error to
-// report, and each port gets exactly one output line, so the two cannot be
-// combined.
+// itself produced none. A probe that already failed has a more relevant
+// failure to report, and each port gets exactly one output line, so the two
+// cannot be combined.
 func closeDevice(lg *slog.Logger, conn *gpsio.SerialConn, result *probeResult) {
 	closeErr := conn.Close()
 	if closeErr == nil {
 		return
 	}
-	if result.err == nil {
-		result.err = closeErr
+	if result.failure == "" {
+		result.failure = closeErr.Error()
 		return
 	}
 	lg.Debug("closing the serial device failed after an unsuccessful probe", "device", result.device, "error", closeErr)
@@ -288,7 +291,7 @@ func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port,
 	return commandError{msg: "serial scan did not detect a device", code: bestCode, quiet: true}
 }
 
-func describeProbeError(err error) string {
+func describeSerialError(err error) string {
 	switch {
 	case errors.Is(err, context.Canceled):
 		return "interrupted"
