@@ -42,7 +42,8 @@ func Speed(speed int) AttrSetter {
 		}
 	}
 	return func(a *Attr) error {
-		a.ts.Cflag &^= unix.CBAUD | unix.CBAUDEX
+		// B0 in CIBAUD makes the input rate follow the output rate.
+		a.ts.Cflag &^= unix.CBAUD | unix.CIBAUD
 		a.ts.Cflag |= b
 		a.ts.Ospeed = b
 		a.ts.Ispeed = b
