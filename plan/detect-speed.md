@@ -62,13 +62,15 @@ const (
 
 func trySpeed(ctx context.Context, packetCh <-chan scan.Packet,
     procs map[gpsprot.Tag]gpsprot.PacketProcessor,
-    d time.Duration) (trySpeedResult, trySpeedStats, error)
+    d time.Duration) (trySpeedResult, trySpeedStats, bool, error)
 ```
 
 `trySpeed` does not take the connection: it only consumes packets,
 which keeps it structurally side-effect-free. Its error return
-covers context cancellation and the packet channel closing because
-the port died; classification always arrives as the result.
+covers context cancellation. The bool reports that the scanner's
+packet channel closed; detection then stops walking speeds and uses
+the observations collected so far. The scanner remains responsible
+for reporting a terminal read failure.
 
 Classification of the window:
 
@@ -348,7 +350,7 @@ codes:
   detection is meaningless there.
 - 1: the port's current speed is not a standard speed
   (`ErrCurrentSpeedUnknown`), so nothing was tried.
-- 1: other system errors (device disappeared, ...).
+- 1: other system errors (changing or flushing the serial port, ...).
 - 2: silent (`DetectSilent`): nothing received.
 
 ### Scan

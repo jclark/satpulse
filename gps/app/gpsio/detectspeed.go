@@ -170,7 +170,7 @@ func (s *trySpeedStats) result() trySpeedResult {
 	return tryOther
 }
 
-func trySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpsprot.Tag]gpsprot.PacketProcessor, d time.Duration) (trySpeedResult, trySpeedStats, error) {
+func trySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpsprot.Tag]gpsprot.PacketProcessor, d time.Duration) (trySpeedResult, trySpeedStats, bool, error) {
 	start := time.Now()
 	cutoff := start.Add(stalePacketMargin)
 	timer := time.NewTimer(d)
@@ -179,23 +179,23 @@ func trySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpspro
 	for {
 		select {
 		case <-ctx.Done():
-			return tryOther, stats, ctx.Err()
+			return tryOther, stats, false, ctx.Err()
 		case pkt, ok := <-packetCh:
 			if !ok {
 				if err := ctx.Err(); err != nil {
-					return tryOther, stats, err
+					return tryOther, stats, false, err
 				}
-				return tryOther, stats, io.ErrUnexpectedEOF
+				return stats.result(), stats, true, nil
 			}
 			if pkt.TRead.Before(cutoff) {
 				stats.stalePackets++
 				continue
 			}
 			if stats.addPacket(pkt, procs) == tryDetected {
-				return tryDetected, stats, nil
+				return tryDetected, stats, false, nil
 			}
 		case <-timer.C:
-			return stats.result(), stats, nil
+			return stats.result(), stats, false, nil
 		}
 	}
 }
@@ -217,17 +217,17 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 	if err != nil {
 		return DetectResult{}, err
 	}
-	attempt := func(speed int) (trySpeedResult, error) {
+	attempt := func(speed int) (trySpeedResult, bool, error) {
 		if speed != currentSpeed {
 			if _, err := conn.WriteThenChangeSpeed(nil, speed); err != nil {
-				return tryOther, fmt.Errorf("changing serial speed to %d: %w", speed, err)
+				return tryOther, false, fmt.Errorf("changing serial speed to %d: %w", speed, err)
 			}
 			currentSpeed = speed
 			if err := conn.term().Flush(); err != nil {
-				return tryOther, fmt.Errorf("flushing serial port at %d: %w", speed, err)
+				return tryOther, false, fmt.Errorf("flushing serial port at %d: %w", speed, err)
 			}
 		}
-		result, stats, err := trySpeed(ctx, packetCh, procs, d)
+		result, stats, streamEnded, err := trySpeed(ctx, packetCh, procs, d)
 		lg.Info("tried serial speed",
 			"speed", speed,
 			"result", result.String(),
@@ -236,7 +236,7 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 			"framingErrors", stats.framingErrors,
 			"readErrors", stats.readErrors,
 			"stalePackets", stats.stalePackets)
-		return result, err
+		return result, streamEnded, err
 	}
 
 	return walkSpeedCandidates(candidates, attempt, stopSilent)
@@ -266,7 +266,7 @@ func resolveSpeedCandidates(speeds []int, originalSpeed int, devUSB bool) ([]int
 	return resolved, nil
 }
 
-type speedAttempt func(speed int) (trySpeedResult, error)
+type speedAttempt func(speed int) (trySpeedResult, bool, error)
 
 func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func([]int) bool) (DetectResult, error) {
 	remaining := uniqueSpeedCandidates(candidates)
@@ -277,7 +277,7 @@ func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func
 		speed := remaining[0]
 		remaining = remaining[1:]
 		tried = append(tried, speed)
-		result, err := attempt(speed)
+		result, streamEnded, err := attempt(speed)
 		if err != nil {
 			return DetectResult{}, err
 		}
@@ -286,7 +286,11 @@ func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func
 		}
 		if result != trySilent {
 			allSilent = false
-		} else if allSilent && stopSilent != nil && stopSilent(slices.Clone(tried)) {
+		}
+		if streamEnded {
+			break
+		}
+		if result == trySilent && allSilent && stopSilent != nil && stopSilent(slices.Clone(tried)) {
 			return DetectResult{Outcome: DetectSilent}, nil
 		}
 		if shouldSwapNextSpeeds(remaining, deferred, speed, result) {
