@@ -8,14 +8,18 @@ import (
 	"io"
 	"os"
 	"sort"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
 
+// Term allows its cached attributes to be read from any goroutine concurrently
+// with Change. Calls to Change must be serialized by the caller.
 type Term struct {
 	fd      int
 	path    string
+	attrMu  sync.RWMutex
 	attr    Attr
 	tsSaved unix.Termios
 	iCount  *serialICounter
@@ -83,14 +87,14 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	}
 	// XXX turn of IXOFF
 	err = t.setAttrNow(&attr.ts)
-	t.attr = attr
+	t.storeAttr(attr)
 	_ = t.readError()
 	return
 }
 
 // Change changes the attributes of the terminal after output has drained.
 func (t *Term) Change(opts ...AttrSetter) error {
-	attr := t.attr
+	attr := t.loadAttr()
 	for _, opt := range opts {
 		err := opt(&attr)
 		if err != nil {
@@ -103,12 +107,25 @@ func (t *Term) Change(opts ...AttrSetter) error {
 	if err := t.setAttrNow(&attr.ts); err != nil {
 		return err
 	}
-	t.attr = attr
+	t.storeAttr(attr)
 	return nil
 }
 
 func (t *Term) Speed() int {
-	return t.attr.speed()
+	attr := t.loadAttr()
+	return attr.speed()
+}
+
+func (t *Term) loadAttr() Attr {
+	t.attrMu.RLock()
+	defer t.attrMu.RUnlock()
+	return t.attr
+}
+
+func (t *Term) storeAttr(attr Attr) {
+	t.attrMu.Lock()
+	defer t.attrMu.Unlock()
+	t.attr = attr
 }
 
 func lock(fd int, path string) error {
@@ -140,7 +157,8 @@ func (t *Term) TransmitTime(nBytes int) time.Duration {
 	if nBytes <= 0 {
 		return 0
 	}
-	return t.attr.byteTransmitTime() * time.Duration(nBytes)
+	attr := t.loadAttr()
+	return attr.byteTransmitTime() * time.Duration(nBytes)
 }
 
 // byteTransmitTime returns the time it takes to send a byte using the given Termios settings.
@@ -281,7 +299,8 @@ func (t *Term) Read(buf []byte) (n int, err error) {
 			}
 			return
 		}
-		if !t.attr.readCanTimeout() || time.Since(start) >= earlyZeroRead {
+		attr := t.loadAttr()
+		if !attr.readCanTimeout() || time.Since(start) >= earlyZeroRead {
 			// VTIME expired with no data available.
 			return 0, &os.PathError{Op: "read", Path: t.path, Err: os.ErrDeadlineExceeded}
 		}
