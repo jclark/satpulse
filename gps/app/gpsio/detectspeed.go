@@ -59,9 +59,6 @@ type DetectResult struct {
 	Speed   int // the detected speed; set only when Outcome is DetectFound
 }
 
-// ErrNotSerial means the connection is not backed by a terminal.
-var ErrNotSerial = errors.New("not a serial device")
-
 const (
 	// These thresholds bracket the separation measured while listening at
 	// 38400 to receivers running at the other two common speeds: 9600 produced
@@ -211,7 +208,7 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 		panic("nil logger passed to DetectSpeed")
 	}
 	if conn.term() == nil {
-		return DetectResult{}, ErrNotSerial
+		return DetectResult{}, term.ErrNotATTY
 	}
 	currentSpeed := conn.Speed()
 	candidates := resolveSpeedCandidates(speeds, currentSpeed, conn.kind == term.DevUSB)

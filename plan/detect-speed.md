@@ -155,8 +155,11 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger,
 // first; 0 means the port's current speed.
 func DefaultSpeedList() []int
 
-var ErrNotSerial = ...        // connection has no terminal behind it
 ```
+
+A connection with no terminal behind it gets `term.ErrNotATTY`, the
+same error `term.Open` reports for a path that is not a termios
+device; detection has no separate error of its own.
 
 Silence and unrecognized output are outcomes of a detection that ran
 to completion, not faults, so they are values rather than errors, as
@@ -171,7 +174,7 @@ terminal, with the same unexported `term()` accessor that
 `WriteThenChangeSpeed` uses (it returns nil for a connection opened
 through the non-termios fallback: a FIFO, or a non-termios
 character device such as /dev/gnss0). Such a connection gets
-`ErrNotSerial` immediately, before any packets are consumed: speed
+`term.ErrNotATTY` immediately, before any packets are consumed: speed
 changes on it are silent no-ops, so the candidate walk would
 attribute whatever valid packets arrive to an arbitrary candidate
 and return a fabricated speed. A pty is a terminal and passes the
@@ -357,7 +360,7 @@ codes:
   (`DetectUnrecognized`). The wording must not overclaim: this
   case covers both a non-GNSS device and a GNSS receiver at a
   speed outside the candidate list.
-- 1: not a serial device (`ErrNotSerial`, e.g. a FIFO): speed
+- 1: not a serial device (`term.ErrNotATTY`, e.g. a FIFO): speed
   detection is meaningless there.
 - 1: other system errors (changing or flushing the serial port, ...).
 - 2: silent (`DetectSilent`): nothing received.

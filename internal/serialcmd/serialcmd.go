@@ -300,7 +300,7 @@ func describeSerialError(err error) string {
 		return "permission denied; add this user to the serial-port access group (usually dialout)"
 	case isLocked(err):
 		return "device is locked by another process"
-	case errors.Is(err, gpsio.ErrNotSerial):
+	case errors.Is(err, term.ErrNotATTY):
 		return "speed detection requires a serial device"
 	default:
 		return err.Error()

@@ -12,6 +12,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
+	"github.com/jclark/satpulse/gps/lib/term"
 )
 
 func TestParseFlags(t *testing.T) {
@@ -148,7 +149,7 @@ func TestDescribeSerialError(t *testing.T) {
 		{context.Canceled, "interrupted"},
 		{fmtWrap(os.ErrPermission), "permission denied; add this user to the serial-port access group (usually dialout)"},
 		{fmtWrap(testLockedError{}), "device is locked by another process"},
-		{gpsio.ErrNotSerial, "speed detection requires a serial device"},
+		{term.ErrNotATTY, "speed detection requires a serial device"},
 		{errors.New("gone"), "gone"},
 	} {
 		if got := describeSerialError(tc.err); got != tc.want {
