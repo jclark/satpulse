@@ -93,6 +93,7 @@ var descriptions = []struct {
 	name, desc string
 }{
 	{"gps", "configure a GPS device"},
+	{"serial", "list serial ports and detect their speeds"},
 	{"sdp", "control software-defined pins on PTP hardware clocks"},
 	{"syncsim", "run clock synchronization simulation"},
 	{"ubxsim", "run u-blox receiver simulation"},
