@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"math/bits"
 	"slices"
@@ -206,11 +205,14 @@ func trySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpspro
 // speed is unspecified and the caller must close the connection, which
 // restores the terminal state captured when the port was opened.
 func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, conn *SerialConn, procs map[gpsprot.Tag]gpsprot.PacketProcessor, speeds []int, d time.Duration, stopSilent func(tried []int) bool) (DetectResult, error) {
-	if conn == nil || conn.term() == nil {
-		return DetectResult{}, ErrNotSerial
+	if conn == nil {
+		panic("nil connection passed to DetectSpeed")
 	}
 	if lg == nil {
-		lg = slog.New(slog.NewTextHandler(io.Discard, nil))
+		panic("nil logger passed to DetectSpeed")
+	}
+	if conn.term() == nil {
+		return DetectResult{}, ErrNotSerial
 	}
 	currentSpeed := conn.Speed()
 	candidates, err := resolveSpeedCandidates(speeds, currentSpeed, conn.kind == term.DevUSB)
