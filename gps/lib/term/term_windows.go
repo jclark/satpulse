@@ -192,6 +192,11 @@ func (t *Term) Read(buf []byte) (int, error) {
 		return int(n), t.wrapErr(err, "read")
 	}
 	if n == 0 {
+		// Serial errors indicate line activity, so this interval cannot be
+		// treated as an inter-packet timeout.
+		if serr := t.readError(); serr != nil {
+			return 0, serr
+		}
 		return 0, &os.PathError{Op: "read", Path: t.path, Err: os.ErrDeadlineExceeded}
 	}
 	if serr := t.readError(); serr != nil {

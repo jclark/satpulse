@@ -301,7 +301,11 @@ func (t *Term) Read(buf []byte) (n int, err error) {
 		}
 		attr := t.loadAttr()
 		if !attr.readCanTimeout() || time.Since(start) >= earlyZeroRead {
-			// VTIME expired with no data available.
+			// Serial errors indicate line activity, so this interval cannot be
+			// treated as an inter-packet timeout.
+			if serr := t.readError(); serr != nil {
+				return 0, serr
+			}
 			return 0, &os.PathError{Op: "read", Path: t.path, Err: os.ErrDeadlineExceeded}
 		}
 	}

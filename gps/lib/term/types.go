@@ -22,7 +22,7 @@ const (
 )
 
 // Error reports one or more serial errors (framing, parity, overrun, etc.)
-// that occurred during a successful Term.Read.
+// detected by Term.Read.
 type Error struct {
 	Path  string
 	Flags ErrFlags
