@@ -297,7 +297,7 @@ func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func
 		}
 		if result != TrySilent {
 			allSilent = false
-		} else if allSilent && stopSilent != nil && stopSilent(append([]int(nil), tried...)) {
+		} else if allSilent && stopSilent != nil && stopSilent(slices.Clone(tried)) {
 			return DetectResult{Outcome: DetectSilent}, nil
 		}
 		if shouldSwapNextSpeeds(remaining, deferred, speed, result) {
