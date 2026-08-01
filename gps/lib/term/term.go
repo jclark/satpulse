@@ -130,8 +130,11 @@ func (t *Term) storeAttr(attr Attr) {
 
 func lock(fd int, path string) error {
 	err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB)
-	if err != nil {
+	if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 		return fmt.Errorf("%s: could not lock device (%w); probably being used by another process", path, err)
+	}
+	if err != nil {
+		return fmt.Errorf("%s: could not lock device: %w", path, err)
 	}
 	return nil
 }
