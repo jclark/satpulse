@@ -39,7 +39,7 @@ are not logged. The scanner passes
 unrecognized bytes through promptly as packets with nil `Format`, so
 the classifier sees all received data.
 
-`TrySpeed` classifies at whatever speed the port currently has and
+`trySpeed` classifies at whatever speed the port currently has and
 never touches the port at all: on its own it is a side-effect-free
 check of the current speed. Speed changes between attempts are
 `DetectSpeed`'s job, through the existing
@@ -47,36 +47,32 @@ check of the current speed. Speed changes between attempts are
 reduces to the settle delay plus `term.Change`, takes the write lock,
 and records the speed change in the packet log.
 
-### Lower layer: TrySpeed
+### Lower layer: trySpeed
 
 ```go
-// TrySpeedResult classifies what was received while listening at one
-// speed.
-type TrySpeedResult int
+type trySpeedResult int
 
 const (
-    TrySilent   TrySpeedResult = iota // zero value: no data, no serial errors
-    TryDetected                       // checksum-valid packet of a known protocol
-    TryOther                          // data received but no verdict: try another speed
-    TryLower                          // strong low transition ratio: try a lower speed
-    TryHigher                         // strong high ratio, or ambiguous with framing: try higher
+    trySilent   trySpeedResult = iota // zero value: no data, no serial errors
+    tryDetected                       // checksum-valid packet of a known protocol
+    tryOther                          // data received but no verdict: try another speed
+    tryLower                          // strong low transition ratio: try a lower speed
+    tryHigher                         // strong high ratio, or ambiguous with framing: try higher
 )
 
-// TrySpeed consumes packets for at most d and classifies what is
-// arriving at the port's current speed. Returns early on TryDetected.
-func TrySpeed(ctx context.Context, packetCh <-chan scan.Packet,
+func trySpeed(ctx context.Context, packetCh <-chan scan.Packet,
     procs map[gpsprot.Tag]gpsprot.PacketProcessor,
-    d time.Duration) (TrySpeedResult, error)
+    d time.Duration) (trySpeedResult, trySpeedStats, error)
 ```
 
-TrySpeed does not take the connection: it only consumes packets,
+`trySpeed` does not take the connection: it only consumes packets,
 which keeps it structurally side-effect-free. Its error return
 covers context cancellation and the packet channel closing because
 the port died; classification always arrives as the result.
 
 Classification of the window:
 
-- `TryDetected`: a packet with `ChecksumValid` whose format counts
+- `tryDetected`: a packet with `ChecksumValid` whose format counts
   by the same rule as gpscfg's detection
   (`suitableMessageCount`): the format's tag has a packet
   processor, and that processor is not `NativeOnly`. This excludes
@@ -91,18 +87,18 @@ Classification of the window:
   `gpsreg.CreatePacketProcessors` (the map's types are all
   gpsprot, so gpsio's layering is undisturbed), and the classifier
   applies the same test as gpscfg.
-- `TrySilent`: no data and no serial errors for the whole window,
+- `trySilent`: no data and no serial errors for the whole window,
   i.e. nothing but inter-packet timeout markers
   (`Packet.IsInterPacketTimeout`). A window with read errors but
   no bytes is not silent: the device is transmitting.
-- `TryLower`: the bit-transition ratio is below M, currently 0.30.
-- `TryHigher`: the ratio is above N, currently 0.35. A ratio from M
+- `tryLower`: the bit-transition ratio is below M, currently 0.30.
+- `tryHigher`: the ratio is above N, currently 0.35. A ratio from M
   through N is ambiguous; a framing error resolves that ambiguity as
-  `TryHigher`. A framing error without any delivered bytes also yields
-  `TryHigher`, since the window is active rather than silent.
+  `tryHigher`. A framing error without any delivered bytes also yields
+  `tryHigher`, since the window is active rather than silent.
   Framing errors arrive as `Packet.ReadError` values implementing
   `SerialFraming()` (from term's serial-error support).
-- `TryOther`: data or non-framing read errors were received, but the
+- `tryOther`: data or non-framing read errors were received, but the
   transition ratio is ambiguous and no framing error was reported.
 
 The ratio is computed exactly as in the issue's experiment code
@@ -152,7 +148,7 @@ var ErrCurrentSpeedUnknown = ... // entry speed is not a standard speed
 
 Silence and unrecognized output are outcomes of a detection that ran
 to completion, not faults, so they are values rather than errors, as
-`TrySpeedResult` already is one layer down. The error return is
+`trySpeedResult` already is one layer down. The error return is
 reserved for a detection that could not run or could not finish: a
 connection that is not a terminal, an entry speed that cannot be
 named, a cancelled context, a port that died mid-walk. Callers check
@@ -223,18 +219,18 @@ recorded and cannot be pushed later a second time. No verdict removes
 a speed.
 
 This rule limits a wrong hint to one additional attempt. In the
-default common prefix 38400, 9600, 115200, a strong `TryHigher` result
-at 38400 swaps 115200 ahead of 9600; `TryLower` or an ambiguous result
+default common prefix 38400, 9600, 115200, a strong `tryHigher` result
+at 38400 swaps 115200 ahead of 9600; `tryLower` or an ambiguous result
 preserves 9600 as the next attempt.
 
-A `TrySilent` verdict does not by itself end the search: silence
+A `trySilent` verdict does not by itself end the search: silence
 at one speed is not proof of a silent device. But while nothing
 at all has been received (no bytes, no serial errors), the
 `stopSilent` function is consulted after each window with the
 speeds tried so far, and true concludes the search early; nil
 means never stop early. The outcome is `DetectSilent` when every
 tried window was silent, and `DetectUnrecognized` when the list is
-exhausted without a `TryDetected` but something was received.
+exhausted without a `tryDetected` but something was received.
 
 When the connection is `DevUSB`, DetectSpeed prepends 115200 to
 the list, behind a hoisted unsettable entry speed if there is one;
@@ -250,13 +246,13 @@ wire-real line speed - so DevUSB ports get the same full walk as
 everything else.
 
 The per-try window `d` is a parameter of `DetectSpeed`, passed
-through to each `TrySpeed` call.
+through to each `trySpeed` call.
 
 ### Speed-change coordination
 
 Three layers of stale data can leak across a speed change. The first
 is handled where the change happens (in DetectSpeed, between
-attempts); the others are TrySpeed's own:
+attempts); the others are `trySpeed`'s own:
 
 1. Kernel input buffer: bytes received at the old speed are still
    queued. Immediately after the change, call `term.Flush` (TCIOFLUSH;
@@ -264,7 +260,7 @@ attempts); the others are TrySpeed's own:
    nothing was written.
 2. Pipeline: packets scanned before the change may still sit in the
    channel, and a read in flight during the flush can deliver
-   pre-flush bytes with a post-change timestamp. TrySpeed discards
+   pre-flush bytes with a post-change timestamp. `trySpeed` discards
    packets whose `TRead` precedes its own start time plus a margin of
    about one read timeout (100 ms).
 3. Scanner state: a stale partial packet can fuse with the first
@@ -276,12 +272,12 @@ attempts); the others are TrySpeed's own:
 
 The transition-ratio computation and the window classifier are pure
 functions over byte strings and packet sequences; factor them so they
-are testable directly, with `TrySpeed` a thin shell around them.
+are testable directly through `trySpeed` and `trySpeedStats`.
 Drive classifier tests with synthetic packet streams (constructed
 garbage with known transition ratios, `ReadError` packets, valid NMEA
 and UBX packets) and with recorded wrong-speed captures from real
 hardware once available. Test `DetectSpeed`'s search logic against a
-scripted fake of TrySpeed results. Timing behavior (windows, cutoff
+scripted fake of `trySpeed` results. Timing behavior (windows, cutoff
 margins) uses `testing/synctest` per the repo pattern.
 
 A pty cannot emulate wrong-speed effects (it ignores termios speeds),
@@ -295,7 +291,7 @@ two, then validated packets at the actual speed.
 ### Open questions
 
 - Window length: long enough for receivers that emit only one burst
-  per second; whether `TrySilent` needs a longer confirmation window
+  per second; whether `trySilent` needs a longer confirmation window
   than the directional verdicts.
 
 ## satpulsetool serial
@@ -386,7 +382,7 @@ as detected. Usage errors and command-level failures are exit 1.
 ### Common
 
 The detection modes run under `cmd.CancelOnSignal`, as the gps
-command does: Ctrl-C cancels the context, which `TrySpeed` and
+command does: Ctrl-C cancels the context, which `trySpeed` and
 `DetectSpeed` honor mid-window. An interrupted probe restores the
 port's original speed like any other failure, and a scan waits for
 all its probes to finish that cleanup before exiting. An

@@ -15,31 +15,30 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
-// TrySpeedResult classifies what was received while listening at one speed.
-type TrySpeedResult int
+type trySpeedResult int
 
 const (
-	TrySilent TrySpeedResult = iota
-	TryDetected
-	TryOther
-	TryLower
-	TryHigher
+	trySilent trySpeedResult = iota
+	tryDetected
+	tryOther
+	tryLower
+	tryHigher
 )
 
-func (r TrySpeedResult) String() string {
+func (r trySpeedResult) String() string {
 	switch r {
-	case TrySilent:
+	case trySilent:
 		return "silent"
-	case TryDetected:
+	case tryDetected:
 		return "detected"
-	case TryOther:
+	case tryOther:
 		return "other"
-	case TryLower:
+	case tryLower:
 		return "lower"
-	case TryHigher:
+	case tryHigher:
 		return "higher"
 	default:
-		return fmt.Sprintf("TrySpeedResult(%d)", r)
+		return fmt.Sprintf("trySpeedResult(%d)", r)
 	}
 }
 
@@ -119,13 +118,7 @@ func (s *trySpeedStats) transitionRatio() float64 {
 	return float64(s.transitions) / float64(s.pairs)
 }
 
-func transitionRatio(data []byte) float64 {
-	var stats trySpeedStats
-	stats.addData(string(data))
-	return stats.transitionRatio()
-}
-
-func (s *trySpeedStats) addPacket(pkt scan.Packet, procs map[gpsprot.Tag]gpsprot.PacketProcessor) TrySpeedResult {
+func (s *trySpeedStats) addPacket(pkt scan.Packet, procs map[gpsprot.Tag]gpsprot.PacketProcessor) trySpeedResult {
 	s.addData(pkt.Data)
 	if pkt.ReadError != nil && !pkt.IsInterPacketTimeout() {
 		s.readErrors++
@@ -133,10 +126,10 @@ func (s *trySpeedStats) addPacket(pkt scan.Packet, procs map[gpsprot.Tag]gpsprot
 	}
 	if pkt.ChecksumValid && pkt.Format != nil {
 		if pp, ok := procs[pkt.Format.Tag()]; ok && !pp.NativeOnly() {
-			return TryDetected
+			return tryDetected
 		}
 	}
-	return TryOther
+	return tryOther
 }
 
 func framingErrorCount(err error) int {
@@ -153,35 +146,28 @@ func framingErrorCount(err error) int {
 	return 1
 }
 
-func (s *trySpeedStats) result() TrySpeedResult {
+func (s *trySpeedStats) result() trySpeedResult {
 	if s.bytes == 0 && s.readErrors == 0 {
-		return TrySilent
+		return trySilent
 	}
 	if s.bytes > 0 {
 		ratio := s.transitionRatio()
 		if ratio < lowerTransitionRatio {
-			return TryLower
+			return tryLower
 		}
 		if ratio > upperTransitionRatio {
-			return TryHigher
+			return tryHigher
 		}
 	}
 	// A framing error is a weaker signal than a transition ratio outside the
 	// ambiguity band. It also shows that a byte-empty window was not silent.
 	if s.framingErrors > 0 {
-		return TryHigher
+		return tryHigher
 	}
-	return TryOther
+	return tryOther
 }
 
-// TrySpeed consumes packets for at most d and classifies input at the port's
-// current speed. It returns immediately after a suitable valid packet.
-func TrySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpsprot.Tag]gpsprot.PacketProcessor, d time.Duration) (TrySpeedResult, error) {
-	result, _, err := trySpeed(ctx, packetCh, procs, d)
-	return result, err
-}
-
-func trySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpsprot.Tag]gpsprot.PacketProcessor, d time.Duration) (TrySpeedResult, trySpeedStats, error) {
+func trySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpsprot.Tag]gpsprot.PacketProcessor, d time.Duration) (trySpeedResult, trySpeedStats, error) {
 	start := time.Now()
 	cutoff := start.Add(stalePacketMargin)
 	timer := time.NewTimer(d)
@@ -190,20 +176,20 @@ func trySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpspro
 	for {
 		select {
 		case <-ctx.Done():
-			return TryOther, stats, ctx.Err()
+			return tryOther, stats, ctx.Err()
 		case pkt, ok := <-packetCh:
 			if !ok {
 				if err := ctx.Err(); err != nil {
-					return TryOther, stats, err
+					return tryOther, stats, err
 				}
-				return TryOther, stats, io.ErrUnexpectedEOF
+				return tryOther, stats, io.ErrUnexpectedEOF
 			}
 			if pkt.TRead.Before(cutoff) {
 				stats.stalePackets++
 				continue
 			}
-			if stats.addPacket(pkt, procs) == TryDetected {
-				return TryDetected, stats, nil
+			if stats.addPacket(pkt, procs) == tryDetected {
+				return tryDetected, stats, nil
 			}
 		case <-timer.C:
 			return stats.result(), stats, nil
@@ -228,14 +214,14 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 	if err != nil {
 		return DetectResult{}, err
 	}
-	attempt := func(speed int) (TrySpeedResult, error) {
+	attempt := func(speed int) (trySpeedResult, error) {
 		if speed != currentSpeed {
 			if _, err := conn.WriteThenChangeSpeed(nil, speed); err != nil {
-				return TryOther, fmt.Errorf("changing serial speed to %d: %w", speed, err)
+				return tryOther, fmt.Errorf("changing serial speed to %d: %w", speed, err)
 			}
 			currentSpeed = speed
 			if err := conn.term().Flush(); err != nil {
-				return TryOther, fmt.Errorf("flushing serial port at %d: %w", speed, err)
+				return tryOther, fmt.Errorf("flushing serial port at %d: %w", speed, err)
 			}
 		}
 		result, stats, err := trySpeed(ctx, packetCh, procs, d)
@@ -277,7 +263,7 @@ func resolveSpeedCandidates(speeds []int, originalSpeed int, devUSB bool) ([]int
 	return resolved, nil
 }
 
-type speedAttempt func(speed int) (TrySpeedResult, error)
+type speedAttempt func(speed int) (trySpeedResult, error)
 
 func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func([]int) bool) (DetectResult, error) {
 	remaining := uniqueSpeedCandidates(candidates)
@@ -292,10 +278,10 @@ func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func
 		if err != nil {
 			return DetectResult{}, err
 		}
-		if result == TryDetected {
+		if result == tryDetected {
 			return DetectResult{Outcome: DetectFound, Speed: speed}, nil
 		}
-		if result != TrySilent {
+		if result != trySilent {
 			allSilent = false
 		} else if allSilent && stopSilent != nil && stopSilent(slices.Clone(tried)) {
 			return DetectResult{Outcome: DetectSilent}, nil
@@ -324,7 +310,7 @@ func uniqueSpeedCandidates(speeds []int) []int {
 	return unique
 }
 
-func shouldSwapNextSpeeds(remaining []int, deferred map[int]bool, currentSpeed int, result TrySpeedResult) bool {
+func shouldSwapNextSpeeds(remaining []int, deferred map[int]bool, currentSpeed int, result trySpeedResult) bool {
 	if len(remaining) < 2 || deferred[remaining[0]] {
 		return false
 	}
@@ -332,11 +318,11 @@ func shouldSwapNextSpeeds(remaining []int, deferred map[int]bool, currentSpeed i
 		matchesDirection(remaining[1], currentSpeed, result)
 }
 
-func matchesDirection(candidate, current int, result TrySpeedResult) bool {
+func matchesDirection(candidate, current int, result trySpeedResult) bool {
 	switch result {
-	case TryHigher:
+	case tryHigher:
 		return candidate > current
-	case TryLower:
+	case tryLower:
 		return candidate < current
 	}
 	return false

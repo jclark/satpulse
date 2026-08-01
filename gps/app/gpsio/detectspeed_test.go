@@ -59,7 +59,9 @@ func TestTransitionRatio(t *testing.T) {
 		{[]byte{0x55}, 1},
 		{[]byte{0x80, 0x01}, 2.0 / 15.0},
 	} {
-		if got := transitionRatio(tc.data); got != tc.want {
+		var stats trySpeedStats
+		stats.addData(string(tc.data))
+		if got := stats.transitionRatio(); got != tc.want {
 			t.Errorf("transitionRatio(%x) = %v, want %v", tc.data, got, tc.want)
 		}
 	}
@@ -70,23 +72,23 @@ func TestTrySpeedStatsResult(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		packets []scan.Packet
-		want    TrySpeedResult
+		want    trySpeedResult
 	}{
-		{name: "silent", packets: []scan.Packet{{ReadError: testTimeoutError{}}}, want: TrySilent},
-		{name: "valid", packets: []scan.Packet{{Format: testFormat{}, ChecksumValid: true}}, want: TryDetected},
-		{name: "high transitions", packets: []scan.Packet{{Data: string([]byte{0x55, 0x55})}}, want: TryHigher},
-		{name: "low transitions", packets: []scan.Packet{{Data: string([]byte{0, 0})}}, want: TryLower},
-		{name: "ambiguous with framing", packets: []scan.Packet{{Data: string([]byte{0x80, 0x90}), ReadError: testFramingError{}}}, want: TryHigher},
-		{name: "ambiguous without framing", packets: []scan.Packet{{Data: string([]byte{0x80, 0x90})}}, want: TryOther},
-		{name: "framing without data", packets: []scan.Packet{{ReadError: testFramingError{}}}, want: TryHigher},
-		{name: "strong ratio overrides framing", packets: []scan.Packet{{Data: string(bytes.Repeat([]byte{0}, 100)), ReadError: testFramingError{}}}, want: TryLower},
-		{name: "nonframing read error", packets: []scan.Packet{{ReadError: errors.New("parity")}}, want: TryOther},
+		{name: "silent", packets: []scan.Packet{{ReadError: testTimeoutError{}}}, want: trySilent},
+		{name: "valid", packets: []scan.Packet{{Format: testFormat{}, ChecksumValid: true}}, want: tryDetected},
+		{name: "high transitions", packets: []scan.Packet{{Data: string([]byte{0x55, 0x55})}}, want: tryHigher},
+		{name: "low transitions", packets: []scan.Packet{{Data: string([]byte{0, 0})}}, want: tryLower},
+		{name: "ambiguous with framing", packets: []scan.Packet{{Data: string([]byte{0x80, 0x90}), ReadError: testFramingError{}}}, want: tryHigher},
+		{name: "ambiguous without framing", packets: []scan.Packet{{Data: string([]byte{0x80, 0x90})}}, want: tryOther},
+		{name: "framing without data", packets: []scan.Packet{{ReadError: testFramingError{}}}, want: tryHigher},
+		{name: "strong ratio overrides framing", packets: []scan.Packet{{Data: string(bytes.Repeat([]byte{0}, 100)), ReadError: testFramingError{}}}, want: tryLower},
+		{name: "nonframing read error", packets: []scan.Packet{{ReadError: errors.New("parity")}}, want: tryOther},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var stats trySpeedStats
 			for _, pkt := range tc.packets {
-				if got := stats.addPacket(pkt, procs); got == TryDetected {
-					if tc.want != TryDetected {
+				if got := stats.addPacket(pkt, procs); got == tryDetected {
+					if tc.want != tryDetected {
 						t.Fatalf("addPacket() = detected, want %v", tc.want)
 					}
 					return
@@ -110,7 +112,7 @@ func TestTrySpeedRejectsUnsuitableValidPackets(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stats trySpeedStats
 			pkt := scan.Packet{Format: testFormat{}, Data: string([]byte{0x55}), ChecksumValid: true}
-			if got := stats.addPacket(pkt, tc.procs); got == TryDetected {
+			if got := stats.addPacket(pkt, tc.procs); got == tryDetected {
 				t.Fatal("addPacket() detected an unsuitable packet")
 			}
 		})
@@ -141,7 +143,7 @@ func TestTrySpeedRecognizesScannedGNSSPackets(t *testing.T) {
 				t.Fatalf("scanned packet format/checksum = %v/%v", pkt.Format, pkt.ChecksumValid)
 			}
 			var stats trySpeedStats
-			if got := stats.addPacket(pkt, procs); got != TryDetected {
+			if got := stats.addPacket(pkt, procs); got != tryDetected {
 				t.Errorf("addPacket() = %v, want detected", got)
 			}
 		})
@@ -157,16 +159,16 @@ func TestTrySpeedTiming(t *testing.T) {
 			time.Sleep(stalePacketMargin)
 			packetCh <- scan.Packet{TRead: time.Now(), Format: testFormat{}, ChecksumValid: true}
 		}()
-		got, err := TrySpeed(context.Background(), packetCh, procs, time.Second)
-		if err != nil || got != TryDetected {
-			t.Fatalf("TrySpeed() = %v, %v, want detected", got, err)
+		got, _, err := trySpeed(context.Background(), packetCh, procs, time.Second)
+		if err != nil || got != tryDetected {
+			t.Fatalf("trySpeed() = %v, %v, want detected", got, err)
 		}
 	})
 	t.Run("timeout", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			got, err := TrySpeed(context.Background(), make(chan scan.Packet), nil, time.Second)
-			if err != nil || got != TrySilent {
-				t.Fatalf("TrySpeed() = %v, %v, want silent", got, err)
+			got, _, err := trySpeed(context.Background(), make(chan scan.Packet), nil, time.Second)
+			if err != nil || got != trySilent {
+				t.Fatalf("trySpeed() = %v, %v, want silent", got, err)
 			}
 		})
 	})
@@ -176,17 +178,17 @@ func TestTrySpeedErrors(t *testing.T) {
 	t.Run("closed channel", func(t *testing.T) {
 		ch := make(chan scan.Packet)
 		close(ch)
-		_, err := TrySpeed(context.Background(), ch, nil, time.Second)
+		_, _, err := trySpeed(context.Background(), ch, nil, time.Second)
 		if !errors.Is(err, io.ErrUnexpectedEOF) {
-			t.Fatalf("TrySpeed() error = %v, want io.ErrUnexpectedEOF", err)
+			t.Fatalf("trySpeed() error = %v, want io.ErrUnexpectedEOF", err)
 		}
 	})
 	t.Run("cancelled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		_, err := TrySpeed(ctx, make(chan scan.Packet), nil, time.Second)
+		_, _, err := trySpeed(ctx, make(chan scan.Packet), nil, time.Second)
 		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("TrySpeed() error = %v, want context.Canceled", err)
+			t.Fatalf("trySpeed() error = %v, want context.Canceled", err)
 		}
 	})
 }
@@ -223,14 +225,14 @@ func TestResolveSpeedCandidates(t *testing.T) {
 
 func TestWalkSpeedCandidates(t *testing.T) {
 	t.Run("direction hints and duplicate", func(t *testing.T) {
-		results := map[int]TrySpeedResult{
-			38400:  TryHigher,
-			115200: TryLower,
-			9600:   TryOther,
-			57600:  TryDetected,
+		results := map[int]trySpeedResult{
+			38400:  tryHigher,
+			115200: tryLower,
+			9600:   tryOther,
+			57600:  tryDetected,
 		}
 		var order []int
-		got, err := walkSpeedCandidates([]int{38400, 9600, 115200, 57600, 115200}, func(speed int) (TrySpeedResult, error) {
+		got, err := walkSpeedCandidates([]int{38400, 9600, 115200, 57600, 115200}, func(speed int) (trySpeedResult, error) {
 			order = append(order, speed)
 			return results[speed], nil
 		}, nil)
@@ -244,12 +246,12 @@ func TestWalkSpeedCandidates(t *testing.T) {
 	})
 	t.Run("hint does not search past next two", func(t *testing.T) {
 		var order []int
-		got, err := walkSpeedCandidates([]int{100, 50, 75, 200}, func(speed int) (TrySpeedResult, error) {
+		got, err := walkSpeedCandidates([]int{100, 50, 75, 200}, func(speed int) (trySpeedResult, error) {
 			order = append(order, speed)
 			if speed == 50 {
-				return TryDetected, nil
+				return tryDetected, nil
 			}
-			return TryHigher, nil
+			return tryHigher, nil
 		}, nil)
 		if err != nil || got.Speed != 50 || fmt.Sprint(order) != "[100 50]" {
 			t.Fatalf("walkSpeedCandidates() = %+v, %v; order = %v", got, err, order)
@@ -257,12 +259,12 @@ func TestWalkSpeedCandidates(t *testing.T) {
 	})
 	t.Run("speed is deferred only once", func(t *testing.T) {
 		var order []int
-		got, err := walkSpeedCandidates([]int{100, 50, 200, 300}, func(speed int) (TrySpeedResult, error) {
+		got, err := walkSpeedCandidates([]int{100, 50, 200, 300}, func(speed int) (trySpeedResult, error) {
 			order = append(order, speed)
 			if speed == 50 {
-				return TryDetected, nil
+				return tryDetected, nil
 			}
-			return TryHigher, nil
+			return tryHigher, nil
 		}, nil)
 		if err != nil || got.Speed != 50 || fmt.Sprint(order) != "[100 200 50]" {
 			t.Fatalf("walkSpeedCandidates() = %+v, %v; order = %v", got, err, order)
@@ -270,22 +272,22 @@ func TestWalkSpeedCandidates(t *testing.T) {
 	})
 	t.Run("silent stop", func(t *testing.T) {
 		var order []int
-		got, err := walkSpeedCandidates([]int{1, 2, 3}, func(speed int) (TrySpeedResult, error) {
+		got, err := walkSpeedCandidates([]int{1, 2, 3}, func(speed int) (trySpeedResult, error) {
 			order = append(order, speed)
-			return TrySilent, nil
+			return trySilent, nil
 		}, func(tried []int) bool { return len(tried) == 2 })
 		if err != nil || got.Outcome != DetectSilent || fmt.Sprint(order) != "[1 2]" {
 			t.Fatalf("walkSpeedCandidates() = %+v, %v; order = %v", got, err, order)
 		}
 	})
 	t.Run("data exhausted", func(t *testing.T) {
-		got, err := walkSpeedCandidates([]int{1}, func(int) (TrySpeedResult, error) { return TryOther, nil }, nil)
+		got, err := walkSpeedCandidates([]int{1}, func(int) (trySpeedResult, error) { return tryOther, nil }, nil)
 		if err != nil || got.Outcome != DetectUnrecognized {
 			t.Fatalf("walkSpeedCandidates() = %+v, %v", got, err)
 		}
 	})
 	t.Run("empty", func(t *testing.T) {
-		got, err := walkSpeedCandidates(nil, func(int) (TrySpeedResult, error) { return TryDetected, nil }, nil)
+		got, err := walkSpeedCandidates(nil, func(int) (trySpeedResult, error) { return tryDetected, nil }, nil)
 		if err != nil || got.Outcome != DetectUnrecognized {
 			t.Fatalf("walkSpeedCandidates() = %+v, %v", got, err)
 		}
