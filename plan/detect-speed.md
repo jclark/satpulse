@@ -2,7 +2,7 @@
 
 Determine the serial speed of a connected GNSS receiver by examining
 what is received at a trial speed, instead of blindly trying speeds
-one by one. The two signals, from the issue:
+one by one. The signals are:
 
 - speed too high: we are oversampling, so the received bytes show long
   runs of identical bits, i.e. a low bit-transition ratio: the
@@ -10,7 +10,17 @@ one by one. The two signals, from the issue:
   bytes as a continuous LSB-first bitstream as in the issue's
   experiment code (`bits.OnesCount8((b ^ (b >> 1)) & 0x7f)` within a
   byte, plus one pair per inter-byte boundary);
-- speed too low: framing errors dominate.
+- speed too low: received bytes generally have a higher transition
+  ratio. Framing errors provide supporting evidence when the ratio is
+  ambiguous, and also prove activity when the driver reports errors
+  without delivering bytes.
+
+Real UART measurements showed that neither transition ratio nor
+framing errors identifies direction reliably over arbitrary speed
+multiples: framing errors occur on both sides, and sparse bytes at a
+very high trial speed can have a high transition ratio. The classifier
+therefore uses two thresholds around an ambiguity band, and direction
+hints are allowed to make only a bounded change to the caller's order.
 
 ## Detection code
 
@@ -48,8 +58,8 @@ const (
     TrySilent   TrySpeedResult = iota // zero value: no data, no serial errors
     TryDetected                       // checksum-valid packet of a known protocol
     TryOther                          // data received but no verdict: try another speed
-    TryLower                          // low transition ratio: try a lower speed
-    TryHigher                         // framing errors dominate: try a higher speed
+    TryLower                          // strong low transition ratio: try a lower speed
+    TryHigher                         // strong high ratio, or ambiguous with framing: try higher
 )
 
 // TrySpeed consumes packets for at most d and classifies what is
@@ -85,16 +95,21 @@ Classification of the window:
   i.e. nothing but inter-packet timeout markers
   (`Packet.IsInterPacketTimeout`). A window with read errors but
   no bytes is not silent: the device is transmitting.
-- `TryHigher`: framing errors dominate the window. These arrive as
-  `Packet.ReadError` values implementing `SerialFraming()` (from
-  term's TIOCGICOUNT support). Driver support varies; where the
-  driver reports nothing, a too-low speed lands in `TryOther`
-  instead, which is safe.
-- `TryLower`: the bit-transition ratio over the received bytes is
-  below a threshold. The ratio is computed exactly as in the
-  issue's experiment code (continuous LSB-first bitstream,
-  inter-byte boundaries included), which used a threshold of 0.42.
-- `TryOther`: data was received but none of the above applies.
+- `TryLower`: the bit-transition ratio is below M, currently 0.30.
+- `TryHigher`: the ratio is above N, currently 0.35. A ratio from M
+  through N is ambiguous; a framing error resolves that ambiguity as
+  `TryHigher`. A framing error without any delivered bytes also yields
+  `TryHigher`, since the window is active rather than silent.
+  Framing errors arrive as `Packet.ReadError` values implementing
+  `SerialFraming()` (from term's serial-error support).
+- `TryOther`: data or non-framing read errors were received, but the
+  transition ratio is ambiguous and no framing error was reported.
+
+The ratio is computed exactly as in the issue's experiment code
+(continuous LSB-first bitstream, inter-byte boundaries included).
+A strong ratio takes precedence over framing because hardware testing
+showed framing errors at trial speeds both above and below the actual
+speed.
 
 ### Upper layer: DetectSpeed
 
@@ -143,15 +158,18 @@ always be a real speed and makes direction hints compare against
 the port's original speed rather than the literal zero or a speed
 selected by an earlier attempt.
 
-The list is tried in order, modified by the direction hints. A
-tried-set (`map[int]struct{}`) records the speeds already tried,
-and also makes duplicate list entries no-ops. When the last
-verdict was `TryHigher` or `TryLower`, the next speed is the
-first untried entry in list order that is higher or lower than
-the previous speed, when such an entry exists; otherwise, and
-after `TryOther`, it is simply the first untried entry. No
-verdict removes a speed: every entry is tried before the search
-gives up.
+Duplicate list entries are removed while preserving the first
+occurrence. The remaining list is tried in caller-specified order,
+subject to one bounded use of each direction hint: a hint can swap
+only the next two untried speeds, and only when the second matches the
+hint while the first does not. A speed pushed later by such a swap is
+recorded and cannot be pushed later a second time. No verdict removes
+a speed.
+
+This rule limits a wrong hint to one additional attempt. In the
+default common prefix 38400, 9600, 115200, a strong `TryHigher` result
+at 38400 swaps 115200 ahead of 9600; `TryLower` or an ambiguous result
+preserves 9600 as the next attempt.
 
 A `TrySilent` verdict does not by itself end the search: silence
 at one speed is not proof of a silent device. But while nothing
@@ -164,7 +182,7 @@ window was silent; when the list is exhausted without
 `ErrSpeedNotDetected`.
 
 When the connection is `DevUSB`, DetectSpeed prepends 115200 to
-the list; the tried-set makes the later duplicate a no-op. A
+the list; duplicate removal makes the later entry a no-op. A
 native-USB receiver delivers valid packets at whatever speed is
 tried, so the first entry is the one that gets detected and
 recorded; starting high makes that a sensible value, and on macOS
@@ -211,7 +229,12 @@ scripted fake of TrySpeed results. Timing behavior (windows, cutoff
 margins) uses `testing/synctest` per the repo pattern.
 
 A pty cannot emulate wrong-speed effects (it ignores termios speeds),
-so end-to-end validation is against real receivers.
+so end-to-end validation is against real receivers. Tests on a u-blox
+LEA-M8T listening initially at 38400 measured ratios of 0.138 (UBX)
+and 0.196 (NMEA) when the receiver was at 9600, versus 0.396 (UBX)
+and 0.475 (NMEA) when it was at 115200. The detector tried 9600 next
+in the first two cases and swapped 115200 ahead of 9600 in the latter
+two, then validated packets at the actual speed.
 
 ### Open questions
 
@@ -317,13 +340,10 @@ the receiver-side port configuration reported by `--show-port`, so a
 host-side detection result has no unambiguous place to be reported
 there. The composed form above covers that use.
 
-Per-attempt diagnostics (the speed tried and the verdict) are logged
-by `DetectSpeed`, so they appear under satpulsetool's global `-v`
-flag; `DetectSpeed` takes a logger parameter, as `gpscfg.Configure`
-does, while `TrySpeed` does not. If the finer numbers behind a
-verdict (transition ratio, byte and framing-error counts) prove
-worth logging, `TrySpeed` can return them alongside the verdict for
-`DetectSpeed` to log. The received bytes are also recoverable
+Per-attempt diagnostics are logged by `DetectSpeed`, so they appear
+under satpulsetool's global `-v` flag. They include the speed, verdict,
+byte count, transition ratio, framing-error count, read-error count,
+and stale-packet count. The received bytes are also recoverable
 offline from the packet log, but read errors are not logged, so
 framing-error evidence comes from these `-v` diagnostics, not from
 captures.
@@ -341,7 +361,10 @@ and so depends on the #394 enumerator. The change adds a
 `satpulsetool-serial.1.md` man page and carries a NEWS entry
 (#326).
 
-## Workbench
+## Workbench (not implemented yet)
+
+Workbench integration was explicitly excluded from this implementation.
+The following remains possible future work.
 
 The speed dropdown gets an explicit Auto entry, and Auto is the
 default selection. Connecting with Auto runs detection between
