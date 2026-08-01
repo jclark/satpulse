@@ -210,19 +210,14 @@ func TestResolveSpeedCandidates(t *testing.T) {
 		{"unsettable goes first", []int{38400, 0, 115200}, 14400, false, []int{14400, 38400, 14400, 115200}},
 		{"unsettable outranks devUSB", []int{38400, 0}, 14400, true, []int{14400, 115200, 38400, 14400}},
 		{"unsettable but not asked for", []int{38400, 115200}, 14400, false, []int{38400, 115200}},
+		{"unrepresentable speed drops the zero", []int{38400, 0, 115200}, 0, false, []int{38400, 115200}},
+		{"unrepresentable speed keeps devUSB", []int{38400, 0}, 0, true, []int{115200, 38400}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolveSpeedCandidates(tc.speeds, tc.originalSpeed, tc.devUSB)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if fmt.Sprint(got) != fmt.Sprint(tc.want) {
+			if got := resolveSpeedCandidates(tc.speeds, tc.originalSpeed, tc.devUSB); fmt.Sprint(got) != fmt.Sprint(tc.want) {
 				t.Errorf("resolveSpeedCandidates() = %v, want %v", got, tc.want)
 			}
 		})
-	}
-	if _, err := resolveSpeedCandidates([]int{38400, 0}, 0, false); !errors.Is(err, ErrCurrentSpeedUnknown) {
-		t.Errorf("resolveSpeedCandidates() error = %v, want ErrCurrentSpeedUnknown", err)
 	}
 }
 

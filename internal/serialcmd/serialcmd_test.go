@@ -149,7 +149,6 @@ func TestDescribeSerialError(t *testing.T) {
 		{fmtWrap(os.ErrPermission), "permission denied; add this user to the serial-port access group (usually dialout)"},
 		{fmtWrap(testLockedError{}), "device is locked by another process"},
 		{gpsio.ErrNotSerial, "speed detection requires a serial device"},
-		{gpsio.ErrCurrentSpeedUnknown, "the device's current serial speed could not be determined"},
 		{errors.New("gone"), "gone"},
 	} {
 		if got := describeSerialError(tc.err); got != tc.want {

@@ -156,17 +156,15 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger,
 func DefaultSpeedList() []int
 
 var ErrNotSerial = ...        // connection has no terminal behind it
-var ErrCurrentSpeedUnknown = ... // entry speed is not a standard speed
 ```
 
 Silence and unrecognized output are outcomes of a detection that ran
 to completion, not faults, so they are values rather than errors, as
 `trySpeedResult` already is one layer down. The error return is
 reserved for a detection that could not run or could not finish: a
-connection that is not a terminal, an entry speed that cannot be
-named, a cancelled context, a port that died mid-walk. Callers check
-the error first, since the zero `DetectResult` reads as
-`DetectSilent`.
+connection that is not a terminal, a cancelled context, a port that
+died mid-walk. Callers check the error first, since the zero
+`DetectResult` reads as `DetectSilent`.
 
 DetectSpeed first checks that the connection is backed by a
 terminal, with the same unexported `term()` accessor that
@@ -193,16 +191,18 @@ be a real speed and makes direction hints compare against the port's
 original speed rather than the literal zero or a speed selected by
 an earlier attempt.
 
-The platform has to report an entry speed at all, since a 0
-candidate has nothing else to resolve to; when it reports none,
-`DetectSpeed` returns `ErrCurrentSpeedUnknown` before it changes
-anything. It need not be a speed `term.Speed` can set: reading a
+The entry speed need not be one `term.Speed` can set: reading a
 speed and setting one do not accept the same values everywhere.
-Linux maps the termios baud field back through its table and
-reports 0 for anything absent from it, but macOS and FreeBSD
-return the raw rate from `c_ospeed` and Windows returns
-`DCB.BaudRate`, so a port at 14400 reports 14400 and detection
-proceeds.
+macOS and FreeBSD return the raw rate from `c_ospeed` and Windows
+returns `DCB.BaudRate`, so a port at 14400 reports 14400 and
+detection proceeds. Linux maps the termios baud field back through
+its own table and reports 0 for anything absent from it, so there
+the rate is unrepresentable rather than merely unsettable. A 0
+candidate is then dropped, since detection has to name its result
+and a rate it cannot name is no use to the caller; the rest of the
+list is walked as usual. A stale port setting says nothing about
+what the receiver is transmitting, so refusing to look because of
+one would give up the case detection exists to solve.
 
 Such a speed can only be listened to while the port is still on it,
 since `attempt` skips the speed change for a candidate equal to the
@@ -359,8 +359,6 @@ codes:
   speed outside the candidate list.
 - 1: not a serial device (`ErrNotSerial`, e.g. a FIFO): speed
   detection is meaningless there.
-- 1: the port's current speed is not a standard speed
-  (`ErrCurrentSpeedUnknown`), so nothing was tried.
 - 1: other system errors (changing or flushing the serial port, ...).
 - 2: silent (`DetectSilent`): nothing received.
 

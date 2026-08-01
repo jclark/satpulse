@@ -59,14 +59,8 @@ type DetectResult struct {
 	Speed   int // the detected speed; set only when Outcome is DetectFound
 }
 
-var (
-	// ErrNotSerial means the connection is not backed by a terminal.
-	ErrNotSerial = errors.New("not a serial device")
-	// ErrCurrentSpeedUnknown means the platform reported no current speed
-	// for the terminal, so a zero candidate has nothing to resolve to. A
-	// speed it does report is accepted even when term.Speed cannot set it.
-	ErrCurrentSpeedUnknown = errors.New("current serial speed is unknown")
-)
+// ErrNotSerial means the connection is not backed by a terminal.
+var ErrNotSerial = errors.New("not a serial device")
 
 const (
 	// These thresholds bracket the separation measured while listening at
@@ -220,10 +214,7 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 		return DetectResult{}, ErrNotSerial
 	}
 	currentSpeed := conn.Speed()
-	candidates, err := resolveSpeedCandidates(speeds, currentSpeed, conn.kind == term.DevUSB)
-	if err != nil {
-		return DetectResult{}, err
-	}
+	candidates := resolveSpeedCandidates(speeds, currentSpeed, conn.kind == term.DevUSB)
 	attempt := func(speed int) (trySpeedResult, bool, error) {
 		if speed != currentSpeed {
 			if _, err := conn.WriteThenChangeSpeed(nil, speed); err != nil {
@@ -249,16 +240,17 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 	return walkSpeedCandidates(candidates, attempt, stopSilent)
 }
 
-func resolveSpeedCandidates(speeds []int, originalSpeed int, devUSB bool) ([]int, error) {
-	if originalSpeed <= 0 && slices.Contains(speeds, 0) {
-		return nil, ErrCurrentSpeedUnknown
-	}
+// resolveSpeedCandidates replaces each zero candidate with the speed the port
+// was on. A platform reports no speed for a rate outside its own table, and
+// such a rate is no use to a caller that has to name the result, so a zero
+// candidate is dropped instead.
+func resolveSpeedCandidates(speeds []int, originalSpeed int, devUSB bool) []int {
 	resolved := make([]int, 0, len(speeds)+2)
 	// An entry speed that term.Speed cannot set is reachable only while the
 	// port is still on it, so a zero candidate standing for such a speed has
 	// to be tried first, ahead even of the DevUSB preference. Anywhere else
 	// in the list the speed change would fail and end the walk.
-	if !term.IsValidSpeed(originalSpeed) && slices.Contains(speeds, 0) {
+	if originalSpeed > 0 && !term.IsValidSpeed(originalSpeed) && slices.Contains(speeds, 0) {
 		resolved = append(resolved, originalSpeed)
 	}
 	if devUSB {
@@ -266,11 +258,14 @@ func resolveSpeedCandidates(speeds []int, originalSpeed int, devUSB bool) ([]int
 	}
 	for _, speed := range speeds {
 		if speed == 0 {
+			if originalSpeed <= 0 {
+				continue
+			}
 			speed = originalSpeed
 		}
 		resolved = append(resolved, speed)
 	}
-	return resolved, nil
+	return resolved
 }
 
 type speedAttempt func(speed int) (trySpeedResult, bool, error)

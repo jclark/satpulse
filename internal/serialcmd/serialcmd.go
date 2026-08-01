@@ -302,8 +302,6 @@ func describeSerialError(err error) string {
 		return "device is locked by another process"
 	case errors.Is(err, gpsio.ErrNotSerial):
 		return "speed detection requires a serial device"
-	case errors.Is(err, gpsio.ErrCurrentSpeedUnknown):
-		return "the device's current serial speed could not be determined"
 	default:
 		return err.Error()
 	}
