@@ -47,6 +47,25 @@ func TestParseFlags(t *testing.T) {
 	}
 }
 
+func TestCmdUsageError(t *testing.T) {
+	for _, args := range [][]string{
+		{"--bogus"},
+		{"--scan", "/dev/ttyS0"},
+	} {
+		usage, err := Cmd(io.Discard, slog.LevelInfo, "satpulsetool", "serial", args)
+		if err == nil {
+			t.Fatalf("Cmd(%q) returned nil error", args)
+		}
+		if usage == "" {
+			t.Errorf("Cmd(%q) returned empty usage", args)
+		}
+		var exitErr interface{ ExitCode() int }
+		if errors.As(err, &exitErr) {
+			t.Errorf("Cmd(%q) error has explicit exit code %d", args, exitErr.ExitCode())
+		}
+	}
+}
+
 func TestPrintPorts(t *testing.T) {
 	ports := []serialenum.Port{
 		{Device: "/dev/ttyS0", Display: "/dev/ttyS0"},

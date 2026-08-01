@@ -377,7 +377,8 @@ code is the best actual outcome over a non-empty set of ports:
 found, enumeration or scan exits 2 explicitly. Single-device
 detection is the one-port case: 0 detected, 2 silent, 1 anything
 else. For enumeration, which does not probe, a listed port counts
-as detected. Usage errors and command-level failures are exit 1.
+as detected. Usage errors exit 2; operational command-level failures
+exit 1.
 
 ### Common
 

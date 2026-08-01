@@ -48,7 +48,7 @@ type flags struct {
 func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, args []string) (usage string, err error) {
 	cfg, help, usageFunc, err := parseFlags(cmdName, args)
 	if err != nil {
-		return usageFunc(progName), commandError{msg: err.Error(), code: 1}
+		return usageFunc(progName), err
 	}
 	if help {
 		return usageFunc(progName), nil
