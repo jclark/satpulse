@@ -63,9 +63,9 @@ type DetectResult struct {
 var (
 	// ErrNotSerial means the connection is not backed by a terminal.
 	ErrNotSerial = errors.New("not a serial device")
-	// ErrCurrentSpeedUnknown means the terminal's current speed cannot be
-	// represented as a supported numeric speed, so a zero candidate has
-	// nothing to resolve to.
+	// ErrCurrentSpeedUnknown means the platform reported no current speed
+	// for the terminal, so a zero candidate has nothing to resolve to. A
+	// speed it does report is accepted even when term.Speed cannot set it.
 	ErrCurrentSpeedUnknown = errors.New("current serial speed is unknown")
 )
 

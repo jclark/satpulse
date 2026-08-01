@@ -299,7 +299,7 @@ func describeProbeError(err error) string {
 	case errors.Is(err, gpsio.ErrNotSerial):
 		return "speed detection requires a serial device"
 	case errors.Is(err, gpsio.ErrCurrentSpeedUnknown):
-		return "the device's current serial speed is not supported"
+		return "the device's current serial speed could not be determined"
 	default:
 		return err.Error()
 	}

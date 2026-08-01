@@ -184,10 +184,16 @@ be a real speed and makes direction hints compare against the port's
 original speed rather than the literal zero or a speed selected by
 an earlier attempt.
 
-The captured entry speed has to be one the platform's tables can
-name, since a 0 candidate has nothing else to resolve to;
-otherwise `DetectSpeed` returns `ErrCurrentSpeedUnknown` before it
-changes anything.
+The platform has to report an entry speed at all, since a 0
+candidate has nothing else to resolve to; when it reports none,
+`DetectSpeed` returns `ErrCurrentSpeedUnknown` before it changes
+anything. It need not be a speed `term.Speed` can set: reading a
+speed and setting one do not accept the same values everywhere.
+Linux maps the termios baud field back through its table and
+reports 0 for anything absent from it, but macOS and FreeBSD
+return the raw rate from `c_ospeed` and Windows returns
+`DCB.BaudRate`, so a port at 14400 reports 14400 and detection
+proceeds.
 
 On `DetectFound` the port keeps the detected speed. On any other
 outcome, and on an error including cancellation, its speed is
