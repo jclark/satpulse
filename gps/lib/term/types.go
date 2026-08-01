@@ -10,6 +10,29 @@ import (
 // Callers can check for it with errors.Is.
 var ErrNotATTY = errors.New("not a serial device")
 
+// LockedError indicates that a device is already in exclusive use.
+// Callers can check for it with errors.As and then call Locked.
+type LockedError interface {
+	error
+	Locked() bool
+}
+
+type lockedError struct {
+	err error
+}
+
+var _ LockedError = (*lockedError)(nil)
+
+func (e *lockedError) Error() string {
+	return "device is locked by another process: " + e.err.Error()
+}
+
+func (e *lockedError) Unwrap() error { return e.err }
+
+func (e *lockedError) Locked() bool { return true }
+
+func wrapLocked(err error) error { return &lockedError{err: err} }
+
 type DevKind int
 
 const (

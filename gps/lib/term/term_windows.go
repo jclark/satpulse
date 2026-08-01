@@ -88,6 +88,9 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 		0,
 	)
 	if err != nil {
+		if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
+			err = wrapLocked(err)
+		}
 		return t.wrapErr(err, "open")
 	}
 	t.handle = h
@@ -381,6 +384,9 @@ func OpenFallback(path string, _ time.Duration) (*os.File, *File, DevKind, error
 		0,
 	)
 	if err != nil {
+		if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
+			err = wrapLocked(err)
+		}
 		return nil, nil, DevUnknown, &os.PathError{Op: "open", Path: path, Err: err}
 	}
 	return os.NewFile(uintptr(h), path), nil, DevFIFO, nil
