@@ -247,8 +247,9 @@ func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port,
 	resultCh := make(chan probeResult, len(ports))
 	var wg sync.WaitGroup
 	for _, port := range ports {
+		device := port.Device
 		wg.Go(func() {
-			resultCh <- probe(ctx, lg, port.Device, "")
+			resultCh <- probe(ctx, lg.With("device", device), device, "")
 		})
 	}
 	go func() {

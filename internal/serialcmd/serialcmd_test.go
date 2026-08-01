@@ -148,10 +148,11 @@ func (testLockedError) Locked() bool  { return true }
 
 func TestScanPortList(t *testing.T) {
 	ports := []serialenum.Port{{Device: "detected"}, {Device: "silent"}, {Device: "error"}}
-	probe := func(_ context.Context, _ *slog.Logger, device, packetLog string) probeResult {
+	probe := func(_ context.Context, lg *slog.Logger, device, packetLog string) probeResult {
 		if packetLog != "" {
 			t.Errorf("scan packet log = %q, want empty", packetLog)
 		}
+		lg.Info("probing")
 		switch device {
 		case "detected":
 			return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 38400}}
@@ -161,8 +162,9 @@ func TestScanPortList(t *testing.T) {
 			return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectUnrecognized}}
 		}
 	}
-	var stdout, stderr bytes.Buffer
-	if err := scanPortList(context.Background(), slog.Default(), ports, probe, &stdout, &stderr); err != nil {
+	var stdout, stderr, logBuf bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&logBuf, nil))
+	if err := scanPortList(context.Background(), lg, ports, probe, &stdout, &stderr); err != nil {
 		t.Fatalf("scanPortList() error = %v, want nil because one device was detected", err)
 	}
 	if got := stdout.String(); got != "detected 38400\n" {
@@ -174,6 +176,11 @@ func TestScanPortList(t *testing.T) {
 	} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("stderr %q does not contain %q", stderr.String(), want)
+		}
+	}
+	for _, port := range ports {
+		if want := "device=" + port.Device; !strings.Contains(logBuf.String(), want) {
+			t.Errorf("log %q does not contain %q", logBuf.String(), want)
 		}
 	}
 }
