@@ -397,7 +397,7 @@ func RawMode(a *Attr) error {
 	a.dcb.Parity = windows.NOPARITY
 	a.dcb.StopBits = windows.ONESTOPBIT
 	a.dcb.Flags |= dcbBinary
-	a.dcb.Flags &^= dcbParity | dcbErrorChar | dcbNull | dcbAbortOnError
+	a.dcb.Flags &^= dcbErrorChar | dcbNull | dcbAbortOnError
 	return nil
 }
 
@@ -405,6 +405,14 @@ func RawMode(a *Attr) error {
 // fDsrSensitivity ensures incoming bytes are not dropped based on DSR.
 func Local(a *Attr) error {
 	a.dcb.Flags &^= dcbDsrSensitivity
+	return nil
+}
+
+// NoParity configures the terminal for no parity and disables input parity
+// checking.
+func NoParity(a *Attr) error {
+	a.dcb.Parity = windows.NOPARITY
+	a.dcb.Flags &^= dcbParity
 	return nil
 }
 

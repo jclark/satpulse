@@ -158,6 +158,14 @@ func Local(a *Attr) error {
 	return nil
 }
 
+// NoParity configures the terminal for no parity and disables input parity
+// checking.
+func NoParity(a *Attr) error {
+	a.ts.Iflag &^= unix.INPCK
+	a.ts.Cflag &^= unix.PARENB
+	return nil
+}
+
 // TransmitTime returns the time it takes to send a byte using the settings in Term.
 func (t *Term) TransmitTime(nBytes int) time.Duration {
 	if nBytes <= 0 {
