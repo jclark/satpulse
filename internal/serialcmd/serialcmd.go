@@ -64,10 +64,10 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		if ctx.Err() != nil {
 			return "", commandError{msg: "interrupted", code: 1}
 		}
-		if result.err != nil {
-			return "", commandError{msg: describeProbeError(result.err), code: result.exitCode()}
+		if code := result.exitCode(); code != 0 {
+			return "", commandError{msg: result.description(), code: code}
 		}
-		_, err = fmt.Fprintln(os.Stdout, result.speed)
+		_, err = fmt.Fprintln(os.Stdout, result.detection.Speed)
 		return "", err
 	}
 	return "", scanPorts(ctx, lg)
@@ -131,19 +131,34 @@ func printPorts(w io.Writer, ports []serialenum.Port, jsonl bool) error {
 }
 
 type probeResult struct {
-	device string
-	speed  int
-	err    error
+	device    string
+	detection gpsio.DetectResult
+	err       error
 }
 
 func (r probeResult) exitCode() int {
-	if r.err == nil {
-		return 0
+	if r.err != nil {
+		return 1
 	}
-	if errors.Is(r.err, gpsio.ErrSilent) {
+	switch r.detection.Outcome {
+	case gpsio.DetectFound:
+		return 0
+	case gpsio.DetectSilent:
 		return 2
 	}
 	return 1
+}
+
+// description explains an unsuccessful probe: either why detection could not
+// run, or what the device did instead of producing a speed.
+func (r probeResult) description() string {
+	if r.err != nil {
+		return describeProbeError(r.err)
+	}
+	if r.detection.Outcome == gpsio.DetectSilent {
+		return "no output received from the device"
+	}
+	return "output was received, but no known GNSS protocol was validated at a candidate speed"
 }
 
 func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath string) (result probeResult) {
@@ -173,7 +188,7 @@ func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath str
 	packetCh := make(chan scan.Packet, 1)
 	wg.Go(func() { gpsio.Scan(scanCtx, lg, conn, packetCh, pktLog, formats) })
 
-	result.speed, result.err = gpsio.DetectSpeed(
+	result.detection, result.err = gpsio.DetectSpeed(
 		ctx,
 		lg,
 		packetCh,
@@ -244,19 +259,19 @@ func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port,
 		code := result.exitCode()
 		switch code {
 		case 0:
-			if _, err := fmt.Fprintf(stdout, "%s %d\n", result.device, result.speed); err != nil && outputErr == nil {
+			if _, err := fmt.Fprintf(stdout, "%s %d\n", result.device, result.detection.Speed); err != nil && outputErr == nil {
 				outputErr = err
 			}
 			bestCode = 0
 		case 2:
-			if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, describeProbeError(result.err)); err != nil && outputErr == nil {
+			if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, result.description()); err != nil && outputErr == nil {
 				outputErr = err
 			}
 			if bestCode != 0 {
 				bestCode = 2
 			}
 		default:
-			if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, describeProbeError(result.err)); err != nil && outputErr == nil {
+			if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, result.description()); err != nil && outputErr == nil {
 				outputErr = err
 			}
 		}
@@ -281,10 +296,6 @@ func describeProbeError(err error) string {
 		return "permission denied; add this user to the serial-port access group (usually dialout)"
 	case isLocked(err):
 		return "device is locked by another process"
-	case errors.Is(err, gpsio.ErrSilent):
-		return "no output received from the device"
-	case errors.Is(err, gpsio.ErrSpeedNotDetected):
-		return "output was received, but no known GNSS protocol was validated at a candidate speed"
 	case errors.Is(err, gpsio.ErrNotSerial):
 		return "speed detection requires a serial device"
 	case errors.Is(err, gpsio.ErrCurrentSpeedUnknown):

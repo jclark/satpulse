@@ -85,15 +85,35 @@ func TestPrintPorts(t *testing.T) {
 
 func TestProbeResultExitCode(t *testing.T) {
 	for _, tc := range []struct {
-		err  error
-		want int
+		name   string
+		result probeResult
+		want   int
 	}{
-		{nil, 0},
-		{gpsio.ErrSilent, 2},
-		{gpsio.ErrSpeedNotDetected, 1},
+		{"found", probeResult{detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 38400}}, 0},
+		{"silent", probeResult{}, 2},
+		{"unrecognized", probeResult{detection: gpsio.DetectResult{Outcome: gpsio.DetectUnrecognized}}, 1},
+		{"error", probeResult{err: gpsio.ErrNotSerial}, 1},
+		{"error outranks silence", probeResult{err: errors.New("close failed")}, 1},
 	} {
-		if got := (probeResult{err: tc.err}).exitCode(); got != tc.want {
-			t.Errorf("exitCode(%v) = %d, want %d", tc.err, got, tc.want)
+		if got := tc.result.exitCode(); got != tc.want {
+			t.Errorf("%s: exitCode() = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestProbeResultDescription(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result probeResult
+		want   string
+	}{
+		{"silent", probeResult{}, "no output received from the device"},
+		{"unrecognized", probeResult{detection: gpsio.DetectResult{Outcome: gpsio.DetectUnrecognized}},
+			"output was received, but no known GNSS protocol was validated at a candidate speed"},
+		{"error", probeResult{err: gpsio.ErrNotSerial}, "speed detection requires a serial device"},
+	} {
+		if got := tc.result.description(); got != tc.want {
+			t.Errorf("%s: description() = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }
@@ -106,8 +126,6 @@ func TestDescribeProbeError(t *testing.T) {
 		{context.Canceled, "interrupted"},
 		{fmtWrap(os.ErrPermission), "permission denied; add this user to the serial-port access group (usually dialout)"},
 		{fmtWrap(testLockedError{}), "device is locked by another process"},
-		{gpsio.ErrSilent, "no output received from the device"},
-		{gpsio.ErrSpeedNotDetected, "output was received, but no known GNSS protocol was validated at a candidate speed"},
 		{gpsio.ErrNotSerial, "speed detection requires a serial device"},
 		{gpsio.ErrCurrentSpeedUnknown, "the device's current serial speed is not supported"},
 		{errors.New("gone"), "gone"},
@@ -133,11 +151,11 @@ func TestScanPortList(t *testing.T) {
 		}
 		switch device {
 		case "detected":
-			return probeResult{device: device, speed: 38400}
+			return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 38400}}
 		case "silent":
-			return probeResult{device: device, err: gpsio.ErrSilent}
+			return probeResult{device: device}
 		default:
-			return probeResult{device: device, err: gpsio.ErrSpeedNotDetected}
+			return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectUnrecognized}}
 		}
 	}
 	var stdout, stderr bytes.Buffer
@@ -161,7 +179,7 @@ func TestScanPortListBestFailure(t *testing.T) {
 	ports := []serialenum.Port{{Device: "silent"}, {Device: "error"}}
 	probe := func(_ context.Context, _ *slog.Logger, device, _ string) probeResult {
 		if device == "silent" {
-			return probeResult{device: device, err: gpsio.ErrSilent}
+			return probeResult{device: device}
 		}
 		return probeResult{device: device, err: errors.New("failed")}
 	}
@@ -178,7 +196,7 @@ func TestScanPortListInterruptedOverridesDetection(t *testing.T) {
 	ports := []serialenum.Port{{Device: "detected"}, {Device: "cancelled"}}
 	probe := func(_ context.Context, _ *slog.Logger, device, _ string) probeResult {
 		if device == "detected" {
-			return probeResult{device: device, speed: 115200}
+			return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 115200}}
 		}
 		return probeResult{device: device, err: context.Canceled}
 	}
@@ -196,7 +214,7 @@ func (errorWriter) Write([]byte) (int, error) { return 0, errors.New("write fail
 func TestScanPortListOutputError(t *testing.T) {
 	ports := []serialenum.Port{{Device: "detected"}}
 	probe := func(_ context.Context, _ *slog.Logger, device, _ string) probeResult {
-		return probeResult{device: device, speed: 38400}
+		return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 38400}}
 	}
 	err := scanPortList(context.Background(), slog.Default(), ports, probe, errorWriter{}, io.Discard)
 	var cmdErr commandError

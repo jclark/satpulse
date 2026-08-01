@@ -50,7 +50,7 @@ func TestDetectSpeedPTY(t *testing.T) {
 		_, _ = master.Write([]byte("$GPGGA,,,,,,0,00,99.99,,,,,,*48\r\n"))
 	})
 
-	detected, err := DetectSpeed(
+	got, err := DetectSpeed(
 		context.Background(),
 		lg,
 		packetCh,
@@ -60,8 +60,8 @@ func TestDetectSpeedPTY(t *testing.T) {
 		time.Second,
 		nil,
 	)
-	if err != nil || detected != 38400 {
-		t.Errorf("DetectSpeed() = %d, %v, want 38400, nil", detected, err)
+	if err != nil || got != (DetectResult{Outcome: DetectFound, Speed: 38400}) {
+		t.Errorf("DetectSpeed() = %+v, %v, want found at 38400", got, err)
 	}
 	if got := conn.Speed(); got != 38400 {
 		t.Errorf("connection speed = %d, want 38400", got)
@@ -77,11 +77,11 @@ func TestDetectSpeedPTY(t *testing.T) {
 	}
 }
 
-// A failed detection leaves the speed unspecified and reports only why it
-// failed: cleanup is the caller's Close, which restores the port.
-func TestDetectSpeedPTYFailure(t *testing.T) {
+// A device that says nothing is an outcome, not an error, and leaves the
+// speed unspecified: cleanup is the caller's Close, which restores the port.
+func TestDetectSpeedPTYSilent(t *testing.T) {
 	_, conn := openTestPTY(t, 9600)
-	_, err := DetectSpeed(
+	got, err := DetectSpeed(
 		context.Background(),
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		make(chan scan.Packet),
@@ -91,8 +91,8 @@ func TestDetectSpeedPTYFailure(t *testing.T) {
 		time.Millisecond,
 		nil,
 	)
-	if err != ErrSilent {
-		t.Errorf("DetectSpeed() error = %v, want exactly ErrSilent", err)
+	if err != nil || got.Outcome != DetectSilent {
+		t.Errorf("DetectSpeed() = %+v, %v, want silent", got, err)
 	}
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)

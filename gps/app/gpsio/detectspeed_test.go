@@ -218,8 +218,8 @@ func TestWalkSpeedCandidates(t *testing.T) {
 			order = append(order, speed)
 			return results[speed], nil
 		}, nil)
-		if err != nil || got != 57600 {
-			t.Fatalf("walkSpeedCandidates() = %d, %v", got, err)
+		if err != nil || got != (DetectResult{Outcome: DetectFound, Speed: 57600}) {
+			t.Fatalf("walkSpeedCandidates() = %+v, %v", got, err)
 		}
 		wantOrder := []int{38400, 115200, 9600, 57600}
 		if fmt.Sprint(order) != fmt.Sprint(wantOrder) {
@@ -235,8 +235,8 @@ func TestWalkSpeedCandidates(t *testing.T) {
 			}
 			return TryHigher, nil
 		}, nil)
-		if err != nil || got != 50 || fmt.Sprint(order) != "[100 50]" {
-			t.Fatalf("walkSpeedCandidates() = %d, %v; order = %v", got, err, order)
+		if err != nil || got.Speed != 50 || fmt.Sprint(order) != "[100 50]" {
+			t.Fatalf("walkSpeedCandidates() = %+v, %v; order = %v", got, err, order)
 		}
 	})
 	t.Run("speed is deferred only once", func(t *testing.T) {
@@ -248,30 +248,30 @@ func TestWalkSpeedCandidates(t *testing.T) {
 			}
 			return TryHigher, nil
 		}, nil)
-		if err != nil || got != 50 || fmt.Sprint(order) != "[100 200 50]" {
-			t.Fatalf("walkSpeedCandidates() = %d, %v; order = %v", got, err, order)
+		if err != nil || got.Speed != 50 || fmt.Sprint(order) != "[100 200 50]" {
+			t.Fatalf("walkSpeedCandidates() = %+v, %v; order = %v", got, err, order)
 		}
 	})
 	t.Run("silent stop", func(t *testing.T) {
 		var order []int
-		_, err := walkSpeedCandidates([]int{1, 2, 3}, func(speed int) (TrySpeedResult, error) {
+		got, err := walkSpeedCandidates([]int{1, 2, 3}, func(speed int) (TrySpeedResult, error) {
 			order = append(order, speed)
 			return TrySilent, nil
 		}, func(tried []int) bool { return len(tried) == 2 })
-		if !errors.Is(err, ErrSilent) || fmt.Sprint(order) != "[1 2]" {
-			t.Fatalf("walkSpeedCandidates() order/error = %v/%v", order, err)
+		if err != nil || got.Outcome != DetectSilent || fmt.Sprint(order) != "[1 2]" {
+			t.Fatalf("walkSpeedCandidates() = %+v, %v; order = %v", got, err, order)
 		}
 	})
 	t.Run("data exhausted", func(t *testing.T) {
-		_, err := walkSpeedCandidates([]int{1}, func(int) (TrySpeedResult, error) { return TryOther, nil }, nil)
-		if !errors.Is(err, ErrSpeedNotDetected) {
-			t.Fatalf("walkSpeedCandidates() error = %v", err)
+		got, err := walkSpeedCandidates([]int{1}, func(int) (TrySpeedResult, error) { return TryOther, nil }, nil)
+		if err != nil || got.Outcome != DetectUnrecognized {
+			t.Fatalf("walkSpeedCandidates() = %+v, %v", got, err)
 		}
 	})
 	t.Run("empty", func(t *testing.T) {
-		_, err := walkSpeedCandidates(nil, func(int) (TrySpeedResult, error) { return TryDetected, nil }, nil)
-		if !errors.Is(err, ErrSpeedNotDetected) {
-			t.Fatalf("walkSpeedCandidates() error = %v", err)
+		got, err := walkSpeedCandidates(nil, func(int) (TrySpeedResult, error) { return TryDetected, nil }, nil)
+		if err != nil || got.Outcome != DetectUnrecognized {
+			t.Fatalf("walkSpeedCandidates() = %+v, %v", got, err)
 		}
 	})
 }

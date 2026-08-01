@@ -42,11 +42,25 @@ func (r TrySpeedResult) String() string {
 	}
 }
 
+// DetectOutcome classifies a completed detection. It says what the device
+// did, not what went wrong: a failure to run the detection at all is an
+// error instead.
+type DetectOutcome int
+
+const (
+	DetectSilent       DetectOutcome = iota // nothing received at any tried speed
+	DetectFound                             // a suitable valid packet arrived
+	DetectUnrecognized                      // data received, but no speed validated
+)
+
+// DetectResult is what a completed detection established. It is meaningful
+// only when DetectSpeed returned no error.
+type DetectResult struct {
+	Outcome DetectOutcome
+	Speed   int // the detected speed; set only when Outcome is DetectFound
+}
+
 var (
-	// ErrSilent means no bytes or serial errors arrived at any tried speed.
-	ErrSilent = errors.New("no output from serial device")
-	// ErrSpeedNotDetected means input arrived but no suitable packet validated.
-	ErrSpeedNotDetected = errors.New("serial speed not detected")
 	// ErrNotSerial means the connection is not backed by a terminal.
 	ErrNotSerial = errors.New("not a serial device")
 	// ErrCurrentSpeedUnknown means the terminal's current speed cannot be
@@ -196,14 +210,14 @@ func trySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpspro
 	}
 }
 
-// DetectSpeed finds a speed at which the device produces suitable valid
-// packets. A zero candidate means the speed in effect on entry. On success it
-// leaves the connection at the detected speed. On failure the speed is
-// unspecified and the caller must close the connection, which restores the
-// terminal state captured when the port was opened.
-func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, conn *SerialConn, procs map[gpsprot.Tag]gpsprot.PacketProcessor, speeds []int, d time.Duration, stopSilent func(tried []int) bool) (int, error) {
+// DetectSpeed looks for a speed at which the device produces suitable valid
+// packets. A zero candidate means the speed in effect on entry. On
+// DetectFound it leaves the connection at the detected speed. Otherwise the
+// speed is unspecified and the caller must close the connection, which
+// restores the terminal state captured when the port was opened.
+func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, conn *SerialConn, procs map[gpsprot.Tag]gpsprot.PacketProcessor, speeds []int, d time.Duration, stopSilent func(tried []int) bool) (DetectResult, error) {
 	if conn == nil || conn.term() == nil {
-		return 0, ErrNotSerial
+		return DetectResult{}, ErrNotSerial
 	}
 	if lg == nil {
 		lg = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -211,7 +225,7 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 	currentSpeed := conn.Speed()
 	candidates, err := resolveSpeedCandidates(speeds, currentSpeed, conn.kind == term.DevUSB)
 	if err != nil {
-		return 0, err
+		return DetectResult{}, err
 	}
 	attempt := func(speed int) (TrySpeedResult, error) {
 		if speed != currentSpeed {
@@ -261,7 +275,7 @@ func resolveSpeedCandidates(speeds []int, originalSpeed int, devUSB bool) ([]int
 
 type speedAttempt func(speed int) (TrySpeedResult, error)
 
-func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func([]int) bool) (int, error) {
+func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func([]int) bool) (DetectResult, error) {
 	remaining := uniqueSpeedCandidates(candidates)
 	tried := make([]int, 0, len(remaining))
 	deferred := make(map[int]bool, len(remaining))
@@ -272,15 +286,15 @@ func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func
 		tried = append(tried, speed)
 		result, err := attempt(speed)
 		if err != nil {
-			return 0, err
+			return DetectResult{}, err
 		}
 		if result == TryDetected {
-			return speed, nil
+			return DetectResult{Outcome: DetectFound, Speed: speed}, nil
 		}
 		if result != TrySilent {
 			allSilent = false
 		} else if allSilent && stopSilent != nil && stopSilent(append([]int(nil), tried...)) {
-			return 0, ErrSilent
+			return DetectResult{Outcome: DetectSilent}, nil
 		}
 		if shouldSwapNextSpeeds(remaining, deferred, speed, result) {
 			deferred[remaining[0]] = true
@@ -288,9 +302,9 @@ func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func
 		}
 	}
 	if allSilent && len(tried) > 0 {
-		return 0, ErrSilent
+		return DetectResult{Outcome: DetectSilent}, nil
 	}
-	return 0, ErrSpeedNotDetected
+	return DetectResult{Outcome: DetectUnrecognized}, nil
 }
 
 func uniqueSpeedCandidates(speeds []int) []int {

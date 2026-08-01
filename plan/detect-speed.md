@@ -114,26 +114,50 @@ speed.
 ### Upper layer: DetectSpeed
 
 ```go
-// DetectSpeed finds the speed at which the device produces valid
+// DetectOutcome classifies a completed detection: what the device
+// did, rather than what went wrong.
+type DetectOutcome int
+
+const (
+    DetectSilent       DetectOutcome = iota // nothing received
+    DetectFound                             // a suitable valid packet arrived
+    DetectUnrecognized                      // data received, no speed validated
+)
+
+// DetectResult is what a completed detection established. It is
+// meaningful only when DetectSpeed returned no error.
+type DetectResult struct {
+    Outcome DetectOutcome
+    Speed   int // set only when Outcome is DetectFound
+}
+
+// DetectSpeed looks for a speed at which the device produces valid
 // packets, trying the given speeds; 0 as an entry means the port's
-// current speed. It returns the actual detected speed (never 0)
-// and leaves the port set to it. On failure the port's speed is
-// unspecified and the caller must close the connection.
+// current speed. On DetectFound it leaves the port at the detected
+// speed. Otherwise the port's speed is unspecified and the caller
+// must close the connection.
 func DetectSpeed(ctx context.Context, lg *slog.Logger,
     packetCh <-chan scan.Packet, conn *SerialConn,
     procs map[gpsprot.Tag]gpsprot.PacketProcessor,
     speeds []int, d time.Duration,
-    stopSilent func(tried []int) bool) (int, error)
+    stopSilent func(tried []int) bool) (DetectResult, error)
 
 // DefaultSpeedList returns the default speed list, common speeds
 // first; 0 means the port's current speed.
 func DefaultSpeedList() []int
 
-var ErrSilent = ...           // nothing received at any tried speed
-var ErrSpeedNotDetected = ... // data received but no speed validated
 var ErrNotSerial = ...        // connection has no terminal behind it
 var ErrCurrentSpeedUnknown = ... // entry speed is not a standard speed
 ```
+
+Silence and unrecognized output are outcomes of a detection that ran
+to completion, not faults, so they are values rather than errors, as
+`TrySpeedResult` already is one layer down. The error return is
+reserved for a detection that could not run or could not finish: a
+connection that is not a terminal, an entry speed that cannot be
+named, a cancelled context, a port that died mid-walk. Callers check
+the error first, since the zero `DetectResult` reads as
+`DetectSilent`.
 
 DetectSpeed first checks that the connection is backed by a
 terminal, with the same unexported `term()` accessor that
@@ -155,24 +179,25 @@ first: 38400, 9600, 115200, 0, 460800, 230400, 57600, 19200,
 4800, 921600. Callers prune, reorder, or extend it as they see
 fit. On entry, `DetectSpeed` captures `conn.Speed()`, copies the
 candidate list, and replaces every 0 with that captured speed
-before trying or comparing any candidates. This lets the result
-always be a real speed and makes direction hints compare against
-the port's original speed rather than the literal zero or a speed
-selected by an earlier attempt.
+before trying or comparing any candidates. This lets `Speed` always
+be a real speed and makes direction hints compare against the port's
+original speed rather than the literal zero or a speed selected by
+an earlier attempt.
 
 The captured entry speed has to be one the platform's tables can
 name, since a 0 candidate has nothing else to resolve to;
 otherwise `DetectSpeed` returns `ErrCurrentSpeedUnknown` before it
 changes anything.
 
-On success the port keeps the detected speed. On failure, including
-cancellation, its speed is unspecified: the caller must close the
-connection, and `SerialConn.Close` restores the whole terminal state
-captured when the port was opened, including a speed that
-`term.Speed` would refuse to set. DetectSpeed does not restore the
-speed itself. Doing so by number would fail on exactly the ports
-whose entry speed cannot be set, and every caller closes after a
-failed detection anyway.
+On `DetectFound` the port keeps the detected speed. On any other
+outcome, and on an error including cancellation, its speed is
+unspecified: the caller must close the connection, and
+`SerialConn.Close` restores the whole terminal state captured when
+the port was opened, including a speed that `term.Speed` would
+refuse to set. DetectSpeed does not restore the speed itself. Doing
+so by number would fail on exactly the ports whose entry speed
+cannot be set, and every caller closes after an unsuccessful
+detection anyway.
 
 Duplicate list entries are removed while preserving the first
 occurrence. The remaining list is tried in caller-specified order,
@@ -192,10 +217,9 @@ at one speed is not proof of a silent device. But while nothing
 at all has been received (no bytes, no serial errors), the
 `stopSilent` function is consulted after each window with the
 speeds tried so far, and true concludes the search early; nil
-means never stop early. `ErrSilent` is returned when every tried
-window was silent; when the list is exhausted without
-`TryDetected` but something was received, return
-`ErrSpeedNotDetected`.
+means never stop early. The outcome is `DetectSilent` when every
+tried window was silent, and `DetectUnrecognized` when the list is
+exhausted without a `TryDetected` but something was received.
 
 When the connection is `DevUSB`, DetectSpeed prepends 115200 to
 the list; duplicate removal makes the later entry a no-op. A
@@ -305,7 +329,7 @@ codes:
   until #117 is implemented, detection run as root is vulnerable
   to conflict with programs that rely on TIOCEXCL.
 - 1: no known protocol validated at any tried speed
-  (`ErrSpeedNotDetected`). The wording must not overclaim: this
+  (`DetectUnrecognized`). The wording must not overclaim: this
   case covers both a non-GNSS device and a GNSS receiver at a
   speed outside the candidate list.
 - 1: not a serial device (`ErrNotSerial`, e.g. a FIFO): speed
@@ -313,7 +337,7 @@ codes:
 - 1: the port's current speed is not a standard speed
   (`ErrCurrentSpeedUnknown`), so nothing was tried.
 - 1: other system errors (device disappeared, ...).
-- 2: silent (`ErrSilent`): nothing received.
+- 2: silent (`DetectSilent`): nothing received.
 
 ### Scan
 
@@ -388,9 +412,9 @@ The speed dropdown gets an explicit Auto entry, and Auto is the
 default selection. Connecting with Auto runs detection between
 opening the port and configuration; when detection succeeds, the
 dropdown changes to the actual speed. On failure the session goes
-back to disconnected and the connection bar shows the error, with
-distinct messages for `ErrSilent` (no output from the device) and
-`ErrSpeedNotDetected` (output seen but no speed validated); the
+back to disconnected and the connection bar shows the reason, with
+distinct messages for `DetectSilent` (no output from the device) and
+`DetectUnrecognized` (output seen but no speed validated); the
 device stays filled in and Auto stays selected. While detection is
 running the connection bar shows a "Detecting speed..." state.
 
