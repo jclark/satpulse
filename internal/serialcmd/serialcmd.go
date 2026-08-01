@@ -61,7 +61,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 	defer cancel()
 	if cfg.device != "" {
 		result := probeDevice(ctx, lg, cfg.device, cfg.packetLog)
-		if ctx.Err() != nil && !result.cleanupFailed && !errors.Is(result.err, gpsio.ErrSpeedRestore) {
+		if ctx.Err() != nil && !result.cleanupFailed {
 			return "", commandError{msg: "interrupted", code: 1}
 		}
 		if result.err != nil {
@@ -141,7 +141,7 @@ func (r probeResult) exitCode() int {
 	if r.err == nil {
 		return 0
 	}
-	if r.cleanupFailed || errors.Is(r.err, gpsio.ErrSpeedRestore) {
+	if r.cleanupFailed {
 		return 1
 	}
 	if errors.Is(r.err, gpsio.ErrSilent) {
@@ -151,7 +151,7 @@ func (r probeResult) exitCode() int {
 }
 
 func (r probeResult) description() string {
-	if r.cleanupFailed || errors.Is(r.err, gpsio.ErrSpeedRestore) {
+	if r.cleanupFailed {
 		return r.err.Error()
 	}
 	return describeProbeError(r.err)
@@ -276,8 +276,6 @@ func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port,
 
 func describeProbeError(err error) string {
 	switch {
-	case errors.Is(err, gpsio.ErrSpeedRestore):
-		return err.Error()
 	case errors.Is(err, context.Canceled):
 		return "interrupted"
 	case errors.Is(err, os.ErrPermission):

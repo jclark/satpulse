@@ -2,7 +2,6 @@ package gpsio
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -78,7 +77,9 @@ func TestDetectSpeedPTY(t *testing.T) {
 	}
 }
 
-func TestDetectSpeedRestoresPTYOnFailure(t *testing.T) {
+// A failed detection leaves the speed unspecified and reports only why it
+// failed: cleanup is the caller's Close, which restores the port.
+func TestDetectSpeedPTYFailure(t *testing.T) {
 	_, conn := openTestPTY(t, 9600)
 	_, err := DetectSpeed(
 		context.Background(),
@@ -90,11 +91,8 @@ func TestDetectSpeedRestoresPTYOnFailure(t *testing.T) {
 		time.Millisecond,
 		nil,
 	)
-	if !errors.Is(err, ErrSilent) {
-		t.Errorf("DetectSpeed() error = %v, want ErrSilent", err)
-	}
-	if got := conn.Speed(); got != 9600 {
-		t.Errorf("connection speed = %d, want restored 9600", got)
+	if err != ErrSilent {
+		t.Errorf("DetectSpeed() error = %v, want exactly ErrSilent", err)
 	}
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)

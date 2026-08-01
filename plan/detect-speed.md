@@ -117,8 +117,8 @@ speed.
 // DetectSpeed finds the speed at which the device produces valid
 // packets, trying the given speeds; 0 as an entry means the port's
 // current speed. It returns the actual detected speed (never 0)
-// and leaves the port set to it; on failure it restores the speed
-// the port had on entry.
+// and leaves the port set to it. On failure the port's speed is
+// unspecified and the caller must close the connection.
 func DetectSpeed(ctx context.Context, lg *slog.Logger,
     packetCh <-chan scan.Packet, conn *SerialConn,
     procs map[gpsprot.Tag]gpsprot.PacketProcessor,
@@ -133,7 +133,6 @@ var ErrSilent = ...           // nothing received at any tried speed
 var ErrSpeedNotDetected = ... // data received but no speed validated
 var ErrNotSerial = ...        // connection has no terminal behind it
 var ErrCurrentSpeedUnknown = ... // entry speed is not a standard speed
-var ErrSpeedRestore = ...     // failed detection could not restore it
 ```
 
 DetectSpeed first checks that the connection is backed by a
@@ -161,15 +160,19 @@ always be a real speed and makes direction hints compare against
 the port's original speed rather than the literal zero or a speed
 selected by an earlier attempt.
 
-The captured entry speed has to be a standard speed: a port left
-at a custom divisor rate reports 0, which could not be restored
-afterwards, so `DetectSpeed` returns `ErrCurrentSpeedUnknown`
-before it changes anything. On any failure, including
-cancellation, a deferred restore puts the port back to the entry
-speed and flushes. If that restore itself fails, its error is
-joined onto the returned error and wraps `ErrSpeedRestore`, so
-the caller can tell that the port has been left at an arbitrary
-candidate speed. On success the port keeps the detected speed.
+The captured entry speed has to be one the platform's tables can
+name, since a 0 candidate has nothing else to resolve to;
+otherwise `DetectSpeed` returns `ErrCurrentSpeedUnknown` before it
+changes anything.
+
+On success the port keeps the detected speed. On failure, including
+cancellation, its speed is unspecified: the caller must close the
+connection, and `SerialConn.Close` restores the whole terminal state
+captured when the port was opened, including a speed that
+`term.Speed` would refuse to set. DetectSpeed does not restore the
+speed itself. Doing so by number would fail on exactly the ports
+whose entry speed cannot be set, and every caller closes after a
+failed detection anyway.
 
 Duplicate list entries are removed while preserving the first
 occurrence. The remaining list is tried in caller-specified order,
@@ -309,10 +312,6 @@ codes:
   detection is meaningless there.
 - 1: the port's current speed is not a standard speed
   (`ErrCurrentSpeedUnknown`), so nothing was tried.
-- 1: the original speed could not be restored after a failed
-  detection (`ErrSpeedRestore`), whatever the failure was: this
-  outranks silence, because the port has been left on a candidate
-  speed and the reason has to reach the user.
 - 1: other system errors (device disappeared, ...).
 - 2: silent (`ErrSilent`): nothing received.
 

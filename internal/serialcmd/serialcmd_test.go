@@ -91,7 +91,6 @@ func TestProbeResultExitCode(t *testing.T) {
 		{nil, 0},
 		{gpsio.ErrSilent, 2},
 		{gpsio.ErrSpeedNotDetected, 1},
-		{errors.Join(gpsio.ErrSilent, gpsio.ErrSpeedRestore), 1},
 	} {
 		if got := (probeResult{err: tc.err}).exitCode(); got != tc.want {
 			t.Errorf("exitCode(%v) = %d, want %d", tc.err, got, tc.want)
@@ -111,7 +110,6 @@ func TestDescribeProbeError(t *testing.T) {
 		{gpsio.ErrSpeedNotDetected, "output was received, but no known GNSS protocol was validated at a candidate speed"},
 		{gpsio.ErrNotSerial, "speed detection requires a serial device"},
 		{gpsio.ErrCurrentSpeedUnknown, "the device's current serial speed is not supported"},
-		{errors.Join(context.Canceled, gpsio.ErrSpeedRestore), "context canceled\ncannot restore original serial speed"},
 		{errors.New("gone"), "gone"},
 	} {
 		if got := describeProbeError(tc.err); got != tc.want {
@@ -209,13 +207,13 @@ func TestScanPortListOutputError(t *testing.T) {
 
 func TestProbeResultCleanupFailure(t *testing.T) {
 	r := probeResult{
-		err:           errors.Join(gpsio.ErrSilent, errors.New("restore failed")),
+		err:           errors.Join(gpsio.ErrSilent, errors.New("close failed")),
 		cleanupFailed: true,
 	}
 	if got := r.exitCode(); got != 1 {
 		t.Errorf("exitCode() = %d, want 1", got)
 	}
-	if got := r.description(); got != "no output from serial device\nrestore failed" {
+	if got := r.description(); got != "no output from serial device\nclose failed" {
 		t.Errorf("description() = %q", got)
 	}
 }

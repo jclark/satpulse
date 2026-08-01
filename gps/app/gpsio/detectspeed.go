@@ -50,11 +50,9 @@ var (
 	// ErrNotSerial means the connection is not backed by a terminal.
 	ErrNotSerial = errors.New("not a serial device")
 	// ErrCurrentSpeedUnknown means the terminal's current speed cannot be
-	// represented as a supported numeric speed, so it cannot be restored safely.
+	// represented as a supported numeric speed, so a zero candidate has
+	// nothing to resolve to.
 	ErrCurrentSpeedUnknown = errors.New("current serial speed is unknown")
-	// ErrSpeedRestore means a failed detection also failed to restore the
-	// terminal's original speed.
-	ErrSpeedRestore = errors.New("cannot restore original serial speed")
 )
 
 const (
@@ -199,35 +197,22 @@ func trySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpspro
 }
 
 // DetectSpeed finds a speed at which the device produces suitable valid
-// packets. A zero candidate means the speed in effect on entry. On failure it
-// restores that original speed; on success it leaves the detected speed set.
-func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, conn *SerialConn, procs map[gpsprot.Tag]gpsprot.PacketProcessor, speeds []int, d time.Duration, stopSilent func(tried []int) bool) (detected int, err error) {
+// packets. A zero candidate means the speed in effect on entry. On success it
+// leaves the connection at the detected speed. On failure the speed is
+// unspecified and the caller must close the connection, which restores the
+// terminal state captured when the port was opened.
+func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, conn *SerialConn, procs map[gpsprot.Tag]gpsprot.PacketProcessor, speeds []int, d time.Duration, stopSilent func(tried []int) bool) (int, error) {
 	if conn == nil || conn.term() == nil {
 		return 0, ErrNotSerial
 	}
 	if lg == nil {
 		lg = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	originalSpeed := conn.Speed()
-	candidates, err := resolveSpeedCandidates(speeds, originalSpeed, conn.kind == term.DevUSB)
+	currentSpeed := conn.Speed()
+	candidates, err := resolveSpeedCandidates(speeds, currentSpeed, conn.kind == term.DevUSB)
 	if err != nil {
 		return 0, err
 	}
-	currentSpeed := originalSpeed
-	succeeded := false
-	defer func() {
-		if succeeded || currentSpeed == originalSpeed {
-			return
-		}
-		_, restoreErr := conn.WriteThenChangeSpeed(nil, originalSpeed)
-		if restoreErr == nil {
-			restoreErr = conn.term().Flush()
-		}
-		if restoreErr != nil {
-			err = errors.Join(err, fmt.Errorf("%w %d: %w", ErrSpeedRestore, originalSpeed, restoreErr))
-		}
-	}()
-
 	attempt := func(speed int) (TrySpeedResult, error) {
 		if speed != currentSpeed {
 			if _, err := conn.WriteThenChangeSpeed(nil, speed); err != nil {
@@ -250,11 +235,7 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 		return result, err
 	}
 
-	detected, err = walkSpeedCandidates(candidates, attempt, stopSilent)
-	if err == nil {
-		succeeded = true
-	}
-	return detected, err
+	return walkSpeedCandidates(candidates, attempt, stopSilent)
 }
 
 func resolveSpeedCandidates(speeds []int, originalSpeed int, devUSB bool) ([]int, error) {
