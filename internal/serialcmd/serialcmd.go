@@ -261,23 +261,23 @@ func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port,
 	var outputErr error
 	for result := range resultCh {
 		code := result.exitCode()
-		switch code {
-		case 0:
+		if code == 0 {
+			bestCode = 0
 			if _, err := fmt.Fprintf(stdout, "%s %d\n", result.device, result.detection.Speed); err != nil && outputErr == nil {
 				outputErr = err
 			}
-			bestCode = 0
-		case 2:
-			if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, result.description()); err != nil && outputErr == nil {
-				outputErr = err
-			}
-			if bestCode != 0 {
-				bestCode = 2
-			}
-		default:
-			if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, result.description()); err != nil && outputErr == nil {
-				outputErr = err
-			}
+			continue
+		}
+		if code == 2 && bestCode != 0 {
+			bestCode = 2
+		}
+		// An interrupt fails every probe still running, so describing each one
+		// would bury the interrupt in noise.
+		if ctx.Err() != nil {
+			continue
+		}
+		if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, result.description()); err != nil && outputErr == nil {
+			outputErr = err
 		}
 	}
 	if outputErr != nil {

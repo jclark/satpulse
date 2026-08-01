@@ -229,10 +229,14 @@ func TestScanPortListInterruptedOverridesDetection(t *testing.T) {
 		}
 		return probeResult{device: device, failure: "interrupted"}
 	}
-	err := scanPortList(ctx, slog.Default(), ports, probe, io.Discard, io.Discard)
+	var stderr bytes.Buffer
+	err := scanPortList(ctx, slog.Default(), ports, probe, io.Discard, &stderr)
 	var cmdErr commandError
 	if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != 1 || !cmdErr.Quiet() {
 		t.Fatalf("scanPortList() error = %#v, want quiet exit code 1", err)
+	}
+	if got := stderr.String(); got != "" {
+		t.Errorf("stderr = %q, want nothing reported for an interrupted scan", got)
 	}
 }
 
