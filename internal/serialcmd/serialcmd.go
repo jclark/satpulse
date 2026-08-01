@@ -61,11 +61,11 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 	defer cancel()
 	if cfg.device != "" {
 		result := probeDevice(ctx, lg, cfg.device, cfg.packetLog)
-		if ctx.Err() != nil && !result.cleanupFailed {
+		if ctx.Err() != nil {
 			return "", commandError{msg: "interrupted", code: 1}
 		}
 		if result.err != nil {
-			return "", commandError{msg: result.description(), code: result.exitCode()}
+			return "", commandError{msg: describeProbeError(result.err), code: result.exitCode()}
 		}
 		_, err = fmt.Fprintln(os.Stdout, result.speed)
 		return "", err
@@ -131,30 +131,19 @@ func printPorts(w io.Writer, ports []serialenum.Port, jsonl bool) error {
 }
 
 type probeResult struct {
-	device        string
-	speed         int
-	err           error
-	cleanupFailed bool
+	device string
+	speed  int
+	err    error
 }
 
 func (r probeResult) exitCode() int {
 	if r.err == nil {
 		return 0
 	}
-	if r.cleanupFailed {
-		return 1
-	}
 	if errors.Is(r.err, gpsio.ErrSilent) {
 		return 2
 	}
 	return 1
-}
-
-func (r probeResult) description() string {
-	if r.cleanupFailed {
-		return r.err.Error()
-	}
-	return describeProbeError(r.err)
 }
 
 func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath string) (result probeResult) {
@@ -170,19 +159,16 @@ func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath str
 	pktLog, logFile, err := gpsio.LogPackets(lg, &wg, packetLogPath, false, formats)
 	if err != nil {
 		result.err = fmt.Errorf("opening packet log: %w", err)
-		if closeErr := conn.Close(); closeErr != nil {
-			result.err = errors.Join(result.err, closeErr)
-			result.cleanupFailed = true
-		}
+		closeDevice(lg, conn, &result)
 		return
 	}
 	if pktLog != nil {
 		conn.SetPacketLog(pktLog)
 	}
 
-	// Detection owns signal cancellation. The scan worker is stopped only
-	// after DetectSpeed returns, so cancellation cannot prevent its deferred
-	// restoration of the original speed.
+	// Detection owns signal cancellation: DetectSpeed honors ctx itself. The
+	// scan worker gets a context of its own so that Ctrl-C cannot close the
+	// packet channel under the window DetectSpeed is still consuming.
 	scanCtx, cancelScan := context.WithCancel(context.Background())
 	packetCh := make(chan scan.Packet, 1)
 	wg.Go(func() { gpsio.Scan(scanCtx, lg, conn, packetCh, pktLog, formats) })
@@ -206,11 +192,24 @@ func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath str
 	if logFile != nil {
 		logFile.Close(lg)
 	}
-	if closeErr := conn.Close(); closeErr != nil {
-		result.err = errors.Join(result.err, closeErr)
-		result.cleanupFailed = true
-	}
+	closeDevice(lg, conn, &result)
 	return
+}
+
+// closeDevice closes conn, keeping the close error only when the probe
+// itself produced none. A probe that already failed has a better error to
+// report, and each port gets exactly one output line, so the two cannot be
+// combined.
+func closeDevice(lg *slog.Logger, conn *gpsio.SerialConn, result *probeResult) {
+	closeErr := conn.Close()
+	if closeErr == nil {
+		return
+	}
+	if result.err == nil {
+		result.err = closeErr
+		return
+	}
+	lg.Debug("closing the serial device failed after an unsuccessful probe", "device", result.device, "error", closeErr)
 }
 
 func scanPorts(ctx context.Context, lg *slog.Logger) error {
@@ -250,14 +249,14 @@ func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port,
 			}
 			bestCode = 0
 		case 2:
-			if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, result.description()); err != nil && outputErr == nil {
+			if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, describeProbeError(result.err)); err != nil && outputErr == nil {
 				outputErr = err
 			}
 			if bestCode != 0 {
 				bestCode = 2
 			}
 		default:
-			if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, result.description()); err != nil && outputErr == nil {
+			if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, describeProbeError(result.err)); err != nil && outputErr == nil {
 				outputErr = err
 			}
 		}

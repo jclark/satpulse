@@ -204,16 +204,3 @@ func TestScanPortListOutputError(t *testing.T) {
 		t.Fatalf("scanPortList() error = %#v, want non-quiet exit code 1", err)
 	}
 }
-
-func TestProbeResultCleanupFailure(t *testing.T) {
-	r := probeResult{
-		err:           errors.Join(gpsio.ErrSilent, errors.New("close failed")),
-		cleanupFailed: true,
-	}
-	if got := r.exitCode(); got != 1 {
-		t.Errorf("exitCode() = %d, want 1", got)
-	}
-	if got := r.description(); got != "no output from serial device\nclose failed" {
-		t.Errorf("description() = %q", got)
-	}
-}
