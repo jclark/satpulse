@@ -42,12 +42,25 @@ func TestDetectSpeedPTY(t *testing.T) {
 	formats := gpsreg.CreatePacketFormats(nil)
 	packetCh := make(chan scan.Packet, 1)
 	scanCtx, cancelScan := context.WithCancel(context.Background())
+	writeCtx, cancelWrite := context.WithCancel(context.Background())
+	writeErrCh := make(chan error, 1)
 	var wg sync.WaitGroup
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	wg.Go(func() { Scan(scanCtx, lg, conn, packetCh, nil, formats) })
 	wg.Go(func() {
-		time.Sleep(stalePacketMargin + 20*time.Millisecond)
-		_, _ = master.Write([]byte("$GPGGA,,,,,,0,00,99.99,,,,,,*48\r\n"))
+		ticker := time.NewTicker(stalePacketMargin / 2)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-writeCtx.Done():
+				return
+			case <-ticker.C:
+				if _, err := master.Write([]byte("$GPGGA,,,,,,0,00,99.99,,,,,,*48\r\n")); err != nil {
+					writeErrCh <- err
+					return
+				}
+			}
+		}
 	})
 
 	got, err := DetectSpeed(
@@ -60,6 +73,7 @@ func TestDetectSpeedPTY(t *testing.T) {
 		time.Second,
 		nil,
 	)
+	cancelWrite()
 	if err != nil || got != (DetectResult{Outcome: DetectFound, Speed: 38400}) {
 		t.Errorf("DetectSpeed() = %+v, %v, want found at 38400", got, err)
 	}
@@ -72,6 +86,11 @@ func TestDetectSpeedPTY(t *testing.T) {
 	for range packetCh {
 	}
 	wg.Wait()
+	select {
+	case err := <-writeErrCh:
+		t.Errorf("writing test sentence: %v", err)
+	default:
+	}
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
