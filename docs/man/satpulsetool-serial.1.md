@@ -10,28 +10,31 @@ satpulsetool-serial - list serial ports and detect their speeds
 
 # DESCRIPTION
 
-The **satpulsetool** **serial** command lists serial ports and detects the serial speed of connected Global Navigation Satellite System (GNSS) receivers.
-It has enumeration, single-device detection, and scan modes.
+The **satpulsetool** **serial** command lists the serial ports of the host,
+and detects the speed of a GPS receiver connected to one of them.
 
-With no *device* and without **\-\-scan**, the command lists serial ports without opening them.
-Human-readable output contains one display label per port.
-The label starts with the canonical device name and may include aliases and USB product information.
+With no *device* and without **\-\-scan**, the command lists the serial ports it finds, one per line.
+Each line is a display label beginning with the device path,
+which may be followed by aliases and USB product information.
+The ports are not opened, so this mode needs no permission to access them.
 
-With a *device*, the command opens that path at its current speed and detects the speed from received data.
-It validates packets from known GNSS protocols and does not accept correction-only output as a detection.
-On success it writes the detected speed in bits per second to standard output as a single integer.
-On failure or interruption it restores the speed that was in effect when the device was opened.
-Detection fails before changing the port when its current speed cannot be represented as a supported numeric speed, since that speed could not be restored safely.
+With a *device*, the command opens that path at the speed the port is already set to,
+and determines the receiver's speed from the data that arrives.
+Nothing is written to the receiver.
+The detected speed in bits per second is written to standard output as a single integer,
+so that it can be substituted into another command.
+Detection succeeds only for a receiver sending packets of a GPS protocol that SatPulse recognizes;
+a port carrying only RTCM corrections is not detected.
+Ctrl-C interrupts detection.
+The port settings in effect when the device was opened are restored before the command exits,
+so the port is not left at the detected speed.
+Opening a serial device usually requires membership of the `dialout` group.
 
-The default candidate order is 38400, 9600, 115200, the current speed, 460800, 230400, 57600, 19200, 4800, and 921600 bits per second.
-Native USB devices try 115200 first.
-Each candidate is observed for up to 1.25 seconds.
-The command stops after five candidates when every candidate has been silent.
-
-With **\-\-scan**, the command detects all enumerated ports in parallel.
-Each detected port produces one standard-output line containing its canonical device name, a space, and its detected speed.
-Each unsuccessful port produces one standard-error line containing its canonical device name and a description.
-Lines are written as each detection completes, so their order is not fixed.
+With **\-\-scan**, every enumerated port is detected, in parallel.
+Each detected port produces a line on standard output with the device path and the speed, separated by a space.
+Every other port produces a line on standard error with the device path and a description.
+A port that another program holds with a lock is reported as locked;
+a port held without a lock is opened and probed like any other.
 
 # OPTIONS
 
@@ -39,54 +42,53 @@ Lines are written as each detection completes, so their order is not fixed.
 : Show usage help for the **serial** command.
 
 **\-j**, **\-\-jsonl**
-: Write one JSON object per enumerated port instead of human-readable display labels.
-Each object contains `device` and `display` strings.
-USB ports also contain a `usb` object with numeric `vid` and `pid` fields.
-Applies only to enumeration mode.
+: Write one JSON object per port instead of a display label.
+The object has `device` and `display` strings, and for a USB port a `usb` object with numeric `vid` and `pid` fields.
+Cannot be combined with a *device* or **\-\-scan**.
 
 **\-s**, **\-\-scan**
-: Detect the speed of every enumerated serial port in parallel.
-Cannot be combined with a *device* or **\-\-jsonl**.
+: Detect the speed of every enumerated serial port.
+Each line is written as that port's detection finishes, so the order varies between runs.
+The exit status reports the best outcome over all the ports.
+Cannot be combined with a *device*.
 
 **\-\-packet\-log** *path*
-: Write received packets and serial speed changes to a JSONL packet log.
-Requires a *device* and cannot be used with **\-\-scan**.
+: Log to *path* a description of the packets received while detecting, including those received at the wrong speed.
+The log is in `.jsonl` (JSON lines) format.
+Requires a *device*.
 
 # EXIT STATUS
 
 **0**
-: At least one port was listed or detected.
+: Success
 
 **1**
-: An error occurred and no port was listed or detected.
-This includes usage errors, permission errors, locked devices, non-serial devices, unsupported current speeds, interruptions, and output that did not validate at any candidate speed.
+: Error
 
 **2**
-: No ports were found, or at least one probed port was silent and no port was detected.
-
-For **\-\-scan**, the status represents the best result: detected, then silent, then error.
+: No data found: no serial ports found, or no output received from the device
 
 # EXAMPLES
 
-List serial ports:
+List the serial ports:
 
     satpulsetool serial
 
-List serial ports as JSON Lines:
+List the serial ports as JSON Lines:
 
     satpulsetool serial --jsonl
 
-Detect the speed of one receiver:
+Detect the speed of a receiver:
 
-    satpulsetool serial /dev/ttyACM0
+    satpulsetool serial /dev/ttyUSB0
 
-Use a detected speed with the **gps** command:
-
-    satpulsetool gps -d /dev/ttyS0 -s $(satpulsetool serial /dev/ttyS0) --show-receiver
-
-Detect all enumerated ports:
+Detect the speed of every serial port:
 
     satpulsetool serial --scan
+
+Show receiver information at the detected speed:
+
+    satpulsetool gps -d /dev/ttyUSB0 -s $(satpulsetool serial /dev/ttyUSB0) --show-receiver
 
 # SEE ALSO
 
