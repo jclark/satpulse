@@ -195,6 +195,15 @@ return the raw rate from `c_ospeed` and Windows returns
 `DCB.BaudRate`, so a port at 14400 reports 14400 and detection
 proceeds.
 
+Such a speed can only be listened to while the port is still on it,
+since `attempt` skips the speed change for a candidate equal to the
+current speed and any later attempt to set it fails and ends the
+walk. So when the entry speed cannot be set, a 0 candidate is moved
+to the front of the list, ahead even of the DevUSB prepend below.
+The reorder happens only in that case, which the caller could not
+have anticipated; a literal unsettable entry stays where the caller
+put it and ends the walk if it is reached.
+
 On `DetectFound` the port keeps the detected speed. On any other
 outcome, and on an error including cancellation, its speed is
 unspecified: the caller must close the connection, and
@@ -228,7 +237,8 @@ tried window was silent, and `DetectUnrecognized` when the list is
 exhausted without a `TryDetected` but something was received.
 
 When the connection is `DevUSB`, DetectSpeed prepends 115200 to
-the list; duplicate removal makes the later entry a no-op. A
+the list, behind a hoisted unsettable entry speed if there is one;
+duplicate removal makes the later entry a no-op. A
 native-USB receiver delivers valid packets at whatever speed is
 tried, so the first entry is the one that gets detected and
 recorded; starting high makes that a sensible value, and on macOS

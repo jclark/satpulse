@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"math/bits"
+	"slices"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -256,11 +257,14 @@ func resolveSpeedCandidates(speeds []int, originalSpeed int, devUSB bool) ([]int
 	if originalSpeed <= 0 {
 		return nil, ErrCurrentSpeedUnknown
 	}
-	n := len(speeds)
-	if devUSB {
-		n++
+	resolved := make([]int, 0, len(speeds)+2)
+	// An entry speed that term.Speed cannot set is reachable only while the
+	// port is still on it, so a zero candidate standing for such a speed has
+	// to be tried first, ahead even of the DevUSB preference. Anywhere else
+	// in the list the speed change would fail and end the walk.
+	if !term.IsValidSpeed(originalSpeed) && slices.Contains(speeds, 0) {
+		resolved = append(resolved, originalSpeed)
 	}
-	resolved := make([]int, 0, n)
 	if devUSB {
 		resolved = append(resolved, 115200)
 	}

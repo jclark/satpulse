@@ -192,13 +192,29 @@ func TestTrySpeedErrors(t *testing.T) {
 }
 
 func TestResolveSpeedCandidates(t *testing.T) {
-	got, err := resolveSpeedCandidates([]int{38400, 0, 115200}, 57600, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []int{115200, 38400, 57600, 115200}
-	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Errorf("resolveSpeedCandidates() = %v, want %v", got, want)
+	// 14400 is absent from every platform's speed table, so term.Speed
+	// cannot set it; a port reporting it can only be listened to first.
+	for _, tc := range []struct {
+		name          string
+		speeds        []int
+		originalSpeed int
+		devUSB        bool
+		want          []int
+	}{
+		{"devUSB", []int{38400, 0, 115200}, 57600, true, []int{115200, 38400, 57600, 115200}},
+		{"unsettable goes first", []int{38400, 0, 115200}, 14400, false, []int{14400, 38400, 14400, 115200}},
+		{"unsettable outranks devUSB", []int{38400, 0}, 14400, true, []int{14400, 115200, 38400, 14400}},
+		{"unsettable but not asked for", []int{38400, 115200}, 14400, false, []int{38400, 115200}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveSpeedCandidates(tc.speeds, tc.originalSpeed, tc.devUSB)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tc.want) {
+				t.Errorf("resolveSpeedCandidates() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 	if _, err := resolveSpeedCandidates([]int{38400, 0}, 0, false); !errors.Is(err, ErrCurrentSpeedUnknown) {
 		t.Errorf("resolveSpeedCandidates() error = %v, want ErrCurrentSpeedUnknown", err)
