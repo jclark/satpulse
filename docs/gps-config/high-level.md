@@ -1,6 +1,5 @@
 ---
 title: High-level configuration
-sitemap: false
 ---
 
 SatPulse has a high-level, device-independent model for configuring GPS receivers.

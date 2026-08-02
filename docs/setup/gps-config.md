@@ -1,5 +1,6 @@
 ---
 title: GPS configuration
+sitemap: false
 ---
 
 Although satpulsed can do GPS configuration automatically,
