@@ -343,3 +343,192 @@ class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x3B, 0]
+
+# Information message output via CFG-INF (class 0x06, id 0x02).
+# Payload: protocolID(U1) + reserved1(U1[3]) + infMsgMask(X1[6]).
+# protocolID is 0 for UBX-INF and 1 for NMEA TXT. infMsgMask is a bit mask
+# of severity levels: ERROR 0x01, WARNING 0x02, NOTICE 0x04, TEST 0x08,
+# DEBUG 0x10. Each tag names the least important level enabled and includes
+# every more important level. UBX-INF defaults to none on every port; NMEA
+# TXT defaults to notice on I2C, UART1, USB and SPI.
+# There is no current-port form of CFG-INF: the mask covers all six I/O
+# ports at once, so each tag says which ports it acts on. The -uart1 tags
+# enable the level on UART1 and disable it on the other ports; the -all
+# tags enable it on every port, which the receiver clamps to the ports it
+# has. An unsuffixed name is reserved for a future current-port form.
+
+[[ubx]]
+tag = "ubx-inf-error-uart1"
+description = "Enable UBX-INF error messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0, 0x01, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "ubx-inf-warning-uart1"
+description = "Enable UBX-INF error and warning messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0, 0x03, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "ubx-inf-notice-uart1"
+description = "Enable UBX-INF error, warning and notice messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0, 0x07, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "ubx-inf-test-uart1"
+description = "Enable UBX-INF error, warning, notice and test messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0, 0x0F, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "ubx-inf-debug-uart1"
+description = "Enable UBX-INF messages at all severity levels on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0, 0x1F, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "ubx-inf-error-all"
+description = "Enable UBX-INF error messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01]
+
+[[ubx]]
+tag = "ubx-inf-warning-all"
+description = "Enable UBX-INF error and warning messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03]
+
+[[ubx]]
+tag = "ubx-inf-notice-all"
+description = "Enable UBX-INF error, warning and notice messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07]
+
+[[ubx]]
+tag = "ubx-inf-test-all"
+description = "Enable UBX-INF error, warning, notice and test messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F]
+
+[[ubx]]
+tag = "ubx-inf-debug-all"
+description = "Enable UBX-INF messages at all severity levels on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F]
+
+[[ubx]]
+tag = "ubx-inf-off"
+description = "Disable UBX-INF messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "nmea-inf-error-uart1"
+description = "Enable NMEA TXT error messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0, 0x01, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "nmea-inf-warning-uart1"
+description = "Enable NMEA TXT error and warning messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0, 0x03, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "nmea-inf-notice-uart1"
+description = "Enable NMEA TXT error, warning and notice messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0, 0x07, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "nmea-inf-test-uart1"
+description = "Enable NMEA TXT error, warning, notice and test messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0, 0x0F, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "nmea-inf-debug-uart1"
+description = "Enable NMEA TXT messages at all severity levels on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0, 0x1F, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "nmea-inf-error-all"
+description = "Enable NMEA TXT error messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01]
+
+[[ubx]]
+tag = "nmea-inf-warning-all"
+description = "Enable NMEA TXT error and warning messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03]
+
+[[ubx]]
+tag = "nmea-inf-notice-all"
+description = "Enable NMEA TXT error, warning and notice messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07]
+
+[[ubx]]
+tag = "nmea-inf-test-all"
+description = "Enable NMEA TXT error, warning, notice and test messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F]
+
+[[ubx]]
+tag = "nmea-inf-debug-all"
+description = "Enable NMEA TXT messages at all severity levels on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F]
+
+[[ubx]]
+tag = "nmea-inf-off"
+description = "Disable NMEA TXT messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
