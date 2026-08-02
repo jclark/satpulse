@@ -26,7 +26,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The workbench URL line satpulsewb prints at startup, e.g.
 #   http://127.0.0.1:15754/?t=RM3YmI3_Hl-G5EbdrlkmiA
 # The bracketed alternative matches an IPv6 host (net.JoinHostPort form); the
-# token group is absent when the token is disabled (-L without -t).
+# token group is absent when the token is disabled (-L without --token).
 _URL_RE = re.compile(r"http://(?:\[[^\]]+\]|[^\s/]+?):(\d+)/(?:\?t=(\S+))?")
 
 # satpulsewb runs with neither a PTP hardware clock nor NTP, so it never emits

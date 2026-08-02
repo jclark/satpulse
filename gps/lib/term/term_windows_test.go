@@ -11,6 +11,37 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func TestNoParity(t *testing.T) {
+	attr := Attr{
+		dcb: windows.DCB{
+			Parity: windows.EVENPARITY,
+			Flags:  dcbParity | dcbBinary,
+		},
+	}
+	if err := NoParity(&attr); err != nil {
+		t.Fatalf("NoParity: %v", err)
+	}
+	if attr.dcb.Parity != windows.NOPARITY {
+		t.Errorf("NoParity left Parity = %d, want NOPARITY", attr.dcb.Parity)
+	}
+	if attr.dcb.Flags&dcbParity != 0 {
+		t.Error("NoParity left fParity enabled")
+	}
+	if attr.dcb.Flags&dcbBinary == 0 {
+		t.Error("NoParity changed unrelated flags")
+	}
+}
+
+func TestRawModeLeavesParityChecking(t *testing.T) {
+	attr := Attr{dcb: windows.DCB{Flags: dcbParity}}
+	if err := RawMode(&attr); err != nil {
+		t.Fatalf("RawMode: %v", err)
+	}
+	if attr.dcb.Flags&dcbParity == 0 {
+		t.Error("RawMode disabled input parity checking")
+	}
+}
+
 // TestOpenFallbackPipe exercises the Windows named-pipe fallback end to end:
 // a live pipe server on one end, term.OpenFallback (the daemon's path) on the
 // other. It is the proof that os.NewFile gives an overlapped pipe handle a

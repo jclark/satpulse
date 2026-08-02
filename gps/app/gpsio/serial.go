@@ -299,6 +299,7 @@ func openTerm(path string, speed int) (*term.Term, error) {
 	opts := []term.AttrSetter{
 		term.RawMode,
 		term.Local,
+		term.NoParity,
 		term.NoFlowControl,
 		term.ReadTimeout(readTimeout),
 	}

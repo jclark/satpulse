@@ -4,7 +4,7 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 
 # SYNOPSIS
 
-**satpulsewb** [**\-h**\|**\-\-help**] [**\-V**\|**\-\-version**] [**\-v**\|**\-\-verbose**] [**\-L**\|**\-\-listen** *host:port*] [**\-t**\|**\-\-token**]\
+**satpulsewb** [**\-h**\|**\-\-help**] [**\-V**\|**\-\-version**] [**\-v**\|**\-\-verbose**] [**\-L**\|**\-\-listen** *host:port*] [**\-\-token**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-n**\|**\-\-no\-open\-browser**] [**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*] [**\-\-vendor** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
@@ -56,7 +56,7 @@ With an explicit port there is no fallback: a bind failure is an error, since th
 **\-\-listen** also disables the access token, since the typical use is a tunnel.
 Without **\-\-token**, requests with a non-loopback Host are refused and a non-loopback bind prints a warning; **\-\-token** allows remote browser access.
 
-**\-t**, **\-\-token**
+**\-\-token**
 : Require the generated access token even with **\-\-listen**.
 Without **\-\-listen** this is the default.
 
@@ -64,11 +64,12 @@ Without **\-\-listen** this is the default.
 : Do not open a browser at startup.
 
 **\-d**, **\-\-serial\-device** *path*
-: Initial serial device shown in the connection bar.
+: Prefill for the device control in the connection bar.
+When both **\-d** and **\-s** are given, **satpulsewb** connects at startup with these values.
 
 **\-s**, **\-\-device\-speed** *bps*
-: Initial serial speed shown in the connection bar.
-The default is 9600.
+: Prefill for the speed control in the connection bar.
+When both **\-d** and **\-s** are given, **satpulsewb** connects at startup with these values.
 
 **\-\-vendor** *name*
 : Restrict probing and packet format detection to a receiver vendor.

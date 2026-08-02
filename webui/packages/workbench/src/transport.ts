@@ -20,10 +20,12 @@ export type ConnState =
 // ConnectionInfo is the complete connection-bar snapshot. Device and speed
 // are retained while disconnected, so every frontend starts from the same
 // values whether they came from command-line flags or an earlier UI connect.
+// Either may be absent (device empty, speed omitted) when nothing has been
+// specified or chosen; the frontend then keeps its own initial control value.
 export interface ConnectionInfo {
     state: ConnState;
     device: string;
-    speed: number;
+    speed?: number;
 }
 
 export interface PortInfo {
