@@ -14,18 +14,34 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// unixTerm allows its cached attributes to be read from any goroutine concurrently
-// with Change. Calls to Change must be serialized by the caller.
 type unixTerm struct {
-	fd          int
-	path        string
-	attrMu      sync.RWMutex
-	attr        Attr
+	fd   int
+	path string
+	attrCache
 	tsSaved     unix.Termios
 	serialError serialErrorState
 }
 
 var _ Term = (*unixTerm)(nil)
+
+// attrCache allows a terminal's cached attributes to be read from any goroutine
+// concurrently with Change. Calls to Change must be serialized by the caller.
+type attrCache struct {
+	mu   sync.RWMutex
+	attr Attr
+}
+
+func (c *attrCache) loadAttr() Attr {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.attr
+}
+
+func (c *attrCache) storeAttr(attr Attr) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.attr = attr
+}
 
 type Attr struct {
 	ts unix.Termios
@@ -35,6 +51,13 @@ type AttrSetter func(*Attr) error
 
 // Open opens and configures a serial terminal.
 func Open(path string, opts ...AttrSetter) (Term, error) {
+	d, ok, err := tryD2XX(path, opts)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return d, nil
+	}
 	t := new(unixTerm)
 	if err := t.init(path, opts...); err != nil {
 		return nil, err
@@ -129,18 +152,6 @@ func (t *unixTerm) Change(opts ...AttrSetter) error {
 func (t *unixTerm) Speed() int {
 	attr := t.loadAttr()
 	return attr.speed()
-}
-
-func (t *unixTerm) loadAttr() Attr {
-	t.attrMu.RLock()
-	defer t.attrMu.RUnlock()
-	return t.attr
-}
-
-func (t *unixTerm) storeAttr(attr Attr) {
-	t.attrMu.Lock()
-	defer t.attrMu.Unlock()
-	t.attr = attr
 }
 
 func lock(fd int, path string) error {

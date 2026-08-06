@@ -31,6 +31,13 @@ type StateReader interface {
 	ModemControlLineState() (gpsio.ModemControlLineState, error)
 }
 
+// ChangeWaiter is a StateReader that can block until a modem control input may
+// have changed.
+type ChangeWaiter interface {
+	StateReader
+	WaitModemControlLineChange(gpsio.ModemControlLine) error
+}
+
 type reading struct {
 	state gpsio.ModemControlLineState
 	at    time.Time
@@ -111,6 +118,40 @@ func Poll(ctx context.Context, r StateReader, line gpsio.ModemControlLine, edges
 			predicted = predicted.Add(pulsePeriod)
 			firstWindow = false
 		}
+	}
+}
+
+// Wait sends leading edges detected with modem-control change notifications.
+// A leading edge is the modem-control flag becoming deasserted. The wakeup is
+// timestamped before the state read because that read can require a USB round
+// trip.
+func Wait(ctx context.Context, r ChangeWaiter, line gpsio.ModemControlLine, edges chan<- Edge) error {
+	prev, err := r.ModemControlLineState()
+	if err != nil {
+		return err
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if err := r.WaitModemControlLineChange(line); err != nil {
+			return err
+		}
+		at := time.Now()
+		cur, err := r.ModemControlLineState()
+		if err != nil {
+			return err
+		}
+		if prev.Asserted(line) && !cur.Asserted(line) {
+			select {
+			case edges <- Edge{T: at}:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		prev = cur
 	}
 }
 

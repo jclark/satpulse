@@ -179,8 +179,13 @@ capability interface that the PPS source asserts for, not a method of
 ```go
 type ModemControlLineWaiter interface {
 	WaitModemControlLineChange(line ModemControlLine) error
+	CancelModemControlLineWait()
 }
 ```
+
+The cancel exists so that shutdown is prompt on backends that can abort
+a pending wait; where nothing can interrupt it, it does nothing and the
+shutdown behaviour below applies.
 
 The primitive may return without the line having changed (a spurious
 wakeup, an interrupted syscall, or -- on D2XX -- an event for another
@@ -223,23 +228,34 @@ driver removal needed, unlike Linux). The
 definitions derived from FTDI's headers (constants, struct layouts)
 are generated with `cgo -godefs` and the generated file committed, so
 the FTDI headers are needed only when regenerating, not at build time;
-the hand-written C shim is limited to the pthread wait and uses only
-system headers. D2XX support therefore requires cgo (a C toolchain) at
-build time: the Homebrew formula's environment guarantees that, so
-packaged macOS builds always include it, and a cgo-disabled build
-still succeeds with only the polling backend (Go disables cgo
-automatically when no C toolchain is present). The
-`cmd/pollpps --d2xx` mode is the measurement diagnostic.
+the runtime implementation is entirely in Go. The `go:generate`
+directive invokes `generate_ftd2xx.sh`; `FTD2XX_DIR` supplies the
+directory containing the headers at regeneration time, so no local
+include path is embedded in the source or generated output. The
+build-ignored `ftd2xx_defs.go` is input to `cgo -godefs`, while the
+committed `zftd2xx_defs_darwin.go` is the normal Go build input. There
+are no `.c` files and normal builds do not invoke cgo.
+
+FTDI and pthread symbols are called through `purego`. Because `purego`
+represents C `void *` parameters as `unsafe.Pointer`, D2XX handles and
+C-allocated addresses use that type; direct unsafe operations are
+confined to small helpers for applying generated field offsets and
+reading a bounded C character array. The generated `EVENT_HANDLE`
+layout is allocated with `calloc`. A C toolchain and the FTDI headers
+are needed only to regenerate the definitions; cgo-disabled builds
+include the D2XX backend as well. The `cmd/pollpps --d2xx` mode is the
+measurement diagnostic.
 
 Structurally this is a new kind of device in `term`, not in `gpsio`,
-and not a separate package: build-tagged (`darwin && cgo`) files
-inside `gps/lib/term`, parallel to the existing platform files. It is
-a D2XX-backed implementation of the same surface (read, write, speed,
-`ModemControlLineState`, and the blocking line-change wait), selected
-at open time on Darwin when the device is an FTDI adapter and the
-library is present, with the termios path as fallback. Everything from
-`gpsio` up is unchanged, and the PPS source sees the wait primitive
-through the same availability probe as on Linux/Windows. The D2XX
+and not a separate package: build-tagged (`darwin`) files inside
+`gps/lib/term`, parallel to the existing platform files. It is a peer
+implementation of the `Term` interface, plus the
+`ModemControlLineWaiter` capability that the termios terminals do not
+provide, selected at open time on Darwin when the device is an FTDI
+adapter and the library is present, with the termios path as fallback.
+Everything from `gpsio` up remains D2XX-agnostic: `gpsio` forwards the
+generic wait primitive, and the PPS source selects it through the same
+capability assertion intended for Linux/Windows. The D2XX
 backend must own the data stream as well as the PPS line: the receive
 queue has to be drained promptly (a full queue degrades event
 delivery -- measured as event timing collapsing after ~40 s), and the

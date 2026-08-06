@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/ebitengine/purego v0.10.2
 	github.com/jaypipes/pcidb v1.1.1
 	github.com/jclark/crc24q v0.0.0-20240116045836-0ddb95a0c2ab
 	github.com/mdlayher/netlink v1.11.1

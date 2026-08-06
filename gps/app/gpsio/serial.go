@@ -130,6 +130,30 @@ func (c *SerialConn) ModemControlLineState() (ModemControlLineState, error) {
 	return 0, fmt.Errorf("%s: %w", c.file.Path(), term.ErrNotATTY)
 }
 
+// modemWaiter returns the underlying terminal's wait capability, or nil if the
+// backend can only be polled.
+func (c *SerialConn) modemWaiter() term.ModemControlLineWaiter {
+	w, _ := c.file.(term.ModemControlLineWaiter)
+	return w
+}
+
+// CanWaitModemControlLineChange reports whether the serial backend can block
+// until a modem control input changes.
+func (c *SerialConn) CanWaitModemControlLineChange() bool {
+	return c.modemWaiter() != nil
+}
+
+// WaitModemControlLineChange blocks until a modem control input may have
+// changed. It fails when the backend can only be polled, which
+// CanWaitModemControlLineChange reports in advance.
+func (c *SerialConn) WaitModemControlLineChange(line ModemControlLine) error {
+	w := c.modemWaiter()
+	if w == nil {
+		return fmt.Errorf("%s: cannot wait for a modem control line change: %w", c.file.Path(), errors.ErrUnsupported)
+	}
+	return w.WaitModemControlLineChange(line)
+}
+
 func (c *SerialConn) Read(p []byte) (int, error) {
 	if c.isStopped() {
 		return 0, io.EOF
@@ -234,6 +258,9 @@ func (c *SerialConn) Stop() {
 	defer c.mu.Unlock()
 	c.mu.Lock()
 	c.stopped = true
+	if w := c.modemWaiter(); w != nil {
+		w.CancelModemControlLineWait()
+	}
 	if c.pktLog != nil {
 		// We need close promptly so that the logging goroutine can exit.
 		c.pktLog.SemiClose()

@@ -1,85 +1,183 @@
 //go:build !windows
 
-// This is an experiment for Darwin to try polling the CTS line to detect PPS signals.
-// The GPS PPS output should be connected to the CTS pin of a USB to TTL adapter.
-// I have tested this with the Waveshare USB to TTL converter, which uses the FTDI FT232RNL.
+// pollpps measures PPS detection on a serial modem-control input.
 package main
 
 import (
+	"context"
+	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	"github.com/jclark/satpulse/gps/lib/term"
 )
 
+const diagnosticReadTimeout = 100 * time.Millisecond
+
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintf(os.Stderr, "usage: %s <device>\n", os.Args[0])
-		os.Exit(1)
+	useD2XX := flag.Bool("d2xx", false, "wait for PPS using the FTDI D2XX backend")
+	speed := flag.Int("speed", 9600, "serial speed in bits per second")
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: %s [options] device\n", os.Args[0])
+		flag.PrintDefaults()
 	}
+	flag.Parse()
+	if flag.NArg() != 1 {
+		flag.Usage()
+		os.Exit(2)
+	}
+	if err := run(flag.Arg(0), *speed, *useD2XX); err != nil {
+		log.Fatal(err)
+	}
+}
 
-	device := os.Args[1]
-
-	// Open terminal in raw mode
-	t, err := term.Open(device, term.RawMode)
+func run(device string, speed int, useD2XX bool) error {
+	if !term.IsValidSpeed(speed) {
+		return fmt.Errorf("non-standard serial speed %d is not supported", speed)
+	}
+	t, err := term.Open(device, term.RawMode, term.Local, term.NoParity,
+		term.NoFlowControl, term.ReadTimeout(diagnosticReadTimeout), term.Speed(speed))
 	if err != nil {
-		log.Fatalf("Failed to open %s: %v", device, err)
+		return err
 	}
 	defer func() {
 		t.Restore()
 		t.Close()
 	}()
-	fmt.Printf("Monitoring PPS on CTS line of %s\n", device)
+	if err := t.Flush(); err != nil {
+		return err
+	}
+	wt, canWait := t.(waitTerm)
+	if useD2XX && !canWait {
+		return errors.New("D2XX backend is not available for this device")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	fmt.Printf("Monitoring PPS on CTS of %s at %d bps using %s\n", device, t.Speed(), backendName(useD2XX))
+	if useD2XX {
+		return monitorD2XX(ctx, wt)
+	}
+	return monitorPolling(ctx, t)
+}
 
-	var lastCTS bool
-	var ppsCount int
+// waitTerm is a terminal that can also block until a modem control line
+// changes, which only the D2XX backend can do.
+type waitTerm interface {
+	term.Term
+	term.ModemControlLineWaiter
+}
 
-	// Set up signal handler for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt)
+func backendName(useD2XX bool) string {
+	if useD2XX {
+		return "D2XX"
+	}
+	return "polling"
+}
 
-	ticker := time.NewTicker(time.Millisecond / 10)
-	defer ticker.Stop()
-
+func monitorD2XX(ctx context.Context, t waitTerm) error {
+	ctx, cancel := context.WithCancel(ctx)
+	readErr := make(chan error, 1)
+	var wg sync.WaitGroup
+	wg.Go(func() { drainD2XX(ctx, t, readErr) })
+	defer func() {
+		cancel()
+		t.CancelModemControlLineWait()
+		wg.Wait()
+	}()
+	wg.Go(func() {
+		<-ctx.Done()
+		t.CancelModemControlLineWait()
+	})
+	status, err := t.ModemControlLineState()
+	if err != nil {
+		return err
+	}
+	lastCTS := status.Asserted(term.ModemCTS)
+	count := 0
 	for {
+		if err := t.WaitModemControlLineChange(term.ModemCTS); err != nil {
+			return err
+		}
+		at := time.Now()
 		select {
-		case <-ticker.C:
-			status, err := t.ModemControlLineState()
-			if err != nil {
-				log.Printf("Error reading modem status: %v", err)
+		case <-ctx.Done():
+			return nil
+		case err := <-readErr:
+			return err
+		default:
+		}
+		status, err = t.ModemControlLineState()
+		if err != nil {
+			return err
+		}
+		cts := status.Asserted(term.ModemCTS)
+		if lastCTS && !cts {
+			count++
+			printPPS(count, at)
+		}
+		lastCTS = cts
+	}
+}
+
+func drainD2XX(ctx context.Context, t waitTerm, errCh chan<- error) {
+	buf := make([]byte, 4096)
+	for {
+		_, err := t.Read(buf)
+		if err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
+			select {
+			case <-ctx.Done():
+				return
+			default:
 				continue
 			}
-
-			// Check if CTS flag is set
-			cts := status.Asserted(term.ModemCTS)
-
-			// Check for transition from flag being on to off.
-			// This is the opposite of what you might expect.
-			// In RS232, CTS is asserted by having a negative voltage, and deasserted by a positive voltage.
-			// With a USB to TTL serial adapter, an RS232 negative voltage is represented by a logic low (0V),
-			// and a positive voltage is represented by a logic high (3.3V).
-			// Thus in TTL, the CTS being asserted corresponds to a logic low (0V);
-			// logic high (3.3V) means CTS is deasserted.
-			// A PPS leading edge with normal polarity is TTL logic level going from low to high,
-			// which correspond to CTS flag going from on to off.
-			if !cts && lastCTS {
-				now := time.Now()
-				ppsCount++
-				fmt.Printf("PPS #%d at %s (%d.%09d)\n",
-					ppsCount,
-					now.Format("15:04:05.000000000"),
-					now.Unix(),
-					now.Nanosecond())
-			}
-
-			lastCTS = cts
-
-		case <-sigChan:
-			fmt.Printf("\nReceived interrupt, shutting down...\n")
+		}
+		if errors.Is(err, io.EOF) && ctx.Err() != nil {
 			return
 		}
+		select {
+		case errCh <- err:
+		default:
+		}
+		t.CancelModemControlLineWait()
+		return
 	}
+}
+
+func monitorPolling(ctx context.Context, t term.Term) error {
+	ticker := time.NewTicker(100 * time.Microsecond)
+	defer ticker.Stop()
+	status, err := t.ModemControlLineState()
+	if err != nil {
+		return err
+	}
+	lastCTS := status.Asserted(term.ModemCTS)
+	count := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+		status, err = t.ModemControlLineState()
+		if err != nil {
+			return err
+		}
+		cts := status.Asserted(term.ModemCTS)
+		if lastCTS && !cts {
+			count++
+			printPPS(count, time.Now())
+		}
+		lastCTS = cts
+	}
+}
+
+func printPPS(count int, at time.Time) {
+	fmt.Printf("PPS #%d at %s (%d.%09d)\n", count,
+		at.Format("15:04:05.000000000"), at.Unix(), at.Nanosecond())
 }

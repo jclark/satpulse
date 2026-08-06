@@ -323,14 +323,24 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		line, _ := cfg.Serial.PPS.modemControlLine() // checked by Config.Validate
 		ch := make(chan serialpps.Edge, 1)
 		serialPPSCh = ch
+		backend := "polling"
+		if conn.CanWaitModemControlLineChange() {
+			backend = "wait"
+		}
 		wg.Go(func() {
 			defer close(ch)
-			lg.Debug("serial PPS polling goroutine started", "line", cfg.Serial.PPS.Line)
-			if err := serialpps.Poll(ctx, conn, line, ch); err != nil && ctx.Err() == nil {
-				lg.Error("serial PPS polling failed", "line", cfg.Serial.PPS.Line, "err", err)
-				cancel(fmt.Errorf("serial PPS polling failed on %s: %w", cfg.Serial.PPS.Line, err))
+			lg.Debug("serial PPS goroutine started", "line", cfg.Serial.PPS.Line, "backend", backend)
+			var err error
+			if backend == "wait" {
+				err = serialpps.Wait(ctx, conn, line, ch)
+			} else {
+				err = serialpps.Poll(ctx, conn, line, ch)
 			}
-			lg.Debug("serial PPS polling goroutine exited", "line", cfg.Serial.PPS.Line)
+			if err != nil && ctx.Err() == nil {
+				lg.Error("serial PPS detection failed", "line", cfg.Serial.PPS.Line, "backend", backend, "err", err)
+				cancel(fmt.Errorf("serial PPS detection failed on %s: %w", cfg.Serial.PPS.Line, err))
+			}
+			lg.Debug("serial PPS goroutine exited", "line", cfg.Serial.PPS.Line, "backend", backend)
 		})
 	}
 	statsObs := newStatsLogObserver(cfg, lg)
