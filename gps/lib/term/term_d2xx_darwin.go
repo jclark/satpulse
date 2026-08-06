@@ -77,6 +77,7 @@ const (
 	ftEventMutexOffset       = unsafe.Offsetof(ftEventHandle{}.EMutex)
 	ftDeviceInfoNodeSize     = unsafe.Sizeof(ftDeviceListInfoNode{})
 	ftDeviceInfoSerialOffset = unsafe.Offsetof(ftDeviceListInfoNode{}.SerialNumber)
+	ftDeviceInfoSerialLen    = len(ftDeviceListInfoNode{}.SerialNumber)
 )
 
 var loadD2XX = sync.OnceValues(newD2XXAPI)
@@ -224,7 +225,7 @@ func (api *d2xxAPI) devices(path string) ([]string, error) {
 	serials := make([]string, n)
 	for i := range n {
 		p := addCPointer(buf, uintptr(i)*ftDeviceInfoNodeSize+ftDeviceInfoSerialOffset)
-		serials[i] = cString(p, 16)
+		serials[i] = cString(p, ftDeviceInfoSerialLen)
 	}
 	return serials, nil
 }
