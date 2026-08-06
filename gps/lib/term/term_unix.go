@@ -14,16 +14,18 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Term allows its cached attributes to be read from any goroutine concurrently
+// unixTerm allows its cached attributes to be read from any goroutine concurrently
 // with Change. Calls to Change must be serialized by the caller.
-type Term struct {
-	fd      int
-	path    string
-	attrMu  sync.RWMutex
-	attr    Attr
-	tsSaved unix.Termios
-	iCount  *serialICounter
+type unixTerm struct {
+	fd          int
+	path        string
+	attrMu      sync.RWMutex
+	attr        Attr
+	tsSaved     unix.Termios
+	serialError serialErrorState
 }
+
+var _ Term = (*unixTerm)(nil)
 
 type Attr struct {
 	ts unix.Termios
@@ -31,16 +33,16 @@ type Attr struct {
 
 type AttrSetter func(*Attr) error
 
-func Open(path string, opts ...AttrSetter) (*Term, error) {
-	t := new(Term)
-	err := t.Init(path, opts...)
-	if err != nil {
+// Open opens and configures a serial terminal.
+func Open(path string, opts ...AttrSetter) (Term, error) {
+	t := new(unixTerm)
+	if err := t.init(path, opts...); err != nil {
 		return nil, err
 	}
 	return t, nil
 }
 
-func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
+func (t *unixTerm) init(path string, opts ...AttrSetter) (err error) {
 	t.path = path
 	// O_CLOEXEC is here, because we are using flock to lock.
 	// Without O_CLOEXEC, the lock would be inherited by child processes, which is probably not what is wanted.
@@ -106,7 +108,7 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 }
 
 // Change changes the attributes of the terminal after output has drained.
-func (t *Term) Change(opts ...AttrSetter) error {
+func (t *unixTerm) Change(opts ...AttrSetter) error {
 	attr := t.loadAttr()
 	for _, opt := range opts {
 		err := opt(&attr)
@@ -124,18 +126,18 @@ func (t *Term) Change(opts ...AttrSetter) error {
 	return nil
 }
 
-func (t *Term) Speed() int {
+func (t *unixTerm) Speed() int {
 	attr := t.loadAttr()
 	return attr.speed()
 }
 
-func (t *Term) loadAttr() Attr {
+func (t *unixTerm) loadAttr() Attr {
 	t.attrMu.RLock()
 	defer t.attrMu.RUnlock()
 	return t.attr
 }
 
-func (t *Term) storeAttr(attr Attr) {
+func (t *unixTerm) storeAttr(attr Attr) {
 	t.attrMu.Lock()
 	defer t.attrMu.Unlock()
 	t.attr = attr
@@ -157,7 +159,7 @@ func lock(fd int, path string) error {
 // for interoperating with programs such as gpsd that use TIOCEXCL instead, and it
 // also stops an unprivileged opener reprogramming the line as a side effect of
 // probing it.
-func (t *Term) setExclusive() error {
+func (t *unixTerm) setExclusive() error {
 	if err := t.checkNotExclusive(); err != nil {
 		return err
 	}
@@ -168,7 +170,7 @@ func (t *Term) setExclusive() error {
 // the tty rather than to our file descriptor, so closing without clearing it
 // leaves the port unopenable for as long as some other process holds the tty
 // open.
-func (t *Term) clearExclusive() error {
+func (t *unixTerm) clearExclusive() error {
 	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TIOCNXCL, 0), "ioctl(TIOCNXCL)")
 }
 
@@ -197,7 +199,7 @@ func NoParity(a *Attr) error {
 }
 
 // TransmitTime returns the time it takes to send a byte using the settings in Term.
-func (t *Term) TransmitTime(nBytes int) time.Duration {
+func (t *unixTerm) TransmitTime(nBytes int) time.Duration {
 	if nBytes <= 0 {
 		return 0
 	}
@@ -315,7 +317,7 @@ func (attr *Attr) readCanTimeout() bool {
 const earlyZeroRead = time.Millisecond
 const earlyZeroReadLimit = 5
 
-func (t *Term) Read(buf []byte) (n int, err error) {
+func (t *unixTerm) Read(buf []byte) (n int, err error) {
 	if len(buf) == 0 {
 		return 0, nil
 	}
@@ -356,7 +358,7 @@ func (t *Term) Read(buf []byte) (n int, err error) {
 	return 0, io.EOF
 }
 
-func (t *Term) Write(buf []byte) (int, error) {
+func (t *unixTerm) Write(buf []byte) (int, error) {
 	total := 0
 	for len(buf) > 0 {
 		// Semantics of Unix write and Go Write are not the same:
@@ -372,14 +374,14 @@ func (t *Term) Write(buf []byte) (int, error) {
 	return total, nil
 }
 
-func (t *Term) Buffered() (n int, err error) {
+func (t *unixTerm) Buffered() (n int, err error) {
 	n, err = unix.IoctlGetInt(t.fd, unix.TIOCOUTQ)
 	err = t.wrapErr(err, "ioctl(TIOCOUTQ)")
 	return
 }
 
 // ModemControlLineState returns the asserted modem control input lines.
-func (t *Term) ModemControlLineState() (ModemControlLineState, error) {
+func (t *unixTerm) ModemControlLineState() (ModemControlLineState, error) {
 	var status int
 	var err error
 	for {
@@ -407,11 +409,11 @@ func (t *Term) ModemControlLineState() (ModemControlLineState, error) {
 	return state, nil
 }
 
-func (t *Term) Restore() error {
+func (t *unixTerm) Restore() error {
 	return t.setAttrNow(&t.tsSaved)
 }
 
-func (t *Term) Close() error {
+func (t *unixTerm) Close() error {
 	err := t.clearExclusive()
 	fd := t.fd
 	t.fd = -1
@@ -421,7 +423,7 @@ func (t *Term) Close() error {
 	return err
 }
 
-func (t *Term) Path() string {
+func (t *unixTerm) Path() string {
 	return t.path
 }
 
@@ -545,7 +547,7 @@ func (f *File) wrapErr(err error, op string) error {
 	}
 }
 
-func (t *Term) wrapErr(err error, op string) error {
+func (t *unixTerm) wrapErr(err error, op string) error {
 	if err == nil {
 		return err
 	}

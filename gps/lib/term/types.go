@@ -3,8 +3,26 @@ package term
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
+	"time"
 )
+
+// Term is a configurable serial terminal.
+type Term interface {
+	io.ReadWriteCloser
+
+	Path() string
+	Buffered() (int, error)
+	Change(...AttrSetter) error
+	Speed() int
+	TransmitTime(int) time.Duration
+	DevKind() DevKind
+	ModemControlLineState() (ModemControlLineState, error)
+	Flush() error
+	Drain() error
+	Restore() error
+}
 
 // ErrNotATTY is returned when a device does not support termios.
 // Callers can check for it with errors.Is.

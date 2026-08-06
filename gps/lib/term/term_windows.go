@@ -48,13 +48,15 @@ var baudRates = []int{
 	230400, 460800, 921600,
 }
 
-type Term struct {
+type windowsTerm struct {
 	handle        windows.Handle
 	path          string
 	attr          Attr
 	dcbSaved      windows.DCB
 	timeoutsSaved windows.CommTimeouts
 }
+
+var _ Term = (*windowsTerm)(nil)
 
 type Attr struct {
 	dcb      windows.DCB
@@ -63,16 +65,16 @@ type Attr struct {
 
 type AttrSetter func(*Attr) error
 
-func Open(path string, opts ...AttrSetter) (*Term, error) {
-	t := new(Term)
-	err := t.Init(path, opts...)
-	if err != nil {
+// Open opens and configures a serial terminal.
+func Open(path string, opts ...AttrSetter) (Term, error) {
+	t := new(windowsTerm)
+	if err := t.init(path, opts...); err != nil {
 		return nil, err
 	}
 	return t, nil
 }
 
-func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
+func (t *windowsTerm) init(path string, opts ...AttrSetter) (err error) {
 	t.path = path
 	name, err := windows.UTF16PtrFromString(normalizeCOM(path))
 	if err != nil {
@@ -162,7 +164,7 @@ func normalizeCOM(path string) string {
 }
 
 // Change changes the attributes of the terminal after output has drained.
-func (t *Term) Change(opts ...AttrSetter) error {
+func (t *windowsTerm) Change(opts ...AttrSetter) error {
 	attr := t.attr
 	for _, opt := range opts {
 		err := opt(&attr)
@@ -185,7 +187,7 @@ func (t *Term) Change(opts ...AttrSetter) error {
 	return nil
 }
 
-func (t *Term) Read(buf []byte) (int, error) {
+func (t *windowsTerm) Read(buf []byte) (int, error) {
 	if len(buf) == 0 {
 		return 0, nil
 	}
@@ -208,7 +210,7 @@ func (t *Term) Read(buf []byte) (int, error) {
 	return int(n), nil
 }
 
-func (t *Term) Write(buf []byte) (int, error) {
+func (t *windowsTerm) Write(buf []byte) (int, error) {
 	total := 0
 	for len(buf) > 0 {
 		var n uint32
@@ -222,7 +224,7 @@ func (t *Term) Write(buf []byte) (int, error) {
 	return total, nil
 }
 
-func (t *Term) Buffered() (int, error) {
+func (t *windowsTerm) Buffered() (int, error) {
 	var errs uint32
 	var stat windows.ComStat
 	err := windows.ClearCommError(t.handle, &errs, &stat)
@@ -241,7 +243,7 @@ const (
 )
 
 // ModemControlLineState returns the asserted modem control input lines.
-func (t *Term) ModemControlLineState() (ModemControlLineState, error) {
+func (t *windowsTerm) ModemControlLineState() (ModemControlLineState, error) {
 	var status uint32
 	if err := windows.GetCommModemStatus(t.handle, &status); err != nil {
 		return 0, t.wrapErr(err, "GetCommModemStatus")
@@ -262,17 +264,17 @@ func (t *Term) ModemControlLineState() (ModemControlLineState, error) {
 	return state, nil
 }
 
-func (t *Term) Flush() error {
+func (t *windowsTerm) Flush() error {
 	err := windows.PurgeComm(t.handle, windows.PURGE_RXCLEAR|windows.PURGE_TXCLEAR)
 	return t.wrapErr(err, "PurgeComm")
 }
 
 // Drain blocks until all pending output has been transmitted.
-func (t *Term) Drain() error {
+func (t *windowsTerm) Drain() error {
 	return t.wrapErr(windows.FlushFileBuffers(t.handle), "FlushFileBuffers")
 }
 
-func (t *Term) Restore() error {
+func (t *windowsTerm) Restore() error {
 	err := windows.SetCommState(t.handle, &t.dcbSaved)
 	if err != nil {
 		return t.wrapErr(err, "SetCommState")
@@ -281,22 +283,22 @@ func (t *Term) Restore() error {
 	return t.wrapErr(err, "SetCommTimeouts")
 }
 
-func (t *Term) Close() error {
+func (t *windowsTerm) Close() error {
 	h := t.handle
 	t.handle = windows.InvalidHandle
 	return t.wrapErr(windows.CloseHandle(h), "close")
 }
 
-func (t *Term) Path() string {
+func (t *windowsTerm) Path() string {
 	return t.path
 }
 
-func (t *Term) Speed() int {
+func (t *windowsTerm) Speed() int {
 	return int(t.attr.dcb.BaudRate)
 }
 
 // TransmitTime returns the time it takes to send nBytes at the current speed.
-func (t *Term) TransmitTime(nBytes int) time.Duration {
+func (t *windowsTerm) TransmitTime(nBytes int) time.Duration {
 	if nBytes <= 0 {
 		return 0
 	}
@@ -320,14 +322,14 @@ func (attr *Attr) byteTransmitTime() time.Duration {
 
 // DevKind on Windows returns DevUnknown. The plan allows best-effort
 // classification via registry lookup; that is not yet implemented.
-func (t *Term) DevKind() DevKind {
+func (t *windowsTerm) DevKind() DevKind {
 	return DevUnknown
 }
 
 // readError returns a *Error describing serial errors reported by
 // ClearCommError, or nil if none. Windows does not expose per-category
 // counters, so Error.Counts is always nil.
-func (t *Term) readError() *Error {
+func (t *windowsTerm) readError() *Error {
 	var errs uint32
 	var stat windows.ComStat
 	if err := windows.ClearCommError(t.handle, &errs, &stat); err != nil {
@@ -355,7 +357,7 @@ func (t *Term) readError() *Error {
 	return &Error{Path: t.path, Flags: flags}
 }
 
-func (t *Term) wrapErr(err error, op string) error {
+func (t *windowsTerm) wrapErr(err error, op string) error {
 	if err == nil {
 		return nil
 	}
@@ -390,7 +392,7 @@ func (f *File) Buffered() (int, error) {
 
 // OpenFallback opens a non-serial GPS input, such as a named pipe used as a
 // replay sink, as an asynchronous *os.File. It skips the GetCommState/
-// SetCommState setup a COM port needs (and that fails on a pipe; see Init).
+// SetCommState setup a COM port needs (and that fails on a pipe; see init).
 // The handle is opened FILE_FLAG_OVERLAPPED so os.NewFile associates it with
 // the Go runtime poller, giving Read the SetReadDeadline support the scan loop
 // relies on (Go 1.25+). It is classified DevFIFO, so writes are rejected at

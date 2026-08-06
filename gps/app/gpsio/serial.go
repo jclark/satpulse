@@ -36,9 +36,9 @@ type SerialConn struct {
 }
 
 // ioFile is the minimal file-like interface SerialConn needs.
-// *term.Term, *term.File, and *pollingFile satisfy it.
-// TTY-specific operations (speed change, flush, restore, error counts)
-// are performed via type assertion to *term.Term.
+// term.Term, *term.File, and *pollingFile satisfy it.
+// TTY-specific operations (speed change, flush, restore, error counts,
+// modem control lines) are performed via type assertion to term.Term.
 type ioFile interface {
 	io.ReadWriteCloser
 	Path() string
@@ -103,16 +103,16 @@ func (c *SerialConn) Direct() bool {
 	return false
 }
 
-// term returns the underlying *term.Term if this SerialConn is backed by a
-// TTY, nil otherwise. TTY-specific operations (speed change, restore) are
-// gated on the result.
-func (c *SerialConn) term() *term.Term {
-	t, _ := c.file.(*term.Term)
+// term returns the underlying terminal capability if this SerialConn is backed
+// by a configurable terminal, nil otherwise. Terminal-specific operations
+// (speed change, restore) are gated on the result.
+func (c *SerialConn) term() term.Term {
+	t, _ := c.file.(term.Term)
 	return t
 }
 
-// Speed returns the current termios speed of the underlying TTY,
-// or 0 if this connection is not backed by a TTY.
+// Speed returns the current speed of the underlying configurable terminal,
+// or 0 if this connection does not provide terminal capabilities.
 func (c *SerialConn) Speed() int {
 	if t := c.term(); t != nil {
 		return t.Speed()
@@ -307,7 +307,7 @@ const readTimeout = time.Millisecond * 100
 // settings, on top of the computed transmit time for non-UART devices.
 const minDelay = time.Millisecond
 
-func openTerm(path string, speed int) (*term.Term, error) {
+func openTerm(path string, speed int) (term.Term, error) {
 	opts := []term.AttrSetter{
 		term.RawMode,
 		term.Local,

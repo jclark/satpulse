@@ -172,10 +172,14 @@ the time messages. Unlike the polling backend, nothing here relies on
 the pulses being 1 s apart.
 
 `term` gains a primitive that only waits; reading the state afterwards
-is the existing method:
+is the existing method. Since only some terminals can wait, it is a
+capability interface that the PPS source asserts for, not a method of
+`Term`:
 
 ```go
-func (t *Term) WaitModemControlLineChange(line ModemControlLine) error
+type ModemControlLineWaiter interface {
+	WaitModemControlLineChange(line ModemControlLine) error
+}
 ```
 
 The primitive may return without the line having changed (a spurious
@@ -183,9 +187,9 @@ wakeup, an interrupted syscall, or -- on D2XX -- an event for another
 line or for received data); callers detect actual transitions by
 reading the state, which the backend does after every wakeup anyway.
 
-`gpsio.SerialConn` forwards it as usual, and `term` reports per
-platform whether the primitive is available, which is how the PPS
-source chooses between the wait and polling backends at startup.
+`gpsio.SerialConn` forwards it as usual, and whether the underlying
+terminal satisfies the capability is how the PPS source chooses
+between the wait and polling backends at startup.
 Whether FreeBSD has an equivalent ioctl is unresolved (to be settled
 before that platform is claimed; if it has none, FreeBSD uses the
 polling backend).
@@ -274,7 +278,8 @@ type ModemControlLineState int
 
 func (s ModemControlLineState) Asserted(l ModemControlLine) bool
 
-func (t *Term) ModemControlLineState() (ModemControlLineState, error)
+// ModemControlLineState is a method of the Term interface.
+ModemControlLineState() (ModemControlLineState, error)
 ```
 
 Each platform fills the state from its native call (`TIOCMGET`;
@@ -282,8 +287,8 @@ Each platform fills the state from its native call (`TIOCMGET`;
 lines). `gpsio.SerialConn` exposes the same interface, re-exporting the
 `term` types, with an error when the connection is not TTY-backed; the
 daemon layer imports only `gpsio`. `WaitModemControlLineChange` (see
-the Wait section) is the further `Term` method; it arrives with the
-first wait-capable device backend.
+the Wait section) is a further capability interface rather than a
+`Term` method; it arrives with the first wait-capable device backend.
 
 ## Daemon wiring
 

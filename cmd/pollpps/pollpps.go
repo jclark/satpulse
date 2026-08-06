@@ -32,7 +32,6 @@ func main() {
 		t.Restore()
 		t.Close()
 	}()
-
 	fmt.Printf("Monitoring PPS on CTS line of %s\n", device)
 
 	var lastCTS bool
