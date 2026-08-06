@@ -17,6 +17,8 @@ import (
 // It provides a similar interface to net.Conn.
 // It implements io.Reader, io.Writer and io.Closer.
 // It is safe to call Read, Write and Close on different goroutines.
+// ModemControlLineState can be called concurrently with Read and Write, but
+// the caller must stop all ModemControlLineState calls before calling Close.
 // However, there must not be more than one concurrent Read
 // nor more than one concurrent Write, nor more than one concurrent Close.
 // Stop can be called before Close to prevent further reads and writes.
@@ -120,7 +122,7 @@ func (c *SerialConn) Speed() int {
 
 // ModemControlLineState returns the asserted modem control input lines. It
 // fails with term.ErrNotATTY when the connection uses a FIFO or another
-// non-TTY fallback.
+// non-TTY fallback. It must not be called concurrently with Close.
 func (c *SerialConn) ModemControlLineState() (ModemControlLineState, error) {
 	if t := c.term(); t != nil {
 		return t.ModemControlLineState()

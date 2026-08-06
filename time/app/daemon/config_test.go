@@ -182,6 +182,23 @@ func TestSerialPPSConfig(t *testing.T) {
 	}
 }
 
+func TestSerialPPSConfigRejectsPHC(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(`
+[serial.pps]
+line = "cts"
+
+[phc]
+interface = "eth0"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "serial.pps.line cannot be used with phc.interface") {
+		t.Fatalf("Validate error = %v, want serial PPS/PHC conflict", err)
+	}
+}
+
 func TestPTPConfig(t *testing.T) {
 	cfgStr := `[ptp]
 	ptp4l.udsAddress = "/tmp/ptp4l"
@@ -252,10 +269,9 @@ shm.precision = -23`))
 		t.Fatalf("configured PHC-mode SHM fixed precision = %v, want -23", got)
 	}
 	cfg.NTP.SHM.Precision = nil
-	cfg.Serial.PPS = &SerialPPSConfig{Line: "cts"}
 	got = cfg.shmFixedPrecision()
-	if got == nil || *got != serialPPSSHMPrecision {
-		t.Fatalf("serial-PPS precision with PHC configured = %v, want %d", got, serialPPSSHMPrecision)
+	if got != nil {
+		t.Fatalf("default PHC precision = %v, want nil", *got)
 	}
 }
 

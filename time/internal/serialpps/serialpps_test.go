@@ -4,8 +4,65 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/ptime"
 )
+
+func TestClassifyReading(t *testing.T) {
+	base := time.Unix(1_000, 0)
+	asserted := gpsio.ModemControlLineState(1 << gpsio.ModemCTS)
+	tests := []struct {
+		name       string
+		curState   gpsio.ModemControlLineState
+		curAt      time.Duration
+		deadline   time.Duration
+		wantEdgeAt time.Duration
+		wantMissed bool
+	}{
+		{
+			name:       "transition before deadline",
+			curAt:      4 * time.Millisecond,
+			deadline:   5 * time.Millisecond,
+			wantEdgeAt: 2 * time.Millisecond,
+		},
+		{
+			name:       "transition crossing deadline",
+			curAt:      12 * time.Millisecond,
+			deadline:   5 * time.Millisecond,
+			wantEdgeAt: 6 * time.Millisecond,
+		},
+		{
+			name:     "no transition before deadline",
+			curState: asserted,
+			curAt:    4 * time.Millisecond,
+			deadline: 5 * time.Millisecond,
+		},
+		{
+			name:       "no transition crossing deadline",
+			curState:   asserted,
+			curAt:      6 * time.Millisecond,
+			deadline:   5 * time.Millisecond,
+			wantMissed: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			prev := reading{state: asserted, at: base}
+			cur := reading{state: tc.curState, at: base.Add(tc.curAt)}
+			edge, missed := classifyReading(prev, cur, gpsio.ModemCTS, base.Add(tc.deadline))
+			if missed != tc.wantMissed {
+				t.Errorf("missed = %v, want %v", missed, tc.wantMissed)
+			}
+			if tc.wantEdgeAt == 0 {
+				if !edge.IsZero() {
+					t.Errorf("edge = %v, want zero", edge)
+				}
+			} else if want := base.Add(tc.wantEdgeAt); !edge.Equal(want) {
+				t.Errorf("edge = %v, want %v", edge, want)
+			}
+		})
+	}
+}
 
 func TestGenerator(t *testing.T) {
 	msgUTC := time.Unix(1_000, 0).UTC()

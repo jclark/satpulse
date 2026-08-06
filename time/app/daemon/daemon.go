@@ -144,6 +144,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		speed = cfgSpeed
 	}
 
+	// During normal shutdown, the worker-wait defer registered below runs
+	// first, so the serial PPS poller stops before the connection is closed.
 	defer func() {
 		serialDev := cfg.Serial.Device
 		lg.Debug("closing the serial port", "path", serialDev)
@@ -204,6 +206,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		if sseCh != nil {
 			close(sseCh)
 		}
+		// This defer intentionally runs before the serial-port close defer.
+		// In particular, no modem-control ioctl can still be in progress when
+		// the underlying file descriptor is closed.
 		wg.Wait()
 		lg.Debug("wait group counter dropped to zero")
 	}()

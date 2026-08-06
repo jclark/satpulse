@@ -30,7 +30,7 @@ const (
 	// ModemDSR is data set ready.
 	ModemDSR = term.ModemDSR
 	// ModemRI is ring indicator.
-	ModemRI  = term.ModemRI
+	ModemRI = term.ModemRI
 )
 
 // ModemControlLineState is the set of asserted modem control input lines.

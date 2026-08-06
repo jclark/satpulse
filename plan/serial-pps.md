@@ -58,6 +58,9 @@ a TTL-level adapter is observed as the CTS flag becoming deasserted; a
 
 The serial device must be a real TTY; configuring `pps.line` on anything
 else (FIFO, socket) is a startup error.
+`pps.line` and `phc.interface` are mutually exclusive: the PHC is the
+higher-precision source, and configuring both is an error rather than
+silently replacing it with serial PPS.
 
 In the daemon package the `pps` table maps to a pointer field, nil when
 the table is absent, following the existing pattern of `ntp.sock` and
@@ -145,6 +148,13 @@ hardware:
 - On each miss the margin doubles and the prediction advances 1 s;
   when the margin would exceed 100 ms, drop back to slow polling.
 - Minimum spacing between polls: 200 us.
+
+The selected flag's deasserted interval must overlap at least one poll.
+In tracking this means a practical minimum pulse width of roughly one
+modem-state query interval (about 2 ms on the tested FT232R). Slow phase
+acquisition samples at 100 ms spacing, so narrow pulses can take much
+longer to acquire. The u-blox default width of 100 ms works well;
+microsecond-width pulses are not supported by this backend.
 
 The polling goroutine locks its OS thread.
 

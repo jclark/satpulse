@@ -80,7 +80,14 @@ It can have the following keys:
   one of `"cts"`, `"dcd"`, `"dsr"`, or `"ri"`. CTS is recommended. Specifying this key enables
   user-space PPS detection and requires `device` to be a real TTY rather than a FIFO or socket.
   The PPS leading edge is assumed to be electrically rising; on a TTL serial adapter this is observed
-  as the selected modem-control flag becoming deasserted.
+  as the selected modem-control flag becoming deasserted. `pps.line` cannot be used when
+  `phc.interface` is configured.
+
+The polling backend must observe the selected modem-control flag while it is deasserted. In tracking,
+the deasserted interval therefore needs to last for at least approximately one state-query interval
+(about 2 ms with the tested FT232R). Initial phase acquisition polls at 100 ms intervals, so narrow
+pulses can take much longer to acquire. The common u-blox default of 100 ms works well; microsecond-width
+pulses are not supported by the polling backend.
 
 Example using PPS on CTS:
 

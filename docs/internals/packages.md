@@ -188,6 +188,8 @@ These packages are the main building blocks for satpulsed; they are in the appli
 
 `time/internal/ts` implements a goroutine that reads external timestamps from the PTP hardware clock and sends those to a channel. These external timestamps are the time pulses emitted by the GPS receiver.
 
+`time/internal/serialpps` detects PPS edges on serial modem-control input lines and combines their system timestamps with recent receiver UTC messages to generate refclock samples.
+
 `time/internal/gpsevent` provides the main event handling loop after GPS configuration is done. It receives GPS packets from `gps/app/gpsio` and then uses the appropriate protocol implementation to construct protocol-independent messages that it passes to `time/internal/phcsync`. It also receives timestamps from `time/internal/ts` and passes them to `time/internal/phcsync`.
 
 `time/internal/phcsync` provides the core functionality of synchronizing the PTP hardware clock. It receives timestamps from gpsevent and accesses GPS messages via `time/internal/timemsg`.

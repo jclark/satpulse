@@ -188,7 +188,10 @@ func NewDispatcher(
 	return &d, nil
 }
 
-const tickPeriod = time.Second / 4
+const (
+	tickPeriod                = time.Second / 4
+	serialPPSFirstEdgeTimeout = 5 * time.Second
+)
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
 	// loop until all input channels are closed
@@ -210,6 +213,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 	var ticker *time.Ticker
 	var tickerCh <-chan time.Time
 	var firstTsDeadline <-chan time.Time
+	var firstSerialPPSDeadline <-chan time.Time
 	if d.controller != nil {
 		ticker = time.NewTicker(tickPeriod)
 		defer ticker.Stop()
@@ -218,6 +222,11 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 	if tsCh != nil {
 		// give a warning if we haven't received a timestamp by the time this fires
 		firstTsDeadline = time.After(time.Second * 2)
+	}
+	if serialPPSCh != nil {
+		// Slow acquisition deliberately discards its first, coarse edge. Allow
+		// time to acquire phase and deliver the following precisely polled edge.
+		firstSerialPPSDeadline = time.After(serialPPSFirstEdgeTimeout)
 	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
@@ -263,10 +272,12 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 			}
 		case edge, ok := <-serialPPSCh:
 			if ok {
+				firstSerialPPSDeadline = nil
 				d.serialPPSEdge(edge)
 			} else {
 				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
 				serialPPSCh = nil
+				firstSerialPPSDeadline = nil
 			}
 
 		case pkt, ok := <-pktCh:
@@ -288,6 +299,9 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 		case <-firstTsDeadline:
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
+		case <-firstSerialPPSDeadline:
+			lg.Warn("no serial PPS edges are being received; check serial.pps.line, PPS wiring, and receiver pulse width")
+			firstSerialPPSDeadline = nil
 		case <-sig:
 			d.obs.ReopenLog()
 			d.lf.Reopen(d.lg)

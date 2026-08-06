@@ -87,15 +87,7 @@ func Poll(ctx context.Context, r StateReader, line gpsio.ModemControlLine, edges
 				if err != nil {
 					return err
 				}
-				if prev.state.Asserted(line) && !cur.state.Asserted(line) {
-					edge = midpoint(prev.at, cur.at)
-					if edge.After(deadline) {
-						edge = time.Time{}
-						missed = true
-					}
-				} else if !cur.at.Before(deadline) {
-					missed = true
-				}
+				edge, missed = classifyReading(prev, cur, line, deadline)
 				prev = cur
 			}
 			if !edge.IsZero() {
@@ -120,6 +112,15 @@ func Poll(ctx context.Context, r StateReader, line gpsio.ModemControlLine, edges
 			firstWindow = false
 		}
 	}
+}
+
+// classifyReading gives a detected transition precedence over the deadline.
+// The deadline says when to stop looking, not whether a measured edge is valid.
+func classifyReading(prev, cur reading, line gpsio.ModemControlLine, deadline time.Time) (time.Time, bool) {
+	if prev.state.Asserted(line) && !cur.state.Asserted(line) {
+		return midpoint(prev.at, cur.at), false
+	}
+	return time.Time{}, !cur.at.Before(deadline)
 }
 
 func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading, error) {

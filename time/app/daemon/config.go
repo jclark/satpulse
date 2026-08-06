@@ -214,6 +214,9 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		if _, err := cfg.Serial.PPS.modemControlLine(); err != nil {
 			return &configError{err: err}
 		}
+		if cfg.PHC.Interface != "" {
+			return &configError{err: fmt.Errorf("serial.pps.line cannot be used with phc.interface")}
+		}
 	}
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}

@@ -380,7 +380,14 @@ func (t *Term) Buffered() (n int, err error) {
 
 // ModemControlLineState returns the asserted modem control input lines.
 func (t *Term) ModemControlLineState() (ModemControlLineState, error) {
-	status, err := unix.IoctlGetInt(t.fd, unix.TIOCMGET)
+	var status int
+	var err error
+	for {
+		status, err = unix.IoctlGetInt(t.fd, unix.TIOCMGET)
+		if err != unix.EINTR {
+			break
+		}
+	}
 	if err != nil {
 		return 0, t.wrapErr(err, "ioctl(TIOCMGET)")
 	}
