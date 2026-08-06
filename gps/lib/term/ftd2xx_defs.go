@@ -3,14 +3,8 @@
 package term
 
 /*
-#include <stddef.h>
+#include <pthread.h>
 #include <ftd2xx.h>
-
-enum {
-	SATPULSE_EVENT_COND_OFFSET = offsetof(EVENT_HANDLE, eCondVar),
-	SATPULSE_EVENT_MUTEX_OFFSET = offsetof(EVENT_HANDLE, eMutex),
-	SATPULSE_DEVICE_SERIAL_OFFSET = offsetof(FT_DEVICE_LIST_INFO_NODE, SerialNumber),
-};
 */
 import "C"
 
@@ -55,11 +49,14 @@ const (
 	ftModemRI                 = C.MS_RING_ON
 	ftModemDCD                = C.MS_RLSD_ON
 	ftDefaultRXTimeout        = C.FT_DEFAULT_RX_TIMEOUT
-	ftEventHandleSize         = C.sizeof_EVENT_HANDLE
-	ftEventCondOffset         = C.SATPULSE_EVENT_COND_OFFSET
-	ftEventMutexOffset        = C.SATPULSE_EVENT_MUTEX_OFFSET
-	ftDeviceInfoNodeSize      = C.sizeof_FT_DEVICE_LIST_INFO_NODE
-	ftDeviceInfoSerialOffset  = C.SATPULSE_DEVICE_SERIAL_OFFSET
 )
+
+// The pthread types are declared so that godefs renders the EVENT_HANDLE
+// fields; sizes and offsets come from the Go types with unsafe.
+type pthreadCond C.pthread_cond_t
+
+type pthreadMutex C.pthread_mutex_t
+
+type ftEventHandle C.EVENT_HANDLE
 
 type ftDeviceListInfoNode C.FT_DEVICE_LIST_INFO_NODE

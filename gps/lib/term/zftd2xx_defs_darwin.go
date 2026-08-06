@@ -43,12 +43,24 @@ const (
 	ftModemRI                 = 0x40
 	ftModemDCD                = 0x80
 	ftDefaultRXTimeout        = 0x12c
-	ftEventHandleSize         = 0x78
-	ftEventCondOffset         = 0x0
-	ftEventMutexOffset        = 0x30
-	ftDeviceInfoNodeSize      = 0x68
-	ftDeviceInfoSerialOffset  = 0x10
 )
+
+type pthreadCond struct {
+	X__sig    int64
+	X__opaque [40]int8
+}
+
+type pthreadMutex struct {
+	X__sig    int64
+	X__opaque [56]int8
+}
+
+type ftEventHandle struct {
+	ECondVar  pthreadCond
+	EMutex    pthreadMutex
+	IVar      int32
+	Pad_cgo_0 [4]byte
+}
 
 type ftDeviceListInfoNode struct {
 	Flags        uint32

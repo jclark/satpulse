@@ -69,6 +69,16 @@ type d2xxEvent struct {
 	wake atomic.Bool
 }
 
+// Sizes and offsets of the C structures, taken from the generated Go types so
+// that they cannot drift from the layout cgo derived from the headers.
+const (
+	ftEventHandleSize        = unsafe.Sizeof(ftEventHandle{})
+	ftEventCondOffset        = unsafe.Offsetof(ftEventHandle{}.ECondVar)
+	ftEventMutexOffset       = unsafe.Offsetof(ftEventHandle{}.EMutex)
+	ftDeviceInfoNodeSize     = unsafe.Sizeof(ftDeviceListInfoNode{})
+	ftDeviceInfoSerialOffset = unsafe.Offsetof(ftDeviceListInfoNode{}.SerialNumber)
+)
+
 var loadD2XX = sync.OnceValues(newD2XXAPI)
 
 // tryD2XX opens path through the D2XX library, reporting false when the path
