@@ -19,6 +19,23 @@ import (
 // depending on the term package directly.
 type SerialError = term.Error
 
+// ModemControlLine identifies a modem control input line.
+type ModemControlLine = term.ModemControlLine
+
+const (
+	// ModemCTS is clear to send.
+	ModemCTS = term.ModemCTS
+	// ModemDCD is data carrier detect.
+	ModemDCD = term.ModemDCD
+	// ModemDSR is data set ready.
+	ModemDSR = term.ModemDSR
+	// ModemRI is ring indicator.
+	ModemRI  = term.ModemRI
+)
+
+// ModemControlLineState is the set of asserted modem control input lines.
+type ModemControlLineState = term.ModemControlLineState
+
 type OutPort interface {
 	io.Writer
 	Buffered() (int, error)

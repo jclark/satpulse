@@ -48,14 +48,14 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			status, err := t.ModemStatus()
+			status, err := t.ModemControlLineState()
 			if err != nil {
 				log.Printf("Error reading modem status: %v", err)
 				continue
 			}
 
 			// Check if CTS flag is set
-			cts := (status & term.MODEM_CTS) != 0
+			cts := status.Asserted(term.ModemCTS)
 
 			// Check for transition from flag being on to off.
 			// This is the opposite of what you might expect.

@@ -118,6 +118,16 @@ func (c *SerialConn) Speed() int {
 	return 0
 }
 
+// ModemControlLineState returns the asserted modem control input lines. It
+// fails with term.ErrNotATTY when the connection uses a FIFO or another
+// non-TTY fallback.
+func (c *SerialConn) ModemControlLineState() (ModemControlLineState, error) {
+	if t := c.term(); t != nil {
+		return t.ModemControlLineState()
+	}
+	return 0, fmt.Errorf("%s: %w", c.file.Path(), term.ErrNotATTY)
+}
+
 func (c *SerialConn) Read(p []byte) (int, error) {
 	if c.isStopped() {
 		return 0, io.EOF

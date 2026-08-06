@@ -151,6 +151,37 @@ ntrip.nmeaSend = true`
 	}
 }
 
+func TestSerialPPSConfig(t *testing.T) {
+	tests := []struct {
+		line string
+		ok   bool
+	}{
+		{line: "cts", ok: true},
+		{line: "dcd", ok: true},
+		{line: "dsr", ok: true},
+		{line: "ri", ok: true},
+		{line: ""},
+		{line: "CTS"},
+		{line: "rts"},
+	}
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, tc := range tests {
+		t.Run(tc.line, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader("[serial.pps]\nline = \"" + tc.line + "\""))
+			if err != nil {
+				t.Fatalf("readConfig: %v", err)
+			}
+			if cfg.Serial.PPS == nil || cfg.Serial.PPS.Line != tc.line {
+				t.Fatalf("serial PPS config = %+v", cfg.Serial.PPS)
+			}
+			err = cfg.Validate(lg)
+			if (err == nil) != tc.ok {
+				t.Fatalf("Validate error = %v, want success %v", err, tc.ok)
+			}
+		})
+	}
+}
+
 func TestPTPConfig(t *testing.T) {
 	cfgStr := `[ptp]
 	ptp4l.udsAddress = "/tmp/ptp4l"
@@ -199,6 +230,12 @@ func TestConfigSHMFixedPrecision(t *testing.T) {
 	if got == nil || *got != serialSHMPrecision {
 		t.Fatalf("serial-mode SHM fixed precision = %v, want %d", got, serialSHMPrecision)
 	}
+	cfg.Serial.PPS = &SerialPPSConfig{Line: "cts"}
+	got = cfg.shmFixedPrecision()
+	if got == nil || *got != serialPPSSHMPrecision {
+		t.Fatalf("serial-PPS SHM fixed precision = %v, want %d", got, serialPPSSHMPrecision)
+	}
+	cfg.Serial.PPS = nil
 	cfg, err := readConfig(strings.NewReader(`[ntp]
 shm.segment = 2
 shm.precision = -23`))
@@ -213,6 +250,12 @@ shm.precision = -23`))
 	got = cfg.shmFixedPrecision()
 	if got == nil || *got != -23 {
 		t.Fatalf("configured PHC-mode SHM fixed precision = %v, want -23", got)
+	}
+	cfg.NTP.SHM.Precision = nil
+	cfg.Serial.PPS = &SerialPPSConfig{Line: "cts"}
+	got = cfg.shmFixedPrecision()
+	if got == nil || *got != serialPPSSHMPrecision {
+		t.Fatalf("serial-PPS precision with PHC configured = %v, want %d", got, serialPPSSHMPrecision)
 	}
 }
 

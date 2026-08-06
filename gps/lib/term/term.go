@@ -378,22 +378,26 @@ func (t *Term) Buffered() (n int, err error) {
 	return
 }
 
-const (
-	// in means input to PC from modem; out vice-versa
-	MODEM_DCD = unix.TIOCM_CAR // Data carrier detect; pin 1; in
-	MODEM_DTR = unix.TIOCM_DTR // Data terminal ready; pin 4; out
-	MODEM_DSR = unix.TIOCM_DSR // Data set ready; pin 6; in
-	MODEM_RTS = unix.TIOCM_RTS // Request to send; pin 7; out
-	MODEM_CTS = unix.TIOCM_CTS // Clear to send; pin 8; in
-	MODEM_RI  = unix.TIOCM_RI  // Ring indicator; pin 9; in
-)
-
-func (t *Term) ModemStatus() (int, error) {
+// ModemControlLineState returns the asserted modem control input lines.
+func (t *Term) ModemControlLineState() (ModemControlLineState, error) {
 	status, err := unix.IoctlGetInt(t.fd, unix.TIOCMGET)
 	if err != nil {
 		return 0, t.wrapErr(err, "ioctl(TIOCMGET)")
 	}
-	return status, nil
+	var state ModemControlLineState
+	if status&unix.TIOCM_CTS != 0 {
+		state |= modemControlLineState(ModemCTS)
+	}
+	if status&unix.TIOCM_CAR != 0 {
+		state |= modemControlLineState(ModemDCD)
+	}
+	if status&unix.TIOCM_DSR != 0 {
+		state |= modemControlLineState(ModemDSR)
+	}
+	if status&unix.TIOCM_RI != 0 {
+		state |= modemControlLineState(ModemRI)
+	}
+	return state, nil
 }
 
 func (t *Term) Restore() error {

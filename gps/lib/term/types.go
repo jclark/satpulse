@@ -44,6 +44,38 @@ const (
 	DevFIFO
 )
 
+// ModemControlLine identifies a modem control line that is an input to the
+// host.
+type ModemControlLine int
+
+const (
+	ModemCTS ModemControlLine = iota
+	ModemDCD
+	ModemDSR
+	ModemRI
+)
+
+// ModemControlLineState is the set of asserted modem control input lines.
+// Its representation is independent of the platform's native modem-status
+// bits.
+type ModemControlLineState int
+
+// Asserted reports whether l is asserted in s.
+func (s ModemControlLineState) Asserted(l ModemControlLine) bool {
+	if l < ModemCTS || l > ModemRI {
+		return false
+	}
+	return s&(1<<l) != 0
+}
+
+func modemControlLineState(asserted ...ModemControlLine) ModemControlLineState {
+	var state ModemControlLineState
+	for _, line := range asserted {
+		state |= 1 << line
+	}
+	return state
+}
+
 // Error reports one or more serial errors (framing, parity, overrun, etc.)
 // detected by Term.Read.
 type Error struct {

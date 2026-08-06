@@ -18,6 +18,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/refclock"
+	"github.com/jclark/satpulse/time/internal/serialpps"
 	"github.com/jclark/satpulse/time/internal/timemsg"
 	"github.com/jclark/satpulse/time/internal/ts"
 	"github.com/jclark/satpulse/time/lib/median"
@@ -106,6 +107,7 @@ type Dispatcher struct {
 	shm                   SHMWriter
 	sps                   samplePrecisionSetter
 	timeMsgBuffer         *timemsg.Buffer
+	serialPPS             *serialpps.Generator
 	timeTicker            gpsprot.TimeTicker
 	pvAccum               gpsprot.PVMsgAccum
 	ls                    ptime.LeapSecond
@@ -125,6 +127,7 @@ func NewDispatcher(
 	controller *phcsync.Controller,
 	rc *refclock.ProxyRefClock,
 	shm SHMWriter,
+	useSerialPPS bool,
 	ls ptime.LeapSecond,
 	obs obs.Observer,
 	eventLogPath string,
@@ -170,9 +173,12 @@ func NewDispatcher(
 		pp.SetMsgHandler(multiHandler)
 		pp.SetNativeMsgHandler(&d)
 	}
-	// In serial timing mode (no PHC, but refclock configured), feed
-	// NTP samples directly from time messages.
-	if controller == nil && (rc != nil || shm != nil) {
+	if useSerialPPS {
+		d.serialPPS = serialpps.NewGenerator()
+		timeMsgBuffer.SetMsgUTCTimer(d.serialPPS)
+	} else if controller == nil && (rc != nil || shm != nil) {
+		// In serial timing mode (no PHC, but refclock configured), feed
+		// NTP samples directly from time messages.
 		timeMsgBuffer.SetMsgUTCTimer(&d)
 	}
 	err := d.lf.Open(eventLogPath, true)
@@ -184,7 +190,7 @@ func NewDispatcher(
 
 const tickPeriod = time.Second / 4
 
-func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
+func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
 	// loop until all input channels are closed
 	defer d.obs.Release()
 	if d.rc != nil {
@@ -223,7 +229,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 	staleEra := ts.StaleEra
 	nSkipped := 0
 
-	for tsCh != nil || pktCh != nil || pullPktCh != nil {
+	for tsCh != nil || serialPPSCh != nil || pktCh != nil || pullPktCh != nil {
 		select {
 		case e, ok := <-tsCh:
 			if !ok {
@@ -255,6 +261,13 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 				}
 				d.timestamp(e)
 			}
+		case edge, ok := <-serialPPSCh:
+			if ok {
+				d.serialPPSEdge(edge)
+			} else {
+				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
+				serialPPSCh = nil
+			}
 
 		case pkt, ok := <-pktCh:
 			if ok {
@@ -280,6 +293,25 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 			d.lf.Reopen(d.lg)
 		}
 	}
+}
+
+func (d *Dispatcher) serialPPSEdge(edge serialpps.Edge) {
+	if d.serialPPS == nil {
+		return
+	}
+	sample, ok := d.serialPPS.Edge(edge)
+	if !ok {
+		return
+	}
+	if d.rc != nil {
+		if err := d.rc.Sample(ntime.Sys(sample.System), sample.Offset, sample.Leap); err != nil {
+			d.lg.Warn("refclock sample failed", "err", err)
+		}
+	}
+	if d.shm != nil {
+		d.shm.Write(sample.Reference, sample.System, sample.Leap)
+	}
+	d.obs.NTPSample(sample.System, sample.Offset, sample.Leap, ptime.Time(0))
 }
 
 func (d *Dispatcher) handlePacket(pkt scan.Packet) {
@@ -411,7 +443,7 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 // sysSample generates a sample of system time vs true time (based on PHC)
 func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time, samplePrecision time.Duration) {
 	// Send refclock sample if in tracking mode
-	if (d.rc == nil && d.shm == nil) || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
+	if d.serialPPS != nil || (d.rc == nil && d.shm == nil) || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
 		return
 	}
 	if d.sps != nil {

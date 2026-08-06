@@ -232,6 +232,36 @@ func (t *Term) Buffered() (int, error) {
 	return int(stat.CBOutQue), nil
 }
 
+// Win32 modem-status bits from winbase.h.
+const (
+	msCTSOn  = 0x0010
+	msDSROn  = 0x0020
+	msRingOn = 0x0040
+	msRLSDOn = 0x0080
+)
+
+// ModemControlLineState returns the asserted modem control input lines.
+func (t *Term) ModemControlLineState() (ModemControlLineState, error) {
+	var status uint32
+	if err := windows.GetCommModemStatus(t.handle, &status); err != nil {
+		return 0, t.wrapErr(err, "GetCommModemStatus")
+	}
+	var state ModemControlLineState
+	if status&msCTSOn != 0 {
+		state |= modemControlLineState(ModemCTS)
+	}
+	if status&msRLSDOn != 0 {
+		state |= modemControlLineState(ModemDCD)
+	}
+	if status&msDSROn != 0 {
+		state |= modemControlLineState(ModemDSR)
+	}
+	if status&msRingOn != 0 {
+		state |= modemControlLineState(ModemRI)
+	}
+	return state, nil
+}
+
 func (t *Term) Flush() error {
 	err := windows.PurgeComm(t.handle, windows.PURGE_RXCLEAR|windows.PURGE_TXCLEAR)
 	return t.wrapErr(err, "PurgeComm")

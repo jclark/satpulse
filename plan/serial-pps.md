@@ -138,8 +138,8 @@ hardware:
   inter-pulse period buys nothing.
 - Window margin: open 5 ms before the predicted edge; a miss is
   declared 5 ms after it. The first window after a slow-poll detection
-  opens earlier by half the slow polling spacing, reflecting the
-  coarser phase knowledge.
+  opens earlier and closes later by half the slow polling spacing,
+  reflecting the coarser phase knowledge.
 - If the line is already in its pulse-asserted state when the window
   opens, that also counts as a miss.
 - On each miss the margin doubles and the prediction advances 1 s;

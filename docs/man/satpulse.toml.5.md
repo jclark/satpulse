@@ -76,6 +76,20 @@ It can have the following keys:
 * `speed` - an integer giving the speed of the connection in bits-per-second (baud)
 * `device` - a string giving the path of the serial device name; when SatPulse is run via systemd, the
   device will usually be specified in systemd commands, which will override any value specified here
+* `pps.line` - an optional string specifying the modem-control input carrying the receiver's PPS signal;
+  one of `"cts"`, `"dcd"`, `"dsr"`, or `"ri"`. CTS is recommended. Specifying this key enables
+  user-space PPS detection and requires `device` to be a real TTY rather than a FIFO or socket.
+  The PPS leading edge is assumed to be electrically rising; on a TTL serial adapter this is observed
+  as the selected modem-control flag becoming deasserted.
+
+Example using PPS on CTS:
+
+```
+[serial]
+device = "/dev/cu.usbserial-XXXXXXXX"
+speed = 38400
+pps.line = "cts"
+```
 
 
 ## `gps` table
@@ -185,9 +199,11 @@ ptp4l.udsAddress = "/var/run/ptp4l"
 The `ntp` table controls how SatPulse sends samples to an NTP daemon.
 It supports two protocols: the refclock SOCK protocol defined by chrony, and the SHM protocol defined by NTP.
 
-If the `[phc]` table is not present, then the samples will be based on the timing of the serial messages.
+If the `[phc]` table is not present, samples are normally based on the timing of the serial messages.
 This is imprecise but is useful when the NTP daemon has a separate source of PPS samples, which do not include time-of-day information.
-The samples from SatPulse can be used to complete the PPS samples.
+The samples from SatPulse can be used to complete the PPS samples. When `serial.pps.line` is configured,
+samples instead use PPS edges detected on that modem-control line; serial time messages are still used
+to identify the UTC second and leap indication.
 
 The following key enables use of the refclock SOCK protocol:
 
@@ -206,7 +222,8 @@ The following keys are used with the SHM protocol:
 * `shm.segment` - an integer from 0 to 255 giving the NTP SHM segment index;
   this key enables use of the SHM protocol
 * `shm.precision` - an optional integer from -128 to 127 overriding the SHM precision field, in log2 seconds;
-  the default is for SatPulse to choose a precision based on how the sample was generated
+  the default is for SatPulse to choose a precision based on how the sample was generated: -1 for
+  serial-message arrival samples, -9 for serial PPS samples, and a measured value for PHC samples
 
 The segment is created with mode 0600 when the index is 0 or 1, and otherwise with mode 0666,
 so indices 0 and 1 are only suitable when satpulsed and the NTP daemon run as the same user.

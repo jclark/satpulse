@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/ntrip"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/ptime"
@@ -53,6 +54,11 @@ type UserConfig struct {
 type SerialConfig struct {
 	Device string
 	Speed  *int
+	PPS    *SerialPPSConfig `toml:"pps"`
+}
+
+type SerialPPSConfig struct {
+	Line string `toml:"line"`
 }
 
 type PHCConfig struct {
@@ -96,7 +102,10 @@ type NTPSHMConfig struct {
 	Precision *int8  `toml:"precision"`
 }
 
-const serialSHMPrecision int8 = -1
+const (
+	serialSHMPrecision    int8 = -1
+	serialPPSSHMPrecision int8 = -9
+)
 
 type LogConfig struct {
 	Interval int    `toml:"interval"`
@@ -201,6 +210,11 @@ func (cfg *Config) hasRTCMMSM7To4() bool {
 // It is separate from LoadConfig because the config contains logging settings.
 func (cfg *Config) Validate(lg *slog.Logger) error {
 	cfg.GPS.validate(lg)
+	if cfg.Serial.PPS != nil {
+		if _, err := cfg.Serial.PPS.modemControlLine(); err != nil {
+			return &configError{err: err}
+		}
+	}
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
 	}
@@ -215,6 +229,21 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		return &configError{err: err}
 	}
 	return nil
+}
+
+func (cfg SerialPPSConfig) modemControlLine() (gpsio.ModemControlLine, error) {
+	switch cfg.Line {
+	case "cts":
+		return gpsio.ModemCTS, nil
+	case "dcd":
+		return gpsio.ModemDCD, nil
+	case "dsr":
+		return gpsio.ModemDSR, nil
+	case "ri":
+		return gpsio.ModemRI, nil
+	default:
+		return 0, fmt.Errorf("serial.pps.line %q: must be one of cts, dcd, dsr, ri", cfg.Line)
+	}
 }
 
 // userSet checks the top-level [[user]] table for empty or duplicate
@@ -289,6 +318,10 @@ func (cfg *NTPConfig) NewSHMWriter(lg *slog.Logger) (*ntpshm.Writer, error) {
 func (cfg *Config) shmFixedPrecision() *int8 {
 	if cfg.NTP.SHM != nil && cfg.NTP.SHM.Precision != nil {
 		return cfg.NTP.SHM.Precision
+	}
+	if cfg.Serial.PPS != nil {
+		p := serialPPSSHMPrecision
+		return &p
 	}
 	if cfg.PHC.Interface == "" {
 		p := serialSHMPrecision

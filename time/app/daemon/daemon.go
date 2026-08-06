@@ -26,6 +26,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/proxy"
 	"github.com/jclark/satpulse/time/internal/ptpgm"
 	"github.com/jclark/satpulse/time/internal/refclock"
+	"github.com/jclark/satpulse/time/internal/serialpps"
 	"github.com/jclark/satpulse/time/internal/sseobs"
 	"github.com/jclark/satpulse/time/internal/ts"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
@@ -132,6 +133,12 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	conn, speed, err := gpsio.OpenSerial(cfg.Serial.Device, cfgSpeed)
 	if err != nil {
 		return err
+	}
+	if cfg.Serial.PPS != nil {
+		if _, err := conn.ModemControlLineState(); err != nil {
+			conn.Close()
+			return fmt.Errorf("serial PPS requires a TTY with modem-control lines: %w", err)
+		}
 	}
 	if speed == 0 {
 		speed = cfgSpeed
@@ -306,6 +313,21 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			return err
 		}
 	}
+	var serialPPSCh <-chan serialpps.Edge
+	if cfg.Serial.PPS != nil {
+		line, _ := cfg.Serial.PPS.modemControlLine() // checked by Config.Validate
+		ch := make(chan serialpps.Edge, 1)
+		serialPPSCh = ch
+		wg.Go(func() {
+			defer close(ch)
+			lg.Debug("serial PPS polling goroutine started", "line", cfg.Serial.PPS.Line)
+			if err := serialpps.Poll(ctx, conn, line, ch); err != nil && ctx.Err() == nil {
+				lg.Error("serial PPS polling failed", "line", cfg.Serial.PPS.Line, "err", err)
+				cancel(fmt.Errorf("serial PPS polling failed on %s: %w", cfg.Serial.PPS.Line, err))
+			}
+			lg.Debug("serial PPS polling goroutine exited", "line", cfg.Serial.PPS.Line)
+		})
+	}
 	statsObs := newStatsLogObserver(cfg, lg)
 	clockObs, err := newClockLogObserver(cfg, lg, clk, cfg.LeapSecond.leapSecond())
 	if err != nil {
@@ -349,7 +371,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			d.LeapSecond(ls, time.Time{})
 		}
 		// Dispatcher is responsible for closing rcProxy via defer in Run()
-		d.Run(tsCh, pCh, pullPktCh)
+		d.Run(tsCh, serialPPSCh, pCh, pullPktCh)
 	})
 
 	return nil
@@ -393,7 +415,7 @@ func NewDispatcher(
 	if ggaSelector != nil {
 		gs = ggaSelector
 	}
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ls, obs, eventLogPath, tStart, gs)
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, cfg.Serial.PPS != nil, ls, obs, eventLogPath, tStart, gs)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI

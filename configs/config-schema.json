@@ -55,6 +55,16 @@
         },
         "speed": {
           "type": "integer"
+        },
+        "pps": {
+          "type": "object",
+          "properties": {
+            "line": {
+              "type": "string",
+              "enum": ["cts", "dcd", "dsr", "ri"]
+            }
+          },
+          "required": ["line"]
         }
       }
     },
