@@ -319,8 +319,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		}
 	}
 	var serialPPSCh <-chan serialpps.Edge
+	var serialPPSGen *serialpps.Generator
 	if cfg.Serial.PPS != nil {
 		line, _ := cfg.Serial.PPS.modemControlLine() // checked by Config.Validate
+		serialPPSGen = serialpps.NewGenerator()
 		ch := make(chan serialpps.Edge, 1)
 		serialPPSCh = ch
 		wg.Go(func() {
@@ -356,7 +358,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	obs.AddObserver(&oc, posObs)
 	observer := oc.Observer()
 
-	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, observer, tStart, ggaSelector)
+	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, serialPPSGen, observer, tStart, ggaSelector)
 	if err != nil {
 		return err
 	}
@@ -391,6 +393,7 @@ func NewDispatcher(
 	gm *ptpgm.Grandmaster,
 	rc *refclock.ProxyRefClock,
 	shm *ntpshm.Writer,
+	serialPPS *serialpps.Generator,
 	obs obs.Observer,
 	tStart time.Time,
 	ggaSelector *stream.GGASelector,
@@ -420,7 +423,7 @@ func NewDispatcher(
 	if ggaSelector != nil {
 		gs = ggaSelector
 	}
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, cfg.Serial.PPS != nil, ls, obs, eventLogPath, tStart, gs)
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, serialPPS, ls, obs, eventLogPath, tStart, gs)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
