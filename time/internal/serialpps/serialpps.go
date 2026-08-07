@@ -4,6 +4,8 @@ package serialpps
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"runtime"
 	"time"
 
@@ -15,7 +17,7 @@ const (
 	slowPollSpacing = 100 * time.Millisecond
 	windowMargin    = 5 * time.Millisecond
 	maxWindowMargin = 100 * time.Millisecond
-	minPollSpacing  = 200 * time.Microsecond
+	minPollSpacing  = 100 * time.Microsecond
 	pulsePeriod     = time.Second
 	maxMessageAge   = 3 * time.Second
 )
@@ -31,11 +33,20 @@ type StateReader interface {
 	ModemControlLineState() (gpsio.ModemControlLineState, error)
 }
 
-// ChangeWaiter is a StateReader that can block until a modem control input may
-// have changed, reporting the time of the wakeup.
+// ChangeWaiter is a StateReader that may be able to block until a modem
+// control input changes, reporting the time of the wakeup;
+// CanWaitModemControlLineChange reports whether it actually can. Implemented
+// by a TTY-backed gpsio.SerialConn.
 type ChangeWaiter interface {
 	StateReader
+	CanWaitModemControlLineChange() bool
 	WaitModemControlLineChange(gpsio.ModemControlLine) (time.Time, error)
+}
+
+// Wiring describes how the PPS pulse is represented on the serial port's
+// modem-control inputs.
+type Wiring struct {
+	Line gpsio.ModemControlLine
 }
 
 type reading struct {
@@ -44,11 +55,27 @@ type reading struct {
 	start time.Time
 }
 
-// Poll adaptively polls line and sends precisely detected leading edges to
-// edges. A leading edge is the modem-control flag becoming deasserted. Edges
-// found during slow phase acquisition are used only to predict the next pulse
-// and are not sent.
-func Poll(ctx context.Context, r StateReader, line gpsio.ModemControlLine, edges chan<- Edge) error {
+// Detect sends detected leading edges of the pulse described by w to edges,
+// blocking on the wait primitive when r provides it and polling adaptively
+// otherwise. A tty driver without the wait shows up only as the first wait
+// failing with errors.ErrUnsupported; Detect then falls back to polling.
+func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, edges chan<- Edge) error {
+	if cw, ok := r.(ChangeWaiter); ok && cw.CanWaitModemControlLineChange() {
+		lg.Debug("serial PPS wait backend selected")
+		err := Wait(ctx, cw, w, edges)
+		if !errors.Is(err, errors.ErrUnsupported) {
+			return err
+		}
+		lg.Info("serial driver cannot wait for modem control line changes; polling instead")
+	}
+	lg.Debug("serial PPS polling backend selected")
+	return Poll(ctx, r, w, edges)
+}
+
+// Poll adaptively polls for the pulse described by w and sends precisely
+// detected leading edges to edges. Edges found during slow phase acquisition
+// are used only to predict the next pulse and are not sent.
+func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -65,36 +92,33 @@ func Poll(ctx context.Context, r StateReader, line gpsio.ModemControlLine, edges
 			if err != nil {
 				return err
 			}
-			if prev.state.Asserted(line) && !cur.state.Asserted(line) {
+			if !inPulse(prev.state, w) && inPulse(cur.state, w) {
 				coarseEdge = midpoint(prev.at, cur.at)
 			}
 			prev = cur
 		}
 
 		predicted := coarseEdge.Add(pulsePeriod)
-		margin := windowMargin
-		firstWindow := true
+		// The first window's margin covers the coarse phase knowledge from
+		// slow polling; each caught edge resets it to windowMargin. A miss
+		// of the first window therefore doubles past maxWindowMargin and
+		// goes straight back to slow polling.
+		margin := windowMargin + slowPollSpacing/2
 		for {
-			earlyMargin := margin
-			lateMargin := margin
-			if firstWindow {
-				earlyMargin += slowPollSpacing / 2
-				lateMargin += slowPollSpacing / 2
-			}
-			cur, err := readState(ctx, r, predicted.Add(-earlyMargin))
+			cur, err := readState(ctx, r, predicted.Add(-margin))
 			if err != nil {
 				return err
 			}
 			prev = cur
-			missed := !cur.state.Asserted(line)
-			deadline := predicted.Add(lateMargin)
+			missed := inPulse(cur.state, w)
+			deadline := predicted.Add(margin)
 			var edge time.Time
 			for !missed && edge.IsZero() {
 				cur, err = readState(ctx, r, prev.start.Add(minPollSpacing))
 				if err != nil {
 					return err
 				}
-				edge, missed = classifyReading(prev, cur, line, deadline)
+				edge, missed = classifyReading(prev, cur, w, deadline)
 				prev = cur
 			}
 			if !edge.IsZero() {
@@ -105,7 +129,6 @@ func Poll(ctx context.Context, r StateReader, line gpsio.ModemControlLine, edges
 				}
 				predicted = edge.Add(pulsePeriod)
 				margin = windowMargin
-				firstWindow = false
 				continue
 			}
 
@@ -116,16 +139,15 @@ func Poll(ctx context.Context, r StateReader, line gpsio.ModemControlLine, edges
 				break
 			}
 			predicted = predicted.Add(pulsePeriod)
-			firstWindow = false
 		}
 	}
 }
 
-// Wait sends leading edges detected with modem-control change notifications.
-// A leading edge is the modem-control flag becoming deasserted. The wait
-// primitive itself timestamps the wakeup, before the state read, because
-// that read can require a USB round trip.
-func Wait(ctx context.Context, r ChangeWaiter, line gpsio.ModemControlLine, edges chan<- Edge) error {
+// Wait sends leading edges of the pulse described by w detected with
+// modem-control change notifications. The wait primitive itself timestamps
+// the wakeup, before the state read, because that read can require a USB
+// round trip.
+func Wait(ctx context.Context, r ChangeWaiter, w Wiring, edges chan<- Edge) error {
 	prev, err := r.ModemControlLineState()
 	if err != nil {
 		return err
@@ -136,7 +158,7 @@ func Wait(ctx context.Context, r ChangeWaiter, line gpsio.ModemControlLine, edge
 			return ctx.Err()
 		default:
 		}
-		at, err := r.WaitModemControlLineChange(line)
+		at, err := r.WaitModemControlLineChange(w.Line)
 		if err != nil {
 			return err
 		}
@@ -144,7 +166,7 @@ func Wait(ctx context.Context, r ChangeWaiter, line gpsio.ModemControlLine, edge
 		if err != nil {
 			return err
 		}
-		if prev.Asserted(line) && !cur.Asserted(line) {
+		if !inPulse(prev, w) && inPulse(cur, w) {
 			select {
 			case edges <- Edge{T: at}:
 			case <-ctx.Done():
@@ -157,11 +179,18 @@ func Wait(ctx context.Context, r ChangeWaiter, line gpsio.ModemControlLine, edge
 
 // classifyReading gives a detected transition precedence over the deadline.
 // The deadline says when to stop looking, not whether a measured edge is valid.
-func classifyReading(prev, cur reading, line gpsio.ModemControlLine, deadline time.Time) (time.Time, bool) {
-	if prev.state.Asserted(line) && !cur.state.Asserted(line) {
+func classifyReading(prev, cur reading, w Wiring, deadline time.Time) (time.Time, bool) {
+	if !inPulse(prev.state, w) && inPulse(cur.state, w) {
 		return midpoint(prev.at, cur.at), false
 	}
 	return time.Time{}, !cur.at.Before(deadline)
+}
+
+// inPulse reports whether the state was observed during a pulse. The pulse's
+// electrically rising leading edge reaches the host inverted through the TTL
+// driver chain, so the flag reads deasserted during the pulse.
+func inPulse(s gpsio.ModemControlLineState, w Wiring) bool {
+	return !s.Asserted(w.Line)
 }
 
 func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading, error) {
@@ -212,9 +241,8 @@ type Sample struct {
 // Generator associates PPS edges with UTC seconds using the latest receiver
 // time message. It is intended to be called from one dispatcher goroutine.
 type Generator struct {
-	have  bool
 	utc   time.Time
-	tRead time.Time
+	tRead time.Time // zero until the first message arrives
 	leap  ptime.LeapSecondKind
 }
 
@@ -225,10 +253,9 @@ func NewGenerator() *Generator {
 
 // MsgUTCTime records the newest UTC/system-time pair from a receiver message.
 func (g *Generator) MsgUTCTime(utc, tRead time.Time, leap ptime.LeapSecondKind) {
-	if g.have && tRead.Before(g.tRead) {
+	if tRead.Before(g.tRead) {
 		return
 	}
-	g.have = true
 	g.utc = utc
 	g.tRead = tRead
 	g.leap = leap
@@ -238,16 +265,25 @@ func (g *Generator) MsgUTCTime(utc, tRead time.Time, leap ptime.LeapSecondKind) 
 // until a time message is available or when the newest message is over three
 // seconds old.
 func (g *Generator) Edge(edge Edge) (Sample, bool) {
-	if !g.have || edge.T.Sub(g.tRead) > maxMessageAge {
+	if g.tRead.IsZero() || edge.T.Sub(g.tRead) > maxMessageAge {
 		return Sample{}, false
 	}
-	// utc-tRead estimates the system clock error. Applying it at the edge
-	// puts the edge within half a second of the UTC second that it marks.
-	reference := edge.T.Add(g.utc.Sub(g.tRead)).Round(time.Second)
+	// Advancing utc by the monotonic elapsed time since tRead puts the edge
+	// within half a second of the UTC second it marks, and is immune to any
+	// wall-clock step between the message and the edge.
+	reference := g.utc.Add(edge.T.Sub(g.tRead)).Round(time.Second)
+	leap := g.leap
+	// The message's leap flag announces a leap at the end of the message's
+	// UTC day. If the edge falls in a different day, that announcement does
+	// not apply to it; a retained pre-midnight flag must not re-announce a
+	// leap that has already happened.
+	if !reference.Truncate(24 * time.Hour).Equal(g.utc.Truncate(24 * time.Hour)) {
+		leap = ptime.LeapSecondNone
+	}
 	return Sample{
 		Reference: reference,
 		System:    edge.T,
 		Offset:    reference.Sub(edge.T).Seconds(),
-		Leap:      g.leap,
+		Leap:      leap,
 	}, true
 }

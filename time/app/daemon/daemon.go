@@ -323,36 +323,20 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		}
 	}
 	var serialPPSCh <-chan serialpps.Edge
+	var serialPPSGen *serialpps.Generator
 	if cfg.Serial.PPS != nil {
 		line, _ := cfg.Serial.PPS.modemControlLine() // checked by Config.Validate
+		serialPPSGen = serialpps.NewGenerator()
 		ch := make(chan serialpps.Edge, 1)
 		serialPPSCh = ch
-		backend := "polling"
-		if conn.CanWaitModemControlLineChange() {
-			backend = "wait"
-		}
 		wg.Go(func() {
 			defer close(ch)
-			lg.Debug("serial PPS goroutine started", "line", cfg.Serial.PPS.Line, "backend", backend)
-			var err error
-			if backend == "wait" {
-				err = serialpps.Wait(ctx, conn, line, ch)
-				// On Linux the wait capability depends on the tty driver
-				// and shows up only as the first wait failing; no probe at
-				// open can detect it.
-				if errors.Is(err, errors.ErrUnsupported) && ctx.Err() == nil {
-					backend = "polling"
-					lg.Info("serial driver cannot wait for modem control line changes; polling instead", "line", cfg.Serial.PPS.Line)
-					err = serialpps.Poll(ctx, conn, line, ch)
-				}
-			} else {
-				err = serialpps.Poll(ctx, conn, line, ch)
-			}
-			if err != nil && ctx.Err() == nil {
-				lg.Error("serial PPS detection failed", "line", cfg.Serial.PPS.Line, "backend", backend, "err", err)
+			lg.Debug("serial PPS goroutine started", "line", cfg.Serial.PPS.Line)
+			if err := serialpps.Detect(ctx, lg, conn, serialpps.Wiring{Line: line}, ch); err != nil && ctx.Err() == nil {
+				lg.Error("serial PPS detection failed", "line", cfg.Serial.PPS.Line, "err", err)
 				cancel(fmt.Errorf("serial PPS detection failed on %s: %w", cfg.Serial.PPS.Line, err))
 			}
-			lg.Debug("serial PPS goroutine exited", "line", cfg.Serial.PPS.Line, "backend", backend)
+			lg.Debug("serial PPS goroutine exited", "line", cfg.Serial.PPS.Line)
 		})
 	}
 	statsObs := newStatsLogObserver(cfg, lg)
@@ -378,7 +362,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	obs.AddObserver(&oc, posObs)
 	observer := oc.Observer()
 
-	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, observer, tStart, ggaSelector)
+	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, serialPPSGen, observer, tStart, ggaSelector)
 	if err != nil {
 		return err
 	}
@@ -413,6 +397,7 @@ func NewDispatcher(
 	gm *ptpgm.Grandmaster,
 	rc *refclock.ProxyRefClock,
 	shm *ntpshm.Writer,
+	serialPPS *serialpps.Generator,
 	obs obs.Observer,
 	tStart time.Time,
 	ggaSelector *stream.GGASelector,
@@ -442,7 +427,7 @@ func NewDispatcher(
 	if ggaSelector != nil {
 		gs = ggaSelector
 	}
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, cfg.Serial.PPS != nil, ls, obs, eventLogPath, tStart, gs)
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, serialPPS, ls, obs, eventLogPath, tStart, gs)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI

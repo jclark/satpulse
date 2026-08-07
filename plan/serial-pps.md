@@ -1,4 +1,4 @@
-# Serial PPS (#259)
+# Serial PPS (#402)
 
 ## Introduction
 
@@ -92,7 +92,7 @@ reference minus T; the leap indication comes from the time messages, as
 in the existing message-based sampling. If the newest time message is
 more than 3 s old, the edge produces no sample. Emission uses the
 existing refclock path (SOCK and/or SHM); the fixed SHM precision
-reported in this mode is 2^-9 s (~2 ms), not the 2^-1 s used for
+reported in this mode is 2^-11 s (~500 us), not the 2^-1 s used for
 message-arrival sampling.
 
 With the polling backend, edges found while the pulse phase is unknown
@@ -147,7 +147,7 @@ hardware:
   opens, that also counts as a miss.
 - On each miss the margin doubles and the prediction advances 1 s;
   when the margin would exceed 100 ms, drop back to slow polling.
-- Minimum spacing between polls: 200 us.
+- Minimum spacing between polls: 100 us.
 
 The selected flag's deasserted interval must overlap at least one poll.
 In tracking this means a practical minimum pulse width of roughly one
@@ -201,8 +201,8 @@ On Linux every tty satisfies the interface but the ioctl itself
 depends on the tty driver, and there is no probe that does not block
 (`TIOCMIWAIT` waits for a change no matter what mask it is given); a
 driver without it fails the first wait immediately with `ENOTTY`,
-which `term` maps to `errors.ErrUnsupported`, and the daemon then
-falls back to the polling backend.
+which `term` maps to `errors.ErrUnsupported`, and the edge detector
+then falls back to the polling backend.
 Whether FreeBSD has an equivalent ioctl is unresolved (to be settled
 before that platform is claimed; if it has none, FreeBSD uses the
 polling backend).
