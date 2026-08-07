@@ -449,7 +449,7 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 // sysSample generates a sample of system time vs true time (based on PHC)
 func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time, samplePrecision time.Duration) {
 	// Send refclock sample if in tracking mode
-	if d.serialPPS != nil || (d.rc == nil && d.shm == nil) || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
+	if (d.rc == nil && d.shm == nil) || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
 		return
 	}
 	if d.sps != nil {
