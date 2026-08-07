@@ -171,9 +171,8 @@ type Sample struct {
 // Generator associates PPS edges with UTC seconds using the latest receiver
 // time message. It is intended to be called from one dispatcher goroutine.
 type Generator struct {
-	have  bool
 	utc   time.Time
-	tRead time.Time
+	tRead time.Time // zero until the first message arrives
 	leap  ptime.LeapSecondKind
 }
 
@@ -184,10 +183,9 @@ func NewGenerator() *Generator {
 
 // MsgUTCTime records the newest UTC/system-time pair from a receiver message.
 func (g *Generator) MsgUTCTime(utc, tRead time.Time, leap ptime.LeapSecondKind) {
-	if g.have && tRead.Before(g.tRead) {
+	if tRead.Before(g.tRead) {
 		return
 	}
-	g.have = true
 	g.utc = utc
 	g.tRead = tRead
 	g.leap = leap
@@ -197,7 +195,7 @@ func (g *Generator) MsgUTCTime(utc, tRead time.Time, leap ptime.LeapSecondKind) 
 // until a time message is available or when the newest message is over three
 // seconds old.
 func (g *Generator) Edge(edge Edge) (Sample, bool) {
-	if !g.have || edge.T.Sub(g.tRead) > maxMessageAge {
+	if g.tRead.IsZero() || edge.T.Sub(g.tRead) > maxMessageAge {
 		return Sample{}, false
 	}
 	// utc-tRead estimates the system clock error. Applying it at the edge
