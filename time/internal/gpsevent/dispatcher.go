@@ -127,7 +127,7 @@ func NewDispatcher(
 	controller *phcsync.Controller,
 	rc *refclock.ProxyRefClock,
 	shm SHMWriter,
-	useSerialPPS bool,
+	serialPPS *serialpps.Generator,
 	ls ptime.LeapSecond,
 	obs obs.Observer,
 	eventLogPath string,
@@ -173,9 +173,9 @@ func NewDispatcher(
 		pp.SetMsgHandler(multiHandler)
 		pp.SetNativeMsgHandler(&d)
 	}
-	if useSerialPPS {
-		d.serialPPS = serialpps.NewGenerator()
-		timeMsgBuffer.SetMsgUTCTimer(d.serialPPS)
+	if serialPPS != nil {
+		d.serialPPS = serialPPS
+		timeMsgBuffer.SetMsgUTCTimer(serialPPS)
 	} else if controller == nil && (rc != nil || shm != nil) {
 		// In serial timing mode (no PHC, but refclock configured), feed
 		// NTP samples directly from time messages.

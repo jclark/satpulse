@@ -35,7 +35,7 @@ func TestWait(t *testing.T) {
 	edges := make(chan Edge, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
-	go func() { errCh <- Wait(ctx, w, gpsio.ModemCTS, edges) }()
+	go func() { errCh <- Wait(ctx, w, Wiring{Line: gpsio.ModemCTS}, edges) }()
 	select {
 	case edge := <-edges:
 		if edge.T.IsZero() {
@@ -89,7 +89,7 @@ func TestDetectFallsBackToPolling(t *testing.T) {
 			if !tc.canWait {
 				cancel()
 			}
-			err := Detect(ctx, slog.New(slog.DiscardHandler), w, gpsio.ModemCTS, make(chan Edge, 1))
+			err := Detect(ctx, slog.New(slog.DiscardHandler), w, Wiring{Line: gpsio.ModemCTS}, make(chan Edge, 1))
 			if !errors.Is(err, context.Canceled) {
 				t.Errorf("Detect error = %v, want context.Canceled", err)
 			}
@@ -141,7 +141,7 @@ func TestClassifyReading(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			prev := reading{state: asserted, at: base}
 			cur := reading{state: tc.curState, at: base.Add(tc.curAt)}
-			edge, missed := classifyReading(prev, cur, gpsio.ModemCTS, base.Add(tc.deadline))
+			edge, missed := classifyReading(prev, cur, Wiring{Line: gpsio.ModemCTS}, base.Add(tc.deadline))
 			if missed != tc.wantMissed {
 				t.Errorf("missed = %v, want %v", missed, tc.wantMissed)
 			}
@@ -222,5 +222,19 @@ func TestGeneratorKeepsNewestMessage(t *testing.T) {
 	}
 	if !sample.Reference.Equal(time.Unix(200, 0)) || sample.Leap != ptime.LeapSecondPositive {
 		t.Fatalf("sample = %+v, want newest message reference and leap", sample)
+	}
+}
+
+func TestGeneratorSuppressesLeapAcrossDayBoundary(t *testing.T) {
+	g := NewGenerator()
+	utc := time.Unix(86_399, 500_000_000).UTC()
+	read := time.Unix(86_399, 600_000_000)
+	g.MsgUTCTime(utc, read, ptime.LeapSecondPositive)
+	sample, ok := g.Edge(Edge{T: read.Add(900 * time.Millisecond)})
+	if !ok {
+		t.Fatal("Edge returned no sample")
+	}
+	if !sample.Reference.Equal(time.Unix(86_400, 0)) || sample.Leap != ptime.LeapSecondNone {
+		t.Fatalf("sample = %+v, want midnight reference and no leap", sample)
 	}
 }
