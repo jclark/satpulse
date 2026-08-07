@@ -70,22 +70,19 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error
 		}
 
 		predicted := coarseEdge.Add(pulsePeriod)
-		margin := windowMargin
-		firstWindow := true
+		// The first window's margin covers the coarse phase knowledge from
+		// slow polling; each caught edge resets it to windowMargin. A miss
+		// of the first window therefore doubles past maxWindowMargin and
+		// goes straight back to slow polling.
+		margin := windowMargin + slowPollSpacing/2
 		for {
-			earlyMargin := margin
-			lateMargin := margin
-			if firstWindow {
-				earlyMargin += slowPollSpacing / 2
-				lateMargin += slowPollSpacing / 2
-			}
-			cur, err := readState(ctx, r, predicted.Add(-earlyMargin))
+			cur, err := readState(ctx, r, predicted.Add(-margin))
 			if err != nil {
 				return err
 			}
 			prev = cur
 			missed := inPulse(cur.state, w)
-			deadline := predicted.Add(lateMargin)
+			deadline := predicted.Add(margin)
 			var edge time.Time
 			for !missed && edge.IsZero() {
 				cur, err = readState(ctx, r, prev.start.Add(minPollSpacing))
@@ -103,7 +100,6 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error
 				}
 				predicted = edge.Add(pulsePeriod)
 				margin = windowMargin
-				firstWindow = false
 				continue
 			}
 
@@ -114,7 +110,6 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error
 				break
 			}
 			predicted = predicted.Add(pulsePeriod)
-			firstWindow = false
 		}
 	}
 }
