@@ -109,9 +109,6 @@ func TestGenerator(t *testing.T) {
 			if !sample.System.Equal(tEdge) {
 				t.Errorf("system = %v, want %v", sample.System, tEdge)
 			}
-			if want := wantRef.Sub(tEdge).Seconds(); sample.Offset != want {
-				t.Errorf("offset = %v, want %v", sample.Offset, want)
-			}
 			if sample.Leap != tc.leap {
 				t.Errorf("leap = %v, want %v", sample.Leap, tc.leap)
 			}

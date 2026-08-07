@@ -171,7 +171,6 @@ func midpoint(a, b time.Time) time.Time {
 type Sample struct {
 	Reference time.Time
 	System    time.Time
-	Offset    float64
 	Leap      ptime.LeapSecondKind
 }
 
@@ -220,7 +219,6 @@ func (g *Generator) Edge(edge Edge) (Sample, bool) {
 	return Sample{
 		Reference: reference,
 		System:    edge.T,
-		Offset:    reference.Sub(edge.T).Seconds(),
 		Leap:      leap,
 	}, true
 }

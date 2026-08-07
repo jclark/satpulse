@@ -317,15 +317,7 @@ func (d *Dispatcher) serialPPSEdge(edge serialpps.Edge) {
 	if !ok {
 		return
 	}
-	if d.rc != nil {
-		if err := d.rc.Sample(ntime.Sys(sample.System), sample.Offset, sample.Leap); err != nil {
-			d.lg.Warn("refclock sample failed", "err", err)
-		}
-	}
-	if d.shm != nil {
-		d.shm.Write(sample.Reference, sample.System, sample.Leap)
-	}
-	d.obs.NTPSample(sample.System, sample.Offset, sample.Leap, ptime.Time(0))
+	d.MsgUTCTime(sample.Reference, sample.System, sample.Leap)
 }
 
 func (d *Dispatcher) handlePacket(pkt scan.Packet) {
