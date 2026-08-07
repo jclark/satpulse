@@ -104,7 +104,7 @@ type NTPSHMConfig struct {
 
 const (
 	serialSHMPrecision    int8 = -1
-	serialPPSSHMPrecision int8 = -9
+	serialPPSSHMPrecision int8 = -11
 )
 
 type LogConfig struct {

@@ -15,7 +15,7 @@ const (
 	slowPollSpacing = 100 * time.Millisecond
 	windowMargin    = 5 * time.Millisecond
 	maxWindowMargin = 100 * time.Millisecond
-	minPollSpacing  = 200 * time.Microsecond
+	minPollSpacing  = 100 * time.Microsecond
 	pulsePeriod     = time.Second
 	maxMessageAge   = 3 * time.Second
 )
