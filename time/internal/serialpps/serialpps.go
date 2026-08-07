@@ -210,9 +210,10 @@ func (g *Generator) Edge(edge Edge) (Sample, bool) {
 	if g.tRead.IsZero() || edge.T.Sub(g.tRead) > maxMessageAge {
 		return Sample{}, false
 	}
-	// utc-tRead estimates the system clock error. Applying it at the edge
-	// puts the edge within half a second of the UTC second that it marks.
-	reference := edge.T.Add(g.utc.Sub(g.tRead)).Round(time.Second)
+	// Advancing utc by the monotonic elapsed time since tRead puts the edge
+	// within half a second of the UTC second it marks, and is immune to any
+	// wall-clock step between the message and the edge.
+	reference := g.utc.Add(edge.T.Sub(g.tRead)).Round(time.Second)
 	return Sample{
 		Reference: reference,
 		System:    edge.T,
