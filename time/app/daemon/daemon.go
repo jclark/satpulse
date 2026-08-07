@@ -328,7 +328,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		wg.Go(func() {
 			defer close(ch)
 			lg.Debug("serial PPS polling goroutine started", "line", cfg.Serial.PPS.Line)
-			if err := serialpps.Poll(ctx, conn, line, ch); err != nil && ctx.Err() == nil {
+			if err := serialpps.Poll(ctx, conn, serialpps.Wiring{Line: line}, ch); err != nil && ctx.Err() == nil {
 				lg.Error("serial PPS polling failed", "line", cfg.Serial.PPS.Line, "err", err)
 				cancel(fmt.Errorf("serial PPS polling failed on %s: %w", cfg.Serial.PPS.Line, err))
 			}

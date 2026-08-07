@@ -49,7 +49,7 @@ func TestClassifyReading(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			prev := reading{state: asserted, at: base}
 			cur := reading{state: tc.curState, at: base.Add(tc.curAt)}
-			edge, missed := classifyReading(prev, cur, gpsio.ModemCTS, base.Add(tc.deadline))
+			edge, missed := classifyReading(prev, cur, Wiring{Line: gpsio.ModemCTS}, base.Add(tc.deadline))
 			if missed != tc.wantMissed {
 				t.Errorf("missed = %v, want %v", missed, tc.wantMissed)
 			}

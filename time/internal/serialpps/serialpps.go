@@ -31,17 +31,22 @@ type StateReader interface {
 	ModemControlLineState() (gpsio.ModemControlLineState, error)
 }
 
+// Wiring describes how the PPS pulse is represented on the serial port's
+// modem-control inputs.
+type Wiring struct {
+	Line gpsio.ModemControlLine
+}
+
 type reading struct {
 	state gpsio.ModemControlLineState
 	at    time.Time
 	start time.Time
 }
 
-// Poll adaptively polls line and sends precisely detected leading edges to
-// edges. A leading edge is the modem-control flag becoming deasserted. Edges
-// found during slow phase acquisition are used only to predict the next pulse
-// and are not sent.
-func Poll(ctx context.Context, r StateReader, line gpsio.ModemControlLine, edges chan<- Edge) error {
+// Poll adaptively polls for the pulse described by w and sends precisely
+// detected leading edges to edges. Edges found during slow phase acquisition
+// are used only to predict the next pulse and are not sent.
+func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -58,7 +63,7 @@ func Poll(ctx context.Context, r StateReader, line gpsio.ModemControlLine, edges
 			if err != nil {
 				return err
 			}
-			if prev.state.Asserted(line) && !cur.state.Asserted(line) {
+			if !inPulse(prev.state, w) && inPulse(cur.state, w) {
 				coarseEdge = midpoint(prev.at, cur.at)
 			}
 			prev = cur
@@ -79,7 +84,7 @@ func Poll(ctx context.Context, r StateReader, line gpsio.ModemControlLine, edges
 				return err
 			}
 			prev = cur
-			missed := !cur.state.Asserted(line)
+			missed := inPulse(cur.state, w)
 			deadline := predicted.Add(lateMargin)
 			var edge time.Time
 			for !missed && edge.IsZero() {
@@ -87,7 +92,7 @@ func Poll(ctx context.Context, r StateReader, line gpsio.ModemControlLine, edges
 				if err != nil {
 					return err
 				}
-				edge, missed = classifyReading(prev, cur, line, deadline)
+				edge, missed = classifyReading(prev, cur, w, deadline)
 				prev = cur
 			}
 			if !edge.IsZero() {
@@ -116,11 +121,18 @@ func Poll(ctx context.Context, r StateReader, line gpsio.ModemControlLine, edges
 
 // classifyReading gives a detected transition precedence over the deadline.
 // The deadline says when to stop looking, not whether a measured edge is valid.
-func classifyReading(prev, cur reading, line gpsio.ModemControlLine, deadline time.Time) (time.Time, bool) {
-	if prev.state.Asserted(line) && !cur.state.Asserted(line) {
+func classifyReading(prev, cur reading, w Wiring, deadline time.Time) (time.Time, bool) {
+	if !inPulse(prev.state, w) && inPulse(cur.state, w) {
 		return midpoint(prev.at, cur.at), false
 	}
 	return time.Time{}, !cur.at.Before(deadline)
+}
+
+// inPulse reports whether the state was observed during a pulse. The pulse's
+// electrically rising leading edge reaches the host inverted through the TTL
+// driver chain, so the flag reads deasserted during the pulse.
+func inPulse(s gpsio.ModemControlLineState, w Wiring) bool {
+	return !s.Asserted(w.Line)
 }
 
 func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading, error) {
