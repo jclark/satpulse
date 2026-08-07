@@ -132,3 +132,17 @@ func TestGeneratorKeepsNewestMessage(t *testing.T) {
 		t.Fatalf("sample = %+v, want newest message reference and leap", sample)
 	}
 }
+
+func TestGeneratorSuppressesLeapAcrossDayBoundary(t *testing.T) {
+	g := NewGenerator()
+	utc := time.Unix(86_399, 500_000_000).UTC()
+	read := time.Unix(86_399, 600_000_000)
+	g.MsgUTCTime(utc, read, ptime.LeapSecondPositive)
+	sample, ok := g.Edge(Edge{T: read.Add(900 * time.Millisecond)})
+	if !ok {
+		t.Fatal("Edge returned no sample")
+	}
+	if !sample.Reference.Equal(time.Unix(86_400, 0)) || sample.Leap != ptime.LeapSecondNone {
+		t.Fatalf("sample = %+v, want midnight reference and no leap", sample)
+	}
+}

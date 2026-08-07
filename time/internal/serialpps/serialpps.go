@@ -214,10 +214,18 @@ func (g *Generator) Edge(edge Edge) (Sample, bool) {
 	// within half a second of the UTC second it marks, and is immune to any
 	// wall-clock step between the message and the edge.
 	reference := g.utc.Add(edge.T.Sub(g.tRead)).Round(time.Second)
+	leap := g.leap
+	// The message's leap flag announces a leap at the end of the message's
+	// UTC day. If the edge falls in a different day, that announcement does
+	// not apply to it; a retained pre-midnight flag must not re-announce a
+	// leap that has already happened.
+	if !reference.Truncate(24 * time.Hour).Equal(g.utc.Truncate(24 * time.Hour)) {
+		leap = ptime.LeapSecondNone
+	}
 	return Sample{
 		Reference: reference,
 		System:    edge.T,
 		Offset:    reference.Sub(edge.T).Seconds(),
-		Leap:      g.leap,
+		Leap:      leap,
 	}, true
 }
