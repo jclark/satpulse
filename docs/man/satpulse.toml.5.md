@@ -229,8 +229,7 @@ The following keys are used with the SHM protocol:
 * `shm.segment` - an integer from 0 to 255 giving the NTP SHM segment index;
   this key enables use of the SHM protocol
 * `shm.precision` - an optional integer from -128 to 127 overriding the SHM precision field, in log2 seconds;
-  the default is for SatPulse to choose a precision based on how the sample was generated: -1 for
-  serial-message arrival samples, -9 for serial PPS samples, and a measured value for PHC samples
+  the default is for SatPulse to choose a precision based on how the sample was generated
 
 The segment is created with mode 0600 when the index is 0 or 1, and otherwise with mode 0666,
 so indices 0 and 1 are only suitable when satpulsed and the NTP daemon run as the same user.
