@@ -311,7 +311,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 
 func (d *Dispatcher) serialPPSEdge(edge serialpps.Edge) {
 	if d.serialPPS == nil {
-		return
+		panic("serial PPS edge channel wired without a Generator")
 	}
 	sample, ok := d.serialPPS.Edge(edge)
 	if !ok {
