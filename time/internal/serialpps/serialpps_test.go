@@ -3,6 +3,7 @@ package serialpps
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -18,6 +19,8 @@ type testChangeWaiter struct {
 func (w *testChangeWaiter) ModemControlLineState() (gpsio.ModemControlLineState, error) {
 	return w.state, nil
 }
+
+func (w *testChangeWaiter) CanWaitModemControlLineChange() bool { return true }
 
 func (w *testChangeWaiter) WaitModemControlLineChange(gpsio.ModemControlLine) (time.Time, error) {
 	w.state = <-w.next
@@ -45,6 +48,55 @@ func TestWait(t *testing.T) {
 	w.next <- asserted
 	if err := <-errCh; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Wait error = %v, want context.Canceled", err)
+	}
+}
+
+// testFallbackWaiter reports the wait capability but fails every wait with
+// ErrUnsupported, as a tty driver without TIOCMIWAIT does; it cancels the
+// context on the first wait so that the polling fallback returns promptly.
+type testFallbackWaiter struct {
+	canWait bool
+	waits   int
+	cancel  context.CancelFunc
+}
+
+func (w *testFallbackWaiter) ModemControlLineState() (gpsio.ModemControlLineState, error) {
+	return 0, nil
+}
+
+func (w *testFallbackWaiter) CanWaitModemControlLineChange() bool { return w.canWait }
+
+func (w *testFallbackWaiter) WaitModemControlLineChange(gpsio.ModemControlLine) (time.Time, error) {
+	w.waits++
+	w.cancel()
+	return time.Time{}, errors.ErrUnsupported
+}
+
+func TestDetectFallsBackToPolling(t *testing.T) {
+	tests := []struct {
+		name        string
+		canWait     bool
+		expectWaits int
+	}{
+		{name: "unsupported wait falls back", canWait: true, expectWaits: 1},
+		{name: "no capability polls directly", canWait: false, expectWaits: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			w := &testFallbackWaiter{canWait: tc.canWait, cancel: cancel}
+			if !tc.canWait {
+				cancel()
+			}
+			err := Detect(ctx, slog.New(slog.DiscardHandler), w, gpsio.ModemCTS, make(chan Edge, 1))
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("Detect error = %v, want context.Canceled", err)
+			}
+			if w.waits != tc.expectWaits {
+				t.Errorf("waits = %d, want %d", w.waits, tc.expectWaits)
+			}
+		})
 	}
 }
 

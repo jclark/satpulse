@@ -201,8 +201,8 @@ On Linux every tty satisfies the interface but the ioctl itself
 depends on the tty driver, and there is no probe that does not block
 (`TIOCMIWAIT` waits for a change no matter what mask it is given); a
 driver without it fails the first wait immediately with `ENOTTY`,
-which `term` maps to `errors.ErrUnsupported`, and the daemon then
-falls back to the polling backend.
+which `term` maps to `errors.ErrUnsupported`, and the edge detector
+then falls back to the polling backend.
 Whether FreeBSD has an equivalent ioctl is unresolved (to be settled
 before that platform is claimed; if it has none, FreeBSD uses the
 polling backend).

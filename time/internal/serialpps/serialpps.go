@@ -4,6 +4,8 @@ package serialpps
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"runtime"
 	"time"
 
@@ -31,10 +33,13 @@ type StateReader interface {
 	ModemControlLineState() (gpsio.ModemControlLineState, error)
 }
 
-// ChangeWaiter is a StateReader that can block until a modem control input may
-// have changed, reporting the time of the wakeup.
+// ChangeWaiter is a StateReader that may be able to block until a modem
+// control input changes, reporting the time of the wakeup;
+// CanWaitModemControlLineChange reports whether it actually can. Implemented
+// by a TTY-backed gpsio.SerialConn.
 type ChangeWaiter interface {
 	StateReader
+	CanWaitModemControlLineChange() bool
 	WaitModemControlLineChange(gpsio.ModemControlLine) (time.Time, error)
 }
 
@@ -42,6 +47,23 @@ type reading struct {
 	state gpsio.ModemControlLineState
 	at    time.Time
 	start time.Time
+}
+
+// Detect sends detected PPS leading edges on line to edges, blocking on the
+// wait primitive when r provides it and polling adaptively otherwise. A tty
+// driver without the wait shows up only as the first wait failing with
+// errors.ErrUnsupported; Detect then falls back to polling.
+func Detect(ctx context.Context, lg *slog.Logger, r StateReader, line gpsio.ModemControlLine, edges chan<- Edge) error {
+	if w, ok := r.(ChangeWaiter); ok && w.CanWaitModemControlLineChange() {
+		lg.Debug("serial PPS wait backend selected")
+		err := Wait(ctx, w, line, edges)
+		if !errors.Is(err, errors.ErrUnsupported) {
+			return err
+		}
+		lg.Info("serial driver cannot wait for modem control line changes; polling instead")
+	}
+	lg.Debug("serial PPS polling backend selected")
+	return Poll(ctx, r, line, edges)
 }
 
 // Poll adaptively polls line and sends precisely detected leading edges to

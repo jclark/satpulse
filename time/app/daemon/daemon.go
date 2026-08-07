@@ -327,32 +327,14 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		line, _ := cfg.Serial.PPS.modemControlLine() // checked by Config.Validate
 		ch := make(chan serialpps.Edge, 1)
 		serialPPSCh = ch
-		backend := "polling"
-		if conn.CanWaitModemControlLineChange() {
-			backend = "wait"
-		}
 		wg.Go(func() {
 			defer close(ch)
-			lg.Debug("serial PPS goroutine started", "line", cfg.Serial.PPS.Line, "backend", backend)
-			var err error
-			if backend == "wait" {
-				err = serialpps.Wait(ctx, conn, line, ch)
-				// On Linux the wait capability depends on the tty driver
-				// and shows up only as the first wait failing; no probe at
-				// open can detect it.
-				if errors.Is(err, errors.ErrUnsupported) && ctx.Err() == nil {
-					backend = "polling"
-					lg.Info("serial driver cannot wait for modem control line changes; polling instead", "line", cfg.Serial.PPS.Line)
-					err = serialpps.Poll(ctx, conn, line, ch)
-				}
-			} else {
-				err = serialpps.Poll(ctx, conn, line, ch)
-			}
-			if err != nil && ctx.Err() == nil {
-				lg.Error("serial PPS detection failed", "line", cfg.Serial.PPS.Line, "backend", backend, "err", err)
+			lg.Debug("serial PPS goroutine started", "line", cfg.Serial.PPS.Line)
+			if err := serialpps.Detect(ctx, lg, conn, line, ch); err != nil && ctx.Err() == nil {
+				lg.Error("serial PPS detection failed", "line", cfg.Serial.PPS.Line, "err", err)
 				cancel(fmt.Errorf("serial PPS detection failed on %s: %w", cfg.Serial.PPS.Line, err))
 			}
-			lg.Debug("serial PPS goroutine exited", "line", cfg.Serial.PPS.Line, "backend", backend)
+			lg.Debug("serial PPS goroutine exited", "line", cfg.Serial.PPS.Line)
 		})
 	}
 	statsObs := newStatsLogObserver(cfg, lg)
