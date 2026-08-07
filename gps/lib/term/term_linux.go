@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -237,6 +239,127 @@ func (t *unixTerm) readError() *Error {
 		flags |= ErrBufOverrun
 	}
 	return &Error{Path: t.path, Flags: flags, Counts: &ec}
+}
+
+var _ ModemControlLineWaiter = (*unixTerm)(nil)
+
+// modemWaitState makes CancelModemControlLineWait sticky: once cancelCh is
+// closed, pending waits return promptly and later ones return immediately.
+type modemWaitState struct {
+	mu        sync.Mutex
+	cancelled bool
+	cancelCh  chan struct{} // closed by CancelModemControlLineWait
+}
+
+// WaitModemControlLineChange blocks in TIOCMIWAIT until line may have changed
+// state, returning the time the ioctl returned. A Close preceded by
+// CancelModemControlLineWait (the order SerialConn.Stop ensures) is safe at
+// any point relative to a wait call: cancel serializes with the dup below.
+//
+// The ioctl cannot be interrupted: TIOCMIWAIT has no timeout, closing the
+// descriptor does not wake it, and a directed signal never surfaces as EINTR
+// because the Go runtime installs its signal handlers with SA_RESTART, under
+// which the kernel transparently restarts the ioctl. So the ioctl runs on a
+// goroutine that a cancelled wait abandons: it stays parked in the kernel
+// until the next line change or process exit. It operates only on a private
+// dup of the descriptor, so however late it wakes it cannot touch a
+// descriptor number reused after Close; the dup (and with it the port's
+// flock) is held until it wakes, and process exit releases everything.
+func (t *unixTerm) WaitModemControlLineChange(line ModemControlLine) (time.Time, error) {
+	mask, err := tiocmLineMask(line)
+	if err != nil {
+		return time.Time{}, err
+	}
+	w := &t.miwait
+	w.mu.Lock()
+	if w.cancelled {
+		w.mu.Unlock()
+		return time.Now(), nil
+	}
+	if w.cancelCh == nil {
+		w.cancelCh = make(chan struct{})
+	}
+	cancelCh := w.cancelCh
+	// Hold the lock across the dup: CancelModemControlLineWait also takes
+	// it, and Close paths cancel before closing, so the descriptor cannot
+	// be closed or its number reused between the cancelled check and the
+	// dup.
+	fd, err := unix.FcntlInt(uintptr(t.fd), unix.F_DUPFD_CLOEXEC, 0)
+	w.mu.Unlock()
+	if err != nil {
+		return time.Time{}, t.wrapErr(err, "fcntl(F_DUPFD_CLOEXEC)")
+	}
+	ch := make(chan miwaitResult, 1)
+	go miwaitIoctl(fd, mask, ch)
+	select {
+	case r := <-ch:
+		if r.errno == unix.ENOTTY {
+			// The tty driver does not implement TIOCMIWAIT.
+			return time.Time{}, t.wrapErr(fmt.Errorf("%w: %v", errors.ErrUnsupported, r.errno), "ioctl(TIOCMIWAIT)")
+		}
+		if r.errno != 0 {
+			return time.Time{}, t.wrapErr(r.errno, "ioctl(TIOCMIWAIT)")
+		}
+		return r.at, nil
+	case <-cancelCh:
+		return time.Now(), nil
+	}
+}
+
+// CancelModemControlLineWait makes a pending wait return promptly and all
+// future waits on this terminal return immediately. The wait's ioctl
+// goroutine is left parked in the kernel; see WaitModemControlLineChange.
+func (t *unixTerm) CancelModemControlLineWait() {
+	w := &t.miwait
+	w.mu.Lock()
+	if !w.cancelled {
+		w.cancelled = true
+		if w.cancelCh == nil {
+			w.cancelCh = make(chan struct{})
+		}
+		close(w.cancelCh)
+	}
+	w.mu.Unlock()
+}
+
+type miwaitResult struct {
+	at    time.Time
+	errno syscall.Errno
+}
+
+// miwaitIoctl blocks in TIOCMIWAIT and reports when and how it returned. It
+// may run detached from any caller, arbitrarily long, so every syscall here
+// uses the private descriptor passed in, which it alone closes. EINTR is
+// routine noise from the runtime's signals and is retried. The unix.Syscall
+// wrapper blocks this goroutine's OS thread; the runtime poller cannot be
+// used for an ioctl.
+func miwaitIoctl(fd int, mask uint, ch chan<- miwaitResult) {
+	for {
+		_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), unix.TIOCMIWAIT, uintptr(mask))
+		at := time.Now()
+		if errno == unix.EINTR {
+			continue
+		}
+		ch <- miwaitResult{at: at, errno: errno}
+		unix.Close(fd)
+		return
+	}
+}
+
+// tiocmLineMask returns the TIOCM_* bit for line, forming TIOCMIWAIT's mask
+// of lines to watch.
+func tiocmLineMask(line ModemControlLine) (uint, error) {
+	switch line {
+	case ModemCTS:
+		return unix.TIOCM_CTS, nil
+	case ModemDCD:
+		return unix.TIOCM_CAR, nil
+	case ModemDSR:
+		return unix.TIOCM_DSR, nil
+	case ModemRI:
+		return unix.TIOCM_RNG, nil
+	}
+	return 0, fmt.Errorf("invalid modem control line: %d", line)
 }
 
 func (t *unixTerm) DevKind() DevKind {

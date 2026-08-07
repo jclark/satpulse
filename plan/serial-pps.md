@@ -158,15 +158,15 @@ microsecond-width pulses are not supported by this backend.
 
 The polling goroutine locks its OS thread.
 
-### Wait (phase 2 via D2XX on macOS; phase 3: Linux, Windows)
+### Wait (phase 2: Linux; phase 3 via D2XX on macOS; phase 4: Windows)
 
 Linux `TIOCMIWAIT` blocks until a chosen modem control line changes;
 Windows has the equivalent `SetCommMask`/`WaitCommEvent`. Neither
-reports the transition's direction nor a timestamp, so on each wakeup
-the backend takes the timestamp immediately -- before any further
-calls, since on hardware like the FT232R a state read is itself a
-~2 ms round trip -- and then reads the line state to classify the
-transition. Every wakeup where the line has entered its pulse-asserted
+reports the transition's direction nor a timestamp, so the wait
+primitive returns a timestamp taken immediately on wakeup -- before
+any further calls, since on hardware like the FT232R a state read is
+itself a ~2 ms round trip -- and the backend then reads the line
+state to classify the transition. Every wakeup where the line has entered its pulse-asserted
 sense produces a sample, subject only to identifying the second from
 the time messages. Unlike the polling backend, nothing here relies on
 the pulses being 1 s apart.
@@ -178,37 +178,56 @@ capability interface that the PPS source asserts for, not a method of
 
 ```go
 type ModemControlLineWaiter interface {
-	WaitModemControlLineChange(line ModemControlLine) error
+	WaitModemControlLineChange(line ModemControlLine) (time.Time, error)
 	CancelModemControlLineWait()
 }
 ```
 
-The cancel exists so that shutdown is prompt on backends that can abort
-a pending wait; where nothing can interrupt it, it does nothing and the
-shutdown behaviour below applies.
+The cancel exists so that shutdown is prompt: it makes a pending wait
+call return and all subsequent calls return immediately, whether or
+not the backend can interrupt the underlying primitive (see the
+shutdown discussion below).
 
 The primitive may return without the line having changed (a spurious
-wakeup, an interrupted syscall, or -- on D2XX -- an event for another
-line or for received data); callers detect actual transitions by
-reading the state, which the backend does after every wakeup anyway.
+wakeup, an interrupted syscall, a cancelled wait, or -- on D2XX -- an
+event for another line or for received data); callers detect actual
+transitions by reading the state, which the backend does after every
+wakeup anyway.
 
 `gpsio.SerialConn` forwards it as usual, and whether the underlying
 terminal satisfies the capability is how the PPS source chooses
 between the wait and polling backends at startup.
+On Linux every tty satisfies the interface but the ioctl itself
+depends on the tty driver, and there is no probe that does not block
+(`TIOCMIWAIT` waits for a change no matter what mask it is given); a
+driver without it fails the first wait immediately with `ENOTTY`,
+which `term` maps to `errors.ErrUnsupported`, and the daemon then
+falls back to the polling backend.
 Whether FreeBSD has an equivalent ioctl is unresolved (to be settled
 before that platform is claimed; if it has none, FreeBSD uses the
 polling backend).
 
-Shutdown for this backend differs from every other goroutine in the
-daemon and must be called out explicitly at the wiring point: the wait
-cannot be interrupted portably (`TIOCMIWAIT` has no timeout, and
-closing the descriptor is not guaranteed to wake it). While pulses are
-arriving, the goroutine wakes within a second and observes the stop
-flag; if the pulse has stopped, the goroutine may remain blocked in
-the ioctl until process exit. That is accepted and harmless -- it must
-not later be "fixed" as if it were a leak. `EINTR` from the ioctl is
-retried. (On Windows, `SetCommMask` aborts a pending `WaitCommEvent`,
-so an explicit unblock is available there.)
+Shutdown requires a pending wait call to return promptly: the
+daemon's shutdown path waits for every goroutine to exit before the
+serial port is closed, so a call blocked until process exit would
+hang the daemon whenever the pulse has stopped. On Linux nothing can
+end the ioctl itself: `TIOCMIWAIT` has no timeout, closing the
+descriptor does not wake it, and a directed signal never surfaces as
+`EINTR`, because the Go runtime installs its signal handlers with
+`SA_RESTART`, under which the kernel transparently restarts the
+interrupted ioctl (verified against cdc-acm on kernel 6.12). So the
+call is decoupled from the ioctl: the ioctl runs on its own goroutine
+against a private dup of the descriptor and reports the wakeup and
+its timestamp over a channel; cancel makes the call return while that
+goroutine stays parked in the kernel until the next line change or
+process exit. A late wakeup is confined to the private descriptor --
+the goroutine reports into a buffered channel, closes its dup, and
+exits, issuing nothing against the connection -- so a descriptor
+number reused after close cannot be touched. Until then the dup keeps
+the port's flock held; process exit releases everything. `EINTR` from
+the ioctl is runtime noise and is retried. (On D2XX, cancel signals
+the event's condition variable, so nothing is left parked; on
+Windows, `SetCommMask` aborts a pending `WaitCommEvent`.)
 
 ### D2XX on macOS
 
@@ -352,9 +371,12 @@ hardware per the phasing below.
    backend, sample generation wired into the daemon as described under
    Configuration, validated against chrony on real hardware (F9P +
    FT232R).
-2. The D2XX-backed `term` device for macOS, together with the
-   wait-consuming edge backend in `serialpps` (D2XX is its first
-   provider); the polling backend remains as the fallback for non-FTDI
-   adapters or when the library is absent.
-3. The `TIOCMIWAIT` and `WaitCommEvent` implementations of the wait
-   primitive for Linux and Windows.
+2. The `TIOCMIWAIT` implementation of the wait primitive for Linux,
+   together with the wait-consuming edge backend in `serialpps`
+   (Linux is its first provider); the polling backend remains as the
+   fallback for tty drivers without the ioctl.
+3. The D2XX-backed `term` device for macOS; the polling backend
+   remains as the fallback for non-FTDI adapters or when the library
+   is absent.
+4. The `WaitCommEvent` implementation of the wait primitive for
+   Windows.

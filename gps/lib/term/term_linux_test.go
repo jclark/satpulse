@@ -107,6 +107,52 @@ func TestExclusiveModeReleased(t *testing.T) {
 	}
 }
 
+// TestWaitModemControlLineChangeUnsupported checks that a tty whose driver
+// lacks TIOCMIWAIT (a pty) reports the wait capability as unsupported, which
+// is what triggers the fallback to the polling backend.
+func TestWaitModemControlLineChangeUnsupported(t *testing.T) {
+	w := openTestWaiter(t)
+	if _, err := w.WaitModemControlLineChange(ModemCTS); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("WaitModemControlLineChange error = %v, want errors.ErrUnsupported", err)
+	}
+}
+
+// TestCancelModemControlLineWait checks that cancellation is sticky and is
+// observed before the ioctl: on a pty a non-cancelled wait fails with
+// ErrUnsupported, so a nil error proves the ioctl was never entered.
+func TestCancelModemControlLineWait(t *testing.T) {
+	w := openTestWaiter(t)
+	w.CancelModemControlLineWait()
+	if at, err := w.WaitModemControlLineChange(ModemCTS); err != nil || at.IsZero() {
+		t.Fatalf("WaitModemControlLineChange after cancel = %v, %v; want a timestamp", at, err)
+	}
+}
+
+func TestWaitModemControlLineChangeInvalidLine(t *testing.T) {
+	w := openTestWaiter(t)
+	if _, err := w.WaitModemControlLineChange(ModemControlLine(99)); err == nil {
+		t.Fatal("WaitModemControlLineChange accepted an invalid line")
+	}
+}
+
+func openTestWaiter(t *testing.T) ModemControlLineWaiter {
+	t.Helper()
+	term, err := Open(newTestPTY(t), RawMode)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := term.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	w, ok := term.(ModemControlLineWaiter)
+	if !ok {
+		t.Fatalf("%T does not implement ModemControlLineWaiter", term)
+	}
+	return w
+}
+
 func newTestPTY(t *testing.T) string {
 	t.Helper()
 	fd, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)

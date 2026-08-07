@@ -144,12 +144,13 @@ func (c *SerialConn) CanWaitModemControlLineChange() bool {
 }
 
 // WaitModemControlLineChange blocks until a modem control input may have
-// changed. It fails when the backend can only be polled, which
-// CanWaitModemControlLineChange reports in advance.
-func (c *SerialConn) WaitModemControlLineChange(line ModemControlLine) error {
+// changed, returning the time the wakeup was observed. It fails when the
+// backend can only be polled, which CanWaitModemControlLineChange reports in
+// advance.
+func (c *SerialConn) WaitModemControlLineChange(line ModemControlLine) (time.Time, error) {
 	w := c.modemWaiter()
 	if w == nil {
-		return fmt.Errorf("%s: cannot wait for a modem control line change: %w", c.file.Path(), errors.ErrUnsupported)
+		return time.Time{}, fmt.Errorf("%s: cannot wait for a modem control line change: %w", c.file.Path(), errors.ErrUnsupported)
 	}
 	return w.WaitModemControlLineChange(line)
 }

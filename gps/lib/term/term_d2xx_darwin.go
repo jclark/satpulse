@@ -484,16 +484,19 @@ func (d *d2xxTerm) ModemControlLineState() (ModemControlLineState, error) {
 }
 
 // WaitModemControlLineChange blocks until a modem control input may have
-// changed. The library notifies on any modem-status event or on received data,
-// so the caller must read the state to tell what happened.
-func (d *d2xxTerm) WaitModemControlLineChange(line ModemControlLine) error {
+// changed, returning the time the wakeup was observed. The library notifies on
+// any modem-status event or on received data, so the caller must read the
+// state to tell what happened.
+func (d *d2xxTerm) WaitModemControlLineChange(line ModemControlLine) (time.Time, error) {
 	if line < ModemCTS || line > ModemRI {
-		return fmt.Errorf("invalid modem control line: %d", line)
+		return time.Time{}, fmt.Errorf("invalid modem control line: %d", line)
 	}
-	if err := d.event.wait(); err != nil {
-		return &os.PathError{Op: "wait for D2XX event", Path: d.path, Err: err}
+	err := d.event.wait()
+	at := time.Now()
+	if err != nil {
+		return time.Time{}, &os.PathError{Op: "wait for D2XX event", Path: d.path, Err: err}
 	}
-	return nil
+	return at, nil
 }
 
 // CancelModemControlLineWait unblocks a pending wait, to make shutdown prompt.

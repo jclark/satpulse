@@ -20,6 +20,7 @@ type unixTerm struct {
 	attrCache
 	tsSaved     unix.Termios
 	serialError serialErrorState
+	miwait      modemWaitState
 }
 
 var _ Term = (*unixTerm)(nil)

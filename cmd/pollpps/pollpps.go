@@ -101,10 +101,10 @@ func monitorD2XX(ctx context.Context, t waitTerm) error {
 	lastCTS := status.Asserted(term.ModemCTS)
 	count := 0
 	for {
-		if err := t.WaitModemControlLineChange(term.ModemCTS); err != nil {
+		at, err := t.WaitModemControlLineChange(term.ModemCTS)
+		if err != nil {
 			return err
 		}
-		at := time.Now()
 		select {
 		case <-ctx.Done():
 			return nil

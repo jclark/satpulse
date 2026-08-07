@@ -19,9 +19,9 @@ func (w *testChangeWaiter) ModemControlLineState() (gpsio.ModemControlLineState,
 	return w.state, nil
 }
 
-func (w *testChangeWaiter) WaitModemControlLineChange(gpsio.ModemControlLine) error {
+func (w *testChangeWaiter) WaitModemControlLineChange(gpsio.ModemControlLine) (time.Time, error) {
 	w.state = <-w.next
-	return nil
+	return time.Now(), nil
 }
 
 func TestWait(t *testing.T) {
