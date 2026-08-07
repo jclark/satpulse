@@ -10,10 +10,10 @@ import (
 
 func TestClassifyReading(t *testing.T) {
 	base := time.Unix(1_000, 0)
-	asserted := gpsio.ModemControlLineState(1 << gpsio.ModemCTS)
+	asserted := gpsio.ModemControlPinState(1 << gpsio.ModemCTS)
 	tests := []struct {
 		name       string
-		curState   gpsio.ModemControlLineState
+		curState   gpsio.ModemControlPinState
 		curAt      time.Duration
 		deadline   time.Duration
 		wantEdgeAt time.Duration
@@ -49,7 +49,7 @@ func TestClassifyReading(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			prev := reading{state: asserted, at: base}
 			cur := reading{state: tc.curState, at: base.Add(tc.curAt)}
-			edge, missed := classifyReading(prev, cur, Wiring{Line: gpsio.ModemCTS}, base.Add(tc.deadline))
+			edge, missed := classifyReading(prev, cur, Wiring{Pin: gpsio.ModemCTS}, base.Add(tc.deadline))
 			if missed != tc.wantMissed {
 				t.Errorf("missed = %v, want %v", missed, tc.wantMissed)
 			}

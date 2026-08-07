@@ -58,7 +58,7 @@ type SerialConfig struct {
 }
 
 type SerialPPSConfig struct {
-	Line string `toml:"line"`
+	Pin string `toml:"pin"`
 }
 
 type PHCConfig struct {
@@ -211,11 +211,11 @@ func (cfg *Config) hasRTCMMSM7To4() bool {
 func (cfg *Config) Validate(lg *slog.Logger) error {
 	cfg.GPS.validate(lg)
 	if cfg.Serial.PPS != nil {
-		if _, err := cfg.Serial.PPS.modemControlLine(); err != nil {
+		if _, err := cfg.Serial.PPS.modemControlPin(); err != nil {
 			return &configError{err: err}
 		}
 		if cfg.PHC.Interface != "" {
-			return &configError{err: fmt.Errorf("serial.pps.line cannot be used with phc.interface")}
+			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface in the [phc] table")}
 		}
 	}
 	if err := cfg.Sync.Validate(); err != nil {
@@ -234,8 +234,8 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	return nil
 }
 
-func (cfg SerialPPSConfig) modemControlLine() (gpsio.ModemControlLine, error) {
-	switch cfg.Line {
+func (cfg SerialPPSConfig) modemControlPin() (gpsio.ModemControlPin, error) {
+	switch cfg.Pin {
 	case "cts":
 		return gpsio.ModemCTS, nil
 	case "dcd":
@@ -245,7 +245,7 @@ func (cfg SerialPPSConfig) modemControlLine() (gpsio.ModemControlLine, error) {
 	case "ri":
 		return gpsio.ModemRI, nil
 	default:
-		return 0, fmt.Errorf("serial.pps.line %q: must be one of cts, dcd, dsr, ri", cfg.Line)
+		return 0, fmt.Errorf("pps.pin %q in the [serial] table: must be one of cts, dcd, dsr, ri", cfg.Pin)
 	}
 }
 

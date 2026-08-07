@@ -5,8 +5,8 @@
 device = "/dev/cu.usbserial-DBE128L5"
 speed = 38400
 # Uncomment when the receiver's PPS output is connected to CTS on the same
-# serial adapter. CTS is the recommended and tested modem-control line.
-#pps.line = "cts"
+# serial adapter. CTS is the recommended and tested modem-control pin.
+#pps.pin = "cts"
 
 [gps]
 # Uncommenting the following line will enable configuration of the GPS

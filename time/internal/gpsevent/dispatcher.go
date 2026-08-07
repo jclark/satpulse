@@ -300,7 +300,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
 		case <-firstSerialPPSDeadline:
-			lg.Warn("no serial PPS edges are being received; check serial.pps.line, PPS wiring, and receiver pulse width")
+			lg.Warn("no serial PPS edges are being received; check pps.pin in the [serial] table, PPS wiring, and receiver pulse width")
 			firstSerialPPSDeadline = nil
 		case <-sig:
 			d.obs.ReopenLog()

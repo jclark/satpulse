@@ -135,9 +135,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		return err
 	}
 	if cfg.Serial.PPS != nil {
-		if _, err := conn.ModemControlLineState(); err != nil {
+		if _, err := conn.ModemControlPinState(); err != nil {
 			conn.Close()
-			return fmt.Errorf("serial PPS requires a TTY with modem-control lines: %w", err)
+			return fmt.Errorf("serial PPS requires a TTY with modem-control pins: %w", err)
 		}
 	}
 	if speed == 0 {
@@ -321,18 +321,18 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	var serialPPSCh <-chan serialpps.Edge
 	var serialPPSGen *serialpps.Generator
 	if cfg.Serial.PPS != nil {
-		line, _ := cfg.Serial.PPS.modemControlLine() // checked by Config.Validate
+		pin, _ := cfg.Serial.PPS.modemControlPin() // checked by Config.Validate
 		serialPPSGen = serialpps.NewGenerator()
 		ch := make(chan serialpps.Edge, 1)
 		serialPPSCh = ch
 		wg.Go(func() {
 			defer close(ch)
-			lg.Debug("serial PPS polling goroutine started", "line", cfg.Serial.PPS.Line)
-			if err := serialpps.Poll(ctx, conn, serialpps.Wiring{Line: line}, ch); err != nil && ctx.Err() == nil {
-				lg.Error("serial PPS polling failed", "line", cfg.Serial.PPS.Line, "err", err)
-				cancel(fmt.Errorf("serial PPS polling failed on %s: %w", cfg.Serial.PPS.Line, err))
+			lg.Debug("serial PPS polling goroutine started", "pin", cfg.Serial.PPS.Pin)
+			if err := serialpps.Poll(ctx, conn, serialpps.Wiring{Pin: pin}, ch); err != nil && ctx.Err() == nil {
+				lg.Error("serial PPS polling failed", "pin", cfg.Serial.PPS.Pin, "err", err)
+				cancel(fmt.Errorf("serial PPS polling failed on %s: %w", cfg.Serial.PPS.Pin, err))
 			}
-			lg.Debug("serial PPS polling goroutine exited", "line", cfg.Serial.PPS.Line)
+			lg.Debug("serial PPS polling goroutine exited", "pin", cfg.Serial.PPS.Pin)
 		})
 	}
 	statsObs := newStatsLogObserver(cfg, lg)

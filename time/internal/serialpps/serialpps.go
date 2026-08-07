@@ -1,4 +1,4 @@
-// Package serialpps detects PPS edges on serial modem-control lines and turns
+// Package serialpps detects PPS edges on serial modem-control pins and turns
 // them into refclock samples using UTC time messages from the receiver.
 package serialpps
 
@@ -28,17 +28,17 @@ type Edge struct {
 
 // StateReader is implemented by a TTY-backed gpsio.SerialConn.
 type StateReader interface {
-	ModemControlLineState() (gpsio.ModemControlLineState, error)
+	ModemControlPinState() (gpsio.ModemControlPinState, error)
 }
 
 // Wiring describes how the PPS pulse is represented on the serial port's
 // modem-control inputs.
 type Wiring struct {
-	Line gpsio.ModemControlLine
+	Pin gpsio.ModemControlPin
 }
 
 type reading struct {
-	state gpsio.ModemControlLineState
+	state gpsio.ModemControlPinState
 	at    time.Time
 	start time.Time
 }
@@ -126,8 +126,8 @@ func classifyReading(prev, cur reading, w Wiring, deadline time.Time) (time.Time
 // inPulse reports whether the state was observed during a pulse. The pulse's
 // electrically rising leading edge reaches the host inverted through the TTL
 // driver chain, so the flag reads deasserted during the pulse.
-func inPulse(s gpsio.ModemControlLineState, w Wiring) bool {
-	return !s.Asserted(w.Line)
+func inPulse(s gpsio.ModemControlPinState, w Wiring) bool {
+	return !s.Asserted(w.Pin)
 }
 
 func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading, error) {
@@ -135,7 +135,7 @@ func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading
 		return reading{}, err
 	}
 	start := time.Now()
-	state, err := r.ModemControlLineState()
+	state, err := r.ModemControlPinState()
 	end := time.Now()
 	if err != nil {
 		return reading{}, err

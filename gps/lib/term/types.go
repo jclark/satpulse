@@ -18,7 +18,7 @@ type Term interface {
 	Speed() int
 	TransmitTime(int) time.Duration
 	DevKind() DevKind
-	ModemControlLineState() (ModemControlLineState, error)
+	ModemControlPinState() (ModemControlPinState, error)
 	Flush() error
 	Drain() error
 	Restore() error
@@ -62,34 +62,34 @@ const (
 	DevFIFO
 )
 
-// ModemControlLine identifies a modem control line that is an input to the
+// ModemControlPin identifies a modem control pin that is an input to the
 // host.
-type ModemControlLine int
+type ModemControlPin int
 
 const (
-	ModemCTS ModemControlLine = iota
+	ModemCTS ModemControlPin = iota
 	ModemDCD
 	ModemDSR
 	ModemRI
 )
 
-// ModemControlLineState is the set of asserted modem control input lines.
+// ModemControlPinState is the set of asserted modem control input pins.
 // Its representation is independent of the platform's native modem-status
 // bits.
-type ModemControlLineState int
+type ModemControlPinState int
 
 // Asserted reports whether l is asserted in s.
-func (s ModemControlLineState) Asserted(l ModemControlLine) bool {
+func (s ModemControlPinState) Asserted(l ModemControlPin) bool {
 	if l < ModemCTS || l > ModemRI {
 		return false
 	}
 	return s&(1<<l) != 0
 }
 
-func modemControlLineState(asserted ...ModemControlLine) ModemControlLineState {
-	var state ModemControlLineState
-	for _, line := range asserted {
-		state |= 1 << line
+func modemControlPinState(asserted ...ModemControlPin) ModemControlPinState {
+	var state ModemControlPinState
+	for _, pin := range asserted {
+		state |= 1 << pin
 	}
 	return state
 }

@@ -59,12 +59,12 @@
         "pps": {
           "type": "object",
           "properties": {
-            "line": {
+            "pin": {
               "type": "string",
               "enum": ["cts", "dcd", "dsr", "ri"]
             }
           },
-          "required": ["line"]
+          "required": ["pin"]
         }
       }
     },

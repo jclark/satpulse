@@ -44,10 +44,10 @@ One new key in the `[serial]` table:
 [serial]
 device = "/dev/cu.usbserial-XXXXXXXX"
 speed = 38400
-pps.line = "cts"
+pps.pin = "cts"
 ```
 
-`pps.line` names the modem control line carrying the PPS signal; its
+`pps.pin` names the modem control line carrying the PPS signal; its
 presence enables PPS detection. Any of the four input lines is
 accepted: `"cts"`, `"dcd"`, `"dsr"`, `"ri"`. CTS is the recommended and
 tested wiring; DCD is the traditional serial-PPS line but many USB
@@ -56,9 +56,9 @@ The pulse's leading edge is assumed to be electrically rising, which on
 a TTL-level adapter is observed as the CTS flag becoming deasserted; a
 `pps.edge` key can be added later if inverted pulses turn out to matter.
 
-The serial device must be a real TTY; configuring `pps.line` on anything
+The serial device must be a real TTY; configuring `pps.pin` on anything
 else (FIFO, socket) is a startup error.
-`pps.line` and `phc.interface` are mutually exclusive: the PHC is the
+`pps.pin` and `phc.interface` are mutually exclusive: the PHC is the
 higher-precision source, and configuring both is an error rather than
 silently replacing it with serial PPS.
 
@@ -74,11 +74,11 @@ type SerialConfig struct {
 }
 
 type SerialPPSConfig struct {
-	Line string `toml:"line"`
+	Pin string `toml:"pin"`
 }
 ```
 
-When `pps.line` is configured, refclock samples come from PPS edges, and
+When `pps.pin` is configured, refclock samples come from PPS edges, and
 the existing samples based on message arrival times are disabled. Time
 messages are still consumed: they identify which second each pulse marks.
 

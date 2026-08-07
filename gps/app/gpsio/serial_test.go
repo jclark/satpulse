@@ -48,7 +48,7 @@ func (f *fakeTerm) TransmitTime(int) time.Duration { return 0 }
 
 func (f *fakeTerm) DevKind() term.DevKind { return term.DevUnknown }
 
-func (f *fakeTerm) ModemControlLineState() (term.ModemControlLineState, error) {
+func (f *fakeTerm) ModemControlPinState() (term.ModemControlPinState, error) {
 	return 1 << term.ModemCTS, nil
 }
 
@@ -71,12 +71,12 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 	if got := c.Speed(); got != 4800 {
 		t.Errorf("Speed() = %d, want 4800", got)
 	}
-	state, err := c.ModemControlLineState()
+	state, err := c.ModemControlPinState()
 	if err != nil {
-		t.Fatalf("ModemControlLineState: %v", err)
+		t.Fatalf("ModemControlPinState: %v", err)
 	}
 	if !state.Asserted(ModemCTS) {
-		t.Error("ModemControlLineState did not report CTS asserted")
+		t.Error("ModemControlPinState did not report CTS asserted")
 	}
 	if n, err := c.WriteThenChangeSpeed([]byte("test"), 9600); err != nil || n != 4 {
 		t.Fatalf("WriteThenChangeSpeed() = %d, %v; want 4, nil", n, err)
@@ -105,8 +105,8 @@ func TestSerialConnKeepsIOFileFallbackNonTerminal(t *testing.T) {
 	if got := c.Speed(); got != 0 {
 		t.Errorf("Speed() = %d, want 0", got)
 	}
-	if _, err := c.ModemControlLineState(); !errors.Is(err, term.ErrNotATTY) {
-		t.Errorf("ModemControlLineState error = %v, want ErrNotATTY", err)
+	if _, err := c.ModemControlPinState(); !errors.Is(err, term.ErrNotATTY) {
+		t.Errorf("ModemControlPinState error = %v, want ErrNotATTY", err)
 	}
 	if n, err := c.WriteThenChangeSpeed([]byte("test"), 9600); err != nil || n != 4 {
 		t.Fatalf("WriteThenChangeSpeed() = %d, %v; want 4, nil", n, err)

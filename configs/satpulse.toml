@@ -20,8 +20,8 @@
 # Edit this to specify the speed in baud for the serial connection
 speed = 9600
 # Uncomment when the receiver's PPS output is connected to a modem-control
-# input on this serial device. One of: cts, dcd, dsr, ri
-#pps.line = "cts"
+# input pin on this serial device. One of: cts, dcd, dsr, ri
+#pps.pin = "cts"
 
 [gps]
 # Uncomment to configure the GPS (changes are not persistent across GPS reboots)
