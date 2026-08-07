@@ -1,4 +1,4 @@
-# Serial PPS (#259)
+# Serial PPS (#402)
 
 ## Introduction
 
