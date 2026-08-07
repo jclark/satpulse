@@ -12,6 +12,8 @@ import (
 
 type serialErrorState struct{}
 
+type modemWaitState struct{}
+
 func Speed(speed int) AttrSetter {
 	b, ok := speedToB(speed)
 	if !ok {

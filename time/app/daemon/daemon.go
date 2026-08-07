@@ -206,9 +206,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		if sseCh != nil {
 			close(sseCh)
 		}
-		// This defer intentionally runs before the serial-port close defer.
-		// In particular, no modem-control ioctl can still be in progress when
-		// the underlying file descriptor is closed.
+		// This defer intentionally runs before the serial-port close defer,
+		// so that no goroutine still issues syscalls against the connection
+		// when it is closed. One exception is safe by construction: a
+		// serial-PPS wait abandoned by cancellation may stay parked in
+		// TIOCMIWAIT past the close, but it holds a private dup of the
+		// descriptor and touches nothing else (see the term package's
+		// CancelModemControlLineWait).
 		wg.Wait()
 		lg.Debug("wait group counter dropped to zero")
 	}()
@@ -323,14 +327,32 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		line, _ := cfg.Serial.PPS.modemControlLine() // checked by Config.Validate
 		ch := make(chan serialpps.Edge, 1)
 		serialPPSCh = ch
+		backend := "polling"
+		if conn.CanWaitModemControlLineChange() {
+			backend = "wait"
+		}
 		wg.Go(func() {
 			defer close(ch)
-			lg.Debug("serial PPS polling goroutine started", "line", cfg.Serial.PPS.Line)
-			if err := serialpps.Poll(ctx, conn, line, ch); err != nil && ctx.Err() == nil {
-				lg.Error("serial PPS polling failed", "line", cfg.Serial.PPS.Line, "err", err)
-				cancel(fmt.Errorf("serial PPS polling failed on %s: %w", cfg.Serial.PPS.Line, err))
+			lg.Debug("serial PPS goroutine started", "line", cfg.Serial.PPS.Line, "backend", backend)
+			var err error
+			if backend == "wait" {
+				err = serialpps.Wait(ctx, conn, line, ch)
+				// On Linux the wait capability depends on the tty driver
+				// and shows up only as the first wait failing; no probe at
+				// open can detect it.
+				if errors.Is(err, errors.ErrUnsupported) && ctx.Err() == nil {
+					backend = "polling"
+					lg.Info("serial driver cannot wait for modem control line changes; polling instead", "line", cfg.Serial.PPS.Line)
+					err = serialpps.Poll(ctx, conn, line, ch)
+				}
+			} else {
+				err = serialpps.Poll(ctx, conn, line, ch)
 			}
-			lg.Debug("serial PPS polling goroutine exited", "line", cfg.Serial.PPS.Line)
+			if err != nil && ctx.Err() == nil {
+				lg.Error("serial PPS detection failed", "line", cfg.Serial.PPS.Line, "backend", backend, "err", err)
+				cancel(fmt.Errorf("serial PPS detection failed on %s: %w", cfg.Serial.PPS.Line, err))
+			}
+			lg.Debug("serial PPS goroutine exited", "line", cfg.Serial.PPS.Line, "backend", backend)
 		})
 	}
 	statsObs := newStatsLogObserver(cfg, lg)

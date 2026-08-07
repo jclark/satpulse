@@ -94,6 +94,22 @@ func modemControlLineState(asserted ...ModemControlLine) ModemControlLineState {
 	return state
 }
 
+// ModemControlLineWaiter is implemented by terminals that can block until a
+// modem control input changes, rather than having to poll for it. Callers
+// discover the capability by asserting for this interface.
+type ModemControlLineWaiter interface {
+	// WaitModemControlLineChange blocks until a modem control input may
+	// have changed, returning the time the wakeup was observed. The
+	// timestamp is taken on the waiting thread as soon as the wait ends,
+	// before any other call. The caller must read the state to reject
+	// spurious wakeups and changes to other lines.
+	WaitModemControlLineChange(line ModemControlLine) (time.Time, error)
+	// CancelModemControlLineWait makes a pending wait return promptly
+	// and all subsequent waits return immediately. It is used to make
+	// shutdown prompt.
+	CancelModemControlLineWait()
+}
+
 // Error reports one or more serial errors (framing, parity, overrun, etc.)
 // detected by Term.Read.
 type Error struct {

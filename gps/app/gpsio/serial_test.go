@@ -93,6 +93,45 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 	if !f.closed {
 		t.Error("Close did not close terminal")
 	}
+	if c.CanWaitModemControlLineChange() {
+		t.Error("CanWaitModemControlLineChange() = true for a terminal that cannot wait")
+	}
+}
+
+// fakeWaitTerm is a terminal with the optional wait capability, as the D2XX
+// backend has.
+type fakeWaitTerm struct {
+	fakeTerm
+	waits     int
+	cancelled bool
+}
+
+var _ term.ModemControlLineWaiter = (*fakeWaitTerm)(nil)
+
+func (f *fakeWaitTerm) WaitModemControlLineChange(term.ModemControlLine) (time.Time, error) {
+	f.waits++
+	return time.Now(), nil
+}
+
+func (f *fakeWaitTerm) CancelModemControlLineWait() { f.cancelled = true }
+
+func TestSerialConnWaitCapability(t *testing.T) {
+	f := new(fakeWaitTerm)
+	c := newSerialConn(f, term.DevUSBtoUART)
+
+	if !c.CanWaitModemControlLineChange() {
+		t.Fatal("CanWaitModemControlLineChange() = false, want true")
+	}
+	if at, err := c.WaitModemControlLineChange(ModemCTS); err != nil || at.IsZero() {
+		t.Fatalf("WaitModemControlLineChange = %v, %v; want a timestamp", at, err)
+	}
+	if f.waits != 1 {
+		t.Errorf("waits = %d, want 1", f.waits)
+	}
+	c.Stop()
+	if !f.cancelled {
+		t.Error("Stop did not cancel the pending wait")
+	}
 }
 
 func TestSerialConnKeepsIOFileFallbackNonTerminal(t *testing.T) {
@@ -107,6 +146,9 @@ func TestSerialConnKeepsIOFileFallbackNonTerminal(t *testing.T) {
 	}
 	if _, err := c.ModemControlLineState(); !errors.Is(err, term.ErrNotATTY) {
 		t.Errorf("ModemControlLineState error = %v, want ErrNotATTY", err)
+	}
+	if _, err := c.WaitModemControlLineChange(ModemCTS); !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("WaitModemControlLineChange error = %v, want ErrUnsupported", err)
 	}
 	if n, err := c.WriteThenChangeSpeed([]byte("test"), 9600); err != nil || n != 4 {
 		t.Fatalf("WriteThenChangeSpeed() = %d, %v; want 4, nil", n, err)

@@ -1,12 +1,52 @@
 package serialpps
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/ptime"
 )
+
+type testChangeWaiter struct {
+	state gpsio.ModemControlLineState
+	next  chan gpsio.ModemControlLineState
+}
+
+func (w *testChangeWaiter) ModemControlLineState() (gpsio.ModemControlLineState, error) {
+	return w.state, nil
+}
+
+func (w *testChangeWaiter) WaitModemControlLineChange(gpsio.ModemControlLine) (time.Time, error) {
+	w.state = <-w.next
+	return time.Now(), nil
+}
+
+func TestWait(t *testing.T) {
+	asserted := gpsio.ModemControlLineState(1 << gpsio.ModemCTS)
+	w := &testChangeWaiter{state: asserted, next: make(chan gpsio.ModemControlLineState, 3)}
+	w.next <- asserted
+	w.next <- 0
+	edges := make(chan Edge, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- Wait(ctx, w, gpsio.ModemCTS, edges) }()
+	select {
+	case edge := <-edges:
+		if edge.T.IsZero() {
+			t.Fatal("Wait emitted a zero timestamp")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Wait did not emit the deasserting edge")
+	}
+	cancel()
+	w.next <- asserted
+	if err := <-errCh; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Wait error = %v, want context.Canceled", err)
+	}
+}
 
 func TestClassifyReading(t *testing.T) {
 	base := time.Unix(1_000, 0)
