@@ -76,18 +76,12 @@ It can have the following keys:
 * `speed` - an integer giving the speed of the connection in bits-per-second (baud)
 * `device` - a string giving the path of the serial device name; when SatPulse is run via systemd, the
   device will usually be specified in systemd commands, which will override any value specified here
-* `pps.line` - an optional string specifying the modem-control input carrying the receiver's PPS signal;
-  one of `"cts"`, `"dcd"`, `"dsr"`, or `"ri"`. CTS is recommended. Specifying this key enables
-  user-space PPS detection and requires `device` to be a real TTY rather than a FIFO or socket.
-  The PPS leading edge is assumed to be electrically rising; on a TTL serial adapter this is observed
-  as the selected modem-control flag becoming deasserted. `pps.line` cannot be used when
-  `phc.interface` is configured.
-
-The polling backend must observe the selected modem-control flag while it is deasserted. In tracking,
-the deasserted interval therefore needs to last for at least approximately one state-query interval
-(about 2 ms with the tested FT232R). Initial phase acquisition polls at 100 ms intervals, so narrow
-pulses can take much longer to acquire. The common u-blox default of 100 ms works well; microsecond-width
-pulses are not supported by the polling backend.
+* `pps.pin` - a string giving the modem-control input pin on which to detect the receiver's PPS pulses;
+  one of `"cts"`, `"dcd"`, `"dsr"`, or `"ri"`, naming the pins of the computer's own serial port or
+  adapter; CTS is recommended; requires `device` to be a real TTY rather than a FIFO or socket;
+  cannot be used when `interface` in the `[phc]` table is configured;
+  the pulse must be at least a few milliseconds wide, and narrow pulses can take longer to detect;
+  the common receiver default of 100 ms works well, and microsecond-width pulses are not supported
 
 Example using PPS on CTS:
 
@@ -95,7 +89,7 @@ Example using PPS on CTS:
 [serial]
 device = "/dev/cu.usbserial-XXXXXXXX"
 speed = 38400
-pps.line = "cts"
+pps.pin = "cts"
 ```
 
 
@@ -208,9 +202,9 @@ It supports two protocols: the refclock SOCK protocol defined by chrony, and the
 
 If the `[phc]` table is not present, samples are normally based on the timing of the serial messages.
 This is imprecise but is useful when the NTP daemon has a separate source of PPS samples, which do not include time-of-day information.
-The samples from SatPulse can be used to complete the PPS samples. When `serial.pps.line` is configured,
-samples instead use PPS edges detected on that modem-control line; serial time messages are still used
-to identify the UTC second and leap indication.
+The samples from SatPulse can be used to complete the PPS samples.
+When `pps.pin` in the `[serial]` table is configured, samples instead use PPS edges detected on that pin;
+serial time messages are still used to identify the UTC second and leap indication.
 
 The following key enables use of the refclock SOCK protocol:
 

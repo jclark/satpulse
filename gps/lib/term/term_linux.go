@@ -241,19 +241,19 @@ func (t *unixTerm) readError() *Error {
 	return &Error{Path: t.path, Flags: flags, Counts: &ec}
 }
 
-var _ ModemControlLineWaiter = (*unixTerm)(nil)
+var _ ModemControlPinWaiter = (*unixTerm)(nil)
 
-// modemWaitState makes CancelModemControlLineWait sticky: once cancelCh is
+// modemWaitState makes CancelModemControlPinWait sticky: once cancelCh is
 // closed, pending waits return promptly and later ones return immediately.
 type modemWaitState struct {
 	mu        sync.Mutex
 	cancelled bool
-	cancelCh  chan struct{} // closed by CancelModemControlLineWait
+	cancelCh  chan struct{} // closed by CancelModemControlPinWait
 }
 
-// WaitModemControlLineChange blocks in TIOCMIWAIT until line may have changed
+// WaitModemControlPinChange blocks in TIOCMIWAIT until pin may have changed
 // state, returning the time the ioctl returned. A Close preceded by
-// CancelModemControlLineWait (the order SerialConn.Stop ensures) is safe at
+// CancelModemControlPinWait (the order SerialConn.Stop ensures) is safe at
 // any point relative to a wait call: cancel serializes with the dup below.
 //
 // The ioctl cannot be interrupted: TIOCMIWAIT has no timeout, closing the
@@ -261,12 +261,12 @@ type modemWaitState struct {
 // because the Go runtime installs its signal handlers with SA_RESTART, under
 // which the kernel transparently restarts the ioctl. So the ioctl runs on a
 // goroutine that a cancelled wait abandons: it stays parked in the kernel
-// until the next line change or process exit. It operates only on a private
+// until the next pin change or process exit. It operates only on a private
 // dup of the descriptor, so however late it wakes it cannot touch a
 // descriptor number reused after Close; the dup (and with it the port's
 // flock) is held until it wakes, and process exit releases everything.
-func (t *unixTerm) WaitModemControlLineChange(line ModemControlLine) (time.Time, error) {
-	mask, err := tiocmLineMask(line)
+func (t *unixTerm) WaitModemControlPinChange(pin ModemControlPin) (time.Time, error) {
+	mask, err := tiocmPinMask(pin)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -280,7 +280,7 @@ func (t *unixTerm) WaitModemControlLineChange(line ModemControlLine) (time.Time,
 		w.cancelCh = make(chan struct{})
 	}
 	cancelCh := w.cancelCh
-	// Hold the lock across the dup: CancelModemControlLineWait also takes
+	// Hold the lock across the dup: CancelModemControlPinWait also takes
 	// it, and Close paths cancel before closing, so the descriptor cannot
 	// be closed or its number reused between the cancelled check and the
 	// dup.
@@ -306,10 +306,10 @@ func (t *unixTerm) WaitModemControlLineChange(line ModemControlLine) (time.Time,
 	}
 }
 
-// CancelModemControlLineWait makes a pending wait return promptly and all
+// CancelModemControlPinWait makes a pending wait return promptly and all
 // future waits on this terminal return immediately. The wait's ioctl
-// goroutine is left parked in the kernel; see WaitModemControlLineChange.
-func (t *unixTerm) CancelModemControlLineWait() {
+// goroutine is left parked in the kernel; see WaitModemControlPinChange.
+func (t *unixTerm) CancelModemControlPinWait() {
 	w := &t.miwait
 	w.mu.Lock()
 	if !w.cancelled {
@@ -346,10 +346,10 @@ func miwaitIoctl(fd int, mask uint, ch chan<- miwaitResult) {
 	}
 }
 
-// tiocmLineMask returns the TIOCM_* bit for line, forming TIOCMIWAIT's mask
-// of lines to watch.
-func tiocmLineMask(line ModemControlLine) (uint, error) {
-	switch line {
+// tiocmPinMask returns the TIOCM_* bit for pin, forming TIOCMIWAIT's mask
+// of pins to watch.
+func tiocmPinMask(pin ModemControlPin) (uint, error) {
+	switch pin {
 	case ModemCTS:
 		return unix.TIOCM_CTS, nil
 	case ModemDCD:
@@ -359,7 +359,7 @@ func tiocmLineMask(line ModemControlLine) (uint, error) {
 	case ModemRI:
 		return unix.TIOCM_RNG, nil
 	}
-	return 0, fmt.Errorf("invalid modem control line: %d", line)
+	return 0, fmt.Errorf("invalid modem control pin: %d", pin)
 }
 
 func (t *unixTerm) DevKind() DevKind {

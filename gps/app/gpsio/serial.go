@@ -17,8 +17,8 @@ import (
 // It provides a similar interface to net.Conn.
 // It implements io.Reader, io.Writer and io.Closer.
 // It is safe to call Read, Write and Close on different goroutines.
-// ModemControlLineState can be called concurrently with Read and Write, but
-// the caller must stop all ModemControlLineState calls before calling Close.
+// ModemControlPinState can be called concurrently with Read and Write, but
+// the caller must stop all ModemControlPinState calls before calling Close.
 // However, there must not be more than one concurrent Read
 // nor more than one concurrent Write, nor more than one concurrent Close.
 // Stop can be called before Close to prevent further reads and writes.
@@ -38,7 +38,7 @@ type SerialConn struct {
 // ioFile is the minimal file-like interface SerialConn needs.
 // term.Term, *term.File, and *pollingFile satisfy it.
 // TTY-specific operations (speed change, flush, restore, error counts,
-// modem control lines) are performed via type assertion to term.Term.
+// modem control pins) are performed via type assertion to term.Term.
 type ioFile interface {
 	io.ReadWriteCloser
 	Path() string
@@ -120,39 +120,39 @@ func (c *SerialConn) Speed() int {
 	return 0
 }
 
-// ModemControlLineState returns the asserted modem control input lines. It
+// ModemControlPinState returns the asserted modem control input pins. It
 // fails with term.ErrNotATTY when the connection uses a FIFO or another
 // non-TTY fallback. It must not be called concurrently with Close.
-func (c *SerialConn) ModemControlLineState() (ModemControlLineState, error) {
+func (c *SerialConn) ModemControlPinState() (ModemControlPinState, error) {
 	if t := c.term(); t != nil {
-		return t.ModemControlLineState()
+		return t.ModemControlPinState()
 	}
 	return 0, fmt.Errorf("%s: %w", c.file.Path(), term.ErrNotATTY)
 }
 
 // modemWaiter returns the underlying terminal's wait capability, or nil if the
 // backend can only be polled.
-func (c *SerialConn) modemWaiter() term.ModemControlLineWaiter {
-	w, _ := c.file.(term.ModemControlLineWaiter)
+func (c *SerialConn) modemWaiter() term.ModemControlPinWaiter {
+	w, _ := c.file.(term.ModemControlPinWaiter)
 	return w
 }
 
-// CanWaitModemControlLineChange reports whether the serial backend can block
+// CanWaitModemControlPinChange reports whether the serial backend can block
 // until a modem control input changes.
-func (c *SerialConn) CanWaitModemControlLineChange() bool {
+func (c *SerialConn) CanWaitModemControlPinChange() bool {
 	return c.modemWaiter() != nil
 }
 
-// WaitModemControlLineChange blocks until a modem control input may have
+// WaitModemControlPinChange blocks until a modem control input may have
 // changed, returning the time the wakeup was observed. It fails when the
-// backend can only be polled, which CanWaitModemControlLineChange reports in
+// backend can only be polled, which CanWaitModemControlPinChange reports in
 // advance.
-func (c *SerialConn) WaitModemControlLineChange(line ModemControlLine) (time.Time, error) {
+func (c *SerialConn) WaitModemControlPinChange(line ModemControlPin) (time.Time, error) {
 	w := c.modemWaiter()
 	if w == nil {
-		return time.Time{}, fmt.Errorf("%s: cannot wait for a modem control line change: %w", c.file.Path(), errors.ErrUnsupported)
+		return time.Time{}, fmt.Errorf("%s: cannot wait for a modem control pin change: %w", c.file.Path(), errors.ErrUnsupported)
 	}
-	return w.WaitModemControlLineChange(line)
+	return w.WaitModemControlPinChange(line)
 }
 
 func (c *SerialConn) Read(p []byte) (int, error) {
@@ -260,7 +260,7 @@ func (c *SerialConn) Stop() {
 	c.mu.Lock()
 	c.stopped = true
 	if w := c.modemWaiter(); w != nil {
-		w.CancelModemControlLineWait()
+		w.CancelModemControlPinWait()
 	}
 	if c.pktLog != nil {
 		// We need close promptly so that the logging goroutine can exit.

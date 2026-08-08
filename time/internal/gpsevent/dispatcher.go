@@ -190,7 +190,7 @@ func NewDispatcher(
 
 const (
 	tickPeriod                = time.Second / 4
-	serialPPSFirstEdgeTimeout = 5 * time.Second
+	serialPPSFirstEdgeTimeout = 30 * time.Second
 )
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
@@ -224,8 +224,9 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 		firstTsDeadline = time.After(time.Second * 2)
 	}
 	if serialPPSCh != nil {
-		// Slow acquisition deliberately discards its first, coarse edge. Allow
-		// time to acquire phase and deliver the following precisely polled edge.
+		// Settling deliberately suppresses edges until the polling window has
+		// stopped shrinking, which takes on the order of ten pulses. Allow
+		// comfortably more before warning.
 		firstSerialPPSDeadline = time.After(serialPPSFirstEdgeTimeout)
 	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
@@ -300,7 +301,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
 		case <-firstSerialPPSDeadline:
-			lg.Warn("no serial PPS edges are being received; check serial.pps.line, PPS wiring, and receiver pulse width")
+			lg.Warn("no serial PPS edges are being received; check pps.pin in the [serial] table, PPS wiring, and receiver pulse width")
 			firstSerialPPSDeadline = nil
 		case <-sig:
 			d.obs.ReopenLog()
@@ -311,21 +312,13 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 
 func (d *Dispatcher) serialPPSEdge(edge serialpps.Edge) {
 	if d.serialPPS == nil {
-		return
+		panic("serial PPS edge channel wired without a Generator")
 	}
 	sample, ok := d.serialPPS.Edge(edge)
 	if !ok {
 		return
 	}
-	if d.rc != nil {
-		if err := d.rc.Sample(ntime.Sys(sample.System), sample.Offset, sample.Leap); err != nil {
-			d.lg.Warn("refclock sample failed", "err", err)
-		}
-	}
-	if d.shm != nil {
-		d.shm.Write(sample.Reference, sample.System, sample.Leap)
-	}
-	d.obs.NTPSample(sample.System, sample.Offset, sample.Leap, ptime.Time(0))
+	d.MsgUTCTime(sample.Reference, sample.System, sample.Leap)
 }
 
 func (d *Dispatcher) handlePacket(pkt scan.Packet) {
@@ -457,7 +450,7 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 // sysSample generates a sample of system time vs true time (based on PHC)
 func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time, samplePrecision time.Duration) {
 	// Send refclock sample if in tracking mode
-	if d.serialPPS != nil || (d.rc == nil && d.shm == nil) || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
+	if (d.rc == nil && d.shm == nil) || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
 		return
 	}
 	if d.sps != nil {

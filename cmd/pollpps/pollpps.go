@@ -66,11 +66,11 @@ func run(device string, speed int, useD2XX bool) error {
 	return monitorPolling(ctx, t)
 }
 
-// waitTerm is a terminal that can also block until a modem control line
+// waitTerm is a terminal that can also block until a modem control pin
 // changes, which only the D2XX backend can do.
 type waitTerm interface {
 	term.Term
-	term.ModemControlLineWaiter
+	term.ModemControlPinWaiter
 }
 
 func backendName(useD2XX bool) string {
@@ -87,21 +87,21 @@ func monitorD2XX(ctx context.Context, t waitTerm) error {
 	wg.Go(func() { drainD2XX(ctx, t, readErr) })
 	defer func() {
 		cancel()
-		t.CancelModemControlLineWait()
+		t.CancelModemControlPinWait()
 		wg.Wait()
 	}()
 	wg.Go(func() {
 		<-ctx.Done()
-		t.CancelModemControlLineWait()
+		t.CancelModemControlPinWait()
 	})
-	status, err := t.ModemControlLineState()
+	status, err := t.ModemControlPinState()
 	if err != nil {
 		return err
 	}
 	lastCTS := status.Asserted(term.ModemCTS)
 	count := 0
 	for {
-		at, err := t.WaitModemControlLineChange(term.ModemCTS)
+		at, err := t.WaitModemControlPinChange(term.ModemCTS)
 		if err != nil {
 			return err
 		}
@@ -112,7 +112,7 @@ func monitorD2XX(ctx context.Context, t waitTerm) error {
 			return err
 		default:
 		}
-		status, err = t.ModemControlLineState()
+		status, err = t.ModemControlPinState()
 		if err != nil {
 			return err
 		}
@@ -144,7 +144,7 @@ func drainD2XX(ctx context.Context, t waitTerm, errCh chan<- error) {
 		case errCh <- err:
 		default:
 		}
-		t.CancelModemControlLineWait()
+		t.CancelModemControlPinWait()
 		return
 	}
 }
@@ -152,7 +152,7 @@ func drainD2XX(ctx context.Context, t waitTerm, errCh chan<- error) {
 func monitorPolling(ctx context.Context, t term.Term) error {
 	ticker := time.NewTicker(100 * time.Microsecond)
 	defer ticker.Stop()
-	status, err := t.ModemControlLineState()
+	status, err := t.ModemControlPinState()
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func monitorPolling(ctx context.Context, t term.Term) error {
 			return nil
 		case <-ticker.C:
 		}
-		status, err = t.ModemControlLineState()
+		status, err = t.ModemControlPinState()
 		if err != nil {
 			return err
 		}

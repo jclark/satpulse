@@ -61,7 +61,7 @@ type d2xxTerm struct {
 }
 
 var _ Term = (*d2xxTerm)(nil)
-var _ ModemControlLineWaiter = (*d2xxTerm)(nil)
+var _ ModemControlPinWaiter = (*d2xxTerm)(nil)
 
 type d2xxEvent struct {
 	api  *d2xxAPI
@@ -461,33 +461,33 @@ func (d *d2xxTerm) Buffered() (int, error) {
 	return int(tx), err
 }
 
-// ModemControlLineState returns the asserted modem control input lines.
-func (d *d2xxTerm) ModemControlLineState() (ModemControlLineState, error) {
+// ModemControlPinState returns the asserted modem control input lines.
+func (d *d2xxTerm) ModemControlPinState() (ModemControlPinState, error) {
 	var status uint32
 	if st := d.api.getModemStatus(d.handle, &status); st != ftOK {
 		return 0, d2xxError(d.path, "FT_GetModemStatus", int(st))
 	}
-	var state ModemControlLineState
+	var state ModemControlPinState
 	if status&ftModemCTS != 0 {
-		state |= modemControlLineState(ModemCTS)
+		state |= modemControlPinState(ModemCTS)
 	}
 	if status&ftModemDCD != 0 {
-		state |= modemControlLineState(ModemDCD)
+		state |= modemControlPinState(ModemDCD)
 	}
 	if status&ftModemDSR != 0 {
-		state |= modemControlLineState(ModemDSR)
+		state |= modemControlPinState(ModemDSR)
 	}
 	if status&ftModemRI != 0 {
-		state |= modemControlLineState(ModemRI)
+		state |= modemControlPinState(ModemRI)
 	}
 	return state, nil
 }
 
-// WaitModemControlLineChange blocks until a modem control input may have
+// WaitModemControlPinChange blocks until a modem control input may have
 // changed, returning the time the wakeup was observed. The library notifies on
 // any modem-status event or on received data, so the caller must read the
 // state to tell what happened.
-func (d *d2xxTerm) WaitModemControlLineChange(line ModemControlLine) (time.Time, error) {
+func (d *d2xxTerm) WaitModemControlPinChange(line ModemControlPin) (time.Time, error) {
 	if line < ModemCTS || line > ModemRI {
 		return time.Time{}, fmt.Errorf("invalid modem control line: %d", line)
 	}
@@ -499,8 +499,8 @@ func (d *d2xxTerm) WaitModemControlLineChange(line ModemControlLine) (time.Time,
 	return at, nil
 }
 
-// CancelModemControlLineWait unblocks a pending wait, to make shutdown prompt.
-func (d *d2xxTerm) CancelModemControlLineWait() {
+// CancelModemControlPinWait unblocks a pending wait, to make shutdown prompt.
+func (d *d2xxTerm) CancelModemControlPinWait() {
 	d.event.signal()
 }
 

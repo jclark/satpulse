@@ -392,8 +392,8 @@ func (t *unixTerm) Buffered() (n int, err error) {
 	return
 }
 
-// ModemControlLineState returns the asserted modem control input lines.
-func (t *unixTerm) ModemControlLineState() (ModemControlLineState, error) {
+// ModemControlPinState returns the asserted modem control input pins.
+func (t *unixTerm) ModemControlPinState() (ModemControlPinState, error) {
 	var status int
 	var err error
 	for {
@@ -405,18 +405,18 @@ func (t *unixTerm) ModemControlLineState() (ModemControlLineState, error) {
 	if err != nil {
 		return 0, t.wrapErr(err, "ioctl(TIOCMGET)")
 	}
-	var state ModemControlLineState
+	var state ModemControlPinState
 	if status&unix.TIOCM_CTS != 0 {
-		state |= modemControlLineState(ModemCTS)
+		state |= modemControlPinState(ModemCTS)
 	}
 	if status&unix.TIOCM_CAR != 0 {
-		state |= modemControlLineState(ModemDCD)
+		state |= modemControlPinState(ModemDCD)
 	}
 	if status&unix.TIOCM_DSR != 0 {
-		state |= modemControlLineState(ModemDSR)
+		state |= modemControlPinState(ModemDSR)
 	}
 	if status&unix.TIOCM_RI != 0 {
-		state |= modemControlLineState(ModemRI)
+		state |= modemControlPinState(ModemRI)
 	}
 	return state, nil
 }
